@@ -2,8 +2,8 @@
 includes("lib/commonlibsf")
 
 -- set project constants
-set_project("commonlibsf-template")
-set_version("0.0.0")
+set_project("HorizonUI")
+set_version("0.39.0")
 set_license("GPL-3.0")
 set_languages("c++23")
 set_warnings("allextra")
@@ -13,12 +13,13 @@ add_rules("mode.debug", "mode.releasedbg")
 add_rules("plugin.vsxmake.autoupdate")
 
 -- define targets
-target("commonlibsf-template")
+target("HorizonUI")
+    set_version("0.39.0")
     add_rules("commonlibsf.plugin", {
-        name = "commonlibsf-template",
-        author = "libxse",
-        description = "SFSE plugin template using CommonLibSF",
-        email = "user@site.com"
+        name = "HorizonUI",
+        author = "Moragar",
+        description = "Horizon UI HUD settings",
+        email = "208107460+moragar360@users.noreply.github.com"
     })
 
     -- add src files
