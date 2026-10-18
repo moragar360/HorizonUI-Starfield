@@ -1,4 +1,4 @@
-// HorizonUI SFSE plugin v0.39.0 - drop-in src\main.cpp (CommonLibSF libxse 9d090c4)
+// HorizonUI SFSE plugin v0.40.2 - drop-in src\main.cpp (CommonLibSF libxse 9d090c4)
 // v0.39: the hovered-person data feature (v0.35 - 0.38) is deleted: the DLL reads nothing about the person under
 // the crosshair, writes no extra files and has no settings section of its own. It only runs the F11 settings window
 // and the settings files. The v0.38 check that the loaded HUDMenu is Horizon's now asks hzSettingsOpen.
@@ -82,7 +82,7 @@ namespace HZ
 	//   presets\*.ini           shipped presets (moragars_choice.ini from the installer); presets\user\*.ini saved in game
 	namespace HZF
 	{
-		inline const char* kVersion = "0.39.0";
+		inline const char* kVersion = "0.40.2";
 		using LogFn = void (*)(int, const std::string&);   // 0 info, 1 warn
 		inline LogFn g_log = nullptr;
 		inline void Log(int a_lvl, const std::string& a_s) { if (g_log) g_log(a_lvl, a_s); }
@@ -1319,7 +1319,7 @@ namespace HZ
 		}
 	}
 
-	// v0.38: is the loaded HUDMenu Horizon's? (StarUI HUD and other HUD replacers ship their own hudmenu.gfx; the F11
+	// v0.38: is the loaded HUDMenu Horizon's? (other HUD replacers ship their own hudmenu.gfx; the F11
 	// window lives in Horizon's movie, so the warning can only be a log line.) v0.39: asks hzSettingsOpen (read-only,
 	// returns a Boolean), Horizon's own HUD callback. Every Horizon HUD since v0.18 answers it, so this tells Horizon from
 	// a foreign HUD, not one Horizon version from another (the F11 window shows the HUD's version). Logged when the
@@ -1332,7 +1332,7 @@ namespace HZ
 		if (now == g_hudOwner) return;
 		g_hudOwner = now;
 		if (now) REX::INFO("hud: HUDMenu answers hzSettingsOpen - a Horizon UI hudmenu.gfx is loaded (any Horizon HUD since v0.18 answers; the F11 window shows its version)");
-		else REX::WARN("hud: HUDMenu does not answer hzSettingsOpen - the loaded hudmenu.gfx is not a Horizon UI HUD (StarUI HUD or another HUD replacer overrides it; check the load order)");
+		else REX::WARN("hud: HUDMenu does not answer hzSettingsOpen - the loaded hudmenu.gfx is not a Horizon UI HUD (another HUD replacer overrides it; check the load order)");
 	}
 
 	void Poll()
@@ -1379,7 +1379,7 @@ SFSE_PLUGIN_PRELOAD(const SFSE::PreLoadInterface* a_sfse)
 SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* a_sfse)
 {
 	SFSE::Init(a_sfse);
-	REX::INFO("HorizonUI 0.39.0 loaded");
+	REX::INFO("HorizonUI 0.40.2 loaded");
 	HZ::FilesStartup();   // v0.37: update backup, migration / preset seeding - before any menu reads the settings
 	if (auto msg = SFSE::GetMessagingInterface())
 		msg->RegisterListener(HZ::OnMessage);

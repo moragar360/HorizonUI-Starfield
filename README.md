@@ -12,7 +12,7 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 - **Adaptive:** every card has its own visibility rule, so cards appear when they matter. Warnings react to your health and oxygen, and the Planet card lights up in hazards.
 - **Dynamic:** cards update live, including XP, carry weight, ammo, the Starborn power meter, and two clocks (in-game time and your real PC time). You also get combat feedback and live previews in F11.
 - **Customizable:** more than 100 settings, Arrange Cards to move anything, colors, fonts, sizes, and presets you can save and switch.
-- **Modular:** a core HUD plus optional **Horizon Font** and **Comms** (subtitles and dialogue) modules, with a **Scanner** module planned. The FOMOD installer lets you pick what you want.
+- **Modular:** a core HUD plus optional **Horizon Font** and **Comms** (subtitles and dialogue) modules, plus the optional **Scanner**, Horizon's own hand scanner screen. The FOMOD installer lets you pick what you want.
 
 ## Requirements
 - **Starfield** (PC). Tested on game version 1.16.244.
@@ -29,7 +29,7 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
   Without this, Starfield ignores loose interface files and you'll see the vanilla HUD.
 
 ## Install
-Most players should use the **FOMOD installer** from [Releases](https://github.com/moragar360/HorizonUI-Starfield/releases) or from Nexus (link coming with the Nexus release), installed with Vortex or Mod Organizer 2. The installer walks you through Font, Settings Preset, and the optional Comms modules. The release notes cover manual installs from the separate zips.
+Most players should use the **FOMOD installer** from [Releases](https://github.com/moragar360/HorizonUI-Starfield/releases) or from Nexus (link coming with the Nexus release), installed with Vortex or Mod Organizer 2. The installer walks you through Font, Settings Preset, and the optional Comms and Scanner modules. The release notes cover manual installs from the separate zips.
 
 ## What the plugin does
 `HorizonUI.dll` is a small SFSE plugin that runs alongside the HUD's interface files:
@@ -56,7 +56,7 @@ Log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
 
 3. The plugin is written to `build\windows\x64\releasedbg\HorizonUI.dll`.
 
-Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.39.0 loaded`.
+Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.40.2 loaded`.
 
 ## Repository layout
 ```
@@ -78,7 +78,8 @@ The plugin source is licensed under the **GNU General Public License v3.0** (see
 - **Exo 2** by Natanael Gama, and **Roboto** by Christian Robertson (with ParaType and Font Bureau). Both are licensed under the SIL Open Font License 1.1 and ship in the Font package.
 - **SFSE team**, for the Starfield Script Extender
 - **CommonLibSF** contributors ([libxse/commonlibsf](https://github.com/libxse/commonlibsf))
-- **AEGIS** by [Jaderay](https://www.nexusmods.com/profile/jaderay?gameId=4187) inspired the planned Scanner module's concept. Horizon UI is its own code and original art; no AEGIS code or assets are included.
+- **AEGIS** by [Jaderay](https://www.nexusmods.com/profile/jaderay?gameId=4187) (no longer publicly listed): thanks for showing how the scanner's data works. Horizon includes none of its code or art.
+- **HONKCORE** by beepcmyk: thanks for showing how the scanner's data works. Horizon includes none of its code or art.
 - Game icons (weapon outlines, Starborn powers) are loaded from your game at runtime and aren't bundled.
 
 ## Links
