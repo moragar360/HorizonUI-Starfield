@@ -3,7 +3,7 @@ includes("lib/commonlibsf")
 
 -- set project constants
 set_project("HorizonUI")
-set_version("0.40.2")
+set_version("0.41.0")
 set_license("GPL-3.0")
 set_languages("c++23")
 set_warnings("allextra")
@@ -14,7 +14,7 @@ add_rules("plugin.vsxmake.autoupdate")
 
 -- define targets
 target("HorizonUI")
-    set_version("0.40.2")
+    set_version("0.41.0")
     add_rules("commonlibsf.plugin", {
         name = "HorizonUI",
         author = "Moragar",

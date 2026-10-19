@@ -11,13 +11,14 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 ## Features at a glance
 - **Adaptive:** every card has its own visibility rule, so cards appear when they matter. Warnings react to your health and oxygen, and the Planet card lights up in hazards.
 - **Dynamic:** cards update live, including XP, carry weight, ammo, the Starborn power meter, and two clocks (in-game time and your real PC time). You also get combat feedback and live previews in F11.
-- **Customizable:** more than 100 settings, Arrange Cards to move anything, colors, fonts, sizes, and presets you can save and switch.
-- **Modular:** a core HUD plus optional **Horizon Font** and **Comms** (subtitles and dialogue) modules, plus the optional **Scanner**, Horizon's own hand scanner screen. The FOMOD installer lets you pick what you want.
+- **Customizable:** more than 100 settings, Arrange Cards and Arrange Scanner to move anything, colors, fonts, sizes, and presets you can save and switch.
+- **Modular:** a core HUD plus optional **Horizon Font** and **Comms** (subtitles and dialogue) modules, plus the optional **Scanner**, Horizon's own hand scanner screen. Core is always installed; the modules are optional parts of the same FOMOD installer and need Core.
 
 ## Requirements
 - **Starfield** (PC). Tested on game version 1.16.244.
 - **[Starfield Script Extender (SFSE)](https://sfse.silverlock.org/)** for that game version. SFSE isn't included, so install it separately and launch with `sfse_loader.exe`.
 - **[Address Library for SFSE Plugins](https://www.nexusmods.com/starfield/mods/3256)** for that game version (required). It isn't included; `HorizonUI.dll` needs it to load.
+- **Horizon UI Core**, always required. The FOMOD (`HorizonUI-0.41.0-FOMOD.zip`) installs it automatically; Comms and the Scanner are optional modules inside it, not separate mods, and they need Core's `HorizonUI.dll`, settings files, F11 menu and HUD.
 - **Loose files enabled** in `Documents\My Games\Starfield\StarfieldCustom.ini` (create it if missing):
 
   ```ini
@@ -29,14 +30,23 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
   Without this, Starfield ignores loose interface files and you'll see the vanilla HUD.
 
 ## Install
-Most players should use the **FOMOD installer** from [Releases](https://github.com/moragar360/HorizonUI-Starfield/releases) or from Nexus (link coming with the Nexus release), installed with Vortex or Mod Organizer 2. The installer walks you through Font, Settings Preset, and the optional Comms and Scanner modules. The release notes cover manual installs from the separate zips.
+Download the one **FOMOD installer**, `HorizonUI-0.41.0-FOMOD.zip`, from [Releases](https://github.com/moragar360/HorizonUI-Starfield/releases) or from Nexus (link coming with the Nexus release), and install it with Vortex or Mod Organizer 2. **Core** (the HUD, the settings files, the F11 menu and `HorizonUI.dll`) is always required and installs automatically. The installer then walks you through Font, Settings Preset and the optional Comms and Scanner modules. Those modules are part of the same download, not separate mods, and they need Core.
+
+The other zips on the Releases page are the individual parts of the same build, for manual installs or reference. For a manual install, the release notes explain how to copy the FOMOD zip's folders into `Data\`, starting with `00 Core`.
+
+## Tip: the COMMS tab in F11
+Subtitles and dialogue share one tab in F11. At the top of the **COMMS** tab, the **PAGE** selector switches between **SUBTITLES** and **DIALOGUE**. The settings below it change only the page you've picked, so check which one is selected before you edit.
+
+## Accessibility: ships in the scanner
+In the Horizon Scanner's Signals list, ship ownership is shown by the row label and icon as well as color (YOUR SHIP, YOUR VEHICLE, Companion ship), so colorblind players can tell them apart.
 
 ## What the plugin does
 `HorizonUI.dll` is a small SFSE plugin that runs alongside the HUD's interface files:
-- **F11 live settings window:** opens the settings menu from your key (F11 by default, rebindable) and handles its input.
+- **F11 live settings window:** opens the settings menu from your key (F11 by default, rebindable) and handles its input. It opens inside the hand scanner too, and stays closed in full-screen game menus like the inventory, starmap and builders.
 - **Mouse wheel** support in Horizon's menus.
 - **Settings files:** reads the shipped `HorizonUI.default.ini` and your `HorizonUI.user.ini`, saves changes safely, and keeps one backup per update (`HorizonUI.user.bak.ini`).
 - **Presets:** lists, applies, saves, deletes and undoes presets in `Interface\HorizonUI\presets\` (your own go in `presets\user\`).
+- **Scanner state:** tells the HUD and Comms while the hand scanner is open, so they stay hidden for the whole scan, even while you switch scanner tools.
 
 Log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
 
@@ -56,7 +66,7 @@ Log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
 
 3. The plugin is written to `build\windows\x64\releasedbg\HorizonUI.dll`.
 
-Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.40.2 loaded`.
+Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.41.0 loaded`.
 
 ## Repository layout
 ```

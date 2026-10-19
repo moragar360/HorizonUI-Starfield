@@ -1,4 +1,14 @@
-// HorizonUI SFSE plugin v0.40.2 - drop-in src\main.cpp (CommonLibSF libxse 9d090c4)
+// HorizonUI SFSE plugin v0.41.0 - drop-in src\main.cpp (CommonLibSF libxse 9d090c4)
+// v0.41.0: the hand scanner state is pushed to the HUD (hz41DllScan) and the Comms HUD messages movie (hzcDllScan) every
+// 100 ms (ScanPush, from BannerPoll), so a tool switch inside the scanner no longer ends their scan state.
+// v0.41.0 test r2: ScanPush only while the hand scanner is open (+ one closed push) and only with the Scanner module; the
+// retired [Scanner] ScanShowVitals key is never written again (presets that still have it set the three vitals keys).
+// v0.41.0 FINAL: F11 / settings ignored while a full-screen menu is open (ship builder, outpost, inventory, galaxy map,
+// photo mode, Data Menu, ship crew, skills, missions, powers, status, research, crafting, container, barter, terminal,
+// digipick, chargen, photo gallery, blueprint, ...), same as load / pause / console; ResetSettingsState fully closes
+// ARRANGE then the F11 window (toggle at most twice while open).
+// v0.40.3: without the Comms module, the game's planet location banner (HUD messages movie) is set to alpha 0 while the
+// Horizon scanner is open (BannerPoll; GFx::Value GetMember / SetMember on the menu's document object), and restored after.
 // v0.39: the hovered-person data feature (v0.35 - 0.38) is deleted: the DLL reads nothing about the person under
 // the crosshair, writes no extra files and has no settings section of its own. It only runs the F11 settings window
 // and the settings files. The v0.38 check that the loaded HUDMenu is Horizon's now asks hzSettingsOpen.
@@ -82,7 +92,7 @@ namespace HZ
 	//   presets\*.ini           shipped presets (moragars_choice.ini from the installer); presets\user\*.ini saved in game
 	namespace HZF
 	{
-		inline const char* kVersion = "0.40.2";
+		inline const char* kVersion = "0.41.0";
 		using LogFn = void (*)(int, const std::string&);   // 0 info, 1 warn
 		inline LogFn g_log = nullptr;
 		inline void Log(int a_lvl, const std::string& a_s) { if (g_log) g_log(a_lvl, a_s); }
@@ -317,6 +327,9 @@ namespace HZ
 		}
 
 		inline bool IsModuleSec(const std::string& a_n) { return a_n == "scanner" || a_n == "comms"; }
+		// v0.41.0 r2: keys a newer version replaced. Never written again by Diff (F11 save, presets, migration), so an old
+		// line cannot outlive the keys that replaced it. [Scanner] ScanShowVitals (0.40.3) = ScanShowVitalsHealth / O2 / Boost.
+		inline bool RetiredKey(const std::string& a_sec, const std::string& a_kl) { return a_sec == "scanner" && a_kl == "scanshowvitals"; }
 
 		struct DiffOpt
 		{
@@ -353,6 +366,7 @@ namespace HZ
 				return o && o->kv.count(a_kl) && D.SectionOfKey(a_kl) == a_sec;
 			};
 			auto consider = [&](const std::string& a_sec, const std::string& a_kl, const std::pair<std::string, std::string>& a_p) {
+				if (RetiredKey(a_sec, a_kl)) return;   // v0.41.0 r2
 				auto ds = D.Find(a_sec);
 				auto dk = ds->kv.find(a_kl);
 				const bool inU = inUser(a_sec, a_kl);
@@ -520,9 +534,26 @@ namespace HZ
 			}
 			return Join(out);
 		}
+		// v0.41.0 r2: a preset (0.40.3) with [Scanner] ScanShowVitals=0 / 1 sets the three vitals keys it stood for (the ones
+		// the preset does not set itself); any other value is ignored. The retired line itself is dropped by Diff.
+		inline std::string ExpandRetired(const std::string& a_text)
+		{
+			Doc d = Parse(a_text);
+			auto s = d.Find("scanner");
+			if (!s) return a_text;
+			auto it = s->kv.find("scanshowvitals");
+			if (it == s->kv.end()) return a_text;
+			double v = -1;
+			if (!IsNum(it->second.second, v) || (v != 0.0 && v != 1.0)) return a_text;
+			std::string add;
+			for (auto k : { "ScanShowVitalsHealth", "ScanShowVitalsO2", "ScanShowVitalsBoost" })
+				if (!s->kv.count(Lower(k))) add += std::string(k) + "=" + (v == 1.0 ? "1" : "0") + "\r\n";
+			if (add.empty()) return a_text;
+			return Overlay(a_text, "[Scanner]\r\n" + add);
+		}
 		inline std::string PresetToUser(const std::string& a_preset, const std::string& a_defs, const std::string& a_oldUser = std::string())
 		{
-			std::string p = StripSection(a_preset, "preset");
+			std::string p = ExpandRetired(StripSection(a_preset, "preset"));   // v0.41.0 r2
 			p = StripPersonal(StripSection(p, "debug"));
 			if (!a_oldUser.empty()) {
 				Doc U = Parse(a_oldUser);
@@ -941,13 +972,23 @@ namespace HZ
 		return false;
 	}
 
-	// True only when the HUD is fully up and nothing loading-related is open.
+	// True only when the HUD is fully up and nothing loading-related or full-screen is open.
+	// r6 / final: ship builder, outpost, inventory, galaxy map, photo mode, Data Menu, ship crew, plus skills,
+	// missions, powers, status, research, the five crafting menus, container, barter, terminal, digipick (SecurityMenu),
+	// chargen, photo gallery and blueprint (F11 on top of those froze input until Escape was mashed).
 	bool HudSafe()
 	{
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) return false;
 		if (!ui->IsMenuOpen("HUDMenu")) return false;
-		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu", "Console" })
+		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu", "Console",
+		                "SpaceshipEditorMenu", "WorkshopMenu", "WorkshopBuilderMenu", "InventoryMenu",
+		                "PhotoModeMenu", "GalaxyStarMapMenu", "DataMenu", "ShipCrewMenu", "ShipCrewAssignMenu",
+		                "SpaceshipInfoMenu",
+		                "SkillsMenu", "BSMissionMenu", "PowersMenu", "StatusMenu", "ResearchMenu",
+		                "ArmorCraftingMenu", "WeaponsCraftingMenu", "DrugsCraftingMenu", "FoodCraftingMenu",
+		                "IndustrialCraftingMenu", "ContainerMenu", "BarterMenu", "GenesisTerminalMenu",
+		                "SecurityMenu", "ChargenMenu", "PhotoGalleryMenu", "Workshop_BlueprintMenu" })
 			if (ui->IsMenuOpen(m)) return false;
 		auto menu = ui->GetMenu("HUDMenu");
 		if (!menu || !menu->uiMovie || !menu->uiMovie->asMovieRoot) return false;
@@ -960,7 +1001,8 @@ namespace HZ
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) return;
 		if (TextMenuOpen(ui)) { REX::INFO("ignored: text/console/pause menu open"); return; }
-		bool ok = HudSafe() && HudInvoke("hzToggleSettings", nullptr, nullptr, 0, true);
+		if (!HudSafe()) { REX::INFO("ignored: full-screen or loading menu open"); return; }
+		bool ok = HudInvoke("hzToggleSettings", nullptr, nullptr, 0, true);
 		REX::INFO("hzToggleSettings invoke {}", ok ? "OK" : "FAILED (HUD lacks function or HUDMenu missing)");
 	}
 
@@ -1192,6 +1234,14 @@ namespace HZ
 	void ResetSettingsState()
 	{
 		if (g_open) REX::INFO("settings closed (HUD not safe)");
+		// final (r6 SF-1): ARRANGE keeps hzSetIsOpen; one toggle only leaves arrange and re-shows F11.
+		// Toggle at most twice while hzSettingsOpen (close-only: each call runs with open==true, so never opens).
+		for (int i = 0; i < 2; ++i) {
+			GValue open;
+			if (!(HudInvoke("hzSettingsOpen", &open) && open.IsBoolean() && open.GetBoolean()))
+				break;
+			HudInvoke("hzToggleSettings", nullptr, nullptr, 0, true);
+		}
 		g_open = false;
 		g_swallow = false;
 		SetControlsBlocked(false);
@@ -1335,9 +1385,114 @@ namespace HZ
 		else REX::WARN("hud: HUDMenu does not answer hzSettingsOpen - the loaded hudmenu.gfx is not a Horizon UI HUD (another HUD replacer overrides it; check the load order)");
 	}
 
+	// ---------------- v0.40.3: the game's planet location banner while the Horizon scanner is open ----------------
+	// HUDMessagesMenu > Location_mc > PlanetLocationTextAnim_mc (the body name and its system / type line) shows through
+	// the Horizon scanner's cards. The Comms module hides it inside its own movie. Without Comms (the game's own HUD
+	// messages movie) the DLL does the same: alpha 0 while MonocleMenu is open, the alpha it had before back when the
+	// scanner closes, a load / main / pause menu opens, or the movie goes away. Only with the Scanner module installed
+	// (modules\scanner.marker). Nothing is removed; the game's banner queue and animation are not touched.
+	bool      g_banHidden = false;
+	double    g_banAlpha = 1.0;
+	ULONGLONG g_banNext = 0;
+	ULONGLONG g_banMarkT = 0;
+	int       g_banScanMod = -1;   // scanner.marker: -1 not checked yet, 0 absent, 1 present
+	bool      g_banCommsLogged = false;
+
+	// the banner clip of the HUD messages movie; false (and a_comms = true) when that movie is Horizon's Comms movie
+	bool BannerClip(GValue& a_clip, bool& a_comms)
+	{
+		a_comms = false;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return false;
+		auto menu = ui->GetMenu("HUDMessagesMenu");
+		if (!menu || !menu->menuObj.IsObject()) return false;
+		if (menu->menuObj.HasMember("hzcProbeDone")) { a_comms = true; return false; }
+		GValue loc;
+		if (!menu->menuObj.GetMember("Location_mc", &loc) || !loc.IsObject()) return false;
+		if (!loc.GetMember("PlanetLocationTextAnim_mc", &a_clip) || !a_clip.IsObject()) return false;
+		return true;
+	}
+
+	void BannerRestore()
+	{
+		if (!g_banHidden) return;
+		g_banHidden = false;
+		GValue clip;
+		bool   comms = false;
+		if (BannerClip(clip, comms) && clip.SetMember("alpha", GValue(g_banAlpha))) REX::INFO("scanner: location banner restored");
+	}
+
+	// v0.41.0 (test r2): the hand scanner state to the Horizon HUD (hz41DllScan) and the Comms HUD messages movie
+	// (hzcDllScan). Only while MonocleMenu is open (every 100 ms) plus ONE "closed" push when it closes, and only with the
+	// Scanner module (modules\scanner.marker). Outside a scan nothing is called. Never while a load / fader / main / pause
+	// menu is up (a closed push waits until it is gone). Each movie only when it is open and its document object answers
+	// (HasMember). The first push of the session and the first closed push are logged once (which movies answered).
+	bool g_pushOpen = false;      // the last push said "open"
+	bool g_pushLogged = false;
+	bool g_pushEndLogged = false;
+	void ScanPush(RE::UI* a_ui)
+	{
+		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu" })
+			if (a_ui->IsMenuOpen(m)) return;
+		const bool open = g_banScanMod == 1 && a_ui->IsMenuOpen("MonocleMenu");
+		if (!open && !g_pushOpen) return;   // not scanning and the closed push was sent: nothing
+		GValue arg(open);
+		bool hudOk = false, msgOk = false;
+		if (a_ui->IsMenuOpen("HUDMenu"))
+			if (auto hud = a_ui->GetMenu("HUDMenu"); hud && hud->menuObj.IsObject() && hud->menuObj.HasMember("hz41DllScan"))
+				hudOk = hud->menuObj.Invoke("hz41DllScan", nullptr, &arg, 1);
+		if (a_ui->IsMenuOpen("HUDMessagesMenu"))
+			if (auto msg = a_ui->GetMenu("HUDMessagesMenu"); msg && msg->menuObj.IsObject() && msg->menuObj.HasMember("hzcDllScan"))
+				msgOk = msg->menuObj.Invoke("hzcDllScan", nullptr, &arg, 1);
+		if (open && !g_pushLogged) {
+			g_pushLogged = true;
+			REX::INFO("scanner: scan state push started (HUD hz41DllScan {}, HUD messages hzcDllScan {})", hudOk ? "OK" : "not answered", msgOk ? "OK" : "not answered (no Comms module?)");
+		}
+		if (!open && !g_pushEndLogged) {
+			g_pushEndLogged = true;
+			REX::INFO("scanner: scan state push ended (closed sent once; HUD {}, HUD messages {})", hudOk ? "OK" : "not answered", msgOk ? "OK" : "not answered");
+		}
+		g_pushOpen = open;
+	}
+
+	void BannerPoll(ULONGLONG a_now)
+	{
+		if (a_now < g_banNext) return;
+		g_banNext = a_now + 100;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		if (g_banScanMod < 0 || a_now - g_banMarkT > 10000) {
+			std::error_code ec;
+			g_banScanMod = std::filesystem::exists(HzDir() / "modules" / "scanner.marker", ec) ? 1 : 0;
+			g_banMarkT = a_now;
+		}
+		ScanPush(ui);   // v0.41.0 (test r2: after the marker check; only while scanning + one closed push)
+		bool scan = g_banScanMod == 1 && ui->IsMenuOpen("MonocleMenu");
+		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu" })
+			if (ui->IsMenuOpen(m)) scan = false;
+		if (!scan) { BannerRestore(); return; }
+		GValue clip;
+		bool   comms = false;
+		if (!BannerClip(clip, comms)) {
+			if (comms && !g_banCommsLogged) { REX::INFO("scanner: location banner left to the Comms module"); g_banCommsLogged = true; }
+			g_banHidden = false;   // the movie went away (or is Comms): nothing of ours to restore
+			return;
+		}
+		if (!g_banHidden) {
+			GValue a;
+			g_banAlpha = (clip.GetMember("alpha", &a) && a.IsNumber()) ? a.GetNumber() : 1.0;
+			if (g_banAlpha <= 0.0) g_banAlpha = 1.0;
+		}
+		if (clip.SetMember("alpha", GValue(0.0))) {
+			if (!g_banHidden) REX::INFO("scanner: location banner hidden (no Comms module)");
+			g_banHidden = true;
+		}
+	}
+
 	void Poll()
 	{
 		auto now = GetTickCount64();
+		BannerPoll(now);   // v0.40.3
 		HWND wnd = GameWindow();
 		bool down = wnd && (GetAsyncKeyState(g_vk) & 0x8000) != 0;
 		if (down && !g_wasDown) OnSettingsKey();
@@ -1379,7 +1534,7 @@ SFSE_PLUGIN_PRELOAD(const SFSE::PreLoadInterface* a_sfse)
 SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* a_sfse)
 {
 	SFSE::Init(a_sfse);
-	REX::INFO("HorizonUI 0.40.2 loaded");
+	REX::INFO("HorizonUI 0.41.0 loaded");
 	HZ::FilesStartup();   // v0.37: update backup, migration / preset seeding - before any menu reads the settings
 	if (auto msg = SFSE::GetMessagingInterface())
 		msg->RegisterListener(HZ::OnMessage);
