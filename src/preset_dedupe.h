@@ -34,27 +34,69 @@ inline std::string Lower(std::string a_s)
 	return a_s;
 }
 
+// Purpose: true when a_s[a_i] is a non-breaking space (UTF-8 C2 A0, or a lone A0).
+// Outputs: byte length of that space through a_step. A UTF-8 pair is taken first so
+// the A0 is not folded on its own and the C2 left behind.
+inline bool IsNbsp(const std::string& a_s, std::size_t a_i, std::size_t& a_step)
+{
+	const auto c = static_cast<unsigned char>(a_s[a_i]);
+	if (c == 0xC2 && a_i + 1 < a_s.size() && static_cast<unsigned char>(a_s[a_i + 1]) == 0xA0) {
+		a_step = 2;
+		return true;
+	}
+	if (c == 0xA0) {
+		a_step = 1;
+		return true;
+	}
+	return false;
+}
+
 // Purpose: turn a preset display name into the dedupe key.
 // Inputs: the name already stored on the preset. Outputs: trimmed, ASCII
-// case-folded, with runs of whitespace collapsed to one space.
-// Dependencies: none.
+// case-folded, with runs of whitespace collapsed to one space. A non-breaking
+// space counts as a space, so it does not make a second name.
+// Dependencies: IsNbsp.
 // Last modified: 2026-10-20.
 inline std::string NormalizePresetName(const std::string& a_name)
 {
+	const std::string t = Trim(a_name);
 	std::string o;
 	bool sp = false;
-	for (unsigned char c : Trim(a_name)) {
-		if (IsWs(c)) { if (!o.empty()) sp = true; continue; }
+	for (std::size_t i = 0; i < t.size();) {
+		std::size_t step = 0;
+		const auto c = static_cast<unsigned char>(t[i]);
+		if (IsNbsp(t, i, step) || IsWs(c)) {
+			if (!o.empty()) sp = true;
+			i += step ? step : 1;
+			continue;
+		}
 		if (sp) { o += ' '; sp = false; }
 		o += static_cast<char>(std::tolower(c));
+		++i;
 	}
 	return o;
 }
 
+// Purpose: a prefix of at most a_max bytes that does not end inside a UTF-8 character.
+// Inputs: text and a byte budget. Outputs: the text when it already fits, otherwise
+// bytes [0, a_max) with a split character removed. A continuation byte (10xxxxxx)
+// at the cut means the character started earlier; that lead byte is dropped too.
+// Dependencies: none.
+// Last modified: 2026-10-20.
+inline std::string Utf8Prefix(const std::string& a_s, std::size_t a_max)
+{
+	if (a_s.size() <= a_max) return a_s;
+	std::size_t n = a_max;
+	if ((static_cast<unsigned char>(a_s[n]) & 0xC0) == 0x80) {
+		while (n > 0 && (static_cast<unsigned char>(a_s[n]) & 0xC0) == 0x80) --n;
+	}
+	return a_s.substr(0, n);
+}
+
 // Purpose: drop the characters a preset name must not contain, matching the HUD.
 // Inputs: the raw name from F11. Outputs: the name with those characters and
-// control characters removed, trimmed, and cut at 48 characters.
-// Dependencies: kPresetNameDrop. The movie's typing box still stops at 32.
+// control characters removed, trimmed, and cut at 48 bytes on a UTF-8 boundary.
+// Dependencies: kPresetNameDrop, Utf8Prefix. The movie's typing box still stops at 32.
 // Last modified: 2026-10-20.
 inline std::string CleanPresetName(const std::string& a_name)
 {
@@ -65,7 +107,7 @@ inline std::string CleanPresetName(const std::string& a_name)
 		s += static_cast<char>(c);
 	}
 	s = Trim(s);
-	if (s.size() > 48) s = Trim(s.substr(0, 48));
+	if (s.size() > 48) s = Trim(Utf8Prefix(s, 48));
 	return s;
 }
 
@@ -186,9 +228,11 @@ inline std::string DropReason(const Candidate& a_dropped, const Candidate& a_kep
 	return "settings differ, same time, kept the stable id";
 }
 
-// Purpose: hide duplicate preset names in the F11 list.
+// Purpose: hide duplicate shipped preset names in the F11 list.
 // Inputs: presets in the order ScanPresets already shows (shipped, then saved).
 // Outputs: indexes to keep, in that same order, and one log line per hidden file.
+// Only shipped files (user == false) are compared with each other. A saved preset
+// is always kept, even when its name matches a shipped preset and that file is newer.
 // The hidden file stays on disk. Dependencies: NormalizePresetName, PreferPreset.
 // Last modified: 2026-10-20.
 inline std::vector<std::size_t> DedupePresetIndices(const std::vector<Candidate>& a_items, std::vector<Drop>& a_drops)
@@ -201,6 +245,7 @@ inline std::vector<std::size_t> DedupePresetIndices(const std::vector<Candidate>
 	};
 	std::vector<Group> groups;
 	for (std::size_t i = 0; i < a_items.size(); ++i) {
+		if (a_items[i].user) continue;
 		const std::string key = NormalizePresetName(a_items[i].name);
 		std::size_t g = 0;
 		for (; g < groups.size(); ++g)

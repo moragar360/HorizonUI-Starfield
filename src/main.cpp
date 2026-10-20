@@ -1,5 +1,6 @@
 // HorizonUI SFSE plugin v0.42.0 - drop-in src\main.cpp (CommonLibSF libxse 9d090c4)
-// v0.42.0.4: F11 lists each preset name once. Same settings keep the installer copy; different settings keep the newer file.
+// v0.42.0.4: F11 lists each shipped preset name once. Saved presets are never hidden.
+// Same settings keep the installer copy; different settings keep the newer shipped file.
 // The F11 header and the "movie builds" line use the DLL file version (src/hz_version.h, also the version resource).
 // HUD message text is written to the log only when HZ_COMMS_MSG_LOG is 1 (xmake debug). Saved preset names drop the same
 // characters as the HUD: '=' '+' '[' ']' ';' '#' '"' '\' '|' and control characters.
@@ -657,7 +658,7 @@ namespace HZ
 				s += c;
 			}
 			s = Trim(s);
-			if (s.size() > a_max) s = Trim(s.substr(0, a_max));
+			if (s.size() > a_max) s = Trim(hzpreset::Utf8Prefix(s, a_max));
 			return s;
 		}
 		inline const std::vector<std::string>& BuiltinSections()
@@ -721,9 +722,11 @@ namespace HZ
 			if (ec) return 0;
 			return static_cast<std::int64_t>(t.time_since_epoch().count());
 		}
-		// Purpose: list presets for F11, one row per normalized name.
+		// Purpose: list presets for F11. Shipped files collapse to one row per name.
 		// Inputs: preset folders and the defaults text used to validate files.
 		// Outputs: the list the HUD shows, skip reasons, and duplicate-hide notes.
+		// Saved presets (presets\user) are always listed, so a player look that reuses a
+		// shipped name can still be applied and deleted after a mod update.
 		// Same settings: keep the installer copy (shipped file not named HorizonUI.*.ini).
 		// Different settings: keep the newer last-write time. Ties then prefer the installer copy, then the smaller id.
 		// Dependencies: hzpreset::DedupePresetIndices. A duplicate is not a skip.
@@ -917,7 +920,9 @@ namespace HZ
 			const auto name = hzpreset::CleanPresetName(a_name);   // same characters as the HUD (hz42NmOk), including '|' and DEL
 			if (name.empty()) return { false, "Type a name first" };
 			const auto file = a_p.userPresets / (Slug(name) + ".ini");
-			for (const auto& sp : ScanPresets(a_p, Defaults(a_p)).list)   // shipped presets are never overwritten or shadowed
+			// A shipped name stays in this list: dedupe only hides one shipped file when another
+			// shipped file has the same name. Saved presets are not removed, so this guard still fires.
+			for (const auto& sp : ScanPresets(a_p, Defaults(a_p)).list)
 				if (!sp.user && Slug(sp.name) == Slug(name)) return { false, "A preset that came with the mod has that name - pick another name" };
 			if (Exists(file) && !a_overwrite) return { false, "A saved preset with that name exists" };
 			const std::string body = PresetBody(a_full, Defaults(a_p));   // rule 3: only what differs from the defaults
@@ -1618,10 +1623,13 @@ namespace HZ
 			query[q] = 0;
 			wchar_t* str = nullptr;
 			UINT slen = 0;
-			if (::VerQueryValueW(buf.data(), query, reinterpret_cast<void**>(&str), &slen) && str && str[0]) {
+			if (::VerQueryValueW(buf.data(), query, reinterpret_cast<void**>(&str), &slen) && str && slen > 0 && str[0]) {
 				std::string out;
 				bool ascii = true;
-				for (UINT i = 0; str[i] && i < 64; ++i) {
+				// slen counts wchar_t in the version buffer, including the NUL. The index is checked
+				// before the read, and the copy stops at 64 so a missing NUL cannot walk off the buffer.
+				const UINT lim = slen < 64u ? slen : 64u;
+				for (UINT i = 0; i < lim && str[i] != L'\0'; ++i) {
 					if (str[i] > 127) { ascii = false; break; }
 					out.push_back(static_cast<char>(str[i]));
 				}

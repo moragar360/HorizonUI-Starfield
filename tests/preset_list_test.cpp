@@ -74,6 +74,23 @@ int main()
 	Expect(!IsInstallerPresetFile(false, "HorizonUI.moragars-choice-0.42.0.ini"), "standalone package file");
 	Expect(!IsInstallerPresetFile(true, "moragars_choice.ini"), "a saved copy is not the installer file");
 	ExpectEq(NormalizePresetName("  Moragar's   Choice\t"), "moragar's choice", "name key folds case and space");
+	ExpectEq(NormalizePresetName("Moragar's" "\xC2\xA0" "Choice"), "moragar's choice", "UTF-8 NBSP folds to a space");
+	ExpectEq(NormalizePresetName("Moragar's" "\xA0" "Choice"), "moragar's choice", "lone A0 NBSP folds to a space");
+	ExpectEq(NormalizePresetName("\xC2\xA0" "Moragar's Choice" "\xC2\xA0"), "moragar's choice", "leading and trailing NBSP fold away");
+
+	{
+		std::string cut(47, 'a');
+		cut += "\xC3\xA9";
+		ExpectEq(CleanPresetName(cut), std::string(47, 'a'), "a 48-byte cut does not keep a split UTF-8 lead");
+		std::string fit(46, 'a');
+		fit += "\xC3\xA9";
+		ExpectEq(CleanPresetName(fit), fit, "a complete UTF-8 character at 48 bytes stays");
+		std::string wide(45, 'b');
+		wide += "\xF0\x9F\x8C\x8D";
+		wide += "Z";
+		ExpectEq(CleanPresetName(wide), std::string(45, 'b'), "a 4-byte character that crosses 48 bytes is dropped whole");
+		ExpectEq(Utf8Prefix(std::string(46, 'a') + "\xC3\xA9" + "Z", 48), std::string(46, 'a') + "\xC3\xA9", "a character that ends on the cut stays");
+	}
 
 	const std::string same = PresetContentKey(bodyA);
 	const std::string other = PresetContentKey(bodyC);
@@ -113,7 +130,7 @@ int main()
 		Expect(drops[0].line.find("kept the installer copy") != std::string::npos, "time-tie installer reason");
 	}
 
-	// A saved preset with the same settings loses to the installer copy. A different name stays.
+	// A saved preset that reuses a shipped name stays, even when the settings match.
 	{
 		std::vector<Candidate> items = {
 			C("s:moragars_choice.ini", false, "Moragar's Choice", "moragars_choice.ini", same.c_str(), 10),
@@ -121,17 +138,42 @@ int main()
 			C("u:my_preset.ini", true, "My preset", "my_preset.ini", other.c_str(), 80),
 		};
 		const auto keep = DedupePresetIndices(items, drops);
-		Expect(keep.size() == 2 && keep[0] == 0 && keep[1] == 2, "saved duplicate hidden, other name kept, order unchanged");
+		Expect(keep.size() == 3 && keep[0] == 0 && keep[1] == 1 && keep[2] == 2, "saved presets stay beside the shipped name");
+		Expect(drops.empty(), "a saved copy is not a shipped duplicate");
 	}
 
-	// Newer saved preset whose settings differ replaces the installer copy in the list.
+	// The review case: after a mod update the shipped file is newer, and the player's saved
+	// preset has the same name but different settings. The saved preset must stay listable.
+	{
+		std::vector<Candidate> items = {
+			C("s:moragars_choice.ini", false, "Moragar's Choice", "moragars_choice.ini", same.c_str(), 500),
+			C("s:HorizonUI.moragars-choice-0.42.0.ini", false, "Moragar's Choice", "HorizonUI.moragars-choice-0.42.0.ini", same.c_str(), 400),
+			C("u:my_look.ini", true, "Moragar's Choice", "my_look.ini", other.c_str(), 20),
+		};
+		const auto keep = DedupePresetIndices(items, drops);
+		Expect(keep.size() == 2 && keep[0] == 0 && keep[1] == 2, "newer shipped file does not hide a different saved preset");
+		Expect(drops.size() == 1 && drops[0].line.find("u:") == std::string::npos, "the hide log does not name a saved preset");
+		Expect(drops[0].line.find("s:HorizonUI.moragars-choice-0.42.0.ini") != std::string::npos, "the loose shipped copy is the one hidden");
+	}
+
+	// Two saved presets with one name are both shown. Dedupe does not apply to presets\\user.
+	{
+		std::vector<Candidate> items = {
+			C("u:one.ini", true, "Moragar's Choice", "one.ini", same.c_str(), 10),
+			C("u:two.ini", true, "Moragar's Choice", "two.ini", other.c_str(), 90),
+		};
+		const auto keep = DedupePresetIndices(items, drops);
+		Expect(keep.size() == 2 && keep[0] == 0 && keep[1] == 1 && drops.empty(), "saved presets are never hidden from each other");
+	}
+
+	// A non-breaking space does not split one shipped name into two list rows.
 	{
 		std::vector<Candidate> items = {
 			C("s:moragars_choice.ini", false, "Moragar's Choice", "moragars_choice.ini", same.c_str(), 10),
-			C("u:custom.ini", true, "Moragar's Choice", "custom.ini", other.c_str(), 90),
+			C("s:HorizonUI.moragars-choice-0.42.0.ini", false, "Moragar's" "\xC2\xA0" "Choice", "HorizonUI.moragars-choice-0.42.0.ini", same.c_str(), 99),
 		};
 		const auto keep = DedupePresetIndices(items, drops);
-		Expect(keep.size() == 1 && keep[0] == 1, "newer different saved preset is the one listed");
+		Expect(keep.size() == 1 && keep[0] == 0, "NBSP still matches the shipped name");
 	}
 
 	{

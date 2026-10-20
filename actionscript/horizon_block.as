@@ -2986,7 +2986,7 @@
 
       // window text: own faces ("rg" / "sb" / "bd" via hzFontName per-face fallback), whole pixels, no filters.
       // (x, y) is the mockup's text origin (left or right edge per align), compensating the 2 px TextField gutter.
-      private function hzWT(p:Sprite, txt:String, x:Number, y:Number, w:Number, fs:Number, face:String, col:uint, ls:Number = 0, align:String = "left") : TextField
+      private function hzWT(p:Sprite, txt:String, x:Number, y:Number, w:Number, fs:Number, face:String, col:uint, ls:Number = 0, align:String = "left", minPx:int = 0) : TextField
       {
          var t:TextField = new TextField();
          t.embedFonts = true;
@@ -2994,6 +2994,7 @@
          t.mouseEnabled = false;
          var ts:Number = Math.max(0.9,Math.min(1.15,this.hzTextScale));
          var sz:int = Math.max(9,int(Math.round(fs * ts)));
+         if(minPx > sz) { sz = minPx; }   // v0.42.0.4: the version label passes 13 so TextScale 0.9 cannot round it to 12
          if(face == "rg" && sz <= 12) { face = "sb"; }
          var f:TextFormat = new TextFormat(this.hzFontName(face),sz,col);
          f.align = align;
@@ -3151,10 +3152,12 @@
          // title
          var tt:TextField = this.hzWT(b,"HORIZON UI",28,20,260,18,"bd",uint(T.txt),3);
          this.hzWT(b,"SETTINGS",28 + this.hzTW(tt) + 12,25,200,12,"sb",uint(T.mut),2.4);
-         // v0.42.0.4: exact DLL file version (13 px). HZ_BUILD until hzSetDllFileVersion arrives.
+         // v0.42.0.4: exact DLL file version. HZ_BUILD until hzSetDllFileVersion arrives.
+         // The last argument is a 13 px floor. hzWT multiplies by TextScale (clamped to 0.9) and rounds,
+         // so a bare 13 would draw at 12 px when TextScale is 0.9.
          var hv:String = HZ_BUILD;
          if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
-         var vt:TextField = this.hzWT(b,"v" + hv,W - 28,24,170,13,"sb",uint(T.mut),0.4,"right");
+         var vt:TextField = this.hzWT(b,"v" + hv,W - 28,24,170,13,"sb",uint(T.mut),0.4,"right",13);
          g.beginFill(acc,1); g.drawCircle(Math.round(W - 28 - this.hzTW(vt) - 14),32,4); g.endFill();
          // tabs
          var tx:Number = 28;
@@ -13396,10 +13399,11 @@
       // gone. r4: hidden with visible = false, never by alpha (the BottomLeftGroup timeline fades its alpha in and out with the
       // scan; a script alpha write would fight it). Never removed; the visible value seen before goes back when the scan ends
       // (close, a load, F11 / the F11 latch, ARRANGE).
-      // v0.42.0.4: FadeOutPlanetInfo stops on frame 245 and leaves that label current, so a hide that waits for the label
-      // to change never ends. After the 1.5 s grace, the hide ends when the label is not a planet-info label, currentFrame
-      // is 245, or the playhead has not moved since the previous frame tick. A FadeInPlanetInfo that starts after the scan
-      // ended does not keep the hide going, and it does not start a new one. Visible only; nothing is removed.
+      // v0.42.0.4: FadeOutPlanetInfo stops on timeline frame 245 (0-based) and leaves that label current.
+      // AS3 currentFrame is 1-based, so the playhead rests at 246. After the 1.5 s grace, the hide ends when the label
+      // is not a planet-info label, currentFrame is 246, or the playhead has not moved since the previous frame tick.
+      // A FadeInPlanetInfo that starts after the scan ended does not keep the hide going, and it does not start a new one.
+      // Visible only; nothing is removed.
       // With POI MARKERS off (ScanWorldMarkers=0) the game's floating quest markers (FloatingQuestMarkerBase) too, by alpha
       // (the game itself sets that alpha to the HUD opacity); r4: restored to the game's current HUD opacity (hz41Op).
       private var hz41LocBlg:Object = null;    // BottomLeftGroup_mc (own lookup: hzBlg exists only with the vanilla watch hide)
@@ -13469,7 +13473,7 @@
          this.hz41LocPf = fr;
          this.hz41LocPfN = this.hzFrameN;
       }
-      // After the grace: keep hiding only while the scan's own planet-info clip is still moving and has not reached frame 245.
+      // After the grace: keep hiding only while the scan's own planet-info clip is still moving and currentFrame has not reached 246.
       private function hz41LocHoldAfterGrace() : Boolean
       {
          var lb:String = this.hz41LocLbl();
@@ -13485,11 +13489,11 @@
             this.hz41LocPf = fr;
             this.hz41LocPfN = this.hzFrameN;
          }
-         if(!planet || newIn || fr == 245 || stopped) { return false; }
+         if(!planet || newIn || fr == 246 || stopped) { return false; }   // 246 = timeline frame 245, because currentFrame is 1-based
          return true;
       }
       // true while scanning (always, not gated on ScanShowPlanet), for 1.5 s after the scan ends, then only while the
-      // leftover planet-info clip is still playing. Frame 245, a stopped playhead, or any other label ends it.
+      // leftover planet-info clip is still playing. currentFrame 246, a stopped playhead, or any other label ends it.
       private function hz41LocWant() : Boolean
       {
          if(this.hz41ScanHideOn())
