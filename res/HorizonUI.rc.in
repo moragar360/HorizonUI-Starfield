@@ -1,11 +1,12 @@
 // Horizon UI version resource (used instead of CommonLibSF's commonlib-plugin.rc.in; see xmake.lua).
 // CompanyName and LegalCopyright are the plugin author from xmake.lua.
-// v0.42.0 r3: the file version carries the build number (0.42.0.3); the product version stays 0.42.0.
+// File version and product version both come from src/hz_version.h (0.42.0.4). Do not type the numbers here.
 #include <winres.h>
+#include "hz_version.h"
 
 1 VERSIONINFO
-FILEVERSION ${COMMONLIB_PLUGIN_VERSION_MAJOR}, ${COMMONLIB_PLUGIN_VERSION_MINOR}, ${COMMONLIB_PLUGIN_VERSION_PATCH}, 3
-PRODUCTVERSION ${COMMONLIB_PROJECT_VERSION_MAJOR}, ${COMMONLIB_PROJECT_VERSION_MINOR}, ${COMMONLIB_PROJECT_VERSION_PATCH}, 0
+FILEVERSION HZ_FILE_VERSION_MAJOR, HZ_FILE_VERSION_MINOR, HZ_FILE_VERSION_PATCH, HZ_FILE_VERSION_BUILD
+PRODUCTVERSION HZ_FILE_VERSION_MAJOR, HZ_FILE_VERSION_MINOR, HZ_FILE_VERSION_PATCH, HZ_FILE_VERSION_BUILD
 FILEFLAGSMASK 0x17L
 #ifdef _DEBUG
     FILEFLAGS 0x1L
@@ -23,13 +24,13 @@ BEGIN
             VALUE "Comments", "${COMMONLIB_PLUGIN_CONTACT}"
             VALUE "CompanyName", "${COMMONLIB_PLUGIN_AUTHOR}"
             VALUE "FileDescription", "${COMMONLIB_PLUGIN_DESCRIPTION}"
-            VALUE "FileVersion", "${COMMONLIB_PLUGIN_VERSION}.3"
+            VALUE "FileVersion", HZ_FILE_VERSION_STR
             VALUE "InternalName", "${COMMONLIB_PLUGIN_NAME}"
             VALUE "LegalCopyright", "${COMMONLIB_PLUGIN_AUTHOR}"
             VALUE "LegalTrademarks", "${COMMONLIB_PLUGIN_LICENSE}"
             VALUE "OriginalFilename", "${COMMONLIB_PLUGIN_NAME}.dll"
             VALUE "ProductName", "${COMMONLIB_PROJECT_NAME}"
-            VALUE "ProductVersion", "${COMMONLIB_PROJECT_VERSION}.0"
+            VALUE "ProductVersion", HZ_FILE_VERSION_STR
         END
     END
     BLOCK "VarFileInfo"

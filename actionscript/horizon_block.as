@@ -2378,6 +2378,7 @@
       private var hzSetBody:Sprite = null;
       private var hzSetCursor:Sprite = null;
       private var hzSetIsOpen:Boolean = false;
+      private var hzDllFileVer:String = "";   // v0.42.0.4: DLL file version, from hzSetDllFileVersion
       private var hzSetPend:Object = null;
       private var hzSetOrig:Object = null;
       private var hzSetTab:int = 0;
@@ -2937,6 +2938,8 @@
 
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
+      // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
+      private static const HZ_BUILD:String = "0.42.0.4";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -3148,7 +3151,10 @@
          // title
          var tt:TextField = this.hzWT(b,"HORIZON UI",28,20,260,18,"bd",uint(T.txt),3);
          this.hzWT(b,"SETTINGS",28 + this.hzTW(tt) + 12,25,200,12,"sb",uint(T.mut),2.4);
-         var vt:TextField = this.hzWT(b,"v" + HZ_VERSION,W - 28,25,120,11,"sb",uint(T.mut),1,"right");
+         // v0.42.0.4: exact DLL file version (13 px). HZ_BUILD until hzSetDllFileVersion arrives.
+         var hv:String = HZ_BUILD;
+         if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
+         var vt:TextField = this.hzWT(b,"v" + hv,W - 28,24,170,13,"sb",uint(T.mut),0.4,"right");
          g.beginFill(acc,1); g.drawCircle(Math.round(W - 28 - this.hzTW(vt) - 14),32,4); g.endFill();
          // tabs
          var tx:Number = 28;
@@ -13390,6 +13396,10 @@
       // gone. r4: hidden with visible = false, never by alpha (the BottomLeftGroup timeline fades its alpha in and out with the
       // scan; a script alpha write would fight it). Never removed; the visible value seen before goes back when the scan ends
       // (close, a load, F11 / the F11 latch, ARRANGE).
+      // v0.42.0.4: FadeOutPlanetInfo stops on frame 245 and leaves that label current, so a hide that waits for the label
+      // to change never ends. After the 1.5 s grace, the hide ends when the label is not a planet-info label, currentFrame
+      // is 245, or the playhead has not moved since the previous frame tick. A FadeInPlanetInfo that starts after the scan
+      // ended does not keep the hide going, and it does not start a new one. Visible only; nothing is removed.
       // With POI MARKERS off (ScanWorldMarkers=0) the game's floating quest markers (FloatingQuestMarkerBase) too, by alpha
       // (the game itself sets that alpha to the HUD opacity); r4: restored to the game's current HUD opacity (hz41Op).
       private var hz41LocBlg:Object = null;    // BottomLeftGroup_mc (own lookup: hzBlg exists only with the vanilla watch hide)
@@ -13400,7 +13410,13 @@
       private static const HZ41_LOC_GRACE:Number = 1500;
       private var hz41LocArm:Boolean = false;   // a scan happened; its planet-info timeline leftovers stay hidden
       private var hz41LocEnd:Number = -1;       // when the scan ended (ms), -1 = scanning / none
+      private var hz41LocAt:String = "";        // v0.42.0.4: label at the moment the scan ended
+      private var hz41LocLeftIn:Boolean = false; // v0.42.0.4: saw a label other than FadeIn after the scan ended
+      private var hz41LocPf:int = -1;           // v0.42.0.4: currentFrame on the previous frame tick
+      private var hz41LocPfN:int = -1;          // v0.42.0.4: hzFrameN of that sample (enterFrame and exitFrame share a tick)
       public var hz41NowFn:Function = null;     // tests: mocked clock
+      public var hz41LocLblFn:Function = null;  // tests: mocked timeline label
+      public var hz41LocFrameFn:Function = null; // tests: mocked currentFrame
       private var hz41QmHid:Boolean = false;
       private function hz41ScanHideOn() : Boolean
       {
@@ -13414,24 +13430,92 @@
       }
       private function hz41LocLbl() : String
       {
-         try { var l:* = this.hz41LocBlg != null ? this.hz41LocBlg["currentLabel"] : null; return l == null ? "" : String(l); } catch(e:Error) { }
+         try
+         {
+            if(this.hz41LocLblFn != null) { var m:* = this.hz41LocLblFn(); return m == null ? "" : String(m); }
+            var l:* = this.hz41LocBlg != null ? this.hz41LocBlg["currentLabel"] : null;
+            return l == null ? "" : String(l);
+         }
+         catch(e:Error) { }
          return "";
       }
-      // r3: true while scanning (always, not gated on ScanShowPlanet), for 1.5 s after the scan ends, and after that while
-      // BottomLeftGroup still plays the planet-info labels the scan started; then the session ends (the game's again)
-      private function hz41LocWant() : Boolean
+      private function hz41LocFrame() : int
       {
-         if(this.hz41ScanHideOn()) { this.hz41LocArm = true; this.hz41LocEnd = -1; return true; }
-         if(!this.hz41LocArm) { return false; }
-         if(this.hz40Latch || this.hz30Mod["scanner"] !== 1 || this.hzArrange) { this.hz41LocArm = false; this.hz41LocEnd = -1; return false; }
-         var now:Number = this.hz41Now();
-         if(this.hz41LocEnd < 0) { this.hz41LocEnd = now; }
-         if(now - this.hz41LocEnd < HZ41_LOC_GRACE) { return true; }
-         var lb:String = this.hz41LocLbl();
-         if(lb == "FadeInPlanetInfo" || lb == "FadeOutPlanetInfo") { return true; }
+         try
+         {
+            var f:* = null;
+            if(this.hz41LocFrameFn != null) { f = this.hz41LocFrameFn(); }
+            else if(this.hz41LocBlg != null) { f = this.hz41LocBlg["currentFrame"]; }
+            if(f == null || isNaN(Number(f))) { return -1; }
+            return int(f);
+         }
+         catch(e:Error) { }
+         return -1;
+      }
+      private function hz41LocClear() : void
+      {
          this.hz41LocArm = false;
          this.hz41LocEnd = -1;
-         return false;
+         this.hz41LocAt = "";
+         this.hz41LocLeftIn = false;
+         this.hz41LocPf = -1;
+         this.hz41LocPfN = -1;
+      }
+      // Remember the playhead once per frame tick. enterFrame and exitFrame both call in, and they share hzFrameN.
+      private function hz41LocNoteFrame() : void
+      {
+         var fr:int = this.hz41LocFrame();
+         if(fr < 0 || this.hzFrameN == this.hz41LocPfN) { return; }
+         this.hz41LocPf = fr;
+         this.hz41LocPfN = this.hzFrameN;
+      }
+      // After the grace: keep hiding only while the scan's own planet-info clip is still moving and has not reached frame 245.
+      private function hz41LocHoldAfterGrace() : Boolean
+      {
+         var lb:String = this.hz41LocLbl();
+         var fr:int = this.hz41LocFrame();
+         var planet:Boolean = lb == "FadeInPlanetInfo" || lb == "FadeOutPlanetInfo";
+         // A FadeIn that was not already playing when the scan ended, or that starts again later, is a new alert.
+         var newIn:Boolean = lb == "FadeInPlanetInfo" && (this.hz41LocAt != "FadeInPlanetInfo" || this.hz41LocLeftIn);
+         if(lb != "FadeInPlanetInfo") { this.hz41LocLeftIn = true; }
+         var stopped:Boolean = false;
+         if(fr >= 0 && this.hzFrameN != this.hz41LocPfN)
+         {
+            if(this.hz41LocPf >= 0 && fr == this.hz41LocPf) { stopped = true; }
+            this.hz41LocPf = fr;
+            this.hz41LocPfN = this.hzFrameN;
+         }
+         if(!planet || newIn || fr == 245 || stopped) { return false; }
+         return true;
+      }
+      // true while scanning (always, not gated on ScanShowPlanet), for 1.5 s after the scan ends, then only while the
+      // leftover planet-info clip is still playing. Frame 245, a stopped playhead, or any other label ends it.
+      private function hz41LocWant() : Boolean
+      {
+         if(this.hz41ScanHideOn())
+         {
+            this.hz41LocArm = true;
+            this.hz41LocEnd = -1;
+            this.hz41LocAt = "";
+            this.hz41LocLeftIn = false;
+            this.hz41LocPf = -1;
+            this.hz41LocPfN = -1;
+            return true;
+         }
+         if(!this.hz41LocArm) { return false; }
+         if(this.hz40Latch || this.hz30Mod["scanner"] !== 1 || this.hzArrange) { this.hz41LocClear(); return false; }
+         var now:Number = this.hz41Now();
+         if(this.hz41LocEnd < 0)
+         {
+            this.hz41LocEnd = now;
+            this.hz41LocAt = this.hz41LocLbl();
+            this.hz41LocLeftIn = false;
+            this.hz41LocPf = -1;
+            this.hz41LocPfN = -1;
+         }
+         if(now - this.hz41LocEnd < HZ41_LOC_GRACE) { this.hz41LocNoteFrame(); return true; }
+         if(!this.hz41LocHoldAfterGrace()) { this.hz41LocClear(); return false; }
+         return true;
       }
       private function hz41LocHide() : void
       {
@@ -14055,7 +14139,8 @@
          if(isNaN(s) || s <= 0) { s = 1; }
          return Math.max(n,Math.ceil(13 / s));
       }
-      // v0.42.0 r3: preset names: no ini-breaking characters ('=' '+' '[' ']' ';' '#' '"' '\' '|') and no control characters
+      // v0.42.0 r3 / v0.42.0.4: preset names drop '=' '+' '[' ']' ';' '#' '"' '\' '|' , controls, and DEL.
+      // The same set is hzpreset::kPresetNameDrop / CleanPresetName in the DLL. Do not change one without the other.
       private function hz42NmOk(ch:String) : Boolean
       {
          if(ch == null || ch.length != 1) { return false; }
@@ -14071,9 +14156,42 @@
          while(i < s.length) { if(this.hz42NmOk(s.charAt(i))) { o += s.charAt(i); } i++; }
          return o;
       }
+      // v0.42.0.4: four numeric parts, no leading v. Same rule as HzFileVersionOk in the DLL.
+      private function hz42FileVerOk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         if(s.length < 7 || s.length > 32) { return false; }
+         var dots:int = 0;
+         var digit:Boolean = false;
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 48 && c <= 57) { digit = true; }
+            else if(c == 46 && digit) { dots++; digit = false; }
+            else { return false; }
+            i++;
+         }
+         return digit && dots == 3;
+      }
+      // v0.42.0.4: HorizonUI.dll passes its file version (from the DLL version resource). Empty and odd strings are ignored.
+      public function hzSetDllFileVersion(s:String) : void
+      {
+         try
+         {
+            if(s == null) { return; }
+            var t:String = String(s);
+            while(t.length > 0 && (t.charAt(0) == " " || t.charAt(0) == "\t")) { t = t.substr(1); }
+            if(t.length > 0 && (t.charAt(0) == "v" || t.charAt(0) == "V")) { t = t.substr(1); }
+            if(!this.hz42FileVerOk(t) || t == this.hzDllFileVer) { return; }
+            this.hzDllFileVer = t;
+            if(this.hzSetIsOpen) { this.hzSetDraw(); }
+         }
+         catch(err:Error) { }
+      }
       public function hzBuildId() : String
       {
-         return "0.42.0 r3";
+         return HZ_BUILD;
       }
       // ini keys (lower case, any section like the rest of the HUD parser); "0" / "false" = off, like the scope movie
       private function hz42ScIni(k:String, v:String, nv:Number) : Boolean

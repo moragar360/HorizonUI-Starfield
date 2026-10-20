@@ -1,7 +1,12 @@
 // HorizonUI SFSE plugin v0.42.0 - drop-in src\main.cpp (CommonLibSF libxse 9d090c4)
+// v0.42.0.4: F11 lists each preset name once. Same settings keep the installer copy; different settings keep the newer file.
+// The F11 header and the "movie builds" line use the DLL file version (src/hz_version.h, also the version resource).
+// HUD message text is written to the log only when HZ_COMMS_MSG_LOG is 1 (xmake debug). Saved preset names drop the same
+// characters as the HUD: '=' '+' '[' ']' ';' '#' '"' '\' '|' and control characters.
 // v0.42.0 r3 (file version 0.42.0.3): a scope (ScopeMenu) still blocks F11 but no longer restarts the 3 s "HUD ready" wait,
-// so F11 works right after leaving the scope. Debug-only Comms message log: every 500 ms the HUD messages movie's
-// hzcTakeDbg queue (filled only with [Debug] Debug=1) goes to HorizonUI.log as "comms msg:" lines. "movie builds:" logs
+// so F11 works right after leaving the scope. Debug-only Comms message log (compiled out of the no-debug build in 0.42.0.4):
+// every 500 ms the HUD messages movie's hzcTakeDbg queue (filled only with [Debug] Debug=1) goes to HorizonUI.log as
+// "comms msg:" lines. "movie builds:" logs
 // the loaded HUD / Comms builds (hzBuildId / hzcBuildId). Saved preset names drop '=' '+' '[' ']' ';' '#' '"' '\'.
 // v0.42.0 r2: F11 is also ignored while a scope (ScopeMenu) or the item inspect view (InspectMenu) is open; the deny list
 // uses the registered "MissionBoard" only (MissionBoardMenu / ShipDialogueMenu dropped). '+' / '=' reach the HUD as
@@ -26,6 +31,8 @@
 // v0.37: settings files (HorizonUI.default.ini + HorizonUI.user.ini, update backup, migration, presets) - plain
 // std / Win32 file code in the HZF section, no new CommonLibSF calls. Everything from v0.36 is unchanged.
 #include <Windows.h>
+#include <winver.h>
+#pragma comment(lib, "version.lib")
 #undef GetObject
 #undef ERROR
 #undef PostMessage
@@ -41,8 +48,11 @@
 #include <cstdio>
 #include <algorithm>
 #include <cmath>
+#include <utility>
 #include <map>
 #include <iterator>
+#include "hz_version.h"
+#include "preset_dedupe.h"
 
 // v0.37: the settings-file code (HZF) replaces files through this (temp file + MoveFileExW)
 static bool HzfReplace(const std::filesystem::path& a_tmp, const std::filesystem::path& a_dst)
@@ -702,15 +712,36 @@ namespace HZ
 		{
 			std::vector<Preset>      list;
 			std::vector<std::string> skipped;   // "<id>: <reason>"
+			std::vector<std::string> deduped;   // duplicate names hidden from the list; the file stays on disk
 		};
+		inline std::int64_t WriteTicks(const std::filesystem::path& a_p)
+		{
+			std::error_code ec;
+			const auto t = std::filesystem::last_write_time(a_p, ec);
+			if (ec) return 0;
+			return static_cast<std::int64_t>(t.time_since_epoch().count());
+		}
+		// Purpose: list presets for F11, one row per normalized name.
+		// Inputs: preset folders and the defaults text used to validate files.
+		// Outputs: the list the HUD shows, skip reasons, and duplicate-hide notes.
+		// Same settings: keep the installer copy (shipped file not named HorizonUI.*.ini).
+		// Different settings: keep the newer last-write time. Ties then prefer the installer copy, then the smaller id.
+		// Dependencies: hzpreset::DedupePresetIndices. A duplicate is not a skip.
+		// Last modified: 2026-10-20.
 		inline Scan ScanPresets(const Paths& a_p, const std::string& a_defs)
 		{
 			Scan r;
+			struct Row
+			{
+				Preset preset;
+				hzpreset::Candidate cand;
+			};
+			std::vector<Row> rows;
 			for (int u = 0; u < 2; ++u) {
 				const auto& dir = u ? a_p.userPresets : a_p.presets;
 				std::error_code ec;
 				if (!std::filesystem::is_directory(dir, ec)) continue;
-				std::vector<Preset> part;
+				std::vector<Row> part;
 				int n = 0;
 				for (std::filesystem::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
 					std::error_code ec2;
@@ -726,14 +757,29 @@ namespace HZ
 					p.id = id;
 					p.user = u == 1;
 					p.path = f;
-					part.push_back(p);
+					Row row;
+					row.preset = p;
+					row.cand.id = id;
+					row.cand.user = p.user;
+					row.cand.name = p.name;
+					row.cand.fileName = U8(f.filename());
+					row.cand.contentKey = hzpreset::PresetContentKey(text);
+					row.cand.mtime = WriteTicks(f);
+					part.push_back(std::move(row));
 				}
-				std::sort(part.begin(), part.end(), [](const Preset& a, const Preset& b) {
-					const auto x = Lower(a.name), y = Lower(b.name);
-					return x != y ? x < y : a.id < b.id;
+				std::sort(part.begin(), part.end(), [](const Row& a, const Row& b) {
+					const auto x = Lower(a.preset.name), y = Lower(b.preset.name);
+					return x != y ? x < y : a.preset.id < b.preset.id;
 				});
-				r.list.insert(r.list.end(), part.begin(), part.end());
+				rows.insert(rows.end(), part.begin(), part.end());
 			}
+			std::vector<hzpreset::Candidate> cands;
+			cands.reserve(rows.size());
+			for (const auto& row : rows) cands.push_back(row.cand);
+			std::vector<hzpreset::Drop> drops;
+			const auto keep = hzpreset::DedupePresetIndices(cands, drops);
+			for (std::size_t i : keep) r.list.push_back(rows[i].preset);
+			for (const auto& d : drops) r.deduped.push_back(d.line);
 			return r;
 		}
 		inline const Preset* FindPreset(const Scan& a_s, const std::string& a_id)
@@ -868,9 +914,7 @@ namespace HZ
 		}
 		inline Result SavePreset(const Paths& a_p, const std::string& a_name, bool a_overwrite, const std::string& a_full, const std::string& a_when)
 		{
-			std::string name0 = CleanField(a_name, 48);
-			name0.erase(std::remove_if(name0.begin(), name0.end(), [](char c) { return std::strchr("=+[];#\"\\", c) != nullptr && c != 0; }), name0.end());   // v0.42.0 r3: ini-safe
-			const auto name = Trim(name0);
+			const auto name = hzpreset::CleanPresetName(a_name);   // same characters as the HUD (hz42NmOk), including '|' and DEL
 			if (name.empty()) return { false, "Type a name first" };
 			const auto file = a_p.userPresets / (Slug(name) + ".ini");
 			for (const auto& sp : ScanPresets(a_p, Defaults(a_p)).list)   // shipped presets are never overwritten or shadowed
@@ -1030,6 +1074,8 @@ namespace HZ
 		return menu->menuObj.IsObject();
 	}
 
+	void PushDllFileVersion();   // v0.42.0.4: defined with the movie-build log
+
 	void OnSettingsKey()
 	{
 		REX::INFO("Settings key pressed");
@@ -1038,6 +1084,7 @@ namespace HZ
 		if (TextMenuOpen(ui)) { REX::INFO("ignored: text/console/pause menu open"); return; }
 		if (!HudSafe()) { REX::INFO("ignored: full-screen or loading menu open"); return; }
 		if (ui->IsMenuOpen("MonocleMenu")) { REX::INFO("ignored: hand scanner open (F11 opens from the main HUD only)"); return; }   // v0.42.0
+		PushDllFileVersion();   // v0.42.0.4: the header reads this on the open that follows
 		bool ok = HudInvoke("hzToggleSettings", nullptr, nullptr, 0, true);
 		REX::INFO("hzToggleSettings invoke {}", ok ? "OK" : "FAILED (HUD lacks function or HUDMenu missing)");
 	}
@@ -1312,10 +1359,12 @@ namespace HZ
 			const auto sc = HZF::ScanPresets(P, HZF::Defaults(P));
 			std::string sig;
 			for (const auto& k : sc.skipped) sig += k + "\n";
+			for (const auto& k : sc.deduped) sig += k + "\n";
 			if (sig != g_skipSig) {
 				g_skipSig = sig;
 				for (const auto& k : sc.skipped) REX::WARN("preset skipped: {}", k);
-				REX::INFO("presets: {} found, {} skipped", sc.list.size(), sc.skipped.size());
+				for (const auto& k : sc.deduped) REX::INFO("{}", k);
+				REX::INFO("presets: {} found, {} skipped, {} duplicate names hidden", sc.list.size(), sc.skipped.size(), sc.deduped.size());
 			}
 			st = HZF::StateString(P, sc);
 		} catch (...) {
@@ -1529,7 +1578,114 @@ namespace HZ
 		}
 	}
 
-	// v0.42.0 r3: which Horizon movie builds are loaded (HUD hzBuildId / Comms hzcBuildId), logged when it changes
+	// Purpose: read this DLL's own FileVersion string from its version resource.
+	// Inputs: none (the module that contains this function). Outputs: "0.42.0.4", or empty on failure.
+	// Dependencies: version.dll. The resource is generated from src/hz_version.h.
+	// Last modified: 2026-10-20.
+	std::string ReadOwnFileVersion()
+	{
+		HMODULE mod = nullptr;
+		if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		        reinterpret_cast<LPCWSTR>(&ReadOwnFileVersion), &mod) || !mod)
+			return {};
+		wchar_t path[MAX_PATH]{};
+		const DWORD n = ::GetModuleFileNameW(mod, path, MAX_PATH);
+		if (n == 0 || n >= MAX_PATH) return {};
+		DWORD unused = 0;
+		const DWORD bytes = ::GetFileVersionInfoSizeW(path, &unused);
+		if (bytes == 0) return {};
+		std::vector<unsigned char> buf(bytes);
+		if (!::GetFileVersionInfoW(path, 0, bytes, buf.data())) return {};
+		struct Tr { WORD lang; WORD cp; };
+		Tr* tr = nullptr;
+		UINT trBytes = 0;
+		if (::VerQueryValueW(buf.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<void**>(&tr), &trBytes) && tr && trBytes >= sizeof(Tr)) {
+			wchar_t query[80]{};
+			const wchar_t* hex = L"0123456789abcdef";
+			auto hex4 = [&](WORD a_w, wchar_t* a_d) {
+				a_d[0] = hex[(a_w >> 12) & 0xF];
+				a_d[1] = hex[(a_w >> 8) & 0xF];
+				a_d[2] = hex[(a_w >> 4) & 0xF];
+				a_d[3] = hex[a_w & 0xF];
+			};
+			const wchar_t* pre = L"\\StringFileInfo\\";
+			const wchar_t* suf = L"\\FileVersion";
+			int q = 0;
+			for (int i = 0; pre[i]; ++i) query[q++] = pre[i];
+			hex4(tr[0].lang, query + q); q += 4;
+			hex4(tr[0].cp, query + q); q += 4;
+			for (int i = 0; suf[i]; ++i) query[q++] = suf[i];
+			query[q] = 0;
+			wchar_t* str = nullptr;
+			UINT slen = 0;
+			if (::VerQueryValueW(buf.data(), query, reinterpret_cast<void**>(&str), &slen) && str && str[0]) {
+				std::string out;
+				bool ascii = true;
+				for (UINT i = 0; str[i] && i < 64; ++i) {
+					if (str[i] > 127) { ascii = false; break; }
+					out.push_back(static_cast<char>(str[i]));
+				}
+				while (!out.empty() && (out.back() == ' ' || out.back() == '\0')) out.pop_back();
+				std::size_t b = 0;
+				while (b < out.size() && out[b] == ' ') ++b;
+				if (b) out.erase(0, b);
+				if (!out.empty() && (out[0] == 'v' || out[0] == 'V')) out.erase(0, 1);
+				if (ascii && HzFileVersionOk(out)) return out;
+			}
+		}
+		VS_FIXEDFILEINFO* info = nullptr;
+		UINT len = 0;
+		if (!::VerQueryValueW(buf.data(), L"\\", reinterpret_cast<void**>(&info), &len) || !info || len < sizeof(VS_FIXEDFILEINFO))
+			return {};
+		char b[32];
+		std::snprintf(b, sizeof(b), "%u.%u.%u.%u",
+			static_cast<unsigned>(HIWORD(info->dwFileVersionMS)),
+			static_cast<unsigned>(LOWORD(info->dwFileVersionMS)),
+			static_cast<unsigned>(HIWORD(info->dwFileVersionLS)),
+			static_cast<unsigned>(LOWORD(info->dwFileVersionLS)));
+		return b;
+	}
+
+	// Purpose: the file version shown in the log and sent to F11.
+	// Inputs: none. Outputs: the version resource when it reads cleanly, otherwise HZ_FILE_VERSION_STR.
+	// Dependencies: ReadOwnFileVersion, src/hz_version.h. One string, not a second hand-typed copy.
+	// Last modified: 2026-10-20.
+	const std::string& DllFileVersion()
+	{
+		static const std::string v = []() {
+			std::string s = ReadOwnFileVersion();
+			if (!HzFileVersionOk(s)) {
+				REX::WARN("dll file version resource unreadable; using {}", HZ_FILE_VERSION_STR);
+				s = HZ_FILE_VERSION_STR;
+			}
+			return s;
+		}();
+		return v;
+	}
+
+	// Purpose: give the HUD the DLL file version for the F11 header.
+	// Inputs: none. Outputs: hzSetDllFileVersion on HUDMenu when that movie has the function.
+	// An older HUD is left alone. Dependencies: DllFileVersion.
+	// Last modified: 2026-10-20.
+	bool g_dllVerLogged = false;
+	void PushDllFileVersion()
+	{
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		auto menu = ui->GetMenu("HUDMenu");
+		if (!menu || !menu->menuObj.IsObject() || !menu->menuObj.HasMember("hzSetDllFileVersion")) return;
+		const std::string& v = DllFileVersion();
+		if (!HzFileVersionOk(v)) return;
+		GValue arg(v.c_str());
+		if (!menu->menuObj.Invoke("hzSetDllFileVersion", nullptr, &arg, 1)) return;
+		if (!g_dllVerLogged) {
+			g_dllVerLogged = true;
+			REX::INFO("dll file version {} sent to the F11 header", v);
+		}
+	}
+
+	// v0.42.0 r3: which Horizon movie builds are loaded (HUD hzBuildId / Comms hzcBuildId), logged when it changes.
+	// The DLL file version is DllFileVersion(), not a literal, so it cannot drift from the version resource.
 	std::string g_buildsLogged;
 	ULONGLONG   g_buildsNext = 0;
 	void BuildLog(ULONGLONG a_now)
@@ -1538,6 +1694,7 @@ namespace HZ
 		g_buildsNext = a_now + 5000;
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) return;
+		PushDllFileVersion();
 		std::string hud = "no build id (older than r3 or not Horizon)", msg = "no build id (older than r3, no Comms module or not open)";
 		GValue a;
 		if (HudInvoke("hzBuildId", &a) && a.IsString() && a.GetString()) hud = a.GetString();
@@ -1549,11 +1706,19 @@ namespace HZ
 		const std::string s = "HUD " + hud + ", Comms HUD messages " + msg;
 		if (s == g_buildsLogged) return;
 		g_buildsLogged = s;
-		REX::INFO("movie builds: {} (DLL file version 0.42.0.3)", s);
+		REX::INFO("movie builds: {} (DLL file version {})", s, DllFileVersion());
 	}
 
-	// v0.42.0 r3: debug-only Comms message log. The movie queues new HUD message lines only with [Debug] Debug=1
-	// (hzcTakeDbg returns "" otherwise); nothing is written to the log then.
+	// Purpose: copy queued HUD message lines into HorizonUI.log.
+	// Inputs: a_now, the poll clock. Outputs: "comms msg:" lines, only when the movie queued some.
+	// Dependencies: HUDMessagesMenu.hzcTakeDbg. Compiled only when HZ_COMMS_MSG_LOG is 1
+	// (xmake mode.debug). The releasedbg / no-debug build has an empty function, so message
+	// text from the game or from other interface files is not written.
+	// Last modified: 2026-10-20.
+#ifndef HZ_COMMS_MSG_LOG
+#define HZ_COMMS_MSG_LOG 0
+#endif
+#if HZ_COMMS_MSG_LOG
 	ULONGLONG g_cdbgNext = 0;
 	bool      g_cdbgLogged = false;
 	void CommsDbgPoll(ULONGLONG a_now)
@@ -1583,12 +1748,15 @@ namespace HZ
 			p = e + 1;
 		}
 	}
+#else
+	void CommsDbgPoll(ULONGLONG) {}
+#endif
 
 	void Poll()
 	{
 		auto now = GetTickCount64();
 		BannerPoll(now);   // v0.40.3
-		CommsDbgPoll(now);   // v0.42.0 r3 (debug only: empty unless [Debug] Debug=1)
+		CommsDbgPoll(now);   // v0.42.0.4: empty in the no-debug build; debug builds log only when [Debug] Debug=1
 		HWND wnd = GameWindow();
 		bool down = wnd && (GetAsyncKeyState(g_vk) & 0x8000) != 0;
 		if (down && !g_wasDown) OnSettingsKey();

@@ -1057,12 +1057,17 @@
          return s;
       }
       // ---------- r3: debug-only message log ([Debug] Debug=1; off by default) ----------
+      // v0.42.0.4: this movie has no compile-time switch. HZC_MSG_LOG false means the no-debug movie does not
+      // queue HUD message text. A debug movie sets it true, and only an xmake debug DLL (HZ_COMMS_MSG_LOG) writes the lines.
+      private static const HZC_MSG_LOG:Boolean = false;
+      private static const HZC_BUILD:String = "0.42.0.4";
       private var hzcRxDbgOn:Boolean = false;
       private var hzcRxDbgQ:Array = [];
       private var hzcRxDbgSeen:Array = [];   // {it, f}
       private var hzcRxDbgHdr:Boolean = false;
       private function hzcRxDbgIni(txt:String) : void
       {
+         if(!HZC_MSG_LOG) { this.hzcRxDbgOn = false; this.hzcRxDbgQ = []; this.hzcRxDbgSeen = []; return; }
          var on:Boolean = false;
          var sec:String = "";
          if(txt != null)
@@ -1113,7 +1118,7 @@
       // every new line once (waits up to 3 frames for its text)
       private function hzcRxDbgScan(arr:*) : void
       {
-         if(!this.hzcRxDbgOn || arr == null) { return; }
+         if(!HZC_MSG_LOG || !this.hzcRxDbgOn || arr == null) { return; }
          if(!this.hzcRxDbgHdr) { this.hzcRxDbgHdr = true; this.hzcRxDbgPush("comms " + this.hzcBuildId() + ": message column " + this.hzcRxDbgPath(this.Messages_mc) + ", ReactionCard=" + this.hzcCfg.ReactionCard + ", ini state " + this.hzcIniState + ", card code " + (this.hzcRxOff ? "off after an error" : "on")); }
          var keep:Array = [];
          for each(var s0:Object in this.hzcRxDbgSeen) { if(arr.indexOf(s0.it) >= 0) { keep.push(s0); } }
@@ -1142,7 +1147,7 @@
       {
          try
          {
-            if(!this.hzcRxDbgOn || this.hzcRxDbgQ.length == 0) { return ""; }
+            if(!HZC_MSG_LOG || !this.hzcRxDbgOn || this.hzcRxDbgQ.length == 0) { return ""; }
             var o:String = this.hzcRxDbgQ.join("\n");
             this.hzcRxDbgQ = [];
             return o;
@@ -1152,7 +1157,7 @@
       }
       public function hzcBuildId() : String
       {
-         return "0.42.0 r3";
+         return HZC_BUILD;
       }
       private function hzcRxFind(it:*) : Object
       {
