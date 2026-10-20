@@ -75,8 +75,10 @@ int main()
 	Expect(!IsInstallerPresetFile(true, "moragars_choice.ini"), "a saved copy is not the installer file");
 	ExpectEq(NormalizePresetName("  Moragar's   Choice\t"), "moragar's choice", "name key folds case and space");
 	ExpectEq(NormalizePresetName("Moragar's" "\xC2\xA0" "Choice"), "moragar's choice", "UTF-8 NBSP folds to a space");
-	ExpectEq(NormalizePresetName("Moragar's" "\xA0" "Choice"), "moragar's choice", "lone A0 NBSP folds to a space");
 	ExpectEq(NormalizePresetName("\xC2\xA0" "Moragar's Choice" "\xC2\xA0"), "moragar's choice", "leading and trailing NBSP fold away");
+	ExpectEq(NormalizePresetName("Caf" "\xC3\xA0"), std::string("caf") + "\xC3\xA0", "a-grave stays in the name key");
+	Expect(NormalizePresetName("Caf" "\xC3\xA0") != "caf", "a-grave is not dropped");
+	Expect(NormalizePresetName("Caf" "\xC3\xA0") != "caf ", "a-grave is not folded into a space");
 
 	{
 		std::string cut(47, 'a');

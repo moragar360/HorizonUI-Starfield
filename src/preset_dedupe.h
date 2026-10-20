@@ -34,18 +34,14 @@ inline std::string Lower(std::string a_s)
 	return a_s;
 }
 
-// Purpose: true when a_s[a_i] is a non-breaking space (UTF-8 C2 A0, or a lone A0).
-// Outputs: byte length of that space through a_step. A UTF-8 pair is taken first so
-// the A0 is not folded on its own and the C2 left behind.
+// Purpose: true when a_s[a_i] is the UTF-8 non-breaking space (C2 A0).
+// Outputs: byte length 2 through a_step. A lone A0 is not a space: it is the
+// second byte of characters such as 'à' (C3 A0).
 inline bool IsNbsp(const std::string& a_s, std::size_t a_i, std::size_t& a_step)
 {
 	const auto c = static_cast<unsigned char>(a_s[a_i]);
 	if (c == 0xC2 && a_i + 1 < a_s.size() && static_cast<unsigned char>(a_s[a_i + 1]) == 0xA0) {
 		a_step = 2;
-		return true;
-	}
-	if (c == 0xA0) {
-		a_step = 1;
 		return true;
 	}
 	return false;
