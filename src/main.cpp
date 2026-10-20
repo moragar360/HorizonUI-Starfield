@@ -1,4 +1,15 @@
-// HorizonUI SFSE plugin v0.41.0 - drop-in src\main.cpp (CommonLibSF libxse 9d090c4)
+// HorizonUI SFSE plugin v0.42.0 - drop-in src\main.cpp (CommonLibSF libxse 9d090c4)
+// v0.42.0 r3 (file version 0.42.0.3): a scope (ScopeMenu) still blocks F11 but no longer restarts the 3 s "HUD ready" wait,
+// so F11 works right after leaving the scope. Debug-only Comms message log: every 500 ms the HUD messages movie's
+// hzcTakeDbg queue (filled only with [Debug] Debug=1) goes to HorizonUI.log as "comms msg:" lines. "movie builds:" logs
+// the loaded HUD / Comms builds (hzBuildId / hzcBuildId). Saved preset names drop '=' '+' '[' ']' ';' '#' '"' '\'.
+// v0.42.0 r2: F11 is also ignored while a scope (ScopeMenu) or the item inspect view (InspectMenu) is open; the deny list
+// uses the registered "MissionBoard" only (MissionBoardMenu / ShipDialogueMenu dropped). '+' / '=' reach the HUD as
+// "ch:+" / "ch:=" (ARRANGE CARDS: scope chip size).
+// v0.42.0: F11 opens only from the main HUD. The key is ignored while the hand scanner (MonocleMenu) is open, and a
+// window left open when the scanner opens is closed once (close-only, like the full-screen menus). The full-screen
+// deny list also covers pickpocket, mission board, sleep / sit wait, book, data slate, message box, video, credits,
+// title sequence, weapon groups, takeoff, favorites, marketplace, almanac, dialogue and the workshop quick menus.
 // v0.41.0: the hand scanner state is pushed to the HUD (hz41DllScan) and the Comms HUD messages movie (hzcDllScan) every
 // 100 ms (ScanPush, from BannerPoll), so a tool switch inside the scanner no longer ends their scan state.
 // v0.41.0 test r2: ScanPush only while the hand scanner is open (+ one closed push) and only with the Scanner module; the
@@ -92,7 +103,7 @@ namespace HZ
 	//   presets\*.ini           shipped presets (moragars_choice.ini from the installer); presets\user\*.ini saved in game
 	namespace HZF
 	{
-		inline const char* kVersion = "0.41.0";
+		inline const char* kVersion = "0.42.0";
 		using LogFn = void (*)(int, const std::string&);   // 0 info, 1 warn
 		inline LogFn g_log = nullptr;
 		inline void Log(int a_lvl, const std::string& a_s) { if (g_log) g_log(a_lvl, a_s); }
@@ -857,7 +868,9 @@ namespace HZ
 		}
 		inline Result SavePreset(const Paths& a_p, const std::string& a_name, bool a_overwrite, const std::string& a_full, const std::string& a_when)
 		{
-			const auto name = CleanField(a_name, 48);
+			std::string name0 = CleanField(a_name, 48);
+			name0.erase(std::remove_if(name0.begin(), name0.end(), [](char c) { return std::strchr("=+[];#\"\\", c) != nullptr && c != 0; }), name0.end());   // v0.42.0 r3: ini-safe
+			const auto name = Trim(name0);
 			if (name.empty()) return { false, "Type a name first" };
 			const auto file = a_p.userPresets / (Slug(name) + ".ini");
 			for (const auto& sp : ScanPresets(a_p, Defaults(a_p)).list)   // shipped presets are never overwritten or shadowed
@@ -976,7 +989,27 @@ namespace HZ
 	// r6 / final: ship builder, outpost, inventory, galaxy map, photo mode, Data Menu, ship crew, plus skills,
 	// missions, powers, status, research, the five crafting menus, container, barter, terminal, digipick (SecurityMenu),
 	// chargen, photo gallery and blueprint (F11 on top of those froze input until Escape was mashed).
-	bool HudSafe()
+	// v0.42.0: + the remaining full-screen / modal menus (kDenyMenus42), registered menu names only (the lookup is
+	// case-insensitive and an unknown name is simply never open). r2: + ScopeMenu, InspectMenu; the mission board is
+	// registered as "MissionBoard" (MissionBoardMenu is its class name, ShipDialogueMenu was never verified: both dropped).
+	constexpr const char* kDenyMenus42[] = {
+		"PickpocketMenu", "MissionBoard", "WorkshopTargetMenu", "WorkshopQuickMenu",
+		"ShipRefuelMenu", "SleepWaitMenu", "SitWaitMenu", "BookMenu", "DataSlateMenu", "MessageBoxMenu",
+		"PlayBinkMenu", "CreditsMenu", "EndGameCreditsMenu", "TitleSequenceMenu", "WeaponGroupAssignmentMenu",
+		"TakeoffMenu", "FavoritesMenu", "MarketplaceMenu", "AlmanacMenu", "DialogueMenu",
+		"DocAcceptMenu", "StreamingInstallMenu", "TestMenu", "ScopeMenu", "InspectMenu"
+	};
+
+	// v0.42.0 r3: menus that block F11 but leave the HUD up underneath (no 3 s "HUD ready" restart after them)
+	constexpr const char* kLightMenus422[] = { "ScopeMenu" };
+	bool LightMenuOpen(RE::UI* a_ui)
+	{
+		for (auto m : kLightMenus422)
+			if (a_ui->IsMenuOpen(m)) return true;
+		return false;
+	}
+
+	bool HudSafe(bool a_light = true)
 	{
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) return false;
@@ -990,6 +1023,8 @@ namespace HZ
 		                "IndustrialCraftingMenu", "ContainerMenu", "BarterMenu", "GenesisTerminalMenu",
 		                "SecurityMenu", "ChargenMenu", "PhotoGalleryMenu", "Workshop_BlueprintMenu" })
 			if (ui->IsMenuOpen(m)) return false;
+		for (auto m : kDenyMenus42)   // v0.42.0
+			if ((a_light || !LightMenuOpen(ui) || std::strcmp(m, "ScopeMenu") != 0) && ui->IsMenuOpen(m)) return false;
 		auto menu = ui->GetMenu("HUDMenu");
 		if (!menu || !menu->uiMovie || !menu->uiMovie->asMovieRoot) return false;
 		return menu->menuObj.IsObject();
@@ -1002,6 +1037,7 @@ namespace HZ
 		if (!ui) return;
 		if (TextMenuOpen(ui)) { REX::INFO("ignored: text/console/pause menu open"); return; }
 		if (!HudSafe()) { REX::INFO("ignored: full-screen or loading menu open"); return; }
+		if (ui->IsMenuOpen("MonocleMenu")) { REX::INFO("ignored: hand scanner open (F11 opens from the main HUD only)"); return; }   // v0.42.0
 		bool ok = HudInvoke("hzToggleSettings", nullptr, nullptr, 0, true);
 		REX::INFO("hzToggleSettings invoke {}", ok ? "OK" : "FAILED (HUD lacks function or HUDMenu missing)");
 	}
@@ -1036,6 +1072,7 @@ namespace HZ
 	bool IsArrow(UINT a_vk) { return a_vk == VK_UP || a_vk == VK_DOWN || a_vk == VK_LEFT || a_vk == VK_RIGHT; }
 
 	// v0.37: letters / digits / space / '-' for the F11 preset name entry, as "ch:<c>" (the HUD ignores them elsewhere)
+	// v0.42.0 r2: + '+' / '=' (ARRANGE CARDS: scope chip size)
 	std::string CharCode(UINT a_vk)
 	{
 		char       c = 0;
@@ -1051,6 +1088,8 @@ namespace HZ
 			c = ' ';
 		} else if (a_vk == VK_OEM_MINUS || a_vk == VK_SUBTRACT) {
 			c = (shift && a_vk == VK_OEM_MINUS) ? '_' : '-';
+		} else if (a_vk == VK_OEM_PLUS || a_vk == VK_ADD) {
+			c = (a_vk == VK_ADD || shift) ? '+' : '=';
 		}
 		if (!c) return {};
 		return std::string("ch:") + c;
@@ -1228,6 +1267,7 @@ namespace HZ
 	bool      g_hudReadyLogged = false;
 	bool      g_firstInvokeLogged = false;
 	bool      g_open = false;
+	bool      g_scanWas42 = false;   // v0.42.0: MonocleMenu was open at the last poll
 	ULONGLONG g_lastOpen = 0;
 	ULONGLONG g_nextOpenPoll = 0;
 
@@ -1489,24 +1529,93 @@ namespace HZ
 		}
 	}
 
+	// v0.42.0 r3: which Horizon movie builds are loaded (HUD hzBuildId / Comms hzcBuildId), logged when it changes
+	std::string g_buildsLogged;
+	ULONGLONG   g_buildsNext = 0;
+	void BuildLog(ULONGLONG a_now)
+	{
+		if (a_now < g_buildsNext) return;
+		g_buildsNext = a_now + 5000;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		std::string hud = "no build id (older than r3 or not Horizon)", msg = "no build id (older than r3, no Comms module or not open)";
+		GValue a;
+		if (HudInvoke("hzBuildId", &a) && a.IsString() && a.GetString()) hud = a.GetString();
+		if (ui->IsMenuOpen("HUDMessagesMenu"))
+			if (auto m = ui->GetMenu("HUDMessagesMenu"); m && m->menuObj.IsObject() && m->menuObj.HasMember("hzcBuildId")) {
+				GValue b;
+				if (m->menuObj.Invoke("hzcBuildId", &b, nullptr, 0) && b.IsString() && b.GetString()) msg = b.GetString();
+			}
+		const std::string s = "HUD " + hud + ", Comms HUD messages " + msg;
+		if (s == g_buildsLogged) return;
+		g_buildsLogged = s;
+		REX::INFO("movie builds: {} (DLL file version 0.42.0.3)", s);
+	}
+
+	// v0.42.0 r3: debug-only Comms message log. The movie queues new HUD message lines only with [Debug] Debug=1
+	// (hzcTakeDbg returns "" otherwise); nothing is written to the log then.
+	ULONGLONG g_cdbgNext = 0;
+	bool      g_cdbgLogged = false;
+	void CommsDbgPoll(ULONGLONG a_now)
+	{
+		if (a_now < g_cdbgNext) return;
+		g_cdbgNext = a_now + 500;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		for (auto m : { "LoadingMenu", "MainMenu" })
+			if (ui->IsMenuOpen(m)) return;
+		if (!ui->IsMenuOpen("HUDMessagesMenu")) return;
+		auto msg = ui->GetMenu("HUDMessagesMenu");
+		if (!msg || !msg->menuObj.IsObject() || !msg->menuObj.HasMember("hzcTakeDbg")) return;
+		GValue r;
+		if (!msg->menuObj.Invoke("hzcTakeDbg", &r, nullptr, 0) || !r.IsString()) return;
+		const char* s = r.GetString();
+		if (!s || !*s) return;
+		if (!g_cdbgLogged) { g_cdbgLogged = true; REX::INFO("comms msg: message log on ([Debug] Debug=1); set Debug=0 to stop it"); }
+		const std::string all(s);
+		std::size_t p = 0;
+		int n = 0;
+		while (p < all.size() && n < 40) {
+			std::size_t e = all.find('\n', p);
+			if (e == std::string::npos) e = all.size();
+			const std::string line = all.substr(p, std::min<std::size_t>(e - p, 600));
+			if (!line.empty()) { REX::INFO("comms msg: {}", line); n++; }
+			p = e + 1;
+		}
+	}
+
 	void Poll()
 	{
 		auto now = GetTickCount64();
 		BannerPoll(now);   // v0.40.3
+		CommsDbgPoll(now);   // v0.42.0 r3 (debug only: empty unless [Debug] Debug=1)
 		HWND wnd = GameWindow();
 		bool down = wnd && (GetAsyncKeyState(g_vk) & 0x8000) != 0;
 		if (down && !g_wasDown) OnSettingsKey();
 		g_wasDown = down;
 
 		if (!HudSafe()) {
+			if (HudSafe(false)) {   // v0.42.0 r3: only a scope is up: F11 stays blocked, the HUD-ready time is kept
+				if (g_open) ResetSettingsState();
+				return;
+			}
 			if (g_hudSince) { REX::INFO("HUD not ready (loading/menu)"); ResetSettingsState(); }
 			g_hudSince = 0;
 			g_hudReadyLogged = false;
 			return;
 		}
+		// v0.42.0: the hand scanner opened while the F11 window / ARRANGE is up: close it once (close-only, as for the
+		// full-screen menus). Edge-triggered, so it runs once per scanner open; nothing happens while F11 is closed.
+		{
+			auto ui42 = RE::UI::GetSingleton();
+			const bool scan42 = ui42 && ui42->IsMenuOpen("MonocleMenu");
+			if (scan42 && !g_scanWas42 && g_open) { REX::INFO("settings closed (hand scanner opened)"); ResetSettingsState(); }
+			g_scanWas42 = scan42;
+		}
 		if (!g_hudSince) g_hudSince = now;
 		if (now - g_hudSince < 3000) return;
 		if (!g_hudReadyLogged) { REX::INFO("HUD ready (stable 3s)"); g_hudReadyLogged = true; HudOwnerCheck(); }
+		BuildLog(now);   // v0.42.0 r3
 		EnsureSubclass(wnd);
 		PollSettings(wnd, now);
 	}
@@ -1534,7 +1643,7 @@ SFSE_PLUGIN_PRELOAD(const SFSE::PreLoadInterface* a_sfse)
 SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* a_sfse)
 {
 	SFSE::Init(a_sfse);
-	REX::INFO("HorizonUI 0.41.0 loaded");
+	REX::INFO("HorizonUI 0.42.0 loaded");
 	HZ::FilesStartup();   // v0.37: update backup, migration / preset seeding - before any menu reads the settings
 	if (auto msg = SFSE::GetMessagingInterface())
 		msg->RegisterListener(HZ::OnMessage);

@@ -1,0 +1,39 @@
+// Horizon UI version resource (used instead of CommonLibSF's commonlib-plugin.rc.in; see xmake.lua).
+// CompanyName and LegalCopyright are the plugin author from xmake.lua.
+// v0.42.0 r3: the file version carries the build number (0.42.0.3); the product version stays 0.42.0.
+#include <winres.h>
+
+1 VERSIONINFO
+FILEVERSION ${COMMONLIB_PLUGIN_VERSION_MAJOR}, ${COMMONLIB_PLUGIN_VERSION_MINOR}, ${COMMONLIB_PLUGIN_VERSION_PATCH}, 3
+PRODUCTVERSION ${COMMONLIB_PROJECT_VERSION_MAJOR}, ${COMMONLIB_PROJECT_VERSION_MINOR}, ${COMMONLIB_PROJECT_VERSION_PATCH}, 0
+FILEFLAGSMASK 0x17L
+#ifdef _DEBUG
+    FILEFLAGS 0x1L
+#else
+    FILEFLAGS 0x0L
+#endif
+FILEOS 0x4L
+FILETYPE 0x1L
+FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "Comments", "${COMMONLIB_PLUGIN_CONTACT}"
+            VALUE "CompanyName", "${COMMONLIB_PLUGIN_AUTHOR}"
+            VALUE "FileDescription", "${COMMONLIB_PLUGIN_DESCRIPTION}"
+            VALUE "FileVersion", "${COMMONLIB_PLUGIN_VERSION}.3"
+            VALUE "InternalName", "${COMMONLIB_PLUGIN_NAME}"
+            VALUE "LegalCopyright", "${COMMONLIB_PLUGIN_AUTHOR}"
+            VALUE "LegalTrademarks", "${COMMONLIB_PLUGIN_LICENSE}"
+            VALUE "OriginalFilename", "${COMMONLIB_PLUGIN_NAME}.dll"
+            VALUE "ProductName", "${COMMONLIB_PROJECT_NAME}"
+            VALUE "ProductVersion", "${COMMONLIB_PROJECT_VERSION}.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
