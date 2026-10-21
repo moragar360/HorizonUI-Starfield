@@ -1,10 +1,10 @@
       // ===================== Horizon UI Comms (HUD Messages) v0.42.0 =====================
       // v0.42.0 r2: companion reaction card ([Comms] ReactionCard=1). The game's HUD message "<Name> liked that." (also loved /
-      // disliked / hated; 1.16.244 English strings) is drawn as a Horizon card in the same spot: a pill with a chevron
-      // tile (2 up loved, 1 up liked, 1 down disliked, 2 down hated), the name in the speaker color, the reaction in its
+      // disliked / hated, and the present tense loves / likes / dislikes / hates) is drawn as a Horizon card in the same
+      // spot: a pill with a chevron tile (2 up loved, 1 up liked, 1 down disliked, 2 down hated), the name in the speaker color, the reaction in its
       // color (teal / green / amber / red). The game's line (HUDMessageItem.Internal_mc) is set visible = false, never
       // removed: the game's stack, fade and timing stay. Only an exact, whole-line match is changed (one line, name of 1 - 4
-      // words, each starting with a capital or digit (name particles like "de" / "van" allowed), no ':' '!' '?' quotes or brackets, not a pronoun like "Everyone"); any
+      // words of letters, apostrophes, or hyphens, any case, no ':' '!' '?' quotes or brackets, not a pronoun like "Everyone"); any
       // other line, other languages, ReactionCard=0 or any error leave the game's line as it is.
       // v0.40.1: the scan state also ends when the HUD's bottom-center group goes from shown to hidden.
       // v0.40: quest popups / the mission toast stay hidden for the whole scan (no 30 s cap); the scan state is cleared by
@@ -1002,13 +1002,13 @@
          }
       }
       // ---------- v0.42.0 r2: companion reaction card ([Comms] ReactionCard) ----------
+      // Category order is the past-tense form. loves/likes/dislikes/hates use the same slot, label, color, and chevrons.
       private static const HZC_RX_VERB:Array = ["loved","liked","disliked","hated"];
       private static const HZC_RX_LBL:Array = ["LOVED THAT","LIKED THAT","DISLIKED THAT","HATED THAT"];
       private static const HZC_RX_COL:Array = [0x4FD1B8,0x5EE3A1,0xF2A93B,0xFF5B5B];   // liked = the scanner's companion green (noted)
       private static const HZC_RX_DIR:Array = [2,1,-1,-2];
       private static const HZC_RX_NOT:Array = ["you","i","we","they","he","she","it","everyone","everybody","someone","somebody","nobody","no one","people","all","this","that"];
       private static const HZC_RX_LABEL:uint = 0xC4D2D9;
-      private static const HZC_RX_PART:Array = ["de","da","del","van","von","der","of","the","la","le","du","al"];
       private var hzcRx:Array = [];          // {it: the game's HUDMessageItem, st: -1 pending / 0 game line / 1 card, n, k, c: card, w, h, f: pending frames, sig}
       private var hzcRxLayer:Sprite = null;
       private var hzcRxOff:Boolean = false;  // set after an error: every line stays the game's for this session
@@ -1025,26 +1025,40 @@
       {
          return !this.hzcRxOff && this.hzcIniState != 0 && int(this.hzcCfg.ReactionCard) == 1 && this.Messages_mc != null;
       }
-      // whole-line match, English game text: "<Name> loved|liked|disliked|hated that." -> {n, k} or null
+      // Present tense uses the same category as the past tense: card label, color, and chevrons.
+      private function hzcRxVerb(v:String) : int
+      {
+         var s:String = v == null ? "" : v.toLowerCase();
+         if(s == "loved" || s == "loves") { return 0; }
+         if(s == "liked" || s == "likes") { return 1; }
+         if(s == "disliked" || s == "dislikes") { return 2; }
+         if(s == "hated" || s == "hates") { return 3; }
+         return -1;
+      }
+      // Whole line, English only. The game line may be any case ("Sam likes that" or "SAM COE LIKED THAT").
+      // The name is 1 to 4 words of letters, apostrophes, or hyphens. No capital is required.
+      // Verb is either tense. The period is optional. Trailing space is ignored.
+      // Returns {n, k} or null. k is the past-tense category. n keeps the matched letters; the card uppercases it.
       private function hzcRxMatch(t:String) : Object
       {
          var s:String = this.hzcRxNorm(t);   // r3: normalized (spaces, trailing line break)
          if(s == null || s.indexOf("\n") >= 0 || s.indexOf("\r") >= 0) { return null; }
          if(s.length < 11 || s.length > 64) { return null; }
-         var m:Object = /^(.+?) (loved|liked|disliked|hated) that\.$/.exec(s);
+         var m:Object = /^(.+?) (loves|likes|dislikes|hates|loved|liked|disliked|hated) that\.?\s*$/i.exec(s);
          if(m == null) { return null; }
          var n:String = String(m[1]);
          if(n.length < 1 || n.length > 40) { return null; }
-         if(!/^[A-Z0-9\u00C0-\u00DE][A-Za-z0-9\u00C0-\u024F'\u2019.\- ]*$/.test(n)) { return null; }
          var ws:Array = n.split(" ");
-         if(ws.length > 4) { return null; }
-         for each(var w:String in ws)   // every word starts with a capital or a digit (name particles excepted)
+         if(ws.length < 1 || ws.length > 4) { return null; }
+         for each(var w:String in ws)
          {
             if(w.length == 0) { return null; }
-            if(!/^[A-Z0-9\u00C0-\u00DE]/.test(w) && HZC_RX_PART.indexOf(w) < 0) { return null; }
+            // A word starts with a letter. Apostrophes and hyphens can sit between letters, not at the ends or doubled.
+            if(!/^[A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F'\u2019-]*$/.test(w)) { return null; }
+            if(/['\u2019-]['\u2019-]/.test(w) || /['\u2019-]$/.test(w)) { return null; }
          }
          if(HZC_RX_NOT.indexOf(n.toLowerCase()) >= 0) { return null; }
-         var k:int = HZC_RX_VERB.indexOf(String(m[2]));
+         var k:int = this.hzcRxVerb(String(m[2]));
          if(k < 0) { return null; }
          return {"n":n,"k":k};
       }
@@ -1060,7 +1074,7 @@
       // v0.42.0.4: this movie has no compile-time switch. HZC_MSG_LOG false means the no-debug movie does not
       // queue HUD message text. A debug movie sets it true, and only an xmake debug DLL (HZ_COMMS_MSG_LOG) writes the lines.
       private static const HZC_MSG_LOG:Boolean = false;
-      private static const HZC_BUILD:String = "0.42.0.4";
+      private static const HZC_BUILD:String = "0.42.0.5";
       private var hzcRxDbgOn:Boolean = false;
       private var hzcRxDbgQ:Array = [];
       private var hzcRxDbgSeen:Array = [];   // {it, f}
@@ -1281,6 +1295,7 @@
          var fs:Number = Math.max(13,Math.round(14 * z));
          var h:Number = Math.round(44 * z);
          var nm:TextField = this.hzcField(true);
+         // Same uppercase as the subtitle speaker and the speaker card. All-caps game text is not a second style.
          this.hzcSet(nm,String(e.n).toUpperCase(),"nm",fs,this.hzcSpeakerCol(),Math.round(fs * 0.1 * 10) / 10,"left");
          var lb:TextField = this.hzcField(true);
          this.hzcSet(lb,String(HZC_RX_LBL[e.k]),"nm",fs,col,Math.round(fs * 0.12 * 10) / 10,"left");
