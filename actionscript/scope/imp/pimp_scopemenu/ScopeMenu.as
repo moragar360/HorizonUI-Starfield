@@ -213,8 +213,8 @@ package
       // Settings: [Scope] ScopeHoldBreathChip (0 = the game's prompt) / ScopeChipX / ScopeChipY / ScopeChipScale and [Style]
       // AccentColor / AccentHex / CardOpacity / TextScale / FontFace / HeaderStyle (same meaning as on the HUD). Read when
       // the scope opens and every 5 s after.
-      private static const HZP_VERSION:String = "0.42.0";
-      private static const HZP_BUILD:String = "0.42.0 r3";
+      private static const HZP_VERSION:String = "0.42.0.5";   // 0.42.0.5: scope movie version (= the test build's DLL file version)
+      private static const HZP_BUILD:String = "0.42.0.5";   // 0.42.0.5: scope movie build label (= the test build's DLL file version)
       private static const HZP_ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       private static const HZP_ACC:uint = 0x3FD0E0;
       private static const HZP_O2:uint = 0x4DB6FF;
@@ -224,6 +224,10 @@ package
       private static const HZP_TXT:uint = 0xF2F7F9;
       private static const HZP_DIM:uint = 0x8E9CA4;
       private static const HZP_MINPX:Number = 13;
+      private static const HZP_KPAD:Number = 10;        // 0.42.0.5: keycap padding right of the key text (was 8)
+      private static const HZP_KHEAD:Number = 1.08;     // 0.42.0.5: headroom on the measured key text width (bold faces, renderer rounding)
+      private static const HZP_KMINW:Number = 14;       // 0.42.0.5: smallest key text slot (a one-glyph gamepad face such as L3)
+      private static const HZP_RPAD:Number = 18;        // 0.42.0.5: panel padding right of the O2 meter (was 14)
       private static const HZP_O2_WARN:Number = 0.35;   // = the HUD vitals card warning band (hz26Band 1, hz26WarnCol amber)
       private static const HZP_O2_CRIT:Number = 0.15;   // = the HUD vitals card critical band (hz26Band 2, hz26WarnCol red)
       private static const HZP_LRG:Boolean = false;
@@ -612,6 +616,19 @@ package
          while(i < w.length) { if(String(w[i]).length > 0 && w[i] != "o2") { w[i] = String(w[i]).charAt(0).toUpperCase() + String(w[i]).substr(1); } i++; }
          return w.join(" ").replace("o2","O2");
       }
+      // 0.42.0.5: width the key text needs inside the keycap. textWidth alone left the keycap's right border clipped by
+      // long key names (L-SHIFT on the breath scope): take the larger of textWidth and the field width less its 4 px gutter,
+      // add the letter spacing of every glyph (in case the renderer leaves it out of textWidth) and HZP_KHEAD headroom.
+      private function hzpKeyW(t:TextField) : Number
+      {
+         if(t == null) { return 0; }
+         var ls:Number = 0;
+         try { ls = Number(t.getTextFormat().letterSpacing); } catch(e:Error) { ls = 0; }
+         if(isNaN(ls) || ls < 0) { ls = 0; }
+         var tw:Number = Math.max(Number(t.textWidth),Number(t.width) - 4);
+         if(isNaN(tw) || tw < 0) { tw = 0; }
+         return Math.max(HZP_KMINW,Math.ceil(tw * HZP_KHEAD + ls * String(t.text).length));
+      }
       // st: 0 ready, 1 holding, 3 out of breath; band: 0 normal, 1 warning (amber), 2 critical (red). o = O2 0 - 1 (-1 = no data)
       private function hzpDraw(st:int, band:int, o:Number) : void
       {
@@ -630,13 +647,13 @@ package
          var kt:TextField = null;
          if(this.hzpKeyTx.length > 0) { kt = this.hzpT(p,this.hzpKeyTx,13,keyCol,"bd",0.04,this.hzpKeyFace); }
          h = Math.max(h,Math.round(lt.height + 6),kt != null ? Math.round(kt.height + 6) : 0);
-         var kw:Number = 30 + (kt != null ? Math.round(kt.textWidth + 8) : 0);
+         var kw:Number = 30 + (kt != null ? this.hzpKeyW(kt) + HZP_KPAD : 0);   // 0.42.0.5: full key text width + padding
          var kh:Number = Math.round(h - 12);
          var mw:Number = 120;
          var x0:Number = 7;
          var lx:Number = x0 + kw + 10;
          var mx:Number = Math.round(lx + lt.textWidth + 16);
-         var w:Number = Math.round(mx + mw + 14);
+         var w:Number = Math.round(mx + mw + HZP_RPAD);   // 0.42.0.5: + 4
          // panel: soft shadow, translucent fill (CardOpacity), 1 px edge; HOLDING = accent edge
          var opa:Number = Number(this.hzpS.CardOpacity);
          if(isNaN(opa)) { opa = 1; }
