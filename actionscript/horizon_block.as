@@ -14345,12 +14345,16 @@
          var g:* = p.graphics;
          g.clear();
          var h:Number = HZ42_SC_H;
-         var lt:TextField = this.hzSText(p,"HOLD BREATH",0,0,220,this.hz42ScFs(14),0xF2F7F9,"left");
-         // Same keycap as the scope chip (hzpDraw): 30 for the icon, then round(textWidth + 8). "L-SHIFT" is the wide PC label.
-         // The font size stays at least 13 px after this proxy's scale and after hzSText's TextScale. This field's letter spacing is 0, so textWidth is the scope measurement.
+         // hzSText multiplies by TextScale (clamped 0.9-1.15). Pass a size that survives that, or the
+         // on-screen size is the chip scale times a font that was already shrunk. At chip 0.65 and
+         // TextScale 0.9, HOLD BREATH was 11.7 px. Both lines use the same correction. The floor is 13 px
+         // after the proxy scale (hz42ScFs) and after TextScale. Letter spacing on these fields is 0.
          var ts:Number = this.hzTextScale;
          if(isNaN(ts) || ts <= 0) { ts = 1; }
          ts = Math.max(0.9,Math.min(1.15,ts));
+         var lb:int = int(this.hz42ScFs(14));
+         var lt:TextField = this.hzSText(p,"HOLD BREATH",0,0,220,int(Math.ceil(lb / ts)),0xF2F7F9,"left");
+         // Same keycap as the scope chip (hzpDraw): 30 for the icon, then round(textWidth + 8). "L-SHIFT" is the wide PC label.
          var want:int = int(this.hz42ScFs(13));
          var kt:TextField = this.hzSText(p,"L-SHIFT",0,0,160,int(Math.ceil(want / ts)),HZ_ACCENT,"left");
          var tw:Number = kt.textWidth;

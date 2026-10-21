@@ -4,7 +4,7 @@
       // spot: a pill with a chevron tile (2 up loved, 1 up liked, 1 down disliked, 2 down hated), the name in the speaker color, the reaction in its
       // color (teal / green / amber / red). The game's line (HUDMessageItem.Internal_mc) is set visible = false, never
       // removed: the game's stack, fade and timing stay. Only an exact, whole-line match is changed (one line, name of 1 - 4
-      // words of letters, apostrophes, or hyphens, any case; a period only on a title such as Dr.; no ':' '!' '?' quotes or brackets; the first word is not a pronoun); any
+      // words of letters, apostrophes, or hyphens, any case; a period on a title such as Dr. or an initial such as J. or J.T.; no ':' '!' '?' quotes or brackets; the first word is not a pronoun); any
       // other line, other languages, ReactionCard=0 or any error leave the game's line as it is.
       // v0.40.1: the scan state also ends when the HUD's bottom-center group goes from shown to hidden.
       // v0.40: quest popups / the mission toast stay hidden for the whole scan (no 30 s cap); the scan state is cleared by
@@ -1009,7 +1009,7 @@
       private static const HZC_RX_DIR:Array = [2,1,-1,-2];
       // First word only (and the two-word "no one"). A later word such as a real name is allowed.
       private static const HZC_RX_NOT:Array = ["i","you","we","they","he","she","it","your","my","our","their","his","her","nobody","everyone","everybody","someone","somebody","none","all","some","the","a","an","crew","no one","who","not","people","this","that","many","most","each","several","both","what"];
-      // A trailing period is a title, not a sentence. "Dr." matches. "Okay." does not.
+      // A trailing period is a title or an initial, not a sentence. "Dr." and "J." match. "Okay." does not.
       private static const HZC_RX_TITLE:Array = ["dr","mr","mrs","ms","jr","sr","st","lt","capt","sgt","prof"];
       private static const HZC_RX_LABEL:uint = 0xC4D2D9;
       private var hzcRx:Array = [];          // {it: the game's HUDMessageItem, st: -1 pending / 0 game line / 1 card, n, k, c: card, w, h, f: pending frames, sig}
@@ -1045,11 +1045,17 @@
          while(s.length > 0 && s.charAt(s.length - 1) == ".") { s = s.substr(0,s.length - 1); }
          return s;
       }
-      // Letters, apostrophes, and hyphens. One trailing period is allowed only when the word is a title (Dr., Lt., Capt.).
+      // An initial is one letter and a period, or those pairs stuck together: "J." and "J.T.". "Okay." is neither.
+      private function hzcRxInitial(w:String) : Boolean
+      {
+         return w != null && /^(?:[A-Za-z\u00C0-\u024F]\.)+$/.test(w);
+      }
+      // Letters, apostrophes, and hyphens. A trailing period is a title (Dr., Lt., Capt.) or an initial.
       // Any other period is a sentence break, so "Okay. Sam liked that." does not swallow the first sentence.
       private function hzcRxWordOk(w:String) : Boolean
       {
          if(w == null || w.length == 0) { return false; }
+         if(this.hzcRxInitial(w)) { return true; }
          var body:String = w;
          if(w.charAt(w.length - 1) == ".")
          {
@@ -1063,7 +1069,8 @@
       }
       // Whole line, English only. The game line may be any case ("Sam likes that" or "SAM COE LIKED THAT").
       // The name is 1 to 4 words. No capital is required. The first word cannot be a pronoun or a quantifier.
-      // "and", "that", and a reaction verb cannot be a name word. "Dr. Barrett" is a name.
+      // An initial ("A.", "I.") is a name word, not the article or the pronoun. "and", "that", and a reaction verb cannot be a name word.
+      // "Dr. Barrett" is a name. A name that is only a title ("Mr.") is not.
       // Verb is either tense. The period after "that" is optional. Trailing space is ignored.
       // Returns {n, k} or null. k is the past-tense category. n keeps the matched letters; the card uppercases it.
       private function hzcRxMatch(t:String) : Object
@@ -1078,15 +1085,20 @@
          var ws:Array = n.split(" ");
          if(ws.length < 1 || ws.length > 4) { return null; }
          var i:int = 0;
+         var named:Boolean = false;
          for each(var w:String in ws)
          {
             if(!this.hzcRxWordOk(w)) { return null; }
             var key:String = this.hzcRxLead(w);
+            var initial:Boolean = this.hzcRxInitial(w);
             if(key == "and" || key == "that" || this.hzcRxVerb(key) >= 0) { return null; }
-            if(i == 0 && HZC_RX_NOT.indexOf(key) >= 0) { return null; }
-            if(i == 1 && HZC_RX_NOT.indexOf(this.hzcRxLead(String(ws[0])) + " " + key) >= 0) { return null; }
+            // "A." and "I." are initials. "A" and "I" without the period stay in the leading-word list.
+            if(!initial && i == 0 && HZC_RX_NOT.indexOf(key) >= 0) { return null; }
+            if(!initial && i == 1 && HZC_RX_NOT.indexOf(this.hzcRxLead(String(ws[0])) + " " + key) >= 0) { return null; }
+            if(HZC_RX_TITLE.indexOf(key) < 0) { named = true; }
             i++;
          }
+         if(!named) { return null; }
          var k:int = this.hzcRxVerb(String(m[2]));
          if(k < 0) { return null; }
          return {"n":n,"k":k};

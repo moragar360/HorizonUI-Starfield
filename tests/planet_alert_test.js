@@ -349,6 +349,42 @@ function scanOnHold() {
 	expect(h.tick() === false, "the session stays ended after the clock step");
 }
 
+// F11 scope-chip preview. HOLD BREATH uses the same TextScale correction as L-SHIFT.
+// On-screen px = the font hzSText stored, times the chip scale. The old label passed
+// hz42ScFs(14) straight through, so chip 0.65 and TextScale 0.9 rendered at 11.7 px.
+pin('var lb:int = int(this.hz42ScFs(14));', "HOLD BREATH starts from the 13 px chip floor");
+pin('this.hzSText(p,"HOLD BREATH",0,0,220,int(Math.ceil(lb / ts)),0xF2F7F9,"left");', "HOLD BREATH divides TextScale back out");
+pin('this.hzSText(p,"L-SHIFT",0,0,160,int(Math.ceil(want / ts)),HZ_ACCENT,"left");', "the key keeps the same TextScale correction");
+
+function asInt(n) {
+	if (!Number.isFinite(n)) return 0;
+	return n < 0 ? Math.ceil(n) : Math.floor(n);
+}
+function chipFs(n, chip) {
+	const s = !Number.isFinite(chip) || chip <= 0 ? 1 : chip;
+	return Math.max(n, Math.ceil(13 / s));
+}
+function previewPx(design, chip, textScale) {
+	let ts = textScale;
+	if (Number.isNaN(ts) || ts <= 0) ts = 1;
+	ts = Math.max(0.9, Math.min(1.15, ts));
+	const fieldTs = Math.max(0.9, Math.min(1.15, textScale));
+	const passed = asInt(Math.ceil(asInt(chipFs(design, chip)) / ts));
+	const sz = asInt(Math.round(passed * fieldTs));
+	const s = !Number.isFinite(chip) || chip <= 0 ? 1 : chip;
+	return sz * s;
+}
+const chipSizes = [0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99, 1, 1.6];
+const textScales = [0.8, 0.9, 1, 1.15];
+for (let ci = 0; ci < chipSizes.length; ci++) {
+	for (let ti = 0; ti < textScales.length; ti++) {
+		const px = previewPx(14, chipSizes[ci], textScales[ti]);
+		expect(px >= 13, "HOLD BREATH at chip " + chipSizes[ci] + " text " + textScales[ti] + " is " + px + " px");
+	}
+}
+expect(previewPx(14, 0.65, 0.9) >= 13, "the 11.7 px case stays at least 13");
+expect(previewPx(13, 0.65, 0.9) >= 13, "L-SHIFT uses the same floor");
+
 if (failed) {
 	console.error(failed + " failed");
 	process.exit(1);

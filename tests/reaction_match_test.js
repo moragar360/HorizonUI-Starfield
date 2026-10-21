@@ -54,6 +54,10 @@ const WORD = takeRegex(
 	"word regex",
 	/if\(!(\/\^\[A-Za-z\\u00C0-\\u024F\]\[A-Za-z\\u00C0-\\u024F'\\u2019-\]\*\$\/)\.test\(body\)\)/
 );
+const INITIAL = takeRegex(
+	"initial regex",
+	/(\/\^\(\?:\[A-Za-z\\u00C0-\\u024F\]\\.\)\+\$\/)\.test\(w\)/
+);
 const PUNCT_DBL = takeRegex("doubled punctuation", /if\((\/\['\\u2019-\]\['\\u2019-\]\/)/);
 const PUNCT_END = takeRegex("trailing punctuation", /(\/\['\\u2019-\]\$\/)\.test\(body\)/);
 
@@ -74,6 +78,8 @@ expect(src.indexOf("int(HZC_RX_DIR[e.k])") >= 0, "chevrons use the category inde
 expect(src.indexOf('this.hzcSet(nm,String(e.n).toUpperCase(),"nm"') >= 0, "card name uses the existing uppercase");
 expect(src.indexOf("HZC_RX_PART") < 0, "capital-letter particle exception is gone");
 expect(src.indexOf('if(key == "and" || key == "that" || this.hzcRxVerb(key) >= 0) { return null; }') >= 0, "and, that, and a reaction verb are rejected");
+expect(src.indexOf("if(!named) { return null; }") >= 0, "a bare title is not a name");
+expect(src.indexOf("if(!initial && i == 0 && HZC_RX_NOT.indexOf(key) >= 0)") >= 0, "an initial is not the article or the pronoun");
 const LEAD = ["i","you","we","they","he","she","it","your","my","our","their","his","her","nobody","everyone","everybody","someone","somebody","none","all","some","the","a","an","crew","no one","who","not","people","this","that","many","most","each","several","both","what"];
 expect(NOT.length === LEAD.length && LEAD.every(function (w) { return NOT.indexOf(w) >= 0; }), "first-word pronoun list");
 expect(["dr","mr","mrs","ms","jr","sr","st","lt","capt","sgt","prof"].every(function (w) { return TITLE.indexOf(w) >= 0; }), "title period list");
@@ -108,8 +114,13 @@ function hzcRxLead(w) {
 	return s;
 }
 
+function hzcRxInitial(w) {
+	return w != null && INITIAL.test(w);
+}
+
 function hzcRxWordOk(w) {
 	if (w == null || w.length === 0) return false;
+	if (hzcRxInitial(w)) return true;
 	let body = w;
 	if (w.charAt(w.length - 1) === ".") {
 		body = w.slice(0, -1);
@@ -130,14 +141,18 @@ function hzcRxMatch(t) {
 	if (n.length < 1 || n.length > 40) return null;
 	const ws = n.split(" ");
 	if (ws.length < 1 || ws.length > 4) return null;
+	let named = false;
 	for (let i = 0; i < ws.length; i++) {
 		const w = ws[i];
 		if (!hzcRxWordOk(w)) return null;
 		const key = hzcRxLead(w);
+		const initial = hzcRxInitial(w);
 		if (key === "and" || key === "that" || hzcRxVerb(key) >= 0) return null;
-		if (i === 0 && NOT.indexOf(key) >= 0) return null;
-		if (i === 1 && NOT.indexOf(hzcRxLead(ws[0]) + " " + key) >= 0) return null;
+		if (!initial && i === 0 && NOT.indexOf(key) >= 0) return null;
+		if (!initial && i === 1 && NOT.indexOf(hzcRxLead(ws[0]) + " " + key) >= 0) return null;
+		if (TITLE.indexOf(key) < 0) named = true;
 	}
+	if (!named) return null;
 	const k = hzcRxVerb(String(m[2]));
 	if (k < 0) return null;
 	return { n: n, k: k, label: LBL[k], color: COL[k], dir: DIR[k], card: cardName(n) };
@@ -223,7 +238,12 @@ const RX1 = [
 	["Sam Coe loved that.", 0, "Sam Coe"],
 	["Barrett hated that.", 3, "Barrett"],
 	["Sam likes that  ", 1, "Sam"],
-	["Dr. Barrett liked that.", 1, "Dr. Barrett"]
+	["Dr. Barrett liked that.", 1, "Dr. Barrett"],
+	["J.T. Kirk liked that", 1, "J.T. Kirk"],
+	["J. T. Kirk liked that.", 1, "J. T. Kirk"],
+	["R. Kim likes that", 1, "R. Kim"],
+	["A. Kim liked that", 1, "A. Kim"],
+	["St. John liked that", 1, "St. John"]
 ];
 const RX2 = [
 	"Sam likes that ship",
@@ -260,7 +280,20 @@ const RX2 = [
 	"No one liked that",
 	"My ship liked that",
 	"Some people liked that",
-	"Sam and Sarah liked that"
+	"Sam and Sarah liked that",
+	"Mr. liked that",
+	"Dr. liked that.",
+	"Mrs. likes that",
+	"Ms. liked that",
+	"Jr. liked that",
+	"Sr. liked that",
+	"St. liked that",
+	"Lt. liked that",
+	"Capt. liked that",
+	"Sgt. liked that",
+	"Prof. hated that",
+	"A liked that",
+	"I liked that"
 ];
 for (let i = 0; i < RX1.length; i++) expectMatch(RX1[i][0], RX1[i][2], RX1[i][1], "RX1 " + RX1[i][0]);
 for (let i = 0; i < RX2.length; i++) expectNull(RX2[i], "RX2 " + RX2[i]);
