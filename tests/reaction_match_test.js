@@ -52,9 +52,9 @@ const RX = takeRegex(
 );
 const WORD = takeRegex(
 	"word regex",
-	/if\(!(\/\^\[A-Za-z\\u00C0-\\u024F\]\[A-Za-z\\u00C0-\\u024F'\\u2019-\]\*\$\/)\.test\(w\)\)/
+	/if\(!(\/\^\[A-Za-z\\u00C0-\\u024F\]\[A-Za-z\\u00C0-\\u024F'\\u2019\.-]\*\$\/)\.test\(w\)\)/
 );
-const PUNCT_DBL = takeRegex("doubled punctuation", /if\((\/\['\\u2019-\]\['\\u2019-\]\/)/);
+const PUNCT_DBL = takeRegex("doubled punctuation", /if\((\/\['\\u2019\.-]\['\\u2019\.-]\/)/);
 const PUNCT_END = takeRegex("trailing punctuation", /(\/\['\\u2019-\]\$\/)\.test\(w\)/);
 
 const LBL = stringArray("HZC_RX_LBL");
@@ -72,6 +72,8 @@ expect(src.indexOf("uint(HZC_RX_COL[e.k])") >= 0, "card color uses the category 
 expect(src.indexOf("int(HZC_RX_DIR[e.k])") >= 0, "chevrons use the category index");
 expect(src.indexOf('this.hzcSet(nm,String(e.n).toUpperCase(),"nm"') >= 0, "card name uses the existing uppercase");
 expect(src.indexOf("HZC_RX_PART") < 0, "capital-letter particle exception is gone");
+expect(src.indexOf('if(key == "and") { return null; }') >= 0, "the word and is rejected");
+expect(["i","you","we","they","he","she","it","your","my","our","their","his","her","nobody","everyone","everybody","someone","somebody","none","all","some","the","a","an","crew","no one"].every(function (w) { return NOT.indexOf(w) >= 0; }), "first-word pronoun list");
 expect(LBL.join("|") === "LOVED THAT|LIKED THAT|DISLIKED THAT|HATED THAT", "category labels stay past tense");
 expect(COL[0] === 0x4FD1B8 && COL[1] === 0x5EE3A1 && COL[2] === 0xF2A93B && COL[3] === 0xFF5B5B, "category colors");
 expect(DIR.join(",") === "2,1,-1,-2", "chevron directions");
@@ -97,6 +99,12 @@ function hzcRxVerb(v) {
 	return -1;
 }
 
+function hzcRxLead(w) {
+	let s = w == null ? "" : String(w).toLowerCase();
+	while (s.length > 0 && s.charAt(s.length - 1) === ".") s = s.slice(0, -1);
+	return s;
+}
+
 function hzcRxMatch(t) {
 	const s = hzcRxNorm(t);
 	if (s == null || s.indexOf("\n") >= 0 || s.indexOf("\r") >= 0) return null;
@@ -112,8 +120,11 @@ function hzcRxMatch(t) {
 		if (w.length === 0) return null;
 		if (!WORD.test(w)) return null;
 		if (PUNCT_DBL.test(w) || PUNCT_END.test(w)) return null;
+		const key = hzcRxLead(w);
+		if (key === "and") return null;
+		if (i === 0 && NOT.indexOf(key) >= 0) return null;
+		if (i === 1 && NOT.indexOf(hzcRxLead(ws[0]) + " " + key) >= 0) return null;
 	}
-	if (NOT.indexOf(n.toLowerCase()) >= 0) return null;
 	const k = hzcRxVerb(String(m[2]));
 	if (k < 0) return null;
 	return { n: n, k: k, label: LBL[k], color: COL[k], dir: DIR[k], card: cardName(n) };
@@ -149,6 +160,13 @@ expect(hzcRxMatch("sam coe hated that").card === "SAM COE", "lowercase name is d
 expect(hzcRxMatch("Sam likes that").card === "SAM", "mixed-case name is drawn in the card uppercase");
 expect(hzcRxMatch("sam coe hated that").card !== "sam coe", "raw lowercase is not the card text");
 
+expectMatch("Dr. Barrett liked that", "Dr. Barrett", 1, "period in a name");
+expectMatch("Dr. Barrett liked that.", "Dr. Barrett", 1, "period in a name and after that");
+expectNull("You really liked that");
+expectNull("Nobody else likes that");
+expectNull("Your crew liked that.");
+expectNull("Sam Coe and Andreja liked that");
+expectNull("No one likes that");
 expectNull("Sam likes that ship.");
 expectNull("Sam likes that ship");
 expectNull("SAM COE LIKED THAT SHIP.");

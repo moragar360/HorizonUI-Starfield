@@ -1299,7 +1299,7 @@ package
       // Horizon draws its own panels from the same data providers. Settings: [Scanner] of HorizonUI.default.ini with
       // HorizonUI.user.ini laid over (the shared reader, prefix hzs37); read when the scanner opens and polled every
       // 2 s while it is open, so an F11 save (HzRev) applies without reopening.
-      private static const HZS_VERSION:String = "0.42.0";
+      private static const HZS_VERSION:String = "0.42.0.5";   // 0.42.0.4: the scanner movie's build version (= the test build's DLL file version); bump here only
       private static const HZS_LRG:Boolean = false;
       private static const HZS_SCALE:Number = HZS_LRG ? 1.07 : 1;
       // design tokens 0.3.1 (exotic purple added in v0.40)
@@ -1318,6 +1318,7 @@ package
       private static const HZS_VIO:uint = 0xB48CFF;    // v0.41.0: ships / vehicles that are not yours
       private static const HZS_QST:uint = 0xF2D35F;    // v0.41.0: the quest diamond (gold; the ship is blue)
       private static const HZS_MINPX:Number = 13;
+      private static const HZS_KMIN:Number = 0.78;   // 0.42.0.4: smallest on-screen panel scale (text floored to 13 px after it; layouts fit from 0.76)
       private static const HZS_RING_FILL:Number = 0.004;   // v0.40.2: fill of an outline-only rounded rect (closes its path; invisible)
       private static const HZS_CARD_A:Number = 0.8;
       private static const HZS_CW:Number = 400;
@@ -1376,6 +1377,7 @@ package
       private var hzsFrameT:int = 0;
       private var hzsAlpha:Number = 0;
       private var hzsCfgSig:String = "";
+      private var hzsTk:Number = 1;         // 0.42.0.4: scale of the panel being drawn (HZS_SCALE x hzsF); hzsFs keeps text >= 13 px after it
 
       // ---------------------------------------------------------------- start
       private function hzsInit() : void
@@ -1603,6 +1605,7 @@ package
       // ---------------------------------------------------------------- frame tick
       private function hzsTick(e:Event) : void
       {
+         this.hzsTk = 1;   // 0.42.0.4
          this.hzsFrame++;
          var now:int = getTimer();
          try { this.hzsHideVanilla(); } catch(e0:Error) { }
@@ -1699,17 +1702,17 @@ package
          if(isNaN(m) || m < 0) { m = Number(this.hzsS.Margin); }
          return isNaN(m) ? 40 : m;
       }
-      // panel size factor: -1 = [Style] HudScale. v0.40.3: 0.60 - 1.60 like the HUD cards; as there, a size below 1.00 also
-      // draws the text below 13 px at 1080p (the 13 px floor of hzsFs is for the size before this factor).
+      // panel size factor: -1 = [Style] HudScale. v0.40.3: 0.60 - 1.60 like the HUD cards. 0.42.0.4: a size below 1.00 still
+      // shrinks the card, but no text goes under 13 px at 1080p (hzsFs floors the size after this factor, see hzsTk).
       private function hzsF(panel:String) : Number
       {
          var v:Number = Number(this.hzsC["Scan" + panel + "Scale"]);
          if(panel == "Social" && (isNaN(v) || v <= 0)) { v = Number(this.hzsC.ScanTraitsScale); }   // r5: -1 = the traits card's size
          if(isNaN(v) || v <= 0) { v = Number(this.hzsS.HudScale); }
          if(isNaN(v) || v <= 0) { v = 1; }
-         return Math.max(0.6,v);   // v0.40.3: 0.60 - 1.60 like the HUD cards (below 1.00 the text is under 13 px at 1080p)
+         return Math.max(0.6,v);   // v0.40.3: 0.60 - 1.60 like the HUD cards (0.42.0.4: text stays >= 13 px at 1080p, hzsFs)
       }
-      private function hzsK(panel:String) : Number { return HZS_SCALE * this.hzsF(panel); }
+      private function hzsK(panel:String) : Number { return Math.max(HZS_KMIN,HZS_SCALE * this.hzsF(panel)); }   // 0.42.0.4: never under HZS_KMIN
       // compact form: the panel's own value, else ScanCompactAll, else [Style] Compact
       private function hzsCmpOn(panel:String) : Boolean
       {
@@ -1812,12 +1815,16 @@ package
          this.hzsFontOk[n] = ok ? 1 : 0;
          return ok;
       }
-      // text size at 1080p: TextScale applies, never under 13 px
+      // text size at 1080p: TextScale applies, never under 13 px. 0.42.0.4: also never under 13 px AFTER the panel's scale
+      // (hzsTk = HZS_SCALE x hzsF of the panel being drawn): the size is at least 13 / hzsTk, rounded up to 0.1
       private function hzsFs(size:Number) : Number
       {
          var ts:Number = Number(this.hzsS.TextScale);
          if(isNaN(ts) || ts <= 0) { ts = 1; }
-         return Math.max(HZS_MINPX,Math.round(size * ts * 10) / 10);
+         var f:Number = Math.max(HZS_MINPX,Math.round(size * ts * 10) / 10);
+         var k:Number = this.hzsTk;
+         if(!isNaN(k) && k > 0 && k < 1) { f = Math.max(f,Math.ceil(HZS_MINPX / k * 10) / 10); }
+         return f;
       }
       // one text field. (x, cy) = left / right / center x and the vertical middle; tr = tracking in em.
       // maxW > 0 shortens the text with "..." to fit. Returns the field (its right edge = x + width for "l").
@@ -2835,6 +2842,7 @@ package
          this.hzsClr(p);
          if(m == null) { p.visible = false; this.hzsSz[n] = null; return; }
          var wh:Array = null;
+         this.hzsTk = this.hzsK(this.hzsKeyOf(n));   // 0.42.0.4: text floor after this panel's scale
          try
          {
             if(n == "Planet") { wh = m.cmp ? this.hzsDPlanetC(p,m) : this.hzsDPlanet(p,m); }
@@ -2846,6 +2854,7 @@ package
             else if(n == "Hints") { wh = this.hzsDHints2(p,m); }
          }
          catch(e1:Error) { wh = null; }
+         this.hzsTk = 1;
          if(wh == null) { this.hzsClr(p); p.visible = false; this.hzsSz[n] = null; return; }
          this.hzsSz[n] = wh;
          p.visible = true;
@@ -3094,12 +3103,17 @@ package
       {
          var g:* = p.graphics;
          var yy:Number = y;
+         // 0.42.0.4: the rarity column fits the widest label shown (96 - 130; the 13 px floor makes it wider at small sizes)
+         var col:Number = 96;
+         var probe:Sprite = new Sprite();
+         for each(var r0:Object in res) { var ri0:int = int(r0.r); col = Math.max(col,Math.ceil(this.hzsTw(this.hzsT(probe,this.hzsCs(ri0 < 0 ? "SPECIAL" : String(HZS_RAR_N[ri0])),0,0,13,HZS_WHITE,"sb",0.08))) + 10); }
+         col = Math.min(130,col);
          for each(var r:Object in res)
          {
             var ri:int = int(r.r);
             var c:uint = ri < 0 ? HZS_WHITE : uint(HZS_RAR_C[ri]);
-            this.hzsT(p,this.hzsCs(ri < 0 ? "SPECIAL" : String(HZS_RAR_N[ri])),x0,yy,13,c,"sb",0.08,"l",1,90);
-            var cx:Number = x0 + 96;
+            this.hzsT(p,this.hzsCs(ri < 0 ? "SPECIAL" : String(HZS_RAR_N[ri])),x0,yy,13,c,"sb",0.08,"l",1,col - 6);
+            var cx:Number = x0 + col;
             for each(var it:Array in r.items)
             {
                var dis:Boolean = int(it[2]) == 1;
@@ -3108,7 +3122,7 @@ package
                var sw:Number = Math.max(26,this.hzsTw(st) + 10);
                var nt:TextField = this.hzsT(p,String(it[1]),0,yy,13,dis ? HZS_MUTED : HZS_LABEL,"rg",0,"l",1,180);
                var need:Number = sw + 5 + this.hzsTw(nt);
-               if(cx > x0 + 96 && cx + need > x0 + iw) { yy += 28; cx = x0 + 96; st.y = Math.round(yy - st.height / 2); nt.y = Math.round(yy - nt.height / 2); }
+               if(cx > x0 + col && cx + need > x0 + iw) { yy += 28; cx = x0 + col; st.y = Math.round(yy - st.height / 2); nt.y = Math.round(yy - nt.height / 2); }
                g.lineStyle(1.2,cc,0.67,true); g.beginFill(cc,34 / 255); g.drawRoundRect(cx,yy - 11,sw,22,12,12); g.endFill(); g.lineStyle();
                st.x = Math.round(cx + sw / 2 - this.hzsTw(st) / 2 - 2);
                nt.x = Math.round(cx + sw + 5 - 2);
@@ -3298,6 +3312,7 @@ package
          if(!on) { p.visible = false; hp.visible = false; this.hzsSz.Compass = null; this.hzsSz.Head = null; this.hzsPlace(); return; }
          var cmp:Boolean = this.hzsCmpOn("Compass");
          var acc:uint = this.hzsAccent();
+         this.hzsTk = this.hzsK("Compass");   // 0.42.0.4: compass + heading pill (both drawn at the compass scale)
          var wd:Number = 640;
          var hh:Number = cmp ? 46 : 58;
          var g:* = p.graphics;
@@ -3356,6 +3371,7 @@ package
          var w:Number = this.hzsTw(this.hzsT(probe,txt,0,14,14,HZS_WHITE,"sb",0.06)) + 28;
          this.hzsCard(hp.graphics,w,28,HZS_R_STRIP,-1);
          this.hzsT(hp,txt,w / 2,14,14,HZS_WHITE,"sb",0.06,"c");
+         this.hzsTk = 1;
          this.hzsSz.Head = [w,28];
          hp.visible = true;
          this.hzsPlace();
@@ -3470,7 +3486,8 @@ package
          var tp:Sprite = this.hzsP.Tag as Sprite;
          this.hzsClr(tp);
          if(tag == null) { tp.visible = false; return; }
-         var tk:Number = HZS_SCALE * this.hzsF("WorldTag");
+         var tk:Number = this.hzsK("WorldTag");   // 0.42.0.4: = HZS_SCALE x hzsF, never under HZS_KMIN
+         this.hzsTk = tk;   // 0.42.0.4: world tag text floor after its scale
          var tc:uint = uint(tag.col);
          var tw:Number = 250;
          var tg:* = tp.graphics;
@@ -3498,6 +3515,7 @@ package
                fx0 += fcw + 6;
             }
          }
+         this.hzsTk = 1;
          tp.scaleX = tp.scaleY = tk;
          tp.x = Math.round(Math.max(this.hzsVr.left + 8,c.x - 370 * k));
          tp.y = Math.round(c.y + 34 * k);

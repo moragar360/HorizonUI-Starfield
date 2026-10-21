@@ -42,9 +42,13 @@ pin('if(this.hz41LocAtHold(this.hz41LocLbl(), this.hz41LocFrame())) { this.hz41L
 pin('if(lb != "" && lb != "FadeInPlanetInfo") { this.hz41LocLeftIn = true; }', "empty post-grace read is not a new label");
 pin("if(!newIn && this.hz41LocAtHold(lb, fr)) { return true; }", "228 hold stays hidden");
 pin('if(lb == "") { return true; }', "unreadable label stays hidden on a 228 session");
-pin('if(lb == "FadeOutPlanetInfo" || newIn || !planet || (fr >= 0 && fr != HZ41_LOC_HOLD)) { return false; }', "leaving 228 ends the hide");
+pin('if(lb == "FadeOutPlanetInfo")', "fade-out is its own branch");
+pin("if(fr == HZ41_LOC_REST || stopped) { return false; }", "fade-out ends at 246 or a stall");
+pin('if(newIn || !planet || (fr >= 0 && fr != HZ41_LOC_HOLD)) { return false; }', "leaving 228 ends the hide");
 pin("if(!planet || newIn || fr == HZ41_LOC_REST || stopped) { return false; }", "0.42.0.4 end rules remain");
 pin("if(expired) { return false; }", "30 s cap ends every session");
+pin("return flash.utils.getTimer();", "grace and cap use getTimer");
+pin("if(since < 0) { this.hz41LocClear(); return false; }", "a backwards clock ends the hide");
 pin("c.visible = false;", "hide is visible only");
 
 function PlanetAlert() {
@@ -105,12 +109,17 @@ PlanetAlert.prototype.hz41LocHoldAfterGrace = function () {
 		this.hz41LocPf = fr;
 		this.hz41LocPfN = this.hzFrameN;
 	}
-	const expired = this.hz41LocEnd >= 0 && (this.hz41Now() - this.hz41LocEnd) >= HOLD_MAX;
+	const elapsed = this.hz41Now() - this.hz41LocEnd;
+	const expired = this.hz41LocEnd >= 0 && (elapsed < 0 || elapsed >= HOLD_MAX);
 	if (expired) return false;
 	if (this.hz41LocSawHold) {
 		if (!newIn && this.hz41LocAtHold(lb, fr)) return true;
 		if (lb === "") return true;
-		if (lb === FADE_OUT || newIn || !planet || (fr >= 0 && fr !== HOLD)) return false;
+		if (lb === FADE_OUT) {
+			if (fr === REST || stopped) return false;
+			return true;
+		}
+		if (newIn || !planet || (fr >= 0 && fr !== HOLD)) return false;
 		return true;
 	}
 	if (!planet || newIn || fr === REST || stopped) return false;
@@ -140,7 +149,12 @@ PlanetAlert.prototype.hz41LocWant = function () {
 		this.hz41LocPf = -1;
 		this.hz41LocPfN = -1;
 	}
-	if (now - this.hz41LocEnd < GRACE) {
+	const since = now - this.hz41LocEnd;
+	if (since < 0) {
+		this.hz41LocClear();
+		return false;
+	}
+	if (since < GRACE) {
 		const gl = this.hz41LocLbl();
 		if (gl !== "" && gl !== FADE_IN) this.hz41LocLeftIn = true;
 		if (!this.hz41LocSawHold && !this.hz41LocLeftIn && this.hz41LocAt === FADE_IN && this.hz41LocAtHold(gl, this.hz41LocFrame())) {
@@ -193,8 +207,38 @@ function scanOnHold() {
 	const h = scanOnHold();
 	h.label = FADE_OUT;
 	h.frame = 230;
-	expect(h.tick() === false, "FadeOutPlanetInfo leaves the hold");
+	expect(h.tick() === true, "fade-out frame 230 stays hidden");
+	h.frame = 234;
+	expect(h.tick() === true, "fade-out frame 234 stays hidden");
+	h.frame = REST;
+	expect(h.tick() === false, "fade-out rest at 246 ends the hide");
 	expect(h.tick() === false, "the session stays ended");
+}
+
+{
+	const h = scanOnHold();
+	h.label = FADE_OUT;
+	h.frame = 232;
+	expect(h.tick() === true, "first fade-out frame stays hidden");
+	expect(h.tick() === false, "a stalled fade-out ends the hide");
+}
+
+{
+	const h = scanOnHold();
+	h.label = FADE_OUT;
+	h.frame = 230;
+	expect(h.tick() === true, "fade-out in progress stays hidden");
+	h.label = "LocationDiscovered";
+	expect(h.tick() === false, "a label change during fade-out ends the hide");
+}
+
+{
+	const h = scanOnHold();
+	h.label = FADE_OUT;
+	h.frame = 230;
+	expect(h.tick() === true, "fade-out before the cap stays hidden");
+	h.now = 1000 + HOLD_MAX;
+	expect(h.tick() === false, "30 s cap still ends a fade-out");
 }
 
 {
@@ -290,6 +334,13 @@ function scanOnHold() {
 	h.tick();
 	h.now = 5000 + GRACE;
 	expect(h.tick() === false, "a stall off 228 still ends the hide when the hold was never seen");
+}
+
+{
+	const h = scanOnHold();
+	h.now = 500;
+	expect(h.tick() === false && h.hz41LocArm === false, "a backwards clock ends the hide");
+	expect(h.tick() === false, "the session stays ended after the clock step");
 }
 
 if (failed) {

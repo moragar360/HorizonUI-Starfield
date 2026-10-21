@@ -4,7 +4,7 @@
       // spot: a pill with a chevron tile (2 up loved, 1 up liked, 1 down disliked, 2 down hated), the name in the speaker color, the reaction in its
       // color (teal / green / amber / red). The game's line (HUDMessageItem.Internal_mc) is set visible = false, never
       // removed: the game's stack, fade and timing stay. Only an exact, whole-line match is changed (one line, name of 1 - 4
-      // words of letters, apostrophes, or hyphens, any case, no ':' '!' '?' quotes or brackets, not a pronoun like "Everyone"); any
+      // words of letters, apostrophes, hyphens, or periods, any case, no ':' '!' '?' quotes or brackets, not a line whose first word is a pronoun); any
       // other line, other languages, ReactionCard=0 or any error leave the game's line as it is.
       // v0.40.1: the scan state also ends when the HUD's bottom-center group goes from shown to hidden.
       // v0.40: quest popups / the mission toast stay hidden for the whole scan (no 30 s cap); the scan state is cleared by
@@ -1007,7 +1007,8 @@
       private static const HZC_RX_LBL:Array = ["LOVED THAT","LIKED THAT","DISLIKED THAT","HATED THAT"];
       private static const HZC_RX_COL:Array = [0x4FD1B8,0x5EE3A1,0xF2A93B,0xFF5B5B];   // liked = the scanner's companion green (noted)
       private static const HZC_RX_DIR:Array = [2,1,-1,-2];
-      private static const HZC_RX_NOT:Array = ["you","i","we","they","he","she","it","everyone","everybody","someone","somebody","nobody","no one","people","all","this","that"];
+      // First word only (and the two-word "no one"). A later word such as a real name is allowed.
+      private static const HZC_RX_NOT:Array = ["i","you","we","they","he","she","it","your","my","our","their","his","her","nobody","everyone","everybody","someone","somebody","none","all","some","the","a","an","crew","no one"];
       private static const HZC_RX_LABEL:uint = 0xC4D2D9;
       private var hzcRx:Array = [];          // {it: the game's HUDMessageItem, st: -1 pending / 0 game line / 1 card, n, k, c: card, w, h, f: pending frames, sig}
       private var hzcRxLayer:Sprite = null;
@@ -1035,9 +1036,17 @@
          if(s == "hated" || s == "hates") { return 3; }
          return -1;
       }
+      // Letters of a name word, for the pronoun and "and" checks. A trailing period is an abbreviation ("Dr."), not a different word.
+      private function hzcRxLead(w:String) : String
+      {
+         var s:String = w == null ? "" : w.toLowerCase();
+         while(s.length > 0 && s.charAt(s.length - 1) == ".") { s = s.substr(0,s.length - 1); }
+         return s;
+      }
       // Whole line, English only. The game line may be any case ("Sam likes that" or "SAM COE LIKED THAT").
-      // The name is 1 to 4 words of letters, apostrophes, or hyphens. No capital is required.
-      // Verb is either tense. The period is optional. Trailing space is ignored.
+      // The name is 1 to 4 words of letters, apostrophes, hyphens, or periods. No capital is required.
+      // The first word cannot be a pronoun or a quantifier. The word "and" cannot appear. "Dr. Barrett" is a name.
+      // Verb is either tense. The period after "that" is optional. Trailing space is ignored.
       // Returns {n, k} or null. k is the past-tense category. n keeps the matched letters; the card uppercases it.
       private function hzcRxMatch(t:String) : Object
       {
@@ -1050,14 +1059,19 @@
          if(n.length < 1 || n.length > 40) { return null; }
          var ws:Array = n.split(" ");
          if(ws.length < 1 || ws.length > 4) { return null; }
+         var i:int = 0;
          for each(var w:String in ws)
          {
             if(w.length == 0) { return null; }
-            // A word starts with a letter. Apostrophes and hyphens can sit between letters, not at the ends or doubled.
-            if(!/^[A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F'\u2019-]*$/.test(w)) { return null; }
-            if(/['\u2019-]['\u2019-]/.test(w) || /['\u2019-]$/.test(w)) { return null; }
+            // A word starts with a letter. Apostrophes, hyphens, and periods can sit after a letter. Hyphens and apostrophes cannot end a word or be doubled.
+            if(!/^[A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F'\u2019.-]*$/.test(w)) { return null; }
+            if(/['\u2019.-]['\u2019.-]/.test(w) || /['\u2019-]$/.test(w)) { return null; }
+            var key:String = this.hzcRxLead(w);
+            if(key == "and") { return null; }
+            if(i == 0 && HZC_RX_NOT.indexOf(key) >= 0) { return null; }
+            if(i == 1 && HZC_RX_NOT.indexOf(this.hzcRxLead(String(ws[0])) + " " + key) >= 0) { return null; }
+            i++;
          }
-         if(HZC_RX_NOT.indexOf(n.toLowerCase()) >= 0) { return null; }
          var k:int = this.hzcRxVerb(String(m[2]));
          if(k < 0) { return null; }
          return {"n":n,"k":k};
