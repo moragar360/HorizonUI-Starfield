@@ -1584,7 +1584,7 @@ namespace HZ
 	}
 
 	// Purpose: read this DLL's own FileVersion string from its version resource.
-	// Inputs: none (the module that contains this function). Outputs: "0.42.0.4", or empty on failure.
+	// Inputs: none (the module that contains this function). Outputs: the four-part file version, or empty on failure.
 	// Dependencies: version.dll. The resource is generated from src/hz_version.h.
 	// Last modified: 2026-10-20.
 	std::string ReadOwnFileVersion()

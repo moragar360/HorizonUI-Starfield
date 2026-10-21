@@ -4,16 +4,16 @@
 // res/HorizonUI.rc.in includes this header, and the plugin logs and sends the same
 // string (or the version resource that this header produced). Do not copy the
 // numbers into the resource script or into a log line.
-// Product version matches the file version (0.42.0.4). The settings-schema string
+// Product version matches the file version (0.42.0.5). The settings-schema string
 // in the plugin (HZF::kVersion, "0.42.0") is a different value: preset age and the
 // update backup compare against that, not against this file version.
-// Last modified: 2026-10-20.
+// Last modified: 2026-10-21.
 
 #define HZ_FILE_VERSION_MAJOR 0
 #define HZ_FILE_VERSION_MINOR 42
 #define HZ_FILE_VERSION_PATCH 0
-#define HZ_FILE_VERSION_BUILD 4
-#define HZ_FILE_VERSION_STR "0.42.0.4"
+#define HZ_FILE_VERSION_BUILD 5
+#define HZ_FILE_VERSION_STR "0.42.0.5"
 
 // The resource compiler defines RC_INVOKED. Keep this header free of C++ there.
 #if !defined(RC_INVOKED) && defined(__cplusplus)

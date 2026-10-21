@@ -1,6 +1,6 @@
 // Horizon UI version resource (used instead of CommonLibSF's commonlib-plugin.rc.in; see xmake.lua).
 // CompanyName and LegalCopyright are the plugin author from xmake.lua.
-// File version and product version both come from src/hz_version.h (0.42.0.4). Do not type the numbers here.
+// File version and product version both come from src/hz_version.h. Do not type the numbers here.
 #include <winres.h>
 #include "hz_version.h"
 

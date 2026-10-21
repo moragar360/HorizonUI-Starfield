@@ -46,12 +46,12 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.42.0.4", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 42 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 4, "file version numbers");
-	Expect(HzFileVersionOk("0.42.0.4"), "4-part version ok");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.42.0.5", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 42 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 5, "file version numbers");
+	Expect(HzFileVersionOk("0.42.0.5"), "4-part version ok");
 	Expect(!HzFileVersionOk("0.42.0"), "3-part version is not the file version");
-	Expect(!HzFileVersionOk("v0.42.0.4"), "leading v is not accepted");
-	Expect(!HzFileVersionOk("0.42.0.4 "), "trailing space rejected");
+	Expect(!HzFileVersionOk("v0.42.0.5"), "leading v is not accepted");
+	Expect(!HzFileVersionOk("0.42.0.5 "), "trailing space rejected");
 
 	ExpectEq(CleanPresetName("Moragar's Choice"), "Moragar's Choice", "apostrophe stays");
 	ExpectEq(CleanPresetName("A=B+C[D]E;F#G\"H\\I|J"), "ABCDEFGHIJ", "same drop set as the HUD");

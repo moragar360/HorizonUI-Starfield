@@ -2939,7 +2939,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.42.0.4";
+      private static const HZ_BUILD:String = "0.42.0.5";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -13403,7 +13403,11 @@
       // AS3 currentFrame is 1-based, so the playhead rests at 246. After the 1.5 s grace, the hide ends when the label
       // is not a planet-info label, currentFrame is 246, or the playhead has not moved since the previous frame tick.
       // A FadeInPlanetInfo that starts after the scan ended does not keep the hide going, and it does not start a new one.
-      // Visible only; nothing is removed.
+      // v0.42.0.5: FadeInPlanetInfo holds on currentFrame 228. That stall is the landing alert still on screen, not the
+      // end of the clip. If this scan saw that hold (already there, or the same FadeIn reached it before the grace ended),
+      // the alert stays hidden after the grace until the game leaves the hold, or for 30 s, whichever comes first.
+      // Leaving the hold is FadeOutPlanetInfo, a new FadeIn, any other label, or currentFrame moving off 228 toward 246.
+      // A landing alert with no scan is left alone. Visible only; nothing is removed. Both HUD sizes use this block.
       // With POI MARKERS off (ScanWorldMarkers=0) the game's floating quest markers (FloatingQuestMarkerBase) too, by alpha
       // (the game itself sets that alpha to the HUD opacity); r4: restored to the game's current HUD opacity (hz41Op).
       private var hz41LocBlg:Object = null;    // BottomLeftGroup_mc (own lookup: hzBlg exists only with the vanilla watch hide)
@@ -13412,12 +13416,19 @@
       private var hz41LocHid:Boolean = false;
       // v0.42.0 r3: hide session (scan + grace + planet-info leftovers), see hz41LocWant
       private static const HZ41_LOC_GRACE:Number = 1500;
+      // currentFrame where FadeInPlanetInfo rests. hz41LocHoldAfterGrace reads currentFrame, and that stall is 228.
+      private static const HZ41_LOC_HOLD:int = 228;
+      // currentFrame where FadeOutPlanetInfo rests (timeline frame 245, 1-based).
+      private static const HZ41_LOC_REST:int = 246;
+      // After the scan ends, the 228 hold cannot keep the vanilla alert hidden longer than this.
+      private static const HZ41_LOC_HOLD_MAX:Number = 30000;
       private var hz41LocArm:Boolean = false;   // a scan happened; its planet-info timeline leftovers stay hidden
       private var hz41LocEnd:Number = -1;       // when the scan ended (ms), -1 = scanning / none
       private var hz41LocAt:String = "";        // v0.42.0.4: label at the moment the scan ended
       private var hz41LocLeftIn:Boolean = false; // v0.42.0.4: saw a label other than FadeIn after the scan ended
       private var hz41LocPf:int = -1;           // v0.42.0.4: currentFrame on the previous frame tick
       private var hz41LocPfN:int = -1;          // v0.42.0.4: hzFrameN of that sample (enterFrame and exitFrame share a tick)
+      private var hz41LocSawHold:Boolean = false; // v0.42.0.5: this scan saw FadeInPlanetInfo resting on 228
       public var hz41NowFn:Function = null;     // tests: mocked clock
       public var hz41LocLblFn:Function = null;  // tests: mocked timeline label
       public var hz41LocFrameFn:Function = null; // tests: mocked currentFrame
@@ -13464,6 +13475,11 @@
          this.hz41LocLeftIn = false;
          this.hz41LocPf = -1;
          this.hz41LocPfN = -1;
+         this.hz41LocSawHold = false;
+      }
+      private function hz41LocAtHold(lb:String, fr:int) : Boolean
+      {
+         return lb == "FadeInPlanetInfo" && fr == HZ41_LOC_HOLD;
       }
       // Remember the playhead once per frame tick. enterFrame and exitFrame both call in, and they share hzFrameN.
       private function hz41LocNoteFrame() : void
@@ -13473,7 +13489,7 @@
          this.hz41LocPf = fr;
          this.hz41LocPfN = this.hzFrameN;
       }
-      // After the grace: keep hiding only while the scan's own planet-info clip is still moving and currentFrame has not reached 246.
+      // After the grace. A 228 hold this scan already saw stays hidden. Every other stall still ends the session.
       private function hz41LocHoldAfterGrace() : Boolean
       {
          var lb:String = this.hz41LocLbl();
@@ -13481,7 +13497,8 @@
          var planet:Boolean = lb == "FadeInPlanetInfo" || lb == "FadeOutPlanetInfo";
          // A FadeIn that was not already playing when the scan ended, or that starts again later, is a new alert.
          var newIn:Boolean = lb == "FadeInPlanetInfo" && (this.hz41LocAt != "FadeInPlanetInfo" || this.hz41LocLeftIn);
-         if(lb != "FadeInPlanetInfo") { this.hz41LocLeftIn = true; }
+         // An empty read is a failed lookup, not a different label. It must not turn the same FadeIn into a new one.
+         if(lb != "" && lb != "FadeInPlanetInfo") { this.hz41LocLeftIn = true; }
          var stopped:Boolean = false;
          if(fr >= 0 && this.hzFrameN != this.hz41LocPfN)
          {
@@ -13489,11 +13506,26 @@
             this.hz41LocPf = fr;
             this.hz41LocPfN = this.hzFrameN;
          }
-         if(!planet || newIn || fr == 246 || stopped) { return false; }   // 246 = timeline frame 245, because currentFrame is 1-based
+         var expired:Boolean = this.hz41LocEnd >= 0 && (this.hz41Now() - this.hz41LocEnd) >= HZ41_LOC_HOLD_MAX;
+         if(expired) { return false; }
+         if(this.hz41LocSawHold)
+         {
+            // Still the landing hold. The stopped playhead is the game keeping the alert up.
+            if(!newIn && this.hz41LocAtHold(lb, fr)) { return true; }
+            // A failed label read is not the game leaving the hold. The 30 s cap still ends it.
+            if(lb == "") { return true; }
+            // Left that hold: fade-out, a new fade-in, another label, or the frame moved off 228 toward 246.
+            if(lb == "FadeOutPlanetInfo" || newIn || !planet || (fr >= 0 && fr != HZ41_LOC_HOLD)) { return false; }
+            return true;   // frame not readable yet; the 30 s cap still ends it
+         }
+         // v0.42.0.4: no 228 hold on this scan. Rest at 246, any stall, a new FadeIn, or another label ends it.
+         if(!planet || newIn || fr == HZ41_LOC_REST || stopped) { return false; }
          return true;
       }
-      // true while scanning (always, not gated on ScanShowPlanet), for 1.5 s after the scan ends, then only while the
-      // leftover planet-info clip is still playing. currentFrame 246, a stopped playhead, or any other label ends it.
+      // true while scanning (always, not gated on ScanShowPlanet), for 1.5 s after the scan ends, then while a
+      // planet-info clip from that scan is still playing. A 228 hold seen during the scan stays hidden until the game
+      // leaves it, or 30 s after the scan ends. currentFrame 246, any other stall, or any other label still ends it.
+      // No scan: false, so a landing alert by itself stays vanilla.
       private function hz41LocWant() : Boolean
       {
          if(this.hz41ScanHideOn())
@@ -13504,6 +13536,7 @@
             this.hz41LocLeftIn = false;
             this.hz41LocPf = -1;
             this.hz41LocPfN = -1;
+            if(this.hz41LocAtHold(this.hz41LocLbl(), this.hz41LocFrame())) { this.hz41LocSawHold = true; }
             return true;
          }
          if(!this.hz41LocArm) { return false; }
@@ -13517,7 +13550,18 @@
             this.hz41LocPf = -1;
             this.hz41LocPfN = -1;
          }
-         if(now - this.hz41LocEnd < HZ41_LOC_GRACE) { this.hz41LocNoteFrame(); return true; }
+         if(now - this.hz41LocEnd < HZ41_LOC_GRACE)
+         {
+            var gl:String = this.hz41LocLbl();
+            if(gl != "" && gl != "FadeInPlanetInfo") { this.hz41LocLeftIn = true; }
+            // The same FadeIn can reach the hold during the grace. A later FadeIn must not.
+            if(!this.hz41LocSawHold && !this.hz41LocLeftIn && this.hz41LocAt == "FadeInPlanetInfo" && this.hz41LocAtHold(gl, this.hz41LocFrame()))
+            {
+               this.hz41LocSawHold = true;
+            }
+            this.hz41LocNoteFrame();
+            return true;
+         }
          if(!this.hz41LocHoldAfterGrace()) { this.hz41LocClear(); return false; }
          return true;
       }
