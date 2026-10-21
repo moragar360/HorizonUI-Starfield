@@ -1,7 +1,7 @@
 // HorizonUI SFSE plugin v0.42.0 - drop-in src\main.cpp (CommonLibSF libxse 9d090c4)
 // v0.42.0.4: F11 lists each shipped preset name once. Saved presets are never hidden.
 // Same settings keep the installer copy; different settings keep the newer shipped file.
-// The F11 header and the "movie builds" line use the DLL file version (src/hz_version.h, also the version resource).
+// The F11 header, the load line, and the "movie builds" line use the DLL file version (src/hz_version.h, also the version resource).
 // HUD message text is written to the log only when HZ_COMMS_MSG_LOG is 1 (xmake debug). Saved preset names drop the same
 // characters as the HUD: '=' '+' '[' ']' ';' '#' '"' '\' '|' and control characters.
 // v0.42.0 r3 (file version 0.42.0.3): a scope (ScopeMenu) still blocks F11 but no longer restarts the 3 s "HUD ready" wait,
@@ -1654,10 +1654,10 @@ namespace HZ
 		return b;
 	}
 
-	// Purpose: the file version shown in the log and sent to F11.
+	// Purpose: the file version shown at load, in the movie-builds line, and sent to F11.
 	// Inputs: none. Outputs: the version resource when it reads cleanly, otherwise HZ_FILE_VERSION_STR.
 	// Dependencies: ReadOwnFileVersion, src/hz_version.h. One string, not a second hand-typed copy.
-	// Last modified: 2026-10-20.
+	// Last modified: 2026-10-21.
 	const std::string& DllFileVersion()
 	{
 		static const std::string v = []() {
@@ -1819,7 +1819,8 @@ SFSE_PLUGIN_PRELOAD(const SFSE::PreLoadInterface* a_sfse)
 SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* a_sfse)
 {
 	SFSE::Init(a_sfse);
-	REX::INFO("HorizonUI 0.42.0 loaded");
+	// Same string as "movie builds": the version resource produced from src/hz_version.h.
+	REX::INFO("HorizonUI {} loaded", HZ::DllFileVersion());
 	HZ::FilesStartup();   // v0.37: update backup, migration / preset seeding - before any menu reads the settings
 	if (auto msg = SFSE::GetMessagingInterface())
 		msg->RegisterListener(HZ::OnMessage);

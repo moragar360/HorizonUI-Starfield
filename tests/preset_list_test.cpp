@@ -191,6 +191,26 @@ int main()
 		Expect(rc.find(", 3") == std::string::npos && rc.find(".3\"") == std::string::npos, "build number is not typed in the resource");
 	}
 
+	{
+		std::ifstream in("src/main.cpp");
+		Expect(static_cast<bool>(in), "main.cpp opens");
+		std::string src((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		const auto load = src.find("SFSE_PLUGIN_LOAD");
+		Expect(load != std::string::npos, "plugin load function is present");
+		Expect(src.find("REX::INFO(\"HorizonUI {} loaded\", HZ::DllFileVersion());", load) != std::string::npos, "load line prints DllFileVersion");
+		Expect(src.find("HorizonUI 0.42.0 loaded") == std::string::npos, "load line is not a typed schema version");
+		Expect(src.find("inline const char* kVersion = \"0.42.0\"") != std::string::npos, "settings schema stays 0.42.0");
+	}
+
+	{
+		std::ifstream in("preset/HorizonUI.moragars-choice-0.42.0.ini");
+		Expect(static_cast<bool>(in), "preset ini opens");
+		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		Expect(ini.find("Version=0.42.0") != std::string::npos, "preset Version stays 0.42.0");
+		Expect(ini.find("test DLL") == std::string::npos, "preset Debug note does not call this a test DLL");
+		Expect(ini.find("The comms message log is only in debug builds.") != std::string::npos, "release Debug note");
+	}
+
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";
 		return 1;
