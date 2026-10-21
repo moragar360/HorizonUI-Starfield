@@ -47,8 +47,14 @@ pin("if(fr == HZ41_LOC_REST || stopped) { return false; }", "fade-out ends at 24
 pin('if(newIn || !planet || (fr >= 0 && fr != HZ41_LOC_HOLD)) { return false; }', "leaving 228 ends the hide");
 pin("if(!planet || newIn || fr == HZ41_LOC_REST || stopped) { return false; }", "0.42.0.4 end rules remain");
 pin("if(expired) { return false; }", "30 s cap ends every session");
-pin("return flash.utils.getTimer();", "grace and cap use getTimer");
+pin("return new Date().getTime();", "grace and cap use the wall clock");
 pin("if(since < 0) { this.hz41LocClear(); return false; }", "a backwards clock ends the hide");
+{
+	const fn = src.slice(src.indexOf("private function hz41Now()"), src.indexOf("private function hz41LocLbl()"));
+	expect(fn.indexOf("return new Date().getTime();") >= 0, "hz41Now returns new Date().getTime()");
+	expect(fn.indexOf("getTimer") < 0 && fn.indexOf("flash.utils") < 0, "hz41Now does not call getTimer");
+	expect(src.indexOf("import flash.utils.getTimer") < 0, "the injected HUD block does not carry a getTimer import");
+}
 pin("c.visible = false;", "hide is visible only");
 
 function PlanetAlert() {

@@ -13439,13 +13439,18 @@
          // planet location / floating quest hides while scanning (v0.42.0: F11 cannot open while scanning)
          return this.hz40Scan && !this.hz40Latch && this.hz30Mod["scanner"] === 1 && !this.hzArrange;
       }
-      // Grace and the 30 s cap. getTimer is monotonic for this movie. new Date() is the wall clock, and a step
-      // backwards kept the grace open. This block is injected into HUDMenu, which does not import getTimer, so the
-      // call is fully qualified. A negative gap is the 24-day wrap; that ends the hide instead of extending it.
+      // Grace and the 30 s cap.
+      // Purpose: milliseconds for the 1.5 s grace and the 30 s cap.
+      // new Date() is the wall clock. A step backwards (since < 0, or elapsed < 0) ends the hide instead of holding it open.
+      // getTimer() is monotonic, but this block is injected as members of HUDMenu. That class does not
+      // import getTimer, and an import is not legal inside the injected class body. A qualified flash.utils call
+      // compiles in ffdec and then throws ReferenceError #1065 (it looks up a global named flash).
+      // The exitFrame and scan-edge try/catch swallow that, so the landing alert would stay hidden for the session.
+      // Inputs: hz41NowFn when a test supplies a clock, otherwise the wall clock. Output: milliseconds. No logging.
       private function hz41Now() : Number
       {
          if(this.hz41NowFn != null) { return Number(this.hz41NowFn()); }
-         return flash.utils.getTimer();
+         return new Date().getTime();
       }
       private function hz41LocLbl() : String
       {
@@ -14341,7 +14346,15 @@
          g.clear();
          var h:Number = HZ42_SC_H;
          var lt:TextField = this.hzSText(p,"HOLD BREATH",0,0,220,this.hz42ScFs(14),0xF2F7F9,"left");
-         var kw:Number = 30;
+         // Same keycap as the scope chip (hzpDraw): 30 for the icon, then round(textWidth + 8). "L-SHIFT" is the wide PC label.
+         // The font size stays at least 13 px after this proxy's scale and after hzSText's TextScale. This field's letter spacing is 0, so textWidth is the scope measurement.
+         var ts:Number = this.hzTextScale;
+         if(isNaN(ts) || ts <= 0) { ts = 1; }
+         ts = Math.max(0.9,Math.min(1.15,ts));
+         var want:int = int(this.hz42ScFs(13));
+         var kt:TextField = this.hzSText(p,"L-SHIFT",0,0,160,int(Math.ceil(want / ts)),HZ_ACCENT,"left");
+         var tw:Number = kt.textWidth;
+         var kw:Number = 30 + Math.round(tw + 8);
          var x0:Number = 7;
          var lx:Number = x0 + kw + 10;
          var mx:Number = Math.round(lx + lt.textWidth + 16);
@@ -14357,7 +14370,10 @@
          g.drawRoundRect(x0,6,kw,h - 12,8,8);
          g.endFill();
          g.lineStyle();
-         this.hz42Cross(g,x0 + kw / 2,h / 2,HZ_ACCENT,1);
+         this.hz42Cross(g,x0 + 15,h / 2,HZ_ACCENT,1);
+         kt.width = Math.max(kt.width,Math.ceil(tw) + 4);
+         kt.x = Math.round(x0 + 28);
+         kt.y = Math.round(h / 2 - (kt.textHeight + 4) / 2);
          lt.x = lx - 2;
          lt.y = Math.round(h / 2 - (lt.textHeight + 4) / 2);
          var my:Number = Math.round(h / 2 - 3);

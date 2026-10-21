@@ -52,15 +52,16 @@ const RX = takeRegex(
 );
 const WORD = takeRegex(
 	"word regex",
-	/if\(!(\/\^\[A-Za-z\\u00C0-\\u024F\]\[A-Za-z\\u00C0-\\u024F'\\u2019\.-]\*\$\/)\.test\(w\)\)/
+	/if\(!(\/\^\[A-Za-z\\u00C0-\\u024F\]\[A-Za-z\\u00C0-\\u024F'\\u2019-\]\*\$\/)\.test\(body\)\)/
 );
-const PUNCT_DBL = takeRegex("doubled punctuation", /if\((\/\['\\u2019\.-]\['\\u2019\.-]\/)/);
-const PUNCT_END = takeRegex("trailing punctuation", /(\/\['\\u2019-\]\$\/)\.test\(w\)/);
+const PUNCT_DBL = takeRegex("doubled punctuation", /if\((\/\['\\u2019-\]\['\\u2019-\]\/)/);
+const PUNCT_END = takeRegex("trailing punctuation", /(\/\['\\u2019-\]\$\/)\.test\(body\)/);
 
 const LBL = stringArray("HZC_RX_LBL");
 const COL = numArray("HZC_RX_COL");
 const DIR = numArray("HZC_RX_DIR");
 const NOT = stringArray("HZC_RX_NOT");
+const TITLE = stringArray("HZC_RX_TITLE");
 
 expect(src.indexOf('private static const HZC_BUILD:String = "0.42.0.5";') >= 0, "comms build id is 0.42.0.5");
 expect(src.indexOf('if(s == "loved" || s == "loves") { return 0; }') >= 0, "loves maps with loved");
@@ -72,8 +73,10 @@ expect(src.indexOf("uint(HZC_RX_COL[e.k])") >= 0, "card color uses the category 
 expect(src.indexOf("int(HZC_RX_DIR[e.k])") >= 0, "chevrons use the category index");
 expect(src.indexOf('this.hzcSet(nm,String(e.n).toUpperCase(),"nm"') >= 0, "card name uses the existing uppercase");
 expect(src.indexOf("HZC_RX_PART") < 0, "capital-letter particle exception is gone");
-expect(src.indexOf('if(key == "and") { return null; }') >= 0, "the word and is rejected");
-expect(["i","you","we","they","he","she","it","your","my","our","their","his","her","nobody","everyone","everybody","someone","somebody","none","all","some","the","a","an","crew","no one"].every(function (w) { return NOT.indexOf(w) >= 0; }), "first-word pronoun list");
+expect(src.indexOf('if(key == "and" || key == "that" || this.hzcRxVerb(key) >= 0) { return null; }') >= 0, "and, that, and a reaction verb are rejected");
+const LEAD = ["i","you","we","they","he","she","it","your","my","our","their","his","her","nobody","everyone","everybody","someone","somebody","none","all","some","the","a","an","crew","no one","who","not","people","this","that","many","most","each","several","both","what"];
+expect(NOT.length === LEAD.length && LEAD.every(function (w) { return NOT.indexOf(w) >= 0; }), "first-word pronoun list");
+expect(["dr","mr","mrs","ms","jr","sr","st","lt","capt","sgt","prof"].every(function (w) { return TITLE.indexOf(w) >= 0; }), "title period list");
 expect(LBL.join("|") === "LOVED THAT|LIKED THAT|DISLIKED THAT|HATED THAT", "category labels stay past tense");
 expect(COL[0] === 0x4FD1B8 && COL[1] === 0x5EE3A1 && COL[2] === 0xF2A93B && COL[3] === 0xFF5B5B, "category colors");
 expect(DIR.join(",") === "2,1,-1,-2", "chevron directions");
@@ -105,6 +108,18 @@ function hzcRxLead(w) {
 	return s;
 }
 
+function hzcRxWordOk(w) {
+	if (w == null || w.length === 0) return false;
+	let body = w;
+	if (w.charAt(w.length - 1) === ".") {
+		body = w.slice(0, -1);
+		if (TITLE.indexOf(body.toLowerCase()) < 0) return false;
+	} else if (w.indexOf(".") >= 0) return false;
+	if (!WORD.test(body)) return false;
+	if (PUNCT_DBL.test(body) || PUNCT_END.test(body)) return false;
+	return true;
+}
+
 function hzcRxMatch(t) {
 	const s = hzcRxNorm(t);
 	if (s == null || s.indexOf("\n") >= 0 || s.indexOf("\r") >= 0) return null;
@@ -117,11 +132,9 @@ function hzcRxMatch(t) {
 	if (ws.length < 1 || ws.length > 4) return null;
 	for (let i = 0; i < ws.length; i++) {
 		const w = ws[i];
-		if (w.length === 0) return null;
-		if (!WORD.test(w)) return null;
-		if (PUNCT_DBL.test(w) || PUNCT_END.test(w)) return null;
+		if (!hzcRxWordOk(w)) return null;
 		const key = hzcRxLead(w);
-		if (key === "and") return null;
+		if (key === "and" || key === "that" || hzcRxVerb(key) >= 0) return null;
 		if (i === 0 && NOT.indexOf(key) >= 0) return null;
 		if (i === 1 && NOT.indexOf(hzcRxLead(ws[0]) + " " + key) >= 0) return null;
 	}
@@ -199,8 +212,61 @@ for (let i = 0; i < pairs.length; i++) {
 	expect(same, pairs[i][0] + " uses the same card as " + pairs[i][1]);
 }
 
+// Main Worker harness (new_04205rx.js): RX1 must match, RX2 must stay vanilla, and the SF-2 lines must not match.
+const RX1 = [
+	["Sam likes that", 1, "Sam"],
+	["Sarah liked that.", 1, "Sarah"],
+	["Sam LOVES that", 0, "Sam"],
+	["Andreja dislikes that", 2, "Andreja"],
+	["Vasco hates that", 3, "Vasco"],
+	["SAM COE LIKED THAT", 1, "SAM COE"],
+	["Sam Coe loved that.", 0, "Sam Coe"],
+	["Barrett hated that.", 3, "Barrett"],
+	["Sam likes that  ", 1, "Sam"],
+	["Dr. Barrett liked that.", 1, "Dr. Barrett"]
+];
+const RX2 = [
+	"Sam likes that ship",
+	"Sam likes that ship.",
+	"Sam liked that!",
+	"Sam liked: that.",
+	"Objective: Talk to Sam Coe",
+	"Quest Completed: Into the Unknown",
+	"Sam Coe likes your ship",
+	"Everyone liked that.",
+	"Someone liked that",
+	"Sam likes this",
+	"Sam liked that.\nSarah liked that.",
+	"Discovered: Sam liked that",
+	"\"Sam\" liked that.",
+	"Sam (Constellation) liked that.",
+	"Location discovered: The Lodge",
+	"Sam liked that. Sarah hated that.",
+	"Okay. Sam liked that.",
+	"Quest done. Sam liked that.",
+	"Who liked that",
+	"Not everyone liked that",
+	"Bounty paid. Sam likes that",
+	"People liked that",
+	"This liked that",
+	"That liked that",
+	"Many liked that",
+	"Most liked that",
+	"Each liked that",
+	"Several liked that",
+	"Both liked that",
+	"What liked that",
+	"Your crew liked that",
+	"No one liked that",
+	"My ship liked that",
+	"Some people liked that",
+	"Sam and Sarah liked that"
+];
+for (let i = 0; i < RX1.length; i++) expectMatch(RX1[i][0], RX1[i][2], RX1[i][1], "RX1 " + RX1[i][0]);
+for (let i = 0; i < RX2.length; i++) expectNull(RX2[i], "RX2 " + RX2[i]);
+
 if (failed) {
 	console.error(failed + " failed");
 	process.exit(1);
 }
-console.log("reaction match: all cases passed");
+console.log("reaction match: " + (RX1.length + RX2.length) + " harness cases, all passed");

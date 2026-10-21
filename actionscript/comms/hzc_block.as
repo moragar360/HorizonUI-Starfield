@@ -4,7 +4,7 @@
       // spot: a pill with a chevron tile (2 up loved, 1 up liked, 1 down disliked, 2 down hated), the name in the speaker color, the reaction in its
       // color (teal / green / amber / red). The game's line (HUDMessageItem.Internal_mc) is set visible = false, never
       // removed: the game's stack, fade and timing stay. Only an exact, whole-line match is changed (one line, name of 1 - 4
-      // words of letters, apostrophes, hyphens, or periods, any case, no ':' '!' '?' quotes or brackets, not a line whose first word is a pronoun); any
+      // words of letters, apostrophes, or hyphens, any case; a period only on a title such as Dr.; no ':' '!' '?' quotes or brackets; the first word is not a pronoun); any
       // other line, other languages, ReactionCard=0 or any error leave the game's line as it is.
       // v0.40.1: the scan state also ends when the HUD's bottom-center group goes from shown to hidden.
       // v0.40: quest popups / the mission toast stay hidden for the whole scan (no 30 s cap); the scan state is cleared by
@@ -1008,7 +1008,9 @@
       private static const HZC_RX_COL:Array = [0x4FD1B8,0x5EE3A1,0xF2A93B,0xFF5B5B];   // liked = the scanner's companion green (noted)
       private static const HZC_RX_DIR:Array = [2,1,-1,-2];
       // First word only (and the two-word "no one"). A later word such as a real name is allowed.
-      private static const HZC_RX_NOT:Array = ["i","you","we","they","he","she","it","your","my","our","their","his","her","nobody","everyone","everybody","someone","somebody","none","all","some","the","a","an","crew","no one"];
+      private static const HZC_RX_NOT:Array = ["i","you","we","they","he","she","it","your","my","our","their","his","her","nobody","everyone","everybody","someone","somebody","none","all","some","the","a","an","crew","no one","who","not","people","this","that","many","most","each","several","both","what"];
+      // A trailing period is a title, not a sentence. "Dr." matches. "Okay." does not.
+      private static const HZC_RX_TITLE:Array = ["dr","mr","mrs","ms","jr","sr","st","lt","capt","sgt","prof"];
       private static const HZC_RX_LABEL:uint = 0xC4D2D9;
       private var hzcRx:Array = [];          // {it: the game's HUDMessageItem, st: -1 pending / 0 game line / 1 card, n, k, c: card, w, h, f: pending frames, sig}
       private var hzcRxLayer:Sprite = null;
@@ -1036,16 +1038,32 @@
          if(s == "hated" || s == "hates") { return 3; }
          return -1;
       }
-      // Letters of a name word, for the pronoun and "and" checks. A trailing period is an abbreviation ("Dr."), not a different word.
+      // Letters of a name word, for the pronoun, "and", "that", and verb checks. A title's period is not part of the word.
       private function hzcRxLead(w:String) : String
       {
          var s:String = w == null ? "" : w.toLowerCase();
          while(s.length > 0 && s.charAt(s.length - 1) == ".") { s = s.substr(0,s.length - 1); }
          return s;
       }
+      // Letters, apostrophes, and hyphens. One trailing period is allowed only when the word is a title (Dr., Lt., Capt.).
+      // Any other period is a sentence break, so "Okay. Sam liked that." does not swallow the first sentence.
+      private function hzcRxWordOk(w:String) : Boolean
+      {
+         if(w == null || w.length == 0) { return false; }
+         var body:String = w;
+         if(w.charAt(w.length - 1) == ".")
+         {
+            body = w.substr(0,w.length - 1);
+            if(HZC_RX_TITLE.indexOf(body.toLowerCase()) < 0) { return false; }
+         }
+         else if(w.indexOf(".") >= 0) { return false; }
+         if(!/^[A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F'\u2019-]*$/.test(body)) { return false; }
+         if(/['\u2019-]['\u2019-]/.test(body) || /['\u2019-]$/.test(body)) { return false; }
+         return true;
+      }
       // Whole line, English only. The game line may be any case ("Sam likes that" or "SAM COE LIKED THAT").
-      // The name is 1 to 4 words of letters, apostrophes, hyphens, or periods. No capital is required.
-      // The first word cannot be a pronoun or a quantifier. The word "and" cannot appear. "Dr. Barrett" is a name.
+      // The name is 1 to 4 words. No capital is required. The first word cannot be a pronoun or a quantifier.
+      // "and", "that", and a reaction verb cannot be a name word. "Dr. Barrett" is a name.
       // Verb is either tense. The period after "that" is optional. Trailing space is ignored.
       // Returns {n, k} or null. k is the past-tense category. n keeps the matched letters; the card uppercases it.
       private function hzcRxMatch(t:String) : Object
@@ -1062,12 +1080,9 @@
          var i:int = 0;
          for each(var w:String in ws)
          {
-            if(w.length == 0) { return null; }
-            // A word starts with a letter. Apostrophes, hyphens, and periods can sit after a letter. Hyphens and apostrophes cannot end a word or be doubled.
-            if(!/^[A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F'\u2019.-]*$/.test(w)) { return null; }
-            if(/['\u2019.-]['\u2019.-]/.test(w) || /['\u2019-]$/.test(w)) { return null; }
+            if(!this.hzcRxWordOk(w)) { return null; }
             var key:String = this.hzcRxLead(w);
-            if(key == "and") { return null; }
+            if(key == "and" || key == "that" || this.hzcRxVerb(key) >= 0) { return null; }
             if(i == 0 && HZC_RX_NOT.indexOf(key) >= 0) { return null; }
             if(i == 1 && HZC_RX_NOT.indexOf(this.hzcRxLead(String(ws[0])) + " " + key) >= 0) { return null; }
             i++;
