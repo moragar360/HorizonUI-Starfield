@@ -14186,6 +14186,10 @@
       // of the scope movie plus half its height). The proxy draws the chip's look (target icon, label, meter) at its size.
       private static const HZ42_SC_HOMEY:Number = 302;
       private static const HZ42_SC_H:Number = 32;
+      // Keycap geometry of the scope movie's hzpKeyW. HZP_KPAD is the gap after the 30 px icon; HZP_RPAD is the pad after the key text.
+      // Keep these equal to the scope movie. The preview cannot call that function; both HUD sizes share this block.
+      private static const HZ42_SC_KPAD:Number = 10;
+      private static const HZ42_SC_RPAD:Number = 18;
       private static const HZ42_SC_KEY:String = "ScopeChip";   // ARRANGE list key of the proxy (saved as [Scope] ScopeChipX / ScopeChipY)
       private var hz42ScOn:Boolean = true;
       private var hz42ScX:Number = 0;
@@ -14338,6 +14342,14 @@
          g.lineStyle();
          g.beginFill(col,a); g.drawCircle(cx,cy,1.8); g.endFill();
       }
+      // Purpose: width of the F11 hold-breath keycap, matching the scope movie's hzpKeyW.
+      // Inputs: tw, the key label's textWidth. This preview field's letter spacing is 0, so textWidth is the full width.
+      // Output: 30 px icon + HZ42_SC_KPAD + the text + HZ42_SC_RPAD. A bad measurement returns the icon and the two pads.
+      private function hz42ScKeyW(tw:Number) : Number
+      {
+         if(isNaN(tw) || tw < 0) { tw = 0; }
+         return 30 + HZ42_SC_KPAD + Math.round(tw) + HZ42_SC_RPAD;
+      }
       private function hz42ScDraw() : void
       {
          var p:Sprite = this.hz42ScPx;
@@ -14354,11 +14366,11 @@
          ts = Math.max(0.9,Math.min(1.15,ts));
          var lb:int = int(this.hz42ScFs(14));
          var lt:TextField = this.hzSText(p,"HOLD BREATH",0,0,220,int(Math.ceil(lb / ts)),0xF2F7F9,"left");
-         // Same keycap as the scope chip (hzpDraw): 30 for the icon, then round(textWidth + 8). "L-SHIFT" is the wide PC label.
+         // "L-SHIFT" is the wide PC label. The cap is hzpKeyW: icon, key padding, text, right padding.
          var want:int = int(this.hz42ScFs(13));
          var kt:TextField = this.hzSText(p,"L-SHIFT",0,0,160,int(Math.ceil(want / ts)),HZ_ACCENT,"left");
          var tw:Number = kt.textWidth;
-         var kw:Number = 30 + Math.round(tw + 8);
+         var kw:Number = this.hz42ScKeyW(tw);
          var x0:Number = 7;
          var lx:Number = x0 + kw + 10;
          var mx:Number = Math.round(lx + lt.textWidth + 16);
@@ -14376,7 +14388,7 @@
          g.lineStyle();
          this.hz42Cross(g,x0 + 15,h / 2,HZ_ACCENT,1);
          kt.width = Math.max(kt.width,Math.ceil(tw) + 4);
-         kt.x = Math.round(x0 + 28);
+         kt.x = Math.round(x0 + 30 + HZ42_SC_KPAD);
          kt.y = Math.round(h / 2 - (kt.textHeight + 4) / 2);
          lt.x = lx - 2;
          lt.y = Math.round(h / 2 - (lt.textHeight + 4) / 2);

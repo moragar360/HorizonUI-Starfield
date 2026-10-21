@@ -385,6 +385,29 @@ for (let ci = 0; ci < chipSizes.length; ci++) {
 expect(previewPx(14, 0.65, 0.9) >= 13, "the 11.7 px case stays at least 13");
 expect(previewPx(13, 0.65, 0.9) >= 13, "L-SHIFT uses the same floor");
 
+// Scope chip keycap. The real chip's hzpKeyW is icon 30 + HZP_KPAD 10 + text + HZP_RPAD 18.
+// The old preview was 30 + round(textWidth + 8), which is narrower than that cap.
+pin("private static const HZ42_SC_KPAD:Number = 10;", "key padding matches HZP_KPAD");
+pin("private static const HZ42_SC_RPAD:Number = 18;", "right padding matches HZP_RPAD");
+pin("return 30 + HZ42_SC_KPAD + Math.round(tw) + HZ42_SC_RPAD;", "preview keycap is hzpKeyW");
+pin("var kw:Number = this.hz42ScKeyW(tw);", "the draw uses that width");
+pin("kt.x = Math.round(x0 + 30 + HZ42_SC_KPAD);", "the key text starts after the icon and the key padding");
+expect(src.indexOf("30 + Math.round(tw + 8)") < 0, "the old keycap width is gone");
+
+function hzpKeyW(tw) {
+	if (!Number.isFinite(tw) || tw < 0) tw = 0;
+	return 30 + 10 + Math.round(tw) + 18;
+}
+function oldKeyW(tw) {
+	return 30 + Math.round(tw + 8);
+}
+const keyWidths = [0, 12.4, 36, 48.6, 70.2];
+for (let i = 0; i < keyWidths.length; i++) {
+	const tw = keyWidths[i];
+	expect(hzpKeyW(tw) === 30 + 10 + Math.round(tw) + 18, "hzpKeyW(" + tw + ") uses both pads");
+	expect(hzpKeyW(tw) > oldKeyW(tw), "hzpKeyW(" + tw + ") is wider than 30 + round(textWidth + 8)");
+}
+
 if (failed) {
 	console.error(failed + " failed");
 	process.exit(1);
