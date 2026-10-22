@@ -15,8 +15,8 @@
       // Settings: [Scope] ScopeHoldBreathChip (0 = the game's prompt) / ScopeChipX / ScopeChipY / ScopeChipScale and [Style]
       // AccentColor / AccentHex / CardOpacity / TextScale / FontFace / HeaderStyle (same meaning as on the HUD). Read when
       // the scope opens and every 5 s after.
-      private static const HZP_VERSION:String = "0.42.0.5";   // 0.42.0.5: scope movie version (= the test build's DLL file version)
-      private static const HZP_BUILD:String = "0.42.0.5";   // 0.42.0.5: scope movie build label (= the test build's DLL file version)
+      private static const HZP_VERSION:String = "0.42.0.6";   // 0.42.0.6: scope movie version (= the test build's DLL file version)
+      private static const HZP_BUILD:String = "0.42.0.6";   // 0.42.0.6: scope movie build label (= the test build's DLL file version)
       private static const HZP_ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       private static const HZP_ACC:uint = 0x3FD0E0;
       private static const HZP_O2:uint = 0x4DB6FF;
@@ -418,18 +418,21 @@
          while(i < w.length) { if(String(w[i]).length > 0 && w[i] != "o2") { w[i] = String(w[i]).charAt(0).toUpperCase() + String(w[i]).substr(1); } i++; }
          return w.join(" ").replace("o2","O2");
       }
-      // 0.42.0.5: width the key text needs inside the keycap. textWidth alone left the keycap's right border clipped by
-      // long key names (L-SHIFT on the breath scope): take the larger of textWidth and the field width less its 4 px gutter,
-      // add the letter spacing of every glyph (in case the renderer leaves it out of textWidth) and HZP_KHEAD headroom.
+      // 0.42.0.6: an autosized key field clips its last glyph, so the keycap's right border looks cut off
+      // (L-SHIFT on the hold-breath chip). Measure textWidth first, then lock autoSize to NONE and set the
+      // field width to ceil(textWidth * 1.08 + letterSpacing * length) + 8. The keycap and the chip use that width.
       private function hzpKeyW(t:TextField) : Number
       {
          if(t == null) { return 0; }
          var ls:Number = 0;
          try { ls = Number(t.getTextFormat().letterSpacing); } catch(e:Error) { ls = 0; }
          if(isNaN(ls) || ls < 0) { ls = 0; }
-         var tw:Number = Math.max(Number(t.textWidth),Number(t.width) - 4);
+         var tw:Number = Number(t.textWidth);
          if(isNaN(tw) || tw < 0) { tw = 0; }
-         return Math.max(HZP_KMINW,Math.ceil(tw * HZP_KHEAD + ls * String(t.text).length));
+         var len:Number = t.text != null ? Number(t.text.length) : 0;
+         var w:Number = Math.ceil(tw * HZP_KHEAD + ls * len) + 8;
+         if(w < HZP_KMINW) { w = HZP_KMINW; }
+         return w;
       }
       // st: 0 ready, 1 holding, 3 out of breath; band: 0 normal, 1 warning (amber), 2 critical (red). o = O2 0 - 1 (-1 = no data)
       private function hzpDraw(st:int, band:int, o:Number) : void
@@ -447,9 +450,18 @@
          var h:Number = Math.round(32 + (ts - 1) * 20);
          var lt:TextField = this.hzpT(p,this.hzpCase(String(HZP_LBL[st])),14,st == 3 ? HZP_DIM : HZP_TXT,"sb",0.1);
          var kt:TextField = null;
+         var ktw:Number = 0;
          if(this.hzpKeyTx.length > 0) { kt = this.hzpT(p,this.hzpKeyTx,13,keyCol,"bd",0.04,this.hzpKeyFace); }
+         if(kt != null)
+         {
+            ktw = this.hzpKeyW(kt);
+            var kth:Number = kt.height;
+            kt.autoSize = TextFieldAutoSize.NONE;
+            kt.width = ktw;
+            if(kt.height < kth) { kt.height = kth; }
+         }
          h = Math.max(h,Math.round(lt.height + 6),kt != null ? Math.round(kt.height + 6) : 0);
-         var kw:Number = 30 + (kt != null ? this.hzpKeyW(kt) + HZP_KPAD : 0);   // 0.42.0.5: full key text width + padding
+         var kw:Number = 30 + (kt != null ? ktw + HZP_KPAD : 0);   // 0.42.0.6: keycap from the locked key-field width
          var kh:Number = Math.round(h - 12);
          var mw:Number = 120;
          var x0:Number = 7;

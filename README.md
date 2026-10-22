@@ -77,7 +77,7 @@ Log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
 
 3. The plugin is written to `build\windows\x64\releasedbg\HorizonUI.dll`.
 
-Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.42.0.5 loaded`.
+Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.42.0.6 loaded`.
 
 ## Repository layout
 ```

@@ -31,7 +31,8 @@ function pin(snippet, msg) {
 	expect(src.indexOf(snippet) >= 0, msg || snippet);
 }
 
-pin('private static const HZ_BUILD:String = "0.42.0.5";', "HUD build id is 0.42.0.5");
+pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
+pin('private static const HZ_BUILD:String = "0.42.0.6";', "HUD build id is 0.42.0.6");
 pin("private static const HZ41_LOC_GRACE:Number = 1500;");
 pin("private static const HZ41_LOC_HOLD:int = 228;");
 pin("private static const HZ41_LOC_REST:int = 246;");
@@ -385,27 +386,60 @@ for (let ci = 0; ci < chipSizes.length; ci++) {
 expect(previewPx(14, 0.65, 0.9) >= 13, "the 11.7 px case stays at least 13");
 expect(previewPx(13, 0.65, 0.9) >= 13, "L-SHIFT uses the same floor");
 
-// Scope chip keycap. The real chip's hzpKeyW is icon 30 + HZP_KPAD 10 + text + HZP_RPAD 18.
-// The old preview was 30 + round(textWidth + 8), which is narrower than that cap.
+// Scope chip key text. The field is autoSize NONE and its width is ceil(textWidth * 1.08 + letterSpacing * len) + 8.
+// The keycap is the 30 px icon plus that width plus HZP_KPAD. The panel pad after the meter is HZP_RPAD.
 pin("private static const HZ42_SC_KPAD:Number = 10;", "key padding matches HZP_KPAD");
-pin("private static const HZ42_SC_RPAD:Number = 18;", "right padding matches HZP_RPAD");
-pin("return 30 + HZ42_SC_KPAD + Math.round(tw) + HZ42_SC_RPAD;", "preview keycap is hzpKeyW");
-pin("var kw:Number = this.hz42ScKeyW(tw);", "the draw uses that width");
-pin("kt.x = Math.round(x0 + 30 + HZ42_SC_KPAD);", "the key text starts after the icon and the key padding");
+pin("private static const HZ42_SC_RPAD:Number = 18;", "panel padding matches HZP_RPAD");
+pin("private static const HZ42_SC_KHEAD:Number = 1.08;", "key headroom matches HZP_KHEAD");
+pin("var w:Number = Math.ceil(tw * HZ42_SC_KHEAD + ls * len) + 8;", "preview key width is the scope field width");
+pin("kt.autoSize = flash.text.TextFieldAutoSize.NONE;", "preview key field does not autosize");
+pin("kt.width = this.hz42ScKeyW(Number(kt.textWidth),ls,len);", "preview key field uses that width");
+pin("var kw:Number = 30 + kt.width + HZ42_SC_KPAD;", "the keycap is sized from that width");
+pin("kt.x = Math.round(x0 + 28);", "the key text starts where the scope chip starts it");
+pin("var w:Number = Math.round(mx + mw + HZ42_SC_RPAD);", "the chip panel uses the scope's right pad");
 expect(src.indexOf("30 + Math.round(tw + 8)") < 0, "the old keycap width is gone");
+expect(src.indexOf("return 30 + HZ42_SC_KPAD + Math.round(tw) + HZ42_SC_RPAD;") < 0, "the guessed keycap width is gone");
 
-function hzpKeyW(tw) {
+function keySlot(tw, ls, len) {
 	if (!Number.isFinite(tw) || tw < 0) tw = 0;
-	return 30 + 10 + Math.round(tw) + 18;
+	if (!Number.isFinite(ls) || ls < 0) ls = 0;
+	if (len < 0) len = 0;
+	let w = Math.ceil(tw * 1.08 + ls * len) + 8;
+	if (w < 14) w = 14;
+	return w;
 }
-function oldKeyW(tw) {
-	return 30 + Math.round(tw + 8);
+function keycap(tw, ls, len) {
+	return 30 + keySlot(tw, ls, len) + 10;
 }
 const keyWidths = [0, 12.4, 36, 48.6, 70.2];
 for (let i = 0; i < keyWidths.length; i++) {
 	const tw = keyWidths[i];
-	expect(hzpKeyW(tw) === 30 + 10 + Math.round(tw) + 18, "hzpKeyW(" + tw + ") uses both pads");
-	expect(hzpKeyW(tw) > oldKeyW(tw), "hzpKeyW(" + tw + ") is wider than 30 + round(textWidth + 8)");
+	expect(keySlot(tw, 0, 7) === Math.max(14, Math.ceil(tw * 1.08) + 8), "key slot " + tw + " uses 1.08 and + 8");
+	expect(keycap(tw, 0.5, 7) === 30 + keySlot(tw, 0.5, 7) + 10, "keycap " + tw + " is icon + slot + pad");
+}
+expect(keySlot(48, 0.6, 7) === Math.ceil(48 * 1.08 + 0.6 * 7) + 8, "L-SHIFT-sized text keeps the headroom");
+
+const scopeFiles = [
+	["actionscript/scope/hzp_main.as", false],
+	["actionscript/scope/imp/pimp_scopemenu/ScopeMenu.as", true],
+	["actionscript/scope/imp/pimp_scopemenu_lrg/ScopeMenu.as", true],
+];
+for (let i = 0; i < scopeFiles.length; i++) {
+	const rel = scopeFiles[i][0];
+	const wantCrlf = scopeFiles[i][1];
+	const buf = fs.readFileSync(path.join(__dirname, "..", rel));
+	const body = buf.toString("utf8");
+	const stripped = buf.toString("binary").replace(/\r\n/g, "");
+	const hasCrlf = buf.includes(Buffer.from("\r\n"));
+	const loneLf = stripped.includes("\n");
+	const loneCr = stripped.includes("\r");
+	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
+	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.6";') >= 0, rel + " build is 0.42.0.6");
+	expect(body.indexOf("kt.autoSize = TextFieldAutoSize.NONE;") >= 0, rel + " key field does not autosize");
+	expect(body.indexOf("Math.ceil(tw * HZP_KHEAD + ls * len) + 8") >= 0, rel + " uses the field-width formula");
+	expect(body.indexOf("kt.width = ktw;") >= 0, rel + " sets the field width");
+	expect(body.indexOf("ktw + HZP_KPAD") >= 0, rel + " sizes the keycap from that width");
 }
 
 if (failed) {

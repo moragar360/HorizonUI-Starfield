@@ -2,11 +2,13 @@
 // v0.42.0.4: F11 lists each shipped preset name once. Saved presets are never hidden.
 // Same settings keep the installer copy; different settings keep the newer shipped file.
 // The F11 header, the load line, and the "movie builds" line use the DLL file version (src/hz_version.h, also the version resource).
-// HUD message text is written to the log only when HZ_COMMS_MSG_LOG is 1 (xmake debug). Saved preset names drop the same
-// characters as the HUD: '=' '+' '[' ']' ';' '#' '"' '\' '|' and control characters.
+// v0.42.0.6: ShowHUDMessageEvent (address id 86800) logs HUD text that contains " that", and the Comms
+// message queue is written as "comms msg:" lines. Both are compiled only when HZ_COMMS_MSG_LOG is 1
+// (src/hz_version.h). Set that to 0, and HZC_MSG_LOG to false, for the release. The settings schema stays 0.42.0.
+// Saved preset names drop the same characters as the HUD: '=' '+' '[' ']' ';' '#' '"' '\' '|' and control characters.
 // v0.42.0 r3 (file version 0.42.0.3): a scope (ScopeMenu) still blocks F11 but no longer restarts the 3 s "HUD ready" wait,
-// so F11 works right after leaving the scope. Debug-only Comms message log (compiled out of the no-debug build in 0.42.0.4):
-// every 500 ms the HUD messages movie's hzcTakeDbg queue (filled only with [Debug] Debug=1) goes to HorizonUI.log as
+// so F11 works right after leaving the scope. The 0.42.0.4 no-debug build compiled this log out. In 0.42.0.6 it is on
+// when HZ_COMMS_MSG_LOG is 1 (Debug=0 in the ini still stops the movie queue): every 500 ms hzcTakeDbg goes to the log as
 // "comms msg:" lines. "movie builds:" logs
 // the loaded HUD / Comms builds (hzBuildId / hzcBuildId). Saved preset names drop '=' '+' '[' ']' ';' '#' '"' '\'.
 // v0.42.0 r2: F11 is also ignored while a scope (ScopeMenu) or the item inspect view (InspectMenu) is open; the deny list
@@ -47,6 +49,7 @@
 #include <vector>
 #include <string>
 #include <cstdio>
+#include <exception>
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -1720,13 +1723,218 @@ namespace HZ
 	// Purpose: copy queued HUD message lines into HorizonUI.log.
 	// Inputs: a_now, the poll clock. Outputs: "comms msg:" lines, only when the movie queued some.
 	// Dependencies: HUDMessagesMenu.hzcTakeDbg. Compiled only when HZ_COMMS_MSG_LOG is 1
-	// (xmake mode.debug). The releasedbg / no-debug build has an empty function, so message
-	// text from the game or from other interface files is not written.
-	// Last modified: 2026-10-20.
+	// (src/hz_version.h). With the switch at 0 the function is empty, so message text is not written.
+	// Last modified: 2026-10-22.
 #ifndef HZ_COMMS_MSG_LOG
 #define HZ_COMMS_MSG_LOG 0
 #endif
 #if HZ_COMMS_MSG_LOG
+
+	// Purpose: read one ShowHUDMessageEvent without letting a bad pointer escape this function.
+	// Inputs: the event. Outputs: 1 and a filled snap, or 0 when the read faulted.
+	// Dependencies: RE::ShowHUDMessageEvent (text, sound, canThrottle, isWarning). The copy is bounded.
+	// Last modified: 2026-10-22.
+	struct HudMsgSnap
+	{
+		bool match;
+		bool throttle;
+		bool warning;
+		char text[201];
+		char sound[97];
+	};
+
+	static void HzCopyRaw(char* a_dst, std::size_t a_cap, const char* a_src)
+	{
+		if (!a_dst || a_cap == 0) return;
+		a_dst[0] = '\0';
+		if (!a_src) return;
+		std::size_t i = 0;
+		for (; a_src[i] != '\0' && i + 1 < a_cap; ++i) {
+			const unsigned char c = static_cast<unsigned char>(a_src[i]);
+			a_dst[i] = (c < 32 || c == 127) ? ' ' : static_cast<char>(c);
+		}
+		a_dst[i] = '\0';
+	}
+
+	static bool HzHasThat(const char* a_s)
+	{
+		if (!a_s) return false;
+		const auto low = [](unsigned char c) {
+			return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : static_cast<char>(c);
+		};
+		for (std::size_t i = 0; a_s[i] != '\0'; ++i) {
+			if (low(static_cast<unsigned char>(a_s[i])) != ' ') continue;
+			const char c1 = a_s[i + 1];
+			if (c1 == '\0') return false;
+			if (low(static_cast<unsigned char>(c1)) != 't') continue;
+			const char c2 = a_s[i + 2];
+			if (c2 == '\0' || low(static_cast<unsigned char>(c2)) != 'h') continue;
+			const char c3 = a_s[i + 3];
+			if (c3 == '\0' || low(static_cast<unsigned char>(c3)) != 'a') continue;
+			const char c4 = a_s[i + 4];
+			if (c4 == '\0' || low(static_cast<unsigned char>(c4)) != 't') continue;
+			return true;
+		}
+		return false;
+	}
+
+	static void HzHudMsgCopyCall(const RE::ShowHUDMessageEvent* a_ev, HudMsgSnap* a_out)
+	{
+		if (!a_ev || !a_out) return;
+		HzCopyRaw(a_out->text, sizeof(a_out->text), a_ev->text.c_str());
+		HzCopyRaw(a_out->sound, sizeof(a_out->sound), a_ev->sound.c_str());
+		a_out->throttle = a_ev->canThrottle;
+		a_out->warning = a_ev->isWarning;
+	}
+
+	static RE::BSTEventSource<RE::ShowHUDMessageEvent>* HzHudMsgSourceCall()
+	{
+		return RE::ShowHUDMessageEvent::GetEventSource();
+	}
+
+	static void HzHudMsgRegisterCall(RE::BSTEventSource<RE::ShowHUDMessageEvent>* a_src, RE::BSTEventSink<RE::ShowHUDMessageEvent>* a_sink)
+	{
+		if (a_src && a_sink) a_src->RegisterSink(a_sink);
+	}
+
+	// The SEH helpers only call through a function pointer, so an inlined Relocation cannot
+	// force object unwinding inside the __try (MSVC C2712). A fault returns a code; it does not escape.
+#if defined(_MSC_VER)
+	static int HzHudMsgReadSEH(const RE::ShowHUDMessageEvent* a_ev, HudMsgSnap* a_out) noexcept
+	{
+		if (!a_ev || !a_out) return 0;
+		using Fn = void (*)(const RE::ShowHUDMessageEvent*, HudMsgSnap*);
+		Fn fn = &HzHudMsgCopyCall;
+		__try {
+			fn(a_ev, a_out);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+	static int HzHudMsgSourceSEH(RE::BSTEventSource<RE::ShowHUDMessageEvent>** a_out) noexcept
+	{
+		if (!a_out) return -1;
+		*a_out = nullptr;
+		using Fn = RE::BSTEventSource<RE::ShowHUDMessageEvent>* (*)();
+		Fn fn = &HzHudMsgSourceCall;
+		__try {
+			*a_out = fn();
+			return *a_out ? 1 : 0;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return -1;
+		}
+	}
+	static int HzHudMsgRegisterSEH(RE::BSTEventSource<RE::ShowHUDMessageEvent>* a_src, RE::BSTEventSink<RE::ShowHUDMessageEvent>* a_sink) noexcept
+	{
+		if (!a_src || !a_sink) return 0;
+		using Fn = void (*)(RE::BSTEventSource<RE::ShowHUDMessageEvent>*, RE::BSTEventSink<RE::ShowHUDMessageEvent>*);
+		Fn fn = &HzHudMsgRegisterCall;
+		__try {
+			fn(a_src, a_sink);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+#else
+	static int HzHudMsgReadSEH(const RE::ShowHUDMessageEvent* a_ev, HudMsgSnap* a_out) noexcept
+	{
+		if (!a_ev || !a_out) return 0;
+		try { HzHudMsgCopyCall(a_ev, a_out); return 1; } catch (...) { return 0; }
+	}
+	static int HzHudMsgSourceSEH(RE::BSTEventSource<RE::ShowHUDMessageEvent>** a_out) noexcept
+	{
+		if (!a_out) return -1;
+		*a_out = nullptr;
+		try { *a_out = HzHudMsgSourceCall(); return *a_out ? 1 : 0; } catch (...) { return -1; }
+	}
+	static int HzHudMsgRegisterSEH(RE::BSTEventSource<RE::ShowHUDMessageEvent>* a_src, RE::BSTEventSink<RE::ShowHUDMessageEvent>* a_sink) noexcept
+	{
+		if (!a_src || !a_sink) return 0;
+		try { HzHudMsgRegisterCall(a_src, a_sink); return 1; } catch (...) { return 0; }
+	}
+#endif
+
+	class ShowHUDMessageSink final : public RE::BSTEventSink<RE::ShowHUDMessageEvent>
+	{
+	public:
+		// Purpose: log a HUD message whose text contains " that", and never stop the game's own listeners.
+		// Inputs: the event (text, sound, canThrottle, isWarning). Outputs: kContinue. A bad event is skipped.
+		// Dependencies: HzHudMsgReadSEH. Last modified: 2026-10-22.
+		RE::BSEventNotifyControl ProcessEvent(const RE::ShowHUDMessageEvent& a_event, RE::BSTEventSource<RE::ShowHUDMessageEvent>*) override
+		{
+			try {
+				HudMsgSnap snap{};
+				if (!HzHudMsgReadSEH(&a_event, &snap)) {
+					if (!g_hudMsgReadWarned) {
+						g_hudMsgReadWarned = true;
+						REX::WARN("ShowHUDMessageEvent sink failed: message could not be read");
+					}
+					return RE::BSEventNotifyControl::kContinue;
+				}
+				snap.match = HzHasThat(snap.text);
+				if (!snap.match) return RE::BSEventNotifyControl::kContinue;
+				REX::INFO("hud message: text=\"{}\" sound=\"{}\" canThrottle={} isWarning={}",
+					snap.text, snap.sound, snap.throttle ? 1 : 0, snap.warning ? 1 : 0);
+			} catch (const std::exception& ex) {
+				if (!g_hudMsgReadWarned) {
+					g_hudMsgReadWarned = true;
+					REX::WARN("ShowHUDMessageEvent sink failed: {}", ex.what());
+				}
+			} catch (...) {
+				if (!g_hudMsgReadWarned) {
+					g_hudMsgReadWarned = true;
+					REX::WARN("ShowHUDMessageEvent sink failed: unknown error");
+				}
+			}
+			return RE::BSEventNotifyControl::kContinue;
+		}
+
+		bool g_hudMsgReadWarned = false;
+	};
+
+	// 0 pending, 1 registered, -1 failed and will not be tried again.
+	int g_hudMsgSink = 0;
+
+	// Purpose: register the ShowHUDMessageEvent sink (address id 86800). A failure is logged and ignored.
+	// Inputs: a_final is true on the post-data-load attempt. A null source before that is not a failure yet.
+	// Outputs: HorizonUI.log. Dependencies: RE::ShowHUDMessageEvent::GetEventSource. Last modified: 2026-10-22.
+	void RegisterShowHUDMessageSink(bool a_final)
+	{
+		if (g_hudMsgSink != 0) return;
+		try {
+			RE::BSTEventSource<RE::ShowHUDMessageEvent>* src = nullptr;
+			const int got = HzHudMsgSourceSEH(&src);
+			if (got < 0) {
+				g_hudMsgSink = -1;
+				REX::WARN("ShowHUDMessageEvent sink failed: GetEventSource faulted (address id 86800)");
+				return;
+			}
+			if (!src) {
+				if (a_final) {
+					g_hudMsgSink = -1;
+					REX::WARN("ShowHUDMessageEvent sink failed: event source is null (address id 86800)");
+				}
+				return;
+			}
+			static ShowHUDMessageSink sink;
+			if (!HzHudMsgRegisterSEH(src, &sink)) {
+				g_hudMsgSink = -1;
+				REX::WARN("ShowHUDMessageEvent sink failed: RegisterSink faulted (address id 86800)");
+				return;
+			}
+			g_hudMsgSink = 1;
+			REX::INFO("ShowHUDMessageEvent sink registered (address id 86800)");
+		} catch (const std::exception& ex) {
+			g_hudMsgSink = -1;
+			REX::WARN("ShowHUDMessageEvent sink failed: {}", ex.what());
+		} catch (...) {
+			g_hudMsgSink = -1;
+			REX::WARN("ShowHUDMessageEvent sink failed: unknown error");
+		}
+	}
+
 	ULONGLONG g_cdbgNext = 0;
 	bool      g_cdbgLogged = false;
 	void CommsDbgPoll(ULONGLONG a_now)
@@ -1744,7 +1952,7 @@ namespace HZ
 		if (!msg->menuObj.Invoke("hzcTakeDbg", &r, nullptr, 0) || !r.IsString()) return;
 		const char* s = r.GetString();
 		if (!s || !*s) return;
-		if (!g_cdbgLogged) { g_cdbgLogged = true; REX::INFO("comms msg: message log on ([Debug] Debug=1); set Debug=0 to stop it"); }
+		if (!g_cdbgLogged) { g_cdbgLogged = true; REX::INFO("comms msg: message log on (HZ_COMMS_MSG_LOG); Debug=0 in the ini stops it"); }
 		const std::string all(s);
 		std::size_t p = 0;
 		int n = 0;
@@ -1757,6 +1965,7 @@ namespace HZ
 		}
 	}
 #else
+	void RegisterShowHUDMessageSink(bool) {}
 	void CommsDbgPoll(ULONGLONG) {}
 #endif
 
@@ -1764,7 +1973,7 @@ namespace HZ
 	{
 		auto now = GetTickCount64();
 		BannerPoll(now);   // v0.40.3
-		CommsDbgPoll(now);   // v0.42.0.4: empty in the no-debug build; debug builds log only when [Debug] Debug=1
+		CommsDbgPoll(now);   // v0.42.0.6: empty when HZ_COMMS_MSG_LOG is 0
 		HWND wnd = GameWindow();
 		bool down = wnd && (GetAsyncKeyState(g_vk) & 0x8000) != 0;
 		if (down && !g_wasDown) OnSettingsKey();
@@ -1799,6 +2008,7 @@ namespace HZ
 	void OnMessage(SFSE::MessagingInterface::Message* a_msg)
 	{
 		if (a_msg->type == SFSE::MessagingInterface::kPostDataLoad) {
+			RegisterShowHUDMessageSink(true);   // v0.42.0.6: second chance if the source was not ready at load
 			LoadIni();
 			if (auto task = SFSE::GetTaskInterface()) {
 				task->AddPermanentTask([]() { Poll(); });
@@ -1821,6 +2031,7 @@ SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* a_sfse)
 	SFSE::Init(a_sfse);
 	// Same string as "movie builds": the version resource produced from src/hz_version.h.
 	REX::INFO("HorizonUI {} loaded", HZ::DllFileVersion());
+	HZ::RegisterShowHUDMessageSink(false);   // v0.42.0.6: a failure here is logged; the game still loads
 	HZ::FilesStartup();   // v0.37: update backup, migration / preset seeding - before any menu reads the settings
 	if (auto msg = SFSE::GetMessagingInterface())
 		msg->RegisterListener(HZ::OnMessage);

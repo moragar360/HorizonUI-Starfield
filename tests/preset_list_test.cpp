@@ -46,12 +46,13 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.42.0.5", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 42 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 5, "file version numbers");
-	Expect(HzFileVersionOk("0.42.0.5"), "4-part version ok");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.42.0.6", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 42 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 6, "file version numbers");
+	Expect(HZ_COMMS_MSG_LOG == 1, "reaction diagnostic is on for this test build");
+	Expect(HzFileVersionOk("0.42.0.6"), "4-part version ok");
 	Expect(!HzFileVersionOk("0.42.0"), "3-part version is not the file version");
-	Expect(!HzFileVersionOk("v0.42.0.5"), "leading v is not accepted");
-	Expect(!HzFileVersionOk("0.42.0.5 "), "trailing space rejected");
+	Expect(!HzFileVersionOk("v0.42.0.6"), "leading v is not accepted");
+	Expect(!HzFileVersionOk("0.42.0.6 "), "trailing space rejected");
 
 	ExpectEq(CleanPresetName("Moragar's Choice"), "Moragar's Choice", "apostrophe stays");
 	ExpectEq(CleanPresetName("A=B+C[D]E;F#G\"H\\I|J"), "ABCDEFGHIJ", "same drop set as the HUD");
@@ -200,6 +201,11 @@ int main()
 		Expect(src.find("REX::INFO(\"HorizonUI {} loaded\", HZ::DllFileVersion());", load) != std::string::npos, "load line prints DllFileVersion");
 		Expect(src.find("HorizonUI 0.42.0 loaded") == std::string::npos, "load line is not a typed schema version");
 		Expect(src.find("inline const char* kVersion = \"0.42.0\"") != std::string::npos, "settings schema stays 0.42.0");
+		Expect(src.find("ShowHUDMessageEvent sink registered (address id 86800)") != std::string::npos, "sink registration is logged");
+		Expect(src.find("ShowHUDMessageEvent sink failed:") != std::string::npos, "sink failure is logged");
+		Expect(src.find("hud message: text=") != std::string::npos, "matching HUD text is logged");
+		Expect(src.find("RegisterShowHUDMessageSink(false)") != std::string::npos, "sink is registered at load");
+		Expect(src.find("RegisterShowHUDMessageSink(true)") != std::string::npos, "sink retries after data load");
 	}
 
 	{
@@ -209,6 +215,18 @@ int main()
 		Expect(ini.find("Version=0.42.0") != std::string::npos, "preset Version stays 0.42.0");
 		Expect(ini.find("test DLL") == std::string::npos, "preset Debug note does not call this a test DLL");
 		Expect(ini.find("The comms message log is only in debug builds.") != std::string::npos, "release Debug note");
+	}
+
+	{
+		std::ifstream in("xmake.lua");
+		Expect(static_cast<bool>(in), "xmake.lua opens");
+		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		Expect(lua.find("set_version(\"0.42.0.6\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
+		std::ifstream cpp("res/horizonui-plugin.cpp.in");
+		Expect(static_cast<bool>(cpp), "plugin version template opens");
+		std::string plugin((std::istreambuf_iterator<char>(cpp)), std::istreambuf_iterator<char>());
+		Expect(plugin.find("v.PluginVersion({ ${COMMONLIB_PLUGIN_VERSION_MAJOR}, ${COMMONLIB_PLUGIN_VERSION_MINOR}, ${COMMONLIB_PLUGIN_VERSION_PATCH}, ${HZ_FILE_VERSION_BUILD} });") != std::string::npos, "SFSE plugin version uses the file-version build");
 	}
 
 	if (g_fails) {

@@ -1111,19 +1111,21 @@
          s = s.replace(/^[\s]+|[\s]+$/g,"").replace(/ {2,}/g," ");
          return s;
       }
-      // ---------- r3: debug-only message log ([Debug] Debug=1; off by default) ----------
-      // v0.42.0.4: this movie has no compile-time switch. HZC_MSG_LOG false means the no-debug movie does not
-      // queue HUD message text. A debug movie sets it true, and only an xmake debug DLL (HZ_COMMS_MSG_LOG) writes the lines.
-      private static const HZC_MSG_LOG:Boolean = false;
-      private static const HZC_BUILD:String = "0.42.0.5";
-      private var hzcRxDbgOn:Boolean = false;
+      // ---------- 0.42.0.6: message log. HZC_MSG_LOG is the switch (true on this test build). ----------
+      // Final release: set HZC_MSG_LOG false and HZ_COMMS_MSG_LOG to 0 in src/hz_version.h. The DLL writes
+      // whatever this queue returns. Debug=0 in the ini still stops the queue. A missing Debug key leaves it on.
+      private static const HZC_MSG_LOG:Boolean = true;
+      private static const HZC_BUILD:String = "0.42.0.6";
+      private var hzcRxDbgOn:Boolean = true;   // 0.42.0.6: on with HZC_MSG_LOG. hzcRxDbgIni turns it off when Debug=0.
       private var hzcRxDbgQ:Array = [];
       private var hzcRxDbgSeen:Array = [];   // {it, f}
       private var hzcRxDbgHdr:Boolean = false;
+      private var hzcRxErr:String = "";
+      private var hzcRxErrSent:Boolean = false;
       private function hzcRxDbgIni(txt:String) : void
       {
          if(!HZC_MSG_LOG) { this.hzcRxDbgOn = false; this.hzcRxDbgQ = []; this.hzcRxDbgSeen = []; return; }
-         var on:Boolean = false;
+         var on:Boolean = true;
          var sec:String = "";
          if(txt != null)
          {
@@ -1169,6 +1171,14 @@
       {
          if(this.hzcRxDbgQ.length >= 40) { this.hzcRxDbgQ.shift(); }
          this.hzcRxDbgQ.push(s);
+      }
+      // One line when the card code turns itself off. The DLL writes it as "comms msg: card code off after error: ...".
+      private function hzcRxDbgErr() : void
+      {
+         if(this.hzcRxErrSent || !this.hzcRxOff || !HZC_MSG_LOG || !this.hzcRxDbgOn) { return; }
+         this.hzcRxErrSent = true;
+         var em:String = this.hzcRxErr != null ? this.hzcRxErr : "";
+         this.hzcRxDbgPush("card code off after error: " + this.hzcRxDbgEsc(em));
       }
       // every new line once (waits up to 3 frames for its text)
       private function hzcRxDbgScan(arr:*) : void
@@ -1256,9 +1266,15 @@
       }
       private function hzcRxFrame(ev:Event) : void
       {
-         if(this.hzcRxOff) { if(this.hzcRxDbgOn) { try { this.hzcRxDbgScan(this.Messages_mc != null ? this.Messages_mc.ShownMessageArray : null); } catch(eDbg2:Error) { } } return; }
+         if(this.hzcRxOff) { if(this.hzcRxDbgOn) { try { this.hzcRxDbgErr(); this.hzcRxDbgScan(this.Messages_mc != null ? this.Messages_mc.ShownMessageArray : null); } catch(eDbg2:Error) { } } return; }
          try { this.hzcRxStep(); }
-         catch(err:Error) { this.hzcRxOff = true; try { this.hzcRxAll(); } catch(err2:Error) { } }
+         catch(err:Error)
+         {
+            this.hzcRxOff = true;
+            try { this.hzcRxErr = err != null && err.message != null ? String(err.message) : ""; } catch(eMsg:Error) { this.hzcRxErr = ""; }
+            try { this.hzcRxAll(); } catch(err2:Error) { }
+            try { this.hzcRxDbgErr(); } catch(eDbgE:Error) { }
+         }
       }
       private function hzcRxStep() : void
       {

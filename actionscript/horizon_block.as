@@ -2939,7 +2939,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.42.0.5";
+      private static const HZ_BUILD:String = "0.42.0.6";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -14186,10 +14186,12 @@
       // of the scope movie plus half its height). The proxy draws the chip's look (target icon, label, meter) at its size.
       private static const HZ42_SC_HOMEY:Number = 302;
       private static const HZ42_SC_H:Number = 32;
-      // Keycap geometry of the scope movie's hzpKeyW. HZP_KPAD is the gap after the 30 px icon; HZP_RPAD is the pad after the key text.
-      // Keep these equal to the scope movie. The preview cannot call that function; both HUD sizes share this block.
+      // Key field of the scope movie's hzpKeyW (0.42.0.6). The preview cannot call that function; both HUD sizes share this block.
+      // HZP_KPAD is the gap after the 30 px icon. HZP_RPAD is the panel pad after the O2 meter. HZP_KHEAD is 1.08.
       private static const HZ42_SC_KPAD:Number = 10;
       private static const HZ42_SC_RPAD:Number = 18;
+      private static const HZ42_SC_KHEAD:Number = 1.08;
+      private static const HZ42_SC_KMINW:Number = 14;
       private static const HZ42_SC_KEY:String = "ScopeChip";   // ARRANGE list key of the proxy (saved as [Scope] ScopeChipX / ScopeChipY)
       private var hz42ScOn:Boolean = true;
       private var hz42ScX:Number = 0;
@@ -14342,13 +14344,17 @@
          g.lineStyle();
          g.beginFill(col,a); g.drawCircle(cx,cy,1.8); g.endFill();
       }
-      // Purpose: width of the F11 hold-breath keycap, matching the scope movie's hzpKeyW.
-      // Inputs: tw, the key label's textWidth. This preview field's letter spacing is 0, so textWidth is the full width.
-      // Output: 30 px icon + HZ42_SC_KPAD + the text + HZ42_SC_RPAD. A bad measurement returns the icon and the two pads.
-      private function hz42ScKeyW(tw:Number) : Number
+      // Purpose: width of the F11 hold-breath key text, matching the scope movie's field width.
+      // Inputs: tw textWidth, ls letterSpacing, len character count. Output: ceil(tw * 1.08 + ls * len) + 8.
+      // The keycap adds the 30 px icon and HZ42_SC_KPAD. A bad measurement is treated as 0, then held to 14 px.
+      private function hz42ScKeyW(tw:Number, ls:Number, len:int) : Number
       {
          if(isNaN(tw) || tw < 0) { tw = 0; }
-         return 30 + HZ42_SC_KPAD + Math.round(tw) + HZ42_SC_RPAD;
+         if(isNaN(ls) || ls < 0) { ls = 0; }
+         if(len < 0) { len = 0; }
+         var w:Number = Math.ceil(tw * HZ42_SC_KHEAD + ls * len) + 8;
+         if(w < HZ42_SC_KMINW) { w = HZ42_SC_KMINW; }
+         return w;
       }
       private function hz42ScDraw() : void
       {
@@ -14360,22 +14366,33 @@
          // hzSText multiplies by TextScale (clamped 0.9-1.15). Pass a size that survives that, or the
          // on-screen size is the chip scale times a font that was already shrunk. At chip 0.65 and
          // TextScale 0.9, HOLD BREATH was 11.7 px. Both lines use the same correction. The floor is 13 px
-         // after the proxy scale (hz42ScFs) and after TextScale. Letter spacing on these fields is 0.
+         // after the proxy scale (hz42ScFs) and after TextScale. The label's letter spacing stays 0.
+         // The key uses the scope key's 0.04 tracking so the measured width matches that chip.
          var ts:Number = this.hzTextScale;
          if(isNaN(ts) || ts <= 0) { ts = 1; }
          ts = Math.max(0.9,Math.min(1.15,ts));
          var lb:int = int(this.hz42ScFs(14));
          var lt:TextField = this.hzSText(p,"HOLD BREATH",0,0,220,int(Math.ceil(lb / ts)),0xF2F7F9,"left");
-         // "L-SHIFT" is the wide PC label. The cap is hzpKeyW: icon, key padding, text, right padding.
+         // "L-SHIFT" is the wide PC label. Same tracking as the scope key (0.04), then the same field width.
          var want:int = int(this.hz42ScFs(13));
          var kt:TextField = this.hzSText(p,"L-SHIFT",0,0,160,int(Math.ceil(want / ts)),HZ_ACCENT,"left");
-         var tw:Number = kt.textWidth;
-         var kw:Number = this.hz42ScKeyW(tw);
+         var kf:TextFormat = kt.getTextFormat();
+         var kfs:Number = Number(kf.size);
+         if(isNaN(kfs) || kfs <= 0) { kfs = 13; }
+         kf.letterSpacing = Math.round(kfs * 0.04 * 10) / 10;
+         kt.defaultTextFormat = kf;
+         kt.setTextFormat(kf);
+         var ls:Number = Number(kf.letterSpacing);
+         if(isNaN(ls) || ls < 0) { ls = 0; }
+         var len:int = kt.text != null ? int(kt.text.length) : 0;
+         kt.autoSize = flash.text.TextFieldAutoSize.NONE;
+         kt.width = this.hz42ScKeyW(Number(kt.textWidth),ls,len);
+         var kw:Number = 30 + kt.width + HZ42_SC_KPAD;
          var x0:Number = 7;
          var lx:Number = x0 + kw + 10;
          var mx:Number = Math.round(lx + lt.textWidth + 16);
          var mw:Number = 120;
-         var w:Number = Math.round(mx + mw + 14);
+         var w:Number = Math.round(mx + mw + HZ42_SC_RPAD);
          g.lineStyle(1,0xFFFFFF,0.18,true,"none");
          g.beginFill(0x0B1218,0.84);
          g.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
@@ -14387,8 +14404,7 @@
          g.endFill();
          g.lineStyle();
          this.hz42Cross(g,x0 + 15,h / 2,HZ_ACCENT,1);
-         kt.width = Math.max(kt.width,Math.ceil(tw) + 4);
-         kt.x = Math.round(x0 + 30 + HZ42_SC_KPAD);
+         kt.x = Math.round(x0 + 28);
          kt.y = Math.round(h / 2 - (kt.textHeight + 4) / 2);
          lt.x = lx - 2;
          lt.y = Math.round(h / 2 - (lt.textHeight + 4) / 2);
