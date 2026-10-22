@@ -447,6 +447,54 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	expect(body.indexOf("ktw + HZP_KPAD") >= 0, rel + " sizes the keycap from that width");
 }
 
+const dlgBlock = fs.readFileSync(path.join(__dirname, "..", "actionscript", "comms", "hzd_block.as"), "utf8");
+function dlgPin(snippet, msg) {
+	expect(dlgBlock.indexOf(snippet) >= 0, msg || snippet);
+}
+dlgPin('"DlgPersuasionMeter":1', "persuasion meter defaults on in the dialogue config");
+dlgPin("uPersuasionScore", "persuasion meter reads the score");
+dlgPin("uMaxPersuasionScore", "persuasion meter reads the goal");
+dlgPin("uTurnsLeft", "persuasion meter reads the turns");
+dlgPin("iPersuasionPointsGained", "persuasion ghost uses the highlighted reply");
+dlgPin("this.PERUSASION_RESULT_WIN", "persuasion win uses the game result");
+dlgPin("this.PERUSASION_RESULT_CRIT_WIN", "persuasion critical win uses the game result");
+dlgPin("this.PERUSASION_RESULT_FAIL", "persuasion fail uses the game result");
+dlgPin("alpha only: visible stays the game's", "persuasion meter hides with alpha, not visible");
+dlgPin("b.alpha = 0;", "persuasion meter sets the game meter alpha to 0");
+expect(dlgBlock.indexOf("PersuasionData_mc.visible = false") < 0, "persuasion meter does not clear the game meter's visible flag");
+expect(dlgBlock.indexOf("PERSUADED") >= 0 && dlgBlock.indexOf("OUT OF TURNS") >= 0 && dlgBlock.indexOf("FAILED") >= 0, "persuasion meter has the result labels");
+expect(src.indexOf('["DlgPersuasionMeter","b",1,0,1,"comms"]') >= 0, "persuasion meter is a Comms ini key");
+expect(src.indexOf('{"k":"DlgPersuasionMeter","l":"PERSUASION METER"') >= 0, "persuasion meter is on the Dialogue tab");
+
+function dlgTail(buf) {
+	const text = buf.toString("utf8").replace(/\r\n/g, "\n");
+	const at = text.indexOf("private static const HZD_AMB:uint = 0xF2B45F;");
+	const end = text.indexOf("// =================== end Horizon UI Comms (Dialogue) v0.35 ===================");
+	expect(at >= 0 && end > at, "dialogue block markers");
+	return text.slice(at, end);
+}
+const dlgTailBlock = dlgTail(fs.readFileSync(path.join(__dirname, "..", "actionscript", "comms", "hzd_block.as")));
+const dlgFiles = [
+	["actionscript/comms/hzd_block.as", false],
+	["actionscript/imp/dimp/scripts/DialogueMenu.as", true],
+	["actionscript/imp/dimp-Lrg/scripts/DialogueMenu.as", true],
+];
+for (let di = 0; di < dlgFiles.length; di++) {
+	const rel = dlgFiles[di][0];
+	const wantCrlf = dlgFiles[di][1];
+	const buf = fs.readFileSync(path.join(__dirname, "..", rel));
+	const stripped = buf.toString("binary").replace(/\r\n/g, "");
+	const hasCrlf = buf.includes(Buffer.from("\r\n"));
+	const loneLf = stripped.includes("\n");
+	const loneCr = stripped.includes("\r");
+	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
+	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
+	const tail = dlgTail(buf);
+	expect(tail === dlgTailBlock, rel + " persuasion meter matches the dialogue block");
+	if (rel.indexOf("dimp-Lrg") >= 0) expect(buf.toString("utf8").indexOf("private static const HZD_LRG:Boolean = true;") >= 0, "large dialogue stays large");
+	else if (rel.indexOf("dimp/") >= 0) expect(buf.toString("utf8").indexOf("private static const HZD_LRG:Boolean = false;") >= 0, "standard dialogue stays standard");
+}
+
 if (failed) {
 	console.error(failed + " failed");
 	process.exit(1);

@@ -10881,10 +10881,10 @@
          ["DlgOffsetY","i",0,-400,400,"comms"],["DlgScale","f",1,0.7,1.5,"comms"],["DlgBgColor","i",0,0,12,"comms"],["DlgBgHex","s","",0,0,"comms"],
          ["DlgTextColor","i",-1,-1,13,"comms"],["DlgTextHex","s","",0,0,"comms"],
          ["DlgNumberKeys","b",1,0,1,"comms"],["DlgWheel","b",1,0,1,"comms"],["DlgHoverScroll","b",0,0,1,"comms"],["DlgSaidStyle","i",2,0,2,"comms"],
-         ["DlgPersuadeStyle","i",0,0,2,"comms"],["DlgPersuadeColor","i",2,0,12,"comms"],["DlgMarkers","b",0,0,1,"comms"],["DlgInputDelay","i",150,0,1000,"comms"],
+         ["DlgPersuadeStyle","i",0,0,2,"comms"],["DlgPersuadeColor","i",2,0,12,"comms"],["DlgPersuasionMeter","b",1,0,1,"comms"],["DlgMarkers","b",0,0,1,"comms"],["DlgInputDelay","i",150,0,1000,"comms"],
          ["DlgRolloverSound","i",0,0,1,"comms"],["DlgAnim","i",1,0,2,"comms"],
          ["DlgButtonBar","i",0,0,2,"comms"],["DlgQuickPickHint","b",1,0,1,"comms"],["DlgSelectHint","b",1,0,1,"comms"]];
-      private static const HZ31_DEF:Object = {"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"TxtColIdx":0,"SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"ReactionCard":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"ShowSpeaker":1,"SpkColIdx":0,"SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgTxtIdx":0,"DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4};
+      private static const HZ31_DEF:Object = {"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"TxtColIdx":0,"SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"ReactionCard":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"ShowSpeaker":1,"SpkColIdx":0,"SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgTxtIdx":0,"DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4};
       // URLLoader probes, relative to Data/Interface (same base as HorizonUI/HorizonUI.ini). Foreign mods are only reported.
       private static const HZ31_PROBE:Object = {"es":"Enhanced Subtitles - My Edits.ini","edi":"Enhanced Dialogue Interface - My Edits.ini","edi2":"Enhanced Dialogue Interface.ini"};   // v0.38: no file probes for other HUD mods (an ini left behind is not an active HUD)
       private static const HZ31_FONT_OPTS:Array = ["GLOBAL","EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"];
@@ -11083,6 +11083,7 @@
             "DlgLayout":"0 card list, 1 compact, 2 classic centered",
             "DlgSaidStyle":"0 dimmed, 1 hidden, 2 tagged",
             "DlgPersuadeStyle":"0 chip, 1 colored text, 2 none; DlgPersuadeColor = accent palette index",
+            "DlgPersuasionMeter":"1 = Horizon persuasion meter (score, the highlighted reply, turns). 0 = the game's meter",
             "DlgInputDelay":"ms before a list accepts input (game default 1000)",
             "DlgRolloverSound":"0 game default, 1 off",
             "DlgAnim":"0 off, 1 fast, 2 vanilla-like",
@@ -11190,6 +11191,7 @@
                {"k":"DlgSaidStyle","l":"ALREADY-SAID STYLE","t":"r","opts":["DIMMED","HIDDEN","TAGGED"],"h":"OPTION TAGS"},
                {"k":"DlgPersuadeStyle","l":"PERSUASION TAG","t":"r","opts":["CHIP","COLORED TEXT","NONE"]},
                {"k":"DlgPersuadeColor","l":"PERSUASION TAG COLOR","t":"a","pal":HZ_ACCENTS,"names":HZ_SET_ACCNAMES},
+               {"k":"DlgPersuasionMeter","l":"PERSUASION METER","t":"b","note":"Score, the highlighted reply and turns, in place of the game's bars. Off = the game's meter."},
                {"k":"DlgMarkers","l":"QUESTION / ADVANCE MARKERS","t":"b","dis":true,"dv":false,"note":"Experimental: no marker data in this game version"},
                {"k":"DlgNumberKeys","l":"NUMBER KEYS 1 - 9","t":"b","h":"INPUT"},
                {"k":"DlgWheel","l":"MOUSE WHEEL SCROLL","t":"b"},
@@ -11893,6 +11895,7 @@
          "DlgRolloverSound":"GAME DEFAULT plays the game's rollover sound when the selection moves. OFF keeps it silent.",
          "DlgAnim":"How the options card appears and leaves: OFF (instant), FAST, or VANILLA-LIKE (the game's timing).",
          "DlgPersuadeStyle":"How persuasion options are marked: a CHIP, the option text in the tag color, or NONE.",
+         "DlgPersuasionMeter":"On: a Horizon meter for the persuasion challenge (the score, a ghost of the highlighted reply's points, and turns left). The game's meter stays in the movie at alpha 0, so its result animations keep running. Off: the game's meter.",
          "DlgScale":"Width and text of the options card together. If the options don't fit the screen height, their text steps down to fit.",
          "DlgOffsetX":"Moves the options card sideways, in 1080p pixels (+ = right). Added on top of the ARRANGE CARDS spot.",
          "DlgOffsetY":"Moves the options card up or down, in 1080p pixels (+ = up). Added on top of the ARRANGE CARDS spot.",

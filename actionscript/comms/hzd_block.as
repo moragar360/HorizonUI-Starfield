@@ -32,10 +32,12 @@
       private static const HZD_ACC:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       private static const HZD_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face (run-time name only)
       private static const HZD_AMB:uint = 0xF2B45F;
+      private static const HZD_OK:uint = 0x5EE3A1;
+      private static const HZD_BAD:uint = 0xFF5B5B;
       private static const HZD_DIFF:Array = [0x6FD39A,0xF2B45F,0xF27A5F];
       private static const HZD_STR:Object = {"AccentHex":1,"DialogueX":1,"DialogueY":1,"DlgBgHex":1,"DlgTextHex":1};
       private static const HZD_BG:Array = [0x0B1218,0x16181C,0x0B1630,0x0A2226,0x1E1328,0x2A1014,0x3A4652,0xD5DBE0,0xF2F4F6,0xCCDFEE,0xF0E0C2,0xD2ECDF];   // = the HUD card colors
-      private var hzdCfg:Object = {"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgBgHex":"","DlgTextColor":-1,"DlgTextHex":"","DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"SpeakerCard":1,"HzRev":0,"FontFace":1,"AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"DialogueX":"-1","DialogueY":"-1"};
+      private var hzdCfg:Object = {"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgBgHex":"","DlgTextColor":-1,"DlgTextHex":"","DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"SpeakerCard":1,"HzRev":0,"FontFace":1,"AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"DialogueX":"-1","DialogueY":"-1"};
       private var hzdIni:int = 0;            // 0 loading, 1 loaded, 2 missing (defaults)
       private var hzdProbe:Object = {};      // edi / edi2 / font: 1 found, 0 not found
       private var hzdOn:Boolean = false;     // Horizon list in charge
@@ -72,6 +74,7 @@
          this.hzdBar.visible = false;
          this.hzdLayer.addChild(this.hzdBar);
          addChild(this.hzdLayer);
+         try { this.hzdPmEnsure(); } catch(ePm:Error) { }
          // D10 / D11: the vanilla bar is set up by DialogueMenuBase's constructor (super() already ran). Read-only
          // mirroring: its redraw event + the button-state overrides below; clicks call the vanilla handlers.
          try { this.ButtonBar_mc.addEventListener("ButtonBarRedrawnEvent",this.hzdOnBarRedrawn); } catch(e1:Error) { }
@@ -166,6 +169,9 @@
          this.hzdVanillaHide(this.DialogueList_mc,want);
          this.hzdVanillaHide(this.PersuasionList_mc,want);
          try { this.hzdBarApply(); } catch(eba:Error) { }
+         this.hzdPmOff = false;
+         this.hzdPmFail = 0;
+         try { this.hzdPmApply(); } catch(epm:Error) { }
          if(!want) { this.hzdLayer.visible = false; this.hzdOpen = false; return; }
          this.hzdSyncState();
       }
@@ -199,7 +205,7 @@
          {
             this.hzdWho = param1.data.sSpeakerName != null ? String(param1.data.sSpeakerName) : "";
             this.hzdReload();
-            if(param1.data.bClosingMenu) { this.hzdOpen = false; this.hzdLayer.visible = false; return; }
+            if(param1.data.bClosingMenu) { this.hzdOpen = false; this.hzdLayer.visible = false; this.hzdPmData = null; try { this.hzdPmApply(); } catch(epm0:Error) { } return; }
             if(this.hzdOn) { this.hzdLayer.visible = true; this.hzdDrawSpeaker(); }
          }
          catch(e:Error) { }
@@ -224,9 +230,9 @@
       {
          var inChoice:Boolean = this.m_State == this.state_ChoiceList;
          var inPers:Boolean = this.m_State == this.state_PersuasionList;
-         if(!this.hzdOn) { this.hzdOpen = false; this.hzdLayer.visible = false; return; }
+         if(!this.hzdOn) { this.hzdOpen = false; this.hzdLayer.visible = false; try { this.hzdPmApply(); } catch(epm1:Error) { } return; }
          this.hzdLayer.visible = true;   // the speaker card shows for the whole conversation
-         if(!(inChoice || inPers)) { this.hzdOpen = false; this.hzdPanel.visible = false; this.hzdDrawSpeaker(); try { this.hzdBarDraw(); } catch(eb0:Error) { } return; }
+         if(!(inChoice || inPers)) { this.hzdOpen = false; this.hzdPanel.visible = false; this.hzdDrawSpeaker(); try { this.hzdBarDraw(); } catch(eb0:Error) { } try { this.hzdPmApply(); } catch(epm2:Error) { } return; }
          this.hzdPanel.visible = true;
          this.hzdVanillaHide(this.DialogueList_mc,true);
          this.hzdVanillaHide(this.PersuasionList_mc,true);
@@ -241,6 +247,7 @@
          this.hzdDraw();
          this.hzdDrawSpeaker();
          try { this.hzdBarDraw(); } catch(eb1:Error) { }
+         try { this.hzdPmApply(); } catch(epm3:Error) { }
       }
       private function hzdBuildView() : void
       {
@@ -348,6 +355,7 @@
             this.hzdSel = v;
             this.hzdKeepInView();
             this.hzdDraw();
+            try { this.hzdPmApply(); } catch(epm4:Error) { }
          }
          catch(err:Error) { }
       }
@@ -959,17 +967,27 @@
       override protected function ShowPersuasionDataElems() : void
       {
          super.ShowPersuasionDataElems();
-         try { if(this.hzdBar != null) { this.hzdBarDraw(); } } catch(e:Error) { }
+         try { if(this.hzdBar != null) { this.hzdBarDraw(); } this.hzdPmApply(); } catch(e:Error) { }
       }
       override protected function HidePersuasionDataElems() : void
       {
          super.HidePersuasionDataElems();
-         try { if(this.hzdBar != null) { this.hzdBarDraw(); } } catch(e:Error) { }
+         try { if(this.hzdBar != null) { this.hzdBarDraw(); } this.hzdPmApply(); } catch(e:Error) { }
       }
       override protected function onPersuasionPointsUpdate(param1:FromClientDataEvent) : void
       {
          super.onPersuasionPointsUpdate(param1);
-         try { if(this.hzdBar != null) { this.hzdBarDraw(); } } catch(e:Error) { }
+         try
+         {
+            if(param1 != null && param1.data != null)
+            {
+               var mx:Number = Number(param1.data.uMaxPersuasionScore);
+               if(!isNaN(mx) && mx > 0) { this.hzdPmData = param1.data; this.hzdPmOff = false; this.hzdPmFail = 0; }
+            }
+            if(this.hzdBar != null) { this.hzdBarDraw(); }
+            this.hzdPmApply();
+         }
+         catch(e:Error) { }
       }
       // one pill: [keycap or controller glyph] + LABEL, optional progress line (auto-win charge). Returns its width.
       private function hzdPill(b:Sprite, id:String, key:String, lab:String, cap:uint, lc:uint, pad:Boolean, font:String, prog:Number, z:Number) : Sprite
@@ -1161,6 +1179,410 @@
          this.hzdAnimDy = dy;
          if(k >= 1) { removeEventListener(Event.ENTER_FRAME,this.hzdAnimTick); }
       }
+      // ---------- persuasion meter (part of the dialogue menu; DlgPersuasionMeter) ----------
+      // The game's PersuasionData_mc stays in the movie. While this card is up its alpha is 0 and its visible flag
+      // is left alone, so the open, close and result animations keep running. A missing clip only skips this card.
+      private var hzdPm:Sprite = null;
+      private var hzdPmData:Object = null;
+      private var hzdPmSig:String = "";
+      private var hzdPmHid:Boolean = false;
+      private var hzdPmAlpha:Number = 1;
+      private var hzdPmFail:int = 0;
+      private var hzdPmOff:Boolean = false;
+      private var hzdPmListen:Boolean = false;
+      private var hzdPmW:Number = 0;
+      private var hzdPmH:Number = 0;
+      private function hzdPmEnsure() : Boolean
+      {
+         if(this.hzdPm != null) { return true; }
+         try
+         {
+            this.hzdPm = new Sprite();
+            this.hzdPm.name = "hzdPm";
+            this.hzdPm.mouseEnabled = false;
+            this.hzdPm.mouseChildren = false;
+            this.hzdPm.visible = false;
+            addChild(this.hzdPm);
+            return true;
+         }
+         catch(e:Error) { return false; }
+      }
+      private function hzdPmOn() : Boolean
+      {
+         var n:Number = Number(this.hzdCfg.DlgPersuasionMeter);
+         return isNaN(n) ? true : n >= 0.5;
+      }
+      private function hzdPmClip() : *
+      {
+         try { return this.PersuasionData_mc; } catch(e:Error) { }
+         return null;
+      }
+      private function hzdPmNum(v:*) : Number
+      {
+         if(v == undefined || v == null) { return NaN; }
+         var n:Number = Number(v);
+         return n;
+      }
+      // alpha only: visible stays the game's
+      private function hzdPmHideVan(hide:Boolean) : void
+      {
+         var b:* = this.hzdPmClip();
+         if(b == null) { return; }
+         if(hide)
+         {
+            if(!this.hzdPmHid)
+            {
+               var a:Number = Number(b.alpha);
+               this.hzdPmAlpha = !isNaN(a) && a > 0 ? a : 1;
+               this.hzdPmHid = true;
+            }
+            b.alpha = 0;
+         }
+         else if(this.hzdPmHid)
+         {
+            b.alpha = this.hzdPmAlpha > 0 ? this.hzdPmAlpha : 1;
+            this.hzdPmHid = false;
+         }
+      }
+      private function hzdPmShown() : Boolean
+      {
+         var b:* = this.hzdPmClip();
+         if(b == null) { return false; }
+         try { return b.visible == true; } catch(e:Error) { }
+         return false;
+      }
+      // highlighted reply only; no ghost when the points field is missing, zero, or the challenge is already over
+      private function hzdPmGhost() : Number
+      {
+         if(!this.hzdPers) { return 0; }
+         try
+         {
+            var l:* = this.PersuasionList_mc;
+            if(l == null) { return 0; }
+            var idx:int = -1;
+            if(this.hzdView != null && this.hzdSel >= 0 && this.hzdSel < this.hzdView.length) { idx = int(this.hzdView[this.hzdSel]); }
+            else if(l.selectedIndex != undefined && l.selectedIndex != null) { idx = int(l.selectedIndex); }
+            if(idx < 0) { return 0; }
+            var d:Object = l.GetDataForEntry(idx);
+            if(d == null || d.iPersuasionPointsGained == undefined || d.iPersuasionPointsGained == null) { return 0; }
+            var g:Number = Number(d.iPersuasionPointsGained);
+            if(isNaN(g) || g <= 0) { return 0; }
+            return g;
+         }
+         catch(e:Error) { }
+         return 0;
+      }
+      private function hzdPmRead() : Object
+      {
+         var o:Object = {"goal":NaN,"score":NaN,"turns":NaN,"res":this.PERUSASION_RESULT_NONE,"won":false,"failed":false,"last":false,"have":false,"frac":0,"ghost":0,"gfrac":0,"col":this.hzdAccent()};
+         var d:Object = this.hzdPmData;
+         if(d != null)
+         {
+            o.goal = this.hzdPmNum(d.uMaxPersuasionScore);
+            o.score = this.hzdPmNum(d.uPersuasionScore);
+            o.turns = this.hzdPmNum(d.uTurnsLeft);
+            if(d.uChallengeResult != undefined && d.uChallengeResult != null)
+            {
+               var rn:Number = Number(d.uChallengeResult);
+               if(!isNaN(rn)) { o.res = int(rn); }
+            }
+         }
+         var won:Boolean = o.res == this.PERUSASION_RESULT_WIN || o.res == this.PERUSASION_RESULT_CRIT_WIN;
+         var failed:Boolean = !won && (o.res == this.PERUSASION_RESULT_FAIL || (!isNaN(o.turns) && o.turns <= 0));
+         if(won && !isNaN(o.goal) && o.goal > 0) { o.score = o.goal; }
+         o.won = won;
+         o.failed = failed;
+         o.last = !won && !failed && !isNaN(o.turns) && int(o.turns) == 1;
+         o.have = !isNaN(o.score) && !isNaN(o.goal) && o.goal > 0 && o.score >= 0;
+         o.frac = o.have ? Math.max(0,Math.min(1,Number(o.score) / Number(o.goal))) : 0;
+         var gh:Number = won || failed ? 0 : this.hzdPmGhost();
+         o.ghost = gh;
+         o.gfrac = o.have ? Math.max(Number(o.frac),Math.min(1,(Number(o.score) + gh) / Number(o.goal))) : 0;
+         o.col = won ? HZD_OK : (failed ? HZD_BAD : (o.last ? HZD_AMB : this.hzdAccent()));
+         return o;
+      }
+      private function hzdPmFs() : Number
+      {
+         var z:Number = Number(this.hzdCfg.TextScale);
+         if(isNaN(z) || z <= 0) { z = 1; }
+         z = z * (HZD_LRG ? 1.25 : 1) * this.hzdDsc();
+         return Math.max(13,Math.round(13 * z));
+      }
+      private function hzdPmListenSet(on:Boolean) : void
+      {
+         if(on == this.hzdPmListen) { return; }
+         if(on) { addEventListener(Event.ENTER_FRAME,this.hzdPmTick); }
+         else { removeEventListener(Event.ENTER_FRAME,this.hzdPmTick); }
+         this.hzdPmListen = on;
+      }
+      private function hzdPmTick(e:Event) : void
+      {
+         try { this.hzdPmApply(); } catch(err:Error) { }
+      }
+      private function hzdPmApply() : void
+      {
+         if(!this.hzdPmEnsure()) { return; }
+         var show:Boolean = false;
+         if(!this.hzdPmOff && this.hzdOn && this.hzdPmOn())
+         {
+            try { show = this.hzdPmShown(); } catch(e0:Error) { show = false; }
+            if(show)
+            {
+               var ready:Boolean = false;
+               try
+               {
+                  var pre:Object = this.hzdPmRead();
+                  ready = Boolean(pre.won) || Boolean(pre.failed) || Boolean(pre.have) || (!isNaN(pre.turns) && Number(pre.turns) >= 0);
+               }
+               catch(er0:Error) { ready = false; }
+               if(!ready) { show = false; }
+            }
+         }
+         if(!show)
+         {
+            this.hzdPm.visible = false;
+            this.hzdPmSig = "";
+            try { this.hzdPmListenSet(false); } catch(e1:Error) { }
+            try { this.hzdPmHideVan(false); } catch(e2:Error) { }
+            return;
+         }
+         try
+         {
+            this.hzdPmDraw();
+            this.hzdPmFail = 0;
+            this.hzdPmHideVan(true);
+            this.hzdPm.visible = true;
+            this.hzdPm.mouseEnabled = false;
+            this.hzdPm.mouseChildren = false;
+            addChild(this.hzdPm);
+            this.hzdPmListenSet(true);
+         }
+         catch(e3:Error)
+         {
+            this.hzdPmFail++;
+            this.hzdPm.visible = false;
+            this.hzdPmSig = "";
+            this.hzdPmW = 0;
+            this.hzdPmH = 0;
+            try { this.hzdPmHideVan(false); } catch(e5:Error) { }
+            if(this.hzdPmFail >= 3)
+            {
+               this.hzdPmOff = true;
+               try { this.hzdPmListenSet(false); } catch(e4:Error) { }
+            }
+         }
+      }
+      private function hzdPmMark(g:*, x:Number, y:Number, s:Number, col:uint, ok:Boolean) : void
+      {
+         g.lineStyle(Math.max(2,Math.round(s * 0.16)),col,1,true);
+         if(ok)
+         {
+            g.moveTo(x,y + s * 0.55);
+            g.lineTo(x + s * 0.34,y + s * 0.88);
+            g.lineTo(x + s,y + s * 0.12);
+         }
+         else
+         {
+            g.moveTo(x + s * 0.12,y + s * 0.12);
+            g.lineTo(x + s * 0.88,y + s * 0.88);
+            g.moveTo(x + s * 0.88,y + s * 0.12);
+            g.lineTo(x + s * 0.12,y + s * 0.88);
+         }
+         g.lineStyle();
+      }
+      private function hzdPmPlace(w:Number, h:Number) : void
+      {
+         var b:* = this.hzdPmClip();
+         var cx:Number = NaN;
+         var cy:Number = NaN;
+         if(b != null)
+         {
+            try
+            {
+               var r:Rectangle = b.getBounds(this);
+               if(r != null && r.width >= 1 && r.height >= 1 && r.width <= 1400 && r.height <= 800 && !isNaN(r.x) && !isNaN(r.y) && !isNaN(r.width) && !isNaN(r.height))
+               {
+                  cx = r.x + r.width / 2;
+                  cy = r.y + r.height / 2;
+               }
+            }
+            catch(e0:Error) { }
+            if(isNaN(cx) || isNaN(cy))
+            {
+               try
+               {
+                  var bw:Number = Number(b.width);
+                  var bh:Number = Number(b.height);
+                  if(isNaN(bw) || bw < 1) { bw = 0; }
+                  if(isNaN(bh) || bh < 1) { bh = 0; }
+                  var q:Point = this.globalToLocal(b.localToGlobal(new Point(bw / 2,bh / 2)));
+                  if(q != null && !isNaN(q.x) && !isNaN(q.y)) { cx = q.x; cy = q.y; }
+               }
+               catch(e1:Error) { }
+            }
+         }
+         var vr:Rectangle = this.hzdVr();
+         if(isNaN(cx) || isNaN(cy))
+         {
+            if(this.hzdPanel != null && this.hzdPanel.visible) { cx = this.hzdPanel.x + w / 2; cy = this.hzdPanel.y - 12 - h / 2; }
+            else { cx = vr.x + vr.width / 2; cy = vr.y + 120 + h / 2; }
+         }
+         var x:Number = Math.max(vr.x,Math.min(vr.right - w,cx - w / 2));
+         var y:Number = Math.max(vr.y,Math.min(vr.bottom - h,cy - h / 2));
+         this.hzdPm.x = Math.round(x);
+         this.hzdPm.y = Math.round(y);
+      }
+      private function hzdPmDraw() : void
+      {
+         var s:Sprite = this.hzdPm;
+         var o:Object = this.hzdPmRead();
+         var fs:Number = this.hzdPmFs();
+         var u:Number = fs / 13;
+         var sig:String = (o.won ? "W" : (o.failed ? "F" : (o.last ? "L" : "P"))) + ":" + o.score + ":" + o.goal + ":" + o.turns + ":" + o.ghost + ":" + o.col + ":" + fs + ":" + int(this.hzdCfg.DlgFont) + ":" + int(this.hzdCfg.FontFace) + ":" + Number(this.hzdCfg.DlgBgOpacity) + ":" + int(this.hzdCfg.DlgBgColor) + ":" + int(this.hzdCfg.AccentColor) + ":" + String(this.hzdCfg.AccentHex);
+         if(sig == this.hzdPmSig && s.visible && this.hzdPmW > 0 && this.hzdPmH > 0)
+         {
+            this.hzdPmPlace(this.hzdPmW,this.hzdPmH);
+            return;
+         }
+         this.hzdPmSig = sig;
+         while(s.numChildren > 0) { s.removeChildAt(0); }
+         s.graphics.clear();
+         var col:uint = uint(o.col);
+         var bg:uint = 0x0B1218;
+         try { bg = this.hzdBgCol(); } catch(ebg:Error) { bg = 0x0B1218; }
+         var light:Boolean = false;
+         try { light = this.hzdLight(bg); } catch(elb:Error) { light = false; }
+         var mut:uint = light ? 0x4A5A64 : 0x8FA3AE;
+         var word:String = "";
+         var mark:int = 0;
+         if(o.won) { word = "PERSUADED"; mark = 1; }
+         else if(o.failed && !isNaN(o.turns) && o.turns <= 0) { word = "OUT OF TURNS"; mark = 2; }
+         else if(o.failed) { word = "FAILED"; mark = 2; }
+         var fracTxt:String = "";
+         if(o.have) { fracTxt = String(int(Math.max(0,Number(o.score)))) + " / " + String(int(Number(o.goal))); }
+         var turnsTxt:String = "";
+         if(!isNaN(o.turns) && o.turns >= 0 && o.turns < 1000)
+         {
+            var ti:int = int(o.turns);
+            turnsTxt = "TURNS " + (ti < 10 ? "0" + String(ti) : String(ti));
+         }
+         var pad:Number = Math.round(14 * u);
+         var gap:Number = Math.round(8 * u);
+         var pillX:Number = 0;
+         var pillY:Number = 0;
+         var pillH:Number = 0;
+         var title:TextField = this.hzdText(s,"PERSUASION","",fs,col,Math.round(fs * 0.16),0,0,0,"left",false);
+         var turnsT:TextField = turnsTxt.length > 0 ? this.hzdText(s,turnsTxt,"",fs,col,Math.round(fs * 0.08),0,0,0,"left",false) : null;
+         var wordT:TextField = word.length > 0 ? this.hzdText(s,word,"",fs,col,Math.round(fs * 0.1),0,0,0,"left",false) : null;
+         var fracT:TextField = fracTxt.length > 0 ? this.hzdText(s,fracTxt,"",fs,word.length > 0 ? mut : col,Math.round(fs * 0.06),0,0,0,"left",false) : null;
+         var turnsW:Number = turnsT != null ? Math.round(turnsT.textWidth + 20 * u) : 0;
+         var markS:Number = Math.max(12,Math.round(12 * u));
+         var wordW:Number = wordT != null ? wordT.textWidth + (mark > 0 ? markS + gap : 0) : 0;
+         var fracW:Number = fracT != null ? fracT.textWidth : 0;
+         var row1:Number = pad + title.textWidth + gap + turnsW + pad + 8 * u;
+         var row3:Number = pad + wordW + (wordW > 0 && fracW > 0 ? gap : 0) + fracW + pad;
+         var W:Number = Math.round(Math.max(300 * u,row1,row3));
+         var meterH:Number = Math.max(8,Math.round(8 * u));
+         var row1H:Number = Math.max(title.height,turnsT != null ? turnsT.height + 6 * u : 0);
+         var y1:Number = pad;
+         title.x = pad;
+         title.y = Math.round(y1 + Math.max(0,(row1H - title.height) / 2));
+         if(turnsT != null)
+         {
+            pillH = Math.round(Math.max(fs + 8 * u,turnsT.height + 6 * u));
+            pillX = W - pad - turnsW;
+            pillY = Math.round(y1 + Math.max(0,(row1H - pillH) / 2));
+            this.hzdClip(title,pillX - title.x - gap);
+            turnsT.x = Math.round(pillX + (turnsW - turnsT.width) / 2);
+            turnsT.y = Math.round(pillY + (pillH - turnsT.height) / 2);
+         }
+         var yM:Number = y1 + row1H + gap;
+         var statusH:Number = 0;
+         if(wordT != null) { statusH = Math.max(statusH,wordT.height); }
+         if(fracT != null) { statusH = Math.max(statusH,fracT.height); }
+         if(mark > 0) { statusH = Math.max(statusH,markS); }
+         var yS:Number = yM + (o.have ? meterH + gap : 0);
+         var H:Number = Math.round((statusH > 0 ? yS + statusH : (o.have ? yM + meterH : y1 + row1H)) + pad);
+         if(wordT != null)
+         {
+            var wx:Number = pad + (mark > 0 ? markS + Math.round(6 * u) : 0);
+            wordT.x = Math.round(wx);
+            wordT.y = Math.round(yS + Math.max(0,(statusH - wordT.height) / 2));
+         }
+         if(fracT != null)
+         {
+            fracT.x = wordT != null ? Math.round(W - pad - fracT.width) : pad;
+            fracT.y = Math.round(yS + Math.max(0,(statusH - fracT.height) / 2));
+         }
+         var bo:Number = Number(this.hzdCfg.DlgBgOpacity);
+         if(isNaN(bo)) { bo = 0.85; }
+         bo = Math.max(0.35,Math.min(1,bo));
+         var rad:Number = Math.round(14 * u);
+         var g:* = s.graphics;
+         g.beginFill(bg,bo);
+         g.drawRoundRect(0,0,W,H,rad,rad);
+         g.endFill();
+         g.lineStyle(Math.max(1,Math.round(u)),col,0.8,true);
+         g.beginFill(col,0);
+         g.drawRoundRect(0.5,0.5,W - 1,H - 1,rad,rad);
+         g.endFill();
+         g.lineStyle();
+         g.beginFill(col,1);
+         g.drawRoundRect(0,Math.round(pad),Math.max(3,Math.round(4 * u)),Math.max(4,H - pad * 2),4,4);
+         g.endFill();
+         if(turnsT != null)
+         {
+            g.beginFill(col,0.16);
+            g.drawRoundRect(pillX,pillY,turnsW,pillH,pillH,pillH);
+            g.endFill();
+         }
+         if(o.have)
+         {
+            var tx0:Number = pad;
+            var tw:Number = Math.max(meterH,W - pad * 2);
+            g.beginFill(light ? 0x0E151B : 0xFFFFFF,light ? 0.12 : 0.1);
+            g.drawRoundRect(tx0,yM,tw,meterH,meterH,meterH);
+            g.endFill();
+            var meterAt:int = 0;
+            if(Number(o.gfrac) > Number(o.frac) + 0.001)
+            {
+               var ghost:Sprite = new Sprite();
+               ghost.mouseEnabled = false;
+               ghost.mouseChildren = false;
+               ghost.x = tx0;
+               ghost.y = yM;
+               ghost.graphics.beginFill(col,0.32);
+               ghost.graphics.drawRoundRect(0,0,tw,meterH,meterH,meterH);
+               ghost.graphics.endFill();
+               ghost.scrollRect = new Rectangle(0,0,Math.max(1,Math.min(tw,tw * Number(o.gfrac))),meterH + 1);
+               s.addChildAt(ghost,meterAt);
+               meterAt++;
+            }
+            if(Number(o.frac) > 0)
+            {
+               var fill:Sprite = new Sprite();
+               fill.mouseEnabled = false;
+               fill.mouseChildren = false;
+               fill.x = tx0;
+               fill.y = yM;
+               fill.graphics.beginFill(col,0.92);
+               fill.graphics.drawRoundRect(0,0,tw,meterH,meterH,meterH);
+               fill.graphics.endFill();
+               fill.scrollRect = new Rectangle(0,0,Math.max(1,Math.min(tw,tw * Number(o.frac))),meterH + 1);
+               s.addChildAt(fill,meterAt);
+            }
+         }
+         if(mark > 0)
+         {
+            var my:Number = yS + Math.max(0,(statusH - markS) / 2);
+            this.hzdPmMark(g,pad,my,markS,col,mark == 1);
+         }
+         if(isNaN(W) || isNaN(H) || W < 40 || H < 20) { throw new Error("pm"); }
+         this.hzdPmW = W;
+         this.hzdPmH = H;
+         this.hzdPmPlace(W,H);
+      }
+
       // =================== v0.37 shared settings reader (hzd37) ===================
       // ONE helper, spliced into every movie that reads the settings (hudmenu + hudmenu_lrg as hz37, hudmessagesmenu
       // x2 as hzc37, dialoguemenu x2 as hzd37; generated from /workspace/v037/work/hzini_shared.as, so the copies are
