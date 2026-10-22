@@ -2388,7 +2388,7 @@
       private var hzVehHid:Boolean = false;
       private var hzVehAlpha:Number = 1;
       private var hzVehW:Number = 0;
-      private var hzVehH:Number = 38;
+      private var hzVehH:Number = 39;
       private var hzVehFail:int = 0;
       private function hz42VehOnData(e:FromClientDataEvent) : void
       {
@@ -2471,12 +2471,6 @@
          if(cur <= a) { return 0; }
          return (cur - a) / (z - a);
       }
-      // ClickFailed begins at frame 41 and Disabled is frame 61. Those frames are not a hold.
-      private function hz42VehBtnAdd(frame:int) : Number
-      {
-         if(frame >= 41) { return 0; }
-         return 0;
-      }
       private function hz42VehHold(b:*) : *
       {
          var pc:* = this.hz42VehAt(b,["PCButton_mc","ButtonInstance_mc","HoldAnim_mc"]);
@@ -2505,10 +2499,7 @@
             var z:int = this.hz42VehLabel(hold,"buttonHoldComplete");
             p = this.hz42VehSpan(cur,a,z);
          }
-         var bf:int = 0;
-         try { bf = int(b.currentFrame); } catch(eB:Error) { bf = 0; }
-         var add:Number = this.hz42VehBtnAdd(bf);
-         if(add > p) { p = add; }
+         // The button's own frames, including 41 and later, are not the sweep.
          if(p < 0) { return 0; }
          return p > 1 ? 1 : p;
       }
@@ -2582,12 +2573,12 @@
          if(pt == null) { return ["",""]; }
          return [pt.toUpperCase(),""];
       }
-      private function hz42VehFs(size:Number) : int
+      private function hz42VehFs(size:Number) : Number
       {
          var ts:Number = this.hzTextScale;
          if(isNaN(ts) || ts <= 0) { ts = 1; }
          ts = Math.max(0.8,Math.min(1.3,ts));
-         var sz:int = int(Math.round(size * ts));
+         var sz:Number = Math.round(size * ts * 2) / 2;
          if(sz < 13) { sz = 13; }
          return sz;
       }
@@ -2605,7 +2596,7 @@
          if(w < 14) { w = 14; }
          return w;
       }
-      private function hz42VehTf(p:Sprite, s:String, size:int, col:uint, font:String, ls:Number) : TextField
+      private function hz42VehTf(p:Sprite, s:String, size:Number, col:uint, font:String, ls:Number) : TextField
       {
          var t:TextField = new TextField();
          t.embedFonts = true;
@@ -2629,8 +2620,8 @@
          while(p.numChildren > 0) { p.removeChildAt(0); }
          var g:* = p.graphics;
          g.clear();
-         var keyFs:int = this.hz42VehFs(15);
-         var labFs:int = this.hz42VehFs(16);
+         var keyFs:Number = this.hz42VehFs(16.5);
+         var labFs:Number = this.hz42VehFs(18);
          var edge:uint = done ? HZ_GREEN : HZ_ACCENT;
          var kt:TextField = null;
          var ktw:Number = 0;
@@ -2650,8 +2641,8 @@
          }
          var lab:String = this.hzHdrCase("EXIT");
          var lls:Number = this.hzHeaderStyle == 0 ? Math.round(labFs * 0.1 * 10) / 10 : 0;
-         var lt:TextField = this.hz42VehTf(p,lab,labFs,0xF2F7F9,this.hzFontName("bd"),lls);
-         var h:Number = 38;
+         var lt:TextField = this.hz42VehTf(p,lab,labFs,0xF2F7F9,this.hzFontName(),lls);
+         var h:Number = 39;
          if(lt.height + 10 > h) { h = Math.round(lt.height + 10); }
          if(kt != null && kt.height + 10 > h) { h = Math.round(kt.height + 10); }
          var x0:Number = 10;
@@ -2677,15 +2668,29 @@
          if(fw > 0)
          {
             var sg:* = sweep.graphics;
-            sg.beginFill(done ? HZ_GREEN : edge,sweepA);
+            var sweepCol:uint = done ? HZ_GREEN : edge;
+            if(!done && fw < w - 1)
+            {
+               var feather:Number = 14;
+               if(feather > fw * 0.5) { feather = fw * 0.5; }
+               var mtx:* = new flash.geom.Matrix();
+               mtx.createGradientBox(w,h,0,0,0);
+               var fade0:int = int(Math.round(255 * Math.max(0,fw - feather) / w));
+               var fade1:int = int(Math.round(255 * fw / w));
+               if(fade1 <= fade0) { fade1 = fade0 + 1; }
+               if(fade1 > 255) { fade1 = 255; }
+               if(fade0 >= fade1) { fade0 = fade1 - 1; }
+               if(fade0 < 0) { fade0 = 0; }
+               sg.beginGradientFill("linear",[sweepCol,sweepCol,sweepCol],[sweepA,sweepA,0],[0,fade0,fade1],mtx);
+            }
+            else { sg.beginFill(sweepCol,sweepA); }
             sg.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
             sg.endFill();
-            if(fw < w) { sweep.scrollRect = new Rectangle(0,0,fw,h); }
             p.addChild(sweep);
          }
          var idleRim:Boolean = !done && prog <= 0.02;
          var rimCol:uint = done ? HZ_GREEN : (idleRim ? 0xFFFFFF : edge);
-         var rimA:Number = idleRim ? 0.35 : (done ? 0.95 : 0.9);
+         var rimA:Number = idleRim ? 0.18 : (done ? 0.95 : 0.9);
          var rim:Sprite = new Sprite();
          rim.mouseEnabled = false;
          rim.mouseChildren = false;
@@ -2694,6 +2699,7 @@
          rg.beginFill(rimCol,0.004);
          rg.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
          rg.endFill();
+         if(!idleRim) { try { rim.filters = [new GlowFilter(rimCol,0.32,10,10,1,1)]; } catch(eGlow:Error) { } }
          p.addChild(rim);
          if(kw > 0)
          {
@@ -2703,8 +2709,8 @@
             var kh:Number = Math.round(h - 10);
             var ky:Number = Math.round((h - kh) / 2);
             var cg:* = cap.graphics;
-            cg.lineStyle(1,edge,0.95,true,"none");
-            cg.beginFill(0x0B1218,prog > 0.02 ? 0.12 : 0.45);
+            cg.lineStyle(1,edge,0.9,true,"none");
+            cg.beginFill(edge,0.22);
             cg.drawRoundRect(x0,ky,kw,kh,8,8);
             cg.endFill();
             p.addChild(cap);
