@@ -535,6 +535,7 @@ package
       // v0.42.0.7: HUDMessageData is the primary path. A value replayed during Subscribe is ignored, and the skip
       // flag is cleared when Subscribe returns so the first real message is kept. The DLL may also call hzcRxPush.
       // The two paths pair in order, so the same text from both paths is one card and N reactions are N cards.
+      // A DLL note that arrives after its linked line has left still pairs inside the 3 s window and does not open another card.
       // A card that links to a vanilla line stays up until that line leaves the list. A card that never links
       // lasts 4 s of time while Messages_mc is visible, so a line held through a conversation is still carded.
       // v0.40.1: the scan state also ends when the HUD's bottom-center group goes from shown to hidden.
@@ -1546,7 +1547,9 @@ package
       private static const HZC_RX_PAIR:int = 3000;  // a binding note and a DLL note of the same text pair inside this window
       private static const HZC_RX_VIS:int = 4000;    // unlinked cards only: shown time while the message slot is visible
       private static const HZC_RX_COOL:int = 5000;   // after three message misses, try the card again once this has passed
+      private static const HZC_RX_STEP:int = 3;     // consecutive frames whose step threw, then the card turns off
       private var hzcRx:Array = [];          // {it, st, n, k, c, w, h, sig, key, t0, vis, tx, linked, src, paired, blamed}
+      private var hzcRxGone:Array = [];      // {key, t0} linked binding cards that ended before their DLL note arrived
       private var hzcRxWait:Array = [];      // {it, f} text not ready yet
       private var hzcRxLayer:Sprite = null;
       private var hzcRxOff:Boolean = false;  // after three message misses: lines stay the game's until the cooldown or a settings reload
@@ -1555,7 +1558,7 @@ package
       private var hzcRxSub:Boolean = false;
       private var hzcRxLast:int = 0;
       private var hzcRxFail:int = 0;         // misses in a row, one per message. A later success clears it.
-      private var hzcRxStepBad:Boolean = false;
+      private var hzcRxStepN:int = 0;        // consecutive top-level step throws. Three turn the card off.
       private var hzcRxWhyLast:String = "";
       private function hzcRxInit() : void
       {
@@ -1816,7 +1819,7 @@ package
          this.hzcRxOff = false;
          this.hzcRxOffAt = 0;
          this.hzcRxFail = 0;
-         this.hzcRxStepBad = false;
+         this.hzcRxStepN = 0;
          this.hzcRxErr = "";
          this.hzcRxErrSent = false;
          this.hzcRxWhyLast = "";
@@ -1864,6 +1867,7 @@ package
             var age:int = now - int(e0.t0);
             if(age >= 0 && age < HZC_RX_PAIR) { e0.paired = true; e0.src = "both"; return "queued"; }
          }
+         if(fromDll && this.hzcRxPairGone(key, now)) { return "queued"; }
          var src:String = fromDll ? "d" : "b";
          this.hzcRx.push({"it":null,"st":1,"n":r.n,"k":r.k,"c":null,"w":0,"h":0,"sig":"","key":key,"t0":now,"vis":0,"tx":String(raw),"linked":false,"src":src,"paired":false,"blamed":false});
          if(this.hzcRx.length > 8)
@@ -1872,6 +1876,28 @@ package
             this.hzcRxDrop(old);
          }
          return "queued";
+      }
+      // The line already left. A DLL note of that same text, still inside the pair window, is the backup for it.
+      private function hzcRxRemember(e:Object) : void
+      {
+         if(e == null || e.linked != true || e.paired == true || e.src != "b" || e.key == null) { return; }
+         this.hzcRxGone.push({"key":e.key,"t0":int(e.t0)});
+         if(this.hzcRxGone.length > 8) { this.hzcRxGone.shift(); }
+      }
+      private function hzcRxPairGone(key:String, now:int) : Boolean
+      {
+         var keepG:Array = [];
+         var ate:Boolean = false;
+         for each(var g0:Object in this.hzcRxGone)
+         {
+            if(g0 == null) { continue; }
+            var gage:int = now - int(g0.t0);
+            if(gage < 0 || gage >= HZC_RX_PAIR) { continue; }
+            if(!ate && g0.key == key) { ate = true; continue; }
+            keepG.push(g0);
+         }
+         this.hzcRxGone = keepG;
+         return ate;
       }
       // DLL backup. The sink thread never calls this. Poll does, and only while HUDMessagesMenu is open.
       public function hzcRxPush(text:String) : String
@@ -1984,7 +2010,19 @@ package
          this.hzcRxOff = true;
          this.hzcRxOffAt = getTimer();
          try { this.hzcRxAll(); } catch(eAll:Error) { }
+         try { this.hzcRxUnhide(); } catch(eUn:Error) { }
          try { this.hzcRxDbgErr(); } catch(eDbg:Error) { }
+      }
+      // Lines hidden on the way in, and not yet a card, come back when the card turns off.
+      private function hzcRxUnhide() : void
+      {
+         var m:* = this.Messages_mc;
+         if(m == null) { return; }
+         var arr:* = null;
+         try { arr = m.ShownMessageArray; } catch(eArr:Error) { arr = null; }
+         if(arr == null) { return; }
+         var i:int = 0;
+         while(i < arr.length) { this.hzcRxReveal(arr[i]); i++; }
       }
       // One miss is recoverable: the next message draws again. The caller turns the card off after three.
       private function hzcRxHit(err:Error) : void
@@ -2024,6 +2062,7 @@ package
       {
          for each(var e:Object in this.hzcRx) { this.hzcRxShow(e); this.hzcRxDrop(e); if(e != null) { e.st = 0; } }
          this.hzcRx = [];
+         this.hzcRxGone = [];
       }
       private function hzcRxApply() : void
       {
@@ -2035,18 +2074,22 @@ package
       {
          if(this.hzcRxOff)
          {
-            var woke:int = getTimer() - this.hzcRxOffAt;
-            if(this.hzcRxOffAt != 0 && woke >= HZC_RX_COOL && woke < 120000) { this.hzcRxRearm(); }
+            // getTimer is a signed int and wraps. Unsigned subtraction keeps a real elapsed time across that wrap.
+            // A backward step becomes a value above 2147483647 and stays latched until settings reload.
+            var woke:uint = uint(getTimer()) - uint(this.hzcRxOffAt);
+            if(woke >= uint(HZC_RX_COOL) && woke <= uint(2147483647)) { this.hzcRxRearm(); }
             else
             {
                if(this.hzcRxDbgOn) { try { this.hzcRxDbgErr(); this.hzcRxDbgScan(this.Messages_mc != null ? this.Messages_mc.ShownMessageArray : null); } catch(eDbg2:Error) { } }
                return;
             }
          }
-         try { this.hzcRxStep(); this.hzcRxStepBad = false; }
+         try { this.hzcRxStep(); this.hzcRxStepN = 0; }
          catch(err:Error)
          {
-            if(!this.hzcRxStepBad) { this.hzcRxStepBad = true; this.hzcRxHit(err); if(this.hzcRxFail >= 3) { this.hzcRxLatch(); } }
+            this.hzcRxStepN++;
+            if(this.hzcRxStepN == 1) { this.hzcRxHit(err); }
+            if(this.hzcRxStepN >= HZC_RX_STEP) { this.hzcRxLatch(); }
          }
       }
       // Time counts only while Messages_mc is visible. A hidden slot does not age a pending card, and nothing here uses a 30 s wall clock.
@@ -2078,7 +2121,7 @@ package
                var inList:Boolean = false;
                try { inList = e0.it != null && arr != null && arr.indexOf(e0.it) >= 0 && e0.it.parent === m; } catch(eIn:Error) { inList = false; }
                // The card ends with its line. It does not fall back to a standalone card.
-               if(!inList) { this.hzcRxShow(e0); this.hzcRxDrop(e0); continue; }
+               if(!inList) { this.hzcRxShow(e0); this.hzcRxRemember(e0); this.hzcRxDrop(e0); continue; }
             }
             else
             {

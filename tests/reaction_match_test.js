@@ -323,11 +323,18 @@ expect(src.indexOf("private static const HZC_RX_COOL:int = 5000;") >= 0, "a miss
 expect(src.indexOf('if(age >= 0 && age < HZC_RX_PAIR) { e0.paired = true; e0.src = "both"; return "queued"; }') >= 0, "pairing keeps the oldest card");
 expect(src.indexOf('try { return this.hzcRxOffer(text == null ? "" : String(text),true); }') >= 0, "the DLL path offers through the same queue");
 expect(src.indexOf("if(e0.linked == true)") >= 0, "a linked card follows its line");
-expect(src.indexOf("if(!inList) { this.hzcRxShow(e0); this.hzcRxDrop(e0); continue; }") >= 0, "a linked card ends when its line leaves");
+expect(src.indexOf("if(!inList) { this.hzcRxShow(e0); this.hzcRxRemember(e0); this.hzcRxDrop(e0); continue; }") >= 0, "a linked card ends when its line leaves");
 expect(src.indexOf("e0.it = null") < 0, "a finished line does not fall back to a standalone card");
 expect(src.indexOf("if(e.linked == true) { e.c.visible = false; return; }") >= 0, "a linked card stays hidden when it cannot sit on its line");
 expect(src.indexOf("private function hzcRxRearm() : void") >= 0, "a settings reload rearms the card");
-expect(src.indexOf("if(this.hzcRxOffAt != 0 && woke >= HZC_RX_COOL && woke < 120000) { this.hzcRxRearm(); }") >= 0, "the cooldown rearms the card");
+expect(src.indexOf("if(woke >= uint(HZC_RX_COOL) && woke <= uint(2147483647)) { this.hzcRxRearm(); }") >= 0, "the cooldown rearms across a timer wrap");
+expect(src.indexOf("woke < 120000") < 0, "a long pause still rearms");
+expect(src.indexOf("private static const HZC_RX_STEP:int = 3;") >= 0, "three consecutive step throws turn the card off");
+expect(src.indexOf("if(this.hzcRxStepN >= HZC_RX_STEP) { this.hzcRxLatch(); }") >= 0, "the step-throw cutoff calls the off switch");
+expect(src.indexOf("private function hzcRxUnhide() : void") >= 0, "turning the card off restores vanilla lines");
+expect(src.indexOf("hzcRxStepBad") < 0, "a repeating step throw is not counted only once");
+expect(src.indexOf("if(fromDll && this.hzcRxPairGone(key, now)) { return \"queued\"; }") >= 0, "a late DLL note pairs with an ended card");
+expect(src.indexOf("e.paired == true || e.src != \"b\"") >= 0, "only an unpaired binding card leaves a pair slot");
 expect(src.indexOf("if(e.blamed != true) { e.blamed = true; e.judged = true; this.hzcRxHit(err); }") >= 0, "one message counts one miss");
 expect(src.indexOf("if(e.judged != true) { e.judged = true; drew = true; }") >= 0, "the first successful place of a message clears the streak");
 expect(src.indexOf("if(drew) { this.hzcRxFail = 0; }") >= 0, "a later success clears the miss streak");
@@ -386,7 +393,12 @@ function rxPlace(e, placed) {
 }
 
 // FIFO: opposite sources of the same text pair in order. N reactions stay N cards.
-function rxOffer(q, text, fromDll, now) {
+function rxRemember(gone, e) {
+	if (!e || e.linked !== true || e.paired === true || e.src !== "b" || e.key == null) return;
+	gone.push({ key: e.key, t0: e.t0 | 0 });
+	if (gone.length > 8) gone.shift();
+}
+function rxOffer(q, text, fromDll, now, gone) {
 	const key = String(text).toLowerCase();
 	const want = fromDll ? "b" : "d";
 	for (let i = 0; i < q.length; i++) {
@@ -394,6 +406,20 @@ function rxOffer(q, text, fromDll, now) {
 		if (e0 == null || e0.key !== key || e0.paired === true || e0.src !== want) continue;
 		const age = now - e0.t0;
 		if (age >= 0 && age < PAIR) { e0.paired = true; e0.src = "both"; return "queued"; }
+	}
+	if (fromDll && gone) {
+		const keep = [];
+		let ate = false;
+		for (let gi = 0; gi < gone.length; gi++) {
+			const g0 = gone[gi];
+			const gage = now - (g0.t0 | 0);
+			if (gage < 0 || gage >= PAIR) continue;
+			if (!ate && g0.key === key) { ate = true; continue; }
+			keep.push(g0);
+		}
+		gone.length = 0;
+		for (let ki = 0; ki < keep.length; ki++) gone.push(keep[ki]);
+		if (ate) return "queued";
 	}
 	const srcName = fromDll ? "d" : "b";
 	q.push({ key: key, t0: now, src: srcName, paired: false, it: null });
@@ -428,6 +454,33 @@ function rxOffer(q, text, fromDll, now) {
 	rxOffer(order, line, false, 10);
 	rxOffer(order, line, true, 20);
 	expect(order[0].paired === true && order[1].paired === false, "pairing takes the oldest unpaired note");
+	const ended = { key: line.toLowerCase(), t0: 0, linked: true, src: "b", paired: false };
+	const gone = [];
+	rxRemember(gone, ended);
+	const lateCard = [];
+	expect(rxOffer(lateCard, line, true, 2500, gone) === "queued" && lateCard.length === 0 && gone.length === 0, "a DLL note 2.5 s after a short line adds no second card");
+	const edgeGone = [];
+	rxRemember(edgeGone, ended);
+	const edgeCard = [];
+	rxOffer(edgeCard, line, true, PAIR, edgeGone);
+	expect(edgeCard.length === 1, "a DLL note at 3 s does not pair with the ended card");
+	const pairedGone = [];
+	rxRemember(pairedGone, { key: line.toLowerCase(), t0: 0, linked: true, src: "both", paired: true });
+	const second = [];
+	rxOffer(second, line, true, 2500, pairedGone);
+	expect(pairedGone.length === 0 && second.length === 1, "an already paired line does not swallow the next DLL note");
+	const two = [];
+	rxRemember(two, ended);
+	rxRemember(two, { key: line.toLowerCase(), t0: 20, linked: true, src: "b", paired: false });
+	const none = [];
+	rxOffer(none, line, true, 2400, two);
+	rxOffer(none, line, true, 2500, two);
+	expect(none.length === 0 && two.length === 0, "two ended lines take two late DLL notes in order");
+	const bindGone = [];
+	rxRemember(bindGone, ended);
+	const bindCard = [];
+	rxOffer(bindCard, line, false, 2500, bindGone);
+	expect(bindCard.length === 1 && bindGone.length === 1, "a new binding note is not consumed by an ended line");
 }
 
 // Misses are one per message. A healthy card that already drew does not clear the streak every frame.
@@ -442,22 +495,30 @@ function rxPlaces(entries, state) {
 	if (drew) state.fail = 0;
 	if (state.fail >= 3) { state.off = true; state.offAt = state.now; }
 }
+function wokeOf(now, offAt) {
+	return ((now >>> 0) - (offAt >>> 0)) >>> 0;
+}
+function rxCool(now, offAt) {
+	const woke = wokeOf(now, offAt);
+	return woke >= COOL && woke <= 2147483647;
+}
 function rxRearm(state) {
 	state.off = false;
 	state.offAt = 0;
 	state.fail = 0;
-	state.stepBad = false;
+	state.stepN = 0;
 }
 function rxFrame(state, now, stepThrows) {
 	state.now = now;
 	if (state.off) {
-		const woke = now - state.offAt;
-		if (state.offAt !== 0 && woke >= COOL && woke < 120000) rxRearm(state);
+		if (rxCool(now, state.offAt)) rxRearm(state);
 		else return;
 	}
 	if (stepThrows) {
-		if (!state.stepBad) { state.stepBad = true; state.fail++; if (state.fail >= 3) { state.off = true; state.offAt = now; } }
-	} else state.stepBad = false;
+		state.stepN = (state.stepN | 0) + 1;
+		if (state.stepN === 1) state.fail++;
+		if (state.stepN >= 3) { state.off = true; state.offAt = now; state.restored = true; }
+	} else state.stepN = 0;
 }
 {
 	const one = { bad: true, blamed: false, judged: false };
@@ -477,17 +538,36 @@ function rxFrame(state, now, stepThrows) {
 	expect(steady.fail === 2, "a card that already drew does not clear the streak every frame");
 	rxRearm(three);
 	expect(three.off === false && three.fail === 0, "a settings reload rearms a latched card");
-	const cool = { fail: 3, off: true, offAt: 1000, now: 1000, stepBad: false };
+	const cool = { fail: 3, off: true, offAt: 1000, now: 1000, stepN: 0 };
 	rxFrame(cool, 1000 + COOL - 1, false);
 	expect(cool.off === true, "the latch holds through 4999 ms");
 	rxFrame(cool, 1000 + COOL, false);
 	expect(cool.off === false && cool.fail === 0, "the latch clears after 5 s");
-	const back = { fail: 3, off: true, offAt: 5000, now: 5000, stepBad: false };
+	const back = { fail: 3, off: true, offAt: 5000, now: 5000, stepN: 0 };
 	rxFrame(back, 4000, false);
-	expect(back.off === true, "a clock step backward does not rearm");
-	const stuck = { fail: 0, off: false, offAt: 0, now: 0, stepBad: false };
-	for (let i = 0; i < 10; i++) rxFrame(stuck, i * 16, true);
-	expect(stuck.fail === 1 && stuck.off === false, "one step error counts once, not once per frame");
+	expect(back.off === true && rxCool(4000, 5000) === false, "a clock step backward does not rearm");
+	const long = { fail: 3, off: true, offAt: 1000, now: 1000, stepN: 0 };
+	rxFrame(long, 1000 + 130000, false);
+	expect(long.off === false, "a pause longer than 120 s still rearms");
+	const wrapAt = 2147483000;
+	const wrapNow = (wrapAt + 6000) | 0;
+	expect(rxCool(wrapNow, wrapAt) === true, "a timer wrap of 6 s rearms");
+	expect(rxCool((wrapAt + 1000) | 0, wrapAt) === false, "a timer wrap under 5 s stays latched");
+	const stuck = { fail: 0, off: false, offAt: 0, now: 0, stepN: 0, restored: false };
+	rxFrame(stuck, 0, true);
+	rxFrame(stuck, 16, true);
+	expect(stuck.fail === 1 && stuck.off === false, "two step throws stay on");
+	rxFrame(stuck, 32, true);
+	expect(stuck.off === true && stuck.restored === true, "three consecutive step throws turn the card off and restore vanilla");
+	const gap = { fail: 0, off: false, offAt: 0, now: 0, stepN: 0, restored: false };
+	rxFrame(gap, 0, true);
+	rxFrame(gap, 16, true);
+	rxFrame(gap, 32, false);
+	rxFrame(gap, 48, true);
+	rxFrame(gap, 64, true);
+	expect(gap.off === false, "a successful frame resets the step-throw count");
+	rxFrame(gap, 80, true);
+	expect(gap.off === true && gap.restored === true, "the count reaches three again after a reset");
 }
 
 const msgTwins = [

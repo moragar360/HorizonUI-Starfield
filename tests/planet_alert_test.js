@@ -585,6 +585,7 @@ pin("var sw:Number = Math.max(1,Math.round(this.hz42ScW * sx));", "the F11 chip 
 pin("var sh:Number = Math.max(1,Math.round(boxH * sx));", "the F11 chip snaps height after scaling");
 pin("private function hz42ScLblW(t:TextField) : Number", "the F11 label width uses the scope tracking");
 pin("f.letterSpacing = Math.round(fs * 0.1 * 10) / 10;", "the F11 label uses 0.1 letter spacing");
+pin('f.font = this.hzFontName("sb");', "the F11 label uses the chip semibold face");
 pin("var ltw:Number = this.hz42ScLblW(lt);", "the F11 label measures HOLD BREATH with that tracking");
 pin("var hw:Number = this.hz42ScLblW(hold);", "the F11 label measures HOLDING BREATH");
 pin("var ow:Number = this.hz42ScLblW(outb);", "the F11 label measures OUT OF BREATH");
@@ -628,11 +629,48 @@ dlgPin('titleStr = "FAILED"', "a loss changes the header to FAILED");
 dlgPin("if(mark != 0) { titleFs = 16.5; titleBold = true; }", "PERSUADED and FAILED are 16.5 px");
 {
 	const call = dlgBlock.indexOf('this.hzdText(s,titleStr,"",titleFs');
-	const face = dlgBlock.indexOf('tbf.font = "$Horizon_Font_Bold";');
+	const face = dlgBlock.indexOf("tbf.font = this.hzdPmBold(titleStr);");
 	const size = dlgBlock.indexOf("tbf.size = 16.5;");
 	expect(call >= 0 && face > call && size > face, "PERSUADED and FAILED set the bold face after hzdText");
 }
+expect(dlgBlock.indexOf('tbf.font = "$Horizon_Font_Bold"') < 0, "the result title is not hard-wired to Exo bold");
+dlgPin('var picked:String = this.hzdFont("_Bold", s);', "faces 1 and 2 ask hzdFont for the bold role");
+dlgPin('return "$MAIN_Font_Bold";', "face 0, face 3, and a failed check use the game bold");
 expect(dlgBlock.indexOf('titleRole = "_Bold"') < 0, "the result title does not follow FontFace");
+function pmProbe(moduleOn, faces) {
+	return { font: moduleOn ? 1 : 0, faces: faces || {} };
+}
+function hzdFontBold(face, dlgFont, probe) {
+	const f = dlgFont >= 0 ? dlgFont : face;
+	if (f === 3) return probe.semi ? "$NB_Grotesk_Semibold" : "$MAIN_Font";
+	if (probe.font === 0 || f <= 0 || f > 2) return "$MAIN_Font";
+	const base = f === 2 ? "$Horizon_Font_Alt" : "$Horizon_Font";
+	if (probe.faces[base + "_Bold"]) return base + "_Bold";
+	if (probe.faces[base]) return base;
+	return "$MAIN_Font";
+}
+function hzdPmBold(face, dlgFont, probe) {
+	const f = dlgFont >= 0 ? dlgFont : face;
+	if (f === 1 || f === 2) {
+		const picked = hzdFontBold(face, dlgFont, probe);
+		const base = f === 2 ? "$Horizon_Font_Alt" : "$Horizon_Font";
+		if (picked === base + "_Bold") return picked;
+	}
+	return "$MAIN_Font_Bold";
+}
+{
+	const both = pmProbe(true, { "$Horizon_Font_Bold": true, "$Horizon_Font": true, "$Horizon_Font_Alt_Bold": true, "$Horizon_Font_Alt": true });
+	expect(hzdPmBold(0, -1, both) === "$MAIN_Font_Bold", "FontFace 0 uses the game bold");
+	expect(hzdPmBold(1, -1, both) === "$Horizon_Font_Bold", "FontFace 1 uses Exo bold");
+	expect(hzdPmBold(2, -1, both) === "$Horizon_Font_Alt_Bold", "FontFace 2 uses Alt bold");
+	expect(hzdPmBold(3, -1, both) === "$MAIN_Font_Bold", "FontFace 3 uses the game bold");
+	const missing = pmProbe(false, { "$Horizon_Font_Bold": true, "$Horizon_Font_Alt_Bold": true });
+	expect(hzdPmBold(1, -1, missing) === "$MAIN_Font_Bold", "FontFace 1 with the Font module missing uses the game bold");
+	expect(hzdPmBold(2, -1, missing) === "$MAIN_Font_Bold", "FontFace 2 with the Font module missing uses the game bold");
+	const noBold = pmProbe(true, { "$Horizon_Font": true, "$Horizon_Font_Alt": true });
+	expect(hzdPmBold(1, -1, noBold) === "$MAIN_Font_Bold", "a failed Exo bold check uses the game bold");
+	expect(hzdPmBold(2, -1, noBold) === "$MAIN_Font_Bold", "a failed Alt bold check uses the game bold");
+}
 expect(dlgBlock.indexOf("Math.round(fs * 1.12)") < 0, "the result title is not a rounded scale of the body");
 expect(dlgBlock.indexOf("0xF4FBFF") < 0, "persuasion notches are not light ticks");
 expect(dlgBlock.indexOf("var wordT:") < 0, "a result replaces the header instead of adding a row");

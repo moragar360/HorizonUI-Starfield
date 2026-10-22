@@ -290,6 +290,8 @@ int main()
 		const auto veh = ini.find("VehicleExitPill=1");
 		Expect(cards != std::string::npos && compass != std::string::npos && veh != std::string::npos && cards < veh && veh < compass, "VehicleExitPill defaults on under Cards");
 		Expect(ini.find("; Vehicle exit prompt: 1 = Horizon pill") != std::string::npos, "VehicleExitPill has its comment");
+		Expect(ini.find("F11 opens from the main HUD only (not while the scanner or a full-screen menu is open).") != std::string::npos, "the settings key comment keeps the F11 hint");
+		Expect(ini.find("set in F11 > SCANNER from the main HUD (F11 does not open inside the scanner).") != std::string::npos, "the scanner comment keeps the F11 hint");
 		const auto comms = ini.find("[Comms]");
 		const auto scanner = ini.find("[Scanner]");
 		const auto meter = ini.find("DlgPersuasionMeter=1");

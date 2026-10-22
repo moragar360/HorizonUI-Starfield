@@ -1561,6 +1561,19 @@ package
          g.lineTo(fx + flagW,fy + fh * 0.5);
          g.endFill();
       }
+      // PERSUADED / FAILED stay 16.5 px. Faces 1 and 2 go through hzdFont so the bold face is the installed
+      // one (Exo bold, or Roboto Alt_Bold). Face 0, face 3, a missing Font module, or a failed check use the game bold.
+      private function hzdPmBold(s:String) : String
+      {
+         var f:int = int(this.hzdCfg.DlgFont) >= 0 ? int(this.hzdCfg.DlgFont) : int(this.hzdCfg.FontFace);
+         if(f == 1 || f == 2)
+         {
+            var picked:String = this.hzdFont("_Bold", s);
+            var base:String = f == 2 ? "$Horizon_Font_Alt" : "$Horizon_Font";
+            if(picked == base + "_Bold") { return picked; }
+         }
+         return "$MAIN_Font_Bold";
+      }
       private function hzdPmDraw() : void
       {
          var s:Sprite = this.hzdPm;
@@ -1609,7 +1622,7 @@ package
          if(titleBold && title != null)
          {
             var tbf:TextFormat = title.getTextFormat();
-            tbf.font = "$Horizon_Font_Bold";
+            tbf.font = this.hzdPmBold(titleStr);
             tbf.size = 16.5;
             title.defaultTextFormat = tbf;
             title.setTextFormat(tbf);

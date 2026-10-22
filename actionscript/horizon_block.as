@@ -14847,6 +14847,7 @@
          var f:TextFormat = t.getTextFormat();
          var fs:Number = Number(f.size);
          if(isNaN(fs) || fs <= 0) { fs = 14; }
+         f.font = this.hzFontName("sb");
          f.letterSpacing = Math.round(fs * 0.1 * 10) / 10;
          t.defaultTextFormat = f;
          t.setTextFormat(f);
@@ -14874,15 +14875,15 @@
          // hzSText multiplies by TextScale (clamped 0.9-1.15). Pass a size that survives that, or the
          // on-screen size is the chip scale times a font that was already shrunk. At chip 0.65 and
          // TextScale 0.9, HOLD BREATH was 11.7 px. Both lines use the same correction. The floor is 13 px
-         // after the proxy scale (hz42ScFs) and after TextScale. The label uses the scope's 0.1 tracking
-         // (hz42ScLblW), then the same field width. The key uses the scope key's 0.04 tracking.
+         // after the proxy scale (hz42ScFs) and after TextScale. The label uses the chip's semibold face
+         // (hzFontName "sb") and the scope's 0.1 tracking, then the same field width. The key uses bold.
          var ts:Number = this.hzTextScale;
          if(isNaN(ts) || ts <= 0) { ts = 1; }
          ts = Math.max(0.9,Math.min(1.15,ts));
          var lb:int = int(this.hz42ScFs(14));
          var lt:TextField = this.hzSText(p,"HOLD BREATH",0,0,220,int(Math.ceil(lb / ts)),0xF2F7F9,"left");
          // "L-SHIFT" is the wide PC label. Same bold face as the scope key (hzpFace "bd"), same 0.04 tracking,
-         // then the same field width. The label above stays the regular face.
+         // then the same field width. The label uses the chip's semibold weight.
          var want:int = int(this.hz42ScFs(13));
          var kt:TextField = this.hzSText(p,"L-SHIFT",0,0,160,int(Math.ceil(want / ts)),HZ_ACCENT,"left");
          var kf:TextFormat = kt.getTextFormat();
