@@ -79,6 +79,17 @@ Log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
 
 Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.42.0.7 loaded`.
 
+### Release checklist: companion reaction log
+
+The 0.42.0.6 diagnostic is still on, so the 0.42.0.7 test can read it. Do not turn it off for that test. Before a release build, change all four of these together:
+
+1. `src/hz_version.h`: set `HZ_COMMS_MSG_LOG` to `0`.
+2. `actionscript/comms/hzc_block.as`: set `HZC_MSG_LOG` to `false`.
+3. In that same file, change the `hzcRxDbgOn` default from `true` to `false`.
+4. Update the test pins that expect the log to be on: `tests/reaction_match_test.js` (`HZC_MSG_LOG` is `true`) and `tests/preset_list_test.cpp` (`HZ_COMMS_MSG_LOG == 1`).
+
+`Debug=0` in the ini only stops the movie queue. It does not replace this list. The settings schema stays `0.42.0`.
+
 ## Repository layout
 ```
 src/main.cpp      plugin source

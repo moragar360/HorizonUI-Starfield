@@ -4,7 +4,7 @@
 // The F11 header, the load line, and the "movie builds" line use the DLL file version (src/hz_version.h, also the version resource).
 // v0.42.0.6: ShowHUDMessageEvent (address id 86800) logs HUD text that contains " that", and the Comms
 // message queue is written as "comms msg:" lines. Both are compiled only when HZ_COMMS_MSG_LOG is 1
-// (src/hz_version.h). Set that to 0, and HZC_MSG_LOG to false, for the release. The settings schema stays 0.42.0.
+// (src/hz_version.h). The release checklist in README.md turns that log off. The settings schema stays 0.42.0.
 // Saved preset names drop the same characters as the HUD: '=' '+' '[' ']' ';' '#' '"' '\' '|' and control characters.
 // v0.42.0 r3 (file version 0.42.0.3): a scope (ScopeMenu) still blocks F11 but no longer restarts the 3 s "HUD ready" wait,
 // so F11 works right after leaving the scope. The 0.42.0.4 no-debug build compiled this log out. In 0.42.0.6 it is on
@@ -1798,7 +1798,8 @@ namespace HZ
 	}
 
 	// The SEH helpers only call through a function pointer, so an inlined Relocation cannot
-	// force object unwinding inside the __try (MSVC C2712). A fault returns a code; it does not escape.
+	// force object unwinding inside the __try (MSVC C2712). An access fault returns a code; it does not escape.
+	// A missing address id is not one of those faults: that lookup hard-exits, and SEH does not catch it.
 #if defined(_MSC_VER)
 	static int HzHudMsgReadSEH(const RE::ShowHUDMessageEvent* a_ev, HudMsgSnap* a_out) noexcept
 	{
@@ -1897,10 +1898,13 @@ namespace HZ
 	// 0 pending, 1 registered, -1 failed and will not be tried again.
 	int g_hudMsgSink = 0;
 
-	// Purpose: register the ShowHUDMessageEvent sink (address id 86800). A failure is logged and ignored.
-	// Inputs: a_final is true on the post-data-load attempt. A null source before that is not a failure yet.
-	// Outputs: HorizonUI.log. Dependencies: RE::ShowHUDMessageEvent::GetEventSource. Last modified: 2026-10-22.
-	void RegisterShowHUDMessageSink(bool a_final)
+	// Purpose: register the ShowHUDMessageEvent sink (address id 86800) from kPostDataLoad.
+	// A null source, or a fault caught around the source pointer or RegisterSink, is logged and ignored.
+	// A missing address id still hard-exits. GetEventSource looks the id up with a call that ends the
+	// process, and SEH does not catch that lookup.
+	// Inputs: none. Outputs: HorizonUI.log. Dependencies: RE::ShowHUDMessageEvent::GetEventSource.
+	// Last modified: 2026-10-22.
+	void RegisterShowHUDMessageSink()
 	{
 		if (g_hudMsgSink != 0) return;
 		try {
@@ -1912,10 +1916,8 @@ namespace HZ
 				return;
 			}
 			if (!src) {
-				if (a_final) {
-					g_hudMsgSink = -1;
-					REX::WARN("ShowHUDMessageEvent sink failed: event source is null (address id 86800)");
-				}
+				g_hudMsgSink = -1;
+				REX::WARN("ShowHUDMessageEvent sink failed: event source is null (address id 86800)");
 				return;
 			}
 			static ShowHUDMessageSink sink;
@@ -1965,7 +1967,7 @@ namespace HZ
 		}
 	}
 #else
-	void RegisterShowHUDMessageSink(bool) {}
+	void RegisterShowHUDMessageSink() {}
 	void CommsDbgPoll(ULONGLONG) {}
 #endif
 
@@ -2008,7 +2010,9 @@ namespace HZ
 	void OnMessage(SFSE::MessagingInterface::Message* a_msg)
 	{
 		if (a_msg->type == SFSE::MessagingInterface::kPostDataLoad) {
-			RegisterShowHUDMessageSink(true);   // v0.42.0.6: second chance if the source was not ready at load
+			// The only registration. A missing address id 86800 still hard-exits in GetEventSource.
+			// SEH does not catch that lookup. A null source or a caught fault is logged, and the game continues.
+			RegisterShowHUDMessageSink();
 			LoadIni();
 			if (auto task = SFSE::GetTaskInterface()) {
 				task->AddPermanentTask([]() { Poll(); });
@@ -2031,7 +2035,6 @@ SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* a_sfse)
 	SFSE::Init(a_sfse);
 	// Same string as "movie builds": the version resource produced from src/hz_version.h.
 	REX::INFO("HorizonUI {} loaded", HZ::DllFileVersion());
-	HZ::RegisterShowHUDMessageSink(false);   // v0.42.0.6: a failure here is logged; the game still loads
 	HZ::FilesStartup();   // v0.37: update backup, migration / preset seeding - before any menu reads the settings
 	if (auto msg = SFSE::GetMessagingInterface())
 		msg->RegisterListener(HZ::OnMessage);

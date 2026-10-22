@@ -14836,12 +14836,14 @@
          ts = Math.max(0.9,Math.min(1.15,ts));
          var lb:int = int(this.hz42ScFs(14));
          var lt:TextField = this.hzSText(p,"HOLD BREATH",0,0,220,int(Math.ceil(lb / ts)),0xF2F7F9,"left");
-         // "L-SHIFT" is the wide PC label. Same tracking as the scope key (0.04), then the same field width.
+         // "L-SHIFT" is the wide PC label. Same bold face as the scope key (hzpFace "bd"), same 0.04 tracking,
+         // then the same field width. The label above stays the regular face.
          var want:int = int(this.hz42ScFs(13));
          var kt:TextField = this.hzSText(p,"L-SHIFT",0,0,160,int(Math.ceil(want / ts)),HZ_ACCENT,"left");
          var kf:TextFormat = kt.getTextFormat();
          var kfs:Number = Number(kf.size);
          if(isNaN(kfs) || kfs <= 0) { kfs = 13; }
+         kf.font = this.hzFontName("bd");
          kf.letterSpacing = Math.round(kfs * 0.04 * 10) / 10;
          kt.defaultTextFormat = kf;
          kt.setTextFormat(kf);

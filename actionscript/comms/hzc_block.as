@@ -1112,11 +1112,11 @@
          return s;
       }
       // ---------- 0.42.0.6: message log. HZC_MSG_LOG is the switch (true on this test build). ----------
-      // Final release: set HZC_MSG_LOG false and HZ_COMMS_MSG_LOG to 0 in src/hz_version.h. The DLL writes
-      // whatever this queue returns. Debug=0 in the ini still stops the queue. A missing Debug key leaves it on.
+      // Leave this true until the release checklist in README.md. The DLL writes whatever this queue
+      // returns. Debug=0 in the ini still stops the queue. A missing Debug key leaves it on.
       private static const HZC_MSG_LOG:Boolean = true;
       private static const HZC_BUILD:String = "0.42.0.7";
-      private var hzcRxDbgOn:Boolean = true;   // 0.42.0.6: on with HZC_MSG_LOG. hzcRxDbgIni turns it off when Debug=0.
+      private var hzcRxDbgOn:Boolean = true;   // 0.42.0.6: on with HZC_MSG_LOG. The release checklist sets this default to false. hzcRxDbgIni turns it off when Debug=0.
       private var hzcRxDbgQ:Array = [];
       private var hzcRxDbgSeen:Array = [];   // {it, f}
       private var hzcRxDbgHdr:Boolean = false;

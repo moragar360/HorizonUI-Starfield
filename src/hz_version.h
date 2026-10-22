@@ -16,8 +16,8 @@
 #define HZ_FILE_VERSION_STR "0.42.0.7"
 
 // 0.42.0.7 test build: 1 logs ShowHUDMessageEvent text that contains " that", and it
-// writes the Comms movie's message queue to HorizonUI.log. Final release: set this to 0
-// and set HZC_MSG_LOG in actionscript/comms/hzc_block.as to false. One switch for the DLL.
+// writes the Comms movie's message queue to HorizonUI.log. Leave this at 1 until the
+// release checklist in README.md (HZC_MSG_LOG, the hzcRxDbgOn default, and the test pins).
 // The settings schema above is not this switch.
 #define HZ_COMMS_MSG_LOG 1
 

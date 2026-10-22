@@ -31,7 +31,7 @@ target("HorizonUI")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
     -- Version resource APIs (GetFileVersionInfo).
-    -- HZ_COMMS_MSG_LOG lives in src/hz_version.h (1 for this test build, 0 for the release).
+    -- HZ_COMMS_MSG_LOG lives in src/hz_version.h (1 for this test build). The README release checklist turns the log off.
     add_syslinks("version")
 
     -- xmake's semver parser rejects a 4-part numeric version. set_version is still the file version

@@ -204,8 +204,15 @@ int main()
 		Expect(src.find("ShowHUDMessageEvent sink registered (address id 86800)") != std::string::npos, "sink registration is logged");
 		Expect(src.find("ShowHUDMessageEvent sink failed:") != std::string::npos, "sink failure is logged");
 		Expect(src.find("hud message: text=") != std::string::npos, "matching HUD text is logged");
-		Expect(src.find("RegisterShowHUDMessageSink(false)") != std::string::npos, "sink is registered at load");
-		Expect(src.find("RegisterShowHUDMessageSink(true)") != std::string::npos, "sink retries after data load");
+		Expect(src.find("A missing address id still hard-exits.") != std::string::npos, "a missing address id is documented as a hard exit");
+		Expect(src.find("SEH does not catch that lookup.") != std::string::npos, "SEH does not catch a missing address id");
+		const auto post = src.rfind("kPostDataLoad", load);
+		Expect(post != std::string::npos, "post-data-load handler is present");
+		const auto postCall = src.find("RegisterShowHUDMessageSink();", post);
+		Expect(postCall != std::string::npos && postCall < load, "sink is registered after data load");
+		const auto loadEnd = src.find("return true;", load);
+		Expect(loadEnd != std::string::npos, "plugin load returns");
+		Expect(src.substr(load, loadEnd - load).find("RegisterShowHUDMessageSink") == std::string::npos, "sink is not registered at plugin load");
 	}
 
 	{

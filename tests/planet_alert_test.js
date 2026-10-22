@@ -361,6 +361,7 @@ function scanOnHold() {
 pin('var lb:int = int(this.hz42ScFs(14));', "HOLD BREATH starts from the 13 px chip floor");
 pin('this.hzSText(p,"HOLD BREATH",0,0,220,int(Math.ceil(lb / ts)),0xF2F7F9,"left");', "HOLD BREATH divides TextScale back out");
 pin('this.hzSText(p,"L-SHIFT",0,0,160,int(Math.ceil(want / ts)),HZ_ACCENT,"left");', "the key keeps the same TextScale correction");
+pin('kf.font = this.hzFontName("bd");', "the hold-breath key uses the scope bold face");
 
 function asInt(n) {
 	if (!Number.isFinite(n)) return 0;
