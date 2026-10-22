@@ -6,6 +6,9 @@
       // removed: the game's stack, fade and timing stay. Only an exact, whole-line match is changed (one line, name of 1 - 4
       // words of letters, apostrophes, or hyphens, any case; a period on a title such as Dr. or an initial such as J. or J.T.; no ':' '!' '?' quotes or brackets; the first word is not a pronoun); any
       // other line, other languages, ReactionCard=0 or any error leave the game's line as it is.
+      // v0.42.0.7: HUDMessageData is the primary path (the value replayed on subscribe is ignored). The DLL may also
+      // call hzcRxPush. One text inside a short window is one card. A pending card is not dropped on a wall clock.
+      // Time counts only while Messages_mc is visible, so a line held through a conversation is still carded.
       // v0.40.1: the scan state also ends when the HUD's bottom-center group goes from shown to hidden.
       // v0.40: quest popups / the mission toast stay hidden for the whole scan (no 30 s cap); the scan state is cleared by
       // the scanner's close event or a frame gap over 1 s while scanning (a load). HideQuestPopupsWhileScanning defaults to 1.
@@ -1012,17 +1015,33 @@
       // A trailing period is a title or an initial, not a sentence. "Dr." and "J." match. "Okay." does not.
       private static const HZC_RX_TITLE:Array = ["dr","mr","mrs","ms","jr","sr","st","lt","capt","sgt","prof"];
       private static const HZC_RX_LABEL:uint = 0xC4D2D9;
-      private var hzcRx:Array = [];          // {it: the game's HUDMessageItem, st: -1 pending / 0 game line / 1 card, n, k, c: card, w, h, f: pending frames, sig}
+      private static const HZC_RX_DUP:int = 1500;   // same text from the binding and the DLL is one card
+      private static const HZC_RX_VIS:int = 4000;   // shown time, counted only while the message slot is visible
+      private var hzcRx:Array = [];          // {it, st: 1 card, n, k, c, w, h, sig, key, t0, vis, tx}
+      private var hzcRxWait:Array = [];      // {it, f} text not ready yet
       private var hzcRxLayer:Sprite = null;
-      private var hzcRxOff:Boolean = false;  // set after an error: every line stays the game's for this session
+      private var hzcRxOff:Boolean = false;  // after repeated errors: every line stays the game's for this session
+      private var hzcRxSkip:Boolean = true;  // the first HUDMessageData callback is the replayed value
+      private var hzcRxSub:Boolean = false;
+      private var hzcRxLast:int = 0;
+      private var hzcRxFail:int = 0;         // recoverable place / draw misses. The session turns off at 3.
+      private var hzcRxWhyLast:String = "";
       private function hzcRxInit() : void
       {
-         this.hzcRxLayer = new Sprite();
-         this.hzcRxLayer.mouseEnabled = false;
-         this.hzcRxLayer.mouseChildren = false;
-         addChild(this.hzcRxLayer);
-         addEventListener(Event.ADDED,this.hzcRxAdded);
-         addEventListener(Event.ENTER_FRAME,this.hzcRxFrame);
+         if(this.hzcRxLayer == null)
+         {
+            this.hzcRxLayer = new Sprite();
+            this.hzcRxLayer.mouseEnabled = false;
+            this.hzcRxLayer.mouseChildren = false;
+            addChild(this.hzcRxLayer);
+            addEventListener(Event.ADDED,this.hzcRxAdded);
+            addEventListener(Event.ENTER_FRAME,this.hzcRxFrame);
+         }
+         if(this.hzcRxSub) { return; }
+         this.hzcRxSub = true;
+         this.hzcRxSkip = true;
+         try { BSUIDataManager.Subscribe("HUDMessageData",this.hzcRxOnMsg); }
+         catch(eSub:Error) { this.hzcRxSub = false; this.hzcRxSkip = false; }
       }
       private function hzcRxOn() : Boolean
       {
@@ -1226,94 +1245,307 @@
       }
       private function hzcRxFind(it:*) : Object
       {
-         for each(var e:Object in this.hzcRx) { if(e.it === it) { return e; } }
+         for each(var e:Object in this.hzcRx) { if(e != null && e.it === it) { return e; } }
          return null;
+      }
+      private function hzcRxOne(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var t:String = String(s).replace(/[\r\n]+/g," ");
+         if(t.length > 160) { t = t.substr(0,160); }
+         return t;
+      }
+      // Why the card is not running. Independent of Debug. hzcRxPush and hzcRxWhy both use this.
+      private function hzcRxWhyText() : String
+      {
+         if(this.hzcRxOff) { return "off after error: " + this.hzcRxOne(this.hzcRxErr); }
+         if(this.hzcIniState == 0) { return "cards off: settings not loaded"; }
+         if(this.hzcCfg == null || int(this.hzcCfg.ReactionCard) != 1) { return "cards off: ReactionCard is off"; }
+         if(this.Messages_mc == null) { return "cards off: message column missing"; }
+         return "cards off: cards are off";
+      }
+      private function hzcRxKey(t:String) : String
+      {
+         var s:String = this.hzcRxNorm(t);
+         if(s == null || s.length == 0) { return null; }
+         return s.toLowerCase();
+      }
+      private function hzcRxByKey(tx:String) : Object
+      {
+         var key:String = this.hzcRxKey(tx);
+         if(key == null) { return null; }
+         var hit:Object = null;
+         for each(var e:Object in this.hzcRx) { if(e != null && e.key == key) { hit = e; } }
+         return hit;
+      }
+      // Match the unchanged text. The first HUDMessageData event is the value replayed on subscribe.
+      private function hzcRxOnMsg(ev:FromClientDataEvent) : void
+      {
+         try
+         {
+            if(this.hzcRxSkip) { this.hzcRxSkip = false; return; }
+            if(ev == null || ev.data == null) { return; }
+            var d:Object = ev.data;
+            var clear:Boolean = false;
+            try { clear = d.bClearMessages == true; } catch(eC:Error) { clear = false; }
+            if(clear) { return; }
+            var msg:Object = null;
+            try { msg = d.NextMessage; } catch(eN:Error) { msg = null; }
+            if(msg == null) { return; }
+            var tx:* = null;
+            try { tx = msg.sText; } catch(eT:Error) { tx = null; }
+            if(tx == null) { return; }
+            var raw:String = String(tx);
+            if(raw.length == 0) { return; }
+            this.hzcRxOffer(raw);
+         }
+         catch(err:Error) { }
+      }
+      // queued / no match / cards off: reason / off after error: message. A repeat inside HZC_RX_DUP is still queued.
+      private function hzcRxOffer(raw:String) : String
+      {
+         if(raw == null) { raw = ""; }
+         if(this.hzcRxOff || !this.hzcRxOn()) { return this.hzcRxWhyText(); }
+         if(String(raw).length == 0) { return "no match"; }
+         var r:Object = null;
+         try { r = this.hzcRxMatch(String(raw)); } catch(eM:Error) { r = null; }
+         if(r == null) { return "no match"; }
+         var key:String = this.hzcRxKey(String(raw));
+         if(key == null) { return "no match"; }
+         var now:int = getTimer();
+         for each(var e0:Object in this.hzcRx)
+         {
+            if(e0 != null && e0.key == key)
+            {
+               var age:int = now - int(e0.t0);
+               if(age >= 0 && age < HZC_RX_DUP) { return "queued"; }
+            }
+         }
+         this.hzcRx.push({"it":null,"st":1,"n":r.n,"k":r.k,"c":null,"w":0,"h":0,"sig":"","key":key,"t0":now,"vis":0,"tx":String(raw)});
+         if(this.hzcRx.length > 8)
+         {
+            var old:Object = this.hzcRx.shift();
+            this.hzcRxDrop(old);
+         }
+         return "queued";
+      }
+      // DLL backup. The sink thread never calls this. Poll does, and only while HUDMessagesMenu is open.
+      public function hzcRxPush(text:String) : String
+      {
+         try { return this.hzcRxOffer(text == null ? "" : String(text)); }
+         catch(err:Error)
+         {
+            var em:String = "";
+            try { em = err != null && err.message != null ? String(err.message) : ""; } catch(e2:Error) { em = ""; }
+            this.hzcRxErr = this.hzcRxOne(em);
+            return "off after error: " + this.hzcRxErr;
+         }
+      }
+      // Empty while cards are on, while settings are still loading, or when this reason was already returned.
+      public function hzcRxWhy() : String
+      {
+         try
+         {
+            if(this.hzcIniState == 0 && !this.hzcRxOff) { return ""; }
+            if(this.hzcRxOn()) { this.hzcRxWhyLast = ""; return ""; }
+            var why:String = this.hzcRxWhyText();
+            if(why == this.hzcRxWhyLast) { return ""; }
+            this.hzcRxWhyLast = why;
+            return why;
+         }
+         catch(err:Error) { return ""; }
+      }
+      private function hzcRxItemTx(it:*) : String
+      {
+         if(it == null) { return ""; }
+         try
+         {
+            var im:* = it.Internal_mc;
+            if(im == null || im.Text_tf == null) { return ""; }
+            var tx:* = im.Text_tf.text;
+            return tx == null ? "" : String(tx);
+         }
+         catch(e:Error) { return ""; }
+      }
+      private function hzcRxReveal(it:*) : void
+      {
+         try { if(it != null && it.Internal_mc != null) { it.Internal_mc.visible = true; } } catch(e:Error) { }
+      }
+      private function hzcRxWaits(it:*) : int
+      {
+         var i:int = 0;
+         while(i < this.hzcRxWait.length)
+         {
+            var w:Object = this.hzcRxWait[i];
+            if(w != null && w.it === it) { w.f = int(w.f) + 1; return int(w.f); }
+            i++;
+         }
+         this.hzcRxWait.push({"it":it,"f":1});
+         return 1;
+      }
+      private function hzcRxWaitClear(it:*) : void
+      {
+         var keep:Array = [];
+         for each(var w:Object in this.hzcRxWait)
+         {
+            if(w == null || w.it == null || w.it === it) { continue; }
+            try { if(w.it.parent == null) { continue; } } catch(e:Error) { continue; }
+            keep.push(w);
+         }
+         this.hzcRxWait = keep;
+      }
+      // Attach a shown line to a card from the binding, or classify a line the binding did not see.
+      private function hzcRxLink(arr:*) : void
+      {
+         if(arr == null) { return; }
+         var i:int = 0;
+         while(i < arr.length)
+         {
+            var it:* = arr[i];
+            i++;
+            if(it == null || this.hzcRxFind(it) != null) { continue; }
+            var tx:String = this.hzcRxItemTx(it);
+            var n:int = this.hzcRxWaits(it);
+            if(tx.length == 0 && n < 3) { continue; }
+            this.hzcRxWaitClear(it);
+            if(tx.length == 0) { this.hzcRxReveal(it); continue; }
+            var before:Object = this.hzcRxByKey(tx);
+            if(before != null && before.it == null)
+            {
+               before.it = it;
+               try { if(it.Internal_mc != null) { it.Internal_mc.visible = false; } } catch(eHid0:Error) { }
+               continue;
+            }
+            var st:String = "";
+            try { st = this.hzcRxOffer(tx); } catch(eOff:Error) { st = ""; }
+            if(st != "queued") { this.hzcRxReveal(it); continue; }
+            var e:Object = this.hzcRxByKey(tx);
+            if(e != null && e.it == null)
+            {
+               e.it = it;
+               try { if(it.Internal_mc != null) { it.Internal_mc.visible = false; } } catch(eHid:Error) { }
+            }
+            else { this.hzcRxReveal(it); }
+         }
+      }
+      private function hzcRxSlot(m:*) : Boolean
+      {
+         if(m == null) { return false; }
+         try { return m.visible == true; } catch(e:Error) { return false; }
+      }
+      private function hzcRxLatch() : void
+      {
+         this.hzcRxOff = true;
+         try { this.hzcRxAll(); } catch(eAll:Error) { }
+         try { this.hzcRxDbgErr(); } catch(eDbg:Error) { }
+      }
+      // One miss is recoverable: the next message draws again. The caller turns the card off after three.
+      private function hzcRxHit(err:Error) : void
+      {
+         this.hzcRxFail++;
+         try { this.hzcRxErr = err != null && err.message != null ? String(err.message) : ""; } catch(e:Error) { this.hzcRxErr = ""; }
+         this.hzcRxErr = this.hzcRxOne(this.hzcRxErr);
       }
       // a new game line: hidden until it is classified (at most a few frames; it is still fading in from frame 1)
       private function hzcRxAdded(ev:Event) : void
       {
          try
          {
+            if(!this.hzcRxOn()) { return; }
             var it:* = ev.target;
-            if(it == null || it.parent !== this.Messages_mc || !this.hzcRxOn()) { return; }
+            if(it == null || it.parent !== this.Messages_mc) { return; }
             if(this.hzcRxFind(it) != null) { return; }
-            var im:* = it.Internal_mc;
+            var im:* = null;
+            try { im = it.Internal_mc; } catch(eIm:Error) { im = null; }
             if(im == null) { return; }
             im.visible = false;
-            this.hzcRx.push({"it":it,"st":-1,"f":0});
          }
          catch(e:Error) { }
       }
       private function hzcRxShow(e:Object) : void
       {
-         try { if(e.it != null && e.it.Internal_mc != null) { e.it.Internal_mc.visible = true; } } catch(err:Error) { }
-         if(e.c != null) { e.c.visible = false; }
+         try { if(e != null && e.it != null && e.it.Internal_mc != null) { e.it.Internal_mc.visible = true; } } catch(err:Error) { }
+         if(e != null && e.c != null) { e.c.visible = false; }
       }
       private function hzcRxDrop(e:Object) : void
       {
-         if(e.c != null && e.c.parent == this.hzcRxLayer) { this.hzcRxLayer.removeChild(e.c); }
-         e.c = null;
+         if(e != null && e.c != null && this.hzcRxLayer != null && e.c.parent == this.hzcRxLayer) { this.hzcRxLayer.removeChild(e.c); }
+         if(e != null) { e.c = null; }
       }
       // everything back to the game's lines (ReactionCard=0, an error)
       private function hzcRxAll() : void
       {
-         for each(var e:Object in this.hzcRx) { this.hzcRxShow(e); this.hzcRxDrop(e); e.st = 0; }
+         for each(var e:Object in this.hzcRx) { this.hzcRxShow(e); this.hzcRxDrop(e); if(e != null) { e.st = 0; } }
+         this.hzcRx = [];
       }
       private function hzcRxApply() : void
       {
          if(!this.hzcRxOn()) { this.hzcRxAll(); return; }
-         for each(var e:Object in this.hzcRx) { e.sig = ""; }
+         for each(var e:Object in this.hzcRx) { if(e != null) { e.sig = ""; } }
       }
       private function hzcRxFrame(ev:Event) : void
       {
-         if(this.hzcRxOff) { if(this.hzcRxDbgOn) { try { this.hzcRxDbgErr(); this.hzcRxDbgScan(this.Messages_mc != null ? this.Messages_mc.ShownMessageArray : null); } catch(eDbg2:Error) { } } return; }
-         try { this.hzcRxStep(); }
-         catch(err:Error)
+         if(this.hzcRxOff)
          {
-            this.hzcRxOff = true;
-            try { this.hzcRxErr = err != null && err.message != null ? String(err.message) : ""; } catch(eMsg:Error) { this.hzcRxErr = ""; }
-            try { this.hzcRxAll(); } catch(err2:Error) { }
-            try { this.hzcRxDbgErr(); } catch(eDbgE:Error) { }
+            if(this.hzcRxDbgOn) { try { this.hzcRxDbgErr(); this.hzcRxDbgScan(this.Messages_mc != null ? this.Messages_mc.ShownMessageArray : null); } catch(eDbg2:Error) { } }
+            return;
          }
+         try { this.hzcRxStep(); }
+         catch(err:Error) { this.hzcRxHit(err); if(this.hzcRxFail >= 3) { this.hzcRxLatch(); } }
       }
+      // Time counts only while Messages_mc is visible. A hidden slot does not age a pending card, and nothing here uses a 30 s wall clock.
       private function hzcRxStep() : void
       {
          var m:* = this.Messages_mc;
-         if(m == null) { return; }
-         var arr:* = m.ShownMessageArray;
-         var on:Boolean = this.hzcRxOn();
-         // lines that left the game's list: drop their cards
+         if(m == null || this.hzcRxLayer == null) { return; }
+         var arr:* = null;
+         try { arr = m.ShownMessageArray; } catch(eArr:Error) { arr = null; }
+         var now:int = getTimer();
+         var dt:int = 0;
+         if(this.hzcRxLast != 0)
+         {
+            dt = now - this.hzcRxLast;
+            if(dt < 0) { dt = 0; }
+            if(dt > 100) { dt = 100; }
+         }
+         this.hzcRxLast = now;
+         var slot:Boolean = this.hzcRxSlot(m);
+         if(this.hzcRxDbgOn) { try { this.hzcRxDbgScan(arr); } catch(eDbg:Error) { } }
+         if(!this.hzcRxOn()) { this.hzcRxAll(); return; }
+         this.hzcRxLink(arr);
          var keep:Array = [];
          for each(var e0:Object in this.hzcRx)
          {
-            if(arr == null || arr.indexOf(e0.it) < 0 || e0.it.parent !== m) { this.hzcRxDrop(e0); continue; }
+            if(e0 == null || e0.st != 1) { continue; }
+            if(slot) { e0.vis = int(e0.vis) + dt; }
+            if(e0.it != null)
+            {
+               var inList:Boolean = false;
+               try { inList = arr != null && arr.indexOf(e0.it) >= 0 && e0.it.parent === m; } catch(eIn:Error) { inList = false; }
+               if(!inList) { e0.it = null; }
+            }
+            // Visible time only. A hidden message slot does not age the card, so a long conversation cannot drop it.
+            if(int(e0.vis) >= HZC_RX_VIS) { this.hzcRxShow(e0); this.hzcRxDrop(e0); continue; }
             keep.push(e0);
          }
          this.hzcRx = keep;
-         if(arr == null || this.hzcRxLayer == null) { return; }
-         if(this.hzcRxDbgOn) { try { this.hzcRxDbgScan(arr); } catch(eDbg:Error) { } }   // r3: debug-only log
-         if(!on) { this.hzcRxAll(); return; }
-         // lines already shown before the listener saw them: classified once, never hidden first
-         var i:int = 0;
-         while(i < arr.length) { if(this.hzcRxFind(arr[i]) == null) { this.hzcRx.push({"it":arr[i],"st":-1,"f":3}); } i++; }
+         if(this.hzcRxFail >= 3) { this.hzcRxLatch(); return; }
          var newest:Object = null;
+         for each(var eN:Object in this.hzcRx) { if(eN != null && eN.st == 1) { newest = eN; } }
          for each(var e:Object in this.hzcRx)
          {
-            if(e.st == -1)
+            if(e == null || e.st != 1) { continue; }
+            try
             {
-               var tx:String = "";
-               try { tx = String(e.it.Internal_mc.Text_tf.text); } catch(err0:Error) { tx = ""; }
-               if(tx.length == 0 && e.f < 3) { e.f++; continue; }
-               var r:Object = this.hzcRxMatch(tx);
-               if(r == null) { e.st = 0; this.hzcRxShow(e); continue; }
-               e.st = 1; e.n = r.n; e.k = r.k; e.sig = "";
+               this.hzcRxPlace(e,e === newest,m,slot);
+               this.hzcRxFail = 0;
             }
-            if(e.st == 1) { newest = e; }
-         }
-         for each(var e2:Object in this.hzcRx)
-         {
-            if(e2.st != 1) { continue; }
-            this.hzcRxPlace(e2,e2 === newest,m);
+            catch(err:Error)
+            {
+               this.hzcRxHit(err);
+               e.sig = "";
+               try { if(e.c != null) { e.c.visible = false; } } catch(eHide:Error) { }
+            }
          }
       }
       private function hzcRxScale() : Number
@@ -1322,27 +1554,81 @@
          if(isNaN(s) || s <= 0) { s = 1; }
          return Math.max(13 / 14,Math.min(1.3,s));   // 13 px text at least; at most 1.3 so it stays near the game's line height
       }
-      private function hzcRxPlace(e:Object, newest:Boolean, m:*) : void
+      private function hzcRxAnchor(e:Object, m:*) : void
       {
-         var it:* = e.it;
-         var im:* = it.Internal_mc;
-         im.visible = false;
-         var fr:int = int(it.currentFrame);
-         var live:Boolean = it.visible && m.visible && it.fadeInStarted && !it.fullyFadedOut && fr < 70;
-         var sig:String = (newest ? "1" : "0") + "|" + this.hzcRxScale() + "|" + this.hzcCfg.SubCard + "|" + this.hzcCfg.SubBgOpacity + "|" + this.hzcCfg.SpeakerColor + "|" + this.hzcCfg.SpeakerHex + "|" + this.hzcCfg.SubFont + "|" + this.hzcCfg.FontFace + "|" + this.hzcCfg.AccentColor + "|" + this.hzcCfg.AccentHex;
-         if(e.c == null || e.sig != sig) { e.sig = sig; this.hzcRxDraw(e,newest); }
-         if(!live) { e.c.visible = false; return; }
-         var bg:* = im.Background_mc;
-         var gp:Point = im.localToGlobal(new Point(bg.x + bg.width,bg.y + bg.height / 2));
-         var lp:Point = this.globalToLocal(gp);
-         e.c.x = Math.round(lp.x - e.w);
-         e.c.y = Math.round(lp.y - e.h / 2);
-         e.c.alpha = Math.max(0,Math.min(1,it.alpha * im.alpha * m.alpha));
+         if(e == null || e.c == null) { return; }
+         var x:Number = 40;
+         var y:Number = 80;
+         var r:Rectangle = null;
+         if(m != null) { try { r = m.getBounds(this); } catch(e0:Error) { r = null; } }
+         if(r != null && !isNaN(r.x) && !isNaN(r.y) && !isNaN(r.width) && r.width > 2 && r.height > 2)
+         {
+            x = r.x + r.width - Number(e.w);
+            y = r.y;
+         }
+         else
+         {
+            var vr:Rectangle = null;
+            try { vr = this.hzcVis(); } catch(e1:Error) { vr = null; }
+            if(vr != null && !isNaN(vr.right)) { x = vr.right - Number(e.w) - 40; y = vr.y + 80; }
+         }
+         if(isNaN(x) || isNaN(y)) { e.c.visible = false; return; }
+         e.c.x = Math.round(x);
+         e.c.y = Math.round(y);
+         e.c.alpha = 1;
          e.c.visible = true;
+      }
+      private function hzcRxPlace(e:Object, newest:Boolean, m:*, slot:Boolean) : void
+      {
+         if(e == null || m == null || this.hzcRxLayer == null) { return; }
+         var sig:String = (newest ? "1" : "0") + "|" + this.hzcRxScale() + "|" + this.hzcCfg.SubCard + "|" + this.hzcCfg.SubBgOpacity + "|" + this.hzcCfg.SpeakerColor + "|" + this.hzcCfg.SpeakerHex + "|" + this.hzcCfg.SubFont + "|" + this.hzcCfg.FontFace + "|" + this.hzcCfg.AccentColor + "|" + this.hzcCfg.AccentHex + "|" + e.k + "|" + e.n;
+         if(e.c == null || e.sig != sig)
+         {
+            this.hzcRxDraw(e,newest);
+            e.sig = sig;
+         }
+         if(e.c == null) { return; }
+         if(!slot) { e.c.visible = false; return; }
+         var it:* = e.it;
+         var placed:Boolean = false;
+         if(it != null)
+         {
+            var im:* = null;
+            try { im = it.Internal_mc; } catch(eIm:Error) { im = null; }
+            if(im != null)
+            {
+               try { im.visible = false; } catch(eVis:Error) { }
+               var bg:* = null;
+               try { bg = im.Background_mc; } catch(eBg:Error) { bg = null; }
+               if(bg != null)
+               {
+                  var gp:Point = null;
+                  try { gp = im.localToGlobal(new Point(Number(bg.x) + Number(bg.width),Number(bg.y) + Number(bg.height) / 2)); } catch(eGp:Error) { gp = null; }
+                  var lp:Point = null;
+                  if(gp != null) { try { lp = this.globalToLocal(gp); } catch(eLp:Error) { lp = null; } }
+                  if(lp != null && !isNaN(lp.x) && !isNaN(lp.y))
+                  {
+                     e.c.x = Math.round(lp.x - Number(e.w));
+                     e.c.y = Math.round(lp.y - Number(e.h) / 2);
+                     var a:Number = 1;
+                     try { a = Number(it.alpha) * Number(im.alpha) * Number(m.alpha); } catch(eA:Error) { a = 1; }
+                     if(isNaN(a)) { a = 1; }
+                     e.c.alpha = Math.max(0,Math.min(1,a));
+                     e.c.visible = true;
+                     placed = true;
+                  }
+               }
+            }
+         }
+         if(!placed) { this.hzcRxAnchor(e,m); }
       }
       private function hzcRxDraw(e:Object, newest:Boolean) : void
       {
+         if(e == null) { return; }
          this.hzcRxDrop(e);
+         if(this.hzcRxLayer == null || this.hzcCfg == null) { return; }
+         var k:int = int(e.k);
+         if(k < 0 || k >= HZC_RX_LBL.length || k >= HZC_RX_COL.length || k >= HZC_RX_DIR.length) { return; }
          var c:Sprite = new Sprite();
          c.mouseEnabled = false;
          c.mouseChildren = false;
@@ -1352,18 +1638,29 @@
          var fs:Number = Math.max(13,Math.round(14 * z));
          var h:Number = Math.round(44 * z);
          var nm:TextField = this.hzcField(true);
+         if(nm == null) { return; }
          // Same uppercase as the subtitle speaker and the speaker card. All-caps game text is not a second style.
+         if(e.n == null) { e.n = ""; }
          this.hzcSet(nm,String(e.n).toUpperCase(),"nm",fs,this.hzcSpeakerCol(),Math.round(fs * 0.1 * 10) / 10,"left");
          var lb:TextField = this.hzcField(true);
+         if(lb == null) { return; }
          this.hzcSet(lb,String(HZC_RX_LBL[e.k]),"nm",fs,col,Math.round(fs * 0.12 * 10) / 10,"left");
          var nx:Number = Math.round((14 + 30 + 12) * z);
          var nw:Number = Math.ceil(nm.textWidth);
+         if(isNaN(nw) || nw < 0) { nw = 0; }
          var lx:Number = Math.round(nx + nw + 14 * z);
-         var w:Number = Math.round(lx + Math.ceil(lb.textWidth) + 18 * z);
+         var lw:Number = Math.ceil(lb.textWidth);
+         if(isNaN(lw) || lw < 0) { lw = 0; }
+         var w:Number = Math.round(lx + lw + 18 * z);
+         if(w < 40) { w = 40; }
+         if(h < 20) { h = 20; }
          var g:* = c.graphics;
+         if(g == null) { return; }
          if(card)
          {
-            g.beginFill(0x0B1218,Math.max(0,Math.min(1,Number(this.hzcCfg.SubBgOpacity))));
+            var bo:Number = Number(this.hzcCfg.SubBgOpacity);
+            if(isNaN(bo)) { bo = 0.7; }
+            g.beginFill(0x0B1218,Math.max(0,Math.min(1,bo)));
             g.drawRoundRect(0,0,w,h,h,h);
             g.endFill();
             if(newest) { g.lineStyle(1,col,150 / 255,true); } else { g.lineStyle(1,0xFFFFFF,HZC_EDGE,true); }

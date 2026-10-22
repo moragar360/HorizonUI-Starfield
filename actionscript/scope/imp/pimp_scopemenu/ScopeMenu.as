@@ -208,8 +208,8 @@ package
       // the scope menu gets no breath value, so the meter is O2 (PlayerFrequentData fOxygen / fMaxO2CO2, the same source as
       // the HUD's O2 bar; verified in game). O2 colors = the main HUD vitals card (hz26Band / hz26WarnCol): under 35 % the
       // bar and the border are amber, under 15 % red; OUT OF BREATH (red, no fill) after 2 readings in a row under 1 %
-      // (a single 0 reading when the scope opens never flashes it). HOLDING BREATH = O2 fell on 2 readings in a row (the
-      // game sends no breath-hold state to this menu, so a steady O2 drain also shows it).
+      // (a single 0 reading when the scope opens never flashes it). HOLDING BREATH = O2 fell on 2 readings in a row, and
+      // that state stays up for at least 900 ms (the game sends no breath-hold state, so a steady O2 drain also shows it).
       // Settings: [Scope] ScopeHoldBreathChip (0 = the game's prompt) / ScopeChipX / ScopeChipY / ScopeChipScale and [Style]
       // AccentColor / AccentHex / CardOpacity / TextScale / FontFace / HeaderStyle (same meaning as on the HUD). Read when
       // the scope opens and every 5 s after.
@@ -254,6 +254,10 @@ package
       private var hzpMap:Array = null;       // r3: ControlMapData vMappedEvents
       private var hzpPad:Boolean = false;    // r3: a controller is in use (uiController > keyboard / mouse)
       private var hzpErr:Boolean = false;    // r3: an error turned the chip off for this scope session
+      private var hzpBar:flash.display.Shape = null;   // O2 fill. Its own shape, so a tick does not redraw the frame.
+      private var hzpMx:Number = 0;
+      private var hzpMy:Number = 0;
+      private var hzpMw:Number = 120;
 
       private function hzpInit() : void
       {
@@ -486,8 +490,9 @@ package
          var band:int = this.hzpBand(o);
          var ka:Array = this.hzpKey();
          if(String(ka[0]) != this.hzpKeyTx || ka[1] != this.hzpKeyFace) { this.hzpKeyTx = String(ka[0]); this.hzpKeyFace = ka[1]; }
-         var sig:String = this.hzpKeyTx + "|" + this.hzpKeyFace + "|" + this.hzpS.ChipS + "|" + st + "|" + band + "|" + Math.round((o < 0 ? -1 : o) * 120) + "|" + this.hzpS.AccentColor + "|" + this.hzpS.AccentHex + "|" + this.hzpS.CardOpacity + "|" + this.hzpS.TextScale + "|" + this.hzpS.FontFace + "|" + this.hzpS.HeaderStyle;
-         if(sig != this.hzpSig) { this.hzpSig = sig; this.hzpDraw(st,band,o); }
+         var sig:String = this.hzpKeyTx + "|" + this.hzpKeyFace + "|" + this.hzpS.ChipS + "|" + st + "|" + band + "|" + this.hzpS.AccentColor + "|" + this.hzpS.AccentHex + "|" + this.hzpS.CardOpacity + "|" + this.hzpS.TextScale + "|" + this.hzpS.FontFace + "|" + this.hzpS.HeaderStyle;
+         if(sig != this.hzpSig) { this.hzpSig = sig; this.hzpDraw(st,band); }
+         this.hzpBarDraw(st,band,o);
          // where the hidden button sits, at its own (counter-scaled) size
          var r:Rectangle = b.getBounds(this);
          if(r != null && r.width > 1 && r.height > 1) { this.hzpLastX = r.x + r.width / 2; this.hzpLastY = r.y + r.height / 2; }
@@ -499,10 +504,18 @@ package
          var oy:Number = -Number(this.hzpS.ChipY) * b.scaleY;
          if(isNaN(ox)) { ox = 0; }
          if(isNaN(oy)) { oy = 0; }
-         this.hzpChip.scaleX = b.scaleX * cs;
-         this.hzpChip.scaleY = b.scaleY * cs;
-         this.hzpChip.x = Math.round(this.hzpLastX + ox - this.hzpW * this.hzpChip.scaleX / 2);
-         this.hzpChip.y = Math.round(this.hzpLastY + oy - this.hzpH * this.hzpChip.scaleY / 2);
+         var sx:Number = b.scaleX * cs;
+         var sy:Number = b.scaleY * cs;
+         if(isNaN(sx) || sx == 0) { sx = 1; }
+         if(isNaN(sy) || sy == 0) { sy = 1; }
+         var sw:Number = Math.round(this.hzpW * sx);
+         var sh:Number = Math.round(this.hzpH * sy);
+         if(sw < 1) { sw = 1; }
+         if(sh < 1) { sh = 1; }
+         if(this.hzpW > 0) { this.hzpChip.scaleX = sw / this.hzpW; }
+         if(this.hzpH > 0) { this.hzpChip.scaleY = sh / this.hzpH; }
+         this.hzpChip.x = Math.round(this.hzpLastX + ox - sw / 2);
+         this.hzpChip.y = Math.round(this.hzpLastY + oy - sh / 2);
          if(this.hzpChip.parent == this && getChildIndex(this.hzpChip) != numChildren - 1) { setChildIndex(this.hzpChip,numChildren - 1); }
          this.hzpChip.visible = true;
       }
@@ -512,11 +525,11 @@ package
          if(o < 0) { return 0; }
          return o < HZP_O2_CRIT ? 2 : (o < HZP_O2_WARN ? 1 : 0);
       }
-      // 0 ready, 1 holding (O2 fell on 2 readings in a row, within 400 ms), 3 out of breath (2 readings under 1 % in a row)
+      // 0 ready, 1 holding (O2 fell on 2 readings in a row; held at least 900 ms), 3 out of breath (2 readings under 1 % in a row)
       private function hzpState(o:Number, now:int) : int
       {
          if(o >= 0 && o < 0.01 && this.hzpZeroN >= 2) { return 3; }
-         if(now - this.hzpFallT < 400) { return 1; }
+         if(now - this.hzpFallT < 900) { return 1; }
          return 0;
       }
       // original target icon (ring, 4 ticks, center dot), drawn in code; 17 px across at 1080p
@@ -632,21 +645,59 @@ package
          if(w < HZP_KMINW) { w = HZP_KMINW; }
          return w;
       }
-      // st: 0 ready, 1 holding, 3 out of breath; band: 0 normal, 1 warning (amber), 2 critical (red). o = O2 0 - 1 (-1 = no data)
-      private function hzpDraw(st:int, band:int, o:Number) : void
+      // Widest label (HOLDING BREATH). The chip keeps that width in every state, so it does not resize or re-center.
+      private function hzpLblSlot(p:Sprite) : Array
+      {
+         var bestW:Number = 0;
+         var bestH:Number = 0;
+         var seen:Object = {};
+         var i:int = 0;
+         while(i < HZP_LBL.length)
+         {
+            var s:String = this.hzpCase(String(HZP_LBL[i]));
+            if(seen[s] != 1)
+            {
+               seen[s] = 1;
+               var t:TextField = this.hzpT(p,s,14,HZP_TXT,"sb",0.1);
+               var w:Number = this.hzpKeyW(t);
+               var th:Number = t.height;
+               if(t.parent == p) { p.removeChild(t); }
+               if(w > bestW) { bestW = w; }
+               if(th > bestH) { bestH = th; }
+            }
+            i++;
+         }
+         return [bestW,bestH];
+      }
+      // st: 0 ready, 1 holding, 3 out of breath; band: 0 normal, 1 warning (amber), 2 critical (red).
+      // Every stroke stays inside [0,w] x [0,h]. The 4 px glow and the border are inset. The O2 bar is hzpBar.
+      private function hzpDraw(st:int, band:int) : void
       {
          var p:Sprite = this.hzpChip;
+         if(p == null) { return; }
+         if(this.hzpBar != null && this.hzpBar.parent == p) { p.removeChild(this.hzpBar); }
          while(p.numChildren > 0) { p.removeChildAt(0); }
          var g:* = p.graphics;
          g.clear();
          var acc:uint = this.hzpAccent();
-         var bc:uint = (st == 3 || band == 2) ? HZP_RED : (band == 1 ? HZP_AMB : HZP_O2);   // meter: HUD O2 colors
          var stc:uint = (st == 3 || band == 2) ? HZP_RED : (band == 1 ? HZP_AMB : acc);
          var keyCol:uint = st == 3 ? HZP_DIM : stc;
          var ts:Number = Math.max(1,Math.min(1.3,Number(this.hzpS.TextScale)));
          if(isNaN(ts)) { ts = 1; }
+         var slot:Array = this.hzpLblSlot(p);
+         var ltw:Number = Number(slot[0]);
+         var lth0:Number = Number(slot[1]);
+         if(isNaN(ltw) || ltw < 1) { ltw = 80; }
+         if(isNaN(lth0) || lth0 < 1) { lth0 = 16; }
          var h:Number = Math.round(32 + (ts - 1) * 20);
          var lt:TextField = this.hzpT(p,this.hzpCase(String(HZP_LBL[st])),14,st == 3 ? HZP_DIM : HZP_TXT,"sb",0.1);
+         var ownW:Number = this.hzpKeyW(lt);
+         if(ownW > ltw) { ltw = ownW; }
+         var lth:Number = lt.height;
+         if(lth0 > lth) { lth = lth0; }
+         lt.autoSize = TextFieldAutoSize.NONE;
+         lt.width = ltw;
+         if(lt.height < lth) { lt.height = lth; }
          var kt:TextField = null;
          var ktw:Number = 0;
          if(this.hzpKeyTx.length > 0) { kt = this.hzpT(p,this.hzpKeyTx,13,keyCol,"bd",0.04,this.hzpKeyFace); }
@@ -658,29 +709,41 @@ package
             kt.width = ktw;
             if(kt.height < kth) { kt.height = kth; }
          }
-         h = Math.max(h,Math.round(lt.height + 6),kt != null ? Math.round(kt.height + 6) : 0);
+         h = Math.max(h,Math.round(lth + 6),kt != null ? Math.round(kt.height + 6) : 0);
+         h = Math.round(h);
          var kw:Number = 30 + (kt != null ? ktw + HZP_KPAD : 0);   // 0.42.0.6: keycap from the locked key-field width
          var kh:Number = Math.round(h - 12);
          var mw:Number = 120;
          var x0:Number = 7;
          var lx:Number = x0 + kw + 10;
-         var mx:Number = Math.round(lx + lt.textWidth + 16);
+         var mx:Number = Math.round(lx + ltw + 16);
          var w:Number = Math.round(mx + mw + HZP_RPAD);   // 0.42.0.5: + 4
-         // panel: soft shadow, translucent fill (CardOpacity), 1 px edge; HOLDING = accent edge
+         // panel: shadow and strokes stay inside the chip. HOLDING insets a 4 px glow. The border is inset by its own width.
          var opa:Number = Number(this.hzpS.CardOpacity);
          if(isNaN(opa)) { opa = 1; }
          var i:int = 0;
-         while(i < 3) { g.beginFill(0x000000,0.07); g.drawRoundRect(-1 - i,2 - i * 0.5,w + 2 + i * 2,h + 1 + i * 2,h + i * 2,h + i * 2); g.endFill(); i++; }
-         if(st == 3) { g.lineStyle(1,HZP_RED,0.7,true,"none"); }
-         else if(band == 2) { g.lineStyle(1.5,HZP_RED,1,true,"none"); }
-         else if(band == 1) { g.lineStyle(1.5,HZP_AMB,1,true,"none"); }
-         else if(st == 1) { g.lineStyle(1.5,acc,1,true,"none"); }
-         else { g.lineStyle(1,0xFFFFFF,0.18,true,"none"); }
+         while(i < 3)
+         {
+            var sx:Number = 1 + i;
+            var sy:Number = 2;
+            var sw:Number = w - sx * 2;
+            var shd:Number = h - 4 - i;
+            if(sw > 4 && shd > 4) { g.beginFill(0x000000,0.07); g.drawRoundRect(sx,sy,sw,shd,h,h); g.endFill(); }
+            i++;
+         }
+         var bw:Number = 1;
+         var bcol:uint = 0xFFFFFF;
+         var ba:Number = 0.18;
+         if(st == 3) { bw = 1; bcol = HZP_RED; ba = 0.7; }
+         else if(band == 2) { bw = 1.5; bcol = HZP_RED; ba = 1; }
+         else if(band == 1) { bw = 1.5; bcol = HZP_AMB; ba = 1; }
+         else if(st == 1) { bw = 1.5; bcol = acc; ba = 1; }
+         g.lineStyle(bw,bcol,ba,true,"none");
          g.beginFill(HZP_BG,Math.min(1,0.84 * opa));
-         g.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
+         g.drawRoundRect(bw,bw,w - bw * 2,h - bw * 2,Math.max(0,h - bw * 2),Math.max(0,h - bw * 2));
          g.endFill();
          g.lineStyle();
-         if(st == 1 || (band > 0 && st != 3)) { g.lineStyle(4,stc,0.18,true,"none"); g.drawRoundRect(-2,-2,w + 4,h + 4,h + 4,h + 4); g.lineStyle(); }
+         if(st == 1 || (band > 0 && st != 3)) { g.lineStyle(4,stc,0.18,true,"none"); g.drawRoundRect(2,2,w - 4,h - 4,Math.max(0,h - 4),Math.max(0,h - 4)); g.lineStyle(); }
          // keycap
          var ky:Number = Math.round((h - kh) / 2);
          g.lineStyle(1,keyCol,st == 3 ? 0.5 : 0.95,true,"none");
@@ -692,16 +755,32 @@ package
          if(kt != null) { kt.x = Math.round(x0 + 28); kt.y = Math.round(h / 2 - kt.height / 2); }
          lt.x = lx - 2;
          lt.y = Math.round(h / 2 - lt.height / 2);
-         // slim O2 meter (120 x 6)
-         var my:Number = Math.round(h / 2 - 3);
+         this.hzpMx = mx;
+         this.hzpMy = Math.round(h / 2 - 3);
+         this.hzpMw = mw;
+         if(this.hzpBar == null) { this.hzpBar = new flash.display.Shape(); }
+         p.addChild(this.hzpBar);
+         this.hzpW = w;
+         this.hzpH = h;
+      }
+      private function hzpBarDraw(st:int, band:int, o:Number) : void
+      {
+         if(this.hzpBar == null) { return; }
+         var g:* = this.hzpBar.graphics;
+         if(g == null) { return; }
+         g.clear();
+         var bc:uint = (st == 3 || band == 2) ? HZP_RED : (band == 1 ? HZP_AMB : HZP_O2);
+         var mw:Number = this.hzpMw;
+         var mx:Number = this.hzpMx;
+         var my:Number = this.hzpMy;
+         if(mw < 4 || mx < 0 || my < 0) { return; }
          g.beginFill(0xFFFFFF,0.14); g.drawRoundRect(mx,my,mw,6,6,6); g.endFill();
          if(o > 0 && st != 3)
          {
             var fw:Number = Math.max(3,Math.round(mw * o));
+            if(fw > mw) { fw = mw; }
             g.beginFill(bc,1); g.drawRoundRect(mx,my,fw,6,6,6); g.endFill();
          }
-         this.hzpW = w;
-         this.hzpH = h;
       }
       // =================== end Horizon UI Scope module ===================
       // =================== v0.37 shared settings reader (hzp37) ===================

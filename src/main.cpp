@@ -46,6 +46,7 @@
 #include <fstream>
 #include <atomic>
 #include <mutex>
+#include <deque>
 #include <vector>
 #include <string>
 #include <cstdio>
@@ -1857,6 +1858,8 @@ namespace HZ
 	}
 #endif
 
+	void HzRxEnqueue(const char* a_text);
+
 	class ShowHUDMessageSink final : public RE::BSTEventSink<RE::ShowHUDMessageEvent>
 	{
 	public:
@@ -1878,6 +1881,8 @@ namespace HZ
 				if (!snap.match) return RE::BSEventNotifyControl::kContinue;
 				REX::INFO("hud message: text=\"{}\" sound=\"{}\" canThrottle={} isWarning={}",
 					snap.text, snap.sound, snap.throttle ? 1 : 0, snap.warning ? 1 : 0);
+				// This thread is not the UI thread. Copy the text and return. Poll invokes Scaleform.
+				HzRxEnqueue(snap.text);
 			} catch (const std::exception& ex) {
 				if (!g_hudMsgReadWarned) {
 					g_hudMsgReadWarned = true;
@@ -1938,6 +1943,94 @@ namespace HZ
 		}
 	}
 
+	// The sink thread only pushes. The timestamp is the enqueue time, not a 30 s expiry.
+	constexpr std::size_t kRxQueueMax = 8;
+	struct RxNote
+	{
+		char      text[201];
+		ULONGLONG tick;
+	};
+	std::mutex        g_rxMu;
+	std::deque<RxNote> g_rxQ;
+
+	void HzRxEnqueue(const char* a_text)
+	{
+		if (!a_text || !a_text[0]) return;
+		RxNote n{};
+		HzCopyRaw(n.text, sizeof(n.text), a_text);
+		n.tick = GetTickCount64();
+		try {
+			std::lock_guard<std::mutex> lock(g_rxMu);
+			if (g_rxQ.size() >= kRxQueueMax) g_rxQ.pop_front();
+			g_rxQ.push_back(n);
+		} catch (...) {
+		}
+	}
+
+	int HzRxMessagesVisible(RE::UI* a_ui)
+	{
+		if (!a_ui) return -1;
+		try {
+			auto msg = a_ui->GetMenu("HUDMessagesMenu");
+			if (!msg || !msg->menuObj.IsObject()) return -1;
+			GValue mc;
+			if (!msg->menuObj.GetMember("Messages_mc", &mc) || !mc.IsObject()) return -1;
+			GValue v;
+			if (!mc.GetMember("visible", &v) || !v.IsBoolean()) return -1;
+			return v.GetBoolean() ? 1 : 0;
+		} catch (...) {
+			return -1;
+		}
+	}
+
+	ULONGLONG g_rxWhyNext = 0;
+
+	// Purpose: drain the reaction queue on the UI thread and log hzcRxPush's status once per reaction.
+	// Skips loading and the main menu. Not gated on the 3 s HUD-ready wait. A missing hzcRxPush is skipped.
+	// Last modified: 2026-10-22.
+	void CommsRxPoll(ULONGLONG a_now)
+	{
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		for (auto m : { "LoadingMenu", "MainMenu" })
+			if (ui->IsMenuOpen(m)) return;
+		if (!ui->IsMenuOpen("HUDMessagesMenu")) return;
+		auto msg = ui->GetMenu("HUDMessagesMenu");
+		if (!msg || !msg->menuObj.IsObject()) return;
+		try {
+			if (a_now >= g_rxWhyNext && msg->menuObj.HasMember("hzcRxWhy")) {
+				g_rxWhyNext = a_now + 500;
+				GValue why;
+				if (msg->menuObj.Invoke("hzcRxWhy", &why, nullptr, 0) && why.IsString() && why.GetString() && why.GetString()[0])
+					REX::INFO("comms reaction: {}", why.GetString());
+			}
+		} catch (...) {
+		}
+		if (!msg->menuObj.HasMember("hzcRxPush")) return;
+		std::deque<RxNote> batch;
+		try {
+			std::lock_guard<std::mutex> lock(g_rxMu);
+			batch.swap(g_rxQ);
+		} catch (...) {
+			return;
+		}
+		const bool dialogue = ui->IsMenuOpen("DialogueMenu");
+		const int  vis = HzRxMessagesVisible(ui);
+		const char* visTx = vis < 0 ? "unknown" : (vis ? "1" : "0");
+		for (const auto& n : batch) {
+			std::string status = "invoke failed";
+			try {
+				GValue arg(n.text);
+				GValue ret;
+				if (msg->menuObj.Invoke("hzcRxPush", &ret, &arg, 1) && ret.IsString() && ret.GetString())
+					status = ret.GetString();
+			} catch (...) {
+				status = "invoke failed";
+			}
+			REX::INFO("comms reaction: {} | messages visible={} | dialogue={}", status, visTx, dialogue ? 1 : 0);
+		}
+	}
+
 	ULONGLONG g_cdbgNext = 0;
 	bool      g_cdbgLogged = false;
 	void CommsDbgPoll(ULONGLONG a_now)
@@ -1970,6 +2063,7 @@ namespace HZ
 #else
 	void RegisterShowHUDMessageSink() {}
 	void CommsDbgPoll(ULONGLONG) {}
+	void CommsRxPoll(ULONGLONG) {}
 #endif
 
 	void Poll()
@@ -1977,6 +2071,7 @@ namespace HZ
 		auto now = GetTickCount64();
 		BannerPoll(now);   // v0.40.3
 		CommsDbgPoll(now);   // v0.42.0.6: empty when HZ_COMMS_MSG_LOG is 0
+		CommsRxPoll(now);    // v0.42.0.7: reaction backup. Before the HUD-ready return below.
 		HWND wnd = GameWindow();
 		bool down = wnd && (GetAsyncKeyState(g_vk) & 0x8000) != 0;
 		if (down && !g_wasDown) OnSettingsKey();

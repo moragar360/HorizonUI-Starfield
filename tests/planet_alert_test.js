@@ -55,7 +55,9 @@ pin("var h:Number = 39;", "the exit pill is about 39 tall");
 pin("this.hz42VehFs(16.5)", "the exit key is about 16.5");
 pin("this.hz42VehFs(18)", "the exit label is about 18");
 pin("this.hz42VehTf(p,lab,labFs,0xF2F7F9,this.hzFontName(),lls);", "the exit label uses the semibold face");
-pin("cg.beginFill(edge,0.22);", "the exit keycap is tinted with the accent");
+pin("var sweepHi:Number = 0.62;", "the exit sweep has a brighter band at its leading edge");
+pin("var capA:Number = done ? 0.18 : (idleRim ? 0.10 : 0.22);", "the exit keycap is 0.10 idle, 0.22 holding, 0.18 complete");
+pin("cg.beginFill(edge,capA);", "the exit keycap uses that fill");
 
 // Mirror of hz42VehSpan. HoldAnim frames are 1-based, matching currentFrame
 // and currentLabels. Vanilla StartHold is frame 2 and buttonHoldComplete is frame 25.
@@ -511,7 +513,73 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	expect(body.indexOf("Math.ceil(tw * HZP_KHEAD + ls * len) + 8") >= 0, rel + " uses the field-width formula");
 	expect(body.indexOf("kt.width = ktw;") >= 0, rel + " sets the field width");
 	expect(body.indexOf("ktw + HZP_KPAD") >= 0, rel + " sizes the keycap from that width");
+	expect(body.indexOf("if(now - this.hzpFallT < 900)") >= 0, rel + " holds the held state for at least 900 ms");
+	expect(body.indexOf("lt.autoSize = TextFieldAutoSize.NONE;") >= 0, rel + " label field does not autosize");
+	expect(body.indexOf("lt.width = ltw;") >= 0, rel + " label uses the key headroom");
+	expect(body.indexOf("g.drawRoundRect(2,2,w - 4,h - 4,Math.max(0,h - 4),Math.max(0,h - 4));") >= 0, rel + " insets the 4 px glow");
+	expect(body.indexOf("g.drawRoundRect(bw,bw,w - bw * 2,h - bw * 2,Math.max(0,h - bw * 2),Math.max(0,h - bw * 2));") >= 0, rel + " insets the border");
+	expect(body.indexOf("drawRoundRect(-") < 0, rel + " does not draw outside the chip");
+	expect(body.indexOf("private var hzpBar:flash.display.Shape = null;") >= 0, rel + " keeps the O2 bar on its own shape");
+	expect(body.indexOf('this.hzSText(p,"HOLDING BREATH"') < 0, rel + " is the scope movie, not the F11 preview");
 }
+
+// Chip strokes for ready (state 0) and HOLDING BREATH (state 1). A stroke is centered on its path.
+function strokeBox(x, y, rw, rh, sw) {
+	const pad = sw / 2;
+	return { l: x - pad, t: y - pad, r: x + rw + pad, b: y + rh + pad };
+}
+function chipBoxes(ltw, ktw, h, holding) {
+	const x0 = 7;
+	const kw = 30 + ktw + 10;
+	const lx = x0 + kw + 10;
+	const mx = Math.round(lx + ltw + 16);
+	const mw = 120;
+	const w = Math.round(mx + mw + 18);
+	const boxes = [];
+	for (let i = 0; i < 3; i++) {
+		const sx = 1 + i;
+		const sy = 2;
+		const sw = w - sx * 2;
+		const sh = h - 4 - i;
+		if (sw > 4 && sh > 4) boxes.push(strokeBox(sx, sy, sw, sh, 0));
+	}
+	const bw = holding ? 1.5 : 1;
+	boxes.push(strokeBox(bw, bw, w - bw * 2, h - bw * 2, bw));
+	if (holding) boxes.push(strokeBox(2, 2, w - 4, h - 4, 4));
+	const kh = Math.round(h - 12);
+	const ky = Math.round((h - kh) / 2);
+	boxes.push(strokeBox(x0, ky, kw, kh, 1));
+	const cx = x0 + 15;
+	const cy = ky + kh / 2;
+	boxes.push(strokeBox(cx - 8.5, cy - 8.5, 17, 17, 1.6));
+	const my = Math.round(h / 2 - 3);
+	boxes.push(strokeBox(mx, my, mw, 6, 0));
+	boxes.push(strokeBox(mx, my, Math.round(mw * 0.7), 6, 0));
+	return { w: w, boxes: boxes };
+}
+const chipWh = [
+	[140, 70, 36],
+	[90, 40, 32],
+	[180, 96, 48],
+];
+for (let si = 0; si < chipWh.length; si++) {
+	const ltw = chipWh[si][0];
+	const ktw = chipWh[si][1];
+	const h = chipWh[si][2];
+	for (let holding = 0; holding < 2; holding++) {
+		const laid = chipBoxes(ltw, ktw, h, holding === 1);
+		for (let bi = 0; bi < laid.boxes.length; bi++) {
+			const b = laid.boxes[bi];
+			expect(b.l >= -0.001 && b.t >= -0.001 && b.r <= laid.w + 0.001 && b.b <= h + 0.001,
+				(holding ? "HOLDING BREATH" : "ready") + " draw " + bi + " stays inside the chip");
+		}
+	}
+}
+pin('this.hzSText(p,"HOLDING BREATH",0,0,400,int(Math.ceil(lb / ts)),0xF2F7F9,"left");', "the F11 preview sizes the held label");
+pin("lt.autoSize = flash.text.TextFieldAutoSize.NONE;", "the F11 label does not autosize");
+pin("lt.width = ltw;", "the F11 label uses the key headroom");
+pin("var sw:Number = Math.max(1,Math.round(this.hz42ScW * sx));", "the F11 chip snaps width after scaling");
+pin("var sh:Number = Math.max(1,Math.round(boxH * sx));", "the F11 chip snaps height after scaling");
 
 const dlgBlock = fs.readFileSync(path.join(__dirname, "..", "actionscript", "comms", "hzd_block.as"), "utf8");
 function dlgPin(snippet, msg) {
@@ -541,6 +609,8 @@ dlgPin("g.drawRect(nx,0,gapW,mh);", "persuasion notches are gaps");
 dlgPin("fracT.y = Math.round(yM + Math.max(0,(rowMH - fracT.height) / 2));", "the score sits on the meter row");
 dlgPin('titleStr = "PERSUADED"', "a win changes the header to PERSUADED");
 dlgPin('titleStr = "FAILED"', "a loss changes the header to FAILED");
+dlgPin('titleRole = "_Bold"', "PERSUADED and FAILED are bold");
+dlgPin("Math.round(fs * 1.12)", "PERSUADED and FAILED are slightly larger");
 expect(dlgBlock.indexOf("0xF4FBFF") < 0, "persuasion notches are not light ticks");
 expect(dlgBlock.indexOf("var wordT:") < 0, "a result replaces the header instead of adding a row");
 expect(dlgBlock.indexOf("OUT OF TURNS") < 0, "a failed persuasion says FAILED in the header");

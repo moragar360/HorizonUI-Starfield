@@ -214,6 +214,20 @@ int main()
 		const auto loadEnd = src.find("return true;", load);
 		Expect(loadEnd != std::string::npos, "plugin load returns");
 		Expect(src.substr(load, loadEnd - load).find("RegisterShowHUDMessageSink") == std::string::npos, "sink is not registered at plugin load");
+		Expect(src.find("void HzRxEnqueue(const char* a_text);") != std::string::npos, "the sink thread only enqueues");
+		Expect(src.find("std::lock_guard<std::mutex> lock(g_rxMu);") != std::string::npos, "the reaction queue is mutex locked");
+		Expect(src.find("kRxQueueMax") != std::string::npos, "the reaction queue is bounded");
+		Expect(src.find("HasMember(\"hzcRxPush\")") != std::string::npos, "Poll invokes hzcRxPush only when the movie defines it");
+		Expect(src.find("comms reaction: {} | messages visible={} | dialogue={}") != std::string::npos, "each reaction logs one status");
+		Expect(src.find("for (auto m : { \"LoadingMenu\", \"MainMenu\" })") != std::string::npos, "the reaction drain skips loading and the main menu");
+		const auto rxPoll = src.find("CommsRxPoll(now);");
+		const auto hudWait = src.find("if (now - g_hudSince < 3000) return;");
+		Expect(rxPoll != std::string::npos && hudWait != std::string::npos && rxPoll < hudWait, "the reaction drain is not gated on HUD ready");
+		const auto proc = src.find("ProcessEvent(const RE::ShowHUDMessageEvent&");
+		const auto procEnd = src.find("g_hudMsgSink", proc);
+		Expect(proc != std::string::npos && procEnd != std::string::npos && procEnd > proc, "the sink method is present");
+		Expect(src.substr(proc, procEnd - proc).find("Invoke") == std::string::npos, "the sink thread does not touch Scaleform");
+		Expect(src.substr(proc, procEnd - proc).find("HzRxEnqueue") != std::string::npos, "the sink pushes the reaction text");
 	}
 
 	{

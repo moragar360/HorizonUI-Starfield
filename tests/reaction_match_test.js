@@ -300,6 +300,50 @@ const RX2 = [
 for (let i = 0; i < RX1.length; i++) expectMatch(RX1[i][0], RX1[i][2], RX1[i][1], "RX1 " + RX1[i][0]);
 for (let i = 0; i < RX2.length; i++) expectNull(RX2[i], "RX2 " + RX2[i]);
 
+expect(src.indexOf('BSUIDataManager.Subscribe("HUDMessageData",this.hzcRxOnMsg);') >= 0, "the movie subscribes to HUDMessageData");
+expect(src.indexOf("if(this.hzcRxSkip) { this.hzcRxSkip = false; return; }") >= 0, "the subscribe replay is ignored");
+expect(src.indexOf("this.hzcRxOffer(raw);") >= 0, "a new message is matched from the unchanged text");
+expect(src.indexOf("public function hzcRxPush(text:String) : String") >= 0, "the DLL backup calls hzcRxPush");
+expect(src.indexOf('return "queued";') >= 0, "a match returns queued");
+expect(src.indexOf('return "no match";') >= 0, "a non-reaction returns no match");
+expect(src.indexOf('return "cards off: settings not loaded";') >= 0, "cards off names settings");
+expect(src.indexOf('return "cards off: ReactionCard is off";') >= 0, "cards off names the toggle");
+expect(src.indexOf('return "cards off: message column missing";') >= 0, "cards off names a missing column");
+expect(src.indexOf('return "off after error: " + this.hzcRxOne(this.hzcRxErr);') >= 0, "a latched error returns the exception text");
+expect(src.indexOf("if(this.hzcRxFail >= 3) { this.hzcRxLatch(); return; }") >= 0, "one place error does not turn the card off");
+expect(src.indexOf("private static const HZC_RX_DUP:int = 1500;") >= 0, "the two paths dedupe inside a short window");
+expect(src.indexOf("private static const HZC_RX_VIS:int = 4000;") >= 0, "visible time is not a 30 s wall clock");
+expect(src.indexOf("if(slot) { e0.vis = int(e0.vis) + dt; }") >= 0, "time counts only while the message slot is visible");
+expect(src.indexOf("if(int(e0.vis) >= HZC_RX_VIS)") >= 0, "a pending card ends on visible time");
+expect(src.indexOf("30000") < 0, "the reaction movie has no 30 s wall clock");
+expect(src.indexOf("public function hzcRxWhy() : String") >= 0, "cards-off is reported once per reason");
+
+const msgTwins = [
+	["actionscript/imp/imp/scripts/HUDMessagesMenu.as", false],
+	["actionscript/imp/imp-Lrg/scripts/HUDMessagesMenu.as", true],
+];
+const msgStart = "// ===================== Horizon UI Comms (HUD Messages) v0.42.0 =====================";
+const msgEnd = "// =================== end Horizon UI Comms (HUD Messages) v0.35 ===================";
+function msgSpan(text) {
+	const a = text.indexOf(msgStart);
+	const b = text.indexOf(msgEnd);
+	expect(a >= 0 && b > a, "HUD messages block markers");
+	return text.slice(a, b);
+}
+const msgBlock = msgSpan(src);
+for (let i = 0; i < msgTwins.length; i++) {
+	const rel = msgTwins[i][0];
+	const lrg = msgTwins[i][1];
+	const buf = fs.readFileSync(path.join(__dirname, "..", rel));
+	const stripped = buf.toString("binary").replace(/\r\n/g, "");
+	expect(buf.includes(Buffer.from("\r\n")) && !stripped.includes("\n") && !stripped.includes("\r"), rel + " stays CRLF");
+	const body = buf.toString("utf8").replace(/\r\n/g, "\n");
+	let expectSpan = msgBlock;
+	expectSpan = expectSpan.replace("private static const HZC_LRG:Boolean = __HZC_LRG__;", "private static const HZC_LRG:Boolean = " + (lrg ? "true" : "false") + ";");
+	expect(msgSpan(body) === expectSpan, rel + " matches the comms block");
+	expect(body.indexOf("public function hzcRxPush(text:String) : String") >= 0, rel + " defines hzcRxPush");
+}
+
 if (failed) {
 	console.error(failed + " failed");
 	process.exit(1);

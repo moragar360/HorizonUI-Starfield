@@ -2681,7 +2681,15 @@
                if(fade1 > 255) { fade1 = 255; }
                if(fade0 >= fade1) { fade0 = fade1 - 1; }
                if(fade0 < 0) { fade0 = 0; }
-               sg.beginGradientFill("linear",[sweepCol,sweepCol,sweepCol],[sweepA,sweepA,0],[0,fade0,fade1],mtx);
+               var sweepHi:Number = 0.62;
+               var peak:int = fade0 + int(Math.round((fade1 - fade0) * 0.62));
+               if(peak <= fade0) { peak = fade0 + 1; }
+               if(peak >= fade1) { peak = fade1 - 1; }
+               if(peak > fade0 && peak < fade1)
+               {
+                  sg.beginGradientFill("linear",[sweepCol,sweepCol,sweepCol,sweepCol],[sweepA,sweepA,sweepHi,0],[0,fade0,peak,fade1],mtx);
+               }
+               else { sg.beginGradientFill("linear",[sweepCol,sweepCol,sweepCol],[sweepA,sweepHi,0],[0,fade0,fade1],mtx); }
             }
             else { sg.beginFill(sweepCol,sweepA); }
             sg.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
@@ -2710,7 +2718,8 @@
             var ky:Number = Math.round((h - kh) / 2);
             var cg:* = cap.graphics;
             cg.lineStyle(1,edge,0.9,true,"none");
-            cg.beginFill(edge,0.22);
+            var capA:Number = done ? 0.18 : (idleRim ? 0.10 : 0.22);
+            cg.beginFill(edge,capA);
             cg.drawRoundRect(x0,ky,kw,kh,8,8);
             cg.endFill();
             p.addChild(cap);
@@ -14683,6 +14692,7 @@
       private var hz42ScOrig:Object = null;
       private var hz42ScPx:Sprite = null;
       private var hz42ScW:Number = 0;
+      private var hz42ScBoxH:Number = 32;
       private var hz42ScSig:String = "";
       private function hz42ScCX(v:*) : Number { var n:Number = Number(v); if(isNaN(n)) { return 0; } return Math.round(Math.max(-900,Math.min(900,n))); }
       private function hz42ScCY(v:*) : Number { var n:Number = Number(v); if(isNaN(n)) { return 0; } return Math.round(Math.max(-500,Math.min(500,n))); }
@@ -14875,12 +14885,28 @@
          var kw:Number = 30 + kt.width + HZ42_SC_KPAD;
          var x0:Number = 7;
          var lx:Number = x0 + kw + 10;
-         var mx:Number = Math.round(lx + lt.textWidth + 16);
+         // Same width headroom as the key. The slot is the widest label (HOLDING BREATH), so the proxy matches the held chip.
+         var hold:TextField = this.hzSText(p,"HOLDING BREATH",0,0,400,int(Math.ceil(lb / ts)),0xF2F7F9,"left");
+         var outb:TextField = this.hzSText(p,"OUT OF BREATH",0,0,400,int(Math.ceil(lb / ts)),0xF2F7F9,"left");
+         var ltw:Number = this.hz42ScKeyW(Number(lt.textWidth),0,lt.text != null ? int(lt.text.length) : 0);
+         var hw:Number = this.hz42ScKeyW(Number(hold.textWidth),0,hold.text != null ? int(hold.text.length) : 0);
+         var ow:Number = this.hz42ScKeyW(Number(outb.textWidth),0,outb.text != null ? int(outb.text.length) : 0);
+         if(hw > ltw) { ltw = hw; }
+         if(ow > ltw) { ltw = ow; }
+         if(hold.parent == p) { p.removeChild(hold); }
+         if(outb.parent == p) { p.removeChild(outb); }
+         var lth:Number = lt.height;
+         lt.autoSize = flash.text.TextFieldAutoSize.NONE;
+         lt.width = ltw;
+         if(lt.height < lth) { lt.height = lth; }
+         if(lt.height + 8 > h) { h = Math.round(lt.height + 8); }
+         var mx:Number = Math.round(lx + ltw + 16);
          var mw:Number = 120;
          var w:Number = Math.round(mx + mw + HZ42_SC_RPAD);
-         g.lineStyle(1,0xFFFFFF,0.18,true,"none");
+         var bw:Number = 1;
+         g.lineStyle(bw,0xFFFFFF,0.18,true,"none");
          g.beginFill(0x0B1218,0.84);
-         g.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
+         g.drawRoundRect(bw,bw,w - bw * 2,h - bw * 2,Math.max(0,h - bw * 2),Math.max(0,h - bw * 2));
          g.endFill();
          g.lineStyle();
          g.lineStyle(1,HZ_ACCENT,0.95,true,"none");
@@ -14894,9 +14920,13 @@
          lt.x = lx - 2;
          lt.y = Math.round(h / 2 - (lt.textHeight + 4) / 2);
          var my:Number = Math.round(h / 2 - 3);
-         g.beginFill(0xFFFFFF,0.14); g.drawRoundRect(mx,my,mw,6,6,6); g.endFill();
-         g.beginFill(0x4DB6FF,1); g.drawRoundRect(mx,my,Math.round(mw * 0.7),6,6,6); g.endFill();
+         var bar:flash.display.Shape = new flash.display.Shape();
+         p.addChild(bar);
+         var bg:* = bar.graphics;
+         bg.beginFill(0xFFFFFF,0.14); bg.drawRoundRect(mx,my,mw,6,6,6); bg.endFill();
+         bg.beginFill(0x4DB6FF,1); bg.drawRoundRect(mx,my,Math.round(mw * 0.7),6,6,6); bg.endFill();
          this.hz42ScW = w;
+         this.hz42ScBoxH = h;
       }
       // proxy: shown only in ARRANGE CARDS with the module installed and the chip on; placed from the stored offsets
       private function hz42ScSync() : void
@@ -14914,19 +14944,25 @@
          if(this.hz42ScPx.parent != this) { addChild(this.hz42ScPx); if(this.hzArr_mc != null && this.hzArr_mc.parent == this) { addChild(this.hzArr_mc); } }
          var sig:String = HZ_ACCENT + "|" + this.hzTextScale + "|" + this.hzFontFace + "|" + this.hz42ScS;   // r3: + size (text floor)
          if(sig != this.hz42ScSig || this.hz42ScW <= 0) { this.hz42ScSig = sig; this.hz42ScDraw(); }
-         this.hz42ScPx.scaleX = this.hz42ScS;
-         this.hz42ScPx.scaleY = this.hz42ScS;
+         var sx:Number = this.hz42ScS;
+         if(isNaN(sx) || sx == 0) { sx = 1; }
+         var boxH:Number = this.hz42ScBoxH > 0 ? this.hz42ScBoxH : HZ42_SC_H;
+         var sw:Number = Math.max(1,Math.round(this.hz42ScW * sx));
+         var sh:Number = Math.max(1,Math.round(boxH * sx));
+         if(this.hz42ScW > 0) { this.hz42ScPx.scaleX = sw / this.hz42ScW; } else { this.hz42ScPx.scaleX = sx; }
+         if(boxH > 0) { this.hz42ScPx.scaleY = sh / boxH; } else { this.hz42ScPx.scaleY = sx; }
          var hp:Point = this.hz42ScHome();
-         this.hz42ScPx.x = Math.round(hp.x + this.hz42ScX - this.hz42ScW * this.hz42ScS / 2);
-         this.hz42ScPx.y = Math.round(hp.y - this.hz42ScY - HZ42_SC_H * this.hz42ScS / 2);
+         this.hz42ScPx.x = Math.round(hp.x + this.hz42ScX - sw / 2);
+         this.hz42ScPx.y = Math.round(hp.y - this.hz42ScY - sh / 2);
          this.hz42ScPx.visible = true;
       }
       // ARRANGE drag / nudge: the proxy center -> offsets from the home spot
       private function hz42ScFromPx(c:Sprite) : void
       {
          var hp:Point = this.hz42ScHome();
+         var boxH:Number = this.hz42ScBoxH > 0 ? this.hz42ScBoxH : HZ42_SC_H;
          var cx:Number = c.x + this.hz42ScW * c.scaleX / 2;
-         var cy:Number = c.y + HZ42_SC_H * c.scaleY / 2;
+         var cy:Number = c.y + boxH * c.scaleY / 2;
          this.hz42ScPut(cx - hp.x,hp.y - cy,this.hz42ScS);
       }
       private function hz42ScStep(dir:int) : void
