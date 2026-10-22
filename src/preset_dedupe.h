@@ -89,6 +89,41 @@ inline std::string Utf8Prefix(const std::string& a_s, std::size_t a_max)
 	return a_s.substr(0, n);
 }
 
+// Purpose: copy a HUD string into a fixed buffer without splitting a UTF-8 character.
+// Inputs: destination, its size in bytes (including the NUL), and the source. Outputs: at most
+// a_cap - 1 bytes, ending on a character boundary. A character that would cross that limit is left out.
+// Controls and DEL become spaces. Dependencies: none.
+// Last modified: 2026-10-22.
+inline void CopyHudText(char* a_dst, std::size_t a_cap, const char* a_src)
+{
+	if (!a_dst || a_cap == 0) return;
+	a_dst[0] = '\0';
+	if (!a_src) return;
+	const std::size_t max = a_cap - 1;
+	std::size_t o = 0;
+	for (std::size_t i = 0; a_src[i] != '\0' && o < max;) {
+		const auto lead = static_cast<unsigned char>(a_src[i]);
+		int need = 1;
+		if ((lead & 0x80) == 0x00) need = 1;
+		else if ((lead & 0xE0) == 0xC0) need = 2;
+		else if ((lead & 0xF0) == 0xE0) need = 3;
+		else if ((lead & 0xF8) == 0xF0) need = 4;
+		int got = 1;
+		while (got < need) {
+			const auto cc = static_cast<unsigned char>(a_src[i + static_cast<std::size_t>(got)]);
+			if (cc == 0 || (cc & 0xC0) != 0x80) break;
+			++got;
+		}
+		if (got != need || o + static_cast<std::size_t>(need) > max) break;
+		for (int k = 0; k < need; ++k) {
+			const auto b = static_cast<unsigned char>(a_src[i + static_cast<std::size_t>(k)]);
+			a_dst[o++] = (k == 0 && (b < 32 || b == 127)) ? ' ' : static_cast<char>(b);
+		}
+		i += static_cast<std::size_t>(need);
+	}
+	a_dst[o] = '\0';
+}
+
 // Purpose: drop the characters a preset name must not contain, matching the HUD.
 // Inputs: the raw name from F11. Outputs: the name with those characters and
 // control characters removed, trimmed, and cut at 48 bytes on a UTF-8 boundary.

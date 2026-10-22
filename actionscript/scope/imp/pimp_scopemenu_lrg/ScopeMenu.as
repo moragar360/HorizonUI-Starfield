@@ -535,7 +535,7 @@ package
       // original target icon (ring, 4 ticks, center dot), drawn in code; 17 px across at 1080p
       private function hzpCross(g:*, cx:Number, cy:Number, col:uint, a:Number) : void
       {
-         g.lineStyle(1.6,col,a,true,"none");
+         g.lineStyle(2,col,a,true,"none");
          g.drawCircle(cx,cy,6);
          g.moveTo(cx,cy - 8.5); g.lineTo(cx,cy - 3.5);
          g.moveTo(cx,cy + 3.5); g.lineTo(cx,cy + 8.5);
@@ -670,7 +670,7 @@ package
          return [bestW,bestH];
       }
       // st: 0 ready, 1 holding, 3 out of breath; band: 0 normal, 1 warning (amber), 2 critical (red).
-      // Every stroke stays inside [0,w] x [0,h]. The 4 px glow and the border are inset. The O2 bar is hzpBar.
+      // Every stroke stays inside [0,w] x [0,h]. Strokes are 1 or 2 px, inset by half their width. The O2 bar is hzpBar.
       private function hzpDraw(st:int, band:int) : void
       {
          var p:Sprite = this.hzpChip;
@@ -718,7 +718,7 @@ package
          var lx:Number = x0 + kw + 10;
          var mx:Number = Math.round(lx + ltw + 16);
          var w:Number = Math.round(mx + mw + HZP_RPAD);   // 0.42.0.5: + 4
-         // panel: shadow and strokes stay inside the chip. HOLDING insets a 4 px glow. The border is inset by its own width.
+         // panel: shadow and strokes stay inside the chip. Strokes are 1 or 2 px and inset by half that width.
          var opa:Number = Number(this.hzpS.CardOpacity);
          if(isNaN(opa)) { opa = 1; }
          var i:int = 0;
@@ -735,20 +735,21 @@ package
          var bcol:uint = 0xFFFFFF;
          var ba:Number = 0.18;
          if(st == 3) { bw = 1; bcol = HZP_RED; ba = 0.7; }
-         else if(band == 2) { bw = 1.5; bcol = HZP_RED; ba = 1; }
-         else if(band == 1) { bw = 1.5; bcol = HZP_AMB; ba = 1; }
-         else if(st == 1) { bw = 1.5; bcol = acc; ba = 1; }
+         else if(band == 2) { bw = 2; bcol = HZP_RED; ba = 1; }
+         else if(band == 1) { bw = 2; bcol = HZP_AMB; ba = 1; }
+         else if(st == 1) { bw = 2; bcol = acc; ba = 1; }
+         var inset:Number = bw * 0.5;
          g.lineStyle(bw,bcol,ba,true,"none");
          g.beginFill(HZP_BG,Math.min(1,0.84 * opa));
-         g.drawRoundRect(bw,bw,w - bw * 2,h - bw * 2,Math.max(0,h - bw * 2),Math.max(0,h - bw * 2));
+         g.drawRoundRect(inset,inset,w - bw,h - bw,Math.max(0,h - bw),Math.max(0,h - bw));
          g.endFill();
          g.lineStyle();
-         if(st == 1 || (band > 0 && st != 3)) { g.lineStyle(4,stc,0.18,true,"none"); g.drawRoundRect(2,2,w - 4,h - 4,Math.max(0,h - 4),Math.max(0,h - 4)); g.lineStyle(); }
-         // keycap
+         if(st == 1 || (band > 0 && st != 3)) { g.lineStyle(2,stc,0.18,true,"none"); g.drawRoundRect(1,1,w - 2,h - 2,Math.max(0,h - 2),Math.max(0,h - 2)); g.lineStyle(); }
+         // keycap. A 1 px stroke is inset by half a pixel so it stays on whole pixels and inside the cap.
          var ky:Number = Math.round((h - kh) / 2);
          g.lineStyle(1,keyCol,st == 3 ? 0.5 : 0.95,true,"none");
          g.beginFill(keyCol,st == 1 ? 0.22 : 0.1);
-         g.drawRoundRect(x0,ky,kw,kh,8,8);
+         g.drawRoundRect(x0 + 0.5,ky + 0.5,kw - 1,kh - 1,8,8);
          g.endFill();
          g.lineStyle();
          this.hzpCross(g,x0 + 15,ky + kh / 2,keyCol,st == 3 ? 0.6 : 1);

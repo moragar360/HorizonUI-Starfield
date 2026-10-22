@@ -311,12 +311,184 @@ expect(src.indexOf('return "cards off: ReactionCard is off";') >= 0, "cards off 
 expect(src.indexOf('return "cards off: message column missing";') >= 0, "cards off names a missing column");
 expect(src.indexOf('return "off after error: " + this.hzcRxOne(this.hzcRxErr);') >= 0, "a latched error returns the exception text");
 expect(src.indexOf("if(this.hzcRxFail >= 3) { this.hzcRxLatch(); return; }") >= 0, "one place error does not turn the card off");
-expect(src.indexOf("private static const HZC_RX_DUP:int = 1500;") >= 0, "the two paths dedupe inside a short window");
+expect(src.indexOf("HZC_RX_DUP") < 0, "identical reactions are not collapsed inside a time window");
 expect(src.indexOf("private static const HZC_RX_VIS:int = 4000;") >= 0, "visible time is not a 30 s wall clock");
 expect(src.indexOf("if(slot) { e0.vis = int(e0.vis) + dt; }") >= 0, "time counts only while the message slot is visible");
-expect(src.indexOf("if(int(e0.vis) >= HZC_RX_VIS)") >= 0, "a pending card ends on visible time");
+expect(src.indexOf("if(int(e0.vis) >= HZC_RX_VIS)") >= 0, "an unlinked card ends on visible time");
 expect(src.indexOf("30000") < 0, "the reaction movie has no 30 s wall clock");
 expect(src.indexOf("public function hzcRxWhy() : String") >= 0, "cards-off is reported once per reason");
+expect(src.indexOf("catch(eSub:Error) { this.hzcRxSub = false; }\n         this.hzcRxSkip = false;") >= 0, "the skip flag clears when Subscribe returns");
+expect(src.indexOf("private static const HZC_RX_PAIR:int = 3000;") >= 0, "the two paths pair inside 3 s");
+expect(src.indexOf("private static const HZC_RX_COOL:int = 5000;") >= 0, "a miss latch rearms after 5 s");
+expect(src.indexOf('if(age >= 0 && age < HZC_RX_PAIR) { e0.paired = true; e0.src = "both"; return "queued"; }') >= 0, "pairing keeps the oldest card");
+expect(src.indexOf('try { return this.hzcRxOffer(text == null ? "" : String(text),true); }') >= 0, "the DLL path offers through the same queue");
+expect(src.indexOf("if(e0.linked == true)") >= 0, "a linked card follows its line");
+expect(src.indexOf("if(!inList) { this.hzcRxShow(e0); this.hzcRxDrop(e0); continue; }") >= 0, "a linked card ends when its line leaves");
+expect(src.indexOf("e0.it = null") < 0, "a finished line does not fall back to a standalone card");
+expect(src.indexOf("if(e.linked == true) { e.c.visible = false; return; }") >= 0, "a linked card stays hidden when it cannot sit on its line");
+expect(src.indexOf("private function hzcRxRearm() : void") >= 0, "a settings reload rearms the card");
+expect(src.indexOf("if(this.hzcRxOffAt != 0 && woke >= HZC_RX_COOL && woke < 120000) { this.hzcRxRearm(); }") >= 0, "the cooldown rearms the card");
+expect(src.indexOf("if(e.blamed != true) { e.blamed = true; e.judged = true; this.hzcRxHit(err); }") >= 0, "one message counts one miss");
+expect(src.indexOf("if(e.judged != true) { e.judged = true; drew = true; }") >= 0, "the first successful place of a message clears the streak");
+expect(src.indexOf("if(drew) { this.hzcRxFail = 0; }") >= 0, "a later success clears the miss streak");
+
+function constInt(name) {
+	const m = src.match(new RegExp("private static const " + name + ":int = (\\d+);"));
+	if (!m) throw new Error("missing " + name);
+	return Number(m[1]);
+}
+const PAIR = constInt("HZC_RX_PAIR");
+const VIS = constInt("HZC_RX_VIS");
+const COOL = constInt("HZC_RX_COOL");
+expect(PAIR === 3000 && VIS === 4000 && COOL === 5000, "pair, visible, and cooldown windows");
+
+// Keep loop from hzcRxStep. A linked card drops when its item leaves. Visible time applies only when it never linked.
+function rxKeep(entries, present, slot, dt) {
+	const out = [];
+	for (let i = 0; i < entries.length; i++) {
+		const e0 = entries[i];
+		if (e0 == null || e0.st !== 1) continue;
+		if (e0.linked === true) {
+			const inList = e0.it != null && present.indexOf(e0.it) >= 0;
+			if (!inList) continue;
+		} else {
+			if (slot) e0.vis = (e0.vis | 0) + dt;
+			if ((e0.vis | 0) >= VIS) continue;
+		}
+		out.push(e0);
+	}
+	return out;
+}
+function rxPlace(e, placed) {
+	if (placed) return "beside";
+	if (e.linked === true) return "hidden";
+	return "anchor";
+}
+{
+	const line = 1;
+	let cur = [{ st: 1, linked: true, it: line, vis: 0 }];
+	for (let i = 0; i < 23; i++) cur = rxKeep(cur, [line], true, 100);
+	expect(cur.length === 1, "a linked card is still up at about 2.3 s while its line is shown");
+	cur = rxKeep(cur, [], true, 16);
+	expect(cur.length === 0, "a linked card ends when its line leaves at about 2.3 s");
+	cur = rxKeep(cur, [], true, 100);
+	expect(cur.length === 0 && rxPlace({ linked: true }, false) === "hidden", "a linked card does not pop back as a standalone card");
+	let held = [{ st: 1, linked: true, it: line, vis: 0 }];
+	for (let i = 0; i < 60; i++) held = rxKeep(held, [line], true, 100);
+	expect(held.length === 1, "a line held past 4 s keeps its card");
+	let loose = [{ st: 1, linked: false, it: null, vis: 0 }];
+	for (let i = 0; i < 39; i++) loose = rxKeep(loose, [], true, 100);
+	expect(loose.length === 1 && loose[0].vis === 3900, "an unlinked card is still up just before 4 s");
+	loose = rxKeep(loose, [], true, 100);
+	expect(loose.length === 0, "an unlinked card ends at 4 s of visible time");
+	const hidden = rxKeep([{ st: 1, linked: false, it: null, vis: 0 }], [], false, 5000);
+	expect(hidden.length === 1 && hidden[0].vis === 0, "a hidden message slot does not age an unlinked card");
+}
+
+// FIFO: opposite sources of the same text pair in order. N reactions stay N cards.
+function rxOffer(q, text, fromDll, now) {
+	const key = String(text).toLowerCase();
+	const want = fromDll ? "b" : "d";
+	for (let i = 0; i < q.length; i++) {
+		const e0 = q[i];
+		if (e0 == null || e0.key !== key || e0.paired === true || e0.src !== want) continue;
+		const age = now - e0.t0;
+		if (age >= 0 && age < PAIR) { e0.paired = true; e0.src = "both"; return "queued"; }
+	}
+	const srcName = fromDll ? "d" : "b";
+	q.push({ key: key, t0: now, src: srcName, paired: false, it: null });
+	if (q.length > 8) q.shift();
+	return "queued";
+}
+{
+	const line = "Sam Coe liked that.";
+	const q = [];
+	for (let i = 0; i < 4; i++) rxOffer(q, line, false, i * 10);
+	expect(q.length === 4 && q.every(function (e) { return e.src === "b" && e.paired === false; }), "four binding notes are four cards");
+	for (let i = 0; i < 4; i++) rxOffer(q, line, true, 100 + i * 10);
+	expect(q.length === 4 && q.every(function (e) { return e.src === "both" && e.paired === true; }), "four DLL notes pair onto those four cards");
+	const rev = [];
+	for (let i = 0; i < 3; i++) rxOffer(rev, line, true, i * 20);
+	for (let i = 0; i < 3; i++) rxOffer(rev, line, false, 80 + i * 20);
+	expect(rev.length === 3 && rev.every(function (e) { return e.paired === true; }), "DLL notes then binding notes still pair one to one");
+	const only = [];
+	rxOffer(only, line, false, 0);
+	rxOffer(only, line, false, 10);
+	expect(only.length === 2, "binding-only reactions are not collapsed");
+	const late = [];
+	rxOffer(late, line, false, 0);
+	rxOffer(late, line, true, PAIR);
+	expect(late.length === 2 && late[0].paired === false, "a DLL note older than 3 s does not pair");
+	const other = [];
+	rxOffer(other, "Sam Coe liked that.", false, 0);
+	rxOffer(other, "Sarah Morgan hated that.", true, 10);
+	expect(other.length === 2, "different lines do not pair");
+	const order = [];
+	rxOffer(order, line, false, 0);
+	rxOffer(order, line, false, 10);
+	rxOffer(order, line, true, 20);
+	expect(order[0].paired === true && order[1].paired === false, "pairing takes the oldest unpaired note");
+}
+
+// Misses are one per message. A healthy card that already drew does not clear the streak every frame.
+function rxPlaces(entries, state) {
+	let drew = false;
+	for (let i = 0; i < entries.length; i++) {
+		const e = entries[i];
+		if (e.bad) {
+			if (e.blamed !== true) { e.blamed = true; e.judged = true; state.fail++; }
+		} else if (e.judged !== true) { e.judged = true; drew = true; }
+	}
+	if (drew) state.fail = 0;
+	if (state.fail >= 3) { state.off = true; state.offAt = state.now; }
+}
+function rxRearm(state) {
+	state.off = false;
+	state.offAt = 0;
+	state.fail = 0;
+	state.stepBad = false;
+}
+function rxFrame(state, now, stepThrows) {
+	state.now = now;
+	if (state.off) {
+		const woke = now - state.offAt;
+		if (state.offAt !== 0 && woke >= COOL && woke < 120000) rxRearm(state);
+		else return;
+	}
+	if (stepThrows) {
+		if (!state.stepBad) { state.stepBad = true; state.fail++; if (state.fail >= 3) { state.off = true; state.offAt = now; } }
+	} else state.stepBad = false;
+}
+{
+	const one = { bad: true, blamed: false, judged: false };
+	const state = { fail: 0, off: false, offAt: 0, now: 0, stepBad: false };
+	rxPlaces([one], state);
+	rxPlaces([one], state);
+	rxPlaces([one], state);
+	expect(state.fail === 1 && state.off === false, "one bad message counts once across frames");
+	const three = { fail: 0, off: false, offAt: 0, now: 0 };
+	rxPlaces([{ bad: true }, { bad: true }, { bad: true }], three);
+	expect(three.fail === 3 && three.off === true, "three new message misses turn the card off");
+	const healed = { fail: 2, off: false, offAt: 0, now: 0 };
+	rxPlaces([{ bad: false, judged: false }], healed);
+	expect(healed.fail === 0 && healed.off === false, "the first success of a message clears the streak");
+	const steady = { fail: 2, off: false, offAt: 0, now: 0 };
+	rxPlaces([{ bad: false, judged: true }], steady);
+	expect(steady.fail === 2, "a card that already drew does not clear the streak every frame");
+	rxRearm(three);
+	expect(three.off === false && three.fail === 0, "a settings reload rearms a latched card");
+	const cool = { fail: 3, off: true, offAt: 1000, now: 1000, stepBad: false };
+	rxFrame(cool, 1000 + COOL - 1, false);
+	expect(cool.off === true, "the latch holds through 4999 ms");
+	rxFrame(cool, 1000 + COOL, false);
+	expect(cool.off === false && cool.fail === 0, "the latch clears after 5 s");
+	const back = { fail: 3, off: true, offAt: 5000, now: 5000, stepBad: false };
+	rxFrame(back, 4000, false);
+	expect(back.off === true, "a clock step backward does not rearm");
+	const stuck = { fail: 0, off: false, offAt: 0, now: 0, stepBad: false };
+	for (let i = 0; i < 10; i++) rxFrame(stuck, i * 16, true);
+	expect(stuck.fail === 1 && stuck.off === false, "one step error counts once, not once per frame");
+}
 
 const msgTwins = [
 	["actionscript/imp/imp/scripts/HUDMessagesMenu.as", false],
@@ -348,4 +520,4 @@ if (failed) {
 	console.error(failed + " failed");
 	process.exit(1);
 }
-console.log("reaction match: " + (RX1.length + RX2.length) + " harness cases, all passed");
+console.log("reaction match: " + (RX1.length + RX2.length) + " matcher cases, plus lifetime, pairing, and miss harnesses, all passed");

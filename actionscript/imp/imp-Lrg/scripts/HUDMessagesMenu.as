@@ -532,9 +532,11 @@ package
       // removed: the game's stack, fade and timing stay. Only an exact, whole-line match is changed (one line, name of 1 - 4
       // words of letters, apostrophes, or hyphens, any case; a period on a title such as Dr. or an initial such as J. or J.T.; no ':' '!' '?' quotes or brackets; the first word is not a pronoun); any
       // other line, other languages, ReactionCard=0 or any error leave the game's line as it is.
-      // v0.42.0.7: HUDMessageData is the primary path (the value replayed on subscribe is ignored). The DLL may also
-      // call hzcRxPush. One text inside a short window is one card. A pending card is not dropped on a wall clock.
-      // Time counts only while Messages_mc is visible, so a line held through a conversation is still carded.
+      // v0.42.0.7: HUDMessageData is the primary path. A value replayed during Subscribe is ignored, and the skip
+      // flag is cleared when Subscribe returns so the first real message is kept. The DLL may also call hzcRxPush.
+      // The two paths pair in order, so the same text from both paths is one card and N reactions are N cards.
+      // A card that links to a vanilla line stays up until that line leaves the list. A card that never links
+      // lasts 4 s of time while Messages_mc is visible, so a line held through a conversation is still carded.
       // v0.40.1: the scan state also ends when the HUD's bottom-center group goes from shown to hidden.
       // v0.40: quest popups / the mission toast stay hidden for the whole scan (no 30 s cap); the scan state is cleared by
       // the scanner's close event or a frame gap over 1 s while scanning (a load). HideQuestPopupsWhileScanning defaults to 1.
@@ -1541,16 +1543,19 @@ package
       // A trailing period is a title or an initial, not a sentence. "Dr." and "J." match. "Okay." does not.
       private static const HZC_RX_TITLE:Array = ["dr","mr","mrs","ms","jr","sr","st","lt","capt","sgt","prof"];
       private static const HZC_RX_LABEL:uint = 0xC4D2D9;
-      private static const HZC_RX_DUP:int = 1500;   // same text from the binding and the DLL is one card
-      private static const HZC_RX_VIS:int = 4000;   // shown time, counted only while the message slot is visible
-      private var hzcRx:Array = [];          // {it, st: 1 card, n, k, c, w, h, sig, key, t0, vis, tx}
+      private static const HZC_RX_PAIR:int = 3000;  // a binding note and a DLL note of the same text pair inside this window
+      private static const HZC_RX_VIS:int = 4000;    // unlinked cards only: shown time while the message slot is visible
+      private static const HZC_RX_COOL:int = 5000;   // after three message misses, try the card again once this has passed
+      private var hzcRx:Array = [];          // {it, st, n, k, c, w, h, sig, key, t0, vis, tx, linked, src, paired, blamed}
       private var hzcRxWait:Array = [];      // {it, f} text not ready yet
       private var hzcRxLayer:Sprite = null;
-      private var hzcRxOff:Boolean = false;  // after repeated errors: every line stays the game's for this session
-      private var hzcRxSkip:Boolean = true;  // the first HUDMessageData callback is the replayed value
+      private var hzcRxOff:Boolean = false;  // after three message misses: lines stay the game's until the cooldown or a settings reload
+      private var hzcRxOffAt:int = 0;
+      private var hzcRxSkip:Boolean = true;  // true only while Subscribe may replay the cached value
       private var hzcRxSub:Boolean = false;
       private var hzcRxLast:int = 0;
-      private var hzcRxFail:int = 0;         // recoverable place / draw misses. The session turns off at 3.
+      private var hzcRxFail:int = 0;         // misses in a row, one per message. A later success clears it.
+      private var hzcRxStepBad:Boolean = false;
       private var hzcRxWhyLast:String = "";
       private function hzcRxInit() : void
       {
@@ -1567,7 +1572,8 @@ package
          this.hzcRxSub = true;
          this.hzcRxSkip = true;
          try { BSUIDataManager.Subscribe("HUDMessageData",this.hzcRxOnMsg); }
-         catch(eSub:Error) { this.hzcRxSub = false; this.hzcRxSkip = false; }
+         catch(eSub:Error) { this.hzcRxSub = false; }
+         this.hzcRxSkip = false;
       }
       private function hzcRxOn() : Boolean
       {
@@ -1796,13 +1802,24 @@ package
          if(s == null || s.length == 0) { return null; }
          return s.toLowerCase();
       }
-      private function hzcRxByKey(tx:String) : Object
+      // Oldest card for this text that does not have a vanilla line yet.
+      private function hzcRxOpen(tx:String) : Object
       {
          var key:String = this.hzcRxKey(tx);
          if(key == null) { return null; }
-         var hit:Object = null;
-         for each(var e:Object in this.hzcRx) { if(e != null && e.key == key) { hit = e; } }
-         return hit;
+         for each(var e:Object in this.hzcRx) { if(e != null && e.key == key && e.it == null) { return e; } }
+         return null;
+      }
+      // Settings reload, a ReactionCard toggle, or the miss cooldown. The next message draws again.
+      private function hzcRxRearm() : void
+      {
+         this.hzcRxOff = false;
+         this.hzcRxOffAt = 0;
+         this.hzcRxFail = 0;
+         this.hzcRxStepBad = false;
+         this.hzcRxErr = "";
+         this.hzcRxErrSent = false;
+         this.hzcRxWhyLast = "";
       }
       // Match the unchanged text. The first HUDMessageData event is the value replayed on subscribe.
       private function hzcRxOnMsg(ev:FromClientDataEvent) : void
@@ -1827,8 +1844,9 @@ package
          }
          catch(err:Error) { }
       }
-      // queued / no match / cards off: reason / off after error: message. A repeat inside HZC_RX_DUP is still queued.
-      private function hzcRxOffer(raw:String) : String
+      // queued / no match / cards off: reason / off after error: message.
+      // fromDll pairs with the oldest unpaired binding note of the same text, and the other way around.
+      private function hzcRxOffer(raw:String, fromDll:Boolean = false) : String
       {
          if(raw == null) { raw = ""; }
          if(this.hzcRxOff || !this.hzcRxOn()) { return this.hzcRxWhyText(); }
@@ -1839,15 +1857,15 @@ package
          var key:String = this.hzcRxKey(String(raw));
          if(key == null) { return "no match"; }
          var now:int = getTimer();
+         var want:String = fromDll ? "b" : "d";
          for each(var e0:Object in this.hzcRx)
          {
-            if(e0 != null && e0.key == key)
-            {
-               var age:int = now - int(e0.t0);
-               if(age >= 0 && age < HZC_RX_DUP) { return "queued"; }
-            }
+            if(e0 == null || e0.key != key || e0.paired == true || e0.src != want) { continue; }
+            var age:int = now - int(e0.t0);
+            if(age >= 0 && age < HZC_RX_PAIR) { e0.paired = true; e0.src = "both"; return "queued"; }
          }
-         this.hzcRx.push({"it":null,"st":1,"n":r.n,"k":r.k,"c":null,"w":0,"h":0,"sig":"","key":key,"t0":now,"vis":0,"tx":String(raw)});
+         var src:String = fromDll ? "d" : "b";
+         this.hzcRx.push({"it":null,"st":1,"n":r.n,"k":r.k,"c":null,"w":0,"h":0,"sig":"","key":key,"t0":now,"vis":0,"tx":String(raw),"linked":false,"src":src,"paired":false,"blamed":false});
          if(this.hzcRx.length > 8)
          {
             var old:Object = this.hzcRx.shift();
@@ -1858,7 +1876,7 @@ package
       // DLL backup. The sink thread never calls this. Poll does, and only while HUDMessagesMenu is open.
       public function hzcRxPush(text:String) : String
       {
-         try { return this.hzcRxOffer(text == null ? "" : String(text)); }
+         try { return this.hzcRxOffer(text == null ? "" : String(text),true); }
          catch(err:Error)
          {
             var em:String = "";
@@ -1935,20 +1953,22 @@ package
             if(tx.length == 0 && n < 3) { continue; }
             this.hzcRxWaitClear(it);
             if(tx.length == 0) { this.hzcRxReveal(it); continue; }
-            var before:Object = this.hzcRxByKey(tx);
-            if(before != null && before.it == null)
+            var before:Object = this.hzcRxOpen(tx);
+            if(before != null)
             {
                before.it = it;
+               before.linked = true;
                try { if(it.Internal_mc != null) { it.Internal_mc.visible = false; } } catch(eHid0:Error) { }
                continue;
             }
             var st:String = "";
-            try { st = this.hzcRxOffer(tx); } catch(eOff:Error) { st = ""; }
+            try { st = this.hzcRxOffer(tx,false); } catch(eOff:Error) { st = ""; }
             if(st != "queued") { this.hzcRxReveal(it); continue; }
-            var e:Object = this.hzcRxByKey(tx);
-            if(e != null && e.it == null)
+            var e:Object = this.hzcRxOpen(tx);
+            if(e != null)
             {
                e.it = it;
+               e.linked = true;
                try { if(it.Internal_mc != null) { it.Internal_mc.visible = false; } } catch(eHid:Error) { }
             }
             else { this.hzcRxReveal(it); }
@@ -1962,6 +1982,7 @@ package
       private function hzcRxLatch() : void
       {
          this.hzcRxOff = true;
+         this.hzcRxOffAt = getTimer();
          try { this.hzcRxAll(); } catch(eAll:Error) { }
          try { this.hzcRxDbgErr(); } catch(eDbg:Error) { }
       }
@@ -2006,6 +2027,7 @@ package
       }
       private function hzcRxApply() : void
       {
+         this.hzcRxRearm();
          if(!this.hzcRxOn()) { this.hzcRxAll(); return; }
          for each(var e:Object in this.hzcRx) { if(e != null) { e.sig = ""; } }
       }
@@ -2013,11 +2035,19 @@ package
       {
          if(this.hzcRxOff)
          {
-            if(this.hzcRxDbgOn) { try { this.hzcRxDbgErr(); this.hzcRxDbgScan(this.Messages_mc != null ? this.Messages_mc.ShownMessageArray : null); } catch(eDbg2:Error) { } }
-            return;
+            var woke:int = getTimer() - this.hzcRxOffAt;
+            if(this.hzcRxOffAt != 0 && woke >= HZC_RX_COOL && woke < 120000) { this.hzcRxRearm(); }
+            else
+            {
+               if(this.hzcRxDbgOn) { try { this.hzcRxDbgErr(); this.hzcRxDbgScan(this.Messages_mc != null ? this.Messages_mc.ShownMessageArray : null); } catch(eDbg2:Error) { } }
+               return;
+            }
          }
-         try { this.hzcRxStep(); }
-         catch(err:Error) { this.hzcRxHit(err); if(this.hzcRxFail >= 3) { this.hzcRxLatch(); } }
+         try { this.hzcRxStep(); this.hzcRxStepBad = false; }
+         catch(err:Error)
+         {
+            if(!this.hzcRxStepBad) { this.hzcRxStepBad = true; this.hzcRxHit(err); if(this.hzcRxFail >= 3) { this.hzcRxLatch(); } }
+         }
       }
       // Time counts only while Messages_mc is visible. A hidden slot does not age a pending card, and nothing here uses a 30 s wall clock.
       private function hzcRxStep() : void
@@ -2043,36 +2073,41 @@ package
          for each(var e0:Object in this.hzcRx)
          {
             if(e0 == null || e0.st != 1) { continue; }
-            if(slot) { e0.vis = int(e0.vis) + dt; }
-            if(e0.it != null)
+            if(e0.linked == true)
             {
                var inList:Boolean = false;
-               try { inList = arr != null && arr.indexOf(e0.it) >= 0 && e0.it.parent === m; } catch(eIn:Error) { inList = false; }
-               if(!inList) { e0.it = null; }
+               try { inList = e0.it != null && arr != null && arr.indexOf(e0.it) >= 0 && e0.it.parent === m; } catch(eIn:Error) { inList = false; }
+               // The card ends with its line. It does not fall back to a standalone card.
+               if(!inList) { this.hzcRxShow(e0); this.hzcRxDrop(e0); continue; }
             }
-            // Visible time only. A hidden message slot does not age the card, so a long conversation cannot drop it.
-            if(int(e0.vis) >= HZC_RX_VIS) { this.hzcRxShow(e0); this.hzcRxDrop(e0); continue; }
+            else
+            {
+               if(slot) { e0.vis = int(e0.vis) + dt; }
+               if(int(e0.vis) >= HZC_RX_VIS) { this.hzcRxShow(e0); this.hzcRxDrop(e0); continue; }
+            }
             keep.push(e0);
          }
          this.hzcRx = keep;
-         if(this.hzcRxFail >= 3) { this.hzcRxLatch(); return; }
          var newest:Object = null;
          for each(var eN:Object in this.hzcRx) { if(eN != null && eN.st == 1) { newest = eN; } }
+         var drew:Boolean = false;
          for each(var e:Object in this.hzcRx)
          {
             if(e == null || e.st != 1) { continue; }
             try
             {
                this.hzcRxPlace(e,e === newest,m,slot);
-               this.hzcRxFail = 0;
+               if(e.judged != true) { e.judged = true; drew = true; }
             }
             catch(err:Error)
             {
-               this.hzcRxHit(err);
+               if(e.blamed != true) { e.blamed = true; e.judged = true; this.hzcRxHit(err); }
                e.sig = "";
                try { if(e.c != null) { e.c.visible = false; } } catch(eHide:Error) { }
             }
          }
+         if(drew) { this.hzcRxFail = 0; }
+         if(this.hzcRxFail >= 3) { this.hzcRxLatch(); return; }
       }
       private function hzcRxScale() : Number
       {
@@ -2146,7 +2181,11 @@ package
                }
             }
          }
-         if(!placed) { this.hzcRxAnchor(e,m); }
+         if(!placed)
+         {
+            if(e.linked == true) { e.c.visible = false; return; }
+            this.hzcRxAnchor(e,m);
+         }
       }
       private function hzcRxDraw(e:Object, newest:Boolean) : void
       {

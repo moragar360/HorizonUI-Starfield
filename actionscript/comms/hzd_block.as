@@ -1541,8 +1541,8 @@
          if(o.won) { titleStr = "PERSUADED"; titleCol = col; mark = 1; }
          else if(o.failed) { titleStr = "FAILED"; titleCol = col; mark = 2; }
          var titleFs:Number = fs;
-         var titleRole:String = "";
-         if(mark != 0) { titleFs = Math.max(13,Math.round(fs * 1.12)); titleRole = "_Bold"; }
+         var titleBold:Boolean = false;
+         if(mark != 0) { titleFs = 16.5; titleBold = true; }
          var fracTxt:String = "";
          if(o.have) { fracTxt = String(int(Math.max(0,Number(o.score)))) + "/" + String(int(Number(o.goal))); }
          var turnsTxt:String = "";
@@ -1558,7 +1558,15 @@
          var pillH:Number = 0;
          var iconS:Number = Math.max(13,Math.round(fs * 0.92));
          var iconW:Number = iconS + Math.round(6 * u);
-         var title:TextField = this.hzdText(s,titleStr,titleRole,titleFs,titleCol,Math.round(titleFs * 0.16),0,0,0,"left",false);
+         var title:TextField = this.hzdText(s,titleStr,"",titleFs,titleCol,Math.round(titleFs * 0.16),0,0,0,"left",false);
+         if(titleBold && title != null)
+         {
+            var tbf:TextFormat = title.getTextFormat();
+            tbf.font = "$Horizon_Font_Bold";
+            tbf.size = 16.5;
+            title.defaultTextFormat = tbf;
+            title.setTextFormat(tbf);
+         }
          var turnsT:TextField = turnsTxt.length > 0 ? this.hzdText(s,turnsTxt,"",fs,col,Math.round(fs * 0.08),0,0,0,"left",false) : null;
          var fracT:TextField = fracTxt.length > 0 ? this.hzdText(s,fracTxt,"",fs,col,Math.round(fs * 0.06),0,0,0,"left",false) : null;
          var turnsW:Number = turnsT != null ? Math.round(turnsT.textWidth + 20 * u) : 0;

@@ -516,8 +516,10 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	expect(body.indexOf("if(now - this.hzpFallT < 900)") >= 0, rel + " holds the held state for at least 900 ms");
 	expect(body.indexOf("lt.autoSize = TextFieldAutoSize.NONE;") >= 0, rel + " label field does not autosize");
 	expect(body.indexOf("lt.width = ltw;") >= 0, rel + " label uses the key headroom");
-	expect(body.indexOf("g.drawRoundRect(2,2,w - 4,h - 4,Math.max(0,h - 4),Math.max(0,h - 4));") >= 0, rel + " insets the 4 px glow");
-	expect(body.indexOf("g.drawRoundRect(bw,bw,w - bw * 2,h - bw * 2,Math.max(0,h - bw * 2),Math.max(0,h - bw * 2));") >= 0, rel + " insets the border");
+	expect(body.indexOf("g.lineStyle(2,stc,0.18,true,\"none\"); g.drawRoundRect(1,1,w - 2,h - 2,Math.max(0,h - 2),Math.max(0,h - 2));") >= 0, rel + " insets the 2 px glow");
+	expect(body.indexOf("g.drawRoundRect(inset,inset,w - bw,h - bw,Math.max(0,h - bw),Math.max(0,h - bw));") >= 0, rel + " insets the border by half the stroke");
+	expect(body.indexOf("g.drawRoundRect(x0 + 0.5,ky + 0.5,kw - 1,kh - 1,8,8);") >= 0, rel + " insets the keycap by half a pixel");
+	expect(body.indexOf("g.lineStyle(2,col,a,true,\"none\");") >= 0, rel + " draws the cross with a 2 px stroke");
 	expect(body.indexOf("drawRoundRect(-") < 0, rel + " does not draw outside the chip");
 	expect(body.indexOf("private var hzpBar:flash.display.Shape = null;") >= 0, rel + " keeps the O2 bar on its own shape");
 	expect(body.indexOf('this.hzSText(p,"HOLDING BREATH"') < 0, rel + " is the scope movie, not the F11 preview");
@@ -543,15 +545,16 @@ function chipBoxes(ltw, ktw, h, holding) {
 		const sh = h - 4 - i;
 		if (sw > 4 && sh > 4) boxes.push(strokeBox(sx, sy, sw, sh, 0));
 	}
-	const bw = holding ? 1.5 : 1;
-	boxes.push(strokeBox(bw, bw, w - bw * 2, h - bw * 2, bw));
-	if (holding) boxes.push(strokeBox(2, 2, w - 4, h - 4, 4));
+	const bw = holding ? 2 : 1;
+	const inset = bw * 0.5;
+	boxes.push(strokeBox(inset, inset, w - bw, h - bw, bw));
+	if (holding) boxes.push(strokeBox(1, 1, w - 2, h - 2, 2));
 	const kh = Math.round(h - 12);
 	const ky = Math.round((h - kh) / 2);
-	boxes.push(strokeBox(x0, ky, kw, kh, 1));
+	boxes.push(strokeBox(x0 + 0.5, ky + 0.5, kw - 1, kh - 1, 1));
 	const cx = x0 + 15;
 	const cy = ky + kh / 2;
-	boxes.push(strokeBox(cx - 8.5, cy - 8.5, 17, 17, 1.6));
+	boxes.push(strokeBox(cx - 8.5, cy - 8.5, 17, 17, 2));
 	const my = Math.round(h / 2 - 3);
 	boxes.push(strokeBox(mx, my, mw, 6, 0));
 	boxes.push(strokeBox(mx, my, Math.round(mw * 0.7), 6, 0));
@@ -580,6 +583,19 @@ pin("lt.autoSize = flash.text.TextFieldAutoSize.NONE;", "the F11 label does not 
 pin("lt.width = ltw;", "the F11 label uses the key headroom");
 pin("var sw:Number = Math.max(1,Math.round(this.hz42ScW * sx));", "the F11 chip snaps width after scaling");
 pin("var sh:Number = Math.max(1,Math.round(boxH * sx));", "the F11 chip snaps height after scaling");
+pin("private function hz42ScLblW(t:TextField) : Number", "the F11 label width uses the scope tracking");
+pin("f.letterSpacing = Math.round(fs * 0.1 * 10) / 10;", "the F11 label uses 0.1 letter spacing");
+pin("var ltw:Number = this.hz42ScLblW(lt);", "the F11 label measures HOLD BREATH with that tracking");
+pin("var hw:Number = this.hz42ScLblW(hold);", "the F11 label measures HOLDING BREATH");
+pin("var ow:Number = this.hz42ScLblW(outb);", "the F11 label measures OUT OF BREATH");
+pin("g.drawRoundRect(0.5,0.5,w - 1,h - 1,Math.max(0,h - 1),Math.max(0,h - 1));", "the F11 border is inset by half a pixel");
+pin("g.drawRoundRect(x0 + 0.5,6.5,kw - 1,h - 13,8,8);", "the F11 keycap is inset by half a pixel");
+pin("g.lineStyle(2,col,a,true,\"none\");", "the F11 cross uses a 2 px stroke");
+{
+	const help = src.match(/"VehicleExitPill":"([^"]*)"/);
+	const n = help ? help[1].length : -1;
+	expect(help && n <= 330, "vehicle exit help is 330 characters or fewer (" + n + ")");
+}
 
 const dlgBlock = fs.readFileSync(path.join(__dirname, "..", "actionscript", "comms", "hzd_block.as"), "utf8");
 function dlgPin(snippet, msg) {
@@ -609,8 +625,15 @@ dlgPin("g.drawRect(nx,0,gapW,mh);", "persuasion notches are gaps");
 dlgPin("fracT.y = Math.round(yM + Math.max(0,(rowMH - fracT.height) / 2));", "the score sits on the meter row");
 dlgPin('titleStr = "PERSUADED"', "a win changes the header to PERSUADED");
 dlgPin('titleStr = "FAILED"', "a loss changes the header to FAILED");
-dlgPin('titleRole = "_Bold"', "PERSUADED and FAILED are bold");
-dlgPin("Math.round(fs * 1.12)", "PERSUADED and FAILED are slightly larger");
+dlgPin("if(mark != 0) { titleFs = 16.5; titleBold = true; }", "PERSUADED and FAILED are 16.5 px");
+{
+	const call = dlgBlock.indexOf('this.hzdText(s,titleStr,"",titleFs');
+	const face = dlgBlock.indexOf('tbf.font = "$Horizon_Font_Bold";');
+	const size = dlgBlock.indexOf("tbf.size = 16.5;");
+	expect(call >= 0 && face > call && size > face, "PERSUADED and FAILED set the bold face after hzdText");
+}
+expect(dlgBlock.indexOf('titleRole = "_Bold"') < 0, "the result title does not follow FontFace");
+expect(dlgBlock.indexOf("Math.round(fs * 1.12)") < 0, "the result title is not a rounded scale of the body");
 expect(dlgBlock.indexOf("0xF4FBFF") < 0, "persuasion notches are not light ticks");
 expect(dlgBlock.indexOf("var wordT:") < 0, "a result replaces the header instead of adding a row");
 expect(dlgBlock.indexOf("OUT OF TURNS") < 0, "a failed persuasion says FAILED in the header");

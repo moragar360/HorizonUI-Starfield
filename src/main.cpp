@@ -2,14 +2,15 @@
 // v0.42.0.4: F11 lists each shipped preset name once. Saved presets are never hidden.
 // Same settings keep the installer copy; different settings keep the newer shipped file.
 // The F11 header, the load line, and the "movie builds" line use the DLL file version (src/hz_version.h, also the version resource).
-// v0.42.0.6: ShowHUDMessageEvent (address id 86800) logs HUD text that contains " that", and the Comms
-// message queue is written as "comms msg:" lines. Both are compiled only when HZ_COMMS_MSG_LOG is 1
-// (src/hz_version.h). The release checklist in README.md turns that log off. The settings schema stays 0.42.0.
+// v0.42.0.6: ShowHUDMessageEvent (address id 86800) feeds the reaction backup. The verbose trace
+// (the "hud message:" line and "comms msg:" lines) is compiled only when HZ_COMMS_MSG_LOG is 1
+// (src/hz_version.h). The queue, Poll, hzcRxPush, and the one-line "comms reaction:" status stay on
+// when that flag is 0. The release checklist in README.md turns the verbose trace off. The settings schema stays 0.42.0.
 // Saved preset names drop the same characters as the HUD: '=' '+' '[' ']' ';' '#' '"' '\' '|' and control characters.
 // v0.42.0 r3 (file version 0.42.0.3): a scope (ScopeMenu) still blocks F11 but no longer restarts the 3 s "HUD ready" wait,
 // so F11 works right after leaving the scope. The 0.42.0.4 no-debug build compiled this log out. In 0.42.0.6 it is on
 // when HZ_COMMS_MSG_LOG is 1 (Debug=0 in the ini still stops the movie queue): every 500 ms hzcTakeDbg goes to the log as
-// "comms msg:" lines. "movie builds:" logs
+// "comms msg:" lines. The reaction backup is separate and stays compiled. "movie builds:" logs
 // the loaded HUD / Comms builds (hzBuildId / hzcBuildId). Saved preset names drop '=' '+' '[' ']' ';' '#' '"' '\'.
 // v0.42.0 r2: F11 is also ignored while a scope (ScopeMenu) or the item inspect view (InspectMenu) is open; the deny list
 // uses the registered "MissionBoard" only (MissionBoardMenu / ShipDialogueMenu dropped). '+' / '=' reach the HUD as
@@ -1721,15 +1722,12 @@ namespace HZ
 		REX::INFO("movie builds: {} (DLL file version {})", s, DllFileVersion());
 	}
 
-	// Purpose: copy queued HUD message lines into HorizonUI.log.
-	// Inputs: a_now, the poll clock. Outputs: "comms msg:" lines, only when the movie queued some.
-	// Dependencies: HUDMessagesMenu.hzcTakeDbg. Compiled only when HZ_COMMS_MSG_LOG is 1
-	// (src/hz_version.h). With the switch at 0 the function is empty, so message text is not written.
+	// Purpose: the reaction backup is always compiled. HZ_COMMS_MSG_LOG gates only the verbose trace
+	// (the "hud message:" line above the enqueue, and CommsDbgPoll). The one-line status stays.
 	// Last modified: 2026-10-22.
 #ifndef HZ_COMMS_MSG_LOG
 #define HZ_COMMS_MSG_LOG 0
 #endif
-#if HZ_COMMS_MSG_LOG
 
 	// Purpose: read one ShowHUDMessageEvent without letting a bad pointer escape this function.
 	// Inputs: the event. Outputs: 1 and a filled snap, or 0 when the read faulted.
@@ -1746,15 +1744,7 @@ namespace HZ
 
 	static void HzCopyRaw(char* a_dst, std::size_t a_cap, const char* a_src)
 	{
-		if (!a_dst || a_cap == 0) return;
-		a_dst[0] = '\0';
-		if (!a_src) return;
-		std::size_t i = 0;
-		for (; a_src[i] != '\0' && i + 1 < a_cap; ++i) {
-			const unsigned char c = static_cast<unsigned char>(a_src[i]);
-			a_dst[i] = (c < 32 || c == 127) ? ' ' : static_cast<char>(c);
-		}
-		a_dst[i] = '\0';
+		hzpreset::CopyHudText(a_dst, a_cap, a_src);
 	}
 
 	static bool HzHasThat(const char* a_s)
@@ -1871,33 +1861,29 @@ namespace HZ
 			try {
 				HudMsgSnap snap{};
 				if (!HzHudMsgReadSEH(&a_event, &snap)) {
-					if (!g_hudMsgReadWarned) {
-						g_hudMsgReadWarned = true;
+					if (!g_hudMsgReadWarned.exchange(true, std::memory_order_relaxed))
 						REX::WARN("ShowHUDMessageEvent sink failed: message could not be read");
-					}
 					return RE::BSEventNotifyControl::kContinue;
 				}
 				snap.match = HzHasThat(snap.text);
 				if (!snap.match) return RE::BSEventNotifyControl::kContinue;
+#if HZ_COMMS_MSG_LOG
 				REX::INFO("hud message: text=\"{}\" sound=\"{}\" canThrottle={} isWarning={}",
 					snap.text, snap.sound, snap.throttle ? 1 : 0, snap.warning ? 1 : 0);
+#endif
 				// This thread is not the UI thread. Copy the text and return. Poll invokes Scaleform.
 				HzRxEnqueue(snap.text);
 			} catch (const std::exception& ex) {
-				if (!g_hudMsgReadWarned) {
-					g_hudMsgReadWarned = true;
+				if (!g_hudMsgReadWarned.exchange(true, std::memory_order_relaxed))
 					REX::WARN("ShowHUDMessageEvent sink failed: {}", ex.what());
-				}
 			} catch (...) {
-				if (!g_hudMsgReadWarned) {
-					g_hudMsgReadWarned = true;
+				if (!g_hudMsgReadWarned.exchange(true, std::memory_order_relaxed))
 					REX::WARN("ShowHUDMessageEvent sink failed: unknown error");
-				}
 			}
 			return RE::BSEventNotifyControl::kContinue;
 		}
 
-		bool g_hudMsgReadWarned = false;
+		std::atomic<bool> g_hudMsgReadWarned{false};
 	};
 
 	// 0 pending, 1 registered, -1 failed and will not be tried again.
@@ -1943,8 +1929,9 @@ namespace HZ
 		}
 	}
 
-	// The sink thread only pushes. The timestamp is the enqueue time, not a 30 s expiry.
+	// The sink thread only pushes. The timestamp is the enqueue time. Poll drops a note older than kRxMaxAge.
 	constexpr std::size_t kRxQueueMax = 8;
+	constexpr ULONGLONG kRxMaxAge = 3000;
 	struct RxNote
 	{
 		char      text[201];
@@ -2018,6 +2005,7 @@ namespace HZ
 		const int  vis = HzRxMessagesVisible(ui);
 		const char* visTx = vis < 0 ? "unknown" : (vis ? "1" : "0");
 		for (const auto& n : batch) {
+			if (n.tick == 0 || a_now < n.tick || a_now - n.tick > kRxMaxAge) continue;
 			std::string status = "invoke failed";
 			try {
 				GValue arg(n.text);
@@ -2031,6 +2019,7 @@ namespace HZ
 		}
 	}
 
+#if HZ_COMMS_MSG_LOG
 	ULONGLONG g_cdbgNext = 0;
 	bool      g_cdbgLogged = false;
 	void CommsDbgPoll(ULONGLONG a_now)
@@ -2061,9 +2050,7 @@ namespace HZ
 		}
 	}
 #else
-	void RegisterShowHUDMessageSink() {}
 	void CommsDbgPoll(ULONGLONG) {}
-	void CommsRxPoll(ULONGLONG) {}
 #endif
 
 	void Poll()

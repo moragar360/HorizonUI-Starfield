@@ -48,7 +48,7 @@ int main()
 
 	Expect(std::string(HZ_FILE_VERSION_STR) == "0.42.0.7", "file version string");
 	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 42 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 7, "file version numbers");
-	Expect(HZ_COMMS_MSG_LOG == 1, "reaction diagnostic is on for this test build");
+	Expect(HZ_COMMS_MSG_LOG == 1, "verbose reaction trace is on for this test build");
 	Expect(HzFileVersionOk("0.42.0.7"), "4-part version ok");
 	Expect(!HzFileVersionOk("0.42.0"), "3-part version is not the file version");
 	Expect(!HzFileVersionOk("v0.42.0.6"), "leading v is not accepted");
@@ -93,6 +93,28 @@ int main()
 		wide += "Z";
 		ExpectEq(CleanPresetName(wide), std::string(45, 'b'), "a 4-byte character that crosses 48 bytes is dropped whole");
 		ExpectEq(Utf8Prefix(std::string(46, 'a') + "\xC3\xA9" + "Z", 48), std::string(46, 'a') + "\xC3\xA9", "a character that ends on the cut stays");
+	}
+
+	{
+		char buf[201];
+		std::string past(199, 'a');
+		past += "\xC3\xA9";
+		CopyHudText(buf, sizeof(buf), past.c_str());
+		ExpectEq(buf, std::string(199, 'a'), "a character past 200 bytes is dropped");
+		std::string fit(198, 'a');
+		fit += "\xC3\xA9";
+		CopyHudText(buf, sizeof(buf), fit.c_str());
+		ExpectEq(buf, fit, "a complete character at 200 bytes stays");
+		std::string wide(197, 'b');
+		wide += "\xF0\x9F\x8C\x8D";
+		CopyHudText(buf, sizeof(buf), wide.c_str());
+		ExpectEq(buf, std::string(197, 'b'), "a 4-byte character that crosses 200 bytes is dropped");
+		CopyHudText(buf, sizeof(buf), "A\x01" "B\x7f" "C");
+		ExpectEq(buf, "A B C", "controls and DEL become spaces");
+		CopyHudText(buf, sizeof(buf), "Hi\xC3");
+		ExpectEq(buf, "Hi", "an incomplete UTF-8 sequence is dropped");
+		CopyHudText(buf, 0, "Sam");
+		CopyHudText(nullptr, 4, "Sam");
 	}
 
 	const std::string same = PresetContentKey(bodyA);
@@ -219,6 +241,23 @@ int main()
 		Expect(src.find("kRxQueueMax") != std::string::npos, "the reaction queue is bounded");
 		Expect(src.find("HasMember(\"hzcRxPush\")") != std::string::npos, "Poll invokes hzcRxPush only when the movie defines it");
 		Expect(src.find("comms reaction: {} | messages visible={} | dialogue={}") != std::string::npos, "each reaction logs one status");
+		Expect(src.find("void CommsRxPoll(ULONGLONG) {}") == std::string::npos, "the reaction drain is not compiled out");
+		Expect(src.find("void CommsDbgPoll(ULONGLONG) {}") != std::string::npos, "the verbose poll is the only empty stub");
+		Expect(src.find("std::atomic<bool> g_hudMsgReadWarned{false};") != std::string::npos, "the sink warning flag is atomic");
+		Expect(src.find("constexpr ULONGLONG kRxMaxAge = 3000;") != std::string::npos, "a queued reaction expires after 3 s");
+		Expect(src.find("a_now - n.tick > kRxMaxAge") != std::string::npos, "Poll drops a note older than 3 s");
+		{
+			const auto hud = src.find("REX::INFO(\"hud message: text=");
+			const auto gate = src.rfind("#if HZ_COMMS_MSG_LOG", hud);
+			const auto endGate = src.find("#endif", hud);
+			const auto push = src.find("HzRxEnqueue(snap.text)", endGate);
+			Expect(hud != std::string::npos && gate != std::string::npos && endGate != std::string::npos && push != std::string::npos, "the verbose line is gated and the enqueue is not");
+			Expect(gate < hud && hud < endGate && push > endGate, "only the verbose HUD line is behind the flag");
+			const auto drain = src.find("void CommsRxPoll(ULONGLONG a_now)");
+			const auto dbgGate = src.find("#if HZ_COMMS_MSG_LOG", drain);
+			const auto dbg = src.find("void CommsDbgPoll(ULONGLONG a_now)", dbgGate);
+			Expect(drain != std::string::npos && dbgGate != std::string::npos && dbg != std::string::npos && drain < dbgGate && dbgGate < dbg, "Poll stays compiled ahead of the verbose stub");
+		}
 		Expect(src.find("for (auto m : { \"LoadingMenu\", \"MainMenu\" })") != std::string::npos, "the reaction drain skips loading and the main menu");
 		const auto rxPoll = src.find("CommsRxPoll(now);");
 		const auto hudWait = src.find("if (now - g_hudSince < 3000) return;");
@@ -237,6 +276,28 @@ int main()
 		Expect(ini.find("Version=0.42.0") != std::string::npos, "preset Version stays 0.42.0");
 		Expect(ini.find("test DLL") == std::string::npos, "preset Debug note does not call this a test DLL");
 		Expect(ini.find("The comms message log is only in debug builds.") != std::string::npos, "release Debug note");
+		Expect(ini.find("VehicleExitPill") == std::string::npos, "the preset does not mirror the vehicle exit default");
+		Expect(ini.find("DlgPersuasionMeter") == std::string::npos, "the preset does not mirror the persuasion meter default");
+	}
+
+	{
+		std::ifstream in("Interface/HorizonUI/HorizonUI.default.ini");
+		Expect(static_cast<bool>(in), "default.ini opens");
+		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		Expect(ini.find("\r\n") != std::string::npos, "default.ini stays CRLF");
+		const auto cards = ini.find("[Cards]");
+		const auto compass = ini.find("[Compass]");
+		const auto veh = ini.find("VehicleExitPill=1");
+		Expect(cards != std::string::npos && compass != std::string::npos && veh != std::string::npos && cards < veh && veh < compass, "VehicleExitPill defaults on under Cards");
+		Expect(ini.find("; Vehicle exit prompt: 1 = Horizon pill") != std::string::npos, "VehicleExitPill has its comment");
+		const auto comms = ini.find("[Comms]");
+		const auto scanner = ini.find("[Scanner]");
+		const auto meter = ini.find("DlgPersuasionMeter=1");
+		Expect(comms != std::string::npos && scanner != std::string::npos && meter != std::string::npos && comms < meter && meter < scanner, "DlgPersuasionMeter defaults on under Comms");
+		Expect(ini.find("; 1 = Horizon persuasion meter (score, the highlighted reply, turns). 0 = the game's meter") != std::string::npos, "DlgPersuasionMeter has its comment");
+		Expect(ini.find("ReactionCard=1") != std::string::npos, "ReactionCard defaults on");
+		Expect(ini.find("VitalsLayout=0") != std::string::npos, "VitalsLayout keeps its default");
+		Expect(ini.find("[Scope]") != std::string::npos && ini.find("ScopeHoldBreathChip=1") != std::string::npos, "the scope block is in the defaults");
 	}
 
 	{

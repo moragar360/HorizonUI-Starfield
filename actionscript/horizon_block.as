@@ -11948,7 +11948,7 @@
          "ShowFollowers":"Markers for your follower and companions on the Horizon compass.",
          "CompassMarkers":"Master switch for every Horizon compass marker below. Quest objectives always show while it is on.",
          "ShowTarget":"Horizon's own card for the game's activate prompt (take, talk, open) and the item / container hover cards. Off = the game's prompt.",
-         "VehicleExitPill":"While you are in a vehicle, the hold-to-exit prompt is a Horizon pill: the key the game shows, then EXIT. A fill sweeps across while you hold, and the pill turns green with a check when the hold completes. The game's button stays in the movie at alpha 0, so the hold still finishes and you still get out. Off shows the game's prompt.",
+         "VehicleExitPill":"While you are in a vehicle, the hold-to-exit prompt is a Horizon pill: the key the game shows, then EXIT. A fill sweeps across while you hold, and the pill turns green with a check when the hold completes. The game's button stays at alpha 0, so the hold still finishes. Off shows the game's prompt.",
          "PlanetDetails":"Adds a gravity / air line to the planet card.",
          "_size":"GLOBAL: this card uses HUD SCALE (STYLE tab). CUSTOM: it has its own size and HUD SCALE no longer changes it. Click the GLOBAL / CUSTOM chip or drag the slider to switch.",
          "_compact":"GLOBAL: this card takes its compact form whenever COMPACT MODE (top right) is on. ON / OFF: always compact / always full for this card only, whatever COMPACT MODE says.",
@@ -14828,7 +14828,7 @@
       // original target icon (ring, 4 ticks, center dot), drawn in code; same art as the scope chip
       private function hz42Cross(g:*, cx:Number, cy:Number, col:uint, a:Number) : void
       {
-         g.lineStyle(1.6,col,a,true,"none");
+         g.lineStyle(2,col,a,true,"none");
          g.drawCircle(cx,cy,6);
          g.moveTo(cx,cy - 8.5); g.lineTo(cx,cy - 3.5);
          g.moveTo(cx,cy + 3.5); g.lineTo(cx,cy + 8.5);
@@ -14840,6 +14840,21 @@
       // Purpose: width of the F11 hold-breath key text, matching the scope movie's field width.
       // Inputs: tw textWidth, ls letterSpacing, len character count. Output: ceil(tw * 1.08 + ls * len) + 8.
       // The keycap adds the 30 px icon and HZ42_SC_KPAD. A bad measurement is treated as 0, then held to 14 px.
+      // Scope label slot: semibold tracking is 0.1 of the font size, then the same field width as the key.
+      private function hz42ScLblW(t:TextField) : Number
+      {
+         if(t == null) { return 0; }
+         var f:TextFormat = t.getTextFormat();
+         var fs:Number = Number(f.size);
+         if(isNaN(fs) || fs <= 0) { fs = 14; }
+         f.letterSpacing = Math.round(fs * 0.1 * 10) / 10;
+         t.defaultTextFormat = f;
+         t.setTextFormat(f);
+         var ls:Number = Number(f.letterSpacing);
+         if(isNaN(ls) || ls < 0) { ls = 0; }
+         var len:int = t.text != null ? int(t.text.length) : 0;
+         return this.hz42ScKeyW(Number(t.textWidth),ls,len);
+      }
       private function hz42ScKeyW(tw:Number, ls:Number, len:int) : Number
       {
          if(isNaN(tw) || tw < 0) { tw = 0; }
@@ -14859,8 +14874,8 @@
          // hzSText multiplies by TextScale (clamped 0.9-1.15). Pass a size that survives that, or the
          // on-screen size is the chip scale times a font that was already shrunk. At chip 0.65 and
          // TextScale 0.9, HOLD BREATH was 11.7 px. Both lines use the same correction. The floor is 13 px
-         // after the proxy scale (hz42ScFs) and after TextScale. The label's letter spacing stays 0.
-         // The key uses the scope key's 0.04 tracking so the measured width matches that chip.
+         // after the proxy scale (hz42ScFs) and after TextScale. The label uses the scope's 0.1 tracking
+         // (hz42ScLblW), then the same field width. The key uses the scope key's 0.04 tracking.
          var ts:Number = this.hzTextScale;
          if(isNaN(ts) || ts <= 0) { ts = 1; }
          ts = Math.max(0.9,Math.min(1.15,ts));
@@ -14885,12 +14900,12 @@
          var kw:Number = 30 + kt.width + HZ42_SC_KPAD;
          var x0:Number = 7;
          var lx:Number = x0 + kw + 10;
-         // Same width headroom as the key. The slot is the widest label (HOLDING BREATH), so the proxy matches the held chip.
+         // Same width headroom and 0.1 tracking as the scope label. The slot is the widest label (HOLDING BREATH).
          var hold:TextField = this.hzSText(p,"HOLDING BREATH",0,0,400,int(Math.ceil(lb / ts)),0xF2F7F9,"left");
          var outb:TextField = this.hzSText(p,"OUT OF BREATH",0,0,400,int(Math.ceil(lb / ts)),0xF2F7F9,"left");
-         var ltw:Number = this.hz42ScKeyW(Number(lt.textWidth),0,lt.text != null ? int(lt.text.length) : 0);
-         var hw:Number = this.hz42ScKeyW(Number(hold.textWidth),0,hold.text != null ? int(hold.text.length) : 0);
-         var ow:Number = this.hz42ScKeyW(Number(outb.textWidth),0,outb.text != null ? int(outb.text.length) : 0);
+         var ltw:Number = this.hz42ScLblW(lt);
+         var hw:Number = this.hz42ScLblW(hold);
+         var ow:Number = this.hz42ScLblW(outb);
          if(hw > ltw) { ltw = hw; }
          if(ow > ltw) { ltw = ow; }
          if(hold.parent == p) { p.removeChild(hold); }
@@ -14903,15 +14918,14 @@
          var mx:Number = Math.round(lx + ltw + 16);
          var mw:Number = 120;
          var w:Number = Math.round(mx + mw + HZ42_SC_RPAD);
-         var bw:Number = 1;
-         g.lineStyle(bw,0xFFFFFF,0.18,true,"none");
+         g.lineStyle(1,0xFFFFFF,0.18,true,"none");
          g.beginFill(0x0B1218,0.84);
-         g.drawRoundRect(bw,bw,w - bw * 2,h - bw * 2,Math.max(0,h - bw * 2),Math.max(0,h - bw * 2));
+         g.drawRoundRect(0.5,0.5,w - 1,h - 1,Math.max(0,h - 1),Math.max(0,h - 1));
          g.endFill();
          g.lineStyle();
          g.lineStyle(1,HZ_ACCENT,0.95,true,"none");
          g.beginFill(HZ_ACCENT,0.1);
-         g.drawRoundRect(x0,6,kw,h - 12,8,8);
+         g.drawRoundRect(x0 + 0.5,6.5,kw - 1,h - 13,8,8);
          g.endFill();
          g.lineStyle();
          this.hz42Cross(g,x0 + 15,h / 2,HZ_ACCENT,1);

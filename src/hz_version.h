@@ -15,10 +15,11 @@
 #define HZ_FILE_VERSION_BUILD 7
 #define HZ_FILE_VERSION_STR "0.42.0.7"
 
-// 0.42.0.7 test build: 1 logs ShowHUDMessageEvent text that contains " that", and it
-// writes the Comms movie's message queue to HorizonUI.log. Leave this at 1 until the
-// release checklist in README.md (HZC_MSG_LOG, the hzcRxDbgOn default, and the test pins).
-// The settings schema above is not this switch.
+// 0.42.0.7: 1 writes the verbose HUD-message trace (the "hud message:" line and the
+// Comms movie queue as "comms msg:" lines). 0 turns that trace off. The reaction backup
+// (the queue, Poll, hzcRxPush, and the one-line "comms reaction:" status) stays compiled
+// either way. Leave this at 1 until the release checklist in README.md. The settings schema
+// above is not this switch.
 #define HZ_COMMS_MSG_LOG 1
 
 // The resource compiler defines RC_INVOKED. Keep this header free of C++ there.
