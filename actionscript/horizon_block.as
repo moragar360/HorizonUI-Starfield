@@ -1739,6 +1739,7 @@
                case "ammoonlywhendrawn": this.hzAmmoOnlyWhenDrawn = bv; break;
                case "showquests": this.hzShowQuests = bv; break;
                case "showcompass": this.hzShowCompass = bv; break;
+               case "vehicleexitpill": this.hzVehOn = bv; break;   // 0.42.0.7: [Cards], part of the HUD
                case "compassmarkers": this.hzShowCompassMarkers = bv; break;
                case "smoothbars": this.hzSmoothBars = bv; break;
                case "fadecards": this.hzFadeCards = bv; break;
@@ -1903,6 +1904,8 @@
          BSUIDataManager.Subscribe("PlayerFrequentData",this.hzOnPlayerFrequent);
          BSUIDataManager.Subscribe("PlayerData",this.hzOnPlayerData);
          BSUIDataManager.Subscribe("HudCrosshairData",this.hzOnCrosshair);
+         try { BSUIDataManager.Subscribe("HUDVehicleData",this.hz42VehOnData); } catch(e42vs:Error) { }
+         try { BSUIDataManager.Subscribe("ControlMapData",this.hz42VehOnMap); } catch(e42vm:Error) { }
          try { this.hz26Build(); } catch(err26:Error) { }
          try { this.hz40Init(); } catch(err40:Error) { }
          this.hzLoadIni();
@@ -2369,8 +2372,460 @@
             this.hzPulseT += 0.08;
             this.hzDrawVitBg(0.5 + 0.5 * Math.sin(this.hzPulseT));
          }
+         try { this.hz42VehTick(); } catch(e42v:Error) { }   // 0.42.0.7: vehicle exit pill
          try { this.hz36HideTick(); } catch(e36z:Error) { }   // v0.36: and again after everything else this frame
          if(this.hz40Hide) { try { this.hz40ForceHide(); } catch(e40z:Error) { } }
+      }
+
+      // 0.42.0.7: vehicle exit pill, part of the main HUD (not its own movie). Same keycap and pill language as the
+      // scope hold-breath chip: the key the game is showing, then EXIT. A fill sweeps left to right from the vanilla
+      // hold, and the pill turns green with a check when that hold completes. The game's button stays in the movie.
+      private var hzVehOn:Boolean = true;
+      private var hzVehPx:Sprite = null;
+      private var hzVehSig:String = "";
+      private var hzVehIn:int = -1;       // HUDVehicleData.bInVehicle: -1 unknown, 0 out, 1 in
+      private var hzVehPad:int = -1;      // ControlMapData.uiController: -1 unknown, 0 keyboard, 1 controller
+      private var hzVehHid:Boolean = false;
+      private var hzVehAlpha:Number = 1;
+      private var hzVehW:Number = 0;
+      private var hzVehH:Number = 32;
+      private var hzVehFail:int = 0;
+      private function hz42VehOnData(e:FromClientDataEvent) : void
+      {
+         try
+         {
+            if(e == null || e.data == null || e.data.bInVehicle == undefined) { return; }
+            this.hzVehIn = Boolean(e.data.bInVehicle) ? 1 : 0;
+         }
+         catch(err:Error) { }
+      }
+      private function hz42VehOnMap(e:FromClientDataEvent) : void
+      {
+         try
+         {
+            if(e == null || e.data == null || e.data.uiController == undefined) { return; }
+            this.hzVehPad = uint(e.data.uiController) > 0 ? 1 : 0;
+         }
+         catch(err:Error) { }
+      }
+      private function hz42VehBtn() : *
+      {
+         try
+         {
+            var rm:* = this["RightMeters_mc"];
+            if(rm == null) { return null; }
+            var hv:* = rm.HUDVehicle_mc;
+            if(hv == null) { return null; }
+            return hv.GetUpButton_mc;
+         }
+         catch(err:Error) { }
+         return null;
+      }
+      // alpha only: visible stays the game's, so the hold timeline keeps running and the exit still fires
+      private function hz42VehHideVan(b:*, hide:Boolean) : void
+      {
+         if(b == null) { return; }
+         try
+         {
+            if(hide)
+            {
+               if(!this.hzVehHid)
+               {
+                  var a:Number = Number(b.alpha);
+                  this.hzVehAlpha = (!isNaN(a) && a > 0.05) ? a : 1;
+                  this.hzVehHid = true;
+               }
+               b.alpha = 0;
+            }
+            else if(this.hzVehHid)
+            {
+               b.alpha = this.hzVehAlpha > 0 ? this.hzVehAlpha : 1;
+               this.hzVehHid = false;
+            }
+         }
+         catch(err:Error) { }
+      }
+      private function hz42VehNum(o:*, name:String) : Number
+      {
+         var n:Number = NaN;
+         try { n = Number(o[name]); } catch(err:Error) { return NaN; }
+         if(isNaN(n)) { return NaN; }
+         if(n > 1 && n <= 100) { n = n / 100; }
+         if(n < 0 || n > 1.001) { return NaN; }
+         return n > 1 ? 1 : n;
+      }
+      // frame 1 is the idle pose. trustStop: a fill / hold / meter clip parked on a frame is the hold.
+      private function hz42VehFrame(o:*, trustStop:Boolean) : Number
+      {
+         try
+         {
+            var tf:int = int(o.totalFrames);
+            var cf:int = int(o.currentFrame);
+            if(tf > 1 && cf > 1)
+            {
+               var playing:Boolean = true;
+               try { if(o.isPlaying === false) { playing = false; } } catch(eP:Error) { }
+               if(trustStop || playing || cf >= tf) { return Math.max(0,Math.min(1,(cf - 1) / (tf - 1))); }
+            }
+         }
+         catch(err:Error) { }
+         return NaN;
+      }
+      private function hz42VehProg(b:*) : Number
+      {
+         var best:Number = 0;
+         var fp:Number = this.hz42VehNum(b,"FillPercent");
+         var hp:Number = this.hz42VehNum(b,"HoldPercent");
+         var fr:Number = this.hz42VehFrame(b,false);
+         if(!isNaN(fp) && fp > best) { best = fp; }
+         if(!isNaN(hp) && hp > best) { best = hp; }
+         if(!isNaN(fr) && fr > best) { best = fr; }
+         try
+         {
+            var n:int = int(b.numChildren);
+            if(n > 8) { n = 8; }
+            var i:int = 0;
+            while(i < n)
+            {
+               var ch:* = b.getChildAt(i);
+               var nm:String = ch != null && ch.name != null ? String(ch.name).toLowerCase() : "";
+               if(nm.indexOf("fill") >= 0 || nm.indexOf("hold") >= 0 || nm.indexOf("meter") >= 0)
+               {
+                  var cfp:Number = this.hz42VehNum(ch,"FillPercent");
+                  var cfr:Number = this.hz42VehFrame(ch,true);
+                  if(!isNaN(cfp) && cfp > best) { best = cfp; }
+                  if(!isNaN(cfr) && cfr > best) { best = cfr; }
+               }
+               i++;
+            }
+         }
+         catch(err:Error) { }
+         if(best < 0) { return 0; }
+         return best > 1 ? 1 : best;
+      }
+      private function hz42VehAt(o:*, path:Array) : *
+      {
+         try
+         {
+            var c:* = o;
+            for each(var n:String in path) { if(c == null) { return null; } c = c[n]; }
+            return c;
+         }
+         catch(err:Error) { }
+         return null;
+      }
+      private function hz42VehShown(d:*, top:*) : Boolean
+      {
+         try
+         {
+            var c:* = d;
+            var n:int = 0;
+            while(c != null && c != top && n < 8)
+            {
+               if(c.visible == false) { return false; }
+               c = c.parent;
+               n++;
+            }
+            return c != null;
+         }
+         catch(err:Error) { }
+         return false;
+      }
+      private function hz42VehTx(t:*) : String
+      {
+         try
+         {
+            if(t == null || t.visible == false || t.text == null) { return null; }
+            var s:String = String(t.text).replace(/^\s+|\s+$/g,"").replace(/\s+/g," ");
+            if(s.length == 0 || s == "?" || s == "null" || s == "undefined" || s.charAt(0) == "$") { return null; }
+            return s.length > 12 ? s.substr(0,12) : s;
+         }
+         catch(err:Error) { }
+         return null;
+      }
+      // live key only: keyboard text or the controller glyph. No stand-in key when the game has not drawn one.
+      private function hz42VehKey(b:*) : Array
+      {
+         var pc:* = this.hz42VehAt(b,["PCButton_mc","ButtonInstance_mc","PCButton_tf"]);
+         if(pc == null) { pc = this.hz42VehAt(b,["PCButton_mc","PCButton_tf"]); }
+         var con:* = this.hz42VehAt(b,["ConsoleButton_mc","ButtonInstance_mc","ConsoleButton_tf"]);
+         if(con == null) { con = this.hz42VehAt(b,["ConsoleButton_mc","ConsoleButton_tf"]); }
+         var pcOn:Boolean = pc != null && this.hz42VehShown(pc,b);
+         var conOn:Boolean = con != null && this.hz42VehShown(con,b);
+         var usePad:int = this.hzVehPad;
+         if(usePad < 0)
+         {
+            if(conOn && !pcOn) { usePad = 1; }
+            else if(pcOn && !conOn) { usePad = 0; }
+            else { return ["",""]; }
+         }
+         if(usePad == 1)
+         {
+            if(!conOn) { return ["",""]; }
+            var ct:String = this.hz42VehTx(con);
+            if(ct == null) { return ["",""]; }
+            var font:String = "";
+            try { var f:* = con.getTextFormat().font; if(f) { font = String(f); } } catch(err:Error) { font = ""; }
+            return [ct,font];
+         }
+         if(!pcOn) { return ["",""]; }
+         var pt:String = this.hz42VehTx(pc);
+         if(pt == null) { return ["",""]; }
+         return [pt.toUpperCase(),""];
+      }
+      private function hz42VehFs(size:Number) : int
+      {
+         var ts:Number = this.hzTextScale;
+         if(isNaN(ts) || ts <= 0) { ts = 1; }
+         ts = Math.max(0.8,Math.min(1.3,ts));
+         var sz:int = int(Math.round(size * ts));
+         if(sz < 13) { sz = 13; }
+         return sz;
+      }
+      // same field width as the scope key: ceil(textWidth * 1.08 + letterSpacing * length) + 8, at least 14
+      private function hz42VehKeyW(t:TextField) : Number
+      {
+         if(t == null) { return 14; }
+         var ls:Number = 0;
+         try { ls = Number(t.getTextFormat().letterSpacing); } catch(err:Error) { ls = 0; }
+         if(isNaN(ls) || ls < 0) { ls = 0; }
+         var tw:Number = Number(t.textWidth);
+         if(isNaN(tw) || tw < 0) { tw = 0; }
+         var len:int = t.text != null ? int(t.text.length) : 0;
+         var w:Number = Math.ceil(tw * 1.08 + ls * len) + 8;
+         if(w < 14) { w = 14; }
+         return w;
+      }
+      private function hz42VehTf(p:Sprite, s:String, size:int, col:uint, font:String, ls:Number) : TextField
+      {
+         var t:TextField = new TextField();
+         t.embedFonts = true;
+         t.selectable = false;
+         t.mouseEnabled = false;
+         t.autoSize = flash.text.TextFieldAutoSize.LEFT;
+         var f:TextFormat = new TextFormat(font,size,col);
+         f.letterSpacing = ls;
+         t.defaultTextFormat = f;
+         t.text = s;
+         t.setTextFormat(f);
+         t.textColor = col;
+         t.filters = this.hz35Shadow(false);
+         try { t.antiAliasType = "advanced"; t.gridFitType = "pixel"; } catch(err:Error) { }
+         p.addChild(t);
+         return t;
+      }
+      private function hz42VehDraw(key:String, face:String, prog:Number, done:Boolean) : void
+      {
+         var p:Sprite = this.hzVehPx;
+         while(p.numChildren > 0) { p.removeChildAt(0); }
+         var g:* = p.graphics;
+         g.clear();
+         var keyFs:int = this.hz42VehFs(13);
+         var labFs:int = this.hz42VehFs(14);
+         var edge:uint = done ? HZ_GREEN : HZ_ACCENT;
+         var kt:TextField = null;
+         var ktw:Number = 0;
+         var kw:Number = 0;
+         if(key != null && key.length > 0)
+         {
+            var kface:String = face != null && face.length > 0 ? face : this.hzFontName("bd");
+            var kls:Number = face != null && face.length > 0 ? 0 : Math.round(keyFs * 0.04 * 10) / 10;
+            var kcol:uint = face != null && face.length > 0 ? 0xF2F7F9 : edge;
+            kt = this.hz42VehTf(p,key,keyFs,kcol,kface,kls);
+            ktw = this.hz42VehKeyW(kt);
+            var kth:Number = kt.height;
+            kt.autoSize = flash.text.TextFieldAutoSize.NONE;
+            kt.width = ktw;
+            if(kt.height < kth) { kt.height = kth; }
+            kw = ktw + 8;
+         }
+         var lab:String = this.hzHdrCase("EXIT");
+         var lls:Number = this.hzHeaderStyle == 0 ? Math.round(labFs * 0.1 * 10) / 10 : 0;
+         var lt:TextField = this.hz42VehTf(p,lab,labFs,0xF2F7F9,this.hzFontName("bd"),lls);
+         var h:Number = 32;
+         if(lt.height + 8 > h) { h = Math.round(lt.height + 8); }
+         if(kt != null && kt.height + 8 > h) { h = Math.round(kt.height + 8); }
+         var x0:Number = 8;
+         var lx:Number = x0 + (kw > 0 ? kw + 8 : 0);
+         var tw:Number = Number(lt.textWidth);
+         if(isNaN(tw) || tw < 8) { tw = 36; }
+         var checkW:Number = done ? 18 : 0;
+         var w:Number = Math.round(lx + tw + 14 + checkW + 8);
+         if(w < 72) { w = 72; }
+         var i:int = 0;
+         while(i < 3) { g.beginFill(0x000000,0.07); g.drawRoundRect(-1 - i,2 - i * 0.5,w + 2 + i * 2,h + 1 + i * 2,h + i * 2,h + i * 2); g.endFill(); i++; }
+         var opa:Number = Number(this.hzCardOpacity);
+         if(isNaN(opa)) { opa = 1; }
+         g.lineStyle();
+         g.beginFill(0x0B1218,Math.min(1,0.84 * opa));
+         g.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
+         g.endFill();
+         var sweep:Sprite = new Sprite();
+         sweep.mouseEnabled = false;
+         sweep.mouseChildren = false;
+         var fw:Number = Math.round(w * (done ? 1 : prog));
+         if(fw > 0)
+         {
+            var sg:* = sweep.graphics;
+            sg.beginFill(edge,done ? 0.7 : 0.62);
+            sg.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
+            sg.endFill();
+            if(fw < w) { sweep.scrollRect = new Rectangle(0,0,fw,h); }
+            p.addChild(sweep);
+         }
+         var rim:Sprite = new Sprite();
+         rim.mouseEnabled = false;
+         rim.mouseChildren = false;
+         var rg:* = rim.graphics;
+         rg.lineStyle(1.5,edge,1,true,"none");
+         rg.beginFill(edge,0.004);
+         rg.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
+         rg.endFill();
+         p.addChild(rim);
+         if(kw > 0)
+         {
+            var cap:Sprite = new Sprite();
+            cap.mouseEnabled = false;
+            cap.mouseChildren = false;
+            var kh:Number = Math.round(h - 10);
+            var ky:Number = Math.round((h - kh) / 2);
+            var cg:* = cap.graphics;
+            cg.lineStyle(1,edge,0.95,true,"none");
+            cg.beginFill(0x0B1218,prog > 0.02 ? 0.12 : 0.45);
+            cg.drawRoundRect(x0,ky,kw,kh,8,8);
+            cg.endFill();
+            p.addChild(cap);
+            kt.x = Math.round(x0 + (kw - ktw) / 2);
+            kt.y = Math.round(h / 2 - kt.height / 2);
+            p.addChild(kt);
+         }
+         lt.x = Math.round(lx);
+         lt.y = Math.round(h / 2 - lt.height / 2);
+         p.addChild(lt);
+         if(done)
+         {
+            var ck:Sprite = new Sprite();
+            ck.mouseEnabled = false;
+            var kg:* = ck.graphics;
+            var cx0:Number = Math.round(lx + tw + 8);
+            var cy0:Number = Math.round(h / 2);
+            kg.lineStyle(2.2,0xF4FFF9,1,true,"none");
+            kg.moveTo(cx0,cy0);
+            kg.lineTo(cx0 + 4,cy0 + 4);
+            kg.lineTo(cx0 + 12,cy0 - 5);
+            p.addChild(ck);
+         }
+         this.hzVehW = w;
+         this.hzVehH = h;
+      }
+      private function hz42VehFront() : void
+      {
+         var p:Sprite = this.hzVehPx;
+         if(p == null) { return; }
+         if(p.parent != this) { this.addChild(p); }
+         try { this.setChildIndex(p,this.numChildren - 1); } catch(err:Error) { }
+         var tops:Array = [this.hzArr_mc,this.HorizonSettings_mc];
+         var i:int = 0;
+         while(i < tops.length)
+         {
+            var c:Sprite = tops[i] as Sprite;
+            if(c != null && c.parent == this && c.visible) { try { this.setChildIndex(c,this.numChildren - 1); } catch(err2:Error) { } }
+            i++;
+         }
+      }
+      private function hz42VehPlace(b:*) : Boolean
+      {
+         var r:Rectangle = null;
+         try { r = b.getBounds(this); } catch(err:Error) { r = null; }
+         var bad:Boolean = r == null || isNaN(r.x) || isNaN(r.y) || isNaN(r.width) || isNaN(r.height) || r.width < 1 || r.height < 1 || r.width > 800 || r.height > 400;
+         if(bad)
+         {
+            r = null;
+            try
+            {
+               var lp:Point = this.globalToLocal(b.localToGlobal(new Point(b.width > 1 ? b.width / 2 : 0,b.height > 1 ? b.height / 2 : 0)));
+               if(lp != null && !isNaN(lp.x) && !isNaN(lp.y)) { r = new Rectangle(lp.x,lp.y,2,2); }
+            }
+            catch(err2:Error) { r = null; }
+         }
+         if(r == null || isNaN(r.x) || isNaN(r.y)) { return false; }
+         this.hzVehPx.x = Math.round(r.x + r.width / 2 - this.hzVehW / 2);
+         this.hzVehPx.y = Math.round(r.y + r.height / 2 - this.hzVehH / 2);
+         return true;
+      }
+      private function hz42VehTick() : void
+      {
+         var b:* = this.hz42VehBtn();
+         if(!this.hzVehOn || b == null)
+         {
+            this.hzVehFail = 0;
+            this.hz42VehHideVan(b,false);
+            if(this.hzVehPx != null) { this.hzVehPx.visible = false; }
+            return;
+         }
+         var shown:Boolean = false;
+         var haveVis:Boolean = false;
+         try
+         {
+            var vv:* = b.Visible;
+            if(vv !== undefined) { haveVis = true; shown = Boolean(vv); }
+         }
+         catch(eV:Error) { haveVis = false; }
+         if(!haveVis) { shown = this.hzVehIn == 1; }
+         if(this.hzVehIn == 0) { shown = false; }
+         try { if(b.stage == null) { shown = false; } } catch(eS:Error) { }
+         if(!shown)
+         {
+            this.hzVehFail = 0;
+            this.hz42VehHideVan(b,false);
+            if(this.hzVehPx != null) { this.hzVehPx.visible = false; }
+            return;
+         }
+         var prog:Number = this.hz42VehProg(b);
+         if(isNaN(prog) || prog < 0) { prog = 0; }
+         if(prog > 1) { prog = 1; }
+         var done:Boolean = prog >= 0.99;
+         var key:Array = this.hz42VehKey(b);
+         var ks:String = key != null && key[0] != null ? String(key[0]) : "";
+         var kf:String = key != null && key[1] != null ? String(key[1]) : "";
+         var sig:String = (done ? "1" : "0") + "|" + String(int(Math.round(prog * 100))) + "|" + ks + "|" + kf + "|" + String(int(HZ_ACCENT)) + "|" + String(this.hzTextScale) + "|" + String(this.hzFontFace) + "|" + String(this.hzHeaderStyle) + "|" + String(this.hzCardOpacity);
+         if(this.hzVehPx == null)
+         {
+            this.hzVehPx = new Sprite();
+            this.hzVehPx.mouseEnabled = false;
+            this.hzVehPx.mouseChildren = false;
+            this.hzVehPx.name = "hzVehExit";
+            this.hzVehSig = "";
+         }
+         if(sig != this.hzVehSig)
+         {
+            try
+            {
+               this.hz42VehDraw(ks,kf,prog,done);
+               this.hzVehSig = sig;
+               this.hzVehFail = 0;
+            }
+            catch(eD:Error)
+            {
+               this.hzVehFail++;
+               if(this.hzVehFail >= 3)
+               {
+                  this.hzVehSig = sig;
+                  this.hzVehPx.visible = false;
+                  this.hz42VehHideVan(b,false);
+               }
+               return;
+            }
+         }
+         if(this.hzVehW < 1 || !this.hz42VehPlace(b))
+         {
+            this.hzVehPx.visible = false;
+            this.hz42VehHideVan(b,false);
+            return;
+         }
+         this.hzVehPx.visible = true;
+         this.hz42VehFront();
+         this.hz42VehHideVan(b,true);
       }
       // =================== Horizon settings window (keyboard + mouse) ===================
       public var HorizonSettings_mc:Sprite = null;
@@ -2429,7 +2884,7 @@
 
       private function hzSetCurrent() : Object
       {
-         var cur:Object = {"ShowJetpack":this.hzShowJetpack,"JetpackAutoHide":this.hzJetpackAutoHide,"ShowVitals":this.hzShowVitals,"ShowPlanet":this.hzShowPlanet,"ShowAfflictions":this.hzShowAfflictions,"AfflictionsAutoHide":this.hzAfflAutoHide,"ShowAmmo":this.hzShowAmmo,"AmmoOnlyWhenDrawn":this.hzAmmoOnlyWhenDrawn,"ShowQuests":this.hzShowQuests,"ShowCompass":this.hzShowCompass,"CompassMarkers":this.hzShowCompassMarkers,"CardOpacity":this.hzCardOpacity,"ContainerOpacity":this.hzContOpacity,"AccentColor":Math.max(0,Math.min(this.hzAccPal().length - 1,this.hzAccentChoice)),"Margin":this.hzMargin,"Compact":this.hzCompact,"SmoothBars":this.hzSmoothBars,"FadeCards":this.hzFadeCards,"CombatDim":this.hzCombatDim,"DimOpacity":this.hzDimAlpha,"HazardAlert":this.hzHazardAlert,"CardColor":Math.max(0,Math.min(this.hzCardPal().length - 1,this.hzCardColor)),"HudScale":this.hzHudScale,"AutoCenterVitals":this.hzAutoCenterVitals,"JetpackRule":this.hzRuleJetpack,"VitalsRule":this.hzRuleVitals,"PlanetRule":this.hzRulePlanet,"AfflictionsRule":this.hzRuleAffl,"AmmoRule":this.hzRuleAmmo,"QuestsRule":this.hzRuleQuests,"CompassRule":this.hzRuleCompass,"SettingsKey":this.hzSettingsKeyName,"ShowFollowers":this.hzCmpFollowers,"TextTone":this.hzTextTone,"FontFace":this.hzFontFace,"PlanetDetails":this.hzPlanDetails,"ShowTarget":this.hzShowTarget,"TargetAnchor":this.hzTgAnchor,"TargetShowValue":this.hzTgShowValue,"ShowLocations":this.hzCmpLocations,"ShowShip":this.hzCmpShip,"ShowEnemies":this.hzCmpEnemies,"ShowPlayerMarker":this.hzCmpPlayerMark,"TextScale":this.hzTextScale,"ContainerScale":this.hzTgScale,"ScreenHeight":this.hzScrH,"CrosshairStyle":this.hzXhStyle,"ObjectRing":this.hzObjRing,"HeaderStyle":this.hzHeaderStyle,"TextShadow":this.hzTextShadow,"TimeDisplay":this.hzTimeDisplay,"ClockFormat":this.hzClockFmt,"AfflictionLayout":this.hzAfLayout};
+         var cur:Object = {"ShowJetpack":this.hzShowJetpack,"JetpackAutoHide":this.hzJetpackAutoHide,"ShowVitals":this.hzShowVitals,"ShowPlanet":this.hzShowPlanet,"ShowAfflictions":this.hzShowAfflictions,"AfflictionsAutoHide":this.hzAfflAutoHide,"ShowAmmo":this.hzShowAmmo,"AmmoOnlyWhenDrawn":this.hzAmmoOnlyWhenDrawn,"ShowQuests":this.hzShowQuests,"ShowCompass":this.hzShowCompass,"VehicleExitPill":this.hzVehOn,"CompassMarkers":this.hzShowCompassMarkers,"CardOpacity":this.hzCardOpacity,"ContainerOpacity":this.hzContOpacity,"AccentColor":Math.max(0,Math.min(this.hzAccPal().length - 1,this.hzAccentChoice)),"Margin":this.hzMargin,"Compact":this.hzCompact,"SmoothBars":this.hzSmoothBars,"FadeCards":this.hzFadeCards,"CombatDim":this.hzCombatDim,"DimOpacity":this.hzDimAlpha,"HazardAlert":this.hzHazardAlert,"CardColor":Math.max(0,Math.min(this.hzCardPal().length - 1,this.hzCardColor)),"HudScale":this.hzHudScale,"AutoCenterVitals":this.hzAutoCenterVitals,"JetpackRule":this.hzRuleJetpack,"VitalsRule":this.hzRuleVitals,"PlanetRule":this.hzRulePlanet,"AfflictionsRule":this.hzRuleAffl,"AmmoRule":this.hzRuleAmmo,"QuestsRule":this.hzRuleQuests,"CompassRule":this.hzRuleCompass,"SettingsKey":this.hzSettingsKeyName,"ShowFollowers":this.hzCmpFollowers,"TextTone":this.hzTextTone,"FontFace":this.hzFontFace,"PlanetDetails":this.hzPlanDetails,"ShowTarget":this.hzShowTarget,"TargetAnchor":this.hzTgAnchor,"TargetShowValue":this.hzTgShowValue,"ShowLocations":this.hzCmpLocations,"ShowShip":this.hzCmpShip,"ShowEnemies":this.hzCmpEnemies,"ShowPlayerMarker":this.hzCmpPlayerMark,"TextScale":this.hzTextScale,"ContainerScale":this.hzTgScale,"ScreenHeight":this.hzScrH,"CrosshairStyle":this.hzXhStyle,"ObjectRing":this.hzObjRing,"HeaderStyle":this.hzHeaderStyle,"TextShadow":this.hzTextShadow,"TimeDisplay":this.hzTimeDisplay,"ClockFormat":this.hzClockFmt,"AfflictionLayout":this.hzAfLayout};
          try { this.hz26SetCur(cur); } catch(err26:Error) { }
          try { this.hz31SetCur(cur); } catch(err31:Error) { }
          try { this.hz34SetCur(cur); } catch(err34:Error) { }
@@ -2655,6 +3110,7 @@
          this.hzAmmoOnlyWhenDrawn = p.AmmoOnlyWhenDrawn;
          this.hzShowQuests = p.ShowQuests;
          this.hzShowCompass = p.ShowCompass;
+         if(p.VehicleExitPill !== undefined) { this.hzVehOn = p.VehicleExitPill === true || Number(p.VehicleExitPill) >= 0.5; }
          this.hzShowCompassMarkers = p.CompassMarkers;
          this.hzCmpFollowers = p.ShowFollowers;
          var rd:Boolean = false;
@@ -2758,6 +3214,8 @@
          {
             a.push(k + "=" + this.hzB(p[k]));
          }
+         a.push("; Vehicle exit prompt: 1 = Horizon pill (the key the game shows, EXIT, a hold sweep). 0 = the game's prompt.");
+         a.push("VehicleExitPill=" + this.hzB(p.VehicleExitPill !== undefined ? p.VehicleExitPill : this.hzVehOn));
          a.push("; Planet pill: extra GRAV / AIR line");
          a.push("PlanetDetails=" + this.hzB(p.PlanetDetails));
          a.push("; Target card (restyled activate prompt). 0 = vanilla prompt untouched. Scanner / inventory prompts always stay vanilla");
@@ -2939,14 +3397,14 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.42.0.6";
+      private static const HZ_BUILD:String = "0.42.0.7";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":0,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":0,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -11458,6 +11916,7 @@
          "ShowFollowers":"Markers for your follower and companions on the Horizon compass.",
          "CompassMarkers":"Master switch for every Horizon compass marker below. Quest objectives always show while it is on.",
          "ShowTarget":"Horizon's own card for the game's activate prompt (take, talk, open) and the item / container hover cards. Off = the game's prompt.",
+         "VehicleExitPill":"While you are in a vehicle, the hold-to-exit prompt is a Horizon pill: the key the game shows, then EXIT. A fill sweeps across while you hold, and the pill turns green with a check when the hold completes. The game's button stays in the movie at alpha 0, so the hold still finishes and you still get out. Off shows the game's prompt.",
          "PlanetDetails":"Adds a gravity / air line to the planet card.",
          "_size":"GLOBAL: this card uses HUD SCALE (STYLE tab). CUSTOM: it has its own size and HUD SCALE no longer changes it. Click the GLOBAL / CUSTOM chip or drag the slider to switch.",
          "_compact":"GLOBAL: this card takes its compact form whenever COMPACT MODE (top right) is on. ON / OFF: always compact / always full for this card only, whatever COMPACT MODE says.",
@@ -11657,6 +12116,7 @@
             {"k":"EquipmentExtras","l":"EQUIPMENT: GRENADES + STARBORN POWER","t":"b"},
             {"k":"ShowQuests","l":"QUEST TRACKER","t":"b"},this.hz34Sz("Quests"),this.hz34Cmp("Quests"),
             {"k":"ShowCompass","l":"COMPASS","t":"b"},this.hz34Sz("Compass"),this.hz34Cmp("Compass","The enemy health bar follows the compass form"),
+            {"k":"VehicleExitPill","l":"VEHICLE EXIT PILL","t":"b","note":"Hold-to-exit prompt while you are in a vehicle. Off = the game's prompt."},
             {"k":"EnemyBar","l":"ENEMY HEALTH BAR (TOP CENTER)","t":"b"},this.hz34Sz("Enemy"),
             {"k":"StealthMeter","l":"STEALTH METER (ABOVE CROSSHAIR)","t":"b"},this.hz34Sz("Stealth"),
             {"k":"CompactScale","l":"COMPACT STRIPS: SIZE","t":"z","note":"The jetpack / vitals / afflictions strips of COMPACT MODE"},

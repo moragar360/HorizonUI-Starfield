@@ -67,7 +67,7 @@ const DIR = numArray("HZC_RX_DIR");
 const NOT = stringArray("HZC_RX_NOT");
 const TITLE = stringArray("HZC_RX_TITLE");
 
-expect(src.indexOf('private static const HZC_BUILD:String = "0.42.0.6";') >= 0, "comms build id is 0.42.0.6");
+expect(src.indexOf('private static const HZC_BUILD:String = "0.42.0.7";') >= 0, "comms build id is 0.42.0.7");
 expect(src.indexOf("private static const HZC_MSG_LOG:Boolean = true;") >= 0, "comms message log is on for this test build");
 expect(src.indexOf('this.hzcRxDbgPush("card code off after error: " + this.hzcRxDbgEsc(em));') >= 0, "a card error records the error text");
 expect(src.indexOf('if(s == "loved" || s == "loves") { return 0; }') >= 0, "loves maps with loved");

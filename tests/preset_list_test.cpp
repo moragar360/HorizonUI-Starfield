@@ -46,10 +46,10 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.42.0.6", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 42 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 6, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.42.0.7", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 42 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 7, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 1, "reaction diagnostic is on for this test build");
-	Expect(HzFileVersionOk("0.42.0.6"), "4-part version ok");
+	Expect(HzFileVersionOk("0.42.0.7"), "4-part version ok");
 	Expect(!HzFileVersionOk("0.42.0"), "3-part version is not the file version");
 	Expect(!HzFileVersionOk("v0.42.0.6"), "leading v is not accepted");
 	Expect(!HzFileVersionOk("0.42.0.6 "), "trailing space rejected");
@@ -221,7 +221,7 @@ int main()
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(lua.find("set_version(\"0.42.0.6\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.42.0.7\")") != std::string::npos, "xmake version is the 4-part file version");
 		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
 		std::ifstream cpp("res/horizonui-plugin.cpp.in");
 		Expect(static_cast<bool>(cpp), "plugin version template opens");

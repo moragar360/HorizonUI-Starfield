@@ -213,8 +213,8 @@ package
       // Settings: [Scope] ScopeHoldBreathChip (0 = the game's prompt) / ScopeChipX / ScopeChipY / ScopeChipScale and [Style]
       // AccentColor / AccentHex / CardOpacity / TextScale / FontFace / HeaderStyle (same meaning as on the HUD). Read when
       // the scope opens and every 5 s after.
-      private static const HZP_VERSION:String = "0.42.0.6";   // 0.42.0.6: scope movie version (= the test build's DLL file version)
-      private static const HZP_BUILD:String = "0.42.0.6";   // 0.42.0.6: scope movie build label (= the test build's DLL file version)
+      private static const HZP_VERSION:String = "0.42.0.7";   // 0.42.0.7: scope movie version (= the test build's DLL file version)
+      private static const HZP_BUILD:String = "0.42.0.7";   // 0.42.0.7: scope movie build label (= the test build's DLL file version)
       private static const HZP_ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       private static const HZP_ACC:uint = 0x3FD0E0;
       private static const HZP_O2:uint = 0x4DB6FF;

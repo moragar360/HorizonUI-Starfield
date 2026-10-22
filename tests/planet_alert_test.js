@@ -32,7 +32,12 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.42.0.6";', "HUD build id is 0.42.0.6");
+pin('private static const HZ_BUILD:String = "0.42.0.7";', "HUD build id is 0.42.0.7");
+pin('case "vehicleexitpill": this.hzVehOn = bv; break;', "vehicle exit pill is a Cards ini key");
+pin('{"k":"VehicleExitPill","l":"VEHICLE EXIT PILL"', "vehicle exit pill is on the Cards tab");
+pin("return hv.GetUpButton_mc;", "vehicle exit follows the game's button");
+pin("alpha only: visible stays the game's", "vehicle exit hides with alpha, not visible");
+pin("b.alpha = 0;", "vehicle exit sets the game button alpha to 0");
 pin("private static const HZ41_LOC_GRACE:Number = 1500;");
 pin("private static const HZ41_LOC_HOLD:int = 228;");
 pin("private static const HZ41_LOC_REST:int = 246;");
@@ -435,7 +440,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.6";') >= 0, rel + " build is 0.42.0.6");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.7";') >= 0, rel + " build is 0.42.0.7");
 	expect(body.indexOf("kt.autoSize = TextFieldAutoSize.NONE;") >= 0, rel + " key field does not autosize");
 	expect(body.indexOf("Math.ceil(tw * HZP_KHEAD + ls * len) + 8") >= 0, rel + " uses the field-width formula");
 	expect(body.indexOf("kt.width = ktw;") >= 0, rel + " sets the field width");
