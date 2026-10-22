@@ -2298,6 +2298,7 @@
          var names:Array = [];
          var o:Object = null;
          this.hzFrameN++;
+         try { this.hz42VehTick(); } catch(e42v:Error) { }   // 0.42.0.7: own try, first, so a throw later in this frame cannot skip the exit pill
          try { this.hz40Frame(); } catch(e40f:Error) { }
          try { this.hz42QmFont(); } catch(e42q:Error) { }   // v0.40.2: in-world quest-marker labels in the Horizon face
          try { this.hz35CmpTick(); } catch(e35c:Error) { }   // v0.35: global Compact follow
@@ -2372,14 +2373,13 @@
             this.hzPulseT += 0.08;
             this.hzDrawVitBg(0.5 + 0.5 * Math.sin(this.hzPulseT));
          }
-         try { this.hz42VehTick(); } catch(e42v:Error) { }   // 0.42.0.7: vehicle exit pill
          try { this.hz36HideTick(); } catch(e36z:Error) { }   // v0.36: and again after everything else this frame
          if(this.hz40Hide) { try { this.hz40ForceHide(); } catch(e40z:Error) { } }
       }
 
       // 0.42.0.7: vehicle exit pill, part of the main HUD (not its own movie). Same keycap and pill language as the
-      // scope hold-breath chip: the key the game is showing, then EXIT. A fill sweeps left to right from the vanilla
-      // hold, and the pill turns green with a check when that hold completes. The game's button stays in the movie.
+      // scope hold-breath chip: the key the game is showing, then EXIT. The sweep is HoldAnim_mc from StartHold to
+      // buttonHoldComplete. The pill turns green with a check when that hold completes. The game's button stays in the movie.
       private var hzVehOn:Boolean = true;
       private var hzVehPx:Sprite = null;
       private var hzVehSig:String = "";
@@ -2388,7 +2388,7 @@
       private var hzVehHid:Boolean = false;
       private var hzVehAlpha:Number = 1;
       private var hzVehW:Number = 0;
-      private var hzVehH:Number = 32;
+      private var hzVehH:Number = 38;
       private var hzVehFail:int = 0;
       private function hz42VehOnData(e:FromClientDataEvent) : void
       {
@@ -2445,63 +2445,72 @@
          }
          catch(err:Error) { }
       }
-      private function hz42VehNum(o:*, name:String) : Number
+      private function hz42VehLabel(mc:*, name:String) : int
       {
-         var n:Number = NaN;
-         try { n = Number(o[name]); } catch(err:Error) { return NaN; }
-         if(isNaN(n)) { return NaN; }
-         if(n > 1 && n <= 100) { n = n / 100; }
-         if(n < 0 || n > 1.001) { return NaN; }
-         return n > 1 ? 1 : n;
-      }
-      // frame 1 is the idle pose. trustStop: a fill / hold / meter clip parked on a frame is the hold.
-      private function hz42VehFrame(o:*, trustStop:Boolean) : Number
-      {
+         var f:int = 0;
          try
          {
-            var tf:int = int(o.totalFrames);
-            var cf:int = int(o.currentFrame);
-            if(tf > 1 && cf > 1)
-            {
-               var playing:Boolean = true;
-               try { if(o.isPlaying === false) { playing = false; } } catch(eP:Error) { }
-               if(trustStop || playing || cf >= tf) { return Math.max(0,Math.min(1,(cf - 1) / (tf - 1))); }
-            }
-         }
-         catch(err:Error) { }
-         return NaN;
-      }
-      private function hz42VehProg(b:*) : Number
-      {
-         var best:Number = 0;
-         var fp:Number = this.hz42VehNum(b,"FillPercent");
-         var hp:Number = this.hz42VehNum(b,"HoldPercent");
-         var fr:Number = this.hz42VehFrame(b,false);
-         if(!isNaN(fp) && fp > best) { best = fp; }
-         if(!isNaN(hp) && hp > best) { best = hp; }
-         if(!isNaN(fr) && fr > best) { best = fr; }
-         try
-         {
-            var n:int = int(b.numChildren);
-            if(n > 8) { n = 8; }
+            var labs:Array = mc.currentLabels;
             var i:int = 0;
+            var n:int = labs != null ? int(labs.length) : 0;
             while(i < n)
             {
-               var ch:* = b.getChildAt(i);
-               var nm:String = ch != null && ch.name != null ? String(ch.name).toLowerCase() : "";
-               if(nm.indexOf("fill") >= 0 || nm.indexOf("hold") >= 0 || nm.indexOf("meter") >= 0)
-               {
-                  var cfp:Number = this.hz42VehNum(ch,"FillPercent");
-                  var cfr:Number = this.hz42VehFrame(ch,true);
-                  if(!isNaN(cfp) && cfp > best) { best = cfp; }
-                  if(!isNaN(cfr) && cfr > best) { best = cfr; }
-               }
+               var lb:* = labs[i];
+               if(lb != null && String(lb.name) == name) { f = int(lb.frame); break; }
                i++;
             }
          }
-         catch(err:Error) { }
-         if(best < 0) { return 0; }
-         return best > 1 ? 1 : best;
+         catch(err:Error) { f = 0; }
+         return f;
+      }
+      // 0 at or before StartHold, 1 at or after buttonHoldComplete. The frames after that label are the end flash.
+      private function hz42VehSpan(cur:int, a:int, z:int) : Number
+      {
+         if(a < 1 || z <= a) { return 0; }
+         if(cur >= z) { return 1; }
+         if(cur <= a) { return 0; }
+         return (cur - a) / (z - a);
+      }
+      // ClickFailed begins at frame 41 and Disabled is frame 61. Those frames are not a hold.
+      private function hz42VehBtnAdd(frame:int) : Number
+      {
+         if(frame >= 41) { return 0; }
+         return 0;
+      }
+      private function hz42VehHold(b:*) : *
+      {
+         var pc:* = this.hz42VehAt(b,["PCButton_mc","ButtonInstance_mc","HoldAnim_mc"]);
+         var con:* = this.hz42VehAt(b,["ConsoleButton_mc","ButtonInstance_mc","HoldAnim_mc"]);
+         var pad:int = this.hzVehPad;
+         if(pad < 0)
+         {
+            var pcOn:Boolean = this.hz42VehShown(this.hz42VehAt(b,["PCButton_mc"]),b);
+            var conOn:Boolean = this.hz42VehShown(this.hz42VehAt(b,["ConsoleButton_mc"]),b);
+            if(conOn && !pcOn) { pad = 1; }
+            else { pad = 0; }
+         }
+         var hold:* = pad == 1 ? con : pc;
+         if(hold == null) { hold = pad == 1 ? pc : con; }
+         return hold;
+      }
+      private function hz42VehProg(b:*) : Number
+      {
+         var p:Number = 0;
+         var hold:* = this.hz42VehHold(b);
+         if(hold != null)
+         {
+            var cur:int = 0;
+            try { cur = int(hold.currentFrame); } catch(eH:Error) { cur = 0; }
+            var a:int = this.hz42VehLabel(hold,"StartHold");
+            var z:int = this.hz42VehLabel(hold,"buttonHoldComplete");
+            p = this.hz42VehSpan(cur,a,z);
+         }
+         var bf:int = 0;
+         try { bf = int(b.currentFrame); } catch(eB:Error) { bf = 0; }
+         var add:Number = this.hz42VehBtnAdd(bf);
+         if(add > p) { p = add; }
+         if(p < 0) { return 0; }
+         return p > 1 ? 1 : p;
       }
       private function hz42VehAt(o:*, path:Array) : *
       {
@@ -2620,8 +2629,8 @@
          while(p.numChildren > 0) { p.removeChildAt(0); }
          var g:* = p.graphics;
          g.clear();
-         var keyFs:int = this.hz42VehFs(13);
-         var labFs:int = this.hz42VehFs(14);
+         var keyFs:int = this.hz42VehFs(15);
+         var labFs:int = this.hz42VehFs(16);
          var edge:uint = done ? HZ_GREEN : HZ_ACCENT;
          var kt:TextField = null;
          var ktw:Number = 0;
@@ -2642,16 +2651,16 @@
          var lab:String = this.hzHdrCase("EXIT");
          var lls:Number = this.hzHeaderStyle == 0 ? Math.round(labFs * 0.1 * 10) / 10 : 0;
          var lt:TextField = this.hz42VehTf(p,lab,labFs,0xF2F7F9,this.hzFontName("bd"),lls);
-         var h:Number = 32;
-         if(lt.height + 8 > h) { h = Math.round(lt.height + 8); }
-         if(kt != null && kt.height + 8 > h) { h = Math.round(kt.height + 8); }
-         var x0:Number = 8;
-         var lx:Number = x0 + (kw > 0 ? kw + 8 : 0);
+         var h:Number = 38;
+         if(lt.height + 10 > h) { h = Math.round(lt.height + 10); }
+         if(kt != null && kt.height + 10 > h) { h = Math.round(kt.height + 10); }
+         var x0:Number = 10;
+         var lx:Number = x0 + (kw > 0 ? kw + 10 : 0);
          var tw:Number = Number(lt.textWidth);
          if(isNaN(tw) || tw < 8) { tw = 36; }
-         var checkW:Number = done ? 18 : 0;
-         var w:Number = Math.round(lx + tw + 14 + checkW + 8);
-         if(w < 72) { w = 72; }
+         var checkW:Number = done ? 22 : 0;
+         var w:Number = Math.round(lx + tw + 16 + checkW + 10);
+         if(w < 86) { w = 86; }
          var i:int = 0;
          while(i < 3) { g.beginFill(0x000000,0.07); g.drawRoundRect(-1 - i,2 - i * 0.5,w + 2 + i * 2,h + 1 + i * 2,h + i * 2,h + i * 2); g.endFill(); i++; }
          var opa:Number = Number(this.hzCardOpacity);
@@ -2664,21 +2673,25 @@
          sweep.mouseEnabled = false;
          sweep.mouseChildren = false;
          var fw:Number = Math.round(w * (done ? 1 : prog));
+         var sweepA:Number = 0.30;
          if(fw > 0)
          {
             var sg:* = sweep.graphics;
-            sg.beginFill(edge,done ? 0.7 : 0.62);
+            sg.beginFill(done ? HZ_GREEN : edge,sweepA);
             sg.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
             sg.endFill();
             if(fw < w) { sweep.scrollRect = new Rectangle(0,0,fw,h); }
             p.addChild(sweep);
          }
+         var idleRim:Boolean = !done && prog <= 0.02;
+         var rimCol:uint = done ? HZ_GREEN : (idleRim ? 0xFFFFFF : edge);
+         var rimA:Number = idleRim ? 0.35 : (done ? 0.95 : 0.9);
          var rim:Sprite = new Sprite();
          rim.mouseEnabled = false;
          rim.mouseChildren = false;
          var rg:* = rim.graphics;
-         rg.lineStyle(1.5,edge,1,true,"none");
-         rg.beginFill(edge,0.004);
+         rg.lineStyle(1.5,rimCol,rimA,true,"none");
+         rg.beginFill(rimCol,0.004);
          rg.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
          rg.endFill();
          p.addChild(rim);
@@ -2709,7 +2722,7 @@
             var kg:* = ck.graphics;
             var cx0:Number = Math.round(lx + tw + 8);
             var cy0:Number = Math.round(h / 2);
-            kg.lineStyle(2.2,0xF4FFF9,1,true,"none");
+            kg.lineStyle(2.4,HZ_GREEN,1,true,"none");
             kg.moveTo(cx0,cy0);
             kg.lineTo(cx0 + 4,cy0 + 4);
             kg.lineTo(cx0 + 12,cy0 - 5);
@@ -2774,6 +2787,7 @@
          if(!haveVis) { shown = this.hzVehIn == 1; }
          if(this.hzVehIn == 0) { shown = false; }
          try { if(b.stage == null) { shown = false; } } catch(eS:Error) { }
+         if(shown && !this.hz42VehShown(b,this)) { shown = false; }
          if(!shown)
          {
             this.hzVehFail = 0;
@@ -2784,7 +2798,7 @@
          var prog:Number = this.hz42VehProg(b);
          if(isNaN(prog) || prog < 0) { prog = 0; }
          if(prog > 1) { prog = 1; }
-         var done:Boolean = prog >= 0.99;
+         var done:Boolean = prog >= 1;
          var key:Array = this.hz42VehKey(b);
          var ks:String = key != null && key[0] != null ? String(key[0]) : "";
          var kf:String = key != null && key[1] != null ? String(key[1]) : "";
