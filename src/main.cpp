@@ -1899,6 +1899,7 @@ namespace HZ
 	int g_hudMsgSink = 0;
 
 	// Purpose: register the ShowHUDMessageEvent sink (address id 86800) from kPostDataLoad.
+	// RegisterSink is address id 123821.
 	// A null source, or a fault caught around the source pointer or RegisterSink, is logged and ignored.
 	// A missing address id still hard-exits. GetEventSource looks the id up with a call that ends the
 	// process, and SEH does not catch that lookup.
@@ -2011,6 +2012,7 @@ namespace HZ
 	{
 		if (a_msg->type == SFSE::MessagingInterface::kPostDataLoad) {
 			// The only registration. A missing address id 86800 still hard-exits in GetEventSource.
+			// RegisterSink is address id 123821.
 			// SEH does not catch that lookup. A null source or a caught fault is logged, and the game continues.
 			RegisterShowHUDMessageSink();
 			LoadIni();

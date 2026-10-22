@@ -206,6 +206,7 @@ int main()
 		Expect(src.find("hud message: text=") != std::string::npos, "matching HUD text is logged");
 		Expect(src.find("A missing address id still hard-exits.") != std::string::npos, "a missing address id is documented as a hard exit");
 		Expect(src.find("SEH does not catch that lookup.") != std::string::npos, "SEH does not catch a missing address id");
+		Expect(src.find("RegisterSink is address id 123821.") != std::string::npos, "the sink comment names RegisterSink id 123821");
 		const auto post = src.rfind("kPostDataLoad", load);
 		Expect(post != std::string::npos, "post-data-load handler is present");
 		const auto postCall = src.find("RegisterShowHUDMessageSink();", post);

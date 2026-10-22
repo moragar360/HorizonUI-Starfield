@@ -205,7 +205,7 @@
          {
             this.hzdWho = param1.data.sSpeakerName != null ? String(param1.data.sSpeakerName) : "";
             this.hzdReload();
-            if(param1.data.bClosingMenu) { this.hzdOpen = false; this.hzdLayer.visible = false; this.hzdPmData = null; try { this.hzdPmApply(); } catch(epm0:Error) { } return; }
+            if(param1.data.bClosingMenu) { this.hzdOpen = false; this.hzdLayer.visible = false; this.hzdPmData = null; this.hzdPmNew = null; try { this.hzdPmApply(); } catch(epm0:Error) { } return; }
             if(this.hzdOn) { this.hzdLayer.visible = true; this.hzdDrawSpeaker(); }
          }
          catch(e:Error) { }
@@ -966,7 +966,17 @@
       }
       override protected function ShowPersuasionDataElems() : void
       {
+         var was:Boolean = false;
+         try { was = this.hzdPmShown(); } catch(eW:Error) { was = false; }
          super.ShowPersuasionDataElems();
+         if(!was)
+         {
+            this.hzdPmData = this.hzdPmNew;
+            this.hzdPmNew = null;
+            this.hzdPmSig = "";
+            this.hzdPmOff = false;
+            this.hzdPmFail = 0;
+         }
          try { if(this.hzdBar != null) { this.hzdBarDraw(); } this.hzdPmApply(); } catch(e:Error) { }
       }
       override protected function HidePersuasionDataElems() : void
@@ -982,7 +992,13 @@
             if(param1 != null && param1.data != null)
             {
                var mx:Number = Number(param1.data.uMaxPersuasionScore);
-               if(!isNaN(mx) && mx > 0) { this.hzdPmData = param1.data; this.hzdPmOff = false; this.hzdPmFail = 0; }
+               if(!isNaN(mx) && mx > 0)
+               {
+                  this.hzdPmData = param1.data;
+                  this.hzdPmOff = false;
+                  this.hzdPmFail = 0;
+                  try { if(!this.hzdPmShown()) { this.hzdPmNew = param1.data; } } catch(eN:Error) { }
+               }
             }
             if(this.hzdBar != null) { this.hzdBarDraw(); }
             this.hzdPmApply();
@@ -1184,6 +1200,7 @@
       // is left alone, so the open, close and result animations keep running. A missing clip only skips this card.
       private var hzdPm:Sprite = null;
       private var hzdPmData:Object = null;
+      private var hzdPmNew:Object = null;
       private var hzdPmSig:String = "";
       private var hzdPmHid:Boolean = false;
       private var hzdPmAlpha:Number = 1;
@@ -1223,7 +1240,8 @@
          var n:Number = Number(v);
          return n;
       }
-      // alpha only: visible stays the game's
+      // alpha only. Vanilla uses PersuasionData_mc.visible as the open and close state, and the HUD uses
+      // noInvisibleAdvance, so this card never writes visible.
       private function hzdPmHideVan(hide:Boolean) : void
       {
          var b:* = this.hzdPmClip();
@@ -1288,8 +1306,8 @@
             }
          }
          var won:Boolean = o.res == this.PERUSASION_RESULT_WIN || o.res == this.PERUSASION_RESULT_CRIT_WIN;
-         var failed:Boolean = !won && (o.res == this.PERUSASION_RESULT_FAIL || (!isNaN(o.turns) && o.turns <= 0));
-         if(won && !isNaN(o.goal) && o.goal > 0) { o.score = o.goal; }
+         var failed:Boolean = o.res == this.PERUSASION_RESULT_FAIL;
+         if(o.res == this.PERUSASION_RESULT_CRIT_WIN && !isNaN(o.goal) && o.goal > 0) { o.score = o.goal; }
          o.won = won;
          o.failed = failed;
          o.last = !won && !failed && !isNaN(o.turns) && int(o.turns) == 1;
@@ -1432,6 +1450,47 @@
          this.hzdPm.x = Math.round(x);
          this.hzdPm.y = Math.round(y);
       }
+      private function hzdPmSpeech(g:*, x:Number, y:Number, s:Number, col:uint) : void
+      {
+         var bh:Number = Math.round(s * 0.72);
+         g.lineStyle(Math.max(1.25,Math.round(s * 0.08)),col,0.85,true);
+         g.beginFill(col,0.14);
+         g.drawRoundRect(x,y,s,bh,Math.round(s * 0.28),Math.round(s * 0.28));
+         g.endFill();
+         g.lineStyle();
+         g.beginFill(col,0.9);
+         var tx0:Number = x + s * 0.22;
+         var ty0:Number = y + bh - 1;
+         g.moveTo(tx0,ty0);
+         g.lineTo(tx0 - s * 0.06,ty0 + s * 0.28);
+         g.lineTo(tx0 + s * 0.28,ty0);
+         g.endFill();
+      }
+      private function hzdPmMeterMarks(g:*, tw:Number, mh:Number, goal:Number, col:uint, u:Number) : void
+      {
+         var steps:int = int(Math.round(goal));
+         if(!isNaN(goal) && Math.abs(goal - steps) < 0.01 && steps >= 2 && steps <= 16)
+         {
+            var k:int = 1;
+            g.lineStyle(Math.max(1,Math.round(u)),0xF4FBFF,0.55,true);
+            while(k < steps)
+            {
+               var nx:Number = tw * k / steps;
+               g.moveTo(nx,1);
+               g.lineTo(nx,mh - 1);
+               k++;
+            }
+            g.lineStyle();
+         }
+         var fh:Number = Math.max(8,Math.round(9 * u));
+         var fw:Number = Math.max(6,Math.round(7 * u));
+         var fy:Number = -Math.round(fh * 0.35);
+         g.beginFill(col,1);
+         g.moveTo(tw - 1,fy);
+         g.lineTo(tw - 1,fy + fh);
+         g.lineTo(tw - 1 - fw,fy + fh * 0.45);
+         g.endFill();
+      }
       private function hzdPmDraw() : void
       {
          var s:Sprite = this.hzdPm;
@@ -1459,7 +1518,7 @@
          else if(o.failed && !isNaN(o.turns) && o.turns <= 0) { word = "OUT OF TURNS"; mark = 2; }
          else if(o.failed) { word = "FAILED"; mark = 2; }
          var fracTxt:String = "";
-         if(o.have) { fracTxt = String(int(Math.max(0,Number(o.score)))) + " / " + String(int(Number(o.goal))); }
+         if(o.have) { fracTxt = String(int(Math.max(0,Number(o.score)))) + "/" + String(int(Number(o.goal))); }
          var turnsTxt:String = "";
          if(!isNaN(o.turns) && o.turns >= 0 && o.turns < 1000)
          {
@@ -1471,35 +1530,45 @@
          var pillX:Number = 0;
          var pillY:Number = 0;
          var pillH:Number = 0;
-         var title:TextField = this.hzdText(s,"PERSUASION","",fs,col,Math.round(fs * 0.16),0,0,0,"left",false);
+         var iconS:Number = Math.max(13,Math.round(fs * 0.92));
+         var iconW:Number = iconS + Math.round(6 * u);
+         var title:TextField = this.hzdText(s,"PERSUASION","",fs,mut,Math.round(fs * 0.16),0,0,0,"left",false);
          var turnsT:TextField = turnsTxt.length > 0 ? this.hzdText(s,turnsTxt,"",fs,col,Math.round(fs * 0.08),0,0,0,"left",false) : null;
          var wordT:TextField = word.length > 0 ? this.hzdText(s,word,"",fs,col,Math.round(fs * 0.1),0,0,0,"left",false) : null;
-         var fracT:TextField = fracTxt.length > 0 ? this.hzdText(s,fracTxt,"",fs,word.length > 0 ? mut : col,Math.round(fs * 0.06),0,0,0,"left",false) : null;
+         var fracT:TextField = fracTxt.length > 0 ? this.hzdText(s,fracTxt,"",fs,col,Math.round(fs * 0.06),0,0,0,"left",false) : null;
          var turnsW:Number = turnsT != null ? Math.round(turnsT.textWidth + 20 * u) : 0;
-         var markS:Number = Math.max(12,Math.round(12 * u));
+         var markS:Number = Math.max(13,Math.round(13 * u));
          var wordW:Number = wordT != null ? wordT.textWidth + (mark > 0 ? markS + gap : 0) : 0;
-         var fracW:Number = fracT != null ? fracT.textWidth : 0;
-         var row1:Number = pad + title.textWidth + gap + turnsW + pad + 8 * u;
-         var row3:Number = pad + wordW + (wordW > 0 && fracW > 0 ? gap : 0) + fracW + pad;
+         var fracW:Number = fracT != null ? Math.round(fracT.textWidth) : 0;
+         var rightCluster:Number = (fracW > 0 ? fracW + gap : 0) + turnsW;
+         var row1:Number = pad + iconW + title.textWidth + gap + rightCluster + pad;
+         var row3:Number = pad + wordW + pad;
          var W:Number = Math.round(Math.max(300 * u,row1,row3));
-         var meterH:Number = Math.max(8,Math.round(8 * u));
-         var row1H:Number = Math.max(title.height,turnsT != null ? turnsT.height + 6 * u : 0);
+         var meterH:Number = Math.max(10,Math.round(10 * u));
+         var row1H:Number = Math.max(title.height,iconS,turnsT != null ? turnsT.height + 6 * u : 0,fracT != null ? fracT.height : 0);
          var y1:Number = pad;
-         title.x = pad;
+         title.x = pad + iconW;
          title.y = Math.round(y1 + Math.max(0,(row1H - title.height) / 2));
+         var rightX:Number = W - pad;
          if(turnsT != null)
          {
             pillH = Math.round(Math.max(fs + 8 * u,turnsT.height + 6 * u));
-            pillX = W - pad - turnsW;
+            pillX = rightX - turnsW;
             pillY = Math.round(y1 + Math.max(0,(row1H - pillH) / 2));
-            this.hzdClip(title,pillX - title.x - gap);
+            rightX = pillX - gap;
             turnsT.x = Math.round(pillX + (turnsW - turnsT.width) / 2);
             turnsT.y = Math.round(pillY + (pillH - turnsT.height) / 2);
          }
+         if(fracT != null)
+         {
+            fracT.x = Math.round(rightX - fracT.width);
+            fracT.y = Math.round(y1 + Math.max(0,(row1H - fracT.height) / 2));
+            rightX = fracT.x - gap;
+         }
+         this.hzdClip(title,Math.max(20,rightX - title.x));
          var yM:Number = y1 + row1H + gap;
          var statusH:Number = 0;
          if(wordT != null) { statusH = Math.max(statusH,wordT.height); }
-         if(fracT != null) { statusH = Math.max(statusH,fracT.height); }
          if(mark > 0) { statusH = Math.max(statusH,markS); }
          var yS:Number = yM + (o.have ? meterH + gap : 0);
          var H:Number = Math.round((statusH > 0 ? yS + statusH : (o.have ? yM + meterH : y1 + row1H)) + pad);
@@ -1508,11 +1577,6 @@
             var wx:Number = pad + (mark > 0 ? markS + Math.round(6 * u) : 0);
             wordT.x = Math.round(wx);
             wordT.y = Math.round(yS + Math.max(0,(statusH - wordT.height) / 2));
-         }
-         if(fracT != null)
-         {
-            fracT.x = wordT != null ? Math.round(W - pad - fracT.width) : pad;
-            fracT.y = Math.round(yS + Math.max(0,(statusH - fracT.height) / 2));
          }
          var bo:Number = Number(this.hzdCfg.DlgBgOpacity);
          if(isNaN(bo)) { bo = 0.85; }
@@ -1527,9 +1591,7 @@
          g.drawRoundRect(0.5,0.5,W - 1,H - 1,rad,rad);
          g.endFill();
          g.lineStyle();
-         g.beginFill(col,1);
-         g.drawRoundRect(0,Math.round(pad),Math.max(3,Math.round(4 * u)),Math.max(4,H - pad * 2),4,4);
-         g.endFill();
+         this.hzdPmSpeech(g,pad,y1 + Math.max(0,(row1H - iconS) / 2),iconS,col);
          if(turnsT != null)
          {
             g.beginFill(col,0.16);
@@ -1571,6 +1633,13 @@
                fill.scrollRect = new Rectangle(0,0,Math.max(1,Math.min(tw,tw * Number(o.frac))),meterH + 1);
                s.addChildAt(fill,meterAt);
             }
+            var ticks:Sprite = new Sprite();
+            ticks.mouseEnabled = false;
+            ticks.mouseChildren = false;
+            ticks.x = tx0;
+            ticks.y = yM;
+            this.hzdPmMeterMarks(ticks.graphics,tw,meterH,Number(o.goal),col,u);
+            s.addChild(ticks);
          }
          if(mark > 0)
          {

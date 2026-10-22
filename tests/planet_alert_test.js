@@ -37,6 +37,63 @@ pin('case "vehicleexitpill": this.hzVehOn = bv; break;', "vehicle exit pill is a
 pin('{"k":"VehicleExitPill","l":"VEHICLE EXIT PILL"', "vehicle exit pill is on the Cards tab");
 pin("return hv.GetUpButton_mc;", "vehicle exit follows the game's button");
 pin("alpha only: visible stays the game's", "vehicle exit hides with alpha, not visible");
+pin('["PCButton_mc","ButtonInstance_mc","HoldAnim_mc"]', "exit hold reads the keyboard HoldAnim");
+pin('["ConsoleButton_mc","ButtonInstance_mc","HoldAnim_mc"]', "exit hold reads the controller HoldAnim");
+pin('this.hz42VehLabel(hold,"StartHold")', "exit hold starts at StartHold");
+pin('this.hz42VehLabel(hold,"buttonHoldComplete")', "exit hold ends at buttonHoldComplete");
+pin("if(frame >= 41) { return 0; }", "button frames 41 and later are not hold progress");
+pin("if(shown && !this.hz42VehShown(b,this)) { shown = false; }", "the exit pill follows its parent HUD group's visibility");
+pin("try { this.hz42VehTick(); } catch(e42v:Error) { }   // 0.42.0.7: own try, first, so a throw later in this frame cannot skip the exit pill", "the exit pill has its own try before the rest of the frame");
+pin("var sweepA:Number = 0.30;", "the exit sweep is a soft 0.30 fill");
+pin("idleRim ? 0xFFFFFF : edge", "the idle exit pill has a faint white border");
+pin("kg.lineStyle(2.4,HZ_GREEN,1,true,\"none\");", "the completed exit pill uses a green check");
+pin("var h:Number = 38;", "the exit pill is about 20% taller than the 32px pill");
+
+// Mirror of hz42VehSpan + hz42VehBtnAdd. HoldAnim frames are 1-based, matching currentFrame
+// and currentLabels. Vanilla StartHold is frame 2 and buttonHoldComplete is frame 25.
+// Button frame 41 is ClickFailed and frame 61 is Disabled. Those add no progress.
+function vehHold(holdFrame, startHold, holdComplete, buttonFrame) {
+	let p = 0;
+	let done = false;
+	if (startHold >= 1 && holdComplete > startHold) {
+		if (holdFrame >= holdComplete) {
+			p = 1;
+			done = true;
+		} else if (holdFrame > startHold) {
+			p = (holdFrame - startHold) / (holdComplete - startHold);
+		}
+	}
+	let add = 0;
+	if (buttonFrame >= 41) add = 0;
+	if (add > p) p = add;
+	if (p < 0) p = 0;
+	if (p > 1) p = 1;
+	if (p >= 1) done = true;
+	return { p: p, done: done };
+}
+function vehNear(a, b) { return Math.abs(a - b) < 1e-9; }
+{
+	const idle = vehHold(1, 2, 25, 1);
+	expect(idle.p === 0 && idle.done === false, "Idle HoldAnim is an empty sweep");
+	const start = vehHold(2, 2, 25, 1);
+	expect(start.p === 0 && start.done === false, "StartHold has not filled yet");
+	const mid = vehHold(14, 2, 25, 1);
+	expect(vehNear(mid.p, 12 / 23) && mid.done === false, "a mid hold fills from StartHold toward buttonHoldComplete");
+	const held = vehHold(25, 2, 25, 10);
+	expect(held.p === 1 && held.done === true, "buttonHoldComplete is the complete state without Disabled frame 61");
+	const flash = vehHold(40, 2, 25, 1);
+	expect(flash.p === 1 && flash.done === true, "the end flash after buttonHoldComplete stays complete");
+	const failedClick = vehHold(1, 2, 25, 41);
+	expect(failedClick.p === 0 && failedClick.done === false, "button frame 41 is not progress");
+	const disabled = vehHold(1, 2, 25, 61);
+	expect(disabled.p === 0 && disabled.done === false, "Disabled frame 61 alone does not fill or complete the sweep");
+	const midDisabled = vehHold(14, 2, 25, 61);
+	expect(vehNear(midDisabled.p, 12 / 23) && midDisabled.done === false, "a late button frame does not replace the HoldAnim reading");
+	const noLabels = vehHold(30, 0, 0, 20);
+	expect(noLabels.p === 0 && noLabels.done === false, "missing hold labels stay empty");
+	const early = vehHold(1, 2, 25, 30);
+	expect(early.p === 0 && early.done === false, "a button frame under 41 still does not invent progress");
+}
 pin("b.alpha = 0;", "vehicle exit sets the game button alpha to 0");
 pin("private static const HZ41_LOC_GRACE:Number = 1500;");
 pin("private static const HZ41_LOC_HOLD:int = 228;");
@@ -460,10 +517,44 @@ dlgPin("iPersuasionPointsGained", "persuasion ghost uses the highlighted reply")
 dlgPin("this.PERUSASION_RESULT_WIN", "persuasion win uses the game result");
 dlgPin("this.PERUSASION_RESULT_CRIT_WIN", "persuasion critical win uses the game result");
 dlgPin("this.PERUSASION_RESULT_FAIL", "persuasion fail uses the game result");
-dlgPin("alpha only: visible stays the game's", "persuasion meter hides with alpha, not visible");
+dlgPin("Vanilla uses PersuasionData_mc.visible as the open and close state", "persuasion alpha comment names the visible open and close state");
+dlgPin("noInvisibleAdvance", "persuasion alpha comment names noInvisibleAdvance");
+dlgPin("var failed:Boolean = o.res == this.PERUSASION_RESULT_FAIL;", "a turn count of 0 is not a failed persuasion");
+dlgPin("if(o.res == this.PERUSASION_RESULT_CRIT_WIN && !isNaN(o.goal) && o.goal > 0) { o.score = o.goal; }", "only a critical win snaps the score to the goal");
+dlgPin("this.hzdPmData = this.hzdPmNew;", "a new persuasion resets meter data");
+dlgPin("private function hzdPmSpeech(", "the persuasion title has a speech icon");
+dlgPin("private function hzdPmMeterMarks(", "the persuasion meter has notches and a goal flag");
+expect(dlgBlock.indexOf("g.drawRoundRect(0,Math.round(pad)") < 0, "the persuasion meter has no accent stripe");
 dlgPin("b.alpha = 0;", "persuasion meter sets the game meter alpha to 0");
 expect(dlgBlock.indexOf("PersuasionData_mc.visible = false") < 0, "persuasion meter does not clear the game meter's visible flag");
 expect(dlgBlock.indexOf("PERSUADED") >= 0 && dlgBlock.indexOf("OUT OF TURNS") >= 0 && dlgBlock.indexOf("FAILED") >= 0, "persuasion meter has the result labels");
+
+// Mirror of hzdPmRead's win, fail, and score rules. Result ids match DialogueMenuBase's enum order.
+function pmState(res, score, goal, turns) {
+	const WIN = 1;
+	const FAIL = 2;
+	const CRIT = 3;
+	const won = res === WIN || res === CRIT;
+	const failed = res === FAIL;
+	if (res === CRIT && !isNaN(goal) && goal > 0) score = goal;
+	let word = "";
+	if (won) word = "PERSUADED";
+	else if (failed && !isNaN(turns) && turns <= 0) word = "OUT OF TURNS";
+	else if (failed) word = "FAILED";
+	return { won: won, failed: failed, score: score, word: word };
+}
+{
+	const early = pmState(0, 4, 6, 0);
+	expect(early.failed === false && early.word === "", "turns at 0 before a result stays out of the failed state");
+	const out = pmState(2, 2, 6, 0);
+	expect(out.failed === true && out.word === "OUT OF TURNS", "OUT OF TURNS waits for the failed result");
+	const miss = pmState(2, 2, 6, 1);
+	expect(miss.word === "FAILED", "a failed result with turns left says FAILED");
+	const win = pmState(1, 3, 6, 2);
+	expect(win.won === true && win.score === 3 && win.word === "PERSUADED", "a regular win keeps the real score");
+	const crit = pmState(3, 3, 6, 2);
+	expect(crit.won === true && crit.score === 6, "a critical win shows the goal");
+}
 expect(src.indexOf('["DlgPersuasionMeter","b",1,0,1,"comms"]') >= 0, "persuasion meter is a Comms ini key");
 expect(src.indexOf('{"k":"DlgPersuasionMeter","l":"PERSUASION METER"') >= 0, "persuasion meter is on the Dialogue tab");
 
