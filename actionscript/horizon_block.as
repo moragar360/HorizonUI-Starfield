@@ -14707,7 +14707,7 @@
       private static const HZ42_SC_RPAD:Number = 18;
       private static const HZ42_SC_KHEAD:Number = 1.08;
       private static const HZ42_SC_KMINW:Number = 14;
-      private static const HZ42_SC_LABEX:Number = 16;   // 0.42.0.8: extra label slot, same as the scope chip (HZP_LABEX)
+      private static const HZ42_SC_LABEX:Number = 32;   // 0.42.0.8: extra label slot, same as the scope chip (HZP_LABEX)
       private static const HZ42_SC_KEY:String = "ScopeChip";   // ARRANGE list key of the proxy (saved as [Scope] ScopeChipX / ScopeChipY)
       private var hz42ScOn:Boolean = true;
       private var hz42ScX:Number = 0;

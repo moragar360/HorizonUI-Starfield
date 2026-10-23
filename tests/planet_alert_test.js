@@ -526,6 +526,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	expect(body.indexOf("g.lineStyle(2,stc,0.18,true,\"none\"); g.drawRoundRect(pad + 1,pad + 1,cw - 2,ch - 2,Math.max(0,ch - 2),Math.max(0,ch - 2));") >= 0, rel + " insets the 2 px glow");
 	expect(body.indexOf("g.drawRoundRect(pad + inset,pad + inset,cw - bw,ch - bw,Math.max(0,ch - bw),Math.max(0,ch - bw));") >= 0, rel + " insets the border by half the stroke");
 	expect(body.indexOf("g.drawRoundRect(pad + x0 + 0.5,pad + ky + 0.5,kw - 1,kh - 1,8,8);") >= 0, rel + " insets the keycap by half a pixel");
+	expect(body.indexOf("private static const HZP_LABEX:Number = 32;") >= 0, rel + " label slot is slightly longer");
 	expect(body.indexOf("ltw += HZP_LABEX;") >= 0, rel + " adds label headroom");
 	expect(body.indexOf("private function hzpUnclip()") >= 0, rel + " clears a parent clip");
 	expect(body.indexOf("g.lineStyle(2,col,a,true,\"none\");") >= 0, rel + " draws the cross with a 2 px stroke");
@@ -541,7 +542,7 @@ function strokeBox(x, y, rw, rh, sw) {
 }
 function chipBoxes(ltw, ktw, h, holding) {
 	const pad = 8;
-	const slot = ltw + 16;
+	const slot = ltw + 32;
 	const x0 = 7;
 	const kw = 30 + ktw + 10;
 	const lx = x0 + kw + 10;
@@ -601,6 +602,7 @@ pin("var sh:Number = Math.max(1,Math.round(boxH * sx));", "the F11 chip snaps he
 pin("private function hz42ScLblW(t:TextField) : Number", "the F11 label width uses the scope tracking");
 pin("f.letterSpacing = Math.round(fs * 0.1 * 10) / 10;", "the F11 label uses 0.1 letter spacing");
 pin('f.font = this.hzFontName("sb");', "the F11 label uses the chip semibold face");
+pin("private static const HZ42_SC_LABEX:Number = 32;", "the F11 label slot matches the longer scope chip");
 pin("ltw += HZ42_SC_LABEX;", "the F11 label keeps the scope's extra slot");
 pin("var ltw:Number = this.hz42ScLblW(lt);", "the F11 label measures HOLD BREATH with that tracking");
 pin("var hw:Number = this.hz42ScLblW(hold);", "the F11 label measures HOLDING BREATH");

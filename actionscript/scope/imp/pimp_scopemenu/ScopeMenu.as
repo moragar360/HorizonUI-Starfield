@@ -229,7 +229,7 @@ package
       private static const HZP_KMINW:Number = 14;       // 0.42.0.5: smallest key text slot (a one-glyph gamepad face such as L3)
       private static const HZP_RPAD:Number = 18;        // 0.42.0.5: panel padding right of the O2 meter (was 14)
       private static const HZP_GLOW:Number = 8;         // 0.42.0.8: transparent pad so a parent scrollRect can include the held edge
-      private static const HZP_LABEX:Number = 16;       // 0.42.0.8: extra label field past textWidth (the last glyph's right bearing)
+      private static const HZP_LABEX:Number = 32;       // 0.42.0.8: extra label field past textWidth so the held card is slightly longer
       private static const HZP_O2_WARN:Number = 0.35;   // = the HUD vitals card warning band (hz26Band 1, hz26WarnCol amber)
       private static const HZP_O2_CRIT:Number = 0.15;   // = the HUD vitals card critical band (hz26Band 2, hz26WarnCol red)
       private static const HZP_LRG:Boolean = false;
