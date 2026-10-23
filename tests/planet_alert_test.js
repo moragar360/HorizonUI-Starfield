@@ -58,6 +58,8 @@ pin("this.hz42VehTf(p,lab,labFs,0xF2F7F9,this.hzFontName(),lls);", "the exit lab
 pin("var feather:Number = 6;", "the exit sweep fades over a short leading edge");
 expect(src.indexOf("var sweepHi:Number") < 0, "the exit sweep has no bright band");
 pin("var keyBox:Number = 24;", "the exit key cap is about 24 stage units");
+pin("var kh:Number = keyBox;", "the exit key cap height stays on that 24 box");
+expect(src.indexOf("kt.height + 4") < 0, "the exit key cap height does not grow with the text");
 pin("var x0:Number = 8;", "the exit key sits in from the left");
 pin("var gap:Number = 11;", "the exit label has a gap after the key");
 pin('kt = this.hz42VehTf(p,key,keyFs,edge,kface,0,"center");', "the exit key is centered in the cap");
@@ -529,6 +531,13 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	expect(body.indexOf("private static const HZP_LABEX:Number = 32;") >= 0, rel + " label slot is slightly longer");
 	expect(body.indexOf("ltw += HZP_LABEX;") >= 0, rel + " adds label headroom");
 	expect(body.indexOf("private function hzpUnclip()") >= 0, rel + " clears a parent clip");
+	expect(body.indexOf("new Rectangle(sr.x,sr.y,nr - sr.x,nb - sr.y)") >= 0, rel + " grows a scrollRect on the right and bottom");
+	expect(body.indexOf("var nl:Number") < 0, rel + " does not move a scrollRect");
+	expect(body.indexOf("public function hzpClipDiag() : String") >= 0, rel + " exposes the clip line");
+	expect(body.indexOf("chip.getBounds(stage)") >= 0, rel + " records chip bounds on the stage");
+	expect(body.indexOf("label textWidth=") >= 0, rel + " records the label textWidth");
+	expect(body.indexOf("hudScale=") >= 0, rel + " records HudScale");
+	expect(body.indexOf("cache=") >= 0, rel + " records cacheAsBitmap");
 	expect(body.indexOf("g.lineStyle(2,col,a,true,\"none\");") >= 0, rel + " draws the cross with a 2 px stroke");
 	expect(body.indexOf("drawRoundRect(-") < 0, rel + " does not draw outside the chip");
 	expect(body.indexOf("private var hzpBar:flash.display.Shape = null;") >= 0, rel + " keeps the O2 bar on its own shape");

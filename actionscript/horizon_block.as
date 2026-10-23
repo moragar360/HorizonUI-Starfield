@@ -2655,7 +2655,7 @@
             kt.autoSize = flash.text.TextFieldAutoSize.NONE;
             kt.width = kw;
             if(kt.height < kth) { kt.height = kth; }
-            if(kt.height + 4 > kh) { kh = Math.round(kt.height + 4); }
+            // Height stays keyBox (24). A taller text field used to stretch the cap to about 28.
          }
          var lab:String = this.hzHdrCase("EXIT");
          var lls:Number = Math.round(labFs * 0.1 * 10) / 10;

@@ -1973,6 +1973,7 @@ namespace HZ
 
 	ULONGLONG g_rxWhyNext = 0;
 	bool      g_rxSelfLogged = false;
+	bool      g_hzpClipLogged = false;
 
 	// Purpose: drain the reaction queue on the UI thread and log hzcRxPush's status once per reaction.
 	// Also logs hzcRxSelfTest once (pass or fail, plus the three regex probes). That line is not gated on
@@ -2077,12 +2078,44 @@ namespace HZ
 	void CommsDbgPoll(ULONGLONG) {}
 #endif
 
+	// Purpose: log the hold-breath clip geometry once per session, the first time HOLDING BREATH is on screen.
+	// The movie fills hzpClipDiag. This is not gated on Debug or HZ_COMMS_MSG_LOG. A missing member is retried.
+	// An empty string means that state has not been shown yet, so the latch stays open.
+	// Last modified: 2026-10-22.
+	void ScopeClipPoll()
+	{
+		if (g_hzpClipLogged) return;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui || !ui->IsMenuOpen("ScopeMenu")) return;
+		auto menu = ui->GetMenu("ScopeMenu");
+		if (!menu || !menu->menuObj.IsObject() || !menu->menuObj.HasMember("hzpClipDiag")) return;
+		try {
+			GValue self;
+			if (menu->menuObj.Invoke("hzpClipDiag", &self, nullptr, 0) && self.IsString() && self.GetString() && self.GetString()[0]) {
+				const std::string all = self.GetString();
+				std::size_t i = 0;
+				while (i < all.size()) {
+					const auto j = all.find('\n', i);
+					std::string line = all.substr(i, j == std::string::npos ? std::string::npos : j - i);
+					if (!line.empty() && line.back() == '\r') line.pop_back();
+					if (!line.empty())
+						REX::INFO("scope holdbreath diag: {}", line);
+					if (j == std::string::npos) break;
+					i = j + 1;
+				}
+				g_hzpClipLogged = true;
+			}
+		} catch (...) {
+		}
+	}
+
 	void Poll()
 	{
 		auto now = GetTickCount64();
 		BannerPoll(now);   // v0.40.3
 		CommsDbgPoll(now);   // v0.42.0.6: empty when HZ_COMMS_MSG_LOG is 0
 		CommsRxPoll(now);    // v0.42.0.7: reaction backup. Before the HUD-ready return below.
+		ScopeClipPoll();     // v0.42.0.8: hold-breath clip line. Before the HUD-ready return, so a scope still logs it.
 		HWND wnd = GameWindow();
 		bool down = wnd && (GetAsyncKeyState(g_vk) & 0x8000) != 0;
 		if (down && !g_wasDown) OnSettingsKey();

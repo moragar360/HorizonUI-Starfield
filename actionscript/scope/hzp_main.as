@@ -40,7 +40,7 @@
       private var hzpReady:Boolean = false;
       private var hzpSub:Boolean = false;
       private var hzpHid:Boolean = false;
-      private var hzpS:Object = {"AccentColor":0,"AccentHex":-1,"CardOpacity":1,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ChipX":0,"ChipY":0,"ChipS":1};
+      private var hzpS:Object = {"AccentColor":0,"AccentHex":-1,"CardOpacity":1,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ChipX":0,"ChipY":0,"ChipS":1,"HudScale":1};
       private var hzpChip:Sprite = null;
       private var hzpW:Number = 0;
       private var hzpH:Number = 32;
@@ -60,6 +60,8 @@
       private var hzpPad:Boolean = false;    // r3: a controller is in use (uiController > keyboard / mouse)
       private var hzpErr:Boolean = false;    // r3: an error turned the chip off for this scope session
       private var hzpBar:flash.display.Shape = null;   // O2 fill. Its own shape, so a tick does not redraw the frame.
+      private var hzpLbl:TextField = null;          // label field, kept for the one-time clip line
+      private var hzpDiag:String = "";              // first HOLDING BREATH clip report; the DLL logs it once
       private var hzpMx:Number = 0;
       private var hzpMy:Number = 0;
       private var hzpMw:Number = 120;
@@ -84,7 +86,7 @@
       private function hzpOnIni(txt:String) : void
       {
          var on:Boolean = true;
-         var st:Object = {"AccentColor":0,"AccentHex":-1,"CardOpacity":1,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ChipX":0,"ChipY":0,"ChipS":1};
+         var st:Object = {"AccentColor":0,"AccentHex":-1,"CardOpacity":1,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ChipX":0,"ChipY":0,"ChipS":1,"HudScale":1};
          if(txt != null)
          {
             var sec:String = "";
@@ -112,6 +114,7 @@
                   else if(k == "textscale" && !isNaN(nv)) { st.TextScale = Math.max(0.8,Math.min(1.3,nv)); }
                   else if(k == "fontface" && !isNaN(nv)) { st.FontFace = Math.max(0,Math.min(3,int(nv))); }
                   else if(k == "headerstyle" && !isNaN(nv)) { st.HeaderStyle = Math.max(0,Math.min(1,int(nv))); }
+                  else if(k == "hudscale" && !isNaN(nv)) { st.HudScale = nv; }
                }
             }
          }
@@ -324,6 +327,7 @@
          this.hzpUnclip();
          if(this.hzpChip.parent == this && getChildIndex(this.hzpChip) != numChildren - 1) { setChildIndex(this.hzpChip,numChildren - 1); }
          this.hzpChip.visible = true;
+         if(st == 1 && this.hzpDiag.length == 0) { try { this.hzpSnap(); } catch(eSnap:Error) { this.hzpDiag = "chip bounds error"; } }
       }
       // O2 band, same thresholds as the HUD vitals card (hz26Band): 0 normal, 1 warning (< 35 %), 2 critical (< 15 %)
       private function hzpBand(o:Number) : int
@@ -497,6 +501,7 @@
          if(isNaN(lth0) || lth0 < 1) { lth0 = 16; }
          var ch:Number = Math.round(32 + (ts - 1) * 20);
          var lt:TextField = this.hzpT(p,this.hzpCase(String(HZP_LBL[st])),14,st == 3 ? HZP_DIM : HZP_TXT,"sb",0.1);
+         this.hzpLbl = lt;
          var ownW:Number = this.hzpKeyW(lt);
          if(ownW > ltw) { ltw = ownW; }
          ltw += HZP_LABEX;
@@ -576,8 +581,8 @@
          this.hzpW = cw + pad * 2;
          this.hzpH = ch + pad * 2;
       }
-      // Clear a clip on the chip itself. Grow an ancestor scrollRect so it includes the pad. A round mask
-      // (width about equal to height) is left alone: that is the scope reticle, not the chip's box.
+      // Clear a clip on the chip itself. Grow an ancestor scrollRect on the right and bottom only; x and y stay.
+      // A round mask (width about equal to height) is left alone: that is the scope reticle, not the chip's box.
       private function hzpUnclip() : void
       {
          var chip:Sprite = this.hzpChip;
@@ -596,17 +601,15 @@
             try { cb = chip.getBounds(d); } catch(eB:Error) { cb = null; }
             if(sr != null && cb != null && cb.width > 0 && cb.height > 0)
             {
-               var l:Number = cb.x - HZP_GLOW;
-               var t:Number = cb.y - HZP_GLOW;
+               var nr:Number = sr.x + sr.width;
+               var nb:Number = sr.y + sr.height;
                var r:Number = cb.x + cb.width + HZP_GLOW;
                var btm:Number = cb.y + cb.height + HZP_GLOW;
-               var nl:Number = sr.x < l ? sr.x : l;
-               var nt:Number = sr.y < t ? sr.y : t;
-               var nr:Number = (sr.x + sr.width) > r ? (sr.x + sr.width) : r;
-               var nb:Number = (sr.y + sr.height) > btm ? (sr.y + sr.height) : btm;
-               if(nl < sr.x - 0.5 || nt < sr.y - 0.5 || nr > sr.x + sr.width + 0.5 || nb > sr.y + sr.height + 0.5)
+               if(r > nr) { nr = r; }
+               if(btm > nb) { nb = btm; }
+               if(nr > sr.x + sr.width + 0.5 || nb > sr.y + sr.height + 0.5)
                {
-                  try { d.scrollRect = new Rectangle(nl,nt,nr - nl,nb - nt); } catch(eSet:Error) { }
+                  try { d.scrollRect = new Rectangle(sr.x,sr.y,nr - sr.x,nb - sr.y); } catch(eSet:Error) { }
                }
             }
             try
@@ -625,6 +628,91 @@
             d = d.parent;
             n++;
          }
+      }
+      // First HOLDING BREATH this movie. trace() does not reach HorizonUI.log, and Debug=0 leaves the movie
+      // queue off, so the DLL reads hzpClipDiag and logs it once per session.
+      public function hzpClipDiag() : String
+      {
+         try { return this.hzpDiag != null ? this.hzpDiag : ""; } catch(e:Error) { return ""; }
+      }
+      private function hzpNum(n:Number) : String
+      {
+         if(isNaN(n) || n > 1000000000 || n < -1000000000) { return "nan"; }
+         return String(Math.round(n * 100) / 100);
+      }
+      private function hzpFlat(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length && i < 80)
+         {
+            var c:int = s.charCodeAt(i);
+            o += (c < 32 ? " " : s.charAt(i));
+            i++;
+         }
+         return o;
+      }
+      private function hzpSnap() : void
+      {
+         var chip:Sprite = this.hzpChip;
+         if(chip == null) { return; }
+         var o:String = "";
+         try
+         {
+            var br:Rectangle = chip.getBounds(stage);
+            if(br == null) { o = "chip bounds none"; }
+            else { o = "chip bounds x=" + this.hzpNum(br.x) + " y=" + this.hzpNum(br.y) + " w=" + this.hzpNum(br.width) + " h=" + this.hzpNum(br.height); }
+         }
+         catch(eB:Error) { o = "chip bounds error"; }
+         var tw:String = "none";
+         var fw:String = "none";
+         try
+         {
+            if(this.hzpLbl != null)
+            {
+               tw = this.hzpNum(Number(this.hzpLbl.textWidth));
+               fw = this.hzpNum(Number(this.hzpLbl.width));
+            }
+         }
+         catch(eL:Error) { tw = "error"; fw = "error"; }
+         o += "\nlabel textWidth=" + tw + " width=" + fw;
+         var ssx:String = "none";
+         var ssy:String = "none";
+         try
+         {
+            if(stage != null) { ssx = this.hzpNum(stage.scaleX); ssy = this.hzpNum(stage.scaleY); }
+         }
+         catch(eS:Error) { ssx = "error"; ssy = "error"; }
+         var hs:Number = Number(this.hzpS.HudScale);
+         if(isNaN(hs)) { hs = 1; }
+         o += "\nstage scaleX=" + ssx + " scaleY=" + ssy + " hudScale=" + this.hzpNum(hs);
+         var d:* = chip.parent;
+         var n:int = 0;
+         while(d != null && n < 16)
+         {
+            var nm:String = "";
+            var scr:String = "none";
+            var mk:String = "no";
+            var sx:String = "none";
+            var sy:String = "none";
+            var bit:String = "none";
+            try { nm = this.hzpFlat(d.name == null ? "" : String(d.name)); } catch(eN:Error) { nm = ""; }
+            try
+            {
+               var asr:Rectangle = d.scrollRect;
+               if(asr != null) { scr = this.hzpNum(asr.x) + "," + this.hzpNum(asr.y) + "," + this.hzpNum(asr.width) + "," + this.hzpNum(asr.height); }
+            }
+            catch(eR:Error) { scr = "error"; }
+            try { mk = d.mask != null ? "yes" : "no"; } catch(eM:Error) { mk = "error"; }
+            try { sx = this.hzpNum(Number(d.scaleX)); sy = this.hzpNum(Number(d.scaleY)); } catch(eSc:Error) { sx = "error"; sy = "error"; }
+            try { bit = d.cacheAsBitmap ? "true" : "false"; } catch(eC:Error) { bit = "error"; }
+            o += "\nancestor name=" + nm + " scroll=" + scr + " mask=" + mk + " scaleX=" + sx + " scaleY=" + sy + " cache=" + bit;
+            if(d == stage) { break; }
+            try { d = d.parent; } catch(eP:Error) { break; }
+            n++;
+         }
+         this.hzpDiag = o;
       }
       private function hzpBarDraw(st:int, band:int, o:Number) : void
       {

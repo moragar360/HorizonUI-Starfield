@@ -389,6 +389,14 @@ expect(src.indexOf("loves|likes") < 0, "the sentence match is not a regex");
 	const gate = cpp.indexOf("#if HZ_COMMS_MSG_LOG", poll);
 	expect(poll >= 0 && invoke > poll && cpp.indexOf("comms reaction selftest:", poll) > poll, "the DLL logs the reaction self-test");
 	expect(gate > invoke, "the self-test call sits before the verbose-trace ifdef");
+	const clipFn = cpp.indexOf("void ScopeClipPoll");
+	const clipEnd = cpp.indexOf("void Poll()", clipFn);
+	const clipBody = clipFn >= 0 && clipEnd > clipFn ? cpp.slice(clipFn, clipEnd) : "";
+	expect(clipBody.indexOf('Invoke("hzpClipDiag"') >= 0 && clipBody.indexOf("#if") < 0, "the hold-breath diag is outside the verbose ifdef");
+	expect(clipBody.indexOf("scope holdbreath diag:") >= 0, "the DLL logs the hold-breath diag");
+	const clipCall = cpp.indexOf("ScopeClipPoll();");
+	const clipSafe = cpp.indexOf("if (!HudSafe())", clipCall);
+	expect(clipCall > 0 && clipSafe > clipCall, "the hold-breath diag runs while a scope is open");
 }
 
 function constInt(name) {
@@ -651,9 +659,19 @@ for (let i = 0; i < msgTwins.length; i++) {
 function shippedRegexes(text) {
 	const found = [];
 	let i = 0;
-	let prev = "";
-	function can(p) {
-		return !p || "([=,;:!&|?{}~+-*%^<>".indexOf(p) >= 0;
+	// A slash starts a regex after those punctuation marks, after return / typeof / case, or at the start of a line.
+	// A slash after a name stays division, so "a / b" is not scanned.
+	function canRegexAt(at) {
+		let j = at - 1;
+		while (j >= 0 && (text[j] === " " || text[j] === "\t" || text[j] === "\r" || text[j] === "\f")) j--;
+		if (j < 0 || text[j] === "\n") return true;
+		if (/[A-Za-z0-9_$]/.test(text[j])) {
+			let k = j;
+			while (k >= 0 && /[A-Za-z0-9_$]/.test(text[k])) k--;
+			const word = text.slice(k + 1, j + 1);
+			return word === "return" || word === "typeof" || word === "case";
+		}
+		return "([=,;:!&|?{}~+-*%^<>".indexOf(text[j]) >= 0;
 	}
 	while (i < text.length) {
 		const c = text[i];
@@ -683,10 +701,9 @@ function shippedRegexes(text) {
 			if (/new\s+RegExp\s*\(\s*$/.test(before)) {
 				found.push(s.replace(/\\(.)/g, function (_, ch) { return ch; }));
 			}
-			prev = q;
 			continue;
 		}
-		if (c === "/" && can(prev)) {
+		if (c === "/" && canRegexAt(i)) {
 			i++;
 			let pat = "";
 			let closed = false;
@@ -702,10 +719,8 @@ function shippedRegexes(text) {
 				while (i < text.length && /[gimsxu]/i.test(text[i])) { flags += text[i]; i++; }
 				found.push(pat + "\n" + flags);
 			}
-			prev = "/";
 			continue;
 		}
-		if (!/\s/.test(c)) prev = c;
 		i++;
 	}
 	return found;
@@ -719,6 +734,31 @@ function regexBanned(item) {
 	if (body.indexOf("\\p{") >= 0) return "\\p{";
 	if (body.indexOf("\\u") >= 0 && body !== "\\u0041") return "\\u";
 	return "";
+}
+{
+	function bannedOf(sample) {
+		const items = shippedRegexes(sample);
+		const why = [];
+		for (let bi = 0; bi < items.length; bi++) {
+			const w = regexBanned(items[bi]);
+			if (w) why.push(w);
+		}
+		return { n: items.length, why: why };
+	}
+	const ret = bannedOf("function f():void { return /\\u0042/; }");
+	expect(ret.n === 1 && ret.why[0] === "\\u", "a regex literal after return is scanned");
+	const typ = bannedOf("typeof /\\u0043/;");
+	expect(typ.n === 1 && typ.why[0] === "\\u", "a regex literal after typeof is scanned");
+	const cas = bannedOf("case /\\u0044/:");
+	expect(cas.n === 1 && cas.why[0] === "\\u", "a regex literal after case is scanned");
+	const paren = bannedOf("(/\\u0045/)");
+	expect(paren.n === 1 && paren.why[0] === "\\u", "a regex literal after a parenthesis is scanned");
+	const line = bannedOf("var a:int = 1;\n/\\u0046/;");
+	expect(line.n === 1 && line.why[0] === "\\u", "a regex literal at the start of a line is scanned");
+	const div = bannedOf("var a:Number = 1; a /\\u0042/ b;");
+	expect(div.n === 0, "division after a name is not a regex literal");
+	const allowed = bannedOf("return /\\u0041/;");
+	expect(allowed.n === 1 && allowed.why.length === 0, "the startup probe body stays allowed");
 }
 // Scaleform String.replace leaves $1, $2, $&, $$, $` and $' in the text.
 // A function as the replacement is also rejected: the support table does not say that form works.
