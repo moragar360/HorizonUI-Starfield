@@ -185,12 +185,26 @@ package
          this.hzdReloadT = getTimer();
          this.hzdIniLoad();
       }
+      // Leading and trailing space, tab, line breaks, NBSP, and BOM. charCodeAt: a \u class is not safe in Scaleform's PCRE.
+      private function hzdTrimC(c:int) : Boolean
+      {
+         return c == 9 || c == 10 || c == 11 || c == 12 || c == 13 || c == 32 || c == 0xA0 || c == 0xFEFF;
+      }
+      private function hzdTrim(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var a:int = 0;
+         var b:int = s.length;
+         while(a < b && this.hzdTrimC(s.charCodeAt(a))) { a++; }
+         while(b > a && this.hzdTrimC(s.charCodeAt(b - 1))) { b--; }
+         return a == 0 && b == s.length ? s : s.substring(a,b);
+      }
       private function hzdParse(t:String) : void
       {
          var sec:String = "";
          for each(var raw:String in t.split("\r").join("").split("\n"))
          {
-            var ln:String = raw.replace(/^[\s\uFEFF]+|\s+$/g,"");
+            var ln:String = this.hzdTrim(raw);
             if(ln.length == 0 || ln.charAt(0) == ";" || ln.charAt(0) == "#") { continue; }
             if(ln.charAt(0) == "[") { var e:int = ln.indexOf("]"); sec = (e > 0 ? ln.substring(1,e) : ln.substr(1)).replace(/^\s+|\s+$/g,"").toLowerCase(); continue; }
             if(sec != "comms" && sec != "style" && sec != "layout") { continue; }

@@ -77,11 +77,11 @@ Log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
 
 3. The plugin is written to `build\windows\x64\releasedbg\HorizonUI.dll`.
 
-Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.42.0.7 loaded`.
+Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.42.0.8 loaded`.
 
 ### Release checklist: companion reaction log
 
-The 0.42.0.6 verbose trace is still on, so the 0.42.0.7 test can read it. Do not turn it off for that test. Before a release build, turn off only that trace. The reaction backup stays compiled: the queue, Poll, `hzcRxPush`, and the one-line `comms reaction:` status (including `hzcRxWhy`).
+The 0.42.0.6 verbose trace is still on, so the 0.42.0.8 test can read it. Do not turn it off for that test. Before a release build, turn off only that trace. The reaction backup stays compiled: the queue, Poll, `hzcRxPush`, and the one-line `comms reaction:` status (including `hzcRxWhy`). The one-time `comms reaction selftest:` lines are not part of that trace. They stay on when `Debug=0`.
 
 1. `src/hz_version.h`: set `HZ_COMMS_MSG_LOG` to `0`. That compiles out the `hud message:` line and `CommsDbgPoll` (the `comms msg:` lines). It does not compile out the backup.
 2. `actionscript/comms/hzc_block.as`: set `HZC_MSG_LOG` to `false`. That stops the movie's verbose queue.

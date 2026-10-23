@@ -1435,6 +1435,11 @@
          this.hzRefreshVisibility();
       }
 
+      // Purpose: short label for an effect icon id.
+      // Inputs: a frame name such as PersonalEffect_CardioRespiratoryCirculatory_Negative.
+      // Outputs: "Cardio Respiratory Circulatory" for that name. Thermal, Radiation, Airborne, and Corrosive stay one word.
+      // The game's own bio alert shows sAlertText only (vanilla BottomLeftGroup, BIO_ALERT). This label is used when sAlertSubText is empty.
+      // Dependencies: hzSplitCamel. Scaleform String.replace does not expand $1, so the camel split is not a replace.
       private function hzPretty(id:String) : String
       {
          if(!id) { return ""; }
@@ -1447,8 +1452,24 @@
          s = s.replace(/^(PersonalEffect_|Personal_|HazardEffect_|Hazard_)/,"");
          s = s.replace(/_(Negative|Positive)$/,"");
          s = s.replace(/_/g," ");
-         s = s.replace(/([a-z])([A-Z])/g,"$1 $2");
+         s = this.hzSplitCamel(s);
          return s;
+      }
+      // A lowercase letter followed by a capital gets a space. "CardioRespiratoryCirculatory" becomes "Cardio Respiratory Circulatory".
+      private function hzSplitCamel(s:String) : String
+      {
+         if(s == null || s.length < 2) { return s == null ? "" : s; }
+         var o:String = s.charAt(0);
+         var i:int = 1;
+         while(i < s.length)
+         {
+            var p:int = s.charCodeAt(i - 1);
+            var c:int = s.charCodeAt(i);
+            if(p >= 97 && p <= 122 && c >= 65 && c <= 90) { o += " "; }
+            o += s.charAt(i);
+            i++;
+         }
+         return o;
       }
 
       private function hzJoinEffects(a:Array) : String
@@ -2388,7 +2409,7 @@
       private var hzVehHid:Boolean = false;
       private var hzVehAlpha:Number = 1;
       private var hzVehW:Number = 0;
-      private var hzVehH:Number = 39;
+      private var hzVehH:Number = 42;
       private var hzVehFail:int = 0;
       private function hz42VehOnData(e:FromClientDataEvent) : void
       {
@@ -2421,7 +2442,8 @@
          catch(err:Error) { }
          return null;
       }
-      // alpha only: visible stays the game's, so the hold timeline keeps running and the exit still fires
+      // alpha only: visible stays the game's, so the hold timeline keeps running and the exit still fires.
+      // Name, x, and y stay the game's too. Exit input depends on GetUpButton_mc remaining that button.
       private function hz42VehHideVan(b:*, hide:Boolean) : void
       {
          if(b == null) { return; }
@@ -2582,21 +2604,7 @@
          if(sz < 13) { sz = 13; }
          return sz;
       }
-      // same field width as the scope key: ceil(textWidth * 1.08 + letterSpacing * length) + 8, at least 14
-      private function hz42VehKeyW(t:TextField) : Number
-      {
-         if(t == null) { return 14; }
-         var ls:Number = 0;
-         try { ls = Number(t.getTextFormat().letterSpacing); } catch(err:Error) { ls = 0; }
-         if(isNaN(ls) || ls < 0) { ls = 0; }
-         var tw:Number = Number(t.textWidth);
-         if(isNaN(tw) || tw < 0) { tw = 0; }
-         var len:int = t.text != null ? int(t.text.length) : 0;
-         var w:Number = Math.ceil(tw * 1.08 + ls * len) + 8;
-         if(w < 14) { w = 14; }
-         return w;
-      }
-      private function hz42VehTf(p:Sprite, s:String, size:Number, col:uint, font:String, ls:Number) : TextField
+      private function hz42VehTf(p:Sprite, s:String, size:Number, col:uint, font:String, ls:Number, align:String = "left") : TextField
       {
          var t:TextField = new TextField();
          t.embedFonts = true;
@@ -2605,6 +2613,7 @@
          t.autoSize = flash.text.TextFieldAutoSize.LEFT;
          var f:TextFormat = new TextFormat(font,size,col);
          f.letterSpacing = ls;
+         f.align = align;
          t.defaultTextFormat = f;
          t.text = s;
          t.setTextFormat(f);
@@ -2614,50 +2623,71 @@
          p.addChild(t);
          return t;
       }
+      // Stage sizes for the 1440p measurement (pill was 48 px from a 39-unit box, about 1.23 screen px per stage unit).
+      // 42 -> about 52 px tall, key 24 -> about 30 px, inset 8 -> about 10 px, gap 11 -> about 14 px.
+      // Key 17 -> about 21 px bold. EXIT 19.5 -> about 24 px semibold. The repo's 1080/ScreenHeight rule (0.75) is noted in the findings.
+      // Outline, glow, sweep, and the key follow HZ_ACCENT. Only the finished hold is HZ_GREEN.
       private function hz42VehDraw(key:String, face:String, prog:Number, done:Boolean) : void
       {
          var p:Sprite = this.hzVehPx;
          while(p.numChildren > 0) { p.removeChildAt(0); }
          var g:* = p.graphics;
          g.clear();
-         var keyFs:Number = this.hz42VehFs(16.5);
-         var labFs:Number = this.hz42VehFs(18);
+         var keyFs:Number = this.hz42VehFs(17);
+         var labFs:Number = this.hz42VehFs(19.5);
          var edge:uint = done ? HZ_GREEN : HZ_ACCENT;
+         var h:Number = 42;
+         var keyBox:Number = 24;
+         var x0:Number = 8;
+         var gap:Number = 11;
          var kt:TextField = null;
-         var ktw:Number = 0;
          var kw:Number = 0;
+         var kh:Number = keyBox;
          if(key != null && key.length > 0)
          {
             var kface:String = face != null && face.length > 0 ? face : this.hzFontName("bd");
-            var kls:Number = face != null && face.length > 0 ? 0 : Math.round(keyFs * 0.04 * 10) / 10;
-            var kcol:uint = face != null && face.length > 0 ? 0xF2F7F9 : edge;
-            kt = this.hz42VehTf(p,key,keyFs,kcol,kface,kls);
-            ktw = this.hz42VehKeyW(kt);
+            kt = this.hz42VehTf(p,key,keyFs,edge,kface,0,"center");
+            var kMeas:Number = Number(kt.textWidth);
+            if(isNaN(kMeas) || kMeas < 0) { kMeas = 0; }
+            kw = Math.ceil(kMeas + 8);
+            if(kw < keyBox) { kw = keyBox; }
             var kth:Number = kt.height;
             kt.autoSize = flash.text.TextFieldAutoSize.NONE;
-            kt.width = ktw;
+            kt.width = kw;
             if(kt.height < kth) { kt.height = kth; }
-            kw = ktw + 8;
+            if(kt.height + 4 > kh) { kh = Math.round(kt.height + 4); }
          }
          var lab:String = this.hzHdrCase("EXIT");
-         var lls:Number = this.hzHeaderStyle == 0 ? Math.round(labFs * 0.1 * 10) / 10 : 0;
+         var lls:Number = Math.round(labFs * 0.1 * 10) / 10;
          var lt:TextField = this.hz42VehTf(p,lab,labFs,0xF2F7F9,this.hzFontName(),lls);
-         var h:Number = 39;
-         if(lt.height + 10 > h) { h = Math.round(lt.height + 10); }
-         if(kt != null && kt.height + 10 > h) { h = Math.round(kt.height + 10); }
-         var x0:Number = 10;
-         var lx:Number = x0 + (kw > 0 ? kw + 10 : 0);
          var tw:Number = Number(lt.textWidth);
          if(isNaN(tw) || tw < 8) { tw = 36; }
-         var checkW:Number = done ? 22 : 0;
-         var w:Number = Math.round(lx + tw + 16 + checkW + 10);
-         if(w < 86) { w = 86; }
+         var labLen:int = lab != null ? int(lab.length) : 0;
+         var tracked:Number = Math.ceil(tw + lls * (labLen > 0 ? labLen - 1 : 0));
+         var lth:Number = lt.height;
+         lt.autoSize = flash.text.TextFieldAutoSize.NONE;
+         lt.width = tracked + 4;
+         if(lt.height < lth) { lt.height = lth; }
+         if(lt.height + 12 > h) { h = Math.round(lt.height + 12); }
+         if(kh + 10 > h) { h = kh + 10; }
+         var lx:Number = x0 + (kw > 0 ? kw + gap : 0);
+         var checkW:Number = done ? 18 : 0;
+         var w:Number = Math.round(lx + tracked + 16 + checkW);
+         if(w < 96) { w = 96; }
          var i:int = 0;
-         while(i < 3) { g.beginFill(0x000000,0.07); g.drawRoundRect(-1 - i,2 - i * 0.5,w + 2 + i * 2,h + 1 + i * 2,h + i * 2,h + i * 2); g.endFill(); i++; }
+         while(i < 3)
+         {
+            var sx:Number = 2 + i;
+            var sy:Number = 3;
+            var sw:Number = w - 8 - i * 2;
+            var shd:Number = h - 8;
+            if(sw > 4 && shd > 4) { g.beginFill(0x000000,0.07); g.drawRoundRect(sx,sy,sw,shd,h,h); g.endFill(); }
+            i++;
+         }
          var opa:Number = Number(this.hzCardOpacity);
          if(isNaN(opa)) { opa = 1; }
          g.lineStyle();
-         g.beginFill(0x0B1218,Math.min(1,0.84 * opa));
+         g.beginFill(0x0B1218,Math.min(1,0.88 * opa));
          g.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
          g.endFill();
          var sweep:Sprite = new Sprite();
@@ -2671,8 +2701,8 @@
             var sweepCol:uint = done ? HZ_GREEN : edge;
             if(!done && fw < w - 1)
             {
-               var feather:Number = 14;
-               if(feather > fw * 0.5) { feather = fw * 0.5; }
+               var feather:Number = 6;
+               if(feather > fw) { feather = fw; }
                var mtx:* = new flash.geom.Matrix();
                mtx.createGradientBox(w,h,0,0,0);
                var fade0:int = int(Math.round(255 * Math.max(0,fw - feather) / w));
@@ -2681,15 +2711,7 @@
                if(fade1 > 255) { fade1 = 255; }
                if(fade0 >= fade1) { fade0 = fade1 - 1; }
                if(fade0 < 0) { fade0 = 0; }
-               var sweepHi:Number = 0.62;
-               var peak:int = fade0 + int(Math.round((fade1 - fade0) * 0.62));
-               if(peak <= fade0) { peak = fade0 + 1; }
-               if(peak >= fade1) { peak = fade1 - 1; }
-               if(peak > fade0 && peak < fade1)
-               {
-                  sg.beginGradientFill("linear",[sweepCol,sweepCol,sweepCol,sweepCol],[sweepA,sweepA,sweepHi,0],[0,fade0,peak,fade1],mtx);
-               }
-               else { sg.beginGradientFill("linear",[sweepCol,sweepCol,sweepCol],[sweepA,sweepHi,0],[0,fade0,fade1],mtx); }
+               sg.beginGradientFill("linear",[sweepCol,sweepCol,sweepCol],[sweepA,sweepA,0],[0,fade0,fade1],mtx);
             }
             else { sg.beginFill(sweepCol,sweepA); }
             sg.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
@@ -2698,33 +2720,34 @@
          }
          var idleRim:Boolean = !done && prog <= 0.02;
          var rimCol:uint = done ? HZ_GREEN : (idleRim ? 0xFFFFFF : edge);
-         var rimA:Number = idleRim ? 0.18 : (done ? 0.95 : 0.9);
+         var rimA:Number = idleRim ? 0.18 : (done ? 1 : 0.95);
+         var rimW:Number = idleRim ? 1.5 : 2;
          var rim:Sprite = new Sprite();
          rim.mouseEnabled = false;
          rim.mouseChildren = false;
          var rg:* = rim.graphics;
-         rg.lineStyle(1.5,rimCol,rimA,true,"none");
+         rg.lineStyle(rimW,rimCol,rimA,true,"none");
          rg.beginFill(rimCol,0.004);
-         rg.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
+         rg.drawRoundRect(rimW * 0.5,rimW * 0.5,w - rimW,h - rimW,Math.max(0,h - rimW),Math.max(0,h - rimW));
          rg.endFill();
-         if(!idleRim) { try { rim.filters = [new GlowFilter(rimCol,0.32,10,10,1,1)]; } catch(eGlow:Error) { } }
+         // Blur 6 stays under Scaleform's 15.9 px text-and-shape glow cap. Idle has no glow.
+         if(!idleRim) { try { rim.filters = [new GlowFilter(rimCol,0.30,6,6,1,1)]; } catch(eGlow:Error) { } }
          p.addChild(rim);
          if(kw > 0)
          {
             var cap:Sprite = new Sprite();
             cap.mouseEnabled = false;
             cap.mouseChildren = false;
-            var kh:Number = Math.round(h - 10);
             var ky:Number = Math.round((h - kh) / 2);
             var cg:* = cap.graphics;
-            cg.lineStyle(1,edge,0.9,true,"none");
+            cg.lineStyle(1.5,edge,0.9,true,"none");
             var capA:Number = done ? 0.18 : (idleRim ? 0.10 : 0.22);
             cg.beginFill(edge,capA);
-            cg.drawRoundRect(x0,ky,kw,kh,8,8);
+            cg.drawRoundRect(x0 + 0.75,ky + 0.75,kw - 1.5,kh - 1.5,8,8);
             cg.endFill();
             p.addChild(cap);
-            kt.x = Math.round(x0 + (kw - ktw) / 2);
-            kt.y = Math.round(h / 2 - kt.height / 2);
+            kt.x = x0;
+            kt.y = Math.round(ky + (kh - kt.height) / 2);
             p.addChild(kt);
          }
          lt.x = Math.round(lx);
@@ -2735,12 +2758,12 @@
             var ck:Sprite = new Sprite();
             ck.mouseEnabled = false;
             var kg:* = ck.graphics;
-            var cx0:Number = Math.round(lx + tw + 8);
+            var cx0:Number = Math.round(lx + tracked + 8);
             var cy0:Number = Math.round(h / 2);
-            kg.lineStyle(2.4,HZ_GREEN,1,true,"none");
+            kg.lineStyle(2,HZ_GREEN,1,true,"none");
             kg.moveTo(cx0,cy0);
             kg.lineTo(cx0 + 4,cy0 + 4);
-            kg.lineTo(cx0 + 12,cy0 - 5);
+            kg.lineTo(cx0 + 11,cy0 - 5);
             p.addChild(ck);
          }
          this.hzVehW = w;
@@ -3426,7 +3449,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.42.0.7";
+      private static const HZ_BUILD:String = "0.42.0.8";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -14684,6 +14707,7 @@
       private static const HZ42_SC_RPAD:Number = 18;
       private static const HZ42_SC_KHEAD:Number = 1.08;
       private static const HZ42_SC_KMINW:Number = 14;
+      private static const HZ42_SC_LABEX:Number = 16;   // 0.42.0.8: extra label slot, same as the scope chip (HZP_LABEX)
       private static const HZ42_SC_KEY:String = "ScopeChip";   // ARRANGE list key of the proxy (saved as [Scope] ScopeChipX / ScopeChipY)
       private var hz42ScOn:Boolean = true;
       private var hz42ScX:Number = 0;
@@ -14909,6 +14933,7 @@
          var ow:Number = this.hz42ScLblW(outb);
          if(hw > ltw) { ltw = hw; }
          if(ow > ltw) { ltw = ow; }
+         ltw += HZ42_SC_LABEX;
          if(hold.parent == p) { p.removeChild(hold); }
          if(outb.parent == p) { p.removeChild(outb); }
          var lth:Number = lt.height;

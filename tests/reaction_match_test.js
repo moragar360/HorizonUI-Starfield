@@ -1,6 +1,7 @@
 // Companion reaction matcher for actionscript/comms/hzc_block.as (hzcRxMatch).
-// The regex and the category tables are read from that file, so a drift in the
-// movie fails here. The name may be any case. The card draws it with the same
+// The category tables are read from that file. The name test is the same char-code
+// loop as the movie, because a unicode escape in a regex is not safe in Scaleform.
+// The name may be any case. The card draws it with the same
 // toUpperCase the subtitle speaker and the speaker card already use.
 // Run: node tests/reaction_match_test.js
 "use strict";
@@ -40,34 +41,13 @@ function numArray(name) {
 	});
 }
 
-function takeRegex(label, re) {
-	const m = src.match(re);
-	if (!m) throw new Error("missing " + label + " in hzc_block.as");
-	return new Function("return " + m[1])();
-}
-
-const RX = takeRegex(
-	"match regex",
-	/var m:Object = (\/\^\(\.\+\?\) \(loves\|likes\|dislikes\|hates\|loved\|liked\|disliked\|hated\) that\\\.\?\\s\*\$\/i)\.exec\(s\);/
-);
-const WORD = takeRegex(
-	"word regex",
-	/if\(!(\/\^\[A-Za-z\\u00C0-\\u024F\]\[A-Za-z\\u00C0-\\u024F'\\u2019-\]\*\$\/)\.test\(body\)\)/
-);
-const INITIAL = takeRegex(
-	"initial regex",
-	/(\/\^\(\?:\[A-Za-z\\u00C0-\\u024F\]\\.\)\+\$\/)\.test\(w\)/
-);
-const PUNCT_DBL = takeRegex("doubled punctuation", /if\((\/\['\\u2019-\]\['\\u2019-\]\/)/);
-const PUNCT_END = takeRegex("trailing punctuation", /(\/\['\\u2019-\]\$\/)\.test\(body\)/);
-
 const LBL = stringArray("HZC_RX_LBL");
 const COL = numArray("HZC_RX_COL");
 const DIR = numArray("HZC_RX_DIR");
 const NOT = stringArray("HZC_RX_NOT");
 const TITLE = stringArray("HZC_RX_TITLE");
 
-expect(src.indexOf('private static const HZC_BUILD:String = "0.42.0.7";') >= 0, "comms build id is 0.42.0.7");
+expect(src.indexOf('private static const HZC_BUILD:String = "0.42.0.8";') >= 0, "comms build id is 0.42.0.8");
 expect(src.indexOf("private static const HZC_MSG_LOG:Boolean = true;") >= 0, "comms message log is on for this test build");
 expect(src.indexOf('this.hzcRxDbgPush("card code off after error: " + this.hzcRxDbgEsc(em));') >= 0, "a card error records the error text");
 expect(src.indexOf('if(s == "loved" || s == "loves") { return 0; }') >= 0, "loves maps with loved");
@@ -94,11 +74,36 @@ function cardName(n) {
 	return String(n).toUpperCase();
 }
 
+function hzcRxLetter(c) {
+	return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 0xC0 && c <= 0x24F);
+}
+function hzcRxMark(c) {
+	return c === 0x27 || c === 0x2019 || c === 0x2D;
+}
+function hzcRxTrimC(c) {
+	return c === 9 || c === 10 || c === 11 || c === 12 || c === 13 || c === 32;
+}
 function hzcRxNorm(t) {
 	if (t == null) return null;
-	let s = t.replace(/[\u00A0\u2007\u202F\u2009\u200A\t]/g, " ").replace(/[\u200B\uFEFF]/g, "");
-	s = s.replace(/^[\s]+|[\s]+$/g, "").replace(/ {2,}/g, " ");
-	return s;
+	let raw = "";
+	for (let i = 0; i < t.length; i++) {
+		const c = t.charCodeAt(i);
+		if (c === 0x200B || c === 0xFEFF) continue;
+		if (c === 9 || c === 0xA0 || c === 0x2007 || c === 0x202F || c === 0x2009 || c === 0x200A) raw += " ";
+		else raw += t.charAt(i);
+	}
+	let a = 0;
+	let b = raw.length;
+	while (a < b && hzcRxTrimC(raw.charCodeAt(a))) a++;
+	while (b > a && hzcRxTrimC(raw.charCodeAt(b - 1))) b--;
+	let o = "";
+	let spc = false;
+	for (let i = a; i < b; i++) {
+		if (raw.charCodeAt(i) === 32) {
+			if (!spc) { o += " "; spc = true; }
+		} else { o += raw.charAt(i); spc = false; }
+	}
+	return o;
 }
 
 function hzcRxVerb(v) {
@@ -117,30 +122,59 @@ function hzcRxLead(w) {
 }
 
 function hzcRxInitial(w) {
-	return w != null && INITIAL.test(w);
+	if (w == null) return false;
+	const n = w.length;
+	if (n < 2 || (n & 1) !== 0) return false;
+	for (let i = 0; i < n; i += 2) {
+		if (!hzcRxLetter(w.charCodeAt(i)) || w.charCodeAt(i + 1) !== 46) return false;
+	}
+	return true;
 }
 
 function hzcRxWordOk(w) {
 	if (w == null || w.length === 0) return false;
 	if (hzcRxInitial(w)) return true;
 	let body = w;
-	if (w.charAt(w.length - 1) === ".") {
+	if (w.charCodeAt(w.length - 1) === 46) {
 		body = w.slice(0, -1);
 		if (TITLE.indexOf(body.toLowerCase()) < 0) return false;
 	} else if (w.indexOf(".") >= 0) return false;
-	if (!WORD.test(body)) return false;
-	if (PUNCT_DBL.test(body) || PUNCT_END.test(body)) return false;
-	return true;
+	if (body == null || body.length === 0 || !hzcRxLetter(body.charCodeAt(0))) return false;
+	let prevMark = false;
+	for (let i = 1; i < body.length; i++) {
+		const c = body.charCodeAt(i);
+		if (hzcRxMark(c)) {
+			if (prevMark) return false;
+			prevMark = true;
+		} else if (hzcRxLetter(c)) prevMark = false;
+		else return false;
+	}
+	return !prevMark;
+}
+
+function hzcRxTail(s, tail) {
+	if (s == null || tail == null || s.length < tail.length) return false;
+	return s.substring(s.length - tail.length).toLowerCase() === tail;
 }
 
 function hzcRxMatch(t) {
 	const s = hzcRxNorm(t);
 	if (s == null || s.indexOf("\n") >= 0 || s.indexOf("\r") >= 0) return null;
 	if (s.length < 11 || s.length > 64) return null;
-	const m = RX.exec(s);
-	if (m == null) return null;
-	const n = String(m[1]);
-	if (n.length < 1 || n.length > 40) return null;
+	let cut = 0;
+	if (hzcRxTail(s, " that.")) cut = 6;
+	else if (hzcRxTail(s, " that")) cut = 5;
+	else return null;
+	const head = s.substring(0, s.length - cut);
+	let sp = -1;
+	for (let j = head.length - 1; j >= 0; j--) {
+		if (head.charCodeAt(j) === 32) { sp = j; break; }
+	}
+	if (sp <= 0) return null;
+	const verb = head.substring(sp + 1);
+	const n = head.substring(0, sp);
+	const k = hzcRxVerb(verb);
+	if (k < 0 || n.length < 1 || n.length > 40) return null;
 	const ws = n.split(" ");
 	if (ws.length < 1 || ws.length > 4) return null;
 	let named = false;
@@ -155,8 +189,6 @@ function hzcRxMatch(t) {
 		if (TITLE.indexOf(key) < 0) named = true;
 	}
 	if (!named) return null;
-	const k = hzcRxVerb(String(m[2]));
-	if (k < 0) return null;
 	return { n: n, k: k, label: LBL[k], color: COL[k], dir: DIR[k], card: cardName(n) };
 }
 
@@ -209,6 +241,9 @@ expectNull("Sam- liked that.", "a hyphen cannot end a word");
 expectNull("Anna Beth Cara Dana Eve liked that", "five name words");
 
 expectMatch("O'Neill likes that", "O'Neill", 1, "apostrophe inside a word");
+expectMatch("O\u2019Neill likes that", "O\u2019Neill", 1, "curly apostrophe");
+expectMatch("Jos\u00e9 likes that", "Jos\u00e9", 1, "accented name");
+expectMatch("Sam\u00A0Coe liked that.", "Sam Coe", 1, "no-break space");
 expectMatch("Anne-Marie liked that.", "Anne-Marie", 1, "hyphen inside a word");
 expectMatch("Sam Coe liked that.", "Sam Coe", 1, "two-word mixed case");
 
@@ -338,6 +373,23 @@ expect(src.indexOf("e.paired == true || e.src != \"b\"") >= 0, "only an unpaired
 expect(src.indexOf("if(e.blamed != true) { e.blamed = true; e.judged = true; this.hzcRxHit(err); }") >= 0, "one message counts one miss");
 expect(src.indexOf("if(e.judged != true) { e.judged = true; drew = true; }") >= 0, "the first successful place of a message clears the streak");
 expect(src.indexOf("if(drew) { this.hzcRxFail = 0; }") >= 0, "a later success clears the miss streak");
+expect(src.indexOf("private function hzcRxLetter(c:int)") >= 0, "names use char codes");
+expect(src.indexOf("c >= 0xC0 && c <= 0x24F") >= 0, "the Latin range is a char-code test");
+expect(src.indexOf("c == 0x2019") >= 0, "the curly apostrophe is a char code");
+expect(src.indexOf("public function hzcRxSelfTest() : String") >= 0, "the movie exposes the startup self-test");
+expect(src.indexOf("/\\u0041/.test(\"A\")") >= 0, "the literal unicode probe is in the self-test");
+expect(src.indexOf("new RegExp(\"\\\\u0041\")") >= 0, "the constructed unicode probe is in the self-test");
+expect(src.indexOf("/\\x41/.test(\"A\")") >= 0, "the hex probe is in the self-test");
+expect(src.indexOf("\\u00C0") < 0, "the name class no longer uses a unicode escape");
+expect(src.indexOf("loves|likes") < 0, "the sentence match is not a regex");
+{
+	const cpp = fs.readFileSync(path.join(__dirname, "..", "src", "main.cpp"), "utf8");
+	const poll = cpp.indexOf("void CommsRxPoll");
+	const invoke = cpp.indexOf('Invoke("hzcRxSelfTest"', poll);
+	const gate = cpp.indexOf("#if HZ_COMMS_MSG_LOG", poll);
+	expect(poll >= 0 && invoke > poll && cpp.indexOf("comms reaction selftest:", poll) > poll, "the DLL logs the reaction self-test");
+	expect(gate > invoke, "the self-test call sits before the verbose-trace ifdef");
+}
 
 function constInt(name) {
 	const m = src.match(new RegExp("private static const " + name + ":int = (\\d+);"));
@@ -594,6 +646,302 @@ for (let i = 0; i < msgTwins.length; i++) {
 	expectSpan = expectSpan.replace("private static const HZC_LRG:Boolean = __HZC_LRG__;", "private static const HZC_LRG:Boolean = " + (lrg ? "true" : "false") + ";");
 	expect(msgSpan(body) === expectSpan, rel + " matches the comms block");
 	expect(body.indexOf("public function hzcRxPush(text:String) : String") >= 0, rel + " defines hzcRxPush");
+}
+
+function shippedRegexes(text) {
+	const found = [];
+	let i = 0;
+	let prev = "";
+	function can(p) {
+		return !p || "([=,;:!&|?{}~+-*%^<>".indexOf(p) >= 0;
+	}
+	while (i < text.length) {
+		const c = text[i];
+		if (c === "/" && text[i + 1] === "/") {
+			i += 2;
+			while (i < text.length && text[i] !== "\n") i++;
+			continue;
+		}
+		if (c === "/" && text[i + 1] === "*") {
+			i += 2;
+			while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i++;
+			i += 2;
+			continue;
+		}
+		if (c === '"' || c === "'") {
+			const q = c;
+			const start = i;
+			i++;
+			let s = "";
+			while (i < text.length) {
+				if (text[i] === "\\") { s += text[i] + (text[i + 1] || ""); i += 2; continue; }
+				if (text[i] === q) { i++; break; }
+				s += text[i];
+				i++;
+			}
+			const before = text.slice(Math.max(0, start - 40), start);
+			if (/new\s+RegExp\s*\(\s*$/.test(before)) {
+				found.push(s.replace(/\\(.)/g, function (_, ch) { return ch; }));
+			}
+			prev = q;
+			continue;
+		}
+		if (c === "/" && can(prev)) {
+			i++;
+			let pat = "";
+			let closed = false;
+			while (i < text.length) {
+				if (text[i] === "\\") { pat += text[i] + (text[i + 1] || ""); i += 2; continue; }
+				if (text[i] === "/") { closed = true; i++; break; }
+				if (text[i] === "\n") break;
+				pat += text[i];
+				i++;
+			}
+			let flags = "";
+			if (closed) {
+				while (i < text.length && /[gimsxu]/i.test(text[i])) { flags += text[i]; i++; }
+				found.push(pat + "\n" + flags);
+			}
+			prev = "/";
+			continue;
+		}
+		if (!/\s/.test(c)) prev = c;
+		i++;
+	}
+	return found;
+}
+function regexBanned(item) {
+	const nl = item.indexOf("\n");
+	const body = nl >= 0 ? item.slice(0, nl) : item;
+	const flags = nl >= 0 ? item.slice(nl + 1) : "";
+	if (flags.indexOf("u") >= 0) return "u flag";
+	if (body.indexOf("(?<") >= 0) return "(?<";
+	if (body.indexOf("\\p{") >= 0) return "\\p{";
+	if (body.indexOf("\\u") >= 0 && body !== "\\u0041") return "\\u";
+	return "";
+}
+// Scaleform String.replace leaves $1, $2, $&, $$, $` and $' in the text.
+// A function as the replacement is also rejected: the support table does not say that form works.
+function replacementCode(decoded) {
+	const m = /\$(\$|&|`|'|[0-9])/.exec(decoded);
+	return m ? m[0] : "";
+}
+function decodeAsString(body) {
+	let o = "";
+	for (let i = 0; i < body.length; i++) {
+		if (body[i] !== "\\") { o += body[i]; continue; }
+		const n = body[i + 1] || "";
+		if (n === "n") o += "\n";
+		else if (n === "r") o += "\r";
+		else if (n === "t") o += "\t";
+		else o += n;
+		i++;
+	}
+	return o;
+}
+function skipSpaceAt(text, i) {
+	while (i < text.length && /\s/.test(text[i])) i++;
+	return i;
+}
+function readStringAt(text, i) {
+	const q = text[i];
+	let j = i + 1;
+	let body = "";
+	while (j < text.length) {
+		if (text[j] === "\\") { body += text[j] + (text[j + 1] || ""); j += 2; continue; }
+		if (text[j] === q) return { raw: text.slice(i, j + 1), decoded: decodeAsString(body), end: j + 1 };
+		body += text[j];
+		j++;
+	}
+	return { raw: text.slice(i), decoded: decodeAsString(body), end: text.length };
+}
+function canStartRegex(prev) {
+	return !prev || "([=,;:!&|?{}~+-*%^<>".indexOf(prev) >= 0;
+}
+// Second argument of each .replace( call, outside comments.
+function replaceReplacements(text) {
+	const out = [];
+	let i = 0;
+	let prev = "";
+	function takeString() {
+		const s = readStringAt(text, i);
+		i = s.end;
+		prev = s.raw[0];
+		return s;
+	}
+	while (i < text.length) {
+		const c = text[i];
+		if (c === "/" && text[i + 1] === "/") {
+			i += 2;
+			while (i < text.length && text[i] !== "\n") i++;
+			continue;
+		}
+		if (c === "/" && text[i + 1] === "*") {
+			i += 2;
+			while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i++;
+			i += 2;
+			continue;
+		}
+		if (c === '"' || c === "'") { takeString(); continue; }
+		if (c === "/" && canStartRegex(prev)) {
+			i++;
+			while (i < text.length) {
+				if (text[i] === "\\") { i += 2; continue; }
+				if (text[i] === "/" || text[i] === "\n") { i++; break; }
+				i++;
+			}
+			while (i < text.length && /[gimsx]/i.test(text[i])) i++;
+			prev = "/";
+			continue;
+		}
+		if (c === "." && text.slice(i, i + 8) === ".replace" && !/[A-Za-z0-9_$]/.test(text[i + 8] || "")) {
+			let j = skipSpaceAt(text, i + 8);
+			if (text[j] !== "(") { prev = "."; i++; continue; }
+			const args = [];
+			let cur = "";
+			let depth = 1;
+			let k = j + 1;
+			let ap = "";
+			while (k < text.length && depth > 0) {
+				if (text[k] === "/" && text[k + 1] === "/") {
+					k += 2;
+					while (k < text.length && text[k] !== "\n") k++;
+					continue;
+				}
+				if (text[k] === "/" && text[k + 1] === "*") {
+					k += 2;
+					while (k < text.length && !(text[k] === "*" && text[k + 1] === "/")) k++;
+					k += 2;
+					continue;
+				}
+				if (text[k] === '"' || text[k] === "'") {
+					const s = readStringAt(text, k);
+					cur += text.slice(k, s.end);
+					k = s.end;
+					ap = s.raw[0];
+					continue;
+				}
+				if (text[k] === "/" && canStartRegex(ap)) {
+					const start = k;
+					k++;
+					while (k < text.length) {
+						if (text[k] === "\\") { k += 2; continue; }
+						if (text[k] === "/" || text[k] === "\n") { k++; break; }
+						k++;
+					}
+					while (k < text.length && /[gimsx]/i.test(text[k])) k++;
+					cur += text.slice(start, k);
+					ap = "/";
+					continue;
+				}
+				if (text[k] === "(" || text[k] === "[" || text[k] === "{") { depth++; cur += text[k]; ap = text[k]; k++; continue; }
+				if (text[k] === ")" || text[k] === "]" || text[k] === "}") {
+					depth--;
+					if (depth === 0) break;
+					cur += text[k];
+					ap = text[k];
+					k++;
+					continue;
+				}
+				if (text[k] === "," && depth === 1) { args.push(cur); cur = ""; ap = ","; k++; continue; }
+				if (!/\s/.test(text[k])) ap = text[k];
+				cur += text[k];
+				k++;
+			}
+			args.push(cur);
+			if (args.length >= 2) out.push(args[1]);
+			i = k + 1;
+			prev = ")";
+			continue;
+		}
+		if (!/\s/.test(c)) prev = c;
+		i++;
+	}
+	return out;
+}
+function replacementProblem(arg) {
+	const trimmed = arg.trim();
+	let i = 0;
+	let sawString = false;
+	let glued = "";
+	let onlyStrings = true;
+	while (i < trimmed.length) {
+		if (/\s/.test(trimmed[i]) || trimmed[i] === "+") { i++; continue; }
+		if (trimmed[i] === '"' || trimmed[i] === "'") {
+			const s = readStringAt(trimmed, i);
+			sawString = true;
+			const code = replacementCode(s.decoded);
+			if (code) return code;
+			glued += s.decoded;
+			i = s.end;
+			continue;
+		}
+		onlyStrings = false;
+		break;
+	}
+	if (onlyStrings && sawString) {
+		const code = replacementCode(glued);
+		if (code) return code;
+	}
+	let j = 0;
+	let inStr = false;
+	let q = "";
+	while (j < trimmed.length) {
+		if (inStr) {
+			if (trimmed[j] === "\\") { j += 2; continue; }
+			if (trimmed[j] === q) inStr = false;
+			j++;
+			continue;
+		}
+		if (trimmed[j] === '"' || trimmed[j] === "'") { inStr = true; q = trimmed[j]; j++; continue; }
+		if (trimmed.slice(j, j + 8) === "function" && !/[A-Za-z0-9_$]/.test(trimmed[j + 8] || "")) return "function";
+		j++;
+	}
+	return "";
+}
+{
+	const hit = replacementProblem('"$1 $2"');
+	expect(hit === "$1", "the replace rule catches a $1 replacement");
+	expect(replacementProblem('"$&"') === "$&", "the replace rule catches $&");
+	expect(replacementProblem('"$$"') === "$$", "the replace rule catches $$");
+	expect(replacementProblem('"$2"') === "$2", "the replace rule catches $2");
+	expect(replacementProblem("function(m:String):String { return m; }") === "function", "the replace rule catches a function replacement");
+	expect(replacementProblem('"$MAIN_Font"') === "", "a translation token is not a replacement code");
+	expect(replacementProblem('" "') === "", "a space replacement is allowed");
+	const sample = 's.replace(/([a-z])([A-Z])/g,"$1 $2");\nGlobalFunc.SetText(tf,"$$scanned");\ns.replace(re,"$MAIN_Font");';
+	const reps = replaceReplacements(sample);
+	expect(reps.length === 2 && replacementProblem(reps[0]) === "$1" && replacementProblem(reps[1]) === "", "$$ in SetText is not a replace replacement");
+}
+// Shipped movies and the blocks they are built from, including each _lrg twin.
+// hudmenu and hudmenu_lrg share horizon_block.as. The older HUDMenu_1 / himp snapshots are not this build.
+const scanFiles = [
+	"actionscript/comms/hzc_block.as",
+	"actionscript/comms/hzd_block.as",
+	"actionscript/horizon_block.as",
+	"actionscript/scope/hzp_main.as",
+	"actionscript/scanner/hzs_block.as",
+	"actionscript/imp/imp/scripts/HUDMessagesMenu.as",
+	"actionscript/imp/imp-Lrg/scripts/HUDMessagesMenu.as",
+	"actionscript/imp/dimp/scripts/DialogueMenu.as",
+	"actionscript/imp/dimp-Lrg/scripts/DialogueMenu.as",
+	"actionscript/scope/imp/pimp_scopemenu/ScopeMenu.as",
+	"actionscript/scope/imp/pimp_scopemenu_lrg/ScopeMenu.as",
+	"actionscript/imp/simp_monoclemenu/MonocleMenu.as",
+	"actionscript/imp/simp_monoclemenu_lrg/MonocleMenu.as"
+];
+for (let si = 0; si < scanFiles.length; si++) {
+	const rel = scanFiles[si];
+	const text = fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
+	const items = shippedRegexes(text);
+	for (let ri = 0; ri < items.length; ri++) {
+		const why = regexBanned(items[ri]);
+		expect(!why, rel + " regex " + ri + (why ? " uses " + why : " is ascii-safe"));
+	}
+	const reps = replaceReplacements(text);
+	for (let pi = 0; pi < reps.length; pi++) {
+		const why = replacementProblem(reps[pi]);
+		expect(!why, rel + " replace " + pi + (why ? " uses " + why : " has a plain replacement"));
+	}
 }
 
 if (failed) {

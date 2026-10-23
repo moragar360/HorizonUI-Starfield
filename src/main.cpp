@@ -4,8 +4,9 @@
 // The F11 header, the load line, and the "movie builds" line use the DLL file version (src/hz_version.h, also the version resource).
 // v0.42.0.6: ShowHUDMessageEvent (address id 86800) feeds the reaction backup. The verbose trace
 // (the "hud message:" line and "comms msg:" lines) is compiled only when HZ_COMMS_MSG_LOG is 1
-// (src/hz_version.h). The queue, Poll, hzcRxPush, and the one-line "comms reaction:" status stay on
-// when that flag is 0. The release checklist in README.md turns the verbose trace off. The settings schema stays 0.42.0.
+// (src/hz_version.h). The queue, Poll, hzcRxPush, the one-line "comms reaction:" status, and the
+// one-time "comms reaction selftest:" lines stay on when that flag is 0. The release checklist in
+// README.md turns the verbose trace off. The settings schema stays 0.42.0.
 // Saved preset names drop the same characters as the HUD: '=' '+' '[' ']' ';' '#' '"' '\' '|' and control characters.
 // v0.42.0 r3 (file version 0.42.0.3): a scope (ScopeMenu) still blocks F11 but no longer restarts the 3 s "HUD ready" wait,
 // so F11 works right after leaving the scope. The 0.42.0.4 no-debug build compiled this log out. In 0.42.0.6 it is on
@@ -1971,10 +1972,13 @@ namespace HZ
 	}
 
 	ULONGLONG g_rxWhyNext = 0;
+	bool      g_rxSelfLogged = false;
 
 	// Purpose: drain the reaction queue on the UI thread and log hzcRxPush's status once per reaction.
+	// Also logs hzcRxSelfTest once (pass or fail, plus the three regex probes). That line is not gated on
+	// Debug or HZ_COMMS_MSG_LOG. A missing hzcRxSelfTest is retried until it returns a non-empty string.
 	// Skips loading and the main menu. Not gated on the 3 s HUD-ready wait. A missing hzcRxPush is skipped.
-	// Last modified: 2026-10-22.
+	// Last modified: 2026-10-23.
 	void CommsRxPoll(ULONGLONG a_now)
 	{
 		auto ui = RE::UI::GetSingleton();
@@ -1984,6 +1988,26 @@ namespace HZ
 		if (!ui->IsMenuOpen("HUDMessagesMenu")) return;
 		auto msg = ui->GetMenu("HUDMessagesMenu");
 		if (!msg || !msg->menuObj.IsObject()) return;
+		if (!g_rxSelfLogged && msg->menuObj.HasMember("hzcRxSelfTest")) {
+			try {
+				GValue self;
+				if (msg->menuObj.Invoke("hzcRxSelfTest", &self, nullptr, 0) && self.IsString() && self.GetString() && self.GetString()[0]) {
+					const std::string all = self.GetString();
+					std::size_t i = 0;
+					while (i < all.size()) {
+						const auto j = all.find('\n', i);
+						std::string line = all.substr(i, j == std::string::npos ? std::string::npos : j - i);
+						if (!line.empty() && line.back() == '\r') line.pop_back();
+						if (!line.empty())
+							REX::INFO("comms reaction selftest: {}", line);
+						if (j == std::string::npos) break;
+						i = j + 1;
+					}
+					g_rxSelfLogged = true;
+				}
+			} catch (...) {
+			}
+		}
 		try {
 			if (a_now >= g_rxWhyNext && msg->menuObj.HasMember("hzcRxWhy")) {
 				g_rxWhyNext = a_now + 500;

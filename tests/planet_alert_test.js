@@ -32,7 +32,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.42.0.7";', "HUD build id is 0.42.0.7");
+pin('private static const HZ_BUILD:String = "0.42.0.8";', "HUD build id is 0.42.0.8");
 pin('case "vehicleexitpill": this.hzVehOn = bv; break;', "vehicle exit pill is a Cards ini key");
 pin('{"k":"VehicleExitPill","l":"VEHICLE EXIT PILL"', "vehicle exit pill is on the Cards tab");
 pin("return hv.GetUpButton_mc;", "vehicle exit follows the game's button");
@@ -48,14 +48,21 @@ pin("try { this.hz42VehTick(); } catch(e42v:Error) { }   // 0.42.0.7: own try, f
 pin("var sweepA:Number = 0.30;", "the exit sweep is a soft 0.30 fill");
 pin('sg.beginGradientFill("linear"', "the exit sweep fades through a gradient edge");
 pin("idleRim ? 0xFFFFFF : edge", "the idle exit pill has a faint white border");
-pin("var rimA:Number = idleRim ? 0.18 : (done ? 0.95 : 0.9);", "the idle exit border is about 0.18");
-pin("new GlowFilter(rimCol,0.32,10,10,1,1)", "the exit pill glows while holding and when complete");
-pin("kg.lineStyle(2.4,HZ_GREEN,1,true,\"none\");", "the completed exit pill uses a green check");
-pin("var h:Number = 39;", "the exit pill is about 39 tall");
-pin("this.hz42VehFs(16.5)", "the exit key is about 16.5");
-pin("this.hz42VehFs(18)", "the exit label is about 18");
+pin("var rimA:Number = idleRim ? 0.18 : (done ? 1 : 0.95);", "the idle exit border is about 0.18");
+pin("new GlowFilter(rimCol,0.30,6,6,1,1)", "the exit pill glows while holding and when complete");
+pin("kg.lineStyle(2,HZ_GREEN,1,true,\"none\");", "the completed exit pill uses a green check");
+pin("var h:Number = 42;", "the exit pill is about 42 tall");
+pin("this.hz42VehFs(17)", "the exit key is about 17");
+pin("this.hz42VehFs(19.5)", "the exit label is about 19.5");
 pin("this.hz42VehTf(p,lab,labFs,0xF2F7F9,this.hzFontName(),lls);", "the exit label uses the semibold face");
-pin("var sweepHi:Number = 0.62;", "the exit sweep has a brighter band at its leading edge");
+pin("var feather:Number = 6;", "the exit sweep fades over a short leading edge");
+expect(src.indexOf("var sweepHi:Number") < 0, "the exit sweep has no bright band");
+pin("var keyBox:Number = 24;", "the exit key cap is about 24 stage units");
+pin("var x0:Number = 8;", "the exit key sits in from the left");
+pin("var gap:Number = 11;", "the exit label has a gap after the key");
+pin('kt = this.hz42VehTf(p,key,keyFs,edge,kface,0,"center");', "the exit key is centered in the cap");
+pin("Math.min(1,0.88 * opa)", "the exit fill is about 0.88");
+pin("Name, x, and y stay the game's too.", "the exit button keeps its name and position");
 pin("var capA:Number = done ? 0.18 : (idleRim ? 0.10 : 0.22);", "the exit keycap is 0.10 idle, 0.22 holding, 0.18 complete");
 pin("cg.beginFill(edge,capA);", "the exit keycap uses that fill");
 
@@ -508,7 +515,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.7";') >= 0, rel + " build is 0.42.0.7");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.8";') >= 0, rel + " build is 0.42.0.8");
 	expect(body.indexOf("kt.autoSize = TextFieldAutoSize.NONE;") >= 0, rel + " key field does not autosize");
 	expect(body.indexOf("Math.ceil(tw * HZP_KHEAD + ls * len) + 8") >= 0, rel + " uses the field-width formula");
 	expect(body.indexOf("kt.width = ktw;") >= 0, rel + " sets the field width");
@@ -516,9 +523,11 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	expect(body.indexOf("if(now - this.hzpFallT < 900)") >= 0, rel + " holds the held state for at least 900 ms");
 	expect(body.indexOf("lt.autoSize = TextFieldAutoSize.NONE;") >= 0, rel + " label field does not autosize");
 	expect(body.indexOf("lt.width = ltw;") >= 0, rel + " label uses the key headroom");
-	expect(body.indexOf("g.lineStyle(2,stc,0.18,true,\"none\"); g.drawRoundRect(1,1,w - 2,h - 2,Math.max(0,h - 2),Math.max(0,h - 2));") >= 0, rel + " insets the 2 px glow");
-	expect(body.indexOf("g.drawRoundRect(inset,inset,w - bw,h - bw,Math.max(0,h - bw),Math.max(0,h - bw));") >= 0, rel + " insets the border by half the stroke");
-	expect(body.indexOf("g.drawRoundRect(x0 + 0.5,ky + 0.5,kw - 1,kh - 1,8,8);") >= 0, rel + " insets the keycap by half a pixel");
+	expect(body.indexOf("g.lineStyle(2,stc,0.18,true,\"none\"); g.drawRoundRect(pad + 1,pad + 1,cw - 2,ch - 2,Math.max(0,ch - 2),Math.max(0,ch - 2));") >= 0, rel + " insets the 2 px glow");
+	expect(body.indexOf("g.drawRoundRect(pad + inset,pad + inset,cw - bw,ch - bw,Math.max(0,ch - bw),Math.max(0,ch - bw));") >= 0, rel + " insets the border by half the stroke");
+	expect(body.indexOf("g.drawRoundRect(pad + x0 + 0.5,pad + ky + 0.5,kw - 1,kh - 1,8,8);") >= 0, rel + " insets the keycap by half a pixel");
+	expect(body.indexOf("ltw += HZP_LABEX;") >= 0, rel + " adds label headroom");
+	expect(body.indexOf("private function hzpUnclip()") >= 0, rel + " clears a parent clip");
 	expect(body.indexOf("g.lineStyle(2,col,a,true,\"none\");") >= 0, rel + " draws the cross with a 2 px stroke");
 	expect(body.indexOf("drawRoundRect(-") < 0, rel + " does not draw outside the chip");
 	expect(body.indexOf("private var hzpBar:flash.display.Shape = null;") >= 0, rel + " keeps the O2 bar on its own shape");
@@ -531,34 +540,40 @@ function strokeBox(x, y, rw, rh, sw) {
 	return { l: x - pad, t: y - pad, r: x + rw + pad, b: y + rh + pad };
 }
 function chipBoxes(ltw, ktw, h, holding) {
+	const pad = 8;
+	const slot = ltw + 16;
 	const x0 = 7;
 	const kw = 30 + ktw + 10;
 	const lx = x0 + kw + 10;
-	const mx = Math.round(lx + ltw + 16);
+	const mx = Math.round(lx + slot + 16);
 	const mw = 120;
-	const w = Math.round(mx + mw + 18);
+	const cw = Math.round(mx + mw + 18);
+	const ch = h;
+	const w = cw + pad * 2;
+	const hh = ch + pad * 2;
 	const boxes = [];
+	boxes.push(strokeBox(0, 0, w, hh, 0));
 	for (let i = 0; i < 3; i++) {
-		const sx = 1 + i;
-		const sy = 2;
-		const sw = w - sx * 2;
-		const sh = h - 4 - i;
+		const sx = pad + 1 + i;
+		const sy = pad + 2;
+		const sw = cw - (1 + i) * 2;
+		const sh = ch - 4 - i;
 		if (sw > 4 && sh > 4) boxes.push(strokeBox(sx, sy, sw, sh, 0));
 	}
 	const bw = holding ? 2 : 1;
 	const inset = bw * 0.5;
-	boxes.push(strokeBox(inset, inset, w - bw, h - bw, bw));
-	if (holding) boxes.push(strokeBox(1, 1, w - 2, h - 2, 2));
-	const kh = Math.round(h - 12);
-	const ky = Math.round((h - kh) / 2);
-	boxes.push(strokeBox(x0 + 0.5, ky + 0.5, kw - 1, kh - 1, 1));
-	const cx = x0 + 15;
-	const cy = ky + kh / 2;
+	boxes.push(strokeBox(pad + inset, pad + inset, cw - bw, ch - bw, bw));
+	if (holding) boxes.push(strokeBox(pad + 1, pad + 1, cw - 2, ch - 2, 2));
+	const kh = Math.round(ch - 12);
+	const ky = Math.round((ch - kh) / 2);
+	boxes.push(strokeBox(pad + x0 + 0.5, pad + ky + 0.5, kw - 1, kh - 1, 1));
+	const cx = pad + x0 + 15;
+	const cy = pad + ky + kh / 2;
 	boxes.push(strokeBox(cx - 8.5, cy - 8.5, 17, 17, 2));
-	const my = Math.round(h / 2 - 3);
-	boxes.push(strokeBox(mx, my, mw, 6, 0));
-	boxes.push(strokeBox(mx, my, Math.round(mw * 0.7), 6, 0));
-	return { w: w, boxes: boxes };
+	const my = Math.round(pad + ch / 2 - 3);
+	boxes.push(strokeBox(pad + mx, my, mw, 6, 0));
+	boxes.push(strokeBox(pad + mx, my, Math.round(mw * 0.7), 6, 0));
+	return { w: w, h: hh, boxes: boxes };
 }
 const chipWh = [
 	[140, 70, 36],
@@ -573,7 +588,7 @@ for (let si = 0; si < chipWh.length; si++) {
 		const laid = chipBoxes(ltw, ktw, h, holding === 1);
 		for (let bi = 0; bi < laid.boxes.length; bi++) {
 			const b = laid.boxes[bi];
-			expect(b.l >= -0.001 && b.t >= -0.001 && b.r <= laid.w + 0.001 && b.b <= h + 0.001,
+			expect(b.l >= -0.001 && b.t >= -0.001 && b.r <= laid.w + 0.001 && b.b <= laid.h + 0.001,
 				(holding ? "HOLDING BREATH" : "ready") + " draw " + bi + " stays inside the chip");
 		}
 	}
@@ -586,6 +601,7 @@ pin("var sh:Number = Math.max(1,Math.round(boxH * sx));", "the F11 chip snaps he
 pin("private function hz42ScLblW(t:TextField) : Number", "the F11 label width uses the scope tracking");
 pin("f.letterSpacing = Math.round(fs * 0.1 * 10) / 10;", "the F11 label uses 0.1 letter spacing");
 pin('f.font = this.hzFontName("sb");', "the F11 label uses the chip semibold face");
+pin("ltw += HZ42_SC_LABEX;", "the F11 label keeps the scope's extra slot");
 pin("var ltw:Number = this.hz42ScLblW(lt);", "the F11 label measures HOLD BREATH with that tracking");
 pin("var hw:Number = this.hz42ScLblW(hold);", "the F11 label measures HOLDING BREATH");
 pin("var ow:Number = this.hz42ScLblW(outb);", "the F11 label measures OUT OF BREATH");
@@ -707,6 +723,54 @@ function pmState(res, score, goal, turns) {
 }
 expect(src.indexOf('["DlgPersuasionMeter","b",1,0,1,"comms"]') >= 0, "persuasion meter is a Comms ini key");
 expect(src.indexOf('{"k":"DlgPersuasionMeter","l":"PERSUASION METER"') >= 0, "persuasion meter is on the Dialogue tab");
+
+// Affliction subtitle. Vanilla's bio alert shows sAlertText only. When sAlertSubText is empty the chip
+// labels the icon. PersonalEffect_CardioRespiratoryCirculatory_Negative is the game's symbol for that
+// body group (Creation-Hub/Interface). The old replace inserted the literal "$1 $2" under Scaleform.
+pin("s = this.hzSplitCamel(s);", "affliction names split camel case in code");
+pin("p >= 97 && p <= 122 && c >= 65 && c <= 90", "the camel split is a lowercase letter before a capital");
+expect(src.indexOf('"$1 $2"') < 0, "the HUD does not pass $1 $2 to replace");
+pin('var sb:String = String(b.sub).length > 0 ? String(b.sub) : this.hzPretty(String(b.icon));', "a game subtitle is kept, and an empty one falls back to the icon label");
+function hzSplitCamel(s) {
+	if (s == null || s.length < 2) return s == null ? "" : s;
+	let o = s.charAt(0);
+	for (let i = 1; i < s.length; i++) {
+		const p = s.charCodeAt(i - 1);
+		const c = s.charCodeAt(i);
+		if (p >= 97 && p <= 122 && c >= 65 && c <= 90) o += " ";
+		o += s.charAt(i);
+	}
+	return o;
+}
+function hzPretty(id) {
+	if (!id) return "";
+	const lo = id.toLowerCase();
+	if (lo.indexOf("thermal") >= 0) return "Thermal";
+	if (lo.indexOf("radiation") >= 0) return "Radiation";
+	if (lo.indexOf("airborne") >= 0) return "Airborne";
+	if (lo.indexOf("corros") >= 0) return "Corrosive";
+	let s = id.replace(/^(PersonalEffect_|Personal_|HazardEffect_|Hazard_)/, "");
+	s = s.replace(/_(Negative|Positive)$/, "");
+	s = s.replace(/_/g, " ");
+	return hzSplitCamel(s);
+}
+function scaleformCamel(s) {
+	let o = "";
+	for (let i = 0; i < s.length; i++) {
+		const p = s.charCodeAt(i);
+		const c = s.charCodeAt(i + 1);
+		if (p >= 97 && p <= 122 && c >= 65 && c <= 90) { o += "$1 $2"; i++; }
+		else o += s.charAt(i);
+	}
+	return o;
+}
+expect(hzPretty("PersonalEffect_CardioRespiratoryCirculatory_Negative") === "Cardio Respiratory Circulatory", "contusions icon label matches the vanilla symbol words");
+expect(hzPretty("PersonalEffect_SkeletalMuscular_Negative") === "Skeletal Muscular", "skeletal icon label");
+expect(hzPretty("PersonalEffect_NervousSystem_Positive") === "Nervous System", "nervous icon label");
+expect(hzPretty("PersonalEffect_DigestiveImmune_Negative") === "Digestive Immune", "digestive icon label");
+expect(hzPretty("HazardEffect_Thermal") === "Thermal", "thermal stays one word");
+expect(hzPretty("HazardEffect_Corrosive_Negative") === "Corrosive", "corrosive stays one word");
+expect(scaleformCamel("CardioRespiratoryCirculatory") === "Cardi$1 $2espirator$1 $2irculatory", "Scaleform leaves $1 $2 in the contusions subtitle");
 
 function dlgTail(buf) {
 	const text = buf.toString("utf8").replace(/\r\n/g, "\n");

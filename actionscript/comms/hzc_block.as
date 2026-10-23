@@ -172,7 +172,7 @@
          var want:Object = {"comms":1,"scanner":1,"style":1,"layout":1,"effects":1,"effects v0.26":2};
          for each(var raw:String in t.split("\r").join("").split("\n"))
          {
-            var ln:String = raw.replace(/^[\s\uFEFF]+|\s+$/g,"");
+            var ln:String = this.hzcTrim(raw);
             if(ln.length == 0 || ln.charAt(0) == ";" || ln.charAt(0) == "#") { continue; }
             if(ln.charAt(0) == "[") { var e:int = ln.indexOf("]"); sec = (e > 0 ? ln.substring(1,e) : ln.substr(1)).replace(/^\s+|\s+$/g,"").toLowerCase(); continue; }
             if(want[sec] == undefined) { continue; }
@@ -187,6 +187,20 @@
          }
          for(var ok:String in old) { if(o[ok] == undefined) { o[ok] = old[ok]; } }
          return o;
+      }
+      // Leading and trailing space, tab, line breaks, NBSP, and BOM. No RegExp: Scaleform's PCRE rejects \u.
+      private function hzcTrimC(c:int) : Boolean
+      {
+         return c == 9 || c == 10 || c == 11 || c == 12 || c == 13 || c == 32 || c == 0xA0 || c == 0xFEFF;
+      }
+      private function hzcTrim(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var a:int = 0;
+         var b:int = s.length;
+         while(a < b && this.hzcTrimC(s.charCodeAt(a))) { a++; }
+         while(b > a && this.hzcTrimC(s.charCodeAt(b - 1))) { b--; }
+         return a == 0 && b == s.length ? s : s.substring(a,b);
       }
       private function hzcApply() : void
       {
@@ -1034,6 +1048,7 @@
       private var hzcRxFail:int = 0;         // misses in a row, one per message. A later success clears it.
       private var hzcRxStepN:int = 0;        // consecutive top-level step throws. Three turn the card off.
       private var hzcRxWhyLast:String = "";
+      private var hzcRxSelf:String = "";   // one-time matcher self-test: "pass" or "fail"
       private function hzcRxInit() : void
       {
          if(this.hzcRxLayer == null)
@@ -1051,6 +1066,7 @@
          try { BSUIDataManager.Subscribe("HUDMessageData",this.hzcRxOnMsg); }
          catch(eSub:Error) { this.hzcRxSub = false; }
          this.hzcRxSkip = false;
+         try { this.hzcRxSelfTest(); } catch(eSelf:Error) { this.hzcRxSelf = "fail"; }
       }
       private function hzcRxOn() : Boolean
       {
@@ -1073,10 +1089,30 @@
          while(s.length > 0 && s.charAt(s.length - 1) == ".") { s = s.substr(0,s.length - 1); }
          return s;
       }
+      // A-Z, a-z, or Latin-1 / Latin Extended (U+00C0 through U+024F). charCodeAt, not a regex:
+      // Scaleform compiles AS3 RegExp with PCRE, and the pattern text keeps a literal \u (FFDec does not expand it).
+      private function hzcRxLetter(c:int) : Boolean
+      {
+         return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 0xC0 && c <= 0x24F);
+      }
+      // Apostrophe, right single quotation mark, or hyphen.
+      private function hzcRxMark(c:int) : Boolean
+      {
+         return c == 0x27 || c == 0x2019 || c == 0x2D;
+      }
       // An initial is one letter and a period, or those pairs stuck together: "J." and "J.T.". "Okay." is neither.
       private function hzcRxInitial(w:String) : Boolean
       {
-         return w != null && /^(?:[A-Za-z\u00C0-\u024F]\.)+$/.test(w);
+         if(w == null) { return false; }
+         var n:int = w.length;
+         if(n < 2 || (n & 1) != 0) { return false; }
+         var i:int = 0;
+         while(i < n)
+         {
+            if(!this.hzcRxLetter(w.charCodeAt(i)) || w.charCodeAt(i + 1) != 46) { return false; }
+            i += 2;
+         }
+         return true;
       }
       // Letters, apostrophes, and hyphens. A trailing period is a title (Dr., Lt., Capt.) or an initial.
       // Any other period is a sentence break, so "Okay. Sam liked that." does not swallow the first sentence.
@@ -1085,31 +1121,63 @@
          if(w == null || w.length == 0) { return false; }
          if(this.hzcRxInitial(w)) { return true; }
          var body:String = w;
-         if(w.charAt(w.length - 1) == ".")
+         var p:int = 0;
+         if(w.charCodeAt(w.length - 1) == 46)
          {
             body = w.substr(0,w.length - 1);
             if(HZC_RX_TITLE.indexOf(body.toLowerCase()) < 0) { return false; }
          }
-         else if(w.indexOf(".") >= 0) { return false; }
-         if(!/^[A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F'\u2019-]*$/.test(body)) { return false; }
-         if(/['\u2019-]['\u2019-]/.test(body) || /['\u2019-]$/.test(body)) { return false; }
-         return true;
+         else
+         {
+            while(p < w.length) { if(w.charCodeAt(p) == 46) { return false; } p++; }
+         }
+         if(body == null || body.length == 0 || !this.hzcRxLetter(body.charCodeAt(0))) { return false; }
+         var i:int = 1;
+         var prevMark:Boolean = false;
+         while(i < body.length)
+         {
+            var c:int = body.charCodeAt(i);
+            if(this.hzcRxMark(c))
+            {
+               if(prevMark) { return false; }
+               prevMark = true;
+            }
+            else if(this.hzcRxLetter(c)) { prevMark = false; }
+            else { return false; }
+            i++;
+         }
+         return !prevMark;
       }
       // Whole line, English only. The game line may be any case ("Sam likes that" or "SAM COE LIKED THAT").
       // The name is 1 to 4 words. No capital is required. The first word cannot be a pronoun or a quantifier.
       // An initial ("A.", "I.") is a name word, not the article or the pronoun. "and", "that", and a reaction verb cannot be a name word.
       // "Dr. Barrett" is a name. A name that is only a title ("Mr.") is not.
-      // Verb is either tense. The period after "that" is optional. Trailing space is ignored.
+      // The verb is the word immediately before a final "that" or "that.". The period is optional. Trailing space is ignored.
+      // Case is folded with toLowerCase. The regex i flag only folds A-Z, and this path does not use a regex.
       // Returns {n, k} or null. k is the past-tense category. n keeps the matched letters; the card uppercases it.
+      private function hzcRxTail(s:String, tail:String) : Boolean
+      {
+         if(s == null || tail == null || s.length < tail.length) { return false; }
+         return s.substring(s.length - tail.length).toLowerCase() == tail;
+      }
       private function hzcRxMatch(t:String) : Object
       {
-         var s:String = this.hzcRxNorm(t);   // r3: normalized (spaces, trailing line break)
+         var s:String = this.hzcRxNorm(t);
          if(s == null || s.indexOf("\n") >= 0 || s.indexOf("\r") >= 0) { return null; }
          if(s.length < 11 || s.length > 64) { return null; }
-         var m:Object = /^(.+?) (loves|likes|dislikes|hates|loved|liked|disliked|hated) that\.?\s*$/i.exec(s);
-         if(m == null) { return null; }
-         var n:String = String(m[1]);
-         if(n.length < 1 || n.length > 40) { return null; }
+         var cut:int = 0;
+         if(this.hzcRxTail(s," that.")) { cut = 6; }
+         else if(this.hzcRxTail(s," that")) { cut = 5; }
+         else { return null; }
+         var head:String = s.substring(0,s.length - cut);
+         var sp:int = -1;
+         var j:int = head.length - 1;
+         while(j >= 0) { if(head.charCodeAt(j) == 32) { sp = j; break; } j--; }
+         if(sp <= 0) { return null; }
+         var verb:String = head.substring(sp + 1);
+         var n:String = head.substring(0,sp);
+         var k:int = this.hzcRxVerb(verb);
+         if(k < 0 || n.length < 1 || n.length > 40) { return null; }
          var ws:Array = n.split(" ");
          if(ws.length < 1 || ws.length > 4) { return null; }
          var i:int = 0;
@@ -1127,23 +1195,67 @@
             i++;
          }
          if(!named) { return null; }
-         var k:int = this.hzcRxVerb(String(m[2]));
-         if(k < 0) { return null; }
          return {"n":n,"k":k};
       }
-      // r3: no-break / figure / narrow no-break spaces and tabs -> space, space runs -> one, trimmed (a trailing line break too)
+      // Tab and the no-break spaces become a normal space. Zero-width space and BOM are dropped.
+      // Ends are trimmed. Runs of spaces become one. A line break in the middle is left so the match can reject it.
       private function hzcRxNorm(t:String) : String
       {
          if(t == null) { return null; }
-         var s:String = t.replace(/[\u00A0\u2007\u202F\u2009\u200A\t]/g," ").replace(/[\u200B\uFEFF]/g,"");
-         s = s.replace(/^[\s]+|[\s]+$/g,"").replace(/ {2,}/g," ");
-         return s;
+         var raw:String = "";
+         var i:int = 0;
+         while(i < t.length)
+         {
+            var c:int = t.charCodeAt(i);
+            if(c == 0x200B || c == 0xFEFF) { i++; continue; }
+            if(c == 9 || c == 0xA0 || c == 0x2007 || c == 0x202F || c == 0x2009 || c == 0x200A) { raw += " "; }
+            else { raw += t.charAt(i); }
+            i++;
+         }
+         var a:int = 0;
+         var b:int = raw.length;
+         while(a < b && this.hzcRxTrimC(raw.charCodeAt(a))) { a++; }
+         while(b > a && this.hzcRxTrimC(raw.charCodeAt(b - 1))) { b--; }
+         var o:String = "";
+         var spc:Boolean = false;
+         i = a;
+         while(i < b)
+         {
+            if(raw.charCodeAt(i) == 32)
+            {
+               if(!spc) { o += " "; spc = true; }
+            }
+            else { o += raw.charAt(i); spc = false; }
+            i++;
+         }
+         return o;
+      }
+      private function hzcRxTrimC(c:int) : Boolean
+      {
+         return c == 9 || c == 10 || c == 11 || c == 12 || c == 13 || c == 32;
+      }
+      // One startup line for HorizonUI.log. Pass means "Sam Coe liked that." is Sam Coe, liked.
+      // The three probes stay even though the matcher does not use them: they show whether this GFx build accepts \u.
+      public function hzcRxSelfTest() : String
+      {
+         if(this.hzcRxSelf != null && this.hzcRxSelf.length > 0) { return this.hzcRxSelf; }
+         var r:Object = null;
+         try { r = this.hzcRxMatch("Sam Coe liked that."); } catch(eM:Error) { r = null; }
+         var ok:Boolean = r != null && String(r.n) == "Sam Coe" && int(r.k) == 1;
+         var uLit:String = "throw";
+         var uNew:String = "throw";
+         var xLit:String = "throw";
+         try { uLit = /\u0041/.test("A") ? "true" : "false"; } catch(eU:Error) { uLit = "throw"; }
+         try { uNew = new RegExp("\\u0041").test("A") ? "true" : "false"; } catch(eN:Error) { uNew = "throw"; }
+         try { xLit = /\x41/.test("A") ? "true" : "false"; } catch(eX:Error) { xLit = "throw"; }
+         this.hzcRxSelf = (ok ? "pass" : "fail") + "\n/\\u0041/.test('A')=" + uLit + "\nnew RegExp('\\\\u0041').test('A')=" + uNew + "\n/\\x41/.test('A')=" + xLit;
+         return this.hzcRxSelf;
       }
       // ---------- 0.42.0.6: message log. HZC_MSG_LOG is the switch (true on this test build). ----------
       // Leave this true until the release checklist in README.md. The DLL writes whatever this queue
       // returns. Debug=0 in the ini still stops the queue. A missing Debug key leaves it on.
       private static const HZC_MSG_LOG:Boolean = true;
-      private static const HZC_BUILD:String = "0.42.0.7";
+      private static const HZC_BUILD:String = "0.42.0.8";
       private var hzcRxDbgOn:Boolean = true;   // 0.42.0.6: on with HZC_MSG_LOG. The release checklist sets this default to false. hzcRxDbgIni turns it off when Debug=0.
       private var hzcRxDbgQ:Array = [];
       private var hzcRxDbgSeen:Array = [];   // {it, f}
@@ -1159,7 +1271,7 @@
          {
             for each(var raw:String in txt.split("\r").join("").split("\n"))
             {
-               var ln:String = raw.replace(/^[\s\uFEFF]+|\s+$/g,"");
+               var ln:String = this.hzcTrim(raw);
                if(ln.length == 0 || ln.charAt(0) == ";" || ln.charAt(0) == "#") { continue; }
                if(ln.charAt(0) == "[") { var e:int = ln.indexOf("]"); sec = (e > 0 ? ln.substring(1,e) : ln.substr(1)).replace(/^\s+|\s+$/g,"").toLowerCase(); continue; }
                if(sec != "debug") { continue; }

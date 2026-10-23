@@ -4,18 +4,18 @@
 // res/HorizonUI.rc.in includes this header, and the plugin logs and sends the same
 // string (or the version resource that this header produced). Do not copy the
 // numbers into the resource script or into a log line.
-// Product version matches the file version (0.42.0.7). The settings-schema string
+// Product version matches the file version (0.42.0.8). The settings-schema string
 // in the plugin (HZF::kVersion, "0.42.0") is a different value: preset age and the
 // update backup compare against that, not against this file version.
-// Last modified: 2026-10-22.
+// Last modified: 2026-10-23.
 
 #define HZ_FILE_VERSION_MAJOR 0
 #define HZ_FILE_VERSION_MINOR 42
 #define HZ_FILE_VERSION_PATCH 0
-#define HZ_FILE_VERSION_BUILD 7
-#define HZ_FILE_VERSION_STR "0.42.0.7"
+#define HZ_FILE_VERSION_BUILD 8
+#define HZ_FILE_VERSION_STR "0.42.0.8"
 
-// 0.42.0.7: 1 writes the verbose HUD-message trace (the "hud message:" line and the
+// 0.42.0.8: 1 writes the verbose HUD-message trace (the "hud message:" line and the
 // Comms movie queue as "comms msg:" lines). 0 turns that trace off. The reaction backup
 // (the queue, Poll, hzcRxPush, and the one-line "comms reaction:" status) stays compiled
 // either way. Leave this at 1 until the release checklist in README.md. The settings schema
@@ -26,7 +26,7 @@
 #if !defined(RC_INVOKED) && defined(__cplusplus)
 #include <string>
 
-// Purpose: accept a 4-part numeric file version such as 0.42.0.7.
+// Purpose: accept a 4-part numeric file version such as 0.42.0.8.
 // Inputs: a version string with no leading v. Outputs: true when it is four
 // numeric parts. Dependencies: none.
 // Last modified: 2026-10-22.

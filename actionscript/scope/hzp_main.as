@@ -15,8 +15,8 @@
       // Settings: [Scope] ScopeHoldBreathChip (0 = the game's prompt) / ScopeChipX / ScopeChipY / ScopeChipScale and [Style]
       // AccentColor / AccentHex / CardOpacity / TextScale / FontFace / HeaderStyle (same meaning as on the HUD). Read when
       // the scope opens and every 5 s after.
-      private static const HZP_VERSION:String = "0.42.0.7";   // 0.42.0.7: scope movie version (= the test build's DLL file version)
-      private static const HZP_BUILD:String = "0.42.0.7";   // 0.42.0.7: scope movie build label (= the test build's DLL file version)
+      private static const HZP_VERSION:String = "0.42.0.8";   // 0.42.0.8: scope movie version (= the test build's DLL file version)
+      private static const HZP_BUILD:String = "0.42.0.8";   // 0.42.0.8: scope movie build label (= the test build's DLL file version)
       private static const HZP_ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       private static const HZP_ACC:uint = 0x3FD0E0;
       private static const HZP_O2:uint = 0x4DB6FF;
@@ -30,6 +30,8 @@
       private static const HZP_KHEAD:Number = 1.08;     // 0.42.0.5: headroom on the measured key text width (bold faces, renderer rounding)
       private static const HZP_KMINW:Number = 14;       // 0.42.0.5: smallest key text slot (a one-glyph gamepad face such as L3)
       private static const HZP_RPAD:Number = 18;        // 0.42.0.5: panel padding right of the O2 meter (was 14)
+      private static const HZP_GLOW:Number = 8;         // 0.42.0.8: transparent pad so a parent scrollRect can include the held edge
+      private static const HZP_LABEX:Number = 16;       // 0.42.0.8: extra label field past textWidth (the last glyph's right bearing)
       private static const HZP_O2_WARN:Number = 0.35;   // = the HUD vitals card warning band (hz26Band 1, hz26WarnCol amber)
       private static const HZP_O2_CRIT:Number = 0.15;   // = the HUD vitals card critical band (hz26Band 2, hz26WarnCol red)
       private static const HZP_LRG:Boolean = __HZP_LRG__;
@@ -47,6 +49,7 @@
       private var hzpFallN:int = 0;           // falling readings in a row
       private var hzpZeroN:int = 0;           // readings under 1 % in a row
       private var hzpSig:String = "";
+      private var hzpMaskOnce:Boolean = false;   // 0.42.0.8: a non-round ancestor mask is widened once, not every frame
       private var hzpIniT:int = -100000;
       private var hzpFontOk:Object = {};
       private var hzpLastX:Number = NaN;
@@ -318,6 +321,7 @@
          if(this.hzpH > 0) { this.hzpChip.scaleY = sh / this.hzpH; }
          this.hzpChip.x = Math.round(this.hzpLastX + ox - sw / 2);
          this.hzpChip.y = Math.round(this.hzpLastY + oy - sh / 2);
+         this.hzpUnclip();
          if(this.hzpChip.parent == this && getChildIndex(this.hzpChip) != numChildren - 1) { setChildIndex(this.hzpChip,numChildren - 1); }
          this.hzpChip.visible = true;
       }
@@ -491,10 +495,11 @@
          var lth0:Number = Number(slot[1]);
          if(isNaN(ltw) || ltw < 1) { ltw = 80; }
          if(isNaN(lth0) || lth0 < 1) { lth0 = 16; }
-         var h:Number = Math.round(32 + (ts - 1) * 20);
+         var ch:Number = Math.round(32 + (ts - 1) * 20);
          var lt:TextField = this.hzpT(p,this.hzpCase(String(HZP_LBL[st])),14,st == 3 ? HZP_DIM : HZP_TXT,"sb",0.1);
          var ownW:Number = this.hzpKeyW(lt);
          if(ownW > ltw) { ltw = ownW; }
+         ltw += HZP_LABEX;
          var lth:Number = lt.height;
          if(lth0 > lth) { lth = lth0; }
          lt.autoSize = TextFieldAutoSize.NONE;
@@ -511,26 +516,31 @@
             kt.width = ktw;
             if(kt.height < kth) { kt.height = kth; }
          }
-         h = Math.max(h,Math.round(lth + 6),kt != null ? Math.round(kt.height + 6) : 0);
-         h = Math.round(h);
+         ch = Math.max(ch,Math.round(lth + 6),kt != null ? Math.round(kt.height + 6) : 0);
+         ch = Math.round(ch);
          var kw:Number = 30 + (kt != null ? ktw + HZP_KPAD : 0);   // 0.42.0.6: keycap from the locked key-field width
-         var kh:Number = Math.round(h - 12);
+         var kh:Number = Math.round(ch - 12);
          var mw:Number = 120;
          var x0:Number = 7;
          var lx:Number = x0 + kw + 10;
          var mx:Number = Math.round(lx + ltw + 16);
-         var w:Number = Math.round(mx + mw + HZP_RPAD);   // 0.42.0.5: + 4
+         var cw:Number = Math.round(mx + mw + HZP_RPAD);   // 0.42.0.5: + 4
+         var pad:Number = HZP_GLOW;
+         // A 1% fill makes getBounds include the pad. Filters and strokes are cropped by an ancestor scrollRect.
+         g.beginFill(0x000000,0.01);
+         g.drawRect(0,0,cw + pad * 2,ch + pad * 2);
+         g.endFill();
          // panel: shadow and strokes stay inside the chip. Strokes are 1 or 2 px and inset by half that width.
          var opa:Number = Number(this.hzpS.CardOpacity);
          if(isNaN(opa)) { opa = 1; }
          var i:int = 0;
          while(i < 3)
          {
-            var sx:Number = 1 + i;
-            var sy:Number = 2;
-            var sw:Number = w - sx * 2;
-            var shd:Number = h - 4 - i;
-            if(sw > 4 && shd > 4) { g.beginFill(0x000000,0.07); g.drawRoundRect(sx,sy,sw,shd,h,h); g.endFill(); }
+            var sx:Number = pad + 1 + i;
+            var sy:Number = pad + 2;
+            var sw:Number = cw - (1 + i) * 2;
+            var shd:Number = ch - 4 - i;
+            if(sw > 4 && shd > 4) { g.beginFill(0x000000,0.07); g.drawRoundRect(sx,sy,sw,shd,ch,ch); g.endFill(); }
             i++;
          }
          var bw:Number = 1;
@@ -543,28 +553,78 @@
          var inset:Number = bw * 0.5;
          g.lineStyle(bw,bcol,ba,true,"none");
          g.beginFill(HZP_BG,Math.min(1,0.84 * opa));
-         g.drawRoundRect(inset,inset,w - bw,h - bw,Math.max(0,h - bw),Math.max(0,h - bw));
+         g.drawRoundRect(pad + inset,pad + inset,cw - bw,ch - bw,Math.max(0,ch - bw),Math.max(0,ch - bw));
          g.endFill();
          g.lineStyle();
-         if(st == 1 || (band > 0 && st != 3)) { g.lineStyle(2,stc,0.18,true,"none"); g.drawRoundRect(1,1,w - 2,h - 2,Math.max(0,h - 2),Math.max(0,h - 2)); g.lineStyle(); }
+         if(st == 1 || (band > 0 && st != 3)) { g.lineStyle(2,stc,0.18,true,"none"); g.drawRoundRect(pad + 1,pad + 1,cw - 2,ch - 2,Math.max(0,ch - 2),Math.max(0,ch - 2)); g.lineStyle(); }
          // keycap. A 1 px stroke is inset by half a pixel so it stays on whole pixels and inside the cap.
-         var ky:Number = Math.round((h - kh) / 2);
+         var ky:Number = Math.round((ch - kh) / 2);
          g.lineStyle(1,keyCol,st == 3 ? 0.5 : 0.95,true,"none");
          g.beginFill(keyCol,st == 1 ? 0.22 : 0.1);
-         g.drawRoundRect(x0 + 0.5,ky + 0.5,kw - 1,kh - 1,8,8);
+         g.drawRoundRect(pad + x0 + 0.5,pad + ky + 0.5,kw - 1,kh - 1,8,8);
          g.endFill();
          g.lineStyle();
-         this.hzpCross(g,x0 + 15,ky + kh / 2,keyCol,st == 3 ? 0.6 : 1);
-         if(kt != null) { kt.x = Math.round(x0 + 28); kt.y = Math.round(h / 2 - kt.height / 2); }
-         lt.x = lx - 2;
-         lt.y = Math.round(h / 2 - lt.height / 2);
-         this.hzpMx = mx;
-         this.hzpMy = Math.round(h / 2 - 3);
+         this.hzpCross(g,pad + x0 + 15,pad + ky + kh / 2,keyCol,st == 3 ? 0.6 : 1);
+         if(kt != null) { kt.x = Math.round(pad + x0 + 28); kt.y = Math.round(pad + ch / 2 - kt.height / 2); }
+         lt.x = pad + lx - 2;
+         lt.y = Math.round(pad + ch / 2 - lt.height / 2);
+         this.hzpMx = pad + mx;
+         this.hzpMy = Math.round(pad + ch / 2 - 3);
          this.hzpMw = mw;
          if(this.hzpBar == null) { this.hzpBar = new flash.display.Shape(); }
          p.addChild(this.hzpBar);
-         this.hzpW = w;
-         this.hzpH = h;
+         this.hzpW = cw + pad * 2;
+         this.hzpH = ch + pad * 2;
+      }
+      // Clear a clip on the chip itself. Grow an ancestor scrollRect so it includes the pad. A round mask
+      // (width about equal to height) is left alone: that is the scope reticle, not the chip's box.
+      private function hzpUnclip() : void
+      {
+         var chip:Sprite = this.hzpChip;
+         if(chip == null) { return; }
+         chip.scrollRect = null;
+         chip.mask = null;
+         chip.cacheAsBitmap = false;
+         var d:* = chip.parent;
+         var n:int = 0;
+         while(d != null && n < 6)
+         {
+            var sr:Rectangle = null;
+            var mb:Rectangle = null;
+            var cb:Rectangle = null;
+            try { sr = d.scrollRect; } catch(eS:Error) { sr = null; }
+            try { cb = chip.getBounds(d); } catch(eB:Error) { cb = null; }
+            if(sr != null && cb != null && cb.width > 0 && cb.height > 0)
+            {
+               var l:Number = cb.x - HZP_GLOW;
+               var t:Number = cb.y - HZP_GLOW;
+               var r:Number = cb.x + cb.width + HZP_GLOW;
+               var btm:Number = cb.y + cb.height + HZP_GLOW;
+               var nl:Number = sr.x < l ? sr.x : l;
+               var nt:Number = sr.y < t ? sr.y : t;
+               var nr:Number = (sr.x + sr.width) > r ? (sr.x + sr.width) : r;
+               var nb:Number = (sr.y + sr.height) > btm ? (sr.y + sr.height) : btm;
+               if(nl < sr.x - 0.5 || nt < sr.y - 0.5 || nr > sr.x + sr.width + 0.5 || nb > sr.y + sr.height + 0.5)
+               {
+                  try { d.scrollRect = new Rectangle(nl,nt,nr - nl,nb - nt); } catch(eSet:Error) { }
+               }
+            }
+            try
+            {
+               if(d.mask != null) { mb = d.mask.getBounds(d); }
+            }
+            catch(eM:Error) { mb = null; }
+            if(!this.hzpMaskOnce && mb != null && cb != null && mb.width > 20 && Math.abs(mb.width - mb.height) >= 4)
+            {
+               this.hzpMaskOnce = true;
+               var overR:Number = (cb.x + cb.width + HZP_GLOW) - (mb.x + mb.width);
+               var overB:Number = (cb.y + cb.height + HZP_GLOW) - (mb.y + mb.height);
+               if(overR > 0 && overR <= HZP_GLOW + 1) { try { d.mask.width = d.mask.width + overR; } catch(eW:Error) { } }
+               if(overB > 0 && overB <= HZP_GLOW + 1) { try { d.mask.height = d.mask.height + overB; } catch(eH:Error) { } }
+            }
+            d = d.parent;
+            n++;
+         }
       }
       private function hzpBarDraw(st:int, band:int, o:Number) : void
       {
