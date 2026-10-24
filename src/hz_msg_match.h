@@ -1,6 +1,6 @@
 #pragma once
 
-// HUD message classification for the 0.42.0.10 cards. Pure string work: no forms,
+// HUD message classification for the 0.42.0.11 cards. Pure string work: no forms,
 // no game settings, and no address lookups. The DLL fills the GMST phrases after
 // data has loaded and calls Match on the task thread. English is the fallback.
 // A line that does not match is left as the game's own message.
@@ -722,11 +722,38 @@ inline Hit MatchBounty(std::string_view line, const Templates& t, const Template
 	return Miss();
 }
 
+// Any HUD line whose last token before the Credits name is a signed or unsigned
+// amount ("-1890 Credits", "+500 credits"). Prefix and suffix stay on the card
+// as the raw line. No amount means a miss: a tariff-only line stays vanilla.
+// Fail closed: Credits is a whole word, and TakeAmount must consume that token.
+inline Hit MatchCreditsSigned(std::string_view line, const Templates& t, const Templates& en)
+{
+	if (!UsablePhrase(t.creditsName)) return Miss();
+	std::size_t nameAt = 0;
+	if (!ContainsWord(line, t.creditsName, nameAt)) return Miss();
+	auto before = Trim(line.substr(0, nameAt));
+	if (before.empty()) return Miss();
+	std::size_t tokEnd = before.size();
+	std::size_t tokStart = tokEnd;
+	while (tokStart > 0 && !IsWs(static_cast<unsigned char>(before[tokStart - 1]))) --tokStart;
+	auto tok = before.substr(tokStart, tokEnd - tokStart);
+	if (tok.size() < 2 || (tok[0] != '+' && tok[0] != '-')) return Miss();
+	const bool plus = tok[0] == '+';
+	const std::size_t t0 = 1;
+	if (t0 >= tok.size()) return Miss();
+	std::string digits;
+	std::size_t b = 0, e = 0;
+	if (!TakeAmount(tok, t0, digits, b, e) || b != t0 || e != tok.size()) return Miss();
+	const char tier = SamePhrase(t.creditsName, en.creditsName) ? kTierEnglish : kTierGmst;
+	return Make("credits", plus ? "gain" : "loss", "", SignedChip(plus, digits).c_str(), tier);
+}
+
 inline Hit MatchCredits(std::string_view line, const Templates& t, const Templates& en)
 {
 	if (auto h = MatchCreditsKid(line, t); h.ok) return h;
 	if (auto h = MatchCreditsGeneric(line, t, en); h.ok) return h;
 	if (auto h = MatchBounty(line, t, en); h.ok) return h;
+	if (auto h = MatchCreditsSigned(line, t, en); h.ok) return h;
 	return Miss();
 }
 
@@ -824,7 +851,7 @@ inline Hit MatchUnavailable(std::string_view line, const Templates& t, const Tem
 	if (EqFold(line, Trim(t.creature)))
 		return Make("unavailable", "calmed", "Creature", "CALMED", TierOf(t.creature, en.creature));
 	if (EqFold(line, Trim(t.pickFail)))
-		return Make("unavailable", "caught", "", "CAUGHT", TierOf(t.pickFail, en.pickFail));
+		return Make("crime", "caught", "", "CAUGHT", TierOf(t.pickFail, en.pickFail));
 	if (EqLine(line, t.stealTake))
 		return Make("crime", "takeback", "", "CAUGHT", TierOf(t.stealTake, en.stealTake));
 	if (EqLine(line, t.stealAttack))

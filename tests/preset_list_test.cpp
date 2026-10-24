@@ -58,11 +58,11 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.42.0.10", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 42 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 10, "file version numbers");
-	Expect(HZ_COMMS_MSG_LOG == 1, "verbose reaction trace is on for this test build");
-	Expect(HZ_HUD_MSG_CAPTURE == 1, "unfiltered HUD capture is on for this test build");
-	Expect(HzFileVersionOk("0.42.0.10"), "4-part version ok");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.42.0.11", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 42 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 11, "file version numbers");
+	Expect(HZ_COMMS_MSG_LOG == 0, "verbose reaction trace is off for this release");
+	Expect(HZ_HUD_MSG_CAPTURE == 0, "unfiltered HUD capture is off for this release");
+	Expect(HzFileVersionOk("0.42.0.11"), "4-part version ok");
 	Expect(!HzFileVersionOk("0.42.0"), "3-part version is not the file version");
 	Expect(!HzFileVersionOk("v0.42.0.6"), "leading v is not accepted");
 	Expect(!HzFileVersionOk("0.42.0.6 "), "trailing space rejected");
@@ -139,7 +139,7 @@ int main()
 		ok(hit("Sarah Morgan has already caught you.", en), "unavailable", "caught", "Sarah Morgan", "CAUGHT", 'C', "caught");
 		ok(hit("The creature is calmed and cannot respond.", en), "unavailable", "calmed", "Creature", "CALMED", 'C', "creature");
 		ok(hit("Sam Coe is calmed and cannot respond.", en), "unavailable", "calmed", "Sam Coe", "CALMED", 'C', "npc calmed");
-		ok(hit("You've been caught pickpocketing.", en), "unavailable", "caught", "", "CAUGHT", 'C', "pickpocket fail");
+		ok(hit("You've been caught pickpocketing.", en), "crime", "caught", "", "CAUGHT", 'C', "pickpocket fail");
 		ok(hit("The owner caught you stealing.", en), "crime", "takeback", "", "CAUGHT", 'C', "steal take-back");
 		ok(hit("THE OWNER CAUGHT YOU STEALING.", en), "crime", "takeback", "", "CAUGHT", 'C', "steal take-back folded");
 		ok(hit("You've been caught stealing and the alarm has been raised.", en), "crime", "alarm", "", "ALARM", 'C', "steal alarm");
@@ -160,6 +160,9 @@ int main()
 		ok(hit("Credits (500) Added.", en), "credits", "gain", "", "+500", 'C', "credits added paren");
 		ok(hit("Credits x500 Added.", en), "credits", "gain", "", "+500", 'C', "credits added times");
 		ok(hit("200 Credits Removed.", en), "credits", "loss", "", "-200", 'C', "credits removed");
+		ok(hit("Docking fee: -1890 Credits (Cargo, Tariffs, Fuel, Crew)", en), "credits", "loss", "", "-1,890", 'C', "signed credits loss with detail");
+		ok(hit("Refund: +500 credits posted", en), "credits", "gain", "", "+500", 'C', "signed credits gain any case");
+		miss("Shipment fees: Tariffs Initiated", en, "credits word without an amount stays vanilla");
 		miss("Credits Card Added.", en, "other item with Credits in the name");
 		miss("Added.", en, "generic added without the Credits name or amount");
 		miss("3 Digipick Added.", en, "Digipick added is not credits");
@@ -228,6 +231,9 @@ int main()
 		Expect(as.find("if(sub == \"bounty\") { return \"BOUNTY PAID\"; }") != std::string::npos, "bounty paid title is BOUNTY PAID");
 		Expect(as.find("if(sub == \"bounty-add\") { return \"BOUNTY\"; }") != std::string::npos, "bounty added title is BOUNTY");
 		Expect(as.find("if(sub == \"gain\" || sub == \"bounty-add\")") == std::string::npos, "bounty added is not a green credits gain");
+		Expect(as.find("private function hzcCardMatch(kind:String, sub:String, name:String, value:String)") != std::string::npos, "movie matcher takes a DLL payload");
+		Expect(as.find("if(sub == \"caught\") { return \"PICKPOCKET\"; }") != std::string::npos, "pickpocket crime title is PICKPOCKET");
+		Expect(as.find("if(sub == \"takeback\" || sub == \"lock\") { return \"CAUGHT\"; }") != std::string::npos, "take-back and lock titles are CAUGHT");
 		if (as.find("if(sub == \"kid\") { return \"KID STUFF\"; }") != std::string::npos) std::cout << "ok  Kid Stuff title is KID STUFF\n";
 		if (as.find("SENT HOME") == std::string::npos) std::cout << "ok  SENT HOME is not a card title\n";
 		if (as.find("if(sub == \"bounty\") { return \"BOUNTY PAID\"; }") != std::string::npos) std::cout << "ok  bounty paid title is BOUNTY PAID\n";
@@ -453,6 +459,14 @@ int main()
 	}
 
 	{
+		std::ifstream in("src/hz_ini_diff.h");
+		Expect(static_cast<bool>(in), "hz_ini_diff.h opens");
+		std::string hdr((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		Expect(hdr.find("#include <cstdlib>") != std::string::npos, "hz_ini_diff.h includes cstdlib");
+		Expect(hdr.find("#include <cctype>") != std::string::npos, "hz_ini_diff.h includes cctype");
+	}
+
+	{
 		std::ifstream in("src/main.cpp");
 		Expect(static_cast<bool>(in), "main.cpp opens");
 		std::string src((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -461,7 +475,13 @@ int main()
 		Expect(src.find("REX::INFO(\"HorizonUI {} loaded\", HZ::DllFileVersion());", load) != std::string::npos, "load line prints DllFileVersion");
 		Expect(src.find("HorizonUI 0.42.0 loaded") == std::string::npos, "load line is not a typed schema version");
 		Expect(src.find("inline const char* kVersion = \"0.42.0\"") != std::string::npos, "settings schema stays 0.42.0");
-		Expect(src.find("#include \"hz_ini_diff.h\"") != std::string::npos, "F11 save uses the shared Diff header");
+		Expect(src.find("\n#include \"hz_ini_diff.h\"") != std::string::npos, "F11 save uses the shared Diff header");
+		{
+			const auto inc = src.find("\n#include \"hz_ini_diff.h\"");
+			const auto lastNs = src.rfind("namespace HZ", inc);
+			const auto lastClose = src.rfind("\n}", inc);
+			Expect(inc != std::string::npos && lastClose > lastNs, "hz_ini_diff.h is included at file scope, not inside namespace HZ");
+		}
 		Expect(src.find("const std::string u = Diff(a_full, Defaults(a_p), ReadOr(a_p.user), o);") != std::string::npos, "SaveFromHud still runs through Diff");
 		Expect(src.find("ShowHUDMessageEvent sink registered (address id 86800)") != std::string::npos, "sink registration is logged");
 		Expect(src.find("ShowHUDMessageEvent sink failed:") != std::string::npos, "sink failure is logged");
@@ -607,6 +627,8 @@ int main()
 		Expect(ini.find("TempUnit=0") != std::string::npos, "temperature units default to Celsius");
 		Expect(ini.find("HudMessagesX=-1") != std::string::npos, "HudMessagesX defaults to the built-in column");
 		Expect(ini.find("HudMessagesY=-1") != std::string::npos, "HudMessagesY defaults to the built-in column");
+		Expect(ini.find("; position of the shared HUD Messages box (-1 = default)") != std::string::npos, "HudMessages comment names the box, not people");
+		Expect(ini.find("companion, crew") == std::string::npos, "HudMessages comment has no person-like words");
 		{
 			std::ifstream hud("actionscript/horizon_block.as");
 			Expect(static_cast<bool>(hud), "horizon_block.as opens");
@@ -655,7 +677,7 @@ int main()
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(lua.find("set_version(\"0.42.0.10\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.42.0.11\")") != std::string::npos, "xmake version is the 4-part file version");
 		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
 		std::ifstream cpp("res/horizonui-plugin.cpp.in");
 		Expect(static_cast<bool>(cpp), "plugin version template opens");

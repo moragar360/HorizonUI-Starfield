@@ -47,7 +47,7 @@ const DIR = numArray("HZC_RX_DIR");
 const NOT = stringArray("HZC_RX_NOT");
 const TITLE = stringArray("HZC_RX_TITLE");
 
-expect(src.indexOf('private static const HZC_BUILD:String = "0.42.0.10";') >= 0, "comms build id is 0.42.0.10");
+expect(src.indexOf('private static const HZC_BUILD:String = "0.42.0.11";') >= 0, "comms build id is 0.42.0.11");
 expect(src.indexOf('HudMessagesX') >= 0 && src.indexOf("function hzcMsgLayout") >= 0, "HUD Messages box reads a saved layout");
 expect(src.indexOf("x = Math.max(vr.x,Math.min(vr.right - w,x));") >= 0, "HUD Messages box is clamped on screen");
 expect(src.indexOf("y = Math.max(vr.y,Math.min(vr.bottom - h,y));") >= 0, "HUD Messages box is clamped vertically");
@@ -61,7 +61,10 @@ expect(src.indexOf('if(sub == "gain" || sub == "bounty-add")') < 0, "bounty adde
 expect(src.indexOf('if(sub == "gain") { return HZC_GRN; }') >= 0, "only credit gains are green");
 expect(src.indexOf('sub == "alarm" || sub == "bounty-add"') >= 0, "bounty added uses the red crime tone");
 expect(src.indexOf('crew card: path=hzcCardDraw') >= 0, "crew cards log the movie draw path");
-expect(src.indexOf("private static const HZC_MSG_LOG:Boolean = true;") >= 0, "comms message log is on for this test build");
+expect(src.indexOf("private static const HZC_MSG_LOG:Boolean = false;") >= 0, "comms message log is off for this release");
+expect(src.indexOf("private var hzcRxDbgOn:Boolean = false;") >= 0, "movie debug default is off for this release");
+expect(src.indexOf("private function hzcCardMatch(kind:String, sub:String, name:String, value:String)") >= 0, "movie matcher takes a DLL payload");
+expect(src.indexOf("private function hzcRxClaim(arr:*, key:String)") >= 0, "a rebuilt message clip is reclaimed by text");
 expect(src.indexOf('this.hzcRxDbgPush("card code off after error: " + this.hzcRxDbgEsc(em));') >= 0, "a card error records the error text");
 expect(src.indexOf('if(s == "loved" || s == "loves") { return 0; }') >= 0, "loves maps with loved");
 expect(src.indexOf('if(s == "liked" || s == "likes") { return 1; }') >= 0, "likes maps with liked");
@@ -377,7 +380,8 @@ expect(src.indexOf("private static const HZC_RX_COOL:int = 5000;") >= 0, "a miss
 expect(src.indexOf('if(age >= 0 && age < HZC_RX_PAIR) { e0.paired = true; e0.src = "both"; return "queued"; }') >= 0, "pairing keeps the oldest card");
 expect(src.indexOf('try { return this.hzcRxOffer(text == null ? "" : String(text),true); }') >= 0, "the DLL path offers through the same queue");
 expect(src.indexOf("if(e0.linked == true)") >= 0, "a linked card follows its line");
-expect(src.indexOf("if(!inList) { this.hzcRxShow(e0); this.hzcRxRemember(e0); this.hzcRxDrop(e0); continue; }") >= 0, "a linked card ends when its line leaves");
+expect(src.indexOf("var nxt:* = this.hzcRxClaim(arr,e0.key);") >= 0, "a rebuilt clip with the same text keeps its card");
+expect(src.indexOf("else { this.hzcRxShow(e0); this.hzcRxRemember(e0); this.hzcRxDrop(e0); continue; }") >= 0, "a linked card ends when its line leaves");
 expect(src.indexOf("e0.it = null") < 0, "a finished line does not fall back to a standalone card");
 expect(src.indexOf("if(e.linked == true) { this.hzcRxShow(e); return; }") >= 0, "a linked card that cannot sit restores only a covered line");
 expect(src.indexOf("private function hzcRxRearm() : void") >= 0, "a settings reload rearms the card");
@@ -1511,7 +1515,7 @@ function dllUnavail(line, t) {
 	}
 	if (dllEq(line, dllTrim(t.busy))) return dllMake("unavailable", "busy", "", "BUSY", tier(t.busy, "This individual is busy."));
 	if (dllEq(line, dllTrim(t.creature))) return dllMake("unavailable", "calmed", "Creature", "CALMED", tier(t.creature, "The creature is calmed and cannot respond."));
-	if (dllEq(line, dllTrim(t.pickFail))) return dllMake("unavailable", "caught", "", "CAUGHT", tier(t.pickFail, "You've been caught pickpocketing."));
+	if (dllEq(line, dllTrim(t.pickFail))) return dllMake("crime", "caught", "", "CAUGHT", tier(t.pickFail, "You've been caught pickpocketing."));
 	if (eqLine(line, t.stealTake)) return dllMake("crime", "takeback", "", "CAUGHT", tier(t.stealTake, "The owner caught you stealing."));
 	if (eqLine(line, t.stealAttack)) return dllMake("crime", "alarm", "", "ALARM", tier(t.stealAttack, "You've been caught stealing and the alarm has been raised."));
 	if (eqLine(line, t.lockCaught)) return dllMake("crime", "lock", "", "CAUGHT", tier(t.lockCaught, "You've been caught tampering with a lock."));
@@ -1559,7 +1563,61 @@ function dllMatch(text, phrases) {
 	if (!line || line.length > 200) return null;
 	if (line.indexOf("\n") >= 0 || line.indexOf("\r") >= 0) return null;
 	const t = phrases || dllEnglish();
-	return dllReaction(line, t) || dllUnavail(line, t) || dllCredits(line, t.credits) || dllMedical(line) || dllCrew(line);
+	return dllReaction(line, t) || dllUnavail(line, t) || dllCredits(line, t.credits) || dllCreditsSigned(line, t) || dllMedical(line) || dllCrew(line);
+}
+function dllWordAt(hay, needle) {
+	needle = dllTrim(needle);
+	if (!needle) return -1;
+	const low = String(hay).toLowerCase();
+	const want = needle.toLowerCase();
+	let i = 0;
+	while (i + want.length <= low.length) {
+		if (low.substr(i, want.length) === want) {
+			const left = i === 0 || !/[A-Za-z0-9]/.test(hay.charAt(i - 1));
+			const right = i + want.length === hay.length || !/[A-Za-z0-9]/.test(hay.charAt(i + want.length));
+			if (left && right) return i;
+		}
+		i++;
+	}
+	return -1;
+}
+function dllTakeTokAmount(tok) {
+	if (tok.length < 2 || (tok.charAt(0) !== "+" && tok.charAt(0) !== "-")) return null;
+	const plus = tok.charAt(0) === "+";
+	const t0 = 1;
+	if (t0 >= tok.length) return null;
+	let digits = "";
+	let i = t0;
+	if (i >= tok.length || tok.charAt(i) < "0" || tok.charAt(i) > "9") return null;
+	while (i < tok.length) {
+		const c = tok.charAt(i);
+		if (c >= "0" && c <= "9") { digits += c; i++; continue; }
+		if ((c === "," || c === "." || c === "'" || c === " ") && i + 3 <= tok.length && /^\d{3}$/.test(tok.substr(i + 1, 3))) {
+			digits += tok.substr(i + 1, 3);
+			i += 4;
+			continue;
+		}
+		break;
+	}
+	if (i !== tok.length || !digits || digits.length > 9) return null;
+	let grouped = "";
+	for (let k = 0; k < digits.length; k++) {
+		if (k && ((digits.length - k) % 3) === 0) grouped += ",";
+		grouped += digits.charAt(k);
+	}
+	return { plus: plus, chip: (plus ? "+" : "-") + grouped };
+}
+function dllCreditsSigned(line, t) {
+	const at = dllWordAt(line, t.creditsName);
+	if (at < 0) return null;
+	const before = dllTrim(line.slice(0, at));
+	if (!before) return null;
+	const sp = before.lastIndexOf(" ");
+	const tok = sp < 0 ? before : before.slice(sp + 1);
+	const amt = dllTakeTokAmount(tok);
+	if (!amt) return null;
+	const tier = dllEq(dllTrim(t.creditsName), "Credits") ? "C" : "A";
+	return dllMake("credits", amt.plus ? "gain" : "loss", "", amt.chip, tier);
 }
 function expectDll(text, phrases, kind, sub, name, value, tier, label) {
 	const h = dllMatch(text, phrases);
@@ -1622,13 +1680,99 @@ function expectDllMiss(text, phrases, label) {
 	expectDll("Sarah Morgan has already caught you.", en, "unavailable", "caught", "Sarah Morgan", "CAUGHT", "C", "DLL caught");
 	expectDll("The creature is calmed and cannot respond.", en, "unavailable", "calmed", "Creature", "CALMED", "C", "DLL creature");
 	expectDll("Sam Coe is calmed and cannot respond.", en, "unavailable", "calmed", "Sam Coe", "CALMED", "C", "DLL npc calmed");
-	expectDll("You've been caught pickpocketing.", en, "unavailable", "caught", "", "CAUGHT", "C", "DLL pickpocket fail");
+	expectDll("You've been caught pickpocketing.", en, "crime", "caught", "", "CAUGHT", "C", "DLL pickpocket fail");
 	expectDll("The owner caught you stealing.", en, "crime", "takeback", "", "CAUGHT", "C", "DLL steal take-back");
 	expectDll("You've been caught stealing and the alarm has been raised.", en, "crime", "alarm", "", "ALARM", "C", "DLL steal alarm");
 	expectDll("You've been caught tampering with a lock.", en, "crime", "lock", "", "CAUGHT", "C", "DLL lockpick caught");
 	expectDll("You're currently trespassing. Residents will become hostile if you stay.", en, "crime", "trespass", "", "TRESPASS", "C", "DLL trespass");
 	expectDll("Last witness killed.", en, "crime", "witness", "", "WITNESS", "C", "DLL witness");
 	expectDllMiss(new Array(202).join("A"), en, "DLL over the 200 byte cap");
+	expectDll("Docking fee: -1890 Credits (Cargo, Tariffs, Fuel, Crew)", en, "credits", "loss", "", "-1,890", "C", "DLL signed credits loss with detail");
+	expectDll("Refund: +500 credits posted", en, "credits", "gain", "", "+500", "C", "DLL signed credits gain any case");
+	expectDllMiss("Shipment fees: Tariffs Initiated", en, "DLL credits word without an amount stays vanilla");
+}
+
+const HZC_GRN = 0x5EE3A1;
+const HZC_RED = 0xFF5B5B;
+const HZC_CARD_AMB = 0xF2A93B;
+function hzcCardTone(kind, sub) {
+	if (kind === "credits") return sub === "gain" ? HZC_GRN : HZC_RED;
+	if (["gained", "worse", "furious", "caught", "takeback", "lock", "alarm", "bounty-add"].indexOf(sub) >= 0) return HZC_RED;
+	if (["improved", "severity", "cured", "friend", "ally", "partner", "calm"].indexOf(sub) >= 0) return HZC_GRN;
+	if (["attempted", "unfollow", "follow-unavailable", "uncompanion", "companion-unavailable", "uncrew", "crew-unavailable", "busy", "angry", "trespass", "witness"].indexOf(sub) >= 0) return HZC_CARD_AMB;
+	return -1;
+}
+function hzcCardTitle(kind, sub, name) {
+	const n = name == null ? "" : String(name);
+	if (kind === "credits") {
+		if (sub === "kid") return "KID STUFF";
+		if (sub === "bounty") return "BOUNTY PAID";
+		return "CREDITS";
+	}
+	if (kind === "crime") {
+		if (sub === "takeback" || sub === "lock") return "CAUGHT";
+		if (sub === "caught") return "PICKPOCKET";
+		if (sub === "alarm") return "ALARM";
+		if (sub === "trespass") return "TRESPASS";
+		if (sub === "witness") return "WITNESS";
+		if (sub === "bounty-add") return "BOUNTY";
+		return "CRIME";
+	}
+	if (n.length > 0) return n.toUpperCase();
+	if (kind === "medical") return "AFFLICTION";
+	if (kind === "crew") return "CREW";
+	if (sub === "busy") return "BUSY";
+	if (sub === "calmed") return "CALMED";
+	if (sub === "caught") return "PICKPOCKET";
+	return "NOTICE";
+}
+function hzcCardMatch(kind, sub, name, value) {
+	if (kind == null || String(kind).length === 0) return null;
+	return { kind: String(kind), sub: String(sub), title: hzcCardTitle(kind, sub, name), tone: hzcCardTone(kind, sub), value: value == null ? "" : String(value) };
+}
+{
+	const en = dllEnglish();
+	const crimeRows = [
+		["The owner caught you stealing.", "crime", "takeback", "", "CAUGHT", "CAUGHT", HZC_RED, "movie take-back"],
+		["You've been caught stealing and the alarm has been raised.", "crime", "alarm", "", "ALARM", "ALARM", HZC_RED, "movie stealattack"],
+		["You've been caught tampering with a lock.", "crime", "lock", "", "CAUGHT", "CAUGHT", HZC_RED, "movie lockpick caught"],
+		["You're currently trespassing. Residents will become hostile if you stay.", "crime", "trespass", "", "TRESPASS", "TRESPASS", HZC_CARD_AMB, "movie trespass"],
+		["Last witness killed.", "crime", "witness", "", "WITNESS", "WITNESS", HZC_CARD_AMB, "movie witness"],
+		["You've been caught pickpocketing.", "crime", "caught", "", "CAUGHT", "PICKPOCKET", HZC_RED, "movie pickpocket"]
+	];
+	for (let i = 0; i < crimeRows.length; i++) {
+		const row = crimeRows[i];
+		const dll = dllMatch(row[0], en);
+		expect(dll && dll.kind === row[1] && dll.sub === row[2] && dll.name === row[3] && dll.value === row[4], row[7] + " DLL payload");
+		const movie = hzcCardMatch(dll.kind, dll.sub, dll.name, dll.value);
+		expect(movie && movie.kind === "crime" && movie.title === row[5] && movie.tone === row[6] && movie.value === row[4], row[7] + " card " + (movie ? movie.title : "miss"));
+	}
+	const loss = dllMatch("Docking fee: -1890 Credits (Cargo, Tariffs, Fuel, Crew)", en);
+	const lossCard = hzcCardMatch(loss.kind, loss.sub, loss.name, loss.value);
+	expect(loss && loss.kind === "credits" && loss.sub === "loss" && loss.value === "-1,890", "signed credits loss payload");
+	expect(lossCard && lossCard.title === "CREDITS" && lossCard.tone === HZC_RED && lossCard.value === "-1,890", "signed credits loss uses the credits card");
+	const none = dllMatch("Shipment fees: Tariffs Initiated", en);
+	expect(none == null, "no-amount fee line has no DLL payload");
+	expect(hzcCardMatch("", "info", "", "") == null, "empty kind is not a card");
+}
+{
+	const take = { st: 1, linked: true, it: "old15", key: "the owner caught you stealing.", vis: 0 };
+	const bounty = { st: 1, linked: false, it: null, key: "17 bounty added to freestar collective", vis: 0 };
+	const rebuilt = [
+		{ it: "new15", key: "the owner caught you stealing.", parent: "m" },
+		{ it: "new16", key: "17 bounty added to freestar collective", parent: "m" }
+	];
+	function claim(arr, key) {
+		for (let i = 0; i < arr.length; i++) {
+			if (arr[i].key === key) return arr[i].it;
+		}
+		return null;
+	}
+	const nxt = claim(rebuilt, take.key);
+	expect(nxt === "new15", "rebuilt take-back clip is found by key");
+	if (nxt != null) { take.it = nxt; take.linked = true; }
+	expect(take.it === "new15" && take.linked === true, "take-back card rebinds instead of dropping");
+	expect(bounty.linked === false, "unlinked bounty card is unchanged");
 }
 
 if (failed) {

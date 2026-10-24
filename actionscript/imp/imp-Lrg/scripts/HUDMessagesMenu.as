@@ -532,7 +532,7 @@ package
       // is set to 0 only after a Horizon card for that line has been drawn. It is never removed.
       // v0.42.0.9: the DLL classifies the line (kind, subtype, name, value, raw text). This movie does not parse it.
       // Medical, crew, unavailable, and Kid Stuff use the same card slot. XP, skills, quests, and help tips are not touched.
-      // v0.42.0.10: crime and generic credit cards use the same slot. Every Horizon card is a child of hzcRxLayer,
+      // v0.42.0.11: crime and generic credit cards use the same slot. Every Horizon card is a child of hzcRxLayer,
       // which F11 ARRANGE CARDS names HUD Messages. The vanilla fade is still it.alpha * Internal_mc.alpha * Messages_mc.alpha.
       // v0.42.0.7: HUDMessageData is the primary path. A value replayed during Subscribe is ignored, and the skip
       // flag is cleared when Subscribe returns so the first real message is kept. The DLL calls hzcCardPush. hzcRxPush remains.
@@ -1848,12 +1848,11 @@ package
          this.hzcRxSelf = (ok ? "pass" : "fail") + "\n/\\u0041/.test('A')=" + uLit + "\nnew RegExp('\\\\u0041').test('A')=" + uNew + "\n/\\x41/.test('A')=" + xLit;
          return this.hzcRxSelf;
       }
-      // ---------- 0.42.0.6: message log. HZC_MSG_LOG is the switch (true on this test build). ----------
-      // Leave this true until the release checklist in README.md. The DLL writes whatever this queue
-      // returns. Debug=0 in the ini still stops the queue. A missing Debug key leaves it on.
-      private static const HZC_MSG_LOG:Boolean = true;
-      private static const HZC_BUILD:String = "0.42.0.10";
-      private var hzcRxDbgOn:Boolean = true;   // 0.42.0.6: on with HZC_MSG_LOG. The release checklist sets this default to false. hzcRxDbgIni turns it off when Debug=0.
+      // ---------- 0.42.0.6: message log. HZC_MSG_LOG is the switch (false on this release). ----------
+      // The DLL still writes the one-line status. Debug=0 in the ini also stops the queue.
+      private static const HZC_MSG_LOG:Boolean = false;
+      private static const HZC_BUILD:String = "0.42.0.11";
+      private var hzcRxDbgOn:Boolean = false;   // 0.42.0.11: off for release. hzcRxDbgIni still follows Debug=0.
       private var hzcRxDbgQ:Array = [];
       private var hzcRxDbgSeen:Array = [];   // {it, f}
       private var hzcRxDbgHdr:Boolean = false;
@@ -2216,6 +2215,22 @@ package
          }
          this.hzcRxWait = keep;
       }
+      // A rebuilt message list keeps the same text on a new clip. Claim that clip for this key.
+      private function hzcRxClaim(arr:*, key:String) : *
+      {
+         if(arr == null || key == null) { return null; }
+         var i:int = 0;
+         while(i < arr.length)
+         {
+            var it:* = arr[i];
+            i++;
+            if(it == null || this.hzcRxFind(it) != null) { continue; }
+            var tx:String = this.hzcRxItemTx(it);
+            if(tx.length == 0) { continue; }
+            if(this.hzcRxKey(tx) == key) { return it; }
+         }
+         return null;
+      }
       // Attach a shown line to an open card. A line with no card is left alone, fade included.
       private function hzcRxLink(arr:*) : void
       {
@@ -2339,7 +2354,6 @@ package
          }
          this.hzcRxLast = now;
          var slot:Boolean = this.hzcRxSlot(m);
-         if(this.hzcRxDbgOn) { try { this.hzcRxDbgScan(arr); } catch(eDbg:Error) { } }
          if(!this.hzcRxOn()) { this.hzcRxAll(); return; }
          try { this.hzcMsgLayout(); } catch(eLay:Error) { }
          this.hzcRxLink(arr);
@@ -2351,8 +2365,13 @@ package
             {
                var inList:Boolean = false;
                try { inList = e0.it != null && arr != null && arr.indexOf(e0.it) >= 0 && e0.it.parent === m; } catch(eIn:Error) { inList = false; }
-               // The card ends with its line. It does not fall back to a standalone card.
-               if(!inList) { this.hzcRxShow(e0); this.hzcRxRemember(e0); this.hzcRxDrop(e0); continue; }
+               // The card ends with its line. A rebuilt clip with the same text is the same line.
+               if(!inList)
+               {
+                  var nxt:* = this.hzcRxClaim(arr,e0.key);
+                  if(nxt != null) { e0.it = nxt; e0.linked = true; }
+                  else { this.hzcRxShow(e0); this.hzcRxRemember(e0); this.hzcRxDrop(e0); continue; }
+               }
             }
             else
             {
@@ -2362,6 +2381,7 @@ package
             keep.push(e0);
          }
          this.hzcRx = keep;
+         if(this.hzcRxDbgOn) { try { this.hzcRxDbgScan(arr); } catch(eDbg:Error) { } }
          var newest:Object = null;
          for each(var eN:Object in this.hzcRx) { if(eN != null && eN.st == 1) { newest = eN; } }
          var drew:Boolean = false;
@@ -2580,6 +2600,16 @@ package
          if(z > 2.2) { z = 2.2; }
          return z;
       }
+      // DLL payload -> card the movie draws. Crime and credits use kind/sub; the movie does not parse the line.
+      private function hzcCardMatch(kind:String, sub:String, name:String, value:String) : Object
+      {
+         if(kind == null) { kind = ""; }
+         if(sub == null) { sub = ""; }
+         if(name == null) { name = ""; }
+         if(value == null) { value = ""; }
+         if(String(kind).length == 0) { return null; }
+         return {"kind":String(kind),"sub":String(sub),"title":this.hzcCardTitle(kind,sub,name),"tone":this.hzcCardTone(kind,sub),"value":String(value)};
+      }
       // -1 means the F11 accent. Tone is the icon and the chip. The left bar stays the accent.
       private function hzcCardTone(kind:String, sub:String) : int
       {
@@ -2633,6 +2663,7 @@ package
          if(kind == "crime")
          {
             if(sub == "takeback" || sub == "lock") { return "CAUGHT"; }
+            if(sub == "caught") { return "PICKPOCKET"; }
             if(sub == "alarm") { return "ALARM"; }
             if(sub == "trespass") { return "TRESPASS"; }
             if(sub == "witness") { return "WITNESS"; }

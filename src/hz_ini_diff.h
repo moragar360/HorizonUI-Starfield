@@ -3,6 +3,7 @@
 // HZF ini overlay and Diff (F11 SaveFromHud / presets). No files and no Win32.
 // HZF::kVersion must be declared before this header is included.
 
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <map>

@@ -32,7 +32,14 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.42.0.10";', "HUD build id is 0.42.0.10");
+pin('private static const HZ_BUILD:String = "0.42.0.11";', "HUD build id is 0.42.0.11");
+pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
+pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
+pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
+pin("if(isLoc && this.hzPpShowUT)", "preview clock glyph does not read the label text");
+pin('this.hzPpLocL = this.hzT(p,"LOCAL/GAME",r - 80,21,80,8,"sb","dim",0.8,"right");', "LOCAL/GAME label field is wide enough");
+expect(src.indexOf('this.hzPpLocL.text = showUT ? "GAME" : "LOCAL"') < 0, "planet label no longer switches LOCAL vs GAME");
+expect(src.indexOf('this.hzPpLocL.text == "GAME"') < 0, "clock glyph no longer compares the label text");
 pin('{"k":"TempUnit","l":"TEMPERATURE UNITS"', "temperature units toggle is on the Type tab");
 pin("private function hzTempText(c:Number)", "planet temperature formats a unit");
 pin('if(c == null || isNaN(c)) { return "--"; }', "a missing temperature is not 0");
@@ -52,6 +59,10 @@ expect(hzTempText(Number.NaN, 0) === "--", "a NaN temperature shows --");
 	const scan = fs.readFileSync(path.join(__dirname, "..", "actionscript", "scanner", "hzs_block.as"), "utf8");
 	expect(scan.indexOf("var hasT:Boolean = env.fTemperature != null && !isNaN(Number(env.fTemperature));") >= 0, "scanner checks null before Number");
 	expect(scan.indexOf('cond.push(["TEMPERATURE",inShip || !hasT ? "--" : String(tShown) + tUnit]);') >= 0, "scanner shows -- for a null temperature");
+}
+{
+	const scan = fs.readFileSync(path.join(__dirname, "..", "actionscript", "scanner", "hzs_block.as"), "utf8");
+	expect(scan.indexOf('cond.push(["LOCAL TIME",clk]);') >= 0, "scanner LOCAL TIME row is unchanged");
 }
 pin('"HudMessages"', "HUD Messages is an arrangeable layout key");
 pin("private function hzArrFs(want:int)", "HUD Messages ghost type size is corrected once");
@@ -566,7 +577,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.10";') >= 0, rel + " build is 0.42.0.10");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.11";') >= 0, rel + " build is 0.42.0.11");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");

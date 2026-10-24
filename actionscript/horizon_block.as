@@ -3484,7 +3484,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.42.0.10";
+      private static const HZ_BUILD:String = "0.42.0.11";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -4057,7 +4057,7 @@
             var gtf:TextField = isLoc ? this.hzPpLocT : this.hzPpRealT;
             var gx:Number = isLoc ? this.hzPpGlx : this.hzPpGrx;
             var gy:Number = isLoc ? this.hzPpGly : this.hzPpGry;
-            if(isLoc && this.hzPpLocL.text == "GAME") { this.hzGlyph(gg,"clock",gx,gy,this.hzIconCol(HZ_ACCENT),bgc); }
+            if(isLoc && this.hzPpShowUT) { this.hzGlyph(gg,"clock",gx,gy,this.hzIconCol(HZ_ACCENT),bgc); }
             else if(isLoc) { this.hzGlyph(gg,this.hzPpDay >= 0.25 && this.hzPpDay <= 0.75 ? "sun" : "moon",gx,gy,this.hzIconCol(0xFFD678),bgc); }
             else { this.hzGlyph(gg,"clock",gx,gy,this.hzIconCol(0x96A6AE),bgc); }
             ri++;
@@ -5681,6 +5681,7 @@
       private var hzPpRealG:Sprite;
       private var hzPpDay:Number = -1;
       private var hzPpUT:Number = -1;   // LocalEnvData_Frequent.fGalacticStandardTime, hours (DataMenu ClockWidget prints it as "HH:MM UT")
+      private var hzPpShowUT:Boolean = false;   // true when the local row is showing GAME time; do not read the label text
       private var hzPpBodyType:int = -1;
       private var hzPpRealMin:int = -1;
       private var hzPpDrawnDay:Number = -2;
@@ -5704,7 +5705,7 @@
          this.hzPpDet = this.hzT(p,"",86,60,180,10,"rg","dim",1);
          var r:Number = HZ_PP_W - 16;
          this.hzPpLocT = this.hzT(p,"",r - 34 - 90,17,90,13,"sb","mut",0.6,"right");
-         this.hzPpLocL = this.hzT(p,"LOCAL",r - 30,21,32,8,"sb","dim",0.8,"right");
+         this.hzPpLocL = this.hzT(p,"LOCAL/GAME",r - 80,21,80,8,"sb","dim",0.8,"right");
          this.hzPpRealT = this.hzT(p,"",r - 34 - 90,42,90,12,"rg","dim",0.4,"right");
          this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");
          this.hzPpLocG = new Sprite(); p.addChild(this.hzPpLocG);
@@ -5934,7 +5935,8 @@
          var locOk:Boolean = this.hzPpDay >= 0 && this.hzPpKind != "ship";
          var showUT:Boolean = !locOk && this.hzPpUT >= 0 && (td == 1 || td == 3);
          var showLoc:Boolean = (locOk && (td == 1 || td == 3)) || showUT;
-         this.hzPpLocL.text = showUT ? "GAME" : "LOCAL";
+         this.hzPpShowUT = showUT;
+         this.hzPpLocL.text = "LOCAL/GAME";
          var realStr:String = null;
          if(td >= 2)
          {

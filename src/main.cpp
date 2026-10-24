@@ -114,24 +114,26 @@ namespace HZ
 	}
 	// v0.37: the folder (HorizonUI.ini above is the legacy file: read for migration only, never written)
 	std::filesystem::path HzDir() { return IniPath().parent_path(); }
+}
 
-	// ==== HZF BEGIN: v0.37 settings files (plain std + one Win32 call through HzfReplace; unit-tested on the box) ====
-	// Data\Interface\HorizonUI\:
-	//   HorizonUI.default.ini   shipped, replaced by every update, never written here
-	//   HorizonUI.user.ini      the player's settings: only what differs from the defaults (+ keys the file already had)
-	//   HorizonUI.user.bak.ini  copy of user.ini made once per update (state.ini LastVersion != this DLL)
-	//   HorizonUI.user.preapply.ini  user.ini as it was before the last preset was applied (one-step undo)
-	//   HorizonUI.state.ini     [State] LastVersion / LegacyImported / PresetSeeded
-	//   HorizonUI.ini           legacy (v0.36 and older): read for migration only, never written, never deleted
-	//   presets\*.ini           shipped presets (moragars_choice.ini from the installer); presets\user\*.ini saved in game
-	namespace HZF
-	{
-		inline const char* kVersion = "0.42.0";
-	}
+// ==== HZF BEGIN: v0.37 settings files (plain std + one Win32 call through HzfReplace; unit-tested on the box) ====
+// Data\Interface\HorizonUI\:
+//   HorizonUI.default.ini   shipped, replaced by every update, never written here
+//   HorizonUI.user.ini      the player's settings: only what differs from the defaults (+ keys the file already had)
+//   HorizonUI.user.bak.ini  copy of user.ini made once per update (state.ini LastVersion != this DLL)
+//   HorizonUI.user.preapply.ini  user.ini as it was before the last preset was applied (one-step undo)
+//   HorizonUI.state.ini     [State] LastVersion / LegacyImported / PresetSeeded
+//   HorizonUI.ini           legacy (v0.36 and older): read for migration only, never written, never deleted
+//   presets\*.ini           shipped presets (moragars_choice.ini from the installer); presets\user\*.ini saved in game
+// HZF lives at file scope (not inside namespace HZ). hz_ini_diff.h is self-contained.
+namespace HZF
+{
+	inline const char* kVersion = "0.42.0";
+}
 
 #include "hz_ini_diff.h"
 
-	namespace HZF
+namespace HZF
 	{
 		using LogFn = void (*)(int, const std::string&);   // 0 info, 1 warn
 		inline LogFn g_log = nullptr;
@@ -666,8 +668,10 @@ namespace HZ
 			return { false, "unknown action" };
 		}
 	}
-	// ==== HZF END ====
+// ==== HZF END ====
 
+namespace HZ
+{
 	HZF::Paths FilesP() { return HZF::MakePaths(HzDir()); }
 
 	void LoadIni()
