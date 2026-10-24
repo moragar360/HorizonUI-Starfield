@@ -1522,21 +1522,37 @@ package
       }
       // HUD Messages box: default is the current column (layer at 0,0). A saved [Layout]
       // HudMessagesX/Y is an offset from that same default spot, so the fade coupling stays.
+      // Home is the stable visible-rect default, not Messages_mc live bounds (those shift
+      // when a line covers or fades).
       private function hzcMsgHome(vr:Rectangle, w:Number, h:Number) : Point
       {
          var x:Number = 40;
          var y:Number = 80;
-         var r:Rectangle = null;
-         try { if(this.Messages_mc != null) { r = this.Messages_mc.getBounds(this); } } catch(e0:Error) { r = null; }
-         if(r != null && !isNaN(r.x) && !isNaN(r.y) && !isNaN(r.width) && r.width > 2)
-         {
-            x = r.x + r.width - w;
-            y = r.y;
-         }
-         else if(vr != null && !isNaN(vr.right))
+         if(vr != null && !isNaN(vr.right))
          {
             x = vr.right - w - 40;
             y = vr.y + 80;
+         }
+         if(this.hzcRxDbgOn && !this.hzcMsgHomeLogged)
+         {
+            this.hzcMsgHomeLogged = true;
+            var mx:String = "?";
+            var my:String = "?";
+            var bx:String = "?";
+            var by:String = "?";
+            var bw:String = "?";
+            try
+            {
+               if(this.Messages_mc != null)
+               {
+                  mx = String(Math.round(Number(this.Messages_mc.x)));
+                  my = String(Math.round(Number(this.Messages_mc.y)));
+                  var r:Rectangle = this.Messages_mc.getBounds(this);
+                  if(r != null && !isNaN(r.x)) { bx = String(Math.round(r.x)); by = String(Math.round(r.y)); bw = String(Math.round(r.width)); }
+               }
+            }
+            catch(e0:Error) { }
+            try { this.hzcRxDbgPush("hud messages home: x=" + Math.round(x) + " y=" + Math.round(y) + " clip=" + mx + "," + my + " bounds=" + bx + "," + by + " w=" + bw); } catch(eD:Error) { }
          }
          return new Point(x,y);
       }
@@ -1562,6 +1578,8 @@ package
          var x:Number = (xs == "-1" || xs == "undefined" || xs == "null") ? home.x : this.hzcAnchor(xs,"x",w,vr.x,vr.right);
          var y:Number = (ys == "-1" || ys == "undefined" || ys == "null") ? home.y : this.hzcAnchor(ys,"y",h,vr.y,vr.bottom);
          if(isNaN(x) || isNaN(y) || isNaN(home.x) || isNaN(home.y)) { this.hzcRxLayer.x = 0; this.hzcRxLayer.y = 0; return; }
+         x = Math.max(vr.x,Math.min(vr.right - w,x));
+         y = Math.max(vr.y,Math.min(vr.bottom - h,y));
          this.hzcRxLayer.x = Math.round(x - home.x);
          this.hzcRxLayer.y = Math.round(y - home.y);
       }
@@ -1614,6 +1632,7 @@ package
       private var hzcRxGone:Array = [];      // {key, t0} linked binding cards that ended before their DLL note arrived
       private var hzcRxWait:Array = [];      // {it, f} text not ready yet
       private var hzcRxLayer:Sprite = null;
+      private var hzcMsgHomeLogged:Boolean = false;
       private var hzcRxOff:Boolean = false;  // after three message misses: lines stay the game's until the cooldown or a settings reload
       private var hzcRxOffAt:int = 0;
       private var hzcRxSkip:Boolean = true;  // true only while Subscribe may replay the cached value
@@ -2566,10 +2585,10 @@ package
       {
          if(kind == "credits")
          {
-            if(sub == "gain" || sub == "bounty-add") { return HZC_GRN; }
+            if(sub == "gain") { return HZC_GRN; }
             return HZC_RED;
          }
-         if(sub == "gained" || sub == "worse" || sub == "furious" || sub == "caught" || sub == "takeback" || sub == "lock" || sub == "alarm") { return HZC_RED; }
+         if(sub == "gained" || sub == "worse" || sub == "furious" || sub == "caught" || sub == "takeback" || sub == "lock" || sub == "alarm" || sub == "bounty-add") { return HZC_RED; }
          if(sub == "improved" || sub == "severity" || sub == "cured" || sub == "friend" || sub == "ally" || sub == "partner" || sub == "calm") { return HZC_GRN; }
          if(sub == "attempted" || sub == "unfollow" || sub == "follow-unavailable" || sub == "uncompanion" || sub == "companion-unavailable" || sub == "uncrew" || sub == "crew-unavailable" || sub == "busy" || sub == "angry" || sub == "trespass" || sub == "witness") { return HZC_CARD_AMB; }
          return -1;
@@ -2607,7 +2626,7 @@ package
          var n:String = name == null ? "" : String(name);
          if(kind == "credits")
          {
-            if(sub == "kid") { return "SENT HOME"; }
+            if(sub == "kid") { return "KID STUFF"; }
             if(sub == "bounty") { return "BOUNTY PAID"; }
             return "CREDITS";
          }
@@ -2617,6 +2636,7 @@ package
             if(sub == "alarm") { return "ALARM"; }
             if(sub == "trespass") { return "TRESPASS"; }
             if(sub == "witness") { return "WITNESS"; }
+            if(sub == "bounty-add") { return "BOUNTY"; }
             return "CRIME";
          }
          if(n.length > 0) { return n.toUpperCase(); }

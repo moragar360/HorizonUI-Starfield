@@ -49,6 +49,17 @@ const TITLE = stringArray("HZC_RX_TITLE");
 
 expect(src.indexOf('private static const HZC_BUILD:String = "0.42.0.10";') >= 0, "comms build id is 0.42.0.10");
 expect(src.indexOf('HudMessagesX') >= 0 && src.indexOf("function hzcMsgLayout") >= 0, "HUD Messages box reads a saved layout");
+expect(src.indexOf("x = Math.max(vr.x,Math.min(vr.right - w,x));") >= 0, "HUD Messages box is clamped on screen");
+expect(src.indexOf("y = Math.max(vr.y,Math.min(vr.bottom - h,y));") >= 0, "HUD Messages box is clamped vertically");
+expect(src.indexOf("hud messages home:") >= 0, "HUD Messages home is logged for the in-game check");
+expect(src.indexOf("Home is the stable visible-rect default") >= 0, "HUD Messages home is not the live line bounds");
+expect(src.indexOf('if(sub == "kid") { return "KID STUFF"; }') >= 0, "Kid Stuff title is KID STUFF");
+expect(src.indexOf("SENT HOME") < 0, "SENT HOME is not a card title");
+expect(src.indexOf('if(sub == "bounty") { return "BOUNTY PAID"; }') >= 0, "bounty paid title is BOUNTY PAID");
+expect(src.indexOf('if(sub == "bounty-add") { return "BOUNTY"; }') >= 0, "bounty added title is BOUNTY");
+expect(src.indexOf('if(sub == "gain" || sub == "bounty-add")') < 0, "bounty added is not a green credits gain");
+expect(src.indexOf('if(sub == "gain") { return HZC_GRN; }') >= 0, "only credit gains are green");
+expect(src.indexOf('sub == "alarm" || sub == "bounty-add"') >= 0, "bounty added uses the red crime tone");
 expect(src.indexOf('crew card: path=hzcCardDraw') >= 0, "crew cards log the movie draw path");
 expect(src.indexOf("private static const HZC_MSG_LOG:Boolean = true;") >= 0, "comms message log is on for this test build");
 expect(src.indexOf('this.hzcRxDbgPush("card code off after error: " + this.hzcRxDbgEsc(em));') >= 0, "a card error records the error text");

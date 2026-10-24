@@ -1497,7 +1497,7 @@
       // Last modified: 2026-10-24.
       private function hzTempText(c:Number) : String
       {
-         if(isNaN(c)) { return "--"; }
+         if(c == null || isNaN(c)) { return "--"; }
          var v:Number = int(this.hzTempUnit) == 1 ? Math.round(c * 9 / 5 + 32) : Math.round(c);
          return String(v) + (int(this.hzTempUnit) == 1 ? " °F" : " °C");
       }
@@ -1519,8 +1519,16 @@
          }
          else
          {
-            this.hzEnvTempC = Number(d.fTemperature);
-            this.hzEnvTemp.text = this.hzTempText(this.hzEnvTempC);
+            if(d.fTemperature == null || isNaN(Number(d.fTemperature)))
+            {
+               this.hzEnvTempC = NaN;
+               this.hzEnvTemp.text = "--";
+            }
+            else
+            {
+               this.hzEnvTempC = Number(d.fTemperature);
+               this.hzEnvTemp.text = this.hzTempText(this.hzEnvTempC);
+            }
             this.hzEnvGrav.text = GlobalFunc.FormatNumberToString(d.fGravity,2,true) + "g";
             this.hzEnvAir.text = d.fOxygenPercent + "%";
          }
@@ -11498,6 +11506,16 @@
          g.beginFill(col,1); g.drawRoundRect(0,14,4,Math.max(4,h - 28),4,4); g.endFill();
          return g;
       }
+      // Arrange ghost font size. hzSText multiplies by clamped TextScale, so the
+      // value passed in must not be pre-scaled. The result never drops under want px.
+      private function hzArrFs(want:int) : int
+      {
+         var ts:Number = Math.max(0.9,Math.min(1.15,this.hzTextScale));
+         if(!(ts > 0)) { ts = 1; }
+         var n:int = int(Math.ceil(want / ts));
+         if(n < want) { n = want; }
+         return n;
+      }
       private function hz31PxDraw(k:String, p:Sprite) : void
       {
          while(p.numChildren > 0) { p.removeChildAt(0); }
@@ -11530,9 +11548,9 @@
          else if(k == "HudMessages")
          {
             var hz:Number = this.hzTextScale;
-            this.hzSText(p,"HUD MESSAGES",16 * hz,12 * hz,sz.x - 32 * hz,Math.round(15 * hz),acc,"left","hdr");
-            this.hzSText(p,"Companion, crew, crime, credits, afflictions",16 * hz,34 * hz,sz.x - 32 * hz,Math.round(13 * hz),0xF2F7F9,"left");
-            this.hzSText(p,"Default spot matches the current message column",16 * hz,52 * hz,sz.x - 32 * hz,Math.round(13 * hz),0x96A6AE,"left");
+            this.hzSText(p,"HUD MESSAGES",16 * hz,12 * hz,sz.x - 32 * hz,this.hzArrFs(15),acc,"left","hdr");
+            this.hzSText(p,"Companion, crew, crime, credits, afflictions",16 * hz,34 * hz,sz.x - 32 * hz,this.hzArrFs(13),0xF2F7F9,"left");
+            this.hzSText(p,"Default spot matches the current message column",16 * hz,52 * hz,sz.x - 32 * hz,this.hzArrFs(13),0x96A6AE,"left");
          }
          else if(k == "MissionToast")
          {

@@ -35,15 +35,49 @@ pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 
 pin('private static const HZ_BUILD:String = "0.42.0.10";', "HUD build id is 0.42.0.10");
 pin('{"k":"TempUnit","l":"TEMPERATURE UNITS"', "temperature units toggle is on the Type tab");
 pin("private function hzTempText(c:Number)", "planet temperature formats a unit");
+pin('if(c == null || isNaN(c)) { return "--"; }', "a missing temperature is not 0");
+pin("if(d.fTemperature == null || isNaN(Number(d.fTemperature)))", "null fTemperature is checked before Number");
 pin('return String(v) + (int(this.hzTempUnit) == 1 ? " °F" : " °C");', "Akila 11 C becomes 52 F when Fahrenheit is on");
 function hzTempText(c, unit) {
+	if (c == null || Number.isNaN(c)) return "--";
 	const v = unit === 1 ? Math.round(c * 9 / 5 + 32) : Math.round(c);
 	return String(v) + (unit === 1 ? " °F" : " °C");
 }
 expect(hzTempText(11, 0) === "11 °C", "Akila formats as 11 °C");
 expect(hzTempText(11, 1) === "52 °F", "Akila formats as 52 °F");
 expect(hzTempText(-5, 1) === "23 °F", "Mars formats as 23 °F");
+expect(hzTempText(null, 0) === "--", "a null temperature shows --");
+expect(hzTempText(Number.NaN, 0) === "--", "a NaN temperature shows --");
+{
+	const scan = fs.readFileSync(path.join(__dirname, "..", "actionscript", "scanner", "hzs_block.as"), "utf8");
+	expect(scan.indexOf("var hasT:Boolean = env.fTemperature != null && !isNaN(Number(env.fTemperature));") >= 0, "scanner checks null before Number");
+	expect(scan.indexOf('cond.push(["TEMPERATURE",inShip || !hasT ? "--" : String(tShown) + tUnit]);') >= 0, "scanner shows -- for a null temperature");
+}
 pin('"HudMessages"', "HUD Messages is an arrangeable layout key");
+pin("private function hzArrFs(want:int)", "HUD Messages ghost type size is corrected once");
+pin('this.hzSText(p,"HUD MESSAGES",16 * hz,12 * hz,sz.x - 32 * hz,this.hzArrFs(15),acc,"left","hdr");', "HUD MESSAGES header uses hzArrFs");
+pin('this.hzSText(p,"Companion, crew, crime, credits, afflictions",16 * hz,34 * hz,sz.x - 32 * hz,this.hzArrFs(13),0xF2F7F9,"left");', "HUD MESSAGES body uses hzArrFs");
+expect(src.indexOf('Math.round(13 * hz)') < 0, "HUD MESSAGES body is not scaled twice");
+function hzArrFs(want, textScale) {
+	let ts = textScale;
+	if (!(ts > 0)) ts = 1;
+	ts = Math.max(0.9, Math.min(1.15, ts));
+	return Math.max(want, Math.ceil(want / ts));
+}
+function hzSTextPx(size, textScale) {
+	let ts = textScale;
+	if (Number.isNaN(ts) || ts <= 0) ts = 1;
+	ts = Math.max(0.9, Math.min(1.15, ts));
+	return Math.round(size * ts);
+}
+const ghostScales = [0.8, 0.9, 1, 1.15, 1.3];
+for (let gi = 0; gi < ghostScales.length; gi++) {
+	const ts = ghostScales[gi];
+	const body = hzSTextPx(hzArrFs(13, ts), ts);
+	const hdr = hzSTextPx(hzArrFs(15, ts), ts);
+	expect(body >= 13, "HUD MESSAGES body at TextScale " + ts + " is " + body + " px");
+	expect(hdr >= 13, "HUD MESSAGES header at TextScale " + ts + " is " + hdr + " px");
+}
 pin('case "vehicleexitpill": this.hzVehOn = bv; break;', "vehicle exit pill is a Cards ini key");
 pin('{"k":"VehicleExitPill","l":"VEHICLE EXIT PILL"', "vehicle exit pill is on the Cards tab");
 pin("return hv.GetUpButton_mc;", "vehicle exit follows the game's button");

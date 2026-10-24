@@ -70,14 +70,18 @@ int main()
 				std::cerr << "FAIL: " << what << "\n  got: ok=" << h.ok << " " << h.kind << "/" << h.sub
 					<< " name=[" << h.name << "] value=[" << h.value << "] tier=" << h.tier << "\n";
 				++g_fails;
+				return;
 			}
+			std::cout << "ok  " << what << " -> " << kind << "/" << sub << " [" << value << "]\n";
 		};
 		auto miss = [&](const char* text, const hzmsg::Templates& phrases, const char* what) {
 			const auto h = hit(text, phrases);
 			if (h.ok) {
 				std::cerr << "FAIL: " << what << " matched " << h.kind << "/" << h.sub << " [" << h.name << "]\n";
 				++g_fails;
+				return;
 			}
+			std::cout << "ok  miss " << what << "\n";
 		};
 		ok(hit("Sam Coe liked that.", en), "reaction", "liked", "Sam Coe", "LIKED", 'C', "Sam Coe liked that");
 		ok(hit("SAM COE LIKED THAT.", en), "reaction", "liked", "SAM COE", "LIKED", 'C', "upper case liked");
@@ -139,30 +143,57 @@ int main()
 		ok(hit("Last witness killed.", en), "crime", "witness", "", "WITNESS", 'C', "witness");
 		miss("The owner caught you stealing a cup.", en, "steal take-back is exact");
 		miss("caught you stealing", en, "steal fragment is not enough");
-		ok(hit("500 bounty added to United Colonies", en), "credits", "bounty-add", "United Colonies", "+500", 'C', "bounty added");
+		ok(hit("500 bounty added to United Colonies", en), "crime", "bounty-add", "United Colonies", "BOUNTY", 'C', "bounty added");
 		ok(hit("1,500 bounty removed from United Colonies", en), "credits", "bounty", "United Colonies", "-1,500", 'C', "bounty paid");
 		miss("bounty added to United Colonies", en, "bounty without an amount");
 		ok(hit("500 Credits Added.", en), "credits", "gain", "", "+500", 'C', "credits added");
 		ok(hit("1,500 Credits Added.", en), "credits", "gain", "", "+1,500", 'C', "credits added grouped");
+		ok(hit("1.500 Credits Added.", en), "credits", "gain", "", "+1,500", 'C', "credits added period group");
+		ok(hit("1'500 Credits Added.", en), "credits", "gain", "", "+1,500", 'C', "credits added apostrophe group");
+		ok(hit("1 500 Credits Added.", en), "credits", "gain", "", "+1,500", 'C', "credits added space group");
+		ok(hit(("1" + std::string("\xC2\xA0") + "500 Credits Added.").c_str(), en), "credits", "gain", "", "+1,500", 'C', "credits added NBSP group");
 		ok(hit("Credits (500) Added.", en), "credits", "gain", "", "+500", 'C', "credits added paren");
 		ok(hit("Credits x500 Added.", en), "credits", "gain", "", "+500", 'C', "credits added times");
 		ok(hit("200 Credits Removed.", en), "credits", "loss", "", "-200", 'C', "credits removed");
 		miss("Credits Card Added.", en, "other item with Credits in the name");
 		miss("Added.", en, "generic added without the Credits name or amount");
+		miss("3 Digipick Added.", en, "Digipick added is not credits");
+		miss("Digipick (3) Added.", en, "Digipick paren added is not credits");
+		miss("12 Ammo Removed.", en, "Ammo removed is not credits");
+		miss("Credits Card (2) Added.", en, "Credits Card paren is not credits");
+		miss("12.5 Credits Added.", en, "decimal is not a grouped credits amount");
+		miss("500 500 Credits Added.", en, "two amounts do not merge");
 		{
 			const auto kid = hzmsg::MatchTemplate("500 credits have been sent home to your parents.", en.kidTpl);
 			Expect(kid.ok && kid.amount == "500", "Kid Stuff template 500");
+			if (kid.ok && kid.amount == "500") std::cout << "ok  Kid Stuff template 500\n";
 			const auto kid15 = hzmsg::MatchTemplate("1,500 credits have been sent home to your parents.", en.kidTpl);
 			Expect(kid15.ok && kid15.amount == "1500", "Kid Stuff template 1500");
+			if (kid15.ok && kid15.amount == "1500") std::cout << "ok  Kid Stuff template 1500\n";
 			const auto named = hzmsg::MatchTemplate("Sam Coe liked that.", "%s liked that.");
 			Expect(named.ok, "percent-s template");
+			if (named.ok) std::cout << "ok  percent-s template\n";
 			const auto num = hzmsg::MatchTemplate("Pay 40 credits.", "Pay %d credits.");
 			Expect(num.ok && num.amount == "40", "percent-d template");
+			if (num.ok && num.amount == "40") std::cout << "ok  percent-d template\n";
 			const auto frac = hzmsg::MatchTemplate("12.0 credits due.", "%.1f credits due.");
-			Expect(frac.ok && frac.amount == "120", "percent-dot-Nf treats the period as a group separator");
+			Expect(!frac.ok, "percent-dot-Nf does not treat a decimal as a grouped amount");
+			if (!frac.ok) std::cout << "ok  percent-dot-Nf does not treat a decimal as a grouped amount\n";
+			const bool dec = !hzmsg::MatchTemplate("12.5 credits due.", "%.1f credits due.").ok;
+			Expect(dec, "12.5 is not 125");
+			if (dec) std::cout << "ok  12.5 is not 125\n";
+			const auto grouped = hzmsg::MatchTemplate("1.500 credits due.", "%.0f credits due.");
+			Expect(grouped.ok && grouped.amount == "1500", "percent-dot-Nf still accepts a 3-digit period group");
+			if (grouped.ok && grouped.amount == "1500") std::cout << "ok  percent-dot-Nf still accepts a 3-digit period group\n";
 			const auto glob = hzmsg::MatchTemplate("Interest is 250 credits.", "Interest is <Global=Trait_StarterHome_Interest> credits.");
 			Expect(glob.ok && glob.amount == "250", "Global wildcard template");
-			Expect(!hzmsg::MatchTemplate("Added.", "%.0f credits have been sent home to your parents.").ok, "Added. is not Kid Stuff");
+			if (glob.ok && glob.amount == "250") std::cout << "ok  Global wildcard template\n";
+			const bool added = !hzmsg::MatchTemplate("Added.", "%.0f credits have been sent home to your parents.").ok;
+			Expect(added, "Added. is not Kid Stuff");
+			if (added) std::cout << "ok  Added. is not Kid Stuff\n";
+			const bool kidDec = !hzmsg::MatchTemplate("12.5 credits have been sent home to your parents.", en.kidTpl).ok;
+			Expect(kidDec, "Kid Stuff decimal does not become 125");
+			if (kidDec) std::cout << "ok  Kid Stuff decimal does not become 125\n";
 		}
 		ok(hit("500 credits have been sent home to your parents.", en), "credits", "kid", "", "-500", 'C', "kid stuff still 500 after tokenizer");
 		ok(hit("1,500 credits have been sent home to your parents.", en), "credits", "kid", "", "-1500", 'C', "kid stuff still 1500 after tokenizer");
@@ -181,6 +212,22 @@ int main()
 		Expect(applied.likes == "liked that.", "a stub does not replace English");
 		hzmsg::ApplyPhrase(applied.likes, "  das gefiel.  ");
 		Expect(applied.likes == "das gefiel.", "a real phrase replaces English");
+	}
+
+	{
+		std::ifstream in("actionscript/comms/hzc_block.as");
+		Expect(static_cast<bool>(in), "hzc_block.as opens");
+		std::string as((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		Expect(as.find("if(sub == \"kid\") { return \"KID STUFF\"; }") != std::string::npos, "Kid Stuff title is KID STUFF");
+		Expect(as.find("SENT HOME") == std::string::npos, "SENT HOME is not a card title");
+		Expect(as.find("if(sub == \"bounty\") { return \"BOUNTY PAID\"; }") != std::string::npos, "bounty paid title is BOUNTY PAID");
+		Expect(as.find("if(sub == \"bounty-add\") { return \"BOUNTY\"; }") != std::string::npos, "bounty added title is BOUNTY");
+		Expect(as.find("if(sub == \"gain\" || sub == \"bounty-add\")") == std::string::npos, "bounty added is not a green credits gain");
+		if (as.find("if(sub == \"kid\") { return \"KID STUFF\"; }") != std::string::npos) std::cout << "ok  Kid Stuff title is KID STUFF\n";
+		if (as.find("SENT HOME") == std::string::npos) std::cout << "ok  SENT HOME is not a card title\n";
+		if (as.find("if(sub == \"bounty\") { return \"BOUNTY PAID\"; }") != std::string::npos) std::cout << "ok  bounty paid title is BOUNTY PAID\n";
+		if (as.find("if(sub == \"bounty-add\") { return \"BOUNTY\"; }") != std::string::npos) std::cout << "ok  bounty added title is BOUNTY\n";
+		if (as.find("if(sub == \"gain\" || sub == \"bounty-add\")") == std::string::npos) std::cout << "ok  bounty added is not a green credits gain\n";
 	}
 
 	ExpectEq(CleanPresetName("Moragar's Choice"), "Moragar's Choice", "apostrophe stays");

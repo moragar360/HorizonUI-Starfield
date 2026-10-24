@@ -355,7 +355,29 @@ inline bool GroupSepAt(std::string_view s, std::size_t i, std::size_t& adv)
 	return false;
 }
 
-// First run of digits, allowing locale separators between groups. Fail closed if none.
+inline bool SpaceSep(std::string_view s, std::size_t i, std::size_t adv)
+{
+	if (adv >= 2) return true;
+	return adv == 1 && i < s.size() && s[i] == ' ';
+}
+
+// Exactly three digits at i, and not the start of a longer run.
+inline bool TakeGroup3(std::string_view s, std::size_t i, std::string& digits, std::size_t& out)
+{
+	if (i + 3 > s.size()) return false;
+	for (std::size_t k = 0; k < 3; ++k) {
+		if (s[i + k] < '0' || s[i + k] > '9') return false;
+	}
+	if (i + 3 < s.size() && s[i + 3] >= '0' && s[i + 3] <= '9') return false;
+	if (digits.size() + 3 > 9) return false;
+	digits.append(s.substr(i, 3));
+	out = i + 3;
+	return true;
+}
+
+// First run of digits, allowing locale separators between groups. A separator
+// must be followed by exactly three digits. Space and NBSP do not join two
+// already-complete 3-digit amounts ("500 500" fails closed; "1 500" is 1500).
 inline bool TakeAmount(std::string_view s, std::size_t from, std::string& digits, std::size_t& begin, std::size_t& end)
 {
 	digits.clear();
@@ -363,6 +385,7 @@ inline bool TakeAmount(std::string_view s, std::size_t from, std::string& digits
 	while (i < s.size() && (s[i] < '0' || s[i] > '9')) ++i;
 	if (i >= s.size()) return false;
 	begin = i;
+	bool usedSpace = false;
 	while (i < s.size()) {
 		const char c = s[i];
 		if (c >= '0' && c <= '9') {
@@ -373,7 +396,12 @@ inline bool TakeAmount(std::string_view s, std::size_t from, std::string& digits
 		}
 		std::size_t adv = 0;
 		if (GroupSepAt(s, i, adv) && i + adv < s.size() && s[i + adv] >= '0' && s[i + adv] <= '9') {
-			i += adv;
+			const bool space = SpaceSep(s, i, adv);
+			if (space && !usedSpace && digits.size() >= 3) return false;
+			std::size_t after = 0;
+			if (!TakeGroup3(s, i + adv, digits, after)) return false;
+			usedSpace = usedSpace || space;
+			i = after;
 			continue;
 		}
 		break;
@@ -658,14 +686,21 @@ inline Hit MatchCreditsGeneric(std::string_view line, const Templates& t, const 
 	return Make("credits", add ? "gain" : "loss", "", SignedChip(add, digits).c_str(), tier);
 }
 
-// "<amount> bounty added to <faction>" / "bounty removed from". Fail closed: a
-// digit run, the fragment as a whole phrase, and a non-empty faction.
+// "<amount> bounty added to <faction>" is a crime penalty (BOUNTY, no credit
+// sign). "bounty removed from" is credits leaving the player (BOUNTY PAID, -).
+// Fail closed: a digit run, the fragment as a whole phrase, and a non-empty faction.
 inline Hit MatchBounty(std::string_view line, const Templates& t, const Templates& en)
 {
-	struct Row { std::string_view phrase; const char* sub; bool plus; std::string_view english; };
+	struct Row {
+		std::string_view phrase;
+		const char*      kind;
+		const char*      sub;
+		bool             paid;
+		std::string_view english;
+	};
 	const Row rows[] = {
-		{t.remCrime, "bounty", false, en.remCrime},
-		{t.addCrime, "bounty-add", true, en.addCrime},
+		{t.remCrime, "credits", "bounty", true, en.remCrime},
+		{t.addCrime, "crime", "bounty-add", false, en.addCrime},
 	};
 	for (const auto& r : rows) {
 		const auto phrase = Trim(r.phrase);
@@ -681,7 +716,8 @@ inline Hit MatchBounty(std::string_view line, const Templates& t, const Template
 		auto leftover = Trim(std::string(head.substr(0, b)) + std::string(head.substr(e)));
 		if (!leftover.empty()) continue;
 		const char tier = SamePhrase(r.phrase, r.english) ? kTierEnglish : kTierGmst;
-		return Make("credits", r.sub, Slice(tail), SignedChip(r.plus, digits).c_str(), tier);
+		if (r.paid) return Make(r.kind, r.sub, Slice(tail), SignedChip(false, digits).c_str(), tier);
+		return Make(r.kind, r.sub, Slice(tail), "BOUNTY", tier);
 	}
 	return Miss();
 }

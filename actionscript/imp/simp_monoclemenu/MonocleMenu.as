@@ -2148,14 +2148,15 @@ package
          if(env != null)
          {
             // v0.40.1: rounded; a row is left out when the game gives no number (never "NaN")
-            var tv:Number = Number(env.fTemperature);
+            var hasT:Boolean = env.fTemperature != null && !isNaN(Number(env.fTemperature));
+            var tv:Number = hasT ? Number(env.fTemperature) : NaN;
             var gv:Number = Number(env.fGravity);
             var ov:Number = Number(env.fOxygenPercent);
-            if(inShip || !isNaN(tv))
+            if(inShip || env.fTemperature == null || hasT)
             {
                var tShown:Number = int(this.hzsS.TempUnit) == 1 ? Math.round(tv * 9 / 5 + 32) : Math.round(tv);
                var tUnit:String = int(this.hzsS.TempUnit) == 1 ? " °F" : " °C";
-               cond.push(["TEMPERATURE",inShip ? "--" : String(tShown) + tUnit]);
+               cond.push(["TEMPERATURE",inShip || !hasT ? "--" : String(tShown) + tUnit]);
             }
             if(inShip || !isNaN(gv)) { cond.push(["GRAVITY",inShip ? "--" : gv.toFixed(2) + " G"]); }
             if(inShip || !isNaN(ov)) { cond.push(["OXYGEN",inShip ? "--" : String(Math.round(ov)) + "%"]); }
