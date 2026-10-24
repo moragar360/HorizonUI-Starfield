@@ -14946,6 +14946,10 @@
          var len:int = kt.text != null ? int(kt.text.length) : 0;
          kt.autoSize = flash.text.TextFieldAutoSize.NONE;
          kt.width = this.hz42ScKeyW(Number(kt.textWidth),ls,len,HZ42_SC_KEX);
+         var kAlign:TextFormat = kt.getTextFormat();
+         kAlign.align = "center";
+         kt.defaultTextFormat = kAlign;
+         kt.setTextFormat(kAlign);
          var kw:Number = 30 + kt.width + HZ42_SC_KPAD;
          var x0:Number = 7;
          var lx:Number = x0 + kw + 10;

@@ -523,6 +523,10 @@
             kt.autoSize = TextFieldAutoSize.NONE;
             kt.width = ktw;
             if(kt.height < kth) { kt.height = kth; }
+            var kAlign:TextFormat = kt.getTextFormat();
+            kAlign.align = "center";
+            kt.defaultTextFormat = kAlign;
+            kt.setTextFormat(kAlign);
          }
          ch = Math.max(ch,Math.round(lth + 6),kt != null ? Math.round(kt.height + 6) : 0);
          ch = Math.round(ch);

@@ -339,8 +339,11 @@ expect(src.indexOf('BSUIDataManager.Subscribe("HUDMessageData",this.hzcRxOnMsg);
 expect(src.indexOf("if(this.hzcRxSkip) { this.hzcRxSkip = false; return; }") >= 0, "the subscribe replay is ignored");
 expect(src.indexOf("this.hzcRxOffer(raw);") < 0, "the binding does not classify the line");
 expect(src.indexOf("public function hzcCardPush(kind:String, sub:String, name:String, value:String, raw:String) : String") >= 0, "the DLL pushes kind, subtype, name, value, and the raw text");
-expect(src.indexOf("it.Internal_mc.alpha = 0") >= 0, "a drawn card hides the game line with alpha");
-expect(src.indexOf("e.it.Internal_mc.alpha = 1") >= 0, "ending a card restores the game line alpha");
+expect(src.indexOf("Internal_mc.alpha =") < 0, "the movie never writes Internal_mc.alpha");
+expect(src.indexOf("Text_tf.visible = false") >= 0, "a drawn card hides the game text");
+expect(src.indexOf("Background_mc.visible = false") >= 0, "a drawn card hides the game background");
+expect(src.indexOf("Number(it.alpha) * Number(im.alpha) * Number(m.alpha)") >= 0, "the card fades with the inner clip");
+expect(src.indexOf("e.covered == true") >= 0, "only a covered line is restored");
 expect(src.indexOf("public function hzcRxPush(text:String) : String") >= 0, "the DLL backup calls hzcRxPush");
 expect(src.indexOf('return "queued";') >= 0, "a match returns queued");
 expect(src.indexOf('return "no match";') >= 0, "a non-reaction returns no match");
@@ -363,7 +366,7 @@ expect(src.indexOf('try { return this.hzcRxOffer(text == null ? "" : String(text
 expect(src.indexOf("if(e0.linked == true)") >= 0, "a linked card follows its line");
 expect(src.indexOf("if(!inList) { this.hzcRxShow(e0); this.hzcRxRemember(e0); this.hzcRxDrop(e0); continue; }") >= 0, "a linked card ends when its line leaves");
 expect(src.indexOf("e0.it = null") < 0, "a finished line does not fall back to a standalone card");
-expect(src.indexOf("if(e.linked == true) { this.hzcRxReveal(it); e.c.visible = false; return; }") >= 0, "a linked card that cannot sit shows the game line again");
+expect(src.indexOf("if(e.linked == true) { this.hzcRxShow(e); return; }") >= 0, "a linked card that cannot sit restores only a covered line");
 expect(src.indexOf("private function hzcRxRearm() : void") >= 0, "a settings reload rearms the card");
 expect(src.indexOf("if(woke >= uint(HZC_RX_COOL) && woke <= uint(2147483647)) { this.hzcRxRearm(); }") >= 0, "the cooldown rearms across a timer wrap");
 expect(src.indexOf("woke < 120000") < 0, "a long pause still rearms");
@@ -397,9 +400,12 @@ expect(src.indexOf("loves|likes") < 0, "the sentence match is not a regex");
 	const clipBody = clipFn >= 0 && clipEnd > clipFn ? cpp.slice(clipFn, clipEnd) : "";
 	expect(clipBody.indexOf('Invoke("hzpClipDiag"') >= 0 && clipBody.indexOf("#if") < 0, "the hold-breath diag is outside the verbose ifdef");
 	expect(clipBody.indexOf("scope holdbreath diag:") >= 0, "the DLL logs the hold-breath diag");
-	const clipCall = cpp.indexOf("ScopeClipPoll();");
+	expect(clipBody.indexOf("a_now < g_hzpClipNext") >= 0, "the hold-breath diag does not run every frame");
+	expect(clipBody.indexOf("g_hzpClipNext = a_now + 500") >= 0, "the hold-breath diag waits 500 ms");
+	const clipCall = cpp.indexOf("ScopeClipPoll(now);");
 	const clipSafe = cpp.indexOf("if (!HudSafe())", clipCall);
 	expect(clipCall > 0 && clipSafe > clipCall, "the hold-breath diag runs while a scope is open");
+	expect(cpp.indexOf("ScopeClipPoll();") < 0, "the hold-breath diag takes the poll time");
 }
 
 function constInt(name) {
@@ -544,6 +550,136 @@ function rxOffer(q, text, fromDll, now, gone) {
 	const bindCard = [];
 	rxOffer(bindCard, line, false, 2500, bindGone);
 	expect(bindCard.length === 1 && bindGone.length === 1, "a new binding note is not consumed by an ended line");
+}
+
+function fnBody(name, next) {
+	const a = src.indexOf(name);
+	const b = src.indexOf(next, a + name.length);
+	expect(a >= 0 && b > a, name + " is present");
+	return a >= 0 && b > a ? src.slice(a, b) : "";
+}
+{
+	const push = fnBody("public function hzcCardPush", "public function hzcRxWhy");
+	expect(push.indexOf("e0.paired = true") < 0, "a repeated DLL card is not swallowed");
+	expect(push.indexOf("this.hzcRxShow(old)") >= 0, "overflow restores the dropped DLL card");
+	const offer = fnBody("private function hzcRxOffer", "private function hzcRxRemember");
+	expect(offer.indexOf('e0.paired = true; e0.src = "both"; return "queued";') >= 0, "the backup path still pairs");
+	expect(offer.indexOf("this.hzcRxShow(old)") >= 0, "backup overflow restores the dropped card");
+	const link = fnBody("private function hzcRxLink", "private function hzcRxSlot");
+	expect(link.indexOf("hzcRxReveal") < 0 && link.indexOf("Internal_mc") < 0, "an unclassified line is not rewritten");
+	const unhide = fnBody("private function hzcRxUnhide", "private function hzcRxHit");
+	expect(unhide.indexOf("ShownMessageArray") < 0, "turning cards off does not rewrite every line");
+	const zed = fnBody("private function hzcCardZ", "private function hzcCardTone");
+	expect(zed.indexOf("ScreenHeight") < 0, "card size does not scale by screen height");
+	expect(zed.indexOf("TextScale") >= 0 && zed.indexOf("HudScale") >= 0 && zed.indexOf("HZC_LRG") >= 0, "text, HUD, and large scale still apply");
+	const tone = fnBody("private function hzcCardTone", "private function hzcCardPhrase");
+	let redLine = "";
+	let ambLine = "";
+	const toneLines = tone.split("\n");
+	for (let i = 0; i < toneLines.length; i++) {
+		if (toneLines[i].indexOf("return HZC_RED") >= 0 && toneLines[i].indexOf("sub ==") >= 0) redLine = toneLines[i];
+		if (toneLines[i].indexOf("return HZC_CARD_AMB") >= 0) ambLine = toneLines[i];
+	}
+	expect(redLine.indexOf('"angry"') < 0 && ambLine.indexOf('"angry"') >= 0, "angry is amber");
+	expect(ambLine.indexOf('"calmed"') < 0 && tone.indexOf("return -1") >= 0, "calmed uses the accent");
+	expect(tone.indexOf('sub == "calm"') >= 0 && tone.indexOf("return HZC_GRN") >= 0, "calm stays green");
+	expect(redLine.indexOf('"furious"') >= 0 && redLine.indexOf('"caught"') >= 0, "furious and caught stay red");
+	expect(src.indexOf("private function hzcRxStack()") >= 0 && src.indexOf("var gap:Number = 8;") >= 0, "stacked cards keep a gap");
+}
+
+function cardAlpha(itAlpha, imAlpha, mAlpha) {
+	let a = itAlpha * imAlpha * mAlpha;
+	if (!Number.isFinite(a)) a = 1;
+	return Math.max(0, Math.min(1, a));
+}
+function tickUnclassified(line, timelineAlpha) {
+	const tf = line.tf;
+	const bg = line.bg;
+	line.imAlpha = timelineAlpha;
+	return line.alpha === 1 && line.imAlpha === timelineAlpha && line.tf === tf && line.bg === bg;
+}
+function coverLine(line) {
+	line.tf = false;
+	line.bg = false;
+	line.covered = true;
+}
+function showLine(line) {
+	if (line.covered === true) {
+		line.tf = true;
+		line.bg = true;
+		line.covered = false;
+	}
+}
+{
+	const fade = [0, 27 / 255, 1, 205 / 255, 0];
+	const plain = { alpha: 1, imAlpha: 1, tf: true, bg: true, covered: false };
+	for (let i = 0; i < fade.length; i++) {
+		expect(tickUnclassified(plain, fade[i]), "an unclassified line keeps the timeline alpha");
+		expect(Math.abs(cardAlpha(1, fade[i], 1) - fade[i]) < 1e-9, "a card follows Internal_mc.alpha");
+	}
+	expect(Math.abs(cardAlpha(1, 27 / 255, 0.5) - (27 / 255) * 0.5) < 1e-9, "a card also follows the message column");
+	const other = { alpha: 1, imAlpha: 0.2, tf: true, bg: true, covered: false };
+	showLine(other);
+	expect(other.tf === true && other.bg === true && other.imAlpha === 0.2 && other.covered === false, "a line that was not covered is not rewritten");
+	const hid = { alpha: 1, imAlpha: 205 / 255, tf: true, bg: true, covered: false };
+	coverLine(hid);
+	expect(hid.tf === false && hid.bg === false && hid.covered === true && hid.imAlpha === 205 / 255, "covering hides the children and leaves the fade");
+	expect(Math.abs(cardAlpha(hid.alpha, hid.imAlpha, 1) - 205 / 255) < 1e-9, "a covered card is at the fade-out alpha");
+	showLine(hid);
+	expect(hid.tf === true && hid.bg === true && hid.covered === false && hid.imAlpha === 205 / 255, "ending a covered card restores its children");
+}
+
+function cardPush(q, raw, now, dropped) {
+	q.push({ key: String(raw).toLowerCase(), t0: now, covered: false });
+	if (q.length > 8) {
+		const old = q.shift();
+		if (old.covered === true) {
+			old.covered = false;
+			old.restored = true;
+		}
+		if (dropped) dropped.push(old);
+	}
+	return "queued";
+}
+{
+	const again = [];
+	expect(cardPush(again, "Sam Coe liked that.", 0) === "queued", "the first identical push queues");
+	expect(cardPush(again, "Sam Coe liked that.", 1000) === "queued", "the second identical push queues");
+	expect(again.length === 2, "two identical DLL cards within 3 s both stay");
+	const full = [];
+	const dropped = [];
+	for (let i = 0; i < 8; i++) cardPush(full, "line " + i, i, dropped);
+	full[0].covered = true;
+	cardPush(full, "line 9", 9, dropped);
+	expect(full.length === 8 && full[0].key === "line 1", "the ninth card drops the oldest");
+	expect(dropped.length === 1 && dropped[0].restored === true && dropped[0].covered === false, "the dropped card restores its line");
+}
+
+function stackCards(cards) {
+	const vis = [];
+	for (let i = 0; i < cards.length; i++) if (cards[i].visible) vis.push({ x: cards[i].x, y: cards[i].y, h: cards[i].h });
+	vis.sort(function (a, b) { return a.y - b.y; });
+	const gap = 8;
+	for (let p = 1; p < vis.length; p++) {
+		const floorY = vis[p - 1].y + vis[p - 1].h + gap;
+		if (vis[p].y < floorY) vis[p].y = Math.round(floorY);
+	}
+	return vis;
+}
+{
+	const laid = stackCards([
+		{ visible: true, x: 10, y: 100, h: 70 },
+		{ visible: true, x: 10, y: 151, h: 81 },
+		{ visible: true, x: 22, y: 400, h: 56 }
+	]);
+	expect(laid[0].y === 100 && laid[0].x === 10, "the top card stays");
+	expect(laid[1].y === 178 && laid[1].x === 10, "an overlapping card moves down and keeps its x");
+	expect(laid[2].y === 400 && laid[2].x === 22, "a card that already clears stays");
+	const same = stackCards([
+		{ visible: true, x: 4, y: 80, h: 63 },
+		{ visible: true, x: 9, y: 80, h: 63 }
+	]);
+	expect(same[0].y === 80 && same[1].y === 151 && same[1].x === 9, "two cards on one line do not overlap");
 }
 
 // Misses are one per message. A healthy card that already drew does not clear the streak every frame.

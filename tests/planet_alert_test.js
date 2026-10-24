@@ -478,6 +478,7 @@ pin("private static const HZ42_SC_LABEX:Number = 32;", "the preview label extra 
 pin("var w:Number = Math.ceil(tw * HZ42_SC_KHEAD + ls * len) + 8 + extra;", "preview key width is the scope field width plus the key extra");
 pin("kt.autoSize = flash.text.TextFieldAutoSize.NONE;", "preview key field does not autosize");
 pin("kt.width = this.hz42ScKeyW(Number(kt.textWidth),ls,len,HZ42_SC_KEX);", "preview key field uses the wider key cap");
+pin('kAlign.align = "center";', "the preview key text is centered in the cap");
 pin("return this.hz42ScKeyW(Number(t.textWidth),ls,len);", "the preview label does not use the key extra");
 pin("var kw:Number = 30 + kt.width + HZ42_SC_KPAD;", "the keycap is sized from that width");
 pin("kt.x = Math.round(x0 + 28);", "the key text starts where the scope chip starts it");
@@ -529,6 +530,8 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	expect(body.indexOf("kt.autoSize = TextFieldAutoSize.NONE;") >= 0, rel + " key field does not autosize");
 	expect(body.indexOf("Math.ceil(tw * HZP_KHEAD + ls * len) + 8") >= 0, rel + " uses the field-width formula");
 	expect(body.indexOf("kt.width = ktw;") >= 0, rel + " sets the field width");
+	expect(body.indexOf('kAlign.align = "center";') >= 0, rel + " centers the key text");
+	expect(body.indexOf('lt.defaultTextFormat') < 0, rel + " does not recenter the label");
 	expect(body.indexOf("ktw + HZP_KPAD") >= 0, rel + " sizes the keycap from that width");
 	expect(body.indexOf("if(now - this.hzpFallT < 900)") >= 0, rel + " holds the held state for at least 900 ms");
 	expect(body.indexOf("lt.autoSize = TextFieldAutoSize.NONE;") >= 0, rel + " label field does not autosize");

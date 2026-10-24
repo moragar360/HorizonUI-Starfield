@@ -1461,10 +1461,11 @@
          }
          if(fromDll && this.hzcRxPairGone(key, now)) { return "queued"; }
          var src:String = fromDll ? "d" : "b";
-         this.hzcRx.push({"it":null,"st":1,"n":r.n,"k":r.k,"c":null,"w":0,"h":0,"sig":"","key":key,"t0":now,"vis":0,"tx":String(raw),"linked":false,"src":src,"paired":false,"blamed":false});
+         this.hzcRx.push({"it":null,"st":1,"n":r.n,"k":r.k,"c":null,"w":0,"h":0,"sig":"","key":key,"t0":now,"vis":0,"tx":String(raw),"linked":false,"src":src,"paired":false,"blamed":false,"covered":false});
          if(this.hzcRx.length > 8)
          {
             var old:Object = this.hzcRx.shift();
+            this.hzcRxShow(old);
             this.hzcRxDrop(old);
          }
          return "queued";
@@ -1526,22 +1527,17 @@
             var key:String = this.hzcRxKey(String(raw));
             if(key == null) { return "no match"; }
             var now:int = getTimer();
-            for each(var e0:Object in this.hzcRx)
-            {
-               if(e0 == null || e0.key != key || e0.paired == true) { continue; }
-               var age:int = now - int(e0.t0);
-               if(age >= 0 && age < HZC_RX_PAIR) { e0.paired = true; e0.src = "both"; return "queued"; }
-            }
             var k:int = -1;
             if(String(kind) == "reaction")
             {
                k = this.hzcRxSubK(String(sub));
                if(k < 0) { return "no match"; }
             }
-            this.hzcRx.push({"it":null,"st":1,"n":String(name),"k":k,"c":null,"w":0,"h":0,"sig":"","key":key,"t0":now,"vis":0,"tx":String(raw),"linked":false,"src":"d","paired":false,"blamed":false,"kind":String(kind),"sub":String(sub),"value":String(value)});
+            this.hzcRx.push({"it":null,"st":1,"n":String(name),"k":k,"c":null,"w":0,"h":0,"sig":"","key":key,"t0":now,"vis":0,"tx":String(raw),"linked":false,"src":"d","paired":false,"blamed":false,"kind":String(kind),"sub":String(sub),"value":String(value),"covered":false});
             if(this.hzcRx.length > 8)
             {
                var old:Object = this.hzcRx.shift();
+               this.hzcRxShow(old);
                this.hzcRxDrop(old);
             }
             return "queued";
@@ -1580,22 +1576,29 @@
          }
          catch(e:Error) { return ""; }
       }
+      // The timeline fades Internal_mc. Never write that alpha. These two children are not tweened.
       private function hzcRxReveal(it:*) : void
       {
          try
          {
-            if(it != null && it.Internal_mc != null)
-            {
-               it.Internal_mc.alpha = 1;
-               it.Internal_mc.visible = true;
-            }
+            if(it == null || it.Internal_mc == null) { return; }
+            var im:* = it.Internal_mc;
+            if(im.Text_tf != null) { im.Text_tf.visible = true; }
+            if(im.Background_mc != null) { im.Background_mc.visible = true; }
          }
          catch(e:Error) { }
       }
-      // Alpha only, and only after the Horizon card is on screen. The clip stays in the list.
-      private function hzcRxCover(it:*) : void
+      // Hide the game's text and background after the Horizon card has drawn. The clip stays in the list.
+      private function hzcRxCover(e:Object, it:*) : void
       {
-         try { if(it != null && it.Internal_mc != null) { it.Internal_mc.alpha = 0; } } catch(e:Error) { }
+         try
+         {
+            if(e == null || it == null || it.Internal_mc == null) { return; }
+            var im:* = it.Internal_mc;
+            if(im.Text_tf != null) { im.Text_tf.visible = false; e.covered = true; }
+            if(im.Background_mc != null) { im.Background_mc.visible = false; e.covered = true; }
+         }
+         catch(err:Error) { }
       }
       private function hzcRxWaits(it:*) : int
       {
@@ -1620,7 +1623,7 @@
          }
          this.hzcRxWait = keep;
       }
-      // Attach a shown line to a card from the binding, or classify a line the binding did not see.
+      // Attach a shown line to an open card. A line with no card is left alone, fade included.
       private function hzcRxLink(arr:*) : void
       {
          if(arr == null) { return; }
@@ -1634,15 +1637,13 @@
             var n:int = this.hzcRxWaits(it);
             if(tx.length == 0 && n < 3) { continue; }
             this.hzcRxWaitClear(it);
-            if(tx.length == 0) { this.hzcRxReveal(it); continue; }
+            if(tx.length == 0) { continue; }
             var before:Object = this.hzcRxOpen(tx);
             if(before != null)
             {
                before.it = it;
                before.linked = true;
-               continue;
             }
-            this.hzcRxReveal(it);
          }
       }
       private function hzcRxSlot(m:*) : Boolean
@@ -1658,16 +1659,10 @@
          try { this.hzcRxUnhide(); } catch(eUn:Error) { }
          try { this.hzcRxDbgErr(); } catch(eDbg:Error) { }
       }
-      // Lines hidden on the way in, and not yet a card, come back when the card turns off.
+      // Only a line this movie covered comes back. Every other HUD line keeps the game's fade.
       private function hzcRxUnhide() : void
       {
-         var m:* = this.Messages_mc;
-         if(m == null) { return; }
-         var arr:* = null;
-         try { arr = m.ShownMessageArray; } catch(eArr:Error) { arr = null; }
-         if(arr == null) { return; }
-         var i:int = 0;
-         while(i < arr.length) { this.hzcRxReveal(arr[i]); i++; }
+         for each(var e:Object in this.hzcRx) { this.hzcRxShow(e); }
       }
       // One miss is recoverable: the next message draws again. The caller turns the card off after three.
       private function hzcRxHit(err:Error) : void
@@ -1676,7 +1671,7 @@
          try { this.hzcRxErr = err != null && err.message != null ? String(err.message) : ""; } catch(e:Error) { this.hzcRxErr = ""; }
          this.hzcRxErr = this.hzcRxOne(this.hzcRxErr);
       }
-      // A new game line stays visible. The card covers it with alpha 0 only after that card has drawn.
+      // A new game line stays visible. The card covers its text and background only after that card has drawn.
       private function hzcRxAdded(ev:Event) : void
       {
          if(ev == null) { return; }
@@ -1685,10 +1680,10 @@
       {
          try
          {
-            if(e != null && e.it != null && e.it.Internal_mc != null)
+            if(e != null && e.covered == true)
             {
-               e.it.Internal_mc.alpha = 1;
-               e.it.Internal_mc.visible = true;
+               this.hzcRxReveal(e.it);
+               e.covered = false;
             }
          }
          catch(err:Error) { }
@@ -1792,7 +1787,45 @@
             }
          }
          if(drew) { this.hzcRxFail = 0; }
+         try { this.hzcRxStack(); } catch(eSt:Error) { }
          if(this.hzcRxFail >= 3) { this.hzcRxLatch(); return; }
+      }
+      // A card is taller than the gap between game lines. The top card stays. Lower cards move down. x stays.
+      private function hzcRxStack() : void
+      {
+         var vis:Array = [];
+         for each(var e0:Object in this.hzcRx)
+         {
+            if(e0 == null || e0.c == null || e0.c.visible != true) { continue; }
+            if(isNaN(Number(e0.c.y)) || isNaN(Number(e0.h))) { continue; }
+            vis.push(e0);
+         }
+         var i:int = 0;
+         while(i < vis.length)
+         {
+            var j:int = i + 1;
+            while(j < vis.length)
+            {
+               if(Number(vis[j].c.y) < Number(vis[i].c.y))
+               {
+                  var tmp:Object = vis[i];
+                  vis[i] = vis[j];
+                  vis[j] = tmp;
+               }
+               j++;
+            }
+            i++;
+         }
+         var gap:Number = 8;
+         var p:int = 1;
+         while(p < vis.length)
+         {
+            var prev:Object = vis[p - 1];
+            var cur:Object = vis[p];
+            var floorY:Number = Number(prev.c.y) + Number(prev.h) + gap;
+            if(Number(cur.c.y) < floorY) { cur.c.y = Math.round(floorY); }
+            p++;
+         }
       }
       private function hzcRxScale() : Number
       {
@@ -1856,19 +1889,19 @@
                      e.c.x = Math.round(lp.x - Number(e.w));
                      e.c.y = Math.round(lp.y - Number(e.h) / 2);
                      var a:Number = 1;
-                     try { a = Number(it.alpha) * Number(m.alpha); } catch(eA:Error) { a = 1; }
+                     try { a = Number(it.alpha) * Number(im.alpha) * Number(m.alpha); } catch(eA:Error) { a = 1; }
                      if(isNaN(a)) { a = 1; }
                      e.c.alpha = Math.max(0,Math.min(1,a));
                      e.c.visible = true;
                      placed = true;
-                     if(e.c.visible == true && Number(e.w) > 0) { this.hzcRxCover(it); }
+                     if(e.c.visible == true && Number(e.w) > 0) { this.hzcRxCover(e, it); }
                   }
                }
             }
          }
          if(!placed)
          {
-            if(e.linked == true) { this.hzcRxReveal(it); e.c.visible = false; return; }
+            if(e.linked == true) { this.hzcRxShow(e); return; }
             this.hzcRxAnchor(e,m);
          }
       }
@@ -1942,14 +1975,12 @@
       }
       private function hzcCardZ() : Number
       {
-         var sh:Number = Number(this.hzcCfg.ScreenHeight);
          var z:Number = 1;
-         if(!isNaN(sh) && sh >= 720) { z = sh / 1080; }
          var ts:Number = Number(this.hzcCfg.TextScale);
          if(isNaN(ts) || ts <= 0) { ts = 1; }
          var hs:Number = Number(this.hzcCfg.HudScale);
          if(isNaN(hs) || hs <= 0) { hs = 1; }
-         z = z * ts * hs;
+         z = ts * hs;
          if(HZC_LRG) { z = z * 1.25; }
          if(z < 0.75) { z = 0.75; }
          if(z > 2.2) { z = 2.2; }
@@ -1959,9 +1990,9 @@
       private function hzcCardTone(kind:String, sub:String) : int
       {
          if(kind == "credits") { return HZC_RED; }
-         if(sub == "gained" || sub == "worse" || sub == "angry" || sub == "furious" || sub == "caught") { return HZC_RED; }
+         if(sub == "gained" || sub == "worse" || sub == "furious" || sub == "caught") { return HZC_RED; }
          if(sub == "improved" || sub == "severity" || sub == "cured" || sub == "friend" || sub == "ally" || sub == "partner" || sub == "calm") { return HZC_GRN; }
-         if(sub == "attempted" || sub == "unfollow" || sub == "follow-unavailable" || sub == "uncompanion" || sub == "companion-unavailable" || sub == "uncrew" || sub == "crew-unavailable" || sub == "busy" || sub == "calmed") { return HZC_CARD_AMB; }
+         if(sub == "attempted" || sub == "unfollow" || sub == "follow-unavailable" || sub == "uncompanion" || sub == "companion-unavailable" || sub == "uncrew" || sub == "crew-unavailable" || sub == "busy" || sub == "angry") { return HZC_CARD_AMB; }
          return -1;
       }
       private function hzcCardPhrase(sub:String) : String

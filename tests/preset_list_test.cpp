@@ -2,14 +2,20 @@
 // single file-version header. No game, no CommonLibSF.
 // Build: g++ -std=c++20 -Wall -Wextra -I src tests/preset_list_test.cpp -o /tmp/preset_list_test
 
+#include "hz_addr_probe.h"
 #include "hz_msg_match.h"
+#include "hz_rx_queue.h"
 #include "hz_version.h"
 #include "preset_dedupe.h"
 
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <deque>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -175,6 +181,63 @@ int main()
 		wide += "Z";
 		ExpectEq(CleanPresetName(wide), std::string(45, 'b'), "a 4-byte character that crosses 48 bytes is dropped whole");
 		ExpectEq(Utf8Prefix(std::string(46, 'a') + "\xC3\xA9" + "Z", 48), std::string(46, 'a') + "\xC3\xA9", "a character that ends on the cut stays");
+		std::string gmst(158, 'a');
+		gmst += "\xF0\x9F\x8C\x8D";
+		ExpectEq(Utf8Prefix(gmst, 160), std::string(158, 'a'), "a GMST cut of 160 does not split a 4-byte character");
+		std::string gmst159(159, 'b');
+		gmst159 += "\xF0\x9F\x8C\x8D";
+		ExpectEq(Utf8Prefix(gmst159, 160), std::string(159, 'b'), "a GMST cut keeps 159 bytes when a 4-byte character would cross 160");
+	}
+
+	{
+		struct Note
+		{
+			char text[201];
+			unsigned long long tick;
+		};
+		std::deque<Note> q;
+		Expect(!hzrx::Enqueue(q, nullptr, 1), "a null HUD line is dropped");
+		Expect(!hzrx::Enqueue(q, "", 1), "an empty HUD line is dropped");
+		Expect(q.empty(), "a dropped line is not stored");
+		Expect(hzrx::Enqueue(q, "Sam Coe liked that.", 10), "the first line is stored");
+		Expect(!hzrx::Enqueue(q, "Sam Coe liked that.", 11), "an exact duplicate is dropped");
+		Expect(q.size() == 1 && q.front().tick == 10, "the first copy of a duplicate stays");
+		const std::string longA(250, 'a');
+		const std::string longB = longA + "XYZ";
+		std::deque<Note> cut;
+		Expect(hzrx::Enqueue(cut, longA.c_str(), 1), "a long line is stored");
+		Expect(!hzrx::Enqueue(cut, longB.c_str(), 2), "two lines that truncate to the same 200 bytes dedupe");
+		Expect(cut.size() == 1 && std::strlen(cut.front().text) == 200, "the stored line is 200 bytes");
+		Expect(std::string(cut.front().text) == std::string(200, 'a'), "the stored line is not split");
+		std::deque<Note> cap;
+		for (int i = 0; i < 8; ++i) {
+			const std::string line = "line " + std::to_string(i);
+			Expect(hzrx::Enqueue(cap, line.c_str(), static_cast<unsigned long long>(i)), "a queue slot is stored");
+		}
+		Expect(hzrx::Enqueue(cap, "line 8", 8), "the ninth line is stored");
+		Expect(cap.size() == 8 && std::string(cap.front().text) == "line 1" && std::string(cap.back().text) == "line 8", "the ninth line drops the oldest");
+	}
+
+	{
+		auto blob = [](std::uint32_t a_format, std::int32_t a_count, const std::vector<std::uint32_t>& a_slots) {
+			std::vector<unsigned char> b(hzaddr::kV5HeaderBytes + a_slots.size() * 4u, 0);
+			std::memcpy(b.data(), &a_format, sizeof a_format);
+			std::memcpy(b.data() + 92, &a_count, sizeof a_count);
+			for (std::size_t i = 0; i < a_slots.size(); ++i)
+				std::memcpy(b.data() + hzaddr::kV5HeaderBytes + i * 4u, &a_slots[i], sizeof a_slots[i]);
+			return b;
+		};
+		const auto ok = blob(5, 3, { 0x1000u, 0u, 0x20u });
+		Expect(hzaddr::V5Slot(ok.data(), ok.size(), 0) == 1, "a non-zero v5 slot resolves");
+		Expect(hzaddr::V5Slot(ok.data(), ok.size(), 1) == 0, "a zero v5 slot does not resolve");
+		Expect(hzaddr::V5Slot(ok.data(), ok.size(), 2) == 1, "a later non-zero v5 slot resolves");
+		Expect(hzaddr::V5Slot(ok.data(), ok.size(), 3) == 0, "an id past the table does not resolve");
+		Expect(hzaddr::V5Slot(ok.data(), ok.size(), 938225) == 0, "a high id past a short table does not resolve");
+		const auto bad = blob(2, 3, { 0x1000u, 0u, 0x20u });
+		Expect(hzaddr::V5Slot(bad.data(), bad.size(), 0) == -1, "a non-v5 table is not used");
+		Expect(hzaddr::V5Slot(ok.data(), 10, 0) == -1, "a short image is not used");
+		const auto chopped = blob(5, 3, { 0x1000u });
+		Expect(hzaddr::V5Slot(chopped.data(), chopped.size(), 0) == -1, "a table that does not fit is not used");
 	}
 
 	{
@@ -323,7 +386,27 @@ int main()
 		Expect(src.find("kRxQueueMax") != std::string::npos, "the reaction queue is bounded");
 		Expect(src.find("HasMember(\"hzcCardPush\")") != std::string::npos, "Poll invokes hzcCardPush only when the movie defines it");
 		Expect(src.find("kRxQueueMax = 8") != std::string::npos, "the HUD message queue holds 8");
-		Expect(src.find("std::strcmp(q.text, n.text) == 0") != std::string::npos, "an exact duplicate is not queued again");
+		Expect(src.find("hzrx::Enqueue(g_rxQ, a_text, GetTickCount64(), kRxQueueMax)") != std::string::npos, "the HUD queue uses the shared policy");
+		Expect(src.find("hud gmst: address id {} does not resolve, English fallback") != std::string::npos, "a missing settings id is logged and skipped");
+		Expect(src.find("hud form: address id {} does not resolve") != std::string::npos, "a missing form id is logged and skipped");
+		{
+			const auto fill = src.find("static void HzGmstFillCall");
+			const auto fillEnd = src.find("struct HzFormRaw", fill);
+			Expect(fill != std::string::npos && fillEnd > fill, "the settings read is bounded");
+			const auto body = src.substr(fill, fillEnd - fill);
+			const auto probe = body.find("HzAddrSlot");
+			const auto call = body.find("GetSingleton()");
+			Expect(probe != std::string::npos && call != std::string::npos && probe < call, "settings are not read until the address resolves");
+		}
+		{
+			const auto fill = src.find("static void HzFormFillCall");
+			const auto fillEnd = src.find("#if defined(_MSC_VER)", fill);
+			Expect(fill != std::string::npos && fillEnd > fill, "the form read is bounded");
+			const auto body = src.substr(fill, fillEnd - fill);
+			const auto probe = body.find("HzAddrSlot");
+			const auto call = body.find("LookupByID(id)");
+			Expect(probe != std::string::npos && call != std::string::npos && probe < call, "forms are not looked up until the address resolves");
+		}
 		Expect(src.find("hud capture: text=") != std::string::npos, "the unfiltered capture line is present");
 		Expect(src.find("RE::ID::GameSettingCollection::Singleton.id() == 0") != std::string::npos, "a zero settings address id is not called");
 		Expect(src.find("RE::ID::TESForm::LookupByID.id() == 0") != std::string::npos, "a zero form lookup id is not called");

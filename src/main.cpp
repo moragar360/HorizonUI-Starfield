@@ -62,6 +62,8 @@
 #include <iterator>
 #include "hz_version.h"
 #include "hz_msg_match.h"
+#include "hz_addr_probe.h"
+#include "hz_rx_queue.h"
 #include "preset_dedupe.h"
 
 // v0.37: the settings-file code (HZF) replaces files through this (temp file + MoveFileExW)
@@ -1924,17 +1926,10 @@ namespace HZ
 	void HzRxEnqueue(const char* a_text)
 	{
 		if (!a_text || !a_text[0]) return;
-		RxNote n{};
-		HzCopyRaw(n.text, sizeof(n.text), a_text);
-		n.tick = GetTickCount64();
 		try {
 			std::lock_guard<std::mutex> lock(g_rxMu);
-			// 0.42.0.9: an exact duplicate already in the queue is not stored again. The cap stays 8.
-			for (const auto& q : g_rxQ) {
-				if (std::strcmp(q.text, n.text) == 0) return;
-			}
-			if (g_rxQ.size() >= kRxQueueMax) g_rxQ.pop_front();
-			g_rxQ.push_back(n);
+			// 0.42.0.9: empty, duplicate, and over-cap notes are dropped in hzrx::Enqueue. The cap stays 8.
+			hzrx::Enqueue(g_rxQ, a_text, GetTickCount64(), kRxQueueMax);
 		} catch (...) {
 		}
 	}
@@ -1958,6 +1953,7 @@ namespace HZ
 	ULONGLONG g_rxWhyNext = 0;
 	bool      g_rxSelfLogged = false;
 	bool      g_hzpClipLogged = false;
+	ULONGLONG g_hzpClipNext = 0;
 	bool      g_hzCardWarned = false;
 	bool      g_msgGmstDone = false;
 	bool      g_msgGmstWait = false;
@@ -1985,7 +1981,95 @@ namespace HZ
 		char caught[161];
 		char pick[161];
 		int  ok;
+		std::uint64_t miss;
 	};
+
+	// The versionlib image, read once. A slot of 0, a short file, or anything other than v5
+	// means that id is not called. IDDB::offset would end the process, and SEH cannot catch that.
+	static int g_addrState = 0;
+	static std::vector<unsigned char> g_addrBytes;
+	static std::string g_addrWhy;
+
+	static void HzAddrLoad() noexcept
+	{
+		if (g_addrState != 0) return;
+		g_addrState = -1;
+		try {
+			const auto ver = REX::FModule::GetExecutingModule().GetFileVersion().wstring(L"-");
+			if (ver.empty()) {
+				g_addrWhy = "game version could not be read";
+				return;
+			}
+			for (wchar_t c : ver) {
+				if (!((c >= L'0' && c <= L'9') || c == L'-')) {
+					g_addrWhy = "game version could not be read";
+					return;
+				}
+			}
+			HMODULE mod = nullptr;
+			if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			        reinterpret_cast<LPCWSTR>(&HzAddrLoad), &mod) || !mod) {
+				g_addrWhy = "plugin path could not be read";
+				return;
+			}
+			wchar_t path[MAX_PATH]{};
+			const DWORD n = ::GetModuleFileNameW(mod, path, MAX_PATH);
+			if (n == 0 || n >= MAX_PATH) {
+				g_addrWhy = "plugin path could not be read";
+				return;
+			}
+			const auto file = std::filesystem::path(path).parent_path() / (std::wstring(L"versionlib-") + std::wstring(ver) + L".bin");
+			std::ifstream in(file, std::ios::binary);
+			if (!in) {
+				g_addrWhy = "versionlib file was not found";
+				return;
+			}
+			in.seekg(0, std::ios::end);
+			const auto end = in.tellg();
+			if (end < static_cast<std::streamoff>(hzaddr::kV5HeaderBytes) || end > static_cast<std::streamoff>(32 * 1024 * 1024)) {
+				g_addrWhy = "versionlib is not a v5 table";
+				return;
+			}
+			in.seekg(0, std::ios::beg);
+			g_addrBytes.resize(static_cast<std::size_t>(end));
+			in.read(reinterpret_cast<char*>(g_addrBytes.data()), static_cast<std::streamsize>(end));
+			if (!in) {
+				g_addrBytes.clear();
+				g_addrWhy = "versionlib could not be read";
+				return;
+			}
+			std::uint32_t format = 0;
+			std::memcpy(&format, g_addrBytes.data(), sizeof format);
+			if (format != 5u) {
+				g_addrBytes.clear();
+				g_addrWhy = "versionlib is not a v5 table";
+				return;
+			}
+			g_addrState = 1;
+			g_addrWhy.clear();
+		} catch (...) {
+			g_addrBytes.clear();
+			g_addrState = -1;
+			if (g_addrWhy.empty()) g_addrWhy = "versionlib could not be read";
+		}
+	}
+
+	static int HzAddrSlot(std::uint64_t a_id)
+	{
+		HzAddrLoad();
+		if (g_addrState != 1) return -1;
+		const int slot = hzaddr::V5Slot(g_addrBytes.data(), g_addrBytes.size(), a_id);
+		if (slot < 0 && g_addrWhy.empty()) g_addrWhy = "versionlib is not a v5 table";
+		return slot;
+	}
+
+	static void HzAddrLogOnce()
+	{
+		static bool once = false;
+		if (once || g_addrWhy.empty()) return;
+		once = true;
+		REX::INFO("hud address: {}", g_addrWhy);
+	}
 
 	static void HzCopySetting(RE::GameSettingCollection* a_col, const char* a_key, char* a_dst, std::size_t a_cap)
 	{
@@ -2004,8 +2088,18 @@ namespace HZ
 	{
 		if (!a_out) return;
 		a_out->ok = 0;
+		a_out->miss = 0;
 		if (RE::ID::GameSettingCollection::Singleton.id() == 0 || RE::ID::GameSettingCollection::GetSetting.id() == 0) {
 			a_out->ok = -1;
+			return;
+		}
+		const auto sid = RE::ID::GameSettingCollection::Singleton.id();
+		const auto gid = RE::ID::GameSettingCollection::GetSetting.id();
+		const int ss = HzAddrSlot(sid);
+		const int gs = HzAddrSlot(gid);
+		if (ss != 1 || gs != 1) {
+			a_out->ok = -2;
+			a_out->miss = ss != 1 ? sid : gid;
 			return;
 		}
 		auto* col = RE::GameSettingCollection::GetSingleton();
@@ -2027,6 +2121,7 @@ namespace HZ
 		int loaded[32];
 		int n;
 		int ok;
+		std::uint64_t miss;
 	};
 
 	static void HzFormFillCall(HzFormRaw* a_out)
@@ -2034,8 +2129,15 @@ namespace HZ
 		if (!a_out) return;
 		a_out->n = static_cast<int>(std::size(kHzMsgForms));
 		a_out->ok = 0;
+		a_out->miss = 0;
 		if (RE::ID::TESForm::LookupByID.id() == 0) {
 			a_out->ok = -1;
+			return;
+		}
+		const auto lid = RE::ID::TESForm::LookupByID.id();
+		if (HzAddrSlot(lid) != 1) {
+			a_out->ok = -2;
+			a_out->miss = lid;
 			return;
 		}
 		for (int i = 0; i < a_out->n && i < 32; ++i) {
@@ -2095,7 +2197,8 @@ namespace HZ
 	}
 
 	// Purpose: read the localized GMST phrases once, on the task thread, after data has loaded.
-	// A zero address id is not called. An empty phrase or an "<ID=" stub keeps the English fallback.
+	// A zero address id is not called. An id that is not in the loaded v5 address library is not called either.
+	// An empty phrase or an "<ID=" stub keeps the English fallback.
 	// Last modified: 2026-10-23.
 	void HzMsgPrepare()
 	{
@@ -2105,6 +2208,10 @@ namespace HZ
 			if (!ran) {
 				g_msgGmstDone = true;
 				REX::INFO("hud gmst: read failed, English fallback");
+			} else if (raw.ok == -2) {
+				g_msgGmstDone = true;
+				HzAddrLogOnce();
+				REX::INFO("hud gmst: address id {} does not resolve, English fallback", raw.miss);
 			} else if (raw.ok < 0) {
 				g_msgGmstDone = true;
 				REX::INFO("hud gmst: address id is 0, English fallback");
@@ -2141,6 +2248,10 @@ namespace HZ
 			if (!ran) {
 				g_msgFormDone = true;
 				REX::INFO("hud form: read failed");
+			} else if (raw.ok == -2) {
+				g_msgFormDone = true;
+				HzAddrLogOnce();
+				REX::INFO("hud form: address id {} does not resolve", raw.miss);
 			} else if (raw.ok < 0) {
 				g_msgFormDone = true;
 				REX::INFO("hud form: address id is 0");
@@ -2304,10 +2415,13 @@ namespace HZ
 	// Purpose: log the hold-breath clip geometry once per session, the first time HOLDING BREATH is on screen.
 	// The movie fills hzpClipDiag. This is not gated on Debug or HZ_COMMS_MSG_LOG. A missing member is retried.
 	// An empty string means that state has not been shown yet, so the latch stays open.
-	// Last modified: 2026-10-22.
-	void ScopeClipPoll()
+	// The menu check runs at most every 500 ms while the scope is open.
+	// Last modified: 2026-10-23.
+	void ScopeClipPoll(ULONGLONG a_now)
 	{
 		if (g_hzpClipLogged) return;
+		if (a_now < g_hzpClipNext) return;
+		g_hzpClipNext = a_now + 500;
 		auto ui = RE::UI::GetSingleton();
 		if (!ui || !ui->IsMenuOpen("ScopeMenu")) return;
 		auto menu = ui->GetMenu("ScopeMenu");
@@ -2338,7 +2452,7 @@ namespace HZ
 		BannerPoll(now);   // v0.40.3
 		CommsDbgPoll(now);   // v0.42.0.6: empty when HZ_COMMS_MSG_LOG is 0
 		CommsRxPoll(now);    // v0.42.0.7: reaction backup. Before the HUD-ready return below.
-		ScopeClipPoll();     // v0.42.0.8: hold-breath clip line. Before the HUD-ready return, so a scope still logs it.
+		ScopeClipPoll(now);     // v0.42.0.8: hold-breath clip line. Before the HUD-ready return, so a scope still logs it.
 		HWND wnd = GameWindow();
 		bool down = wnd && (GetAsyncKeyState(g_vk) & 0x8000) != 0;
 		if (down && !g_wasDown) OnSettingsKey();
