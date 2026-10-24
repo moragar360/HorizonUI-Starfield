@@ -477,13 +477,13 @@
       {
          var f:int = int(this.hzcCfg.SubFont) >= 0 ? int(this.hzcCfg.SubFont) : int(this.hzcCfg.FontFace);
          if(f == 3) { return this.hzcFontProbe(HZC_SEMI) ? HZC_SEMI : this.hzcGameFont; }   // one weight for every role
-         if(this.hzcProbe.font === 0) { f = 0; }
+         // marker still loading or absent: game font, so a missing $Horizon_ face is not looked up
+         if(this.hzcProbe.font !== 1) { return this.hzcGameFont; }
          var base:String = f == 2 ? "$Horizon_Font_Alt" : (f == 1 ? "$Horizon_Font" : null);
-         if(base == null) { return this.hzcGameFont; }
+         if(base == null || !this.hzcFontProbe(base)) { return this.hzcGameFont; }
          var want:String = role == "rg" ? base + "_Regular" : base;
-         if(this.hzcFontProbe(want)) { return want; }
-         if(this.hzcFontProbe(base)) { return base; }
-         return this.hzcGameFont;
+         if(want != base && this.hzcFontProbe(want)) { return want; }
+         return base;
       }
       // a line with characters the Horizon faces don't carry (CJK, Greek in Exo 2...) uses the game font
       private function hzcFits(tf:TextField, s:String) : Boolean
@@ -2288,7 +2288,8 @@
       // identical apart from the prefix). It reads HorizonUI.default.ini, HorizonUI.user.ini, HorizonUI.state.ini and the
       // legacy HorizonUI.ini (paths relative to Data/Interface) one after the other and hands every waiting callback the
       // merged text: the defaults with user.ini laid over (hzc37Compose; mirrors HZF::Compose in HorizonUI.dll). A missing
-      // file is normal: its IOErrorEvent is caught and simply counts as "no file" (nothing is thrown or logged).
+      // file is normal: its IOErrorEvent is caught and counts as no file. The game logs every failed open, so
+      // HorizonUI.ini is opened at most once, and only when Compose still needs that unshipped file.
       // No defaults file -> the legacy HorizonUI.ini is the base. Nothing at all -> null (callers keep built-in defaults).
       private static const hzc37_FILES:Array = ["HorizonUI/HorizonUI.default.ini","HorizonUI/HorizonUI.user.ini","HorizonUI/HorizonUI.state.ini","HorizonUI/HorizonUI.ini"];
       private static const hzc37_BOM:String = String.fromCharCode(0xFEFF);
@@ -2298,6 +2299,8 @@
       private var hzc37Got:Array = null;
       private var hzc37Q:Array = [];          // callbacks of the running read
       private var hzc37N:Array = [];          // callbacks that arrived meanwhile (they get a fresh read)
+      private var hzc37Leg:String = null;     // last text of HorizonUI.ini, or null when that open missed
+      private var hzc37LegTry:int = 0;        // 0 = not opened yet, 1 = opened once
       private function hzc37Ws(c:String) : Boolean { return c == " " || c == "\t" || c == "\r" || c == "\n"; }
       private function hzc37Trim(s:String) : String
       {
@@ -2498,10 +2501,32 @@
          this.hzc37T0 = new Date().getTime();
          this.hzc37Next(0);
       }
+      private function hzc37IsLeg(i:int) : Boolean
+      {
+         if(i < 0 || i >= hzc37_FILES.length) { return false; }
+         var pth:String = String(hzc37_FILES[i]);
+         return pth.length >= 13 && pth.substr(pth.length - 13) == "HorizonUI.ini";
+      }
+      // HorizonUI.ini is not shipped. Skip it when Compose would ignore it, and open it only once when it would not.
+      private function hzc37SkipLeg(i:int) : Boolean
+      {
+         if(!this.hzc37IsLeg(i)) { return false; }
+         if(this.hzc37LegTry != 0) { return true; }
+         var def:String = this.hzc37Got[0] == null ? null : String(this.hzc37Got[0]);
+         var hd:Boolean = def != null && def.length > 0;
+         if(hd && (this.hzc37Got[1] != null || this.hzc37Got[2] != null)) { return true; }
+         return false;
+      }
       private function hzc37Next(i:int) : void
       {
          this.hzc37Step = i + 1;
          if(i >= hzc37_FILES.length) { this.hzc37Ldr = null; this.hzc37Done(); return; }
+         if(this.hzc37SkipLeg(i))
+         {
+            this.hzc37Got[i] = this.hzc37LegTry != 0 ? this.hzc37Leg : null;
+            this.hzc37Next(i + 1);
+            return;
+         }
          try
          {
             this.hzc37Ldr = new URLLoader();
@@ -2517,12 +2542,14 @@
          if(e == null || e.target != this.hzc37Ldr) { return; }
          var i:int = this.hzc37Step - 1;
          try { this.hzc37Got[i] = String(this.hzc37Ldr.data); } catch(err:Error) { }
+         if(this.hzc37IsLeg(i)) { this.hzc37Leg = this.hzc37Got[i] == null ? null : String(this.hzc37Got[i]); this.hzc37LegTry = 1; }
          this.hzc37Next(i + 1);
       }
       private function hzc37OnErr(e:Event) : void
       {
          if(e == null || e.target != this.hzc37Ldr) { return; }
-         this.hzc37Next(this.hzc37Step);   // missing file: normal, no error
+         if(this.hzc37IsLeg(this.hzc37Step - 1)) { this.hzc37Leg = null; this.hzc37LegTry = 1; }
+         this.hzc37Next(this.hzc37Step);   // missing file: counted once, not opened again
       }
       private function hzc37Done() : void
       {

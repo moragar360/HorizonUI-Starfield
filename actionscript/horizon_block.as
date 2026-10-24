@@ -787,18 +787,22 @@
          var game:String = this.hzFont ? this.hzFont : "$MAIN_Font";
          if(this.hzFontFace == 3) { return this.hzFontProbe(HZ34_SEMI) ? HZ34_SEMI : game; }   // v0.34: one weight for every face
          if(this.hzFontFace != 1 && this.hzFontFace != 2) { return game; }
-         if(this.hz30Mod["font"] === 0) { return game; }   // v0.30: font.marker absent -> game font (FontFace itself is kept)
+         // font.marker still loading or absent: game font, and no $Horizon_ lookup yet (that logs a missing face)
+         if(this.hz30Mod["font"] !== 1) { return game; }
          var want:String;
-         if(this.hzFontFace == 2)
+         if(this.hzFontFace == 2 && this.hzFontProbe("$Horizon_Font_Alt"))
          {
             want = face == "rg" ? "$Horizon_Font_Alt_Regular" : (face == "bd" ? "$Horizon_Font_Alt_Bold" : "$Horizon_Font_Alt");
-            if(this.hzFontProbe(want)) { this.hzFontOk = 1; return want; }
-            if(want != "$Horizon_Font_Alt" && this.hzFontProbe("$Horizon_Font_Alt")) { this.hzFontOk = 1; return "$Horizon_Font_Alt"; }
+            if(want == "$Horizon_Font_Alt" || this.hzFontProbe(want)) { this.hzFontOk = 1; return want; }
+            this.hzFontOk = 1;
+            return "$Horizon_Font_Alt";
          }
+         // Bold and Regular wait until the base face really renders, so they are not looked up before the library is ready
+         if(!this.hzFontProbe("$Horizon_Font")) { return game; }
          want = face == "rg" ? "$Horizon_Font_Regular" : (face == "bd" ? "$Horizon_Font_Bold" : "$Horizon_Font");
-         if(this.hzFontProbe(want)) { this.hzFontOk = 1; return want; }
-         if(want != "$Horizon_Font" && this.hzFontProbe("$Horizon_Font")) { this.hzFontOk = 1; return "$Horizon_Font"; }
-         return game;
+         if(want == "$Horizon_Font" || this.hzFontProbe(want)) { this.hzFontOk = 1; return want; }
+         this.hzFontOk = 1;
+         return "$Horizon_Font";
       }
 
       // Live typography update (TextScale / HeaderStyle / TextShadow / card color).
@@ -2366,7 +2370,7 @@
          try { this.hzEqTick(); } catch(e36e:Error) { }
          if(this.hz30ModT0 > 0) { try { this.hz30ModTick(); } catch(errMt:Error) { this.hz30ModT0 = 0; } }
          if(this.hzFrameN % 30 == 11) { try { this.hzPpClock(); } catch(errClk:Error) { } }
-         if(this.hzFontFace >= 1 && this.hzFontFace <= 3 && this.hzFontRetry < 6 && this.hzFrameN % 300 == 150)
+         if(this.hzFontFace >= 1 && this.hzFontFace <= 3 && this.hzFontRetry < 6 && this.hzFrameN % 300 == 150 && (this.hzFontFace == 3 || this.hz30Mod["font"] === 1))
          {
             // fontlibs can register late: re-probe faces that failed (a few times in the first ~60 s)
             var fbefore:String = this.hzFontName() + this.hzFontName("rg") + this.hzFontName("bd");
@@ -11660,7 +11664,7 @@
       // Horizon fonts usable: font.marker not reported absent and at least one Horizon face renders
       private function hz30FontAvail() : Boolean
       {
-         if(this.hz30Mod["font"] === 0) { return false; }
+         if(this.hz30Mod["font"] !== 1) { return false; }
          return this.hzFontProbe("$Horizon_Font") || this.hzFontProbe("$Horizon_Font_Alt");
       }
 
@@ -12735,7 +12739,8 @@
       // identical apart from the prefix). It reads HorizonUI.default.ini, HorizonUI.user.ini, HorizonUI.state.ini and the
       // legacy HorizonUI.ini (paths relative to Data/Interface) one after the other and hands every waiting callback the
       // merged text: the defaults with user.ini laid over (hz37Compose; mirrors HZF::Compose in HorizonUI.dll). A missing
-      // file is normal: its IOErrorEvent is caught and simply counts as "no file" (nothing is thrown or logged).
+      // file is normal: its IOErrorEvent is caught and counts as no file. The game logs every failed open, so
+      // HorizonUI.ini is opened at most once, and only when Compose still needs that unshipped file.
       // No defaults file -> the legacy HorizonUI.ini is the base. Nothing at all -> null (callers keep built-in defaults).
       private static const hz37_FILES:Array = ["HorizonUI/HorizonUI.default.ini","HorizonUI/HorizonUI.user.ini","HorizonUI/HorizonUI.state.ini","HorizonUI/HorizonUI.ini"];
       private static const hz37_BOM:String = String.fromCharCode(0xFEFF);
@@ -12745,6 +12750,8 @@
       private var hz37Got:Array = null;
       private var hz37Q:Array = [];          // callbacks of the running read
       private var hz37N:Array = [];          // callbacks that arrived meanwhile (they get a fresh read)
+      private var hz37Leg:String = null;     // last text of HorizonUI.ini, or null when that open missed
+      private var hz37LegTry:int = 0;        // 0 = not opened yet, 1 = opened once
       private function hz37Ws(c:String) : Boolean { return c == " " || c == "\t" || c == "\r" || c == "\n"; }
       private function hz37Trim(s:String) : String
       {
@@ -12945,10 +12952,32 @@
          this.hz37T0 = new Date().getTime();
          this.hz37Next(0);
       }
+      private function hz37IsLeg(i:int) : Boolean
+      {
+         if(i < 0 || i >= hz37_FILES.length) { return false; }
+         var pth:String = String(hz37_FILES[i]);
+         return pth.length >= 13 && pth.substr(pth.length - 13) == "HorizonUI.ini";
+      }
+      // HorizonUI.ini is not shipped. Skip it when Compose would ignore it, and open it only once when it would not.
+      private function hz37SkipLeg(i:int) : Boolean
+      {
+         if(!this.hz37IsLeg(i)) { return false; }
+         if(this.hz37LegTry != 0) { return true; }
+         var def:String = this.hz37Got[0] == null ? null : String(this.hz37Got[0]);
+         var hd:Boolean = def != null && def.length > 0;
+         if(hd && (this.hz37Got[1] != null || this.hz37Got[2] != null)) { return true; }
+         return false;
+      }
       private function hz37Next(i:int) : void
       {
          this.hz37Step = i + 1;
          if(i >= hz37_FILES.length) { this.hz37Ldr = null; this.hz37Done(); return; }
+         if(this.hz37SkipLeg(i))
+         {
+            this.hz37Got[i] = this.hz37LegTry != 0 ? this.hz37Leg : null;
+            this.hz37Next(i + 1);
+            return;
+         }
          try
          {
             this.hz37Ldr = new URLLoader();
@@ -12964,12 +12993,14 @@
          if(e == null || e.target != this.hz37Ldr) { return; }
          var i:int = this.hz37Step - 1;
          try { this.hz37Got[i] = String(this.hz37Ldr.data); } catch(err:Error) { }
+         if(this.hz37IsLeg(i)) { this.hz37Leg = this.hz37Got[i] == null ? null : String(this.hz37Got[i]); this.hz37LegTry = 1; }
          this.hz37Next(i + 1);
       }
       private function hz37OnErr(e:Event) : void
       {
          if(e == null || e.target != this.hz37Ldr) { return; }
-         this.hz37Next(this.hz37Step);   // missing file: normal, no error
+         if(this.hz37IsLeg(this.hz37Step - 1)) { this.hz37Leg = null; this.hz37LegTry = 1; }
+         this.hz37Next(this.hz37Step);   // missing file: counted once, not opened again
       }
       private function hz37Done() : void
       {

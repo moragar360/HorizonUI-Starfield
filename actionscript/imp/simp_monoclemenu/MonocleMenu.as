@@ -1372,6 +1372,8 @@ package
       private var hzsHead:Number = NaN;
       private var hzsHeadDrawn:Number = NaN;
       private var hzsFontOk:Object = {};
+      private var hzsFontLib:int = -1;       // font.marker: -1 checking, 0 absent, 1 present
+      private var hzsFontLdr:URLLoader = null;
       private var hzsGameFont:String = null;
       private var hzsFrame:int = 0;
       private var hzsFrameT:int = 0;
@@ -1411,6 +1413,7 @@ package
          this.hzsSub("LocalEnvData_Frequent",this.hzsOnEnvF);
          this.hzsSub("HudCompassData",this.hzsOnCmp);
          addEventListener(Event.ENTER_FRAME,this.hzsTick);
+         try { this.hzsFontBegin(); } catch(eFont:Error) { this.hzsFontLib = 0; }
          this.hzsRead();
       }
       private function hzsSub(n:String, f:Function) : void
@@ -1762,25 +1765,48 @@ package
          try { var t:TextField = new TextField(); GlobalFunc.SetText(t,s); return t.text; } catch(e:Error) { }
          return s;
       }
+      private function hzsFontBegin() : void
+      {
+         if(this.hzsFontLdr != null || this.hzsFontLib == 0 || this.hzsFontLib == 1) { return; }
+         var l:URLLoader = new URLLoader();
+         this.hzsFontLdr = l;
+         l.addEventListener(Event.COMPLETE,this.hzsFontOkEv);
+         l.addEventListener(IOErrorEvent.IO_ERROR,this.hzsFontErrEv);
+         l.addEventListener("securityError",this.hzsFontErrEv);
+         l.load(new URLRequest("HorizonUI/modules/font.marker"));
+      }
+      private function hzsFontOkEv(e:Event) : void
+      {
+         this.hzsFontLib = 1;
+         this.hzsFontLdr = null;
+         this.hzsSig = {};
+         this.hzsDirty = true;
+      }
+      private function hzsFontErrEv(e:Event) : void
+      {
+         this.hzsFontLib = 0;
+         this.hzsFontLdr = null;
+      }
       private function hzsFace(w:String) : String
       {
          var f:int = int(this.hzsC.ScanFont);
          if(f < 0 || f > 3) { f = int(this.hzsS.FontFace); }
          var game:String = this.hzsGame();
          if(f == 3) { return this.hzsProbe(HZS_SEMI) ? HZS_SEMI : game; }
-         if(f == 2)
+         if(f != 1 && f != 2) { return game; }
+         // marker still loading or absent: game font. Bold waits until the base face renders.
+         if(this.hzsFontLib !== 1) { return game; }
+         var want:String;
+         if(f == 2 && this.hzsProbe("$Horizon_Font_Alt"))
          {
-            var r:String = w == "rg" ? "$Horizon_Font_Alt_Regular" : (w == "bd" ? "$Horizon_Font_Alt_Bold" : "$Horizon_Font_Alt");
-            if(this.hzsProbe(r)) { return r; }
-            if(this.hzsProbe("$Horizon_Font_Alt")) { return "$Horizon_Font_Alt"; }
+            want = w == "rg" ? "$Horizon_Font_Alt_Regular" : (w == "bd" ? "$Horizon_Font_Alt_Bold" : "$Horizon_Font_Alt");
+            if(want == "$Horizon_Font_Alt" || this.hzsProbe(want)) { return want; }
+            return "$Horizon_Font_Alt";
          }
-         if(f == 1 || f == 2)
-         {
-            var x:String = w == "rg" ? "$Horizon_Font_Regular" : (w == "bd" ? "$Horizon_Font_Bold" : "$Horizon_Font");
-            if(this.hzsProbe(x)) { return x; }
-            if(this.hzsProbe("$Horizon_Font")) { return "$Horizon_Font"; }
-         }
-         return game;
+         if(!this.hzsProbe("$Horizon_Font")) { return game; }
+         want = w == "rg" ? "$Horizon_Font_Regular" : (w == "bd" ? "$Horizon_Font_Bold" : "$Horizon_Font");
+         if(want == "$Horizon_Font" || this.hzsProbe(want)) { return want; }
+         return "$Horizon_Font";
       }
       private function hzsGame() : String
       {
@@ -3698,7 +3724,8 @@ package
       // identical apart from the prefix). It reads HorizonUI.default.ini, HorizonUI.user.ini, HorizonUI.state.ini and the
       // legacy HorizonUI.ini (paths relative to Data/Interface) one after the other and hands every waiting callback the
       // merged text: the defaults with user.ini laid over (hzs37Compose; mirrors HZF::Compose in HorizonUI.dll). A missing
-      // file is normal: its IOErrorEvent is caught and simply counts as "no file" (nothing is thrown or logged).
+      // file is normal: its IOErrorEvent is caught and counts as no file. The game logs every failed open, so
+      // HorizonUI.ini is opened at most once, and only when Compose still needs that unshipped file.
       // No defaults file -> the legacy HorizonUI.ini is the base. Nothing at all -> null (callers keep built-in defaults).
       private static const hzs37_FILES:Array = ["HorizonUI/HorizonUI.default.ini","HorizonUI/HorizonUI.user.ini","HorizonUI/HorizonUI.state.ini","HorizonUI/HorizonUI.ini"];
       private static const hzs37_BOM:String = String.fromCharCode(0xFEFF);
@@ -3708,6 +3735,8 @@ package
       private var hzs37Got:Array = null;
       private var hzs37Q:Array = [];          // callbacks of the running read
       private var hzs37N:Array = [];          // callbacks that arrived meanwhile (they get a fresh read)
+      private var hzs37Leg:String = null;     // last text of HorizonUI.ini, or null when that open missed
+      private var hzs37LegTry:int = 0;        // 0 = not opened yet, 1 = opened once
       private function hzs37Ws(c:String) : Boolean { return c == " " || c == "\t" || c == "\r" || c == "\n"; }
       private function hzs37Trim(s:String) : String
       {
@@ -3908,10 +3937,32 @@ package
          this.hzs37T0 = new Date().getTime();
          this.hzs37Next(0);
       }
+      private function hzs37IsLeg(i:int) : Boolean
+      {
+         if(i < 0 || i >= hzs37_FILES.length) { return false; }
+         var pth:String = String(hzs37_FILES[i]);
+         return pth.length >= 13 && pth.substr(pth.length - 13) == "HorizonUI.ini";
+      }
+      // HorizonUI.ini is not shipped. Skip it when Compose would ignore it, and open it only once when it would not.
+      private function hzs37SkipLeg(i:int) : Boolean
+      {
+         if(!this.hzs37IsLeg(i)) { return false; }
+         if(this.hzs37LegTry != 0) { return true; }
+         var def:String = this.hzs37Got[0] == null ? null : String(this.hzs37Got[0]);
+         var hd:Boolean = def != null && def.length > 0;
+         if(hd && (this.hzs37Got[1] != null || this.hzs37Got[2] != null)) { return true; }
+         return false;
+      }
       private function hzs37Next(i:int) : void
       {
          this.hzs37Step = i + 1;
          if(i >= hzs37_FILES.length) { this.hzs37Ldr = null; this.hzs37Done(); return; }
+         if(this.hzs37SkipLeg(i))
+         {
+            this.hzs37Got[i] = this.hzs37LegTry != 0 ? this.hzs37Leg : null;
+            this.hzs37Next(i + 1);
+            return;
+         }
          try
          {
             this.hzs37Ldr = new URLLoader();
@@ -3927,12 +3978,14 @@ package
          if(e == null || e.target != this.hzs37Ldr) { return; }
          var i:int = this.hzs37Step - 1;
          try { this.hzs37Got[i] = String(this.hzs37Ldr.data); } catch(err:Error) { }
+         if(this.hzs37IsLeg(i)) { this.hzs37Leg = this.hzs37Got[i] == null ? null : String(this.hzs37Got[i]); this.hzs37LegTry = 1; }
          this.hzs37Next(i + 1);
       }
       private function hzs37OnErr(e:Event) : void
       {
          if(e == null || e.target != this.hzs37Ldr) { return; }
-         this.hzs37Next(this.hzs37Step);   // missing file: normal, no error
+         if(this.hzs37IsLeg(this.hzs37Step - 1)) { this.hzs37Leg = null; this.hzs37LegTry = 1; }
+         this.hzs37Next(this.hzs37Step);   // missing file: counted once, not opened again
       }
       private function hzs37Done() : void
       {

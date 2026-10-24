@@ -400,6 +400,9 @@ expect(src.indexOf("loves|likes") < 0, "the sentence match is not a regex");
 	const clipBody = clipFn >= 0 && clipEnd > clipFn ? cpp.slice(clipFn, clipEnd) : "";
 	expect(clipBody.indexOf('Invoke("hzpClipDiag"') >= 0 && clipBody.indexOf("#if") < 0, "the hold-breath diag is outside the verbose ifdef");
 	expect(clipBody.indexOf("scope holdbreath diag:") >= 0, "the DLL logs the hold-breath diag");
+	const clipDbg = clipBody.indexOf("if (!g_iniDebug) return;");
+	expect(clipDbg >= 0 && clipDbg < clipBody.indexOf('Invoke("hzpClipDiag"') && clipDbg < clipBody.indexOf("a_now < g_hzpClipNext"), "hold-breath diag stays off unless Debug=1");
+	expect(clipBody.indexOf("g_hzpClipLogged = true") > clipDbg, "Debug off does not latch the hold-breath diag");
 	expect(clipBody.indexOf("a_now < g_hzpClipNext") >= 0, "the hold-breath diag does not run every frame");
 	expect(clipBody.indexOf("g_hzpClipNext = a_now + 500") >= 0, "the hold-breath diag waits 500 ms");
 	const clipCall = cpp.indexOf("ScopeClipPoll(now);");
@@ -585,6 +588,107 @@ function fnBody(name, next) {
 	expect(tone.indexOf('sub == "calm"') >= 0 && tone.indexOf("return HZC_GRN") >= 0, "calm stays green");
 	expect(redLine.indexOf('"furious"') >= 0 && redLine.indexOf('"caught"') >= 0, "furious and caught stay red");
 	expect(src.indexOf("private function hzcRxStack()") >= 0 && src.indexOf("var gap:Number = 8;") >= 0, "stacked cards keep a gap");
+}
+
+// HC-2: the fade model is a copy. These pins read the movie, including a split name and a helper the model never runs.
+function stripMovieComments(s) {
+	let out = "";
+	let i = 0;
+	let q = "";
+	while (i < s.length) {
+		const c = s[i];
+		if (q) {
+			out += c;
+			if (c === "\\") { out += s[i + 1] || ""; i += 2; continue; }
+			if (c === q) q = "";
+			i++;
+			continue;
+		}
+		if (c === '"' || c === "'") { q = c; out += c; i++; continue; }
+		if (c === "/" && s[i + 1] === "/") { while (i < s.length && s[i] !== "\n") i++; continue; }
+		if (c === "/" && s[i + 1] === "*") {
+			i += 2;
+			while (i < s.length && !(s[i] === "*" && s[i + 1] === "/")) i++;
+			i += 2;
+			continue;
+		}
+		out += c;
+		i++;
+	}
+	return out;
+}
+function foldMovieStrings(s) {
+	let prev = "";
+	while (prev !== s) {
+		prev = s;
+		s = s.replace(/"((?:\\.|[^"\\])*)"\s*\+\s*"((?:\\.|[^"\\])*)"/g, function (_m, a, b) { return '"' + a + b + '"'; });
+		s = s.replace(/'((?:\\.|[^'\\])*)'\s*\+\s*'((?:\\.|[^'\\])*)'/g, function (_m, a, b) { return "'" + a + b + "'"; });
+	}
+	return s;
+}
+function movieFns(text) {
+	const re = /\n      (?:private|public) function /g;
+	const starts = [];
+	let m;
+	while ((m = re.exec(text))) starts.push(m.index + 1);
+	const spans = [];
+	for (let i = 0; i < starts.length; i++) spans.push(text.slice(starts[i], i + 1 < starts.length ? starts[i + 1] : text.length));
+	return spans;
+}
+function fadeProblems(text) {
+	const problems = [];
+	const allow = { hzcRxFind: 1, hzcRxItemTx: 1, hzcRxWaits: 1, hzcRxWaitClear: 1, hzcRxOpen: 1 };
+	const fns = movieFns(stripMovieComments(text));
+	for (let fi = 0; fi < fns.length; fi++) {
+		const raw = fns[fi];
+		const fn = foldMovieStrings(raw);
+		const bodyAt = fn.indexOf("{");
+		const body = bodyAt >= 0 ? fn.slice(bodyAt + 1) : fn;
+		const aliases = {};
+		const asg = /(?:var\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*\*)?\s*=\s*([^;\n]*);/g;
+		let am;
+		while ((am = asg.exec(body))) { if (am[2].indexOf("Internal_mc") >= 0) aliases[am[1]] = 1; }
+		let i = 0;
+		while (i < body.length) {
+			const at = body.indexOf(".alpha", i);
+			if (at < 0) break;
+			if (!/^\s*=(?!=)/.test(body.slice(at + 6))) { i = at + 6; continue; }
+			let j = at - 1;
+			while (j >= 0 && /[A-Za-z0-9_$.\[\]"']/.test(body[j])) j--;
+			const recv = body.slice(j + 1, at);
+			const ids = recv.match(/[A-Za-z_][A-Za-z0-9_]*/g) || [];
+			const last = ids.length ? ids[ids.length - 1] : "";
+			if (recv.indexOf("Internal_mc") >= 0 || aliases[last]) problems.push("alpha " + recv);
+			i = at + 6;
+		}
+		if (raw.indexOf("function hzcRxLink") >= 0) {
+			const call = /(this\.)?([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
+			let cm;
+			while ((cm = call.exec(body))) {
+				if (!cm[1] && cm[2].indexOf("hzc") !== 0) continue;
+				if (!allow[cm[2]]) problems.push("link " + cm[2]);
+			}
+			const br = /this\[\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*\]\s*\(/g;
+			let bm;
+			while ((bm = br.exec(body))) { if (!allow[bm[1]]) problems.push("link " + bm[1]); }
+		}
+	}
+	return problems;
+}
+{
+	const clean = fadeProblems(src);
+	expect(clean.length === 0, "shipped fade writes stay off Internal_mc" + (clean.length ? " (" + clean[0] + ")" : ""));
+	const head = "private function hzcRxLink(arr:*) : void\n      {";
+	expect(src.indexOf(head) >= 0, "the link function has a stable head");
+	const poked = src.replace(head, head + "\n         this.hzcRxPoke(it);");
+	expect(fadeProblems(poked).length > 0, "a new helper on a line without a card fails");
+	const split = src.replace(head, head + '\n         it["Internal" + "_mc"].alpha = 1;');
+	expect(fadeProblems(split).length > 0, "a split Internal_mc alpha write fails");
+	const direct = src.replace(head, head + "\n         it.Internal_mc.alpha = 1;");
+	expect(fadeProblems(direct).length > 0, "a direct Internal_mc alpha write fails");
+	const aliasAt = "var im:* = it.Internal_mc;\n            if(im == null || im.Text_tf == null)";
+	const alias = src.replace(aliasAt, "var im:* = it.Internal_mc;\n            im.alpha = 1;\n            if(im == null || im.Text_tf == null)");
+	expect(src.indexOf(aliasAt) >= 0 && fadeProblems(alias).length > 0, "an Internal_mc alias alpha write fails");
 }
 
 function cardAlpha(itAlpha, imAlpha, mAlpha) {
@@ -1090,6 +1194,38 @@ function replacementProblem(arg) {
 	const sample = 's.replace(/([a-z])([A-Z])/g,"$1 $2");\nGlobalFunc.SetText(tf,"$$scanned");\ns.replace(re,"$MAIN_Font");';
 	const reps = replaceReplacements(sample);
 	expect(reps.length === 2 && replacementProblem(reps[0]) === "$1" && replacementProblem(reps[1]) === "", "$$ in SetText is not a replace replacement");
+}
+{
+	const iniFiles = [
+		"actionscript/horizon_block.as",
+		"actionscript/comms/hzc_block.as",
+		"actionscript/comms/hzd_block.as",
+		"actionscript/scope/hzp37_reader.as",
+		"actionscript/scanner/hzs_block.as",
+		"actionscript/scope/imp/pimp_scopemenu/ScopeMenu.as",
+		"actionscript/scope/imp/pimp_scopemenu_lrg/ScopeMenu.as",
+		"actionscript/imp/simp_monoclemenu/MonocleMenu.as",
+		"actionscript/imp/simp_monoclemenu_lrg/MonocleMenu.as"
+	];
+	for (let ii = 0; ii < iniFiles.length; ii++) {
+		const rel = iniFiles[ii];
+		const text = fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
+		expect(text.indexOf("LegTry") >= 0 && text.indexOf('substr(pth.length - 13) == "HorizonUI.ini"') >= 0, rel + " opens the unshipped ini at most once");
+		expect(text.indexOf("Got[1] != null || this.") >= 0, rel + " skips HorizonUI.ini when defaults and another file are present");
+	}
+	const hud = fs.readFileSync(path.join(__dirname, "..", "actionscript", "horizon_block.as"), "utf8");
+	const fontFn = hud.slice(hud.indexOf("private function hzFontName"), hud.indexOf("private function hzApplyTypo"));
+	expect(fontFn.indexOf('hz30Mod["font"] !== 1') >= 0, "HUD waits for the font library");
+	expect(fontFn.indexOf('hzFontProbe("$Horizon_Font")') < fontFn.indexOf('"$Horizon_Font_Bold"'), "Bold is not looked up before the base face");
+	const scope = fs.readFileSync(path.join(__dirname, "..", "actionscript", "scope", "hzp_main.as"), "utf8");
+	expect(scope.indexOf("hzpFontLib !== 1") >= 0 && scope.indexOf('hzpProbe("$Horizon_Font")') < scope.indexOf('"$Horizon_Font_Bold"'), "scope waits for the font library");
+	const scopeTwin = fs.readFileSync(path.join(__dirname, "..", "actionscript", "scope", "imp", "pimp_scopemenu_lrg", "ScopeMenu.as"), "utf8");
+	expect(scopeTwin.indexOf("hzpFontLib !== 1") >= 0, "the large scope waits for the font library");
+	const scan = fs.readFileSync(path.join(__dirname, "..", "actionscript", "scanner", "hzs_block.as"), "utf8");
+	expect(scan.indexOf("hzsFontLib !== 1") >= 0 && scan.indexOf('hzsProbe("$Horizon_Font")') < scan.indexOf('"$Horizon_Font_Bold"'), "scanner waits for the font library");
+	const dlg = fs.readFileSync(path.join(__dirname, "..", "actionscript", "comms", "hzd_block.as"), "utf8");
+	const dlgFont = dlg.slice(dlg.indexOf("private function hzdFont"), dlg.indexOf("private function hzdText"));
+	expect(dlgFont.indexOf("hzdProbe.font !== 1") >= 0 && dlgFont.indexOf("hzdFontProbe(base)") < dlgFont.indexOf("hzdFontProbe(base + role)"), "dialogue waits for the font library");
 }
 // Shipped movies and the blocks they are built from, including each _lrg twin.
 // hudmenu and hudmenu_lrg share horizon_block.as. The older HUDMenu_1 / himp snapshots are not this build.

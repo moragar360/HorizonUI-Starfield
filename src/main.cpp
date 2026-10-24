@@ -104,6 +104,7 @@ namespace HZ
 	std::uint32_t g_scan = 0x57;  // F11
 	int           g_vk = VK_F11;
 	bool          g_wasDown = false;
+	bool          g_iniDebug = false;   // [Debug] Debug=1. Gates the one-time hud form, gmst, address, and hold-breath lines.
 
 	std::filesystem::path IniPath()
 	{
@@ -991,6 +992,7 @@ namespace HZ
 	void LoadIni()
 	{
 		std::string key = "F11";
+		g_iniDebug = false;
 		std::string text;
 		const auto  P = FilesP();
 		// v0.37: HorizonUI.default.ini with HorizonUI.user.ini laid over (legacy HorizonUI.ini only when there is no default)
@@ -1006,6 +1008,7 @@ namespace HZ
 				return f;
 			};
 			std::string v;
+			if (get("debug", v) && v == "1") g_iniDebug = true;
 			if (get("settingskey", v) && !v.empty()) key = v;
 		}
 		auto sc = KeyNameToScan(key);
@@ -2068,7 +2071,7 @@ namespace HZ
 		static bool once = false;
 		if (once || g_addrWhy.empty()) return;
 		once = true;
-		REX::INFO("hud address: {}", g_addrWhy);
+		if (g_iniDebug) REX::INFO("hud address: {}", g_addrWhy);
 	}
 
 	static void HzCopySetting(RE::GameSettingCollection* a_col, const char* a_key, char* a_dst, std::size_t a_cap)
@@ -2193,12 +2196,14 @@ namespace HZ
 		if (a_text && a_text[0]) status = (a_text[0] == '<' && (a_text[1] == 'I' || a_text[1] == 'i')) ? "stub" : "text";
 		char show[61] = {};
 		if (a_text) hzpreset::CopyHudText(show, sizeof show, a_text);
-		REX::INFO("hud gmst {}: {} \"{}\"", a_key, status, show);
+		if (g_iniDebug) REX::INFO("hud gmst {}: {} \"{}\"", a_key, status, show);
 	}
 
 	// Purpose: read the localized GMST phrases once, on the task thread, after data has loaded.
 	// A zero address id is not called. An id that is not in the loaded v5 address library is not called either.
-	// An empty phrase or an "<ID=" stub keeps the English fallback.
+	// An empty phrase or an "<ID=" stub keeps the English fallback. The reads still run when Debug=0.
+	// The one-time hud form, hud gmst, and hud address lines are logged only when Debug=1.
+	// The versionlib image is released once both reads have finished.
 	// Last modified: 2026-10-23.
 	void HzMsgPrepare()
 	{
@@ -2207,18 +2212,18 @@ namespace HZ
 			const int ran = HzGmstFillSEH(&raw);
 			if (!ran) {
 				g_msgGmstDone = true;
-				REX::INFO("hud gmst: read failed, English fallback");
+				if (g_iniDebug) REX::INFO("hud gmst: read failed, English fallback");
 			} else if (raw.ok == -2) {
 				g_msgGmstDone = true;
 				HzAddrLogOnce();
-				REX::INFO("hud gmst: address id {} does not resolve, English fallback", raw.miss);
+				if (g_iniDebug) REX::INFO("hud gmst: address id {} does not resolve, English fallback", raw.miss);
 			} else if (raw.ok < 0) {
 				g_msgGmstDone = true;
-				REX::INFO("hud gmst: address id is 0, English fallback");
+				if (g_iniDebug) REX::INFO("hud gmst: address id is 0, English fallback");
 			} else if (raw.ok == 0) {
 				if (!g_msgGmstWait) {
 					g_msgGmstWait = true;
-					REX::INFO("hud gmst: settings not ready");
+					if (g_iniDebug) REX::INFO("hud gmst: settings not ready");
 				}
 			} else {
 				hzmsg::ApplyPhrase(g_msgPhrases.likes, raw.likes);
@@ -2247,20 +2252,26 @@ namespace HZ
 			const int ran = HzFormFillSEH(&raw);
 			if (!ran) {
 				g_msgFormDone = true;
-				REX::INFO("hud form: read failed");
+				if (g_iniDebug) REX::INFO("hud form: read failed");
 			} else if (raw.ok == -2) {
 				g_msgFormDone = true;
 				HzAddrLogOnce();
-				REX::INFO("hud form: address id {} does not resolve", raw.miss);
+				if (g_iniDebug) REX::INFO("hud form: address id {} does not resolve", raw.miss);
 			} else if (raw.ok < 0) {
 				g_msgFormDone = true;
-				REX::INFO("hud form: address id is 0");
+				if (g_iniDebug) REX::INFO("hud form: address id is 0");
 			} else if (raw.ok > 0) {
 				for (int i = 0; i < raw.n && i < 32; ++i) {
 					const char* state = raw.loaded[i] < 0 ? "skipped" : (raw.loaded[i] ? "loaded" : "missing");
-					REX::INFO("hud form {:08X}: {}", kHzMsgForms[i], state);
+					if (g_iniDebug) REX::INFO("hud form {:08X}: {}", kHzMsgForms[i], state);
 				}
 				g_msgFormDone = true;
+			}
+		}
+		if (g_msgGmstDone && g_msgFormDone) {
+			if (!g_addrBytes.empty()) {
+				g_addrBytes.clear();
+				g_addrBytes.shrink_to_fit();
 			}
 		}
 	}
@@ -2413,12 +2424,14 @@ namespace HZ
 #endif
 
 	// Purpose: log the hold-breath clip geometry once per session, the first time HOLDING BREATH is on screen.
-	// The movie fills hzpClipDiag. This is not gated on Debug or HZ_COMMS_MSG_LOG. A missing member is retried.
+	// The movie fills hzpClipDiag. Debug=0 returns before any menu lookup and does not latch, so turning
+	// Debug on later still logs once. This is not behind HZ_COMMS_MSG_LOG. A missing member is retried.
 	// An empty string means that state has not been shown yet, so the latch stays open.
 	// The menu check runs at most every 500 ms while the scope is open.
 	// Last modified: 2026-10-23.
 	void ScopeClipPoll(ULONGLONG a_now)
 	{
+		if (!g_iniDebug) return;
 		if (g_hzpClipLogged) return;
 		if (a_now < g_hzpClipNext) return;
 		g_hzpClipNext = a_now + 500;
@@ -2435,7 +2448,7 @@ namespace HZ
 					const auto j = all.find('\n', i);
 					std::string line = all.substr(i, j == std::string::npos ? std::string::npos : j - i);
 					if (!line.empty() && line.back() == '\r') line.pop_back();
-					if (!line.empty())
+					if (!line.empty() && g_iniDebug)
 						REX::INFO("scope holdbreath diag: {}", line);
 					if (j == std::string::npos) break;
 					i = j + 1;

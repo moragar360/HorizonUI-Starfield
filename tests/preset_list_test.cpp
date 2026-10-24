@@ -389,6 +389,20 @@ int main()
 		Expect(src.find("hzrx::Enqueue(g_rxQ, a_text, GetTickCount64(), kRxQueueMax)") != std::string::npos, "the HUD queue uses the shared policy");
 		Expect(src.find("hud gmst: address id {} does not resolve, English fallback") != std::string::npos, "a missing settings id is logged and skipped");
 		Expect(src.find("hud form: address id {} does not resolve") != std::string::npos, "a missing form id is logged and skipped");
+		Expect(src.find("if (g_iniDebug) REX::INFO(\"hud gmst: address id {} does not resolve, English fallback\"") != std::string::npos, "the settings id line is behind Debug");
+		Expect(src.find("if (g_iniDebug) REX::INFO(\"hud form: address id {} does not resolve\"") != std::string::npos, "the form id line is behind Debug");
+		Expect(src.find("if (g_iniDebug) REX::INFO(\"hud address:") != std::string::npos, "the address line is behind Debug");
+		Expect(src.find("if (get(\"debug\", v) && v == \"1\") g_iniDebug = true;") != std::string::npos, "Debug=1 is the only debug gate");
+		{
+			const auto prep = src.find("void HzMsgPrepare()");
+			const auto prepEnd = src.find("static std::string HzCrossName()", prep);
+			Expect(prep != std::string::npos && prepEnd > prep, "the address reads are bounded");
+			const auto body = src.substr(prep, prepEnd - prep);
+			const auto rel = body.find("g_addrBytes.clear();");
+			const auto fit = body.find("g_addrBytes.shrink_to_fit();");
+			const auto both = body.find("if (g_msgGmstDone && g_msgFormDone)");
+			Expect(both != std::string::npos && rel != std::string::npos && fit != std::string::npos && both < rel && rel < fit, "the versionlib image is freed after both reads");
+		}
 		{
 			const auto fill = src.find("static void HzGmstFillCall");
 			const auto fillEnd = src.find("struct HzFormRaw", fill);
