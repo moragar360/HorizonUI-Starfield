@@ -1102,7 +1102,7 @@
       private static const HZC_RX_VIS:int = 4000;    // unlinked cards only: shown time while the message slot is visible
       private static const HZC_RX_COOL:int = 5000;   // after three message misses, try the card again once this has passed
       private static const HZC_RX_STEP:int = 3;     // consecutive frames whose step threw, then the card turns off
-      private var hzcRx:Array = [];          // {it, st, n, k, c, w, h, sig, key, t0, vis, tx, linked, src, paired, blamed}
+      private var hzcRx:Array = [];          // {it, st, n, k, c, w, h, sig, key, t0, vis, tx, linked, src, paired, blamed, rebound, reboundAt}
       private var hzcRxGone:Array = [];      // {key, t0} linked binding cards that ended before their DLL note arrived
       private var hzcRxWait:Array = [];      // {it, f} text not ready yet
       private var hzcRxLayer:Sprite = null;
@@ -1463,13 +1463,17 @@
          if(s == null || s.length == 0) { return null; }
          return s.toLowerCase();
       }
-      // Oldest card for this text that does not have a vanilla line yet.
-      private function hzcRxOpen(tx:String) : Object
+      // Oldest card for this key that does not have a vanilla line yet.
+      private function hzcRxOpenKey(key:String) : Object
       {
-         var key:String = this.hzcRxKey(tx);
          if(key == null) { return null; }
          for each(var e:Object in this.hzcRx) { if(e != null && e.key == key && e.it == null) { return e; } }
          return null;
+      }
+      // Oldest card for this text that does not have a vanilla line yet.
+      private function hzcRxOpen(tx:String) : Object
+      {
+         return this.hzcRxOpenKey(this.hzcRxKey(tx));
       }
       // Settings reload, a ReactionCard toggle, or the miss cooldown. The next message draws again.
       private function hzcRxRearm() : void
@@ -1527,7 +1531,7 @@
          }
          if(fromDll && this.hzcRxPairGone(key, now)) { return "queued"; }
          var src:String = fromDll ? "d" : "b";
-         this.hzcRx.push({"it":null,"st":1,"n":r.n,"k":r.k,"c":null,"w":0,"h":0,"sig":"","key":key,"t0":now,"vis":0,"tx":String(raw),"linked":false,"src":src,"paired":false,"blamed":false,"covered":false});
+         this.hzcRx.push({"it":null,"st":1,"n":r.n,"k":r.k,"c":null,"w":0,"h":0,"sig":"","key":key,"t0":now,"vis":0,"tx":String(raw),"linked":false,"src":src,"paired":false,"blamed":false,"covered":false,"rebound":false,"reboundAt":0});
          if(this.hzcRx.length > 8)
          {
             var old:Object = this.hzcRx.shift();
@@ -1578,7 +1582,10 @@
          if(s == "hated") { return 3; }
          return -1;
       }
-      // DLL classification. The movie lays the card out. It does not parse the sentence.
+      // Purpose: queue a DLL-classified card. A late push whose text matches a
+      // card rebound inside HZC_RX_PAIR is the same reaction, so it is not added
+      // again. Inputs: kind, sub, name, value, raw line. Output: queued / no match
+      // / cards-off reason. The movie does not parse the sentence.
       public function hzcCardPush(kind:String, sub:String, name:String, value:String, raw:String) : String
       {
          try
@@ -1599,7 +1606,13 @@
                k = this.hzcRxSubK(String(sub));
                if(k < 0) { return "no match"; }
             }
-            this.hzcRx.push({"it":null,"st":1,"n":String(name),"k":k,"c":null,"w":0,"h":0,"sig":"","key":key,"t0":now,"vis":0,"tx":String(raw),"linked":false,"src":"d","paired":false,"blamed":false,"kind":String(kind),"sub":String(sub),"value":String(value),"covered":false});
+            for each(var eR:Object in this.hzcRx)
+            {
+               if(eR == null || eR.key != key || eR.rebound != true) { continue; }
+               var rage:int = now - int(eR.reboundAt);
+               if(rage >= 0 && rage < HZC_RX_PAIR) { return "queued"; }
+            }
+            this.hzcRx.push({"it":null,"st":1,"n":String(name),"k":k,"c":null,"w":0,"h":0,"sig":"","key":key,"t0":now,"vis":0,"tx":String(raw),"linked":false,"src":"d","paired":false,"blamed":false,"kind":String(kind),"sub":String(sub),"value":String(value),"covered":false,"rebound":false,"reboundAt":0});
             if(this.hzcRx.length > 8)
             {
                var old:Object = this.hzcRx.shift();
@@ -1690,9 +1703,11 @@
          this.hzcRxWait = keep;
       }
       // A rebuilt message list keeps the same text on a new clip. Claim that clip for this key.
+      // Skip when a pending card already owns this text, so a real repeat is not stolen.
       private function hzcRxClaim(arr:*, key:String) : *
       {
          if(arr == null || key == null) { return null; }
+         if(this.hzcRxOpenKey(key) != null) { return null; }
          var i:int = 0;
          while(i < arr.length)
          {
@@ -1843,7 +1858,15 @@
                if(!inList)
                {
                   var nxt:* = this.hzcRxClaim(arr,e0.key);
-                  if(nxt != null) { e0.it = nxt; e0.linked = true; }
+                  if(nxt != null)
+                  {
+                     this.hzcRxReveal(e0.it);
+                     e0.covered = false;
+                     e0.it = nxt;
+                     e0.linked = true;
+                     e0.rebound = true;
+                     e0.reboundAt = now;
+                  }
                   else { this.hzcRxShow(e0); this.hzcRxRemember(e0); this.hzcRxDrop(e0); continue; }
                }
             }
@@ -2202,9 +2225,11 @@
          var name:String = e.n != null ? String(e.n) : "";
          var value:String = e.value != null ? String(e.value) : "";
          var raw:String = e.tx != null ? String(e.tx) : "";
+         var hit:Object = this.hzcCardMatch(kind,sub,name,value);
+         if(hit == null) { return; }
          var z:Number = this.hzcCardZ();
          var acc:uint = this.hzcAccent();
-         var toneI:int = this.hzcCardTone(kind,sub);
+         var toneI:int = int(hit.tone);
          var tone:uint = toneI < 0 ? acc : uint(toneI);
          var c:Sprite = new Sprite();
          c.mouseEnabled = false;
@@ -2212,7 +2237,8 @@
          var titleFs:Number = Math.max(13,Math.round(15 * z));
          var subFs:Number = Math.max(13,Math.round(13 * z));
          var chipFs:Number = Math.max(13,Math.round(13 * z));
-         var title:String = this.hzcCardTitle(kind,sub,name);
+         var title:String = String(hit.title);
+         value = String(hit.value);
          var phrase:String = "";
          if(kind == "unavailable" || kind == "credits" || kind == "crime") { phrase = raw; }
          else

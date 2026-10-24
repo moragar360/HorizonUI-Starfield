@@ -161,7 +161,12 @@ int main()
 		ok(hit("Credits x500 Added.", en), "credits", "gain", "", "+500", 'C', "credits added times");
 		ok(hit("200 Credits Removed.", en), "credits", "loss", "", "-200", 'C', "credits removed");
 		ok(hit("Docking fee: -1890 Credits (Cargo, Tariffs, Fuel, Crew)", en), "credits", "loss", "", "-1,890", 'C', "signed credits loss with detail");
-		ok(hit("Refund: +500 credits posted", en), "credits", "gain", "", "+500", 'C', "signed credits gain any case");
+		ok(hit("Refund: +500 credits", en), "credits", "gain", "", "+500", 'C', "signed credits gain any case");
+		ok(hit("Refund: +500 credits (dock fee)", en), "credits", "gain", "", "+500", 'C', "signed credits gain with a parenthetical");
+		miss("Refund: +500 credits posted", en, "leftover after Credits is not a signed gain");
+		miss("-1 Credits Card Removed.", en, "item line after Credits is not a signed loss");
+		miss("Fee: +500x Credits", en, "whole-token amount rejects a trailing x");
+		miss("+500.5.5 Credits", en, "whole-token amount rejects a broken decimal");
 		miss("Shipment fees: Tariffs Initiated", en, "credits word without an amount stays vanilla");
 		miss("Credits Card Added.", en, "other item with Credits in the name");
 		miss("Added.", en, "generic added without the Credits name or amount");
@@ -232,6 +237,9 @@ int main()
 		Expect(as.find("if(sub == \"bounty-add\") { return \"BOUNTY\"; }") != std::string::npos, "bounty added title is BOUNTY");
 		Expect(as.find("if(sub == \"gain\" || sub == \"bounty-add\")") == std::string::npos, "bounty added is not a green credits gain");
 		Expect(as.find("private function hzcCardMatch(kind:String, sub:String, name:String, value:String)") != std::string::npos, "movie matcher takes a DLL payload");
+		Expect(as.find("this.hzcCardMatch(kind,sub,name,value)") != std::string::npos, "card draw uses the live matcher");
+		Expect(as.find("eR.rebound != true") != std::string::npos, "a rebound DLL push merges into the existing card");
+		Expect(as.find("this.hzcRxReveal(e0.it)") != std::string::npos, "rebind uncovers the old clip first");
 		Expect(as.find("if(sub == \"caught\") { return \"PICKPOCKET\"; }") != std::string::npos, "pickpocket crime title is PICKPOCKET");
 		Expect(as.find("if(sub == \"takeback\" || sub == \"lock\") { return \"CAUGHT\"; }") != std::string::npos, "take-back and lock titles are CAUGHT");
 		if (as.find("if(sub == \"kid\") { return \"KID STUFF\"; }") != std::string::npos) std::cout << "ok  Kid Stuff title is KID STUFF\n";

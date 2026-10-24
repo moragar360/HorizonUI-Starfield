@@ -464,6 +464,22 @@ inline bool CreditsRestOk(std::string_view rest)
 	return true;
 }
 
+// After the Credits name, a signed line may keep nothing, end punctuation, or
+// one wrapping parenthetical. Item lines that end in Added./Removed. are not
+// signed credits; MatchCreditsGeneric owns those.
+inline bool CreditsAfterOk(std::string_view after)
+{
+	after = Trim(after);
+	if (after.empty()) return true;
+	const char last = after.back();
+	if (last == '.' || last == '!' || last == '?') {
+		after.remove_suffix(1);
+		after = Trim(after);
+		if (after.empty()) return true;
+	}
+	return after.size() >= 2 && after.front() == '(' && after.back() == ')';
+}
+
 enum class Tk : unsigned char { Lit, Str, Num };
 
 struct Token
@@ -722,10 +738,12 @@ inline Hit MatchBounty(std::string_view line, const Templates& t, const Template
 	return Miss();
 }
 
-// Any HUD line whose last token before the Credits name is a signed or unsigned
-// amount ("-1890 Credits", "+500 credits"). Prefix and suffix stay on the card
-// as the raw line. No amount means a miss: a tariff-only line stays vanilla.
-// Fail closed: Credits is a whole word, and TakeAmount must consume that token.
+// Any HUD line whose last token before the Credits name is a signed amount
+// ("-1890 Credits", "+500 credits"). Prefix and a parenthetical suffix stay on
+// the card as the raw line. No amount means a miss: a tariff-only line stays
+// vanilla. Fail closed: Credits is a whole word, TakeAmount must consume that
+// token, and leftover after Credits may only be empty, end punctuation, or one
+// wrapping parenthetical. Added./Removed. after Credits is an item line.
 inline Hit MatchCreditsSigned(std::string_view line, const Templates& t, const Templates& en)
 {
 	if (!UsablePhrase(t.creditsName)) return Miss();
@@ -744,6 +762,9 @@ inline Hit MatchCreditsSigned(std::string_view line, const Templates& t, const T
 	std::string digits;
 	std::size_t b = 0, e = 0;
 	if (!TakeAmount(tok, t0, digits, b, e) || b != t0 || e != tok.size()) return Miss();
+	auto after = Trim(line.substr(nameAt + t.creditsName.size()));
+	if (EndsPhrase(after, t.added) || EndsPhrase(after, t.removed)) return Miss();
+	if (!CreditsAfterOk(after)) return Miss();
 	const char tier = SamePhrase(t.creditsName, en.creditsName) ? kTierEnglish : kTierGmst;
 	return Make("credits", plus ? "gain" : "loss", "", SignedChip(plus, digits).c_str(), tier);
 }

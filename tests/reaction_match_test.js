@@ -581,7 +581,17 @@ function fnBody(name, next) {
 {
 	const push = fnBody("public function hzcCardPush", "public function hzcRxWhy");
 	expect(push.indexOf("e0.paired = true") < 0, "a repeated DLL card is not swallowed");
+	expect(push.indexOf("eR.rebound != true") >= 0 && push.indexOf("return \"queued\"") >= 0, "a rebound DLL push merges into the existing card");
 	expect(push.indexOf("this.hzcRxShow(old)") >= 0, "overflow restores the dropped DLL card");
+	const claim = fnBody("private function hzcRxClaim", "private function hzcRxLink");
+	expect(claim.indexOf("this.hzcRxOpenKey(key)") >= 0, "claim skips when a card of that text is still pending");
+	const step = fnBody("private function hzcRxStep", "private function hzcRxStack");
+	expect(step.indexOf("this.hzcRxReveal(e0.it)") >= 0, "rebind uncovers the old clip first");
+	expect(step.indexOf("e0.rebound = true") >= 0, "rebind marks the card so a late push can merge");
+	const draw = fnBody("private function hzcCardDraw", "private function hzcRxDraw");
+	expect(draw.indexOf("this.hzcCardMatch(kind,sub,name,value)") >= 0, "card draw uses the live matcher");
+	expect(draw.indexOf("this.hzcCardTone(kind,sub)") < 0, "draw does not call tone directly");
+	expect(draw.indexOf("this.hzcCardTitle(kind,sub,name)") < 0, "draw does not call title directly");
 	const offer = fnBody("private function hzcRxOffer", "private function hzcRxRemember");
 	expect(offer.indexOf('e0.paired = true; e0.src = "both"; return "queued";') >= 0, "the backup path still pairs");
 	expect(offer.indexOf("this.hzcRxShow(old)") >= 0, "backup overflow restores the dropped card");
@@ -1607,6 +1617,16 @@ function dllTakeTokAmount(tok) {
 	}
 	return { plus: plus, chip: (plus ? "+" : "-") + grouped };
 }
+function dllCreditsAfterOk(after) {
+	after = dllTrim(after);
+	if (!after) return true;
+	const last = after.charAt(after.length - 1);
+	if (last === "." || last === "!" || last === "?") {
+		after = dllTrim(after.slice(0, -1));
+		if (!after) return true;
+	}
+	return after.length >= 2 && after.charAt(0) === "(" && after.charAt(after.length - 1) === ")";
+}
 function dllCreditsSigned(line, t) {
 	const at = dllWordAt(line, t.creditsName);
 	if (at < 0) return null;
@@ -1616,6 +1636,9 @@ function dllCreditsSigned(line, t) {
 	const tok = sp < 0 ? before : before.slice(sp + 1);
 	const amt = dllTakeTokAmount(tok);
 	if (!amt) return null;
+	const after = dllTrim(line.slice(at + String(t.creditsName).length));
+	if (dllEndsPhrase(after, t.added) || dllEndsPhrase(after, t.removed)) return null;
+	if (!dllCreditsAfterOk(after)) return null;
 	const tier = dllEq(dllTrim(t.creditsName), "Credits") ? "C" : "A";
 	return dllMake("credits", amt.plus ? "gain" : "loss", "", amt.chip, tier);
 }
@@ -1688,7 +1711,12 @@ function expectDllMiss(text, phrases, label) {
 	expectDll("Last witness killed.", en, "crime", "witness", "", "WITNESS", "C", "DLL witness");
 	expectDllMiss(new Array(202).join("A"), en, "DLL over the 200 byte cap");
 	expectDll("Docking fee: -1890 Credits (Cargo, Tariffs, Fuel, Crew)", en, "credits", "loss", "", "-1,890", "C", "DLL signed credits loss with detail");
-	expectDll("Refund: +500 credits posted", en, "credits", "gain", "", "+500", "C", "DLL signed credits gain any case");
+	expectDll("Refund: +500 credits", en, "credits", "gain", "", "+500", "C", "DLL signed credits gain any case");
+	expectDll("Refund: +500 credits (dock fee)", en, "credits", "gain", "", "+500", "C", "DLL signed credits gain with a parenthetical");
+	expectDllMiss("Refund: +500 credits posted", en, "DLL leftover after Credits is not a signed gain");
+	expectDllMiss("-1 Credits Card Removed.", en, "DLL item line after Credits is not a signed loss");
+	expectDllMiss("Fee: +500x Credits", en, "DLL whole-token amount rejects a trailing x");
+	expectDllMiss("+500.5.5 Credits", en, "DLL whole-token amount rejects a broken decimal");
 	expectDllMiss("Shipment fees: Tariffs Initiated", en, "DLL credits word without an amount stays vanilla");
 }
 
@@ -1756,13 +1784,21 @@ function hzcCardMatch(kind, sub, name, value) {
 	expect(hzcCardMatch("", "info", "", "") == null, "empty kind is not a card");
 }
 {
-	const take = { st: 1, linked: true, it: "old15", key: "the owner caught you stealing.", vis: 0 };
+	const take = { st: 1, linked: true, it: "old15", key: "the owner caught you stealing.", vis: 0, covered: true, rebound: false, reboundAt: 0 };
 	const bounty = { st: 1, linked: false, it: null, key: "17 bounty added to freestar collective", vis: 0 };
+	const cards = [take, bounty];
 	const rebuilt = [
 		{ it: "new15", key: "the owner caught you stealing.", parent: "m" },
 		{ it: "new16", key: "17 bounty added to freestar collective", parent: "m" }
 	];
+	function openKey(key) {
+		for (let i = 0; i < cards.length; i++) {
+			if (cards[i].key === key && cards[i].it == null) return cards[i];
+		}
+		return null;
+	}
 	function claim(arr, key) {
+		if (openKey(key) != null) return null;
 		for (let i = 0; i < arr.length; i++) {
 			if (arr[i].key === key) return arr[i].it;
 		}
@@ -1770,9 +1806,36 @@ function hzcCardMatch(kind, sub, name, value) {
 	}
 	const nxt = claim(rebuilt, take.key);
 	expect(nxt === "new15", "rebuilt take-back clip is found by key");
-	if (nxt != null) { take.it = nxt; take.linked = true; }
-	expect(take.it === "new15" && take.linked === true, "take-back card rebinds instead of dropping");
+	if (nxt != null) {
+		take.covered = false;
+		take.it = nxt;
+		take.linked = true;
+		take.rebound = true;
+		take.reboundAt = 100;
+	}
+	expect(take.it === "new15" && take.linked === true && take.covered === false && take.rebound === true, "take-back card rebinds and uncovers the old clip");
 	expect(bounty.linked === false, "unlinked bounty card is unchanged");
+	function cardPush(now) {
+		for (let i = 0; i < cards.length; i++) {
+			const eR = cards[i];
+			if (eR.key !== take.key || eR.rebound !== true) continue;
+			const rage = now - eR.reboundAt;
+			if (rage >= 0 && rage < 3000) return "queued";
+		}
+		cards.push({ st: 1, linked: false, it: null, key: take.key, rebound: false });
+		return "queued";
+	}
+	expect(cardPush(150) === "queued" && cards.length === 2, "a rebound push does not add a second card");
+	const pending = { st: 1, linked: false, it: null, key: "alarm line" };
+	const oldAlarm = { st: 1, linked: true, it: "oldA", key: "alarm line" };
+	const pile = [oldAlarm, pending];
+	function openPending(key) {
+		for (let i = 0; i < pile.length; i++) {
+			if (pile[i].key === key && pile[i].it == null) return pile[i];
+		}
+		return null;
+	}
+	expect(openPending("alarm line") === pending, "a pending card of the same text blocks a rebind");
 }
 
 if (failed) {
