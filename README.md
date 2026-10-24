@@ -77,7 +77,19 @@ Log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
 
 3. The plugin is written to `build\windows\x64\releasedbg\HorizonUI.dll`.
 
-Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.42.0 loaded`.
+Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.42.0.9 loaded`.
+
+### Release checklist: companion reaction log
+
+The 0.42.0.6 verbose trace is still on, so the 0.42.0.9 test can read it. Do not turn it off for that test. `HZ_HUD_MSG_CAPTURE` is also on: it logs every HUD message as `hud capture:` with no text filter. Before a release build, turn off both traces. The card backup stays compiled: the queue, Poll, `hzcCardPush`, and the one-line `comms reaction:` status (including `hzcRxWhy`). The one-time `comms reaction selftest:` lines are not part of that trace. They stay on when `Debug=0`.
+
+1. `src/hz_version.h`: set `HZ_HUD_MSG_CAPTURE` to `0`. That compiles out the unfiltered `hud capture:` line.
+2. `src/hz_version.h`: set `HZ_COMMS_MSG_LOG` to `0`. That compiles out the `hud message:` line and `CommsDbgPoll` (the `comms msg:` lines). It does not compile out the backup.
+3. `actionscript/comms/hzc_block.as`: set `HZC_MSG_LOG` to `false`. That stops the movie's verbose queue.
+4. In that same file, change the `hzcRxDbgOn` default from `true` to `false`.
+5. Update the test pins that expect the traces to be on: `tests/reaction_match_test.js` (`HZC_MSG_LOG` is `true`) and `tests/preset_list_test.cpp` (`HZ_COMMS_MSG_LOG == 1` and `HZ_HUD_MSG_CAPTURE == 1`).
+
+`Debug=0` in the ini only stops the movie queue. It does not replace this list, and it does not turn off the one-line status. The settings schema stays `0.42.0`.
 
 ## Repository layout
 ```

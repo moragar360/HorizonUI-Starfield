@@ -208,13 +208,13 @@ package
       // the scope menu gets no breath value, so the meter is O2 (PlayerFrequentData fOxygen / fMaxO2CO2, the same source as
       // the HUD's O2 bar; verified in game). O2 colors = the main HUD vitals card (hz26Band / hz26WarnCol): under 35 % the
       // bar and the border are amber, under 15 % red; OUT OF BREATH (red, no fill) after 2 readings in a row under 1 %
-      // (a single 0 reading when the scope opens never flashes it). HOLDING BREATH = O2 fell on 2 readings in a row (the
-      // game sends no breath-hold state to this menu, so a steady O2 drain also shows it).
+      // (a single 0 reading when the scope opens never flashes it). HOLDING BREATH = O2 fell on 2 readings in a row, and
+      // that state stays up for at least 900 ms (the game sends no breath-hold state, so a steady O2 drain also shows it).
       // Settings: [Scope] ScopeHoldBreathChip (0 = the game's prompt) / ScopeChipX / ScopeChipY / ScopeChipScale and [Style]
       // AccentColor / AccentHex / CardOpacity / TextScale / FontFace / HeaderStyle (same meaning as on the HUD). Read when
       // the scope opens and every 5 s after.
-      private static const HZP_VERSION:String = "0.42.0";
-      private static const HZP_BUILD:String = "0.42.0 r3";
+      private static const HZP_VERSION:String = "0.42.0.9";   // 0.42.0.9: scope movie version (= the test build's DLL file version)
+      private static const HZP_BUILD:String = "0.42.0.9";   // 0.42.0.9: scope movie build label (= the test build's DLL file version)
       private static const HZP_ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       private static const HZP_ACC:uint = 0x3FD0E0;
       private static const HZP_O2:uint = 0x4DB6FF;
@@ -224,6 +224,13 @@ package
       private static const HZP_TXT:uint = 0xF2F7F9;
       private static const HZP_DIM:uint = 0x8E9CA4;
       private static const HZP_MINPX:Number = 13;
+      private static const HZP_KPAD:Number = 10;        // 0.42.0.5: keycap padding right of the key text (was 8)
+      private static const HZP_KHEAD:Number = 1.08;     // 0.42.0.5: headroom on the measured key text width (bold faces, renderer rounding)
+      private static const HZP_KMINW:Number = 14;       // 0.42.0.5: smallest key text slot (a one-glyph gamepad face such as L3)
+      private static const HZP_KEX:Number = 16;         // 0.42.0.9: extra width for the key text only. The label slot does not use it.
+      private static const HZP_RPAD:Number = 18;        // 0.42.0.5: panel padding right of the O2 meter (was 14)
+      private static const HZP_GLOW:Number = 8;         // 0.42.0.8: transparent pad so a parent scrollRect can include the held edge
+      private static const HZP_LABEX:Number = 32;       // 0.42.0.8: extra label field past textWidth so the held card is slightly longer
       private static const HZP_O2_WARN:Number = 0.35;   // = the HUD vitals card warning band (hz26Band 1, hz26WarnCol amber)
       private static const HZP_O2_CRIT:Number = 0.15;   // = the HUD vitals card critical band (hz26Band 2, hz26WarnCol red)
       private static const HZP_LRG:Boolean = false;
@@ -232,7 +239,7 @@ package
       private var hzpReady:Boolean = false;
       private var hzpSub:Boolean = false;
       private var hzpHid:Boolean = false;
-      private var hzpS:Object = {"AccentColor":0,"AccentHex":-1,"CardOpacity":1,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ChipX":0,"ChipY":0,"ChipS":1};
+      private var hzpS:Object = {"AccentColor":0,"AccentHex":-1,"CardOpacity":1,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ChipX":0,"ChipY":0,"ChipS":1,"HudScale":1};
       private var hzpChip:Sprite = null;
       private var hzpW:Number = 0;
       private var hzpH:Number = 32;
@@ -241,8 +248,11 @@ package
       private var hzpFallN:int = 0;           // falling readings in a row
       private var hzpZeroN:int = 0;           // readings under 1 % in a row
       private var hzpSig:String = "";
+      private var hzpMaskOnce:Boolean = false;   // 0.42.0.8: a non-round ancestor mask is widened once, not every frame
       private var hzpIniT:int = -100000;
       private var hzpFontOk:Object = {};
+      private var hzpFontLib:int = -1;       // font.marker: -1 checking, 0 absent, 1 present
+      private var hzpFontLdr:URLLoader = null;
       private var hzpLastX:Number = NaN;
       private var hzpLastY:Number = NaN;
       private var hzpKeyTx:String = "";      // r3: key name shown in the keycap
@@ -250,6 +260,12 @@ package
       private var hzpMap:Array = null;       // r3: ControlMapData vMappedEvents
       private var hzpPad:Boolean = false;    // r3: a controller is in use (uiController > keyboard / mouse)
       private var hzpErr:Boolean = false;    // r3: an error turned the chip off for this scope session
+      private var hzpBar:flash.display.Shape = null;   // O2 fill. Its own shape, so a tick does not redraw the frame.
+      private var hzpLbl:TextField = null;          // label field, kept for the one-time clip line
+      private var hzpDiag:String = "";              // first HOLDING BREATH clip report; the DLL logs it once
+      private var hzpMx:Number = 0;
+      private var hzpMy:Number = 0;
+      private var hzpMw:Number = 120;
 
       private function hzpInit() : void
       {
@@ -261,6 +277,7 @@ package
          addChild(this.hzpChip);
          this.addEventListener(Event.ENTER_FRAME,this.hzpTick);
          try { this.HoldBreathButton_mc.addEventListener(ButtonBase.BUTTON_REDRAWN_EVENT,this.hzpRedrawn); } catch(e1:Error) { }
+         try { this.hzpFontBegin(); } catch(eFont:Error) { this.hzpFontLib = 0; }
          this.hzpRead();
       }
       private function hzpRead() : void
@@ -271,7 +288,7 @@ package
       private function hzpOnIni(txt:String) : void
       {
          var on:Boolean = true;
-         var st:Object = {"AccentColor":0,"AccentHex":-1,"CardOpacity":1,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ChipX":0,"ChipY":0,"ChipS":1};
+         var st:Object = {"AccentColor":0,"AccentHex":-1,"CardOpacity":1,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ChipX":0,"ChipY":0,"ChipS":1,"HudScale":1};
          if(txt != null)
          {
             var sec:String = "";
@@ -299,6 +316,7 @@ package
                   else if(k == "textscale" && !isNaN(nv)) { st.TextScale = Math.max(0.8,Math.min(1.3,nv)); }
                   else if(k == "fontface" && !isNaN(nv)) { st.FontFace = Math.max(0,Math.min(3,int(nv))); }
                   else if(k == "headerstyle" && !isNaN(nv)) { st.HeaderStyle = Math.max(0,Math.min(1,int(nv))); }
+                  else if(k == "hudscale" && !isNaN(nv)) { st.HudScale = nv; }
                }
             }
          }
@@ -482,8 +500,9 @@ package
          var band:int = this.hzpBand(o);
          var ka:Array = this.hzpKey();
          if(String(ka[0]) != this.hzpKeyTx || ka[1] != this.hzpKeyFace) { this.hzpKeyTx = String(ka[0]); this.hzpKeyFace = ka[1]; }
-         var sig:String = this.hzpKeyTx + "|" + this.hzpKeyFace + "|" + this.hzpS.ChipS + "|" + st + "|" + band + "|" + Math.round((o < 0 ? -1 : o) * 120) + "|" + this.hzpS.AccentColor + "|" + this.hzpS.AccentHex + "|" + this.hzpS.CardOpacity + "|" + this.hzpS.TextScale + "|" + this.hzpS.FontFace + "|" + this.hzpS.HeaderStyle;
-         if(sig != this.hzpSig) { this.hzpSig = sig; this.hzpDraw(st,band,o); }
+         var sig:String = this.hzpKeyTx + "|" + this.hzpKeyFace + "|" + this.hzpS.ChipS + "|" + st + "|" + band + "|" + this.hzpS.AccentColor + "|" + this.hzpS.AccentHex + "|" + this.hzpS.CardOpacity + "|" + this.hzpS.TextScale + "|" + this.hzpS.FontFace + "|" + this.hzpS.HeaderStyle + "|" + this.hzpFontLib;
+         if(sig != this.hzpSig) { this.hzpSig = sig; this.hzpDraw(st,band); }
+         this.hzpBarDraw(st,band,o);
          // where the hidden button sits, at its own (counter-scaled) size
          var r:Rectangle = b.getBounds(this);
          if(r != null && r.width > 1 && r.height > 1) { this.hzpLastX = r.x + r.width / 2; this.hzpLastY = r.y + r.height / 2; }
@@ -495,12 +514,22 @@ package
          var oy:Number = -Number(this.hzpS.ChipY) * b.scaleY;
          if(isNaN(ox)) { ox = 0; }
          if(isNaN(oy)) { oy = 0; }
-         this.hzpChip.scaleX = b.scaleX * cs;
-         this.hzpChip.scaleY = b.scaleY * cs;
-         this.hzpChip.x = Math.round(this.hzpLastX + ox - this.hzpW * this.hzpChip.scaleX / 2);
-         this.hzpChip.y = Math.round(this.hzpLastY + oy - this.hzpH * this.hzpChip.scaleY / 2);
+         var sx:Number = b.scaleX * cs;
+         var sy:Number = b.scaleY * cs;
+         if(isNaN(sx) || sx == 0) { sx = 1; }
+         if(isNaN(sy) || sy == 0) { sy = 1; }
+         var sw:Number = Math.round(this.hzpW * sx);
+         var sh:Number = Math.round(this.hzpH * sy);
+         if(sw < 1) { sw = 1; }
+         if(sh < 1) { sh = 1; }
+         if(this.hzpW > 0) { this.hzpChip.scaleX = sw / this.hzpW; }
+         if(this.hzpH > 0) { this.hzpChip.scaleY = sh / this.hzpH; }
+         this.hzpChip.x = Math.round(this.hzpLastX + ox - sw / 2);
+         this.hzpChip.y = Math.round(this.hzpLastY + oy - sh / 2);
+         this.hzpUnclip();
          if(this.hzpChip.parent == this && getChildIndex(this.hzpChip) != numChildren - 1) { setChildIndex(this.hzpChip,numChildren - 1); }
          this.hzpChip.visible = true;
+         if(st == 1 && this.hzpDiag.length == 0) { try { this.hzpSnap(); } catch(eSnap:Error) { this.hzpDiag = "chip bounds error"; } }
       }
       // O2 band, same thresholds as the HUD vitals card (hz26Band): 0 normal, 1 warning (< 35 %), 2 critical (< 15 %)
       private function hzpBand(o:Number) : int
@@ -508,17 +537,17 @@ package
          if(o < 0) { return 0; }
          return o < HZP_O2_CRIT ? 2 : (o < HZP_O2_WARN ? 1 : 0);
       }
-      // 0 ready, 1 holding (O2 fell on 2 readings in a row, within 400 ms), 3 out of breath (2 readings under 1 % in a row)
+      // 0 ready, 1 holding (O2 fell on 2 readings in a row; held at least 900 ms), 3 out of breath (2 readings under 1 % in a row)
       private function hzpState(o:Number, now:int) : int
       {
          if(o >= 0 && o < 0.01 && this.hzpZeroN >= 2) { return 3; }
-         if(now - this.hzpFallT < 400) { return 1; }
+         if(now - this.hzpFallT < 900) { return 1; }
          return 0;
       }
       // original target icon (ring, 4 ticks, center dot), drawn in code; 17 px across at 1080p
       private function hzpCross(g:*, cx:Number, cy:Number, col:uint, a:Number) : void
       {
-         g.lineStyle(1.6,col,a,true,"none");
+         g.lineStyle(2,col,a,true,"none");
          g.drawCircle(cx,cy,6);
          g.moveTo(cx,cy - 8.5); g.lineTo(cx,cy - 3.5);
          g.moveTo(cx,cy + 3.5); g.lineTo(cx,cy + 8.5);
@@ -526,6 +555,27 @@ package
          g.moveTo(cx + 3.5,cy); g.lineTo(cx + 8.5,cy);
          g.lineStyle();
          g.beginFill(col,a); g.drawCircle(cx,cy,1.8); g.endFill();
+      }
+      private function hzpFontBegin() : void
+      {
+         if(this.hzpFontLdr != null || this.hzpFontLib == 0 || this.hzpFontLib == 1) { return; }
+         var l:URLLoader = new URLLoader();
+         this.hzpFontLdr = l;
+         l.addEventListener(Event.COMPLETE,this.hzpFontOkEv);
+         l.addEventListener(IOErrorEvent.IO_ERROR,this.hzpFontErrEv);
+         l.addEventListener("securityError",this.hzpFontErrEv);
+         l.load(new URLRequest("HorizonUI/modules/font.marker"));
+      }
+      private function hzpFontOkEv(e:Event) : void
+      {
+         this.hzpFontLib = 1;
+         this.hzpFontLdr = null;
+         this.hzpSig = "";
+      }
+      private function hzpFontErrEv(e:Event) : void
+      {
+         this.hzpFontLib = 0;
+         this.hzpFontLdr = null;
       }
       private function hzpProbe(n:String) : Boolean
       {
@@ -551,22 +601,11 @@ package
          this.hzpFontOk[n] = ok ? 1 : 0;
          return ok;
       }
-      // FontFace: 1 Exo 2, 2 Roboto (both from the Horizon font package), 0 game font, 3 the game face of the prompt label
+      // FontFace: 1 Exo 2, 2 Roboto (both from the Horizon font package), 0 game font, 3 the game face of the prompt label.
+      // $Horizon_ faces wait until font.marker is present, and Bold waits until that family's base face renders.
       private function hzpFace(w:String) : String
       {
          var f:int = int(this.hzpS.FontFace);
-         if(f == 2)
-         {
-            var r:String = w == "bd" ? "$Horizon_Font_Alt_Bold" : "$Horizon_Font_Alt";
-            if(this.hzpProbe(r)) { return r; }
-            if(this.hzpProbe("$Horizon_Font_Alt")) { return "$Horizon_Font_Alt"; }
-         }
-         if(f == 1 || f == 2)
-         {
-            var x:String = w == "bd" ? "$Horizon_Font_Bold" : "$Horizon_Font";
-            if(this.hzpProbe(x)) { return x; }
-            if(this.hzpProbe("$Horizon_Font")) { return "$Horizon_Font"; }
-         }
          if(f == 3)
          {
             try
@@ -575,8 +614,21 @@ package
                if(lt != null && lt.getTextFormat().font) { return String(lt.getTextFormat().font); }
             }
             catch(e3:Error) { }
+            return "$MAIN_Font";
          }
-         return "$MAIN_Font";
+         if(f != 1 && f != 2) { return "$MAIN_Font"; }
+         if(this.hzpFontLib !== 1) { return "$MAIN_Font"; }
+         var want:String;
+         if(f == 2 && this.hzpProbe("$Horizon_Font_Alt"))
+         {
+            want = w == "bd" ? "$Horizon_Font_Alt_Bold" : "$Horizon_Font_Alt";
+            if(want == "$Horizon_Font_Alt" || this.hzpProbe(want)) { return want; }
+            return "$Horizon_Font_Alt";
+         }
+         if(!this.hzpProbe("$Horizon_Font")) { return "$MAIN_Font"; }
+         want = w == "bd" ? "$Horizon_Font_Bold" : "$Horizon_Font";
+         if(want == "$Horizon_Font" || this.hzpProbe(want)) { return want; }
+         return "$Horizon_Font";
       }
       private function hzpFs(size:Number) : Number
       {
@@ -612,67 +664,305 @@ package
          while(i < w.length) { if(String(w[i]).length > 0 && w[i] != "o2") { w[i] = String(w[i]).charAt(0).toUpperCase() + String(w[i]).substr(1); } i++; }
          return w.join(" ").replace("o2","O2");
       }
-      // st: 0 ready, 1 holding, 3 out of breath; band: 0 normal, 1 warning (amber), 2 critical (red). o = O2 0 - 1 (-1 = no data)
-      private function hzpDraw(st:int, band:int, o:Number) : void
+      // 0.42.0.6: an autosized key field clips its last glyph, so the keycap's right border looks cut off
+      // (L-SHIFT on the hold-breath chip). Measure textWidth first, then lock autoSize to NONE and set the
+      // field width to ceil(textWidth * 1.08 + letterSpacing * length) + 8. The keycap and the chip use that width.
+      // extra is 0 for the label slot. The key cap passes HZP_KEX so L-SHIFT fits. The card grows only by that extra.
+      private function hzpKeyW(t:TextField, extra:Number = 0) : Number
+      {
+         if(t == null) { return 0; }
+         if(isNaN(extra) || extra < 0) { extra = 0; }
+         var ls:Number = 0;
+         try { ls = Number(t.getTextFormat().letterSpacing); } catch(e:Error) { ls = 0; }
+         if(isNaN(ls) || ls < 0) { ls = 0; }
+         var tw:Number = Number(t.textWidth);
+         if(isNaN(tw) || tw < 0) { tw = 0; }
+         var len:Number = t.text != null ? Number(t.text.length) : 0;
+         var w:Number = Math.ceil(tw * HZP_KHEAD + ls * len) + 8 + extra;
+         if(w < HZP_KMINW) { w = HZP_KMINW; }
+         return w;
+      }
+      // Widest label (HOLDING BREATH). The chip keeps that width in every state, so it does not resize or re-center.
+      private function hzpLblSlot(p:Sprite) : Array
+      {
+         var bestW:Number = 0;
+         var bestH:Number = 0;
+         var seen:Object = {};
+         var i:int = 0;
+         while(i < HZP_LBL.length)
+         {
+            var s:String = this.hzpCase(String(HZP_LBL[i]));
+            if(seen[s] != 1)
+            {
+               seen[s] = 1;
+               var t:TextField = this.hzpT(p,s,14,HZP_TXT,"sb",0.1);
+               var w:Number = this.hzpKeyW(t);
+               var th:Number = t.height;
+               if(t.parent == p) { p.removeChild(t); }
+               if(w > bestW) { bestW = w; }
+               if(th > bestH) { bestH = th; }
+            }
+            i++;
+         }
+         return [bestW,bestH];
+      }
+      // st: 0 ready, 1 holding, 3 out of breath; band: 0 normal, 1 warning (amber), 2 critical (red).
+      // Every stroke stays inside [0,w] x [0,h]. Strokes are 1 or 2 px, inset by half their width. The O2 bar is hzpBar.
+      private function hzpDraw(st:int, band:int) : void
       {
          var p:Sprite = this.hzpChip;
+         if(p == null) { return; }
+         if(this.hzpBar != null && this.hzpBar.parent == p) { p.removeChild(this.hzpBar); }
          while(p.numChildren > 0) { p.removeChildAt(0); }
          var g:* = p.graphics;
          g.clear();
          var acc:uint = this.hzpAccent();
-         var bc:uint = (st == 3 || band == 2) ? HZP_RED : (band == 1 ? HZP_AMB : HZP_O2);   // meter: HUD O2 colors
          var stc:uint = (st == 3 || band == 2) ? HZP_RED : (band == 1 ? HZP_AMB : acc);
          var keyCol:uint = st == 3 ? HZP_DIM : stc;
          var ts:Number = Math.max(1,Math.min(1.3,Number(this.hzpS.TextScale)));
          if(isNaN(ts)) { ts = 1; }
-         var h:Number = Math.round(32 + (ts - 1) * 20);
+         var slot:Array = this.hzpLblSlot(p);
+         var ltw:Number = Number(slot[0]);
+         var lth0:Number = Number(slot[1]);
+         if(isNaN(ltw) || ltw < 1) { ltw = 80; }
+         if(isNaN(lth0) || lth0 < 1) { lth0 = 16; }
+         var ch:Number = Math.round(32 + (ts - 1) * 20);
          var lt:TextField = this.hzpT(p,this.hzpCase(String(HZP_LBL[st])),14,st == 3 ? HZP_DIM : HZP_TXT,"sb",0.1);
+         this.hzpLbl = lt;
+         var ownW:Number = this.hzpKeyW(lt);
+         if(ownW > ltw) { ltw = ownW; }
+         ltw += HZP_LABEX;
+         var lth:Number = lt.height;
+         if(lth0 > lth) { lth = lth0; }
+         lt.autoSize = TextFieldAutoSize.NONE;
+         lt.width = ltw;
+         if(lt.height < lth) { lt.height = lth; }
          var kt:TextField = null;
+         var ktw:Number = 0;
          if(this.hzpKeyTx.length > 0) { kt = this.hzpT(p,this.hzpKeyTx,13,keyCol,"bd",0.04,this.hzpKeyFace); }
-         h = Math.max(h,Math.round(lt.height + 6),kt != null ? Math.round(kt.height + 6) : 0);
-         var kw:Number = 30 + (kt != null ? Math.round(kt.textWidth + 8) : 0);
-         var kh:Number = Math.round(h - 12);
+         if(kt != null)
+         {
+            ktw = this.hzpKeyW(kt,HZP_KEX);
+            var kth:Number = kt.height;
+            kt.autoSize = TextFieldAutoSize.NONE;
+            kt.width = ktw;
+            if(kt.height < kth) { kt.height = kth; }
+            var kAlign:TextFormat = kt.getTextFormat();
+            kAlign.align = "center";
+            kt.defaultTextFormat = kAlign;
+            kt.setTextFormat(kAlign);
+         }
+         ch = Math.max(ch,Math.round(lth + 6),kt != null ? Math.round(kt.height + 6) : 0);
+         ch = Math.round(ch);
+         var kw:Number = 30 + (kt != null ? ktw + HZP_KPAD : 0);   // 0.42.0.6: keycap from the locked key-field width
+         var kh:Number = Math.round(ch - 12);
          var mw:Number = 120;
          var x0:Number = 7;
          var lx:Number = x0 + kw + 10;
-         var mx:Number = Math.round(lx + lt.textWidth + 16);
-         var w:Number = Math.round(mx + mw + 14);
-         // panel: soft shadow, translucent fill (CardOpacity), 1 px edge; HOLDING = accent edge
+         var mx:Number = Math.round(lx + ltw + 16);
+         var cw:Number = Math.round(mx + mw + HZP_RPAD);   // 0.42.0.5: + 4
+         var pad:Number = HZP_GLOW;
+         // A 1% fill makes getBounds include the pad. Filters and strokes are cropped by an ancestor scrollRect.
+         g.beginFill(0x000000,0.01);
+         g.drawRect(0,0,cw + pad * 2,ch + pad * 2);
+         g.endFill();
+         // panel: shadow and strokes stay inside the chip. Strokes are 1 or 2 px and inset by half that width.
          var opa:Number = Number(this.hzpS.CardOpacity);
          if(isNaN(opa)) { opa = 1; }
          var i:int = 0;
-         while(i < 3) { g.beginFill(0x000000,0.07); g.drawRoundRect(-1 - i,2 - i * 0.5,w + 2 + i * 2,h + 1 + i * 2,h + i * 2,h + i * 2); g.endFill(); i++; }
-         if(st == 3) { g.lineStyle(1,HZP_RED,0.7,true,"none"); }
-         else if(band == 2) { g.lineStyle(1.5,HZP_RED,1,true,"none"); }
-         else if(band == 1) { g.lineStyle(1.5,HZP_AMB,1,true,"none"); }
-         else if(st == 1) { g.lineStyle(1.5,acc,1,true,"none"); }
-         else { g.lineStyle(1,0xFFFFFF,0.18,true,"none"); }
+         while(i < 3)
+         {
+            var sx:Number = pad + 1 + i;
+            var sy:Number = pad + 2;
+            var sw:Number = cw - (1 + i) * 2;
+            var shd:Number = ch - 4 - i;
+            if(sw > 4 && shd > 4) { g.beginFill(0x000000,0.07); g.drawRoundRect(sx,sy,sw,shd,ch,ch); g.endFill(); }
+            i++;
+         }
+         var bw:Number = 1;
+         var bcol:uint = 0xFFFFFF;
+         var ba:Number = 0.18;
+         if(st == 3) { bw = 1; bcol = HZP_RED; ba = 0.7; }
+         else if(band == 2) { bw = 2; bcol = HZP_RED; ba = 1; }
+         else if(band == 1) { bw = 2; bcol = HZP_AMB; ba = 1; }
+         else if(st == 1) { bw = 2; bcol = acc; ba = 1; }
+         var inset:Number = bw * 0.5;
+         g.lineStyle(bw,bcol,ba,true,"none");
          g.beginFill(HZP_BG,Math.min(1,0.84 * opa));
-         g.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
+         g.drawRoundRect(pad + inset,pad + inset,cw - bw,ch - bw,Math.max(0,ch - bw),Math.max(0,ch - bw));
          g.endFill();
          g.lineStyle();
-         if(st == 1 || (band > 0 && st != 3)) { g.lineStyle(4,stc,0.18,true,"none"); g.drawRoundRect(-2,-2,w + 4,h + 4,h + 4,h + 4); g.lineStyle(); }
-         // keycap
-         var ky:Number = Math.round((h - kh) / 2);
+         if(st == 1 || (band > 0 && st != 3)) { g.lineStyle(2,stc,0.18,true,"none"); g.drawRoundRect(pad + 1,pad + 1,cw - 2,ch - 2,Math.max(0,ch - 2),Math.max(0,ch - 2)); g.lineStyle(); }
+         // keycap. A 1 px stroke is inset by half a pixel so it stays on whole pixels and inside the cap.
+         var ky:Number = Math.round((ch - kh) / 2);
          g.lineStyle(1,keyCol,st == 3 ? 0.5 : 0.95,true,"none");
          g.beginFill(keyCol,st == 1 ? 0.22 : 0.1);
-         g.drawRoundRect(x0,ky,kw,kh,8,8);
+         g.drawRoundRect(pad + x0 + 0.5,pad + ky + 0.5,kw - 1,kh - 1,8,8);
          g.endFill();
          g.lineStyle();
-         this.hzpCross(g,x0 + 15,ky + kh / 2,keyCol,st == 3 ? 0.6 : 1);
-         if(kt != null) { kt.x = Math.round(x0 + 28); kt.y = Math.round(h / 2 - kt.height / 2); }
-         lt.x = lx - 2;
-         lt.y = Math.round(h / 2 - lt.height / 2);
-         // slim O2 meter (120 x 6)
-         var my:Number = Math.round(h / 2 - 3);
+         this.hzpCross(g,pad + x0 + 15,pad + ky + kh / 2,keyCol,st == 3 ? 0.6 : 1);
+         if(kt != null) { kt.x = Math.round(pad + x0 + 28); kt.y = Math.round(pad + ch / 2 - kt.height / 2); }
+         lt.x = pad + lx - 2;
+         lt.y = Math.round(pad + ch / 2 - lt.height / 2);
+         this.hzpMx = pad + mx;
+         this.hzpMy = Math.round(pad + ch / 2 - 3);
+         this.hzpMw = mw;
+         if(this.hzpBar == null) { this.hzpBar = new flash.display.Shape(); }
+         p.addChild(this.hzpBar);
+         this.hzpW = cw + pad * 2;
+         this.hzpH = ch + pad * 2;
+      }
+      // Clear a clip on the chip itself. Grow an ancestor scrollRect on the right and bottom only; x and y stay.
+      // A round mask (width about equal to height) is left alone: that is the scope reticle, not the chip's box.
+      private function hzpUnclip() : void
+      {
+         var chip:Sprite = this.hzpChip;
+         if(chip == null) { return; }
+         chip.scrollRect = null;
+         chip.mask = null;
+         chip.cacheAsBitmap = false;
+         var d:* = chip.parent;
+         var n:int = 0;
+         while(d != null && n < 6)
+         {
+            var sr:Rectangle = null;
+            var mb:Rectangle = null;
+            var cb:Rectangle = null;
+            try { sr = d.scrollRect; } catch(eS:Error) { sr = null; }
+            try { cb = chip.getBounds(d); } catch(eB:Error) { cb = null; }
+            if(sr != null && cb != null && cb.width > 0 && cb.height > 0)
+            {
+               var nr:Number = sr.x + sr.width;
+               var nb:Number = sr.y + sr.height;
+               var r:Number = cb.x + cb.width + HZP_GLOW;
+               var btm:Number = cb.y + cb.height + HZP_GLOW;
+               if(r > nr) { nr = r; }
+               if(btm > nb) { nb = btm; }
+               if(nr > sr.x + sr.width + 0.5 || nb > sr.y + sr.height + 0.5)
+               {
+                  try { d.scrollRect = new Rectangle(sr.x,sr.y,nr - sr.x,nb - sr.y); } catch(eSet:Error) { }
+               }
+            }
+            try
+            {
+               if(d.mask != null) { mb = d.mask.getBounds(d); }
+            }
+            catch(eM:Error) { mb = null; }
+            if(!this.hzpMaskOnce && mb != null && cb != null && mb.width > 20 && Math.abs(mb.width - mb.height) >= 4)
+            {
+               this.hzpMaskOnce = true;
+               var overR:Number = (cb.x + cb.width + HZP_GLOW) - (mb.x + mb.width);
+               var overB:Number = (cb.y + cb.height + HZP_GLOW) - (mb.y + mb.height);
+               if(overR > 0 && overR <= HZP_GLOW + 1) { try { d.mask.width = d.mask.width + overR; } catch(eW:Error) { } }
+               if(overB > 0 && overB <= HZP_GLOW + 1) { try { d.mask.height = d.mask.height + overB; } catch(eH:Error) { } }
+            }
+            d = d.parent;
+            n++;
+         }
+      }
+      // First HOLDING BREATH this movie. trace() does not reach HorizonUI.log, and Debug=0 leaves the movie
+      // queue off, so the DLL reads hzpClipDiag and logs it once per session.
+      public function hzpClipDiag() : String
+      {
+         try { return this.hzpDiag != null ? this.hzpDiag : ""; } catch(e:Error) { return ""; }
+      }
+      private function hzpNum(n:Number) : String
+      {
+         if(isNaN(n) || n > 1000000000 || n < -1000000000) { return "nan"; }
+         return String(Math.round(n * 100) / 100);
+      }
+      private function hzpFlat(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length && i < 80)
+         {
+            var c:int = s.charCodeAt(i);
+            o += (c < 32 ? " " : s.charAt(i));
+            i++;
+         }
+         return o;
+      }
+      private function hzpSnap() : void
+      {
+         var chip:Sprite = this.hzpChip;
+         if(chip == null) { return; }
+         var o:String = "";
+         try
+         {
+            var br:Rectangle = chip.getBounds(stage);
+            if(br == null) { o = "chip bounds none"; }
+            else { o = "chip bounds x=" + this.hzpNum(br.x) + " y=" + this.hzpNum(br.y) + " w=" + this.hzpNum(br.width) + " h=" + this.hzpNum(br.height); }
+         }
+         catch(eB:Error) { o = "chip bounds error"; }
+         var tw:String = "none";
+         var fw:String = "none";
+         try
+         {
+            if(this.hzpLbl != null)
+            {
+               tw = this.hzpNum(Number(this.hzpLbl.textWidth));
+               fw = this.hzpNum(Number(this.hzpLbl.width));
+            }
+         }
+         catch(eL:Error) { tw = "error"; fw = "error"; }
+         o += "\nlabel textWidth=" + tw + " width=" + fw;
+         var ssx:String = "none";
+         var ssy:String = "none";
+         try
+         {
+            if(stage != null) { ssx = this.hzpNum(stage.scaleX); ssy = this.hzpNum(stage.scaleY); }
+         }
+         catch(eS:Error) { ssx = "error"; ssy = "error"; }
+         var hs:Number = Number(this.hzpS.HudScale);
+         if(isNaN(hs)) { hs = 1; }
+         o += "\nstage scaleX=" + ssx + " scaleY=" + ssy + " hudScale=" + this.hzpNum(hs);
+         var d:* = chip.parent;
+         var n:int = 0;
+         while(d != null && n < 16)
+         {
+            var nm:String = "";
+            var scr:String = "none";
+            var mk:String = "no";
+            var sx:String = "none";
+            var sy:String = "none";
+            var bit:String = "none";
+            try { nm = this.hzpFlat(d.name == null ? "" : String(d.name)); } catch(eN:Error) { nm = ""; }
+            try
+            {
+               var asr:Rectangle = d.scrollRect;
+               if(asr != null) { scr = this.hzpNum(asr.x) + "," + this.hzpNum(asr.y) + "," + this.hzpNum(asr.width) + "," + this.hzpNum(asr.height); }
+            }
+            catch(eR:Error) { scr = "error"; }
+            try { mk = d.mask != null ? "yes" : "no"; } catch(eM:Error) { mk = "error"; }
+            try { sx = this.hzpNum(Number(d.scaleX)); sy = this.hzpNum(Number(d.scaleY)); } catch(eSc:Error) { sx = "error"; sy = "error"; }
+            try { bit = d.cacheAsBitmap ? "true" : "false"; } catch(eC:Error) { bit = "error"; }
+            o += "\nancestor name=" + nm + " scroll=" + scr + " mask=" + mk + " scaleX=" + sx + " scaleY=" + sy + " cache=" + bit;
+            if(d == stage) { break; }
+            try { d = d.parent; } catch(eP:Error) { break; }
+            n++;
+         }
+         this.hzpDiag = o;
+      }
+      private function hzpBarDraw(st:int, band:int, o:Number) : void
+      {
+         if(this.hzpBar == null) { return; }
+         var g:* = this.hzpBar.graphics;
+         if(g == null) { return; }
+         g.clear();
+         var bc:uint = (st == 3 || band == 2) ? HZP_RED : (band == 1 ? HZP_AMB : HZP_O2);
+         var mw:Number = this.hzpMw;
+         var mx:Number = this.hzpMx;
+         var my:Number = this.hzpMy;
+         if(mw < 4 || mx < 0 || my < 0) { return; }
          g.beginFill(0xFFFFFF,0.14); g.drawRoundRect(mx,my,mw,6,6,6); g.endFill();
          if(o > 0 && st != 3)
          {
             var fw:Number = Math.max(3,Math.round(mw * o));
+            if(fw > mw) { fw = mw; }
             g.beginFill(bc,1); g.drawRoundRect(mx,my,fw,6,6,6); g.endFill();
          }
-         this.hzpW = w;
-         this.hzpH = h;
       }
       // =================== end Horizon UI Scope module ===================
       // =================== v0.37 shared settings reader (hzp37) ===================
@@ -681,7 +971,8 @@ package
       // identical apart from the prefix). It reads HorizonUI.default.ini, HorizonUI.user.ini, HorizonUI.state.ini and the
       // legacy HorizonUI.ini (paths relative to Data/Interface) one after the other and hands every waiting callback the
       // merged text: the defaults with user.ini laid over (hzp37Compose; mirrors HZF::Compose in HorizonUI.dll). A missing
-      // file is normal: its IOErrorEvent is caught and simply counts as "no file" (nothing is thrown or logged).
+      // file is normal: its IOErrorEvent is caught and counts as no file. The game logs every failed open, so
+      // HorizonUI.ini is opened at most once, and only when Compose still needs that unshipped file.
       // No defaults file -> the legacy HorizonUI.ini is the base. Nothing at all -> null (callers keep built-in defaults).
       private static const hzp37_FILES:Array = ["HorizonUI/HorizonUI.default.ini","HorizonUI/HorizonUI.user.ini","HorizonUI/HorizonUI.state.ini","HorizonUI/HorizonUI.ini"];
       private static const hzp37_BOM:String = String.fromCharCode(0xFEFF);
@@ -691,6 +982,8 @@ package
       private var hzp37Got:Array = null;
       private var hzp37Q:Array = [];          // callbacks of the running read
       private var hzp37N:Array = [];          // callbacks that arrived meanwhile (they get a fresh read)
+      private var hzp37Leg:String = null;     // last text of HorizonUI.ini, or null when that open missed
+      private var hzp37LegTry:int = 0;        // 0 = not opened yet, 1 = opened once
       private function hzp37Ws(c:String) : Boolean { return c == " " || c == "\t" || c == "\r" || c == "\n"; }
       private function hzp37Trim(s:String) : String
       {
@@ -891,10 +1184,32 @@ package
          this.hzp37T0 = new Date().getTime();
          this.hzp37Next(0);
       }
+      private function hzp37IsLeg(i:int) : Boolean
+      {
+         if(i < 0 || i >= hzp37_FILES.length) { return false; }
+         var pth:String = String(hzp37_FILES[i]);
+         return pth.length >= 13 && pth.substr(pth.length - 13) == "HorizonUI.ini";
+      }
+      // HorizonUI.ini is not shipped. Skip it when Compose would ignore it, and open it only once when it would not.
+      private function hzp37SkipLeg(i:int) : Boolean
+      {
+         if(!this.hzp37IsLeg(i)) { return false; }
+         if(this.hzp37LegTry != 0) { return true; }
+         var def:String = this.hzp37Got[0] == null ? null : String(this.hzp37Got[0]);
+         var hd:Boolean = def != null && def.length > 0;
+         if(hd && (this.hzp37Got[1] != null || this.hzp37Got[2] != null)) { return true; }
+         return false;
+      }
       private function hzp37Next(i:int) : void
       {
          this.hzp37Step = i + 1;
          if(i >= hzp37_FILES.length) { this.hzp37Ldr = null; this.hzp37Done(); return; }
+         if(this.hzp37SkipLeg(i))
+         {
+            this.hzp37Got[i] = this.hzp37LegTry != 0 ? this.hzp37Leg : null;
+            this.hzp37Next(i + 1);
+            return;
+         }
          try
          {
             this.hzp37Ldr = new URLLoader();
@@ -910,12 +1225,14 @@ package
          if(e == null || e.target != this.hzp37Ldr) { return; }
          var i:int = this.hzp37Step - 1;
          try { this.hzp37Got[i] = String(this.hzp37Ldr.data); } catch(err:Error) { }
+         if(this.hzp37IsLeg(i)) { this.hzp37Leg = this.hzp37Got[i] == null ? null : String(this.hzp37Got[i]); this.hzp37LegTry = 1; }
          this.hzp37Next(i + 1);
       }
       private function hzp37OnErr(e:Event) : void
       {
          if(e == null || e.target != this.hzp37Ldr) { return; }
-         this.hzp37Next(this.hzp37Step);   // missing file: normal, no error
+         if(this.hzp37IsLeg(this.hzp37Step - 1)) { this.hzp37Leg = null; this.hzp37LegTry = 1; }
+         this.hzp37Next(this.hzp37Step);   // missing file: counted once, not opened again
       }
       private function hzp37Done() : void
       {
