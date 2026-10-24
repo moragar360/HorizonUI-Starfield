@@ -4,9 +4,10 @@
 // The F11 header, the load line, and the "movie builds" line use the DLL file version (src/hz_version.h, also the version resource).
 // v0.42.0.6: ShowHUDMessageEvent (address id 86800) feeds the reaction backup. The verbose trace
 // (the "hud message:" line and "comms msg:" lines) is compiled only when HZ_COMMS_MSG_LOG is 1
-// (src/hz_version.h). The queue, Poll, hzcRxPush, the one-line "comms reaction:" status, and the
-// one-time "comms reaction selftest:" lines stay on when that flag is 0. The release checklist in
-// README.md turns the verbose trace off. The settings schema stays 0.42.0.
+// (src/hz_version.h). The queue, Poll, hzcCardPush, the one-line "comms reaction:" status, and the
+// one-time "comms reaction selftest:" lines stay on when that flag is 0. HZ_HUD_MSG_CAPTURE logs
+// every HUD message with no text filter. The release checklist in README.md turns both traces off.
+// The settings schema stays 0.42.0. hzcRxPush remains on the movie. The DLL calls hzcCardPush.
 // Saved preset names drop the same characters as the HUD: '=' '+' '[' ']' ';' '#' '"' '\' '|' and control characters.
 // v0.42.0 r3 (file version 0.42.0.3): a scope (ScopeMenu) still blocks F11 but no longer restarts the 3 s "HUD ready" wait,
 // so F11 works right after leaving the scope. The 0.42.0.4 no-debug build compiled this log out. In 0.42.0.6 it is on
@@ -51,6 +52,7 @@
 #include <deque>
 #include <vector>
 #include <string>
+#include <string_view>
 #include <cstdio>
 #include <exception>
 #include <algorithm>
@@ -59,6 +61,7 @@
 #include <map>
 #include <iterator>
 #include "hz_version.h"
+#include "hz_msg_match.h"
 #include "preset_dedupe.h"
 
 // v0.37: the settings-file code (HZF) replaces files through this (temp file + MoveFileExW)
@@ -1724,8 +1727,9 @@ namespace HZ
 	}
 
 	// Purpose: the reaction backup is always compiled. HZ_COMMS_MSG_LOG gates only the verbose trace
-	// (the "hud message:" line above the enqueue, and CommsDbgPoll). The one-line status stays.
-	// Last modified: 2026-10-22.
+	// (the "hud message:" line on the task thread, and CommsDbgPoll). The one-line status stays.
+	// HZ_HUD_MSG_CAPTURE is a separate switch for the unfiltered "hud capture:" line.
+	// Last modified: 2026-10-23.
 #ifndef HZ_COMMS_MSG_LOG
 #define HZ_COMMS_MSG_LOG 0
 #endif
@@ -1736,7 +1740,6 @@ namespace HZ
 	// Last modified: 2026-10-22.
 	struct HudMsgSnap
 	{
-		bool match;
 		bool throttle;
 		bool warning;
 		char text[201];
@@ -1746,28 +1749,6 @@ namespace HZ
 	static void HzCopyRaw(char* a_dst, std::size_t a_cap, const char* a_src)
 	{
 		hzpreset::CopyHudText(a_dst, a_cap, a_src);
-	}
-
-	static bool HzHasThat(const char* a_s)
-	{
-		if (!a_s) return false;
-		const auto low = [](unsigned char c) {
-			return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : static_cast<char>(c);
-		};
-		for (std::size_t i = 0; a_s[i] != '\0'; ++i) {
-			if (low(static_cast<unsigned char>(a_s[i])) != ' ') continue;
-			const char c1 = a_s[i + 1];
-			if (c1 == '\0') return false;
-			if (low(static_cast<unsigned char>(c1)) != 't') continue;
-			const char c2 = a_s[i + 2];
-			if (c2 == '\0' || low(static_cast<unsigned char>(c2)) != 'h') continue;
-			const char c3 = a_s[i + 3];
-			if (c3 == '\0' || low(static_cast<unsigned char>(c3)) != 'a') continue;
-			const char c4 = a_s[i + 4];
-			if (c4 == '\0' || low(static_cast<unsigned char>(c4)) != 't') continue;
-			return true;
-		}
-		return false;
 	}
 
 	static void HzHudMsgCopyCall(const RE::ShowHUDMessageEvent* a_ev, HudMsgSnap* a_out)
@@ -1854,9 +1835,10 @@ namespace HZ
 	class ShowHUDMessageSink final : public RE::BSTEventSink<RE::ShowHUDMessageEvent>
 	{
 	public:
-		// Purpose: log a HUD message whose text contains " that", and never stop the game's own listeners.
+		// Purpose: copy one HUD message and return. No settings, no forms, no Scaleform.
 		// Inputs: the event (text, sound, canThrottle, isWarning). Outputs: kContinue. A bad event is skipped.
-		// Dependencies: HzHudMsgReadSEH. Last modified: 2026-10-22.
+		// The unfiltered "hud capture:" line is HZ_HUD_MSG_CAPTURE. Classification happens on the task thread.
+		// Dependencies: HzHudMsgReadSEH. Last modified: 2026-10-23.
 		RE::BSEventNotifyControl ProcessEvent(const RE::ShowHUDMessageEvent& a_event, RE::BSTEventSource<RE::ShowHUDMessageEvent>*) override
 		{
 			try {
@@ -1866,13 +1848,11 @@ namespace HZ
 						REX::WARN("ShowHUDMessageEvent sink failed: message could not be read");
 					return RE::BSEventNotifyControl::kContinue;
 				}
-				snap.match = HzHasThat(snap.text);
-				if (!snap.match) return RE::BSEventNotifyControl::kContinue;
-#if HZ_COMMS_MSG_LOG
-				REX::INFO("hud message: text=\"{}\" sound=\"{}\" canThrottle={} isWarning={}",
+#if HZ_HUD_MSG_CAPTURE
+				REX::INFO("hud capture: text=\"{}\" sound=\"{}\" canThrottle={} isWarning={}",
 					snap.text, snap.sound, snap.throttle ? 1 : 0, snap.warning ? 1 : 0);
 #endif
-				// This thread is not the UI thread. Copy the text and return. Poll invokes Scaleform.
+				// This thread is not the UI thread. Copy the text and return. Poll classifies and invokes Scaleform.
 				HzRxEnqueue(snap.text);
 			} catch (const std::exception& ex) {
 				if (!g_hudMsgReadWarned.exchange(true, std::memory_order_relaxed))
@@ -1949,6 +1929,10 @@ namespace HZ
 		n.tick = GetTickCount64();
 		try {
 			std::lock_guard<std::mutex> lock(g_rxMu);
+			// 0.42.0.9: an exact duplicate already in the queue is not stored again. The cap stays 8.
+			for (const auto& q : g_rxQ) {
+				if (std::strcmp(q.text, n.text) == 0) return;
+			}
 			if (g_rxQ.size() >= kRxQueueMax) g_rxQ.pop_front();
 			g_rxQ.push_back(n);
 		} catch (...) {
@@ -1974,11 +1958,223 @@ namespace HZ
 	ULONGLONG g_rxWhyNext = 0;
 	bool      g_rxSelfLogged = false;
 	bool      g_hzpClipLogged = false;
+	bool      g_hzCardWarned = false;
+	bool      g_msgGmstDone = false;
+	bool      g_msgGmstWait = false;
+	bool      g_msgFormDone = false;
+	hzmsg::Templates g_msgPhrases = hzmsg::English();
 
-	// Purpose: drain the reaction queue on the UI thread and log hzcRxPush's status once per reaction.
+	// Starfield.esm message form ids. Lookup confirms the form loaded. The description is only a string id,
+	// so the matcher keeps the English text from the 0.42.0.9 research note.
+	constexpr std::uint32_t kHzMsgForms[] = {
+		0x002F443D, 0x002F443E, 0x000295FD, 0x00205AA3, 0x002EDFF6, 0x002F4434, 0x00236F3C,
+		0x002A6C4D, 0x002A6C4E, 0x0000D8A3, 0x002A6C4C, 0x002A6C4F, 0x002A6C51, 0x002A6C50, 0x002A6C52,
+		0x002BFDCA, 0x0027072C, 0x0027072E, 0x0027072D, 0x002BCB8C, 0x002BCB8D, 0x002BCB8E,
+		0x002C8FF6, 0x002C8FF7, 0x002C8FF5, 0x000C6587
+	};
+
+	struct HzGmstRaw
+	{
+		char likes[161];
+		char loves[161];
+		char dislikes[161];
+		char hates[161];
+		char busy[161];
+		char calmed[161];
+		char creature[161];
+		char caught[161];
+		char pick[161];
+		int  ok;
+	};
+
+	static void HzCopySetting(RE::GameSettingCollection* a_col, const char* a_key, char* a_dst, std::size_t a_cap)
+	{
+		if (!a_dst || a_cap == 0) return;
+		a_dst[0] = '\0';
+		if (!a_col || !a_key || RE::ID::GameSettingCollection::GetSetting.id() == 0) return;
+		auto* setting = a_col->GetSetting(a_key);
+		if (!setting || setting->GetType() != RE::Setting::Type::kString) return;
+		const auto view = setting->GetString();
+		const auto cut = hzpreset::Utf8Prefix(std::string(view), a_cap - 1);
+		for (std::size_t i = 0; i < cut.size(); ++i) a_dst[i] = cut[i];
+		a_dst[cut.size()] = '\0';
+	}
+
+	static void HzGmstFillCall(HzGmstRaw* a_out)
+	{
+		if (!a_out) return;
+		a_out->ok = 0;
+		if (RE::ID::GameSettingCollection::Singleton.id() == 0 || RE::ID::GameSettingCollection::GetSetting.id() == 0) {
+			a_out->ok = -1;
+			return;
+		}
+		auto* col = RE::GameSettingCollection::GetSingleton();
+		if (!col) return;
+		HzCopySetting(col, "sAffinityEventLikes", a_out->likes, sizeof a_out->likes);
+		HzCopySetting(col, "sAffinityEventLoves", a_out->loves, sizeof a_out->loves);
+		HzCopySetting(col, "sAffinityEventDislikes", a_out->dislikes, sizeof a_out->dislikes);
+		HzCopySetting(col, "sAffinityEventHates", a_out->hates, sizeof a_out->hates);
+		HzCopySetting(col, "sSceneBlockingActorActivation", a_out->busy, sizeof a_out->busy);
+		HzCopySetting(col, "sActivateNPCCalmed", a_out->calmed, sizeof a_out->calmed);
+		HzCopySetting(col, "sActivateCreatureCalmed", a_out->creature, sizeof a_out->creature);
+		HzCopySetting(col, "sNoPickPocketAgain", a_out->caught, sizeof a_out->caught);
+		HzCopySetting(col, "sPickpocketFail", a_out->pick, sizeof a_out->pick);
+		a_out->ok = 1;
+	}
+
+	struct HzFormRaw
+	{
+		int loaded[32];
+		int n;
+		int ok;
+	};
+
+	static void HzFormFillCall(HzFormRaw* a_out)
+	{
+		if (!a_out) return;
+		a_out->n = static_cast<int>(std::size(kHzMsgForms));
+		a_out->ok = 0;
+		if (RE::ID::TESForm::LookupByID.id() == 0) {
+			a_out->ok = -1;
+			return;
+		}
+		for (int i = 0; i < a_out->n && i < 32; ++i) {
+			const auto id = kHzMsgForms[i];
+			if (id == 0) { a_out->loaded[i] = -1; continue; }
+			auto* form = RE::TESForm::LookupByID(id);
+			a_out->loaded[i] = form ? 1 : 0;
+		}
+		a_out->ok = 1;
+	}
+
+#if defined(_MSC_VER)
+	static int HzGmstFillSEH(HzGmstRaw* a_out) noexcept
+	{
+		if (!a_out) return 0;
+		using Fn = void (*)(HzGmstRaw*);
+		Fn fn = &HzGmstFillCall;
+		__try {
+			fn(a_out);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+	static int HzFormFillSEH(HzFormRaw* a_out) noexcept
+	{
+		if (!a_out) return 0;
+		using Fn = void (*)(HzFormRaw*);
+		Fn fn = &HzFormFillCall;
+		__try {
+			fn(a_out);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+#else
+	static int HzGmstFillSEH(HzGmstRaw* a_out) noexcept
+	{
+		if (!a_out) return 0;
+		try { HzGmstFillCall(a_out); return 1; } catch (...) { return 0; }
+	}
+	static int HzFormFillSEH(HzFormRaw* a_out) noexcept
+	{
+		if (!a_out) return 0;
+		try { HzFormFillCall(a_out); return 1; } catch (...) { return 0; }
+	}
+#endif
+
+	static void HzLogPhrase(const char* a_key, const char* a_text)
+	{
+		const char* status = "empty";
+		if (a_text && a_text[0]) status = (a_text[0] == '<' && (a_text[1] == 'I' || a_text[1] == 'i')) ? "stub" : "text";
+		char show[61] = {};
+		if (a_text) hzpreset::CopyHudText(show, sizeof show, a_text);
+		REX::INFO("hud gmst {}: {} \"{}\"", a_key, status, show);
+	}
+
+	// Purpose: read the localized GMST phrases once, on the task thread, after data has loaded.
+	// A zero address id is not called. An empty phrase or an "<ID=" stub keeps the English fallback.
+	// Last modified: 2026-10-23.
+	void HzMsgPrepare()
+	{
+		if (!g_msgGmstDone) {
+			HzGmstRaw raw{};
+			const int ran = HzGmstFillSEH(&raw);
+			if (!ran) {
+				g_msgGmstDone = true;
+				REX::INFO("hud gmst: read failed, English fallback");
+			} else if (raw.ok < 0) {
+				g_msgGmstDone = true;
+				REX::INFO("hud gmst: address id is 0, English fallback");
+			} else if (raw.ok == 0) {
+				if (!g_msgGmstWait) {
+					g_msgGmstWait = true;
+					REX::INFO("hud gmst: settings not ready");
+				}
+			} else {
+				hzmsg::ApplyPhrase(g_msgPhrases.likes, raw.likes);
+				hzmsg::ApplyPhrase(g_msgPhrases.loves, raw.loves);
+				hzmsg::ApplyPhrase(g_msgPhrases.dislikes, raw.dislikes);
+				hzmsg::ApplyPhrase(g_msgPhrases.hates, raw.hates);
+				hzmsg::ApplyPhrase(g_msgPhrases.busy, raw.busy);
+				hzmsg::ApplyPhrase(g_msgPhrases.npcCalmed, raw.calmed);
+				hzmsg::ApplyPhrase(g_msgPhrases.creature, raw.creature);
+				hzmsg::ApplyPhrase(g_msgPhrases.caught, raw.caught);
+				hzmsg::ApplyPhrase(g_msgPhrases.pickFail, raw.pick);
+				HzLogPhrase("sAffinityEventLikes", raw.likes);
+				HzLogPhrase("sAffinityEventLoves", raw.loves);
+				HzLogPhrase("sAffinityEventDislikes", raw.dislikes);
+				HzLogPhrase("sAffinityEventHates", raw.hates);
+				HzLogPhrase("sSceneBlockingActorActivation", raw.busy);
+				HzLogPhrase("sActivateNPCCalmed", raw.calmed);
+				HzLogPhrase("sActivateCreatureCalmed", raw.creature);
+				HzLogPhrase("sNoPickPocketAgain", raw.caught);
+				HzLogPhrase("sPickpocketFail", raw.pick);
+				g_msgGmstDone = true;
+			}
+		}
+		if (!g_msgFormDone) {
+			HzFormRaw raw{};
+			const int ran = HzFormFillSEH(&raw);
+			if (!ran) {
+				g_msgFormDone = true;
+				REX::INFO("hud form: read failed");
+			} else if (raw.ok < 0) {
+				g_msgFormDone = true;
+				REX::INFO("hud form: address id is 0");
+			} else if (raw.ok > 0) {
+				for (int i = 0; i < raw.n && i < 32; ++i) {
+					const char* state = raw.loaded[i] < 0 ? "skipped" : (raw.loaded[i] ? "loaded" : "missing");
+					REX::INFO("hud form {:08X}: {}", kHzMsgForms[i], state);
+				}
+				g_msgFormDone = true;
+			}
+		}
+	}
+
+	static std::string HzCrossName()
+	{
+		try {
+			auto ui = RE::UI::GetSingleton();
+			if (!ui) return {};
+			auto menu = ui->GetMenu("HUDMenu");
+			if (!menu || !menu->menuObj.IsObject() || !menu->menuObj.HasMember("hzCrossName")) return {};
+			GValue r;
+			if (!menu->menuObj.Invoke("hzCrossName", &r, nullptr, 0) || !r.IsString() || !r.GetString()) return {};
+			const auto view = hzmsg::Trim(r.GetString());
+			if (view.empty() || view.find('<') != std::string_view::npos) return {};
+			return hzpreset::Utf8Prefix(std::string(view), 80);
+		} catch (...) {
+			return {};
+		}
+	}
+
+	// Purpose: drain the HUD-message queue on the UI thread and log hzcCardPush's status once per card.
 	// Also logs hzcRxSelfTest once (pass or fail, plus the three regex probes). That line is not gated on
 	// Debug or HZ_COMMS_MSG_LOG. A missing hzcRxSelfTest is retried until it returns a non-empty string.
-	// Skips loading and the main menu. Not gated on the 3 s HUD-ready wait. A missing hzcRxPush is skipped.
+	// Skips loading and the main menu. Not gated on the 3 s HUD-ready wait. A missing hzcCardPush is logged once.
 	// Last modified: 2026-10-23.
 	void CommsRxPoll(ULONGLONG a_now)
 	{
@@ -1989,6 +2185,7 @@ namespace HZ
 		if (!ui->IsMenuOpen("HUDMessagesMenu")) return;
 		auto msg = ui->GetMenu("HUDMessagesMenu");
 		if (!msg || !msg->menuObj.IsObject()) return;
+		try { HzMsgPrepare(); } catch (...) {}
 		if (!g_rxSelfLogged && msg->menuObj.HasMember("hzcRxSelfTest")) {
 			try {
 				GValue self;
@@ -2018,7 +2215,13 @@ namespace HZ
 			}
 		} catch (...) {
 		}
-		if (!msg->menuObj.HasMember("hzcRxPush")) return;
+		if (!msg->menuObj.HasMember("hzcCardPush")) {
+			if (!g_hzCardWarned) {
+				g_hzCardWarned = true;
+				REX::INFO("Horizon messages movie is not active");
+			}
+			return;
+		}
 		std::deque<RxNote> batch;
 		try {
 			std::lock_guard<std::mutex> lock(g_rxMu);
@@ -2031,15 +2234,35 @@ namespace HZ
 		const char* visTx = vis < 0 ? "unknown" : (vis ? "1" : "0");
 		for (const auto& n : batch) {
 			if (n.tick == 0 || a_now < n.tick || a_now - n.tick > kRxMaxAge) continue;
+			hzmsg::Hit hit;
+			try { hit = hzmsg::Match(n.text, g_msgPhrases); } catch (...) { hit = {}; }
+			if (!hit.ok) continue;
+			if (hit.kind == "unavailable" && hit.sub == "busy" && hit.name.empty()) {
+				const auto who = HzCrossName();
+				if (!who.empty()) hit.name = who;
+			}
 			std::string status = "invoke failed";
 			try {
-				GValue arg(n.text);
+				const std::string kind = hit.kind;
+				const std::string sub = hit.sub;
+				const std::string name = hit.name;
+				const std::string value = hit.value;
+				GValue args[5] = {
+					GValue(kind.c_str()),
+					GValue(sub.c_str()),
+					GValue(name.c_str()),
+					GValue(value.c_str()),
+					GValue(n.text)
+				};
 				GValue ret;
-				if (msg->menuObj.Invoke("hzcRxPush", &ret, &arg, 1) && ret.IsString() && ret.GetString())
+				if (msg->menuObj.Invoke("hzcCardPush", &ret, args, 5) && ret.IsString() && ret.GetString())
 					status = ret.GetString();
 			} catch (...) {
 				status = "invoke failed";
 			}
+#if HZ_COMMS_MSG_LOG
+			REX::INFO("hud message: text=\"{}\" kind={} sub={} tier={}", n.text, hit.kind, hit.sub, hit.tier);
+#endif
 			REX::INFO("comms reaction: {} | messages visible={} | dialogue={}", status, visTx, dialogue ? 1 : 0);
 		}
 	}

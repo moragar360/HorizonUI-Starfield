@@ -3449,7 +3449,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.42.0.8";
+      private static const HZ_BUILD:String = "0.42.0.9";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -5536,6 +5536,28 @@
             case 4: return 0xF28C5F; // exotic
          }
          return -1;
+      }
+
+      // 0.42.0.9: the name on the crosshair target card. The DLL reads it on the task thread for the busy card.
+      public function hzCrossName() : String
+      {
+         var s:String = "";
+         try
+         {
+            if(this.hzTgAct != null && this.hzTgAct.sHeaderText != null) { s = String(this.hzTgAct.sHeaderText); }
+         }
+         catch(e:Error) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length && o.length < 80)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 32 && c != 127) { o += s.charAt(i); }
+            i++;
+         }
+         while(o.length > 0 && o.charAt(0) == " ") { o = o.substr(1); }
+         while(o.length > 0 && o.charAt(o.length - 1) == " ") { o = o.substr(0,o.length - 1); }
+         return o;
       }
 
       private function hzTgContent(m:int) : void
@@ -14707,6 +14729,7 @@
       private static const HZ42_SC_RPAD:Number = 18;
       private static const HZ42_SC_KHEAD:Number = 1.08;
       private static const HZ42_SC_KMINW:Number = 14;
+      private static const HZ42_SC_KEX:Number = 16;     // 0.42.0.9: extra key-text width, same as HZP_KEX. The label slot does not use it.
       private static const HZ42_SC_LABEX:Number = 32;   // 0.42.0.8: extra label slot, same as the scope chip (HZP_LABEX)
       private static const HZ42_SC_KEY:String = "ScopeChip";   // ARRANGE list key of the proxy (saved as [Scope] ScopeChipX / ScopeChipY)
       private var hz42ScOn:Boolean = true;
@@ -14880,12 +14903,13 @@
          var len:int = t.text != null ? int(t.text.length) : 0;
          return this.hz42ScKeyW(Number(t.textWidth),ls,len);
       }
-      private function hz42ScKeyW(tw:Number, ls:Number, len:int) : Number
+      private function hz42ScKeyW(tw:Number, ls:Number, len:int, extra:Number = 0) : Number
       {
          if(isNaN(tw) || tw < 0) { tw = 0; }
          if(isNaN(ls) || ls < 0) { ls = 0; }
          if(len < 0) { len = 0; }
-         var w:Number = Math.ceil(tw * HZ42_SC_KHEAD + ls * len) + 8;
+         if(isNaN(extra) || extra < 0) { extra = 0; }
+         var w:Number = Math.ceil(tw * HZ42_SC_KHEAD + ls * len) + 8 + extra;
          if(w < HZ42_SC_KMINW) { w = HZ42_SC_KMINW; }
          return w;
       }
@@ -14921,7 +14945,7 @@
          if(isNaN(ls) || ls < 0) { ls = 0; }
          var len:int = kt.text != null ? int(kt.text.length) : 0;
          kt.autoSize = flash.text.TextFieldAutoSize.NONE;
-         kt.width = this.hz42ScKeyW(Number(kt.textWidth),ls,len);
+         kt.width = this.hz42ScKeyW(Number(kt.textWidth),ls,len,HZ42_SC_KEX);
          var kw:Number = 30 + kt.width + HZ42_SC_KPAD;
          var x0:Number = 7;
          var lx:Number = x0 + kw + 10;

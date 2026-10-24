@@ -213,8 +213,8 @@ package
       // Settings: [Scope] ScopeHoldBreathChip (0 = the game's prompt) / ScopeChipX / ScopeChipY / ScopeChipScale and [Style]
       // AccentColor / AccentHex / CardOpacity / TextScale / FontFace / HeaderStyle (same meaning as on the HUD). Read when
       // the scope opens and every 5 s after.
-      private static const HZP_VERSION:String = "0.42.0.8";   // 0.42.0.8: scope movie version (= the test build's DLL file version)
-      private static const HZP_BUILD:String = "0.42.0.8";   // 0.42.0.8: scope movie build label (= the test build's DLL file version)
+      private static const HZP_VERSION:String = "0.42.0.9";   // 0.42.0.9: scope movie version (= the test build's DLL file version)
+      private static const HZP_BUILD:String = "0.42.0.9";   // 0.42.0.9: scope movie build label (= the test build's DLL file version)
       private static const HZP_ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       private static const HZP_ACC:uint = 0x3FD0E0;
       private static const HZP_O2:uint = 0x4DB6FF;
@@ -227,6 +227,7 @@ package
       private static const HZP_KPAD:Number = 10;        // 0.42.0.5: keycap padding right of the key text (was 8)
       private static const HZP_KHEAD:Number = 1.08;     // 0.42.0.5: headroom on the measured key text width (bold faces, renderer rounding)
       private static const HZP_KMINW:Number = 14;       // 0.42.0.5: smallest key text slot (a one-glyph gamepad face such as L3)
+      private static const HZP_KEX:Number = 16;         // 0.42.0.9: extra width for the key text only. The label slot does not use it.
       private static const HZP_RPAD:Number = 18;        // 0.42.0.5: panel padding right of the O2 meter (was 14)
       private static const HZP_GLOW:Number = 8;         // 0.42.0.8: transparent pad so a parent scrollRect can include the held edge
       private static const HZP_LABEX:Number = 32;       // 0.42.0.8: extra label field past textWidth so the held card is slightly longer
@@ -640,16 +641,18 @@ package
       // 0.42.0.6: an autosized key field clips its last glyph, so the keycap's right border looks cut off
       // (L-SHIFT on the hold-breath chip). Measure textWidth first, then lock autoSize to NONE and set the
       // field width to ceil(textWidth * 1.08 + letterSpacing * length) + 8. The keycap and the chip use that width.
-      private function hzpKeyW(t:TextField) : Number
+      // extra is 0 for the label slot. The key cap passes HZP_KEX so L-SHIFT fits. The card grows only by that extra.
+      private function hzpKeyW(t:TextField, extra:Number = 0) : Number
       {
          if(t == null) { return 0; }
+         if(isNaN(extra) || extra < 0) { extra = 0; }
          var ls:Number = 0;
          try { ls = Number(t.getTextFormat().letterSpacing); } catch(e:Error) { ls = 0; }
          if(isNaN(ls) || ls < 0) { ls = 0; }
          var tw:Number = Number(t.textWidth);
          if(isNaN(tw) || tw < 0) { tw = 0; }
          var len:Number = t.text != null ? Number(t.text.length) : 0;
-         var w:Number = Math.ceil(tw * HZP_KHEAD + ls * len) + 8;
+         var w:Number = Math.ceil(tw * HZP_KHEAD + ls * len) + 8 + extra;
          if(w < HZP_KMINW) { w = HZP_KMINW; }
          return w;
       }
@@ -713,7 +716,7 @@ package
          if(this.hzpKeyTx.length > 0) { kt = this.hzpT(p,this.hzpKeyTx,13,keyCol,"bd",0.04,this.hzpKeyFace); }
          if(kt != null)
          {
-            ktw = this.hzpKeyW(kt);
+            ktw = this.hzpKeyW(kt,HZP_KEX);
             var kth:Number = kt.height;
             kt.autoSize = TextFieldAutoSize.NONE;
             kt.width = ktw;

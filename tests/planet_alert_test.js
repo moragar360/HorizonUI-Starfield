@@ -32,7 +32,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.42.0.8";', "HUD build id is 0.42.0.8");
+pin('private static const HZ_BUILD:String = "0.42.0.9";', "HUD build id is 0.42.0.9");
 pin('case "vehicleexitpill": this.hzVehOn = bv; break;', "vehicle exit pill is a Cards ini key");
 pin('{"k":"VehicleExitPill","l":"VEHICLE EXIT PILL"', "vehicle exit pill is on the Cards tab");
 pin("return hv.GetUpButton_mc;", "vehicle exit follows the game's button");
@@ -468,14 +468,17 @@ for (let ci = 0; ci < chipSizes.length; ci++) {
 expect(previewPx(14, 0.65, 0.9) >= 13, "the 11.7 px case stays at least 13");
 expect(previewPx(13, 0.65, 0.9) >= 13, "L-SHIFT uses the same floor");
 
-// Scope chip key text. The field is autoSize NONE and its width is ceil(textWidth * 1.08 + letterSpacing * len) + 8.
+// Scope chip key text. The field is autoSize NONE. Its width is ceil(textWidth * 1.08 + letterSpacing * len) + 8, plus 16 for the key cap only.
 // The keycap is the 30 px icon plus that width plus HZP_KPAD. The panel pad after the meter is HZP_RPAD.
 pin("private static const HZ42_SC_KPAD:Number = 10;", "key padding matches HZP_KPAD");
 pin("private static const HZ42_SC_RPAD:Number = 18;", "panel padding matches HZP_RPAD");
 pin("private static const HZ42_SC_KHEAD:Number = 1.08;", "key headroom matches HZP_KHEAD");
-pin("var w:Number = Math.ceil(tw * HZ42_SC_KHEAD + ls * len) + 8;", "preview key width is the scope field width");
+pin("private static const HZ42_SC_KEX:Number = 16;", "the preview key cap adds 16");
+pin("private static const HZ42_SC_LABEX:Number = 32;", "the preview label extra stays 32");
+pin("var w:Number = Math.ceil(tw * HZ42_SC_KHEAD + ls * len) + 8 + extra;", "preview key width is the scope field width plus the key extra");
 pin("kt.autoSize = flash.text.TextFieldAutoSize.NONE;", "preview key field does not autosize");
-pin("kt.width = this.hz42ScKeyW(Number(kt.textWidth),ls,len);", "preview key field uses that width");
+pin("kt.width = this.hz42ScKeyW(Number(kt.textWidth),ls,len,HZ42_SC_KEX);", "preview key field uses the wider key cap");
+pin("return this.hz42ScKeyW(Number(t.textWidth),ls,len);", "the preview label does not use the key extra");
 pin("var kw:Number = 30 + kt.width + HZ42_SC_KPAD;", "the keycap is sized from that width");
 pin("kt.x = Math.round(x0 + 28);", "the key text starts where the scope chip starts it");
 pin("var w:Number = Math.round(mx + mw + HZ42_SC_RPAD);", "the chip panel uses the scope's right pad");
@@ -486,7 +489,7 @@ function keySlot(tw, ls, len) {
 	if (!Number.isFinite(tw) || tw < 0) tw = 0;
 	if (!Number.isFinite(ls) || ls < 0) ls = 0;
 	if (len < 0) len = 0;
-	let w = Math.ceil(tw * 1.08 + ls * len) + 8;
+	let w = Math.ceil(tw * 1.08 + ls * len) + 8 + 16;
 	if (w < 14) w = 14;
 	return w;
 }
@@ -496,10 +499,10 @@ function keycap(tw, ls, len) {
 const keyWidths = [0, 12.4, 36, 48.6, 70.2];
 for (let i = 0; i < keyWidths.length; i++) {
 	const tw = keyWidths[i];
-	expect(keySlot(tw, 0, 7) === Math.max(14, Math.ceil(tw * 1.08) + 8), "key slot " + tw + " uses 1.08 and + 8");
+	expect(keySlot(tw, 0, 7) === Math.max(14, Math.ceil(tw * 1.08) + 8 + 16), "key slot " + tw + " uses 1.08, + 8, and the 16 px key extra");
 	expect(keycap(tw, 0.5, 7) === 30 + keySlot(tw, 0.5, 7) + 10, "keycap " + tw + " is icon + slot + pad");
 }
-expect(keySlot(48, 0.6, 7) === Math.ceil(48 * 1.08 + 0.6 * 7) + 8, "L-SHIFT-sized text keeps the headroom");
+expect(keySlot(48, 0.6, 7) === Math.ceil(48 * 1.08 + 0.6 * 7) + 8 + 16, "L-SHIFT key cap adds 16 on top of the headroom");
 
 const scopeFiles = [
 	["actionscript/scope/hzp_main.as", false],
@@ -517,7 +520,12 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.8";') >= 0, rel + " build is 0.42.0.8");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.9";') >= 0, rel + " build is 0.42.0.9");
+	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
+	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
+	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
+	expect(body.indexOf("var ownW:Number = this.hzpKeyW(lt);") >= 0, rel + " the live label does not get the key extra");
+	expect(body.indexOf("hzpKeyW(t,HZP_KEX)") < 0 && body.indexOf("hzpKeyW(lt,HZP_KEX)") < 0, rel + " does not widen the label");
 	expect(body.indexOf("kt.autoSize = TextFieldAutoSize.NONE;") >= 0, rel + " key field does not autosize");
 	expect(body.indexOf("Math.ceil(tw * HZP_KHEAD + ls * len) + 8") >= 0, rel + " uses the field-width formula");
 	expect(body.indexOf("kt.width = ktw;") >= 0, rel + " sets the field width");

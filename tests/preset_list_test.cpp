@@ -2,6 +2,7 @@
 // single file-version header. No game, no CommonLibSF.
 // Build: g++ -std=c++20 -Wall -Wextra -I src tests/preset_list_test.cpp -o /tmp/preset_list_test
 
+#include "hz_msg_match.h"
 #include "hz_version.h"
 #include "preset_dedupe.h"
 
@@ -46,13 +47,94 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.42.0.8", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 42 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 8, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.42.0.9", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 42 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 9, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 1, "verbose reaction trace is on for this test build");
-	Expect(HzFileVersionOk("0.42.0.8"), "4-part version ok");
+	Expect(HZ_HUD_MSG_CAPTURE == 1, "unfiltered HUD capture is on for this test build");
+	Expect(HzFileVersionOk("0.42.0.9"), "4-part version ok");
 	Expect(!HzFileVersionOk("0.42.0"), "3-part version is not the file version");
 	Expect(!HzFileVersionOk("v0.42.0.6"), "leading v is not accepted");
 	Expect(!HzFileVersionOk("0.42.0.6 "), "trailing space rejected");
+
+	{
+		const auto en = hzmsg::English();
+		auto hit = [&](const char* text, const hzmsg::Templates& phrases) { return hzmsg::Match(text, phrases); };
+		auto ok = [&](const hzmsg::Hit& h, const char* kind, const char* sub, const char* name, const char* value, char tier, const char* what) {
+			if (!h.ok || h.kind != kind || h.sub != sub || h.name != name || h.value != value || h.tier != tier) {
+				std::cerr << "FAIL: " << what << "\n  got: ok=" << h.ok << " " << h.kind << "/" << h.sub
+					<< " name=[" << h.name << "] value=[" << h.value << "] tier=" << h.tier << "\n";
+				++g_fails;
+			}
+		};
+		auto miss = [&](const char* text, const hzmsg::Templates& phrases, const char* what) {
+			const auto h = hit(text, phrases);
+			if (h.ok) {
+				std::cerr << "FAIL: " << what << " matched " << h.kind << "/" << h.sub << " [" << h.name << "]\n";
+				++g_fails;
+			}
+		};
+		ok(hit("Sam Coe liked that.", en), "reaction", "liked", "Sam Coe", "LIKED", 'C', "Sam Coe liked that");
+		ok(hit("SAM COE LIKED THAT.", en), "reaction", "liked", "SAM COE", "LIKED", 'C', "upper case liked");
+		ok(hit("Sam Coe loved that.", en), "reaction", "loved", "Sam Coe", "LOVED", 'C', "loved");
+		ok(hit("Sam Coe disliked that.", en), "reaction", "disliked", "Sam Coe", "DISLIKED", 'C', "disliked is not liked");
+		ok(hit("Sam Coe hated that.", en), "reaction", "hated", "Sam Coe", "HATED", 'C', "hated");
+		ok(hit("Sam Coe likes that", en), "reaction", "liked", "Sam Coe", "LIKED", 'C', "present likes");
+		ok(hit("  Sam Coe liked that.  ", en), "reaction", "liked", "Sam Coe", "LIKED", 'C', "trimmed reaction");
+		miss("I liked that.", en, "pronoun");
+		miss("No one liked that.", en, "no one");
+		miss("Dr. liked that.", en, "bare title");
+		miss("Added.", en, "loot line");
+		miss("", en, "empty");
+		miss(" cured.", en, "empty affliction name");
+		miss("<Alias=TextReplacementRefAlias> gained.", en, "unresolved alias");
+		miss("Sam Coe lik", en, "cut-off reaction");
+		auto de = en;
+		de.likes = "das gefiel.";
+		de.dislikes = "das missfiel.";
+		ok(hit("Sam Coe das gefiel.", de), "reaction", "liked", "Sam Coe", "LIKED", 'A', "localized likes suffix");
+		miss("Sam Coe liked that.", de, "English likes is not used once the GMST differs");
+		miss("Sam Coe likes that.", de, "present tense stays English-only");
+		auto mixed = en;
+		mixed.dislikes = "mochte das nicht.";
+		ok(hit("Sam Coe mochte das nicht.", mixed), "reaction", "disliked", "Sam Coe", "DISLIKED", 'A', "localized dislikes");
+		miss("Sam Coe disliked that.", mixed, "English liked does not claim a disliked line");
+		ok(hit("This individual is busy.", en), "unavailable", "busy", "", "BUSY", 'C', "busy");
+		auto busy = en;
+		busy.busy = "Esta persona esta ocupada.";
+		ok(hit("Esta persona esta ocupada.", busy), "unavailable", "busy", "", "BUSY", 'A', "localized busy");
+		ok(hit("Contusions cured.", en), "medical", "cured", "Contusions", "CURED", 'C', "cured");
+		ok(hit("Prognosis improved (Contusions).", en), "medical", "improved", "Contusions", "IMPROVED", 'C', "prognosis");
+		ok(hit("Severity improved (Poisoning).", en), "medical", "severity", "Poisoning", "LESS SEVERE", 'C', "severity");
+		ok(hit("Attempted to cure Burns.", en), "medical", "attempted", "Burns", "ATTEMPTED", 'C', "attempted");
+		ok(hit("Fractured Limb gained.", en), "medical", "gained", "Fractured Limb", "GAINED", 'C', "gained");
+		ok(hit("Lung Damage became worse.", en), "medical", "worse", "Lung Damage", "WORSE", 'C', "worse");
+		ok(hit("500 credits have been sent home to your parents.", en), "credits", "kid", "", "-500", 'C', "kid stuff 500");
+		ok(hit("1,500 credits have been sent home to your parents.", en), "credits", "kid", "", "-1500", 'C', "kid stuff 1500");
+		miss("about 500 credits have been sent home to your parents.", en, "junk before the amount");
+		ok(hit("Andreja is now following you.", en), "crew", "follow", "Andreja", "FOLLOWING", 'C', "following");
+		ok(hit("Andreja is no longer following you.", en), "crew", "unfollow", "Andreja", "FOLLOWING", 'C', "unfollow");
+		ok(hit("Andreja is no longer your Active Companion", en), "crew", "uncompanion", "Andreja", "COMPANION", 'C', "uncompanion without a period");
+		ok(hit("Andreja is now your Active Companion.", en), "crew", "companion", "Andreja", "COMPANION", 'C', "companion");
+		ok(hit("Andreja is available to be your Companion", en), "crew", "companion-available", "Andreja", "AVAILABLE", 'C', "companion available");
+		ok(hit("Andreja is no longer available to be your companion.", en), "crew", "companion-unavailable", "Andreja", "AVAILABLE", 'C', "longer unavailable suffix wins");
+		ok(hit("Sarah Morgan considers you a friend.", en), "crew", "friend", "Sarah Morgan", "FRIEND", 'C', "friend");
+		ok(hit("Sam Coe is furious with you and will no longer be your companion.", en), "crew", "furious", "Sam Coe", "FURIOUS", 'C', "furious");
+		ok(hit("Sam Coe is no longer angry with you.", en), "crew", "calm", "Sam Coe", "CALM", 'C', "calm is not angry");
+		ok(hit("Sam Coe is angry with you.", en), "crew", "angry", "Sam Coe", "ANGRY", 'C', "angry");
+		ok(hit("Sarah Morgan has already caught you.", en), "unavailable", "caught", "Sarah Morgan", "CAUGHT", 'C', "caught");
+		ok(hit("The creature is calmed and cannot respond.", en), "unavailable", "calmed", "Creature", "CALMED", 'C', "creature");
+		ok(hit("Sam Coe is calmed and cannot respond.", en), "unavailable", "calmed", "Sam Coe", "CALMED", 'C', "npc calmed");
+		ok(hit("You've been caught pickpocketing.", en), "unavailable", "caught", "", "CAUGHT", 'C', "pickpocket fail");
+		miss(std::string(201, 'A').c_str(), en, "over the 200 byte cap");
+		Expect(!hzmsg::UsablePhrase(""), "blank phrase");
+		Expect(!hzmsg::UsablePhrase("<ID=123>"), "stub phrase");
+		Expect(hzmsg::UsablePhrase("liked that."), "English phrase");
+		auto applied = en;
+		hzmsg::ApplyPhrase(applied.likes, "<ID=1>");
+		Expect(applied.likes == "liked that.", "a stub does not replace English");
+		hzmsg::ApplyPhrase(applied.likes, "  das gefiel.  ");
+		Expect(applied.likes == "das gefiel.", "a real phrase replaces English");
+	}
 
 	ExpectEq(CleanPresetName("Moragar's Choice"), "Moragar's Choice", "apostrophe stays");
 	ExpectEq(CleanPresetName("A=B+C[D]E;F#G\"H\\I|J"), "ABCDEFGHIJ", "same drop set as the HUD");
@@ -239,7 +321,13 @@ int main()
 		Expect(src.find("void HzRxEnqueue(const char* a_text);") != std::string::npos, "the sink thread only enqueues");
 		Expect(src.find("std::lock_guard<std::mutex> lock(g_rxMu);") != std::string::npos, "the reaction queue is mutex locked");
 		Expect(src.find("kRxQueueMax") != std::string::npos, "the reaction queue is bounded");
-		Expect(src.find("HasMember(\"hzcRxPush\")") != std::string::npos, "Poll invokes hzcRxPush only when the movie defines it");
+		Expect(src.find("HasMember(\"hzcCardPush\")") != std::string::npos, "Poll invokes hzcCardPush only when the movie defines it");
+		Expect(src.find("kRxQueueMax = 8") != std::string::npos, "the HUD message queue holds 8");
+		Expect(src.find("std::strcmp(q.text, n.text) == 0") != std::string::npos, "an exact duplicate is not queued again");
+		Expect(src.find("hud capture: text=") != std::string::npos, "the unfiltered capture line is present");
+		Expect(src.find("RE::ID::GameSettingCollection::Singleton.id() == 0") != std::string::npos, "a zero settings address id is not called");
+		Expect(src.find("RE::ID::TESForm::LookupByID.id() == 0") != std::string::npos, "a zero form lookup id is not called");
+		Expect(src.find("hzmsg::Match(") != std::string::npos, "classification runs through the pure matcher");
 		Expect(src.find("comms reaction: {} | messages visible={} | dialogue={}") != std::string::npos, "each reaction logs one status");
 		Expect(src.find("void CommsRxPoll(ULONGLONG) {}") == std::string::npos, "the reaction drain is not compiled out");
 		Expect(src.find("void CommsDbgPoll(ULONGLONG) {}") != std::string::npos, "the verbose poll is the only empty stub");
@@ -247,16 +335,26 @@ int main()
 		Expect(src.find("constexpr ULONGLONG kRxMaxAge = 3000;") != std::string::npos, "a queued reaction expires after 3 s");
 		Expect(src.find("a_now - n.tick > kRxMaxAge") != std::string::npos, "Poll drops a note older than 3 s");
 		{
+			const auto cap = src.find("REX::INFO(\"hud capture: text=");
+			const auto capGate = src.rfind("#if HZ_HUD_MSG_CAPTURE", cap);
+			const auto capEnd = src.find("#endif", cap);
+			const auto push = src.find("HzRxEnqueue(snap.text)", capEnd);
+			Expect(cap != std::string::npos && capGate != std::string::npos && capEnd != std::string::npos && push != std::string::npos, "the capture line is gated and the enqueue is not");
+			Expect(capGate < cap && cap < capEnd && push > capEnd, "only the capture line is behind its flag");
 			const auto hud = src.find("REX::INFO(\"hud message: text=");
 			const auto gate = src.rfind("#if HZ_COMMS_MSG_LOG", hud);
 			const auto endGate = src.find("#endif", hud);
-			const auto push = src.find("HzRxEnqueue(snap.text)", endGate);
-			Expect(hud != std::string::npos && gate != std::string::npos && endGate != std::string::npos && push != std::string::npos, "the verbose line is gated and the enqueue is not");
-			Expect(gate < hud && hud < endGate && push > endGate, "only the verbose HUD line is behind the flag");
+			Expect(hud != std::string::npos && gate != std::string::npos && endGate != std::string::npos && gate < hud && hud < endGate, "the verbose HUD line stays behind its own flag");
 			const auto drain = src.find("void CommsRxPoll(ULONGLONG a_now)");
-			const auto dbgGate = src.find("#if HZ_COMMS_MSG_LOG", drain);
-			const auto dbg = src.find("void CommsDbgPoll(ULONGLONG a_now)", dbgGate);
-			Expect(drain != std::string::npos && dbgGate != std::string::npos && dbg != std::string::npos && drain < dbgGate && dbgGate < dbg, "Poll stays compiled ahead of the verbose stub");
+			const auto dbg = src.find("void CommsDbgPoll(ULONGLONG a_now)", drain);
+			Expect(drain != std::string::npos && dbg != std::string::npos && drain < dbg, "Poll stays compiled ahead of the verbose stub");
+			const auto proc = src.find("ProcessEvent(const RE::ShowHUDMessageEvent&");
+			const auto procEnd = src.find("g_hudMsgSink", proc);
+			Expect(proc != std::string::npos && procEnd > proc, "the sink method is bounded");
+			const auto body = src.substr(proc, procEnd - proc);
+			Expect(body.find("GetSetting") == std::string::npos, "the sink does not read a setting");
+			Expect(body.find("LookupByID") == std::string::npos, "the sink does not look up a form");
+			Expect(body.find("Invoke") == std::string::npos, "the sink thread does not touch Scaleform");
 		}
 		Expect(src.find("for (auto m : { \"LoadingMenu\", \"MainMenu\" })") != std::string::npos, "the reaction drain skips loading and the main menu");
 		const auto rxPoll = src.find("CommsRxPoll(now);");
@@ -306,7 +404,7 @@ int main()
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(lua.find("set_version(\"0.42.0.8\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.42.0.9\")") != std::string::npos, "xmake version is the 4-part file version");
 		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
 		std::ifstream cpp("res/horizonui-plugin.cpp.in");
 		Expect(static_cast<bool>(cpp), "plugin version template opens");

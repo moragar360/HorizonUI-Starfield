@@ -47,7 +47,7 @@ const DIR = numArray("HZC_RX_DIR");
 const NOT = stringArray("HZC_RX_NOT");
 const TITLE = stringArray("HZC_RX_TITLE");
 
-expect(src.indexOf('private static const HZC_BUILD:String = "0.42.0.8";') >= 0, "comms build id is 0.42.0.8");
+expect(src.indexOf('private static const HZC_BUILD:String = "0.42.0.9";') >= 0, "comms build id is 0.42.0.9");
 expect(src.indexOf("private static const HZC_MSG_LOG:Boolean = true;") >= 0, "comms message log is on for this test build");
 expect(src.indexOf('this.hzcRxDbgPush("card code off after error: " + this.hzcRxDbgEsc(em));') >= 0, "a card error records the error text");
 expect(src.indexOf('if(s == "loved" || s == "loves") { return 0; }') >= 0, "loves maps with loved");
@@ -337,7 +337,10 @@ for (let i = 0; i < RX2.length; i++) expectNull(RX2[i], "RX2 " + RX2[i]);
 
 expect(src.indexOf('BSUIDataManager.Subscribe("HUDMessageData",this.hzcRxOnMsg);') >= 0, "the movie subscribes to HUDMessageData");
 expect(src.indexOf("if(this.hzcRxSkip) { this.hzcRxSkip = false; return; }") >= 0, "the subscribe replay is ignored");
-expect(src.indexOf("this.hzcRxOffer(raw);") >= 0, "a new message is matched from the unchanged text");
+expect(src.indexOf("this.hzcRxOffer(raw);") < 0, "the binding does not classify the line");
+expect(src.indexOf("public function hzcCardPush(kind:String, sub:String, name:String, value:String, raw:String) : String") >= 0, "the DLL pushes kind, subtype, name, value, and the raw text");
+expect(src.indexOf("it.Internal_mc.alpha = 0") >= 0, "a drawn card hides the game line with alpha");
+expect(src.indexOf("e.it.Internal_mc.alpha = 1") >= 0, "ending a card restores the game line alpha");
 expect(src.indexOf("public function hzcRxPush(text:String) : String") >= 0, "the DLL backup calls hzcRxPush");
 expect(src.indexOf('return "queued";') >= 0, "a match returns queued");
 expect(src.indexOf('return "no match";') >= 0, "a non-reaction returns no match");
@@ -360,7 +363,7 @@ expect(src.indexOf('try { return this.hzcRxOffer(text == null ? "" : String(text
 expect(src.indexOf("if(e0.linked == true)") >= 0, "a linked card follows its line");
 expect(src.indexOf("if(!inList) { this.hzcRxShow(e0); this.hzcRxRemember(e0); this.hzcRxDrop(e0); continue; }") >= 0, "a linked card ends when its line leaves");
 expect(src.indexOf("e0.it = null") < 0, "a finished line does not fall back to a standalone card");
-expect(src.indexOf("if(e.linked == true) { e.c.visible = false; return; }") >= 0, "a linked card stays hidden when it cannot sit on its line");
+expect(src.indexOf("if(e.linked == true) { this.hzcRxReveal(it); e.c.visible = false; return; }") >= 0, "a linked card that cannot sit shows the game line again");
 expect(src.indexOf("private function hzcRxRearm() : void") >= 0, "a settings reload rearms the card");
 expect(src.indexOf("if(woke >= uint(HZC_RX_COOL) && woke <= uint(2147483647)) { this.hzcRxRearm(); }") >= 0, "the cooldown rearms across a timer wrap");
 expect(src.indexOf("woke < 120000") < 0, "a long pause still rearms");
@@ -982,6 +985,337 @@ for (let si = 0; si < scanFiles.length; si++) {
 		const why = replacementProblem(reps[pi]);
 		expect(!why, rel + " replace " + pi + (why ? " uses " + why : " has a plain replacement"));
 	}
+}
+
+// DLL matcher (src/hz_msg_match.h). The movie no longer parses a live line.
+// This is the same suffix rules: disliked before liked, English present tense only
+// while the likes phrase is still English, and a cut-off line fails closed.
+function dllFold(c) {
+	const u = c.charCodeAt(0);
+	if (u >= 65 && u <= 90) return String.fromCharCode(u + 32);
+	return c;
+}
+function dllEq(a, b) {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (dllFold(a.charAt(i)) !== dllFold(b.charAt(i))) return false;
+	return true;
+}
+function dllTrim(s) {
+	let a = 0;
+	let b = s.length;
+	while (a < b && " \t\n\r\v\f".indexOf(s.charAt(a)) >= 0) a++;
+	while (b > a && " \t\n\r\v\f".indexOf(s.charAt(b - 1)) >= 0) b--;
+	return s.slice(a, b);
+}
+function dllEnds(s, suf) {
+	if (!suf || s.length < suf.length) return false;
+	return dllEq(s.slice(s.length - suf.length), suf);
+}
+function dllStarts(s, pre) {
+	if (!pre || s.length < pre.length) return false;
+	return dllEq(s.slice(0, pre.length), pre);
+}
+function dllDropDot(s) {
+	return s.length > 0 && s.charAt(s.length - 1) === "." ? s.slice(0, -1) : s;
+}
+function dllEndsPhrase(line, phrase) {
+	phrase = dllTrim(phrase);
+	if (!phrase) return false;
+	if (dllEnds(line, phrase)) return true;
+	if (phrase.charAt(phrase.length - 1) === ".") {
+		const bare = phrase.slice(0, -1);
+		return bare.length > 0 && dllEnds(line, bare);
+	}
+	return dllEnds(dllDropDot(line), phrase);
+}
+function dllPrefix(line, phrase) {
+	phrase = dllTrim(phrase);
+	function take(suf) {
+		if (!dllEnds(line, suf)) return null;
+		return dllTrim(line.slice(0, line.length - suf.length));
+	}
+	if (dllEnds(line, phrase)) return take(phrase);
+	if (phrase.charAt(phrase.length - 1) === ".") {
+		const bare = phrase.slice(0, -1);
+		if (dllEnds(line, bare)) return take(bare);
+	} else if (dllEnds(dllDropDot(line), phrase)) {
+		const cut = dllDropDot(line);
+		if (dllEnds(cut, phrase)) return dllTrim(cut.slice(0, cut.length - phrase.length));
+	}
+	return null;
+}
+function dllWords(s) {
+	let n = 0;
+	let inn = false;
+	for (let i = 0; i < s.length; i++) {
+		if (s.charAt(i) === " ") { inn = false; continue; }
+		if (!inn) { inn = true; n++; }
+	}
+	return n;
+}
+const DLL_TITLE = ["dr", "mr", "mrs", "ms", "jr", "sr", "st", "lt", "capt", "sgt", "prof"];
+const DLL_NO = ["i", "you", "we", "they", "he", "she", "it", "your", "my", "our", "their", "his", "her", "nobody", "everyone", "everybody", "someone", "somebody", "none", "all", "some", "the", "a", "an", "crew", "who", "not", "people", "this", "that", "many", "most", "each", "several", "both", "what"];
+function dllIs(list, w) {
+	for (let i = 0; i < list.length; i++) if (dllEq(w, list[i])) return true;
+	return false;
+}
+function dllRxName(name, english) {
+	name = dllTrim(name);
+	if (!name || name.length > 80) return false;
+	if (name.indexOf("<") >= 0 || name.indexOf(">") >= 0) return false;
+	const n = dllWords(name);
+	if (!english) return n >= 1 && n <= 8;
+	if (n < 1 || n > 4) return false;
+	const sp = name.indexOf(" ");
+	let first = sp < 0 ? name : name.slice(0, sp);
+	while (first.charAt(first.length - 1) === ".") first = first.slice(0, -1);
+	if (!first || dllIs(DLL_NO, first)) return false;
+	if (n === 1 && dllIs(DLL_TITLE, first)) return false;
+	if (sp >= 0) {
+		const rest = dllTrim(name.slice(sp + 1));
+		const sp2 = rest.indexOf(" ");
+		let second = sp2 < 0 ? rest : rest.slice(0, sp2);
+		while (second.charAt(second.length - 1) === ".") second = second.slice(0, -1);
+		if (dllEq(first, "no") && dllEq(second, "one")) return false;
+	}
+	return true;
+}
+function dllPlain(name) {
+	name = dllTrim(name);
+	if (!name || name.length > 80) return false;
+	if (name.indexOf("<") >= 0 || name.indexOf(">") >= 0) return false;
+	const n = dllWords(name);
+	return n >= 1 && n <= 8;
+}
+function dllShadow(line, phrase) {
+	phrase = dllTrim(phrase);
+	const bare = dllDropDot(phrase);
+	if (!dllEq(bare, "liked that") && !dllEq(bare, "likes that")) return false;
+	const longer = ["disliked that.", "dislikes that."];
+	for (let i = 0; i < longer.length; i++) {
+		if (dllEq(dllTrim(longer[i]), phrase)) continue;
+		if (!dllEndsPhrase(longer[i], phrase)) continue;
+		if (dllEndsPhrase(line, longer[i])) return true;
+	}
+	return false;
+}
+function dllMake(kind, sub, name, value, tier) {
+	return { ok: true, kind: kind, sub: sub, name: name, value: value, tier: tier };
+}
+function dllReaction(line, t) {
+	const slots = [
+		[t.dislikes, "disliked", "DISLIKED", dllEq(dllTrim(t.dislikes), "disliked that.")],
+		[t.hates, "hated", "HATED", dllEq(dllTrim(t.hates), "hated that.")],
+		[t.loves, "loved", "LOVED", dllEq(dllTrim(t.loves), "loved that.")],
+		[t.likes, "liked", "LIKED", dllEq(dllTrim(t.likes), "liked that.")]
+	];
+	for (let i = 0; i < slots.length; i++) {
+		if (!dllEndsPhrase(line, slots[i][0]) || dllShadow(line, slots[i][0])) continue;
+		const name = dllPrefix(line, slots[i][0]);
+		if (!dllRxName(name, slots[i][3])) return null;
+		return dllMake("reaction", slots[i][1], name, slots[i][2], slots[i][3] ? "C" : "A");
+	}
+	if (dllEq(dllTrim(t.likes), "liked that.")) {
+		const now = [
+			["dislikes that.", "disliked", "DISLIKED"],
+			["hates that.", "hated", "HATED"],
+			["loves that.", "loved", "LOVED"],
+			["likes that.", "liked", "LIKED"]
+		];
+		for (let i = 0; i < now.length; i++) {
+			if (!dllEndsPhrase(line, now[i][0]) || dllShadow(line, now[i][0])) continue;
+			const name = dllPrefix(line, now[i][0]);
+			if (!dllRxName(name, true)) return null;
+			return dllMake("reaction", now[i][1], name, now[i][2], "C");
+		}
+	}
+	return null;
+}
+function dllCredits(line, tail) {
+	tail = dllTrim(tail);
+	if (!tail || !dllEndsPhrase(line, tail)) return null;
+	let s = line;
+	if (dllEnds(s, tail)) {
+		/* keep */
+	} else if (tail.charAt(tail.length - 1) === "." && dllEnds(s, tail.slice(0, -1))) {
+		/* keep */
+	} else s = dllDropDot(s);
+	const suf = dllEnds(s, tail) ? tail : tail.slice(0, -1);
+	if (s.length < suf.length + 2) return null;
+	const head = dllTrim(s.slice(0, s.length - suf.length));
+	if (!head) return null;
+	let digits = "";
+	let i = 0;
+	while (i < head.length) {
+		const c = head.charAt(i);
+		if (c >= "0" && c <= "9") { digits += c; i++; continue; }
+		if (c === "," && digits.length > 0 && i + 1 < head.length && head.charAt(i + 1) >= "0" && head.charAt(i + 1) <= "9") { i++; continue; }
+		break;
+	}
+	if (i === 0 || i !== head.length || digits.length === 0 || digits.length > 9) return null;
+	return dllMake("credits", "kid", "", "-" + digits, "C");
+}
+function dllMedical(line) {
+	const holes = [
+		["Prognosis improved (", ")", "improved", "IMPROVED"],
+		["Severity improved (", ")", "severity", "LESS SEVERE"],
+		["Attempted to cure ", ".", "attempted", "ATTEMPTED"],
+		["", " became worse.", "worse", "WORSE"],
+		["", " gained.", "gained", "GAINED"],
+		["", " cured.", "cured", "CURED"]
+	];
+	for (let h = 0; h < holes.length; h++) {
+		let s = line;
+		const paren = holes[h][1] === ")";
+		if (paren && s.length > 0 && s.charAt(s.length - 1) === "." && !dllEnds(s, holes[h][1])) s = dllDropDot(s);
+		if (holes[h][0] && !dllStarts(s, holes[h][0])) continue;
+		if (!dllEndsPhrase(s, holes[h][1]) && !dllEnds(s, holes[h][1])) continue;
+		let mid = "";
+		if (!dllEnds(s, holes[h][1])) {
+			if (!holes[h][1] || holes[h][1].charAt(holes[h][1].length - 1) !== ".") continue;
+			const bare = holes[h][1].slice(0, -1);
+			if (!dllEnds(s, bare)) continue;
+			if (s.length < holes[h][0].length + bare.length) continue;
+			mid = dllTrim(s.slice(holes[h][0].length, s.length - bare.length));
+		} else {
+			if (s.length < holes[h][0].length + holes[h][1].length) continue;
+			mid = dllTrim(s.slice(holes[h][0].length, s.length - holes[h][1].length));
+		}
+		if (!dllPlain(mid)) continue;
+		return dllMake("medical", holes[h][2], mid, holes[h][3], "C");
+	}
+	return null;
+}
+function dllCrew(line) {
+	const rows = [
+		["is furious with you and will no longer be your companion.", "furious", "FURIOUS"],
+		["is no longer available to be your companion.", "companion-unavailable", "AVAILABLE"],
+		["is no longer available to be your follower.", "follow-unavailable", "AVAILABLE"],
+		["is no longer available for your Crew.", "crew-unavailable", "CREW"],
+		["is no longer an Active Crew Member.", "uncrew", "CREW"],
+		["is no longer your Active Companion", "uncompanion", "COMPANION"],
+		["is no longer following you.", "unfollow", "FOLLOWING"],
+		["is no longer angry with you.", "calm", "CALM"],
+		["is now your Active Companion.", "companion", "COMPANION"],
+		["is available to be your Companion", "companion-available", "AVAILABLE"],
+		["is available to be your follower.", "follow-available", "AVAILABLE"],
+		["is now an Active Crew Member.", "crew", "CREW"],
+		["is available for your Crew.", "crew-available", "AVAILABLE"],
+		["is now following you.", "follow", "FOLLOWING"],
+		["considers you a committed partner.", "partner", "PARTNER"],
+		["considers you a friend.", "friend", "FRIEND"],
+		["considers you an ally.", "ally", "ALLY"],
+		["is angry with you.", "angry", "ANGRY"]
+	];
+	for (let i = 0; i < rows.length; i++) {
+		if (!dllEndsPhrase(line, rows[i][0])) continue;
+		const name = dllPrefix(line, rows[i][0]);
+		if (!dllPlain(name)) continue;
+		return dllMake("crew", rows[i][1], name, rows[i][2], "C");
+	}
+	return null;
+}
+function dllUnavail(line, t) {
+	function tier(got, english) { return dllEq(dllTrim(got), dllTrim(english)) ? "C" : "A"; }
+	if (dllEq(line, dllTrim(t.busy))) return dllMake("unavailable", "busy", "", "BUSY", tier(t.busy, "This individual is busy."));
+	if (dllEq(line, dllTrim(t.creature))) return dllMake("unavailable", "calmed", "Creature", "CALMED", tier(t.creature, "The creature is calmed and cannot respond."));
+	if (dllEq(line, dllTrim(t.pickFail))) return dllMake("unavailable", "caught", "", "CAUGHT", tier(t.pickFail, "You've been caught pickpocketing."));
+	if (dllEndsPhrase(line, t.npcCalmed)) {
+		const name = dllPrefix(line, t.npcCalmed);
+		if (!dllPlain(name)) return null;
+		return dllMake("unavailable", "calmed", name, "CALMED", tier(t.npcCalmed, "is calmed and cannot respond."));
+	}
+	if (dllEndsPhrase(line, t.caught)) {
+		const name = dllPrefix(line, t.caught);
+		if (!dllPlain(name)) return null;
+		return dllMake("unavailable", "caught", name, "CAUGHT", tier(t.caught, "has already caught you."));
+	}
+	return null;
+}
+function dllEnglish() {
+	return {
+		likes: "liked that.",
+		loves: "loved that.",
+		dislikes: "disliked that.",
+		hates: "hated that.",
+		busy: "This individual is busy.",
+		npcCalmed: "is calmed and cannot respond.",
+		creature: "The creature is calmed and cannot respond.",
+		caught: "has already caught you.",
+		pickFail: "You've been caught pickpocketing.",
+		credits: "credits have been sent home to your parents."
+	};
+}
+function dllMatch(text, phrases) {
+	const line = dllTrim(text == null ? "" : String(text));
+	if (!line || line.length > 200) return null;
+	if (line.indexOf("\n") >= 0 || line.indexOf("\r") >= 0) return null;
+	const t = phrases || dllEnglish();
+	return dllReaction(line, t) || dllUnavail(line, t) || dllCredits(line, t.credits) || dllMedical(line) || dllCrew(line);
+}
+function expectDll(text, phrases, kind, sub, name, value, tier, label) {
+	const h = dllMatch(text, phrases);
+	const good = h && h.kind === kind && h.sub === sub && h.name === name && h.value === value && h.tier === tier;
+	expect(good, label + (good ? "" : " got " + (h ? h.kind + "/" + h.sub + " [" + h.name + "] " + h.value + " " + h.tier : "miss")));
+}
+function expectDllMiss(text, phrases, label) {
+	expect(dllMatch(text, phrases) == null, label);
+}
+{
+	const en = dllEnglish();
+	expectDll("Sam Coe liked that.", en, "reaction", "liked", "Sam Coe", "LIKED", "C", "DLL Sam Coe liked that");
+	expectDll("SAM COE LIKED THAT.", en, "reaction", "liked", "SAM COE", "LIKED", "C", "DLL upper case liked");
+	expectDll("Sam Coe loved that.", en, "reaction", "loved", "Sam Coe", "LOVED", "C", "DLL loved");
+	expectDll("Sam Coe disliked that.", en, "reaction", "disliked", "Sam Coe", "DISLIKED", "C", "DLL disliked is not liked");
+	expectDll("Sam Coe hated that.", en, "reaction", "hated", "Sam Coe", "HATED", "C", "DLL hated");
+	expectDll("Sam Coe likes that", en, "reaction", "liked", "Sam Coe", "LIKED", "C", "DLL present likes");
+	expectDll("  Sam Coe liked that.  ", en, "reaction", "liked", "Sam Coe", "LIKED", "C", "DLL trimmed reaction");
+	expectDllMiss("I liked that.", en, "DLL pronoun");
+	expectDllMiss("No one liked that.", en, "DLL no one");
+	expectDllMiss("Dr. liked that.", en, "DLL bare title");
+	expectDllMiss("Added.", en, "DLL loot line");
+	expectDllMiss("", en, "DLL empty");
+	expectDllMiss(" cured.", en, "DLL empty affliction name");
+	expectDllMiss("<Alias=TextReplacementRefAlias> gained.", en, "DLL unresolved alias");
+	expectDllMiss("Sam Coe lik", en, "DLL cut-off reaction");
+	const de = dllEnglish();
+	de.likes = "das gefiel.";
+	de.dislikes = "das missfiel.";
+	expectDll("Sam Coe das gefiel.", de, "reaction", "liked", "Sam Coe", "LIKED", "A", "DLL localized likes suffix");
+	expectDllMiss("Sam Coe liked that.", de, "DLL English likes is not used once the GMST differs");
+	expectDllMiss("Sam Coe likes that.", de, "DLL present tense stays English-only");
+	const mixed = dllEnglish();
+	mixed.dislikes = "mochte das nicht.";
+	expectDll("Sam Coe mochte das nicht.", mixed, "reaction", "disliked", "Sam Coe", "DISLIKED", "A", "DLL localized dislikes");
+	expectDllMiss("Sam Coe disliked that.", mixed, "DLL English liked does not claim a disliked line");
+	expectDll("This individual is busy.", en, "unavailable", "busy", "", "BUSY", "C", "DLL busy");
+	const busy = dllEnglish();
+	busy.busy = "Esta persona esta ocupada.";
+	expectDll("Esta persona esta ocupada.", busy, "unavailable", "busy", "", "BUSY", "A", "DLL localized busy");
+	expectDll("Contusions cured.", en, "medical", "cured", "Contusions", "CURED", "C", "DLL cured");
+	expectDll("Prognosis improved (Contusions).", en, "medical", "improved", "Contusions", "IMPROVED", "C", "DLL prognosis");
+	expectDll("Severity improved (Poisoning).", en, "medical", "severity", "Poisoning", "LESS SEVERE", "C", "DLL severity");
+	expectDll("Attempted to cure Burns.", en, "medical", "attempted", "Burns", "ATTEMPTED", "C", "DLL attempted");
+	expectDll("Fractured Limb gained.", en, "medical", "gained", "Fractured Limb", "GAINED", "C", "DLL gained");
+	expectDll("Lung Damage became worse.", en, "medical", "worse", "Lung Damage", "WORSE", "C", "DLL worse");
+	expectDll("500 credits have been sent home to your parents.", en, "credits", "kid", "", "-500", "C", "DLL kid stuff 500");
+	expectDll("1,500 credits have been sent home to your parents.", en, "credits", "kid", "", "-1500", "C", "DLL kid stuff 1500");
+	expectDllMiss("about 500 credits have been sent home to your parents.", en, "DLL junk before the amount");
+	expectDll("Andreja is now following you.", en, "crew", "follow", "Andreja", "FOLLOWING", "C", "DLL following");
+	expectDll("Andreja is no longer following you.", en, "crew", "unfollow", "Andreja", "FOLLOWING", "C", "DLL unfollow");
+	expectDll("Andreja is no longer your Active Companion", en, "crew", "uncompanion", "Andreja", "COMPANION", "C", "DLL uncompanion without a period");
+	expectDll("Andreja is now your Active Companion.", en, "crew", "companion", "Andreja", "COMPANION", "C", "DLL companion");
+	expectDll("Andreja is available to be your Companion", en, "crew", "companion-available", "Andreja", "AVAILABLE", "C", "DLL companion available");
+	expectDll("Andreja is no longer available to be your companion.", en, "crew", "companion-unavailable", "Andreja", "AVAILABLE", "C", "DLL longer unavailable suffix wins");
+	expectDll("Sarah Morgan considers you a friend.", en, "crew", "friend", "Sarah Morgan", "FRIEND", "C", "DLL friend");
+	expectDll("Sam Coe is furious with you and will no longer be your companion.", en, "crew", "furious", "Sam Coe", "FURIOUS", "C", "DLL furious");
+	expectDll("Sam Coe is no longer angry with you.", en, "crew", "calm", "Sam Coe", "CALM", "C", "DLL calm is not angry");
+	expectDll("Sam Coe is angry with you.", en, "crew", "angry", "Sam Coe", "ANGRY", "C", "DLL angry");
+	expectDll("Sarah Morgan has already caught you.", en, "unavailable", "caught", "Sarah Morgan", "CAUGHT", "C", "DLL caught");
+	expectDll("The creature is calmed and cannot respond.", en, "unavailable", "calmed", "Creature", "CALMED", "C", "DLL creature");
+	expectDll("Sam Coe is calmed and cannot respond.", en, "unavailable", "calmed", "Sam Coe", "CALMED", "C", "DLL npc calmed");
+	expectDll("You've been caught pickpocketing.", en, "unavailable", "caught", "", "CAUGHT", "C", "DLL pickpocket fail");
+	expectDllMiss(new Array(202).join("A"), en, "DLL over the 200 byte cap");
 }
 
 if (failed) {
