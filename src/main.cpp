@@ -1983,6 +1983,15 @@ namespace HZ
 		char creature[161];
 		char caught[161];
 		char pick[161];
+		char stealTake[161];
+		char stealAttack[161];
+		char lockCaught[161];
+		char trespass[161];
+		char witness[161];
+		char addCrime[161];
+		char remCrime[161];
+		char added[161];
+		char removed[161];
 		int  ok;
 		std::uint64_t miss;
 	};
@@ -2116,6 +2125,15 @@ namespace HZ
 		HzCopySetting(col, "sActivateCreatureCalmed", a_out->creature, sizeof a_out->creature);
 		HzCopySetting(col, "sNoPickPocketAgain", a_out->caught, sizeof a_out->caught);
 		HzCopySetting(col, "sPickpocketFail", a_out->pick, sizeof a_out->pick);
+		HzCopySetting(col, "sStealTakeBack", a_out->stealTake, sizeof a_out->stealTake);
+		HzCopySetting(col, "sStealAttack", a_out->stealAttack, sizeof a_out->stealAttack);
+		HzCopySetting(col, "sLockpickingCaught", a_out->lockCaught, sizeof a_out->lockCaught);
+		HzCopySetting(col, "sTrespassing", a_out->trespass, sizeof a_out->trespass);
+		HzCopySetting(col, "sWitnessKilled", a_out->witness, sizeof a_out->witness);
+		HzCopySetting(col, "sAddCrimeGold", a_out->addCrime, sizeof a_out->addCrime);
+		HzCopySetting(col, "sRemoveCrimeGold", a_out->remCrime, sizeof a_out->remCrime);
+		HzCopySetting(col, "sAddItemtoInventory", a_out->added, sizeof a_out->added);
+		HzCopySetting(col, "sRemoveItemfromInventory", a_out->removed, sizeof a_out->removed);
 		a_out->ok = 1;
 	}
 
@@ -2125,6 +2143,7 @@ namespace HZ
 		int n;
 		int ok;
 		std::uint64_t miss;
+		char credits[161];
 	};
 
 	static void HzFormFillCall(HzFormRaw* a_out)
@@ -2133,6 +2152,7 @@ namespace HZ
 		a_out->n = static_cast<int>(std::size(kHzMsgForms));
 		a_out->ok = 0;
 		a_out->miss = 0;
+		a_out->credits[0] = '\0';
 		if (RE::ID::TESForm::LookupByID.id() == 0) {
 			a_out->ok = -1;
 			return;
@@ -2148,6 +2168,20 @@ namespace HZ
 			if (id == 0) { a_out->loaded[i] = -1; continue; }
 			auto* form = RE::TESForm::LookupByID(id);
 			a_out->loaded[i] = form ? 1 : 0;
+		}
+		// Credits is MISC 0000000F. Same guarded LookupByID as the message-form audit.
+		// The full name is copied into a fixed buffer; a miss keeps the English fallback.
+		if (auto* credits = RE::TESForm::LookupByID(0x0000000F)) {
+			if (credits->IsCredits()) {
+				if (auto* misc = credits->As<RE::TESObjectMISC>()) {
+					const char* name = misc->GetFullName();
+					if (name && name[0]) {
+						const auto cut = hzpreset::Utf8Prefix(std::string(name), sizeof a_out->credits - 1);
+						for (std::size_t i = 0; i < cut.size(); ++i) a_out->credits[i] = cut[i];
+						a_out->credits[cut.size()] = '\0';
+					}
+				}
+			}
 		}
 		a_out->ok = 1;
 	}
@@ -2235,6 +2269,15 @@ namespace HZ
 				hzmsg::ApplyPhrase(g_msgPhrases.creature, raw.creature);
 				hzmsg::ApplyPhrase(g_msgPhrases.caught, raw.caught);
 				hzmsg::ApplyPhrase(g_msgPhrases.pickFail, raw.pick);
+				hzmsg::ApplyPhrase(g_msgPhrases.stealTake, raw.stealTake);
+				hzmsg::ApplyPhrase(g_msgPhrases.stealAttack, raw.stealAttack);
+				hzmsg::ApplyPhrase(g_msgPhrases.lockCaught, raw.lockCaught);
+				hzmsg::ApplyPhrase(g_msgPhrases.trespass, raw.trespass);
+				hzmsg::ApplyPhrase(g_msgPhrases.witness, raw.witness);
+				hzmsg::ApplyPhrase(g_msgPhrases.addCrime, raw.addCrime);
+				hzmsg::ApplyPhrase(g_msgPhrases.remCrime, raw.remCrime);
+				hzmsg::ApplyPhrase(g_msgPhrases.added, raw.added);
+				hzmsg::ApplyPhrase(g_msgPhrases.removed, raw.removed);
 				HzLogPhrase("sAffinityEventLikes", raw.likes);
 				HzLogPhrase("sAffinityEventLoves", raw.loves);
 				HzLogPhrase("sAffinityEventDislikes", raw.dislikes);
@@ -2244,6 +2287,15 @@ namespace HZ
 				HzLogPhrase("sActivateCreatureCalmed", raw.creature);
 				HzLogPhrase("sNoPickPocketAgain", raw.caught);
 				HzLogPhrase("sPickpocketFail", raw.pick);
+				HzLogPhrase("sStealTakeBack", raw.stealTake);
+				HzLogPhrase("sStealAttack", raw.stealAttack);
+				HzLogPhrase("sLockpickingCaught", raw.lockCaught);
+				HzLogPhrase("sTrespassing", raw.trespass);
+				HzLogPhrase("sWitnessKilled", raw.witness);
+				HzLogPhrase("sAddCrimeGold", raw.addCrime);
+				HzLogPhrase("sRemoveCrimeGold", raw.remCrime);
+				HzLogPhrase("sAddItemtoInventory", raw.added);
+				HzLogPhrase("sRemoveItemfromInventory", raw.removed);
 				g_msgGmstDone = true;
 			}
 		}
@@ -2264,6 +2316,12 @@ namespace HZ
 				for (int i = 0; i < raw.n && i < 32; ++i) {
 					const char* state = raw.loaded[i] < 0 ? "skipped" : (raw.loaded[i] ? "loaded" : "missing");
 					if (g_iniDebug) REX::INFO("hud form {:08X}: {}", kHzMsgForms[i], state);
+				}
+				hzmsg::ApplyPhrase(g_msgPhrases.creditsName, raw.credits);
+				if (g_iniDebug) {
+					const char* state = raw.credits[0] ? "loaded" : "missing";
+					REX::INFO("hud form {:08X}: {} credits name", 0x0000000Fu, state);
+					HzLogPhrase("Credits", raw.credits);
 				}
 				g_msgFormDone = true;
 			}
@@ -2363,6 +2421,8 @@ namespace HZ
 				const auto who = HzCrossName();
 				if (!who.empty()) hit.name = who;
 			}
+			if (g_iniDebug && hit.kind == "crew")
+				REX::INFO("crew card: path=dll-match sub={} name=\"{}\" text=\"{}\"", hit.sub, hit.name, n.text);
 			std::string status = "invoke failed";
 			try {
 				const std::string kind = hit.kind;

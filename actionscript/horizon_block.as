@@ -66,6 +66,7 @@
       private static const HZ_CARD:Array = ["N","NE","E","SE","S","SW","W","NW"];
       private static const HZ_W:Number = 260;
       private var hzEnvTemp:TextField = null;
+      private var hzEnvTempC:Number = NaN;
       private var hzEnvGrav:TextField = null;
       private var hzEnvAir:TextField = null;
       private var hzDotJet:Sprite = null;
@@ -231,8 +232,8 @@
       public var hzCmpPlayerMark:Boolean = true;
       private var hzDbgCmp:String = "";
       // layout edit (ARRANGE CARDS)
-      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast"];
-      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST"];
+      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages"];
+      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES"];
       public var hzLay:Object = {};
       private var hzLayOrig:Object = null;
       private var hzArrange:Boolean = false;
@@ -1490,6 +1491,17 @@
          return out.length ? out.join(", ") : "None";
       }
 
+      // Purpose: format the planet temperature with a unit. The game value is Celsius.
+      // Inputs: Celsius number from LocalEnvironmentData.fTemperature.
+      // Outputs: rounded text such as "11 °C" or "52 °F". Dependencies: hzTempUnit (0 C, 1 F).
+      // Last modified: 2026-10-24.
+      private function hzTempText(c:Number) : String
+      {
+         if(isNaN(c)) { return "--"; }
+         var v:Number = int(this.hzTempUnit) == 1 ? Math.round(c * 9 / 5 + 32) : Math.round(c);
+         return String(v) + (int(this.hzTempUnit) == 1 ? " °F" : " °C");
+      }
+
       private function hzOnLocalEnv(e:FromClientDataEvent) : *
       {
          var d:Object = e.data;
@@ -1502,11 +1514,13 @@
          if(this.hzInShip != Boolean(d.bInSpaceship)) { this.hzInShip = Boolean(d.bInSpaceship); this.hzRefreshVisibility(); }
          if(inShip)
          {
+            this.hzEnvTempC = NaN;
             this.hzEnvTemp.text = "--"; this.hzEnvGrav.text = "--"; this.hzEnvAir.text = "--";
          }
          else
          {
-            this.hzEnvTemp.text = d.fTemperature + "°";
+            this.hzEnvTempC = Number(d.fTemperature);
+            this.hzEnvTemp.text = this.hzTempText(this.hzEnvTempC);
             this.hzEnvGrav.text = GlobalFunc.FormatNumberToString(d.fGravity,2,true) + "g";
             this.hzEnvAir.text = d.fOxygenPercent + "%";
          }
@@ -1776,6 +1790,7 @@
                case "fontface": if(!isNaN(nv)) { this.hzFontFace = Math.max(0,Math.min(3,int(nv))); } break;
                case "timedisplay": if(!isNaN(nv)) { this.hzTimeDisplay = Math.max(0,Math.min(3,int(nv))); } break;
                case "clockformat": if(!isNaN(nv)) { this.hzClockFmt = Math.max(0,Math.min(1,int(nv))); } break;
+               case "tempunit": if(!isNaN(nv)) { this.hzTempUnit = Math.max(0,Math.min(1,int(nv))); } break;
                case "afflictionlayout": if(!isNaN(nv)) { this.hzAfLayout = Math.max(0,Math.min(2,int(nv))); } break;
                case "planetdetails": this.hzPlanDetails = bv; break;
                case "showtarget": this.hzShowTarget = bv; break;
@@ -2919,7 +2934,7 @@
          }
          if(tab == 2)
          {
-            return this.hz30FontRows([{"k":"TextTone","l":"TEXT TONE","t":"r","opts":HZ_TONE_NAMES,"note":"AUTO = dark text on light card colors","h":"TYPE"},{"k":"FontFace","l":"FONT","t":"r","opts":HZ_FONT_NAMES,"ids":HZ_FONT_IDS,"note":"EXO 2 (default) / ROBOTO need fonts_horizon.swf + fontconfig; game font is used if missing."},{"k":"TextScale","l":"TEXT SIZE","t":"n","mn":0.8,"mx":1.3,"st":0.05},{"k":"HeaderStyle","l":"CARD HEADER STYLE","t":"r","opts":HZ_HDRSTYLE_NAMES},{"k":"TextShadow","l":"TEXT SHADOW","t":"b"},{"k":"TimeDisplay","l":"PLANET TIME","t":"r","opts":HZ_TIME_NAMES,"h":"CLOCK"},{"k":"ClockFormat","l":"CLOCK FORMAT","t":"r","opts":HZ_CLOCK_NAMES}]);
+            return this.hz30FontRows([{"k":"TextTone","l":"TEXT TONE","t":"r","opts":HZ_TONE_NAMES,"note":"AUTO = dark text on light card colors","h":"TYPE"},{"k":"FontFace","l":"FONT","t":"r","opts":HZ_FONT_NAMES,"ids":HZ_FONT_IDS,"note":"EXO 2 (default) / ROBOTO need fonts_horizon.swf + fontconfig; game font is used if missing."},{"k":"TextScale","l":"TEXT SIZE","t":"n","mn":0.8,"mx":1.3,"st":0.05},{"k":"HeaderStyle","l":"CARD HEADER STYLE","t":"r","opts":HZ_HDRSTYLE_NAMES},{"k":"TextShadow","l":"TEXT SHADOW","t":"b"},{"k":"TimeDisplay","l":"PLANET TIME","t":"r","opts":HZ_TIME_NAMES,"h":"CLOCK"},{"k":"ClockFormat","l":"CLOCK FORMAT","t":"r","opts":HZ_CLOCK_NAMES},{"k":"TempUnit","l":"TEMPERATURE UNITS","t":"r","opts":HZ_TEMP_NAMES}]);
          }
          if(tab == 3)
          {
@@ -2940,7 +2955,7 @@
 
       private function hzSetCurrent() : Object
       {
-         var cur:Object = {"ShowJetpack":this.hzShowJetpack,"JetpackAutoHide":this.hzJetpackAutoHide,"ShowVitals":this.hzShowVitals,"ShowPlanet":this.hzShowPlanet,"ShowAfflictions":this.hzShowAfflictions,"AfflictionsAutoHide":this.hzAfflAutoHide,"ShowAmmo":this.hzShowAmmo,"AmmoOnlyWhenDrawn":this.hzAmmoOnlyWhenDrawn,"ShowQuests":this.hzShowQuests,"ShowCompass":this.hzShowCompass,"VehicleExitPill":this.hzVehOn,"CompassMarkers":this.hzShowCompassMarkers,"CardOpacity":this.hzCardOpacity,"ContainerOpacity":this.hzContOpacity,"AccentColor":Math.max(0,Math.min(this.hzAccPal().length - 1,this.hzAccentChoice)),"Margin":this.hzMargin,"Compact":this.hzCompact,"SmoothBars":this.hzSmoothBars,"FadeCards":this.hzFadeCards,"CombatDim":this.hzCombatDim,"DimOpacity":this.hzDimAlpha,"HazardAlert":this.hzHazardAlert,"CardColor":Math.max(0,Math.min(this.hzCardPal().length - 1,this.hzCardColor)),"HudScale":this.hzHudScale,"AutoCenterVitals":this.hzAutoCenterVitals,"JetpackRule":this.hzRuleJetpack,"VitalsRule":this.hzRuleVitals,"PlanetRule":this.hzRulePlanet,"AfflictionsRule":this.hzRuleAffl,"AmmoRule":this.hzRuleAmmo,"QuestsRule":this.hzRuleQuests,"CompassRule":this.hzRuleCompass,"SettingsKey":this.hzSettingsKeyName,"ShowFollowers":this.hzCmpFollowers,"TextTone":this.hzTextTone,"FontFace":this.hzFontFace,"PlanetDetails":this.hzPlanDetails,"ShowTarget":this.hzShowTarget,"TargetAnchor":this.hzTgAnchor,"TargetShowValue":this.hzTgShowValue,"ShowLocations":this.hzCmpLocations,"ShowShip":this.hzCmpShip,"ShowEnemies":this.hzCmpEnemies,"ShowPlayerMarker":this.hzCmpPlayerMark,"TextScale":this.hzTextScale,"ContainerScale":this.hzTgScale,"ScreenHeight":this.hzScrH,"CrosshairStyle":this.hzXhStyle,"ObjectRing":this.hzObjRing,"HeaderStyle":this.hzHeaderStyle,"TextShadow":this.hzTextShadow,"TimeDisplay":this.hzTimeDisplay,"ClockFormat":this.hzClockFmt,"AfflictionLayout":this.hzAfLayout};
+         var cur:Object = {"ShowJetpack":this.hzShowJetpack,"JetpackAutoHide":this.hzJetpackAutoHide,"ShowVitals":this.hzShowVitals,"ShowPlanet":this.hzShowPlanet,"ShowAfflictions":this.hzShowAfflictions,"AfflictionsAutoHide":this.hzAfflAutoHide,"ShowAmmo":this.hzShowAmmo,"AmmoOnlyWhenDrawn":this.hzAmmoOnlyWhenDrawn,"ShowQuests":this.hzShowQuests,"ShowCompass":this.hzShowCompass,"VehicleExitPill":this.hzVehOn,"CompassMarkers":this.hzShowCompassMarkers,"CardOpacity":this.hzCardOpacity,"ContainerOpacity":this.hzContOpacity,"AccentColor":Math.max(0,Math.min(this.hzAccPal().length - 1,this.hzAccentChoice)),"Margin":this.hzMargin,"Compact":this.hzCompact,"SmoothBars":this.hzSmoothBars,"FadeCards":this.hzFadeCards,"CombatDim":this.hzCombatDim,"DimOpacity":this.hzDimAlpha,"HazardAlert":this.hzHazardAlert,"CardColor":Math.max(0,Math.min(this.hzCardPal().length - 1,this.hzCardColor)),"HudScale":this.hzHudScale,"AutoCenterVitals":this.hzAutoCenterVitals,"JetpackRule":this.hzRuleJetpack,"VitalsRule":this.hzRuleVitals,"PlanetRule":this.hzRulePlanet,"AfflictionsRule":this.hzRuleAffl,"AmmoRule":this.hzRuleAmmo,"QuestsRule":this.hzRuleQuests,"CompassRule":this.hzRuleCompass,"SettingsKey":this.hzSettingsKeyName,"ShowFollowers":this.hzCmpFollowers,"TextTone":this.hzTextTone,"FontFace":this.hzFontFace,"PlanetDetails":this.hzPlanDetails,"ShowTarget":this.hzShowTarget,"TargetAnchor":this.hzTgAnchor,"TargetShowValue":this.hzTgShowValue,"ShowLocations":this.hzCmpLocations,"ShowShip":this.hzCmpShip,"ShowEnemies":this.hzCmpEnemies,"ShowPlayerMarker":this.hzCmpPlayerMark,"TextScale":this.hzTextScale,"ContainerScale":this.hzTgScale,"ScreenHeight":this.hzScrH,"CrosshairStyle":this.hzXhStyle,"ObjectRing":this.hzObjRing,"HeaderStyle":this.hzHeaderStyle,"TextShadow":this.hzTextShadow,"TimeDisplay":this.hzTimeDisplay,"ClockFormat":this.hzClockFmt,"TempUnit":this.hzTempUnit,"AfflictionLayout":this.hzAfLayout};
          try { this.hz26SetCur(cur); } catch(err26:Error) { }
          try { this.hz31SetCur(cur); } catch(err31:Error) { }
          try { this.hz34SetCur(cur); } catch(err34:Error) { }
@@ -3181,6 +3196,12 @@
          if(!this.hzShowTarget) { this.hzTgRestore(); }
          if(p.TimeDisplay != undefined && this.hzTimeDisplay != int(p.TimeDisplay)) { this.hzTimeDisplay = Math.max(0,Math.min(3,int(p.TimeDisplay))); this.hzPpLayout(); }
          if(p.ClockFormat != undefined && this.hzClockFmt != int(p.ClockFormat)) { this.hzClockFmt = Math.max(0,Math.min(1,int(p.ClockFormat))); this.hzPpLayout(); }
+         if(p.TempUnit != undefined && this.hzTempUnit != int(p.TempUnit))
+         {
+            this.hzTempUnit = Math.max(0,Math.min(1,int(p.TempUnit)));
+            if(this.hzEnvTemp != null && !isNaN(this.hzEnvTempC)) { this.hzEnvTemp.text = this.hzTempText(this.hzEnvTempC); }
+            this.hzPpLayout();
+         }
          if(p.AfflictionLayout != undefined && this.hzAfLayout != int(p.AfflictionLayout)) { this.hzAfLayout = Math.max(0,Math.min(2,int(p.AfflictionLayout))); this.hzAfSync(); this.hzLaidOut = false; }
          if(p.PlanetDetails != undefined && this.hzPlanDetails != Boolean(p.PlanetDetails)) { this.hzPlanDetails = Boolean(p.PlanetDetails); this.hzPpLayout(); }
          if(rd) { this.hzRedrawBodies(); if(this.hzEqKind.length > 0) { this.hzEqDrawWeapIcon(this.hzEqKind); } this.hzEqDrawAmmoIcon(); }
@@ -3305,6 +3326,8 @@
          a.push("TimeDisplay=" + int(p.TimeDisplay));
          a.push("; Clock format for LOCAL and PC: 0 12-hour (AM/PM), 1 24-hour (GAME UT is always 24-hour, like the game)");
          a.push("ClockFormat=" + int(p.ClockFormat));
+         a.push("; Temperature units on the planet card and scanner: 0 Celsius, 1 Fahrenheit (default Celsius)");
+         a.push("TempUnit=" + int(p.TempUnit != undefined ? p.TempUnit : this.hzTempUnit));
          a.push("; Afflictions: 0 column of chips, 1 row, 2 icons only");
          a.push("AfflictionLayout=" + int(p.AfflictionLayout));
          a.push("; 0 cyan, 1 teal, 2 amber, 3 violet, 4 lime, 5 white, 6 rose, 7 orange, 8 sky, 9 gold, 10 mint, 11 steel, 12 deep blue, 13 custom (AccentHex)");
@@ -3453,14 +3476,14 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.42.0.9";
+      private static const HZ_BUILD:String = "0.42.0.10";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":0,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":0,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -4457,7 +4480,7 @@
             case "Enemy": return [this.HorizonEnemy_mc].filter(this.hzNotNull);
             case "Stealth": return [this.HorizonStealth_mc].filter(this.hzNotNull);
             case "XpToast": return [this.HorizonXp_mc].filter(this.hzNotNull);
-            case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": return this.hz31PxOn(k) ? [this.hz31Px(k)] : [];
+            case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": return this.hz31PxOn(k) ? [this.hz31Px(k)] : [];
          }
          return [];
       }
@@ -4518,7 +4541,7 @@
                case "Enemy": ok = this.hzEnemyBarOn; break;
                case "Stealth": ok = this.hzStealthOn; break;
                case "XpToast": ok = this.hzXpToastOn; break;
-               case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": ok = this.hz31PxOn(k); break;   // v0.31 / v0.32: Comms proxies
+               case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": ok = this.hz31PxOn(k); break;   // v0.31 / v0.32: Comms proxies
             }
             if(ok)
             {
@@ -6089,9 +6112,11 @@
       private static const HZ_RARN:Array = ["","RARE","EPIC","LEGENDARY","EXOTIC"];
       private static const HZ_TIME_NAMES:Array = ["OFF","LOCAL / GAME","PC/REAL","LOCAL / GAME + PC/REAL"];
       private static const HZ_CLOCK_NAMES:Array = ["12 H","24 H"];
+      private static const HZ_TEMP_NAMES:Array = ["°C","°F"];
       private static const HZ_AFLAY_NAMES:Array = ["COLUMN","ROW","ICONS ONLY"];
       public var hzTimeDisplay:int = 3;
       public var hzClockFmt:int = 0;
+      public var hzTempUnit:int = 0;
       public var hzAfLayout:int = 0;
       private var hzSz:Array = [];
       private var hzFontOkMap:Object = {};
@@ -11316,6 +11341,7 @@
          if(k == "Speaker") { return int(c.SpeakerCard) == 1 && !this.hz31DlgOwnsSpk(); }
          if(k == "Dialogue") { return this.hz31DlgOwnsSpk() || (this.hz31On("comms_dialogue") && int(c.Dialogue) == 1); }
          if(k == "MissionToast") { return int(c.MissionToast) == 1; }
+         if(k == "HudMessages") { return int(c.ReactionCard) == 1; }
          return false;
       }
       // layout key of a Comms proxy ghost, or null for any other card
@@ -11352,6 +11378,7 @@
          }
          if(k == "Speaker" || k == "SpeakerD") { return new Point(Math.round(400 * ts),Math.round(86 * ts)); }
          if(k == "MissionToast") { var mf:Number = ts * this.hz34ToastF(); return new Point(Math.round(460 * mf),Math.round(88 * mf)); }
+         if(k == "HudMessages") { return new Point(Math.round(360 * ts),Math.round(80 * ts)); }
          var ds:Number = this.hz33DlgScale();
          var dz:Number = Number(c.DlgTextSize) * ts * ds;
          var cmp:Boolean = int(c.DlgLayout) == 1;
@@ -11403,13 +11430,14 @@
          }
          if(k == "Speaker") { return new Point(br.x - 710,tl.y + 300); }
          if(k == "MissionToast") { return new Point(mid - sz.x / 2,tl.y + Math.max(28,this.hzMargin - 12) + 90); }
+         if(k == "HudMessages") { return new Point(br.x - 40 - sz.x,tl.y + 80); }
          if(int(c.DlgLayout) == 2) { return new Point(mid - sz.x / 2,br.y - 80 - sz.y); }
          return new Point(br.x - 90 - sz.x,tl.y + 404);
       }
       private function hz31PxDefaults(tl:Point, br:Point) : void
       {
          if(!this.hzArrange) { return; }   // the ghosts exist only in ARRANGE CARDS
-         for each(var k:String in ["Subtitle","Speaker","Dialogue","MissionToast"])
+         for each(var k:String in ["Subtitle","Speaker","Dialogue","MissionToast","HudMessages"])
          {
             if(!this.hz31PxOn(k)) { continue; }
             var p:Sprite = this.hz31Px(k);
@@ -11424,7 +11452,7 @@
          var vr:Rectangle = this.hzVis();
          var tl:Point = new Point(vr.x,vr.y);
          var br:Point = new Point(vr.right,vr.bottom);
-         for each(var k:String in ["Subtitle","Speaker","Dialogue","MissionToast","SpeakerD"])
+         for each(var k:String in ["Subtitle","Speaker","Dialogue","MissionToast","HudMessages","SpeakerD"])
          {
             var on:Boolean = this.hzArrange && !this.hz41SA && (k == "SpeakerD" ? this.hz31PxOn("Dialogue") && this.hz31DlgOwnsSpk() && int(this.hz31Cfg().SpeakerCard) == 1 : this.hz31PxOn(k));
             var p:Sprite = this.hz31PxS[k] as Sprite;
@@ -11498,6 +11526,13 @@
             g.beginFill(acc,0.9); g.drawRoundRect(34 * ts,46 * ts,24 * ts,12 * ts,12 * ts,12 * ts); g.endFill();
             this.hzSText(p,"SAM COE",90 * ts,16 * ts,sz.x - 100 * ts,Math.round(20 * ts),0xE8F0F5,"left","hdr");
             this.hzSText(p,"SPEAKING",90 * ts,50 * ts,sz.x - 100 * ts,13,0x8FA3AE,"left","hdr");
+         }
+         else if(k == "HudMessages")
+         {
+            var hz:Number = this.hzTextScale;
+            this.hzSText(p,"HUD MESSAGES",16 * hz,12 * hz,sz.x - 32 * hz,Math.round(15 * hz),acc,"left","hdr");
+            this.hzSText(p,"Companion, crew, crime, credits, afflictions",16 * hz,34 * hz,sz.x - 32 * hz,Math.round(13 * hz),0xF2F7F9,"left");
+            this.hzSText(p,"Default spot matches the current message column",16 * hz,52 * hz,sz.x - 32 * hz,Math.round(13 * hz),0x96A6AE,"left");
          }
          else if(k == "MissionToast")
          {
@@ -11999,6 +12034,7 @@
          "ShowTarget":"Horizon's own card for the game's activate prompt (take, talk, open) and the item / container hover cards. Off = the game's prompt.",
          "VehicleExitPill":"While you are in a vehicle, the hold-to-exit prompt is a Horizon pill: the key the game shows, then EXIT. A fill sweeps across while you hold, and the pill turns green with a check when the hold completes. The game's button stays at alpha 0, so the hold still finishes. Off shows the game's prompt.",
          "PlanetDetails":"Adds a gravity / air line to the planet card.",
+         "TempUnit":"Planet card and scanner temperature units. The game value is Celsius. Fahrenheit is C times 9/5 plus 32, rounded. Default Celsius.",
          "_size":"GLOBAL: this card uses HUD SCALE (STYLE tab). CUSTOM: it has its own size and HUD SCALE no longer changes it. Click the GLOBAL / CUSTOM chip or drag the slider to switch.",
          "_compact":"GLOBAL: this card takes its compact form whenever COMPACT MODE (top right) is on. ON / OFF: always compact / always full for this card only, whatever COMPACT MODE says.",
          "_rule":"When this card shows. ALWAYS, or only in the situation named (in combat, weapon drawn, not full ...). The card's own switch in CARDS still has to be on."};

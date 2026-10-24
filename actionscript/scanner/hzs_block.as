@@ -7,7 +7,7 @@
       // Horizon draws its own panels from the same data providers. Settings: [Scanner] of HorizonUI.default.ini with
       // HorizonUI.user.ini laid over (the shared reader, prefix hzs37); read when the scanner opens and polled every
       // 2 s while it is open, so an F11 save (HzRev) applies without reopening.
-      private static const HZS_VERSION:String = "0.42.0.9";   // 0.42.0.9: the scanner movie's build version (= the test build's DLL file version); bump here only
+      private static const HZS_VERSION:String = "0.42.0.10";   // 0.42.0.10: the scanner movie's build version (= the test build's DLL file version); bump here only
       private static const HZS_LRG:Boolean = __HZS_LRG__;
       private static const HZS_SCALE:Number = HZS_LRG ? 1.07 : 1;
       // design tokens 0.3.1 (exotic purple added in v0.40)
@@ -94,7 +94,7 @@
       {
          this.hzsT0 = getTimer();
          this.hzsC = this.hzsDefaults();
-         this.hzsS = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ClockFormat":0};
+         this.hzsS = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ClockFormat":0,"TempUnit":0};
          this.hzsL = new Sprite();
          this.hzsL.mouseEnabled = false;
          this.hzsL.mouseChildren = false;
@@ -242,7 +242,7 @@
       private function hzsParse(txt:String) : void
       {
          var c:Object = this.hzsDefaults();
-         var st:Object = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ClockFormat":0};
+         var st:Object = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ClockFormat":0,"TempUnit":0};
          if(txt != null)
          {
             var sec:String = "";
@@ -272,6 +272,7 @@
                   else if(k == "fontface" && !isNaN(nv)) { st.FontFace = Math.max(0,Math.min(3,int(nv))); }
                   else if(k == "headerstyle" && !isNaN(nv)) { st.HeaderStyle = Math.max(0,Math.min(1,int(nv))); }
                   else if(k == "clockformat" && !isNaN(nv)) { st.ClockFormat = Math.max(0,Math.min(1,int(nv))); }
+                  else if(k == "tempunit" && !isNaN(nv)) { st.TempUnit = Math.max(0,Math.min(1,int(nv))); }
                }
             }
          }
@@ -858,7 +859,12 @@
             var tv:Number = Number(env.fTemperature);
             var gv:Number = Number(env.fGravity);
             var ov:Number = Number(env.fOxygenPercent);
-            if(inShip || !isNaN(tv)) { cond.push(["TEMPERATURE",inShip ? "--" : String(Math.round(tv)) + String.fromCharCode(0xB0)]); }
+            if(inShip || !isNaN(tv))
+            {
+               var tShown:Number = int(this.hzsS.TempUnit) == 1 ? Math.round(tv * 9 / 5 + 32) : Math.round(tv);
+               var tUnit:String = int(this.hzsS.TempUnit) == 1 ? " °F" : " °C";
+               cond.push(["TEMPERATURE",inShip ? "--" : String(tShown) + tUnit]);
+            }
             if(inShip || !isNaN(gv)) { cond.push(["GRAVITY",inShip ? "--" : gv.toFixed(2) + " G"]); }
             if(inShip || !isNaN(ov)) { cond.push(["OXYGEN",inShip ? "--" : String(Math.round(ov)) + "%"]); }
          }

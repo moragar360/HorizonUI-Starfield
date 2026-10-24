@@ -53,11 +53,11 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.42.0.9", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 42 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 9, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.42.0.10", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 42 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 10, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 1, "verbose reaction trace is on for this test build");
 	Expect(HZ_HUD_MSG_CAPTURE == 1, "unfiltered HUD capture is on for this test build");
-	Expect(HzFileVersionOk("0.42.0.9"), "4-part version ok");
+	Expect(HzFileVersionOk("0.42.0.10"), "4-part version ok");
 	Expect(!HzFileVersionOk("0.42.0"), "3-part version is not the file version");
 	Expect(!HzFileVersionOk("v0.42.0.6"), "leading v is not accepted");
 	Expect(!HzFileVersionOk("0.42.0.6 "), "trailing space rejected");
@@ -131,6 +131,47 @@ int main()
 		ok(hit("The creature is calmed and cannot respond.", en), "unavailable", "calmed", "Creature", "CALMED", 'C', "creature");
 		ok(hit("Sam Coe is calmed and cannot respond.", en), "unavailable", "calmed", "Sam Coe", "CALMED", 'C', "npc calmed");
 		ok(hit("You've been caught pickpocketing.", en), "unavailable", "caught", "", "CAUGHT", 'C', "pickpocket fail");
+		ok(hit("The owner caught you stealing.", en), "crime", "takeback", "", "CAUGHT", 'C', "steal take-back");
+		ok(hit("THE OWNER CAUGHT YOU STEALING.", en), "crime", "takeback", "", "CAUGHT", 'C', "steal take-back folded");
+		ok(hit("You've been caught stealing and the alarm has been raised.", en), "crime", "alarm", "", "ALARM", 'C', "steal alarm");
+		ok(hit("You've been caught tampering with a lock.", en), "crime", "lock", "", "CAUGHT", 'C', "lockpick caught");
+		ok(hit("You're currently trespassing. Residents will become hostile if you stay.", en), "crime", "trespass", "", "TRESPASS", 'C', "trespass");
+		ok(hit("Last witness killed.", en), "crime", "witness", "", "WITNESS", 'C', "witness");
+		miss("The owner caught you stealing a cup.", en, "steal take-back is exact");
+		miss("caught you stealing", en, "steal fragment is not enough");
+		ok(hit("500 bounty added to United Colonies", en), "credits", "bounty-add", "United Colonies", "+500", 'C', "bounty added");
+		ok(hit("1,500 bounty removed from United Colonies", en), "credits", "bounty", "United Colonies", "-1,500", 'C', "bounty paid");
+		miss("bounty added to United Colonies", en, "bounty without an amount");
+		ok(hit("500 Credits Added.", en), "credits", "gain", "", "+500", 'C', "credits added");
+		ok(hit("1,500 Credits Added.", en), "credits", "gain", "", "+1,500", 'C', "credits added grouped");
+		ok(hit("Credits (500) Added.", en), "credits", "gain", "", "+500", 'C', "credits added paren");
+		ok(hit("Credits x500 Added.", en), "credits", "gain", "", "+500", 'C', "credits added times");
+		ok(hit("200 Credits Removed.", en), "credits", "loss", "", "-200", 'C', "credits removed");
+		miss("Credits Card Added.", en, "other item with Credits in the name");
+		miss("Added.", en, "generic added without the Credits name or amount");
+		{
+			const auto kid = hzmsg::MatchTemplate("500 credits have been sent home to your parents.", en.kidTpl);
+			Expect(kid.ok && kid.amount == "500", "Kid Stuff template 500");
+			const auto kid15 = hzmsg::MatchTemplate("1,500 credits have been sent home to your parents.", en.kidTpl);
+			Expect(kid15.ok && kid15.amount == "1500", "Kid Stuff template 1500");
+			const auto named = hzmsg::MatchTemplate("Sam Coe liked that.", "%s liked that.");
+			Expect(named.ok, "percent-s template");
+			const auto num = hzmsg::MatchTemplate("Pay 40 credits.", "Pay %d credits.");
+			Expect(num.ok && num.amount == "40", "percent-d template");
+			const auto frac = hzmsg::MatchTemplate("12.0 credits due.", "%.1f credits due.");
+			Expect(frac.ok && frac.amount == "120", "percent-dot-Nf treats the period as a group separator");
+			const auto glob = hzmsg::MatchTemplate("Interest is 250 credits.", "Interest is <Global=Trait_StarterHome_Interest> credits.");
+			Expect(glob.ok && glob.amount == "250", "Global wildcard template");
+			Expect(!hzmsg::MatchTemplate("Added.", "%.0f credits have been sent home to your parents.").ok, "Added. is not Kid Stuff");
+		}
+		ok(hit("500 credits have been sent home to your parents.", en), "credits", "kid", "", "-500", 'C', "kid stuff still 500 after tokenizer");
+		ok(hit("1,500 credits have been sent home to your parents.", en), "credits", "kid", "", "-1500", 'C', "kid stuff still 1500 after tokenizer");
+		{
+			auto deKid = en;
+			deKid.kidTpl = "%.0f Credits wurden nach Hause geschickt.";
+			deKid.credits = "Credits wurden nach Hause geschickt.";
+			ok(hit("750 Credits wurden nach Hause geschickt.", deKid), "credits", "kid", "", "-750", 'C', "localized Kid Stuff template");
+		}
 		miss(std::string(201, 'A').c_str(), en, "over the 200 byte cap");
 		Expect(!hzmsg::UsablePhrase(""), "blank phrase");
 		Expect(!hzmsg::UsablePhrase("<ID=123>"), "stub phrase");
@@ -424,6 +465,20 @@ int main()
 		Expect(src.find("hud capture: text=") != std::string::npos, "the unfiltered capture line is present");
 		Expect(src.find("RE::ID::GameSettingCollection::Singleton.id() == 0") != std::string::npos, "a zero settings address id is not called");
 		Expect(src.find("RE::ID::TESForm::LookupByID.id() == 0") != std::string::npos, "a zero form lookup id is not called");
+		Expect(src.find("HzCopySetting(col, \"sStealTakeBack\"") != std::string::npos, "sStealTakeBack is loaded");
+		Expect(src.find("HzCopySetting(col, \"sStealAttack\"") != std::string::npos, "sStealAttack is loaded");
+		Expect(src.find("HzCopySetting(col, \"sLockpickingCaught\"") != std::string::npos, "sLockpickingCaught is loaded");
+		Expect(src.find("HzCopySetting(col, \"sTrespassing\"") != std::string::npos, "sTrespassing is loaded");
+		Expect(src.find("HzCopySetting(col, \"sWitnessKilled\"") != std::string::npos, "sWitnessKilled is loaded");
+		Expect(src.find("HzCopySetting(col, \"sAddCrimeGold\"") != std::string::npos, "sAddCrimeGold is loaded");
+		Expect(src.find("HzCopySetting(col, \"sRemoveCrimeGold\"") != std::string::npos, "sRemoveCrimeGold is loaded");
+		Expect(src.find("HzCopySetting(col, \"sAddItemtoInventory\"") != std::string::npos, "sAddItemtoInventory is loaded");
+		Expect(src.find("HzCopySetting(col, \"sRemoveItemfromInventory\"") != std::string::npos, "sRemoveItemfromInventory is loaded");
+		Expect(src.find("LookupByID(0x0000000F)") != std::string::npos, "Credits form 0xF is looked up through the guarded path");
+		Expect(src.find("TESPickpocketFailedEvent") == std::string::npos, "pickpocket event sink stays out");
+		Expect(src.find("PlayerCrimeGoldEvent") == std::string::npos, "crime-gold event sink stays out");
+		Expect(src.find("TESContainerChangedEvent") == std::string::npos, "container-changed event sink stays out");
+		Expect(src.find("crew card: path=dll-match") != std::string::npos, "crew cards log their DLL path");
 		Expect(src.find("hzmsg::Match(") != std::string::npos, "classification runs through the pure matcher");
 		Expect(src.find("comms reaction: {} | messages visible={} | dialogue={}") != std::string::npos, "each reaction logs one status");
 		Expect(src.find("void CommsRxPoll(ULONGLONG) {}") == std::string::npos, "the reaction drain is not compiled out");
@@ -495,13 +550,14 @@ int main()
 		Expect(ini.find("ReactionCard=1") != std::string::npos, "ReactionCard defaults on");
 		Expect(ini.find("VitalsLayout=0") != std::string::npos, "VitalsLayout keeps its default");
 		Expect(ini.find("[Scope]") != std::string::npos && ini.find("ScopeHoldBreathChip=1") != std::string::npos, "the scope block is in the defaults");
+		Expect(ini.find("TempUnit=0") != std::string::npos, "temperature units default to Celsius");
 	}
 
 	{
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(lua.find("set_version(\"0.42.0.9\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.42.0.10\")") != std::string::npos, "xmake version is the 4-part file version");
 		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
 		std::ifstream cpp("res/horizonui-plugin.cpp.in");
 		Expect(static_cast<bool>(cpp), "plugin version template opens");

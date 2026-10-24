@@ -532,6 +532,8 @@ package
       // is set to 0 only after a Horizon card for that line has been drawn. It is never removed.
       // v0.42.0.9: the DLL classifies the line (kind, subtype, name, value, raw text). This movie does not parse it.
       // Medical, crew, unavailable, and Kid Stuff use the same card slot. XP, skills, quests, and help tips are not touched.
+      // v0.42.0.10: crime and generic credit cards use the same slot. Every Horizon card is a child of hzcRxLayer,
+      // which F11 ARRANGE CARDS names HUD Messages. The vanilla fade is still it.alpha * Internal_mc.alpha * Messages_mc.alpha.
       // v0.42.0.7: HUDMessageData is the primary path. A value replayed during Subscribe is ignored, and the skip
       // flag is cleared when Subscribe returns so the first real message is kept. The DLL calls hzcCardPush. hzcRxPush remains.
       // The two paths pair in order, so the same text from both paths is one card and N reactions are N cards.
@@ -561,7 +563,7 @@ package
       // ini is re-applied whenever the file text changes (not only on a new HzRev) so ARRANGE positions always arrive.
       private static const HZC_LRG:Boolean = false;
       private static const HZC_ACC:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
-      private static const HZC_STR:Object = {"SpeakerHex":1,"SubTextHex":1,"AccentHex":1,"SubtitleX":1,"SubtitleY":1,"SpeakerX":1,"SpeakerY":1,"MissionToastX":1,"MissionToastY":1};
+      private static const HZC_STR:Object = {"SpeakerHex":1,"SubTextHex":1,"AccentHex":1,"SubtitleX":1,"SubtitleY":1,"SpeakerX":1,"SpeakerY":1,"MissionToastX":1,"MissionToastY":1,"HudMessagesX":1,"HudMessagesY":1};
       private static const HZC_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face (run-time name only)
       private static const HZC_EDGE:Number = 0.10;          // card edge: white @ .10, 1 px stroke
       private static const HZC_TXT:uint = 0xE8F0F5;         // default subtitle text (off-white)
@@ -569,7 +571,7 @@ package
       private static const HZC_RED:uint = 0xFF5B5B;
       private static const HZC_TST_HEAD:Array = ["MISSION UPDATED","NEW MISSION","OBJECTIVE COMPLETE","MISSION COMPLETE","MISSION FAILED"];
       private static const HZC_TST_PRIO:Array = [1,3,2,4,5];   // merging two updates of one quest keeps the stronger state
-      private var hzcCfg:Object = {"ReactionCard":1,"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"ShowSpeaker":1,"SpeakerColor":-1,"SpeakerHex":"","SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4,"XpToast":0,"FontFace":1,"AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"SubtitleX":"-1","SubtitleY":"-1","SpeakerX":"-1","SpeakerY":"-1","SubTextColor":-1,"SubTextHex":"","SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"HudScale":1,"MissionToastX":"-1","MissionToastY":"-1","HzRev":0};
+      private var hzcCfg:Object = {"ReactionCard":1,"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"ShowSpeaker":1,"SpeakerColor":-1,"SpeakerHex":"","SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4,"XpToast":0,"FontFace":1,"AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"SubtitleX":"-1","SubtitleY":"-1","SpeakerX":"-1","SpeakerY":"-1","SubTextColor":-1,"SubTextHex":"","SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"HudScale":1,"MissionToastX":"-1","MissionToastY":"-1","HudMessagesX":"-1","HudMessagesY":"-1","HzRev":0};
       private var hzcIniState:int = 0;       // 0 loading, 1 read, 2 missing / unreadable (defaults)
       private var hzcSubBg:Shape = null;     // card art: a fresh Shape per draw (no stale path can survive)
       private var hzcSpkBg:Shape = null;
@@ -745,6 +747,7 @@ package
          this.hzcRefreshAlphas();
          try { this.hzcToastApply(); } catch(e2:Error) { }
          try { this.hzcRxApply(); } catch(eRx1:Error) { }   // v0.42.0 r2
+         try { this.hzcMsgLayout(); } catch(eMsg:Error) { }
       }
       private function hzcOnPoll(e:TimerEvent) : void { this.hzcReload(); }
 
@@ -1517,6 +1520,51 @@ package
          var hide:Boolean = this.hzcScan && int(this.hzcCfg.HideQuestPopupsWhileScanning) == 1;
          this.hzcTstLayer.visible = this.hzcToastOn() && !hide;
       }
+      // HUD Messages box: default is the current column (layer at 0,0). A saved [Layout]
+      // HudMessagesX/Y is an offset from that same default spot, so the fade coupling stays.
+      private function hzcMsgHome(vr:Rectangle, w:Number, h:Number) : Point
+      {
+         var x:Number = 40;
+         var y:Number = 80;
+         var r:Rectangle = null;
+         try { if(this.Messages_mc != null) { r = this.Messages_mc.getBounds(this); } } catch(e0:Error) { r = null; }
+         if(r != null && !isNaN(r.x) && !isNaN(r.y) && !isNaN(r.width) && r.width > 2)
+         {
+            x = r.x + r.width - w;
+            y = r.y;
+         }
+         else if(vr != null && !isNaN(vr.right))
+         {
+            x = vr.right - w - 40;
+            y = vr.y + 80;
+         }
+         return new Point(x,y);
+      }
+      private function hzcMsgLayout() : void
+      {
+         if(this.hzcRxLayer == null || this.hzcCfg == null) { return; }
+         var xs:String = String(this.hzcCfg.HudMessagesX);
+         var ys:String = String(this.hzcCfg.HudMessagesY);
+         if((xs == "-1" || xs == "undefined" || xs == "null") && (ys == "-1" || ys == "undefined" || ys == "null"))
+         {
+            this.hzcRxLayer.x = 0;
+            this.hzcRxLayer.y = 0;
+            return;
+         }
+         var vr:Rectangle = null;
+         try { vr = this.hzcVis(); } catch(e1:Error) { vr = null; }
+         if(vr == null) { this.hzcRxLayer.x = 0; this.hzcRxLayer.y = 0; return; }
+         var z:Number = this.hzcCardZ();
+         var w:Number = Math.round(360 * z);
+         if(w < 280) { w = 280; }
+         var h:Number = Math.round(56 * z);
+         var home:Point = this.hzcMsgHome(vr,w,h);
+         var x:Number = (xs == "-1" || xs == "undefined" || xs == "null") ? home.x : this.hzcAnchor(xs,"x",w,vr.x,vr.right);
+         var y:Number = (ys == "-1" || ys == "undefined" || ys == "null") ? home.y : this.hzcAnchor(ys,"y",h,vr.y,vr.bottom);
+         if(isNaN(x) || isNaN(y) || isNaN(home.x) || isNaN(home.y)) { this.hzcRxLayer.x = 0; this.hzcRxLayer.y = 0; return; }
+         this.hzcRxLayer.x = Math.round(x - home.x);
+         this.hzcRxLayer.y = Math.round(y - home.y);
+      }
       // default spot top-center under the compass; [Layout] MissionToastX/Y anchor the newest card, the stack grows away
       // from the anchored edge (down, or up for a B anchor)
       private function hzcToastLayout() : void
@@ -1785,7 +1833,7 @@ package
       // Leave this true until the release checklist in README.md. The DLL writes whatever this queue
       // returns. Debug=0 in the ini still stops the queue. A missing Debug key leaves it on.
       private static const HZC_MSG_LOG:Boolean = true;
-      private static const HZC_BUILD:String = "0.42.0.9";
+      private static const HZC_BUILD:String = "0.42.0.10";
       private var hzcRxDbgOn:Boolean = true;   // 0.42.0.6: on with HZC_MSG_LOG. The release checklist sets this default to false. hzcRxDbgIni turns it off when Debug=0.
       private var hzcRxDbgQ:Array = [];
       private var hzcRxDbgSeen:Array = [];   // {it, f}
@@ -2274,6 +2322,7 @@ package
          var slot:Boolean = this.hzcRxSlot(m);
          if(this.hzcRxDbgOn) { try { this.hzcRxDbgScan(arr); } catch(eDbg:Error) { } }
          if(!this.hzcRxOn()) { this.hzcRxAll(); return; }
+         try { this.hzcMsgLayout(); } catch(eLay:Error) { }
          this.hzcRxLink(arr);
          var keep:Array = [];
          for each(var e0:Object in this.hzcRx)
@@ -2515,10 +2564,14 @@ package
       // -1 means the F11 accent. Tone is the icon and the chip. The left bar stays the accent.
       private function hzcCardTone(kind:String, sub:String) : int
       {
-         if(kind == "credits") { return HZC_RED; }
-         if(sub == "gained" || sub == "worse" || sub == "furious" || sub == "caught") { return HZC_RED; }
+         if(kind == "credits")
+         {
+            if(sub == "gain" || sub == "bounty-add") { return HZC_GRN; }
+            return HZC_RED;
+         }
+         if(sub == "gained" || sub == "worse" || sub == "furious" || sub == "caught" || sub == "takeback" || sub == "lock" || sub == "alarm") { return HZC_RED; }
          if(sub == "improved" || sub == "severity" || sub == "cured" || sub == "friend" || sub == "ally" || sub == "partner" || sub == "calm") { return HZC_GRN; }
-         if(sub == "attempted" || sub == "unfollow" || sub == "follow-unavailable" || sub == "uncompanion" || sub == "companion-unavailable" || sub == "uncrew" || sub == "crew-unavailable" || sub == "busy" || sub == "angry") { return HZC_CARD_AMB; }
+         if(sub == "attempted" || sub == "unfollow" || sub == "follow-unavailable" || sub == "uncompanion" || sub == "companion-unavailable" || sub == "uncrew" || sub == "crew-unavailable" || sub == "busy" || sub == "angry" || sub == "trespass" || sub == "witness") { return HZC_CARD_AMB; }
          return -1;
       }
       private function hzcCardPhrase(sub:String) : String
@@ -2552,7 +2605,20 @@ package
       private function hzcCardTitle(kind:String, sub:String, name:String) : String
       {
          var n:String = name == null ? "" : String(name);
-         if(kind == "credits") { return "KID STUFF"; }
+         if(kind == "credits")
+         {
+            if(sub == "kid") { return "SENT HOME"; }
+            if(sub == "bounty") { return "BOUNTY PAID"; }
+            return "CREDITS";
+         }
+         if(kind == "crime")
+         {
+            if(sub == "takeback" || sub == "lock") { return "CAUGHT"; }
+            if(sub == "alarm") { return "ALARM"; }
+            if(sub == "trespass") { return "TRESPASS"; }
+            if(sub == "witness") { return "WITNESS"; }
+            return "CRIME";
+         }
          if(n.length > 0) { return n.toUpperCase(); }
          if(kind == "medical") { return "AFFLICTION"; }
          if(kind == "crew") { return "CREW"; }
@@ -2574,7 +2640,7 @@ package
             g.lineStyle();
             return;
          }
-         if(kind == "unavailable")
+         if(kind == "unavailable" || kind == "crime")
          {
             g.beginFill(col,1);
             g.drawRoundRect(cx - s * 0.22,cy - s * 0.28,s * 0.12,s * 0.56,2,2);
@@ -2623,7 +2689,7 @@ package
          var chipFs:Number = Math.max(13,Math.round(13 * z));
          var title:String = this.hzcCardTitle(kind,sub,name);
          var phrase:String = "";
-         if(kind == "unavailable" || kind == "credits") { phrase = raw; }
+         if(kind == "unavailable" || kind == "credits" || kind == "crime") { phrase = raw; }
          else
          {
             phrase = this.hzcCardPhrase(sub);
@@ -2635,7 +2701,7 @@ package
             if(phrase.length == 0) { phrase = raw; }
          }
          var chipTx:String = value;
-         if(kind == "credits" && value.length > 0) { chipTx = value + " CR"; }
+         if(kind == "credits" && sub == "kid" && value.length > 0) { chipTx = value + " CR"; }
          var w:Number = Math.round(360 * z);
          if(w < 280) { w = 280; }
          var nm:TextField = this.hzcField(true);
@@ -2725,6 +2791,10 @@ package
          e.c = c;
          e.w = w;
          e.h = h;
+         if(kind == "crew" && this.hzcRxDbgOn)
+         {
+            try { this.hzcRxDbgPush("crew card: path=hzcCardDraw sub=" + sub + " name=\"" + this.hzcRxDbgEsc(name) + "\" raw=\"" + this.hzcRxDbgEsc(raw) + "\""); } catch(eCrew:Error) { }
+         }
       }
       private function hzcRxDraw(e:Object, newest:Boolean) : void
       {

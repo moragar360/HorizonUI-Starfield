@@ -47,7 +47,9 @@ const DIR = numArray("HZC_RX_DIR");
 const NOT = stringArray("HZC_RX_NOT");
 const TITLE = stringArray("HZC_RX_TITLE");
 
-expect(src.indexOf('private static const HZC_BUILD:String = "0.42.0.9";') >= 0, "comms build id is 0.42.0.9");
+expect(src.indexOf('private static const HZC_BUILD:String = "0.42.0.10";') >= 0, "comms build id is 0.42.0.10");
+expect(src.indexOf('HudMessagesX') >= 0 && src.indexOf("function hzcMsgLayout") >= 0, "HUD Messages box reads a saved layout");
+expect(src.indexOf('crew card: path=hzcCardDraw') >= 0, "crew cards log the movie draw path");
 expect(src.indexOf("private static const HZC_MSG_LOG:Boolean = true;") >= 0, "comms message log is on for this test build");
 expect(src.indexOf('this.hzcRxDbgPush("card code off after error: " + this.hzcRxDbgEsc(em));') >= 0, "a card error records the error text");
 expect(src.indexOf('if(s == "loved" || s == "loves") { return 0; }') >= 0, "loves maps with loved");
@@ -1489,9 +1491,21 @@ function dllCrew(line) {
 }
 function dllUnavail(line, t) {
 	function tier(got, english) { return dllEq(dllTrim(got), dllTrim(english)) ? "C" : "A"; }
+	function eqLine(got, phrase) {
+		got = dllTrim(got);
+		phrase = dllTrim(phrase);
+		if (!phrase) return false;
+		if (dllEq(got, phrase)) return true;
+		return dllEq(dllDropDot(got), dllDropDot(phrase));
+	}
 	if (dllEq(line, dllTrim(t.busy))) return dllMake("unavailable", "busy", "", "BUSY", tier(t.busy, "This individual is busy."));
 	if (dllEq(line, dllTrim(t.creature))) return dllMake("unavailable", "calmed", "Creature", "CALMED", tier(t.creature, "The creature is calmed and cannot respond."));
 	if (dllEq(line, dllTrim(t.pickFail))) return dllMake("unavailable", "caught", "", "CAUGHT", tier(t.pickFail, "You've been caught pickpocketing."));
+	if (eqLine(line, t.stealTake)) return dllMake("crime", "takeback", "", "CAUGHT", tier(t.stealTake, "The owner caught you stealing."));
+	if (eqLine(line, t.stealAttack)) return dllMake("crime", "alarm", "", "ALARM", tier(t.stealAttack, "You've been caught stealing and the alarm has been raised."));
+	if (eqLine(line, t.lockCaught)) return dllMake("crime", "lock", "", "CAUGHT", tier(t.lockCaught, "You've been caught tampering with a lock."));
+	if (eqLine(line, t.trespass)) return dllMake("crime", "trespass", "", "TRESPASS", tier(t.trespass, "You're currently trespassing. Residents will become hostile if you stay."));
+	if (eqLine(line, t.witness)) return dllMake("crime", "witness", "", "WITNESS", tier(t.witness, "Last witness killed."));
 	if (dllEndsPhrase(line, t.npcCalmed)) {
 		const name = dllPrefix(line, t.npcCalmed);
 		if (!dllPlain(name)) return null;
@@ -1515,7 +1529,18 @@ function dllEnglish() {
 		creature: "The creature is calmed and cannot respond.",
 		caught: "has already caught you.",
 		pickFail: "You've been caught pickpocketing.",
-		credits: "credits have been sent home to your parents."
+		stealTake: "The owner caught you stealing.",
+		stealAttack: "You've been caught stealing and the alarm has been raised.",
+		lockCaught: "You've been caught tampering with a lock.",
+		trespass: "You're currently trespassing. Residents will become hostile if you stay.",
+		witness: "Last witness killed.",
+		addCrime: "bounty added to",
+		remCrime: "bounty removed from",
+		added: "Added.",
+		removed: "Removed.",
+		creditsName: "Credits",
+		credits: "credits have been sent home to your parents.",
+		kidTpl: "%.0f credits have been sent home to your parents."
 	};
 }
 function dllMatch(text, phrases) {
@@ -1587,6 +1612,11 @@ function expectDllMiss(text, phrases, label) {
 	expectDll("The creature is calmed and cannot respond.", en, "unavailable", "calmed", "Creature", "CALMED", "C", "DLL creature");
 	expectDll("Sam Coe is calmed and cannot respond.", en, "unavailable", "calmed", "Sam Coe", "CALMED", "C", "DLL npc calmed");
 	expectDll("You've been caught pickpocketing.", en, "unavailable", "caught", "", "CAUGHT", "C", "DLL pickpocket fail");
+	expectDll("The owner caught you stealing.", en, "crime", "takeback", "", "CAUGHT", "C", "DLL steal take-back");
+	expectDll("You've been caught stealing and the alarm has been raised.", en, "crime", "alarm", "", "ALARM", "C", "DLL steal alarm");
+	expectDll("You've been caught tampering with a lock.", en, "crime", "lock", "", "CAUGHT", "C", "DLL lockpick caught");
+	expectDll("You're currently trespassing. Residents will become hostile if you stay.", en, "crime", "trespass", "", "TRESPASS", "C", "DLL trespass");
+	expectDll("Last witness killed.", en, "crime", "witness", "", "WITNESS", "C", "DLL witness");
 	expectDllMiss(new Array(202).join("A"), en, "DLL over the 200 byte cap");
 }
 

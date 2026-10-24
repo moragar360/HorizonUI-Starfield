@@ -32,7 +32,18 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.42.0.9";', "HUD build id is 0.42.0.9");
+pin('private static const HZ_BUILD:String = "0.42.0.10";', "HUD build id is 0.42.0.10");
+pin('{"k":"TempUnit","l":"TEMPERATURE UNITS"', "temperature units toggle is on the Type tab");
+pin("private function hzTempText(c:Number)", "planet temperature formats a unit");
+pin('return String(v) + (int(this.hzTempUnit) == 1 ? " °F" : " °C");', "Akila 11 C becomes 52 F when Fahrenheit is on");
+function hzTempText(c, unit) {
+	const v = unit === 1 ? Math.round(c * 9 / 5 + 32) : Math.round(c);
+	return String(v) + (unit === 1 ? " °F" : " °C");
+}
+expect(hzTempText(11, 0) === "11 °C", "Akila formats as 11 °C");
+expect(hzTempText(11, 1) === "52 °F", "Akila formats as 52 °F");
+expect(hzTempText(-5, 1) === "23 °F", "Mars formats as 23 °F");
+pin('"HudMessages"', "HUD Messages is an arrangeable layout key");
 pin('case "vehicleexitpill": this.hzVehOn = bv; break;', "vehicle exit pill is a Cards ini key");
 pin('{"k":"VehicleExitPill","l":"VEHICLE EXIT PILL"', "vehicle exit pill is on the Cards tab");
 pin("return hv.GetUpButton_mc;", "vehicle exit follows the game's button");
@@ -521,7 +532,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.9";') >= 0, rel + " build is 0.42.0.9");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.10";') >= 0, rel + " build is 0.42.0.10");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
