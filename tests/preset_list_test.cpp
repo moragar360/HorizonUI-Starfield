@@ -17,6 +17,11 @@
 #include <string>
 #include <vector>
 
+namespace HZF {
+inline const char* kVersion = "0.42.0";
+}
+#include "hz_ini_diff.h"
+
 namespace {
 
 int g_fails = 0;
@@ -456,6 +461,8 @@ int main()
 		Expect(src.find("REX::INFO(\"HorizonUI {} loaded\", HZ::DllFileVersion());", load) != std::string::npos, "load line prints DllFileVersion");
 		Expect(src.find("HorizonUI 0.42.0 loaded") == std::string::npos, "load line is not a typed schema version");
 		Expect(src.find("inline const char* kVersion = \"0.42.0\"") != std::string::npos, "settings schema stays 0.42.0");
+		Expect(src.find("#include \"hz_ini_diff.h\"") != std::string::npos, "F11 save uses the shared Diff header");
+		Expect(src.find("const std::string u = Diff(a_full, Defaults(a_p), ReadOr(a_p.user), o);") != std::string::npos, "SaveFromHud still runs through Diff");
 		Expect(src.find("ShowHUDMessageEvent sink registered (address id 86800)") != std::string::npos, "sink registration is logged");
 		Expect(src.find("ShowHUDMessageEvent sink failed:") != std::string::npos, "sink failure is logged");
 		Expect(src.find("hud message: text=") != std::string::npos, "matching HUD text is logged");
@@ -598,6 +605,50 @@ int main()
 		Expect(ini.find("VitalsLayout=0") != std::string::npos, "VitalsLayout keeps its default");
 		Expect(ini.find("[Scope]") != std::string::npos && ini.find("ScopeHoldBreathChip=1") != std::string::npos, "the scope block is in the defaults");
 		Expect(ini.find("TempUnit=0") != std::string::npos, "temperature units default to Celsius");
+		Expect(ini.find("HudMessagesX=-1") != std::string::npos, "HudMessagesX defaults to the built-in column");
+		Expect(ini.find("HudMessagesY=-1") != std::string::npos, "HudMessagesY defaults to the built-in column");
+		{
+			std::ifstream hud("actionscript/horizon_block.as");
+			Expect(static_cast<bool>(hud), "horizon_block.as opens");
+			std::string as((std::istreambuf_iterator<char>(hud)), std::istreambuf_iterator<char>());
+			const auto keysAt = as.find("HZ_LAY_KEYS:Array = [");
+			const auto keysEnd = as.find("];", keysAt);
+			Expect(keysAt != std::string::npos && keysEnd > keysAt, "HZ_LAY_KEYS is present");
+			const auto keys = as.substr(keysAt, keysEnd - keysAt);
+			std::size_t q = 0;
+			int nLay = 0;
+			while ((q = keys.find('"', q)) != std::string::npos) {
+				const auto e = keys.find('"', q + 1);
+				if (e == std::string::npos) break;
+				const auto name = keys.substr(q + 1, e - q - 1);
+				Expect(ini.find(name + "X=-1") != std::string::npos, (name + "X is a known Layout key").c_str());
+				Expect(ini.find(name + "Y=-1") != std::string::npos, (name + "Y is a known Layout key").c_str());
+				++nLay;
+				q = e + 1;
+			}
+			Expect(nLay == 17, "every arrangeable card has Layout X/Y in the defaults");
+		}
+		{
+			const std::string full =
+				"[Layout]\r\nHudMessagesX=0.25\r\nHudMessagesY=0.4\r\nHudMessagesZ=1\r\n"
+				"MissionToastX=-1\r\n"
+				"[Style]\r\nTempUnit=1\r\n"
+				"[Comms]\r\nReactionCard=0\r\n";
+			HZF::DiffOpt o;
+			o.keepUnknownKeys = false;
+			const auto saved = HZF::Diff(full, ini, "", o);
+			Expect(saved.find("HudMessagesX=0.25") != std::string::npos, "HudMessagesX survives the Diff path");
+			Expect(saved.find("HudMessagesY=0.4") != std::string::npos, "HudMessagesY survives the Diff path");
+			Expect(saved.find("HudMessagesZ=") == std::string::npos, "an unknown Layout key is dropped");
+			Expect(saved.find("TempUnit=1") != std::string::npos, "TempUnit survives the Diff path");
+			Expect(saved.find("ReactionCard=0") != std::string::npos, "ReactionCard survives the Diff path");
+			Expect(saved.find("MissionToastX=") == std::string::npos, "a Layout value equal to the default is not written");
+			std::cout << "ok  HudMessagesX=0.25 survives Diff\n";
+			std::cout << "ok  HudMessagesY=0.4 survives Diff\n";
+			std::cout << "ok  HudMessagesZ is dropped\n";
+			std::cout << "ok  TempUnit=1 survives Diff\n";
+			std::cout << "ok  ReactionCard=0 survives Diff\n";
+		}
 	}
 
 	{
