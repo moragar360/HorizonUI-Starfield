@@ -163,8 +163,14 @@ int main()
 		ok(hit("Docking fee: -1890 Credits (Cargo, Tariffs, Fuel, Crew)", en), "credits", "loss", "", "-1,890", 'C', "signed credits loss with detail");
 		ok(hit("Refund: +500 credits", en), "credits", "gain", "", "+500", 'C', "signed credits gain any case");
 		ok(hit("Refund: +500 credits (dock fee)", en), "credits", "gain", "", "+500", 'C', "signed credits gain with a parenthetical");
+		ok(hit("+500 Credits.", en), "credits", "gain", "", "+500", 'C', "signed credits with a trailing period");
+		ok(hit("+500 Credits!", en), "credits", "gain", "", "+500", 'C', "signed credits with a trailing bang");
+		ok(hit("+500 Credits...", en), "credits", "gain", "", "+500", 'C', "signed credits with an ellipsis");
+		ok(hit("+500 Credits.\"", en), "credits", "gain", "", "+500", 'C', "signed credits with a closing quote");
 		miss("Refund: +500 credits posted", en, "leftover after Credits is not a signed gain");
 		miss("-1 Credits Card Removed.", en, "item line after Credits is not a signed loss");
+		miss("Only 100 credits!", en, "unsigned amount is not a signed credits line");
+		miss("Bring 500 Credits", en, "unsigned Credits sentence stays vanilla");
 		miss("Fee: +500x Credits", en, "whole-token amount rejects a trailing x");
 		miss("+500.5.5 Credits", en, "whole-token amount rejects a broken decimal");
 		miss("Shipment fees: Tariffs Initiated", en, "credits word without an amount stays vanilla");
@@ -238,7 +244,7 @@ int main()
 		Expect(as.find("if(sub == \"gain\" || sub == \"bounty-add\")") == std::string::npos, "bounty added is not a green credits gain");
 		Expect(as.find("private function hzcCardMatch(kind:String, sub:String, name:String, value:String)") != std::string::npos, "movie matcher takes a DLL payload");
 		Expect(as.find("this.hzcCardMatch(kind,sub,name,value)") != std::string::npos, "card draw uses the live matcher");
-		Expect(as.find("eR.rebound != true") != std::string::npos, "a rebound DLL push merges into the existing card");
+		Expect(as.find("if(rage >= 0 && rage < HZC_RX_PAIR) { eR.rebound = false; return \"queued\"; }") != std::string::npos, "a rebound merge is one-shot");
 		Expect(as.find("this.hzcRxReveal(e0.it)") != std::string::npos, "rebind uncovers the old clip first");
 		Expect(as.find("if(sub == \"caught\") { return \"PICKPOCKET\"; }") != std::string::npos, "pickpocket crime title is PICKPOCKET");
 		Expect(as.find("if(sub == \"takeback\" || sub == \"lock\") { return \"CAUGHT\"; }") != std::string::npos, "take-back and lock titles are CAUGHT");

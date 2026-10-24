@@ -2110,8 +2110,9 @@ package
       }
       // Purpose: queue a DLL-classified card. A late push whose text matches a
       // card rebound inside HZC_RX_PAIR is the same reaction, so it is not added
-      // again. Inputs: kind, sub, name, value, raw line. Output: queued / no match
-      // / cards-off reason. The movie does not parse the sentence.
+      // again. The merge is one-shot: rebound clears so a later identical line
+      // still gets its own card. Inputs: kind, sub, name, value, raw line.
+      // Output: queued / no match / cards-off reason. The movie does not parse.
       public function hzcCardPush(kind:String, sub:String, name:String, value:String, raw:String) : String
       {
          try
@@ -2136,7 +2137,7 @@ package
             {
                if(eR == null || eR.key != key || eR.rebound != true) { continue; }
                var rage:int = now - int(eR.reboundAt);
-               if(rage >= 0 && rage < HZC_RX_PAIR) { return "queued"; }
+               if(rage >= 0 && rage < HZC_RX_PAIR) { eR.rebound = false; return "queued"; }
             }
             this.hzcRx.push({"it":null,"st":1,"n":String(name),"k":k,"c":null,"w":0,"h":0,"sig":"","key":key,"t0":now,"vis":0,"tx":String(raw),"linked":false,"src":"d","paired":false,"blamed":false,"kind":String(kind),"sub":String(sub),"value":String(value),"covered":false,"rebound":false,"reboundAt":0});
             if(this.hzcRx.length > 8)
@@ -2228,8 +2229,8 @@ package
          }
          this.hzcRxWait = keep;
       }
-      // A rebuilt message list keeps the same text on a new clip. Claim that clip for this key.
-      // Skip when a pending card already owns this text, so a real repeat is not stolen.
+      // A later clip with the same text is a real repeat, not a rebuilt list.
+      // Claim it only when no pending card already owns this text.
       private function hzcRxClaim(arr:*, key:String) : *
       {
          if(arr == null || key == null) { return null; }
@@ -2380,7 +2381,7 @@ package
             {
                var inList:Boolean = false;
                try { inList = e0.it != null && arr != null && arr.indexOf(e0.it) >= 0 && e0.it.parent === m; } catch(eIn:Error) { inList = false; }
-               // The card ends with its line. A rebuilt clip with the same text is the same line.
+               // The card ends with its line. A later clip with the same text is a real repeat.
                if(!inList)
                {
                   var nxt:* = this.hzcRxClaim(arr,e0.key);

@@ -64,7 +64,7 @@ expect(src.indexOf('crew card: path=hzcCardDraw') >= 0, "crew cards log the movi
 expect(src.indexOf("private static const HZC_MSG_LOG:Boolean = false;") >= 0, "comms message log is off for this release");
 expect(src.indexOf("private var hzcRxDbgOn:Boolean = false;") >= 0, "movie debug default is off for this release");
 expect(src.indexOf("private function hzcCardMatch(kind:String, sub:String, name:String, value:String)") >= 0, "movie matcher takes a DLL payload");
-expect(src.indexOf("private function hzcRxClaim(arr:*, key:String)") >= 0, "a rebuilt message clip is reclaimed by text");
+expect(src.indexOf("private function hzcRxClaim(arr:*, key:String)") >= 0, "a later clip with the same text can keep the card");
 expect(src.indexOf('this.hzcRxDbgPush("card code off after error: " + this.hzcRxDbgEsc(em));') >= 0, "a card error records the error text");
 expect(src.indexOf('if(s == "loved" || s == "loves") { return 0; }') >= 0, "loves maps with loved");
 expect(src.indexOf('if(s == "liked" || s == "likes") { return 1; }') >= 0, "likes maps with liked");
@@ -380,7 +380,7 @@ expect(src.indexOf("private static const HZC_RX_COOL:int = 5000;") >= 0, "a miss
 expect(src.indexOf('if(age >= 0 && age < HZC_RX_PAIR) { e0.paired = true; e0.src = "both"; return "queued"; }') >= 0, "pairing keeps the oldest card");
 expect(src.indexOf('try { return this.hzcRxOffer(text == null ? "" : String(text),true); }') >= 0, "the DLL path offers through the same queue");
 expect(src.indexOf("if(e0.linked == true)") >= 0, "a linked card follows its line");
-expect(src.indexOf("var nxt:* = this.hzcRxClaim(arr,e0.key);") >= 0, "a rebuilt clip with the same text keeps its card");
+expect(src.indexOf("var nxt:* = this.hzcRxClaim(arr,e0.key);") >= 0, "a later clip with the same text can keep the card");
 expect(src.indexOf("else { this.hzcRxShow(e0); this.hzcRxRemember(e0); this.hzcRxDrop(e0); continue; }") >= 0, "a linked card ends when its line leaves");
 expect(src.indexOf("e0.it = null") < 0, "a finished line does not fall back to a standalone card");
 expect(src.indexOf("if(e.linked == true) { this.hzcRxShow(e); return; }") >= 0, "a linked card that cannot sit restores only a covered line");
@@ -581,10 +581,7 @@ function fnBody(name, next) {
 {
 	const push = fnBody("public function hzcCardPush", "public function hzcRxWhy");
 	expect(push.indexOf("e0.paired = true") < 0, "a repeated DLL card is not swallowed");
-	expect(push.indexOf("eR.rebound != true") >= 0 && push.indexOf("return \"queued\"") >= 0, "a rebound DLL push merges into the existing card");
 	expect(push.indexOf("this.hzcRxShow(old)") >= 0, "overflow restores the dropped DLL card");
-	const claim = fnBody("private function hzcRxClaim", "private function hzcRxLink");
-	expect(claim.indexOf("this.hzcRxOpenKey(key)") >= 0, "claim skips when a card of that text is still pending");
 	const step = fnBody("private function hzcRxStep", "private function hzcRxStack");
 	expect(step.indexOf("this.hzcRxReveal(e0.it)") >= 0, "rebind uncovers the old clip first");
 	expect(step.indexOf("e0.rebound = true") >= 0, "rebind marks the card so a late push can merge");
@@ -1619,13 +1616,18 @@ function dllTakeTokAmount(tok) {
 }
 function dllCreditsAfterOk(after) {
 	after = dllTrim(after);
-	if (!after) return true;
-	const last = after.charAt(after.length - 1);
-	if (last === "." || last === "!" || last === "?") {
-		after = dllTrim(after.slice(0, -1));
+	for (;;) {
+		after = dllTrim(after);
 		if (!after) return true;
+		const c = after.charAt(after.length - 1);
+		if (c === "." || c === "!" || c === "?" || c === ":" || c === ";" || c === '"' || c === "'") {
+			after = after.slice(0, -1);
+			continue;
+		}
+		break;
 	}
-	return after.length >= 2 && after.charAt(0) === "(" && after.charAt(after.length - 1) === ")";
+	if (after.length >= 2 && after.charAt(0) === "(" && after.charAt(after.length - 1) === ")") return true;
+	return after.length === 1 && (after.charAt(0) === ")" || after.charAt(0) === "]");
 }
 function dllCreditsSigned(line, t) {
 	const at = dllWordAt(line, t.creditsName);
@@ -1713,8 +1715,12 @@ function expectDllMiss(text, phrases, label) {
 	expectDll("Docking fee: -1890 Credits (Cargo, Tariffs, Fuel, Crew)", en, "credits", "loss", "", "-1,890", "C", "DLL signed credits loss with detail");
 	expectDll("Refund: +500 credits", en, "credits", "gain", "", "+500", "C", "DLL signed credits gain any case");
 	expectDll("Refund: +500 credits (dock fee)", en, "credits", "gain", "", "+500", "C", "DLL signed credits gain with a parenthetical");
+	expectDll("+500 Credits.", en, "credits", "gain", "", "+500", "C", "DLL signed credits with a trailing period");
+	expectDll("+500 Credits!", en, "credits", "gain", "", "+500", "C", "DLL signed credits with a trailing bang");
 	expectDllMiss("Refund: +500 credits posted", en, "DLL leftover after Credits is not a signed gain");
 	expectDllMiss("-1 Credits Card Removed.", en, "DLL item line after Credits is not a signed loss");
+	expectDllMiss("Only 100 credits!", en, "DLL unsigned amount is not a signed credits line");
+	expectDllMiss("Bring 500 Credits", en, "DLL unsigned Credits sentence stays vanilla");
 	expectDllMiss("Fee: +500x Credits", en, "DLL whole-token amount rejects a trailing x");
 	expectDllMiss("+500.5.5 Credits", en, "DLL whole-token amount rejects a broken decimal");
 	expectDllMiss("Shipment fees: Tariffs Initiated", en, "DLL credits word without an amount stays vanilla");
@@ -1783,59 +1789,156 @@ function hzcCardMatch(kind, sub, name, value) {
 	expect(none == null, "no-amount fee line has no DLL payload");
 	expect(hzcCardMatch("", "info", "", "") == null, "empty kind is not a card");
 }
+function asFunction(text) {
+	const start = text.search(/(?:public|private) function /);
+	if (start < 0) return "";
+	text = text.slice(start);
+	let depth = 0;
+	let i = text.indexOf("{");
+	if (i < 0) return "";
+	for (; i < text.length; i++) {
+		if (text[i] === "{") depth++;
+		else if (text[i] === "}") {
+			depth--;
+			if (depth === 0) return text.slice(0, i + 1);
+		}
+	}
+	return text;
+}
+function asToJs(text) {
+	let s = asFunction(text);
+	s = s.replace(/for each\(var (\w+):\w+ in /g, "for (var $1 of ");
+	s = s.replace(/(?:public|private) function (\w+)\(([^)]*)\)(?:\s*:\s*[\w.*]+)?/g, function (_, name, args) {
+		const jsArgs = args.split(",").map(function (a) {
+			a = a.trim();
+			if (!a) return "";
+			const parts = a.split("=");
+			const left = parts[0].trim().split(":")[0].trim();
+			return parts.length > 1 ? left + "=" + parts.slice(1).join("=") : left;
+		}).filter(Boolean);
+		return "function " + name + "(" + jsArgs.join(", ") + ")";
+	});
+	s = s.replace(/var (\w+):[\w.*]+/g, "var $1");
+	s = s.replace(/catch\((\w+):\w+\)/g, "catch ($1)");
+	s = s.replace(/\bint\(/g, "(0|");
+	s = s.replace(/\bgetTimer\(\)/g, "this.getTimer()");
+	s = s.replace(/\bHZC_RX_PAIR\b/g, "this.HZC_RX_PAIR");
+	s = s.replace(/\bHZC_RX_VIS\b/g, "this.HZC_RX_VIS");
+	return s;
+}
+function installAsFn(host, asText) {
+	const js = asToJs(asText);
+	const m = js.match(/^function (\w+)\(([^)]*)\)\s*\{([\s\S]*)\}\s*$/);
+	const name = (asText.match(/function (\w+)/) || ["", "?"])[1];
+	if (!m) {
+		expect(false, "live ActionScript " + name + " converts");
+		return;
+	}
+	host[m[1]] = new Function(m[2], m[3]);
+}
+function hzcClip(text, parent, name) {
+	return { name: name, parent: parent, Internal_mc: { Text_tf: { text: text, visible: true }, Background_mc: { visible: true } } };
+}
+function makeHzcHost(now) {
+	const host = {
+		HZC_RX_PAIR: 3000,
+		HZC_RX_VIS: 4000,
+		hzcRx: [],
+		hzcRxOff: false,
+		hzcIniState: 1,
+		hzcCfg: { ReactionCard: 1 },
+		Messages_mc: { ShownMessageArray: [], visible: true },
+		hzcRxLayer: {},
+		hzcRxLast: 0,
+		hzcRxDbgOn: false,
+		hzcRxErr: "",
+		hzcRxWait: [],
+		hzcRxGone: [],
+		hzcRxFail: 0,
+		now: now || 1000,
+		shown: [],
+		dropped: [],
+		getTimer: function () { return this.now; },
+		hzcRxSlot: function () { return true; },
+		hzcMsgLayout: function () {},
+		hzcRxLink: function () {},
+		hzcRxPlace: function () {},
+		hzcRxStack: function () {},
+		hzcRxDbgScan: function () {},
+		hzcRxHit: function () {},
+		hzcRxShow: function (e) { this.shown.push(e); },
+		hzcRxDrop: function (e) { this.dropped.push(e); },
+		hzcRxRemember: function () {},
+		hzcRxWhyText: function () { return "cards off: cards are off"; }
+	};
+	host.Messages_mc.parent = host.Messages_mc;
+	installAsFn(host, fnBody("private function hzcRxTrimC", "public function hzcRxSelfTest"));
+	installAsFn(host, fnBody("private function hzcRxNorm", "private function hzcRxTrimC"));
+	installAsFn(host, fnBody("private function hzcRxKey", "private function hzcRxOpenKey"));
+	installAsFn(host, fnBody("private function hzcRxOpenKey", "private function hzcRxOpen"));
+	installAsFn(host, fnBody("private function hzcRxFind", "private function hzcRxOne"));
+	installAsFn(host, fnBody("private function hzcRxItemTx", "private function hzcRxReveal"));
+	installAsFn(host, fnBody("private function hzcRxOn", "private function hzcRxVerb"));
+	installAsFn(host, fnBody("private function hzcRxSubK", "public function hzcCardPush"));
+	installAsFn(host, fnBody("private function hzcRxOne", "private function hzcRxWhyText"));
+	installAsFn(host, fnBody("private function hzcRxReveal", "private function hzcRxCover"));
+	installAsFn(host, fnBody("private function hzcRxClaim", "private function hzcRxLink"));
+	installAsFn(host, fnBody("public function hzcCardPush", "public function hzcRxWhy"));
+	installAsFn(host, fnBody("private function hzcRxStep", "private function hzcRxStack"));
+	return host;
+}
 {
-	const take = { st: 1, linked: true, it: "old15", key: "the owner caught you stealing.", vis: 0, covered: true, rebound: false, reboundAt: 0 };
-	const bounty = { st: 1, linked: false, it: null, key: "17 bounty added to freestar collective", vis: 0 };
-	const cards = [take, bounty];
-	const rebuilt = [
-		{ it: "new15", key: "the owner caught you stealing.", parent: "m" },
-		{ it: "new16", key: "17 bounty added to freestar collective", parent: "m" }
+	const line = "The owner caught you stealing.";
+	const host = makeHzcHost(1000);
+	const m = host.Messages_mc;
+	const oldClip = hzcClip(line, null, "old15");
+	const nextClip = hzcClip(line, m, "new15");
+	m.ShownMessageArray = [nextClip];
+	const take = { st: 1, linked: true, it: oldClip, key: host.hzcRxKey(line), vis: 0, covered: true, rebound: false, reboundAt: 0, n: "", k: -1, kind: "crime", sub: "takeback", value: "CAUGHT", tx: line };
+	host.hzcRx = [take];
+	host.hzcRxStep();
+	expect(take.it === nextClip && take.linked === true && take.rebound === true, "a later take-back clip keeps the card");
+	expect(oldClip.Internal_mc.Text_tf.visible === true && take.covered === false, "rebind uncovers the old clip");
+	const before = host.hzcRx.length;
+	expect(host.hzcCardPush("crime", "takeback", "", "CAUGHT", line) === "queued" && host.hzcRx.length === before && take.rebound === false, "a rebound push merges once and clears the flag");
+	expect(host.hzcCardPush("crime", "takeback", "", "CAUGHT", line) === "queued" && host.hzcRx.length === before + 1, "a third identical take-back still gets its own card");
+
+	const pendingHost = makeHzcHost(1000);
+	const pm = pendingHost.Messages_mc;
+	const oldA = hzcClip("alarm line", null, "oldA");
+	const newA = hzcClip("alarm line", pm, "newA");
+	pm.ShownMessageArray = [newA];
+	const linked = { st: 1, linked: true, it: oldA, key: pendingHost.hzcRxKey("alarm line"), vis: 0, covered: false, rebound: false };
+	const pending = { st: 1, linked: false, it: null, key: pendingHost.hzcRxKey("alarm line"), vis: 0, covered: false, rebound: false };
+	pendingHost.hzcRx = [linked, pending];
+	expect(pendingHost.hzcRxClaim(pm.ShownMessageArray, linked.key) == null, "claim skips when a card of that text is still pending");
+	expect(pendingHost.hzcRxClaim(pm.ShownMessageArray, pendingHost.hzcRxKey("other")) == null, "claim misses a different line");
+
+	const mergeSrc = fnBody("public function hzcCardPush", "public function hzcRxWhy");
+	const mergeLoop = "for each(var eR:Object in this.hzcRx)\n            {\n               if(eR == null || eR.key != key || eR.rebound != true) { continue; }\n               var rage:int = now - int(eR.reboundAt);\n               if(rage >= 0 && rage < HZC_RX_PAIR) { eR.rebound = false; return \"queued\"; }\n            }";
+	expect(mergeSrc.indexOf(mergeLoop) >= 0, "the live push contains the one-shot merge");
+	const noMergeHost = makeHzcHost(1000);
+	installAsFn(noMergeHost, mergeSrc.replace(mergeLoop, ""));
+	const mergeCard = { st: 1, linked: true, it: nextClip, key: noMergeHost.hzcRxKey(line), rebound: true, reboundAt: 900, n: "", k: -1, kind: "crime", sub: "takeback", value: "CAUGHT", tx: line };
+	noMergeHost.hzcRx = [mergeCard];
+	const noMergeLen = noMergeHost.hzcRx.length;
+	noMergeHost.hzcCardPush("crime", "takeback", "", "CAUGHT", line);
+	expect(noMergeHost.hzcRx.length === noMergeLen + 1, "removing the merge adds a second card");
+
+	const claimSrc = fnBody("private function hzcRxClaim", "private function hzcRxLink");
+	const guard = "if(this.hzcRxOpenKey(key) != null) { return null; }";
+	expect(claimSrc.indexOf(guard) >= 0, "the live claim contains the pending-card guard");
+	const invHost = makeHzcHost(1000);
+	installAsFn(invHost, claimSrc.replace(guard, "if(this.hzcRxOpenKey(key) == null) { return null; }"));
+	const invM = invHost.Messages_mc;
+	const invOld = hzcClip("alarm line", null, "oldB");
+	const invNew = hzcClip("alarm line", invM, "newB");
+	invM.ShownMessageArray = [invNew];
+	invHost.hzcRx = [
+		{ st: 1, linked: true, it: invOld, key: invHost.hzcRxKey("alarm line") },
+		{ st: 1, linked: false, it: null, key: invHost.hzcRxKey("alarm line") }
 	];
-	function openKey(key) {
-		for (let i = 0; i < cards.length; i++) {
-			if (cards[i].key === key && cards[i].it == null) return cards[i];
-		}
-		return null;
-	}
-	function claim(arr, key) {
-		if (openKey(key) != null) return null;
-		for (let i = 0; i < arr.length; i++) {
-			if (arr[i].key === key) return arr[i].it;
-		}
-		return null;
-	}
-	const nxt = claim(rebuilt, take.key);
-	expect(nxt === "new15", "rebuilt take-back clip is found by key");
-	if (nxt != null) {
-		take.covered = false;
-		take.it = nxt;
-		take.linked = true;
-		take.rebound = true;
-		take.reboundAt = 100;
-	}
-	expect(take.it === "new15" && take.linked === true && take.covered === false && take.rebound === true, "take-back card rebinds and uncovers the old clip");
-	expect(bounty.linked === false, "unlinked bounty card is unchanged");
-	function cardPush(now) {
-		for (let i = 0; i < cards.length; i++) {
-			const eR = cards[i];
-			if (eR.key !== take.key || eR.rebound !== true) continue;
-			const rage = now - eR.reboundAt;
-			if (rage >= 0 && rage < 3000) return "queued";
-		}
-		cards.push({ st: 1, linked: false, it: null, key: take.key, rebound: false });
-		return "queued";
-	}
-	expect(cardPush(150) === "queued" && cards.length === 2, "a rebound push does not add a second card");
-	const pending = { st: 1, linked: false, it: null, key: "alarm line" };
-	const oldAlarm = { st: 1, linked: true, it: "oldA", key: "alarm line" };
-	const pile = [oldAlarm, pending];
-	function openPending(key) {
-		for (let i = 0; i < pile.length; i++) {
-			if (pile[i].key === key && pile[i].it == null) return pile[i];
-		}
-		return null;
-	}
-	expect(openPending("alarm line") === pending, "a pending card of the same text blocks a rebind");
+	expect(invHost.hzcRxClaim(invM.ShownMessageArray, invHost.hzcRxKey("alarm line")) === invNew, "inverting the claim guard steals a pending line");
 }
 
 if (failed) {

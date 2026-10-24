@@ -464,20 +464,26 @@ inline bool CreditsRestOk(std::string_view rest)
 	return true;
 }
 
-// After the Credits name, a signed line may keep nothing, end punctuation, or
-// one wrapping parenthetical. Item lines that end in Added./Removed. are not
-// signed credits; MatchCreditsGeneric owns those.
+// After the Credits name, a signed line may keep nothing, end punctuation
+// (. ! ? : ; ... !!), a closing quote or bracket, or one wrapping
+// parenthetical. Item lines that end in Added./Removed. are not signed
+// credits; MatchCreditsGeneric owns those.
 inline bool CreditsAfterOk(std::string_view after)
 {
 	after = Trim(after);
-	if (after.empty()) return true;
-	const char last = after.back();
-	if (last == '.' || last == '!' || last == '?') {
-		after.remove_suffix(1);
+	for (;;) {
 		after = Trim(after);
 		if (after.empty()) return true;
+		const char c = after.back();
+		if (c == '.' || c == '!' || c == '?' || c == ':' || c == ';' || c == '"' || c == '\'') {
+			after.remove_suffix(1);
+			continue;
+		}
+		break;
 	}
-	return after.size() >= 2 && after.front() == '(' && after.back() == ')';
+	if (after.size() >= 2 && after.front() == '(' && after.back() == ')') return true;
+	if (after.size() == 1 && (after.front() == ')' || after.front() == ']')) return true;
+	return false;
 }
 
 enum class Tk : unsigned char { Lit, Str, Num };
@@ -742,8 +748,9 @@ inline Hit MatchBounty(std::string_view line, const Templates& t, const Template
 // ("-1890 Credits", "+500 credits"). Prefix and a parenthetical suffix stay on
 // the card as the raw line. No amount means a miss: a tariff-only line stays
 // vanilla. Fail closed: Credits is a whole word, TakeAmount must consume that
-// token, and leftover after Credits may only be empty, end punctuation, or one
-// wrapping parenthetical. Added./Removed. after Credits is an item line.
+// token, and leftover after Credits may only be empty, end punctuation, a
+// closing quote or bracket, or one wrapping parenthetical. Added./Removed.
+// after Credits is an item line.
 inline Hit MatchCreditsSigned(std::string_view line, const Templates& t, const Templates& en)
 {
 	if (!UsablePhrase(t.creditsName)) return Miss();
