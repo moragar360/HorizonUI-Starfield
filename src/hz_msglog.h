@@ -565,6 +565,11 @@ inline bool ShouldKeepHeldRows(bool a_hold, std::size_t a_count)
 	return a_hold && a_count > 0;
 }
 
+inline bool ShouldParkDirtyRows(bool a_dirty, bool a_allowed, std::size_t a_count)
+{
+	return a_dirty && a_allowed && a_count > 0;
+}
+
 // Purpose: a failed promote/recover for a name-hash buffer parks under the
 // player-id target. Other buffers keep their own key.
 inline std::string ParkHeldKey(const Character& a_ch, const std::string& a_holdTarget)
@@ -1862,6 +1867,7 @@ public:
 		retryAt = a_nowMs + static_cast<std::uint64_t>(retryBackoffMs);
 	}
 
+	// Read and write share retryBackoffMs / retryAt. This reset covers both.
 	void NoteRetrySuccess()
 	{
 		persistHold = false;
@@ -1890,8 +1896,10 @@ public:
 	// failed promote). A second park for the same key appends, then caps.
 	void ParkHeldRows()
 	{
-		if (!ShouldKeepHeldRows(persistHold, buf.entries.size())) return;
-		const auto key = ParkHeldKey(buf.character, holdTargetKey);
+		const bool readHold = ShouldKeepHeldRows(persistHold, buf.entries.size());
+		const bool writeHold = ShouldParkDirtyRows(dirty, PersistAllowed(buf.character), buf.entries.size());
+		if (!readHold && !writeHold) return;
+		const auto key = readHold ? ParkHeldKey(buf.character, holdTargetKey) : buf.character.key;
 		if (key.empty()) return;
 		auto rows = buf.entries;
 		if (auto* s = KeptHeldSlot(key)) {

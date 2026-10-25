@@ -503,6 +503,8 @@ int main()
 		}
 		Expect(main.find("ParkHeldRows") != std::string::npos && main.find("keeping {} held rows") != std::string::npos,
 			"unrecovered held rows are logged and parked");
+		Expect(main.find("ShouldParkDirtyRows") != std::string::npos,
+			"HUD-ready parks dirty unsaved rows before ResetMemory");
 		Expect(main.find("MergeKeptHeldIfMatch") != std::string::npos, "parked rows merge when that character loads");
 		Expect(Slurp("src/hz_msglog.h").find("MergeKeptKeyOk") != std::string::npos,
 			"parked rows merge only when the character key matches");
@@ -956,6 +958,10 @@ int main()
 		Expect(ShouldKeepHeldRows(true, 2), "a hold with rows is parked");
 		Expect(!ShouldKeepHeldRows(false, 2), "a recovered session is not parked");
 		Expect(!ShouldKeepHeldRows(true, 0), "an empty hold is not parked");
+		Expect(ShouldParkDirtyRows(true, true, 1), "a dirty persist-allowed buffer is parked");
+		Expect(!ShouldParkDirtyRows(false, true, 1), "a clean buffer is not parked as dirty");
+		Expect(!ShouldParkDirtyRows(true, false, 1), "a name-hash dirty buffer is not parked");
+		Expect(!ShouldParkDirtyRows(true, true, 0), "an empty dirty buffer is not parked");
 		{
 			Character nh = MakeCharacter(0, "Sam");
 			Character pid = MakeCharacter(0xABCDu, "Sam");
@@ -1423,6 +1429,88 @@ int main()
 			empty.buf.entries.front().text = "no key";
 			empty.ParkHeldRows();
 			Expect(empty.keptHeld.empty(), "an empty key is not parked");
+		}
+		{
+			Log dirtyEmpty;
+			dirtyEmpty.dirty = true;
+			dirtyEmpty.persistHold = false;
+			dirtyEmpty.buf.character.key.clear();
+			dirtyEmpty.buf.character.keySource = "playerId";
+			dirtyEmpty.buf.entries.resize(1);
+			dirtyEmpty.buf.entries.front().text = "dirty no key";
+			dirtyEmpty.ParkHeldRows();
+			Expect(dirtyEmpty.keptHeld.empty(), "a dirty park never uses an empty key");
+		}
+		{
+			Log mfd;
+			Settings failS;
+			mfd.Configure(failS, root);
+			mfd.replace = [&](const std::filesystem::path&, const std::filesystem::path&) { return false; };
+			mfd.ApplyPersist(true);
+			mfd.buf.character = MakeCharacter(0xABCDu, "Sam");
+			mfd.Offer(Cap(Kind::Game, "A unsaved write", 400'000));
+			Expect(!mfd.Flush(401'000), "A's save fails while a load is starting");
+			Expect(mfd.dirty, "the failed save stays dirty");
+			Expect(!mfd.persistHold, "a failed write is not a read hold");
+			mfd.ParkHeldRows();
+			mfd.NoteRetrySuccess();
+			mfd.buf.ResetMemory();
+			mfd.dirty = false;
+			mfd.replace = DefaultReplace;
+			mfd.ApplyPersist(true);
+			mfd.buf.character = MakeCharacter(0xBBBBu, "Barrett");
+			mfd.Offer(Cap(Kind::Game, "B session", 410'000));
+			Expect(mfd.Flush(411'000), "B writes after the switch");
+			const auto bPath = root / "MessageLog" / "MessageLog_0000BBBB.json";
+			Expect(ReadFile(bPath).find("B session") != std::string::npos, "B's file has B's row");
+			Expect(ReadFile(bPath).find("A unsaved write") == std::string::npos, "B's file has none of A's unsaved rows");
+			mfd.buf.ResetMemory();
+			mfd.dirty = false;
+			mfd.buf.character = MakeCharacter(0xABCDu, "Sam");
+			mfd.LoadCurrent();
+			mfd.dirty = false;
+			mfd.MergeKeptHeldIfMatch("0000ABCD");
+			Expect(mfd.dirty, "merging parked write-fail rows dirties the buffer");
+			Expect(mfd.Flush(420'000), "A writes after the switch back");
+			Expect(ReadFile(path).find("A unsaved write") != std::string::npos, "A's row ends up in A's file");
+			Expect(ReadFile(bPath).find("A unsaved write") == std::string::npos, "A's row is not in B's file");
+		}
+		{
+			Log thru;
+			Settings failS;
+			thru.Configure(failS, root);
+			thru.replace = [&](const std::filesystem::path&, const std::filesystem::path&) { return false; };
+			thru.ApplyPersist(true);
+			thru.buf.character = MakeCharacter(0xABCDu, "Sam");
+			thru.Offer(Cap(Kind::Game, "A failthru", 430'000));
+			Expect(!thru.Flush(431'000), "A's write keeps failing");
+			thru.ParkHeldRows();
+			thru.NoteRetrySuccess();
+			thru.buf.ResetMemory();
+			thru.dirty = false;
+			thru.buf.character = MakeCharacter(0xBBBBu, "Barrett");
+			thru.Offer(Cap(Kind::Game, "B failthru", 440'000));
+			Expect(!thru.Flush(441'000), "B's write keeps failing through the switch");
+			thru.ParkHeldRows();
+			thru.NoteRetrySuccess();
+			thru.buf.ResetMemory();
+			thru.dirty = false;
+			thru.replace = DefaultReplace;
+			thru.ApplyPersist(true);
+			thru.buf.character = MakeCharacter(0xABCDu, "Sam");
+			thru.LoadCurrent();
+			thru.MergeKeptHeldIfMatch("0000ABCD");
+			Expect(thru.Flush(450'000), "A writes after writes recover");
+			Expect(ReadFile(path).find("A failthru") != std::string::npos, "A's fail-through row is in A's file");
+			Expect(ReadFile(path).find("B failthru") == std::string::npos, "B's fail-through row is not in A's file");
+			thru.buf.ResetMemory();
+			thru.buf.character = MakeCharacter(0xBBBBu, "Barrett");
+			thru.LoadCurrent();
+			thru.MergeKeptHeldIfMatch("0000BBBB");
+			Expect(thru.Flush(451'000), "B writes after writes recover");
+			const auto bPath = root / "MessageLog" / "MessageLog_0000BBBB.json";
+			Expect(ReadFile(bPath).find("B failthru") != std::string::npos, "B's fail-through row is in B's file");
+			Expect(ReadFile(bPath).find("A failthru") == std::string::npos, "A's fail-through row is not in B's file");
 		}
 		std::error_code ec;
 		std::filesystem::remove_all(root, ec);

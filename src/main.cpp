@@ -2867,7 +2867,9 @@ namespace HZ
 
 	void MsglogParkHeldIfNeeded()
 	{
-		if (!hzlog::ShouldKeepHeldRows(g_ml.persistHold, g_ml.buf.entries.size())) return;
+		if (!hzlog::ShouldKeepHeldRows(g_ml.persistHold, g_ml.buf.entries.size())
+			&& !hzlog::ShouldParkDirtyRows(g_ml.dirty, hzlog::PersistAllowed(g_ml.buf.character), g_ml.buf.entries.size()))
+			return;
 		REX::WARN("message log: keeping {} held rows for {}", g_ml.buf.entries.size(), g_ml.buf.character.key);
 		g_ml.ParkHeldRows();
 	}
