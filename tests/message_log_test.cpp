@@ -21,6 +21,10 @@
 #include <unistd.h>
 #include <vector>
 
+#ifndef MSGLOG_REPO_ROOT
+#define MSGLOG_REPO_ROOT ""
+#endif
+
 namespace {
 
 int g_fails = 0;
@@ -84,9 +88,43 @@ void WriteFile(const std::filesystem::path& a_p, const std::string& a_s)
 	o << a_s;
 }
 
+std::filesystem::path RepoRoot()
+{
+	std::error_code ec;
+	std::vector<std::filesystem::path> seeds;
+	if (MSGLOG_REPO_ROOT[0])
+		seeds.emplace_back(MSGLOG_REPO_ROOT);
+	auto src = std::filesystem::path(__FILE__);
+	if (src.is_relative())
+		seeds.push_back(std::filesystem::current_path(ec) / src);
+	else
+		seeds.push_back(src);
+	seeds.push_back(std::filesystem::current_path(ec));
+#ifdef __linux__
+	char exe[4096]{};
+	const auto n = ::readlink("/proc/self/exe", exe, sizeof exe - 1);
+	if (n > 0)
+		seeds.emplace_back(std::filesystem::path(std::string(exe, static_cast<std::size_t>(n))).parent_path());
+#endif
+	for (auto seed : seeds) {
+		auto p = std::filesystem::weakly_canonical(seed, ec);
+		for (int i = 0; i < 8; ++i) {
+			if (std::filesystem::is_regular_file(p / "src" / "main.cpp", ec)
+				&& std::filesystem::is_regular_file(p / "actionscript" / "horizon_block.as", ec))
+				return p;
+			if (!p.has_parent_path() || p.parent_path() == p) break;
+			p = p.parent_path();
+		}
+	}
+	return std::filesystem::current_path();
+}
+
 std::string Slurp(const char* a_path)
 {
-	std::ifstream f(a_path);
+	auto p = std::filesystem::path(a_path);
+	if (p.is_relative())
+		p = RepoRoot() / p;
+	std::ifstream f(p, std::ios::binary);
 	return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 }
 
@@ -112,12 +150,15 @@ int main()
 		Expect(b.Offer(Cap(Kind::Game, "$AutosavingMsg", 1004)) == OfferResult::SaveSignal, "$AutosavingMsg is a save signal");
 		Expect(b.Offer(Cap(Kind::Game, "$QuickSaveMsg", 1004)) == OfferResult::SaveSignal, "$QuickSaveMsg is a save signal");
 		Expect(b.Offer(Cap(Kind::Game, "$SavingMsg", 1004)) == OfferResult::SaveSignal, "$SavingMsg is a save signal");
+		Expect(b.Offer(Cap(Kind::Game, "Quicksave...", 1004)) == OfferResult::SaveSignal, "Quicksave... is a save signal");
+		Expect(b.Offer(Cap(Kind::Game, "QuickSave...", 1004)) == OfferResult::SaveSignal, "QuickSave... is a save signal");
 		Expect(b.Offer(Cap(Kind::Game, "$SomeOtherKey", 1005)) == OfferResult::Rejected, "$ keys that are not save lines are rejected");
 		ExpectEqI(static_cast<int>(b.entries.size()), 0, "save and $ keys never become rows");
 		Expect(b.Offer(Cap(Kind::Game, "Saving the colony", 1005)) == OfferResult::Stored, "Saving the colony is not a save line");
+		Expect(b.Offer(Cap(Kind::Game, "Saving... the colony", 1005)) == OfferResult::Stored, "Saving... prefix is not a save line");
 		Expect(b.Offer(Cap(Kind::Quest, "Saving the colony", 1006)) == OfferResult::Stored, "quest Saving the colony is stored");
 		Expect(b.Offer(Cap(Kind::Game, "No direct path seen.", 1007)) == OfferResult::Stored, "an ordinary line is stored");
-		ExpectEqI(static_cast<int>(b.entries.size()), 3, "colony lines and one ordinary row");
+		ExpectEqI(static_cast<int>(b.entries.size()), 4, "colony lines, prefix, and one ordinary row");
 	}
 
 	// ---- Record=0 and type gates ----
@@ -203,6 +244,7 @@ int main()
 			if (b.Pin(e.id)) ++pinned;
 			if (b.PinCount() >= kPinCap) break;
 		}
+		Expect(pinned > 0, "the pin loop actually pinned rows");
 		ExpectEqI(b.PinCount(), kPinCap, "pin cap is 50");
 		std::uint64_t extra = 0;
 		for (auto& e : b.entries) {
@@ -387,6 +429,9 @@ int main()
 		Expect(main.find("try { Poll(); }") != std::string::npos, "the task lambda swallows exceptions");
 		Expect(main.find("JoinOrDetach") != std::string::npos && main.find("g_mlWStop") != std::string::npos,
 			"writer is stopped and joined");
+		Expect(main.find("g_mlHadSession.exchange(false)") != std::string::npos, "quit flush is edge-triggered");
+		Expect(main.find("g_mlWLive") != std::string::npos, "detached writer blocks a second thread");
+		Expect(main.find("PromoteToCharacter") != std::string::npos, "DLL promotion uses the merge helper");
 		Expect(as.find("padx") != std::string::npos && as.find("pady") != std::string::npos, "AS3 treats padx/pady as actions");
 		Expect(main.find("OnSettingsKey") != std::string::npos && main.find("g_vk") != std::string::npos, "F11 still opens from the keyboard");
 		Expect(as.find("hzMsglogOpenHint") != std::string::npos && as.find("return \"F11\"") != std::string::npos,
@@ -531,6 +576,74 @@ int main()
 	}
 
 	{
+		FileRead rd;
+		rd.ok = false;
+		rd.notice = "open failed";
+		Expect(!ShouldQuarantine(rd, false), "a transient read error is not .bad");
+		rd.tooLarge = true;
+		Expect(ShouldQuarantine(rd, false), "oversize is .bad");
+		rd.tooLarge = false;
+		Expect(ShouldQuarantine(rd, true), "parse failure is .bad");
+	}
+
+	{
+		const auto root = TmpRoot();
+		Settings s;
+		s.historySize = 100;
+		Log disk;
+		disk.Configure(s, root);
+		disk.buf.character = MakeCharacter(0xABCDu, "Sam");
+		disk.Offer(Cap(Kind::Game, "disk old", 10'000, 10.0));
+		disk.Offer(Cap(Kind::Game, "disk shared", 14'000, 11.0));
+		for (int i = 0; i < 50; ++i) {
+			disk.Offer(Cap(Kind::Game, ("disk pin " + std::to_string(i)).c_str(),
+				20'000 + static_cast<std::uint64_t>(i) * 4000, 12.0));
+			disk.buf.Pin(disk.buf.entries.back().id);
+		}
+		Expect(disk.Flush(40'000), "seed the existing id file");
+
+		Log live;
+		live.Configure(s, root);
+		live.buf.character = MakeCharacter(0, "Sam");
+		live.Offer(Cap(Kind::Game, "session new", 50'000, 13.0));
+		live.Offer(Cap(Kind::Game, "disk shared", 50'100, 13.0));
+		live.Offer(Cap(Kind::Medical, "session medical", 51'000, 13.0));
+		Expect(!PersistAllowed(live.buf.character), "session is still name-hash");
+		Expect(live.PromoteToCharacter(MakeCharacter(0xABCDu, "Sam")), "promote merges the existing file");
+		ExpectEq(live.buf.character.key, "0000ABCD", "promotion uses the player id");
+		Expect(live.buf.character.keySource == "playerId", "promotion keySource is playerId");
+
+		int oldN = 0, sharedN = 0, sessionN = 0, medicalN = 0, sharedCount = 0;
+		for (const auto& e : live.buf.entries) {
+			if (e.text == "disk old") ++oldN;
+			if (e.text == "disk shared") { ++sharedCount; sharedN = e.n; }
+			if (e.text == "session new") ++sessionN;
+			if (e.text == "session medical") ++medicalN;
+		}
+		ExpectEqI(oldN, 1, "promotion keeps the existing file history");
+		ExpectEqI(sessionN, 1, "promotion keeps the in-memory session");
+		ExpectEqI(medicalN, 1, "promotion keeps other session kinds");
+		ExpectEqI(sharedCount, 1, "promotion does not duplicate a matching line");
+		Expect(sharedN >= 2, "promotion merges n on a matching line");
+		Expect(live.buf.PinCount() <= kPinCap, "promotion respects the 50-pin cap");
+		Expect(live.buf.UnpinnedCount() <= live.buf.Cap(), "promotion respects HistorySize");
+
+		Log hud;
+		hud.Configure(s, root);
+		hud.buf.character = MakeCharacter(0, "Sam");
+		hud.Offer(Cap(Kind::Game, "hud session", 60'000, 14.0));
+		Expect(hud.OnHudReady(MakeCharacter(0xABCDu, "Sam"), 14.0, 9, 9'000), "HUD-ready promotion merges");
+		bool hudKept = false, diskKept = false;
+		for (const auto& e : hud.buf.entries) {
+			if (e.text == "hud session") hudKept = true;
+			if (e.text == "disk old") diskKept = true;
+		}
+		Expect(hudKept && diskKept, "HUD-ready migrate keeps both file and session rows");
+		std::error_code ec;
+		std::filesystem::remove_all(root, ec);
+	}
+
+	{
 		std::atomic<bool> stop{false};
 		std::atomic<bool> done{false};
 		std::mutex mu;
@@ -550,8 +663,12 @@ int main()
 		std::atomic<bool> done2{false};
 		std::mutex mu2;
 		std::condition_variable cv2;
-		std::thread stuck([] { std::this_thread::sleep_for(std::chrono::seconds(8)); });
+		std::thread stuck([] { std::this_thread::sleep_for(std::chrono::seconds(2)); });
+		const auto t0 = std::chrono::steady_clock::now();
 		Expect(!JoinOrDetach(stuck, done2, cv2, mu2, 50), "writer join detaches after the bounded wait");
+		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - t0).count();
+		Expect(ms < 400, "timeout detaches instead of joining the stuck worker");
 		Expect(!stuck.joinable(), "timed-out worker is detached");
 	}
 

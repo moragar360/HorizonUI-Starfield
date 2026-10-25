@@ -11,6 +11,7 @@
 #include "hz_version.h"
 #include "preset_dedupe.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <chrono>
@@ -451,6 +452,14 @@ struct FileRead {
 	std::string notice;
 };
 
+// Purpose: .bad is only for a too-large file or a parse failure (depth, type,
+// truncated JSON). A sharing violation or a transient open/stat/read error
+// leaves the original file so the next load can retry.
+inline bool ShouldQuarantine(const FileRead& a_rd, bool a_parseCorrupt)
+{
+	return a_rd.tooLarge || a_parseCorrupt;
+}
+
 // Purpose: stat the log file first and refuse anything over 1 MB without reading.
 // Inputs: path. Outputs: FileRead (body stays empty when tooLarge).
 inline FileRead ReadLogFile(const std::filesystem::path& a_path)
@@ -677,6 +686,61 @@ public:
 		sess = 1;
 		sessStartTs = 0;
 		lastPlayedTs = 0;
+	}
+
+	void SortByTime()
+	{
+		std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+			if (a.ts != b.ts) return a.ts < b.ts;
+			if (a.gt != b.gt) return a.gt < b.gt;
+			return a.id < b.id;
+		});
+		if (lastMs_.size() != entries.size()) lastMs_.resize(entries.size(), 0);
+	}
+
+	// Purpose: fold a name-hash session into a loaded player-id file.
+	// File rows stay; matching kind+normalized text merge n; then sort, pin
+	// cap, and HistorySize eviction (pins sit on top of history).
+	// Inputs: in-memory session rows. Outputs: this buffer.
+	void MergeSession(const std::vector<Entry>& a_session)
+	{
+		for (const auto& in : a_session) {
+			const auto key = in.norm.empty() ? NormalizeText(in.text) : in.norm;
+			Entry* hit = nullptr;
+			for (auto& e : entries) {
+				if (e.kind != in.kind) continue;
+				if (e.norm.empty()) e.norm = NormalizeText(e.text);
+				if (e.norm == key) {
+					hit = &e;
+					break;
+				}
+			}
+			if (hit) {
+				hit->n += in.n > 0 ? in.n : 1;
+				if (hit->n > kRepeatCap) hit->n = kRepeatCap;
+				if (in.ts >= hit->ts) {
+					hit->ts = in.ts;
+					hit->gt = in.gt;
+					hit->ut = in.ut;
+					hit->lt = in.lt;
+					if (!in.loc.empty()) hit->loc = in.loc;
+				}
+				if (in.pin) hit->pin = 1;
+			} else {
+				Entry e = in;
+				if (e.norm.empty()) e.norm = key;
+				if (e.id >= nextId) nextId = e.id + 1;
+				entries.push_back(std::move(e));
+			}
+		}
+		int pins = 0;
+		for (auto& e : entries) {
+			if (!e.pin) continue;
+			++pins;
+			if (pins > kPinCap) e.pin = 0;
+		}
+		SortByTime();
+		Evict();
 	}
 
 private:
@@ -1463,7 +1527,7 @@ private:
 		std::error_code ec;
 		auto rd = ReadLogFile(a_path);
 		if (rd.missing) return true;
-		if (rd.tooLarge || !rd.ok) {
+		if (ShouldQuarantine(rd, false)) {
 			if (a_path.extension() != ".bak") {
 				auto bad = a_path;
 				bad += ".bad";
@@ -1472,8 +1536,12 @@ private:
 			a_notice = rd.notice.empty() ? "file too large" : rd.notice;
 			return false;
 		}
+		if (!rd.ok) {
+			a_notice = rd.notice.empty() ? "read failed" : rd.notice;
+			return false;
+		}
 		auto parsed = FromJson(rd.body);
-		if (parsed.corrupt) {
+		if (parsed.corrupt || ShouldQuarantine(rd, parsed.corrupt)) {
 			if (a_path.extension() != ".bak") {
 				auto bad = a_path;
 				bad += ".bad";
@@ -1563,6 +1631,31 @@ public:
 		return ok;
 	}
 
+	// Purpose: name-hash session becomes a real currentPlayerID. If that id
+	// already has a file, load it (1 MB / depth / .bak) and merge the session.
+	// Inputs: the player-id character. Outputs: true when the key changed.
+	bool PromoteToCharacter(Character a_ch)
+	{
+		if (!PersistAllowed(a_ch)) return false;
+		if (buf.character.keySource != "nameHash") return false;
+		auto session = buf.entries;
+		const auto names = buf.character.names;
+		LogState file;
+		lastNotice.clear();
+		if (store && buf.settings.persist)
+			store->Load(a_ch.key, file, lastNotice);
+		const bool haveFile = !file.entries.empty() || !file.character.key.empty();
+		if (haveFile) {
+			buf.LoadState(std::move(file));
+			buf.MergeSession(session);
+		}
+		buf.character = std::move(a_ch);
+		for (const auto& n : names)
+			buf.RememberName(n);
+		dirty = true;
+		return true;
+	}
+
 	// Purpose: HUD-ready edge. A new key flushes the old file and loads the new
 	// one (NG+ starts empty). Persist=0 and name-hash keys stay memory-only.
 	// a_loadNow is for tests; the DLL loads on the worker instead.
@@ -1584,17 +1677,17 @@ public:
 			// Caller flushes the old file on a worker first. Never write here.
 			(void)a_nowMs;
 			const bool migrate = buf.character.keySource == "nameHash" && a_ch.keySource == "playerId";
-			if (!migrate) {
+			if (migrate) {
+				PromoteToCharacter(std::move(a_ch));
+			} else {
 				buf.ResetMemory();
 				dirty = false;
-			} else {
-				dirty = true;
+				buf.character = std::move(a_ch);
+				if (canLoad)
+					LoadCurrent();
+				else
+					lastNotice.clear();
 			}
-			buf.character = std::move(a_ch);
-			if (canLoad && !migrate)
-				LoadCurrent();
-			else
-				lastNotice.clear();
 			changed = true;
 		} else {
 			buf.RememberName(a_ch.names.empty() ? "" : a_ch.names.back());

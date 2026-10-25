@@ -2352,6 +2352,7 @@ namespace HZ
 	double                  g_mlLGt{0};
 	std::int64_t            g_mlLTs{0};
 	std::thread             g_mlWThread;
+	std::atomic<bool>       g_mlWLive{false};
 	bool                    g_mlWStarted = false;
 	bool                    g_mlAtExit = false;
 	bool                    g_mlInited = false;
@@ -2452,7 +2453,11 @@ namespace HZ
 			}
 		} catch (...) {
 		}
-		g_mlWDone.store(true);
+		{
+			std::lock_guard lk(g_mlWMu);
+			g_mlWDone.store(true);
+			g_mlWLive.store(false);
+		}
 		g_mlWCv.notify_all();
 	}
 
@@ -2463,8 +2468,9 @@ namespace HZ
 			std::lock_guard lk(g_mlMu);
 			persist = g_ml.buf.settings.persist;
 		}
-		if (g_mlWStarted || !persist) return;
+		if (g_mlWLive.load() || g_mlWStarted || !persist) return;
 		g_mlWStarted = true;
+		g_mlWLive.store(true);
 		g_mlWStop.store(false);
 		g_mlWDone.store(false);
 		try {
@@ -2475,6 +2481,7 @@ namespace HZ
 			}
 		} catch (...) {
 			g_mlWStarted = false;
+			g_mlWLive.store(false);
 		}
 	}
 
@@ -2488,7 +2495,8 @@ namespace HZ
 			{
 				std::lock_guard lk(g_mlMu);
 				if (!g_ml.buf.settings.persist) return;
-				if (!g_ml.dirty && !a_force) return;
+				if (!g_ml.dirty) return;
+				(void)a_force;
 				if (!hzlog::PersistAllowed(g_ml.buf.character)) return;
 				g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(GetTickCount64() / 1000);
 				job.snap = g_ml.buf.Snapshot();
@@ -2663,7 +2671,16 @@ namespace HZ
 			if (!g_hudReadyLogged) return;
 		}
 		HzMlEngineRaw raw{};
-		if (!HzMlEngineFillSEH(&raw) || raw.ok != 1) return;
+		if (!HzMlEngineFillSEH(&raw) || raw.ok != 1) {
+			if (raw.ok == -1 || raw.ok == -2) {
+				static bool once = false;
+				if (!once) {
+					once = true;
+					REX::WARN("message log: engine address {} missing from the address library; capture stays memory-only", raw.miss);
+				}
+			}
+			return;
+		}
 		g_mlEng.loc = raw.loc;
 		g_mlEng.name = raw.name;
 		g_mlEng.playerId = raw.playerId;
@@ -2751,14 +2768,11 @@ namespace HZ
 			bool promote = false;
 			{
 				std::lock_guard lk(g_mlMu);
-				if (g_ml.buf.character.keySource == "nameHash") {
-					g_ml.buf.character = hzlog::MakeCharacter(g_mlEng.playerId, g_mlEng.name);
-					g_ml.dirty = true;
-					promote = true;
-				}
+				if (g_ml.buf.character.keySource == "nameHash")
+					promote = g_ml.PromoteToCharacter(hzlog::MakeCharacter(g_mlEng.playerId, g_mlEng.name));
 			}
 			if (promote)
-				MsglogRequestWrite(true);
+				MsglogRequestWrite(false);
 		} catch (...) {
 		}
 	}
@@ -2943,10 +2957,8 @@ namespace HZ
 			}
 			if (g_mlLoadReq.exchange(false))
 				MsglogBeginLoad();
-			if (g_mlQuitReq.exchange(false)) {
-				MsglogRequestWrite(true);
-				MsglogShutdownWriter();
-			}
+			if (g_mlQuitReq.exchange(false))
+				MsglogRequestWrite(false);
 			MsglogApplyLoad();
 			MsglogPadPoll();
 			try { MsglogTakeMovie(); } catch (...) {}
@@ -3042,7 +3054,7 @@ namespace HZ
 					const bool menu = uiLoad->IsMenuOpen("MainMenu");
 					if (loading || (menu && g_mlCapture.load()))
 						g_mlLoadReq.store(true);
-					if (menu && !loading && g_mlHadSession.load())
+					if (menu && !loading && g_mlHadSession.exchange(false))
 						g_mlQuitReq.store(true);
 				}
 			}
