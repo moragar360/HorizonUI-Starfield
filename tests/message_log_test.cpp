@@ -495,6 +495,11 @@ int main()
 			for (std::size_t p = 0; (p = hudBody.find("g_mlHoldFlush = false;", p)) != std::string::npos; ++p)
 				++clears;
 			ExpectEqI(clears, 2, "both HUD-ready resets clear the hold-flush flag");
+			int clearsHold = 0;
+			const char* holdClear = "g_mlHoldFlush = false;\n\t\t\t\t\tg_ml.NoteRetrySuccess();";
+			for (std::size_t p = 0; (p = hudBody.find(holdClear, p)) != std::string::npos; ++p)
+				++clearsHold;
+			ExpectEqI(clearsHold, 2, "both HUD-ready resets clear persistHold and holdTargetKey");
 		}
 		Expect(main.find("ParkHeldRows") != std::string::npos && main.find("keeping {} held rows") != std::string::npos,
 			"unrecovered held rows are logged and parked");
@@ -1322,6 +1327,102 @@ int main()
 			Expect(gotNewest, "the cap keeps the newest rows");
 			Expect(gotOldestPin, "the cap keeps pins");
 			Expect(!gotOldestUnpinned, "the cap drops the oldest unpinned rows");
+		}
+		{
+			Log s19;
+			s19.Configure(s, root);
+			if (auto* p = dynamic_cast<FileStore*>(s19.store.get()))
+				p->readHook = transientMain;
+			s19.buf.character = MakeCharacter(0, "Sam");
+			s19.Offer(Cap(Kind::Game, "A S19 held", 300'000));
+			Expect(!s19.PromoteToCharacter(MakeCharacter(0xABCDu, "Sam"), 301'000),
+				"S19 A promote read fails");
+			s19.ParkHeldRows();
+			s19.NoteRetrySuccess();
+			Expect(!s19.persistHold, "S19 HUD-ready clear drops the hold");
+			Expect(s19.holdTargetKey.empty(), "S19 HUD-ready clear drops the stale target");
+			s19.buf.ResetMemory();
+			s19.buf.character = MakeCharacter(0, "Barrett");
+			s19.Offer(Cap(Kind::Game, "B S19 row", 310'000));
+			s19.ParkHeldRows();
+			s19.NoteRetrySuccess();
+			s19.buf.ResetMemory();
+			s19.buf.character = MakeCharacter(0xCCCCu, "Cora");
+			s19.Offer(Cap(Kind::Game, "C S19 row", 320'000));
+			s19.ParkHeldRows();
+			s19.NoteRetrySuccess();
+			s19.buf.ResetMemory();
+			if (auto* p = dynamic_cast<FileStore*>(s19.store.get()))
+				p->readHook = nullptr;
+			s19.buf.character = MakeCharacter(0xABCDu, "Sam");
+			s19.LoadCurrent();
+			s19.MergeKeptHeldIfMatch("0000ABCD");
+			Expect(s19.Flush(330'000), "S19 A load writes");
+			const auto s19Body = ReadFile(path);
+			Expect(s19Body.find("B S19 row") == std::string::npos, "S19 A's file contains none of B's rows");
+			Expect(s19Body.find("C S19 row") == std::string::npos, "S19 A's file contains none of C's rows");
+			Expect(s19Body.find("A S19 held") != std::string::npos, "S19 A's parked row reaches A's file");
+		}
+		{
+			Log ap;
+			ap.persistHold = true;
+			ap.buf.character = MakeCharacter(0xABCDu, "Sam");
+			ap.buf.entries.resize(700);
+			for (int i = 0; i < 700; ++i) {
+				auto& e = ap.buf.entries[static_cast<std::size_t>(i)];
+				e.text = "a1-" + std::to_string(i);
+				e.ts = i;
+				e.pin = i < 28 ? 1 : 0;
+			}
+			ap.ParkHeldRows();
+			ap.buf.ResetMemory();
+			ap.buf.character = MakeCharacter(0xABCDu, "Sam");
+			ap.persistHold = true;
+			ap.buf.entries.resize(700);
+			for (int i = 0; i < 700; ++i) {
+				auto& e = ap.buf.entries[static_cast<std::size_t>(i)];
+				e.text = "a2-" + std::to_string(i);
+				e.ts = 1000 + i;
+				e.pin = i < 28 ? 1 : 0;
+			}
+			ap.ParkHeldRows();
+			ExpectEqI(static_cast<int>(ap.keptHeld.size()), 1, "append-path cap stays one slot");
+			const auto& rows = ap.keptHeld.front().entries;
+			ExpectEqI(static_cast<int>(rows.size()), 1000, "append-path cap is 1000 rows");
+			int pins = 0, a1pin = 0, a2pin = 0, lastA1Pin = -1, firstA2Pin = -1;
+			int lastA1Rest = -1, firstA2Rest = -1;
+			bool gotNewest = false;
+			for (int i = 0; i < static_cast<int>(rows.size()); ++i) {
+				const auto& e = rows[static_cast<std::size_t>(i)];
+				const bool a1 = e.text.rfind("a1-", 0) == 0;
+				const bool a2 = e.text.rfind("a2-", 0) == 0;
+				if (e.text == "a2-699") gotNewest = true;
+				if (e.pin) {
+					++pins;
+					if (a1) { ++a1pin; lastA1Pin = i; }
+					if (a2) { ++a2pin; if (firstA2Pin < 0) firstA2Pin = i; }
+				} else {
+					if (a1) lastA1Rest = i;
+					if (a2 && firstA2Rest < 0) firstA2Rest = i;
+				}
+			}
+			ExpectEqI(pins, 56, "append-path cap keeps all 56 pins");
+			ExpectEqI(a1pin, 28, "append-path cap keeps the A1 pins");
+			ExpectEqI(a2pin, 28, "append-path cap keeps the A2 pins");
+			Expect(gotNewest, "append-path cap keeps the newest A2 rows");
+			Expect(lastA1Pin >= 0 && firstA2Pin > lastA1Pin, "A1 pins stay before A2 pins");
+			Expect(lastA1Rest >= 0 && firstA2Rest > lastA1Rest, "A1 rows stay before A2 rows");
+		}
+		{
+			Log empty;
+			empty.persistHold = true;
+			empty.buf.character.key.clear();
+			empty.buf.character.keySource.clear();
+			empty.holdTargetKey.clear();
+			empty.buf.entries.resize(1);
+			empty.buf.entries.front().text = "no key";
+			empty.ParkHeldRows();
+			Expect(empty.keptHeld.empty(), "an empty key is not parked");
 		}
 		std::error_code ec;
 		std::filesystem::remove_all(root, ec);

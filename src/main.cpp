@@ -2907,6 +2907,7 @@ namespace HZ
 				if (forceFresh || (afterLoad && !hzlog::PersistAllowed(g_ml.buf.character) && !hzlog::PersistAllowed(ch))) {
 					MsglogParkHeldIfNeeded();
 					g_mlHoldFlush = false;
+					g_ml.NoteRetrySuccess();
 					g_ml.buf.ResetMemory();
 					g_ml.dirty = false;
 					g_ml.buf.character = ch;
@@ -2919,6 +2920,7 @@ namespace HZ
 				} else if (afterLoad) {
 					MsglogParkHeldIfNeeded();
 					g_mlHoldFlush = false;
+					g_ml.NoteRetrySuccess();
 					g_ml.buf.ResetMemory();
 					g_ml.dirty = false;
 					g_ml.buf.character = ch;
