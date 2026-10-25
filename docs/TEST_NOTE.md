@@ -12,10 +12,10 @@ No change in 0.42.0.14. The Horizon stealth pill hides the vanilla `StealthMeter
 
 ## Affliction chip typography
 
-The title and body-system line now use the same fonts_horizon path as the other Horizon chips: SemiBold (`$Horizon_Font`), HeaderStyle on the title (AFFLICTION / real name), muted SemiBold 1.2 tracking on the sub line. Size is the shared chip formula `max(9, round(design * TextScale))`, then the 13 px on-screen floor through `hz34S` (HZ_SCALE * HudScale or AfflictionsScale), including Moragar's Choice. Changing HUD SCALE or AfflictionsScale in F11 still reformats those lines. Env-chip bar math is unchanged. After a load, a nameless effect is still **AFFLICTION** over the body system.
+The title and body-system line now use the same fonts_horizon path as the other Horizon chips: SemiBold (`$Horizon_Font`), HeaderStyle on the title (AFFLICTION / real name), muted SemiBold 1.2 tracking on the sub line. Size is the shared chip formula `max(9, round(design * TextScale))`, then the 13 px on-screen floor through `hz34S` (HZ_SCALE * HudScale or the card's own scale key). TAKE, stealth title/sub, and jetpack title/sub use that same path (HoverScale / StealthScale / JetpackScale, else HudScale), including Moragar's Choice. Changing HUD SCALE or a card scale in F11 still reformats those lines. Env-chip bar math is unchanged. The stealth and jetpack pills grow so the larger type does not clip. After a load, a nameless effect is still **AFFLICTION** over the body system.
 
 ## In-game checks
 
 1. Stealth rank 1: sneak with StealthMeter on. Horizon pill shows and vanilla is hidden. StealthMeter off: vanilla meter, no pill.
 2. Save with an affliction (for example Contusions). Load. The chip should read AFFLICTION over the body system, not CARDIO RESPIRATORY CIRCULATORY as the title. Get injured again this session: the real name returns.
-3. Compare the affliction title and sub line to the stealth pill and jetpack status lines at your TextScale / HudScale. Weight, case, and tracking should match that family. Apply Moragar's Choice: type stays at least 13 px on screen.
+3. Compare the affliction title and sub line to TAKE, the stealth pill, and the jetpack status lines at your TextScale / HudScale. Weight, case, and tracking should match that family. Apply Moragar's Choice: every one of those lines stays at least 13 px on screen, and the stealth pill still sits above the crosshair.

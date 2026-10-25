@@ -500,18 +500,20 @@
          }
          this.hzT19Sig = "";   // hover / container cards on GLOBAL follow HudScale
          try { this.hzAfFmt13(); } catch(errAfF:Error) { }
+         try { this.hzJ19Draw(); } catch(errJ13:Error) { }
+         try { this.hz26StDraw(this.hz26Now()); } catch(errSt13:Error) { }
          try { this.hzAfRetryLayout(); } catch(errAfS:Error) { }
          this.hzLaidOut = this.hzLayout();
       }
 
-      // af13 clamp uses hzChipSzOn / hz34S("Afflictions"). Re-run after HudScale / AfflictionsScale
-      // so F11 live changes (including Moragar's Choice) do not keep the previous font size.
+      // Chip-family 13 px floor (affliction, TAKE, stealth, jetpack). Re-run after HudScale / per-card
+      // scale so F11 live changes (including Moragar's Choice) do not keep the previous font size.
       // hzTxtTint skips when the tint is unchanged, and hzAfRetryLayout does not touch the F11 preview chips.
       private function hzAfFmt13() : void
       {
          for each(var o:Object in this.hzTexts)
          {
-            if(o != null && o.af13) { try { this.hzApplyFmt(o); } catch(errAf13:Error) { } }
+            if(o != null && (o.af13 || o.chipMin)) { try { this.hzApplyFmt(o); } catch(errAf13:Error) { } }
          }
       }
 
@@ -524,13 +526,20 @@
       }
 
       // Same formula, then the 13 px on-screen floor using the card's real scale path (hz34S),
-      // not hz34F alone. Moragar's Choice (HudScale 0.8) still stays at least 13 px on screen.
+      // not hz34F alone. TAKE uses HoverScale (hz34Eff), falling back to HudScale. Moragar's
+      // Choice (HudScale 0.8) still stays at least 13 px on screen.
       private function hzChipSzOn(fs:Number, card:String, minPx:Number) : int
       {
          var sz:int = this.hzChipSz(fs);
          if(minPx > 0)
          {
             var sc:Number = this.hz34S(card);
+            if(card == "Hover")
+            {
+               var hv:Number = this.hz34Eff(this.hz30Hover);
+               if(this.hz30TgSc > 0.01) { hv = this.hz30TgSc; }
+               sc = HZ_SCALE * hv;
+            }
             if(!(sc > 0.01)) { sc = 1; }
             var fl:int = int(Math.ceil(minPx / sc));
             if(sz < fl) { sz = fl; }
@@ -541,6 +550,16 @@
       private function hzAf13Sz() : int
       {
          return this.hzChipSzOn(13,"Afflictions",13);
+      }
+
+      // Mark a chip-family line so hzApplyFmt19 uses hzChipSzOn + the 13 px floor on that card's scale.
+      private function hzChip13(tf:TextField, card:String) : void
+      {
+         var o:Object = this.hzTxtObj(tf);
+         if(!o) { return; }
+         o.chipCard = card;
+         o.chipMin = 13;
+         try { this.hzApplyFmt(o); } catch(errChip13:Error) { }
       }
 
       private function hzDot(d:Sprite, col:uint) : void
@@ -4157,6 +4176,7 @@
             o.m = this.hzT(c,"x3  ·  0.1",100,14,96,12,"rg","mut",0.5,"right");
             o.k = this.hzT(c,"E",0,0,60,12,"bd","col",0,"left");
             o.l = this.hzT(c,"TAKE",0,0,120,13,"sb","main",1.6);
+            this.hzChip13(o.l,"Hover");
             o.ov = new Sprite(); c.addChild(o.ov);
             this.hzSetPvTgTf = o;
             p.addChild(new Sprite());   // scene layer (crosshair, ring, ghost) above the card
@@ -4169,6 +4189,12 @@
          // sample tag, same metrics as the item tag (stripe, title, meta, divider, keycap row)
          var CW:Number = 200;
          var CH:Number = 86;
+         var kt:TextField = TextField(tf.k);
+         this.hzTxtTint(kt,this.hzIconCol(HZ_ACCENT));
+         var kw:Number = Math.max(26,Math.round(this.hzTW(kt) + 16));
+         var lt:TextField = TextField(tf.l);
+         var loTk:Object = this.hzTxtObj(lt); if(loTk) { this.hzApplyFmt(loTk); }
+         CW = Math.max(200,18 + kw + 7 + this.hzTW(lt) + 14);
          var cgg:* = Sprite(tf.g).graphics;
          cgg.clear();
          var opS:Number = this.hzCardOpacity;
@@ -4177,14 +4203,10 @@
          this.hzCardOpacity = opS;
          cgg.beginFill(this.hzIconCol(HZ_ACCENT),1); cgg.drawRoundRect(5,8,3,CH - 16,3,3); cgg.endFill();
          this.hzT19Line(cgg,40,CW,false);
-         var kt:TextField = TextField(tf.k);
-         this.hzTxtTint(kt,this.hzIconCol(HZ_ACCENT));
-         var kw:Number = Math.max(26,Math.round(this.hzTW(kt) + 16));
          Sprite(tf.ov).graphics.clear();
          this.hzKeycap(cgg,18,48,kw,24,this.hzIconCol(HZ_ACCENT),1,Sprite(tf.ov).graphics);
          kt.width = Math.round(this.hzTW(kt) + 5);
          kt.x = Math.round(18 + (kw - this.hzTW(kt)) / 2 - 2); this.hzTxtTop(kt,this.hzCapTop(kt,60));
-         var lt:TextField = TextField(tf.l);
          lt.x = 18 + kw + 7; this.hzTxtTop(lt,this.hzCapTop(lt,60));
          TextField(tf.m).x = CW - 14 - 96; this.hzTxtTop(TextField(tf.m),14);
          // v0.31: CONTAINER WINDOW SCALE previews a stand-in container window (header, item rows, selected row,
@@ -5047,6 +5069,8 @@
          o.su = undefined;   // v0.26: plain whole-unit top (device-grid snap only via hzTxtTopU)
          var base:Number = (o.role != null && HZ_TY_SIZE[o.role] != undefined) ? Number(HZ_TY_SIZE[o.role]) : Number(o.size);
          var sz:Number = Math.round(base * Math.max(0.8,Math.min(1.3,this.hzTextScale)));
+         var card:String = o.chipCard != null && String(o.chipCard).length > 0 ? String(o.chipCard) : (o.af13 ? "Afflictions" : "");
+         if(card.length > 0) { sz = this.hzChipSzOn(base,card,o.chipMin > 0 ? Number(o.chipMin) : 13); }
          o.y0 = top + (sz - base) / 2;
          tf.y = top;
       }
@@ -6285,7 +6309,8 @@
       private function hzApplyFmt19(o:Object) : void
       {
          var fs:Number = Number(o.fs);
-         var sz:int = o.af13 ? this.hzChipSzOn(fs,"Afflictions",13) : this.hzChipSz(fs);
+         var card:String = o.chipCard != null && String(o.chipCard).length > 0 ? String(o.chipCard) : (o.af13 ? "Afflictions" : "");
+         var sz:int = card.length > 0 ? this.hzChipSzOn(fs,card,o.chipMin > 0 ? Number(o.chipMin) : 13) : this.hzChipSz(fs);
          var dk:Boolean = this.hzDarkText();
          var col:uint = 0;
          switch(String(o.tone))
@@ -6886,7 +6911,11 @@
       private var hzJ19Glyph:Sprite;
       private var hzJ19Seg:Sprite;
       private var hzJ19Bolt:Sprite;
+      private var hzJ19Title:TextField;
       private var hzJ19Sub:TextField;
+      private var hzJ19W:Number = 330;
+      private var hzJ19H:Number = 72;
+      private var hzJ19BarY:Number = 54;
       private var hzJetRech:Boolean = false;
       private var hzJetLastC:Number = -2;
 
@@ -6898,9 +6927,12 @@
          this.HorizonCard_mc.addChild(p);
          this.hzJ19Body = new Sprite(); p.addChild(this.hzJ19Body);
          this.hzJ19Glyph = new Sprite(); this.hzJ19Glyph.x = 40; this.hzJ19Glyph.y = 34; p.addChild(this.hzJ19Glyph);
-         this.hzHdr19(this.hzT(p,"JETPACK",78,9,170,14,"sb","main",2));
+         this.hzJ19Title = this.hzT(p,"JETPACK",78,9,170,14,"sb","main",2);
+         this.hzHdr19(this.hzJ19Title);
+         this.hzChip13(this.hzJ19Title,"Jetpack");
          this.hzJ19Bolt = new Sprite(); this.hzJ19Bolt.x = 83; this.hzJ19Bolt.y = 39; p.addChild(this.hzJ19Bolt);
          this.hzJ19Sub = this.hzT(p,"BOOST 100%",78,29,230,12,"sb","acc",1.2);
+         this.hzChip13(this.hzJ19Sub,"Jetpack");
          this.hzJ19Seg = new Sprite(); this.hzJ19Seg.x = 78; this.hzJ19Seg.y = 54; p.addChild(this.hzJ19Seg);
          this.hzSetSz(this.HorizonCard_mc,HZ_J19_W,72);
          this.hzJ19Draw();
@@ -6909,12 +6941,31 @@
       private function hzJ19Draw() : void
       {
          if(!this.hzJ19Body) { return; }
+         var szT:int = this.hzChipSzOn(14,"Jetpack",13);
+         var szS:int = this.hzChipSzOn(12,"Jetpack",13);
+         var subTop:int = 9 + szT + 6;
+         var barY:int = subTop + szS + 13;
+         var h:Number = Math.max(72,barY + 18);
+         if(this.hzJ19Title) { this.hzTxtTop(this.hzJ19Title,9); }
+         if(this.hzJ19Sub) { this.hzTxtTop(this.hzJ19Sub,subTop); }
+         var tw:Number = 0;
+         if(this.hzJ19Title) { tw = Math.max(tw,this.hzTW(this.hzJ19Title)); }
+         if(this.hzJ19Sub) { tw = Math.max(tw,this.hzTW(this.hzJ19Sub)); }
+         var w:Number = Math.max(HZ_J19_W,78 + tw + 18);
+         this.hzJ19W = w;
+         this.hzJ19H = h;
+         this.hzJ19BarY = barY;
+         this.hzSetSz(this.HorizonCard_mc,w,h);
+         if(this.hzJ19Glyph) { this.hzJ19Glyph.y = Math.round(h / 2); }
+         if(this.hzJ19Bolt) { this.hzJ19Bolt.y = subTop + Math.round(szS / 2) + 4; }
+         if(this.hzJ19Seg) { this.hzJ19Seg.y = barY; }
          var g:* = this.hzJ19Body.graphics;
          g.clear();
-         this.hzPanel(g,HZ_J19_W,72,18);
+         this.hzPanel(g,w,h,18);
          var col:uint = this.hzJetRech ? HZ_AMB : HZ_ACCENT;
-         this.hzTileDisc(g,40,36,26,-1);
-         g.lineStyle(1.4,this.hzIconCol(col),0.35,true); g.drawCircle(40,36,22); g.lineStyle();
+         var cy:Number = Math.round(h / 2);
+         this.hzTileDisc(g,40,cy,26,-1);
+         g.lineStyle(1.4,this.hzIconCol(col),0.35,true); g.drawCircle(40,cy,22); g.lineStyle();
          // original jetpack glyph: twin-tank pack, center spine, two nozzles, optional flames
          var j:* = this.hzJ19Glyph.graphics;
          j.clear();
@@ -6957,7 +7008,8 @@
          g.clear();
          var n:int = 10;
          var gap:Number = 3;
-         var sw:Number = (238 - gap * (n - 1)) / n;
+         var bw:Number = Math.max(238,this.hzJ19W - 78 - 14);
+         var sw:Number = (bw - gap * (n - 1)) / n;
          var lit:Number = f * n;
          var tr:uint = this.hzDarkText() ? 0x000000 : 0xFFFFFF;
          var i:int = 0;
@@ -7665,7 +7717,11 @@
          i = 0;
          while(i < 4)
          {
-            this.hzT19Btn.push({"kp":this.hzT(p,"",0,0,60,12,"bd","col",0,"left"),"lp":this.hzT(p,"",0,0,160,13,"sb","main",1.6),"hh":this.hzT(p,"HOLD",0,0,60,11,"rg","mut",1.2),"kh":this.hzT(p,"",0,0,60,12,"bd","col",0,"left"),"lh":this.hzT(p,"",0,0,160,13,"sb","mut",1.6)});
+            var lp:TextField = this.hzT(p,"",0,0,160,13,"sb","main",1.6);
+            var lh:TextField = this.hzT(p,"",0,0,160,13,"sb","mut",1.6);
+            this.hzChip13(lp,"Hover");
+            this.hzChip13(lh,"Hover");
+            this.hzT19Btn.push({"kp":this.hzT(p,"",0,0,60,12,"bd","col",0,"left"),"lp":lp,"hh":this.hzT(p,"HOLD",0,0,60,11,"rg","mut",1.2),"kh":this.hzT(p,"",0,0,60,12,"bd","col",0,"left"),"lh":lh});
             i++;
          }
          p.visible = false;
@@ -8098,6 +8154,7 @@
                var isHold:Boolean = Boolean(pr[0]);
                var kt:TextField = TextField(isHold ? slot.kh : slot.kp);
                var lt:TextField = TextField(isHold ? slot.lh : slot.lp);
+               var loTk:Object = this.hzTxtObj(lt); if(loTk && loTk.chipMin) { this.hzApplyFmt(loTk); }
                if(isHold)
                {
                   if(pairs.length > 1) { x += 14; }
@@ -8755,6 +8812,8 @@
       private static const HZ_EN_W:Number = 480;
       private static const HZ_ST_W:Number = 220;
       private static const HZ_ST_H:Number = 48;
+      private var hz26StW:Number = 220;
+      private var hz26StH:Number = 48;
       private var hz26Dbg:Object = {};
       private var hz26Built:Boolean = false;
       // character data (PlayerData / PlayerInventoryData)
@@ -9958,9 +10017,13 @@
          this.HorizonStealth_mc = c;
          this.hz26StG = new Sprite(); c.addChild(this.hz26StG);
          this.hz26StT = this.hzT(c,"HIDDEN",50,7,160,14,"bd","col",1.8,"left",0xB2C0C7);
+         this.hzChip13(this.hz26StT,"Stealth");
          this.hz26StD = this.hzT(c,"",50,26,160,10,"sb","mut",1.2);
+         this.hzChip13(this.hz26StD,"Stealth");
          addChild(c);
          c.visible = false;
+         this.hz26StW = HZ_ST_W;
+         this.hz26StH = HZ_ST_H;
          this.hzSetSz(c,HZ_ST_W,HZ_ST_H);
       }
 
@@ -9985,6 +10048,7 @@
 
       private function hz26StDraw(now:Number) : void
       {
+         if(!this.hz26StG || !this.hz26StT || !this.hz26StD) { return; }
          var d:Object = this.hz26St;
          if(d == null || !this.hz26StOn) { d = {"uSneakMode":2,"fPercent":45,"uNextSneakMode":2}; }
          var m:int = int(d.uSneakMode);
@@ -9993,18 +10057,34 @@
          if(m < 0 || m > 4) { m = 0; }
          var col:uint = this.hzIconCol(uint(cols[m]));
          var pct:Number = this.hz26StPct(d);
+         var szT:int = this.hzChipSzOn(14,"Stealth",13);
+         var szS:int = this.hzChipSzOn(10,"Stealth",13);
+         var subTop:int = 7 + szT + 5;
+         var h:Number = Math.max(HZ_ST_H,subTop + szS + 12);
+         this.hz26StT.text = String(names[m]);
+         this.hzTxtTint(this.hz26StT,uint(cols[m]));
+         this.hzTxtTop(this.hz26StT,7);
+         this.hz26StD.text = "DETECTION " + Math.round(pct) + "%";
+         this.hzTxtTop(this.hz26StD,subTop);
+         this.hz26StT.width = Math.max(160,this.hzTW(this.hz26StT) + 8);
+         this.hz26StD.width = Math.max(160,this.hzTW(this.hz26StD) + 8);
+         var w:Number = Math.max(HZ_ST_W,50 + Math.max(this.hzTW(this.hz26StT),this.hzTW(this.hz26StD)) + 18);
+         this.hz26StW = w;
+         this.hz26StH = h;
+         this.hzSetSz(this.HorizonStealth_mc,w,h);
          var g:* = this.hz26StG.graphics;
          g.clear();
          var edge:int = m == 4 ? int(this.hzIconCol(HZ_RED)) : -1;
-         this.hzPanel(g,HZ_ST_W,HZ_ST_H,24,-1,edge);
+         this.hzPanel(g,w,h,24,-1,edge);
+         var cy:Number = Math.round(h / 2);
          if(m == 4)
          {
             this.hz26StPh = 0.5 + 0.5 * Math.sin(now / 1000 * Math.PI * 2);
-            g.lineStyle(1.5,col,0.25 + 0.6 * this.hz26StPh,true); g.beginFill(col,0.004); g.drawRoundRect(0.5,0.5,HZ_ST_W - 1,HZ_ST_H - 1,48,48); g.endFill(); g.lineStyle();
+            g.lineStyle(1.5,col,0.25 + 0.6 * this.hz26StPh,true); g.beginFill(col,0.004); g.drawRoundRect(0.5,0.5,w - 1,h - 1,48,48); g.endFill(); g.lineStyle();
          }
          var dk:Boolean = this.hzDarkText();
-         this.hzTileDisc(g,24,24,18,-1);
-         g.lineStyle(2.5,dk ? 0x000000 : 0xFFFFFF,0.15,true); g.drawCircle(24,24,14); g.lineStyle();
+         this.hzTileDisc(g,24,cy,18,-1);
+         g.lineStyle(2.5,dk ? 0x000000 : 0xFFFFFF,0.15,true); g.drawCircle(24,cy,14); g.lineStyle();
          if(pct > 0.5)
          {
             g.lineStyle(2.5,col,1,true,"normal","none");
@@ -10013,21 +10093,16 @@
             while(i <= st)
             {
                var a:Number = -Math.PI / 2 + Math.PI * 2 * (pct / 100) * i / st;
-               if(i == 0) { g.moveTo(24 + Math.cos(a) * 14,24 + Math.sin(a) * 14); } else { g.lineTo(24 + Math.cos(a) * 14,24 + Math.sin(a) * 14); }
+               if(i == 0) { g.moveTo(24 + Math.cos(a) * 14,cy + Math.sin(a) * 14); } else { g.lineTo(24 + Math.cos(a) * 14,cy + Math.sin(a) * 14); }
                i++;
             }
             g.lineStyle();
          }
          // original eye glyph
          g.lineStyle(1.5,col,1,true);
-         g.moveTo(16.5,24); g.curveTo(24,17,31.5,24); g.curveTo(24,31,16.5,24);
+         g.moveTo(16.5,cy); g.curveTo(24,cy - 7,31.5,cy); g.curveTo(24,cy + 7,16.5,cy);
          g.lineStyle();
-         g.beginFill(col,1); g.drawCircle(24,24,2.8); g.endFill();
-         this.hz26StT.text = String(names[m]);
-         this.hzTxtTint(this.hz26StT,uint(cols[m]));
-         this.hzTxtTop(this.hz26StT,7);
-         this.hz26StD.text = "DETECTION " + Math.round(pct) + "%";
-         this.hzTxtTop(this.hz26StD,26);
+         g.beginFill(col,1); g.drawCircle(24,cy,2.8); g.endFill();
       }
 
       // ---------- combat feedback: hit marker, kill X, damage numbers, direction ring ----------
@@ -10331,7 +10406,7 @@
          if(this.HorizonStealth_mc)
          {
             var c:Point = this.hz26Center();
-            this.hzPlace(this.HorizonStealth_mc,c.x - HZ_ST_W * sSt / 2,c.y - 150 * sSt - HZ_ST_H * sSt);
+            this.hzPlace(this.HorizonStealth_mc,c.x - this.hz26StW * sSt / 2,c.y - 150 * sSt - this.hz26StH * sSt);
          }
       }
 

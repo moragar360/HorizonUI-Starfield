@@ -817,14 +817,28 @@ pin('this.hzT(c,"",48,24,200,13,"sb","mut",1.2);', "the affliction sub line is S
 pin('this.hzT(c,"HIDDEN",50,7,160,14,"bd","col",1.8,"left",0xB2C0C7);', "the stealth status chip title is Bold 14 / 1.8");
 pin('this.hzT(c,"",50,26,160,10,"sb","mut",1.2);', "the stealth status chip sub line is SemiBold muted 1.2");
 pin('this.hzT(p,"BOOST 100%",78,29,230,12,"sb","acc",1.2);', "the jetpack status sub line is SemiBold 12 / 1.2");
-pin("o.af13 ?", "affliction chip lines use the 13 px on-screen clamp");
-pin('o.af13 ? this.hzChipSzOn(fs,"Afflictions",13) : this.hzChipSz(fs)', "affliction lines use the shared chip size formula");
+pin("o.af13 ?", "affliction chip lines still mark the 13 px on-screen clamp");
+pin('o.af13 ? "Afflictions" : ""', "affliction lines still use the Afflictions scale key");
+pin("card.length > 0 ? this.hzChipSzOn(fs,card,o.chipMin > 0 ? Number(o.chipMin) : 13) : this.hzChipSz(fs)", "every chip-family line uses the shared size formula");
 pin("var sc:Number = this.hz34S(card);", "the 13 px floor uses the shared card scale path");
+pin('if(card == "Hover")', "TAKE uses the HoverScale path");
+pin("var hv:Number = this.hz34Eff(this.hz30Hover);", "TAKE falls back to HudScale through hz34Eff");
 pin("var fl:int = int(Math.ceil(minPx / sc));", "the chip floor is ceil(13 / hz34S)");
 expect(src.indexOf('var hs:Number = this.hz34F("Afflictions");') < 0, "the chip floor no longer uses hz34F alone");
 expect(src.indexOf('this.hzT(c,"",48,24,200,13,"rg","mut",0.4)') < 0, "the affliction sub line is no longer Regular 0.4");
+pin('this.hzChip13(o.l,"Hover");', "the F11 TAKE line uses the shared chip floor");
+pin('this.hzChip13(lp,"Hover");', "the live TAKE line uses the shared chip floor");
+pin('this.hzChip13(this.hz26StT,"Stealth");', "the stealth title uses the Stealth scale key");
+pin('this.hzChip13(this.hz26StD,"Stealth");', "the stealth sub line uses the Stealth scale key");
+pin('this.hzChip13(this.hzJ19Title,"Jetpack");', "the jetpack title uses the Jetpack scale key");
+pin('this.hzChip13(this.hzJ19Sub,"Jetpack");', "the jetpack sub line uses the Jetpack scale key");
+pin("var subTop:int = 7 + szT + 5;", "the stealth sub line sits under the floored title");
+pin("var h:Number = Math.max(HZ_ST_H,subTop + szS + 12);", "the stealth pill grows with the floored type");
+pin("c.y - 150 * sSt - this.hz26StH * sSt", "the stealth pill stays above the crosshair at the live height");
+pin("var subTop:int = 9 + szT + 6;", "the jetpack sub line sits under the floored title");
+pin("var h:Number = Math.max(72,barY + 18);", "the jetpack pill grows with the floored type");
 pin('try { this.hzAfFmt13(); } catch(errAfF:Error) { }', "scale changes reformat af13 fields before the chip relayout");
-pin("if(o != null && o.af13)", "every af13 field is reformatted after a scale change");
+pin("if(o != null && (o.af13 || o.chipMin))", "every chip-family field is reformatted after a scale change");
 pin("var j:int = 0;\n         this.hzAfFmt13();", "the F11 preview also reformats af13 fields");
 pin('try { this.hzAfRetryLayout(); } catch(errAfS:Error) { }\n         this.hzLaidOut = this.hzLayout();', "the main layout runs after the chip relayout");
 pin("Sample: one affliction and one", "the F11 preview caption says affliction");
@@ -893,6 +907,71 @@ function hzAfEnvH(sz) {
 		expect(barY >= base, "live bar top at size " + sz + " is " + barY + ", baseline " + base);
 		expect(barY >= base, "preview bar top at size " + sz + " is " + barY + ", baseline " + base);
 	}
+}
+const hzChipLines = [
+	{ name: "affliction title", fs: 13, card: "Afflictions" },
+	{ name: "affliction sub", fs: 13, card: "Afflictions" },
+	{ name: "TAKE", fs: 13, card: "Hover" },
+	{ name: "stealth title", fs: 14, card: "Stealth" },
+	{ name: "stealth sub", fs: 10, card: "Stealth" },
+	{ name: "jetpack title", fs: 14, card: "Jetpack" },
+	{ name: "jetpack sub", fs: 12, card: "Jetpack" }
+];
+function hzChipLineSz(fs, textScale, hudScale, hzScale) {
+	return hzAfChipSz(fs, textScale, hudScale, hzScale);
+}
+function hzChipLinePx(fs, textScale, hudScale, hzScale) {
+	return hzAfChipPx(fs, textScale, hudScale, hzScale);
+}
+function hzStSubTop(szT) { return 7 + szT + 5; }
+function hzStH(szT, szS) { return Math.max(48, hzStSubTop(szT) + szS + 12); }
+function hzJSubTop(szT) { return 9 + szT + 6; }
+function hzJBarY(szT, szS) { return hzJSubTop(szT) + szS + 13; }
+function hzJH(szT, szS) { return Math.max(72, hzJBarY(szT, szS) + 18); }
+{
+	const cases = [
+		{ ts: 1.0, hs: 0.8, lrg: 1, label: "TS 1.0 HS 0.8" },
+		{ ts: 1.0, hs: 1.0, lrg: 1, label: "TS 1.0 HS 1.0" },
+		{ ts: 1.3, hs: 0.8, lrg: 1, label: "TS 1.3 HS 0.8" },
+		{ ts: 1.3, hs: 1.0, lrg: 1, label: "TS 1.3 HS 1.0" },
+		{ ts: 0.8, hs: 0.8, lrg: 1, label: "Moragar's Choice" },
+		{ ts: 1.0, hs: 0.8, lrg: 1.07, label: "hudmenu_lrg TS 1.0 HS 0.8" },
+		{ ts: 1.0, hs: 1.0, lrg: 1.07, label: "hudmenu_lrg TS 1.0 HS 1.0" },
+		{ ts: 1.3, hs: 0.8, lrg: 1.07, label: "hudmenu_lrg TS 1.3 HS 0.8" },
+		{ ts: 1.3, hs: 1.0, lrg: 1.07, label: "hudmenu_lrg TS 1.3 HS 1.0" }
+	];
+	for (let ci = 0; ci < cases.length; ci++) {
+		const c = cases[ci];
+		for (let li = 0; li < hzChipLines.length; li++) {
+			const line = hzChipLines[li];
+			const px = hzChipLinePx(line.fs, c.ts, c.hs, c.lrg);
+			expect(px + 1e-9 >= 13, line.name + " at " + c.label + " is " + px + " px");
+		}
+		const stT = hzChipLineSz(14, c.ts, c.hs, c.lrg);
+		const stS = hzChipLineSz(10, c.ts, c.hs, c.lrg);
+		const stTop = hzStSubTop(stT);
+		const stH = hzStH(stT, stS);
+		expect(stTop >= 7 + stT, "stealth title and sub do not overlap at " + c.label);
+		expect(stH >= stTop + stS + 12, "stealth pill height holds both lines at " + c.label);
+		expect(stH >= 48, "stealth pill is at least 48 at " + c.label);
+		const jT = hzChipLineSz(14, c.ts, c.hs, c.lrg);
+		const jS = hzChipLineSz(12, c.ts, c.hs, c.lrg);
+		const jTop = hzJSubTop(jT);
+		const jBar = hzJBarY(jT, jS);
+		const jH = hzJH(jT, jS);
+		expect(jTop >= 9 + jT, "jetpack title and sub do not overlap at " + c.label);
+		expect(jBar >= jTop + jS, "jetpack bar sits under the sub line at " + c.label);
+		expect(jH >= jBar + 18, "jetpack pill height holds the bar at " + c.label);
+	}
+	expect(hzChipLinePx(13, 1, 0.8) + 1e-9 >= 13, "TAKE at Moragar's Choice TS 1.0 HS 0.8 stays at least 13 px");
+	expect(hzChipLineSz(12, 1, 1) === 13, "jetpack sub floors 12 to 13 at TS 1.0 HS 1.0");
+	expect(hzChipLineSz(10, 1, 1) === 13, "stealth sub floors 10 to 13 at TS 1.0 HS 1.0");
+	expect(hzChipLineSz(14, 1, 0.8) === 17, "stealth title at HS 0.8 uses ceil(13/0.8)");
+	expect(hzStH(14, 10) === 48, "the stealth pill stays 48 at the design sizes");
+	expect(hzStH(17, 17) === 58, "the stealth pill is 58 at the HS 0.8 floor");
+	expect(hzJH(14, 12) === 72, "the jetpack pill stays 72 at the design sizes");
+	expect(hzJH(17, 17) === 80, "the jetpack pill is 80 at the HS 0.8 floor");
+	expect(150 + hzStH(17, 17) > 150 + 48, "a taller stealth pill grows upward above the crosshair");
 }
 function hzAfPlainPers(icon) {
 	const sys = hzPretty(icon);
