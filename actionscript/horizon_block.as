@@ -3034,14 +3034,74 @@
          return cur;
       }
 
+      private var hzPopLayers:Array = [];   // 0.43.0.1: extra F11 layers (log / settings / confirm). P1 is plumbing only.
+
       public function hzSettingsOpen() : Boolean
       {
-         return this.hzSetIsOpen || this.hzArrange;
+         return this.hzSetIsOpen || this.hzArrange || (this.hzPopLayers != null && this.hzPopLayers.length > 0);
+      }
+
+      // Purpose: forced close when a full-screen menu opens. Every layer goes.
+      // The older path toggled at most twice and could leave a layer stuck (freeze risk).
+      // Inputs: none. Outputs: none. Dependencies: hzArrExit, hzSetCancel, hz37Reset.
+      public function hzSettingsCloseAll() : void
+      {
+         this.hzPopLayers = [];
+         try { if(this.hz41SA) { this.hz41SAEnd(false); } } catch(eSa:Error) { }
+         if(this.hzArrange) { this.hzArrExit(false); }
+         if(this.hzSetIsOpen) { this.hzSetCancel(); }
+         try { this.hz37Reset(); } catch(e37:Error) { }
+      }
+
+      public function hzPopPush(id:String) : void
+      {
+         if(id == null || id.length == 0) { return; }
+         if(this.hzPopLayers == null) { this.hzPopLayers = []; }
+         if(this.hzPopLayers.length >= 8) { return; }
+         this.hzPopLayers.push(id);
+      }
+
+      public function hzPopPop() : String
+      {
+         if(this.hzPopLayers == null || this.hzPopLayers.length == 0) { return ""; }
+         return String(this.hzPopLayers.pop());
+      }
+
+      public function hzPopTop() : String
+      {
+         if(this.hzPopLayers == null || this.hzPopLayers.length == 0) { return ""; }
+         return String(this.hzPopLayers[this.hzPopLayers.length - 1]);
+      }
+
+      private function hzPopKey(code:String) : void
+      {
+         if(code == "cancel") { this.hzPopPop(); }
+      }
+
+      // F11 and the Message Log open from the keyboard only. Never a pad button.
+      public function hzMsglogOpenHint() : String
+      {
+         return "F11";
+      }
+
+      public function hzMsglogModule() : Number
+      {
+         return this.hz30Mod["notifications"] === 1 ? 1 : 0;
+      }
+
+      // ut|lt|body for the log detail strip. lt is -1 when vanilla blanks local time.
+      public function hzMsglogClock() : String
+      {
+         var ut:String = this.hzPpUT >= 0 ? String(this.hzPpUT) : "-1";
+         var lt:String = this.hzPpDay >= 0 ? String(this.hzPpDay) : "-1";
+         var body:String = this.hzPpBodyName != null && this.hzPpBodyName != "--" ? this.hzPpBodyName : "";
+         return ut + "|" + lt + "|" + body;
       }
 
       public function hzToggleSettings() : void
       {
          if(!this.hzSetIsOpen && !this.hzArrange && this.hz40F11Block()) { return; }   // v0.42.0: F11 opens from the main HUD only (never while scanning)
+         if(this.hzPopLayers != null && this.hzPopLayers.length > 0) { this.hzPopLayers = []; }
          if(this.hzArrange) { this.hzArrExit(false); return; }
          if(this.hzSetIsOpen) { this.hzSetCancel(); return; }
          try { this.hz30ModProbeAll(); } catch(errMod:Error) { }
@@ -3126,6 +3186,7 @@
       public function hzSettingsKey(code:String) : void
       {
          this.hz35Kb = true;   // v0.35: keys / controller -> the selected row shows its info
+         if(this.hzPopLayers != null && this.hzPopLayers.length > 0) { this.hzPopKey(code); return; }   // 0.43.0.1: only the top layer
          if(this.hzArrange) { this.hzArrKey(code); return; }
          if(!this.hzSetIsOpen) { return; }
          if(this.hz37Key(code)) { this.hzSetDraw(); return; }   // v0.37: preset name entry / pending confirm
@@ -3546,7 +3607,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.42.0.14";
+      private static const HZ_BUILD:String = "0.43.0.1";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -4434,6 +4495,7 @@
       // Mouse from the SFSE plugin: nx, ny = 0..1 of the game client area.
       public function hzSettingsMouse(nx:Number, ny:Number, down:Boolean) : void
       {
+         if(this.hzPopLayers != null && this.hzPopLayers.length > 0) { return; }   // 0.43.0.1: extra layers swallow mouse (P2 draws them)
          if(this.hzArrange) { this.hzArrMouse(nx,ny,down); return; }
          if(!this.hzSetIsOpen || !this.HorizonSettings_mc || isNaN(nx) || isNaN(ny)) { this.hzSetPrevDown = down; return; }
          var vr:Rectangle = Extensions.visibleRect;
@@ -11847,7 +11909,7 @@
       // URLLoader on the same relative path base the HUD already reads HorizonUI.ini from; a missing file / folder
       // only raises IOErrorEvent (caught). State: undefined/-1 checking, 0 absent, 1 present. Re-probed on every F11
       // open so an install / uninstall shows without restarting.
-      private static const HZ30_MODS:Array = ["scanner","comms","font","comms_dialogue","es","edi","edi2","scope"];   // v0.42.0 r2: + scope.marker
+      private static const HZ30_MODS:Array = ["scanner","comms","font","comms_dialogue","es","edi","edi2","scope","notifications"];   // 0.43.0.1: + notifications.marker
       private var hz30Mod:Object = {};
       private var hz30ModLdr:Object = {};
       private var hz30ModT0:Number = 0;

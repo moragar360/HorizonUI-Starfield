@@ -77,11 +77,11 @@ Log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
 
 3. The plugin is written to `build\windows\x64\releasedbg\HorizonUI.dll`.
 
-Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.42.0.14 loaded`.
+Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.43.0.1 loaded`.
 
 ### Release checklist: companion reaction log
 
-0.42.0.14 is a release build: `HZ_HUD_MSG_CAPTURE` is `0`, `HZ_COMMS_MSG_LOG` is `0`, `HZC_MSG_LOG` is `false`, and `hzcRxDbgOn` defaults to `false`. The card backup stays compiled: the queue, Poll, `hzcCardPush`, and the one-line `comms reaction:` status (including `hzcRxWhy`). The one-time `comms reaction selftest:` lines are not part of that trace. They stay on when `Debug=0`.
+0.43.0.1 is a pre-release dev build (Message Log P1: capture and storage, no log UI). `HZ_HUD_MSG_CAPTURE` is `0`, `HZ_COMMS_MSG_LOG` is `0`, `HZC_MSG_LOG` is `false`, and `hzcRxDbgOn` defaults to `false`. The card backup stays compiled: the queue, Poll, `hzcCardPush`, and the one-line `comms reaction:` status (including `hzcRxWhy`). The one-time `comms reaction selftest:` lines are not part of that trace. They stay on when `Debug=0`. The settings schema stays `0.42.0`.
 
 To turn the traces back on for an in-game check:
 
@@ -92,6 +92,18 @@ To turn the traces back on for an in-game check:
 5. Update the test pins that expect the traces to be off: `tests/reaction_match_test.js` (`HZC_MSG_LOG` is `false`) and `tests/preset_list_test.cpp` (`HZ_COMMS_MSG_LOG == 0` and `HZ_HUD_MSG_CAPTURE == 0`).
 
 `Debug=0` in the ini only stops the movie queue. It does not replace this list, and it does not turn off the one-line status. The settings schema stays `0.42.0`.
+
+## Message Log (planned, not released)
+
+0.43.0.1 is Message Log P1: capture and storage only. There is no log popup yet.
+
+- The log starts empty. It records only while `Record=1` and only the types in `LogTypes`.
+- It cannot recover messages from before install, or from while Record was off.
+- One file per character (not per save) under `Documents\My Games\Starfield\SFSE\HorizonUI\MessageLog\`. NG+ that changes the character key starts a new log.
+- `Persist=0` keeps the log in memory only: no folder, no file, no `.tmp`, no `.bak`. Nothing survives a restart.
+- Location and real time are stored locally only.
+- F11 (and later the log) opens from the keyboard only. A controller can navigate after F11 is already open. Find stays keyboard-only.
+- Without the Notifications module marker, the later F11 row shows "needs Notifications". P1 ships the backend in this build behind `Record`.
 
 ## Repository layout
 ```

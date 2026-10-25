@@ -124,6 +124,8 @@
          BSUIDataManager.Subscribe("HUDOpacityData",this.hzcOnOpacity);
          BSUIDataManager.Subscribe("FireForgetEventData",this.hzcOnFF);
          BSUIDataManager.Subscribe("QuestUpdateData",this.hzcOnQuest);
+         try { BSUIDataManager.Subscribe("HUDLocationData",this.hzcOnLoc); } catch(eLoc:Error) { }
+         try { BSUIDataManager.Subscribe("XPData",this.hzcOnXp); } catch(eXp:Error) { }
          addEventListener(Event.ADDED,this.hzcOnAdded);
          try { this.hzcRxInit(); } catch(eRx0:Error) { }   // v0.42.0 r2: companion reaction card
          this.hzcReload();
@@ -724,6 +726,7 @@
             var i:int = 0;
             while(i < a.length)
             {
+               try { this.hzcLogQuest(a[i]); } catch(eLg:Error) { }
                if(this.hzcIniState == 0) { if(this.hzcTstPend.length < 16) { this.hzcTstPend.push(a[i]); } }
                else if(this.hzcToastOn()) { this.hzcToastFrom(a[i]); }
                i++;
@@ -1325,7 +1328,7 @@
       // ---------- 0.42.0.6: message log. HZC_MSG_LOG is the switch (false on this release). ----------
       // The DLL still writes the one-line status. Debug=0 in the ini also stops the queue.
       private static const HZC_MSG_LOG:Boolean = false;
-      private static const HZC_BUILD:String = "0.42.0.14";
+      private static const HZC_BUILD:String = "0.43.0.1";
       private var hzcRxDbgOn:Boolean = false;   // 0.42.0.14: off for release. hzcRxDbgIni still follows Debug=0.
       private var hzcRxDbgQ:Array = [];
       private var hzcRxDbgSeen:Array = [];   // {it, f}
@@ -1435,6 +1438,98 @@
       public function hzcBuildId() : String
       {
          return HZC_BUILD;
+      }
+
+      // 0.43.0.1 Message Log P1: quest / location / XP forwarding. HUDMessageData stays with the DLL sink.
+      private var hzcLogQ:Array = [];
+      private var hzcLogLastLoc:String = "";
+      private function hzcLogPipe(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var t:String = String(s).split("|").join("/").split("\n").join(" ").split("\r").join(" ");
+         if(t.length > 200) { t = t.substr(0,200); }
+         return t;
+      }
+      private function hzcLogPush(kind:String, title:String, text:String) : void
+      {
+         if(text == null || String(text).length == 0) { return; }
+         if(this.hzcLogQ.length >= 40) { this.hzcLogQ.shift(); }
+         this.hzcLogQ.push(kind + "|" + this.hzcLogPipe(title) + "|" + this.hzcLogPipe(text));
+      }
+      public function hzcTakeLog() : String
+      {
+         try
+         {
+            if(this.hzcLogQ.length == 0) { return ""; }
+            var o:String = this.hzcLogQ.join("\n");
+            this.hzcLogQ = [];
+            return o;
+         }
+         catch(e:Error) { }
+         return "";
+      }
+      private function hzcLogQuest(d:Object) : void
+      {
+         if(d == null) { return; }
+         var title:String = d.strQuestName != null ? String(d.strQuestName) : "";
+         var main:String = "";
+         var obs:* = d.ObjectiveDataA;
+         var j:int = 0;
+         while(obs != null && j < obs.length)
+         {
+            var o:Object = obs[j];
+            j++;
+            if(o == null) { continue; }
+            var tx:String = o.strObjectiveText != null ? String(o.strObjectiveText) : "";
+            if(tx.length > 0 && main.length == 0) { main = tx; }
+         }
+         if(main.length == 0) { main = title; }
+         if(main.length == 0) { return; }
+         this.hzcLogPush("quest",title,main);
+      }
+      private function hzcOnLoc(ev:FromClientDataEvent) : void
+      {
+         try
+         {
+            var d:Object = ev != null ? ev.data : null;
+            if(d == null) { return; }
+            var nm:String = "";
+            if(d.sLocationName != null && String(d.sLocationName).length > 0) { nm = String(d.sLocationName); }
+            else if(d.sName != null && String(d.sName).length > 0) { nm = String(d.sName); }
+            else if(d.sText != null && String(d.sText).length > 0) { nm = String(d.sText); }
+            if(nm.length == 0 || nm == this.hzcLogLastLoc) { return; }
+            this.hzcLogLastLoc = nm;
+            this.hzcLogPush("location","LOCATION",nm);
+         }
+         catch(e:Error) { }
+      }
+      private function hzcOnXp(ev:FromClientDataEvent) : void
+      {
+         try
+         {
+            var d:Object = ev != null ? ev.data : null;
+            if(d == null) { return; }
+            var a:Array = d.XPUpdatesA as Array;
+            var n:Number = 0;
+            var lv:int = 0;
+            if(a != null)
+            {
+               var i:int = 0;
+               while(i < a.length)
+               {
+                  var u:Object = a[i];
+                  i++;
+                  if(u == null) { continue; }
+                  if(!isNaN(Number(u.uiXPAmount))) { n += Number(u.uiXPAmount); }
+                  if(u.uiLevel != undefined && int(u.uiLevel) > lv) { lv = int(u.uiLevel); }
+                  if(u.uLevel != undefined && int(u.uLevel) > lv) { lv = int(u.uLevel); }
+                  if(u.bLevelUp === true && lv <= 0) { lv = 1; }
+               }
+            }
+            if(lv > 1) { this.hzcLogPush("xp","LEVEL UP","Level up! You are now level " + lv + "."); }
+            else if(n > 0) { this.hzcLogPush("xp","XP","+" + String(int(n)) + " XP"); }
+         }
+         catch(e:Error) { }
       }
       private function hzcRxFind(it:*) : Object
       {

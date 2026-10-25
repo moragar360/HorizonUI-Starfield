@@ -38,7 +38,12 @@
 // std / Win32 file code in the HZF section, no new CommonLibSF calls. Everything from v0.36 is unchanged.
 #include <Windows.h>
 #include <winver.h>
+#include <Xinput.h>
+#include <ShlObj.h>
 #pragma comment(lib, "version.lib")
+#pragma comment(lib, "xinput.lib")
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "ole32.lib")
 #undef GetObject
 #undef ERROR
 #undef PostMessage
@@ -57,13 +62,19 @@
 #include <exception>
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 #include <utility>
 #include <map>
 #include <iterator>
+#include <thread>
+#include <condition_variable>
+#include <chrono>
+#include <memory>
 #include "hz_version.h"
 #include "hz_msg_match.h"
 #include "hz_addr_probe.h"
 #include "hz_rx_queue.h"
+#include "hz_msglog.h"
 #include "preset_dedupe.h"
 
 // v0.37: the settings-file code (HZF) replaces files through this (temp file + MoveFileExW)
@@ -674,6 +685,9 @@ namespace HZ
 {
 	HZF::Paths FilesP() { return HZF::MakePaths(HzDir()); }
 
+	void MsglogLoadSettings(const HZF::Doc& a_d);
+	void MsglogEnsureInit();
+
 	void LoadIni()
 	{
 		std::string key = "F11";
@@ -695,7 +709,9 @@ namespace HZ
 			std::string v;
 			if (get("debug", v) && v == "1") g_iniDebug = true;
 			if (get("settingskey", v) && !v.empty()) key = v;
+			MsglogLoadSettings(d);
 		}
+		MsglogEnsureInit();
 		auto sc = KeyNameToScan(key);
 		if (!sc) { REX::WARN("unknown SettingsKey '{}', using F11", key); sc = 0x57; key = "F11"; }
 		g_scan = sc;
@@ -841,6 +857,8 @@ namespace HZ
 			c = (shift && a_vk == VK_OEM_MINUS) ? '_' : '-';
 		} else if (a_vk == VK_OEM_PLUS || a_vk == VK_ADD) {
 			c = (a_vk == VK_ADD || shift) ? '+' : '=';
+		} else if (a_vk == VK_OEM_2) {
+			return shift ? std::string("ch:?") : std::string("ch:/");   // 0.43.0.1: Find is keyboard-only
 		}
 		if (!c) return {};
 		return std::string("ch:") + c;
@@ -1025,14 +1043,9 @@ namespace HZ
 	void ResetSettingsState()
 	{
 		if (g_open) REX::INFO("settings closed (HUD not safe)");
-		// final (r6 SF-1): ARRANGE keeps hzSetIsOpen; one toggle only leaves arrange and re-shows F11.
-		// Toggle at most twice while hzSettingsOpen (close-only: each call runs with open==true, so never opens).
-		for (int i = 0; i < 2; ++i) {
-			GValue open;
-			if (!(HudInvoke("hzSettingsOpen", &open) && open.IsBoolean() && open.GetBoolean()))
-				break;
-			HudInvoke("hzToggleSettings", nullptr, nullptr, 0, true);
-		}
+		// 0.43.0.1: close every F11 layer in one call. The older toggle-twice loop
+		// left a deeper stack (log / settings / confirm) stuck and could freeze input.
+		HudInvoke("hzSettingsCloseAll", nullptr, nullptr, 0, true);
 		g_open = false;
 		g_swallow = false;
 		SetControlsBlocked(false);
@@ -1611,6 +1624,8 @@ namespace HZ
 	std::mutex        g_rxMu;
 	std::deque<RxNote> g_rxQ;
 
+	void MsglogEnqueueHud(const char* a_text);
+
 	void HzRxEnqueue(const char* a_text)
 	{
 		if (!a_text || !a_text[0]) return;
@@ -1620,6 +1635,7 @@ namespace HZ
 			hzrx::Enqueue(g_rxQ, a_text, GetTickCount64(), kRxQueueMax);
 		} catch (...) {
 		}
+		MsglogEnqueueHud(a_text);
 	}
 
 	int HzRxMessagesVisible(RE::UI* a_ui)
@@ -2204,6 +2220,410 @@ namespace HZ
 		}
 	}
 
+	// ---------------- 0.43.0.1 Message Log P1: capture + storage (no log UI) ----------------
+	// F11 still opens from the keyboard only. Pad input is applied only while F11 is already open.
+	hzlog::Log              g_ml;
+	std::mutex              g_mlQMu;
+	struct MlNote
+	{
+		char      text[257];
+		char      title[65];
+		char      src; // H = HUD sink, Q/L/X = movie
+		ULONGLONG tick;
+	};
+	std::deque<MlNote>      g_mlQ;
+	std::mutex              g_mlWMu;
+	std::condition_variable g_mlWCv;
+	std::atomic<bool>       g_mlWStop{false};
+	std::atomic<bool>       g_mlWReq{false};
+	hzlog::LogState         g_mlWSnap;
+	std::thread             g_mlWThread;
+	bool                    g_mlWStarted = false;
+	bool                    g_mlInited = false;
+	bool                    g_mlMarker = false;
+	WORD                    g_mlPadLast = 0;
+	ULONGLONG               g_mlPadNext[16]{};
+
+	std::filesystem::path MsglogHorizonDir()
+	{
+		PWSTR docs = nullptr;
+		if (FAILED(::SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DONT_VERIFY, nullptr, &docs)) || !docs)
+			return HzDir();
+		std::filesystem::path p(docs);
+		::CoTaskMemFree(docs);
+		return p / L"My Games" / L"Starfield" / L"SFSE" / L"HorizonUI";
+	}
+
+	void MsglogWriter()
+	{
+		for (;;) {
+			std::unique_lock lk(g_mlWMu);
+			g_mlWCv.wait_for(lk, std::chrono::milliseconds(500), [] { return g_mlWStop.load() || g_mlWReq.load(); });
+			if (g_mlWStop.load() && !g_mlWReq.load()) break;
+			if (!g_mlWReq.load()) continue;
+			auto snap = std::move(g_mlWSnap);
+			g_mlWReq = false;
+			lk.unlock();
+			if (!g_ml.buf.settings.persist || g_ml.loadBusy) continue;
+			try {
+				hzlog::FileStore fs(g_ml.horizonDir / "MessageLog", g_ml.replace);
+				fs.Save(snap);
+			} catch (...) {
+			}
+		}
+	}
+
+	void MsglogEnsureWriter()
+	{
+		if (g_mlWStarted || !g_ml.buf.settings.persist) return;
+		g_mlWStarted = true;
+		try {
+			g_mlWThread = std::thread(MsglogWriter);
+		} catch (...) {
+			g_mlWStarted = false;
+		}
+	}
+
+	void MsglogRequestWrite(bool a_force)
+	{
+		if (!g_ml.buf.settings.persist || g_ml.loadBusy) return;
+		if (!g_ml.dirty && !a_force) return;
+		if (g_ml.buf.character.key.empty()) return;
+		MsglogEnsureWriter();
+		{
+			std::lock_guard lk(g_mlWMu);
+			g_mlWSnap = g_ml.buf.Snapshot();
+			g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(GetTickCount64() / 1000);
+			g_mlWSnap.lastPlayedTs = g_ml.buf.lastPlayedTs;
+			g_mlWReq = true;
+			g_ml.dirty = false;
+			g_ml.lastWriteMs = GetTickCount64();
+		}
+		g_mlWCv.notify_one();
+	}
+
+	// Purpose: read [MessageLog] from the merged INI. Record, LogTypes, HistorySize,
+	// MissedBadge, Persist. P1 keeps capture in this build behind Record.
+	// Inputs: parsed settings document. Outputs: g_ml configured. Dependencies: HzfReplace.
+	// Author: Moragar. Last modified: 2026-10-25.
+	void MsglogLoadSettings(const HZF::Doc& a_d)
+	{
+		auto getSec = [&](const char* a_sec, const char* a_k, std::string& a_v) {
+			for (const auto& sec : a_d.secs) {
+				if (sec.name != a_sec) continue;
+				if (auto it = sec.kv.find(a_k); it != sec.kv.end()) {
+					a_v = it->second.second;
+					return true;
+				}
+			}
+			return false;
+		};
+		hzlog::Settings s;
+		std::string v;
+		if (getSec("messagelog", "record", v)) s.record = v != "0";
+		if (getSec("messagelog", "persist", v)) s.persist = v != "0";
+		if (getSec("messagelog", "missedbadge", v)) s.missedBadge = v != "0";
+		if (getSec("messagelog", "historysize", v)) {
+			try { s.historySize = hzlog::ClampHistory(std::stoi(v)); } catch (...) {}
+		}
+		if (getSec("messagelog", "logtypes", v)) s.logTypes = hzlog::ParseLogTypes(v);
+		std::error_code ec;
+		g_mlMarker = std::filesystem::is_regular_file(HzDir() / "modules" / "notifications.marker", ec);
+		// P1 ships in this build: Record is the capture gate. The marker is the F11 row flag.
+		s.modulePresent = true;
+		g_ml.replace = [](const std::filesystem::path& a_tmp, const std::filesystem::path& a_dst) {
+			return HzfReplace(a_tmp, a_dst);
+		};
+		g_ml.Configure(s, MsglogHorizonDir());
+		g_mlInited = true;
+		REX::INFO("message log: Record={} Persist={} HistorySize={} module marker={}",
+			s.record ? 1 : 0, s.persist ? 1 : 0, s.historySize, g_mlMarker ? 1 : 0);
+	}
+
+	void MsglogEnsureInit()
+	{
+		if (g_mlInited) return;
+		hzlog::Settings s;
+		g_ml.replace = [](const std::filesystem::path& a_tmp, const std::filesystem::path& a_dst) {
+			return HzfReplace(a_tmp, a_dst);
+		};
+		g_ml.Configure(s, MsglogHorizonDir());
+		g_mlInited = true;
+	}
+
+	void MsglogEnqueueHud(const char* a_text)
+	{
+		if (!a_text || !a_text[0] || !g_mlInited) return;
+		try {
+			MlNote n{};
+			hzpreset::CopyHudText(n.text, sizeof n.text, a_text);
+			if (!n.text[0]) return;
+			n.src = 'H';
+			n.tick = GetTickCount64();
+			std::lock_guard lock(g_mlQMu);
+			if (g_mlQ.size() >= 256) g_mlQ.pop_front();
+			g_mlQ.push_back(n);
+		} catch (...) {
+		}
+	}
+
+	void MsglogEnqueueFwd(char a_src, const char* a_title, const char* a_text)
+	{
+		if (!a_text || !a_text[0]) return;
+		try {
+			MlNote n{};
+			hzpreset::CopyHudText(n.text, sizeof n.text, a_text);
+			if (a_title) hzpreset::CopyHudText(n.title, sizeof n.title, a_title);
+			n.src = a_src;
+			n.tick = GetTickCount64();
+			std::lock_guard lock(g_mlQMu);
+			if (g_mlQ.size() >= 256) g_mlQ.pop_front();
+			g_mlQ.push_back(n);
+		} catch (...) {
+		}
+	}
+
+	std::string MsglogLocation()
+	{
+		try {
+			auto pc = RE::PlayerCharacter::GetSingleton();
+			if (pc) {
+				if (auto loc = pc->GetCurrentLocation(); loc) {
+					if (const char* n = loc->GetFullName(); n && n[0])
+						return hzlog::CapText(n, hzlog::kLocCap);
+				}
+			}
+		} catch (...) {
+		}
+		return {};
+	}
+
+	std::string MsglogPlayerName()
+	{
+		try {
+			auto pc = RE::PlayerCharacter::GetSingleton();
+			if (pc) {
+				if (const char* n = pc->GetDisplayFullName(); n && n[0])
+					return n;
+			}
+		} catch (...) {
+		}
+		return {};
+	}
+
+	std::uint64_t MsglogPlayerId()
+	{
+		try {
+			auto mgr = RE::BGSSaveLoadManager::GetSingleton();
+			if (mgr && mgr->currentPlayerID)
+				return mgr->currentPlayerID;
+		} catch (...) {
+		}
+		return 0;
+	}
+
+	double MsglogGt()
+	{
+		try {
+			auto cal = RE::Calendar::GetSingleton();
+			if (cal)
+				return cal->GetDaysPassedExact();
+		} catch (...) {
+		}
+		return 0;
+	}
+
+	void MsglogClock(double& a_ut, double& a_lt, std::string& a_body)
+	{
+		a_ut = -1;
+		a_lt = -1;
+		a_body.clear();
+		GValue r;
+		if (!HudInvoke("hzMsglogClock", &r) || !r.IsString() || !r.GetString()) return;
+		const std::string s = r.GetString();
+		const auto p1 = s.find('|');
+		const auto p2 = p1 == std::string::npos ? std::string::npos : s.find('|', p1 + 1);
+		if (p1 == std::string::npos || p2 == std::string::npos) return;
+		try { a_ut = std::stod(s.substr(0, p1)); } catch (...) { a_ut = -1; }
+		try { a_lt = std::stod(s.substr(p1 + 1, p2 - p1 - 1)); } catch (...) { a_lt = -1; }
+		a_body = s.substr(p2 + 1);
+	}
+
+	void MsglogOfferNote(const MlNote& a_n)
+	{
+		if (!g_mlInited) return;
+		hzlog::Capture c;
+		c.nowMs = a_n.tick;
+		c.ts = static_cast<std::int64_t>(std::time(nullptr));
+		c.gt = MsglogGt();
+		std::string body;
+		MsglogClock(c.ut, c.lt, body);
+		c.loc = MsglogLocation();
+		if (c.loc.empty()) c.loc = body;
+		c.text = a_n.text;
+		c.title = a_n.title;
+		if (a_n.src == 'H') {
+			if (hzlog::IsSaveLine(a_n.text)) {
+				MsglogRequestWrite(true);
+				return;
+			}
+			c.kind = hzlog::ClassifyHud(a_n.text, g_msgPhrases, c.title, c.tag);
+		} else if (a_n.src == 'Q') {
+			c.kind = hzlog::Kind::Quest;
+			if (c.title.empty()) c.title = "QUEST";
+		} else if (a_n.src == 'L') {
+			c.kind = hzlog::Kind::Location;
+			if (c.title.empty()) c.title = "LOCATION";
+		} else if (a_n.src == 'X') {
+			c.kind = hzlog::Kind::Xp;
+			if (c.title.empty()) c.title = "XP";
+		} else {
+			return;
+		}
+		const auto r = g_ml.Offer(std::move(c));
+		if (r == hzlog::OfferResult::SaveSignal)
+			MsglogRequestWrite(true);
+		else if ((r == hzlog::OfferResult::Stored || r == hzlog::OfferResult::Deduped) && g_ml.ShouldFlush(a_n.tick, false))
+			MsglogRequestWrite(false);
+	}
+
+	void MsglogTakeMovie()
+	{
+		auto ui = RE::UI::GetSingleton();
+		if (!ui || !ui->IsMenuOpen("HUDMessagesMenu")) return;
+		auto msg = ui->GetMenu("HUDMessagesMenu");
+		if (!msg || !msg->menuObj.IsObject() || !msg->menuObj.HasMember("hzcTakeLog")) return;
+		GValue r;
+		if (!msg->menuObj.Invoke("hzcTakeLog", &r, nullptr, 0) || !r.IsString()) return;
+		const char* s = r.GetString();
+		if (!s || !*s) return;
+		std::string all(s);
+		std::size_t p = 0;
+		while (p < all.size()) {
+			auto e = all.find('\n', p);
+			if (e == std::string::npos) e = all.size();
+			const auto line = all.substr(p, e - p);
+			p = e + 1;
+			hzlog::Kind k;
+			std::string title, text;
+			if (!hzlog::ParseForward(line, k, title, text)) continue;
+			char src = k == hzlog::Kind::Quest ? 'Q' : (k == hzlog::Kind::Location ? 'L' : 'X');
+			MsglogEnqueueFwd(src, title.c_str(), text.c_str());
+		}
+	}
+
+	void MsglogOnHudReady()
+	{
+		if (!g_mlInited) return;
+		g_ml.loadBusy = false;
+		const auto ch = hzlog::MakeCharacter(MsglogPlayerId(), MsglogPlayerName());
+		if (!g_ml.buf.character.key.empty() && g_ml.buf.character.key != ch.key && g_ml.dirty)
+			MsglogRequestWrite(true);
+		g_ml.OnHudReady(ch, MsglogGt(), static_cast<std::int64_t>(std::time(nullptr)), GetTickCount64());
+		if (g_ml.dirty)
+			MsglogRequestWrite(true);
+	}
+
+	// Purpose: pad navigation only after F11 is already open. Never opens F11, the log, or any Horizon menu.
+	// Inputs: none. Outputs: queued hzSettingsKey codes. Dependencies: XInputGetState, QueueKey path.
+	void MsglogPadPoll()
+	{
+		if (!g_open) return;
+		XINPUT_STATE st{};
+		if (::XInputGetState(0, &st) != ERROR_SUCCESS) return;
+		const WORD b = st.Gamepad.wButtons;
+		const WORD edge = static_cast<WORD>(b & ~g_mlPadLast);
+		g_mlPadLast = b;
+		auto fire = [&](const char* code) {
+			std::lock_guard l(g_qLock);
+			if (g_keyQueue.size() < 64) g_keyQueue.emplace_back(code);
+		};
+		const ULONGLONG now = GetTickCount64();
+		struct Map { WORD mask; const char* code; int slot; bool repeat; };
+		const Map maps[] = {
+			{XINPUT_GAMEPAD_DPAD_UP, "up", 0, true},
+			{XINPUT_GAMEPAD_DPAD_DOWN, "down", 1, true},
+			{XINPUT_GAMEPAD_DPAD_LEFT, "left", 2, true},
+			{XINPUT_GAMEPAD_DPAD_RIGHT, "right", 3, true},
+			{XINPUT_GAMEPAD_A, "ok", 4, false},
+			{XINPUT_GAMEPAD_B, "cancel", 5, false},
+			{XINPUT_GAMEPAD_X, "ch:s", 6, false},
+			{XINPUT_GAMEPAD_Y, "ch:y", 7, false},
+			{XINPUT_GAMEPAD_LEFT_SHOULDER, "tabprev", 8, false},
+			{XINPUT_GAMEPAD_RIGHT_SHOULDER, "tabnext", 9, false},
+		};
+		for (const auto& m : maps) {
+			if (edge & m.mask) {
+				fire(m.code);
+				g_mlPadNext[m.slot] = now + 400;
+				continue;
+			}
+			if (m.repeat && (b & m.mask) && now >= g_mlPadNext[m.slot]) {
+				fire(m.code);
+				g_mlPadNext[m.slot] = now + 150;
+			}
+		}
+	}
+
+	void MsglogPoll(ULONGLONG a_now)
+	{
+		if (!g_mlInited) return;
+		MsglogPadPoll();
+		try { MsglogTakeMovie(); } catch (...) {}
+		std::deque<MlNote> batch;
+		{
+			std::lock_guard lock(g_mlQMu);
+			batch.swap(g_mlQ);
+		}
+		for (const auto& n : batch)
+			MsglogOfferNote(n);
+		if (g_ml.ShouldFlush(a_now, false))
+			MsglogRequestWrite(false);
+	}
+
+	class SaveLoadSink final : public RE::BSTEventSink<RE::SaveLoadEvent>
+	{
+	public:
+		// Purpose: flush the message log on save. Character switch waits for the HUD-ready edge.
+		// Inputs: SaveLoadEvent. Outputs: kContinue. Dependencies: MsglogRequestWrite.
+		RE::BSEventNotifyControl ProcessEvent(const RE::SaveLoadEvent& a_ev, RE::BSTEventSource<RE::SaveLoadEvent>*) override
+		{
+			try {
+				using Op = RE::SaveLoadEvent::OpType;
+				using St = RE::SaveLoadEvent::Status;
+				const auto op = a_ev.opType;
+				const auto st = a_ev.status;
+				const bool saving = op == Op::kAutosave || op == Op::kQuicksave || op == Op::kManualSave
+					|| op == Op::kExitSaveToMainMenu || op == Op::kExitSaveToDesktop;
+				const bool loading = op == Op::kLoad || op == Op::kQuickload || op == Op::kLoadMostRecent || op == Op::kLoadNamedFile;
+				if (loading && st == St::kBegin)
+					g_ml.loadBusy = true;
+				if (saving && (st == St::kSaveCompleted || st == St::kBegin))
+					MsglogRequestWrite(true);
+			} catch (...) {
+			}
+			return RE::BSEventNotifyControl::kContinue;
+		}
+	};
+
+	void RegisterSaveLoadSink()
+	{
+		try {
+			auto src = RE::SaveLoadEvent::GetEventSource();
+			if (!src) {
+				REX::WARN("SaveLoadEvent source is null; message log will flush on debounce and save HUD lines");
+				return;
+			}
+			static SaveLoadSink sink;
+			src->RegisterSink(&sink);
+			REX::INFO("SaveLoadEvent sink registered (message log flush)");
+		} catch (const std::exception& ex) {
+			REX::WARN("SaveLoadEvent sink failed: {}", ex.what());
+		} catch (...) {
+			REX::WARN("SaveLoadEvent sink failed: unknown error");
+		}
+	}
+
 	void Poll()
 	{
 		auto now = GetTickCount64();
@@ -2211,6 +2631,7 @@ namespace HZ
 		CommsDbgPoll(now);   // v0.42.0.6: empty when HZ_COMMS_MSG_LOG is 0
 		CommsRxPoll(now);    // v0.42.0.7: reaction backup. Before the HUD-ready return below.
 		ScopeClipPoll(now);     // v0.42.0.8: hold-breath clip line. Before the HUD-ready return, so a scope still logs it.
+		MsglogPoll(now);        // 0.43.0.1: capture during menus too; writes stay off while a load is in progress.
 		HWND wnd = GameWindow();
 		bool down = wnd && (GetAsyncKeyState(g_vk) & 0x8000) != 0;
 		if (down && !g_wasDown) OnSettingsKey();
@@ -2224,6 +2645,11 @@ namespace HZ
 			if (g_hudSince) { REX::INFO("HUD not ready (loading/menu)"); ResetSettingsState(); }
 			g_hudSince = 0;
 			g_hudReadyLogged = false;
+			{
+				auto uiLoad = RE::UI::GetSingleton();
+				if (uiLoad && (uiLoad->IsMenuOpen("LoadingMenu") || uiLoad->IsMenuOpen("MainMenu")))
+					g_ml.loadBusy = true;
+			}
 			return;
 		}
 		// v0.42.0: the hand scanner opened while the F11 window / ARRANGE is up: close it once (close-only, as for the
@@ -2236,7 +2662,7 @@ namespace HZ
 		}
 		if (!g_hudSince) g_hudSince = now;
 		if (now - g_hudSince < 3000) return;
-		if (!g_hudReadyLogged) { REX::INFO("HUD ready (stable 3s)"); g_hudReadyLogged = true; HudOwnerCheck(); }
+		if (!g_hudReadyLogged) { REX::INFO("HUD ready (stable 3s)"); g_hudReadyLogged = true; HudOwnerCheck(); MsglogOnHudReady(); }
 		BuildLog(now);   // v0.42.0 r3
 		EnsureSubclass(wnd);
 		PollSettings(wnd, now);
@@ -2249,6 +2675,7 @@ namespace HZ
 			// RegisterSink is address id 123821.
 			// SEH does not catch that lookup. A null source or a caught fault is logged, and the game continues.
 			RegisterShowHUDMessageSink();
+			RegisterSaveLoadSink();
 			LoadIni();
 			if (auto task = SFSE::GetTaskInterface()) {
 				task->AddPermanentTask([]() { Poll(); });

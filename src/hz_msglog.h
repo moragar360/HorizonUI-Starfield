@@ -1,0 +1,1518 @@
+#pragma once
+
+// Horizon Message Log P1: capture, ring buffer, per-character JSON, Persist.
+// Planned, not released. Game-free so the harness can fail the rules without
+// CommonLibSF. The DLL (src/main.cpp) supplies engine pointers, the worker
+// thread, and the HUD-ready / SaveLoad flush.
+// Author: Moragar
+// Last modified: 2026-10-25.
+
+#include "hz_msg_match.h"
+#include "hz_version.h"
+#include "preset_dedupe.h"
+
+#include <cctype>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <iterator>
+#include <memory>
+#include <utility>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <utility>
+#include <vector>
+
+namespace hzlog {
+
+inline constexpr int kHistoryMin = 100;
+inline constexpr int kHistoryMax = 1000;
+inline constexpr int kHistoryDefault = 500;
+inline constexpr int kHistoryStep = 100;
+inline constexpr int kPinCap = 50;
+inline constexpr int kTextCap = 256;
+inline constexpr int kLocCap = 64;
+inline constexpr int kRepeatCap = 999;
+inline constexpr int kDedupeMs = 3000;
+inline constexpr int kBusyDedupeMs = 10000;
+inline constexpr int kFileMaxBytes = 1024 * 1024;
+inline constexpr int kJsonVersion = 1;
+inline constexpr const char* kJsonType = "horizon.messagelog";
+inline constexpr int kDebounceMsMin = 10000;
+inline constexpr int kDebounceMsMax = 30000;
+inline constexpr int kDebounceMs = 15000;
+// F11 and the log open from the keyboard only. The HUD "Open in F11" hint
+// shows this key, never a pad button or combo.
+inline constexpr const char* kOpenHint = "F11";
+
+enum class Kind : std::uint8_t {
+	Medical = 0,
+	Crew,
+	Busy,
+	Crime,
+	Credits,
+	Quest,
+	Location,
+	Xp,
+	Game
+};
+
+inline constexpr std::uint32_t kTypeMedical = 1u << 0;
+inline constexpr std::uint32_t kTypeCrew = 1u << 1;
+inline constexpr std::uint32_t kTypeBusy = 1u << 2;
+inline constexpr std::uint32_t kTypeCrime = 1u << 3;
+inline constexpr std::uint32_t kTypeCredits = 1u << 4;
+inline constexpr std::uint32_t kTypeQuest = 1u << 5;
+inline constexpr std::uint32_t kTypeLocation = 1u << 6;
+inline constexpr std::uint32_t kTypeXp = 1u << 7;
+inline constexpr std::uint32_t kTypeGame = 1u << 8;
+inline constexpr std::uint32_t kTypeAll = 0x1FFu;
+
+enum class OfferResult : std::uint8_t {
+	Stored = 0,
+	Deduped,
+	Rejected,
+	SaveSignal
+};
+
+struct Settings {
+	bool         record{true};
+	bool         persist{true};
+	bool         modulePresent{true}; // P1 ships in this build; tests may clear it
+	bool         missedBadge{true};
+	int          historySize{kHistoryDefault};
+	std::uint32_t logTypes{kTypeAll};
+};
+
+struct Entry {
+	std::uint64_t id{0};
+	Kind          kind{Kind::Game};
+	std::string   text;
+	std::string   title;
+	std::string   tag;
+	double        gt{0};
+	double        ut{-1};
+	double        lt{-1};
+	std::int64_t  ts{0};
+	std::string   loc;
+	int           sess{0};
+	int           n{1};
+	int           missed{0};
+	int           pin{0};
+};
+
+struct Session {
+	int          id{0};
+	std::int64_t startTs{0};
+};
+
+struct Character {
+	std::string              key;
+	std::string              keySource; // "playerId" or "nameHash"
+	std::vector<std::string> names;
+};
+
+struct Capture {
+	Kind         kind{Kind::Game};
+	std::string  text;
+	std::string  title;
+	std::string  tag;
+	double       gt{0};
+	double       ut{-1};
+	double       lt{-1};
+	std::int64_t ts{0};
+	std::string  loc;
+	int          missed{0};
+	std::uint64_t nowMs{0};
+};
+
+struct LogState {
+	Character            character;
+	std::int64_t         lastPlayedTs{0};
+	int                  cap{kHistoryDefault};
+	int                  pinCap{kPinCap};
+	std::uint64_t        nextId{1};
+	int                  nextSess{1};
+	std::vector<Session> sessions;
+	std::vector<Entry>   entries; // oldest -> newest
+};
+
+// Purpose: map a Kind to the JSON "k" token.
+// Inputs: kind. Outputs: lowercase token. Dependencies: none.
+inline const char* KindKey(Kind a_k)
+{
+	switch (a_k) {
+	case Kind::Medical: return "medical";
+	case Kind::Crew: return "crew";
+	case Kind::Busy: return "busy";
+	case Kind::Crime: return "crime";
+	case Kind::Credits: return "credits";
+	case Kind::Quest: return "quest";
+	case Kind::Location: return "location";
+	case Kind::Xp: return "xp";
+	case Kind::Game: return "game";
+	}
+	return "game";
+}
+
+// Purpose: parse a JSON "k" token. Unknown tokens become Game.
+// Inputs: token. Outputs: Kind. Dependencies: none.
+inline Kind KindFromKey(std::string_view a_k)
+{
+	if (a_k == "medical") return Kind::Medical;
+	if (a_k == "crew") return Kind::Crew;
+	if (a_k == "busy") return Kind::Busy;
+	if (a_k == "crime") return Kind::Crime;
+	if (a_k == "credits") return Kind::Credits;
+	if (a_k == "quest") return Kind::Quest;
+	if (a_k == "location") return Kind::Location;
+	if (a_k == "xp") return Kind::Xp;
+	return Kind::Game;
+}
+
+inline std::uint32_t TypeBit(Kind a_k)
+{
+	switch (a_k) {
+	case Kind::Medical: return kTypeMedical;
+	case Kind::Crew: return kTypeCrew;
+	case Kind::Busy: return kTypeBusy;
+	case Kind::Crime: return kTypeCrime;
+	case Kind::Credits: return kTypeCredits;
+	case Kind::Quest: return kTypeQuest;
+	case Kind::Location: return kTypeLocation;
+	case Kind::Xp: return kTypeXp;
+	case Kind::Game: return kTypeGame;
+	}
+	return kTypeGame;
+}
+
+// Purpose: clamp HistorySize to 100-1000 in steps of 100.
+// Inputs: requested size. Outputs: clamped size. Dependencies: none.
+inline int ClampHistory(int a_n)
+{
+	if (a_n < kHistoryMin) a_n = kHistoryMin;
+	if (a_n > kHistoryMax) a_n = kHistoryMax;
+	a_n = (a_n / kHistoryStep) * kHistoryStep;
+	if (a_n < kHistoryMin) a_n = kHistoryMin;
+	return a_n;
+}
+
+// Purpose: parse LogTypes=medical,crew,... All-on is the default when empty.
+// Inputs: comma list. Outputs: bit mask. Dependencies: KindFromKey.
+inline std::uint32_t ParseLogTypes(std::string_view a_s)
+{
+	std::uint32_t bits = 0;
+	std::string cur;
+	auto flush = [&]() {
+		std::string t;
+		for (unsigned char c : cur) {
+			if (c == ' ' || c == '\t') continue;
+			t.push_back(static_cast<char>(std::tolower(c)));
+		}
+		cur.clear();
+		if (t.empty()) return;
+		bits |= TypeBit(KindFromKey(t));
+	};
+	for (char c : a_s) {
+		if (c == ',') flush();
+		else cur.push_back(c);
+	}
+	flush();
+	return bits ? bits : kTypeAll;
+}
+
+inline std::string LogTypesText(std::uint32_t a_bits)
+{
+	std::string o;
+	const Kind order[] = {Kind::Medical, Kind::Crew, Kind::Busy, Kind::Crime, Kind::Credits,
+		Kind::Quest, Kind::Location, Kind::Xp, Kind::Game};
+	for (auto k : order) {
+		if (!(a_bits & TypeBit(k))) continue;
+		if (!o.empty()) o += ',';
+		o += KindKey(k);
+	}
+	return o;
+}
+
+// Purpose: trim, collapse whitespace, case-fold. The dedupe key uses this.
+// Inputs: raw text. Outputs: normalized key. Dependencies: hzpreset::IsNbsp.
+inline std::string NormalizeText(std::string_view a_s)
+{
+	std::string t(a_s.begin(), a_s.end());
+	t = hzpreset::Trim(t);
+	std::string o;
+	bool sp = false;
+	for (std::size_t i = 0; i < t.size();) {
+		std::size_t step = 0;
+		const auto c = static_cast<unsigned char>(t[i]);
+		if (hzpreset::IsNbsp(t, i, step) || hzpreset::IsWs(c)) {
+			if (!o.empty()) sp = true;
+			i += step ? step : 1;
+			continue;
+		}
+		if (sp) {
+			o += ' ';
+			sp = false;
+		}
+		o += static_cast<char>(std::tolower(c));
+		++i;
+	}
+	return o;
+}
+
+inline std::string CapText(std::string_view a_s, std::size_t a_max)
+{
+	return hzpreset::Utf8Prefix(std::string(a_s.begin(), a_s.end()), a_max);
+}
+
+inline bool StartsFold(std::string_view a_s, std::string_view a_pre)
+{
+	if (a_s.size() < a_pre.size()) return false;
+	for (std::size_t i = 0; i < a_pre.size(); ++i) {
+		const auto a = static_cast<unsigned char>(a_s[i]);
+		const auto b = static_cast<unsigned char>(a_pre[i]);
+		if (std::tolower(a) != std::tolower(b)) return false;
+	}
+	return true;
+}
+
+// Purpose: true for untranslated "$..." Scaleform keys. Those are never stored.
+// Inputs: raw HUD text. Outputs: true when the trimmed line starts with $.
+inline bool IsDollarKey(std::string_view a_s)
+{
+	auto t = hzmsg::Trim(a_s);
+	return !t.empty() && t.front() == '$';
+}
+
+// Purpose: Saving / Autosaving lines and their $...Msg keys. Never logged.
+// They are a backup flush signal when SaveLoadEvent is quiet.
+// Inputs: raw HUD text. Outputs: true when the line is a save notice.
+inline bool IsSaveLine(std::string_view a_s)
+{
+	auto t = hzmsg::Trim(a_s);
+	if (t.empty()) return false;
+	if (StartsFold(t, "$ManualSaveMsg") || StartsFold(t, "$AutosavingMsg") || StartsFold(t, "$QuicksaveMsg")
+		|| StartsFold(t, "$QuickSaveMsg") || StartsFold(t, "$SavingMsg"))
+		return true;
+	if (IsDollarKey(t)) return false;
+	// Ellipsis may be ASCII "..." or a UTF-8 ellipsis (E2 80 A6).
+	if (StartsFold(t, "Saving") || StartsFold(t, "Autosaving")) return true;
+	return false;
+}
+
+// Purpose: classify a HUD sink line with hz_msg_match, including credits.
+// Quest / location / XP never come from this path (the movie owns those).
+// Inputs: text and GMST phrases. Outputs: kind, title, tag. Unmatched -> Game.
+inline Kind ClassifyHud(std::string_view a_text, const hzmsg::Templates& a_phrases, std::string& a_title, std::string& a_tag)
+{
+	a_title.clear();
+	a_tag.clear();
+	const auto hit = hzmsg::Match(a_text, a_phrases);
+	if (!hit.ok) {
+		a_title = "GAME";
+		return Kind::Game;
+	}
+	a_tag = hit.value;
+	if (hit.kind == "medical") {
+		a_title = hit.name.empty() ? "MEDICAL" : hit.name;
+		return Kind::Medical;
+	}
+	if (hit.kind == "crew") {
+		a_title = hit.name.empty() ? "CREW" : hit.name;
+		return Kind::Crew;
+	}
+	if (hit.kind == "reaction") {
+		a_title = hit.name.empty() ? "CREW" : hit.name;
+		return Kind::Crew;
+	}
+	if (hit.kind == "unavailable" && hit.sub == "busy") {
+		a_title = "BUSY";
+		return Kind::Busy;
+	}
+	if (hit.kind == "crime") {
+		a_title = "CRIME";
+		return Kind::Crime;
+	}
+	if (hit.kind == "credits") {
+		a_title = hit.sub == "kid" ? "KID STUFF" : "CREDITS";
+		return Kind::Credits;
+	}
+	a_title = hit.name.empty() ? "GAME" : hit.name;
+	return Kind::Game;
+}
+
+// Purpose: hex key from BGSSaveLoadManager::currentPlayerID.
+// Inputs: the u64 id. Outputs: uppercase hex, 8 digits when it fits in 32 bits.
+inline std::string HexPlayerId(std::uint64_t a_id)
+{
+	char b[17];
+	if (a_id <= 0xFFFFFFFFull)
+		std::snprintf(b, sizeof b, "%08X", static_cast<unsigned>(a_id));
+	else
+		std::snprintf(b, sizeof b, "%016llX", static_cast<unsigned long long>(a_id));
+	return b;
+}
+
+// Purpose: FNV-1a of the player name, marked as the fallback key.
+// Inputs: display name. Outputs: "<8 hex>-n". Dependencies: none.
+inline std::string NameHashKey(std::string_view a_name)
+{
+	std::uint32_t h = 2166136261u;
+	for (unsigned char c : a_name) {
+		h ^= static_cast<std::uint32_t>(std::tolower(c));
+		h *= 16777619u;
+	}
+	char b[16];
+	std::snprintf(b, sizeof b, "%08X-n", h);
+	return b;
+}
+
+// Purpose: pick the character file key. A non-zero player id wins. NG+ that
+// changes the id starts a new log. A zero id falls back to the name hash.
+// Inputs: currentPlayerID and the display name. Outputs: key and keySource.
+inline Character MakeCharacter(std::uint64_t a_playerId, std::string_view a_name)
+{
+	Character c;
+	if (a_playerId != 0) {
+		c.key = HexPlayerId(a_playerId);
+		c.keySource = "playerId";
+	} else {
+		c.key = NameHashKey(a_name);
+		c.keySource = "nameHash";
+	}
+	const auto n = hzpreset::Trim(std::string(a_name.begin(), a_name.end()));
+	if (!n.empty()) c.names.push_back(n);
+	return c;
+}
+
+inline bool FromLaterPoint(const Entry& a_e, double a_gtNow)
+{
+	return a_gtNow > 0 && a_e.gt > a_gtNow;
+}
+
+// ---------------------------------------------------------------------------
+// In-memory ring + pins
+// ---------------------------------------------------------------------------
+
+class Buffer {
+public:
+	Settings  settings;
+	Character character;
+	std::int64_t lastPlayedTs{0};
+	std::uint64_t nextId{1};
+	int       sess{1};
+	std::int64_t sessStartTs{0};
+	std::vector<Session> sessions;
+	std::vector<Entry> entries; // oldest -> newest
+
+	int Cap() const { return ClampHistory(settings.historySize); }
+
+	int UnpinnedCount() const
+	{
+		int n = 0;
+		for (const auto& e : entries)
+			if (!e.pin) ++n;
+		return n;
+	}
+
+	int PinCount() const
+	{
+		int n = 0;
+		for (const auto& e : entries)
+			if (e.pin) ++n;
+		return n;
+	}
+
+	const Entry* FindId(std::uint64_t a_id) const
+	{
+		for (const auto& e : entries)
+			if (e.id == a_id) return &e;
+		return nullptr;
+	}
+
+	Entry* FindIdMut(std::uint64_t a_id)
+	{
+		for (auto& e : entries)
+			if (e.id == a_id) return &e;
+		return nullptr;
+	}
+
+	void StartSession(std::int64_t a_ts)
+	{
+		sessStartTs = a_ts;
+		sessions.push_back(Session{sess, a_ts});
+	}
+
+	// Purpose: apply a capture. Saving lines return SaveSignal and are not stored.
+	// Record=0, a type that is off, or a missing module reject the line.
+	// A match inside the dedupe window increments n (cap 999) and moves the row.
+	// Inputs: capture (text, kind, times, location). Outputs: OfferResult.
+	OfferResult Offer(Capture a)
+	{
+		if (IsSaveLine(a.text) || IsDollarKey(a.text)) {
+			if (IsSaveLine(a.text)) return OfferResult::SaveSignal;
+			return OfferResult::Rejected;
+		}
+		if (!settings.record || !settings.modulePresent) return OfferResult::Rejected;
+		if (!(settings.logTypes & TypeBit(a.kind))) return OfferResult::Rejected;
+		a.text = CapText(hzpreset::Trim(a.text), kTextCap);
+		if (a.text.empty()) return OfferResult::Rejected;
+		a.loc = CapText(a.loc, kLocCap);
+		a.title = CapText(a.title, 64);
+		a.tag = CapText(a.tag, 32);
+		const auto key = NormalizeText(a.text);
+		const int win = a.kind == Kind::Busy ? kBusyDedupeMs : kDedupeMs;
+		return OfferDedupe(a, key, win);
+	}
+
+	bool Pin(std::uint64_t a_id)
+	{
+		for (auto& e : entries) {
+			if (e.id != a_id) continue;
+			if (e.pin) return true;
+			if (PinCount() >= kPinCap) return false;
+			e.pin = 1;
+			return true;
+		}
+		return false;
+	}
+
+	bool Unpin(std::uint64_t a_id)
+	{
+		for (auto& e : entries) {
+			if (e.id != a_id) continue;
+			e.pin = 0;
+			Evict();
+			return true;
+		}
+		return false;
+	}
+
+	// Purpose: drop unpinned rows whose in-game time is later than now.
+	// Pins stay and are flagged by FromLaterPoint. A null/zero clock is a no-op.
+	// Inputs: Calendar::GetDaysPassedExact(). Outputs: number of dropped rows.
+	int Prune(double a_gtNow)
+	{
+		if (a_gtNow <= 0) return 0;
+		double newest = 0;
+		for (const auto& e : entries)
+			if (e.gt > newest) newest = e.gt;
+		if (newest <= a_gtNow) return 0;
+		const auto before = entries.size();
+		std::vector<Entry> keep;
+		keep.reserve(entries.size());
+		for (auto& e : entries) {
+			if (e.pin || e.gt <= a_gtNow) keep.push_back(std::move(e));
+		}
+		entries.swap(keep);
+		return static_cast<int>(before - entries.size());
+	}
+
+	void ClearSession()
+	{
+		std::vector<Entry> keep;
+		for (auto& e : entries) {
+			if (e.sess != sess || e.pin) keep.push_back(std::move(e));
+		}
+		entries.swap(keep);
+	}
+
+	void ClearHistory()
+	{
+		entries.clear();
+	}
+
+	void SetHistorySize(int a_n)
+	{
+		settings.historySize = ClampHistory(a_n);
+		Evict();
+	}
+
+	void RememberName(std::string_view a_name)
+	{
+		const auto n = hzpreset::Trim(std::string(a_name.begin(), a_name.end()));
+		if (n.empty()) return;
+		for (const auto& have : character.names)
+			if (have == n) return;
+		character.names.push_back(n);
+	}
+
+	LogState Snapshot() const
+	{
+		LogState s;
+		s.character = character;
+		s.lastPlayedTs = lastPlayedTs;
+		s.cap = Cap();
+		s.pinCap = kPinCap;
+		s.nextId = nextId;
+		s.nextSess = sess + 1;
+		s.sessions = sessions;
+		s.entries = entries;
+		return s;
+	}
+
+	void LoadState(LogState s)
+	{
+		character = std::move(s.character);
+		lastPlayedTs = s.lastPlayedTs;
+		settings.historySize = ClampHistory(s.cap > 0 ? s.cap : settings.historySize);
+		nextId = s.nextId ? s.nextId : 1;
+		sess = s.nextSess > 0 ? s.nextSess : 1;
+		sessions = std::move(s.sessions);
+		entries = std::move(s.entries);
+		int pins = 0;
+		for (auto& e : entries) {
+			if (e.pin) {
+				++pins;
+				if (pins > kPinCap) e.pin = 0;
+			}
+			if (e.id >= nextId) nextId = e.id + 1;
+		}
+		Evict();
+	}
+
+	void ResetMemory()
+	{
+		entries.clear();
+		sessions.clear();
+		nextId = 1;
+		sess = 1;
+		sessStartTs = 0;
+		lastPlayedTs = 0;
+	}
+
+private:
+	std::vector<std::uint64_t> lastMs_;
+
+	OfferResult OfferDedupe(Capture& a, const std::string& a_key, int a_win)
+	{
+		if (lastMs_.size() != entries.size()) lastMs_.resize(entries.size(), 0);
+		for (std::size_t i = entries.size(); i-- > 0;) {
+			auto& e = entries[i];
+			if (e.kind != a.kind) continue;
+			if (NormalizeText(e.text) != a_key) continue;
+			const auto seen = lastMs_[i] ? lastMs_[i] : static_cast<std::uint64_t>(e.ts);
+			const auto now = a.nowMs ? a.nowMs : static_cast<std::uint64_t>(a.ts);
+			if (now >= seen && (now - seen) <= static_cast<std::uint64_t>(a_win)) {
+				if (e.n < kRepeatCap) ++e.n;
+				e.ts = a.ts;
+				e.gt = a.gt;
+				e.ut = a.ut;
+				e.lt = a.lt;
+				if (!a.loc.empty()) e.loc = a.loc;
+				lastMs_[i] = now;
+				if (i + 1 != entries.size()) {
+					auto moved = std::move(e);
+					const auto ms = lastMs_[i];
+					entries.erase(entries.begin() + static_cast<std::ptrdiff_t>(i));
+					lastMs_.erase(lastMs_.begin() + static_cast<std::ptrdiff_t>(i));
+					entries.push_back(std::move(moved));
+					lastMs_.push_back(ms);
+				}
+				return OfferResult::Deduped;
+			}
+			break;
+		}
+		Entry e;
+		e.id = nextId++;
+		e.kind = a.kind;
+		e.text = std::move(a.text);
+		e.title = std::move(a.title);
+		e.tag = std::move(a.tag);
+		e.gt = a.gt;
+		e.ut = a.ut;
+		e.lt = a.lt;
+		e.ts = a.ts;
+		e.loc = std::move(a.loc);
+		e.sess = sess;
+		e.n = 1;
+		e.missed = a.missed;
+		e.pin = 0;
+		entries.push_back(std::move(e));
+		lastMs_.push_back(a.nowMs ? a.nowMs : static_cast<std::uint64_t>(a.ts));
+		Evict();
+		return OfferResult::Stored;
+	}
+
+	void Evict()
+	{
+		const int cap = Cap();
+		while (UnpinnedCount() > cap) {
+			for (std::size_t i = 0; i < entries.size(); ++i) {
+				if (entries[i].pin) continue;
+				entries.erase(entries.begin() + static_cast<std::ptrdiff_t>(i));
+				if (i < lastMs_.size()) lastMs_.erase(lastMs_.begin() + static_cast<std::ptrdiff_t>(i));
+				break;
+			}
+		}
+		if (lastMs_.size() != entries.size()) lastMs_.resize(entries.size(), 0);
+	}
+};
+
+// ---------------------------------------------------------------------------
+// JSON
+// ---------------------------------------------------------------------------
+
+inline void JsonEsc(std::string& a_o, std::string_view a_s)
+{
+	a_o.push_back('"');
+	for (unsigned char c : a_s) {
+		if (c == '"' || c == '\\') {
+			a_o.push_back('\\');
+			a_o.push_back(static_cast<char>(c));
+		} else if (c == '\n') {
+			a_o += "\\n";
+		} else if (c == '\r') {
+			a_o += "\\r";
+		} else if (c == '\t') {
+			a_o += "\\t";
+		} else if (c < 32) {
+			char b[8];
+			std::snprintf(b, sizeof b, "\\u%04X", c);
+			a_o += b;
+		} else {
+			a_o.push_back(static_cast<char>(c));
+		}
+	}
+	a_o.push_back('"');
+}
+
+inline std::string JsonNumber(double a_v)
+{
+	char b[64];
+	std::snprintf(b, sizeof b, "%.6g", a_v);
+	return b;
+}
+
+// Purpose: write one log file body, oldest -> newest, already trimmed.
+// Inputs: state and the plugin version string. Outputs: JSON text.
+inline std::string ToJson(const LogState& a_s, std::string_view a_plugin)
+{
+	std::string o;
+	o += "{\n  \"type\": ";
+	JsonEsc(o, kJsonType);
+	o += ", \"version\": ";
+	o += std::to_string(kJsonVersion);
+	o += ", \"plugin\": ";
+	JsonEsc(o, a_plugin);
+	o += ",\n  \"character\": { \"key\": ";
+	JsonEsc(o, a_s.character.key);
+	o += ", \"keySource\": ";
+	JsonEsc(o, a_s.character.keySource);
+	o += ", \"names\": [";
+	for (std::size_t i = 0; i < a_s.character.names.size(); ++i) {
+		if (i) o += ", ";
+		JsonEsc(o, a_s.character.names[i]);
+	}
+	o += "] },\n  \"lastPlayedTs\": ";
+	o += std::to_string(a_s.lastPlayedTs);
+	o += ", \"cap\": ";
+	o += std::to_string(a_s.cap);
+	o += ", \"pinCap\": ";
+	o += std::to_string(a_s.pinCap);
+	o += ",\n  \"sessions\": [";
+	for (std::size_t i = 0; i < a_s.sessions.size(); ++i) {
+		if (i) o += ", ";
+		o += "{ \"id\": ";
+		o += std::to_string(a_s.sessions[i].id);
+		o += ", \"startTs\": ";
+		o += std::to_string(a_s.sessions[i].startTs);
+		o += " }";
+	}
+	o += "],\n  \"entries\": [\n";
+	for (std::size_t i = 0; i < a_s.entries.size(); ++i) {
+		const auto& e = a_s.entries[i];
+		o += "    { \"id\": ";
+		o += std::to_string(e.id);
+		o += ", \"k\": ";
+		JsonEsc(o, KindKey(e.kind));
+		o += ", \"t\": ";
+		JsonEsc(o, e.text);
+		o += ", \"title\": ";
+		JsonEsc(o, e.title);
+		o += ", \"tag\": ";
+		JsonEsc(o, e.tag);
+		o += ", \"gt\": ";
+		o += JsonNumber(e.gt);
+		o += ", \"ut\": ";
+		o += JsonNumber(e.ut);
+		o += ", \"lt\": ";
+		o += JsonNumber(e.lt);
+		o += ", \"ts\": ";
+		o += std::to_string(e.ts);
+		o += ", \"loc\": ";
+		JsonEsc(o, e.loc);
+		o += ", \"sess\": ";
+		o += std::to_string(e.sess);
+		o += ", \"n\": ";
+		o += std::to_string(e.n);
+		o += ", \"missed\": ";
+		o += std::to_string(e.missed);
+		o += ", \"pin\": ";
+		o += std::to_string(e.pin);
+		o += " }";
+		if (i + 1 < a_s.entries.size()) o += ",";
+		o += "\n";
+	}
+	o += "  ]\n}\n";
+	return o;
+}
+
+struct JsonTok {
+	const char* p{nullptr};
+	const char* e{nullptr};
+	void Skip()
+	{
+		while (p < e && std::isspace(static_cast<unsigned char>(*p))) ++p;
+	}
+	bool Eat(char c)
+	{
+		Skip();
+		if (p < e && *p == c) {
+			++p;
+			return true;
+		}
+		return false;
+	}
+	bool Peek(char c)
+	{
+		Skip();
+		return p < e && *p == c;
+	}
+};
+
+inline bool JsonString(JsonTok& a_t, std::string& a_o)
+{
+	a_t.Skip();
+	if (a_t.p >= a_t.e || *a_t.p != '"') return false;
+	++a_t.p;
+	a_o.clear();
+	while (a_t.p < a_t.e) {
+		char c = *a_t.p++;
+		if (c == '"') return true;
+		if (c == '\\' && a_t.p < a_t.e) {
+			c = *a_t.p++;
+			if (c == 'n') a_o += '\n';
+			else if (c == 'r') a_o += '\r';
+			else if (c == 't') a_o += '\t';
+			else if (c == 'u' && a_t.p + 4 <= a_t.e) {
+				a_t.p += 4;
+				a_o += '?';
+			} else
+				a_o += c;
+		} else {
+			a_o += c;
+		}
+	}
+	return false;
+}
+
+inline bool JsonNumberTok(JsonTok& a_t, double& a_o)
+{
+	a_t.Skip();
+	char* end = nullptr;
+	a_o = std::strtod(a_t.p, &end);
+	if (end == a_t.p) return false;
+	a_t.p = end;
+	return true;
+}
+
+inline bool JsonIntTok(JsonTok& a_t, std::int64_t& a_o)
+{
+	double d = 0;
+	if (!JsonNumberTok(a_t, d)) return false;
+	a_o = static_cast<std::int64_t>(d);
+	return true;
+}
+
+inline bool JsonSkipValue(JsonTok& a_t);
+
+inline bool JsonSkipObject(JsonTok& a_t)
+{
+	if (!a_t.Eat('{')) return false;
+	if (a_t.Eat('}')) return true;
+	for (;;) {
+		std::string k;
+		if (!JsonString(a_t, k) || !a_t.Eat(':') || !JsonSkipValue(a_t)) return false;
+		if (a_t.Eat('}')) return true;
+		if (!a_t.Eat(',')) return false;
+	}
+}
+
+inline bool JsonSkipArray(JsonTok& a_t)
+{
+	if (!a_t.Eat('[')) return false;
+	if (a_t.Eat(']')) return true;
+	for (;;) {
+		if (!JsonSkipValue(a_t)) return false;
+		if (a_t.Eat(']')) return true;
+		if (!a_t.Eat(',')) return false;
+	}
+}
+
+inline bool JsonSkipValue(JsonTok& a_t)
+{
+	a_t.Skip();
+	if (a_t.p >= a_t.e) return false;
+	if (*a_t.p == '"') {
+		std::string s;
+		return JsonString(a_t, s);
+	}
+	if (*a_t.p == '{') return JsonSkipObject(a_t);
+	if (*a_t.p == '[') return JsonSkipArray(a_t);
+	if (std::strncmp(a_t.p, "true", 4) == 0) {
+		a_t.p += 4;
+		return true;
+	}
+	if (std::strncmp(a_t.p, "false", 5) == 0) {
+		a_t.p += 5;
+		return true;
+	}
+	if (std::strncmp(a_t.p, "null", 4) == 0) {
+		a_t.p += 4;
+		return true;
+	}
+	double d = 0;
+	return JsonNumberTok(a_t, d);
+}
+
+inline bool ParseEntry(JsonTok& a_t, Entry& a_e, bool& a_usable)
+{
+	a_usable = false;
+	if (!a_t.Eat('{')) return false;
+	bool haveT = false, haveK = false;
+	if (a_t.Eat('}')) return true;
+	for (;;) {
+		std::string key;
+		if (!JsonString(a_t, key) || !a_t.Eat(':')) return false;
+		if (key == "id") {
+			std::int64_t v = 0;
+			if (!JsonIntTok(a_t, v)) return false;
+			a_e.id = static_cast<std::uint64_t>(v);
+		} else if (key == "k") {
+			std::string v;
+			if (!JsonString(a_t, v)) return false;
+			a_e.kind = KindFromKey(v);
+			haveK = true;
+		} else if (key == "t") {
+			if (!JsonString(a_t, a_e.text)) return false;
+			haveT = true;
+		} else if (key == "title") {
+			if (!JsonString(a_t, a_e.title)) return false;
+		} else if (key == "tag") {
+			if (!JsonString(a_t, a_e.tag)) return false;
+		} else if (key == "gt") {
+			if (!JsonNumberTok(a_t, a_e.gt)) return false;
+		} else if (key == "ut") {
+			if (!JsonNumberTok(a_t, a_e.ut)) return false;
+		} else if (key == "lt") {
+			if (!JsonNumberTok(a_t, a_e.lt)) return false;
+		} else if (key == "ts") {
+			if (!JsonIntTok(a_t, a_e.ts)) return false;
+		} else if (key == "loc") {
+			if (!JsonString(a_t, a_e.loc)) return false;
+		} else if (key == "sess") {
+			std::int64_t v = 0;
+			if (!JsonIntTok(a_t, v)) return false;
+			a_e.sess = static_cast<int>(v);
+		} else if (key == "n") {
+			std::int64_t v = 0;
+			if (!JsonIntTok(a_t, v)) return false;
+			a_e.n = static_cast<int>(v);
+			if (a_e.n < 1) a_e.n = 1;
+			if (a_e.n > kRepeatCap) a_e.n = kRepeatCap;
+		} else if (key == "missed") {
+			std::int64_t v = 0;
+			if (!JsonIntTok(a_t, v)) return false;
+			a_e.missed = static_cast<int>(v);
+		} else if (key == "pin") {
+			std::int64_t v = 0;
+			if (!JsonIntTok(a_t, v)) return false;
+			a_e.pin = v ? 1 : 0;
+		} else if (!JsonSkipValue(a_t)) {
+			return false;
+		}
+		if (a_t.Eat('}')) break;
+		if (!a_t.Eat(',')) return false;
+	}
+	if (!haveT || !haveK || a_e.text.empty()) return true;
+	a_e.text = CapText(a_e.text, kTextCap);
+	a_e.loc = CapText(a_e.loc, kLocCap);
+	a_usable = true;
+	return true;
+}
+
+struct ParseResult {
+	bool        ok{false};
+	bool        corrupt{false};
+	std::string notice;
+	LogState    state;
+};
+
+// Purpose: parse a log file. Bad JSON, the wrong type, a too-new version, or
+// a file over 1 MB is corrupt. Malformed entries are skipped.
+// Inputs: file bytes. Outputs: ParseResult. Dependencies: none.
+inline ParseResult FromJson(std::string_view a_text)
+{
+	ParseResult r;
+	if (a_text.size() > static_cast<std::size_t>(kFileMaxBytes)) {
+		r.corrupt = true;
+		r.notice = "file too large";
+		return r;
+	}
+	JsonTok t{a_text.data(), a_text.data() + a_text.size()};
+	if (!t.Eat('{')) {
+		r.corrupt = true;
+		r.notice = "bad json";
+		return r;
+	}
+	std::string type;
+	int version = 0;
+	bool haveType = false, haveVer = false;
+	r.state.cap = kHistoryDefault;
+	r.state.pinCap = kPinCap;
+	r.state.nextId = 1;
+	if (t.Eat('}')) {
+		r.corrupt = true;
+		r.notice = "empty object";
+		return r;
+	}
+	for (;;) {
+		std::string key;
+		if (!JsonString(t, key) || !t.Eat(':')) {
+			r.corrupt = true;
+			r.notice = "bad json";
+			return r;
+		}
+		if (key == "type") {
+			if (!JsonString(t, type)) {
+				r.corrupt = true;
+				r.notice = "bad json";
+				return r;
+			}
+			haveType = true;
+		} else if (key == "version") {
+			std::int64_t v = 0;
+			if (!JsonIntTok(t, v)) {
+				r.corrupt = true;
+				r.notice = "bad json";
+				return r;
+			}
+			version = static_cast<int>(v);
+			haveVer = true;
+		} else if (key == "plugin") {
+			std::string s;
+			if (!JsonString(t, s)) {
+				r.corrupt = true;
+				r.notice = "bad json";
+				return r;
+			}
+		} else if (key == "character") {
+			if (!t.Eat('{')) {
+				r.corrupt = true;
+				r.notice = "bad json";
+				return r;
+			}
+			if (!t.Eat('}')) {
+				for (;;) {
+					std::string ck;
+					if (!JsonString(t, ck) || !t.Eat(':')) {
+						r.corrupt = true;
+						r.notice = "bad json";
+						return r;
+					}
+					if (ck == "key") {
+						if (!JsonString(t, r.state.character.key)) {
+							r.corrupt = true;
+							r.notice = "bad json";
+							return r;
+						}
+					} else if (ck == "keySource") {
+						if (!JsonString(t, r.state.character.keySource)) {
+							r.corrupt = true;
+							r.notice = "bad json";
+							return r;
+						}
+					} else if (ck == "names") {
+						if (!t.Eat('[')) {
+							r.corrupt = true;
+							r.notice = "bad json";
+							return r;
+						}
+						if (!t.Eat(']')) {
+							for (;;) {
+								std::string nm;
+								if (!JsonString(t, nm)) {
+									r.corrupt = true;
+									r.notice = "bad json";
+									return r;
+								}
+								if (!nm.empty()) r.state.character.names.push_back(nm);
+								if (t.Eat(']')) break;
+								if (!t.Eat(',')) {
+									r.corrupt = true;
+									r.notice = "bad json";
+									return r;
+								}
+							}
+						}
+					} else if (!JsonSkipValue(t)) {
+						r.corrupt = true;
+						r.notice = "bad json";
+						return r;
+					}
+					if (t.Eat('}')) break;
+					if (!t.Eat(',')) {
+						r.corrupt = true;
+						r.notice = "bad json";
+						return r;
+					}
+				}
+			}
+		} else if (key == "lastPlayedTs") {
+			if (!JsonIntTok(t, r.state.lastPlayedTs)) {
+				r.corrupt = true;
+				r.notice = "bad json";
+				return r;
+			}
+		} else if (key == "cap") {
+			std::int64_t v = 0;
+			if (!JsonIntTok(t, v)) {
+				r.corrupt = true;
+				r.notice = "bad json";
+				return r;
+			}
+			r.state.cap = ClampHistory(static_cast<int>(v));
+		} else if (key == "pinCap") {
+			std::int64_t v = 0;
+			if (!JsonIntTok(t, v)) {
+				r.corrupt = true;
+				r.notice = "bad json";
+				return r;
+			}
+			r.state.pinCap = static_cast<int>(v);
+		} else if (key == "sessions") {
+			if (!t.Eat('[')) {
+				r.corrupt = true;
+				r.notice = "bad json";
+				return r;
+			}
+			if (!t.Eat(']')) {
+				for (;;) {
+					if (!t.Eat('{')) {
+						r.corrupt = true;
+						r.notice = "bad json";
+						return r;
+					}
+					Session s;
+					if (!t.Eat('}')) {
+						for (;;) {
+							std::string sk;
+							if (!JsonString(t, sk) || !t.Eat(':')) {
+								r.corrupt = true;
+								r.notice = "bad json";
+								return r;
+							}
+							if (sk == "id") {
+								std::int64_t v = 0;
+								if (!JsonIntTok(t, v)) {
+									r.corrupt = true;
+									r.notice = "bad json";
+									return r;
+								}
+								s.id = static_cast<int>(v);
+							} else if (sk == "startTs") {
+								if (!JsonIntTok(t, s.startTs)) {
+									r.corrupt = true;
+									r.notice = "bad json";
+									return r;
+								}
+							} else if (!JsonSkipValue(t)) {
+								r.corrupt = true;
+								r.notice = "bad json";
+								return r;
+							}
+							if (t.Eat('}')) break;
+							if (!t.Eat(',')) {
+								r.corrupt = true;
+								r.notice = "bad json";
+								return r;
+							}
+						}
+					}
+					r.state.sessions.push_back(s);
+					if (t.Eat(']')) break;
+					if (!t.Eat(',')) {
+						r.corrupt = true;
+						r.notice = "bad json";
+						return r;
+					}
+				}
+			}
+		} else if (key == "entries") {
+			if (!t.Eat('[')) {
+				r.corrupt = true;
+				r.notice = "bad json";
+				return r;
+			}
+			if (!t.Eat(']')) {
+				for (;;) {
+					t.Skip();
+					if (t.Peek('{')) {
+						Entry e;
+						bool usable = false;
+						if (!ParseEntry(t, e, usable)) {
+							r.corrupt = true;
+							r.notice = "bad json";
+							return r;
+						}
+						if (usable) {
+							if (e.id >= r.state.nextId) r.state.nextId = e.id + 1;
+							r.state.entries.push_back(std::move(e));
+						} else {
+							r.notice = "skipped malformed entries";
+						}
+					} else if (!JsonSkipValue(t)) {
+						r.corrupt = true;
+						r.notice = "bad json";
+						return r;
+					}
+					if (t.Eat(']')) break;
+					if (!t.Eat(',')) {
+						r.corrupt = true;
+						r.notice = "bad json";
+						return r;
+					}
+				}
+			}
+		} else if (!JsonSkipValue(t)) {
+			r.corrupt = true;
+			r.notice = "bad json";
+			return r;
+		}
+		if (t.Eat('}')) break;
+		if (!t.Eat(',')) {
+			r.corrupt = true;
+			r.notice = "bad json";
+			return r;
+		}
+	}
+	if (!haveType || type != kJsonType) {
+		r.corrupt = true;
+		r.notice = "wrong type";
+		return r;
+	}
+	if (!haveVer || version > kJsonVersion) {
+		r.corrupt = true;
+		r.notice = "too new";
+		return r;
+	}
+	r.ok = true;
+	return r;
+}
+
+// ---------------------------------------------------------------------------
+// Storage backends
+// ---------------------------------------------------------------------------
+
+class IMessageStore {
+public:
+	virtual ~IMessageStore() = default;
+	virtual bool Load(const std::string& a_key, LogState& a_out, std::string& a_notice) = 0;
+	virtual bool Save(const LogState& a_state) = 0;
+	// Called only after the later UI confirm. Never silent.
+	virtual bool DeleteCurrent(const std::string& a_key) = 0;
+	virtual bool TouchesDisk() const = 0;
+	virtual bool FolderExists() const = 0;
+};
+
+class NullStore final : public IMessageStore {
+public:
+	bool Load(const std::string&, LogState& a_out, std::string& a_notice) override
+	{
+		a_out = {};
+		a_notice.clear();
+		return true;
+	}
+	bool Save(const LogState&) override { return true; }
+	bool DeleteCurrent(const std::string&) override { return true; }
+	bool TouchesDisk() const override { return false; }
+	bool FolderExists() const override { return false; }
+};
+
+using ReplaceFn = std::function<bool(const std::filesystem::path&, const std::filesystem::path&)>;
+
+inline bool DefaultReplace(const std::filesystem::path& a_tmp, const std::filesystem::path& a_dst)
+{
+	std::error_code ec;
+	std::filesystem::rename(a_tmp, a_dst, ec);
+	if (!ec) return true;
+	std::filesystem::remove(a_dst, ec);
+	std::filesystem::rename(a_tmp, a_dst, ec);
+	return !ec;
+}
+
+class FileStore final : public IMessageStore {
+public:
+	std::filesystem::path dir; // .../HorizonUI/MessageLog
+	ReplaceFn             replace{DefaultReplace};
+
+	explicit FileStore(std::filesystem::path a_dir, ReplaceFn a_rep = DefaultReplace)
+		: dir(std::move(a_dir)), replace(std::move(a_rep))
+	{
+	}
+
+	std::filesystem::path FileFor(const std::string& a_key) const
+	{
+		return dir / ("MessageLog_" + a_key + ".json");
+	}
+
+	bool TouchesDisk() const override { return true; }
+
+	bool FolderExists() const override
+	{
+		std::error_code ec;
+		return std::filesystem::is_directory(dir, ec);
+	}
+
+	bool Load(const std::string& a_key, LogState& a_out, std::string& a_notice) override
+	{
+		a_out = {};
+		a_notice.clear();
+		if (a_key.empty()) return true;
+		std::error_code ec;
+		if (!std::filesystem::is_directory(dir, ec)) return true;
+		auto path = FileFor(a_key);
+		if (!TryLoad(path, a_out, a_notice)) {
+			auto bak = path;
+			bak += ".bak";
+			if (TryLoad(bak, a_out, a_notice)) {
+				if (a_notice.empty()) a_notice = "recovered from bak";
+				return true;
+			}
+			a_out = {};
+			if (a_notice.empty()) a_notice = "empty after corrupt file";
+		}
+		return true;
+	}
+
+	bool Save(const LogState& a_state) override
+	{
+		if (a_state.character.key.empty()) return false;
+		std::error_code ec;
+		std::filesystem::create_directories(dir, ec);
+		if (ec) return false;
+		const auto path = FileFor(a_state.character.key);
+		const auto body = ToJson(a_state, std::string("HorizonUI ") + HZ_FILE_VERSION_STR);
+		auto tmp = path;
+		tmp += ".tmp";
+		{
+			std::ofstream o(tmp, std::ios::binary | std::ios::trunc);
+			if (!o) return false;
+			o.write(body.data(), static_cast<std::streamsize>(body.size()));
+			o.flush();
+			if (!o) {
+				o.close();
+				std::filesystem::remove(tmp, ec);
+				return false;
+			}
+		}
+		if (std::filesystem::is_regular_file(path, ec)) {
+			auto bak = path;
+			bak += ".bak";
+			std::filesystem::copy_file(path, bak, std::filesystem::copy_options::overwrite_existing, ec);
+		}
+		if (!replace(tmp, path)) {
+			std::filesystem::remove(tmp, ec);
+			return false;
+		}
+		return true;
+	}
+
+	bool DeleteCurrent(const std::string& a_key) override
+	{
+		if (a_key.empty()) return false;
+		std::error_code ec;
+		auto path = FileFor(a_key);
+		std::filesystem::remove(path, ec);
+		auto bak = path;
+		bak += ".bak";
+		std::filesystem::remove(bak, ec);
+		auto bad = path;
+		bad += ".bad";
+		std::filesystem::remove(bad, ec);
+		auto tmp = path;
+		tmp += ".tmp";
+		std::filesystem::remove(tmp, ec);
+		return true;
+	}
+
+private:
+	bool TryLoad(const std::filesystem::path& a_path, LogState& a_out, std::string& a_notice)
+	{
+		std::error_code ec;
+		if (!std::filesystem::is_regular_file(a_path, ec)) return true;
+		std::ifstream f(a_path, std::ios::binary);
+		if (!f) return false;
+		std::string body((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+		auto parsed = FromJson(body);
+		if (parsed.corrupt) {
+			auto bad = a_path;
+			if (a_path.extension() == ".bak") {
+				// leave the bak; the caller will start empty
+			} else {
+				bad += ".bad";
+				std::filesystem::rename(a_path, bad, ec);
+			}
+			a_notice = parsed.notice;
+			return false;
+		}
+		a_out = std::move(parsed.state);
+		if (!parsed.notice.empty()) a_notice = parsed.notice;
+		return parsed.ok;
+	}
+};
+
+// Purpose: Persist=0 uses NullStore and never creates the MessageLog folder.
+// Persist=1 uses FileStore under <horizonDir>/MessageLog.
+// Switching 1->0 stops writes and keeps memory. DeleteCurrent is the later UI call.
+class Log {
+public:
+	Buffer                    buf;
+	std::unique_ptr<IMessageStore> store;
+	std::filesystem::path     horizonDir;
+	ReplaceFn                 replace{DefaultReplace};
+	bool                      loadBusy{false};
+	std::uint64_t             lastChangeMs{0};
+	std::uint64_t             lastWriteMs{0};
+	bool                      dirty{false};
+	std::string               lastNotice;
+
+	Log() { store = std::make_unique<NullStore>(); }
+
+	void Configure(const Settings& a_s, std::filesystem::path a_horizonDir)
+	{
+		buf.settings = a_s;
+		buf.settings.historySize = ClampHistory(a_s.historySize);
+		horizonDir = std::move(a_horizonDir);
+		ApplyPersist(a_s.persist);
+	}
+
+	void ApplyPersist(bool a_persist)
+	{
+		buf.settings.persist = a_persist;
+		if (!a_persist)
+			store = std::make_unique<NullStore>();
+		else
+			store = std::make_unique<FileStore>(horizonDir / "MessageLog", replace);
+	}
+
+	bool FolderExists() const { return store && store->FolderExists(); }
+
+	OfferResult Offer(Capture a)
+	{
+		const auto r = buf.Offer(std::move(a));
+		if (r == OfferResult::Stored || r == OfferResult::Deduped) {
+			dirty = true;
+			lastChangeMs = a.nowMs;
+		}
+		return r;
+	}
+
+	bool ShouldFlush(std::uint64_t a_nowMs, bool a_force) const
+	{
+		if (!buf.settings.persist || !store || !store->TouchesDisk()) return false;
+		if (loadBusy) return false;
+		if (!dirty) return false;
+		if (a_force) return true;
+		if (lastWriteMs && a_nowMs >= lastWriteMs && (a_nowMs - lastWriteMs) < static_cast<std::uint64_t>(kDebounceMsMin))
+			return false;
+		if (!lastChangeMs) return false;
+		return a_nowMs >= lastChangeMs && (a_nowMs - lastChangeMs) >= static_cast<std::uint64_t>(kDebounceMs);
+	}
+
+	bool Flush(std::uint64_t a_nowMs)
+	{
+		if (!store) return false;
+		if (!buf.settings.persist) return true;
+		if (loadBusy) return false;
+		buf.lastPlayedTs = static_cast<std::int64_t>(a_nowMs / 1000);
+		if (buf.character.key.empty()) return false;
+		const bool ok = store->Save(buf.Snapshot());
+		if (ok) {
+			dirty = false;
+			lastWriteMs = a_nowMs;
+		}
+		return ok;
+	}
+
+	// Purpose: HUD-ready edge. A new key flushes the old file and loads the new
+	// one (NG+ starts empty). Persist=0 only clears memory. Then prune.
+	// Inputs: new character, current gt, now. Outputs: true when the key changed.
+	bool OnHudReady(Character a_ch, double a_gtNow, std::int64_t a_ts, std::uint64_t a_nowMs)
+	{
+		bool changed = false;
+		if (a_ch.key.empty()) return false;
+		if (buf.character.key.empty()) {
+			buf.character = std::move(a_ch);
+			LoadCurrent();
+			changed = true;
+		} else if (buf.character.key != a_ch.key) {
+			// Caller flushes the old file on a worker first. Never write here.
+			(void)a_nowMs;
+			buf.ResetMemory();
+			dirty = false;
+			buf.character = std::move(a_ch);
+			if (buf.settings.persist)
+				LoadCurrent();
+			else
+				lastNotice.clear();
+			changed = true;
+		} else {
+			buf.RememberName(a_ch.names.empty() ? "" : a_ch.names.back());
+		}
+		buf.sess = buf.sess <= 0 ? 1 : buf.sess;
+		if (changed || buf.sessions.empty()) {
+			buf.StartSession(a_ts);
+		}
+		buf.Prune(a_gtNow);
+		return changed;
+	}
+
+	void LoadCurrent()
+	{
+		LogState st;
+		lastNotice.clear();
+		if (store) store->Load(buf.character.key, st, lastNotice);
+		if (!st.character.key.empty() || !st.entries.empty())
+			buf.LoadState(std::move(st));
+	}
+
+	// Purpose: later UI confirm after Save to disk is turned off. Never silent.
+	bool DeleteCurrentFile()
+	{
+		if (!store || buf.character.key.empty()) return false;
+		return store->DeleteCurrent(buf.character.key);
+	}
+};
+
+// Purpose: parse a movie take-queue line "kind|title|text".
+// Inputs: one forwarded line. Outputs: kind/title/text. Bad lines are rejected.
+inline bool ParseForward(std::string_view a_line, Kind& a_kind, std::string& a_title, std::string& a_text)
+{
+	const auto p1 = a_line.find('|');
+	if (p1 == std::string_view::npos) return false;
+	const auto p2 = a_line.find('|', p1 + 1);
+	if (p2 == std::string_view::npos) return false;
+	a_kind = KindFromKey(a_line.substr(0, p1));
+	a_title.assign(a_line.substr(p1 + 1, p2 - p1 - 1));
+	a_text.assign(a_line.substr(p2 + 1));
+	return !a_text.empty() && (a_kind == Kind::Quest || a_kind == Kind::Location || a_kind == Kind::Xp);
+}
+
+} // namespace hzlog
