@@ -565,6 +565,15 @@ inline bool ShouldKeepHeldRows(bool a_hold, std::size_t a_count)
 	return a_hold && a_count > 0;
 }
 
+// Purpose: a failed promote/recover for a name-hash buffer parks under the
+// player-id target. Other buffers keep their own key.
+inline std::string ParkHeldKey(const Character& a_ch, const std::string& a_holdTarget)
+{
+	if (a_ch.keySource == "nameHash" && !a_holdTarget.empty())
+		return a_holdTarget;
+	return a_ch.key;
+}
+
 // Purpose: drop the oldest unpinned rows. Pins and the newest rows stay.
 inline void CapKeptHeld(std::vector<Entry>& a_rows, std::size_t a_cap)
 {
@@ -1780,6 +1789,7 @@ public:
 	std::uint64_t             lastWriteMs{0};
 	bool                      dirty{false};
 	bool                      persistHold{false};
+	std::string               holdTargetKey;
 	int                       retryBackoffMs{0};
 	std::uint64_t             retryAt{0};
 	std::string               lastNotice;
@@ -1855,6 +1865,7 @@ public:
 	void NoteRetrySuccess()
 	{
 		persistHold = false;
+		holdTargetKey.clear();
 		retryBackoffMs = 0;
 		retryAt = 0;
 	}
@@ -1875,30 +1886,21 @@ public:
 
 	// Purpose: park held rows when a load resets memory before the read
 	// recovers. One slot per character key. Merge when that file next loads.
+	// A name-hash hold parks under holdTargetKey (the player-id from the
+	// failed promote). A second park for the same key appends, then caps.
 	void ParkHeldRows()
 	{
 		if (!ShouldKeepHeldRows(persistHold, buf.entries.size())) return;
-		if (buf.character.key.empty()) return;
+		const auto key = ParkHeldKey(buf.character, holdTargetKey);
+		if (key.empty()) return;
 		auto rows = buf.entries;
+		if (auto* s = KeptHeldSlot(key)) {
+			s->entries.insert(s->entries.end(), rows.begin(), rows.end());
+			CapKeptHeld(s->entries, static_cast<std::size_t>(kKeptHeldCap));
+			return;
+		}
 		CapKeptHeld(rows, static_cast<std::size_t>(kKeptHeldCap));
-		if (auto* s = KeptHeldSlot(buf.character.key)) {
-			s->entries = std::move(rows);
-			return;
-		}
-		keptHeld.push_back({buf.character.key, std::move(rows)});
-	}
-
-	void RekeyKeptHeld(const std::string& a_from, const std::string& a_to)
-	{
-		if (a_from.empty() || a_to.empty() || a_from == a_to) return;
-		auto* src = KeptHeldSlot(a_from);
-		if (!src) return;
-		if (KeptHeldSlot(a_to)) {
-			keptHeld.erase(std::find_if(keptHeld.begin(), keptHeld.end(),
-				[&](const KeptHeld& s) { return s.key == a_from; }));
-			return;
-		}
-		src->key = a_to;
+		keptHeld.push_back({key, std::move(rows)});
 	}
 
 	void MergeKeptHeldIfMatch(const std::string& a_key)
@@ -1927,8 +1929,6 @@ public:
 			buf.MergeSession(session);
 		}
 		if (PersistAllowed(a_ch)) {
-			if (buf.character.keySource == "nameHash")
-				RekeyKeptHeld(buf.character.key, a_ch.key);
 			buf.character = std::move(a_ch);
 			for (const auto& n : names)
 				buf.RememberName(n);
@@ -1952,6 +1952,8 @@ public:
 			if (!store->Load(target.key, file, lastNotice)) {
 				persistHold = true;
 				dirty = false;
+				if (buf.character.keySource == "nameHash")
+					holdTargetKey = target.key;
 				NoteRetryFailure(a_nowMs);
 				return false;
 			}

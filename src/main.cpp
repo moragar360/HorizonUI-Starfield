@@ -2985,6 +2985,8 @@ namespace HZ
 					runPending = g_mlPendingHud;
 				} else if (!ok) {
 					hzlog::NoteLoadResult(false, g_ml.persistHold);
+					if (g_ml.buf.character.keySource == "nameHash")
+						g_ml.holdTargetKey = ch.key;
 					g_ml.NoteRetryFailure(now);
 					if (!notice.empty())
 						g_ml.lastNotice = std::move(notice);

@@ -501,6 +501,12 @@ int main()
 		Expect(main.find("MergeKeptHeldIfMatch") != std::string::npos, "parked rows merge when that character loads");
 		Expect(Slurp("src/hz_msglog.h").find("MergeKeptKeyOk") != std::string::npos,
 			"parked rows merge only when the character key matches");
+		Expect(main.find("g_ml.holdTargetKey = ch.key") != std::string::npos,
+			"a failed name-hash promote records the player-id target");
+		Expect(main.find("g_mlInFlightGen = job.gen") != std::string::npos,
+			"the in-flight generation is recorded when a load is queued");
+		Expect(Slurp("src/hz_msglog.h").find("RekeyKeptHeld") == std::string::npos,
+			"RekeyKeptHeld is gone");
 		Expect(main.find("NoteRetryFailure") != std::string::npos, "retries use exponential backoff");
 		Expect(main.find("MsglogQueueRecover") != std::string::npos, "held rows retry on the worker");
 		Expect(as.find("padx") != std::string::npos && as.find("pady") != std::string::npos, "AS3 treats padx/pady as actions");
@@ -946,6 +952,13 @@ int main()
 		Expect(!ShouldKeepHeldRows(false, 2), "a recovered session is not parked");
 		Expect(!ShouldKeepHeldRows(true, 0), "an empty hold is not parked");
 		{
+			Character nh = MakeCharacter(0, "Sam");
+			Character pid = MakeCharacter(0xABCDu, "Sam");
+			ExpectEq(ParkHeldKey(nh, "0000ABCD"), "0000ABCD", "a name-hash hold parks under the player-id target");
+			ExpectEq(ParkHeldKey(nh, ""), nh.key, "a name-hash hold without a target keeps its own key");
+			ExpectEq(ParkHeldKey(pid, "0000FFFF"), "0000ABCD", "a player-id hold keeps its own key");
+		}
+		{
 			int backoff = 0;
 			std::uint64_t retryAt = 0;
 			backoff = NextRetryMs(backoff);
@@ -1212,20 +1225,80 @@ int main()
 			ExpectEqI(static_cast<int>(two.keptHeld.size()), 1, "A's slot remains after B merges");
 		}
 		{
-			Log nameHash;
-			nameHash.persistHold = true;
-			nameHash.buf.character = MakeCharacter(0, "Sam");
-			nameHash.Offer(Cap(Kind::Game, "namehash held", 260'000));
-			nameHash.ParkHeldRows();
-			ExpectEq(nameHash.keptHeld.front().key, nameHash.buf.character.key, "name-hash park uses the buffer key");
-			nameHash.RekeyKeptHeld(nameHash.buf.character.key, "0000ABCD");
-			ExpectEq(nameHash.keptHeld.front().key, "0000ABCD", "promotion re-keys the parked slot to the player id");
-			nameHash.buf.ResetMemory();
-			nameHash.MergeKeptHeldIfMatch("0000ABCD");
-			bool gotNh = false;
-			for (const auto& e : nameHash.buf.entries)
+			Log promo;
+			promo.Configure(s, root);
+			if (auto* p = dynamic_cast<FileStore*>(promo.store.get()))
+				p->readHook = transientMain;
+			promo.buf.character = MakeCharacter(0, "Sam");
+			promo.Offer(Cap(Kind::Game, "namehash held", 260'000));
+			Expect(!promo.PromoteToCharacter(MakeCharacter(0xABCDu, "Sam"), 261'000),
+				"the real promote path fails the read");
+			Expect(promo.persistHold, "failed promote holds the session");
+			ExpectEq(promo.holdTargetKey, "0000ABCD", "failed promote records the player-id target");
+			promo.ParkHeldRows();
+			ExpectEqI(static_cast<int>(promo.keptHeld.size()), 1, "failed promote parks one slot");
+			ExpectEq(promo.keptHeld.front().key, "0000ABCD", "name-hash rows park under the player-id target");
+			const auto parked = promo.keptHeld;
+
+			Log other;
+			other.Configure(s, root);
+			other.buf.character = MakeCharacter(0xBBBBu, "Sam");
+			other.keptHeld = parked;
+			other.ApplyRecoveredFile({}, MakeCharacter(0xBBBBu, "Sam"));
+			other.MergeKeptHeldIfMatch(other.buf.character.key);
+			bool leakSameName = false;
+			for (const auto& e : other.buf.entries)
+				if (e.text == "namehash held") leakSameName = true;
+			Expect(!leakSameName, "a different character with the same name gets none of the held rows");
+			ExpectEqI(static_cast<int>(other.keptHeld.size()), 1, "the parked slot stays for the target character");
+
+			Log later;
+			later.Configure(s, root);
+			later.keptHeld = parked;
+			LogState aFile;
+			std::string notice;
+			Expect(dynamic_cast<FileStore*>(later.store.get())->Load("0000ABCD", aFile, notice),
+				"A's file loads for ApplyRecoveredFile");
+			later.ApplyRecoveredFile(std::move(aFile), MakeCharacter(0xABCDu, "Sam"));
+			later.MergeKeptHeldIfMatch("0000ABCD");
+			bool gotNh = false, gotFileRow = false;
+			for (const auto& e : later.buf.entries) {
 				if (e.text == "namehash held") gotNh = true;
-			Expect(gotNh, "re-keyed parked rows merge on the player-id load");
+				if (e.text == "second generation") gotFileRow = true;
+			}
+			Expect(gotNh && gotFileRow, "held name-hash rows merge into that character's file only");
+			Expect(later.Flush(270'000), "the recovered session writes");
+			Expect(ReadFile(path).find("namehash held") != std::string::npos,
+				"A's file on disk has the held name-hash row");
+			Expect(ReadFile(path).find("second generation") != std::string::npos,
+				"A's file still has its own rows");
+		}
+		{
+			Log again;
+			again.Configure(s, root);
+			again.persistHold = true;
+			again.buf.character = MakeCharacter(0xABCDu, "Sam");
+			again.Offer(Cap(Kind::Game, "A1", 280'000));
+			again.ParkHeldRows();
+			again.buf.ResetMemory();
+			again.buf.character = MakeCharacter(0xABCDu, "Sam");
+			again.persistHold = true;
+			again.Offer(Cap(Kind::Game, "A2", 284'000));
+			again.ParkHeldRows();
+			ExpectEqI(static_cast<int>(again.keptHeld.size()), 1, "a second park for the same key stays one slot");
+			ExpectEqI(static_cast<int>(again.keptHeld.front().entries.size()), 2, "the second park appends");
+			bool gotA1 = false, gotA2 = false;
+			for (const auto& e : again.keptHeld.front().entries) {
+				if (e.text == "A1") gotA1 = true;
+				if (e.text == "A2") gotA2 = true;
+			}
+			Expect(gotA1 && gotA2, "park A1 then park A2 keeps both rows");
+			again.LoadCurrent();
+			again.MergeKeptHeldIfMatch("0000ABCD");
+			Expect(again.Flush(290'000), "appended parked rows write to A's file");
+			const auto body = ReadFile(path);
+			Expect(body.find("A1") != std::string::npos && body.find("A2") != std::string::npos,
+				"both parked rows reach A's file");
 		}
 		{
 			Log cap;
