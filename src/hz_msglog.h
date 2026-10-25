@@ -584,15 +584,18 @@ inline bool WriteFailParksJob(const std::string& a_jobKey, const std::string& a_
 	return !a_jobKey.empty() && a_jobKey != a_curKey;
 }
 
-// Purpose: the same parked event is the same text plus the same id or
-// the same time. Id alone is not enough: ResetMemory restarts nextId.
+// Purpose: the same parked event is the same kind, normalized text, and
+// exact timestamp. Ids are unused: a held or name-hash session restarts
+// nextId at 1, so those ids are unrelated to the file.
 inline bool SameParkedRow(const Entry& a_a, const Entry& a_b)
 {
-	if (a_a.text != a_b.text)
+	if (a_a.kind != a_b.kind)
 		return false;
-	if (a_a.ts == a_b.ts)
-		return true;
-	return a_a.id && a_b.id && a_a.id == a_b.id;
+	if (a_a.ts != a_b.ts)
+		return false;
+	const auto na = a_a.norm.empty() ? NormalizeText(a_a.text) : a_a.norm;
+	const auto nb = a_b.norm.empty() ? NormalizeText(a_b.text) : a_b.norm;
+	return na == nb;
 }
 
 inline bool HasSameParkedRow(const std::vector<Entry>& a_rows, const Entry& a_in)
@@ -604,8 +607,8 @@ inline bool HasSameParkedRow(const std::vector<Entry>& a_rows, const Entry& a_in
 	return false;
 }
 
-// Purpose: dirty-park merge skips rows already in the file (same id or
-// time and text) so n does not bump.
+// Purpose: dirty-park merge skips rows already in the file (same kind,
+// normalized text, and timestamp) so n does not bump.
 inline std::vector<Entry> ExactParkedNew(const std::vector<Entry>& a_have, const std::vector<Entry>& a_in)
 {
 	std::vector<Entry> out;

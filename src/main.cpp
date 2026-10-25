@@ -2352,7 +2352,6 @@ namespace HZ
 	MlWriteJob              g_mlWJob;
 	hzlog::LogState         g_mlWFailSnap;
 	std::string             g_mlWFailKey;
-	std::uint64_t           g_mlWFailGen{0};
 	MlLoadJob               g_mlLJob;
 	hzlog::LogState         g_mlLResult;
 	hzlog::Character        g_mlLCh;
@@ -2468,7 +2467,6 @@ namespace HZ
 						std::lock_guard wlk(g_mlWMu);
 						g_mlWFailSnap = std::move(wjob.snap);
 						g_mlWFailKey = std::move(wjob.key);
-						g_mlWFailGen = wjob.gen;
 						g_mlWFailed.store(true);
 					} else
 						g_mlWRecovered.store(true);

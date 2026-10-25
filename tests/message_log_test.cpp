@@ -532,8 +532,22 @@ int main()
 		}
 		Expect(main.find("WriteFailParksJob") != std::string::npos,
 			"a failed save for another key parks that job");
-		Expect(main.find("ParkWriteFailure") != std::string::npos,
-			"failed-save rows park under the job key");
+		Expect(main.find("ParkWriteFailure(failKey") != std::string::npos,
+			"a failed save parks under the job key, not the current key");
+		Expect(main.find("g_mlWFailGen") == std::string::npos,
+			"unused write-fail generation is gone");
+		{
+			const auto hdr = Slurp("src/hz_msglog.h");
+			const auto sameAt = hdr.find("inline bool SameParkedRow");
+			const auto nextAt = hdr.find("inline bool HasSameParkedRow");
+			const auto sameFn = sameAt != std::string::npos && nextAt > sameAt
+				? hdr.substr(sameAt, nextAt - sameAt) : std::string();
+			Expect(sameFn.find(".id") == std::string::npos, "SameParkedRow does not match on id");
+			Expect(sameFn.find("kind") != std::string::npos && sameFn.find(".ts") != std::string::npos,
+				"SameParkedRow matches kind and timestamp");
+			Expect(sameFn.find("NormalizeText") != std::string::npos,
+				"SameParkedRow matches normalized text");
+		}
 		Expect(main.find("MergeKeptHeldIfMatch") != std::string::npos, "parked rows merge when that character loads");
 		Expect(Slurp("src/hz_msglog.h").find("MergeKeptKeyOk") != std::string::npos,
 			"parked rows merge only when the character key matches");
@@ -999,6 +1013,75 @@ int main()
 		Expect(!WriteFailParksJob("", "0000BBBB"), "an empty job key is not parked");
 		Expect(ShouldParkDirtyRows(PendingCountsAsDirty(false, true), true, 1),
 			"a pending persist-allowed save is parked");
+		{
+			Entry fileInv;
+			fileInv.id = 1;
+			fileInv.kind = Kind::Game;
+			fileInv.text = "Inventory full";
+			fileInv.ts = 5;
+			Entry parkedInv;
+			parkedInv.id = 1;
+			parkedInv.kind = Kind::Game;
+			parkedInv.text = "Inventory full";
+			parkedInv.ts = 700;
+			Expect(!SameParkedRow(fileInv, parkedInv),
+				"same text and id at different times are two events");
+			parkedInv.ts = 5;
+			Expect(SameParkedRow(fileInv, parkedInv),
+				"S26/S28 same kind, text, and timestamp match");
+			fileInv.id = 99;
+			Expect(SameParkedRow(fileInv, parkedInv),
+				"S26/S28 same-ts re-park does not use id");
+			parkedInv.kind = Kind::Medical;
+			Expect(!SameParkedRow(fileInv, parkedInv),
+				"the same text at the same time is not a match across kinds");
+			parkedInv.kind = Kind::Game;
+			parkedInv.text = "INVENTORY   FULL";
+			Expect(SameParkedRow(fileInv, parkedInv),
+				"parked rows compare normalized text");
+		}
+		{
+			Log w15;
+			w15.buf.character = MakeCharacter(0xBBBBu, "Barrett");
+			w15.retryBackoffMs = 0;
+			w15.retryAt = 0;
+			w15.persistHold = false;
+			Entry oldRow;
+			oldRow.kind = Kind::Game;
+			oldRow.text = "A W15";
+			oldRow.ts = 1;
+			if (WriteFailParksJob("0000ABCD", w15.buf.character.key))
+				w15.ParkWriteFailure("0000ABCD", std::vector<Entry>{oldRow});
+			else {
+				NoteWriteFailure(w15.dirty);
+				w15.NoteRetryFailure(50'000);
+			}
+			ExpectEqI(w15.retryBackoffMs, 0, "W15 old-key fail does not back off B");
+			Expect(w15.retryAt == 0, "W15 old-key fail does not set B's retry timer");
+			Expect(!w15.persistHold, "W15 old-key fail is not a hold");
+		}
+		{
+			Log w17;
+			w17.dirty = false;
+			w17.writePending = true;
+			w17.persistHold = false;
+			w17.buf.character = MakeCharacter(0xABCDu, "Sam");
+			w17.buf.entries.resize(1);
+			w17.buf.entries.front().kind = Kind::Game;
+			w17.buf.entries.front().text = "W17 pending";
+			w17.ParkHeldRows();
+			ExpectEqI(static_cast<int>(w17.keptHeld.size()), 1, "W17 reset park honors the pending flag");
+			Expect(w17.keptHeld.front().entries.front().text == "W17 pending", "W17 parks the pending row");
+			Log idle;
+			idle.dirty = false;
+			idle.writePending = false;
+			idle.persistHold = false;
+			idle.buf.character = MakeCharacter(0xABCDu, "Sam");
+			idle.buf.entries.resize(1);
+			idle.buf.entries.front().text = "W17 idle";
+			idle.ParkHeldRows();
+			Expect(idle.keptHeld.empty(), "W17 idle is not parked");
+		}
 		{
 			Character nh = MakeCharacter(0, "Sam");
 			Character pid = MakeCharacter(0xABCDu, "Sam");
@@ -1563,13 +1646,75 @@ int main()
 			p2.dirty = false;
 			p2.MergeKeptHeldIfMatch("0000ABCD");
 			ExpectEqI(static_cast<int>(p2.buf.entries.size()), 1, "exact park stays one row");
-			ExpectEqI(p2.buf.entries.front().n, 1, "exact dirty-park match does not bump n");
+			ExpectEqI(p2.buf.entries.front().n, 1, "S26/S28 exact same-ts re-park gives n=1");
 			Expect(!p2.dirty, "exact park merge does not dirty a file that already has the row");
 			Entry copy = p2.buf.entries.front();
 			copy.id = 99999;
 			p2.ParkWriteFailure("0000ABCD", std::vector<Entry>{copy});
 			p2.MergeKeptHeldIfMatch("0000ABCD");
-			ExpectEqI(p2.buf.entries.front().n, 1, "same time and text does not bump n");
+			ExpectEqI(p2.buf.entries.front().n, 1, "S26/S28 same-ts re-park does not bump n");
+		}
+		{
+			Log inv;
+			inv.Configure(s, root);
+			inv.ApplyPersist(true);
+			inv.buf.character = MakeCharacter(0xABCDu, "Sam");
+			Entry fileInv;
+			fileInv.id = 1;
+			fileInv.kind = Kind::Game;
+			fileInv.text = "Inventory full";
+			fileInv.ts = 5;
+			fileInv.n = 1;
+			inv.buf.entries.push_back(fileInv);
+			inv.buf.nextId = 2;
+			Entry parkedInv;
+			parkedInv.id = 1;
+			parkedInv.kind = Kind::Game;
+			parkedInv.text = "Inventory full";
+			parkedInv.ts = 700;
+			parkedInv.n = 1;
+			inv.ParkWriteFailure("0000ABCD", std::vector<Entry>{parkedInv});
+			inv.MergeKeptHeldIfMatch("0000ABCD");
+			ExpectEqI(static_cast<int>(inv.buf.entries.size()), 2,
+				"Inventory full at ts 5 and ts 700 are both kept");
+			bool got5 = false, got700 = false;
+			int n5 = 0, n700 = 0;
+			for (const auto& e : inv.buf.entries) {
+				if (e.text == "Inventory full" && e.ts == 5) { got5 = true; n5 = e.n; }
+				if (e.text == "Inventory full" && e.ts == 700) { got700 = true; n700 = e.n; }
+			}
+			Expect(got5 && got700, "file id 1 ts 5 and parked id 1 ts 700 both survive the merge");
+			ExpectEqI(n5, 1, "the file Inventory full row stays n=1");
+			ExpectEqI(n700, 1, "the later Inventory full row stays n=1");
+		}
+		{
+			Log w7;
+			w7.Configure(s, root);
+			w7.ApplyPersist(true);
+			w7.buf.character = MakeCharacter(0xBBBBu, "Barrett");
+			Entry aRow;
+			aRow.id = 1;
+			aRow.kind = Kind::Game;
+			aRow.text = "A old-key fail";
+			aRow.ts = 800;
+			Expect(WriteFailParksJob("0000ABCD", w7.buf.character.key),
+				"W7 a failure for an old key is not the current key");
+			w7.ParkWriteFailure("0000ABCD", std::vector<Entry>{aRow});
+			ExpectEqI(static_cast<int>(w7.keptHeld.size()), 1, "W7 parks one slot");
+			ExpectEq(w7.keptHeld.front().key, "0000ABCD", "W7 parks under the job key");
+			Expect(w7.keptHeld.front().key != w7.buf.character.key,
+				"W7 is never parked under the current key");
+			w7.Offer(Cap(Kind::Game, "B after W7", 820'000));
+			w7.MergeKeptHeldIfMatch(w7.buf.character.key);
+			bool aInB = false;
+			for (const auto& e : w7.buf.entries)
+				if (e.text == "A old-key fail") aInB = true;
+			Expect(!aInB, "W7 A's row is not merged into B");
+			Expect(w7.Flush(821'000), "W7 B writes");
+			const auto bW7 = root / "MessageLog" / "MessageLog_0000BBBB.json";
+			Expect(ReadFile(bW7).find("B after W7") != std::string::npos, "W7 B's file has B's row");
+			Expect(ReadFile(bW7).find("A old-key fail") == std::string::npos,
+				"W7 A's row never ends up in B");
 		}
 		{
 			Log queued;
