@@ -506,23 +506,43 @@
          this.hzLaidOut = this.hzLayout();
       }
 
-      // Chip-family 13 px floor (affliction, TAKE, stealth, jetpack). Re-run after HudScale / per-card
-      // scale so F11 live changes (including Moragar's Choice) do not keep the previous font size.
+      // Affliction + chip-family 13 px floor. Re-run after HudScale / per-card scale so F11
+      // live changes (including Moragar's Choice) do not keep the previous font size.
       // hzTxtTint skips when the tint is unchanged, and hzAfRetryLayout does not touch the F11 preview chips.
       private function hzAfFmt13() : void
       {
          for each(var o:Object in this.hzTexts)
          {
-            if(o != null && (o.af13 || o.chipMin)) { try { this.hzApplyFmt(o); } catch(errAf13:Error) { } }
+            if(o != null && (o.af13 || o.vit13 || o.chipMin)) { try { this.hzApplyFmt(o); } catch(errAf13:Error) { } }
          }
       }
 
-      // Shared v0.19 chip size: max(9, round(design * TextScale)). Every Horizon card uses this
-      // before the card sprite scale (hz34S = HZ_SCALE * HudScale or per-card scale).
+      // Shared v0.19 size: max(9, round(design * TextScale)). hzBuildVitNew HEALTH / OXYGEN
+      // (fs 13) and hzVnHp / hzVnO2 (fs 20) use this before the card sprite scale
+      // (hz34S = HZ_SCALE * HudScale or the card's own scale).
       private function hzChipSz(fs:Number) : int
       {
          var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
          return int(Math.max(9,Math.round(Number(fs) * ts)));
+      }
+
+      // Affliction type: same TextScale path as the Vitals labels, then a 13 px on-screen
+      // floor through the tighter of Vitals and Afflictions (HZ_SCALE * HudScale when those
+      // keys are unset), including Moragar's Choice. Title copies hzBuildVitNew HEALTH /
+      // OXYGEN: hzT(...,13,"sb","acc",2) + hzHdr19. Sub copies hz26Co2T (closest secondary;
+      // hzVnHp / hzVnO2 value text is 20 px): hzT(...,13,"sb","col",0.6). Size variable:
+      // hzChipSz(fs), then ceil(13 / min(hz34S("Vitals"), hz34S("Afflictions"))).
+      private function hzVitTextSz(fs:Number) : int
+      {
+         var sz:int = this.hzChipSz(fs);
+         var vs:Number = this.hz34S("Vitals");
+         var af:Number = this.hz34S("Afflictions");
+         if(!(vs > 0.01)) { vs = 1; }
+         if(!(af > 0.01)) { af = 1; }
+         var sc:Number = vs < af ? vs : af;
+         var fl:int = int(Math.ceil(13 / sc));
+         if(sz < fl) { sz = fl; }
+         return sz;
       }
 
       // Same formula, then the 13 px on-screen floor using the card's real scale path (hz34S),
@@ -549,7 +569,16 @@
 
       private function hzAf13Sz() : int
       {
-         return this.hzChipSzOn(13,"Afflictions",13);
+         return this.hzVitTextSz(13);
+      }
+
+      // Size for a v0.19 field: vitals-copied affliction lines, then chip-family, then plain hzChipSz.
+      private function hzTextSz19(o:Object, fs:Number) : int
+      {
+         if(o != null && o.vit13) { return this.hzVitTextSz(fs); }
+         var card:String = o != null && o.chipCard != null && String(o.chipCard).length > 0 ? String(o.chipCard) : (o != null && o.af13 ? "Afflictions" : "");
+         if(card.length > 0) { return this.hzChipSzOn(fs,card,o.chipMin > 0 ? Number(o.chipMin) : 13); }
+         return this.hzChipSz(fs);
       }
 
       // Mark a chip-family line so hzApplyFmt19 uses hzChipSzOn + the 13 px floor on that card's scale.
@@ -560,6 +589,16 @@
          o.chipCard = card;
          o.chipMin = 13;
          try { this.hzApplyFmt(o); } catch(errChip13:Error) { }
+      }
+
+      // Mark an affliction line so it uses hzVitTextSz (HEALTH / OXYGEN / hz26Co2T path + 13 px floor).
+      private function hzVit13(tf:TextField) : void
+      {
+         var o:Object = this.hzTxtObj(tf);
+         if(!o) { return; }
+         o.vit13 = true;
+         o.af13 = true;
+         try { this.hzApplyFmt(o); } catch(errVit13:Error) { }
       }
 
       private function hzDot(d:Sprite, col:uint) : void
@@ -4406,11 +4445,11 @@
             {
                var c:Sprite = new Sprite(); p.addChild(c);
                var body:Sprite = new Sprite(); c.addChild(body);
-               var lb:TextField = this.hzT(c,"",48,8,240,13,"sb","main",1.6);
-               var lo:Object = this.hzTxtObj(lb); if(lo) { lo.af13 = true; }
+               var lb:TextField = this.hzT(c,"",48,8,240,13,"sb","acc",2);
                this.hzHdr19(lb);
-               var sb:TextField = this.hzT(c,"",48,24,200,13,"sb","mut",1.2);
-               var so:Object = this.hzTxtObj(sb); if(so) { so.af13 = true; this.hzApplyFmt(so); }
+               this.hzVit13(lb);
+               var sb:TextField = this.hzT(c,"",48,24,200,13,"sb","col",0.6);
+               this.hzVit13(sb);
                this.hzSetPvAfCh.push({"c":c,"b":body,"l":lb,"s":sb});
                i++;
             }
@@ -5131,9 +5170,7 @@
          if(!o) { tf.y = top; return; }
          o.su = undefined;   // v0.26: plain whole-unit top (device-grid snap only via hzTxtTopU)
          var base:Number = (o.role != null && HZ_TY_SIZE[o.role] != undefined) ? Number(HZ_TY_SIZE[o.role]) : Number(o.size);
-         var sz:Number = Math.round(base * Math.max(0.8,Math.min(1.3,this.hzTextScale)));
-         var card:String = o.chipCard != null && String(o.chipCard).length > 0 ? String(o.chipCard) : (o.af13 ? "Afflictions" : "");
-         if(card.length > 0) { sz = this.hzChipSzOn(base,card,o.chipMin > 0 ? Number(o.chipMin) : 13); }
+         var sz:Number = this.hzTextSz19(o,base);
          o.y0 = top + (sz - base) / 2;
          tf.y = top;
       }
@@ -6372,8 +6409,7 @@
       private function hzApplyFmt19(o:Object) : void
       {
          var fs:Number = Number(o.fs);
-         var card:String = o.chipCard != null && String(o.chipCard).length > 0 ? String(o.chipCard) : (o.af13 ? "Afflictions" : "");
-         var sz:int = card.length > 0 ? this.hzChipSzOn(fs,card,o.chipMin > 0 ? Number(o.chipMin) : 13) : this.hzChipSz(fs);
+         var sz:int = this.hzTextSz19(o,fs);
          var dk:Boolean = this.hzDarkText();
          var col:uint = 0;
          switch(String(o.tone))
@@ -7130,11 +7166,11 @@
             var c:Sprite = new Sprite();
             this.hzAfNew.addChild(c);
             var body:Sprite = new Sprite(); c.addChild(body);
-            var lb:TextField = this.hzT(c,"",48,8,240,13,"sb","main",1.6);
-            var lo:Object = this.hzTxtObj(lb); if(lo) { lo.af13 = true; }
+            var lb:TextField = this.hzT(c,"",48,8,240,13,"sb","acc",2);
             this.hzHdr19(lb);
-            var sb:TextField = this.hzT(c,"",48,24,200,13,"sb","mut",1.2);
-            var so:Object = this.hzTxtObj(sb); if(so) { so.af13 = true; this.hzApplyFmt(so); }
+            this.hzVit13(lb);
+            var sb:TextField = this.hzT(c,"",48,24,200,13,"sb","col",0.6);
+            this.hzVit13(sb);
             c.visible = false;
             this.hzAfChips.push({"c":c,"b":body,"l":lb,"s":sb});
             i++;
@@ -8069,9 +8105,7 @@
          var t:Number = this.hzSnapU(top,su);
          if(!o) { tf.y = t; tf.x = this.hzSnapU(tf.x,su); return; }
          var fs:Number = Number(o.fs != undefined ? o.fs : o.size);
-         var sz:Number = Math.max(9,Math.round(fs * Math.max(0.8,Math.min(1.3,this.hzTextScale))));
-         var card:String = o.chipCard != null && String(o.chipCard).length > 0 ? String(o.chipCard) : (o.af13 ? "Afflictions" : "");
-         if(card.length > 0) { sz = this.hzChipSzOn(fs,card,o.chipMin > 0 ? Number(o.chipMin) : 13); }
+         var sz:Number = this.hzTextSz19(o,fs);
          o.su = su;
          o.y0 = t + (sz - fs) / 2;
          tf.y = t;

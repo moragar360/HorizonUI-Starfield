@@ -812,20 +812,36 @@ pin('var sb:String = String(b.sub).length > 0 ? String(b.sub) : sys;', "a game s
 pin('var nm:String = String(b.txt).length > 0 ? String(b.txt) : "Affliction";', "an alert without a name uses Affliction");
 pin('out.push({"key":"p:" + sys,"name":"Affliction","sub":sys,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});', "a plain effect chip is Affliction plus the body system");
 pin('{"name":"Affliction","kind":"injury","env":false}', "the F11 preview uses Affliction as the fallback title");
-pin('this.hzT(c,"",48,8,240,13,"sb","main",1.6);', "the affliction title is SemiBold 13 / main / 1.6 like TAKE");
-pin('this.hzT(c,"",48,24,200,13,"sb","mut",1.2);', "the affliction sub line is SemiBold 13 / mut / 1.2 like stealth");
-pin('this.hzT(c,"HIDDEN",50,7,160,14,"bd","col",1.8,"left",0xB2C0C7);', "the stealth status chip title is Bold 14 / 1.8");
-pin('this.hzT(c,"",50,26,160,10,"sb","mut",1.2);', "the stealth status chip sub line is SemiBold muted 1.2");
-pin('this.hzT(p,"BOOST 100%",78,29,230,12,"sb","acc",1.2);', "the jetpack status sub line is SemiBold 12 / 1.2");
-pin("o.af13 ?", "affliction chip lines still mark the 13 px on-screen clamp");
-pin('o.af13 ? "Afflictions" : ""', "affliction lines still use the Afflictions scale key");
-pin("card.length > 0 ? this.hzChipSzOn(fs,card,o.chipMin > 0 ? Number(o.chipMin) : 13) : this.hzChipSz(fs)", "every chip-family line uses the shared size formula");
+pin('this.hzHdr19(this.hzT(p,i == 0 ? "HEALTH" : "OXYGEN",50,y + 9,150,13,"sb","acc",2));', "the Vitals labels are SemiBold 13 / acc / 2 plus hzHdr19");
+	pin('this.hzT(p,"--",HZ_VN_W - 14 - 160,y + 4,160,20,"sb","main",1,"right");', "the Vitals value text hzVnHp / hzVnO2 is SemiBold 20 / main / 1");
+	pin('this.hz26Co2T = this.hzT(p,"",HZ_VN_W - 14 - 260,66 + 8,100,13,"sb","col",0.6,"right",HZ_RED);', "the Vitals CO2 secondary hz26Co2T is SemiBold 13 / col / 0.6");
+	pin('this.hz26RegenT = this.hzT(p,"",HZ_VN_W - 14 - 260,8,100,13,"sb","col",0.4,"right",HZ_GREEN);', "the Vitals regen secondary hz26RegenT is SemiBold 13 / col / 0.4");
+	pin('this.hzT(c,"",48,8,240,13,"sb","acc",2);', "the affliction title copies HEALTH / OXYGEN SemiBold 13 / acc / 2");
+	pin('this.hzT(c,"",48,24,200,13,"sb","col",0.6);', "the affliction sub line copies hz26Co2T SemiBold 13 / col / 0.6");
+	pin("this.hzVit13(lb);", "the affliction title uses hzVit13 (Vitals size path + 13 px floor)");
+	pin("this.hzVit13(sb);", "the affliction sub line uses hzVit13 (Vitals size path + 13 px floor)");
+	pin("if(o != null && o.vit13) { return this.hzVitTextSz(fs); }", "vit13 lines use hzVitTextSz, not hzChipSzOn");
+	pin('var vs:Number = this.hz34S("Vitals");', "hzVitTextSz floors through hz34S Vitals");
+	pin('var af:Number = this.hz34S("Afflictions");', "hzVitTextSz also floors through hz34S Afflictions");
+	pin("return this.hzVitTextSz(13);", "hzAf13Sz uses the Vitals-copied size");
+	expect((src.split('this.hzT(c,"",48,8,240,13,"sb","acc",2);').length - 1) === 2, "live and F11 preview titles both copy HEALTH");
+	expect((src.split('this.hzT(c,"",48,24,200,13,"sb","col",0.6);').length - 1) === 2, "live and F11 preview subs both copy hz26Co2T");
+	expect((src.split("this.hzVit13(lb);").length - 1) === 2, "both titles mark hzVit13");
+	expect((src.split("this.hzVit13(sb);").length - 1) === 2, "both subs mark hzVit13");
+	pin('this.hzT(c,"HIDDEN",50,7,160,14,"bd","col",1.8,"left",0xB2C0C7);', "the stealth status chip title is Bold 14 / 1.8");
+	pin('this.hzT(c,"",50,26,160,10,"sb","mut",1.2);', "the stealth status chip sub line is SemiBold muted 1.2");
+	pin('this.hzT(p,"BOOST 100%",78,29,230,12,"sb","acc",1.2);', "the jetpack status sub line is SemiBold 12 / 1.2");
+	pin("o.af13 ?", "affliction chip lines still mark the 13 px on-screen clamp");
+	pin('o.af13 ? "Afflictions" : ""', "chip-family fallback still uses the Afflictions scale key");
+	pin("if(card.length > 0) { return this.hzChipSzOn(fs,card,o.chipMin > 0 ? Number(o.chipMin) : 13); }", "every chip-family line uses the shared size formula");
 pin("var sc:Number = this.hz34S(card);", "the 13 px floor uses the shared card scale path");
 pin('if(card == "Hover")', "TAKE uses the HoverScale path");
 pin("var hv:Number = this.hz34Eff(this.hz30Hover);", "TAKE falls back to HudScale through hz34Eff");
 pin("var fl:int = int(Math.ceil(minPx / sc));", "the chip floor is ceil(13 / hz34S)");
 expect(src.indexOf('var hs:Number = this.hz34F("Afflictions");') < 0, "the chip floor no longer uses hz34F alone");
-expect(src.indexOf('this.hzT(c,"",48,24,200,13,"rg","mut",0.4)') < 0, "the affliction sub line is no longer Regular 0.4");
+expect(src.indexOf('this.hzT(c,"",48,8,240,13,"sb","main",1.6)') < 0, "the affliction title is no longer TAKE SemiBold main 1.6");
+	expect(src.indexOf('this.hzT(c,"",48,24,200,13,"sb","mut",1.2)') < 0, "the affliction sub line is no longer stealth SemiBold mut 1.2");
+	expect(src.indexOf('this.hzT(c,"",48,24,200,13,"rg","mut",0.4)') < 0, "the affliction sub line is no longer Regular 0.4");
 pin('this.hzChip13(o.l,"Hover");', "the F11 TAKE line uses the shared chip floor");
 pin('this.hzChip13(lp,"Hover");', "the live TAKE line uses the shared chip floor");
 pin('this.hzChip13(kp,"Hover");', "the live keycap letter uses the shared chip floor");
@@ -849,7 +865,7 @@ pin("private function hzT19CapH() : Number", "the hover keycap grows with the fl
 pin('Math.max(24,Math.max(keySz,holdSz) + 10)', "the keycap stays at least 24 and fits the floored type");
 pin('try { this.hzAfFmt13(); } catch(errAfF:Error) { }\n         try { this.hzJ19Draw(); } catch(errJ13:Error) { }\n         try { this.hz26StDraw(this.hz26Now()); } catch(errSt13:Error) { }\n         try { this.hzAfRetryLayout(); } catch(errAfS:Error) { }\n         this.hzLaidOut = this.hzLayout();', "hzApplyScale draws jetpack and stealth before the relayout");
 pin('try { this.hzPpLayout(); this.hzV19Redraw(); } catch(err3:Error) { }\n         try { this.hz26StDraw(this.hz26Now()); } catch(errStT:Error) { }', "a TextScale-only change redraws stealth before the next layout");
-pin("if(o != null && (o.af13 || o.chipMin))", "every chip-family field is reformatted after a scale change");
+pin("if(o != null && (o.af13 || o.vit13 || o.chipMin))", "every chip-family and Vitals-copied field is reformatted after a scale change");
 pin("var j:int = 0;\n         this.hzAfFmt13();", "the F11 preview also reformats af13 fields");
 pin('try { this.hzAfRetryLayout(); } catch(errAfS:Error) { }\n         this.hzLaidOut = this.hzLayout();', "the main layout runs after the chip relayout");
 pin("Sample: one affliction and one", "the F11 preview caption says affliction");
@@ -912,6 +928,39 @@ function hzAfEnvH(sz) {
 	expect(hzAfChipH(true, 13, 1, 0.6) === 60, "a two-line chip at 0.6 is 60 so font 22 fits");
 	expect(hzAfChipH(false, 13, 1, 0.6) === 48, "a one-line chip stays 48 at scale 0.6");
 	expect(hzAfEnvH(13) === 48 && hzAfEnvH(17) === 56 && hzAfEnvH(22) === 66, "an env chip is 48 / 56 / 66 at 13 / 17 / 22");
+	function hzVitLabelSz(fs, textScale) {
+		let ts = textScale;
+		if (!(ts > 0)) ts = 1;
+		ts = Math.max(0.8, Math.min(1.3, ts));
+		return Math.max(9, Math.round(fs * ts));
+	}
+	function hzVitLabelPx(fs, textScale, hudScale, hzScale) {
+		const sc = (hzScale > 0.01 ? hzScale : 1) * (hudScale > 0.01 ? hudScale : 1);
+		return hzVitLabelSz(fs, textScale) * sc;
+	}
+	function hzVitFloorSz(fs, textScale, hudScale, hzScale) {
+		return hzAfChipSz(fs, textScale, hudScale, hzScale);
+	}
+	const sizeReport = [
+		{ ts: 1.0, hs: 0.80, lrg: 1, label: "TS 1.0 HS 0.80" },
+		{ ts: 1.0, hs: 1.0, lrg: 1, label: "TS 1.0 HS 1.0" },
+		{ ts: 1.3, hs: 0.80, lrg: 1, label: "TS 1.3 HS 0.80" },
+		{ ts: 1.3, hs: 1.0, lrg: 1, label: "TS 1.3 HS 1.0" },
+		{ ts: 1.0, hs: 0.80, lrg: 1.07, label: "hudmenu_lrg TS 1.0 HS 0.80" },
+		{ ts: 1.0, hs: 1.0, lrg: 1.07, label: "hudmenu_lrg TS 1.0 HS 1.0" },
+		{ ts: 1.3, hs: 0.80, lrg: 1.07, label: "hudmenu_lrg TS 1.3 HS 0.80" },
+		{ ts: 1.3, hs: 1.0, lrg: 1.07, label: "hudmenu_lrg TS 1.3 HS 1.0" }
+	];
+	for (let ri = 0; ri < sizeReport.length; ri++) {
+		const r = sizeReport[ri];
+		const beforeSz = hzVitFloorSz(13, r.ts, r.hs, r.lrg);
+		const afterSz = hzVitFloorSz(13, r.ts, r.hs, r.lrg);
+		const healthSz = hzVitLabelSz(13, r.ts);
+		const healthPx = hzVitLabelPx(13, r.ts, r.hs, r.lrg);
+		const afterPx = hzAfChipPx(13, r.ts, r.hs, r.lrg);
+		expect(afterSz === beforeSz, "affliction design size at " + r.label + " stays " + afterSz + " (HEALTH unfloored " + healthSz + ")");
+		expect(afterPx + 1e-9 >= 13, "affliction on-screen at " + r.label + " is " + afterPx + " px (HEALTH " + healthPx + " px)");
+	}
 	for (let sz = 13; sz <= 22; sz++) {
 		const barY = hzAfBarY(sz);
 		const base = hzAfSubBase(sz);
