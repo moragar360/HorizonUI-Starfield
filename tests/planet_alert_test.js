@@ -32,7 +32,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.42.0.11";', "HUD build id is 0.42.0.11");
+pin('private static const HZ_BUILD:String = "0.42.0.12";', "HUD build id is 0.42.0.12");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
@@ -577,7 +577,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.11";') >= 0, rel + " build is 0.42.0.11");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.12";') >= 0, rel + " build is 0.42.0.12");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -877,6 +877,71 @@ for (let di = 0; di < dlgFiles.length; di++) {
 	expect(tail === dlgTailBlock, rel + " persuasion meter matches the dialogue block");
 	if (rel.indexOf("dimp-Lrg") >= 0) expect(buf.toString("utf8").indexOf("private static const HZD_LRG:Boolean = true;") >= 0, "large dialogue stays large");
 	else if (rel.indexOf("dimp/") >= 0) expect(buf.toString("utf8").indexOf("private static const HZD_LRG:Boolean = false;") >= 0, "standard dialogue stays standard");
+}
+
+// t34-t40: 0.42.0.12 stealth hide guard and affliction remeasure after a load.
+pin('this.hz26HideV("StealthMeter_mc",live && this.hzStealthOn && this.HorizonStealth_mc != null && this.hz26St != null && this.hz26StOn);', "t34 stealth hide requires the pill to be active");
+function stealthHideVanilla(live, stealthOn, pill, st, stOn) {
+	return !!(live && stealthOn && pill && st != null && stOn);
+}
+expect(!stealthHideVanilla(true, true, true, null, false), "t35 vanilla stays visible when the pill has no stealth data");
+expect(!stealthHideVanilla(true, true, true, { bSneaking: true }, false), "t35 vanilla stays visible when the pill is not on");
+expect(stealthHideVanilla(true, true, true, { bSneaking: true, bShowMeter: true }, true), "t35 vanilla is hidden while the pill is active");
+expect(!stealthHideVanilla(true, false, true, { bSneaking: true, bShowMeter: true }, true), "t36 StealthMeter off leaves vanilla visible");
+expect(!stealthHideVanilla(false, true, true, { bSneaking: true, bShowMeter: true }, true), "t36 a hidden HUD does not alpha-hide vanilla stealth");
+pin("if(lb.text.length > 0 && w < 4)", "t37 title fit does not shrink a non-empty unread title");
+pin("if(this.hzAfTitleW > 4) { w = this.hzAfTitleW; lb.width = Math.round(w + 8); }", "t37 a bad title measure keeps the last good width");
+function hz31AfFitWidth(text, measured, prevW) {
+	let w = measured;
+	let remasure = false;
+	let width;
+	if (text.length > 0 && w < 4) {
+		remasure = true;
+		if (prevW > 4) {
+			w = prevW;
+			width = Math.round(w + 8);
+		} else {
+			width = 2000;
+		}
+	} else {
+		width = Math.round(w + 8);
+	}
+	return { width: width, remasure: remasure, used: w };
+}
+expect(hz31AfFitWidth("CONTUSIONS", 0, 0).width === 2000 && hz31AfFitWidth("CONTUSIONS", 0, 0).remasure, "t38 first measure 0 keeps the title wide");
+expect(hz31AfFitWidth("CONTUSIONS", 0, 80).width === 88 && hz31AfFitWidth("CONTUSIONS", 0, 80).used === 80, "t38 a later 0 measure keeps the last good title width");
+expect(hz31AfFitWidth("CONTUSIONS", 72, 0).width === 80 && !hz31AfFitWidth("CONTUSIONS", 72, 0).remasure, "t38 a good title measure sizes to textWidth+8");
+expect(hz31AfFitWidth("", 0, 80).width === 8 && !hz31AfFitWidth("", 0, 80).remasure, "t38 an empty title may shrink");
+pin("this.hz27Alerts = [];", "t39 load clears personal alerts");
+pin("this.hzAfSeen = {};", "t39 load clears affliction seen keys");
+pin('if(this.hz40HasFF(ev.data,"LoadingMenu_Opened") || this.hz40HasFF(ev.data,"LoadingMenu_Closed")) { this.hzAfOnLoad(); }', "t39 load clear is on LoadingMenu open and close");
+pin("if(age == 30 || age == 120) { this.hzAfRetryLayout(); }", "t40 layout reruns at 30 and 120 frames after load");
+pin("if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAfOnLoad(); }", "t40 a wall-clock gap after load also clears and remeasures");
+function afLoadWatch(s, now, frame) {
+	const events = [];
+	if (s.lastWall > 0 && now - s.lastWall > 4000) {
+		s.alerts = [];
+		s.seen = {};
+		s.remeasure = true;
+		s.loadAt = frame;
+		events.push("onload");
+	}
+	if (now > 0) s.lastWall = now;
+	if (s.loadAt > 0) {
+		const age = frame - s.loadAt;
+		if (age === 30 || age === 120) events.push("relayout");
+		if (age >= 120) s.loadAt = 0;
+	}
+	return events;
+}
+{
+	const s = { lastWall: 1000, alerts: [{ cat: "old" }], seen: { "p:old": 1 }, remeasure: false, loadAt: 0 };
+	expect(afLoadWatch(s, 2000, 10).length === 0 && s.alerts.length === 1, "t40 a short gap is not a load");
+	const ev = afLoadWatch(s, 7000, 11);
+	expect(ev.indexOf("onload") >= 0 && s.alerts.length === 0 && Object.keys(s.seen).length === 0, "t40 a 4 s gap clears alerts and seen");
+	expect(s.remeasure && s.loadAt === 11, "t40 a load gap arms remeasure");
+	expect(afLoadWatch(s, 7016, 41).indexOf("relayout") >= 0, "t40 remeasure at frame 30");
+	expect(afLoadWatch(s, 7033, 131).indexOf("relayout") >= 0, "t40 remeasure at frame 120");
 }
 
 if (failed) {

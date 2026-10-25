@@ -1,6 +1,6 @@
 #pragma once
 
-// HUD message classification for the 0.42.0.11 cards. Pure string work: no forms,
+// HUD message classification for the 0.42.0.12 cards. Pure string work: no forms,
 // no game settings, and no address lookups. The DLL fills the GMST phrases after
 // data has loaded and calls Match on the task thread. English is the fallback.
 // A line that does not match is left as the game's own message.

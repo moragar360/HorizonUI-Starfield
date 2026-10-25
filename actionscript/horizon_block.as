@@ -2399,7 +2399,7 @@
             var fbefore:String = this.hzFontName() + this.hzFontName("rg") + this.hzFontName("bd");
             var fbad:Boolean = false;
             for(var fk:String in this.hzFontOkMap) { if(this.hzFontOkMap[fk] != 1) { delete this.hzFontOkMap[fk]; fbad = true; } }
-            if(fbad) { this.hzFontRetry++; if(this.hzFontName() + this.hzFontName("rg") + this.hzFontName("bd") != fbefore) { this.hzApplyTypo(); } }
+            if(fbad) { this.hzFontRetry++; if(this.hzFontName() + this.hzFontName("rg") + this.hzFontName("bd") != fbefore) { this.hzApplyTypo(); } else { try { this.hzAfRetryLayout(); } catch(errAf:Error) { } } }
             else { this.hzFontRetry = 6; }
          }
          try { this.hzTgTick(); } catch(errTg:Error) { try { this.hzTgRestore(); this.HorizonTarget_mc.visible = false; } catch(errTg2:Error) { } }
@@ -2408,6 +2408,7 @@
          try { this.hzTickFades(); } catch(e36d:Error) { }
          try { this.hzTickVitals(); } catch(e36v:Error) { }
          try { this.hz26Tick(); } catch(err26:Error) { }
+         try { this.hzAfLoadWatch(); } catch(errAfW:Error) { }
          if(this.hzPlanAlertOn)
          {
             this.hzPlanPulse += 0.07;
@@ -3484,7 +3485,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.42.0.11";
+      private static const HZ_BUILD:String = "0.42.0.12";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -6345,6 +6346,11 @@
          }
          catch(err:Error) { ok = false; }
          this.hzFontOkMap[n] = ok ? 1 : 0;
+         if(ok)
+         {
+            this.hzAfRemeasure = true;
+            if(this.hzAfRemeasureAt == 0) { this.hzAfRemeasureAt = this.hzFrameN; }
+         }
          return ok;
       }
 
@@ -6939,6 +6945,11 @@
       private var hzAfPers:Array = [];
       private var hzAfSoak:Number = 0;
       private var hzAfSeen:Object = {};
+      private var hzAfRemeasure:Boolean = false;
+      private var hzAfRemeasureAt:int = 0;
+      private var hzAfLoadAt:int = 0;
+      private var hzAfTitleW:Number = 0;
+      private var hzAfLastWall:Number = 0;
       private var hzAfH:Number = 48;
       private var hzAfW:Number = 190;
 
@@ -7041,6 +7052,47 @@
          this.hzAfflCount = this.hzV19() ? all.length : (this.hzAfPers.length > 0 ? 1 : 0);
          this.hzAfLayoutChips(all);
          this.hzRefreshVisibility();
+      }
+
+      private function hzAfRetryLayout() : void
+      {
+         try { if(this.hzAfNew && this.hz31AfLast != null) { this.hzAfLayoutChips(this.hz31AfLast); } } catch(err:Error) { }
+      }
+
+      private function hzAfOnLoad() : void
+      {
+         try
+         {
+            this.hz27Alerts = [];
+            this.hzAfSeen = {};
+            this.hzAfRemeasure = true;
+            this.hzAfRemeasureAt = this.hzFrameN;
+            this.hzAfLoadAt = this.hzFrameN;
+            if(this.hzAfNew) { this.hzAfSync(); }
+         }
+         catch(err:Error) { }
+      }
+
+      private function hzAfLoadWatch() : void
+      {
+         var now:Number = this.hz26Now();
+         if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAfOnLoad(); }
+         if(now > 0) { this.hzAfLastWall = now; }
+         if(this.hzAfLoadAt > 0)
+         {
+            var age:int = this.hzFrameN - this.hzAfLoadAt;
+            if(age == 30 || age == 120) { this.hzAfRetryLayout(); }
+            if(age >= 120) { this.hzAfLoadAt = 0; }
+         }
+         if(this.hzAfRemeasure)
+         {
+            this.hzAfRetryLayout();
+            if(this.hzAfRemeasureAt > 0 && this.hzFrameN - this.hzAfRemeasureAt >= 120)
+            {
+               this.hzAfRemeasure = false;
+               this.hzAfRemeasureAt = 0;
+            }
+         }
       }
 
       private function hzAfLayoutChips(all:Array) : void
@@ -10128,7 +10180,7 @@
       {
          var live:Boolean = !this.hzUserHidden;
          this.hz26HideV("EnemyHealthHolder_mc",live && this.hzEnemyBarOn && this.HorizonEnemy_mc != null);
-         this.hz26HideV("StealthMeter_mc",live && this.hzStealthOn && this.HorizonStealth_mc != null);
+         this.hz26HideV("StealthMeter_mc",live && this.hzStealthOn && this.HorizonStealth_mc != null && this.hz26St != null && this.hz26StOn);
          this.hz26HideV("HitAndKillIndicator_mc",live && this.hzHitMarkOn && this.HorizonFx_mc != null);
          this.hz26HideV("HitDamageBase_mc",live && this.hzDmgNumOn && this.HorizonFx_mc != null);
          this.hz26HideV("DirectionalHitIndicatorBase_mc",live && this.hzDirRingOn && this.HorizonFx_mc != null);
@@ -11601,13 +11653,28 @@
          lb.width = 2000;
          if(this.hzTW(lb) > maxT) { this.hzFitText(lb,lb.text,maxT); }
          var w:Number = this.hzTW(lb);
-         lb.width = Math.round(w + 8);
+         if(lb.text.length > 0 && w < 4)
+         {
+            this.hzAfRemeasure = true;
+            if(this.hzAfRemeasureAt == 0) { this.hzAfRemeasureAt = this.hzFrameN; }
+            if(this.hzAfTitleW > 4) { w = this.hzAfTitleW; lb.width = Math.round(w + 8); }
+         }
+         else
+         {
+            if(w >= 4) { this.hzAfTitleW = w; this.hzAfRemeasure = false; this.hzAfRemeasureAt = 0; }
+            lb.width = Math.round(w + 8);
+         }
          if(two)
          {
             sb.width = 2000;
             if(this.hzTW(sb) > maxT) { this.hzFitText(sb,sb.text,maxT); }
             var w2:Number = this.hzTW(sb);
-            sb.width = Math.round(w2 + 8);
+            if(sb.text.length > 0 && w2 < 4)
+            {
+               this.hzAfRemeasure = true;
+               if(this.hzAfRemeasureAt == 0) { this.hzAfRemeasureAt = this.hzFrameN; }
+            }
+            else { sb.width = Math.round(w2 + 8); }
             w = Math.max(w,w2);
          }
          return Math.min(maxT,w);
@@ -13851,6 +13918,7 @@
       {
          try
          {
+            if(this.hz40HasFF(ev.data,"LoadingMenu_Opened") || this.hz40HasFF(ev.data,"LoadingMenu_Closed")) { this.hzAfOnLoad(); }
             if(this.hz41DllFresh()) { return; }   // v0.41.0: the DLL push is the scan state
             if(this.hz40HasFF(ev.data,"MonocleMenu_Opened")) { this.hz40SetScan(true); }
             else if(this.hz40HasFF(ev.data,"MonocleMenu_Closed")) { this.hz40SetScan(false); }
