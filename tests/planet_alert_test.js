@@ -32,7 +32,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.42.0.12";', "HUD build id is 0.42.0.12");
+pin('private static const HZ_BUILD:String = "0.42.0.13";', "HUD build id is 0.42.0.13");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
@@ -577,7 +577,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.12";') >= 0, rel + " build is 0.42.0.12");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.13";') >= 0, rel + " build is 0.42.0.13");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -808,7 +808,33 @@ expect(src.indexOf('{"k":"DlgPersuasionMeter","l":"PERSUASION METER"') >= 0, "pe
 pin("s = this.hzSplitCamel(s);", "affliction names split camel case in code");
 pin("p >= 97 && p <= 122 && c >= 65 && c <= 90", "the camel split is a lowercase letter before a capital");
 expect(src.indexOf('"$1 $2"') < 0, "the HUD does not pass $1 $2 to replace");
-pin('var sb:String = String(b.sub).length > 0 ? String(b.sub) : this.hzPretty(String(b.icon));', "a game subtitle is kept, and an empty one falls back to the icon label");
+pin('var sb:String = String(b.sub).length > 0 ? String(b.sub) : sys;', "a game subtitle is kept, and an empty one falls back to the body system");
+pin('var nm:String = String(b.txt).length > 0 ? String(b.txt) : "Injury";', "an alert without a name uses Injury");
+pin('out.push({"key":"p:" + sys,"name":"Injury","sub":sys,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});', "a plain effect chip is Injury plus the body system");
+pin('this.hzT(c,"",48,8,240,13,"sb","main",1.6);', "the affliction title is at least 13");
+pin('this.hzT(c,"",48,24,200,13,"rg","mut",0.4);', "the affliction body-system line is at least 13");
+function hzAfPlainPers(icon) {
+	const sys = hzPretty(icon);
+	return { name: "Injury", sub: sys };
+}
+function hzAfAlertChip(txt, sub, icon) {
+	const sys = hzPretty(icon);
+	const nm = txt && txt.length > 0 ? txt : "Injury";
+	let sb = sub && sub.length > 0 ? sub : sys;
+	if (sb.toLowerCase() === nm.toLowerCase()) {
+		sb = sys.length > 0 && sys.toLowerCase() !== nm.toLowerCase() ? sys : "";
+	}
+	return { name: nm, sub: sb || null, two: !!(nm && (sb || "").length) };
+}
+{
+	const plain = hzAfPlainPers("PersonalEffect_CardioRespiratoryCirculatory_Negative");
+	expect(plain.name === "Injury" && plain.sub === "Cardio Respiratory Circulatory", "after a load the plain chip is Injury / body system");
+	const named = hzAfAlertChip("Contusions", "", "PersonalEffect_CardioRespiratoryCirculatory_Negative");
+	expect(named.name === "Contusions" && named.sub === "Cardio Respiratory Circulatory" && named.two, "a session alert keeps Contusions and the body system");
+	const empty = hzAfAlertChip("", "", "PersonalEffect_SkeletalMuscular_Negative");
+	expect(empty.name === "Injury" && empty.sub === "Skeletal Muscular", "an alert with no text still uses Injury");
+	expect(hzAfAlertChip("Contusions", "Contusions", "PersonalEffect_CardioRespiratoryCirculatory_Negative").sub === "Cardio Respiratory Circulatory", "a repeated name still keeps the body-system sub line");
+}
 function hzSplitCamel(s) {
 	if (s == null || s.length < 2) return s == null ? "" : s;
 	let o = s.charAt(0);

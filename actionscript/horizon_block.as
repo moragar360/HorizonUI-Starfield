@@ -3485,7 +3485,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.42.0.12";
+      private static const HZ_BUILD:String = "0.42.0.13";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -6964,9 +6964,9 @@
             var c:Sprite = new Sprite();
             this.hzAfNew.addChild(c);
             var body:Sprite = new Sprite(); c.addChild(body);
-            var lb:TextField = this.hzT(c,"",48,8,240,12,"sb","main",1.6);
+            var lb:TextField = this.hzT(c,"",48,8,240,13,"sb","main",1.6);
             this.hzHdr19(lb);
-            var sb:TextField = this.hzT(c,"",48,24,200,10,"rg","mut",0.4);
+            var sb:TextField = this.hzT(c,"",48,24,200,13,"rg","mut",0.4);
             c.visible = false;
             this.hzAfChips.push({"c":c,"b":body,"l":lb,"s":sb});
             i++;
@@ -7015,10 +7015,10 @@
             for each(var o:Object in a)
             {
                if(!o || o.sEffectIcon == null) { continue; }
-               var nm:String = this.hzPretty(String(o.sEffectIcon));
-               if(nm.length == 0 || keys.indexOf(nm) >= 0) { continue; }
-               keys.push(nm);
-               out.push({"key":"p:" + nm,"name":nm,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});
+               var sys:String = this.hzPretty(String(o.sEffectIcon));
+               if(sys.length == 0 || keys.indexOf(sys) >= 0) { continue; }
+               keys.push(sys);
+               out.push({"key":"p:" + sys,"name":"Injury","sub":sys,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});
             }
          }
          this.hzAfPers = out;
@@ -10717,9 +10717,10 @@
          var used:Array = [];
          for each(var b:Object in keep)
          {
-            var nm:String = String(b.txt).length > 0 ? String(b.txt) : this.hzPretty(String(b.icon));
-            var sb:String = String(b.sub).length > 0 ? String(b.sub) : this.hzPretty(String(b.icon));
-            if(sb.toLowerCase() == nm.toLowerCase()) { sb = ""; }
+            var sys:String = this.hzPretty(String(b.icon));
+            var nm:String = String(b.txt).length > 0 ? String(b.txt) : "Injury";
+            var sb:String = String(b.sub).length > 0 ? String(b.sub) : sys;
+            if(sb.toLowerCase() == nm.toLowerCase()) { sb = (sys.length > 0 && sys.toLowerCase() != nm.toLowerCase()) ? sys : ""; }
             if(nm.length == 0) { continue; }
             out.push({"key":"a:" + String(b.cat) + ":" + nm,"name":nm,"sub":sb.length > 0 ? sb : null,"kind":"injury","env":false,"cat":String(b.cat)});
             used.push(String(b.cat));
