@@ -457,8 +457,23 @@ int main()
 		Expect(main.find("WriteAllowed") != std::string::npos, "force can retry a write");
 		Expect(main.find("g_mlWStarted = false") != std::string::npos && main.find("g_mlWLive.store(false)") != std::string::npos,
 			"the writer outer catch re-enables a later start");
-		Expect(main.find("NoteLoadResult") != std::string::npos && main.find("g_ml.persistHold") != std::string::npos,
+		Expect(main.find("hzlog::NoteLoadResult(false, g_ml.persistHold);") != std::string::npos,
 			"ApplyLoad holds persist after a transient read");
+		{
+			const auto rec = main.find("g_mlWRecovered.exchange(false)");
+			Expect(rec != std::string::npos, "Poll watches write recovery");
+			const auto win = rec == std::string::npos ? std::string() : main.substr(rec, 400);
+			Expect(win.find("NoteWriteSuccess") != std::string::npos,
+				"a successful write resets the write backoff");
+			Expect(win.find("g_mlWRetryAt") != std::string::npos,
+				"a successful write clears the write retry timer");
+		}
+		Expect(main.find("++g_mlLoadGen") != std::string::npos && main.find("LoadResultStale") != std::string::npos,
+			"worker reads are tagged with the load generation");
+		Expect(main.find("job.gen = g_mlLoadGen") != std::string::npos, "each load job carries the load generation");
+		Expect(main.find("ParkHeldRows") != std::string::npos && main.find("keeping {} held rows") != std::string::npos,
+			"unrecovered held rows are logged and parked");
+		Expect(main.find("MergeKeptHeldIfMatch") != std::string::npos, "parked rows merge when that character loads");
 		Expect(main.find("NoteRetryFailure") != std::string::npos, "retries use exponential backoff");
 		Expect(main.find("MsglogQueueRecover") != std::string::npos, "held rows retry on the worker");
 		Expect(as.find("padx") != std::string::npos && as.find("pady") != std::string::npos, "AS3 treats padx/pady as actions");
@@ -872,6 +887,41 @@ int main()
 		Expect(hold, "ApplyLoad hold is set on a failed load");
 		NoteLoadResult(true, hold);
 		Expect(!hold, "a successful load clears the hold");
+		Expect(LoadResultStale(1, 2), "a recover from the previous load generation is stale");
+		Expect(!LoadResultStale(3, 3), "a matching load generation is current");
+		Expect(LoadResultKeyMismatch("0000AAAA", "0000BBBB"), "a recover for another character is stale");
+		Expect(!LoadResultKeyMismatch("0000AAAA", "0000AAAA"), "the same character key is current");
+		Expect(!LoadResultKeyMismatch("", "0000AAAA"), "an empty job key is not a mismatch");
+		Expect(ShouldKeepHeldRows(true, 2), "a hold with rows is parked");
+		Expect(!ShouldKeepHeldRows(false, 2), "a recovered session is not parked");
+		Expect(!ShouldKeepHeldRows(true, 0), "an empty hold is not parked");
+		{
+			int backoff = 0;
+			std::uint64_t retryAt = 0;
+			backoff = NextRetryMs(backoff);
+			ExpectEqI(backoff, 1000, "first write failure starts at 1 s");
+			backoff = NextRetryMs(backoff);
+			ExpectEqI(backoff, 2000, "second write failure is 2 s");
+			retryAt = 10'000 + static_cast<std::uint64_t>(backoff);
+			NoteWriteSuccess(backoff, retryAt);
+			ExpectEqI(backoff, 0, "successful write resets the backoff");
+			Expect(retryAt == 0, "successful write clears retryAt");
+			Expect(WriteAllowed(true, false, 10'000, 25'000, backoff),
+				"after success the next write is allowed at normal cadence");
+			ExpectEqI(NextRetryMs(backoff), 1000, "a new failure streak starts at 1 s");
+			int grown = 0;
+			for (int i = 0; i < 7; ++i)
+				grown = NextRetryMs(grown);
+			ExpectEqI(grown, kRetryMsMax, "seven failures cap at 60 s");
+			Expect(!WriteAllowed(true, false, 10'000, 25'000, grown),
+				"60 s backoff blocks a 15 s gap");
+			std::uint64_t at = 1;
+			NoteWriteSuccess(grown, at);
+			ExpectEqI(grown, 0, "success after a long streak still resets backoff");
+			Expect(WriteAllowed(true, false, 10'000, 25'000, grown),
+				"after that reset a 15 s gap is allowed");
+			ExpectEqI(NextRetryMs(grown), 1000, "the next failure after a reset starts at 1 s");
+		}
 	}
 
 	{
@@ -1051,6 +1101,42 @@ int main()
 		Expect(held.buf.entries.front().text == "must survive", "held text is still in memory");
 		Expect(held.RetryHeld(MakeCharacter(0xABCDu, "Sam"), 221'000, true) == false, "forced recover still fails");
 		Expect(held.buf.entries.front().text == "must survive", "forced recover does not discard held rows");
+
+		Log park;
+		park.Configure(s, root);
+		if (auto* p = dynamic_cast<FileStore*>(park.store.get()))
+			p->readHook = transientMain;
+		park.buf.character = MakeCharacter(0xABCDu, "Sam");
+		park.LoadCurrent();
+		Expect(park.persistHold, "park fixture is held");
+		park.Offer(Cap(Kind::Game, "parked row", 230'000));
+		park.ParkHeldRows();
+		ExpectEq(park.keptHeld.key, "0000ABCD", "parked rows keep the character key");
+		ExpectEqI(static_cast<int>(park.keptHeld.entries.size()), 1, "parked row count");
+		Expect(park.keptHeld.entries.front().text == "parked row", "parked text is kept");
+		park.buf.ResetMemory();
+		Expect(park.buf.entries.empty(), "reset drops the live held rows");
+		if (auto* p = dynamic_cast<FileStore*>(park.store.get()))
+			p->readHook = nullptr;
+		park.LoadCurrent();
+		park.MergeKeptHeldIfMatch("0000ABCD");
+		bool gotFile = false, gotParked = false;
+		for (const auto& e : park.buf.entries) {
+			if (e.text == "second generation") gotFile = true;
+			if (e.text == "parked row") gotParked = true;
+		}
+		Expect(gotFile && gotParked, "a later load of that character merges the parked rows");
+		Expect(park.keptHeld.entries.empty(), "merged parked rows are cleared");
+		{
+			Log cap;
+			cap.persistHold = true;
+			cap.buf.character = MakeCharacter(0xABCDu, "Sam");
+			cap.buf.entries.resize(static_cast<std::size_t>(kKeptHeldCap) + 8);
+			for (int i = 0; i < kKeptHeldCap + 8; ++i)
+				cap.buf.entries[static_cast<std::size_t>(i)].text = "cap " + std::to_string(i);
+			cap.ParkHeldRows();
+			ExpectEqI(static_cast<int>(cap.keptHeld.entries.size()), kKeptHeldCap, "parked rows are capped");
+		}
 		std::error_code ec;
 		std::filesystem::remove_all(root, ec);
 	}

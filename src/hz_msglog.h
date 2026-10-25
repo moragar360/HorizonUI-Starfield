@@ -58,6 +58,7 @@ inline constexpr int kRetryMsMin = 1000;
 inline constexpr int kRetryMsMax = 60000;
 inline constexpr int kWriteRetryMs = kRetryMsMin;
 inline constexpr int kBakFailGiveUp = 3;
+inline constexpr int kKeptHeldCap = kHistoryMax;
 // F11 and the log open from the keyboard only. The HUD "Open in F11" hint
 // shows this key, never a pad button or combo.
 inline constexpr const char* kOpenHint = "F11";
@@ -501,6 +502,38 @@ inline void NoteWorkerSave(bool a_ok, bool& a_failed)
 inline void NoteLoadResult(bool a_ok, bool& a_hold)
 {
 	a_hold = !a_ok;
+}
+
+// Purpose: a successful write clears the write backoff and failure streak.
+// Does not touch persistHold: that flag is only for a failed read.
+inline void NoteWriteSuccess(int& a_backoffMs, std::uint64_t& a_retryAt)
+{
+	a_backoffMs = 0;
+	a_retryAt = 0;
+}
+
+// Purpose: a recover/promote that finishes after BeginLoad belongs to the
+// old generation. Discard it so capture does not reopen for the old character.
+inline bool LoadResultStale(std::uint64_t a_jobGen, std::uint64_t a_curGen)
+{
+	return a_jobGen != a_curGen;
+}
+
+inline bool LoadResultKeyMismatch(const std::string& a_jobKey, const std::string& a_curKey)
+{
+	return !a_jobKey.empty() && !a_curKey.empty() && a_jobKey != a_curKey;
+}
+
+inline bool ShouldKeepHeldRows(bool a_hold, std::size_t a_count)
+{
+	return a_hold && a_count > 0;
+}
+
+template <typename T>
+inline void CapKeptHeld(std::vector<T>& a_rows, std::size_t a_cap)
+{
+	if (a_rows.size() > a_cap)
+		a_rows.resize(a_cap);
 }
 
 // Purpose: first promote/recover may run immediately. After a hold, wait
@@ -1772,6 +1805,33 @@ public:
 		persistHold = false;
 		retryBackoffMs = 0;
 		retryAt = 0;
+	}
+
+	struct KeptHeld
+	{
+		std::string        key;
+		std::vector<Entry> entries;
+	};
+	KeptHeld keptHeld;
+
+	// Purpose: park held rows when a load resets memory before the read
+	// recovers. Merge them when that character's file next loads.
+	void ParkHeldRows()
+	{
+		if (!ShouldKeepHeldRows(persistHold, buf.entries.size())) return;
+		keptHeld.key = buf.character.key;
+		keptHeld.entries = buf.entries;
+		CapKeptHeld(keptHeld.entries, static_cast<std::size_t>(kKeptHeldCap));
+	}
+
+	void MergeKeptHeldIfMatch(const std::string& a_key)
+	{
+		if (a_key.empty() || keptHeld.key != a_key || keptHeld.entries.empty())
+			return;
+		buf.MergeSession(keptHeld.entries);
+		keptHeld.entries.clear();
+		keptHeld.key.clear();
+		dirty = true;
 	}
 
 	// Purpose: merge a just-read file with the in-memory session. File pins

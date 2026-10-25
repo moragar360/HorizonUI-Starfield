@@ -822,6 +822,30 @@ pin('this.hzHdr19(this.hzT(p,i == 0 ? "HEALTH" : "OXYGEN",50,y + 9,150,13,"sb","
 	pin("this.hzVit13(sb);", "the affliction sub line uses hzVit13 (Vitals hzChipSz path, no extra floor)");
 	pin("if(o != null && o.vit13) { return this.hzVitTextSz(fs); }", "vit13 lines use hzVitTextSz, not hzChipSzOn");
 	pin("private function hzVitTextSz(fs:Number) : int\n      {\n         return this.hzChipSz(fs);\n      }", "hzVitTextSz is hzChipSz only, same as HEALTH / hz26Co2T");
+	pin("this.hzTxtTop(this.hzTgChip,11);", "the Target chip still sits at top 11");
+	pin("var sz:Number = Math.round(base * Math.max(0.8,Math.min(1.3,this.hzTextScale)));", "unflagged hzTxtTop uses the 4e0c1ef size (no 9 px floor)");
+	pin("if(o.vit13 || o.af13 || card.length > 0) { sz = this.hzTextSz19(o,base); }", "hzTxtTop uses hzTextSz19 only for Vitals / affliction / chip-family");
+	{
+		const start = src.indexOf("private function hzTxtTop(tf:TextField, top:Number)");
+		expect(start >= 0, "hzTxtTop is present");
+		let body = "";
+		if (start >= 0) {
+			let depth = 0;
+			const brace = src.indexOf("{", start);
+			for (let i = brace; i < src.length; i++) {
+				if (src[i] === "{") depth++;
+				else if (src[i] === "}") {
+					depth--;
+					if (depth === 0) {
+						body = src.slice(start, i + 1);
+						break;
+					}
+				}
+			}
+		}
+		expect(body.indexOf("var sz:Number = this.hzTextSz19(o,base);") < 0, "hzTxtTop no longer folds hzTextSz19 into every card");
+		expect(body.indexOf("Math.round(base * Math.max(0.8,Math.min(1.3,this.hzTextScale)))") >= 0, "hzTxtTop default size matches 4e0c1ef");
+	}
 	pin("return this.hzVitTextSz(13);", "hzAf13Sz uses the Vitals-copied size");
 	expect(src.indexOf('var vs:Number = this.hz34S("Vitals");') < 0, "affliction no longer floors through min(Vitals, Afflictions)");
 	expect((src.split('this.hzT(c,"",48,8,240,13,"sb","acc",2);').length - 1) === 2, "live and F11 preview titles both copy HEALTH");
@@ -961,6 +985,23 @@ function hzAfEnvH(sz) {
 		const co2Px = hzVitPx(13, r.ts, r.hs, r.lrg);
 		expect(titlePx === healthPx, "affliction title equals HEALTH at " + r.label + " (" + titlePx + " px)");
 		expect(subPx === co2Px, "affliction sub equals hz26Co2T at " + r.label + " (" + subPx + " px)");
+	}
+	function hzTxtTopY0(base, top, textScale, sizeAware) {
+		const ts = Math.max(0.8, Math.min(1.3, textScale));
+		const render = Math.round(base * ts);
+		const sz = sizeAware ? Math.max(9, render) : render;
+		return top + (sz - base) / 2;
+	}
+	function hzApplyFmtY(y0, base, textScale) {
+		const ts = Math.max(0.8, Math.min(1.3, textScale));
+		const sz = Math.round(base * ts);
+		return y0 - (sz - base) / 2;
+	}
+	{
+		const y0 = hzTxtTopY0(9, 11, 0.8, false);
+		expect(y0 === 10, "Target chip y0 at TS 0.8 uses unfloored 7 (11 + (7-9)/2)");
+		expect(hzApplyFmtY(y0, 9, 0.8) === 11, "Target chip stays at 11 after a reformat");
+		expect(hzApplyFmtY(hzTxtTopY0(9, 11, 0.8, true), 9, 0.8) === 12, "folding the 9 px floor into y0 would move the Target chip to 12");
 	}
 	for (let sz = 13; sz <= 22; sz++) {
 		const barY = hzAfBarY(sz);

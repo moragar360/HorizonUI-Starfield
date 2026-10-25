@@ -5154,6 +5154,9 @@
       }
 
       // set the logical top of a registered text (survives TextScale / guard re-formatting)
+      // Unflagged texts use the 4e0c1ef size (round(base*ts), no 9 px floor) so
+      // legacy cards keep their y after a reformat. Vitals / affliction (hzVit13)
+      // and chip-family lines use hzTextSz19.
       private function hzTxtTop(tf:TextField, top:Number) : void
       {
          var o:Object = this.hzTxtObj(tf);
@@ -5161,7 +5164,9 @@
          if(!o) { tf.y = top; return; }
          o.su = undefined;   // v0.26: plain whole-unit top (device-grid snap only via hzTxtTopU)
          var base:Number = (o.role != null && HZ_TY_SIZE[o.role] != undefined) ? Number(HZ_TY_SIZE[o.role]) : Number(o.size);
-         var sz:Number = this.hzTextSz19(o,base);
+         var sz:Number = Math.round(base * Math.max(0.8,Math.min(1.3,this.hzTextScale)));
+         var card:String = o.chipCard != null && String(o.chipCard).length > 0 ? String(o.chipCard) : "";
+         if(o.vit13 || o.af13 || card.length > 0) { sz = this.hzTextSz19(o,base); }
          o.y0 = top + (sz - base) / 2;
          tf.y = top;
       }
