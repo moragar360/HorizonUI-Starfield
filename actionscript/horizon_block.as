@@ -875,6 +875,7 @@
          }
          try { this.hzEqLayout(); } catch(err2:Error) { }
          try { this.hzPpLayout(); this.hzV19Redraw(); } catch(err3:Error) { }
+         try { this.hz26StDraw(this.hz26Now()); } catch(errStT:Error) { }
          try { if(this.hzAfNew && this.hz31AfLast != null) { this.hzAfLayoutChips(this.hz31AfLast); } } catch(err31:Error) { }
          if(this.hzSetIsOpen) { this.hzSetDraw(); }
       }
@@ -1759,7 +1760,7 @@
             this.hzPlace(this.HorizonVitals_mc,left,vy);
             this.hzVitCX = NaN;
             this.hzVitOff = 0;
-            this.hzPlace(this.HorizonCard_mc,left,vy - 8 * sV - 72 * sJ);
+            this.hzPlace(this.HorizonCard_mc,left,vy - 8 * sV - this.hzJ19H * sJ);
             this.hzPlace(this.HorizonAffl_mc,left + (this.hz42VW() + 16) * sV,bottom - this.hzAfH * sA);
             this.hzPlace(this.HorizonCompact_mc,left,bottom - 114 * sC);
             var eqw:Number = this.hzE19Wd;
@@ -6952,18 +6953,19 @@
          if(this.hzJ19Title) { tw = Math.max(tw,this.hzTW(this.hzJ19Title)); }
          if(this.hzJ19Sub) { tw = Math.max(tw,this.hzTW(this.hzJ19Sub)); }
          var w:Number = Math.max(HZ_J19_W,78 + tw + 18);
+         if(w != this.hzJ19W || h != this.hzJ19H) { this.hzLaidOut = false; }
          this.hzJ19W = w;
          this.hzJ19H = h;
          this.hzJ19BarY = barY;
          this.hzSetSz(this.HorizonCard_mc,w,h);
-         if(this.hzJ19Glyph) { this.hzJ19Glyph.y = Math.round(h / 2); }
+         var cy:Number = Math.round(h / 2);
+         if(this.hzJ19Glyph) { this.hzJ19Glyph.y = cy - 2; }
          if(this.hzJ19Bolt) { this.hzJ19Bolt.y = subTop + Math.round(szS / 2) + 4; }
          if(this.hzJ19Seg) { this.hzJ19Seg.y = barY; }
          var g:* = this.hzJ19Body.graphics;
          g.clear();
          this.hzPanel(g,w,h,18);
          var col:uint = this.hzJetRech ? HZ_AMB : HZ_ACCENT;
-         var cy:Number = Math.round(h / 2);
          this.hzTileDisc(g,40,cy,26,-1);
          g.lineStyle(1.4,this.hzIconCol(col),0.35,true); g.drawCircle(40,cy,22); g.lineStyle();
          // original jetpack glyph: twin-tank pack, center spine, two nozzles, optional flames
@@ -7719,9 +7721,15 @@
          {
             var lp:TextField = this.hzT(p,"",0,0,160,13,"sb","main",1.6);
             var lh:TextField = this.hzT(p,"",0,0,160,13,"sb","mut",1.6);
+            var kp:TextField = this.hzT(p,"",0,0,60,12,"bd","col",0,"left");
+            var kh:TextField = this.hzT(p,"",0,0,60,12,"bd","col",0,"left");
+            var hh:TextField = this.hzT(p,"HOLD",0,0,60,11,"rg","mut",1.2);
             this.hzChip13(lp,"Hover");
             this.hzChip13(lh,"Hover");
-            this.hzT19Btn.push({"kp":this.hzT(p,"",0,0,60,12,"bd","col",0,"left"),"lp":lp,"hh":this.hzT(p,"HOLD",0,0,60,11,"rg","mut",1.2),"kh":this.hzT(p,"",0,0,60,12,"bd","col",0,"left"),"lh":lh});
+            this.hzChip13(kp,"Hover");
+            this.hzChip13(kh,"Hover");
+            this.hzChip13(hh,"Hover");
+            this.hzT19Btn.push({"kp":kp,"lp":lp,"hh":hh,"kh":kh,"lh":lh});
             i++;
          }
          p.visible = false;
@@ -8000,6 +8008,8 @@
          if(!o) { tf.y = t; tf.x = this.hzSnapU(tf.x,su); return; }
          var fs:Number = Number(o.fs != undefined ? o.fs : o.size);
          var sz:Number = Math.max(9,Math.round(fs * Math.max(0.8,Math.min(1.3,this.hzTextScale))));
+         var card:String = o.chipCard != null && String(o.chipCard).length > 0 ? String(o.chipCard) : (o.af13 ? "Afflictions" : "");
+         if(card.length > 0) { sz = this.hzChipSzOn(fs,card,o.chipMin > 0 ? Number(o.chipMin) : 13); }
          o.su = su;
          o.y0 = t + (sz - fs) / 2;
          tf.y = t;
@@ -8118,6 +8128,15 @@
          return k.toUpperCase();
       }
 
+      // Keycap box for the hover TAKE row: at least 24, and tall enough for the floored E / HOLD type.
+      private function hzT19CapH() : Number
+      {
+         var u:Number = this.hzT19U();
+         var keySz:int = this.hzChipSzOn(12,"Hover",13);
+         var holdSz:int = this.hzChipSzOn(11,"Hover",13);
+         return this.hzSnapU(Math.max(24,Math.max(keySz,holdSz) + 10),u);
+      }
+
       // our keycap action row from aButtons (sTextPressAndRelease / sTextHold / bVisible / bEnabled / iType).
       // g == null only measures. Returns the row width.
       private function hzT19Buttons(g:*, a:Object, aw:Object, x0:Number, y:Number, col:uint) : Number
@@ -8142,7 +8161,7 @@
             // v0.26: caps 24 units tall (was 20); key glyph + labels centered on the cap by their real ascent
             var u:Number = this.hzT19U();
             var ky:Number = this.hzSnapU(y,u);
-            var kh:Number = this.hzSnapU(24,u);
+            var kh:Number = this.hzT19CapH();
             var kcy:Number = ky + kh / 2;
             used++;
             if(x > x0) { x += 16; }
@@ -8155,10 +8174,12 @@
                var kt:TextField = TextField(isHold ? slot.kh : slot.kp);
                var lt:TextField = TextField(isHold ? slot.lh : slot.lp);
                var loTk:Object = this.hzTxtObj(lt); if(loTk && loTk.chipMin) { this.hzApplyFmt(loTk); }
+               var koTk:Object = this.hzTxtObj(kt); if(koTk && koTk.chipMin) { this.hzApplyFmt(koTk); }
                if(isHold)
                {
                   if(pairs.length > 1) { x += 14; }
                   var ht:TextField = TextField(slot.hh);
+                  var hoTk:Object = this.hzTxtObj(ht); if(hoTk && hoTk.chipMin) { this.hzApplyFmt(hoTk); }
                   ht.visible = g != null;
                   ht.x = this.hzSnapU(x,u); this.hzTxtTopU(ht,this.hzCapTop(ht,kcy),u);
                   x += this.hzTW(ht) + 6;
@@ -8494,7 +8515,7 @@
             var cw:Number = W - 2 * PX;
             var L38:Object = this.hz38PromptY();
             var dvY:Number = Number(L38.dv);
-            H = hasBtn ? dvY + 8 + 24 + 18 : dvY + 6;
+            H = hasBtn ? dvY + 8 + this.hzT19CapH() + 18 : dvY + 6;
             this.hzPanel(g,W,H,18,-1,-1);
             g.beginFill(this.hzIconCol(HZ_ACCENT),1); g.drawRoundRect(0,16,4,H - 32,4,4); g.endFill();
             this.hzT19Tile(g,Math.round(W / 2),Number(L38.icy),HZ_ACCENT);
@@ -8524,7 +8545,7 @@
             this.hzFitText(nmTf,this.hzUC(en),W - 40);
             this.hzTxtTop(nmTf,11);
             var by:Number = stars > 0 ? 48 : 40;
-            H = by + 7 + 15 + (hasBtn ? 34 : 0);
+            H = by + 7 + 15 + (hasBtn ? this.hzT19CapH() + 10 : 0);
             this.hzPanel(g,W,H,18,tint,edge);
             i = 0;
             while(i < stars) { this.hzT19Star(g,W / 2 + (i - (stars - 1) / 2) * 15,36,this.hzIconCol(0xF2C14E)); i++; }
@@ -8571,7 +8592,7 @@
             var rows:Array = kind == "cmp" ? this.hzT19CmpRows(it,cmp) : [];
             var rowsY:Number = head + 9;
             var bodyEnd:Number = kind == "cmp" ? rowsY + rows.length * 24 : head;
-            H = hasBtn ? bodyEnd + 12 + 24 + 14 : bodyEnd + (kind == "cmp" ? 6 : 0);
+            H = hasBtn ? bodyEnd + 12 + this.hzT19CapH() + 14 : bodyEnd + (kind == "cmp" ? 6 : 0);
             this.hzPanel(g,W,H,18,tint,edge);
             // v0.25: left accent stripe like the equipment card (red while stealing; rarity stays on its chip)
             this.hzAccStripe(g,H,steal ? HZ_RED : HZ_ACCENT);
@@ -8673,7 +8694,7 @@
                if(se.fWeight != undefined && !isNaN(sw) && sw > 0) { fmeta.push(sw.toFixed(1) + " KG"); }
             }
             // v0.25: value / weight line, then a thin divider, then the keycap row a little lower (whole units)
-            H = hasBtn ? fy + 42 + 24 + 14 : fy + 30;
+            H = hasBtn ? fy + 42 + this.hzT19CapH() + 14 : fy + 30;
             this.hzPanel(g,W,H,18,tint,edge);
             this.hzAccStripe(g,H,steal ? HZ_RED : HZ_ACCENT);
             if(steal)
@@ -10069,6 +10090,7 @@
          this.hz26StT.width = Math.max(160,this.hzTW(this.hz26StT) + 8);
          this.hz26StD.width = Math.max(160,this.hzTW(this.hz26StD) + 8);
          var w:Number = Math.max(HZ_ST_W,50 + Math.max(this.hzTW(this.hz26StT),this.hzTW(this.hz26StD)) + 18);
+         if(w != this.hz26StW || h != this.hz26StH) { this.hzLaidOut = false; }
          this.hz26StW = w;
          this.hz26StH = h;
          this.hzSetSz(this.HorizonStealth_mc,w,h);

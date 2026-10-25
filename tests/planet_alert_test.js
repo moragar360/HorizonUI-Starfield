@@ -828,6 +828,9 @@ expect(src.indexOf('var hs:Number = this.hz34F("Afflictions");') < 0, "the chip 
 expect(src.indexOf('this.hzT(c,"",48,24,200,13,"rg","mut",0.4)') < 0, "the affliction sub line is no longer Regular 0.4");
 pin('this.hzChip13(o.l,"Hover");', "the F11 TAKE line uses the shared chip floor");
 pin('this.hzChip13(lp,"Hover");', "the live TAKE line uses the shared chip floor");
+pin('this.hzChip13(kp,"Hover");', "the live keycap letter uses the shared chip floor");
+pin('this.hzChip13(kh,"Hover");', "the live hold keycap letter uses the shared chip floor");
+pin('this.hzChip13(hh,"Hover");', "the live HOLD word uses the shared chip floor");
 pin('this.hzChip13(this.hz26StT,"Stealth");', "the stealth title uses the Stealth scale key");
 pin('this.hzChip13(this.hz26StD,"Stealth");', "the stealth sub line uses the Stealth scale key");
 pin('this.hzChip13(this.hzJ19Title,"Jetpack");', "the jetpack title uses the Jetpack scale key");
@@ -837,7 +840,15 @@ pin("var h:Number = Math.max(HZ_ST_H,subTop + szS + 12);", "the stealth pill gro
 pin("c.y - 150 * sSt - this.hz26StH * sSt", "the stealth pill stays above the crosshair at the live height");
 pin("var subTop:int = 9 + szT + 6;", "the jetpack sub line sits under the floored title");
 pin("var h:Number = Math.max(72,barY + 18);", "the jetpack pill grows with the floored type");
-pin('try { this.hzAfFmt13(); } catch(errAfF:Error) { }', "scale changes reformat af13 fields before the chip relayout");
+pin("vy - 8 * sV - this.hzJ19H * sJ", "the jetpack card sits on the measured height above Vitals");
+expect(src.indexOf("vy - 8 * sV - 72 * sJ") < 0, "the jetpack card is no longer placed as if it were 72 tall");
+pin("if(w != this.hzJ19W || h != this.hzJ19H) { this.hzLaidOut = false; }", "a jetpack size change marks a relayout");
+pin("if(w != this.hz26StW || h != this.hz26StH) { this.hzLaidOut = false; }", "a stealth size change marks a relayout");
+pin("this.hzJ19Glyph.y = cy - 2;", "the jetpack glyph sits cy - 2 in its disc");
+pin("private function hzT19CapH() : Number", "the hover keycap grows with the floored E and HOLD");
+pin('Math.max(24,Math.max(keySz,holdSz) + 10)', "the keycap stays at least 24 and fits the floored type");
+pin('try { this.hzAfFmt13(); } catch(errAfF:Error) { }\n         try { this.hzJ19Draw(); } catch(errJ13:Error) { }\n         try { this.hz26StDraw(this.hz26Now()); } catch(errSt13:Error) { }\n         try { this.hzAfRetryLayout(); } catch(errAfS:Error) { }\n         this.hzLaidOut = this.hzLayout();', "hzApplyScale draws jetpack and stealth before the relayout");
+pin('try { this.hzPpLayout(); this.hzV19Redraw(); } catch(err3:Error) { }\n         try { this.hz26StDraw(this.hz26Now()); } catch(errStT:Error) { }', "a TextScale-only change redraws stealth before the next layout");
 pin("if(o != null && (o.af13 || o.chipMin))", "every chip-family field is reformatted after a scale change");
 pin("var j:int = 0;\n         this.hzAfFmt13();", "the F11 preview also reformats af13 fields");
 pin('try { this.hzAfRetryLayout(); } catch(errAfS:Error) { }\n         this.hzLaidOut = this.hzLayout();', "the main layout runs after the chip relayout");
@@ -912,6 +923,8 @@ const hzChipLines = [
 	{ name: "affliction title", fs: 13, card: "Afflictions" },
 	{ name: "affliction sub", fs: 13, card: "Afflictions" },
 	{ name: "TAKE", fs: 13, card: "Hover" },
+	{ name: "keycap letter", fs: 12, card: "Hover" },
+	{ name: "HOLD", fs: 11, card: "Hover" },
 	{ name: "stealth title", fs: 14, card: "Stealth" },
 	{ name: "stealth sub", fs: 10, card: "Stealth" },
 	{ name: "jetpack title", fs: 14, card: "Jetpack" },
@@ -964,14 +977,80 @@ function hzJH(szT, szS) { return Math.max(72, hzJBarY(szT, szS) + 18); }
 		expect(jH >= jBar + 18, "jetpack pill height holds the bar at " + c.label);
 	}
 	expect(hzChipLinePx(13, 1, 0.8) + 1e-9 >= 13, "TAKE at Moragar's Choice TS 1.0 HS 0.8 stays at least 13 px");
+	expect(hzChipLinePx(12, 1, 0.8) + 1e-9 >= 13, "the keycap letter at Moragar's Choice stays at least 13 px");
+	expect(hzChipLinePx(11, 1, 0.8) + 1e-9 >= 13, "HOLD at Moragar's Choice stays at least 13 px");
 	expect(hzChipLineSz(12, 1, 1) === 13, "jetpack sub floors 12 to 13 at TS 1.0 HS 1.0");
 	expect(hzChipLineSz(10, 1, 1) === 13, "stealth sub floors 10 to 13 at TS 1.0 HS 1.0");
 	expect(hzChipLineSz(14, 1, 0.8) === 17, "stealth title at HS 0.8 uses ceil(13/0.8)");
-	expect(hzStH(14, 10) === 48, "the stealth pill stays 48 at the design sizes");
+	expect(hzStH(hzChipLineSz(14, 1, 1), hzChipLineSz(10, 1, 1)) === 51, "the stealth pill is 51 at TS 1.0 HS 1.0");
 	expect(hzStH(17, 17) === 58, "the stealth pill is 58 at the HS 0.8 floor");
-	expect(hzJH(14, 12) === 72, "the jetpack pill stays 72 at the design sizes");
+	expect(hzJH(hzChipLineSz(14, 1, 1), hzChipLineSz(12, 1, 1)) === 73, "the jetpack pill is 73 at TS 1.0 HS 1.0");
 	expect(hzJH(17, 17) === 80, "the jetpack pill is 80 at the HS 0.8 floor");
-	expect(150 + hzStH(17, 17) > 150 + 48, "a taller stealth pill grows upward above the crosshair");
+	expect(150 + hzStH(17, 17) > 150 + 51, "a taller stealth pill grows upward above the crosshair");
+}
+function hzJSize(ts, hs, js, lrg) {
+	const card = js > 0 ? js : hs;
+	return hzJH(hzChipLineSz(14, ts, card, lrg), hzChipLineSz(12, ts, card, lrg));
+}
+function hzJGap(jH, sV, sJ, placedH) {
+	return 8 * sV + (placedH - jH) * sJ;
+}
+function hzStAbove(sSt, h) {
+	const cY = 540;
+	const y = cY - 150 * sSt - h * sSt;
+	return cY - (y + h * sSt);
+}
+function hzCapH(ts, hs, lrg) {
+	const keySz = hzChipLineSz(12, ts, hs, lrg);
+	const holdSz = hzChipLineSz(11, ts, hs, lrg);
+	return Math.max(24, Math.max(keySz, holdSz) + 10);
+}
+{
+	const placeCases = [
+		{ ts: 0.8, hs: 0.8, js: 0, lrg: 1, label: "TS 0.8 HS 0.8" },
+		{ ts: 0.8, hs: 1.0, js: 0, lrg: 1, label: "TS 0.8 HS 1.0" },
+		{ ts: 1.0, hs: 0.8, js: 0, lrg: 1, label: "TS 1.0 HS 0.8" },
+		{ ts: 1.0, hs: 1.0, js: 0, lrg: 1, label: "TS 1.0 HS 1.0" },
+		{ ts: 1.3, hs: 0.8, js: 0, lrg: 1, label: "TS 1.3 HS 0.8" },
+		{ ts: 1.3, hs: 1.0, js: 0, lrg: 1, label: "TS 1.3 HS 1.0" },
+		{ ts: 1.0, hs: 1.0, js: 0.6, lrg: 1, label: "JetpackScale 0.6" },
+		{ ts: 1.0, hs: 0.8, js: 0, lrg: 1, label: "Moragar's Choice" },
+		{ ts: 0.8, hs: 0.8, js: 0, lrg: 1.07, label: "hudmenu_lrg TS 0.8 HS 0.8" },
+		{ ts: 1.0, hs: 0.8, js: 0, lrg: 1.07, label: "hudmenu_lrg TS 1.0 HS 0.8" },
+		{ ts: 1.0, hs: 1.0, js: 0, lrg: 1.07, label: "hudmenu_lrg TS 1.0 HS 1.0" },
+		{ ts: 1.3, hs: 0.8, js: 0, lrg: 1.07, label: "hudmenu_lrg TS 1.3 HS 0.8" },
+		{ ts: 1.3, hs: 1.0, js: 0, lrg: 1.07, label: "hudmenu_lrg TS 1.3 HS 1.0" },
+		{ ts: 1.0, hs: 1.0, js: 0.6, lrg: 1.07, label: "hudmenu_lrg JetpackScale 0.6" },
+		{ ts: 1.0, hs: 0.8, js: 0, lrg: 1.07, label: "hudmenu_lrg Moragar's Choice" }
+	];
+	for (let i = 0; i < placeCases.length; i++) {
+		const c = placeCases[i];
+		const sV = c.lrg * c.hs;
+		const sJ = c.lrg * (c.js > 0 ? c.js : c.hs);
+		const jH = hzJSize(c.ts, c.hs, c.js, c.lrg);
+		const gap = hzJGap(jH, sV, sJ, jH);
+		const old = hzJGap(jH, sV, sJ, 72);
+		expect(gap + 1e-9 >= 8 * sV, "jetpack gap at " + c.label + " is " + gap + " (need " + (8 * sV) + ", height " + jH + ")");
+		expect(Math.abs(gap - 8 * sV) < 1e-9, "jetpack gap at " + c.label + " is the 8-unit Vitals gap");
+		if (jH > 72 && sJ > 0) {
+			expect(old + 1e-9 < 8 * sV, "a 72-tall place at " + c.label + " would leave only " + old);
+		}
+	}
+	expect(hzJSize(1, 1, 0, 1) === 73, "reachable jetpack height at TS 1.0 HS 1.0 is 73");
+	expect(hzJSize(1.3, 1, 0, 1) === 80, "reachable jetpack height at TS 1.3 HS 1.0 is 80");
+	expect(hzJSize(1, 0.8, 0, 1) === 80, "reachable jetpack height at Moragar's Choice is 80");
+	expect(hzJSize(1.3, 0.8, 0, 1) === 81, "reachable jetpack height at TS 1.3 HS 0.8 is 81");
+	expect(hzJSize(1, 1, 0.6, 1) === 90, "reachable jetpack height at JetpackScale 0.6 is 90");
+	expect(hzJGap(90, 1, 0.6, 72) + 1e-9 < 8, "the old 72-tall place overlaps Vitals at JetpackScale 0.6");
+	const stBefore = hzStH(hzChipLineSz(14, 1, 1), hzChipLineSz(10, 1, 1));
+	const stAfter = hzStH(hzChipLineSz(14, 1.3, 1), hzChipLineSz(10, 1.3, 1));
+	expect(stBefore === 51 && stAfter === 55, "TextScale 1.0 to 1.3 grows stealth 51 to 55");
+	expect(hzStAbove(1, stBefore) === 150, "stealth stays 150 above the crosshair at TS 1.0");
+	expect(hzStAbove(1, stAfter) === 150, "stealth stays 150 above the crosshair after a TextScale-only change");
+	expect(hzStAbove(0.8, hzStH(17, 17)) === 120, "stealth stays 150 StealthScale units above the crosshair at HS 0.8");
+	expect(hzCapH(1, 1, 1) === 24, "the keycap stays 24 at TS 1.0 HS 1.0");
+	expect(hzCapH(1, 0.8, 1) === 27, "the keycap is 27 at HS 0.8 so font 17 fits");
+	expect(hzCapH(1, 0.6, 1) === 32, "the keycap is 32 at HoverScale 0.6 so font 22 fits");
 }
 function hzAfPlainPers(icon) {
 	const sys = hzPretty(icon);
