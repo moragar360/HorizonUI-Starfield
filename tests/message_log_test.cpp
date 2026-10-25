@@ -124,6 +124,14 @@ std::filesystem::path RepoRoot()
 	return std::filesystem::current_path();
 }
 
+bool HaveRepo()
+{
+	std::error_code ec;
+	const auto p = RepoRoot();
+	return std::filesystem::is_regular_file(p / "src" / "main.cpp", ec)
+		&& std::filesystem::is_regular_file(p / "actionscript" / "horizon_block.as", ec);
+}
+
 std::string Slurp(const char* a_path)
 {
 	auto p = std::filesystem::path(a_path);
@@ -412,7 +420,10 @@ int main()
 	}
 
 	// ---- wiring contracts that used to freeze F11 ----
-	{
+	if (!HaveRepo()) {
+		std::cerr << "SKIP: source-pin fixture checks (repo not found from this cwd; "
+			"set MSGLOG_REPO_ROOT or rebuild with -DMSGLOG_REPO_ROOT)\n";
+	} else {
 		const auto main = Slurp("src/main.cpp");
 		const auto as = Slurp("actionscript/horizon_block.as");
 		const auto hzc = Slurp("actionscript/comms/hzc_block.as");
@@ -434,15 +445,22 @@ int main()
 		Expect(main.find("try { Poll(); }") != std::string::npos, "the task lambda swallows exceptions");
 		Expect(main.find("JoinOrDetach") != std::string::npos && main.find("g_mlWStop") != std::string::npos,
 			"writer is stopped and joined");
+		Expect(main.find("AtExitShouldJoin") != std::string::npos && main.find("g_mlWThread.detach()") != std::string::npos,
+			"atexit joins only when done, otherwise detaches");
 		Expect(main.find("g_mlHadSession.exchange(false)") != std::string::npos, "quit flush is edge-triggered");
 		Expect(main.find("WriterStartAllowed") != std::string::npos, "detached writer blocks a second thread");
-		Expect(main.find("PromoteToCharacter") != std::string::npos, "DLL promotion uses the merge helper");
-		Expect(main.find("g_mlWFailed") != std::string::npos && main.find("NoteWriteFailure") != std::string::npos,
-			"a failed write is retried");
+		Expect(main.find("ApplyRecoveredFile") != std::string::npos && main.find("HoldRetryDue") != std::string::npos,
+			"DLL promotion merges on the worker and is throttled");
+		Expect(main.find("g_mlWFailed.store(true)") != std::string::npos && main.find("NoteWorkerSave") != std::string::npos,
+			"the worker sets the failure flag");
+		Expect(main.find("NoteWriteFailure") != std::string::npos, "a failed write is retried");
 		Expect(main.find("WriteAllowed") != std::string::npos, "force can retry a write");
 		Expect(main.find("g_mlWStarted = false") != std::string::npos && main.find("g_mlWLive.store(false)") != std::string::npos,
 			"the writer outer catch re-enables a later start");
-		Expect(main.find("g_mlLOk") != std::string::npos, "HUD-ready load reports success so a transient read can hold persist");
+		Expect(main.find("NoteLoadResult") != std::string::npos && main.find("g_ml.persistHold") != std::string::npos,
+			"ApplyLoad holds persist after a transient read");
+		Expect(main.find("NoteRetryFailure") != std::string::npos, "retries use exponential backoff");
+		Expect(main.find("MsglogQueueRecover") != std::string::npos, "held rows retry on the worker");
 		Expect(as.find("padx") != std::string::npos && as.find("pady") != std::string::npos, "AS3 treats padx/pady as actions");
 		Expect(main.find("OnSettingsKey") != std::string::npos && main.find("g_vk") != std::string::npos, "F11 still opens from the keyboard");
 		Expect(as.find("hzMsglogOpenHint") != std::string::npos && as.find("return \"F11\"") != std::string::npos,
@@ -745,6 +763,79 @@ int main()
 	}
 
 	{
+		Buffer b;
+		LogState file;
+		Entry fe;
+		fe.id = 1;
+		fe.kind = Kind::Game;
+		fe.text = "fold pin";
+		fe.norm = NormalizeText("fold pin");
+		fe.ts = 100;
+		file.entries.push_back(fe);
+		b.LoadState(file);
+		Entry se;
+		se.id = 1;
+		se.kind = Kind::Game;
+		se.text = "fold pin";
+		se.norm = fe.norm;
+		se.ts = 103;
+		se.pin = 1;
+		b.MergeSession({se});
+		ExpectEqI(static_cast<int>(b.entries.size()), 1, "exact 3000 ms folds");
+		Expect(b.entries.front().pin == 1, "folded row carries the session pin");
+		Expect(b.entries.front().n >= 2, "in-window fold increments n");
+		Entry late;
+		late.kind = Kind::Game;
+		late.text = "fold pin";
+		late.norm = fe.norm;
+		late.ts = 104;
+		late.id = 9;
+		Buffer b2;
+		b2.LoadState(file);
+		b2.MergeSession({late});
+		ExpectEqI(static_cast<int>(b2.entries.size()), 2, "3001 ms does not fold");
+	}
+
+	{
+		Buffer b;
+		LogState file;
+		Entry fe;
+		fe.id = 1;
+		fe.kind = Kind::Busy;
+		fe.text = "This individual is busy.";
+		fe.norm = NormalizeText(fe.text);
+		fe.ts = 100;
+		file.entries.push_back(fe);
+		b.LoadState(file);
+		Entry se;
+		se.kind = Kind::Busy;
+		se.text = fe.text;
+		se.norm = fe.norm;
+		se.ts = 110;
+		b.MergeSession({se});
+		ExpectEqI(static_cast<int>(b.entries.size()), 1, "Busy 10 s window folds");
+		Buffer b2;
+		b2.LoadState(file);
+		se.ts = 111;
+		b2.MergeSession({se});
+		ExpectEqI(static_cast<int>(b2.entries.size()), 2, "Busy outside 10 s does not fold");
+	}
+
+	{
+		Buffer b;
+		Expect(b.DedupeClockClear(), "empty buffer clock is clear");
+		b.Offer(Cap(Kind::Game, "clock row", 100'000));
+		Expect(!b.DedupeClockClear(), "offer arms the dedupe clock");
+		auto snap = b.Snapshot();
+		b.LoadState(snap);
+		Expect(b.DedupeClockClear(), "load clears the dedupe clock");
+		b.Offer(Cap(Kind::Game, "clock row", 101'000));
+		ExpectEqI(static_cast<int>(b.entries.size()), 2, "cleared clock does not fold across a load");
+		b.SortByTime();
+		Expect(b.DedupeClockClear(), "sort clears the dedupe clock");
+	}
+
+	{
 		Expect(WriterStartAllowed(false, false), "a stopped writer may start");
 		Expect(!WriterStartAllowed(true, false), "a live detached writer blocks a second start");
 		Expect(!WriterStartAllowed(false, true), "a started writer blocks a second start");
@@ -752,9 +843,35 @@ int main()
 		Expect(!WriteAllowed(false, false, 0, 1000), "clean buffer does not write");
 		Expect(!WriteAllowed(true, false, 1000, 1500), "retry waits the backoff");
 		Expect(WriteAllowed(true, false, 1000, 2000), "retry after the backoff");
+		ExpectEqI(NextRetryMs(0), kRetryMsMin, "first backoff is 1 s");
+		ExpectEqI(NextRetryMs(1000), 2000, "backoff doubles");
+		ExpectEqI(NextRetryMs(2000), 4000, "backoff doubles again");
+		ExpectEqI(NextRetryMs(32000), kRetryMsMax, "backoff caps at 60 s");
+		ExpectEqI(NextRetryMs(kRetryMsMax), kRetryMsMax, "cap stays at 60 s");
+		Expect(!WriteAllowed(true, false, 1000, 2500, 2000), "grown backoff waits");
+		Expect(WriteAllowed(true, false, 1000, 3000, 2000), "grown backoff is due");
+		Expect(HoldRetryDue(false, 5000, 1000), "first promote is not throttled");
+		Expect(!HoldRetryDue(true, 5000, 1001), "held promote waits the backoff");
+		Expect(HoldRetryDue(true, 5000, 5000), "held promote runs when due");
+		Expect(WithinDedupeWindow(3000, kDedupeMs), "3000 ms folds");
+		Expect(!WithinDedupeWindow(3001, kDedupeMs), "3001 ms does not fold");
+		Expect(WithinDedupeWindow(10000, kBusyDedupeMs), "Busy 10 s folds");
+		Expect(!WithinDedupeWindow(10001, kBusyDedupeMs), "Busy 10.001 s does not fold");
+		Expect(BakCopyBlocksReplace(1), "the first bak failure still blocks replace");
+		Expect(!BakCopyBlocksReplace(3), "the third bak failure allows replace");
+		Expect(AtExitShouldJoin(true), "atexit joins a finished worker");
+		Expect(!AtExitShouldJoin(false), "atexit detaches a live-or-killed worker");
 		bool dirty = false;
 		NoteWriteFailure(dirty);
 		Expect(dirty, "a failed write marks dirty so it is retried");
+		bool failed = false;
+		NoteWorkerSave(false, failed);
+		Expect(failed, "the worker failure flag is set on Save false");
+		bool hold = false;
+		NoteLoadResult(false, hold);
+		Expect(hold, "ApplyLoad hold is set on a failed load");
+		NoteLoadResult(true, hold);
+		Expect(!hold, "a successful load clears the hold");
 	}
 
 	{
@@ -801,7 +918,32 @@ int main()
 		Expect(!log.Flush(40'000), "a failed bak copy fails the save");
 		Expect(ReadFile(path).find("keep original") != std::string::npos, "main file is not replaced after bak failure");
 		Expect(ReadFile(path).find("must not replace") == std::string::npos, "new row is not in the main file");
-		Expect(std::filesystem::is_directory(bak), "bak path stays a directory");
+		std::filesystem::remove_all(root, ec);
+	}
+
+	{
+		const auto root = TmpRoot();
+		Log log;
+		Settings s;
+		log.Configure(s, root);
+		log.buf.character = MakeCharacter(0xABCDu, "Sam");
+		log.Offer(Cap(Kind::Game, "keep original", 20'000));
+		Expect(log.Flush(20'000), "seed the main file for bak give-up");
+		const auto path = root / "MessageLog" / "MessageLog_0000ABCD.json";
+		const auto bak = root / "MessageLog" / "MessageLog_0000ABCD.json.bak";
+		std::error_code ec;
+		std::filesystem::remove(bak, ec);
+		std::filesystem::create_directory(bak, ec);
+		WriteFile(bak / "lock", "held");
+		auto* fs = dynamic_cast<FileStore*>(log.store.get());
+		Expect(fs != nullptr, "persist store is FileStore");
+		if (fs) fs->bakFailGiveUp = 3;
+		log.Offer(Cap(Kind::Game, "third try writes", 40'000));
+		Expect(!log.Flush(41'000), "first bak failure still blocks");
+		Expect(!log.Flush(42'000), "second bak failure still blocks");
+		Expect(log.Flush(43'000), "third bak failure writes the main file");
+		Expect(ReadFile(path).find("third try writes") != std::string::npos, "give-up replace updated the main file");
+		Expect(std::filesystem::is_directory(bak), "locked bak path is left in place");
 		std::filesystem::remove_all(root, ec);
 	}
 
@@ -864,6 +1006,51 @@ int main()
 		Expect(promo.persistHold, "promote hold after transient");
 		Expect(promo.buf.entries.size() == 1 && promo.buf.entries.front().text == "namehash row",
 			"transient promote keeps the session in memory");
+
+		int reads = 0;
+		auto countFail = [&](const std::filesystem::path&) {
+			++reads;
+			FileRead rd;
+			rd.ok = false;
+			rd.notice = "sharing violation";
+			return rd;
+		};
+		Log throttle;
+		throttle.Configure(s, root);
+		if (auto* p = dynamic_cast<FileStore*>(throttle.store.get()))
+			p->readHook = countFail;
+		throttle.buf.character = MakeCharacter(0, "Sam");
+		throttle.Offer(Cap(Kind::Game, "throttle row", 10'000));
+		Expect(!throttle.PromoteToCharacter(MakeCharacter(0xABCDu, "Sam"), 1'000), "first promote reads once");
+		ExpectEqI(reads, 1, "first promote does one read");
+		Expect(!throttle.PromoteToCharacter(MakeCharacter(0xABCDu, "Sam"), 1'001), "promote is throttled");
+		ExpectEqI(reads, 1, "throttled promote does not read again");
+		Expect(!throttle.PromoteToCharacter(MakeCharacter(0xABCDu, "Sam"), throttle.retryAt), "promote retries when due");
+		ExpectEqI(reads, 2, "due promote reads once more");
+
+		if (auto* p = dynamic_cast<FileStore*>(live.store.get()))
+			p->readHook = nullptr;
+		Expect(live.RetryHeld(MakeCharacter(0xABCDu, "Sam"), 200'000, true), "held session merges after the read recovers");
+		Expect(!live.persistHold, "recover clears the hold");
+		bool gotNewer = false, gotSession = false;
+		for (const auto& e : live.buf.entries) {
+			if (e.text == "second generation") gotNewer = true;
+			if (e.text == "session only") gotSession = true;
+		}
+		Expect(gotNewer && gotSession, "recover merges the held rows into the file");
+		Expect(live.Flush(210'000), "recover then writes");
+
+		Log held;
+		held.Configure(s, root);
+		if (auto* p = dynamic_cast<FileStore*>(held.store.get()))
+			p->readHook = transientMain;
+		held.buf.character = MakeCharacter(0, "Sam");
+		held.Offer(Cap(Kind::Game, "must survive", 220'000));
+		Expect(!held.PromoteToCharacter(MakeCharacter(0xABCDu, "Sam"), 221'000), "quit path tries recover once");
+		ExpectEqI(static_cast<int>(held.buf.entries.size()), 1, "held rows survive a failed quit/load attempt");
+		Expect(held.buf.entries.front().text == "must survive", "held text is still in memory");
+		Expect(held.RetryHeld(MakeCharacter(0xABCDu, "Sam"), 221'000, true) == false, "forced recover still fails");
+		Expect(held.buf.entries.front().text == "must survive", "forced recover does not discard held rows");
 		std::error_code ec;
 		std::filesystem::remove_all(root, ec);
 	}

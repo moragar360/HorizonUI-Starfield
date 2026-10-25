@@ -54,7 +54,10 @@ inline constexpr int kDebounceMs = 15000;
 inline constexpr int kJsonMaxDepth = 32;
 inline constexpr int kLoadEntryCap = kHistoryMax + kPinCap;
 inline constexpr int kWriterJoinMs = 2000;
-inline constexpr int kWriteRetryMs = 1000;
+inline constexpr int kRetryMsMin = 1000;
+inline constexpr int kRetryMsMax = 60000;
+inline constexpr int kWriteRetryMs = kRetryMsMin;
+inline constexpr int kBakFailGiveUp = 3;
 // F11 and the log open from the keyboard only. The HUD "Open in F11" hint
 // shows this key, never a pad button or combo.
 inline constexpr const char* kOpenHint = "F11";
@@ -451,14 +454,36 @@ inline bool WriterStartAllowed(bool a_live, bool a_started)
 	return !a_live && !a_started;
 }
 
+// Purpose: 1 s, 2 s, 4 s … capped at 60 s. Same curve for write, read, and
+// promotion retries. Normal writes stay on the 10–15 s debounce.
+inline int NextRetryMs(int a_prevMs)
+{
+	if (a_prevMs < kRetryMsMin) return kRetryMsMin;
+	if (a_prevMs >= kRetryMsMax / 2) return kRetryMsMax;
+	return a_prevMs * 2;
+}
+
+inline bool RetryDue(std::uint64_t a_retryAt, std::uint64_t a_nowMs)
+{
+	return a_retryAt == 0 || a_nowMs >= a_retryAt;
+}
+
+// Purpose: atexit joins only when the worker already set done. Otherwise
+// detach. Never take a mutex and never wait: the worker may already be dead.
+inline bool AtExitShouldJoin(bool a_done)
+{
+	return a_done;
+}
+
 // Purpose: queue a write when dirty, or when force asks to retry. After a
-// failed attempt, wait kWriteRetryMs unless force is set.
-inline bool WriteAllowed(bool a_dirty, bool a_force, std::uint64_t a_lastAttemptMs, std::uint64_t a_nowMs)
+// failed attempt, wait a_backoffMs unless force is set.
+inline bool WriteAllowed(bool a_dirty, bool a_force, std::uint64_t a_lastAttemptMs, std::uint64_t a_nowMs, int a_backoffMs = kRetryMsMin)
 {
 	if (a_force) return true;
 	if (!a_dirty) return false;
+	const auto back = a_backoffMs > 0 ? a_backoffMs : kRetryMsMin;
 	if (a_lastAttemptMs && a_nowMs >= a_lastAttemptMs
-		&& (a_nowMs - a_lastAttemptMs) < static_cast<std::uint64_t>(kWriteRetryMs))
+		&& (a_nowMs - a_lastAttemptMs) < static_cast<std::uint64_t>(back))
 		return false;
 	return true;
 }
@@ -466,6 +491,37 @@ inline bool WriteAllowed(bool a_dirty, bool a_force, std::uint64_t a_lastAttempt
 inline void NoteWriteFailure(bool& a_dirty)
 {
 	a_dirty = true;
+}
+
+inline void NoteWorkerSave(bool a_ok, bool& a_failed)
+{
+	if (!a_ok) a_failed = true;
+}
+
+inline void NoteLoadResult(bool a_ok, bool& a_hold)
+{
+	a_hold = !a_ok;
+}
+
+// Purpose: first promote/recover may run immediately. After a hold, wait
+// until retryAt. Used so the game thread never re-reads every frame.
+inline bool HoldRetryDue(bool a_hold, std::uint64_t a_retryAt, std::uint64_t a_nowMs)
+{
+	if (!a_hold) return true;
+	return RetryDue(a_retryAt, a_nowMs);
+}
+
+inline bool WithinDedupeWindow(std::int64_t a_dtMs, int a_winMs)
+{
+	const auto dt = a_dtMs < 0 ? -a_dtMs : a_dtMs;
+	return dt <= static_cast<std::int64_t>(a_winMs);
+}
+
+// Purpose: one transient .bak copy failure still aborts the save. After
+// kBakFailGiveUp consecutive failures, the atomic replace may proceed.
+inline bool BakCopyBlocksReplace(int a_fails, int a_giveUp = kBakFailGiveUp)
+{
+	return a_fails > 0 && a_fails < a_giveUp;
 }
 
 struct FileRead {
@@ -724,6 +780,14 @@ public:
 		ClearDedupeClock();
 	}
 
+	bool DedupeClockClear() const
+	{
+		if (lastMs_.size() != entries.size()) return false;
+		for (auto t : lastMs_)
+			if (t) return false;
+		return true;
+	}
+
 	// Purpose: fold a name-hash session into a loaded player-id file.
 	// Same kind + normalized text fold only when |dt| <= the 3 s window
 	// (Busy 10 s). Appended rows get nextId++ and keep their pin. File pins
@@ -741,7 +805,7 @@ public:
 				if (e.norm.empty()) e.norm = NormalizeText(e.text);
 				if (e.norm != key) continue;
 				const auto dt = in.ts >= e.ts ? (in.ts - e.ts) : (e.ts - in.ts);
-				if (dt * 1000 <= static_cast<std::int64_t>(win)) {
+				if (WithinDedupeWindow(dt * 1000, win)) {
 					hit = &e;
 					break;
 				}
@@ -1469,6 +1533,9 @@ public:
 	std::filesystem::path dir; // .../HorizonUI/MessageLog
 	ReplaceFn             replace{DefaultReplace};
 	std::function<FileRead(const std::filesystem::path&)> readHook;
+	int                   bakFails{0};
+	int                   bakFailGiveUp{kBakFailGiveUp};
+	bool                  bakBypassed{false};
 
 	explicit FileStore(std::filesystem::path a_dir, ReplaceFn a_rep = DefaultReplace)
 		: dir(std::move(a_dir)), replace(std::move(a_rep))
@@ -1541,8 +1608,15 @@ public:
 			bak += ".bak";
 			std::filesystem::copy_file(path, bak, std::filesystem::copy_options::overwrite_existing, ec);
 			if (ec) {
-				std::filesystem::remove(tmp, ec);
-				return false;
+				++bakFails;
+				std::filesystem::remove(bak, ec);
+				if (BakCopyBlocksReplace(bakFails, bakFailGiveUp)) {
+					std::filesystem::remove(tmp, ec);
+					return false;
+				}
+				bakBypassed = true;
+			} else {
+				bakFails = 0;
 			}
 		}
 		if (!replace(tmp, path)) {
@@ -1621,6 +1695,8 @@ public:
 	std::uint64_t             lastWriteMs{0};
 	bool                      dirty{false};
 	bool                      persistHold{false};
+	int                       retryBackoffMs{0};
+	std::uint64_t             retryAt{0};
 	std::string               lastNotice;
 
 	Log() { store = std::make_unique<NullStore>(); }
@@ -1685,37 +1761,75 @@ public:
 		return ok;
 	}
 
-	// Purpose: name-hash session becomes a real currentPlayerID. If that id
-	// already has a file, load it (1 MB / depth / .bak) and merge the session.
-	// Inputs: the player-id character. Outputs: true when the key changed.
-	bool PromoteToCharacter(Character a_ch)
+	void NoteRetryFailure(std::uint64_t a_nowMs)
 	{
-		if (!PersistAllowed(a_ch)) return false;
-		if (buf.character.keySource != "nameHash") return false;
+		retryBackoffMs = NextRetryMs(retryBackoffMs);
+		retryAt = a_nowMs + static_cast<std::uint64_t>(retryBackoffMs);
+	}
+
+	void NoteRetrySuccess()
+	{
+		persistHold = false;
+		retryBackoffMs = 0;
+		retryAt = 0;
+	}
+
+	// Purpose: merge a just-read file with the in-memory session. File pins
+	// win, appended rows get new IDs. Clears the persist hold.
+	// Inputs: loaded file state and the player-id character.
+	void ApplyRecoveredFile(LogState a_file, Character a_ch)
+	{
 		auto session = buf.entries;
+		const auto names = buf.character.names;
+		const bool haveFile = !a_file.entries.empty() || !a_file.character.key.empty();
+		if (haveFile) {
+			buf.LoadState(std::move(a_file));
+			buf.MergeSession(session);
+		}
+		if (PersistAllowed(a_ch)) {
+			buf.character = std::move(a_ch);
+			for (const auto& n : names)
+				buf.RememberName(n);
+		}
+		NoteRetrySuccess();
+		dirty = true;
+	}
+
+	// Purpose: re-read the target file on a timer, merge the held session,
+	// then allow a write. a_force ignores the backoff (quit / next load).
+	// Inputs: player-id character, now, force. Outputs: true when merged.
+	bool RetryHeld(Character a_ch, std::uint64_t a_nowMs, bool a_force)
+	{
+		const auto target = PersistAllowed(a_ch) ? a_ch : buf.character;
+		if (!PersistAllowed(target)) return false;
+		if (persistHold && !a_force && !RetryDue(retryAt, a_nowMs))
+			return false;
 		LogState file;
 		lastNotice.clear();
-		persistHold = false;
 		if (store && buf.settings.persist) {
-			if (!store->Load(a_ch.key, file, lastNotice)) {
-				// Transient read: keep the name-hash session and retry later.
-				// Do not take the player-id key or write over the unread file.
+			if (!store->Load(target.key, file, lastNotice)) {
 				persistHold = true;
 				dirty = false;
+				NoteRetryFailure(a_nowMs);
 				return false;
 			}
 		}
-		const auto names = buf.character.names;
-		const bool haveFile = !file.entries.empty() || !file.character.key.empty();
-		if (haveFile) {
-			buf.LoadState(std::move(file));
-			buf.MergeSession(session);
-		}
-		buf.character = std::move(a_ch);
-		for (const auto& n : names)
-			buf.RememberName(n);
-		dirty = true;
+		ApplyRecoveredFile(std::move(file), target);
 		return true;
+	}
+
+	// Purpose: name-hash session becomes a real currentPlayerID. Tests may
+	// load here. The DLL queues the read on the worker and calls
+	// ApplyRecoveredFile. a_nowMs 0 forces the first attempt.
+	// Inputs: the player-id character and optional now. Outputs: true when the key changed.
+	bool PromoteToCharacter(Character a_ch, std::uint64_t a_nowMs = 0)
+	{
+		if (!PersistAllowed(a_ch)) return false;
+		if (buf.character.keySource != "nameHash") return false;
+		const bool force = a_nowMs == 0 && !persistHold;
+		if (!HoldRetryDue(persistHold, retryAt, a_nowMs) && !force)
+			return false;
+		return RetryHeld(std::move(a_ch), a_nowMs, force);
 	}
 
 	// Purpose: HUD-ready edge. A new key flushes the old file and loads the new
@@ -1740,7 +1854,8 @@ public:
 			(void)a_nowMs;
 			const bool migrate = buf.character.keySource == "nameHash" && a_ch.keySource == "playerId";
 			if (migrate) {
-				PromoteToCharacter(std::move(a_ch));
+				if (canLoad)
+					PromoteToCharacter(std::move(a_ch));
 			} else {
 				buf.ResetMemory();
 				dirty = false;
@@ -1770,6 +1885,7 @@ public:
 		if (store) {
 			if (!store->Load(buf.character.key, st, lastNotice)) {
 				persistHold = true;
+				dirty = false;
 				return;
 			}
 		}

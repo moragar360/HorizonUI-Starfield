@@ -2355,7 +2355,14 @@ namespace HZ
 	std::thread             g_mlWThread;
 	std::atomic<bool>       g_mlWLive{false};
 	std::atomic<bool>       g_mlWFailed{false};
+	std::atomic<bool>       g_mlWRecovered{false};
 	std::atomic<ULONGLONG>  g_mlWRetryAt{0};
+	std::atomic<bool>       g_mlRecoverBusy{false};
+	bool                    g_mlHoldFlush = false;
+	bool                    g_mlPendingHud = false;
+	bool                    g_mlFailNoted = false;
+	int                     g_mlBakFails = 0;
+	bool                    g_mlBakBypassLogged = false;
 	bool                    g_mlWStarted = false;
 	bool                    g_mlAtExit = false;
 	bool                    g_mlInited = false;
@@ -2391,9 +2398,17 @@ namespace HZ
 
 	void MsglogAtExit()
 	{
-		g_mlWStop.store(true);
-		g_mlWCv.notify_all();
-		hzlog::JoinOrDetach(g_mlWThread, g_mlWDone, g_mlWCv, g_mlWMu, 100);
+		try {
+			g_mlWStop.store(true);
+			g_mlWCv.notify_all();
+			if (!g_mlWThread.joinable()) return;
+			if (hzlog::AtExitShouldJoin(g_mlWDone.load())) {
+				try { g_mlWThread.join(); } catch (...) {}
+			} else {
+				try { g_mlWThread.detach(); } catch (...) {}
+			}
+		} catch (...) {
+		}
 	}
 
 	void MsglogWriter()
@@ -2423,13 +2438,23 @@ namespace HZ
 					try {
 						if (wjob.persist && hzlog::PersistAllowed(wjob.snap.character)) {
 							hzlog::FileStore fs(wjob.dir / "MessageLog", wjob.replace);
+							fs.bakFails = g_mlBakFails;
 							ok = fs.Save(wjob.snap);
+							g_mlBakFails = fs.bakFails;
+							if (fs.bakBypassed && !g_mlBakBypassLogged) {
+								g_mlBakBypassLogged = true;
+								REX::WARN("message log: bak copy failed {} times; wrote the main file", fs.bakFails);
+							}
 						}
 					} catch (...) {
 						ok = false;
 					}
-					if (!ok)
+					bool failed = false;
+					hzlog::NoteWorkerSave(ok, failed);
+					if (failed)
 						g_mlWFailed.store(true);
+					else
+						g_mlWRecovered.store(true);
 				}
 				if (ld) {
 					try {
@@ -2502,7 +2527,7 @@ namespace HZ
 				std::lock_guard lk(g_mlMu);
 				if (!g_ml.buf.settings.persist) return;
 				if (g_ml.persistHold) return;
-				if (!hzlog::WriteAllowed(g_ml.dirty, a_force, g_ml.lastWriteMs, GetTickCount64()))
+				if (!hzlog::WriteAllowed(g_ml.dirty, a_force, g_ml.lastWriteMs, GetTickCount64(), g_ml.retryBackoffMs))
 					return;
 				if (!hzlog::PersistAllowed(g_ml.buf.character)) return;
 				g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(GetTickCount64() / 1000);
@@ -2550,7 +2575,10 @@ namespace HZ
 				job.gt = a_gt;
 				job.ts = a_ts;
 			}
-			if (!job.persist || !hzlog::PersistAllowed(a_ch)) return;
+			if (!job.persist || !hzlog::PersistAllowed(a_ch)) {
+				g_mlRecoverBusy.store(false);
+				return;
+			}
 			MsglogEnsureWriter();
 			{
 				std::lock_guard lk(g_mlWMu);
@@ -2771,16 +2799,64 @@ namespace HZ
 	{
 		try {
 			if (!g_mlCapture.load() || g_ml.loadBusy.load()) return;
+			if (g_mlRecoverBusy.load()) return;
 			if (g_mlEng.playerId == 0) return;
-			bool promote = false;
+			const auto ch = hzlog::MakeCharacter(g_mlEng.playerId, g_mlEng.name);
+			const auto now = GetTickCount64();
+			bool queue = false;
 			{
 				std::lock_guard lk(g_mlMu);
-				if (g_ml.buf.character.keySource == "nameHash")
-					promote = g_ml.PromoteToCharacter(hzlog::MakeCharacter(g_mlEng.playerId, g_mlEng.name));
+				if (g_ml.buf.character.keySource != "nameHash") return;
+				if (!hzlog::PersistAllowed(ch)) return;
+				if (!hzlog::HoldRetryDue(g_ml.persistHold, g_ml.retryAt, now)) return;
+				g_mlRecoverBusy.store(true);
+				queue = true;
 			}
-			if (promote)
-				MsglogRequestWrite(false);
+			if (queue)
+				MsglogQueueLoad(ch, g_mlEng.gt, static_cast<std::int64_t>(std::time(nullptr)));
 		} catch (...) {
+		}
+	}
+
+	void MsglogQueueRecover(bool a_force)
+	{
+		try {
+			if (g_mlRecoverBusy.load() && !a_force) return;
+			hzlog::Character ch;
+			double gt = 0;
+			std::int64_t ts = 0;
+			{
+				std::lock_guard lk(g_mlMu);
+				if (g_mlEng.playerId)
+					ch = hzlog::MakeCharacter(g_mlEng.playerId, g_mlEng.name);
+				else
+					ch = g_ml.buf.character;
+				if (!hzlog::PersistAllowed(ch)) return;
+				if (!a_force && !hzlog::HoldRetryDue(g_ml.persistHold, g_ml.retryAt, GetTickCount64()))
+					return;
+				if (a_force)
+					g_ml.retryAt = 0;
+				gt = g_mlEng.gt;
+				ts = static_cast<std::int64_t>(std::time(nullptr));
+				g_mlRecoverBusy.store(true);
+			}
+			MsglogQueueLoad(ch, gt, ts);
+		} catch (...) {
+		}
+	}
+
+	void MsglogNotePersistLog(bool a_ok)
+	{
+		if (!a_ok) {
+			if (!g_mlFailNoted) {
+				g_mlFailNoted = true;
+				REX::WARN("message log: persist failed; retrying with backoff");
+			}
+			return;
+		}
+		if (g_mlFailNoted) {
+			g_mlFailNoted = false;
+			REX::INFO("message log: persist recovered");
 		}
 	}
 
@@ -2796,6 +2872,10 @@ namespace HZ
 			bool needLoad = false;
 			{
 				std::lock_guard lk(g_mlMu);
+				if (afterLoad && g_mlRecoverBusy.load()) {
+					g_mlPendingHud = true;
+					return;
+				}
 				const bool forceFresh = !hzlog::PersistAllowed(ch);
 				if (forceFresh || (afterLoad && !hzlog::PersistAllowed(g_ml.buf.character) && !hzlog::PersistAllowed(ch))) {
 					g_ml.buf.ResetMemory();
@@ -2856,28 +2936,54 @@ namespace HZ
 				ts = g_mlLTs;
 				ok = g_mlLOk;
 			}
+			bool needWrite = false;
+			bool runPending = false;
 			{
 				std::lock_guard lk(g_mlMu);
+				const auto now = GetTickCount64();
+				g_mlRecoverBusy.store(false);
 				if (!ok) {
-					g_ml.persistHold = true;
+					hzlog::NoteLoadResult(false, g_ml.persistHold);
+					g_ml.NoteRetryFailure(now);
 					if (!notice.empty())
 						g_ml.lastNotice = std::move(notice);
+					MsglogNotePersistLog(false);
+					if (!g_mlHoldFlush) {
+						g_ml.loadBusy.store(false);
+						g_mlCapture.store(true);
+						g_mlHadSession.store(true);
+					}
+					runPending = g_mlPendingHud;
+				} else {
+					const bool merge = g_ml.persistHold || g_ml.buf.character.keySource == "nameHash";
+					if (merge) {
+						g_ml.ApplyRecoveredFile(std::move(st), ch);
+						needWrite = true;
+					} else {
+						hzlog::NoteLoadResult(true, g_ml.persistHold);
+						g_ml.NoteRetrySuccess();
+						if (!ch.key.empty())
+							g_ml.buf.character = ch;
+						if (!st.character.key.empty() || !st.entries.empty())
+							g_ml.buf.LoadState(std::move(st));
+					}
+					g_ml.lastNotice = std::move(notice);
+					g_ml.buf.StartSession(ts);
+					g_ml.buf.Prune(gt);
+					MsglogNotePersistLog(true);
+					g_mlHoldFlush = false;
 					g_ml.loadBusy.store(false);
 					g_mlCapture.store(true);
 					g_mlHadSession.store(true);
-					return;
+					runPending = g_mlPendingHud;
 				}
-				g_ml.persistHold = false;
-				if (!ch.key.empty())
-					g_ml.buf.character = ch;
-				if (!st.character.key.empty() || !st.entries.empty())
-					g_ml.buf.LoadState(std::move(st));
-				g_ml.lastNotice = std::move(notice);
-				g_ml.buf.StartSession(ts);
-				g_ml.buf.Prune(gt);
-				g_ml.loadBusy.store(false);
-				g_mlCapture.store(true);
-				g_mlHadSession.store(true);
+			}
+			if (needWrite)
+				MsglogRequestWrite(false);
+			if (runPending) {
+				g_mlPendingHud = false;
+				g_ml.loadBusy.store(true);
+				MsglogOnHudReady();
 			}
 		} catch (...) {
 		}
@@ -2895,6 +3001,18 @@ namespace HZ
 			if (g_mlCapture.load()) {
 				for (const auto& n : leftover)
 					MsglogOfferNote(n);
+			}
+			bool held = false;
+			{
+				std::lock_guard lk(g_mlMu);
+				held = g_ml.persistHold;
+			}
+			if (held) {
+				g_mlHoldFlush = true;
+				MsglogQueueRecover(true);
+				g_ml.loadBusy.store(true);
+				g_mlCapture.store(false);
+				return;
 			}
 			MsglogRequestWrite(true);
 			g_ml.loadBusy.store(true);
@@ -2970,9 +3088,20 @@ namespace HZ
 			if (g_mlWFailed.exchange(false)) {
 				std::lock_guard lk(g_mlMu);
 				hzlog::NoteWriteFailure(g_ml.dirty);
-				g_mlWRetryAt.store(a_now + static_cast<ULONGLONG>(hzlog::kWriteRetryMs));
+				g_ml.NoteRetryFailure(a_now);
+				g_mlWRetryAt.store(g_ml.retryAt);
+				MsglogNotePersistLog(false);
 			}
-			if (g_mlWRetryAt.load() && a_now >= g_mlWRetryAt.load()) {
+			if (g_mlWRecovered.exchange(false))
+				MsglogNotePersistLog(true);
+			bool holdDue = false;
+			{
+				std::lock_guard lk(g_mlMu);
+				holdDue = g_ml.persistHold && hzlog::RetryDue(g_ml.retryAt, a_now);
+			}
+			if (holdDue)
+				MsglogQueueRecover(false);
+			else if (g_mlWRetryAt.load() && a_now >= g_mlWRetryAt.load()) {
 				g_mlWRetryAt.store(0);
 				MsglogRequestWrite(false);
 			}
@@ -2981,12 +3110,29 @@ namespace HZ
 					MsglogRefreshEngine(true);
 					MsglogPromoteId();
 				}
-				MsglogRequestWrite(true);
+				bool held = false;
+				{
+					std::lock_guard lk(g_mlMu);
+					held = g_ml.persistHold;
+				}
+				if (held)
+					MsglogQueueRecover(true);
+				else
+					MsglogRequestWrite(true);
 			}
 			if (g_mlLoadReq.exchange(false))
 				MsglogBeginLoad();
-			if (g_mlQuitReq.exchange(false))
-				MsglogRequestWrite(false);
+			if (g_mlQuitReq.exchange(false)) {
+				bool held = false;
+				{
+					std::lock_guard lk(g_mlMu);
+					held = g_ml.persistHold;
+				}
+				if (held)
+					MsglogQueueRecover(true);
+				else
+					MsglogRequestWrite(false);
+			}
 			MsglogApplyLoad();
 			MsglogPadPoll();
 			try { MsglogTakeMovie(); } catch (...) {}
