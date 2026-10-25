@@ -1,7 +1,8 @@
 // Message Log P1: capture, ring, pins, prune, per-character files, Persist=0,
 // save-line exclusion, and the F11 popup stack. No game, no CommonLibSF.
 // These cases are written to fail when a rule is broken.
-// Build: g++ -std=c++20 -Wall -Wextra -I src tests/message_log_test.cpp -o /tmp/message_log_test
+// Build: g++ -std=c++20 -Wall -Wextra -pthread -I src -DMSGLOG_REPO_ROOT=\"$PWD\" tests/message_log_test.cpp -o /tmp/message_log_test
+// Or: MSGLOG_REPO_ROOT=$PWD /tmp/message_log_test  (relative __FILE__ still finds the repo).
 // Author: Moragar
 // Last modified: 2026-10-25.
 
@@ -12,10 +13,12 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -92,6 +95,8 @@ std::filesystem::path RepoRoot()
 {
 	std::error_code ec;
 	std::vector<std::filesystem::path> seeds;
+	if (const char* env = std::getenv("MSGLOG_REPO_ROOT"); env && env[0])
+		seeds.emplace_back(env);
 	if (MSGLOG_REPO_ROOT[0])
 		seeds.emplace_back(MSGLOG_REPO_ROOT);
 	auto src = std::filesystem::path(__FILE__);
@@ -430,8 +435,14 @@ int main()
 		Expect(main.find("JoinOrDetach") != std::string::npos && main.find("g_mlWStop") != std::string::npos,
 			"writer is stopped and joined");
 		Expect(main.find("g_mlHadSession.exchange(false)") != std::string::npos, "quit flush is edge-triggered");
-		Expect(main.find("g_mlWLive") != std::string::npos, "detached writer blocks a second thread");
+		Expect(main.find("WriterStartAllowed") != std::string::npos, "detached writer blocks a second thread");
 		Expect(main.find("PromoteToCharacter") != std::string::npos, "DLL promotion uses the merge helper");
+		Expect(main.find("g_mlWFailed") != std::string::npos && main.find("NoteWriteFailure") != std::string::npos,
+			"a failed write is retried");
+		Expect(main.find("WriteAllowed") != std::string::npos, "force can retry a write");
+		Expect(main.find("g_mlWStarted = false") != std::string::npos && main.find("g_mlWLive.store(false)") != std::string::npos,
+			"the writer outer catch re-enables a later start");
+		Expect(main.find("g_mlLOk") != std::string::npos, "HUD-ready load reports success so a transient read can hold persist");
 		Expect(as.find("padx") != std::string::npos && as.find("pady") != std::string::npos, "AS3 treats padx/pady as actions");
 		Expect(main.find("OnSettingsKey") != std::string::npos && main.find("g_vk") != std::string::npos, "F11 still opens from the keyboard");
 		Expect(as.find("hzMsglogOpenHint") != std::string::npos && as.find("return \"F11\"") != std::string::npos,
@@ -593,8 +604,9 @@ int main()
 		Log disk;
 		disk.Configure(s, root);
 		disk.buf.character = MakeCharacter(0xABCDu, "Sam");
-		disk.Offer(Cap(Kind::Game, "disk old", 10'000, 10.0));
-		disk.Offer(Cap(Kind::Game, "disk shared", 14'000, 11.0));
+		disk.Offer(Cap(Kind::Game, "disk old", 10'000, 10.0, "New Atlantis"));
+		disk.Offer(Cap(Kind::Game, "disk shared", 14'000, 11.0, "Akila City"));
+		disk.Offer(Cap(Kind::Game, "near shared", 16'000, 11.0, "Akila City"));
 		for (int i = 0; i < 50; ++i) {
 			disk.Offer(Cap(Kind::Game, ("disk pin " + std::to_string(i)).c_str(),
 				20'000 + static_cast<std::uint64_t>(i) * 4000, 12.0));
@@ -605,28 +617,57 @@ int main()
 		Log live;
 		live.Configure(s, root);
 		live.buf.character = MakeCharacter(0, "Sam");
-		live.Offer(Cap(Kind::Game, "session new", 50'000, 13.0));
-		live.Offer(Cap(Kind::Game, "disk shared", 50'100, 13.0));
+		live.Offer(Cap(Kind::Game, "session new", 50'000, 13.0, "Cydonia"));
+		live.Offer(Cap(Kind::Game, "disk shared", 50'100, 13.0, "Cydonia"));
+		live.Offer(Cap(Kind::Game, "near shared", 18'000, 11.2, "Akila City"));
 		live.Offer(Cap(Kind::Medical, "session medical", 51'000, 13.0));
+		auto sessPin = Cap(Kind::Crew, "session pin", 52'000, 13.0);
+		live.Offer(sessPin);
+		const auto sessPinId = live.buf.entries.back().id;
+		Expect(live.buf.Pin(sessPinId), "session pin before promote");
+		for (int i = 0; i < 3; ++i) {
+			live.Offer(Cap(Kind::Game, ("extra pin " + std::to_string(i)).c_str(), 53'000 + static_cast<std::uint64_t>(i) * 4000, 13.0));
+			live.buf.Pin(live.buf.entries.back().id);
+		}
 		Expect(!PersistAllowed(live.buf.character), "session is still name-hash");
 		Expect(live.PromoteToCharacter(MakeCharacter(0xABCDu, "Sam")), "promote merges the existing file");
 		ExpectEq(live.buf.character.key, "0000ABCD", "promotion uses the player id");
 		Expect(live.buf.character.keySource == "playerId", "promotion keySource is playerId");
 
-		int oldN = 0, sharedN = 0, sessionN = 0, medicalN = 0, sharedCount = 0;
+		int oldN = 0, sharedCount = 0, sessionN = 0, medicalN = 0, nearN = 0, nearCount = 0;
+		int filePins = 0, sessionPins = 0;
+		std::set<std::uint64_t> ids;
+		std::int64_t lastTs = -1;
+		bool sorted = true;
 		for (const auto& e : live.buf.entries) {
+			if (!ids.insert(e.id).second)
+				Expect(false, "merge IDs are unique");
+			if (lastTs >= 0 && e.ts < lastTs) sorted = false;
+			lastTs = e.ts;
 			if (e.text == "disk old") ++oldN;
-			if (e.text == "disk shared") { ++sharedCount; sharedN = e.n; }
+			if (e.text == "disk shared") ++sharedCount;
 			if (e.text == "session new") ++sessionN;
 			if (e.text == "session medical") ++medicalN;
+			if (e.text == "near shared") { ++nearCount; nearN = e.n; }
+			if (e.pin && e.text.rfind("disk pin ", 0) == 0) ++filePins;
+			if (e.pin && (e.text == "session pin" || e.text.rfind("extra pin ", 0) == 0)) ++sessionPins;
 		}
 		ExpectEqI(oldN, 1, "promotion keeps the existing file history");
 		ExpectEqI(sessionN, 1, "promotion keeps the in-memory session");
 		ExpectEqI(medicalN, 1, "promotion keeps other session kinds");
-		ExpectEqI(sharedCount, 1, "promotion does not duplicate a matching line");
-		Expect(sharedN >= 2, "promotion merges n on a matching line");
-		Expect(live.buf.PinCount() <= kPinCap, "promotion respects the 50-pin cap");
+		ExpectEqI(sharedCount, 2, "rows more than 3 s apart are not folded");
+		ExpectEqI(nearCount, 1, "rows inside 3 s fold");
+		Expect(nearN >= 2, "in-window fold increments n");
+		Expect(sorted, "merge sorts by time");
+		ExpectEqI(static_cast<int>(ids.size()), static_cast<int>(live.buf.entries.size()), "every merge id is unique");
+		ExpectEqI(live.buf.PinCount(), kPinCap, "merge pin cap is 50 and file pins win");
+		ExpectEqI(filePins, kPinCap, "all 50 pins after merge are the file pins");
+		ExpectEqI(sessionPins, 0, "session pins beyond 50 are dropped");
 		Expect(live.buf.UnpinnedCount() <= live.buf.Cap(), "promotion respects HistorySize");
+		bool sessionPinKept = false;
+		for (const auto& e : live.buf.entries)
+			if (e.text == "session pin") sessionPinKept = true;
+		Expect(sessionPinKept, "session pin text is kept as an unpinned row");
 
 		Log hud;
 		hud.Configure(s, root);
@@ -639,6 +680,190 @@ int main()
 			if (e.text == "disk old") diskKept = true;
 		}
 		Expect(hudKept && diskKept, "HUD-ready migrate keeps both file and session rows");
+		std::error_code ec;
+		std::filesystem::remove_all(root, ec);
+	}
+
+	{
+		Buffer b;
+		b.SetHistorySize(100);
+		LogState file;
+		file.cap = 100;
+		for (int i = 0; i < 100; ++i) {
+			Entry e;
+			e.id = static_cast<std::uint64_t>(i + 1);
+			e.kind = Kind::Game;
+			e.text = "old " + std::to_string(i);
+			e.ts = i;
+			e.gt = static_cast<double>(i);
+			file.entries.push_back(std::move(e));
+		}
+		b.LoadState(file);
+		std::vector<Entry> sess;
+		for (int i = 0; i < 20; ++i) {
+			Entry e;
+			e.id = static_cast<std::uint64_t>(i + 1);
+			e.kind = Kind::Game;
+			e.text = "new " + std::to_string(i);
+			e.ts = 1000 + i;
+			e.gt = 100.0;
+			sess.push_back(std::move(e));
+		}
+		b.MergeSession(sess);
+		ExpectEqI(b.UnpinnedCount(), 100, "merge evicts down to HistorySize");
+		bool oldestDropped = true, newestKept = false;
+		for (const auto& e : b.entries) {
+			if (e.text == "old 0") oldestDropped = false;
+			if (e.text == "new 19") newestKept = true;
+		}
+		Expect(oldestDropped && newestKept, "merge evicts the oldest unpinned rows");
+	}
+
+	{
+		Buffer b;
+		LogState file;
+		Entry fe;
+		fe.id = 1;
+		fe.kind = Kind::Game;
+		fe.text = "file row";
+		fe.ts = 20;
+		file.entries.push_back(fe);
+		b.LoadState(file);
+		Entry se;
+		se.id = 1;
+		se.kind = Kind::Crew;
+		se.text = "session pin";
+		se.ts = 5;
+		se.pin = 1;
+		b.MergeSession({se});
+		ExpectEqI(static_cast<int>(b.entries.size()), 2, "merge keeps both rows");
+		Expect(b.entries.front().text == "session pin" && b.entries.front().ts == 5, "earlier session row sorts first");
+		Expect(b.entries.front().id != 1 || b.entries.back().id != b.entries.front().id, "appended row is re-ided");
+		Expect(b.entries.front().pin == 1, "session pin is carried onto the new id");
+		Expect(b.FindId(b.entries.front().id) == &b.entries.front(), "FindId hits the re-ided pin");
+		Expect(b.FindId(1) == &b.entries.back() || b.entries.back().id == 1, "file id 1 still finds the file row");
+	}
+
+	{
+		Expect(WriterStartAllowed(false, false), "a stopped writer may start");
+		Expect(!WriterStartAllowed(true, false), "a live detached writer blocks a second start");
+		Expect(!WriterStartAllowed(false, true), "a started writer blocks a second start");
+		Expect(WriteAllowed(false, true, 1000, 1001), "force bypasses the dirty early return");
+		Expect(!WriteAllowed(false, false, 0, 1000), "clean buffer does not write");
+		Expect(!WriteAllowed(true, false, 1000, 1500), "retry waits the backoff");
+		Expect(WriteAllowed(true, false, 1000, 2000), "retry after the backoff");
+		bool dirty = false;
+		NoteWriteFailure(dirty);
+		Expect(dirty, "a failed write marks dirty so it is retried");
+	}
+
+	{
+		const auto root = TmpRoot();
+		Log log;
+		Settings s;
+		int fails = 0;
+		log.replace = [&](const std::filesystem::path&, const std::filesystem::path&) {
+			++fails;
+			return false;
+		};
+		log.Configure(s, root);
+		log.buf.character = MakeCharacter(0xABCDu, "Sam");
+		log.Offer(Cap(Kind::Game, "retry me", 20'000));
+		Expect(log.dirty, "offer dirties the buffer");
+		Expect(!log.Flush(20'000), "a failing replace fails the save");
+		Expect(fails >= 1, "Save used the failing replace");
+		Expect(log.dirty, "failed save stays dirty for a retry");
+		const auto path = root / "MessageLog" / "MessageLog_0000ABCD.json";
+		Expect(!std::filesystem::is_regular_file(path), "failed replace leaves no main file");
+		log.replace = DefaultReplace;
+		log.ApplyPersist(true);
+		Expect(log.Flush(21'000), "retry save succeeds");
+		Expect(!log.dirty, "successful retry clears dirty");
+		Expect(ReadFile(path).find("retry me") != std::string::npos, "retry wrote the row");
+		std::error_code ec;
+		std::filesystem::remove_all(root, ec);
+	}
+
+	{
+		const auto root = TmpRoot();
+		Log log;
+		Settings s;
+		log.Configure(s, root);
+		log.buf.character = MakeCharacter(0xABCDu, "Sam");
+		log.Offer(Cap(Kind::Game, "keep original", 20'000));
+		Expect(log.Flush(20'000), "seed the main file");
+		const auto path = root / "MessageLog" / "MessageLog_0000ABCD.json";
+		const auto bak = root / "MessageLog" / "MessageLog_0000ABCD.json.bak";
+		std::error_code ec;
+		std::filesystem::remove(bak, ec);
+		std::filesystem::create_directory(bak, ec);
+		log.Offer(Cap(Kind::Game, "must not replace", 40'000));
+		Expect(!log.Flush(40'000), "a failed bak copy fails the save");
+		Expect(ReadFile(path).find("keep original") != std::string::npos, "main file is not replaced after bak failure");
+		Expect(ReadFile(path).find("must not replace") == std::string::npos, "new row is not in the main file");
+		Expect(std::filesystem::is_directory(bak), "bak path stays a directory");
+		std::filesystem::remove_all(root, ec);
+	}
+
+	{
+		const auto root = TmpRoot();
+		Log seed;
+		Settings s;
+		seed.Configure(s, root);
+		seed.buf.character = MakeCharacter(0xABCDu, "Sam");
+		seed.Offer(Cap(Kind::Game, "newer file", 20'000));
+		Expect(seed.Flush(20'000), "write the first generation");
+		seed.Offer(Cap(Kind::Game, "second generation", 40'000));
+		Expect(seed.Flush(40'000), "write the newer main file");
+		const auto path = root / "MessageLog" / "MessageLog_0000ABCD.json";
+		const auto bak = root / "MessageLog" / "MessageLog_0000ABCD.json.bak";
+		Expect(ReadFile(path).find("second generation") != std::string::npos, "main file is the newer generation");
+		Expect(ReadFile(bak).find("newer file") != std::string::npos, "bak holds the older generation");
+
+		auto transientMain = [](const std::filesystem::path& a_p) {
+			FileRead rd;
+			const auto name = a_p.filename().string();
+			if (name.size() < 4 || name.substr(name.size() - 4) != ".bak") {
+				rd.ok = false;
+				rd.notice = "sharing violation";
+				return rd;
+			}
+			return ReadLogFile(a_p);
+		};
+
+		FileStore fs(root / "MessageLog");
+		fs.readHook = transientMain;
+		LogState st;
+		std::string notice;
+		Expect(!fs.Load("0000ABCD", st, notice), "transient read fails the load");
+		Expect(st.entries.empty(), "transient read does not fall back to bak");
+		Expect(notice.find("sharing") != std::string::npos || notice.find("transient") != std::string::npos
+			|| notice.find("read") != std::string::npos, "transient notice");
+
+		Log live;
+		live.Configure(s, root);
+		if (auto* p = dynamic_cast<FileStore*>(live.store.get()))
+			p->readHook = transientMain;
+		live.buf.character = MakeCharacter(0xABCDu, "Sam");
+		live.LoadCurrent();
+		Expect(live.persistHold, "HUD load hold after transient");
+		Expect(live.buf.entries.empty(), "memory stays empty until the real file loads");
+		live.Offer(Cap(Kind::Game, "session only", 80'000));
+		Expect(!live.ShouldFlush(100'000, true), "hold blocks a flush");
+		Expect(!live.Flush(100'000), "hold does not overwrite the newer file");
+		Expect(ReadFile(path).find("second generation") != std::string::npos, "newer main file is left in place");
+
+		Log promo;
+		promo.Configure(s, root);
+		if (auto* p = dynamic_cast<FileStore*>(promo.store.get()))
+			p->readHook = transientMain;
+		promo.buf.character = MakeCharacter(0, "Sam");
+		promo.Offer(Cap(Kind::Game, "namehash row", 90'000));
+		Expect(!promo.PromoteToCharacter(MakeCharacter(0xABCDu, "Sam")), "transient promote retries later");
+		Expect(promo.buf.character.keySource == "nameHash", "transient promote keeps name-hash");
+		Expect(promo.persistHold, "promote hold after transient");
+		Expect(promo.buf.entries.size() == 1 && promo.buf.entries.front().text == "namehash row",
+			"transient promote keeps the session in memory");
 		std::error_code ec;
 		std::filesystem::remove_all(root, ec);
 	}

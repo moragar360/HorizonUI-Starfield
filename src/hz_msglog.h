@@ -54,6 +54,7 @@ inline constexpr int kDebounceMs = 15000;
 inline constexpr int kJsonMaxDepth = 32;
 inline constexpr int kLoadEntryCap = kHistoryMax + kPinCap;
 inline constexpr int kWriterJoinMs = 2000;
+inline constexpr int kWriteRetryMs = 1000;
 // F11 and the log open from the keyboard only. The HUD "Open in F11" hint
 // shows this key, never a pad button or combo.
 inline constexpr const char* kOpenHint = "F11";
@@ -444,6 +445,29 @@ inline bool JoinOrDetach(std::thread& a_th, std::atomic<bool>& a_done,
 	return true;
 }
 
+// Purpose: a live or already-started worker must not be replaced by a second thread.
+inline bool WriterStartAllowed(bool a_live, bool a_started)
+{
+	return !a_live && !a_started;
+}
+
+// Purpose: queue a write when dirty, or when force asks to retry. After a
+// failed attempt, wait kWriteRetryMs unless force is set.
+inline bool WriteAllowed(bool a_dirty, bool a_force, std::uint64_t a_lastAttemptMs, std::uint64_t a_nowMs)
+{
+	if (a_force) return true;
+	if (!a_dirty) return false;
+	if (a_lastAttemptMs && a_nowMs >= a_lastAttemptMs
+		&& (a_nowMs - a_lastAttemptMs) < static_cast<std::uint64_t>(kWriteRetryMs))
+		return false;
+	return true;
+}
+
+inline void NoteWriteFailure(bool& a_dirty)
+{
+	a_dirty = true;
+}
+
 struct FileRead {
 	bool        tooLarge{false};
 	bool        missing{false};
@@ -676,6 +700,7 @@ public:
 			if (e.id >= nextId) nextId = e.id + 1;
 		}
 		Evict();
+		ClearDedupeClock();
 	}
 
 	void ResetMemory()
@@ -686,6 +711,7 @@ public:
 		sess = 1;
 		sessStartTs = 0;
 		lastPlayedTs = 0;
+		ClearDedupeClock();
 	}
 
 	void SortByTime()
@@ -695,22 +721,27 @@ public:
 			if (a.gt != b.gt) return a.gt < b.gt;
 			return a.id < b.id;
 		});
-		if (lastMs_.size() != entries.size()) lastMs_.resize(entries.size(), 0);
+		ClearDedupeClock();
 	}
 
 	// Purpose: fold a name-hash session into a loaded player-id file.
-	// File rows stay; matching kind+normalized text merge n; then sort, pin
-	// cap, and HistorySize eviction (pins sit on top of history).
+	// Same kind + normalized text fold only when |dt| <= the 3 s window
+	// (Busy 10 s). Appended rows get nextId++ and keep their pin. File pins
+	// are counted first so they win the 50-pin cap. Then sort and evict.
 	// Inputs: in-memory session rows. Outputs: this buffer.
 	void MergeSession(const std::vector<Entry>& a_session)
 	{
 		for (const auto& in : a_session) {
 			const auto key = in.norm.empty() ? NormalizeText(in.text) : in.norm;
+			const int win = in.kind == Kind::Busy ? kBusyDedupeMs : kDedupeMs;
 			Entry* hit = nullptr;
-			for (auto& e : entries) {
+			for (std::size_t i = entries.size(); i-- > 0;) {
+				auto& e = entries[i];
 				if (e.kind != in.kind) continue;
 				if (e.norm.empty()) e.norm = NormalizeText(e.text);
-				if (e.norm == key) {
+				if (e.norm != key) continue;
+				const auto dt = in.ts >= e.ts ? (in.ts - e.ts) : (e.ts - in.ts);
+				if (dt * 1000 <= static_cast<std::int64_t>(win)) {
 					hit = &e;
 					break;
 				}
@@ -729,7 +760,8 @@ public:
 			} else {
 				Entry e = in;
 				if (e.norm.empty()) e.norm = key;
-				if (e.id >= nextId) nextId = e.id + 1;
+				e.id = nextId++;
+				e.pin = in.pin ? 1 : 0;
 				entries.push_back(std::move(e));
 			}
 		}
@@ -741,10 +773,16 @@ public:
 		}
 		SortByTime();
 		Evict();
+		ClearDedupeClock();
 	}
 
 private:
 	std::vector<std::uint64_t> lastMs_;
+
+	void ClearDedupeClock()
+	{
+		lastMs_.assign(entries.size(), 0);
+	}
 
 	OfferResult OfferDedupe(Capture& a, const std::string& a_key, int a_win)
 	{
@@ -1430,6 +1468,7 @@ class FileStore final : public IMessageStore {
 public:
 	std::filesystem::path dir; // .../HorizonUI/MessageLog
 	ReplaceFn             replace{DefaultReplace};
+	std::function<FileRead(const std::filesystem::path&)> readHook;
 
 	explicit FileStore(std::filesystem::path a_dir, ReplaceFn a_rep = DefaultReplace)
 		: dir(std::move(a_dir)), replace(std::move(a_rep))
@@ -1457,10 +1496,16 @@ public:
 		std::error_code ec;
 		if (!std::filesystem::is_directory(dir, ec)) return true;
 		auto path = FileFor(a_key);
-		if (!TryLoad(path, a_out, a_notice)) {
+		bool transient = false;
+		if (!TryLoad(path, a_out, a_notice, &transient)) {
+			if (transient) {
+				a_out = {};
+				if (a_notice.empty()) a_notice = "transient read";
+				return false;
+			}
 			auto bak = path;
 			bak += ".bak";
-			if (TryLoad(bak, a_out, a_notice)) {
+			if (TryLoad(bak, a_out, a_notice, nullptr)) {
 				if (a_notice.empty()) a_notice = "recovered from bak";
 				return true;
 			}
@@ -1495,6 +1540,10 @@ public:
 			auto bak = path;
 			bak += ".bak";
 			std::filesystem::copy_file(path, bak, std::filesystem::copy_options::overwrite_existing, ec);
+			if (ec) {
+				std::filesystem::remove(tmp, ec);
+				return false;
+			}
 		}
 		if (!replace(tmp, path)) {
 			std::filesystem::remove(tmp, ec);
@@ -1522,10 +1571,11 @@ public:
 	}
 
 private:
-	bool TryLoad(const std::filesystem::path& a_path, LogState& a_out, std::string& a_notice)
+	bool TryLoad(const std::filesystem::path& a_path, LogState& a_out, std::string& a_notice, bool* a_transient)
 	{
 		std::error_code ec;
-		auto rd = ReadLogFile(a_path);
+		if (a_transient) *a_transient = false;
+		auto rd = readHook ? readHook(a_path) : ReadLogFile(a_path);
 		if (rd.missing) return true;
 		if (ShouldQuarantine(rd, false)) {
 			if (a_path.extension() != ".bak") {
@@ -1537,6 +1587,7 @@ private:
 			return false;
 		}
 		if (!rd.ok) {
+			if (a_transient) *a_transient = true;
 			a_notice = rd.notice.empty() ? "read failed" : rd.notice;
 			return false;
 		}
@@ -1569,6 +1620,7 @@ public:
 	std::uint64_t             lastChangeMs{0};
 	std::uint64_t             lastWriteMs{0};
 	bool                      dirty{false};
+	bool                      persistHold{false};
 	std::string               lastNotice;
 
 	Log() { store = std::make_unique<NullStore>(); }
@@ -1606,6 +1658,7 @@ public:
 	{
 		if (!buf.settings.persist || !store || !store->TouchesDisk()) return false;
 		if (!PersistAllowed(buf.character)) return false;
+		if (persistHold) return false;
 		if (loadBusy.load()) return false;
 		if (!dirty) return false;
 		if (a_force) return true;
@@ -1620,6 +1673,7 @@ public:
 		if (!store) return false;
 		if (!buf.settings.persist) return true;
 		if (!PersistAllowed(buf.character)) return true;
+		if (persistHold) return false;
 		if (loadBusy.load()) return false;
 		buf.lastPlayedTs = static_cast<std::int64_t>(a_nowMs / 1000);
 		if (buf.character.key.empty()) return false;
@@ -1639,11 +1693,19 @@ public:
 		if (!PersistAllowed(a_ch)) return false;
 		if (buf.character.keySource != "nameHash") return false;
 		auto session = buf.entries;
-		const auto names = buf.character.names;
 		LogState file;
 		lastNotice.clear();
-		if (store && buf.settings.persist)
-			store->Load(a_ch.key, file, lastNotice);
+		persistHold = false;
+		if (store && buf.settings.persist) {
+			if (!store->Load(a_ch.key, file, lastNotice)) {
+				// Transient read: keep the name-hash session and retry later.
+				// Do not take the player-id key or write over the unread file.
+				persistHold = true;
+				dirty = false;
+				return false;
+			}
+		}
+		const auto names = buf.character.names;
 		const bool haveFile = !file.entries.empty() || !file.character.key.empty();
 		if (haveFile) {
 			buf.LoadState(std::move(file));
@@ -1704,7 +1766,13 @@ public:
 	{
 		LogState st;
 		lastNotice.clear();
-		if (store) store->Load(buf.character.key, st, lastNotice);
+		persistHold = false;
+		if (store) {
+			if (!store->Load(buf.character.key, st, lastNotice)) {
+				persistHold = true;
+				return;
+			}
+		}
 		if (!st.character.key.empty() || !st.entries.empty())
 			buf.LoadState(std::move(st));
 	}

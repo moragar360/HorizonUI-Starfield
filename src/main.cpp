@@ -2351,8 +2351,11 @@ namespace HZ
 	std::string             g_mlLNotice;
 	double                  g_mlLGt{0};
 	std::int64_t            g_mlLTs{0};
+	bool                    g_mlLOk{true};
 	std::thread             g_mlWThread;
 	std::atomic<bool>       g_mlWLive{false};
+	std::atomic<bool>       g_mlWFailed{false};
+	std::atomic<ULONGLONG>  g_mlWRetryAt{0};
 	bool                    g_mlWStarted = false;
 	bool                    g_mlAtExit = false;
 	bool                    g_mlInited = false;
@@ -2390,13 +2393,7 @@ namespace HZ
 	{
 		g_mlWStop.store(true);
 		g_mlWCv.notify_all();
-		if (g_mlWThread.joinable()) {
-			if (g_mlWDone.load()) {
-				try { g_mlWThread.join(); } catch (...) {}
-			} else {
-				try { g_mlWThread.detach(); } catch (...) {}
-			}
-		}
+		hzlog::JoinOrDetach(g_mlWThread, g_mlWDone, g_mlWCv, g_mlWMu, 100);
 	}
 
 	void MsglogWriter()
@@ -2422,21 +2419,26 @@ namespace HZ
 				}
 				lk.unlock();
 				if (wr) {
+					bool ok = true;
 					try {
 						if (wjob.persist && hzlog::PersistAllowed(wjob.snap.character)) {
 							hzlog::FileStore fs(wjob.dir / "MessageLog", wjob.replace);
-							fs.Save(wjob.snap);
+							ok = fs.Save(wjob.snap);
 						}
 					} catch (...) {
+						ok = false;
 					}
+					if (!ok)
+						g_mlWFailed.store(true);
 				}
 				if (ld) {
 					try {
 						hzlog::LogState st;
 						std::string notice;
+						bool ok = true;
 						if (ljob.persist && hzlog::PersistAllowed(ljob.ch)) {
 							hzlog::FileStore fs(ljob.dir / "MessageLog", ljob.replace);
-							fs.Load(ljob.ch.key, st, notice);
+							ok = fs.Load(ljob.ch.key, st, notice);
 						}
 						std::lock_guard rlk(g_mlWMu);
 						g_mlLResult = std::move(st);
@@ -2444,8 +2446,11 @@ namespace HZ
 						g_mlLCh = std::move(ljob.ch);
 						g_mlLGt = ljob.gt;
 						g_mlLTs = ljob.ts;
+						g_mlLOk = ok;
 						g_mlLoadReady.store(true);
 					} catch (...) {
+						std::lock_guard rlk(g_mlWMu);
+						g_mlLOk = false;
 						g_mlLoadReady.store(true);
 					}
 				}
@@ -2457,6 +2462,7 @@ namespace HZ
 			std::lock_guard lk(g_mlWMu);
 			g_mlWDone.store(true);
 			g_mlWLive.store(false);
+			g_mlWStarted = false;
 		}
 		g_mlWCv.notify_all();
 	}
@@ -2468,7 +2474,7 @@ namespace HZ
 			std::lock_guard lk(g_mlMu);
 			persist = g_ml.buf.settings.persist;
 		}
-		if (g_mlWLive.load() || g_mlWStarted || !persist) return;
+		if (!hzlog::WriterStartAllowed(g_mlWLive.load(), g_mlWStarted) || !persist) return;
 		g_mlWStarted = true;
 		g_mlWLive.store(true);
 		g_mlWStop.store(false);
@@ -2495,8 +2501,9 @@ namespace HZ
 			{
 				std::lock_guard lk(g_mlMu);
 				if (!g_ml.buf.settings.persist) return;
-				if (!g_ml.dirty) return;
-				(void)a_force;
+				if (g_ml.persistHold) return;
+				if (!hzlog::WriteAllowed(g_ml.dirty, a_force, g_ml.lastWriteMs, GetTickCount64()))
+					return;
 				if (!hzlog::PersistAllowed(g_ml.buf.character)) return;
 				g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(GetTickCount64() / 1000);
 				job.snap = g_ml.buf.Snapshot();
@@ -2839,6 +2846,7 @@ namespace HZ
 			std::string notice;
 			double gt = 0;
 			std::int64_t ts = 0;
+			bool ok = true;
 			{
 				std::lock_guard lk(g_mlWMu);
 				st = std::move(g_mlLResult);
@@ -2846,9 +2854,20 @@ namespace HZ
 				notice = std::move(g_mlLNotice);
 				gt = g_mlLGt;
 				ts = g_mlLTs;
+				ok = g_mlLOk;
 			}
 			{
 				std::lock_guard lk(g_mlMu);
+				if (!ok) {
+					g_ml.persistHold = true;
+					if (!notice.empty())
+						g_ml.lastNotice = std::move(notice);
+					g_ml.loadBusy.store(false);
+					g_mlCapture.store(true);
+					g_mlHadSession.store(true);
+					return;
+				}
+				g_ml.persistHold = false;
 				if (!ch.key.empty())
 					g_ml.buf.character = ch;
 				if (!st.character.key.empty() || !st.entries.empty())
@@ -2948,6 +2967,15 @@ namespace HZ
 	{
 		try {
 			if (!g_mlInited) return;
+			if (g_mlWFailed.exchange(false)) {
+				std::lock_guard lk(g_mlMu);
+				hzlog::NoteWriteFailure(g_ml.dirty);
+				g_mlWRetryAt.store(a_now + static_cast<ULONGLONG>(hzlog::kWriteRetryMs));
+			}
+			if (g_mlWRetryAt.load() && a_now >= g_mlWRetryAt.load()) {
+				g_mlWRetryAt.store(0);
+				MsglogRequestWrite(false);
+			}
 			if (g_mlSaveReq.exchange(false)) {
 				if (g_mlCapture.load() && HudSafe()) {
 					MsglogRefreshEngine(true);
