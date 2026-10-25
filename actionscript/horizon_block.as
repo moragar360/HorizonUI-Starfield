@@ -499,9 +499,9 @@
             if(c) { c.scaleX = c.scaleY = this.hz34S(String(e[1])); }
          }
          this.hzT19Sig = "";   // hover / container cards on GLOBAL follow HudScale
-         this.hzLaidOut = this.hzLayout();
          try { this.hzAfFmt13(); } catch(errAfF:Error) { }
          try { this.hzAfRetryLayout(); } catch(errAfS:Error) { }
+         this.hzLaidOut = this.hzLayout();
       }
 
       // af13 clamp uses hz34F("Afflictions"). Re-run after HudScale / AfflictionsScale so F11 live
@@ -4327,6 +4327,7 @@
          var rowH:Number = 48;
          var sz13:int = this.hzAf13Sz();
          var grow:int = Math.max(0,sz13 - 13);
+         var barY:int = 23 + grow + sz13 + 3;
          var j:int = 0;
          this.hzAfFmt13();
          while(j < this.hzSetPvAfCh.length)
@@ -4340,7 +4341,7 @@
             var col:uint = a.env ? HZ_AMB : HZ_RED;
             var ic:uint = this.hzIconCol(col);
             var two:Boolean = a.env;
-            var h:Number = (!icons && two) ? Math.max(48,23 + grow + sz13 + 6) : 48;
+            var h:Number = (!icons && two) ? Math.max(48, barY + 9) : 48;
             lt.visible = !icons;
             st.visible = !icons && a.env;
             if(!icons)
@@ -4359,8 +4360,8 @@
             {
                var bw:Number = w - 48 - 14;
                var tr:uint = this.hzDarkText() ? 0x000000 : 0xFFFFFF;
-               cg.beginFill(tr,0.14); cg.drawRoundRect(48,37 + grow,bw,4,4,4); cg.endFill();
-               cg.beginFill(ic,1); cg.drawRoundRect(48,37 + grow,Math.max(4,bw * soak),4,4,4); cg.endFill();
+               cg.beginFill(tr,0.14); cg.drawRoundRect(48,barY,bw,4,4,4); cg.endFill();
+               cg.beginFill(ic,1); cg.drawRoundRect(48,barY,Math.max(4,bw * soak),4,4,4); cg.endFill();
             }
             var cs:Sprite = Sprite(ch.c);
             cs.x = x; cs.y = y;
@@ -7159,6 +7160,7 @@
          var rowH:Number = 48;
          var sz13:int = this.hzAf13Sz();
          var grow:int = Math.max(0,sz13 - 13);
+         var barY:int = 23 + grow + sz13 + 3;
          var bg:uint = this.hzDarkText() ? this.hzMix(this.hzPanelFill(),0x000000,0.14) : 0x060A0E;
          var i:int = 0;
          while(i < this.hzAfChips.length)
@@ -7215,7 +7217,7 @@
                   tw31 = this.hz31AfFit(lb,sb,two);
                   if(two)
                   {
-                     h = Math.max(48,23 + grow + sz13 + 6);
+                     h = a.env ? Math.max(48, barY + 9) : Math.max(48,23 + grow + sz13 + 6);
                      this.hzTxtTop(lb,7);
                      this.hzTxtTop(sb,23 + grow);
                   }
@@ -7230,10 +7232,10 @@
                {
                   var bw:Number = w - 48 - 14;
                   var tr:uint = this.hzDarkText() ? 0x000000 : 0xFFFFFF;
-                  g.beginFill(tr,0.14); g.drawRoundRect(48,37 + grow,bw,4,4,4); g.endFill();
+                  g.beginFill(tr,0.14); g.drawRoundRect(48,barY,bw,4,4,4); g.endFill();
                   if(this.hzAfSoak > 0.005)
                   {
-                     g.beginFill(ic,1); g.drawRoundRect(48,37 + grow,Math.max(4,bw * this.hzAfSoak),4,4,4); g.endFill();
+                     g.beginFill(ic,1); g.drawRoundRect(48,barY,Math.max(4,bw * this.hzAfSoak),4,4,4); g.endFill();
                   }
                }
             }

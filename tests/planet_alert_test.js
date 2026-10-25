@@ -819,9 +819,14 @@ pin("var fl:int = int(Math.ceil(13 / hs));", "the chip floor is ceil(13 / Afflic
 pin('try { this.hzAfFmt13(); } catch(errAfF:Error) { }', "scale changes reformat af13 fields before the chip relayout");
 pin("if(o != null && o.af13)", "every af13 field is reformatted after a scale change");
 pin("var j:int = 0;\n         this.hzAfFmt13();", "the F11 preview also reformats af13 fields");
+pin('try { this.hzAfRetryLayout(); } catch(errAfS:Error) { }\n         this.hzLaidOut = this.hzLayout();', "the main layout runs after the chip relayout");
 pin("Sample: one affliction and one", "the F11 preview caption says affliction");
 expect(src.indexOf("Sample: one injury and one") < 0, "the F11 preview caption no longer says injury");
-pin("Math.max(48,23 + grow + sz13 + 6)", "a two-line chip grows to fit the clamped font");
+pin("var barY:int = 23 + grow + sz13 + 3;", "the exposure bar sits under the second-line baseline");
+pin("g.drawRoundRect(48,barY,bw,4,4,4)", "the live exposure bar uses barY");
+pin("cg.drawRoundRect(48,barY,bw,4,4,4)", "the F11 preview exposure bar uses barY");
+pin("Math.max(48, barY + 9)", "a chip with a bar grows to hold the bar");
+pin("Math.max(48,23 + grow + sz13 + 6)", "a two-line chip without a bar still grows with the font");
 expect(src.indexOf('this.hzT(c,"",48,8,240,12,"sb","main",1.6)') < 0, "the F11 afflictions preview no longer uses 12");
 expect(src.indexOf('this.hzT(c,"",48,24,200,10,"rg","mut",0.4)') < 0, "the F11 afflictions preview no longer uses 10");
 function hzAfChipSz(fs, textScale, hudScale) {
@@ -844,6 +849,17 @@ function hzAfChipH(two, fs, textScale, hudScale) {
 	const grow = Math.max(0, sz - 13);
 	return Math.max(48, 23 + grow + sz + 6);
 }
+function hzAfBarY(sz) {
+	const grow = Math.max(0, sz - 13);
+	return 23 + grow + sz + 3;
+}
+function hzAfSubBase(sz) {
+	const grow = Math.max(0, sz - 13);
+	return 23 + grow + sz;
+}
+function hzAfEnvH(sz) {
+	return Math.max(48, hzAfBarY(sz) + 9);
+}
 {
 	const textScales = [0.8, 0.9, 1, 1.15, 1.3];
 	const hudScales = [0.6, 0.7, 0.8, 1, 1.2, 1.4];
@@ -856,9 +872,17 @@ function hzAfChipH(two, fs, textScale, hudScale) {
 	expect(hzAfChipSz(13, 0.8, 0.8) === 17, "Moragar's Choice uses ceil(13/0.8)");
 	expect(hzAfChipPx(13, 0.8, 0.8) >= 13, "Moragar's Choice stays at least 13 px");
 	expect(hzAfChipSz(13, 1, 0.6) === 22, "AfflictionsScale 0.6 uses ceil(13/0.6)");
-	expect(hzAfChipH(true, 13, 1, 1) === 48, "a two-line chip stays 48 at scale 1.0");
+	expect(hzAfChipH(true, 13, 1, 1) === 48, "a two-line chip stays 48 at size 13");
+	expect(hzAfChipH(true, 13, 1.3, 1) === 50, "a two-line chip is 50 at TextScale 1.3");
 	expect(hzAfChipH(true, 13, 1, 0.6) === 60, "a two-line chip at 0.6 is 60 so font 22 fits");
 	expect(hzAfChipH(false, 13, 1, 0.6) === 48, "a one-line chip stays 48 at scale 0.6");
+	expect(hzAfEnvH(13) === 48 && hzAfEnvH(17) === 56 && hzAfEnvH(22) === 66, "an env chip is 48 / 56 / 66 at 13 / 17 / 22");
+	for (let sz = 13; sz <= 22; sz++) {
+		const barY = hzAfBarY(sz);
+		const base = hzAfSubBase(sz);
+		expect(barY >= base, "live bar top at size " + sz + " is " + barY + ", baseline " + base);
+		expect(barY >= base, "preview bar top at size " + sz + " is " + barY + ", baseline " + base);
+	}
 }
 function hzAfPlainPers(icon) {
 	const sys = hzPretty(icon);
