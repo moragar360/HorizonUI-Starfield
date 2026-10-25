@@ -881,22 +881,41 @@ for (let di = 0; di < dlgFiles.length; di++) {
 
 // t34-t40: 0.42.0.12 stealth hide guard and affliction remeasure after a load.
 pin('this.hz26HideV("StealthMeter_mc",live && this.hzStealthOn && this.HorizonStealth_mc != null && this.hz26St != null && this.hz26StOn);', "t34 stealth hide requires the pill to be active");
+pin("this.hz26StOn = sd != null && sd.bSneaking === true && sd.bShowMeter === true;\n         try { this.hz26Vanilla(); } catch(e0:Error) { }", "t34 sneak-start updates hz26StOn before the vanilla hide");
 function stealthHideVanilla(live, stealthOn, pill, st, stOn) {
 	return !!(live && stealthOn && pill && st != null && stOn);
+}
+function stealthTick(s) {
+	s.stOn = s.st != null && s.st.bSneaking === true && s.st.bShowMeter === true;
+	s.vanillaHidden = stealthHideVanilla(s.live, s.stealthOn, s.pill, s.st, s.stOn);
+}
+function stealthTickOld(s) {
+	s.vanillaHidden = stealthHideVanilla(s.live, s.stealthOn, s.pill, s.st, s.stOn);
+	s.stOn = s.st != null && s.st.bSneaking === true && s.st.bShowMeter === true;
 }
 expect(!stealthHideVanilla(true, true, true, null, false), "t35 vanilla stays visible when the pill has no stealth data");
 expect(!stealthHideVanilla(true, true, true, { bSneaking: true }, false), "t35 vanilla stays visible when the pill is not on");
 expect(stealthHideVanilla(true, true, true, { bSneaking: true, bShowMeter: true }, true), "t35 vanilla is hidden while the pill is active");
+{
+	const sneak = { live: true, stealthOn: true, pill: true, st: { bSneaking: true, bShowMeter: true }, stOn: false };
+	stealthTick(sneak);
+	expect(sneak.stOn && sneak.vanillaHidden, "t35 sneak-start hides vanilla on the same frame");
+	const flash = { live: true, stealthOn: true, pill: true, st: { bSneaking: true, bShowMeter: true }, stOn: false };
+	stealthTickOld(flash);
+	expect(!flash.vanillaHidden && flash.stOn, "t35 the old order flashes vanilla on sneak start");
+}
 expect(!stealthHideVanilla(true, false, true, { bSneaking: true, bShowMeter: true }, true), "t36 StealthMeter off leaves vanilla visible");
 expect(!stealthHideVanilla(false, true, true, { bSneaking: true, bShowMeter: true }, true), "t36 a hidden HUD does not alpha-hide vanilla stealth");
 pin("if(lb.text.length > 0 && w < 4)", "t37 title fit does not shrink a non-empty unread title");
 pin("if(this.hzAfTitleW > 4) { w = this.hzAfTitleW; lb.width = Math.round(w + 8); }", "t37 a bad title measure keeps the last good width");
+pin("if(w >= 4) { this.hzAfTitleW = w; }", "t37 a good title measure does not clear the retry flag");
+expect(src.indexOf("if(w >= 4) { this.hzAfTitleW = w; this.hzAfRemeasure = false; this.hzAfRemeasureAt = 0; }") < 0, "t37 one chip cannot clear another chip's remeasure");
 function hz31AfFitWidth(text, measured, prevW) {
 	let w = measured;
-	let remasure = false;
+	let remeasure = false;
 	let width;
 	if (text.length > 0 && w < 4) {
-		remasure = true;
+		remeasure = true;
 		if (prevW > 4) {
 			w = prevW;
 			width = Math.round(w + 8);
@@ -906,25 +925,46 @@ function hz31AfFitWidth(text, measured, prevW) {
 	} else {
 		width = Math.round(w + 8);
 	}
-	return { width: width, remasure: remasure, used: w };
+	return { width: width, remeasure: remeasure, used: w };
 }
-expect(hz31AfFitWidth("CONTUSIONS", 0, 0).width === 2000 && hz31AfFitWidth("CONTUSIONS", 0, 0).remasure, "t38 first measure 0 keeps the title wide");
+function hzAfFitPass(chips) {
+	let remeasure = false;
+	for (let i = 0; i < chips.length; i++) {
+		const r = hz31AfFitWidth(chips[i].text, chips[i].w, chips[i].prev || 0);
+		if (r.remeasure) remeasure = true;
+	}
+	return remeasure;
+}
+expect(hz31AfFitWidth("CONTUSIONS", 0, 0).width === 2000 && hz31AfFitWidth("CONTUSIONS", 0, 0).remeasure, "t38 first measure 0 keeps the title wide");
 expect(hz31AfFitWidth("CONTUSIONS", 0, 80).width === 88 && hz31AfFitWidth("CONTUSIONS", 0, 80).used === 80, "t38 a later 0 measure keeps the last good title width");
-expect(hz31AfFitWidth("CONTUSIONS", 72, 0).width === 80 && !hz31AfFitWidth("CONTUSIONS", 72, 0).remasure, "t38 a good title measure sizes to textWidth+8");
-expect(hz31AfFitWidth("", 0, 80).width === 8 && !hz31AfFitWidth("", 0, 80).remasure, "t38 an empty title may shrink");
+expect(hz31AfFitWidth("CONTUSIONS", 72, 0).width === 80 && !hz31AfFitWidth("CONTUSIONS", 72, 0).remeasure, "t38 a good title measure sizes to textWidth+8");
+expect(hz31AfFitWidth("", 0, 80).width === 8 && !hz31AfFitWidth("", 0, 80).remeasure, "t38 an empty title may shrink");
+expect(hzAfFitPass([{ text: "CONTUSIONS", w: 0 }, { text: "BURNS", w: 80 }]), "t38 a later good chip does not drop an earlier remeasure");
+expect(!hzAfFitPass([{ text: "CONTUSIONS", w: 72 }, { text: "BURNS", w: 80 }]), "t38 all good chips leave remeasure off");
 pin("this.hz27Alerts = [];", "t39 load clears personal alerts");
 pin("this.hzAfSeen = {};", "t39 load clears affliction seen keys");
 pin('if(this.hz40HasFF(ev.data,"LoadingMenu_Opened") || this.hz40HasFF(ev.data,"LoadingMenu_Closed")) { this.hzAfOnLoad(); }', "t39 load clear is on LoadingMenu open and close");
 pin("if(age == 30 || age == 120) { this.hzAfRetryLayout(); }", "t40 layout reruns at 30 and 120 frames after load");
-pin("if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAfOnLoad(); }", "t40 a wall-clock gap after load also clears and remeasures");
+pin("if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAfArmRelayout(); }", "t40 a wall-clock gap remeasures without clearing");
+pin("private function hzAfArmRelayout() : void", "t40 the gap path only arms remeasure");
+pin("this.hzAfRemeasureAt = Math.max(1,this.hzFrameN);", "t40 frame 0 still starts the remeasure timeout");
+expect(src.indexOf("if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAfOnLoad(); }") < 0, "t40 a gap is not a load clear");
+function afArmRelayout(s, frame) {
+	s.remeasure = true;
+	if (!s.remeasureAt) s.remeasureAt = Math.max(1, frame);
+}
+function afOnLoad(s, frame) {
+	s.alerts = [];
+	s.seen = {};
+	s.remeasure = true;
+	s.remeasureAt = Math.max(1, frame);
+	s.loadAt = Math.max(1, frame);
+}
 function afLoadWatch(s, now, frame) {
 	const events = [];
 	if (s.lastWall > 0 && now - s.lastWall > 4000) {
-		s.alerts = [];
-		s.seen = {};
-		s.remeasure = true;
-		s.loadAt = frame;
-		events.push("onload");
+		afArmRelayout(s, frame);
+		events.push("arm");
 	}
 	if (now > 0) s.lastWall = now;
 	if (s.loadAt > 0) {
@@ -935,13 +975,18 @@ function afLoadWatch(s, now, frame) {
 	return events;
 }
 {
-	const s = { lastWall: 1000, alerts: [{ cat: "old" }], seen: { "p:old": 1 }, remeasure: false, loadAt: 0 };
+	const s = { lastWall: 1000, alerts: [{ cat: "old" }], seen: { "p:old": 1 }, remeasure: false, remeasureAt: 0, loadAt: 0 };
 	expect(afLoadWatch(s, 2000, 10).length === 0 && s.alerts.length === 1, "t40 a short gap is not a load");
 	const ev = afLoadWatch(s, 7000, 11);
-	expect(ev.indexOf("onload") >= 0 && s.alerts.length === 0 && Object.keys(s.seen).length === 0, "t40 a 4 s gap clears alerts and seen");
-	expect(s.remeasure && s.loadAt === 11, "t40 a load gap arms remeasure");
-	expect(afLoadWatch(s, 7016, 41).indexOf("relayout") >= 0, "t40 remeasure at frame 30");
-	expect(afLoadWatch(s, 7033, 131).indexOf("relayout") >= 0, "t40 remeasure at frame 120");
+	expect(ev.indexOf("arm") >= 0 && s.alerts.length === 1 && s.seen["p:old"] === 1, "t40 a pause gap does not clear alerts or seen");
+	expect(s.remeasure && s.loadAt === 0, "t40 a pause gap remeasures without a load timer");
+	const loaded = { lastWall: 1000, alerts: [{ cat: "old" }], seen: { "p:old": 1 }, remeasure: false, remeasureAt: 0, loadAt: 0 };
+	afOnLoad(loaded, 0);
+	expect(loaded.alerts.length === 0 && Object.keys(loaded.seen).length === 0, "t40 a load clears alerts and seen");
+	expect(loaded.loadAt === 1 && loaded.remeasureAt === 1, "t40 a frame-0 load still times out");
+	loaded.lastWall = 7000;
+	expect(afLoadWatch(loaded, 7016, 31).indexOf("relayout") >= 0, "t40 remeasure at frame 30");
+	expect(afLoadWatch(loaded, 7033, 121).indexOf("relayout") >= 0, "t40 remeasure at frame 120");
 }
 
 if (failed) {

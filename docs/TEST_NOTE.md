@@ -4,7 +4,7 @@ Pre-release. Debug compile flags stay off (`HZ_HUD_MSG_CAPTURE` 0, `HZ_COMMS_MSG
 
 ## SFSE log
 
-`sfse.ini` uses `EnableLog=`, not `Debug=`. HorizonUI.ini still uses `Debug=` for the in-game overlay and the movie queue.
+`Data\SFSE\SFSE.ini`: `[Scaleform]` `EnableLog=1` turns on the Scaleform log. Horizon's own `Debug=1` goes in `HorizonUI.user.ini` under `[Debug]`.
 
 ## Stealth meter
 

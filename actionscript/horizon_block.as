@@ -6349,7 +6349,7 @@
          if(ok)
          {
             this.hzAfRemeasure = true;
-            if(this.hzAfRemeasureAt == 0) { this.hzAfRemeasureAt = this.hzFrameN; }
+            if(this.hzAfRemeasureAt == 0) { this.hzAfRemeasureAt = Math.max(1,this.hzFrameN); }
          }
          return ok;
       }
@@ -7059,6 +7059,12 @@
          try { if(this.hzAfNew && this.hz31AfLast != null) { this.hzAfLayoutChips(this.hz31AfLast); } } catch(err:Error) { }
       }
 
+      private function hzAfArmRelayout() : void
+      {
+         this.hzAfRemeasure = true;
+         if(this.hzAfRemeasureAt == 0) { this.hzAfRemeasureAt = Math.max(1,this.hzFrameN); }
+      }
+
       private function hzAfOnLoad() : void
       {
          try
@@ -7066,8 +7072,8 @@
             this.hz27Alerts = [];
             this.hzAfSeen = {};
             this.hzAfRemeasure = true;
-            this.hzAfRemeasureAt = this.hzFrameN;
-            this.hzAfLoadAt = this.hzFrameN;
+            this.hzAfRemeasureAt = Math.max(1,this.hzFrameN);
+            this.hzAfLoadAt = Math.max(1,this.hzFrameN);
             if(this.hzAfNew) { this.hzAfSync(); }
          }
          catch(err:Error) { }
@@ -7076,7 +7082,7 @@
       private function hzAfLoadWatch() : void
       {
          var now:Number = this.hz26Now();
-         if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAfOnLoad(); }
+         if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAfArmRelayout(); }
          if(now > 0) { this.hzAfLastWall = now; }
          if(this.hzAfLoadAt > 0)
          {
@@ -7099,6 +7105,7 @@
       {
          if(!this.hzAfNew) { return; }
          this.hz31AfLast = all;
+         this.hzAfRemeasure = false;
          var mode:int = this.hzAfLayout;
          var shown:int = Math.min(4,all.length);
          var more:int = all.length - shown;
@@ -10194,13 +10201,13 @@
          if(!this.hz26Built) { return; }
          var now:Number = this.hz26Now();
          var base:Boolean = this.hzGroupVisible && !this.hzUserHidden;
+         // stealth: vanilla rule (sneaking and the meter is on)
+         var sd:Object = this.hz26St;
+         this.hz26StOn = sd != null && sd.bSneaking === true && sd.bShowMeter === true;
          try { this.hz26Vanilla(); } catch(e0:Error) { }
          // enemy: shown while targeted (+0.4 s hold)
          this.hz26EnOn = this.hz26En != null && now - this.hz26EnT < 400;
          if(!this.hz26EnOn && now - this.hz26EnT > 1500) { this.hz26En = null; }
-         // stealth: vanilla rule (sneaking and the meter is on)
-         var sd:Object = this.hz26St;
-         this.hz26StOn = sd != null && sd.bSneaking === true && sd.bShowMeter === true;
          try { if(this.HorizonEnemy_mc && (this.hz26EnOn || this.hzArrange) && this.HorizonEnemy_mc.visible) { this.hz26EnDraw(); } } catch(e1:Error) { if(this.HorizonEnemy_mc) { this.HorizonEnemy_mc.visible = false; } }
          try { if(this.HorizonStealth_mc && (this.hz26StOn || this.hzArrange) && this.HorizonStealth_mc.visible) { this.hz26StDraw(now); } } catch(e2:Error) { }
          // first frame a card turns on: draw before it shows
@@ -11656,12 +11663,12 @@
          if(lb.text.length > 0 && w < 4)
          {
             this.hzAfRemeasure = true;
-            if(this.hzAfRemeasureAt == 0) { this.hzAfRemeasureAt = this.hzFrameN; }
+            if(this.hzAfRemeasureAt == 0) { this.hzAfRemeasureAt = Math.max(1,this.hzFrameN); }
             if(this.hzAfTitleW > 4) { w = this.hzAfTitleW; lb.width = Math.round(w + 8); }
          }
          else
          {
-            if(w >= 4) { this.hzAfTitleW = w; this.hzAfRemeasure = false; this.hzAfRemeasureAt = 0; }
+            if(w >= 4) { this.hzAfTitleW = w; }
             lb.width = Math.round(w + 8);
          }
          if(two)
@@ -11672,7 +11679,7 @@
             if(sb.text.length > 0 && w2 < 4)
             {
                this.hzAfRemeasure = true;
-               if(this.hzAfRemeasureAt == 0) { this.hzAfRemeasureAt = this.hzFrameN; }
+               if(this.hzAfRemeasureAt == 0) { this.hzAfRemeasureAt = Math.max(1,this.hzFrameN); }
             }
             else { sb.width = Math.round(w2 + 8); }
             w = Math.max(w,w2);
