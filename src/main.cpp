@@ -1,7 +1,18 @@
 // HorizonUI SFSE plugin v0.42.0 - drop-in src\main.cpp (CommonLibSF libxse 9d090c4)
+// v0.42.0.4: F11 lists each shipped preset name once. Saved presets are never hidden.
+// Same settings keep the installer copy; different settings keep the newer shipped file.
+// The F11 header, the load line, and the "movie builds" line use the DLL file version (src/hz_version.h, also the version resource).
+// v0.42.0.6: ShowHUDMessageEvent (address id 86800) feeds the reaction backup. The verbose trace
+// (the "hud message:" line and "comms msg:" lines) is compiled only when HZ_COMMS_MSG_LOG is 1
+// (src/hz_version.h). The queue, Poll, hzcCardPush, the one-line "comms reaction:" status, and the
+// one-time "comms reaction selftest:" lines stay on when that flag is 0. HZ_HUD_MSG_CAPTURE logs
+// every HUD message with no text filter. The release checklist in README.md turns both traces off.
+// The settings schema stays 0.42.0. hzcRxPush remains on the movie. The DLL calls hzcCardPush.
+// Saved preset names drop the same characters as the HUD: '=' '+' '[' ']' ';' '#' '"' '\' '|' and control characters.
 // v0.42.0 r3 (file version 0.42.0.3): a scope (ScopeMenu) still blocks F11 but no longer restarts the 3 s "HUD ready" wait,
-// so F11 works right after leaving the scope. Debug-only Comms message log: every 500 ms the HUD messages movie's
-// hzcTakeDbg queue (filled only with [Debug] Debug=1) goes to HorizonUI.log as "comms msg:" lines. "movie builds:" logs
+// so F11 works right after leaving the scope. The 0.42.0.4 no-debug build compiled this log out. In 0.42.0.6 it is on
+// when HZ_COMMS_MSG_LOG is 1 (Debug=0 in the ini still stops the movie queue): every 500 ms hzcTakeDbg goes to the log as
+// "comms msg:" lines. The reaction backup is separate and stays compiled. "movie builds:" logs
 // the loaded HUD / Comms builds (hzBuildId / hzcBuildId). Saved preset names drop '=' '+' '[' ']' ';' '#' '"' '\'.
 // v0.42.0 r2: F11 is also ignored while a scope (ScopeMenu) or the item inspect view (InspectMenu) is open; the deny list
 // uses the registered "MissionBoard" only (MissionBoardMenu / ShipDialogueMenu dropped). '+' / '=' reach the HUD as
@@ -26,6 +37,8 @@
 // v0.37: settings files (HorizonUI.default.ini + HorizonUI.user.ini, update backup, migration, presets) - plain
 // std / Win32 file code in the HZF section, no new CommonLibSF calls. Everything from v0.36 is unchanged.
 #include <Windows.h>
+#include <winver.h>
+#pragma comment(lib, "version.lib")
 #undef GetObject
 #undef ERROR
 #undef PostMessage
@@ -36,13 +49,22 @@
 #include <fstream>
 #include <atomic>
 #include <mutex>
+#include <deque>
 #include <vector>
 #include <string>
+#include <string_view>
 #include <cstdio>
+#include <exception>
 #include <algorithm>
 #include <cmath>
+#include <utility>
 #include <map>
 #include <iterator>
+#include "hz_version.h"
+#include "hz_msg_match.h"
+#include "hz_addr_probe.h"
+#include "hz_rx_queue.h"
+#include "preset_dedupe.h"
 
 // v0.37: the settings-file code (HZF) replaces files through this (temp file + MoveFileExW)
 static bool HzfReplace(const std::filesystem::path& a_tmp, const std::filesystem::path& a_dst)
@@ -82,6 +104,7 @@ namespace HZ
 	std::uint32_t g_scan = 0x57;  // F11
 	int           g_vk = VK_F11;
 	bool          g_wasDown = false;
+	bool          g_iniDebug = false;   // [Debug] Debug=1. Gates the one-time hud form, gmst, address, and hold-breath lines.
 
 	std::filesystem::path IniPath()
 	{
@@ -91,347 +114,30 @@ namespace HZ
 	}
 	// v0.37: the folder (HorizonUI.ini above is the legacy file: read for migration only, never written)
 	std::filesystem::path HzDir() { return IniPath().parent_path(); }
+}
 
-	// ==== HZF BEGIN: v0.37 settings files (plain std + one Win32 call through HzfReplace; unit-tested on the box) ====
-	// Data\Interface\HorizonUI\:
-	//   HorizonUI.default.ini   shipped, replaced by every update, never written here
-	//   HorizonUI.user.ini      the player's settings: only what differs from the defaults (+ keys the file already had)
-	//   HorizonUI.user.bak.ini  copy of user.ini made once per update (state.ini LastVersion != this DLL)
-	//   HorizonUI.user.preapply.ini  user.ini as it was before the last preset was applied (one-step undo)
-	//   HorizonUI.state.ini     [State] LastVersion / LegacyImported / PresetSeeded
-	//   HorizonUI.ini           legacy (v0.36 and older): read for migration only, never written, never deleted
-	//   presets\*.ini           shipped presets (moragars_choice.ini from the installer); presets\user\*.ini saved in game
-	namespace HZF
+// ==== HZF BEGIN: v0.37 settings files (plain std + one Win32 call through HzfReplace; unit-tested on the box) ====
+// Data\Interface\HorizonUI\:
+//   HorizonUI.default.ini   shipped, replaced by every update, never written here
+//   HorizonUI.user.ini      the player's settings: only what differs from the defaults (+ keys the file already had)
+//   HorizonUI.user.bak.ini  copy of user.ini made once per update (state.ini LastVersion != this DLL)
+//   HorizonUI.user.preapply.ini  user.ini as it was before the last preset was applied (one-step undo)
+//   HorizonUI.state.ini     [State] LastVersion / LegacyImported / PresetSeeded
+//   HorizonUI.ini           legacy (v0.36 and older): read for migration only, never written, never deleted
+//   presets\*.ini           shipped presets (moragars_choice.ini from the installer); presets\user\*.ini saved in game
+// HZF lives at file scope (not inside namespace HZ). hz_ini_diff.h is self-contained.
+namespace HZF
+{
+	inline const char* kVersion = "0.42.0";
+}
+
+#include "hz_ini_diff.h"
+
+namespace HZF
 	{
-		inline const char* kVersion = "0.42.0";
 		using LogFn = void (*)(int, const std::string&);   // 0 info, 1 warn
 		inline LogFn g_log = nullptr;
 		inline void Log(int a_lvl, const std::string& a_s) { if (g_log) g_log(a_lvl, a_s); }
-
-		inline std::string Lower(std::string a_s)
-		{
-			for (auto& c : a_s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-			return a_s;
-		}
-		inline bool IsWs(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
-		inline std::string Trim(const std::string& a_s)
-		{
-			std::size_t b = 0, e = a_s.size();
-			while (b < e && IsWs(a_s[b])) ++b;
-			while (e > b && IsWs(a_s[e - 1])) --e;
-			return a_s.substr(b, e - b);
-		}
-		// leading blanks and UTF-8 BOMs off (hz30Hdr / hz30Key do the same in the HUD)
-		inline std::string LTrimBom(const std::string& a_s)
-		{
-			std::size_t b = 0;
-			for (;;) {
-				if (b < a_s.size() && IsWs(a_s[b])) { ++b; continue; }
-				if (a_s.compare(b, 3, "\xEF\xBB\xBF") == 0) { b += 3; continue; }
-				break;
-			}
-			return a_s.substr(b);
-		}
-		inline std::vector<std::string> SplitLines(const std::string& a_text)
-		{
-			std::vector<std::string> out;
-			std::string t = a_text;
-			if (t.compare(0, 3, "\xEF\xBB\xBF") == 0) t.erase(0, 3);
-			std::size_t p = 0;
-			while (p < t.size()) {
-				auto q = t.find('\n', p);
-				std::string ln = t.substr(p, q == std::string::npos ? std::string::npos : q - p);
-				if (!ln.empty() && ln.back() == '\r') ln.pop_back();
-				out.push_back(ln);
-				if (q == std::string::npos) break;
-				p = q + 1;
-			}
-			return out;
-		}
-		inline std::string Alias(const std::string& a_n)
-		{
-			if (a_n == "cards v0.26") return "cards extra";   // v0.31 renames (the HUD's hz31SecAlias)
-			if (a_n == "effects v0.26") return "effects";
-			return a_n;
-		}
-		inline bool IsOldName(const std::string& a_n) { return a_n == "cards v0.26" || a_n == "effects v0.26"; }
-		// "[Name]" -> "name" (lower case, not aliased)
-		inline bool HeaderOf(const std::string& a_ln, std::string& a_out)
-		{
-			std::string t = LTrimBom(a_ln);
-			while (!t.empty() && IsWs(t.back())) t.pop_back();
-			if (t.size() < 3 || t[0] != '[') return false;
-			const auto e = t.find(']');
-			if (e == std::string::npos || e < 2) return false;
-			a_out = Lower(Trim(t.substr(1, e - 1)));
-			return true;
-		}
-		// key=value line (comments / headers / malformed -> false). Value: up to ';', trimmed
-		inline bool KeyOf(const std::string& a_ln, std::string& a_kl, std::string& a_ko, std::string& a_v)
-		{
-			std::string t = LTrimBom(a_ln);
-			if (t.empty() || t[0] == ';' || t[0] == '#' || t[0] == '[') return false;
-			const auto eq = t.find('=');
-			if (eq == std::string::npos || eq == 0) return false;
-			std::string k;
-			for (char c : t.substr(0, eq))
-				if (!IsWs(c)) k += c;
-			if (k.empty()) return false;
-			a_kl = Lower(k);
-			a_ko = Trim(t.substr(0, eq));
-			std::string v = t.substr(eq + 1);
-			if (auto sc = v.find(';'); sc != std::string::npos) v.erase(sc);
-			a_v = Trim(v);
-			return true;
-		}
-
-		struct Sec
-		{
-			std::string name;     // canonical (lower case, aliased); "" = lines before the first header
-			std::string header;   // header line as written (trimmed)
-			std::vector<std::string> raw;     // every line (header first)
-			std::vector<std::string> order;   // keys (lower) in first-seen order
-			std::map<std::string, std::pair<std::string, std::string>> kv;   // key (lower) -> (key as written, value); last wins
-		};
-		struct Doc
-		{
-			std::vector<Sec> secs;
-			Sec* Find(const std::string& a_n)
-			{
-				for (auto& s : secs)
-					if (s.name == a_n) return &s;
-				return nullptr;
-			}
-			bool Has(const std::string& a_n) { return Find(a_n) != nullptr; }
-			std::string SectionOfKey(const std::string& a_kl)
-			{
-				for (auto& s : secs)
-					if (!s.name.empty() && s.kv.count(a_kl)) return s.name;
-				return {};
-			}
-		};
-		// a second copy of a section (or its pre-v0.31 name) merges into the first one; old names first, so the new name wins
-		inline Doc Parse(const std::string& a_text)
-		{
-			Doc d;
-			d.secs.push_back(Sec{});
-			const auto lines = SplitLines(a_text);
-			for (int pass = 0; pass < 2; ++pass) {
-				Sec* cur = &d.secs[0];
-				bool old = false;
-				for (const auto& ln : lines) {
-					std::string h;
-					if (HeaderOf(ln, h)) {
-						old = IsOldName(h);
-						const auto n = Alias(h);
-						if ((pass == 0) != old) { cur = nullptr; continue; }
-						cur = d.Find(n);
-						if (!cur) {
-							d.secs.push_back(Sec{});
-							cur = &d.secs.back();
-							cur->name = n;
-							cur->header = Trim(LTrimBom(ln));
-						}
-						cur->raw.push_back(ln);
-						continue;
-					}
-					if (!cur) continue;
-					if (pass == 0 && cur->name.empty()) continue;   // pre-header lines: second pass only
-					if (pass == 1 && old) continue;
-					cur->raw.push_back(ln);
-					std::string kl, ko, v;
-					if (!KeyOf(ln, kl, ko, v)) continue;
-					if (!cur->kv.count(kl)) cur->order.push_back(kl);
-					cur->kv[kl] = { ko, v };
-				}
-			}
-			return d;
-		}
-		inline bool IsNum(const std::string& a_s, double& a_out)
-		{
-			if (a_s.empty()) return false;
-			char* end = nullptr;
-			a_out = std::strtod(a_s.c_str(), &end);
-			return end && *end == 0;
-		}
-		inline bool SameValue(const std::string& a, const std::string& b)
-		{
-			double x, y;
-			if (IsNum(a, x) && IsNum(b, y)) return std::fabs(x - y) < 1e-9;
-			return a == b;
-		}
-		inline std::string Join(const std::vector<std::string>& a_l)
-		{
-			std::string s;
-			for (const auto& l : a_l) { s += l; s += "\r\n"; }
-			return s;
-		}
-		inline bool Blank(const std::string& a_s) { return Trim(LTrimBom(a_s)).empty(); }
-
-		// base with the player's values laid over it (identical to the HUD's hz37Overlay; tested for parity):
-		// known keys replace the base value in place, unknown keys of a known section are appended to it, sections the
-		// base lacks are appended verbatim. Keys before any header go to the base section that has them. Malformed lines
-		// are skipped. CRLF out.
-		inline std::string Overlay(const std::string& a_base, const std::string& a_over)
-		{
-			Doc B = Parse(a_base);
-			Doc O = Parse(a_over);
-			std::map<std::string, std::map<std::string, std::pair<std::string, std::string>>> U;
-			std::map<std::string, std::vector<std::string>> ext;
-			std::vector<const Sec*> unk;
-			for (const auto& s : O.secs) {
-				if (!s.name.empty() && !B.Has(s.name)) { unk.push_back(&s); continue; }
-				for (const auto& kl : s.order) {
-					std::string sec = s.name.empty() ? B.SectionOfKey(kl) : s.name;
-					if (sec.empty()) continue;
-					auto& m = U[sec];
-					if (!m.count(kl) && !B.Find(sec)->kv.count(kl)) ext[sec].push_back(kl);
-					m[kl] = s.kv.at(kl);
-				}
-			}
-			std::vector<std::string> out;
-			std::string cur;
-			std::map<std::string, bool> flushed;
-			auto flush = [&](const std::string& a_sec) {
-				if (a_sec.empty() || flushed[a_sec]) return;
-				flushed[a_sec] = true;
-				auto it = ext.find(a_sec);
-				if (it == ext.end() || it->second.empty()) return;
-				int blanks = 0;
-				while (!out.empty() && Blank(out.back())) { out.pop_back(); ++blanks; }
-				for (const auto& kl : it->second) { const auto& p = U[a_sec][kl]; out.push_back(p.first + "=" + p.second); }
-				for (int i = 0; i < blanks; ++i) out.emplace_back();
-			};
-			for (const auto& ln : SplitLines(a_base)) {
-				std::string h;
-				if (HeaderOf(ln, h)) { flush(cur); cur = Alias(h); out.push_back(ln); continue; }
-				std::string kl, ko, v;
-				if (!cur.empty() && KeyOf(ln, kl, ko, v)) {
-					auto su = U.find(cur);
-					if (su != U.end()) {
-						auto ku = su->second.find(kl);
-						if (ku != su->second.end()) { out.push_back(ko + "=" + ku->second.second); continue; }
-					}
-				}
-				out.push_back(ln);
-			}
-			flush(cur);
-			for (const auto* s : unk) {
-				if (!out.empty() && !Blank(out.back())) out.emplace_back();
-				auto r = s->raw;
-				while (!r.empty() && Blank(r.back())) r.pop_back();
-				for (const auto& l : r) out.push_back(l);
-			}
-			return Join(out);
-		}
-
-		inline std::string StripSection(const std::string& a_text, const std::string& a_sec)
-		{
-			std::vector<std::string> out;
-			bool skip = false;
-			for (const auto& ln : SplitLines(a_text)) {
-				std::string h;
-				if (HeaderOf(ln, h)) skip = Alias(h) == a_sec;
-				if (!skip) out.push_back(ln);
-			}
-			return Join(out);
-		}
-
-		inline bool IsModuleSec(const std::string& a_n) { return a_n == "scanner" || a_n == "comms"; }
-		// v0.41.0 r2: keys a newer version replaced. Never written again by Diff (F11 save, presets, migration), so an old
-		// line cannot outlive the keys that replaced it. [Scanner] ScanShowVitals (0.40.3) = ScanShowVitalsHealth / O2 / Boost.
-		inline bool RetiredKey(const std::string& a_sec, const std::string& a_kl) { return a_sec == "scanner" && a_kl == "scanshowvitals"; }
-
-		struct DiffOpt
-		{
-			bool keepUnknownKeys = false;       // unknown keys of known sections (migration)
-			bool keepUnknownSections = true;    // sections the defaults do not have (other modules / the player's own)
-		};
-		inline std::string UserHeader()
-		{
-			return std::string("; Horizon UI - your settings. Only what differs from HorizonUI.default.ini is kept here (plus keys this\r\n"
-			                   "; file already had). Written by HorizonUI.dll ") + kVersion + " (F11). Delete it to go back to the defaults.\r\n";
-		}
-		// what goes into HorizonUI.user.ini: a_full = the complete settings text, a_defs = HorizonUI.default.ini,
-		// a_user = the current user.ini (its known keys are always kept). [Preset] is never written.
-		inline std::string Diff(const std::string& a_full, const std::string& a_defs, const std::string& a_user, DiffOpt a_opt)
-		{
-			Doc D = Parse(a_defs), F = Parse(a_full), U = Parse(a_user);
-			std::vector<std::string> order;
-			std::map<std::string, std::vector<std::pair<std::string, std::string>>> keep;
-			std::map<std::string, std::map<std::string, std::size_t>> pos;
-			std::map<std::string, std::vector<std::string>> rawUnk;
-			auto put = [&](const std::string& a_sec, const std::string& a_k, const std::string& a_v, const std::string& a_kl) {
-				if (!keep.count(a_sec) && !rawUnk.count(a_sec)) order.push_back(a_sec);
-				auto& p = pos[a_sec];
-				auto it = p.find(a_kl);
-				if (it != p.end()) { keep[a_sec][it->second].second = a_v; return; }
-				p[a_kl] = keep[a_sec].size();
-				keep[a_sec].push_back({ a_k, a_v });
-			};
-			auto inUser = [&](const std::string& a_sec, const std::string& a_kl) {
-				auto s = U.Find(a_sec);
-				if (!s) return false;
-				if (s->kv.count(a_kl)) return true;
-				auto o = U.Find("");   // a key the player wrote above every header
-				return o && o->kv.count(a_kl) && D.SectionOfKey(a_kl) == a_sec;
-			};
-			auto consider = [&](const std::string& a_sec, const std::string& a_kl, const std::pair<std::string, std::string>& a_p) {
-				if (RetiredKey(a_sec, a_kl)) return;   // v0.41.0 r2
-				auto ds = D.Find(a_sec);
-				auto dk = ds->kv.find(a_kl);
-				const bool inU = inUser(a_sec, a_kl);
-				if (dk != ds->kv.end()) {
-					if (!SameValue(a_p.second, dk->second.second) || inU) put(a_sec, dk->second.first, a_p.second, a_kl);
-				} else if (a_opt.keepUnknownKeys || (IsModuleSec(a_sec) && inU)) {
-					put(a_sec, a_p.first, a_p.second, a_kl);
-				}
-			};
-			auto take = [&](Doc& a_doc, bool a_fromUser) {
-				for (auto& s : a_doc.secs) {
-					if (s.name == "preset") continue;
-					if (s.name.empty()) {
-						for (const auto& kl : s.order) {
-							const auto sec = D.SectionOfKey(kl);
-							if (!sec.empty() && !(a_fromUser && F.Has(sec) && F.Find(sec)->kv.count(kl))) consider(sec, kl, s.kv.at(kl));
-						}
-						continue;
-					}
-					if (!D.Has(s.name)) {
-						if (!a_opt.keepUnknownSections || rawUnk.count(s.name)) continue;
-						auto r = s.raw;
-						while (!r.empty() && Blank(r.back())) r.pop_back();
-						if (!keep.count(s.name)) order.push_back(s.name);
-						rawUnk[s.name] = r;
-						continue;
-					}
-					for (const auto& kl : s.order) {
-						if (a_fromUser) {   // a key of user.ini that the full text lost: the player's value stays
-							auto fs = F.Find(s.name);
-							if (fs && fs->kv.count(kl)) continue;
-							auto fo = F.Find("");
-							if (fo && fo->kv.count(kl) && D.SectionOfKey(kl) == s.name) continue;
-						}
-						consider(s.name, kl, s.kv.at(kl));
-					}
-				}
-			};
-			take(F, false);
-			take(U, true);
-			std::string out = UserHeader();
-			for (const auto& n : order) {
-				if (rawUnk.count(n)) {
-					out += "\r\n";
-					out += Join(rawUnk[n]);
-					continue;
-				}
-				const auto& kv = keep[n];
-				if (kv.empty()) continue;
-				out += "\r\n" + D.Find(n)->header + "\r\n";
-				for (const auto& [k, v] : kv) out += k + "=" + v + "\r\n";
-			}
-			return out;
-		}
 
 		// ---------------- files ----------------
 		struct Paths
@@ -647,7 +353,7 @@ namespace HZ
 				s += c;
 			}
 			s = Trim(s);
-			if (s.size() > a_max) s = Trim(s.substr(0, a_max));
+			if (s.size() > a_max) s = Trim(hzpreset::Utf8Prefix(s, a_max));
 			return s;
 		}
 		inline const std::vector<std::string>& BuiltinSections()
@@ -702,15 +408,38 @@ namespace HZ
 		{
 			std::vector<Preset>      list;
 			std::vector<std::string> skipped;   // "<id>: <reason>"
+			std::vector<std::string> deduped;   // duplicate names hidden from the list; the file stays on disk
 		};
+		inline std::int64_t WriteTicks(const std::filesystem::path& a_p)
+		{
+			std::error_code ec;
+			const auto t = std::filesystem::last_write_time(a_p, ec);
+			if (ec) return 0;
+			return static_cast<std::int64_t>(t.time_since_epoch().count());
+		}
+		// Purpose: list presets for F11. Shipped files collapse to one row per name.
+		// Inputs: preset folders and the defaults text used to validate files.
+		// Outputs: the list the HUD shows, skip reasons, and duplicate-hide notes.
+		// Saved presets (presets\user) are always listed, so a player look that reuses a
+		// shipped name can still be applied and deleted after a mod update.
+		// Same settings: keep the installer copy (shipped file not named HorizonUI.*.ini).
+		// Different settings: keep the newer last-write time. Ties then prefer the installer copy, then the smaller id.
+		// Dependencies: hzpreset::DedupePresetIndices. A duplicate is not a skip.
+		// Last modified: 2026-10-20.
 		inline Scan ScanPresets(const Paths& a_p, const std::string& a_defs)
 		{
 			Scan r;
+			struct Row
+			{
+				Preset preset;
+				hzpreset::Candidate cand;
+			};
+			std::vector<Row> rows;
 			for (int u = 0; u < 2; ++u) {
 				const auto& dir = u ? a_p.userPresets : a_p.presets;
 				std::error_code ec;
 				if (!std::filesystem::is_directory(dir, ec)) continue;
-				std::vector<Preset> part;
+				std::vector<Row> part;
 				int n = 0;
 				for (std::filesystem::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
 					std::error_code ec2;
@@ -726,14 +455,29 @@ namespace HZ
 					p.id = id;
 					p.user = u == 1;
 					p.path = f;
-					part.push_back(p);
+					Row row;
+					row.preset = p;
+					row.cand.id = id;
+					row.cand.user = p.user;
+					row.cand.name = p.name;
+					row.cand.fileName = U8(f.filename());
+					row.cand.contentKey = hzpreset::PresetContentKey(text);
+					row.cand.mtime = WriteTicks(f);
+					part.push_back(std::move(row));
 				}
-				std::sort(part.begin(), part.end(), [](const Preset& a, const Preset& b) {
-					const auto x = Lower(a.name), y = Lower(b.name);
-					return x != y ? x < y : a.id < b.id;
+				std::sort(part.begin(), part.end(), [](const Row& a, const Row& b) {
+					const auto x = Lower(a.preset.name), y = Lower(b.preset.name);
+					return x != y ? x < y : a.preset.id < b.preset.id;
 				});
-				r.list.insert(r.list.end(), part.begin(), part.end());
+				rows.insert(rows.end(), part.begin(), part.end());
 			}
+			std::vector<hzpreset::Candidate> cands;
+			cands.reserve(rows.size());
+			for (const auto& row : rows) cands.push_back(row.cand);
+			std::vector<hzpreset::Drop> drops;
+			const auto keep = hzpreset::DedupePresetIndices(cands, drops);
+			for (std::size_t i : keep) r.list.push_back(rows[i].preset);
+			for (const auto& d : drops) r.deduped.push_back(d.line);
 			return r;
 		}
 		inline const Preset* FindPreset(const Scan& a_s, const std::string& a_id)
@@ -868,12 +612,12 @@ namespace HZ
 		}
 		inline Result SavePreset(const Paths& a_p, const std::string& a_name, bool a_overwrite, const std::string& a_full, const std::string& a_when)
 		{
-			std::string name0 = CleanField(a_name, 48);
-			name0.erase(std::remove_if(name0.begin(), name0.end(), [](char c) { return std::strchr("=+[];#\"\\", c) != nullptr && c != 0; }), name0.end());   // v0.42.0 r3: ini-safe
-			const auto name = Trim(name0);
+			const auto name = hzpreset::CleanPresetName(a_name);   // same characters as the HUD (hz42NmOk), including '|' and DEL
 			if (name.empty()) return { false, "Type a name first" };
 			const auto file = a_p.userPresets / (Slug(name) + ".ini");
-			for (const auto& sp : ScanPresets(a_p, Defaults(a_p)).list)   // shipped presets are never overwritten or shadowed
+			// A shipped name stays in this list: dedupe only hides one shipped file when another
+			// shipped file has the same name. Saved presets are not removed, so this guard still fires.
+			for (const auto& sp : ScanPresets(a_p, Defaults(a_p)).list)
 				if (!sp.user && Slug(sp.name) == Slug(name)) return { false, "A preset that came with the mod has that name - pick another name" };
 			if (Exists(file) && !a_overwrite) return { false, "A saved preset with that name exists" };
 			const std::string body = PresetBody(a_full, Defaults(a_p));   // rule 3: only what differs from the defaults
@@ -924,13 +668,16 @@ namespace HZ
 			return { false, "unknown action" };
 		}
 	}
-	// ==== HZF END ====
+// ==== HZF END ====
 
+namespace HZ
+{
 	HZF::Paths FilesP() { return HZF::MakePaths(HzDir()); }
 
 	void LoadIni()
 	{
 		std::string key = "F11";
+		g_iniDebug = false;
 		std::string text;
 		const auto  P = FilesP();
 		// v0.37: HorizonUI.default.ini with HorizonUI.user.ini laid over (legacy HorizonUI.ini only when there is no default)
@@ -946,6 +693,7 @@ namespace HZ
 				return f;
 			};
 			std::string v;
+			if (get("debug", v) && v == "1") g_iniDebug = true;
 			if (get("settingskey", v) && !v.empty()) key = v;
 		}
 		auto sc = KeyNameToScan(key);
@@ -1030,6 +778,8 @@ namespace HZ
 		return menu->menuObj.IsObject();
 	}
 
+	void PushDllFileVersion();   // v0.42.0.4: defined with the movie-build log
+
 	void OnSettingsKey()
 	{
 		REX::INFO("Settings key pressed");
@@ -1038,6 +788,7 @@ namespace HZ
 		if (TextMenuOpen(ui)) { REX::INFO("ignored: text/console/pause menu open"); return; }
 		if (!HudSafe()) { REX::INFO("ignored: full-screen or loading menu open"); return; }
 		if (ui->IsMenuOpen("MonocleMenu")) { REX::INFO("ignored: hand scanner open (F11 opens from the main HUD only)"); return; }   // v0.42.0
+		PushDllFileVersion();   // v0.42.0.4: the header reads this on the open that follows
 		bool ok = HudInvoke("hzToggleSettings", nullptr, nullptr, 0, true);
 		REX::INFO("hzToggleSettings invoke {}", ok ? "OK" : "FAILED (HUD lacks function or HUDMenu missing)");
 	}
@@ -1312,10 +1063,12 @@ namespace HZ
 			const auto sc = HZF::ScanPresets(P, HZF::Defaults(P));
 			std::string sig;
 			for (const auto& k : sc.skipped) sig += k + "\n";
+			for (const auto& k : sc.deduped) sig += k + "\n";
 			if (sig != g_skipSig) {
 				g_skipSig = sig;
 				for (const auto& k : sc.skipped) REX::WARN("preset skipped: {}", k);
-				REX::INFO("presets: {} found, {} skipped", sc.list.size(), sc.skipped.size());
+				for (const auto& k : sc.deduped) REX::INFO("{}", k);
+				REX::INFO("presets: {} found, {} skipped, {} duplicate names hidden", sc.list.size(), sc.skipped.size(), sc.deduped.size());
 			}
 			st = HZF::StateString(P, sc);
 		} catch (...) {
@@ -1529,7 +1282,117 @@ namespace HZ
 		}
 	}
 
-	// v0.42.0 r3: which Horizon movie builds are loaded (HUD hzBuildId / Comms hzcBuildId), logged when it changes
+	// Purpose: read this DLL's own FileVersion string from its version resource.
+	// Inputs: none (the module that contains this function). Outputs: the four-part file version, or empty on failure.
+	// Dependencies: version.dll. The resource is generated from src/hz_version.h.
+	// Last modified: 2026-10-20.
+	std::string ReadOwnFileVersion()
+	{
+		HMODULE mod = nullptr;
+		if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		        reinterpret_cast<LPCWSTR>(&ReadOwnFileVersion), &mod) || !mod)
+			return {};
+		wchar_t path[MAX_PATH]{};
+		const DWORD n = ::GetModuleFileNameW(mod, path, MAX_PATH);
+		if (n == 0 || n >= MAX_PATH) return {};
+		DWORD unused = 0;
+		const DWORD bytes = ::GetFileVersionInfoSizeW(path, &unused);
+		if (bytes == 0) return {};
+		std::vector<unsigned char> buf(bytes);
+		if (!::GetFileVersionInfoW(path, 0, bytes, buf.data())) return {};
+		struct Tr { WORD lang; WORD cp; };
+		Tr* tr = nullptr;
+		UINT trBytes = 0;
+		if (::VerQueryValueW(buf.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<void**>(&tr), &trBytes) && tr && trBytes >= sizeof(Tr)) {
+			wchar_t query[80]{};
+			const wchar_t* hex = L"0123456789abcdef";
+			auto hex4 = [&](WORD a_w, wchar_t* a_d) {
+				a_d[0] = hex[(a_w >> 12) & 0xF];
+				a_d[1] = hex[(a_w >> 8) & 0xF];
+				a_d[2] = hex[(a_w >> 4) & 0xF];
+				a_d[3] = hex[a_w & 0xF];
+			};
+			const wchar_t* pre = L"\\StringFileInfo\\";
+			const wchar_t* suf = L"\\FileVersion";
+			int q = 0;
+			for (int i = 0; pre[i]; ++i) query[q++] = pre[i];
+			hex4(tr[0].lang, query + q); q += 4;
+			hex4(tr[0].cp, query + q); q += 4;
+			for (int i = 0; suf[i]; ++i) query[q++] = suf[i];
+			query[q] = 0;
+			wchar_t* str = nullptr;
+			UINT slen = 0;
+			if (::VerQueryValueW(buf.data(), query, reinterpret_cast<void**>(&str), &slen) && str && slen > 0 && str[0]) {
+				std::string out;
+				bool ascii = true;
+				// slen counts wchar_t in the version buffer, including the NUL. The index is checked
+				// before the read, and the copy stops at 64 so a missing NUL cannot walk off the buffer.
+				const UINT lim = slen < 64u ? slen : 64u;
+				for (UINT i = 0; i < lim && str[i] != L'\0'; ++i) {
+					if (str[i] > 127) { ascii = false; break; }
+					out.push_back(static_cast<char>(str[i]));
+				}
+				while (!out.empty() && (out.back() == ' ' || out.back() == '\0')) out.pop_back();
+				std::size_t b = 0;
+				while (b < out.size() && out[b] == ' ') ++b;
+				if (b) out.erase(0, b);
+				if (!out.empty() && (out[0] == 'v' || out[0] == 'V')) out.erase(0, 1);
+				if (ascii && HzFileVersionOk(out)) return out;
+			}
+		}
+		VS_FIXEDFILEINFO* info = nullptr;
+		UINT len = 0;
+		if (!::VerQueryValueW(buf.data(), L"\\", reinterpret_cast<void**>(&info), &len) || !info || len < sizeof(VS_FIXEDFILEINFO))
+			return {};
+		char b[32];
+		std::snprintf(b, sizeof(b), "%u.%u.%u.%u",
+			static_cast<unsigned>(HIWORD(info->dwFileVersionMS)),
+			static_cast<unsigned>(LOWORD(info->dwFileVersionMS)),
+			static_cast<unsigned>(HIWORD(info->dwFileVersionLS)),
+			static_cast<unsigned>(LOWORD(info->dwFileVersionLS)));
+		return b;
+	}
+
+	// Purpose: the file version shown at load, in the movie-builds line, and sent to F11.
+	// Inputs: none. Outputs: the version resource when it reads cleanly, otherwise HZ_FILE_VERSION_STR.
+	// Dependencies: ReadOwnFileVersion, src/hz_version.h. One string, not a second hand-typed copy.
+	// Last modified: 2026-10-21.
+	const std::string& DllFileVersion()
+	{
+		static const std::string v = []() {
+			std::string s = ReadOwnFileVersion();
+			if (!HzFileVersionOk(s)) {
+				REX::WARN("dll file version resource unreadable; using {}", HZ_FILE_VERSION_STR);
+				s = HZ_FILE_VERSION_STR;
+			}
+			return s;
+		}();
+		return v;
+	}
+
+	// Purpose: give the HUD the DLL file version for the F11 header.
+	// Inputs: none. Outputs: hzSetDllFileVersion on HUDMenu when that movie has the function.
+	// An older HUD is left alone. Dependencies: DllFileVersion.
+	// Last modified: 2026-10-20.
+	bool g_dllVerLogged = false;
+	void PushDllFileVersion()
+	{
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		auto menu = ui->GetMenu("HUDMenu");
+		if (!menu || !menu->menuObj.IsObject() || !menu->menuObj.HasMember("hzSetDllFileVersion")) return;
+		const std::string& v = DllFileVersion();
+		if (!HzFileVersionOk(v)) return;
+		GValue arg(v.c_str());
+		if (!menu->menuObj.Invoke("hzSetDllFileVersion", nullptr, &arg, 1)) return;
+		if (!g_dllVerLogged) {
+			g_dllVerLogged = true;
+			REX::INFO("dll file version {} sent to the F11 header", v);
+		}
+	}
+
+	// v0.42.0 r3: which Horizon movie builds are loaded (HUD hzBuildId / Comms hzcBuildId), logged when it changes.
+	// The DLL file version is DllFileVersion(), not a literal, so it cannot drift from the version resource.
 	std::string g_buildsLogged;
 	ULONGLONG   g_buildsNext = 0;
 	void BuildLog(ULONGLONG a_now)
@@ -1538,6 +1401,7 @@ namespace HZ
 		g_buildsNext = a_now + 5000;
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) return;
+		PushDllFileVersion();
 		std::string hud = "no build id (older than r3 or not Horizon)", msg = "no build id (older than r3, no Comms module or not open)";
 		GValue a;
 		if (HudInvoke("hzBuildId", &a) && a.IsString() && a.GetString()) hud = a.GetString();
@@ -1549,11 +1413,728 @@ namespace HZ
 		const std::string s = "HUD " + hud + ", Comms HUD messages " + msg;
 		if (s == g_buildsLogged) return;
 		g_buildsLogged = s;
-		REX::INFO("movie builds: {} (DLL file version 0.42.0.3)", s);
+		REX::INFO("movie builds: {} (DLL file version {})", s, DllFileVersion());
 	}
 
-	// v0.42.0 r3: debug-only Comms message log. The movie queues new HUD message lines only with [Debug] Debug=1
-	// (hzcTakeDbg returns "" otherwise); nothing is written to the log then.
+	// Purpose: the reaction backup is always compiled. HZ_COMMS_MSG_LOG gates only the verbose trace
+	// (the "hud message:" line on the task thread, and CommsDbgPoll). The one-line status stays.
+	// HZ_HUD_MSG_CAPTURE is a separate switch for the unfiltered "hud capture:" line.
+	// Last modified: 2026-10-23.
+#ifndef HZ_COMMS_MSG_LOG
+#define HZ_COMMS_MSG_LOG 0
+#endif
+
+	// Purpose: read one ShowHUDMessageEvent without letting a bad pointer escape this function.
+	// Inputs: the event. Outputs: 1 and a filled snap, or 0 when the read faulted.
+	// Dependencies: RE::ShowHUDMessageEvent (text, sound, canThrottle, isWarning). The copy is bounded.
+	// Last modified: 2026-10-22.
+	struct HudMsgSnap
+	{
+		bool throttle;
+		bool warning;
+		char text[201];
+		char sound[97];
+	};
+
+	static void HzCopyRaw(char* a_dst, std::size_t a_cap, const char* a_src)
+	{
+		hzpreset::CopyHudText(a_dst, a_cap, a_src);
+	}
+
+	static void HzHudMsgCopyCall(const RE::ShowHUDMessageEvent* a_ev, HudMsgSnap* a_out)
+	{
+		if (!a_ev || !a_out) return;
+		HzCopyRaw(a_out->text, sizeof(a_out->text), a_ev->text.c_str());
+		HzCopyRaw(a_out->sound, sizeof(a_out->sound), a_ev->sound.c_str());
+		a_out->throttle = a_ev->canThrottle;
+		a_out->warning = a_ev->isWarning;
+	}
+
+	static RE::BSTEventSource<RE::ShowHUDMessageEvent>* HzHudMsgSourceCall()
+	{
+		return RE::ShowHUDMessageEvent::GetEventSource();
+	}
+
+	static void HzHudMsgRegisterCall(RE::BSTEventSource<RE::ShowHUDMessageEvent>* a_src, RE::BSTEventSink<RE::ShowHUDMessageEvent>* a_sink)
+	{
+		if (a_src && a_sink) a_src->RegisterSink(a_sink);
+	}
+
+	// The SEH helpers only call through a function pointer, so an inlined Relocation cannot
+	// force object unwinding inside the __try (MSVC C2712). An access fault returns a code; it does not escape.
+	// A missing address id is not one of those faults: that lookup hard-exits, and SEH does not catch it.
+#if defined(_MSC_VER)
+	static int HzHudMsgReadSEH(const RE::ShowHUDMessageEvent* a_ev, HudMsgSnap* a_out) noexcept
+	{
+		if (!a_ev || !a_out) return 0;
+		using Fn = void (*)(const RE::ShowHUDMessageEvent*, HudMsgSnap*);
+		Fn fn = &HzHudMsgCopyCall;
+		__try {
+			fn(a_ev, a_out);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+	static int HzHudMsgSourceSEH(RE::BSTEventSource<RE::ShowHUDMessageEvent>** a_out) noexcept
+	{
+		if (!a_out) return -1;
+		*a_out = nullptr;
+		using Fn = RE::BSTEventSource<RE::ShowHUDMessageEvent>* (*)();
+		Fn fn = &HzHudMsgSourceCall;
+		__try {
+			*a_out = fn();
+			return *a_out ? 1 : 0;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return -1;
+		}
+	}
+	static int HzHudMsgRegisterSEH(RE::BSTEventSource<RE::ShowHUDMessageEvent>* a_src, RE::BSTEventSink<RE::ShowHUDMessageEvent>* a_sink) noexcept
+	{
+		if (!a_src || !a_sink) return 0;
+		using Fn = void (*)(RE::BSTEventSource<RE::ShowHUDMessageEvent>*, RE::BSTEventSink<RE::ShowHUDMessageEvent>*);
+		Fn fn = &HzHudMsgRegisterCall;
+		__try {
+			fn(a_src, a_sink);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+#else
+	static int HzHudMsgReadSEH(const RE::ShowHUDMessageEvent* a_ev, HudMsgSnap* a_out) noexcept
+	{
+		if (!a_ev || !a_out) return 0;
+		try { HzHudMsgCopyCall(a_ev, a_out); return 1; } catch (...) { return 0; }
+	}
+	static int HzHudMsgSourceSEH(RE::BSTEventSource<RE::ShowHUDMessageEvent>** a_out) noexcept
+	{
+		if (!a_out) return -1;
+		*a_out = nullptr;
+		try { *a_out = HzHudMsgSourceCall(); return *a_out ? 1 : 0; } catch (...) { return -1; }
+	}
+	static int HzHudMsgRegisterSEH(RE::BSTEventSource<RE::ShowHUDMessageEvent>* a_src, RE::BSTEventSink<RE::ShowHUDMessageEvent>* a_sink) noexcept
+	{
+		if (!a_src || !a_sink) return 0;
+		try { HzHudMsgRegisterCall(a_src, a_sink); return 1; } catch (...) { return 0; }
+	}
+#endif
+
+	void HzRxEnqueue(const char* a_text);
+
+	class ShowHUDMessageSink final : public RE::BSTEventSink<RE::ShowHUDMessageEvent>
+	{
+	public:
+		// Purpose: copy one HUD message and return. No settings, no forms, no Scaleform.
+		// Inputs: the event (text, sound, canThrottle, isWarning). Outputs: kContinue. A bad event is skipped.
+		// The unfiltered "hud capture:" line is HZ_HUD_MSG_CAPTURE. Classification happens on the task thread.
+		// Dependencies: HzHudMsgReadSEH. Last modified: 2026-10-23.
+		RE::BSEventNotifyControl ProcessEvent(const RE::ShowHUDMessageEvent& a_event, RE::BSTEventSource<RE::ShowHUDMessageEvent>*) override
+		{
+			try {
+				HudMsgSnap snap{};
+				if (!HzHudMsgReadSEH(&a_event, &snap)) {
+					if (!g_hudMsgReadWarned.exchange(true, std::memory_order_relaxed))
+						REX::WARN("ShowHUDMessageEvent sink failed: message could not be read");
+					return RE::BSEventNotifyControl::kContinue;
+				}
+#if HZ_HUD_MSG_CAPTURE
+				REX::INFO("hud capture: text=\"{}\" sound=\"{}\" canThrottle={} isWarning={}",
+					snap.text, snap.sound, snap.throttle ? 1 : 0, snap.warning ? 1 : 0);
+#endif
+				// This thread is not the UI thread. Copy the text and return. Poll classifies and invokes Scaleform.
+				HzRxEnqueue(snap.text);
+			} catch (const std::exception& ex) {
+				if (!g_hudMsgReadWarned.exchange(true, std::memory_order_relaxed))
+					REX::WARN("ShowHUDMessageEvent sink failed: {}", ex.what());
+			} catch (...) {
+				if (!g_hudMsgReadWarned.exchange(true, std::memory_order_relaxed))
+					REX::WARN("ShowHUDMessageEvent sink failed: unknown error");
+			}
+			return RE::BSEventNotifyControl::kContinue;
+		}
+
+		std::atomic<bool> g_hudMsgReadWarned{false};
+	};
+
+	// 0 pending, 1 registered, -1 failed and will not be tried again.
+	int g_hudMsgSink = 0;
+
+	// Purpose: register the ShowHUDMessageEvent sink (address id 86800) from kPostDataLoad.
+	// RegisterSink is address id 123821.
+	// A null source, or a fault caught around the source pointer or RegisterSink, is logged and ignored.
+	// A missing address id still hard-exits. GetEventSource looks the id up with a call that ends the
+	// process, and SEH does not catch that lookup.
+	// Inputs: none. Outputs: HorizonUI.log. Dependencies: RE::ShowHUDMessageEvent::GetEventSource.
+	// Last modified: 2026-10-22.
+	void RegisterShowHUDMessageSink()
+	{
+		if (g_hudMsgSink != 0) return;
+		try {
+			RE::BSTEventSource<RE::ShowHUDMessageEvent>* src = nullptr;
+			const int got = HzHudMsgSourceSEH(&src);
+			if (got < 0) {
+				g_hudMsgSink = -1;
+				REX::WARN("ShowHUDMessageEvent sink failed: GetEventSource faulted (address id 86800)");
+				return;
+			}
+			if (!src) {
+				g_hudMsgSink = -1;
+				REX::WARN("ShowHUDMessageEvent sink failed: event source is null (address id 86800)");
+				return;
+			}
+			static ShowHUDMessageSink sink;
+			if (!HzHudMsgRegisterSEH(src, &sink)) {
+				g_hudMsgSink = -1;
+				REX::WARN("ShowHUDMessageEvent sink failed: RegisterSink faulted (address id 86800)");
+				return;
+			}
+			g_hudMsgSink = 1;
+			REX::INFO("ShowHUDMessageEvent sink registered (address id 86800)");
+		} catch (const std::exception& ex) {
+			g_hudMsgSink = -1;
+			REX::WARN("ShowHUDMessageEvent sink failed: {}", ex.what());
+		} catch (...) {
+			g_hudMsgSink = -1;
+			REX::WARN("ShowHUDMessageEvent sink failed: unknown error");
+		}
+	}
+
+	// The sink thread only pushes. The timestamp is the enqueue time. Poll drops a note older than kRxMaxAge.
+	constexpr std::size_t kRxQueueMax = 8;
+	constexpr ULONGLONG kRxMaxAge = 3000;
+	struct RxNote
+	{
+		char      text[201];
+		ULONGLONG tick;
+	};
+	std::mutex        g_rxMu;
+	std::deque<RxNote> g_rxQ;
+
+	void HzRxEnqueue(const char* a_text)
+	{
+		if (!a_text || !a_text[0]) return;
+		try {
+			std::lock_guard<std::mutex> lock(g_rxMu);
+			// 0.42.0.9: empty, duplicate, and over-cap notes are dropped in hzrx::Enqueue. The cap stays 8.
+			hzrx::Enqueue(g_rxQ, a_text, GetTickCount64(), kRxQueueMax);
+		} catch (...) {
+		}
+	}
+
+	int HzRxMessagesVisible(RE::UI* a_ui)
+	{
+		if (!a_ui) return -1;
+		try {
+			auto msg = a_ui->GetMenu("HUDMessagesMenu");
+			if (!msg || !msg->menuObj.IsObject()) return -1;
+			GValue mc;
+			if (!msg->menuObj.GetMember("Messages_mc", &mc) || !mc.IsObject()) return -1;
+			GValue v;
+			if (!mc.GetMember("visible", &v) || !v.IsBoolean()) return -1;
+			return v.GetBoolean() ? 1 : 0;
+		} catch (...) {
+			return -1;
+		}
+	}
+
+	ULONGLONG g_rxWhyNext = 0;
+	bool      g_rxSelfLogged = false;
+	bool      g_hzpClipLogged = false;
+	ULONGLONG g_hzpClipNext = 0;
+	bool      g_hzCardWarned = false;
+	bool      g_msgGmstDone = false;
+	bool      g_msgGmstWait = false;
+	bool      g_msgFormDone = false;
+	hzmsg::Templates g_msgPhrases = hzmsg::English();
+
+	// Starfield.esm message form ids. Lookup confirms the form loaded. The description is only a string id,
+	// so the matcher keeps the English text from the 0.42.0.9 research note.
+	constexpr std::uint32_t kHzMsgForms[] = {
+		0x002F443D, 0x002F443E, 0x000295FD, 0x00205AA3, 0x002EDFF6, 0x002F4434, 0x00236F3C,
+		0x002A6C4D, 0x002A6C4E, 0x0000D8A3, 0x002A6C4C, 0x002A6C4F, 0x002A6C51, 0x002A6C50, 0x002A6C52,
+		0x002BFDCA, 0x0027072C, 0x0027072E, 0x0027072D, 0x002BCB8C, 0x002BCB8D, 0x002BCB8E,
+		0x002C8FF6, 0x002C8FF7, 0x002C8FF5, 0x000C6587
+	};
+
+	struct HzGmstRaw
+	{
+		char likes[161];
+		char loves[161];
+		char dislikes[161];
+		char hates[161];
+		char busy[161];
+		char calmed[161];
+		char creature[161];
+		char caught[161];
+		char pick[161];
+		char stealTake[161];
+		char stealAttack[161];
+		char lockCaught[161];
+		char trespass[161];
+		char witness[161];
+		char addCrime[161];
+		char remCrime[161];
+		char added[161];
+		char removed[161];
+		int  ok;
+		std::uint64_t miss;
+	};
+
+	// The versionlib image, read once. A slot of 0, a short file, or anything other than v5
+	// means that id is not called. IDDB::offset would end the process, and SEH cannot catch that.
+	static int g_addrState = 0;
+	static std::vector<unsigned char> g_addrBytes;
+	static std::string g_addrWhy;
+
+	static void HzAddrLoad() noexcept
+	{
+		if (g_addrState != 0) return;
+		g_addrState = -1;
+		try {
+			const auto ver = REX::FModule::GetExecutingModule().GetFileVersion().wstring(L"-");
+			if (ver.empty()) {
+				g_addrWhy = "game version could not be read";
+				return;
+			}
+			for (wchar_t c : ver) {
+				if (!((c >= L'0' && c <= L'9') || c == L'-')) {
+					g_addrWhy = "game version could not be read";
+					return;
+				}
+			}
+			HMODULE mod = nullptr;
+			if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			        reinterpret_cast<LPCWSTR>(&HzAddrLoad), &mod) || !mod) {
+				g_addrWhy = "plugin path could not be read";
+				return;
+			}
+			wchar_t path[MAX_PATH]{};
+			const DWORD n = ::GetModuleFileNameW(mod, path, MAX_PATH);
+			if (n == 0 || n >= MAX_PATH) {
+				g_addrWhy = "plugin path could not be read";
+				return;
+			}
+			const auto file = std::filesystem::path(path).parent_path() / (std::wstring(L"versionlib-") + std::wstring(ver) + L".bin");
+			std::ifstream in(file, std::ios::binary);
+			if (!in) {
+				g_addrWhy = "versionlib file was not found";
+				return;
+			}
+			in.seekg(0, std::ios::end);
+			const auto end = in.tellg();
+			if (end < static_cast<std::streamoff>(hzaddr::kV5HeaderBytes) || end > static_cast<std::streamoff>(32 * 1024 * 1024)) {
+				g_addrWhy = "versionlib is not a v5 table";
+				return;
+			}
+			in.seekg(0, std::ios::beg);
+			g_addrBytes.resize(static_cast<std::size_t>(end));
+			in.read(reinterpret_cast<char*>(g_addrBytes.data()), static_cast<std::streamsize>(end));
+			if (!in) {
+				g_addrBytes.clear();
+				g_addrWhy = "versionlib could not be read";
+				return;
+			}
+			std::uint32_t format = 0;
+			std::memcpy(&format, g_addrBytes.data(), sizeof format);
+			if (format != 5u) {
+				g_addrBytes.clear();
+				g_addrWhy = "versionlib is not a v5 table";
+				return;
+			}
+			g_addrState = 1;
+			g_addrWhy.clear();
+		} catch (...) {
+			g_addrBytes.clear();
+			g_addrState = -1;
+			if (g_addrWhy.empty()) g_addrWhy = "versionlib could not be read";
+		}
+	}
+
+	static int HzAddrSlot(std::uint64_t a_id)
+	{
+		HzAddrLoad();
+		if (g_addrState != 1) return -1;
+		const int slot = hzaddr::V5Slot(g_addrBytes.data(), g_addrBytes.size(), a_id);
+		if (slot < 0 && g_addrWhy.empty()) g_addrWhy = "versionlib is not a v5 table";
+		return slot;
+	}
+
+	static void HzAddrLogOnce()
+	{
+		static bool once = false;
+		if (once || g_addrWhy.empty()) return;
+		once = true;
+		if (g_iniDebug) REX::INFO("hud address: {}", g_addrWhy);
+	}
+
+	static void HzCopySetting(RE::GameSettingCollection* a_col, const char* a_key, char* a_dst, std::size_t a_cap)
+	{
+		if (!a_dst || a_cap == 0) return;
+		a_dst[0] = '\0';
+		if (!a_col || !a_key || RE::ID::GameSettingCollection::GetSetting.id() == 0) return;
+		auto* setting = a_col->GetSetting(a_key);
+		if (!setting || setting->GetType() != RE::Setting::Type::kString) return;
+		const auto view = setting->GetString();
+		const auto cut = hzpreset::Utf8Prefix(std::string(view), a_cap - 1);
+		for (std::size_t i = 0; i < cut.size(); ++i) a_dst[i] = cut[i];
+		a_dst[cut.size()] = '\0';
+	}
+
+	static void HzGmstFillCall(HzGmstRaw* a_out)
+	{
+		if (!a_out) return;
+		a_out->ok = 0;
+		a_out->miss = 0;
+		if (RE::ID::GameSettingCollection::Singleton.id() == 0 || RE::ID::GameSettingCollection::GetSetting.id() == 0) {
+			a_out->ok = -1;
+			return;
+		}
+		const auto sid = RE::ID::GameSettingCollection::Singleton.id();
+		const auto gid = RE::ID::GameSettingCollection::GetSetting.id();
+		const int ss = HzAddrSlot(sid);
+		const int gs = HzAddrSlot(gid);
+		if (ss != 1 || gs != 1) {
+			a_out->ok = -2;
+			a_out->miss = ss != 1 ? sid : gid;
+			return;
+		}
+		auto* col = RE::GameSettingCollection::GetSingleton();
+		if (!col) return;
+		HzCopySetting(col, "sAffinityEventLikes", a_out->likes, sizeof a_out->likes);
+		HzCopySetting(col, "sAffinityEventLoves", a_out->loves, sizeof a_out->loves);
+		HzCopySetting(col, "sAffinityEventDislikes", a_out->dislikes, sizeof a_out->dislikes);
+		HzCopySetting(col, "sAffinityEventHates", a_out->hates, sizeof a_out->hates);
+		HzCopySetting(col, "sSceneBlockingActorActivation", a_out->busy, sizeof a_out->busy);
+		HzCopySetting(col, "sActivateNPCCalmed", a_out->calmed, sizeof a_out->calmed);
+		HzCopySetting(col, "sActivateCreatureCalmed", a_out->creature, sizeof a_out->creature);
+		HzCopySetting(col, "sNoPickPocketAgain", a_out->caught, sizeof a_out->caught);
+		HzCopySetting(col, "sPickpocketFail", a_out->pick, sizeof a_out->pick);
+		HzCopySetting(col, "sStealTakeBack", a_out->stealTake, sizeof a_out->stealTake);
+		HzCopySetting(col, "sStealAttack", a_out->stealAttack, sizeof a_out->stealAttack);
+		HzCopySetting(col, "sLockpickingCaught", a_out->lockCaught, sizeof a_out->lockCaught);
+		HzCopySetting(col, "sTrespassing", a_out->trespass, sizeof a_out->trespass);
+		HzCopySetting(col, "sWitnessKilled", a_out->witness, sizeof a_out->witness);
+		HzCopySetting(col, "sAddCrimeGold", a_out->addCrime, sizeof a_out->addCrime);
+		HzCopySetting(col, "sRemoveCrimeGold", a_out->remCrime, sizeof a_out->remCrime);
+		HzCopySetting(col, "sAddItemtoInventory", a_out->added, sizeof a_out->added);
+		HzCopySetting(col, "sRemoveItemfromInventory", a_out->removed, sizeof a_out->removed);
+		a_out->ok = 1;
+	}
+
+	struct HzFormRaw
+	{
+		int loaded[32];
+		int n;
+		int ok;
+		std::uint64_t miss;
+		char credits[161];
+	};
+
+	static void HzFormFillCall(HzFormRaw* a_out)
+	{
+		if (!a_out) return;
+		a_out->n = static_cast<int>(std::size(kHzMsgForms));
+		a_out->ok = 0;
+		a_out->miss = 0;
+		a_out->credits[0] = '\0';
+		if (RE::ID::TESForm::LookupByID.id() == 0) {
+			a_out->ok = -1;
+			return;
+		}
+		const auto lid = RE::ID::TESForm::LookupByID.id();
+		if (HzAddrSlot(lid) != 1) {
+			a_out->ok = -2;
+			a_out->miss = lid;
+			return;
+		}
+		for (int i = 0; i < a_out->n && i < 32; ++i) {
+			const auto id = kHzMsgForms[i];
+			if (id == 0) { a_out->loaded[i] = -1; continue; }
+			auto* form = RE::TESForm::LookupByID(id);
+			a_out->loaded[i] = form ? 1 : 0;
+		}
+		// Credits is MISC 0000000F. Same guarded LookupByID as the message-form audit.
+		// The full name is copied into a fixed buffer; a miss keeps the English fallback.
+		if (auto* credits = RE::TESForm::LookupByID(0x0000000F)) {
+			if (credits->IsCredits()) {
+				if (auto* misc = credits->As<RE::TESObjectMISC>()) {
+					const char* name = misc->GetFullName();
+					if (name && name[0]) {
+						const auto cut = hzpreset::Utf8Prefix(std::string(name), sizeof a_out->credits - 1);
+						for (std::size_t i = 0; i < cut.size(); ++i) a_out->credits[i] = cut[i];
+						a_out->credits[cut.size()] = '\0';
+					}
+				}
+			}
+		}
+		a_out->ok = 1;
+	}
+
+#if defined(_MSC_VER)
+	static int HzGmstFillSEH(HzGmstRaw* a_out) noexcept
+	{
+		if (!a_out) return 0;
+		using Fn = void (*)(HzGmstRaw*);
+		Fn fn = &HzGmstFillCall;
+		__try {
+			fn(a_out);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+	static int HzFormFillSEH(HzFormRaw* a_out) noexcept
+	{
+		if (!a_out) return 0;
+		using Fn = void (*)(HzFormRaw*);
+		Fn fn = &HzFormFillCall;
+		__try {
+			fn(a_out);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+#else
+	static int HzGmstFillSEH(HzGmstRaw* a_out) noexcept
+	{
+		if (!a_out) return 0;
+		try { HzGmstFillCall(a_out); return 1; } catch (...) { return 0; }
+	}
+	static int HzFormFillSEH(HzFormRaw* a_out) noexcept
+	{
+		if (!a_out) return 0;
+		try { HzFormFillCall(a_out); return 1; } catch (...) { return 0; }
+	}
+#endif
+
+	static void HzLogPhrase(const char* a_key, const char* a_text)
+	{
+		const char* status = "empty";
+		if (a_text && a_text[0]) status = (a_text[0] == '<' && (a_text[1] == 'I' || a_text[1] == 'i')) ? "stub" : "text";
+		char show[61] = {};
+		if (a_text) hzpreset::CopyHudText(show, sizeof show, a_text);
+		if (g_iniDebug) REX::INFO("hud gmst {}: {} \"{}\"", a_key, status, show);
+	}
+
+	// Purpose: read the localized GMST phrases once, on the task thread, after data has loaded.
+	// A zero address id is not called. An id that is not in the loaded v5 address library is not called either.
+	// An empty phrase or an "<ID=" stub keeps the English fallback. The reads still run when Debug=0.
+	// The one-time hud form, hud gmst, and hud address lines are logged only when Debug=1.
+	// The versionlib image is released once both reads have finished.
+	// Last modified: 2026-10-23.
+	void HzMsgPrepare()
+	{
+		if (!g_msgGmstDone) {
+			HzGmstRaw raw{};
+			const int ran = HzGmstFillSEH(&raw);
+			if (!ran) {
+				g_msgGmstDone = true;
+				if (g_iniDebug) REX::INFO("hud gmst: read failed, English fallback");
+			} else if (raw.ok == -2) {
+				g_msgGmstDone = true;
+				HzAddrLogOnce();
+				if (g_iniDebug) REX::INFO("hud gmst: address id {} does not resolve, English fallback", raw.miss);
+			} else if (raw.ok < 0) {
+				g_msgGmstDone = true;
+				if (g_iniDebug) REX::INFO("hud gmst: address id is 0, English fallback");
+			} else if (raw.ok == 0) {
+				if (!g_msgGmstWait) {
+					g_msgGmstWait = true;
+					if (g_iniDebug) REX::INFO("hud gmst: settings not ready");
+				}
+			} else {
+				hzmsg::ApplyPhrase(g_msgPhrases.likes, raw.likes);
+				hzmsg::ApplyPhrase(g_msgPhrases.loves, raw.loves);
+				hzmsg::ApplyPhrase(g_msgPhrases.dislikes, raw.dislikes);
+				hzmsg::ApplyPhrase(g_msgPhrases.hates, raw.hates);
+				hzmsg::ApplyPhrase(g_msgPhrases.busy, raw.busy);
+				hzmsg::ApplyPhrase(g_msgPhrases.npcCalmed, raw.calmed);
+				hzmsg::ApplyPhrase(g_msgPhrases.creature, raw.creature);
+				hzmsg::ApplyPhrase(g_msgPhrases.caught, raw.caught);
+				hzmsg::ApplyPhrase(g_msgPhrases.pickFail, raw.pick);
+				hzmsg::ApplyPhrase(g_msgPhrases.stealTake, raw.stealTake);
+				hzmsg::ApplyPhrase(g_msgPhrases.stealAttack, raw.stealAttack);
+				hzmsg::ApplyPhrase(g_msgPhrases.lockCaught, raw.lockCaught);
+				hzmsg::ApplyPhrase(g_msgPhrases.trespass, raw.trespass);
+				hzmsg::ApplyPhrase(g_msgPhrases.witness, raw.witness);
+				hzmsg::ApplyPhrase(g_msgPhrases.addCrime, raw.addCrime);
+				hzmsg::ApplyPhrase(g_msgPhrases.remCrime, raw.remCrime);
+				hzmsg::ApplyPhrase(g_msgPhrases.added, raw.added);
+				hzmsg::ApplyPhrase(g_msgPhrases.removed, raw.removed);
+				HzLogPhrase("sAffinityEventLikes", raw.likes);
+				HzLogPhrase("sAffinityEventLoves", raw.loves);
+				HzLogPhrase("sAffinityEventDislikes", raw.dislikes);
+				HzLogPhrase("sAffinityEventHates", raw.hates);
+				HzLogPhrase("sSceneBlockingActorActivation", raw.busy);
+				HzLogPhrase("sActivateNPCCalmed", raw.calmed);
+				HzLogPhrase("sActivateCreatureCalmed", raw.creature);
+				HzLogPhrase("sNoPickPocketAgain", raw.caught);
+				HzLogPhrase("sPickpocketFail", raw.pick);
+				HzLogPhrase("sStealTakeBack", raw.stealTake);
+				HzLogPhrase("sStealAttack", raw.stealAttack);
+				HzLogPhrase("sLockpickingCaught", raw.lockCaught);
+				HzLogPhrase("sTrespassing", raw.trespass);
+				HzLogPhrase("sWitnessKilled", raw.witness);
+				HzLogPhrase("sAddCrimeGold", raw.addCrime);
+				HzLogPhrase("sRemoveCrimeGold", raw.remCrime);
+				HzLogPhrase("sAddItemtoInventory", raw.added);
+				HzLogPhrase("sRemoveItemfromInventory", raw.removed);
+				g_msgGmstDone = true;
+			}
+		}
+		if (!g_msgFormDone) {
+			HzFormRaw raw{};
+			const int ran = HzFormFillSEH(&raw);
+			if (!ran) {
+				g_msgFormDone = true;
+				if (g_iniDebug) REX::INFO("hud form: read failed");
+			} else if (raw.ok == -2) {
+				g_msgFormDone = true;
+				HzAddrLogOnce();
+				if (g_iniDebug) REX::INFO("hud form: address id {} does not resolve", raw.miss);
+			} else if (raw.ok < 0) {
+				g_msgFormDone = true;
+				if (g_iniDebug) REX::INFO("hud form: address id is 0");
+			} else if (raw.ok > 0) {
+				for (int i = 0; i < raw.n && i < 32; ++i) {
+					const char* state = raw.loaded[i] < 0 ? "skipped" : (raw.loaded[i] ? "loaded" : "missing");
+					if (g_iniDebug) REX::INFO("hud form {:08X}: {}", kHzMsgForms[i], state);
+				}
+				hzmsg::ApplyPhrase(g_msgPhrases.creditsName, raw.credits);
+				if (g_iniDebug) {
+					const char* state = raw.credits[0] ? "loaded" : "missing";
+					REX::INFO("hud form {:08X}: {} credits name", 0x0000000Fu, state);
+					HzLogPhrase("Credits", raw.credits);
+				}
+				g_msgFormDone = true;
+			}
+		}
+		if (g_msgGmstDone && g_msgFormDone) {
+			if (!g_addrBytes.empty()) {
+				g_addrBytes.clear();
+				g_addrBytes.shrink_to_fit();
+			}
+		}
+	}
+
+	static std::string HzCrossName()
+	{
+		try {
+			auto ui = RE::UI::GetSingleton();
+			if (!ui) return {};
+			auto menu = ui->GetMenu("HUDMenu");
+			if (!menu || !menu->menuObj.IsObject() || !menu->menuObj.HasMember("hzCrossName")) return {};
+			GValue r;
+			if (!menu->menuObj.Invoke("hzCrossName", &r, nullptr, 0) || !r.IsString() || !r.GetString()) return {};
+			const auto view = hzmsg::Trim(r.GetString());
+			if (view.empty() || view.find('<') != std::string_view::npos) return {};
+			return hzpreset::Utf8Prefix(std::string(view), 80);
+		} catch (...) {
+			return {};
+		}
+	}
+
+	// Purpose: drain the HUD-message queue on the UI thread and log hzcCardPush's status once per card.
+	// Also logs hzcRxSelfTest once (pass or fail, plus the three regex probes). That line is not gated on
+	// Debug or HZ_COMMS_MSG_LOG. A missing hzcRxSelfTest is retried until it returns a non-empty string.
+	// Skips loading and the main menu. Not gated on the 3 s HUD-ready wait. A missing hzcCardPush is logged once.
+	// Last modified: 2026-10-23.
+	void CommsRxPoll(ULONGLONG a_now)
+	{
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		for (auto m : { "LoadingMenu", "MainMenu" })
+			if (ui->IsMenuOpen(m)) return;
+		if (!ui->IsMenuOpen("HUDMessagesMenu")) return;
+		auto msg = ui->GetMenu("HUDMessagesMenu");
+		if (!msg || !msg->menuObj.IsObject()) return;
+		try { HzMsgPrepare(); } catch (...) {}
+		if (!g_rxSelfLogged && msg->menuObj.HasMember("hzcRxSelfTest")) {
+			try {
+				GValue self;
+				if (msg->menuObj.Invoke("hzcRxSelfTest", &self, nullptr, 0) && self.IsString() && self.GetString() && self.GetString()[0]) {
+					const std::string all = self.GetString();
+					std::size_t i = 0;
+					while (i < all.size()) {
+						const auto j = all.find('\n', i);
+						std::string line = all.substr(i, j == std::string::npos ? std::string::npos : j - i);
+						if (!line.empty() && line.back() == '\r') line.pop_back();
+						if (!line.empty())
+							REX::INFO("comms reaction selftest: {}", line);
+						if (j == std::string::npos) break;
+						i = j + 1;
+					}
+					g_rxSelfLogged = true;
+				}
+			} catch (...) {
+			}
+		}
+		try {
+			if (a_now >= g_rxWhyNext && msg->menuObj.HasMember("hzcRxWhy")) {
+				g_rxWhyNext = a_now + 500;
+				GValue why;
+				if (msg->menuObj.Invoke("hzcRxWhy", &why, nullptr, 0) && why.IsString() && why.GetString() && why.GetString()[0])
+					REX::INFO("comms reaction: {}", why.GetString());
+			}
+		} catch (...) {
+		}
+		if (!msg->menuObj.HasMember("hzcCardPush")) {
+			if (!g_hzCardWarned) {
+				g_hzCardWarned = true;
+				REX::INFO("Horizon messages movie is not active");
+			}
+			return;
+		}
+		std::deque<RxNote> batch;
+		try {
+			std::lock_guard<std::mutex> lock(g_rxMu);
+			batch.swap(g_rxQ);
+		} catch (...) {
+			return;
+		}
+		const bool dialogue = ui->IsMenuOpen("DialogueMenu");
+		const int  vis = HzRxMessagesVisible(ui);
+		const char* visTx = vis < 0 ? "unknown" : (vis ? "1" : "0");
+		for (const auto& n : batch) {
+			if (n.tick == 0 || a_now < n.tick || a_now - n.tick > kRxMaxAge) continue;
+			hzmsg::Hit hit;
+			try { hit = hzmsg::Match(n.text, g_msgPhrases); } catch (...) { hit = {}; }
+			if (!hit.ok) continue;
+			if (hit.kind == "unavailable" && hit.sub == "busy" && hit.name.empty()) {
+				const auto who = HzCrossName();
+				if (!who.empty()) hit.name = who;
+			}
+			if (g_iniDebug && hit.kind == "crew")
+				REX::INFO("crew card: path=dll-match sub={} name=\"{}\" text=\"{}\"", hit.sub, hit.name, n.text);
+			std::string status = "invoke failed";
+			try {
+				const std::string kind = hit.kind;
+				const std::string sub = hit.sub;
+				const std::string name = hit.name;
+				const std::string value = hit.value;
+				GValue args[5] = {
+					GValue(kind.c_str()),
+					GValue(sub.c_str()),
+					GValue(name.c_str()),
+					GValue(value.c_str()),
+					GValue(n.text)
+				};
+				GValue ret;
+				if (msg->menuObj.Invoke("hzcCardPush", &ret, args, 5) && ret.IsString() && ret.GetString())
+					status = ret.GetString();
+			} catch (...) {
+				status = "invoke failed";
+			}
+#if HZ_COMMS_MSG_LOG
+			REX::INFO("hud message: text=\"{}\" kind={} sub={} tier={}", n.text, hit.kind, hit.sub, hit.tier);
+#endif
+			REX::INFO("comms reaction: {} | messages visible={} | dialogue={}", status, visTx, dialogue ? 1 : 0);
+		}
+	}
+
+#if HZ_COMMS_MSG_LOG
 	ULONGLONG g_cdbgNext = 0;
 	bool      g_cdbgLogged = false;
 	void CommsDbgPoll(ULONGLONG a_now)
@@ -1571,7 +2152,7 @@ namespace HZ
 		if (!msg->menuObj.Invoke("hzcTakeDbg", &r, nullptr, 0) || !r.IsString()) return;
 		const char* s = r.GetString();
 		if (!s || !*s) return;
-		if (!g_cdbgLogged) { g_cdbgLogged = true; REX::INFO("comms msg: message log on ([Debug] Debug=1); set Debug=0 to stop it"); }
+		if (!g_cdbgLogged) { g_cdbgLogged = true; REX::INFO("comms msg: message log on (HZ_COMMS_MSG_LOG); Debug=0 in the ini stops it"); }
 		const std::string all(s);
 		std::size_t p = 0;
 		int n = 0;
@@ -1583,12 +2164,53 @@ namespace HZ
 			p = e + 1;
 		}
 	}
+#else
+	void CommsDbgPoll(ULONGLONG) {}
+#endif
+
+	// Purpose: log the hold-breath clip geometry once per session, the first time HOLDING BREATH is on screen.
+	// The movie fills hzpClipDiag. Debug=0 returns before any menu lookup and does not latch, so turning
+	// Debug on later still logs once. This is not behind HZ_COMMS_MSG_LOG. A missing member is retried.
+	// An empty string means that state has not been shown yet, so the latch stays open.
+	// The menu check runs at most every 500 ms while the scope is open.
+	// Last modified: 2026-10-23.
+	void ScopeClipPoll(ULONGLONG a_now)
+	{
+		if (!g_iniDebug) return;
+		if (g_hzpClipLogged) return;
+		if (a_now < g_hzpClipNext) return;
+		g_hzpClipNext = a_now + 500;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui || !ui->IsMenuOpen("ScopeMenu")) return;
+		auto menu = ui->GetMenu("ScopeMenu");
+		if (!menu || !menu->menuObj.IsObject() || !menu->menuObj.HasMember("hzpClipDiag")) return;
+		try {
+			GValue self;
+			if (menu->menuObj.Invoke("hzpClipDiag", &self, nullptr, 0) && self.IsString() && self.GetString() && self.GetString()[0]) {
+				const std::string all = self.GetString();
+				std::size_t i = 0;
+				while (i < all.size()) {
+					const auto j = all.find('\n', i);
+					std::string line = all.substr(i, j == std::string::npos ? std::string::npos : j - i);
+					if (!line.empty() && line.back() == '\r') line.pop_back();
+					if (!line.empty() && g_iniDebug)
+						REX::INFO("scope holdbreath diag: {}", line);
+					if (j == std::string::npos) break;
+					i = j + 1;
+				}
+				g_hzpClipLogged = true;
+			}
+		} catch (...) {
+		}
+	}
 
 	void Poll()
 	{
 		auto now = GetTickCount64();
 		BannerPoll(now);   // v0.40.3
-		CommsDbgPoll(now);   // v0.42.0 r3 (debug only: empty unless [Debug] Debug=1)
+		CommsDbgPoll(now);   // v0.42.0.6: empty when HZ_COMMS_MSG_LOG is 0
+		CommsRxPoll(now);    // v0.42.0.7: reaction backup. Before the HUD-ready return below.
+		ScopeClipPoll(now);     // v0.42.0.8: hold-breath clip line. Before the HUD-ready return, so a scope still logs it.
 		HWND wnd = GameWindow();
 		bool down = wnd && (GetAsyncKeyState(g_vk) & 0x8000) != 0;
 		if (down && !g_wasDown) OnSettingsKey();
@@ -1623,6 +2245,10 @@ namespace HZ
 	void OnMessage(SFSE::MessagingInterface::Message* a_msg)
 	{
 		if (a_msg->type == SFSE::MessagingInterface::kPostDataLoad) {
+			// The only registration. A missing address id 86800 still hard-exits in GetEventSource.
+			// RegisterSink is address id 123821.
+			// SEH does not catch that lookup. A null source or a caught fault is logged, and the game continues.
+			RegisterShowHUDMessageSink();
 			LoadIni();
 			if (auto task = SFSE::GetTaskInterface()) {
 				task->AddPermanentTask([]() { Poll(); });
@@ -1643,7 +2269,8 @@ SFSE_PLUGIN_PRELOAD(const SFSE::PreLoadInterface* a_sfse)
 SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* a_sfse)
 {
 	SFSE::Init(a_sfse);
-	REX::INFO("HorizonUI 0.42.0 loaded");
+	// Same string as "movie builds": the version resource produced from src/hz_version.h.
+	REX::INFO("HorizonUI {} loaded", HZ::DllFileVersion());
 	HZ::FilesStartup();   // v0.37: update backup, migration / preset seeding - before any menu reads the settings
 	if (auto msg = SFSE::GetMessagingInterface())
 		msg->RegisterListener(HZ::OnMessage);

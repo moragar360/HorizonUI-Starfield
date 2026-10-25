@@ -4,7 +4,8 @@
       // identical apart from the prefix). It reads HorizonUI.default.ini, HorizonUI.user.ini, HorizonUI.state.ini and the
       // legacy HorizonUI.ini (paths relative to Data/Interface) one after the other and hands every waiting callback the
       // merged text: the defaults with user.ini laid over (hzp37Compose; mirrors HZF::Compose in HorizonUI.dll). A missing
-      // file is normal: its IOErrorEvent is caught and simply counts as "no file" (nothing is thrown or logged).
+      // file is normal: its IOErrorEvent is caught and counts as no file. The game logs every failed open, so
+      // HorizonUI.ini is opened at most once, and only when Compose still needs that unshipped file.
       // No defaults file -> the legacy HorizonUI.ini is the base. Nothing at all -> null (callers keep built-in defaults).
       private static const hzp37_FILES:Array = ["HorizonUI/HorizonUI.default.ini","HorizonUI/HorizonUI.user.ini","HorizonUI/HorizonUI.state.ini","HorizonUI/HorizonUI.ini"];
       private static const hzp37_BOM:String = String.fromCharCode(0xFEFF);
@@ -14,6 +15,8 @@
       private var hzp37Got:Array = null;
       private var hzp37Q:Array = [];          // callbacks of the running read
       private var hzp37N:Array = [];          // callbacks that arrived meanwhile (they get a fresh read)
+      private var hzp37Leg:String = null;     // last text of HorizonUI.ini, or null when that open missed
+      private var hzp37LegTry:int = 0;        // 0 = not opened yet, 1 = opened once
       private function hzp37Ws(c:String) : Boolean { return c == " " || c == "\t" || c == "\r" || c == "\n"; }
       private function hzp37Trim(s:String) : String
       {
@@ -214,10 +217,32 @@
          this.hzp37T0 = new Date().getTime();
          this.hzp37Next(0);
       }
+      private function hzp37IsLeg(i:int) : Boolean
+      {
+         if(i < 0 || i >= hzp37_FILES.length) { return false; }
+         var pth:String = String(hzp37_FILES[i]);
+         return pth.length >= 13 && pth.substr(pth.length - 13) == "HorizonUI.ini";
+      }
+      // HorizonUI.ini is not shipped. Skip it when Compose would ignore it, and open it only once when it would not.
+      private function hzp37SkipLeg(i:int) : Boolean
+      {
+         if(!this.hzp37IsLeg(i)) { return false; }
+         if(this.hzp37LegTry != 0) { return true; }
+         var def:String = this.hzp37Got[0] == null ? null : String(this.hzp37Got[0]);
+         var hd:Boolean = def != null && def.length > 0;
+         if(hd && (this.hzp37Got[1] != null || this.hzp37Got[2] != null)) { return true; }
+         return false;
+      }
       private function hzp37Next(i:int) : void
       {
          this.hzp37Step = i + 1;
          if(i >= hzp37_FILES.length) { this.hzp37Ldr = null; this.hzp37Done(); return; }
+         if(this.hzp37SkipLeg(i))
+         {
+            this.hzp37Got[i] = this.hzp37LegTry != 0 ? this.hzp37Leg : null;
+            this.hzp37Next(i + 1);
+            return;
+         }
          try
          {
             this.hzp37Ldr = new URLLoader();
@@ -233,12 +258,14 @@
          if(e == null || e.target != this.hzp37Ldr) { return; }
          var i:int = this.hzp37Step - 1;
          try { this.hzp37Got[i] = String(this.hzp37Ldr.data); } catch(err:Error) { }
+         if(this.hzp37IsLeg(i)) { this.hzp37Leg = this.hzp37Got[i] == null ? null : String(this.hzp37Got[i]); this.hzp37LegTry = 1; }
          this.hzp37Next(i + 1);
       }
       private function hzp37OnErr(e:Event) : void
       {
          if(e == null || e.target != this.hzp37Ldr) { return; }
-         this.hzp37Next(this.hzp37Step);   // missing file: normal, no error
+         if(this.hzp37IsLeg(this.hzp37Step - 1)) { this.hzp37Leg = null; this.hzp37LegTry = 1; }
+         this.hzp37Next(this.hzp37Step);   // missing file: counted once, not opened again
       }
       private function hzp37Done() : void
       {
