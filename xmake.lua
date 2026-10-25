@@ -32,7 +32,7 @@ target("HorizonUI")
     set_pcxxheader("src/pch.h")
     -- Version resource APIs (GetFileVersionInfo).
     -- HZ_COMMS_MSG_LOG lives in src/hz_version.h (0 for this release).
-    add_syslinks("version", "xinput", "shell32", "ole32")
+    add_syslinks("version", "shell32", "ole32")
 
     -- xmake's semver parser rejects a 4-part numeric version. set_version is still the file version
     -- (0.43.0.1). major.minor.patch stay the first three parts, and the fourth is the build number.

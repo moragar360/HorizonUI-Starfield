@@ -13610,6 +13610,7 @@
          if(this.hz37Edit != null)
          {
             if(code.indexOf("ch:") == 0) { if(this.hz37Edit.length < 32 && this.hz42NmOk(code.substr(3,1))) { this.hz37Edit += code.substr(3,1); } this.hz37Cf = ""; return true; }
+            if(code == "padx" || code == "pady") { return true; }   // pad X/Y are actions, never typed characters
             if(code == "bksp") { if(this.hz37Edit.length > 0) { this.hz37Edit = this.hz37Edit.substr(0,this.hz37Edit.length - 1); } this.hz37Cf = ""; return true; }
             if(code == "ok" || (code == "right" && rk == "_hz37save")) { this.hz37SaveSubmit(); return true; }
             if(code == "cancel" || code == "left") { this.hz37Edit = null; this.hz37Cf = ""; return true; }
@@ -13618,6 +13619,7 @@
             return false;
          }
          if(code.indexOf("ch:") == 0) { return true; }   // letters do nothing outside the name entry
+         if(code == "padx" || code == "pady") { return false; }   // fall through as actions, never text
          if(this.hz37Cf.length > 0)
          {
             if(r != null && rk == this.hz37Cf && (code == "ok" || code == "right" || code == "left")) { this.hz37Act(r,1); return true; }

@@ -9,10 +9,15 @@
 #include "hz_msglog_stack.h"
 #include "hz_version.h"
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 
@@ -105,10 +110,14 @@ int main()
 		Expect(b.Offer(Cap(Kind::Game, "Saving…", 1002)) == OfferResult::SaveSignal, "Saving ellipsis is a save signal");
 		Expect(b.Offer(Cap(Kind::Game, "$ManualSaveMsg", 1003)) == OfferResult::SaveSignal, "$ManualSaveMsg is a save signal");
 		Expect(b.Offer(Cap(Kind::Game, "$AutosavingMsg", 1004)) == OfferResult::SaveSignal, "$AutosavingMsg is a save signal");
+		Expect(b.Offer(Cap(Kind::Game, "$QuickSaveMsg", 1004)) == OfferResult::SaveSignal, "$QuickSaveMsg is a save signal");
+		Expect(b.Offer(Cap(Kind::Game, "$SavingMsg", 1004)) == OfferResult::SaveSignal, "$SavingMsg is a save signal");
 		Expect(b.Offer(Cap(Kind::Game, "$SomeOtherKey", 1005)) == OfferResult::Rejected, "$ keys that are not save lines are rejected");
 		ExpectEqI(static_cast<int>(b.entries.size()), 0, "save and $ keys never become rows");
-		Expect(b.Offer(Cap(Kind::Game, "No direct path seen.", 1006)) == OfferResult::Stored, "an ordinary line is stored");
-		ExpectEqI(static_cast<int>(b.entries.size()), 1, "one ordinary row");
+		Expect(b.Offer(Cap(Kind::Game, "Saving the colony", 1005)) == OfferResult::Stored, "Saving the colony is not a save line");
+		Expect(b.Offer(Cap(Kind::Quest, "Saving the colony", 1006)) == OfferResult::Stored, "quest Saving the colony is stored");
+		Expect(b.Offer(Cap(Kind::Game, "No direct path seen.", 1007)) == OfferResult::Stored, "an ordinary line is stored");
+		ExpectEqI(static_cast<int>(b.entries.size()), 3, "colony lines and one ordinary row");
 	}
 
 	// ---- Record=0 and type gates ----
@@ -148,6 +157,13 @@ int main()
 		ExpectEqI(b.entries[0].n, 3, "window slides from the last occurrence");
 		Expect(b.Offer(Cap(Kind::Game, "No direct path seen.", 18'000)) == OfferResult::Stored, "outside 3 s is a new row");
 		ExpectEqI(static_cast<int>(b.entries.size()), 2, "new row after the window");
+
+		Buffer edge;
+		Expect(edge.Offer(Cap(Kind::Game, "edge", 10'000)) == OfferResult::Stored, "edge first row");
+		Expect(edge.Offer(Cap(Kind::Game, "edge", 13'000)) == OfferResult::Deduped, "exact 3000 ms is still inside the window");
+		ExpectEqI(static_cast<int>(edge.entries.size()), 1, "exact 3000 ms keeps one row");
+		Expect(edge.Offer(Cap(Kind::Game, "edge", 16'001)) == OfferResult::Stored, "3001 ms from last is a new row");
+		ExpectEqI(static_cast<int>(edge.entries.size()), 2, "one millisecond past the window is a new row");
 
 		Expect(b.Offer(Cap(Kind::Busy, "This individual is busy.", 20'000)) == OfferResult::Stored, "first busy");
 		Expect(b.Offer(Cap(Kind::Busy, "this individual is busy.", 28'000)) == OfferResult::Deduped, "Busy window is 10 s");
@@ -356,9 +372,22 @@ int main()
 		Expect(as.find("function hzSettingsCloseAll") != std::string::npos, "AS3 has hzSettingsCloseAll");
 		Expect(main.find("hzSettingsCloseAll") != std::string::npos, "DLL forced close calls hzSettingsCloseAll");
 		Expect(main.find("for (int i = 0; i < 2; ++i)") == std::string::npos, "forced close no longer toggles at most twice");
+		Expect(main.find("attempt < 2") != std::string::npos && main.find("hzToggleSettings") != std::string::npos,
+			"close-all falls back to the old toggle loop");
 		Expect(main.find("VK_OEM_2") != std::string::npos && main.find("ch:/") != std::string::npos, "slash reaches F11 for Find");
 		Expect(main.find("USER_EVENT_FLAG::Looking | RE::USER_EVENT_FLAG::Fighting") != std::string::npos, "only Looking+Fighting stay blocked");
 		Expect(main.find("XInputGetState") != std::string::npos, "pad path exists for in-menu navigation");
+		Expect(main.find("LoadLibraryW(L\"xinput1_4.dll\")") != std::string::npos
+			&& main.find("xinput9_1_0.dll") != std::string::npos, "XInput is loaded dynamically");
+		Expect(main.find("pragma comment(lib, \"xinput.lib\")") == std::string::npos, "XInput is not a static import");
+		Expect(main.find("\"padx\"") != std::string::npos && main.find("\"pady\"") != std::string::npos, "pad X/Y are actions");
+		Expect(main.find("ch:s") == std::string::npos && main.find("ch:y") == std::string::npos, "pad X/Y do not type s or y");
+		Expect(main.find("HzMlEngineFillSEH") != std::string::npos && main.find("HzAddrSlot") != std::string::npos,
+			"engine reads use HzAddrSlot plus SEH");
+		Expect(main.find("try { Poll(); }") != std::string::npos, "the task lambda swallows exceptions");
+		Expect(main.find("JoinOrDetach") != std::string::npos && main.find("g_mlWStop") != std::string::npos,
+			"writer is stopped and joined");
+		Expect(as.find("padx") != std::string::npos && as.find("pady") != std::string::npos, "AS3 treats padx/pady as actions");
 		Expect(main.find("OnSettingsKey") != std::string::npos && main.find("g_vk") != std::string::npos, "F11 still opens from the keyboard");
 		Expect(as.find("hzMsglogOpenHint") != std::string::npos && as.find("return \"F11\"") != std::string::npos,
 			"HUD open hint is the F11 key");
@@ -385,8 +414,145 @@ int main()
 	{
 		const auto id = MakeCharacter(0, "Sam Coe");
 		Expect(id.keySource == "nameHash" && id.key.find("-n") != std::string::npos, "zero player id uses the name-hash fallback");
+		Expect(!PersistAllowed(id), "name-hash is memory-only until a real player id");
 		const auto keep = MakeCharacter(0x11, "Old");
 		Expect(keep.key == "00000011" && keep.keySource == "playerId", "rename keeps the player-id key");
+		Expect(PersistAllowed(keep), "a real player id may persist");
+	}
+
+	// ---- crash-safety: depth, 1 MB pre-read, pins, bak, type, writer join ----
+	{
+		std::string deep = "{\"type\":\"horizon.messagelog\",\"version\":1,\"x\":";
+		for (int i = 0; i < 40; ++i) deep += '[';
+		for (int i = 0; i < 40; ++i) deep += ']';
+		deep += "}";
+		auto nest = FromJson(deep);
+		Expect(nest.corrupt, "deep nesting is corrupt");
+		ExpectEqI(static_cast<int>(kJsonMaxDepth), 32, "JSON skip depth cap is 32");
+	}
+
+	{
+		const auto root = TmpRoot();
+		const auto path = root / "MessageLog" / "MessageLog_0000BIG1.json";
+		WriteFile(path, std::string(static_cast<std::size_t>(kFileMaxBytes) + 8, 'x'));
+		auto rd = ReadLogFile(path);
+		Expect(rd.tooLarge && rd.body.empty(), "1 MB is rejected before the file is read");
+		ExpectEq(rd.notice, "file too large", "oversize notice");
+		LogState st;
+		std::string notice;
+		FileStore fs(root / "MessageLog");
+		fs.Load("0000BIG1", st, notice);
+		Expect(st.entries.empty(), "oversize load starts empty");
+		Expect(notice.find("too large") != std::string::npos, "oversize load reports too large");
+		Expect(std::filesystem::is_regular_file(root / "MessageLog" / "MessageLog_0000BIG1.json.bad"),
+			"oversize file is renamed .bad");
+		std::error_code ec;
+		std::filesystem::remove_all(root, ec);
+	}
+
+	{
+		LogState st;
+		st.cap = 100;
+		for (int i = 0; i < 60; ++i) {
+			Entry e;
+			e.id = static_cast<std::uint64_t>(i + 1);
+			e.kind = Kind::Game;
+			e.text = "pin " + std::to_string(i);
+			e.pin = 1;
+			st.entries.push_back(std::move(e));
+		}
+		Buffer b;
+		b.LoadState(st);
+		ExpectEqI(b.PinCount(), kPinCap, "load demotes pins above 50");
+		Expect(static_cast<int>(b.entries.size()) <= b.Cap() + kPinCap, "load respects HistorySize plus 50 pins");
+	}
+
+	{
+		std::string many = "{\"type\":\"horizon.messagelog\",\"version\":1,\"entries\":[";
+		for (int i = 0; i < 1100; ++i) {
+			if (i) many += ',';
+			many += "{\"id\":";
+			many += std::to_string(i + 1);
+			many += ",\"k\":\"game\",\"t\":\"e";
+			many += std::to_string(i);
+			many += "\"}";
+		}
+		many += "]}";
+		auto capped = FromJson(many);
+		Expect(capped.ok, "a large valid file still parses");
+		Expect(static_cast<int>(capped.state.entries.size()) <= kLoadEntryCap, "FromJson caps at HistorySize plus 50 pins");
+	}
+
+	{
+		auto wrong = FromJson(std::string("{\"type\":\"not-a-log\",\"version\":1,\"entries\":[]}"));
+		Expect(wrong.corrupt, "wrong type is corrupt");
+		Expect(wrong.notice.find("wrong") != std::string::npos, "wrong type notice");
+	}
+
+	{
+		const auto root = TmpRoot();
+		Log log;
+		Settings s;
+		log.Configure(s, root);
+		log.buf.character = MakeCharacter(0xABCDu, "Sam");
+		log.Offer(Cap(Kind::Game, "first line", 20'000));
+		Expect(log.Flush(20'000), "first flush");
+		log.Offer(Cap(Kind::Game, "second line", 40'000));
+		Expect(log.Flush(40'000), "second flush writes bak");
+		const auto path = root / "MessageLog" / "MessageLog_0000ABCD.json";
+		const auto bak = root / "MessageLog" / "MessageLog_0000ABCD.json.bak";
+		Expect(std::filesystem::is_regular_file(bak), "Save writes a .bak");
+		Expect(ReadFile(bak).find("first line") != std::string::npos, ".bak keeps the previous file");
+		WriteFile(path, "{not json");
+		LogState st;
+		std::string notice;
+		FileStore fs(root / "MessageLog");
+		fs.Load("0000ABCD", st, notice);
+		bool recovered = false;
+		for (const auto& e : st.entries)
+			if (e.text == "first line" || e.text == "second line") recovered = true;
+		Expect(recovered, "corrupt file recovers from .bak");
+		Expect(notice.find("bak") != std::string::npos || recovered, "bak recovery notice");
+		std::error_code ec;
+		std::filesystem::remove_all(root, ec);
+	}
+
+	{
+		const auto root = TmpRoot();
+		Log log;
+		Settings s;
+		log.Configure(s, root);
+		log.buf.character = MakeCharacter(0, "Sam Coe");
+		log.Offer(Cap(Kind::Game, "new character", 21'000));
+		Expect(log.Flush(21'000), "name-hash flush is a memory-only success");
+		Expect(!std::filesystem::exists(root / "MessageLog"), "name-hash never creates a shared file");
+		std::error_code ec;
+		std::filesystem::remove_all(root, ec);
+	}
+
+	{
+		std::atomic<bool> stop{false};
+		std::atomic<bool> done{false};
+		std::mutex mu;
+		std::condition_variable cv;
+		std::thread th([&] {
+			std::unique_lock lk(mu);
+			cv.wait(lk, [&] { return stop.load(); });
+			done.store(true);
+			lk.unlock();
+			cv.notify_all();
+		});
+		stop.store(true);
+		cv.notify_all();
+		Expect(JoinOrDetach(th, done, cv, mu, kWriterJoinMs), "writer join succeeds when the worker stops");
+		Expect(!th.joinable(), "joined thread is not joinable");
+
+		std::atomic<bool> done2{false};
+		std::mutex mu2;
+		std::condition_variable cv2;
+		std::thread stuck([] { std::this_thread::sleep_for(std::chrono::seconds(8)); });
+		Expect(!JoinOrDetach(stuck, done2, cv2, mu2, 50), "writer join detaches after the bounded wait");
+		Expect(!stuck.joinable(), "timed-out worker is detached");
 	}
 
 	if (g_fails) {

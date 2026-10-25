@@ -41,7 +41,6 @@
 #include <Xinput.h>
 #include <ShlObj.h>
 #pragma comment(lib, "version.lib")
-#pragma comment(lib, "xinput.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")
 #undef GetObject
@@ -49,6 +48,7 @@
 #undef PostMessage
 #undef SendMessage
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -1045,7 +1045,16 @@ namespace HZ
 		if (g_open) REX::INFO("settings closed (HUD not safe)");
 		// 0.43.0.1: close every F11 layer in one call. The older toggle-twice loop
 		// left a deeper stack (log / settings / confirm) stuck and could freeze input.
-		HudInvoke("hzSettingsCloseAll", nullptr, nullptr, 0, true);
+		const bool closed = HudInvoke("hzSettingsCloseAll", nullptr, nullptr, 0, true);
+		if (!closed) {
+			// Older or overridden HUD gfx: the 0.42 toggle-twice path.
+			for (int attempt = 0; attempt < 2; ++attempt) {
+				GValue open;
+				if (!(HudInvoke("hzSettingsOpen", &open) && open.IsBoolean() && open.GetBoolean()))
+					break;
+				HudInvoke("hzToggleSettings", nullptr, nullptr, 0, true);
+			}
+		}
 		g_open = false;
 		g_swallow = false;
 		SetControlsBlocked(false);
@@ -1925,6 +1934,80 @@ namespace HZ
 	}
 #endif
 
+	// Purpose: location, player name, currentPlayerID, and Calendar. ID-gated
+	// (63412 / 883588 / 937673 / PlayerCharacter singleton) then the same
+	// __try/SEH pattern as the HUD-message and GMST readers.
+	// Inputs: output buffer. Outputs: ok=1 on a completed walk.
+	// Dependencies: HzAddrSlot. Last modified: 2026-10-25.
+	struct HzMlEngineRaw
+	{
+		int           ok;
+		std::uint64_t miss;
+		char          loc[65];
+		char          name[129];
+		std::uint64_t playerId;
+		double        gt;
+	};
+
+	static void HzMlEngineFillCall(HzMlEngineRaw* a_out)
+	{
+		if (!a_out) return;
+		a_out->ok = 0;
+		a_out->miss = 0;
+		a_out->loc[0] = '\0';
+		a_out->name[0] = '\0';
+		a_out->playerId = 0;
+		a_out->gt = 0;
+		const auto locId = RE::ID::TESObjectREFR::GetCurrentLocation.id();
+		const auto slmId = RE::ID::BGSSaveLoadManager::Singleton.id();
+		const auto calId = RE::ID::Calendar::Singleton.id();
+		const auto pcId = RE::ID::PlayerCharacter::Singleton.id();
+		if (locId == 0 || slmId == 0 || calId == 0 || pcId == 0) {
+			a_out->ok = -1;
+			a_out->miss = locId == 0 ? locId : (slmId == 0 ? slmId : (calId == 0 ? calId : pcId));
+			if (a_out->miss == 0) a_out->miss = locId == 0 ? 63412ull : (slmId == 0 ? 883588ull : 937673ull);
+			return;
+		}
+		if (HzAddrSlot(locId) != 1) { a_out->ok = -2; a_out->miss = locId; return; }
+		if (HzAddrSlot(slmId) != 1) { a_out->ok = -2; a_out->miss = slmId; return; }
+		if (HzAddrSlot(calId) != 1) { a_out->ok = -2; a_out->miss = calId; return; }
+		if (HzAddrSlot(pcId) != 1) { a_out->ok = -2; a_out->miss = pcId; return; }
+		if (auto pc = RE::PlayerCharacter::GetSingleton()) {
+			if (auto loc = pc->GetCurrentLocation(); loc) {
+				if (const char* n = loc->GetFullName(); n && n[0])
+					HzCopyRaw(a_out->loc, sizeof a_out->loc, n);
+			}
+			if (const char* n = pc->GetDisplayFullName(); n && n[0])
+				HzCopyRaw(a_out->name, sizeof a_out->name, n);
+		}
+		if (auto mgr = RE::BGSSaveLoadManager::GetSingleton())
+			a_out->playerId = mgr->currentPlayerID;
+		if (auto cal = RE::Calendar::GetSingleton())
+			a_out->gt = cal->GetDaysPassedExact();
+		a_out->ok = 1;
+	}
+
+#if defined(_MSC_VER)
+	static int HzMlEngineFillSEH(HzMlEngineRaw* a_out) noexcept
+	{
+		if (!a_out) return 0;
+		using Fn = void (*)(HzMlEngineRaw*);
+		Fn fn = &HzMlEngineFillCall;
+		__try {
+			fn(a_out);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+#else
+	static int HzMlEngineFillSEH(HzMlEngineRaw* a_out) noexcept
+	{
+		if (!a_out) return 0;
+		try { HzMlEngineFillCall(a_out); return 1; } catch (...) { return 0; }
+	}
+#endif
+
 	static void HzLogPhrase(const char* a_key, const char* a_text)
 	{
 		const char* status = "empty";
@@ -2223,6 +2306,7 @@ namespace HZ
 	// ---------------- 0.43.0.1 Message Log P1: capture + storage (no log UI) ----------------
 	// F11 still opens from the keyboard only. Pad input is applied only while F11 is already open.
 	hzlog::Log              g_ml;
+	std::mutex              g_mlMu;  // buf, replace, horizonDir, persist copies
 	std::mutex              g_mlQMu;
 	struct MlNote
 	{
@@ -2235,14 +2319,61 @@ namespace HZ
 	std::mutex              g_mlWMu;
 	std::condition_variable g_mlWCv;
 	std::atomic<bool>       g_mlWStop{false};
+	std::atomic<bool>       g_mlWDone{false};
 	std::atomic<bool>       g_mlWReq{false};
-	hzlog::LogState         g_mlWSnap;
+	std::atomic<bool>       g_mlLoadJobReq{false};
+	std::atomic<bool>       g_mlLoadReady{false};
+	std::atomic<bool>       g_mlSaveReq{false};
+	std::atomic<bool>       g_mlLoadReq{false};
+	std::atomic<bool>       g_mlQuitReq{false};
+	std::atomic<bool>       g_mlCapture{false};
+	std::atomic<bool>       g_mlHadSession{false};
+	struct MlWriteJob
+	{
+		hzlog::LogState         snap;
+		std::filesystem::path   dir;
+		hzlog::ReplaceFn        replace;
+		bool                    persist{false};
+	};
+	struct MlLoadJob
+	{
+		hzlog::Character        ch;
+		std::filesystem::path   dir;
+		hzlog::ReplaceFn        replace;
+		bool                    persist{false};
+		double                  gt{0};
+		std::int64_t            ts{0};
+	};
+	MlWriteJob              g_mlWJob;
+	MlLoadJob               g_mlLJob;
+	hzlog::LogState         g_mlLResult;
+	hzlog::Character        g_mlLCh;
+	std::string             g_mlLNotice;
+	double                  g_mlLGt{0};
+	std::int64_t            g_mlLTs{0};
 	std::thread             g_mlWThread;
 	bool                    g_mlWStarted = false;
+	bool                    g_mlAtExit = false;
 	bool                    g_mlInited = false;
 	bool                    g_mlMarker = false;
 	WORD                    g_mlPadLast = 0;
 	ULONGLONG               g_mlPadNext[16]{};
+	using XInputGetStateFn = DWORD (WINAPI*)(DWORD, XINPUT_STATE*);
+	HMODULE                 g_xiMod = nullptr;
+	XInputGetStateFn        g_xiGetState = nullptr;
+	bool                    g_xiTried = false;
+	ULONGLONG               g_xiNext = 0;
+	struct MlEngineCache
+	{
+		std::string   loc;
+		std::string   name;
+		std::string   body;
+		std::uint64_t playerId{0};
+		double        gt{0};
+		double        ut{-1};
+		double        lt{-1};
+	};
+	MlEngineCache           g_mlEng;
 
 	std::filesystem::path MsglogHorizonDir()
 	{
@@ -2254,52 +2385,167 @@ namespace HZ
 		return p / L"My Games" / L"Starfield" / L"SFSE" / L"HorizonUI";
 	}
 
-	void MsglogWriter()
+	void MsglogAtExit()
 	{
-		for (;;) {
-			std::unique_lock lk(g_mlWMu);
-			g_mlWCv.wait_for(lk, std::chrono::milliseconds(500), [] { return g_mlWStop.load() || g_mlWReq.load(); });
-			if (g_mlWStop.load() && !g_mlWReq.load()) break;
-			if (!g_mlWReq.load()) continue;
-			auto snap = std::move(g_mlWSnap);
-			g_mlWReq = false;
-			lk.unlock();
-			if (!g_ml.buf.settings.persist || g_ml.loadBusy) continue;
-			try {
-				hzlog::FileStore fs(g_ml.horizonDir / "MessageLog", g_ml.replace);
-				fs.Save(snap);
-			} catch (...) {
+		g_mlWStop.store(true);
+		g_mlWCv.notify_all();
+		if (g_mlWThread.joinable()) {
+			if (g_mlWDone.load()) {
+				try { g_mlWThread.join(); } catch (...) {}
+			} else {
+				try { g_mlWThread.detach(); } catch (...) {}
 			}
 		}
 	}
 
+	void MsglogWriter()
+	{
+		try {
+			for (;;) {
+				std::unique_lock lk(g_mlWMu);
+				g_mlWCv.wait_for(lk, std::chrono::milliseconds(500), [] {
+					return g_mlWStop.load() || g_mlWReq.load() || g_mlLoadJobReq.load();
+				});
+				const bool stop = g_mlWStop.load();
+				const bool wr = g_mlWReq.load();
+				const bool ld = g_mlLoadJobReq.load();
+				MlWriteJob wjob;
+				MlLoadJob ljob;
+				if (wr) {
+					wjob = std::move(g_mlWJob);
+					g_mlWReq.store(false);
+				}
+				if (ld) {
+					ljob = std::move(g_mlLJob);
+					g_mlLoadJobReq.store(false);
+				}
+				lk.unlock();
+				if (wr) {
+					try {
+						if (wjob.persist && hzlog::PersistAllowed(wjob.snap.character)) {
+							hzlog::FileStore fs(wjob.dir / "MessageLog", wjob.replace);
+							fs.Save(wjob.snap);
+						}
+					} catch (...) {
+					}
+				}
+				if (ld) {
+					try {
+						hzlog::LogState st;
+						std::string notice;
+						if (ljob.persist && hzlog::PersistAllowed(ljob.ch)) {
+							hzlog::FileStore fs(ljob.dir / "MessageLog", ljob.replace);
+							fs.Load(ljob.ch.key, st, notice);
+						}
+						std::lock_guard rlk(g_mlWMu);
+						g_mlLResult = std::move(st);
+						g_mlLNotice = std::move(notice);
+						g_mlLCh = std::move(ljob.ch);
+						g_mlLGt = ljob.gt;
+						g_mlLTs = ljob.ts;
+						g_mlLoadReady.store(true);
+					} catch (...) {
+						g_mlLoadReady.store(true);
+					}
+				}
+				if (stop && !g_mlWReq.load() && !g_mlLoadJobReq.load()) break;
+			}
+		} catch (...) {
+		}
+		g_mlWDone.store(true);
+		g_mlWCv.notify_all();
+	}
+
 	void MsglogEnsureWriter()
 	{
-		if (g_mlWStarted || !g_ml.buf.settings.persist) return;
+		bool persist = false;
+		{
+			std::lock_guard lk(g_mlMu);
+			persist = g_ml.buf.settings.persist;
+		}
+		if (g_mlWStarted || !persist) return;
 		g_mlWStarted = true;
+		g_mlWStop.store(false);
+		g_mlWDone.store(false);
 		try {
 			g_mlWThread = std::thread(MsglogWriter);
+			if (!g_mlAtExit) {
+				g_mlAtExit = true;
+				std::atexit(MsglogAtExit);
+			}
 		} catch (...) {
 			g_mlWStarted = false;
 		}
 	}
 
+	// Purpose: snapshot the buffer under g_mlMu, copy dir/replace/persist into
+	// the write job, and wake the worker. Does not skip when loadBusy: the
+	// snapshot belongs to the character that just left.
 	void MsglogRequestWrite(bool a_force)
 	{
-		if (!g_ml.buf.settings.persist || g_ml.loadBusy) return;
-		if (!g_ml.dirty && !a_force) return;
-		if (g_ml.buf.character.key.empty()) return;
-		MsglogEnsureWriter();
-		{
-			std::lock_guard lk(g_mlWMu);
-			g_mlWSnap = g_ml.buf.Snapshot();
-			g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(GetTickCount64() / 1000);
-			g_mlWSnap.lastPlayedTs = g_ml.buf.lastPlayedTs;
-			g_mlWReq = true;
-			g_ml.dirty = false;
-			g_ml.lastWriteMs = GetTickCount64();
+		try {
+			MlWriteJob job;
+			{
+				std::lock_guard lk(g_mlMu);
+				if (!g_ml.buf.settings.persist) return;
+				if (!g_ml.dirty && !a_force) return;
+				if (!hzlog::PersistAllowed(g_ml.buf.character)) return;
+				g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(GetTickCount64() / 1000);
+				job.snap = g_ml.buf.Snapshot();
+				job.dir = g_ml.horizonDir;
+				job.replace = g_ml.replace;
+				job.persist = true;
+				g_ml.dirty = false;
+				g_ml.lastWriteMs = GetTickCount64();
+			}
+			MsglogEnsureWriter();
+			{
+				std::lock_guard lk(g_mlWMu);
+				g_mlWJob = std::move(job);
+				g_mlWReq.store(true);
+			}
+			g_mlWCv.notify_one();
+		} catch (...) {
 		}
-		g_mlWCv.notify_one();
+	}
+
+	void MsglogShutdownWriter()
+	{
+		try {
+			MsglogRequestWrite(true);
+			g_mlWStop.store(true);
+			g_mlWCv.notify_all();
+			if (g_mlWStarted)
+				hzlog::JoinOrDetach(g_mlWThread, g_mlWDone, g_mlWCv, g_mlWMu, hzlog::kWriterJoinMs);
+			g_mlWStarted = false;
+		} catch (...) {
+		}
+	}
+
+	void MsglogQueueLoad(const hzlog::Character& a_ch, double a_gt, std::int64_t a_ts)
+	{
+		try {
+			MlLoadJob job;
+			{
+				std::lock_guard lk(g_mlMu);
+				job.ch = a_ch;
+				job.dir = g_ml.horizonDir;
+				job.replace = g_ml.replace;
+				job.persist = g_ml.buf.settings.persist;
+				job.gt = a_gt;
+				job.ts = a_ts;
+			}
+			if (!job.persist || !hzlog::PersistAllowed(a_ch)) return;
+			MsglogEnsureWriter();
+			{
+				std::lock_guard lk(g_mlWMu);
+				g_mlLJob = std::move(job);
+				g_mlLoadReady.store(false);
+				g_mlLoadJobReq.store(true);
+			}
+			g_mlWCv.notify_one();
+		} catch (...) {
+		}
 	}
 
 	// Purpose: read [MessageLog] from the merged INI. Record, LogTypes, HistorySize,
@@ -2331,11 +2577,16 @@ namespace HZ
 		g_mlMarker = std::filesystem::is_regular_file(HzDir() / "modules" / "notifications.marker", ec);
 		// P1 ships in this build: Record is the capture gate. The marker is the F11 row flag.
 		s.modulePresent = true;
-		g_ml.replace = [](const std::filesystem::path& a_tmp, const std::filesystem::path& a_dst) {
+		auto rep = [](const std::filesystem::path& a_tmp, const std::filesystem::path& a_dst) {
 			return HzfReplace(a_tmp, a_dst);
 		};
-		g_ml.Configure(s, MsglogHorizonDir());
-		g_mlInited = true;
+		const auto dir = MsglogHorizonDir();
+		{
+			std::lock_guard lk(g_mlMu);
+			g_ml.replace = std::move(rep);
+			g_ml.Configure(s, dir);
+			g_mlInited = true;
+		}
 		REX::INFO("message log: Record={} Persist={} HistorySize={} module marker={}",
 			s.record ? 1 : 0, s.persist ? 1 : 0, s.historySize, g_mlMarker ? 1 : 0);
 	}
@@ -2344,10 +2595,13 @@ namespace HZ
 	{
 		if (g_mlInited) return;
 		hzlog::Settings s;
-		g_ml.replace = [](const std::filesystem::path& a_tmp, const std::filesystem::path& a_dst) {
+		auto rep = [](const std::filesystem::path& a_tmp, const std::filesystem::path& a_dst) {
 			return HzfReplace(a_tmp, a_dst);
 		};
-		g_ml.Configure(s, MsglogHorizonDir());
+		const auto dir = MsglogHorizonDir();
+		std::lock_guard lk(g_mlMu);
+		g_ml.replace = std::move(rep);
+		g_ml.Configure(s, dir);
 		g_mlInited = true;
 	}
 
@@ -2383,56 +2637,6 @@ namespace HZ
 		}
 	}
 
-	std::string MsglogLocation()
-	{
-		try {
-			auto pc = RE::PlayerCharacter::GetSingleton();
-			if (pc) {
-				if (auto loc = pc->GetCurrentLocation(); loc) {
-					if (const char* n = loc->GetFullName(); n && n[0])
-						return hzlog::CapText(n, hzlog::kLocCap);
-				}
-			}
-		} catch (...) {
-		}
-		return {};
-	}
-
-	std::string MsglogPlayerName()
-	{
-		try {
-			auto pc = RE::PlayerCharacter::GetSingleton();
-			if (pc) {
-				if (const char* n = pc->GetDisplayFullName(); n && n[0])
-					return n;
-			}
-		} catch (...) {
-		}
-		return {};
-	}
-
-	std::uint64_t MsglogPlayerId()
-	{
-		try {
-			auto mgr = RE::BGSSaveLoadManager::GetSingleton();
-			if (mgr && mgr->currentPlayerID)
-				return mgr->currentPlayerID;
-		} catch (...) {
-		}
-		return 0;
-	}
-
-	double MsglogGt()
-	{
-		try {
-			auto cal = RE::Calendar::GetSingleton();
-			if (cal)
-				return cal->GetDaysPassedExact();
-		} catch (...) {
-		}
-		return 0;
-	}
-
 	void MsglogClock(double& a_ut, double& a_lt, std::string& a_body)
 	{
 		a_ut = -1;
@@ -2449,42 +2653,69 @@ namespace HZ
 		a_body = s.substr(p2 + 1);
 	}
 
+	// Purpose: one engine walk per poll while the HUD is up and we are not
+	// loading. Never per message, never during menus.
+	void MsglogRefreshEngine(bool a_switch)
+	{
+		if (!a_switch) {
+			if (!HudSafe()) return;
+			if (g_ml.loadBusy.load()) return;
+			if (!g_hudReadyLogged) return;
+		}
+		HzMlEngineRaw raw{};
+		if (!HzMlEngineFillSEH(&raw) || raw.ok != 1) return;
+		g_mlEng.loc = raw.loc;
+		g_mlEng.name = raw.name;
+		g_mlEng.playerId = raw.playerId;
+		g_mlEng.gt = raw.gt;
+		if (a_switch || (g_mlCapture.load() && HudSafe()))
+			MsglogClock(g_mlEng.ut, g_mlEng.lt, g_mlEng.body);
+		if (g_mlEng.loc.empty()) g_mlEng.loc = g_mlEng.body;
+	}
+
 	void MsglogOfferNote(const MlNote& a_n)
 	{
-		if (!g_mlInited) return;
-		hzlog::Capture c;
-		c.nowMs = a_n.tick;
-		c.ts = static_cast<std::int64_t>(std::time(nullptr));
-		c.gt = MsglogGt();
-		std::string body;
-		MsglogClock(c.ut, c.lt, body);
-		c.loc = MsglogLocation();
-		if (c.loc.empty()) c.loc = body;
-		c.text = a_n.text;
-		c.title = a_n.title;
-		if (a_n.src == 'H') {
-			if (hzlog::IsSaveLine(a_n.text)) {
+		try {
+			if (!g_mlInited) return;
+			if (!g_mlCapture.load()) return;
+			if (a_n.src == 'H' && hzlog::IsSaveLine(a_n.text)) {
 				MsglogRequestWrite(true);
 				return;
 			}
-			c.kind = hzlog::ClassifyHud(a_n.text, g_msgPhrases, c.title, c.tag);
-		} else if (a_n.src == 'Q') {
-			c.kind = hzlog::Kind::Quest;
-			if (c.title.empty()) c.title = "QUEST";
-		} else if (a_n.src == 'L') {
-			c.kind = hzlog::Kind::Location;
-			if (c.title.empty()) c.title = "LOCATION";
-		} else if (a_n.src == 'X') {
-			c.kind = hzlog::Kind::Xp;
-			if (c.title.empty()) c.title = "XP";
-		} else {
-			return;
+			hzlog::Capture c;
+			c.nowMs = a_n.tick;
+			c.ts = static_cast<std::int64_t>(std::time(nullptr));
+			c.gt = g_mlEng.gt;
+			c.ut = g_mlEng.ut;
+			c.lt = g_mlEng.lt;
+			c.loc = g_mlEng.loc;
+			c.text = a_n.text;
+			c.title = a_n.title;
+			if (a_n.src == 'H') {
+				c.kind = hzlog::ClassifyHud(a_n.text, g_msgPhrases, c.title, c.tag);
+			} else if (a_n.src == 'Q') {
+				c.kind = hzlog::Kind::Quest;
+				if (c.title.empty()) c.title = "QUEST";
+			} else if (a_n.src == 'L') {
+				c.kind = hzlog::Kind::Location;
+				if (c.title.empty()) c.title = "LOCATION";
+			} else if (a_n.src == 'X') {
+				c.kind = hzlog::Kind::Xp;
+				if (c.title.empty()) c.title = "XP";
+			} else {
+				return;
+			}
+			hzlog::OfferResult r = hzlog::OfferResult::Rejected;
+			{
+				std::lock_guard lk(g_mlMu);
+				r = g_ml.Offer(std::move(c));
+			}
+			if (r == hzlog::OfferResult::SaveSignal)
+				MsglogRequestWrite(true);
+			else if ((r == hzlog::OfferResult::Stored || r == hzlog::OfferResult::Deduped) && g_ml.ShouldFlush(a_n.tick, false))
+				MsglogRequestWrite(false);
+		} catch (...) {
 		}
-		const auto r = g_ml.Offer(std::move(c));
-		if (r == hzlog::OfferResult::SaveSignal)
-			MsglogRequestWrite(true);
-		else if ((r == hzlog::OfferResult::Stored || r == hzlog::OfferResult::Deduped) && g_ml.ShouldFlush(a_n.tick, false))
-			MsglogRequestWrite(false);
 	}
 
 	void MsglogTakeMovie()
@@ -2512,25 +2743,160 @@ namespace HZ
 		}
 	}
 
+	void MsglogPromoteId()
+	{
+		try {
+			if (!g_mlCapture.load() || g_ml.loadBusy.load()) return;
+			if (g_mlEng.playerId == 0) return;
+			bool promote = false;
+			{
+				std::lock_guard lk(g_mlMu);
+				if (g_ml.buf.character.keySource == "nameHash") {
+					g_ml.buf.character = hzlog::MakeCharacter(g_mlEng.playerId, g_mlEng.name);
+					g_ml.dirty = true;
+					promote = true;
+				}
+			}
+			if (promote)
+				MsglogRequestWrite(true);
+		} catch (...) {
+		}
+	}
+
 	void MsglogOnHudReady()
 	{
-		if (!g_mlInited) return;
-		g_ml.loadBusy = false;
-		const auto ch = hzlog::MakeCharacter(MsglogPlayerId(), MsglogPlayerName());
-		if (!g_ml.buf.character.key.empty() && g_ml.buf.character.key != ch.key && g_ml.dirty)
+		try {
+			if (!g_mlInited) return;
+			MsglogRefreshEngine(true);
+			const auto ch = hzlog::MakeCharacter(g_mlEng.playerId, g_mlEng.name);
+			const auto ts = static_cast<std::int64_t>(std::time(nullptr));
+			const auto now = GetTickCount64();
+			const bool afterLoad = g_ml.loadBusy.load();
+			bool needLoad = false;
+			{
+				std::lock_guard lk(g_mlMu);
+				const bool forceFresh = !hzlog::PersistAllowed(ch);
+				if (forceFresh || (afterLoad && !hzlog::PersistAllowed(g_ml.buf.character) && !hzlog::PersistAllowed(ch))) {
+					g_ml.buf.ResetMemory();
+					g_ml.dirty = false;
+					g_ml.buf.character = ch;
+					g_ml.lastNotice.clear();
+					g_ml.buf.StartSession(ts);
+					g_ml.buf.Prune(g_mlEng.gt);
+					g_ml.loadBusy.store(false);
+					g_mlCapture.store(true);
+					g_mlHadSession.store(true);
+				} else if (afterLoad) {
+					g_ml.buf.ResetMemory();
+					g_ml.dirty = false;
+					g_ml.buf.character = ch;
+					g_ml.lastNotice.clear();
+					needLoad = g_ml.buf.settings.persist && hzlog::PersistAllowed(ch);
+					if (!needLoad) {
+						g_ml.buf.StartSession(ts);
+						g_ml.buf.Prune(g_mlEng.gt);
+						g_ml.loadBusy.store(false);
+						g_mlCapture.store(true);
+						g_mlHadSession.store(true);
+					}
+				} else {
+					g_ml.OnHudReady(ch, g_mlEng.gt, ts, now, false);
+					needLoad = g_ml.buf.settings.persist && hzlog::PersistAllowed(ch)
+						&& g_ml.buf.entries.empty();
+					if (!needLoad) {
+						g_ml.loadBusy.store(false);
+						g_mlCapture.store(true);
+						g_mlHadSession.store(true);
+					}
+				}
+			}
+			if (needLoad)
+				MsglogQueueLoad(ch, g_mlEng.gt, ts);
+		} catch (...) {
+		}
+	}
+
+	void MsglogApplyLoad()
+	{
+		try {
+			if (!g_mlLoadReady.exchange(false)) return;
+			hzlog::LogState st;
+			hzlog::Character ch;
+			std::string notice;
+			double gt = 0;
+			std::int64_t ts = 0;
+			{
+				std::lock_guard lk(g_mlWMu);
+				st = std::move(g_mlLResult);
+				ch = std::move(g_mlLCh);
+				notice = std::move(g_mlLNotice);
+				gt = g_mlLGt;
+				ts = g_mlLTs;
+			}
+			{
+				std::lock_guard lk(g_mlMu);
+				if (!ch.key.empty())
+					g_ml.buf.character = ch;
+				if (!st.character.key.empty() || !st.entries.empty())
+					g_ml.buf.LoadState(std::move(st));
+				g_ml.lastNotice = std::move(notice);
+				g_ml.buf.StartSession(ts);
+				g_ml.buf.Prune(gt);
+				g_ml.loadBusy.store(false);
+				g_mlCapture.store(true);
+				g_mlHadSession.store(true);
+			}
+		} catch (...) {
+		}
+	}
+
+	void MsglogBeginLoad()
+	{
+		try {
+			if (g_ml.loadBusy.load() && !g_mlCapture.load()) return;
+			std::deque<MlNote> leftover;
+			{
+				std::lock_guard lock(g_mlQMu);
+				leftover.swap(g_mlQ);
+			}
+			if (g_mlCapture.load()) {
+				for (const auto& n : leftover)
+					MsglogOfferNote(n);
+			}
 			MsglogRequestWrite(true);
-		g_ml.OnHudReady(ch, MsglogGt(), static_cast<std::int64_t>(std::time(nullptr)), GetTickCount64());
-		if (g_ml.dirty)
-			MsglogRequestWrite(true);
+			g_ml.loadBusy.store(true);
+			g_mlCapture.store(false);
+		} catch (...) {
+		}
 	}
 
 	// Purpose: pad navigation only after F11 is already open. Never opens F11, the log, or any Horizon menu.
 	// Inputs: none. Outputs: queued hzSettingsKey codes. Dependencies: XInputGetState, QueueKey path.
+	void MsglogXInputEnsure()
+	{
+		if (g_xiTried) return;
+		g_xiTried = true;
+		g_xiMod = ::LoadLibraryW(L"xinput1_4.dll");
+		if (!g_xiMod) g_xiMod = ::LoadLibraryW(L"xinput9_1_0.dll");
+		if (g_xiMod)
+			g_xiGetState = reinterpret_cast<XInputGetStateFn>(::GetProcAddress(g_xiMod, "XInputGetState"));
+	}
+
 	void MsglogPadPoll()
 	{
 		if (!g_open) return;
+		MsglogXInputEnsure();
+		if (!g_xiGetState) return;
+		const ULONGLONG now = GetTickCount64();
+		if (now < g_xiNext) return;
 		XINPUT_STATE st{};
-		if (::XInputGetState(0, &st) != ERROR_SUCCESS) return;
+		const auto err = g_xiGetState(0, &st);
+		if (err == ERROR_DEVICE_NOT_CONNECTED) {
+			g_xiNext = now + 1000;
+			g_mlPadLast = 0;
+			return;
+		}
+		if (err != ERROR_SUCCESS) return;
 		const WORD b = st.Gamepad.wButtons;
 		const WORD edge = static_cast<WORD>(b & ~g_mlPadLast);
 		g_mlPadLast = b;
@@ -2538,7 +2904,6 @@ namespace HZ
 			std::lock_guard l(g_qLock);
 			if (g_keyQueue.size() < 64) g_keyQueue.emplace_back(code);
 		};
-		const ULONGLONG now = GetTickCount64();
 		struct Map { WORD mask; const char* code; int slot; bool repeat; };
 		const Map maps[] = {
 			{XINPUT_GAMEPAD_DPAD_UP, "up", 0, true},
@@ -2547,8 +2912,8 @@ namespace HZ
 			{XINPUT_GAMEPAD_DPAD_RIGHT, "right", 3, true},
 			{XINPUT_GAMEPAD_A, "ok", 4, false},
 			{XINPUT_GAMEPAD_B, "cancel", 5, false},
-			{XINPUT_GAMEPAD_X, "ch:s", 6, false},
-			{XINPUT_GAMEPAD_Y, "ch:y", 7, false},
+			{XINPUT_GAMEPAD_X, "padx", 6, false},
+			{XINPUT_GAMEPAD_Y, "pady", 7, false},
 			{XINPUT_GAMEPAD_LEFT_SHOULDER, "tabprev", 8, false},
 			{XINPUT_GAMEPAD_RIGHT_SHOULDER, "tabnext", 9, false},
 		};
@@ -2567,18 +2932,40 @@ namespace HZ
 
 	void MsglogPoll(ULONGLONG a_now)
 	{
-		if (!g_mlInited) return;
-		MsglogPadPoll();
-		try { MsglogTakeMovie(); } catch (...) {}
-		std::deque<MlNote> batch;
-		{
-			std::lock_guard lock(g_mlQMu);
-			batch.swap(g_mlQ);
+		try {
+			if (!g_mlInited) return;
+			if (g_mlSaveReq.exchange(false)) {
+				if (g_mlCapture.load() && HudSafe()) {
+					MsglogRefreshEngine(true);
+					MsglogPromoteId();
+				}
+				MsglogRequestWrite(true);
+			}
+			if (g_mlLoadReq.exchange(false))
+				MsglogBeginLoad();
+			if (g_mlQuitReq.exchange(false)) {
+				MsglogRequestWrite(true);
+				MsglogShutdownWriter();
+			}
+			MsglogApplyLoad();
+			MsglogPadPoll();
+			try { MsglogTakeMovie(); } catch (...) {}
+			if (g_mlCapture.load()) {
+				MsglogRefreshEngine(false);
+				MsglogPromoteId();
+			}
+			if (!g_mlCapture.load()) return;
+			std::deque<MlNote> batch;
+			{
+				std::lock_guard lock(g_mlQMu);
+				batch.swap(g_mlQ);
+			}
+			for (const auto& n : batch)
+				MsglogOfferNote(n);
+			if (g_ml.ShouldFlush(a_now, false))
+				MsglogRequestWrite(false);
+		} catch (...) {
 		}
-		for (const auto& n : batch)
-			MsglogOfferNote(n);
-		if (g_ml.ShouldFlush(a_now, false))
-			MsglogRequestWrite(false);
 	}
 
 	class SaveLoadSink final : public RE::BSTEventSink<RE::SaveLoadEvent>
@@ -2597,9 +2984,12 @@ namespace HZ
 					|| op == Op::kExitSaveToMainMenu || op == Op::kExitSaveToDesktop;
 				const bool loading = op == Op::kLoad || op == Op::kQuickload || op == Op::kLoadMostRecent || op == Op::kLoadNamedFile;
 				if (loading && st == St::kBegin)
-					g_ml.loadBusy = true;
+					g_mlLoadReq.store(true);
 				if (saving && (st == St::kSaveCompleted || st == St::kBegin))
-					MsglogRequestWrite(true);
+					g_mlSaveReq.store(true);
+				if ((op == Op::kExitSaveToMainMenu || op == Op::kExitSaveToDesktop)
+					&& (st == St::kSaveCompleted || st == St::kBegin))
+					g_mlQuitReq.store(true);
 			} catch (...) {
 			}
 			return RE::BSEventNotifyControl::kContinue;
@@ -2647,8 +3037,14 @@ namespace HZ
 			g_hudReadyLogged = false;
 			{
 				auto uiLoad = RE::UI::GetSingleton();
-				if (uiLoad && (uiLoad->IsMenuOpen("LoadingMenu") || uiLoad->IsMenuOpen("MainMenu")))
-					g_ml.loadBusy = true;
+				if (uiLoad) {
+					const bool loading = uiLoad->IsMenuOpen("LoadingMenu");
+					const bool menu = uiLoad->IsMenuOpen("MainMenu");
+					if (loading || (menu && g_mlCapture.load()))
+						g_mlLoadReq.store(true);
+					if (menu && !loading && g_mlHadSession.load())
+						g_mlQuitReq.store(true);
+				}
 			}
 			return;
 		}
@@ -2678,7 +3074,7 @@ namespace HZ
 			RegisterSaveLoadSink();
 			LoadIni();
 			if (auto task = SFSE::GetTaskInterface()) {
-				task->AddPermanentTask([]() { Poll(); });
+				task->AddPermanentTask([]() { try { Poll(); } catch (...) {} });
 				REX::INFO("hotkey poller registered");
 			} else {
 				REX::ERROR("no TaskInterface");
