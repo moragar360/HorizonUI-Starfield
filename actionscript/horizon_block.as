@@ -526,23 +526,14 @@
          return int(Math.max(9,Math.round(Number(fs) * ts)));
       }
 
-      // Affliction type: same TextScale path as the Vitals labels, then a 13 px on-screen
-      // floor through the tighter of Vitals and Afflictions (HZ_SCALE * HudScale when those
-      // keys are unset), including Moragar's Choice. Title copies hzBuildVitNew HEALTH /
-      // OXYGEN: hzT(...,13,"sb","acc",2) + hzHdr19. Sub copies hz26Co2T (closest secondary;
-      // hzVnHp / hzVnO2 value text is 20 px): hzT(...,13,"sb","col",0.6). Size variable:
-      // hzChipSz(fs), then ceil(13 / min(hz34S("Vitals"), hz34S("Afflictions"))).
+      // Affliction type: identical Vitals size path. HEALTH / OXYGEN and hz26Co2T use
+      // hzChipSz only (max(9, round(design * TextScale))), then the card sprite scale
+      // (hz34S). No 13 px floor: the chip matches Vitals below 13 px.
+      // Title: hzBuildVitNew HEALTH / OXYGEN, hzT(...,13,"sb","acc",2) + hzHdr19.
+      // Sub: hz26Co2T, hzT(...,13,"sb","col",0.6). TAKE / stealth / jetpack still use hzChipSzOn.
       private function hzVitTextSz(fs:Number) : int
       {
-         var sz:int = this.hzChipSz(fs);
-         var vs:Number = this.hz34S("Vitals");
-         var af:Number = this.hz34S("Afflictions");
-         if(!(vs > 0.01)) { vs = 1; }
-         if(!(af > 0.01)) { af = 1; }
-         var sc:Number = vs < af ? vs : af;
-         var fl:int = int(Math.ceil(13 / sc));
-         if(sz < fl) { sz = fl; }
-         return sz;
+         return this.hzChipSz(fs);
       }
 
       // Same formula, then the 13 px on-screen floor using the card's real scale path (hz34S),
@@ -591,7 +582,7 @@
          try { this.hzApplyFmt(o); } catch(errChip13:Error) { }
       }
 
-      // Mark an affliction line so it uses hzVitTextSz (HEALTH / OXYGEN / hz26Co2T path + 13 px floor).
+      // Mark an affliction line so it uses hzVitTextSz (HEALTH / OXYGEN / hz26Co2T, hzChipSz only).
       private function hzVit13(tf:TextField) : void
       {
          var o:Object = this.hzTxtObj(tf);
