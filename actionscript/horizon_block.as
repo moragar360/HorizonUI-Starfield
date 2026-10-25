@@ -500,6 +500,7 @@
          }
          this.hzT19Sig = "";   // hover / container cards on GLOBAL follow HudScale
          this.hzLaidOut = this.hzLayout();
+         try { this.hzAfRetryLayout(); } catch(errAfS:Error) { }
       }
 
       private function hzDot(d:Sprite, col:uint) : void
@@ -4281,8 +4282,11 @@
             {
                var c:Sprite = new Sprite(); p.addChild(c);
                var body:Sprite = new Sprite(); c.addChild(body);
-               var lb:TextField = this.hzT(c,"",48,8,240,12,"sb","main",1.6); this.hzHdr19(lb);
-               var sb:TextField = this.hzT(c,"",48,24,200,10,"rg","mut",0.4);
+               var lb:TextField = this.hzT(c,"",48,8,240,13,"sb","main",1.6);
+               var lo:Object = this.hzTxtObj(lb); if(lo) { lo.af13 = true; }
+               this.hzHdr19(lb);
+               var sb:TextField = this.hzT(c,"",48,24,200,13,"rg","mut",0.4);
+               var so:Object = this.hzTxtObj(sb); if(so) { so.af13 = true; this.hzApplyFmt(so); }
                this.hzSetPvAfCh.push({"c":c,"b":body,"l":lb,"s":sb});
                i++;
             }
@@ -4290,7 +4294,7 @@
          var pv:Sprite = this.hzSetPvAf;
          if(pv.parent != this.HorizonSettings_mc) { this.HorizonSettings_mc.addChild(pv); }
          this.HorizonSettings_mc.setChildIndex(pv,this.HorizonSettings_mc.numChildren - 1);
-         var samples:Array = [{"name":"Burn","kind":"thermal","env":false},{"name":"Radiation","kind":"radiation","env":true}];
+         var samples:Array = [{"name":"Affliction","kind":"injury","env":false},{"name":"Radiation","kind":"radiation","env":true}];
          var soak:Number = 0.45;
          var icons:Boolean = mode == 2;
          var bg:uint = this.hzDarkText() ? this.hzMix(this.hzPanelFill(),0x000000,0.14) : 0x060A0E;
@@ -6236,6 +6240,13 @@
          var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
          var fs:Number = Number(o.fs);
          var sz:int = Math.max(9,int(Math.round(fs * ts)));
+         if(o.af13)
+         {
+            var hs:Number = this.hz34F("Afflictions");
+            if(!(hs > 0.01)) { hs = 1; }
+            var fl:int = int(Math.ceil(13 / hs));
+            if(sz < fl) { sz = fl; }
+         }
          var dk:Boolean = this.hzDarkText();
          var col:uint = 0;
          switch(String(o.tone))
@@ -6965,8 +6976,10 @@
             this.hzAfNew.addChild(c);
             var body:Sprite = new Sprite(); c.addChild(body);
             var lb:TextField = this.hzT(c,"",48,8,240,13,"sb","main",1.6);
+            var lo:Object = this.hzTxtObj(lb); if(lo) { lo.af13 = true; }
             this.hzHdr19(lb);
             var sb:TextField = this.hzT(c,"",48,24,200,13,"rg","mut",0.4);
+            var so:Object = this.hzTxtObj(sb); if(so) { so.af13 = true; this.hzApplyFmt(so); }
             c.visible = false;
             this.hzAfChips.push({"c":c,"b":body,"l":lb,"s":sb});
             i++;
@@ -7018,7 +7031,7 @@
                var sys:String = this.hzPretty(String(o.sEffectIcon));
                if(sys.length == 0 || keys.indexOf(sys) >= 0) { continue; }
                keys.push(sys);
-               out.push({"key":"p:" + sys,"name":"Injury","sub":sys,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});
+               out.push({"key":"p:" + sys,"name":"Affliction","sub":sys,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});
             }
          }
          this.hzAfPers = out;
@@ -10718,7 +10731,7 @@
          for each(var b:Object in keep)
          {
             var sys:String = this.hzPretty(String(b.icon));
-            var nm:String = String(b.txt).length > 0 ? String(b.txt) : "Injury";
+            var nm:String = String(b.txt).length > 0 ? String(b.txt) : "Affliction";
             var sb:String = String(b.sub).length > 0 ? String(b.sub) : sys;
             if(sb.toLowerCase() == nm.toLowerCase()) { sb = (sys.length > 0 && sys.toLowerCase() != nm.toLowerCase()) ? sys : ""; }
             if(nm.length == 0) { continue; }

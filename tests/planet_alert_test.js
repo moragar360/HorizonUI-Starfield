@@ -809,17 +809,48 @@ pin("s = this.hzSplitCamel(s);", "affliction names split camel case in code");
 pin("p >= 97 && p <= 122 && c >= 65 && c <= 90", "the camel split is a lowercase letter before a capital");
 expect(src.indexOf('"$1 $2"') < 0, "the HUD does not pass $1 $2 to replace");
 pin('var sb:String = String(b.sub).length > 0 ? String(b.sub) : sys;', "a game subtitle is kept, and an empty one falls back to the body system");
-pin('var nm:String = String(b.txt).length > 0 ? String(b.txt) : "Injury";', "an alert without a name uses Injury");
-pin('out.push({"key":"p:" + sys,"name":"Injury","sub":sys,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});', "a plain effect chip is Injury plus the body system");
-pin('this.hzT(c,"",48,8,240,13,"sb","main",1.6);', "the affliction title is at least 13");
-pin('this.hzT(c,"",48,24,200,13,"rg","mut",0.4);', "the affliction body-system line is at least 13");
+pin('var nm:String = String(b.txt).length > 0 ? String(b.txt) : "Affliction";', "an alert without a name uses Affliction");
+pin('out.push({"key":"p:" + sys,"name":"Affliction","sub":sys,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});', "a plain effect chip is Affliction plus the body system");
+pin('{"name":"Affliction","kind":"injury","env":false}', "the F11 preview uses Affliction as the fallback title");
+pin('this.hzT(c,"",48,8,240,13,"sb","main",1.6);', "the affliction title starts at 13");
+pin('this.hzT(c,"",48,24,200,13,"rg","mut",0.4);', "the affliction body-system line starts at 13");
+pin("if(o.af13)", "affliction chip lines use the 13 px on-screen clamp");
+pin("var fl:int = int(Math.ceil(13 / hs));", "the chip floor is ceil(13 / Afflictions scale)");
+expect(src.indexOf('this.hzT(c,"",48,8,240,12,"sb","main",1.6)') < 0, "the F11 afflictions preview no longer uses 12");
+expect(src.indexOf('this.hzT(c,"",48,24,200,10,"rg","mut",0.4)') < 0, "the F11 afflictions preview no longer uses 10");
+function hzAfChipSz(fs, textScale, hudScale) {
+	let ts = textScale;
+	if (!(ts > 0)) ts = 1;
+	ts = Math.max(0.8, Math.min(1.3, ts));
+	let sz = Math.max(9, Math.round(fs * ts));
+	let hs = hudScale;
+	if (!(hs > 0.01)) hs = 1;
+	const fl = Math.ceil(13 / hs);
+	if (sz < fl) sz = fl;
+	return sz;
+}
+function hzAfChipPx(fs, textScale, hudScale) {
+	return hzAfChipSz(fs, textScale, hudScale) * hudScale;
+}
+{
+	const textScales = [0.8, 0.9, 1, 1.15, 1.3];
+	const hudScales = [0.7, 0.8, 1, 1.2, 1.4];
+	for (let ti = 0; ti < textScales.length; ti++) {
+		for (let hi = 0; hi < hudScales.length; hi++) {
+			const px = hzAfChipPx(13, textScales[ti], hudScales[hi]);
+			expect(px + 1e-9 >= 13, "chip at TextScale " + textScales[ti] + " HudScale " + hudScales[hi] + " is " + px + " px");
+		}
+	}
+	expect(hzAfChipSz(13, 0.8, 0.8) === 17, "Moragar's Choice uses ceil(13/0.8)");
+	expect(hzAfChipPx(13, 0.8, 0.8) >= 13, "Moragar's Choice stays at least 13 px");
+}
 function hzAfPlainPers(icon) {
 	const sys = hzPretty(icon);
-	return { name: "Injury", sub: sys };
+	return { name: "Affliction", sub: sys };
 }
 function hzAfAlertChip(txt, sub, icon) {
 	const sys = hzPretty(icon);
-	const nm = txt && txt.length > 0 ? txt : "Injury";
+	const nm = txt && txt.length > 0 ? txt : "Affliction";
 	let sb = sub && sub.length > 0 ? sub : sys;
 	if (sb.toLowerCase() === nm.toLowerCase()) {
 		sb = sys.length > 0 && sys.toLowerCase() !== nm.toLowerCase() ? sys : "";
@@ -828,11 +859,11 @@ function hzAfAlertChip(txt, sub, icon) {
 }
 {
 	const plain = hzAfPlainPers("PersonalEffect_CardioRespiratoryCirculatory_Negative");
-	expect(plain.name === "Injury" && plain.sub === "Cardio Respiratory Circulatory", "after a load the plain chip is Injury / body system");
+	expect(plain.name === "Affliction" && plain.sub === "Cardio Respiratory Circulatory", "after a load the plain chip is Affliction / body system");
 	const named = hzAfAlertChip("Contusions", "", "PersonalEffect_CardioRespiratoryCirculatory_Negative");
 	expect(named.name === "Contusions" && named.sub === "Cardio Respiratory Circulatory" && named.two, "a session alert keeps Contusions and the body system");
 	const empty = hzAfAlertChip("", "", "PersonalEffect_SkeletalMuscular_Negative");
-	expect(empty.name === "Injury" && empty.sub === "Skeletal Muscular", "an alert with no text still uses Injury");
+	expect(empty.name === "Affliction" && empty.sub === "Skeletal Muscular", "an alert with no text still uses Affliction");
 	expect(hzAfAlertChip("Contusions", "Contusions", "PersonalEffect_CardioRespiratoryCirculatory_Negative").sub === "Cardio Respiratory Circulatory", "a repeated name still keeps the body-system sub line");
 }
 function hzSplitCamel(s) {
