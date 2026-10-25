@@ -512,6 +512,11 @@ inline void NoteWriteSuccess(int& a_backoffMs, std::uint64_t& a_retryAt)
 	a_retryAt = 0;
 }
 
+inline bool WriteRecoveredResetsBackoff(bool a_persistHold)
+{
+	return !a_persistHold;
+}
+
 // Purpose: a recover/promote that finishes after BeginLoad belongs to the
 // old generation. Discard it so capture does not reopen for the old character.
 inline bool LoadResultStale(std::uint64_t a_jobGen, std::uint64_t a_curGen)
@@ -519,9 +524,40 @@ inline bool LoadResultStale(std::uint64_t a_jobGen, std::uint64_t a_curGen)
 	return a_jobGen != a_curGen;
 }
 
-inline bool LoadResultKeyMismatch(const std::string& a_jobKey, const std::string& a_curKey)
+// Purpose: compare the buffer key captured at queue time, never the
+// result's target key. Promotion loads a player-id file into a name-hash
+// buffer; those keys differ by design.
+inline bool LoadJobBufMismatch(const std::string& a_jobBufKey, const std::string& a_curBufKey)
 {
-	return !a_jobKey.empty() && !a_curKey.empty() && a_jobKey != a_curKey;
+	return !a_jobBufKey.empty() && !a_curBufKey.empty() && a_jobBufKey != a_curBufKey;
+}
+
+inline bool LoadApplyStale(std::uint64_t a_jobGen, std::uint64_t a_curGen,
+	const std::string& a_jobBufKey, const std::string& a_curBufKey)
+{
+	return LoadResultStale(a_jobGen, a_curGen) || LoadJobBufMismatch(a_jobBufKey, a_curBufKey);
+}
+
+inline void CopyLoadJobTag(std::uint64_t a_jobGen, const std::string& a_jobBufKey,
+	std::uint64_t& a_outGen, std::string& a_outBufKey)
+{
+	a_outGen = a_jobGen;
+	a_outBufKey = a_jobBufKey;
+}
+
+inline bool ShouldClearRecoverBusy(std::uint64_t a_jobGen, std::uint64_t a_inFlightGen)
+{
+	return a_jobGen == a_inFlightGen;
+}
+
+inline bool ApplyReopensCapture(bool a_jobHoldFlush, bool a_holdFlush)
+{
+	return !a_jobHoldFlush && !a_holdFlush;
+}
+
+inline bool MergeKeptKeyOk(const std::string& a_key, const std::string& a_parked)
+{
+	return !a_key.empty() && !a_parked.empty() && a_key == a_parked;
 }
 
 inline bool ShouldKeepHeldRows(bool a_hold, std::size_t a_count)
@@ -529,11 +565,27 @@ inline bool ShouldKeepHeldRows(bool a_hold, std::size_t a_count)
 	return a_hold && a_count > 0;
 }
 
-template <typename T>
-inline void CapKeptHeld(std::vector<T>& a_rows, std::size_t a_cap)
+// Purpose: drop the oldest unpinned rows. Pins and the newest rows stay.
+inline void CapKeptHeld(std::vector<Entry>& a_rows, std::size_t a_cap)
 {
-	if (a_rows.size() > a_cap)
-		a_rows.resize(a_cap);
+	if (a_rows.size() <= a_cap) return;
+	std::vector<Entry> pins;
+	std::vector<Entry> rest;
+	pins.reserve(a_rows.size());
+	rest.reserve(a_rows.size());
+	for (auto& e : a_rows) {
+		if (e.pin) pins.push_back(std::move(e));
+		else rest.push_back(std::move(e));
+	}
+	const auto keepRest = a_cap > pins.size() ? a_cap - pins.size() : 0;
+	if (rest.size() > keepRest) {
+		const auto drop = rest.size() - keepRest;
+		rest.erase(rest.begin(), rest.begin() + drop);
+	}
+	a_rows.clear();
+	a_rows.reserve(pins.size() + rest.size());
+	for (auto& e : pins) a_rows.push_back(std::move(e));
+	for (auto& e : rest) a_rows.push_back(std::move(e));
 }
 
 // Purpose: first promote/recover may run immediately. After a hold, wait
@@ -1812,26 +1864,54 @@ public:
 		std::string        key;
 		std::vector<Entry> entries;
 	};
-	KeptHeld keptHeld;
+	std::vector<KeptHeld> keptHeld;
+
+	KeptHeld* KeptHeldSlot(const std::string& a_key)
+	{
+		for (auto& s : keptHeld)
+			if (s.key == a_key) return &s;
+		return nullptr;
+	}
 
 	// Purpose: park held rows when a load resets memory before the read
-	// recovers. Merge them when that character's file next loads.
+	// recovers. One slot per character key. Merge when that file next loads.
 	void ParkHeldRows()
 	{
 		if (!ShouldKeepHeldRows(persistHold, buf.entries.size())) return;
-		keptHeld.key = buf.character.key;
-		keptHeld.entries = buf.entries;
-		CapKeptHeld(keptHeld.entries, static_cast<std::size_t>(kKeptHeldCap));
+		if (buf.character.key.empty()) return;
+		auto rows = buf.entries;
+		CapKeptHeld(rows, static_cast<std::size_t>(kKeptHeldCap));
+		if (auto* s = KeptHeldSlot(buf.character.key)) {
+			s->entries = std::move(rows);
+			return;
+		}
+		keptHeld.push_back({buf.character.key, std::move(rows)});
+	}
+
+	void RekeyKeptHeld(const std::string& a_from, const std::string& a_to)
+	{
+		if (a_from.empty() || a_to.empty() || a_from == a_to) return;
+		auto* src = KeptHeldSlot(a_from);
+		if (!src) return;
+		if (KeptHeldSlot(a_to)) {
+			keptHeld.erase(std::find_if(keptHeld.begin(), keptHeld.end(),
+				[&](const KeptHeld& s) { return s.key == a_from; }));
+			return;
+		}
+		src->key = a_to;
 	}
 
 	void MergeKeptHeldIfMatch(const std::string& a_key)
 	{
-		if (a_key.empty() || keptHeld.key != a_key || keptHeld.entries.empty())
+		for (auto it = keptHeld.begin(); it != keptHeld.end(); ++it) {
+			if (!MergeKeptKeyOk(a_key, it->key)) continue;
+			if (!it->entries.empty()) {
+				buf.MergeSession(it->entries);
+				dirty = true;
+			}
+			keptHeld.erase(it);
 			return;
-		buf.MergeSession(keptHeld.entries);
-		keptHeld.entries.clear();
-		keptHeld.key.clear();
-		dirty = true;
+		}
 	}
 
 	// Purpose: merge a just-read file with the in-memory session. File pins
@@ -1847,6 +1927,8 @@ public:
 			buf.MergeSession(session);
 		}
 		if (PersistAllowed(a_ch)) {
+			if (buf.character.keySource == "nameHash")
+				RekeyKeptHeld(buf.character.key, a_ch.key);
 			buf.character = std::move(a_ch);
 			for (const auto& n : names)
 				buf.RememberName(n);

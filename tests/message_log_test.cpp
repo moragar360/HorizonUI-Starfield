@@ -465,15 +465,42 @@ int main()
 			const auto win = rec == std::string::npos ? std::string() : main.substr(rec, 400);
 			Expect(win.find("NoteWriteSuccess") != std::string::npos,
 				"a successful write resets the write backoff");
+			Expect(win.find("WriteRecoveredResetsBackoff") != std::string::npos,
+				"a hold does not reset the write backoff");
 			Expect(win.find("g_mlWRetryAt") != std::string::npos,
 				"a successful write clears the write retry timer");
 		}
-		Expect(main.find("++g_mlLoadGen") != std::string::npos && main.find("LoadResultStale") != std::string::npos,
+		Expect(main.find("++g_mlLoadGen") != std::string::npos && main.find("LoadApplyStale") != std::string::npos,
 			"worker reads are tagged with the load generation");
 		Expect(main.find("job.gen = g_mlLoadGen") != std::string::npos, "each load job carries the load generation");
+		Expect(main.find("job.bufKey = g_ml.buf.character.key") != std::string::npos,
+			"each load job is tagged with the buffer key at queue time");
+		Expect(main.find("CopyLoadJobTag") != std::string::npos, "the worker copies the load-generation tag");
+		Expect(main.find("LoadApplyStale(jobGen, g_mlLoadGen, jobBufKey, g_ml.buf.character.key)") != std::string::npos,
+			"ApplyLoad compares the queued buffer key, not the result key");
+		Expect(main.find("LoadResultKeyMismatch") == std::string::npos,
+			"ApplyLoad does not compare the promotion target key");
+		Expect(main.find("ShouldClearRecoverBusy(jobGen, g_mlInFlightGen)") != std::string::npos,
+			"a stale result does not clear busy for a queued flush");
+		Expect(main.find("ApplyReopensCapture") != std::string::npos, "hold-flush apply keeps capture closed");
+		{
+			int parks = 0;
+			for (std::size_t p = 0; (p = main.find("MsglogParkHeldIfNeeded();", p)) != std::string::npos; ++p)
+				++parks;
+			ExpectEqI(parks, 2, "both HUD-ready resets park held rows");
+			int clears = 0;
+			const auto hud = main.find("void MsglogOnHudReady()");
+			const auto apply = main.find("void MsglogApplyLoad()");
+			const auto hudBody = hud != std::string::npos && apply > hud ? main.substr(hud, apply - hud) : std::string();
+			for (std::size_t p = 0; (p = hudBody.find("g_mlHoldFlush = false;", p)) != std::string::npos; ++p)
+				++clears;
+			ExpectEqI(clears, 2, "both HUD-ready resets clear the hold-flush flag");
+		}
 		Expect(main.find("ParkHeldRows") != std::string::npos && main.find("keeping {} held rows") != std::string::npos,
 			"unrecovered held rows are logged and parked");
 		Expect(main.find("MergeKeptHeldIfMatch") != std::string::npos, "parked rows merge when that character loads");
+		Expect(Slurp("src/hz_msglog.h").find("MergeKeptKeyOk") != std::string::npos,
+			"parked rows merge only when the character key matches");
 		Expect(main.find("NoteRetryFailure") != std::string::npos, "retries use exponential backoff");
 		Expect(main.find("MsglogQueueRecover") != std::string::npos, "held rows retry on the worker");
 		Expect(as.find("padx") != std::string::npos && as.find("pady") != std::string::npos, "AS3 treats padx/pady as actions");
@@ -889,9 +916,32 @@ int main()
 		Expect(!hold, "a successful load clears the hold");
 		Expect(LoadResultStale(1, 2), "a recover from the previous load generation is stale");
 		Expect(!LoadResultStale(3, 3), "a matching load generation is current");
-		Expect(LoadResultKeyMismatch("0000AAAA", "0000BBBB"), "a recover for another character is stale");
-		Expect(!LoadResultKeyMismatch("0000AAAA", "0000AAAA"), "the same character key is current");
-		Expect(!LoadResultKeyMismatch("", "0000AAAA"), "an empty job key is not a mismatch");
+		Expect(!LoadApplyStale(1, 1, "DD1C9DDC-n", "DD1C9DDC-n"),
+			"a promote tagged with the name-hash buffer key is current");
+		Expect(LoadApplyStale(1, 1, "DD1C9DDC-n", "0000AAAA"),
+			"after the buffer key changes the old tag is stale");
+		Expect(LoadJobBufMismatch("0000AAAA", "DD1C9DDC-n"),
+			"the player-id result key is not the buffer tag");
+		Expect(!LoadJobBufMismatch("DD1C9DDC-n", "DD1C9DDC-n"), "the queued buffer key matches itself");
+		Expect(!LoadJobBufMismatch("", "0000AAAA"), "an empty job tag is not a mismatch");
+		{
+			std::uint64_t copiedGen = 0;
+			std::string copiedKey;
+			CopyLoadJobTag(7, "buf-key", copiedGen, copiedKey);
+			ExpectEqI(static_cast<int>(copiedGen), 7, "the worker copies the load generation");
+			ExpectEq(copiedKey, "buf-key", "the worker copies the buffer key");
+		}
+		Expect(ShouldClearRecoverBusy(2, 2), "the in-flight job may clear busy");
+		Expect(!ShouldClearRecoverBusy(1, 2), "a stale result does not clear busy for the queued flush");
+		Expect(!ApplyReopensCapture(true, false), "a hold-flush apply keeps capture closed");
+		Expect(!ApplyReopensCapture(false, true), "a leftover hold-flush flag keeps capture closed");
+		Expect(ApplyReopensCapture(false, false), "the new character reopens capture");
+		Expect(WriteRecoveredResetsBackoff(false), "a successful write resets backoff");
+		Expect(!WriteRecoveredResetsBackoff(true), "a hold does not reset the write backoff");
+		Expect(MergeKeptKeyOk("0000ABCD", "0000ABCD"), "the same character key may merge");
+		Expect(!MergeKeptKeyOk("0000BBBB", "0000ABCD"), "A's parked rows do not match B");
+		Expect(!MergeKeptKeyOk("", "0000ABCD"), "an empty merge key is rejected");
+		Expect(!MergeKeptKeyOk("", ""), "two empty keys do not merge");
 		Expect(ShouldKeepHeldRows(true, 2), "a hold with rows is parked");
 		Expect(!ShouldKeepHeldRows(false, 2), "a recovered session is not parked");
 		Expect(!ShouldKeepHeldRows(true, 0), "an empty hold is not parked");
@@ -1111,14 +1161,25 @@ int main()
 		Expect(park.persistHold, "park fixture is held");
 		park.Offer(Cap(Kind::Game, "parked row", 230'000));
 		park.ParkHeldRows();
-		ExpectEq(park.keptHeld.key, "0000ABCD", "parked rows keep the character key");
-		ExpectEqI(static_cast<int>(park.keptHeld.entries.size()), 1, "parked row count");
-		Expect(park.keptHeld.entries.front().text == "parked row", "parked text is kept");
+		ExpectEqI(static_cast<int>(park.keptHeld.size()), 1, "one parked slot");
+		ExpectEq(park.keptHeld.front().key, "0000ABCD", "parked rows keep the character key");
+		ExpectEqI(static_cast<int>(park.keptHeld.front().entries.size()), 1, "parked row count");
+		Expect(park.keptHeld.front().entries.front().text == "parked row", "parked text is kept");
 		park.buf.ResetMemory();
 		Expect(park.buf.entries.empty(), "reset drops the live held rows");
 		if (auto* p = dynamic_cast<FileStore*>(park.store.get()))
 			p->readHook = nullptr;
 		park.LoadCurrent();
+		park.dirty = false;
+		park.MergeKeptHeldIfMatch("0000BBBB");
+		bool leakB = false;
+		for (const auto& e : park.buf.entries)
+			if (e.text == "parked row") leakB = true;
+		Expect(!leakB, "A's held row must never land in B's file");
+		ExpectEqI(static_cast<int>(park.keptHeld.size()), 1, "B's key leaves A's parked slot");
+		Expect(!park.dirty, "a key mismatch does not dirty the buffer");
+		park.MergeKeptHeldIfMatch("");
+		ExpectEqI(static_cast<int>(park.keptHeld.size()), 1, "an empty key does not merge parked rows");
 		park.MergeKeptHeldIfMatch("0000ABCD");
 		bool gotFile = false, gotParked = false;
 		for (const auto& e : park.buf.entries) {
@@ -1126,16 +1187,68 @@ int main()
 			if (e.text == "parked row") gotParked = true;
 		}
 		Expect(gotFile && gotParked, "a later load of that character merges the parked rows");
-		Expect(park.keptHeld.entries.empty(), "merged parked rows are cleared");
+		Expect(park.keptHeld.empty(), "merged parked rows are cleared");
+		Expect(park.dirty, "a matched merge dirties the buffer");
+		{
+			Log two;
+			two.persistHold = true;
+			two.buf.character = MakeCharacter(0xABCDu, "Sam");
+			two.Offer(Cap(Kind::Game, "A held", 240'000));
+			two.ParkHeldRows();
+			two.buf.ResetMemory();
+			two.buf.character = MakeCharacter(0xBBBBu, "Barrett");
+			two.Offer(Cap(Kind::Game, "B held", 250'000));
+			two.ParkHeldRows();
+			ExpectEqI(static_cast<int>(two.keptHeld.size()), 2, "each character keeps its own parked slot");
+			two.buf.ResetMemory();
+			two.dirty = false;
+			two.MergeKeptHeldIfMatch("0000BBBB");
+			ExpectEqI(static_cast<int>(two.buf.entries.size()), 1, "B merge takes only B's slot");
+			Expect(two.buf.entries.front().text == "B held", "B merge has B's row");
+			bool aInB = false;
+			for (const auto& e : two.buf.entries)
+				if (e.text == "A held") aInB = true;
+			Expect(!aInB, "A's held row is not in B after B's merge");
+			ExpectEqI(static_cast<int>(two.keptHeld.size()), 1, "A's slot remains after B merges");
+		}
+		{
+			Log nameHash;
+			nameHash.persistHold = true;
+			nameHash.buf.character = MakeCharacter(0, "Sam");
+			nameHash.Offer(Cap(Kind::Game, "namehash held", 260'000));
+			nameHash.ParkHeldRows();
+			ExpectEq(nameHash.keptHeld.front().key, nameHash.buf.character.key, "name-hash park uses the buffer key");
+			nameHash.RekeyKeptHeld(nameHash.buf.character.key, "0000ABCD");
+			ExpectEq(nameHash.keptHeld.front().key, "0000ABCD", "promotion re-keys the parked slot to the player id");
+			nameHash.buf.ResetMemory();
+			nameHash.MergeKeptHeldIfMatch("0000ABCD");
+			bool gotNh = false;
+			for (const auto& e : nameHash.buf.entries)
+				if (e.text == "namehash held") gotNh = true;
+			Expect(gotNh, "re-keyed parked rows merge on the player-id load");
+		}
 		{
 			Log cap;
 			cap.persistHold = true;
 			cap.buf.character = MakeCharacter(0xABCDu, "Sam");
-			cap.buf.entries.resize(static_cast<std::size_t>(kKeptHeldCap) + 8);
-			for (int i = 0; i < kKeptHeldCap + 8; ++i)
-				cap.buf.entries[static_cast<std::size_t>(i)].text = "cap " + std::to_string(i);
+			cap.buf.entries.resize(static_cast<std::size_t>(1008));
+			for (int i = 0; i < 1008; ++i) {
+				auto& e = cap.buf.entries[static_cast<std::size_t>(i)];
+				e.text = "cap " + std::to_string(i);
+				e.ts = i;
+				e.pin = (i == 0) ? 1 : 0;
+			}
 			cap.ParkHeldRows();
-			ExpectEqI(static_cast<int>(cap.keptHeld.entries.size()), kKeptHeldCap, "parked rows are capped");
+			ExpectEqI(static_cast<int>(cap.keptHeld.front().entries.size()), 1000, "parked rows cap at 1000");
+			bool gotNewest = false, gotOldestPin = false, gotOldestUnpinned = false;
+			for (const auto& e : cap.keptHeld.front().entries) {
+				if (e.text == "cap 1007") gotNewest = true;
+				if (e.text == "cap 0") gotOldestPin = true;
+				if (e.text == "cap 1") gotOldestUnpinned = true;
+			}
+			Expect(gotNewest, "the cap keeps the newest rows");
+			Expect(gotOldestPin, "the cap keeps pins");
+			Expect(!gotOldestUnpinned, "the cap drops the oldest unpinned rows");
 		}
 		std::error_code ec;
 		std::filesystem::remove_all(root, ec);
