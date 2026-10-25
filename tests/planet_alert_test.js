@@ -32,7 +32,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.42.0.13";', "HUD build id is 0.42.0.13");
+pin('private static const HZ_BUILD:String = "0.42.0.14";', "HUD build id is 0.42.0.14");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
@@ -577,7 +577,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.13";') >= 0, rel + " build is 0.42.0.13");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.42.0.14";') >= 0, rel + " build is 0.42.0.14");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -812,10 +812,17 @@ pin('var sb:String = String(b.sub).length > 0 ? String(b.sub) : sys;', "a game s
 pin('var nm:String = String(b.txt).length > 0 ? String(b.txt) : "Affliction";', "an alert without a name uses Affliction");
 pin('out.push({"key":"p:" + sys,"name":"Affliction","sub":sys,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});', "a plain effect chip is Affliction plus the body system");
 pin('{"name":"Affliction","kind":"injury","env":false}', "the F11 preview uses Affliction as the fallback title");
-pin('this.hzT(c,"",48,8,240,13,"sb","main",1.6);', "the affliction title starts at 13");
-pin('this.hzT(c,"",48,24,200,13,"rg","mut",0.4);', "the affliction body-system line starts at 13");
-pin("if(o.af13)", "affliction chip lines use the 13 px on-screen clamp");
-pin("var fl:int = int(Math.ceil(13 / hs));", "the chip floor is ceil(13 / Afflictions scale)");
+pin('this.hzT(c,"",48,8,240,13,"sb","main",1.6);', "the affliction title is SemiBold 13 / main / 1.6 like TAKE");
+pin('this.hzT(c,"",48,24,200,13,"sb","mut",1.2);', "the affliction sub line is SemiBold 13 / mut / 1.2 like stealth");
+pin('this.hzT(c,"HIDDEN",50,7,160,14,"bd","col",1.8,"left",0xB2C0C7);', "the stealth status chip title is Bold 14 / 1.8");
+pin('this.hzT(c,"",50,26,160,10,"sb","mut",1.2);', "the stealth status chip sub line is SemiBold muted 1.2");
+pin('this.hzT(p,"BOOST 100%",78,29,230,12,"sb","acc",1.2);', "the jetpack status sub line is SemiBold 12 / 1.2");
+pin("o.af13 ?", "affliction chip lines use the 13 px on-screen clamp");
+pin('o.af13 ? this.hzChipSzOn(fs,"Afflictions",13) : this.hzChipSz(fs)', "affliction lines use the shared chip size formula");
+pin("var sc:Number = this.hz34S(card);", "the 13 px floor uses the shared card scale path");
+pin("var fl:int = int(Math.ceil(minPx / sc));", "the chip floor is ceil(13 / hz34S)");
+expect(src.indexOf('var hs:Number = this.hz34F("Afflictions");') < 0, "the chip floor no longer uses hz34F alone");
+expect(src.indexOf('this.hzT(c,"",48,24,200,13,"rg","mut",0.4)') < 0, "the affliction sub line is no longer Regular 0.4");
 pin('try { this.hzAfFmt13(); } catch(errAfF:Error) { }', "scale changes reformat af13 fields before the chip relayout");
 pin("if(o != null && o.af13)", "every af13 field is reformatted after a scale change");
 pin("var j:int = 0;\n         this.hzAfFmt13();", "the F11 preview also reformats af13 fields");
@@ -829,19 +836,20 @@ pin("Math.max(48, barY + 9)", "a chip with a bar grows to hold the bar");
 pin("Math.max(48,23 + grow + sz13 + 6)", "a two-line chip without a bar still grows with the font");
 expect(src.indexOf('this.hzT(c,"",48,8,240,12,"sb","main",1.6)') < 0, "the F11 afflictions preview no longer uses 12");
 expect(src.indexOf('this.hzT(c,"",48,24,200,10,"rg","mut",0.4)') < 0, "the F11 afflictions preview no longer uses 10");
-function hzAfChipSz(fs, textScale, hudScale) {
+function hzAfChipSz(fs, textScale, hudScale, hzScale) {
 	let ts = textScale;
 	if (!(ts > 0)) ts = 1;
 	ts = Math.max(0.8, Math.min(1.3, ts));
 	let sz = Math.max(9, Math.round(fs * ts));
-	let hs = hudScale;
-	if (!(hs > 0.01)) hs = 1;
-	const fl = Math.ceil(13 / hs);
+	let sc = (hzScale > 0.01 ? hzScale : 1) * (hudScale > 0.01 ? hudScale : 1);
+	if (!(sc > 0.01)) sc = 1;
+	const fl = Math.ceil(13 / sc);
 	if (sz < fl) sz = fl;
 	return sz;
 }
-function hzAfChipPx(fs, textScale, hudScale) {
-	return hzAfChipSz(fs, textScale, hudScale) * hudScale;
+function hzAfChipPx(fs, textScale, hudScale, hzScale) {
+	const sc = (hzScale > 0.01 ? hzScale : 1) * (hudScale > 0.01 ? hudScale : 1);
+	return hzAfChipSz(fs, textScale, hudScale, hzScale) * sc;
 }
 function hzAfChipH(two, fs, textScale, hudScale) {
 	if (!two) return 48;
@@ -871,6 +879,8 @@ function hzAfEnvH(sz) {
 	}
 	expect(hzAfChipSz(13, 0.8, 0.8) === 17, "Moragar's Choice uses ceil(13/0.8)");
 	expect(hzAfChipPx(13, 0.8, 0.8) >= 13, "Moragar's Choice stays at least 13 px");
+	expect(hzAfChipSz(13, 1, 0.8, 1.07) === 16, "hudmenu_lrg floors through HZ_SCALE * HudScale");
+	expect(hzAfChipPx(13, 1, 0.8, 1.07) + 1e-9 >= 13, "hudmenu_lrg stays at least 13 px");
 	expect(hzAfChipSz(13, 1, 0.6) === 22, "AfflictionsScale 0.6 uses ceil(13/0.6)");
 	expect(hzAfChipH(true, 13, 1, 1) === 48, "a two-line chip stays 48 at size 13");
 	expect(hzAfChipH(true, 13, 1.3, 1) === 50, "a two-line chip is 50 at TextScale 1.3");

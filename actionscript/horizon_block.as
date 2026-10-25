@@ -504,9 +504,9 @@
          this.hzLaidOut = this.hzLayout();
       }
 
-      // af13 clamp uses hz34F("Afflictions"). Re-run after HudScale / AfflictionsScale so F11 live
-      // changes (including Moragar's Choice) do not keep the previous font size. hzTxtTint skips
-      // when the tint is unchanged, and hzAfRetryLayout does not touch the F11 preview chips.
+      // af13 clamp uses hzChipSzOn / hz34S("Afflictions"). Re-run after HudScale / AfflictionsScale
+      // so F11 live changes (including Moragar's Choice) do not keep the previous font size.
+      // hzTxtTint skips when the tint is unchanged, and hzAfRetryLayout does not touch the F11 preview chips.
       private function hzAfFmt13() : void
       {
          for each(var o:Object in this.hzTexts)
@@ -515,15 +515,32 @@
          }
       }
 
-      private function hzAf13Sz() : int
+      // Shared v0.19 chip size: max(9, round(design * TextScale)). Every Horizon card uses this
+      // before the card sprite scale (hz34S = HZ_SCALE * HudScale or per-card scale).
+      private function hzChipSz(fs:Number) : int
       {
          var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
-         var sz:int = Math.max(9,int(Math.round(13 * ts)));
-         var hs:Number = this.hz34F("Afflictions");
-         if(!(hs > 0.01)) { hs = 1; }
-         var fl:int = int(Math.ceil(13 / hs));
-         if(sz < fl) { sz = fl; }
+         return int(Math.max(9,Math.round(Number(fs) * ts)));
+      }
+
+      // Same formula, then the 13 px on-screen floor using the card's real scale path (hz34S),
+      // not hz34F alone. Moragar's Choice (HudScale 0.8) still stays at least 13 px on screen.
+      private function hzChipSzOn(fs:Number, card:String, minPx:Number) : int
+      {
+         var sz:int = this.hzChipSz(fs);
+         if(minPx > 0)
+         {
+            var sc:Number = this.hz34S(card);
+            if(!(sc > 0.01)) { sc = 1; }
+            var fl:int = int(Math.ceil(minPx / sc));
+            if(sz < fl) { sz = fl; }
+         }
          return sz;
+      }
+
+      private function hzAf13Sz() : int
+      {
+         return this.hzChipSzOn(13,"Afflictions",13);
       }
 
       private function hzDot(d:Sprite, col:uint) : void
@@ -3509,7 +3526,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.42.0.13";
+      private static const HZ_BUILD:String = "0.42.0.14";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -4308,7 +4325,7 @@
                var lb:TextField = this.hzT(c,"",48,8,240,13,"sb","main",1.6);
                var lo:Object = this.hzTxtObj(lb); if(lo) { lo.af13 = true; }
                this.hzHdr19(lb);
-               var sb:TextField = this.hzT(c,"",48,24,200,13,"rg","mut",0.4);
+               var sb:TextField = this.hzT(c,"",48,24,200,13,"sb","mut",1.2);
                var so:Object = this.hzTxtObj(sb); if(so) { so.af13 = true; this.hzApplyFmt(so); }
                this.hzSetPvAfCh.push({"c":c,"b":body,"l":lb,"s":sb});
                i++;
@@ -6267,16 +6284,8 @@
 
       private function hzApplyFmt19(o:Object) : void
       {
-         var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
          var fs:Number = Number(o.fs);
-         var sz:int = Math.max(9,int(Math.round(fs * ts)));
-         if(o.af13)
-         {
-            var hs:Number = this.hz34F("Afflictions");
-            if(!(hs > 0.01)) { hs = 1; }
-            var fl:int = int(Math.ceil(13 / hs));
-            if(sz < fl) { sz = fl; }
-         }
+         var sz:int = o.af13 ? this.hzChipSzOn(fs,"Afflictions",13) : this.hzChipSz(fs);
          var dk:Boolean = this.hzDarkText();
          var col:uint = 0;
          switch(String(o.tone))
@@ -7008,7 +7017,7 @@
             var lb:TextField = this.hzT(c,"",48,8,240,13,"sb","main",1.6);
             var lo:Object = this.hzTxtObj(lb); if(lo) { lo.af13 = true; }
             this.hzHdr19(lb);
-            var sb:TextField = this.hzT(c,"",48,24,200,13,"rg","mut",0.4);
+            var sb:TextField = this.hzT(c,"",48,24,200,13,"sb","mut",1.2);
             var so:Object = this.hzTxtObj(sb); if(so) { so.af13 = true; this.hzApplyFmt(so); }
             c.visible = false;
             this.hzAfChips.push({"c":c,"b":body,"l":lb,"s":sb});

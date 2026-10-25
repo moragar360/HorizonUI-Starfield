@@ -7,7 +7,7 @@
       // Horizon draws its own panels from the same data providers. Settings: [Scanner] of HorizonUI.default.ini with
       // HorizonUI.user.ini laid over (the shared reader, prefix hzs37); read when the scanner opens and polled every
       // 2 s while it is open, so an F11 save (HzRev) applies without reopening.
-      private static const HZS_VERSION:String = "0.42.0.13";   // 0.42.0.13: the scanner movie's build version (= the DLL file version); bump here only
+      private static const HZS_VERSION:String = "0.42.0.14";   // 0.42.0.14: the scanner movie's build version (= the DLL file version); bump here only
       private static const HZS_LRG:Boolean = __HZS_LRG__;
       private static const HZS_SCALE:Number = HZS_LRG ? 1.07 : 1;
       // design tokens 0.3.1 (exotic purple added in v0.40)

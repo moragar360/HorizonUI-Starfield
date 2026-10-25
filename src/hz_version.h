@@ -4,7 +4,7 @@
 // res/HorizonUI.rc.in includes this header, and the plugin logs and sends the same
 // string (or the version resource that this header produced). Do not copy the
 // numbers into the resource script or into a log line.
-// Product version matches the file version (0.42.0.13). The settings-schema string
+// Product version matches the file version (0.42.0.14). The settings-schema string
 // in the plugin (HZF::kVersion, "0.42.0") is a different value: preset age and the
 // update backup compare against that, not against this file version.
 // Last modified: 2026-10-25.
@@ -12,16 +12,16 @@
 #define HZ_FILE_VERSION_MAJOR 0
 #define HZ_FILE_VERSION_MINOR 42
 #define HZ_FILE_VERSION_PATCH 0
-#define HZ_FILE_VERSION_BUILD 13
-#define HZ_FILE_VERSION_STR "0.42.0.13"
+#define HZ_FILE_VERSION_BUILD 14
+#define HZ_FILE_VERSION_STR "0.42.0.14"
 
-// 0.42.0.13: 0 is the release state. 1 writes the verbose HUD-message trace (the
+// 0.42.0.14: 0 is the release state. 1 writes the verbose HUD-message trace (the
 // "hud message:" line and the Comms movie queue as "comms msg:" lines). The card
 // backup (the queue, Poll, hzcCardPush, and the one-line "comms reaction:" status)
 // stays compiled either way. The settings schema above is not this switch.
 #define HZ_COMMS_MSG_LOG 0
 
-// 0.42.0.13: 0 is the release state. 1 logs every ShowHUDMessageEvent as
+// 0.42.0.14: 0 is the release state. 1 logs every ShowHUDMessageEvent as
 // "hud capture:" with no text filter. It is independent of HZ_COMMS_MSG_LOG.
 #define HZ_HUD_MSG_CAPTURE 0
 
