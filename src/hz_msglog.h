@@ -570,6 +570,53 @@ inline bool ShouldParkDirtyRows(bool a_dirty, bool a_allowed, std::size_t a_coun
 	return a_dirty && a_allowed && a_count > 0;
 }
 
+// Purpose: RequestWrite clears dirty before the worker finishes. HUD-ready
+// treats an in-flight save as dirty so those rows are parked.
+inline bool PendingCountsAsDirty(bool a_dirty, bool a_pending)
+{
+	return a_dirty || a_pending;
+}
+
+// Purpose: a failed save for another character parks that job. Same-key
+// failures stay on the live buffer. Never park an empty key.
+inline bool WriteFailParksJob(const std::string& a_jobKey, const std::string& a_curKey)
+{
+	return !a_jobKey.empty() && a_jobKey != a_curKey;
+}
+
+// Purpose: the same parked event is the same text plus the same id or
+// the same time. Id alone is not enough: ResetMemory restarts nextId.
+inline bool SameParkedRow(const Entry& a_a, const Entry& a_b)
+{
+	if (a_a.text != a_b.text)
+		return false;
+	if (a_a.ts == a_b.ts)
+		return true;
+	return a_a.id && a_b.id && a_a.id == a_b.id;
+}
+
+inline bool HasSameParkedRow(const std::vector<Entry>& a_rows, const Entry& a_in)
+{
+	for (const auto& e : a_rows) {
+		if (SameParkedRow(e, a_in))
+			return true;
+	}
+	return false;
+}
+
+// Purpose: dirty-park merge skips rows already in the file (same id or
+// time and text) so n does not bump.
+inline std::vector<Entry> ExactParkedNew(const std::vector<Entry>& a_have, const std::vector<Entry>& a_in)
+{
+	std::vector<Entry> out;
+	out.reserve(a_in.size());
+	for (const auto& in : a_in) {
+		if (!HasSameParkedRow(a_have, in))
+			out.push_back(in);
+	}
+	return out;
+}
+
 // Purpose: a failed promote/recover for a name-hash buffer parks under the
 // player-id target. Other buffers keep their own key.
 inline std::string ParkHeldKey(const Character& a_ch, const std::string& a_holdTarget)
@@ -600,6 +647,17 @@ inline void CapKeptHeld(std::vector<Entry>& a_rows, std::size_t a_cap)
 	a_rows.reserve(pins.size() + rest.size());
 	for (auto& e : pins) a_rows.push_back(std::move(e));
 	for (auto& e : rest) a_rows.push_back(std::move(e));
+}
+
+// Purpose: append parked rows, skip exact matches, then cap. A second park
+// of the same snapshot must not raise n later.
+inline void AppendParkedRows(std::vector<Entry>& a_dst, const std::vector<Entry>& a_src)
+{
+	for (const auto& in : a_src) {
+		if (!HasSameParkedRow(a_dst, in))
+			a_dst.push_back(in);
+	}
+	CapKeptHeld(a_dst, static_cast<std::size_t>(kKeptHeldCap));
 }
 
 // Purpose: first promote/recover may run immediately. After a hold, wait
@@ -1793,6 +1851,7 @@ public:
 	std::uint64_t             lastChangeMs{0};
 	std::uint64_t             lastWriteMs{0};
 	bool                      dirty{false};
+	bool                      writePending{false};
 	bool                      persistHold{false};
 	std::string               holdTargetKey;
 	int                       retryBackoffMs{0};
@@ -1897,26 +1956,41 @@ public:
 	void ParkHeldRows()
 	{
 		const bool readHold = ShouldKeepHeldRows(persistHold, buf.entries.size());
-		const bool writeHold = ShouldParkDirtyRows(dirty, PersistAllowed(buf.character), buf.entries.size());
+		const bool writeHold = ShouldParkDirtyRows(
+			PendingCountsAsDirty(dirty, writePending), PersistAllowed(buf.character), buf.entries.size());
 		if (!readHold && !writeHold) return;
 		const auto key = readHold ? ParkHeldKey(buf.character, holdTargetKey) : buf.character.key;
 		if (key.empty()) return;
-		auto rows = buf.entries;
 		if (auto* s = KeptHeldSlot(key)) {
-			s->entries.insert(s->entries.end(), rows.begin(), rows.end());
-			CapKeptHeld(s->entries, static_cast<std::size_t>(kKeptHeldCap));
+			AppendParkedRows(s->entries, buf.entries);
 			return;
 		}
+		auto rows = buf.entries;
 		CapKeptHeld(rows, static_cast<std::size_t>(kKeptHeldCap));
 		keptHeld.push_back({key, std::move(rows)});
+	}
+
+	// Purpose: a failed save for another character parks that job's
+	// snapshot under the job key. Append, then cap. Never an empty key.
+	void ParkWriteFailure(const std::string& a_key, const std::vector<Entry>& a_rows)
+	{
+		if (a_key.empty() || a_rows.empty()) return;
+		if (auto* s = KeptHeldSlot(a_key)) {
+			AppendParkedRows(s->entries, a_rows);
+			return;
+		}
+		auto rows = a_rows;
+		CapKeptHeld(rows, static_cast<std::size_t>(kKeptHeldCap));
+		keptHeld.push_back({a_key, std::move(rows)});
 	}
 
 	void MergeKeptHeldIfMatch(const std::string& a_key)
 	{
 		for (auto it = keptHeld.begin(); it != keptHeld.end(); ++it) {
 			if (!MergeKeptKeyOk(a_key, it->key)) continue;
-			if (!it->entries.empty()) {
-				buf.MergeSession(it->entries);
+			const auto add = ExactParkedNew(buf.entries, it->entries);
+			if (!add.empty()) {
+				buf.MergeSession(add);
 				dirty = true;
 			}
 			keptHeld.erase(it);

@@ -83,6 +83,14 @@ std::string ReadFile(const std::filesystem::path& a_p)
 	return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 }
 
+int CountNeedle(const std::string& a_hay, const std::string& a_needle)
+{
+	int n = 0;
+	for (std::size_t p = 0; (p = a_hay.find(a_needle, p)) != std::string::npos; p += a_needle.size())
+		++n;
+	return n;
+}
+
 void WriteFile(const std::filesystem::path& a_p, const std::string& a_s)
 {
 	std::error_code ec;
@@ -472,7 +480,12 @@ int main()
 		}
 		Expect(main.find("++g_mlLoadGen") != std::string::npos && main.find("LoadApplyStale") != std::string::npos,
 			"worker reads are tagged with the load generation");
-		Expect(main.find("job.gen = g_mlLoadGen") != std::string::npos, "each load job carries the load generation");
+		{
+			int gens = 0;
+			for (std::size_t p = 0; (p = main.find("job.gen = g_mlLoadGen", p)) != std::string::npos; ++p)
+				++gens;
+			ExpectEqI(gens, 2, "load and save jobs each carry the load generation");
+		}
 		Expect(main.find("job.bufKey = g_ml.buf.character.key") != std::string::npos,
 			"each load job is tagged with the buffer key at queue time");
 		Expect(main.find("CopyLoadJobTag") != std::string::npos, "the worker copies the load-generation tag");
@@ -505,6 +518,22 @@ int main()
 			"unrecovered held rows are logged and parked");
 		Expect(main.find("ShouldParkDirtyRows") != std::string::npos,
 			"HUD-ready parks dirty unsaved rows before ResetMemory");
+		Expect(main.find("PendingCountsAsDirty") != std::string::npos,
+			"HUD-ready treats a pending save as dirty");
+		Expect(main.find("job.key = g_ml.buf.character.key") != std::string::npos,
+			"each save job carries the character key");
+		Expect(main.find("g_ml.writePending = true") != std::string::npos,
+			"RequestWrite sets the pending-save flag");
+		{
+			int clearsPending = 0;
+			for (std::size_t p = 0; (p = main.find("g_ml.writePending = false", p)) != std::string::npos; ++p)
+				++clearsPending;
+			ExpectEqI(clearsPending, 2, "Poll clears the pending-save flag on fail and recover");
+		}
+		Expect(main.find("WriteFailParksJob") != std::string::npos,
+			"a failed save for another key parks that job");
+		Expect(main.find("ParkWriteFailure") != std::string::npos,
+			"failed-save rows park under the job key");
 		Expect(main.find("MergeKeptHeldIfMatch") != std::string::npos, "parked rows merge when that character loads");
 		Expect(Slurp("src/hz_msglog.h").find("MergeKeptKeyOk") != std::string::npos,
 			"parked rows merge only when the character key matches");
@@ -962,6 +991,14 @@ int main()
 		Expect(!ShouldParkDirtyRows(false, true, 1), "a clean buffer is not parked as dirty");
 		Expect(!ShouldParkDirtyRows(true, false, 1), "a name-hash dirty buffer is not parked");
 		Expect(!ShouldParkDirtyRows(true, true, 0), "an empty dirty buffer is not parked");
+		Expect(PendingCountsAsDirty(false, true), "a pending save counts as dirty");
+		Expect(PendingCountsAsDirty(true, false), "a dirty buffer still counts as dirty");
+		Expect(!PendingCountsAsDirty(false, false), "idle is not dirty");
+		Expect(WriteFailParksJob("0000ABCD", "0000BBBB"), "a failed save for another key parks that job");
+		Expect(!WriteFailParksJob("0000ABCD", "0000ABCD"), "a failed save for the current key stays on the buffer");
+		Expect(!WriteFailParksJob("", "0000BBBB"), "an empty job key is not parked");
+		Expect(ShouldParkDirtyRows(PendingCountsAsDirty(false, true), true, 1),
+			"a pending persist-allowed save is parked");
 		{
 			Character nh = MakeCharacter(0, "Sam");
 			Character pid = MakeCharacter(0xABCDu, "Sam");
@@ -1511,6 +1548,109 @@ int main()
 			const auto bPath = root / "MessageLog" / "MessageLog_0000BBBB.json";
 			Expect(ReadFile(bPath).find("B failthru") != std::string::npos, "B's fail-through row is in B's file");
 			Expect(ReadFile(bPath).find("A failthru") == std::string::npos, "A's fail-through row is not in B's file");
+		}
+		{
+			Log p2;
+			Settings p2s;
+			p2.Configure(p2s, root);
+			p2.ApplyPersist(true);
+			p2.buf.character = MakeCharacter(0xABCDu, "Sam");
+			p2.Offer(Cap(Kind::Game, "exact park", 500'000));
+			Expect(p2.Flush(501'000), "seed the file for exact-match park");
+			ExpectEqI(p2.buf.entries.front().n, 1, "seed n is 1");
+			p2.dirty = true;
+			p2.ParkHeldRows();
+			p2.dirty = false;
+			p2.MergeKeptHeldIfMatch("0000ABCD");
+			ExpectEqI(static_cast<int>(p2.buf.entries.size()), 1, "exact park stays one row");
+			ExpectEqI(p2.buf.entries.front().n, 1, "exact dirty-park match does not bump n");
+			Expect(!p2.dirty, "exact park merge does not dirty a file that already has the row");
+			Entry copy = p2.buf.entries.front();
+			copy.id = 99999;
+			p2.ParkWriteFailure("0000ABCD", std::vector<Entry>{copy});
+			p2.MergeKeptHeldIfMatch("0000ABCD");
+			ExpectEqI(p2.buf.entries.front().n, 1, "same time and text does not bump n");
+		}
+		{
+			Log queued;
+			queued.Configure(s, root);
+			queued.ApplyPersist(true);
+			queued.buf.character = MakeCharacter(0xABCDu, "Sam");
+			queued.Offer(Cap(Kind::Game, "A queued save", 600'000));
+			Expect(queued.dirty, "queued save starts dirty");
+			const auto snap = queued.buf.Snapshot();
+			const auto jobKey = queued.buf.character.key;
+			queued.dirty = false;
+			queued.writePending = true;
+			Expect(PendingCountsAsDirty(queued.dirty, queued.writePending),
+				"a queued save is pending at HUD-ready");
+			queued.ParkHeldRows();
+			queued.NoteRetrySuccess();
+			queued.buf.ResetMemory();
+			queued.dirty = false;
+			queued.buf.character = MakeCharacter(0xBBBBu, "Barrett");
+			Expect(WriteFailParksJob(jobKey, queued.buf.character.key),
+				"queued fail parks under A");
+			queued.ParkWriteFailure(jobKey, snap.entries);
+			queued.writePending = false;
+			queued.ParkWriteFailure("", snap.entries);
+			ExpectEqI(static_cast<int>(queued.keptHeld.size()), 1, "queued fail never parks an empty key");
+			ExpectEqI(static_cast<int>(queued.keptHeld.front().entries.size()), 1,
+				"queued fail does not double-park the same snap");
+			queued.Offer(Cap(Kind::Game, "B after queued", 610'000));
+			Expect(queued.Flush(611'000), "B writes after the queued fail");
+			const auto bQueued = root / "MessageLog" / "MessageLog_0000BBBB.json";
+			Expect(ReadFile(bQueued).find("B after queued") != std::string::npos, "B's file has B's queued-test row");
+			Expect(ReadFile(bQueued).find("A queued save") == std::string::npos, "B's file has none of the queued A row");
+			queued.buf.ResetMemory();
+			queued.dirty = false;
+			queued.buf.character = MakeCharacter(0xABCDu, "Sam");
+			queued.LoadCurrent();
+			queued.dirty = false;
+			queued.MergeKeptHeldIfMatch("0000ABCD");
+			Expect(queued.Flush(620'000), "A writes after the queued fail");
+			ExpectEqI(CountNeedle(ReadFile(path), "A queued save"), 1, "A's queued row is in A's file exactly once");
+			Expect(ReadFile(bQueued).find("A queued save") == std::string::npos, "A's queued row is not in B's file");
+		}
+		{
+			Log running;
+			running.Configure(s, root);
+			running.ApplyPersist(true);
+			running.buf.character = MakeCharacter(0xABCDu, "Sam");
+			running.Offer(Cap(Kind::Game, "A running save", 700'000));
+			Expect(running.dirty, "running save starts dirty");
+			const auto snap = running.buf.Snapshot();
+			const auto jobKey = running.buf.character.key;
+			running.dirty = false;
+			running.writePending = true;
+			Expect(PendingCountsAsDirty(running.dirty, running.writePending),
+				"a running save is pending at HUD-ready");
+			running.ParkHeldRows();
+			running.NoteRetrySuccess();
+			running.buf.ResetMemory();
+			running.dirty = false;
+			running.buf.character = MakeCharacter(0xBBBBu, "Barrett");
+			Expect(WriteFailParksJob(jobKey, running.buf.character.key),
+				"running fail parks under A");
+			running.ParkWriteFailure(jobKey, snap.entries);
+			running.writePending = false;
+			ExpectEqI(static_cast<int>(running.keptHeld.size()), 1, "running fail parks one slot");
+			ExpectEqI(static_cast<int>(running.keptHeld.front().entries.size()), 1,
+				"running fail does not double-park the worker snap");
+			running.Offer(Cap(Kind::Game, "B after running", 710'000));
+			Expect(running.Flush(711'000), "B writes after the running fail");
+			const auto bRunning = root / "MessageLog" / "MessageLog_0000BBBB.json";
+			Expect(ReadFile(bRunning).find("B after running") != std::string::npos, "B's file has B's running-test row");
+			Expect(ReadFile(bRunning).find("A running save") == std::string::npos, "B's file has none of the running A row");
+			running.buf.ResetMemory();
+			running.dirty = false;
+			running.buf.character = MakeCharacter(0xABCDu, "Sam");
+			running.LoadCurrent();
+			running.dirty = false;
+			running.MergeKeptHeldIfMatch("0000ABCD");
+			Expect(running.Flush(720'000), "A writes after the running fail");
+			ExpectEqI(CountNeedle(ReadFile(path), "A running save"), 1, "A's running row is in A's file exactly once");
+			Expect(ReadFile(bRunning).find("A running save") == std::string::npos, "A's running row is not in B's file");
 		}
 		std::error_code ec;
 		std::filesystem::remove_all(root, ec);

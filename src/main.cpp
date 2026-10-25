@@ -2334,6 +2334,8 @@ namespace HZ
 		std::filesystem::path   dir;
 		hzlog::ReplaceFn        replace;
 		bool                    persist{false};
+		std::string             key;
+		std::uint64_t           gen{0};
 	};
 	struct MlLoadJob
 	{
@@ -2348,6 +2350,9 @@ namespace HZ
 		bool                    holdFlush{false};
 	};
 	MlWriteJob              g_mlWJob;
+	hzlog::LogState         g_mlWFailSnap;
+	std::string             g_mlWFailKey;
+	std::uint64_t           g_mlWFailGen{0};
 	MlLoadJob               g_mlLJob;
 	hzlog::LogState         g_mlLResult;
 	hzlog::Character        g_mlLCh;
@@ -2459,9 +2464,13 @@ namespace HZ
 					}
 					bool failed = false;
 					hzlog::NoteWorkerSave(ok, failed);
-					if (failed)
+					if (failed) {
+						std::lock_guard wlk(g_mlWMu);
+						g_mlWFailSnap = std::move(wjob.snap);
+						g_mlWFailKey = std::move(wjob.key);
+						g_mlWFailGen = wjob.gen;
 						g_mlWFailed.store(true);
-					else
+					} else
 						g_mlWRecovered.store(true);
 				}
 				if (ld) {
@@ -2547,10 +2556,13 @@ namespace HZ
 				if (!hzlog::PersistAllowed(g_ml.buf.character)) return;
 				g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(GetTickCount64() / 1000);
 				job.snap = g_ml.buf.Snapshot();
+				job.key = g_ml.buf.character.key;
+				job.gen = g_mlLoadGen;
 				job.dir = g_ml.horizonDir;
 				job.replace = g_ml.replace;
 				job.persist = true;
 				g_ml.dirty = false;
+				g_ml.writePending = true;
 				g_ml.lastWriteMs = GetTickCount64();
 			}
 			MsglogEnsureWriter();
@@ -2868,7 +2880,9 @@ namespace HZ
 	void MsglogParkHeldIfNeeded()
 	{
 		if (!hzlog::ShouldKeepHeldRows(g_ml.persistHold, g_ml.buf.entries.size())
-			&& !hzlog::ShouldParkDirtyRows(g_ml.dirty, hzlog::PersistAllowed(g_ml.buf.character), g_ml.buf.entries.size()))
+			&& !hzlog::ShouldParkDirtyRows(
+				hzlog::PendingCountsAsDirty(g_ml.dirty, g_ml.writePending),
+				hzlog::PersistAllowed(g_ml.buf.character), g_ml.buf.entries.size()))
 			return;
 		REX::WARN("message log: keeping {} held rows for {}", g_ml.buf.entries.size(), g_ml.buf.character.key);
 		g_ml.ParkHeldRows();
@@ -3139,14 +3153,27 @@ namespace HZ
 		try {
 			if (!g_mlInited) return;
 			if (g_mlWFailed.exchange(false)) {
+				hzlog::LogState failSnap;
+				std::string failKey;
+				{
+					std::lock_guard wlk(g_mlWMu);
+					failSnap = std::move(g_mlWFailSnap);
+					failKey = std::move(g_mlWFailKey);
+				}
 				std::lock_guard lk(g_mlMu);
-				hzlog::NoteWriteFailure(g_ml.dirty);
-				g_ml.NoteRetryFailure(a_now);
-				g_mlWRetryAt.store(g_ml.retryAt);
+				g_ml.writePending = false;
+				if (hzlog::WriteFailParksJob(failKey, g_ml.buf.character.key)) {
+					g_ml.ParkWriteFailure(failKey, failSnap.entries);
+				} else {
+					hzlog::NoteWriteFailure(g_ml.dirty);
+					g_ml.NoteRetryFailure(a_now);
+					g_mlWRetryAt.store(g_ml.retryAt);
+				}
 				MsglogNotePersistLog(false);
 			}
 			if (g_mlWRecovered.exchange(false)) {
 				std::lock_guard lk(g_mlMu);
+				g_ml.writePending = false;
 				if (hzlog::WriteRecoveredResetsBackoff(g_ml.persistHold)) {
 					hzlog::NoteWriteSuccess(g_ml.retryBackoffMs, g_ml.retryAt);
 					g_mlWRetryAt.store(0);
