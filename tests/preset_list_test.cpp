@@ -58,11 +58,11 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.1", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 1, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.2", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 2, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "verbose reaction trace is off for this release");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "unfiltered HUD capture is off for this release");
-	Expect(HzFileVersionOk("0.43.0.1"), "4-part version ok");
+	Expect(HzFileVersionOk("0.43.0.2"), "4-part version ok");
 	Expect(!HzFileVersionOk("0.42.0"), "3-part version is not the file version");
 	Expect(!HzFileVersionOk("v0.42.0.6"), "leading v is not accepted");
 	Expect(!HzFileVersionOk("0.42.0.6 "), "trailing space rejected");
@@ -527,10 +527,31 @@ int main()
 			const auto prepEnd = src.find("static std::string HzCrossName()", prep);
 			Expect(prep != std::string::npos && prepEnd > prep, "the address reads are bounded");
 			const auto body = src.substr(prep, prepEnd - prep);
-			const auto rel = body.find("g_addrBytes.clear();");
-			const auto fit = body.find("g_addrBytes.shrink_to_fit();");
-			const auto both = body.find("if (g_msgGmstDone && g_msgFormDone)");
-			Expect(both != std::string::npos && rel != std::string::npos && fit != std::string::npos && both < rel && rel < fit, "the versionlib image is freed after both reads");
+			Expect(body.find("g_addrBytes.clear();") == std::string::npos
+				&& body.find("g_addrBytes.shrink_to_fit();") == std::string::npos,
+				"the versionlib image stays after prepare so later slot lookups work");
+		}
+		{
+			std::vector<unsigned char> img(96 + 63413ull * 4u, 0);
+			const std::uint32_t fmt = 5;
+			std::memcpy(img.data(), &fmt, 4);
+			const std::int32_t count = 63413;
+			std::memcpy(img.data() + 92, &count, 4);
+			const std::uint32_t off = 0x100;
+			std::memcpy(img.data() + 96 + 63412ull * 4u, &off, 4);
+			Expect(hzaddr::V5Slot(img.data(), img.size(), 63412ull) == 1,
+				"address lookup works on a loaded v5 image");
+			Expect(hzaddr::AddrSlotReady(1, img.size()), "a loaded v5 image is ready");
+			img.clear();
+			img.shrink_to_fit();
+			Expect(hzaddr::V5Slot(img.data(), img.size(), 63412ull) == -1,
+				"a freed address image fails a later slot lookup");
+			Expect(!hzaddr::AddrSlotReady(1, img.size()),
+				"state 1 with a freed buffer is not ready");
+			Expect(hzaddr::EngineZeroMiss(0, 1, 1, 1) == 63412ull, "a zero location id names 63412");
+			Expect(hzaddr::EngineZeroMiss(1, 0, 1, 1) == 883588ull, "a zero save-manager id names 883588");
+			Expect(hzaddr::EngineZeroMiss(1, 1, 0, 1) == 937673ull, "a zero calendar id names 937673");
+			Expect(hzaddr::EngineZeroMiss(1, 1, 1, 0) == 922868ull, "a zero player id names 922868");
 		}
 		{
 			const auto fill = src.find("static void HzGmstFillCall");
@@ -691,7 +712,7 @@ int main()
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(lua.find("set_version(\"0.43.0.1\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.43.0.2\")") != std::string::npos, "xmake version is the 4-part file version");
 		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
 		std::ifstream cpp("res/horizonui-plugin.cpp.in");
 		Expect(static_cast<bool>(cpp), "plugin version template opens");

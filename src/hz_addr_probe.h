@@ -35,4 +35,23 @@ inline int V5Slot(const unsigned char* a_data, std::size_t a_size, std::uint64_t
 	return off != 0u ? 1 : 0;
 }
 
+// Purpose: a later HzAddrSlot needs the same v5 image prepare loaded.
+// State 1 with a freed (empty) buffer is not ready; V5Slot then returns -1.
+inline bool AddrSlotReady(int a_state, std::size_t a_size)
+{
+	return a_state == 1 && a_size >= kV5HeaderBytes;
+}
+
+// Purpose: when a CommonLib id is 0, name the published id that failed.
+// Slot misses use the live id; this is only the zero-id fallback.
+inline std::uint64_t EngineZeroMiss(
+	std::uint64_t a_locId, std::uint64_t a_slmId, std::uint64_t a_calId, std::uint64_t a_pcId)
+{
+	if (a_locId == 0) return 63412ull;
+	if (a_slmId == 0) return 883588ull;
+	if (a_calId == 0) return 937673ull;
+	if (a_pcId == 0) return 922868ull;
+	return 0;
+}
+
 }

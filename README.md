@@ -77,11 +77,11 @@ Log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
 
 3. The plugin is written to `build\windows\x64\releasedbg\HorizonUI.dll`.
 
-Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.43.0.1 loaded`.
+Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.43.0.2 loaded`.
 
 ### Release checklist: companion reaction log
 
-0.43.0.1 is a pre-release dev build (Message Log P1: capture and storage, no log UI). `HZ_HUD_MSG_CAPTURE` is `0`, `HZ_COMMS_MSG_LOG` is `0`, `HZC_MSG_LOG` is `false`, and `hzcRxDbgOn` defaults to `false`. The card backup stays compiled: the queue, Poll, `hzcCardPush`, and the one-line `comms reaction:` status (including `hzcRxWhy`). The one-time `comms reaction selftest:` lines are not part of that trace. They stay on when `Debug=0`. The settings schema stays `0.42.0`.
+0.43.0.2 is a pre-release dev build (Message Log P1: capture and storage, no log UI). `HZ_HUD_MSG_CAPTURE` is `0`, `HZ_COMMS_MSG_LOG` is `0`, `HZC_MSG_LOG` is `false`, and `hzcRxDbgOn` defaults to `false`. The card backup stays compiled: the queue, Poll, `hzcCardPush`, and the one-line `comms reaction:` status (including `hzcRxWhy`). The one-time `comms reaction selftest:` lines are not part of that trace. They stay on when `Debug=0`. The settings schema stays `0.42.0`.
 
 To turn the traces back on for an in-game check:
 
@@ -95,7 +95,7 @@ To turn the traces back on for an in-game check:
 
 ## Message Log (planned, not released)
 
-0.43.0.1 is Message Log P1: capture and storage only. There is no log popup yet.
+0.43.0.2 is Message Log P1: capture and storage only. There is no log popup yet.
 
 - The log starts empty. It records only while `Record=1` and only the types in `LogTypes`.
 - It cannot recover messages from before install, or from while Record was off.

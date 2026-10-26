@@ -6,6 +6,7 @@
 // Author: Moragar
 // Last modified: 2026-10-25.
 
+#include "hz_addr_probe.h"
 #include "hz_msglog.h"
 #include "hz_msglog_stack.h"
 #include "hz_version.h"
@@ -13,6 +14,8 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
+#include <cstring>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -155,8 +158,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.1", "file version is 0.43.0.1");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 1, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.2", "file version is 0.43.0.2");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 2, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -450,9 +453,28 @@ int main()
 		Expect(main.find("ch:s") == std::string::npos && main.find("ch:y") == std::string::npos, "pad X/Y do not type s or y");
 		Expect(main.find("HzMlEngineFillSEH") != std::string::npos && main.find("HzAddrSlot") != std::string::npos,
 			"engine reads use HzAddrSlot plus SEH");
+		Expect(main.find("AddrSlotReady") != std::string::npos,
+			"later slot lookups require the loaded address image");
+		Expect(main.find("EngineZeroMiss") != std::string::npos,
+			"a zero engine id names the published address id");
+		Expect(main.find("engine address id {} missing") != std::string::npos,
+			"the engine warning names the id that failed");
+		Expect(main.find("persist skipped; character key is still a name hash") != std::string::npos,
+			"a name-hash write skip is logged");
+		Expect(main.find("MsglogShutdownWriter();") != std::string::npos,
+			"quit to desktop queues a last flush and stops the writer");
+		{
+			const auto prep = main.find("void HzMsgPrepare()");
+			const auto prepEnd = main.find("static std::string HzCrossName()", prep);
+			const auto body = prep != std::string::npos && prepEnd > prep ? main.substr(prep, prepEnd - prep) : std::string();
+			Expect(body.find("g_addrBytes.clear();") == std::string::npos,
+				"prepare does not free the address image");
+		}
 		Expect(main.find("try { Poll(); }") != std::string::npos, "the task lambda swallows exceptions");
-		Expect(main.find("JoinOrDetach") != std::string::npos && main.find("g_mlWStop") != std::string::npos,
-			"writer is stopped and joined");
+		Expect(main.find("g_mlWStop.store(true)") != std::string::npos && main.find("MsglogShutdownWriter();") != std::string::npos,
+			"quit to desktop stops the writer without joining");
+		Expect(main.find("hzlog::JoinOrDetach") == std::string::npos,
+			"shutdown does not join on the game thread");
 		Expect(main.find("AtExitShouldJoin") != std::string::npos && main.find("g_mlWThread.detach()") != std::string::npos,
 			"atexit joins only when done, otherwise detaches");
 		Expect(main.find("g_mlHadSession.exchange(false)") != std::string::npos, "quit flush is edge-triggered");
@@ -590,6 +612,29 @@ int main()
 		const auto keep = MakeCharacter(0x11, "Old");
 		Expect(keep.key == "00000011" && keep.keySource == "playerId", "rename keeps the player-id key");
 		Expect(PersistAllowed(keep), "a real player id may persist");
+		std::uint64_t last = 0;
+		Expect(NoteNameHashSkip(id, 1'000, last), "first name-hash skip is logged");
+		Expect(!NoteNameHashSkip(id, 2'000, last), "name-hash skip is rate-limited");
+		Expect(NoteNameHashSkip(id, 1'000 + static_cast<std::uint64_t>(kNameHashSkipLogMs), last),
+			"name-hash skip logs again after the gap");
+		Expect(!NoteNameHashSkip(keep, 20'000, last), "a player-id key is not a name-hash skip");
+		{
+			std::vector<unsigned char> img(96 + 63413ull * 4u, 0);
+			const std::uint32_t fmt = 5;
+			std::memcpy(img.data(), &fmt, 4);
+			const std::int32_t count = 63413;
+			std::memcpy(img.data() + 92, &count, 4);
+			const std::uint32_t off = 0x100;
+			std::memcpy(img.data() + 96 + 63412ull * 4u, &off, 4);
+			Expect(hzaddr::V5Slot(img.data(), img.size(), 63412ull) == 1,
+				"address lookup works before prepare-free");
+			img.clear();
+			img.shrink_to_fit();
+			Expect(hzaddr::V5Slot(img.data(), img.size(), 63412ull) == -1,
+				"a freed address image fails a later slot lookup");
+			Expect(!hzaddr::AddrSlotReady(1, img.size()),
+				"state 1 with a freed buffer fails a later lookup");
+		}
 	}
 
 	// ---- crash-safety: depth, 1 MB pre-read, pins, bak, type, writer join ----

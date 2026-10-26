@@ -1779,7 +1779,7 @@ namespace HZ
 	static int HzAddrSlot(std::uint64_t a_id)
 	{
 		HzAddrLoad();
-		if (g_addrState != 1) return -1;
+		if (!hzaddr::AddrSlotReady(g_addrState, g_addrBytes.size())) return -1;
 		const int slot = hzaddr::V5Slot(g_addrBytes.data(), g_addrBytes.size(), a_id);
 		if (slot < 0 && g_addrWhy.empty()) g_addrWhy = "versionlib is not a v5 table";
 		return slot;
@@ -1964,8 +1964,7 @@ namespace HZ
 		const auto pcId = RE::ID::PlayerCharacter::Singleton.id();
 		if (locId == 0 || slmId == 0 || calId == 0 || pcId == 0) {
 			a_out->ok = -1;
-			a_out->miss = locId == 0 ? locId : (slmId == 0 ? slmId : (calId == 0 ? calId : pcId));
-			if (a_out->miss == 0) a_out->miss = locId == 0 ? 63412ull : (slmId == 0 ? 883588ull : 937673ull);
+			a_out->miss = hzaddr::EngineZeroMiss(locId, slmId, calId, pcId);
 			return;
 		}
 		if (HzAddrSlot(locId) != 1) { a_out->ok = -2; a_out->miss = locId; return; }
@@ -2021,8 +2020,10 @@ namespace HZ
 	// A zero address id is not called. An id that is not in the loaded v5 address library is not called either.
 	// An empty phrase or an "<ID=" stub keeps the English fallback. The reads still run when Debug=0.
 	// The one-time hud form, hud gmst, and hud address lines are logged only when Debug=1.
-	// The versionlib image is released once both reads have finished.
-	// Last modified: 2026-10-23.
+	// The versionlib image stays loaded so later HzAddrSlot lookups
+	// (message-log engine walk) still resolve. Reloading would be file I/O
+	// on the game thread.
+	// Last modified: 2026-10-26.
 	void HzMsgPrepare()
 	{
 		if (!g_msgGmstDone) {
@@ -2108,12 +2109,6 @@ namespace HZ
 					HzLogPhrase("Credits", raw.credits);
 				}
 				g_msgFormDone = true;
-			}
-		}
-		if (g_msgGmstDone && g_msgFormDone) {
-			if (!g_addrBytes.empty()) {
-				g_addrBytes.clear();
-				g_addrBytes.shrink_to_fit();
 			}
 		}
 	}
@@ -2375,6 +2370,8 @@ namespace HZ
 	bool                    g_mlFailNoted = false;
 	int                     g_mlBakFails = 0;
 	bool                    g_mlBakBypassLogged = false;
+	std::uint64_t           g_mlNameHashSkipMs{0};
+	std::atomic<bool>       g_mlShutdownReq{false};
 	bool                    g_mlWStarted = false;
 	bool                    g_mlAtExit = false;
 	bool                    g_mlInited = false;
@@ -2551,7 +2548,11 @@ namespace HZ
 				if (g_ml.persistHold) return;
 				if (!hzlog::WriteAllowed(g_ml.dirty, a_force, g_ml.lastWriteMs, GetTickCount64(), g_ml.retryBackoffMs))
 					return;
-				if (!hzlog::PersistAllowed(g_ml.buf.character)) return;
+				if (!hzlog::PersistAllowed(g_ml.buf.character)) {
+					if (hzlog::NoteNameHashSkip(g_ml.buf.character, GetTickCount64(), g_mlNameHashSkipMs))
+						REX::WARN("message log: persist skipped; character key is still a name hash");
+					return;
+				}
 				g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(GetTickCount64() / 1000);
 				job.snap = g_ml.buf.Snapshot();
 				job.key = g_ml.buf.character.key;
@@ -2574,15 +2575,14 @@ namespace HZ
 		}
 	}
 
+	// Purpose: queue a last write and ask the worker to stop. Does not join:
+	// atexit joins only when the worker is already done, so exit cannot hang.
 	void MsglogShutdownWriter()
 	{
 		try {
 			MsglogRequestWrite(true);
 			g_mlWStop.store(true);
 			g_mlWCv.notify_all();
-			if (g_mlWStarted)
-				hzlog::JoinOrDetach(g_mlWThread, g_mlWDone, g_mlWCv, g_mlWMu, hzlog::kWriterJoinMs);
-			g_mlWStarted = false;
 		} catch (...) {
 		}
 	}
@@ -2741,7 +2741,7 @@ namespace HZ
 				static bool once = false;
 				if (!once) {
 					once = true;
-					REX::WARN("message log: engine address {} missing from the address library; capture stays memory-only", raw.miss);
+					REX::WARN("message log: engine address id {} missing from the address library; capture stays memory-only", raw.miss);
 				}
 			}
 			return;
@@ -3215,8 +3215,10 @@ namespace HZ
 				if (held)
 					MsglogQueueRecover(true);
 				else
-					MsglogRequestWrite(false);
+					MsglogRequestWrite(true);
 			}
+			if (g_mlShutdownReq.exchange(false))
+				MsglogShutdownWriter();
 			MsglogApplyLoad();
 			MsglogPadPoll();
 			try { MsglogTakeMovie(); } catch (...) {}
@@ -3260,6 +3262,8 @@ namespace HZ
 				if ((op == Op::kExitSaveToMainMenu || op == Op::kExitSaveToDesktop)
 					&& (st == St::kSaveCompleted || st == St::kBegin))
 					g_mlQuitReq.store(true);
+				if (op == Op::kExitSaveToDesktop && (st == St::kSaveCompleted || st == St::kBegin))
+					g_mlShutdownReq.store(true);
 			} catch (...) {
 			}
 			return RE::BSEventNotifyControl::kContinue;

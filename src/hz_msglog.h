@@ -337,6 +337,21 @@ inline bool PersistAllowed(const Character& a_ch)
 	return a_ch.keySource == "playerId" && !a_ch.key.empty();
 }
 
+inline constexpr int kNameHashSkipLogMs = 10000;
+
+// Purpose: one warning when a write is skipped because the key is still a
+// name hash. Rate-limited so Poll does not log every frame.
+inline bool NoteNameHashSkip(const Character& a_ch, std::uint64_t a_nowMs, std::uint64_t& a_lastLogMs, int a_gapMs = kNameHashSkipLogMs)
+{
+	if (PersistAllowed(a_ch)) return false;
+	if (a_ch.keySource != "nameHash") return false;
+	if (a_lastLogMs && a_nowMs >= a_lastLogMs
+		&& (a_nowMs - a_lastLogMs) < static_cast<std::uint64_t>(a_gapMs))
+		return false;
+	a_lastLogMs = a_nowMs;
+	return true;
+}
+
 // Purpose: classify a HUD sink line with hz_msg_match, including credits.
 // Quest / location / XP never come from this path (the movie owns those).
 // Inputs: text and GMST phrases. Outputs: kind, title, tag. Unmatched -> Game.
