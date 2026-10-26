@@ -7,7 +7,7 @@
       // Horizon draws its own panels from the same data providers. Settings: [Scanner] of HorizonUI.default.ini with
       // HorizonUI.user.ini laid over (the shared reader, prefix hzs37); read when the scanner opens and polled every
       // 2 s while it is open, so an F11 save (HzRev) applies without reopening.
-      private static const HZS_VERSION:String = "0.42.0";
+      private static const HZS_VERSION:String = "0.43.0.1";   // 0.43.0.1: the scanner movie's build version (= the DLL file version); bump here only
       private static const HZS_LRG:Boolean = __HZS_LRG__;
       private static const HZS_SCALE:Number = HZS_LRG ? 1.07 : 1;
       // design tokens 0.3.1 (exotic purple added in v0.40)
@@ -26,6 +26,7 @@
       private static const HZS_VIO:uint = 0xB48CFF;    // v0.41.0: ships / vehicles that are not yours
       private static const HZS_QST:uint = 0xF2D35F;    // v0.41.0: the quest diamond (gold; the ship is blue)
       private static const HZS_MINPX:Number = 13;
+      private static const HZS_KMIN:Number = 0.78;   // 0.42.0.4: smallest on-screen panel scale (text floored to 13 px after it; layouts fit from 0.76)
       private static const HZS_RING_FILL:Number = 0.004;   // v0.40.2: fill of an outline-only rounded rect (closes its path; invisible)
       private static const HZS_CARD_A:Number = 0.8;
       private static const HZS_CW:Number = 400;
@@ -79,18 +80,21 @@
       private var hzsHead:Number = NaN;
       private var hzsHeadDrawn:Number = NaN;
       private var hzsFontOk:Object = {};
+      private var hzsFontLib:int = -1;       // font.marker: -1 checking, 0 absent, 1 present
+      private var hzsFontLdr:URLLoader = null;
       private var hzsGameFont:String = null;
       private var hzsFrame:int = 0;
       private var hzsFrameT:int = 0;
       private var hzsAlpha:Number = 0;
       private var hzsCfgSig:String = "";
+      private var hzsTk:Number = 1;         // 0.42.0.4: scale of the panel being drawn (HZS_SCALE x hzsF); hzsFs keeps text >= 13 px after it
 
       // ---------------------------------------------------------------- start
       private function hzsInit() : void
       {
          this.hzsT0 = getTimer();
          this.hzsC = this.hzsDefaults();
-         this.hzsS = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ClockFormat":0};
+         this.hzsS = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ClockFormat":0,"TempUnit":0};
          this.hzsL = new Sprite();
          this.hzsL.mouseEnabled = false;
          this.hzsL.mouseChildren = false;
@@ -117,6 +121,7 @@
          this.hzsSub("LocalEnvData_Frequent",this.hzsOnEnvF);
          this.hzsSub("HudCompassData",this.hzsOnCmp);
          addEventListener(Event.ENTER_FRAME,this.hzsTick);
+         try { this.hzsFontBegin(); } catch(eFont:Error) { this.hzsFontLib = 0; }
          this.hzsRead();
       }
       private function hzsSub(n:String, f:Function) : void
@@ -237,7 +242,7 @@
       private function hzsParse(txt:String) : void
       {
          var c:Object = this.hzsDefaults();
-         var st:Object = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ClockFormat":0};
+         var st:Object = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ClockFormat":0,"TempUnit":0};
          if(txt != null)
          {
             var sec:String = "";
@@ -267,6 +272,7 @@
                   else if(k == "fontface" && !isNaN(nv)) { st.FontFace = Math.max(0,Math.min(3,int(nv))); }
                   else if(k == "headerstyle" && !isNaN(nv)) { st.HeaderStyle = Math.max(0,Math.min(1,int(nv))); }
                   else if(k == "clockformat" && !isNaN(nv)) { st.ClockFormat = Math.max(0,Math.min(1,int(nv))); }
+                  else if(k == "tempunit" && !isNaN(nv)) { st.TempUnit = Math.max(0,Math.min(1,int(nv))); }
                }
             }
          }
@@ -311,6 +317,7 @@
       // ---------------------------------------------------------------- frame tick
       private function hzsTick(e:Event) : void
       {
+         this.hzsTk = 1;   // 0.42.0.4
          this.hzsFrame++;
          var now:int = getTimer();
          try { this.hzsHideVanilla(); } catch(e0:Error) { }
@@ -407,17 +414,17 @@
          if(isNaN(m) || m < 0) { m = Number(this.hzsS.Margin); }
          return isNaN(m) ? 40 : m;
       }
-      // panel size factor: -1 = [Style] HudScale. v0.40.3: 0.60 - 1.60 like the HUD cards; as there, a size below 1.00 also
-      // draws the text below 13 px at 1080p (the 13 px floor of hzsFs is for the size before this factor).
+      // panel size factor: -1 = [Style] HudScale. v0.40.3: 0.60 - 1.60 like the HUD cards. 0.42.0.4: a size below 1.00 still
+      // shrinks the card, but no text goes under 13 px at 1080p (hzsFs floors the size after this factor, see hzsTk).
       private function hzsF(panel:String) : Number
       {
          var v:Number = Number(this.hzsC["Scan" + panel + "Scale"]);
          if(panel == "Social" && (isNaN(v) || v <= 0)) { v = Number(this.hzsC.ScanTraitsScale); }   // r5: -1 = the traits card's size
          if(isNaN(v) || v <= 0) { v = Number(this.hzsS.HudScale); }
          if(isNaN(v) || v <= 0) { v = 1; }
-         return Math.max(0.6,v);   // v0.40.3: 0.60 - 1.60 like the HUD cards (below 1.00 the text is under 13 px at 1080p)
+         return Math.max(0.6,v);   // v0.40.3: 0.60 - 1.60 like the HUD cards (0.42.0.4: text stays >= 13 px at 1080p, hzsFs)
       }
-      private function hzsK(panel:String) : Number { return HZS_SCALE * this.hzsF(panel); }
+      private function hzsK(panel:String) : Number { return Math.max(HZS_KMIN,HZS_SCALE * this.hzsF(panel)); }   // 0.42.0.4: never under HZS_KMIN
       // compact form: the panel's own value, else ScanCompactAll, else [Style] Compact
       private function hzsCmpOn(panel:String) : Boolean
       {
@@ -467,25 +474,48 @@
          try { var t:TextField = new TextField(); GlobalFunc.SetText(t,s); return t.text; } catch(e:Error) { }
          return s;
       }
+      private function hzsFontBegin() : void
+      {
+         if(this.hzsFontLdr != null || this.hzsFontLib == 0 || this.hzsFontLib == 1) { return; }
+         var l:URLLoader = new URLLoader();
+         this.hzsFontLdr = l;
+         l.addEventListener(Event.COMPLETE,this.hzsFontOkEv);
+         l.addEventListener(IOErrorEvent.IO_ERROR,this.hzsFontErrEv);
+         l.addEventListener("securityError",this.hzsFontErrEv);
+         l.load(new URLRequest("HorizonUI/modules/font.marker"));
+      }
+      private function hzsFontOkEv(e:Event) : void
+      {
+         this.hzsFontLib = 1;
+         this.hzsFontLdr = null;
+         this.hzsSig = {};
+         this.hzsDirty = true;
+      }
+      private function hzsFontErrEv(e:Event) : void
+      {
+         this.hzsFontLib = 0;
+         this.hzsFontLdr = null;
+      }
       private function hzsFace(w:String) : String
       {
          var f:int = int(this.hzsC.ScanFont);
          if(f < 0 || f > 3) { f = int(this.hzsS.FontFace); }
          var game:String = this.hzsGame();
          if(f == 3) { return this.hzsProbe(HZS_SEMI) ? HZS_SEMI : game; }
-         if(f == 2)
+         if(f != 1 && f != 2) { return game; }
+         // marker still loading or absent: game font. Bold waits until the base face renders.
+         if(this.hzsFontLib !== 1) { return game; }
+         var want:String;
+         if(f == 2 && this.hzsProbe("$Horizon_Font_Alt"))
          {
-            var r:String = w == "rg" ? "$Horizon_Font_Alt_Regular" : (w == "bd" ? "$Horizon_Font_Alt_Bold" : "$Horizon_Font_Alt");
-            if(this.hzsProbe(r)) { return r; }
-            if(this.hzsProbe("$Horizon_Font_Alt")) { return "$Horizon_Font_Alt"; }
+            want = w == "rg" ? "$Horizon_Font_Alt_Regular" : (w == "bd" ? "$Horizon_Font_Alt_Bold" : "$Horizon_Font_Alt");
+            if(want == "$Horizon_Font_Alt" || this.hzsProbe(want)) { return want; }
+            return "$Horizon_Font_Alt";
          }
-         if(f == 1 || f == 2)
-         {
-            var x:String = w == "rg" ? "$Horizon_Font_Regular" : (w == "bd" ? "$Horizon_Font_Bold" : "$Horizon_Font");
-            if(this.hzsProbe(x)) { return x; }
-            if(this.hzsProbe("$Horizon_Font")) { return "$Horizon_Font"; }
-         }
-         return game;
+         if(!this.hzsProbe("$Horizon_Font")) { return game; }
+         want = w == "rg" ? "$Horizon_Font_Regular" : (w == "bd" ? "$Horizon_Font_Bold" : "$Horizon_Font");
+         if(want == "$Horizon_Font" || this.hzsProbe(want)) { return want; }
+         return "$Horizon_Font";
       }
       private function hzsGame() : String
       {
@@ -520,12 +550,16 @@
          this.hzsFontOk[n] = ok ? 1 : 0;
          return ok;
       }
-      // text size at 1080p: TextScale applies, never under 13 px
+      // text size at 1080p: TextScale applies, never under 13 px. 0.42.0.4: also never under 13 px AFTER the panel's scale
+      // (hzsTk = HZS_SCALE x hzsF of the panel being drawn): the size is at least 13 / hzsTk, rounded up to 0.1
       private function hzsFs(size:Number) : Number
       {
          var ts:Number = Number(this.hzsS.TextScale);
          if(isNaN(ts) || ts <= 0) { ts = 1; }
-         return Math.max(HZS_MINPX,Math.round(size * ts * 10) / 10);
+         var f:Number = Math.max(HZS_MINPX,Math.round(size * ts * 10) / 10);
+         var k:Number = this.hzsTk;
+         if(!isNaN(k) && k > 0 && k < 1) { f = Math.max(f,Math.ceil(HZS_MINPX / k * 10) / 10); }
+         return f;
       }
       // one text field. (x, cy) = left / right / center x and the vertical middle; tr = tracking in em.
       // maxW > 0 shortens the text with "..." to fit. Returns the field (its right edge = x + width for "l").
@@ -822,10 +856,16 @@
          if(env != null)
          {
             // v0.40.1: rounded; a row is left out when the game gives no number (never "NaN")
-            var tv:Number = Number(env.fTemperature);
+            var hasT:Boolean = env.fTemperature != null && !isNaN(Number(env.fTemperature));
+            var tv:Number = hasT ? Number(env.fTemperature) : NaN;
             var gv:Number = Number(env.fGravity);
             var ov:Number = Number(env.fOxygenPercent);
-            if(inShip || !isNaN(tv)) { cond.push(["TEMPERATURE",inShip ? "--" : String(Math.round(tv)) + String.fromCharCode(0xB0)]); }
+            if(inShip || env.fTemperature == null || hasT)
+            {
+               var tShown:Number = int(this.hzsS.TempUnit) == 1 ? Math.round(tv * 9 / 5 + 32) : Math.round(tv);
+               var tUnit:String = int(this.hzsS.TempUnit) == 1 ? " °F" : " °C";
+               cond.push(["TEMPERATURE",inShip || !hasT ? "--" : String(tShown) + tUnit]);
+            }
             if(inShip || !isNaN(gv)) { cond.push(["GRAVITY",inShip ? "--" : gv.toFixed(2) + " G"]); }
             if(inShip || !isNaN(ov)) { cond.push(["OXYGEN",inShip ? "--" : String(Math.round(ov)) + "%"]); }
          }
@@ -1543,6 +1583,7 @@
          this.hzsClr(p);
          if(m == null) { p.visible = false; this.hzsSz[n] = null; return; }
          var wh:Array = null;
+         this.hzsTk = this.hzsK(this.hzsKeyOf(n));   // 0.42.0.4: text floor after this panel's scale
          try
          {
             if(n == "Planet") { wh = m.cmp ? this.hzsDPlanetC(p,m) : this.hzsDPlanet(p,m); }
@@ -1554,6 +1595,7 @@
             else if(n == "Hints") { wh = this.hzsDHints2(p,m); }
          }
          catch(e1:Error) { wh = null; }
+         this.hzsTk = 1;
          if(wh == null) { this.hzsClr(p); p.visible = false; this.hzsSz[n] = null; return; }
          this.hzsSz[n] = wh;
          p.visible = true;
@@ -1802,12 +1844,17 @@
       {
          var g:* = p.graphics;
          var yy:Number = y;
+         // 0.42.0.4: the rarity column fits the widest label shown (96 - 130; the 13 px floor makes it wider at small sizes)
+         var col:Number = 96;
+         var probe:Sprite = new Sprite();
+         for each(var r0:Object in res) { var ri0:int = int(r0.r); col = Math.max(col,Math.ceil(this.hzsTw(this.hzsT(probe,this.hzsCs(ri0 < 0 ? "SPECIAL" : String(HZS_RAR_N[ri0])),0,0,13,HZS_WHITE,"sb",0.08))) + 10); }
+         col = Math.min(130,col);
          for each(var r:Object in res)
          {
             var ri:int = int(r.r);
             var c:uint = ri < 0 ? HZS_WHITE : uint(HZS_RAR_C[ri]);
-            this.hzsT(p,this.hzsCs(ri < 0 ? "SPECIAL" : String(HZS_RAR_N[ri])),x0,yy,13,c,"sb",0.08,"l",1,90);
-            var cx:Number = x0 + 96;
+            this.hzsT(p,this.hzsCs(ri < 0 ? "SPECIAL" : String(HZS_RAR_N[ri])),x0,yy,13,c,"sb",0.08,"l",1,col - 6);
+            var cx:Number = x0 + col;
             for each(var it:Array in r.items)
             {
                var dis:Boolean = int(it[2]) == 1;
@@ -1816,7 +1863,7 @@
                var sw:Number = Math.max(26,this.hzsTw(st) + 10);
                var nt:TextField = this.hzsT(p,String(it[1]),0,yy,13,dis ? HZS_MUTED : HZS_LABEL,"rg",0,"l",1,180);
                var need:Number = sw + 5 + this.hzsTw(nt);
-               if(cx > x0 + 96 && cx + need > x0 + iw) { yy += 28; cx = x0 + 96; st.y = Math.round(yy - st.height / 2); nt.y = Math.round(yy - nt.height / 2); }
+               if(cx > x0 + col && cx + need > x0 + iw) { yy += 28; cx = x0 + col; st.y = Math.round(yy - st.height / 2); nt.y = Math.round(yy - nt.height / 2); }
                g.lineStyle(1.2,cc,0.67,true); g.beginFill(cc,34 / 255); g.drawRoundRect(cx,yy - 11,sw,22,12,12); g.endFill(); g.lineStyle();
                st.x = Math.round(cx + sw / 2 - this.hzsTw(st) / 2 - 2);
                nt.x = Math.round(cx + sw + 5 - 2);
@@ -2006,6 +2053,7 @@
          if(!on) { p.visible = false; hp.visible = false; this.hzsSz.Compass = null; this.hzsSz.Head = null; this.hzsPlace(); return; }
          var cmp:Boolean = this.hzsCmpOn("Compass");
          var acc:uint = this.hzsAccent();
+         this.hzsTk = this.hzsK("Compass");   // 0.42.0.4: compass + heading pill (both drawn at the compass scale)
          var wd:Number = 640;
          var hh:Number = cmp ? 46 : 58;
          var g:* = p.graphics;
@@ -2064,6 +2112,7 @@
          var w:Number = this.hzsTw(this.hzsT(probe,txt,0,14,14,HZS_WHITE,"sb",0.06)) + 28;
          this.hzsCard(hp.graphics,w,28,HZS_R_STRIP,-1);
          this.hzsT(hp,txt,w / 2,14,14,HZS_WHITE,"sb",0.06,"c");
+         this.hzsTk = 1;
          this.hzsSz.Head = [w,28];
          hp.visible = true;
          this.hzsPlace();
@@ -2178,7 +2227,8 @@
          var tp:Sprite = this.hzsP.Tag as Sprite;
          this.hzsClr(tp);
          if(tag == null) { tp.visible = false; return; }
-         var tk:Number = HZS_SCALE * this.hzsF("WorldTag");
+         var tk:Number = this.hzsK("WorldTag");   // 0.42.0.4: = HZS_SCALE x hzsF, never under HZS_KMIN
+         this.hzsTk = tk;   // 0.42.0.4: world tag text floor after its scale
          var tc:uint = uint(tag.col);
          var tw:Number = 250;
          var tg:* = tp.graphics;
@@ -2206,6 +2256,7 @@
                fx0 += fcw + 6;
             }
          }
+         this.hzsTk = 1;
          tp.scaleX = tp.scaleY = tk;
          tp.x = Math.round(Math.max(this.hzsVr.left + 8,c.x - 370 * k));
          tp.y = Math.round(c.y + 34 * k);
@@ -2388,7 +2439,8 @@
       // identical apart from the prefix). It reads HorizonUI.default.ini, HorizonUI.user.ini, HorizonUI.state.ini and the
       // legacy HorizonUI.ini (paths relative to Data/Interface) one after the other and hands every waiting callback the
       // merged text: the defaults with user.ini laid over (hzs37Compose; mirrors HZF::Compose in HorizonUI.dll). A missing
-      // file is normal: its IOErrorEvent is caught and simply counts as "no file" (nothing is thrown or logged).
+      // file is normal: its IOErrorEvent is caught and counts as no file. The game logs every failed open, so
+      // HorizonUI.ini is opened at most once, and only when Compose still needs that unshipped file.
       // No defaults file -> the legacy HorizonUI.ini is the base. Nothing at all -> null (callers keep built-in defaults).
       private static const hzs37_FILES:Array = ["HorizonUI/HorizonUI.default.ini","HorizonUI/HorizonUI.user.ini","HorizonUI/HorizonUI.state.ini","HorizonUI/HorizonUI.ini"];
       private static const hzs37_BOM:String = String.fromCharCode(0xFEFF);
@@ -2398,6 +2450,8 @@
       private var hzs37Got:Array = null;
       private var hzs37Q:Array = [];          // callbacks of the running read
       private var hzs37N:Array = [];          // callbacks that arrived meanwhile (they get a fresh read)
+      private var hzs37Leg:String = null;     // last text of HorizonUI.ini, or null when that open missed
+      private var hzs37LegTry:int = 0;        // 0 = not opened yet, 1 = opened once
       private function hzs37Ws(c:String) : Boolean { return c == " " || c == "\t" || c == "\r" || c == "\n"; }
       private function hzs37Trim(s:String) : String
       {
@@ -2598,10 +2652,32 @@
          this.hzs37T0 = new Date().getTime();
          this.hzs37Next(0);
       }
+      private function hzs37IsLeg(i:int) : Boolean
+      {
+         if(i < 0 || i >= hzs37_FILES.length) { return false; }
+         var pth:String = String(hzs37_FILES[i]);
+         return pth.length >= 13 && pth.substr(pth.length - 13) == "HorizonUI.ini";
+      }
+      // HorizonUI.ini is not shipped. Skip it when Compose would ignore it, and open it only once when it would not.
+      private function hzs37SkipLeg(i:int) : Boolean
+      {
+         if(!this.hzs37IsLeg(i)) { return false; }
+         if(this.hzs37LegTry != 0) { return true; }
+         var def:String = this.hzs37Got[0] == null ? null : String(this.hzs37Got[0]);
+         var hd:Boolean = def != null && def.length > 0;
+         if(hd && (this.hzs37Got[1] != null || this.hzs37Got[2] != null)) { return true; }
+         return false;
+      }
       private function hzs37Next(i:int) : void
       {
          this.hzs37Step = i + 1;
          if(i >= hzs37_FILES.length) { this.hzs37Ldr = null; this.hzs37Done(); return; }
+         if(this.hzs37SkipLeg(i))
+         {
+            this.hzs37Got[i] = this.hzs37LegTry != 0 ? this.hzs37Leg : null;
+            this.hzs37Next(i + 1);
+            return;
+         }
          try
          {
             this.hzs37Ldr = new URLLoader();
@@ -2617,12 +2693,14 @@
          if(e == null || e.target != this.hzs37Ldr) { return; }
          var i:int = this.hzs37Step - 1;
          try { this.hzs37Got[i] = String(this.hzs37Ldr.data); } catch(err:Error) { }
+         if(this.hzs37IsLeg(i)) { this.hzs37Leg = this.hzs37Got[i] == null ? null : String(this.hzs37Got[i]); this.hzs37LegTry = 1; }
          this.hzs37Next(i + 1);
       }
       private function hzs37OnErr(e:Event) : void
       {
          if(e == null || e.target != this.hzs37Ldr) { return; }
-         this.hzs37Next(this.hzs37Step);   // missing file: normal, no error
+         if(this.hzs37IsLeg(this.hzs37Step - 1)) { this.hzs37Leg = null; this.hzs37LegTry = 1; }
+         this.hzs37Next(this.hzs37Step);   // missing file: counted once, not opened again
       }
       private function hzs37Done() : void
       {

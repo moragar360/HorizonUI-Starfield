@@ -66,6 +66,7 @@
       private static const HZ_CARD:Array = ["N","NE","E","SE","S","SW","W","NW"];
       private static const HZ_W:Number = 260;
       private var hzEnvTemp:TextField = null;
+      private var hzEnvTempC:Number = NaN;
       private var hzEnvGrav:TextField = null;
       private var hzEnvAir:TextField = null;
       private var hzDotJet:Sprite = null;
@@ -231,8 +232,8 @@
       public var hzCmpPlayerMark:Boolean = true;
       private var hzDbgCmp:String = "";
       // layout edit (ARRANGE CARDS)
-      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast"];
-      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST"];
+      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages"];
+      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES"];
       public var hzLay:Object = {};
       private var hzLayOrig:Object = null;
       private var hzArrange:Boolean = false;
@@ -498,7 +499,97 @@
             if(c) { c.scaleX = c.scaleY = this.hz34S(String(e[1])); }
          }
          this.hzT19Sig = "";   // hover / container cards on GLOBAL follow HudScale
+         try { this.hzAfFmt13(); } catch(errAfF:Error) { }
+         try { this.hzJ19Draw(); } catch(errJ13:Error) { }
+         try { this.hz26StDraw(this.hz26Now()); } catch(errSt13:Error) { }
+         try { this.hzAfRetryLayout(); } catch(errAfS:Error) { }
          this.hzLaidOut = this.hzLayout();
+      }
+
+      // Affliction + chip-family 13 px floor. Re-run after HudScale / per-card scale so F11
+      // live changes (including Moragar's Choice) do not keep the previous font size.
+      // hzTxtTint skips when the tint is unchanged, and hzAfRetryLayout does not touch the F11 preview chips.
+      private function hzAfFmt13() : void
+      {
+         for each(var o:Object in this.hzTexts)
+         {
+            if(o != null && (o.af13 || o.vit13 || o.chipMin)) { try { this.hzApplyFmt(o); } catch(errAf13:Error) { } }
+         }
+      }
+
+      // Shared v0.19 size: max(9, round(design * TextScale)). hzBuildVitNew HEALTH / OXYGEN
+      // (fs 13) and hzVnHp / hzVnO2 (fs 20) use this before the card sprite scale
+      // (hz34S = HZ_SCALE * HudScale or the card's own scale).
+      private function hzChipSz(fs:Number) : int
+      {
+         var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
+         return int(Math.max(9,Math.round(Number(fs) * ts)));
+      }
+
+      // Affliction type: identical Vitals size path. HEALTH / OXYGEN and hz26Co2T use
+      // hzChipSz only (max(9, round(design * TextScale))), then the card sprite scale
+      // (hz34S). No 13 px floor: the chip matches Vitals below 13 px.
+      // Title: hzBuildVitNew HEALTH / OXYGEN, hzT(...,13,"sb","acc",2) + hzHdr19.
+      // Sub: hz26Co2T, hzT(...,13,"sb","col",0.6). TAKE / stealth / jetpack still use hzChipSzOn.
+      private function hzVitTextSz(fs:Number) : int
+      {
+         return this.hzChipSz(fs);
+      }
+
+      // Same formula, then the 13 px on-screen floor using the card's real scale path (hz34S),
+      // not hz34F alone. TAKE uses HoverScale (hz34Eff), falling back to HudScale. Moragar's
+      // Choice (HudScale 0.8) still stays at least 13 px on screen.
+      private function hzChipSzOn(fs:Number, card:String, minPx:Number) : int
+      {
+         var sz:int = this.hzChipSz(fs);
+         if(minPx > 0)
+         {
+            var sc:Number = this.hz34S(card);
+            if(card == "Hover")
+            {
+               var hv:Number = this.hz34Eff(this.hz30Hover);
+               if(this.hz30TgSc > 0.01) { hv = this.hz30TgSc; }
+               sc = HZ_SCALE * hv;
+            }
+            if(!(sc > 0.01)) { sc = 1; }
+            var fl:int = int(Math.ceil(minPx / sc));
+            if(sz < fl) { sz = fl; }
+         }
+         return sz;
+      }
+
+      private function hzAf13Sz() : int
+      {
+         return this.hzVitTextSz(13);
+      }
+
+      // Size for a v0.19 field: vitals-copied affliction lines, then chip-family, then plain hzChipSz.
+      private function hzTextSz19(o:Object, fs:Number) : int
+      {
+         if(o != null && o.vit13) { return this.hzVitTextSz(fs); }
+         var card:String = o != null && o.chipCard != null && String(o.chipCard).length > 0 ? String(o.chipCard) : (o != null && o.af13 ? "Afflictions" : "");
+         if(card.length > 0) { return this.hzChipSzOn(fs,card,o.chipMin > 0 ? Number(o.chipMin) : 13); }
+         return this.hzChipSz(fs);
+      }
+
+      // Mark a chip-family line so hzApplyFmt19 uses hzChipSzOn + the 13 px floor on that card's scale.
+      private function hzChip13(tf:TextField, card:String) : void
+      {
+         var o:Object = this.hzTxtObj(tf);
+         if(!o) { return; }
+         o.chipCard = card;
+         o.chipMin = 13;
+         try { this.hzApplyFmt(o); } catch(errChip13:Error) { }
+      }
+
+      // Mark an affliction line so it uses hzVitTextSz (HEALTH / OXYGEN / hz26Co2T, hzChipSz only).
+      private function hzVit13(tf:TextField) : void
+      {
+         var o:Object = this.hzTxtObj(tf);
+         if(!o) { return; }
+         o.vit13 = true;
+         o.af13 = true;
+         try { this.hzApplyFmt(o); } catch(errVit13:Error) { }
       }
 
       private function hzDot(d:Sprite, col:uint) : void
@@ -787,18 +878,22 @@
          var game:String = this.hzFont ? this.hzFont : "$MAIN_Font";
          if(this.hzFontFace == 3) { return this.hzFontProbe(HZ34_SEMI) ? HZ34_SEMI : game; }   // v0.34: one weight for every face
          if(this.hzFontFace != 1 && this.hzFontFace != 2) { return game; }
-         if(this.hz30Mod["font"] === 0) { return game; }   // v0.30: font.marker absent -> game font (FontFace itself is kept)
+         // font.marker still loading or absent: game font, and no $Horizon_ lookup yet (that logs a missing face)
+         if(this.hz30Mod["font"] !== 1) { return game; }
          var want:String;
-         if(this.hzFontFace == 2)
+         if(this.hzFontFace == 2 && this.hzFontProbe("$Horizon_Font_Alt"))
          {
             want = face == "rg" ? "$Horizon_Font_Alt_Regular" : (face == "bd" ? "$Horizon_Font_Alt_Bold" : "$Horizon_Font_Alt");
-            if(this.hzFontProbe(want)) { this.hzFontOk = 1; return want; }
-            if(want != "$Horizon_Font_Alt" && this.hzFontProbe("$Horizon_Font_Alt")) { this.hzFontOk = 1; return "$Horizon_Font_Alt"; }
+            if(want == "$Horizon_Font_Alt" || this.hzFontProbe(want)) { this.hzFontOk = 1; return want; }
+            this.hzFontOk = 1;
+            return "$Horizon_Font_Alt";
          }
+         // Bold and Regular wait until the base face really renders, so they are not looked up before the library is ready
+         if(!this.hzFontProbe("$Horizon_Font")) { return game; }
          want = face == "rg" ? "$Horizon_Font_Regular" : (face == "bd" ? "$Horizon_Font_Bold" : "$Horizon_Font");
-         if(this.hzFontProbe(want)) { this.hzFontOk = 1; return want; }
-         if(want != "$Horizon_Font" && this.hzFontProbe("$Horizon_Font")) { this.hzFontOk = 1; return "$Horizon_Font"; }
-         return game;
+         if(want == "$Horizon_Font" || this.hzFontProbe(want)) { this.hzFontOk = 1; return want; }
+         this.hzFontOk = 1;
+         return "$Horizon_Font";
       }
 
       // Live typography update (TextScale / HeaderStyle / TextShadow / card color).
@@ -810,6 +905,7 @@
          }
          try { this.hzEqLayout(); } catch(err2:Error) { }
          try { this.hzPpLayout(); this.hzV19Redraw(); } catch(err3:Error) { }
+         try { this.hz26StDraw(this.hz26Now()); } catch(errStT:Error) { }
          try { if(this.hzAfNew && this.hz31AfLast != null) { this.hzAfLayoutChips(this.hz31AfLast); } } catch(err31:Error) { }
          if(this.hzSetIsOpen) { this.hzSetDraw(); }
       }
@@ -1435,6 +1531,11 @@
          this.hzRefreshVisibility();
       }
 
+      // Purpose: short label for an effect icon id.
+      // Inputs: a frame name such as PersonalEffect_CardioRespiratoryCirculatory_Negative.
+      // Outputs: "Cardio Respiratory Circulatory" for that name. Thermal, Radiation, Airborne, and Corrosive stay one word.
+      // The game's own bio alert shows sAlertText only (vanilla BottomLeftGroup, BIO_ALERT). This label is used when sAlertSubText is empty.
+      // Dependencies: hzSplitCamel. Scaleform String.replace does not expand $1, so the camel split is not a replace.
       private function hzPretty(id:String) : String
       {
          if(!id) { return ""; }
@@ -1447,8 +1548,24 @@
          s = s.replace(/^(PersonalEffect_|Personal_|HazardEffect_|Hazard_)/,"");
          s = s.replace(/_(Negative|Positive)$/,"");
          s = s.replace(/_/g," ");
-         s = s.replace(/([a-z])([A-Z])/g,"$1 $2");
+         s = this.hzSplitCamel(s);
          return s;
+      }
+      // A lowercase letter followed by a capital gets a space. "CardioRespiratoryCirculatory" becomes "Cardio Respiratory Circulatory".
+      private function hzSplitCamel(s:String) : String
+      {
+         if(s == null || s.length < 2) { return s == null ? "" : s; }
+         var o:String = s.charAt(0);
+         var i:int = 1;
+         while(i < s.length)
+         {
+            var p:int = s.charCodeAt(i - 1);
+            var c:int = s.charCodeAt(i);
+            if(p >= 97 && p <= 122 && c >= 65 && c <= 90) { o += " "; }
+            o += s.charAt(i);
+            i++;
+         }
+         return o;
       }
 
       private function hzJoinEffects(a:Array) : String
@@ -1465,6 +1582,17 @@
          return out.length ? out.join(", ") : "None";
       }
 
+      // Purpose: format the planet temperature with a unit. The game value is Celsius.
+      // Inputs: Celsius number from LocalEnvironmentData.fTemperature.
+      // Outputs: rounded text such as "11 °C" or "52 °F". Dependencies: hzTempUnit (0 C, 1 F).
+      // Last modified: 2026-10-24.
+      private function hzTempText(c:Number) : String
+      {
+         if(c == null || isNaN(c)) { return "--"; }
+         var v:Number = int(this.hzTempUnit) == 1 ? Math.round(c * 9 / 5 + 32) : Math.round(c);
+         return String(v) + (int(this.hzTempUnit) == 1 ? " °F" : " °C");
+      }
+
       private function hzOnLocalEnv(e:FromClientDataEvent) : *
       {
          var d:Object = e.data;
@@ -1477,11 +1605,21 @@
          if(this.hzInShip != Boolean(d.bInSpaceship)) { this.hzInShip = Boolean(d.bInSpaceship); this.hzRefreshVisibility(); }
          if(inShip)
          {
+            this.hzEnvTempC = NaN;
             this.hzEnvTemp.text = "--"; this.hzEnvGrav.text = "--"; this.hzEnvAir.text = "--";
          }
          else
          {
-            this.hzEnvTemp.text = d.fTemperature + "°";
+            if(d.fTemperature == null || isNaN(Number(d.fTemperature)))
+            {
+               this.hzEnvTempC = NaN;
+               this.hzEnvTemp.text = "--";
+            }
+            else
+            {
+               this.hzEnvTempC = Number(d.fTemperature);
+               this.hzEnvTemp.text = this.hzTempText(this.hzEnvTempC);
+            }
             this.hzEnvGrav.text = GlobalFunc.FormatNumberToString(d.fGravity,2,true) + "g";
             this.hzEnvAir.text = d.fOxygenPercent + "%";
          }
@@ -1652,7 +1790,7 @@
             this.hzPlace(this.HorizonVitals_mc,left,vy);
             this.hzVitCX = NaN;
             this.hzVitOff = 0;
-            this.hzPlace(this.HorizonCard_mc,left,vy - 8 * sV - 72 * sJ);
+            this.hzPlace(this.HorizonCard_mc,left,vy - 8 * sV - this.hzJ19H * sJ);
             this.hzPlace(this.HorizonAffl_mc,left + (this.hz42VW() + 16) * sV,bottom - this.hzAfH * sA);
             this.hzPlace(this.HorizonCompact_mc,left,bottom - 114 * sC);
             var eqw:Number = this.hzE19Wd;
@@ -1739,6 +1877,7 @@
                case "ammoonlywhendrawn": this.hzAmmoOnlyWhenDrawn = bv; break;
                case "showquests": this.hzShowQuests = bv; break;
                case "showcompass": this.hzShowCompass = bv; break;
+               case "vehicleexitpill": this.hzVehOn = bv; break;   // 0.42.0.7: [Cards], part of the HUD
                case "compassmarkers": this.hzShowCompassMarkers = bv; break;
                case "smoothbars": this.hzSmoothBars = bv; break;
                case "fadecards": this.hzFadeCards = bv; break;
@@ -1750,6 +1889,7 @@
                case "fontface": if(!isNaN(nv)) { this.hzFontFace = Math.max(0,Math.min(3,int(nv))); } break;
                case "timedisplay": if(!isNaN(nv)) { this.hzTimeDisplay = Math.max(0,Math.min(3,int(nv))); } break;
                case "clockformat": if(!isNaN(nv)) { this.hzClockFmt = Math.max(0,Math.min(1,int(nv))); } break;
+               case "tempunit": if(!isNaN(nv)) { this.hzTempUnit = Math.max(0,Math.min(1,int(nv))); } break;
                case "afflictionlayout": if(!isNaN(nv)) { this.hzAfLayout = Math.max(0,Math.min(2,int(nv))); } break;
                case "planetdetails": this.hzPlanDetails = bv; break;
                case "showtarget": this.hzShowTarget = bv; break;
@@ -1903,6 +2043,8 @@
          BSUIDataManager.Subscribe("PlayerFrequentData",this.hzOnPlayerFrequent);
          BSUIDataManager.Subscribe("PlayerData",this.hzOnPlayerData);
          BSUIDataManager.Subscribe("HudCrosshairData",this.hzOnCrosshair);
+         try { BSUIDataManager.Subscribe("HUDVehicleData",this.hz42VehOnData); } catch(e42vs:Error) { }
+         try { BSUIDataManager.Subscribe("ControlMapData",this.hz42VehOnMap); } catch(e42vm:Error) { }
          try { this.hz26Build(); } catch(err26:Error) { }
          try { this.hz40Init(); } catch(err40:Error) { }
          this.hzLoadIni();
@@ -2295,6 +2437,7 @@
          var names:Array = [];
          var o:Object = null;
          this.hzFrameN++;
+         try { this.hz42VehTick(); } catch(e42v:Error) { }   // 0.42.0.7: own try, first, so a throw later in this frame cannot skip the exit pill
          try { this.hz40Frame(); } catch(e40f:Error) { }
          try { this.hz42QmFont(); } catch(e42q:Error) { }   // v0.40.2: in-world quest-marker labels in the Horizon face
          try { this.hz35CmpTick(); } catch(e35c:Error) { }   // v0.35: global Compact follow
@@ -2341,13 +2484,13 @@
          try { this.hzEqTick(); } catch(e36e:Error) { }
          if(this.hz30ModT0 > 0) { try { this.hz30ModTick(); } catch(errMt:Error) { this.hz30ModT0 = 0; } }
          if(this.hzFrameN % 30 == 11) { try { this.hzPpClock(); } catch(errClk:Error) { } }
-         if(this.hzFontFace >= 1 && this.hzFontFace <= 3 && this.hzFontRetry < 6 && this.hzFrameN % 300 == 150)
+         if(this.hzFontFace >= 1 && this.hzFontFace <= 3 && this.hzFontRetry < 6 && this.hzFrameN % 300 == 150 && (this.hzFontFace == 3 || this.hz30Mod["font"] === 1))
          {
             // fontlibs can register late: re-probe faces that failed (a few times in the first ~60 s)
             var fbefore:String = this.hzFontName() + this.hzFontName("rg") + this.hzFontName("bd");
             var fbad:Boolean = false;
             for(var fk:String in this.hzFontOkMap) { if(this.hzFontOkMap[fk] != 1) { delete this.hzFontOkMap[fk]; fbad = true; } }
-            if(fbad) { this.hzFontRetry++; if(this.hzFontName() + this.hzFontName("rg") + this.hzFontName("bd") != fbefore) { this.hzApplyTypo(); } }
+            if(fbad) { this.hzFontRetry++; if(this.hzFontName() + this.hzFontName("rg") + this.hzFontName("bd") != fbefore) { this.hzApplyTypo(); } else { try { this.hzAfRetryLayout(); } catch(errAf:Error) { } } }
             else { this.hzFontRetry = 6; }
          }
          try { this.hzTgTick(); } catch(errTg:Error) { try { this.hzTgRestore(); this.HorizonTarget_mc.visible = false; } catch(errTg2:Error) { } }
@@ -2356,6 +2499,7 @@
          try { this.hzTickFades(); } catch(e36d:Error) { }
          try { this.hzTickVitals(); } catch(e36v:Error) { }
          try { this.hz26Tick(); } catch(err26:Error) { }
+         try { this.hzAfLoadWatch(); } catch(errAfW:Error) { }
          if(this.hzPlanAlertOn)
          {
             this.hzPlanPulse += 0.07;
@@ -2372,12 +2516,495 @@
          try { this.hz36HideTick(); } catch(e36z:Error) { }   // v0.36: and again after everything else this frame
          if(this.hz40Hide) { try { this.hz40ForceHide(); } catch(e40z:Error) { } }
       }
+
+      // 0.42.0.7: vehicle exit pill, part of the main HUD (not its own movie). Same keycap and pill language as the
+      // scope hold-breath chip: the key the game is showing, then EXIT. The sweep is HoldAnim_mc from StartHold to
+      // buttonHoldComplete. The pill turns green with a check when that hold completes. The game's button stays in the movie.
+      private var hzVehOn:Boolean = true;
+      private var hzVehPx:Sprite = null;
+      private var hzVehSig:String = "";
+      private var hzVehIn:int = -1;       // HUDVehicleData.bInVehicle: -1 unknown, 0 out, 1 in
+      private var hzVehPad:int = -1;      // ControlMapData.uiController: -1 unknown, 0 keyboard, 1 controller
+      private var hzVehHid:Boolean = false;
+      private var hzVehAlpha:Number = 1;
+      private var hzVehW:Number = 0;
+      private var hzVehH:Number = 42;
+      private var hzVehFail:int = 0;
+      private function hz42VehOnData(e:FromClientDataEvent) : void
+      {
+         try
+         {
+            if(e == null || e.data == null || e.data.bInVehicle == undefined) { return; }
+            this.hzVehIn = Boolean(e.data.bInVehicle) ? 1 : 0;
+         }
+         catch(err:Error) { }
+      }
+      private function hz42VehOnMap(e:FromClientDataEvent) : void
+      {
+         try
+         {
+            if(e == null || e.data == null || e.data.uiController == undefined) { return; }
+            this.hzVehPad = uint(e.data.uiController) > 0 ? 1 : 0;
+         }
+         catch(err:Error) { }
+      }
+      private function hz42VehBtn() : *
+      {
+         try
+         {
+            var rm:* = this["RightMeters_mc"];
+            if(rm == null) { return null; }
+            var hv:* = rm.HUDVehicle_mc;
+            if(hv == null) { return null; }
+            return hv.GetUpButton_mc;
+         }
+         catch(err:Error) { }
+         return null;
+      }
+      // alpha only: visible stays the game's, so the hold timeline keeps running and the exit still fires.
+      // Name, x, and y stay the game's too. Exit input depends on GetUpButton_mc remaining that button.
+      private function hz42VehHideVan(b:*, hide:Boolean) : void
+      {
+         if(b == null) { return; }
+         try
+         {
+            if(hide)
+            {
+               if(!this.hzVehHid)
+               {
+                  var a:Number = Number(b.alpha);
+                  this.hzVehAlpha = (!isNaN(a) && a > 0.05) ? a : 1;
+                  this.hzVehHid = true;
+               }
+               b.alpha = 0;
+            }
+            else if(this.hzVehHid)
+            {
+               b.alpha = this.hzVehAlpha > 0 ? this.hzVehAlpha : 1;
+               this.hzVehHid = false;
+            }
+         }
+         catch(err:Error) { }
+      }
+      private function hz42VehLabel(mc:*, name:String) : int
+      {
+         var f:int = 0;
+         try
+         {
+            var labs:Array = mc.currentLabels;
+            var i:int = 0;
+            var n:int = labs != null ? int(labs.length) : 0;
+            while(i < n)
+            {
+               var lb:* = labs[i];
+               if(lb != null && String(lb.name) == name) { f = int(lb.frame); break; }
+               i++;
+            }
+         }
+         catch(err:Error) { f = 0; }
+         return f;
+      }
+      // 0 at or before StartHold, 1 at or after buttonHoldComplete. The frames after that label are the end flash.
+      private function hz42VehSpan(cur:int, a:int, z:int) : Number
+      {
+         if(a < 1 || z <= a) { return 0; }
+         if(cur >= z) { return 1; }
+         if(cur <= a) { return 0; }
+         return (cur - a) / (z - a);
+      }
+      private function hz42VehHold(b:*) : *
+      {
+         var pc:* = this.hz42VehAt(b,["PCButton_mc","ButtonInstance_mc","HoldAnim_mc"]);
+         var con:* = this.hz42VehAt(b,["ConsoleButton_mc","ButtonInstance_mc","HoldAnim_mc"]);
+         var pad:int = this.hzVehPad;
+         if(pad < 0)
+         {
+            var pcOn:Boolean = this.hz42VehShown(this.hz42VehAt(b,["PCButton_mc"]),b);
+            var conOn:Boolean = this.hz42VehShown(this.hz42VehAt(b,["ConsoleButton_mc"]),b);
+            if(conOn && !pcOn) { pad = 1; }
+            else { pad = 0; }
+         }
+         var hold:* = pad == 1 ? con : pc;
+         if(hold == null) { hold = pad == 1 ? pc : con; }
+         return hold;
+      }
+      private function hz42VehProg(b:*) : Number
+      {
+         var p:Number = 0;
+         var hold:* = this.hz42VehHold(b);
+         if(hold != null)
+         {
+            var cur:int = 0;
+            try { cur = int(hold.currentFrame); } catch(eH:Error) { cur = 0; }
+            var a:int = this.hz42VehLabel(hold,"StartHold");
+            var z:int = this.hz42VehLabel(hold,"buttonHoldComplete");
+            p = this.hz42VehSpan(cur,a,z);
+         }
+         // The button's own frames, including 41 and later, are not the sweep.
+         if(p < 0) { return 0; }
+         return p > 1 ? 1 : p;
+      }
+      private function hz42VehAt(o:*, path:Array) : *
+      {
+         try
+         {
+            var c:* = o;
+            for each(var n:String in path) { if(c == null) { return null; } c = c[n]; }
+            return c;
+         }
+         catch(err:Error) { }
+         return null;
+      }
+      private function hz42VehShown(d:*, top:*) : Boolean
+      {
+         try
+         {
+            var c:* = d;
+            var n:int = 0;
+            while(c != null && c != top && n < 8)
+            {
+               if(c.visible == false) { return false; }
+               c = c.parent;
+               n++;
+            }
+            return c != null;
+         }
+         catch(err:Error) { }
+         return false;
+      }
+      private function hz42VehTx(t:*) : String
+      {
+         try
+         {
+            if(t == null || t.visible == false || t.text == null) { return null; }
+            var s:String = String(t.text).replace(/^\s+|\s+$/g,"").replace(/\s+/g," ");
+            if(s.length == 0 || s == "?" || s == "null" || s == "undefined" || s.charAt(0) == "$") { return null; }
+            return s.length > 12 ? s.substr(0,12) : s;
+         }
+         catch(err:Error) { }
+         return null;
+      }
+      // live key only: keyboard text or the controller glyph. No stand-in key when the game has not drawn one.
+      private function hz42VehKey(b:*) : Array
+      {
+         var pc:* = this.hz42VehAt(b,["PCButton_mc","ButtonInstance_mc","PCButton_tf"]);
+         if(pc == null) { pc = this.hz42VehAt(b,["PCButton_mc","PCButton_tf"]); }
+         var con:* = this.hz42VehAt(b,["ConsoleButton_mc","ButtonInstance_mc","ConsoleButton_tf"]);
+         if(con == null) { con = this.hz42VehAt(b,["ConsoleButton_mc","ConsoleButton_tf"]); }
+         var pcOn:Boolean = pc != null && this.hz42VehShown(pc,b);
+         var conOn:Boolean = con != null && this.hz42VehShown(con,b);
+         var usePad:int = this.hzVehPad;
+         if(usePad < 0)
+         {
+            if(conOn && !pcOn) { usePad = 1; }
+            else if(pcOn && !conOn) { usePad = 0; }
+            else { return ["",""]; }
+         }
+         if(usePad == 1)
+         {
+            if(!conOn) { return ["",""]; }
+            var ct:String = this.hz42VehTx(con);
+            if(ct == null) { return ["",""]; }
+            var font:String = "";
+            try { var f:* = con.getTextFormat().font; if(f) { font = String(f); } } catch(err:Error) { font = ""; }
+            return [ct,font];
+         }
+         if(!pcOn) { return ["",""]; }
+         var pt:String = this.hz42VehTx(pc);
+         if(pt == null) { return ["",""]; }
+         return [pt.toUpperCase(),""];
+      }
+      private function hz42VehFs(size:Number) : Number
+      {
+         var ts:Number = this.hzTextScale;
+         if(isNaN(ts) || ts <= 0) { ts = 1; }
+         ts = Math.max(0.8,Math.min(1.3,ts));
+         var sz:Number = Math.round(size * ts * 2) / 2;
+         if(sz < 13) { sz = 13; }
+         return sz;
+      }
+      private function hz42VehTf(p:Sprite, s:String, size:Number, col:uint, font:String, ls:Number, align:String = "left") : TextField
+      {
+         var t:TextField = new TextField();
+         t.embedFonts = true;
+         t.selectable = false;
+         t.mouseEnabled = false;
+         t.autoSize = flash.text.TextFieldAutoSize.LEFT;
+         var f:TextFormat = new TextFormat(font,size,col);
+         f.letterSpacing = ls;
+         f.align = align;
+         t.defaultTextFormat = f;
+         t.text = s;
+         t.setTextFormat(f);
+         t.textColor = col;
+         t.filters = this.hz35Shadow(false);
+         try { t.antiAliasType = "advanced"; t.gridFitType = "pixel"; } catch(err:Error) { }
+         p.addChild(t);
+         return t;
+      }
+      // Stage sizes for the 1440p measurement (pill was 48 px from a 39-unit box, about 1.23 screen px per stage unit).
+      // 42 -> about 52 px tall, key 24 -> about 30 px, inset 8 -> about 10 px, gap 11 -> about 14 px.
+      // Key 17 -> about 21 px bold. EXIT 19.5 -> about 24 px semibold. The repo's 1080/ScreenHeight rule (0.75) is noted in the findings.
+      // Outline, glow, sweep, and the key follow HZ_ACCENT. Only the finished hold is HZ_GREEN.
+      private function hz42VehDraw(key:String, face:String, prog:Number, done:Boolean) : void
+      {
+         var p:Sprite = this.hzVehPx;
+         while(p.numChildren > 0) { p.removeChildAt(0); }
+         var g:* = p.graphics;
+         g.clear();
+         var keyFs:Number = this.hz42VehFs(17);
+         var labFs:Number = this.hz42VehFs(19.5);
+         var edge:uint = done ? HZ_GREEN : HZ_ACCENT;
+         var h:Number = 42;
+         var keyBox:Number = 24;
+         var x0:Number = 8;
+         var gap:Number = 11;
+         var kt:TextField = null;
+         var kw:Number = 0;
+         var kh:Number = keyBox;
+         if(key != null && key.length > 0)
+         {
+            var kface:String = face != null && face.length > 0 ? face : this.hzFontName("bd");
+            kt = this.hz42VehTf(p,key,keyFs,edge,kface,0,"center");
+            var kMeas:Number = Number(kt.textWidth);
+            if(isNaN(kMeas) || kMeas < 0) { kMeas = 0; }
+            kw = Math.ceil(kMeas + 8);
+            if(kw < keyBox) { kw = keyBox; }
+            var kth:Number = kt.height;
+            kt.autoSize = flash.text.TextFieldAutoSize.NONE;
+            kt.width = kw;
+            if(kt.height < kth) { kt.height = kth; }
+            // Height stays keyBox (24). A taller text field used to stretch the cap to about 28.
+         }
+         var lab:String = this.hzHdrCase("EXIT");
+         var lls:Number = Math.round(labFs * 0.1 * 10) / 10;
+         var lt:TextField = this.hz42VehTf(p,lab,labFs,0xF2F7F9,this.hzFontName(),lls);
+         var tw:Number = Number(lt.textWidth);
+         if(isNaN(tw) || tw < 8) { tw = 36; }
+         var labLen:int = lab != null ? int(lab.length) : 0;
+         var tracked:Number = Math.ceil(tw + lls * (labLen > 0 ? labLen - 1 : 0));
+         var lth:Number = lt.height;
+         lt.autoSize = flash.text.TextFieldAutoSize.NONE;
+         lt.width = tracked + 4;
+         if(lt.height < lth) { lt.height = lth; }
+         if(lt.height + 12 > h) { h = Math.round(lt.height + 12); }
+         if(kh + 10 > h) { h = kh + 10; }
+         var lx:Number = x0 + (kw > 0 ? kw + gap : 0);
+         var checkW:Number = done ? 18 : 0;
+         var w:Number = Math.round(lx + tracked + 16 + checkW);
+         if(w < 96) { w = 96; }
+         var i:int = 0;
+         while(i < 3)
+         {
+            var sx:Number = 2 + i;
+            var sy:Number = 3;
+            var sw:Number = w - 8 - i * 2;
+            var shd:Number = h - 8;
+            if(sw > 4 && shd > 4) { g.beginFill(0x000000,0.07); g.drawRoundRect(sx,sy,sw,shd,h,h); g.endFill(); }
+            i++;
+         }
+         var opa:Number = Number(this.hzCardOpacity);
+         if(isNaN(opa)) { opa = 1; }
+         g.lineStyle();
+         g.beginFill(0x0B1218,Math.min(1,0.88 * opa));
+         g.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
+         g.endFill();
+         var sweep:Sprite = new Sprite();
+         sweep.mouseEnabled = false;
+         sweep.mouseChildren = false;
+         var fw:Number = Math.round(w * (done ? 1 : prog));
+         var sweepA:Number = 0.30;
+         if(fw > 0)
+         {
+            var sg:* = sweep.graphics;
+            var sweepCol:uint = done ? HZ_GREEN : edge;
+            if(!done && fw < w - 1)
+            {
+               var feather:Number = 6;
+               if(feather > fw) { feather = fw; }
+               var mtx:* = new flash.geom.Matrix();
+               mtx.createGradientBox(w,h,0,0,0);
+               var fade0:int = int(Math.round(255 * Math.max(0,fw - feather) / w));
+               var fade1:int = int(Math.round(255 * fw / w));
+               if(fade1 <= fade0) { fade1 = fade0 + 1; }
+               if(fade1 > 255) { fade1 = 255; }
+               if(fade0 >= fade1) { fade0 = fade1 - 1; }
+               if(fade0 < 0) { fade0 = 0; }
+               sg.beginGradientFill("linear",[sweepCol,sweepCol,sweepCol],[sweepA,sweepA,0],[0,fade0,fade1],mtx);
+            }
+            else { sg.beginFill(sweepCol,sweepA); }
+            sg.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
+            sg.endFill();
+            p.addChild(sweep);
+         }
+         var idleRim:Boolean = !done && prog <= 0.02;
+         var rimCol:uint = done ? HZ_GREEN : (idleRim ? 0xFFFFFF : edge);
+         var rimA:Number = idleRim ? 0.18 : (done ? 1 : 0.95);
+         var rimW:Number = idleRim ? 1.5 : 2;
+         var rim:Sprite = new Sprite();
+         rim.mouseEnabled = false;
+         rim.mouseChildren = false;
+         var rg:* = rim.graphics;
+         rg.lineStyle(rimW,rimCol,rimA,true,"none");
+         rg.beginFill(rimCol,0.004);
+         rg.drawRoundRect(rimW * 0.5,rimW * 0.5,w - rimW,h - rimW,Math.max(0,h - rimW),Math.max(0,h - rimW));
+         rg.endFill();
+         // Blur 6 stays under Scaleform's 15.9 px text-and-shape glow cap. Idle has no glow.
+         if(!idleRim) { try { rim.filters = [new GlowFilter(rimCol,0.30,6,6,1,1)]; } catch(eGlow:Error) { } }
+         p.addChild(rim);
+         if(kw > 0)
+         {
+            var cap:Sprite = new Sprite();
+            cap.mouseEnabled = false;
+            cap.mouseChildren = false;
+            var ky:Number = Math.round((h - kh) / 2);
+            var cg:* = cap.graphics;
+            cg.lineStyle(1.5,edge,0.9,true,"none");
+            var capA:Number = done ? 0.18 : (idleRim ? 0.10 : 0.22);
+            cg.beginFill(edge,capA);
+            cg.drawRoundRect(x0 + 0.75,ky + 0.75,kw - 1.5,kh - 1.5,8,8);
+            cg.endFill();
+            p.addChild(cap);
+            kt.x = x0;
+            kt.y = Math.round(ky + (kh - kt.height) / 2);
+            p.addChild(kt);
+         }
+         lt.x = Math.round(lx);
+         lt.y = Math.round(h / 2 - lt.height / 2);
+         p.addChild(lt);
+         if(done)
+         {
+            var ck:Sprite = new Sprite();
+            ck.mouseEnabled = false;
+            var kg:* = ck.graphics;
+            var cx0:Number = Math.round(lx + tracked + 8);
+            var cy0:Number = Math.round(h / 2);
+            kg.lineStyle(2,HZ_GREEN,1,true,"none");
+            kg.moveTo(cx0,cy0);
+            kg.lineTo(cx0 + 4,cy0 + 4);
+            kg.lineTo(cx0 + 11,cy0 - 5);
+            p.addChild(ck);
+         }
+         this.hzVehW = w;
+         this.hzVehH = h;
+      }
+      private function hz42VehFront() : void
+      {
+         var p:Sprite = this.hzVehPx;
+         if(p == null) { return; }
+         if(p.parent != this) { this.addChild(p); }
+         try { this.setChildIndex(p,this.numChildren - 1); } catch(err:Error) { }
+         var tops:Array = [this.hzArr_mc,this.HorizonSettings_mc];
+         var i:int = 0;
+         while(i < tops.length)
+         {
+            var c:Sprite = tops[i] as Sprite;
+            if(c != null && c.parent == this && c.visible) { try { this.setChildIndex(c,this.numChildren - 1); } catch(err2:Error) { } }
+            i++;
+         }
+      }
+      private function hz42VehPlace(b:*) : Boolean
+      {
+         var r:Rectangle = null;
+         try { r = b.getBounds(this); } catch(err:Error) { r = null; }
+         var bad:Boolean = r == null || isNaN(r.x) || isNaN(r.y) || isNaN(r.width) || isNaN(r.height) || r.width < 1 || r.height < 1 || r.width > 800 || r.height > 400;
+         if(bad)
+         {
+            r = null;
+            try
+            {
+               var lp:Point = this.globalToLocal(b.localToGlobal(new Point(b.width > 1 ? b.width / 2 : 0,b.height > 1 ? b.height / 2 : 0)));
+               if(lp != null && !isNaN(lp.x) && !isNaN(lp.y)) { r = new Rectangle(lp.x,lp.y,2,2); }
+            }
+            catch(err2:Error) { r = null; }
+         }
+         if(r == null || isNaN(r.x) || isNaN(r.y)) { return false; }
+         this.hzVehPx.x = Math.round(r.x + r.width / 2 - this.hzVehW / 2);
+         this.hzVehPx.y = Math.round(r.y + r.height / 2 - this.hzVehH / 2);
+         return true;
+      }
+      private function hz42VehTick() : void
+      {
+         var b:* = this.hz42VehBtn();
+         if(!this.hzVehOn || b == null)
+         {
+            this.hzVehFail = 0;
+            this.hz42VehHideVan(b,false);
+            if(this.hzVehPx != null) { this.hzVehPx.visible = false; }
+            return;
+         }
+         var shown:Boolean = false;
+         var haveVis:Boolean = false;
+         try
+         {
+            var vv:* = b.Visible;
+            if(vv !== undefined) { haveVis = true; shown = Boolean(vv); }
+         }
+         catch(eV:Error) { haveVis = false; }
+         if(!haveVis) { shown = this.hzVehIn == 1; }
+         if(this.hzVehIn == 0) { shown = false; }
+         try { if(b.stage == null) { shown = false; } } catch(eS:Error) { }
+         if(shown && !this.hz42VehShown(b,this)) { shown = false; }
+         if(!shown)
+         {
+            this.hzVehFail = 0;
+            this.hz42VehHideVan(b,false);
+            if(this.hzVehPx != null) { this.hzVehPx.visible = false; }
+            return;
+         }
+         var prog:Number = this.hz42VehProg(b);
+         if(isNaN(prog) || prog < 0) { prog = 0; }
+         if(prog > 1) { prog = 1; }
+         var done:Boolean = prog >= 1;
+         var key:Array = this.hz42VehKey(b);
+         var ks:String = key != null && key[0] != null ? String(key[0]) : "";
+         var kf:String = key != null && key[1] != null ? String(key[1]) : "";
+         var sig:String = (done ? "1" : "0") + "|" + String(int(Math.round(prog * 100))) + "|" + ks + "|" + kf + "|" + String(int(HZ_ACCENT)) + "|" + String(this.hzTextScale) + "|" + String(this.hzFontFace) + "|" + String(this.hzHeaderStyle) + "|" + String(this.hzCardOpacity);
+         if(this.hzVehPx == null)
+         {
+            this.hzVehPx = new Sprite();
+            this.hzVehPx.mouseEnabled = false;
+            this.hzVehPx.mouseChildren = false;
+            this.hzVehPx.name = "hzVehExit";
+            this.hzVehSig = "";
+         }
+         if(sig != this.hzVehSig)
+         {
+            try
+            {
+               this.hz42VehDraw(ks,kf,prog,done);
+               this.hzVehSig = sig;
+               this.hzVehFail = 0;
+            }
+            catch(eD:Error)
+            {
+               this.hzVehFail++;
+               if(this.hzVehFail >= 3)
+               {
+                  this.hzVehSig = sig;
+                  this.hzVehPx.visible = false;
+                  this.hz42VehHideVan(b,false);
+               }
+               return;
+            }
+         }
+         if(this.hzVehW < 1 || !this.hz42VehPlace(b))
+         {
+            this.hzVehPx.visible = false;
+            this.hz42VehHideVan(b,false);
+            return;
+         }
+         this.hzVehPx.visible = true;
+         this.hz42VehFront();
+         this.hz42VehHideVan(b,true);
+      }
       // =================== Horizon settings window (keyboard + mouse) ===================
       public var HorizonSettings_mc:Sprite = null;
       public var hzSettingsKeyName:String = "F11";
       private var hzSetBody:Sprite = null;
       private var hzSetCursor:Sprite = null;
       private var hzSetIsOpen:Boolean = false;
+      private var hzDllFileVer:String = "";   // v0.42.0.4: DLL file version, from hzSetDllFileVersion
       private var hzSetPend:Object = null;
       private var hzSetOrig:Object = null;
       private var hzSetTab:int = 0;
@@ -2407,7 +3034,7 @@
          }
          if(tab == 2)
          {
-            return this.hz30FontRows([{"k":"TextTone","l":"TEXT TONE","t":"r","opts":HZ_TONE_NAMES,"note":"AUTO = dark text on light card colors","h":"TYPE"},{"k":"FontFace","l":"FONT","t":"r","opts":HZ_FONT_NAMES,"ids":HZ_FONT_IDS,"note":"EXO 2 (default) / ROBOTO need fonts_horizon.swf + fontconfig; game font is used if missing."},{"k":"TextScale","l":"TEXT SIZE","t":"n","mn":0.8,"mx":1.3,"st":0.05},{"k":"HeaderStyle","l":"CARD HEADER STYLE","t":"r","opts":HZ_HDRSTYLE_NAMES},{"k":"TextShadow","l":"TEXT SHADOW","t":"b"},{"k":"TimeDisplay","l":"PLANET TIME","t":"r","opts":HZ_TIME_NAMES,"h":"CLOCK"},{"k":"ClockFormat","l":"CLOCK FORMAT","t":"r","opts":HZ_CLOCK_NAMES}]);
+            return this.hz30FontRows([{"k":"TextTone","l":"TEXT TONE","t":"r","opts":HZ_TONE_NAMES,"note":"AUTO = dark text on light card colors","h":"TYPE"},{"k":"FontFace","l":"FONT","t":"r","opts":HZ_FONT_NAMES,"ids":HZ_FONT_IDS,"note":"EXO 2 (default) / ROBOTO need fonts_horizon.swf + fontconfig; game font is used if missing."},{"k":"TextScale","l":"TEXT SIZE","t":"n","mn":0.8,"mx":1.3,"st":0.05},{"k":"HeaderStyle","l":"CARD HEADER STYLE","t":"r","opts":HZ_HDRSTYLE_NAMES},{"k":"TextShadow","l":"TEXT SHADOW","t":"b"},{"k":"TimeDisplay","l":"PLANET TIME","t":"r","opts":HZ_TIME_NAMES,"h":"CLOCK"},{"k":"ClockFormat","l":"CLOCK FORMAT","t":"r","opts":HZ_CLOCK_NAMES},{"k":"TempUnit","l":"TEMPERATURE UNITS","t":"r","opts":HZ_TEMP_NAMES}]);
          }
          if(tab == 3)
          {
@@ -2428,7 +3055,7 @@
 
       private function hzSetCurrent() : Object
       {
-         var cur:Object = {"ShowJetpack":this.hzShowJetpack,"JetpackAutoHide":this.hzJetpackAutoHide,"ShowVitals":this.hzShowVitals,"ShowPlanet":this.hzShowPlanet,"ShowAfflictions":this.hzShowAfflictions,"AfflictionsAutoHide":this.hzAfflAutoHide,"ShowAmmo":this.hzShowAmmo,"AmmoOnlyWhenDrawn":this.hzAmmoOnlyWhenDrawn,"ShowQuests":this.hzShowQuests,"ShowCompass":this.hzShowCompass,"CompassMarkers":this.hzShowCompassMarkers,"CardOpacity":this.hzCardOpacity,"ContainerOpacity":this.hzContOpacity,"AccentColor":Math.max(0,Math.min(this.hzAccPal().length - 1,this.hzAccentChoice)),"Margin":this.hzMargin,"Compact":this.hzCompact,"SmoothBars":this.hzSmoothBars,"FadeCards":this.hzFadeCards,"CombatDim":this.hzCombatDim,"DimOpacity":this.hzDimAlpha,"HazardAlert":this.hzHazardAlert,"CardColor":Math.max(0,Math.min(this.hzCardPal().length - 1,this.hzCardColor)),"HudScale":this.hzHudScale,"AutoCenterVitals":this.hzAutoCenterVitals,"JetpackRule":this.hzRuleJetpack,"VitalsRule":this.hzRuleVitals,"PlanetRule":this.hzRulePlanet,"AfflictionsRule":this.hzRuleAffl,"AmmoRule":this.hzRuleAmmo,"QuestsRule":this.hzRuleQuests,"CompassRule":this.hzRuleCompass,"SettingsKey":this.hzSettingsKeyName,"ShowFollowers":this.hzCmpFollowers,"TextTone":this.hzTextTone,"FontFace":this.hzFontFace,"PlanetDetails":this.hzPlanDetails,"ShowTarget":this.hzShowTarget,"TargetAnchor":this.hzTgAnchor,"TargetShowValue":this.hzTgShowValue,"ShowLocations":this.hzCmpLocations,"ShowShip":this.hzCmpShip,"ShowEnemies":this.hzCmpEnemies,"ShowPlayerMarker":this.hzCmpPlayerMark,"TextScale":this.hzTextScale,"ContainerScale":this.hzTgScale,"ScreenHeight":this.hzScrH,"CrosshairStyle":this.hzXhStyle,"ObjectRing":this.hzObjRing,"HeaderStyle":this.hzHeaderStyle,"TextShadow":this.hzTextShadow,"TimeDisplay":this.hzTimeDisplay,"ClockFormat":this.hzClockFmt,"AfflictionLayout":this.hzAfLayout};
+         var cur:Object = {"ShowJetpack":this.hzShowJetpack,"JetpackAutoHide":this.hzJetpackAutoHide,"ShowVitals":this.hzShowVitals,"ShowPlanet":this.hzShowPlanet,"ShowAfflictions":this.hzShowAfflictions,"AfflictionsAutoHide":this.hzAfflAutoHide,"ShowAmmo":this.hzShowAmmo,"AmmoOnlyWhenDrawn":this.hzAmmoOnlyWhenDrawn,"ShowQuests":this.hzShowQuests,"ShowCompass":this.hzShowCompass,"VehicleExitPill":this.hzVehOn,"CompassMarkers":this.hzShowCompassMarkers,"CardOpacity":this.hzCardOpacity,"ContainerOpacity":this.hzContOpacity,"AccentColor":Math.max(0,Math.min(this.hzAccPal().length - 1,this.hzAccentChoice)),"Margin":this.hzMargin,"Compact":this.hzCompact,"SmoothBars":this.hzSmoothBars,"FadeCards":this.hzFadeCards,"CombatDim":this.hzCombatDim,"DimOpacity":this.hzDimAlpha,"HazardAlert":this.hzHazardAlert,"CardColor":Math.max(0,Math.min(this.hzCardPal().length - 1,this.hzCardColor)),"HudScale":this.hzHudScale,"AutoCenterVitals":this.hzAutoCenterVitals,"JetpackRule":this.hzRuleJetpack,"VitalsRule":this.hzRuleVitals,"PlanetRule":this.hzRulePlanet,"AfflictionsRule":this.hzRuleAffl,"AmmoRule":this.hzRuleAmmo,"QuestsRule":this.hzRuleQuests,"CompassRule":this.hzRuleCompass,"SettingsKey":this.hzSettingsKeyName,"ShowFollowers":this.hzCmpFollowers,"TextTone":this.hzTextTone,"FontFace":this.hzFontFace,"PlanetDetails":this.hzPlanDetails,"ShowTarget":this.hzShowTarget,"TargetAnchor":this.hzTgAnchor,"TargetShowValue":this.hzTgShowValue,"ShowLocations":this.hzCmpLocations,"ShowShip":this.hzCmpShip,"ShowEnemies":this.hzCmpEnemies,"ShowPlayerMarker":this.hzCmpPlayerMark,"TextScale":this.hzTextScale,"ContainerScale":this.hzTgScale,"ScreenHeight":this.hzScrH,"CrosshairStyle":this.hzXhStyle,"ObjectRing":this.hzObjRing,"HeaderStyle":this.hzHeaderStyle,"TextShadow":this.hzTextShadow,"TimeDisplay":this.hzTimeDisplay,"ClockFormat":this.hzClockFmt,"TempUnit":this.hzTempUnit,"AfflictionLayout":this.hzAfLayout};
          try { this.hz26SetCur(cur); } catch(err26:Error) { }
          try { this.hz31SetCur(cur); } catch(err31:Error) { }
          try { this.hz34SetCur(cur); } catch(err34:Error) { }
@@ -2437,14 +3064,74 @@
          return cur;
       }
 
+      private var hzPopLayers:Array = [];   // 0.43.0.1: extra F11 layers (log / settings / confirm). P1 is plumbing only.
+
       public function hzSettingsOpen() : Boolean
       {
-         return this.hzSetIsOpen || this.hzArrange;
+         return this.hzSetIsOpen || this.hzArrange || (this.hzPopLayers != null && this.hzPopLayers.length > 0);
+      }
+
+      // Purpose: forced close when a full-screen menu opens. Every layer goes.
+      // The older path toggled at most twice and could leave a layer stuck (freeze risk).
+      // Inputs: none. Outputs: none. Dependencies: hzArrExit, hzSetCancel, hz37Reset.
+      public function hzSettingsCloseAll() : void
+      {
+         this.hzPopLayers = [];
+         try { if(this.hz41SA) { this.hz41SAEnd(false); } } catch(eSa:Error) { }
+         if(this.hzArrange) { this.hzArrExit(false); }
+         if(this.hzSetIsOpen) { this.hzSetCancel(); }
+         try { this.hz37Reset(); } catch(e37:Error) { }
+      }
+
+      public function hzPopPush(id:String) : void
+      {
+         if(id == null || id.length == 0) { return; }
+         if(this.hzPopLayers == null) { this.hzPopLayers = []; }
+         if(this.hzPopLayers.length >= 8) { return; }
+         this.hzPopLayers.push(id);
+      }
+
+      public function hzPopPop() : String
+      {
+         if(this.hzPopLayers == null || this.hzPopLayers.length == 0) { return ""; }
+         return String(this.hzPopLayers.pop());
+      }
+
+      public function hzPopTop() : String
+      {
+         if(this.hzPopLayers == null || this.hzPopLayers.length == 0) { return ""; }
+         return String(this.hzPopLayers[this.hzPopLayers.length - 1]);
+      }
+
+      private function hzPopKey(code:String) : void
+      {
+         if(code == "cancel") { this.hzPopPop(); }
+      }
+
+      // F11 and the Message Log open from the keyboard only. Never a pad button.
+      public function hzMsglogOpenHint() : String
+      {
+         return "F11";
+      }
+
+      public function hzMsglogModule() : Number
+      {
+         return this.hz30Mod["notifications"] === 1 ? 1 : 0;
+      }
+
+      // ut|lt|body for the log detail strip. lt is -1 when vanilla blanks local time.
+      public function hzMsglogClock() : String
+      {
+         var ut:String = this.hzPpUT >= 0 ? String(this.hzPpUT) : "-1";
+         var lt:String = this.hzPpDay >= 0 ? String(this.hzPpDay) : "-1";
+         var body:String = this.hzPpBodyName != null && this.hzPpBodyName != "--" ? this.hzPpBodyName : "";
+         return ut + "|" + lt + "|" + body;
       }
 
       public function hzToggleSettings() : void
       {
          if(!this.hzSetIsOpen && !this.hzArrange && this.hz40F11Block()) { return; }   // v0.42.0: F11 opens from the main HUD only (never while scanning)
+         if(this.hzPopLayers != null && this.hzPopLayers.length > 0) { this.hzPopLayers = []; }
          if(this.hzArrange) { this.hzArrExit(false); return; }
          if(this.hzSetIsOpen) { this.hzSetCancel(); return; }
          try { this.hz30ModProbeAll(); } catch(errMod:Error) { }
@@ -2529,6 +3216,7 @@
       public function hzSettingsKey(code:String) : void
       {
          this.hz35Kb = true;   // v0.35: keys / controller -> the selected row shows its info
+         if(this.hzPopLayers != null && this.hzPopLayers.length > 0) { this.hzPopKey(code); return; }   // 0.43.0.1: only the top layer
          if(this.hzArrange) { this.hzArrKey(code); return; }
          if(!this.hzSetIsOpen) { return; }
          if(this.hz37Key(code)) { this.hzSetDraw(); return; }   // v0.37: preset name entry / pending confirm
@@ -2654,6 +3342,7 @@
          this.hzAmmoOnlyWhenDrawn = p.AmmoOnlyWhenDrawn;
          this.hzShowQuests = p.ShowQuests;
          this.hzShowCompass = p.ShowCompass;
+         if(p.VehicleExitPill !== undefined) { this.hzVehOn = p.VehicleExitPill === true || Number(p.VehicleExitPill) >= 0.5; }
          this.hzShowCompassMarkers = p.CompassMarkers;
          this.hzCmpFollowers = p.ShowFollowers;
          var rd:Boolean = false;
@@ -2668,6 +3357,12 @@
          if(!this.hzShowTarget) { this.hzTgRestore(); }
          if(p.TimeDisplay != undefined && this.hzTimeDisplay != int(p.TimeDisplay)) { this.hzTimeDisplay = Math.max(0,Math.min(3,int(p.TimeDisplay))); this.hzPpLayout(); }
          if(p.ClockFormat != undefined && this.hzClockFmt != int(p.ClockFormat)) { this.hzClockFmt = Math.max(0,Math.min(1,int(p.ClockFormat))); this.hzPpLayout(); }
+         if(p.TempUnit != undefined && this.hzTempUnit != int(p.TempUnit))
+         {
+            this.hzTempUnit = Math.max(0,Math.min(1,int(p.TempUnit)));
+            if(this.hzEnvTemp != null && !isNaN(this.hzEnvTempC)) { this.hzEnvTemp.text = this.hzTempText(this.hzEnvTempC); }
+            this.hzPpLayout();
+         }
          if(p.AfflictionLayout != undefined && this.hzAfLayout != int(p.AfflictionLayout)) { this.hzAfLayout = Math.max(0,Math.min(2,int(p.AfflictionLayout))); this.hzAfSync(); this.hzLaidOut = false; }
          if(p.PlanetDetails != undefined && this.hzPlanDetails != Boolean(p.PlanetDetails)) { this.hzPlanDetails = Boolean(p.PlanetDetails); this.hzPpLayout(); }
          if(rd) { this.hzRedrawBodies(); if(this.hzEqKind.length > 0) { this.hzEqDrawWeapIcon(this.hzEqKind); } this.hzEqDrawAmmoIcon(); }
@@ -2757,6 +3452,8 @@
          {
             a.push(k + "=" + this.hzB(p[k]));
          }
+         a.push("; Vehicle exit prompt: 1 = Horizon pill (the key the game shows, EXIT, a hold sweep). 0 = the game's prompt.");
+         a.push("VehicleExitPill=" + this.hzB(p.VehicleExitPill !== undefined ? p.VehicleExitPill : this.hzVehOn));
          a.push("; Planet pill: extra GRAV / AIR line");
          a.push("PlanetDetails=" + this.hzB(p.PlanetDetails));
          a.push("; Target card (restyled activate prompt). 0 = vanilla prompt untouched. Scanner / inventory prompts always stay vanilla");
@@ -2790,6 +3487,8 @@
          a.push("TimeDisplay=" + int(p.TimeDisplay));
          a.push("; Clock format for LOCAL and PC: 0 12-hour (AM/PM), 1 24-hour (GAME UT is always 24-hour, like the game)");
          a.push("ClockFormat=" + int(p.ClockFormat));
+         a.push("; Temperature units on the planet card and scanner: 0 Celsius, 1 Fahrenheit (default Celsius)");
+         a.push("TempUnit=" + int(p.TempUnit != undefined ? p.TempUnit : this.hzTempUnit));
          a.push("; Afflictions: 0 column of chips, 1 row, 2 icons only");
          a.push("AfflictionLayout=" + int(p.AfflictionLayout));
          a.push("; 0 cyan, 1 teal, 2 amber, 3 violet, 4 lime, 5 white, 6 rose, 7 orange, 8 sky, 9 gold, 10 mint, 11 steel, 12 deep blue, 13 custom (AccentHex)");
@@ -2937,13 +3636,15 @@
 
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
+      // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
+      private static const HZ_BUILD:String = "0.43.0.1";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":0,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":0,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -2983,7 +3684,7 @@
 
       // window text: own faces ("rg" / "sb" / "bd" via hzFontName per-face fallback), whole pixels, no filters.
       // (x, y) is the mockup's text origin (left or right edge per align), compensating the 2 px TextField gutter.
-      private function hzWT(p:Sprite, txt:String, x:Number, y:Number, w:Number, fs:Number, face:String, col:uint, ls:Number = 0, align:String = "left") : TextField
+      private function hzWT(p:Sprite, txt:String, x:Number, y:Number, w:Number, fs:Number, face:String, col:uint, ls:Number = 0, align:String = "left", minPx:int = 0) : TextField
       {
          var t:TextField = new TextField();
          t.embedFonts = true;
@@ -2991,6 +3692,7 @@
          t.mouseEnabled = false;
          var ts:Number = Math.max(0.9,Math.min(1.15,this.hzTextScale));
          var sz:int = Math.max(9,int(Math.round(fs * ts)));
+         if(minPx > sz) { sz = minPx; }   // v0.42.0.4: the version label passes 13 so TextScale 0.9 cannot round it to 12
          if(face == "rg" && sz <= 12) { face = "sb"; }
          var f:TextFormat = new TextFormat(this.hzFontName(face),sz,col);
          f.align = align;
@@ -3148,7 +3850,12 @@
          // title
          var tt:TextField = this.hzWT(b,"HORIZON UI",28,20,260,18,"bd",uint(T.txt),3);
          this.hzWT(b,"SETTINGS",28 + this.hzTW(tt) + 12,25,200,12,"sb",uint(T.mut),2.4);
-         var vt:TextField = this.hzWT(b,"v" + HZ_VERSION,W - 28,25,120,11,"sb",uint(T.mut),1,"right");
+         // v0.42.0.4: exact DLL file version. HZ_BUILD until hzSetDllFileVersion arrives.
+         // The last argument is a 13 px floor. hzWT multiplies by TextScale (clamped to 0.9) and rounds,
+         // so a bare 13 would draw at 12 px when TextScale is 0.9.
+         var hv:String = HZ_BUILD;
+         if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
+         var vt:TextField = this.hzWT(b,"v" + hv,W - 28,24,170,13,"sb",uint(T.mut),0.4,"right",13);
          g.beginFill(acc,1); g.drawCircle(Math.round(W - 28 - this.hzTW(vt) - 14),32,4); g.endFill();
          // tabs
          var tx:Number = 28;
@@ -3503,7 +4210,7 @@
             var gtf:TextField = isLoc ? this.hzPpLocT : this.hzPpRealT;
             var gx:Number = isLoc ? this.hzPpGlx : this.hzPpGrx;
             var gy:Number = isLoc ? this.hzPpGly : this.hzPpGry;
-            if(isLoc && this.hzPpLocL.text == "GAME") { this.hzGlyph(gg,"clock",gx,gy,this.hzIconCol(HZ_ACCENT),bgc); }
+            if(isLoc && this.hzPpShowUT) { this.hzGlyph(gg,"clock",gx,gy,this.hzIconCol(HZ_ACCENT),bgc); }
             else if(isLoc) { this.hzGlyph(gg,this.hzPpDay >= 0.25 && this.hzPpDay <= 0.75 ? "sun" : "moon",gx,gy,this.hzIconCol(0xFFD678),bgc); }
             else { this.hzGlyph(gg,"clock",gx,gy,this.hzIconCol(0x96A6AE),bgc); }
             ri++;
@@ -3561,6 +4268,7 @@
             o.m = this.hzT(c,"x3  ·  0.1",100,14,96,12,"rg","mut",0.5,"right");
             o.k = this.hzT(c,"E",0,0,60,12,"bd","col",0,"left");
             o.l = this.hzT(c,"TAKE",0,0,120,13,"sb","main",1.6);
+            this.hzChip13(o.l,"Hover");
             o.ov = new Sprite(); c.addChild(o.ov);
             this.hzSetPvTgTf = o;
             p.addChild(new Sprite());   // scene layer (crosshair, ring, ghost) above the card
@@ -3573,6 +4281,12 @@
          // sample tag, same metrics as the item tag (stripe, title, meta, divider, keycap row)
          var CW:Number = 200;
          var CH:Number = 86;
+         var kt:TextField = TextField(tf.k);
+         this.hzTxtTint(kt,this.hzIconCol(HZ_ACCENT));
+         var kw:Number = Math.max(26,Math.round(this.hzTW(kt) + 16));
+         var lt:TextField = TextField(tf.l);
+         var loTk:Object = this.hzTxtObj(lt); if(loTk) { this.hzApplyFmt(loTk); }
+         CW = Math.max(200,18 + kw + 7 + this.hzTW(lt) + 14);
          var cgg:* = Sprite(tf.g).graphics;
          cgg.clear();
          var opS:Number = this.hzCardOpacity;
@@ -3581,14 +4295,10 @@
          this.hzCardOpacity = opS;
          cgg.beginFill(this.hzIconCol(HZ_ACCENT),1); cgg.drawRoundRect(5,8,3,CH - 16,3,3); cgg.endFill();
          this.hzT19Line(cgg,40,CW,false);
-         var kt:TextField = TextField(tf.k);
-         this.hzTxtTint(kt,this.hzIconCol(HZ_ACCENT));
-         var kw:Number = Math.max(26,Math.round(this.hzTW(kt) + 16));
          Sprite(tf.ov).graphics.clear();
          this.hzKeycap(cgg,18,48,kw,24,this.hzIconCol(HZ_ACCENT),1,Sprite(tf.ov).graphics);
          kt.width = Math.round(this.hzTW(kt) + 5);
          kt.x = Math.round(18 + (kw - this.hzTW(kt)) / 2 - 2); this.hzTxtTop(kt,this.hzCapTop(kt,60));
-         var lt:TextField = TextField(tf.l);
          lt.x = 18 + kw + 7; this.hzTxtTop(lt,this.hzCapTop(lt,60));
          TextField(tf.m).x = CW - 14 - 96; this.hzTxtTop(TextField(tf.m),14);
          // v0.31: CONTAINER WINDOW SCALE previews a stand-in container window (header, item rows, selected row,
@@ -3715,7 +4425,7 @@
       {
          var P:Object = this.hzSetPend ? this.hzSetPend : {};
          var mode:int = P.AfflictionLayout != undefined ? Math.max(0,Math.min(2,int(P.AfflictionLayout))) : this.hzAfLayout;
-         this.hzSetPvFrame(b,g,px,py,T,"AFFLICTIONS",["Sample: one injury and one","environmental hazard (exposure bar).","Layout: " + String(HZ_AFLAY_NAMES[mode]).toLowerCase() + "."]);
+         this.hzSetPvFrame(b,g,px,py,T,"AFFLICTIONS",["Sample: one affliction and one","environmental hazard (exposure bar).","Layout: " + String(HZ_AFLAY_NAMES[mode]).toLowerCase() + "."]);
          if(!this.hzSetPvAf)
          {
             var p:Sprite = new Sprite();
@@ -3726,8 +4436,11 @@
             {
                var c:Sprite = new Sprite(); p.addChild(c);
                var body:Sprite = new Sprite(); c.addChild(body);
-               var lb:TextField = this.hzT(c,"",48,8,240,12,"sb","main",1.6); this.hzHdr19(lb);
-               var sb:TextField = this.hzT(c,"",48,24,200,10,"rg","mut",0.4);
+               var lb:TextField = this.hzT(c,"",48,8,240,13,"sb","acc",2);
+               this.hzHdr19(lb);
+               this.hzVit13(lb);
+               var sb:TextField = this.hzT(c,"",48,24,200,13,"sb","col",0.6);
+               this.hzVit13(sb);
                this.hzSetPvAfCh.push({"c":c,"b":body,"l":lb,"s":sb});
                i++;
             }
@@ -3735,14 +4448,19 @@
          var pv:Sprite = this.hzSetPvAf;
          if(pv.parent != this.HorizonSettings_mc) { this.HorizonSettings_mc.addChild(pv); }
          this.HorizonSettings_mc.setChildIndex(pv,this.HorizonSettings_mc.numChildren - 1);
-         var samples:Array = [{"name":"Burn","kind":"thermal","env":false},{"name":"Radiation","kind":"radiation","env":true}];
+         var samples:Array = [{"name":"Affliction","kind":"injury","env":false},{"name":"Radiation","kind":"radiation","env":true}];
          var soak:Number = 0.45;
          var icons:Boolean = mode == 2;
          var bg:uint = this.hzDarkText() ? this.hzMix(this.hzPanelFill(),0x000000,0.14) : 0x060A0E;
          var x:Number = 0;
          var y:Number = 0;
          var maxW:Number = 0;
+         var rowH:Number = 48;
+         var sz13:int = this.hzAf13Sz();
+         var grow:int = Math.max(0,sz13 - 13);
+         var barY:int = 23 + grow + sz13 + 3;
          var j:int = 0;
+         this.hzAfFmt13();
          while(j < this.hzSetPvAfCh.length)
          {
             var ch:Object = this.hzSetPvAfCh[j];
@@ -3753,17 +4471,19 @@
             var st:TextField = TextField(ch.s);
             var col:uint = a.env ? HZ_AMB : HZ_RED;
             var ic:uint = this.hzIconCol(col);
+            var two:Boolean = a.env;
+            var h:Number = (!icons && two) ? Math.max(48, barY + 9) : 48;
             lt.visible = !icons;
             st.visible = !icons && a.env;
             if(!icons)
             {
                lt.text = this.hzUC(String(a.name));
                this.hzTxtTint(lt,a.env ? null : HZ_RED);
-               if(a.env) { st.text = "Exposure " + Math.round(soak * 100) + "%"; this.hzTxtTop(lt,7); this.hzTxtTop(st,23); }
+               if(a.env) { st.text = "Exposure " + Math.round(soak * 100) + "%"; this.hzTxtTop(lt,7); this.hzTxtTop(st,23 + grow); }
                else { this.hzTxtTop(lt,15); }
             }
             var w:Number = icons ? 48 : Math.max(190,Math.max(this.hzTW(lt),a.env ? this.hzTW(st) : 0) + 48 + 18);
-            this.hzPanel(cg,w,48,16);
+            this.hzPanel(cg,w,h,16);
             this.hzTileDisc(cg,24,24,16,-1);
             cg.lineStyle(1.2,ic,0.55,true); cg.drawCircle(24,24,16); cg.lineStyle();
             this.hzGlyph(cg,String(a.kind),24,24,ic,bg);
@@ -3771,16 +4491,16 @@
             {
                var bw:Number = w - 48 - 14;
                var tr:uint = this.hzDarkText() ? 0x000000 : 0xFFFFFF;
-               cg.beginFill(tr,0.14); cg.drawRoundRect(48,37,bw,4,4,4); cg.endFill();
-               cg.beginFill(ic,1); cg.drawRoundRect(48,37,Math.max(4,bw * soak),4,4,4); cg.endFill();
+               cg.beginFill(tr,0.14); cg.drawRoundRect(48,barY,bw,4,4,4); cg.endFill();
+               cg.beginFill(ic,1); cg.drawRoundRect(48,barY,Math.max(4,bw * soak),4,4,4); cg.endFill();
             }
             var cs:Sprite = Sprite(ch.c);
             cs.x = x; cs.y = y;
-            if(mode == 1) { x += w + 8; maxW = x - 8; }
-            else { y += 48 + 8; maxW = Math.max(maxW,w); }
+            if(mode == 1) { x += w + 8; maxW = x - 8; if(h > rowH) { rowH = h; } }
+            else { y += h + 8; maxW = Math.max(maxW,w); }
             j++;
          }
-         var th:Number = mode == 1 ? 48 : y - 8;
+         var th:Number = mode == 1 ? rowH : y - 8;
          var sc:Number = Math.min(0.9,206 / Math.max(1,maxW),170 / Math.max(1,th));
          pv.scaleX = pv.scaleY = sc;
          pv.x = Math.round(px + (226 - maxW * sc) / 2);
@@ -3805,6 +4525,7 @@
       // Mouse from the SFSE plugin: nx, ny = 0..1 of the game client area.
       public function hzSettingsMouse(nx:Number, ny:Number, down:Boolean) : void
       {
+         if(this.hzPopLayers != null && this.hzPopLayers.length > 0) { return; }   // 0.43.0.1: extra layers swallow mouse (P2 draws them)
          if(this.hzArrange) { this.hzArrMouse(nx,ny,down); return; }
          if(!this.hzSetIsOpen || !this.HorizonSettings_mc || isNaN(nx) || isNaN(ny)) { this.hzSetPrevDown = down; return; }
          var vr:Rectangle = Extensions.visibleRect;
@@ -3934,7 +4655,7 @@
             case "Enemy": return [this.HorizonEnemy_mc].filter(this.hzNotNull);
             case "Stealth": return [this.HorizonStealth_mc].filter(this.hzNotNull);
             case "XpToast": return [this.HorizonXp_mc].filter(this.hzNotNull);
-            case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": return this.hz31PxOn(k) ? [this.hz31Px(k)] : [];
+            case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": return this.hz31PxOn(k) ? [this.hz31Px(k)] : [];
          }
          return [];
       }
@@ -3995,7 +4716,7 @@
                case "Enemy": ok = this.hzEnemyBarOn; break;
                case "Stealth": ok = this.hzStealthOn; break;
                case "XpToast": ok = this.hzXpToastOn; break;
-               case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": ok = this.hz31PxOn(k); break;   // v0.31 / v0.32: Comms proxies
+               case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": ok = this.hz31PxOn(k); break;   // v0.31 / v0.32: Comms proxies
             }
             if(ok)
             {
@@ -4433,6 +5154,9 @@
       }
 
       // set the logical top of a registered text (survives TextScale / guard re-formatting)
+      // Unflagged texts use the 4e0c1ef size (round(base*ts), no 9 px floor) so
+      // legacy cards keep their y after a reformat. Vitals / affliction (hzVit13)
+      // and chip-family lines use hzTextSz19.
       private function hzTxtTop(tf:TextField, top:Number) : void
       {
          var o:Object = this.hzTxtObj(tf);
@@ -4441,6 +5165,8 @@
          o.su = undefined;   // v0.26: plain whole-unit top (device-grid snap only via hzTxtTopU)
          var base:Number = (o.role != null && HZ_TY_SIZE[o.role] != undefined) ? Number(HZ_TY_SIZE[o.role]) : Number(o.size);
          var sz:Number = Math.round(base * Math.max(0.8,Math.min(1.3,this.hzTextScale)));
+         var card:String = o.chipCard != null && String(o.chipCard).length > 0 ? String(o.chipCard) : "";
+         if(o.vit13 || o.af13 || card.length > 0) { sz = this.hzTextSz19(o,base); }
          o.y0 = top + (sz - base) / 2;
          tf.y = top;
       }
@@ -5019,6 +5745,28 @@
          return -1;
       }
 
+      // 0.42.0.9: the name on the crosshair target card. The DLL reads it on the task thread for the busy card.
+      public function hzCrossName() : String
+      {
+         var s:String = "";
+         try
+         {
+            if(this.hzTgAct != null && this.hzTgAct.sHeaderText != null) { s = String(this.hzTgAct.sHeaderText); }
+         }
+         catch(e:Error) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length && o.length < 80)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 32 && c != 127) { o += s.charAt(i); }
+            i++;
+         }
+         while(o.length > 0 && o.charAt(0) == " ") { o = o.substr(1); }
+         while(o.length > 0 && o.charAt(o.length - 1) == " ") { o = o.substr(0,o.length - 1); }
+         return o;
+      }
+
       private function hzTgContent(m:int) : void
       {
          var a:Object = this.hzTgAct;
@@ -5105,6 +5853,7 @@
       private var hzPpRealG:Sprite;
       private var hzPpDay:Number = -1;
       private var hzPpUT:Number = -1;   // LocalEnvData_Frequent.fGalacticStandardTime, hours (DataMenu ClockWidget prints it as "HH:MM UT")
+      private var hzPpShowUT:Boolean = false;   // true when the local row is showing GAME time; do not read the label text
       private var hzPpBodyType:int = -1;
       private var hzPpRealMin:int = -1;
       private var hzPpDrawnDay:Number = -2;
@@ -5128,7 +5877,7 @@
          this.hzPpDet = this.hzT(p,"",86,60,180,10,"rg","dim",1);
          var r:Number = HZ_PP_W - 16;
          this.hzPpLocT = this.hzT(p,"",r - 34 - 90,17,90,13,"sb","mut",0.6,"right");
-         this.hzPpLocL = this.hzT(p,"LOCAL",r - 30,21,32,8,"sb","dim",0.8,"right");
+         this.hzPpLocL = this.hzT(p,"LOCAL/GAME",r - 80,21,80,8,"sb","dim",0.8,"right");
          this.hzPpRealT = this.hzT(p,"",r - 34 - 90,42,90,12,"rg","dim",0.4,"right");
          this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");
          this.hzPpLocG = new Sprite(); p.addChild(this.hzPpLocG);
@@ -5358,7 +6107,8 @@
          var locOk:Boolean = this.hzPpDay >= 0 && this.hzPpKind != "ship";
          var showUT:Boolean = !locOk && this.hzPpUT >= 0 && (td == 1 || td == 3);
          var showLoc:Boolean = (locOk && (td == 1 || td == 3)) || showUT;
-         this.hzPpLocL.text = showUT ? "GAME" : "LOCAL";
+         this.hzPpShowUT = showUT;
+         this.hzPpLocL.text = "LOCAL/GAME";
          var realStr:String = null;
          if(td >= 2)
          {
@@ -5544,9 +6294,11 @@
       private static const HZ_RARN:Array = ["","RARE","EPIC","LEGENDARY","EXOTIC"];
       private static const HZ_TIME_NAMES:Array = ["OFF","LOCAL / GAME","PC/REAL","LOCAL / GAME + PC/REAL"];
       private static const HZ_CLOCK_NAMES:Array = ["12 H","24 H"];
+      private static const HZ_TEMP_NAMES:Array = ["°C","°F"];
       private static const HZ_AFLAY_NAMES:Array = ["COLUMN","ROW","ICONS ONLY"];
       public var hzTimeDisplay:int = 3;
       public var hzClockFmt:int = 0;
+      public var hzTempUnit:int = 0;
       public var hzAfLayout:int = 0;
       private var hzSz:Array = [];
       private var hzFontOkMap:Object = {};
@@ -5652,9 +6404,8 @@
 
       private function hzApplyFmt19(o:Object) : void
       {
-         var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
          var fs:Number = Number(o.fs);
-         var sz:int = Math.max(9,int(Math.round(fs * ts)));
+         var sz:int = this.hzTextSz19(o,fs);
          var dk:Boolean = this.hzDarkText();
          var col:uint = 0;
          switch(String(o.tone))
@@ -5765,6 +6516,11 @@
          }
          catch(err:Error) { ok = false; }
          this.hzFontOkMap[n] = ok ? 1 : 0;
+         if(ok)
+         {
+            this.hzAfRemeasure = true;
+            if(this.hzAfRemeasureAt == 0) { this.hzAfRemeasureAt = Math.max(1,this.hzFrameN); }
+         }
          return ok;
       }
 
@@ -6250,7 +7006,11 @@
       private var hzJ19Glyph:Sprite;
       private var hzJ19Seg:Sprite;
       private var hzJ19Bolt:Sprite;
+      private var hzJ19Title:TextField;
       private var hzJ19Sub:TextField;
+      private var hzJ19W:Number = 330;
+      private var hzJ19H:Number = 72;
+      private var hzJ19BarY:Number = 54;
       private var hzJetRech:Boolean = false;
       private var hzJetLastC:Number = -2;
 
@@ -6262,9 +7022,12 @@
          this.HorizonCard_mc.addChild(p);
          this.hzJ19Body = new Sprite(); p.addChild(this.hzJ19Body);
          this.hzJ19Glyph = new Sprite(); this.hzJ19Glyph.x = 40; this.hzJ19Glyph.y = 34; p.addChild(this.hzJ19Glyph);
-         this.hzHdr19(this.hzT(p,"JETPACK",78,9,170,14,"sb","main",2));
+         this.hzJ19Title = this.hzT(p,"JETPACK",78,9,170,14,"sb","main",2);
+         this.hzHdr19(this.hzJ19Title);
+         this.hzChip13(this.hzJ19Title,"Jetpack");
          this.hzJ19Bolt = new Sprite(); this.hzJ19Bolt.x = 83; this.hzJ19Bolt.y = 39; p.addChild(this.hzJ19Bolt);
          this.hzJ19Sub = this.hzT(p,"BOOST 100%",78,29,230,12,"sb","acc",1.2);
+         this.hzChip13(this.hzJ19Sub,"Jetpack");
          this.hzJ19Seg = new Sprite(); this.hzJ19Seg.x = 78; this.hzJ19Seg.y = 54; p.addChild(this.hzJ19Seg);
          this.hzSetSz(this.HorizonCard_mc,HZ_J19_W,72);
          this.hzJ19Draw();
@@ -6273,12 +7036,32 @@
       private function hzJ19Draw() : void
       {
          if(!this.hzJ19Body) { return; }
+         var szT:int = this.hzChipSzOn(14,"Jetpack",13);
+         var szS:int = this.hzChipSzOn(12,"Jetpack",13);
+         var subTop:int = 9 + szT + 6;
+         var barY:int = subTop + szS + 13;
+         var h:Number = Math.max(72,barY + 18);
+         if(this.hzJ19Title) { this.hzTxtTop(this.hzJ19Title,9); }
+         if(this.hzJ19Sub) { this.hzTxtTop(this.hzJ19Sub,subTop); }
+         var tw:Number = 0;
+         if(this.hzJ19Title) { tw = Math.max(tw,this.hzTW(this.hzJ19Title)); }
+         if(this.hzJ19Sub) { tw = Math.max(tw,this.hzTW(this.hzJ19Sub)); }
+         var w:Number = Math.max(HZ_J19_W,78 + tw + 18);
+         if(w != this.hzJ19W || h != this.hzJ19H) { this.hzLaidOut = false; }
+         this.hzJ19W = w;
+         this.hzJ19H = h;
+         this.hzJ19BarY = barY;
+         this.hzSetSz(this.HorizonCard_mc,w,h);
+         var cy:Number = Math.round(h / 2);
+         if(this.hzJ19Glyph) { this.hzJ19Glyph.y = cy - 2; }
+         if(this.hzJ19Bolt) { this.hzJ19Bolt.y = subTop + Math.round(szS / 2) + 4; }
+         if(this.hzJ19Seg) { this.hzJ19Seg.y = barY; }
          var g:* = this.hzJ19Body.graphics;
          g.clear();
-         this.hzPanel(g,HZ_J19_W,72,18);
+         this.hzPanel(g,w,h,18);
          var col:uint = this.hzJetRech ? HZ_AMB : HZ_ACCENT;
-         this.hzTileDisc(g,40,36,26,-1);
-         g.lineStyle(1.4,this.hzIconCol(col),0.35,true); g.drawCircle(40,36,22); g.lineStyle();
+         this.hzTileDisc(g,40,cy,26,-1);
+         g.lineStyle(1.4,this.hzIconCol(col),0.35,true); g.drawCircle(40,cy,22); g.lineStyle();
          // original jetpack glyph: twin-tank pack, center spine, two nozzles, optional flames
          var j:* = this.hzJ19Glyph.graphics;
          j.clear();
@@ -6321,7 +7104,8 @@
          g.clear();
          var n:int = 10;
          var gap:Number = 3;
-         var sw:Number = (238 - gap * (n - 1)) / n;
+         var bw:Number = Math.max(238,this.hzJ19W - 78 - 14);
+         var sw:Number = (bw - gap * (n - 1)) / n;
          var lit:Number = f * n;
          var tr:uint = this.hzDarkText() ? 0x000000 : 0xFFFFFF;
          var i:int = 0;
@@ -6359,6 +7143,11 @@
       private var hzAfPers:Array = [];
       private var hzAfSoak:Number = 0;
       private var hzAfSeen:Object = {};
+      private var hzAfRemeasure:Boolean = false;
+      private var hzAfRemeasureAt:int = 0;
+      private var hzAfLoadAt:int = 0;
+      private var hzAfTitleW:Number = 0;
+      private var hzAfLastWall:Number = 0;
       private var hzAfH:Number = 48;
       private var hzAfW:Number = 190;
 
@@ -6373,9 +7162,11 @@
             var c:Sprite = new Sprite();
             this.hzAfNew.addChild(c);
             var body:Sprite = new Sprite(); c.addChild(body);
-            var lb:TextField = this.hzT(c,"",48,8,240,12,"sb","main",1.6);
+            var lb:TextField = this.hzT(c,"",48,8,240,13,"sb","acc",2);
             this.hzHdr19(lb);
-            var sb:TextField = this.hzT(c,"",48,24,200,10,"rg","mut",0.4);
+            this.hzVit13(lb);
+            var sb:TextField = this.hzT(c,"",48,24,200,13,"sb","col",0.6);
+            this.hzVit13(sb);
             c.visible = false;
             this.hzAfChips.push({"c":c,"b":body,"l":lb,"s":sb});
             i++;
@@ -6424,10 +7215,10 @@
             for each(var o:Object in a)
             {
                if(!o || o.sEffectIcon == null) { continue; }
-               var nm:String = this.hzPretty(String(o.sEffectIcon));
-               if(nm.length == 0 || keys.indexOf(nm) >= 0) { continue; }
-               keys.push(nm);
-               out.push({"key":"p:" + nm,"name":nm,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});
+               var sys:String = this.hzPretty(String(o.sEffectIcon));
+               if(sys.length == 0 || keys.indexOf(sys) >= 0) { continue; }
+               keys.push(sys);
+               out.push({"key":"p:" + sys,"name":"Affliction","sub":sys,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});
             }
          }
          this.hzAfPers = out;
@@ -6463,10 +7254,58 @@
          this.hzRefreshVisibility();
       }
 
+      private function hzAfRetryLayout() : void
+      {
+         try { if(this.hzAfNew && this.hz31AfLast != null) { this.hzAfLayoutChips(this.hz31AfLast); } } catch(err:Error) { }
+      }
+
+      private function hzAfArmRelayout() : void
+      {
+         this.hzAfRemeasure = true;
+         if(this.hzAfRemeasureAt == 0) { this.hzAfRemeasureAt = Math.max(1,this.hzFrameN); }
+      }
+
+      private function hzAfOnLoad() : void
+      {
+         try
+         {
+            this.hz27Alerts = [];
+            this.hzAfSeen = {};
+            this.hzAfRemeasure = true;
+            this.hzAfRemeasureAt = Math.max(1,this.hzFrameN);
+            this.hzAfLoadAt = Math.max(1,this.hzFrameN);
+            if(this.hzAfNew) { this.hzAfSync(); }
+         }
+         catch(err:Error) { }
+      }
+
+      private function hzAfLoadWatch() : void
+      {
+         var now:Number = this.hz26Now();
+         if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAfArmRelayout(); }
+         if(now > 0) { this.hzAfLastWall = now; }
+         if(this.hzAfLoadAt > 0)
+         {
+            var age:int = this.hzFrameN - this.hzAfLoadAt;
+            if(age == 30 || age == 120) { this.hzAfRetryLayout(); }
+            if(age >= 120) { this.hzAfLoadAt = 0; }
+         }
+         if(this.hzAfRemeasure)
+         {
+            this.hzAfRetryLayout();
+            if(this.hzAfRemeasureAt > 0 && this.hzFrameN - this.hzAfRemeasureAt >= 120)
+            {
+               this.hzAfRemeasure = false;
+               this.hzAfRemeasureAt = 0;
+            }
+         }
+      }
+
       private function hzAfLayoutChips(all:Array) : void
       {
          if(!this.hzAfNew) { return; }
          this.hz31AfLast = all;
+         this.hzAfRemeasure = false;
          var mode:int = this.hzAfLayout;
          var shown:int = Math.min(4,all.length);
          var more:int = all.length - shown;
@@ -6475,6 +7314,10 @@
          var x:Number = 0;
          var y:Number = 0;
          var maxW:Number = 0;
+         var rowH:Number = 48;
+         var sz13:int = this.hzAf13Sz();
+         var grow:int = Math.max(0,sz13 - 13);
+         var barY:int = 23 + grow + sz13 + 3;
          var bg:uint = this.hzDarkText() ? this.hzMix(this.hzPanelFill(),0x000000,0.14) : 0x060A0E;
          var i:int = 0;
          while(i < this.hzAfChips.length)
@@ -6531,8 +7374,9 @@
                   tw31 = this.hz31AfFit(lb,sb,two);
                   if(two)
                   {
+                     h = a.env ? Math.max(48, barY + 9) : Math.max(48,23 + grow + sz13 + 6);
                      this.hzTxtTop(lb,7);
-                     this.hzTxtTop(sb,23);
+                     this.hzTxtTop(sb,23 + grow);
                   }
                   else { this.hzTxtTop(lb,15); }
                }
@@ -6545,20 +7389,20 @@
                {
                   var bw:Number = w - 48 - 14;
                   var tr:uint = this.hzDarkText() ? 0x000000 : 0xFFFFFF;
-                  g.beginFill(tr,0.14); g.drawRoundRect(48,37,bw,4,4,4); g.endFill();
+                  g.beginFill(tr,0.14); g.drawRoundRect(48,barY,bw,4,4,4); g.endFill();
                   if(this.hzAfSoak > 0.005)
                   {
-                     g.beginFill(ic,1); g.drawRoundRect(48,37,Math.max(4,bw * this.hzAfSoak),4,4,4); g.endFill();
+                     g.beginFill(ic,1); g.drawRoundRect(48,barY,Math.max(4,bw * this.hzAfSoak),4,4,4); g.endFill();
                   }
                }
             }
             c.x = x; c.y = y;
-            if(mode == 1) { x += w + 8; maxW = x - 8; }
+            if(mode == 1) { x += w + 8; maxW = x - 8; if(h > rowH) { rowH = h; } }
             else { y += h + 8; maxW = Math.max(maxW,w); }
             i++;
          }
          var tw:Number = Math.max(48,maxW);
-         var th:Number = mode == 1 ? 48 : Math.max(48,y - 8);
+         var th:Number = mode == 1 ? rowH : Math.max(48,y - 8);
          if(th != this.hzAfH || tw != this.hzAfW) { this.hzAfH = th; this.hzAfW = tw; this.hzLaidOut = false; }
          this.hzSetSz(this.HorizonAffl_mc,tw,th);
       }
@@ -6969,7 +7813,17 @@
          i = 0;
          while(i < 4)
          {
-            this.hzT19Btn.push({"kp":this.hzT(p,"",0,0,60,12,"bd","col",0,"left"),"lp":this.hzT(p,"",0,0,160,13,"sb","main",1.6),"hh":this.hzT(p,"HOLD",0,0,60,11,"rg","mut",1.2),"kh":this.hzT(p,"",0,0,60,12,"bd","col",0,"left"),"lh":this.hzT(p,"",0,0,160,13,"sb","mut",1.6)});
+            var lp:TextField = this.hzT(p,"",0,0,160,13,"sb","main",1.6);
+            var lh:TextField = this.hzT(p,"",0,0,160,13,"sb","mut",1.6);
+            var kp:TextField = this.hzT(p,"",0,0,60,12,"bd","col",0,"left");
+            var kh:TextField = this.hzT(p,"",0,0,60,12,"bd","col",0,"left");
+            var hh:TextField = this.hzT(p,"HOLD",0,0,60,11,"rg","mut",1.2);
+            this.hzChip13(lp,"Hover");
+            this.hzChip13(lh,"Hover");
+            this.hzChip13(kp,"Hover");
+            this.hzChip13(kh,"Hover");
+            this.hzChip13(hh,"Hover");
+            this.hzT19Btn.push({"kp":kp,"lp":lp,"hh":hh,"kh":kh,"lh":lh});
             i++;
          }
          p.visible = false;
@@ -7247,7 +8101,7 @@
          var t:Number = this.hzSnapU(top,su);
          if(!o) { tf.y = t; tf.x = this.hzSnapU(tf.x,su); return; }
          var fs:Number = Number(o.fs != undefined ? o.fs : o.size);
-         var sz:Number = Math.max(9,Math.round(fs * Math.max(0.8,Math.min(1.3,this.hzTextScale))));
+         var sz:Number = this.hzTextSz19(o,fs);
          o.su = su;
          o.y0 = t + (sz - fs) / 2;
          tf.y = t;
@@ -7366,6 +8220,15 @@
          return k.toUpperCase();
       }
 
+      // Keycap box for the hover TAKE row: at least 24, and tall enough for the floored E / HOLD type.
+      private function hzT19CapH() : Number
+      {
+         var u:Number = this.hzT19U();
+         var keySz:int = this.hzChipSzOn(12,"Hover",13);
+         var holdSz:int = this.hzChipSzOn(11,"Hover",13);
+         return this.hzSnapU(Math.max(24,Math.max(keySz,holdSz) + 10),u);
+      }
+
       // our keycap action row from aButtons (sTextPressAndRelease / sTextHold / bVisible / bEnabled / iType).
       // g == null only measures. Returns the row width.
       private function hzT19Buttons(g:*, a:Object, aw:Object, x0:Number, y:Number, col:uint) : Number
@@ -7390,7 +8253,7 @@
             // v0.26: caps 24 units tall (was 20); key glyph + labels centered on the cap by their real ascent
             var u:Number = this.hzT19U();
             var ky:Number = this.hzSnapU(y,u);
-            var kh:Number = this.hzSnapU(24,u);
+            var kh:Number = this.hzT19CapH();
             var kcy:Number = ky + kh / 2;
             used++;
             if(x > x0) { x += 16; }
@@ -7402,10 +8265,13 @@
                var isHold:Boolean = Boolean(pr[0]);
                var kt:TextField = TextField(isHold ? slot.kh : slot.kp);
                var lt:TextField = TextField(isHold ? slot.lh : slot.lp);
+               var loTk:Object = this.hzTxtObj(lt); if(loTk && loTk.chipMin) { this.hzApplyFmt(loTk); }
+               var koTk:Object = this.hzTxtObj(kt); if(koTk && koTk.chipMin) { this.hzApplyFmt(koTk); }
                if(isHold)
                {
                   if(pairs.length > 1) { x += 14; }
                   var ht:TextField = TextField(slot.hh);
+                  var hoTk:Object = this.hzTxtObj(ht); if(hoTk && hoTk.chipMin) { this.hzApplyFmt(hoTk); }
                   ht.visible = g != null;
                   ht.x = this.hzSnapU(x,u); this.hzTxtTopU(ht,this.hzCapTop(ht,kcy),u);
                   x += this.hzTW(ht) + 6;
@@ -7741,7 +8607,7 @@
             var cw:Number = W - 2 * PX;
             var L38:Object = this.hz38PromptY();
             var dvY:Number = Number(L38.dv);
-            H = hasBtn ? dvY + 8 + 24 + 18 : dvY + 6;
+            H = hasBtn ? dvY + 8 + this.hzT19CapH() + 18 : dvY + 6;
             this.hzPanel(g,W,H,18,-1,-1);
             g.beginFill(this.hzIconCol(HZ_ACCENT),1); g.drawRoundRect(0,16,4,H - 32,4,4); g.endFill();
             this.hzT19Tile(g,Math.round(W / 2),Number(L38.icy),HZ_ACCENT);
@@ -7771,7 +8637,7 @@
             this.hzFitText(nmTf,this.hzUC(en),W - 40);
             this.hzTxtTop(nmTf,11);
             var by:Number = stars > 0 ? 48 : 40;
-            H = by + 7 + 15 + (hasBtn ? 34 : 0);
+            H = by + 7 + 15 + (hasBtn ? this.hzT19CapH() + 10 : 0);
             this.hzPanel(g,W,H,18,tint,edge);
             i = 0;
             while(i < stars) { this.hzT19Star(g,W / 2 + (i - (stars - 1) / 2) * 15,36,this.hzIconCol(0xF2C14E)); i++; }
@@ -7818,7 +8684,7 @@
             var rows:Array = kind == "cmp" ? this.hzT19CmpRows(it,cmp) : [];
             var rowsY:Number = head + 9;
             var bodyEnd:Number = kind == "cmp" ? rowsY + rows.length * 24 : head;
-            H = hasBtn ? bodyEnd + 12 + 24 + 14 : bodyEnd + (kind == "cmp" ? 6 : 0);
+            H = hasBtn ? bodyEnd + 12 + this.hzT19CapH() + 14 : bodyEnd + (kind == "cmp" ? 6 : 0);
             this.hzPanel(g,W,H,18,tint,edge);
             // v0.25: left accent stripe like the equipment card (red while stealing; rarity stays on its chip)
             this.hzAccStripe(g,H,steal ? HZ_RED : HZ_ACCENT);
@@ -7920,7 +8786,7 @@
                if(se.fWeight != undefined && !isNaN(sw) && sw > 0) { fmeta.push(sw.toFixed(1) + " KG"); }
             }
             // v0.25: value / weight line, then a thin divider, then the keycap row a little lower (whole units)
-            H = hasBtn ? fy + 42 + 24 + 14 : fy + 30;
+            H = hasBtn ? fy + 42 + this.hzT19CapH() + 14 : fy + 30;
             this.hzPanel(g,W,H,18,tint,edge);
             this.hzAccStripe(g,H,steal ? HZ_RED : HZ_ACCENT);
             if(steal)
@@ -8059,6 +8925,8 @@
       private static const HZ_EN_W:Number = 480;
       private static const HZ_ST_W:Number = 220;
       private static const HZ_ST_H:Number = 48;
+      private var hz26StW:Number = 220;
+      private var hz26StH:Number = 48;
       private var hz26Dbg:Object = {};
       private var hz26Built:Boolean = false;
       // character data (PlayerData / PlayerInventoryData)
@@ -9262,9 +10130,13 @@
          this.HorizonStealth_mc = c;
          this.hz26StG = new Sprite(); c.addChild(this.hz26StG);
          this.hz26StT = this.hzT(c,"HIDDEN",50,7,160,14,"bd","col",1.8,"left",0xB2C0C7);
+         this.hzChip13(this.hz26StT,"Stealth");
          this.hz26StD = this.hzT(c,"",50,26,160,10,"sb","mut",1.2);
+         this.hzChip13(this.hz26StD,"Stealth");
          addChild(c);
          c.visible = false;
+         this.hz26StW = HZ_ST_W;
+         this.hz26StH = HZ_ST_H;
          this.hzSetSz(c,HZ_ST_W,HZ_ST_H);
       }
 
@@ -9289,6 +10161,7 @@
 
       private function hz26StDraw(now:Number) : void
       {
+         if(!this.hz26StG || !this.hz26StT || !this.hz26StD) { return; }
          var d:Object = this.hz26St;
          if(d == null || !this.hz26StOn) { d = {"uSneakMode":2,"fPercent":45,"uNextSneakMode":2}; }
          var m:int = int(d.uSneakMode);
@@ -9297,18 +10170,35 @@
          if(m < 0 || m > 4) { m = 0; }
          var col:uint = this.hzIconCol(uint(cols[m]));
          var pct:Number = this.hz26StPct(d);
+         var szT:int = this.hzChipSzOn(14,"Stealth",13);
+         var szS:int = this.hzChipSzOn(10,"Stealth",13);
+         var subTop:int = 7 + szT + 5;
+         var h:Number = Math.max(HZ_ST_H,subTop + szS + 12);
+         this.hz26StT.text = String(names[m]);
+         this.hzTxtTint(this.hz26StT,uint(cols[m]));
+         this.hzTxtTop(this.hz26StT,7);
+         this.hz26StD.text = "DETECTION " + Math.round(pct) + "%";
+         this.hzTxtTop(this.hz26StD,subTop);
+         this.hz26StT.width = Math.max(160,this.hzTW(this.hz26StT) + 8);
+         this.hz26StD.width = Math.max(160,this.hzTW(this.hz26StD) + 8);
+         var w:Number = Math.max(HZ_ST_W,50 + Math.max(this.hzTW(this.hz26StT),this.hzTW(this.hz26StD)) + 18);
+         if(w != this.hz26StW || h != this.hz26StH) { this.hzLaidOut = false; }
+         this.hz26StW = w;
+         this.hz26StH = h;
+         this.hzSetSz(this.HorizonStealth_mc,w,h);
          var g:* = this.hz26StG.graphics;
          g.clear();
          var edge:int = m == 4 ? int(this.hzIconCol(HZ_RED)) : -1;
-         this.hzPanel(g,HZ_ST_W,HZ_ST_H,24,-1,edge);
+         this.hzPanel(g,w,h,24,-1,edge);
+         var cy:Number = Math.round(h / 2);
          if(m == 4)
          {
             this.hz26StPh = 0.5 + 0.5 * Math.sin(now / 1000 * Math.PI * 2);
-            g.lineStyle(1.5,col,0.25 + 0.6 * this.hz26StPh,true); g.beginFill(col,0.004); g.drawRoundRect(0.5,0.5,HZ_ST_W - 1,HZ_ST_H - 1,48,48); g.endFill(); g.lineStyle();
+            g.lineStyle(1.5,col,0.25 + 0.6 * this.hz26StPh,true); g.beginFill(col,0.004); g.drawRoundRect(0.5,0.5,w - 1,h - 1,48,48); g.endFill(); g.lineStyle();
          }
          var dk:Boolean = this.hzDarkText();
-         this.hzTileDisc(g,24,24,18,-1);
-         g.lineStyle(2.5,dk ? 0x000000 : 0xFFFFFF,0.15,true); g.drawCircle(24,24,14); g.lineStyle();
+         this.hzTileDisc(g,24,cy,18,-1);
+         g.lineStyle(2.5,dk ? 0x000000 : 0xFFFFFF,0.15,true); g.drawCircle(24,cy,14); g.lineStyle();
          if(pct > 0.5)
          {
             g.lineStyle(2.5,col,1,true,"normal","none");
@@ -9317,21 +10207,16 @@
             while(i <= st)
             {
                var a:Number = -Math.PI / 2 + Math.PI * 2 * (pct / 100) * i / st;
-               if(i == 0) { g.moveTo(24 + Math.cos(a) * 14,24 + Math.sin(a) * 14); } else { g.lineTo(24 + Math.cos(a) * 14,24 + Math.sin(a) * 14); }
+               if(i == 0) { g.moveTo(24 + Math.cos(a) * 14,cy + Math.sin(a) * 14); } else { g.lineTo(24 + Math.cos(a) * 14,cy + Math.sin(a) * 14); }
                i++;
             }
             g.lineStyle();
          }
          // original eye glyph
          g.lineStyle(1.5,col,1,true);
-         g.moveTo(16.5,24); g.curveTo(24,17,31.5,24); g.curveTo(24,31,16.5,24);
+         g.moveTo(16.5,cy); g.curveTo(24,cy - 7,31.5,cy); g.curveTo(24,cy + 7,16.5,cy);
          g.lineStyle();
-         g.beginFill(col,1); g.drawCircle(24,24,2.8); g.endFill();
-         this.hz26StT.text = String(names[m]);
-         this.hzTxtTint(this.hz26StT,uint(cols[m]));
-         this.hzTxtTop(this.hz26StT,7);
-         this.hz26StD.text = "DETECTION " + Math.round(pct) + "%";
-         this.hzTxtTop(this.hz26StD,26);
+         g.beginFill(col,1); g.drawCircle(24,cy,2.8); g.endFill();
       }
 
       // ---------- combat feedback: hit marker, kill X, damage numbers, direction ring ----------
@@ -9548,7 +10433,7 @@
       {
          var live:Boolean = !this.hzUserHidden;
          this.hz26HideV("EnemyHealthHolder_mc",live && this.hzEnemyBarOn && this.HorizonEnemy_mc != null);
-         this.hz26HideV("StealthMeter_mc",live && this.hzStealthOn && this.HorizonStealth_mc != null);
+         this.hz26HideV("StealthMeter_mc",live && this.hzStealthOn && this.HorizonStealth_mc != null && this.hz26St != null && this.hz26StOn);
          this.hz26HideV("HitAndKillIndicator_mc",live && this.hzHitMarkOn && this.HorizonFx_mc != null);
          this.hz26HideV("HitDamageBase_mc",live && this.hzDmgNumOn && this.HorizonFx_mc != null);
          this.hz26HideV("DirectionalHitIndicatorBase_mc",live && this.hzDirRingOn && this.HorizonFx_mc != null);
@@ -9562,13 +10447,13 @@
          if(!this.hz26Built) { return; }
          var now:Number = this.hz26Now();
          var base:Boolean = this.hzGroupVisible && !this.hzUserHidden;
+         // stealth: vanilla rule (sneaking and the meter is on)
+         var sd:Object = this.hz26St;
+         this.hz26StOn = sd != null && sd.bSneaking === true && sd.bShowMeter === true;
          try { this.hz26Vanilla(); } catch(e0:Error) { }
          // enemy: shown while targeted (+0.4 s hold)
          this.hz26EnOn = this.hz26En != null && now - this.hz26EnT < 400;
          if(!this.hz26EnOn && now - this.hz26EnT > 1500) { this.hz26En = null; }
-         // stealth: vanilla rule (sneaking and the meter is on)
-         var sd:Object = this.hz26St;
-         this.hz26StOn = sd != null && sd.bSneaking === true && sd.bShowMeter === true;
          try { if(this.HorizonEnemy_mc && (this.hz26EnOn || this.hzArrange) && this.HorizonEnemy_mc.visible) { this.hz26EnDraw(); } } catch(e1:Error) { if(this.HorizonEnemy_mc) { this.HorizonEnemy_mc.visible = false; } }
          try { if(this.HorizonStealth_mc && (this.hz26StOn || this.hzArrange) && this.HorizonStealth_mc.visible) { this.hz26StDraw(now); } } catch(e2:Error) { }
          // first frame a card turns on: draw before it shows
@@ -9635,7 +10520,7 @@
          if(this.HorizonStealth_mc)
          {
             var c:Point = this.hz26Center();
-            this.hzPlace(this.HorizonStealth_mc,c.x - HZ_ST_W * sSt / 2,c.y - 150 * sSt - HZ_ST_H * sSt);
+            this.hzPlace(this.HorizonStealth_mc,c.x - this.hz26StW * sSt / 2,c.y - 150 * sSt - this.hz26StH * sSt);
          }
       }
 
@@ -10078,9 +10963,10 @@
          var used:Array = [];
          for each(var b:Object in keep)
          {
-            var nm:String = String(b.txt).length > 0 ? String(b.txt) : this.hzPretty(String(b.icon));
-            var sb:String = String(b.sub).length > 0 ? String(b.sub) : this.hzPretty(String(b.icon));
-            if(sb.toLowerCase() == nm.toLowerCase()) { sb = ""; }
+            var sys:String = this.hzPretty(String(b.icon));
+            var nm:String = String(b.txt).length > 0 ? String(b.txt) : "Affliction";
+            var sb:String = String(b.sub).length > 0 ? String(b.sub) : sys;
+            if(sb.toLowerCase() == nm.toLowerCase()) { sb = (sys.length > 0 && sys.toLowerCase() != nm.toLowerCase()) ? sys : ""; }
             if(nm.length == 0) { continue; }
             out.push({"key":"a:" + String(b.cat) + ":" + nm,"name":nm,"sub":sb.length > 0 ? sb : null,"kind":"injury","env":false,"cat":String(b.cat)});
             used.push(String(b.cat));
@@ -10414,10 +11300,10 @@
          ["DlgOffsetY","i",0,-400,400,"comms"],["DlgScale","f",1,0.7,1.5,"comms"],["DlgBgColor","i",0,0,12,"comms"],["DlgBgHex","s","",0,0,"comms"],
          ["DlgTextColor","i",-1,-1,13,"comms"],["DlgTextHex","s","",0,0,"comms"],
          ["DlgNumberKeys","b",1,0,1,"comms"],["DlgWheel","b",1,0,1,"comms"],["DlgHoverScroll","b",0,0,1,"comms"],["DlgSaidStyle","i",2,0,2,"comms"],
-         ["DlgPersuadeStyle","i",0,0,2,"comms"],["DlgPersuadeColor","i",2,0,12,"comms"],["DlgMarkers","b",0,0,1,"comms"],["DlgInputDelay","i",150,0,1000,"comms"],
+         ["DlgPersuadeStyle","i",0,0,2,"comms"],["DlgPersuadeColor","i",2,0,12,"comms"],["DlgPersuasionMeter","b",1,0,1,"comms"],["DlgMarkers","b",0,0,1,"comms"],["DlgInputDelay","i",150,0,1000,"comms"],
          ["DlgRolloverSound","i",0,0,1,"comms"],["DlgAnim","i",1,0,2,"comms"],
          ["DlgButtonBar","i",0,0,2,"comms"],["DlgQuickPickHint","b",1,0,1,"comms"],["DlgSelectHint","b",1,0,1,"comms"]];
-      private static const HZ31_DEF:Object = {"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"TxtColIdx":0,"SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"ReactionCard":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"ShowSpeaker":1,"SpkColIdx":0,"SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgTxtIdx":0,"DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4};
+      private static const HZ31_DEF:Object = {"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"TxtColIdx":0,"SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"ReactionCard":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"ShowSpeaker":1,"SpkColIdx":0,"SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgTxtIdx":0,"DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4};
       // URLLoader probes, relative to Data/Interface (same base as HorizonUI/HorizonUI.ini). Foreign mods are only reported.
       private static const HZ31_PROBE:Object = {"es":"Enhanced Subtitles - My Edits.ini","edi":"Enhanced Dialogue Interface - My Edits.ini","edi2":"Enhanced Dialogue Interface.ini"};   // v0.38: no file probes for other HUD mods (an ini left behind is not an active HUD)
       private static const HZ31_FONT_OPTS:Array = ["GLOBAL","EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"];
@@ -10616,6 +11502,7 @@
             "DlgLayout":"0 card list, 1 compact, 2 classic centered",
             "DlgSaidStyle":"0 dimmed, 1 hidden, 2 tagged",
             "DlgPersuadeStyle":"0 chip, 1 colored text, 2 none; DlgPersuadeColor = accent palette index",
+            "DlgPersuasionMeter":"1 = Horizon persuasion meter (score, the highlighted reply, turns). 0 = the game's meter",
             "DlgInputDelay":"ms before a list accepts input (game default 1000)",
             "DlgRolloverSound":"0 game default, 1 off",
             "DlgAnim":"0 off, 1 fast, 2 vanilla-like",
@@ -10723,6 +11610,7 @@
                {"k":"DlgSaidStyle","l":"ALREADY-SAID STYLE","t":"r","opts":["DIMMED","HIDDEN","TAGGED"],"h":"OPTION TAGS"},
                {"k":"DlgPersuadeStyle","l":"PERSUASION TAG","t":"r","opts":["CHIP","COLORED TEXT","NONE"]},
                {"k":"DlgPersuadeColor","l":"PERSUASION TAG COLOR","t":"a","pal":HZ_ACCENTS,"names":HZ_SET_ACCNAMES},
+               {"k":"DlgPersuasionMeter","l":"PERSUASION METER","t":"b","note":"Score, the highlighted reply and turns, in place of the game's bars. Off = the game's meter."},
                {"k":"DlgMarkers","l":"QUESTION / ADVANCE MARKERS","t":"b","dis":true,"dv":false,"note":"Experimental: no marker data in this game version"},
                {"k":"DlgNumberKeys","l":"NUMBER KEYS 1 - 9","t":"b","h":"INPUT"},
                {"k":"DlgWheel","l":"MOUSE WHEEL SCROLL","t":"b"},
@@ -10769,6 +11657,7 @@
          if(k == "Speaker") { return int(c.SpeakerCard) == 1 && !this.hz31DlgOwnsSpk(); }
          if(k == "Dialogue") { return this.hz31DlgOwnsSpk() || (this.hz31On("comms_dialogue") && int(c.Dialogue) == 1); }
          if(k == "MissionToast") { return int(c.MissionToast) == 1; }
+         if(k == "HudMessages") { return int(c.ReactionCard) == 1; }
          return false;
       }
       // layout key of a Comms proxy ghost, or null for any other card
@@ -10805,6 +11694,7 @@
          }
          if(k == "Speaker" || k == "SpeakerD") { return new Point(Math.round(400 * ts),Math.round(86 * ts)); }
          if(k == "MissionToast") { var mf:Number = ts * this.hz34ToastF(); return new Point(Math.round(460 * mf),Math.round(88 * mf)); }
+         if(k == "HudMessages") { return new Point(Math.round(360 * ts),Math.round(80 * ts)); }
          var ds:Number = this.hz33DlgScale();
          var dz:Number = Number(c.DlgTextSize) * ts * ds;
          var cmp:Boolean = int(c.DlgLayout) == 1;
@@ -10856,13 +11746,14 @@
          }
          if(k == "Speaker") { return new Point(br.x - 710,tl.y + 300); }
          if(k == "MissionToast") { return new Point(mid - sz.x / 2,tl.y + Math.max(28,this.hzMargin - 12) + 90); }
+         if(k == "HudMessages") { return new Point(br.x - 40 - sz.x,tl.y + 80); }
          if(int(c.DlgLayout) == 2) { return new Point(mid - sz.x / 2,br.y - 80 - sz.y); }
          return new Point(br.x - 90 - sz.x,tl.y + 404);
       }
       private function hz31PxDefaults(tl:Point, br:Point) : void
       {
          if(!this.hzArrange) { return; }   // the ghosts exist only in ARRANGE CARDS
-         for each(var k:String in ["Subtitle","Speaker","Dialogue","MissionToast"])
+         for each(var k:String in ["Subtitle","Speaker","Dialogue","MissionToast","HudMessages"])
          {
             if(!this.hz31PxOn(k)) { continue; }
             var p:Sprite = this.hz31Px(k);
@@ -10877,7 +11768,7 @@
          var vr:Rectangle = this.hzVis();
          var tl:Point = new Point(vr.x,vr.y);
          var br:Point = new Point(vr.right,vr.bottom);
-         for each(var k:String in ["Subtitle","Speaker","Dialogue","MissionToast","SpeakerD"])
+         for each(var k:String in ["Subtitle","Speaker","Dialogue","MissionToast","HudMessages","SpeakerD"])
          {
             var on:Boolean = this.hzArrange && !this.hz41SA && (k == "SpeakerD" ? this.hz31PxOn("Dialogue") && this.hz31DlgOwnsSpk() && int(this.hz31Cfg().SpeakerCard) == 1 : this.hz31PxOn(k));
             var p:Sprite = this.hz31PxS[k] as Sprite;
@@ -10923,6 +11814,16 @@
          g.beginFill(col,1); g.drawRoundRect(0,14,4,Math.max(4,h - 28),4,4); g.endFill();
          return g;
       }
+      // Arrange ghost font size. hzSText multiplies by clamped TextScale, so the
+      // value passed in must not be pre-scaled. The result never drops under want px.
+      private function hzArrFs(want:int) : int
+      {
+         var ts:Number = Math.max(0.9,Math.min(1.15,this.hzTextScale));
+         if(!(ts > 0)) { ts = 1; }
+         var n:int = int(Math.ceil(want / ts));
+         if(n < want) { n = want; }
+         return n;
+      }
       private function hz31PxDraw(k:String, p:Sprite) : void
       {
          while(p.numChildren > 0) { p.removeChildAt(0); }
@@ -10951,6 +11852,13 @@
             g.beginFill(acc,0.9); g.drawRoundRect(34 * ts,46 * ts,24 * ts,12 * ts,12 * ts,12 * ts); g.endFill();
             this.hzSText(p,"SAM COE",90 * ts,16 * ts,sz.x - 100 * ts,Math.round(20 * ts),0xE8F0F5,"left","hdr");
             this.hzSText(p,"SPEAKING",90 * ts,50 * ts,sz.x - 100 * ts,13,0x8FA3AE,"left","hdr");
+         }
+         else if(k == "HudMessages")
+         {
+            var hz:Number = this.hzTextScale;
+            this.hzSText(p,"HUD MESSAGES",16 * hz,12 * hz,sz.x - 32 * hz,this.hzArrFs(15),acc,"left","hdr");
+            this.hzSText(p,"Companion, crew, crime, credits, afflictions",16 * hz,34 * hz,sz.x - 32 * hz,this.hzArrFs(13),0xF2F7F9,"left");
+            this.hzSText(p,"Default spot matches the current message column",16 * hz,52 * hz,sz.x - 32 * hz,this.hzArrFs(13),0x96A6AE,"left");
          }
          else if(k == "MissionToast")
          {
@@ -10999,13 +11907,28 @@
          lb.width = 2000;
          if(this.hzTW(lb) > maxT) { this.hzFitText(lb,lb.text,maxT); }
          var w:Number = this.hzTW(lb);
-         lb.width = Math.round(w + 8);
+         if(lb.text.length > 0 && w < 4)
+         {
+            this.hzAfRemeasure = true;
+            if(this.hzAfRemeasureAt == 0) { this.hzAfRemeasureAt = Math.max(1,this.hzFrameN); }
+            if(this.hzAfTitleW > 4) { w = this.hzAfTitleW; lb.width = Math.round(w + 8); }
+         }
+         else
+         {
+            if(w >= 4) { this.hzAfTitleW = w; }
+            lb.width = Math.round(w + 8);
+         }
          if(two)
          {
             sb.width = 2000;
             if(this.hzTW(sb) > maxT) { this.hzFitText(sb,sb.text,maxT); }
             var w2:Number = this.hzTW(sb);
-            sb.width = Math.round(w2 + 8);
+            if(sb.text.length > 0 && w2 < 4)
+            {
+               this.hzAfRemeasure = true;
+               if(this.hzAfRemeasureAt == 0) { this.hzAfRemeasureAt = Math.max(1,this.hzFrameN); }
+            }
+            else { sb.width = Math.round(w2 + 8); }
             w = Math.max(w,w2);
          }
          return Math.min(maxT,w);
@@ -11016,7 +11939,7 @@
       // URLLoader on the same relative path base the HUD already reads HorizonUI.ini from; a missing file / folder
       // only raises IOErrorEvent (caught). State: undefined/-1 checking, 0 absent, 1 present. Re-probed on every F11
       // open so an install / uninstall shows without restarting.
-      private static const HZ30_MODS:Array = ["scanner","comms","font","comms_dialogue","es","edi","edi2","scope"];   // v0.42.0 r2: + scope.marker
+      private static const HZ30_MODS:Array = ["scanner","comms","font","comms_dialogue","es","edi","edi2","scope","notifications"];   // 0.43.0.1: + notifications.marker
       private var hz30Mod:Object = {};
       private var hz30ModLdr:Object = {};
       private var hz30ModT0:Number = 0;
@@ -11117,7 +12040,7 @@
       // Horizon fonts usable: font.marker not reported absent and at least one Horizon face renders
       private function hz30FontAvail() : Boolean
       {
-         if(this.hz30Mod["font"] === 0) { return false; }
+         if(this.hz30Mod["font"] !== 1) { return false; }
          return this.hzFontProbe("$Horizon_Font") || this.hzFontProbe("$Horizon_Font_Alt");
       }
 
@@ -11426,6 +12349,7 @@
          "DlgRolloverSound":"GAME DEFAULT plays the game's rollover sound when the selection moves. OFF keeps it silent.",
          "DlgAnim":"How the options card appears and leaves: OFF (instant), FAST, or VANILLA-LIKE (the game's timing).",
          "DlgPersuadeStyle":"How persuasion options are marked: a CHIP, the option text in the tag color, or NONE.",
+         "DlgPersuasionMeter":"On: a Horizon meter for the persuasion challenge (the score, a ghost of the highlighted reply's points, and turns left). The game's meter stays in the movie at alpha 0, so its result animations keep running. Off: the game's meter.",
          "DlgScale":"Width and text of the options card together. If the options don't fit the screen height, their text steps down to fit.",
          "DlgOffsetX":"Moves the options card sideways, in 1080p pixels (+ = right). Added on top of the ARRANGE CARDS spot.",
          "DlgOffsetY":"Moves the options card up or down, in 1080p pixels (+ = up). Added on top of the ARRANGE CARDS spot.",
@@ -11449,7 +12373,9 @@
          "ShowFollowers":"Markers for your follower and companions on the Horizon compass.",
          "CompassMarkers":"Master switch for every Horizon compass marker below. Quest objectives always show while it is on.",
          "ShowTarget":"Horizon's own card for the game's activate prompt (take, talk, open) and the item / container hover cards. Off = the game's prompt.",
+         "VehicleExitPill":"While you are in a vehicle, the hold-to-exit prompt is a Horizon pill: the key the game shows, then EXIT. A fill sweeps across while you hold, and the pill turns green with a check when the hold completes. The game's button stays at alpha 0, so the hold still finishes. Off shows the game's prompt.",
          "PlanetDetails":"Adds a gravity / air line to the planet card.",
+         "TempUnit":"Planet card and scanner temperature units. The game value is Celsius. Fahrenheit is C times 9/5 plus 32, rounded. Default Celsius.",
          "_size":"GLOBAL: this card uses HUD SCALE (STYLE tab). CUSTOM: it has its own size and HUD SCALE no longer changes it. Click the GLOBAL / CUSTOM chip or drag the slider to switch.",
          "_compact":"GLOBAL: this card takes its compact form whenever COMPACT MODE (top right) is on. ON / OFF: always compact / always full for this card only, whatever COMPACT MODE says.",
          "_rule":"When this card shows. ALWAYS, or only in the situation named (in combat, weapon drawn, not full ...). The card's own switch in CARDS still has to be on."};
@@ -11648,6 +12574,7 @@
             {"k":"EquipmentExtras","l":"EQUIPMENT: GRENADES + STARBORN POWER","t":"b"},
             {"k":"ShowQuests","l":"QUEST TRACKER","t":"b"},this.hz34Sz("Quests"),this.hz34Cmp("Quests"),
             {"k":"ShowCompass","l":"COMPASS","t":"b"},this.hz34Sz("Compass"),this.hz34Cmp("Compass","The enemy health bar follows the compass form"),
+            {"k":"VehicleExitPill","l":"VEHICLE EXIT PILL","t":"b","note":"Hold-to-exit prompt while you are in a vehicle. Off = the game's prompt."},
             {"k":"EnemyBar","l":"ENEMY HEALTH BAR (TOP CENTER)","t":"b"},this.hz34Sz("Enemy"),
             {"k":"StealthMeter","l":"STEALTH METER (ABOVE CROSSHAIR)","t":"b"},this.hz34Sz("Stealth"),
             {"k":"CompactScale","l":"COMPACT STRIPS: SIZE","t":"z","note":"The jetpack / vitals / afflictions strips of COMPACT MODE"},
@@ -12189,7 +13116,8 @@
       // identical apart from the prefix). It reads HorizonUI.default.ini, HorizonUI.user.ini, HorizonUI.state.ini and the
       // legacy HorizonUI.ini (paths relative to Data/Interface) one after the other and hands every waiting callback the
       // merged text: the defaults with user.ini laid over (hz37Compose; mirrors HZF::Compose in HorizonUI.dll). A missing
-      // file is normal: its IOErrorEvent is caught and simply counts as "no file" (nothing is thrown or logged).
+      // file is normal: its IOErrorEvent is caught and counts as no file. The game logs every failed open, so
+      // HorizonUI.ini is opened at most once, and only when Compose still needs that unshipped file.
       // No defaults file -> the legacy HorizonUI.ini is the base. Nothing at all -> null (callers keep built-in defaults).
       private static const hz37_FILES:Array = ["HorizonUI/HorizonUI.default.ini","HorizonUI/HorizonUI.user.ini","HorizonUI/HorizonUI.state.ini","HorizonUI/HorizonUI.ini"];
       private static const hz37_BOM:String = String.fromCharCode(0xFEFF);
@@ -12199,6 +13127,8 @@
       private var hz37Got:Array = null;
       private var hz37Q:Array = [];          // callbacks of the running read
       private var hz37N:Array = [];          // callbacks that arrived meanwhile (they get a fresh read)
+      private var hz37Leg:String = null;     // last text of HorizonUI.ini, or null when that open missed
+      private var hz37LegTry:int = 0;        // 0 = not opened yet, 1 = opened once
       private function hz37Ws(c:String) : Boolean { return c == " " || c == "\t" || c == "\r" || c == "\n"; }
       private function hz37Trim(s:String) : String
       {
@@ -12399,10 +13329,32 @@
          this.hz37T0 = new Date().getTime();
          this.hz37Next(0);
       }
+      private function hz37IsLeg(i:int) : Boolean
+      {
+         if(i < 0 || i >= hz37_FILES.length) { return false; }
+         var pth:String = String(hz37_FILES[i]);
+         return pth.length >= 13 && pth.substr(pth.length - 13) == "HorizonUI.ini";
+      }
+      // HorizonUI.ini is not shipped. Skip it when Compose would ignore it, and open it only once when it would not.
+      private function hz37SkipLeg(i:int) : Boolean
+      {
+         if(!this.hz37IsLeg(i)) { return false; }
+         if(this.hz37LegTry != 0) { return true; }
+         var def:String = this.hz37Got[0] == null ? null : String(this.hz37Got[0]);
+         var hd:Boolean = def != null && def.length > 0;
+         if(hd && (this.hz37Got[1] != null || this.hz37Got[2] != null)) { return true; }
+         return false;
+      }
       private function hz37Next(i:int) : void
       {
          this.hz37Step = i + 1;
          if(i >= hz37_FILES.length) { this.hz37Ldr = null; this.hz37Done(); return; }
+         if(this.hz37SkipLeg(i))
+         {
+            this.hz37Got[i] = this.hz37LegTry != 0 ? this.hz37Leg : null;
+            this.hz37Next(i + 1);
+            return;
+         }
          try
          {
             this.hz37Ldr = new URLLoader();
@@ -12418,12 +13370,14 @@
          if(e == null || e.target != this.hz37Ldr) { return; }
          var i:int = this.hz37Step - 1;
          try { this.hz37Got[i] = String(this.hz37Ldr.data); } catch(err:Error) { }
+         if(this.hz37IsLeg(i)) { this.hz37Leg = this.hz37Got[i] == null ? null : String(this.hz37Got[i]); this.hz37LegTry = 1; }
          this.hz37Next(i + 1);
       }
       private function hz37OnErr(e:Event) : void
       {
          if(e == null || e.target != this.hz37Ldr) { return; }
-         this.hz37Next(this.hz37Step);   // missing file: normal, no error
+         if(this.hz37IsLeg(this.hz37Step - 1)) { this.hz37Leg = null; this.hz37LegTry = 1; }
+         this.hz37Next(this.hz37Step);   // missing file: counted once, not opened again
       }
       private function hz37Done() : void
       {
@@ -12686,6 +13640,7 @@
          if(this.hz37Edit != null)
          {
             if(code.indexOf("ch:") == 0) { if(this.hz37Edit.length < 32 && this.hz42NmOk(code.substr(3,1))) { this.hz37Edit += code.substr(3,1); } this.hz37Cf = ""; return true; }
+            if(code == "padx" || code == "pady") { return true; }   // pad X/Y are actions, never typed characters
             if(code == "bksp") { if(this.hz37Edit.length > 0) { this.hz37Edit = this.hz37Edit.substr(0,this.hz37Edit.length - 1); } this.hz37Cf = ""; return true; }
             if(code == "ok" || (code == "right" && rk == "_hz37save")) { this.hz37SaveSubmit(); return true; }
             if(code == "cancel" || code == "left") { this.hz37Edit = null; this.hz37Cf = ""; return true; }
@@ -12694,6 +13649,7 @@
             return false;
          }
          if(code.indexOf("ch:") == 0) { return true; }   // letters do nothing outside the name entry
+         if(code == "padx" || code == "pady") { return false; }   // fall through as actions, never text
          if(this.hz37Cf.length > 0)
          {
             if(r != null && rk == this.hz37Cf && (code == "ok" || code == "right" || code == "left")) { this.hz37Act(r,1); return true; }
@@ -13218,6 +14174,7 @@
       {
          try
          {
+            if(this.hz40HasFF(ev.data,"LoadingMenu_Opened") || this.hz40HasFF(ev.data,"LoadingMenu_Closed")) { this.hzAfOnLoad(); }
             if(this.hz41DllFresh()) { return; }   // v0.41.0: the DLL push is the scan state
             if(this.hz40HasFF(ev.data,"MonocleMenu_Opened")) { this.hz40SetScan(true); }
             else if(this.hz40HasFF(ev.data,"MonocleMenu_Closed")) { this.hz40SetScan(false); }
@@ -13390,6 +14347,16 @@
       // gone. r4: hidden with visible = false, never by alpha (the BottomLeftGroup timeline fades its alpha in and out with the
       // scan; a script alpha write would fight it). Never removed; the visible value seen before goes back when the scan ends
       // (close, a load, F11 / the F11 latch, ARRANGE).
+      // v0.42.0.4: FadeOutPlanetInfo stops on timeline frame 245 (0-based) and leaves that label current.
+      // AS3 currentFrame is 1-based, so the playhead rests at 246. After the 1.5 s grace, the hide ends when the label
+      // is not a planet-info label, currentFrame is 246, or the playhead has not moved since the previous frame tick.
+      // A FadeInPlanetInfo that starts after the scan ended does not keep the hide going, and it does not start a new one.
+      // v0.42.0.5: FadeInPlanetInfo holds on currentFrame 228. That stall is the landing alert still on screen, not the
+      // end of the clip. If this scan saw that hold (already there, or the same FadeIn reached it before the grace ended),
+      // the alert stays hidden after the grace until the game leaves the hold, or for 30 s, whichever comes first.
+      // Leaving the hold is a new FadeIn, any other label, or currentFrame moving off 228 while the label is still FadeIn.
+      // FadeOutPlanetInfo stays hidden until currentFrame 246, a stalled playhead, or a different label. The 30 s cap still ends it.
+      // A landing alert with no scan is left alone. Visible only; nothing is removed. Both HUD sizes use this block.
       // With POI MARKERS off (ScanWorldMarkers=0) the game's floating quest markers (FloatingQuestMarkerBase) too, by alpha
       // (the game itself sets that alpha to the HUD opacity); r4: restored to the game's current HUD opacity (hz41Op).
       private var hz41LocBlg:Object = null;    // BottomLeftGroup_mc (own lookup: hzBlg exists only with the vanilla watch hide)
@@ -13398,15 +14365,36 @@
       private var hz41LocHid:Boolean = false;
       // v0.42.0 r3: hide session (scan + grace + planet-info leftovers), see hz41LocWant
       private static const HZ41_LOC_GRACE:Number = 1500;
+      // currentFrame where FadeInPlanetInfo rests. hz41LocHoldAfterGrace reads currentFrame, and that stall is 228.
+      private static const HZ41_LOC_HOLD:int = 228;
+      // currentFrame where FadeOutPlanetInfo rests (timeline frame 245, 1-based).
+      private static const HZ41_LOC_REST:int = 246;
+      // After the scan ends, the 228 hold cannot keep the vanilla alert hidden longer than this.
+      private static const HZ41_LOC_HOLD_MAX:Number = 30000;
       private var hz41LocArm:Boolean = false;   // a scan happened; its planet-info timeline leftovers stay hidden
       private var hz41LocEnd:Number = -1;       // when the scan ended (ms), -1 = scanning / none
+      private var hz41LocAt:String = "";        // v0.42.0.4: label at the moment the scan ended
+      private var hz41LocLeftIn:Boolean = false; // v0.42.0.4: saw a label other than FadeIn after the scan ended
+      private var hz41LocPf:int = -1;           // v0.42.0.4: currentFrame on the previous frame tick
+      private var hz41LocPfN:int = -1;          // v0.42.0.4: hzFrameN of that sample (enterFrame and exitFrame share a tick)
+      private var hz41LocSawHold:Boolean = false; // v0.42.0.5: this scan saw FadeInPlanetInfo resting on 228
       public var hz41NowFn:Function = null;     // tests: mocked clock
+      public var hz41LocLblFn:Function = null;  // tests: mocked timeline label
+      public var hz41LocFrameFn:Function = null; // tests: mocked currentFrame
       private var hz41QmHid:Boolean = false;
       private function hz41ScanHideOn() : Boolean
       {
          // planet location / floating quest hides while scanning (v0.42.0: F11 cannot open while scanning)
          return this.hz40Scan && !this.hz40Latch && this.hz30Mod["scanner"] === 1 && !this.hzArrange;
       }
+      // Grace and the 30 s cap.
+      // Purpose: milliseconds for the 1.5 s grace and the 30 s cap.
+      // new Date() is the wall clock. A step backwards (since < 0, or elapsed < 0) ends the hide instead of holding it open.
+      // getTimer() is monotonic, but this block is injected as members of HUDMenu. That class does not
+      // import getTimer, and an import is not legal inside the injected class body. A qualified flash.utils call
+      // compiles in ffdec and then throws ReferenceError #1065 (it looks up a global named flash).
+      // The exitFrame and scan-edge try/catch swallow that, so the landing alert would stay hidden for the session.
+      // Inputs: hz41NowFn when a test supplies a clock, otherwise the wall clock. Output: milliseconds. No logging.
       private function hz41Now() : Number
       {
          if(this.hz41NowFn != null) { return Number(this.hz41NowFn()); }
@@ -13414,24 +14402,135 @@
       }
       private function hz41LocLbl() : String
       {
-         try { var l:* = this.hz41LocBlg != null ? this.hz41LocBlg["currentLabel"] : null; return l == null ? "" : String(l); } catch(e:Error) { }
+         try
+         {
+            if(this.hz41LocLblFn != null) { var m:* = this.hz41LocLblFn(); return m == null ? "" : String(m); }
+            var l:* = this.hz41LocBlg != null ? this.hz41LocBlg["currentLabel"] : null;
+            return l == null ? "" : String(l);
+         }
+         catch(e:Error) { }
          return "";
       }
-      // r3: true while scanning (always, not gated on ScanShowPlanet), for 1.5 s after the scan ends, and after that while
-      // BottomLeftGroup still plays the planet-info labels the scan started; then the session ends (the game's again)
-      private function hz41LocWant() : Boolean
+      private function hz41LocFrame() : int
       {
-         if(this.hz41ScanHideOn()) { this.hz41LocArm = true; this.hz41LocEnd = -1; return true; }
-         if(!this.hz41LocArm) { return false; }
-         if(this.hz40Latch || this.hz30Mod["scanner"] !== 1 || this.hzArrange) { this.hz41LocArm = false; this.hz41LocEnd = -1; return false; }
-         var now:Number = this.hz41Now();
-         if(this.hz41LocEnd < 0) { this.hz41LocEnd = now; }
-         if(now - this.hz41LocEnd < HZ41_LOC_GRACE) { return true; }
-         var lb:String = this.hz41LocLbl();
-         if(lb == "FadeInPlanetInfo" || lb == "FadeOutPlanetInfo") { return true; }
+         try
+         {
+            var f:* = null;
+            if(this.hz41LocFrameFn != null) { f = this.hz41LocFrameFn(); }
+            else if(this.hz41LocBlg != null) { f = this.hz41LocBlg["currentFrame"]; }
+            if(f == null || isNaN(Number(f))) { return -1; }
+            return int(f);
+         }
+         catch(e:Error) { }
+         return -1;
+      }
+      private function hz41LocClear() : void
+      {
          this.hz41LocArm = false;
          this.hz41LocEnd = -1;
-         return false;
+         this.hz41LocAt = "";
+         this.hz41LocLeftIn = false;
+         this.hz41LocPf = -1;
+         this.hz41LocPfN = -1;
+         this.hz41LocSawHold = false;
+      }
+      private function hz41LocAtHold(lb:String, fr:int) : Boolean
+      {
+         return lb == "FadeInPlanetInfo" && fr == HZ41_LOC_HOLD;
+      }
+      // Remember the playhead once per frame tick. enterFrame and exitFrame both call in, and they share hzFrameN.
+      private function hz41LocNoteFrame() : void
+      {
+         var fr:int = this.hz41LocFrame();
+         if(fr < 0 || this.hzFrameN == this.hz41LocPfN) { return; }
+         this.hz41LocPf = fr;
+         this.hz41LocPfN = this.hzFrameN;
+      }
+      // After the grace. A 228 hold this scan already saw stays hidden. Every other stall still ends the session.
+      private function hz41LocHoldAfterGrace() : Boolean
+      {
+         var lb:String = this.hz41LocLbl();
+         var fr:int = this.hz41LocFrame();
+         var planet:Boolean = lb == "FadeInPlanetInfo" || lb == "FadeOutPlanetInfo";
+         // A FadeIn that was not already playing when the scan ended, or that starts again later, is a new alert.
+         var newIn:Boolean = lb == "FadeInPlanetInfo" && (this.hz41LocAt != "FadeInPlanetInfo" || this.hz41LocLeftIn);
+         // An empty read is a failed lookup, not a different label. It must not turn the same FadeIn into a new one.
+         if(lb != "" && lb != "FadeInPlanetInfo") { this.hz41LocLeftIn = true; }
+         var stopped:Boolean = false;
+         if(fr >= 0 && this.hzFrameN != this.hz41LocPfN)
+         {
+            if(this.hz41LocPf >= 0 && fr == this.hz41LocPf) { stopped = true; }
+            this.hz41LocPf = fr;
+            this.hz41LocPfN = this.hzFrameN;
+         }
+         var elapsed:Number = this.hz41Now() - this.hz41LocEnd;
+         var expired:Boolean = this.hz41LocEnd >= 0 && (elapsed < 0 || elapsed >= HZ41_LOC_HOLD_MAX);
+         if(expired) { return false; }
+         if(this.hz41LocSawHold)
+         {
+            // Still the landing hold. The stopped playhead is the game keeping the alert up.
+            if(!newIn && this.hz41LocAtHold(lb, fr)) { return true; }
+            // A failed label read is not the game leaving the hold. The 30 s cap still ends it.
+            if(lb == "") { return true; }
+            // The fade-out's first frames are still the planet name (alpha falling for about 80 ms).
+            // Keep it hidden until frame 246 or a stall, the same end as the branch below. A different label ends it.
+            if(lb == "FadeOutPlanetInfo")
+            {
+               if(fr == HZ41_LOC_REST || stopped) { return false; }
+               return true;
+            }
+            // Left that hold: a new fade-in, another label, or currentFrame moved off 228.
+            if(newIn || !planet || (fr >= 0 && fr != HZ41_LOC_HOLD)) { return false; }
+            return true;   // frame not readable yet; the 30 s cap still ends it
+         }
+         // v0.42.0.4: no 228 hold on this scan. Rest at 246, any stall, a new FadeIn, or another label ends it.
+         if(!planet || newIn || fr == HZ41_LOC_REST || stopped) { return false; }
+         return true;
+      }
+      // true while scanning (always, not gated on ScanShowPlanet), for 1.5 s after the scan ends, then while a
+      // planet-info clip from that scan is still playing. A 228 hold seen during the scan stays hidden until the game
+      // leaves it. FadeOutPlanetInfo stays hidden until currentFrame 246 or a stall. 30 s after the scan ends always ends it.
+      // No scan: false, so a landing alert by itself stays vanilla.
+      private function hz41LocWant() : Boolean
+      {
+         if(this.hz41ScanHideOn())
+         {
+            this.hz41LocArm = true;
+            this.hz41LocEnd = -1;
+            this.hz41LocAt = "";
+            this.hz41LocLeftIn = false;
+            this.hz41LocPf = -1;
+            this.hz41LocPfN = -1;
+            if(this.hz41LocAtHold(this.hz41LocLbl(), this.hz41LocFrame())) { this.hz41LocSawHold = true; }
+            return true;
+         }
+         if(!this.hz41LocArm) { return false; }
+         if(this.hz40Latch || this.hz30Mod["scanner"] !== 1 || this.hzArrange) { this.hz41LocClear(); return false; }
+         var now:Number = this.hz41Now();
+         if(this.hz41LocEnd < 0)
+         {
+            this.hz41LocEnd = now;
+            this.hz41LocAt = this.hz41LocLbl();
+            this.hz41LocLeftIn = false;
+            this.hz41LocPf = -1;
+            this.hz41LocPfN = -1;
+         }
+         var since:Number = now - this.hz41LocEnd;
+         if(since < 0) { this.hz41LocClear(); return false; }
+         if(since < HZ41_LOC_GRACE)
+         {
+            var gl:String = this.hz41LocLbl();
+            if(gl != "" && gl != "FadeInPlanetInfo") { this.hz41LocLeftIn = true; }
+            // The same FadeIn can reach the hold during the grace. A later FadeIn must not.
+            if(!this.hz41LocSawHold && !this.hz41LocLeftIn && this.hz41LocAt == "FadeInPlanetInfo" && this.hz41LocAtHold(gl, this.hz41LocFrame()))
+            {
+               this.hz41LocSawHold = true;
+            }
+            this.hz41LocNoteFrame();
+            return true;
+         }
+         if(!this.hz41LocHoldAfterGrace()) { this.hz41LocClear(); return false; }
+         return true;
       }
       private function hz41LocHide() : void
       {
@@ -14035,6 +15134,14 @@
       // of the scope movie plus half its height). The proxy draws the chip's look (target icon, label, meter) at its size.
       private static const HZ42_SC_HOMEY:Number = 302;
       private static const HZ42_SC_H:Number = 32;
+      // Key field of the scope movie's hzpKeyW (0.42.0.6). The preview cannot call that function; both HUD sizes share this block.
+      // HZP_KPAD is the gap after the 30 px icon. HZP_RPAD is the panel pad after the O2 meter. HZP_KHEAD is 1.08.
+      private static const HZ42_SC_KPAD:Number = 10;
+      private static const HZ42_SC_RPAD:Number = 18;
+      private static const HZ42_SC_KHEAD:Number = 1.08;
+      private static const HZ42_SC_KMINW:Number = 14;
+      private static const HZ42_SC_KEX:Number = 16;     // 0.42.0.9: extra key-text width, same as HZP_KEX. The label slot does not use it.
+      private static const HZ42_SC_LABEX:Number = 32;   // 0.42.0.8: extra label slot, same as the scope chip (HZP_LABEX)
       private static const HZ42_SC_KEY:String = "ScopeChip";   // ARRANGE list key of the proxy (saved as [Scope] ScopeChipX / ScopeChipY)
       private var hz42ScOn:Boolean = true;
       private var hz42ScX:Number = 0;
@@ -14043,6 +15150,7 @@
       private var hz42ScOrig:Object = null;
       private var hz42ScPx:Sprite = null;
       private var hz42ScW:Number = 0;
+      private var hz42ScBoxH:Number = 32;
       private var hz42ScSig:String = "";
       private function hz42ScCX(v:*) : Number { var n:Number = Number(v); if(isNaN(n)) { return 0; } return Math.round(Math.max(-900,Math.min(900,n))); }
       private function hz42ScCY(v:*) : Number { var n:Number = Number(v); if(isNaN(n)) { return 0; } return Math.round(Math.max(-500,Math.min(500,n))); }
@@ -14055,7 +15163,8 @@
          if(isNaN(s) || s <= 0) { s = 1; }
          return Math.max(n,Math.ceil(13 / s));
       }
-      // v0.42.0 r3: preset names: no ini-breaking characters ('=' '+' '[' ']' ';' '#' '"' '\' '|') and no control characters
+      // v0.42.0 r3 / v0.42.0.4: preset names drop '=' '+' '[' ']' ';' '#' '"' '\' '|' , controls, and DEL.
+      // The same set is hzpreset::kPresetNameDrop / CleanPresetName in the DLL. Do not change one without the other.
       private function hz42NmOk(ch:String) : Boolean
       {
          if(ch == null || ch.length != 1) { return false; }
@@ -14071,9 +15180,42 @@
          while(i < s.length) { if(this.hz42NmOk(s.charAt(i))) { o += s.charAt(i); } i++; }
          return o;
       }
+      // v0.42.0.4: four numeric parts, no leading v. Same rule as HzFileVersionOk in the DLL.
+      private function hz42FileVerOk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         if(s.length < 7 || s.length > 32) { return false; }
+         var dots:int = 0;
+         var digit:Boolean = false;
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 48 && c <= 57) { digit = true; }
+            else if(c == 46 && digit) { dots++; digit = false; }
+            else { return false; }
+            i++;
+         }
+         return digit && dots == 3;
+      }
+      // v0.42.0.4: HorizonUI.dll passes its file version (from the DLL version resource). Empty and odd strings are ignored.
+      public function hzSetDllFileVersion(s:String) : void
+      {
+         try
+         {
+            if(s == null) { return; }
+            var t:String = String(s);
+            while(t.length > 0 && (t.charAt(0) == " " || t.charAt(0) == "\t")) { t = t.substr(1); }
+            if(t.length > 0 && (t.charAt(0) == "v" || t.charAt(0) == "V")) { t = t.substr(1); }
+            if(!this.hz42FileVerOk(t) || t == this.hzDllFileVer) { return; }
+            this.hzDllFileVer = t;
+            if(this.hzSetIsOpen) { this.hzSetDraw(); }
+         }
+         catch(err:Error) { }
+      }
       public function hzBuildId() : String
       {
-         return "0.42.0 r3";
+         return HZ_BUILD;
       }
       // ini keys (lower case, any section like the rest of the HUD parser); "0" / "false" = off, like the scope movie
       private function hz42ScIni(k:String, v:String, nv:Number) : Boolean
@@ -14144,7 +15286,7 @@
       // original target icon (ring, 4 ticks, center dot), drawn in code; same art as the scope chip
       private function hz42Cross(g:*, cx:Number, cy:Number, col:uint, a:Number) : void
       {
-         g.lineStyle(1.6,col,a,true,"none");
+         g.lineStyle(2,col,a,true,"none");
          g.drawCircle(cx,cy,6);
          g.moveTo(cx,cy - 8.5); g.lineTo(cx,cy - 3.5);
          g.moveTo(cx,cy + 3.5); g.lineTo(cx,cy + 8.5);
@@ -14153,6 +15295,35 @@
          g.lineStyle();
          g.beginFill(col,a); g.drawCircle(cx,cy,1.8); g.endFill();
       }
+      // Purpose: width of the F11 hold-breath key text, matching the scope movie's field width.
+      // Inputs: tw textWidth, ls letterSpacing, len character count. Output: ceil(tw * 1.08 + ls * len) + 8.
+      // The keycap adds the 30 px icon and HZ42_SC_KPAD. A bad measurement is treated as 0, then held to 14 px.
+      // Scope label slot: semibold tracking is 0.1 of the font size, then the same field width as the key.
+      private function hz42ScLblW(t:TextField) : Number
+      {
+         if(t == null) { return 0; }
+         var f:TextFormat = t.getTextFormat();
+         var fs:Number = Number(f.size);
+         if(isNaN(fs) || fs <= 0) { fs = 14; }
+         f.font = this.hzFontName("sb");
+         f.letterSpacing = Math.round(fs * 0.1 * 10) / 10;
+         t.defaultTextFormat = f;
+         t.setTextFormat(f);
+         var ls:Number = Number(f.letterSpacing);
+         if(isNaN(ls) || ls < 0) { ls = 0; }
+         var len:int = t.text != null ? int(t.text.length) : 0;
+         return this.hz42ScKeyW(Number(t.textWidth),ls,len);
+      }
+      private function hz42ScKeyW(tw:Number, ls:Number, len:int, extra:Number = 0) : Number
+      {
+         if(isNaN(tw) || tw < 0) { tw = 0; }
+         if(isNaN(ls) || ls < 0) { ls = 0; }
+         if(len < 0) { len = 0; }
+         if(isNaN(extra) || extra < 0) { extra = 0; }
+         var w:Number = Math.ceil(tw * HZ42_SC_KHEAD + ls * len) + 8 + extra;
+         if(w < HZ42_SC_KMINW) { w = HZ42_SC_KMINW; }
+         return w;
+      }
       private function hz42ScDraw() : void
       {
          var p:Sprite = this.hz42ScPx;
@@ -14160,30 +15331,81 @@
          var g:* = p.graphics;
          g.clear();
          var h:Number = HZ42_SC_H;
-         var lt:TextField = this.hzSText(p,"HOLD BREATH",0,0,220,this.hz42ScFs(14),0xF2F7F9,"left");
-         var kw:Number = 30;
+         // hzSText multiplies by TextScale (clamped 0.9-1.15). Pass a size that survives that, or the
+         // on-screen size is the chip scale times a font that was already shrunk. At chip 0.65 and
+         // TextScale 0.9, HOLD BREATH was 11.7 px. Both lines use the same correction. The floor is 13 px
+         // after the proxy scale (hz42ScFs) and after TextScale. The label uses the chip's semibold face
+         // (hzFontName "sb") and the scope's 0.1 tracking, then the same field width. The key uses bold.
+         var ts:Number = this.hzTextScale;
+         if(isNaN(ts) || ts <= 0) { ts = 1; }
+         ts = Math.max(0.9,Math.min(1.15,ts));
+         var lb:int = int(this.hz42ScFs(14));
+         var lt:TextField = this.hzSText(p,"HOLD BREATH",0,0,220,int(Math.ceil(lb / ts)),0xF2F7F9,"left");
+         // "L-SHIFT" is the wide PC label. Same bold face as the scope key (hzpFace "bd"), same 0.04 tracking,
+         // then the same field width. The label uses the chip's semibold weight.
+         var want:int = int(this.hz42ScFs(13));
+         var kt:TextField = this.hzSText(p,"L-SHIFT",0,0,160,int(Math.ceil(want / ts)),HZ_ACCENT,"left");
+         var kf:TextFormat = kt.getTextFormat();
+         var kfs:Number = Number(kf.size);
+         if(isNaN(kfs) || kfs <= 0) { kfs = 13; }
+         kf.font = this.hzFontName("bd");
+         kf.letterSpacing = Math.round(kfs * 0.04 * 10) / 10;
+         kt.defaultTextFormat = kf;
+         kt.setTextFormat(kf);
+         var ls:Number = Number(kf.letterSpacing);
+         if(isNaN(ls) || ls < 0) { ls = 0; }
+         var len:int = kt.text != null ? int(kt.text.length) : 0;
+         kt.autoSize = flash.text.TextFieldAutoSize.NONE;
+         kt.width = this.hz42ScKeyW(Number(kt.textWidth),ls,len,HZ42_SC_KEX);
+         var kAlign:TextFormat = kt.getTextFormat();
+         kAlign.align = "center";
+         kt.defaultTextFormat = kAlign;
+         kt.setTextFormat(kAlign);
+         var kw:Number = 30 + kt.width + HZ42_SC_KPAD;
          var x0:Number = 7;
          var lx:Number = x0 + kw + 10;
-         var mx:Number = Math.round(lx + lt.textWidth + 16);
+         // Same width headroom and 0.1 tracking as the scope label. The slot is the widest label (HOLDING BREATH).
+         var hold:TextField = this.hzSText(p,"HOLDING BREATH",0,0,400,int(Math.ceil(lb / ts)),0xF2F7F9,"left");
+         var outb:TextField = this.hzSText(p,"OUT OF BREATH",0,0,400,int(Math.ceil(lb / ts)),0xF2F7F9,"left");
+         var ltw:Number = this.hz42ScLblW(lt);
+         var hw:Number = this.hz42ScLblW(hold);
+         var ow:Number = this.hz42ScLblW(outb);
+         if(hw > ltw) { ltw = hw; }
+         if(ow > ltw) { ltw = ow; }
+         ltw += HZ42_SC_LABEX;
+         if(hold.parent == p) { p.removeChild(hold); }
+         if(outb.parent == p) { p.removeChild(outb); }
+         var lth:Number = lt.height;
+         lt.autoSize = flash.text.TextFieldAutoSize.NONE;
+         lt.width = ltw;
+         if(lt.height < lth) { lt.height = lth; }
+         if(lt.height + 8 > h) { h = Math.round(lt.height + 8); }
+         var mx:Number = Math.round(lx + ltw + 16);
          var mw:Number = 120;
-         var w:Number = Math.round(mx + mw + 14);
+         var w:Number = Math.round(mx + mw + HZ42_SC_RPAD);
          g.lineStyle(1,0xFFFFFF,0.18,true,"none");
          g.beginFill(0x0B1218,0.84);
-         g.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1);
+         g.drawRoundRect(0.5,0.5,w - 1,h - 1,Math.max(0,h - 1),Math.max(0,h - 1));
          g.endFill();
          g.lineStyle();
          g.lineStyle(1,HZ_ACCENT,0.95,true,"none");
          g.beginFill(HZ_ACCENT,0.1);
-         g.drawRoundRect(x0,6,kw,h - 12,8,8);
+         g.drawRoundRect(x0 + 0.5,6.5,kw - 1,h - 13,8,8);
          g.endFill();
          g.lineStyle();
-         this.hz42Cross(g,x0 + kw / 2,h / 2,HZ_ACCENT,1);
+         this.hz42Cross(g,x0 + 15,h / 2,HZ_ACCENT,1);
+         kt.x = Math.round(x0 + 28);
+         kt.y = Math.round(h / 2 - (kt.textHeight + 4) / 2);
          lt.x = lx - 2;
          lt.y = Math.round(h / 2 - (lt.textHeight + 4) / 2);
          var my:Number = Math.round(h / 2 - 3);
-         g.beginFill(0xFFFFFF,0.14); g.drawRoundRect(mx,my,mw,6,6,6); g.endFill();
-         g.beginFill(0x4DB6FF,1); g.drawRoundRect(mx,my,Math.round(mw * 0.7),6,6,6); g.endFill();
+         var bar:flash.display.Shape = new flash.display.Shape();
+         p.addChild(bar);
+         var bg:* = bar.graphics;
+         bg.beginFill(0xFFFFFF,0.14); bg.drawRoundRect(mx,my,mw,6,6,6); bg.endFill();
+         bg.beginFill(0x4DB6FF,1); bg.drawRoundRect(mx,my,Math.round(mw * 0.7),6,6,6); bg.endFill();
          this.hz42ScW = w;
+         this.hz42ScBoxH = h;
       }
       // proxy: shown only in ARRANGE CARDS with the module installed and the chip on; placed from the stored offsets
       private function hz42ScSync() : void
@@ -14201,19 +15423,25 @@
          if(this.hz42ScPx.parent != this) { addChild(this.hz42ScPx); if(this.hzArr_mc != null && this.hzArr_mc.parent == this) { addChild(this.hzArr_mc); } }
          var sig:String = HZ_ACCENT + "|" + this.hzTextScale + "|" + this.hzFontFace + "|" + this.hz42ScS;   // r3: + size (text floor)
          if(sig != this.hz42ScSig || this.hz42ScW <= 0) { this.hz42ScSig = sig; this.hz42ScDraw(); }
-         this.hz42ScPx.scaleX = this.hz42ScS;
-         this.hz42ScPx.scaleY = this.hz42ScS;
+         var sx:Number = this.hz42ScS;
+         if(isNaN(sx) || sx == 0) { sx = 1; }
+         var boxH:Number = this.hz42ScBoxH > 0 ? this.hz42ScBoxH : HZ42_SC_H;
+         var sw:Number = Math.max(1,Math.round(this.hz42ScW * sx));
+         var sh:Number = Math.max(1,Math.round(boxH * sx));
+         if(this.hz42ScW > 0) { this.hz42ScPx.scaleX = sw / this.hz42ScW; } else { this.hz42ScPx.scaleX = sx; }
+         if(boxH > 0) { this.hz42ScPx.scaleY = sh / boxH; } else { this.hz42ScPx.scaleY = sx; }
          var hp:Point = this.hz42ScHome();
-         this.hz42ScPx.x = Math.round(hp.x + this.hz42ScX - this.hz42ScW * this.hz42ScS / 2);
-         this.hz42ScPx.y = Math.round(hp.y - this.hz42ScY - HZ42_SC_H * this.hz42ScS / 2);
+         this.hz42ScPx.x = Math.round(hp.x + this.hz42ScX - sw / 2);
+         this.hz42ScPx.y = Math.round(hp.y - this.hz42ScY - sh / 2);
          this.hz42ScPx.visible = true;
       }
       // ARRANGE drag / nudge: the proxy center -> offsets from the home spot
       private function hz42ScFromPx(c:Sprite) : void
       {
          var hp:Point = this.hz42ScHome();
+         var boxH:Number = this.hz42ScBoxH > 0 ? this.hz42ScBoxH : HZ42_SC_H;
          var cx:Number = c.x + this.hz42ScW * c.scaleX / 2;
-         var cy:Number = c.y + HZ42_SC_H * c.scaleY / 2;
+         var cy:Number = c.y + boxH * c.scaleY / 2;
          this.hz42ScPut(cx - hp.x,hp.y - cy,this.hz42ScS);
       }
       private function hz42ScStep(dir:int) : void
