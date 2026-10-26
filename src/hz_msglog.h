@@ -470,6 +470,22 @@ inline bool WriterStartAllowed(bool a_live, bool a_started)
 	return !a_live && !a_started;
 }
 
+// Purpose: quit flush only queues a last write. AtExit stops the worker.
+inline bool ShutdownWriterSetsStop()
+{
+	return false;
+}
+
+// Purpose: a finished joinable worker must be joined before a new thread is
+// assigned. Never waits: if done is false the caller must not rebind.
+inline bool RebindDoneWriter(std::thread& a_th, bool a_done)
+{
+	if (!a_th.joinable()) return true;
+	if (!a_done) return false;
+	try { a_th.join(); } catch (...) { return false; }
+	return true;
+}
+
 // Purpose: 1 s, 2 s, 4 s … capped at 60 s. Same curve for write, read, and
 // promotion retries. Normal writes stay on the 10–15 s debounce.
 inline int NextRetryMs(int a_prevMs)

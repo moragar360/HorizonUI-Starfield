@@ -462,7 +462,7 @@ int main()
 		Expect(main.find("persist skipped; character key is still a name hash") != std::string::npos,
 			"a name-hash write skip is logged");
 		Expect(main.find("MsglogShutdownWriter();") != std::string::npos,
-			"quit to desktop queues a last flush and stops the writer");
+			"quit to desktop queues a last flush");
 		{
 			const auto prep = main.find("void HzMsgPrepare()");
 			const auto prepEnd = main.find("static std::string HzCrossName()", prep);
@@ -471,8 +471,18 @@ int main()
 				"prepare does not free the address image");
 		}
 		Expect(main.find("try { Poll(); }") != std::string::npos, "the task lambda swallows exceptions");
-		Expect(main.find("g_mlWStop.store(true)") != std::string::npos && main.find("MsglogShutdownWriter();") != std::string::npos,
-			"quit to desktop stops the writer without joining");
+		{
+			const auto shut = main.find("void MsglogShutdownWriter()");
+			const auto next = main.find("void MsglogQueueLoad", shut);
+			const auto body = shut != std::string::npos && next > shut ? main.substr(shut, next - shut) : std::string();
+			Expect(body.find("MsglogRequestWrite(true)") != std::string::npos,
+				"shutdown queues a last write");
+			Expect(body.find("g_mlWStop") == std::string::npos,
+				"Y14 shutdown does not stop the worker");
+		}
+		Expect(main.find("if (g_mlWThread.joinable())") != std::string::npos
+			&& main.find("if (!g_mlWDone.load()) return;") != std::string::npos,
+			"EnsureWriter joins only a finished worker before rebind");
 		Expect(main.find("hzlog::JoinOrDetach") == std::string::npos,
 			"shutdown does not join on the game thread");
 		Expect(main.find("AtExitShouldJoin") != std::string::npos && main.find("g_mlWThread.detach()") != std::string::npos,
@@ -982,6 +992,7 @@ int main()
 		Expect(WriterStartAllowed(false, false), "a stopped writer may start");
 		Expect(!WriterStartAllowed(true, false), "a live detached writer blocks a second start");
 		Expect(!WriterStartAllowed(false, true), "a started writer blocks a second start");
+		Expect(!ShutdownWriterSetsStop(), "Y14 shutdown does not set stop");
 		Expect(WriteAllowed(false, true, 1000, 1001), "force bypasses the dirty early return");
 		Expect(!WriteAllowed(false, false, 0, 1000), "clean buffer does not write");
 		Expect(!WriteAllowed(true, false, 1000, 1500), "retry waits the backoff");
@@ -1873,6 +1884,158 @@ int main()
 			std::chrono::steady_clock::now() - t0).count();
 		Expect(ms < 400, "timeout detaches instead of joining the stuck worker");
 		Expect(!stuck.joinable(), "timed-out worker is detached");
+
+		std::atomic<bool> finished{false};
+		std::thread doneTh([&] { finished.store(true); });
+		while (!finished.load())
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		Expect(doneTh.joinable(), "a finished worker stays joinable");
+		Expect(RebindDoneWriter(doneTh, true), "EnsureWriter joins a finished worker");
+		Expect(!doneTh.joinable(), "the finished worker is not joinable after rebind");
+		std::thread liveTh([] { std::this_thread::sleep_for(std::chrono::milliseconds(200)); });
+		Expect(!RebindDoneWriter(liveTh, false), "EnsureWriter does not join a live worker");
+		liveTh.join();
+	}
+
+	{
+		struct WriterHarness {
+			std::thread th;
+			std::atomic<bool> live{false};
+			std::atomic<bool> started{false};
+			std::atomic<bool> stop{false};
+			std::atomic<bool> done{false};
+			std::atomic<bool> req{false};
+			std::atomic<int> writes{0};
+			std::mutex mu;
+			std::condition_variable cv;
+
+			void Worker()
+			{
+				try {
+					for (;;) {
+						std::unique_lock lk(mu);
+						cv.wait_for(lk, std::chrono::milliseconds(50), [&] {
+							return stop.load() || req.load();
+						});
+						const bool st = stop.load();
+						const bool wr = req.load();
+						if (wr) {
+							req.store(false);
+							writes.fetch_add(1);
+						}
+						lk.unlock();
+						if (st && !req.load()) break;
+					}
+				} catch (...) {
+				}
+				done.store(true);
+				live.store(false);
+				started.store(false);
+				cv.notify_all();
+			}
+
+			bool Ensure()
+			{
+				if (!WriterStartAllowed(live.load(), started.load())) return false;
+				if (!RebindDoneWriter(th, done.load())) return false;
+				started.store(true);
+				live.store(true);
+				stop.store(false);
+				done.store(false);
+				try {
+					th = std::thread([this] { Worker(); });
+				} catch (...) {
+					started.store(false);
+					live.store(false);
+					return false;
+				}
+				return true;
+			}
+
+			void RequestWrite()
+			{
+				Ensure();
+				{
+					std::lock_guard lk(mu);
+					req.store(true);
+				}
+				cv.notify_one();
+			}
+
+			void Shutdown()
+			{
+				RequestWrite();
+				if (ShutdownWriterSetsStop()) {
+					stop.store(true);
+					cv.notify_all();
+				}
+			}
+
+			bool WaitWrites(int a_n, int a_ms)
+			{
+				const auto t0 = std::chrono::steady_clock::now();
+				while (writes.load() < a_n) {
+					if (std::chrono::duration_cast<std::chrono::milliseconds>(
+							std::chrono::steady_clock::now() - t0).count() > a_ms)
+						return false;
+					std::this_thread::sleep_for(std::chrono::milliseconds(5));
+				}
+				return true;
+			}
+
+			~WriterHarness()
+			{
+				stop.store(true);
+				cv.notify_all();
+				if (th.joinable()) {
+					if (done.load()) {
+						try { th.join(); } catch (...) {}
+					} else {
+						try { th.detach(); } catch (...) {}
+					}
+				}
+			}
+		};
+
+		{
+			WriterHarness rt3;
+			rt3.RequestWrite();
+			Expect(rt3.WaitWrites(1, 1000), "RT3 first write runs");
+			rt3.Shutdown();
+			Expect(rt3.live.load() || !rt3.stop.load(), "Y14 shutdown leaves the worker running");
+			Expect(!rt3.stop.load(), "Y14 shutdown does not set stop");
+			rt3.RequestWrite();
+			Expect(rt3.WaitWrites(2, 1000), "RT3 a write after shutdown does not terminate");
+			Expect(rt3.live.load(), "RT3 worker is still live after the follow-up write");
+		}
+		{
+			WriterHarness rt4;
+			rt4.RequestWrite();
+			Expect(rt4.WaitWrites(1, 1000), "RT4 first write runs");
+			rt4.Shutdown();
+			rt4.Shutdown();
+			Expect(rt4.WaitWrites(2, 1000), "RT4 two shutdowns (kBegin then kSaveCompleted) do not terminate");
+			Expect(!rt4.stop.load(), "RT4 two shutdowns do not stop the worker");
+			Expect(rt4.live.load(), "RT4 worker is still live after two shutdowns");
+		}
+		{
+			WriterHarness rt5;
+			rt5.RequestWrite();
+			Expect(rt5.WaitWrites(1, 1000), "RT5 first write runs");
+			rt5.stop.store(true);
+			rt5.cv.notify_all();
+			const auto t0 = std::chrono::steady_clock::now();
+			while (!rt5.done.load()) {
+				if (std::chrono::duration_cast<std::chrono::milliseconds>(
+						std::chrono::steady_clock::now() - t0).count() > 1000)
+					break;
+				std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			}
+			Expect(rt5.done.load(), "RT5 worker finished");
+			Expect(rt5.th.joinable(), "RT5 finished worker stays joinable");
+			rt5.RequestWrite();
+			Expect(rt5.WaitWrites(2, 1000), "RT5 rebind after a finished joinable worker does not terminate");
+		}
 	}
 
 	if (g_fails) {

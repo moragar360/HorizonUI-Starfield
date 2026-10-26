@@ -2519,6 +2519,10 @@ namespace HZ
 			persist = g_ml.buf.settings.persist;
 		}
 		if (!hzlog::WriterStartAllowed(g_mlWLive.load(), g_mlWStarted) || !persist) return;
+		if (g_mlWThread.joinable()) {
+			if (!g_mlWDone.load()) return;
+			try { g_mlWThread.join(); } catch (...) { return; }
+		}
 		g_mlWStarted = true;
 		g_mlWLive.store(true);
 		g_mlWStop.store(false);
@@ -2575,14 +2579,12 @@ namespace HZ
 		}
 	}
 
-	// Purpose: queue a last write and ask the worker to stop. Does not join:
-	// atexit joins only when the worker is already done, so exit cannot hang.
+	// Purpose: queue a last write on quit. Does not stop the worker:
+	// MsglogAtExit owns stop/join so a later write cannot rebind a live thread.
 	void MsglogShutdownWriter()
 	{
 		try {
 			MsglogRequestWrite(true);
-			g_mlWStop.store(true);
-			g_mlWCv.notify_all();
 		} catch (...) {
 		}
 	}
