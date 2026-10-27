@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <map>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace HZF {
@@ -390,6 +391,25 @@ namespace HZF {
 			a_hidden.push_back(a_id);
 		}
 
+		inline bool RememberHiddenId(std::vector<std::string>& a_out, std::unordered_set<std::string>& a_seen,
+			const std::string& a_id)
+		{
+			if (a_id.empty()) return false;
+			if (!a_seen.insert(Lower(a_id)).second) return false;
+			a_out.push_back(a_id);
+			return true;
+		}
+
+		inline void UnionHiddenPresetIds(std::vector<std::string>& a_out, const std::vector<std::string>& a_more)
+		{
+			std::unordered_set<std::string> seen;
+			seen.reserve(a_out.size() + a_more.size());
+			for (const auto& id : a_out)
+				seen.insert(Lower(id));
+			for (const auto& id : a_more)
+				RememberHiddenId(a_out, seen, id);
+		}
+
 		inline void UnhidePresetId(std::vector<std::string>& a_hidden, const std::string& a_id)
 		{
 			std::vector<std::string> keep;
@@ -474,10 +494,13 @@ namespace HZF {
 		inline void CollectHiddenPresetIds(const std::map<std::string, std::pair<std::string, std::string>>& a_kv,
 			std::vector<std::string>& a_out)
 		{
+			std::unordered_set<std::string> seen;
+			seen.reserve(a_kv.size() + a_out.size());
+			for (const auto& id : a_out)
+				seen.insert(Lower(id));
 			for (const auto& [kl, kv] : a_kv) {
-				if (!IsHiddenPresetKey(kl)) continue;
-				if (!kv.second.empty())
-					HidePresetId(a_out, DecodeHiddenPresetId(kv.second));
+				if (!IsHiddenPresetKey(kl) || kv.second.empty()) continue;
+				RememberHiddenId(a_out, seen, DecodeHiddenPresetId(kv.second));
 			}
 		}
 

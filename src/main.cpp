@@ -454,8 +454,7 @@ namespace HZF
 				else
 					s.undoReady = Exists(a_p.preapply);
 				CollectHiddenPresetIds(x->kv, s.hiddenPresets);
-				if (s.hiddenPresets.empty())
-					s.hiddenPresets = SplitPresetIds(get("hiddenpresets"));
+				UnionHiddenPresetIds(s.hiddenPresets, SplitPresetIds(get("hiddenpresets")));
 			}
 			return s;
 		}
@@ -2374,6 +2373,7 @@ namespace HZ
 		std::uint64_t           cancelSeq{0};
 		bool                    emptyClear{false};
 	};
+	void MsglogQueueWriteJob(MlWriteJob a_job);
 	struct MlLoadJob
 	{
 		hzlog::Character        ch;
@@ -2655,20 +2655,32 @@ namespace HZ
 				job.dir = g_ml.horizonDir;
 				job.replace = g_ml.replace;
 				job.persist = true;
+				job.emptyClear = job.snap.entries.empty();
 				g_ml.dirty = false;
 				g_ml.writePending = true;
 				g_ml.writePendingSeq = job.writeSeq;
 				g_ml.lastWriteMs = GetTickCount64();
 			}
-			MsglogEnsureWriter();
-			{
-				std::lock_guard lk(g_mlWMu);
-				g_mlWJob = std::move(job);
-				g_mlWReq.store(true);
-			}
-			g_mlWCv.notify_one();
+			MsglogQueueWriteJob(std::move(job));
 		} catch (...) {
 		}
+	}
+
+	// Purpose: wake the writer with one job. A pending empty Clear for
+	// the same key is kept so a quit force-write cannot copy pre-clear
+	// rows onto .bak. Inputs: the job. Outputs: g_mlWJob queued.
+	void MsglogQueueWriteJob(MlWriteJob a_job)
+	{
+		MsglogEnsureWriter();
+		{
+			std::lock_guard lk(g_mlWMu);
+			if (g_mlWReq.load() && hzlog::KeepQueuedClear(g_mlWJob.emptyClear, g_mlWJob.key,
+					a_job.emptyClear, a_job.key))
+				return;
+			g_mlWJob = std::move(a_job);
+			g_mlWReq.store(true);
+		}
+		g_mlWCv.notify_one();
 	}
 
 	// Purpose: queue a last write on quit. Does not stop the worker:
@@ -2882,6 +2894,9 @@ namespace HZ
 	// Purpose: empty memory on the game thread, bump the per-key cancel
 	// seq, and queue an empty write on the worker when Persist is on.
 	// Persist=0 never creates or touches a file. No disk I/O here.
+	// Known limitation: if the process is killed within a few ms of this
+	// call, the empty write may not reach disk. Do not join or wait here
+	// — that is a crash risk and would break MF-G (atexit owns stop/join).
 	void MsglogClearHistory()
 	{
 		try {
@@ -2907,13 +2922,7 @@ namespace HZ
 				queue = true;
 			}
 			if (!queue) return;
-			MsglogEnsureWriter();
-			{
-				std::lock_guard lk(g_mlWMu);
-				g_mlWJob = std::move(job);
-				g_mlWReq.store(true);
-			}
-			g_mlWCv.notify_one();
+			MsglogQueueWriteJob(std::move(job));
 		} catch (...) {
 		}
 	}

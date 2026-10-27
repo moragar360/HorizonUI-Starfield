@@ -821,6 +821,16 @@ inline std::uint64_t OrderedCancel(WriteGate& a_g, const std::string& a_key)
 	return a_g.BumpCancel(a_key);
 }
 
+// Purpose: a later force-write must not replace a queued empty Clear
+// for the same key. FileStore::Save copies main onto .bak, so that
+// overwrite would put pre-clear rows back in the bak.
+// Inputs: pending job flags and keys. Outputs: true to keep the Clear.
+inline bool KeepQueuedClear(bool a_pendingClear, std::string_view a_pendingKey,
+	bool a_newClear, std::string_view a_newKey)
+{
+	return a_pendingClear && !a_newClear && SameLogKey(a_pendingKey, a_newKey);
+}
+
 inline bool LastPlayedKnown(std::int64_t a_ts)
 {
 	return a_ts >= kLastPlayedEpochMin;
@@ -982,10 +992,13 @@ public:
 	std::int64_t lastPlayedTs{0};
 	std::uint64_t nextId{1};
 	int       sess{1};
-	int       launchSess{0};
+	int       launchSess{0}; // current key's process-lifetime pin; 0 if none
 	std::int64_t sessStartTs{0};
 	std::vector<Session> sessions;
 	std::vector<Entry> entries; // oldest -> newest
+	// Per-character launch session for this process. Never cleared on
+	// ResetMemory / LoadState: A and B must not share one id.
+	std::vector<std::pair<std::string, int>> launchPins;
 
 	int Cap() const { return ClampHistory(settings.historySize); }
 
@@ -1019,14 +1032,50 @@ public:
 		return nullptr;
 	}
 
+	int LaunchPinFor(std::string_view a_key) const
+	{
+		if (a_key.empty()) return 0;
+		const auto folded = FoldLogKey(a_key);
+		for (const auto& p : launchPins)
+			if (p.first == folded) return p.second;
+		return 0;
+	}
+
+	void RememberLaunchPin(std::string_view a_key, int a_sess)
+	{
+		if (a_key.empty() || a_sess <= 0) return;
+		const auto folded = FoldLogKey(a_key);
+		for (auto& p : launchPins) {
+			if (p.first == folded) {
+				p.second = a_sess;
+				return;
+			}
+		}
+		launchPins.push_back({folded, a_sess});
+	}
+
+	// Purpose: first use of a key in this process takes
+	// max(file nextSess, max entry sess+1, max sessions id+1). Later
+	// loads and switches back to that key reuse the pin.
+	// Inputs: character key and the file's nextSess (0 if none).
+	// Outputs: the launch session id for this key.
+	int TakeLaunchSess(std::string_view a_key, int a_fileNext)
+	{
+		if (const int pinned = LaunchPinFor(a_key))
+			return pinned;
+		const int n = ResolveNextSess(a_fileNext, sessions, entries);
+		RememberLaunchPin(a_key, n);
+		return n;
+	}
+
 	void StartSession(std::int64_t a_ts)
 	{
-		// launchSess is process-lifetime. A save load or character switch
-		// must reuse it, not mint a new id. Still record a session row when
-		// memory was reset so the snapshot is not missing this launch.
-		if (launchSess != 0)
+		if (!character.key.empty()) {
+			sess = TakeLaunchSess(character.key, sess <= 0 ? 1 : sess);
+			launchSess = sess;
+		} else if (launchSess != 0) {
 			sess = launchSess;
-		else {
+		} else {
 			if (sess <= 0) sess = 1;
 			launchSess = sess;
 		}
@@ -1158,11 +1207,8 @@ public:
 		nextId = s.nextId ? s.nextId : 1;
 		sessions = std::move(s.sessions);
 		entries = std::move(s.entries);
-		const auto next = ResolveNextSess(s.nextSess, sessions, entries);
-		if (launchSess == 0)
-			sess = next;
-		else
-			sess = launchSess;
+		sess = TakeLaunchSess(character.key, s.nextSess);
+		launchSess = sess;
 		NoteLocationLoad();
 		int pins = 0;
 		for (auto& e : entries) {
@@ -1182,10 +1228,9 @@ public:
 		entries.clear();
 		sessions.clear();
 		nextId = 1;
-		if (launchSess == 0)
-			sess = 1;
-		else
-			sess = launchSess;
+		// Look up this key's pin. Do not apply another character's id.
+		launchSess = LaunchPinFor(character.key);
+		sess = launchSess != 0 ? launchSess : 1;
 		sessStartTs = 0;
 		lastPlayedTs = 0;
 		suppressFirstLoc_ = false;
@@ -2223,6 +2268,10 @@ public:
 	bool Save(const LogState& a_state) override
 	{
 		if (!ValidLogKey(a_state.character.key)) return false;
+		// An empty snapshot is a Clear / quit-after-Clear. Write both
+		// files empty so .bak cannot keep pre-clear rows.
+		if (a_state.entries.empty())
+			return SaveEmptyBoth(a_state);
 		std::error_code ec;
 		std::filesystem::create_directories(dir, ec);
 		if (ec) return false;

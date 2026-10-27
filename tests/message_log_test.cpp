@@ -263,19 +263,165 @@ bool IdentIsBanned(std::string_view a_ident)
 	if (a_ident.empty() || IsRemoveAlgorithm(a_ident)) return false;
 	static const char* exact[] = {
 		"remove_all", "unlink", "_unlink", "_wunlink", "rmdir", "_rmdir", "_wrmdir",
-		"_wremove", "_remove", "IFileOperation", "FileDispositionInfo", "FO_DELETE",
-		"DELETE_ON_CLOSE", "NtDeleteFile", "SetFileInformationByHandle"
+		"_wremove", "_remove", "IFileOperation", "FO_DELETE",
+		"DELETE_ON_CLOSE", "NtDeleteFile", "SetFileInformationByHandle",
+		"FileDispositionInfoEx", "FILE_DISPOSITION_INFO_EX", "ZwDeleteFile",
+		"NtSetInformationFile", "ZwSetInformationFile", "CLSID_FileOperation"
 	};
 	for (const char* t : exact)
 		if (SameIdent(a_ident, t)) return true;
 	static const char* prefix[] = {
-		"DeleteFile", "RemoveDirectory", "SHFileOperation", "FILE_DISPOSITION", "ReplaceFile"
+		"DeleteFile", "RemoveDirectory", "SHFileOperation", "FILE_DISPOSITION",
+		"ReplaceFile", "FileDispositionInfo"
 	};
 	for (const char* t : prefix)
 		if (StartsIdent(a_ident, t)) return true;
 	const auto low = LowerCopy(std::string(a_ident));
 	if (low.find("delete_on_close") != std::string::npos) return true;
 	return false;
+}
+
+bool StringNamesBannedApi(std::string_view a_lit)
+{
+	std::size_t i = 0;
+	while (i < a_lit.size()) {
+		if (!IdentStart(a_lit[i])) {
+			++i;
+			continue;
+		}
+		std::size_t e = i + 1;
+		while (e < a_lit.size() && IdentChar(a_lit[e])) ++e;
+		if (IdentIsBanned(a_lit.substr(i, e - i)))
+			return true;
+		i = e;
+	}
+	return false;
+}
+
+bool ShellDeleteCmd(std::string_view a_lit)
+{
+	const auto low = LowerCopy(std::string(a_lit));
+	auto word = [&](std::string_view a_w) {
+		std::size_t p = 0;
+		while ((p = low.find(a_w, p)) != std::string::npos) {
+			const bool left = p == 0 || !IdentChar(low[p - 1]);
+			const bool right = p + a_w.size() == low.size() || !IdentChar(low[p + a_w.size()]);
+			if (left && right) return true;
+			++p;
+		}
+		return false;
+	};
+	return word("del") || word("erase") || word("rmdir") || word("rd") || word("remove-item");
+}
+
+bool IsShellSpawnName(std::string_view a_id)
+{
+	return SameIdent(a_id, "system") || SameIdent(a_id, "_wsystem")
+		|| SameIdent(a_id, "_popen") || SameIdent(a_id, "popen")
+		|| StartsIdent(a_id, "ShellExecute") || StartsIdent(a_id, "CreateProcess");
+}
+
+bool IsGetProcName(std::string_view a_id)
+{
+	return StartsIdent(a_id, "GetProcAddress");
+}
+
+std::size_t SkipStringLit(const std::string& a_s, std::size_t a_i, std::string* a_out)
+{
+	if (a_i >= a_s.size()) return a_i;
+	std::size_t i = a_i;
+	if (a_s[i] == 'L' || a_s[i] == 'u' || a_s[i] == 'U') ++i;
+	if (i >= a_s.size() || (a_s[i] != '"' && a_s[i] != '\'')) return a_i;
+	const char q = a_s[i++];
+	std::string v;
+	while (i < a_s.size() && a_s[i] != q && a_s[i] != '\n') {
+		if (a_s[i] == '\\' && i + 1 < a_s.size()) {
+			v.push_back(a_s[i + 1]);
+			i += 2;
+			continue;
+		}
+		v.push_back(a_s[i++]);
+	}
+	if (i < a_s.size() && a_s[i] == q) ++i;
+	if (a_out) *a_out = std::move(v);
+	return i;
+}
+
+std::size_t SkipBalanced(const std::string& a_s, std::size_t a_open)
+{
+	if (a_open >= a_s.size() || a_s[a_open] != '(') return a_open;
+	int depth = 0;
+	std::size_t i = a_open;
+	while (i < a_s.size()) {
+		if (a_s[i] == '"' || a_s[i] == '\'' || ((a_s[i] == 'L' || a_s[i] == 'u' || a_s[i] == 'U')
+			&& i + 1 < a_s.size() && (a_s[i + 1] == '"' || a_s[i + 1] == '\''))) {
+			i = SkipStringLit(a_s, i, nullptr);
+			continue;
+		}
+		if (a_s[i] == '(') ++depth;
+		else if (a_s[i] == ')') {
+			--depth;
+			++i;
+			if (depth == 0) return i;
+			continue;
+		}
+		++i;
+	}
+	return i;
+}
+
+bool MoveFileExNullDest(const std::string& a_s, std::size_t a_name)
+{
+	std::size_t i = a_name + 10; // MoveFileEx
+	while (i < a_s.size() && IdentChar(a_s[i])) ++i;
+	SkipWs(a_s, i);
+	if (i >= a_s.size() || a_s[i] != '(') return false;
+	++i;
+	int depth = 0;
+	while (i < a_s.size()) {
+		if (a_s[i] == '"' || a_s[i] == '\'' || ((a_s[i] == 'L' || a_s[i] == 'u' || a_s[i] == 'U')
+			&& i + 1 < a_s.size() && (a_s[i + 1] == '"' || a_s[i + 1] == '\''))) {
+			i = SkipStringLit(a_s, i, nullptr);
+			continue;
+		}
+		if (a_s[i] == '(') {
+			++depth;
+			++i;
+			continue;
+		}
+		if (a_s[i] == ')') {
+			if (depth == 0) return false;
+			--depth;
+			++i;
+			continue;
+		}
+		if (a_s[i] == ',' && depth == 0) {
+			++i;
+			SkipWs(a_s, i);
+			return a_s.compare(i, 7, "nullptr") == 0 || a_s.compare(i, 4, "NULL") == 0
+				|| (i < a_s.size() && a_s[i] == '0'
+					&& (i + 1 == a_s.size() || !IdentChar(a_s[i + 1])));
+		}
+		++i;
+	}
+	return false;
+}
+
+void CollectCallStrings(const std::string& a_s, std::size_t a_open, std::vector<std::string>& a_out)
+{
+	if (a_open >= a_s.size() || a_s[a_open] != '(') return;
+	const auto end = SkipBalanced(a_s, a_open);
+	std::size_t i = a_open + 1;
+	while (i < end) {
+		if (a_s[i] == '"' || a_s[i] == '\'' || ((a_s[i] == 'L' || a_s[i] == 'u' || a_s[i] == 'U')
+			&& i + 1 < a_s.size() && (a_s[i + 1] == '"' || a_s[i + 1] == '\''))) {
+			std::string v;
+			i = SkipStringLit(a_s, i, &v);
+			if (!v.empty()) a_out.push_back(std::move(v));
+			continue;
+		}
+		++i;
+	}
 }
 
 bool RemoveIsQualified(const std::string& a_s, std::size_t a_identAt)
@@ -398,6 +544,53 @@ std::vector<DeleteHit> FindDeleteCalls(const std::string& a_text)
 		}
 		++i;
 	}
+	std::size_t p = 0;
+	while (p < a_text.size()) {
+		if (a_text[p] == '"' || a_text[p] == '\'' || ((a_text[p] == 'L' || a_text[p] == 'u' || a_text[p] == 'U')
+			&& p + 1 < a_text.size() && (a_text[p + 1] == '"' || a_text[p + 1] == '\''))) {
+			std::string lit;
+			p = SkipStringLit(a_text, p, &lit);
+			if (StringNamesBannedApi(lit))
+				add(std::string("string ") + lit);
+			continue;
+		}
+		if (a_text[p] == '/' && p + 1 < a_text.size() && a_text[p + 1] == '/') {
+			while (p < a_text.size() && a_text[p] != '\n') ++p;
+			continue;
+		}
+		if (a_text[p] == '/' && p + 1 < a_text.size() && a_text[p + 1] == '*') {
+			const auto close = a_text.find("*/", p + 2);
+			p = close == std::string::npos ? a_text.size() : close + 2;
+			continue;
+		}
+		if (IdentStart(a_text[p]) && (p == 0 || !IdentChar(a_text[p - 1]))) {
+			std::size_t e = p + 1;
+			while (e < a_text.size() && IdentChar(a_text[e])) ++e;
+			const auto id = std::string_view(a_text).substr(p, e - p);
+			std::size_t k = e;
+			SkipWs(a_text, k);
+			if (k < a_text.size() && a_text[k] == '(') {
+				std::vector<std::string> args;
+				CollectCallStrings(a_text, k, args);
+				if (IsGetProcName(id)) {
+					for (const auto& a : args) {
+						if (StringNamesBannedApi(a) || SameIdent(a, "remove"))
+							add(std::string("GetProcAddress ") + a);
+					}
+				} else if (IsShellSpawnName(id)) {
+					for (const auto& a : args) {
+						if (ShellDeleteCmd(a))
+							add(std::string(id) + " " + a);
+					}
+				}
+			}
+			if (StartsIdent(id, "MoveFileEx") && MoveFileExNullDest(a_text, p))
+				add("MoveFileEx null dest");
+			p = e;
+			continue;
+		}
+		++p;
+	}
 	return hits;
 }
 
@@ -405,25 +598,6 @@ void ExpectNoDeleteCalls(const std::string& a_text, const std::string& a_file)
 {
 	for (const auto& h : FindDeleteCalls(a_text))
 		Expect(false, (a_file + " must not call " + h.token).c_str());
-	for (std::size_t p = 0; (p = a_text.find("MoveFileEx", p)) != std::string::npos; ) {
-		const auto open = a_text.find('(', p);
-		if (open == std::string::npos) {
-			p += 10;
-			continue;
-		}
-		const auto comma = a_text.find(',', open);
-		if (comma == std::string::npos) {
-			p = open + 1;
-			continue;
-		}
-		std::size_t d = comma + 1;
-		while (d < a_text.size() && std::isspace(static_cast<unsigned char>(a_text[d])))
-			++d;
-		if (a_text.compare(d, 7, "nullptr") == 0 || a_text.compare(d, 4, "NULL") == 0
-			|| (d < a_text.size() && a_text[d] == '0' && (d + 1 == a_text.size() || !IdentChar(a_text[d + 1]))))
-			Expect(false, (a_file + " must not MoveFileEx to a null dest").c_str());
-		p = open + 1;
-	}
 }
 
 // Purpose: prove the no-delete scanner catches every known bypass and
@@ -456,6 +630,23 @@ void TestNoDeleteScannerSelf()
 		"std::filesystem::remove(p)",
 		"std::remove(path)",
 		"using std::remove;",
+		"FileDispositionInfoEx x",
+		"FILE_DISPOSITION_INFO_EX d",
+		"ZwDeleteFile(&oa)",
+		"NtSetInformationFile(h, ios, p, n, c)",
+		"ZwSetInformationFile(h, ios, p, n, c)",
+		"CLSID_FileOperation",
+		"GetProcAddress(m, \"DeleteFileW\")",
+		"GetProcAddress(m, \"NtDeleteFile\")",
+		"system(\"del /q file\")",
+		"_wsystem(L\"erase file\")",
+		"_popen(\"rmdir dir\", \"r\")",
+		"ShellExecuteW(0,0,L\"cmd\",L\"/c rd /s dir\",0,0)",
+		"CreateProcessW(0, L\"powershell Remove-Item x\", 0,0,0,0,0,0,0,0)",
+		"const char* n = \"DeleteFileW\";",
+		"MoveFileEx(foo(a, b), nullptr, flags)",
+		"MoveFileExW(bar(1,2), NULL, 0)",
+		"MoveFileEx(x, 0, flags)",
 	};
 	for (const char* seed : seeds) {
 		const auto hits = FindDeleteCalls(seed);
@@ -469,6 +660,10 @@ void TestNoDeleteScannerSelf()
 		"first.remove_suffix(1);",
 		"phrase.remove_prefix(1);",
 		"std::string removed = \"Removed.\";",
+		"system(\"echo hello\");",
+		"CreateProcessW(0, L\"game.exe\", 0,0,0,0,0,0,0,0);",
+		"GetProcAddress(m, \"XInputGetState\");",
+		"MoveFileExW(tmp, dst, MOVEFILE_REPLACE_EXISTING);",
 	};
 	for (const char* seed : negatives) {
 		const auto hits = FindDeleteCalls(seed);
@@ -744,6 +939,77 @@ int main()
 		}
 		ExpectEqI(after1, 3, "Clear session leaves the earlier launch");
 		ExpectEqI(after2, 0, "Clear session removes only the current launch");
+
+		{
+			const auto rootAB = TmpRoot();
+			const auto chA = MakeCharacter(0xAAAAu, "Sam");
+			const auto chB = MakeCharacter(0xBBBBu, "Barrett");
+			FileStore seed(rootAB / "MessageLog");
+			LogState stA;
+			stA.character = chA;
+			stA.nextSess = 3;
+			stA.nextId = 3;
+			stA.sessions = { Session{1, 1}, Session{2, 2} };
+			Entry a1;
+			a1.id = 1;
+			a1.kind = Kind::Game;
+			a1.text = "A launch 1";
+			a1.sess = 1;
+			a1.ts = 1;
+			Entry a2 = a1;
+			a2.id = 2;
+			a2.text = "A launch 2";
+			a2.sess = 2;
+			a2.ts = 2;
+			stA.entries = { a1, a2 };
+			Expect(seed.Save(stA), "seed A at nextSess 3");
+			LogState stB;
+			stB.character = chB;
+			stB.nextSess = 5;
+			stB.nextId = 2;
+			stB.sessions = { Session{3, 3} };
+			Entry b3;
+			b3.id = 1;
+			b3.kind = Kind::Game;
+			b3.text = "B launch-3";
+			b3.sess = 3;
+			b3.ts = 3;
+			stB.entries = { b3 };
+			Expect(seed.Save(stB), "seed B with launch-3 rows and nextSess 5");
+
+			Log proc;
+			proc.Configure(s, rootAB);
+			Expect(proc.OnHudReady(chA, 1.0, 100, 1), "launch on A");
+			ExpectEqI(proc.buf.sess, 3, "A takes max(file nextSess, entries, sessions) = 3");
+			Expect(proc.Offer(Cap(Kind::Game, "A this launch", 80'000)) == OfferResult::Stored, "A new row");
+			ExpectEqI(proc.buf.entries.back().sess, 3, "A new rows use A's launch session");
+
+			Expect(proc.OnHudReady(chB, 2.0, 200, 2), "switch to B");
+			ExpectEqI(proc.buf.sess, 5, "B does not inherit A's launch session");
+			Expect(proc.Offer(Cap(Kind::Game, "B this launch", 90'000)) == OfferResult::Stored, "B new row");
+			ExpectEqI(proc.buf.entries.back().sess, 5, "B new rows use B's launch session");
+			int bOld = 0, bNew = 0;
+			for (const auto& e : proc.buf.entries) {
+				if (e.text == "B launch-3") ++bOld;
+				if (e.sess == 5) ++bNew;
+			}
+			ExpectEqI(bOld, 1, "B loaded its earlier-launch rows");
+			ExpectEqI(bNew, 1, "B has this-launch rows");
+			proc.buf.ClearSession();
+			bool keptOld = false, hasNew = false;
+			for (const auto& e : proc.buf.entries) {
+				if (e.text == "B launch-3") keptOld = true;
+				if (e.sess == 5) hasNew = true;
+			}
+			Expect(keptOld, "Clear session on B leaves earlier-launch rows");
+			Expect(!hasNew, "Clear session on B drops this-launch rows");
+
+			Expect(proc.OnHudReady(chA, 3.0, 300, 3), "switch back to A");
+			ExpectEqI(proc.buf.sess, 3, "A launch session survives the switch");
+			ExpectEqI(proc.buf.LaunchPinFor(chB.key), 5, "B's pin is still 5 after leaving B");
+			std::error_code ecAB;
+			std::filesystem::remove_all(rootAB, ecAB);
+		}
 
 		const char* oldJson =
 			"{\"type\":\"horizon.messagelog\",\"version\":1,\"sessions\":["
@@ -2979,6 +3245,14 @@ int main()
 				Expect(body.find("if (!wjob.persist)") != std::string::npos,
 					"the writer refuses Persist=0 file work");
 			}
+			Expect(hdr.find("TakeLaunchSess") != std::string::npos,
+				"launch session is pinned per character key");
+			Expect(hdr.find("KeepQueuedClear") != std::string::npos,
+				"a queued Clear is not overwritten by a later save");
+			Expect(main.find("MsglogQueueWriteJob") != std::string::npos,
+				"DLL write jobs go through one queue helper");
+			Expect(main.find("killed within a few ms") != std::string::npos,
+				"async Clear kill is documented without a join");
 		}
 	}
 
@@ -3107,6 +3381,32 @@ int main()
 		Expect(leave.ClearHistoryNow(), "Persist=0 Clear after a saved file");
 		Expect(leave.buf.entries.empty(), "Persist=0 Clear still empties memory");
 		Expect(ReadFile(leavePath) == leaveBody, "Persist=0 Clear does not touch the existing file");
+
+		Expect(KeepQueuedClear(true, "0000EEEE", false, "0000EEEE"),
+			"a quit save does not replace a queued Clear for that key");
+		Expect(!KeepQueuedClear(true, "0000EEEE", true, "0000EEEE"),
+			"a later empty Clear may replace a queued Clear");
+		Expect(!KeepQueuedClear(true, "0000EEEE", false, "0000FFFF"),
+			"a write for another key does not keep the queued Clear");
+		Expect(!KeepQueuedClear(false, "0000EEEE", false, "0000EEEE"),
+			"a regular pending write is not treated as a Clear");
+
+		Log quitOver;
+		quitOver.Configure(s, root);
+		quitOver.buf.character = MakeCharacter(0xEEEEu, "Sam");
+		quitOver.Offer(Cap(Kind::Game, "pre-clear rows", 94'000));
+		Expect(quitOver.Flush(95'000), "seed before quit-over-clear");
+		const auto quitPath = root / "MessageLog" / "MessageLog_0000EEEE.json";
+		const auto quitBak = root / "MessageLog" / "MessageLog_0000EEEE.json.bak";
+		Expect(ReadFile(quitPath).find("pre-clear rows") != std::string::npos, "main has rows before the quit write");
+		auto cleared = quitOver.buf.Snapshot();
+		cleared.entries.clear();
+		FileStore quitFs(root / "MessageLog", quitOver.replace);
+		Expect(quitFs.Save(cleared), "quit force-write of the cleared snapshot");
+		Expect(ReadFile(quitPath).find("pre-clear rows") == std::string::npos,
+			"quit write after Clear empties the main file");
+		Expect(ReadFile(quitBak).find("pre-clear rows") == std::string::npos,
+			"quit write after Clear empties the bak");
 
 		std::error_code ec;
 		std::filesystem::remove_all(root, ec);

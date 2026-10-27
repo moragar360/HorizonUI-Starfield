@@ -8,6 +8,7 @@
 #include "hz_version.h"
 #include "preset_dedupe.h"
 
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -756,6 +757,33 @@ int main()
 
 		auto legacy = HZF::SplitPresetIds("u:a.ini,u:b.ini");
 		Expect(legacy.size() == 2, "legacy HiddenPresets= csv still splits");
+
+		auto mixed = HZF::Parse(
+			"[State]\r\nHidden0=u:new.ini\r\nHiddenPresets=u:old.ini,u:new.ini\r\n");
+		std::vector<std::string> mixedGot;
+		if (auto* ms = mixed.Find("state")) {
+			HZF::CollectHiddenPresetIds(ms->kv, mixedGot);
+			HZF::UnionHiddenPresetIds(mixedGot, HZF::SplitPresetIds(
+				ms->kv.count("hiddenpresets") ? ms->kv["hiddenpresets"].second : std::string()));
+		}
+		Expect(HZF::PresetIdHidden(mixedGot, "u:new.ini"), "HiddenN ids are kept");
+		Expect(HZF::PresetIdHidden(mixedGot, "u:old.ini"), "legacy HiddenPresets ids are unioned");
+		Expect(mixedGot.size() == 2, "union does not duplicate the shared id");
+
+		std::vector<std::string> many2k;
+		many2k.reserve(2000);
+		for (int i = 0; i < 2000; ++i)
+			many2k.push_back("u:preset_" + std::to_string(i) + ".ini");
+		const auto lines2k = HZF::FormatHiddenPresetLines(many2k);
+		auto doc2k = HZF::Parse(std::string("[State]\r\n") + lines2k);
+		std::vector<std::string> got2k;
+		const auto t0 = std::chrono::steady_clock::now();
+		if (auto* s2 = doc2k.Find("state"))
+			HZF::CollectHiddenPresetIds(s2->kv, got2k);
+		const auto ms2k = std::chrono::duration<double, std::milli>(
+			std::chrono::steady_clock::now() - t0).count();
+		Expect(got2k.size() == many2k.size(), "2000 hidden ids collect");
+		Expect(ms2k < 50.0, "2000-id collect runs in well under 50 ms");
 	}
 
 	{
