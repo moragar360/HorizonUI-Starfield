@@ -101,6 +101,7 @@ To turn the traces back on for an in-game check:
 - It cannot recover messages from before install, or from while Record was off.
 - One file per character (not per save) under `Documents\My Games\Starfield\SFSE\HorizonUI\MessageLog\`. The character key is up to 16 hex digits (`currentPlayerID`). NG+ that changes the character key starts a new log.
 - Companion reactions ("Sam Coe liked that.") are saved as their own type, on by default. The match uses on-screen text only; no affinity or actor value is read. Approved 2026-10-26. The Comms reaction card is unchanged.
+- "<NPC> CALMED" lines are not saved. "is no longer angry" and "has already caught you" still are.
 - `Persist=0` keeps the log in memory only: no folder, no file, no `.tmp`, no `.bak`. Nothing survives a restart.
 - Location and real time are stored locally only.
 - F11 (and later the log) opens from the keyboard only. A controller can navigate after F11 is already open. Find stays keyboard-only.

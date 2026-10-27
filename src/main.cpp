@@ -2766,6 +2766,8 @@ namespace HZ
 				MsglogRequestWrite(true);
 				return;
 			}
+			if (a_n.src == 'H' && hzlog::IsCalmedLine(a_n.text, g_msgPhrases))
+				return;
 			hzlog::Capture c;
 			c.nowMs = a_n.tick;
 			c.ts = static_cast<std::int64_t>(std::time(nullptr));

@@ -371,6 +371,24 @@ inline bool NoteNameHashSkip(const Character& a_ch, std::uint64_t a_nowMs, std::
 	return true;
 }
 
+// Purpose: true for "<NPC> CALMED" / creature-calmed HUD lines. Those are
+// never stored: no row, no repeat count, no pin. Match sub "calmed", or a
+// suffix of the game phrase or the English phrase, ignoring PlainNameOk.
+// "is no longer angry" (CALM) and "has already caught you" (CAUGHT) stay.
+inline bool IsCalmedLine(std::string_view a_text, const hzmsg::Templates& a_phrases)
+{
+	const auto line = hzmsg::Trim(a_text);
+	if (line.empty()) return false;
+	const auto hit = hzmsg::Match(a_text, a_phrases);
+	if (hit.ok && hit.sub == "calmed") return true;
+	const auto en = hzmsg::English();
+	if (hzmsg::EqFold(line, hzmsg::Trim(a_phrases.creature))) return true;
+	if (hzmsg::EqFold(line, hzmsg::Trim(en.creature))) return true;
+	if (hzmsg::EndsPhrase(line, a_phrases.npcCalmed)) return true;
+	if (hzmsg::EndsPhrase(line, en.npcCalmed)) return true;
+	return false;
+}
+
 // Purpose: classify a HUD sink line with hz_msg_match, including credits.
 // Quest / location / XP never come from this path (the movie owns those).
 // Companion reactions ("Sam Coe liked that.") are Kind::Reaction: on-screen

@@ -266,6 +266,55 @@ int main()
 		Expect(stay.ok && stay.state.entries.front().kind == Kind::Crew, "ordinary crew rows stay crew");
 	}
 
+	// ---- CALMED lines are never stored ----
+	{
+		const auto en = hzmsg::English();
+		Expect(IsCalmedLine("Andreja is calmed and cannot respond.", en), "named calmed line");
+		Expect(IsCalmedLine("The creature is calmed and cannot respond.", en), "creature calmed line");
+		Expect(IsCalmedLine("ANDREJA IS CALMED AND CANNOT RESPOND.", en), "named calmed folded");
+		hzmsg::Templates loc = en;
+		loc.npcCalmed = "est calme et ne peut pas repondre.";
+		loc.creature = "La creature est calme et ne peut pas repondre.";
+		Expect(IsCalmedLine("Andreja est calme et ne peut pas repondre.", loc), "localized named calmed");
+		Expect(IsCalmedLine("La creature est calme et ne peut pas repondre.", loc), "localized creature calmed");
+		Expect(IsCalmedLine("Andreja is calmed and cannot respond.", loc), "English fallback when the GMST differs");
+		Expect(IsCalmedLine("The creature is calmed and cannot respond.", loc), "English creature fallback");
+		Expect(IsCalmedLine("A B C D E F G H I is calmed and cannot respond.", en),
+			"calmed skip ignores PlainNameOk");
+		Expect(IsCalmedLine("Name <bad> is calmed and cannot respond.", en),
+			"calmed skip ignores angle brackets in the name");
+		Expect(!IsCalmedLine("Andreja is no longer angry with you.", en), "CALM is not skipped");
+		Expect(!IsCalmedLine("Andreja has already caught you.", en), "CAUGHT is not skipped");
+		Expect(!IsCalmedLine("This individual is busy.", en), "Busy is not skipped");
+
+		Buffer b;
+		Expect(b.Offer(Cap(Kind::Game, "No direct path seen.", 30'000)) == OfferResult::Stored, "real row before calmed");
+		ExpectEqI(b.entries.front().n, 1, "seed n is 1");
+		const auto before = static_cast<int>(b.entries.size());
+		const auto n0 = b.entries.front().n;
+		for (int i = 0; i < 5; ++i) {
+			const char* line = "Andreja is calmed and cannot respond.";
+			Expect(IsCalmedLine(line, en), "calmed five times is still calmed");
+			if (!IsCalmedLine(line, en))
+				b.Offer(Cap(Kind::Game, line, 30'100 + static_cast<std::uint64_t>(i) * 10));
+		}
+		ExpectEqI(static_cast<int>(b.entries.size()), before, "five calmed lines create no row");
+		ExpectEqI(b.entries.front().n, n0, "a calmed line after a real entry does not change n");
+		const std::uint64_t missing = 999999;
+		Expect(b.FindId(missing) == nullptr, "no calmed row exists to pin");
+		Expect(!b.Pin(missing), "a calmed line cannot be pinned");
+
+		std::string title, tag;
+		Expect(ClassifyHud("This individual is busy.", en, title, tag) == Kind::Busy, "busy still classifies");
+		Expect(b.Offer(Cap(Kind::Busy, "This individual is busy.", 40'000)) == OfferResult::Stored, "busy still stores");
+		auto calm = Cap(Kind::Crew, "Andreja is no longer angry with you.", 41'000);
+		calm.tag = "CALM";
+		Expect(b.Offer(calm) == OfferResult::Stored, "no longer angry is stored");
+		auto caught = Cap(Kind::Game, "Andreja has already caught you.", 42'000);
+		caught.tag = "CAUGHT";
+		Expect(b.Offer(caught) == OfferResult::Stored, "has already caught you is stored");
+	}
+
 	// ---- dedupe 3 s / Busy 10 s ----
 	{
 		Buffer b;
@@ -657,6 +706,15 @@ int main()
 		Expect(hzc.find("hzcLogPush") != std::string::npos && hzc.find("QuestUpdateData") != std::string::npos, "quests are forwarded");
 		Expect(hzc.find("HUDLocationData") != std::string::npos && hzc.find("XPData") != std::string::npos, "location and XP are forwarded");
 		Expect(main.find("kMsglogOpenWithPad") == std::string::npos, "no pad combo opens F11");
+		{
+			const auto offer = main.find("void MsglogOfferNote");
+			const auto take = main.find("void MsglogTakeMovie");
+			const auto body = offer != std::string::npos && take > offer ? main.substr(offer, take - offer) : std::string();
+			const auto skipAt = body.find("IsCalmedLine");
+			const auto offerAt = body.find("g_ml.Offer");
+			Expect(skipAt != std::string::npos && offerAt != std::string::npos && skipAt < offerAt,
+				"calmed lines are skipped before Offer and before dedupe");
+		}
 	}
 
 	// ---- settings parse ----
