@@ -733,7 +733,7 @@ int main()
 		Expect(lines.find("HiddenPresets=") == std::string::npos, "hidden ids are not a csv list");
 		Expect(lines.find(';') == std::string::npos || lines.find("%3B") != std::string::npos,
 			"a semicolon in an id is encoded");
-		const auto doc = HZF::Parse(std::string("[State]\r\n") + lines);
+		auto doc = HZF::Parse(std::string("[State]\r\n") + lines);
 		auto* st = doc.Find("state");
 		Expect(st != nullptr, "hidden lines parse as [State]");
 		std::vector<std::string> got;
@@ -748,7 +748,7 @@ int main()
 			many.push_back("u:preset_" + std::to_string(i) + "_longish_saved_name.ini");
 		const auto manyLines = HZF::FormatHiddenPresetLines(many);
 		Expect(manyLines.size() > 800, "hidden ids are not capped at 800 characters");
-		const auto manyDoc = HZF::Parse(std::string("[State]\r\n") + manyLines);
+		auto manyDoc = HZF::Parse(std::string("[State]\r\n") + manyLines);
 		std::vector<std::string> manyGot;
 		if (auto* ms = manyDoc.Find("state"))
 			HZF::CollectHiddenPresetIds(ms->kv, manyGot);
