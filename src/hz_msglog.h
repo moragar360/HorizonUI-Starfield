@@ -1383,7 +1383,7 @@ inline FileRead ReadLogFile(const std::filesystem::path& a_path)
 // also get a new id.
 inline int NextSessId(int a_sess)
 {
-	if (a_sess >= std::numeric_limits<int>::max()) return std::numeric_limits<int>::max();
+	if (a_sess >= (std::numeric_limits<int>::max)()) return (std::numeric_limits<int>::max)();
 	if (a_sess < 1) return 1;
 	return a_sess + 1;
 }

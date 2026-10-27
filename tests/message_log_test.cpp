@@ -728,8 +728,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.2", "file version is 0.43.0.2");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 2, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.3", "file version is 0.43.0.3");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 3, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -3537,12 +3537,12 @@ int main()
 		restamp.buf.MergeSession(std::vector<Entry>{held});
 		ExpectEqI(restamp.buf.entries.back().sess, 7, "merged rows take the key's launch pin");
 
-		ExpectEqI(NextSessId(std::numeric_limits<int>::max()), std::numeric_limits<int>::max(),
+		ExpectEqI(NextSessId((std::numeric_limits<int>::max)()), (std::numeric_limits<int>::max)(),
 			"session ids clamp at INT_MAX");
 		Entry maxE;
-		maxE.sess = std::numeric_limits<int>::max();
-		ExpectEqI(ResolveNextSess(std::numeric_limits<int>::max(), {}, {maxE}),
-			std::numeric_limits<int>::max(), "ResolveNextSess does not overflow");
+		maxE.sess = (std::numeric_limits<int>::max)();
+		ExpectEqI(ResolveNextSess((std::numeric_limits<int>::max)(), {}, {maxE}),
+			(std::numeric_limits<int>::max)(), "ResolveNextSess does not overflow");
 
 		Log ident;
 		ident.Configure(s, root);

@@ -4,7 +4,7 @@
 // res/HorizonUI.rc.in includes this header, and the plugin logs and sends the same
 // string (or the version resource that this header produced). Do not copy the
 // numbers into the resource script or into a log line.
-// Product version matches the file version (0.43.0.2). The settings-schema string
+// Product version matches the file version (0.43.0.3). The settings-schema string
 // in the plugin (HZF::kVersion, "0.42.0") is a different value: preset age and the
 // update backup compare against that, not against this file version.
 // 0.43.0.2 is a pre-release dev build for Message Log P1 (capture and storage).
@@ -13,8 +13,8 @@
 #define HZ_FILE_VERSION_MAJOR 0
 #define HZ_FILE_VERSION_MINOR 43
 #define HZ_FILE_VERSION_PATCH 0
-#define HZ_FILE_VERSION_BUILD 2
-#define HZ_FILE_VERSION_STR "0.43.0.2"
+#define HZ_FILE_VERSION_BUILD 3
+#define HZ_FILE_VERSION_STR "0.43.0.3"
 
 // 0.43.0.2: 0 is the release state. 1 writes the verbose HUD-message trace (the
 // "hud message:" line and the Comms movie queue as "comms msg:" lines). The card
