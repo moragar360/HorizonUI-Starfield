@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -45,7 +46,10 @@ inline constexpr int kLocCap = 64;
 inline constexpr int kRepeatCap = 999;
 inline constexpr int kDedupeMs = 3000;
 inline constexpr int kBusyDedupeMs = 10000;
-inline constexpr int kFileMaxBytes = 1024 * 1024;
+inline constexpr int kFileReadMaxBytes = 4 * 1024 * 1024;
+inline constexpr int kFileWriteMaxBytes = 3 * 1024 * 1024;
+inline constexpr int kFileMaxBytes = kFileReadMaxBytes;
+inline constexpr std::int64_t kLastPlayedEpochMin = 1000000000;
 inline constexpr int kJsonVersion = 1;
 inline constexpr const char* kJsonType = "horizon.messagelog";
 inline constexpr int kDebounceMsMin = 10000;
@@ -678,8 +682,19 @@ inline bool HasSameParkedRow(const std::vector<Entry>& a_rows, const Entry& a_in
 	return false;
 }
 
+// Purpose: same kind + normalized text + exact timestamp keeps the larger n
+// so a same-second repeat is not lost after a load or merge.
+inline bool KeepLargerParkedN(Entry& a_have, const Entry& a_in)
+{
+	if (a_in.n > a_have.n) {
+		a_have.n = a_in.n;
+		return true;
+	}
+	return false;
+}
+
 // Purpose: dirty-park merge skips rows already in the file (same kind,
-// normalized text, and timestamp) so n does not bump.
+// normalized text, and timestamp). Larger n is applied by the caller.
 inline std::vector<Entry> ExactParkedNew(const std::vector<Entry>& a_have, const std::vector<Entry>& a_in)
 {
 	std::vector<Entry> out;
@@ -689,6 +704,38 @@ inline std::vector<Entry> ExactParkedNew(const std::vector<Entry>& a_have, const
 			out.push_back(in);
 	}
 	return out;
+}
+
+inline bool WritePendingClears(std::uint64_t a_doneSeq, std::uint64_t a_pendingSeq)
+{
+	return a_doneSeq != 0 && a_doneSeq == a_pendingSeq;
+}
+
+inline bool WriteJobStillCurrent(std::uint64_t a_jobSeq, std::uint64_t a_liveSeq)
+{
+	return a_jobSeq != 0 && a_jobSeq == a_liveSeq;
+}
+
+inline void InvalidateInFlightWrite(std::uint64_t& a_liveSeq, bool& a_pending, std::uint64_t& a_pendingSeq)
+{
+	++a_liveSeq;
+	a_pending = false;
+	a_pendingSeq = 0;
+}
+
+inline bool LastPlayedKnown(std::int64_t a_ts)
+{
+	return a_ts >= kLastPlayedEpochMin;
+}
+
+inline std::int64_t LastPlayedDisplay(std::int64_t a_ts, std::int64_t a_fileMtime)
+{
+	return LastPlayedKnown(a_ts) ? a_ts : a_fileMtime;
+}
+
+inline std::int64_t EpochSeconds()
+{
+	return static_cast<std::int64_t>(std::time(nullptr));
 }
 
 // Purpose: a failed promote/recover for a name-hash buffer parks under the
@@ -723,12 +770,18 @@ inline void CapKeptHeld(std::vector<Entry>& a_rows, std::size_t a_cap)
 	for (auto& e : rest) a_rows.push_back(std::move(e));
 }
 
-// Purpose: append parked rows, skip exact matches, then cap. A second park
-// of the same snapshot must not raise n later.
+// Purpose: append parked rows, keep the larger n on an exact match, then cap.
 inline void AppendParkedRows(std::vector<Entry>& a_dst, const std::vector<Entry>& a_src)
 {
 	for (const auto& in : a_src) {
-		if (!HasSameParkedRow(a_dst, in))
+		bool found = false;
+		for (auto& e : a_dst) {
+			if (!SameParkedRow(e, in)) continue;
+			KeepLargerParkedN(e, in);
+			found = true;
+			break;
+		}
+		if (!found)
 			a_dst.push_back(in);
 	}
 	CapKeptHeld(a_dst, static_cast<std::size_t>(kKeptHeldCap));
@@ -771,7 +824,7 @@ inline bool ShouldQuarantine(const FileRead& a_rd, bool a_parseCorrupt)
 	return a_rd.tooLarge || a_parseCorrupt;
 }
 
-// Purpose: stat the log file first and refuse anything over 1 MB without reading.
+// Purpose: stat the log file first and refuse anything over 4 MiB without reading.
 // Inputs: path. Outputs: FileRead (body stays empty when tooLarge).
 inline FileRead ReadLogFile(const std::filesystem::path& a_path)
 {
@@ -887,6 +940,12 @@ public:
 		if (!(settings.logTypes & TypeBit(a.kind))) return OfferResult::Rejected;
 		a.text = CapText(hzpreset::Trim(a.text), kTextCap);
 		if (a.text.empty()) return OfferResult::Rejected;
+		if (a.kind == Kind::Location && suppressFirstLoc_) {
+			suppressFirstLoc_ = false;
+			const auto key = NormalizeText(a.text);
+			if (!lastLocNorm_.empty() && key == lastLocNorm_)
+				return OfferResult::Rejected;
+		}
 		a.loc = CapText(a.loc, kLocCap);
 		a.title = CapText(a.title, 64);
 		a.tag = CapText(a.tag, 32);
@@ -990,6 +1049,7 @@ public:
 		sessions = std::move(s.sessions);
 		entries = std::move(s.entries);
 		sess = ResolveNextSess(s.nextSess, sessions, entries);
+		NoteLocationLoad();
 		int pins = 0;
 		for (auto& e : entries) {
 			if (e.norm.empty()) e.norm = NormalizeText(e.text);
@@ -1011,6 +1071,8 @@ public:
 		sess = 1;
 		sessStartTs = 0;
 		lastPlayedTs = 0;
+		suppressFirstLoc_ = false;
+		lastLocNorm_.clear();
 		ClearDedupeClock();
 	}
 
@@ -1086,6 +1148,20 @@ public:
 
 private:
 	std::vector<std::uint64_t> lastMs_;
+	bool        suppressFirstLoc_{false};
+	std::string lastLocNorm_;
+
+	void NoteLocationLoad()
+	{
+		suppressFirstLoc_ = false;
+		lastLocNorm_.clear();
+		for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
+			if (it->kind != Kind::Location) continue;
+			lastLocNorm_ = it->norm.empty() ? NormalizeText(it->text) : it->norm;
+			suppressFirstLoc_ = !lastLocNorm_.empty();
+			return;
+		}
+	}
 
 	void ClearDedupeClock()
 	{
@@ -1356,6 +1432,23 @@ inline std::string ToJson(const LogState& a_s, std::string_view a_plugin)
 	return o;
 }
 
+// Purpose: writer cap. Drop the oldest unpinned rows until ToJson is at most
+// 3 MiB. Pins stay even if the file is still over the cap.
+inline void EvictUnpinnedToBytes(LogState& a_s, std::size_t a_max, std::string_view a_plugin)
+{
+	for (;;) {
+		if (ToJson(a_s, a_plugin).size() <= a_max) return;
+		bool dropped = false;
+		for (auto it = a_s.entries.begin(); it != a_s.entries.end(); ++it) {
+			if (it->pin) continue;
+			a_s.entries.erase(it);
+			dropped = true;
+			break;
+		}
+		if (!dropped) return;
+	}
+}
+
 struct JsonTok {
 	const char* p{nullptr};
 	const char* e{nullptr};
@@ -1552,7 +1645,7 @@ struct ParseResult {
 };
 
 // Purpose: parse a log file. Bad JSON, the wrong type, a too-new version, or
-// a file over 1 MB is corrupt. Malformed entries are skipped.
+// a file over 4 MiB is corrupt. Malformed entries are skipped.
 // Inputs: file bytes. Outputs: ParseResult. Dependencies: none.
 inline ParseResult FromJson(std::string_view a_text)
 {
@@ -1826,6 +1919,73 @@ inline ParseResult FromJson(std::string_view a_text)
 	return r;
 }
 
+struct OtherCharacter {
+	std::string  key;
+	std::string  name;
+	int          entryCount{0};
+	std::int64_t lastPlayedTs{0};
+	std::int64_t fileMtime{0};
+};
+
+inline bool LogFileKey(std::string_view a_name, std::string& a_key)
+{
+	static constexpr std::string_view pre = "MessageLog_";
+	static constexpr std::string_view suf = ".json";
+	if (a_name.size() <= pre.size() + suf.size()) return false;
+	if (a_name.substr(0, pre.size()) != pre) return false;
+	if (a_name.substr(a_name.size() - suf.size()) != suf) return false;
+	a_key.assign(a_name.substr(pre.size(), a_name.size() - pre.size() - suf.size()));
+	return !a_key.empty() && a_key.find('.') == std::string::npos;
+}
+
+inline std::string OtherCharacterName(const Character& a_ch, int a_index)
+{
+	if (!a_ch.names.empty() && !a_ch.names.back().empty())
+		return a_ch.names.back();
+	return "Character " + std::to_string(a_index);
+}
+
+inline std::int64_t FileMtimeSeconds(const std::filesystem::path& a_path)
+{
+	std::error_code ec;
+	const auto ft = std::filesystem::last_write_time(a_path, ec);
+	if (ec) return 0;
+	using namespace std::chrono;
+	const auto sys = clock_cast<system_clock>(ft);
+	return static_cast<std::int64_t>(duration_cast<seconds>(sys.time_since_epoch()).count());
+}
+
+inline std::vector<OtherCharacter> ListOtherCharacters(const std::filesystem::path& a_dir, const std::string& a_currentKey)
+{
+	std::vector<OtherCharacter> out;
+	std::error_code ec;
+	if (!std::filesystem::is_directory(a_dir, ec)) return out;
+	int idx = 1;
+	for (const auto& ent : std::filesystem::directory_iterator(a_dir, ec)) {
+		if (!ent.is_regular_file(ec)) continue;
+		std::string key;
+		if (!LogFileKey(ent.path().filename().string(), key)) continue;
+		if (key == a_currentKey) continue;
+		OtherCharacter oc;
+		oc.key = std::move(key);
+		oc.fileMtime = FileMtimeSeconds(ent.path());
+		const auto rd = ReadLogFile(ent.path());
+		if (rd.ok && !rd.missing) {
+			auto parsed = FromJson(rd.body);
+			if (parsed.ok) {
+				oc.name = OtherCharacterName(parsed.state.character, idx);
+				oc.entryCount = static_cast<int>(parsed.state.entries.size());
+				oc.lastPlayedTs = LastPlayedDisplay(parsed.state.lastPlayedTs, oc.fileMtime);
+			}
+		}
+		if (oc.name.empty())
+			oc.name = OtherCharacterName({}, idx);
+		++idx;
+		out.push_back(std::move(oc));
+	}
+	return out;
+}
+
 // ---------------------------------------------------------------------------
 // Storage backends
 // ---------------------------------------------------------------------------
@@ -1928,7 +2088,10 @@ public:
 		std::filesystem::create_directories(dir, ec);
 		if (ec) return false;
 		const auto path = FileFor(a_state.character.key);
-		const auto body = ToJson(a_state, std::string("HorizonUI ") + HZ_FILE_VERSION_STR);
+		LogState writable = a_state;
+		const auto plugin = std::string("HorizonUI ") + HZ_FILE_VERSION_STR;
+		EvictUnpinnedToBytes(writable, static_cast<std::size_t>(kFileWriteMaxBytes), plugin);
+		const auto body = ToJson(writable, plugin);
 		auto tmp = path;
 		tmp += ".tmp";
 		{
@@ -2034,6 +2197,8 @@ public:
 	std::uint64_t             lastWriteMs{0};
 	bool                      dirty{false};
 	bool                      writePending{false};
+	std::uint64_t             writeSeq{0};
+	std::uint64_t             writePendingSeq{0};
 	bool                      persistHold{false};
 	std::string               holdTargetKey;
 	int                       retryBackoffMs{0};
@@ -2092,7 +2257,7 @@ public:
 		if (!PersistAllowed(buf.character)) return true;
 		if (persistHold) return false;
 		if (loadBusy.load()) return false;
-		buf.lastPlayedTs = static_cast<std::int64_t>(a_nowMs / 1000);
+		buf.lastPlayedTs = EpochSeconds();
 		if (buf.character.key.empty()) return false;
 		const bool ok = store->Save(buf.Snapshot());
 		if (ok) {
@@ -2170,9 +2335,23 @@ public:
 	{
 		for (auto it = keptHeld.begin(); it != keptHeld.end(); ++it) {
 			if (!MergeKeptKeyOk(a_key, it->key)) continue;
-			const auto add = ExactParkedNew(buf.entries, it->entries);
+			bool grew = false;
+			std::vector<Entry> add;
+			add.reserve(it->entries.size());
+			for (const auto& in : it->entries) {
+				bool found = false;
+				for (auto& e : buf.entries) {
+					if (!SameParkedRow(e, in)) continue;
+					if (KeepLargerParkedN(e, in)) grew = true;
+					found = true;
+					break;
+				}
+				if (!found) add.push_back(in);
+			}
 			if (!add.empty()) {
 				buf.MergeSession(add);
+				dirty = true;
+			} else if (grew) {
 				dirty = true;
 			}
 			keptHeld.erase(it);
@@ -2306,6 +2485,37 @@ public:
 	{
 		if (!store || buf.character.key.empty()) return false;
 		return store->DeleteCurrent(buf.character.key);
+	}
+
+	// Purpose: Clear history. Cancels an in-flight write so it cannot recreate
+	// the file. Called only after the later UI confirm.
+	bool ClearHistoryNow()
+	{
+		buf.ClearHistory();
+		dirty = false;
+		lastChangeMs = 0;
+		InvalidateInFlightWrite(writeSeq, writePending, writePendingSeq);
+		if (store && PersistAllowed(buf.character))
+			store->DeleteCurrent(buf.character.key);
+		return true;
+	}
+
+	bool DeleteCurrentNow()
+	{
+		InvalidateInFlightWrite(writeSeq, writePending, writePendingSeq);
+		return DeleteCurrentFile();
+	}
+
+	std::vector<OtherCharacter> ListOthers() const
+	{
+		return ListOtherCharacters(horizonDir / "MessageLog", buf.character.key);
+	}
+
+	bool DeleteSelected(const std::string& a_key)
+	{
+		if (a_key.empty() || a_key == buf.character.key) return false;
+		if (!store) return false;
+		return store->DeleteCurrent(a_key);
 	}
 };
 

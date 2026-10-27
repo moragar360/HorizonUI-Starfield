@@ -2331,6 +2331,7 @@ namespace HZ
 		bool                    persist{false};
 		std::string             key;
 		std::uint64_t           gen{0};
+		std::uint64_t           writeSeq{0};
 	};
 	struct MlLoadJob
 	{
@@ -2359,6 +2360,8 @@ namespace HZ
 	bool                    g_mlLHoldFlush{false};
 	std::uint64_t           g_mlLoadGen{0};
 	std::uint64_t           g_mlInFlightGen{0};
+	std::atomic<std::uint64_t> g_mlWriteSeq{0};
+	std::uint64_t           g_mlWDoneSeq{0};
 	std::thread             g_mlWThread;
 	std::atomic<bool>       g_mlWLive{false};
 	std::atomic<bool>       g_mlWFailed{false};
@@ -2445,7 +2448,9 @@ namespace HZ
 				if (wr) {
 					bool ok = true;
 					try {
-						if (wjob.persist && hzlog::PersistAllowed(wjob.snap.character)) {
+						if (!hzlog::WriteJobStillCurrent(wjob.writeSeq, g_mlWriteSeq.load())) {
+							ok = true;
+						} else if (wjob.persist && hzlog::PersistAllowed(wjob.snap.character)) {
 							hzlog::FileStore fs(wjob.dir / "MessageLog", wjob.replace);
 							fs.bakFails = g_mlBakFails;
 							ok = fs.Save(wjob.snap);
@@ -2460,6 +2465,10 @@ namespace HZ
 					}
 					bool failed = false;
 					hzlog::NoteWorkerSave(ok, failed);
+					{
+						std::lock_guard wlk(g_mlWMu);
+						g_mlWDoneSeq = wjob.writeSeq;
+					}
 					if (failed) {
 						std::lock_guard wlk(g_mlWMu);
 						g_mlWFailSnap = std::move(wjob.snap);
@@ -2557,15 +2566,18 @@ namespace HZ
 						REX::WARN("message log: persist skipped; character key is still a name hash");
 					return;
 				}
-				g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(GetTickCount64() / 1000);
+				g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(std::time(nullptr));
 				job.snap = g_ml.buf.Snapshot();
 				job.key = g_ml.buf.character.key;
 				job.gen = g_mlLoadGen;
+				job.writeSeq = ++g_ml.writeSeq;
+				g_mlWriteSeq.store(g_ml.writeSeq);
 				job.dir = g_ml.horizonDir;
 				job.replace = g_ml.replace;
 				job.persist = true;
 				g_ml.dirty = false;
 				g_ml.writePending = true;
+				g_ml.writePendingSeq = job.writeSeq;
 				g_ml.lastWriteMs = GetTickCount64();
 			}
 			MsglogEnsureWriter();
@@ -2764,6 +2776,32 @@ namespace HZ
 		const auto st = hzlog::ClassifyViewStatus(
 			g_ml.buf.settings, g_ml.buf.character, g_ml.writePending, g_ml.persistHold);
 		return hzlog::BuildView(g_ml.buf, a_gtNow, st);
+	}
+
+	void MsglogClearHistory()
+	{
+		std::lock_guard lk(g_mlMu);
+		g_ml.ClearHistoryNow();
+		g_mlWriteSeq.store(g_ml.writeSeq);
+	}
+
+	void MsglogDeleteCurrentFileUi()
+	{
+		std::lock_guard lk(g_mlMu);
+		g_ml.DeleteCurrentNow();
+		g_mlWriteSeq.store(g_ml.writeSeq);
+	}
+
+	std::vector<hzlog::OtherCharacter> MsglogListOthers()
+	{
+		std::lock_guard lk(g_mlMu);
+		return g_ml.ListOthers();
+	}
+
+	bool MsglogDeleteSelected(const std::string& a_key)
+	{
+		std::lock_guard lk(g_mlMu);
+		return g_ml.DeleteSelected(a_key);
 	}
 
 	void MsglogOfferNote(const MlNote& a_n)
@@ -3166,13 +3204,16 @@ namespace HZ
 			if (g_mlWFailed.exchange(false)) {
 				hzlog::LogState failSnap;
 				std::string failKey;
+				std::uint64_t doneSeq = 0;
 				{
 					std::lock_guard wlk(g_mlWMu);
 					failSnap = std::move(g_mlWFailSnap);
 					failKey = std::move(g_mlWFailKey);
+					doneSeq = g_mlWDoneSeq;
 				}
 				std::lock_guard lk(g_mlMu);
-				g_ml.writePending = false;
+				if (hzlog::WritePendingClears(doneSeq, g_ml.writePendingSeq))
+					g_ml.writePending = false;
 				if (hzlog::WriteFailParksJob(failKey, g_ml.buf.character.key)) {
 					g_ml.ParkWriteFailure(failKey, failSnap.entries);
 				} else {
@@ -3183,8 +3224,14 @@ namespace HZ
 				MsglogNotePersistLog(false);
 			}
 			if (g_mlWRecovered.exchange(false)) {
+				std::uint64_t doneSeq = 0;
+				{
+					std::lock_guard wlk(g_mlWMu);
+					doneSeq = g_mlWDoneSeq;
+				}
 				std::lock_guard lk(g_mlMu);
-				g_ml.writePending = false;
+				if (hzlog::WritePendingClears(doneSeq, g_ml.writePendingSeq))
+					g_ml.writePending = false;
 				if (hzlog::WriteRecoveredResetsBackoff(g_ml.persistHold)) {
 					hzlog::NoteWriteSuccess(g_ml.retryBackoffMs, g_ml.retryAt);
 					g_mlWRetryAt.store(0);

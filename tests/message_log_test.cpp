@@ -417,6 +417,214 @@ int main()
 		std::filesystem::remove_all(root, ec);
 	}
 
+	// ---- P2 storage fixes the UI exposes ----
+	{
+		Expect(!LastPlayedKnown(726), "legacy uptime lastPlayedTs is unknown");
+		Expect(!LastPlayedKnown(999999999), "just below 1e9 is unknown");
+		Expect(LastPlayedKnown(1000000000), "epoch seconds are known");
+		ExpectEqI(static_cast<int>(LastPlayedDisplay(726, 1720000000)), 1720000000,
+			"unknown lastPlayed uses the file mtime");
+		ExpectEqI(static_cast<int>(LastPlayedDisplay(1720000001, 1)), 1720000001,
+			"known lastPlayed is kept");
+		Expect(!WritePendingClears(0, 1), "zero done seq does not clear pending");
+		Expect(!WritePendingClears(1, 2), "a stale write does not clear a newer pending");
+		Expect(WritePendingClears(3, 3), "matching seq clears pending");
+		Expect(!WriteJobStillCurrent(0, 1), "zero job seq is not current");
+		Expect(!WriteJobStillCurrent(1, 2), "cancelled job is not current");
+		Expect(WriteJobStillCurrent(4, 4), "live job is current");
+
+		const auto root = TmpRoot();
+		Settings s;
+		Log loc;
+		loc.Configure(s, root);
+		LogState st;
+		Entry locRow;
+		locRow.id = 1;
+		locRow.kind = Kind::Location;
+		locRow.text = "Akila City";
+		locRow.norm = NormalizeText(locRow.text);
+		locRow.ts = 10;
+		st.entries.push_back(locRow);
+		st.nextId = 2;
+		loc.buf.LoadState(st);
+		Expect(loc.Offer(Cap(Kind::Location, "Akila City", 80'000)) == OfferResult::Rejected,
+			"first LOCATION after load matching the last row is suppressed");
+		ExpectEqI(static_cast<int>(loc.buf.entries.size()), 1, "suppressed LOCATION adds no row");
+		Expect(loc.Offer(Cap(Kind::Location, "New Atlantis", 84'000)) == OfferResult::Stored,
+			"a new LOCATION after load is stored");
+		Expect(loc.Offer(Cap(Kind::Xp, "You gained 25 XP.", 88'000)) == OfferResult::Stored, "XP still stores");
+
+		Log nlog;
+		nlog.Configure(s, root);
+		nlog.buf.character = MakeCharacter(0xABCDu, "Sam");
+		nlog.Offer(Cap(Kind::Game, "n seed", 90'000));
+		Expect(nlog.Flush(91'000), "flush writes epoch lastPlayedTs");
+		Expect(LastPlayedKnown(nlog.buf.lastPlayedTs), "Flush writes epoch seconds");
+
+		Log parkN;
+		parkN.Configure(s, root);
+		parkN.buf.character = MakeCharacter(0xABCDu, "Sam");
+		Entry have;
+		have.kind = Kind::Game;
+		have.text = "same second";
+		have.norm = NormalizeText(have.text);
+		have.ts = 500;
+		have.n = 2;
+		parkN.buf.entries.push_back(have);
+		Entry bigger = have;
+		bigger.n = 5;
+		parkN.ParkWriteFailure("0000ABCD", std::vector<Entry>{bigger});
+		parkN.MergeKeptHeldIfMatch("0000ABCD");
+		ExpectEqI(parkN.buf.entries.front().n, 5, "exact park keeps the larger n");
+		Entry smaller = have;
+		smaller.n = 1;
+		parkN.ParkWriteFailure("0000ABCD", std::vector<Entry>{smaller});
+		parkN.MergeKeptHeldIfMatch("0000ABCD");
+		ExpectEqI(parkN.buf.entries.front().n, 5, "exact park does not shrink n");
+
+		Log twoA;
+		twoA.Configure(s, root);
+		twoA.buf.character = MakeCharacter(0x1111u, "Sam Coe");
+		twoA.Offer(Cap(Kind::Game, "sam only", 100'000));
+		Expect(twoA.Flush(101'000), "character A flush");
+		Log twoB;
+		twoB.Configure(s, root);
+		twoB.buf.character = MakeCharacter(0x2222u, "Barrett");
+		twoB.Offer(Cap(Kind::Credits, "barrett only", 102'000));
+		Expect(twoB.Flush(103'000), "character B flush");
+		const auto others = ListOtherCharacters(root / "MessageLog", "00001111");
+		bool sawCurrent = false, sawB = false;
+		std::string bName;
+		int bCount = 0;
+		std::int64_t bPlayed = 0;
+		for (const auto& oc : others) {
+			if (oc.key == "00001111") sawCurrent = true;
+			if (oc.key == "00002222") {
+				sawB = true;
+				bName = oc.name;
+				bCount = oc.entryCount;
+				bPlayed = oc.lastPlayedTs;
+			}
+		}
+		Expect(!sawCurrent, "cleanup list excludes the current key");
+		Expect(sawB, "cleanup list has the other character");
+		ExpectEq(bName, "Barrett", "cleanup list uses the saved name");
+		ExpectEqI(bCount, 1, "cleanup list entry count");
+		Expect(bPlayed >= 0, "cleanup list last played");
+		Expect(!twoA.DeleteSelected("00001111"), "current key is excluded at delete time");
+		Expect(twoA.DeleteSelected("00002222"), "delete selected removes the other file");
+		Expect(!std::filesystem::exists(root / "MessageLog" / "MessageLog_00002222.json"),
+			"deleted character file is gone");
+		Expect(std::filesystem::is_regular_file(root / "MessageLog" / "MessageLog_00001111.json"),
+			"current file stays");
+		Expect(ReadFile(root / "MessageLog" / "MessageLog_00001111.json").find("sam only") != std::string::npos,
+			"no cross-bleed after delete");
+		Expect(ReadFile(root / "MessageLog" / "MessageLog_00001111.json").find("barrett only") == std::string::npos,
+			"other character text is not in the current file");
+
+		Log noName;
+		noName.Configure(s, root);
+		noName.buf.character = MakeCharacter(0x3333u, "");
+		noName.buf.character.names.clear();
+		noName.Offer(Cap(Kind::Game, "anon", 104'000));
+		Expect(noName.Flush(105'000), "nameless character flush");
+		const auto anon = ListOtherCharacters(root / "MessageLog", "00001111");
+		bool foundAnon = false;
+		for (const auto& oc : anon)
+			if (oc.key == "00003333" && oc.name.find("Character ") == 0) foundAnon = true;
+		Expect(foundAnon, "missing name uses Character N");
+
+		Log clear;
+		clear.Configure(s, root);
+		clear.buf.character = MakeCharacter(0xABCDu, "Sam");
+		clear.Offer(Cap(Kind::Game, "must go", 110'000));
+		Expect(clear.Flush(111'000), "seed before clear");
+		const auto clearPath = root / "MessageLog" / "MessageLog_0000ABCD.json";
+		Expect(std::filesystem::is_regular_file(clearPath), "file exists before clear");
+		auto staleSnap = clear.buf.Snapshot();
+		const auto staleSeq = clear.writeSeq + 1;
+		clear.writeSeq = staleSeq;
+		clear.writePending = true;
+		clear.writePendingSeq = staleSeq;
+		Expect(clear.ClearHistoryNow(), "Clear history");
+		Expect(clear.buf.entries.empty(), "Clear history empties memory");
+		Expect(!clear.writePending, "Clear history clears pending");
+		Expect(!WriteJobStillCurrent(staleSeq, clear.writeSeq), "Clear history cancels the in-flight write");
+		if (WriteJobStillCurrent(staleSeq, clear.writeSeq))
+			clear.store->Save(staleSnap);
+		Expect(!std::filesystem::exists(clearPath), "a stale write cannot recreate the file");
+
+		Log del;
+		del.Configure(s, root);
+		del.buf.character = MakeCharacter(0x4444u, "Sam");
+		del.Offer(Cap(Kind::Game, "persist off delete", 112'000));
+		Expect(del.Flush(113'000), "seed before delete");
+		const auto delPath = root / "MessageLog" / "MessageLog_00004444.json";
+		Expect(del.DeleteCurrentNow(), "delete current file");
+		Expect(!std::filesystem::exists(delPath), "delete current removes the file");
+
+		Log persistOff;
+		Settings off;
+		off.persist = false;
+		persistOff.Configure(off, root / "no-persist");
+		persistOff.buf.character = MakeCharacter(0x5555u, "Sam");
+		persistOff.Offer(Cap(Kind::Game, "memory", 114'000));
+		Expect(persistOff.Flush(115'000), "Persist=0 flush");
+		Expect(!std::filesystem::exists(root / "no-persist" / "MessageLog"),
+			"Persist=0 still creates no folder");
+
+		Log heavy;
+		heavy.Configure(s, root);
+		heavy.buf.SetHistorySize(1000);
+		heavy.buf.character = MakeCharacter(0x6666u, "Sam");
+		for (int i = 0; i < 1000; ++i) {
+			std::string t = "quote \"heavy\" line ";
+			t += std::to_string(i);
+			t += " and more \"text\".";
+			heavy.Offer(Cap(Kind::Game, t.c_str(), 200'000 + static_cast<std::uint64_t>(i) * 4000));
+		}
+		ExpectEqI(heavy.buf.UnpinnedCount(), 1000, "1,000-row log is filled");
+		Expect(heavy.Flush(210'000), "1,000-row flush");
+		const auto heavyPath = root / "MessageLog" / "MessageLog_00006666.json";
+		Expect(!std::filesystem::exists(std::filesystem::path(heavyPath.string() + ".bad")),
+			"1,000-row log does not become .bad");
+		Log reload;
+		reload.Configure(s, root);
+		reload.buf.character = MakeCharacter(0x6666u, "Sam");
+		reload.LoadCurrent();
+		ExpectEqI(static_cast<int>(reload.buf.entries.size()), 1000, "1,000-row log reloads");
+
+		LogState huge;
+		huge.character = MakeCharacter(0x7777u, "Sam");
+		for (int i = 0; i < 4; ++i) {
+			Entry e;
+			e.id = static_cast<std::uint64_t>(i + 1);
+			e.kind = Kind::Game;
+			e.text.assign(900 * 1024, i == 0 ? 'A' : 'B');
+			e.ts = i;
+			e.pin = i == 3 ? 1 : 0;
+			huge.entries.push_back(std::move(e));
+		}
+		const auto plugin = std::string("HorizonUI ") + HZ_FILE_VERSION_STR;
+		Expect(ToJson(huge, plugin).size() > static_cast<std::size_t>(kFileWriteMaxBytes),
+			"fixture is over the 3 MiB write cap");
+		FileStore fs(root / "MessageLog");
+		Expect(fs.Save(huge), "writer saves an oversize snapshot");
+		LogState loaded;
+		std::string notice;
+		Expect(fs.Load("00007777", loaded, notice), "oversize write reloads");
+		bool pinKept = false;
+		for (const auto& e : loaded.entries)
+			if (e.pin) pinKept = true;
+		Expect(pinKept, "writer evicts unpinned rows and keeps the pin");
+		Expect(ToJson(loaded, plugin).size() <= static_cast<std::size_t>(kFileWriteMaxBytes)
+			|| loaded.entries.size() < huge.entries.size(),
+			"writer dropped oldest unpinned rows");
+
+		std::error_code ec2;
+		std::filesystem::remove_all(root, ec2);
+	}
+
 	// ---- dedupe 3 s / Busy 10 s ----
 	{
 		Buffer b;
@@ -708,7 +916,7 @@ int main()
 		{
 			const auto rec = main.find("g_mlWRecovered.exchange(false)");
 			Expect(rec != std::string::npos, "Poll watches write recovery");
-			const auto win = rec == std::string::npos ? std::string() : main.substr(rec, 400);
+			const auto win = rec == std::string::npos ? std::string() : main.substr(rec, 800);
 			Expect(win.find("NoteWriteSuccess") != std::string::npos,
 				"a successful write resets the write backoff");
 			Expect(win.find("WriteRecoveredResetsBackoff") != std::string::npos,
@@ -828,6 +1036,18 @@ int main()
 				"the getter never blocks the game thread on disk");
 			Expect(body.find("BuildView") != std::string::npos, "the getter copies a capped view");
 		}
+		Expect(main.find("WriteJobStillCurrent") != std::string::npos,
+			"the writer skips a cancelled in-flight save");
+		Expect(main.find("WritePendingClears") != std::string::npos,
+			"writePending is scoped by the job write sequence");
+		Expect(main.find("GetTickCount64() / 1000") == std::string::npos,
+			"lastPlayedTs is not PC uptime");
+		Expect(main.find("std::time(nullptr)") != std::string::npos,
+			"lastPlayedTs writes epoch seconds");
+		Expect(main.find("void MsglogClearHistory()") != std::string::npos, "DLL Clear history");
+		Expect(main.find("void MsglogDeleteCurrentFileUi()") != std::string::npos, "DLL delete current file");
+		Expect(main.find("MsglogListOthers()") != std::string::npos, "DLL list other characters");
+		Expect(main.find("bool MsglogDeleteSelected") != std::string::npos, "DLL delete selected");
 	}
 
 	// ---- settings parse ----
@@ -888,7 +1108,7 @@ int main()
 		}
 	}
 
-	// ---- crash-safety: depth, 1 MB pre-read, pins, bak, type, writer join ----
+	// ---- crash-safety: depth, 4 MiB pre-read, pins, bak, type, writer join ----
 	{
 		std::string deep = "{\"type\":\"horizon.messagelog\",\"version\":1,\"x\":";
 		for (int i = 0; i < 40; ++i) deep += '[';
@@ -904,7 +1124,7 @@ int main()
 		const auto path = root / "MessageLog" / "MessageLog_0000BIG1.json";
 		WriteFile(path, std::string(static_cast<std::size_t>(kFileMaxBytes) + 8, 'x'));
 		auto rd = ReadLogFile(path);
-		Expect(rd.tooLarge && rd.body.empty(), "1 MB is rejected before the file is read");
+		Expect(rd.tooLarge && rd.body.empty(), "4 MiB is rejected before the file is read");
 		ExpectEq(rd.notice, "file too large", "oversize notice");
 		LogState st;
 		std::string notice;
