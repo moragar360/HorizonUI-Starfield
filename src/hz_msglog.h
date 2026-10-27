@@ -919,10 +919,10 @@ inline bool PruneEmptiedBuffer(int a_dropped, bool a_nowEmpty)
 }
 
 // Purpose: all writer-side state and decisions. The DLL only calls methods.
-// Per-key slots hold clearPending (set on Clear / prune-empty, cleared only
-// after main and bak both succeed), write seqs, and the last failed
-// snapshot. Hold-flush and clearPending writes pass the load guard; every
-// other write for a loading key is skipped.
+// Per-key slots hold clearPending (set on an explicit user Clear, cleared
+// only when ok && seq >= clearSeq), write seqs, last-failed snap, and
+// per-key retry backoff. Hold-flush is slot state, not a caller literal.
+// A prune that empties memory marks the key clean and does not write.
 struct WriteEmit {
 	std::string   key;
 	LogState      snap;
@@ -937,18 +937,31 @@ struct WriteDecision {
 	WriteEmit emit;
 };
 
+// Purpose: copy emit flags onto a worker job. A literal false here
+// drops clearFirst (P1d). Inputs: dest flags and the coordinator emit.
+inline void AssignEmitFlags(bool& a_emptyClear, bool& a_clearFirst, const WriteEmit& a_e)
+{
+	a_emptyClear = a_e.emptyClear;
+	a_clearFirst = a_e.clearFirst;
+}
+
 class MsglogWriteCoordinator {
 public:
 	struct Slot {
 		std::string   key;
 		bool          clearPending{false};
+		std::uint64_t clearSeq{0};
 		bool          writePending{false};
 		std::uint64_t writePendingSeq{0};
 		std::uint64_t doneSeq{0};
 		LogState      failSnap;
+		bool          failClearFirst{false};
 		bool          hasFail{false};
 		bool          retryDue{false};
+		int           retryBackoffMs{0};
+		std::uint64_t retryAt{0};
 		bool          dirty{false};
+		bool          holdFlush{false};
 	};
 
 	void SetPersist(bool a_on) { persist_ = a_on; }
@@ -956,11 +969,18 @@ public:
 
 	bool LoadBusy() const { return loadBusy_; }
 	std::string LoadKey() const { return loadKey_; }
+	std::uint64_t LoadGen() const { return loadGen_; }
 
 	bool ClearPending(std::string_view a_key) const
 	{
 		if (const auto* s = FindSlot(a_key)) return s->clearPending;
 		return false;
+	}
+
+	std::uint64_t ClearSeq(std::string_view a_key) const
+	{
+		if (const auto* s = FindSlot(a_key)) return s->clearSeq;
+		return 0;
 	}
 
 	bool WritePending(std::string_view a_key) const
@@ -976,6 +996,13 @@ public:
 		return false;
 	}
 
+	bool AnyClearPending() const
+	{
+		for (const auto& s : slots_)
+			if (s.clearPending) return true;
+		return false;
+	}
+
 	std::uint64_t WritePendingSeq(std::string_view a_key) const
 	{
 		if (const auto* s = FindSlot(a_key)) return s->writePendingSeq;
@@ -988,51 +1015,76 @@ public:
 		return 0;
 	}
 
+	int RetryBackoffMs(std::string_view a_key) const
+	{
+		if (const auto* s = FindSlot(a_key)) return s->retryBackoffMs;
+		return 0;
+	}
+
 	void OnRow(std::string_view a_key)
 	{
 		if (a_key.empty()) return;
 		SlotFor(a_key).dirty = true;
 	}
 
-	WriteDecision RequestWrite(std::string_view a_key, const LogState& a_snap,
-		bool a_force, bool a_holdFlush = false)
+	// holdFlush is slot state set by OnHoldFlush. Callers must not pass it.
+	WriteDecision RequestWrite(std::string_view a_key, const LogState& a_snap, bool a_force)
 	{
-		(void)a_force;
-		return DecideAndQueue(a_key, a_snap, false, a_holdFlush);
+		if (!a_force && !a_key.empty()) {
+			const auto* s = FindSlot(a_key);
+			const bool dirty = s && s->dirty;
+			const bool pendingClear = s && s->clearPending;
+			const bool hold = s && s->holdFlush;
+			if (!dirty && !pendingClear && !hold) return {};
+		}
+		return DecideAndQueue(a_key, a_snap, false);
 	}
 
 	WriteDecision OnClear(std::string_view a_key, const LogState& a_emptySnap)
 	{
-		if (!persist_ || a_key.empty()) return {};
-		return DecideAndQueue(a_key, a_emptySnap, true, false);
+		if (!persist_ || !ValidLogKey(a_key)) return {};
+		return DecideAndQueue(a_key, a_emptySnap, true);
 	}
 
-	WriteDecision OnBufferEmptied(std::string_view a_key, const LogState& a_emptySnap)
+	// Purpose: a prune that emptied memory is not a Clear. Mark clean and
+	// skip disk so a bad clock cannot wipe main and bak.
+	void OnPruneEmpty(std::string_view a_key)
 	{
-		return OnClear(a_key, a_emptySnap);
+		if (a_key.empty()) return;
+		auto& s = SlotFor(a_key);
+		s.dirty = false;
 	}
 
 	void OnLoadStart(std::string_view a_key)
 	{
 		loadBusy_ = true;
 		loadKey_.assign(a_key.begin(), a_key.end());
+		++loadGen_;
 	}
 
 	void OnLoadApplied(std::string_view a_key)
 	{
-		if (a_key.empty() || SameLogKey(loadKey_, a_key)) {
-			loadBusy_ = false;
-			loadKey_.clear();
-		}
+		if (a_key.empty()) return;
+		if (!SameLogKey(loadKey_, a_key)) return;
+		loadBusy_ = false;
+		loadKey_.clear();
 	}
 
-	void OnHoldFlush(std::string_view a_key)
+	// Purpose: release the load guard only for this key's in-flight load.
+	// A hold-flush for A must not clear a real load of B (P2-A).
+	void OnHoldFlush(std::string_view a_key, std::uint64_t a_jobGen = 0)
 	{
-		OnLoadApplied(a_key);
+		if (a_key.empty()) return;
+		if (!SameLogKey(loadKey_, a_key)) return;
+		if (a_jobGen && a_jobGen != loadGen_) return;
+		SlotFor(a_key).holdFlush = true;
+		loadBusy_ = false;
+		loadKey_.clear();
 	}
 
 	void OnWriteResult(std::string_view a_key, std::uint64_t a_seq, bool a_ok,
-		const LogState* a_failSnap = nullptr)
+		const LogState* a_failSnap = nullptr, bool a_skipped = false, bool a_jobClearFirst = false,
+		std::uint64_t a_nowMs = 0)
 	{
 		auto& s = SlotFor(a_key);
 		s.doneSeq = a_seq;
@@ -1042,32 +1094,60 @@ public:
 			[&](const QueuedWrite& q) {
 				return SameLogKey(q.key, a_key) && q.writeSeq == a_seq;
 			}), pending_.end());
+		if (a_skipped) {
+			if (s.clearPending) s.retryDue = true;
+			return;
+		}
 		if (a_ok) {
-			s.clearPending = false;
+			if (a_seq >= s.clearSeq) {
+				s.clearPending = false;
+				s.clearSeq = 0;
+				s.failClearFirst = false;
+			}
 			s.hasFail = false;
 			s.retryDue = false;
 			s.failSnap = {};
+			s.retryBackoffMs = 0;
+			s.retryAt = 0;
+			s.holdFlush = false;
 			return;
 		}
 		if (a_failSnap) {
 			s.failSnap = *a_failSnap;
 			s.hasFail = true;
 		}
+		s.failClearFirst = a_jobClearFirst
+			|| s.failClearFirst
+			|| (s.clearPending && a_failSnap && !a_failSnap->entries.empty());
+		s.retryBackoffMs = NextRetryMs(s.retryBackoffMs);
+		s.retryAt = a_nowMs + static_cast<std::uint64_t>(s.retryBackoffMs);
 		s.retryDue = true;
 	}
 
-	WriteDecision OnQuit(std::string_view a_key, const LogState& a_snap)
+	std::vector<WriteDecision> OnQuit(std::string_view a_key, const LogState& a_snap)
 	{
-		return RequestWrite(a_key, a_snap, true, false);
+		std::vector<WriteDecision> out;
+		auto cur = RequestWrite(a_key, a_snap, true);
+		if (cur.queue) out.push_back(std::move(cur));
+		for (auto& s : slots_) {
+			if (!s.clearPending) continue;
+			if (!a_key.empty() && SameLogKey(s.key, a_key)) continue;
+			LogState snap = s.hasFail ? s.failSnap : LogState{};
+			if (snap.character.key.empty())
+				snap.character.key = s.key;
+			auto d = DecideAndQueue(s.key, snap, true);
+			if (d.queue) out.push_back(std::move(d));
+		}
+		return out;
 	}
 
 	std::vector<WriteDecision> Poll(std::uint64_t a_nowMs = ~std::uint64_t{0})
 	{
-		(void)a_nowMs;
 		std::vector<WriteDecision> out;
 		std::vector<std::string> keys;
 		for (auto& s : slots_) {
 			if (!s.retryDue) continue;
+			if (a_nowMs < s.retryAt) continue;
 			s.retryDue = false;
 			keys.push_back(s.key);
 		}
@@ -1076,7 +1156,7 @@ public:
 			LogState snap = s.hasFail ? s.failSnap : LogState{};
 			if (snap.character.key.empty())
 				snap.character.key = k;
-			auto d = DecideAndQueue(k, snap, false, false);
+			auto d = DecideAndQueue(k, snap, false);
 			if (d.queue) out.push_back(std::move(d));
 		}
 		return out;
@@ -1088,6 +1168,7 @@ private:
 	bool          persist_{true};
 	bool          loadBusy_{false};
 	std::string   loadKey_;
+	std::uint64_t loadGen_{0};
 	std::uint64_t nextWriteSeq_{0};
 	std::vector<Slot>        slots_;
 	std::vector<QueuedWrite> pending_;
@@ -1112,27 +1193,32 @@ private:
 	}
 
 	WriteDecision DecideAndQueue(std::string_view a_key, const LogState& a_snap,
-		bool a_explicitClear, bool a_holdFlush)
+		bool a_explicitClear)
 	{
 		WriteDecision d;
 		d.emit.key.assign(a_key.begin(), a_key.end());
 		d.emit.snap = a_snap;
 		d.emit.persist = persist_;
 		if (!persist_ || a_key.empty()) return d;
+		if (a_explicitClear && !ValidLogKey(a_key)) return d;
 		auto& s = SlotFor(a_key);
-		if (a_explicitClear)
+		if (a_explicitClear) {
 			s.clearPending = true;
+			if (s.clearSeq == 0)
+				s.clearSeq = nextWriteSeq_ + 1;
+		}
 		const bool snapEmpty = a_snap.entries.empty();
 		const bool explicitClear = a_explicitClear || (s.clearPending && snapEmpty);
-		const bool clearFirst = s.clearPending && !snapEmpty;
-		// Live state only. Constants drop a failed Clear, skip a hold-flush,
-		// or write during a load.
+		const bool holdFlush = s.holdFlush;
+		const bool clearFirst = (s.clearPending && !snapEmpty) || s.failClearFirst;
 		if (!ShouldQueueWrite(explicitClear, snapEmpty, loadBusy_, a_key, loadKey_,
-				s.clearPending, a_holdFlush))
+				s.clearPending, holdFlush))
 			return d;
 		d.emit.emptyClear = DecideWriteEmptyClear(explicitClear);
 		d.emit.clearFirst = clearFirst;
 		d.emit.writeSeq = ++nextWriteSeq_;
+		if (a_explicitClear || d.emit.emptyClear)
+			s.clearSeq = d.emit.writeSeq;
 		QueuedWrite q;
 		q.key = d.emit.key;
 		q.emptyClear = d.emit.emptyClear;
@@ -1143,7 +1229,10 @@ private:
 		if (qd.op == QueueOp::Skip) return d;
 		d.emit.clearFirst = clearFirst || qd.clearFirst;
 		q.clearFirst = d.emit.clearFirst;
-		ApplyQueuedWrite(pending_, std::move(q));
+		if (qd.op == QueueOp::Replace && qd.index < pending_.size())
+			pending_[qd.index] = std::move(q);
+		else
+			pending_.push_back(std::move(q));
 		s.writePending = true;
 		s.writePendingSeq = d.emit.writeSeq;
 		s.dirty = false;

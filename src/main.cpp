@@ -2394,6 +2394,7 @@ namespace HZ
 		std::uint64_t     writeSeq{0};
 		bool              ok{false};
 		bool              skipped{false};
+		bool              clearFirst{false};
 		hzlog::LogState   failSnap;
 	};
 	std::vector<MlWriteResult> g_mlWResults;
@@ -2534,6 +2535,7 @@ namespace HZ
 						MlWriteResult wrRes;
 						wrRes.key = wjob.key;
 						wrRes.writeSeq = wjob.writeSeq;
+						wrRes.clearFirst = wjob.clearFirst;
 						if (run == hzlog::WriteRun::Skipped) {
 							wrRes.skipped = true;
 							g_mlWSkipped.store(true);
@@ -2637,14 +2639,18 @@ namespace HZ
 		}
 	}
 
+	void MsglogMirrorLoadBusy()
+	{
+		g_ml.loadBusy.store(g_mlWrites.LoadBusy());
+	}
+
 	bool MsglogPushDecision(const hzlog::WriteDecision& a_d)
 	{
 		if (!a_d.queue) return false;
 		MlWriteJob job;
 		job.snap = a_d.emit.snap;
 		job.key = a_d.emit.key;
-		job.emptyClear = a_d.emit.emptyClear;
-		job.clearFirst = a_d.emit.clearFirst;
+		hzlog::AssignEmitFlags(job.emptyClear, job.clearFirst, a_d.emit);
 		job.writeSeq = a_d.emit.writeSeq;
 		job.persist = a_d.emit.persist;
 		{
@@ -2660,78 +2666,69 @@ namespace HZ
 		return MsglogQueueWriteJob(std::move(job));
 	}
 
+	void MsglogPushAll(const std::vector<hzlog::WriteDecision>& a_ds)
+	{
+		for (const auto& d : a_ds)
+			MsglogPushDecision(d);
+	}
+
 	// Purpose: snapshot the buffer under g_mlMu and ask the coordinator.
 	// Writer-side guards (load, empty, clearPending, hold-flush) live there.
-	void MsglogRequestWrite(bool a_force, bool a_holdFlush = false, bool a_quit = false)
+	void MsglogRequestWrite(bool a_force, bool a_quit = false)
 	{
 		try {
-			hzlog::WriteDecision d;
+			std::vector<hzlog::WriteDecision> ds;
 			{
 				std::lock_guard lk(g_mlMu);
 				g_mlWrites.SetPersist(g_ml.buf.settings.persist);
 				if (!g_ml.buf.settings.persist) return;
-				if (g_ml.persistHold) return;
-				if (!hzlog::WriteAllowed(g_ml.dirty, a_force, g_ml.lastWriteMs, GetTickCount64(), g_ml.retryBackoffMs))
-					return;
-				if (!hzlog::PersistAllowed(g_ml.buf.character)) {
-					if (hzlog::NoteNameHashSkip(g_ml.buf.character, GetTickCount64(), g_mlNameHashSkipMs))
-						REX::WARN("message log: persist skipped; character key is still a name hash");
-					return;
-				}
-				g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(std::time(nullptr));
 				const auto key = g_ml.buf.character.key;
 				auto snap = g_ml.buf.Snapshot();
-				d = a_quit ? g_mlWrites.OnQuit(key, snap)
-					: g_mlWrites.RequestWrite(key, snap, a_force, a_holdFlush);
-				if (!d.queue) return;
+				if (a_quit) {
+					ds = g_mlWrites.OnQuit(key, snap);
+				} else {
+					if (g_ml.persistHold) return;
+					if (!hzlog::WriteAllowed(g_ml.dirty, a_force, g_ml.lastWriteMs, GetTickCount64(), 0))
+						return;
+					if (!hzlog::PersistAllowed(g_ml.buf.character)) {
+						if (hzlog::NoteNameHashSkip(g_ml.buf.character, GetTickCount64(), g_mlNameHashSkipMs))
+							REX::WARN("message log: persist skipped; character key is still a name hash");
+						return;
+					}
+					g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(std::time(nullptr));
+					auto d = g_mlWrites.RequestWrite(key, snap, a_force);
+					if (d.queue) ds.push_back(std::move(d));
+				}
+				if (ds.empty()) return;
 				g_ml.dirty = false;
 				g_ml.lastWriteMs = GetTickCount64();
 				g_ml.writePending = g_mlWrites.AnyWritePending();
 			}
-			MsglogPushDecision(d);
+			MsglogPushAll(ds);
 		} catch (...) {
 		}
 	}
 
-	// Purpose: one pending slot per key. A job with rows always replaces
-	// a queued Clear for that key and sets clearFirst. A different key
-	// inserts. writePendingSeq is the job that actually stays queued.
-	// Inputs: the job. Outputs: true when the job was queued.
+	// Purpose: push a coordinator emit onto the worker. No queue decision
+	// here — the coordinator already decided and set clearFirst.
 	bool MsglogQueueWriteJob(MlWriteJob a_job)
 	{
 		MsglogEnsureWriter();
-		bool queued = false;
 		{
 			std::lock_guard lk(g_mlWMu);
-			std::vector<hzlog::QueuedWrite> pending;
-			pending.reserve(g_mlWJobs.size());
-			for (const auto& j : g_mlWJobs) {
-				hzlog::QueuedWrite q;
-				q.key = j.key;
-				q.emptyClear = j.emptyClear;
-				q.clearFirst = j.clearFirst;
-				q.hasRows = !j.snap.entries.empty();
-				q.writeSeq = j.writeSeq;
-				pending.push_back(std::move(q));
+			bool found = false;
+			for (auto& j : g_mlWJobs) {
+				if (!hzlog::SameLogKey(j.key, a_job.key)) continue;
+				j = std::move(a_job);
+				found = true;
+				break;
 			}
-			hzlog::QueuedWrite neu;
-			neu.key = a_job.key;
-			neu.emptyClear = a_job.emptyClear;
-			neu.hasRows = !a_job.snap.entries.empty();
-			neu.writeSeq = a_job.writeSeq;
-			const auto d = hzlog::DecideQueuedWrite(pending, neu);
-			if (d.op != hzlog::QueueOp::Skip) {
-				a_job.clearFirst = a_job.clearFirst || d.clearFirst;
-				if (d.op == hzlog::QueueOp::Replace && d.index < g_mlWJobs.size())
-					g_mlWJobs[d.index] = std::move(a_job);
-				else
-					g_mlWJobs.push_back(std::move(a_job));
-				g_mlWReq.store(true);
-				queued = true;
-			}
+			if (!found)
+				g_mlWJobs.push_back(std::move(a_job));
+			g_mlWReq.store(true);
 		}
-		if (queued) g_mlWCv.notify_one();
-		return queued;
+		g_mlWCv.notify_one();
+		return true;
 	}
 
 	// Purpose: queue a last write on quit. Does not stop the worker:
@@ -2739,7 +2736,7 @@ namespace HZ
 	void MsglogShutdownWriter()
 	{
 		try {
-			MsglogRequestWrite(true, false, true);
+			MsglogRequestWrite(true, true);
 		} catch (...) {
 		}
 	}
@@ -2760,7 +2757,7 @@ namespace HZ
 				job.bufKey = g_ml.buf.character.key;
 				job.holdFlush = a_holdFlush;
 				g_mlWrites.OnLoadStart(a_ch.key);
-				g_ml.loadBusy.store(g_mlWrites.LoadBusy());
+				MsglogMirrorLoadBusy();
 				if (job.persist && hzlog::PersistAllowed(a_ch))
 					g_mlInFlightGen = job.gen;
 			}
@@ -3178,7 +3175,8 @@ namespace HZ
 						const int dropped = g_ml.buf.Prune(g_mlEng.gt);
 						pruneEmpty = hzlog::PruneEmptiedBuffer(dropped, g_ml.buf.entries.empty());
 					}
-					g_ml.loadBusy.store(false);
+					g_mlWrites.OnLoadApplied(ch.key);
+					MsglogMirrorLoadBusy();
 					g_mlCapture.store(true);
 					g_mlHadSession.store(true);
 				} else if (afterLoad) {
@@ -3194,7 +3192,8 @@ namespace HZ
 						g_ml.buf.StartSession(ts);
 						const int dropped = g_ml.buf.Prune(g_mlEng.gt);
 						pruneEmpty = hzlog::PruneEmptiedBuffer(dropped, g_ml.buf.entries.empty());
-						g_ml.loadBusy.store(false);
+						g_mlWrites.OnLoadApplied(ch.key);
+						MsglogMirrorLoadBusy();
 						g_mlCapture.store(true);
 						g_mlHadSession.store(true);
 					}
@@ -3206,7 +3205,8 @@ namespace HZ
 					if (before > 0 && g_ml.buf.entries.empty())
 						pruneEmpty = true;
 					if (!needLoad) {
-						g_ml.loadBusy.store(false);
+						g_mlWrites.OnLoadApplied(ch.key);
+						MsglogMirrorLoadBusy();
 						g_mlCapture.store(true);
 						g_mlHadSession.store(true);
 					}
@@ -3215,13 +3215,9 @@ namespace HZ
 			if (needLoad)
 				MsglogQueueLoad(ch, g_mlEng.gt, ts);
 			else if (pruneEmpty) {
-				hzlog::WriteDecision d;
-				{
-					std::lock_guard lk(g_mlMu);
-					d = g_mlWrites.OnBufferEmptied(g_ml.buf.character.key, g_ml.buf.Snapshot());
-					g_ml.writePending = g_mlWrites.AnyWritePending();
-				}
-				MsglogPushDecision(d);
+				std::lock_guard lk(g_mlMu);
+				g_mlWrites.OnPruneEmpty(g_ml.buf.character.key);
+				g_ml.dirty = false;
 			}
 		} catch (...) {
 		}
@@ -3273,7 +3269,7 @@ namespace HZ
 					MsglogNotePersistLog(false);
 					if (hzlog::ApplyReopensCapture(jobHoldFlush, g_mlHoldFlush)) {
 						g_mlWrites.OnLoadApplied(ch.key);
-						g_ml.loadBusy.store(g_mlWrites.LoadBusy());
+						MsglogMirrorLoadBusy();
 						g_mlCapture.store(true);
 						g_mlHadSession.store(true);
 					}
@@ -3296,13 +3292,17 @@ namespace HZ
 					g_ml.buf.StartSession(ts);
 					const int dropped = g_ml.buf.Prune(gt);
 					pruneEmpty = hzlog::PruneEmptiedBuffer(dropped, g_ml.buf.entries.empty());
-					if (pruneEmpty) needWrite = true;
+					if (pruneEmpty) {
+						g_mlWrites.OnPruneEmpty(g_ml.buf.character.key);
+						g_ml.dirty = false;
+						needWrite = false;
+					}
 					MsglogNotePersistLog(true);
 					if (jobHoldFlush || g_mlHoldFlush)
-						g_mlWrites.OnHoldFlush(ch.key);
+						g_mlWrites.OnHoldFlush(ch.key, jobGen);
 					else
 						g_mlWrites.OnLoadApplied(ch.key);
-					g_ml.loadBusy.store(g_mlWrites.LoadBusy());
+					MsglogMirrorLoadBusy();
 					if (hzlog::ApplyReopensCapture(jobHoldFlush, g_mlHoldFlush)) {
 						g_mlHoldFlush = false;
 						g_mlCapture.store(true);
@@ -3313,21 +3313,15 @@ namespace HZ
 					runPending = g_mlPendingHud;
 				}
 			}
-			if (needWrite) {
-				if (pruneEmpty) {
-					hzlog::WriteDecision d;
-					{
-						std::lock_guard lk(g_mlMu);
-						d = g_mlWrites.OnBufferEmptied(g_ml.buf.character.key, g_ml.buf.Snapshot());
-						g_ml.writePending = g_mlWrites.AnyWritePending();
-					}
-					MsglogPushDecision(d);
-				} else
-					MsglogRequestWrite(jobHoldFlush, jobHoldFlush);
-			}
+			if (needWrite)
+				MsglogRequestWrite(true);
 			if (runPending) {
 				g_mlPendingHud = false;
-				g_ml.loadBusy.store(true);
+				{
+					std::lock_guard lk(g_mlMu);
+					g_mlWrites.OnLoadStart(ch.key.empty() ? g_ml.buf.character.key : ch.key);
+					MsglogMirrorLoadBusy();
+				}
 				MsglogOnHudReady();
 			}
 		} catch (...) {
@@ -3356,7 +3350,7 @@ namespace HZ
 			if (held) {
 				g_mlHoldFlush = true;
 				MsglogQueueRecover(true, true);
-				g_ml.loadBusy.store(g_mlWrites.LoadBusy());
+				MsglogMirrorLoadBusy();
 				g_mlCapture.store(false);
 				return;
 			}
@@ -3364,7 +3358,7 @@ namespace HZ
 			{
 				std::lock_guard lk(g_mlMu);
 				g_mlWrites.OnLoadStart(g_ml.buf.character.key);
-				g_ml.loadBusy.store(g_mlWrites.LoadBusy());
+				MsglogMirrorLoadBusy();
 			}
 			g_mlCapture.store(false);
 		} catch (...) {
@@ -3443,22 +3437,20 @@ namespace HZ
 			bool anyFail = false;
 			bool anyOk = false;
 			for (auto& r : wrResults) {
-				if (r.skipped) continue;
 				std::lock_guard lk(g_mlMu);
-				g_mlWrites.OnWriteResult(r.key, r.writeSeq, r.ok, r.ok ? nullptr : &r.failSnap);
+				g_mlWrites.OnWriteResult(r.key, r.writeSeq, r.ok,
+					r.ok || r.skipped ? nullptr : &r.failSnap, r.skipped, r.clearFirst, a_now);
 				g_ml.writePending = g_mlWrites.AnyWritePending();
+				if (r.skipped) continue;
 				if (!r.ok) {
 					if (hzlog::WriteFailParksJob(r.key, g_ml.buf.character.key)) {
 						g_ml.ParkWriteFailure(r.key, r.failSnap.entries);
 					} else {
 						hzlog::NoteWriteFailure(g_ml.dirty);
-						g_ml.NoteRetryFailure(a_now);
-						g_mlWRetryAt.store(g_ml.retryAt);
 					}
 					anyFail = true;
 				} else if (hzlog::WriteRecoveredResetsBackoff(g_ml.persistHold)) {
 					hzlog::NoteWriteSuccess(g_ml.retryBackoffMs, g_ml.retryAt);
-					g_mlWRetryAt.store(0);
 					anyOk = true;
 				} else {
 					anyOk = true;
@@ -3467,23 +3459,16 @@ namespace HZ
 			if (anyFail) MsglogNotePersistLog(false);
 			if (anyOk) MsglogNotePersistLog(true);
 			bool holdDue = false;
+			std::vector<hzlog::WriteDecision> retries;
 			{
 				std::lock_guard lk(g_mlMu);
 				holdDue = g_ml.persistHold && hzlog::RetryDue(g_ml.retryAt, a_now);
+				retries = g_mlWrites.Poll(a_now);
+				g_ml.writePending = g_mlWrites.AnyWritePending();
 			}
 			if (holdDue)
 				MsglogQueueRecover(false);
-			else if (g_mlWRetryAt.load() && a_now >= g_mlWRetryAt.load()) {
-				g_mlWRetryAt.store(0);
-				std::vector<hzlog::WriteDecision> retries;
-				{
-					std::lock_guard lk(g_mlMu);
-					retries = g_mlWrites.Poll(a_now);
-					g_ml.writePending = g_mlWrites.AnyWritePending();
-				}
-				for (const auto& d : retries)
-					MsglogPushDecision(d);
-			}
+			MsglogPushAll(retries);
 			if (g_mlSaveReq.exchange(false)) {
 				if (g_mlCapture.load() && HudSafe()) {
 					MsglogRefreshEngine(true);
@@ -3510,7 +3495,7 @@ namespace HZ
 				if (held)
 					MsglogQueueRecover(true);
 				else
-					MsglogRequestWrite(true, false, true);
+					MsglogRequestWrite(true, true);
 			}
 			if (g_mlShutdownReq.exchange(false))
 				MsglogShutdownWriter();
