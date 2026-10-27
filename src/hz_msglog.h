@@ -752,48 +752,73 @@ inline bool SameLogKey(std::string_view a_a, std::string_view a_b)
 	return true;
 }
 
-// Purpose: only Clear and Persist-off bump cancelSeq. A newer write for
-// another character does not cancel the leaving character's snapshot.
-inline bool WriteIsCanceled(std::uint64_t a_jobCancel, std::string_view a_jobKey,
-	std::uint64_t a_liveCancel, std::string_view a_cancelKey)
-{
-	if (a_jobCancel == a_liveCancel) return false;
-	return SameLogKey(a_jobKey, a_cancelKey);
-}
-
 enum class WriteRun : std::uint8_t { Saved = 0, Skipped, Failed };
 
-// Purpose: the seq check and Save share one lock with Cancel, so a stale
-// job cannot land after Clear empties the file.
+// Purpose: per-key cancel generations. Each character has its own atomic
+// seq so canceling A cannot mark B stale. The game thread only bumps or
+// loads a seq; it never takes mu and never waits on disk.
+// Inputs: folded character key. Outputs: the live seq for that key.
 struct WriteGate {
-	std::mutex            mu;
-	std::uint64_t         cancelSeq{0};
-	std::string           cancelKey;
+	std::mutex            mu; // worker / tests only. Game thread never takes this.
 	std::function<void()> afterCheck;
+
+	struct Slot {
+		std::string               key;
+		std::atomic<std::uint64_t> seq{0};
+	};
+
+	std::uint64_t LoadCancel(std::string_view a_key) const
+	{
+		return SlotFor(a_key)->seq.load(std::memory_order_acquire);
+	}
+
+	// Purpose: bump one character's cancel seq. Inputs: character key.
+	// Outputs: the new seq. Dependencies: SlotFor.
+	std::uint64_t BumpCancel(std::string_view a_key)
+	{
+		return SlotFor(a_key)->seq.fetch_add(1, std::memory_order_acq_rel) + 1;
+	}
+
+private:
+	mutable std::mutex                         mapMu;
+	mutable std::vector<std::unique_ptr<Slot>> slots;
+
+	Slot* SlotFor(std::string_view a_key) const
+	{
+		const auto folded = FoldLogKey(a_key);
+		std::lock_guard lk(mapMu);
+		for (auto& s : slots)
+			if (s->key == folded) return s.get();
+		auto p = std::make_unique<Slot>();
+		p->key = folded;
+		auto* r = p.get();
+		slots.push_back(std::move(p));
+		return r;
+	}
 };
+
+// Purpose: a job is canceled only when its own key's seq moved.
+inline bool WriteIsCanceled(std::uint64_t a_jobCancel, std::string_view a_jobKey, const WriteGate& a_g)
+{
+	return a_jobCancel != a_g.LoadCancel(a_jobKey);
+}
 
 inline WriteRun OrderedSave(WriteGate& a_g, std::uint64_t a_jobCancel, const std::string& a_jobKey,
 	const std::function<bool()>& a_save)
 {
-	std::lock_guard lk(a_g.mu);
-	if (WriteIsCanceled(a_jobCancel, a_jobKey, a_g.cancelSeq, a_g.cancelKey))
+	if (WriteIsCanceled(a_jobCancel, a_jobKey, a_g))
 		return WriteRun::Skipped;
 	if (a_g.afterCheck) a_g.afterCheck();
-	if (WriteIsCanceled(a_jobCancel, a_jobKey, a_g.cancelSeq, a_g.cancelKey))
+	if (WriteIsCanceled(a_jobCancel, a_jobKey, a_g))
 		return WriteRun::Skipped;
 	if (!a_save) return WriteRun::Failed;
 	return a_save() ? WriteRun::Saved : WriteRun::Failed;
 }
 
-// Purpose: bump cancelSeq and then run the empty-save or persist-off
-// callback under the same lock. Inputs: gate, character key, work.
-// Outputs: the callback result. Dependencies: WriteGate.
-inline bool OrderedCancel(WriteGate& a_g, const std::string& a_key, const std::function<bool()>& a_work)
+// Purpose: bump one key's cancel seq. No disk and no fileGate.mu.
+inline std::uint64_t OrderedCancel(WriteGate& a_g, const std::string& a_key)
 {
-	std::lock_guard lk(a_g.mu);
-	++a_g.cancelSeq;
-	a_g.cancelKey = FoldLogKey(a_key);
-	return a_work ? a_work() : false;
+	return a_g.BumpCancel(a_key);
 }
 
 inline bool LastPlayedKnown(std::int64_t a_ts)
@@ -996,13 +1021,18 @@ public:
 
 	void StartSession(std::int64_t a_ts)
 	{
-		if (launchSess != 0) {
+		// launchSess is process-lifetime. A save load or character switch
+		// must reuse it, not mint a new id. Still record a session row when
+		// memory was reset so the snapshot is not missing this launch.
+		if (launchSess != 0)
 			sess = launchSess;
-			return;
+		else {
+			if (sess <= 0) sess = 1;
+			launchSess = sess;
 		}
-		if (sess <= 0) sess = 1;
-		launchSess = sess;
 		sessStartTs = a_ts;
+		for (const auto& s : sessions)
+			if (s.id == sess) return;
 		sessions.push_back(Session{sess, a_ts});
 	}
 
@@ -1152,8 +1182,10 @@ public:
 		entries.clear();
 		sessions.clear();
 		nextId = 1;
-		sess = 1;
-		launchSess = 0;
+		if (launchSess == 0)
+			sess = 1;
+		else
+			sess = launchSess;
 		sessStartTs = 0;
 		lastPlayedTs = 0;
 		suppressFirstLoc_ = false;
@@ -2224,10 +2256,11 @@ public:
 		return replace(tmp, path);
 	}
 
-	// Purpose: Clear history writes the empty snapshot to the main file and
-	// to .bak so old rows cannot come back from the sidecar. Bak is replaced
-	// first. Inputs: empty LogState with nextSess kept. Outputs: true when
-	// both files hold that body. Dependencies: WriteAtomicKeepTmp.
+	// Purpose: Clear history writes the empty snapshot to the main file
+	// first, then .bak. The loader prefers main, so a crash in between
+	// cannot bring old rows back. Inputs: empty LogState with nextSess
+	// kept. Outputs: true when both files hold that body.
+	// Dependencies: WriteAtomicKeepTmp.
 	bool SaveEmptyBoth(const LogState& a_state)
 	{
 		if (!ValidLogKey(a_state.character.key)) return false;
@@ -2237,10 +2270,10 @@ public:
 		const auto path = FileFor(a_state.character.key);
 		const auto plugin = std::string("HorizonUI ") + HZ_FILE_VERSION_STR;
 		const auto body = ToJson(a_state, plugin);
+		if (!WriteAtomicKeepTmp(path, body)) return false;
 		auto bak = path;
 		bak += ".bak";
-		if (!WriteAtomicKeepTmp(bak, body)) return false;
-		return WriteAtomicKeepTmp(path, body);
+		return WriteAtomicKeepTmp(bak, body);
 	}
 
 private:
@@ -2324,7 +2357,7 @@ public:
 			dirty = false;
 			writePending = false;
 			writePendingSeq = 0;
-			OrderedCancel(fileGate, buf.character.key, [] { return true; });
+			fileGate.BumpCancel(buf.character.key);
 		} else {
 			store = std::make_unique<FileStore>(horizonDir / "MessageLog", replace);
 		}
@@ -2628,21 +2661,22 @@ public:
 		DropParked(buf.character.key);
 	}
 
-	// Purpose: Clear history. Empties memory, drops parked rows, bumps
-	// loadGen and cancelSeq, then writes an empty snapshot to the main
-	// file and .bak so a stale job cannot put the old rows back.
-	// Inputs: none. Outputs: true when both files hold the empty body.
-	// Dependencies: OrderedCancel, FileStore::SaveEmptyBoth.
+	// Purpose: Clear history. Always empties memory, drops parked rows,
+	// and bumps the per-key cancel seq. Persist=1 writes the empty
+	// snapshot (tests). Persist=0 does not create or touch any file.
+	// Inputs: none. Outputs: true when memory is clear and, if Persist
+	// is on, both files hold the empty body.
+	// Dependencies: FileStore::SaveEmptyBoth.
 	bool ClearHistoryNow()
 	{
 		ClearHistoryMemory();
 		const auto key = buf.character.key;
+		fileGate.BumpCancel(key);
+		if (!buf.settings.persist) return true;
 		if (!ValidLogKey(key)) return true;
 		const auto snap = buf.Snapshot();
-		return OrderedCancel(fileGate, key, [&] {
-			FileStore fs(horizonDir / "MessageLog", replace);
-			return fs.SaveEmptyBoth(snap);
-		});
+		FileStore fs(horizonDir / "MessageLog", replace);
+		return fs.SaveEmptyBoth(snap);
 	}
 };
 

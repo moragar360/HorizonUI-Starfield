@@ -55,7 +55,7 @@ In the Horizon Scanner's Signals list, ship ownership is shown by the row label 
 - **F11 live settings window:** opens the settings menu from your key (F11 by default, rebindable) and handles its input. It opens from the main HUD only (not inside the hand scanner, and pulling out the scanner closes it) and stays closed in full-screen game menus like the inventory, starmap, builders, dialogue, the mission board and books, and while you aim down a scope or inspect an item. It also passes the **+** key on to Arrange Cards, for the scope chip's size.
 - **Mouse wheel** support in Horizon's menus.
 - **Settings files:** reads the shipped `HorizonUI.default.ini` and your `HorizonUI.user.ini`, saves changes safely, and keeps one backup per update (`HorizonUI.user.bak.ini`).
-- **Presets:** lists, applies, saves, deletes and undoes presets in `Interface\HorizonUI\presets\` (your own go in `presets\user\`).
+- **Presets:** lists, applies, saves, hides, and undoes presets in `Interface\HorizonUI\presets\` (your own go in `presets\user\`). Remove from list hides a saved preset; the file stays in `Data\Interface\HorizonUI\presets\user\`. Horizon UI never deletes files.
 - **Scanner state:** tells the HUD and Comms while the hand scanner is open, so they stay hidden for the whole scan, even while you switch scanner tools.
 
 Log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`

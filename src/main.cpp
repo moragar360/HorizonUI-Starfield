@@ -449,11 +449,13 @@ namespace HZF
 				s.legacyImported = get("legacyimported") == "1";
 				s.presetSeeded = get("presetseeded") == "1";
 				s.lastPreset = get("lastpreset");
-				s.hiddenPresets = SplitPresetIds(get("hiddenpresets"));
 				if (x->kv.count("undoready"))
 					s.undoReady = get("undoready") == "1";
 				else
 					s.undoReady = Exists(a_p.preapply);
+				CollectHiddenPresetIds(x->kv, s.hiddenPresets);
+				if (s.hiddenPresets.empty())
+					s.hiddenPresets = SplitPresetIds(get("hiddenpresets"));
 			}
 			return s;
 		}
@@ -461,7 +463,12 @@ namespace HZF
 		{
 			std::string t = "; HorizonUI.dll state (not settings)\r\n[State]\r\nLastVersion=" + a_s.lastVersion + "\r\nLegacyImported=" +
 			                (a_s.legacyImported ? "1" : "0") + "\r\nPresetSeeded=" + (a_s.presetSeeded ? "1" : "0") + "\r\nLastPreset=" + CleanField(a_s.lastPreset, 120) +
-			                "\r\nUndoReady=" + (a_s.undoReady ? "1" : "0") + "\r\nHiddenPresets=" + CleanField(JoinPresetIds(a_s.hiddenPresets), 800) + "\r\n";
+			                "\r\nUndoReady=" + (a_s.undoReady ? "1" : "0") + "\r\n";
+			std::vector<std::string> hidden;
+			hidden.reserve(a_s.hiddenPresets.size());
+			for (const auto& id : a_s.hiddenPresets)
+				hidden.push_back(CleanField(id, 4096));
+			t += FormatHiddenPresetLines(hidden);
 			return WriteAtomic(a_p.state, t);
 		}
 
@@ -2365,6 +2372,7 @@ namespace HZ
 		std::uint64_t           gen{0};
 		std::uint64_t           writeSeq{0};
 		std::uint64_t           cancelSeq{0};
+		bool                    emptyClear{false};
 	};
 	struct MlLoadJob
 	{
@@ -2498,9 +2506,14 @@ namespace HZ
 					hzlog::WriteRun run = hzlog::WriteRun::Failed;
 					try {
 						run = hzlog::OrderedSave(g_ml.fileGate, wjob.cancelSeq, wjob.key, [&]() {
-							if (!wjob.persist || !hzlog::PersistAllowed(wjob.snap.character))
+							// Persist=0: memory-only. Never construct FileStore
+							// (Save / SaveEmptyBoth create the folder and files).
+							if (!wjob.persist) return true;
+							if (!hzlog::PersistAllowed(wjob.snap.character))
 								return true;
 							hzlog::FileStore fs(wjob.dir / "MessageLog", wjob.replace);
+							if (wjob.emptyClear)
+								return fs.SaveEmptyBoth(wjob.snap);
 							fs.bakFails = g_mlBakFails;
 							const bool ok = fs.Save(wjob.snap);
 							g_mlBakFails = fs.bakFails;
@@ -2638,10 +2651,7 @@ namespace HZ
 				job.gen = g_mlLoadGen;
 				job.writeSeq = ++g_ml.writeSeq;
 				g_mlWriteSeq.store(g_ml.writeSeq);
-				{
-					std::lock_guard flk(g_ml.fileGate.mu);
-					job.cancelSeq = g_ml.fileGate.cancelSeq;
-				}
+				job.cancelSeq = g_ml.fileGate.LoadCancel(job.key);
 				job.dir = g_ml.horizonDir;
 				job.replace = g_ml.replace;
 				job.persist = true;
@@ -2869,26 +2879,43 @@ namespace HZ
 		}
 	}
 
+	// Purpose: empty memory on the game thread, bump the per-key cancel
+	// seq, and queue an empty write on the worker when Persist is on.
+	// Persist=0 never creates or touches a file. No disk I/O here.
 	void MsglogClearHistory()
 	{
-		std::string key;
-		std::filesystem::path dir;
-		hzlog::ReplaceFn rep;
-		hzlog::LogState empty;
-		{
-			std::lock_guard lk(g_mlMu);
-			++g_mlLoadGen;
-			g_ml.ClearHistoryMemory();
-			key = g_ml.buf.character.key;
-			dir = g_ml.horizonDir;
-			rep = g_ml.replace;
-			empty = g_ml.buf.Snapshot();
+		try {
+			MlWriteJob job;
+			bool queue = false;
+			{
+				std::lock_guard lk(g_mlMu);
+				++g_mlLoadGen;
+				g_ml.ClearHistoryMemory();
+				job.key = g_ml.buf.character.key;
+				job.cancelSeq = g_ml.fileGate.BumpCancel(job.key);
+				if (!g_ml.buf.settings.persist) return;
+				if (!hzlog::ValidLogKey(job.key)) return;
+				job.snap = g_ml.buf.Snapshot();
+				job.writeSeq = ++g_ml.writeSeq;
+				g_mlWriteSeq.store(g_ml.writeSeq);
+				job.dir = g_ml.horizonDir;
+				job.replace = g_ml.replace;
+				job.persist = true;
+				job.emptyClear = true;
+				g_ml.writePending = true;
+				g_ml.writePendingSeq = job.writeSeq;
+				queue = true;
+			}
+			if (!queue) return;
+			MsglogEnsureWriter();
+			{
+				std::lock_guard lk(g_mlWMu);
+				g_mlWJob = std::move(job);
+				g_mlWReq.store(true);
+			}
+			g_mlWCv.notify_one();
+		} catch (...) {
 		}
-		hzlog::OrderedCancel(g_ml.fileGate, key, [&] {
-			if (!hzlog::ValidLogKey(key)) return true;
-			hzlog::FileStore fs(dir / "MessageLog", rep);
-			return fs.SaveEmptyBoth(empty);
-		});
 	}
 
 	std::vector<hzlog::OtherCharacter> MsglogListOthers()

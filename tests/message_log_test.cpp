@@ -24,6 +24,7 @@
 #include <mutex>
 #include <set>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unistd.h>
 #include <vector>
@@ -125,42 +126,285 @@ bool IdentChar(char a_c)
 	return std::isalnum(static_cast<unsigned char>(a_c)) || a_c == '_';
 }
 
-// Purpose: fail if any file-erase API appears in src/ or include/.
-// Renames and MoveFileExW(tmp, dst, REPLACE_EXISTING) are allowed.
-// Inputs: file text and path. Outputs: fail count via Expect.
+bool IdentStart(char a_c)
+{
+	return std::isalpha(static_cast<unsigned char>(a_c)) || a_c == '_';
+}
+
+std::string LowerCopy(std::string a_s)
+{
+	for (char& c : a_s)
+		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	return a_s;
+}
+
+bool SameIdent(std::string_view a_a, std::string_view a_b)
+{
+	if (a_a.size() != a_b.size()) return false;
+	for (std::size_t i = 0; i < a_a.size(); ++i) {
+		if (std::tolower(static_cast<unsigned char>(a_a[i]))
+			!= std::tolower(static_cast<unsigned char>(a_b[i])))
+			return false;
+	}
+	return true;
+}
+
+bool StartsIdent(std::string_view a_ident, std::string_view a_prefix)
+{
+	if (a_ident.size() < a_prefix.size()) return false;
+	return SameIdent(a_ident.substr(0, a_prefix.size()), a_prefix);
+}
+
+bool IsRemoveAlgorithm(std::string_view a_ident)
+{
+	return SameIdent(a_ident, "remove_if")
+		|| SameIdent(a_ident, "remove_copy")
+		|| SameIdent(a_ident, "remove_copy_if")
+		|| SameIdent(a_ident, "remove_prefix")
+		|| SameIdent(a_ident, "remove_suffix");
+}
+
+// Purpose: drop comments and string/char literals so the no-delete scan
+// does not match prose or "Remove from list" text. Newlines stay so
+// #define / using lines can still be read. Inputs: source text.
+// Outputs: the same length-ish text with comments and strings blanked.
+std::string StripCommentsAndStrings(const std::string& a_text)
+{
+	std::string o;
+	o.reserve(a_text.size());
+	const std::size_t n = a_text.size();
+	std::size_t i = 0;
+	auto blank = [&](std::size_t a_from, std::size_t a_to) {
+		for (std::size_t k = a_from; k < a_to && k < n; ++k)
+			o.push_back(a_text[k] == '\n' ? '\n' : ' ');
+	};
+	while (i < n) {
+		if (a_text[i] == 'R' && i + 1 < n && a_text[i + 1] == '"') {
+			std::size_t d = i + 2;
+			while (d < n && a_text[d] != '(' && a_text[d] != '"' && a_text[d] != '\n')
+				++d;
+			if (d < n && a_text[d] == '(') {
+				const std::string delim = a_text.substr(i + 2, d - (i + 2));
+				const std::string end = ")" + delim + "\"";
+				const auto close = a_text.find(end, d + 1);
+				const auto stop = close == std::string::npos ? n : close + end.size();
+				blank(i, stop);
+				i = stop;
+				continue;
+			}
+		}
+		if (a_text[i] == '"' || ((a_text[i] == 'L' || a_text[i] == 'u' || a_text[i] == 'U')
+			&& i + 1 < n && a_text[i + 1] == '"')) {
+			std::size_t k = a_text[i] == '"' ? i + 1 : i + 2;
+			while (k < n && a_text[k] != '"' && a_text[k] != '\n') {
+				if (a_text[k] == '\\' && k + 1 < n) k += 2;
+				else ++k;
+			}
+			if (k < n && a_text[k] == '"') ++k;
+			blank(i, k);
+			i = k;
+			continue;
+		}
+		if (a_text[i] == '\'') {
+			std::size_t k = i + 1;
+			while (k < n && a_text[k] != '\'' && a_text[k] != '\n') {
+				if (a_text[k] == '\\' && k + 1 < n) k += 2;
+				else ++k;
+			}
+			if (k < n && a_text[k] == '\'') ++k;
+			blank(i, k);
+			i = k;
+			continue;
+		}
+		if (a_text[i] == '/' && i + 1 < n && a_text[i + 1] == '/') {
+			std::size_t k = i + 2;
+			while (k < n && a_text[k] != '\n') ++k;
+			blank(i, k);
+			i = k;
+			continue;
+		}
+		if (a_text[i] == '/' && i + 1 < n && a_text[i + 1] == '*') {
+			const auto close = a_text.find("*/", i + 2);
+			const auto stop = close == std::string::npos ? n : close + 2;
+			blank(i, stop);
+			i = stop;
+			continue;
+		}
+		o.push_back(a_text[i]);
+		++i;
+	}
+	return o;
+}
+
+bool SkipWs(const std::string& a_s, std::size_t& a_i)
+{
+	while (a_i < a_s.size() && std::isspace(static_cast<unsigned char>(a_s[a_i])))
+		++a_i;
+	return a_i < a_s.size();
+}
+
+bool MatchWord(const std::string& a_s, std::size_t a_i, std::string_view a_word)
+{
+	if (a_i + a_word.size() > a_s.size()) return false;
+	if (!SameIdent(std::string_view(a_s).substr(a_i, a_word.size()), a_word))
+		return false;
+	const auto after = a_i + a_word.size();
+	if (after < a_s.size() && IdentChar(a_s[after])) return false;
+	if (a_i > 0 && IdentChar(a_s[a_i - 1])) return false;
+	return true;
+}
+
+struct DeleteHit {
+	std::string token;
+};
+
+bool IdentIsBanned(std::string_view a_ident)
+{
+	if (a_ident.empty() || IsRemoveAlgorithm(a_ident)) return false;
+	static const char* exact[] = {
+		"remove_all", "unlink", "_unlink", "_wunlink", "rmdir", "_rmdir", "_wrmdir",
+		"_wremove", "_remove", "IFileOperation", "FileDispositionInfo", "FO_DELETE",
+		"DELETE_ON_CLOSE", "NtDeleteFile", "SetFileInformationByHandle"
+	};
+	for (const char* t : exact)
+		if (SameIdent(a_ident, t)) return true;
+	static const char* prefix[] = {
+		"DeleteFile", "RemoveDirectory", "SHFileOperation", "FILE_DISPOSITION", "ReplaceFile"
+	};
+	for (const char* t : prefix)
+		if (StartsIdent(a_ident, t)) return true;
+	const auto low = LowerCopy(std::string(a_ident));
+	if (low.find("delete_on_close") != std::string::npos) return true;
+	return false;
+}
+
+bool RemoveIsQualified(const std::string& a_s, std::size_t a_identAt)
+{
+	std::size_t i = a_identAt;
+	while (i > 0 && std::isspace(static_cast<unsigned char>(a_s[i - 1])))
+		--i;
+	if (i >= 2 && a_s[i - 1] == ':' && a_s[i - 2] == ':') {
+		std::size_t q = i - 2;
+		while (q > 0 && std::isspace(static_cast<unsigned char>(a_s[q - 1])))
+			--q;
+		if (q >= 3 && SameIdent(std::string_view(a_s).substr(q - 3, 3), "std"))
+			return true;
+		if (q >= 2 && SameIdent(std::string_view(a_s).substr(q - 2, 2), "fs"))
+			return true;
+		std::size_t b = q;
+		while (b > 0 && IdentChar(a_s[b - 1]))
+			--b;
+		if (b < q && SameIdent(std::string_view(a_s).substr(b, q - b), "filesystem"))
+			return true;
+		return true; // ::remove
+	}
+	return false;
+}
+
+bool FollowedByCall(const std::string& a_s, std::size_t a_afterIdent)
+{
+	std::size_t i = a_afterIdent;
+	SkipWs(a_s, i);
+	return i < a_s.size() && a_s[i] == '(';
+}
+
+// Purpose: find file-erase APIs after comments and strings are stripped.
+// Whole banned identifiers, optional whitespace before '(', and any
+// #define / using that names a banned identifier. std::remove is only
+// allowed when it is clearly remove_if (or another iterator algorithm).
+// Inputs: source text. Outputs: one hit per banned use.
+std::vector<DeleteHit> FindDeleteCalls(const std::string& a_text)
+{
+	const auto s = StripCommentsAndStrings(a_text);
+	std::vector<DeleteHit> hits;
+	auto add = [&](std::string a_tok) {
+		for (const auto& h : hits)
+			if (h.token == a_tok) return;
+		hits.push_back(DeleteHit{std::move(a_tok)});
+	};
+	bool usingStd = false;
+	bool usingFs = false;
+	std::size_t i = 0;
+	while (i < s.size()) {
+		if (s[i] == '#' ) {
+			std::size_t k = i + 1;
+			SkipWs(s, k);
+			if (MatchWord(s, k, "define")) {
+				k += 6;
+				const auto eol = s.find('\n', k);
+				const auto line = s.substr(k, (eol == std::string::npos ? s.size() : eol) - k);
+				std::size_t p = 0;
+				while (p < line.size()) {
+					if (!IdentStart(line[p])) {
+						++p;
+						continue;
+					}
+					std::size_t e = p + 1;
+					while (e < line.size() && IdentChar(line[e])) ++e;
+					const auto id = std::string_view(line).substr(p, e - p);
+					if (IdentIsBanned(id) || SameIdent(id, "remove"))
+						add(std::string("#define ") + std::string(id));
+					p = e;
+				}
+				i = eol == std::string::npos ? s.size() : eol;
+				continue;
+			}
+		}
+		if (MatchWord(s, i, "using")) {
+			std::size_t k = i + 5;
+			const auto semi = s.find(';', k);
+			const auto eol = s.find('\n', k);
+			const auto stop = std::min(
+				semi == std::string::npos ? s.size() : semi,
+				eol == std::string::npos ? s.size() : eol);
+			const auto clause = s.substr(k, stop - k);
+			if (clause.find("namespace") != std::string::npos) {
+				const auto low = LowerCopy(clause);
+				if (low.find("filesystem") != std::string::npos)
+					usingFs = true;
+				else if (low.find("std") != std::string::npos)
+					usingStd = true;
+			}
+			std::size_t p = 0;
+			while (p < clause.size()) {
+				if (!IdentStart(clause[p])) {
+					++p;
+					continue;
+				}
+				std::size_t e = p + 1;
+				while (e < clause.size() && IdentChar(clause[e])) ++e;
+				const auto id = std::string_view(clause).substr(p, e - p);
+				if (IdentIsBanned(id) || SameIdent(id, "remove"))
+					add(std::string("using ") + std::string(id));
+				p = e;
+			}
+			i += 5;
+			continue;
+		}
+		if (IdentStart(s[i]) && (i == 0 || !IdentChar(s[i - 1]))) {
+			std::size_t e = i + 1;
+			while (e < s.size() && IdentChar(s[e])) ++e;
+			const auto id = std::string_view(s).substr(i, e - i);
+			if (IdentIsBanned(id)) {
+				add(std::string(id));
+			} else if (SameIdent(id, "remove") && !IsRemoveAlgorithm(id)) {
+				const bool call = FollowedByCall(s, e);
+				const bool qual = RemoveIsQualified(s, i);
+				if (qual || call || usingStd || usingFs)
+					add("remove");
+			}
+			i = e;
+			continue;
+		}
+		++i;
+	}
+	return hits;
+}
+
 void ExpectNoDeleteCalls(const std::string& a_text, const std::string& a_file)
 {
-	const char* banned[] = {
-		"DeleteFile", "RemoveDirectory", "SHFileOperation", "DELETE_ON_CLOSE",
-		"_wremove", "_unlink", "filesystem::remove"
-	};
-	for (const char* tok : banned) {
-		if (a_text.find(tok) != std::string::npos)
-			Expect(false, (a_file + " must not call " + std::string(tok)).c_str());
-	}
-	for (std::size_t p = 0; (p = a_text.find("std::remove", p)) != std::string::npos; ) {
-		if (a_text.compare(p, 14, "std::remove_if") == 0) {
-			p += 14;
-			continue;
-		}
-		const auto after = p + 11;
-		if (after < a_text.size() && IdentChar(a_text[after])) {
-			p = after;
-			continue;
-		}
-		Expect(false, (a_file + " must not call std::remove").c_str());
-		break;
-	}
-	for (std::size_t p = 0; (p = a_text.find("::remove(", p)) != std::string::npos; p += 9) {
-		if (p >= 3 && a_text.compare(p - 3, 14, "std::remove_if") == 0)
-			continue;
-		if (p >= 11 && a_text.compare(p - 11, 20, "filesystem::remove(") == 0)
-			continue;
-		if (p >= 3 && a_text.compare(p - 3, 11, "std::remove") == 0)
-			continue;
-		Expect(false, (a_file + " must not call ::remove").c_str());
-		break;
-	}
+	for (const auto& h : FindDeleteCalls(a_text))
+		Expect(false, (a_file + " must not call " + h.token).c_str());
 	for (std::size_t p = 0; (p = a_text.find("MoveFileEx", p)) != std::string::npos; ) {
 		const auto open = a_text.find('(', p);
 		if (open == std::string::npos) {
@@ -179,6 +423,56 @@ void ExpectNoDeleteCalls(const std::string& a_text, const std::string& a_file)
 			|| (d < a_text.size() && a_text[d] == '0' && (d + 1 == a_text.size() || !IdentChar(a_text[d + 1]))))
 			Expect(false, (a_file + " must not MoveFileEx to a null dest").c_str());
 		p = open + 1;
+	}
+}
+
+// Purpose: prove the no-delete scanner catches every known bypass and
+// ignores remove_if, comments, strings, and "Remove from list".
+void TestNoDeleteScannerSelf()
+{
+	const char* seeds[] = {
+		"#define HZ_DEL ::remove",
+		"fs::remove_all(p)",
+		"using namespace std;\nremove(path);",
+		"using namespace std::filesystem;\nremove(path);",
+		"::remove (path)",
+		"unlink(path)",
+		"rmdir(path)",
+		"_rmdir(path)",
+		"_wrmdir(path)",
+		"IFileOperation* op",
+		"FileDispositionInfo info",
+		"FILE_DISPOSITION_INFO d",
+		"FO_DELETE",
+		"ReplaceFileW(a,b,c,d,e,f)",
+		"SetFileInformationByHandle(h,c,p,n)",
+		"DeleteFileW(path)",
+		"DeleteFileA(path)",
+		"RemoveDirectoryW(path)",
+		"RemoveDirectoryA(path)",
+		"FILE_FLAG_DELETE_ON_CLOSE",
+		"SHFileOperationW(&op)",
+		"NtDeleteFile(&oa)",
+		"std::filesystem::remove(p)",
+		"std::remove(path)",
+		"using std::remove;",
+	};
+	for (const char* seed : seeds) {
+		const auto hits = FindDeleteCalls(seed);
+		Expect(!hits.empty(), (std::string("scanner catches: ") + seed).c_str());
+	}
+	const char* negatives[] = {
+		"v.erase(std::remove_if(v.begin(), v.end(), pred), v.end());",
+		"// please remove this file with DeleteFile later",
+		"const char* s = \"please remove the file\";",
+		"rows.push({\"l\":\"Remove from list\"});",
+		"first.remove_suffix(1);",
+		"phrase.remove_prefix(1);",
+		"std::string removed = \"Removed.\";",
+	};
+	for (const char* seed : negatives) {
+		const auto hits = FindDeleteCalls(seed);
+		Expect(hits.empty(), (std::string("scanner allows: ") + seed).c_str());
 	}
 }
 
@@ -621,11 +915,7 @@ int main()
 		Expect(std::filesystem::is_regular_file(clearPath), "file exists before clear");
 		auto staleSnap = clear.buf.Snapshot();
 		clear.writePending = true;
-		std::uint64_t jobCancel = 0;
-		{
-			std::lock_guard lk(clear.fileGate.mu);
-			jobCancel = clear.fileGate.cancelSeq;
-		}
+		const std::uint64_t jobCancel = clear.fileGate.LoadCancel("0000ABCD");
 		Expect(clear.ClearHistoryNow(), "Clear history");
 		Expect(clear.buf.entries.empty(), "Clear history empties memory");
 		Expect(!clear.writePending, "Clear history clears pending");
@@ -654,6 +944,14 @@ int main()
 		Expect(persistOff.Flush(115'000), "Persist=0 flush");
 		Expect(!std::filesystem::exists(root / "no-persist" / "MessageLog"),
 			"Persist=0 still creates no folder");
+		Expect(persistOff.ClearHistoryNow(), "Persist=0 Clear history");
+		Expect(persistOff.buf.entries.empty(), "Persist=0 Clear empties memory");
+		Expect(!std::filesystem::exists(root / "no-persist" / "MessageLog"),
+			"Persist=0 Clear does not create the folder");
+		Expect(!std::filesystem::exists(root / "no-persist" / "MessageLog" / "MessageLog_00005555.json"),
+			"Persist=0 Clear does not write the main file");
+		Expect(!std::filesystem::exists(root / "no-persist" / "MessageLog" / "MessageLog_00005555.json.bak"),
+			"Persist=0 Clear does not write the bak");
 
 		Log heavy;
 		heavy.Configure(s, root);
@@ -2595,6 +2893,7 @@ int main()
 	}
 
 	{
+		TestNoDeleteScannerSelf();
 		const auto root = RepoRoot();
 		std::vector<std::filesystem::path> srcs;
 		CollectSrcFiles(root / "src", srcs);
@@ -2613,7 +2912,8 @@ int main()
 			Expect(hdr.find("SaveEmptyBoth") != std::string::npos, "Clear history writes empty main and bak");
 			Expect(hdr.find("FolderPathDisplay") != std::string::npos, "Log exposes a display folder path");
 			Expect(main.find("HidePreset") != std::string::npos, "F11 hides a saved preset instead of erasing it");
-			Expect(main.find("HiddenPresets=") != std::string::npos, "hidden preset ids live in state.ini");
+			Expect(main.find("FormatHiddenPresetLines") != std::string::npos,
+				"hidden preset ids are one encoded key each");
 			Expect(main.find("UndoReady=") != std::string::npos, "undo ready is stored in state.ini");
 			{
 				const auto wa = main.find("inline bool WriteAtomic");
@@ -2638,6 +2938,47 @@ int main()
 			}
 			Expect(as.find("REMOVE FROM LIST") != std::string::npos, "F11 button hides a saved preset");
 			Expect(as.find("pdir") != std::string::npos, "F11 can show the preset folder path");
+			{
+				const auto emptyAt = hdr.find("bool SaveEmptyBoth");
+				const auto next = hdr.find("private:", emptyAt);
+				const auto body = emptyAt != std::string::npos && next > emptyAt
+					? hdr.substr(emptyAt, next - emptyAt) : std::string();
+				const auto mainAt = body.find("WriteAtomicKeepTmp(path, body)");
+				const auto bakAt = body.find("WriteAtomicKeepTmp(bak, body)");
+				Expect(mainAt != std::string::npos && bakAt != std::string::npos && mainAt < bakAt,
+					"Clear writes the empty main file before the bak");
+			}
+			{
+				const auto clr = main.find("void MsglogClearHistory()");
+				const auto next = main.find("std::vector<hzlog::OtherCharacter> MsglogListOthers()", clr);
+				const auto body = clr != std::string::npos && next > clr
+					? main.substr(clr, next - clr) : std::string();
+				Expect(body.find("FileStore") == std::string::npos
+					&& body.find("SaveEmptyBoth") == std::string::npos
+					&& body.find("fileGate.mu") == std::string::npos,
+					"DLL Clear history does not write or wait on the game thread");
+				Expect(body.find("BumpCancel") != std::string::npos, "DLL Clear bumps the cancel seq first");
+				Expect(body.find("emptyClear") != std::string::npos, "DLL Clear queues an ordered empty write");
+				Expect(body.find("persist") != std::string::npos, "DLL Clear checks Persist before queueing");
+			}
+			{
+				const auto wr = main.find("void MsglogRequestWrite(bool a_force)");
+				const auto next = main.find("void MsglogShutdownWriter()", wr);
+				const auto body = wr != std::string::npos && next > wr
+					? main.substr(wr, next - wr) : std::string();
+				Expect(body.find("fileGate.mu") == std::string::npos,
+					"RequestWrite never takes fileGate.mu");
+				Expect(body.find("LoadCancel") != std::string::npos,
+					"RequestWrite reads the per-key cancel seq");
+			}
+			{
+				const auto wr = main.find("void MsglogWriter()");
+				const auto ens = main.find("void MsglogEnsureWriter()", wr);
+				const auto body = wr != std::string::npos && ens > wr
+					? main.substr(wr, ens - wr) : std::string();
+				Expect(body.find("if (!wjob.persist)") != std::string::npos,
+					"the writer refuses Persist=0 file work");
+			}
 		}
 	}
 
@@ -2661,6 +3002,15 @@ int main()
 		loaded.nextSess = 9;
 		log.buf.LoadState(std::move(loaded));
 		ExpectEqI(log.buf.sess, 1, "a mid-launch load keeps the launch session id");
+		log.buf.ResetMemory();
+		ExpectEqI(log.buf.launchSess, 1, "ResetMemory keeps the launch session pin");
+		ExpectEqI(log.buf.sess, 1, "ResetMemory restores the launch session id");
+		LogState afterReset;
+		afterReset.nextSess = 9;
+		afterReset.character = ch;
+		log.buf.LoadState(std::move(afterReset));
+		ExpectEqI(log.buf.sess, 1, "a load after ResetMemory still keeps the launch session id");
+		ExpectEqI(log.buf.launchSess, 1, "launch session survives every load");
 
 		Entry parked;
 		parked.kind = Kind::Game;
@@ -2709,14 +3059,54 @@ int main()
 		WriteGate race;
 		bool saved = false;
 		race.afterCheck = [&] {
-			++race.cancelSeq;
-			race.cancelKey = "0000ABCD";
+			race.BumpCancel("0000ABCD");
 		};
 		const auto raced = OrderedSave(race, 0, "0000ABCD", [&] {
 			saved = true;
 			return true;
 		});
 		Expect(raced == WriteRun::Skipped && !saved, "a cancel between the two checks skips the save");
+
+		WriteGate keys;
+		const auto aSeq = keys.LoadCancel("0000AAAA");
+		keys.BumpCancel("0000BBBB");
+		Expect(!WriteIsCanceled(aSeq, "0000AAAA", keys), "canceling B does not cancel A");
+		Expect(WriteIsCanceled(0, "0000BBBB", keys), "B is canceled on its own key");
+		bool savedA = false;
+		Expect(OrderedSave(keys, aSeq, "0000AAAA", [&] {
+			savedA = true;
+			return true;
+		}) == WriteRun::Saved && savedA, "A still writes after B is canceled");
+
+		std::vector<std::string> emptyOrder;
+		Log emptyOrderLog;
+		emptyOrderLog.replace = [&](const std::filesystem::path& a_tmp, const std::filesystem::path& a_dst) {
+			emptyOrder.push_back(a_dst.filename().string());
+			return DefaultReplace(a_tmp, a_dst);
+		};
+		emptyOrderLog.Configure(s, root);
+		emptyOrderLog.buf.character = MakeCharacter(0xCCCCu, "Sam");
+		emptyOrderLog.Offer(Cap(Kind::Game, "before empty", 90'000));
+		Expect(emptyOrderLog.Flush(91'000), "seed before empty-order clear");
+		emptyOrder.clear();
+		Expect(emptyOrderLog.ClearHistoryNow(), "Clear history records write order");
+		Expect(emptyOrder.size() >= 2, "Clear history writes main and bak");
+		if (emptyOrder.size() >= 2) {
+			Expect(emptyOrder[0] == "MessageLog_0000CCCC.json", "Clear writes the main file first");
+			Expect(emptyOrder[1] == "MessageLog_0000CCCC.json.bak", "Clear writes the bak second");
+		}
+
+		Log leave;
+		leave.Configure(s, root);
+		leave.buf.character = MakeCharacter(0xDDDDu, "Sam");
+		leave.Offer(Cap(Kind::Game, "leave on disk", 92'000));
+		Expect(leave.Flush(93'000), "seed before persist-off clear");
+		const auto leavePath = root / "MessageLog" / "MessageLog_0000DDDD.json";
+		const auto leaveBody = ReadFile(leavePath);
+		leave.ApplyPersist(false);
+		Expect(leave.ClearHistoryNow(), "Persist=0 Clear after a saved file");
+		Expect(leave.buf.entries.empty(), "Persist=0 Clear still empties memory");
+		Expect(ReadFile(leavePath) == leaveBody, "Persist=0 Clear does not touch the existing file");
 
 		std::error_code ec;
 		std::filesystem::remove_all(root, ec);

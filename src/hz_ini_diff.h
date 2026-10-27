@@ -338,8 +338,9 @@ namespace HZF {
 		}
 
 		// Purpose: persist hidden saved-preset ids in HorizonUI.state.ini.
-		// Inputs: comma-separated ids, or one id to hide/unhide.
-		// Outputs: the updated list. Files stay on disk.
+		// Inputs: one id to hide/unhide, or a legacy csv for migration.
+		// Outputs: HiddenN= encoded lines (one key per id, no list cap).
+		// Files stay on disk.
 		inline bool SamePresetId(const std::string& a_a, const std::string& a_b)
 		{
 			if (a_a.size() != a_b.size()) return false;
@@ -396,6 +397,88 @@ namespace HZF {
 			for (const auto& h : a_hidden)
 				if (!SamePresetId(h, a_id)) keep.push_back(h);
 			a_hidden.swap(keep);
+		}
+
+		inline bool IsHiddenPresetKey(const std::string& a_kl)
+		{
+			if (a_kl.size() < 7 || a_kl.compare(0, 6, "hidden") != 0) return false;
+			for (std::size_t i = 6; i < a_kl.size(); ++i)
+				if (a_kl[i] < '0' || a_kl[i] > '9') return false;
+			return true;
+		}
+
+		// Purpose: encode one hidden-preset id so KeyOf can round-trip it.
+		// Inputs: the raw id (may contain ',' or ';'). Outputs: percent-encoded
+		// text. ';' would otherwise be treated as an INI comment.
+		// Dependencies: none.
+		inline std::string EncodeHiddenPresetId(const std::string& a_id)
+		{
+			std::string o;
+			o.reserve(a_id.size());
+			static const char kHex[] = "0123456789ABCDEF";
+			for (unsigned char c : a_id) {
+				if (c == '%' || c == ';' || c == '\r' || c == '\n') {
+					o += '%';
+					o += kHex[c >> 4];
+					o += kHex[c & 15];
+				} else {
+					o += static_cast<char>(c);
+				}
+			}
+			return o;
+		}
+
+		// Purpose: decode a HiddenN value written by EncodeHiddenPresetId.
+		// Inputs: the stored value. Outputs: the original id.
+		// Dependencies: EncodeHiddenPresetId.
+		inline std::string DecodeHiddenPresetId(const std::string& a_s)
+		{
+			std::string o;
+			o.reserve(a_s.size());
+			auto hex = [](char c) -> int {
+				if (c >= '0' && c <= '9') return c - '0';
+				if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+				if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+				return -1;
+			};
+			for (std::size_t i = 0; i < a_s.size(); ) {
+				if (a_s[i] == '%' && i + 2 < a_s.size()) {
+					const int hi = hex(a_s[i + 1]);
+					const int lo = hex(a_s[i + 2]);
+					if (hi >= 0 && lo >= 0) {
+						o += static_cast<char>((hi << 4) | lo);
+						i += 3;
+						continue;
+					}
+				}
+				o += a_s[i];
+				++i;
+			}
+			return o;
+		}
+
+		inline std::string FormatHiddenPresetLines(const std::vector<std::string>& a_ids)
+		{
+			std::string t;
+			for (std::size_t i = 0; i < a_ids.size(); ++i) {
+				if (a_ids[i].empty()) continue;
+				t += "Hidden";
+				t += std::to_string(i);
+				t += "=";
+				t += EncodeHiddenPresetId(a_ids[i]);
+				t += "\r\n";
+			}
+			return t;
+		}
+
+		inline void CollectHiddenPresetIds(const std::map<std::string, std::pair<std::string, std::string>>& a_kv,
+			std::vector<std::string>& a_out)
+		{
+			for (const auto& [kl, kv] : a_kv) {
+				if (!IsHiddenPresetKey(kl)) continue;
+				if (!kv.second.empty())
+					HidePresetId(a_out, DecodeHiddenPresetId(kv.second));
+			}
 		}
 
 } // namespace HZF
