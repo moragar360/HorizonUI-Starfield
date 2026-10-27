@@ -761,11 +761,8 @@ int main()
 		auto mixed = HZF::Parse(
 			"[State]\r\nHidden0=u:new.ini\r\nHiddenPresets=u:old.ini,u:new.ini\r\n");
 		std::vector<std::string> mixedGot;
-		if (auto* ms = mixed.Find("state")) {
-			HZF::CollectHiddenPresetIds(ms->kv, mixedGot);
-			HZF::UnionHiddenPresetIds(mixedGot, HZF::SplitPresetIds(
-				ms->kv.count("hiddenpresets") ? ms->kv["hiddenpresets"].second : std::string()));
-		}
+		if (auto* ms = mixed.Find("state"))
+			HZF::MergeHiddenPresetState(ms->kv, mixedGot);
 		Expect(HZF::PresetIdHidden(mixedGot, "u:new.ini"), "HiddenN ids are kept");
 		Expect(HZF::PresetIdHidden(mixedGot, "u:old.ini"), "legacy HiddenPresets ids are unioned");
 		Expect(mixedGot.size() == 2, "union does not duplicate the shared id");

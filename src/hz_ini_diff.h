@@ -504,5 +504,16 @@ namespace HZF {
 			}
 		}
 
+		// Purpose: HiddenN plus legacy HiddenPresets= csv, always unioned.
+		// Inputs: the parsed [State] kv. Outputs: a_out with every id once.
+		inline void MergeHiddenPresetState(const std::map<std::string, std::pair<std::string, std::string>>& a_kv,
+			std::vector<std::string>& a_out)
+		{
+			CollectHiddenPresetIds(a_kv, a_out);
+			const auto it = a_kv.find("hiddenpresets");
+			if (it != a_kv.end())
+				UnionHiddenPresetIds(a_out, SplitPresetIds(it->second.second));
+		}
+
 } // namespace HZF
 

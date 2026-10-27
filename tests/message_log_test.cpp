@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <mutex>
 #include <set>
 #include <string>
@@ -3224,31 +3225,71 @@ int main()
 					&& body.find("fileGate.mu") == std::string::npos,
 					"DLL Clear history does not write or wait on the game thread");
 				Expect(body.find("BumpCancel") != std::string::npos, "DLL Clear bumps the cancel seq first");
-				Expect(body.find("emptyClear") != std::string::npos, "DLL Clear queues an ordered empty write");
+				Expect(body.find("DecideWriteEmptyClear(true)") != std::string::npos,
+					"DLL Clear sets emptyClear through the header helper");
 				Expect(body.find("persist") != std::string::npos, "DLL Clear checks Persist before queueing");
 			}
 			{
 				const auto wr = main.find("void MsglogRequestWrite(bool a_force)");
-				const auto next = main.find("void MsglogShutdownWriter()", wr);
+				const auto next = main.find("bool MsglogQueueWriteJob", wr);
 				const auto body = wr != std::string::npos && next > wr
 					? main.substr(wr, next - wr) : std::string();
 				Expect(body.find("fileGate.mu") == std::string::npos,
 					"RequestWrite never takes fileGate.mu");
 				Expect(body.find("LoadCancel") != std::string::npos,
 					"RequestWrite reads the per-key cancel seq");
+				Expect(body.find("ShouldQueueWrite") != std::string::npos,
+					"RequestWrite uses the header queue decision");
+				Expect(body.find("DecideWriteEmptyClear(false)") != std::string::npos,
+					"RequestWrite is not an explicit Clear");
+				Expect(body.find("job.emptyClear = job.snap.entries.empty()") == std::string::npos,
+					"emptyClear is not assigned from a bare empty snapshot");
+				Expect(body.find("RequestWriteBlockedByLoad") != std::string::npos
+					|| body.find("ShouldQueueWrite") != std::string::npos,
+					"RequestWrite skips a load-in-flight key");
 			}
 			{
 				const auto wr = main.find("void MsglogWriter()");
 				const auto ens = main.find("void MsglogEnsureWriter()", wr);
 				const auto body = wr != std::string::npos && ens > wr
 					? main.substr(wr, ens - wr) : std::string();
-				Expect(body.find("if (!wjob.persist)") != std::string::npos,
-					"the writer refuses Persist=0 file work");
+				Expect(body.find("ApplyDiskWrite") != std::string::npos,
+					"the writer uses ApplyDiskWrite");
+			}
+			{
+				const auto q = main.find("bool MsglogQueueWriteJob");
+				const auto next = main.find("void MsglogShutdownWriter()", q);
+				const auto body = q != std::string::npos && next > q
+					? main.substr(q, next - q) : std::string();
+				Expect(body.find("DecideQueuedWrite") != std::string::npos,
+					"the queue helper calls DecideQueuedWrite");
+				Expect(body.find("KeepQueuedClear") == std::string::npos,
+					"the queue helper does not use KeepQueuedClear");
+			}
+			{
+				const auto rs = main.find("inline State ReadState");
+				const auto ws = main.find("inline bool WriteState", rs);
+				const auto body = rs != std::string::npos && ws > rs
+					? main.substr(rs, ws - rs) : std::string();
+				Expect(body.find("MergeHiddenPresetState") != std::string::npos,
+					"ReadState merges HiddenN with legacy HiddenPresets");
+				Expect(body.find("if (s.hiddenPresets.empty())") == std::string::npos,
+					"ReadState does not drop legacy ids when HiddenN exists");
+			}
+			{
+				const auto saveAt = hdr.find("bool Save(const LogState& a_state)");
+				const auto emptyFn = hdr.find("bool SaveEmptyBoth");
+				const auto body = saveAt != std::string::npos && emptyFn > saveAt
+					? hdr.substr(saveAt, emptyFn - saveAt) : std::string();
+				Expect(body.find("SaveEmptyBoth") == std::string::npos,
+					"Save does not treat every empty snapshot as a Clear");
 			}
 			Expect(hdr.find("TakeLaunchSess") != std::string::npos,
 				"launch session is pinned per character key");
-			Expect(hdr.find("KeepQueuedClear") != std::string::npos,
-				"a queued Clear is not overwritten by a later save");
+			Expect(hdr.find("DecideQueuedWrite") != std::string::npos,
+				"queue decisions live in the header");
+			Expect(hdr.find("std::map<std::string, int> launchPins") != std::string::npos,
+				"launchPins is a map");
 			Expect(main.find("MsglogQueueWriteJob") != std::string::npos,
 				"DLL write jobs go through one queue helper");
 			Expect(main.find("killed within a few ms") != std::string::npos,
@@ -3382,14 +3423,46 @@ int main()
 		Expect(leave.buf.entries.empty(), "Persist=0 Clear still empties memory");
 		Expect(ReadFile(leavePath) == leaveBody, "Persist=0 Clear does not touch the existing file");
 
-		Expect(KeepQueuedClear(true, "0000EEEE", false, "0000EEEE"),
-			"a quit save does not replace a queued Clear for that key");
-		Expect(!KeepQueuedClear(true, "0000EEEE", true, "0000EEEE"),
-			"a later empty Clear may replace a queued Clear");
-		Expect(!KeepQueuedClear(true, "0000EEEE", false, "0000FFFF"),
-			"a write for another key does not keep the queued Clear");
-		Expect(!KeepQueuedClear(false, "0000EEEE", false, "0000EEEE"),
-			"a regular pending write is not treated as a Clear");
+		Expect(!DecideWriteEmptyClear(false), "a non-Clear write is not emptyClear");
+		Expect(DecideWriteEmptyClear(true), "an explicit Clear is emptyClear");
+		Expect(SkipEmptyNonClearWrite(false, true), "an empty non-Clear snapshot is skipped");
+		Expect(!SkipEmptyNonClearWrite(true, true), "an explicit Clear is not skipped as empty");
+		Expect(RequestWriteBlockedByLoad(true, "0000ABCD", "0000ABCD"),
+			"a write is blocked while that key is loading");
+		Expect(!RequestWriteBlockedByLoad(true, "0000AAAA", "0000BBBB"),
+			"a write for another key is not blocked by a load");
+		Expect(!RequestWriteBlockedByLoad(false, "0000ABCD", "0000ABCD"),
+			"a write is not blocked when no load is in flight");
+		Expect(!ShouldQueueWrite(false, true, true, "0000ABCD", "0000ABCD"),
+			"quit during a load is not queued");
+		Expect(ShouldQueueWrite(false, false, false, "0000ABCD", ""),
+			"a write with rows is queued");
+
+		std::vector<QueuedWrite> q;
+		QueuedWrite clearJob;
+		clearJob.key = "0000EEEE";
+		clearJob.emptyClear = true;
+		clearJob.writeSeq = 1;
+		ApplyQueuedWrite(q, clearJob);
+		QueuedWrite rowJob;
+		rowJob.key = "0000EEEE";
+		rowJob.hasRows = true;
+		rowJob.writeSeq = 2;
+		ApplyQueuedWrite(q, rowJob);
+		Expect(q.size() == 1 && q[0].hasRows && q[0].clearFirst && q[0].writeSeq == 2,
+			"a row job replaces a queued Clear and sets clearFirst");
+		QueuedWrite other;
+		other.key = "0000FFFF";
+		other.emptyClear = true;
+		other.writeSeq = 3;
+		ApplyQueuedWrite(q, other);
+		Expect(q.size() == 2, "a different key keeps its own Clear slot");
+		QueuedWrite emptyQuit;
+		emptyQuit.key = "0000EEEE";
+		emptyQuit.writeSeq = 4;
+		ApplyQueuedWrite(q, emptyQuit);
+		Expect(q.size() == 2 && q[0].hasRows && q[0].writeSeq == 2,
+			"an empty quit does not drop the row job");
 
 		Log quitOver;
 		quitOver.Configure(s, root);
@@ -3399,14 +3472,79 @@ int main()
 		const auto quitPath = root / "MessageLog" / "MessageLog_0000EEEE.json";
 		const auto quitBak = root / "MessageLog" / "MessageLog_0000EEEE.json.bak";
 		Expect(ReadFile(quitPath).find("pre-clear rows") != std::string::npos, "main has rows before the quit write");
-		auto cleared = quitOver.buf.Snapshot();
-		cleared.entries.clear();
+		auto afterClear = quitOver.buf.Snapshot();
+		afterClear.entries.clear();
+		Entry kept;
+		kept.id = 9;
+		kept.kind = Kind::Game;
+		kept.text = "row after clear";
+		kept.sess = quitOver.buf.sess;
+		kept.ts = 96;
+		auto rowSnap = afterClear;
+		rowSnap.entries.push_back(kept);
 		FileStore quitFs(root / "MessageLog", quitOver.replace);
-		Expect(quitFs.Save(cleared), "quit force-write of the cleared snapshot");
+		Expect(ApplyDiskWrite(quitFs, rowSnap, true, false, true),
+			"clearFirst then Save writes the new row");
+		Expect(ReadFile(quitPath).find("row after clear") != std::string::npos,
+			"a row after a queued Clear is on disk");
 		Expect(ReadFile(quitPath).find("pre-clear rows") == std::string::npos,
-			"quit write after Clear empties the main file");
+			"pre-clear rows are gone from main");
 		Expect(ReadFile(quitBak).find("pre-clear rows") == std::string::npos,
-			"quit write after Clear empties the bak");
+			"bak has no pre-clear rows after clearFirst");
+		Expect(ReadFile(quitBak).find("row after clear") == std::string::npos,
+			"bak is the emptied file, not the new row");
+
+		const auto loadMain = ReadFile(quitPath);
+		const auto loadBak = ReadFile(quitBak);
+		auto emptyQuitSnap = afterClear;
+		Expect(ApplyDiskWrite(quitFs, emptyQuitSnap, true, false, false),
+			"an empty non-Clear write is a no-op");
+		Expect(ReadFile(quitPath) == loadMain && ReadFile(quitBak) == loadBak,
+			"quit during a load leaves main and bak byte-identical");
+
+		Log restamp;
+		restamp.Configure(s, root);
+		restamp.buf.character = MakeCharacter(0xFFFFu, "Sam");
+		restamp.buf.StartSession(1);
+		restamp.buf.sess = 7;
+		Entry held;
+		held.kind = Kind::Game;
+		held.text = "held across switch";
+		held.sess = 2;
+		held.ts = 1;
+		restamp.buf.MergeSession(std::vector<Entry>{held});
+		ExpectEqI(restamp.buf.entries.back().sess, 7, "merged rows take the key's launch pin");
+
+		ExpectEqI(NextSessId(std::numeric_limits<int>::max()), std::numeric_limits<int>::max(),
+			"session ids clamp at INT_MAX");
+		Entry maxE;
+		maxE.sess = std::numeric_limits<int>::max();
+		ExpectEqI(ResolveNextSess(std::numeric_limits<int>::max(), {}, {maxE}),
+			std::numeric_limits<int>::max(), "ResolveNextSess does not overflow");
+
+		Log ident;
+		ident.Configure(s, root);
+		ident.buf.character = MakeCharacter(0x1212u, "Sam");
+		ident.Offer(Cap(Kind::Game, "load-file rows", 97'000));
+		Expect(ident.Flush(98'000), "seed files before a load-quit");
+		ident.Offer(Cap(Kind::Game, "second flush", 99'000));
+		Expect(ident.Flush(100'000), "second flush writes bak");
+		const auto identPath = root / "MessageLog" / "MessageLog_00001212.json";
+		const auto identBak = root / "MessageLog" / "MessageLog_00001212.json.bak";
+		WriteFile(identBak, ReadFile(identPath));
+		const auto identMain = ReadFile(identPath);
+		const auto identBakBody = ReadFile(identBak);
+		Expect(identMain == identBakBody, "main and bak start byte-identical");
+		auto loadEmpty = ident.buf.Snapshot();
+		loadEmpty.entries.clear();
+		FileStore identFs(root / "MessageLog", ident.replace);
+		ident.loadBusy.store(true);
+		Expect(!ShouldQueueWrite(false, true, ident.loadBusy.load(), ident.buf.character.key, ident.buf.character.key),
+			"quit during that key's load is not queued");
+		Expect(ApplyDiskWrite(identFs, loadEmpty, true, false, false),
+			"empty non-Clear during load does not write");
+		Expect(ReadFile(identPath) == identMain && ReadFile(identBak) == identBakBody,
+			"quit during a load leaves main and bak byte-identical");
 
 		std::error_code ec;
 		std::filesystem::remove_all(root, ec);

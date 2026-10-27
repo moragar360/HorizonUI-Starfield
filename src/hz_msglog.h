@@ -25,6 +25,8 @@
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -821,14 +823,91 @@ inline std::uint64_t OrderedCancel(WriteGate& a_g, const std::string& a_key)
 	return a_g.BumpCancel(a_key);
 }
 
-// Purpose: a later force-write must not replace a queued empty Clear
-// for the same key. FileStore::Save copies main onto .bak, so that
-// overwrite would put pre-clear rows back in the bak.
-// Inputs: pending job flags and keys. Outputs: true to keep the Clear.
-inline bool KeepQueuedClear(bool a_pendingClear, std::string_view a_pendingKey,
-	bool a_newClear, std::string_view a_newKey)
+// Purpose: one pending write slot per character key. A newer job that
+// has rows always replaces the slot and sets clearFirst when a Clear
+// was pending, so the worker empties both files then saves the rows.
+// A different key inserts; an empty non-Clear never drops a Clear or rows.
+// Inputs: the live queue and the new job. Outputs: insert / replace / skip.
+enum class QueueOp : std::uint8_t { Insert = 0, Replace, Skip };
+
+struct QueuedWrite {
+	std::string   key;
+	bool          emptyClear{false};
+	bool          clearFirst{false};
+	bool          hasRows{false};
+	std::uint64_t writeSeq{0};
+};
+
+struct QueueDecision {
+	QueueOp     op{QueueOp::Insert};
+	std::size_t index{0};
+	bool        clearFirst{false};
+};
+
+inline QueueDecision DecideQueuedWrite(const std::vector<QueuedWrite>& a_pending, const QueuedWrite& a_new)
 {
-	return a_pendingClear && !a_newClear && SameLogKey(a_pendingKey, a_newKey);
+	for (std::size_t i = 0; i < a_pending.size(); ++i) {
+		if (!SameLogKey(a_pending[i].key, a_new.key)) continue;
+		QueueDecision d;
+		d.index = i;
+		if (a_new.hasRows) {
+			d.op = QueueOp::Replace;
+			d.clearFirst = a_pending[i].emptyClear || a_pending[i].clearFirst;
+			return d;
+		}
+		if (a_new.emptyClear) {
+			d.op = QueueOp::Replace;
+			d.clearFirst = false;
+			return d;
+		}
+		if (a_pending[i].emptyClear || a_pending[i].clearFirst || a_pending[i].hasRows) {
+			d.op = QueueOp::Skip;
+			d.clearFirst = a_pending[i].clearFirst;
+			return d;
+		}
+		d.op = QueueOp::Replace;
+		return d;
+	}
+	return {};
+}
+
+inline void ApplyQueuedWrite(std::vector<QueuedWrite>& a_pending, QueuedWrite a_new)
+{
+	const auto d = DecideQueuedWrite(a_pending, a_new);
+	if (d.op == QueueOp::Skip) return;
+	a_new.clearFirst = d.clearFirst;
+	if (d.op == QueueOp::Replace && d.index < a_pending.size())
+		a_pending[d.index] = std::move(a_new);
+	else
+		a_pending.push_back(std::move(a_new));
+}
+
+// Purpose: emptyClear is only an explicit Clear, never "the snapshot is empty".
+inline bool DecideWriteEmptyClear(bool a_explicitClear)
+{
+	return a_explicitClear;
+}
+
+// Purpose: skip a write while a load is in flight for that key so a quit
+// between ResetMemory and the load result cannot wipe the file.
+inline bool RequestWriteBlockedByLoad(bool a_loadBusy, std::string_view a_jobKey, std::string_view a_loadKey)
+{
+	return a_loadBusy && !a_jobKey.empty() && SameLogKey(a_jobKey, a_loadKey);
+}
+
+// Purpose: an empty non-Clear snapshot is not a write. Inputs: whether
+// this is MsglogClearHistory and whether the snapshot has rows.
+inline bool SkipEmptyNonClearWrite(bool a_explicitClear, bool a_snapEmpty)
+{
+	return a_snapEmpty && !a_explicitClear;
+}
+
+inline bool ShouldQueueWrite(bool a_explicitClear, bool a_snapEmpty, bool a_loadBusy,
+	std::string_view a_jobKey, std::string_view a_loadKey)
+{
+	if (RequestWriteBlockedByLoad(a_loadBusy, a_jobKey, a_loadKey)) return false;
+	if (SkipEmptyNonClearWrite(a_explicitClear, a_snapEmpty)) return false;
+	return true;
 }
 
 inline bool LastPlayedKnown(std::int64_t a_ts)
@@ -971,14 +1050,34 @@ inline FileRead ReadLogFile(const std::filesystem::path& a_path)
 // Purpose: next launch session id. Persist nextSess, then take the max of
 // that value, max(entry sess)+1, and max(session id)+1 so old all-1 files
 // also get a new id.
+inline int NextSessId(int a_sess)
+{
+	if (a_sess >= std::numeric_limits<int>::max()) return std::numeric_limits<int>::max();
+	if (a_sess < 1) return 1;
+	return a_sess + 1;
+}
+
+inline int ClampSessId(int a_sess)
+{
+	if (a_sess < 1) return 1;
+	return a_sess;
+}
+
 inline int ResolveNextSess(int a_nextSess, const std::vector<Session>& a_sessions, const std::vector<Entry>& a_entries)
 {
 	int n = a_nextSess > 0 ? a_nextSess : 1;
 	for (const auto& e : a_entries)
-		if (e.sess + 1 > n) n = e.sess + 1;
+		if (e.sess >= n) n = NextSessId(e.sess);
 	for (const auto& s : a_sessions)
-		if (s.id + 1 > n) n = s.id + 1;
+		if (s.id >= n) n = NextSessId(s.id);
 	return n;
+}
+
+inline void RestampLaunchSess(std::vector<Entry>& a_rows, int a_pin)
+{
+	if (a_pin <= 0) return;
+	for (auto& e : a_rows)
+		e.sess = a_pin;
 }
 
 // ---------------------------------------------------------------------------
@@ -998,7 +1097,7 @@ public:
 	std::vector<Entry> entries; // oldest -> newest
 	// Per-character launch session for this process. Never cleared on
 	// ResetMemory / LoadState: A and B must not share one id.
-	std::vector<std::pair<std::string, int>> launchPins;
+	std::map<std::string, int> launchPins;
 
 	int Cap() const { return ClampHistory(settings.historySize); }
 
@@ -1035,23 +1134,14 @@ public:
 	int LaunchPinFor(std::string_view a_key) const
 	{
 		if (a_key.empty()) return 0;
-		const auto folded = FoldLogKey(a_key);
-		for (const auto& p : launchPins)
-			if (p.first == folded) return p.second;
-		return 0;
+		const auto it = launchPins.find(FoldLogKey(a_key));
+		return it == launchPins.end() ? 0 : it->second;
 	}
 
 	void RememberLaunchPin(std::string_view a_key, int a_sess)
 	{
 		if (a_key.empty() || a_sess <= 0) return;
-		const auto folded = FoldLogKey(a_key);
-		for (auto& p : launchPins) {
-			if (p.first == folded) {
-				p.second = a_sess;
-				return;
-			}
-		}
-		launchPins.push_back({folded, a_sess});
+		launchPins[FoldLogKey(a_key)] = ClampSessId(a_sess);
 	}
 
 	// Purpose: first use of a key in this process takes
@@ -1071,12 +1161,12 @@ public:
 	void StartSession(std::int64_t a_ts)
 	{
 		if (!character.key.empty()) {
-			sess = TakeLaunchSess(character.key, sess <= 0 ? 1 : sess);
+			sess = ClampSessId(TakeLaunchSess(character.key, sess <= 0 ? 1 : sess));
 			launchSess = sess;
 		} else if (launchSess != 0) {
-			sess = launchSess;
+			sess = ClampSessId(launchSess);
 		} else {
-			if (sess <= 0) sess = 1;
+			sess = ClampSessId(sess);
 			launchSess = sess;
 		}
 		sessStartTs = a_ts;
@@ -1193,7 +1283,7 @@ public:
 		s.cap = Cap();
 		s.pinCap = kPinCap;
 		s.nextId = nextId;
-		s.nextSess = sess + 1;
+		s.nextSess = NextSessId(sess);
 		s.sessions = sessions;
 		s.entries = entries;
 		return s;
@@ -1207,7 +1297,7 @@ public:
 		nextId = s.nextId ? s.nextId : 1;
 		sessions = std::move(s.sessions);
 		entries = std::move(s.entries);
-		sess = TakeLaunchSess(character.key, s.nextSess);
+		sess = ClampSessId(TakeLaunchSess(character.key, s.nextSess));
 		launchSess = sess;
 		NoteLocationLoad();
 		int pins = 0;
@@ -1263,7 +1353,9 @@ public:
 	// Inputs: in-memory session rows. Outputs: this buffer.
 	void MergeSession(const std::vector<Entry>& a_session)
 	{
-		for (const auto& in : a_session) {
+		auto incoming = a_session;
+		RestampLaunchSess(incoming, sess);
+		for (const auto& in : incoming) {
 			const auto key = in.norm.empty() ? NormalizeText(in.text) : in.norm;
 			const int win = in.kind == Kind::Busy ? kBusyDedupeMs : kDedupeMs;
 			Entry* hit = nullptr;
@@ -2265,13 +2357,25 @@ public:
 		return replace(tmp, a_dest);
 	}
 
+	bool FileHasRows(const std::string& a_key) const
+	{
+		if (a_key.empty()) return false;
+		std::error_code ec;
+		const auto path = FileFor(a_key);
+		if (!std::filesystem::is_regular_file(path, ec)) return false;
+		const auto rd = readHook ? readHook(path) : ReadLogFile(path);
+		if (!rd.ok || rd.missing) return false;
+		const auto parsed = FromJson(rd.body);
+		return parsed.ok && !parsed.state.entries.empty();
+	}
+
 	bool Save(const LogState& a_state) override
 	{
 		if (!ValidLogKey(a_state.character.key)) return false;
-		// An empty snapshot is a Clear / quit-after-Clear. Write both
-		// files empty so .bak cannot keep pre-clear rows.
+		// Empty snapshots are not a Clear. Only an explicit emptyClear
+		// or clearFirst job empties both files.
 		if (a_state.entries.empty())
-			return SaveEmptyBoth(a_state);
+			return true;
 		std::error_code ec;
 		std::filesystem::create_directories(dir, ec);
 		if (ec) return false;
@@ -2361,6 +2465,26 @@ private:
 		return parsed.ok;
 	}
 };
+
+// Purpose: run one writer job. SaveEmptyBoth only when emptyClear or
+// clearFirst is set. An empty non-Clear snapshot does not touch disk.
+// clearFirst writes the empty files first so .bak cannot keep pre-clear
+// rows, then Save writes the new rows.
+inline bool ApplyDiskWrite(FileStore& a_fs, const LogState& a_snap, bool a_persist,
+	bool a_emptyClear, bool a_clearFirst)
+{
+	if (!a_persist) return true;
+	if (!a_emptyClear && !a_clearFirst && !PersistAllowed(a_snap.character))
+		return true;
+	if (a_emptyClear || a_clearFirst) {
+		LogState empty = a_snap;
+		empty.entries.clear();
+		if (!a_fs.SaveEmptyBoth(empty)) return false;
+		if (a_emptyClear && !a_clearFirst) return true;
+	}
+	if (a_snap.entries.empty()) return true;
+	return a_fs.Save(a_snap);
+}
 
 // Purpose: Persist=0 uses NullStore and never creates the MessageLog folder.
 // Persist=1 uses FileStore under <horizonDir>/MessageLog.

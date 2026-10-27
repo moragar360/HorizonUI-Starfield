@@ -453,8 +453,7 @@ namespace HZF
 					s.undoReady = get("undoready") == "1";
 				else
 					s.undoReady = Exists(a_p.preapply);
-				CollectHiddenPresetIds(x->kv, s.hiddenPresets);
-				UnionHiddenPresetIds(s.hiddenPresets, SplitPresetIds(get("hiddenpresets")));
+				MergeHiddenPresetState(x->kv, s.hiddenPresets);
 			}
 			return s;
 		}
@@ -2372,8 +2371,9 @@ namespace HZ
 		std::uint64_t           writeSeq{0};
 		std::uint64_t           cancelSeq{0};
 		bool                    emptyClear{false};
+		bool                    clearFirst{false};
 	};
-	void MsglogQueueWriteJob(MlWriteJob a_job);
+	bool MsglogQueueWriteJob(MlWriteJob a_job);
 	struct MlLoadJob
 	{
 		hzlog::Character        ch;
@@ -2386,7 +2386,8 @@ namespace HZ
 		std::string             bufKey;
 		bool                    holdFlush{false};
 	};
-	MlWriteJob              g_mlWJob;
+	std::vector<MlWriteJob> g_mlWJobs;
+	std::string             g_mlLoadKey;
 	hzlog::LogState         g_mlWFailSnap;
 	std::string             g_mlWFailKey;
 	MlLoadJob               g_mlLJob;
@@ -2486,11 +2487,12 @@ namespace HZ
 				const bool wr = g_mlWReq.load();
 				const bool ld = g_mlLoadJobReq.load();
 				const bool io = g_mlIoReq.load();
-				MlWriteJob wjob;
 				MlLoadJob ljob;
 				MlIoJob ijob;
+				std::vector<MlWriteJob> wjobs;
 				if (wr) {
-					wjob = std::move(g_mlWJob);
+					wjobs = std::move(g_mlWJobs);
+					g_mlWJobs.clear();
 					g_mlWReq.store(false);
 				}
 				if (ld) {
@@ -2503,45 +2505,42 @@ namespace HZ
 				}
 				lk.unlock();
 				if (wr) {
-					hzlog::WriteRun run = hzlog::WriteRun::Failed;
-					try {
-						run = hzlog::OrderedSave(g_ml.fileGate, wjob.cancelSeq, wjob.key, [&]() {
-							// Persist=0: memory-only. Never construct FileStore
-							// (Save / SaveEmptyBoth create the folder and files).
-							if (!wjob.persist) return true;
-							if (!hzlog::PersistAllowed(wjob.snap.character))
-								return true;
-							hzlog::FileStore fs(wjob.dir / "MessageLog", wjob.replace);
-							if (wjob.emptyClear)
-								return fs.SaveEmptyBoth(wjob.snap);
-							fs.bakFails = g_mlBakFails;
-							const bool ok = fs.Save(wjob.snap);
-							g_mlBakFails = fs.bakFails;
-							if (fs.bakBypassed && !g_mlBakBypassLogged) {
-								g_mlBakBypassLogged = true;
-								REX::WARN("message log: bak copy failed {} times; wrote the main file", fs.bakFails);
-							}
-							return ok;
-						});
-					} catch (...) {
-						run = hzlog::WriteRun::Failed;
-					}
-					{
-						std::lock_guard wlk(g_mlWMu);
-						g_mlWDoneSeq = wjob.writeSeq;
-					}
-					if (run == hzlog::WriteRun::Skipped) {
-						g_mlWSkipped.store(true);
-					} else {
-						bool failed = false;
-						hzlog::NoteWorkerSave(run == hzlog::WriteRun::Saved, failed);
-						if (failed) {
+					for (auto& wjob : wjobs) {
+						hzlog::WriteRun run = hzlog::WriteRun::Failed;
+						try {
+							run = hzlog::OrderedSave(g_ml.fileGate, wjob.cancelSeq, wjob.key, [&]() {
+								if (!wjob.persist) return true;
+								hzlog::FileStore fs(wjob.dir / "MessageLog", wjob.replace);
+								fs.bakFails = g_mlBakFails;
+								const bool ok = hzlog::ApplyDiskWrite(fs, wjob.snap, wjob.persist,
+									wjob.emptyClear, wjob.clearFirst);
+								g_mlBakFails = fs.bakFails;
+								if (fs.bakBypassed && !g_mlBakBypassLogged) {
+									g_mlBakBypassLogged = true;
+									REX::WARN("message log: bak copy failed {} times; wrote the main file", fs.bakFails);
+								}
+								return ok;
+							});
+						} catch (...) {
+							run = hzlog::WriteRun::Failed;
+						}
+						{
 							std::lock_guard wlk(g_mlWMu);
-							g_mlWFailSnap = std::move(wjob.snap);
-							g_mlWFailKey = std::move(wjob.key);
-							g_mlWFailed.store(true);
-						} else
-							g_mlWRecovered.store(true);
+							g_mlWDoneSeq = wjob.writeSeq;
+						}
+						if (run == hzlog::WriteRun::Skipped) {
+							g_mlWSkipped.store(true);
+						} else {
+							bool failed = false;
+							hzlog::NoteWorkerSave(run == hzlog::WriteRun::Saved, failed);
+							if (failed) {
+								std::lock_guard wlk(g_mlWMu);
+								g_mlWFailSnap = std::move(wjob.snap);
+								g_mlWFailKey = std::move(wjob.key);
+								g_mlWFailed.store(true);
+							} else
+								g_mlWRecovered.store(true);
+						}
 					}
 				}
 				if (ld) {
@@ -2628,8 +2627,8 @@ namespace HZ
 	}
 
 	// Purpose: snapshot the buffer under g_mlMu, copy dir/replace/persist into
-	// the write job, and wake the worker. Does not skip when loadBusy: the
-	// snapshot belongs to the character that just left.
+	// the write job, and wake the worker. A load in flight for this key
+	// skips the write so a quit cannot wipe the file.
 	void MsglogRequestWrite(bool a_force)
 	{
 		try {
@@ -2645,9 +2644,13 @@ namespace HZ
 						REX::WARN("message log: persist skipped; character key is still a name hash");
 					return;
 				}
-				g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(std::time(nullptr));
-				job.snap = g_ml.buf.Snapshot();
 				job.key = g_ml.buf.character.key;
+				job.snap = g_ml.buf.Snapshot();
+				if (!hzlog::ShouldQueueWrite(false, job.snap.entries.empty(),
+						g_ml.loadBusy.load(), job.key, g_mlLoadKey))
+					return;
+				g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(std::time(nullptr));
+				job.snap.lastPlayedTs = g_ml.buf.lastPlayedTs;
 				job.gen = g_mlLoadGen;
 				job.writeSeq = ++g_ml.writeSeq;
 				g_mlWriteSeq.store(g_ml.writeSeq);
@@ -2655,32 +2658,59 @@ namespace HZ
 				job.dir = g_ml.horizonDir;
 				job.replace = g_ml.replace;
 				job.persist = true;
-				job.emptyClear = job.snap.entries.empty();
+				job.emptyClear = hzlog::DecideWriteEmptyClear(false);
 				g_ml.dirty = false;
-				g_ml.writePending = true;
-				g_ml.writePendingSeq = job.writeSeq;
 				g_ml.lastWriteMs = GetTickCount64();
 			}
-			MsglogQueueWriteJob(std::move(job));
+			const auto seq = job.writeSeq;
+			if (MsglogQueueWriteJob(std::move(job))) {
+				std::lock_guard lk(g_mlMu);
+				g_ml.writePending = true;
+				g_ml.writePendingSeq = seq;
+			}
 		} catch (...) {
 		}
 	}
 
-	// Purpose: wake the writer with one job. A pending empty Clear for
-	// the same key is kept so a quit force-write cannot copy pre-clear
-	// rows onto .bak. Inputs: the job. Outputs: g_mlWJob queued.
-	void MsglogQueueWriteJob(MlWriteJob a_job)
+	// Purpose: one pending slot per key. A job with rows always replaces
+	// a queued Clear for that key and sets clearFirst. A different key
+	// inserts. writePendingSeq is the job that actually stays queued.
+	// Inputs: the job. Outputs: true when the job was queued.
+	bool MsglogQueueWriteJob(MlWriteJob a_job)
 	{
 		MsglogEnsureWriter();
+		bool queued = false;
 		{
 			std::lock_guard lk(g_mlWMu);
-			if (g_mlWReq.load() && hzlog::KeepQueuedClear(g_mlWJob.emptyClear, g_mlWJob.key,
-					a_job.emptyClear, a_job.key))
-				return;
-			g_mlWJob = std::move(a_job);
-			g_mlWReq.store(true);
+			std::vector<hzlog::QueuedWrite> pending;
+			pending.reserve(g_mlWJobs.size());
+			for (const auto& j : g_mlWJobs) {
+				hzlog::QueuedWrite q;
+				q.key = j.key;
+				q.emptyClear = j.emptyClear;
+				q.clearFirst = j.clearFirst;
+				q.hasRows = !j.snap.entries.empty();
+				q.writeSeq = j.writeSeq;
+				pending.push_back(std::move(q));
+			}
+			hzlog::QueuedWrite neu;
+			neu.key = a_job.key;
+			neu.emptyClear = a_job.emptyClear;
+			neu.hasRows = !a_job.snap.entries.empty();
+			neu.writeSeq = a_job.writeSeq;
+			const auto d = hzlog::DecideQueuedWrite(pending, neu);
+			if (d.op != hzlog::QueueOp::Skip) {
+				a_job.clearFirst = d.clearFirst;
+				if (d.op == hzlog::QueueOp::Replace && d.index < g_mlWJobs.size())
+					g_mlWJobs[d.index] = std::move(a_job);
+				else
+					g_mlWJobs.push_back(std::move(a_job));
+				g_mlWReq.store(true);
+				queued = true;
+			}
 		}
-		g_mlWCv.notify_one();
+		if (queued) g_mlWCv.notify_one();
+		return queued;
 	}
 
 	// Purpose: queue a last write on quit. Does not stop the worker:
@@ -2708,6 +2738,7 @@ namespace HZ
 				job.gen = g_mlLoadGen;
 				job.bufKey = g_ml.buf.character.key;
 				job.holdFlush = a_holdFlush;
+				g_mlLoadKey = a_ch.key;
 				if (job.persist && hzlog::PersistAllowed(a_ch))
 					g_mlInFlightGen = job.gen;
 			}
@@ -2916,13 +2947,16 @@ namespace HZ
 				job.dir = g_ml.horizonDir;
 				job.replace = g_ml.replace;
 				job.persist = true;
-				job.emptyClear = true;
-				g_ml.writePending = true;
-				g_ml.writePendingSeq = job.writeSeq;
+				job.emptyClear = hzlog::DecideWriteEmptyClear(true);
 				queue = true;
 			}
 			if (!queue) return;
-			MsglogQueueWriteJob(std::move(job));
+			const auto seq = job.writeSeq;
+			if (MsglogQueueWriteJob(std::move(job))) {
+				std::lock_guard lk(g_mlMu);
+				g_ml.writePending = true;
+				g_ml.writePendingSeq = seq;
+			}
 		} catch (...) {
 		}
 	}
