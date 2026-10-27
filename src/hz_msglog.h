@@ -875,7 +875,7 @@ inline void ApplyQueuedWrite(std::vector<QueuedWrite>& a_pending, QueuedWrite a_
 {
 	const auto d = DecideQueuedWrite(a_pending, a_new);
 	if (d.op == QueueOp::Skip) return;
-	a_new.clearFirst = d.clearFirst;
+	a_new.clearFirst = a_new.clearFirst || d.clearFirst;
 	if (d.op == QueueOp::Replace && d.index < a_pending.size())
 		a_pending[d.index] = std::move(a_new);
 	else
@@ -903,12 +903,254 @@ inline bool SkipEmptyNonClearWrite(bool a_explicitClear, bool a_snapEmpty)
 }
 
 inline bool ShouldQueueWrite(bool a_explicitClear, bool a_snapEmpty, bool a_loadBusy,
-	std::string_view a_jobKey, std::string_view a_loadKey)
+	std::string_view a_jobKey, std::string_view a_loadKey,
+	bool a_clearPending = false, bool a_holdFlush = false)
 {
-	if (RequestWriteBlockedByLoad(a_loadBusy, a_jobKey, a_loadKey)) return false;
-	if (SkipEmptyNonClearWrite(a_explicitClear, a_snapEmpty)) return false;
+	if (!a_holdFlush && RequestWriteBlockedByLoad(a_loadBusy, a_jobKey, a_loadKey))
+		return false;
+	if (SkipEmptyNonClearWrite(a_explicitClear || a_clearPending, a_snapEmpty))
+		return false;
 	return true;
 }
+
+inline bool PruneEmptiedBuffer(int a_dropped, bool a_nowEmpty)
+{
+	return a_dropped > 0 && a_nowEmpty;
+}
+
+// Purpose: all writer-side state and decisions. The DLL only calls methods.
+// Per-key slots hold clearPending (set on Clear / prune-empty, cleared only
+// after main and bak both succeed), write seqs, and the last failed
+// snapshot. Hold-flush and clearPending writes pass the load guard; every
+// other write for a loading key is skipped.
+struct WriteEmit {
+	std::string   key;
+	LogState      snap;
+	bool          emptyClear{false};
+	bool          clearFirst{false};
+	std::uint64_t writeSeq{0};
+	bool          persist{true};
+};
+
+struct WriteDecision {
+	bool      queue{false};
+	WriteEmit emit;
+};
+
+class MsglogWriteCoordinator {
+public:
+	struct Slot {
+		std::string   key;
+		bool          clearPending{false};
+		bool          writePending{false};
+		std::uint64_t writePendingSeq{0};
+		std::uint64_t doneSeq{0};
+		LogState      failSnap;
+		bool          hasFail{false};
+		bool          retryDue{false};
+		bool          dirty{false};
+	};
+
+	void SetPersist(bool a_on) { persist_ = a_on; }
+	bool Persist() const { return persist_; }
+
+	bool LoadBusy() const { return loadBusy_; }
+	std::string LoadKey() const { return loadKey_; }
+
+	bool ClearPending(std::string_view a_key) const
+	{
+		if (const auto* s = FindSlot(a_key)) return s->clearPending;
+		return false;
+	}
+
+	bool WritePending(std::string_view a_key) const
+	{
+		if (const auto* s = FindSlot(a_key)) return s->writePending;
+		return false;
+	}
+
+	bool AnyWritePending() const
+	{
+		for (const auto& s : slots_)
+			if (s.writePending) return true;
+		return false;
+	}
+
+	std::uint64_t WritePendingSeq(std::string_view a_key) const
+	{
+		if (const auto* s = FindSlot(a_key)) return s->writePendingSeq;
+		return 0;
+	}
+
+	std::uint64_t DoneSeq(std::string_view a_key) const
+	{
+		if (const auto* s = FindSlot(a_key)) return s->doneSeq;
+		return 0;
+	}
+
+	void OnRow(std::string_view a_key)
+	{
+		if (a_key.empty()) return;
+		SlotFor(a_key).dirty = true;
+	}
+
+	WriteDecision RequestWrite(std::string_view a_key, const LogState& a_snap,
+		bool a_force, bool a_holdFlush = false)
+	{
+		(void)a_force;
+		return DecideAndQueue(a_key, a_snap, false, a_holdFlush);
+	}
+
+	WriteDecision OnClear(std::string_view a_key, const LogState& a_emptySnap)
+	{
+		if (!persist_ || a_key.empty()) return {};
+		return DecideAndQueue(a_key, a_emptySnap, true, false);
+	}
+
+	WriteDecision OnBufferEmptied(std::string_view a_key, const LogState& a_emptySnap)
+	{
+		return OnClear(a_key, a_emptySnap);
+	}
+
+	void OnLoadStart(std::string_view a_key)
+	{
+		loadBusy_ = true;
+		loadKey_.assign(a_key.begin(), a_key.end());
+	}
+
+	void OnLoadApplied(std::string_view a_key)
+	{
+		if (a_key.empty() || SameLogKey(loadKey_, a_key)) {
+			loadBusy_ = false;
+			loadKey_.clear();
+		}
+	}
+
+	void OnHoldFlush(std::string_view a_key)
+	{
+		OnLoadApplied(a_key);
+	}
+
+	void OnWriteResult(std::string_view a_key, std::uint64_t a_seq, bool a_ok,
+		const LogState* a_failSnap = nullptr)
+	{
+		auto& s = SlotFor(a_key);
+		s.doneSeq = a_seq;
+		if (WritePendingClears(a_seq, s.writePendingSeq))
+			s.writePending = false;
+		pending_.erase(std::remove_if(pending_.begin(), pending_.end(),
+			[&](const QueuedWrite& q) {
+				return SameLogKey(q.key, a_key) && q.writeSeq == a_seq;
+			}), pending_.end());
+		if (a_ok) {
+			s.clearPending = false;
+			s.hasFail = false;
+			s.retryDue = false;
+			s.failSnap = {};
+			return;
+		}
+		if (a_failSnap) {
+			s.failSnap = *a_failSnap;
+			s.hasFail = true;
+		}
+		s.retryDue = true;
+	}
+
+	WriteDecision OnQuit(std::string_view a_key, const LogState& a_snap)
+	{
+		return RequestWrite(a_key, a_snap, true, false);
+	}
+
+	std::vector<WriteDecision> Poll(std::uint64_t a_nowMs = ~std::uint64_t{0})
+	{
+		(void)a_nowMs;
+		std::vector<WriteDecision> out;
+		std::vector<std::string> keys;
+		for (auto& s : slots_) {
+			if (!s.retryDue) continue;
+			s.retryDue = false;
+			keys.push_back(s.key);
+		}
+		for (const auto& k : keys) {
+			auto& s = SlotFor(k);
+			LogState snap = s.hasFail ? s.failSnap : LogState{};
+			if (snap.character.key.empty())
+				snap.character.key = k;
+			auto d = DecideAndQueue(k, snap, false, false);
+			if (d.queue) out.push_back(std::move(d));
+		}
+		return out;
+	}
+
+	const std::vector<QueuedWrite>& PendingJobs() const { return pending_; }
+
+private:
+	bool          persist_{true};
+	bool          loadBusy_{false};
+	std::string   loadKey_;
+	std::uint64_t nextWriteSeq_{0};
+	std::vector<Slot>        slots_;
+	std::vector<QueuedWrite> pending_;
+
+	Slot& SlotFor(std::string_view a_key)
+	{
+		const auto folded = FoldLogKey(a_key);
+		for (auto& s : slots_)
+			if (s.key == folded) return s;
+		Slot n;
+		n.key = folded;
+		slots_.push_back(std::move(n));
+		return slots_.back();
+	}
+
+	const Slot* FindSlot(std::string_view a_key) const
+	{
+		const auto folded = FoldLogKey(a_key);
+		for (const auto& s : slots_)
+			if (s.key == folded) return &s;
+		return nullptr;
+	}
+
+	WriteDecision DecideAndQueue(std::string_view a_key, const LogState& a_snap,
+		bool a_explicitClear, bool a_holdFlush)
+	{
+		WriteDecision d;
+		d.emit.key.assign(a_key.begin(), a_key.end());
+		d.emit.snap = a_snap;
+		d.emit.persist = persist_;
+		if (!persist_ || a_key.empty()) return d;
+		auto& s = SlotFor(a_key);
+		if (a_explicitClear)
+			s.clearPending = true;
+		const bool snapEmpty = a_snap.entries.empty();
+		const bool explicitClear = a_explicitClear || (s.clearPending && snapEmpty);
+		const bool clearFirst = s.clearPending && !snapEmpty;
+		// Live state only. Constants drop a failed Clear, skip a hold-flush,
+		// or write during a load.
+		if (!ShouldQueueWrite(explicitClear, snapEmpty, loadBusy_, a_key, loadKey_,
+				s.clearPending, a_holdFlush))
+			return d;
+		d.emit.emptyClear = DecideWriteEmptyClear(explicitClear);
+		d.emit.clearFirst = clearFirst;
+		d.emit.writeSeq = ++nextWriteSeq_;
+		QueuedWrite q;
+		q.key = d.emit.key;
+		q.emptyClear = d.emit.emptyClear;
+		q.clearFirst = d.emit.clearFirst;
+		q.hasRows = !snapEmpty;
+		q.writeSeq = d.emit.writeSeq;
+		const auto qd = DecideQueuedWrite(pending_, q);
+		if (qd.op == QueueOp::Skip) return d;
+		d.emit.clearFirst = clearFirst || qd.clearFirst;
+		q.clearFirst = d.emit.clearFirst;
+		ApplyQueuedWrite(pending_, std::move(q));
+		s.writePending = true;
+		s.writePendingSeq = d.emit.writeSeq;
+		s.dirty = false;
+		d.queue = true;
+		return d;
+	}
+};
 
 inline bool LastPlayedKnown(std::int64_t a_ts)
 {
@@ -1146,13 +1388,25 @@ public:
 
 	// Purpose: first use of a key in this process takes
 	// max(file nextSess, max entry sess+1, max sessions id+1). Later
-	// loads and switches back to that key reuse the pin.
+	// loads bump the pin past any later-read ids so an unreadable first
+	// load cannot collide. Switches back to that key reuse the pin.
 	// Inputs: character key and the file's nextSess (0 if none).
 	// Outputs: the launch session id for this key.
 	int TakeLaunchSess(std::string_view a_key, int a_fileNext)
 	{
-		if (const int pinned = LaunchPinFor(a_key))
+		if (const int pinned = LaunchPinFor(a_key)) {
+			int maxRead = 0;
+			for (const auto& e : entries)
+				if (e.sess > maxRead) maxRead = e.sess;
+			for (const auto& s : sessions)
+				if (s.id > maxRead) maxRead = s.id;
+			if (maxRead > pinned) {
+				const int n = NextSessId(maxRead);
+				RememberLaunchPin(a_key, n);
+				return n;
+			}
 			return pinned;
+		}
 		const int n = ResolveNextSess(a_fileNext, sessions, entries);
 		RememberLaunchPin(a_key, n);
 		return n;

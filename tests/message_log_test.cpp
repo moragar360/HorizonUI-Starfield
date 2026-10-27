@@ -1537,7 +1537,7 @@ int main()
 			const auto shut = main.find("void MsglogShutdownWriter()");
 			const auto next = main.find("void MsglogQueueLoad", shut);
 			const auto body = shut != std::string::npos && next > shut ? main.substr(shut, next - shut) : std::string();
-			Expect(body.find("MsglogRequestWrite(true)") != std::string::npos,
+			Expect(body.find("MsglogRequestWrite(true") != std::string::npos,
 				"shutdown queues a last write");
 			Expect(body.find("g_mlWStop") == std::string::npos,
 				"Y14 shutdown does not stop the worker");
@@ -1555,6 +1555,7 @@ int main()
 			"DLL promotion merges on the worker and is throttled");
 		Expect(main.find("g_mlWFailed.store(true)") != std::string::npos && main.find("NoteWorkerSave") != std::string::npos,
 			"the worker sets the failure flag");
+		Expect(main.find("g_mlWrites.OnWriteResult") != std::string::npos, "write results go to the coordinator");
 		Expect(main.find("NoteWriteFailure") != std::string::npos, "a failed write is retried");
 		Expect(main.find("WriteAllowed") != std::string::npos, "force can retry a write");
 		Expect(main.find("g_mlWStarted = false") != std::string::npos && main.find("g_mlWLive.store(false)") != std::string::npos,
@@ -1562,9 +1563,9 @@ int main()
 		Expect(main.find("hzlog::NoteLoadResult(false, g_ml.persistHold);") != std::string::npos,
 			"ApplyLoad holds persist after a transient read");
 		{
-			const auto rec = main.find("g_mlWRecovered.exchange(false)");
-			Expect(rec != std::string::npos, "Poll watches write recovery");
-			const auto win = rec == std::string::npos ? std::string() : main.substr(rec, 800);
+			const auto rec = main.find("g_mlWrites.OnWriteResult");
+			Expect(rec != std::string::npos, "Poll drains write results into the coordinator");
+			const auto win = rec == std::string::npos ? std::string() : main.substr(rec, 900);
 			Expect(win.find("NoteWriteSuccess") != std::string::npos,
 				"a successful write resets the write backoff");
 			Expect(win.find("WriteRecoveredResetsBackoff") != std::string::npos,
@@ -1614,19 +1615,16 @@ int main()
 			"HUD-ready parks dirty unsaved rows before ResetMemory");
 		Expect(main.find("PendingCountsAsDirty") != std::string::npos,
 			"HUD-ready treats a pending save as dirty");
-		Expect(main.find("job.key = g_ml.buf.character.key") != std::string::npos,
-			"each save job carries the character key");
-		Expect(main.find("g_ml.writePending = true") != std::string::npos,
-			"RequestWrite sets the pending-save flag");
-		{
-			int clearsPending = 0;
-			for (std::size_t p = 0; (p = main.find("g_ml.writePending = false", p)) != std::string::npos; ++p)
-				++clearsPending;
-			ExpectEqI(clearsPending, 2, "Poll clears the pending-save flag on fail and recover");
-		}
+		Expect(main.find("g_mlWrites.RequestWrite") != std::string::npos,
+			"RequestWrite asks the coordinator");
+		Expect(main.find("g_ml.writePending = g_mlWrites.AnyWritePending()") != std::string::npos,
+			"writePending is mirrored from the coordinator");
+		Expect(main.find("g_mlWrites.Poll") != std::string::npos,
+			"Poll retries through the coordinator");
 		Expect(main.find("WriteFailParksJob") != std::string::npos,
 			"a failed save for another key parks that job");
-		Expect(main.find("ParkWriteFailure(failKey") != std::string::npos,
+		Expect(main.find("ParkWriteFailure(r.key") != std::string::npos
+			|| main.find("ParkWriteFailure(failKey") != std::string::npos,
 			"a failed save parks under the job key, not the current key");
 		Expect(main.find("g_mlWFailGen") == std::string::npos,
 			"unused write-fail generation is gone");
@@ -1688,7 +1686,7 @@ int main()
 			"the writer skips a canceled in-flight save");
 		Expect(Slurp("src/hz_msglog.h").find("WriteIsCanceled") != std::string::npos,
 			"canceled writes are keyed so the leaving snapshot is kept");
-		Expect(main.find("WritePendingClears") != std::string::npos,
+		Expect(Slurp("src/hz_msglog.h").find("WritePendingClears") != std::string::npos,
 			"writePending is scoped by the job write sequence");
 		Expect(main.find("GetTickCount64() / 1000") == std::string::npos,
 			"lastPlayedTs is not PC uptime");
@@ -3225,28 +3223,24 @@ int main()
 					&& body.find("fileGate.mu") == std::string::npos,
 					"DLL Clear history does not write or wait on the game thread");
 				Expect(body.find("BumpCancel") != std::string::npos, "DLL Clear bumps the cancel seq first");
-				Expect(body.find("DecideWriteEmptyClear(true)") != std::string::npos,
-					"DLL Clear sets emptyClear through the header helper");
+				Expect(body.find("g_mlWrites.OnClear") != std::string::npos,
+					"DLL Clear goes through the coordinator");
 				Expect(body.find("persist") != std::string::npos, "DLL Clear checks Persist before queueing");
 			}
 			{
-				const auto wr = main.find("void MsglogRequestWrite(bool a_force)");
+				const auto wr = main.find("void MsglogRequestWrite(");
 				const auto next = main.find("bool MsglogQueueWriteJob", wr);
 				const auto body = wr != std::string::npos && next > wr
 					? main.substr(wr, next - wr) : std::string();
 				Expect(body.find("fileGate.mu") == std::string::npos,
 					"RequestWrite never takes fileGate.mu");
-				Expect(body.find("LoadCancel") != std::string::npos,
-					"RequestWrite reads the per-key cancel seq");
-				Expect(body.find("ShouldQueueWrite") != std::string::npos,
-					"RequestWrite uses the header queue decision");
-				Expect(body.find("DecideWriteEmptyClear(false)") != std::string::npos,
-					"RequestWrite is not an explicit Clear");
+				Expect(body.find("g_mlWrites.RequestWrite") != std::string::npos
+					|| body.find("g_mlWrites.OnQuit") != std::string::npos,
+					"RequestWrite asks the coordinator");
 				Expect(body.find("job.emptyClear = job.snap.entries.empty()") == std::string::npos,
 					"emptyClear is not assigned from a bare empty snapshot");
-				Expect(body.find("RequestWriteBlockedByLoad") != std::string::npos
-					|| body.find("ShouldQueueWrite") != std::string::npos,
-					"RequestWrite skips a load-in-flight key");
+				Expect(body.find("ShouldQueueWrite(false, false, false") == std::string::npos,
+					"RequestWrite does not call the guard with constants");
 			}
 			{
 				const auto wr = main.find("void MsglogWriter()");
@@ -3288,8 +3282,15 @@ int main()
 				"launch session is pinned per character key");
 			Expect(hdr.find("DecideQueuedWrite") != std::string::npos,
 				"queue decisions live in the header");
+			Expect(hdr.find("class MsglogWriteCoordinator") != std::string::npos,
+				"writer-side state lives in MsglogWriteCoordinator");
 			Expect(hdr.find("std::map<std::string, int> launchPins") != std::string::npos,
 				"launchPins is a map");
+			Expect(main.find("g_mlWrites.OnClear") != std::string::npos
+				&& main.find("g_mlWrites.OnLoadStart") != std::string::npos
+				&& main.find("g_mlWrites.OnHoldFlush") != std::string::npos
+				&& main.find("g_mlWrites.OnQuit") != std::string::npos,
+				"DLL write path calls coordinator methods");
 			Expect(main.find("MsglogQueueWriteJob") != std::string::npos,
 				"DLL write jobs go through one queue helper");
 			Expect(main.find("killed within a few ms") != std::string::npos,
@@ -3437,6 +3438,10 @@ int main()
 			"quit during a load is not queued");
 		Expect(ShouldQueueWrite(false, false, false, "0000ABCD", ""),
 			"a write with rows is queued");
+		Expect(ShouldQueueWrite(false, true, false, "0000ABCD", "", true),
+			"clearPending allows an empty retry");
+		Expect(ShouldQueueWrite(false, false, true, "0000ABCD", "0000ABCD", false, true),
+			"a hold-flush write is not blocked by the load guard");
 
 		std::vector<QueuedWrite> q;
 		QueuedWrite clearJob;
@@ -3546,8 +3551,322 @@ int main()
 		Expect(ReadFile(identPath) == identMain && ReadFile(identBak) == identBakBody,
 			"quit during a load leaves main and bak byte-identical");
 
+		{
+			Buffer pinBuf;
+			pinBuf.character = MakeCharacter(0x3333u, "Sam");
+			pinBuf.StartSession(1);
+			ExpectEqI(pinBuf.LaunchPinFor(pinBuf.character.key), 1, "empty first session pins 1");
+			LogState later;
+			later.character = pinBuf.character;
+			later.nextSess = 4;
+			Entry late;
+			late.id = 10;
+			late.kind = Kind::Game;
+			late.text = "later-read";
+			late.sess = 3;
+			later.entries = { late };
+			pinBuf.LoadState(std::move(later));
+			ExpectEqI(pinBuf.sess, 4, "an unreadable-first pin bumps past later-read ids");
+			ExpectEqI(pinBuf.LaunchPinFor(pinBuf.character.key), 4, "the bumped pin is remembered");
+		}
+
+		{
+			Buffer pruneBuf;
+			pruneBuf.character = MakeCharacter(0x4444u, "Sam");
+			pruneBuf.StartSession(1);
+			Entry future;
+			future.id = 1;
+			future.kind = Kind::Game;
+			future.text = "future row";
+			future.gt = 50.0;
+			future.sess = 1;
+			pruneBuf.entries.push_back(future);
+			const int dropped = pruneBuf.Prune(1.0);
+			Expect(hzlog::PruneEmptiedBuffer(dropped, pruneBuf.entries.empty()),
+				"a prune that empties the buffer is an explicit clear-style write");
+		}
+
 		std::error_code ec;
 		std::filesystem::remove_all(root, ec);
+	}
+
+	{
+		const auto root = TmpRoot();
+		Settings s;
+		struct FailNth {
+			int failAt = -1;
+			int n = 0;
+			bool operator()(const std::filesystem::path& a_tmp, const std::filesystem::path& a_dst)
+			{
+				++n;
+				if (failAt > 0 && n == failAt) return false;
+				return DefaultReplace(a_tmp, a_dst);
+			}
+		};
+
+		auto apply = [](FileStore& fs, const WriteDecision& d) {
+			if (!d.queue) return false;
+			return ApplyDiskWrite(fs, d.emit.snap, d.emit.persist, d.emit.emptyClear, d.emit.clearFirst);
+		};
+
+		auto seedRows = [&](const Character& ch, const char* text) {
+			Log seed;
+			seed.Configure(s, root);
+			seed.buf.character = ch;
+			seed.Offer(Cap(Kind::Game, text, 110'000));
+			Expect(seed.Flush(111'000), "seed rows before coordinator case");
+		};
+
+		{
+			const auto ch = MakeCharacter(0x6001u, "Sam");
+			seedRows(ch, "old clear rows");
+			FailNth fail;
+			fail.failAt = 1;
+			FileStore fs(root / "MessageLog", [&](const auto& t, const auto& d) { return fail(t, d); });
+			MsglogWriteCoordinator coord;
+			LogState empty;
+			empty.character = ch;
+			auto d = coord.OnClear(ch.key, empty);
+			Expect(d.queue && d.emit.emptyClear, "Clear is queued as emptyClear");
+			Expect(coord.ClearPending(ch.key), "clearPending is set when Clear is queued");
+			Expect(!apply(fs, d), "Clear replace fails");
+			coord.OnWriteResult(ch.key, d.emit.writeSeq, false, &d.emit.snap);
+			Expect(coord.ClearPending(ch.key), "clearPending stays until main and bak succeed");
+			Expect(!coord.WritePending(ch.key), "writePending clears for the failed Clear seq");
+			fail.failAt = -1;
+			auto retries = coord.Poll();
+			ExpectEqI(static_cast<int>(retries.size()), 1, "failed Clear is retried");
+			Expect(retries[0].emit.emptyClear, "retry of a failed Clear is emptyClear");
+			Expect(apply(fs, retries[0]), "Clear retry succeeds");
+			coord.OnWriteResult(ch.key, retries[0].emit.writeSeq, true);
+			Expect(!coord.ClearPending(ch.key), "clearPending clears only after a full success");
+			LogState loaded;
+			std::string notice;
+			FileStore loadFs(root / "MessageLog");
+			Expect(loadFs.Load(ch.key, loaded, notice), "restart load after failed-then-retried Clear");
+			Expect(loaded.entries.empty(), "restart after a retried Clear has no old rows");
+		}
+
+		{
+			const auto ch = MakeCharacter(0x6002u, "Sam");
+			seedRows(ch, "pre-clearFirst rows");
+			FailNth fail;
+			fail.failAt = 1;
+			FileStore fs(root / "MessageLog", [&](const auto& t, const auto& d) { return fail(t, d); });
+			MsglogWriteCoordinator coord;
+			LogState empty;
+			empty.character = ch;
+			auto clr = coord.OnClear(ch.key, empty);
+			Expect(clr.queue, "KQ2 Clear is queued");
+			LogState rows;
+			rows.character = ch;
+			Entry kept;
+			kept.id = 2;
+			kept.kind = Kind::Game;
+			kept.text = "row after clear";
+			kept.sess = 1;
+			rows.entries.push_back(kept);
+			auto row = coord.RequestWrite(ch.key, rows, true);
+			Expect(row.queue && row.emit.clearFirst && !row.emit.snap.entries.empty(),
+				"KQ2: a row job after Clear sets clearFirst");
+			Expect(!apply(fs, row), "clearFirst replace fails");
+			coord.OnWriteResult(ch.key, row.emit.writeSeq, false, &row.emit.snap);
+			fail.failAt = -1;
+			auto retries = coord.Poll();
+			ExpectEqI(static_cast<int>(retries.size()), 1, "failed clearFirst is retried");
+			Expect(retries[0].emit.clearFirst, "retry keeps clearFirst so Save cannot copy old rows to bak");
+			Expect(apply(fs, retries[0]), "clearFirst retry succeeds");
+			coord.OnWriteResult(ch.key, retries[0].emit.writeSeq, true);
+			const auto path = root / "MessageLog" / "MessageLog_00006002.json";
+			const auto bak = root / "MessageLog" / "MessageLog_00006002.json.bak";
+			Expect(ReadFile(path).find("pre-clearFirst rows") == std::string::npos,
+				"clearFirst retry emptied the old main rows");
+			Expect(ReadFile(bak).find("pre-clearFirst rows") == std::string::npos,
+				"clearFirst retry emptied bak; old rows are not copied");
+			WriteFile(path, "CORRUPT{");
+			LogState recovered;
+			std::string notice;
+			FileStore loadFs(root / "MessageLog");
+			Expect(loadFs.Load(ch.key, recovered, notice), "restart from bak after clearFirst");
+			bool oldBack = false;
+			for (const auto& e : recovered.entries)
+				if (e.text == "pre-clearFirst rows") oldBack = true;
+			Expect(!oldBack, "restart after a failed clearFirst does not bring old rows back");
+		}
+
+		{
+			const auto ch = MakeCharacter(0x6003u, "Sam");
+			seedRows(ch, "load-file rows");
+			FileStore fs(root / "MessageLog");
+			const auto path = root / "MessageLog" / "MessageLog_00006003.json";
+			const auto bak = root / "MessageLog" / "MessageLog_00006003.json.bak";
+			WriteFile(bak, ReadFile(path));
+			const auto mainBody = ReadFile(path);
+			const auto bakBody = ReadFile(bak);
+			MsglogWriteCoordinator coord;
+			coord.OnLoadStart(ch.key);
+			Expect(coord.LoadKey() == ch.key, "OnLoadStart assigns the load key");
+			LogState rows;
+			rows.character = ch;
+			Entry leftover;
+			leftover.text = "quit-during-load rows";
+			leftover.kind = Kind::Game;
+			rows.entries.push_back(leftover);
+			auto quit = coord.OnQuit(ch.key, rows);
+			Expect(!quit.queue, "a quit during a load is not queued");
+			Expect(!coord.WritePending(ch.key), "a skipped quit does not set writePending");
+			Expect(ReadFile(path) == mainBody && ReadFile(bak) == bakBody,
+				"quit during a load leaves main and bak byte-identical");
+		}
+
+		{
+			const auto ch = MakeCharacter(0x6004u, "Sam");
+			seedRows(ch, "on-disk before hold");
+			FileStore fs(root / "MessageLog");
+			MsglogWriteCoordinator coord;
+			coord.OnLoadStart(ch.key);
+			LogState held;
+			held.character = ch;
+			Entry h;
+			h.id = 3;
+			h.kind = Kind::Game;
+			h.text = "held across load";
+			h.sess = 1;
+			held.entries.push_back(h);
+			coord.OnHoldFlush(ch.key);
+			Expect(!coord.LoadBusy(), "OnHoldFlush clears loadBusy before the write");
+			auto wr = coord.RequestWrite(ch.key, held, true, true);
+			Expect(wr.queue, "hold-flush write is queued");
+			Expect(apply(fs, wr), "hold-flush write lands");
+			coord.OnWriteResult(ch.key, wr.emit.writeSeq, true);
+			auto quit = coord.OnQuit(ch.key, held);
+			if (quit.queue) {
+				apply(fs, quit);
+				coord.OnWriteResult(ch.key, quit.emit.writeSeq, true);
+			}
+			LogState loaded;
+			std::string notice;
+			Expect(fs.Load(ch.key, loaded, notice), "restart after hold-flush");
+			bool found = false;
+			for (const auto& e : loaded.entries)
+				if (e.text == "held across load") found = true;
+			Expect(found, "hold-flush then quit leaves held rows on disk");
+		}
+
+		{
+			const auto chA = MakeCharacter(0x6005u, "Sam");
+			const auto chB = MakeCharacter(0x6006u, "Barrett");
+			seedRows(chA, "A rows");
+			seedRows(chB, "B rows");
+			FailNth fail;
+			fail.failAt = 1;
+			int writes = 0;
+			FileStore fs(root / "MessageLog", [&](const auto& t, const auto& d) {
+				++writes;
+				if (writes <= 2) return false;
+				return DefaultReplace(t, d);
+			});
+			MsglogWriteCoordinator coord;
+			LogState aSnap;
+			aSnap.character = chA;
+			Entry ae;
+			ae.text = "A retry row";
+			ae.kind = Kind::Game;
+			aSnap.entries.push_back(ae);
+			LogState bSnap;
+			bSnap.character = chB;
+			Entry be;
+			be.text = "B retry row";
+			be.kind = Kind::Game;
+			bSnap.entries.push_back(be);
+			auto da = coord.RequestWrite(chA.key, aSnap, true);
+			auto db = coord.RequestWrite(chB.key, bSnap, true);
+			Expect(da.queue && db.queue, "two keys queue two writes");
+			Expect(!apply(fs, da) && !apply(fs, db), "both keys fail");
+			coord.OnWriteResult(chA.key, da.emit.writeSeq, false, &da.emit.snap);
+			coord.OnWriteResult(chB.key, db.emit.writeSeq, false, &db.emit.snap);
+			Expect(!coord.WritePending(chA.key) && !coord.WritePending(chB.key),
+				"writePending clears for each failed key");
+			Expect(coord.DoneSeq(chA.key) == da.emit.writeSeq
+				&& coord.DoneSeq(chB.key) == db.emit.writeSeq,
+				"each key keeps its own done-seq");
+			auto retries = coord.Poll();
+			ExpectEqI(static_cast<int>(retries.size()), 2, "both failed keys are retried");
+			bool gotA = false, gotB = false;
+			for (const auto& r : retries) {
+				if (SameLogKey(r.emit.key, chA.key)) gotA = true;
+				if (SameLogKey(r.emit.key, chB.key)) gotB = true;
+				Expect(apply(fs, r), "multi-key retry succeeds");
+				coord.OnWriteResult(r.emit.key, r.emit.writeSeq, true);
+			}
+			Expect(gotA && gotB, "retries include both keys");
+		}
+
+		{
+			const auto chA = MakeCharacter(0x6007u, "Sam");
+			const auto chB = MakeCharacter(0x6008u, "Barrett");
+			MsglogWriteCoordinator coord;
+			LogState a1;
+			a1.character = chA;
+			a1.nextSess = 3;
+			Buffer buf;
+			buf.character = chA;
+			buf.LoadState(a1);
+			buf.StartSession(10);
+			const int pinA = buf.sess;
+			buf.ResetMemory();
+			buf.character = chB;
+			LogState b1;
+			b1.character = chB;
+			b1.nextSess = 5;
+			buf.LoadState(b1);
+			buf.StartSession(20);
+			const int pinB = buf.sess;
+			buf.ResetMemory();
+			buf.character = chA;
+			buf.LoadState(a1);
+			buf.StartSession(30);
+			ExpectEqI(buf.sess, pinA, "A/B/A keeps A's launch pin");
+			ExpectEqI(buf.LaunchPinFor(chB.key), pinB, "A/B/A keeps B's launch pin");
+		}
+
+		{
+			MsglogWriteCoordinator coord;
+			coord.SetPersist(false);
+			const auto ch = MakeCharacter(0x6009u, "Sam");
+			LogState rows;
+			rows.character = ch;
+			Entry e;
+			e.text = "persist off";
+			e.kind = Kind::Game;
+			rows.entries.push_back(e);
+			Expect(!coord.RequestWrite(ch.key, rows, true).queue, "Persist off writes nothing");
+			Expect(!coord.OnClear(ch.key, rows).queue, "Persist off Clear writes nothing");
+			Expect(!coord.OnQuit(ch.key, rows).queue, "Persist off quit writes nothing");
+		}
+
+		{
+			const auto ch = MakeCharacter(0x600Au, "Sam");
+			MsglogWriteCoordinator coord;
+			LogState rows;
+			rows.character = ch;
+			Entry e;
+			e.text = "queued rows";
+			e.kind = Kind::Game;
+			rows.entries.push_back(e);
+			auto queued = coord.RequestWrite(ch.key, rows, true);
+			Expect(queued.queue && coord.WritePending(ch.key),
+				"a row write sets writePending from the queue result");
+			LogState emptyQuit;
+			emptyQuit.character = ch;
+			auto skipped = coord.OnQuit(ch.key, emptyQuit);
+			Expect(!skipped.queue, "an empty quit does not replace a queued row job");
+			Expect(coord.WritePendingSeq(ch.key) == queued.emit.writeSeq,
+				"writePending seq stays the queued job, not the skipped quit");
+		}
+
+		std::error_code ec2;
+		std::filesystem::remove_all(root, ec2);
 	}
 
 	if (g_fails) {
