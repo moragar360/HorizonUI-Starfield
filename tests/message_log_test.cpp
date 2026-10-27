@@ -4,7 +4,7 @@
 // Build: g++ -std=c++20 -Wall -Wextra -pthread -I src -DMSGLOG_REPO_ROOT=\"$PWD\" tests/message_log_test.cpp -o /tmp/message_log_test
 // Or: MSGLOG_REPO_ROOT=$PWD /tmp/message_log_test  (relative __FILE__ still finds the repo).
 // Author: Moragar
-// Last modified: 2026-10-25.
+// Last modified: 2026-10-27.
 
 #include "hz_addr_probe.h"
 #include "hz_msglog.h"
@@ -209,6 +209,61 @@ int main()
 		Expect(ClassifyHud("Prognosis improved (Contusions)", en, title, tag) == Kind::Medical, "affliction is medical");
 		Expect(ClassifyHud("Sarah Morgan considers you a friend.", en, title, tag) == Kind::Crew, "crew line");
 		Expect(ClassifyHud("No direct path seen.", en, title, tag) == Kind::Game, "unmatched is game");
+		Expect(ClassifyHud("Sam Coe liked that.", en, title, tag) == Kind::Reaction, "liked that is a reaction");
+		ExpectEq(title, "Sam Coe", "reaction title is the companion name");
+		ExpectEq(tag, "LIKED", "liked tag");
+		Expect(ClassifyHud("Andreja loved that.", en, title, tag) == Kind::Reaction, "loved that is a reaction");
+		ExpectEq(title, "Andreja", "loved title is the companion name");
+		ExpectEq(tag, "LOVED", "loved tag");
+		Expect(ClassifyHud("Barrett disliked that.", en, title, tag) == Kind::Reaction, "disliked that is a reaction");
+		ExpectEq(tag, "DISLIKED", "disliked tag");
+		Expect(ClassifyHud("Sarah Morgan hated that.", en, title, tag) == Kind::Reaction, "hated that is a reaction");
+		ExpectEq(tag, "HATED", "hated tag");
+	}
+
+	// ---- LOCATION / XP / reaction capture ----
+	{
+		Buffer b;
+		Expect(b.Offer(Cap(Kind::Location, "Akila City", 3'000)) == OfferResult::Stored, "LOCATION row is stored");
+		Expect(b.entries.back().kind == Kind::Location, "LOCATION kind");
+		Expect(b.Offer(Cap(Kind::Xp, "You gained 50 XP.", 7'000)) == OfferResult::Stored, "XP row is stored");
+		Expect(b.entries.back().kind == Kind::Xp, "XP kind");
+		auto rx = Cap(Kind::Reaction, "Sam Coe liked that.", 11'000);
+		rx.title = "Sam Coe";
+		rx.tag = "LIKED";
+		Expect(b.Offer(rx) == OfferResult::Stored, "reaction row is stored");
+		Expect(b.entries.back().kind == Kind::Reaction, "reaction kind");
+		ExpectEq(b.entries.back().title, "Sam Coe", "stored reaction keeps the companion name");
+		ExpectEq(b.entries.back().tag, "LIKED", "stored reaction keeps LIKED");
+		b.settings.logTypes = kTypeAll & ~kTypeReaction;
+		auto rxOff = Cap(Kind::Reaction, "Andreja loved that.", 15'000);
+		rxOff.title = "Andreja";
+		rxOff.tag = "LOVED";
+		Expect(b.Offer(rxOff) == OfferResult::Rejected, "reaction off stores nothing");
+		ExpectEqI(static_cast<int>(b.entries.size()), 3, "off reaction does not add a row");
+
+		Kind fk = Kind::Game;
+		std::string ft, ftext;
+		Expect(ParseForward("location|LOCATION|Akila City", fk, ft, ftext), "movie location line parses");
+		Expect(fk == Kind::Location && ftext == "Akila City", "forwarded LOCATION");
+		Expect(ParseForward("xp|XP|You gained 50 XP.", fk, ft, ftext), "movie XP line parses");
+		Expect(fk == Kind::Xp && ftext == "You gained 50 XP.", "forwarded XP");
+
+		const char* tags[] = {"LIKED", "LOVED", "DISLIKED", "HATED"};
+		for (const char* tag : tags) {
+			std::string body = "{\"type\":\"horizon.messagelog\",\"version\":1,\"entries\":["
+				"{\"id\":1,\"k\":\"crew\",\"t\":\"Sam Coe liked that.\",\"title\":\"Sam Coe\",\"tag\":\"";
+			body += tag;
+			body += "\"}]}";
+			auto old = FromJson(body);
+			Expect(old.ok && !old.state.entries.empty(), "old crew reaction file loads");
+			Expect(old.state.entries.front().kind == Kind::Reaction, "old crew + reaction tag promotes");
+			ExpectEq(old.state.entries.front().tag, tag, "promoted tag is kept");
+		}
+		auto stay = FromJson(std::string(
+			"{\"type\":\"horizon.messagelog\",\"version\":1,\"entries\":["
+			"{\"id\":1,\"k\":\"crew\",\"t\":\"Sarah Morgan considers you a friend.\",\"title\":\"Sarah Morgan\",\"tag\":\"FRIEND\"}]}"));
+		Expect(stay.ok && stay.state.entries.front().kind == Kind::Crew, "ordinary crew rows stay crew");
 	}
 
 	// ---- dedupe 3 s / Busy 10 s ----
@@ -609,9 +664,21 @@ int main()
 		Expect(ClampHistory(50) == 100, "history floors at 100");
 		Expect(ClampHistory(1000) == 1000, "history caps at 1000");
 		Expect(ClampHistory(550) == 500, "history steps of 100");
-		const auto bits = ParseLogTypes("medical,crew,busy,crime,credits,quest,location,xp,game");
+		const auto bits = ParseLogTypes("medical,crew,reaction,busy,crime,credits,quest,location,xp,game");
 		Expect(bits == kTypeAll, "default type list is every type");
+		ExpectEqI(static_cast<int>(kTypeAll), 0x3FF, "kTypeAll includes the reaction bit");
 		Expect((ParseLogTypes("busy") & kTypeBusy) != 0, "Busy is a real type");
+		const auto noRx = ParseLogTypes("medical,crew,busy,crime,credits,quest,location,xp,game");
+		Expect((noRx & kTypeReaction) == 0, "a user INI that lacks reaction keeps it off");
+		Expect((noRx & kTypeCrew) != 0, "that INI still has crew");
+		ExpectEq(LogTypesText(kTypeAll),
+			"medical,crew,reaction,busy,crime,credits,quest,location,xp,game",
+			"LogTypesText puts reaction after crew");
+		if (HaveRepo()) {
+			const auto ini = Slurp("Interface/HorizonUI/HorizonUI.default.ini");
+			Expect(ini.find("LogTypes=medical,crew,reaction,busy,crime,credits,quest,location,xp,game") != std::string::npos,
+				"default.ini LogTypes includes reaction after crew");
+		}
 	}
 
 	// ---- character key fallback ----
@@ -622,6 +689,9 @@ int main()
 		const auto keep = MakeCharacter(0x11, "Old");
 		Expect(keep.key == "00000011" && keep.keySource == "playerId", "rename keeps the player-id key");
 		Expect(PersistAllowed(keep), "a real player id may persist");
+		const auto wide = MakeCharacter(0x1E82D83B2ull, "Robert");
+		ExpectEq(wide.key, "00000001E82D83B2", "player id over 32 bits uses 16 hex digits");
+		Expect(PersistAllowed(wide), "a 16-hex player id may persist");
 		std::uint64_t last = 0;
 		Expect(NoteNameHashSkip(id, 1'000, last), "first name-hash skip is logged");
 		Expect(!NoteNameHashSkip(id, 2'000, last), "name-hash skip is rate-limited");

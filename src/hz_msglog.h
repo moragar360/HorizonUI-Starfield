@@ -5,7 +5,7 @@
 // CommonLibSF. The DLL (src/main.cpp) supplies engine pointers, the worker
 // thread, and the HUD-ready / SaveLoad flush.
 // Author: Moragar
-// Last modified: 2026-10-25.
+// Last modified: 2026-10-27.
 
 #include "hz_msg_match.h"
 #include "hz_version.h"
@@ -72,7 +72,8 @@ enum class Kind : std::uint8_t {
 	Quest,
 	Location,
 	Xp,
-	Game
+	Game,
+	Reaction
 };
 
 inline constexpr std::uint32_t kTypeMedical = 1u << 0;
@@ -84,7 +85,8 @@ inline constexpr std::uint32_t kTypeQuest = 1u << 5;
 inline constexpr std::uint32_t kTypeLocation = 1u << 6;
 inline constexpr std::uint32_t kTypeXp = 1u << 7;
 inline constexpr std::uint32_t kTypeGame = 1u << 8;
-inline constexpr std::uint32_t kTypeAll = 0x1FFu;
+inline constexpr std::uint32_t kTypeReaction = 1u << 9;
+inline constexpr std::uint32_t kTypeAll = 0x3FFu;
 
 enum class OfferResult : std::uint8_t {
 	Stored = 0,
@@ -163,6 +165,7 @@ inline const char* KindKey(Kind a_k)
 	switch (a_k) {
 	case Kind::Medical: return "medical";
 	case Kind::Crew: return "crew";
+	case Kind::Reaction: return "reaction";
 	case Kind::Busy: return "busy";
 	case Kind::Crime: return "crime";
 	case Kind::Credits: return "credits";
@@ -180,6 +183,7 @@ inline Kind KindFromKey(std::string_view a_k)
 {
 	if (a_k == "medical") return Kind::Medical;
 	if (a_k == "crew") return Kind::Crew;
+	if (a_k == "reaction") return Kind::Reaction;
 	if (a_k == "busy") return Kind::Busy;
 	if (a_k == "crime") return Kind::Crime;
 	if (a_k == "credits") return Kind::Credits;
@@ -194,6 +198,7 @@ inline std::uint32_t TypeBit(Kind a_k)
 	switch (a_k) {
 	case Kind::Medical: return kTypeMedical;
 	case Kind::Crew: return kTypeCrew;
+	case Kind::Reaction: return kTypeReaction;
 	case Kind::Busy: return kTypeBusy;
 	case Kind::Crime: return kTypeCrime;
 	case Kind::Credits: return kTypeCredits;
@@ -240,11 +245,25 @@ inline std::uint32_t ParseLogTypes(std::string_view a_s)
 	return bits ? bits : kTypeAll;
 }
 
+// Purpose: old P1 files stored companion reactions as crew + LIKED/LOVED/
+// DISLIKED/HATED. Promote those rows to Kind::Reaction on load. No affinity
+// value is read. Approved 2026-10-26.
+inline bool IsLegacyReactionTag(std::string_view a_tag)
+{
+	return a_tag == "LIKED" || a_tag == "LOVED" || a_tag == "DISLIKED" || a_tag == "HATED";
+}
+
+inline void PromoteLegacyReaction(Entry& a_e)
+{
+	if (a_e.kind == Kind::Crew && IsLegacyReactionTag(a_e.tag))
+		a_e.kind = Kind::Reaction;
+}
+
 inline std::string LogTypesText(std::uint32_t a_bits)
 {
 	std::string o;
-	const Kind order[] = {Kind::Medical, Kind::Crew, Kind::Busy, Kind::Crime, Kind::Credits,
-		Kind::Quest, Kind::Location, Kind::Xp, Kind::Game};
+	const Kind order[] = {Kind::Medical, Kind::Crew, Kind::Reaction, Kind::Busy, Kind::Crime,
+		Kind::Credits, Kind::Quest, Kind::Location, Kind::Xp, Kind::Game};
 	for (auto k : order) {
 		if (!(a_bits & TypeBit(k))) continue;
 		if (!o.empty()) o += ',';
@@ -354,6 +373,8 @@ inline bool NoteNameHashSkip(const Character& a_ch, std::uint64_t a_nowMs, std::
 
 // Purpose: classify a HUD sink line with hz_msg_match, including credits.
 // Quest / location / XP never come from this path (the movie owns those).
+// Companion reactions ("Sam Coe liked that.") are Kind::Reaction: on-screen
+// text match only, no affinity or actor values. Approved 2026-10-26.
 // Inputs: text and GMST phrases. Outputs: kind, title, tag. Unmatched -> Game.
 inline Kind ClassifyHud(std::string_view a_text, const hzmsg::Templates& a_phrases, std::string& a_title, std::string& a_tag)
 {
@@ -375,7 +396,7 @@ inline Kind ClassifyHud(std::string_view a_text, const hzmsg::Templates& a_phras
 	}
 	if (hit.kind == "reaction") {
 		a_title = hit.name.empty() ? "CREW" : hit.name;
-		return Kind::Crew;
+		return Kind::Reaction;
 	}
 	if (hit.kind == "unavailable" && hit.sub == "busy") {
 		a_title = "BUSY";
@@ -394,7 +415,8 @@ inline Kind ClassifyHud(std::string_view a_text, const hzmsg::Templates& a_phras
 }
 
 // Purpose: hex key from BGSSaveLoadManager::currentPlayerID.
-// Inputs: the u64 id. Outputs: uppercase hex, 8 digits when it fits in 32 bits.
+// Inputs: the u64 id. Outputs: uppercase hex, up to 16 digits. 8 digits when
+// the id fits in 32 bits; 16 digits when it exceeds 32 bits.
 inline std::string HexPlayerId(std::uint64_t a_id)
 {
 	char b[17];
@@ -1400,6 +1422,7 @@ inline bool ParseEntry(JsonTok& a_t, Entry& a_e, bool& a_usable)
 	if (!haveT || !haveK || a_e.text.empty()) return true;
 	a_e.text = CapText(a_e.text, kTextCap);
 	a_e.loc = CapText(a_e.loc, kLocCap);
+	PromoteLegacyReaction(a_e);
 	a_usable = true;
 	return true;
 }
