@@ -723,6 +723,79 @@ inline void InvalidateInFlightWrite(std::uint64_t& a_liveSeq, bool& a_pending, s
 	a_pendingSeq = 0;
 }
 
+inline std::string FoldLogKey(std::string_view a_key)
+{
+	std::string o;
+	o.reserve(a_key.size());
+	for (unsigned char c : a_key)
+		o.push_back(static_cast<char>(std::toupper(c)));
+	return o;
+}
+
+inline bool ValidLogKey(std::string_view a_key)
+{
+	if (a_key.empty() || a_key.size() > 16) return false;
+	for (unsigned char c : a_key) {
+		if (!std::isalnum(c)) return false;
+	}
+	return true;
+}
+
+inline bool SameLogKey(std::string_view a_a, std::string_view a_b)
+{
+	if (a_a.size() != a_b.size()) return false;
+	for (std::size_t i = 0; i < a_a.size(); ++i) {
+		const auto a = static_cast<unsigned char>(a_a[i]);
+		const auto b = static_cast<unsigned char>(a_b[i]);
+		if (std::tolower(a) != std::tolower(b)) return false;
+	}
+	return true;
+}
+
+// Purpose: only Clear and Persist-off bump cancelSeq. A newer write for
+// another character does not cancel the leaving character's snapshot.
+inline bool WriteIsCanceled(std::uint64_t a_jobCancel, std::string_view a_jobKey,
+	std::uint64_t a_liveCancel, std::string_view a_cancelKey)
+{
+	if (a_jobCancel == a_liveCancel) return false;
+	return SameLogKey(a_jobKey, a_cancelKey);
+}
+
+enum class WriteRun : std::uint8_t { Saved = 0, Skipped, Failed };
+
+// Purpose: the seq check and Save share one lock with Cancel, so a stale
+// job cannot land after Clear empties the file.
+struct WriteGate {
+	std::mutex            mu;
+	std::uint64_t         cancelSeq{0};
+	std::string           cancelKey;
+	std::function<void()> afterCheck;
+};
+
+inline WriteRun OrderedSave(WriteGate& a_g, std::uint64_t a_jobCancel, const std::string& a_jobKey,
+	const std::function<bool()>& a_save)
+{
+	std::lock_guard lk(a_g.mu);
+	if (WriteIsCanceled(a_jobCancel, a_jobKey, a_g.cancelSeq, a_g.cancelKey))
+		return WriteRun::Skipped;
+	if (a_g.afterCheck) a_g.afterCheck();
+	if (WriteIsCanceled(a_jobCancel, a_jobKey, a_g.cancelSeq, a_g.cancelKey))
+		return WriteRun::Skipped;
+	if (!a_save) return WriteRun::Failed;
+	return a_save() ? WriteRun::Saved : WriteRun::Failed;
+}
+
+// Purpose: bump cancelSeq and then run the empty-save or persist-off
+// callback under the same lock. Inputs: gate, character key, work.
+// Outputs: the callback result. Dependencies: WriteGate.
+inline bool OrderedCancel(WriteGate& a_g, const std::string& a_key, const std::function<bool()>& a_work)
+{
+	std::lock_guard lk(a_g.mu);
+	++a_g.cancelSeq;
+	a_g.cancelKey = FoldLogKey(a_key);
+	return a_work ? a_work() : false;
+}
+
 inline bool LastPlayedKnown(std::int64_t a_ts)
 {
 	return a_ts >= kLastPlayedEpochMin;
@@ -884,6 +957,7 @@ public:
 	std::int64_t lastPlayedTs{0};
 	std::uint64_t nextId{1};
 	int       sess{1};
+	int       launchSess{0};
 	std::int64_t sessStartTs{0};
 	std::vector<Session> sessions;
 	std::vector<Entry> entries; // oldest -> newest
@@ -922,6 +996,12 @@ public:
 
 	void StartSession(std::int64_t a_ts)
 	{
+		if (launchSess != 0) {
+			sess = launchSess;
+			return;
+		}
+		if (sess <= 0) sess = 1;
+		launchSess = sess;
 		sessStartTs = a_ts;
 		sessions.push_back(Session{sess, a_ts});
 	}
@@ -1048,7 +1128,11 @@ public:
 		nextId = s.nextId ? s.nextId : 1;
 		sessions = std::move(s.sessions);
 		entries = std::move(s.entries);
-		sess = ResolveNextSess(s.nextSess, sessions, entries);
+		const auto next = ResolveNextSess(s.nextSess, sessions, entries);
+		if (launchSess == 0)
+			sess = next;
+		else
+			sess = launchSess;
 		NoteLocationLoad();
 		int pins = 0;
 		for (auto& e : entries) {
@@ -1069,6 +1153,7 @@ public:
 		sessions.clear();
 		nextId = 1;
 		sess = 1;
+		launchSess = 0;
 		sessStartTs = 0;
 		lastPlayedTs = 0;
 		suppressFirstLoc_ = false;
@@ -1935,7 +2020,7 @@ inline bool LogFileKey(std::string_view a_name, std::string& a_key)
 	if (a_name.substr(0, pre.size()) != pre) return false;
 	if (a_name.substr(a_name.size() - suf.size()) != suf) return false;
 	a_key.assign(a_name.substr(pre.size(), a_name.size() - pre.size() - suf.size()));
-	return !a_key.empty() && a_key.find('.') == std::string::npos;
+	return ValidLogKey(a_key);
 }
 
 inline std::string OtherCharacterName(const Character& a_ch, int a_index)
@@ -1960,12 +2045,11 @@ inline std::vector<OtherCharacter> ListOtherCharacters(const std::filesystem::pa
 	std::vector<OtherCharacter> out;
 	std::error_code ec;
 	if (!std::filesystem::is_directory(a_dir, ec)) return out;
-	int idx = 1;
 	for (const auto& ent : std::filesystem::directory_iterator(a_dir, ec)) {
 		if (!ent.is_regular_file(ec)) continue;
 		std::string key;
 		if (!LogFileKey(ent.path().filename().string(), key)) continue;
-		if (key == a_currentKey) continue;
+		if (SameLogKey(key, a_currentKey)) continue;
 		OtherCharacter oc;
 		oc.key = std::move(key);
 		oc.fileMtime = FileMtimeSeconds(ent.path());
@@ -1973,15 +2057,21 @@ inline std::vector<OtherCharacter> ListOtherCharacters(const std::filesystem::pa
 		if (rd.ok && !rd.missing) {
 			auto parsed = FromJson(rd.body);
 			if (parsed.ok) {
-				oc.name = OtherCharacterName(parsed.state.character, idx);
+				if (!parsed.state.character.names.empty())
+					oc.name = parsed.state.character.names.back();
 				oc.entryCount = static_cast<int>(parsed.state.entries.size());
 				oc.lastPlayedTs = LastPlayedDisplay(parsed.state.lastPlayedTs, oc.fileMtime);
 			}
 		}
-		if (oc.name.empty())
-			oc.name = OtherCharacterName({}, idx);
-		++idx;
 		out.push_back(std::move(oc));
+	}
+	std::sort(out.begin(), out.end(), [](const OtherCharacter& a, const OtherCharacter& b) {
+		return FoldLogKey(a.key) < FoldLogKey(b.key);
+	});
+	int nameless = 1;
+	for (auto& oc : out) {
+		if (oc.name.empty())
+			oc.name = OtherCharacterName({}, nameless++);
 	}
 	return out;
 }
@@ -1995,8 +2085,6 @@ public:
 	virtual ~IMessageStore() = default;
 	virtual bool Load(const std::string& a_key, LogState& a_out, std::string& a_notice) = 0;
 	virtual bool Save(const LogState& a_state) = 0;
-	// Called only after the later UI confirm. Never silent.
-	virtual bool DeleteCurrent(const std::string& a_key) = 0;
 	virtual bool TouchesDisk() const = 0;
 	virtual bool FolderExists() const = 0;
 };
@@ -2010,19 +2098,20 @@ public:
 		return true;
 	}
 	bool Save(const LogState&) override { return true; }
-	bool DeleteCurrent(const std::string&) override { return true; }
 	bool TouchesDisk() const override { return false; }
 	bool FolderExists() const override { return false; }
 };
 
 using ReplaceFn = std::function<bool(const std::filesystem::path&, const std::filesystem::path&)>;
 
+// Purpose: atomic tmp -> dest replace. The DLL injects MoveFileExW with
+// MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH. This fallback is
+// POSIX rename, which replaces dest in place. A leftover tmp is left for
+// the next trunc write. Inputs: tmp and dest paths. Outputs: true on
+// replace. Dependencies: none.
 inline bool DefaultReplace(const std::filesystem::path& a_tmp, const std::filesystem::path& a_dst)
 {
 	std::error_code ec;
-	std::filesystem::rename(a_tmp, a_dst, ec);
-	if (!ec) return true;
-	std::filesystem::remove(a_dst, ec);
 	std::filesystem::rename(a_tmp, a_dst, ec);
 	return !ec;
 }
@@ -2043,7 +2132,7 @@ public:
 
 	std::filesystem::path FileFor(const std::string& a_key) const
 	{
-		return dir / ("MessageLog_" + a_key + ".json");
+		return dir / ("MessageLog_" + FoldLogKey(a_key) + ".json");
 	}
 
 	bool TouchesDisk() const override { return true; }
@@ -2081,9 +2170,27 @@ public:
 		return true;
 	}
 
+	// Purpose: write JSON through a leftover-safe tmp, then replace dest.
+	// Inputs: dest path and body. Outputs: true after a successful replace.
+	// A failed write or replace leaves the leftover tmp for the next trunc.
+	// Dependencies: replace callback (MoveFileExW REPLACE_EXISTING in the DLL).
+	bool WriteAtomicKeepTmp(const std::filesystem::path& a_dest, const std::string& a_body)
+	{
+		auto tmp = a_dest;
+		tmp += ".tmp";
+		{
+			std::ofstream o(tmp, std::ios::binary | std::ios::trunc);
+			if (!o) return false;
+			o.write(a_body.data(), static_cast<std::streamsize>(a_body.size()));
+			o.flush();
+			if (!o) return false;
+		}
+		return replace(tmp, a_dest);
+	}
+
 	bool Save(const LogState& a_state) override
 	{
-		if (a_state.character.key.empty()) return false;
+		if (!ValidLogKey(a_state.character.key)) return false;
 		std::error_code ec;
 		std::filesystem::create_directories(dir, ec);
 		if (ec) return false;
@@ -2099,11 +2206,7 @@ public:
 			if (!o) return false;
 			o.write(body.data(), static_cast<std::streamsize>(body.size()));
 			o.flush();
-			if (!o) {
-				o.close();
-				std::filesystem::remove(tmp, ec);
-				return false;
-			}
+			if (!o) return false;
 		}
 		if (std::filesystem::is_regular_file(path, ec)) {
 			auto bak = path;
@@ -2111,39 +2214,33 @@ public:
 			std::filesystem::copy_file(path, bak, std::filesystem::copy_options::overwrite_existing, ec);
 			if (ec) {
 				++bakFails;
-				std::filesystem::remove(bak, ec);
-				if (BakCopyBlocksReplace(bakFails, bakFailGiveUp)) {
-					std::filesystem::remove(tmp, ec);
+				if (BakCopyBlocksReplace(bakFails, bakFailGiveUp))
 					return false;
-				}
 				bakBypassed = true;
 			} else {
 				bakFails = 0;
 			}
 		}
-		if (!replace(tmp, path)) {
-			std::filesystem::remove(tmp, ec);
-			return false;
-		}
-		return true;
+		return replace(tmp, path);
 	}
 
-	bool DeleteCurrent(const std::string& a_key) override
+	// Purpose: Clear history writes the empty snapshot to the main file and
+	// to .bak so old rows cannot come back from the sidecar. Bak is replaced
+	// first. Inputs: empty LogState with nextSess kept. Outputs: true when
+	// both files hold that body. Dependencies: WriteAtomicKeepTmp.
+	bool SaveEmptyBoth(const LogState& a_state)
 	{
-		if (a_key.empty()) return false;
+		if (!ValidLogKey(a_state.character.key)) return false;
 		std::error_code ec;
-		auto path = FileFor(a_key);
-		std::filesystem::remove(path, ec);
+		std::filesystem::create_directories(dir, ec);
+		if (ec) return false;
+		const auto path = FileFor(a_state.character.key);
+		const auto plugin = std::string("HorizonUI ") + HZ_FILE_VERSION_STR;
+		const auto body = ToJson(a_state, plugin);
 		auto bak = path;
 		bak += ".bak";
-		std::filesystem::remove(bak, ec);
-		auto bad = path;
-		bad += ".bad";
-		std::filesystem::remove(bad, ec);
-		auto tmp = path;
-		tmp += ".tmp";
-		std::filesystem::remove(tmp, ec);
-		return true;
+		if (!WriteAtomicKeepTmp(bak, body)) return false;
+		return WriteAtomicKeepTmp(path, body);
 	}
 
 private:
@@ -2185,7 +2282,7 @@ private:
 
 // Purpose: Persist=0 uses NullStore and never creates the MessageLog folder.
 // Persist=1 uses FileStore under <horizonDir>/MessageLog.
-// Switching 1->0 stops writes and keeps memory. DeleteCurrent is the later UI call.
+// Switching 1->0 stops writes and leaves existing files in place.
 class Log {
 public:
 	Buffer                    buf;
@@ -2199,6 +2296,10 @@ public:
 	bool                      writePending{false};
 	std::uint64_t             writeSeq{0};
 	std::uint64_t             writePendingSeq{0};
+	WriteGate                 fileGate;
+	std::uint64_t             loadGen{0};
+	std::vector<OtherCharacter> otherCache;
+	std::uint64_t             otherCacheGen{0};
 	bool                      persistHold{false};
 	std::string               holdTargetKey;
 	int                       retryBackoffMs{0};
@@ -2218,13 +2319,26 @@ public:
 	void ApplyPersist(bool a_persist)
 	{
 		buf.settings.persist = a_persist;
-		if (!a_persist)
+		if (!a_persist) {
 			store = std::make_unique<NullStore>();
-		else
+			dirty = false;
+			writePending = false;
+			writePendingSeq = 0;
+			OrderedCancel(fileGate, buf.character.key, [] { return true; });
+		} else {
 			store = std::make_unique<FileStore>(horizonDir / "MessageLog", replace);
+		}
 	}
 
 	bool FolderExists() const { return store && store->FolderExists(); }
+
+	// Purpose: display-only MessageLog folder path. Inputs: none.
+	// Outputs: a string. Never creates the folder and never opens a file.
+	std::string FolderPathDisplay() const
+	{
+		if (horizonDir.empty()) return {};
+		return (horizonDir / "MessageLog").generic_string();
+	}
 
 	OfferResult Offer(Capture a)
 	{
@@ -2289,10 +2403,17 @@ public:
 	};
 	std::vector<KeptHeld> keptHeld;
 
+	void DropParked(const std::string& a_key)
+	{
+		keptHeld.erase(std::remove_if(keptHeld.begin(), keptHeld.end(),
+			[&](const KeptHeld& s) { return SameLogKey(s.key, a_key); }),
+			keptHeld.end());
+	}
+
 	KeptHeld* KeptHeldSlot(const std::string& a_key)
 	{
 		for (auto& s : keptHeld)
-			if (s.key == a_key) return &s;
+			if (SameLogKey(s.key, a_key)) return &s;
 		return nullptr;
 	}
 
@@ -2480,42 +2601,48 @@ public:
 			buf.LoadState(std::move(st));
 	}
 
-	// Purpose: later UI confirm after Save to disk is turned off. Never silent.
-	bool DeleteCurrentFile()
+	bool AcceptLoad(std::uint64_t a_jobGen) const
 	{
-		if (!store || buf.character.key.empty()) return false;
-		return store->DeleteCurrent(buf.character.key);
+		return a_jobGen == loadGen;
 	}
 
-	// Purpose: Clear history. Cancels an in-flight write so it cannot recreate
-	// the file. Called only after the later UI confirm.
-	bool ClearHistoryNow()
+	void RefreshOthers()
 	{
-		buf.ClearHistory();
-		dirty = false;
-		lastChangeMs = 0;
-		InvalidateInFlightWrite(writeSeq, writePending, writePendingSeq);
-		if (store && PersistAllowed(buf.character))
-			store->DeleteCurrent(buf.character.key);
-		return true;
-	}
-
-	bool DeleteCurrentNow()
-	{
-		InvalidateInFlightWrite(writeSeq, writePending, writePendingSeq);
-		return DeleteCurrentFile();
+		otherCache = ListOtherCharacters(horizonDir / "MessageLog", buf.character.key);
+		++otherCacheGen;
 	}
 
 	std::vector<OtherCharacter> ListOthers() const
 	{
-		return ListOtherCharacters(horizonDir / "MessageLog", buf.character.key);
+		return otherCache;
 	}
 
-	bool DeleteSelected(const std::string& a_key)
+	void ClearHistoryMemory()
 	{
-		if (a_key.empty() || a_key == buf.character.key) return false;
-		if (!store) return false;
-		return store->DeleteCurrent(a_key);
+		++loadGen;
+		buf.ClearHistory();
+		dirty = false;
+		lastChangeMs = 0;
+		writePending = false;
+		writePendingSeq = 0;
+		DropParked(buf.character.key);
+	}
+
+	// Purpose: Clear history. Empties memory, drops parked rows, bumps
+	// loadGen and cancelSeq, then writes an empty snapshot to the main
+	// file and .bak so a stale job cannot put the old rows back.
+	// Inputs: none. Outputs: true when both files hold the empty body.
+	// Dependencies: OrderedCancel, FileStore::SaveEmptyBoth.
+	bool ClearHistoryNow()
+	{
+		ClearHistoryMemory();
+		const auto key = buf.character.key;
+		if (!ValidLogKey(key)) return true;
+		const auto snap = buf.Snapshot();
+		return OrderedCancel(fileGate, key, [&] {
+			FileStore fs(horizonDir / "MessageLog", replace);
+			return fs.SaveEmptyBoth(snap);
+		});
 	}
 };
 

@@ -709,6 +709,19 @@ int main()
 	}
 
 	{
+		std::vector<std::string> hidden;
+		HZF::HidePresetId(hidden, "u:my_look.ini");
+		HZF::HidePresetId(hidden, "u:my_look.ini");
+		Expect(HZF::PresetIdHidden(hidden, "u:my_look.ini"), "hiding a saved preset id records it");
+		Expect(HZF::PresetIdHidden(hidden, "U:MY_LOOK.INI"), "hidden ids compare case-insensitively");
+		ExpectEq(HZF::JoinPresetIds(hidden), "u:my_look.ini", "a second hide does not duplicate the id");
+		Expect(HZF::SplitPresetIds("u:a.ini, u:b.ini").size() == 2, "state.ini csv splits hidden ids");
+		HZF::UnhidePresetId(hidden, "u:my_look.ini");
+		Expect(!HZF::PresetIdHidden(hidden, "u:my_look.ini"), "saving the same name shows the preset again");
+		Expect(!HZF::PresetIdHidden({}, "u:missing.ini"), "an empty hidden list shows every preset");
+	}
+
+	{
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());

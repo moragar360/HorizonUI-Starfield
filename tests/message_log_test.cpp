@@ -12,6 +12,7 @@
 #include "hz_version.h"
 
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -100,6 +101,85 @@ void WriteFile(const std::filesystem::path& a_p, const std::string& a_s)
 	std::filesystem::create_directories(a_p.parent_path(), ec);
 	std::ofstream o(a_p, std::ios::binary | std::ios::trunc);
 	o << a_s;
+}
+
+void CollectSrcFiles(const std::filesystem::path& a_dir, std::vector<std::filesystem::path>& a_out)
+{
+	std::error_code ec;
+	if (!std::filesystem::is_directory(a_dir, ec)) return;
+	for (std::filesystem::directory_iterator it(a_dir, ec), end; !ec && it != end; it.increment(ec)) {
+		const auto name = it->path().filename().string();
+		if (it->is_directory(ec)) {
+			if (name == "commonlibsf" || name == ".git") continue;
+			CollectSrcFiles(it->path(), a_out);
+			continue;
+		}
+		const auto ext = it->path().extension().string();
+		if (ext == ".h" || ext == ".hpp" || ext == ".cpp" || ext == ".c")
+			a_out.push_back(it->path());
+	}
+}
+
+bool IdentChar(char a_c)
+{
+	return std::isalnum(static_cast<unsigned char>(a_c)) || a_c == '_';
+}
+
+// Purpose: fail if any file-erase API appears in src/ or include/.
+// Renames and MoveFileExW(tmp, dst, REPLACE_EXISTING) are allowed.
+// Inputs: file text and path. Outputs: fail count via Expect.
+void ExpectNoDeleteCalls(const std::string& a_text, const std::string& a_file)
+{
+	const char* banned[] = {
+		"DeleteFile", "RemoveDirectory", "SHFileOperation", "DELETE_ON_CLOSE",
+		"_wremove", "_unlink", "filesystem::remove"
+	};
+	for (const char* tok : banned) {
+		if (a_text.find(tok) != std::string::npos)
+			Expect(false, (a_file + " must not call " + std::string(tok)).c_str());
+	}
+	for (std::size_t p = 0; (p = a_text.find("std::remove", p)) != std::string::npos; ) {
+		if (a_text.compare(p, 14, "std::remove_if") == 0) {
+			p += 14;
+			continue;
+		}
+		const auto after = p + 11;
+		if (after < a_text.size() && IdentChar(a_text[after])) {
+			p = after;
+			continue;
+		}
+		Expect(false, (a_file + " must not call std::remove").c_str());
+		break;
+	}
+	for (std::size_t p = 0; (p = a_text.find("::remove(", p)) != std::string::npos; p += 9) {
+		if (p >= 3 && a_text.compare(p - 3, 14, "std::remove_if") == 0)
+			continue;
+		if (p >= 11 && a_text.compare(p - 11, 20, "filesystem::remove(") == 0)
+			continue;
+		if (p >= 3 && a_text.compare(p - 3, 11, "std::remove") == 0)
+			continue;
+		Expect(false, (a_file + " must not call ::remove").c_str());
+		break;
+	}
+	for (std::size_t p = 0; (p = a_text.find("MoveFileEx", p)) != std::string::npos; ) {
+		const auto open = a_text.find('(', p);
+		if (open == std::string::npos) {
+			p += 10;
+			continue;
+		}
+		const auto comma = a_text.find(',', open);
+		if (comma == std::string::npos) {
+			p = open + 1;
+			continue;
+		}
+		std::size_t d = comma + 1;
+		while (d < a_text.size() && std::isspace(static_cast<unsigned char>(a_text[d])))
+			++d;
+		if (a_text.compare(d, 7, "nullptr") == 0 || a_text.compare(d, 4, "NULL") == 0
+			|| (d < a_text.size() && a_text[d] == '0' && (d + 1 == a_text.size() || !IdentChar(a_text[d + 1]))))
+			Expect(false, (a_file + " must not MoveFileEx to a null dest").c_str());
+		p = open + 1;
+	}
 }
 
 std::filesystem::path RepoRoot()
@@ -430,7 +510,7 @@ int main()
 		Expect(!WritePendingClears(1, 2), "a stale write does not clear a newer pending");
 		Expect(WritePendingClears(3, 3), "matching seq clears pending");
 		Expect(!WriteJobStillCurrent(0, 1), "zero job seq is not current");
-		Expect(!WriteJobStillCurrent(1, 2), "cancelled job is not current");
+		Expect(!WriteJobStillCurrent(1, 2), "canceled job is not current");
 		Expect(WriteJobStillCurrent(4, 4), "live job is current");
 
 		const auto root = TmpRoot();
@@ -511,14 +591,12 @@ int main()
 		ExpectEq(bName, "Barrett", "cleanup list uses the saved name");
 		ExpectEqI(bCount, 1, "cleanup list entry count");
 		Expect(bPlayed >= 0, "cleanup list last played");
-		Expect(!twoA.DeleteSelected("00001111"), "current key is excluded at delete time");
-		Expect(twoA.DeleteSelected("00002222"), "delete selected removes the other file");
-		Expect(!std::filesystem::exists(root / "MessageLog" / "MessageLog_00002222.json"),
-			"deleted character file is gone");
+		Expect(std::filesystem::is_regular_file(root / "MessageLog" / "MessageLog_00002222.json"),
+			"other character file stays; the list has no hide/erase action");
 		Expect(std::filesystem::is_regular_file(root / "MessageLog" / "MessageLog_00001111.json"),
 			"current file stays");
 		Expect(ReadFile(root / "MessageLog" / "MessageLog_00001111.json").find("sam only") != std::string::npos,
-			"no cross-bleed after delete");
+			"no cross-bleed between character files");
 		Expect(ReadFile(root / "MessageLog" / "MessageLog_00001111.json").find("barrett only") == std::string::npos,
 			"other character text is not in the current file");
 
@@ -542,26 +620,30 @@ int main()
 		const auto clearPath = root / "MessageLog" / "MessageLog_0000ABCD.json";
 		Expect(std::filesystem::is_regular_file(clearPath), "file exists before clear");
 		auto staleSnap = clear.buf.Snapshot();
-		const auto staleSeq = clear.writeSeq + 1;
-		clear.writeSeq = staleSeq;
 		clear.writePending = true;
-		clear.writePendingSeq = staleSeq;
+		std::uint64_t jobCancel = 0;
+		{
+			std::lock_guard lk(clear.fileGate.mu);
+			jobCancel = clear.fileGate.cancelSeq;
+		}
 		Expect(clear.ClearHistoryNow(), "Clear history");
 		Expect(clear.buf.entries.empty(), "Clear history empties memory");
 		Expect(!clear.writePending, "Clear history clears pending");
-		Expect(!WriteJobStillCurrent(staleSeq, clear.writeSeq), "Clear history cancels the in-flight write");
-		if (WriteJobStillCurrent(staleSeq, clear.writeSeq))
-			clear.store->Save(staleSnap);
-		Expect(!std::filesystem::exists(clearPath), "a stale write cannot recreate the file");
-
-		Log del;
-		del.Configure(s, root);
-		del.buf.character = MakeCharacter(0x4444u, "Sam");
-		del.Offer(Cap(Kind::Game, "persist off delete", 112'000));
-		Expect(del.Flush(113'000), "seed before delete");
-		const auto delPath = root / "MessageLog" / "MessageLog_00004444.json";
-		Expect(del.DeleteCurrentNow(), "delete current file");
-		Expect(!std::filesystem::exists(delPath), "delete current removes the file");
+		Expect(std::filesystem::is_regular_file(clearPath), "Clear history keeps the file");
+		Expect(ReadFile(clearPath).find("must go") == std::string::npos, "Clear history empties the file");
+		const auto clearBak = root / "MessageLog" / "MessageLog_0000ABCD.json.bak";
+		Expect(std::filesystem::is_regular_file(clearBak), "Clear history keeps the bak");
+		Expect(ReadFile(clearBak).find("must go") == std::string::npos, "Clear history empties the bak");
+		auto parsedClear = FromJson(ReadFile(clearPath));
+		Expect(parsedClear.ok && parsedClear.state.nextSess >= 2, "Clear history keeps nextSess");
+		const auto staleRun = OrderedSave(clear.fileGate, jobCancel, "0000ABCD", [&] {
+			return clear.store->Save(staleSnap);
+		});
+		Expect(staleRun == WriteRun::Skipped, "Clear history cancels the in-flight write");
+		Expect(ReadFile(clearPath).find("must go") == std::string::npos,
+			"a stale write cannot put old rows back");
+		Expect(ReadFile(clearBak).find("must go") == std::string::npos,
+			"a stale write cannot restore old rows through bak");
 
 		Log persistOff;
 		Settings off;
@@ -773,8 +855,9 @@ int main()
 		Expect(ReadFile(root / "MessageLog" / "MessageLog_00000001.json").find("after off") == std::string::npos,
 			"Persist 1->0 does not write the new row");
 		Expect(ReadFile(root / "MessageLog" / "MessageLog_00000001.json").find("on disk") != std::string::npos,
-			"INI Persist=0 does not delete the existing file");
-		Expect(on.DeleteCurrentFile(), "delete is an explicit later-UI call");
+			"INI Persist=0 leaves the existing file");
+		Expect(std::filesystem::is_regular_file(root / "MessageLog" / "MessageLog_00000001.json"),
+			"Persist-off does not erase the file");
 		std::error_code ec;
 		std::filesystem::remove_all(root, ec);
 	}
@@ -1028,16 +1111,18 @@ int main()
 		{
 			const auto copy = main.find("hzlog::ViewSnap MsglogCopyView");
 			Expect(copy != std::string::npos, "DLL exposes the view snapshot getter");
-			const auto offer = main.find("void MsglogOfferNote");
-			const auto body = copy != std::string::npos && offer > copy ? main.substr(copy, offer - copy) : std::string();
+			const auto next = main.find("void MsglogQueueListRefresh", copy);
+			const auto body = copy != std::string::npos && next > copy ? main.substr(copy, next - copy) : std::string();
 			Expect(body.find("g_mlMu") != std::string::npos, "the getter takes the buffer lock");
 			Expect(body.find("FileStore") == std::string::npos && body.find("Load(") == std::string::npos
 				&& body.find("Save(") == std::string::npos,
 				"the getter never blocks the game thread on disk");
 			Expect(body.find("BuildView") != std::string::npos, "the getter copies a capped view");
 		}
-		Expect(main.find("WriteJobStillCurrent") != std::string::npos,
-			"the writer skips a cancelled in-flight save");
+		Expect(main.find("OrderedSave") != std::string::npos,
+			"the writer skips a canceled in-flight save");
+		Expect(Slurp("src/hz_msglog.h").find("WriteIsCanceled") != std::string::npos,
+			"canceled writes are keyed so the leaving snapshot is kept");
 		Expect(main.find("WritePendingClears") != std::string::npos,
 			"writePending is scoped by the job write sequence");
 		Expect(main.find("GetTickCount64() / 1000") == std::string::npos,
@@ -1045,9 +1130,19 @@ int main()
 		Expect(main.find("std::time(nullptr)") != std::string::npos,
 			"lastPlayedTs writes epoch seconds");
 		Expect(main.find("void MsglogClearHistory()") != std::string::npos, "DLL Clear history");
-		Expect(main.find("void MsglogDeleteCurrentFileUi()") != std::string::npos, "DLL delete current file");
+		Expect(main.find("MsglogDeleteCurrentFileUi") == std::string::npos, "no DLL erase-current-file call");
 		Expect(main.find("MsglogListOthers()") != std::string::npos, "DLL list other characters");
-		Expect(main.find("bool MsglogDeleteSelected") != std::string::npos, "DLL delete selected");
+		Expect(main.find("MsglogDeleteSelected") == std::string::npos, "no DLL erase-selected call");
+		Expect(main.find("std::string MsglogFolderPath()") != std::string::npos, "DLL folder path getter");
+		{
+			const auto get = main.find("std::string MsglogFolderPath()");
+			const auto next = main.find("void MsglogOfferNote", get);
+			const auto body = get != std::string::npos && next > get ? main.substr(get, next - get) : std::string();
+			Expect(body.find("FolderPathDisplay") != std::string::npos, "folder path is a display string");
+			Expect(body.find("create_directories") == std::string::npos, "folder path getter does not create the folder");
+			Expect(body.find("ofstream") == std::string::npos && body.find("FileStore") == std::string::npos,
+				"folder path getter does not open or change files");
+		}
 	}
 
 	// ---- settings parse ----
@@ -2497,6 +2592,134 @@ int main()
 			rt5.RequestWrite();
 			Expect(rt5.WaitWrites(2, 1000), "RT5 rebind after a finished joinable worker does not terminate");
 		}
+	}
+
+	{
+		const auto root = RepoRoot();
+		std::vector<std::filesystem::path> srcs;
+		CollectSrcFiles(root / "src", srcs);
+		CollectSrcFiles(root / "include", srcs);
+		Expect(!srcs.empty(), "scanned src/ for file-erase APIs");
+		for (const auto& p : srcs) {
+			std::ifstream f(p, std::ios::binary);
+			std::string t((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+			ExpectNoDeleteCalls(t, p.lexically_relative(root).generic_string());
+		}
+		if (HaveRepo()) {
+			const auto hdr = Slurp("src/hz_msglog.h");
+			const auto main = Slurp("src/main.cpp");
+			const auto as = Slurp("actionscript/horizon_block.as");
+			Expect(hdr.find("cancelled") == std::string::npos, "Message Log uses canceled spelling");
+			Expect(hdr.find("SaveEmptyBoth") != std::string::npos, "Clear history writes empty main and bak");
+			Expect(hdr.find("FolderPathDisplay") != std::string::npos, "Log exposes a display folder path");
+			Expect(main.find("HidePreset") != std::string::npos, "F11 hides a saved preset instead of erasing it");
+			Expect(main.find("HiddenPresets=") != std::string::npos, "hidden preset ids live in state.ini");
+			Expect(main.find("UndoReady=") != std::string::npos, "undo ready is stored in state.ini");
+			{
+				const auto wa = main.find("inline bool WriteAtomic");
+				const auto next = main.find("inline bool Compose", wa);
+				const auto body = wa != std::string::npos && next > wa ? main.substr(wa, next - wa) : std::string();
+				Expect(body.find("ios::trunc") != std::string::npos, "settings writer overwrites a leftover tmp");
+				Expect(body.find("HzfReplace") != std::string::npos, "settings writer uses MoveFileExW replace");
+			}
+			Expect(main.find("MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH") != std::string::npos,
+				"atomic replace uses REPLACE_EXISTING and WRITE_THROUGH");
+			Expect(main.find("g_mlWSkipped") != std::string::npos, "stale skips are tracked separately");
+			{
+				const auto wr = main.find("void MsglogWriter()");
+				const auto ens = main.find("void MsglogEnsureWriter()", wr);
+				const auto body = wr != std::string::npos && ens > wr ? main.substr(wr, ens - wr) : std::string();
+				const auto skipAt = body.find("WriteRun::Skipped");
+				const auto noteAt = body.find("NoteWorkerSave");
+				Expect(skipAt != std::string::npos && noteAt != std::string::npos && skipAt < noteAt,
+					"a skipped write is not reported as a successful save");
+				Expect(body.find("g_mlWSkipped.store(true)") != std::string::npos,
+					"a skipped write sets the skip flag");
+			}
+			Expect(as.find("REMOVE FROM LIST") != std::string::npos, "F11 button hides a saved preset");
+			Expect(as.find("pdir") != std::string::npos, "F11 can show the preset folder path");
+		}
+	}
+
+	{
+		const auto root = TmpRoot();
+		Settings s;
+		Log log;
+		log.Configure(s, root);
+		const auto ch = MakeCharacter(0xABCDu, "Sam");
+		log.buf.character = ch;
+		log.buf.StartSession(100);
+		ExpectEqI(log.buf.sess, 1, "first session id is 1");
+		ExpectEqI(log.buf.launchSess, 1, "launch session is pinned");
+		log.buf.StartSession(200);
+		ExpectEqI(log.buf.sess, 1, "session id bumps only once per launch");
+		log.Offer(Cap(Kind::Game, "launch row", 50'000));
+		Expect(log.Flush(51'000), "seed before mid-launch load");
+		LogState loaded;
+		std::string notice;
+		Expect(log.store->Load(ch.key, loaded, notice), "mid-launch load reads the file");
+		loaded.nextSess = 9;
+		log.buf.LoadState(std::move(loaded));
+		ExpectEqI(log.buf.sess, 1, "a mid-launch load keeps the launch session id");
+
+		Entry parked;
+		parked.kind = Kind::Game;
+		parked.text = "parked before clear";
+		parked.ts = 5;
+		log.ParkWriteFailure(ch.key, std::vector<Entry>{parked});
+		ExpectEqI(static_cast<int>(log.keptHeld.size()), 1, "parked row is held");
+		const auto oldGen = log.loadGen;
+		Expect(log.ClearHistoryNow(), "Clear history after a park");
+		Expect(log.keptHeld.empty(), "Clear history drops parked rows");
+		Expect(!log.AcceptLoad(oldGen), "Clear history invalidates an in-flight load");
+		log.MergeKeptHeldIfMatch(ch.key);
+		Expect(log.buf.entries.empty(), "an in-flight load cannot restore parked rows");
+		const auto path = root / "MessageLog" / "MessageLog_0000ABCD.json";
+		const auto bak = root / "MessageLog" / "MessageLog_0000ABCD.json.bak";
+		Expect(ReadFile(path).find("launch row") == std::string::npos, "Clear emptied the file");
+		Expect(ReadFile(bak).find("launch row") == std::string::npos, "Clear emptied the bak");
+		auto quitSnap = log.buf.Snapshot();
+		FileStore fs(root / "MessageLog");
+		Expect(fs.Save(quitSnap), "quit after Clear writes the empty snapshot");
+		Expect(ReadFile(path).find("launch row") == std::string::npos, "quit after Clear does not restore old rows");
+		Expect(ReadFile(path).find("parked before clear") == std::string::npos,
+			"quit after Clear does not restore parked rows");
+		Expect(std::filesystem::is_regular_file(path), "quit after Clear may leave an empty file");
+
+		const auto never = root / "no-folder";
+		Log getter;
+		Settings off;
+		off.persist = false;
+		getter.Configure(off, never);
+		const auto shown = getter.FolderPathDisplay();
+		Expect(shown.find("MessageLog") != std::string::npos, "folder path names MessageLog");
+		Expect(!std::filesystem::exists(never / "MessageLog"), "folder path getter does not create the folder");
+
+		Log tmpLog;
+		tmpLog.Configure(s, root);
+		tmpLog.buf.character = MakeCharacter(0xBBBBu, "Barrett");
+		const auto tmpPath = root / "MessageLog" / "MessageLog_0000BBBB.json.tmp";
+		WriteFile(tmpPath, "STALE_TMP_BODY");
+		tmpLog.Offer(Cap(Kind::Game, "fresh row", 80'000));
+		Expect(tmpLog.Flush(81'000), "save overwrites a leftover tmp");
+		const auto written = ReadFile(root / "MessageLog" / "MessageLog_0000BBBB.json");
+		Expect(written.find("STALE_TMP_BODY") == std::string::npos, "stale tmp bytes do not land in the main file");
+		Expect(written.find("fresh row") != std::string::npos, "overwrite wrote the new body");
+
+		WriteGate race;
+		bool saved = false;
+		race.afterCheck = [&] {
+			++race.cancelSeq;
+			race.cancelKey = "0000ABCD";
+		};
+		const auto raced = OrderedSave(race, 0, "0000ABCD", [&] {
+			saved = true;
+			return true;
+		});
+		Expect(raced == WriteRun::Skipped && !saved, "a cancel between the two checks skips the save");
+
+		std::error_code ec;
+		std::filesystem::remove_all(root, ec);
 	}
 
 	if (g_fails) {

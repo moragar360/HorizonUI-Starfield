@@ -13683,7 +13683,7 @@
          if(this.hz37Cf == k)
          {
             if(k == "_hz37apply") { return "Replaces your settings with " + pn + ". Press again (or ENTER) to apply - any other key cancels"; }
-            if(k == "_hz37del") { return "Deletes " + pn + " from presets/user. Press again (or ENTER) to delete - any other key cancels"; }
+            if(k == "_hz37del") { return "Removes " + pn + " from this list. The file stays on disk. Press again (or ENTER) to confirm - any other key cancels"; }
             if(k == "_hz37undo") { return "Puts back your settings from before the last preset. Press again (or ENTER) to confirm"; }
             if(k == "_hz37bak") { return "Replaces your settings with the update backup. Press again (or ENTER) to confirm"; }
             if(k == "_hz37save") { return "'" + this.hz37Trim(String(this.hz37Edit)) + "' already exists. Press again (or ENTER) to overwrite - ESC cancels"; }
@@ -13720,12 +13720,14 @@
          }
          else
          {
-            rows.push({"k":"_hz37pick","l":"PRESET","t":"p","h":"PRESETS","off":true,"n13":true,"note":"No presets yet: save your own below" + (skip > 0 ? " - " + skip + " skipped (see log)" : ""),"info":"Presets are complete looks for Horizon UI. Saved ones go to Data/Interface/HorizonUI/presets/user; the installer can add Moragar's Choice."});
+            var emptyDir:String = this.hz37St.pdir != undefined && String(this.hz37St.pdir).length > 0 ? String(this.hz37St.pdir) : "Data/Interface/HorizonUI/presets/user";
+            rows.push({"k":"_hz37pick","l":"PRESET","t":"p","h":"PRESETS","off":true,"n13":true,"note":"No presets yet: save your own below" + (skip > 0 ? " - " + skip + " skipped (see log)" : ""),"info":"Presets are complete looks for Horizon UI. Saved ones go to " + emptyDir + "; the installer can add Moragar's Choice. Removing a saved preset from this list leaves its file there so you can erase it yourself."});
          }
          rows.push({"k":"_hz37apply","l":"APPLY SELECTED PRESET","t":"x","btn":"APPLY","off":p == null,"n13":true,"note":this.hz37Note("_hz37apply",null),"info":"Your settings become exactly the defaults plus what the preset sets - anything it does not list goes back to its default. Your settings key, ScreenHeight and debug switches ([Debug]) stay as they are. Applies right away; UNDO LAST PRESET puts your old settings back."});
          rows.push({"k":"_hz37save","l":"SAVE CURRENT AS PRESET","t":"x","btn":"SAVE","n13":true,"note":this.hz37Note("_hz37save",null),"info":"Saves your current look as a preset in Data/Interface/HorizonUI/presets/user: every setting that differs from the defaults (card positions, sizes, colors, fonts, Comms and Scanner included; not your settings key or ScreenHeight). Type a name with the keyboard; with a controller, confirm the suggested name."});
          var delOff:Boolean = p == null || !p.u;
-         rows.push({"k":"_hz37del","l":"DELETE SELECTED PRESET","t":"x","btn":"DELETE","off":delOff,"n13":true,"note":this.hz37Note("_hz37del",p != null && !p.u ? "Presets that came with the mod can't be deleted here" : null),"info":"Deletes the selected preset you saved yourself (presets/user). Presets that came with the mod or the installer are never deleted."});
+         var presetDir:String = this.hz37St.pdir != undefined && String(this.hz37St.pdir).length > 0 ? String(this.hz37St.pdir) : "Data/Interface/HorizonUI/presets/user";
+         rows.push({"k":"_hz37del","l":"REMOVE FROM LIST","t":"x","btn":"REMOVE","off":delOff,"n13":true,"note":this.hz37Note("_hz37del",p != null && !p.u ? "Presets that came with the mod stay on this list" : null),"info":"Hides the selected preset you saved yourself. The file stays in " + presetDir + " so you can erase it yourself. Presets that came with the mod stay on this list."});
          var undo:Boolean = String(this.hz37St.undo) == "1";
          rows.push({"k":"_hz37undo","l":"UNDO LAST PRESET","t":"x","btn":"UNDO","off":!undo,"n13":true,"note":this.hz37Note("_hz37undo",undo ? null : "Nothing to undo"),"info":"Brings back your settings from just before the last preset was applied (one step)."});
          var bak:Boolean = String(this.hz37St.bak) == "1";

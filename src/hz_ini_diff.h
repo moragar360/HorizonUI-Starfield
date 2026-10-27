@@ -337,5 +337,66 @@ namespace HZF {
 			return out;
 		}
 
+		// Purpose: persist hidden saved-preset ids in HorizonUI.state.ini.
+		// Inputs: comma-separated ids, or one id to hide/unhide.
+		// Outputs: the updated list. Files stay on disk.
+		inline bool SamePresetId(const std::string& a_a, const std::string& a_b)
+		{
+			if (a_a.size() != a_b.size()) return false;
+			for (std::size_t i = 0; i < a_a.size(); ++i) {
+				const auto a = static_cast<unsigned char>(a_a[i]);
+				const auto b = static_cast<unsigned char>(a_b[i]);
+				if (std::tolower(a) != std::tolower(b)) return false;
+			}
+			return true;
+		}
+
+		inline std::vector<std::string> SplitPresetIds(const std::string& a_csv)
+		{
+			std::vector<std::string> out;
+			std::size_t i = 0;
+			while (i < a_csv.size()) {
+				const auto j = a_csv.find(',', i);
+				const auto part = Trim(a_csv.substr(i, j == std::string::npos ? std::string::npos : j - i));
+				if (!part.empty()) out.push_back(part);
+				if (j == std::string::npos) break;
+				i = j + 1;
+			}
+			return out;
+		}
+
+		inline std::string JoinPresetIds(const std::vector<std::string>& a_ids)
+		{
+			std::string o;
+			for (const auto& id : a_ids) {
+				if (id.empty()) continue;
+				if (!o.empty()) o += ',';
+				o += id;
+			}
+			return o;
+		}
+
+		inline bool PresetIdHidden(const std::vector<std::string>& a_hidden, const std::string& a_id)
+		{
+			for (const auto& h : a_hidden)
+				if (SamePresetId(h, a_id)) return true;
+			return false;
+		}
+
+		inline void HidePresetId(std::vector<std::string>& a_hidden, const std::string& a_id)
+		{
+			if (a_id.empty() || PresetIdHidden(a_hidden, a_id)) return;
+			a_hidden.push_back(a_id);
+		}
+
+		inline void UnhidePresetId(std::vector<std::string>& a_hidden, const std::string& a_id)
+		{
+			std::vector<std::string> keep;
+			keep.reserve(a_hidden.size());
+			for (const auto& h : a_hidden)
+				if (!SamePresetId(h, a_id)) keep.push_back(h);
+			a_hidden.swap(keep);
+		}
+
 } // namespace HZF
 

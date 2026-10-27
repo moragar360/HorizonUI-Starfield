@@ -1,5 +1,5 @@
 // HorizonUI SFSE plugin v0.42.0 - drop-in src\main.cpp (CommonLibSF libxse 9d090c4)
-// v0.42.0.4: F11 lists each shipped preset name once. Saved presets are never hidden.
+// v0.42.0.4: F11 lists each shipped preset name once. A player can hide a saved preset from the list.
 // Same settings keep the installer copy; different settings keep the newer shipped file.
 // The F11 header, the load line, and the "movie builds" line use the DLL file version (src/hz_version.h, also the version resource).
 // v0.42.0.6: ShowHUDMessageEvent (address id 86800) feeds the reaction backup. The verbose trace
@@ -133,7 +133,7 @@ namespace HZ
 //   HorizonUI.user.ini      the player's settings: only what differs from the defaults (+ keys the file already had)
 //   HorizonUI.user.bak.ini  copy of user.ini made once per update (state.ini LastVersion != this DLL)
 //   HorizonUI.user.preapply.ini  user.ini as it was before the last preset was applied (one-step undo)
-//   HorizonUI.state.ini     [State] LastVersion / LegacyImported / PresetSeeded
+//   HorizonUI.state.ini     [State] LastVersion / LegacyImported / PresetSeeded / LastPreset / UndoReady / HiddenPresets
 //   HorizonUI.ini           legacy (v0.36 and older): read for migration only, never written, never deleted
 //   presets\*.ini           shipped presets (moragars_choice.ini from the installer); presets\user\*.ini saved in game
 // HZF lives at file scope (not inside namespace HZ). hz_ini_diff.h is self-contained.
@@ -197,7 +197,8 @@ namespace HZF
 			ReadText(a_p, s);
 			return s;
 		}
-		// temp file next to the target, flushed, then HzfReplace (MoveFileExW REPLACE_EXISTING | WRITE_THROUGH in the DLL)
+		// temp file next to the target, flushed, then HzfReplace (MoveFileExW REPLACE_EXISTING | WRITE_THROUGH in the DLL).
+		// A leftover .tmp is overwritten on the next trunc write.
 		inline bool WriteAtomic(const std::filesystem::path& a_p, const std::string& a_data)
 		{
 			std::error_code ec;
@@ -209,9 +210,9 @@ namespace HZF
 				if (!o) return false;
 				o.write(a_data.data(), static_cast<std::streamsize>(a_data.size()));
 				o.flush();
-				if (!o) { o.close(); std::filesystem::remove(tmp, ec); return false; }
+				if (!o) return false;
 			}
-			if (!HzfReplace(tmp, a_p)) { std::filesystem::remove(tmp, ec); return false; }
+			if (!HzfReplace(tmp, a_p)) return false;
 			return true;
 		}
 
@@ -428,11 +429,47 @@ namespace HZF
 			if (ec) return 0;
 			return static_cast<std::int64_t>(t.time_since_epoch().count());
 		}
+
+		// ---------------- state + startup ----------------
+		struct State
+		{
+			std::string lastVersion;
+			bool legacyImported = false, presetSeeded = false;
+			std::string lastPreset;   // id of the last applied preset ("u:<file>" / "s:<file>"), for the SAVE name box
+			bool undoReady = false;   // one-step undo after Apply; not whether preapply exists
+			std::vector<std::string> hiddenPresets; // saved-preset ids hidden from F11; files stay
+		};
+		inline State ReadState(const Paths& a_p)
+		{
+			State s;
+			Doc d = Parse(ReadOr(a_p.state));
+			if (auto x = d.Find("state")) {
+				auto get = [&](const char* a_k) { return x->kv.count(a_k) ? x->kv[a_k].second : std::string(); };
+				s.lastVersion = get("lastversion");
+				s.legacyImported = get("legacyimported") == "1";
+				s.presetSeeded = get("presetseeded") == "1";
+				s.lastPreset = get("lastpreset");
+				s.hiddenPresets = SplitPresetIds(get("hiddenpresets"));
+				if (x->kv.count("undoready"))
+					s.undoReady = get("undoready") == "1";
+				else
+					s.undoReady = Exists(a_p.preapply);
+			}
+			return s;
+		}
+		inline bool WriteState(const Paths& a_p, const State& a_s)
+		{
+			std::string t = "; HorizonUI.dll state (not settings)\r\n[State]\r\nLastVersion=" + a_s.lastVersion + "\r\nLegacyImported=" +
+			                (a_s.legacyImported ? "1" : "0") + "\r\nPresetSeeded=" + (a_s.presetSeeded ? "1" : "0") + "\r\nLastPreset=" + CleanField(a_s.lastPreset, 120) +
+			                "\r\nUndoReady=" + (a_s.undoReady ? "1" : "0") + "\r\nHiddenPresets=" + CleanField(JoinPresetIds(a_s.hiddenPresets), 800) + "\r\n";
+			return WriteAtomic(a_p.state, t);
+		}
+
 		// Purpose: list presets for F11. Shipped files collapse to one row per name.
 		// Inputs: preset folders and the defaults text used to validate files.
 		// Outputs: the list the HUD shows, skip reasons, and duplicate-hide notes.
-		// Saved presets (presets\user) are always listed, so a player look that reuses a
-		// shipped name can still be applied and deleted after a mod update.
+		// Saved presets (presets\user) are listed unless the player hid them. A player
+		// look that reuses a shipped name can still be applied or hidden after a mod update.
 		// Same settings: keep the installer copy (shipped file not named HorizonUI.*.ini).
 		// Different settings: keep the newer last-write time. Ties then prefer the installer copy, then the smaller id.
 		// Dependencies: hzpreset::DedupePresetIndices. A duplicate is not a skip.
@@ -489,6 +526,14 @@ namespace HZF
 			const auto keep = hzpreset::DedupePresetIndices(cands, drops);
 			for (std::size_t i : keep) r.list.push_back(rows[i].preset);
 			for (const auto& d : drops) r.deduped.push_back(d.line);
+			const auto hidden = ReadState(a_p).hiddenPresets;
+			if (!hidden.empty()) {
+				std::vector<Preset> shown;
+				shown.reserve(r.list.size());
+				for (auto& p : r.list)
+					if (!PresetIdHidden(hidden, p.id)) shown.push_back(std::move(p));
+				r.list.swap(shown);
+			}
 			return r;
 		}
 		inline const Preset* FindPreset(const Scan& a_s, const std::string& a_id)
@@ -498,32 +543,6 @@ namespace HZF
 			return nullptr;
 		}
 
-		// ---------------- state + startup ----------------
-		struct State
-		{
-			std::string lastVersion;
-			bool legacyImported = false, presetSeeded = false;
-			std::string lastPreset;   // id of the last applied preset ("u:<file>" / "s:<file>"), for the SAVE name box
-		};
-		inline State ReadState(const Paths& a_p)
-		{
-			State s;
-			Doc d = Parse(ReadOr(a_p.state));
-			if (auto x = d.Find("state")) {
-				auto get = [&](const char* a_k) { return x->kv.count(a_k) ? x->kv[a_k].second : std::string(); };
-				s.lastVersion = get("lastversion");
-				s.legacyImported = get("legacyimported") == "1";
-				s.presetSeeded = get("presetseeded") == "1";
-				s.lastPreset = get("lastpreset");
-			}
-			return s;
-		}
-		inline bool WriteState(const Paths& a_p, const State& a_s)
-		{
-			std::string t = "; HorizonUI.dll state (not settings)\r\n[State]\r\nLastVersion=" + a_s.lastVersion + "\r\nLegacyImported=" +
-			                (a_s.legacyImported ? "1" : "0") + "\r\nPresetSeeded=" + (a_s.presetSeeded ? "1" : "0") + "\r\nLastPreset=" + CleanField(a_s.lastPreset, 120) + "\r\n";
-			return WriteAtomic(a_p.state, t);
-		}
 		// once per game start, before any menu loads: update backup, then (no user.ini) migration / preset seeding
 		inline void Startup(const Paths& a_p, const std::string& a_ver)
 		{
@@ -599,8 +618,9 @@ namespace HZF
 			std::string b;
 			if (!ReadText(a_p.preapply, b)) return { false, "Nothing to undo" };
 			if (!WriteAtomic(a_p.user, b)) return { false, "Could not write HorizonUI.user.ini" };
-			std::error_code ec;
-			std::filesystem::remove(a_p.preapply, ec);
+			State st = ReadState(a_p);
+			st.undoReady = false;
+			WriteState(a_p, st);
 			return { true, "Settings from before the preset are back" };
 		}
 		inline Result ApplyPreset(const Paths& a_p, const std::string& a_id)
@@ -618,6 +638,7 @@ namespace HZF
 			if (!WriteAtomic(a_p.user, PresetToUser(text, defs, old))) return { false, "Could not write HorizonUI.user.ini" };
 			State st = ReadState(a_p);
 			st.lastPreset = pr->id;
+			st.undoReady = true;
 			WriteState(a_p, st);
 			return { true, "Applied '" + pr->name + "'" };
 		}
@@ -636,25 +657,36 @@ namespace HZF
 			const std::string text = "[Preset]\r\nName=" + name + "\r\nAuthor=Player\r\nVersion=" + kVersion + "\r\nDescription=Saved in game" +
 			                         (a_when.empty() ? std::string() : " on " + a_when) + ".\r\n" + (body.empty() ? std::string() : "\r\n" + body);
 			if (!WriteAtomic(file, text)) return { false, "Could not write presets/user/" + U8(file.filename()) };
+			{
+				State st = ReadState(a_p);
+				UnhidePresetId(st.hiddenPresets, std::string("u:") + U8(file.filename()));
+				WriteState(a_p, st);
+			}
 			return { true, "Saved '" + name + "'" };
 		}
-		inline Result DeletePreset(const Paths& a_p, const std::string& a_id)
+		// Purpose: hide a saved preset from the F11 list. The file stays on disk.
+		// Inputs: paths and the preset id (u:<file>). Outputs: ok + message.
+		// Hidden ids are stored in HorizonUI.state.ini. Last modified: 2026-10-27.
+		inline Result HidePreset(const Paths& a_p, const std::string& a_id)
 		{
-			if (a_id.compare(0, 2, "u:") != 0) return { false, "Only saved presets can be deleted" };
+			if (a_id.compare(0, 2, "u:") != 0) return { false, "Only saved presets can be removed from the list" };
 			const auto sc = ScanPresets(a_p, Defaults(a_p));
 			const Preset* pr = FindPreset(sc, a_id);
 			if (!pr || !pr->user) return { false, "Preset not found" };
-			std::error_code ec;
-			if (std::filesystem::canonical(pr->path.parent_path(), ec) != std::filesystem::canonical(a_p.userPresets, ec)) return { false, "Refused" };
-			if (!std::filesystem::remove(pr->path, ec)) return { false, "Could not delete it" };
-			return { true, "Deleted '" + pr->name + "'" };
+			State st = ReadState(a_p);
+			HidePresetId(st.hiddenPresets, a_id);
+			if (SamePresetId(st.lastPreset, a_id)) st.lastPreset.clear();
+			if (!WriteState(a_p, st)) return { false, "Could not update HorizonUI.state.ini" };
+			return { true, "Removed '" + pr->name + "' from the list" };
 		}
 		// for the HUD (hzSetFileState): "v=..|bak=..|undo=..|user=..|def=..|skip=N|last=<id>" then one line per preset:
 		// "<id>|<1 user / 0 shipped>|<name>|<author>|<version>|<description>"
 		inline std::string StateString(const Paths& a_p, const Scan& a_s)
 		{
-			std::string s = std::string("v=") + kVersion + "|bak=" + (Exists(a_p.bak) ? "1" : "0") + "|undo=" + (Exists(a_p.preapply) ? "1" : "0") +
-			                "|user=" + (Exists(a_p.user) ? "1" : "0") + "|def=" + (Exists(a_p.def) ? "1" : "0") + "|skip=" + std::to_string(a_s.skipped.size()) + "|last=" + CleanField(ReadState(a_p).lastPreset, 120);
+			const auto st = ReadState(a_p);
+			std::string s = std::string("v=") + kVersion + "|bak=" + (Exists(a_p.bak) ? "1" : "0") + "|undo=" + (st.undoReady ? "1" : "0") +
+			                "|user=" + (Exists(a_p.user) ? "1" : "0") + "|def=" + (Exists(a_p.def) ? "1" : "0") + "|skip=" + std::to_string(a_s.skipped.size()) +
+			                "|last=" + CleanField(st.lastPreset, 120) + "|pdir=" + CleanField(a_p.userPresets.generic_string(), 240);
 			for (const auto& p : a_s.list)
 				s += "\n" + CleanField(p.id, 120) + "|" + (p.user ? "1" : "0") + "|" + p.name + "|" + p.author + "|" + p.version + "|" + p.desc;
 			return s;
@@ -670,7 +702,7 @@ namespace HZF
 			if (a_kind == "restore") return RestoreBackup(a_p);
 			if (a_kind == "undo") return UndoPreset(a_p);
 			if (a_kind == "apply") return ApplyPreset(a_p, arg);
-			if (a_kind == "delete") return DeletePreset(a_p, arg);
+			if (a_kind == "delete") return HidePreset(a_p, arg);
 			if (a_kind == "save") {
 				const auto b2 = arg.find('|');
 				if (b2 == std::string::npos || nl == std::string::npos) return { false, "bad save request" };
@@ -2332,6 +2364,7 @@ namespace HZ
 		std::string             key;
 		std::uint64_t           gen{0};
 		std::uint64_t           writeSeq{0};
+		std::uint64_t           cancelSeq{0};
 	};
 	struct MlLoadJob
 	{
@@ -2362,6 +2395,16 @@ namespace HZ
 	std::uint64_t           g_mlInFlightGen{0};
 	std::atomic<std::uint64_t> g_mlWriteSeq{0};
 	std::uint64_t           g_mlWDoneSeq{0};
+	std::atomic<bool>       g_mlWSkipped{false};
+	std::atomic<bool>       g_mlIoReq{false};
+	struct MlIoJob
+	{
+		enum class Op : std::uint8_t { None, List };
+		Op                    op{Op::None};
+		std::filesystem::path dir;
+		std::string           currentKey;
+	};
+	MlIoJob                 g_mlIoJob;
 	std::thread             g_mlWThread;
 	std::atomic<bool>       g_mlWLive{false};
 	std::atomic<bool>       g_mlWFailed{false};
@@ -2429,13 +2472,15 @@ namespace HZ
 			for (;;) {
 				std::unique_lock lk(g_mlWMu);
 				g_mlWCv.wait_for(lk, std::chrono::milliseconds(500), [] {
-					return g_mlWStop.load() || g_mlWReq.load() || g_mlLoadJobReq.load();
+					return g_mlWStop.load() || g_mlWReq.load() || g_mlLoadJobReq.load() || g_mlIoReq.load();
 				});
 				const bool stop = g_mlWStop.load();
 				const bool wr = g_mlWReq.load();
 				const bool ld = g_mlLoadJobReq.load();
+				const bool io = g_mlIoReq.load();
 				MlWriteJob wjob;
 				MlLoadJob ljob;
+				MlIoJob ijob;
 				if (wr) {
 					wjob = std::move(g_mlWJob);
 					g_mlWReq.store(false);
@@ -2444,38 +2489,47 @@ namespace HZ
 					ljob = std::move(g_mlLJob);
 					g_mlLoadJobReq.store(false);
 				}
+				if (io) {
+					ijob = std::move(g_mlIoJob);
+					g_mlIoReq.store(false);
+				}
 				lk.unlock();
 				if (wr) {
-					bool ok = true;
+					hzlog::WriteRun run = hzlog::WriteRun::Failed;
 					try {
-						if (!hzlog::WriteJobStillCurrent(wjob.writeSeq, g_mlWriteSeq.load())) {
-							ok = true;
-						} else if (wjob.persist && hzlog::PersistAllowed(wjob.snap.character)) {
+						run = hzlog::OrderedSave(g_ml.fileGate, wjob.cancelSeq, wjob.key, [&]() {
+							if (!wjob.persist || !hzlog::PersistAllowed(wjob.snap.character))
+								return true;
 							hzlog::FileStore fs(wjob.dir / "MessageLog", wjob.replace);
 							fs.bakFails = g_mlBakFails;
-							ok = fs.Save(wjob.snap);
+							const bool ok = fs.Save(wjob.snap);
 							g_mlBakFails = fs.bakFails;
 							if (fs.bakBypassed && !g_mlBakBypassLogged) {
 								g_mlBakBypassLogged = true;
 								REX::WARN("message log: bak copy failed {} times; wrote the main file", fs.bakFails);
 							}
-						}
+							return ok;
+						});
 					} catch (...) {
-						ok = false;
+						run = hzlog::WriteRun::Failed;
 					}
-					bool failed = false;
-					hzlog::NoteWorkerSave(ok, failed);
 					{
 						std::lock_guard wlk(g_mlWMu);
 						g_mlWDoneSeq = wjob.writeSeq;
 					}
-					if (failed) {
-						std::lock_guard wlk(g_mlWMu);
-						g_mlWFailSnap = std::move(wjob.snap);
-						g_mlWFailKey = std::move(wjob.key);
-						g_mlWFailed.store(true);
-					} else
-						g_mlWRecovered.store(true);
+					if (run == hzlog::WriteRun::Skipped) {
+						g_mlWSkipped.store(true);
+					} else {
+						bool failed = false;
+						hzlog::NoteWorkerSave(run == hzlog::WriteRun::Saved, failed);
+						if (failed) {
+							std::lock_guard wlk(g_mlWMu);
+							g_mlWFailSnap = std::move(wjob.snap);
+							g_mlWFailKey = std::move(wjob.key);
+							g_mlWFailed.store(true);
+						} else
+							g_mlWRecovered.store(true);
+					}
 				}
 				if (ld) {
 					const auto jobGen = ljob.gen;
@@ -2507,7 +2561,18 @@ namespace HZ
 						g_mlLoadReady.store(true);
 					}
 				}
-				if (stop && !g_mlWReq.load() && !g_mlLoadJobReq.load()) break;
+				if (io && ijob.op == MlIoJob::Op::List) {
+					std::vector<hzlog::OtherCharacter> rows;
+					try {
+						rows = hzlog::ListOtherCharacters(ijob.dir / "MessageLog", ijob.currentKey);
+					} catch (...) {
+						rows.clear();
+					}
+					std::lock_guard mlk(g_mlMu);
+					g_ml.otherCache = std::move(rows);
+					++g_ml.otherCacheGen;
+				}
+				if (stop && !g_mlWReq.load() && !g_mlLoadJobReq.load() && !g_mlIoReq.load()) break;
 			}
 		} catch (...) {
 		}
@@ -2527,7 +2592,8 @@ namespace HZ
 			std::lock_guard lk(g_mlMu);
 			persist = g_ml.buf.settings.persist;
 		}
-		if (!hzlog::WriterStartAllowed(g_mlWLive.load(), g_mlWStarted) || !persist) return;
+		if (!hzlog::WriterStartAllowed(g_mlWLive.load(), g_mlWStarted)) return;
+		(void)persist;
 		if (g_mlWThread.joinable()) {
 			if (!g_mlWDone.load()) return;
 			try { g_mlWThread.join(); } catch (...) { return; }
@@ -2572,6 +2638,10 @@ namespace HZ
 				job.gen = g_mlLoadGen;
 				job.writeSeq = ++g_ml.writeSeq;
 				g_mlWriteSeq.store(g_ml.writeSeq);
+				{
+					std::lock_guard flk(g_ml.fileGate.mu);
+					job.cancelSeq = g_ml.fileGate.cancelSeq;
+				}
 				job.dir = g_ml.horizonDir;
 				job.replace = g_ml.replace;
 				job.persist = true;
@@ -2778,30 +2848,68 @@ namespace HZ
 		return hzlog::BuildView(g_ml.buf, a_gtNow, st);
 	}
 
-	void MsglogClearHistory()
+	void MsglogQueueListRefresh()
 	{
-		std::lock_guard lk(g_mlMu);
-		g_ml.ClearHistoryNow();
-		g_mlWriteSeq.store(g_ml.writeSeq);
+		try {
+			MlIoJob job;
+			job.op = MlIoJob::Op::List;
+			{
+				std::lock_guard lk(g_mlMu);
+				job.dir = g_ml.horizonDir;
+				job.currentKey = g_ml.buf.character.key;
+			}
+			MsglogEnsureWriter();
+			{
+				std::lock_guard lk(g_mlWMu);
+				g_mlIoJob = std::move(job);
+				g_mlIoReq.store(true);
+			}
+			g_mlWCv.notify_one();
+		} catch (...) {
+		}
 	}
 
-	void MsglogDeleteCurrentFileUi()
+	void MsglogClearHistory()
 	{
-		std::lock_guard lk(g_mlMu);
-		g_ml.DeleteCurrentNow();
-		g_mlWriteSeq.store(g_ml.writeSeq);
+		std::string key;
+		std::filesystem::path dir;
+		hzlog::ReplaceFn rep;
+		hzlog::LogState empty;
+		{
+			std::lock_guard lk(g_mlMu);
+			++g_mlLoadGen;
+			g_ml.ClearHistoryMemory();
+			key = g_ml.buf.character.key;
+			dir = g_ml.horizonDir;
+			rep = g_ml.replace;
+			empty = g_ml.buf.Snapshot();
+		}
+		hzlog::OrderedCancel(g_ml.fileGate, key, [&] {
+			if (!hzlog::ValidLogKey(key)) return true;
+			hzlog::FileStore fs(dir / "MessageLog", rep);
+			return fs.SaveEmptyBoth(empty);
+		});
 	}
 
 	std::vector<hzlog::OtherCharacter> MsglogListOthers()
 	{
-		std::lock_guard lk(g_mlMu);
-		return g_ml.ListOthers();
+		std::vector<hzlog::OtherCharacter> copy;
+		{
+			std::lock_guard lk(g_mlMu);
+			copy = g_ml.otherCache;
+		}
+		MsglogQueueListRefresh();
+		return copy;
 	}
 
-	bool MsglogDeleteSelected(const std::string& a_key)
+	// Purpose: display-only MessageLog folder path for Persist-off and the
+	// old-characters list. Inputs: none. Outputs: a copied display string.
+	// Never creates the folder and never opens, writes, or changes files.
+	// Author: Moragar. Last modified: 2026-10-27.
+	std::string MsglogFolderPath()
 	{
 		std::lock_guard lk(g_mlMu);
-		return g_ml.DeleteSelected(a_key);
+		return g_ml.FolderPathDisplay();
 	}
 
 	void MsglogOfferNote(const MlNote& a_n)
