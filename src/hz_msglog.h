@@ -807,6 +807,19 @@ inline FileRead ReadLogFile(const std::filesystem::path& a_path)
 	return r;
 }
 
+// Purpose: next launch session id. Persist nextSess, then take the max of
+// that value, max(entry sess)+1, and max(session id)+1 so old all-1 files
+// also get a new id.
+inline int ResolveNextSess(int a_nextSess, const std::vector<Session>& a_sessions, const std::vector<Entry>& a_entries)
+{
+	int n = a_nextSess > 0 ? a_nextSess : 1;
+	for (const auto& e : a_entries)
+		if (e.sess + 1 > n) n = e.sess + 1;
+	for (const auto& s : a_sessions)
+		if (s.id + 1 > n) n = s.id + 1;
+	return n;
+}
+
 // ---------------------------------------------------------------------------
 // In-memory ring + pins
 // ---------------------------------------------------------------------------
@@ -974,9 +987,9 @@ public:
 		lastPlayedTs = s.lastPlayedTs;
 		settings.historySize = ClampHistory(s.cap > 0 ? s.cap : settings.historySize);
 		nextId = s.nextId ? s.nextId : 1;
-		sess = s.nextSess > 0 ? s.nextSess : 1;
 		sessions = std::move(s.sessions);
 		entries = std::move(s.entries);
+		sess = ResolveNextSess(s.nextSess, sessions, entries);
 		int pins = 0;
 		for (auto& e : entries) {
 			if (e.norm.empty()) e.norm = NormalizeText(e.text);
@@ -1148,6 +1161,90 @@ private:
 	}
 };
 
+// P2 data link: the movie polls this snapshot. No IO. Size is capped.
+enum class ViewStatus : std::uint8_t {
+	Ok = 0,
+	Saving,
+	MemoryOnly,
+	Paused,
+	KeyFallback
+};
+
+struct ViewEntry {
+	std::uint64_t id{0};
+	Kind          kind{Kind::Game};
+	std::string   title;
+	std::string   text;
+	std::string   tag;
+	std::string   loc;
+	int           n{1};
+	int           pin{0};
+	int           missed{0};
+	int           sess{0};
+	std::int64_t  ts{0};
+	double        gt{0};
+	double        ut{-1};
+	double        lt{-1};
+	bool          fromLater{false};
+};
+
+struct ViewSnap {
+	std::vector<ViewEntry> entries;
+	int                    pinCount{0};
+	int                    pinCap{kPinCap};
+	int                    sess{0};
+	std::int64_t           sessStartTs{0};
+	ViewStatus             status{ViewStatus::Ok};
+};
+
+inline constexpr int kViewEntryCap = kLoadEntryCap;
+
+inline ViewStatus ClassifyViewStatus(const Settings& a_s, const Character& a_ch, bool a_saving, bool a_paused)
+{
+	if (a_ch.keySource == "nameHash") return ViewStatus::KeyFallback;
+	if (!a_s.persist) return ViewStatus::MemoryOnly;
+	if (!a_s.record || a_paused) return ViewStatus::Paused;
+	if (a_saving) return ViewStatus::Saving;
+	return ViewStatus::Ok;
+}
+
+// Purpose: copy a capped view of the buffer for the movie. Never reads disk.
+// Inputs: buffer, current game time, status. Outputs: ViewSnap.
+inline ViewSnap BuildView(const Buffer& a_buf, double a_gtNow, ViewStatus a_status)
+{
+	ViewSnap v;
+	v.pinCount = a_buf.PinCount();
+	v.pinCap = kPinCap;
+	v.sess = a_buf.sess;
+	v.sessStartTs = a_buf.sessStartTs;
+	v.status = a_status;
+	const auto n = a_buf.entries.size();
+	const auto start = n > static_cast<std::size_t>(kViewEntryCap)
+		? n - static_cast<std::size_t>(kViewEntryCap) : 0;
+	v.entries.reserve(n - start);
+	for (std::size_t i = start; i < n; ++i) {
+		const auto& e = a_buf.entries[i];
+		ViewEntry row;
+		row.id = e.id;
+		row.kind = e.kind;
+		row.title = e.title;
+		row.text = e.text;
+		row.tag = e.tag;
+		row.loc = e.loc;
+		row.n = e.n;
+		row.pin = e.pin;
+		row.missed = e.missed;
+		row.sess = e.sess;
+		row.ts = e.ts;
+		row.gt = e.gt;
+		row.ut = e.ut;
+		row.lt = e.lt;
+		row.fromLater = FromLaterPoint(e, a_gtNow);
+		v.entries.push_back(std::move(row));
+	}
+	return v;
+}
+
 // ---------------------------------------------------------------------------
 // JSON
 // ---------------------------------------------------------------------------
@@ -1209,6 +1306,8 @@ inline std::string ToJson(const LogState& a_s, std::string_view a_plugin)
 	o += std::to_string(a_s.cap);
 	o += ", \"pinCap\": ";
 	o += std::to_string(a_s.pinCap);
+	o += ", \"nextSess\": ";
+	o += std::to_string(a_s.nextSess);
 	o += ",\n  \"sessions\": [";
 	for (std::size_t i = 0; i < a_s.sessions.size(); ++i) {
 		if (i) o += ", ";
@@ -1594,6 +1693,14 @@ inline ParseResult FromJson(std::string_view a_text)
 				return r;
 			}
 			r.state.pinCap = static_cast<int>(v);
+		} else if (key == "nextSess") {
+			std::int64_t v = 0;
+			if (!JsonIntTok(t, v)) {
+				r.corrupt = true;
+				r.notice = "bad json";
+				return r;
+			}
+			r.state.nextSess = static_cast<int>(v);
 		} else if (key == "sessions") {
 			if (!t.Eat('[')) {
 				r.corrupt = true;

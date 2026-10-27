@@ -2757,6 +2757,15 @@ namespace HZ
 		if (g_mlEng.loc.empty()) g_mlEng.loc = g_mlEng.body;
 	}
 
+	// Purpose: P2 data link. The movie polls this snapshot. g_mlMu only; no IO.
+	hzlog::ViewSnap MsglogCopyView(double a_gtNow)
+	{
+		std::lock_guard lk(g_mlMu);
+		const auto st = hzlog::ClassifyViewStatus(
+			g_ml.buf.settings, g_ml.buf.character, g_ml.writePending, g_ml.persistHold);
+		return hzlog::BuildView(g_ml.buf, a_gtNow, st);
+	}
+
 	void MsglogOfferNote(const MlNote& a_n)
 	{
 		try {

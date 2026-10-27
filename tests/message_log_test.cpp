@@ -315,6 +315,108 @@ int main()
 		Expect(b.Offer(caught) == OfferResult::Stored, "has already caught you is stored");
 	}
 
+	// ---- two launches get distinct session ids ----
+	{
+		const auto root = TmpRoot();
+		Settings s;
+		const auto ch = MakeCharacter(0xABCDu, "Sam");
+		Log first;
+		first.Configure(s, root);
+		first.buf.character = ch;
+		first.buf.StartSession(100);
+		ExpectEqI(first.buf.sess, 1, "first launch session is 1");
+		Expect(first.Offer(Cap(Kind::Game, "launch1 a", 50'000)) == OfferResult::Stored, "launch 1 row a");
+		Expect(first.Offer(Cap(Kind::Game, "launch1 b", 54'000)) == OfferResult::Stored, "launch 1 row b");
+		Expect(first.Offer(Cap(Kind::Game, "launch1 c", 58'000)) == OfferResult::Stored, "launch 1 row c");
+		Expect(first.Flush(59'000), "first launch flush");
+		const auto path = root / "MessageLog" / "MessageLog_0000ABCD.json";
+		const auto body1 = ReadFile(path);
+		Expect(body1.find("\"nextSess\"") != std::string::npos, "file writes nextSess");
+		auto parsed1 = FromJson(body1);
+		Expect(parsed1.ok && parsed1.state.nextSess >= 2, "nextSess is persisted");
+
+		Log second;
+		second.Configure(s, root);
+		second.buf.character = ch;
+		second.LoadCurrent();
+		ExpectEqI(second.buf.sess, 2, "second launch session is 2");
+		second.buf.StartSession(200);
+		Expect(second.Offer(Cap(Kind::Game, "launch2 a", 70'000)) == OfferResult::Stored, "launch 2 row a");
+		Expect(second.Offer(Cap(Kind::Game, "launch2 b", 74'000)) == OfferResult::Stored, "launch 2 row b");
+		ExpectEqI(second.buf.entries.back().sess, 2, "new rows use session 2");
+		Expect(second.Flush(75'000), "second launch flush");
+
+		int n1 = 0, n2 = 0;
+		std::set<int> sessIds;
+		for (const auto& e : second.buf.entries) {
+			sessIds.insert(e.sess);
+			if (e.sess == 1) ++n1;
+			if (e.sess == 2) ++n2;
+		}
+		ExpectEqI(n1, 3, "first launch rows survive");
+		ExpectEqI(n2, 2, "second launch rows are stored");
+		ExpectEqI(static_cast<int>(sessIds.size()), 2, "two launches have two session ids");
+		std::set<int> recIds;
+		for (const auto& rec : second.buf.sessions)
+			recIds.insert(rec.id);
+		ExpectEqI(static_cast<int>(recIds.size()), static_cast<int>(second.buf.sessions.size()),
+			"sessions list ids are unique");
+
+		second.buf.ClearSession();
+		int after1 = 0, after2 = 0;
+		for (const auto& e : second.buf.entries) {
+			if (e.sess == 1) ++after1;
+			if (e.sess == 2) ++after2;
+		}
+		ExpectEqI(after1, 3, "Clear session leaves the earlier launch");
+		ExpectEqI(after2, 0, "Clear session removes only the current launch");
+
+		const char* oldJson =
+			"{\"type\":\"horizon.messagelog\",\"version\":1,\"sessions\":["
+			"{\"id\":1,\"startTs\":1},{\"id\":1,\"startTs\":2}],\"entries\":["
+			"{\"id\":1,\"k\":\"game\",\"t\":\"old a\",\"sess\":1},"
+			"{\"id\":2,\"k\":\"game\",\"t\":\"old b\",\"sess\":1}]}";
+		auto old = FromJson(oldJson);
+		Expect(old.ok, "old file without nextSess still loads");
+		Buffer oldb;
+		oldb.LoadState(std::move(old.state));
+		ExpectEqI(oldb.sess, 2, "old all-1 file gets a new session id");
+
+		auto view = BuildView(second.buf, 10.0, ViewStatus::Ok);
+		ExpectEqI(view.sess, second.buf.sess, "view session matches");
+		ExpectEqI(view.pinCap, kPinCap, "view pin cap");
+		ExpectEqI(static_cast<int>(view.entries.size()), static_cast<int>(second.buf.entries.size()),
+			"view copies current rows");
+		Expect(view.entries.size() <= static_cast<std::size_t>(kViewEntryCap), "view is capped");
+		Expect(ClassifyViewStatus(second.buf.settings, second.buf.character, false, false) == ViewStatus::Ok,
+			"player-id persist view is ok");
+		Character hashCh;
+		hashCh.keySource = "nameHash";
+		Expect(ClassifyViewStatus(second.buf.settings, hashCh, false, false) == ViewStatus::KeyFallback,
+			"name-hash status is the fallback");
+		Settings mem = second.buf.settings;
+		mem.persist = false;
+		Expect(ClassifyViewStatus(mem, second.buf.character, false, false) == ViewStatus::MemoryOnly,
+			"Persist off is memory only");
+		Expect(ClassifyViewStatus(second.buf.settings, second.buf.character, true, false) == ViewStatus::Saving,
+			"pending write is saving");
+		Expect(ClassifyViewStatus(second.buf.settings, second.buf.character, false, true) == ViewStatus::Paused,
+			"persist hold is paused");
+		{
+			Buffer capv;
+			capv.entries.resize(static_cast<std::size_t>(kViewEntryCap) + 20);
+			for (int i = 0; i < kViewEntryCap + 20; ++i) {
+				capv.entries[static_cast<std::size_t>(i)].id = static_cast<std::uint64_t>(i + 1);
+				capv.entries[static_cast<std::size_t>(i)].text = "x";
+			}
+			const auto clipped = BuildView(capv, 0, ViewStatus::Ok);
+			ExpectEqI(static_cast<int>(clipped.entries.size()), kViewEntryCap, "view drops oldest overflow");
+			ExpectEqI(static_cast<int>(clipped.entries.front().id), 21, "view keeps the newest cap rows");
+		}
+		std::error_code ec;
+		std::filesystem::remove_all(root, ec);
+	}
+
 	// ---- dedupe 3 s / Busy 10 s ----
 	{
 		Buffer b;
@@ -714,6 +816,17 @@ int main()
 			const auto offerAt = body.find("g_ml.Offer");
 			Expect(skipAt != std::string::npos && offerAt != std::string::npos && skipAt < offerAt,
 				"calmed lines are skipped before Offer and before dedupe");
+		}
+		{
+			const auto copy = main.find("hzlog::ViewSnap MsglogCopyView");
+			Expect(copy != std::string::npos, "DLL exposes the view snapshot getter");
+			const auto offer = main.find("void MsglogOfferNote");
+			const auto body = copy != std::string::npos && offer > copy ? main.substr(copy, offer - copy) : std::string();
+			Expect(body.find("g_mlMu") != std::string::npos, "the getter takes the buffer lock");
+			Expect(body.find("FileStore") == std::string::npos && body.find("Load(") == std::string::npos
+				&& body.find("Save(") == std::string::npos,
+				"the getter never blocks the game thread on disk");
+			Expect(body.find("BuildView") != std::string::npos, "the getter copies a capped view");
 		}
 	}
 
