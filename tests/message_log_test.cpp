@@ -4,7 +4,7 @@
 // Build: g++ -std=c++20 -Wall -Wextra -pthread -I src -DMSGLOG_REPO_ROOT=\"$PWD\" tests/message_log_test.cpp -o /tmp/message_log_test
 // Or: MSGLOG_REPO_ROOT=$PWD /tmp/message_log_test  (relative __FILE__ still finds the repo).
 // Author: Moragar
-// Last modified: 2026-10-27.
+// Last modified: 2026-10-28.
 
 #include "hz_addr_probe.h"
 #include "hz_msglog.h"
@@ -1436,6 +1436,67 @@ int main()
 		ExpectEqI(static_cast<int>(cap.entries.size()), 101, "flagging later-point rows does not evict");
 	}
 
+	// ---- persisted nextId (empty file and LoadState) ----
+	{
+		LogState held;
+		held.nextId = 42;
+		held.character = MakeCharacter(0x60C0u, "Sam");
+		Buffer loaded;
+		loaded.LoadState(held);
+		ExpectEqI(static_cast<int>(loaded.nextId), 42, "LoadState keeps the persisted nextId");
+		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.4");
+		Expect(json.find("\"nextId\": 42") != std::string::npos, "ToJson writes nextId");
+		auto parsed = FromJson(json);
+		Expect(parsed.ok && parsed.state.nextId == 42, "FromJson reads the persisted nextId");
+		Buffer again;
+		again.LoadState(std::move(parsed.state));
+		ExpectEqI(static_cast<int>(again.nextId), 42, "a restart keeps nextId when the file has no rows");
+		again.Offer(Cap(Kind::Game, "after empty persist", 8'000));
+		ExpectEqI(static_cast<int>(again.entries.back().id), 42, "the next row uses the persisted counter");
+	}
+
+	// ---- Clear session that empties the buffer must persist empty ----
+	{
+		const auto root = TmpRoot();
+		Settings s;
+		const auto ch = MakeCharacter(0x60C1u, "Sam");
+		Log first;
+		first.Configure(s, root);
+		first.buf.character = ch;
+		first.buf.StartSession(100);
+		Expect(first.Offer(Cap(Kind::Game, "only this launch a", 10'000)) == OfferResult::Stored,
+			"seed this-launch row a");
+		Expect(first.Offer(Cap(Kind::Game, "only this launch b", 11'000)) == OfferResult::Stored,
+			"seed this-launch row b");
+		Expect(first.Flush(12'000), "seed this-launch rows on disk");
+		ExpectEqI(static_cast<int>(first.buf.entries.size()), 2, "two this-launch rows");
+		const auto nextBefore = first.buf.nextId;
+		first.buf.ClearSession();
+		Expect(first.buf.entries.empty(), "Clear session emptied the buffer");
+		Expect(first.buf.nextId == nextBefore, "Clear session does not rewind nextId");
+		MsglogWriteCoordinator coord;
+		auto d = coord.OnClear(ch.key, first.buf.Snapshot());
+		Expect(d.queue && d.emit.emptyClear, "emptied Clear session is an explicit Clear");
+		FileStore fs(root / "MessageLog");
+		Expect(ApplyDiskWrite(fs, d.emit.snap, d.emit.persist, d.emit.emptyClear, d.emit.clearFirst),
+			"emptied Clear session writes empty main and bak");
+		Log restart;
+		restart.Configure(s, root);
+		restart.buf.character = ch;
+		restart.LoadCurrent();
+		Expect(restart.buf.entries.empty(), "restart after emptied Clear session has no rows");
+		Expect(restart.buf.nextId == nextBefore, "restart keeps nextId after emptied Clear session");
+		Log reload;
+		reload.Configure(s, root);
+		reload.buf.character = ch;
+		reload.LoadCurrent();
+		Expect(reload.buf.entries.empty(), "reload after emptied Clear session has no rows");
+		Expect(!ShouldQueueWrite(false, true, false, ch.key, ch.key),
+			"an automatic empty snapshot is still not a write");
+		std::error_code ecClear;
+		std::filesystem::remove_all(root, ecClear);
+	}
+
 	// ---- per-character switch / NG+ ----
 	{
 		const auto root = TmpRoot();
@@ -1773,9 +1834,49 @@ int main()
 		Expect(main.find("void MsglogTogglePin(") != std::string::npos, "DLL pin toggle");
 		Expect(Slurp("src/hz_msglog.h").find("PackView") != std::string::npos, "the view is packed for the movie");
 		{
+			const auto clr = main.find("void MsglogClearSession()");
+			const auto next = main.find("void MsglogTogglePin(", clr);
+			const auto body = clr != std::string::npos && next > clr ? main.substr(clr, next - clr) : std::string();
+			Expect(body.find("OnClear") != std::string::npos, "emptied Clear session uses OnClear");
+			Expect(body.find("entries.empty()") != std::string::npos, "Clear session checks whether the buffer emptied");
+			Expect(body.find("MsglogRequestWrite(true)") != std::string::npos,
+				"Clear session still rewrites when earlier rows remain");
+		}
+		{
+			const auto poll = main.find("void MsglogPollUi()");
+			const auto next = main.find("void MsglogOfferNote", poll);
+			const auto body = poll != std::string::npos && next > poll ? main.substr(poll, next - poll) : std::string();
+			Expect(body.find("viewGen") != std::string::npos, "PollUi reads the buffer generation");
+			Expect(body.find("g_mlUiPacked") != std::string::npos && body.find("g_mlUiPackGen") != std::string::npos,
+				"PollUi packs only when the generation changes");
+		}
+		Expect(main.find("pruneEmpty") == std::string::npos
+			&& main.find("PruneEmptiedBuffer") == std::string::npos,
+			"dead pruneEmpty wiring is gone from the DLL");
+		Expect(as.find("this.hzMlAct = \"\"") != std::string::npos, "ForceClose clears a pending action");
+		{
+			const auto fc = as.find("function hzMsglogForceClose");
+			const auto next = as.find("function hzMsglogEnsure", fc);
+			const auto body = fc != std::string::npos && next > fc ? as.substr(fc, next - fc) : std::string();
+			Expect(body.find("this.hzMlAct = \"\"") != std::string::npos,
+				"ForceClose clears hzMlAct so nothing runs the next open");
+		}
+		Expect(as.find("hzMsglogChipKeepVisible") != std::string::npos
+			&& as.find("strip.mask = clip") != std::string::npos,
+			"the chip row scrolls sideways and clips to the popup");
+		Expect(as.find("hzMsglogKindIcon") != std::string::npos, "rows draw a type icon");
+		Expect(as.find("minPx:int = 0) : Number") != std::string::npos, "hzSetKey and hzSetBtn accept minPx");
+		Expect(as.find("hzSetKey(b,g,ox + 22,fy + 4,\"/\",uint(T.mut),24,13,13)") != std::string::npos,
+			"the Find keycap passes minPx 13");
+		Expect(as.find("hzSetBtn(b,g,bxr,by,\"BACK\",false,false,this.hzMlHover == \"back\",T,\"mlback\",13,13)") != std::string::npos,
+			"log buttons pass minPx 13");
+		{
 			const auto ini = Slurp("Interface/HorizonUI/HorizonUI.default.ini");
 			Expect(ini.find("offers to delete") == std::string::npos, "Persist comment does not offer a delete");
 			Expect(ini.find("only stops writing") != std::string::npos, "Persist off only stops writing");
+			Expect(ini.find("settings popup") == std::string::npos
+				&& ini.find("settings folder") == std::string::npos,
+				"Persist comment does not mention a settings popup");
 		}
 		Expect(hzc.find("function hzcTakeLog") != std::string::npos, "movie exposes hzcTakeLog");
 		Expect(hzc.find("function hzcTakeLog") != std::string::npos && hzc.find("HUDMessageData stays with the DLL sink") != std::string::npos,
@@ -1860,6 +1961,10 @@ int main()
 			const auto ini = Slurp("Interface/HorizonUI/HorizonUI.default.ini");
 			Expect(ini.find("LogTypes=medical,crew,reaction,busy,crime,credits,quest,location,xp,game") != std::string::npos,
 				"default.ini LogTypes includes reaction after crew");
+			const auto readme = Slurp("README.md");
+			Expect(readme.find("settings popup") == std::string::npos
+				&& readme.find("settings folder") == std::string::npos,
+				"README does not mention a settings popup");
 		}
 	}
 
@@ -3434,6 +3539,16 @@ int main()
 				"queue decisions live in the header");
 			Expect(hdr.find("class MsglogWriteCoordinator") != std::string::npos,
 				"writer-side state lives in MsglogWriteCoordinator");
+			Expect(hdr.find("PollSkipsRetry") != std::string::npos,
+				"Poll halves live in PollSkipsRetry");
+			{
+				const auto pollAt = hdr.find("std::vector<WriteDecision> Poll(");
+				const auto nextAt = hdr.find("const std::vector<QueuedWrite>& PendingJobs()");
+				const auto body = pollAt != std::string::npos && nextAt > pollAt
+					? hdr.substr(pollAt, nextAt - pollAt) : std::string();
+				Expect(body.find("PollSkipsRetry") != std::string::npos,
+					"Poll uses PollSkipsRetry for both halves");
+			}
 			Expect(hdr.find("std::map<std::string, int> launchPins") != std::string::npos,
 				"launchPins is a map");
 			Expect(main.find("g_mlWrites.OnClear") != std::string::npos
@@ -4266,6 +4381,13 @@ int main()
 			Expect(retries.empty(), "P2-H Poll does not replace a newer queued job with failSnap");
 			Expect(coord.WritePendingSeq(ch.key) == newer.emit.writeSeq,
 				"P2-H the newer write seq stays queued");
+		}
+
+		{
+			Expect(PollSkipsRetry(true, false), "writePending alone skips a Poll retry");
+			Expect(PollSkipsRetry(false, true), "a queued job alone skips a Poll retry");
+			Expect(!PollSkipsRetry(false, false), "Poll retries when neither half is set");
+			Expect(PollSkipsRetry(true, true), "both Poll guard halves together still skip");
 		}
 
 		{
