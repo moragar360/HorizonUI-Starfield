@@ -2,7 +2,8 @@
 """Scaleform and UI-path file-I/O call-graph for every file under src/.
 
 Poll() (job thread) must not reach any Scaleform site. PollScaleform()
-is the UI-thread root and must not reach file I/O (ifstream, filesystem
+(HUDMenu) and PollMessages() (HUDMessagesMenu) are the UI-thread roots
+and must not reach file I/O (ifstream, filesystem
 exists/copy/create/rename/remove, CreateFile, LoadLibrary,
 GetFileVersionInfo, HzAddrLoad, ReadOwnFileVersion).
 
@@ -164,14 +165,16 @@ def reachable(root: str, calls: dict[str, set[str]]) -> set[str]:
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
     fns, cpp_fns, _where = parse_src(root)
-    if "Poll" not in cpp_fns or "PollScaleform" not in cpp_fns:
-        print("FAIL: Poll / PollScaleform not found in src/*.cpp", file=sys.stderr)
+    if "Poll" not in cpp_fns or "PollScaleform" not in cpp_fns or "PollMessages" not in cpp_fns:
+        print("FAIL: Poll / PollScaleform / PollMessages not found in src/*.cpp", file=sys.stderr)
         return 1
     sf = matching_fns(fns, SF_RE)
     io_cpp = matching_fns(cpp_fns, IO_RE)
     cpp_calls = callers_of(cpp_fns)
     from_poll = reachable("Poll", cpp_calls)
-    from_ui = reachable("PollScaleform", cpp_calls)
+    from_hud = reachable("PollScaleform", cpp_calls)
+    from_msg = reachable("PollMessages", cpp_calls)
+    from_ui = from_hud | from_msg
     leaked = sorted(name for name in sf if name in from_poll and name not in SKIP_ROOTS)
     print("Scaleform-touching functions:")
     for name in sf:
@@ -191,15 +194,19 @@ def main() -> int:
         )
         print(f"  {name:24} {thread}")
     print(f"Poll() reaches: {', '.join(sorted(from_poll))}")
-    print(f"PollScaleform() reaches: {', '.join(sorted(from_ui))}")
+    print(f"PollScaleform() reaches: {', '.join(sorted(from_hud))}")
+    print(f"PollMessages() reaches: {', '.join(sorted(from_msg))}")
     print(f"file-I/O .cpp functions: {', '.join(sorted(io_cpp))}")
     if leaked:
         print("FAIL: Scaleform reachable from Poll(): " + ", ".join(leaked), file=sys.stderr)
         return 1
-    needed = {"HudInvoke", "HudSafe", "MsglogTakeMovie", "MsglogPollUi", "BannerPoll", "CommsRxPoll"}
-    missing = sorted(n for n in needed if n not in from_ui)
+    needed_hud = {"HudInvoke", "HudSafe", "MsglogPollUi"}
+    needed_msg = {"MsglogTakeMovie", "BannerPoll", "CommsRxPoll"}
+    missing = sorted(n for n in needed_hud if n not in from_hud) + sorted(
+        n for n in needed_msg if n not in from_msg
+    )
     if missing:
-        print("FAIL: PollScaleform does not reach " + ", ".join(missing), file=sys.stderr)
+        print("FAIL: movie polls do not reach " + ", ".join(missing), file=sys.stderr)
         return 1
     poll_body = "\n".join(strip_line(ln) for ln in cpp_fns["Poll"].splitlines())
     for token in ("GetMenu", "menuObj", "Invoke(", "HudSafe", "HudInvoke", "MsglogTakeMovie"):

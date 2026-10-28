@@ -47,7 +47,7 @@ const DIR = numArray("HZC_RX_DIR");
 const NOT = stringArray("HZC_RX_NOT");
 const TITLE = stringArray("HZC_RX_TITLE");
 
-expect(src.indexOf('private static const HZC_BUILD:String = "0.43.0.4";') >= 0, "comms build id is 0.43.0.4");
+expect(src.indexOf('private static const HZC_BUILD:String = "0.43.0.5";') >= 0, "comms build id is 0.43.0.5");
 expect(src.indexOf('HudMessagesX') >= 0 && src.indexOf("function hzcMsgLayout") >= 0, "HUD Messages box reads a saved layout");
 expect(src.indexOf("x = Math.max(vr.x,Math.min(vr.right - w,x));") >= 0, "HUD Messages box is clamped on screen");
 expect(src.indexOf("y = Math.max(vr.y,Math.min(vr.bottom - h,y));") >= 0, "HUD Messages box is clamped vertically");
@@ -422,9 +422,11 @@ expect(src.indexOf("loves|likes") < 0, "the sentence match is not a regex");
 	expect(clipBody.indexOf("g_hzpClipLogged = true") > clipDbg, "Debug off does not latch the hold-breath diag");
 	expect(clipBody.indexOf("a_now < g_hzpClipNext") >= 0, "the hold-breath diag does not run every frame");
 	expect(clipBody.indexOf("g_hzpClipNext = a_now + 500") >= 0, "the hold-breath diag waits 500 ms");
-	const clipCall = cpp.indexOf("ScopeClipPoll(now);");
-	const clipSafe = cpp.indexOf("if (!HudSafe())", clipCall);
-	expect(clipCall > 0 && clipSafe > clipCall, "the hold-breath diag runs while a scope is open");
+	const hook = cpp.indexOf("void HookedAdvanceFrame");
+	const hookEnd = cpp.indexOf("void InstallAdvanceHook", hook);
+	const hookBody = hook >= 0 && hookEnd > hook ? cpp.slice(hook, hookEnd) : "";
+	expect(hookBody.indexOf("ScopeClipPoll(now)") >= 0 && hookBody.indexOf("g_scopeRoot") >= 0,
+		"the hold-breath diag runs while a scope is open");
 	expect(cpp.indexOf("ScopeClipPoll();") < 0, "the hold-breath diag takes the poll time");
 }
 

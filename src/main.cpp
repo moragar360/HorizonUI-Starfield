@@ -116,31 +116,34 @@ namespace HZ
 	std::atomic<std::uint32_t> g_scan{0x57};  // F11
 	std::atomic<int>           g_vk{VK_F11};
 	bool          g_wasDown = false;
+	bool          g_wasDownJob = false;
 	std::atomic<bool> g_iniDebug{false};   // [Debug] Debug=1. Gates the one-time hud form, gmst, address, and hold-breath lines.
 
 	// SFSE documents AddPermanentTask as "every frame on Main". Starfield
 	// 1.16.244 actually runs that queue on BSJobs workers (crash3: Invoke
 	// from "BSJobs 9"). TaskInterface has no UI-thread API. Scaleform
-	// runs only from the HUD movie AdvanceFrame hook (see PollScaleform).
-	// g_uiTid is adopted only from the stored HUD / HUDMessages root's
-	// own AdvanceFrame. Window-owner and any-menu tids are hints. A
-	// later HUD-root tid needs ~500 ms of sustained advances and none
-	// on the recorded tid (see hz_ui_tid.h).
+	// Invokes run only from the stored movie's own AdvanceFrame
+	// (PollScaleform on HUDMenu, PollMessages on HUDMessagesMenu).
+	// g_uiTid is a first-record log hint, not a poll gate. Window-owner
+	// and any-menu tids are hints. See hz_ui_tid.h.
 	std::atomic<std::uint32_t> g_uiTid{0};
-	std::mutex                 g_uiTidMu;
-	std::uint64_t              g_uiTidLastHudMs{0};
-	std::uint32_t              g_uiTidCand{0};
-	std::uint64_t              g_uiTidCandSince{0};
-	std::atomic<std::uint64_t> g_uiTidSwitchLogMs{0};
+	std::atomic<std::uint32_t> g_loadTid{0};
+	std::atomic<std::uint32_t> g_jobTid{0};
 	std::atomic<bool>          g_inPoll{false};
+	std::atomic<bool>          g_inMsgPoll{false};
+	std::atomic<bool>          g_inScopePoll{false};
 	std::atomic<bool>          g_uiPollLogged{false};
+	std::atomic<bool>          g_msgPollLogged{false};
 	std::atomic<bool>          g_jobPollLogged{false};
-	std::atomic<bool>          g_hookWrongTidLogged{false};
 	std::atomic<bool>          g_windowTidHinted{false};
 	std::atomic<bool>          g_menuTidHinted{false};
-	std::atomic<ULONGLONG>     g_sfLastMs{0};
+	std::atomic<bool>          g_settingsKeyReq{false};
+	std::atomic<bool>          g_uiPause{false};
 	std::atomic<std::uint64_t> g_hookCalls{0};
 	std::atomic<ULONGLONG>     g_hookAliveNext{0};
+	std::atomic<std::uint64_t> g_hudPolls{0};
+	std::atomic<std::uint32_t> g_lastHudPollTid{0};
+	std::atomic<std::uint64_t> g_pollHeartbeatMs{0};
 	std::atomic<bool>          g_uiLoading{false};
 	std::atomic<bool>          g_uiMainMenu{false};
 	std::atomic<std::uint32_t> g_advTids[8]{};
@@ -150,7 +153,6 @@ namespace HZ
 	void PreloadDllFileVersion();
 	void FilesJobPreload();
 	void RecordUiTidOnce(std::uint32_t a_tid, const char* a_src);
-	void AdoptHudAdvanceTid(std::uint32_t a_tid, std::uint64_t a_nowMs);
 
 	std::filesystem::path IniPath()
 	{
@@ -773,26 +775,6 @@ namespace HZ
 		(void)a_src;
 	}
 
-	void AdoptHudAdvanceTid(std::uint32_t a_tid, std::uint64_t a_nowMs)
-	{
-		if (!a_tid) return;
-		std::lock_guard lk(g_uiTidMu);
-		const auto have = g_uiTid.load(std::memory_order_acquire);
-		const auto d = hzlog::UiTidOnHudAdvance(have, a_tid, a_nowMs,
-			g_uiTidLastHudMs, g_uiTidCand, g_uiTidCandSince);
-		if (d.action == hzlog::UiTidAction::RecordFirst) {
-			RecordUiTidOnce(d.to, hzlog::kUiTidSourceHudRoot);
-			return;
-		}
-		if (d.action != hzlog::UiTidAction::Switch) return;
-		g_uiTid.store(d.to, std::memory_order_release);
-		const auto lastLog = g_uiTidSwitchLogMs.load(std::memory_order_relaxed);
-		if (hzlog::UiTidSwitchLogDue(lastLog, a_nowMs)) {
-			REX::ERROR("thread: ui tid self-heal from {} to {} source=hud-root-advance", d.from, d.to);
-			g_uiTidSwitchLogMs.store(a_nowMs, std::memory_order_relaxed);
-		}
-	}
-
 	// Purpose: log the foreground window's owner thread as a hint.
 	// Never adopts g_uiTid (overlay windows can own a different tid).
 	// Inputs: none. Outputs: one INFO line. Author: Moragar.
@@ -854,15 +836,13 @@ namespace HZ
 	}
 
 #ifndef NDEBUG
-	// Purpose: log Scaleform calls that run off the UI thread. Off in
-	// release (NDEBUG). Inputs: call-site name. Outputs: a warn line.
+	// Purpose: debug-only Scaleform call-site breadcrumb. Tid is a
+	// log hint, not a gate (movies advance on many workers). Off in
+	// release (NDEBUG). Inputs: call-site name. Outputs: none.
 	// Author: Moragar. Last modified: 2026-10-28.
 	void HzNoteScaleformThread(const char* a_where)
 	{
-		const auto ui = g_uiTid.load(std::memory_order_relaxed);
-		const auto cur = ::GetCurrentThreadId();
-		if (!hzlog::ScaleformThreadOk(ui, cur))
-			REX::WARN("scaleform off UI thread: {} ui={} cur={}", a_where ? a_where : "?", ui, cur);
+		(void)a_where;
 	}
 #endif
 
@@ -1501,30 +1481,50 @@ namespace HZ
 	// Scanner module (modules\scanner.marker). Outside a scan nothing is called. Never while a load / fader / main / pause
 	// menu is up (a closed push waits until it is gone). Each movie only when it is open and its document object answers
 	// (HasMember). The first push of the session and the first closed push are logged once (which movies answered).
-	bool g_pushOpen = false;      // the last push said "open"
+	bool g_pushOpenHud = false;   // last HUD hz41DllScan said "open"
+	bool g_pushOpenMsg = false;   // last messages hzcDllScan said "open"
 	bool g_pushLogged = false;
 	bool g_pushEndLogged = false;
-	void ScanPush(RE::UI* a_ui)
+	ULONGLONG g_scanHudNext = 0;
+	ULONGLONG g_scanMsgNext = 0;
+
+	// Purpose: push scan-open to one movie from that movie's own
+	// AdvanceFrame. Each movie has its own last-open latch so a closed
+	// push is not dropped when the other movie polls first.
+	// Inputs: UI, whether this is the HUD half, now-ms.
+	// Outputs: one Invoke on that movie. Author: Moragar.
+	// Last modified: 2026-10-28.
+	void ScanPushMovie(RE::UI* a_ui, bool a_hud, ULONGLONG a_now)
 	{
+		if (!a_ui) return;
+		auto& next = a_hud ? g_scanHudNext : g_scanMsgNext;
+		if (a_now < next) return;
+		next = a_now + 100;
 		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu" })
 			if (a_ui->IsMenuOpen(m)) return;
 		const bool open = g_banScanMod.load() == 1 && a_ui->IsMenuOpen("MonocleMenu");
-		if (!open && !g_pushOpen) return;   // not scanning and the closed push was sent: nothing
+		bool& was = a_hud ? g_pushOpenHud : g_pushOpenMsg;
+		if (!open && !was) return;
 		GValue arg(open);
-		bool hudOk = false, msgOk = false;
-		if (auto hud = MenuLive(a_ui, "HUDMenu", "hz41DllScan"); hud && hud->menuObj.HasMember("hz41DllScan"))
-			hudOk = hud->menuObj.Invoke("hz41DllScan", nullptr, &arg, 1);
-		if (auto msg = MenuLive(a_ui, "HUDMessagesMenu", "hzcDllScan"); msg && msg->menuObj.HasMember("hzcDllScan"))
-			msgOk = msg->menuObj.Invoke("hzcDllScan", nullptr, &arg, 1);
+		bool ok = false;
+		if (a_hud) {
+			if (auto hud = MenuLive(a_ui, "HUDMenu", "hz41DllScan"); hud && hud->menuObj.HasMember("hz41DllScan"))
+				ok = hud->menuObj.Invoke("hz41DllScan", nullptr, &arg, 1);
+		} else {
+			if (auto msg = MenuLive(a_ui, "HUDMessagesMenu", "hzcDllScan"); msg && msg->menuObj.HasMember("hzcDllScan"))
+				ok = msg->menuObj.Invoke("hzcDllScan", nullptr, &arg, 1);
+		}
 		if (open && !g_pushLogged) {
 			g_pushLogged = true;
-			REX::INFO("scanner: scan state push started (HUD hz41DllScan {}, HUD messages hzcDllScan {})", hudOk ? "OK" : "not answered", msgOk ? "OK" : "not answered (no Comms module?)");
+			REX::INFO("scanner: scan state push started ({} {})",
+				a_hud ? "HUD hz41DllScan" : "HUD messages hzcDllScan", ok ? "OK" : "not answered");
 		}
 		if (!open && !g_pushEndLogged) {
 			g_pushEndLogged = true;
-			REX::INFO("scanner: scan state push ended (closed sent once; HUD {}, HUD messages {})", hudOk ? "OK" : "not answered", msgOk ? "OK" : "not answered");
+			REX::INFO("scanner: scan state push ended (closed sent once; {} {})",
+				a_hud ? "HUD" : "HUD messages", ok ? "OK" : "not answered");
 		}
-		g_pushOpen = open;
+		was = open;
 	}
 
 	// Purpose: job-thread marker check. No Scaleform. Author: Moragar.
@@ -1543,7 +1543,7 @@ namespace HZ
 		g_banNext = a_now + 100;
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) return;
-		ScanPush(ui);   // v0.41.0 (test r2: after the marker check; only while scanning + one closed push)
+		ScanPushMovie(ui, false, a_now);   // HUDMessagesMenu only; HUD half is ScanPushMovie from PollScaleform
 		bool scan = g_banScanMod.load() == 1 && ui->IsMenuOpen("MonocleMenu");
 		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu" })
 			if (ui->IsMenuOpen(m)) scan = false;
@@ -1693,26 +1693,44 @@ namespace HZ
 
 	// v0.42.0 r3: which Horizon movie builds are loaded (HUD hzBuildId / Comms hzcBuildId), logged when it changes.
 	// The DLL file version is DllFileVersion(), not a literal, so it cannot drift from the version resource.
+	// Each half Invokes only the movie whose AdvanceFrame is running.
 	std::string g_buildsLogged;
-	ULONGLONG   g_buildsNext = 0;
-	void BuildLog(ULONGLONG a_now)
+	std::string g_buildsHud = "no build id (older than r3 or not Horizon)";
+	std::string g_buildsMsg = "no build id (older than r3, no Comms module or not open)";
+	ULONGLONG   g_buildsHudNext = 0;
+	ULONGLONG   g_buildsMsgNext = 0;
+
+	void BuildLogFlush()
 	{
-		if (a_now < g_buildsNext) return;
-		g_buildsNext = a_now + 5000;
-		auto ui = RE::UI::GetSingleton();
-		if (!ui) return;
-		PushDllFileVersion();
-		std::string hud = "no build id (older than r3 or not Horizon)", msg = "no build id (older than r3, no Comms module or not open)";
-		GValue a;
-		if (HudInvoke("hzBuildId", &a) && a.IsString() && a.GetString()) hud = a.GetString();
-		if (auto m = MenuLive(ui, "HUDMessagesMenu", "hzcBuildId"); m && m->menuObj.HasMember("hzcBuildId")) {
-				GValue b;
-				if (m->menuObj.Invoke("hzcBuildId", &b, nullptr, 0) && b.IsString() && b.GetString()) msg = b.GetString();
-			}
-		const std::string s = "HUD " + hud + ", Comms HUD messages " + msg;
+		const std::string s = "HUD " + g_buildsHud + ", Comms HUD messages " + g_buildsMsg;
 		if (s == g_buildsLogged) return;
 		g_buildsLogged = s;
 		REX::INFO("movie builds: {} (DLL file version {})", s, DllFileVersion());
+	}
+
+	void BuildLogHud(ULONGLONG a_now)
+	{
+		if (a_now < g_buildsHudNext) return;
+		g_buildsHudNext = a_now + 5000;
+		PushDllFileVersion();
+		GValue a;
+		if (HudInvoke("hzBuildId", &a) && a.IsString() && a.GetString())
+			g_buildsHud = a.GetString();
+		BuildLogFlush();
+	}
+
+	void BuildLogMsg(ULONGLONG a_now)
+	{
+		if (a_now < g_buildsMsgNext) return;
+		g_buildsMsgNext = a_now + 5000;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		if (auto m = MenuLive(ui, "HUDMessagesMenu", "hzcBuildId"); m && m->menuObj.HasMember("hzcBuildId")) {
+			GValue b;
+			if (m->menuObj.Invoke("hzcBuildId", &b, nullptr, 0) && b.IsString() && b.GetString())
+				g_buildsMsg = b.GetString();
+		}
+		BuildLogFlush();
 	}
 
 	// Purpose: the reaction backup is always compiled. HZ_COMMS_MSG_LOG gates only the verbose trace
@@ -4050,11 +4068,21 @@ namespace HZ
 	// Last modified: 2026-10-28.
 	void Poll()
 	{
-		if (!g_jobPollLogged.exchange(true))
-			REX::INFO("thread: job poll tid={}", ::GetCurrentThreadId());
+		const auto jobTid = ::GetCurrentThreadId();
+		if (!g_jobPollLogged.exchange(true)) {
+			g_jobTid.store(jobTid, std::memory_order_release);
+			REX::INFO("thread: job poll tid={}", jobTid);
+		}
 		HintWindowOwnerTid();
 		FilesJobPreload();
 		const auto now = GetTickCount64();
+		{
+			HWND w = GameWindow();
+			const bool down = w && (GetAsyncKeyState(g_vk.load()) & 0x8000) != 0;
+			if (hzlog::SettingsKeyEdge(down, g_wasDownJob))
+				g_settingsKeyReq.store(true, std::memory_order_release);
+			g_wasDownJob = down;
+		}
 		BannerPollWork(now);
 		FilesPollWork();
 		MsglogPoll(now);
@@ -4066,41 +4094,43 @@ namespace HZ
 			g_mlQuitReq.store(true);
 	}
 
-	// Purpose: every Scaleform call lives here. Runs from HUD / HUD
-	// messages AdvanceFrame on the UI thread after that movie advances.
-	// Re-fetches menus each call. Inputs: none. Outputs: HUD invokes.
-	// No disk. Author: Moragar. Last modified: 2026-10-28.
+	// Purpose: HUDMenu Invokes only. Runs from the stored HUDMenu
+	// root's own AdvanceFrame on whatever thread advanced it. F11 is
+	// consumed from the job-thread latch. No HUDMessagesMenu Invoke.
+	// Inputs: none. Outputs: HUD invokes. No disk. Author: Moragar.
+	// Last modified: 2026-10-28.
 	void PollScaleform()
 	{
 		const auto now = GetTickCount64();
+		const auto tid = ::GetCurrentThreadId();
+		g_lastHudPollTid.store(tid, std::memory_order_relaxed);
+		const auto polls = g_hudPolls.fetch_add(1, std::memory_order_relaxed) + 1;
 		if (!g_uiPollLogged.exchange(true))
-			REX::INFO("thread: ui poll tid={}", ::GetCurrentThreadId());
+			REX::INFO("thread: ui poll tid={}", tid);
 		if (auto uiPub = RE::UI::GetSingleton()) {
 			g_uiLoading.store(uiPub->IsMenuOpen("LoadingMenu"));
 			g_uiMainMenu.store(uiPub->IsMenuOpen("MainMenu"));
+			g_uiPause.store(uiPub->IsMenuOpen("PauseMenu"));
+			ScanPushMovie(uiPub, true, now);
 		}
-		BannerPoll(now);        // v0.40.3
-		CommsDbgPoll(now);      // v0.42.0.6: empty when HZ_COMMS_MSG_LOG is 0
-		CommsRxPoll(now);       // v0.42.0.7: reaction backup. Before the HUD-ready return below.
-		ScopeClipPoll(now);     // v0.42.0.8: hold-breath clip line. Before the HUD-ready return, so a scope still logs it.
-		try { MsglogTakeMovie(); } catch (...) {}
-		try { MsglogPollUi(); } catch (...) {}
 		if (g_mlHudReadyReq.exchange(false))
 			MsglogOnHudReady();
-		if (g_mlCapture.load()) {
-			static ULONGLONG s_engNext = 0;
-			if (now >= s_engNext) {
-				s_engNext = now + hzlog::kEngineRefreshMinMs;
-				MsglogRefreshEngine(false);
-			}
-			MsglogPromoteId();
-		}
 		HWND wnd = GameWindow();
 		bool down = wnd && (GetAsyncKeyState(g_vk.load()) & 0x8000) != 0;
-		if (down && !g_wasDown) OnSettingsKey();
+		if (hzlog::SettingsKeyEdge(down, g_wasDown) || g_settingsKeyReq.exchange(false))
+			OnSettingsKey();
 		g_wasDown = down;
 
-		if (!HudSafe()) {
+		const bool hudSafe = HudSafe();
+		const auto lastBeat = g_pollHeartbeatMs.load(std::memory_order_relaxed);
+		if (hzlog::PollHeartbeatDue(lastBeat, now, hzlog::kPollHeartbeatMs)) {
+			REX::INFO("scaleform: poll alive calls={} lastTid={} hudSafe={} root={} uiTid={}",
+				polls, tid, hudSafe ? 1 : 0,
+				static_cast<const void*>(g_hudRoot.load(std::memory_order_acquire)),
+				g_uiTid.load(std::memory_order_relaxed));
+			g_pollHeartbeatMs.store(now, std::memory_order_relaxed);
+		}
+		if (!hudSafe) {
 			if (HudSafe(false)) {   // v0.42.0 r3: only a scope is up: F11 stays blocked, the HUD-ready time is kept
 				if (g_open.load()) ResetSettingsState();
 				return;
@@ -4125,9 +4155,39 @@ namespace HZ
 			HudOwnerCheck();
 			MsglogOnHudReady();
 		}
-		BuildLog(now);   // v0.42.0 r3
+		if (g_mlCapture.load()) {
+			static ULONGLONG s_engNext = 0;
+			if (now >= s_engNext) {
+				s_engNext = now + hzlog::kEngineRefreshMinMs;
+				MsglogRefreshEngine(false);
+			}
+			MsglogPromoteId();
+		}
+		try { MsglogPollUi(); } catch (...) {}
+		BuildLogHud(now);
 		EnsureSubclass(wnd);
 		PollSettings(wnd, now);
+	}
+
+	// Purpose: HUDMessagesMenu Invokes only. Runs from that movie's
+	// own AdvanceFrame. Take-log / cards / banner skip load and the
+	// main menu inside each helper. Inputs: none. Outputs: messages
+	// invokes. No disk. Author: Moragar. Last modified: 2026-10-28.
+	void PollMessages()
+	{
+		const auto now = GetTickCount64();
+		if (!g_msgPollLogged.exchange(true))
+			REX::INFO("thread: msg poll tid={}", ::GetCurrentThreadId());
+		if (auto uiPub = RE::UI::GetSingleton()) {
+			g_uiLoading.store(uiPub->IsMenuOpen("LoadingMenu"));
+			g_uiMainMenu.store(uiPub->IsMenuOpen("MainMenu"));
+			g_uiPause.store(uiPub->IsMenuOpen("PauseMenu"));
+		}
+		BannerPoll(now);
+		CommsDbgPoll(now);
+		CommsRxPoll(now);
+		try { MsglogTakeMovie(); } catch (...) {}
+		BuildLogMsg(now);
 	}
 
 	using AdvanceFn = void (*)(RE::Scaleform::GFx::ASMovieRootBase*, bool);
@@ -4135,6 +4195,7 @@ namespace HZ
 	std::atomic<bool>      g_advanceHooked{false};
 	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_hudRoot{nullptr};
 	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_hudMsgRoot{nullptr};
+	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_scopeRoot{nullptr};
 
 	void LogAdvanceTid(std::uint32_t a_tid)
 	{
@@ -4167,11 +4228,6 @@ namespace HZ
 		const auto tid = ::GetCurrentThreadId();
 		LogAdvanceTid(tid);
 		const auto now = GetTickCount64();
-		const bool hudRoot = hzlog::IsStoredHudRoot(a_this,
-			g_hudRoot.load(std::memory_order_acquire),
-			g_hudMsgRoot.load(std::memory_order_acquire));
-		if (hudRoot)
-			AdoptHudAdvanceTid(tid, now);
 		const auto n = g_hookCalls.fetch_add(1, std::memory_order_relaxed) + 1;
 		if (n == static_cast<std::uint64_t>(hzlog::kHookAliveFirstN)
 			|| (n > static_cast<std::uint64_t>(hzlog::kHookAliveFirstN)
@@ -4179,27 +4235,39 @@ namespace HZ
 			REX::INFO("scaleform: hook alive, {} calls", n);
 			g_hookAliveNext.store(now + hzlog::kHookAlivePeriodMs, std::memory_order_relaxed);
 		}
-		const auto ui = g_uiTid.load(std::memory_order_acquire);
-		if (!hzlog::HookTidAllowsPoll(ui, tid)) {
-			if (!g_hookWrongTidLogged.exchange(true))
-				REX::INFO("scaleform: AdvanceFrame on other thread tid={} ui={}; skip PollScaleform", tid, ui);
+		const auto hud = g_hudRoot.load(std::memory_order_acquire);
+		const auto msg = g_hudMsgRoot.load(std::memory_order_acquire);
+		const auto kind = hzlog::PollMovieForRoot(a_this, hud, msg);
+		if (hzlog::PollHudOnThisAdvance(kind)) {
+			if (hzlog::UiTidRecordFirst(g_uiTid.load(std::memory_order_acquire), tid))
+				RecordUiTidOnce(tid, hzlog::kUiTidSourceHudRoot);
+			if (hzlog::PollAlreadyIn(g_inPoll.exchange(true, std::memory_order_acq_rel)))
+				return;
+			try { PollScaleform(); } catch (...) {}
+			g_inPoll.store(false, std::memory_order_release);
 			return;
 		}
-		auto prev = g_sfLastMs.load(std::memory_order_relaxed);
-		if (now == prev)
+		if (hzlog::PollMsgOnThisAdvance(kind)) {
+			if (hzlog::PollAlreadyIn(g_inMsgPoll.exchange(true, std::memory_order_acq_rel)))
+				return;
+			try { PollMessages(); } catch (...) {}
+			g_inMsgPoll.store(false, std::memory_order_release);
 			return;
-		if (!g_sfLastMs.compare_exchange_strong(prev, now, std::memory_order_relaxed))
-			return;
-		if (hzlog::PollAlreadyIn(g_inPoll.exchange(true, std::memory_order_acq_rel)))
-			return;
-		try { PollScaleform(); } catch (...) {}
-		g_inPoll.store(false, std::memory_order_release);
+		}
+		const auto scope = g_scopeRoot.load(std::memory_order_acquire);
+		if (a_this && scope && a_this == scope) {
+			if (hzlog::PollAlreadyIn(g_inScopePoll.exchange(true, std::memory_order_acq_rel)))
+				return;
+			try { ScopeClipPoll(now); } catch (...) {}
+			g_inScopePoll.store(false, std::memory_order_release);
+		}
 	}
 
 	// Purpose: patch AS3 MovieRoot::AdvanceFrame (vtable slot 2) once.
-	// CommonLibSF WriteSafeData. After the original advance, PollScaleform
-	// runs on the same UI thread. Inputs: a live movie root.
-	// Outputs: hooked vtable slot. Author: Moragar. Last modified: 2026-10-28.
+	// CommonLibSF WriteSafeData. After the original advance, the stored
+	// HUD / HUDMessages root runs its own poll on this thread.
+	// Inputs: a live movie root. Outputs: hooked vtable slot.
+	// Author: Moragar. Last modified: 2026-10-28.
 	void InstallAdvanceHook(RE::Scaleform::GFx::ASMovieRootBase* a_root)
 	{
 		if (!a_root) return;
@@ -4229,10 +4297,10 @@ namespace HZ
 		REX::INFO("scaleform: AdvanceFrame hook installed");
 	}
 
-	// Purpose: SFSE MenuMovieCreated. Stores the HUD / HUDMessages
-	// root pointer (compare only later; never dereferenced from the
-	// hook). A new non-HUD root at a stored HUD address nulls that
-	// store (ABA). Does not adopt g_uiTid. Hooks AdvanceFrame once.
+	// Purpose: SFSE MenuMovieCreated. Stores the HUD / HUDMessages /
+	// Scope root pointer (compare only later; never dereferenced from
+	// the hook). A new non-matching root at a stored address nulls
+	// that store (ABA). Does not adopt g_uiTid. Hooks AdvanceFrame once.
 	// Inputs: the new menu. Outputs: none. Author: Moragar.
 	// Last modified: 2026-10-28.
 	void OnMenuMovie(RE::IMenu* a_menu)
@@ -4240,6 +4308,7 @@ namespace HZ
 		if (!a_menu) return;
 		const bool isHud = a_menu->menuName == "HUDMenu";
 		const bool isMsg = a_menu->menuName == "HUDMessagesMenu";
+		const bool isScope = a_menu->menuName == "ScopeMenu";
 		const bool live = a_menu->uiMovie && a_menu->uiMovie->asMovieRoot;
 		if (!live) return;
 		auto* root = a_menu->uiMovie->asMovieRoot.get();
@@ -4249,10 +4318,15 @@ namespace HZ
 		auto msg = g_hudMsgRoot.load(std::memory_order_acquire);
 		if (hzlog::ShouldClearReusedHudRoot(msg, root, isMsg))
 			g_hudMsgRoot.compare_exchange_strong(msg, nullptr, std::memory_order_acq_rel);
+		auto scope = g_scopeRoot.load(std::memory_order_acquire);
+		if (hzlog::ShouldClearReusedHudRoot(scope, root, isScope))
+			g_scopeRoot.compare_exchange_strong(scope, nullptr, std::memory_order_acq_rel);
 		if (isHud)
 			g_hudRoot.store(root, std::memory_order_release);
 		else if (isMsg)
 			g_hudMsgRoot.store(root, std::memory_order_release);
+		else if (isScope)
+			g_scopeRoot.store(root, std::memory_order_release);
 		if (!isHud && !isMsg) {
 			if (!g_menuTidHinted.exchange(true))
 				REX::INFO("thread: menu-create tid={} (hint only)", ::GetCurrentThreadId());
@@ -4295,8 +4369,10 @@ SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* a_sfse)
 	// FilesStartup preloads the version resource and versionlib on this thread
 	// so the UI poll never opens those files.
 	HZ::FilesStartup();   // v0.37: update backup, migration / preset seeding - before any menu reads the settings
+	const auto loadTid = ::GetCurrentThreadId();
+	HZ::g_loadTid.store(loadTid, std::memory_order_release);
 	REX::INFO("HorizonUI {} loaded", HZ::DllFileVersion());
-	REX::INFO("thread: load tid={}", ::GetCurrentThreadId());
+	REX::INFO("thread: load tid={}", loadTid);
 	if (auto menu = SFSE::GetMenuInterface()) {
 		menu->Register(HZ::OnMenuMovie);
 		REX::INFO("menu movie hook registered");

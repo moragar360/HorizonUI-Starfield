@@ -59,11 +59,11 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.4", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 4, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.5", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 5, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "verbose reaction trace is off for this release");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "unfiltered HUD capture is off for this release");
-	Expect(HzFileVersionOk("0.43.0.4"), "4-part version ok");
+	Expect(HzFileVersionOk("0.43.0.5"), "4-part version ok");
 	Expect(!HzFileVersionOk("0.42.0"), "3-part version is not the file version");
 	Expect(!HzFileVersionOk("v0.42.0.6"), "leading v is not accepted");
 	Expect(!HzFileVersionOk("0.42.0.6 "), "trailing space rejected");
@@ -621,9 +621,15 @@ int main()
 		Expect(src.find("FaderMenu") != std::string::npos
 			&& src.find("MsglogTakeMovieAllowed") != std::string::npos,
 			"the reaction drain skips loading, the fader, and the main menu");
-		const auto rxPoll = src.find("CommsRxPoll(now);");
-		const auto hudWait = src.find("if (now - g_hudSince < 3000) return;");
-		Expect(rxPoll != std::string::npos && hudWait != std::string::npos && rxPoll < hudWait, "the reaction drain is not gated on HUD ready");
+		const auto msgPoll = src.find("void PollMessages()");
+		const auto msgEnd = src.find("using AdvanceFn", msgPoll);
+		const auto msgBody = msgPoll != std::string::npos && msgEnd > msgPoll
+			? src.substr(msgPoll, msgEnd - msgPoll) : std::string();
+		Expect(msgBody.find("CommsRxPoll(now);") != std::string::npos
+			&& msgBody.find("if (now - g_hudSince < 3000)") == std::string::npos,
+			"the reaction drain is not gated on HUD ready");
+		Expect(src.find("if (now - g_hudSince < 3000) return;") != std::string::npos,
+			"the HUD poll still waits 3 s before F11-ready work");
 		const auto proc = src.find("ProcessEvent(const RE::ShowHUDMessageEvent&");
 		const auto procEnd = src.find("g_hudMsgSink", proc);
 		Expect(proc != std::string::npos && procEnd != std::string::npos && procEnd > proc, "the sink method is present");
@@ -789,7 +795,7 @@ int main()
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(lua.find("set_version(\"0.43.0.4\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.43.0.5\")") != std::string::npos, "xmake version is the 4-part file version");
 		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
 		std::ifstream cpp("res/horizonui-plugin.cpp.in");
 		Expect(static_cast<bool>(cpp), "plugin version template opens");

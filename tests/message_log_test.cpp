@@ -752,8 +752,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.4", "file version is 0.43.0.4");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 4, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.5", "file version is 0.43.0.5");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 5, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -1475,7 +1475,7 @@ int main()
 		Expect(stillMid && stillFuture, "later-point flags survive a new capture");
 		Expect(b.nextId > futureId, "new rows take ids after the later-point rows");
 
-		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.4");
+		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.5");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok, "later-point flags round-trip through JSON");
 		Buffer restarted;
@@ -1525,7 +1525,7 @@ int main()
 		Buffer loaded;
 		loaded.LoadState(held);
 		ExpectEqI(static_cast<int>(loaded.nextId), 42, "LoadState keeps the persisted nextId");
-		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.4");
+		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.5");
 		Expect(json.find("\"nextId\": 42") != std::string::npos, "ToJson writes nextId");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok && parsed.state.nextId == 42, "FromJson reads the persisted nextId");
@@ -1761,12 +1761,15 @@ int main()
 		Expect(main.find("RecordUiTidOnce") != std::string::npos
 			&& main.find("compare_exchange_strong(expected, a_tid") != std::string::npos
 			&& main.find("source=hud-root-advance") != std::string::npos
-			&& main.find("AdoptHudAdvanceTid") != std::string::npos
-			&& main.find("UiTidOnHudAdvance") != std::string::npos
+			&& main.find("UiTidRecordFirst") != std::string::npos
+			&& main.find("PollMovieForRoot") != std::string::npos
 			&& main.find("hz_ui_tid.h") != std::string::npos,
-			"the UI tid is recorded once from the HUD root advance");
-		Expect(main.find("g_uiTid.store(::GetCurrentThreadId()") == std::string::npos,
-			"the hook does not overwrite the UI tid on every advance");
+			"the UI tid is a first-record log hint from the HUD root advance");
+		Expect(main.find("g_uiTid.store(::GetCurrentThreadId()") == std::string::npos
+			&& main.find("AdoptHudAdvanceTid") == std::string::npos
+			&& main.find("UiTidOnHudAdvance") == std::string::npos
+			&& main.find("self-heal") == std::string::npos,
+			"the hook does not heal or overwrite the UI tid");
 		{
 			const auto om = main.find("void OnMenuMovie");
 			const auto next = main.find("void OnMessage", om);
@@ -1782,16 +1785,20 @@ int main()
 			const auto hook = main.find("void HookedAdvanceFrame");
 			const auto next = main.find("void InstallAdvanceHook", hook);
 			const auto body = hook != std::string::npos && next > hook ? main.substr(hook, next - hook) : std::string();
-			Expect(body.find("HookTidAllowsPoll(ui, tid)") != std::string::npos,
-				"the hook compares the recorded tid to this advance");
-			Expect(body.find("AdoptHudAdvanceTid(tid, now)") != std::string::npos
-				&& body.find("IsStoredHudRoot") != std::string::npos
-				&& body.find("hzlog::IsStoredHudRoot") != std::string::npos,
-				"the hook adopts only the stored HUD root's tid");
+			Expect(body.find("HookTidAllowsPoll") == std::string::npos
+				&& body.find("skip PollScaleform") == std::string::npos,
+				"the hook does not gate PollScaleform on a recorded tid");
+			Expect(body.find("PollMovieForRoot") != std::string::npos
+				&& body.find("PollHudOnThisAdvance") != std::string::npos
+				&& body.find("PollMsgOnThisAdvance") != std::string::npos
+				&& body.find("PollScaleform()") != std::string::npos
+				&& body.find("PollMessages()") != std::string::npos,
+				"the hook polls only the movie whose root is advancing");
 			Expect(body.find("g_inPoll.exchange(true") != std::string::npos
 				&& body.find("g_inPoll.store(false") != std::string::npos
+				&& body.find("g_inMsgPoll.exchange(true") != std::string::npos
 				&& body.find("thread_local bool inPoll") == std::string::npos,
-				"PollScaleform reentrancy is a process-wide atomic");
+				"each poll has a process-wide reentrancy atomic");
 		}
 		{
 			const auto inst = main.find("void InstallAdvanceHook");
@@ -1801,19 +1808,19 @@ int main()
 				&& body.find("HookOrigStored") != std::string::npos,
 				"the hook stores the original AdvanceFrame pointer");
 		}
-		{
-			const auto ad = main.find("void AdoptHudAdvanceTid");
-			const auto next = main.find("void HintWindowOwnerTid", ad);
-			const auto body = ad != std::string::npos && next > ad ? main.substr(ad, next - ad) : std::string();
-			Expect(body.find("UiTidOnHudAdvance") != std::string::npos
-				&& body.find("g_uiTid.store(d.to") != std::string::npos
-				&& body.find("g_uiTidHealLogged") == std::string::npos
-				&& body.find("UiTidSwitchLogDue") != std::string::npos,
-				"AdoptHudAdvanceTid uses hysteresis and stores every switch");
-		}
-		Expect(main.find("skip PollScaleform") != std::string::npos
-			&& main.find("AdvanceFrame on other thread") != std::string::npos,
-			"the hook skips PollScaleform on a non-UI tid");
+		Expect(main.find("poll alive") != std::string::npos
+			&& main.find("kPollHeartbeatMs") != std::string::npos
+			&& main.find("g_loadTid") != std::string::npos
+			&& main.find("g_jobTid") != std::string::npos
+			&& main.find("g_uiTid.store(d.to") == std::string::npos
+			&& main.find("g_uiTidHealLogged") == std::string::npos,
+			"the HUD poll heartbeats and never heals g_uiTid");
+		Expect(main.find("g_settingsKeyReq") != std::string::npos
+			&& main.find("SettingsKeyEdge") != std::string::npos,
+			"F11 is latched on the job poll and consumed on the UI poll");
+		Expect(main.find("void PollMessages()") != std::string::npos
+			&& main.find("PollHudOnThisAdvance") != std::string::npos,
+			"HUD and HUDMessages polls are split by the advancing movie");
 		Expect(main.find("scaleform: hook alive") != std::string::npos
 			&& main.find("kHookAliveFirstN") != std::string::npos,
 			"the hook logs an alive counter");
@@ -1937,24 +1944,42 @@ int main()
 				"job-thread Poll keeps capture, files, and the writer");
 			Expect(body.find("RecordUiTidOnce") == std::string::npos
 				&& body.find("TryRecordUiTidFromWindow") == std::string::npos
-				&& body.find("HintWindowOwnerTid") != std::string::npos,
-				"job-thread Poll only hints the window-owner tid");
+				&& body.find("HintWindowOwnerTid") != std::string::npos
+				&& body.find("OnSettingsKey") == std::string::npos
+				&& body.find("g_settingsKeyReq") != std::string::npos,
+				"job-thread Poll only hints the window-owner tid and latches F11");
 		}
 		{
 			const auto ui = main.find("void PollScaleform()");
-			const auto next = main.find("using AdvanceFn", ui);
+			const auto next = main.find("void PollMessages()", ui);
 			const auto body = ui != std::string::npos && next > ui ? main.substr(ui, next - ui) : std::string();
-			Expect(body.find("BannerPoll(now)") != std::string::npos && body.find("CommsRxPoll(now)") != std::string::npos
-				&& body.find("ScopeClipPoll(now)") != std::string::npos && body.find("MsglogTakeMovie") != std::string::npos
-				&& body.find("MsglogPollUi") != std::string::npos && body.find("HudSafe") != std::string::npos
+			Expect(body.find("ScanPushMovie") != std::string::npos && body.find("MsglogPollUi") != std::string::npos
+				&& body.find("HudSafe") != std::string::npos
 				&& body.find("OnSettingsKey") != std::string::npos && body.find("PollSettings") != std::string::npos
-				&& body.find("MsglogRefreshEngine") != std::string::npos,
-				"UI poll owns banners, cards, F11, the log take, and engine reads");
+				&& body.find("MsglogRefreshEngine") != std::string::npos
+				&& body.find("BuildLogHud") != std::string::npos
+				&& body.find("poll alive") != std::string::npos,
+				"HUD poll owns F11, the log view, and HUD Invokes");
+			Expect(body.find("CommsRxPoll") == std::string::npos && body.find("MsglogTakeMovie") == std::string::npos
+				&& body.find("BannerPoll(") == std::string::npos && body.find("ScopeClipPoll") == std::string::npos
+				&& body.find("CommsDbgPoll") == std::string::npos,
+				"HUD poll does not Invoke HUDMessagesMenu or ScopeMenu");
 			Expect(body.find("SaveFromHud") == std::string::npos && body.find("DoAction") == std::string::npos
 				&& body.find("filesystem::exists") == std::string::npos
 				&& body.find("HzAddrLoad") == std::string::npos
 				&& body.find("ReadOwnFileVersion") == std::string::npos,
 				"UI poll does no file I/O");
+		}
+		{
+			const auto msg = main.find("void PollMessages()");
+			const auto next = main.find("using AdvanceFn", msg);
+			const auto body = msg != std::string::npos && next > msg ? main.substr(msg, next - msg) : std::string();
+			Expect(body.find("BannerPoll(now)") != std::string::npos && body.find("CommsRxPoll(now)") != std::string::npos
+				&& body.find("MsglogTakeMovie") != std::string::npos && body.find("BuildLogMsg") != std::string::npos,
+				"messages poll owns cards, take-log, and the banner");
+			Expect(body.find("HudInvoke") == std::string::npos && body.find("OnSettingsKey") == std::string::npos
+				&& body.find("PollSettings") == std::string::npos && body.find("MsglogPollUi") == std::string::npos,
+				"messages poll does not Invoke HUDMenu");
 		}
 		{
 			const auto slot = main.find("static int HzAddrSlot");
@@ -2154,7 +2179,7 @@ int main()
 		Expect(as.find("Find (keyboard only)") != std::string::npos, "Find shows a keyboard-only note on a pad");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.4\"") != std::string::npos, "HUD movie build id is 0.43.0.4");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.5\"") != std::string::npos, "HUD movie build id is 0.43.0.5");
 		Expect(as.find("F12") == std::string::npos || as.find("SETTINGS MENU KEY") != std::string::npos,
 			"no new F key is added for the log");
 		Expect(main.find("void MsglogPollUi()") != std::string::npos, "DLL pushes the view while the log is open");
@@ -4775,57 +4800,137 @@ int main()
 			Expect(!MsglogTakeMovieDue(249, 250), "take-log waits out the interval");
 			{
 				int loadingRoot = 11;
-				int overlayWnd = 22;
 				int hudRoot = 33;
+				int msgRoot = 34;
 				int otherMovie = 44;
 				int reused = 55;
-				UiTidRecorder rec;
-				rec.HintWindowOwner(static_cast<std::uint32_t>(overlayWnd));
-				rec.OnMenuCreated("LoadingMenu", &loadingRoot, static_cast<std::uint32_t>(overlayWnd));
-				rec.OnAdvance(&loadingRoot, static_cast<std::uint32_t>(overlayWnd), 0);
-				ExpectEqI(static_cast<int>(rec.tid), 0, "a non-HUD menu create does not record the tid");
-				rec.OnMenuCreated("HUDMenu", &hudRoot, static_cast<std::uint32_t>(overlayWnd));
-				rec.OnAdvance(&otherMovie, static_cast<std::uint32_t>(overlayWnd), 0);
-				ExpectEqI(static_cast<int>(rec.tid), 0, "a foreign window owner does not record the tid");
-				rec.OnAdvance(&hudRoot, 5, 0);
-				ExpectEqI(static_cast<int>(rec.tid), 5, "the HUD root advance records the tid");
-				ExpectEq(rec.source ? rec.source : "", kUiTidSourceHudRoot, "the record source is hud-root-advance");
-				rec.OnAdvance(&hudRoot, 9, 10);
-				ExpectEqI(static_cast<int>(rec.tid), 5, "one stray HUD-root tid does not flip");
-				Expect(!rec.healed, "one stray does not heal");
-				for (std::uint64_t t = 20; t <= 200; t += 10)
-					rec.OnAdvance(&hudRoot, 5, t);
-				ExpectEqI(static_cast<int>(rec.tid), 5, "the recorded tid stays after many real advances");
-				rec.OnAdvance(&hudRoot, 9, 210);
-				rec.OnAdvance(&hudRoot, 9, 710);
-				ExpectEqI(static_cast<int>(rec.tid), 9, "500 ms of the new tid with none on the old switches");
-				Expect(rec.healed, "hysteresis heal latches");
-				ExpectEqI(rec.switchCount, 1, "one hysteresis switch");
-				ExpectEqI(rec.switchLogs, 1, "the switch is logged");
-				rec.OnMenuCreated("PauseMenu", &hudRoot, 9);
-				Expect(!rec.IsStoredHudRoot(&hudRoot), "a reused non-HUD root clears the stored HUD pointer");
-				rec.OnAdvance(&hudRoot, 11, 720);
-				rec.OnAdvance(&hudRoot, 11, 1220);
-				ExpectEqI(static_cast<int>(rec.tid), 9, "ABA reuse cannot flip the tid");
-				rec.OnMenuCreated("HUDMenu", &reused, 9);
-				rec.OnAdvance(&reused, 5, 1300);
-				rec.OnAdvance(&reused, 5, 1800);
-				ExpectEqI(static_cast<int>(rec.tid), 5, "a later HUD root can switch back after 500 ms");
-				ExpectEqI(rec.switchCount, 2, "every hysteresis switch is counted");
-				Expect(rec.switchLogs >= 2, "every switch is logged at ERROR, rate-limited");
-				UiTidRecorder always;
-				always.OnMenuCreated("HUDMenu", &hudRoot, 5);
-				always.OnAdvance(&hudRoot, 5, 0);
-				always.OnAdvance(&otherMovie, 9, 0);
-				always.OnAdvance(&otherMovie, 9, 600);
-				ExpectEqI(static_cast<int>(always.tid), 5, "a non-HUD advance does not start hysteresis");
+				int bg[8] = {101, 102, 103, 104, 105, 106, 107, 108};
+				constexpr std::uint32_t kTidA = 166496;
+				constexpr std::uint32_t kTidB = 175048;
+				auto pump = [](PollGate& g, const void* root, std::uint32_t tid,
+						std::uint64_t start, std::uint64_t end, std::uint64_t step) {
+					std::uint64_t n = 0;
+					for (std::uint64_t t = start; t < end; t += step) {
+						g.OnAdvance(root, tid, t);
+						++n;
+					}
+					return n;
+				};
+				{
+					PollGate rec;
+					rec.OnMenuCreated("LoadingMenu", &loadingRoot, 22);
+					rec.OnAdvance(&loadingRoot, 22, 0);
+					ExpectEqI(static_cast<int>(rec.hudPolls), 0, "a non-HUD menu create does not poll");
+					ExpectEqI(static_cast<int>(rec.uiTidHint), 0, "a non-HUD menu create does not record the tid");
+					rec.OnMenuCreated("HUDMenu", &hudRoot, 22);
+					rec.OnMenuCreated("HUDMessagesMenu", &msgRoot, 22);
+					rec.OnAdvance(&otherMovie, 22, 0);
+					ExpectEqI(static_cast<int>(rec.hudPolls), 0, "a foreign movie does not poll");
+					rec.OnAdvance(&hudRoot, 5, 0);
+					ExpectEqI(static_cast<int>(rec.uiTidHint), 5, "the HUD root advance records the tid hint");
+					ExpectEqI(static_cast<int>(rec.hudPolls), 1, "the first HUD advance polls");
+					rec.OnAdvance(&hudRoot, 9, 10);
+					ExpectEqI(static_cast<int>(rec.uiTidHint), 5, "a later HUD tid does not heal the hint");
+					ExpectEqI(static_cast<int>(rec.hudPolls), 2, "a later HUD tid still polls");
+					rec.OnMenuCreated("PauseMenu", &hudRoot, 9);
+					Expect(!rec.IsStoredHudRoot(&hudRoot), "a reused non-HUD root clears the stored HUD pointer");
+					const auto beforeAba = rec.hudPolls;
+					rec.OnAdvance(&hudRoot, 11, 800);
+					ExpectEqI(static_cast<int>(rec.hudPolls), static_cast<int>(beforeAba),
+						"ABA reuse does not poll a Pause root at the old HUD address");
+					rec.OnMenuCreated("HUDMenu", &reused, 9);
+					rec.OnAdvance(&reused, 5, 1500);
+					ExpectEqI(static_cast<int>(rec.hudPolls), static_cast<int>(beforeAba + 1),
+						"a later HUD root polls on its own advance");
+					ExpectEqI(static_cast<int>(rec.uiTidHint), 5, "the first-record hint stays after ABA");
+				}
+				{
+					PollGate replay;
+					replay.OnMenuCreated("HUDMenu", &hudRoot);
+					replay.OnMenuCreated("HUDMessagesMenu", &msgRoot);
+					std::uint64_t want = 0;
+					want += pump(replay, &hudRoot, kTidA, 0, 5000, 16);
+					const auto afterA = replay.hudPolls;
+					want += pump(replay, &hudRoot, kTidB, 5000, 15000, 16);
+					want += pump(replay, &hudRoot, kTidA, 15000, 75000, 16);
+					ExpectEqI(static_cast<int>(replay.hudPolls), static_cast<int>(want),
+						"every HUD-root advance polls across tid A, B, then A again");
+					Expect(replay.hudPolls > afterA, "the 10 s on tid B still polls");
+					ExpectEqI(static_cast<int>(replay.uiTidHint), static_cast<int>(kTidA),
+						"the first HUD tid stays a log hint");
+					ExpectEqI(static_cast<int>(replay.lastHudPollTid), static_cast<int>(kTidA),
+						"the last poll tid follows the last HUD advance");
+					Expect(replay.heartbeats >= 1, "the HUD poll emits a heartbeat");
+				}
+				{
+					PollGate alt;
+					alt.OnMenuCreated("HUDMenu", &hudRoot);
+					alt.OnMenuCreated("HUDMessagesMenu", &msgRoot);
+					for (int i = 0; i < 64; ++i) {
+						const auto tid = (i % 2) ? kTidA : kTidB;
+						const auto other = (i % 2) ? kTidB : kTidA;
+						alt.OnAdvance(&hudRoot, tid, static_cast<std::uint64_t>(i) * 16);
+						alt.OnAdvance(&msgRoot, other, static_cast<std::uint64_t>(i) * 16);
+					}
+					ExpectEqI(static_cast<int>(alt.hudPolls), 64, "alternating workers still poll every HUD advance");
+					ExpectEqI(static_cast<int>(alt.msgPolls), 64, "alternating workers still poll every messages advance");
+				}
+				{
+					PollGate eight;
+					eight.OnMenuCreated("HUDMenu", &hudRoot);
+					for (int i = 0; i < 8; ++i)
+						eight.OnAdvance(&bg[i], 300 + static_cast<std::uint32_t>(i), static_cast<std::uint64_t>(i));
+					ExpectEqI(static_cast<int>(eight.hudPolls), 0, "eight background tids on other movies do not poll");
+					eight.OnAdvance(&hudRoot, kTidA, 40);
+					ExpectEqI(static_cast<int>(eight.hudPolls), 1, "a HUD advance still polls after eight background tids");
+				}
+				{
+					PollGate key;
+					key.OnMenuCreated("HUDMenu", &hudRoot);
+					for (int i = 0; i < 4; ++i)
+						key.JobKey(false);
+					for (int i = 0; i < 4; ++i)
+						key.JobKey(true);
+					for (int i = 0; i < 4; ++i)
+						key.JobKey(false);
+					Expect(key.settingsKeyReq, "a 60 ms F11 tap latches on the job poll");
+					key.OnAdvance(&hudRoot, kTidA, 500);
+					ExpectEqI(key.settingsOpens, 1, "F11 opens exactly once after a short tap");
+					key.OnAdvance(&hudRoot, kTidA, 1000);
+					ExpectEqI(key.settingsOpens, 1, "a later HUD poll does not reopen F11");
+				}
+				Expect(InvokeOnAdvancingMovie(PollMovie::Hud, InvokeMovie::Hud),
+					"HUD Invokes are allowed on a HUD advance");
+				Expect(!InvokeOnAdvancingMovie(PollMovie::Hud, InvokeMovie::HudMessages),
+					"HUDMessages Invokes are not allowed on a HUD advance");
+				Expect(InvokeOnAdvancingMovie(PollMovie::HudMessages, InvokeMovie::HudMessages),
+					"HUDMessages Invokes are allowed on a messages advance");
+				Expect(!InvokeOnAdvancingMovie(PollMovie::HudMessages, InvokeMovie::Hud),
+					"HUD Invokes are not allowed on a messages advance");
+				Expect(!InvokeOnAdvancingMovie(PollMovie::None, InvokeMovie::Hud),
+					"no Invoke is allowed on a non-stored movie advance");
+				Expect(!InvokeOnAdvancingMovie(PollMovie::Hud, InvokeMovie::Scope),
+					"Scope Invokes are not allowed on a HUD advance");
 				Expect(!IsStoredHudRoot(&otherMovie, &hudRoot, nullptr),
 					"IsStoredHudRoot is not always true");
 				Expect(ShouldClearReusedHudRoot(&hudRoot, &hudRoot, false),
 					"a reused address of a non-HUD menu clears the store");
 				Expect(!ShouldClearReusedHudRoot(&hudRoot, &hudRoot, true),
 					"a HUD recreate at the same address keeps the store");
-				ExpectEqI(static_cast<int>(kUiTidHysteresisMs), 500, "hysteresis is 500 ms");
+				ExpectEqI(static_cast<int>(kPollHeartbeatMs), 30000, "the poll heartbeat is 30 s");
+				Expect(PollHeartbeatDue(0, 1), "the first heartbeat is due immediately");
+				Expect(!PollHeartbeatDue(1, 29999), "the heartbeat waits out 30 s");
+				Expect(PollHeartbeatDue(1, 30001), "the heartbeat fires at 30 s");
+				Expect(SettingsKeyEdge(true, false), "F11 rising edge fires");
+				Expect(!SettingsKeyEdge(true, true), "a held F11 does not retrigger");
+				Expect(UiTidRecordFirst(0, 5), "the first HUD tid is recorded as a hint");
+				Expect(!UiTidRecordFirst(5, 9), "a later tid does not replace the hint");
+				Expect(PollHudOnThisAdvance(PollMovieForRoot(&hudRoot, &hudRoot, &msgRoot)),
+					"the HUD root selects the HUD poll");
+				Expect(PollMsgOnThisAdvance(PollMovieForRoot(&msgRoot, &hudRoot, &msgRoot)),
+					"the messages root selects the messages poll");
+				Expect(!PollHudOnThisAdvance(PollMovieForRoot(&otherMovie, &hudRoot, &msgRoot)),
+					"a foreign movie selects no poll");
 				Expect(PollAlreadyIn(true), "an overlapping PollScaleform is blocked");
 				Expect(!PollAlreadyIn(false), "the first PollScaleform enters");
 				TakeLogMovieQueue tq;
@@ -4843,13 +4948,7 @@ int main()
 				tq.q.clear();
 				ExpectEq(tq.Take(), "drop|3", "a drop-only take still reports the count");
 			}
-			Expect(!UiTidHintAdopts(UiTidHint::WindowOwner, false), "window owner never adopts");
-			Expect(!UiTidHintAdopts(UiTidHint::AnyMenu, true), "any-menu never adopts even with a stored root");
-			Expect(UiTidHintAdopts(UiTidHint::HudRootAdvance, true), "HUD root advance adopts");
-			Expect(!UiTidHintAdopts(UiTidHint::HudRootAdvance, false), "a non-HUD advance does not adopt");
-			Expect(HookTidAllowsPoll(7, 7), "matching tid may poll");
-			Expect(!HookTidAllowsPoll(0, 7), "unknown tid may not poll");
-			Expect(!HookTidAllowsPoll(7, 8), "a mismatched tid may not poll");
+			Expect(PollMovieForRoot(nullptr, nullptr, nullptr) == PollMovie::None, "a null root selects no poll");
 			Expect(HookOrigStored(reinterpret_cast<const void*>(1), reinterpret_cast<const void*>(2)),
 				"a real original is stored");
 			Expect(!HookOrigStored(nullptr, reinterpret_cast<const void*>(2)), "a null original is rejected");

@@ -1064,11 +1064,6 @@ inline bool EngineCacheNeedsMutex(bool a_crossThread)
 
 inline constexpr int kTakeLogHardCap = 500;
 
-inline bool HookTidAllowsPoll(std::uint32_t a_uiTid, std::uint32_t a_curTid)
-{
-	return a_uiTid != 0 && a_uiTid == a_curTid;
-}
-
 inline bool HookOrigStored(const void* a_orig, const void* a_hook)
 {
 	return a_orig != nullptr && a_orig != a_hook;
