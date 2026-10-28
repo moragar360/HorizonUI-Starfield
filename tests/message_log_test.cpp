@@ -1024,6 +1024,13 @@ int main()
 		ExpectEqI(oldb.sess, 2, "old all-1 file gets a new session id");
 
 		auto view = BuildView(second.buf, 10.0, ViewStatus::Ok);
+		{
+			const auto packed = PackView(view);
+			Expect(packed.find("v1|") == 0, "packed view starts with v1");
+			Expect(packed.find('|') != std::string::npos, "packed view is pipe-separated");
+			Expect(packed.find('\n') != std::string::npos || view.entries.empty(),
+				"packed rows are newline-separated");
+		}
 		ExpectEqI(view.sess, second.buf.sess, "view session matches");
 		ExpectEqI(view.pinCap, kPinCap, "view pin cap");
 		ExpectEqI(static_cast<int>(view.entries.size()), static_cast<int>(second.buf.entries.size()),
@@ -1741,6 +1748,35 @@ int main()
 		Expect(as.find("hzMsglogOpenHint") != std::string::npos && as.find("return \"F11\"") != std::string::npos,
 			"HUD open hint is the F11 key");
 		Expect(as.find("notifications") != std::string::npos, "F11 probes the Notifications marker");
+		Expect(as.find("MESSAGE LOG") != std::string::npos, "F11 has a MESSAGE LOG row");
+		Expect(as.find("needs Notifications") != std::string::npos, "the row is gated on the Notifications marker");
+		Expect(as.find("HORIZON UI · MESSAGE LOG") != std::string::npos, "the log shell title is present");
+		Expect(as.find("HZ_ML_W") != std::string::npos && as.find("860") != std::string::npos,
+			"the log popup is 860 wide");
+		Expect(as.find("HZ_ML_H") != std::string::npos && as.find("620") != std::string::npos,
+			"the log popup is 620 tall");
+		Expect(as.find("HZ_ML_VIS") != std::string::npos && as.find("HZ_ML_ROW") != std::string::npos,
+			"the log shows about 10 rows at 28 px");
+		Expect(as.find("Starts empty") != std::string::npos, "the empty log has a starts-empty note");
+		Expect(as.find("from a later point") != std::string::npos, "later-point rows are labeled");
+		Expect(as.find("Clear this session?") != std::string::npos, "Clear session asks for a confirm");
+		Expect(as.find("REACTIONS") != std::string::npos && as.find("ALL TIME") != std::string::npos,
+			"type chips and All time are drawn");
+		Expect(as.find("Find (keyboard only)") != std::string::npos, "Find shows a keyboard-only note on a pad");
+		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
+			"the movie exposes the view poll pair");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.4\"") != std::string::npos, "HUD movie build id is 0.43.0.4");
+		Expect(as.find("F12") == std::string::npos || as.find("SETTINGS MENU KEY") != std::string::npos,
+			"no new F key is added for the log");
+		Expect(main.find("void MsglogPollUi()") != std::string::npos, "DLL pushes the view while the log is open");
+		Expect(main.find("void MsglogClearSession()") != std::string::npos, "DLL Clear session");
+		Expect(main.find("void MsglogTogglePin(") != std::string::npos, "DLL pin toggle");
+		Expect(Slurp("src/hz_msglog.h").find("PackView") != std::string::npos, "the view is packed for the movie");
+		{
+			const auto ini = Slurp("Interface/HorizonUI/HorizonUI.default.ini");
+			Expect(ini.find("offers to delete") == std::string::npos, "Persist comment does not offer a delete");
+			Expect(ini.find("only stops writing") != std::string::npos, "Persist off only stops writing");
+		}
 		Expect(hzc.find("function hzcTakeLog") != std::string::npos, "movie exposes hzcTakeLog");
 		Expect(hzc.find("function hzcTakeLog") != std::string::npos && hzc.find("HUDMessageData stays with the DLL sink") != std::string::npos,
 			"take-log is separate from HUDMessageData");

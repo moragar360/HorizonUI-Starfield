@@ -2989,6 +2989,91 @@ namespace HZ
 		return g_ml.FolderPathDisplay();
 	}
 
+	// Purpose: remove this launch's unpinned rows. Pins and earlier
+	// sessions stay. Queues a rewrite; no delete. Author: Moragar.
+	// Last modified: 2026-10-28.
+	void MsglogClearSession()
+	{
+		try {
+			{
+				std::lock_guard lk(g_mlMu);
+				g_ml.buf.ClearSession();
+				g_ml.dirty = true;
+				g_mlWrites.OnRow(g_ml.buf.character.key);
+			}
+			MsglogRequestWrite(true);
+		} catch (...) {
+		}
+	}
+
+	// Purpose: pin or unpin one row. The 51st pin is refused. No IO here.
+	// Inputs: entry id. Outputs: none. Author: Moragar. Last modified: 2026-10-28.
+	void MsglogTogglePin(std::uint64_t a_id)
+	{
+		try {
+			std::lock_guard lk(g_mlMu);
+			bool pinned = false;
+			for (const auto& e : g_ml.buf.entries) {
+				if (e.id == a_id) {
+					pinned = e.pin != 0;
+					break;
+				}
+			}
+			if (pinned)
+				g_ml.buf.Unpin(a_id);
+			else
+				g_ml.buf.Pin(a_id);
+			g_ml.dirty = true;
+			g_mlWrites.OnRow(g_ml.buf.character.key);
+		} catch (...) {
+		}
+		MsglogRequestWrite(true);
+	}
+
+	void MsglogApplyUiAct(const char* a_s)
+	{
+		if (!a_s || !*a_s) return;
+		std::string_view s(a_s);
+		if (s == "clearsess") {
+			MsglogClearSession();
+			return;
+		}
+		const auto p = s.find('|');
+		if (p == std::string_view::npos) return;
+		const auto op = s.substr(0, p);
+		std::uint64_t id = 0;
+		try {
+			id = static_cast<std::uint64_t>(std::stoull(std::string(s.substr(p + 1))));
+		} catch (...) {
+			return;
+		}
+		if (id == 0) return;
+		if (op == "pin" || op == "unpin" || op == "togglepin")
+			MsglogTogglePin(id);
+	}
+
+	// Purpose: push the view to the HUD movie while the log layer is open.
+	// Inputs: none. Outputs: none. No disk. Author: Moragar.
+	// Last modified: 2026-10-28.
+	void MsglogPollUi()
+	{
+		try {
+			if (!g_open) return;
+			GValue need;
+			if (!HudInvoke("hzMsglogNeed", &need) || !need.IsString() || !need.GetString())
+				return;
+			if (need.GetString()[0] != '1') return;
+			GValue act;
+			if (HudInvoke("hzTakeMsglogAct", &act) && act.IsString() && act.GetString() && act.GetString()[0])
+				MsglogApplyUiAct(act.GetString());
+			const auto view = MsglogCopyView(g_mlEng.gt);
+			const auto packed = hzlog::PackView(view);
+			GValue arg(packed.c_str());
+			HudInvoke("hzSetMsglogView", nullptr, &arg, 1);
+		} catch (...) {
+		}
+	}
+
 	void MsglogOfferNote(const MlNote& a_n)
 	{
 		try {
@@ -3506,6 +3591,7 @@ namespace HZ
 				MsglogShutdownWriter();
 			MsglogApplyLoad();
 			MsglogPadPoll();
+			try { MsglogPollUi(); } catch (...) {}
 			try { MsglogTakeMovie(); } catch (...) {}
 			if (g_mlCapture.load()) {
 				MsglogRefreshEngine(false);

@@ -1950,6 +1950,83 @@ inline ViewSnap BuildView(const Buffer& a_buf, double a_gtNow, ViewStatus a_stat
 	return v;
 }
 
+// Purpose: pack a view snapshot for the HUD movie. No IO. Pipes and
+// newlines in fields become spaces so the movie can split on '|'.
+// Inputs: ViewSnap. Outputs: one string. Last modified: 2026-10-28.
+inline std::string PackViewField(std::string_view a_s)
+{
+	std::string o;
+	o.reserve(a_s.size());
+	for (unsigned char c : a_s) {
+		if (c == '|' || c == '\n' || c == '\r')
+			o.push_back(' ');
+		else
+			o.push_back(static_cast<char>(c));
+	}
+	return o;
+}
+
+inline const char* ViewStatusKey(ViewStatus a_s)
+{
+	switch (a_s) {
+	case ViewStatus::Saving: return "saving";
+	case ViewStatus::MemoryOnly: return "memory";
+	case ViewStatus::Paused: return "paused";
+	case ViewStatus::KeyFallback: return "fallback";
+	default: return "ok";
+	}
+}
+
+inline std::string PackView(const ViewSnap& a_v)
+{
+	std::string o;
+	o += "v1|";
+	o += ViewStatusKey(a_v.status);
+	o += '|';
+	o += std::to_string(a_v.sess);
+	o += '|';
+	o += std::to_string(a_v.pinCount);
+	o += '|';
+	o += std::to_string(a_v.pinCap);
+	o += '|';
+	o += std::to_string(a_v.sessStartTs);
+	o += '|';
+	o += std::to_string(a_v.entries.size());
+	for (const auto& e : a_v.entries) {
+		o += '\n';
+		o += std::to_string(e.id);
+		o += '|';
+		o += KindKey(e.kind);
+		o += '|';
+		o += PackViewField(e.title);
+		o += '|';
+		o += PackViewField(e.text);
+		o += '|';
+		o += PackViewField(e.tag);
+		o += '|';
+		o += PackViewField(e.loc);
+		o += '|';
+		o += std::to_string(e.n);
+		o += '|';
+		o += std::to_string(e.pin);
+		o += '|';
+		o += std::to_string(e.missed);
+		o += '|';
+		o += std::to_string(e.sess);
+		o += '|';
+		o += std::to_string(e.ts);
+		o += '|';
+		o += std::to_string(e.gt);
+		o += '|';
+		o += std::to_string(e.ut);
+		o += '|';
+		o += std::to_string(e.lt);
+		o += '|';
+		o += e.fromLater ? '1' : '0';
+	}
+	return o;
+}
+
 // ---------------------------------------------------------------------------
 // JSON
 // ---------------------------------------------------------------------------

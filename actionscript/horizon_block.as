@@ -3050,7 +3050,9 @@
          }
          if(tab == 7) { return this.hz37WithWarn(this.hz40ScanRows()); }
          if(tab == 8) { return this.hz37WithWarn(this.hz30Mod["comms"] === 1 ? this.hz31CommsRows() : this.hz30ModRows("comms")); }
-         return this.hz37WithWarn([{"k":"SettingsKey","l":"SETTINGS MENU KEY","t":"c","note":"takes effect after restart","h":"CONTROLS"},{"k":"_arrange","l":"ARRANGE CARDS  (drag cards on screen)","t":"x"}]).concat(this.hz37Rows());
+         var ml:Object = {"k":"_msglog","l":"MESSAGE LOG","t":"x","btn":"OPEN","n13":true};
+         if(this.hzMsglogModule() == 0) { ml.dis = true; ml.note = "needs Notifications"; }
+         return this.hz37WithWarn([{"k":"SettingsKey","l":"SETTINGS MENU KEY","t":"c","note":"takes effect after restart","h":"CONTROLS"},{"k":"_arrange","l":"ARRANGE CARDS  (drag cards on screen)","t":"x"},ml]).concat(this.hz37Rows());
       }
 
       private function hzSetCurrent() : Object
@@ -3076,6 +3078,7 @@
       // Inputs: none. Outputs: none. Dependencies: hzArrExit, hzSetCancel, hz37Reset.
       public function hzSettingsCloseAll() : void
       {
+         this.hzMsglogForceClose();
          this.hzPopLayers = [];
          try { if(this.hz41SA) { this.hz41SAEnd(false); } } catch(eSa:Error) { }
          if(this.hzArrange) { this.hzArrExit(false); }
@@ -3105,6 +3108,8 @@
 
       private function hzPopKey(code:String) : void
       {
+         var top:String = this.hzPopTop();
+         if(top == "log" || top == "mlconfirm") { this.hzMsglogKey(code); return; }
          if(code == "cancel") { this.hzPopPop(); }
       }
 
@@ -3126,6 +3131,687 @@
          var lt:String = this.hzPpDay >= 0 ? String(this.hzPpDay) : "-1";
          var body:String = this.hzPpBodyName != null && this.hzPpBodyName != "--" ? this.hzPpBodyName : "";
          return ut + "|" + lt + "|" + body;
+      }
+
+      // ---------- Message Log popup (0.43.0.4, stages 5-9). Inside the 900x660 F11 window. ----------
+      // v5 layout: 860x620, 10 visible rows at 28 px, text at least 13 px. No new F keys.
+      // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
+      private static const HZ_ML_W:Number = 860;
+      private static const HZ_ML_H:Number = 620;
+      private static const HZ_ML_ROW:Number = 28;
+      private static const HZ_ML_VIS:int = 10;
+      private static const HZ_ML_CHIPS:Array = ["ALL","MEDICAL","CREW","REACTIONS","BUSY","CRIME","CREDITS","QUEST","LOCATION","GAME","XP"];
+      private static const HZ_ML_KIND:Array = ["","medical","crew","reaction","busy","crime","credits","quest","location","game","xp"];
+      private var hzMlLayer:Sprite = null;
+      private var hzMlHits:Array = [];
+      private var hzMlRows:Array = [];
+      private var hzMlSelId:Number = 0;
+      private var hzMlScroll:int = 0;
+      private var hzMlChip:int = 0;
+      private var hzMlChipX:Number = 0;
+      private var hzMlFind:String = "";
+      private var hzMlFindOn:Boolean = false;
+      private var hzMlAllTime:Boolean = true;
+      private var hzMlStatus:String = "ok";
+      private var hzMlSess:int = 0;
+      private var hzMlPinN:int = 0;
+      private var hzMlPinCap:int = 50;
+      private var hzMlAct:String = "";
+      private var hzMlPacked:String = "";
+      private var hzMlNotice:String = "";
+      private var hzMlPad:Boolean = false;
+      private var hzMlHover:String = "";
+
+      public function hzMsglogNeed() : String
+      {
+         var top:String = this.hzPopTop();
+         return (top == "log" || top == "mlconfirm") ? "1" : "0";
+      }
+
+      public function hzTakeMsglogAct() : String
+      {
+         var s:String = this.hzMlAct != null ? this.hzMlAct : "";
+         this.hzMlAct = "";
+         return s;
+      }
+
+      public function hzSetMsglogView(s:String) : void
+      {
+         if(s == null) { s = ""; }
+         if(s == this.hzMlPacked) { return; }
+         this.hzMlPacked = s;
+         this.hzMsglogParse(s);
+         if(this.hzPopTop() == "log" || this.hzPopTop() == "mlconfirm") { this.hzMsglogDraw(); }
+      }
+
+      private function hzMsglogOpen() : void
+      {
+         if(this.hzMsglogModule() == 0) { return; }
+         if(this.hzPopTop() == "log" || this.hzPopTop() == "mlconfirm") { return; }
+         this.hzPopPush("log");
+         this.hzMlFindOn = false;
+         this.hzMlFind = "";
+         this.hzMlNotice = "";
+         this.hzMlPacked = "";
+         this.hzMsglogEnsure();
+         this.hzMsglogDraw();
+      }
+
+      private function hzMsglogForceClose() : void
+      {
+         this.hzMlFindOn = false;
+         this.hzMlNotice = "";
+         this.hzMlPacked = "";
+         if(this.hzMlLayer != null) { this.hzMlLayer.visible = false; }
+         while(this.hzPopTop() == "log" || this.hzPopTop() == "mlconfirm") { this.hzPopPop(); }
+      }
+
+      private function hzMsglogEnsure() : void
+      {
+         if(this.hzMlLayer != null) { return; }
+         this.hzMlLayer = new Sprite();
+         this.hzMlLayer.mouseEnabled = false;
+         this.hzMlLayer.mouseChildren = false;
+      }
+
+      private function hzMsglogParse(s:String) : void
+      {
+         this.hzMlRows = [];
+         if(s == null || s.length < 3) { return; }
+         var lines:Array = s.split("\n");
+         var head:Array = String(lines[0]).split("|");
+         if(head.length >= 7)
+         {
+            this.hzMlStatus = String(head[1]);
+            this.hzMlSess = int(head[2]);
+            this.hzMlPinN = int(head[3]);
+            this.hzMlPinCap = int(head[4]);
+         }
+         var i:int = 1;
+         while(i < lines.length)
+         {
+            var p:Array = String(lines[i]).split("|");
+            if(p.length >= 15)
+            {
+               this.hzMlRows.push({
+                  "id":Number(p[0]),"k":String(p[1]),"title":String(p[2]),"text":String(p[3]),
+                  "tag":String(p[4]),"loc":String(p[5]),"n":int(p[6]),"pin":int(p[7]),
+                  "missed":int(p[8]),"sess":int(p[9]),"ts":Number(p[10]),"gt":Number(p[11]),
+                  "ut":Number(p[12]),"lt":Number(p[13]),"later":int(p[14]) == 1
+               });
+            }
+            i++;
+         }
+      }
+
+      private function hzMsglogShown() : Array
+      {
+         var out:Array = [];
+         var q:String = this.hzMlFind != null ? this.hzMlFind.toLowerCase() : "";
+         var want:String = this.hzMlChip > 0 && this.hzMlChip < HZ_ML_KIND.length ? String(HZ_ML_KIND[this.hzMlChip]) : "";
+         var i:int = 0;
+         while(i < this.hzMlRows.length)
+         {
+            var r:Object = this.hzMlRows[i];
+            if(!this.hzMlAllTime && int(r.sess) != this.hzMlSess) { i++; continue; }
+            if(want.length > 0 && String(r.k) != want) { i++; continue; }
+            if(q.length > 0)
+            {
+               var hay:String = (String(r.title) + " " + String(r.text) + " " + String(r.tag) + " " + String(r.loc)).toLowerCase();
+               if(hay.indexOf(q) < 0) { i++; continue; }
+            }
+            out.push(r);
+            i++;
+         }
+         return out;
+      }
+
+      private function hzMsglogChipCount(kind:String) : int
+      {
+         var n:int = 0;
+         var q:String = this.hzMlFind != null ? this.hzMlFind.toLowerCase() : "";
+         var i:int = 0;
+         while(i < this.hzMlRows.length)
+         {
+            var r:Object = this.hzMlRows[i];
+            if(!this.hzMlAllTime && int(r.sess) != this.hzMlSess) { i++; continue; }
+            if(kind.length > 0 && String(r.k) != kind) { i++; continue; }
+            if(q.length > 0)
+            {
+               var hay:String = (String(r.title) + " " + String(r.text) + " " + String(r.tag) + " " + String(r.loc)).toLowerCase();
+               if(hay.indexOf(q) < 0) { i++; continue; }
+            }
+            n++;
+            i++;
+         }
+         return n;
+      }
+
+      private function hzMsglogList() : Array
+      {
+         var rows:Array = this.hzMsglogShown();
+         var list:Array = [];
+         var pins:Array = [];
+         var rest:Array = [];
+         var i:int = 0;
+         while(i < rows.length)
+         {
+            if(int(rows[i].pin) != 0) { pins.push(rows[i]); }
+            else { rest.push(rows[i]); }
+            i++;
+         }
+         if(pins.length > 0)
+         {
+            list.push({"g":1,"lab":"PINNED " + String(this.hzMlPinN) + " / " + String(this.hzMlPinCap)});
+            i = 0;
+            while(i < pins.length) { list.push(pins[i]); i++; }
+         }
+         var lastKey:String = "";
+         i = rest.length - 1;
+         var grouped:Array = [];
+         while(i >= 0)
+         {
+            var e:Object = rest[i];
+            var gk:String = this.hzMsglogGroup(e);
+            grouped.push({"e":e,"gk":gk});
+            i--;
+         }
+         i = 0;
+         while(i < grouped.length)
+         {
+            var item:Object = grouped[i];
+            if(String(item.gk) != lastKey)
+            {
+               list.push({"g":1,"lab":String(item.gk)});
+               lastKey = String(item.gk);
+            }
+            list.push(item.e);
+            i++;
+         }
+         return list;
+      }
+
+      private function hzMsglogGroup(e:Object) : String
+      {
+         var today:Boolean = this.hzMsglogIsToday(Number(e.ts));
+         if(int(e.sess) == this.hzMlSess) { return today ? "Today · this session" : "This session"; }
+         return today ? "Today · earlier" : "Earlier";
+      }
+
+      private function hzMsglogIsToday(ts:Number) : Boolean
+      {
+         if(ts <= 0) { return false; }
+         var now:Date = new Date();
+         var d:Date = new Date(ts * 1000);
+         return now.fullYear == d.fullYear && now.month == d.month && now.date == d.date;
+      }
+
+      private function hzMsglogAgo(ts:Number) : String
+      {
+         if(ts <= 0) { return ""; }
+         var sec:Number = Math.max(0, Math.floor(new Date().getTime() / 1000 - ts));
+         if(sec < 60) { return "just now"; }
+         if(sec < 3600) { return String(Math.floor(sec / 60)) + " min ago"; }
+         if(sec < 86400) { return String(Math.floor(sec / 3600)) + " h ago"; }
+         return String(Math.floor(sec / 86400)) + " d ago";
+      }
+
+      private function hzMsglogClockTxt(v:Number) : String
+      {
+         if(v < 0) { return ""; }
+         var h:int = int(v) % 24;
+         var m:int = int((v - int(v)) * 60);
+         if(m < 0) { m = 0; }
+         var hs:String = h < 10 ? "0" + String(h) : String(h);
+         var ms:String = m < 10 ? "0" + String(m) : String(m);
+         return hs + ":" + ms;
+      }
+
+      private function hzMsglogKindLab(k:String) : String
+      {
+         var i:int = 0;
+         while(i < HZ_ML_KIND.length)
+         {
+            if(String(HZ_ML_KIND[i]) == k) { return String(HZ_ML_CHIPS[i]); }
+            i++;
+         }
+         return "GAME";
+      }
+
+      private function hzMsglogStatusLab() : String
+      {
+         if(this.hzMlStatus == "memory" || this.hzMlStatus == "paused") { return "History not saved"; }
+         if(this.hzMlStatus == "saving") { return "Saving"; }
+         if(this.hzMlStatus == "fallback") { return "Character key fallback"; }
+         return "";
+      }
+
+      private function hzMsglogEllip(t:TextField, maxW:Number) : void
+      {
+         if(t == null) { return; }
+         var s:String = t.text;
+         if(s == null) { return; }
+         t.width = 2000;
+         if(this.hzTW(t) <= maxW) { t.width = Math.round(maxW); return; }
+         while(s.length > 1 && this.hzTW(t) > maxW)
+         {
+            s = s.substr(0,s.length - 1);
+            t.text = s + "...";
+            t.width = 2000;
+         }
+         t.width = Math.round(maxW);
+      }
+
+      private function hzMsglogDraw() : void
+      {
+         this.hzMsglogEnsure();
+         if(this.HorizonSettings_mc == null) { return; }
+         if(this.hzMlLayer.parent != this.HorizonSettings_mc) { this.HorizonSettings_mc.addChild(this.hzMlLayer); }
+         this.hzMlLayer.visible = true;
+         while(this.hzMlLayer.numChildren > 0) { this.hzMlLayer.removeChildAt(0); }
+         this.hzMlLayer.graphics.clear();
+         this.hzMlHits = [];
+         var T:Object = this.hzSetTheme();
+         var acc:uint = uint(T.acc);
+         var b:Sprite = this.hzMlLayer;
+         var g:* = b.graphics;
+         var ox:Number = Math.round((HZ_SET_W - HZ_ML_W) / 2);
+         var oy:Number = Math.round((HZ_SET_H - HZ_ML_H) / 2);
+         b.x = 0; b.y = 0;
+         g.beginFill(0x000000,0.35);
+         g.drawRoundRect(0,0,HZ_SET_W,HZ_SET_H,36,36);
+         g.endFill();
+         g.beginFill(uint(T.fill),Number(T.fa));
+         g.drawRoundRect(ox,oy,HZ_ML_W,HZ_ML_H,36,36);
+         g.endFill();
+         this.hz33Edge(b,ox,oy,HZ_ML_W,HZ_ML_H,36,uint(T.edge),Number(T.ea),1);
+         this.hzWT(b,"HORIZON UI · MESSAGE LOG",ox + 22,oy + 14,520,15,"bd",uint(T.txt),2, "left", 13);
+         var st:String = this.hzMsglogStatusLab();
+         if(st.length > 0) { this.hzWT(b,st,ox + HZ_ML_W - 22,oy + 16,240,13,"sb",uint(T.mut),0.4,"right",13); }
+
+         var cx:Number = ox + 22;
+         var cy:Number = oy + 44;
+         var i:int = 0;
+         var chipW:Number = 0;
+         while(i < HZ_ML_CHIPS.length)
+         {
+            var cn:int = this.hzMsglogChipCount(String(HZ_ML_KIND[i]));
+            var clab:String = String(HZ_ML_CHIPS[i]) + " " + String(cn);
+            var on:Boolean = i == this.hzMlChip;
+            var dim:Boolean = cn == 0 && i != 0;
+            var tw:TextField = this.hzWT(b,clab,0,0,180,13,"sb",on ? uint(T.ontxt) : (dim ? uint(T.off) : uint(T.txt)),1.2,"left",13);
+            var cw:Number = Math.round(this.hzTW(tw) + 18);
+            b.removeChild(tw);
+            chipW += cw + 8;
+            i++;
+         }
+         var chipInner:Number = HZ_ML_W - 44;
+         if(this.hzMlChipX > Math.max(0,chipW - chipInner)) { this.hzMlChipX = Math.max(0,chipW - chipInner); }
+         if(this.hzMlChipX < 0) { this.hzMlChipX = 0; }
+         i = 0;
+         var at:Number = cx - this.hzMlChipX;
+         while(i < HZ_ML_CHIPS.length)
+         {
+            cn = this.hzMsglogChipCount(String(HZ_ML_KIND[i]));
+            clab = String(HZ_ML_CHIPS[i]) + " " + String(cn);
+            on = i == this.hzMlChip;
+            dim = cn == 0 && i != 0;
+            tw = this.hzWT(b,clab,at + 8,cy + 8,180,13,"sb",on ? uint(T.ontxt) : (dim ? uint(T.off) : uint(T.txt)),1.2,"left",13);
+            cw = Math.round(this.hzTW(tw) + 18);
+            g.beginFill(on ? acc : uint(T.mut), on ? 0.9 : (dim ? 0.12 : 0.2));
+            g.drawRoundRect(at,cy + 4,cw,28,28,28);
+            g.endFill();
+            tw.x = at + 8;
+            this.hzMlHits.push({"id":"chip" + i,"x":at,"y":cy + 4,"w":cw,"h":28});
+            at += cw + 8;
+            i++;
+         }
+
+         var fy:Number = oy + 80;
+         this.hzSetKey(b,g,ox + 22,fy + 4,"/",uint(T.mut),24,13);
+         var findLab:String = this.hzMlFindOn ? (this.hzMlFind.length > 0 ? this.hzMlFind : "Type to find") : "Find";
+         if(this.hzMlPad && !this.hzMlFindOn) { findLab = "Find (keyboard only)"; }
+         this.hzWT(b,findLab,ox + 56,fy + 8,320,13,"rg",this.hzMlFindOn ? uint(T.txt) : uint(T.mut),0.3,"left",13);
+         this.hzMlHits.push({"id":"find","x":ox + 22,"y":fy,"w":360,"h":28});
+         var allOn:Boolean = this.hzMlAllTime;
+         this.hzSetSwitch(b,g,ox + HZ_ML_W - 22,fy + 18,allOn,T,false);
+         this.hzWT(b,"ALL TIME",ox + HZ_ML_W - 70,fy + 8,80,13,"sb",uint(T.lab),1.2,"right",13);
+         this.hzMlHits.push({"id":"alltime","x":ox + HZ_ML_W - 120,"y":fy,"w":98,"h":28});
+
+         var list:Array = this.hzMsglogList();
+         var rowTop:Number = oy + 116;
+         var rowH:Number = 320;
+         if(this.hzMlScroll < 0) { this.hzMlScroll = 0; }
+         var maxSc:int = Math.max(0,list.length - HZ_ML_VIS);
+         if(this.hzMlScroll > maxSc) { this.hzMlScroll = maxSc; }
+         if(list.length == 0)
+         {
+            this.hzWT(b,"Starts empty. Messages from before this log was on cannot be recovered.",ox + 28,rowTop + 40,HZ_ML_W - 56,13,"rg",uint(T.mut),0.3,"left",13);
+         }
+         var vis:int = 0;
+         var li:int = this.hzMlScroll;
+         var ry:Number = rowTop;
+         var sel:Object = null;
+         while(li < list.length && vis < HZ_ML_VIS)
+         {
+            var it:Object = list[li];
+            if(it.g)
+            {
+               this.hzWT(b,String(it.lab),ox + 28,ry + 6,400,13,"sb",acc,1.6,"left",13);
+            }
+            else
+            {
+               var isSel:Boolean = Number(it.id) == this.hzMlSelId;
+               if(this.hzMlSelId == 0 && sel == null) { isSel = true; this.hzMlSelId = Number(it.id); }
+               if(isSel) { sel = it; }
+               var later:Boolean = it.later == true;
+               var aMul:Number = later ? 0.45 : 1;
+               if(isSel)
+               {
+                  g.beginFill(acc,0.13);
+                  g.drawRoundRect(ox + 18,ry,HZ_ML_W - 48,HZ_ML_ROW,14,14);
+                  g.endFill();
+                  g.beginFill(acc,1);
+                  g.drawRoundRect(ox + 18,ry + 6,3,16,3,3);
+                  g.endFill();
+               }
+               var tcol:uint = later ? uint(T.mut) : uint(T.txt);
+               var clock:String = this.hzMsglogClockTxt(Number(it.ut));
+               if(clock.length == 0) { clock = this.hzMsglogAgo(Number(it.ts)); }
+               else { clock = clock + "  " + this.hzMsglogAgo(Number(it.ts)); }
+               var line:String = String(it.title);
+               if(String(it.text).length > 0 && String(it.text) != String(it.title)) { line += "  " + String(it.text); }
+               if(int(it.n) > 1) { line += "  x " + String(it.n); }
+               if(String(it.tag).length > 0) { line += "  " + String(it.tag); }
+               if(later) { line += "  from a later point"; }
+               var rt:TextField = this.hzWT(b,clock,ox + 28,ry + 6,90,13,"sb",tcol,0.4,"left",13);
+               rt.alpha = aMul;
+               var tt:TextField = this.hzWT(b,line,ox + 122,ry + 6,HZ_ML_W - 180,13,"rg",tcol,0.3,"left",13);
+               tt.alpha = aMul;
+               this.hzMsglogEllip(tt,HZ_ML_W - 190);
+               if(int(it.pin) != 0)
+               {
+                  g.beginFill(acc,0.85);
+                  g.moveTo(ox + HZ_ML_W - 40, ry + 8);
+                  g.lineTo(ox + HZ_ML_W - 32, ry + 8);
+                  g.lineTo(ox + HZ_ML_W - 36, ry + 20);
+                  g.lineTo(ox + HZ_ML_W - 40, ry + 8);
+                  g.endFill();
+               }
+               this.hzMlHits.push({"id":"row" + String(it.id),"x":ox + 18,"y":ry,"w":HZ_ML_W - 48,"h":HZ_ML_ROW,"rid":Number(it.id)});
+            }
+            ry += HZ_ML_ROW;
+            vis++;
+            li++;
+         }
+         if(maxSc > 0)
+         {
+            var trX:Number = ox + HZ_ML_W - 16;
+            var thH:Number = Math.max(24, Math.round(rowH * HZ_ML_VIS / Math.max(1,list.length)));
+            var thY:Number = rowTop + (rowH - thH) * this.hzMlScroll / Math.max(1,maxSc);
+            g.beginFill(uint(T.track),Number(T.ta));
+            g.drawRoundRect(trX,rowTop,3,rowH,3,3);
+            g.endFill();
+            g.beginFill(acc,0.9);
+            g.drawRoundRect(trX,thY,3,thH,3,3);
+            g.endFill();
+         }
+
+         var dy:Number = oy + HZ_ML_H - 92 - 64;
+         g.beginFill(uint(T.line),Number(T.la));
+         g.drawRect(ox + 22,dy,HZ_ML_W - 44,1);
+         g.endFill();
+         if(sel != null)
+         {
+            var d1:String = this.hzMsglogKindLab(String(sel.k)) + "  ·  " + String(sel.title);
+            if(String(sel.text).length > 0) { d1 += "  " + String(sel.text); }
+            var dtf:TextField = this.hzWT(b,d1,ox + 28,dy + 8,HZ_ML_W - 56,13,"sb",uint(T.txt),0.4,"left",13);
+            this.hzMsglogEllip(dtf,HZ_ML_W - 56);
+            var uts:String = this.hzMsglogClockTxt(Number(sel.ut));
+            var lts:String = Number(sel.lt) >= 0 ? this.hzMsglogClockTxt(Number(sel.lt)) : "";
+            var when:String = uts.length > 0 ? "IN-GAME " + uts : "";
+            if(lts.length > 0) { when += (when.length > 0 ? " + " : "") + "local " + lts; }
+            var where:String = String(sel.loc).length > 0 ? String(sel.loc) : "";
+            var real:String = "";
+            if(Number(sel.ts) > 0)
+            {
+               var rd:Date = new Date(Number(sel.ts) * 1000);
+               real = String(rd.getFullYear()) + "-" + (rd.getMonth() + 1 < 10 ? "0" : "") + String(rd.getMonth() + 1) + "-" + (rd.date < 10 ? "0" : "") + String(rd.date) + "  " + (rd.hours < 10 ? "0" : "") + String(rd.hours) + ":" + (rd.minutes < 10 ? "0" : "") + String(rd.minutes);
+            }
+            var d2:String = when;
+            if(where.length > 0) { d2 += (d2.length > 0 ? "  ·  " : "") + where; }
+            if(real.length > 0) { d2 += (d2.length > 0 ? "  ·  " : "") + real; }
+            if(sel.later == true) { d2 += (d2.length > 0 ? "  ·  " : "") + "from a later point"; }
+            var dtf2:TextField = this.hzWT(b,d2.length > 0 ? d2 : " ",ox + 28,dy + 32,HZ_ML_W - 56,13,"rg",uint(T.mut),0.3,"left",13);
+            this.hzMsglogEllip(dtf2,HZ_ML_W - 56);
+         }
+
+         var foot:Number = oy + HZ_ML_H - 92;
+         g.beginFill(uint(T.line),Number(T.la));
+         g.drawRect(ox + 22,foot,HZ_ML_W - 44,1);
+         g.endFill();
+         var hx:Number = ox + 28;
+         var hy:Number = foot + 10;
+         var hints:Array = this.hzMlPad
+            ? [["LB/RB","CHIPS"],["A","PIN"],["X","SETTINGS"],["Y","CLEAR"],["B","BACK"]]
+            : [["UP/DN","SELECT"],["ENTER","PIN"],["ESC","BACK"],["/","FIND"]];
+         var hi:int = 0;
+         while(hi < hints.length)
+         {
+            var hk:Number = this.hzSetKey(b,g,hx,hy,String(hints[hi][0]),uint(T.mut),22,13);
+            this.hzWT(b,String(hints[hi][1]),hx + hk + 6,hy + 4,70,13,"sb",uint(T.mut),1.2,"left",13);
+            hx += hk + 78;
+            hi++;
+         }
+         var by:Number = foot + 48;
+         var bxr:Number = ox + HZ_ML_W - 22;
+         var hit0:int = this.hzSetHits.length;
+         bxr -= this.hzSetBtn(b,g,bxr,by,"BACK",false,false,this.hzMlHover == "back",T,"mlback",13) + 10;
+         bxr -= this.hzSetBtn(b,g,bxr,by,"CLEAR SESSION",false,true,this.hzMlHover == "clear",T,"mlclear",13) + 10;
+         bxr -= this.hzSetBtn(b,g,bxr,by,"PIN",true,false,this.hzMlHover == "pin",T,"mlpin",13) + 10;
+         this.hzSetBtn(b,g,bxr,by,"SETTINGS",false,true,this.hzMlHover == "set",T,"mlset",13);
+         while(this.hzSetHits.length > hit0)
+         {
+            this.hzMlHits.push(this.hzSetHits.pop());
+         }
+         if(this.hzMlNotice.length > 0)
+         {
+            this.hzWT(b,this.hzMlNotice,ox + 28,foot + 36,400,13,"sb",uint(T.note),0.4,"left",13);
+         }
+         if(this.hzPopTop() == "mlconfirm") { this.hzMsglogDrawConfirm(b,g,T,acc,ox,oy); }
+      }
+
+      private function hzMsglogDrawConfirm(b:Sprite, g:*, T:Object, acc:uint, ox:Number, oy:Number) : void
+      {
+         var n:int = 0;
+         var i:int = 0;
+         while(i < this.hzMlRows.length)
+         {
+            var r:Object = this.hzMlRows[i];
+            if(int(r.sess) == this.hzMlSess && int(r.pin) == 0) { n++; }
+            i++;
+         }
+         var cw:Number = 420;
+         var ch:Number = 168;
+         var cx:Number = ox + Math.round((HZ_ML_W - cw) / 2);
+         var cy:Number = oy + Math.round((HZ_ML_H - ch) / 2);
+         g.beginFill(0x000000,0.45);
+         g.drawRoundRect(ox,oy,HZ_ML_W,HZ_ML_H,36,36);
+         g.endFill();
+         g.beginFill(uint(T.fill),Number(T.fa));
+         g.drawRoundRect(cx,cy,cw,ch,28,28);
+         g.endFill();
+         this.hz33Edge(b,cx,cy,cw,ch,28,uint(T.edge),Number(T.ea),1);
+         this.hzWT(b,"Clear this session?",cx + 22,cy + 18,cw - 44,15,"bd",uint(T.txt),2,"left",13);
+         this.hzWT(b,"Removes " + String(n) + " unpinned messages from this launch. Can't be undone.",cx + 22,cy + 48,cw - 44,13,"rg",uint(T.lab),0.3,"left",13);
+         var br:Number = cx + cw - 22;
+         var hit0:int = this.hzSetHits.length;
+         br -= this.hzSetBtn(b,g,br,cy + 120,"CANCEL",false,false,this.hzMlHover == "cfcancel",T,"cfcancel",13) + 10;
+         this.hzSetBtn(b,g,br,cy + 120,"CLEAR",true,false,this.hzMlHover == "cfok",T,"cfok",13);
+         while(this.hzSetHits.length > hit0)
+         {
+            this.hzMlHits.push(this.hzSetHits.pop());
+         }
+      }
+
+      private function hzMsglogKey(code:String) : void
+      {
+         if(code == "up" || code == "down" || code == "left" || code == "right" || code == "ok" || code == "cancel" || code == "padx" || code == "pady" || code == "tabprev" || code == "tabnext") { this.hzMlPad = (code == "padx" || code == "pady" || code.indexOf("tab") == 0); }
+         if(this.hzPopTop() == "mlconfirm")
+         {
+            if(code == "cancel") { this.hzPopPop(); this.hzMsglogDraw(); return; }
+            if(code == "ok" || code == "pady") { this.hzMsglogDoClear(); return; }
+            return;
+         }
+         if(this.hzMlFindOn)
+         {
+            if(code == "cancel") { this.hzMlFindOn = false; this.hzMlFind = ""; this.hzMsglogDraw(); return; }
+            if(code == "bksp")
+            {
+               if(this.hzMlFind.length > 0) { this.hzMlFind = this.hzMlFind.substr(0,this.hzMlFind.length - 1); this.hzMsglogDraw(); }
+               return;
+            }
+            if(code.indexOf("ch:") == 0)
+            {
+               var ch:String = code.substr(3);
+               if(ch.length > 0) { this.hzMlFind += ch; this.hzMsglogDraw(); }
+               return;
+            }
+            if(code == "ok") { this.hzMlFindOn = false; this.hzMsglogDraw(); return; }
+         }
+         if(code == "cancel") { this.hzMsglogForceClose(); return; }
+         if(code == "wheelup") { this.hzMlScroll--; this.hzMsglogDraw(); return; }
+         if(code == "wheeldown") { this.hzMlScroll++; this.hzMsglogDraw(); return; }
+         if(code == "tabprev") { this.hzMsglogChipStep(-1); return; }
+         if(code == "tabnext") { this.hzMsglogChipStep(1); return; }
+         if(code == "up") { this.hzMsglogSelStep(-1); return; }
+         if(code == "down") { this.hzMsglogSelStep(1); return; }
+         if(code == "ok") { this.hzMsglogDoPin(); return; }
+         if(code == "pady") { this.hzMsglogAskClear(); return; }
+         if(code.indexOf("ch:") == 0 && code.substr(3) == "/") { this.hzMlFindOn = true; this.hzMsglogDraw(); return; }
+         if(code == "bksp" && this.hzMlFind.length > 0) { this.hzMlFindOn = true; this.hzMsglogDraw(); }
+      }
+
+      private function hzMsglogChipStep(dir:int) : void
+      {
+         this.hzMlChip = (this.hzMlChip + dir + HZ_ML_CHIPS.length) % HZ_ML_CHIPS.length;
+         this.hzMlScroll = 0;
+         this.hzMsglogDraw();
+      }
+
+      private function hzMsglogSelStep(dir:int) : void
+      {
+         var list:Array = this.hzMsglogList();
+         var ids:Array = [];
+         var i:int = 0;
+         while(i < list.length)
+         {
+            if(!list[i].g) { ids.push(Number(list[i].id)); }
+            i++;
+         }
+         if(ids.length == 0) { return; }
+         var at:int = 0;
+         i = 0;
+         while(i < ids.length)
+         {
+            if(Number(ids[i]) == this.hzMlSelId) { at = i; break; }
+            i++;
+         }
+         at += dir;
+         if(at < 0) { at = 0; }
+         if(at >= ids.length) { at = ids.length - 1; }
+         this.hzMlSelId = Number(ids[at]);
+         var visAt:int = 0;
+         i = 0;
+         while(i < list.length)
+         {
+            if(!list[i].g && Number(list[i].id) == this.hzMlSelId) { visAt = i; break; }
+            i++;
+         }
+         if(visAt < this.hzMlScroll) { this.hzMlScroll = visAt; }
+         if(visAt >= this.hzMlScroll + HZ_ML_VIS) { this.hzMlScroll = visAt - HZ_ML_VIS + 1; }
+         this.hzMsglogDraw();
+      }
+
+      private function hzMsglogDoPin() : void
+      {
+         if(this.hzMlSelId == 0) { return; }
+         var pinned:Boolean = false;
+         var i:int = 0;
+         while(i < this.hzMlRows.length)
+         {
+            if(Number(this.hzMlRows[i].id) == this.hzMlSelId) { pinned = int(this.hzMlRows[i].pin) != 0; break; }
+            i++;
+         }
+         if(!pinned && this.hzMlPinN >= this.hzMlPinCap)
+         {
+            this.hzMlNotice = "Pin limit reached (50)";
+            this.hzMsglogDraw();
+            return;
+         }
+         this.hzMlNotice = "";
+         this.hzMlAct = (pinned ? "unpin|" : "pin|") + String(this.hzMlSelId);
+      }
+
+      private function hzMsglogAskClear() : void
+      {
+         if(this.hzPopTop() != "log") { return; }
+         this.hzPopPush("mlconfirm");
+         this.hzMsglogDraw();
+      }
+
+      private function hzMsglogDoClear() : void
+      {
+         if(this.hzPopTop() == "mlconfirm") { this.hzPopPop(); }
+         this.hzMlAct = "clearsess";
+         this.hzMsglogDraw();
+      }
+
+      private function hzMsglogHit(mx:Number, my:Number) : Object
+      {
+         var i:int = this.hzMlHits.length - 1;
+         while(i >= 0)
+         {
+            var h:Object = this.hzMlHits[i];
+            if(mx >= h.x && mx <= h.x + h.w && my >= h.y && my <= h.y + h.h) { return h; }
+            i--;
+         }
+         return null;
+      }
+
+      private function hzMsglogMouse(nx:Number, ny:Number, down:Boolean) : void
+      {
+         if(!this.HorizonSettings_mc || isNaN(nx) || isNaN(ny)) { return; }
+         var vr:Rectangle = Extensions.visibleRect;
+         var gp:Point = (vr != null && vr.width >= 1) ? new Point(vr.x + nx * vr.width,vr.y + ny * vr.height) : new Point(nx * 1920,ny * 1080);
+         var lp:Point = globalToLocal(gp);
+         var mx:Number = lp.x - this.HorizonSettings_mc.x;
+         var my:Number = lp.y - this.HorizonSettings_mc.y;
+         this.hzMlPad = false;
+         this.hzSetDrawCursor();
+         this.hzSetCursor.x = mx;
+         this.hzSetCursor.y = my;
+         this.hzSetCursor.visible = true;
+         var hit:Object = this.hzMsglogHit(mx,my);
+         this.hzMlHover = hit != null ? String(hit.id) : "";
+         var pressed:Boolean = down && !this.hzSetPrevDown;
+         this.hzSetPrevDown = down;
+         if(!pressed) { this.hzMsglogDraw(); return; }
+         if(this.hzPopTop() == "mlconfirm")
+         {
+            if(this.hzMlHover == "cfok") { this.hzMsglogDoClear(); return; }
+            if(this.hzMlHover == "cfcancel" || this.hzMlHover == "") { this.hzPopPop(); this.hzMsglogDraw(); }
+            return;
+         }
+         if(hit == null) { return; }
+         var id:String = String(hit.id);
+         if(id.indexOf("chip") == 0) { this.hzMlChip = int(id.substr(4)); this.hzMlScroll = 0; this.hzMsglogDraw(); return; }
+         if(id.indexOf("row") == 0) { this.hzMlSelId = Number(hit.rid); this.hzMsglogDraw(); return; }
+         if(id == "find") { this.hzMlFindOn = true; this.hzMsglogDraw(); return; }
+         if(id == "alltime") { this.hzMlAllTime = !this.hzMlAllTime; this.hzMlScroll = 0; this.hzMsglogDraw(); return; }
+         if(id == "mlpin") { this.hzMsglogDoPin(); return; }
+         if(id == "mlclear") { this.hzMsglogAskClear(); return; }
+         if(id == "mlback") { this.hzMsglogForceClose(); return; }
       }
 
       public function hzToggleSettings() : void
@@ -3280,6 +3966,7 @@
          else if(r.t == "x")
          {
             if(r.k == "_arrange") { this.hzArrEnter(); return; }
+            if(r.k == "_msglog") { this.hzMsglogOpen(); return; }
             if(r.k == "_hz41arrscan") { this.hz41SAEnter(); return; }   // v0.41.0: ARRANGE SCANNER
             if(r.k == "_hz31usesub") { this.hzSetPend.SubAutoPause = false; }
             else if(r.k == "_hz31usedlg") { this.hzSetPend.DlgAutoPause = false; }
@@ -3637,7 +4324,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.1";
+      private static const HZ_BUILD:String = "0.43.0.4";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -4525,7 +5212,12 @@
       // Mouse from the SFSE plugin: nx, ny = 0..1 of the game client area.
       public function hzSettingsMouse(nx:Number, ny:Number, down:Boolean) : void
       {
-         if(this.hzPopLayers != null && this.hzPopLayers.length > 0) { return; }   // 0.43.0.1: extra layers swallow mouse (P2 draws them)
+         if(this.hzPopLayers != null && this.hzPopLayers.length > 0)
+         {
+            var topM:String = this.hzPopTop();
+            if(topM == "log" || topM == "mlconfirm") { this.hzMsglogMouse(nx,ny,down); return; }
+            return;
+         }
          if(this.hzArrange) { this.hzArrMouse(nx,ny,down); return; }
          if(!this.hzSetIsOpen || !this.HorizonSettings_mc || isNaN(nx) || isNaN(ny)) { this.hzSetPrevDown = down; return; }
          var vr:Rectangle = Extensions.visibleRect;
