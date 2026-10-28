@@ -42,6 +42,25 @@ inline bool AddrSlotReady(int a_state, std::size_t a_size)
 	return a_state == 1 && a_size >= kV5HeaderBytes;
 }
 
+// State 0: the job thread has not finished HzAddrLoad. A -1 from
+// HzAddrSlot in that window must not latch "id missing".
+inline constexpr int kSlotPending = -3;
+
+inline bool AddrImagePending(int a_state)
+{
+	return a_state == 0;
+}
+
+inline bool AddrSlotRetry(int a_slot)
+{
+	return a_slot == kSlotPending;
+}
+
+inline bool AddrSlotMiss(int a_slot)
+{
+	return a_slot != 1 && a_slot != kSlotPending;
+}
+
 // Purpose: when a CommonLib id is 0, name the published id that failed.
 // Slot misses use the live id; this is only the zero-id fallback.
 inline std::uint64_t EngineZeroMiss(

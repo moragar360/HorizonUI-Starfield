@@ -121,25 +121,28 @@ namespace HZ
 	// 1.16.244 actually runs that queue on BSJobs workers (crash3: Invoke
 	// from "BSJobs 9"). TaskInterface has no UI-thread API. Scaleform
 	// runs only from the HUD movie AdvanceFrame hook (see PollScaleform).
-	// g_uiTid is recorded once (window owner or first MenuMovieCreated).
-	// The hook never overwrites it.
+	// g_uiTid is adopted only from the stored HUD / HUDMessages root's
+	// own AdvanceFrame. Window-owner and any-menu tids are hints.
 	std::atomic<std::uint32_t> g_uiTid{0};
+	std::atomic<bool>          g_uiTidHealLogged{false};
 	std::atomic<bool>          g_uiPollLogged{false};
 	std::atomic<bool>          g_jobPollLogged{false};
 	std::atomic<bool>          g_hookWrongTidLogged{false};
+	std::atomic<bool>          g_windowTidHinted{false};
+	std::atomic<bool>          g_menuTidHinted{false};
 	std::atomic<ULONGLONG>     g_sfLastMs{0};
 	std::atomic<std::uint64_t> g_hookCalls{0};
 	std::atomic<ULONGLONG>     g_hookAliveNext{0};
 	std::atomic<bool>          g_uiLoading{false};
 	std::atomic<bool>          g_uiMainMenu{false};
-	std::uint32_t              g_advTids[8]{};
+	std::atomic<std::uint32_t> g_advTids[8]{};
 	std::atomic<int>           g_advTidN{0};
-	std::mutex                 g_advTidMu;
 
 	void HzAddrLoad() noexcept;
 	void PreloadDllFileVersion();
 	void FilesJobPreload();
-	void RecordUiTidOnce(std::uint32_t a_tid);
+	void RecordUiTidOnce(std::uint32_t a_tid, const char* a_src);
+	void AdoptHudAdvanceTid(std::uint32_t a_tid);
 
 	std::filesystem::path IniPath()
 	{
@@ -750,24 +753,40 @@ namespace HZ
 	void MsglogEnsureInit();
 	HWND GameWindow();
 
-	// Purpose: record the UI thread once. The AdvanceFrame hook must
-	// not overwrite this; a worker advance would then look "on UI".
-	// Inputs: candidate tid. Outputs: stored on the first non-zero.
+	// Purpose: record the UI tid only from the HUD root's AdvanceFrame.
+	// Inputs: tid and a source tag. Outputs: INFO on the first store.
 	// Author: Moragar. Last modified: 2026-10-28.
-	void RecordUiTidOnce(std::uint32_t a_tid)
+	void RecordUiTidOnce(std::uint32_t a_tid, const char* a_src)
 	{
 		if (!a_tid) return;
 		std::uint32_t expected = 0;
 		if (g_uiTid.compare_exchange_strong(expected, a_tid, std::memory_order_acq_rel))
-			REX::INFO("thread: ui tid recorded once={}", a_tid);
+			REX::INFO("thread: ui tid recorded once={} source=hud-root-advance", a_tid);
+		(void)a_src;
 	}
 
-	void TryRecordUiTidFromWindow()
+	void AdoptHudAdvanceTid(std::uint32_t a_tid)
 	{
+		RecordUiTidOnce(a_tid, hzlog::kUiTidSourceHudRoot);
+		const auto have = g_uiTid.load(std::memory_order_acquire);
+		if (!hzlog::UiTidSelfHeal(have, a_tid, true)) return;
+		if (g_uiTidHealLogged.exchange(true)) return;
+		REX::ERROR("thread: ui tid self-heal from {} to {} source=hud-root-advance", have, a_tid);
+		g_uiTid.store(a_tid, std::memory_order_release);
+	}
+
+	// Purpose: log the foreground window's owner thread as a hint.
+	// Never adopts g_uiTid (overlay windows can own a different tid).
+	// Inputs: none. Outputs: one INFO line. Author: Moragar.
+	// Last modified: 2026-10-28.
+	void HintWindowOwnerTid()
+	{
+		if (g_windowTidHinted.load(std::memory_order_relaxed)) return;
 		HWND w = GameWindow();
 		if (!w) return;
 		const auto tid = ::GetWindowThreadProcessId(w, nullptr);
-		RecordUiTidOnce(static_cast<std::uint32_t>(tid));
+		if (!g_windowTidHinted.exchange(true))
+			REX::INFO("thread: window-owner tid={} (hint only)", tid);
 	}
 
 	void LoadIni()
@@ -1961,9 +1980,22 @@ namespace HZ
 	// IDDB::offset would end the process, and SEH cannot catch that. The UI
 	// thread only reads the ready flag and the cached bytes.
 	std::mutex                    g_addrLoadMu;
+	std::mutex                    g_addrWhyMu;
 	std::atomic<int>              g_addrState{0};
 	static std::vector<unsigned char> g_addrBytes;
 	static std::string            g_addrWhy;
+
+	void AddrWhySet(std::string a_why)
+	{
+		std::lock_guard lk(g_addrWhyMu);
+		g_addrWhy = std::move(a_why);
+	}
+
+	std::string AddrWhyGet()
+	{
+		std::lock_guard lk(g_addrWhyMu);
+		return g_addrWhy;
+	}
 
 	void HzAddrLoad() noexcept
 	{
@@ -1974,13 +2006,13 @@ namespace HZ
 		try {
 			const auto ver = REX::FModule::GetExecutingModule().GetFileVersion().wstring(L"-");
 			if (ver.empty()) {
-				g_addrWhy = "game version could not be read";
+				AddrWhySet("game version could not be read");
 				g_addrState.store(next, std::memory_order_release);
 				return;
 			}
 			for (wchar_t c : ver) {
 				if (!((c >= L'0' && c <= L'9') || c == L'-')) {
-					g_addrWhy = "game version could not be read";
+					AddrWhySet("game version could not be read");
 					g_addrState.store(next, std::memory_order_release);
 					return;
 				}
@@ -1988,28 +2020,28 @@ namespace HZ
 			HMODULE mod = nullptr;
 			if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
 			        reinterpret_cast<LPCWSTR>(&HzAddrLoad), &mod) || !mod) {
-				g_addrWhy = "plugin path could not be read";
+				AddrWhySet("plugin path could not be read");
 				g_addrState.store(next, std::memory_order_release);
 				return;
 			}
 			wchar_t path[MAX_PATH]{};
 			const DWORD n = ::GetModuleFileNameW(mod, path, MAX_PATH);
 			if (n == 0 || n >= MAX_PATH) {
-				g_addrWhy = "plugin path could not be read";
+				AddrWhySet("plugin path could not be read");
 				g_addrState.store(next, std::memory_order_release);
 				return;
 			}
 			const auto file = std::filesystem::path(path).parent_path() / (std::wstring(L"versionlib-") + std::wstring(ver) + L".bin");
 			std::ifstream in(file, std::ios::binary);
 			if (!in) {
-				g_addrWhy = "versionlib file was not found";
+				AddrWhySet("versionlib file was not found");
 				g_addrState.store(next, std::memory_order_release);
 				return;
 			}
 			in.seekg(0, std::ios::end);
 			const auto end = in.tellg();
 			if (end < static_cast<std::streamoff>(hzaddr::kV5HeaderBytes) || end > static_cast<std::streamoff>(32 * 1024 * 1024)) {
-				g_addrWhy = "versionlib is not a v5 table";
+				AddrWhySet("versionlib is not a v5 table");
 				g_addrState.store(next, std::memory_order_release);
 				return;
 			}
@@ -2018,7 +2050,7 @@ namespace HZ
 			in.read(reinterpret_cast<char*>(g_addrBytes.data()), static_cast<std::streamsize>(end));
 			if (!in) {
 				g_addrBytes.clear();
-				g_addrWhy = "versionlib could not be read";
+				AddrWhySet("versionlib could not be read");
 				g_addrState.store(next, std::memory_order_release);
 				return;
 			}
@@ -2026,15 +2058,15 @@ namespace HZ
 			std::memcpy(&format, g_addrBytes.data(), sizeof format);
 			if (format != 5u) {
 				g_addrBytes.clear();
-				g_addrWhy = "versionlib is not a v5 table";
+				AddrWhySet("versionlib is not a v5 table");
 				g_addrState.store(next, std::memory_order_release);
 				return;
 			}
-			g_addrWhy.clear();
+			AddrWhySet({});
 			next = 1;
 		} catch (...) {
 			g_addrBytes.clear();
-			if (g_addrWhy.empty()) g_addrWhy = "versionlib could not be read";
+			if (AddrWhyGet().empty()) AddrWhySet("versionlib could not be read");
 			next = -1;
 		}
 		g_addrState.store(next, std::memory_order_release);
@@ -2051,19 +2083,19 @@ namespace HZ
 
 	static int HzAddrSlot(std::uint64_t a_id)
 	{
-		if (g_addrState.load(std::memory_order_acquire) != 1) return -1;
-		if (!hzaddr::AddrSlotReady(1, g_addrBytes.size())) return -1;
-		const int slot = hzaddr::V5Slot(g_addrBytes.data(), g_addrBytes.size(), a_id);
-		if (slot < 0 && g_addrWhy.empty()) g_addrWhy = "versionlib is not a v5 table";
-		return slot;
+		const int st = g_addrState.load(std::memory_order_acquire);
+		if (hzaddr::AddrImagePending(st)) return hzaddr::kSlotPending;
+		if (!hzaddr::AddrSlotReady(st, g_addrBytes.size())) return -1;
+		return hzaddr::V5Slot(g_addrBytes.data(), g_addrBytes.size(), a_id);
 	}
 
 	static void HzAddrLogOnce()
 	{
 		static bool once = false;
-		if (once || g_addrWhy.empty()) return;
+		const auto why = AddrWhyGet();
+		if (once || why.empty()) return;
 		once = true;
-		if (g_iniDebug) REX::INFO("hud address: {}", g_addrWhy);
+		if (g_iniDebug) REX::INFO("hud address: {}", why);
 	}
 
 	static void HzCopySetting(RE::GameSettingCollection* a_col, const char* a_key, char* a_dst, std::size_t a_cap)
@@ -2092,9 +2124,13 @@ namespace HZ
 		const auto gid = RE::ID::GameSettingCollection::GetSetting.id();
 		const int ss = HzAddrSlot(sid);
 		const int gs = HzAddrSlot(gid);
-		if (ss != 1 || gs != 1) {
+		if (hzaddr::AddrSlotRetry(ss) || hzaddr::AddrSlotRetry(gs)) {
+			a_out->ok = 0;
+			return;
+		}
+		if (hzaddr::AddrSlotMiss(ss) || hzaddr::AddrSlotMiss(gs)) {
 			a_out->ok = -2;
-			a_out->miss = ss != 1 ? sid : gid;
+			a_out->miss = hzaddr::AddrSlotMiss(ss) ? sid : gid;
 			return;
 		}
 		auto* col = RE::GameSettingCollection::GetSingleton();
@@ -2141,7 +2177,12 @@ namespace HZ
 			return;
 		}
 		const auto lid = RE::ID::TESForm::LookupByID.id();
-		if (HzAddrSlot(lid) != 1) {
+		const int ls = HzAddrSlot(lid);
+		if (hzaddr::AddrSlotRetry(ls)) {
+			a_out->ok = 0;
+			return;
+		}
+		if (hzaddr::AddrSlotMiss(ls)) {
 			a_out->ok = -2;
 			a_out->miss = lid;
 			return;
@@ -2240,10 +2281,19 @@ namespace HZ
 			a_out->miss = hzaddr::EngineZeroMiss(locId, slmId, calId, pcId);
 			return;
 		}
-		if (HzAddrSlot(locId) != 1) { a_out->ok = -2; a_out->miss = locId; return; }
-		if (HzAddrSlot(slmId) != 1) { a_out->ok = -2; a_out->miss = slmId; return; }
-		if (HzAddrSlot(calId) != 1) { a_out->ok = -2; a_out->miss = calId; return; }
-		if (HzAddrSlot(pcId) != 1) { a_out->ok = -2; a_out->miss = pcId; return; }
+		const int locS = HzAddrSlot(locId);
+		const int slmS = HzAddrSlot(slmId);
+		const int calS = HzAddrSlot(calId);
+		const int pcS = HzAddrSlot(pcId);
+		if (hzaddr::AddrSlotRetry(locS) || hzaddr::AddrSlotRetry(slmS)
+			|| hzaddr::AddrSlotRetry(calS) || hzaddr::AddrSlotRetry(pcS)) {
+			a_out->ok = 0;
+			return;
+		}
+		if (hzaddr::AddrSlotMiss(locS)) { a_out->ok = -2; a_out->miss = locId; return; }
+		if (hzaddr::AddrSlotMiss(slmS)) { a_out->ok = -2; a_out->miss = slmId; return; }
+		if (hzaddr::AddrSlotMiss(calS)) { a_out->ok = -2; a_out->miss = calId; return; }
+		if (hzaddr::AddrSlotMiss(pcS)) { a_out->ok = -2; a_out->miss = pcId; return; }
 		if (auto pc = RE::PlayerCharacter::GetSingleton()) {
 			if (auto loc = pc->GetCurrentLocation(); loc) {
 				if (const char* n = loc->GetFullName(); n && n[0])
@@ -2680,7 +2730,7 @@ namespace HZ
 	bool                    g_mlBakBypassLogged = false;
 	std::uint64_t           g_mlNameHashSkipMs{0};
 	std::atomic<bool>       g_mlShutdownReq{false};
-	bool                    g_mlWStarted = false;
+	std::atomic<bool>       g_mlWStarted{false};
 	bool                    g_mlAtExit = false;
 	std::mutex              g_mlWStartMu;
 	std::atomic<bool>       g_mlInited{false};
@@ -2857,7 +2907,7 @@ namespace HZ
 			std::lock_guard lk(g_mlWMu);
 			g_mlWDone.store(true);
 			g_mlWLive.store(false);
-			g_mlWStarted = false;
+			g_mlWStarted.store(false);
 		}
 		g_mlWCv.notify_all();
 	}
@@ -2870,13 +2920,13 @@ namespace HZ
 			std::lock_guard lk(g_mlMu);
 			persist = g_ml.buf.settings.persist;
 		}
-		if (!hzlog::WriterStartAllowed(g_mlWLive.load(), g_mlWStarted)) return;
+		if (!hzlog::WriterStartAllowed(g_mlWLive.load(), g_mlWStarted.load())) return;
 		(void)persist;
 		if (g_mlWThread.joinable()) {
 			if (!g_mlWDone.load()) return;
 			try { g_mlWThread.join(); } catch (...) { return; }
 		}
-		g_mlWStarted = true;
+		g_mlWStarted.store(true);
 		g_mlWLive.store(true);
 		g_mlWStop.store(false);
 		g_mlWDone.store(false);
@@ -2887,7 +2937,7 @@ namespace HZ
 				std::atexit(MsglogAtExit);
 			}
 		} catch (...) {
-			g_mlWStarted = false;
+			g_mlWStarted.store(false);
 			g_mlWLive.store(false);
 		}
 	}
@@ -3466,6 +3516,10 @@ namespace HZ
 			if (e == std::string::npos) e = all.size();
 			const auto line = all.substr(p, e - p);
 			p = e + 1;
+			if (const int dropped = hzlog::TakeLogDroppedCount(line); dropped >= 0) {
+				REX::INFO("take-log dropped {} queued lines", dropped);
+				continue;
+			}
 			hzlog::Kind k;
 			std::string title, text;
 			if (!hzlog::ParseForward(line, k, title, text)) continue;
@@ -3980,7 +4034,7 @@ namespace HZ
 	{
 		if (!g_jobPollLogged.exchange(true))
 			REX::INFO("thread: job poll tid={}", ::GetCurrentThreadId());
-		TryRecordUiTidFromWindow();
+		HintWindowOwnerTid();
 		FilesJobPreload();
 		const auto now = GetTickCount64();
 		BannerPollWork(now);
@@ -4061,18 +4115,35 @@ namespace HZ
 	using AdvanceFn = void (*)(RE::Scaleform::GFx::ASMovieRootBase*, bool);
 	std::atomic<AdvanceFn> g_origAdvance{nullptr};
 	std::atomic<bool>      g_advanceHooked{false};
+	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_hudRoot{nullptr};
+	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_hudMsgRoot{nullptr};
+
+	bool IsStoredHudRoot(RE::Scaleform::GFx::ASMovieRootBase* a_root)
+	{
+		return a_root
+			&& (a_root == g_hudRoot.load(std::memory_order_acquire)
+				|| a_root == g_hudMsgRoot.load(std::memory_order_acquire));
+	}
 
 	void LogAdvanceTid(std::uint32_t a_tid)
 	{
-		std::lock_guard lk(g_advTidMu);
-		const int n = g_advTidN.load(std::memory_order_relaxed);
+		thread_local bool seen = false;
+		if (seen) return;
+		const int n = g_advTidN.load(std::memory_order_acquire);
 		for (int i = 0; i < n && i < 8; ++i) {
-			if (g_advTids[i] == a_tid) return;
+			if (g_advTids[i].load(std::memory_order_relaxed) == a_tid) {
+				seen = true;
+				return;
+			}
 		}
-		if (n >= 8) return;
-		g_advTids[n] = a_tid;
-		g_advTidN.store(n + 1, std::memory_order_relaxed);
-		REX::INFO("thread: movie advance tid={} (new, {} of 8)", a_tid, n + 1);
+		const int slot = g_advTidN.fetch_add(1, std::memory_order_acq_rel);
+		if (slot >= 8) {
+			seen = true;
+			return;
+		}
+		g_advTids[slot].store(a_tid, std::memory_order_release);
+		seen = true;
+		REX::INFO("thread: movie advance tid={} (new, {} of 8)", a_tid, slot + 1);
 	}
 
 	void HookedAdvanceFrame(RE::Scaleform::GFx::ASMovieRootBase* a_this, bool a_next)
@@ -4084,6 +4155,9 @@ namespace HZ
 			orig(a_this, a_next);
 		const auto tid = ::GetCurrentThreadId();
 		LogAdvanceTid(tid);
+		const bool hudRoot = IsStoredHudRoot(a_this);
+		if (hudRoot)
+			AdoptHudAdvanceTid(tid);
 		const auto now = GetTickCount64();
 		const auto n = g_hookCalls.fetch_add(1, std::memory_order_relaxed) + 1;
 		if (n == static_cast<std::uint64_t>(hzlog::kHookAliveFirstN)
@@ -4093,7 +4167,7 @@ namespace HZ
 			g_hookAliveNext.store(now + hzlog::kHookAlivePeriodMs, std::memory_order_relaxed);
 		}
 		const auto ui = g_uiTid.load(std::memory_order_acquire);
-		if (!ui || tid != ui) {
+		if (!hzlog::HookTidAllowsPoll(ui, tid)) {
 			if (!g_hookWrongTidLogged.exchange(true))
 				REX::INFO("scaleform: AdvanceFrame on other thread tid={} ui={}; skip PollScaleform", tid, ui);
 			return;
@@ -4124,7 +4198,7 @@ namespace HZ
 			return;
 		}
 		const auto orig = reinterpret_cast<AdvanceFn>(vtbl[2]);
-		if (!orig || orig == &HookedAdvanceFrame) {
+		if (!hzlog::HookOrigStored(orig, reinterpret_cast<const void*>(&HookedAdvanceFrame))) {
 			g_advanceHooked.store(false);
 			REX::ERROR("scaleform: AdvanceFrame hook failed (null or self original)");
 			return;
@@ -4143,23 +4217,28 @@ namespace HZ
 		REX::INFO("scaleform: AdvanceFrame hook installed");
 	}
 
-	// Purpose: SFSE MenuMovieCreated. Fires on the UI thread when a
-	// movie loads, including HUD recreate on ship enter/exit. Records
-	// the UI tid once and hooks HUD / HUD messages AdvanceFrame.
+	// Purpose: SFSE MenuMovieCreated. Stores the HUD / HUDMessages
+	// root pointer (compare only later; never dereferenced from the
+	// hook). Does not adopt g_uiTid. Hooks AdvanceFrame once.
 	// Inputs: the new menu. Outputs: none. Author: Moragar.
 	// Last modified: 2026-10-28.
 	void OnMenuMovie(RE::IMenu* a_menu)
 	{
 		if (!a_menu) return;
-		RecordUiTidOnce(::GetCurrentThreadId());
 		const bool hud = a_menu->menuName == "HUDMenu" || a_menu->menuName == "HUDMessagesMenu";
 		const bool live = a_menu->uiMovie && a_menu->uiMovie->asMovieRoot;
-		if (live && hud)
-			REX::INFO("scaleform: MenuMovieCreated name={} live root",
-				a_menu->menuName == "HUDMenu" ? "HUDMenu" : "HUDMessagesMenu");
+		if (live && !hud && !g_menuTidHinted.exchange(true))
+			REX::INFO("thread: menu-create tid={} (hint only)", ::GetCurrentThreadId());
 		if (!hud || !live)
 			return;
-		InstallAdvanceHook(a_menu->uiMovie->asMovieRoot.get());
+		auto* root = a_menu->uiMovie->asMovieRoot.get();
+		if (a_menu->menuName == "HUDMenu")
+			g_hudRoot.store(root, std::memory_order_release);
+		else
+			g_hudMsgRoot.store(root, std::memory_order_release);
+		REX::INFO("scaleform: MenuMovieCreated name={} live root",
+			a_menu->menuName == "HUDMenu" ? "HUDMenu" : "HUDMessagesMenu");
+		InstallAdvanceHook(root);
 	}
 
 	void OnMessage(SFSE::MessagingInterface::Message* a_msg)

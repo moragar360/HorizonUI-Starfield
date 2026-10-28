@@ -1061,6 +1061,114 @@ inline bool EngineCacheNeedsMutex(bool a_crossThread)
 	return a_crossThread;
 }
 
+inline constexpr int kTakeLogHardCap = 500;
+inline constexpr const char* kUiTidSourceHudRoot = "hud-root-advance";
+
+// Purpose: g_uiTid may be adopted only from the stored HUD /
+// HUDMessages root's own AdvanceFrame. Window-owner and any-menu
+// create tids are hints; they must not win the compare-exchange.
+// Inputs: hint kind and whether a_this is the stored HUD root
+// (pointer compare only). Outputs: true when this call may record.
+// Author: Moragar. Last modified: 2026-10-28.
+enum class UiTidHint : std::uint8_t { WindowOwner = 0, AnyMenu, HudRootAdvance };
+
+inline bool UiTidHintAdopts(UiTidHint a_hint, bool a_isStoredHudRoot)
+{
+	return a_hint == UiTidHint::HudRootAdvance && a_isStoredHudRoot;
+}
+
+// Purpose: if the HUD root advances on a different tid than the one
+// we recorded, adopt the HUD root's tid. Inputs: recorded tid, this
+// advance tid, stored-root match. Outputs: self-heal?
+// Author: Moragar. Last modified: 2026-10-28.
+inline bool UiTidSelfHeal(std::uint32_t a_recorded, std::uint32_t a_hudTid, bool a_isStoredHudRoot)
+{
+	return a_isStoredHudRoot && a_recorded != 0 && a_hudTid != 0 && a_recorded != a_hudTid;
+}
+
+inline bool HookTidAllowsPoll(std::uint32_t a_uiTid, std::uint32_t a_curTid)
+{
+	return a_uiTid != 0 && a_uiTid == a_curTid;
+}
+
+inline bool HookOrigStored(const void* a_orig, const void* a_hook)
+{
+	return a_orig != nullptr && a_orig != a_hook;
+}
+
+// Purpose: in-test stand-in for g_uiTid. Non-HUD creates and a
+// foreign window owner must not stick. The HUD root's AdvanceFrame
+// wins, and a later HUD-root tid self-heals.
+// Author: Moragar. Last modified: 2026-10-28.
+struct UiTidRecorder
+{
+	std::uint32_t tid{0};
+	const char*   source{nullptr};
+	bool          healed{false};
+	const void*   hudRoot{nullptr};
+	const void*   hudMsgRoot{nullptr};
+
+	void HintWindowOwner(std::uint32_t)
+	{
+	}
+
+	void OnMenuCreated(const char* a_name, const void* a_root, std::uint32_t)
+	{
+		if (!a_name || !a_root) return;
+		if (std::strcmp(a_name, "HUDMenu") == 0)
+			hudRoot = a_root;
+		else if (std::strcmp(a_name, "HUDMessagesMenu") == 0)
+			hudMsgRoot = a_root;
+	}
+
+	bool IsStoredHudRoot(const void* a_root) const
+	{
+		return a_root && (a_root == hudRoot || a_root == hudMsgRoot);
+	}
+
+	void OnAdvance(const void* a_root, std::uint32_t a_tid)
+	{
+		if (!UiTidHintAdopts(UiTidHint::HudRootAdvance, IsStoredHudRoot(a_root)) || !a_tid)
+			return;
+		if (tid == 0) {
+			tid = a_tid;
+			source = kUiTidSourceHudRoot;
+			return;
+		}
+		if (UiTidSelfHeal(tid, a_tid, true)) {
+			healed = true;
+			tid = a_tid;
+			source = kUiTidSourceHudRoot;
+		}
+	}
+};
+
+// Purpose: TextScale 0.90 on a 13 px face rounds to 12; the AS floor
+// then lifts it back. Inputs: face size and minPx. Outputs: size used.
+// Author: Moragar. Last modified: 2026-10-28.
+inline int TextScaleFloorPx(int a_fs, int a_minPx)
+{
+	int sz = (a_fs * 9 + 5) / 10;
+	if (sz < 9) sz = 9;
+	return FloorTextPx(sz, a_minPx);
+}
+
+// Purpose: parse a take-log drop marker (`drop|N`). Inputs: one
+// line. Outputs: dropped count, or -1 if this is not a drop line.
+// Author: Moragar. Last modified: 2026-10-28.
+inline int TakeLogDroppedCount(std::string_view a_line)
+{
+	if (a_line.size() < 6 || a_line.substr(0, 5) != "drop|") return -1;
+	int n = 0;
+	for (std::size_t i = 5; i < a_line.size(); ++i) {
+		const char c = a_line[i];
+		if (c == '|') break;
+		if (c < '0' || c > '9') return -1;
+		n = n * 10 + (c - '0');
+	}
+	return n;
+}
+
 // Purpose: all writer-side state and decisions. The DLL only calls methods.
 // Per-key slots hold clearPending (set on an explicit user Clear, cleared
 // only when ok && seq >= clearSeq), write seqs, last-failed snap, and

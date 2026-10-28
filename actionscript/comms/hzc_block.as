@@ -1442,6 +1442,7 @@
 
       // 0.43.0.1 Message Log P1: quest / location / XP forwarding. HUDMessageData stays with the DLL sink.
       private var hzcLogQ:Array = [];
+      private var hzcLogDropped:int = 0;
       private var hzcLogLastLoc:String = "";
       private function hzcLogPipe(s:String) : String
       {
@@ -1453,17 +1454,27 @@
       private function hzcLogPush(kind:String, title:String, text:String) : void
       {
          if(text == null || String(text).length == 0) { return; }
+         if(this.hzcLogQ.length >= 500)
+         {
+            this.hzcLogQ.shift();
+            this.hzcLogDropped++;
+         }
          this.hzcLogQ.push(kind + "|" + this.hzcLogPipe(title) + "|" + this.hzcLogPipe(text));
       }
       public function hzcTakeLog() : String
       {
          try
          {
-            if(this.hzcLogQ.length == 0) { return ""; }
+            if(this.hzcLogQ.length == 0 && this.hzcLogDropped == 0) { return ""; }
             var n:int = this.hzcLogQ.length;
             if(n > 40) { n = 40; }
             var o:String = this.hzcLogQ.slice(0, n).join("\n");
             this.hzcLogQ = this.hzcLogQ.slice(n);
+            if(this.hzcLogDropped > 0)
+            {
+               o = (o.length > 0) ? ("drop|" + String(this.hzcLogDropped) + "\n" + o) : ("drop|" + String(this.hzcLogDropped));
+               this.hzcLogDropped = 0;
+            }
             return o;
          }
          catch(e:Error) { }
