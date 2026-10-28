@@ -5,7 +5,7 @@
 // CommonLibSF. The DLL (src/main.cpp) supplies engine pointers, the worker
 // thread, and the HUD-ready / SaveLoad flush.
 // Author: Moragar
-// Last modified: 2026-10-27.
+// Last modified: 2026-10-28.
 
 #include "hz_msg_match.h"
 #include "hz_version.h"
@@ -922,6 +922,15 @@ inline bool PruneEmptiedBuffer(int a_dropped, bool a_nowEmpty)
 	return a_dropped > 0 && a_nowEmpty;
 }
 
+// Purpose: Poll must not rebuild a retry from failSnap when a newer
+// job is already in flight (writePending) or still queued. Each half
+// is tested on its own. Inputs: writePending and HasPendingFor.
+// Outputs: true when Poll must skip this key.
+inline bool PollSkipsRetry(bool a_writePending, bool a_hasQueued)
+{
+	return a_writePending || a_hasQueued;
+}
+
 // Purpose: all writer-side state and decisions. The DLL only calls methods.
 // Per-key slots hold clearPending (set on an explicit user Clear, cleared
 // only when ok && seq >= clearSeq), write seqs, last-failed snap, and
@@ -1162,7 +1171,7 @@ public:
 		}
 		for (const auto& k : keys) {
 			auto& s = SlotFor(k);
-			if (s.writePending || HasPendingFor(k))
+			if (PollSkipsRetry(s.writePending, HasPendingFor(k)))
 				continue;
 			LogState snap = s.hasFail ? s.failSnap : LogState{};
 			if (snap.character.key.empty())
@@ -1449,6 +1458,9 @@ public:
 	Character character;
 	std::int64_t lastPlayedTs{0};
 	std::uint64_t nextId{1};
+	// Bumped on every visible-row change so the HUD packs once, not
+	// every tick. The game thread only copies when this moves.
+	std::uint64_t viewGen{0};
 	int       sess{1};
 	int       launchSess{0}; // current key's process-lifetime pin; 0 if none
 	std::int64_t sessStartTs{0};
@@ -1542,8 +1554,12 @@ public:
 		}
 		sessStartTs = a_ts;
 		for (const auto& s : sessions)
-			if (s.id == sess) return;
+			if (s.id == sess) {
+				BumpView();
+				return;
+			}
 		sessions.push_back(Session{sess, a_ts});
+		BumpView();
 	}
 
 	// Purpose: apply a capture. Saving lines return SaveSignal and are not stored.
@@ -1571,7 +1587,10 @@ public:
 		a.tag = CapText(a.tag, 32);
 		const auto key = NormalizeText(a.text);
 		const int win = a.kind == Kind::Busy ? kBusyDedupeMs : kDedupeMs;
-		return OfferDedupe(a, key, win);
+		const auto r = OfferDedupe(a, key, win);
+		if (r == OfferResult::Stored || r == OfferResult::Deduped)
+			BumpView();
+		return r;
 	}
 
 	bool Pin(std::uint64_t a_id)
@@ -1581,6 +1600,7 @@ public:
 			if (e.pin) return true;
 			if (PinCount() >= kPinCap) return false;
 			e.pin = 1;
+			BumpView();
 			return true;
 		}
 		return false;
@@ -1592,6 +1612,7 @@ public:
 			if (e.id != a_id) continue;
 			e.pin = 0;
 			Evict();
+			BumpView();
 			return true;
 		}
 		return false;
@@ -1618,6 +1639,7 @@ public:
 				++flagged;
 			}
 		}
+		if (flagged) BumpView();
 		return flagged;
 	}
 
@@ -1628,17 +1650,20 @@ public:
 			if (e.sess != sess || e.pin) keep.push_back(std::move(e));
 		}
 		entries.swap(keep);
+		BumpView();
 	}
 
 	void ClearHistory()
 	{
 		entries.clear();
+		BumpView();
 	}
 
 	void SetHistorySize(int a_n)
 	{
 		settings.historySize = ClampHistory(a_n);
 		Evict();
+		BumpView();
 	}
 
 	void RememberName(std::string_view a_name)
@@ -1686,6 +1711,7 @@ public:
 		}
 		Evict();
 		ClearDedupeClock();
+		BumpView();
 	}
 
 	void ResetMemory()
@@ -1701,6 +1727,7 @@ public:
 		suppressFirstLoc_ = false;
 		lastLocNorm_.clear();
 		ClearDedupeClock();
+		BumpView();
 	}
 
 	void SortByTime()
@@ -1773,9 +1800,11 @@ public:
 		SortByTime();
 		Evict();
 		ClearDedupeClock();
+		BumpView();
 	}
 
 private:
+	void BumpView() { ++viewGen; }
 	std::vector<std::uint64_t> lastMs_;
 	bool        suppressFirstLoc_{false};
 	std::string lastLocNorm_;
@@ -2090,6 +2119,8 @@ inline std::string ToJson(const LogState& a_s, std::string_view a_plugin)
 	o += std::to_string(a_s.pinCap);
 	o += ", \"nextSess\": ";
 	o += std::to_string(a_s.nextSess);
+	o += ", \"nextId\": ";
+	o += std::to_string(a_s.nextId ? a_s.nextId : 1);
 	o += ",\n  \"sessions\": [";
 	for (std::size_t i = 0; i < a_s.sessions.size(); ++i) {
 		if (i) o += ", ";
@@ -2506,6 +2537,15 @@ inline ParseResult FromJson(std::string_view a_text)
 				return r;
 			}
 			r.state.nextSess = static_cast<int>(v);
+		} else if (key == "nextId") {
+			std::int64_t v = 0;
+			if (!JsonIntTok(t, v)) {
+				r.corrupt = true;
+				r.notice = "bad json";
+				return r;
+			}
+			if (v > 0 && static_cast<std::uint64_t>(v) > r.state.nextId)
+				r.state.nextId = static_cast<std::uint64_t>(v);
 		} else if (key == "sessions") {
 			if (!t.Eat('[')) {
 				r.corrupt = true;

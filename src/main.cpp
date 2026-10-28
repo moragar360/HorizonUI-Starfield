@@ -2435,6 +2435,8 @@ namespace HZ
 	bool                    g_mlWStarted = false;
 	bool                    g_mlAtExit = false;
 	bool                    g_mlInited = false;
+	bool                    g_mlUiPacked = false;
+	std::uint64_t           g_mlUiPackGen = 0;
 	bool                    g_mlMarker = false;
 	WORD                    g_mlPadLast = 0;
 	ULONGLONG               g_mlPadNext[16]{};
@@ -2990,16 +2992,34 @@ namespace HZ
 	}
 
 	// Purpose: remove this launch's unpinned rows. Pins and earlier
-	// sessions stay. Queues a rewrite; no delete. Author: Moragar.
+	// sessions stay. When that empties the buffer, this is a user Clear
+	// and goes through OnClear / SaveEmptyBoth so the files empty too.
+	// Automatic trims still never write empty. No delete. Author: Moragar.
 	// Last modified: 2026-10-28.
 	void MsglogClearSession()
 	{
 		try {
+			hzlog::WriteDecision d;
+			bool emptied = false;
 			{
 				std::lock_guard lk(g_mlMu);
 				g_ml.buf.ClearSession();
 				g_ml.dirty = true;
-				g_mlWrites.OnRow(g_ml.buf.character.key);
+				const auto key = g_ml.buf.character.key;
+				g_mlWrites.OnRow(key);
+				emptied = g_ml.buf.entries.empty();
+				if (emptied) {
+					g_mlWrites.SetPersist(g_ml.buf.settings.persist);
+					if (!g_ml.buf.settings.persist || !hzlog::ValidLogKey(key))
+						return;
+					g_ml.fileGate.BumpCancel(key);
+					d = g_mlWrites.OnClear(key, g_ml.buf.Snapshot());
+					g_ml.writePending = g_mlWrites.AnyWritePending();
+				}
+			}
+			if (emptied) {
+				if (d.queue) MsglogPushDecision(d);
+				return;
 			}
 			MsglogRequestWrite(true);
 		} catch (...) {
@@ -3053,23 +3073,42 @@ namespace HZ
 	}
 
 	// Purpose: push the view to the HUD movie while the log layer is open.
-	// Inputs: none. Outputs: none. No disk. Author: Moragar.
-	// Last modified: 2026-10-28.
+	// Packs only when the buffer generation changes or an act ran this
+	// tick. Never blocks the game thread. Inputs: none. Outputs: none.
+	// No disk. Author: Moragar. Last modified: 2026-10-28.
 	void MsglogPollUi()
 	{
 		try {
-			if (!g_open) return;
+			if (!g_open) {
+				g_mlUiPacked = false;
+				return;
+			}
 			GValue need;
 			if (!HudInvoke("hzMsglogNeed", &need) || !need.IsString() || !need.GetString())
 				return;
-			if (need.GetString()[0] != '1') return;
+			if (need.GetString()[0] != '1') {
+				g_mlUiPacked = false;
+				return;
+			}
+			bool acted = false;
 			GValue act;
-			if (HudInvoke("hzTakeMsglogAct", &act) && act.IsString() && act.GetString() && act.GetString()[0])
+			if (HudInvoke("hzTakeMsglogAct", &act) && act.IsString() && act.GetString() && act.GetString()[0]) {
 				MsglogApplyUiAct(act.GetString());
+				acted = true;
+			}
+			std::uint64_t gen = 0;
+			{
+				std::lock_guard lk(g_mlMu);
+				gen = g_ml.buf.viewGen;
+			}
+			if (g_mlUiPacked && !acted && gen == g_mlUiPackGen)
+				return;
 			const auto view = MsglogCopyView(g_mlEng.gt);
 			const auto packed = hzlog::PackView(view);
 			GValue arg(packed.c_str());
 			HudInvoke("hzSetMsglogView", nullptr, &arg, 1);
+			g_mlUiPacked = true;
+			g_mlUiPackGen = gen;
 		} catch (...) {
 		}
 	}
@@ -3236,7 +3275,6 @@ namespace HZ
 			const auto now = GetTickCount64();
 			const bool afterLoad = g_ml.loadBusy.load();
 			bool needLoad = false;
-			bool pruneEmpty = false;
 			{
 				std::lock_guard lk(g_mlMu);
 				if (afterLoad && g_mlRecoverBusy.load()) {
@@ -3257,7 +3295,6 @@ namespace HZ
 						const int later = g_ml.buf.Prune(g_mlEng.gt);
 						if (later > 0)
 							REX::INFO("message log: {} rows from a later point", later);
-						pruneEmpty = hzlog::PruneEmptiedBuffer(0, g_ml.buf.entries.empty());
 					}
 					g_mlWrites.OnLoadApplied(ch.key);
 					MsglogMirrorLoadBusy();
@@ -3277,19 +3314,15 @@ namespace HZ
 						const int later = g_ml.buf.Prune(g_mlEng.gt);
 						if (later > 0)
 							REX::INFO("message log: {} rows from a later point", later);
-						pruneEmpty = hzlog::PruneEmptiedBuffer(0, g_ml.buf.entries.empty());
 						g_mlWrites.OnLoadApplied(ch.key);
 						MsglogMirrorLoadBusy();
 						g_mlCapture.store(true);
 						g_mlHadSession.store(true);
 					}
 				} else {
-					const auto before = g_ml.buf.entries.size();
 					g_ml.OnHudReady(ch, g_mlEng.gt, ts, now, false);
 					needLoad = g_ml.buf.settings.persist && hzlog::PersistAllowed(ch)
 						&& g_ml.buf.entries.empty();
-					if (before > 0 && g_ml.buf.entries.empty())
-						pruneEmpty = true;
 					if (!needLoad) {
 						g_mlWrites.OnLoadApplied(ch.key);
 						MsglogMirrorLoadBusy();
@@ -3300,11 +3333,6 @@ namespace HZ
 			}
 			if (needLoad)
 				MsglogQueueLoad(ch, g_mlEng.gt, ts);
-			else if (pruneEmpty) {
-				std::lock_guard lk(g_mlMu);
-				g_mlWrites.OnPruneEmpty(g_ml.buf.character.key);
-				g_ml.dirty = false;
-			}
 		} catch (...) {
 		}
 	}
@@ -3335,7 +3363,6 @@ namespace HZ
 				jobHoldFlush = g_mlLHoldFlush;
 			}
 			bool needWrite = false;
-			bool pruneEmpty = false;
 			bool runPending = false;
 			{
 				std::lock_guard lk(g_mlMu);
@@ -3381,12 +3408,6 @@ namespace HZ
 					const int later = g_ml.buf.Prune(gt);
 					if (later > 0)
 						REX::INFO("message log: {} rows from a later point", later);
-					pruneEmpty = hzlog::PruneEmptiedBuffer(0, g_ml.buf.entries.empty());
-					if (pruneEmpty) {
-						g_mlWrites.OnPruneEmpty(g_ml.buf.character.key);
-						g_ml.dirty = false;
-						needWrite = false;
-					}
 					MsglogNotePersistLog(true);
 					if (jobHoldFlush || g_mlHoldFlush)
 						g_mlWrites.OnHoldFlush(ch.key, jobGen);
