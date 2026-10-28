@@ -3199,6 +3199,7 @@
 
       private function hzMsglogForceClose() : void
       {
+         this.hzMlAct = "";
          this.hzMlFindOn = false;
          this.hzMlNotice = "";
          this.hzMlPacked = "";
@@ -3386,6 +3387,78 @@
          return "";
       }
 
+      private function hzMsglogChipKeepVisible(chipW:Number, chipInner:Number, activeLeft:Number, activeW:Number) : void
+      {
+         var maxX:Number = Math.max(0, chipW - chipInner);
+         if(activeLeft < this.hzMlChipX) { this.hzMlChipX = activeLeft; }
+         if(activeLeft + activeW > this.hzMlChipX + chipInner) { this.hzMlChipX = activeLeft + activeW - chipInner; }
+         if(this.hzMlChipX > maxX) { this.hzMlChipX = maxX; }
+         if(this.hzMlChipX < 0) { this.hzMlChipX = 0; }
+      }
+
+      private function hzMsglogKindIcon(g:*, x:Number, y:Number, k:String, col:uint, a:Number) : void
+      {
+         g.beginFill(col, a);
+         if(k == "medical")
+         {
+            g.drawRect(x + 6, y + 1, 4, 14);
+            g.drawRect(x + 1, y + 6, 14, 4);
+         }
+         else if(k == "location")
+         {
+            g.drawCircle(x + 8, y + 6, 5);
+            g.moveTo(x + 3, y + 8);
+            g.lineTo(x + 8, y + 15);
+            g.lineTo(x + 13, y + 8);
+            g.lineTo(x + 3, y + 8);
+         }
+         else if(k == "quest")
+         {
+            g.drawRect(x + 3, y + 2, 10, 12);
+            g.drawRect(x + 6, y + 5, 4, 6);
+         }
+         else if(k == "xp")
+         {
+            g.moveTo(x + 8, y + 1);
+            g.lineTo(x + 15, y + 15);
+            g.lineTo(x + 1, y + 15);
+            g.lineTo(x + 8, y + 1);
+         }
+         else if(k == "credits")
+         {
+            g.drawCircle(x + 8, y + 8, 7);
+         }
+         else if(k == "reaction")
+         {
+            g.drawCircle(x + 5, y + 7, 4);
+            g.drawCircle(x + 11, y + 7, 4);
+         }
+         else if(k == "crew")
+         {
+            g.drawCircle(x + 8, y + 5, 4);
+            g.drawRect(x + 3, y + 10, 10, 5);
+         }
+         else if(k == "crime")
+         {
+            g.moveTo(x + 8, y + 1);
+            g.lineTo(x + 15, y + 8);
+            g.lineTo(x + 8, y + 15);
+            g.lineTo(x + 1, y + 8);
+            g.lineTo(x + 8, y + 1);
+         }
+         else if(k == "busy")
+         {
+            g.drawCircle(x + 8, y + 8, 7);
+            g.drawRect(x + 7, y + 4, 2, 5);
+            g.drawRect(x + 7, y + 8, 5, 2);
+         }
+         else
+         {
+            g.drawRoundRect(x + 2, y + 2, 12, 12, 4, 4);
+         }
+         g.endFill();
+      }
+
       private function hzMsglogEllip(t:TextField, maxW:Number) : void
       {
          if(t == null) { return; }
@@ -3433,6 +3506,8 @@
          var cy:Number = oy + 44;
          var i:int = 0;
          var chipW:Number = 0;
+         var chipWs:Array = [];
+         var chipLefts:Array = [];
          while(i < HZ_ML_CHIPS.length)
          {
             var cn:int = this.hzMsglogChipCount(String(HZ_ML_KIND[i]));
@@ -3442,33 +3517,56 @@
             var tw:TextField = this.hzWT(b,clab,0,0,180,13,"sb",on ? uint(T.ontxt) : (dim ? uint(T.off) : uint(T.txt)),1.2,"left",13);
             var cw:Number = Math.round(this.hzTW(tw) + 18);
             b.removeChild(tw);
+            chipLefts.push(chipW);
+            chipWs.push(cw);
             chipW += cw + 8;
             i++;
          }
          var chipInner:Number = HZ_ML_W - 44;
-         if(this.hzMlChipX > Math.max(0,chipW - chipInner)) { this.hzMlChipX = Math.max(0,chipW - chipInner); }
-         if(this.hzMlChipX < 0) { this.hzMlChipX = 0; }
+         var actL:Number = this.hzMlChip >= 0 && this.hzMlChip < chipLefts.length ? Number(chipLefts[this.hzMlChip]) : 0;
+         var actW:Number = this.hzMlChip >= 0 && this.hzMlChip < chipWs.length ? Number(chipWs[this.hzMlChip]) : 0;
+         this.hzMsglogChipKeepVisible(chipW, chipInner, actL, actW);
+         var strip:Sprite = new Sprite();
+         strip.x = cx;
+         strip.y = cy;
+         strip.mouseEnabled = false;
+         strip.mouseChildren = false;
+         b.addChild(strip);
+         var clip:Sprite = new Sprite();
+         clip.graphics.beginFill(0xFFFFFF, 1);
+         clip.graphics.drawRect(cx, cy, chipInner, 36);
+         clip.graphics.endFill();
+         clip.mouseEnabled = false;
+         b.addChild(clip);
+         strip.mask = clip;
+         var sg:* = strip.graphics;
          i = 0;
-         var at:Number = cx - this.hzMlChipX;
+         var at:Number = -this.hzMlChipX;
          while(i < HZ_ML_CHIPS.length)
          {
             cn = this.hzMsglogChipCount(String(HZ_ML_KIND[i]));
             clab = String(HZ_ML_CHIPS[i]) + " " + String(cn);
             on = i == this.hzMlChip;
             dim = cn == 0 && i != 0;
-            tw = this.hzWT(b,clab,at + 8,cy + 8,180,13,"sb",on ? uint(T.ontxt) : (dim ? uint(T.off) : uint(T.txt)),1.2,"left",13);
+            tw = this.hzWT(strip,clab,at + 8,8,180,13,"sb",on ? uint(T.ontxt) : (dim ? uint(T.off) : uint(T.txt)),1.2,"left",13);
             cw = Math.round(this.hzTW(tw) + 18);
-            g.beginFill(on ? acc : uint(T.mut), on ? 0.9 : (dim ? 0.12 : 0.2));
-            g.drawRoundRect(at,cy + 4,cw,28,28,28);
-            g.endFill();
+            sg.beginFill(on ? acc : uint(T.mut), on ? 0.9 : (dim ? 0.12 : 0.2));
+            sg.drawRoundRect(at,4,cw,28,28,28);
+            sg.endFill();
             tw.x = at + 8;
-            this.hzMlHits.push({"id":"chip" + i,"x":at,"y":cy + 4,"w":cw,"h":28});
+            var visX:Number = cx + at;
+            var visR:Number = Math.min(visX + cw, cx + chipInner);
+            var visL:Number = Math.max(visX, cx);
+            if(visR > visL)
+            {
+               this.hzMlHits.push({"id":"chip" + i,"x":visL,"y":cy + 4,"w":visR - visL,"h":28});
+            }
             at += cw + 8;
             i++;
          }
 
          var fy:Number = oy + 80;
-         this.hzSetKey(b,g,ox + 22,fy + 4,"/",uint(T.mut),24,13);
+         this.hzSetKey(b,g,ox + 22,fy + 4,"/",uint(T.mut),24,13,13);
          var findLab:String = this.hzMlFindOn ? (this.hzMlFind.length > 0 ? this.hzMlFind : "Type to find") : "Find";
          if(this.hzMlPad && !this.hzMlFindOn) { findLab = "Find (keyboard only)"; }
          this.hzWT(b,findLab,ox + 56,fy + 8,320,13,"rg",this.hzMlFindOn ? uint(T.txt) : uint(T.mut),0.3,"left",13);
@@ -3522,13 +3620,33 @@
                var line:String = String(it.title);
                if(String(it.text).length > 0 && String(it.text) != String(it.title)) { line += "  " + String(it.text); }
                if(int(it.n) > 1) { line += "  x " + String(it.n); }
-               if(String(it.tag).length > 0) { line += "  " + String(it.tag); }
-               if(later) { line += "  from a later point"; }
-               var rt:TextField = this.hzWT(b,clock,ox + 28,ry + 6,90,13,"sb",tcol,0.4,"left",13);
+               var locX:Number = ox + HZ_ML_W - 196;
+               var chipX:Number = locX - 118;
+               var textW:Number = chipX - (ox + 140) - 8;
+               if(textW < 80) { textW = 80; }
+               var rt:TextField = this.hzWT(b,clock,ox + 28,ry + 6,86,13,"sb",tcol,0.4,"left",13);
                rt.alpha = aMul;
-               var tt:TextField = this.hzWT(b,line,ox + 122,ry + 6,HZ_ML_W - 180,13,"rg",tcol,0.3,"left",13);
+               this.hzMsglogKindIcon(g, ox + 116, ry + 6, String(it.k), later ? uint(T.mut) : acc, later ? 0.45 : 0.9);
+               var tt:TextField = this.hzWT(b,line,ox + 138,ry + 6,textW,13,"rg",tcol,0.3,"left",13);
                tt.alpha = aMul;
-               this.hzMsglogEllip(tt,HZ_ML_W - 190);
+               this.hzMsglogEllip(tt,textW);
+               var chipLab:String = later ? "from a later point" : (String(it.tag).length > 0 ? String(it.tag) : this.hzMsglogKindLab(String(it.k)));
+               var chp:TextField = this.hzWT(b,chipLab,0,0,140,13,"sb",later ? uint(T.mut) : uint(T.lab),1.2,"left",13);
+               var chw:Number = Math.min(108, Math.round(this.hzTW(chp) + 14));
+               g.beginFill(later ? uint(T.mut) : acc, later ? 0.12 : 0.18);
+               g.drawRoundRect(chipX, ry + 4, chw, 20, 20, 20);
+               g.endFill();
+               chp.x = chipX + 7;
+               chp.y = ry + 4;
+               chp.alpha = aMul;
+               this.hzMsglogEllip(chp, chw - 10);
+               var where:String = String(it.loc);
+               if(where.length > 0)
+               {
+                  var lt:TextField = this.hzWT(b,where,locX,ry + 6,132,13,"rg",tcol,0.3,"left",13);
+                  lt.alpha = aMul;
+                  this.hzMsglogEllip(lt, 132);
+               }
                if(int(it.pin) != 0)
                {
                   g.beginFill(acc,0.85);
@@ -3563,10 +3681,11 @@
          g.endFill();
          if(sel != null)
          {
+            this.hzMsglogKindIcon(g, ox + 28, dy + 10, String(sel.k), acc, 0.9);
             var d1:String = this.hzMsglogKindLab(String(sel.k)) + "  ·  " + String(sel.title);
             if(String(sel.text).length > 0) { d1 += "  " + String(sel.text); }
-            var dtf:TextField = this.hzWT(b,d1,ox + 28,dy + 8,HZ_ML_W - 56,13,"sb",uint(T.txt),0.4,"left",13);
-            this.hzMsglogEllip(dtf,HZ_ML_W - 56);
+            var dtf:TextField = this.hzWT(b,d1,ox + 50,dy + 8,HZ_ML_W - 78,13,"sb",uint(T.txt),0.4,"left",13);
+            this.hzMsglogEllip(dtf,HZ_ML_W - 78);
             var uts:String = this.hzMsglogClockTxt(Number(sel.ut));
             var lts:String = Number(sel.lt) >= 0 ? this.hzMsglogClockTxt(Number(sel.lt)) : "";
             var when:String = uts.length > 0 ? "IN-GAME " + uts : "";
@@ -3598,7 +3717,7 @@
          var hi:int = 0;
          while(hi < hints.length)
          {
-            var hk:Number = this.hzSetKey(b,g,hx,hy,String(hints[hi][0]),uint(T.mut),22,13);
+            var hk:Number = this.hzSetKey(b,g,hx,hy,String(hints[hi][0]),uint(T.mut),22,13,13);
             this.hzWT(b,String(hints[hi][1]),hx + hk + 6,hy + 4,70,13,"sb",uint(T.mut),1.2,"left",13);
             hx += hk + 78;
             hi++;
@@ -3606,10 +3725,10 @@
          var by:Number = foot + 48;
          var bxr:Number = ox + HZ_ML_W - 22;
          var hit0:int = this.hzSetHits.length;
-         bxr -= this.hzSetBtn(b,g,bxr,by,"BACK",false,false,this.hzMlHover == "back",T,"mlback",13) + 10;
-         bxr -= this.hzSetBtn(b,g,bxr,by,"CLEAR SESSION",false,true,this.hzMlHover == "clear",T,"mlclear",13) + 10;
-         bxr -= this.hzSetBtn(b,g,bxr,by,"PIN",true,false,this.hzMlHover == "pin",T,"mlpin",13) + 10;
-         this.hzSetBtn(b,g,bxr,by,"SETTINGS",false,true,this.hzMlHover == "set",T,"mlset",13);
+         bxr -= this.hzSetBtn(b,g,bxr,by,"BACK",false,false,this.hzMlHover == "back",T,"mlback",13,13) + 10;
+         bxr -= this.hzSetBtn(b,g,bxr,by,"CLEAR SESSION",false,true,this.hzMlHover == "clear",T,"mlclear",13,13) + 10;
+         bxr -= this.hzSetBtn(b,g,bxr,by,"PIN",true,false,this.hzMlHover == "pin",T,"mlpin",13,13) + 10;
+         this.hzSetBtn(b,g,bxr,by,"SETTINGS",false,true,this.hzMlHover == "set",T,"mlset",13,13);
          while(this.hzSetHits.length > hit0)
          {
             this.hzMlHits.push(this.hzSetHits.pop());
@@ -3646,8 +3765,8 @@
          this.hzWT(b,"Removes " + String(n) + " unpinned messages from this launch. Can't be undone.",cx + 22,cy + 48,cw - 44,13,"rg",uint(T.lab),0.3,"left",13);
          var br:Number = cx + cw - 22;
          var hit0:int = this.hzSetHits.length;
-         br -= this.hzSetBtn(b,g,br,cy + 120,"CANCEL",false,false,this.hzMlHover == "cfcancel",T,"cfcancel",13) + 10;
-         this.hzSetBtn(b,g,br,cy + 120,"CLEAR",true,false,this.hzMlHover == "cfok",T,"cfok",13);
+         br -= this.hzSetBtn(b,g,br,cy + 120,"CANCEL",false,false,this.hzMlHover == "cfcancel",T,"cfcancel",13,13) + 10;
+         this.hzSetBtn(b,g,br,cy + 120,"CLEAR",true,false,this.hzMlHover == "cfok",T,"cfok",13,13);
          while(this.hzSetHits.length > hit0)
          {
             this.hzMlHits.push(this.hzSetHits.pop());
@@ -4400,9 +4519,10 @@
       }
 
       // keycap: 1 px ring drawn inside the box (never clipped), tinted fill; returns its width
-      private function hzSetKey(b:Sprite, g:*, x:Number, y:Number, k:String, col:uint, h:Number, fs:Number) : Number
+      // minPx is forwarded to hzWT so the log can keep a 13 px floor at TextScale 0.90-0.96.
+      private function hzSetKey(b:Sprite, g:*, x:Number, y:Number, k:String, col:uint, h:Number, fs:Number, minPx:int = 0) : Number
       {
-         var t:TextField = this.hzWT(b,k,x,y,120,fs,"bd",col,0.4);
+         var t:TextField = this.hzWT(b,k,x,y,120,fs,"bd",col,0.4,"left",minPx);
          var tw:Number = Math.round(this.hzTW(t));
          var kw:Number = Math.max(h + 4,tw + 16);
          x = Math.round(x); y = Math.round(y);
@@ -4437,10 +4557,11 @@
       }
 
       // pill button (OK / CANCEL / ARRANGE / OPEN); returns its width; right edge R
-      private function hzSetBtn(b:Sprite, g:*, R:Number, y:Number, lab:String, prim:Boolean, outline:Boolean, hov:Boolean, T:Object, id:String, fs:Number = 12) : Number
+      // minPx is forwarded to hzWT so the log can keep a 13 px floor at TextScale 0.90-0.96.
+      private function hzSetBtn(b:Sprite, g:*, R:Number, y:Number, lab:String, prim:Boolean, outline:Boolean, hov:Boolean, T:Object, id:String, fs:Number = 12, minPx:int = 0) : Number
       {
          var acc:uint = uint(T.acc);
-         var t:TextField = this.hzWT(b,lab,0,y + (fs > 12 ? 5 : 6),220,fs,"sb",prim ? uint(T.ontxt) : uint(T.txt),1.8);
+         var t:TextField = this.hzWT(b,lab,0,y + (fs > 12 ? 5 : 6),220,fs,"sb",prim ? uint(T.ontxt) : uint(T.txt),1.8,"left",minPx);
          var w:Number = Math.round(this.hzTW(t) + 28);
          var x:Number = Math.round(R - w);
          g.beginFill(prim ? acc : uint(T.mut),prim ? (hov ? 1 : 0.8) : (hov ? 0.3 : 0.16));
