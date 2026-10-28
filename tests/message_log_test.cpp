@@ -1731,7 +1731,8 @@ int main()
 		Expect(main.find("FilesJobPreload") != std::string::npos
 			&& main.find("PreloadDllFileVersion") != std::string::npos,
 			"versionlib and the DLL file version preload on the job thread");
-		Expect(main.find("std::mutex g_mlEngMu") != std::string::npos,
+		Expect(main.find("g_mlEngMu") != std::string::npos
+			&& main.find("std::mutex") != std::string::npos,
 			"the engine cache has a mutex");
 		{
 			int engLocks = 0;

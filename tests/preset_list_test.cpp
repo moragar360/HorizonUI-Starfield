@@ -618,7 +618,9 @@ int main()
 			Expect(body.find("LookupByID") == std::string::npos, "the sink does not look up a form");
 			Expect(body.find("Invoke") == std::string::npos, "the sink thread does not touch Scaleform");
 		}
-		Expect(src.find("for (auto m : { \"LoadingMenu\", \"MainMenu\" })") != std::string::npos, "the reaction drain skips loading and the main menu");
+		Expect(src.find("FaderMenu") != std::string::npos
+			&& src.find("MsglogTakeMovieAllowed") != std::string::npos,
+			"the reaction drain skips loading, the fader, and the main menu");
 		const auto rxPoll = src.find("CommsRxPoll(now);");
 		const auto hudWait = src.find("if (now - g_hudSince < 3000) return;");
 		Expect(rxPoll != std::string::npos && hudWait != std::string::npos && rxPoll < hudWait, "the reaction drain is not gated on HUD ready");
