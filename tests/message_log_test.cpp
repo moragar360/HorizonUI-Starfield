@@ -1320,6 +1320,26 @@ int main()
 		Expect(b.entries.back().n <= kRepeatCap, "n never exceeds 999");
 	}
 
+	// ---- viewGen bumps on Offer / Pin / Unpin / ClearSession ----
+	{
+		Buffer b;
+		const auto g0 = b.viewGen;
+		Expect(b.Offer(Cap(Kind::Game, "view gen row", 10'000)) == OfferResult::Stored, "viewGen offer stores");
+		Expect(b.viewGen > g0, "Offer bumps viewGen");
+		const auto g1 = b.viewGen;
+		Expect(b.Offer(Cap(Kind::Game, "Saving...", 10'100)) == OfferResult::SaveSignal, "viewGen save signal");
+		ExpectEqI(static_cast<int>(b.viewGen), static_cast<int>(g1), "a save signal does not bump viewGen");
+		const auto id = b.entries.front().id;
+		Expect(b.Pin(id), "viewGen pin");
+		Expect(b.viewGen > g1, "Pin bumps viewGen");
+		const auto g2 = b.viewGen;
+		Expect(b.Unpin(id), "viewGen unpin");
+		Expect(b.viewGen > g2, "Unpin bumps viewGen");
+		const auto g3 = b.viewGen;
+		b.ClearSession();
+		Expect(b.viewGen > g3, "ClearSession bumps viewGen");
+	}
+
 	// ---- ring buffer and pin cap (500 + 50 on top) ----
 	{
 		Buffer b;
@@ -1674,8 +1694,63 @@ int main()
 		Expect(main.find("OnMenuMovie") != std::string::npos && main.find("InstallAdvanceHook") != std::string::npos,
 			"MenuMovieCreated hooks HUD AdvanceFrame");
 		Expect(main.find("thread: load tid=") != std::string::npos
-			&& main.find("thread: ui poll tid=") != std::string::npos,
-			"startup and first UI poll log the thread id");
+			&& main.find("thread: ui poll tid=") != std::string::npos
+			&& main.find("thread: job poll tid=") != std::string::npos,
+			"startup, first UI poll, and first job poll log the thread id");
+		Expect(main.find("RecordUiTidOnce") != std::string::npos
+			&& main.find("compare_exchange_strong(expected, a_tid") != std::string::npos,
+			"the UI tid is recorded once");
+		Expect(main.find("g_uiTid.store(::GetCurrentThreadId()") == std::string::npos,
+			"the hook does not overwrite the UI tid on every advance");
+		Expect(main.find("skip PollScaleform") != std::string::npos
+			&& main.find("AdvanceFrame on other thread") != std::string::npos,
+			"the hook skips PollScaleform on a non-UI tid");
+		Expect(main.find("scaleform: hook alive") != std::string::npos
+			&& main.find("kHookAliveFirstN") != std::string::npos,
+			"the hook logs an alive counter");
+		Expect(main.find("AdvanceFrame orig=") != std::string::npos
+			&& main.find("rva=0x") != std::string::npos,
+			"the hook logs the original AdvanceFrame address");
+		Expect(main.find("MenuMovieCreated name=") != std::string::npos
+			&& main.find("live root") != std::string::npos,
+			"MenuMovieCreated logs a live root");
+		Expect(main.find("REX::ERROR(\"scaleform: AdvanceFrame hook failed\")") != std::string::npos,
+			"a failed AdvanceFrame patch logs at ERROR");
+		Expect(main.find("orig == &HookedAdvanceFrame") != std::string::npos
+			&& main.find("g_advanceHooked.exchange(true)") != std::string::npos
+			&& main.find("HookOnceFlagBlocksRetry") != std::string::npos,
+			"the hook has a once-flag and a self-recursion guard");
+		Expect(main.find("thread_local bool inPoll") != std::string::npos,
+			"PollScaleform has a reentrancy guard");
+		Expect(main.find("g_mlWStartMu") != std::string::npos
+			&& main.find("lock_guard start(g_mlWStartMu)") != std::string::npos,
+			"EnsureWriter starts the writer under one mutex");
+		Expect(main.find("g_phraseMu") != std::string::npos
+			&& main.find("MsgPhrasesSnap") != std::string::npos,
+			"the phrase table is published under a lock");
+		Expect(main.find("FilesJobPreload") != std::string::npos
+			&& main.find("PreloadDllFileVersion") != std::string::npos,
+			"versionlib and the DLL file version preload on the job thread");
+		Expect(main.find("std::mutex g_mlEngMu") != std::string::npos,
+			"the engine cache has a mutex");
+		{
+			int engLocks = 0;
+			for (std::size_t p = 0; (p = main.find("lock_guard lk(g_mlEngMu)", p)) != std::string::npos; ++p)
+				++engLocks;
+			Expect(engLocks >= 2, "engine cache reads and writes take g_mlEngMu");
+		}
+		{
+			const auto promo = main.find("void MsglogPromoteId()");
+			const auto next = main.find("void MsglogQueueRecover", promo);
+			const auto body = promo != std::string::npos && next > promo ? main.substr(promo, next - promo) : std::string();
+			Expect(body.find("PromoteIdShouldQueue") != std::string::npos
+				&& body.find("g_mlRecoverBusy") != std::string::npos
+				&& body.find("lock_guard lk(g_mlMu)") != std::string::npos,
+				"PromoteId checks recoverBusy inside the lock");
+		}
+		Expect(main.find("FaderMenu") != std::string::npos
+			&& main.find("CommsRxPoll") != std::string::npos,
+			"CommsRx is gated on Fader too");
 		Expect(main.find("HzNoteScaleformThread") != std::string::npos
 			&& main.find("#ifndef NDEBUG") != std::string::npos,
 			"off-UI Scaleform check is debug-only");
@@ -1707,8 +1782,24 @@ int main()
 				&& body.find("MsglogRefreshEngine") != std::string::npos,
 				"UI poll owns banners, cards, F11, the log take, and engine reads");
 			Expect(body.find("SaveFromHud") == std::string::npos && body.find("DoAction") == std::string::npos
-				&& body.find("filesystem::exists") == std::string::npos,
+				&& body.find("filesystem::exists") == std::string::npos
+				&& body.find("HzAddrLoad") == std::string::npos
+				&& body.find("ReadOwnFileVersion") == std::string::npos,
 				"UI poll does no file I/O");
+		}
+		{
+			const auto slot = main.find("static int HzAddrSlot");
+			const auto next = main.find("static void HzAddrLogOnce", slot);
+			const auto body = slot != std::string::npos && next > slot ? main.substr(slot, next - slot) : std::string();
+			Expect(body.find("HzAddrLoad") == std::string::npos,
+				"HzAddrSlot only reads the cached address image");
+		}
+		{
+			const auto ver = main.find("const std::string& DllFileVersion()");
+			const auto next = main.find("void PushDllFileVersion", ver);
+			const auto body = ver != std::string::npos && next > ver ? main.substr(ver, next - ver) : std::string();
+			Expect(body.find("ReadOwnFileVersion") == std::string::npos,
+				"DllFileVersion on the UI path does not open the version resource");
 		}
 		Expect(main.find("GetMenuInterface") != std::string::npos
 			&& main.find("AddPermanentTask") != std::string::npos,
@@ -1717,7 +1808,8 @@ int main()
 			const auto script = RepoRoot() / "tools" / "callgraph_scaleform.py";
 			Expect(std::filesystem::is_regular_file(script), "Scaleform call-graph script is in the repo");
 			const auto cmd = std::string("python3 \"") + script.string() + "\"";
-			Expect(std::system(cmd.c_str()) == 0, "callgraph: no Scaleform call is reachable from Poll()");
+			Expect(std::system(cmd.c_str()) == 0,
+				"callgraph: no Scaleform from Poll() and no file I/O on the UI path");
 		}
 		{
 			const auto shut = main.find("void MsglogShutdownWriter()");
@@ -1888,6 +1980,10 @@ int main()
 			const auto body = clr != std::string::npos && next > clr ? main.substr(clr, next - clr) : std::string();
 			Expect(body.find("OnClear") != std::string::npos, "emptied Clear session uses OnClear");
 			Expect(body.find("entries.empty()") != std::string::npos, "Clear session checks whether the buffer emptied");
+			Expect(body.find("StampLastPlayed") != std::string::npos, "emptied Clear stamps lastPlayed");
+			Expect(body.find("ClearSessionWrites") != std::string::npos
+				&& body.find("persistHold") != std::string::npos,
+				"emptied Clear respects persistHold");
 			Expect(body.find("MsglogRequestWrite(true)") != std::string::npos,
 				"Clear session still rewrites when earlier rows remain");
 		}
@@ -1913,12 +2009,30 @@ int main()
 		Expect(as.find("hzMsglogChipKeepVisible") != std::string::npos
 			&& as.find("strip.mask = clip") != std::string::npos,
 			"the chip row scrolls sideways and clips to the popup");
+		{
+			const auto chip = as.find("function hzMsglogChipKeepVisible");
+			const auto next = as.find("function hzMsglogKindIcon", chip);
+			const auto body = chip != std::string::npos && next > chip ? as.substr(chip, next - chip) : std::string();
+			Expect(body.find("if(activeLeft < this.hzMlChipX)") != std::string::npos
+				&& body.find("if(activeLeft + activeW > this.hzMlChipX + chipInner)") != std::string::npos
+				&& body.find("if(this.hzMlChipX > maxX)") != std::string::npos
+				&& body.find("if(this.hzMlChipX < 0)") != std::string::npos,
+				"chip keep-visible scrolls and clamps the strip");
+		}
 		Expect(as.find("hzMsglogKindIcon") != std::string::npos, "rows draw a type icon");
 		Expect(as.find("minPx:int = 0) : Number") != std::string::npos, "hzSetKey and hzSetBtn accept minPx");
+		Expect(as.find("if(minPx > sz) { sz = minPx; }") != std::string::npos,
+			"hzWT applies the minPx floor");
 		Expect(as.find("hzSetKey(b,g,ox + 22,fy + 4,\"/\",uint(T.mut),24,13,13)") != std::string::npos,
 			"the Find keycap passes minPx 13");
 		Expect(as.find("hzSetBtn(b,g,bxr,by,\"BACK\",false,false,this.hzMlHover == \"back\",T,\"mlback\",13,13)") != std::string::npos,
 			"log buttons pass minPx 13");
+		{
+			int floors = 0;
+			for (std::size_t p = 0; (p = as.find(",13,13)", p)) != std::string::npos; ++p)
+				++floors;
+			Expect(floors >= 4, "log chrome passes the 13 px floor at least four times");
+		}
 		{
 			const auto ini = Slurp("Interface/HorizonUI/HorizonUI.default.ini");
 			Expect(ini.find("offers to delete") == std::string::npos, "Persist comment does not offer a delete");
@@ -1930,6 +2044,10 @@ int main()
 		Expect(hzc.find("function hzcTakeLog") != std::string::npos, "movie exposes hzcTakeLog");
 		Expect(hzc.find("function hzcTakeLog") != std::string::npos && hzc.find("HUDMessageData stays with the DLL sink") != std::string::npos,
 			"take-log is separate from HUDMessageData");
+		Expect(hzc.find("hzcLogQ.shift()") == std::string::npos
+			&& hzc.find("this.hzcLogQ.slice(0, n)") != std::string::npos
+			&& hzc.find("this.hzcLogQ.slice(n)") != std::string::npos,
+			"take-log keeps the remainder instead of dropping the oldest");
 		Expect(hzc.find("hzcLogPush") != std::string::npos && hzc.find("QuestUpdateData") != std::string::npos, "quests are forwarded");
 		Expect(hzc.find("HUDLocationData") != std::string::npos && hzc.find("XPData") != std::string::npos, "location and XP are forwarded");
 		Expect(main.find("kMsglogOpenWithPad") == std::string::npos, "no pad combo opens F11");
@@ -4450,6 +4568,43 @@ int main()
 			Expect(kTakeLogMinMs == 250, "take-log waits 250 ms");
 			Expect(MsglogTakeMovieDue(250, 250), "take-log is due at the next tick");
 			Expect(!MsglogTakeMovieDue(249, 250), "take-log waits out the interval");
+			ExpectEqI(kTakeLogCap, 40, "take-log cap is 40");
+			ExpectEqI(TakeLogBatchCount(0), 0, "an empty take-log queue takes nothing");
+			ExpectEqI(TakeLogBatchCount(12), 12, "a short take-log queue is taken whole");
+			ExpectEqI(TakeLogBatchCount(40), 40, "a full take-log queue takes the cap");
+			ExpectEqI(TakeLogBatchCount(55), 40, "a long take-log queue takes the cap");
+			Expect(TakeLogHasRemainder(55, 40), "lines past the cap stay for the next take");
+			Expect(!TakeLogHasRemainder(40, 40), "a full take with no extra has no remainder");
+			{
+				std::vector<int> q;
+				for (int i = 0; i < 55; ++i) q.push_back(i);
+				const auto first = TakeLogBatch(q);
+				ExpectEqI(static_cast<int>(first.size()), 40, "first take-log batch is 40");
+				ExpectEqI(static_cast<int>(q.size()), 15, "take-log remainder stays on the queue");
+				ExpectEqI(first.front(), 0, "take-log keeps oldest first");
+				ExpectEqI(q.front(), 40, "take-log remainder starts after the cap");
+				const auto second = TakeLogBatch(q);
+				ExpectEqI(static_cast<int>(second.size()), 15, "second take-log batch is the remainder");
+				Expect(q.empty(), "the last take-log remainder drains");
+			}
+			Expect(ClearSessionWrites(true, true, false, true), "emptied Clear writes when Persist is on");
+			Expect(!ClearSessionWrites(true, true, true, true), "emptied Clear skips write while persistHold");
+			Expect(!ClearSessionWrites(true, false, false, true), "emptied Clear skips write when Persist is off");
+			Expect(!ClearSessionWrites(false, true, false, true), "a non-empty Clear is not an OnClear write");
+			Expect(PromoteIdShouldQueue(false, true, true, true), "PromoteId queues when idle");
+			Expect(!PromoteIdShouldQueue(true, true, true, true), "PromoteId dedupes while recoverBusy");
+			ExpectEqI(FloorTextPx(12, kMinTextPx), 13, "TextScale 0.90 cannot drop 13 to 12");
+			ExpectEqI(FloorTextPx(14, kMinTextPx), 14, "a size already above the floor stays");
+			ExpectEqI(kMinTextPx, 13, "the text floor is 13 px");
+			ExpectEqI(ChipScrollX(0, 400, 200, 250, 40), 90, "chip scroll brings a right-hand chip into view");
+			ExpectEqI(ChipScrollX(80, 400, 200, 10, 40), 10, "chip scroll brings a left-hand chip into view");
+			ExpectEqI(ChipScrollX(0, 100, 200, 0, 40), 0, "chip scroll does not go negative");
+			Expect(HookOnceFlagBlocksRetry(true), "a second hook install is skipped");
+			Expect(!HookOnceFlagBlocksRetry(false), "the first hook install runs");
+			Expect(EngineCacheNeedsMutex(true), "the engine cache is locked across threads");
+			Expect(!EngineCacheNeedsMutex(false), "a single-thread cache would not need the mutex");
+			Expect(kEngineRefreshMinMs >= 100 && kEngineRefreshMinMs <= 250, "engine refresh is throttled 100-250 ms");
+			Expect(kHudSafeCacheMs >= 100 && kHudSafeCacheMs <= 250, "HudSafe is cached 100-250 ms");
 		}
 
 		{

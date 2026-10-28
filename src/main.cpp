@@ -112,18 +112,34 @@ namespace HZ
 		return 0;
 	}
 
-	std::uint32_t g_scan = 0x57;  // F11
-	int           g_vk = VK_F11;
+	std::atomic<std::uint32_t> g_scan{0x57};  // F11
+	std::atomic<int>           g_vk{VK_F11};
 	bool          g_wasDown = false;
-	bool          g_iniDebug = false;   // [Debug] Debug=1. Gates the one-time hud form, gmst, address, and hold-breath lines.
+	std::atomic<bool> g_iniDebug{false};   // [Debug] Debug=1. Gates the one-time hud form, gmst, address, and hold-breath lines.
 
 	// SFSE documents AddPermanentTask as "every frame on Main". Starfield
 	// 1.16.244 actually runs that queue on BSJobs workers (crash3: Invoke
 	// from "BSJobs 9"). TaskInterface has no UI-thread API. Scaleform
 	// runs only from the HUD movie AdvanceFrame hook (see PollScaleform).
+	// g_uiTid is recorded once (window owner or first MenuMovieCreated).
+	// The hook never overwrites it.
 	std::atomic<std::uint32_t> g_uiTid{0};
 	std::atomic<bool>          g_uiPollLogged{false};
+	std::atomic<bool>          g_jobPollLogged{false};
+	std::atomic<bool>          g_hookWrongTidLogged{false};
 	std::atomic<ULONGLONG>     g_sfLastMs{0};
+	std::atomic<std::uint64_t> g_hookCalls{0};
+	std::atomic<ULONGLONG>     g_hookAliveNext{0};
+	std::atomic<bool>          g_uiLoading{false};
+	std::atomic<bool>          g_uiMainMenu{false};
+	std::uint32_t              g_advTids[8]{};
+	std::atomic<int>           g_advTidN{0};
+	std::mutex                 g_advTidMu;
+
+	void HzAddrLoad() noexcept;
+	void PreloadDllFileVersion();
+	void FilesJobPreload();
+	void RecordUiTidOnce(std::uint32_t a_tid);
 
 	std::filesystem::path IniPath()
 	{
@@ -732,6 +748,27 @@ namespace HZ
 
 	void MsglogLoadSettings(const HZF::Doc& a_d);
 	void MsglogEnsureInit();
+	HWND GameWindow();
+
+	// Purpose: record the UI thread once. The AdvanceFrame hook must
+	// not overwrite this; a worker advance would then look "on UI".
+	// Inputs: candidate tid. Outputs: stored on the first non-zero.
+	// Author: Moragar. Last modified: 2026-10-28.
+	void RecordUiTidOnce(std::uint32_t a_tid)
+	{
+		if (!a_tid) return;
+		std::uint32_t expected = 0;
+		if (g_uiTid.compare_exchange_strong(expected, a_tid, std::memory_order_acq_rel))
+			REX::INFO("thread: ui tid recorded once={}", a_tid);
+	}
+
+	void TryRecordUiTidFromWindow()
+	{
+		HWND w = GameWindow();
+		if (!w) return;
+		const auto tid = ::GetWindowThreadProcessId(w, nullptr);
+		RecordUiTidOnce(static_cast<std::uint32_t>(tid));
+	}
 
 	void LoadIni()
 	{
@@ -761,7 +798,7 @@ namespace HZ
 		if (!sc) { REX::WARN("unknown SettingsKey '{}', using F11", key); sc = 0x57; key = "F11"; }
 		g_scan = sc;
 		g_vk = static_cast<int>(MapVirtualKeyW(sc > 0x7F ? (0xE000 | (sc & 0x7F)) : sc, MAPVK_VSC_TO_VK_EX));
-		REX::INFO("SettingsKey={} scan=0x{:X} vk=0x{:X}", key, g_scan, g_vk);
+		REX::INFO("SettingsKey={} scan=0x{:X} vk=0x{:X}", key, g_scan.load(), g_vk.load());
 	}
 
 	HWND GameWindow()
@@ -881,14 +918,29 @@ namespace HZ
 	}
 
 	// Purpose: HUD is up and the movie document is live. UI thread only
-	// (GetMenu + menuObj). Inputs: light-menu flag. Outputs: true when
-	// F11 / settings may run. Author: Moragar. Last modified: 2026-10-28.
+	// (GetMenu + menuObj). Cached 150 ms so PollScaleform does not walk
+	// the menu map three times every frame. Inputs: light-menu flag.
+	// Outputs: true when F11 / settings may run. Author: Moragar.
+	// Last modified: 2026-10-28.
+	ULONGLONG g_hudSafeAt = 0;
+	bool      g_hudSafeLightOk = false;
+	bool      g_hudSafeFullOk = false;
 	bool HudSafe(bool a_light = true)
 	{
+		const auto now = GetTickCount64();
+		if (g_hudSafeAt && now >= g_hudSafeAt && (now - g_hudSafeAt) < hzlog::kHudSafeCacheMs)
+			return a_light ? g_hudSafeLightOk : g_hudSafeFullOk;
 		auto ui = RE::UI::GetSingleton();
-		if (!HudMenusClear(ui, a_light)) return false;
-		auto menu = MenuMovie(ui, "HUDMenu", "HudSafe");
-		return menu && menu->menuObj.IsObject();
+		g_hudSafeLightOk = HudMenusClear(ui, true);
+		g_hudSafeFullOk = HudMenusClear(ui, false);
+		if (g_hudSafeLightOk || g_hudSafeFullOk) {
+			auto menu = MenuMovie(ui, "HUDMenu", "HudSafe");
+			const bool live = menu && menu->menuObj.IsObject();
+			g_hudSafeLightOk = g_hudSafeLightOk && live;
+			g_hudSafeFullOk = g_hudSafeFullOk && live;
+		}
+		g_hudSafeAt = now;
+		return a_light ? g_hudSafeLightOk : g_hudSafeFullOk;
 	}
 
 	void PushDllFileVersion();   // v0.42.0.4: defined with the movie-build log
@@ -1017,7 +1069,7 @@ namespace HZ
 		}
 	}
 
-	bool IsSettingsKeyVk(WPARAM a_vk) { return static_cast<int>(a_vk) == g_vk; }
+	bool IsSettingsKeyVk(WPARAM a_vk) { return static_cast<int>(a_vk) == g_vk.load(); }
 
 	LRESULT CALLBACK HzWndProc(HWND a_wnd, UINT a_msg, WPARAM a_wp, LPARAM a_lp)
 	{
@@ -1191,6 +1243,7 @@ namespace HZ
 	// Last modified: 2026-10-28.
 	void FilesPollWork()
 	{
+		FilesJobPreload();
 		if (g_fileStateWant.exchange(false)) {
 			try {
 				const auto P = FilesP();
@@ -1314,6 +1367,7 @@ namespace HZ
 		} catch (...) {
 			REX::WARN("files: startup error");
 		}
+		FilesJobPreload();
 	}
 
 	void PollSettings(HWND a_wnd, ULONGLONG a_now)
@@ -1546,21 +1600,37 @@ namespace HZ
 		return b;
 	}
 
+	// Purpose: cache this DLL's file version on the job / load thread.
+	// The UI thread only reads the ready flag and the cached string.
+	// Inputs: none. Outputs: g_dllVer cached. Dependencies: ReadOwnFileVersion.
+	// Author: Moragar. Last modified: 2026-10-28.
+	std::mutex        g_dllVerMu;
+	std::string       g_dllVer;
+	std::atomic<bool> g_dllVerReady{false};
+
+	void PreloadDllFileVersion()
+	{
+		if (g_dllVerReady.load(std::memory_order_acquire)) return;
+		std::lock_guard lk(g_dllVerMu);
+		if (g_dllVerReady.load(std::memory_order_relaxed)) return;
+		std::string s = ReadOwnFileVersion();
+		if (!HzFileVersionOk(s)) {
+			REX::WARN("dll file version resource unreadable; using {}", HZ_FILE_VERSION_STR);
+			s = HZ_FILE_VERSION_STR;
+		}
+		g_dllVer = std::move(s);
+		g_dllVerReady.store(true, std::memory_order_release);
+	}
+
 	// Purpose: the file version shown at load, in the movie-builds line, and sent to F11.
-	// Inputs: none. Outputs: the version resource when it reads cleanly, otherwise HZ_FILE_VERSION_STR.
-	// Dependencies: ReadOwnFileVersion, src/hz_version.h. One string, not a second hand-typed copy.
-	// Last modified: 2026-10-21.
+	// Inputs: none. Outputs: the cached version, or HZ_FILE_VERSION_STR until preload.
+	// The UI path never opens the version resource. Dependencies: PreloadDllFileVersion.
+	// Last modified: 2026-10-28.
 	const std::string& DllFileVersion()
 	{
-		static const std::string v = []() {
-			std::string s = ReadOwnFileVersion();
-			if (!HzFileVersionOk(s)) {
-				REX::WARN("dll file version resource unreadable; using {}", HZ_FILE_VERSION_STR);
-				s = HZ_FILE_VERSION_STR;
-			}
-			return s;
-		}();
-		return v;
+		if (g_dllVerReady.load(std::memory_order_acquire)) return g_dllVer;
+		static const std::string kFallback{HZ_FILE_VERSION_STR};
+		return kFallback;
 	}
 
 	// Purpose: give the HUD the DLL file version for the F11 header.
@@ -1841,7 +1911,17 @@ namespace HZ
 	bool      g_msgGmstDone = false;
 	bool      g_msgGmstWait = false;
 	bool      g_msgFormDone = false;
+	std::mutex g_phraseMu;
 	hzmsg::Templates g_msgPhrases = hzmsg::English();
+
+	// Purpose: snapshot the phrase table for a job-thread classify.
+	// HzMsgPrepare publishes a finished copy under the same lock.
+	// Inputs: none. Outputs: a copy. Author: Moragar. Last modified: 2026-10-28.
+	hzmsg::Templates MsgPhrasesSnap()
+	{
+		std::lock_guard lk(g_phraseMu);
+		return g_msgPhrases;
+	}
 
 	// Starfield.esm message form ids. Lookup confirms the form loaded. The description is only a string id,
 	// so the matcher keeps the English text from the 0.42.0.9 research note.
@@ -1876,25 +1956,32 @@ namespace HZ
 		std::uint64_t miss;
 	};
 
-	// The versionlib image, read once. A slot of 0, a short file, or anything other than v5
-	// means that id is not called. IDDB::offset would end the process, and SEH cannot catch that.
-	static int g_addrState = 0;
+	// The versionlib image, read once on the job / load thread. A slot of 0,
+	// a short file, or anything other than v5 means that id is not called.
+	// IDDB::offset would end the process, and SEH cannot catch that. The UI
+	// thread only reads the ready flag and the cached bytes.
+	std::mutex                    g_addrLoadMu;
+	std::atomic<int>              g_addrState{0};
 	static std::vector<unsigned char> g_addrBytes;
-	static std::string g_addrWhy;
+	static std::string            g_addrWhy;
 
-	static void HzAddrLoad() noexcept
+	void HzAddrLoad() noexcept
 	{
-		if (g_addrState != 0) return;
-		g_addrState = -1;
+		if (g_addrState.load(std::memory_order_acquire) != 0) return;
+		std::lock_guard lk(g_addrLoadMu);
+		if (g_addrState.load(std::memory_order_relaxed) != 0) return;
+		int next = -1;
 		try {
 			const auto ver = REX::FModule::GetExecutingModule().GetFileVersion().wstring(L"-");
 			if (ver.empty()) {
 				g_addrWhy = "game version could not be read";
+				g_addrState.store(next, std::memory_order_release);
 				return;
 			}
 			for (wchar_t c : ver) {
 				if (!((c >= L'0' && c <= L'9') || c == L'-')) {
 					g_addrWhy = "game version could not be read";
+					g_addrState.store(next, std::memory_order_release);
 					return;
 				}
 			}
@@ -1902,24 +1989,28 @@ namespace HZ
 			if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
 			        reinterpret_cast<LPCWSTR>(&HzAddrLoad), &mod) || !mod) {
 				g_addrWhy = "plugin path could not be read";
+				g_addrState.store(next, std::memory_order_release);
 				return;
 			}
 			wchar_t path[MAX_PATH]{};
 			const DWORD n = ::GetModuleFileNameW(mod, path, MAX_PATH);
 			if (n == 0 || n >= MAX_PATH) {
 				g_addrWhy = "plugin path could not be read";
+				g_addrState.store(next, std::memory_order_release);
 				return;
 			}
 			const auto file = std::filesystem::path(path).parent_path() / (std::wstring(L"versionlib-") + std::wstring(ver) + L".bin");
 			std::ifstream in(file, std::ios::binary);
 			if (!in) {
 				g_addrWhy = "versionlib file was not found";
+				g_addrState.store(next, std::memory_order_release);
 				return;
 			}
 			in.seekg(0, std::ios::end);
 			const auto end = in.tellg();
 			if (end < static_cast<std::streamoff>(hzaddr::kV5HeaderBytes) || end > static_cast<std::streamoff>(32 * 1024 * 1024)) {
 				g_addrWhy = "versionlib is not a v5 table";
+				g_addrState.store(next, std::memory_order_release);
 				return;
 			}
 			in.seekg(0, std::ios::beg);
@@ -1928,6 +2019,7 @@ namespace HZ
 			if (!in) {
 				g_addrBytes.clear();
 				g_addrWhy = "versionlib could not be read";
+				g_addrState.store(next, std::memory_order_release);
 				return;
 			}
 			std::uint32_t format = 0;
@@ -1935,21 +2027,32 @@ namespace HZ
 			if (format != 5u) {
 				g_addrBytes.clear();
 				g_addrWhy = "versionlib is not a v5 table";
+				g_addrState.store(next, std::memory_order_release);
 				return;
 			}
-			g_addrState = 1;
 			g_addrWhy.clear();
+			next = 1;
 		} catch (...) {
 			g_addrBytes.clear();
-			g_addrState = -1;
 			if (g_addrWhy.empty()) g_addrWhy = "versionlib could not be read";
+			next = -1;
 		}
+		g_addrState.store(next, std::memory_order_release);
+	}
+
+	// Purpose: job / load thread preload of versionlib and the DLL file
+	// version. The UI thread never calls this. Inputs: none. Outputs:
+	// ready flags. Author: Moragar. Last modified: 2026-10-28.
+	void FilesJobPreload()
+	{
+		HzAddrLoad();
+		PreloadDllFileVersion();
 	}
 
 	static int HzAddrSlot(std::uint64_t a_id)
 	{
-		HzAddrLoad();
-		if (!hzaddr::AddrSlotReady(g_addrState, g_addrBytes.size())) return -1;
+		if (g_addrState.load(std::memory_order_acquire) != 1) return -1;
+		if (!hzaddr::AddrSlotReady(1, g_addrBytes.size())) return -1;
 		const int slot = hzaddr::V5Slot(g_addrBytes.data(), g_addrBytes.size(), a_id);
 		if (slot < 0 && g_addrWhy.empty()) g_addrWhy = "versionlib is not a v5 table";
 		return slot;
@@ -2215,24 +2318,29 @@ namespace HZ
 					if (g_iniDebug) REX::INFO("hud gmst: settings not ready");
 				}
 			} else {
-				hzmsg::ApplyPhrase(g_msgPhrases.likes, raw.likes);
-				hzmsg::ApplyPhrase(g_msgPhrases.loves, raw.loves);
-				hzmsg::ApplyPhrase(g_msgPhrases.dislikes, raw.dislikes);
-				hzmsg::ApplyPhrase(g_msgPhrases.hates, raw.hates);
-				hzmsg::ApplyPhrase(g_msgPhrases.busy, raw.busy);
-				hzmsg::ApplyPhrase(g_msgPhrases.npcCalmed, raw.calmed);
-				hzmsg::ApplyPhrase(g_msgPhrases.creature, raw.creature);
-				hzmsg::ApplyPhrase(g_msgPhrases.caught, raw.caught);
-				hzmsg::ApplyPhrase(g_msgPhrases.pickFail, raw.pick);
-				hzmsg::ApplyPhrase(g_msgPhrases.stealTake, raw.stealTake);
-				hzmsg::ApplyPhrase(g_msgPhrases.stealAttack, raw.stealAttack);
-				hzmsg::ApplyPhrase(g_msgPhrases.lockCaught, raw.lockCaught);
-				hzmsg::ApplyPhrase(g_msgPhrases.trespass, raw.trespass);
-				hzmsg::ApplyPhrase(g_msgPhrases.witness, raw.witness);
-				hzmsg::ApplyPhrase(g_msgPhrases.addCrime, raw.addCrime);
-				hzmsg::ApplyPhrase(g_msgPhrases.remCrime, raw.remCrime);
-				hzmsg::ApplyPhrase(g_msgPhrases.added, raw.added);
-				hzmsg::ApplyPhrase(g_msgPhrases.removed, raw.removed);
+				hzmsg::Templates next = MsgPhrasesSnap();
+				hzmsg::ApplyPhrase(next.likes, raw.likes);
+				hzmsg::ApplyPhrase(next.loves, raw.loves);
+				hzmsg::ApplyPhrase(next.dislikes, raw.dislikes);
+				hzmsg::ApplyPhrase(next.hates, raw.hates);
+				hzmsg::ApplyPhrase(next.busy, raw.busy);
+				hzmsg::ApplyPhrase(next.npcCalmed, raw.calmed);
+				hzmsg::ApplyPhrase(next.creature, raw.creature);
+				hzmsg::ApplyPhrase(next.caught, raw.caught);
+				hzmsg::ApplyPhrase(next.pickFail, raw.pick);
+				hzmsg::ApplyPhrase(next.stealTake, raw.stealTake);
+				hzmsg::ApplyPhrase(next.stealAttack, raw.stealAttack);
+				hzmsg::ApplyPhrase(next.lockCaught, raw.lockCaught);
+				hzmsg::ApplyPhrase(next.trespass, raw.trespass);
+				hzmsg::ApplyPhrase(next.witness, raw.witness);
+				hzmsg::ApplyPhrase(next.addCrime, raw.addCrime);
+				hzmsg::ApplyPhrase(next.remCrime, raw.remCrime);
+				hzmsg::ApplyPhrase(next.added, raw.added);
+				hzmsg::ApplyPhrase(next.removed, raw.removed);
+				{
+					std::lock_guard lk(g_phraseMu);
+					g_msgPhrases = std::move(next);
+				}
 				HzLogPhrase("sAffinityEventLikes", raw.likes);
 				HzLogPhrase("sAffinityEventLoves", raw.loves);
 				HzLogPhrase("sAffinityEventDislikes", raw.dislikes);
@@ -2272,7 +2380,12 @@ namespace HZ
 					const char* state = raw.loaded[i] < 0 ? "skipped" : (raw.loaded[i] ? "loaded" : "missing");
 					if (g_iniDebug) REX::INFO("hud form {:08X}: {}", kHzMsgForms[i], state);
 				}
-				hzmsg::ApplyPhrase(g_msgPhrases.creditsName, raw.credits);
+				hzmsg::Templates next = MsgPhrasesSnap();
+				hzmsg::ApplyPhrase(next.creditsName, raw.credits);
+				{
+					std::lock_guard lk(g_phraseMu);
+					g_msgPhrases = std::move(next);
+				}
 				if (g_iniDebug) {
 					const char* state = raw.credits[0] ? "loaded" : "missing";
 					REX::INFO("hud form {:08X}: {} credits name", 0x0000000Fu, state);
@@ -2309,8 +2422,9 @@ namespace HZ
 	{
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) return;
-		for (auto m : { "LoadingMenu", "MainMenu" })
-			if (ui->IsMenuOpen(m)) return;
+		const bool loading = ui->IsMenuOpen("LoadingMenu") || ui->IsMenuOpen("FaderMenu");
+		const bool mainMenu = ui->IsMenuOpen("MainMenu");
+		if (!hzlog::MsglogTakeMovieAllowed(loading, mainMenu, true)) return;
 		auto msg = MenuLive(ui, "HUDMessagesMenu", "CommsRxPoll");
 		if (!msg) return;
 		try { HzMsgPrepare(); } catch (...) {}
@@ -2360,10 +2474,11 @@ namespace HZ
 		const bool dialogue = ui->IsMenuOpen("DialogueMenu");
 		const int  vis = HzRxMessagesVisible(ui);
 		const char* visTx = vis < 0 ? "unknown" : (vis ? "1" : "0");
+		const auto phrases = MsgPhrasesSnap();
 		for (const auto& n : batch) {
 			if (n.tick == 0 || a_now < n.tick || a_now - n.tick > kRxMaxAge) continue;
 			hzmsg::Hit hit;
-			try { hit = hzmsg::Match(n.text, g_msgPhrases); } catch (...) { hit = {}; }
+			try { hit = hzmsg::Match(n.text, phrases); } catch (...) { hit = {}; }
 			if (!hit.ok) continue;
 			if (hit.kind == "unavailable" && hit.sub == "busy" && hit.name.empty()) {
 				const auto who = HzCrossName();
@@ -2406,8 +2521,9 @@ namespace HZ
 		g_cdbgNext = a_now + 500;
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) return;
-		for (auto m : { "LoadingMenu", "MainMenu" })
-			if (ui->IsMenuOpen(m)) return;
+		const bool loading = ui->IsMenuOpen("LoadingMenu") || ui->IsMenuOpen("FaderMenu");
+		const bool mainMenu = ui->IsMenuOpen("MainMenu");
+		if (!hzlog::MsglogTakeMovieAllowed(loading, mainMenu, true)) return;
 		auto msg = MenuLive(ui, "HUDMessagesMenu", "hzcTakeDbg");
 		if (!msg || !msg->menuObj.HasMember("hzcTakeDbg")) return;
 		GValue r;
@@ -2556,8 +2672,8 @@ namespace HZ
 	std::thread             g_mlWThread;
 	std::atomic<bool>       g_mlWLive{false};
 	std::atomic<bool>       g_mlRecoverBusy{false};
-	bool                    g_mlHoldFlush = false;
-	bool                    g_mlPendingHud = false;
+	std::atomic<bool>       g_mlHoldFlush{false};
+	std::atomic<bool>       g_mlPendingHud{false};
 	std::atomic<bool>       g_mlHudReadyReq{false};
 	bool                    g_mlFailNoted = false;
 	int                     g_mlBakFails = 0;
@@ -2566,7 +2682,8 @@ namespace HZ
 	std::atomic<bool>       g_mlShutdownReq{false};
 	bool                    g_mlWStarted = false;
 	bool                    g_mlAtExit = false;
-	bool                    g_mlInited = false;
+	std::mutex              g_mlWStartMu;
+	std::atomic<bool>       g_mlInited{false};
 	bool                    g_mlUiPacked = false;
 	std::uint64_t           g_mlUiPackGen = 0;
 	bool                    g_mlMarker = false;
@@ -2747,6 +2864,7 @@ namespace HZ
 
 	void MsglogEnsureWriter()
 	{
+		std::lock_guard start(g_mlWStartMu);
 		bool persist = false;
 		{
 			std::lock_guard lk(g_mlMu);
@@ -3156,8 +3274,10 @@ namespace HZ
 				g_mlWrites.OnRow(key);
 				emptied = g_ml.buf.entries.empty();
 				if (emptied) {
+					hzlog::StampLastPlayed(g_ml.buf.lastPlayedTs, hzlog::EpochSeconds());
 					g_mlWrites.SetPersist(g_ml.buf.settings.persist);
-					if (!g_ml.buf.settings.persist || !hzlog::ValidLogKey(key))
+					if (!hzlog::ClearSessionWrites(true, g_ml.buf.settings.persist,
+							g_ml.persistHold, hzlog::ValidLogKey(key)))
 						return;
 					g_ml.fileGate.BumpCancel(key);
 					d = g_mlWrites.OnClear(key, g_ml.buf.Snapshot());
@@ -3269,7 +3389,8 @@ namespace HZ
 				MsglogRequestWrite(true);
 				return;
 			}
-			if (a_n.src == 'H' && hzlog::IsCalmedLine(a_n.text, g_msgPhrases))
+			const auto phrases = MsgPhrasesSnap();
+			if (a_n.src == 'H' && hzlog::IsCalmedLine(a_n.text, phrases))
 				return;
 			hzlog::Capture c;
 			const auto eng = MsglogEngSnap();
@@ -3282,7 +3403,7 @@ namespace HZ
 			c.text = a_n.text;
 			c.title = a_n.title;
 			if (a_n.src == 'H') {
-				c.kind = hzlog::ClassifyHud(a_n.text, g_msgPhrases, c.title, c.tag);
+				c.kind = hzlog::ClassifyHud(a_n.text, phrases, c.title, c.tag);
 			} else if (a_n.src == 'Q') {
 				c.kind = hzlog::Kind::Quest;
 				if (c.title.empty()) c.title = "QUEST";
@@ -3296,17 +3417,18 @@ namespace HZ
 				return;
 			}
 			hzlog::OfferResult r = hzlog::OfferResult::Rejected;
+			bool flush = false;
 			{
 				std::lock_guard lk(g_mlMu);
 				r = g_ml.Offer(std::move(c));
-			}
-			{
-				std::lock_guard lk(g_mlMu);
 				g_mlWrites.OnRow(g_ml.buf.character.key);
+				if ((r == hzlog::OfferResult::Stored || r == hzlog::OfferResult::Deduped)
+					&& g_ml.ShouldFlush(a_n.tick, false))
+					flush = true;
 			}
 			if (r == hzlog::OfferResult::SaveSignal)
 				MsglogRequestWrite(true);
-			else if ((r == hzlog::OfferResult::Stored || r == hzlog::OfferResult::Deduped) && g_ml.ShouldFlush(a_n.tick, false))
+			else if (flush)
 				MsglogRequestWrite(false);
 		} catch (...) {
 		}
@@ -3338,6 +3460,7 @@ namespace HZ
 		if (!s || !*s) return;
 		std::string all(s);
 		std::size_t p = 0;
+		int lines = 0;
 		while (p < all.size()) {
 			auto e = all.find('\n', p);
 			if (e == std::string::npos) e = all.size();
@@ -3348,14 +3471,16 @@ namespace HZ
 			if (!hzlog::ParseForward(line, k, title, text)) continue;
 			char src = k == hzlog::Kind::Quest ? 'Q' : (k == hzlog::Kind::Location ? 'L' : 'X');
 			MsglogEnqueueFwd(src, title.c_str(), text.c_str());
+			++lines;
 		}
+		if (lines >= hzlog::kTakeLogCap)
+			g_takeNext = now;
 	}
 
 	void MsglogPromoteId()
 	{
 		try {
 			if (!g_mlCapture.load() || g_ml.loadBusy.load()) return;
-			if (g_mlRecoverBusy.load()) return;
 			const auto eng = MsglogEngSnap();
 			if (eng.playerId == 0) return;
 			const auto ch = hzlog::MakeCharacter(eng.playerId, eng.name);
@@ -3363,9 +3488,11 @@ namespace HZ
 			bool queue = false;
 			{
 				std::lock_guard lk(g_mlMu);
-				if (g_ml.buf.character.keySource != "nameHash") return;
-				if (!hzlog::PersistAllowed(ch)) return;
-				if (!hzlog::HoldRetryDue(g_ml.persistHold, g_ml.retryAt, now)) return;
+				if (!hzlog::PromoteIdShouldQueue(g_mlRecoverBusy.load(),
+						g_ml.buf.character.keySource == "nameHash",
+						hzlog::PersistAllowed(ch),
+						hzlog::HoldRetryDue(g_ml.persistHold, g_ml.retryAt, now)))
+					return;
 				g_mlRecoverBusy.store(true);
 				queue = true;
 			}
@@ -3785,7 +3912,12 @@ namespace HZ
 			}
 			for (const auto& n : batch)
 				MsglogOfferNote(n);
-			if (g_ml.ShouldFlush(a_now, false))
+			bool flush = false;
+			{
+				std::lock_guard lk(g_mlMu);
+				flush = g_ml.ShouldFlush(a_now, false);
+			}
+			if (flush)
 				MsglogRequestWrite(false);
 		} catch (...) {
 		}
@@ -3846,14 +3978,16 @@ namespace HZ
 	// Last modified: 2026-10-28.
 	void Poll()
 	{
+		if (!g_jobPollLogged.exchange(true))
+			REX::INFO("thread: job poll tid={}", ::GetCurrentThreadId());
+		TryRecordUiTidFromWindow();
+		FilesJobPreload();
 		const auto now = GetTickCount64();
 		BannerPollWork(now);
 		FilesPollWork();
 		MsglogPoll(now);
-		auto uiLoad = RE::UI::GetSingleton();
-		if (!uiLoad) return;
-		const bool loading = uiLoad->IsMenuOpen("LoadingMenu");
-		const bool menu = uiLoad->IsMenuOpen("MainMenu");
+		const bool loading = g_uiLoading.load();
+		const bool menu = g_uiMainMenu.load();
 		if (loading || (menu && g_mlCapture.load()))
 			g_mlLoadReq.store(true);
 		if (menu && !loading && g_mlHadSession.exchange(false))
@@ -3869,6 +4003,10 @@ namespace HZ
 		const auto now = GetTickCount64();
 		if (!g_uiPollLogged.exchange(true))
 			REX::INFO("thread: ui poll tid={}", ::GetCurrentThreadId());
+		if (auto uiPub = RE::UI::GetSingleton()) {
+			g_uiLoading.store(uiPub->IsMenuOpen("LoadingMenu"));
+			g_uiMainMenu.store(uiPub->IsMenuOpen("MainMenu"));
+		}
 		BannerPoll(now);        // v0.40.3
 		CommsDbgPoll(now);      // v0.42.0.6: empty when HZ_COMMS_MSG_LOG is 0
 		CommsRxPoll(now);       // v0.42.0.7: reaction backup. Before the HUD-ready return below.
@@ -3878,11 +4016,15 @@ namespace HZ
 		if (g_mlHudReadyReq.exchange(false))
 			MsglogOnHudReady();
 		if (g_mlCapture.load()) {
-			MsglogRefreshEngine(false);
+			static ULONGLONG s_engNext = 0;
+			if (now >= s_engNext) {
+				s_engNext = now + hzlog::kEngineRefreshMinMs;
+				MsglogRefreshEngine(false);
+			}
 			MsglogPromoteId();
 		}
 		HWND wnd = GameWindow();
-		bool down = wnd && (GetAsyncKeyState(g_vk) & 0x8000) != 0;
+		bool down = wnd && (GetAsyncKeyState(g_vk.load()) & 0x8000) != 0;
 		if (down && !g_wasDown) OnSettingsKey();
 		g_wasDown = down;
 
@@ -3917,21 +4059,55 @@ namespace HZ
 	}
 
 	using AdvanceFn = void (*)(RE::Scaleform::GFx::ASMovieRootBase*, bool);
-	AdvanceFn         g_origAdvance = nullptr;
-	std::atomic<bool> g_advanceHooked{false};
+	std::atomic<AdvanceFn> g_origAdvance{nullptr};
+	std::atomic<bool>      g_advanceHooked{false};
+
+	void LogAdvanceTid(std::uint32_t a_tid)
+	{
+		std::lock_guard lk(g_advTidMu);
+		const int n = g_advTidN.load(std::memory_order_relaxed);
+		for (int i = 0; i < n && i < 8; ++i) {
+			if (g_advTids[i] == a_tid) return;
+		}
+		if (n >= 8) return;
+		g_advTids[n] = a_tid;
+		g_advTidN.store(n + 1, std::memory_order_relaxed);
+		REX::INFO("thread: movie advance tid={} (new, {} of 8)", a_tid, n + 1);
+	}
 
 	void HookedAdvanceFrame(RE::Scaleform::GFx::ASMovieRootBase* a_this, bool a_next)
 	{
-		if (g_origAdvance)
-			g_origAdvance(a_this, a_next);
-		g_uiTid.store(::GetCurrentThreadId(), std::memory_order_relaxed);
+		const auto orig = g_origAdvance.load(std::memory_order_acquire);
+		if (orig == &HookedAdvanceFrame)
+			return;
+		if (orig)
+			orig(a_this, a_next);
+		const auto tid = ::GetCurrentThreadId();
+		LogAdvanceTid(tid);
 		const auto now = GetTickCount64();
-		auto       prev = g_sfLastMs.load(std::memory_order_relaxed);
+		const auto n = g_hookCalls.fetch_add(1, std::memory_order_relaxed) + 1;
+		if (n == static_cast<std::uint64_t>(hzlog::kHookAliveFirstN)
+			|| (n > static_cast<std::uint64_t>(hzlog::kHookAliveFirstN)
+				&& now >= g_hookAliveNext.load(std::memory_order_relaxed))) {
+			REX::INFO("scaleform: hook alive, {} calls", n);
+			g_hookAliveNext.store(now + hzlog::kHookAlivePeriodMs, std::memory_order_relaxed);
+		}
+		const auto ui = g_uiTid.load(std::memory_order_acquire);
+		if (!ui || tid != ui) {
+			if (!g_hookWrongTidLogged.exchange(true))
+				REX::INFO("scaleform: AdvanceFrame on other thread tid={} ui={}; skip PollScaleform", tid, ui);
+			return;
+		}
+		auto prev = g_sfLastMs.load(std::memory_order_relaxed);
 		if (now == prev)
 			return;
 		if (!g_sfLastMs.compare_exchange_strong(prev, now, std::memory_order_relaxed))
 			return;
+		static thread_local bool inPoll = false;
+		if (inPoll) return;
+		inPoll = true;
 		try { PollScaleform(); } catch (...) {}
+		inPoll = false;
 	}
 
 	// Purpose: patch AS3 MovieRoot::AdvanceFrame (vtable slot 2) once.
@@ -3941,38 +4117,47 @@ namespace HZ
 	void InstallAdvanceHook(RE::Scaleform::GFx::ASMovieRootBase* a_root)
 	{
 		if (!a_root) return;
-		if (g_advanceHooked.exchange(true)) return;
+		if (hzlog::HookOnceFlagBlocksRetry(g_advanceHooked.exchange(true))) return;
 		void** vtbl = *reinterpret_cast<void***>(a_root);
 		if (!vtbl) {
 			g_advanceHooked.store(false);
 			return;
 		}
-		g_origAdvance = reinterpret_cast<AdvanceFn>(vtbl[2]);
-		if (!g_origAdvance) {
+		const auto orig = reinterpret_cast<AdvanceFn>(vtbl[2]);
+		if (!orig || orig == &HookedAdvanceFrame) {
 			g_advanceHooked.store(false);
+			REX::ERROR("scaleform: AdvanceFrame hook failed (null or self original)");
 			return;
 		}
+		g_origAdvance.store(orig, std::memory_order_release);
+		const auto base = reinterpret_cast<std::uintptr_t>(::GetModuleHandleW(nullptr));
+		const auto origAddr = reinterpret_cast<std::uintptr_t>(orig);
+		const auto rva = origAddr >= base ? origAddr - base : origAddr;
+		REX::INFO("scaleform: AdvanceFrame orig={} rva=0x{:X}", static_cast<const void*>(orig), rva);
 		const auto addr = reinterpret_cast<std::uintptr_t>(&vtbl[2]);
 		if (!REL::WriteSafeData(addr, reinterpret_cast<std::uintptr_t>(&HookedAdvanceFrame))) {
 			g_advanceHooked.store(false);
-			REX::WARN("scaleform: AdvanceFrame hook failed");
+			REX::ERROR("scaleform: AdvanceFrame hook failed");
 			return;
 		}
-		REX::INFO("scaleform: HUD AdvanceFrame hooked");
+		REX::INFO("scaleform: AdvanceFrame hook installed");
 	}
 
 	// Purpose: SFSE MenuMovieCreated. Fires on the UI thread when a
 	// movie loads, including HUD recreate on ship enter/exit. Records
-	// the UI tid and hooks HUD / HUD messages AdvanceFrame.
+	// the UI tid once and hooks HUD / HUD messages AdvanceFrame.
 	// Inputs: the new menu. Outputs: none. Author: Moragar.
 	// Last modified: 2026-10-28.
 	void OnMenuMovie(RE::IMenu* a_menu)
 	{
 		if (!a_menu) return;
-		g_uiTid.store(::GetCurrentThreadId(), std::memory_order_relaxed);
-		if (a_menu->menuName != "HUDMenu" && a_menu->menuName != "HUDMessagesMenu")
-			return;
-		if (!a_menu->uiMovie || !a_menu->uiMovie->asMovieRoot)
+		RecordUiTidOnce(::GetCurrentThreadId());
+		const bool hud = a_menu->menuName == "HUDMenu" || a_menu->menuName == "HUDMessagesMenu";
+		const bool live = a_menu->uiMovie && a_menu->uiMovie->asMovieRoot;
+		if (live && hud)
+			REX::INFO("scaleform: MenuMovieCreated name={} live root",
+				a_menu->menuName == "HUDMenu" ? "HUDMenu" : "HUDMessagesMenu");
+		if (!hud || !live)
 			return;
 		InstallAdvanceHook(a_menu->uiMovie->asMovieRoot.get());
 	}
@@ -4006,9 +4191,11 @@ SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* a_sfse)
 {
 	SFSE::Init(a_sfse);
 	// Same string as "movie builds": the version resource produced from src/hz_version.h.
+	// FilesStartup preloads the version resource and versionlib on this thread
+	// so the UI poll never opens those files.
+	HZ::FilesStartup();   // v0.37: update backup, migration / preset seeding - before any menu reads the settings
 	REX::INFO("HorizonUI {} loaded", HZ::DllFileVersion());
 	REX::INFO("thread: load tid={}", ::GetCurrentThreadId());
-	HZ::FilesStartup();   // v0.37: update backup, migration / preset seeding - before any menu reads the settings
 	if (auto menu = SFSE::GetMenuInterface()) {
 		menu->Register(HZ::OnMenuMovie);
 		REX::INFO("menu movie hook registered");

@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
-"""Scaleform call-graph for src/main.cpp.
+"""Scaleform and UI-path file-I/O call-graph for every file under src/.
 
-FINDINGS (0.43.0.3) listed 21 Scaleform-touching functions, all reachable
-only from Poll() on a BSJobs worker. This script rebuilds that graph after
-the 0.43.0.4 split: Poll() must not reach any Scaleform site; PollScaleform()
-is the UI-thread root.
+Poll() (job thread) must not reach any Scaleform site. PollScaleform()
+is the UI-thread root and must not reach file I/O (ifstream, filesystem
+exists/copy/create/rename/remove, CreateFile, LoadLibrary,
+GetFileVersionInfo, HzAddrLoad, ReadOwnFileVersion).
+
+Call-graph nodes come from every src file so a Scaleform or I/O token
+in a new .cpp/.h is visible. File I/O on the UI path is decided from
+.cpp function bodies only: header methods named Load/Save share those
+identifiers with the coordinator, so treating them as callees would
+false-fail. A .cpp UI function that names HzAddrLoad or
+ReadOwnFileVersion still fails.
+
+No root is exempt from the Scaleform leak check unless it is listed in
+SKIP_ROOTS with a reason. That table is empty on purpose: a Scaleform
+call inside Poll / FilesPollWork / BannerPollWork / MsglogPoll must fail.
 
 Author: Moragar
 Last modified: 2026-10-28
@@ -21,13 +32,34 @@ SF_RE = re.compile(
     r"|GetMember\s*\(|SetMember\s*\(|asMovieRoot"
     r"|HudInvoke\s*\(|MenuLive\s*\(|MenuMovie\s*\(|HudSafe\s*\("
 )
-FN_RE = re.compile(
-    r"^\t(?:static\s+)?(?:inline\s+)?"
-    r"(?:void|bool|int|double|float|std::string|const std::string&|"
-    r"RE::Scaleform::Ptr<RE::IMenu>|std::string_view)\s+"
-    r"(\w+)\s*\("
+IO_RE = re.compile(
+    r"\b(?:std::)?ifstream\b|\b(?:std::)?ofstream\b|"
+    r"std::filesystem::(?:exists|copy|create|rename|remove|file_size)|"
+    r"\bCreateFile(?:W|A)?\b|\bLoadLibrary(?:Ex)?(?:W|A)?\b|"
+    r"\bGetFileVersionInfo(?:Size)?W\b|"
+    r"\bHzAddrLoad\s*\(|\bReadOwnFileVersion\s*\("
 )
-SKIP_ROOTS = {"Poll", "FilesPollWork", "BannerPollWork", "MsglogPoll"}
+CONTROL = {
+    "if",
+    "for",
+    "while",
+    "switch",
+    "catch",
+    "else",
+    "return",
+    "sizeof",
+    "sizeof...",
+    "static_assert",
+}
+FN_RE = re.compile(
+    r"^[ \t]*(?:static\s+|inline\s+|constexpr\s+|virtual\s+)*"
+    r"(?!if\b|for\b|while\b|switch\b|catch\b|else\b|return\b)"
+    r"([\w:<>*&,\s]+?)\s+(\w+)\s*\("
+)
+
+# Empty: do not hide Scaleform inside job roots. Add a row only with a
+# listed reason if a future root is a documented false positive.
+SKIP_ROOTS: dict[str, str] = {}
 
 
 def strip_line(line: str) -> str:
@@ -41,17 +73,27 @@ def parse_functions(src: str) -> dict[str, str]:
     fns: dict[str, str] = {}
     i = 0
     while i < len(lines):
-        m = FN_RE.match(lines[i])
+        raw = lines[i]
+        if raw.lstrip().startswith(("//", "*", "/*", "#")):
+            i += 1
+            continue
+        m = FN_RE.match(raw)
         if not m:
             i += 1
             continue
-        name = m.group(1)
-        header = lines[i]
+        name = m.group(2)
+        if name in CONTROL:
+            i += 1
+            continue
+        header = raw
         j = i
         while j + 1 < len(lines) and "{" not in header and ";" not in header:
             j += 1
             header += "\n" + lines[j]
         if ";" in header and ("{" not in header or header.index(";") < header.index("{")):
+            i += 1
+            continue
+        if "{" not in header:
             i += 1
             continue
         body_lines = [lines[i]]
@@ -67,11 +109,29 @@ def parse_functions(src: str) -> dict[str, str]:
     return fns
 
 
-def scaleform_fns(fns: dict[str, str]) -> list[str]:
+def parse_src(root: Path) -> tuple[dict[str, str], dict[str, str], dict[str, Path]]:
+    fns: dict[str, str] = {}
+    cpp_fns: dict[str, str] = {}
+    where: dict[str, Path] = {}
+    src_dir = root / "src"
+    for path in sorted(src_dir.rglob("*")):
+        if path.suffix not in {".cpp", ".h", ".hpp"}:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        parsed = parse_functions(text)
+        fns.update(parsed)
+        for name in parsed:
+            where[name] = path
+        if path.suffix == ".cpp":
+            cpp_fns.update(parsed)
+    return fns, cpp_fns, where
+
+
+def matching_fns(fns: dict[str, str], pat: re.Pattern[str]) -> list[str]:
     out = []
     for name, body in fns.items():
         text = "\n".join(strip_line(ln) for ln in body.splitlines())
-        if SF_RE.search(text):
+        if pat.search(text):
             out.append(name)
     return out
 
@@ -103,29 +163,36 @@ def reachable(root: str, calls: dict[str, set[str]]) -> set[str]:
 
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
-    src = (root / "src" / "main.cpp").read_text(encoding="utf-8", errors="replace")
-    fns = parse_functions(src)
-    if "Poll" not in fns or "PollScaleform" not in fns:
-        print("FAIL: Poll / PollScaleform not found", file=sys.stderr)
+    fns, cpp_fns, _where = parse_src(root)
+    if "Poll" not in cpp_fns or "PollScaleform" not in cpp_fns:
+        print("FAIL: Poll / PollScaleform not found in src/*.cpp", file=sys.stderr)
         return 1
-    sf = scaleform_fns(fns)
-    calls = callers_of(fns)
-    from_poll = reachable("Poll", calls)
-    from_ui = reachable("PollScaleform", calls)
+    sf = matching_fns(fns, SF_RE)
+    io_cpp = matching_fns(cpp_fns, IO_RE)
+    cpp_calls = callers_of(cpp_fns)
+    from_poll = reachable("Poll", cpp_calls)
+    from_ui = reachable("PollScaleform", cpp_calls)
     leaked = sorted(name for name in sf if name in from_poll and name not in SKIP_ROOTS)
     print("Scaleform-touching functions:")
     for name in sf:
-        thread = "UI" if name in from_ui or name in {
-            "HookedAdvanceFrame",
-            "InstallAdvanceHook",
-            "OnMenuMovie",
-            "MenuMovie",
-            "MenuLive",
-            "HzNoteScaleformThread",
-        } else ("JOB-LEAK" if name in from_poll else "other")
+        thread = (
+            "UI"
+            if name in from_ui
+            or name
+            in {
+                "HookedAdvanceFrame",
+                "InstallAdvanceHook",
+                "OnMenuMovie",
+                "MenuMovie",
+                "MenuLive",
+                "HzNoteScaleformThread",
+            }
+            else ("JOB-LEAK" if name in from_poll else "other")
+        )
         print(f"  {name:24} {thread}")
     print(f"Poll() reaches: {', '.join(sorted(from_poll))}")
     print(f"PollScaleform() reaches: {', '.join(sorted(from_ui))}")
+    print(f"file-I/O .cpp functions: {', '.join(sorted(io_cpp))}")
     if leaked:
         print("FAIL: Scaleform reachable from Poll(): " + ", ".join(leaked), file=sys.stderr)
         return 1
@@ -134,12 +201,19 @@ def main() -> int:
     if missing:
         print("FAIL: PollScaleform does not reach " + ", ".join(missing), file=sys.stderr)
         return 1
-    poll_body = "\n".join(strip_line(ln) for ln in fns["Poll"].splitlines())
+    poll_body = "\n".join(strip_line(ln) for ln in cpp_fns["Poll"].splitlines())
     for token in ("GetMenu", "menuObj", "Invoke(", "HudSafe", "HudInvoke", "MsglogTakeMovie"):
         if token in poll_body:
             print(f"FAIL: Poll() body still mentions {token}", file=sys.stderr)
             return 1
-    print("OK: no Scaleform call is reachable from Poll()")
+    ui_io = sorted(name for name in io_cpp if name in from_ui)
+    if ui_io:
+        print("FAIL: file I/O reachable from PollScaleform(): " + ", ".join(ui_io), file=sys.stderr)
+        return 1
+    if "HzAddrLoad" in from_ui or "ReadOwnFileVersion" in from_ui:
+        print("FAIL: HzAddrLoad / ReadOwnFileVersion reachable from PollScaleform()", file=sys.stderr)
+        return 1
+    print("OK: no Scaleform call is reachable from Poll(); no file I/O on the UI path")
     return 0
 
 

@@ -950,6 +950,12 @@ inline bool MsglogTakeMovieAllowed(bool a_loading, bool a_mainMenu, bool a_messa
 }
 
 inline constexpr std::uint64_t kTakeLogMinMs = 250;
+inline constexpr int kTakeLogCap = 40;
+inline constexpr std::uint64_t kEngineRefreshMinMs = 200;
+inline constexpr std::uint64_t kHudSafeCacheMs = 150;
+inline constexpr int kHookAliveFirstN = 60;
+inline constexpr std::uint64_t kHookAlivePeriodMs = 60000;
+inline constexpr int kMinTextPx = 13;
 
 // Purpose: rate-limit hzcTakeLog. Inputs: now and the next-allowed
 // tick. Outputs: true when a take may run. Author: Moragar.
@@ -957,6 +963,102 @@ inline constexpr std::uint64_t kTakeLogMinMs = 250;
 inline bool MsglogTakeMovieDue(std::uint64_t a_now, std::uint64_t a_next)
 {
 	return a_now >= a_next;
+}
+
+// Purpose: how many queued take-log lines go out this take. The rest
+// stay for the next take so a loading skip cannot drop them.
+// Inputs: queued count and cap. Outputs: lines to join this take.
+// Author: Moragar. Last modified: 2026-10-28.
+inline int TakeLogBatchCount(int a_queued, int a_cap = kTakeLogCap)
+{
+	if (a_queued <= 0 || a_cap <= 0) return 0;
+	return a_queued < a_cap ? a_queued : a_cap;
+}
+
+// Purpose: true when this take hit the cap and more lines remain.
+// Inputs: queued count and how many were taken. Outputs: retake now.
+// Author: Moragar. Last modified: 2026-10-28.
+inline bool TakeLogHasRemainder(int a_queued, int a_taken)
+{
+	return a_queued > a_taken && a_taken > 0;
+}
+
+// Purpose: move up to a_cap lines off the front of a_q. Remainder
+// stays. Inputs: queue and cap. Outputs: this take's lines.
+// Author: Moragar. Last modified: 2026-10-28.
+template <typename T>
+inline std::vector<T> TakeLogBatch(std::vector<T>& a_q, int a_cap = kTakeLogCap)
+{
+	const int n = TakeLogBatchCount(static_cast<int>(a_q.size()), a_cap);
+	std::vector<T> out;
+	out.reserve(static_cast<std::size_t>(n));
+	for (int i = 0; i < n; ++i)
+		out.push_back(std::move(a_q[static_cast<std::size_t>(i)]));
+	a_q.erase(a_q.begin(), a_q.begin() + n);
+	return out;
+}
+
+// Purpose: an emptied user Clear writes only when Persist is on, the
+// key is valid, and persistHold is off. persistHold is a failed read;
+// writing empty then would wipe the file we could not load.
+// Inputs: emptied, persist, persistHold, valid key. Outputs: write?
+// Author: Moragar. Last modified: 2026-10-28.
+inline bool ClearSessionWrites(bool a_emptied, bool a_persist, bool a_persistHold, bool a_validKey)
+{
+	return a_emptied && a_persist && a_validKey && !a_persistHold;
+}
+
+// Purpose: PromoteId queues one recovery load. The recoverBusy check
+// belongs inside the same lock as the store so two threads cannot both
+// queue. Inputs: busy, name-hash, persist-ok, hold due. Outputs: queue?
+// Author: Moragar. Last modified: 2026-10-28.
+inline bool PromoteIdShouldQueue(bool a_recoverBusy, bool a_nameHash, bool a_persistOk, bool a_holdDue)
+{
+	return !a_recoverBusy && a_nameHash && a_persistOk && a_holdDue;
+}
+
+// Purpose: TextScale 0.90 can round 13 to 12. The AS floor is this
+// same rule (if minPx > sz then sz = minPx). Inputs: rounded size and
+// the caller floor. Outputs: size used. Author: Moragar.
+// Last modified: 2026-10-28.
+inline int FloorTextPx(int a_sz, int a_minPx)
+{
+	return a_minPx > a_sz ? a_minPx : a_sz;
+}
+
+// Purpose: chip-row scroll that keeps the active chip in the clip.
+// Mirrors hzMsglogChipKeepVisible. Inputs: current x, strip width,
+// clip width, active chip left and width. Outputs: clamped x.
+// Author: Moragar. Last modified: 2026-10-28.
+inline int ChipScrollX(int a_chipX, int a_chipW, int a_chipInner, int a_activeLeft, int a_activeW)
+{
+	int maxX = a_chipW - a_chipInner;
+	if (maxX < 0) maxX = 0;
+	int x = a_chipX;
+	if (a_activeLeft < x) x = a_activeLeft;
+	if (a_activeLeft + a_activeW > x + a_chipInner)
+		x = a_activeLeft + a_activeW - a_chipInner;
+	if (x > maxX) x = maxX;
+	if (x < 0) x = 0;
+	return x;
+}
+
+// Purpose: the AdvanceFrame vtable patch installs once. A second HUD
+// recreate must not read the hook as the original.
+// Inputs: exchange result (already hooked). Outputs: skip install.
+// Author: Moragar. Last modified: 2026-10-28.
+inline bool HookOnceFlagBlocksRetry(bool a_alreadyHooked)
+{
+	return a_alreadyHooked;
+}
+
+// Purpose: g_mlEng is written on the UI thread and read on the job
+// thread. A mutex (or equivalent) is required whenever both happen.
+// Inputs: whether the cache is shared across threads. Outputs: lock?
+// Author: Moragar. Last modified: 2026-10-28.
+inline bool EngineCacheNeedsMutex(bool a_crossThread)
+{
+	return a_crossThread;
 }
 
 // Purpose: all writer-side state and decisions. The DLL only calls methods.

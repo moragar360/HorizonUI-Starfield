@@ -1453,7 +1453,6 @@
       private function hzcLogPush(kind:String, title:String, text:String) : void
       {
          if(text == null || String(text).length == 0) { return; }
-         if(this.hzcLogQ.length >= 40) { this.hzcLogQ.shift(); }
          this.hzcLogQ.push(kind + "|" + this.hzcLogPipe(title) + "|" + this.hzcLogPipe(text));
       }
       public function hzcTakeLog() : String
@@ -1461,8 +1460,10 @@
          try
          {
             if(this.hzcLogQ.length == 0) { return ""; }
-            var o:String = this.hzcLogQ.join("\n");
-            this.hzcLogQ = [];
+            var n:int = this.hzcLogQ.length;
+            if(n > 40) { n = 40; }
+            var o:String = this.hzcLogQ.slice(0, n).join("\n");
+            this.hzcLogQ = this.hzcLogQ.slice(n);
             return o;
          }
          catch(e:Error) { }
