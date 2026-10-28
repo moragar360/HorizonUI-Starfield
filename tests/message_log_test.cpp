@@ -1670,6 +1670,55 @@ int main()
 				"prepare does not free the address image");
 		}
 		Expect(main.find("try { Poll(); }") != std::string::npos, "the task lambda swallows exceptions");
+		Expect(main.find("void PollScaleform()") != std::string::npos, "Scaleform has its own UI-thread poll");
+		Expect(main.find("OnMenuMovie") != std::string::npos && main.find("InstallAdvanceHook") != std::string::npos,
+			"MenuMovieCreated hooks HUD AdvanceFrame");
+		Expect(main.find("thread: load tid=") != std::string::npos
+			&& main.find("thread: ui poll tid=") != std::string::npos,
+			"startup and first UI poll log the thread id");
+		Expect(main.find("HzNoteScaleformThread") != std::string::npos
+			&& main.find("#ifndef NDEBUG") != std::string::npos,
+			"off-UI Scaleform check is debug-only");
+		Expect(main.find("MenuLive") != std::string::npos && main.find("MenuMovie") != std::string::npos,
+			"each Scaleform call re-fetches the menu");
+		Expect(main.find("kTakeLogMinMs") != std::string::npos
+			&& main.find("MsglogTakeMovieAllowed") != std::string::npos,
+			"hzcTakeLog is gated and rate-limited");
+		{
+			const auto poll = main.find("void Poll()");
+			const auto next = main.find("void PollScaleform()", poll);
+			const auto body = poll != std::string::npos && next > poll ? main.substr(poll, next - poll) : std::string();
+			Expect(body.find("GetMenu") == std::string::npos && body.find("menuObj") == std::string::npos
+				&& body.find("HudInvoke") == std::string::npos && body.find("HudSafe") == std::string::npos
+				&& body.find("MsglogTakeMovie") == std::string::npos && body.find("BannerPoll(") == std::string::npos,
+				"job-thread Poll never touches Scaleform");
+			Expect(body.find("BannerPollWork") != std::string::npos && body.find("FilesPollWork") != std::string::npos
+				&& body.find("MsglogPoll") != std::string::npos,
+				"job-thread Poll keeps capture, files, and the writer");
+		}
+		{
+			const auto ui = main.find("void PollScaleform()");
+			const auto next = main.find("using AdvanceFn", ui);
+			const auto body = ui != std::string::npos && next > ui ? main.substr(ui, next - ui) : std::string();
+			Expect(body.find("BannerPoll(now)") != std::string::npos && body.find("CommsRxPoll(now)") != std::string::npos
+				&& body.find("ScopeClipPoll(now)") != std::string::npos && body.find("MsglogTakeMovie") != std::string::npos
+				&& body.find("MsglogPollUi") != std::string::npos && body.find("HudSafe") != std::string::npos
+				&& body.find("OnSettingsKey") != std::string::npos && body.find("PollSettings") != std::string::npos
+				&& body.find("MsglogRefreshEngine") != std::string::npos,
+				"UI poll owns banners, cards, F11, the log take, and engine reads");
+			Expect(body.find("SaveFromHud") == std::string::npos && body.find("DoAction") == std::string::npos
+				&& body.find("filesystem::exists") == std::string::npos,
+				"UI poll does no file I/O");
+		}
+		Expect(main.find("GetMenuInterface") != std::string::npos
+			&& main.find("AddPermanentTask") != std::string::npos,
+			"MenuInterface registers the UI hook; TaskInterface still runs Poll");
+		{
+			const auto script = RepoRoot() / "tools" / "callgraph_scaleform.py";
+			Expect(std::filesystem::is_regular_file(script), "Scaleform call-graph script is in the repo");
+			const auto cmd = std::string("python3 \"") + script.string() + "\"";
+			Expect(std::system(cmd.c_str()) == 0, "callgraph: no Scaleform call is reachable from Poll()");
+		}
 		{
 			const auto shut = main.find("void MsglogShutdownWriter()");
 			const auto next = main.find("void MsglogQueueLoad", shut);
@@ -4388,6 +4437,19 @@ int main()
 			Expect(PollSkipsRetry(false, true), "a queued job alone skips a Poll retry");
 			Expect(!PollSkipsRetry(false, false), "Poll retries when neither half is set");
 			Expect(PollSkipsRetry(true, true), "both Poll guard halves together still skip");
+		}
+
+		{
+			Expect(ScaleformThreadOk(0, 99), "unknown UI tid allows the call");
+			Expect(ScaleformThreadOk(7, 7), "matching UI tid is allowed");
+			Expect(!ScaleformThreadOk(7, 8), "a job tid is not the UI tid");
+			Expect(MsglogTakeMovieAllowed(false, false, true), "take-log runs when messages are up");
+			Expect(!MsglogTakeMovieAllowed(true, false, true), "take-log skips LoadingMenu");
+			Expect(!MsglogTakeMovieAllowed(false, true, true), "take-log skips MainMenu");
+			Expect(!MsglogTakeMovieAllowed(false, false, false), "take-log skips a missing movie");
+			Expect(kTakeLogMinMs == 250, "take-log waits 250 ms");
+			Expect(MsglogTakeMovieDue(250, 250), "take-log is due at the next tick");
+			Expect(!MsglogTakeMovieDue(249, 250), "take-log waits out the interval");
 		}
 
 		{

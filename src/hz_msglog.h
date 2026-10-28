@@ -931,6 +931,34 @@ inline bool PollSkipsRetry(bool a_writePending, bool a_hasQueued)
 	return a_writePending || a_hasQueued;
 }
 
+// Purpose: debug check for Scaleform thread affinity. uiTid 0 means
+// the UI thread is not known yet (skip). Inputs: recorded UI tid and
+// the caller's tid. Outputs: true when the call is allowed.
+// Author: Moragar. Last modified: 2026-10-28.
+inline bool ScaleformThreadOk(std::uint32_t a_uiTid, std::uint32_t a_curTid)
+{
+	return a_uiTid == 0 || a_uiTid == a_curTid;
+}
+
+// Purpose: hzcTakeLog must not run during load or the main menu.
+// Those transitions recreate HUDMessagesMenu. Inputs: menu-open
+// flags. Outputs: true when a take is allowed. Author: Moragar.
+// Last modified: 2026-10-28.
+inline bool MsglogTakeMovieAllowed(bool a_loading, bool a_mainMenu, bool a_messagesOpen)
+{
+	return !a_loading && !a_mainMenu && a_messagesOpen;
+}
+
+inline constexpr std::uint64_t kTakeLogMinMs = 250;
+
+// Purpose: rate-limit hzcTakeLog. Inputs: now and the next-allowed
+// tick. Outputs: true when a take may run. Author: Moragar.
+// Last modified: 2026-10-28.
+inline bool MsglogTakeMovieDue(std::uint64_t a_now, std::uint64_t a_next)
+{
+	return a_now >= a_next;
+}
+
 // Purpose: all writer-side state and decisions. The DLL only calls methods.
 // Per-key slots hold clearPending (set on an explicit user Clear, cleared
 // only when ok && seq >= clearSeq), write seqs, last-failed snap, and
