@@ -1777,28 +1777,45 @@ int main()
 			Expect(body.find("RecordUiTidOnce") == std::string::npos
 				&& body.find("g_hudRoot.store") != std::string::npos
 				&& body.find("g_hudMsgRoot.store") != std::string::npos
-				&& body.find("ShouldClearReusedHudRoot") != std::string::npos
+				&& body.find("g_scopeRoot.store") != std::string::npos
+				&& body.find("ShouldClearReusedHudRoot(hud, root, isHud)") != std::string::npos
+				&& body.find("ShouldClearReusedHudRoot(msg, root, isMsg)") != std::string::npos
+				&& body.find("ShouldClearReusedHudRoot(scope, root, isScope)") != std::string::npos
+				&& body.find("if (!root) return") != std::string::npos
 				&& body.find("hint only") != std::string::npos,
 				"OnMenuMovie stores the HUD root, clears ABA reuse, and does not adopt the tid");
+			Expect(body.find("ShouldClearReusedHudRoot(hud") < body.find("if (!root) return"),
+				"ABA clear runs before the !live return");
 		}
 		{
 			const auto hook = main.find("void HookedAdvanceFrame");
 			const auto next = main.find("void InstallAdvanceHook", hook);
 			const auto body = hook != std::string::npos && next > hook ? main.substr(hook, next - hook) : std::string();
 			Expect(body.find("HookTidAllowsPoll") == std::string::npos
-				&& body.find("skip PollScaleform") == std::string::npos,
+				&& body.find("skip PollScaleform") == std::string::npos
+				&& body.find("tid == g_uiTid") == std::string::npos
+				&& body.find("g_uiTid.load") != std::string::npos
+				&& body.find("UiTidRecordFirst") != std::string::npos,
 				"the hook does not gate PollScaleform on a recorded tid");
 			Expect(body.find("PollMovieForRoot") != std::string::npos
 				&& body.find("PollHudOnThisAdvance") != std::string::npos
 				&& body.find("PollMsgOnThisAdvance") != std::string::npos
 				&& body.find("PollScaleform()") != std::string::npos
-				&& body.find("PollMessages()") != std::string::npos,
+				&& body.find("PollMessages()") != std::string::npos
+				&& body.find("TryAdoptLiveRoot") != std::string::npos,
 				"the hook polls only the movie whose root is advancing");
+			Expect(main.find("ShouldAdoptLiveRoot") != std::string::npos,
+				"stale-root recovery compares a_this to the live HUD movie");
 			Expect(body.find("g_inPoll.exchange(true") != std::string::npos
 				&& body.find("g_inPoll.store(false") != std::string::npos
 				&& body.find("g_inMsgPoll.exchange(true") != std::string::npos
+				&& body.find("g_inScopePoll.exchange(true") != std::string::npos
+				&& body.find("a_this == scope") != std::string::npos
 				&& body.find("thread_local bool inPoll") == std::string::npos,
 				"each poll has a process-wide reentrancy atomic");
+			Expect(body.find("poll alive") != std::string::npos
+				&& body.find("kPollHeartbeatMs") != std::string::npos,
+				"the hook heartbeats even when the HUD poll is dead");
 		}
 		{
 			const auto inst = main.find("void InstallAdvanceHook");
@@ -1814,13 +1831,35 @@ int main()
 			&& main.find("g_jobTid") != std::string::npos
 			&& main.find("g_uiTid.store(d.to") == std::string::npos
 			&& main.find("g_uiTidHealLogged") == std::string::npos,
-			"the HUD poll heartbeats and never heals g_uiTid");
+			"the hook heartbeats and never heals g_uiTid");
 		Expect(main.find("g_settingsKeyReq") != std::string::npos
-			&& main.find("SettingsKeyEdge") != std::string::npos,
-			"F11 is latched on the job poll and consumed on the UI poll");
+			&& main.find("SettingsKeyJobEdge") != std::string::npos
+			&& main.find("SettingsKeyHudTake") != std::string::npos
+			&& main.find("g_settingsKeyReq.exchange(false") != std::string::npos
+			&& main.find("g_settingsKeyAt") != std::string::npos
+			&& main.find("g_wasDownJob = down") == std::string::npos
+			&& main.find("SettingsKeyJobEdge(down, g_wasDownJob)") != std::string::npos,
+			"F11 is latched on the job poll and consumed only from that latch");
 		Expect(main.find("void PollMessages()") != std::string::npos
 			&& main.find("PollHudOnThisAdvance") != std::string::npos,
 			"HUD and HUDMessages polls are split by the advancing movie");
+		Expect(main.find("InvokeOnAdvancingMovie") != std::string::npos
+			&& main.find("InvokeRootMatches") != std::string::npos
+			&& main.find("refuse Invoke") != std::string::npos,
+			"MenuMovie refuses an Invoke whose root is not a_this");
+		Expect(main.find("g_buildsMu") != std::string::npos
+			&& main.find("lock_guard lk(g_buildsMu)") != std::string::npos
+			&& main.find("g_pushLogged.exchange") != std::string::npos
+			&& main.find("g_pushEndLogged.exchange") != std::string::npos,
+			"BuildLog strings and scan-push logs are synchronized");
+		{
+			const auto hx = main.find("static std::string HzCrossName()");
+			const auto hxEnd = main.find("void CommsRxPoll", hx);
+			const auto body = hx != std::string::npos && hxEnd > hx ? main.substr(hx, hxEnd - hx) : std::string();
+			Expect(body.find("Invoke") == std::string::npos && body.find("HUDMenu") == std::string::npos
+				&& body.find("g_crossMu") != std::string::npos,
+				"HzCrossName reads the HUD-published name with no Invoke");
+		}
 		Expect(main.find("scaleform: hook alive") != std::string::npos
 			&& main.find("kHookAliveFirstN") != std::string::npos,
 			"the hook logs an alive counter");
@@ -1946,21 +1985,30 @@ int main()
 				&& body.find("TryRecordUiTidFromWindow") == std::string::npos
 				&& body.find("HintWindowOwnerTid") != std::string::npos
 				&& body.find("OnSettingsKey") == std::string::npos
-				&& body.find("g_settingsKeyReq") != std::string::npos,
+				&& body.find("g_settingsKeyReq") != std::string::npos
+				&& body.find("SettingsKeyJobEdge") != std::string::npos
+				&& body.find("GetAsyncKeyState") != std::string::npos,
 				"job-thread Poll only hints the window-owner tid and latches F11");
 		}
 		{
 			const auto ui = main.find("void PollScaleform()");
 			const auto next = main.find("void PollMessages()", ui);
 			const auto body = ui != std::string::npos && next > ui ? main.substr(ui, next - ui) : std::string();
-			Expect(body.find("ScanPushMovie") != std::string::npos && body.find("MsglogPollUi") != std::string::npos
+			Expect(body.find("ScanPushHud") != std::string::npos && body.find("MsglogPollUi") != std::string::npos
 				&& body.find("HudSafe") != std::string::npos
 				&& body.find("OnSettingsKey") != std::string::npos && body.find("PollSettings") != std::string::npos
 				&& body.find("MsglogRefreshEngine") != std::string::npos
 				&& body.find("BuildLogHud") != std::string::npos
-				&& body.find("poll alive") != std::string::npos,
+				&& body.find("PublishCrossName") != std::string::npos
+				&& body.find("SettingsKeyHudTake") != std::string::npos
+				&& body.find("g_settingsKeyReq.exchange(false") != std::string::npos,
 				"HUD poll owns F11, the log view, and HUD Invokes");
-			Expect(body.find("CommsRxPoll") == std::string::npos && body.find("MsglogTakeMovie") == std::string::npos
+			Expect(body.find("GetAsyncKeyState") == std::string::npos
+				&& body.find("g_wasDown") == std::string::npos
+				&& body.find("SettingsKeyEdge") == std::string::npos,
+				"HUD poll does not sample F11 itself");
+			Expect(body.find("ScanPushMsg") == std::string::npos
+				&& body.find("CommsRxPoll") == std::string::npos && body.find("MsglogTakeMovie") == std::string::npos
 				&& body.find("BannerPoll(") == std::string::npos && body.find("ScopeClipPoll") == std::string::npos
 				&& body.find("CommsDbgPoll") == std::string::npos,
 				"HUD poll does not Invoke HUDMessagesMenu or ScopeMenu");
@@ -1978,7 +2026,8 @@ int main()
 				&& body.find("MsglogTakeMovie") != std::string::npos && body.find("BuildLogMsg") != std::string::npos,
 				"messages poll owns cards, take-log, and the banner");
 			Expect(body.find("HudInvoke") == std::string::npos && body.find("OnSettingsKey") == std::string::npos
-				&& body.find("PollSettings") == std::string::npos && body.find("MsglogPollUi") == std::string::npos,
+				&& body.find("PollSettings") == std::string::npos && body.find("MsglogPollUi") == std::string::npos
+				&& body.find("PublishCrossName") == std::string::npos && body.find("ScanPushHud") == std::string::npos,
 				"messages poll does not Invoke HUDMenu");
 		}
 		{
@@ -4888,17 +4937,77 @@ int main()
 					PollGate key;
 					key.OnMenuCreated("HUDMenu", &hudRoot);
 					for (int i = 0; i < 4; ++i)
-						key.JobKey(false);
+						key.JobKey(false, static_cast<std::uint64_t>(i) * 16);
 					for (int i = 0; i < 4; ++i)
-						key.JobKey(true);
+						key.JobKey(true, 64 + static_cast<std::uint64_t>(i) * 16);
 					for (int i = 0; i < 4; ++i)
-						key.JobKey(false);
+						key.JobKey(false, 128 + static_cast<std::uint64_t>(i) * 16);
 					Expect(key.settingsKeyReq, "a 60 ms F11 tap latches on the job poll");
-					key.OnAdvance(&hudRoot, kTidA, 500);
+					key.OnAdvance(&hudRoot, kTidA, 200);
 					ExpectEqI(key.settingsOpens, 1, "F11 opens exactly once after a short tap");
-					key.OnAdvance(&hudRoot, kTidA, 1000);
+					key.OnAdvance(&hudRoot, kTidA, 250);
 					ExpectEqI(key.settingsOpens, 1, "a later HUD poll does not reopen F11");
 				}
+				{
+					bool was = false;
+					bool req = false;
+					std::uint64_t at = 0;
+					int fires = 0;
+					if (SettingsKeyJobEdge(false, was)) { req = true; at = 0; }
+					if (SettingsKeyHudTake(req, at, 16)) ++fires;
+					req = false;
+					if (SettingsKeyJobEdge(true, was)) { req = true; at = 40; }
+					{
+						const bool had = req;
+						req = false;
+						if (SettingsKeyHudTake(had, at, 48)) ++fires;
+					}
+					if (SettingsKeyJobEdge(true, was)) { req = true; at = 56; }
+					{
+						const bool had = req;
+						req = false;
+						if (SettingsKeyHudTake(had, at, 64)) ++fires;
+					}
+					if (SettingsKeyJobEdge(false, was)) { req = true; at = 80; }
+					ExpectEqI(fires, 1, "job latch plus HUD take fires once per press");
+					Expect(was == false, "SettingsKeyJobEdge resets was-down on release");
+				}
+				{
+					Expect(SettingsKeyHudTake(true, 0, 0), "a fresh latch fires");
+					Expect(!SettingsKeyHudTake(false, 0, 10), "a consumed latch does not fire again");
+					Expect(!SettingsKeyHudTake(true, 0, 2001), "a latch older than 2 s expires");
+					Expect(SettingsKeyHudTake(true, 100, 2100), "a latch at 2 s is still fresh");
+				}
+				{
+					PollGate stale;
+					stale.OnMenuCreated("HUDMenu", &hudRoot);
+					stale.JobKey(true, 0);
+					stale.OnAdvance(&hudRoot, kTidA, 2500);
+					ExpectEqI(stale.settingsOpens, 0, "PollGate expires a 2 s F11 latch");
+				}
+				{
+					PollGate msgAba;
+					int msg = 77;
+					msgAba.OnMenuCreated("HUDMessagesMenu", &msg);
+					msgAba.OnMenuCreated("PauseMenu", &msg);
+					Expect(msgAba.hudMsgRoot == nullptr, "a reused non-messages root clears the messages store");
+					int sc = 88;
+					msgAba.OnMenuCreated("ScopeMenu", &sc);
+					msgAba.OnMenuCreated("PauseMenu", &sc);
+					Expect(msgAba.scopeRoot == nullptr, "a reused non-scope root clears the scope store");
+				}
+				Expect(!PollMsgOnThisAdvance(PollMovie::Hud),
+					"PollMsgOnThisAdvance is false for a HUD movie");
+				Expect(!PollMsgOnThisAdvance(PollMovie::None),
+					"PollMsgOnThisAdvance is false for a non-stored movie");
+				Expect(!PollMsgOnThisAdvance(PollMovie::Scope),
+					"PollMsgOnThisAdvance is false for a scope movie");
+				Expect(ShouldAdoptLiveRoot(&hudRoot, nullptr, &hudRoot),
+					"a live HUD root is adopted when the store is empty");
+				Expect(!ShouldAdoptLiveRoot(&hudRoot, &hudRoot, &hudRoot),
+					"a matching stored HUD root is not re-adopted");
+				Expect(!ShouldAdoptLiveRoot(&otherMovie, nullptr, &hudRoot),
+					"a foreign a_this is not adopted as the HUD root");
 				Expect(InvokeOnAdvancingMovie(PollMovie::Hud, InvokeMovie::Hud),
 					"HUD Invokes are allowed on a HUD advance");
 				Expect(!InvokeOnAdvancingMovie(PollMovie::Hud, InvokeMovie::HudMessages),
@@ -4911,6 +5020,11 @@ int main()
 					"no Invoke is allowed on a non-stored movie advance");
 				Expect(!InvokeOnAdvancingMovie(PollMovie::Hud, InvokeMovie::Scope),
 					"Scope Invokes are not allowed on a HUD advance");
+				Expect(InvokeOnAdvancingMovie(PollMovie::Scope, InvokeMovie::Scope),
+					"Scope Invokes are allowed on a Scope advance");
+				Expect(InvokeMovieForMenu("HUDMenu") == InvokeMovie::Hud, "HUDMenu maps to the HUD Invoke target");
+				Expect(InvokeMovieForMenu("HUDMessagesMenu") == InvokeMovie::HudMessages,
+					"HUDMessagesMenu maps to the messages Invoke target");
 				Expect(!IsStoredHudRoot(&otherMovie, &hudRoot, nullptr),
 					"IsStoredHudRoot is not always true");
 				Expect(ShouldClearReusedHudRoot(&hudRoot, &hudRoot, false),

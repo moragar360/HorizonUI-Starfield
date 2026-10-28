@@ -115,7 +115,6 @@ namespace HZ
 
 	std::atomic<std::uint32_t> g_scan{0x57};  // F11
 	std::atomic<int>           g_vk{VK_F11};
-	bool          g_wasDown = false;
 	bool          g_wasDownJob = false;
 	std::atomic<bool> g_iniDebug{false};   // [Debug] Debug=1. Gates the one-time hud form, gmst, address, and hold-breath lines.
 
@@ -138,12 +137,17 @@ namespace HZ
 	std::atomic<bool>          g_windowTidHinted{false};
 	std::atomic<bool>          g_menuTidHinted{false};
 	std::atomic<bool>          g_settingsKeyReq{false};
+	std::atomic<std::uint64_t> g_settingsKeyAt{0};
 	std::atomic<bool>          g_uiPause{false};
 	std::atomic<std::uint64_t> g_hookCalls{0};
 	std::atomic<ULONGLONG>     g_hookAliveNext{0};
 	std::atomic<std::uint64_t> g_hudPolls{0};
 	std::atomic<std::uint32_t> g_lastHudPollTid{0};
+	std::atomic<std::uint64_t> g_lastHudPollMs{0};
 	std::atomic<std::uint64_t> g_pollHeartbeatMs{0};
+	std::atomic<std::uint64_t> g_invokeRefuseLogMs{0};
+	std::atomic<std::uint64_t> g_adoptLogMs{0};
+	std::atomic<bool>          g_hudSafeHint{false};
 	std::atomic<bool>          g_uiLoading{false};
 	std::atomic<bool>          g_uiMainMenu{false};
 	std::atomic<std::uint32_t> g_advTids[8]{};
@@ -849,6 +853,7 @@ namespace HZ
 	// Purpose: re-fetch a menu and hold its Scaleform::Ptr for one call.
 	// Never cache the pointer or a GFx::Value across frames. Skips a
 	// menu that is closed or whose movie is gone (ship enter/exit).
+	// Refuses when the resolved root is not the advancing a_this.
 	// Inputs: UI, registered menu name, call-site label. Outputs: a
 	// live IMenu or null. Author: Moragar. Last modified: 2026-10-28.
 	RE::Scaleform::Ptr<RE::IMenu> MenuMovie(RE::UI* a_ui, const char* a_name, const char* a_where)
@@ -862,6 +867,20 @@ namespace HZ
 		if (!a_ui->IsMenuOpen(a_name)) return {};
 		auto menu = a_ui->GetMenu(a_name);
 		if (!menu || !menu->uiMovie || !menu->uiMovie->asMovieRoot) return {};
+		auto* root = menu->uiMovie->asMovieRoot.get();
+		const auto want = hzlog::InvokeMovieForMenu(a_name);
+		if (!hzlog::InvokeOnAdvancingMovie(hzlog::g_advancingMovie, want)
+			|| !hzlog::InvokeRootMatches(hzlog::g_advancingRoot, root)) {
+			const auto now = GetTickCount64();
+			const auto last = g_invokeRefuseLogMs.load(std::memory_order_relaxed);
+			if (hzlog::UiTidSwitchLogDue(last, now, hzlog::kUiTidSkipLogMs)) {
+				REX::INFO("scaleform: refuse Invoke {} on {} advancing={} resolved={}",
+					a_where ? a_where : "?", a_name ? a_name : "?",
+					hzlog::g_advancingRoot, static_cast<const void*>(root));
+				g_invokeRefuseLogMs.store(now, std::memory_order_relaxed);
+			}
+			return {};
+		}
 		return menu;
 	}
 
@@ -1483,48 +1502,57 @@ namespace HZ
 	// (HasMember). The first push of the session and the first closed push are logged once (which movies answered).
 	bool g_pushOpenHud = false;   // last HUD hz41DllScan said "open"
 	bool g_pushOpenMsg = false;   // last messages hzcDllScan said "open"
-	bool g_pushLogged = false;
-	bool g_pushEndLogged = false;
+	std::atomic<bool> g_pushLogged{false};
+	std::atomic<bool> g_pushEndLogged{false};
 	ULONGLONG g_scanHudNext = 0;
 	ULONGLONG g_scanMsgNext = 0;
 
-	// Purpose: push scan-open to one movie from that movie's own
-	// AdvanceFrame. Each movie has its own last-open latch so a closed
-	// push is not dropped when the other movie polls first.
-	// Inputs: UI, whether this is the HUD half, now-ms.
-	// Outputs: one Invoke on that movie. Author: Moragar.
-	// Last modified: 2026-10-28.
-	void ScanPushMovie(RE::UI* a_ui, bool a_hud, ULONGLONG a_now)
+	bool ScanPushReady(RE::UI* a_ui, ULONGLONG a_now, ULONGLONG& a_next, bool& a_was, bool& a_open)
 	{
-		if (!a_ui) return;
-		auto& next = a_hud ? g_scanHudNext : g_scanMsgNext;
-		if (a_now < next) return;
-		next = a_now + 100;
+		if (!a_ui) return false;
+		if (a_now < a_next) return false;
+		a_next = a_now + 100;
 		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu" })
-			if (a_ui->IsMenuOpen(m)) return;
-		const bool open = g_banScanMod.load() == 1 && a_ui->IsMenuOpen("MonocleMenu");
-		bool& was = a_hud ? g_pushOpenHud : g_pushOpenMsg;
-		if (!open && !was) return;
+			if (a_ui->IsMenuOpen(m)) return false;
+		a_open = g_banScanMod.load() == 1 && a_ui->IsMenuOpen("MonocleMenu");
+		if (!a_open && !a_was) return false;
+		return true;
+	}
+
+	void ScanPushLog(bool a_open, bool a_ok, bool a_hud)
+	{
+		if (a_open && !g_pushLogged.exchange(true, std::memory_order_acq_rel))
+			REX::INFO("scanner: scan state push started ({} {})",
+				a_hud ? "HUD hz41DllScan" : "HUD messages hzcDllScan", a_ok ? "OK" : "not answered");
+		if (!a_open && !g_pushEndLogged.exchange(true, std::memory_order_acq_rel))
+			REX::INFO("scanner: scan state push ended (closed sent once; {} {})",
+				a_hud ? "HUD" : "HUD messages", a_ok ? "OK" : "not answered");
+	}
+
+	// Purpose: HUDMenu hz41DllScan from the HUD AdvanceFrame only.
+	void ScanPushHud(RE::UI* a_ui, ULONGLONG a_now)
+	{
+		bool open = false;
+		if (!ScanPushReady(a_ui, a_now, g_scanHudNext, g_pushOpenHud, open)) return;
 		GValue arg(open);
 		bool ok = false;
-		if (a_hud) {
-			if (auto hud = MenuLive(a_ui, "HUDMenu", "hz41DllScan"); hud && hud->menuObj.HasMember("hz41DllScan"))
-				ok = hud->menuObj.Invoke("hz41DllScan", nullptr, &arg, 1);
-		} else {
-			if (auto msg = MenuLive(a_ui, "HUDMessagesMenu", "hzcDllScan"); msg && msg->menuObj.HasMember("hzcDllScan"))
-				ok = msg->menuObj.Invoke("hzcDllScan", nullptr, &arg, 1);
-		}
-		if (open && !g_pushLogged) {
-			g_pushLogged = true;
-			REX::INFO("scanner: scan state push started ({} {})",
-				a_hud ? "HUD hz41DllScan" : "HUD messages hzcDllScan", ok ? "OK" : "not answered");
-		}
-		if (!open && !g_pushEndLogged) {
-			g_pushEndLogged = true;
-			REX::INFO("scanner: scan state push ended (closed sent once; {} {})",
-				a_hud ? "HUD" : "HUD messages", ok ? "OK" : "not answered");
-		}
-		was = open;
+		if (auto hud = MenuLive(a_ui, "HUDMenu", "hz41DllScan"); hud && hud->menuObj.HasMember("hz41DllScan"))
+			ok = hud->menuObj.Invoke("hz41DllScan", nullptr, &arg, 1);
+		ScanPushLog(open, ok, true);
+		g_pushOpenHud = open;
+	}
+
+	// Purpose: HUDMessagesMenu hzcDllScan from the messages AdvanceFrame only.
+	void ScanPushMsg(RE::UI* a_ui, ULONGLONG a_now)
+	{
+		bool open = false;
+		if (!ScanPushReady(a_ui, a_now, g_scanMsgNext, g_pushOpenMsg, open)) return;
+		GValue arg(open);
+		bool ok = false;
+		if (auto msg = MenuLive(a_ui, "HUDMessagesMenu", "hzcDllScan"); msg && msg->menuObj.HasMember("hzcDllScan"))
+			ok = msg->menuObj.Invoke("hzcDllScan", nullptr, &arg, 1);
+		ScanPushLog(open, ok, false);
+		g_pushOpenMsg = open;
 	}
 
 	// Purpose: job-thread marker check. No Scaleform. Author: Moragar.
@@ -1543,7 +1571,7 @@ namespace HZ
 		g_banNext = a_now + 100;
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) return;
-		ScanPushMovie(ui, false, a_now);   // HUDMessagesMenu only; HUD half is ScanPushMovie from PollScaleform
+		ScanPushMsg(ui, a_now);
 		bool scan = g_banScanMod.load() == 1 && ui->IsMenuOpen("MonocleMenu");
 		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu" })
 			if (ui->IsMenuOpen(m)) scan = false;
@@ -1694,6 +1722,7 @@ namespace HZ
 	// v0.42.0 r3: which Horizon movie builds are loaded (HUD hzBuildId / Comms hzcBuildId), logged when it changes.
 	// The DLL file version is DllFileVersion(), not a literal, so it cannot drift from the version resource.
 	// Each half Invokes only the movie whose AdvanceFrame is running.
+	std::mutex   g_buildsMu;
 	std::string g_buildsLogged;
 	std::string g_buildsHud = "no build id (older than r3 or not Horizon)";
 	std::string g_buildsMsg = "no build id (older than r3, no Comms module or not open)";
@@ -1713,9 +1742,12 @@ namespace HZ
 		if (a_now < g_buildsHudNext) return;
 		g_buildsHudNext = a_now + 5000;
 		PushDllFileVersion();
+		std::string hud;
 		GValue a;
 		if (HudInvoke("hzBuildId", &a) && a.IsString() && a.GetString())
-			g_buildsHud = a.GetString();
+			hud = a.GetString();
+		std::lock_guard lk(g_buildsMu);
+		if (!hud.empty()) g_buildsHud = std::move(hud);
 		BuildLogFlush();
 	}
 
@@ -1725,11 +1757,14 @@ namespace HZ
 		g_buildsMsgNext = a_now + 5000;
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) return;
+		std::string msg;
 		if (auto m = MenuLive(ui, "HUDMessagesMenu", "hzcBuildId"); m && m->menuObj.HasMember("hzcBuildId")) {
 			GValue b;
 			if (m->menuObj.Invoke("hzcBuildId", &b, nullptr, 0) && b.IsString() && b.GetString())
-				g_buildsMsg = b.GetString();
+				msg = b.GetString();
 		}
+		std::lock_guard lk(g_buildsMu);
+		if (!msg.empty()) g_buildsMsg = std::move(msg);
 		BuildLogFlush();
 	}
 
@@ -2482,21 +2517,46 @@ namespace HZ
 		}
 	}
 
-	static std::string HzCrossName()
+	std::mutex        g_crossMu;
+	std::string       g_crossName;
+	std::atomic<ULONGLONG> g_crossAt{0};
+
+	// Purpose: HUDMenu hzCrossName from the HUD AdvanceFrame. Stores
+	// the name for CommsRxPoll. Inputs: none. Outputs: cached name.
+	// Author: Moragar. Last modified: 2026-10-28.
+	void PublishCrossName()
 	{
+		std::string name;
 		try {
 			auto ui = RE::UI::GetSingleton();
-			if (!ui) return {};
+			if (!ui) return;
 			auto menu = MenuLive(ui, "HUDMenu", "hzCrossName");
-			if (!menu || !menu->menuObj.HasMember("hzCrossName")) return {};
+			if (!menu || !menu->menuObj.HasMember("hzCrossName")) return;
 			GValue r;
-			if (!menu->menuObj.Invoke("hzCrossName", &r, nullptr, 0) || !r.IsString() || !r.GetString()) return {};
+			if (!menu->menuObj.Invoke("hzCrossName", &r, nullptr, 0) || !r.IsString() || !r.GetString()) return;
 			const auto view = hzmsg::Trim(r.GetString());
-			if (view.empty() || view.find('<') != std::string_view::npos) return {};
-			return hzpreset::Utf8Prefix(std::string(view), 80);
+			if (view.empty() || view.find('<') != std::string_view::npos) return;
+			name = hzpreset::Utf8Prefix(std::string(view), 80);
 		} catch (...) {
-			return {};
+			return;
 		}
+		const auto now = GetTickCount64();
+		std::lock_guard lk(g_crossMu);
+		g_crossName = std::move(name);
+		g_crossAt.store(now, std::memory_order_release);
+	}
+
+	// Purpose: read the HUD-published crosshair name. No Scaleform.
+	// Age-checked so a stall does not keep a stale name. Inputs: now.
+	// Outputs: name or empty. Author: Moragar. Last modified: 2026-10-28.
+	static std::string HzCrossName()
+	{
+		const auto now = GetTickCount64();
+		std::lock_guard lk(g_crossMu);
+		if (g_crossName.empty()) return {};
+		const auto at = g_crossAt.load(std::memory_order_acquire);
+		if (now < at || now - at > kRxMaxAge) return {};
+		return g_crossName;
 	}
 
 	// Purpose: drain the HUD-message queue on the UI thread and log hzcCardPush's status once per card.
@@ -4079,9 +4139,10 @@ namespace HZ
 		{
 			HWND w = GameWindow();
 			const bool down = w && (GetAsyncKeyState(g_vk.load()) & 0x8000) != 0;
-			if (hzlog::SettingsKeyEdge(down, g_wasDownJob))
+			if (hzlog::SettingsKeyJobEdge(down, g_wasDownJob)) {
+				g_settingsKeyAt.store(now, std::memory_order_release);
 				g_settingsKeyReq.store(true, std::memory_order_release);
-			g_wasDownJob = down;
+			}
 		}
 		BannerPollWork(now);
 		FilesPollWork();
@@ -4104,32 +4165,25 @@ namespace HZ
 		const auto now = GetTickCount64();
 		const auto tid = ::GetCurrentThreadId();
 		g_lastHudPollTid.store(tid, std::memory_order_relaxed);
-		const auto polls = g_hudPolls.fetch_add(1, std::memory_order_relaxed) + 1;
+		g_lastHudPollMs.store(now, std::memory_order_relaxed);
+		g_hudPolls.fetch_add(1, std::memory_order_relaxed);
 		if (!g_uiPollLogged.exchange(true))
 			REX::INFO("thread: ui poll tid={}", tid);
 		if (auto uiPub = RE::UI::GetSingleton()) {
 			g_uiLoading.store(uiPub->IsMenuOpen("LoadingMenu"));
 			g_uiMainMenu.store(uiPub->IsMenuOpen("MainMenu"));
 			g_uiPause.store(uiPub->IsMenuOpen("PauseMenu"));
-			ScanPushMovie(uiPub, true, now);
+			ScanPushHud(uiPub, now);
 		}
+		try { PublishCrossName(); } catch (...) {}
 		if (g_mlHudReadyReq.exchange(false))
 			MsglogOnHudReady();
-		HWND wnd = GameWindow();
-		bool down = wnd && (GetAsyncKeyState(g_vk.load()) & 0x8000) != 0;
-		if (hzlog::SettingsKeyEdge(down, g_wasDown) || g_settingsKeyReq.exchange(false))
+		if (hzlog::SettingsKeyHudTake(g_settingsKeyReq.exchange(false, std::memory_order_acq_rel),
+				g_settingsKeyAt.load(std::memory_order_acquire), now))
 			OnSettingsKey();
-		g_wasDown = down;
 
 		const bool hudSafe = HudSafe();
-		const auto lastBeat = g_pollHeartbeatMs.load(std::memory_order_relaxed);
-		if (hzlog::PollHeartbeatDue(lastBeat, now, hzlog::kPollHeartbeatMs)) {
-			REX::INFO("scaleform: poll alive calls={} lastTid={} hudSafe={} root={} uiTid={}",
-				polls, tid, hudSafe ? 1 : 0,
-				static_cast<const void*>(g_hudRoot.load(std::memory_order_acquire)),
-				g_uiTid.load(std::memory_order_relaxed));
-			g_pollHeartbeatMs.store(now, std::memory_order_relaxed);
-		}
+		g_hudSafeHint.store(hudSafe, std::memory_order_relaxed);
 		if (!hudSafe) {
 			if (HudSafe(false)) {   // v0.42.0 r3: only a scope is up: F11 stays blocked, the HUD-ready time is kept
 				if (g_open.load()) ResetSettingsState();
@@ -4165,6 +4219,7 @@ namespace HZ
 		}
 		try { MsglogPollUi(); } catch (...) {}
 		BuildLogHud(now);
+		HWND wnd = GameWindow();
 		EnsureSubclass(wnd);
 		PollSettings(wnd, now);
 	}
@@ -4218,6 +4273,35 @@ namespace HZ
 		REX::INFO("thread: movie advance tid={} (new, {} of 8)", a_tid, slot + 1);
 	}
 
+	void TryAdoptLiveRoot(RE::Scaleform::GFx::ASMovieRootBase* a_this, ULONGLONG a_now)
+	{
+		if (!a_this) return;
+		if (!hzlog::StaleHudAdoptDue(g_lastHudPollMs.load(std::memory_order_acquire), a_now)
+			&& g_hudRoot.load(std::memory_order_acquire)
+			&& g_hudMsgRoot.load(std::memory_order_acquire))
+			return;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		auto adopt = [&](const char* a_name, std::atomic<RE::Scaleform::GFx::ASMovieRootBase*>& a_store) {
+			if (!ui->IsMenuOpen(a_name)) return;
+			auto menu = ui->GetMenu(a_name);
+			if (!menu || !menu->uiMovie || !menu->uiMovie->asMovieRoot) return;
+			auto* live = menu->uiMovie->asMovieRoot.get();
+			auto stored = a_store.load(std::memory_order_acquire);
+			if (!hzlog::ShouldAdoptLiveRoot(a_this, stored, live)) return;
+			a_store.store(live, std::memory_order_release);
+			const auto last = g_adoptLogMs.load(std::memory_order_relaxed);
+			if (hzlog::UiTidSwitchLogDue(last, a_now, hzlog::kUiTidSkipLogMs)) {
+				REX::INFO("scaleform: adopted live {} root {} (was {})", a_name,
+					static_cast<const void*>(live), static_cast<const void*>(stored));
+				g_adoptLogMs.store(a_now, std::memory_order_relaxed);
+			}
+		};
+		adopt("HUDMenu", g_hudRoot);
+		adopt("HUDMessagesMenu", g_hudMsgRoot);
+		adopt("ScopeMenu", g_scopeRoot);
+	}
+
 	void HookedAdvanceFrame(RE::Scaleform::GFx::ASMovieRootBase* a_this, bool a_next)
 	{
 		const auto orig = g_origAdvance.load(std::memory_order_acquire);
@@ -4235,6 +4319,21 @@ namespace HZ
 			REX::INFO("scaleform: hook alive, {} calls", n);
 			g_hookAliveNext.store(now + hzlog::kHookAlivePeriodMs, std::memory_order_relaxed);
 		}
+		try { TryAdoptLiveRoot(a_this, now); } catch (...) {}
+		const auto lastBeat = g_pollHeartbeatMs.load(std::memory_order_relaxed);
+		if (hzlog::PollHeartbeatDue(lastBeat, now, hzlog::kPollHeartbeatMs)) {
+			const auto lastHud = g_lastHudPollMs.load(std::memory_order_relaxed);
+			const auto age = lastHud && now >= lastHud ? now - lastHud : 0;
+			REX::INFO("scaleform: poll alive calls={} lastTid={} hudSafe={} root={} uiTid={} hudPolls={} lastHudAge={} hudRoot={} msgRoot={}",
+				n, g_lastHudPollTid.load(std::memory_order_relaxed),
+				g_hudSafeHint.load(std::memory_order_relaxed) ? 1 : 0,
+				static_cast<const void*>(g_hudRoot.load(std::memory_order_acquire)),
+				g_uiTid.load(std::memory_order_relaxed),
+				g_hudPolls.load(std::memory_order_relaxed), age,
+				g_hudRoot.load(std::memory_order_acquire) ? 1 : 0,
+				g_hudMsgRoot.load(std::memory_order_acquire) ? 1 : 0);
+			g_pollHeartbeatMs.store(now, std::memory_order_relaxed);
+		}
 		const auto hud = g_hudRoot.load(std::memory_order_acquire);
 		const auto msg = g_hudMsgRoot.load(std::memory_order_acquire);
 		const auto kind = hzlog::PollMovieForRoot(a_this, hud, msg);
@@ -4243,14 +4342,22 @@ namespace HZ
 				RecordUiTidOnce(tid, hzlog::kUiTidSourceHudRoot);
 			if (hzlog::PollAlreadyIn(g_inPoll.exchange(true, std::memory_order_acq_rel)))
 				return;
+			hzlog::g_advancingRoot = a_this;
+			hzlog::g_advancingMovie = hzlog::PollMovie::Hud;
 			try { PollScaleform(); } catch (...) {}
+			hzlog::g_advancingRoot = nullptr;
+			hzlog::g_advancingMovie = hzlog::PollMovie::None;
 			g_inPoll.store(false, std::memory_order_release);
 			return;
 		}
 		if (hzlog::PollMsgOnThisAdvance(kind)) {
 			if (hzlog::PollAlreadyIn(g_inMsgPoll.exchange(true, std::memory_order_acq_rel)))
 				return;
+			hzlog::g_advancingRoot = a_this;
+			hzlog::g_advancingMovie = hzlog::PollMovie::HudMessages;
 			try { PollMessages(); } catch (...) {}
+			hzlog::g_advancingRoot = nullptr;
+			hzlog::g_advancingMovie = hzlog::PollMovie::None;
 			g_inMsgPoll.store(false, std::memory_order_release);
 			return;
 		}
@@ -4258,7 +4365,11 @@ namespace HZ
 		if (a_this && scope && a_this == scope) {
 			if (hzlog::PollAlreadyIn(g_inScopePoll.exchange(true, std::memory_order_acq_rel)))
 				return;
+			hzlog::g_advancingRoot = a_this;
+			hzlog::g_advancingMovie = hzlog::PollMovie::Scope;
 			try { ScopeClipPoll(now); } catch (...) {}
+			hzlog::g_advancingRoot = nullptr;
+			hzlog::g_advancingMovie = hzlog::PollMovie::None;
 			g_inScopePoll.store(false, std::memory_order_release);
 		}
 	}
@@ -4309,9 +4420,8 @@ namespace HZ
 		const bool isHud = a_menu->menuName == "HUDMenu";
 		const bool isMsg = a_menu->menuName == "HUDMessagesMenu";
 		const bool isScope = a_menu->menuName == "ScopeMenu";
-		const bool live = a_menu->uiMovie && a_menu->uiMovie->asMovieRoot;
-		if (!live) return;
-		auto* root = a_menu->uiMovie->asMovieRoot.get();
+		auto* root = (a_menu->uiMovie && a_menu->uiMovie->asMovieRoot)
+			? a_menu->uiMovie->asMovieRoot.get() : nullptr;
 		auto hud = g_hudRoot.load(std::memory_order_acquire);
 		if (hzlog::ShouldClearReusedHudRoot(hud, root, isHud))
 			g_hudRoot.compare_exchange_strong(hud, nullptr, std::memory_order_acq_rel);
@@ -4321,6 +4431,7 @@ namespace HZ
 		auto scope = g_scopeRoot.load(std::memory_order_acquire);
 		if (hzlog::ShouldClearReusedHudRoot(scope, root, isScope))
 			g_scopeRoot.compare_exchange_strong(scope, nullptr, std::memory_order_acq_rel);
+		if (!root) return;
 		if (isHud)
 			g_hudRoot.store(root, std::memory_order_release);
 		else if (isMsg)

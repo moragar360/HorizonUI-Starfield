@@ -6,6 +6,9 @@ Poll() (job thread) must not reach any Scaleform site. PollScaleform()
 and must not reach file I/O (ifstream, filesystem
 exists/copy/create/rename/remove, CreateFile, LoadLibrary,
 GetFileVersionInfo, HzAddrLoad, ReadOwnFileVersion).
+A poll root's reachable set must not name another movie's Invoke
+literal. PollScaleform / PollMessages bodies must not sample
+GetAsyncKeyState (F11 lives on the job latch).
 
 Call-graph nodes come from every src file so a Scaleform or I/O token
 in a new .cpp/.h is visible. File I/O on the UI path is decided from
@@ -213,6 +216,57 @@ def main() -> int:
         if token in poll_body:
             print(f"FAIL: Poll() body still mentions {token}", file=sys.stderr)
             return 1
+    def reach_text(names: set[str]) -> str:
+        parts = []
+        for name in sorted(names):
+            if name in cpp_fns:
+                parts.append("\n".join(strip_line(ln) for ln in cpp_fns[name].splitlines()))
+        return "\n".join(parts)
+
+    hud_text = reach_text(from_hud)
+    msg_text = reach_text(from_msg)
+    scope_text = reach_text(reachable("ScopeClipPoll", cpp_calls)) if "ScopeClipPoll" in cpp_fns else ""
+    hud_foreign = [
+        t
+        for t in (
+            'MenuLive(ui, "HUDMessagesMenu"',
+            'MenuMovie(ui, "HUDMessagesMenu"',
+            'MenuLive(a_ui, "HUDMessagesMenu"',
+            'MenuLive(ui, "ScopeMenu"',
+            "hzcTakeLog",
+            "hzcCardPush",
+            'Invoke("hzcDllScan"',
+            'HasMember("hzcDllScan"',
+        )
+        if t in hud_text
+    ]
+    msg_foreign = [
+        t
+        for t in (
+            'MenuLive(ui, "HUDMenu"',
+            'MenuMovie(ui, "HUDMenu"',
+            "HudInvoke(",
+            'Invoke("hzCrossName"',
+            'Invoke("hz41DllScan"',
+            'HasMember("hz41DllScan"',
+        )
+        if t in msg_text
+    ]
+    scope_foreign = [t for t in ('MenuLive(ui, "HUDMenu"', "HudInvoke(", 'MenuLive(ui, "HUDMessagesMenu"') if t in scope_text]
+    if hud_foreign:
+        print("FAIL: PollScaleform reaches a foreign movie token: " + ", ".join(hud_foreign), file=sys.stderr)
+        return 1
+    if msg_foreign:
+        print("FAIL: PollMessages reaches a foreign movie token: " + ", ".join(msg_foreign), file=sys.stderr)
+        return 1
+    if scope_foreign:
+        print("FAIL: ScopeClipPoll reaches a foreign movie token: " + ", ".join(scope_foreign), file=sys.stderr)
+        return 1
+    hud_body = "\n".join(strip_line(ln) for ln in cpp_fns["PollScaleform"].splitlines())
+    msg_body = "\n".join(strip_line(ln) for ln in cpp_fns["PollMessages"].splitlines())
+    if "GetAsyncKeyState" in hud_body or "GetAsyncKeyState" in msg_body:
+        print("FAIL: PollScaleform / PollMessages body samples GetAsyncKeyState", file=sys.stderr)
+        return 1
     ui_io = sorted(name for name in io_cpp if name in from_ui)
     if ui_io:
         print("FAIL: file I/O reachable from PollScaleform(): " + ", ".join(ui_io), file=sys.stderr)
