@@ -8,6 +8,7 @@
 // Last modified: 2026-10-28.
 
 #include "hz_msg_match.h"
+#include "hz_ui_tid.h"
 #include "hz_version.h"
 #include "preset_dedupe.h"
 
@@ -1062,29 +1063,6 @@ inline bool EngineCacheNeedsMutex(bool a_crossThread)
 }
 
 inline constexpr int kTakeLogHardCap = 500;
-inline constexpr const char* kUiTidSourceHudRoot = "hud-root-advance";
-
-// Purpose: g_uiTid may be adopted only from the stored HUD /
-// HUDMessages root's own AdvanceFrame. Window-owner and any-menu
-// create tids are hints; they must not win the compare-exchange.
-// Inputs: hint kind and whether a_this is the stored HUD root
-// (pointer compare only). Outputs: true when this call may record.
-// Author: Moragar. Last modified: 2026-10-28.
-enum class UiTidHint : std::uint8_t { WindowOwner = 0, AnyMenu, HudRootAdvance };
-
-inline bool UiTidHintAdopts(UiTidHint a_hint, bool a_isStoredHudRoot)
-{
-	return a_hint == UiTidHint::HudRootAdvance && a_isStoredHudRoot;
-}
-
-// Purpose: if the HUD root advances on a different tid than the one
-// we recorded, adopt the HUD root's tid. Inputs: recorded tid, this
-// advance tid, stored-root match. Outputs: self-heal?
-// Author: Moragar. Last modified: 2026-10-28.
-inline bool UiTidSelfHeal(std::uint32_t a_recorded, std::uint32_t a_hudTid, bool a_isStoredHudRoot)
-{
-	return a_isStoredHudRoot && a_recorded != 0 && a_hudTid != 0 && a_recorded != a_hudTid;
-}
 
 inline bool HookTidAllowsPoll(std::uint32_t a_uiTid, std::uint32_t a_curTid)
 {
@@ -1095,53 +1073,6 @@ inline bool HookOrigStored(const void* a_orig, const void* a_hook)
 {
 	return a_orig != nullptr && a_orig != a_hook;
 }
-
-// Purpose: in-test stand-in for g_uiTid. Non-HUD creates and a
-// foreign window owner must not stick. The HUD root's AdvanceFrame
-// wins, and a later HUD-root tid self-heals.
-// Author: Moragar. Last modified: 2026-10-28.
-struct UiTidRecorder
-{
-	std::uint32_t tid{0};
-	const char*   source{nullptr};
-	bool          healed{false};
-	const void*   hudRoot{nullptr};
-	const void*   hudMsgRoot{nullptr};
-
-	void HintWindowOwner(std::uint32_t)
-	{
-	}
-
-	void OnMenuCreated(const char* a_name, const void* a_root, std::uint32_t)
-	{
-		if (!a_name || !a_root) return;
-		if (std::strcmp(a_name, "HUDMenu") == 0)
-			hudRoot = a_root;
-		else if (std::strcmp(a_name, "HUDMessagesMenu") == 0)
-			hudMsgRoot = a_root;
-	}
-
-	bool IsStoredHudRoot(const void* a_root) const
-	{
-		return a_root && (a_root == hudRoot || a_root == hudMsgRoot);
-	}
-
-	void OnAdvance(const void* a_root, std::uint32_t a_tid)
-	{
-		if (!UiTidHintAdopts(UiTidHint::HudRootAdvance, IsStoredHudRoot(a_root)) || !a_tid)
-			return;
-		if (tid == 0) {
-			tid = a_tid;
-			source = kUiTidSourceHudRoot;
-			return;
-		}
-		if (UiTidSelfHeal(tid, a_tid, true)) {
-			healed = true;
-			tid = a_tid;
-			source = kUiTidSourceHudRoot;
-		}
-	}
-};
 
 // Purpose: TextScale 0.90 on a 13 px face rounds to 12; the AS floor
 // then lifts it back. Inputs: face size and minPx. Outputs: size used.
@@ -1168,6 +1099,44 @@ inline int TakeLogDroppedCount(std::string_view a_line)
 	}
 	return n;
 }
+
+// Purpose: the same 500-cap / drop|N / 40-per-take rules as
+// hzcLogPush / hzcTakeLog in the Comms movie. Inputs: kind|title|text
+// lines. Outputs: a take string that may start with drop|N.
+// Author: Moragar. Last modified: 2026-10-28.
+struct TakeLogMovieQueue
+{
+	std::vector<std::string> q;
+	int dropped{0};
+
+	void Push(std::string a_line)
+	{
+		if (static_cast<int>(q.size()) >= kTakeLogHardCap) {
+			q.erase(q.begin());
+			++dropped;
+		}
+		q.push_back(std::move(a_line));
+	}
+
+	std::string Take()
+	{
+		if (q.empty() && dropped == 0) return {};
+		int n = static_cast<int>(q.size());
+		if (n > kTakeLogCap) n = kTakeLogCap;
+		std::string o;
+		for (int i = 0; i < n; ++i) {
+			if (i) o += '\n';
+			o += q[static_cast<std::size_t>(i)];
+		}
+		q.erase(q.begin(), q.begin() + n);
+		if (dropped > 0) {
+			o = o.empty() ? ("drop|" + std::to_string(dropped))
+				: ("drop|" + std::to_string(dropped) + "\n" + o);
+			dropped = 0;
+		}
+		return o;
+	}
+};
 
 // Purpose: all writer-side state and decisions. The DLL only calls methods.
 // Per-key slots hold clearPending (set on an explicit user Clear, cleared

@@ -75,6 +75,7 @@
 #include "hz_addr_probe.h"
 #include "hz_rx_queue.h"
 #include "hz_msglog.h"
+#include "hz_ui_tid.h"
 #include "preset_dedupe.h"
 
 // v0.37: the settings-file code (HZF) replaces files through this (temp file + MoveFileExW)
@@ -122,9 +123,16 @@ namespace HZ
 	// from "BSJobs 9"). TaskInterface has no UI-thread API. Scaleform
 	// runs only from the HUD movie AdvanceFrame hook (see PollScaleform).
 	// g_uiTid is adopted only from the stored HUD / HUDMessages root's
-	// own AdvanceFrame. Window-owner and any-menu tids are hints.
+	// own AdvanceFrame. Window-owner and any-menu tids are hints. A
+	// later HUD-root tid needs ~500 ms of sustained advances and none
+	// on the recorded tid (see hz_ui_tid.h).
 	std::atomic<std::uint32_t> g_uiTid{0};
-	std::atomic<bool>          g_uiTidHealLogged{false};
+	std::mutex                 g_uiTidMu;
+	std::uint64_t              g_uiTidLastHudMs{0};
+	std::uint32_t              g_uiTidCand{0};
+	std::uint64_t              g_uiTidCandSince{0};
+	std::atomic<std::uint64_t> g_uiTidSwitchLogMs{0};
+	std::atomic<bool>          g_inPoll{false};
 	std::atomic<bool>          g_uiPollLogged{false};
 	std::atomic<bool>          g_jobPollLogged{false};
 	std::atomic<bool>          g_hookWrongTidLogged{false};
@@ -142,7 +150,7 @@ namespace HZ
 	void PreloadDllFileVersion();
 	void FilesJobPreload();
 	void RecordUiTidOnce(std::uint32_t a_tid, const char* a_src);
-	void AdoptHudAdvanceTid(std::uint32_t a_tid);
+	void AdoptHudAdvanceTid(std::uint32_t a_tid, std::uint64_t a_nowMs);
 
 	std::filesystem::path IniPath()
 	{
@@ -765,14 +773,24 @@ namespace HZ
 		(void)a_src;
 	}
 
-	void AdoptHudAdvanceTid(std::uint32_t a_tid)
+	void AdoptHudAdvanceTid(std::uint32_t a_tid, std::uint64_t a_nowMs)
 	{
-		RecordUiTidOnce(a_tid, hzlog::kUiTidSourceHudRoot);
+		if (!a_tid) return;
+		std::lock_guard lk(g_uiTidMu);
 		const auto have = g_uiTid.load(std::memory_order_acquire);
-		if (!hzlog::UiTidSelfHeal(have, a_tid, true)) return;
-		if (g_uiTidHealLogged.exchange(true)) return;
-		REX::ERROR("thread: ui tid self-heal from {} to {} source=hud-root-advance", have, a_tid);
-		g_uiTid.store(a_tid, std::memory_order_release);
+		const auto d = hzlog::UiTidOnHudAdvance(have, a_tid, a_nowMs,
+			g_uiTidLastHudMs, g_uiTidCand, g_uiTidCandSince);
+		if (d.action == hzlog::UiTidAction::RecordFirst) {
+			RecordUiTidOnce(d.to, hzlog::kUiTidSourceHudRoot);
+			return;
+		}
+		if (d.action != hzlog::UiTidAction::Switch) return;
+		g_uiTid.store(d.to, std::memory_order_release);
+		const auto lastLog = g_uiTidSwitchLogMs.load(std::memory_order_relaxed);
+		if (hzlog::UiTidSwitchLogDue(lastLog, a_nowMs)) {
+			REX::ERROR("thread: ui tid self-heal from {} to {} source=hud-root-advance", d.from, d.to);
+			g_uiTidSwitchLogMs.store(a_nowMs, std::memory_order_relaxed);
+		}
 	}
 
 	// Purpose: log the foreground window's owner thread as a hint.
@@ -4118,13 +4136,6 @@ namespace HZ
 	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_hudRoot{nullptr};
 	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_hudMsgRoot{nullptr};
 
-	bool IsStoredHudRoot(RE::Scaleform::GFx::ASMovieRootBase* a_root)
-	{
-		return a_root
-			&& (a_root == g_hudRoot.load(std::memory_order_acquire)
-				|| a_root == g_hudMsgRoot.load(std::memory_order_acquire));
-	}
-
 	void LogAdvanceTid(std::uint32_t a_tid)
 	{
 		thread_local bool seen = false;
@@ -4155,10 +4166,12 @@ namespace HZ
 			orig(a_this, a_next);
 		const auto tid = ::GetCurrentThreadId();
 		LogAdvanceTid(tid);
-		const bool hudRoot = IsStoredHudRoot(a_this);
-		if (hudRoot)
-			AdoptHudAdvanceTid(tid);
 		const auto now = GetTickCount64();
+		const bool hudRoot = hzlog::IsStoredHudRoot(a_this,
+			g_hudRoot.load(std::memory_order_acquire),
+			g_hudMsgRoot.load(std::memory_order_acquire));
+		if (hudRoot)
+			AdoptHudAdvanceTid(tid, now);
 		const auto n = g_hookCalls.fetch_add(1, std::memory_order_relaxed) + 1;
 		if (n == static_cast<std::uint64_t>(hzlog::kHookAliveFirstN)
 			|| (n > static_cast<std::uint64_t>(hzlog::kHookAliveFirstN)
@@ -4177,11 +4190,10 @@ namespace HZ
 			return;
 		if (!g_sfLastMs.compare_exchange_strong(prev, now, std::memory_order_relaxed))
 			return;
-		static thread_local bool inPoll = false;
-		if (inPoll) return;
-		inPoll = true;
+		if (hzlog::PollAlreadyIn(g_inPoll.exchange(true, std::memory_order_acq_rel)))
+			return;
 		try { PollScaleform(); } catch (...) {}
-		inPoll = false;
+		g_inPoll.store(false, std::memory_order_release);
 	}
 
 	// Purpose: patch AS3 MovieRoot::AdvanceFrame (vtable slot 2) once.
@@ -4219,25 +4231,35 @@ namespace HZ
 
 	// Purpose: SFSE MenuMovieCreated. Stores the HUD / HUDMessages
 	// root pointer (compare only later; never dereferenced from the
-	// hook). Does not adopt g_uiTid. Hooks AdvanceFrame once.
+	// hook). A new non-HUD root at a stored HUD address nulls that
+	// store (ABA). Does not adopt g_uiTid. Hooks AdvanceFrame once.
 	// Inputs: the new menu. Outputs: none. Author: Moragar.
 	// Last modified: 2026-10-28.
 	void OnMenuMovie(RE::IMenu* a_menu)
 	{
 		if (!a_menu) return;
-		const bool hud = a_menu->menuName == "HUDMenu" || a_menu->menuName == "HUDMessagesMenu";
+		const bool isHud = a_menu->menuName == "HUDMenu";
+		const bool isMsg = a_menu->menuName == "HUDMessagesMenu";
 		const bool live = a_menu->uiMovie && a_menu->uiMovie->asMovieRoot;
-		if (live && !hud && !g_menuTidHinted.exchange(true))
-			REX::INFO("thread: menu-create tid={} (hint only)", ::GetCurrentThreadId());
-		if (!hud || !live)
-			return;
+		if (!live) return;
 		auto* root = a_menu->uiMovie->asMovieRoot.get();
-		if (a_menu->menuName == "HUDMenu")
+		auto hud = g_hudRoot.load(std::memory_order_acquire);
+		if (hzlog::ShouldClearReusedHudRoot(hud, root, isHud))
+			g_hudRoot.compare_exchange_strong(hud, nullptr, std::memory_order_acq_rel);
+		auto msg = g_hudMsgRoot.load(std::memory_order_acquire);
+		if (hzlog::ShouldClearReusedHudRoot(msg, root, isMsg))
+			g_hudMsgRoot.compare_exchange_strong(msg, nullptr, std::memory_order_acq_rel);
+		if (isHud)
 			g_hudRoot.store(root, std::memory_order_release);
-		else
+		else if (isMsg)
 			g_hudMsgRoot.store(root, std::memory_order_release);
+		if (!isHud && !isMsg) {
+			if (!g_menuTidHinted.exchange(true))
+				REX::INFO("thread: menu-create tid={} (hint only)", ::GetCurrentThreadId());
+			return;
+		}
 		REX::INFO("scaleform: MenuMovieCreated name={} live root",
-			a_menu->menuName == "HUDMenu" ? "HUDMenu" : "HUDMessagesMenu");
+			isHud ? "HUDMenu" : "HUDMessagesMenu");
 		InstallAdvanceHook(root);
 	}
 

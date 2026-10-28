@@ -89,6 +89,30 @@ std::string ReadFile(const std::filesystem::path& a_p)
 	return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 }
 
+std::string AsFnBody(const std::string& a_src, const std::string& a_name, const std::string& a_next)
+{
+	const auto at = a_src.find(a_name);
+	const auto nx = a_next.empty() ? std::string::npos : a_src.find(a_next, at);
+	if (at == std::string::npos) return {};
+	if (nx != std::string::npos && nx > at) return a_src.substr(at, nx - at);
+	return a_src.substr(at);
+}
+
+bool TakeLogAsOk(const std::string& a_src)
+{
+	const auto push = AsFnBody(a_src, "function hzcLogPush", "function hzcTakeLog");
+	const auto take = AsFnBody(a_src, "function hzcTakeLog", "function hzcLogQuest");
+	return push.find("this.hzcLogQ.length >= 500") != std::string::npos
+		&& push.find("this.hzcLogQ.shift()") != std::string::npos
+		&& push.find("this.hzcLogDropped++") != std::string::npos
+		&& take.find("this.hzcLogQ.length == 0 && this.hzcLogDropped == 0") != std::string::npos
+		&& take.find("if(n > 40) { n = 40; }") != std::string::npos
+		&& take.find("this.hzcLogQ.slice(0, n)") != std::string::npos
+		&& take.find("this.hzcLogQ.slice(n)") != std::string::npos
+		&& take.find("drop|") != std::string::npos
+		&& take.find("this.hzcLogDropped = 0") != std::string::npos;
+}
+
 int CountNeedle(const std::string& a_hay, const std::string& a_needle)
 {
 	int n = 0;
@@ -1737,7 +1761,9 @@ int main()
 		Expect(main.find("RecordUiTidOnce") != std::string::npos
 			&& main.find("compare_exchange_strong(expected, a_tid") != std::string::npos
 			&& main.find("source=hud-root-advance") != std::string::npos
-			&& main.find("AdoptHudAdvanceTid") != std::string::npos,
+			&& main.find("AdoptHudAdvanceTid") != std::string::npos
+			&& main.find("UiTidOnHudAdvance") != std::string::npos
+			&& main.find("hz_ui_tid.h") != std::string::npos,
 			"the UI tid is recorded once from the HUD root advance");
 		Expect(main.find("g_uiTid.store(::GetCurrentThreadId()") == std::string::npos,
 			"the hook does not overwrite the UI tid on every advance");
@@ -1748,8 +1774,9 @@ int main()
 			Expect(body.find("RecordUiTidOnce") == std::string::npos
 				&& body.find("g_hudRoot.store") != std::string::npos
 				&& body.find("g_hudMsgRoot.store") != std::string::npos
+				&& body.find("ShouldClearReusedHudRoot") != std::string::npos
 				&& body.find("hint only") != std::string::npos,
-				"OnMenuMovie stores the HUD root and does not adopt the tid");
+				"OnMenuMovie stores the HUD root, clears ABA reuse, and does not adopt the tid");
 		}
 		{
 			const auto hook = main.find("void HookedAdvanceFrame");
@@ -1757,9 +1784,14 @@ int main()
 			const auto body = hook != std::string::npos && next > hook ? main.substr(hook, next - hook) : std::string();
 			Expect(body.find("HookTidAllowsPoll(ui, tid)") != std::string::npos,
 				"the hook compares the recorded tid to this advance");
-			Expect(body.find("AdoptHudAdvanceTid(tid)") != std::string::npos
-				&& body.find("IsStoredHudRoot") != std::string::npos,
+			Expect(body.find("AdoptHudAdvanceTid(tid, now)") != std::string::npos
+				&& body.find("IsStoredHudRoot") != std::string::npos
+				&& body.find("hzlog::IsStoredHudRoot") != std::string::npos,
 				"the hook adopts only the stored HUD root's tid");
+			Expect(body.find("g_inPoll.exchange(true") != std::string::npos
+				&& body.find("g_inPoll.store(false") != std::string::npos
+				&& body.find("thread_local bool inPoll") == std::string::npos,
+				"PollScaleform reentrancy is a process-wide atomic");
 		}
 		{
 			const auto inst = main.find("void InstallAdvanceHook");
@@ -1768,6 +1800,16 @@ int main()
 			Expect(body.find("g_origAdvance.store(orig") != std::string::npos
 				&& body.find("HookOrigStored") != std::string::npos,
 				"the hook stores the original AdvanceFrame pointer");
+		}
+		{
+			const auto ad = main.find("void AdoptHudAdvanceTid");
+			const auto next = main.find("void HintWindowOwnerTid", ad);
+			const auto body = ad != std::string::npos && next > ad ? main.substr(ad, next - ad) : std::string();
+			Expect(body.find("UiTidOnHudAdvance") != std::string::npos
+				&& body.find("g_uiTid.store(d.to") != std::string::npos
+				&& body.find("g_uiTidHealLogged") == std::string::npos
+				&& body.find("UiTidSwitchLogDue") != std::string::npos,
+				"AdoptHudAdvanceTid uses hysteresis and stores every switch");
 		}
 		Expect(main.find("skip PollScaleform") != std::string::npos
 			&& main.find("AdvanceFrame on other thread") != std::string::npos,
@@ -1787,8 +1829,9 @@ int main()
 			&& main.find("g_advanceHooked.exchange(true)") != std::string::npos
 			&& main.find("HookOnceFlagBlocksRetry") != std::string::npos,
 			"the hook has a once-flag and a self-recursion guard");
-		Expect(main.find("thread_local bool inPoll") != std::string::npos,
-			"PollScaleform has a reentrancy guard");
+		Expect(main.find("g_inPoll.exchange(true") != std::string::npos
+			&& main.find("PollAlreadyIn") != std::string::npos,
+			"PollScaleform has a process-wide reentrancy guard");
 		Expect(main.find("g_mlWStartMu") != std::string::npos
 			&& main.find("lock_guard start(g_mlWStartMu)") != std::string::npos,
 			"EnsureWriter starts the writer under one mutex");
@@ -1796,23 +1839,44 @@ int main()
 			&& main.find("MsgPhrasesSnap") != std::string::npos,
 			"the phrase table is published under a lock");
 		{
+			const auto snap = main.find("hzmsg::Templates MsgPhrasesSnap()");
+			const auto snapEnd = main.find("constexpr std::uint32_t kHzMsgForms", snap);
+			const auto snapBody = snap != std::string::npos && snapEnd > snap
+				? main.substr(snap, snapEnd - snap) : std::string();
+			Expect(snapBody.find("lock_guard lk(g_phraseMu)") != std::string::npos
+				&& snapBody.find("return g_msgPhrases") != std::string::npos,
+				"MsgPhrasesSnap copies under g_phraseMu");
+			int phraseLocks = 0;
+			for (std::size_t p = 0; (p = main.find("lock_guard lk(g_phraseMu)", p)) != std::string::npos; ++p)
+				++phraseLocks;
+			Expect(phraseLocks >= 3, "snap and both publishes take g_phraseMu");
+		}
+		{
 			const auto prep = main.find("void HzMsgPrepare()");
 			const auto prepEnd = main.find("static std::string HzCrossName()", prep);
 			const auto body = prep != std::string::npos && prepEnd > prep ? main.substr(prep, prepEnd - prep) : std::string();
 			Expect(body.find("lock_guard lk(g_phraseMu)") != std::string::npos
 				&& body.find("g_msgPhrases = std::move(next)") != std::string::npos,
 				"HzMsgPrepare publishes phrases under g_phraseMu");
+			int prepLocks = 0;
+			for (std::size_t p = 0; (p = body.find("lock_guard lk(g_phraseMu)", p)) != std::string::npos; ++p)
+				++prepLocks;
+			Expect(prepLocks >= 2, "HzMsgPrepare publishes GMST and form phrases under g_phraseMu");
 		}
 		{
 			const auto offer = main.find("void MsglogOfferNote");
 			const auto take = main.find("void MsglogTakeMovie");
 			const auto body = offer != std::string::npos && take > offer ? main.substr(offer, take - offer) : std::string();
 			Expect(body.find("MsgPhrasesSnap()") != std::string::npos, "OfferNote snapshots phrases under the lock");
+			Expect(body.find("g_msgPhrases") == std::string::npos,
+				"OfferNote does not read g_msgPhrases without the snap");
 			const auto lock = body.find("lock_guard lk(g_mlMu)");
-			const auto flush = body.find("ShouldFlush");
+			const auto flush = body.find("g_ml.ShouldFlush(a_n.tick, false)");
+			const auto close = body.find("}", flush);
 			const auto save = body.find("SaveSignal");
-			Expect(lock != std::string::npos && flush != std::string::npos && save != std::string::npos
-				&& lock < flush && flush < save,
+			Expect(lock != std::string::npos && flush != std::string::npos && close != std::string::npos
+				&& save != std::string::npos
+				&& lock < flush && flush < close && flush < save,
 				"ShouldFlush runs under g_mlMu");
 		}
 		Expect(main.find("FilesJobPreload") != std::string::npos
@@ -1831,10 +1895,10 @@ int main()
 			const auto promo = main.find("void MsglogPromoteId()");
 			const auto next = main.find("void MsglogQueueRecover", promo);
 			const auto body = promo != std::string::npos && next > promo ? main.substr(promo, next - promo) : std::string();
-			Expect(body.find("PromoteIdShouldQueue") != std::string::npos
-				&& body.find("g_mlRecoverBusy") != std::string::npos
+			Expect(body.find("PromoteIdShouldQueue(g_mlRecoverBusy.load()") != std::string::npos
+				&& body.find("g_mlRecoverBusy.store(true)") != std::string::npos
 				&& body.find("lock_guard lk(g_mlMu)") != std::string::npos,
-				"PromoteId checks recoverBusy inside the lock");
+				"PromoteId checks recoverBusy as the first ShouldQueue argument under the lock");
 		}
 		{
 			const auto rx = main.find("void CommsRxPoll(ULONGLONG a_now)");
@@ -2151,6 +2215,16 @@ int main()
 		Expect(as.find("minPx:int = 0) : Number") != std::string::npos, "hzSetKey and hzSetBtn accept minPx");
 		Expect(as.find("if(minPx > sz) { sz = minPx; }") != std::string::npos,
 			"hzWT applies the minPx floor");
+		{
+			const auto key = AsFnBody(as, "private function hzSetKey", "private function hzSetSwitch");
+			Expect(key.find("minPx:int = 0) : Number") != std::string::npos
+				&& key.find("this.hzWT(b,k,x,y,120,fs,\"bd\",col,0.4,\"left\",minPx)") != std::string::npos,
+				"hzSetKey forwards minPx to hzWT");
+			const auto btn = AsFnBody(as, "private function hzSetBtn", "private function hzSetRowH");
+			Expect(btn.find("fs:Number = 12, minPx:int = 0) : Number") != std::string::npos
+				&& btn.find("this.hzWT(b,lab,0,y + (fs > 12 ? 5 : 6),220,fs,\"sb\",prim ? uint(T.ontxt) : uint(T.txt),1.8,\"left\",minPx)") != std::string::npos,
+				"hzSetBtn forwards minPx to hzWT");
+		}
 		Expect(as.find("hzSetKey(b,g,ox + 22,fy + 4,\"/\",uint(T.mut),24,13,13)") != std::string::npos,
 			"the Find keycap passes minPx 13");
 		Expect(as.find("hzSetBtn(b,g,bxr,by,\"BACK\",false,false,this.hzMlHover == \"back\",T,\"mlback\",13,13)") != std::string::npos,
@@ -2172,20 +2246,12 @@ int main()
 		Expect(hzc.find("function hzcTakeLog") != std::string::npos, "movie exposes hzcTakeLog");
 		Expect(hzc.find("function hzcTakeLog") != std::string::npos && hzc.find("HUDMessageData stays with the DLL sink") != std::string::npos,
 			"take-log is separate from HUDMessageData");
-		Expect(hzc.find("this.hzcLogQ.slice(0, n)") != std::string::npos
-			&& hzc.find("this.hzcLogQ.slice(n)") != std::string::npos,
-			"take-log keeps the remainder instead of dropping the oldest");
-		Expect(hzc.find("length >= 500") != std::string::npos && hzc.find("hzcLogDropped") != std::string::npos,
-			"take-log bounds the queue at 500 and counts drops");
+		Expect(TakeLogAsOk(hzc), "comms take-log has the 500 cap, drop count, reset, and 40-per-take");
 		{
 			const auto copy = Slurp("actionscript/imp/imp/scripts/HUDMessagesMenu.as");
 			const auto lrg = Slurp("actionscript/imp/imp-Lrg/scripts/HUDMessagesMenu.as");
-			Expect(copy.find("this.hzcLogQ.slice(0, n)") != std::string::npos
-				&& copy.find("length >= 500") != std::string::npos,
-				"the shipped HUDMessages take-log keeps remainder and the 500 cap");
-			Expect(lrg.find("this.hzcLogQ.slice(0, n)") != std::string::npos
-				&& lrg.find("length >= 500") != std::string::npos,
-				"the large HUDMessages take-log keeps remainder and the 500 cap");
+			Expect(TakeLogAsOk(copy), "the shipped HUDMessages take-log has the 500 cap, drop count, reset, and 40-per-take");
+			Expect(TakeLogAsOk(lrg), "the large HUDMessages take-log has the 500 cap, drop count, reset, and 40-per-take");
 		}
 		Expect(hzc.find("hzcLogPush") != std::string::npos && hzc.find("QuestUpdateData") != std::string::npos, "quests are forwarded");
 		Expect(hzc.find("HUDLocationData") != std::string::npos && hzc.find("XPData") != std::string::npos, "location and XP are forwarded");
@@ -4712,20 +4778,70 @@ int main()
 				int overlayWnd = 22;
 				int hudRoot = 33;
 				int otherMovie = 44;
+				int reused = 55;
 				UiTidRecorder rec;
 				rec.HintWindowOwner(static_cast<std::uint32_t>(overlayWnd));
 				rec.OnMenuCreated("LoadingMenu", &loadingRoot, static_cast<std::uint32_t>(overlayWnd));
-				rec.OnAdvance(&loadingRoot, static_cast<std::uint32_t>(overlayWnd));
+				rec.OnAdvance(&loadingRoot, static_cast<std::uint32_t>(overlayWnd), 0);
 				ExpectEqI(static_cast<int>(rec.tid), 0, "a non-HUD menu create does not record the tid");
 				rec.OnMenuCreated("HUDMenu", &hudRoot, static_cast<std::uint32_t>(overlayWnd));
-				rec.OnAdvance(&otherMovie, static_cast<std::uint32_t>(overlayWnd));
+				rec.OnAdvance(&otherMovie, static_cast<std::uint32_t>(overlayWnd), 0);
 				ExpectEqI(static_cast<int>(rec.tid), 0, "a foreign window owner does not record the tid");
-				rec.OnAdvance(&hudRoot, static_cast<std::uint32_t>(hudRoot));
-				ExpectEqI(static_cast<int>(rec.tid), hudRoot, "the HUD root advance records the tid");
+				rec.OnAdvance(&hudRoot, 5, 0);
+				ExpectEqI(static_cast<int>(rec.tid), 5, "the HUD root advance records the tid");
 				ExpectEq(rec.source ? rec.source : "", kUiTidSourceHudRoot, "the record source is hud-root-advance");
-				rec.OnAdvance(&hudRoot, 99);
-				ExpectEqI(static_cast<int>(rec.tid), 99, "a later HUD-root tid self-heals");
-				Expect(rec.healed, "self-heal latches");
+				rec.OnAdvance(&hudRoot, 9, 10);
+				ExpectEqI(static_cast<int>(rec.tid), 5, "one stray HUD-root tid does not flip");
+				Expect(!rec.healed, "one stray does not heal");
+				for (std::uint64_t t = 20; t <= 200; t += 10)
+					rec.OnAdvance(&hudRoot, 5, t);
+				ExpectEqI(static_cast<int>(rec.tid), 5, "the recorded tid stays after many real advances");
+				rec.OnAdvance(&hudRoot, 9, 210);
+				rec.OnAdvance(&hudRoot, 9, 710);
+				ExpectEqI(static_cast<int>(rec.tid), 9, "500 ms of the new tid with none on the old switches");
+				Expect(rec.healed, "hysteresis heal latches");
+				ExpectEqI(rec.switchCount, 1, "one hysteresis switch");
+				ExpectEqI(rec.switchLogs, 1, "the switch is logged");
+				rec.OnMenuCreated("PauseMenu", &hudRoot, 9);
+				Expect(!rec.IsStoredHudRoot(&hudRoot), "a reused non-HUD root clears the stored HUD pointer");
+				rec.OnAdvance(&hudRoot, 11, 720);
+				rec.OnAdvance(&hudRoot, 11, 1220);
+				ExpectEqI(static_cast<int>(rec.tid), 9, "ABA reuse cannot flip the tid");
+				rec.OnMenuCreated("HUDMenu", &reused, 9);
+				rec.OnAdvance(&reused, 5, 1300);
+				rec.OnAdvance(&reused, 5, 1800);
+				ExpectEqI(static_cast<int>(rec.tid), 5, "a later HUD root can switch back after 500 ms");
+				ExpectEqI(rec.switchCount, 2, "every hysteresis switch is counted");
+				Expect(rec.switchLogs >= 2, "every switch is logged at ERROR, rate-limited");
+				UiTidRecorder always;
+				always.OnMenuCreated("HUDMenu", &hudRoot, 5);
+				always.OnAdvance(&hudRoot, 5, 0);
+				always.OnAdvance(&otherMovie, 9, 0);
+				always.OnAdvance(&otherMovie, 9, 600);
+				ExpectEqI(static_cast<int>(always.tid), 5, "a non-HUD advance does not start hysteresis");
+				Expect(!IsStoredHudRoot(&otherMovie, &hudRoot, nullptr),
+					"IsStoredHudRoot is not always true");
+				Expect(ShouldClearReusedHudRoot(&hudRoot, &hudRoot, false),
+					"a reused address of a non-HUD menu clears the store");
+				Expect(!ShouldClearReusedHudRoot(&hudRoot, &hudRoot, true),
+					"a HUD recreate at the same address keeps the store");
+				ExpectEqI(static_cast<int>(kUiTidHysteresisMs), 500, "hysteresis is 500 ms");
+				Expect(PollAlreadyIn(true), "an overlapping PollScaleform is blocked");
+				Expect(!PollAlreadyIn(false), "the first PollScaleform enters");
+				TakeLogMovieQueue tq;
+				Expect(tq.Take().empty(), "an empty take-log with no drops returns empty");
+				for (int i = 0; i < 501; ++i)
+					tq.Push(std::string("quest|Q|") + std::to_string(i));
+				ExpectEqI(static_cast<int>(tq.q.size()), 500, "the take-log queue caps at 500");
+				ExpectEqI(tq.dropped, 1, "the 501st push drops the oldest");
+				ExpectEq(tq.q.front(), "quest|Q|1", "the oldest line is shifted out");
+				const auto first = tq.Take();
+				Expect(first.rfind("drop|1\n", 0) == 0, "take prepends drop|N");
+				ExpectEqI(tq.dropped, 0, "take resets the drop count");
+				ExpectEqI(static_cast<int>(tq.q.size()), 460, "take leaves the remainder");
+				tq.dropped = 3;
+				tq.q.clear();
+				ExpectEq(tq.Take(), "drop|3", "a drop-only take still reports the count");
 			}
 			Expect(!UiTidHintAdopts(UiTidHint::WindowOwner, false), "window owner never adopts");
 			Expect(!UiTidHintAdopts(UiTidHint::AnyMenu, true), "any-menu never adopts even with a stored root");
