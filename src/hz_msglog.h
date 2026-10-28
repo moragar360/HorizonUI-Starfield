@@ -125,6 +125,7 @@ struct Entry {
 	int           n{1};
 	int           missed{0};
 	int           pin{0};
+	int           fromLater{0}; // Decision A (2026-10-27): later-point rows stay
 	std::string   norm; // cached NormalizeText(text); not written to JSON
 };
 
@@ -484,9 +485,12 @@ inline Character MakeCharacter(std::uint64_t a_playerId, std::string_view a_name
 	return c;
 }
 
+// Purpose: a row whose in-game time is after now is from a later point
+// (reload of an earlier save). Decision A (2026-10-27): those rows stay.
+// Inputs: entry and Calendar::GetDaysPassedExact(). Outputs: true when later.
 inline bool FromLaterPoint(const Entry& a_e, double a_gtNow)
 {
-	return a_gtNow > 0 && a_e.gt > a_gtNow;
+	return a_e.fromLater != 0 || (a_gtNow > 0 && a_e.gt > a_gtNow);
 }
 
 // Purpose: join a worker or detach it if it does not finish in a_ms. Used on
@@ -1062,9 +1066,12 @@ public:
 		++loadGen_;
 	}
 
-	void OnLoadApplied(std::string_view a_key)
+	// Purpose: release the load guard. a_jobGen skips a stale result when
+	// a newer load for the same key is already in flight.
+	void OnLoadApplied(std::string_view a_key, std::uint64_t a_jobGen = 0)
 	{
 		if (a_key.empty()) return;
+		if (a_jobGen && a_jobGen != loadGen_) return;
 		if (!SameLogKey(loadKey_, a_key)) return;
 		loadBusy_ = false;
 		loadKey_.clear();
@@ -1141,6 +1148,8 @@ public:
 		return out;
 	}
 
+	// Purpose: retry due slots from failSnap. P2-H: never rebuild a retry
+	// from an older snapshot when a newer job is already queued or in flight.
 	std::vector<WriteDecision> Poll(std::uint64_t a_nowMs = ~std::uint64_t{0})
 	{
 		std::vector<WriteDecision> out;
@@ -1153,6 +1162,8 @@ public:
 		}
 		for (const auto& k : keys) {
 			auto& s = SlotFor(k);
+			if (s.writePending || HasPendingFor(k))
+				continue;
 			LogState snap = s.hasFail ? s.failSnap : LogState{};
 			if (snap.character.key.empty())
 				snap.character.key = k;
@@ -1190,6 +1201,13 @@ private:
 		for (const auto& s : slots_)
 			if (s.key == folded) return &s;
 		return nullptr;
+	}
+
+	bool HasPendingFor(std::string_view a_key) const
+	{
+		for (const auto& q : pending_)
+			if (SameLogKey(q.key, a_key)) return true;
+		return false;
 	}
 
 	WriteDecision DecideAndQueue(std::string_view a_key, const LogState& a_snap,
@@ -1254,6 +1272,16 @@ inline std::int64_t LastPlayedDisplay(std::int64_t a_ts, std::int64_t a_fileMtim
 inline std::int64_t EpochSeconds()
 {
 	return static_cast<std::int64_t>(std::time(nullptr));
+}
+
+// Purpose: stamp lastPlayedTs before Snapshot so a write carries this
+// session (normal and quit). A 0 ts is ignored so a bad clock cannot wipe
+// a known value. Inputs: lastPlayedTs field and epoch seconds. Outputs: none.
+// Last modified: 2026-10-28.
+inline void StampLastPlayed(std::int64_t& a_lastPlayedTs, std::int64_t a_ts)
+{
+	if (a_ts > 0)
+		a_lastPlayedTs = a_ts;
 }
 
 // Purpose: a failed promote/recover for a name-hash buffer parks under the
@@ -1569,24 +1597,28 @@ public:
 		return false;
 	}
 
-	// Purpose: drop unpinned rows whose in-game time is later than now.
-	// Pins stay and are flagged by FromLaterPoint. A null/zero clock is a no-op.
-	// Inputs: Calendar::GetDaysPassedExact(). Outputs: number of dropped rows.
+	// Purpose: after a reload, mark rows from a later point. Decision A
+	// (2026-10-27): loading an earlier save must not drop any rows. Every
+	// later-point row, pinned or not, stays and is flagged fromLater (the
+	// view dims it and labels it "from a later point"). The history-size
+	// cap still evicts the oldest unpinned rows. A null/zero clock is a
+	// no-op. An automatic trim never writes an empty file or touches .bak.
+	// The id counter is not rewound.
+	// Inputs: Calendar::GetDaysPassedExact() at the HUD-ready edge.
+	// Outputs: number of rows newly flagged. Never a drop count.
+	// Dependencies: FromLaterPoint. Last modified: 2026-10-28.
 	int Prune(double a_gtNow)
 	{
 		if (a_gtNow <= 0) return 0;
-		double newest = 0;
-		for (const auto& e : entries)
-			if (e.gt > newest) newest = e.gt;
-		if (newest <= a_gtNow) return 0;
-		const auto before = entries.size();
-		std::vector<Entry> keep;
-		keep.reserve(entries.size());
+		int flagged = 0;
 		for (auto& e : entries) {
-			if (e.pin || e.gt <= a_gtNow) keep.push_back(std::move(e));
+			if (e.fromLater) continue;
+			if (a_gtNow > 0 && e.gt > a_gtNow) {
+				e.fromLater = 1;
+				++flagged;
+			}
 		}
-		entries.swap(keep);
-		return static_cast<int>(before - entries.size());
+		return flagged;
 	}
 
 	void ClearSession()
@@ -1912,7 +1944,7 @@ inline ViewSnap BuildView(const Buffer& a_buf, double a_gtNow, ViewStatus a_stat
 		row.gt = e.gt;
 		row.ut = e.ut;
 		row.lt = e.lt;
-		row.fromLater = FromLaterPoint(e, a_gtNow);
+		row.fromLater = e.fromLater != 0 || FromLaterPoint(e, a_gtNow);
 		v.entries.push_back(std::move(row));
 	}
 	return v;
@@ -2021,6 +2053,8 @@ inline std::string ToJson(const LogState& a_s, std::string_view a_plugin)
 		o += std::to_string(e.missed);
 		o += ", \"pin\": ";
 		o += std::to_string(e.pin);
+		o += ", \"later\": ";
+		o += std::to_string(e.fromLater ? 1 : 0);
 		o += " }";
 		if (i + 1 < a_s.entries.size()) o += ",";
 		o += "\n";
@@ -2220,6 +2254,10 @@ inline bool ParseEntry(JsonTok& a_t, Entry& a_e, bool& a_usable)
 			std::int64_t v = 0;
 			if (!JsonIntTok(a_t, v)) return false;
 			a_e.pin = v ? 1 : 0;
+		} else if (key == "later") {
+			std::int64_t v = 0;
+			if (!JsonIntTok(a_t, v)) return false;
+			a_e.fromLater = v ? 1 : 0;
 		} else if (!JsonSkipValue(a_t, 1)) {
 			return false;
 		}
@@ -2920,7 +2958,7 @@ public:
 		if (!PersistAllowed(buf.character)) return true;
 		if (persistHold) return false;
 		if (loadBusy.load()) return false;
-		buf.lastPlayedTs = EpochSeconds();
+		StampLastPlayed(buf.lastPlayedTs, EpochSeconds());
 		if (buf.character.key.empty()) return false;
 		const bool ok = store->Save(buf.Snapshot());
 		if (ok) {

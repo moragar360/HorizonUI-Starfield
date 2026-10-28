@@ -2424,9 +2424,6 @@ namespace HZ
 	MlIoJob                 g_mlIoJob;
 	std::thread             g_mlWThread;
 	std::atomic<bool>       g_mlWLive{false};
-	std::atomic<bool>       g_mlWFailed{false};
-	std::atomic<bool>       g_mlWRecovered{false};
-	std::atomic<ULONGLONG>  g_mlWRetryAt{0};
 	std::atomic<bool>       g_mlRecoverBusy{false};
 	bool                    g_mlHoldFlush = false;
 	bool                    g_mlPendingHud = false;
@@ -2543,11 +2540,8 @@ namespace HZ
 							bool failed = false;
 							hzlog::NoteWorkerSave(run == hzlog::WriteRun::Saved, failed);
 							wrRes.ok = !failed;
-							if (failed) {
+							if (failed)
 								wrRes.failSnap = std::move(wjob.snap);
-								g_mlWFailed.store(true);
-							} else
-								g_mlWRecovered.store(true);
 						}
 						{
 							std::lock_guard wlk(g_mlWMu);
@@ -2673,6 +2667,8 @@ namespace HZ
 	}
 
 	// Purpose: snapshot the buffer under g_mlMu and ask the coordinator.
+	// lastPlayedTs is stamped before Snapshot so normal and quit writes
+	// carry this session. persistHold blocks quit too (P2-I).
 	// Writer-side guards (load, empty, clearPending, hold-flush) live there.
 	void MsglogRequestWrite(bool a_force, bool a_quit = false)
 	{
@@ -2682,20 +2678,21 @@ namespace HZ
 				std::lock_guard lk(g_mlMu);
 				g_mlWrites.SetPersist(g_ml.buf.settings.persist);
 				if (!g_ml.buf.settings.persist) return;
+				if (g_ml.persistHold) return;
 				const auto key = g_ml.buf.character.key;
+				hzlog::StampLastPlayed(g_ml.buf.lastPlayedTs, hzlog::EpochSeconds());
 				auto snap = g_ml.buf.Snapshot();
 				if (a_quit) {
 					ds = g_mlWrites.OnQuit(key, snap);
 				} else {
-					if (g_ml.persistHold) return;
-					if (!hzlog::WriteAllowed(g_ml.dirty, a_force, g_ml.lastWriteMs, GetTickCount64(), 0))
+					if (!hzlog::WriteAllowed(g_ml.dirty, a_force, g_ml.lastWriteMs, GetTickCount64(),
+							g_mlWrites.RetryBackoffMs(key)))
 						return;
 					if (!hzlog::PersistAllowed(g_ml.buf.character)) {
 						if (hzlog::NoteNameHashSkip(g_ml.buf.character, GetTickCount64(), g_mlNameHashSkipMs))
 							REX::WARN("message log: persist skipped; character key is still a name hash");
 						return;
 					}
-					g_ml.buf.lastPlayedTs = static_cast<std::int64_t>(std::time(nullptr));
 					auto d = g_mlWrites.RequestWrite(key, snap, a_force);
 					if (d.queue) ds.push_back(std::move(d));
 				}
@@ -3172,8 +3169,10 @@ namespace HZ
 					g_ml.lastNotice.clear();
 					g_ml.buf.StartSession(ts);
 					{
-						const int dropped = g_ml.buf.Prune(g_mlEng.gt);
-						pruneEmpty = hzlog::PruneEmptiedBuffer(dropped, g_ml.buf.entries.empty());
+						const int later = g_ml.buf.Prune(g_mlEng.gt);
+						if (later > 0)
+							REX::INFO("message log: {} rows from a later point", later);
+						pruneEmpty = hzlog::PruneEmptiedBuffer(0, g_ml.buf.entries.empty());
 					}
 					g_mlWrites.OnLoadApplied(ch.key);
 					MsglogMirrorLoadBusy();
@@ -3190,8 +3189,10 @@ namespace HZ
 					needLoad = g_ml.buf.settings.persist && hzlog::PersistAllowed(ch);
 					if (!needLoad) {
 						g_ml.buf.StartSession(ts);
-						const int dropped = g_ml.buf.Prune(g_mlEng.gt);
-						pruneEmpty = hzlog::PruneEmptiedBuffer(dropped, g_ml.buf.entries.empty());
+						const int later = g_ml.buf.Prune(g_mlEng.gt);
+						if (later > 0)
+							REX::INFO("message log: {} rows from a later point", later);
+						pruneEmpty = hzlog::PruneEmptiedBuffer(0, g_ml.buf.entries.empty());
 						g_mlWrites.OnLoadApplied(ch.key);
 						MsglogMirrorLoadBusy();
 						g_mlCapture.store(true);
@@ -3259,6 +3260,8 @@ namespace HZ
 				const bool stale = hzlog::LoadApplyStale(jobGen, g_mlLoadGen, jobBufKey, g_ml.buf.character.key);
 				if (stale) {
 					runPending = g_mlPendingHud;
+					g_mlWrites.OnLoadApplied(jobBufKey.empty() ? ch.key : jobBufKey, jobGen);
+					MsglogMirrorLoadBusy();
 				} else if (!ok) {
 					hzlog::NoteLoadResult(false, g_ml.persistHold);
 					if (g_ml.buf.character.keySource == "nameHash")
@@ -3290,8 +3293,10 @@ namespace HZ
 					g_ml.MergeKeptHeldIfMatch(ch.key);
 					g_ml.lastNotice = std::move(notice);
 					g_ml.buf.StartSession(ts);
-					const int dropped = g_ml.buf.Prune(gt);
-					pruneEmpty = hzlog::PruneEmptiedBuffer(dropped, g_ml.buf.entries.empty());
+					const int later = g_ml.buf.Prune(gt);
+					if (later > 0)
+						REX::INFO("message log: {} rows from a later point", later);
+					pruneEmpty = hzlog::PruneEmptiedBuffer(0, g_ml.buf.entries.empty());
 					if (pruneEmpty) {
 						g_mlWrites.OnPruneEmpty(g_ml.buf.character.key);
 						g_ml.dirty = false;

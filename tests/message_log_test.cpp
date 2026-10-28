@@ -728,8 +728,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.3", "file version is 0.43.0.3");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 3, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.4", "file version is 0.43.0.4");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 4, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -1060,6 +1060,18 @@ int main()
 
 	// ---- P2 storage fixes the UI exposes ----
 	{
+		{
+			Buffer stamped;
+			stamped.lastPlayedTs = 0;
+			StampLastPlayed(stamped.lastPlayedTs, 0);
+			ExpectEqI(static_cast<int>(stamped.lastPlayedTs), 0, "a 0 stamp is ignored");
+			StampLastPlayed(stamped.lastPlayedTs, 1'700'000'123);
+			Expect(stamped.lastPlayedTs == 1'700'000'123, "stamp writes epoch seconds");
+			const auto snap = stamped.Snapshot();
+			Expect(snap.lastPlayedTs == 1'700'000'123, "Snapshot carries the stamped lastPlayedTs");
+			StampLastPlayed(stamped.lastPlayedTs, 0);
+			Expect(stamped.lastPlayedTs == 1'700'000'123, "a later 0 stamp does not wipe lastPlayedTs");
+		}
 		Expect(!LastPlayedKnown(726), "legacy uptime lastPlayedTs is unknown");
 		Expect(!LastPlayedKnown(999999999), "just below 1e9 is unknown");
 		Expect(LastPlayedKnown(1000000000), "epoch seconds are known");
@@ -1342,22 +1354,79 @@ int main()
 		ExpectEqI(b.PinCount(), kPinCap, "pin count stays 50 after the refused pin");
 	}
 
-	// ---- prune ----
+	// ---- prune (Decision A 2026-10-27: keep every later-point row) ----
 	{
 		Buffer b;
 		b.Offer(Cap(Kind::Game, "old", 1'000, 10.0));
 		b.Offer(Cap(Kind::Game, "mid", 2'000, 20.0));
 		b.Offer(Cap(Kind::Game, "future", 3'000, 30.0));
 		const auto futureId = b.entries.back().id;
+		const auto midId = b.entries[1].id;
+		const auto nextBefore = b.nextId;
 		Expect(b.Pin(futureId), "pin the future row");
 		ExpectEqI(b.Prune(0.0), 0, "gt 0 never prunes");
 		ExpectEqI(static_cast<int>(b.entries.size()), 3, "gt 0 keeps every row");
-		ExpectEqI(b.Prune(15.0), 1, "unpinned future rows drop");
-		ExpectEqI(static_cast<int>(b.entries.size()), 2, "old + pinned future remain");
-		bool flagged = false;
-		for (const auto& e : b.entries)
-			if (e.id == futureId && FromLaterPoint(e, 15.0) && e.pin) flagged = true;
-		Expect(flagged, "kept pin is flagged from a later point");
+		ExpectEqI(b.Prune(15.0), 2, "later-point rows are flagged, not dropped");
+		ExpectEqI(static_cast<int>(b.entries.size()), 3, "Decision A: every later-point row stays");
+		Expect(b.nextId == nextBefore, "id counter does not rewind");
+		bool midLater = false, futureLater = false;
+		for (const auto& e : b.entries) {
+			if (e.id == midId && FromLaterPoint(e, 15.0) && e.fromLater && !e.pin) midLater = true;
+			if (e.id == futureId && FromLaterPoint(e, 15.0) && e.fromLater && e.pin) futureLater = true;
+		}
+		Expect(midLater, "unpinned later-point row is flagged fromLater");
+		Expect(futureLater, "pinned later-point row is flagged fromLater");
+
+		b.Offer(Cap(Kind::Game, "new after reload", 4'000, 15.0));
+		ExpectEqI(static_cast<int>(b.entries.size()), 4, "a new capture after reload keeps later rows");
+		bool stillMid = false, stillFuture = false;
+		for (const auto& e : b.entries) {
+			if (e.id == midId && e.fromLater) stillMid = true;
+			if (e.id == futureId && e.fromLater) stillFuture = true;
+		}
+		Expect(stillMid && stillFuture, "later-point flags survive a new capture");
+		Expect(b.nextId > futureId, "new rows take ids after the later-point rows");
+
+		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.4");
+		auto parsed = FromJson(json);
+		Expect(parsed.ok, "later-point flags round-trip through JSON");
+		Buffer restarted;
+		restarted.LoadState(std::move(parsed.state));
+		bool restartMid = false, restartFuture = false;
+		for (const auto& e : restarted.entries) {
+			if (e.id == midId && e.fromLater) restartMid = true;
+			if (e.id == futureId && e.fromLater) restartFuture = true;
+		}
+		Expect(restartMid && restartFuture, "a restart keeps fromLater flags");
+		const auto view = BuildView(restarted, 15.0, ViewStatus::Ok);
+		int viewLater = 0;
+		for (const auto& row : view.entries)
+			if (row.fromLater) ++viewLater;
+		Expect(viewLater >= 2, "the view dims later-point rows after a restart");
+
+		Buffer cap;
+		cap.SetHistorySize(100);
+		for (int i = 0; i < 120; ++i) {
+			auto c = Cap(Kind::Game, "cap row", 10'000 + i, 40.0);
+			c.text += std::to_string(i);
+			cap.Offer(c);
+		}
+		ExpectEqI(static_cast<int>(cap.entries.size()), 100, "history-size cap still evicts during offer");
+		Expect(cap.Pin(cap.entries.front().id), "pin the oldest remaining row");
+		const auto pinId = cap.entries.front().id;
+		for (int i = 0; i < 10; ++i) {
+			auto c = Cap(Kind::Game, "more cap", 20'000 + i, 41.0);
+			c.text += std::to_string(i);
+			cap.Offer(c);
+		}
+		ExpectEqI(static_cast<int>(cap.entries.size()), 101, "pins sit on top of HistorySize after later-point rows");
+		bool pinLived = false;
+		for (const auto& e : cap.entries)
+			if (e.id == pinId && e.pin) pinLived = true;
+		Expect(pinLived, "cap eviction never removes a pin");
+		const int flagged = cap.Prune(1.0);
+		Expect(flagged > 0, "later-point rows are flagged after the cap");
+		ExpectEqI(static_cast<int>(cap.entries.size()), 101, "flagging later-point rows does not evict");
 	}
 
 	// ---- per-character switch / NG+ ----
@@ -1553,8 +1622,12 @@ int main()
 		Expect(main.find("WriterStartAllowed") != std::string::npos, "detached writer blocks a second thread");
 		Expect(main.find("ApplyRecoveredFile") != std::string::npos && main.find("HoldRetryDue") != std::string::npos,
 			"DLL promotion merges on the worker and is throttled");
-		Expect(main.find("g_mlWFailed.store(true)") != std::string::npos && main.find("NoteWorkerSave") != std::string::npos,
-			"the worker sets the failure flag");
+		Expect(main.find("NoteWorkerSave") != std::string::npos,
+			"the worker records save failure");
+		Expect(main.find("g_mlWFailed") == std::string::npos
+			&& main.find("g_mlWRecovered") == std::string::npos
+			&& main.find("g_mlWRetryAt") == std::string::npos,
+			"unused worker fail/retry globals are gone");
 		Expect(main.find("g_mlWrites.OnWriteResult") != std::string::npos, "write results go to the coordinator");
 		Expect(main.find("NoteWriteFailure") != std::string::npos, "a failed write is retried");
 		Expect(main.find("WriteAllowed") != std::string::npos, "force can retry a write");
@@ -1704,6 +1777,18 @@ int main()
 			"lastPlayedTs is not PC uptime");
 		Expect(main.find("std::time(nullptr)") != std::string::npos,
 			"lastPlayedTs writes epoch seconds");
+		Expect(main.find("rows from a later point") != std::string::npos,
+			"HUD-ready logs the later-point flag count");
+		Expect(Slurp("src/hz_msglog.h").find("Decision A") != std::string::npos
+			&& Slurp("src/hz_msglog.h").find("must not drop any rows") != std::string::npos,
+			"Prune comments match Decision A");
+		{
+			const auto stale = main.find("const bool stale = hzlog::LoadApplyStale");
+			Expect(stale != std::string::npos, "ApplyLoad detects a stale load result");
+			const auto win = stale == std::string::npos ? std::string() : main.substr(stale, 500);
+			Expect(win.find("OnLoadApplied") != std::string::npos && win.find("jobGen") != std::string::npos,
+				"a stale load result still releases loadBusy for that gen");
+		}
 		Expect(main.find("void MsglogClearHistory()") != std::string::npos, "DLL Clear history");
 		Expect(main.find("MsglogDeleteCurrentFileUi") == std::string::npos, "no DLL erase-current-file call");
 		Expect(main.find("MsglogListOthers()") != std::string::npos, "DLL list other characters");
@@ -3256,6 +3341,18 @@ int main()
 				Expect(body.find("RequestWrite(key, snap, a_force,") == std::string::npos
 					&& body.find("a_holdFlush") == std::string::npos,
 					"holdFlush is not a RequestWrite caller literal");
+				Expect(body.find("StampLastPlayed") != std::string::npos, "lastPlayedTs is stamped on write");
+				const auto stampAt = body.find("StampLastPlayed");
+				const auto snapAt = body.find("Snapshot()");
+				Expect(stampAt != std::string::npos && snapAt != std::string::npos && stampAt < snapAt,
+					"lastPlayedTs is set before Snapshot");
+				const auto holdAt = body.find("if (g_ml.persistHold) return;");
+				const auto quitAt = body.find("OnQuit");
+				Expect(holdAt != std::string::npos && quitAt != std::string::npos && holdAt < quitAt,
+					"persistHold guards the quit write too");
+				Expect(body.find("GetTickCount64(), 0)") == std::string::npos
+					&& body.find("RetryBackoffMs") != std::string::npos,
+					"RequestWrite uses the per-key backoff, not 0");
 			}
 			{
 				const auto wr = main.find("void MsglogWriter()");
@@ -3598,13 +3695,19 @@ int main()
 			future.gt = 50.0;
 			future.sess = 1;
 			pruneBuf.entries.push_back(future);
-			const int dropped = pruneBuf.Prune(1.0);
-			Expect(hzlog::PruneEmptiedBuffer(dropped, pruneBuf.entries.empty()),
-				"a prune that empties memory is detected");
+			const int flagged = pruneBuf.Prune(1.0);
+			ExpectEqI(flagged, 1, "Decision A: the later-point row is flagged");
+			ExpectEqI(static_cast<int>(pruneBuf.entries.size()), 1,
+				"Decision A: prune does not drop the later-point row");
+			Expect(pruneBuf.entries[0].fromLater, "the kept row is fromLater");
+			Expect(!hzlog::PruneEmptiedBuffer(0, pruneBuf.entries.empty()),
+				"a later-point mark is not an emptying prune");
+			Expect(hzlog::PruneEmptiedBuffer(1, true),
+				"the emptying-trim helper still detects a true empty trim");
 			MsglogWriteCoordinator pruneCoord;
 			pruneCoord.OnPruneEmpty(pruneBuf.character.key);
 			Expect(!pruneCoord.ClearPending(pruneBuf.character.key),
-				"a prune that empties memory does not set clearPending");
+				"OnPruneEmpty does not set clearPending");
 		}
 
 		std::error_code ec;
@@ -4100,6 +4203,45 @@ int main()
 			Expect(coord.Poll(0).empty(), "A is not retried before its backoff");
 			ExpectEqI(static_cast<int>(coord.Poll(static_cast<std::uint64_t>(kRetryMsMin)).size()), 1,
 				"A retries on its own timer");
+		}
+
+		{
+			const auto ch = MakeCharacter(0x6017u, "Sam");
+			MsglogWriteCoordinator coord;
+			LogState oldSnap;
+			oldSnap.character = ch;
+			Entry oldE;
+			oldE.text = "older fail snap";
+			oldE.kind = Kind::Game;
+			oldSnap.entries.push_back(oldE);
+			auto failed = coord.RequestWrite(ch.key, oldSnap, true);
+			Expect(failed.queue, "P2-H first write queues");
+			coord.OnWriteResult(ch.key, failed.emit.writeSeq, false, &failed.emit.snap);
+			LogState newSnap;
+			newSnap.character = ch;
+			Entry newE;
+			newE.text = "newer queued rows";
+			newE.kind = Kind::Game;
+			newSnap.entries.push_back(newE);
+			auto newer = coord.RequestWrite(ch.key, newSnap, true);
+			Expect(newer.queue, "P2-H a newer write queues after the fail");
+			Expect(coord.WritePending(ch.key), "P2-H newer job is pending");
+			auto retries = coord.Poll();
+			Expect(retries.empty(), "P2-H Poll does not replace a newer queued job with failSnap");
+			Expect(coord.WritePendingSeq(ch.key) == newer.emit.writeSeq,
+				"P2-H the newer write seq stays queued");
+		}
+
+		{
+			MsglogWriteCoordinator coord;
+			const auto ch = MakeCharacter(0x6018u, "Sam");
+			coord.OnLoadStart(ch.key);
+			Expect(coord.LoadBusy(), "loadBusy is set on start");
+			coord.OnLoadStart(ch.key);
+			coord.OnLoadApplied(ch.key, 1);
+			Expect(coord.LoadBusy(), "a stale load result does not clear a newer load");
+			coord.OnLoadApplied(ch.key, 2);
+			Expect(!coord.LoadBusy(), "the matching load gen clears loadBusy");
 		}
 
 		std::error_code ec2;
