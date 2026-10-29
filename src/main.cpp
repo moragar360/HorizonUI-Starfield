@@ -935,22 +935,39 @@ namespace HZ
 	// touch menuObj / uiMovie. Inputs: UI and the light-menu flag.
 	// Outputs: true when no blocking menu is open. Author: Moragar.
 	// Last modified: 2026-10-28.
+	const char* const kHudBlockMenus[] = {
+		"LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu", "Console",
+		"SpaceshipEditorMenu", "WorkshopMenu", "WorkshopBuilderMenu", "InventoryMenu",
+		"PhotoModeMenu", "GalaxyStarMapMenu", "DataMenu", "ShipCrewMenu", "ShipCrewAssignMenu",
+		"SpaceshipInfoMenu",
+		"SkillsMenu", "BSMissionMenu", "PowersMenu", "StatusMenu", "ResearchMenu",
+		"ArmorCraftingMenu", "WeaponsCraftingMenu", "DrugsCraftingMenu", "FoodCraftingMenu",
+		"IndustrialCraftingMenu", "ContainerMenu", "BarterMenu", "GenesisTerminalMenu",
+		"SecurityMenu", "ChargenMenu", "PhotoGalleryMenu", "Workshop_BlueprintMenu"
+	};
+
 	bool HudMenusClear(RE::UI* a_ui, bool a_light = true)
 	{
 		if (!a_ui) return false;
 		if (!a_ui->IsMenuOpen("HUDMenu")) return false;
-		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu", "Console",
-		                "SpaceshipEditorMenu", "WorkshopMenu", "WorkshopBuilderMenu", "InventoryMenu",
-		                "PhotoModeMenu", "GalaxyStarMapMenu", "DataMenu", "ShipCrewMenu", "ShipCrewAssignMenu",
-		                "SpaceshipInfoMenu",
-		                "SkillsMenu", "BSMissionMenu", "PowersMenu", "StatusMenu", "ResearchMenu",
-		                "ArmorCraftingMenu", "WeaponsCraftingMenu", "DrugsCraftingMenu", "FoodCraftingMenu",
-		                "IndustrialCraftingMenu", "ContainerMenu", "BarterMenu", "GenesisTerminalMenu",
-		                "SecurityMenu", "ChargenMenu", "PhotoGalleryMenu", "Workshop_BlueprintMenu" })
+		for (auto m : kHudBlockMenus)
 			if (a_ui->IsMenuOpen(m)) return false;
 		for (auto m : kDenyMenus42)   // v0.42.0
 			if ((a_light || !LightMenuOpen(a_ui) || std::strcmp(m, "ScopeMenu") != 0) && a_ui->IsMenuOpen(m)) return false;
 		return true;
+	}
+
+	// Purpose: name the menu that keeps the HUD from being ready.
+	// Menu-map only. Inputs: UI. Outputs: a registered name or "?".
+	const char* HudBlockingMenu(RE::UI* a_ui)
+	{
+		if (!a_ui) return "?";
+		if (!a_ui->IsMenuOpen("HUDMenu")) return "HUDMenu";
+		for (auto m : kHudBlockMenus)
+			if (a_ui->IsMenuOpen(m)) return m;
+		for (auto m : kDenyMenus42)
+			if (a_ui->IsMenuOpen(m)) return m;
+		return "menu";
 	}
 
 	// Purpose: HUD is up and the movie document is live. UI thread only
@@ -1731,9 +1748,13 @@ namespace HZ
 
 	void BuildLogFlush()
 	{
-		const std::string s = "HUD " + g_buildsHud + ", Comms HUD messages " + g_buildsMsg;
-		if (s == g_buildsLogged) return;
-		g_buildsLogged = s;
+		std::string s;
+		{
+			std::lock_guard lk(g_buildsMu);
+			s = "HUD " + g_buildsHud + ", Comms HUD messages " + g_buildsMsg;
+			if (s == g_buildsLogged) return;
+			g_buildsLogged = s;
+		}
 		REX::INFO("movie builds: {} (DLL file version {})", s, DllFileVersion());
 	}
 
@@ -1746,8 +1767,10 @@ namespace HZ
 		GValue a;
 		if (HudInvoke("hzBuildId", &a) && a.IsString() && a.GetString())
 			hud = a.GetString();
-		std::lock_guard lk(g_buildsMu);
-		if (!hud.empty()) g_buildsHud = std::move(hud);
+		{
+			std::lock_guard lk(g_buildsMu);
+			if (!hud.empty()) g_buildsHud = std::move(hud);
+		}
 		BuildLogFlush();
 	}
 
@@ -1763,8 +1786,10 @@ namespace HZ
 			if (m->menuObj.Invoke("hzcBuildId", &b, nullptr, 0) && b.IsString() && b.GetString())
 				msg = b.GetString();
 		}
-		std::lock_guard lk(g_buildsMu);
-		if (!msg.empty()) g_buildsMsg = std::move(msg);
+		{
+			std::lock_guard lk(g_buildsMu);
+			if (!msg.empty()) g_buildsMsg = std::move(msg);
+		}
 		BuildLogFlush();
 	}
 
@@ -2526,21 +2551,27 @@ namespace HZ
 	// Author: Moragar. Last modified: 2026-10-28.
 	void PublishCrossName()
 	{
+		const auto now = GetTickCount64();
+		const auto last = g_crossAt.load(std::memory_order_acquire);
+		if (last && now >= last && now - last < hzlog::kCrossNameMs)
+			return;
 		std::string name;
 		try {
 			auto ui = RE::UI::GetSingleton();
-			if (!ui) return;
-			auto menu = MenuLive(ui, "HUDMenu", "hzCrossName");
-			if (!menu || !menu->menuObj.HasMember("hzCrossName")) return;
-			GValue r;
-			if (!menu->menuObj.Invoke("hzCrossName", &r, nullptr, 0) || !r.IsString() || !r.GetString()) return;
-			const auto view = hzmsg::Trim(r.GetString());
-			if (view.empty() || view.find('<') != std::string_view::npos) return;
-			name = hzpreset::Utf8Prefix(std::string(view), 80);
+			if (ui) {
+				auto menu = MenuLive(ui, "HUDMenu", "hzCrossName");
+				if (menu && menu->menuObj.HasMember("hzCrossName")) {
+					GValue r;
+					if (menu->menuObj.Invoke("hzCrossName", &r, nullptr, 0) && r.IsString() && r.GetString()) {
+						const auto view = hzmsg::Trim(r.GetString());
+						if (!view.empty() && view.find('<') == std::string_view::npos)
+							name = hzpreset::Utf8Prefix(std::string(view), 80);
+					}
+				}
+			}
 		} catch (...) {
-			return;
+			name.clear();
 		}
-		const auto now = GetTickCount64();
 		std::lock_guard lk(g_crossMu);
 		g_crossName = std::move(name);
 		g_crossAt.store(now, std::memory_order_release);
@@ -2628,7 +2659,10 @@ namespace HZ
 			if (!hit.ok) continue;
 			if (hit.kind == "unavailable" && hit.sub == "busy" && hit.name.empty()) {
 				const auto who = HzCrossName();
-				if (!who.empty()) hit.name = who;
+				if (!who.empty()) {
+					hit.name = who;
+					REX::INFO("comms busy card name=\"{}\"", who);
+				}
 			}
 			if (g_iniDebug && hit.kind == "crew")
 				REX::INFO("crew card: path=dll-match sub={} name=\"{}\" text=\"{}\"", hit.sub, hit.name, n.text);
@@ -3329,7 +3363,49 @@ namespace HZ
 		std::lock_guard lk(g_mlMu);
 		const auto st = hzlog::ClassifyViewStatus(
 			g_ml.buf.settings, g_ml.buf.character, g_ml.writePending, g_ml.persistHold);
-		return hzlog::BuildView(g_ml.buf, a_gtNow, st);
+		auto v = hzlog::BuildView(g_ml.buf, a_gtNow, st);
+		v.folder = g_ml.FolderPathDisplay();
+		v.otherCount = static_cast<int>(g_ml.otherCache.size());
+		return v;
+	}
+
+	void MsglogApplyLiveSettings(const hzlog::Settings& a_s)
+	{
+		std::lock_guard lk(g_mlMu);
+		g_ml.buf.settings.record = a_s.record;
+		g_ml.buf.settings.missedBadge = a_s.missedBadge;
+		g_ml.buf.settings.logTypes = a_s.logTypes;
+		g_ml.buf.SetHistorySize(a_s.historySize);
+		g_ml.ApplyPersist(a_s.persist);
+		g_mlWrites.SetPersist(a_s.persist);
+		g_ml.buf.BumpView();
+	}
+
+	void MsglogApplySet(std::string_view a_rest)
+	{
+		const auto p = a_rest.find('|');
+		if (p == std::string_view::npos) return;
+		const auto key = a_rest.substr(0, p);
+		const auto val = a_rest.substr(p + 1);
+		hzlog::Settings s;
+		{
+			std::lock_guard lk(g_mlMu);
+			s = g_ml.buf.settings;
+		}
+		if (key == "record")
+			s.record = val != "0";
+		else if (key == "persist")
+			s.persist = val != "0";
+		else if (key == "missed")
+			s.missedBadge = val != "0";
+		else if (key == "history") {
+			try { s.historySize = hzlog::ClampHistory(std::stoi(std::string(val))); }
+			catch (...) { return; }
+		} else if (key == "types")
+			s.logTypes = hzlog::ParseLogTypes(val);
+		else
+			return;
+		MsglogApplyLiveSettings(s);
 	}
 
 	void MsglogQueueListRefresh()
@@ -3471,9 +3547,21 @@ namespace HZ
 			MsglogClearSession();
 			return;
 		}
+		if (s == "clearhist") {
+			MsglogClearHistory();
+			return;
+		}
+		if (s == "list") {
+			MsglogQueueListRefresh();
+			return;
+		}
 		const auto p = s.find('|');
 		if (p == std::string_view::npos) return;
 		const auto op = s.substr(0, p);
+		if (op == "set") {
+			MsglogApplySet(s.substr(p + 1));
+			return;
+		}
 		std::uint64_t id = 0;
 		try {
 			id = static_cast<std::uint64_t>(std::stoull(std::string(s.substr(p + 1))));
@@ -3517,7 +3605,16 @@ namespace HZ
 			if (g_mlUiPacked && !acted && gen == g_mlUiPackGen)
 				return;
 			const auto view = MsglogCopyView(MsglogEngSnap().gt);
-			const auto packed = hzlog::PackView(view);
+			auto packed = hzlog::PackView(view);
+			std::vector<hzlog::OtherCharacter> others;
+			{
+				std::lock_guard lk(g_mlMu);
+				others = g_ml.otherCache;
+			}
+			for (const auto& oc : others) {
+				packed += '\n';
+				packed += hzlog::PackOtherLine(oc);
+			}
 			GValue arg(packed.c_str());
 			HudInvoke("hzSetMsglogView", nullptr, &arg, 1);
 			g_mlUiPacked = true;
@@ -4178,9 +4275,16 @@ namespace HZ
 		try { PublishCrossName(); } catch (...) {}
 		if (g_mlHudReadyReq.exchange(false))
 			MsglogOnHudReady();
-		if (hzlog::SettingsKeyHudTake(g_settingsKeyReq.exchange(false, std::memory_order_acq_rel),
-				g_settingsKeyAt.load(std::memory_order_acquire), now))
-			OnSettingsKey();
+		{
+			const bool had = g_settingsKeyReq.exchange(false, std::memory_order_acq_rel);
+			const auto at = g_settingsKeyAt.load(std::memory_order_acquire);
+			if (had && !hzlog::SettingsKeyLatchFresh(at, now)) {
+				const auto age = now >= at ? now - at : 0;
+				REX::INFO("settings key latch expired (age={}ms)", age);
+			}
+			if (hzlog::SettingsKeyHudTake(had, at, now))
+				OnSettingsKey();
+		}
 
 		const bool hudSafe = HudSafe();
 		g_hudSafeHint.store(hudSafe, std::memory_order_relaxed);
@@ -4189,7 +4293,10 @@ namespace HZ
 				if (g_open.load()) ResetSettingsState();
 				return;
 			}
-			if (g_hudSince) { REX::INFO("HUD not ready (loading/menu)"); ResetSettingsState(); }
+			if (g_hudSince) {
+				REX::INFO("HUD not ready (loading/menu {})", HudBlockingMenu(RE::UI::GetSingleton()));
+				ResetSettingsState();
+			}
 			g_hudSince = 0;
 			g_hudReadyLogged.store(false);
 			return;
@@ -4282,12 +4389,15 @@ namespace HZ
 			return;
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) return;
+		const bool teardown = !HudMenusClear(ui, false);
 		auto adopt = [&](const char* a_name, std::atomic<RE::Scaleform::GFx::ASMovieRootBase*>& a_store) {
+			auto stored = a_store.load(std::memory_order_acquire);
+			if (stored && stored != a_this) return;
+			if (stored != a_this && teardown) return;
 			if (!ui->IsMenuOpen(a_name)) return;
 			auto menu = ui->GetMenu(a_name);
 			if (!menu || !menu->uiMovie || !menu->uiMovie->asMovieRoot) return;
 			auto* live = menu->uiMovie->asMovieRoot.get();
-			auto stored = a_store.load(std::memory_order_acquire);
 			if (!hzlog::ShouldAdoptLiveRoot(a_this, stored, live)) return;
 			a_store.store(live, std::memory_order_release);
 			const auto last = g_adoptLogMs.load(std::memory_order_relaxed);
@@ -4322,17 +4432,29 @@ namespace HZ
 		try { TryAdoptLiveRoot(a_this, now); } catch (...) {}
 		const auto lastBeat = g_pollHeartbeatMs.load(std::memory_order_relaxed);
 		if (hzlog::PollHeartbeatDue(lastBeat, now, hzlog::kPollHeartbeatMs)) {
-			const auto lastHud = g_lastHudPollMs.load(std::memory_order_relaxed);
-			const auto age = lastHud && now >= lastHud ? now - lastHud : 0;
-			REX::INFO("scaleform: poll alive calls={} lastTid={} hudSafe={} root={} uiTid={} hudPolls={} lastHudAge={} hudRoot={} msgRoot={}",
-				n, g_lastHudPollTid.load(std::memory_order_relaxed),
-				g_hudSafeHint.load(std::memory_order_relaxed) ? 1 : 0,
-				static_cast<const void*>(g_hudRoot.load(std::memory_order_acquire)),
-				g_uiTid.load(std::memory_order_relaxed),
-				g_hudPolls.load(std::memory_order_relaxed), age,
-				g_hudRoot.load(std::memory_order_acquire) ? 1 : 0,
-				g_hudMsgRoot.load(std::memory_order_acquire) ? 1 : 0);
-			g_pollHeartbeatMs.store(now, std::memory_order_relaxed);
+			auto expected = lastBeat;
+			if (g_pollHeartbeatMs.compare_exchange_strong(expected, now,
+					std::memory_order_acq_rel, std::memory_order_relaxed)) {
+				bool hudSafe = false;
+				if (auto uiBeat = RE::UI::GetSingleton())
+					hudSafe = HudMenusClear(uiBeat, true);
+				if (hzlog::IsHudMenuRoot(a_this, g_hudRoot.load(std::memory_order_acquire))) {
+					hudSafe = HudSafe();
+					g_hudSafeHint.store(hudSafe, std::memory_order_relaxed);
+				} else {
+					g_hudSafeHint.store(hudSafe, std::memory_order_relaxed);
+				}
+				const auto lastHud = g_lastHudPollMs.load(std::memory_order_relaxed);
+				const auto age = lastHud && now >= lastHud ? now - lastHud : 0;
+				REX::INFO("scaleform: poll alive calls={} lastTid={} hudSafe={} root={} uiTid={} hudPolls={} lastHudAge={} hudRoot={} msgRoot={}",
+					n, g_lastHudPollTid.load(std::memory_order_relaxed),
+					hudSafe ? 1 : 0,
+					static_cast<const void*>(g_hudRoot.load(std::memory_order_acquire)),
+					g_uiTid.load(std::memory_order_relaxed),
+					g_hudPolls.load(std::memory_order_relaxed), age,
+					g_hudRoot.load(std::memory_order_acquire) ? 1 : 0,
+					g_hudMsgRoot.load(std::memory_order_acquire) ? 1 : 0);
+			}
 		}
 		const auto hud = g_hudRoot.load(std::memory_order_acquire);
 		const auto msg = g_hudMsgRoot.load(std::memory_order_acquire);

@@ -22,7 +22,7 @@ SKIP_ROOTS with a reason. That table is empty on purpose: a Scaleform
 call inside Poll / FilesPollWork / BannerPollWork / MsglogPoll must fail.
 
 Author: Moragar
-Last modified: 2026-10-28
+Last modified: 2026-10-29
 """
 
 from __future__ import annotations
@@ -226,33 +226,24 @@ def main() -> int:
     hud_text = reach_text(from_hud)
     msg_text = reach_text(from_msg)
     scope_text = reach_text(reachable("ScopeClipPoll", cpp_calls)) if "ScopeClipPoll" in cpp_fns else ""
-    hud_foreign = [
-        t
-        for t in (
-            'MenuLive(ui, "HUDMessagesMenu"',
-            'MenuMovie(ui, "HUDMessagesMenu"',
-            'MenuLive(a_ui, "HUDMessagesMenu"',
-            'MenuLive(ui, "ScopeMenu"',
-            "hzcTakeLog",
-            "hzcCardPush",
-            'Invoke("hzcDllScan"',
-            'HasMember("hzcDllScan"',
-        )
-        if t in hud_text
-    ]
-    msg_foreign = [
-        t
-        for t in (
-            'MenuLive(ui, "HUDMenu"',
-            'MenuMovie(ui, "HUDMenu"',
-            "HudInvoke(",
-            'Invoke("hzCrossName"',
-            'Invoke("hz41DllScan"',
-            'HasMember("hz41DllScan"',
-        )
-        if t in msg_text
-    ]
-    scope_foreign = [t for t in ('MenuLive(ui, "HUDMenu"', "HudInvoke(", 'MenuLive(ui, "HUDMessagesMenu"') if t in scope_text]
+
+    def menu_live_hits(text: str, menu: str) -> list[str]:
+        return [
+            m.group(0)
+            for m in re.finditer(r'(?:MenuLive|MenuMovie)\s*\(\s*\w+\s*,\s*"' + re.escape(menu) + r'"', text)
+        ]
+
+    hud_foreign = menu_live_hits(hud_text, "HUDMessagesMenu") + menu_live_hits(hud_text, "ScopeMenu")
+    for t in ("hzcTakeLog", "hzcCardPush", 'Invoke("hzcDllScan"', 'HasMember("hzcDllScan"'):
+        if t in hud_text:
+            hud_foreign.append(t)
+    msg_foreign = menu_live_hits(msg_text, "HUDMenu")
+    for t in ("HudInvoke(", 'Invoke("hzCrossName"', 'Invoke("hz41DllScan"', 'HasMember("hz41DllScan"'):
+        if t in msg_text:
+            msg_foreign.append(t)
+    scope_foreign = menu_live_hits(scope_text, "HUDMenu") + menu_live_hits(scope_text, "HUDMessagesMenu")
+    if "HudInvoke(" in scope_text:
+        scope_foreign.append("HudInvoke(")
     if hud_foreign:
         print("FAIL: PollScaleform reaches a foreign movie token: " + ", ".join(hud_foreign), file=sys.stderr)
         return 1

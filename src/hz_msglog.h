@@ -2131,6 +2131,13 @@ struct ViewSnap {
 	int                    sess{0};
 	std::int64_t           sessStartTs{0};
 	ViewStatus             status{ViewStatus::Ok};
+	bool                   record{true};
+	bool                   persist{true};
+	bool                   missedBadge{true};
+	int                    historySize{kHistoryDefault};
+	std::uint32_t          logTypes{kTypeAll};
+	int                    otherCount{0};
+	std::string            folder;
 };
 
 inline constexpr int kViewEntryCap = kLoadEntryCap;
@@ -2154,6 +2161,11 @@ inline ViewSnap BuildView(const Buffer& a_buf, double a_gtNow, ViewStatus a_stat
 	v.sess = a_buf.sess;
 	v.sessStartTs = a_buf.sessStartTs;
 	v.status = a_status;
+	v.record = a_buf.settings.record;
+	v.persist = a_buf.settings.persist;
+	v.missedBadge = a_buf.settings.missedBadge;
+	v.historySize = a_buf.settings.historySize;
+	v.logTypes = a_buf.settings.logTypes;
 	const auto n = a_buf.entries.size();
 	const auto start = n > static_cast<std::size_t>(kViewEntryCap)
 		? n - static_cast<std::size_t>(kViewEntryCap) : 0;
@@ -2223,6 +2235,20 @@ inline std::string PackView(const ViewSnap& a_v)
 	o += std::to_string(a_v.sessStartTs);
 	o += '|';
 	o += std::to_string(a_v.entries.size());
+	o += '|';
+	o += a_v.record ? '1' : '0';
+	o += '|';
+	o += a_v.persist ? '1' : '0';
+	o += '|';
+	o += std::to_string(a_v.historySize);
+	o += '|';
+	o += LogTypesText(a_v.logTypes);
+	o += '|';
+	o += a_v.missedBadge ? '1' : '0';
+	o += '|';
+	o += std::to_string(a_v.otherCount);
+	o += '|';
+	o += PackViewField(a_v.folder);
 	for (const auto& e : a_v.entries) {
 		o += '\n';
 		o += std::to_string(e.id);
@@ -2943,6 +2969,17 @@ inline std::vector<OtherCharacter> ListOtherCharacters(const std::filesystem::pa
 			oc.name = OtherCharacterName({}, nameless++);
 	}
 	return out;
+}
+
+inline std::string PackOtherLine(const OtherCharacter& a_o)
+{
+	std::string o = "o|";
+	o += PackViewField(a_o.name);
+	o += '|';
+	o += std::to_string(a_o.entryCount);
+	o += '|';
+	o += std::to_string(a_o.lastPlayedTs);
+	return o;
 }
 
 // ---------------------------------------------------------------------------

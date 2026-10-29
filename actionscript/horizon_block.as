@@ -3014,7 +3014,7 @@
       private var hzSetDrag:int = -1;
       private var hzSetPrevDown:Boolean = false;
       private var hzSetSaveText:String = "";
-      private static const HZ_SET_W:Number = 900;
+      private static const HZ_SET_W:Number = 1000;
       private static const HZ_SET_H:Number = 660;
       private static const HZ_SET_TABS:Array = ["CARDS","STYLE","TEXT","EFFECTS","RULES","COMPASS","CONTROLS","SCANNER","COMMS"];   // v0.30: 7 SCANNER, 8 COMMS (optional modules)
       private static const HZ_SET_KEYS:Array = ["F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"];
@@ -3109,7 +3109,7 @@
       private function hzPopKey(code:String) : void
       {
          var top:String = this.hzPopTop();
-         if(top == "log" || top == "mlconfirm") { this.hzMsglogKey(code); return; }
+         if(top == "log" || top == "mlconfirm" || top == "logset" || top == "mlhist" || top == "mlchars") { this.hzMsglogKey(code); return; }
          if(code == "cancel") { this.hzPopPop(); }
       }
 
@@ -3133,13 +3133,16 @@
          return ut + "|" + lt + "|" + body;
       }
 
-      // ---------- Message Log popup (0.43.0.5, stages 5-9). Inside the 900x660 F11 window. ----------
-      // v5 layout: 860x620, 10 visible rows at 28 px, text at least 13 px. No new F keys.
+      // ---------- Message Log popup (0.43.0.6). Inside the 1000x660 F11 window. ----------
+      // v6 layout: 976x620, 10 visible rows at 28 px, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
-      private static const HZ_ML_W:Number = 860;
+      private static const HZ_ML_W:Number = 976;
       private static const HZ_ML_H:Number = 620;
       private static const HZ_ML_ROW:Number = 28;
       private static const HZ_ML_VIS:int = 10;
+      private static const HZ_ML_CLOCK:Number = 168;
+      private static const HZ_MLS_W:Number = 620;
+      private static const HZ_MLS_H:Number = 620;
       private static const HZ_ML_CHIPS:Array = ["ALL","MEDICAL","CREW","REACTIONS","BUSY","CRIME","CREDITS","QUEST","LOCATION","GAME","XP"];
       private static const HZ_ML_KIND:Array = ["","medical","crew","reaction","busy","crime","credits","quest","location","game","xp"];
       private var hzMlLayer:Sprite = null;
@@ -3161,11 +3164,21 @@
       private var hzMlNotice:String = "";
       private var hzMlPad:Boolean = false;
       private var hzMlHover:String = "";
+      private var hzMlRecord:Boolean = true;
+      private var hzMlPersist:Boolean = true;
+      private var hzMlHistory:int = 500;
+      private var hzMlTypes:String = "medical,crew,reaction,busy,crime,credits,quest,location,xp,game";
+      private var hzMlMissed:Boolean = true;
+      private var hzMlFolder:String = "";
+      private var hzMlOtherN:int = 0;
+      private var hzMlOthers:Array = [];
+      private var hzMlSetRow:int = 0;
+      private var hzMlSetScroll:int = 0;
 
       public function hzMsglogNeed() : String
       {
          var top:String = this.hzPopTop();
-         return (top == "log" || top == "mlconfirm") ? "1" : "0";
+         return (top == "log" || top == "mlconfirm" || top == "logset" || top == "mlhist" || top == "mlchars") ? "1" : "0";
       }
 
       public function hzTakeMsglogAct() : String
@@ -3181,7 +3194,7 @@
          if(s == this.hzMlPacked) { return; }
          this.hzMlPacked = s;
          this.hzMsglogParse(s);
-         if(this.hzPopTop() == "log" || this.hzPopTop() == "mlconfirm") { this.hzMsglogDraw(); }
+         if(this.hzPopTop() == "log" || this.hzPopTop() == "mlconfirm" || this.hzPopTop() == "logset" || this.hzPopTop() == "mlhist" || this.hzPopTop() == "mlchars") { this.hzMsglogDraw(); }
       }
 
       private function hzMsglogOpen() : void
@@ -3204,7 +3217,7 @@
          this.hzMlNotice = "";
          this.hzMlPacked = "";
          if(this.hzMlLayer != null) { this.hzMlLayer.visible = false; }
-         while(this.hzPopTop() == "log" || this.hzPopTop() == "mlconfirm") { this.hzPopPop(); }
+         while(this.hzPopTop() == "log" || this.hzPopTop() == "mlconfirm" || this.hzPopTop() == "logset" || this.hzPopTop() == "mlhist" || this.hzPopTop() == "mlchars") { this.hzPopPop(); }
       }
 
       private function hzMsglogEnsure() : void
@@ -3218,6 +3231,7 @@
       private function hzMsglogParse(s:String) : void
       {
          this.hzMlRows = [];
+         this.hzMlOthers = [];
          if(s == null || s.length < 3) { return; }
          var lines:Array = s.split("\n");
          var head:Array = String(lines[0]).split("|");
@@ -3228,10 +3242,26 @@
             this.hzMlPinN = int(head[3]);
             this.hzMlPinCap = int(head[4]);
          }
+         if(head.length >= 14)
+         {
+            this.hzMlRecord = String(head[7]) != "0";
+            this.hzMlPersist = String(head[8]) != "0";
+            this.hzMlHistory = int(head[9]);
+            this.hzMlTypes = String(head[10]);
+            this.hzMlMissed = String(head[11]) != "0";
+            this.hzMlOtherN = int(head[12]);
+            this.hzMlFolder = String(head[13]);
+         }
          var i:int = 1;
          while(i < lines.length)
          {
             var p:Array = String(lines[i]).split("|");
+            if(p.length >= 4 && String(p[0]) == "o")
+            {
+               this.hzMlOthers.push({"name":String(p[1]),"n":int(p[2]),"ts":Number(p[3])});
+               i++;
+               continue;
+            }
             if(p.length >= 15)
             {
                this.hzMlRows.push({
@@ -3243,6 +3273,7 @@
             }
             i++;
          }
+         if(this.hzMlOthers.length > 0) { this.hzMlOtherN = this.hzMlOthers.length; }
       }
 
       private function hzMsglogShown() : Array
@@ -3567,10 +3598,25 @@
 
          var fy:Number = oy + 80;
          this.hzSetKey(b,g,ox + 22,fy + 4,"/",uint(T.mut),24,13,13);
-         var findLab:String = this.hzMlFindOn ? (this.hzMlFind.length > 0 ? this.hzMlFind : "Type to find") : "Find";
-         if(this.hzMlPad && !this.hzMlFindOn) { findLab = "Find (keyboard only)"; }
-         this.hzWT(b,findLab,ox + 56,fy + 8,320,13,"rg",this.hzMlFindOn ? uint(T.txt) : uint(T.mut),0.3,"left",13);
-         this.hzMlHits.push({"id":"find","x":ox + 22,"y":fy,"w":360,"h":28});
+         var boxX:Number = ox + 56;
+         var boxW:Number = 320;
+         g.lineStyle(1, uint(T.edge), this.hzMlFindOn ? Number(T.ea) : 0.55);
+         g.beginFill(uint(T.fill), this.hzMlFindOn ? 0.55 : 0.28);
+         g.drawRoundRect(boxX, fy, boxW, 28, 8, 8);
+         g.endFill();
+         g.lineStyle();
+         var findLab:String = this.hzMlFind.length > 0 ? this.hzMlFind : "Find…";
+         if(this.hzMlPad && !this.hzMlFindOn && this.hzMlFind.length == 0) { findLab = "Find (keyboard only)"; }
+         var findCol:uint = (this.hzMlFindOn || this.hzMlFind.length > 0) ? uint(T.txt) : uint(T.mut);
+         var ftf:TextField = this.hzWT(b,findLab,boxX + 10,fy + 6,boxW - 28,13,"rg",findCol,0.3,"left",13);
+         if(this.hzMlFindOn)
+         {
+            var caretX:Number = boxX + 10 + (this.hzMlFind.length > 0 ? Math.min(boxW - 36, Math.round(this.hzTW(ftf))) : 0);
+            g.beginFill(uint(T.txt), (int(getTimer() / 400) % 2 == 0) ? 0.9 : 0.15);
+            g.drawRect(caretX + 1, fy + 6, 1, 16);
+            g.endFill();
+         }
+         this.hzMlHits.push({"id":"find","x":ox + 22,"y":fy,"w":boxX + boxW - (ox + 22),"h":28});
          var allOn:Boolean = this.hzMlAllTime;
          this.hzSetSwitch(b,g,ox + HZ_ML_W - 22,fy + 18,allOn,T,false);
          this.hzWT(b,"ALL TIME",ox + HZ_ML_W - 70,fy + 8,80,13,"sb",uint(T.lab),1.2,"right",13);
@@ -3622,12 +3668,14 @@
                if(int(it.n) > 1) { line += "  x " + String(it.n); }
                var locX:Number = ox + HZ_ML_W - 196;
                var chipX:Number = locX - 118;
-               var textW:Number = chipX - (ox + 140) - 8;
+               var iconX:Number = ox + 28 + HZ_ML_CLOCK + 8;
+               var textX:Number = iconX + 22;
+               var textW:Number = chipX - textX - 8;
                if(textW < 80) { textW = 80; }
-               var rt:TextField = this.hzWT(b,clock,ox + 28,ry + 6,86,13,"sb",tcol,0.4,"left",13);
+               var rt:TextField = this.hzWT(b,clock,ox + 28,ry + 6,HZ_ML_CLOCK,13,"sb",tcol,0.4,"left",13);
                rt.alpha = aMul;
-               this.hzMsglogKindIcon(g, ox + 116, ry + 6, String(it.k), later ? uint(T.mut) : acc, later ? 0.45 : 0.9);
-               var tt:TextField = this.hzWT(b,line,ox + 138,ry + 6,textW,13,"rg",tcol,0.3,"left",13);
+               this.hzMsglogKindIcon(g, iconX, ry + 6, String(it.k), later ? uint(T.mut) : acc, later ? 0.45 : 0.9);
+               var tt:TextField = this.hzWT(b,line,textX,ry + 6,textW,13,"rg",tcol,0.3,"left",13);
                tt.alpha = aMul;
                this.hzMsglogEllip(tt,textW);
                var chipLab:String = later ? "from a later point" : (String(it.tag).length > 0 ? String(it.tag) : this.hzMsglogKindLab(String(it.k)));
@@ -3711,9 +3759,10 @@
          g.endFill();
          var hx:Number = ox + 28;
          var hy:Number = foot + 10;
+         var pinLab:String = (sel != null && int(sel.pin) != 0) ? "UNPIN" : "PIN";
          var hints:Array = this.hzMlPad
-            ? [["LB/RB","CHIPS"],["A","PIN"],["X","SETTINGS"],["Y","CLEAR"],["B","BACK"]]
-            : [["UP/DN","SELECT"],["ENTER","PIN"],["ESC","BACK"],["/","FIND"]];
+            ? [["LB/RB","CHIPS"],["A",pinLab],["X","SETTINGS"],["Y","CLEAR"],["B","BACK"]]
+            : [["UP/DN","SELECT"],["ENTER",pinLab],["ESC","BACK"],["/","FIND"]];
          var hi:int = 0;
          while(hi < hints.length)
          {
@@ -3727,7 +3776,7 @@
          var hit0:int = this.hzSetHits.length;
          bxr -= this.hzSetBtn(b,g,bxr,by,"BACK",false,false,this.hzMlHover == "back",T,"mlback",13,13) + 10;
          bxr -= this.hzSetBtn(b,g,bxr,by,"CLEAR SESSION",false,true,this.hzMlHover == "clear",T,"mlclear",13,13) + 10;
-         bxr -= this.hzSetBtn(b,g,bxr,by,"PIN",true,false,this.hzMlHover == "pin",T,"mlpin",13,13) + 10;
+         bxr -= this.hzSetBtn(b,g,bxr,by,pinLab,true,false,this.hzMlHover == "pin",T,"mlpin",13,13) + 10;
          this.hzSetBtn(b,g,bxr,by,"SETTINGS",false,true,this.hzMlHover == "set",T,"mlset",13,13);
          while(this.hzSetHits.length > hit0)
          {
@@ -3737,6 +3786,8 @@
          {
             this.hzWT(b,this.hzMlNotice,ox + 28,foot + 36,400,13,"sb",uint(T.note),0.4,"left",13);
          }
+         if(this.hzPopTop() == "logset" || this.hzPopTop() == "mlhist") { this.hzMsglogDrawSettings(b,g,T,acc,ox,oy); }
+         if(this.hzPopTop() == "mlchars") { this.hzMsglogDrawChars(b,g,T,acc,ox,oy); }
          if(this.hzPopTop() == "mlconfirm") { this.hzMsglogDrawConfirm(b,g,T,acc,ox,oy); }
       }
 
@@ -3773,9 +3824,313 @@
          }
       }
 
+      private function hzMsglogTypeOn(k:String) : Boolean
+      {
+         if(k == null || k.length == 0) { return true; }
+         var t:String = "," + this.hzMlTypes + ",";
+         return t.indexOf("," + k + ",") >= 0;
+      }
+
+      private function hzMsglogTypeToggle(k:String) : void
+      {
+         var on:Boolean = this.hzMsglogTypeOn(k);
+         var parts:Array = this.hzMlTypes.split(",");
+         var out:Array = [];
+         var i:int = 0;
+         while(i < parts.length)
+         {
+            var p:String = String(parts[i]);
+            if(p.length > 0 && p != k) { out.push(p); }
+            i++;
+         }
+         if(!on) { out.push(k); }
+         this.hzMlTypes = out.join(",");
+         this.hzMlAct = "set|types|" + this.hzMlTypes;
+         this.hzMsglogSaveIni();
+      }
+
+      private function hzMsglogSaveIni() : void
+      {
+         var p:Object = this.hzSetPend != null ? this.hzSetPend : this.hzSetCurrent();
+         this.hzSetSaveText = this.hzBuildIniText(p);
+      }
+
+      private function hzMsglogOpenSettings() : void
+      {
+         if(this.hzPopTop() != "log") { return; }
+         this.hzPopPush("logset");
+         this.hzMlSetRow = 0;
+         this.hzMlSetScroll = 0;
+         this.hzMlAct = "list";
+         this.hzMsglogDraw();
+      }
+
+      private function hzMsglogSetRows() : Array
+      {
+         var rows:Array = [
+            {"id":"record","k":"record","l":"RECORD MESSAGES"},
+            {"id":"persist","k":"persist","l":"SAVE TO DISK"}
+         ];
+         if(!this.hzMlPersist) { rows.push({"id":"folder","k":"folder","l":"FOLDER"}); }
+         rows.push({"id":"history","k":"history","l":"HISTORY"});
+         var i:int = 1;
+         while(i < HZ_ML_KIND.length)
+         {
+            rows.push({"id":"type" + String(i),"k":String(HZ_ML_KIND[i]),"l":String(HZ_ML_CHIPS[i]),"type":1});
+            i++;
+         }
+         rows.push({"id":"missed","k":"missed","l":"MISSED BADGE"});
+         rows.push({"id":"old","k":"old","l":"OLD CHARACTERS"});
+         return rows;
+      }
+
+      private function hzMsglogDrawSettings(b:Sprite, g:*, T:Object, acc:uint, ox:Number, oy:Number) : void
+      {
+         var cw:Number = HZ_MLS_W;
+         var ch:Number = HZ_MLS_H;
+         var cx:Number = ox + Math.round((HZ_ML_W - cw) / 2);
+         var cy:Number = oy + Math.round((HZ_ML_H - ch) / 2);
+         g.beginFill(0x000000,0.45);
+         g.drawRoundRect(ox,oy,HZ_ML_W,HZ_ML_H,36,36);
+         g.endFill();
+         g.beginFill(uint(T.fill),Number(T.fa));
+         g.drawRoundRect(cx,cy,cw,ch,28,28);
+         g.endFill();
+         this.hz33Edge(b,cx,cy,cw,ch,28,uint(T.edge),Number(T.ea),1);
+         this.hzWT(b,"MESSAGE LOG SETTINGS",cx + 22,cy + 16,cw - 44,15,"bd",uint(T.txt),2,"left",13);
+         var rows:Array = this.hzMsglogSetRows();
+         var bodyY:Number = cy + 44;
+         var bodyH:Number = ch - 44 - 56;
+         var rowH:Number = 36;
+         var vis:int = int(Math.floor(bodyH / rowH));
+         if(this.hzMlSetRow < 0) { this.hzMlSetRow = 0; }
+         if(this.hzMlSetRow >= rows.length) { this.hzMlSetRow = rows.length - 1; }
+         if(this.hzMlSetScroll > this.hzMlSetRow) { this.hzMlSetScroll = this.hzMlSetRow; }
+         if(this.hzMlSetScroll < this.hzMlSetRow - vis + 1) { this.hzMlSetScroll = this.hzMlSetRow - vis + 1; }
+         if(this.hzMlSetScroll < 0) { this.hzMlSetScroll = 0; }
+         var i:int = this.hzMlSetScroll;
+         var n:int = 0;
+         var ry:Number = bodyY;
+         while(i < rows.length && n < vis)
+         {
+            var r:Object = rows[i];
+            var sel:Boolean = i == this.hzMlSetRow;
+            if(sel)
+            {
+               g.beginFill(acc,0.13);
+               g.drawRoundRect(cx + 14,ry,cw - 28,rowH - 4,10,10);
+               g.endFill();
+            }
+            if(r.id == "folder")
+            {
+               var path:String = this.hzMlFolder.length > 0 ? this.hzMlFolder : "MessageLog";
+               this.hzWT(b,"Memory only. Existing files stay on disk.",cx + 22,ry + 2,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
+               var ptf:TextField = this.hzWT(b,path,cx + 22,ry + 16,cw - 44,13,"rg",uint(T.lab),0.3,"left",13);
+               this.hzMsglogEllip(ptf,cw - 44);
+            }
+            else if(r.id == "history")
+            {
+               this.hzWT(b,String(r.l),cx + 22,ry + 8,200,13,"sb",uint(T.txt),1.2,"left",13);
+               this.hzSetTri(g,cx + cw - 86,ry + 16,-1,acc,0.9);
+               this.hzWT(b,String(this.hzMlHistory),cx + cw - 78,ry + 8,40,13,"sb",acc,0.5,"center",13);
+               this.hzSetTri(g,cx + cw - 30,ry + 16,1,acc,0.9);
+               this.hzMlHits.push({"id":"mlshistl","x":cx + cw - 100,"y":ry,"w":28,"h":32});
+               this.hzMlHits.push({"id":"mlshistr","x":cx + cw - 44,"y":ry,"w":28,"h":32});
+            }
+            else if(r.id == "old")
+            {
+               this.hzWT(b,"OLD CHARACTERS (" + String(this.hzMlOtherN) + " FILES)",cx + 22,ry + 8,320,13,"sb",uint(T.txt),1.2,"left",13);
+               var hit0:int = this.hzSetHits.length;
+               this.hzSetBtn(b,g,cx + cw - 18,ry + 4,"VIEW LIST",false,true,this.hzMlHover == "mlslist",T,"mlslist",13,13);
+               while(this.hzSetHits.length > hit0) { this.hzMlHits.push(this.hzSetHits.pop()); }
+            }
+            else if(r.type)
+            {
+               var mid:Number = cx + Math.round(cw / 2);
+               this.hzWT(b,String(r.l),cx + 22,ry + 8,200,13,"sb",uint(T.txt),1.2,"left",13);
+               this.hzSetSwitch(b,g,mid - 16,ry + 16,this.hzMsglogTypeOn(String(r.k)),T,false);
+               this.hzMlHits.push({"id":"mlstype" + String(r.k),"x":cx + 14,"y":ry,"w":mid - cx - 20,"h":32});
+               if(i + 1 < rows.length && rows[i + 1].type)
+               {
+                  var r2:Object = rows[i + 1];
+                  this.hzWT(b,String(r2.l),mid + 8,ry + 8,200,13,"sb",uint(T.txt),1.2,"left",13);
+                  this.hzSetSwitch(b,g,cx + cw - 22,ry + 16,this.hzMsglogTypeOn(String(r2.k)),T,false);
+                  this.hzMlHits.push({"id":"mlstype" + String(r2.k),"x":mid,"y":ry,"w":cx + cw - 14 - mid,"h":32});
+                  i++;
+               }
+            }
+            else
+            {
+               this.hzWT(b,String(r.l),cx + 22,ry + 8,280,13,"sb",uint(T.txt),1.2,"left",13);
+               var on:Boolean = r.id == "record" ? this.hzMlRecord : (r.id == "persist" ? this.hzMlPersist : this.hzMlMissed);
+               this.hzSetSwitch(b,g,cx + cw - 22,ry + 16,on,T,false);
+               this.hzMlHits.push({"id":"mls" + String(r.id),"x":cx + 14,"y":ry,"w":cw - 28,"h":32});
+            }
+            ry += rowH;
+            n++;
+            i++;
+         }
+         var foot:Number = cy + ch - 56;
+         g.beginFill(uint(T.line),Number(T.la));
+         g.drawRect(cx + 18,foot,cw - 36,1);
+         g.endFill();
+         var hx:Number = cx + 22;
+         var hy:Number = foot + 8;
+         if(this.hzMlPad)
+         {
+            this.hzSetKey(b,g,hx,hy,"A",uint(T.mut),22,13,13);
+            this.hzWT(b,"TOGGLE",hx + 30,hy + 4,70,13,"sb",uint(T.mut),1.2,"left",13);
+         }
+         var br:Number = cx + cw - 22;
+         var hit1:int = this.hzSetHits.length;
+         br -= this.hzSetBtn(b,g,br,foot + 20,"BACK",false,false,this.hzMlHover == "mlsback",T,"mlsback",13,13) + 10;
+         this.hzSetBtn(b,g,br,foot + 20,"CLEAR HISTORY",false,true,this.hzMlHover == "mlsclear",T,"mlsclear",13,13);
+         while(this.hzSetHits.length > hit1) { this.hzMlHits.push(this.hzSetHits.pop()); }
+         if(this.hzPopTop() == "mlhist") { this.hzMsglogDrawHist(b,g,T,acc,ox,oy); }
+      }
+
+      private function hzMsglogDrawHist(b:Sprite, g:*, T:Object, acc:uint, ox:Number, oy:Number) : void
+      {
+         var cw:Number = 420;
+         var ch:Number = 168;
+         var cx:Number = ox + Math.round((HZ_ML_W - cw) / 2);
+         var cy:Number = oy + Math.round((HZ_ML_H - ch) / 2);
+         g.beginFill(0x000000,0.45);
+         g.drawRoundRect(ox,oy,HZ_ML_W,HZ_ML_H,36,36);
+         g.endFill();
+         g.beginFill(uint(T.fill),Number(T.fa));
+         g.drawRoundRect(cx,cy,cw,ch,28,28);
+         g.endFill();
+         this.hz33Edge(b,cx,cy,cw,ch,28,uint(T.edge),Number(T.ea),1);
+         this.hzWT(b,"Clear all history?",cx + 22,cy + 18,cw - 44,15,"bd",uint(T.txt),2,"left",13);
+         this.hzWT(b,"Removes every unpinned message for this character. Pins stay. Can't be undone.",cx + 22,cy + 48,cw - 44,13,"rg",uint(T.lab),0.3,"left",13);
+         var br:Number = cx + cw - 22;
+         var hit0:int = this.hzSetHits.length;
+         br -= this.hzSetBtn(b,g,br,cy + 120,"CANCEL",false,false,this.hzMlHover == "mhcancel",T,"mhcancel",13,13) + 10;
+         this.hzSetBtn(b,g,br,cy + 120,"CLEAR",true,false,this.hzMlHover == "mhok",T,"mhok",13,13);
+         while(this.hzSetHits.length > hit0) { this.hzMlHits.push(this.hzSetHits.pop()); }
+      }
+
+      private function hzMsglogDrawChars(b:Sprite, g:*, T:Object, acc:uint, ox:Number, oy:Number) : void
+      {
+         var cw:Number = 620;
+         var ch:Number = 414;
+         var cx:Number = ox + Math.round((HZ_ML_W - cw) / 2);
+         var cy:Number = oy + Math.round((HZ_ML_H - ch) / 2);
+         g.beginFill(0x000000,0.45);
+         g.drawRoundRect(ox,oy,HZ_ML_W,HZ_ML_H,36,36);
+         g.endFill();
+         g.beginFill(uint(T.fill),Number(T.fa));
+         g.drawRoundRect(cx,cy,cw,ch,28,28);
+         g.endFill();
+         this.hz33Edge(b,cx,cy,cw,ch,28,uint(T.edge),Number(T.ea),1);
+         this.hzWT(b,"OLD CHARACTERS",cx + 22,cy + 16,cw - 44,15,"bd",uint(T.txt),2,"left",13);
+         this.hzWT(b,"Read-only. The current character is not listed.",cx + 22,cy + 40,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
+         var i:int = 0;
+         var ry:Number = cy + 68;
+         if(this.hzMlOthers.length == 0)
+         {
+            this.hzWT(b,"No other character files.",cx + 22,ry,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
+         }
+         while(i < this.hzMlOthers.length && ry < cy + ch - 64)
+         {
+            var oc:Object = this.hzMlOthers[i];
+            this.hzWT(b,String(oc.name),cx + 22,ry,300,13,"sb",uint(T.txt),1.2,"left",13);
+            this.hzWT(b,String(oc.n) + " messages",cx + cw - 22,ry,160,13,"rg",uint(T.mut),0.3,"right",13);
+            ry += 28;
+            i++;
+         }
+         var hit0:int = this.hzSetHits.length;
+         this.hzSetBtn(b,g,cx + cw - 22,cy + ch - 44,"BACK",false,false,this.hzMlHover == "mlcback",T,"mlcback",13,13);
+         while(this.hzSetHits.length > hit0) { this.hzMlHits.push(this.hzSetHits.pop()); }
+      }
+
+      private function hzMsglogSetToggle() : void
+      {
+         var rows:Array = this.hzMsglogSetRows();
+         if(this.hzMlSetRow < 0 || this.hzMlSetRow >= rows.length) { return; }
+         var r:Object = rows[this.hzMlSetRow];
+         this.hzMsglogSetAct(String(r.id), 0);
+      }
+
+      private function hzMsglogSetAct(id:String, dir:int) : void
+      {
+         if(id == "record")
+         {
+            this.hzMlRecord = !this.hzMlRecord;
+            this.hzMlAct = "set|record|" + (this.hzMlRecord ? "1" : "0");
+         }
+         else if(id == "persist")
+         {
+            this.hzMlPersist = !this.hzMlPersist;
+            this.hzMlAct = "set|persist|" + (this.hzMlPersist ? "1" : "0");
+         }
+         else if(id == "missed")
+         {
+            this.hzMlMissed = !this.hzMlMissed;
+            this.hzMlAct = "set|missed|" + (this.hzMlMissed ? "1" : "0");
+         }
+         else if(id == "history" || id == "mlshistl" || id == "mlshistr")
+         {
+            var step:int = (id == "mlshistl" || dir < 0) ? -100 : 100;
+            if(id == "history" && dir == 0) { step = 100; }
+            this.hzMlHistory = this.hzMlHistory + step;
+            if(this.hzMlHistory < 100) { this.hzMlHistory = 100; }
+            if(this.hzMlHistory > 1000) { this.hzMlHistory = 1000; }
+            this.hzMlAct = "set|history|" + String(this.hzMlHistory);
+         }
+         else if(id.indexOf("type") == 0 || id.indexOf("mlstype") == 0)
+         {
+            var k:String = id.indexOf("mlstype") == 0 ? id.substr(7) : "";
+            if(k.length == 0)
+            {
+               var rows:Array = this.hzMsglogSetRows();
+               if(this.hzMlSetRow >= 0 && this.hzMlSetRow < rows.length && rows[this.hzMlSetRow].type)
+               {
+                  k = String(rows[this.hzMlSetRow].k);
+               }
+            }
+            if(k.length > 0) { this.hzMsglogTypeToggle(k); this.hzMsglogDraw(); return; }
+         }
+         else if(id == "old" || id == "mlslist")
+         {
+            if(this.hzPopTop() == "logset") { this.hzPopPush("mlchars"); this.hzMlAct = "list"; this.hzMsglogDraw(); }
+            return;
+         }
+         else { return; }
+         this.hzMsglogSaveIni();
+         this.hzMsglogDraw();
+      }
+
       private function hzMsglogKey(code:String) : void
       {
          if(code == "up" || code == "down" || code == "left" || code == "right" || code == "ok" || code == "cancel" || code == "padx" || code == "pady" || code == "tabprev" || code == "tabnext") { this.hzMlPad = (code == "padx" || code == "pady" || code.indexOf("tab") == 0); }
+         if(this.hzPopTop() == "mlhist")
+         {
+            if(code == "cancel") { this.hzPopPop(); this.hzMsglogDraw(); return; }
+            if(code == "ok" || code == "pady") { this.hzPopPop(); this.hzMlAct = "clearhist"; this.hzMsglogDraw(); return; }
+            return;
+         }
+         if(this.hzPopTop() == "mlchars")
+         {
+            if(code == "cancel" || code == "ok") { this.hzPopPop(); this.hzMsglogDraw(); return; }
+            if(code == "wheelup" || code == "up") { this.hzMlSetScroll--; this.hzMsglogDraw(); return; }
+            if(code == "wheeldown" || code == "down") { this.hzMlSetScroll++; this.hzMsglogDraw(); return; }
+            return;
+         }
+         if(this.hzPopTop() == "logset")
+         {
+            var setN:int = this.hzMsglogSetRows().length;
+            if(code == "cancel") { this.hzPopPop(); this.hzMsglogDraw(); return; }
+            if(code == "up") { this.hzMlSetRow--; if(this.hzMlSetRow < 0) { this.hzMlSetRow = 0; } this.hzMsglogDraw(); return; }
+            if(code == "down") { this.hzMlSetRow++; if(this.hzMlSetRow >= setN) { this.hzMlSetRow = setN - 1; } this.hzMsglogDraw(); return; }
+            if(code == "left") { this.hzMsglogSetAct(String(this.hzMsglogSetRows()[this.hzMlSetRow].id), -1); return; }
+            if(code == "right" || code == "ok") { this.hzMsglogSetToggle(); return; }
+            if(code == "pady") { this.hzPopPush("mlhist"); this.hzMsglogDraw(); return; }
+            if(code == "wheelup") { this.hzMlSetRow--; if(this.hzMlSetRow < 0) { this.hzMlSetRow = 0; } this.hzMsglogDraw(); return; }
+            if(code == "wheeldown") { this.hzMlSetRow++; if(this.hzMlSetRow >= setN) { this.hzMlSetRow = setN - 1; } this.hzMsglogDraw(); return; }
+            return;
+         }
          if(this.hzPopTop() == "mlconfirm")
          {
             if(code == "cancel") { this.hzPopPop(); this.hzMsglogDraw(); return; }
@@ -3806,6 +4161,7 @@
          if(code == "up") { this.hzMsglogSelStep(-1); return; }
          if(code == "down") { this.hzMsglogSelStep(1); return; }
          if(code == "ok") { this.hzMsglogDoPin(); return; }
+         if(code == "padx") { this.hzMsglogOpenSettings(); return; }
          if(code == "pady") { this.hzMsglogAskClear(); return; }
          if(code.indexOf("ch:") == 0 && code.substr(3) == "/") { this.hzMlFindOn = true; this.hzMsglogDraw(); return; }
          if(code == "bksp" && this.hzMlFind.length > 0) { this.hzMlFindOn = true; this.hzMsglogDraw(); }
@@ -3922,6 +4278,28 @@
             if(this.hzMlHover == "cfcancel" || this.hzMlHover == "") { this.hzPopPop(); this.hzMsglogDraw(); }
             return;
          }
+         if(this.hzPopTop() == "mlhist")
+         {
+            if(this.hzMlHover == "mhok") { this.hzPopPop(); this.hzMlAct = "clearhist"; this.hzMsglogDraw(); return; }
+            if(this.hzMlHover == "mhcancel" || this.hzMlHover == "") { this.hzPopPop(); this.hzMsglogDraw(); }
+            return;
+         }
+         if(this.hzPopTop() == "mlchars")
+         {
+            if(this.hzMlHover == "mlcback" || this.hzMlHover == "") { this.hzPopPop(); this.hzMsglogDraw(); }
+            return;
+         }
+         if(this.hzPopTop() == "logset")
+         {
+            if(this.hzMlHover == "mlsback") { this.hzPopPop(); this.hzMsglogDraw(); return; }
+            if(this.hzMlHover == "mlsclear") { this.hzPopPush("mlhist"); this.hzMsglogDraw(); return; }
+            if(this.hzMlHover == "mlslist") { this.hzMsglogSetAct("old", 0); return; }
+            if(this.hzMlHover == "mlshistl") { this.hzMsglogSetAct("mlshistl", -1); return; }
+            if(this.hzMlHover == "mlshistr") { this.hzMsglogSetAct("mlshistr", 1); return; }
+            if(this.hzMlHover.indexOf("mlstype") == 0) { this.hzMsglogSetAct(this.hzMlHover, 0); return; }
+            if(this.hzMlHover.indexOf("mls") == 0) { this.hzMsglogSetAct(this.hzMlHover.substr(3), 0); return; }
+            return;
+         }
          if(hit == null) { return; }
          var id:String = String(hit.id);
          if(id.indexOf("chip") == 0) { this.hzMlChip = int(id.substr(4)); this.hzMlScroll = 0; this.hzMsglogDraw(); return; }
@@ -3930,6 +4308,7 @@
          if(id == "alltime") { this.hzMlAllTime = !this.hzMlAllTime; this.hzMlScroll = 0; this.hzMsglogDraw(); return; }
          if(id == "mlpin") { this.hzMsglogDoPin(); return; }
          if(id == "mlclear") { this.hzMsglogAskClear(); return; }
+         if(id == "mlset") { this.hzMsglogOpenSettings(); return; }
          if(id == "mlback") { this.hzMsglogForceClose(); return; }
       }
 
@@ -4373,6 +4752,13 @@
          try { this.hz31IniLines(a,p); } catch(err31w:Error) { }
          try { this.hz40ScanIniLines(a,p); } catch(err40w:Error) { }
          try { this.hz42ScIniLines(a,p); } catch(err42w:Error) { }   // v0.42.0 r2: [Scope]
+         a.push("[MessageLog]");
+         a.push("Record=" + (this.hzMlRecord ? "1" : "0"));
+         a.push("LogTypes=" + this.hzMlTypes);
+         a.push("HistorySize=" + String(this.hzMlHistory));
+         a.push("MissedBadge=" + (this.hzMlMissed ? "1" : "0"));
+         a.push("Persist=" + (this.hzMlPersist ? "1" : "0"));
+         a.push("");
          a.push("[Debug]");
          a.push("; 1 shows a live data readout (for troubleshooting)");
          a.push("Debug=" + this.hzB(this.hzDebug));
@@ -4443,7 +4829,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.5";
+      private static const HZ_BUILD:String = "0.43.0.6";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];

@@ -6,7 +6,7 @@
 // movie's own advance. A reused movie-root address is cleared on
 // MenuMovieCreated (ABA). F11 is latched on the job poll and consumed
 // only from that latch. g_uiTid is a log hint only. Author: Moragar.
-// Last modified: 2026-10-28.
+// Last modified: 2026-10-29.
 
 #include <cstdint>
 #include <cstring>
@@ -17,6 +17,7 @@ inline constexpr std::uint64_t kPollHeartbeatMs = 30000;
 inline constexpr std::uint64_t kUiTidSkipLogMs = 1000;
 inline constexpr std::uint64_t kSettingsKeyLatchMs = 2000;
 inline constexpr std::uint64_t kStaleHudAdoptMs = 5000;
+inline constexpr std::uint64_t kCrossNameMs = 250;
 inline constexpr const char* kUiTidSourceHudRoot = "hud-root-advance";
 
 inline bool MenuIsHud(const char* a_name)
@@ -165,7 +166,7 @@ inline bool SettingsKeyJobEdge(bool a_down, bool& a_wasDown)
 inline bool SettingsKeyLatchFresh(std::uint64_t a_atMs, std::uint64_t a_nowMs,
 	std::uint64_t a_maxAgeMs = kSettingsKeyLatchMs)
 {
-	if (a_nowMs < a_atMs) return false;
+	if (a_nowMs < a_atMs) return true;
 	return (a_nowMs - a_atMs) <= a_maxAgeMs;
 }
 
@@ -189,7 +190,7 @@ inline thread_local PollMovie g_advancingMovie = PollMovie::None;
 // Purpose: the same movie-follow / ABA / F11-latch functions the DLL
 // calls. Tests drive this type so a mutant that gates on tid, heals,
 // double-fires F11, or Invokes a foreign movie is caught.
-// Author: Moragar. Last modified: 2026-10-28.
+// Author: Moragar. Last modified: 2026-10-29.
 struct PollGate
 {
 	const void*   hudRoot{nullptr};

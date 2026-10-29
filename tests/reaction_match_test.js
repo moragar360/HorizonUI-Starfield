@@ -47,7 +47,7 @@ const DIR = numArray("HZC_RX_DIR");
 const NOT = stringArray("HZC_RX_NOT");
 const TITLE = stringArray("HZC_RX_TITLE");
 
-expect(src.indexOf('private static const HZC_BUILD:String = "0.43.0.5";') >= 0, "comms build id is 0.43.0.5");
+expect(src.indexOf('private static const HZC_BUILD:String = "0.43.0.6";') >= 0, "comms build id is 0.43.0.6");
 expect(src.indexOf('HudMessagesX') >= 0 && src.indexOf("function hzcMsgLayout") >= 0, "HUD Messages box reads a saved layout");
 expect(src.indexOf("x = Math.max(vr.x,Math.min(vr.right - w,x));") >= 0, "HUD Messages box is clamped on screen");
 expect(src.indexOf("y = Math.max(vr.y,Math.min(vr.bottom - h,y));") >= 0, "HUD Messages box is clamped vertically");

@@ -752,8 +752,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.5", "file version is 0.43.0.5");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 5, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.6", "file version is 0.43.0.6");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 6, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -1475,7 +1475,7 @@ int main()
 		Expect(stillMid && stillFuture, "later-point flags survive a new capture");
 		Expect(b.nextId > futureId, "new rows take ids after the later-point rows");
 
-		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.5");
+		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.6");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok, "later-point flags round-trip through JSON");
 		Buffer restarted;
@@ -1525,7 +1525,7 @@ int main()
 		Buffer loaded;
 		loaded.LoadState(held);
 		ExpectEqI(static_cast<int>(loaded.nextId), 42, "LoadState keeps the persisted nextId");
-		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.5");
+		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.6");
 		Expect(json.find("\"nextId\": 42") != std::string::npos, "ToJson writes nextId");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok && parsed.state.nextId == 42, "FromJson reads the persisted nextId");
@@ -1814,8 +1814,10 @@ int main()
 				&& body.find("thread_local bool inPoll") == std::string::npos,
 				"each poll has a process-wide reentrancy atomic");
 			Expect(body.find("poll alive") != std::string::npos
-				&& body.find("kPollHeartbeatMs") != std::string::npos,
-				"the hook heartbeats even when the HUD poll is dead");
+				&& body.find("kPollHeartbeatMs") != std::string::npos
+				&& body.find("compare_exchange_strong") != std::string::npos
+				&& body.find("HudMenusClear") != std::string::npos,
+				"the hook heartbeats with a compare-exchange and a fresh hudSafe");
 		}
 		{
 			const auto inst = main.find("void InstallAdvanceHook");
@@ -1852,6 +1854,24 @@ int main()
 			&& main.find("g_pushLogged.exchange") != std::string::npos
 			&& main.find("g_pushEndLogged.exchange") != std::string::npos,
 			"BuildLog strings and scan-push logs are synchronized");
+		Expect(main.find("HudBlockingMenu") != std::string::npos
+			&& main.find("HUD not ready (loading/menu {})") != std::string::npos,
+			"HUD not ready names the blocking menu");
+		Expect(main.find("settings key latch expired") != std::string::npos,
+			"an expired F11 latch is logged");
+		Expect(main.find("comms busy card name=") != std::string::npos,
+			"a busy card logs the crosshair name used");
+		Expect(main.find("kCrossNameMs") != std::string::npos
+			&& main.find("g_crossName = std::move(name)") != std::string::npos,
+			"PublishCrossName clears an empty name and is throttled");
+		{
+			const auto ad = main.find("void TryAdoptLiveRoot");
+			const auto next = main.find("void HookedAdvanceFrame", ad);
+			const auto body = ad != std::string::npos && next > ad ? main.substr(ad, next - ad) : std::string();
+			Expect(body.find("stored && stored != a_this") != std::string::npos
+				&& body.find("teardown") != std::string::npos,
+				"degraded adoption does not GetMenu another menu during teardown");
+		}
 		{
 			const auto hx = main.find("static std::string HzCrossName()");
 			const auto hxEnd = main.find("void CommsRxPoll", hx);
@@ -2066,6 +2086,10 @@ int main()
 		{
 			const auto script = RepoRoot() / "tools" / "callgraph_scaleform.py";
 			Expect(std::filesystem::is_regular_file(script), "Scaleform call-graph script is in the repo");
+			const auto gate = Slurp("tools/callgraph_scaleform.py");
+			Expect(gate.find("(?:MenuLive|MenuMovie)") != std::string::npos
+				&& gate.find("\\w+") != std::string::npos,
+				"callgraph catches MenuLive(otherVar, ...)");
 			const auto cmd = std::string("python3 \"") + script.string() + "\"";
 			Expect(std::system(cmd.c_str()) == 0,
 				"callgraph: no Scaleform from Poll() and no file I/O on the UI path");
@@ -2214,8 +2238,12 @@ int main()
 		Expect(as.find("MESSAGE LOG") != std::string::npos, "F11 has a MESSAGE LOG row");
 		Expect(as.find("needs Notifications") != std::string::npos, "the row is gated on the Notifications marker");
 		Expect(as.find("HORIZON UI · MESSAGE LOG") != std::string::npos, "the log shell title is present");
-		Expect(as.find("HZ_ML_W") != std::string::npos && as.find("860") != std::string::npos,
-			"the log popup is 860 wide");
+		Expect(as.find("HZ_ML_W:Number = 976") != std::string::npos,
+			"the log popup is 976 wide");
+		Expect(as.find("HZ_ML_CLOCK:Number = 168") != std::string::npos,
+			"the time column is 168 px");
+		Expect(as.find("HZ_SET_W:Number = 1000") != std::string::npos,
+			"the F11 window is 1000 wide");
 		Expect(as.find("HZ_ML_H") != std::string::npos && as.find("620") != std::string::npos,
 			"the log popup is 620 tall");
 		Expect(as.find("HZ_ML_VIS") != std::string::npos && as.find("HZ_ML_ROW") != std::string::npos,
@@ -2225,10 +2253,22 @@ int main()
 		Expect(as.find("Clear this session?") != std::string::npos, "Clear session asks for a confirm");
 		Expect(as.find("REACTIONS") != std::string::npos && as.find("ALL TIME") != std::string::npos,
 			"type chips and All time are drawn");
+		Expect(as.find("Find…") != std::string::npos, "Find is a search box with a Find… placeholder");
 		Expect(as.find("Find (keyboard only)") != std::string::npos, "Find shows a keyboard-only note on a pad");
+		Expect(as.find("UNPIN") != std::string::npos, "the footer PIN button can read UNPIN");
+		Expect(as.find("MESSAGE LOG SETTINGS") != std::string::npos, "the settings page is drawn");
+		Expect(as.find("function hzMsglogOpenSettings") != std::string::npos
+			&& as.find("function hzMsglogDrawSettings") != std::string::npos,
+			"SETTINGS opens a real page");
+		Expect(as.find("RECORD MESSAGES") != std::string::npos && as.find("SAVE TO DISK") != std::string::npos
+			&& as.find("\"HISTORY\"") != std::string::npos && as.find("MISSED BADGE") != std::string::npos
+			&& as.find("OLD CHARACTERS") != std::string::npos && as.find("CLEAR HISTORY") != std::string::npos,
+			"the settings page has the planned rows");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.5\"") != std::string::npos, "HUD movie build id is 0.43.0.5");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.6\"") != std::string::npos, "HUD movie build id is 0.43.0.6");
+		Expect(as.find("greyed") == std::string::npos, "notes use American grayed");
+		Expect(as.find("grayed") != std::string::npos, "locked rows are grayed");
 		Expect(as.find("F12") == std::string::npos || as.find("SETTINGS MENU KEY") != std::string::npos,
 			"no new F key is added for the log");
 		Expect(main.find("void MsglogPollUi()") != std::string::npos, "DLL pushes the view while the log is open");
@@ -4977,6 +5017,9 @@ int main()
 					Expect(!SettingsKeyHudTake(false, 0, 10), "a consumed latch does not fire again");
 					Expect(!SettingsKeyHudTake(true, 0, 2001), "a latch older than 2 s expires");
 					Expect(SettingsKeyHudTake(true, 100, 2100), "a latch at 2 s is still fresh");
+					Expect(SettingsKeyLatchFresh(200, 50), "now<at is a fresh latch");
+					Expect(SettingsKeyHudTake(true, 200, 50), "latch-skew now<at still fires");
+					ExpectEqI(static_cast<int>(kCrossNameMs), 250, "crosshair name publish is throttled to 250 ms");
 				}
 				{
 					PollGate stale;
