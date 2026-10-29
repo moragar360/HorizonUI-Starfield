@@ -5,7 +5,7 @@
 // CommonLibSF. The DLL (src/main.cpp) supplies engine pointers, the worker
 // thread, and the HUD-ready / SaveLoad flush.
 // Author: Moragar
-// Last modified: 2026-10-28.
+// Last modified: 2026-10-29.
 
 #include "hz_msg_match.h"
 #include "hz_ui_tid.h"
@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <charconv>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -229,7 +230,8 @@ inline int ClampHistory(int a_n)
 	return a_n;
 }
 
-// Purpose: parse LogTypes=medical,crew,... All-on is the default when empty.
+// Purpose: parse LogTypes=medical,crew,... An empty list is none (UI all-off).
+// A missing INI key still uses Settings.logTypes = kTypeAll.
 // Inputs: comma list. Outputs: bit mask. Dependencies: KindFromKey.
 inline std::uint32_t ParseLogTypes(std::string_view a_s)
 {
@@ -250,7 +252,110 @@ inline std::uint32_t ParseLogTypes(std::string_view a_s)
 		else cur.push_back(c);
 	}
 	flush();
-	return bits ? bits : kTypeAll;
+	return bits;
+}
+
+// Purpose: set| values are exact. Booleans are only "0" or "1". History is
+// a full-string integer. Extra '|' fields are rejected.
+// Inputs: the rest after "set|". Outputs: updated Settings, reject why.
+enum class SetParse : std::uint8_t { Ok = 0, Reject };
+
+inline bool ParseSetBool(std::string_view a_v, bool& a_out)
+{
+	if (a_v == "1") {
+		a_out = true;
+		return true;
+	}
+	if (a_v == "0") {
+		a_out = false;
+		return true;
+	}
+	return false;
+}
+
+inline bool ParseSetHistory(std::string_view a_v, int& a_out)
+{
+	if (a_v.empty()) return false;
+	int n = 0;
+	const auto* b = a_v.data();
+	const auto* e = b + a_v.size();
+	const auto r = std::from_chars(b, e, n);
+	if (r.ec != std::errc{} || r.ptr != e) return false;
+	a_out = ClampHistory(n);
+	return true;
+}
+
+inline SetParse ApplySetCommand(std::string_view a_rest, Settings& a_s, std::string& a_why)
+{
+	a_why.clear();
+	const auto p = a_rest.find('|');
+	if (p == std::string_view::npos) {
+		a_why = "missing field";
+		return SetParse::Reject;
+	}
+	const auto key = a_rest.substr(0, p);
+	const auto val = a_rest.substr(p + 1);
+	if (val.find('|') != std::string_view::npos) {
+		a_why = "extra field";
+		return SetParse::Reject;
+	}
+	if (key == "record") {
+		if (!ParseSetBool(val, a_s.record)) {
+			a_why = "record not 0 or 1";
+			return SetParse::Reject;
+		}
+		return SetParse::Ok;
+	}
+	if (key == "persist") {
+		if (!ParseSetBool(val, a_s.persist)) {
+			a_why = "persist not 0 or 1";
+			return SetParse::Reject;
+		}
+		return SetParse::Ok;
+	}
+	if (key == "missed") {
+		if (!ParseSetBool(val, a_s.missedBadge)) {
+			a_why = "missed not 0 or 1";
+			return SetParse::Reject;
+		}
+		return SetParse::Ok;
+	}
+	if (key == "history") {
+		if (!ParseSetHistory(val, a_s.historySize)) {
+			a_why = "history not an integer";
+			return SetParse::Reject;
+		}
+		return SetParse::Ok;
+	}
+	if (key == "types") {
+		a_s.logTypes = ParseLogTypes(val);
+		return SetParse::Ok;
+	}
+	a_why = "unknown key";
+	return SetParse::Reject;
+}
+
+inline std::string LogTypesText(std::uint32_t a_bits);
+
+// Purpose: authoritative [MessageLog] block from live DLL settings. F11
+// Save replaces the movie-built section with this before Diff.
+// Inputs: live Settings. Outputs: CRLF INI section. Dependencies: LogTypesText.
+inline std::string FormatMessageLogIni(const Settings& a_s)
+{
+	std::string o;
+	o += "[MessageLog]\r\n";
+	o += "Record=";
+	o += a_s.record ? "1" : "0";
+	o += "\r\nLogTypes=";
+	o += LogTypesText(a_s.logTypes);
+	o += "\r\nHistorySize=";
+	o += std::to_string(a_s.historySize);
+	o += "\r\nMissedBadge=";
+	o += a_s.missedBadge ? "1" : "0";
+	o += "\r\nPersist=";
+	o += a_s.persist ? "1" : "0";
+	o += "\r\n";
+	return o;
 }
 
 // Purpose: old P1 files stored companion reactions as crew + LIKED/LOVED/
@@ -1857,7 +1962,11 @@ public:
 
 	void ClearHistory()
 	{
-		entries.clear();
+		std::vector<Entry> keep;
+		for (auto& e : entries) {
+			if (e.pin) keep.push_back(std::move(e));
+		}
+		entries.swap(keep);
 		BumpView();
 	}
 
@@ -3146,10 +3255,11 @@ public:
 		return replace(tmp, path);
 	}
 
-	// Purpose: Clear history writes the empty snapshot to the main file
-	// first, then .bak. The loader prefers main, so a crash in between
-	// cannot bring old rows back. Inputs: empty LogState with nextSess
-	// kept. Outputs: true when both files hold that body.
+	// Purpose: Clear history writes the snapshot (remaining pins, or
+	// empty when none) to the main file first, then .bak. The loader
+	// prefers main, so a crash in between cannot bring old unpinned
+	// rows back. Inputs: post-Clear LogState with nextSess kept.
+	// Outputs: true when both files hold that body.
 	// Dependencies: WriteAtomicKeepTmp.
 	bool SaveEmptyBoth(const LogState& a_state)
 	{
@@ -3203,21 +3313,24 @@ private:
 	}
 };
 
-// Purpose: run one writer job. SaveEmptyBoth only when emptyClear or
-// clearFirst is set. An empty non-Clear snapshot does not touch disk.
-// clearFirst writes the empty files first so .bak cannot keep pre-clear
-// rows, then Save writes the new rows.
+// Purpose: run one writer job. emptyClear writes the snapshot (pins, or
+// empty when none remain) to main then .bak. clearFirst writes empty
+// files first so .bak cannot keep pre-clear rows, then Save writes the
+// new rows. An empty non-Clear snapshot does not touch disk.
 inline bool ApplyDiskWrite(FileStore& a_fs, const LogState& a_snap, bool a_persist,
 	bool a_emptyClear, bool a_clearFirst)
 {
 	if (!a_persist) return true;
 	if (!a_emptyClear && !a_clearFirst && !PersistAllowed(a_snap.character))
 		return true;
-	if (a_emptyClear || a_clearFirst) {
+	if (a_emptyClear) {
+		if (!a_fs.SaveEmptyBoth(a_snap)) return false;
+		return true;
+	}
+	if (a_clearFirst) {
 		LogState empty = a_snap;
 		empty.entries.clear();
 		if (!a_fs.SaveEmptyBoth(empty)) return false;
-		if (a_emptyClear && !a_clearFirst) return true;
 	}
 	if (a_snap.entries.empty()) return true;
 	return a_fs.Save(a_snap);
@@ -3259,8 +3372,9 @@ public:
 		ApplyPersist(a_s.persist);
 	}
 
-	void ApplyPersist(bool a_persist)
+	void ApplyPersist(bool a_persist, bool a_loadNow = true)
 	{
+		const bool turningOn = a_persist && !buf.settings.persist;
 		buf.settings.persist = a_persist;
 		if (!a_persist) {
 			store = std::make_unique<NullStore>();
@@ -3268,9 +3382,38 @@ public:
 			writePending = false;
 			writePendingSeq = 0;
 			fileGate.BumpCancel(buf.character.key);
-		} else {
-			store = std::make_unique<FileStore>(horizonDir / "MessageLog", replace);
+			return;
 		}
+		store = std::make_unique<FileStore>(horizonDir / "MessageLog", replace);
+		if (!turningOn) return;
+		persistHold = true;
+		if (a_loadNow)
+			MergeOnPersistOn();
+	}
+
+	// Purpose: off→on must load and merge the existing file (and .bak)
+	// before any write. Holds persistHold until the read succeeds.
+	// Inputs: none (uses the current character and store). Outputs: true
+	// when the hold is cleared. Dependencies: FileStore::Load.
+	bool MergeOnPersistOn()
+	{
+		if (!buf.settings.persist) return true;
+		LogState file;
+		lastNotice.clear();
+		if (store && PersistAllowed(buf.character)) {
+			if (!store->Load(buf.character.key, file, lastNotice)) {
+				persistHold = true;
+				dirty = false;
+				return false;
+			}
+			const bool haveFile = !file.entries.empty() || !file.character.key.empty();
+			if (haveFile) {
+				ApplyRecoveredFile(std::move(file), buf.character);
+				return true;
+			}
+		}
+		persistHold = false;
+		return true;
 	}
 
 	bool FolderExists() const { return store && store->FolderExists(); }
@@ -3571,11 +3714,12 @@ public:
 		DropParked(buf.character.key);
 	}
 
-	// Purpose: Clear history. Always empties memory, drops parked rows,
-	// and bumps the per-key cancel seq. Persist=1 writes the empty
-	// snapshot (tests). Persist=0 does not create or touch any file.
-	// Inputs: none. Outputs: true when memory is clear and, if Persist
-	// is on, both files hold the empty body.
+	// Purpose: Clear history. Drops unpinned rows, keeps pins, drops
+	// parked rows, and bumps the per-key cancel seq. Persist=1 writes
+	// the remaining pins (or empty) to main and .bak. Persist=0 does
+	// not create or touch any file.
+	// Inputs: none. Outputs: true when unpinned rows are gone and, if
+	// Persist is on, both files hold that snapshot.
 	// Dependencies: FileStore::SaveEmptyBoth.
 	bool ClearHistoryNow()
 	{

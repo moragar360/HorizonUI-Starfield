@@ -11,6 +11,11 @@
 #include "hz_msglog_stack.h"
 #include "hz_version.h"
 
+namespace HZF {
+inline const char* kVersion = "0.42.0";
+}
+#include "hz_ini_diff.h"
+
 #include <atomic>
 #include <cctype>
 #include <chrono>
@@ -1227,7 +1232,7 @@ int main()
 		clear.writePending = true;
 		const std::uint64_t jobCancel = clear.fileGate.LoadCancel("0000ABCD");
 		Expect(clear.ClearHistoryNow(), "Clear history");
-		Expect(clear.buf.entries.empty(), "Clear history empties memory");
+		Expect(clear.buf.entries.empty(), "Clear history empties unpinned memory");
 		Expect(!clear.writePending, "Clear history clears pending");
 		Expect(std::filesystem::is_regular_file(clearPath), "Clear history keeps the file");
 		Expect(ReadFile(clearPath).find("must go") == std::string::npos, "Clear history empties the file");
@@ -1255,13 +1260,40 @@ int main()
 		Expect(!std::filesystem::exists(root / "no-persist" / "MessageLog"),
 			"Persist=0 still creates no folder");
 		Expect(persistOff.ClearHistoryNow(), "Persist=0 Clear history");
-		Expect(persistOff.buf.entries.empty(), "Persist=0 Clear empties memory");
+		Expect(persistOff.buf.entries.empty(), "Persist=0 Clear empties unpinned memory");
 		Expect(!std::filesystem::exists(root / "no-persist" / "MessageLog"),
 			"Persist=0 Clear does not create the folder");
 		Expect(!std::filesystem::exists(root / "no-persist" / "MessageLog" / "MessageLog_00005555.json"),
 			"Persist=0 Clear does not write the main file");
 		Expect(!std::filesystem::exists(root / "no-persist" / "MessageLog" / "MessageLog_00005555.json.bak"),
 			"Persist=0 Clear does not write the bak");
+
+		{
+			Log keepPins;
+			keepPins.Configure(s, root);
+			keepPins.buf.character = MakeCharacter(0x5111u, "Sam");
+			keepPins.Offer(Cap(Kind::Game, "unpin me", 116'000));
+			keepPins.Offer(Cap(Kind::Game, "pin stays", 117'000));
+			const auto pinId = keepPins.buf.entries.back().id;
+			Expect(keepPins.buf.Pin(pinId), "K04 pin before Clear");
+			Expect(keepPins.Flush(118'000), "K04 seed before Clear");
+			const auto pinPath = root / "MessageLog" / "MessageLog_00005111.json";
+			const auto pinBak = root / "MessageLog" / "MessageLog_00005111.json.bak";
+			Expect(keepPins.ClearHistoryNow(), "K04 Clear history keeps pins");
+			ExpectEqI(static_cast<int>(keepPins.buf.entries.size()), 1, "K04 memory keeps the pinned row");
+			Expect(keepPins.buf.entries.front().pin && keepPins.buf.entries.front().text == "pin stays",
+				"K04 pinned text stays in memory");
+			bool unpinnedGone = true;
+			for (const auto& e : keepPins.buf.entries)
+				if (e.text == "unpin me") unpinnedGone = false;
+			Expect(unpinnedGone, "K04 unpinned rows leave memory");
+			const auto pinBody = ReadFile(pinPath);
+			const auto pinBakBody = ReadFile(pinBak);
+			Expect(pinBody.find("pin stays") != std::string::npos, "K04 main file keeps the pin");
+			Expect(pinBody.find("unpin me") == std::string::npos, "K04 main file drops unpinned rows");
+			Expect(pinBakBody.find("pin stays") != std::string::npos, "K04 bak keeps the pin");
+			Expect(pinBakBody.find("unpin me") == std::string::npos, "K04 bak drops unpinned rows");
+		}
 
 		Log heavy;
 		heavy.Configure(s, root);
@@ -1641,8 +1673,93 @@ int main()
 			"INI Persist=0 leaves the existing file");
 		Expect(std::filesystem::is_regular_file(root / "MessageLog" / "MessageLog_00000001.json"),
 			"Persist-off does not erase the file");
+
+		on.Offer(Cap(Kind::Game, "after off two", 11'500));
+		on.ApplyPersist(true);
+		Expect(!on.persistHold, "off→on load clears the persist hold");
+		ExpectEqI(static_cast<int>(on.buf.entries.size()), 3,
+			"off→on merges 1 disk row with 2 memory rows");
+		bool gotDisk = false, gotMem = false, gotMem2 = false;
+		for (const auto& e : on.buf.entries) {
+			if (e.text == "on disk") gotDisk = true;
+			if (e.text == "after off") gotMem = true;
+			if (e.text == "after off two") gotMem2 = true;
+		}
+		Expect(gotDisk && gotMem && gotMem2, "off→on merge keeps disk and memory rows");
+		Expect(on.Flush(12'000), "off→on flush after merge");
+		const auto merged = ReadFile(root / "MessageLog" / "MessageLog_00000001.json");
+		Expect(merged.find("on disk") != std::string::npos, "off→on flush keeps the old disk row");
+		Expect(merged.find("after off") != std::string::npos, "off→on flush keeps the first memory row");
+		Expect(merged.find("after off two") != std::string::npos, "off→on flush keeps the second memory row");
+
+		{
+			Log six;
+			Settings s6;
+			six.Configure(s6, root);
+			six.buf.character = MakeCharacter(0x6006u, "Sam");
+			for (int i = 0; i < 6; ++i) {
+				std::string t = "disk row ";
+				t += std::to_string(i);
+				six.Offer(Cap(Kind::Game, t.c_str(), 13'000 + static_cast<std::uint64_t>(i) * 1000));
+			}
+			Expect(six.Flush(20'000), "6 disk rows for off→on");
+			six.ApplyPersist(false);
+			six.Offer(Cap(Kind::Game, "new while off", 21'000));
+			six.Offer(Cap(Kind::Game, "second while off", 22'000));
+			six.ApplyPersist(true);
+			ExpectEqI(static_cast<int>(six.buf.entries.size()), 8,
+				"6 disk rows plus 2 new rows merge");
+			Expect(six.Flush(23'000), "merged off→on flush");
+			const auto sixPath = root / "MessageLog" / "MessageLog_00006006.json";
+			const auto sixBody = ReadFile(sixPath);
+			int foundDisk = 0;
+			for (int i = 0; i < 6; ++i) {
+				std::string t = "disk row ";
+				t += std::to_string(i);
+				if (sixBody.find(t) != std::string::npos) ++foundDisk;
+			}
+			ExpectEqI(foundDisk, 6, "merged file still has the 6 disk rows");
+			Expect(sixBody.find("new while off") != std::string::npos
+				&& sixBody.find("second while off") != std::string::npos,
+				"merged file has the new rows");
+			const auto sixBak = ReadFile(sixPath.string() + ".bak");
+			Expect(sixBak.find("disk row 0") != std::string::npos
+				|| sixBody.find("disk row 0") != std::string::npos,
+				"bak fallback still has disk history");
+		}
 		std::error_code ec;
 		std::filesystem::remove_all(root, ec);
+	}
+
+	// ---- F11 Save keeps a hand-edited [MessageLog] (MF-5) ----
+	{
+		const std::string defs =
+			"[Horizon]\r\nVersion=0.42.0\r\n\r\n[MessageLog]\r\nRecord=1\r\n"
+			"LogTypes=medical,crew,reaction,busy,crime,credits,quest,location,xp,game\r\n"
+			"HistorySize=500\r\nMissedBadge=1\r\nPersist=1\r\n";
+		const std::string movie =
+			"[Horizon]\r\nVersion=0.42.0\r\n\r\n[MessageLog]\r\nRecord=1\r\n"
+			"LogTypes=medical,crew,reaction,busy,crime,credits,quest,location,xp,game\r\n"
+			"HistorySize=500\r\nMissedBadge=1\r\nPersist=1\r\n";
+		const std::string user =
+			"; player\r\n\r\n[MessageLog]\r\nHistorySize=800\r\n";
+		Settings live;
+		live.historySize = 800;
+		const auto patched = HZF::ReplaceSection(movie, "messagelog", FormatMessageLogIni(live));
+		Expect(patched.find("HistorySize=800") != std::string::npos,
+			"DLL replace writes live HistorySize=800");
+		Expect(patched.find("HistorySize=500") == std::string::npos,
+			"DLL replace drops the movie HistorySize=500");
+		HZF::DiffOpt o;
+		const auto out = HZF::Diff(patched, defs, user, o);
+		Expect(out.find("HistorySize=800") != std::string::npos,
+			"hand-edited HistorySize=800 survives F11 Save");
+		Expect(out.find("HistorySize=500") == std::string::npos,
+			"F11 Save does not write the movie HistorySize");
+		HZF::DiffOpt o2;
+		const auto raw = HZF::Diff(movie, defs, user, o2);
+		Expect(raw.find("HistorySize=500") != std::string::npos,
+			"without the replace, the movie would overwrite 800");
 	}
 
 	// ---- JSON round trip, corrupt, oversized, too-new ----
@@ -1813,11 +1930,21 @@ int main()
 				&& body.find("a_this == scope") != std::string::npos
 				&& body.find("thread_local bool inPoll") == std::string::npos,
 				"each poll has a process-wide reentrancy atomic");
-			Expect(body.find("poll alive") != std::string::npos
+				Expect(body.find("poll alive") != std::string::npos
 				&& body.find("kPollHeartbeatMs") != std::string::npos
 				&& body.find("compare_exchange_strong") != std::string::npos
 				&& body.find("HudMenusClear") != std::string::npos,
-				"the hook heartbeats with a compare-exchange and a fresh hudSafe");
+				"the hook heartbeats with a compare-exchange and HudMenusClear");
+			{
+				const auto beat = body.find("const auto lastBeat = g_pollHeartbeatMs");
+				const auto after = body.find("const auto hud = g_hudRoot", beat);
+				const auto hb = beat != std::string::npos && after > beat
+					? body.substr(beat, after - beat) : std::string();
+				Expect(!hb.empty() && hb.find("HudMenusClear") != std::string::npos,
+					"heartbeat uses HudMenusClear");
+				Expect(hb.find("HudSafe(") == std::string::npos,
+					"heartbeat never calls HudSafe");
+			}
 		}
 		{
 			const auto inst = main.find("void InstallAdvanceHook");
@@ -1859,6 +1986,24 @@ int main()
 			"HUD not ready names the blocking menu");
 		Expect(main.find("settings key latch expired") != std::string::npos,
 			"an expired F11 latch is logged");
+		{
+			const auto poll = main.find("void PollScaleform()");
+			const auto next = main.find("void PollMessages()", poll);
+			const auto body = poll != std::string::npos && next > poll
+				? main.substr(poll, next - poll) : std::string();
+			Expect(body.find("SettingsKeyLatchExpired(had, at, now)") != std::string::npos,
+				"L06 expiry log is gated on the latch");
+			Expect(body.find("if (had && !hzlog::SettingsKeyLatchFresh") == std::string::npos,
+				"L06 does not log freshness without SettingsKeyLatchExpired");
+		}
+		Expect(main.find("g_ml.buf.BumpView()") == std::string::npos,
+			"ApplyLiveSettings does not call private BumpView");
+		Expect(main.find("ApplySetCommand") != std::string::npos
+			&& main.find("rejected set|") != std::string::npos,
+			"set| goes through ApplySetCommand and logs rejects");
+		Expect(main.find("MsglogPatchSaveIni") != std::string::npos
+			&& main.find("FormatMessageLogIni") != std::string::npos,
+			"F11 Save patches [MessageLog] from live settings");
 		Expect(main.find("comms busy card name=") != std::string::npos,
 			"a busy card logs the crosshair name used");
 		Expect(main.find("kCrossNameMs") != std::string::npos
@@ -2253,7 +2398,8 @@ int main()
 		Expect(as.find("Clear this session?") != std::string::npos, "Clear session asks for a confirm");
 		Expect(as.find("REACTIONS") != std::string::npos && as.find("ALL TIME") != std::string::npos,
 			"type chips and All time are drawn");
-		Expect(as.find("Find…") != std::string::npos, "Find is a search box with a Find… placeholder");
+		Expect(as.find("Find...") != std::string::npos, "Find is a search box with a Find... placeholder");
+		Expect(as.find("Find…") == std::string::npos, "Find does not use a U+2026 ellipsis");
 		Expect(as.find("Find (keyboard only)") != std::string::npos, "Find shows a keyboard-only note on a pad");
 		Expect(as.find("UNPIN") != std::string::npos, "the footer PIN button can read UNPIN");
 		Expect(as.find("MESSAGE LOG SETTINGS") != std::string::npos, "the settings page is drawn");
@@ -2261,9 +2407,11 @@ int main()
 			&& as.find("function hzMsglogDrawSettings") != std::string::npos,
 			"SETTINGS opens a real page");
 		Expect(as.find("RECORD MESSAGES") != std::string::npos && as.find("SAVE TO DISK") != std::string::npos
-			&& as.find("\"HISTORY\"") != std::string::npos && as.find("MISSED BADGE") != std::string::npos
+			&& as.find("\"HISTORY\"") != std::string::npos
 			&& as.find("OLD CHARACTERS") != std::string::npos && as.find("CLEAR HISTORY") != std::string::npos,
 			"the settings page has the planned rows");
+		Expect(as.find("MISSED BADGE") == std::string::npos,
+			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
 		Expect(as.find("HZ_BUILD:String = \"0.43.0.6\"") != std::string::npos, "HUD movie build id is 0.43.0.6");
@@ -2382,7 +2530,7 @@ int main()
 		{
 			const auto copy = main.find("hzlog::ViewSnap MsglogCopyView");
 			Expect(copy != std::string::npos, "DLL exposes the view snapshot getter");
-			const auto next = main.find("void MsglogQueueListRefresh", copy);
+			const auto next = main.find("void MsglogApplyLiveSettings", copy);
 			const auto body = copy != std::string::npos && next > copy ? main.substr(copy, next - copy) : std::string();
 			Expect(body.find("g_mlMu") != std::string::npos, "the getter takes the buffer lock");
 			Expect(body.find("FileStore") == std::string::npos && body.find("Load(") == std::string::npos
@@ -2440,13 +2588,53 @@ int main()
 		const auto noRx = ParseLogTypes("medical,crew,busy,crime,credits,quest,location,xp,game");
 		Expect((noRx & kTypeReaction) == 0, "a user INI that lacks reaction keeps it off");
 		Expect((noRx & kTypeCrew) != 0, "that INI still has crew");
+		Expect(ParseLogTypes("") == 0, "empty LogTypes records nothing");
+		Expect(ParseLogTypes("   ") == 0, "whitespace-only LogTypes records nothing");
+		ExpectEq(LogTypesText(0), "", "LogTypesText of none is empty");
 		ExpectEq(LogTypesText(kTypeAll),
 			"medical,crew,reaction,busy,crime,credits,quest,location,xp,game",
 			"LogTypesText puts reaction after crew");
+		{
+			Settings s;
+			std::string why;
+			s.persist = true;
+			Expect(ApplySetCommand("persist|1", s, why) == SetParse::Ok && s.persist,
+				"S02 persist|1 is a set");
+			Expect(ApplySetCommand("persist|1", s, why) == SetParse::Ok && s.persist,
+				"S02 persist|1 twice stays on");
+			s.persist = false;
+			Expect(ApplySetCommand("persist|0", s, why) == SetParse::Ok && !s.persist,
+				"S02 persist|0 is a set");
+			s.record = false;
+			Expect(ApplySetCommand("record|1", s, why) == SetParse::Ok && s.record,
+				"record|1 turns record on");
+			Expect(ApplySetCommand("record|0", s, why) == SetParse::Ok && !s.record,
+				"record|0 turns record off");
+			Expect(ApplySetCommand("record|x", s, why) == SetParse::Reject, "record|x is rejected");
+			Expect(ApplySetCommand("record|2", s, why) == SetParse::Reject, "record|2 is rejected");
+			Expect(ApplySetCommand("record|true", s, why) == SetParse::Reject, "record|true is rejected");
+			Expect(ApplySetCommand("record|1|x", s, why) == SetParse::Reject, "an extra field is rejected");
+			Expect(ApplySetCommand("persist|true", s, why) == SetParse::Reject, "persist|true is rejected");
+			Expect(ApplySetCommand("history|500", s, why) == SetParse::Ok && s.historySize == 500,
+				"history|500 is a full-string integer");
+			Expect(ApplySetCommand("history|500|x", s, why) == SetParse::Reject, "history extra field is rejected");
+			Expect(ApplySetCommand("history| 500", s, why) == SetParse::Reject, "history with spaces is rejected");
+			Expect(ApplySetCommand("history|12abc", s, why) == SetParse::Reject, "history|12abc is rejected");
+			Expect(ApplySetCommand("history|5e2", s, why) == SetParse::Reject, "history|5e2 is rejected");
+			Expect(ApplySetCommand("types|", s, why) == SetParse::Ok && s.logTypes == 0,
+				"types| empty is none, not all-on");
+		}
 		if (HaveRepo()) {
 			const auto ini = Slurp("Interface/HorizonUI/HorizonUI.default.ini");
 			Expect(ini.find("LogTypes=medical,crew,reaction,busy,crime,credits,quest,location,xp,game") != std::string::npos,
 				"default.ini LogTypes includes reaction after crew");
+			Expect(ini.find("Planned Message Log") == std::string::npos
+				&& ini.find("Not a released feature") == std::string::npos,
+				"default.ini no longer calls Message Log a planned feature");
+			Expect(ini.find("drawn in a later phase") == std::string::npos,
+				"default.ini MissedBadge comment is not the stale later-phase line");
+			Expect(ini.find("An empty list records nothing") != std::string::npos,
+				"default.ini says an empty LogTypes list records nothing");
 			const auto readme = Slurp("README.md");
 			Expect(readme.find("settings popup") == std::string::npos
 				&& readme.find("settings folder") == std::string::npos,
@@ -3935,7 +4123,7 @@ int main()
 				const auto mainAt = body.find("WriteAtomicKeepTmp(path, body)");
 				const auto bakAt = body.find("WriteAtomicKeepTmp(bak, body)");
 				Expect(mainAt != std::string::npos && bakAt != std::string::npos && mainAt < bakAt,
-					"Clear writes the empty main file before the bak");
+					"Clear writes the snapshot to main before the bak");
 			}
 			{
 				const auto clr = main.find("void MsglogClearHistory()");
@@ -5078,6 +5266,32 @@ int main()
 				Expect(PollHeartbeatDue(0, 1), "the first heartbeat is due immediately");
 				Expect(!PollHeartbeatDue(1, 29999), "the heartbeat waits out 30 s");
 				Expect(PollHeartbeatDue(1, 30001), "the heartbeat fires at 30 s");
+				Expect(HeartbeatKeepsF11Open(false, false),
+					"F11 stays open when the heartbeat skips HudSafe");
+				Expect(!HeartbeatKeepsF11Open(true, false),
+					"HudSafe before the advancing scope would close F11");
+				Expect(HeartbeatKeepsF11Open(true, true),
+					"HudSafe after the scope is set does not close F11");
+				Expect(!SettingsKeyLatchExpired(false, 1, 100000),
+					"L06 no expiry log without a latch");
+				Expect(SettingsKeyLatchExpired(true, 1, 100000),
+					"L06 expiry log when a stale latch existed");
+				Expect(!SettingsKeyLatchExpired(true, 100000, 100001),
+					"L06 a fresh latch is not expired");
+				{
+					PollGate beat;
+					char hud{};
+					beat.OnMenuCreated("HUDMenu", &hud);
+					beat.f11Open = true;
+					beat.OnAdvance(&hud, 7, 1);
+					Expect(beat.f11Open && beat.heartbeats == 1,
+						"the first heartbeat leaves F11 open");
+					beat.OnAdvance(&hud, 7, 30002);
+					Expect(beat.heartbeats == 2 && beat.f11Open,
+						"F11 stays open across heartbeats");
+					Expect(beat.hudSafe == beat.menusClear,
+						"the heartbeat hudSafe is menus-clear only");
+				}
 				Expect(SettingsKeyEdge(true, false), "F11 rising edge fires");
 				Expect(!SettingsKeyEdge(true, true), "a held F11 does not retrigger");
 				Expect(UiTidRecordFirst(0, 5), "the first HUD tid is recorded as a hint");

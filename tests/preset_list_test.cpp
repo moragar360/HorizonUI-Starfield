@@ -498,6 +498,8 @@ int main()
 			Expect(inc != std::string::npos && lastClose > lastNs, "hz_ini_diff.h is included at file scope, not inside namespace HZ");
 		}
 		Expect(src.find("const std::string u = Diff(a_full, Defaults(a_p), ReadOr(a_p.user), o);") != std::string::npos, "SaveFromHud still runs through Diff");
+		Expect(src.find("MsglogPatchSaveIni(std::move(saveIni))") != std::string::npos,
+			"F11 Save replaces [MessageLog] with live DLL settings before Diff");
 		Expect(src.find("ShowHUDMessageEvent sink registered (address id 86800)") != std::string::npos, "sink registration is logged");
 		Expect(src.find("ShowHUDMessageEvent sink failed:") != std::string::npos, "sink failure is logged");
 		Expect(src.find("hud message: text=") != std::string::npos, "matching HUD text is logged");

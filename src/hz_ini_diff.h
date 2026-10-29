@@ -242,6 +242,23 @@ namespace HZF {
 			return Join(out);
 		}
 
+		// Purpose: replace one INI section with an authoritative block.
+		// F11 Save uses this so the movie cannot overwrite [MessageLog].
+		// Inputs: full INI text, section name (lower), replacement block.
+		// Outputs: text with that section swapped. Dependencies: StripSection.
+		inline std::string ReplaceSection(const std::string& a_text, const std::string& a_sec,
+			const std::string& a_block)
+		{
+			std::string o = StripSection(a_text, a_sec);
+			while (!o.empty() && (o.back() == '\n' || o.back() == '\r')) o.pop_back();
+			if (!o.empty()) o += "\r\n\r\n";
+			o += a_block;
+			if (o.size() < 2 || o[o.size() - 2] != '\r' || o.back() != '\n') {
+				if (!o.empty() && o.back() != '\n') o += "\r\n";
+			}
+			return o;
+		}
+
 		inline bool IsModuleSec(const std::string& a_n) { return a_n == "scanner" || a_n == "comms"; }
 		// v0.41.0 r2: keys a newer version replaced. Never written again by Diff (F11 save, presets, migration), so an old
 		// line cannot outlive the keys that replaced it. [Scanner] ScanShowVitals (0.40.3) = ScanShowVitalsHealth / O2 / Boost.

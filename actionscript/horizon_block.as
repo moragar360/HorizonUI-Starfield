@@ -3605,7 +3605,7 @@
          g.drawRoundRect(boxX, fy, boxW, 28, 8, 8);
          g.endFill();
          g.lineStyle();
-         var findLab:String = this.hzMlFind.length > 0 ? this.hzMlFind : "Find…";
+         var findLab:String = this.hzMlFind.length > 0 ? this.hzMlFind : "Find...";
          if(this.hzMlPad && !this.hzMlFindOn && this.hzMlFind.length == 0) { findLab = "Find (keyboard only)"; }
          var findCol:uint = (this.hzMlFindOn || this.hzMlFind.length > 0) ? uint(T.txt) : uint(T.mut);
          var ftf:TextField = this.hzWT(b,findLab,boxX + 10,fy + 6,boxW - 28,13,"rg",findCol,0.3,"left",13);
@@ -3879,7 +3879,6 @@
             rows.push({"id":"type" + String(i),"k":String(HZ_ML_KIND[i]),"l":String(HZ_ML_CHIPS[i]),"type":1});
             i++;
          }
-         rows.push({"id":"missed","k":"missed","l":"MISSED BADGE"});
          rows.push({"id":"old","k":"old","l":"OLD CHARACTERS"});
          return rows;
       }

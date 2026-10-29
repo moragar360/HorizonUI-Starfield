@@ -170,6 +170,25 @@ inline bool SettingsKeyLatchFresh(std::uint64_t a_atMs, std::uint64_t a_nowMs,
 	return (a_nowMs - a_atMs) <= a_maxAgeMs;
 }
 
+// Purpose: the expiry log fires only when a latch existed. A mutant that
+// logs on every poll (no `had`) is L06. Inputs: exchange result, stamp, now.
+inline bool SettingsKeyLatchExpired(bool a_had, std::uint64_t a_atMs, std::uint64_t a_nowMs,
+	std::uint64_t a_maxAgeMs = kSettingsKeyLatchMs)
+{
+	return a_had && !SettingsKeyLatchFresh(a_atMs, a_nowMs, a_maxAgeMs);
+}
+
+// Purpose: the 30 s heartbeat must not call HudSafe before the advancing
+// movie scope is set. MenuMovie would refuse, HudSafe would cache false,
+// and PollScaleform would ResetSettingsState (close F11).
+// Inputs: whether the heartbeat calls HudSafe, whether the scope is set.
+// Outputs: F11 stays open?
+inline bool HeartbeatKeepsF11Open(bool a_callHudSafe, bool a_scopeSet)
+{
+	if (a_callHudSafe && !a_scopeSet) return false;
+	return true;
+}
+
 // Purpose: HUD poll consumes only the job latch. No key-state edge.
 // Inputs: exchange(false) result, latch stamp, now. Outputs: fire?
 inline bool SettingsKeyHudTake(bool a_exchanged, std::uint64_t a_atMs, std::uint64_t a_nowMs,
@@ -211,6 +230,8 @@ struct PollGate
 	std::uint64_t lastHeartbeatMs{0};
 	int           heartbeats{0};
 	bool          hudSafe{false};
+	bool          f11Open{false};
+	bool          menusClear{true};
 
 	void OnMenuCreated(const char* a_name, const void* a_root, std::uint32_t = 0)
 	{
@@ -255,6 +276,7 @@ struct PollGate
 		if (PollHeartbeatDue(lastHeartbeatMs, a_nowMs)) {
 			++heartbeats;
 			lastHeartbeatMs = a_nowMs;
+			hudSafe = menusClear;
 		}
 		if (kind == PollMovie::Hud) {
 			if (UiTidRecordFirst(uiTidHint, a_tid))

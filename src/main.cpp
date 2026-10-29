@@ -765,6 +765,7 @@ namespace HZ
 
 	void MsglogLoadSettings(const HZF::Doc& a_d);
 	void MsglogEnsureInit();
+	std::string MsglogPatchSaveIni(std::string a_ini);
 	HWND GameWindow();
 
 	// Purpose: record the UI tid only from the HUD root's AdvanceFrame.
@@ -1352,7 +1353,9 @@ namespace HZ
 		}
 		if (!saveIni.empty()) {
 			HZF::Result r;
-			try { r = HZF::SaveFromHud(FilesP(), saveIni); } catch (...) { r.ok = false; r.msg = "error"; }
+			try {
+				r = HZF::SaveFromHud(FilesP(), MsglogPatchSaveIni(std::move(saveIni)));
+			} catch (...) { r.ok = false; r.msg = "error"; }
 			if (r.ok) {
 				REX::INFO("{}", r.msg);
 				LoadIni();
@@ -3257,6 +3260,17 @@ namespace HZ
 			s.record ? 1 : 0, s.persist ? 1 : 0, s.historySize, g_mlMarker ? 1 : 0);
 	}
 
+	std::string MsglogPatchSaveIni(std::string a_ini)
+	{
+		if (!g_mlInited) return a_ini;
+		hzlog::Settings live;
+		{
+			std::lock_guard lk(g_mlMu);
+			live = g_ml.buf.settings;
+		}
+		return HZF::ReplaceSection(a_ini, "messagelog", hzlog::FormatMessageLogIni(live));
+	}
+
 	void MsglogEnsureInit()
 	{
 		if (g_mlInited) return;
@@ -3371,40 +3385,44 @@ namespace HZ
 
 	void MsglogApplyLiveSettings(const hzlog::Settings& a_s)
 	{
-		std::lock_guard lk(g_mlMu);
-		g_ml.buf.settings.record = a_s.record;
-		g_ml.buf.settings.missedBadge = a_s.missedBadge;
-		g_ml.buf.settings.logTypes = a_s.logTypes;
-		g_ml.buf.SetHistorySize(a_s.historySize);
-		g_ml.ApplyPersist(a_s.persist);
-		g_mlWrites.SetPersist(a_s.persist);
-		g_ml.buf.BumpView();
+		bool needLoad = false;
+		hzlog::Character ch;
+		double gt = 0;
+		{
+			std::lock_guard lk(g_mlMu);
+			const bool turningOn = a_s.persist && !g_ml.buf.settings.persist;
+			g_ml.buf.settings.record = a_s.record;
+			g_ml.buf.settings.missedBadge = a_s.missedBadge;
+			g_ml.buf.settings.logTypes = a_s.logTypes;
+			g_ml.buf.SetHistorySize(a_s.historySize);
+			g_ml.ApplyPersist(a_s.persist, false);
+			g_mlWrites.SetPersist(a_s.persist);
+			if (turningOn && hzlog::PersistAllowed(g_ml.buf.character)) {
+				needLoad = true;
+				ch = g_ml.buf.character;
+			}
+		}
+		if (needLoad) {
+			{
+				std::lock_guard lk(g_mlEngMu);
+				gt = g_mlEng.gt;
+			}
+			MsglogQueueLoad(ch, gt, static_cast<std::int64_t>(std::time(nullptr)));
+		}
 	}
 
 	void MsglogApplySet(std::string_view a_rest)
 	{
-		const auto p = a_rest.find('|');
-		if (p == std::string_view::npos) return;
-		const auto key = a_rest.substr(0, p);
-		const auto val = a_rest.substr(p + 1);
 		hzlog::Settings s;
 		{
 			std::lock_guard lk(g_mlMu);
 			s = g_ml.buf.settings;
 		}
-		if (key == "record")
-			s.record = val != "0";
-		else if (key == "persist")
-			s.persist = val != "0";
-		else if (key == "missed")
-			s.missedBadge = val != "0";
-		else if (key == "history") {
-			try { s.historySize = hzlog::ClampHistory(std::stoi(std::string(val))); }
-			catch (...) { return; }
-		} else if (key == "types")
-			s.logTypes = hzlog::ParseLogTypes(val);
-		else
+		std::string why;
+		if (hzlog::ApplySetCommand(a_rest, s, why) != hzlog::SetParse::Ok) {
+			REX::INFO("message log: rejected set|{} ({})", a_rest, why);
 			return;
+		}
 		MsglogApplyLiveSettings(s);
 	}
 
@@ -3429,9 +3447,9 @@ namespace HZ
 		}
 	}
 
-	// Purpose: empty memory on the game thread, bump the per-key cancel
-	// seq, and queue an empty write on the worker when Persist is on.
-	// Persist=0 never creates or touches a file. No disk I/O here.
+	// Purpose: drop unpinned rows on the game thread, keep pins, bump the
+	// per-key cancel seq, and queue a pin snapshot write when Persist is
+	// on. Persist=0 never creates or touches a file. No disk I/O here.
 	// Known limitation: if the process is killed within a few ms of this
 	// call, the empty write may not reach disk. Do not join or wait here
 	// — that is a crash risk and would break MF-G (atexit owns stop/join).
@@ -4278,7 +4296,7 @@ namespace HZ
 		{
 			const bool had = g_settingsKeyReq.exchange(false, std::memory_order_acq_rel);
 			const auto at = g_settingsKeyAt.load(std::memory_order_acquire);
-			if (had && !hzlog::SettingsKeyLatchFresh(at, now)) {
+			if (hzlog::SettingsKeyLatchExpired(had, at, now)) {
 				const auto age = now >= at ? now - at : 0;
 				REX::INFO("settings key latch expired (age={}ms)", age);
 			}
@@ -4438,12 +4456,7 @@ namespace HZ
 				bool hudSafe = false;
 				if (auto uiBeat = RE::UI::GetSingleton())
 					hudSafe = HudMenusClear(uiBeat, true);
-				if (hzlog::IsHudMenuRoot(a_this, g_hudRoot.load(std::memory_order_acquire))) {
-					hudSafe = HudSafe();
-					g_hudSafeHint.store(hudSafe, std::memory_order_relaxed);
-				} else {
-					g_hudSafeHint.store(hudSafe, std::memory_order_relaxed);
-				}
+				g_hudSafeHint.store(hudSafe, std::memory_order_relaxed);
 				const auto lastHud = g_lastHudPollMs.load(std::memory_order_relaxed);
 				const auto age = lastHud && now >= lastHud ? now - lastHud : 0;
 				REX::INFO("scaleform: poll alive calls={} lastTid={} hudSafe={} root={} uiTid={} hudPolls={} lastHudAge={} hudRoot={} msgRoot={}",
