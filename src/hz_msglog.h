@@ -3513,6 +3513,8 @@ public:
 		const bool turningOn = PersistTurningOn(a_was, a_persist);
 		buf.settings.persist = a_persist;
 		if (!a_persist) {
+			if (!persistHold)
+				MarkPersistLineage();
 			store = std::make_unique<NullStore>();
 			dirty = false;
 			writePending = false;
@@ -3625,6 +3627,12 @@ public:
 		for (const auto& e : buf.entries) {
 			if (e.id > persistLineageMaxId) persistLineageMaxId = e.id;
 		}
+	}
+
+	void ResetMemory()
+	{
+		buf.ResetMemory();
+		persistLineageMaxId = 0;
 	}
 
 	void NoteRetryFailure(std::uint64_t a_nowMs)
@@ -3846,8 +3854,7 @@ public:
 				if (canLoad)
 					PromoteToCharacter(std::move(a_ch));
 			} else {
-				buf.ResetMemory();
-				persistLineageMaxId = 0;
+				ResetMemory();
 				dirty = false;
 				buf.character = std::move(a_ch);
 				if (canLoad)

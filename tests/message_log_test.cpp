@@ -79,6 +79,12 @@ hzlog::Capture Cap(hzlog::Kind a_k, const char* a_text, std::uint64_t a_now, dou
 	return c;
 }
 
+bool WriterSave(hzlog::Log& a_log)
+{
+	hzlog::FileStore fs(a_log.horizonDir / "MessageLog", hzlog::DefaultReplace);
+	return hzlog::ApplyDiskWrite(fs, a_log.buf.Snapshot(), true, false, false);
+}
+
 std::filesystem::path TmpRoot()
 {
 	auto p = std::filesystem::temp_directory_path() / ("hz-msglog-" + std::to_string(::getpid()));
@@ -1850,6 +1856,31 @@ int main()
 		}
 
 		{
+			Log cu2;
+			Settings cu2s;
+			cu2.Configure(cu2s, root);
+			cu2.buf.character = MakeCharacter(0xC020u, "Sam");
+			cu2.Offer(Cap(Kind::Game, "same-second loose", 50'000));
+			cu2.Offer(Cap(Kind::Game, "same-second pin", 50'000));
+			Expect(cu2.buf.Pin(cu2.buf.entries.back().id), "Cu2 pin");
+			Expect(cu2.Flush(50'000), "Cu2 seed");
+			cu2.ApplyPersist(false);
+			cu2.ApplyPersist(true);
+			cu2.persistHold = true;
+			Expect(cu2.ClearHistoryNow(), "Cu2 Clear at the same second");
+			Expect(cu2.Offer(Cap(Kind::Game, "POSTCLEAR", 50'000)) == OfferResult::Stored,
+				"Cu2 POSTCLEAR shares the cutoff second");
+			Expect(cu2.MergeOnPersistOn(), "Cu2 merge");
+			bool gotPost = false, gotLoose = false;
+			for (const auto& e : cu2.buf.entries) {
+				if (e.text == "POSTCLEAR") gotPost = true;
+				if (e.text == "same-second loose") gotLoose = true;
+			}
+			Expect(gotPost, "Cu2 same-second POSTCLEAR is kept");
+			Expect(!gotLoose, "Cu2 same-second unpinned file row is dropped");
+		}
+
+		{
 			Log probeB;
 			Settings bs;
 			probeB.Configure(bs, root);
@@ -1988,6 +2019,112 @@ int main()
 		}
 
 		{
+			Log r7;
+			Settings r7s;
+			r7.Configure(r7s, root);
+			r7.buf.character = MakeCharacter(0xF52u, "Sam");
+			Expect(r7.Offer(Cap(Kind::Game, "Old row", 100'000)) == OfferResult::Stored, "R7 old row");
+			Expect(r7.Flush(101'000), "R7 launch load/flush Old row");
+			ExpectEqI(static_cast<int>(r7.persistLineageMaxId), 1, "R7 launch lineage is the old row");
+			Expect(r7.Offer(Cap(Kind::Game, "New row", 300'000)) == OfferResult::Stored, "R7 new row");
+			Expect(WriterSave(r7), "R7 writes New row through ApplyDiskWrite");
+			ExpectEqI(static_cast<int>(r7.persistLineageMaxId), 1,
+				"R7 ApplyDiskWrite does not raise lineage (DLL write path)");
+			r7.ApplyPersist(false);
+			Expect(r7.persistLineageMaxId >= r7.buf.entries.back().id,
+				"R7 Persist off marks lineage without Flush");
+			r7.ApplyPersist(true);
+			int oldN = 0, newN = 0, newCount = 0;
+			for (const auto& e : r7.buf.entries) {
+				if (e.text == "Old row") oldN = e.n;
+				if (e.text == "New row") { newN = e.n; ++newCount; }
+			}
+			ExpectEqI(newCount, 1, "R7 New row stays one row");
+			ExpectEqI(oldN, 1, "R7 Old row stays n=1");
+			ExpectEqI(newN, 1, "R7 writer-path off→on stays n=1");
+			r7.ApplyPersist(false);
+			r7.ApplyPersist(true);
+			r7.ApplyPersist(false);
+			r7.ApplyPersist(true);
+			newN = 0;
+			newCount = 0;
+			for (const auto& e : r7.buf.entries) {
+				if (e.text == "New row") { newN = e.n; ++newCount; }
+			}
+			ExpectEqI(newCount, 1, "R7 three toggles stay one New row");
+			ExpectEqI(newN, 1, "R7 three toggles stay n=1");
+		}
+
+		{
+			Log r2;
+			Settings r2s;
+			r2.Configure(r2s, root);
+			r2.buf.character = MakeCharacter(0xF53u, "Sam");
+			Expect(r2.Offer(Cap(Kind::Game, "Inventory full", 100'000)) == OfferResult::Stored,
+				"R2 first offer");
+			Expect(WriterSave(r2), "R2 writes through ApplyDiskWrite");
+			r2.ApplyPersist(false);
+			Expect(r2.Offer(Cap(Kind::Game, "Inventory full", 102'000)) == OfferResult::Deduped, "R2 @102");
+			Expect(r2.Offer(Cap(Kind::Game, "Inventory full", 104'000)) == OfferResult::Deduped, "R2 @104");
+			Expect(r2.Offer(Cap(Kind::Game, "Inventory full", 106'000)) == OfferResult::Deduped, "R2 @106");
+			Expect(r2.Offer(Cap(Kind::Game, "Inventory full", 108'000)) == OfferResult::Deduped, "R2 @108");
+			r2.ApplyPersist(true);
+			ExpectEqI(static_cast<int>(r2.buf.entries.size()), 1, "R2 writer-path chain stays one row");
+			ExpectEqI(r2.buf.entries.front().n, 5, "R2 writer-path chain n is 5");
+		}
+
+		{
+			Log r4;
+			Settings r4s;
+			r4.Configure(r4s, root);
+			r4.buf.character = MakeCharacter(0xF54u, "Sam");
+			Expect(r4.Offer(Cap(Kind::Quest, "Quest done", 200'000)) == OfferResult::Stored, "R4 quest");
+			r4.buf.entries.back().n = 4;
+			Expect(r4.Offer(Cap(Kind::Game, "Other", 300'000)) == OfferResult::Stored, "R4 other");
+			Expect(WriterSave(r4), "R4 writes through ApplyDiskWrite");
+			r4.ApplyPersist(false);
+			r4.ApplyPersist(true);
+			int questN = 0, otherN = 0, otherCount = 0;
+			for (const auto& e : r4.buf.entries) {
+				if (e.text == "Quest done") questN = e.n;
+				if (e.text == "Other") { otherN = e.n; ++otherCount; }
+			}
+			ExpectEqI(questN, 4, "R4 Quest done stays n=4");
+			ExpectEqI(otherCount, 1, "R4 Other stays one row");
+			ExpectEqI(otherN, 1, "R4 empty-at-launch written row stays n=1");
+		}
+
+		{
+			Log seed4;
+			Settings s4;
+			seed4.Configure(s4, root);
+			seed4.buf.character = MakeCharacter(0xF55u, "Sam");
+			seed4.Offer(Cap(Kind::Game, "File A", 100'000));
+			seed4.Offer(Cap(Kind::Game, "File B", 110'000));
+			Expect(WriterSave(seed4), "R5 seed two file rows via ApplyDiskWrite");
+			Log fresh4;
+			Settings off4;
+			off4.persist = false;
+			fresh4.Configure(off4, root);
+			fresh4.buf.character = MakeCharacter(0xF55u, "Sam");
+			Expect(fresh4.Offer(Cap(Kind::Game, "Mem C", 200'000)) == OfferResult::Stored, "R5 mem C");
+			Expect(fresh4.Offer(Cap(Kind::Game, "Mem D", 210'000)) == OfferResult::Stored, "R5 mem D");
+			ExpectEqI(static_cast<int>(fresh4.persistLineageMaxId), 0, "R5 Persist=0 launch has no lineage");
+			Settings on4;
+			fresh4.Configure(on4, root, true);
+			ExpectEqI(static_cast<int>(fresh4.buf.entries.size()), 4,
+				"R5 Persist=0 colliding ids stay 4 distinct rows");
+			std::set<std::string> texts;
+			for (const auto& e : fresh4.buf.entries) {
+				texts.insert(e.text);
+				ExpectEqI(e.n, 1, "R5 each colliding row stays n=1");
+			}
+			Expect(texts.count("File A") && texts.count("File B")
+				&& texts.count("Mem C") && texts.count("Mem D"),
+				"R5 keeps all four texts");
+		}
+
+		{
 			Log d4;
 			Settings d4s;
 			d4.Configure(d4s, root);
@@ -2044,9 +2181,56 @@ int main()
 			mb.ts = 18;
 			Expect(SamePersistIdentity(fa, mb), "lineage identity has no 3 s window");
 			Expect(!SamePersistRow(fa, mb), "SamePersistRow still applies the window");
+			mb.kind = Kind::Xp;
+			Expect(!SamePersistIdentity(fa, mb), "L4 kind mismatch is not the same persist row");
+			mb.kind = Kind::Quest;
+			mb.text = "other words";
+			mb.norm = NormalizeText(mb.text);
+			Expect(!SamePersistIdentity(fa, mb), "L5 text mismatch is not the same persist row");
+			mb.text = fa.text;
+			mb.norm = fa.norm.empty() ? NormalizeText(fa.text) : fa.norm;
+			mb.id = 4;
+			Expect(!SamePersistIdentity(fa, mb), "L6 id mismatch is not the same persist row");
+			mb.id = 0;
+			fa.id = 0;
+			Expect(!SamePersistIdentity(fa, mb), "L6 id 0 is not a persist row");
 			Expect(PersistLineageId(3, 3), "an id at the high-water mark is lineage");
 			Expect(!PersistLineageId(4, 3), "an id above the high-water mark is not lineage");
 			Expect(!PersistLineageId(1, 0), "a Persist=0 launch has no lineage");
+		}
+
+		{
+			Log sw;
+			Settings sws;
+			sw.Configure(sws, root);
+			sw.buf.character = MakeCharacter(0xA11Au, "Sam");
+			sw.Offer(Cap(Kind::Game, "before switch", 80'000));
+			Expect(sw.Flush(81'000), "L8 flush before switch");
+			Expect(sw.persistLineageMaxId != 0, "L8 flush sets lineage");
+			const auto chB = MakeCharacter(0xB22Bu, "Barrett");
+			Expect(sw.OnHudReady(chB, 20.0, 90, 90'000), "L8 character switch");
+			ExpectEqI(static_cast<int>(sw.persistLineageMaxId), 0,
+				"L8 character switch resets the lineage max");
+			sw.persistLineageMaxId = 9;
+			sw.ResetMemory();
+			ExpectEqI(static_cast<int>(sw.persistLineageMaxId), 0,
+				"L8 ResetMemory clears the lineage max");
+		}
+
+		{
+			Log ld;
+			Settings lds;
+			ld.Configure(lds, root);
+			ld.buf.character = MakeCharacter(0xC33Cu, "Sam");
+			ld.Offer(Cap(Kind::Game, "loaded row", 82'000));
+			Expect(WriterSave(ld), "L11 writer seed");
+			Log load;
+			Settings ls;
+			load.Configure(ls, root);
+			load.buf.character = MakeCharacter(0xC33Cu, "Sam");
+			ExpectEqI(static_cast<int>(load.persistLineageMaxId), 0, "L11 starts with no lineage");
+			load.LoadCurrent();
+			Expect(load.persistLineageMaxId != 0, "L11 LoadCurrent marks lineage from the file");
 		}
 
 		{
@@ -2442,6 +2626,9 @@ int main()
 			Expect(body.find("if (g_ml.persistHold)") != std::string::npos
 				&& body.find("clearAfterHold") != std::string::npos,
 				"Clear during a persist hold skips the disk write");
+			Expect(body.find("g_ml.ArmClearCutoff()") != std::string::npos
+				&& body.find("g_ml.ClearHistoryMemory()") != std::string::npos,
+				"Cu5 Clear records the cutoff before it drops rows");
 		}
 		Expect(main.find("comms busy card name=") != std::string::npos,
 			"a busy card logs the crosshair name used");
@@ -2549,6 +2736,17 @@ int main()
 				&& body.find("g_mlRecoverBusy.store(true)") != std::string::npos
 				&& body.find("lock_guard lk(g_mlMu)") != std::string::npos,
 				"PromoteId checks recoverBusy as the first ShouldQueue argument under the lock");
+		}
+		{
+			const auto rec = main.find("void MsglogQueueRecover(bool a_force");
+			const auto next = main.find("void MsglogParkHeldIfNeeded()", rec);
+			const auto body = rec != std::string::npos && next > rec
+				? main.substr(rec, next - rec) : std::string();
+			Expect(body.find("eng.playerId") != std::string::npos
+				&& body.find("MakeCharacter(eng.playerId, eng.name)") != std::string::npos,
+				"S1 QueueRecover rebuilds the character from the engine snapshot");
+			Expect(body.find("ch = g_ml.buf.character") != std::string::npos,
+				"S1 QueueRecover falls back to the buffer only when engine id is 0");
 		}
 		{
 			const auto rx = main.find("void CommsRxPoll(ULONGLONG a_now)");
@@ -2736,15 +2934,17 @@ int main()
 				&& body.find("OnClear") != std::string::npos,
 				"H4 consumeClearWrite goes through OnClear");
 			Expect(body.find("StaleReloadDue") != std::string::npos
-				&& body.find("StaleReloadCharacter") != std::string::npos
-				&& body.find("staleReloadAttempts") != std::string::npos,
-				"stale held reload is gated on backoff and the attempt cap");
+				&& body.find("++g_ml.staleReloadAttempts") != std::string::npos
+				&& body.find("kStaleReloadCap") != std::string::npos,
+				"S5 stale held reload bumps attempts and honors the cap");
 			Expect(body.find("MsglogQueueRecover(true)") != std::string::npos
-				&& body.find("NoteRetryFailure") != std::string::npos,
-				"stale held reload uses QueueRecover and arms the backoff");
-			Expect(body.find("if (ch.key.empty())") == std::string::npos
-				|| body.find("StaleReloadCharacter(eng.playerId") != std::string::npos,
-				"stale reload does not reuse the stale job character");
+				&& body.find("NoteRetryFailure") != std::string::npos
+				&& body.find("needRecover") != std::string::npos,
+				"S6/S9 stale held reload uses QueueRecover and arms the backoff");
+			Expect(body.find("stale load retry cap reached") != std::string::npos,
+				"the stale reload cap hit is logged");
+			Expect(body.find("StaleReloadCharacter") == std::string::npos,
+				"stale reload does not assign the dead job character");
 		}
 		{
 			int gens = 0;
@@ -2779,6 +2979,10 @@ int main()
 			for (std::size_t p = 0; (p = hudBody.find(holdClear, p)) != std::string::npos; ++p)
 				++clearsHold;
 			ExpectEqI(clearsHold, 2, "both HUD-ready resets clear persistHold and holdTargetKey");
+			int lineageResets = 0;
+			for (std::size_t p = 0; (p = hudBody.find("g_ml.ResetMemory()", p)) != std::string::npos; ++p)
+				++lineageResets;
+			ExpectEqI(lineageResets, 2, "both HUD-ready resets clear the lineage max");
 		}
 		Expect(main.find("ParkHeldRows") != std::string::npos && main.find("keeping {} held rows") != std::string::npos,
 			"unrecovered held rows are logged and parked");
@@ -2828,6 +3032,18 @@ int main()
 		Expect(Slurp("src/hz_msglog.h").find("bool a_loadNow = false") != std::string::npos
 			&& Slurp("src/hz_msglog.h").find("void Configure(const Settings& a_s, std::filesystem::path a_horizonDir, bool a_loadNow = false)") != std::string::npos,
 			"Configure defaults loadNow to false");
+		{
+			const auto hdr = Slurp("src/hz_msglog.h");
+			const auto offAt = hdr.find("void ApplyPersistFrom(bool a_was, bool a_persist, bool a_loadNow)");
+			const auto nextAt = hdr.find("bool FlushDeferredClear()", offAt);
+			const auto offFn = offAt != std::string::npos && nextAt > offAt
+				? hdr.substr(offAt, nextAt - offAt) : std::string();
+			Expect(offFn.find("if (!persistHold)") != std::string::npos
+				&& offFn.find("MarkPersistLineage()") != std::string::npos,
+				"Persist off marks lineage so ApplyDiskWrite rows survive off→on");
+			Expect(hdr.find("inline constexpr int kStaleReloadCap = 5") != std::string::npos,
+				"S8 kStaleReloadCap is 5");
+		}
 		Expect(main.find("g_ml.holdTargetKey = ch.key") != std::string::npos,
 			"a failed name-hash promote records the player-id target");
 		Expect(main.find("g_mlInFlightGen = job.gen") != std::string::npos,
@@ -3091,6 +3307,14 @@ int main()
 			Expect(ApplySetCommand("types|medical", s, why) == SetParse::Ok
 				&& (s.logTypes & kTypeMedical) != 0,
 				"types|medical lowercase is accepted");
+			s.logTypes = 0;
+			Expect(ApplySetCommand("types|medical, crew", s, why) == SetParse::Ok
+				&& (s.logTypes & kTypeMedical) != 0 && (s.logTypes & kTypeCrew) != 0,
+				"T2 types| strips spaces around tokens");
+			s.logTypes = 0;
+			Expect(ApplySetCommand("types| medical", s, why) == SetParse::Ok
+				&& (s.logTypes & kTypeMedical) != 0,
+				"T2 types| leading space is stripped");
 			Expect(ApplySetCommand("history|-50", s, why) == SetParse::Reject,
 				"a negative history is rejected");
 			Expect(ApplySetCommand("history|2500", s, why) == SetParse::Ok && s.historySize == 1000,
@@ -3115,9 +3339,16 @@ int main()
 			Expect(StaleReloadDue(true, true, 0, 1000, 0), "first stale held load is due");
 			Expect(!StaleReloadDue(true, true, 2000, 1500, 1), "stale reload waits the backoff");
 			Expect(StaleReloadDue(true, true, 2000, 2000, 1), "stale reload runs when backoff is due");
-			Expect(!StaleReloadDue(true, true, 0, 1000, kStaleReloadCap),
-				"stale reload stops at the attempt cap");
+			ExpectEqI(kStaleReloadCap, 5, "S8 stale reload cap is 5");
+			Expect(!StaleReloadDue(true, true, 0, 1000, 5),
+				"S8 five attempts hits the default cap");
 			Expect(!StaleReloadDue(false, true, 0, 1000, 0), "a current load is not a stale reload");
+			{
+				Log s7;
+				s7.staleReloadAttempts = 4;
+				s7.NoteRetrySuccess();
+				ExpectEqI(s7.staleReloadAttempts, 0, "S7 NoteRetrySuccess resets the attempt count");
+			}
 			{
 				const auto engB = MakeCharacter(0xBu, "Barrett");
 				const auto jobA = MakeCharacter(0xAu, "Andreja");

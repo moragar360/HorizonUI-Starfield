@@ -3864,7 +3864,7 @@ namespace HZ
 					MsglogParkHeldIfNeeded();
 					g_mlHoldFlush = false;
 					g_ml.NoteRetrySuccess();
-					g_ml.buf.ResetMemory();
+					g_ml.ResetMemory();
 					g_ml.dirty = false;
 					g_ml.buf.character = ch;
 					g_ml.lastNotice.clear();
@@ -3882,7 +3882,7 @@ namespace HZ
 					MsglogParkHeldIfNeeded();
 					g_mlHoldFlush = false;
 					g_ml.NoteRetrySuccess();
-					g_ml.buf.ResetMemory();
+					g_ml.ResetMemory();
 					g_ml.dirty = false;
 					g_ml.buf.character = ch;
 					g_ml.lastNotice.clear();
@@ -3945,7 +3945,6 @@ namespace HZ
 			bool needRecover = false;
 			hzlog::WriteDecision clearDec;
 			bool needClearWrite = false;
-			const auto eng = MsglogEngSnap();
 			{
 				std::lock_guard lk(g_mlMu);
 				const auto now = GetTickCount64();
@@ -3960,7 +3959,8 @@ namespace HZ
 						g_ml.staleReloadAttempts)) {
 						++g_ml.staleReloadAttempts;
 						needRecover = true;
-						ch = hzlog::StaleReloadCharacter(eng.playerId, eng.name, g_ml.buf.character);
+					} else if (g_ml.persistHold && g_ml.staleReloadAttempts >= hzlog::kStaleReloadCap) {
+						REX::WARN("message log: stale load retry cap reached");
 					}
 				} else if (!ok) {
 					hzlog::NoteLoadResult(false, g_ml.persistHold);
