@@ -281,8 +281,60 @@ inline bool ParseSetHistory(std::string_view a_v, int& a_out)
 	const auto* e = b + a_v.size();
 	const auto r = std::from_chars(b, e, n);
 	if (r.ec != std::errc{} || r.ptr != e) return false;
+	if (n < 0) return false;
 	a_out = ClampHistory(n);
 	return true;
+}
+
+inline bool KnownLogTypeKey(std::string_view a_k)
+{
+	return a_k == "medical" || a_k == "crew" || a_k == "reaction" || a_k == "busy"
+		|| a_k == "crime" || a_k == "credits" || a_k == "quest" || a_k == "location"
+		|| a_k == "xp" || a_k == "game";
+}
+
+inline bool ParseSetLogTypes(std::string_view a_s, std::uint32_t& a_out)
+{
+	std::uint32_t bits = 0;
+	std::string cur;
+	auto flush = [&]() -> bool {
+		std::string t;
+		for (unsigned char c : cur) {
+			if (c == ' ' || c == '\t') continue;
+			t.push_back(static_cast<char>(std::tolower(c)));
+		}
+		cur.clear();
+		if (t.empty()) return true;
+		if (!KnownLogTypeKey(t)) return false;
+		bits |= TypeBit(KindFromKey(t));
+		return true;
+	};
+	for (char c : a_s) {
+		if (c == ',') {
+			if (!flush()) return false;
+		} else {
+			cur.push_back(c);
+		}
+	}
+	if (!flush()) return false;
+	a_out = bits;
+	return true;
+}
+
+inline bool PersistTurningOn(bool a_was, bool a_want)
+{
+	return a_want && !a_was;
+}
+
+inline std::string NormalizeText(std::string_view a_s);
+
+inline bool SamePersistRow(const Entry& a, const Entry& b)
+{
+	if (!a.id || a.id != b.id) return false;
+	if (a.ts != b.ts) return false;
+	const auto na = a.norm.empty() ? NormalizeText(a.text) : a.norm;
+	const auto nb = b.norm.empty() ? NormalizeText(b.text) : b.norm;
+	return na == nb;
 }
 
 inline SetParse ApplySetCommand(std::string_view a_rest, Settings& a_s, std::string& a_why)
@@ -328,7 +380,10 @@ inline SetParse ApplySetCommand(std::string_view a_rest, Settings& a_s, std::str
 		return SetParse::Ok;
 	}
 	if (key == "types") {
-		a_s.logTypes = ParseLogTypes(val);
+		if (!ParseSetLogTypes(val, a_s.logTypes)) {
+			a_why = "unknown log type";
+			return SetParse::Reject;
+		}
 		return SetParse::Ok;
 	}
 	a_why = "unknown key";
@@ -3357,6 +3412,8 @@ public:
 	std::vector<OtherCharacter> otherCache;
 	std::uint64_t             otherCacheGen{0};
 	bool                      persistHold{false};
+	bool                      clearAfterHold{false};
+	bool                      consumeClearWrite{false};
 	std::string               holdTargetKey;
 	int                       retryBackoffMs{0};
 	std::uint64_t             retryAt{0};
@@ -3364,17 +3421,23 @@ public:
 
 	Log() { store = std::make_unique<NullStore>(); }
 
-	void Configure(const Settings& a_s, std::filesystem::path a_horizonDir)
+	void Configure(const Settings& a_s, std::filesystem::path a_horizonDir, bool a_loadNow = true)
 	{
+		const bool wasPersist = buf.settings.persist;
 		buf.settings = a_s;
 		buf.settings.historySize = ClampHistory(a_s.historySize);
 		horizonDir = std::move(a_horizonDir);
-		ApplyPersist(a_s.persist);
+		ApplyPersistFrom(wasPersist, a_s.persist, a_loadNow);
 	}
 
 	void ApplyPersist(bool a_persist, bool a_loadNow = true)
 	{
-		const bool turningOn = a_persist && !buf.settings.persist;
+		ApplyPersistFrom(buf.settings.persist, a_persist, a_loadNow);
+	}
+
+	void ApplyPersistFrom(bool a_was, bool a_persist, bool a_loadNow)
+	{
+		const bool turningOn = PersistTurningOn(a_was, a_persist);
 		buf.settings.persist = a_persist;
 		if (!a_persist) {
 			store = std::make_unique<NullStore>();
@@ -3395,6 +3458,15 @@ public:
 	// before any write. Holds persistHold until the read succeeds.
 	// Inputs: none (uses the current character and store). Outputs: true
 	// when the hold is cleared. Dependencies: FileStore::Load.
+	bool FlushDeferredClear()
+	{
+		if (!consumeClearWrite) return true;
+		consumeClearWrite = false;
+		if (!buf.settings.persist || !ValidLogKey(buf.character.key)) return true;
+		FileStore fs(horizonDir / "MessageLog", replace);
+		return fs.SaveEmptyBoth(buf.Snapshot());
+	}
+
 	bool MergeOnPersistOn()
 	{
 		if (!buf.settings.persist) return true;
@@ -3409,11 +3481,16 @@ public:
 			const bool haveFile = !file.entries.empty() || !file.character.key.empty();
 			if (haveFile) {
 				ApplyRecoveredFile(std::move(file), buf.character);
-				return true;
+				return FlushDeferredClear();
 			}
 		}
 		persistHold = false;
-		return true;
+		if (clearAfterHold) {
+			clearAfterHold = false;
+			ClearHistoryMemory();
+			consumeClearWrite = true;
+		}
+		return FlushDeferredClear();
 	}
 
 	bool FolderExists() const { return store && store->FolderExists(); }
@@ -3576,7 +3653,21 @@ public:
 		const bool haveFile = !a_file.entries.empty() || !a_file.character.key.empty();
 		if (haveFile) {
 			buf.LoadState(std::move(a_file));
-			buf.MergeSession(session);
+			std::vector<Entry> add;
+			add.reserve(session.size());
+			for (const auto& in : session) {
+				bool skip = false;
+				for (auto& e : buf.entries) {
+					if (!SamePersistRow(e, in)) continue;
+					skip = true;
+					if (in.n > e.n) e.n = in.n;
+					if (in.pin) e.pin = 1;
+					break;
+				}
+				if (!skip) add.push_back(in);
+			}
+			if (!add.empty())
+				buf.MergeSession(add);
 		}
 		if (PersistAllowed(a_ch)) {
 			buf.character = std::move(a_ch);
@@ -3585,6 +3676,11 @@ public:
 		}
 		NoteRetrySuccess();
 		dirty = true;
+		if (clearAfterHold) {
+			clearAfterHold = false;
+			ClearHistoryMemory();
+			consumeClearWrite = true;
+		}
 	}
 
 	// Purpose: re-read the target file on a timer, merge the held session,
@@ -3726,6 +3822,10 @@ public:
 		ClearHistoryMemory();
 		const auto key = buf.character.key;
 		fileGate.BumpCancel(key);
+		if (persistHold) {
+			clearAfterHold = true;
+			return true;
+		}
 		if (!buf.settings.persist) return true;
 		if (!ValidLogKey(key)) return true;
 		const auto snap = buf.Snapshot();

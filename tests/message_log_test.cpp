@@ -1727,6 +1727,121 @@ int main()
 				|| sixBody.find("disk row 0") != std::string::npos,
 				"bak fallback still has disk history");
 		}
+
+		{
+			Log reps;
+			Settings rs;
+			reps.Configure(rs, root);
+			reps.buf.character = MakeCharacter(0x7007u, "Sam");
+			for (int i = 0; i < 5; ++i) {
+				std::string t = "repeat row ";
+				t += std::to_string(i);
+				reps.Offer(Cap(Kind::Game, t.c_str(), 24'000 + static_cast<std::uint64_t>(i) * 1000));
+			}
+			Expect(reps.Flush(30'000), "seed 5 rows for repeat-count");
+			for (const auto& e : reps.buf.entries)
+				ExpectEqI(e.n, 1, "seed repeat count is 1");
+			reps.ApplyPersist(false);
+			reps.ApplyPersist(true);
+			reps.ApplyPersist(false);
+			reps.ApplyPersist(true);
+			ExpectEqI(static_cast<int>(reps.buf.entries.size()), 5,
+				"repeated off→on keeps 5 rows");
+			for (const auto& e : reps.buf.entries)
+				ExpectEqI(e.n, 1, "repeated off→on does not inflate n");
+			Expect(reps.Flush(31'000), "flush after repeated toggles");
+			auto parsedN = FromJson(ReadFile(root / "MessageLog" / "MessageLog_00007007.json"));
+			Expect(parsedN.ok && parsedN.state.entries.size() == 5,
+				"disk still has 5 rows after toggles");
+			for (const auto& e : parsedN.state.entries)
+				ExpectEqI(e.n, 1, "disk repeat counts stay 1 after toggles");
+		}
+
+		{
+			Log restore;
+			Settings onS;
+			restore.Configure(onS, root);
+			restore.buf.character = MakeCharacter(0x8008u, "Sam");
+			for (int i = 0; i < 4; ++i) {
+				std::string t = "old restore ";
+				t += std::to_string(i);
+				restore.Offer(Cap(Kind::Game, t.c_str(), 32'000 + static_cast<std::uint64_t>(i) * 1000));
+			}
+			Expect(restore.Flush(36'000), "seed 4 old rows before Persist off");
+			restore.ApplyPersist(false);
+			restore.Offer(Cap(Kind::Game, "new while persist off", 37'000));
+			Settings backOn;
+			backOn.persist = true;
+			restore.Configure(backOn, root);
+			Expect(!restore.persistHold, "Configure off→on merges and clears the hold");
+			ExpectEqI(static_cast<int>(restore.buf.entries.size()), 5,
+				"Persist=1 restore while off keeps old rows plus the new one");
+			bool old0 = false, old3 = false, gotNew = false;
+			for (const auto& e : restore.buf.entries) {
+				if (e.text == "old restore 0") old0 = true;
+				if (e.text == "old restore 3") old3 = true;
+				if (e.text == "new while persist off") gotNew = true;
+			}
+			Expect(old0 && old3 && gotNew, "a Persist=1 restore while off keeps the old rows");
+			Expect(restore.Flush(38'000), "flush after Configure restore");
+			const auto restBody = ReadFile(root / "MessageLog" / "MessageLog_00008008.json");
+			Expect(restBody.find("old restore 0") != std::string::npos
+				&& restBody.find("old restore 3") != std::string::npos,
+				"restored Persist=1 does not overwrite older history");
+			Expect(restBody.find("new while persist off") != std::string::npos,
+				"the in-memory row from Persist-off is kept");
+		}
+
+		{
+			Log heldClr;
+			Settings hs;
+			heldClr.Configure(hs, root);
+			heldClr.buf.character = MakeCharacter(0x9009u, "Sam");
+			heldClr.Offer(Cap(Kind::Game, "file pin", 40'000));
+			heldClr.Offer(Cap(Kind::Game, "file loose", 41'000));
+			const auto filePinId = heldClr.buf.entries.front().id;
+			Expect(heldClr.buf.Pin(filePinId), "pin a file row");
+			Expect(heldClr.Flush(42'000), "seed file before held Clear");
+			heldClr.ApplyPersist(false);
+			heldClr.Offer(Cap(Kind::Game, "mem pin", 43'000));
+			const auto memPinId = heldClr.buf.entries.back().id;
+			Expect(heldClr.buf.Pin(memPinId), "pin a memory-only row");
+			heldClr.ApplyPersist(true);
+			heldClr.persistHold = true;
+			const auto heldPath = root / "MessageLog" / "MessageLog_00009009.json";
+			const auto before = ReadFile(heldPath);
+			Expect(heldClr.ClearHistoryNow(), "Clear during persistHold skips the disk write");
+			Expect(ReadFile(heldPath) == before, "held Clear does not write memory pins over the file");
+			Expect(heldClr.MergeOnPersistOn(), "merge after a held Clear");
+			const auto after = ReadFile(heldPath);
+			Expect(after.find("file pin") != std::string::npos, "deferred Clear keeps the file pin");
+			Expect(after.find("file loose") == std::string::npos, "deferred Clear drops unpinned file rows");
+		}
+
+		{
+			Log k02;
+			Settings k2s;
+			k02.Configure(k2s, root);
+			k02.buf.character = MakeCharacter(0xA00Au, "Sam");
+			k02.Offer(Cap(Kind::Game, "k02 pin a", 44'000));
+			k02.Offer(Cap(Kind::Game, "k02 pin b", 45'000));
+			k02.Offer(Cap(Kind::Game, "k02 loose", 46'000));
+			Expect(k02.buf.Pin(k02.buf.entries[0].id) && k02.buf.Pin(k02.buf.entries[1].id),
+				"K02 two pins");
+			k02.buf.ClearHistory();
+			ExpectEqI(static_cast<int>(k02.buf.entries.size()), 2, "K02 memory keeps pins");
+			FileStore kfs(root / "MessageLog", DefaultReplace);
+			const auto snap = k02.buf.Snapshot();
+			Expect(ApplyDiskWrite(kfs, snap, true, true, false), "K02 writer-path Clear");
+			const auto kbody = ReadFile(root / "MessageLog" / "MessageLog_0000A00A.json");
+			const auto kbak = ReadFile(root / "MessageLog" / "MessageLog_0000A00A.json.bak");
+			Expect(kbody.find("k02 pin a") != std::string::npos && kbody.find("k02 pin b") != std::string::npos,
+				"K02 writer Clear writes pins to main");
+			Expect(kbody.find("k02 loose") == std::string::npos, "K02 writer Clear drops unpinned rows");
+			Expect(kbak.find("k02 pin a") != std::string::npos && kbak.find("k02 pin b") != std::string::npos,
+				"K02 writer Clear writes pins to bak");
+			Expect(kbak.find("k02 loose") == std::string::npos, "K02 bak is not an empty wipe");
+		}
 		std::error_code ec;
 		std::filesystem::remove_all(root, ec);
 	}
@@ -2004,6 +2119,57 @@ int main()
 		Expect(main.find("MsglogPatchSaveIni") != std::string::npos
 			&& main.find("FormatMessageLogIni") != std::string::npos,
 			"F11 Save patches [MessageLog] from live settings");
+		{
+			const auto live = main.find("void MsglogApplyLiveSettings");
+			const auto next = main.find("void MsglogApplySet", live);
+			const auto body = live != std::string::npos && next > live
+				? main.substr(live, next - live) : std::string();
+			Expect(body.find("ApplyPersist(a_s.persist, false)") != std::string::npos,
+				"P04 live Persist-on does not load on the poll thread");
+			Expect(body.find("MsglogQueueLoad") != std::string::npos
+				&& body.find("PersistTurningOn") != std::string::npos,
+				"P05/P06 live Persist-on queues the load job");
+			Expect(body.find("store->Load") == std::string::npos
+				&& body.find("MergeOnPersistOn") == std::string::npos
+				&& body.find("LoadCurrent") == std::string::npos,
+				"P04 live settings do no load I/O on the poll thread");
+		}
+		{
+			const auto load = main.rfind("void MsglogLoadSettings");
+			const auto next = main.find("std::string MsglogPatchSaveIni(std::string a_ini)", load);
+			const auto body = load != std::string::npos && next > load
+				? main.substr(load, next - load) : std::string();
+			Expect(body.find("Configure(s, dir, false)") != std::string::npos,
+				"P04 LoadIni Persist-on does not load on the caller thread");
+			Expect(body.find("MsglogQueueLoad") != std::string::npos
+				&& body.find("PersistTurningOn") != std::string::npos,
+				"P05/P06 LoadIni Persist-on queues the same load job");
+			Expect(body.find("store->Load") == std::string::npos
+				&& body.find("MergeOnPersistOn") == std::string::npos,
+				"LoadIni MessageLog apply does no load I/O");
+		}
+		{
+			const auto patch = main.rfind("std::string MsglogPatchSaveIni");
+			const auto next = main.find("void MsglogEnsureInit()", patch);
+			const auto body = patch != std::string::npos && next > patch
+				? main.substr(patch, next - patch) : std::string();
+			Expect(body.find("g_ml.buf.settings") != std::string::npos,
+				"Q05 Save patches from live settings");
+			Expect(body.find("Settings live;") != std::string::npos
+				&& body.find("live = g_ml.buf.settings") != std::string::npos,
+				"Q05 does not patch with default Settings");
+		}
+		Expect(main.find("LoadIni(false)") != std::string::npos,
+			"a HUD Save does not re-Configure MessageLog from the INI");
+		{
+			const auto clr = main.find("void MsglogClearHistory()");
+			const auto next = main.find("std::vector<hzlog::OtherCharacter> MsglogListOthers()", clr);
+			const auto body = clr != std::string::npos && next > clr
+				? main.substr(clr, next - clr) : std::string();
+			Expect(body.find("if (g_ml.persistHold)") != std::string::npos
+				&& body.find("clearAfterHold") != std::string::npos,
+				"Clear during a persist hold skips the disk write");
+		}
 		Expect(main.find("comms busy card name=") != std::string::npos,
 			"a busy card logs the crosshair name used");
 		Expect(main.find("kCrossNameMs") != std::string::npos
@@ -2623,6 +2789,21 @@ int main()
 			Expect(ApplySetCommand("history|5e2", s, why) == SetParse::Reject, "history|5e2 is rejected");
 			Expect(ApplySetCommand("types|", s, why) == SetParse::Ok && s.logTypes == 0,
 				"types| empty is none, not all-on");
+			Expect(ApplySetCommand("types|garbage", s, why) == SetParse::Reject,
+				"types|garbage is rejected");
+			Expect(ApplySetCommand("history|-50", s, why) == SetParse::Reject,
+				"a negative history is rejected");
+			Expect(ApplySetCommand("history|2500", s, why) == SetParse::Ok && s.historySize == 1000,
+				"H01 history above 1000 clamps to 1000");
+			s.record = true;
+			s.missedBadge = true;
+			Expect(ApplySetCommand("missed|0", s, why) == SetParse::Ok && !s.missedBadge && s.record,
+				"S08 missed|0 does not write record");
+			Expect(ApplySetCommand("missed|1", s, why) == SetParse::Ok && s.missedBadge && s.record,
+				"S08 missed|1 does not write record");
+			Expect(PersistTurningOn(false, true), "PersistTurningOn is off→on");
+			Expect(!PersistTurningOn(true, true), "PersistTurningOn is not already-on");
+			Expect(!PersistTurningOn(false, false), "PersistTurningOn is not staying off");
 		}
 		if (HaveRepo()) {
 			const auto ini = Slurp("Interface/HorizonUI/HorizonUI.default.ini");

@@ -794,7 +794,7 @@ namespace HZ
 			REX::INFO("thread: window-owner tid={} (hint only)", tid);
 	}
 
-	void LoadIni()
+	void LoadIni(bool a_reloadMsglog = true)
 	{
 		std::string key = "F11";
 		g_iniDebug = false;
@@ -815,7 +815,8 @@ namespace HZ
 			std::string v;
 			if (get("debug", v) && v == "1") g_iniDebug = true;
 			if (get("settingskey", v) && !v.empty()) key = v;
-			MsglogLoadSettings(d);
+			if (a_reloadMsglog)
+				MsglogLoadSettings(d);
 		}
 		MsglogEnsureInit();
 		auto sc = KeyNameToScan(key);
@@ -1358,7 +1359,7 @@ namespace HZ
 			} catch (...) { r.ok = false; r.msg = "error"; }
 			if (r.ok) {
 				REX::INFO("{}", r.msg);
-				LoadIni();
+				LoadIni(false);
 			} else {
 				REX::WARN("save FAILED: {}", r.msg);
 			}
@@ -3249,12 +3250,27 @@ namespace HZ
 			return HzfReplace(a_tmp, a_dst);
 		};
 		const auto dir = MsglogHorizonDir();
+		bool needLoad = false;
+		hzlog::Character ch;
 		{
 			std::lock_guard lk(g_mlMu);
+			const bool turningOn = hzlog::PersistTurningOn(g_ml.buf.settings.persist, s.persist);
 			g_ml.replace = std::move(rep);
-			g_ml.Configure(s, dir);
+			g_ml.Configure(s, dir, false);
 			g_mlWrites.SetPersist(s.persist);
 			g_mlInited = true;
+			if (turningOn && hzlog::PersistAllowed(g_ml.buf.character)) {
+				needLoad = true;
+				ch = g_ml.buf.character;
+			}
+		}
+		if (needLoad) {
+			double gt = 0;
+			{
+				std::lock_guard lk(g_mlEngMu);
+				gt = g_mlEng.gt;
+			}
+			MsglogQueueLoad(ch, gt, static_cast<std::int64_t>(std::time(nullptr)));
 		}
 		REX::INFO("message log: Record={} Persist={} HistorySize={} module marker={}",
 			s.record ? 1 : 0, s.persist ? 1 : 0, s.historySize, g_mlMarker ? 1 : 0);
@@ -3390,7 +3406,7 @@ namespace HZ
 		double gt = 0;
 		{
 			std::lock_guard lk(g_mlMu);
-			const bool turningOn = a_s.persist && !g_ml.buf.settings.persist;
+			const bool turningOn = hzlog::PersistTurningOn(g_ml.buf.settings.persist, a_s.persist);
 			g_ml.buf.settings.record = a_s.record;
 			g_ml.buf.settings.missedBadge = a_s.missedBadge;
 			g_ml.buf.settings.logTypes = a_s.logTypes;
@@ -3464,6 +3480,10 @@ namespace HZ
 				const auto key = g_ml.buf.character.key;
 				g_ml.fileGate.BumpCancel(key);
 				g_mlWrites.SetPersist(g_ml.buf.settings.persist);
+				if (g_ml.persistHold) {
+					g_ml.clearAfterHold = true;
+					return;
+				}
 				if (!g_ml.buf.settings.persist) return;
 				if (!hzlog::ValidLogKey(key)) return;
 				d = g_mlWrites.OnClear(key, g_ml.buf.Snapshot());
@@ -3921,6 +3941,8 @@ namespace HZ
 			}
 			bool needWrite = false;
 			bool runPending = false;
+			hzlog::WriteDecision clearDec;
+			bool needClearWrite = false;
 			{
 				std::lock_guard lk(g_mlMu);
 				const auto now = GetTickCount64();
@@ -3950,7 +3972,18 @@ namespace HZ
 					const bool merge = g_ml.persistHold || g_ml.buf.character.keySource == "nameHash";
 					if (merge) {
 						g_ml.ApplyRecoveredFile(std::move(st), ch);
-						needWrite = true;
+						if (g_ml.consumeClearWrite) {
+							g_ml.consumeClearWrite = false;
+							const auto key = g_ml.buf.character.key;
+							g_mlWrites.SetPersist(g_ml.buf.settings.persist);
+							if (g_ml.buf.settings.persist && hzlog::ValidLogKey(key)) {
+								clearDec = g_mlWrites.OnClear(key, g_ml.buf.Snapshot());
+								g_ml.writePending = g_mlWrites.AnyWritePending();
+								needClearWrite = clearDec.queue;
+							}
+						} else {
+							needWrite = true;
+						}
 					} else {
 						hzlog::NoteLoadResult(true, g_ml.persistHold);
 						g_ml.NoteRetrySuccess();
@@ -3981,7 +4014,9 @@ namespace HZ
 					runPending = g_mlPendingHud;
 				}
 			}
-			if (needWrite)
+			if (needClearWrite)
+				MsglogPushDecision(clearDec);
+			else if (needWrite)
 				MsglogRequestWrite(true);
 			if (runPending) {
 				g_mlPendingHud = false;
