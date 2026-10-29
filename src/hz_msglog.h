@@ -5,25 +5,30 @@
 // CommonLibSF. The DLL (src/main.cpp) supplies engine pointers, the worker
 // thread, and the HUD-ready / SaveLoad flush.
 // Author: Moragar
-// Last modified: 2026-10-25.
+// Last modified: 2026-10-29.
 
 #include "hz_msg_match.h"
+#include "hz_ui_tid.h"
 #include "hz_version.h"
 #include "preset_dedupe.h"
 
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <charconv>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -45,7 +50,10 @@ inline constexpr int kLocCap = 64;
 inline constexpr int kRepeatCap = 999;
 inline constexpr int kDedupeMs = 3000;
 inline constexpr int kBusyDedupeMs = 10000;
-inline constexpr int kFileMaxBytes = 1024 * 1024;
+inline constexpr int kFileReadMaxBytes = 4 * 1024 * 1024;
+inline constexpr int kFileWriteMaxBytes = 3 * 1024 * 1024;
+inline constexpr int kFileMaxBytes = kFileReadMaxBytes;
+inline constexpr std::int64_t kLastPlayedEpochMin = 1000000000;
 inline constexpr int kJsonVersion = 1;
 inline constexpr const char* kJsonType = "horizon.messagelog";
 inline constexpr int kDebounceMsMin = 10000;
@@ -56,6 +64,7 @@ inline constexpr int kLoadEntryCap = kHistoryMax + kPinCap;
 inline constexpr int kWriterJoinMs = 2000;
 inline constexpr int kRetryMsMin = 1000;
 inline constexpr int kRetryMsMax = 60000;
+inline constexpr int kStaleReloadCap = 5;
 inline constexpr int kWriteRetryMs = kRetryMsMin;
 inline constexpr int kBakFailGiveUp = 3;
 inline constexpr int kKeptHeldCap = kHistoryMax;
@@ -72,7 +81,8 @@ enum class Kind : std::uint8_t {
 	Quest,
 	Location,
 	Xp,
-	Game
+	Game,
+	Reaction
 };
 
 inline constexpr std::uint32_t kTypeMedical = 1u << 0;
@@ -84,7 +94,8 @@ inline constexpr std::uint32_t kTypeQuest = 1u << 5;
 inline constexpr std::uint32_t kTypeLocation = 1u << 6;
 inline constexpr std::uint32_t kTypeXp = 1u << 7;
 inline constexpr std::uint32_t kTypeGame = 1u << 8;
-inline constexpr std::uint32_t kTypeAll = 0x1FFu;
+inline constexpr std::uint32_t kTypeReaction = 1u << 9;
+inline constexpr std::uint32_t kTypeAll = 0x3FFu;
 
 enum class OfferResult : std::uint8_t {
 	Stored = 0,
@@ -117,6 +128,7 @@ struct Entry {
 	int           n{1};
 	int           missed{0};
 	int           pin{0};
+	int           fromLater{0}; // Decision A (2026-10-27): later-point rows stay
 	std::string   norm; // cached NormalizeText(text); not written to JSON
 };
 
@@ -163,6 +175,7 @@ inline const char* KindKey(Kind a_k)
 	switch (a_k) {
 	case Kind::Medical: return "medical";
 	case Kind::Crew: return "crew";
+	case Kind::Reaction: return "reaction";
 	case Kind::Busy: return "busy";
 	case Kind::Crime: return "crime";
 	case Kind::Credits: return "credits";
@@ -180,6 +193,7 @@ inline Kind KindFromKey(std::string_view a_k)
 {
 	if (a_k == "medical") return Kind::Medical;
 	if (a_k == "crew") return Kind::Crew;
+	if (a_k == "reaction") return Kind::Reaction;
 	if (a_k == "busy") return Kind::Busy;
 	if (a_k == "crime") return Kind::Crime;
 	if (a_k == "credits") return Kind::Credits;
@@ -194,6 +208,7 @@ inline std::uint32_t TypeBit(Kind a_k)
 	switch (a_k) {
 	case Kind::Medical: return kTypeMedical;
 	case Kind::Crew: return kTypeCrew;
+	case Kind::Reaction: return kTypeReaction;
 	case Kind::Busy: return kTypeBusy;
 	case Kind::Crime: return kTypeCrime;
 	case Kind::Credits: return kTypeCredits;
@@ -216,7 +231,8 @@ inline int ClampHistory(int a_n)
 	return a_n;
 }
 
-// Purpose: parse LogTypes=medical,crew,... All-on is the default when empty.
+// Purpose: parse LogTypes=medical,crew,... An empty list is none (UI all-off).
+// A missing INI key still uses Settings.logTypes = kTypeAll.
 // Inputs: comma list. Outputs: bit mask. Dependencies: KindFromKey.
 inline std::uint32_t ParseLogTypes(std::string_view a_s)
 {
@@ -237,14 +253,237 @@ inline std::uint32_t ParseLogTypes(std::string_view a_s)
 		else cur.push_back(c);
 	}
 	flush();
-	return bits ? bits : kTypeAll;
+	return bits;
+}
+
+// Purpose: set| values are exact. Booleans are only "0" or "1". History is
+// a full-string integer. Extra '|' fields are rejected.
+// Inputs: the rest after "set|". Outputs: updated Settings, reject why.
+enum class SetParse : std::uint8_t { Ok = 0, Reject };
+
+inline bool ParseSetBool(std::string_view a_v, bool& a_out)
+{
+	if (a_v == "1") {
+		a_out = true;
+		return true;
+	}
+	if (a_v == "0") {
+		a_out = false;
+		return true;
+	}
+	return false;
+}
+
+inline bool ParseSetHistory(std::string_view a_v, int& a_out)
+{
+	if (a_v.empty()) return false;
+	int n = 0;
+	const auto* b = a_v.data();
+	const auto* e = b + a_v.size();
+	const auto r = std::from_chars(b, e, n);
+	if (r.ec != std::errc{} || r.ptr != e) return false;
+	if (n < 0) return false;
+	a_out = ClampHistory(n);
+	return true;
+}
+
+inline bool KnownLogTypeKey(std::string_view a_k)
+{
+	return a_k == "medical" || a_k == "crew" || a_k == "reaction" || a_k == "busy"
+		|| a_k == "crime" || a_k == "credits" || a_k == "quest" || a_k == "location"
+		|| a_k == "xp" || a_k == "game";
+}
+
+// Type keys are lowercase and case-exact (the movie sends HZ_ML_KIND).
+// INI LogTypes= stays case-insensitive via ParseLogTypes.
+inline bool ParseSetLogTypes(std::string_view a_s, std::uint32_t& a_out)
+{
+	std::uint32_t bits = 0;
+	std::string cur;
+	auto flush = [&]() -> bool {
+		std::string t;
+		for (unsigned char c : cur) {
+			if (c == ' ' || c == '\t') continue;
+			t.push_back(static_cast<char>(c));
+		}
+		cur.clear();
+		if (t.empty()) return true;
+		if (!KnownLogTypeKey(t)) return false;
+		bits |= TypeBit(KindFromKey(t));
+		return true;
+	};
+	for (char c : a_s) {
+		if (c == ',') {
+			if (!flush()) return false;
+		} else {
+			cur.push_back(c);
+		}
+	}
+	if (!flush()) return false;
+	a_out = bits;
+	return true;
+}
+
+inline bool PersistTurningOn(bool a_was, bool a_want)
+{
+	return a_want && !a_was;
+}
+
+inline bool IniReloadAppliesMsglog(bool a_reloadMsglog)
+{
+	return a_reloadMsglog;
+}
+
+inline bool LoadSettingsQueuesLoad(bool a_turningOn, bool a_allowed)
+{
+	return a_turningOn && a_allowed;
+}
+
+inline bool StaleHeldLoadNeedsReload(bool a_stale, bool a_persistHold)
+{
+	return a_stale && a_persistHold;
+}
+
+inline bool ConsumeClearWriteUsesWriter(bool a_consume, bool a_persist, bool a_validKey)
+{
+	return a_consume && a_persist && a_validKey;
+}
+
+inline std::string NormalizeText(std::string_view a_s);
+inline bool WithinDedupeWindow(std::int64_t a_dtMs, int a_winMs);
+
+// Purpose: a memory row is the same persist row when id, kind and
+// normalized text match and its ts is at or after the file ts inside
+// the 3 s dedupe window (Busy 10 s). A repeat moves ts forward, so
+// an exact-ts compare would miss and MergeSession would add n.
+inline bool SamePersistRow(const Entry& a_file, const Entry& a_mem)
+{
+	if (!a_file.id || a_file.id != a_mem.id) return false;
+	if (a_file.kind != a_mem.kind) return false;
+	const auto na = a_file.norm.empty() ? NormalizeText(a_file.text) : a_file.norm;
+	const auto nb = a_mem.norm.empty() ? NormalizeText(a_mem.text) : a_mem.norm;
+	if (na != nb) return false;
+	if (a_mem.ts < a_file.ts) return false;
+	const auto dt = a_mem.ts - a_file.ts;
+	const int win = a_mem.kind == Kind::Busy ? kBusyDedupeMs : kDedupeMs;
+	return WithinDedupeWindow(dt * 1000, win);
+}
+
+// Purpose: a hold-merge lineage row is the same persist row with no
+// time window. Repeats while Persist is off move ts past 3 s; the
+// window would append a duplicate. Only ids snapshotted from a flush
+// or load (persistLineageMaxId) may use this path, so a Persist=0
+// launch with colliding ids still goes through MergeSession.
+inline bool SamePersistIdentity(const Entry& a_file, const Entry& a_mem)
+{
+	if (!a_file.id || a_file.id != a_mem.id) return false;
+	if (a_file.kind != a_mem.kind) return false;
+	const auto na = a_file.norm.empty() ? NormalizeText(a_file.text) : a_file.norm;
+	const auto nb = a_mem.norm.empty() ? NormalizeText(a_mem.text) : a_mem.norm;
+	if (na != nb) return false;
+	return a_mem.ts >= a_file.ts;
+}
+
+inline bool PersistLineageId(std::uint64_t a_id, std::uint64_t a_maxId)
+{
+	return a_id && a_maxId && a_id <= a_maxId;
+}
+
+inline SetParse ApplySetCommand(std::string_view a_rest, Settings& a_s, std::string& a_why)
+{
+	a_why.clear();
+	const auto p = a_rest.find('|');
+	if (p == std::string_view::npos) {
+		a_why = "missing field";
+		return SetParse::Reject;
+	}
+	const auto key = a_rest.substr(0, p);
+	const auto val = a_rest.substr(p + 1);
+	if (val.find('|') != std::string_view::npos) {
+		a_why = "extra field";
+		return SetParse::Reject;
+	}
+	if (key == "record") {
+		if (!ParseSetBool(val, a_s.record)) {
+			a_why = "record not 0 or 1";
+			return SetParse::Reject;
+		}
+		return SetParse::Ok;
+	}
+	if (key == "persist") {
+		if (!ParseSetBool(val, a_s.persist)) {
+			a_why = "persist not 0 or 1";
+			return SetParse::Reject;
+		}
+		return SetParse::Ok;
+	}
+	if (key == "missed") {
+		if (!ParseSetBool(val, a_s.missedBadge)) {
+			a_why = "missed not 0 or 1";
+			return SetParse::Reject;
+		}
+		return SetParse::Ok;
+	}
+	if (key == "history") {
+		if (!ParseSetHistory(val, a_s.historySize)) {
+			a_why = "history not an integer";
+			return SetParse::Reject;
+		}
+		return SetParse::Ok;
+	}
+	if (key == "types") {
+		if (!ParseSetLogTypes(val, a_s.logTypes)) {
+			a_why = "unknown log type";
+			return SetParse::Reject;
+		}
+		return SetParse::Ok;
+	}
+	a_why = "unknown key";
+	return SetParse::Reject;
+}
+
+inline std::string LogTypesText(std::uint32_t a_bits);
+
+// Purpose: authoritative [MessageLog] block from live DLL settings. F11
+// Save replaces the movie-built section with this before Diff.
+// Inputs: live Settings. Outputs: CRLF INI section. Dependencies: LogTypesText.
+inline std::string FormatMessageLogIni(const Settings& a_s)
+{
+	std::string o;
+	o += "[MessageLog]\r\n";
+	o += "Record=";
+	o += a_s.record ? "1" : "0";
+	o += "\r\nLogTypes=";
+	o += LogTypesText(a_s.logTypes);
+	o += "\r\nHistorySize=";
+	o += std::to_string(a_s.historySize);
+	o += "\r\nMissedBadge=";
+	o += a_s.missedBadge ? "1" : "0";
+	o += "\r\nPersist=";
+	o += a_s.persist ? "1" : "0";
+	o += "\r\n";
+	return o;
+}
+
+// Purpose: old P1 files stored companion reactions as crew + LIKED/LOVED/
+// DISLIKED/HATED. Promote those rows to Kind::Reaction on load. No affinity
+// value is read. Approved 2026-10-26.
+inline bool IsLegacyReactionTag(std::string_view a_tag)
+{
+	return a_tag == "LIKED" || a_tag == "LOVED" || a_tag == "DISLIKED" || a_tag == "HATED";
+}
+
+inline void PromoteLegacyReaction(Entry& a_e)
+{
+	if (a_e.kind == Kind::Crew && IsLegacyReactionTag(a_e.tag))
+		a_e.kind = Kind::Reaction;
 }
 
 inline std::string LogTypesText(std::uint32_t a_bits)
 {
 	std::string o;
-	const Kind order[] = {Kind::Medical, Kind::Crew, Kind::Busy, Kind::Crime, Kind::Credits,
-		Kind::Quest, Kind::Location, Kind::Xp, Kind::Game};
+	const Kind order[] = {Kind::Medical, Kind::Crew, Kind::Reaction, Kind::Busy, Kind::Crime,
+		Kind::Credits, Kind::Quest, Kind::Location, Kind::Xp, Kind::Game};
 	for (auto k : order) {
 		if (!(a_bits & TypeBit(k))) continue;
 		if (!o.empty()) o += ',';
@@ -352,8 +591,28 @@ inline bool NoteNameHashSkip(const Character& a_ch, std::uint64_t a_nowMs, std::
 	return true;
 }
 
+// Purpose: true for "<NPC> CALMED" / creature-calmed HUD lines. Those are
+// never stored: no row, no repeat count, no pin. Match sub "calmed", or a
+// suffix of the game phrase or the English phrase, ignoring PlainNameOk.
+// "is no longer angry" (CALM) and "has already caught you" (CAUGHT) stay.
+inline bool IsCalmedLine(std::string_view a_text, const hzmsg::Templates& a_phrases)
+{
+	const auto line = hzmsg::Trim(a_text);
+	if (line.empty()) return false;
+	const auto hit = hzmsg::Match(a_text, a_phrases);
+	if (hit.ok && hit.sub == "calmed") return true;
+	const auto en = hzmsg::English();
+	if (hzmsg::EqFold(line, hzmsg::Trim(a_phrases.creature))) return true;
+	if (hzmsg::EqFold(line, hzmsg::Trim(en.creature))) return true;
+	if (hzmsg::EndsPhrase(line, a_phrases.npcCalmed)) return true;
+	if (hzmsg::EndsPhrase(line, en.npcCalmed)) return true;
+	return false;
+}
+
 // Purpose: classify a HUD sink line with hz_msg_match, including credits.
 // Quest / location / XP never come from this path (the movie owns those).
+// Companion reactions ("Sam Coe liked that.") are Kind::Reaction: on-screen
+// text match only, no affinity or actor values. Approved 2026-10-26.
 // Inputs: text and GMST phrases. Outputs: kind, title, tag. Unmatched -> Game.
 inline Kind ClassifyHud(std::string_view a_text, const hzmsg::Templates& a_phrases, std::string& a_title, std::string& a_tag)
 {
@@ -375,7 +634,7 @@ inline Kind ClassifyHud(std::string_view a_text, const hzmsg::Templates& a_phras
 	}
 	if (hit.kind == "reaction") {
 		a_title = hit.name.empty() ? "CREW" : hit.name;
-		return Kind::Crew;
+		return Kind::Reaction;
 	}
 	if (hit.kind == "unavailable" && hit.sub == "busy") {
 		a_title = "BUSY";
@@ -394,7 +653,8 @@ inline Kind ClassifyHud(std::string_view a_text, const hzmsg::Templates& a_phras
 }
 
 // Purpose: hex key from BGSSaveLoadManager::currentPlayerID.
-// Inputs: the u64 id. Outputs: uppercase hex, 8 digits when it fits in 32 bits.
+// Inputs: the u64 id. Outputs: uppercase hex, up to 16 digits. 8 digits when
+// the id fits in 32 bits; 16 digits when it exceeds 32 bits.
 inline std::string HexPlayerId(std::uint64_t a_id)
 {
 	char b[17];
@@ -438,9 +698,12 @@ inline Character MakeCharacter(std::uint64_t a_playerId, std::string_view a_name
 	return c;
 }
 
+// Purpose: a row whose in-game time is after now is from a later point
+// (reload of an earlier save). Decision A (2026-10-27): those rows stay.
+// Inputs: entry and Calendar::GetDaysPassedExact(). Outputs: true when later.
 inline bool FromLaterPoint(const Entry& a_e, double a_gtNow)
 {
-	return a_gtNow > 0 && a_e.gt > a_gtNow;
+	return a_e.fromLater != 0 || (a_gtNow > 0 && a_e.gt > a_gtNow);
 }
 
 // Purpose: join a worker or detach it if it does not finish in a_ms. Used on
@@ -498,6 +761,52 @@ inline int NextRetryMs(int a_prevMs)
 inline bool RetryDue(std::uint64_t a_retryAt, std::uint64_t a_nowMs)
 {
 	return a_retryAt == 0 || a_nowMs >= a_retryAt;
+}
+
+inline bool StaleReloadDue(bool a_stale, bool a_persistHold,
+	std::uint64_t a_retryAt, std::uint64_t a_nowMs,
+	int a_attempts, int a_cap = kStaleReloadCap)
+{
+	if (!StaleHeldLoadNeedsReload(a_stale, a_persistHold)) return false;
+	if (a_attempts >= a_cap) return false;
+	return RetryDue(a_retryAt, a_nowMs);
+}
+
+inline Character StaleReloadCharacter(std::uint64_t a_playerId, std::string_view a_name,
+	const Character& a_buf)
+{
+	if (a_playerId)
+		return MakeCharacter(a_playerId, a_name);
+	return a_buf;
+}
+
+struct StaleReloadStep {
+	bool recover{false};
+	bool logCap{false};
+};
+
+inline bool StaleCapWarnOnce(bool a_capWarn, bool& a_warned)
+{
+	if (!a_capWarn || a_warned) return false;
+	a_warned = true;
+	return true;
+}
+
+inline StaleReloadStep PlanStaleReload(bool a_stale, bool a_persistHold,
+	std::uint64_t a_retryAt, std::uint64_t a_nowMs, int a_attempts)
+{
+	StaleReloadStep s;
+	s.recover = StaleReloadDue(a_stale, a_persistHold, a_retryAt, a_nowMs, a_attempts);
+	s.logCap = a_stale && a_persistHold && !s.recover && a_attempts >= kStaleReloadCap;
+	return s;
+}
+
+// Purpose: after ApplyLoad drops the lock, re-queue when the stale
+// step asked to recover. Tests call this; main.cpp gates QueueRecover
+// on the return so a dropped if (needRecover) fails the suite.
+inline bool StaleReloadPostQueue(bool a_needRecover)
+{
+	return a_needRecover;
 }
 
 // Purpose: atexit joins only when the worker already set done. Otherwise
@@ -638,8 +947,19 @@ inline bool HasSameParkedRow(const std::vector<Entry>& a_rows, const Entry& a_in
 	return false;
 }
 
+// Purpose: same kind + normalized text + exact timestamp keeps the larger n
+// so a same-second repeat is not lost after a load or merge.
+inline bool KeepLargerParkedN(Entry& a_have, const Entry& a_in)
+{
+	if (a_in.n > a_have.n) {
+		a_have.n = a_in.n;
+		return true;
+	}
+	return false;
+}
+
 // Purpose: dirty-park merge skips rows already in the file (same kind,
-// normalized text, and timestamp) so n does not bump.
+// normalized text, and timestamp). Larger n is applied by the caller.
 inline std::vector<Entry> ExactParkedNew(const std::vector<Entry>& a_have, const std::vector<Entry>& a_in)
 {
 	std::vector<Entry> out;
@@ -649,6 +969,788 @@ inline std::vector<Entry> ExactParkedNew(const std::vector<Entry>& a_have, const
 			out.push_back(in);
 	}
 	return out;
+}
+
+inline bool WritePendingClears(std::uint64_t a_doneSeq, std::uint64_t a_pendingSeq)
+{
+	return a_doneSeq != 0 && a_doneSeq == a_pendingSeq;
+}
+
+inline bool WriteJobStillCurrent(std::uint64_t a_jobSeq, std::uint64_t a_liveSeq)
+{
+	return a_jobSeq != 0 && a_jobSeq == a_liveSeq;
+}
+
+inline void InvalidateInFlightWrite(std::uint64_t& a_liveSeq, bool& a_pending, std::uint64_t& a_pendingSeq)
+{
+	++a_liveSeq;
+	a_pending = false;
+	a_pendingSeq = 0;
+}
+
+inline std::string FoldLogKey(std::string_view a_key)
+{
+	std::string o;
+	o.reserve(a_key.size());
+	for (unsigned char c : a_key)
+		o.push_back(static_cast<char>(std::toupper(c)));
+	return o;
+}
+
+inline bool ValidLogKey(std::string_view a_key)
+{
+	if (a_key.empty() || a_key.size() > 16) return false;
+	for (unsigned char c : a_key) {
+		if (!std::isalnum(c)) return false;
+	}
+	return true;
+}
+
+inline bool SameLogKey(std::string_view a_a, std::string_view a_b)
+{
+	if (a_a.size() != a_b.size()) return false;
+	for (std::size_t i = 0; i < a_a.size(); ++i) {
+		const auto a = static_cast<unsigned char>(a_a[i]);
+		const auto b = static_cast<unsigned char>(a_b[i]);
+		if (std::tolower(a) != std::tolower(b)) return false;
+	}
+	return true;
+}
+
+enum class WriteRun : std::uint8_t { Saved = 0, Skipped, Failed };
+
+// Purpose: per-key cancel generations. Each character has its own atomic
+// seq so canceling A cannot mark B stale. The game thread only bumps or
+// loads a seq; it never takes mu and never waits on disk.
+// Inputs: folded character key. Outputs: the live seq for that key.
+struct WriteGate {
+	std::mutex            mu; // worker / tests only. Game thread never takes this.
+	std::function<void()> afterCheck;
+
+	struct Slot {
+		std::string               key;
+		std::atomic<std::uint64_t> seq{0};
+	};
+
+	std::uint64_t LoadCancel(std::string_view a_key) const
+	{
+		return SlotFor(a_key)->seq.load(std::memory_order_acquire);
+	}
+
+	// Purpose: bump one character's cancel seq. Inputs: character key.
+	// Outputs: the new seq. Dependencies: SlotFor.
+	std::uint64_t BumpCancel(std::string_view a_key)
+	{
+		return SlotFor(a_key)->seq.fetch_add(1, std::memory_order_acq_rel) + 1;
+	}
+
+private:
+	mutable std::mutex                         mapMu;
+	mutable std::vector<std::unique_ptr<Slot>> slots;
+
+	Slot* SlotFor(std::string_view a_key) const
+	{
+		const auto folded = FoldLogKey(a_key);
+		std::lock_guard lk(mapMu);
+		for (auto& s : slots)
+			if (s->key == folded) return s.get();
+		auto p = std::make_unique<Slot>();
+		p->key = folded;
+		auto* r = p.get();
+		slots.push_back(std::move(p));
+		return r;
+	}
+};
+
+// Purpose: a job is canceled only when its own key's seq moved.
+inline bool WriteIsCanceled(std::uint64_t a_jobCancel, std::string_view a_jobKey, const WriteGate& a_g)
+{
+	return a_jobCancel != a_g.LoadCancel(a_jobKey);
+}
+
+inline WriteRun OrderedSave(WriteGate& a_g, std::uint64_t a_jobCancel, const std::string& a_jobKey,
+	const std::function<bool()>& a_save)
+{
+	if (WriteIsCanceled(a_jobCancel, a_jobKey, a_g))
+		return WriteRun::Skipped;
+	if (a_g.afterCheck) a_g.afterCheck();
+	if (WriteIsCanceled(a_jobCancel, a_jobKey, a_g))
+		return WriteRun::Skipped;
+	if (!a_save) return WriteRun::Failed;
+	return a_save() ? WriteRun::Saved : WriteRun::Failed;
+}
+
+// Purpose: bump one key's cancel seq. No disk and no fileGate.mu.
+inline std::uint64_t OrderedCancel(WriteGate& a_g, const std::string& a_key)
+{
+	return a_g.BumpCancel(a_key);
+}
+
+// Purpose: one pending write slot per character key. A newer job that
+// has rows always replaces the slot and sets clearFirst when a Clear
+// was pending, so the worker empties both files then saves the rows.
+// A different key inserts; an empty non-Clear never drops a Clear or rows.
+// Inputs: the live queue and the new job. Outputs: insert / replace / skip.
+enum class QueueOp : std::uint8_t { Insert = 0, Replace, Skip };
+
+struct QueuedWrite {
+	std::string   key;
+	bool          emptyClear{false};
+	bool          clearFirst{false};
+	bool          hasRows{false};
+	std::uint64_t writeSeq{0};
+};
+
+struct QueueDecision {
+	QueueOp     op{QueueOp::Insert};
+	std::size_t index{0};
+	bool        clearFirst{false};
+};
+
+inline QueueDecision DecideQueuedWrite(const std::vector<QueuedWrite>& a_pending, const QueuedWrite& a_new)
+{
+	for (std::size_t i = 0; i < a_pending.size(); ++i) {
+		if (!SameLogKey(a_pending[i].key, a_new.key)) continue;
+		QueueDecision d;
+		d.index = i;
+		if (a_new.hasRows) {
+			d.op = QueueOp::Replace;
+			d.clearFirst = a_pending[i].emptyClear || a_pending[i].clearFirst;
+			return d;
+		}
+		if (a_new.emptyClear) {
+			d.op = QueueOp::Replace;
+			d.clearFirst = false;
+			return d;
+		}
+		if (a_pending[i].emptyClear || a_pending[i].clearFirst || a_pending[i].hasRows) {
+			d.op = QueueOp::Skip;
+			d.clearFirst = a_pending[i].clearFirst;
+			return d;
+		}
+		d.op = QueueOp::Replace;
+		return d;
+	}
+	return {};
+}
+
+inline void ApplyQueuedWrite(std::vector<QueuedWrite>& a_pending, QueuedWrite a_new)
+{
+	const auto d = DecideQueuedWrite(a_pending, a_new);
+	if (d.op == QueueOp::Skip) return;
+	a_new.clearFirst = a_new.clearFirst || d.clearFirst;
+	if (d.op == QueueOp::Replace && d.index < a_pending.size())
+		a_pending[d.index] = std::move(a_new);
+	else
+		a_pending.push_back(std::move(a_new));
+}
+
+// Purpose: emptyClear is only an explicit Clear, never "the snapshot is empty".
+inline bool DecideWriteEmptyClear(bool a_explicitClear)
+{
+	return a_explicitClear;
+}
+
+// Purpose: skip a write while a load is in flight for that key so a quit
+// between ResetMemory and the load result cannot wipe the file.
+inline bool RequestWriteBlockedByLoad(bool a_loadBusy, std::string_view a_jobKey, std::string_view a_loadKey)
+{
+	return a_loadBusy && !a_jobKey.empty() && SameLogKey(a_jobKey, a_loadKey);
+}
+
+// Purpose: an empty non-Clear snapshot is not a write. Inputs: whether
+// this is MsglogClearHistory and whether the snapshot has rows.
+inline bool SkipEmptyNonClearWrite(bool a_explicitClear, bool a_snapEmpty)
+{
+	return a_snapEmpty && !a_explicitClear;
+}
+
+inline bool ShouldQueueWrite(bool a_explicitClear, bool a_snapEmpty, bool a_loadBusy,
+	std::string_view a_jobKey, std::string_view a_loadKey,
+	bool a_clearPending = false, bool a_holdFlush = false)
+{
+	if (!a_holdFlush && RequestWriteBlockedByLoad(a_loadBusy, a_jobKey, a_loadKey))
+		return false;
+	if (SkipEmptyNonClearWrite(a_explicitClear || a_clearPending, a_snapEmpty))
+		return false;
+	return true;
+}
+
+inline bool PruneEmptiedBuffer(int a_dropped, bool a_nowEmpty)
+{
+	return a_dropped > 0 && a_nowEmpty;
+}
+
+// Purpose: Poll must not rebuild a retry from failSnap when a newer
+// job is already in flight (writePending) or still queued. Each half
+// is tested on its own. Inputs: writePending and HasPendingFor.
+// Outputs: true when Poll must skip this key.
+inline bool PollSkipsRetry(bool a_writePending, bool a_hasQueued)
+{
+	return a_writePending || a_hasQueued;
+}
+
+// Purpose: debug check for Scaleform thread affinity. uiTid 0 means
+// the UI thread is not known yet (skip). Inputs: recorded UI tid and
+// the caller's tid. Outputs: true when the call is allowed.
+// Author: Moragar. Last modified: 2026-10-28.
+inline bool ScaleformThreadOk(std::uint32_t a_uiTid, std::uint32_t a_curTid)
+{
+	return a_uiTid == 0 || a_uiTid == a_curTid;
+}
+
+// Purpose: hzcTakeLog must not run during load or the main menu.
+// Those transitions recreate HUDMessagesMenu. Inputs: menu-open
+// flags. Outputs: true when a take is allowed. Author: Moragar.
+// Last modified: 2026-10-28.
+inline bool MsglogTakeMovieAllowed(bool a_loading, bool a_mainMenu, bool a_messagesOpen)
+{
+	return !a_loading && !a_mainMenu && a_messagesOpen;
+}
+
+inline constexpr std::uint64_t kTakeLogMinMs = 250;
+inline constexpr int kTakeLogCap = 40;
+inline constexpr std::uint64_t kEngineRefreshMinMs = 200;
+inline constexpr std::uint64_t kHudSafeCacheMs = 150;
+inline constexpr int kHookAliveFirstN = 60;
+inline constexpr std::uint64_t kHookAlivePeriodMs = 60000;
+inline constexpr int kMinTextPx = 13;
+
+// Purpose: rate-limit hzcTakeLog. Inputs: now and the next-allowed
+// tick. Outputs: true when a take may run. Author: Moragar.
+// Last modified: 2026-10-28.
+inline bool MsglogTakeMovieDue(std::uint64_t a_now, std::uint64_t a_next)
+{
+	return a_now >= a_next;
+}
+
+// Purpose: how many queued take-log lines go out this take. The rest
+// stay for the next take so a loading skip cannot drop them.
+// Inputs: queued count and cap. Outputs: lines to join this take.
+// Author: Moragar. Last modified: 2026-10-28.
+inline int TakeLogBatchCount(int a_queued, int a_cap = kTakeLogCap)
+{
+	if (a_queued <= 0 || a_cap <= 0) return 0;
+	return a_queued < a_cap ? a_queued : a_cap;
+}
+
+// Purpose: true when this take hit the cap and more lines remain.
+// Inputs: queued count and how many were taken. Outputs: retake now.
+// Author: Moragar. Last modified: 2026-10-28.
+inline bool TakeLogHasRemainder(int a_queued, int a_taken)
+{
+	return a_queued > a_taken && a_taken > 0;
+}
+
+// Purpose: move up to a_cap lines off the front of a_q. Remainder
+// stays. Inputs: queue and cap. Outputs: this take's lines.
+// Author: Moragar. Last modified: 2026-10-28.
+template <typename T>
+inline std::vector<T> TakeLogBatch(std::vector<T>& a_q, int a_cap = kTakeLogCap)
+{
+	const int n = TakeLogBatchCount(static_cast<int>(a_q.size()), a_cap);
+	std::vector<T> out;
+	out.reserve(static_cast<std::size_t>(n));
+	for (int i = 0; i < n; ++i)
+		out.push_back(std::move(a_q[static_cast<std::size_t>(i)]));
+	a_q.erase(a_q.begin(), a_q.begin() + n);
+	return out;
+}
+
+// Purpose: an emptied user Clear writes only when Persist is on, the
+// key is valid, and persistHold is off. persistHold is a failed read;
+// writing empty then would wipe the file we could not load.
+// Inputs: emptied, persist, persistHold, valid key. Outputs: write?
+// Author: Moragar. Last modified: 2026-10-28.
+inline bool ClearSessionWrites(bool a_emptied, bool a_persist, bool a_persistHold, bool a_validKey)
+{
+	return a_emptied && a_persist && a_validKey && !a_persistHold;
+}
+
+// Purpose: PromoteId queues one recovery load. The recoverBusy check
+// belongs inside the same lock as the store so two threads cannot both
+// queue. Inputs: busy, name-hash, persist-ok, hold due. Outputs: queue?
+// Author: Moragar. Last modified: 2026-10-28.
+inline bool PromoteIdShouldQueue(bool a_recoverBusy, bool a_nameHash, bool a_persistOk, bool a_holdDue)
+{
+	return !a_recoverBusy && a_nameHash && a_persistOk && a_holdDue;
+}
+
+// Purpose: TextScale 0.90 can round 13 to 12. The AS floor is this
+// same rule (if minPx > sz then sz = minPx). Inputs: rounded size and
+// the caller floor. Outputs: size used. Author: Moragar.
+// Last modified: 2026-10-28.
+inline int FloorTextPx(int a_sz, int a_minPx)
+{
+	return a_minPx > a_sz ? a_minPx : a_sz;
+}
+
+// Purpose: chip-row scroll that keeps the active chip in the clip.
+// Mirrors hzMsglogChipKeepVisible. Inputs: current x, strip width,
+// clip width, active chip left and width. Outputs: clamped x.
+// Author: Moragar. Last modified: 2026-10-28.
+inline int ChipScrollX(int a_chipX, int a_chipW, int a_chipInner, int a_activeLeft, int a_activeW)
+{
+	int maxX = a_chipW - a_chipInner;
+	if (maxX < 0) maxX = 0;
+	int x = a_chipX;
+	if (a_activeLeft < x) x = a_activeLeft;
+	if (a_activeLeft + a_activeW > x + a_chipInner)
+		x = a_activeLeft + a_activeW - a_chipInner;
+	if (x > maxX) x = maxX;
+	if (x < 0) x = 0;
+	return x;
+}
+
+// Purpose: the AdvanceFrame vtable patch installs once. A second HUD
+// recreate must not read the hook as the original.
+// Inputs: exchange result (already hooked). Outputs: skip install.
+// Author: Moragar. Last modified: 2026-10-28.
+inline bool HookOnceFlagBlocksRetry(bool a_alreadyHooked)
+{
+	return a_alreadyHooked;
+}
+
+// Purpose: g_mlEng is written on the UI thread and read on the job
+// thread. A mutex (or equivalent) is required whenever both happen.
+// Inputs: whether the cache is shared across threads. Outputs: lock?
+// Author: Moragar. Last modified: 2026-10-28.
+inline bool EngineCacheNeedsMutex(bool a_crossThread)
+{
+	return a_crossThread;
+}
+
+inline constexpr int kTakeLogHardCap = 500;
+
+inline bool HookOrigStored(const void* a_orig, const void* a_hook)
+{
+	return a_orig != nullptr && a_orig != a_hook;
+}
+
+// Purpose: TextScale 0.90 on a 13 px face rounds to 12; the AS floor
+// then lifts it back. Inputs: face size and minPx. Outputs: size used.
+// Author: Moragar. Last modified: 2026-10-28.
+inline int TextScaleFloorPx(int a_fs, int a_minPx)
+{
+	int sz = (a_fs * 9 + 5) / 10;
+	if (sz < 9) sz = 9;
+	return FloorTextPx(sz, a_minPx);
+}
+
+// Purpose: parse a take-log drop marker (`drop|N`). Inputs: one
+// line. Outputs: dropped count, or -1 if this is not a drop line.
+// Author: Moragar. Last modified: 2026-10-28.
+inline int TakeLogDroppedCount(std::string_view a_line)
+{
+	if (a_line.size() < 6 || a_line.substr(0, 5) != "drop|") return -1;
+	int n = 0;
+	for (std::size_t i = 5; i < a_line.size(); ++i) {
+		const char c = a_line[i];
+		if (c == '|') break;
+		if (c < '0' || c > '9') return -1;
+		n = n * 10 + (c - '0');
+	}
+	return n;
+}
+
+// Purpose: the same 500-cap / drop|N / 40-per-take rules as
+// hzcLogPush / hzcTakeLog in the Comms movie. Inputs: kind|title|text
+// lines. Outputs: a take string that may start with drop|N.
+// Author: Moragar. Last modified: 2026-10-28.
+struct TakeLogMovieQueue
+{
+	std::vector<std::string> q;
+	int dropped{0};
+
+	void Push(std::string a_line)
+	{
+		if (static_cast<int>(q.size()) >= kTakeLogHardCap) {
+			q.erase(q.begin());
+			++dropped;
+		}
+		q.push_back(std::move(a_line));
+	}
+
+	std::string Take()
+	{
+		if (q.empty() && dropped == 0) return {};
+		int n = static_cast<int>(q.size());
+		if (n > kTakeLogCap) n = kTakeLogCap;
+		std::string o;
+		for (int i = 0; i < n; ++i) {
+			if (i) o += '\n';
+			o += q[static_cast<std::size_t>(i)];
+		}
+		q.erase(q.begin(), q.begin() + n);
+		if (dropped > 0) {
+			o = o.empty() ? ("drop|" + std::to_string(dropped))
+				: ("drop|" + std::to_string(dropped) + "\n" + o);
+			dropped = 0;
+		}
+		return o;
+	}
+};
+
+// Purpose: all writer-side state and decisions. The DLL only calls methods.
+// Per-key slots hold clearPending (set on an explicit user Clear, cleared
+// only when ok && seq >= clearSeq), write seqs, last-failed snap, and
+// per-key retry backoff. Hold-flush is slot state, not a caller literal.
+// A prune that empties memory marks the key clean and does not write.
+struct WriteEmit {
+	std::string   key;
+	LogState      snap;
+	bool          emptyClear{false};
+	bool          clearFirst{false};
+	std::uint64_t writeSeq{0};
+	bool          persist{true};
+};
+
+struct WriteDecision {
+	bool      queue{false};
+	WriteEmit emit;
+};
+
+// Purpose: copy emit flags onto a worker job. A literal false here
+// drops clearFirst (P1d). Inputs: dest flags and the coordinator emit.
+inline void AssignEmitFlags(bool& a_emptyClear, bool& a_clearFirst, const WriteEmit& a_e)
+{
+	a_emptyClear = a_e.emptyClear;
+	a_clearFirst = a_e.clearFirst;
+}
+
+class MsglogWriteCoordinator {
+public:
+	struct Slot {
+		std::string   key;
+		bool          clearPending{false};
+		std::uint64_t clearSeq{0};
+		bool          writePending{false};
+		std::uint64_t writePendingSeq{0};
+		std::uint64_t doneSeq{0};
+		LogState      failSnap;
+		bool          failClearFirst{false};
+		bool          hasFail{false};
+		bool          retryDue{false};
+		int           retryBackoffMs{0};
+		std::uint64_t retryAt{0};
+		bool          dirty{false};
+		bool          holdFlush{false};
+	};
+
+	void SetPersist(bool a_on) { persist_ = a_on; }
+	bool Persist() const { return persist_; }
+
+	bool LoadBusy() const { return loadBusy_; }
+	std::string LoadKey() const { return loadKey_; }
+	std::uint64_t LoadGen() const { return loadGen_; }
+
+	bool ClearPending(std::string_view a_key) const
+	{
+		if (const auto* s = FindSlot(a_key)) return s->clearPending;
+		return false;
+	}
+
+	std::uint64_t ClearSeq(std::string_view a_key) const
+	{
+		if (const auto* s = FindSlot(a_key)) return s->clearSeq;
+		return 0;
+	}
+
+	bool WritePending(std::string_view a_key) const
+	{
+		if (const auto* s = FindSlot(a_key)) return s->writePending;
+		return false;
+	}
+
+	bool AnyWritePending() const
+	{
+		for (const auto& s : slots_)
+			if (s.writePending) return true;
+		return false;
+	}
+
+	bool AnyClearPending() const
+	{
+		for (const auto& s : slots_)
+			if (s.clearPending) return true;
+		return false;
+	}
+
+	std::uint64_t WritePendingSeq(std::string_view a_key) const
+	{
+		if (const auto* s = FindSlot(a_key)) return s->writePendingSeq;
+		return 0;
+	}
+
+	std::uint64_t DoneSeq(std::string_view a_key) const
+	{
+		if (const auto* s = FindSlot(a_key)) return s->doneSeq;
+		return 0;
+	}
+
+	int RetryBackoffMs(std::string_view a_key) const
+	{
+		if (const auto* s = FindSlot(a_key)) return s->retryBackoffMs;
+		return 0;
+	}
+
+	void OnRow(std::string_view a_key)
+	{
+		if (a_key.empty()) return;
+		SlotFor(a_key).dirty = true;
+	}
+
+	// holdFlush is slot state set by OnHoldFlush. Callers must not pass it.
+	WriteDecision RequestWrite(std::string_view a_key, const LogState& a_snap, bool a_force)
+	{
+		if (!a_force && !a_key.empty()) {
+			const auto* s = FindSlot(a_key);
+			const bool dirty = s && s->dirty;
+			const bool pendingClear = s && s->clearPending;
+			const bool hold = s && s->holdFlush;
+			if (!dirty && !pendingClear && !hold) return {};
+		}
+		return DecideAndQueue(a_key, a_snap, false);
+	}
+
+	WriteDecision OnClear(std::string_view a_key, const LogState& a_emptySnap)
+	{
+		if (!persist_ || !ValidLogKey(a_key)) return {};
+		return DecideAndQueue(a_key, a_emptySnap, true);
+	}
+
+	// Purpose: a prune that emptied memory is not a Clear. Mark clean and
+	// skip disk so a bad clock cannot wipe main and bak.
+	void OnPruneEmpty(std::string_view a_key)
+	{
+		if (a_key.empty()) return;
+		auto& s = SlotFor(a_key);
+		s.dirty = false;
+	}
+
+	void OnLoadStart(std::string_view a_key)
+	{
+		loadBusy_ = true;
+		loadKey_.assign(a_key.begin(), a_key.end());
+		++loadGen_;
+	}
+
+	// Purpose: release the load guard. a_jobGen skips a stale result when
+	// a newer load for the same key is already in flight.
+	void OnLoadApplied(std::string_view a_key, std::uint64_t a_jobGen = 0)
+	{
+		if (a_key.empty()) return;
+		if (a_jobGen && a_jobGen != loadGen_) return;
+		if (!SameLogKey(loadKey_, a_key)) return;
+		loadBusy_ = false;
+		loadKey_.clear();
+	}
+
+	// Purpose: release the load guard only for this key's in-flight load.
+	// A hold-flush for A must not clear a real load of B (P2-A).
+	void OnHoldFlush(std::string_view a_key, std::uint64_t a_jobGen = 0)
+	{
+		if (a_key.empty()) return;
+		if (!SameLogKey(loadKey_, a_key)) return;
+		if (a_jobGen && a_jobGen != loadGen_) return;
+		SlotFor(a_key).holdFlush = true;
+		loadBusy_ = false;
+		loadKey_.clear();
+	}
+
+	void OnWriteResult(std::string_view a_key, std::uint64_t a_seq, bool a_ok,
+		const LogState* a_failSnap = nullptr, bool a_skipped = false, bool a_jobClearFirst = false,
+		std::uint64_t a_nowMs = 0)
+	{
+		auto& s = SlotFor(a_key);
+		s.doneSeq = a_seq;
+		if (WritePendingClears(a_seq, s.writePendingSeq))
+			s.writePending = false;
+		pending_.erase(std::remove_if(pending_.begin(), pending_.end(),
+			[&](const QueuedWrite& q) {
+				return SameLogKey(q.key, a_key) && q.writeSeq == a_seq;
+			}), pending_.end());
+		if (a_skipped) {
+			if (s.clearPending) s.retryDue = true;
+			return;
+		}
+		if (a_ok) {
+			if (a_seq >= s.clearSeq) {
+				s.clearPending = false;
+				s.clearSeq = 0;
+				s.failClearFirst = false;
+			}
+			s.hasFail = false;
+			s.retryDue = false;
+			s.failSnap = {};
+			s.retryBackoffMs = 0;
+			s.retryAt = 0;
+			s.holdFlush = false;
+			return;
+		}
+		if (a_failSnap) {
+			s.failSnap = *a_failSnap;
+			s.hasFail = true;
+		}
+		s.failClearFirst = a_jobClearFirst
+			|| s.failClearFirst
+			|| (s.clearPending && a_failSnap && !a_failSnap->entries.empty());
+		s.retryBackoffMs = NextRetryMs(s.retryBackoffMs);
+		s.retryAt = a_nowMs + static_cast<std::uint64_t>(s.retryBackoffMs);
+		s.retryDue = true;
+	}
+
+	std::vector<WriteDecision> OnQuit(std::string_view a_key, const LogState& a_snap)
+	{
+		std::vector<WriteDecision> out;
+		auto cur = RequestWrite(a_key, a_snap, true);
+		if (cur.queue) out.push_back(std::move(cur));
+		for (auto& s : slots_) {
+			if (!s.clearPending) continue;
+			if (!a_key.empty() && SameLogKey(s.key, a_key)) continue;
+			LogState snap = s.hasFail ? s.failSnap : LogState{};
+			if (snap.character.key.empty())
+				snap.character.key = s.key;
+			auto d = DecideAndQueue(s.key, snap, true);
+			if (d.queue) out.push_back(std::move(d));
+		}
+		return out;
+	}
+
+	// Purpose: retry due slots from failSnap. P2-H: never rebuild a retry
+	// from an older snapshot when a newer job is already queued or in flight.
+	std::vector<WriteDecision> Poll(std::uint64_t a_nowMs = ~std::uint64_t{0})
+	{
+		std::vector<WriteDecision> out;
+		std::vector<std::string> keys;
+		for (auto& s : slots_) {
+			if (!s.retryDue) continue;
+			if (a_nowMs < s.retryAt) continue;
+			s.retryDue = false;
+			keys.push_back(s.key);
+		}
+		for (const auto& k : keys) {
+			auto& s = SlotFor(k);
+			if (PollSkipsRetry(s.writePending, HasPendingFor(k)))
+				continue;
+			LogState snap = s.hasFail ? s.failSnap : LogState{};
+			if (snap.character.key.empty())
+				snap.character.key = k;
+			auto d = DecideAndQueue(k, snap, false);
+			if (d.queue) out.push_back(std::move(d));
+		}
+		return out;
+	}
+
+	const std::vector<QueuedWrite>& PendingJobs() const { return pending_; }
+
+private:
+	bool          persist_{true};
+	bool          loadBusy_{false};
+	std::string   loadKey_;
+	std::uint64_t loadGen_{0};
+	std::uint64_t nextWriteSeq_{0};
+	std::vector<Slot>        slots_;
+	std::vector<QueuedWrite> pending_;
+
+	Slot& SlotFor(std::string_view a_key)
+	{
+		const auto folded = FoldLogKey(a_key);
+		for (auto& s : slots_)
+			if (s.key == folded) return s;
+		Slot n;
+		n.key = folded;
+		slots_.push_back(std::move(n));
+		return slots_.back();
+	}
+
+	const Slot* FindSlot(std::string_view a_key) const
+	{
+		const auto folded = FoldLogKey(a_key);
+		for (const auto& s : slots_)
+			if (s.key == folded) return &s;
+		return nullptr;
+	}
+
+	bool HasPendingFor(std::string_view a_key) const
+	{
+		for (const auto& q : pending_)
+			if (SameLogKey(q.key, a_key)) return true;
+		return false;
+	}
+
+	WriteDecision DecideAndQueue(std::string_view a_key, const LogState& a_snap,
+		bool a_explicitClear)
+	{
+		WriteDecision d;
+		d.emit.key.assign(a_key.begin(), a_key.end());
+		d.emit.snap = a_snap;
+		d.emit.persist = persist_;
+		if (!persist_ || a_key.empty()) return d;
+		if (a_explicitClear && !ValidLogKey(a_key)) return d;
+		auto& s = SlotFor(a_key);
+		if (a_explicitClear) {
+			s.clearPending = true;
+			if (s.clearSeq == 0)
+				s.clearSeq = nextWriteSeq_ + 1;
+		}
+		const bool snapEmpty = a_snap.entries.empty();
+		const bool explicitClear = a_explicitClear || (s.clearPending && snapEmpty);
+		const bool holdFlush = s.holdFlush;
+		const bool clearFirst = (s.clearPending && !snapEmpty) || s.failClearFirst;
+		if (!ShouldQueueWrite(explicitClear, snapEmpty, loadBusy_, a_key, loadKey_,
+				s.clearPending, holdFlush))
+			return d;
+		d.emit.emptyClear = DecideWriteEmptyClear(explicitClear);
+		d.emit.clearFirst = clearFirst;
+		d.emit.writeSeq = ++nextWriteSeq_;
+		if (a_explicitClear || d.emit.emptyClear)
+			s.clearSeq = d.emit.writeSeq;
+		QueuedWrite q;
+		q.key = d.emit.key;
+		q.emptyClear = d.emit.emptyClear;
+		q.clearFirst = d.emit.clearFirst;
+		q.hasRows = !snapEmpty;
+		q.writeSeq = d.emit.writeSeq;
+		const auto qd = DecideQueuedWrite(pending_, q);
+		if (qd.op == QueueOp::Skip) return d;
+		d.emit.clearFirst = clearFirst || qd.clearFirst;
+		q.clearFirst = d.emit.clearFirst;
+		if (qd.op == QueueOp::Replace && qd.index < pending_.size())
+			pending_[qd.index] = std::move(q);
+		else
+			pending_.push_back(std::move(q));
+		s.writePending = true;
+		s.writePendingSeq = d.emit.writeSeq;
+		s.dirty = false;
+		d.queue = true;
+		return d;
+	}
+};
+
+inline bool LastPlayedKnown(std::int64_t a_ts)
+{
+	return a_ts >= kLastPlayedEpochMin;
+}
+
+inline std::int64_t LastPlayedDisplay(std::int64_t a_ts, std::int64_t a_fileMtime)
+{
+	return LastPlayedKnown(a_ts) ? a_ts : a_fileMtime;
+}
+
+inline std::int64_t EpochSeconds()
+{
+	return static_cast<std::int64_t>(std::time(nullptr));
+}
+
+// Purpose: stamp lastPlayedTs before Snapshot so a write carries this
+// session (normal and quit). A 0 ts is ignored so a bad clock cannot wipe
+// a known value. Inputs: lastPlayedTs field and epoch seconds. Outputs: none.
+// Last modified: 2026-10-28.
+inline void StampLastPlayed(std::int64_t& a_lastPlayedTs, std::int64_t a_ts)
+{
+	if (a_ts > 0)
+		a_lastPlayedTs = a_ts;
 }
 
 // Purpose: a failed promote/recover for a name-hash buffer parks under the
@@ -683,12 +1785,18 @@ inline void CapKeptHeld(std::vector<Entry>& a_rows, std::size_t a_cap)
 	for (auto& e : rest) a_rows.push_back(std::move(e));
 }
 
-// Purpose: append parked rows, skip exact matches, then cap. A second park
-// of the same snapshot must not raise n later.
+// Purpose: append parked rows, keep the larger n on an exact match, then cap.
 inline void AppendParkedRows(std::vector<Entry>& a_dst, const std::vector<Entry>& a_src)
 {
 	for (const auto& in : a_src) {
-		if (!HasSameParkedRow(a_dst, in))
+		bool found = false;
+		for (auto& e : a_dst) {
+			if (!SameParkedRow(e, in)) continue;
+			KeepLargerParkedN(e, in);
+			found = true;
+			break;
+		}
+		if (!found)
 			a_dst.push_back(in);
 	}
 	CapKeptHeld(a_dst, static_cast<std::size_t>(kKeptHeldCap));
@@ -731,7 +1839,7 @@ inline bool ShouldQuarantine(const FileRead& a_rd, bool a_parseCorrupt)
 	return a_rd.tooLarge || a_parseCorrupt;
 }
 
-// Purpose: stat the log file first and refuse anything over 1 MB without reading.
+// Purpose: stat the log file first and refuse anything over 4 MiB without reading.
 // Inputs: path. Outputs: FileRead (body stays empty when tooLarge).
 inline FileRead ReadLogFile(const std::filesystem::path& a_path)
 {
@@ -767,6 +1875,39 @@ inline FileRead ReadLogFile(const std::filesystem::path& a_path)
 	return r;
 }
 
+// Purpose: next launch session id. Persist nextSess, then take the max of
+// that value, max(entry sess)+1, and max(session id)+1 so old all-1 files
+// also get a new id.
+inline int NextSessId(int a_sess)
+{
+	if (a_sess >= (std::numeric_limits<int>::max)()) return (std::numeric_limits<int>::max)();
+	if (a_sess < 1) return 1;
+	return a_sess + 1;
+}
+
+inline int ClampSessId(int a_sess)
+{
+	if (a_sess < 1) return 1;
+	return a_sess;
+}
+
+inline int ResolveNextSess(int a_nextSess, const std::vector<Session>& a_sessions, const std::vector<Entry>& a_entries)
+{
+	int n = a_nextSess > 0 ? a_nextSess : 1;
+	for (const auto& e : a_entries)
+		if (e.sess >= n) n = NextSessId(e.sess);
+	for (const auto& s : a_sessions)
+		if (s.id >= n) n = NextSessId(s.id);
+	return n;
+}
+
+inline void RestampLaunchSess(std::vector<Entry>& a_rows, int a_pin)
+{
+	if (a_pin <= 0) return;
+	for (auto& e : a_rows)
+		e.sess = a_pin;
+}
+
 // ---------------------------------------------------------------------------
 // In-memory ring + pins
 // ---------------------------------------------------------------------------
@@ -777,10 +1918,17 @@ public:
 	Character character;
 	std::int64_t lastPlayedTs{0};
 	std::uint64_t nextId{1};
+	// Bumped on every visible-row change so the HUD packs once, not
+	// every tick. The game thread only copies when this moves.
+	std::uint64_t viewGen{0};
 	int       sess{1};
+	int       launchSess{0}; // current key's process-lifetime pin; 0 if none
 	std::int64_t sessStartTs{0};
 	std::vector<Session> sessions;
 	std::vector<Entry> entries; // oldest -> newest
+	// Per-character launch session for this process. Never cleared on
+	// ResetMemory / LoadState: A and B must not share one id.
+	std::map<std::string, int> launchPins;
 
 	int Cap() const { return ClampHistory(settings.historySize); }
 
@@ -814,10 +1962,64 @@ public:
 		return nullptr;
 	}
 
+	int LaunchPinFor(std::string_view a_key) const
+	{
+		if (a_key.empty()) return 0;
+		const auto it = launchPins.find(FoldLogKey(a_key));
+		return it == launchPins.end() ? 0 : it->second;
+	}
+
+	void RememberLaunchPin(std::string_view a_key, int a_sess)
+	{
+		if (a_key.empty() || a_sess <= 0) return;
+		launchPins[FoldLogKey(a_key)] = ClampSessId(a_sess);
+	}
+
+	// Purpose: first use of a key in this process takes
+	// max(file nextSess, max entry sess+1, max sessions id+1). Later
+	// loads bump the pin past any later-read ids so an unreadable first
+	// load cannot collide. Switches back to that key reuse the pin.
+	// Inputs: character key and the file's nextSess (0 if none).
+	// Outputs: the launch session id for this key.
+	int TakeLaunchSess(std::string_view a_key, int a_fileNext)
+	{
+		if (const int pinned = LaunchPinFor(a_key)) {
+			int maxRead = 0;
+			for (const auto& e : entries)
+				if (e.sess > maxRead) maxRead = e.sess;
+			for (const auto& s : sessions)
+				if (s.id > maxRead) maxRead = s.id;
+			if (maxRead > pinned) {
+				const int n = NextSessId(maxRead);
+				RememberLaunchPin(a_key, n);
+				return n;
+			}
+			return pinned;
+		}
+		const int n = ResolveNextSess(a_fileNext, sessions, entries);
+		RememberLaunchPin(a_key, n);
+		return n;
+	}
+
 	void StartSession(std::int64_t a_ts)
 	{
+		if (!character.key.empty()) {
+			sess = ClampSessId(TakeLaunchSess(character.key, sess <= 0 ? 1 : sess));
+			launchSess = sess;
+		} else if (launchSess != 0) {
+			sess = ClampSessId(launchSess);
+		} else {
+			sess = ClampSessId(sess);
+			launchSess = sess;
+		}
 		sessStartTs = a_ts;
+		for (const auto& s : sessions)
+			if (s.id == sess) {
+				BumpView();
+				return;
+			}
 		sessions.push_back(Session{sess, a_ts});
+		BumpView();
 	}
 
 	// Purpose: apply a capture. Saving lines return SaveSignal and are not stored.
@@ -834,12 +2036,21 @@ public:
 		if (!(settings.logTypes & TypeBit(a.kind))) return OfferResult::Rejected;
 		a.text = CapText(hzpreset::Trim(a.text), kTextCap);
 		if (a.text.empty()) return OfferResult::Rejected;
+		if (a.kind == Kind::Location && suppressFirstLoc_) {
+			suppressFirstLoc_ = false;
+			const auto key = NormalizeText(a.text);
+			if (!lastLocNorm_.empty() && key == lastLocNorm_)
+				return OfferResult::Rejected;
+		}
 		a.loc = CapText(a.loc, kLocCap);
 		a.title = CapText(a.title, 64);
 		a.tag = CapText(a.tag, 32);
 		const auto key = NormalizeText(a.text);
 		const int win = a.kind == Kind::Busy ? kBusyDedupeMs : kDedupeMs;
-		return OfferDedupe(a, key, win);
+		const auto r = OfferDedupe(a, key, win);
+		if (r == OfferResult::Stored || r == OfferResult::Deduped)
+			BumpView();
+		return r;
 	}
 
 	bool Pin(std::uint64_t a_id)
@@ -849,6 +2060,7 @@ public:
 			if (e.pin) return true;
 			if (PinCount() >= kPinCap) return false;
 			e.pin = 1;
+			BumpView();
 			return true;
 		}
 		return false;
@@ -860,29 +2072,35 @@ public:
 			if (e.id != a_id) continue;
 			e.pin = 0;
 			Evict();
+			BumpView();
 			return true;
 		}
 		return false;
 	}
 
-	// Purpose: drop unpinned rows whose in-game time is later than now.
-	// Pins stay and are flagged by FromLaterPoint. A null/zero clock is a no-op.
-	// Inputs: Calendar::GetDaysPassedExact(). Outputs: number of dropped rows.
+	// Purpose: after a reload, mark rows from a later point. Decision A
+	// (2026-10-27): loading an earlier save must not drop any rows. Every
+	// later-point row, pinned or not, stays and is flagged fromLater (the
+	// view dims it and labels it "from a later point"). The history-size
+	// cap still evicts the oldest unpinned rows. A null/zero clock is a
+	// no-op. An automatic trim never writes an empty file or touches .bak.
+	// The id counter is not rewound.
+	// Inputs: Calendar::GetDaysPassedExact() at the HUD-ready edge.
+	// Outputs: number of rows newly flagged. Never a drop count.
+	// Dependencies: FromLaterPoint. Last modified: 2026-10-28.
 	int Prune(double a_gtNow)
 	{
 		if (a_gtNow <= 0) return 0;
-		double newest = 0;
-		for (const auto& e : entries)
-			if (e.gt > newest) newest = e.gt;
-		if (newest <= a_gtNow) return 0;
-		const auto before = entries.size();
-		std::vector<Entry> keep;
-		keep.reserve(entries.size());
+		int flagged = 0;
 		for (auto& e : entries) {
-			if (e.pin || e.gt <= a_gtNow) keep.push_back(std::move(e));
+			if (e.fromLater) continue;
+			if (a_gtNow > 0 && e.gt > a_gtNow) {
+				e.fromLater = 1;
+				++flagged;
+			}
 		}
-		entries.swap(keep);
-		return static_cast<int>(before - entries.size());
+		if (flagged) BumpView();
+		return flagged;
 	}
 
 	void ClearSession()
@@ -892,17 +2110,24 @@ public:
 			if (e.sess != sess || e.pin) keep.push_back(std::move(e));
 		}
 		entries.swap(keep);
+		BumpView();
 	}
 
 	void ClearHistory()
 	{
-		entries.clear();
+		std::vector<Entry> keep;
+		for (auto& e : entries) {
+			if (e.pin) keep.push_back(std::move(e));
+		}
+		entries.swap(keep);
+		BumpView();
 	}
 
 	void SetHistorySize(int a_n)
 	{
 		settings.historySize = ClampHistory(a_n);
 		Evict();
+		BumpView();
 	}
 
 	void RememberName(std::string_view a_name)
@@ -922,7 +2147,7 @@ public:
 		s.cap = Cap();
 		s.pinCap = kPinCap;
 		s.nextId = nextId;
-		s.nextSess = sess + 1;
+		s.nextSess = NextSessId(sess);
 		s.sessions = sessions;
 		s.entries = entries;
 		return s;
@@ -934,9 +2159,11 @@ public:
 		lastPlayedTs = s.lastPlayedTs;
 		settings.historySize = ClampHistory(s.cap > 0 ? s.cap : settings.historySize);
 		nextId = s.nextId ? s.nextId : 1;
-		sess = s.nextSess > 0 ? s.nextSess : 1;
 		sessions = std::move(s.sessions);
 		entries = std::move(s.entries);
+		sess = ClampSessId(TakeLaunchSess(character.key, s.nextSess));
+		launchSess = sess;
+		NoteLocationLoad();
 		int pins = 0;
 		for (auto& e : entries) {
 			if (e.norm.empty()) e.norm = NormalizeText(e.text);
@@ -948,6 +2175,7 @@ public:
 		}
 		Evict();
 		ClearDedupeClock();
+		BumpView();
 	}
 
 	void ResetMemory()
@@ -955,10 +2183,15 @@ public:
 		entries.clear();
 		sessions.clear();
 		nextId = 1;
-		sess = 1;
+		// Look up this key's pin. Do not apply another character's id.
+		launchSess = LaunchPinFor(character.key);
+		sess = launchSess != 0 ? launchSess : 1;
 		sessStartTs = 0;
 		lastPlayedTs = 0;
+		suppressFirstLoc_ = false;
+		lastLocNorm_.clear();
 		ClearDedupeClock();
+		BumpView();
 	}
 
 	void SortByTime()
@@ -986,7 +2219,9 @@ public:
 	// Inputs: in-memory session rows. Outputs: this buffer.
 	void MergeSession(const std::vector<Entry>& a_session)
 	{
-		for (const auto& in : a_session) {
+		auto incoming = a_session;
+		RestampLaunchSess(incoming, sess);
+		for (const auto& in : incoming) {
 			const auto key = in.norm.empty() ? NormalizeText(in.text) : in.norm;
 			const int win = in.kind == Kind::Busy ? kBusyDedupeMs : kDedupeMs;
 			Entry* hit = nullptr;
@@ -1029,10 +2264,26 @@ public:
 		SortByTime();
 		Evict();
 		ClearDedupeClock();
+		BumpView();
 	}
 
 private:
+	void BumpView() { ++viewGen; }
 	std::vector<std::uint64_t> lastMs_;
+	bool        suppressFirstLoc_{false};
+	std::string lastLocNorm_;
+
+	void NoteLocationLoad()
+	{
+		suppressFirstLoc_ = false;
+		lastLocNorm_.clear();
+		for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
+			if (it->kind != Kind::Location) continue;
+			lastLocNorm_ = it->norm.empty() ? NormalizeText(it->text) : it->norm;
+			suppressFirstLoc_ = !lastLocNorm_.empty();
+			return;
+		}
+	}
 
 	void ClearDedupeClock()
 	{
@@ -1108,6 +2359,193 @@ private:
 	}
 };
 
+// P2 data link: the movie polls this snapshot. No IO. Size is capped.
+enum class ViewStatus : std::uint8_t {
+	Ok = 0,
+	Saving,
+	MemoryOnly,
+	Paused,
+	KeyFallback
+};
+
+struct ViewEntry {
+	std::uint64_t id{0};
+	Kind          kind{Kind::Game};
+	std::string   title;
+	std::string   text;
+	std::string   tag;
+	std::string   loc;
+	int           n{1};
+	int           pin{0};
+	int           missed{0};
+	int           sess{0};
+	std::int64_t  ts{0};
+	double        gt{0};
+	double        ut{-1};
+	double        lt{-1};
+	bool          fromLater{false};
+};
+
+struct ViewSnap {
+	std::vector<ViewEntry> entries;
+	int                    pinCount{0};
+	int                    pinCap{kPinCap};
+	int                    sess{0};
+	std::int64_t           sessStartTs{0};
+	ViewStatus             status{ViewStatus::Ok};
+	bool                   record{true};
+	bool                   persist{true};
+	bool                   missedBadge{true};
+	int                    historySize{kHistoryDefault};
+	std::uint32_t          logTypes{kTypeAll};
+	int                    otherCount{0};
+	std::string            folder;
+};
+
+inline constexpr int kViewEntryCap = kLoadEntryCap;
+
+inline ViewStatus ClassifyViewStatus(const Settings& a_s, const Character& a_ch, bool a_saving, bool a_paused)
+{
+	if (a_ch.keySource == "nameHash") return ViewStatus::KeyFallback;
+	if (!a_s.persist) return ViewStatus::MemoryOnly;
+	if (!a_s.record || a_paused) return ViewStatus::Paused;
+	if (a_saving) return ViewStatus::Saving;
+	return ViewStatus::Ok;
+}
+
+// Purpose: copy a capped view of the buffer for the movie. Never reads disk.
+// Inputs: buffer, current game time, status. Outputs: ViewSnap.
+inline ViewSnap BuildView(const Buffer& a_buf, double a_gtNow, ViewStatus a_status)
+{
+	ViewSnap v;
+	v.pinCount = a_buf.PinCount();
+	v.pinCap = kPinCap;
+	v.sess = a_buf.sess;
+	v.sessStartTs = a_buf.sessStartTs;
+	v.status = a_status;
+	v.record = a_buf.settings.record;
+	v.persist = a_buf.settings.persist;
+	v.missedBadge = a_buf.settings.missedBadge;
+	v.historySize = a_buf.settings.historySize;
+	v.logTypes = a_buf.settings.logTypes;
+	const auto n = a_buf.entries.size();
+	const auto start = n > static_cast<std::size_t>(kViewEntryCap)
+		? n - static_cast<std::size_t>(kViewEntryCap) : 0;
+	v.entries.reserve(n - start);
+	for (std::size_t i = start; i < n; ++i) {
+		const auto& e = a_buf.entries[i];
+		ViewEntry row;
+		row.id = e.id;
+		row.kind = e.kind;
+		row.title = e.title;
+		row.text = e.text;
+		row.tag = e.tag;
+		row.loc = e.loc;
+		row.n = e.n;
+		row.pin = e.pin;
+		row.missed = e.missed;
+		row.sess = e.sess;
+		row.ts = e.ts;
+		row.gt = e.gt;
+		row.ut = e.ut;
+		row.lt = e.lt;
+		row.fromLater = e.fromLater != 0 || FromLaterPoint(e, a_gtNow);
+		v.entries.push_back(std::move(row));
+	}
+	return v;
+}
+
+// Purpose: pack a view snapshot for the HUD movie. No IO. Pipes and
+// newlines in fields become spaces so the movie can split on '|'.
+// Inputs: ViewSnap. Outputs: one string. Last modified: 2026-10-28.
+inline std::string PackViewField(std::string_view a_s)
+{
+	std::string o;
+	o.reserve(a_s.size());
+	for (unsigned char c : a_s) {
+		if (c == '|' || c == '\n' || c == '\r')
+			o.push_back(' ');
+		else
+			o.push_back(static_cast<char>(c));
+	}
+	return o;
+}
+
+inline const char* ViewStatusKey(ViewStatus a_s)
+{
+	switch (a_s) {
+	case ViewStatus::Saving: return "saving";
+	case ViewStatus::MemoryOnly: return "memory";
+	case ViewStatus::Paused: return "paused";
+	case ViewStatus::KeyFallback: return "fallback";
+	default: return "ok";
+	}
+}
+
+inline std::string PackView(const ViewSnap& a_v)
+{
+	std::string o;
+	o += "v1|";
+	o += ViewStatusKey(a_v.status);
+	o += '|';
+	o += std::to_string(a_v.sess);
+	o += '|';
+	o += std::to_string(a_v.pinCount);
+	o += '|';
+	o += std::to_string(a_v.pinCap);
+	o += '|';
+	o += std::to_string(a_v.sessStartTs);
+	o += '|';
+	o += std::to_string(a_v.entries.size());
+	o += '|';
+	o += a_v.record ? '1' : '0';
+	o += '|';
+	o += a_v.persist ? '1' : '0';
+	o += '|';
+	o += std::to_string(a_v.historySize);
+	o += '|';
+	o += LogTypesText(a_v.logTypes);
+	o += '|';
+	o += a_v.missedBadge ? '1' : '0';
+	o += '|';
+	o += std::to_string(a_v.otherCount);
+	o += '|';
+	o += PackViewField(a_v.folder);
+	for (const auto& e : a_v.entries) {
+		o += '\n';
+		o += std::to_string(e.id);
+		o += '|';
+		o += KindKey(e.kind);
+		o += '|';
+		o += PackViewField(e.title);
+		o += '|';
+		o += PackViewField(e.text);
+		o += '|';
+		o += PackViewField(e.tag);
+		o += '|';
+		o += PackViewField(e.loc);
+		o += '|';
+		o += std::to_string(e.n);
+		o += '|';
+		o += std::to_string(e.pin);
+		o += '|';
+		o += std::to_string(e.missed);
+		o += '|';
+		o += std::to_string(e.sess);
+		o += '|';
+		o += std::to_string(e.ts);
+		o += '|';
+		o += std::to_string(e.gt);
+		o += '|';
+		o += std::to_string(e.ut);
+		o += '|';
+		o += std::to_string(e.lt);
+		o += '|';
+		o += e.fromLater ? '1' : '0';
+	}
+	return o;
+}
+
 // ---------------------------------------------------------------------------
 // JSON
 // ---------------------------------------------------------------------------
@@ -1169,6 +2607,10 @@ inline std::string ToJson(const LogState& a_s, std::string_view a_plugin)
 	o += std::to_string(a_s.cap);
 	o += ", \"pinCap\": ";
 	o += std::to_string(a_s.pinCap);
+	o += ", \"nextSess\": ";
+	o += std::to_string(a_s.nextSess);
+	o += ", \"nextId\": ";
+	o += std::to_string(a_s.nextId ? a_s.nextId : 1);
 	o += ",\n  \"sessions\": [";
 	for (std::size_t i = 0; i < a_s.sessions.size(); ++i) {
 		if (i) o += ", ";
@@ -1209,12 +2651,31 @@ inline std::string ToJson(const LogState& a_s, std::string_view a_plugin)
 		o += std::to_string(e.missed);
 		o += ", \"pin\": ";
 		o += std::to_string(e.pin);
+		o += ", \"later\": ";
+		o += std::to_string(e.fromLater ? 1 : 0);
 		o += " }";
 		if (i + 1 < a_s.entries.size()) o += ",";
 		o += "\n";
 	}
 	o += "  ]\n}\n";
 	return o;
+}
+
+// Purpose: writer cap. Drop the oldest unpinned rows until ToJson is at most
+// 3 MiB. Pins stay even if the file is still over the cap.
+inline void EvictUnpinnedToBytes(LogState& a_s, std::size_t a_max, std::string_view a_plugin)
+{
+	for (;;) {
+		if (ToJson(a_s, a_plugin).size() <= a_max) return;
+		bool dropped = false;
+		for (auto it = a_s.entries.begin(); it != a_s.entries.end(); ++it) {
+			if (it->pin) continue;
+			a_s.entries.erase(it);
+			dropped = true;
+			break;
+		}
+		if (!dropped) return;
+	}
 }
 
 struct JsonTok {
@@ -1391,6 +2852,10 @@ inline bool ParseEntry(JsonTok& a_t, Entry& a_e, bool& a_usable)
 			std::int64_t v = 0;
 			if (!JsonIntTok(a_t, v)) return false;
 			a_e.pin = v ? 1 : 0;
+		} else if (key == "later") {
+			std::int64_t v = 0;
+			if (!JsonIntTok(a_t, v)) return false;
+			a_e.fromLater = v ? 1 : 0;
 		} else if (!JsonSkipValue(a_t, 1)) {
 			return false;
 		}
@@ -1400,6 +2865,7 @@ inline bool ParseEntry(JsonTok& a_t, Entry& a_e, bool& a_usable)
 	if (!haveT || !haveK || a_e.text.empty()) return true;
 	a_e.text = CapText(a_e.text, kTextCap);
 	a_e.loc = CapText(a_e.loc, kLocCap);
+	PromoteLegacyReaction(a_e);
 	a_usable = true;
 	return true;
 }
@@ -1412,7 +2878,7 @@ struct ParseResult {
 };
 
 // Purpose: parse a log file. Bad JSON, the wrong type, a too-new version, or
-// a file over 1 MB is corrupt. Malformed entries are skipped.
+// a file over 4 MiB is corrupt. Malformed entries are skipped.
 // Inputs: file bytes. Outputs: ParseResult. Dependencies: none.
 inline ParseResult FromJson(std::string_view a_text)
 {
@@ -1553,6 +3019,23 @@ inline ParseResult FromJson(std::string_view a_text)
 				return r;
 			}
 			r.state.pinCap = static_cast<int>(v);
+		} else if (key == "nextSess") {
+			std::int64_t v = 0;
+			if (!JsonIntTok(t, v)) {
+				r.corrupt = true;
+				r.notice = "bad json";
+				return r;
+			}
+			r.state.nextSess = static_cast<int>(v);
+		} else if (key == "nextId") {
+			std::int64_t v = 0;
+			if (!JsonIntTok(t, v)) {
+				r.corrupt = true;
+				r.notice = "bad json";
+				return r;
+			}
+			if (v > 0 && static_cast<std::uint64_t>(v) > r.state.nextId)
+				r.state.nextId = static_cast<std::uint64_t>(v);
 		} else if (key == "sessions") {
 			if (!t.Eat('[')) {
 				r.corrupt = true;
@@ -1678,6 +3161,89 @@ inline ParseResult FromJson(std::string_view a_text)
 	return r;
 }
 
+struct OtherCharacter {
+	std::string  key;
+	std::string  name;
+	int          entryCount{0};
+	std::int64_t lastPlayedTs{0};
+	std::int64_t fileMtime{0};
+};
+
+inline bool LogFileKey(std::string_view a_name, std::string& a_key)
+{
+	static constexpr std::string_view pre = "MessageLog_";
+	static constexpr std::string_view suf = ".json";
+	if (a_name.size() <= pre.size() + suf.size()) return false;
+	if (a_name.substr(0, pre.size()) != pre) return false;
+	if (a_name.substr(a_name.size() - suf.size()) != suf) return false;
+	a_key.assign(a_name.substr(pre.size(), a_name.size() - pre.size() - suf.size()));
+	return ValidLogKey(a_key);
+}
+
+inline std::string OtherCharacterName(const Character& a_ch, int a_index)
+{
+	if (!a_ch.names.empty() && !a_ch.names.back().empty())
+		return a_ch.names.back();
+	return "Character " + std::to_string(a_index);
+}
+
+inline std::int64_t FileMtimeSeconds(const std::filesystem::path& a_path)
+{
+	std::error_code ec;
+	const auto ft = std::filesystem::last_write_time(a_path, ec);
+	if (ec) return 0;
+	using namespace std::chrono;
+	const auto sys = clock_cast<system_clock>(ft);
+	return static_cast<std::int64_t>(duration_cast<seconds>(sys.time_since_epoch()).count());
+}
+
+inline std::vector<OtherCharacter> ListOtherCharacters(const std::filesystem::path& a_dir, const std::string& a_currentKey)
+{
+	std::vector<OtherCharacter> out;
+	std::error_code ec;
+	if (!std::filesystem::is_directory(a_dir, ec)) return out;
+	for (const auto& ent : std::filesystem::directory_iterator(a_dir, ec)) {
+		if (!ent.is_regular_file(ec)) continue;
+		std::string key;
+		if (!LogFileKey(ent.path().filename().string(), key)) continue;
+		if (SameLogKey(key, a_currentKey)) continue;
+		OtherCharacter oc;
+		oc.key = std::move(key);
+		oc.fileMtime = FileMtimeSeconds(ent.path());
+		const auto rd = ReadLogFile(ent.path());
+		if (rd.ok && !rd.missing) {
+			auto parsed = FromJson(rd.body);
+			if (parsed.ok) {
+				if (!parsed.state.character.names.empty())
+					oc.name = parsed.state.character.names.back();
+				oc.entryCount = static_cast<int>(parsed.state.entries.size());
+				oc.lastPlayedTs = LastPlayedDisplay(parsed.state.lastPlayedTs, oc.fileMtime);
+			}
+		}
+		out.push_back(std::move(oc));
+	}
+	std::sort(out.begin(), out.end(), [](const OtherCharacter& a, const OtherCharacter& b) {
+		return FoldLogKey(a.key) < FoldLogKey(b.key);
+	});
+	int nameless = 1;
+	for (auto& oc : out) {
+		if (oc.name.empty())
+			oc.name = OtherCharacterName({}, nameless++);
+	}
+	return out;
+}
+
+inline std::string PackOtherLine(const OtherCharacter& a_o)
+{
+	std::string o = "o|";
+	o += PackViewField(a_o.name);
+	o += '|';
+	o += std::to_string(a_o.entryCount);
+	o += '|';
+	o += std::to_string(a_o.lastPlayedTs);
+	return o;
+}
+
 // ---------------------------------------------------------------------------
 // Storage backends
 // ---------------------------------------------------------------------------
@@ -1687,8 +3253,6 @@ public:
 	virtual ~IMessageStore() = default;
 	virtual bool Load(const std::string& a_key, LogState& a_out, std::string& a_notice) = 0;
 	virtual bool Save(const LogState& a_state) = 0;
-	// Called only after the later UI confirm. Never silent.
-	virtual bool DeleteCurrent(const std::string& a_key) = 0;
 	virtual bool TouchesDisk() const = 0;
 	virtual bool FolderExists() const = 0;
 };
@@ -1702,19 +3266,20 @@ public:
 		return true;
 	}
 	bool Save(const LogState&) override { return true; }
-	bool DeleteCurrent(const std::string&) override { return true; }
 	bool TouchesDisk() const override { return false; }
 	bool FolderExists() const override { return false; }
 };
 
 using ReplaceFn = std::function<bool(const std::filesystem::path&, const std::filesystem::path&)>;
 
+// Purpose: atomic tmp -> dest replace. The DLL injects MoveFileExW with
+// MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH. This fallback is
+// POSIX rename, which replaces dest in place. A leftover tmp is left for
+// the next trunc write. Inputs: tmp and dest paths. Outputs: true on
+// replace. Dependencies: none.
 inline bool DefaultReplace(const std::filesystem::path& a_tmp, const std::filesystem::path& a_dst)
 {
 	std::error_code ec;
-	std::filesystem::rename(a_tmp, a_dst, ec);
-	if (!ec) return true;
-	std::filesystem::remove(a_dst, ec);
 	std::filesystem::rename(a_tmp, a_dst, ec);
 	return !ec;
 }
@@ -1735,7 +3300,7 @@ public:
 
 	std::filesystem::path FileFor(const std::string& a_key) const
 	{
-		return dir / ("MessageLog_" + a_key + ".json");
+		return dir / ("MessageLog_" + FoldLogKey(a_key) + ".json");
 	}
 
 	bool TouchesDisk() const override { return true; }
@@ -1773,14 +3338,51 @@ public:
 		return true;
 	}
 
+	// Purpose: write JSON through a leftover-safe tmp, then replace dest.
+	// Inputs: dest path and body. Outputs: true after a successful replace.
+	// A failed write or replace leaves the leftover tmp for the next trunc.
+	// Dependencies: replace callback (MoveFileExW REPLACE_EXISTING in the DLL).
+	bool WriteAtomicKeepTmp(const std::filesystem::path& a_dest, const std::string& a_body)
+	{
+		auto tmp = a_dest;
+		tmp += ".tmp";
+		{
+			std::ofstream o(tmp, std::ios::binary | std::ios::trunc);
+			if (!o) return false;
+			o.write(a_body.data(), static_cast<std::streamsize>(a_body.size()));
+			o.flush();
+			if (!o) return false;
+		}
+		return replace(tmp, a_dest);
+	}
+
+	bool FileHasRows(const std::string& a_key) const
+	{
+		if (a_key.empty()) return false;
+		std::error_code ec;
+		const auto path = FileFor(a_key);
+		if (!std::filesystem::is_regular_file(path, ec)) return false;
+		const auto rd = readHook ? readHook(path) : ReadLogFile(path);
+		if (!rd.ok || rd.missing) return false;
+		const auto parsed = FromJson(rd.body);
+		return parsed.ok && !parsed.state.entries.empty();
+	}
+
 	bool Save(const LogState& a_state) override
 	{
-		if (a_state.character.key.empty()) return false;
+		if (!ValidLogKey(a_state.character.key)) return false;
+		// Empty snapshots are not a Clear. Only an explicit emptyClear
+		// or clearFirst job empties both files.
+		if (a_state.entries.empty())
+			return true;
 		std::error_code ec;
 		std::filesystem::create_directories(dir, ec);
 		if (ec) return false;
 		const auto path = FileFor(a_state.character.key);
-		const auto body = ToJson(a_state, std::string("HorizonUI ") + HZ_FILE_VERSION_STR);
+		LogState writable = a_state;
+		const auto plugin = std::string("HorizonUI ") + HZ_FILE_VERSION_STR;
+		EvictUnpinnedToBytes(writable, static_cast<std::size_t>(kFileWriteMaxBytes), plugin);
+		const auto body = ToJson(writable, plugin);
 		auto tmp = path;
 		tmp += ".tmp";
 		{
@@ -1788,11 +3390,7 @@ public:
 			if (!o) return false;
 			o.write(body.data(), static_cast<std::streamsize>(body.size()));
 			o.flush();
-			if (!o) {
-				o.close();
-				std::filesystem::remove(tmp, ec);
-				return false;
-			}
+			if (!o) return false;
 		}
 		if (std::filesystem::is_regular_file(path, ec)) {
 			auto bak = path;
@@ -1800,39 +3398,35 @@ public:
 			std::filesystem::copy_file(path, bak, std::filesystem::copy_options::overwrite_existing, ec);
 			if (ec) {
 				++bakFails;
-				std::filesystem::remove(bak, ec);
-				if (BakCopyBlocksReplace(bakFails, bakFailGiveUp)) {
-					std::filesystem::remove(tmp, ec);
+				if (BakCopyBlocksReplace(bakFails, bakFailGiveUp))
 					return false;
-				}
 				bakBypassed = true;
 			} else {
 				bakFails = 0;
 			}
 		}
-		if (!replace(tmp, path)) {
-			std::filesystem::remove(tmp, ec);
-			return false;
-		}
-		return true;
+		return replace(tmp, path);
 	}
 
-	bool DeleteCurrent(const std::string& a_key) override
+	// Purpose: Clear history writes the snapshot (remaining pins, or
+	// empty when none) to the main file first, then .bak. The loader
+	// prefers main, so a crash in between cannot bring old unpinned
+	// rows back. Inputs: post-Clear LogState with nextSess kept.
+	// Outputs: true when both files hold that body.
+	// Dependencies: WriteAtomicKeepTmp.
+	bool SaveEmptyBoth(const LogState& a_state)
 	{
-		if (a_key.empty()) return false;
+		if (!ValidLogKey(a_state.character.key)) return false;
 		std::error_code ec;
-		auto path = FileFor(a_key);
-		std::filesystem::remove(path, ec);
+		std::filesystem::create_directories(dir, ec);
+		if (ec) return false;
+		const auto path = FileFor(a_state.character.key);
+		const auto plugin = std::string("HorizonUI ") + HZ_FILE_VERSION_STR;
+		const auto body = ToJson(a_state, plugin);
+		if (!WriteAtomicKeepTmp(path, body)) return false;
 		auto bak = path;
 		bak += ".bak";
-		std::filesystem::remove(bak, ec);
-		auto bad = path;
-		bad += ".bad";
-		std::filesystem::remove(bad, ec);
-		auto tmp = path;
-		tmp += ".tmp";
-		std::filesystem::remove(tmp, ec);
-		return true;
+		return WriteAtomicKeepTmp(bak, body);
 	}
 
 private:
@@ -1872,9 +3466,32 @@ private:
 	}
 };
 
+// Purpose: run one writer job. emptyClear writes the snapshot (pins, or
+// empty when none remain) to main then .bak. clearFirst writes empty
+// files first so .bak cannot keep pre-clear rows, then Save writes the
+// new rows. An empty non-Clear snapshot does not touch disk.
+inline bool ApplyDiskWrite(FileStore& a_fs, const LogState& a_snap, bool a_persist,
+	bool a_emptyClear, bool a_clearFirst)
+{
+	if (!a_persist) return true;
+	if (!a_emptyClear && !a_clearFirst && !PersistAllowed(a_snap.character))
+		return true;
+	if (a_emptyClear) {
+		if (!a_fs.SaveEmptyBoth(a_snap)) return false;
+		return true;
+	}
+	if (a_clearFirst) {
+		LogState empty = a_snap;
+		empty.entries.clear();
+		if (!a_fs.SaveEmptyBoth(empty)) return false;
+	}
+	if (a_snap.entries.empty()) return true;
+	return a_fs.Save(a_snap);
+}
+
 // Purpose: Persist=0 uses NullStore and never creates the MessageLog folder.
 // Persist=1 uses FileStore under <horizonDir>/MessageLog.
-// Switching 1->0 stops writes and keeps memory. DeleteCurrent is the later UI call.
+// Switching 1->0 stops writes and leaves existing files in place.
 class Log {
 public:
 	Buffer                    buf;
@@ -1886,32 +3503,111 @@ public:
 	std::uint64_t             lastWriteMs{0};
 	bool                      dirty{false};
 	bool                      writePending{false};
+	std::uint64_t             writeSeq{0};
+	std::uint64_t             writePendingSeq{0};
+	WriteGate                 fileGate;
+	std::uint64_t             loadGen{0};
+	std::vector<OtherCharacter> otherCache;
+	std::uint64_t             otherCacheGen{0};
 	bool                      persistHold{false};
+	bool                      clearAfterHold{false};
+	bool                      consumeClearWrite{false};
+	bool                      clearCutoffSet{false};
+	std::int64_t              clearCutoffTs{0};
 	std::string               holdTargetKey;
 	int                       retryBackoffMs{0};
 	std::uint64_t             retryAt{0};
+	std::uint64_t             persistLineageMaxId{0};
+	int                       staleReloadAttempts{0};
+	bool                      staleCapWarned{false};
 	std::string               lastNotice;
 
 	Log() { store = std::make_unique<NullStore>(); }
 
-	void Configure(const Settings& a_s, std::filesystem::path a_horizonDir)
+	void Configure(const Settings& a_s, std::filesystem::path a_horizonDir, bool a_loadNow = false)
 	{
+		const bool wasPersist = buf.settings.persist;
 		buf.settings = a_s;
 		buf.settings.historySize = ClampHistory(a_s.historySize);
 		horizonDir = std::move(a_horizonDir);
-		ApplyPersist(a_s.persist);
+		ApplyPersistFrom(wasPersist, a_s.persist, a_loadNow);
 	}
 
-	void ApplyPersist(bool a_persist)
+	void ApplyPersist(bool a_persist, bool a_loadNow = true)
 	{
+		ApplyPersistFrom(buf.settings.persist, a_persist, a_loadNow);
+	}
+
+	void ApplyPersistFrom(bool a_was, bool a_persist, bool a_loadNow)
+	{
+		const bool turningOn = PersistTurningOn(a_was, a_persist);
 		buf.settings.persist = a_persist;
-		if (!a_persist)
+		if (!a_persist) {
+			if (a_was && !persistHold)
+				MarkPersistLineage();
 			store = std::make_unique<NullStore>();
-		else
-			store = std::make_unique<FileStore>(horizonDir / "MessageLog", replace);
+			dirty = false;
+			writePending = false;
+			writePendingSeq = 0;
+			fileGate.BumpCancel(buf.character.key);
+			return;
+		}
+		store = std::make_unique<FileStore>(horizonDir / "MessageLog", replace);
+		if (!turningOn) return;
+		persistHold = true;
+		if (a_loadNow)
+			MergeOnPersistOn();
+	}
+
+	// Purpose: off→on must load and merge the existing file (and .bak)
+	// before any write. Holds persistHold until the read succeeds.
+	// Inputs: none (uses the current character and store). Outputs: true
+	// when the hold is cleared. Dependencies: FileStore::Load.
+	bool FlushDeferredClear()
+	{
+		if (!consumeClearWrite) return true;
+		consumeClearWrite = false;
+		if (!buf.settings.persist || !ValidLogKey(buf.character.key)) return true;
+		FileStore fs(horizonDir / "MessageLog", replace);
+		return fs.SaveEmptyBoth(buf.Snapshot());
+	}
+
+	bool MergeOnPersistOn()
+	{
+		if (!buf.settings.persist) return true;
+		LogState file;
+		lastNotice.clear();
+		if (store && PersistAllowed(buf.character)) {
+			if (!store->Load(buf.character.key, file, lastNotice)) {
+				persistHold = true;
+				dirty = false;
+				return false;
+			}
+			const bool haveFile = !file.entries.empty() || !file.character.key.empty();
+			if (haveFile) {
+				ApplyRecoveredFile(std::move(file), buf.character);
+				return FlushDeferredClear();
+			}
+		}
+		persistHold = false;
+		if (clearAfterHold) {
+			clearAfterHold = false;
+			clearCutoffSet = false;
+			clearCutoffTs = 0;
+			consumeClearWrite = true;
+		}
+		return FlushDeferredClear();
 	}
 
 	bool FolderExists() const { return store && store->FolderExists(); }
+
+	// Purpose: display-only MessageLog folder path. Inputs: none.
+	// Outputs: a string. Never creates the folder and never opens a file.
+	std::string FolderPathDisplay() const
+	{
+		if (horizonDir.empty()) return {};
+		return (horizonDir / "MessageLog").generic_string();
+	}
 
 	OfferResult Offer(Capture a)
 	{
@@ -1944,14 +3640,29 @@ public:
 		if (!PersistAllowed(buf.character)) return true;
 		if (persistHold) return false;
 		if (loadBusy.load()) return false;
-		buf.lastPlayedTs = static_cast<std::int64_t>(a_nowMs / 1000);
+		StampLastPlayed(buf.lastPlayedTs, EpochSeconds());
 		if (buf.character.key.empty()) return false;
 		const bool ok = store->Save(buf.Snapshot());
 		if (ok) {
 			dirty = false;
 			lastWriteMs = a_nowMs;
+			MarkPersistLineage();
 		}
 		return ok;
+	}
+
+	void MarkPersistLineage()
+	{
+		persistLineageMaxId = 0;
+		for (const auto& e : buf.entries) {
+			if (e.id > persistLineageMaxId) persistLineageMaxId = e.id;
+		}
+	}
+
+	void ResetMemory()
+	{
+		buf.ResetMemory();
+		persistLineageMaxId = 0;
 	}
 
 	void NoteRetryFailure(std::uint64_t a_nowMs)
@@ -1967,6 +3678,36 @@ public:
 		holdTargetKey.clear();
 		retryBackoffMs = 0;
 		retryAt = 0;
+		staleReloadAttempts = 0;
+		staleCapWarned = false;
+	}
+
+	StaleReloadStep StepStaleReload(std::uint64_t a_nowMs)
+	{
+		auto s = PlanStaleReload(true, persistHold, retryAt, a_nowMs, staleReloadAttempts);
+		s.logCap = StaleCapWarnOnce(s.logCap, staleCapWarned);
+		if (s.recover)
+			++staleReloadAttempts;
+		return s;
+	}
+
+	void FinishStaleReload(std::uint64_t a_nowMs)
+	{
+		NoteRetryFailure(a_nowMs);
+	}
+
+	bool RunStaleReloadAttempt(std::uint64_t a_nowMs)
+	{
+		const auto s = StepStaleReload(a_nowMs);
+		if (!s.recover) return false;
+		FinishStaleReload(a_nowMs);
+		return true;
+	}
+
+	void PrepareHeldClear()
+	{
+		ArmClearCutoff();
+		ClearHistoryMemory();
 	}
 
 	struct KeptHeld
@@ -1976,10 +3717,17 @@ public:
 	};
 	std::vector<KeptHeld> keptHeld;
 
+	void DropParked(const std::string& a_key)
+	{
+		keptHeld.erase(std::remove_if(keptHeld.begin(), keptHeld.end(),
+			[&](const KeptHeld& s) { return SameLogKey(s.key, a_key); }),
+			keptHeld.end());
+	}
+
 	KeptHeld* KeptHeldSlot(const std::string& a_key)
 	{
 		for (auto& s : keptHeld)
-			if (s.key == a_key) return &s;
+			if (SameLogKey(s.key, a_key)) return &s;
 		return nullptr;
 	}
 
@@ -2022,9 +3770,23 @@ public:
 	{
 		for (auto it = keptHeld.begin(); it != keptHeld.end(); ++it) {
 			if (!MergeKeptKeyOk(a_key, it->key)) continue;
-			const auto add = ExactParkedNew(buf.entries, it->entries);
+			bool grew = false;
+			std::vector<Entry> add;
+			add.reserve(it->entries.size());
+			for (const auto& in : it->entries) {
+				bool found = false;
+				for (auto& e : buf.entries) {
+					if (!SameParkedRow(e, in)) continue;
+					if (KeepLargerParkedN(e, in)) grew = true;
+					found = true;
+					break;
+				}
+				if (!found) add.push_back(in);
+			}
 			if (!add.empty()) {
 				buf.MergeSession(add);
+				dirty = true;
+			} else if (grew) {
 				dirty = true;
 			}
 			keptHeld.erase(it);
@@ -2033,7 +3795,9 @@ public:
 	}
 
 	// Purpose: merge a just-read file with the in-memory session. File pins
-	// win, appended rows get new IDs. Clears the persist hold.
+	// win, appended rows get new IDs. Clears the persist hold. A held Clear
+	// drops only unpinned file rows at or before the cutoff so rows captured
+	// after Clear stay.
 	// Inputs: loaded file state and the player-id character.
 	void ApplyRecoveredFile(LogState a_file, Character a_ch)
 	{
@@ -2042,7 +3806,33 @@ public:
 		const bool haveFile = !a_file.entries.empty() || !a_file.character.key.empty();
 		if (haveFile) {
 			buf.LoadState(std::move(a_file));
-			buf.MergeSession(session);
+			if (clearAfterHold)
+				DropUnpinnedAtOrBeforeClear();
+			std::vector<Entry> add;
+			add.reserve(session.size());
+			for (const auto& in : session) {
+				bool skip = false;
+				if (persistHold && PersistLineageId(in.id, persistLineageMaxId)) {
+					for (auto& e : buf.entries) {
+						if (!SamePersistIdentity(e, in)) continue;
+						skip = true;
+						if (in.n > e.n) e.n = in.n;
+						if (in.ts >= e.ts) {
+							e.ts = in.ts;
+							e.gt = in.gt;
+							e.ut = in.ut;
+							e.lt = in.lt;
+							if (!in.loc.empty()) e.loc = in.loc;
+						}
+						if (in.pin) e.pin = 1;
+						break;
+					}
+				}
+				if (!skip) add.push_back(in);
+			}
+			if (!add.empty())
+				buf.MergeSession(add);
+			MarkPersistLineage();
 		}
 		if (PersistAllowed(a_ch)) {
 			buf.character = std::move(a_ch);
@@ -2051,6 +3841,12 @@ public:
 		}
 		NoteRetrySuccess();
 		dirty = true;
+		if (clearAfterHold) {
+			clearAfterHold = false;
+			clearCutoffSet = false;
+			clearCutoffTs = 0;
+			consumeClearWrite = true;
+		}
 	}
 
 	// Purpose: re-read the target file on a timer, merge the held session,
@@ -2117,7 +3913,7 @@ public:
 				if (canLoad)
 					PromoteToCharacter(std::move(a_ch));
 			} else {
-				buf.ResetMemory();
+				ResetMemory();
 				dirty = false;
 				buf.character = std::move(a_ch);
 				if (canLoad)
@@ -2149,15 +3945,85 @@ public:
 				return;
 			}
 		}
-		if (!st.character.key.empty() || !st.entries.empty())
+		if (!st.character.key.empty() || !st.entries.empty()) {
 			buf.LoadState(std::move(st));
+			MarkPersistLineage();
+		}
 	}
 
-	// Purpose: later UI confirm after Save to disk is turned off. Never silent.
-	bool DeleteCurrentFile()
+	bool AcceptLoad(std::uint64_t a_jobGen) const
 	{
-		if (!store || buf.character.key.empty()) return false;
-		return store->DeleteCurrent(buf.character.key);
+		return a_jobGen == loadGen;
+	}
+
+	void RefreshOthers()
+	{
+		otherCache = ListOtherCharacters(horizonDir / "MessageLog", buf.character.key);
+		++otherCacheGen;
+	}
+
+	std::vector<OtherCharacter> ListOthers() const
+	{
+		return otherCache;
+	}
+
+	void ArmClearCutoff()
+	{
+		clearCutoffSet = true;
+		clearCutoffTs = 0;
+		for (const auto& e : buf.entries) {
+			if (e.ts > clearCutoffTs) clearCutoffTs = e.ts;
+		}
+	}
+
+	void DropUnpinnedAtOrBeforeClear()
+	{
+		std::vector<Entry> keep;
+		keep.reserve(buf.entries.size());
+		for (auto& e : buf.entries) {
+			if (e.pin) {
+				keep.push_back(std::move(e));
+				continue;
+			}
+			if (clearCutoffSet && clearCutoffTs != 0 && e.ts > clearCutoffTs)
+				keep.push_back(std::move(e));
+		}
+		buf.entries = std::move(keep);
+	}
+
+	void ClearHistoryMemory()
+	{
+		++loadGen;
+		buf.ClearHistory();
+		dirty = false;
+		lastChangeMs = 0;
+		writePending = false;
+		writePendingSeq = 0;
+		DropParked(buf.character.key);
+	}
+
+	// Purpose: Clear history. Drops unpinned rows, keeps pins, drops
+	// parked rows, and bumps the per-key cancel seq. Persist=1 writes
+	// the remaining pins (or empty) to main and .bak. Persist=0 does
+	// not create or touch any file.
+	// Inputs: none. Outputs: true when unpinned rows are gone and, if
+	// Persist is on, both files hold that snapshot.
+	// Dependencies: FileStore::SaveEmptyBoth.
+	bool ClearHistoryNow()
+	{
+		ArmClearCutoff();
+		ClearHistoryMemory();
+		const auto key = buf.character.key;
+		fileGate.BumpCancel(key);
+		if (persistHold) {
+			clearAfterHold = true;
+			return true;
+		}
+		if (!buf.settings.persist) return true;
+		if (!ValidLogKey(key)) return true;
+		const auto snap = buf.Snapshot();
+		FileStore fs(horizonDir / "MessageLog", replace);
+		return fs.SaveEmptyBoth(snap);
 	}
 };
 

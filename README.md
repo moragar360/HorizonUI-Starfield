@@ -55,7 +55,7 @@ In the Horizon Scanner's Signals list, ship ownership is shown by the row label 
 - **F11 live settings window:** opens the settings menu from your key (F11 by default, rebindable) and handles its input. It opens from the main HUD only (not inside the hand scanner, and pulling out the scanner closes it) and stays closed in full-screen game menus like the inventory, starmap, builders, dialogue, the mission board and books, and while you aim down a scope or inspect an item. It also passes the **+** key on to Arrange Cards, for the scope chip's size.
 - **Mouse wheel** support in Horizon's menus.
 - **Settings files:** reads the shipped `HorizonUI.default.ini` and your `HorizonUI.user.ini`, saves changes safely, and keeps one backup per update (`HorizonUI.user.bak.ini`).
-- **Presets:** lists, applies, saves, deletes and undoes presets in `Interface\HorizonUI\presets\` (your own go in `presets\user\`).
+- **Presets:** lists, applies, saves, hides, and undoes presets in `Interface\HorizonUI\presets\` (your own go in `presets\user\`). Remove from list hides a saved preset; the file stays in `Data\Interface\HorizonUI\presets\user\`. Horizon UI never deletes files.
 - **Scanner state:** tells the HUD and Comms while the hand scanner is open, so they stay hidden for the whole scan, even while you switch scanner tools.
 
 Log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
@@ -77,11 +77,11 @@ Log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
 
 3. The plugin is written to `build\windows\x64\releasedbg\HorizonUI.dll`.
 
-Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.43.0.2 loaded`.
+Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.43.0.6 loaded`.
 
 ### Release checklist: companion reaction log
 
-0.43.0.2 is a pre-release dev build (Message Log P1: capture and storage, no log UI). `HZ_HUD_MSG_CAPTURE` is `0`, `HZ_COMMS_MSG_LOG` is `0`, `HZC_MSG_LOG` is `false`, and `hzcRxDbgOn` defaults to `false`. The card backup stays compiled: the queue, Poll, `hzcCardPush`, and the one-line `comms reaction:` status (including `hzcRxWhy`). The one-time `comms reaction selftest:` lines are not part of that trace. They stay on when `Debug=0`. The settings schema stays `0.42.0`.
+0.43.0.6 is a pre-release dev build (Message Log P2: capture, storage, the F11 log screen, and Message Log settings). `HZ_HUD_MSG_CAPTURE` is `0`, `HZ_COMMS_MSG_LOG` is `0`, `HZC_MSG_LOG` is `false`, and `hzcRxDbgOn` defaults to `false`. The card backup stays compiled: the queue, Poll, `hzcCardPush`, and the one-line `comms reaction:` status (including `hzcRxWhy`). The one-time `comms reaction selftest:` lines are not part of that trace. They stay on when `Debug=0`. The settings schema stays `0.42.0`.
 
 To turn the traces back on for an in-game check:
 
@@ -95,15 +95,18 @@ To turn the traces back on for an in-game check:
 
 ## Message Log (planned, not released)
 
-0.43.0.2 is Message Log P1: capture and storage only. There is no log popup yet.
+0.43.0.6 is Message Log P2: capture, storage, the F11 Message Log, and the Message Log SETTINGS page.
 
 - The log starts empty. It records only while `Record=1` and only the types in `LogTypes`.
 - It cannot recover messages from before install, or from while Record was off.
-- One file per character (not per save) under `Documents\My Games\Starfield\SFSE\HorizonUI\MessageLog\`. NG+ that changes the character key starts a new log.
+- One file per character (not per save) under `Documents\My Games\Starfield\SFSE\HorizonUI\MessageLog\`. The character key is up to 16 hex digits (`currentPlayerID`). NG+ that changes the character key starts a new log.
+- Companion reactions ("Sam Coe liked that.") are saved as their own type, on by default. The match uses on-screen text only; no affinity or actor value is read. Approved 2026-10-26. The Comms reaction card is unchanged.
+- "<NPC> CALMED" lines are not saved. "is no longer angry" and "has already caught you" still are.
 - `Persist=0` keeps the log in memory only: no folder, no file, no `.tmp`, no `.bak`. Nothing survives a restart.
 - Location and real time are stored locally only.
-- F11 (and later the log) opens from the keyboard only. A controller can navigate after F11 is already open. Find stays keyboard-only.
-- Without the Notifications module marker, the later F11 row shows "needs Notifications". P1 ships the backend in this build behind `Record`.
+- F11 (and the log) opens from the keyboard only. A controller can navigate after F11 is already open. Find is a search box (`/` to focus).
+- Reloading an earlier save keeps every later-point row, pinned or not. Those rows are dimmed and labeled "from a later point". The history-size cap still evicts the oldest unpinned rows. An automatic trim never writes an empty file or touches `.bak`.
+- Without the Notifications module marker, the F11 Message Log row shows "needs Notifications".
 
 ## Repository layout
 ```

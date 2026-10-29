@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <map>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace HZF {
@@ -241,6 +242,23 @@ namespace HZF {
 			return Join(out);
 		}
 
+		// Purpose: replace one INI section with an authoritative block.
+		// F11 Save uses this so the movie cannot overwrite [MessageLog].
+		// Inputs: full INI text, section name (lower), replacement block.
+		// Outputs: text with that section swapped. Dependencies: StripSection.
+		inline std::string ReplaceSection(const std::string& a_text, const std::string& a_sec,
+			const std::string& a_block)
+		{
+			std::string o = StripSection(a_text, a_sec);
+			while (!o.empty() && (o.back() == '\n' || o.back() == '\r')) o.pop_back();
+			if (!o.empty()) o += "\r\n\r\n";
+			o += a_block;
+			if (o.size() < 2 || o[o.size() - 2] != '\r' || o.back() != '\n') {
+				if (!o.empty() && o.back() != '\n') o += "\r\n";
+			}
+			return o;
+		}
+
 		inline bool IsModuleSec(const std::string& a_n) { return a_n == "scanner" || a_n == "comms"; }
 		// v0.41.0 r2: keys a newer version replaced. Never written again by Diff (F11 save, presets, migration), so an old
 		// line cannot outlive the keys that replaced it. [Scanner] ScanShowVitals (0.40.3) = ScanShowVitalsHealth / O2 / Boost.
@@ -335,6 +353,183 @@ namespace HZF {
 				for (const auto& [k, v] : kv) out += k + "=" + v + "\r\n";
 			}
 			return out;
+		}
+
+		// Purpose: persist hidden saved-preset ids in HorizonUI.state.ini.
+		// Inputs: one id to hide/unhide, or a legacy csv for migration.
+		// Outputs: HiddenN= encoded lines (one key per id, no list cap).
+		// Files stay on disk.
+		inline bool SamePresetId(const std::string& a_a, const std::string& a_b)
+		{
+			if (a_a.size() != a_b.size()) return false;
+			for (std::size_t i = 0; i < a_a.size(); ++i) {
+				const auto a = static_cast<unsigned char>(a_a[i]);
+				const auto b = static_cast<unsigned char>(a_b[i]);
+				if (std::tolower(a) != std::tolower(b)) return false;
+			}
+			return true;
+		}
+
+		inline std::vector<std::string> SplitPresetIds(const std::string& a_csv)
+		{
+			std::vector<std::string> out;
+			std::size_t i = 0;
+			while (i < a_csv.size()) {
+				const auto j = a_csv.find(',', i);
+				const auto part = Trim(a_csv.substr(i, j == std::string::npos ? std::string::npos : j - i));
+				if (!part.empty()) out.push_back(part);
+				if (j == std::string::npos) break;
+				i = j + 1;
+			}
+			return out;
+		}
+
+		inline std::string JoinPresetIds(const std::vector<std::string>& a_ids)
+		{
+			std::string o;
+			for (const auto& id : a_ids) {
+				if (id.empty()) continue;
+				if (!o.empty()) o += ',';
+				o += id;
+			}
+			return o;
+		}
+
+		inline bool PresetIdHidden(const std::vector<std::string>& a_hidden, const std::string& a_id)
+		{
+			for (const auto& h : a_hidden)
+				if (SamePresetId(h, a_id)) return true;
+			return false;
+		}
+
+		inline void HidePresetId(std::vector<std::string>& a_hidden, const std::string& a_id)
+		{
+			if (a_id.empty() || PresetIdHidden(a_hidden, a_id)) return;
+			a_hidden.push_back(a_id);
+		}
+
+		inline bool RememberHiddenId(std::vector<std::string>& a_out, std::unordered_set<std::string>& a_seen,
+			const std::string& a_id)
+		{
+			if (a_id.empty()) return false;
+			if (!a_seen.insert(Lower(a_id)).second) return false;
+			a_out.push_back(a_id);
+			return true;
+		}
+
+		inline void UnionHiddenPresetIds(std::vector<std::string>& a_out, const std::vector<std::string>& a_more)
+		{
+			std::unordered_set<std::string> seen;
+			seen.reserve(a_out.size() + a_more.size());
+			for (const auto& id : a_out)
+				seen.insert(Lower(id));
+			for (const auto& id : a_more)
+				RememberHiddenId(a_out, seen, id);
+		}
+
+		inline void UnhidePresetId(std::vector<std::string>& a_hidden, const std::string& a_id)
+		{
+			std::vector<std::string> keep;
+			keep.reserve(a_hidden.size());
+			for (const auto& h : a_hidden)
+				if (!SamePresetId(h, a_id)) keep.push_back(h);
+			a_hidden.swap(keep);
+		}
+
+		inline bool IsHiddenPresetKey(const std::string& a_kl)
+		{
+			if (a_kl.size() < 7 || a_kl.compare(0, 6, "hidden") != 0) return false;
+			for (std::size_t i = 6; i < a_kl.size(); ++i)
+				if (a_kl[i] < '0' || a_kl[i] > '9') return false;
+			return true;
+		}
+
+		// Purpose: encode one hidden-preset id so KeyOf can round-trip it.
+		// Inputs: the raw id (may contain ',' or ';'). Outputs: percent-encoded
+		// text. ';' would otherwise be treated as an INI comment.
+		// Dependencies: none.
+		inline std::string EncodeHiddenPresetId(const std::string& a_id)
+		{
+			std::string o;
+			o.reserve(a_id.size());
+			static const char kHex[] = "0123456789ABCDEF";
+			for (unsigned char c : a_id) {
+				if (c == '%' || c == ';' || c == '\r' || c == '\n') {
+					o += '%';
+					o += kHex[c >> 4];
+					o += kHex[c & 15];
+				} else {
+					o += static_cast<char>(c);
+				}
+			}
+			return o;
+		}
+
+		// Purpose: decode a HiddenN value written by EncodeHiddenPresetId.
+		// Inputs: the stored value. Outputs: the original id.
+		// Dependencies: EncodeHiddenPresetId.
+		inline std::string DecodeHiddenPresetId(const std::string& a_s)
+		{
+			std::string o;
+			o.reserve(a_s.size());
+			auto hex = [](char c) -> int {
+				if (c >= '0' && c <= '9') return c - '0';
+				if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+				if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+				return -1;
+			};
+			for (std::size_t i = 0; i < a_s.size(); ) {
+				if (a_s[i] == '%' && i + 2 < a_s.size()) {
+					const int hi = hex(a_s[i + 1]);
+					const int lo = hex(a_s[i + 2]);
+					if (hi >= 0 && lo >= 0) {
+						o += static_cast<char>((hi << 4) | lo);
+						i += 3;
+						continue;
+					}
+				}
+				o += a_s[i];
+				++i;
+			}
+			return o;
+		}
+
+		inline std::string FormatHiddenPresetLines(const std::vector<std::string>& a_ids)
+		{
+			std::string t;
+			for (std::size_t i = 0; i < a_ids.size(); ++i) {
+				if (a_ids[i].empty()) continue;
+				t += "Hidden";
+				t += std::to_string(i);
+				t += "=";
+				t += EncodeHiddenPresetId(a_ids[i]);
+				t += "\r\n";
+			}
+			return t;
+		}
+
+		inline void CollectHiddenPresetIds(const std::map<std::string, std::pair<std::string, std::string>>& a_kv,
+			std::vector<std::string>& a_out)
+		{
+			std::unordered_set<std::string> seen;
+			seen.reserve(a_kv.size() + a_out.size());
+			for (const auto& id : a_out)
+				seen.insert(Lower(id));
+			for (const auto& [kl, kv] : a_kv) {
+				if (!IsHiddenPresetKey(kl) || kv.second.empty()) continue;
+				RememberHiddenId(a_out, seen, DecodeHiddenPresetId(kv.second));
+			}
+		}
+
+		// Purpose: HiddenN plus legacy HiddenPresets= csv, always unioned.
+		// Inputs: the parsed [State] kv. Outputs: a_out with every id once.
+		inline void MergeHiddenPresetState(const std::map<std::string, std::pair<std::string, std::string>>& a_kv,
+			std::vector<std::string>& a_out)
+		{
+			CollectHiddenPresetIds(a_kv, a_out);
+			const auto it = a_kv.find("hiddenpresets");
+			if (it != a_kv.end())
+				UnionHiddenPresetIds(a_out, SplitPresetIds(it->second.second));
 		}
 
 } // namespace HZF

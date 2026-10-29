@@ -32,7 +32,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.43.0.1";', "HUD build id is 0.43.0.1");
+pin('private static const HZ_BUILD:String = "0.43.0.6";', "HUD build id is 0.43.0.6");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
@@ -192,6 +192,8 @@ pin("if(since < 0) { this.hz41LocClear(); return false; }", "a backwards clock e
 	expect(fn.indexOf("return new Date().getTime();") >= 0, "hz41Now returns new Date().getTime()");
 	expect(fn.indexOf("getTimer") < 0 && fn.indexOf("flash.utils") < 0, "hz41Now does not call getTimer");
 	expect(src.indexOf("import flash.utils.getTimer") < 0, "the injected HUD block does not carry a getTimer import");
+	expect(src.indexOf("getTimer(") < 0, "t40 GT1b HUD block has no getTimer(");
+	expect(src.indexOf("flash.utils") < 0, "t37 HUD block has no flash.utils");
 }
 pin("c.visible = false;", "hide is visible only");
 
@@ -577,7 +579,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.1";') >= 0, rel + " build is 0.43.0.1");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.6";') >= 0, rel + " build is 0.43.0.6");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");

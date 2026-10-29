@@ -8,6 +8,7 @@
 #include "hz_version.h"
 #include "preset_dedupe.h"
 
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -58,11 +59,11 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.2", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 2, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.6", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 6, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "verbose reaction trace is off for this release");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "unfiltered HUD capture is off for this release");
-	Expect(HzFileVersionOk("0.43.0.2"), "4-part version ok");
+	Expect(HzFileVersionOk("0.43.0.6"), "4-part version ok");
 	Expect(!HzFileVersionOk("0.42.0"), "3-part version is not the file version");
 	Expect(!HzFileVersionOk("v0.42.0.6"), "leading v is not accepted");
 	Expect(!HzFileVersionOk("0.42.0.6 "), "trailing space rejected");
@@ -497,6 +498,8 @@ int main()
 			Expect(inc != std::string::npos && lastClose > lastNs, "hz_ini_diff.h is included at file scope, not inside namespace HZ");
 		}
 		Expect(src.find("const std::string u = Diff(a_full, Defaults(a_p), ReadOr(a_p.user), o);") != std::string::npos, "SaveFromHud still runs through Diff");
+		Expect(src.find("MsglogPatchSaveIni(std::move(saveIni))") != std::string::npos,
+			"F11 Save replaces [MessageLog] with live DLL settings before Diff");
 		Expect(src.find("ShowHUDMessageEvent sink registered (address id 86800)") != std::string::npos, "sink registration is logged");
 		Expect(src.find("ShowHUDMessageEvent sink failed:") != std::string::npos, "sink failure is logged");
 		Expect(src.find("hud message: text=") != std::string::npos, "matching HUD text is logged");
@@ -617,10 +620,18 @@ int main()
 			Expect(body.find("LookupByID") == std::string::npos, "the sink does not look up a form");
 			Expect(body.find("Invoke") == std::string::npos, "the sink thread does not touch Scaleform");
 		}
-		Expect(src.find("for (auto m : { \"LoadingMenu\", \"MainMenu\" })") != std::string::npos, "the reaction drain skips loading and the main menu");
-		const auto rxPoll = src.find("CommsRxPoll(now);");
-		const auto hudWait = src.find("if (now - g_hudSince < 3000) return;");
-		Expect(rxPoll != std::string::npos && hudWait != std::string::npos && rxPoll < hudWait, "the reaction drain is not gated on HUD ready");
+		Expect(src.find("FaderMenu") != std::string::npos
+			&& src.find("MsglogTakeMovieAllowed") != std::string::npos,
+			"the reaction drain skips loading, the fader, and the main menu");
+		const auto msgPoll = src.find("void PollMessages()");
+		const auto msgEnd = src.find("using AdvanceFn", msgPoll);
+		const auto msgBody = msgPoll != std::string::npos && msgEnd > msgPoll
+			? src.substr(msgPoll, msgEnd - msgPoll) : std::string();
+		Expect(msgBody.find("CommsRxPoll(now);") != std::string::npos
+			&& msgBody.find("if (now - g_hudSince < 3000)") == std::string::npos,
+			"the reaction drain is not gated on HUD ready");
+		Expect(src.find("if (now - g_hudSince < 3000) return;") != std::string::npos,
+			"the HUD poll still waits 3 s before F11-ready work");
 		const auto proc = src.find("ProcessEvent(const RE::ShowHUDMessageEvent&");
 		const auto procEnd = src.find("g_hudMsgSink", proc);
 		Expect(proc != std::string::npos && procEnd != std::string::npos && procEnd > proc, "the sink method is present");
@@ -632,7 +643,7 @@ int main()
 		std::ifstream in("preset/HorizonUI.moragars-choice-0.42.0.ini");
 		Expect(static_cast<bool>(in), "preset ini opens");
 		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(ini.find("Version=0.42.0") != std::string::npos, "preset Version stays 0.42.0");
+		Expect(ini.find("Version=0.43.0.6") != std::string::npos, "preset Version is the file version");
 		Expect(ini.find("test DLL") == std::string::npos, "preset Debug note does not call this a test DLL");
 		Expect(ini.find("The comms message log is only in debug builds.") != std::string::npos, "release Debug note");
 		Expect(ini.find("VehicleExitPill") == std::string::npos, "the preset does not mirror the vehicle exit default");
@@ -644,6 +655,8 @@ int main()
 		Expect(static_cast<bool>(in), "default.ini opens");
 		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 		Expect(ini.find("\r\n") != std::string::npos, "default.ini stays CRLF");
+		Expect(ini.find("HorizonUI.default.ini (v0.43.0.6)") != std::string::npos,
+			"default.ini header is the file version");
 		const auto cards = ini.find("[Cards]");
 		const auto compass = ini.find("[Compass]");
 		const auto veh = ini.find("VehicleExitPill=1");
@@ -709,10 +722,84 @@ int main()
 	}
 
 	{
+		std::vector<std::string> hidden;
+		HZF::HidePresetId(hidden, "u:my_look.ini");
+		HZF::HidePresetId(hidden, "u:my_look.ini");
+		Expect(HZF::PresetIdHidden(hidden, "u:my_look.ini"), "hiding a saved preset id records it");
+		Expect(HZF::PresetIdHidden(hidden, "U:MY_LOOK.INI"), "hidden ids compare case-insensitively");
+		ExpectEq(HZF::JoinPresetIds(hidden), "u:my_look.ini", "a second hide does not duplicate the id");
+		Expect(HZF::SplitPresetIds("u:a.ini, u:b.ini").size() == 2, "state.ini csv splits hidden ids");
+		HZF::UnhidePresetId(hidden, "u:my_look.ini");
+		Expect(!HZF::PresetIdHidden(hidden, "u:my_look.ini"), "saving the same name shows the preset again");
+		Expect(!HZF::PresetIdHidden({}, "u:missing.ini"), "an empty hidden list shows every preset");
+	}
+
+	{
+		const std::vector<std::string> ids = {
+			"u:comma,name.ini",
+			"u:semi;name.ini",
+			"u:both,;x.ini",
+			"u:plain.ini"
+		};
+		const auto lines = HZF::FormatHiddenPresetLines(ids);
+		Expect(lines.find("Hidden0=") != std::string::npos, "hidden ids use one key each");
+		Expect(lines.find("HiddenPresets=") == std::string::npos, "hidden ids are not a csv list");
+		Expect(lines.find(';') == std::string::npos || lines.find("%3B") != std::string::npos,
+			"a semicolon in an id is encoded");
+		auto doc = HZF::Parse(std::string("[State]\r\n") + lines);
+		auto* st = doc.Find("state");
+		Expect(st != nullptr, "hidden lines parse as [State]");
+		std::vector<std::string> got;
+		if (st) HZF::CollectHiddenPresetIds(st->kv, got);
+		Expect(got.size() == ids.size(), "HiddenN round-trips every id");
+		for (const auto& id : ids)
+			Expect(HZF::PresetIdHidden(got, id), ("round-trip keeps " + id).c_str());
+
+		std::vector<std::string> many;
+		many.reserve(80);
+		for (int i = 0; i < 80; ++i)
+			many.push_back("u:preset_" + std::to_string(i) + "_longish_saved_name.ini");
+		const auto manyLines = HZF::FormatHiddenPresetLines(many);
+		Expect(manyLines.size() > 800, "hidden ids are not capped at 800 characters");
+		auto manyDoc = HZF::Parse(std::string("[State]\r\n") + manyLines);
+		std::vector<std::string> manyGot;
+		if (auto* ms = manyDoc.Find("state"))
+			HZF::CollectHiddenPresetIds(ms->kv, manyGot);
+		Expect(manyGot.size() == many.size(), "a long hidden list round-trips");
+
+		auto legacy = HZF::SplitPresetIds("u:a.ini,u:b.ini");
+		Expect(legacy.size() == 2, "legacy HiddenPresets= csv still splits");
+
+		auto mixed = HZF::Parse(
+			"[State]\r\nHidden0=u:new.ini\r\nHiddenPresets=u:old.ini,u:new.ini\r\n");
+		std::vector<std::string> mixedGot;
+		if (auto* ms = mixed.Find("state"))
+			HZF::MergeHiddenPresetState(ms->kv, mixedGot);
+		Expect(HZF::PresetIdHidden(mixedGot, "u:new.ini"), "HiddenN ids are kept");
+		Expect(HZF::PresetIdHidden(mixedGot, "u:old.ini"), "legacy HiddenPresets ids are unioned");
+		Expect(mixedGot.size() == 2, "union does not duplicate the shared id");
+
+		std::vector<std::string> many2k;
+		many2k.reserve(2000);
+		for (int i = 0; i < 2000; ++i)
+			many2k.push_back("u:preset_" + std::to_string(i) + ".ini");
+		const auto lines2k = HZF::FormatHiddenPresetLines(many2k);
+		auto doc2k = HZF::Parse(std::string("[State]\r\n") + lines2k);
+		std::vector<std::string> got2k;
+		const auto t0 = std::chrono::steady_clock::now();
+		if (auto* s2 = doc2k.Find("state"))
+			HZF::CollectHiddenPresetIds(s2->kv, got2k);
+		const auto ms2k = std::chrono::duration<double, std::milli>(
+			std::chrono::steady_clock::now() - t0).count();
+		Expect(got2k.size() == many2k.size(), "2000 hidden ids collect");
+		Expect(ms2k < 50.0, "2000-id collect runs in well under 50 ms");
+	}
+
+	{
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(lua.find("set_version(\"0.43.0.2\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.43.0.6\")") != std::string::npos, "xmake version is the 4-part file version");
 		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
 		std::ifstream cpp("res/horizonui-plugin.cpp.in");
 		Expect(static_cast<bool>(cpp), "plugin version template opens");

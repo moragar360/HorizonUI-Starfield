@@ -1854,7 +1854,7 @@ package
       // ---------- 0.42.0.6: message log. HZC_MSG_LOG is the switch (false on this release). ----------
       // The DLL still writes the one-line status. Debug=0 in the ini also stops the queue.
       private static const HZC_MSG_LOG:Boolean = false;
-      private static const HZC_BUILD:String = "0.43.0.1";
+      private static const HZC_BUILD:String = "0.43.0.6";
       private var hzcRxDbgOn:Boolean = false;   // 0.42.0.14: off for release. hzcRxDbgIni still follows Debug=0.
       private var hzcRxDbgQ:Array = [];
       private var hzcRxDbgSeen:Array = [];   // {it, f}
@@ -1968,6 +1968,7 @@ package
 
       // 0.43.0.1 Message Log P1: quest / location / XP forwarding. HUDMessageData stays with the DLL sink.
       private var hzcLogQ:Array = [];
+      private var hzcLogDropped:int = 0;
       private var hzcLogLastLoc:String = "";
       private function hzcLogPipe(s:String) : String
       {
@@ -1979,16 +1980,27 @@ package
       private function hzcLogPush(kind:String, title:String, text:String) : void
       {
          if(text == null || String(text).length == 0) { return; }
-         if(this.hzcLogQ.length >= 40) { this.hzcLogQ.shift(); }
+         if(this.hzcLogQ.length >= 500)
+         {
+            this.hzcLogQ.shift();
+            this.hzcLogDropped++;
+         }
          this.hzcLogQ.push(kind + "|" + this.hzcLogPipe(title) + "|" + this.hzcLogPipe(text));
       }
       public function hzcTakeLog() : String
       {
          try
          {
-            if(this.hzcLogQ.length == 0) { return ""; }
-            var o:String = this.hzcLogQ.join("\n");
-            this.hzcLogQ = [];
+            if(this.hzcLogQ.length == 0 && this.hzcLogDropped == 0) { return ""; }
+            var n:int = this.hzcLogQ.length;
+            if(n > 40) { n = 40; }
+            var o:String = this.hzcLogQ.slice(0, n).join("\n");
+            this.hzcLogQ = this.hzcLogQ.slice(n);
+            if(this.hzcLogDropped > 0)
+            {
+               o = (o.length > 0) ? ("drop|" + String(this.hzcLogDropped) + "\n" + o) : ("drop|" + String(this.hzcLogDropped));
+               this.hzcLogDropped = 0;
+            }
             return o;
          }
          catch(e:Error) { }
