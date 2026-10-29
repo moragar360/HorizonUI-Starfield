@@ -4,7 +4,7 @@
 // Build: g++ -std=c++20 -Wall -Wextra -pthread -I src -DMSGLOG_REPO_ROOT=\"$PWD\" tests/message_log_test.cpp -o /tmp/message_log_test
 // Or: MSGLOG_REPO_ROOT=$PWD /tmp/message_log_test  (relative __FILE__ still finds the repo).
 // Author: Moragar
-// Last modified: 2026-10-28.
+// Last modified: 2026-10-29.
 
 #include "hz_addr_probe.h"
 #include "hz_msglog.h"
@@ -1772,7 +1772,7 @@ int main()
 			restore.Offer(Cap(Kind::Game, "new while persist off", 37'000));
 			Settings backOn;
 			backOn.persist = true;
-			restore.Configure(backOn, root);
+			restore.Configure(backOn, root, true);
 			Expect(!restore.persistHold, "Configure off→on merges and clears the hold");
 			ExpectEqI(static_cast<int>(restore.buf.entries.size()), 5,
 				"Persist=1 restore while off keeps old rows plus the new one");
@@ -1816,6 +1816,180 @@ int main()
 			const auto after = ReadFile(heldPath);
 			Expect(after.find("file pin") != std::string::npos, "deferred Clear keeps the file pin");
 			Expect(after.find("file loose") == std::string::npos, "deferred Clear drops unpinned file rows");
+		}
+
+		{
+			Log postClr;
+			Settings pcs;
+			postClr.Configure(pcs, root);
+			postClr.buf.character = MakeCharacter(0xB00Bu, "Sam");
+			postClr.Offer(Cap(Kind::Game, "preclear loose", 47'000));
+			postClr.Offer(Cap(Kind::Game, "preclear pin", 48'000));
+			Expect(postClr.buf.Pin(postClr.buf.entries.back().id), "pin before held Clear");
+			Expect(postClr.Flush(49'000), "seed file before POSTCLEAR");
+			postClr.ApplyPersist(false);
+			postClr.ApplyPersist(true);
+			postClr.persistHold = true;
+			Expect(postClr.ClearHistoryNow(), "Clear during persistHold");
+			Expect(postClr.Offer(Cap(Kind::Game, "POSTCLEAR", 50'000)) == OfferResult::Stored,
+				"a row after Clear is stored");
+			Expect(postClr.MergeOnPersistOn(), "merge after Clear plus POSTCLEAR");
+			bool gotPost = false, gotLoose = false, gotPin = false;
+			for (const auto& e : postClr.buf.entries) {
+				if (e.text == "POSTCLEAR") gotPost = true;
+				if (e.text == "preclear loose") gotLoose = true;
+				if (e.text == "preclear pin") gotPin = true;
+			}
+			Expect(gotPost, "POSTCLEAR survives a held load");
+			Expect(!gotLoose, "unpinned file rows older than the Clear cutoff drop");
+			Expect(gotPin, "a file pin older than the cutoff is kept");
+			Expect(postClr.Flush(51'000), "flush after POSTCLEAR merge");
+			const auto postBody = ReadFile(root / "MessageLog" / "MessageLog_0000B00B.json");
+			Expect(postBody.find("POSTCLEAR") != std::string::npos, "POSTCLEAR is written");
+			Expect(postBody.find("preclear loose") == std::string::npos, "older loose row is not written");
+		}
+
+		{
+			Log probeB;
+			Settings bs;
+			probeB.Configure(bs, root);
+			probeB.buf.character = MakeCharacter(0xC00Cu, "Sam");
+			Expect(probeB.Offer(Cap(Kind::Game, "repeat me", 52'000)) == OfferResult::Stored,
+				"probe B first offer");
+			Expect(probeB.Flush(53'000), "probe B flush original");
+			ExpectEqI(probeB.buf.entries.front().n, 1, "probe B seed n is 1");
+			probeB.ApplyPersist(false);
+			Expect(probeB.Offer(Cap(Kind::Game, "repeat me", 53'000)) == OfferResult::Deduped,
+				"probe B repeat 1 s later while off");
+			ExpectEqI(probeB.buf.entries.front().n, 2, "probe B memory n is 2");
+			ExpectEqI(static_cast<int>(probeB.buf.entries.front().ts), 53, "probe B ts moved forward");
+			probeB.ApplyPersist(true);
+			ExpectEqI(static_cast<int>(probeB.buf.entries.size()), 1, "probe B stays one row");
+			ExpectEqI(probeB.buf.entries.front().n, 2, "probe B n is max 2, not 3");
+			Expect(probeB.Flush(54'000), "probe B flush after on");
+			auto parsedB = FromJson(ReadFile(root / "MessageLog" / "MessageLog_0000C00C.json"));
+			Expect(parsedB.ok && parsedB.state.entries.size() == 1, "probe B file has one row");
+			ExpectEqI(parsedB.state.entries.front().n, 2, "probe B file n is 2");
+		}
+
+		{
+			Log probeC;
+			Settings cs;
+			probeC.Configure(cs, root);
+			probeC.buf.character = MakeCharacter(0xD00Du, "Sam");
+			Expect(probeC.Offer(Cap(Kind::Game, "repeat on", 55'000)) == OfferResult::Stored,
+				"probe C first offer");
+			Expect(probeC.Flush(56'000), "probe C flush original");
+			Expect(probeC.Offer(Cap(Kind::Game, "repeat on", 56'000)) == OfferResult::Deduped,
+				"probe C repeat while on before debounce flush");
+			ExpectEqI(probeC.buf.entries.front().n, 2, "probe C memory n is 2");
+			Expect(!probeC.ShouldFlush(56'500, false), "probe C debounce has not flushed");
+			probeC.ApplyPersist(false);
+			probeC.ApplyPersist(true);
+			ExpectEqI(static_cast<int>(probeC.buf.entries.size()), 1, "probe C stays one row");
+			ExpectEqI(probeC.buf.entries.front().n, 2, "probe C n is max 2, not 3");
+			Expect(probeC.Flush(70'000), "probe C flush after on");
+			auto parsedC = FromJson(ReadFile(root / "MessageLog" / "MessageLog_0000D00D.json"));
+			Expect(parsedC.ok && parsedC.state.entries.size() == 1, "probe C file has one row");
+			ExpectEqI(parsedC.state.entries.front().n, 2, "probe C file n is 2");
+		}
+
+		{
+			Log probeC2;
+			Settings c2s;
+			probeC2.Configure(c2s, root);
+			probeC2.buf.character = MakeCharacter(0xE00Eu, "Sam");
+			Expect(probeC2.Offer(Cap(Kind::Game, "later row", 57'000)) == OfferResult::Stored,
+				"C2 first offer");
+			Expect(probeC2.Flush(58'000), "C2 flush original");
+			probeC2.ApplyPersist(false);
+			Expect(probeC2.Offer(Cap(Kind::Game, "later row", 61'000)) == OfferResult::Stored,
+				"C2 repeat more than 3 s later is a new row");
+			ExpectEqI(static_cast<int>(probeC2.buf.entries.size()), 2, "C2 memory has two rows");
+			probeC2.ApplyPersist(true);
+			ExpectEqI(static_cast<int>(probeC2.buf.entries.size()), 2, "C2 stays two rows after on");
+			for (const auto& e : probeC2.buf.entries)
+				ExpectEqI(e.n, 1, "C2 each row stays n=1");
+		}
+
+		{
+			Log d4;
+			Settings d4s;
+			d4.Configure(d4s, root);
+			d4.buf.character = MakeCharacter(0xF00Fu, "Sam");
+			Expect(d4.Offer(Cap(Kind::Game, "max n", 62'000)) == OfferResult::Stored, "D4 first offer");
+			Expect(d4.Flush(63'000), "D4 flush n=1");
+			ExpectEqI(d4.buf.entries.front().n, 1, "D4 file n is 1");
+			const auto sameTs = d4.buf.entries.front().ts;
+			d4.buf.entries.front().n = 4;
+			d4.ApplyPersist(false);
+			d4.ApplyPersist(true);
+			ExpectEqI(static_cast<int>(d4.buf.entries.size()), 1, "D4 stays one row");
+			ExpectEqI(d4.buf.entries.front().n, 4, "D4 n is max(1,4), not 5");
+			ExpectEqI(static_cast<int>(d4.buf.entries.front().ts), static_cast<int>(sameTs),
+				"D4 same-ts merge keeps ts");
+			Entry fileHi;
+			fileHi.id = 9;
+			fileHi.kind = Kind::Game;
+			fileHi.text = "file higher";
+			fileHi.norm = NormalizeText(fileHi.text);
+			fileHi.ts = 80;
+			fileHi.n = 5;
+			Entry memLo = fileHi;
+			memLo.n = 2;
+			Expect(SamePersistRow(fileHi, memLo), "D4 same ts still matches");
+			LogState fileSt;
+			fileSt.character = MakeCharacter(0xF00Fu, "Sam");
+			fileSt.entries.push_back(fileHi);
+			Log d4b;
+			d4b.Configure(d4s, root);
+			d4b.buf.character = fileSt.character;
+			d4b.buf.entries.push_back(memLo);
+			d4b.persistHold = true;
+			d4b.ApplyRecoveredFile(std::move(fileSt), d4b.buf.character);
+			ExpectEqI(d4b.buf.entries.front().n, 5, "D4 n is max(5,2), not 7");
+		}
+
+		{
+			Entry fa, mb;
+			fa.id = mb.id = 3;
+			fa.kind = Kind::Quest;
+			mb.kind = Kind::Xp;
+			fa.text = mb.text = "same words";
+			fa.ts = mb.ts = 10;
+			Expect(!SamePersistRow(fa, mb), "kind is part of the persist-row match");
+			mb.kind = Kind::Quest;
+			mb.ts = 12;
+			Expect(SamePersistRow(fa, mb), "same kind within the window matches");
+			mb.ts = 14;
+			Expect(!SamePersistRow(fa, mb), "more than 3 s later is not the same row");
+			mb.ts = 9;
+			Expect(!SamePersistRow(fa, mb), "a memory ts before the file ts does not match");
+		}
+
+		{
+			Log defLoad;
+			Settings offS;
+			offS.persist = false;
+			defLoad.Configure(offS, root);
+			defLoad.buf.character = MakeCharacter(0x1001u, "Sam");
+			Log seedOn;
+			Settings onS2;
+			seedOn.Configure(onS2, root);
+			seedOn.buf.character = MakeCharacter(0x1001u, "Sam");
+			seedOn.Offer(Cap(Kind::Game, "disk default", 64'000));
+			Expect(seedOn.Flush(65'000), "seed a file for default Configure");
+			defLoad.Offer(Cap(Kind::Game, "mem default", 66'000));
+			Settings back;
+			defLoad.Configure(back, root);
+			Expect(defLoad.persistHold, "Configure default loadNow=false holds");
+			ExpectEqI(static_cast<int>(defLoad.buf.entries.size()), 1,
+				"default Configure does not merge inline");
+			Expect(defLoad.buf.entries.front().text == "mem default",
+				"default Configure leaves the memory row");
+			Expect(defLoad.MergeOnPersistOn(), "an explicit load merges after default Configure");
+			ExpectEqI(static_cast<int>(defLoad.buf.entries.size()), 2,
+				"queued-style load merges disk and memory");
 		}
 
 		{
@@ -2126,7 +2300,8 @@ int main()
 				? main.substr(live, next - live) : std::string();
 			Expect(body.find("ApplyPersist(a_s.persist, false)") != std::string::npos,
 				"P04 live Persist-on does not load on the poll thread");
-			Expect(body.find("MsglogQueueLoad") != std::string::npos
+			Expect(body.find("LoadSettingsQueuesLoad") != std::string::npos
+				&& body.find("MsglogQueueLoad") != std::string::npos
 				&& body.find("PersistTurningOn") != std::string::npos,
 				"P05/P06 live Persist-on queues the load job");
 			Expect(body.find("store->Load") == std::string::npos
@@ -2141,9 +2316,13 @@ int main()
 				? main.substr(load, next - load) : std::string();
 			Expect(body.find("Configure(s, dir, false)") != std::string::npos,
 				"P04 LoadIni Persist-on does not load on the caller thread");
-			Expect(body.find("MsglogQueueLoad") != std::string::npos
+			Expect(body.find("LoadSettingsQueuesLoad") != std::string::npos
+				&& body.find("MsglogQueueLoad") != std::string::npos
 				&& body.find("PersistTurningOn") != std::string::npos,
 				"P05/P06 LoadIni Persist-on queues the same load job");
+			Expect(body.find("needLoad = true") != std::string::npos
+				&& body.find("LoadSettingsQueuesLoad(turningOn") != std::string::npos,
+				"P05 LoadSettings does not queue when Persist is already on");
 			Expect(body.find("store->Load") == std::string::npos
 				&& body.find("MergeOnPersistOn") == std::string::npos,
 				"LoadIni MessageLog apply does no load I/O");
@@ -2161,6 +2340,18 @@ int main()
 		}
 		Expect(main.find("LoadIni(false)") != std::string::npos,
 			"a HUD Save does not re-Configure MessageLog from the INI");
+		{
+			const auto ini = main.find("void LoadIni(bool a_reloadMsglog");
+			const auto next = main.find("HWND GameWindow()", ini);
+			const auto body = ini != std::string::npos && next > ini
+				? main.substr(ini, next - ini) : std::string();
+			Expect(body.find("IniReloadAppliesMsglog(a_reloadMsglog)") != std::string::npos
+				&& body.find("MsglogLoadSettings(d)") != std::string::npos,
+				"C8 LoadIni(false) skips MsglogLoadSettings");
+			Expect(body.find("if (a_reloadMsglog)") == std::string::npos
+				|| body.find("IniReloadAppliesMsglog(a_reloadMsglog)") != std::string::npos,
+				"C8 gates the reload on the LoadIni argument");
+		}
 		{
 			const auto clr = main.find("void MsglogClearHistory()");
 			const auto next = main.find("std::vector<hzlog::OtherCharacter> MsglogListOthers()", clr);
@@ -2455,6 +2646,18 @@ int main()
 		Expect(main.find("++g_mlLoadGen") != std::string::npos && main.find("LoadApplyStale") != std::string::npos,
 			"worker reads are tagged with the load generation");
 		{
+			const auto apply = main.find("void MsglogApplyLoad()");
+			const auto next = main.find("void MsglogBeginLoad()", apply);
+			const auto body = apply != std::string::npos && next > apply
+				? main.substr(apply, next - apply) : std::string();
+			Expect(body.find("ConsumeClearWriteUsesWriter") != std::string::npos
+				&& body.find("OnClear") != std::string::npos,
+				"H4 consumeClearWrite goes through OnClear");
+			Expect(body.find("StaleHeldLoadNeedsReload") != std::string::npos
+				&& body.find("MsglogQueueLoad") != std::string::npos,
+				"a stale held load is re-queued so persistHold is not left set");
+		}
+		{
 			int gens = 0;
 			for (std::size_t p = 0; (p = main.find("job.gen = g_mlLoadGen", p)) != std::string::npos; ++p)
 				++gens;
@@ -2533,6 +2736,9 @@ int main()
 		Expect(main.find("MergeKeptHeldIfMatch") != std::string::npos, "parked rows merge when that character loads");
 		Expect(Slurp("src/hz_msglog.h").find("MergeKeptKeyOk") != std::string::npos,
 			"parked rows merge only when the character key matches");
+		Expect(Slurp("src/hz_msglog.h").find("bool a_loadNow = false") != std::string::npos
+			&& Slurp("src/hz_msglog.h").find("void Configure(const Settings& a_s, std::filesystem::path a_horizonDir, bool a_loadNow = false)") != std::string::npos,
+			"Configure defaults loadNow to false");
 		Expect(main.find("g_ml.holdTargetKey = ch.key") != std::string::npos,
 			"a failed name-hash promote records the player-id target");
 		Expect(main.find("g_mlInFlightGen = job.gen") != std::string::npos,
@@ -2791,6 +2997,11 @@ int main()
 				"types| empty is none, not all-on");
 			Expect(ApplySetCommand("types|garbage", s, why) == SetParse::Reject,
 				"types|garbage is rejected");
+			Expect(ApplySetCommand("types|Medical", s, why) == SetParse::Reject,
+				"types| keys are lowercase and case-exact");
+			Expect(ApplySetCommand("types|medical", s, why) == SetParse::Ok
+				&& (s.logTypes & kTypeMedical) != 0,
+				"types|medical lowercase is accepted");
 			Expect(ApplySetCommand("history|-50", s, why) == SetParse::Reject,
 				"a negative history is rejected");
 			Expect(ApplySetCommand("history|2500", s, why) == SetParse::Ok && s.historySize == 1000,
@@ -2804,6 +3015,17 @@ int main()
 			Expect(PersistTurningOn(false, true), "PersistTurningOn is off→on");
 			Expect(!PersistTurningOn(true, true), "PersistTurningOn is not already-on");
 			Expect(!PersistTurningOn(false, false), "PersistTurningOn is not staying off");
+			Expect(IniReloadAppliesMsglog(true), "C8 LoadIni() reloads MessageLog");
+			Expect(!IniReloadAppliesMsglog(false), "C8 LoadIni(false) skips MessageLog");
+			Expect(LoadSettingsQueuesLoad(true, true), "P05 turning on queues a load");
+			Expect(!LoadSettingsQueuesLoad(false, true), "P05 already-on does not queue a load");
+			Expect(!LoadSettingsQueuesLoad(true, false), "P05 name-hash does not queue a load");
+			Expect(StaleHeldLoadNeedsReload(true, true), "a stale held load is re-queued");
+			Expect(!StaleHeldLoadNeedsReload(false, true), "a current load is not re-queued");
+			Expect(!StaleHeldLoadNeedsReload(true, false), "a stale load with no hold is not re-queued");
+			Expect(ConsumeClearWriteUsesWriter(true, true, true), "H4 consumeClearWrite uses OnClear");
+			Expect(!ConsumeClearWriteUsesWriter(false, true, true), "H4 without the flag does not OnClear");
+			Expect(!ConsumeClearWriteUsesWriter(true, false, true), "H4 Persist-off does not OnClear");
 		}
 		if (HaveRepo()) {
 			const auto ini = Slurp("Interface/HorizonUI/HorizonUI.default.ini");

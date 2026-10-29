@@ -293,6 +293,8 @@ inline bool KnownLogTypeKey(std::string_view a_k)
 		|| a_k == "xp" || a_k == "game";
 }
 
+// Type keys are lowercase and case-exact (the movie sends HZ_ML_KIND).
+// INI LogTypes= stays case-insensitive via ParseLogTypes.
 inline bool ParseSetLogTypes(std::string_view a_s, std::uint32_t& a_out)
 {
 	std::uint32_t bits = 0;
@@ -301,7 +303,7 @@ inline bool ParseSetLogTypes(std::string_view a_s, std::uint32_t& a_out)
 		std::string t;
 		for (unsigned char c : cur) {
 			if (c == ' ' || c == '\t') continue;
-			t.push_back(static_cast<char>(std::tolower(c)));
+			t.push_back(static_cast<char>(c));
 		}
 		cur.clear();
 		if (t.empty()) return true;
@@ -326,15 +328,44 @@ inline bool PersistTurningOn(bool a_was, bool a_want)
 	return a_want && !a_was;
 }
 
-inline std::string NormalizeText(std::string_view a_s);
-
-inline bool SamePersistRow(const Entry& a, const Entry& b)
+inline bool IniReloadAppliesMsglog(bool a_reloadMsglog)
 {
-	if (!a.id || a.id != b.id) return false;
-	if (a.ts != b.ts) return false;
-	const auto na = a.norm.empty() ? NormalizeText(a.text) : a.norm;
-	const auto nb = b.norm.empty() ? NormalizeText(b.text) : b.norm;
-	return na == nb;
+	return a_reloadMsglog;
+}
+
+inline bool LoadSettingsQueuesLoad(bool a_turningOn, bool a_allowed)
+{
+	return a_turningOn && a_allowed;
+}
+
+inline bool StaleHeldLoadNeedsReload(bool a_stale, bool a_persistHold)
+{
+	return a_stale && a_persistHold;
+}
+
+inline bool ConsumeClearWriteUsesWriter(bool a_consume, bool a_persist, bool a_validKey)
+{
+	return a_consume && a_persist && a_validKey;
+}
+
+inline std::string NormalizeText(std::string_view a_s);
+inline bool WithinDedupeWindow(std::int64_t a_dtMs, int a_winMs);
+
+// Purpose: a memory row is the same persist row when id, kind and
+// normalized text match and its ts is at or after the file ts inside
+// the 3 s dedupe window (Busy 10 s). A repeat moves ts forward, so
+// an exact-ts compare would miss and MergeSession would add n.
+inline bool SamePersistRow(const Entry& a_file, const Entry& a_mem)
+{
+	if (!a_file.id || a_file.id != a_mem.id) return false;
+	if (a_file.kind != a_mem.kind) return false;
+	const auto na = a_file.norm.empty() ? NormalizeText(a_file.text) : a_file.norm;
+	const auto nb = a_mem.norm.empty() ? NormalizeText(a_mem.text) : a_mem.norm;
+	if (na != nb) return false;
+	if (a_mem.ts < a_file.ts) return false;
+	const auto dt = a_mem.ts - a_file.ts;
+	const int win = a_mem.kind == Kind::Busy ? kBusyDedupeMs : kDedupeMs;
+	return WithinDedupeWindow(dt * 1000, win);
 }
 
 inline SetParse ApplySetCommand(std::string_view a_rest, Settings& a_s, std::string& a_why)
@@ -3414,6 +3445,8 @@ public:
 	bool                      persistHold{false};
 	bool                      clearAfterHold{false};
 	bool                      consumeClearWrite{false};
+	bool                      clearCutoffSet{false};
+	std::int64_t              clearCutoffTs{0};
 	std::string               holdTargetKey;
 	int                       retryBackoffMs{0};
 	std::uint64_t             retryAt{0};
@@ -3421,7 +3454,7 @@ public:
 
 	Log() { store = std::make_unique<NullStore>(); }
 
-	void Configure(const Settings& a_s, std::filesystem::path a_horizonDir, bool a_loadNow = true)
+	void Configure(const Settings& a_s, std::filesystem::path a_horizonDir, bool a_loadNow = false)
 	{
 		const bool wasPersist = buf.settings.persist;
 		buf.settings = a_s;
@@ -3487,7 +3520,8 @@ public:
 		persistHold = false;
 		if (clearAfterHold) {
 			clearAfterHold = false;
-			ClearHistoryMemory();
+			clearCutoffSet = false;
+			clearCutoffTs = 0;
 			consumeClearWrite = true;
 		}
 		return FlushDeferredClear();
@@ -3644,7 +3678,9 @@ public:
 	}
 
 	// Purpose: merge a just-read file with the in-memory session. File pins
-	// win, appended rows get new IDs. Clears the persist hold.
+	// win, appended rows get new IDs. Clears the persist hold. A held Clear
+	// drops only unpinned file rows at or before the cutoff so rows captured
+	// after Clear stay.
 	// Inputs: loaded file state and the player-id character.
 	void ApplyRecoveredFile(LogState a_file, Character a_ch)
 	{
@@ -3653,16 +3689,27 @@ public:
 		const bool haveFile = !a_file.entries.empty() || !a_file.character.key.empty();
 		if (haveFile) {
 			buf.LoadState(std::move(a_file));
+			if (clearAfterHold)
+				DropUnpinnedAtOrBeforeClear();
 			std::vector<Entry> add;
 			add.reserve(session.size());
 			for (const auto& in : session) {
 				bool skip = false;
-				for (auto& e : buf.entries) {
-					if (!SamePersistRow(e, in)) continue;
-					skip = true;
-					if (in.n > e.n) e.n = in.n;
-					if (in.pin) e.pin = 1;
-					break;
+				if (persistHold) {
+					for (auto& e : buf.entries) {
+						if (!SamePersistRow(e, in)) continue;
+						skip = true;
+						if (in.n > e.n) e.n = in.n;
+						if (in.ts >= e.ts) {
+							e.ts = in.ts;
+							e.gt = in.gt;
+							e.ut = in.ut;
+							e.lt = in.lt;
+							if (!in.loc.empty()) e.loc = in.loc;
+						}
+						if (in.pin) e.pin = 1;
+						break;
+					}
 				}
 				if (!skip) add.push_back(in);
 			}
@@ -3678,7 +3725,8 @@ public:
 		dirty = true;
 		if (clearAfterHold) {
 			clearAfterHold = false;
-			ClearHistoryMemory();
+			clearCutoffSet = false;
+			clearCutoffTs = 0;
 			consumeClearWrite = true;
 		}
 	}
@@ -3799,6 +3847,30 @@ public:
 		return otherCache;
 	}
 
+	void ArmClearCutoff()
+	{
+		clearCutoffSet = true;
+		clearCutoffTs = 0;
+		for (const auto& e : buf.entries) {
+			if (e.ts > clearCutoffTs) clearCutoffTs = e.ts;
+		}
+	}
+
+	void DropUnpinnedAtOrBeforeClear()
+	{
+		std::vector<Entry> keep;
+		keep.reserve(buf.entries.size());
+		for (auto& e : buf.entries) {
+			if (e.pin) {
+				keep.push_back(std::move(e));
+				continue;
+			}
+			if (clearCutoffSet && clearCutoffTs != 0 && e.ts > clearCutoffTs)
+				keep.push_back(std::move(e));
+		}
+		buf.entries = std::move(keep);
+	}
+
 	void ClearHistoryMemory()
 	{
 		++loadGen;
@@ -3819,6 +3891,7 @@ public:
 	// Dependencies: FileStore::SaveEmptyBoth.
 	bool ClearHistoryNow()
 	{
+		ArmClearCutoff();
 		ClearHistoryMemory();
 		const auto key = buf.character.key;
 		fileGate.BumpCancel(key);

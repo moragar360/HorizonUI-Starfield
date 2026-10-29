@@ -815,7 +815,7 @@ namespace HZ
 			std::string v;
 			if (get("debug", v) && v == "1") g_iniDebug = true;
 			if (get("settingskey", v) && !v.empty()) key = v;
-			if (a_reloadMsglog)
+			if (hzlog::IniReloadAppliesMsglog(a_reloadMsglog))
 				MsglogLoadSettings(d);
 		}
 		MsglogEnsureInit();
@@ -3259,7 +3259,7 @@ namespace HZ
 			g_ml.Configure(s, dir, false);
 			g_mlWrites.SetPersist(s.persist);
 			g_mlInited = true;
-			if (turningOn && hzlog::PersistAllowed(g_ml.buf.character)) {
+			if (hzlog::LoadSettingsQueuesLoad(turningOn, hzlog::PersistAllowed(g_ml.buf.character))) {
 				needLoad = true;
 				ch = g_ml.buf.character;
 			}
@@ -3413,7 +3413,7 @@ namespace HZ
 			g_ml.buf.SetHistorySize(a_s.historySize);
 			g_ml.ApplyPersist(a_s.persist, false);
 			g_mlWrites.SetPersist(a_s.persist);
-			if (turningOn && hzlog::PersistAllowed(g_ml.buf.character)) {
+			if (hzlog::LoadSettingsQueuesLoad(turningOn, hzlog::PersistAllowed(g_ml.buf.character))) {
 				needLoad = true;
 				ch = g_ml.buf.character;
 			}
@@ -3476,6 +3476,7 @@ namespace HZ
 			{
 				std::lock_guard lk(g_mlMu);
 				++g_mlLoadGen;
+				g_ml.ArmClearCutoff();
 				g_ml.ClearHistoryMemory();
 				const auto key = g_ml.buf.character.key;
 				g_ml.fileGate.BumpCancel(key);
@@ -3941,6 +3942,7 @@ namespace HZ
 			}
 			bool needWrite = false;
 			bool runPending = false;
+			bool needReload = false;
 			hzlog::WriteDecision clearDec;
 			bool needClearWrite = false;
 			{
@@ -3953,6 +3955,11 @@ namespace HZ
 					runPending = g_mlPendingHud;
 					g_mlWrites.OnLoadApplied(jobBufKey.empty() ? ch.key : jobBufKey, jobGen);
 					MsglogMirrorLoadBusy();
+					if (hzlog::StaleHeldLoadNeedsReload(true, g_ml.persistHold)) {
+						needReload = true;
+						if (ch.key.empty())
+							ch = g_ml.buf.character;
+					}
 				} else if (!ok) {
 					hzlog::NoteLoadResult(false, g_ml.persistHold);
 					if (g_ml.buf.character.keySource == "nameHash")
@@ -3972,16 +3979,17 @@ namespace HZ
 					const bool merge = g_ml.persistHold || g_ml.buf.character.keySource == "nameHash";
 					if (merge) {
 						g_ml.ApplyRecoveredFile(std::move(st), ch);
-						if (g_ml.consumeClearWrite) {
+						const bool consumeClear = g_ml.consumeClearWrite;
+						if (consumeClear)
 							g_ml.consumeClearWrite = false;
-							const auto key = g_ml.buf.character.key;
-							g_mlWrites.SetPersist(g_ml.buf.settings.persist);
-							if (g_ml.buf.settings.persist && hzlog::ValidLogKey(key)) {
-								clearDec = g_mlWrites.OnClear(key, g_ml.buf.Snapshot());
-								g_ml.writePending = g_mlWrites.AnyWritePending();
-								needClearWrite = clearDec.queue;
-							}
-						} else {
+						const auto key = g_ml.buf.character.key;
+						g_mlWrites.SetPersist(g_ml.buf.settings.persist);
+						if (hzlog::ConsumeClearWriteUsesWriter(consumeClear,
+							g_ml.buf.settings.persist, hzlog::ValidLogKey(key))) {
+							clearDec = g_mlWrites.OnClear(key, g_ml.buf.Snapshot());
+							g_ml.writePending = g_mlWrites.AnyWritePending();
+							needClearWrite = clearDec.queue;
+						} else if (!consumeClear) {
 							needWrite = true;
 						}
 					} else {
@@ -4018,6 +4026,8 @@ namespace HZ
 				MsglogPushDecision(clearDec);
 			else if (needWrite)
 				MsglogRequestWrite(true);
+			if (needReload)
+				MsglogQueueLoad(ch, gt, ts);
 			if (runPending) {
 				g_mlPendingHud = false;
 				{
