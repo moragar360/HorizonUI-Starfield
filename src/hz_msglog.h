@@ -801,6 +801,14 @@ inline StaleReloadStep PlanStaleReload(bool a_stale, bool a_persistHold,
 	return s;
 }
 
+// Purpose: after ApplyLoad drops the lock, re-queue when the stale
+// step asked to recover. Tests call this; main.cpp gates QueueRecover
+// on the return so a dropped if (needRecover) fails the suite.
+inline bool StaleReloadPostQueue(bool a_needRecover)
+{
+	return a_needRecover;
+}
+
 // Purpose: atexit joins only when the worker already set done. Otherwise
 // detach. Never take a mutex and never wait: the worker may already be dead.
 inline bool AtExitShouldJoin(bool a_done)

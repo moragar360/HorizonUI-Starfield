@@ -2980,10 +2980,10 @@ int main()
 			Expect(body.find("StepStaleReload") != std::string::npos
 				&& body.find("needRecover = step.recover") != std::string::npos,
 				"S5 stale held reload uses StepStaleReload");
-			Expect(body.find("MsglogQueueRecover(true)") != std::string::npos
-				&& body.find("FinishStaleReload") != std::string::npos
-				&& body.find("needRecover") != std::string::npos,
-				"S6/S9 stale held reload uses QueueRecover and FinishStaleReload");
+			Expect(body.find("StaleReloadPostQueue(needRecover)") != std::string::npos
+				&& body.find("MsglogQueueRecover(true)") != std::string::npos
+				&& body.find("FinishStaleReload") != std::string::npos,
+				"S9 stale held reload re-queues through StaleReloadPostQueue");
 			Expect(body.find("stale load retry cap reached") != std::string::npos
 				&& body.find("step.logCap") != std::string::npos,
 				"the stale reload cap hit is logged once per hold");
@@ -3121,6 +3121,11 @@ int main()
 			"type chips and All time are drawn");
 		Expect(as.find("Find...") != std::string::npos, "Find is a search box with a Find... placeholder");
 		Expect(as.find("Find…") == std::string::npos, "Find does not use a U+2026 ellipsis");
+		Expect(as.find("getTimer(") == std::string::npos, "HUD block has no getTimer(");
+		Expect(as.find("flash.utils") == std::string::npos, "HUD block has no flash.utils");
+		Expect(as.find("this.hz41Now()") != std::string::npos
+			&& as.find("((this.hz41Now() % 800) < 400)") != std::string::npos,
+			"Find caret blink uses hz41Now");
 		Expect(as.find("Find (keyboard only)") != std::string::npos, "Find shows a keyboard-only note on a pad");
 		Expect(as.find("UNPIN") != std::string::npos, "the footer PIN button can read UNPIN");
 		Expect(as.find("MESSAGE LOG SETTINGS") != std::string::npos, "the settings page is drawn");
@@ -3391,6 +3396,20 @@ int main()
 				const auto due = PlanStaleReload(true, true, 0, 1000, 0);
 				Expect(due.recover, "S9 stale held load plans recover");
 				Expect(!due.logCap, "recover does not log the cap");
+				{
+					Log s9q;
+					s9q.persistHold = true;
+					const auto step = s9q.StepStaleReload(1000);
+					Expect(step.recover, "S9 StepStaleReload asks to recover");
+					bool queued = false;
+					if (StaleReloadPostQueue(step.recover)) {
+						queued = true;
+						s9q.FinishStaleReload(1000);
+					}
+					Expect(queued, "S9 needRecover re-queues");
+					Expect(s9q.retryAt > 1000, "S9 arms backoff after re-queue");
+					Expect(!StaleReloadPostQueue(false), "S9 no recover does not re-queue");
+				}
 				const auto capped = PlanStaleReload(true, true, 0, 1000, 5);
 				Expect(!capped.recover, "S5 cap does not plan recover");
 				Expect(capped.logCap, "S5 cap plans the WARN");

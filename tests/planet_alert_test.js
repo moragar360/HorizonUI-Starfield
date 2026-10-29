@@ -192,6 +192,8 @@ pin("if(since < 0) { this.hz41LocClear(); return false; }", "a backwards clock e
 	expect(fn.indexOf("return new Date().getTime();") >= 0, "hz41Now returns new Date().getTime()");
 	expect(fn.indexOf("getTimer") < 0 && fn.indexOf("flash.utils") < 0, "hz41Now does not call getTimer");
 	expect(src.indexOf("import flash.utils.getTimer") < 0, "the injected HUD block does not carry a getTimer import");
+	expect(src.indexOf("getTimer(") < 0, "t40 GT1b HUD block has no getTimer(");
+	expect(src.indexOf("flash.utils") < 0, "t37 HUD block has no flash.utils");
 }
 pin("c.visible = false;", "hide is visible only");
 

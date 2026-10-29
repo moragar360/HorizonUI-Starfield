@@ -4021,7 +4021,7 @@ namespace HZ
 				MsglogPushDecision(clearDec);
 			else if (needWrite)
 				MsglogRequestWrite(true);
-			if (needRecover) {
+			if (hzlog::StaleReloadPostQueue(needRecover)) {
 				MsglogQueueRecover(true);
 				std::lock_guard lk(g_mlMu);
 				g_ml.FinishStaleReload(GetTickCount64());

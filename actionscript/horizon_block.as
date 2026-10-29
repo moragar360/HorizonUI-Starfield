@@ -3612,7 +3612,7 @@
          if(this.hzMlFindOn)
          {
             var caretX:Number = boxX + 10 + (this.hzMlFind.length > 0 ? Math.min(boxW - 36, Math.round(this.hzTW(ftf))) : 0);
-            g.beginFill(uint(T.txt), (int(getTimer() / 400) % 2 == 0) ? 0.9 : 0.15);
+            g.beginFill(uint(T.txt), ((this.hz41Now() % 800) < 400) ? 0.9 : 0.15);
             g.drawRect(caretX + 1, fy + 6, 1, 16);
             g.endFill();
          }
@@ -15590,9 +15590,10 @@
       // Grace and the 30 s cap.
       // Purpose: milliseconds for the 1.5 s grace and the 30 s cap.
       // new Date() is the wall clock. A step backwards (since < 0, or elapsed < 0) ends the hide instead of holding it open.
-      // getTimer() is monotonic, but this block is injected as members of HUDMenu. That class does not
-      // import getTimer, and an import is not legal inside the injected class body. A qualified flash.utils call
-      // compiles in ffdec and then throws ReferenceError #1065 (it looks up a global named flash).
+      // A VM-start clock is monotonic, but this block is injected as members of HUDMenu. That class
+      // does not import a timer helper, and an import is not legal inside the injected class body.
+      // A qualified utils-package call compiles in ffdec and then throws ReferenceError #1065
+      // (it looks up a global named flash).
       // The exitFrame and scan-edge try/catch swallow that, so the landing alert would stay hidden for the session.
       // Inputs: hz41NowFn when a test supplies a clock, otherwise the wall clock. Output: milliseconds. No logging.
       private function hz41Now() : Number
