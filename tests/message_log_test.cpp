@@ -1682,21 +1682,21 @@ int main()
 
 		on.Offer(Cap(Kind::Game, "after off two", 11'500));
 		on.ApplyPersist(true);
-		Expect(!on.persistHold, "off→on load clears the persist hold");
+		Expect(!on.persistHold, "off->on load clears the persist hold");
 		ExpectEqI(static_cast<int>(on.buf.entries.size()), 3,
-			"off→on merges 1 disk row with 2 memory rows");
+			"off->on merges 1 disk row with 2 memory rows");
 		bool gotDisk = false, gotMem = false, gotMem2 = false;
 		for (const auto& e : on.buf.entries) {
 			if (e.text == "on disk") gotDisk = true;
 			if (e.text == "after off") gotMem = true;
 			if (e.text == "after off two") gotMem2 = true;
 		}
-		Expect(gotDisk && gotMem && gotMem2, "off→on merge keeps disk and memory rows");
-		Expect(on.Flush(12'000), "off→on flush after merge");
+		Expect(gotDisk && gotMem && gotMem2, "off->on merge keeps disk and memory rows");
+		Expect(on.Flush(12'000), "off->on flush after merge");
 		const auto merged = ReadFile(root / "MessageLog" / "MessageLog_00000001.json");
-		Expect(merged.find("on disk") != std::string::npos, "off→on flush keeps the old disk row");
-		Expect(merged.find("after off") != std::string::npos, "off→on flush keeps the first memory row");
-		Expect(merged.find("after off two") != std::string::npos, "off→on flush keeps the second memory row");
+		Expect(merged.find("on disk") != std::string::npos, "off->on flush keeps the old disk row");
+		Expect(merged.find("after off") != std::string::npos, "off->on flush keeps the first memory row");
+		Expect(merged.find("after off two") != std::string::npos, "off->on flush keeps the second memory row");
 
 		{
 			Log six;
@@ -1708,14 +1708,14 @@ int main()
 				t += std::to_string(i);
 				six.Offer(Cap(Kind::Game, t.c_str(), 13'000 + static_cast<std::uint64_t>(i) * 1000));
 			}
-			Expect(six.Flush(20'000), "6 disk rows for off→on");
+			Expect(six.Flush(20'000), "6 disk rows for off->on");
 			six.ApplyPersist(false);
 			six.Offer(Cap(Kind::Game, "new while off", 21'000));
 			six.Offer(Cap(Kind::Game, "second while off", 22'000));
 			six.ApplyPersist(true);
 			ExpectEqI(static_cast<int>(six.buf.entries.size()), 8,
 				"6 disk rows plus 2 new rows merge");
-			Expect(six.Flush(23'000), "merged off→on flush");
+			Expect(six.Flush(23'000), "merged off->on flush");
 			const auto sixPath = root / "MessageLog" / "MessageLog_00006006.json";
 			const auto sixBody = ReadFile(sixPath);
 			int foundDisk = 0;
@@ -1752,9 +1752,9 @@ int main()
 			reps.ApplyPersist(false);
 			reps.ApplyPersist(true);
 			ExpectEqI(static_cast<int>(reps.buf.entries.size()), 5,
-				"repeated off→on keeps 5 rows");
+				"repeated off->on keeps 5 rows");
 			for (const auto& e : reps.buf.entries)
-				ExpectEqI(e.n, 1, "repeated off→on does not inflate n");
+				ExpectEqI(e.n, 1, "repeated off->on does not inflate n");
 			Expect(reps.Flush(31'000), "flush after repeated toggles");
 			auto parsedN = FromJson(ReadFile(root / "MessageLog" / "MessageLog_00007007.json"));
 			Expect(parsedN.ok && parsedN.state.entries.size() == 5,
@@ -1779,7 +1779,7 @@ int main()
 			Settings backOn;
 			backOn.persist = true;
 			restore.Configure(backOn, root, true);
-			Expect(!restore.persistHold, "Configure off→on merges and clears the hold");
+			Expect(!restore.persistHold, "Configure off->on merges and clears the hold");
 			ExpectEqI(static_cast<int>(restore.buf.entries.size()), 5,
 				"Persist=1 restore while off keeps old rows plus the new one");
 			bool old0 = false, old3 = false, gotNew = false;
@@ -1881,6 +1881,21 @@ int main()
 		}
 
 		{
+			Log cu5;
+			Settings cu5s;
+			cu5.Configure(cu5s, root);
+			cu5.buf.character = MakeCharacter(0xC050u, "Sam");
+			Expect(cu5.Offer(Cap(Kind::Game, "before clear", 80'000)) == OfferResult::Stored,
+				"Cu5 row before Clear");
+			cu5.persistHold = true;
+			cu5.PrepareHeldClear();
+			Expect(cu5.clearCutoffSet, "Cu5 records the cutoff");
+			ExpectEqI(static_cast<int>(cu5.clearCutoffTs), 80,
+				"Cu5 records the cutoff before it drops rows");
+			Expect(cu5.buf.entries.empty(), "Cu5 drops unpinned memory rows");
+		}
+
+		{
 			Log probeB;
 			Settings bs;
 			probeB.Configure(bs, root);
@@ -1957,7 +1972,7 @@ int main()
 			p40c2.ApplyPersist(false);
 			p40c2.ApplyPersist(true);
 			ExpectEqI(static_cast<int>(p40c2.buf.entries.size()), 2,
-				"p40 C2 stay two rows after off→on");
+				"p40 C2 stay two rows after off->on");
 			for (const auto& e : p40c2.buf.entries)
 				ExpectEqI(e.n, 1, "p40 C2 each row stays n=1");
 		}
@@ -2041,7 +2056,7 @@ int main()
 			}
 			ExpectEqI(newCount, 1, "R7 New row stays one row");
 			ExpectEqI(oldN, 1, "R7 Old row stays n=1");
-			ExpectEqI(newN, 1, "R7 writer-path off→on stays n=1");
+			ExpectEqI(newN, 1, "R7 writer-path off->on stays n=1");
 			r7.ApplyPersist(false);
 			r7.ApplyPersist(true);
 			r7.ApplyPersist(false);
@@ -2122,6 +2137,39 @@ int main()
 			Expect(texts.count("File A") && texts.count("File B")
 				&& texts.count("Mem C") && texts.count("Mem D"),
 				"R5 keeps all four texts");
+		}
+
+		{
+			Log seed53;
+			Settings s53;
+			seed53.Configure(s53, root);
+			seed53.buf.character = MakeCharacter(0xE53u, "Sam");
+			Expect(seed53.Offer(Cap(Kind::Game, "Inventory full", 100'000)) == OfferResult::Stored,
+				"p53 seed Inventory full n1@100");
+			Expect(WriterSave(seed53), "p53 writes the file row through ApplyDiskWrite");
+			Log p53;
+			Settings off53;
+			off53.persist = false;
+			p53.Configure(off53, root);
+			p53.buf.character = MakeCharacter(0xE53u, "Sam");
+			Expect(p53.Offer(Cap(Kind::Game, "Inventory full", 400'000)) == OfferResult::Stored,
+				"p53 Persist=0 launch captures the same text at 400");
+			ExpectEqI(static_cast<int>(p53.persistLineageMaxId), 0,
+				"p53 Persist=0 launch has no lineage");
+			p53.ApplyPersist(false);
+			p53.ApplyPersist(false);
+			ExpectEqI(static_cast<int>(p53.persistLineageMaxId), 0,
+				"p53 ApplyPersist(false) while already off does not mark lineage");
+			p53.ApplyPersist(true);
+			ExpectEqI(static_cast<int>(p53.buf.entries.size()), 2,
+				"p53 Persist=0 plus settings re-apply keeps both rows");
+			int n100 = 0, n400 = 0;
+			for (const auto& e : p53.buf.entries) {
+				if (e.text == "Inventory full" && e.ts == 100) n100 = e.n;
+				if (e.text == "Inventory full" && e.ts == 400) n400 = e.n;
+			}
+			ExpectEqI(n100, 1, "p53 file row n1@100 stays");
+			ExpectEqI(n400, 1, "p53 memory row n1@400 stays");
 		}
 
 		{
@@ -2626,9 +2674,8 @@ int main()
 			Expect(body.find("if (g_ml.persistHold)") != std::string::npos
 				&& body.find("clearAfterHold") != std::string::npos,
 				"Clear during a persist hold skips the disk write");
-			Expect(body.find("g_ml.ArmClearCutoff()") != std::string::npos
-				&& body.find("g_ml.ClearHistoryMemory()") != std::string::npos,
-				"Cu5 Clear records the cutoff before it drops rows");
+			Expect(body.find("g_ml.PrepareHeldClear()") != std::string::npos,
+				"Cu5 Clear uses PrepareHeldClear");
 		}
 		Expect(main.find("comms busy card name=") != std::string::npos,
 			"a busy card logs the crosshair name used");
@@ -2742,11 +2789,8 @@ int main()
 			const auto next = main.find("void MsglogParkHeldIfNeeded()", rec);
 			const auto body = rec != std::string::npos && next > rec
 				? main.substr(rec, next - rec) : std::string();
-			Expect(body.find("eng.playerId") != std::string::npos
-				&& body.find("MakeCharacter(eng.playerId, eng.name)") != std::string::npos,
+			Expect(body.find("StaleReloadCharacter(eng.playerId, eng.name, g_ml.buf.character)") != std::string::npos,
 				"S1 QueueRecover rebuilds the character from the engine snapshot");
-			Expect(body.find("ch = g_ml.buf.character") != std::string::npos,
-				"S1 QueueRecover falls back to the buffer only when engine id is 0");
 		}
 		{
 			const auto rx = main.find("void CommsRxPoll(ULONGLONG a_now)");
@@ -2933,16 +2977,16 @@ int main()
 			Expect(body.find("ConsumeClearWriteUsesWriter") != std::string::npos
 				&& body.find("OnClear") != std::string::npos,
 				"H4 consumeClearWrite goes through OnClear");
-			Expect(body.find("StaleReloadDue") != std::string::npos
-				&& body.find("++g_ml.staleReloadAttempts") != std::string::npos
-				&& body.find("kStaleReloadCap") != std::string::npos,
-				"S5 stale held reload bumps attempts and honors the cap");
+			Expect(body.find("StepStaleReload") != std::string::npos
+				&& body.find("needRecover = step.recover") != std::string::npos,
+				"S5 stale held reload uses StepStaleReload");
 			Expect(body.find("MsglogQueueRecover(true)") != std::string::npos
-				&& body.find("NoteRetryFailure") != std::string::npos
+				&& body.find("FinishStaleReload") != std::string::npos
 				&& body.find("needRecover") != std::string::npos,
-				"S6/S9 stale held reload uses QueueRecover and arms the backoff");
-			Expect(body.find("stale load retry cap reached") != std::string::npos,
-				"the stale reload cap hit is logged");
+				"S6/S9 stale held reload uses QueueRecover and FinishStaleReload");
+			Expect(body.find("stale load retry cap reached") != std::string::npos
+				&& body.find("step.logCap") != std::string::npos,
+				"the stale reload cap hit is logged once per hold");
 			Expect(body.find("StaleReloadCharacter") == std::string::npos,
 				"stale reload does not assign the dead job character");
 		}
@@ -3038,9 +3082,9 @@ int main()
 			const auto nextAt = hdr.find("bool FlushDeferredClear()", offAt);
 			const auto offFn = offAt != std::string::npos && nextAt > offAt
 				? hdr.substr(offAt, nextAt - offAt) : std::string();
-			Expect(offFn.find("if (!persistHold)") != std::string::npos
+			Expect(offFn.find("if (a_was && !persistHold)") != std::string::npos
 				&& offFn.find("MarkPersistLineage()") != std::string::npos,
-				"Persist off marks lineage so ApplyDiskWrite rows survive off→on");
+				"Persist off marks lineage only on a real on-to-off");
 			Expect(hdr.find("inline constexpr int kStaleReloadCap = 5") != std::string::npos,
 				"S8 kStaleReloadCap is 5");
 		}
@@ -3325,7 +3369,7 @@ int main()
 				"S08 missed|0 does not write record");
 			Expect(ApplySetCommand("missed|1", s, why) == SetParse::Ok && s.missedBadge && s.record,
 				"S08 missed|1 does not write record");
-			Expect(PersistTurningOn(false, true), "PersistTurningOn is off→on");
+			Expect(PersistTurningOn(false, true), "PersistTurningOn is off->on");
 			Expect(!PersistTurningOn(true, true), "PersistTurningOn is not already-on");
 			Expect(!PersistTurningOn(false, false), "PersistTurningOn is not staying off");
 			Expect(IniReloadAppliesMsglog(true), "C8 LoadIni() reloads MessageLog");
@@ -3344,19 +3388,63 @@ int main()
 				"S8 five attempts hits the default cap");
 			Expect(!StaleReloadDue(false, true, 0, 1000, 0), "a current load is not a stale reload");
 			{
+				const auto due = PlanStaleReload(true, true, 0, 1000, 0);
+				Expect(due.recover, "S9 stale held load plans recover");
+				Expect(!due.logCap, "recover does not log the cap");
+				const auto capped = PlanStaleReload(true, true, 0, 1000, 5);
+				Expect(!capped.recover, "S5 cap does not plan recover");
+				Expect(capped.logCap, "S5 cap plans the WARN");
+				const auto noHold = PlanStaleReload(true, false, 0, 1000, 5);
+				Expect(!noHold.recover && !noHold.logCap, "no hold does not recover or log the cap");
+				bool warned = false;
+				Expect(StaleCapWarnOnce(true, warned), "first cap WARN is emitted");
+				Expect(warned, "cap WARN latch is set");
+				Expect(!StaleCapWarnOnce(true, warned), "second cap WARN is suppressed");
+				Expect(!StaleCapWarnOnce(false, warned), "no WARN when not at cap");
+			}
+			{
+				Log s5;
+				s5.persistHold = true;
+				s5.retryAt = 0;
+				s5.staleReloadAttempts = 0;
+				Expect(s5.RunStaleReloadAttempt(1000), "S9 first stale held reload recovers");
+				ExpectEqI(s5.staleReloadAttempts, 1, "S5 first attempt is counted");
+				Expect(s5.retryAt > 1000, "S6 FinishStaleReload arms the backoff");
+				Expect(s5.retryBackoffMs > 0, "S6 NoteRetryFailure sets the backoff");
+				Expect(!s5.RunStaleReloadAttempt(1001), "S5 honors the backoff");
+				ExpectEqI(s5.staleReloadAttempts, 1, "S5 backoff does not bump attempts");
+				for (int i = 1; i < kStaleReloadCap; ++i) {
+					s5.retryAt = 0;
+					Expect(s5.RunStaleReloadAttempt(2000 + static_cast<std::uint64_t>(i) * 1000),
+						"S5 attempt before the cap recovers");
+				}
+				ExpectEqI(s5.staleReloadAttempts, 5, "S5 five attempts hits the cap");
+				s5.retryAt = 0;
+				Expect(!s5.RunStaleReloadAttempt(9000), "S5 cap stops further recover");
+				Expect(s5.staleCapWarned, "cap WARN latch is set on the first cap-hit");
+				const auto cap2 = s5.StepStaleReload(10'000);
+				Expect(!cap2.recover, "S5 cap does not recover");
+				Expect(!cap2.logCap, "cap WARN is once per hold");
+			}
+			{
 				Log s7;
 				s7.staleReloadAttempts = 4;
+				s7.staleCapWarned = true;
 				s7.NoteRetrySuccess();
 				ExpectEqI(s7.staleReloadAttempts, 0, "S7 NoteRetrySuccess resets the attempt count");
+				Expect(!s7.staleCapWarned, "S7 NoteRetrySuccess clears the cap WARN latch");
 			}
 			{
 				const auto engB = MakeCharacter(0xBu, "Barrett");
 				const auto jobA = MakeCharacter(0xAu, "Andreja");
 				const auto reload = StaleReloadCharacter(0xBu, "Barrett", jobA);
-				Expect(reload.key == engB.key, "stale reload uses the engine character, not the job");
-				Expect(reload.key != jobA.key, "stale reload does not reuse A's job character");
+				Expect(reload.key == engB.key, "S1 stale reload uses the engine character, not the job");
+				Expect(reload.key != jobA.key, "S1 stale reload does not reuse A's job character");
+				Expect(!reload.names.empty() && reload.names.front() == "Barrett",
+					"S1 engine name is kept");
 				const auto noEng = StaleReloadCharacter(0, "", jobA);
-				Expect(noEng.key == jobA.key, "stale reload falls back to the buffer when engine id is 0");
+				Expect(noEng.key == jobA.key, "S1 stale reload falls back to the buffer when engine id is 0");
+				Expect(noEng.names == jobA.names, "S1 fallback keeps the buffer names");
 			}
 			Expect(ConsumeClearWriteUsesWriter(true, true, true), "H4 consumeClearWrite uses OnClear");
 			Expect(!ConsumeClearWriteUsesWriter(false, true, true), "H4 without the flag does not OnClear");

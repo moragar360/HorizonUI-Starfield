@@ -780,6 +780,27 @@ inline Character StaleReloadCharacter(std::uint64_t a_playerId, std::string_view
 	return a_buf;
 }
 
+struct StaleReloadStep {
+	bool recover{false};
+	bool logCap{false};
+};
+
+inline bool StaleCapWarnOnce(bool a_capWarn, bool& a_warned)
+{
+	if (!a_capWarn || a_warned) return false;
+	a_warned = true;
+	return true;
+}
+
+inline StaleReloadStep PlanStaleReload(bool a_stale, bool a_persistHold,
+	std::uint64_t a_retryAt, std::uint64_t a_nowMs, int a_attempts)
+{
+	StaleReloadStep s;
+	s.recover = StaleReloadDue(a_stale, a_persistHold, a_retryAt, a_nowMs, a_attempts);
+	s.logCap = a_stale && a_persistHold && !s.recover && a_attempts >= kStaleReloadCap;
+	return s;
+}
+
 // Purpose: atexit joins only when the worker already set done. Otherwise
 // detach. Never take a mutex and never wait: the worker may already be dead.
 inline bool AtExitShouldJoin(bool a_done)
@@ -3490,6 +3511,7 @@ public:
 	std::uint64_t             retryAt{0};
 	std::uint64_t             persistLineageMaxId{0};
 	int                       staleReloadAttempts{0};
+	bool                      staleCapWarned{false};
 	std::string               lastNotice;
 
 	Log() { store = std::make_unique<NullStore>(); }
@@ -3513,7 +3535,7 @@ public:
 		const bool turningOn = PersistTurningOn(a_was, a_persist);
 		buf.settings.persist = a_persist;
 		if (!a_persist) {
-			if (!persistHold)
+			if (a_was && !persistHold)
 				MarkPersistLineage();
 			store = std::make_unique<NullStore>();
 			dirty = false;
@@ -3649,6 +3671,35 @@ public:
 		retryBackoffMs = 0;
 		retryAt = 0;
 		staleReloadAttempts = 0;
+		staleCapWarned = false;
+	}
+
+	StaleReloadStep StepStaleReload(std::uint64_t a_nowMs)
+	{
+		auto s = PlanStaleReload(true, persistHold, retryAt, a_nowMs, staleReloadAttempts);
+		s.logCap = StaleCapWarnOnce(s.logCap, staleCapWarned);
+		if (s.recover)
+			++staleReloadAttempts;
+		return s;
+	}
+
+	void FinishStaleReload(std::uint64_t a_nowMs)
+	{
+		NoteRetryFailure(a_nowMs);
+	}
+
+	bool RunStaleReloadAttempt(std::uint64_t a_nowMs)
+	{
+		const auto s = StepStaleReload(a_nowMs);
+		if (!s.recover) return false;
+		FinishStaleReload(a_nowMs);
+		return true;
+	}
+
+	void PrepareHeldClear()
+	{
+		ArmClearCutoff();
+		ClearHistoryMemory();
 	}
 
 	struct KeptHeld

@@ -3476,8 +3476,7 @@ namespace HZ
 			{
 				std::lock_guard lk(g_mlMu);
 				++g_mlLoadGen;
-				g_ml.ArmClearCutoff();
-				g_ml.ClearHistoryMemory();
+				g_ml.PrepareHeldClear();
 				const auto key = g_ml.buf.character.key;
 				g_ml.fileGate.BumpCancel(key);
 				g_mlWrites.SetPersist(g_ml.buf.settings.persist);
@@ -3798,10 +3797,7 @@ namespace HZ
 			const auto eng = MsglogEngSnap();
 			{
 				std::lock_guard lk(g_mlMu);
-				if (eng.playerId)
-					ch = hzlog::MakeCharacter(eng.playerId, eng.name);
-				else
-					ch = g_ml.buf.character;
+				ch = hzlog::StaleReloadCharacter(eng.playerId, eng.name, g_ml.buf.character);
 				if (!hzlog::PersistAllowed(ch)) return;
 				if (!a_force && !hzlog::HoldRetryDue(g_ml.persistHold, g_ml.retryAt, GetTickCount64()))
 					return;
@@ -3955,13 +3951,10 @@ namespace HZ
 					runPending = g_mlPendingHud;
 					g_mlWrites.OnLoadApplied(jobBufKey.empty() ? ch.key : jobBufKey, jobGen);
 					MsglogMirrorLoadBusy();
-					if (hzlog::StaleReloadDue(true, g_ml.persistHold, g_ml.retryAt, now,
-						g_ml.staleReloadAttempts)) {
-						++g_ml.staleReloadAttempts;
-						needRecover = true;
-					} else if (g_ml.persistHold && g_ml.staleReloadAttempts >= hzlog::kStaleReloadCap) {
+					const auto step = g_ml.StepStaleReload(now);
+					needRecover = step.recover;
+					if (step.logCap)
 						REX::WARN("message log: stale load retry cap reached");
-					}
 				} else if (!ok) {
 					hzlog::NoteLoadResult(false, g_ml.persistHold);
 					if (g_ml.buf.character.keySource == "nameHash")
@@ -4031,7 +4024,7 @@ namespace HZ
 			if (needRecover) {
 				MsglogQueueRecover(true);
 				std::lock_guard lk(g_mlMu);
-				g_ml.NoteRetryFailure(GetTickCount64());
+				g_ml.FinishStaleReload(GetTickCount64());
 			}
 			if (runPending) {
 				g_mlPendingHud = false;
