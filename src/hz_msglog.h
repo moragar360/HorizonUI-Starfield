@@ -64,6 +64,7 @@ inline constexpr int kLoadEntryCap = kHistoryMax + kPinCap;
 inline constexpr int kWriterJoinMs = 2000;
 inline constexpr int kRetryMsMin = 1000;
 inline constexpr int kRetryMsMax = 60000;
+inline constexpr int kStaleReloadCap = 5;
 inline constexpr int kWriteRetryMs = kRetryMsMin;
 inline constexpr int kBakFailGiveUp = 3;
 inline constexpr int kKeptHeldCap = kHistoryMax;
@@ -366,6 +367,26 @@ inline bool SamePersistRow(const Entry& a_file, const Entry& a_mem)
 	const auto dt = a_mem.ts - a_file.ts;
 	const int win = a_mem.kind == Kind::Busy ? kBusyDedupeMs : kDedupeMs;
 	return WithinDedupeWindow(dt * 1000, win);
+}
+
+// Purpose: a hold-merge lineage row is the same persist row with no
+// time window. Repeats while Persist is off move ts past 3 s; the
+// window would append a duplicate. Only ids snapshotted from a flush
+// or load (persistLineageMaxId) may use this path, so a Persist=0
+// launch with colliding ids still goes through MergeSession.
+inline bool SamePersistIdentity(const Entry& a_file, const Entry& a_mem)
+{
+	if (!a_file.id || a_file.id != a_mem.id) return false;
+	if (a_file.kind != a_mem.kind) return false;
+	const auto na = a_file.norm.empty() ? NormalizeText(a_file.text) : a_file.norm;
+	const auto nb = a_mem.norm.empty() ? NormalizeText(a_mem.text) : a_mem.norm;
+	if (na != nb) return false;
+	return a_mem.ts >= a_file.ts;
+}
+
+inline bool PersistLineageId(std::uint64_t a_id, std::uint64_t a_maxId)
+{
+	return a_id && a_maxId && a_id <= a_maxId;
 }
 
 inline SetParse ApplySetCommand(std::string_view a_rest, Settings& a_s, std::string& a_why)
@@ -740,6 +761,23 @@ inline int NextRetryMs(int a_prevMs)
 inline bool RetryDue(std::uint64_t a_retryAt, std::uint64_t a_nowMs)
 {
 	return a_retryAt == 0 || a_nowMs >= a_retryAt;
+}
+
+inline bool StaleReloadDue(bool a_stale, bool a_persistHold,
+	std::uint64_t a_retryAt, std::uint64_t a_nowMs,
+	int a_attempts, int a_cap = kStaleReloadCap)
+{
+	if (!StaleHeldLoadNeedsReload(a_stale, a_persistHold)) return false;
+	if (a_attempts >= a_cap) return false;
+	return RetryDue(a_retryAt, a_nowMs);
+}
+
+inline Character StaleReloadCharacter(std::uint64_t a_playerId, std::string_view a_name,
+	const Character& a_buf)
+{
+	if (a_playerId)
+		return MakeCharacter(a_playerId, a_name);
+	return a_buf;
 }
 
 // Purpose: atexit joins only when the worker already set done. Otherwise
@@ -3450,6 +3488,8 @@ public:
 	std::string               holdTargetKey;
 	int                       retryBackoffMs{0};
 	std::uint64_t             retryAt{0};
+	std::uint64_t             persistLineageMaxId{0};
+	int                       staleReloadAttempts{0};
 	std::string               lastNotice;
 
 	Log() { store = std::make_unique<NullStore>(); }
@@ -3574,8 +3614,17 @@ public:
 		if (ok) {
 			dirty = false;
 			lastWriteMs = a_nowMs;
+			MarkPersistLineage();
 		}
 		return ok;
+	}
+
+	void MarkPersistLineage()
+	{
+		persistLineageMaxId = 0;
+		for (const auto& e : buf.entries) {
+			if (e.id > persistLineageMaxId) persistLineageMaxId = e.id;
+		}
 	}
 
 	void NoteRetryFailure(std::uint64_t a_nowMs)
@@ -3591,6 +3640,7 @@ public:
 		holdTargetKey.clear();
 		retryBackoffMs = 0;
 		retryAt = 0;
+		staleReloadAttempts = 0;
 	}
 
 	struct KeptHeld
@@ -3695,9 +3745,9 @@ public:
 			add.reserve(session.size());
 			for (const auto& in : session) {
 				bool skip = false;
-				if (persistHold) {
+				if (persistHold && PersistLineageId(in.id, persistLineageMaxId)) {
 					for (auto& e : buf.entries) {
-						if (!SamePersistRow(e, in)) continue;
+						if (!SamePersistIdentity(e, in)) continue;
 						skip = true;
 						if (in.n > e.n) e.n = in.n;
 						if (in.ts >= e.ts) {
@@ -3715,6 +3765,7 @@ public:
 			}
 			if (!add.empty())
 				buf.MergeSession(add);
+			MarkPersistLineage();
 		}
 		if (PersistAllowed(a_ch)) {
 			buf.character = std::move(a_ch);
@@ -3796,6 +3847,7 @@ public:
 					PromoteToCharacter(std::move(a_ch));
 			} else {
 				buf.ResetMemory();
+				persistLineageMaxId = 0;
 				dirty = false;
 				buf.character = std::move(a_ch);
 				if (canLoad)
@@ -3827,8 +3879,10 @@ public:
 				return;
 			}
 		}
-		if (!st.character.key.empty() || !st.entries.empty())
+		if (!st.character.key.empty() || !st.entries.empty()) {
 			buf.LoadState(std::move(st));
+			MarkPersistLineage();
+		}
 	}
 
 	bool AcceptLoad(std::uint64_t a_jobGen) const

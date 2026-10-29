@@ -1913,6 +1913,81 @@ int main()
 		}
 
 		{
+			Log p40c2;
+			Settings p40s;
+			p40c2.Configure(p40s, root);
+			p40c2.buf.character = MakeCharacter(0xE10Eu, "Sam");
+			Expect(p40c2.Offer(Cap(Kind::Game, "later on", 72'000)) == OfferResult::Stored,
+				"p40 C2 persist-on first offer");
+			Expect(p40c2.Flush(73'000), "p40 C2 flush while persist on");
+			Expect(p40c2.Offer(Cap(Kind::Game, "later on", 77'000)) == OfferResult::Stored,
+				"p40 C2 repeat more than 3 s after a flush stays separate");
+			ExpectEqI(static_cast<int>(p40c2.buf.entries.size()), 2, "p40 C2 memory has two rows");
+			p40c2.ApplyPersist(false);
+			p40c2.ApplyPersist(true);
+			ExpectEqI(static_cast<int>(p40c2.buf.entries.size()), 2,
+				"p40 C2 stay two rows after off→on");
+			for (const auto& e : p40c2.buf.entries)
+				ExpectEqI(e.n, 1, "p40 C2 each row stays n=1");
+		}
+
+		{
+			Log p50;
+			Settings p50s;
+			p50.Configure(p50s, root);
+			p50.buf.character = MakeCharacter(0xE50Eu, "Sam");
+			Expect(p50.Offer(Cap(Kind::Game, "Inventory full", 100'000)) == OfferResult::Stored,
+				"p50 first offer");
+			ExpectEqI(p50.buf.entries.front().n, 1, "p50 file n is 1");
+			ExpectEqI(static_cast<int>(p50.buf.entries.front().ts), 100, "p50 file ts is 100");
+			Expect(p50.Flush(101'000), "p50 flush n1@100");
+			p50.ApplyPersist(false);
+			Expect(p50.Offer(Cap(Kind::Game, "Inventory full", 102'000)) == OfferResult::Deduped,
+				"p50 repeat at 102");
+			Expect(p50.Offer(Cap(Kind::Game, "Inventory full", 104'000)) == OfferResult::Deduped,
+				"p50 repeat at 104");
+			Expect(p50.Offer(Cap(Kind::Game, "Inventory full", 106'000)) == OfferResult::Deduped,
+				"p50 repeat at 106");
+			Expect(p50.Offer(Cap(Kind::Game, "Inventory full", 108'000)) == OfferResult::Deduped,
+				"p50 repeat at 108");
+			ExpectEqI(static_cast<int>(p50.buf.entries.size()), 1, "p50 memory folds the chain");
+			ExpectEqI(p50.buf.entries.front().n, 5, "p50 memory n is 5");
+			ExpectEqI(static_cast<int>(p50.buf.entries.front().ts), 108, "p50 memory ts is 108");
+			p50.ApplyPersist(true);
+			ExpectEqI(static_cast<int>(p50.buf.entries.size()), 1, "p50 hold merge stays one row");
+			ExpectEqI(p50.buf.entries.front().n, 5, "p50 n is max 5, not a duplicate n1+n5");
+			ExpectEqI(static_cast<int>(p50.buf.entries.front().ts), 108, "p50 ts is max 108");
+			Expect(p50.Flush(110'000), "p50 flush after on");
+			auto parsed50 = FromJson(ReadFile(root / "MessageLog" / "MessageLog_0000E50E.json"));
+			Expect(parsed50.ok && parsed50.state.entries.size() == 1, "p50 file has one row");
+			ExpectEqI(parsed50.state.entries.front().n, 5, "p50 file n is 5");
+		}
+
+		{
+			Log seedCol;
+			Settings colS;
+			seedCol.Configure(colS, root);
+			seedCol.buf.character = MakeCharacter(0xE60Eu, "Sam");
+			seedCol.Offer(Cap(Kind::Game, "Inventory full", 100'000));
+			Expect(seedCol.Flush(101'000), "collision seed file n1@100");
+			Log fresh;
+			Settings offCol;
+			offCol.persist = false;
+			fresh.Configure(offCol, root);
+			fresh.buf.character = MakeCharacter(0xE60Eu, "Sam");
+			Expect(fresh.Offer(Cap(Kind::Game, "Inventory full", 200'000)) == OfferResult::Stored,
+				"Persist=0 launch first offer collides on id 1");
+			ExpectEqI(static_cast<int>(fresh.persistLineageMaxId), 0,
+				"Persist=0 launch has no file lineage");
+			Settings onCol;
+			fresh.Configure(onCol, root, true);
+			ExpectEqI(static_cast<int>(fresh.buf.entries.size()), 2,
+				"Persist=0 launch colliding ids stay two rows");
+			for (const auto& e : fresh.buf.entries)
+				ExpectEqI(e.n, 1, "Persist=0 launch does not fold on colliding ids");
+		}
+
+		{
 			Log d4;
 			Settings d4s;
 			d4.Configure(d4s, root);
@@ -1946,6 +2021,7 @@ int main()
 			d4b.buf.character = fileSt.character;
 			d4b.buf.entries.push_back(memLo);
 			d4b.persistHold = true;
+			d4b.persistLineageMaxId = fileHi.id;
 			d4b.ApplyRecoveredFile(std::move(fileSt), d4b.buf.character);
 			ExpectEqI(d4b.buf.entries.front().n, 5, "D4 n is max(5,2), not 7");
 		}
@@ -1965,6 +2041,12 @@ int main()
 			Expect(!SamePersistRow(fa, mb), "more than 3 s later is not the same row");
 			mb.ts = 9;
 			Expect(!SamePersistRow(fa, mb), "a memory ts before the file ts does not match");
+			mb.ts = 18;
+			Expect(SamePersistIdentity(fa, mb), "lineage identity has no 3 s window");
+			Expect(!SamePersistRow(fa, mb), "SamePersistRow still applies the window");
+			Expect(PersistLineageId(3, 3), "an id at the high-water mark is lineage");
+			Expect(!PersistLineageId(4, 3), "an id above the high-water mark is not lineage");
+			Expect(!PersistLineageId(1, 0), "a Persist=0 launch has no lineage");
 		}
 
 		{
@@ -2653,9 +2735,16 @@ int main()
 			Expect(body.find("ConsumeClearWriteUsesWriter") != std::string::npos
 				&& body.find("OnClear") != std::string::npos,
 				"H4 consumeClearWrite goes through OnClear");
-			Expect(body.find("StaleHeldLoadNeedsReload") != std::string::npos
-				&& body.find("MsglogQueueLoad") != std::string::npos,
-				"a stale held load is re-queued so persistHold is not left set");
+			Expect(body.find("StaleReloadDue") != std::string::npos
+				&& body.find("StaleReloadCharacter") != std::string::npos
+				&& body.find("staleReloadAttempts") != std::string::npos,
+				"stale held reload is gated on backoff and the attempt cap");
+			Expect(body.find("MsglogQueueRecover(true)") != std::string::npos
+				&& body.find("NoteRetryFailure") != std::string::npos,
+				"stale held reload uses QueueRecover and arms the backoff");
+			Expect(body.find("if (ch.key.empty())") == std::string::npos
+				|| body.find("StaleReloadCharacter(eng.playerId") != std::string::npos,
+				"stale reload does not reuse the stale job character");
 		}
 		{
 			int gens = 0;
@@ -3023,6 +3112,21 @@ int main()
 			Expect(StaleHeldLoadNeedsReload(true, true), "a stale held load is re-queued");
 			Expect(!StaleHeldLoadNeedsReload(false, true), "a current load is not re-queued");
 			Expect(!StaleHeldLoadNeedsReload(true, false), "a stale load with no hold is not re-queued");
+			Expect(StaleReloadDue(true, true, 0, 1000, 0), "first stale held load is due");
+			Expect(!StaleReloadDue(true, true, 2000, 1500, 1), "stale reload waits the backoff");
+			Expect(StaleReloadDue(true, true, 2000, 2000, 1), "stale reload runs when backoff is due");
+			Expect(!StaleReloadDue(true, true, 0, 1000, kStaleReloadCap),
+				"stale reload stops at the attempt cap");
+			Expect(!StaleReloadDue(false, true, 0, 1000, 0), "a current load is not a stale reload");
+			{
+				const auto engB = MakeCharacter(0xBu, "Barrett");
+				const auto jobA = MakeCharacter(0xAu, "Andreja");
+				const auto reload = StaleReloadCharacter(0xBu, "Barrett", jobA);
+				Expect(reload.key == engB.key, "stale reload uses the engine character, not the job");
+				Expect(reload.key != jobA.key, "stale reload does not reuse A's job character");
+				const auto noEng = StaleReloadCharacter(0, "", jobA);
+				Expect(noEng.key == jobA.key, "stale reload falls back to the buffer when engine id is 0");
+			}
 			Expect(ConsumeClearWriteUsesWriter(true, true, true), "H4 consumeClearWrite uses OnClear");
 			Expect(!ConsumeClearWriteUsesWriter(false, true, true), "H4 without the flag does not OnClear");
 			Expect(!ConsumeClearWriteUsesWriter(true, false, true), "H4 Persist-off does not OnClear");

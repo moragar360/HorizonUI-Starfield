@@ -3942,9 +3942,10 @@ namespace HZ
 			}
 			bool needWrite = false;
 			bool runPending = false;
-			bool needReload = false;
+			bool needRecover = false;
 			hzlog::WriteDecision clearDec;
 			bool needClearWrite = false;
+			const auto eng = MsglogEngSnap();
 			{
 				std::lock_guard lk(g_mlMu);
 				const auto now = GetTickCount64();
@@ -3955,10 +3956,11 @@ namespace HZ
 					runPending = g_mlPendingHud;
 					g_mlWrites.OnLoadApplied(jobBufKey.empty() ? ch.key : jobBufKey, jobGen);
 					MsglogMirrorLoadBusy();
-					if (hzlog::StaleHeldLoadNeedsReload(true, g_ml.persistHold)) {
-						needReload = true;
-						if (ch.key.empty())
-							ch = g_ml.buf.character;
+					if (hzlog::StaleReloadDue(true, g_ml.persistHold, g_ml.retryAt, now,
+						g_ml.staleReloadAttempts)) {
+						++g_ml.staleReloadAttempts;
+						needRecover = true;
+						ch = hzlog::StaleReloadCharacter(eng.playerId, eng.name, g_ml.buf.character);
 					}
 				} else if (!ok) {
 					hzlog::NoteLoadResult(false, g_ml.persistHold);
@@ -4026,8 +4028,11 @@ namespace HZ
 				MsglogPushDecision(clearDec);
 			else if (needWrite)
 				MsglogRequestWrite(true);
-			if (needReload)
-				MsglogQueueLoad(ch, gt, ts);
+			if (needRecover) {
+				MsglogQueueRecover(true);
+				std::lock_guard lk(g_mlMu);
+				g_ml.NoteRetryFailure(GetTickCount64());
+			}
 			if (runPending) {
 				g_mlPendingHud = false;
 				{
