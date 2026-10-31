@@ -2499,6 +2499,7 @@
          try { this.hzTickFades(); } catch(e36d:Error) { }
          try { this.hzTickVitals(); } catch(e36v:Error) { }
          try { this.hz26Tick(); } catch(err26:Error) { }
+         try { this.hzMsglogCaretTick(); } catch(eMlC:Error) { }
          try { this.hzAfLoadWatch(); } catch(errAfW:Error) { }
          if(this.hzPlanAlertOn)
          {
@@ -3106,10 +3107,23 @@
          return String(this.hzPopLayers[this.hzPopLayers.length - 1]);
       }
 
-      private function hzPopKey(code:String) : void
+      // True while any Message Log layer is on top. logset / mlhist / mlchars
+      // must route keys and mouse the same way as log / mlconfirm.
+      private function hzMlIsTop() : Boolean
       {
          var top:String = this.hzPopTop();
-         if(top == "log" || top == "mlconfirm" || top == "logset" || top == "mlhist" || top == "mlchars") { this.hzMsglogKey(code); return; }
+         return top == "log" || top == "mlconfirm" || top == "logset" || top == "mlhist" || top == "mlchars";
+      }
+
+      private function hzMlIsOverlay() : Boolean
+      {
+         var top:String = this.hzPopTop();
+         return top == "mlconfirm" || top == "logset" || top == "mlhist" || top == "mlchars";
+      }
+
+      private function hzPopKey(code:String) : void
+      {
+         if(this.hzMlIsTop()) { this.hzMsglogKey(code); return; }
          if(code == "cancel") { this.hzPopPop(); }
       }
 
@@ -3133,7 +3147,7 @@
          return ut + "|" + lt + "|" + body;
       }
 
-      // ---------- Message Log popup (0.43.0.6). Inside the 1000x660 F11 window. ----------
+      // ---------- Message Log popup (0.43.0.7). Inside the 1000x660 F11 window. ----------
       // v6 layout: 976x620, 10 visible rows at 28 px, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
       private static const HZ_ML_W:Number = 976;
@@ -3174,11 +3188,12 @@
       private var hzMlOthers:Array = [];
       private var hzMlSetRow:int = 0;
       private var hzMlSetScroll:int = 0;
+      private var hzMlSaveIni:String = "";
+      private var hzMlCaret:Sprite = null;
 
       public function hzMsglogNeed() : String
       {
-         var top:String = this.hzPopTop();
-         return (top == "log" || top == "mlconfirm" || top == "logset" || top == "mlhist" || top == "mlchars") ? "1" : "0";
+         return this.hzMlIsTop() ? "1" : "0";
       }
 
       public function hzTakeMsglogAct() : String
@@ -3194,13 +3209,13 @@
          if(s == this.hzMlPacked) { return; }
          this.hzMlPacked = s;
          this.hzMsglogParse(s);
-         if(this.hzPopTop() == "log" || this.hzPopTop() == "mlconfirm" || this.hzPopTop() == "logset" || this.hzPopTop() == "mlhist" || this.hzPopTop() == "mlchars") { this.hzMsglogDraw(); }
+         if(this.hzMlIsTop()) { this.hzMsglogDraw(); }
       }
 
       private function hzMsglogOpen() : void
       {
          if(this.hzMsglogModule() == 0) { return; }
-         if(this.hzPopTop() == "log" || this.hzPopTop() == "mlconfirm") { return; }
+         if(this.hzMlIsTop()) { return; }
          this.hzPopPush("log");
          this.hzMlFindOn = false;
          this.hzMlFind = "";
@@ -3216,8 +3231,14 @@
          this.hzMlFindOn = false;
          this.hzMlNotice = "";
          this.hzMlPacked = "";
-         if(this.hzMlLayer != null) { this.hzMlLayer.visible = false; }
-         while(this.hzPopTop() == "log" || this.hzPopTop() == "mlconfirm" || this.hzPopTop() == "logset" || this.hzPopTop() == "mlhist" || this.hzPopTop() == "mlchars") { this.hzPopPop(); }
+         if(this.hzMlLayer != null)
+         {
+            this.hzMlLayer.visible = false;
+            while(this.hzMlLayer.numChildren > 0) { this.hzMlLayer.removeChildAt(0); }
+            this.hzMlLayer.graphics.clear();
+         }
+         this.hzMlHits = [];
+         while(this.hzMlIsTop()) { this.hzPopPop(); }
       }
 
       private function hzMsglogEnsure() : void
@@ -3418,6 +3439,39 @@
          return "";
       }
 
+      private function hzMsglogChipWrap(chipWs:Array, chipInner:Number) : Array
+      {
+         var out:Array = [];
+         var x:Number = 0;
+         var y:Number = 0;
+         var i:int = 0;
+         while(i < chipWs.length)
+         {
+            var cw:Number = Number(chipWs[i]);
+            if(x > 0 && x + cw > chipInner)
+            {
+               x = 0;
+               y += 34;
+            }
+            out.push({"x":x,"y":y});
+            x += cw + 8;
+            i++;
+         }
+         return out;
+      }
+
+      private function hzMsglogCaretTick() : void
+      {
+         if(this.hzMlCaret == null) { return; }
+         if(!this.hzMlFindOn || !this.hzMlIsTop() || this.hzMlIsOverlay() || this.hzMlCaret.parent == null)
+         {
+            this.hzMlCaret.visible = false;
+            return;
+         }
+         this.hzMlCaret.visible = true;
+         this.hzMlCaret.alpha = ((this.hz41Now() % 800) < 400) ? 0.9 : 0.15;
+      }
+
       private function hzMsglogChipKeepVisible(chipW:Number, chipInner:Number, activeLeft:Number, activeW:Number) : void
       {
          var maxX:Number = Math.max(0, chipW - chipInner);
@@ -3510,6 +3564,17 @@
       {
          this.hzMsglogEnsure();
          if(this.HorizonSettings_mc == null) { return; }
+         if(!this.hzMlIsTop())
+         {
+            if(this.hzMlLayer != null)
+            {
+               this.hzMlLayer.visible = false;
+               while(this.hzMlLayer.numChildren > 0) { this.hzMlLayer.removeChildAt(0); }
+               this.hzMlLayer.graphics.clear();
+            }
+            this.hzMlHits = [];
+            return;
+         }
          if(this.hzMlLayer.parent != this.HorizonSettings_mc) { this.HorizonSettings_mc.addChild(this.hzMlLayer); }
          this.hzMlLayer.visible = true;
          while(this.hzMlLayer.numChildren > 0) { this.hzMlLayer.removeChildAt(0); }
@@ -3533,12 +3598,13 @@
          var st:String = this.hzMsglogStatusLab();
          if(st.length > 0) { this.hzWT(b,st,ox + HZ_ML_W - 22,oy + 16,240,13,"sb",uint(T.mut),0.4,"right",13); }
 
+         var overlayOn:Boolean = this.hzMlIsOverlay();
          var cx:Number = ox + 22;
          var cy:Number = oy + 44;
          var i:int = 0;
-         var chipW:Number = 0;
          var chipWs:Array = [];
-         var chipLefts:Array = [];
+         var chipXs:Array = [];
+         var chipYs:Array = [];
          while(i < HZ_ML_CHIPS.length)
          {
             var cn:int = this.hzMsglogChipCount(String(HZ_ML_KIND[i]));
@@ -3548,55 +3614,48 @@
             var tw:TextField = this.hzWT(b,clab,0,0,180,13,"sb",on ? uint(T.ontxt) : (dim ? uint(T.off) : uint(T.txt)),1.2,"left",13);
             var cw:Number = Math.round(this.hzTW(tw) + 18);
             b.removeChild(tw);
-            chipLefts.push(chipW);
             chipWs.push(cw);
-            chipW += cw + 8;
             i++;
          }
          var chipInner:Number = HZ_ML_W - 44;
-         var actL:Number = this.hzMlChip >= 0 && this.hzMlChip < chipLefts.length ? Number(chipLefts[this.hzMlChip]) : 0;
-         var actW:Number = this.hzMlChip >= 0 && this.hzMlChip < chipWs.length ? Number(chipWs[this.hzMlChip]) : 0;
-         this.hzMsglogChipKeepVisible(chipW, chipInner, actL, actW);
-         var strip:Sprite = new Sprite();
-         strip.x = cx;
-         strip.y = cy;
-         strip.mouseEnabled = false;
-         strip.mouseChildren = false;
-         b.addChild(strip);
-         var clip:Sprite = new Sprite();
-         clip.graphics.beginFill(0xFFFFFF, 1);
-         clip.graphics.drawRect(cx, cy, chipInner, 36);
-         clip.graphics.endFill();
-         clip.mouseEnabled = false;
-         b.addChild(clip);
-         strip.mask = clip;
-         var sg:* = strip.graphics;
+         var wrap:Array = this.hzMsglogChipWrap(chipWs, chipInner);
          i = 0;
-         var at:Number = -this.hzMlChipX;
+         var chipBlockH:Number = 28;
+         while(i < wrap.length)
+         {
+            chipXs.push(Number(wrap[i].x));
+            chipYs.push(Number(wrap[i].y));
+            var bottom:Number = Number(wrap[i].y) + 28;
+            if(bottom > chipBlockH) { chipBlockH = bottom; }
+            i++;
+         }
+         i = 0;
          while(i < HZ_ML_CHIPS.length)
          {
             cn = this.hzMsglogChipCount(String(HZ_ML_KIND[i]));
             clab = String(HZ_ML_CHIPS[i]) + " " + String(cn);
             on = i == this.hzMlChip;
             dim = cn == 0 && i != 0;
-            tw = this.hzWT(strip,clab,at + 8,8,180,13,"sb",on ? uint(T.ontxt) : (dim ? uint(T.off) : uint(T.txt)),1.2,"left",13);
+            var atx:Number = cx + Number(chipXs[i]);
+            var aty:Number = cy + Number(chipYs[i]);
+            tw = this.hzWT(b,clab,atx + 8,aty + 6,180,13,"sb",on ? uint(T.ontxt) : (dim ? uint(T.off) : uint(T.txt)),1.2,"left",13);
             cw = Math.round(this.hzTW(tw) + 18);
-            sg.beginFill(on ? acc : uint(T.mut), on ? 0.9 : (dim ? 0.12 : 0.2));
-            sg.drawRoundRect(at,4,cw,28,28,28);
-            sg.endFill();
-            tw.x = at + 8;
-            var visX:Number = cx + at;
-            var visR:Number = Math.min(visX + cw, cx + chipInner);
-            var visL:Number = Math.max(visX, cx);
-            if(visR > visL)
+            g.beginFill(on ? acc : uint(T.mut), on ? 0.9 : (dim ? 0.12 : 0.2));
+            g.drawRoundRect(atx,aty,cw,28,28,28);
+            g.endFill();
+            tw.x = atx + 8;
+            if(!overlayOn)
             {
-               this.hzMlHits.push({"id":"chip" + i,"x":visL,"y":cy + 4,"w":visR - visL,"h":28});
+               this.hzMlHits.push({"id":"chip" + i,"x":atx,"y":aty,"w":cw,"h":28});
             }
-            at += cw + 8;
             i++;
          }
 
-         var fy:Number = oy + 80;
+         var divY:Number = cy + chipBlockH + 8;
+         g.beginFill(uint(T.line),Number(T.la));
+         g.drawRect(ox + 22,divY,HZ_ML_W - 44,1);
+         g.endFill();
+         var fy:Number = divY + 14;
          this.hzSetKey(b,g,ox + 22,fy + 4,"/",uint(T.mut),24,13,13);
          var boxX:Number = ox + 56;
          var boxW:Number = 320;
@@ -3609,22 +3668,38 @@
          if(this.hzMlPad && !this.hzMlFindOn && this.hzMlFind.length == 0) { findLab = "Find (keyboard only)"; }
          var findCol:uint = (this.hzMlFindOn || this.hzMlFind.length > 0) ? uint(T.txt) : uint(T.mut);
          var ftf:TextField = this.hzWT(b,findLab,boxX + 10,fy + 6,boxW - 28,13,"rg",findCol,0.3,"left",13);
-         if(this.hzMlFindOn)
+         if(this.hzMlFindOn && !overlayOn)
          {
             var caretX:Number = boxX + 10 + (this.hzMlFind.length > 0 ? Math.min(boxW - 36, Math.round(this.hzTW(ftf))) : 0);
-            g.beginFill(uint(T.txt), ((this.hz41Now() % 800) < 400) ? 0.9 : 0.15);
-            g.drawRect(caretX + 1, fy + 6, 1, 16);
-            g.endFill();
+            this.hzMlCaret = new Sprite();
+            this.hzMlCaret.mouseEnabled = false;
+            this.hzMlCaret.mouseChildren = false;
+            this.hzMlCaret.x = caretX + 1;
+            this.hzMlCaret.y = fy + 6;
+            this.hzMlCaret.graphics.beginFill(uint(T.txt),1);
+            this.hzMlCaret.graphics.drawRect(0,0,1,16);
+            this.hzMlCaret.graphics.endFill();
+            this.hzMlCaret.alpha = ((this.hz41Now() % 800) < 400) ? 0.9 : 0.15;
+            b.addChild(this.hzMlCaret);
          }
-         this.hzMlHits.push({"id":"find","x":ox + 22,"y":fy,"w":boxX + boxW - (ox + 22),"h":28});
+         else { this.hzMlCaret = null; }
+         if(!overlayOn)
+         {
+            this.hzMlHits.push({"id":"find","x":ox + 22,"y":fy,"w":boxX + boxW - (ox + 22),"h":28});
+         }
          var allOn:Boolean = this.hzMlAllTime;
          this.hzSetSwitch(b,g,ox + HZ_ML_W - 22,fy + 18,allOn,T,false);
          this.hzWT(b,"ALL TIME",ox + HZ_ML_W - 70,fy + 8,80,13,"sb",uint(T.lab),1.2,"right",13);
-         this.hzMlHits.push({"id":"alltime","x":ox + HZ_ML_W - 120,"y":fy,"w":98,"h":28});
+         if(!overlayOn)
+         {
+            this.hzMlHits.push({"id":"alltime","x":ox + HZ_ML_W - 120,"y":fy,"w":98,"h":28});
+         }
 
          var list:Array = this.hzMsglogList();
-         var rowTop:Number = oy + 116;
+         var rowTop:Number = fy + 36;
          var rowH:Number = 320;
+         if(!overlayOn)
+         {
          if(this.hzMlScroll < 0) { this.hzMlScroll = 0; }
          var maxSc:int = Math.max(0,list.length - HZ_ML_VIS);
          if(this.hzMlScroll > maxSc) { this.hzMlScroll = maxSc; }
@@ -3786,13 +3861,25 @@
          {
             this.hzWT(b,this.hzMlNotice,ox + 28,foot + 36,400,13,"sb",uint(T.note),0.4,"left",13);
          }
-         if(this.hzPopTop() == "logset" || this.hzPopTop() == "mlhist") { this.hzMsglogDrawSettings(b,g,T,acc,ox,oy); }
-         if(this.hzPopTop() == "mlchars") { this.hzMsglogDrawChars(b,g,T,acc,ox,oy); }
-         if(this.hzPopTop() == "mlconfirm") { this.hzMsglogDrawConfirm(b,g,T,acc,ox,oy); }
+         }
+         if(this.hzPopTop() == "logset" || this.hzPopTop() == "mlhist") { this.hzMsglogDrawSettings(T,acc,ox,oy); }
+         if(this.hzPopTop() == "mlchars") { this.hzMsglogDrawChars(T,acc,ox,oy); }
+         if(this.hzPopTop() == "mlconfirm") { this.hzMsglogDrawConfirm(T,acc,ox,oy); }
       }
 
-      private function hzMsglogDrawConfirm(b:Sprite, g:*, T:Object, acc:uint, ox:Number, oy:Number) : void
+      private function hzMsglogOverlayLayer() : Sprite
       {
+         var ov:Sprite = new Sprite();
+         ov.mouseEnabled = false;
+         ov.mouseChildren = false;
+         this.hzMlLayer.addChild(ov);
+         return ov;
+      }
+
+      private function hzMsglogDrawConfirm(T:Object, acc:uint, ox:Number, oy:Number) : void
+      {
+         var b:Sprite = this.hzMsglogOverlayLayer();
+         var g:* = b.graphics;
          var n:int = 0;
          var i:int = 0;
          while(i < this.hzMlRows.length)
@@ -3851,8 +3938,21 @@
 
       private function hzMsglogSaveIni() : void
       {
-         var p:Object = this.hzSetPend != null ? this.hzSetPend : this.hzSetCurrent();
-         this.hzSetSaveText = this.hzBuildIniText(p);
+         var a:Array = [];
+         a.push("[MessageLog]");
+         a.push("Record=" + (this.hzMlRecord ? "1" : "0"));
+         a.push("LogTypes=" + this.hzMlTypes);
+         a.push("HistorySize=" + String(this.hzMlHistory));
+         a.push("MissedBadge=" + (this.hzMlMissed ? "1" : "0"));
+         a.push("Persist=" + (this.hzMlPersist ? "1" : "0"));
+         this.hzMlSaveIni = a.join("\r\n") + "\r\n";
+      }
+
+      public function hzTakeMsglogIni() : String
+      {
+         var s:String = this.hzMlSaveIni != null ? this.hzMlSaveIni : "";
+         this.hzMlSaveIni = "";
+         return s;
       }
 
       private function hzMsglogOpenSettings() : void
@@ -3883,8 +3983,10 @@
          return rows;
       }
 
-      private function hzMsglogDrawSettings(b:Sprite, g:*, T:Object, acc:uint, ox:Number, oy:Number) : void
+      private function hzMsglogDrawSettings(T:Object, acc:uint, ox:Number, oy:Number) : void
       {
+         var b:Sprite = this.hzMsglogOverlayLayer();
+         var g:* = b.graphics;
          var cw:Number = HZ_MLS_W;
          var ch:Number = HZ_MLS_H;
          var cx:Number = ox + Math.round((HZ_ML_W - cw) / 2);
@@ -3985,11 +4087,13 @@
          br -= this.hzSetBtn(b,g,br,foot + 20,"BACK",false,false,this.hzMlHover == "mlsback",T,"mlsback",13,13) + 10;
          this.hzSetBtn(b,g,br,foot + 20,"CLEAR HISTORY",false,true,this.hzMlHover == "mlsclear",T,"mlsclear",13,13);
          while(this.hzSetHits.length > hit1) { this.hzMlHits.push(this.hzSetHits.pop()); }
-         if(this.hzPopTop() == "mlhist") { this.hzMsglogDrawHist(b,g,T,acc,ox,oy); }
+         if(this.hzPopTop() == "mlhist") { this.hzMsglogDrawHist(T,acc,ox,oy); }
       }
 
-      private function hzMsglogDrawHist(b:Sprite, g:*, T:Object, acc:uint, ox:Number, oy:Number) : void
+      private function hzMsglogDrawHist(T:Object, acc:uint, ox:Number, oy:Number) : void
       {
+         var b:Sprite = this.hzMsglogOverlayLayer();
+         var g:* = b.graphics;
          var cw:Number = 420;
          var ch:Number = 168;
          var cx:Number = ox + Math.round((HZ_ML_W - cw) / 2);
@@ -4010,8 +4114,10 @@
          while(this.hzSetHits.length > hit0) { this.hzMlHits.push(this.hzSetHits.pop()); }
       }
 
-      private function hzMsglogDrawChars(b:Sprite, g:*, T:Object, acc:uint, ox:Number, oy:Number) : void
+      private function hzMsglogDrawChars(T:Object, acc:uint, ox:Number, oy:Number) : void
       {
+         var b:Sprite = this.hzMsglogOverlayLayer();
+         var g:* = b.graphics;
          var cw:Number = 620;
          var ch:Number = 414;
          var cx:Number = ox + Math.round((HZ_ML_W - cw) / 2);
@@ -4314,7 +4420,11 @@
       public function hzToggleSettings() : void
       {
          if(!this.hzSetIsOpen && !this.hzArrange && this.hz40F11Block()) { return; }   // v0.42.0: F11 opens from the main HUD only (never while scanning)
-         if(this.hzPopLayers != null && this.hzPopLayers.length > 0) { this.hzPopLayers = []; }
+         if(this.hzPopLayers != null && this.hzPopLayers.length > 0)
+         {
+            this.hzMsglogForceClose();
+            this.hzPopLayers = [];
+         }
          if(this.hzArrange) { this.hzArrExit(false); return; }
          if(this.hzSetIsOpen) { this.hzSetCancel(); return; }
          try { this.hz30ModProbeAll(); } catch(errMod:Error) { }
@@ -4352,6 +4462,7 @@
 
       private function hzSetClose() : void
       {
+         this.hzMsglogForceClose();
          this.hzSetIsOpen = false;
          try { this.hz37Reset(); } catch(e37r:Error) { }
          this.hzSetPend = null;
@@ -4416,7 +4527,15 @@
             // optional codes (a plugin build that forwards the mouse wheel); the selection follows the view
             case "wheelup": this.hzSetScrollBy(-1); break;
             case "wheeldown": this.hzSetScrollBy(1); break;
-            case "ok": this.hzSetApply(); return;
+            case "ok":
+               if(this.hzSetRow >= 0 && this.hzSetRow < rows.length && rows[this.hzSetRow] != null && rows[this.hzSetRow].t == "x")
+               {
+                  this.hzSetChange(rows[this.hzSetRow],1);
+                  this.hzSetDraw();
+                  return;
+               }
+               this.hzSetApply();
+               return;
             case "cancel": this.hzSetCancel(); return;
             default: return;
          }
@@ -4828,7 +4947,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.6";
+      private static const HZ_BUILD:String = "0.43.0.7";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -4875,7 +4994,7 @@
 
       // window text: own faces ("rg" / "sb" / "bd" via hzFontName per-face fallback), whole pixels, no filters.
       // (x, y) is the mockup's text origin (left or right edge per align), compensating the 2 px TextField gutter.
-      private function hzWT(p:Sprite, txt:String, x:Number, y:Number, w:Number, fs:Number, face:String, col:uint, ls:Number = 0, align:String = "left", minPx:int = 0) : TextField
+      private function hzWT(p:Sprite, txt:String, x:Number, y:Number, w:Number, fs:Number, face:String, col:uint, ls:Number = 0, align:String = "left", minPx:int = 13) : TextField
       {
          var t:TextField = new TextField();
          t.embedFonts = true;
@@ -4905,7 +5024,7 @@
 
       // keycap: 1 px ring drawn inside the box (never clipped), tinted fill; returns its width
       // minPx is forwarded to hzWT so the log can keep a 13 px floor at TextScale 0.90-0.96.
-      private function hzSetKey(b:Sprite, g:*, x:Number, y:Number, k:String, col:uint, h:Number, fs:Number, minPx:int = 0) : Number
+      private function hzSetKey(b:Sprite, g:*, x:Number, y:Number, k:String, col:uint, h:Number, fs:Number, minPx:int = 13) : Number
       {
          var t:TextField = this.hzWT(b,k,x,y,120,fs,"bd",col,0.4,"left",minPx);
          var tw:Number = Math.round(this.hzTW(t));
@@ -4943,7 +5062,7 @@
 
       // pill button (OK / CANCEL / ARRANGE / OPEN); returns its width; right edge R
       // minPx is forwarded to hzWT so the log can keep a 13 px floor at TextScale 0.90-0.96.
-      private function hzSetBtn(b:Sprite, g:*, R:Number, y:Number, lab:String, prim:Boolean, outline:Boolean, hov:Boolean, T:Object, id:String, fs:Number = 12, minPx:int = 0) : Number
+      private function hzSetBtn(b:Sprite, g:*, R:Number, y:Number, lab:String, prim:Boolean, outline:Boolean, hov:Boolean, T:Object, id:String, fs:Number = 12, minPx:int = 13) : Number
       {
          var acc:uint = uint(T.acc);
          var t:TextField = this.hzWT(b,lab,0,y + (fs > 12 ? 5 : 6),220,fs,"sb",prim ? uint(T.ontxt) : uint(T.txt),1.8,"left",minPx);
@@ -5720,8 +5839,7 @@
       {
          if(this.hzPopLayers != null && this.hzPopLayers.length > 0)
          {
-            var topM:String = this.hzPopTop();
-            if(topM == "log" || topM == "mlconfirm") { this.hzMsglogMouse(nx,ny,down); return; }
+            if(this.hzMlIsTop()) { this.hzMsglogMouse(nx,ny,down); return; }
             return;
          }
          if(this.hzArrange) { this.hzArrMouse(nx,ny,down); return; }

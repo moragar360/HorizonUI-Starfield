@@ -1202,6 +1202,11 @@ namespace HZ
 			GValue arg(k.c_str());
 			HudInvoke("hzSettingsKey", nullptr, &arg, 1);
 		}
+		// After alt-tab (and after the main / character menus) raw input
+		// pauses because the window is not registered with INPUTSINK.
+		// `sent` stays true, so a click is not forwarded until the cursor
+		// moves or F11 reopens (OnSettingsOpenChanged sets dirty). Resetting
+		// `sent` from WndProc is crash-prone; leave the latch as-is.
 		static bool sent = false;
 		if (dirty || !sent) {
 			GValue args[3] = { GValue(x), GValue(y), GValue(lmb) };
@@ -1277,11 +1282,13 @@ namespace HZ
 	std::string       g_fileAct;
 	std::string       g_fileReply;
 	std::string       g_fileSaveIni;
+	std::string       g_fileMsglogIni;
 	std::atomic<bool> g_fileStateReady{false};
 	std::atomic<bool> g_fileStateWant{true};
 	std::atomic<bool> g_fileActReady{false};
 	std::atomic<bool> g_fileReplyReady{false};
 	std::atomic<bool> g_fileSaveReady{false};
+	std::atomic<bool> g_fileMsglogReady{false};
 
 	std::string Today()
 	{
@@ -1362,6 +1369,29 @@ namespace HZ
 				LoadIni(false);
 			} else {
 				REX::WARN("save FAILED: {}", r.msg);
+			}
+		}
+		std::string mlIni;
+		{
+			std::lock_guard lk(g_fileMu);
+			if (g_fileMsglogReady.exchange(false))
+				mlIni = std::move(g_fileMsglogIni);
+		}
+		if (!mlIni.empty()) {
+			try {
+				if (!HZF::IsMessageLogOnlyIni(mlIni)) {
+					REX::WARN("message log save ignored (not [MessageLog] only)");
+				} else {
+					const auto P = FilesP();
+					const auto user = HZF::ReadOr(P.user);
+					const auto next = HZF::ReplaceSection(user, "messagelog", mlIni);
+					if (HZF::WriteAtomic(P.user, next))
+						REX::INFO("message log settings saved");
+					else
+						REX::WARN("message log save FAILED");
+				}
+			} catch (...) {
+				REX::WARN("message log save FAILED");
 			}
 		}
 	}
@@ -1461,6 +1491,15 @@ namespace HZ
 				g_fileSaveReady.store(true);
 			}
 		}
+		GValue mlIni;
+		if (HudInvoke("hzTakeMsglogIni", &mlIni) && mlIni.IsString()) {
+			const char* s = mlIni.GetString();
+			if (s && *s) {
+				std::lock_guard lk(g_fileMu);
+				g_fileMsglogIni = s;
+				g_fileMsglogReady.store(true);
+			}
+		}
 	}
 
 	// v0.38: is the loaded HUDMenu Horizon's? (other HUD replacers ship their own hudmenu.gfx; the F11
@@ -1543,10 +1582,10 @@ namespace HZ
 	void ScanPushLog(bool a_open, bool a_ok, bool a_hud)
 	{
 		if (a_open && !g_pushLogged.exchange(true, std::memory_order_acq_rel))
-			REX::INFO("scanner: scan state push started ({} {})",
+			REX::INFO("scan push open ({} {})",
 				a_hud ? "HUD hz41DllScan" : "HUD messages hzcDllScan", a_ok ? "OK" : "not answered");
 		if (!a_open && !g_pushEndLogged.exchange(true, std::memory_order_acq_rel))
-			REX::INFO("scanner: scan state push ended (closed sent once; {} {})",
+			REX::INFO("scan push close ({} {})",
 				a_hud ? "HUD" : "HUD messages", a_ok ? "OK" : "not answered");
 	}
 
@@ -2660,6 +2699,15 @@ namespace HZ
 			if (n.tick == 0 || a_now < n.tick || a_now - n.tick > kRxMaxAge) continue;
 			hzmsg::Hit hit;
 			try { hit = hzmsg::Match(n.text, phrases); } catch (...) { hit = {}; }
+			if (!hit.ok) {
+				try {
+					if (hzlog::IsSaveLine(n.text) || hzlog::IsCalmedLine(n.text, phrases))
+						continue;
+					hit = hzmsg::GameNotice(n.text);
+				} catch (...) {
+					hit = {};
+				}
+			}
 			if (!hit.ok) continue;
 			if (hit.kind == "unavailable" && hit.sub == "busy" && hit.name.empty()) {
 				const auto who = HzCrossName();
@@ -4021,7 +4069,8 @@ namespace HZ
 				MsglogPushDecision(clearDec);
 			else if (needWrite)
 				MsglogRequestWrite(true);
-			if (hzlog::StaleReloadPostQueue(needRecover)) {
+			const bool recoverNow = hzlog::StaleReloadPostQueue(needRecover);
+			if (recoverNow) {
 				MsglogQueueRecover(true);
 				std::lock_guard lk(g_mlMu);
 				g_ml.FinishStaleReload(GetTickCount64());

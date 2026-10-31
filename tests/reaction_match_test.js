@@ -47,12 +47,13 @@ const DIR = numArray("HZC_RX_DIR");
 const NOT = stringArray("HZC_RX_NOT");
 const TITLE = stringArray("HZC_RX_TITLE");
 
-expect(src.indexOf('private static const HZC_BUILD:String = "0.43.0.6";') >= 0, "comms build id is 0.43.0.6");
+expect(src.indexOf('private static const HZC_BUILD:String = "0.43.0.7";') >= 0, "comms build id is 0.43.0.7");
 expect(src.indexOf('HudMessagesX') >= 0 && src.indexOf("function hzcMsgLayout") >= 0, "HUD Messages box reads a saved layout");
 expect(src.indexOf("x = Math.max(vr.x,Math.min(vr.right - w,x));") >= 0, "HUD Messages box is clamped on screen");
 expect(src.indexOf("y = Math.max(vr.y,Math.min(vr.bottom - h,y));") >= 0, "HUD Messages box is clamped vertically");
 expect(src.indexOf("hud messages home:") >= 0, "HUD Messages home is logged for the in-game check");
 expect(src.indexOf("Home is the stable visible-rect default") >= 0, "HUD Messages home is not the live line bounds");
+expect(src.indexOf('if(kind == "game") { return n.length > 0 ? n.toUpperCase() : "GAME"; }') >= 0, "unmatched game cards title GAME or ARTIFACT");
 expect(src.indexOf('if(sub == "kid") { return "KID STUFF"; }') >= 0, "Kid Stuff title is KID STUFF");
 expect(src.indexOf("SENT HOME") < 0, "SENT HOME is not a card title");
 expect(src.indexOf('if(sub == "bounty") { return "BOUNTY PAID"; }') >= 0, "bounty paid title is BOUNTY PAID");
@@ -1760,6 +1761,7 @@ function hzcCardTitle(kind, sub, name) {
 	if (sub === "busy") return "BUSY";
 	if (sub === "calmed") return "CALMED";
 	if (sub === "caught") return "PICKPOCKET";
+	if (kind === "game") return n.length > 0 ? n.toUpperCase() : "GAME";
 	return "NOTICE";
 }
 function hzcCardMatch(kind, sub, name, value) {
@@ -1790,6 +1792,10 @@ function hzcCardMatch(kind, sub, name, value) {
 	const none = dllMatch("Shipment fees: Tariffs Initiated", en);
 	expect(none == null, "no-amount fee line has no DLL payload");
 	expect(hzcCardMatch("", "info", "", "") == null, "empty kind is not a card");
+	const gameCard = hzcCardMatch("game", "notice", "ARTIFACT", "GAME");
+	expect(gameCard && gameCard.title === "ARTIFACT", "Artifact game card titles ARTIFACT");
+	const generic = hzcCardMatch("game", "notice", "GAME", "GAME");
+	expect(generic && generic.title === "GAME", "unmatched game card titles GAME");
 }
 function asFunction(text) {
 	const start = text.search(/(?:public|private) function /);

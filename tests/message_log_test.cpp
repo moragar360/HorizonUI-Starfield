@@ -763,8 +763,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.6", "file version is 0.43.0.6");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 6, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.7", "file version is 0.43.0.7");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 7, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -814,6 +814,11 @@ int main()
 		Expect(ClassifyHud("Prognosis improved (Contusions)", en, title, tag) == Kind::Medical, "affliction is medical");
 		Expect(ClassifyHud("Sarah Morgan considers you a friend.", en, title, tag) == Kind::Crew, "crew line");
 		Expect(ClassifyHud("No direct path seen.", en, title, tag) == Kind::Game, "unmatched is game");
+		ExpectEq(title, "GAME", "unmatched title is GAME");
+		Expect(ClassifyHud("Artifact ETA Removed.", en, title, tag) == Kind::Game, "Artifact notice is game");
+		ExpectEq(title, "ARTIFACT", "Artifact title is ARTIFACT");
+		Expect(ClassifyHud("New Artifact located.", en, title, tag) == Kind::Game, "any Artifact text is game");
+		ExpectEq(title, "ARTIFACT", "any Artifact text titles ARTIFACT");
 		Expect(ClassifyHud("Sam Coe liked that.", en, title, tag) == Kind::Reaction, "liked that is a reaction");
 		ExpectEq(title, "Sam Coe", "reaction title is the companion name");
 		ExpectEq(tag, "LIKED", "liked tag");
@@ -1513,7 +1518,7 @@ int main()
 		Expect(stillMid && stillFuture, "later-point flags survive a new capture");
 		Expect(b.nextId > futureId, "new rows take ids after the later-point rows");
 
-		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.6");
+		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.7");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok, "later-point flags round-trip through JSON");
 		Buffer restarted;
@@ -1563,7 +1568,7 @@ int main()
 		Buffer loaded;
 		loaded.LoadState(held);
 		ExpectEqI(static_cast<int>(loaded.nextId), 42, "LoadState keeps the persisted nextId");
-		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.6");
+		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.7");
 		Expect(json.find("\"nextId\": 42") != std::string::npos, "ToJson writes nextId");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok && parsed.state.nextId == 42, "FromJson reads the persisted nextId");
@@ -2980,10 +2985,12 @@ int main()
 			Expect(body.find("StepStaleReload") != std::string::npos
 				&& body.find("needRecover = step.recover") != std::string::npos,
 				"S5 stale held reload uses StepStaleReload");
-			Expect(body.find("StaleReloadPostQueue(needRecover)") != std::string::npos
+			Expect(body.find("const bool recoverNow = hzlog::StaleReloadPostQueue(needRecover);") != std::string::npos
+				&& body.find("if (recoverNow) {") != std::string::npos
+				&& body.find("if (recoverNow &&") == std::string::npos
 				&& body.find("MsglogQueueRecover(true)") != std::string::npos
 				&& body.find("FinishStaleReload") != std::string::npos,
-				"S9 stale held reload re-queues through StaleReloadPostQueue");
+				"S9 stale held reload re-queues through recoverNow");
 			Expect(body.find("stale load retry cap reached") != std::string::npos
 				&& body.find("step.logCap") != std::string::npos,
 				"the stale reload cap hit is logged once per hold");
@@ -3126,6 +3133,74 @@ int main()
 		Expect(as.find("this.hz41Now()") != std::string::npos
 			&& as.find("((this.hz41Now() % 800) < 400)") != std::string::npos,
 			"Find caret blink uses hz41Now");
+		Expect(as.find("function hzMlIsTop") != std::string::npos, "hzMlIsTop covers every Message Log layer");
+		Expect(as.find("function hzMsglogOverlayLayer") != std::string::npos,
+			"each overlay draws into a new child Sprite");
+		Expect(as.find("function hzMsglogChipWrap") != std::string::npos, "chips wrap onto a second line");
+		Expect(as.find("function hzMsglogCaretTick") != std::string::npos, "caret blink has its own tick");
+		Expect(as.find("this.hzMsglogCaretTick()") != std::string::npos, "hzOnFrame ticks the Find caret");
+		Expect(as.find("minPx:int = 13") != std::string::npos, "hzWT defaults to a 13 px floor");
+		{
+			const auto popKey = AsFnBody(as, "private function hzPopKey", "public function hzMsglogOpenHint");
+			const auto need = AsFnBody(as, "public function hzMsglogNeed", "public function hzTakeMsglogAct");
+			const auto view = AsFnBody(as, "public function hzSetMsglogView", "private function hzMsglogOpen");
+			const auto open = AsFnBody(as, "private function hzMsglogOpen", "private function hzMsglogForceClose");
+			const auto force = AsFnBody(as, "private function hzMsglogForceClose", "private function hzMsglogEnsure");
+			const auto mouse = AsFnBody(as, "public function hzSettingsMouse", "if(this.hzArrange)");
+			Expect(popKey.find("this.hzMlIsTop()") != std::string::npos, "hzPopKey uses hzMlIsTop");
+			Expect(need.find("this.hzMlIsTop()") != std::string::npos, "hzMsglogNeed uses hzMlIsTop");
+			Expect(view.find("this.hzMlIsTop()") != std::string::npos, "hzSetMsglogView uses hzMlIsTop");
+			Expect(open.find("this.hzMlIsTop()") != std::string::npos, "hzMsglogOpen uses hzMlIsTop");
+			Expect(force.find("this.hzMlIsTop()") != std::string::npos, "hzMsglogForceClose uses hzMlIsTop");
+			Expect(mouse.find("this.hzMlIsTop()") != std::string::npos, "hzSettingsMouse uses hzMlIsTop");
+			Expect(mouse.find("topM == \"log\" || topM == \"mlconfirm\"") == std::string::npos,
+				"hzSettingsMouse no longer lists only log and mlconfirm");
+		}
+		{
+			const auto draw = AsFnBody(as, "private function hzMsglogDraw", "private function hzMsglogOverlayLayer");
+			Expect(draw.find("if(!this.hzMlIsTop())") != std::string::npos, "hzMsglogDraw hides the layer when no log is on top");
+			Expect(draw.find("this.hzMlLayer.visible = false") != std::string::npos, "a stale overlay is hidden");
+			Expect(draw.find("if(!overlayOn)") != std::string::npos, "log rows are not drawn under an overlay");
+			Expect(draw.find("this.hzMsglogDrawSettings(T,acc,ox,oy)") != std::string::npos, "settings overlay uses the new child path");
+			Expect(draw.find("this.hzMsglogDrawConfirm(T,acc,ox,oy)") != std::string::npos, "confirm overlay uses the new child path");
+		}
+		{
+			const auto tog = AsFnBody(as, "public function hzToggleSettings", "private function hzSetCancel");
+			const auto close = AsFnBody(as, "private function hzSetClose", "public function hzTakeSaveIni");
+			Expect(tog.find("this.hzMsglogForceClose()") != std::string::npos, "F11 toggle ForceCloses the log overlay");
+			Expect(close.find("this.hzMsglogForceClose()") != std::string::npos, "F11 close ForceCloses the log overlay");
+		}
+		{
+			const auto key = AsFnBody(as, "public function hzSettingsKey", "private function hzSetChange");
+			Expect(key.find("rows[this.hzSetRow].t == \"x\"") != std::string::npos, "ENTER on an x-type row activates it");
+			Expect(key.find("this.hzSetChange(rows[this.hzSetRow],1)") != std::string::npos, "ENTER on MESSAGE LOG opens the log");
+			Expect(key.find("case \"ok\": this.hzSetApply(); return;") == std::string::npos,
+				"ENTER on an x-type row does not apply or save");
+		}
+		{
+			const auto save = AsFnBody(as, "private function hzMsglogSaveIni", "public function hzTakeMsglogIni");
+			Expect(save.find("[MessageLog]") != std::string::npos, "hzMsglogSaveIni writes the MessageLog section");
+			Expect(save.find("hzSetPend") == std::string::npos, "hzMsglogSaveIni does not read hzSetPend");
+			Expect(save.find("hzBuildIniText") == std::string::npos, "hzMsglogSaveIni does not build a full F11 dump");
+			Expect(save.find("hzSetSaveText") == std::string::npos, "hzMsglogSaveIni does not flush F11 save text");
+			Expect(as.find("function hzTakeMsglogIni") != std::string::npos, "the movie exposes hzTakeMsglogIni");
+		}
+		Expect(main.find("hzTakeMsglogIni") != std::string::npos, "DLL takes the MessageLog-only save");
+		Expect(main.find("IsMessageLogOnlyIni") != std::string::npos, "DLL rejects a full dump on the MessageLog save path");
+		Expect(main.find("hzmsg::GameNotice") != std::string::npos, "unmatched HUD notices become Horizon game cards");
+		Expect(main.find("scan push open") != std::string::npos && main.find("scan push close") != std::string::npos,
+			"scan push logs one INFO line on open and close");
+		Expect(main.find("Resetting") != std::string::npos && main.find("sent") != std::string::npos
+			&& main.find("WndProc") != std::string::npos,
+			"alt-tab F11 mouse root cause is documented");
+		{
+			const auto only = std::string("[MessageLog]\r\nRecord=1\r\nLogTypes=game\r\nHistorySize=500\r\nMissedBadge=1\r\nPersist=1\r\n");
+			Expect(HZF::IsMessageLogOnlyIni(only), "a MessageLog-only block is accepted");
+			Expect(!HZF::IsMessageLogOnlyIni("[Style]\r\nTextScale=1.1\r\n[MessageLog]\r\nRecord=1\r\n"),
+				"a full dump is not a MessageLog-only block");
+			Expect(!HZF::IsMessageLogOnlyIni("[MessageLog]\r\nRecord=1\r\nTextScale=1.1\r\n"),
+				"a foreign key is not a MessageLog-only block");
+		}
 		Expect(as.find("Find (keyboard only)") != std::string::npos, "Find shows a keyboard-only note on a pad");
 		Expect(as.find("UNPIN") != std::string::npos, "the footer PIN button can read UNPIN");
 		Expect(as.find("MESSAGE LOG SETTINGS") != std::string::npos, "the settings page is drawn");
@@ -3140,7 +3215,7 @@ int main()
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.6\"") != std::string::npos, "HUD movie build id is 0.43.0.6");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.7\"") != std::string::npos, "HUD movie build id is 0.43.0.7");
 		Expect(as.find("greyed") == std::string::npos, "notes use American grayed");
 		Expect(as.find("grayed") != std::string::npos, "locked rows are grayed");
 		Expect(as.find("F12") == std::string::npos || as.find("SETTINGS MENU KEY") != std::string::npos,
@@ -3186,30 +3261,28 @@ int main()
 			Expect(body.find("this.hzMlAct = \"\"") != std::string::npos,
 				"ForceClose clears hzMlAct so nothing runs the next open");
 		}
-		Expect(as.find("hzMsglogChipKeepVisible") != std::string::npos
-			&& as.find("strip.mask = clip") != std::string::npos,
-			"the chip row scrolls sideways and clips to the popup");
+		Expect(as.find("function hzMsglogChipWrap") != std::string::npos
+			&& as.find("strip.mask = clip") == std::string::npos,
+			"the chip row wraps instead of clipping");
 		{
-			const auto chip = as.find("function hzMsglogChipKeepVisible");
-			const auto next = as.find("function hzMsglogKindIcon", chip);
+			const auto chip = as.find("function hzMsglogChipWrap");
+			const auto next = as.find("function hzMsglogCaretTick", chip);
 			const auto body = chip != std::string::npos && next > chip ? as.substr(chip, next - chip) : std::string();
-			Expect(body.find("if(activeLeft < this.hzMlChipX)") != std::string::npos
-				&& body.find("if(activeLeft + activeW > this.hzMlChipX + chipInner)") != std::string::npos
-				&& body.find("if(this.hzMlChipX > maxX)") != std::string::npos
-				&& body.find("if(this.hzMlChipX < 0)") != std::string::npos,
-				"chip keep-visible scrolls and clamps the strip");
+			Expect(body.find("if(x > 0 && x + cw > chipInner)") != std::string::npos
+				&& body.find("y += 34") != std::string::npos,
+				"chips wrap onto a second line when they do not fit");
 		}
 		Expect(as.find("hzMsglogKindIcon") != std::string::npos, "rows draw a type icon");
-		Expect(as.find("minPx:int = 0) : Number") != std::string::npos, "hzSetKey and hzSetBtn accept minPx");
+		Expect(as.find("minPx:int = 13) : Number") != std::string::npos, "hzSetKey and hzSetBtn default to a 13 px floor");
 		Expect(as.find("if(minPx > sz) { sz = minPx; }") != std::string::npos,
 			"hzWT applies the minPx floor");
 		{
 			const auto key = AsFnBody(as, "private function hzSetKey", "private function hzSetSwitch");
-			Expect(key.find("minPx:int = 0) : Number") != std::string::npos
+			Expect(key.find("minPx:int = 13) : Number") != std::string::npos
 				&& key.find("this.hzWT(b,k,x,y,120,fs,\"bd\",col,0.4,\"left\",minPx)") != std::string::npos,
 				"hzSetKey forwards minPx to hzWT");
 			const auto btn = AsFnBody(as, "private function hzSetBtn", "private function hzSetRowH");
-			Expect(btn.find("fs:Number = 12, minPx:int = 0) : Number") != std::string::npos
+			Expect(btn.find("fs:Number = 12, minPx:int = 13) : Number") != std::string::npos
 				&& btn.find("this.hzWT(b,lab,0,y + (fs > 12 ? 5 : 6),220,fs,\"sb\",prim ? uint(T.ontxt) : uint(T.txt),1.8,\"left\",minPx)") != std::string::npos,
 				"hzSetBtn forwards minPx to hzWT");
 		}
@@ -3221,8 +3294,8 @@ int main()
 			"the confirm CLEAR button passes minPx 13");
 		ExpectEqI(TextScaleFloorPx(13, 13), 13, "TextScale 0.90 on a 13 px face stays 13");
 		ExpectEqI(TextScaleFloorPx(13, 0), 12, "without minPx, TextScale 0.90 drops 13 to 12");
-		Expect(as.find("this.hzMsglogChipKeepVisible(chipW, chipInner, actL, actW)") != std::string::npos,
-			"the chip row calls keep-visible");
+		Expect(as.find("this.hzMsglogChipWrap(chipWs, chipInner)") != std::string::npos,
+			"the chip row calls wrap");
 		{
 			const auto ini = Slurp("Interface/HorizonUI/HorizonUI.default.ini");
 			Expect(ini.find("offers to delete") == std::string::npos, "Persist comment does not offer a delete");
@@ -3452,6 +3525,23 @@ int main()
 				s7.NoteRetrySuccess();
 				ExpectEqI(s7.staleReloadAttempts, 0, "S7 NoteRetrySuccess resets the attempt count");
 				Expect(!s7.staleCapWarned, "S7 NoteRetrySuccess clears the cap WARN latch");
+			}
+			{
+				Log mergeReset;
+				mergeReset.staleReloadAttempts = 4;
+				mergeReset.staleCapWarned = true;
+				mergeReset.buf.settings.persist = false;
+				Expect(mergeReset.MergeOnPersistOn(), "MergeOnPersistOn with Persist off is safe");
+				ExpectEqI(mergeReset.staleReloadAttempts, 0, "MergeOnPersistOn resets the attempt count");
+				Expect(!mergeReset.staleCapWarned, "MergeOnPersistOn clears the cap WARN latch");
+			}
+			{
+				Log loadReset;
+				loadReset.staleReloadAttempts = 3;
+				loadReset.staleCapWarned = true;
+				loadReset.LoadCurrent();
+				ExpectEqI(loadReset.staleReloadAttempts, 0, "LoadCurrent resets the attempt count");
+				Expect(!loadReset.staleCapWarned, "LoadCurrent clears the cap WARN latch");
 			}
 			{
 				const auto engB = MakeCharacter(0xBu, "Barrett");

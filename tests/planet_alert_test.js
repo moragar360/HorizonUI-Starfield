@@ -32,7 +32,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.43.0.6";', "HUD build id is 0.43.0.6");
+pin('private static const HZ_BUILD:String = "0.43.0.7";', "HUD build id is 0.43.0.7");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
@@ -579,7 +579,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.6";') >= 0, rel + " build is 0.43.0.6");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.7";') >= 0, rel + " build is 0.43.0.7");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -1344,6 +1344,160 @@ function afLoadWatch(s, now, frame) {
 	expect(afLoadWatch(loaded, 7016, 31).indexOf("relayout") >= 0, "t40 remeasure at frame 30");
 	expect(afLoadWatch(loaded, 7033, 121).indexOf("relayout") >= 0, "t40 remeasure at frame 120");
 }
+
+function hzWtPx(fs, ts, minPx) {
+	if (minPx == null) minPx = 13;
+	ts = Math.max(0.9, Math.min(1.15, ts));
+	let sz = Math.max(9, Math.round(fs * ts));
+	if (minPx > sz) sz = minPx;
+	return sz;
+}
+const settingsFs = [9, 10, 11, 12, 13];
+const settingsTs = [0.9, 1.0, 1.15];
+for (let si = 0; si < settingsFs.length; si++) {
+	for (let ti = 0; ti < settingsTs.length; ti++) {
+		const px = hzWtPx(settingsFs[si], settingsTs[ti]);
+		expect(px >= 13, "settings text at fs " + settingsFs[si] + " TextScale " + settingsTs[ti] + " is " + px + " px");
+	}
+}
+pin("minPx:int = 13", "hzWT defaults to a 13 px floor");
+
+function hzMsglogChipWrap(chipWs, chipInner) {
+	const out = [];
+	let x = 0;
+	let y = 0;
+	for (let i = 0; i < chipWs.length; i++) {
+		const cw = chipWs[i];
+		if (x > 0 && x + cw > chipInner) {
+			x = 0;
+			y += 34;
+		}
+		out.push({ x: x, y: y });
+		x += cw + 8;
+	}
+	return out;
+}
+function chipWsAt(ts) {
+	// In-game 0.43.0.6 clipped LOCATION / GAME / XP at TextScale 0.90.
+	const base = [72, 108, 78, 128, 76, 84, 100, 82, 118, 78, 58];
+	const scale = ts / 0.9;
+	return base.map(function (w) { return Math.round(w * scale); });
+}
+for (let ti = 0; ti < settingsTs.length; ti++) {
+	const ts = settingsTs[ti];
+	const wrap = hzMsglogChipWrap(chipWsAt(ts), 976 - 44);
+	expect(wrap.length === 11, "every chip is laid out at TextScale " + ts);
+	expect(wrap.some(function (c) { return c.y > 0; }), "chips wrap onto a second line at TextScale " + ts);
+	expect(wrap.every(function (c) { return c.x >= 0 && c.x < 976 - 44; }), "wrapped chips stay inside the log at TextScale " + ts);
+}
+pin("function hzMsglogChipWrap", "the movie wraps chips instead of clipping them");
+pin("divY + 14", "Find sits below a divider with extra space");
+
+function caretAlpha(now) {
+	return ((now % 800) < 400) ? 0.9 : 0.15;
+}
+expect(caretAlpha(0) === 0.9, "caret is on in the first 400 ms");
+expect(caretAlpha(399) === 0.9, "caret stays on before 400 ms");
+expect(caretAlpha(400) === 0.15, "caret is dim after 400 ms");
+expect(caretAlpha(800) === 0.9, "caret blink repeats without a redraw");
+pin("function hzMsglogCaretTick", "caret blink is independent of overlay redraws");
+pin("this.hzMsglogCaretTick()", "hzOnFrame ticks the Find caret");
+
+function makeHud() {
+	return {
+		hzPopLayers: [],
+		hzMlLayer: { visible: true, numChildren: 1 },
+		hzSetIsOpen: true,
+		hzArrange: false,
+		hzSetSaveText: "",
+		hzSetPend: { TextScale: 1.1, AccentColor: 3 },
+		activated: "",
+		hzSetRowObj: null,
+		hzPopTop: function () {
+			return this.hzPopLayers.length ? this.hzPopLayers[this.hzPopLayers.length - 1] : "";
+		},
+		hzPopPop: function () { return this.hzPopLayers.pop() || ""; },
+		hzPopPush: function (id) { this.hzPopLayers.push(id); },
+		hzMlIsTop: function () {
+			const t = this.hzPopTop();
+			return t === "log" || t === "mlconfirm" || t === "logset" || t === "mlhist" || t === "mlchars";
+		},
+		hzMsglogForceClose: function () {
+			if (this.hzMlLayer) {
+				this.hzMlLayer.visible = false;
+				this.hzMlLayer.numChildren = 0;
+			}
+			while (this.hzMlIsTop()) this.hzPopPop();
+		},
+		hzMsglogDraw: function () {
+			if (!this.hzMlIsTop()) {
+				if (this.hzMlLayer) {
+					this.hzMlLayer.visible = false;
+					this.hzMlLayer.numChildren = 0;
+				}
+				return;
+			}
+			this.hzMlLayer.visible = true;
+		},
+		hzToggleSettings: function () {
+			if (this.hzPopLayers.length > 0) {
+				this.hzMsglogForceClose();
+				this.hzPopLayers = [];
+			}
+			if (this.hzSetIsOpen) { this.hzSetCancel(); return; }
+			this.hzSetIsOpen = true;
+		},
+		hzSetCancel: function () { this.hzSetClose(); },
+		hzSetClose: function () { this.hzMsglogForceClose(); this.hzSetIsOpen = false; },
+		hzSetApply: function () { this.hzSetSaveText = "FULL"; this.hzSetClose(); },
+		hzSettingsKey: function (code) {
+			if (this.hzPopLayers.length) return;
+			if (code === "ok") {
+				const r = this.hzSetRowObj;
+				if (r && r.t === "x") { this.activated = r.k; return; }
+				this.hzSetApply();
+			}
+		},
+		hzMsglogSaveIni: function () {
+			this.hzMlSaveIni = "[MessageLog]\r\nRecord=1\r\n";
+		}
+	};
+}
+{
+	const h = makeHud();
+	h.hzPopPush("log");
+	h.hzPopPush("logset");
+	h.hzMlLayer.visible = true;
+	h.hzToggleSettings();
+	h.hzToggleSettings();
+	h.hzMsglogDraw();
+	expect(h.hzMlLayer.visible === false, "F11 -> log -> logset -> F11 -> F11 leaves hzMlLayer.visible == false");
+	expect(h.hzPopLayers.length === 0, "the second F11 does not leave a Message Log layer");
+}
+{
+	const h = makeHud();
+	h.hzSetRowObj = { t: "x", k: "_msglog" };
+	h.hzSettingsKey("ok");
+	expect(h.activated === "_msglog", "ENTER on the MESSAGE LOG row opens the log");
+	expect(h.hzSetSaveText === "", "ENTER on the MESSAGE LOG row does not save");
+	expect(h.hzSetPend.TextScale === 1.1, "pending F11 edits stay pending");
+}
+{
+	const h = makeHud();
+	h.hzSetRowObj = { t: "b", k: "ShowVitals" };
+	h.hzSettingsKey("ok");
+	expect(h.hzSetSaveText === "FULL", "ENTER on a non-x row still applies");
+}
+{
+	const h = makeHud();
+	h.hzMsglogSaveIni();
+	expect(h.hzSetSaveText === "", "Message Log save does not set hzSetSaveText");
+	expect(h.hzMlSaveIni.indexOf("[MessageLog]") === 0, "Message Log save writes only [MessageLog]");
+	expect(h.hzSetPend.AccentColor === 3, "Message Log save does not flush hzSetPend");
+}
+pin("function hzMlIsTop", "hzMlIsTop is the shared Message Log top-layer test");
+pin("function hzMsglogOverlayLayer", "overlays draw into a child Sprite added last");
+pin("function hzTakeMsglogIni", "the movie exposes a MessageLog-only take");
 
 if (failed) {
 	console.error(failed + " failed");

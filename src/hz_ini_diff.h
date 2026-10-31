@@ -259,6 +259,27 @@ namespace HZF {
 			return o;
 		}
 
+		// Purpose: true when the movie handed over only [MessageLog] keys.
+		// A full F11 dump must not use the Message Log save path.
+		inline bool IsMessageLogOnlyIni(const std::string& a_text)
+		{
+			Doc d = Parse(a_text);
+			int named = 0;
+			const Sec* ml = nullptr;
+			for (const auto& s : d.secs) {
+				if (s.name.empty()) continue;
+				++named;
+				if (s.name == "messagelog") ml = &s;
+			}
+			if (named != 1 || !ml) return false;
+			for (const auto& kv : ml->kv) {
+				if (kv.first != "record" && kv.first != "logtypes" && kv.first != "historysize"
+					&& kv.first != "missedbadge" && kv.first != "persist")
+					return false;
+			}
+			return !ml->kv.empty();
+		}
+
 		inline bool IsModuleSec(const std::string& a_n) { return a_n == "scanner" || a_n == "comms"; }
 		// v0.41.0 r2: keys a newer version replaced. Never written again by Diff (F11 save, presets, migration), so an old
 		// line cannot outlive the keys that replaced it. [Scanner] ScanShowVitals (0.40.3) = ScanShowVitalsHealth / O2 / Boost.

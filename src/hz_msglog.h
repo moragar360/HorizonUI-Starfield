@@ -620,7 +620,7 @@ inline Kind ClassifyHud(std::string_view a_text, const hzmsg::Templates& a_phras
 	a_tag.clear();
 	const auto hit = hzmsg::Match(a_text, a_phrases);
 	if (!hit.ok) {
-		a_title = "GAME";
+		a_title = hzmsg::ContainsFold(a_text, "artifact") ? "ARTIFACT" : "GAME";
 		return Kind::Game;
 	}
 	a_tag = hit.value;
@@ -3574,6 +3574,8 @@ public:
 
 	bool MergeOnPersistOn()
 	{
+		staleReloadAttempts = 0;
+		staleCapWarned = false;
 		if (!buf.settings.persist) return true;
 		LogState file;
 		lastNotice.clear();
@@ -3935,6 +3937,8 @@ public:
 
 	void LoadCurrent()
 	{
+		staleReloadAttempts = 0;
+		staleCapWarned = false;
 		LogState st;
 		lastNotice.clear();
 		persistHold = false;

@@ -1854,7 +1854,7 @@ package
       // ---------- 0.42.0.6: message log. HZC_MSG_LOG is the switch (false on this release). ----------
       // The DLL still writes the one-line status. Debug=0 in the ini also stops the queue.
       private static const HZC_MSG_LOG:Boolean = false;
-      private static const HZC_BUILD:String = "0.43.0.6";
+      private static const HZC_BUILD:String = "0.43.0.7";
       private var hzcRxDbgOn:Boolean = false;   // 0.42.0.14: off for release. hzcRxDbgIni still follows Debug=0.
       private var hzcRxDbgQ:Array = [];
       private var hzcRxDbgSeen:Array = [];   // {it, f}
@@ -2807,6 +2807,7 @@ package
          if(sub == "busy") { return "BUSY"; }
          if(sub == "calmed") { return "CALMED"; }
          if(sub == "caught") { return "PICKPOCKET"; }
+         if(kind == "game") { return n.length > 0 ? n.toUpperCase() : "GAME"; }
          return "NOTICE";
       }
       private function hzcCardIcon(g:*, kind:String, ix:Number, iy:Number, s:Number, col:uint) : void

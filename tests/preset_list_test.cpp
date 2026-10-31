@@ -59,11 +59,11 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.6", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 6, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.7", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 7, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "verbose reaction trace is off for this release");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "unfiltered HUD capture is off for this release");
-	Expect(HzFileVersionOk("0.43.0.6"), "4-part version ok");
+	Expect(HzFileVersionOk("0.43.0.7"), "4-part version ok");
 	Expect(!HzFileVersionOk("0.42.0"), "3-part version is not the file version");
 	Expect(!HzFileVersionOk("v0.42.0.6"), "leading v is not accepted");
 	Expect(!HzFileVersionOk("0.42.0.6 "), "trailing space rejected");
@@ -224,6 +224,22 @@ int main()
 			ok(hit("750 Credits wurden nach Hause geschickt.", deKid), "credits", "kid", "", "-750", 'C', "localized Kid Stuff template");
 		}
 		miss(std::string(201, 'A').c_str(), en, "over the 200 byte cap");
+		{
+			const auto art = hzmsg::GameNotice("Artifact ETA Removed.");
+			ok(art, "game", "notice", "ARTIFACT", "GAME", hzmsg::kTierEnglish, "Artifact ETA Removed. is a Horizon game card");
+			const auto path = hzmsg::GameNotice("No direct path seen.");
+			ok(path, "game", "notice", "GAME", "GAME", hzmsg::kTierEnglish, "unmatched notice is a generic game card");
+			const auto empty = hzmsg::GameNotice("");
+			if (empty.ok) {
+				std::cerr << "FAIL: empty GameNotice matched\n";
+				++g_fails;
+			} else std::cout << "ok  miss empty GameNotice\n";
+			const auto cut = hzmsg::Match("Artifact ETA Removed.", en);
+			if (cut.ok) {
+				std::cerr << "FAIL: Match still claims Artifact ETA Removed.\n";
+				++g_fails;
+			} else std::cout << "ok  Match still fail-closes Artifact ETA Removed.\n";
+		}
 		Expect(!hzmsg::UsablePhrase(""), "blank phrase");
 		Expect(!hzmsg::UsablePhrase("<ID=123>"), "stub phrase");
 		Expect(hzmsg::UsablePhrase("liked that."), "English phrase");
@@ -247,6 +263,8 @@ int main()
 		Expect(as.find("this.hzcCardMatch(kind,sub,name,value)") != std::string::npos, "card draw uses the live matcher");
 		Expect(as.find("if(rage >= 0 && rage < HZC_RX_PAIR) { eR.rebound = false; return \"queued\"; }") != std::string::npos, "a rebound merge is one-shot");
 		Expect(as.find("this.hzcRxReveal(e0.it)") != std::string::npos, "rebind uncovers the old clip first");
+		Expect(as.find("if(kind == \"game\") { return n.length > 0 ? n.toUpperCase() : \"GAME\"; }") != std::string::npos,
+			"unmatched game cards title GAME or ARTIFACT");
 		Expect(as.find("if(sub == \"caught\") { return \"PICKPOCKET\"; }") != std::string::npos, "pickpocket crime title is PICKPOCKET");
 		Expect(as.find("if(sub == \"takeback\" || sub == \"lock\") { return \"CAUGHT\"; }") != std::string::npos, "take-back and lock titles are CAUGHT");
 		if (as.find("if(sub == \"kid\") { return \"KID STUFF\"; }") != std::string::npos) std::cout << "ok  Kid Stuff title is KID STUFF\n";
@@ -643,7 +661,7 @@ int main()
 		std::ifstream in("preset/HorizonUI.moragars-choice-0.42.0.ini");
 		Expect(static_cast<bool>(in), "preset ini opens");
 		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(ini.find("Version=0.43.0.6") != std::string::npos, "preset Version is the file version");
+		Expect(ini.find("Version=0.43.0.7") != std::string::npos, "preset Version is the file version");
 		Expect(ini.find("test DLL") == std::string::npos, "preset Debug note does not call this a test DLL");
 		Expect(ini.find("The comms message log is only in debug builds.") != std::string::npos, "release Debug note");
 		Expect(ini.find("VehicleExitPill") == std::string::npos, "the preset does not mirror the vehicle exit default");
@@ -655,7 +673,7 @@ int main()
 		Expect(static_cast<bool>(in), "default.ini opens");
 		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 		Expect(ini.find("\r\n") != std::string::npos, "default.ini stays CRLF");
-		Expect(ini.find("HorizonUI.default.ini (v0.43.0.6)") != std::string::npos,
+		Expect(ini.find("HorizonUI.default.ini (v0.43.0.7)") != std::string::npos,
 			"default.ini header is the file version");
 		const auto cards = ini.find("[Cards]");
 		const auto compass = ini.find("[Compass]");
@@ -799,7 +817,7 @@ int main()
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(lua.find("set_version(\"0.43.0.6\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.43.0.7\")") != std::string::npos, "xmake version is the 4-part file version");
 		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
 		std::ifstream cpp("res/horizonui-plugin.cpp.in");
 		Expect(static_cast<bool>(cpp), "plugin version template opens");

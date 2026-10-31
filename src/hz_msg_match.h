@@ -918,4 +918,39 @@ inline Hit Match(std::string_view text, const Templates& phrases)
 	return Miss();
 }
 
+// Purpose: case-folded substring. Artifact notices use this so any
+// line that contains "Artifact" becomes a Horizon card.
+inline bool ContainsFold(std::string_view hay, std::string_view needle)
+{
+	if (needle.empty() || hay.size() < needle.size()) return false;
+	for (std::size_t i = 0; i + needle.size() <= hay.size(); ++i) {
+		bool ok = true;
+		for (std::size_t j = 0; j < needle.size(); ++j) {
+			if (Fold(hay[i + j]) != Fold(needle[j])) {
+				ok = false;
+				break;
+			}
+		}
+		if (ok) return true;
+	}
+	return false;
+}
+
+// Purpose: generic Horizon game card for an unmatched HUD notice.
+// Empty, over-long, and newline lines stay Miss (same as Match).
+inline Hit GameNotice(std::string_view text)
+{
+	const auto line = Trim(text);
+	if (line.empty() || line.size() > 200) return Miss();
+	if (line.find('\n') != std::string_view::npos || line.find('\r') != std::string_view::npos)
+		return Miss();
+	Hit h;
+	h.ok = true;
+	h.kind = "game";
+	h.sub = "notice";
+	h.value = "GAME";
+	h.name = ContainsFold(line, "artifact") ? "ARTIFACT" : "GAME";
+	return h;
+}
+
 } // namespace hzmsg
