@@ -75,11 +75,14 @@ function hzArrFs(want, textScale) {
 	ts = Math.max(0.9, Math.min(1.15, ts));
 	return Math.max(want, Math.ceil(want / ts));
 }
-function hzSTextPx(size, textScale) {
+function hzSTextPx(size, textScale, minPx) {
 	let ts = textScale;
 	if (Number.isNaN(ts) || ts <= 0) ts = 1;
 	ts = Math.max(0.9, Math.min(1.15, ts));
-	return Math.round(size * ts);
+	let sz = Math.round(size * ts);
+	if (minPx == null) minPx = 13;
+	if (minPx > sz) sz = minPx;
+	return sz;
 }
 const ghostScales = [0.8, 0.9, 1, 1.15, 1.3];
 for (let gi = 0; gi < ghostScales.length; gi++) {
@@ -1360,7 +1363,29 @@ for (let si = 0; si < settingsFs.length; si++) {
 		expect(px >= 13, "settings text at fs " + settingsFs[si] + " TextScale " + settingsTs[ti] + " is " + px + " px");
 	}
 }
-pin("minPx:int = 13", "hzWT defaults to a 13 px floor");
+function asFnBody(name, next) {
+	const at = src.indexOf(name);
+	if (at < 0) return "";
+	if (next) {
+		const nx = src.indexOf(next, at);
+		if (nx > at) return src.slice(at, nx);
+	}
+	return src.slice(at);
+}
+{
+	const wt = asFnBody("private function hzWT", "private function hzSetKey");
+	expect(wt.indexOf("minPx:int = 13") >= 0, "hzWT defaults to a 13 px floor");
+	expect(wt.indexOf("if(minPx > sz) { sz = minPx; }") >= 0, "hzWT applies the minPx floor");
+	expect(wt.indexOf("function hzSetKey") < 0 && wt.indexOf("function hzSetBtn") < 0,
+		"the hzWT 13 px pin matches only hzWT");
+}
+{
+	const st = asFnBody("private function hzSText", "private function hz33Edge");
+	expect(st.indexOf("minPx:int = 13") >= 0, "hzSText defaults to a 13 px floor");
+	expect(st.indexOf("if(minPx > sz) { sz = minPx; }") >= 0, "hzSText applies the minPx floor");
+}
+expect(hzSTextPx(13, 0.9) === 13, "hzSText size 13 at TextScale 0.9 stays 13 px");
+expect(hzSTextPx(13, 0.9, 0) === 12, "without minPx, hzSText size 13 at TextScale 0.9 drops to 12");
 
 function hzMsglogChipWrap(chipWs, chipInner) {
 	const out = [];
@@ -1454,7 +1479,10 @@ function makeHud() {
 			if (this.hzPopLayers.length) return;
 			if (code === "ok") {
 				const r = this.hzSetRowObj;
-				if (r && r.t === "x") { this.activated = r.k; return; }
+				if (r && r.t === "x") {
+					if (r.k === "_msglog" || r.k === "_arrange") { this.activated = r.k; return; }
+					return;
+				}
 				this.hzSetApply();
 			}
 		},
@@ -1481,6 +1509,23 @@ function makeHud() {
 	expect(h.activated === "_msglog", "ENTER on the MESSAGE LOG row opens the log");
 	expect(h.hzSetSaveText === "", "ENTER on the MESSAGE LOG row does not save");
 	expect(h.hzSetPend.TextScale === 1.1, "pending F11 edits stay pending");
+}
+{
+	const h = makeHud();
+	h.hzSetRowObj = { t: "x", k: "_arrange" };
+	h.hzSettingsKey("ok");
+	expect(h.activated === "_arrange", "ENTER on the ARRANGE row opens ARRANGE");
+	expect(h.hzSetSaveText === "", "ENTER on the ARRANGE row does not save");
+}
+{
+	const others = ["_hz31useCards", "_hz40goscan", "_hz42scrst", "_hz41arrscan", "_hz37load"];
+	for (let i = 0; i < others.length; i++) {
+		const h = makeHud();
+		h.hzSetRowObj = { t: "x", k: others[i] };
+		h.hzSettingsKey("ok");
+		expect(h.activated === "", "ENTER on " + others[i] + " does not activate");
+		expect(h.hzSetSaveText === "", "ENTER on " + others[i] + " does not save and close");
+	}
 }
 {
 	const h = makeHud();

@@ -1796,6 +1796,28 @@ function hzcCardMatch(kind, sub, name, value) {
 	expect(gameCard && gameCard.title === "ARTIFACT", "Artifact game card titles ARTIFACT");
 	const generic = hzcCardMatch("game", "notice", "GAME", "GAME");
 	expect(generic && generic.title === "GAME", "unmatched game card titles GAME");
+	function containsFold(hay, needle) {
+		hay = String(hay).toLowerCase();
+		needle = String(needle).toLowerCase();
+		return hay.indexOf(needle) >= 0;
+	}
+	function gameNotice(text) {
+		const line = String(text == null ? "" : text).replace(/^\s+|\s+$/g, "");
+		if (!line || line.length > 200) return null;
+		if (line.indexOf("\n") >= 0 || line.indexOf("\r") >= 0) return null;
+		const name = containsFold(line, "artifact") ? "ARTIFACT" : "GAME";
+		const card = hzcCardMatch("game", "notice", name, "GAME");
+		return card ? card.title : null;
+	}
+	expect(gameNotice("ARTIFACT") === "ARTIFACT", "ARTIFACT odd-string titles ARTIFACT");
+	expect(gameNotice("artifact") === "ARTIFACT", "artifact odd-string titles ARTIFACT");
+	expect(gameNotice("An Artifact.") === "ARTIFACT", "An Artifact. titles ARTIFACT");
+	expect(gameNotice("Artifactual") === "ARTIFACT", "Artifactual titles ARTIFACT");
+	expect(gameNotice("No artifacts here") === "ARTIFACT", "No artifacts here titles ARTIFACT");
+	expect(gameNotice("Artifakt") === "GAME", "Artifakt stays GAME");
+	expect(gameNotice("Artifact\nETA") == null, "newline Artifact is not a card");
+	expect(gameNotice(new Array(202).join("A")) == null, "201-char line is not a card");
+	expect(gameNotice("") == null, "empty GameNotice is not a card");
 }
 function asFunction(text) {
 	const start = text.search(/(?:public|private) function /);

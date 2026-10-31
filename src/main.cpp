@@ -238,6 +238,16 @@ namespace HZF
 			ReadText(a_p, s);
 			return s;
 		}
+		// Purpose: read user.ini for a merge write. Missing file -> empty OK.
+		// Exists and ReadText fails (over 1 MiB, locked, unreadable) -> false,
+		// so the caller skips the write instead of treating the file as empty.
+		// Author: Moragar. Last modified: 2026-10-31.
+		inline bool ReadExistingOrEmpty(const std::filesystem::path& a_p, std::string& a_out)
+		{
+			a_out.clear();
+			if (!Exists(a_p)) return true;
+			return ReadText(a_p, a_out);
+		}
 		// temp file next to the target, flushed, then HzfReplace (MoveFileExW REPLACE_EXISTING | WRITE_THROUGH in the DLL).
 		// A leftover .tmp is overwritten on the next trunc write.
 		inline bool WriteAtomic(const std::filesystem::path& a_p, const std::string& a_data)
@@ -646,8 +656,11 @@ namespace HZF
 		inline Result SaveFromHud(const Paths& a_p, const std::string& a_full)
 		{
 			Result r;
+			std::string user;
+			if (!ReadExistingOrEmpty(a_p.user, user))
+				return { false, "Could not read HorizonUI.user.ini" };
 			DiffOpt o;
-			const std::string u = Diff(a_full, Defaults(a_p), ReadOr(a_p.user), o);
+			const std::string u = Diff(a_full, Defaults(a_p), user, o);
 			r.ok = WriteAtomic(a_p.user, u);
 			r.msg = r.ok ? "settings saved (HorizonUI.user.ini, " + std::to_string(std::count(u.begin(), u.end(), '=')) + " values)" : "failed to write HorizonUI.user.ini";
 			return r;
@@ -1383,12 +1396,16 @@ namespace HZ
 					REX::WARN("message log save ignored (not [MessageLog] only)");
 				} else {
 					const auto P = FilesP();
-					const auto user = HZF::ReadOr(P.user);
-					const auto next = HZF::ReplaceSection(user, "messagelog", mlIni);
-					if (HZF::WriteAtomic(P.user, next))
-						REX::INFO("message log settings saved");
-					else
-						REX::WARN("message log save FAILED");
+					std::string user;
+					if (!HZF::ReadExistingOrEmpty(P.user, user)) {
+						REX::WARN("message log save skipped (could not read HorizonUI.user.ini)");
+					} else {
+						const auto next = HZF::ReplaceSection(user, "messagelog", mlIni);
+						if (HZF::WriteAtomic(P.user, next))
+							REX::INFO("message log settings saved");
+						else
+							REX::WARN("message log save FAILED");
+					}
 				}
 			} catch (...) {
 				REX::WARN("message log save FAILED");

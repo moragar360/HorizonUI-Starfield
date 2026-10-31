@@ -234,6 +234,20 @@ int main()
 				std::cerr << "FAIL: empty GameNotice matched\n";
 				++g_fails;
 			} else std::cout << "ok  miss empty GameNotice\n";
+			ok(hzmsg::GameNotice("ARTIFACT"), "game", "notice", "ARTIFACT", "GAME", hzmsg::kTierEnglish, "ARTIFACT is a Horizon game card");
+			ok(hzmsg::GameNotice("artifact"), "game", "notice", "ARTIFACT", "GAME", hzmsg::kTierEnglish, "artifact is a Horizon game card");
+			ok(hzmsg::GameNotice("An Artifact."), "game", "notice", "ARTIFACT", "GAME", hzmsg::kTierEnglish, "An Artifact. is a Horizon game card");
+			ok(hzmsg::GameNotice("Artifactual"), "game", "notice", "ARTIFACT", "GAME", hzmsg::kTierEnglish, "Artifactual is a Horizon game card");
+			ok(hzmsg::GameNotice("No artifacts here"), "game", "notice", "ARTIFACT", "GAME", hzmsg::kTierEnglish, "No artifacts here is a Horizon game card");
+			ok(hzmsg::GameNotice("Artifakt"), "game", "notice", "GAME", "GAME", hzmsg::kTierEnglish, "Artifakt stays a generic game card");
+			if (hzmsg::GameNotice("Artifact\nETA").ok) {
+				std::cerr << "FAIL: GameNotice matched a newline\n";
+				++g_fails;
+			} else std::cout << "ok  miss GameNotice newline\n";
+			if (hzmsg::GameNotice(std::string(201, 'A')).ok) {
+				std::cerr << "FAIL: GameNotice matched a 201-char line\n";
+				++g_fails;
+			} else std::cout << "ok  miss GameNotice 201-char\n";
 			const auto cut = hzmsg::Match("Artifact ETA Removed.", en);
 			if (cut.ok) {
 				std::cerr << "FAIL: Match still claims Artifact ETA Removed.\n";
@@ -515,7 +529,9 @@ int main()
 			const auto lastClose = src.rfind("\n}", inc);
 			Expect(inc != std::string::npos && lastClose > lastNs, "hz_ini_diff.h is included at file scope, not inside namespace HZ");
 		}
-		Expect(src.find("const std::string u = Diff(a_full, Defaults(a_p), ReadOr(a_p.user), o);") != std::string::npos, "SaveFromHud still runs through Diff");
+		Expect(src.find("Diff(a_full, Defaults(a_p), user, o)") != std::string::npos, "SaveFromHud still runs through Diff");
+		Expect(src.find("ReadExistingOrEmpty(a_p.user, user)") != std::string::npos,
+			"SaveFromHud reads user.ini with the skip-write guard");
 		Expect(src.find("MsglogPatchSaveIni(std::move(saveIni))") != std::string::npos,
 			"F11 Save replaces [MessageLog] with live DLL settings before Diff");
 		Expect(src.find("ShowHUDMessageEvent sink registered (address id 86800)") != std::string::npos, "sink registration is logged");

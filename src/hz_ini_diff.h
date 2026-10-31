@@ -259,6 +259,30 @@ namespace HZF {
 			return o;
 		}
 
+		// Purpose: a missing user.ini may be created; an existing file that
+		// could not be read (over 1 MiB, locked, unreadable) must never be
+		// treated as empty. ReplaceSection("") would wipe every other section.
+		// Inputs: Exists(path), ReadText ok. Outputs: whether a write may run.
+		// Author: Moragar. Last modified: 2026-10-31.
+		inline bool UserReadAllowsWrite(bool a_exists, bool a_readOk)
+		{
+			return !a_exists || a_readOk;
+		}
+
+		// Purpose: merge a [MessageLog] block into HorizonUI.user.ini text.
+		// Missing file -> empty base. Exists and read failed -> skip (no out).
+		// Inputs: exists, readOk, current text, MessageLog-only block.
+		// Outputs: merged text when a write is safe. Dependencies: ReplaceSection.
+		// Author: Moragar. Last modified: 2026-10-31.
+		inline bool MergeMessageLogUser(bool a_exists, bool a_readOk, const std::string& a_user,
+			const std::string& a_block, std::string& a_out)
+		{
+			a_out.clear();
+			if (!UserReadAllowsWrite(a_exists, a_readOk)) return false;
+			a_out = ReplaceSection(a_exists ? a_user : std::string(), "messagelog", a_block);
+			return true;
+		}
+
 		// Purpose: true when the movie handed over only [MessageLog] keys.
 		// A full F11 dump must not use the Message Log save path.
 		inline bool IsMessageLogOnlyIni(const std::string& a_text)

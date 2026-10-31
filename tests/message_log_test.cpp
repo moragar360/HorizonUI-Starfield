@@ -819,6 +819,42 @@ int main()
 		ExpectEq(title, "ARTIFACT", "Artifact title is ARTIFACT");
 		Expect(ClassifyHud("New Artifact located.", en, title, tag) == Kind::Game, "any Artifact text is game");
 		ExpectEq(title, "ARTIFACT", "any Artifact text titles ARTIFACT");
+		Expect(ClassifyHud("ARTIFACT", en, title, tag) == Kind::Game, "ARTIFACT classifies as game");
+		ExpectEq(title, "ARTIFACT", "ARTIFACT titles ARTIFACT");
+		Expect(ClassifyHud("artifact", en, title, tag) == Kind::Game, "lowercase artifact classifies as game");
+		ExpectEq(title, "ARTIFACT", "lowercase artifact titles ARTIFACT");
+		Expect(ClassifyHud("An Artifact.", en, title, tag) == Kind::Game, "An Artifact. classifies as game");
+		ExpectEq(title, "ARTIFACT", "An Artifact. titles ARTIFACT");
+		Expect(ClassifyHud("Artifactual", en, title, tag) == Kind::Game, "Artifactual classifies as game");
+		ExpectEq(title, "ARTIFACT", "Artifactual titles ARTIFACT");
+		Expect(ClassifyHud("No artifacts here", en, title, tag) == Kind::Game, "No artifacts here classifies as game");
+		ExpectEq(title, "ARTIFACT", "No artifacts here titles ARTIFACT");
+		Expect(ClassifyHud("Artifakt", en, title, tag) == Kind::Game, "Artifakt is unmatched game");
+		ExpectEq(title, "GAME", "Artifakt does not title ARTIFACT");
+		{
+			const auto art = hzmsg::GameNotice("ARTIFACT");
+			Expect(art.ok && art.name == "ARTIFACT", "GameNotice ARTIFACT");
+			const auto low = hzmsg::GameNotice("artifact");
+			Expect(low.ok && low.name == "ARTIFACT", "GameNotice artifact");
+			const auto sent = hzmsg::GameNotice("An Artifact.");
+			Expect(sent.ok && sent.name == "ARTIFACT", "GameNotice An Artifact.");
+			const auto adj = hzmsg::GameNotice("Artifactual");
+			Expect(adj.ok && adj.name == "ARTIFACT", "GameNotice Artifactual");
+			const auto here = hzmsg::GameNotice("No artifacts here");
+			Expect(here.ok && here.name == "ARTIFACT", "GameNotice No artifacts here");
+			const auto typo = hzmsg::GameNotice("Artifakt");
+			Expect(typo.ok && typo.name == "GAME", "GameNotice Artifakt stays GAME");
+			const auto nl = hzmsg::GameNotice("Artifact\nETA");
+			Expect(!nl.ok, "GameNotice newline misses");
+			const auto cr = hzmsg::GameNotice("Artifact\rETA");
+			Expect(!cr.ok, "GameNotice CR misses");
+			const auto longLine = std::string(201, 'A');
+			Expect(!hzmsg::GameNotice(longLine).ok, "GameNotice 201-char misses");
+			const auto artLong = std::string("Artifact ") + std::string(200, 'x');
+			Expect(!hzmsg::GameNotice(artLong).ok, "GameNotice over-long Artifact misses");
+			Expect(!hzmsg::GameNotice("").ok, "GameNotice empty misses");
+			Expect(!hzmsg::GameNotice("   ").ok, "GameNotice blank misses");
+		}
 		Expect(ClassifyHud("Sam Coe liked that.", en, title, tag) == Kind::Reaction, "liked that is a reaction");
 		ExpectEq(title, "Sam Coe", "reaction title is the companion name");
 		ExpectEq(tag, "LIKED", "liked tag");
@@ -2370,6 +2406,96 @@ int main()
 			"without the replace, the movie would overwrite 800");
 	}
 
+	// ---- MessageLog save: ReplaceSection + skip-write (kills mutant R7) ----
+	{
+		const std::string block =
+			"[MessageLog]\r\nRecord=1\r\nLogTypes=game\r\nHistorySize=500\r\nMissedBadge=1\r\nPersist=1\r\n";
+		Expect(HZF::UserReadAllowsWrite(false, false), "a missing user.ini may be written as a new file");
+		Expect(HZF::UserReadAllowsWrite(false, true), "a missing user.ini does not need a successful read");
+		Expect(HZF::UserReadAllowsWrite(true, true), "a readable existing user.ini may be merged");
+		Expect(!HZF::UserReadAllowsWrite(true, false), "an unreadable existing user.ini skips the write");
+
+		const std::string crlf =
+			"[General]\r\nFoo=1\r\n\r\n[Scanner]\r\nBar=2\r\n\r\n[MessageLog]\r\nRecord=0\r\n";
+		std::string out;
+		Expect(HZF::MergeMessageLogUser(true, true, crlf, block, out), "CRLF user.ini merges");
+		Expect(out.find("[General]") != std::string::npos && out.find("Foo=1") != std::string::npos,
+			"CRLF [General] is preserved");
+		Expect(out.find("[Scanner]") != std::string::npos && out.find("Bar=2") != std::string::npos,
+			"CRLF [Scanner] is preserved");
+		Expect(out.find("Record=1") != std::string::npos && out.find("Record=0") == std::string::npos,
+			"CRLF [MessageLog] is replaced");
+		Expect(out.find("\r\n") != std::string::npos, "CRLF merge writes CRLF");
+
+		const std::string bom =
+			"\xEF\xBB\xBF[General]\r\nFoo=1\r\n[Scanner]\r\nBar=2\r\n[MessageLog]\r\nRecord=0\r\n";
+		Expect(HZF::MergeMessageLogUser(true, true, bom, block, out), "BOM user.ini merges");
+		Expect(out.find("[General]") != std::string::npos && out.find("Foo=1") != std::string::npos,
+			"BOM [General] is preserved");
+		Expect(out.find("[Scanner]") != std::string::npos && out.find("Bar=2") != std::string::npos,
+			"BOM [Scanner] is preserved");
+		Expect(out.find("Record=1") != std::string::npos, "BOM [MessageLog] is replaced");
+
+		const std::string dups =
+			"[General]\r\nFoo=1\r\n[MessageLog]\r\nRecord=0\r\n[Scanner]\r\nBar=2\r\n[MessageLog]\r\nHistorySize=9\r\n";
+		Expect(HZF::MergeMessageLogUser(true, true, dups, block, out), "duplicate [MessageLog] merges");
+		Expect(out.find("[General]") != std::string::npos && out.find("Foo=1") != std::string::npos,
+			"duplicate-section [General] is preserved");
+		Expect(out.find("[Scanner]") != std::string::npos && out.find("Bar=2") != std::string::npos,
+			"duplicate-section [Scanner] is preserved");
+		Expect(out.find("HistorySize=9") == std::string::npos && out.find("Record=0") == std::string::npos,
+			"both old [MessageLog] blocks are stripped");
+		ExpectEqI(CountNeedle(out, "[MessageLog]"), 1, "one [MessageLog] remains after a duplicate merge");
+
+		const std::string missing =
+			"[General]\r\nFoo=1\r\n[Scanner]\r\nBar=2\r\n";
+		Expect(HZF::MergeMessageLogUser(true, true, missing, block, out), "missing [MessageLog] merges");
+		Expect(out.find("[General]") != std::string::npos && out.find("[Scanner]") != std::string::npos,
+			"missing-section other headers stay");
+		Expect(out.find("[MessageLog]") != std::string::npos && out.find("Record=1") != std::string::npos,
+			"missing [MessageLog] is appended");
+
+		const std::string eof = "[General]\nFoo=1\n[Scanner]\nBar=2";
+		Expect(HZF::MergeMessageLogUser(true, true, eof, block, out), "EOF without a newline merges");
+		Expect(out.find("Foo=1") != std::string::npos && out.find("Bar=2") != std::string::npos,
+			"EOF other sections are preserved");
+		Expect(out.find("[MessageLog]") != std::string::npos, "EOF merge appends [MessageLog]");
+		Expect(out.size() >= 2 && out[out.size() - 2] == '\r' && out.back() == '\n',
+			"EOF merge ends in CRLF");
+
+		Expect(HZF::MergeMessageLogUser(false, false, "IGNORED", block, out), "empty / missing file writes the block");
+		Expect(out.find("[General]") == std::string::npos, "a new file has no leftover sections");
+		Expect(out.find("[MessageLog]") != std::string::npos && out.find("Record=1") != std::string::npos,
+			"a new file is the [MessageLog] block");
+
+		Expect(HZF::MergeMessageLogUser(true, true, "", block, out), "an empty existing file writes the block");
+		Expect(out.find("[MessageLog]") != std::string::npos, "empty file becomes [MessageLog]");
+
+		const std::string kept =
+			"[General]\r\nFoo=1\r\n[Scanner]\r\nBar=2\r\n";
+		const auto wiped = HZF::ReplaceSection("", "messagelog", block);
+		Expect(wiped.find("[General]") == std::string::npos && wiped.find("[Scanner]") == std::string::npos,
+			"ReplaceSection(\"\") cannot keep other sections (mutant R7)");
+		Expect(!HZF::MergeMessageLogUser(true, false, kept, block, out),
+			"unreadable existing user.ini skips the write");
+		Expect(out.empty(), "skip-write produces no replacement text");
+		Expect(!HZF::MergeMessageLogUser(true, false, "", block, out),
+			"unreadable existing file is not treated as empty");
+		Expect(out.empty(), "failed read does not become ReplaceSection(\"\")");
+
+		const std::string huge(1024 * 1024 + 100, 'x');
+		const bool oversizeOk = huge.size() <= 1024 * 1024;
+		Expect(!oversizeOk, "a 1.1 MiB user.ini is over the ReadText cap");
+		Expect(!HZF::MergeMessageLogUser(true, oversizeOk, huge, block, out),
+			"an oversized existing user.ini skips the write");
+		Expect(out.empty(), "oversized skip-write does not replace the file");
+		Expect(HZF::MergeMessageLogUser(true, true, kept, block, out)
+			&& out.find("[General]") != std::string::npos
+			&& out.find("[Scanner]") != std::string::npos
+			&& out.find("[MessageLog]") != std::string::npos,
+			"other sections stay when the read succeeds");
+	}
+
 	// ---- JSON round trip, corrupt, oversized, too-new ----
 	{
 		const auto root = TmpRoot();
@@ -3139,7 +3265,12 @@ int main()
 		Expect(as.find("function hzMsglogChipWrap") != std::string::npos, "chips wrap onto a second line");
 		Expect(as.find("function hzMsglogCaretTick") != std::string::npos, "caret blink has its own tick");
 		Expect(as.find("this.hzMsglogCaretTick()") != std::string::npos, "hzOnFrame ticks the Find caret");
-		Expect(as.find("minPx:int = 13") != std::string::npos, "hzWT defaults to a 13 px floor");
+		{
+			const auto wt = AsFnBody(as, "private function hzWT", "private function hzSetKey");
+			Expect(wt.find("minPx:int = 13") != std::string::npos, "hzWT defaults to a 13 px floor");
+			Expect(wt.find("if(minPx > sz) { sz = minPx; }") != std::string::npos,
+				"hzWT applies the minPx floor");
+		}
 		{
 			const auto popKey = AsFnBody(as, "private function hzPopKey", "public function hzMsglogOpenHint");
 			const auto need = AsFnBody(as, "public function hzMsglogNeed", "public function hzTakeMsglogAct");
@@ -3172,8 +3303,10 @@ int main()
 		}
 		{
 			const auto key = AsFnBody(as, "public function hzSettingsKey", "private function hzSetChange");
-			Expect(key.find("rows[this.hzSetRow].t == \"x\"") != std::string::npos, "ENTER on an x-type row activates it");
-			Expect(key.find("this.hzSetChange(rows[this.hzSetRow],1)") != std::string::npos, "ENTER on MESSAGE LOG opens the log");
+			Expect(key.find("xk == \"_msglog\" || xk == \"_arrange\"") != std::string::npos,
+				"ENTER activates only MESSAGE LOG and ARRANGE");
+			Expect(key.find("this.hzSetChange(rows[this.hzSetRow],1)") != std::string::npos,
+				"ENTER on MESSAGE LOG or ARRANGE opens that row");
 			Expect(key.find("case \"ok\": this.hzSetApply(); return;") == std::string::npos,
 				"ENTER on an x-type row does not apply or save");
 		}
@@ -3274,8 +3407,12 @@ int main()
 		}
 		Expect(as.find("hzMsglogKindIcon") != std::string::npos, "rows draw a type icon");
 		Expect(as.find("minPx:int = 13) : Number") != std::string::npos, "hzSetKey and hzSetBtn default to a 13 px floor");
-		Expect(as.find("if(minPx > sz) { sz = minPx; }") != std::string::npos,
-			"hzWT applies the minPx floor");
+		{
+			const auto st = AsFnBody(as, "private function hzSText", "private function hz33Edge");
+			Expect(st.find("minPx:int = 13") != std::string::npos, "hzSText defaults to a 13 px floor");
+			Expect(st.find("if(minPx > sz) { sz = minPx; }") != std::string::npos,
+				"hzSText applies the minPx floor");
+		}
 		{
 			const auto key = AsFnBody(as, "private function hzSetKey", "private function hzSetSwitch");
 			Expect(key.find("minPx:int = 13) : Number") != std::string::npos

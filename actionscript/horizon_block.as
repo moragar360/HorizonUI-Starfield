@@ -4530,8 +4530,13 @@
             case "ok":
                if(this.hzSetRow >= 0 && this.hzSetRow < rows.length && rows[this.hzSetRow] != null && rows[this.hzSetRow].t == "x")
                {
-                  this.hzSetChange(rows[this.hzSetRow],1);
-                  this.hzSetDraw();
+                  var xk:String = String(rows[this.hzSetRow].k);
+                  if(xk == "_msglog" || xk == "_arrange")
+                  {
+                     this.hzSetChange(rows[this.hzSetRow],1);
+                     this.hzSetDraw();
+                     return;
+                  }
                   return;
                }
                this.hzSetApply();
@@ -4891,7 +4896,8 @@
       }
 
       // Own text helper (not registered in hzTexts so window redraws do not leak).
-      private function hzSText(p:Sprite, txt:String, x:Number, y:Number, w:Number, size:int, col:uint, align:String, role:String = null) : TextField
+      // minPx keeps a 13 px floor at TextScale 0.90 so a literal 13 cannot round to 12.
+      private function hzSText(p:Sprite, txt:String, x:Number, y:Number, w:Number, size:int, col:uint, align:String, role:String = null, minPx:int = 13) : TextField
       {
          var t:TextField = new TextField();
          t.embedFonts = true;
@@ -4900,6 +4906,7 @@
          // settings window follows TextScale but clamped so rows never overflow the fixed layout
          var ts:Number = Math.max(0.9,Math.min(1.15,this.hzTextScale));
          var sz:int = int(Math.round(size * ts));
+         if(minPx > sz) { sz = minPx; }
          var al:Number = 1;
          if(role == "hdr") { col = HZ_ACCENT; al = Number(HZ_TY_ALPHA.hdr); txt = this.hzHdrCase(txt); }
          else if(role == "lbl") { al = Number(HZ_TY_ALPHA.lbl); }
