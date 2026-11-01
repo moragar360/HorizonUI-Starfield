@@ -1,21 +1,17 @@
-# Horizon UI 0.42.0.14 tester note
+# Horizon UI 0.43.0.8 tester note
 
-Pre-release. Debug compile flags stay off (`HZ_HUD_MSG_CAPTURE` 0, `HZ_COMMS_MSG_LOG` 0, `HZC_MSG_LOG` false, `hzcRxDbgOn` false). Settings schema stays 0.42.0.
+Pre-release first pass. Not approved. Debug compile flags stay off (`HZ_HUD_MSG_CAPTURE` 0, `HZ_COMMS_MSG_LOG` 0, `HZC_MSG_LOG` false, `hzcRxDbgOn` false). Settings schema stays 0.42.0.
+
+## What to look at
+
+1. Message Log SETTINGS: HISTORY "500" sits between the arrows, not on top of them. Same in large text.
+2. Turning a category off (MEDICAL, CREW, ...) hides that type from the list and hides its pill. It also stops recording that type. ALL still shows the types that are on.
+3. Welcome splash after a save load: HORIZON UI, your HUD accent, dark outline, no panel, no pause. F11 > CONTROLS > SHOW WELCOME ON LOAD turns it off.
+4. F11 COMMS: full-width SUBTITLES / DIALOGUE switch under the notice. Notices start collapsed (13 px text). A missing module expands the notice.
+5. Look at an owned item (Credstik on Akila): E STEAL should be red.
+6. Item and key lines (for example "Jacob's office key") should be Horizon KEY/ITEM or GAME cards, not vanilla.
+7. Long notices still need a natural in-game look: card ends with "...", Message Log keeps about 256 characters.
 
 ## SFSE log
 
 `Data\SFSE\SFSE.ini`: `[Scaleform]` `EnableLog=1` turns on the Scaleform log. Horizon's own `Debug=1` goes in `HorizonUI.user.ini` under `[Debug]`.
-
-## Stealth meter
-
-No change in 0.42.0.14. The Horizon stealth pill hides the vanilla `StealthMeter_mc` (alpha only, never removed) only while the pill is actually active. A character without Stealth rank 1 has `bShowMeter` false, so neither indicator shows. That matches vanilla.
-
-## Affliction chip typography
-
-The title and body-system line now use the same fonts_horizon path as the other Horizon chips: SemiBold (`$Horizon_Font`), HeaderStyle on the title (AFFLICTION / real name), muted SemiBold 1.2 tracking on the sub line. Size is the shared chip formula `max(9, round(design * TextScale))`, then the 13 px on-screen floor through `hz34S` (HZ_SCALE * HudScale or the card's own scale key). TAKE, the TAKE keycap letter, HOLD, stealth title/sub, and jetpack title/sub use that same path (HoverScale / StealthScale / JetpackScale, else HudScale), including Moragar's Choice. Changing HUD SCALE, TextScale, or a card scale still reformats those lines and relayouts so the jetpack keeps an 8-unit gap above Vitals and the stealth pill stays 150 units above the crosshair. Env-chip bar math is unchanged. After a load, a nameless effect is still **AFFLICTION** over the body system.
-
-## In-game checks
-
-1. Stealth rank 1: sneak with StealthMeter on. Horizon pill shows and vanilla is hidden. StealthMeter off: vanilla meter, no pill.
-2. Save with an affliction (for example Contusions). Load. The chip should read AFFLICTION over the body system, not CARDIO RESPIRATORY CIRCULATORY as the title. Get injured again this session: the real name returns.
-3. Compare the affliction title and sub line to TAKE (including the E keycap and HOLD), the stealth pill, and the jetpack status lines at your TextScale / HudScale. Weight, case, and tracking should match that family. Apply Moragar's Choice: every one of those lines stays at least 13 px on screen. The jetpack card keeps an 8-unit gap above Vitals. The stealth pill still sits above the crosshair after a TextScale-only change.
