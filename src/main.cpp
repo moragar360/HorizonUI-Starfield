@@ -1863,14 +1863,15 @@ namespace HZ
 
 	// Purpose: read one ShowHUDMessageEvent without letting a bad pointer escape this function.
 	// Inputs: the event. Outputs: 1 and a filled snap, or 0 when the read faulted.
-	// Dependencies: RE::ShowHUDMessageEvent (text, sound, canThrottle, isWarning). The copy is bounded.
-	// Last modified: 2026-10-22.
+	// Dependencies: RE::ShowHUDMessageEvent (text, sound, canThrottle, isWarning). The copy is
+	// 256 bytes so the Message Log can keep the full line; the card queue still stores 200.
+	// Last modified: 2026-11-01.
 	struct HudMsgSnap
 	{
 		bool throttle;
 		bool warning;
 		bool truncated;
-		char text[201];
+		char text[257];
 		char sound[97];
 	};
 
@@ -2046,6 +2047,7 @@ namespace HZ
 		char      text[201];
 		ULONGLONG tick;
 		bool      truncated;
+		bool      artifact;
 	};
 	std::mutex        g_rxMu;
 	std::deque<RxNote> g_rxQ;
@@ -2718,13 +2720,15 @@ namespace HZ
 			if (n.tick == 0 || a_now < n.tick || a_now - n.tick > kRxMaxAge) continue;
 			hzmsg::Hit hit;
 			try { hit = hzmsg::Match(n.text, phrases); } catch (...) { hit = {}; }
+			if (hit.ok && n.truncated)
+				hit = {};
 			if (!hit.ok) {
 				try {
 					if (!hzmsg::GameNoticeAllowed(n.truncated))
 						continue;
 					if (hzlog::IsSaveLine(n.text) || hzlog::IsCalmedLine(n.text, phrases))
 						continue;
-					hit = hzmsg::GameNotice(n.text);
+					hit = hzmsg::GameNotice(n.text, n.artifact);
 				} catch (...) {
 					hit = {};
 				}
@@ -2745,12 +2749,18 @@ namespace HZ
 				const std::string sub = hit.sub;
 				const std::string name = hit.name;
 				const std::string value = hit.value;
+				char show[201];
+				const char* raw = n.text;
+				if (n.truncated) {
+					hzpreset::EllipsizeHud(show, sizeof show, n.text);
+					raw = show;
+				}
 				GValue args[5] = {
 					GValue(kind.c_str()),
 					GValue(sub.c_str()),
 					GValue(name.c_str()),
 					GValue(value.c_str()),
-					GValue(n.text)
+					GValue(raw)
 				};
 				GValue ret;
 				if (msg->menuObj.Invoke("hzcCardPush", &ret, args, 5) && ret.IsString() && ret.GetString())

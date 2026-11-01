@@ -244,10 +244,11 @@ int main()
 				std::cerr << "FAIL: GameNotice matched a newline\n";
 				++g_fails;
 			} else std::cout << "ok  miss GameNotice newline\n";
-			if (hzmsg::GameNotice(std::string(201, 'A')).ok) {
-				std::cerr << "FAIL: GameNotice matched a 201-char line\n";
+			ok(hzmsg::GameNotice(std::string(201, 'A')), "game", "notice", "GAME", "GAME", hzmsg::kTierEnglish, "GameNotice 201-char is a card");
+			if (hzmsg::GameNotice(std::string(257, 'A')).ok) {
+				std::cerr << "FAIL: GameNotice matched a 257-char line\n";
 				++g_fails;
-			} else std::cout << "ok  miss GameNotice 201-char\n";
+			} else std::cout << "ok  miss GameNotice 257-char\n";
 			const auto cut = hzmsg::Match("Artifact ETA Removed.", en);
 			if (cut.ok) {
 				std::cerr << "FAIL: Match still claims Artifact ETA Removed.\n";
@@ -341,6 +342,7 @@ int main()
 			char text[201];
 			unsigned long long tick;
 			bool truncated;
+			bool artifact;
 		};
 		std::deque<Note> q;
 		Expect(!hzrx::Enqueue(q, nullptr, 1), "a null HUD line is dropped");
@@ -358,18 +360,26 @@ int main()
 		Expect(std::string(cut.front().text) == std::string(200, 'a'), "the stored line is not split");
 		Expect(cut.front().truncated, "Enqueue flags a cut-off notice");
 		Expect(!q.front().truncated, "Enqueue does not flag a short notice");
-		Expect(hzmsg::GameNotice(cut.front().text).ok, "GameNotice would card the 200-byte prefix");
-		Expect(!hzmsg::GameNoticeAllowed(cut.front().truncated), "a cut-off notice skips the GAME card");
+		Expect(hzmsg::GameNotice(cut.front().text).ok, "GameNotice cards the 200-byte prefix");
+		Expect(hzmsg::GameNoticeAllowed(cut.front().truncated), "a cut-off notice still gets a GAME card");
 		Expect(hzmsg::GameNoticeAllowed(false), "a full notice may get a GAME card");
-		Expect(!hzmsg::GameNoticeAllowed(true), "the truncation skip is the GameNotice gate");
+		Expect(hzmsg::GameNoticeAllowed(true), "the truncation gate allows the GAME card");
 		{
 			std::deque<Note> snap;
 			const std::string prefix(200, 'b');
 			Expect(hzrx::Enqueue(snap, prefix.c_str(), 3, 8, true), "a prior snap can pass the cut-off flag");
 			Expect(snap.front().truncated && std::strlen(snap.front().text) == 200,
 				"a 200-byte snap still flags cut-off");
-			Expect(!hzmsg::GameNoticeAllowed(snap.front().truncated),
-				"a flagged snap skips the GAME card so the game's line shows alone");
+			Expect(hzmsg::GameNoticeAllowed(snap.front().truncated),
+				"a flagged snap still gets a GAME card with an ellipsis");
+		}
+		{
+			const std::string art = std::string(180, 'x') + " Artifact " + std::string(40, 'y');
+			std::deque<Note> aq;
+			Expect(hzrx::Enqueue(aq, art.c_str(), 4), "an over-long Artifact line is stored");
+			Expect(aq.front().truncated && aq.front().artifact, "ARTIFACT is decided from the full source");
+			const auto hit = hzmsg::GameNotice(aq.front().text, aq.front().artifact);
+			Expect(hit.ok && hit.name == "ARTIFACT", "a cut Artifact line titles ARTIFACT");
 		}
 		std::deque<Note> cap;
 		for (int i = 0; i < 8; ++i) {
@@ -422,6 +432,49 @@ int main()
 		ExpectEq(buf, "Hi", "an incomplete UTF-8 sequence is dropped");
 		CopyHudText(buf, 0, "Sam");
 		CopyHudText(nullptr, 4, "Sam");
+	}
+
+	{
+		char card[201];
+		Expect(!EllipsizeHud(card, sizeof card, std::string(199, 'a').c_str())
+			&& std::strlen(card) == 199, "199 bytes stay uncut");
+		Expect(!EllipsizeHud(card, sizeof card, std::string(200, 'b').c_str())
+			&& std::strlen(card) == 200, "200 bytes stay uncut");
+		Expect(EllipsizeHud(card, sizeof card, std::string(201, 'c').c_str())
+			&& std::string(card).size() == 200 && std::string(card).rfind("...") == 197,
+			"201 bytes become a 200-byte card with ...");
+		Expect(EllipsizeHud(card, sizeof card, std::string(300, 'd').c_str())
+			&& std::string(card).size() == 200 && std::string(card).rfind("...") == 197,
+			"300 bytes become a 200-byte card with ...");
+		std::string wordy = std::string(170, 'w') + " last-word " + std::string(40, 'z');
+		Expect(EllipsizeHud(card, sizeof card, wordy.c_str()), "a long spaced line ellipsizes");
+		Expect(std::string(card).find("last-word") != std::string::npos
+			&& std::string(card).rfind("...") == std::string(card).size() - 3,
+			"the cut prefers a word boundary then ...");
+		std::string wide(196, 'e');
+		wide += "\xC3\xA9";
+		wide += std::string(20, 'f');
+		Expect(EllipsizeHud(card, sizeof card, wide.c_str()), "a UTF-8 straddle ellipsizes");
+		const std::string got(card);
+		Expect(got.find("\xC3") == std::string::npos && got.rfind("...") == got.size() - 3,
+			"the ellipsis cut does not keep a split UTF-8 lead");
+		HudTextSnap s{};
+		AssignSnapTruncated(s, std::string(199, 'g').c_str());
+		Expect(!s.truncated && std::strlen(s.text) == 199, "snap 199 fits");
+		AssignSnapTruncated(s, std::string(200, 'g').c_str());
+		Expect(!s.truncated && std::strlen(s.text) == 200, "snap 200 fits");
+		AssignSnapTruncated(s, std::string(201, 'g').c_str());
+		Expect(!s.truncated && std::strlen(s.text) == 201, "snap 201 fits the 256-byte log copy");
+		AssignSnapTruncated(s, std::string(256, 'g').c_str());
+		Expect(!s.truncated && std::strlen(s.text) == 256, "snap 256 fits");
+		AssignSnapTruncated(s, std::string(300, 'g').c_str());
+		Expect(s.truncated && std::strlen(s.text) == 256, "snap 300 is cut at 256 for the log");
+		char log[257];
+		CopyHudText(log, sizeof log, s.text);
+		char card2[201];
+		EllipsizeHud(card2, sizeof card2, s.text);
+		Expect(std::strlen(log) == 256 && std::string(card2).rfind("...") == 197,
+			"the log keeps the 256-byte snap; the card shows ...");
 	}
 
 	const std::string same = PresetContentKey(bodyA);
@@ -563,6 +616,13 @@ int main()
 		const auto loadEnd = src.find("return true;", load);
 		Expect(loadEnd != std::string::npos, "plugin load returns");
 		Expect(src.substr(load, loadEnd - load).find("RegisterShowHUDMessageSink") == std::string::npos, "sink is not registered at plugin load");
+		Expect(src.find("a_out->truncated = HzCopyRaw(") != std::string::npos,
+			"the SEH snap assigns truncated from HzCopyRaw");
+		Expect(src.find("char text[257];") != std::string::npos, "the SEH snap holds 256 bytes for the log");
+		Expect(src.find("if (hit.ok && n.truncated)") != std::string::npos,
+			"a cut reaction is not shown as a reaction card");
+		Expect(src.find("hzpreset::EllipsizeHud(show, sizeof show, n.text)") != std::string::npos,
+			"a cut notice is pushed with an ellipsis");
 		Expect(src.find("void HzRxEnqueue(const char* a_text, bool a_truncated") != std::string::npos, "the sink thread only enqueues");
 		Expect(src.find("std::lock_guard<std::mutex> lock(g_rxMu);") != std::string::npos, "the reaction queue is mutex locked");
 		Expect(src.find("kRxQueueMax") != std::string::npos, "the reaction queue is bounded");

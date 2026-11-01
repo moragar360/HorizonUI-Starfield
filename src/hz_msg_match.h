@@ -936,20 +936,22 @@ inline bool ContainsFold(std::string_view hay, std::string_view needle)
 	return false;
 }
 
-// Purpose: a cut-off (truncated) notice must not get a GAME/ARTIFACT card,
-// so the game's own line shows alone. Inputs: Enqueue's truncated flag.
+// Purpose: a cut-off notice still gets a GAME/ARTIFACT card. The card
+// shows ASCII "..."; the Message Log keeps the full text.
+// Inputs: Enqueue's truncated flag (unused; kept so the poll call stays).
 // Author: Moragar. Last modified: 2026-11-01.
-inline bool GameNoticeAllowed(bool a_truncated)
+inline bool GameNoticeAllowed(bool)
 {
-	return !a_truncated;
+	return true;
 }
 
 // Purpose: generic Horizon game card for an unmatched HUD notice.
-// Empty, over-long, and newline lines stay Miss (same as Match).
-inline Hit GameNotice(std::string_view text)
+// Empty, over-256, and newline lines stay Miss. artifact=true titles
+// ARTIFACT from the full source when the queued copy was cut.
+inline Hit GameNotice(std::string_view text, bool artifact = false)
 {
 	const auto line = Trim(text);
-	if (line.empty() || line.size() > 200) return Miss();
+	if (line.empty() || line.size() > 256) return Miss();
 	if (line.find('\n') != std::string_view::npos || line.find('\r') != std::string_view::npos)
 		return Miss();
 	Hit h;
@@ -957,7 +959,7 @@ inline Hit GameNotice(std::string_view text)
 	h.kind = "game";
 	h.sub = "notice";
 	h.value = "GAME";
-	h.name = ContainsFold(line, "artifact") ? "ARTIFACT" : "GAME";
+	h.name = (artifact || ContainsFold(line, "artifact")) ? "ARTIFACT" : "GAME";
 	return h;
 }
 

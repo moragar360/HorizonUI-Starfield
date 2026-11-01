@@ -127,6 +127,53 @@ inline bool CopyHudText(char* a_dst, std::size_t a_cap, const char* a_src)
 	return a_src[i] != '\0';
 }
 
+// Purpose: copy HUD card text and, when the source is longer, end it with ASCII "...".
+// Inputs: destination, its size in bytes (including the NUL), and the source.
+// Outputs: the source when it fits. Otherwise a UTF-8-safe prefix plus "...".
+// A word break in the last 24 bytes is preferred. Returns true when ellipsized.
+// Dependencies: CopyHudText.
+// Last modified: 2026-11-01.
+inline bool EllipsizeHud(char* a_dst, std::size_t a_cap, const char* a_src)
+{
+	if (!a_dst || a_cap == 0) return false;
+	a_dst[0] = '\0';
+	if (!a_src) return false;
+	if (a_cap < 5) return CopyHudText(a_dst, a_cap, a_src);
+	if (!CopyHudText(a_dst, a_cap, a_src)) return false;
+	CopyHudText(a_dst, a_cap - 3, a_src);
+	std::size_t n = 0;
+	while (a_dst[n] != '\0') ++n;
+	const std::size_t minKeep = n > 24 ? n - 24 : (n / 2);
+	std::size_t cut = n;
+	while (cut > minKeep && a_dst[cut - 1] != ' ' && a_dst[cut - 1] != '\t') --cut;
+	if (cut > minKeep && cut < n) {
+		while (cut > 0 && (a_dst[cut - 1] == ' ' || a_dst[cut - 1] == '\t')) --cut;
+		a_dst[cut] = '\0';
+		n = cut;
+	}
+	a_dst[n] = '.';
+	a_dst[n + 1] = '.';
+	a_dst[n + 2] = '.';
+	a_dst[n + 3] = '\0';
+	return true;
+}
+
+// Purpose: the same assignment as HzHudMsgCopyCall so a mutant that drops
+// the CopyHudText return cannot compile through this helper unseen.
+// Inputs: dest snap (257-byte text) and source. Outputs: truncated when
+// the source was longer than 256 bytes. Dependencies: CopyHudText.
+// Last modified: 2026-11-01.
+struct HudTextSnap
+{
+	bool truncated{false};
+	char text[257];
+};
+
+inline void AssignSnapTruncated(HudTextSnap& a_out, const char* a_src)
+{
+	a_out.truncated = CopyHudText(a_out.text, sizeof a_out.text, a_src);
+}
+
 // Purpose: drop the characters a preset name must not contain, matching the HUD.
 // Inputs: the raw name from F11. Outputs: the name with those characters and
 // control characters removed, trimmed, and cut at 48 bytes on a UTF-8 boundary.

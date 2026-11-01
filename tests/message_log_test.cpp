@@ -849,12 +849,14 @@ int main()
 			const auto cr = hzmsg::GameNotice("Artifact\rETA");
 			Expect(!cr.ok, "GameNotice CR misses");
 			const auto longLine = std::string(201, 'A');
-			Expect(!hzmsg::GameNotice(longLine).ok, "GameNotice 201-char misses");
+			Expect(hzmsg::GameNotice(longLine).ok, "GameNotice 201-char is a card");
 			const auto artLong = std::string("Artifact ") + std::string(200, 'x');
-			Expect(!hzmsg::GameNotice(artLong).ok, "GameNotice over-long Artifact misses");
+			Expect(hzmsg::GameNotice(artLong).ok && hzmsg::GameNotice(artLong).name == "ARTIFACT",
+				"GameNotice titles ARTIFACT from the full line");
+			Expect(!hzmsg::GameNotice(std::string(257, 'A')).ok, "GameNotice over 256 misses");
 			Expect(!hzmsg::GameNotice("").ok, "GameNotice empty misses");
 			Expect(!hzmsg::GameNotice("   ").ok, "GameNotice blank misses");
-			Expect(!hzmsg::GameNoticeAllowed(true), "cut-off notices skip the GAME card");
+			Expect(hzmsg::GameNoticeAllowed(true), "cut-off notices still get a GAME card");
 			Expect(hzmsg::GameNoticeAllowed(false), "a full notice may get a GAME card");
 			const auto prefix = hzmsg::GameNotice(std::string(200, 'G'));
 			Expect(prefix.ok && prefix.name == "GAME", "GameNotice would card a 200-byte prefix");
@@ -3336,7 +3338,15 @@ int main()
 		}
 		Expect(main.find("hzmsg::GameNotice") != std::string::npos, "unmatched HUD notices become Horizon game cards");
 		Expect(main.find("GameNoticeAllowed(n.truncated)") != std::string::npos,
-			"cut-off notices skip GameNotice");
+			"cut-off notices still pass GameNoticeAllowed");
+		Expect(main.find("a_out->truncated = HzCopyRaw(") != std::string::npos,
+			"the SEH snap assigns truncated from HzCopyRaw");
+		Expect(main.find("WriteAtomic(P.user, next)") != std::string::npos,
+			"MessageLog save writes user.ini through WriteAtomic");
+		Expect(main.find("IsMessageLogOnlyIni(mlIni)") != std::string::npos,
+			"MessageLog save rejects a full dump");
+		Expect(main.find("ReadExistingOrEmpty(P.user, user)") != std::string::npos,
+			"MessageLog save reads user.ini before merge");
 		Expect(main.find("scan push open") != std::string::npos && main.find("scan push close") != std::string::npos,
 			"scan push logs one INFO line on open and close");
 		Expect(main.find("Resetting") != std::string::npos && main.find("sent") != std::string::npos

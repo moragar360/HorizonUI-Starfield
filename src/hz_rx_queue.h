@@ -1,12 +1,12 @@
 #pragma once
 
 // Purpose: the HUD-message queue policy, with no lock and no game types, so a harness can run it.
-// Inputs: a deque of notes (a char text[201], a tick, and a truncated flag), the raw line, the
-// time, the cap, and an optional already-cut flag from a prior 200-byte snap.
+// Inputs: a deque of notes (a char text[201], a tick, a truncated flag, and an artifact flag),
+// the raw line, the time, the cap, and an optional already-cut flag from a prior snap.
 // Outputs: true when the note was stored. Empty text is dropped. An exact duplicate of a stored
 // note is dropped. The copy is at most 200 bytes and does not split a UTF-8 character. The oldest
 // note is dropped when the cap is full. truncated is set when the source was longer than the copy
-// so GameNotice can skip a cut-off line (the game's own line then shows alone).
+// so the card can show ASCII "..." . artifact is set from the full source line.
 // Dependencies: hzpreset::CopyHudText.
 // Last modified: 2026-11-01.
 
@@ -16,6 +16,23 @@
 #include <cstring>
 
 namespace hzrx {
+
+inline bool LineHasArtifact(const char* a_s)
+{
+	if (!a_s) return false;
+	static constexpr char kNeedle[] = "artifact";
+	for (std::size_t i = 0; a_s[i] != '\0'; ++i) {
+		std::size_t j = 0;
+		for (; kNeedle[j] != '\0'; ++j) {
+			char c = a_s[i + j];
+			if (c == '\0') return false;
+			if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+			if (c != kNeedle[j]) break;
+		}
+		if (kNeedle[j] == '\0') return true;
+	}
+	return false;
+}
 
 template <class Queue>
 inline bool Enqueue(Queue& a_q, const char* a_text, unsigned long long a_now, std::size_t a_cap = 8,
@@ -36,6 +53,7 @@ inline bool Enqueue(Queue& a_q, const char* a_text, unsigned long long a_now, st
 	n.text[i] = '\0';
 	n.tick = a_now;
 	n.truncated = cut || a_truncated;
+	n.artifact = LineHasArtifact(a_text);
 	a_q.push_back(n);
 	return true;
 }
