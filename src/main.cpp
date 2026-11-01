@@ -2044,7 +2044,7 @@ namespace HZ
 	constexpr ULONGLONG kRxMaxAge = 3000;
 	struct RxNote
 	{
-		char      text[201];
+		char      text[257];
 		ULONGLONG tick;
 		bool      truncated;
 		bool      artifact;
@@ -2750,17 +2750,13 @@ namespace HZ
 				const std::string name = hit.name;
 				const std::string value = hit.value;
 				char show[201];
-				const char* raw = n.text;
-				if (n.truncated) {
-					hzpreset::EllipsizeHud(show, sizeof show, n.text);
-					raw = show;
-				}
+				hzpreset::EllipsizeHud(show, sizeof show, n.text);
 				GValue args[5] = {
 					GValue(kind.c_str()),
 					GValue(sub.c_str()),
 					GValue(name.c_str()),
 					GValue(value.c_str()),
-					GValue(raw)
+					GValue(show)
 				};
 				GValue ret;
 				if (msg->menuObj.Invoke("hzcCardPush", &ret, args, 5) && ret.IsString() && ret.GetString())

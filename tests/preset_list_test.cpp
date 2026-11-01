@@ -339,7 +339,7 @@ int main()
 	{
 		struct Note
 		{
-			char text[201];
+			char text[257];
 			unsigned long long tick;
 			bool truncated;
 			bool artifact;
@@ -351,13 +351,13 @@ int main()
 		Expect(hzrx::Enqueue(q, "Sam Coe liked that.", 10), "the first line is stored");
 		Expect(!hzrx::Enqueue(q, "Sam Coe liked that.", 11), "an exact duplicate is dropped");
 		Expect(q.size() == 1 && q.front().tick == 10, "the first copy of a duplicate stays");
-		const std::string longA(250, 'a');
+		const std::string longA(300, 'a');
 		const std::string longB = longA + "XYZ";
 		std::deque<Note> cut;
 		Expect(hzrx::Enqueue(cut, longA.c_str(), 1), "a long line is stored");
-		Expect(!hzrx::Enqueue(cut, longB.c_str(), 2), "two lines that truncate to the same 200 bytes dedupe");
-		Expect(cut.size() == 1 && std::strlen(cut.front().text) == 200, "the stored line is 200 bytes");
-		Expect(std::string(cut.front().text) == std::string(200, 'a'), "the stored line is not split");
+		Expect(!hzrx::Enqueue(cut, longB.c_str(), 2), "two lines that truncate to the same 256 bytes dedupe");
+		Expect(cut.size() == 1 && std::strlen(cut.front().text) == 256, "the stored line is 256 bytes");
+		Expect(std::string(cut.front().text) == std::string(256, 'a'), "the stored line is not split");
 		Expect(cut.front().truncated, "Enqueue flags a cut-off notice");
 		Expect(!q.front().truncated, "Enqueue does not flag a short notice");
 		Expect(hzmsg::GameNotice(cut.front().text).ok, "GameNotice cards the 200-byte prefix");
@@ -377,7 +377,7 @@ int main()
 			const std::string art = std::string(180, 'x') + " Artifact " + std::string(40, 'y');
 			std::deque<Note> aq;
 			Expect(hzrx::Enqueue(aq, art.c_str(), 4), "an over-long Artifact line is stored");
-			Expect(aq.front().truncated && aq.front().artifact, "ARTIFACT is decided from the full source");
+			Expect(aq.front().artifact, "ARTIFACT is decided from the full source");
 			const auto hit = hzmsg::GameNotice(aq.front().text, aq.front().artifact);
 			Expect(hit.ok && hit.name == "ARTIFACT", "a cut Artifact line titles ARTIFACT");
 		}
@@ -475,6 +475,55 @@ int main()
 		EllipsizeHud(card2, sizeof card2, s.text);
 		Expect(std::strlen(log) == 256 && std::string(card2).rfind("...") == 197,
 			"the log keeps the 256-byte snap; the card shows ...");
+	}
+
+	{
+		struct Note
+		{
+			char text[257];
+			unsigned long long tick;
+			bool truncated;
+			bool artifact;
+		};
+		auto pairs = [](const char* a_card, const std::string& a_vanilla) {
+			const std::string card(a_card);
+			if (card == a_vanilla) return true;
+			if (card.size() < 3 || card.compare(card.size() - 3, 3, "...") != 0) return false;
+			const auto stem = card.substr(0, card.size() - 3);
+			return a_vanilla.size() >= stem.size() && a_vanilla.compare(0, stem.size(), stem) == 0;
+		};
+		auto e2e = [&](const std::string& a_src, bool a_dots, const char* a_what) {
+			std::deque<Note> q;
+			Expect(hzrx::Enqueue(q, a_src.c_str(), 1), a_what);
+			char card[201];
+			EllipsizeHud(card, sizeof card, q.front().text);
+			if (a_dots) {
+				const std::string got(card);
+				Expect(got.size() == 200 && got.rfind("...") == got.size() - 3, a_what);
+				Expect(pairs(card, a_src), a_what);
+			} else {
+				ExpectEq(card, a_src, a_what);
+				Expect(pairs(card, a_src), a_what);
+			}
+		};
+		e2e(std::string(199, 'a'), false, "Enqueue+Ellipsize 199 stays uncut and pairs");
+		e2e(std::string(200, 'b'), false, "Enqueue+Ellipsize 200 stays uncut and pairs");
+		e2e(std::string(201, 'c'), true, "Enqueue+Ellipsize 201 ends in ... and pairs");
+		e2e(std::string(300, 'd'), true, "Enqueue+Ellipsize 300 ends in ... and pairs");
+		e2e(std::string(400, 'e'), true, "Enqueue+Ellipsize 400 ends in ... and pairs");
+		std::string wide(196, 'f');
+		wide += "\xC3\xA9";
+		wide += std::string(20, 'g');
+		{
+			std::deque<Note> q;
+			Expect(hzrx::Enqueue(q, wide.c_str(), 1), "Enqueue keeps a UTF-8 straddle");
+			char card[201];
+			Expect(EllipsizeHud(card, sizeof card, q.front().text), "Enqueue+Ellipsize UTF-8 ends in ...");
+			const std::string got(card);
+			Expect(got.rfind("...") == got.size() - 3 && got.find("\xC3") == std::string::npos,
+				"Enqueue+Ellipsize UTF-8 does not split a character");
+			Expect(pairs(card, wide), "Enqueue+Ellipsize UTF-8 still pairs with the vanilla line");
+		}
 	}
 
 	const std::string same = PresetContentKey(bodyA);
@@ -621,8 +670,9 @@ int main()
 		Expect(src.find("char text[257];") != std::string::npos, "the SEH snap holds 256 bytes for the log");
 		Expect(src.find("if (hit.ok && n.truncated)") != std::string::npos,
 			"a cut reaction is not shown as a reaction card");
-		Expect(src.find("hzpreset::EllipsizeHud(show, sizeof show, n.text)") != std::string::npos,
-			"a cut notice is pushed with an ellipsis");
+		Expect(src.find("if (n.truncated)") == std::string::npos
+			&& src.find("hzpreset::EllipsizeHud(show, sizeof show, n.text)") != std::string::npos,
+			"EllipsizeHud always runs on the queued text");
 		Expect(src.find("void HzRxEnqueue(const char* a_text, bool a_truncated") != std::string::npos, "the sink thread only enqueues");
 		Expect(src.find("std::lock_guard<std::mutex> lock(g_rxMu);") != std::string::npos, "the reaction queue is mutex locked");
 		Expect(src.find("kRxQueueMax") != std::string::npos, "the reaction queue is bounded");
