@@ -92,16 +92,18 @@ inline std::string Utf8Prefix(const std::string& a_s, std::size_t a_max)
 // Purpose: copy a HUD string into a fixed buffer without splitting a UTF-8 character.
 // Inputs: destination, its size in bytes (including the NUL), and the source. Outputs: at most
 // a_cap - 1 bytes, ending on a character boundary. A character that would cross that limit is left out.
-// Controls and DEL become spaces. Dependencies: none.
-// Last modified: 2026-10-22.
-inline void CopyHudText(char* a_dst, std::size_t a_cap, const char* a_src)
+// Controls and DEL become spaces. Returns true when the source had more text than fit.
+// Dependencies: none.
+// Last modified: 2026-11-01.
+inline bool CopyHudText(char* a_dst, std::size_t a_cap, const char* a_src)
 {
-	if (!a_dst || a_cap == 0) return;
+	if (!a_dst || a_cap == 0) return false;
 	a_dst[0] = '\0';
-	if (!a_src) return;
+	if (!a_src) return false;
 	const std::size_t max = a_cap - 1;
 	std::size_t o = 0;
-	for (std::size_t i = 0; a_src[i] != '\0' && o < max;) {
+	std::size_t i = 0;
+	for (; a_src[i] != '\0' && o < max;) {
 		const auto lead = static_cast<unsigned char>(a_src[i]);
 		int need = 1;
 		if ((lead & 0x80) == 0x00) need = 1;
@@ -122,6 +124,7 @@ inline void CopyHudText(char* a_dst, std::size_t a_cap, const char* a_src)
 		i += static_cast<std::size_t>(need);
 	}
 	a_dst[o] = '\0';
+	return a_src[i] != '\0';
 }
 
 // Purpose: drop the characters a preset name must not contain, matching the HUD.

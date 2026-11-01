@@ -854,6 +854,10 @@ int main()
 			Expect(!hzmsg::GameNotice(artLong).ok, "GameNotice over-long Artifact misses");
 			Expect(!hzmsg::GameNotice("").ok, "GameNotice empty misses");
 			Expect(!hzmsg::GameNotice("   ").ok, "GameNotice blank misses");
+			Expect(!hzmsg::GameNoticeAllowed(true), "cut-off notices skip the GAME card");
+			Expect(hzmsg::GameNoticeAllowed(false), "a full notice may get a GAME card");
+			const auto prefix = hzmsg::GameNotice(std::string(200, 'G'));
+			Expect(prefix.ok && prefix.name == "GAME", "GameNotice would card a 200-byte prefix");
 		}
 		Expect(ClassifyHud("Sam Coe liked that.", en, title, tag) == Kind::Reaction, "liked that is a reaction");
 		ExpectEq(title, "Sam Coe", "reaction title is the companion name");
@@ -3320,7 +3324,19 @@ int main()
 		}
 		Expect(main.find("hzTakeMsglogIni") != std::string::npos, "DLL takes the MessageLog-only save");
 		Expect(main.find("IsMessageLogOnlyIni") != std::string::npos, "DLL rejects a full dump on the MessageLog save path");
+		{
+			const auto work = AsFnBody(main, "void FilesPollWork()", "void PushFileState()");
+			Expect(work.find("MergeMessageLogUser") != std::string::npos,
+				"the shipped MessageLog save uses MergeMessageLogUser");
+			Expect(work.find("ReplaceSection(user") == std::string::npos,
+				"the shipped save does not ReplaceSection an unread user.ini");
+			Expect(work.find("ReadExistingOrEmpty") != std::string::npos
+				&& work.find("Exists(P.user)") != std::string::npos,
+				"the shipped save passes Exists and ReadText to MergeMessageLogUser");
+		}
 		Expect(main.find("hzmsg::GameNotice") != std::string::npos, "unmatched HUD notices become Horizon game cards");
+		Expect(main.find("GameNoticeAllowed(n.truncated)") != std::string::npos,
+			"cut-off notices skip GameNotice");
 		Expect(main.find("scan push open") != std::string::npos && main.find("scan push close") != std::string::npos,
 			"scan push logs one INFO line on open and close");
 		Expect(main.find("Resetting") != std::string::npos && main.find("sent") != std::string::npos

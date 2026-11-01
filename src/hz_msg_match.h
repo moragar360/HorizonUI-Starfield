@@ -936,6 +936,14 @@ inline bool ContainsFold(std::string_view hay, std::string_view needle)
 	return false;
 }
 
+// Purpose: a cut-off (truncated) notice must not get a GAME/ARTIFACT card,
+// so the game's own line shows alone. Inputs: Enqueue's truncated flag.
+// Author: Moragar. Last modified: 2026-11-01.
+inline bool GameNoticeAllowed(bool a_truncated)
+{
+	return !a_truncated;
+}
+
 // Purpose: generic Horizon game card for an unmatched HUD notice.
 // Empty, over-long, and newline lines stay Miss (same as Match).
 inline Hit GameNotice(std::string_view text)

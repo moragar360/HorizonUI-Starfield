@@ -1397,15 +1397,15 @@ namespace HZ
 				} else {
 					const auto P = FilesP();
 					std::string user;
-					if (!HZF::ReadExistingOrEmpty(P.user, user)) {
+					const bool exists = HZF::Exists(P.user);
+					const bool readOk = HZF::ReadExistingOrEmpty(P.user, user);
+					std::string next;
+					if (!HZF::MergeMessageLogUser(exists, readOk, user, mlIni, next)) {
 						REX::WARN("message log save skipped (could not read HorizonUI.user.ini)");
-					} else {
-						const auto next = HZF::ReplaceSection(user, "messagelog", mlIni);
-						if (HZF::WriteAtomic(P.user, next))
-							REX::INFO("message log settings saved");
-						else
-							REX::WARN("message log save FAILED");
-					}
+					} else if (HZF::WriteAtomic(P.user, next))
+						REX::INFO("message log settings saved");
+					else
+						REX::WARN("message log save FAILED");
 				}
 			} catch (...) {
 				REX::WARN("message log save FAILED");
@@ -1869,19 +1869,20 @@ namespace HZ
 	{
 		bool throttle;
 		bool warning;
+		bool truncated;
 		char text[201];
 		char sound[97];
 	};
 
-	static void HzCopyRaw(char* a_dst, std::size_t a_cap, const char* a_src)
+	static bool HzCopyRaw(char* a_dst, std::size_t a_cap, const char* a_src)
 	{
-		hzpreset::CopyHudText(a_dst, a_cap, a_src);
+		return hzpreset::CopyHudText(a_dst, a_cap, a_src);
 	}
 
 	static void HzHudMsgCopyCall(const RE::ShowHUDMessageEvent* a_ev, HudMsgSnap* a_out)
 	{
 		if (!a_ev || !a_out) return;
-		HzCopyRaw(a_out->text, sizeof(a_out->text), a_ev->text.c_str());
+		a_out->truncated = HzCopyRaw(a_out->text, sizeof(a_out->text), a_ev->text.c_str());
 		HzCopyRaw(a_out->sound, sizeof(a_out->sound), a_ev->sound.c_str());
 		a_out->throttle = a_ev->canThrottle;
 		a_out->warning = a_ev->isWarning;
@@ -1957,7 +1958,7 @@ namespace HZ
 	}
 #endif
 
-	void HzRxEnqueue(const char* a_text);
+	void HzRxEnqueue(const char* a_text, bool a_truncated = false);
 
 	class ShowHUDMessageSink final : public RE::BSTEventSink<RE::ShowHUDMessageEvent>
 	{
@@ -1980,7 +1981,7 @@ namespace HZ
 					snap.text, snap.sound, snap.throttle ? 1 : 0, snap.warning ? 1 : 0);
 #endif
 				// This thread is not the UI thread. Copy the text and return. Poll classifies and invokes Scaleform.
-				HzRxEnqueue(snap.text);
+				HzRxEnqueue(snap.text, snap.truncated);
 			} catch (const std::exception& ex) {
 				if (!g_hudMsgReadWarned.exchange(true, std::memory_order_relaxed))
 					REX::WARN("ShowHUDMessageEvent sink failed: {}", ex.what());
@@ -2044,19 +2045,20 @@ namespace HZ
 	{
 		char      text[201];
 		ULONGLONG tick;
+		bool      truncated;
 	};
 	std::mutex        g_rxMu;
 	std::deque<RxNote> g_rxQ;
 
 	void MsglogEnqueueHud(const char* a_text);
 
-	void HzRxEnqueue(const char* a_text)
+	void HzRxEnqueue(const char* a_text, bool a_truncated)
 	{
 		if (!a_text || !a_text[0]) return;
 		try {
 			std::lock_guard<std::mutex> lock(g_rxMu);
 			// 0.42.0.9: empty, duplicate, and over-cap notes are dropped in hzrx::Enqueue. The cap stays 8.
-			hzrx::Enqueue(g_rxQ, a_text, GetTickCount64(), kRxQueueMax);
+			hzrx::Enqueue(g_rxQ, a_text, GetTickCount64(), kRxQueueMax, a_truncated);
 		} catch (...) {
 		}
 		MsglogEnqueueHud(a_text);
@@ -2718,6 +2720,8 @@ namespace HZ
 			try { hit = hzmsg::Match(n.text, phrases); } catch (...) { hit = {}; }
 			if (!hit.ok) {
 				try {
+					if (!hzmsg::GameNoticeAllowed(n.truncated))
+						continue;
 					if (hzlog::IsSaveLine(n.text) || hzlog::IsCalmedLine(n.text, phrases))
 						continue;
 					hit = hzmsg::GameNotice(n.text);

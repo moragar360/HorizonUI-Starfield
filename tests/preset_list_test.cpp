@@ -340,6 +340,7 @@ int main()
 		{
 			char text[201];
 			unsigned long long tick;
+			bool truncated;
 		};
 		std::deque<Note> q;
 		Expect(!hzrx::Enqueue(q, nullptr, 1), "a null HUD line is dropped");
@@ -355,6 +356,21 @@ int main()
 		Expect(!hzrx::Enqueue(cut, longB.c_str(), 2), "two lines that truncate to the same 200 bytes dedupe");
 		Expect(cut.size() == 1 && std::strlen(cut.front().text) == 200, "the stored line is 200 bytes");
 		Expect(std::string(cut.front().text) == std::string(200, 'a'), "the stored line is not split");
+		Expect(cut.front().truncated, "Enqueue flags a cut-off notice");
+		Expect(!q.front().truncated, "Enqueue does not flag a short notice");
+		Expect(hzmsg::GameNotice(cut.front().text).ok, "GameNotice would card the 200-byte prefix");
+		Expect(!hzmsg::GameNoticeAllowed(cut.front().truncated), "a cut-off notice skips the GAME card");
+		Expect(hzmsg::GameNoticeAllowed(false), "a full notice may get a GAME card");
+		Expect(!hzmsg::GameNoticeAllowed(true), "the truncation skip is the GameNotice gate");
+		{
+			std::deque<Note> snap;
+			const std::string prefix(200, 'b');
+			Expect(hzrx::Enqueue(snap, prefix.c_str(), 3, 8, true), "a prior snap can pass the cut-off flag");
+			Expect(snap.front().truncated && std::strlen(snap.front().text) == 200,
+				"a 200-byte snap still flags cut-off");
+			Expect(!hzmsg::GameNoticeAllowed(snap.front().truncated),
+				"a flagged snap skips the GAME card so the game's line shows alone");
+		}
 		std::deque<Note> cap;
 		for (int i = 0; i < 8; ++i) {
 			const std::string line = "line " + std::to_string(i);
@@ -547,12 +563,12 @@ int main()
 		const auto loadEnd = src.find("return true;", load);
 		Expect(loadEnd != std::string::npos, "plugin load returns");
 		Expect(src.substr(load, loadEnd - load).find("RegisterShowHUDMessageSink") == std::string::npos, "sink is not registered at plugin load");
-		Expect(src.find("void HzRxEnqueue(const char* a_text);") != std::string::npos, "the sink thread only enqueues");
+		Expect(src.find("void HzRxEnqueue(const char* a_text, bool a_truncated") != std::string::npos, "the sink thread only enqueues");
 		Expect(src.find("std::lock_guard<std::mutex> lock(g_rxMu);") != std::string::npos, "the reaction queue is mutex locked");
 		Expect(src.find("kRxQueueMax") != std::string::npos, "the reaction queue is bounded");
 		Expect(src.find("HasMember(\"hzcCardPush\")") != std::string::npos, "Poll invokes hzcCardPush only when the movie defines it");
 		Expect(src.find("kRxQueueMax = 8") != std::string::npos, "the HUD message queue holds 8");
-		Expect(src.find("hzrx::Enqueue(g_rxQ, a_text, GetTickCount64(), kRxQueueMax)") != std::string::npos, "the HUD queue uses the shared policy");
+		Expect(src.find("hzrx::Enqueue(g_rxQ, a_text, GetTickCount64(), kRxQueueMax, a_truncated)") != std::string::npos, "the HUD queue uses the shared policy");
 		Expect(src.find("hud gmst: address id {} does not resolve, English fallback") != std::string::npos, "a missing settings id is logged and skipped");
 		Expect(src.find("hud form: address id {} does not resolve") != std::string::npos, "a missing form id is logged and skipped");
 		Expect(src.find("if (g_iniDebug) REX::INFO(\"hud gmst: address id {} does not resolve, English fallback\"") != std::string::npos, "the settings id line is behind Debug");
@@ -636,7 +652,7 @@ int main()
 			const auto cap = src.find("REX::INFO(\"hud capture: text=");
 			const auto capGate = src.rfind("#if HZ_HUD_MSG_CAPTURE", cap);
 			const auto capEnd = src.find("#endif", cap);
-			const auto push = src.find("HzRxEnqueue(snap.text)", capEnd);
+			const auto push = src.find("HzRxEnqueue(snap.text, snap.truncated)", capEnd);
 			Expect(cap != std::string::npos && capGate != std::string::npos && capEnd != std::string::npos && push != std::string::npos, "the capture line is gated and the enqueue is not");
 			Expect(capGate < cap && cap < capEnd && push > capEnd, "only the capture line is behind its flag");
 			const auto hud = src.find("REX::INFO(\"hud message: text=");
