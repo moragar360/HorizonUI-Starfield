@@ -2116,10 +2116,8 @@ package
       {
          if(a == null || b == null) { return false; }
          if(a == b) { return true; }
-         var sa:String = this.hzcRxStem(a);
-         var sb:String = this.hzcRxStem(b);
-         if(sa.length >= 16 && b.indexOf(sa) == 0) { return true; }
-         if(sb.length >= 16 && a.indexOf(sb) == 0) { return true; }
+         if(a.length >= 19 && a.substring(a.length - 3) == "..." && b.indexOf(a.substring(0,a.length - 3)) == 0) { return true; }
+         if(b.length >= 19 && b.substring(b.length - 3) == "..." && a.indexOf(b.substring(0,b.length - 3)) == 0) { return true; }
          return false;
       }
       // Oldest card for this key that does not have a vanilla line yet.

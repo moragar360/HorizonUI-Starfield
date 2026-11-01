@@ -1988,6 +1988,12 @@ function makeHzcHost(now) {
 	const ellip = long.slice(0, 197) + "...";
 	expect(host.hzcRxKeyMatch(host.hzcRxKey(ellip), host.hzcRxKey(long)) === true, "an ellipsized card key covers the full vanilla line");
 	expect(host.hzcRxKeyMatch(host.hzcRxKey("short"), host.hzcRxKey("short other")) === false, "a short stem does not prefix-match another line");
+	expect(host.hzcRxKeyMatch(host.hzcRxKey("Docking complete"), host.hzcRxKey("Docking complete and ready to land")) === false,
+		"a full card key does not claim a longer vanilla line");
+	expect(host.hzcRxKeyMatch(host.hzcRxKey("Sarah liked that."), host.hzcRxKey("Sarah liked that. Barrett loved that.")) === false,
+		"a reaction card does not claim a longer vanilla line");
+	expect(ellip.length >= 19 && host.hzcRxKeyMatch(host.hzcRxKey(ellip), host.hzcRxKey(long)) === true,
+		"stem match requires an ellipsis and at least 19 characters");
 	const coverSrc = fnBody("private function hzcRxClaim", "private function hzcRxLink");
 	expect(coverSrc.indexOf("this.hzcRxKeyMatch(this.hzcRxKey(tx),key)") >= 0, "claim uses prefix match so a cut card covers the game's line");
 }
