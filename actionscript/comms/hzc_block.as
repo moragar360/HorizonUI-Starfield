@@ -1236,8 +1236,17 @@
       }
       private function hzcRxMatch(t:String) : Object
       {
+         if(t != null)
+         {
+            var a0:int = 0;
+            var b0:int = t.length;
+            while(a0 < b0 && this.hzcRxTrimC(t.charCodeAt(a0))) { a0++; }
+            while(b0 > a0 && this.hzcRxTrimC(t.charCodeAt(b0 - 1))) { b0--; }
+            var mid:String = t.substring(a0,b0);
+            if(mid.indexOf("\n") >= 0 || mid.indexOf("\r") >= 0) { return null; }
+         }
          var s:String = this.hzcRxNorm(t);
-         if(s == null || s.indexOf("\n") >= 0 || s.indexOf("\r") >= 0) { return null; }
+         if(s == null) { return null; }
          if(s.length < 11 || s.length > 64) { return null; }
          var cut:int = 0;
          if(this.hzcRxTail(s," that.")) { cut = 6; }
@@ -1271,8 +1280,8 @@
          if(!named) { return null; }
          return {"n":n,"k":k};
       }
-      // Tab and the no-break spaces become a normal space. Zero-width space and BOM are dropped.
-      // Ends are trimmed. Runs of spaces become one. A line break in the middle is left so the match can reject it.
+      // Tab, CR, LF, and the no-break spaces become a normal space. Zero-width space and BOM are dropped.
+      // Ends are trimmed. Runs of spaces become one.
       private function hzcRxNorm(t:String) : String
       {
          if(t == null) { return null; }
@@ -1282,7 +1291,7 @@
          {
             var c:int = t.charCodeAt(i);
             if(c == 0x200B || c == 0xFEFF) { i++; continue; }
-            if(c == 9 || c == 0xA0 || c == 0x2007 || c == 0x202F || c == 0x2009 || c == 0x200A) { raw += " "; }
+            if(c == 9 || c == 10 || c == 13 || c == 0xA0 || c == 0x2007 || c == 0x202F || c == 0x2009 || c == 0x200A) { raw += " "; }
             else { raw += t.charAt(i); }
             i++;
          }

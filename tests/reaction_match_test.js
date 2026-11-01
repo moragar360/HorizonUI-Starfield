@@ -106,7 +106,7 @@ function hzcRxNorm(t) {
 	for (let i = 0; i < t.length; i++) {
 		const c = t.charCodeAt(i);
 		if (c === 0x200B || c === 0xFEFF) continue;
-		if (c === 9 || c === 0xA0 || c === 0x2007 || c === 0x202F || c === 0x2009 || c === 0x200A) raw += " ";
+		if (c === 9 || c === 10 || c === 13 || c === 0xA0 || c === 0x2007 || c === 0x202F || c === 0x2009 || c === 0x200A) raw += " ";
 		else raw += t.charAt(i);
 	}
 	let a = 0;
@@ -175,8 +175,16 @@ function hzcRxTail(s, tail) {
 }
 
 function hzcRxMatch(t) {
+	if (t != null) {
+		let a = 0;
+		let b = t.length;
+		while (a < b && hzcRxTrimC(t.charCodeAt(a))) a++;
+		while (b > a && hzcRxTrimC(t.charCodeAt(b - 1))) b--;
+		const mid = t.slice(a, b);
+		if (mid.indexOf("\n") >= 0 || mid.indexOf("\r") >= 0) return null;
+	}
 	const s = hzcRxNorm(t);
-	if (s == null || s.indexOf("\n") >= 0 || s.indexOf("\r") >= 0) return null;
+	if (s == null) return null;
 	if (s.length < 11 || s.length > 64) return null;
 	let cut = 0;
 	if (hzcRxTail(s, " that.")) cut = 6;
@@ -924,7 +932,11 @@ for (let i = 0; i < msgTwins.length; i++) {
 	expectSpan = expectSpan.replace("private static const HZC_LRG:Boolean = __HZC_LRG__;", "private static const HZC_LRG:Boolean = " + (lrg ? "true" : "false") + ";");
 	expect(msgSpan(body) === expectSpan, rel + " matches the comms block");
 	expect(body.indexOf("public function hzcRxPush(text:String) : String") >= 0, rel + " defines hzcRxPush");
+	expect(body.indexOf("c == 9 || c == 10 || c == 13 || c == 0xA0") >= 0, rel + " folds CR and LF to a space");
 }
+expect(hzcRxNorm("Docking\ncomplete") === "Docking complete", "LF in the middle becomes a space");
+expect(hzcRxNorm("Docking\rcomplete") === "Docking complete", "CR in the middle becomes a space");
+expect(src.indexOf("c == 9 || c == 10 || c == 13 || c == 0xA0") >= 0, "hzc_block folds CR and LF to a space");
 
 function shippedRegexes(text) {
 	const found = [];
