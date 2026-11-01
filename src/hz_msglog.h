@@ -620,7 +620,14 @@ inline Kind ClassifyHud(std::string_view a_text, const hzmsg::Templates& a_phras
 	a_tag.clear();
 	const auto hit = hzmsg::Match(a_text, a_phrases);
 	if (!hit.ok) {
-		a_title = hzmsg::ContainsFold(a_text, "artifact") ? "ARTIFACT" : "GAME";
+		const auto item = hzmsg::ItemNotice(a_text);
+		if (item.ok) {
+			a_title = item.name;
+			return Kind::Game;
+		}
+		if (hzmsg::ContainsFold(a_text, "artifact")) a_title = "ARTIFACT";
+		else if (hzmsg::ContainsFold(a_text, "key")) a_title = "KEY";
+		else a_title = "GAME";
 		return Kind::Game;
 	}
 	a_tag = hit.value;

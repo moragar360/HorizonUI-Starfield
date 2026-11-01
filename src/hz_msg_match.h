@@ -945,21 +945,57 @@ inline bool GameNoticeAllowed(bool)
 	return true;
 }
 
+// Purpose: an inventory Added./Removed. line that is not credits.
+// Inputs: raw HUD text. Outputs: ITEM, or KEY when the line contains "key".
+// Empty, over-200, newline, and credits-style lines stay Miss.
+// Last modified: 2026-11-01.
+inline Hit ItemNotice(std::string_view text)
+{
+	const auto line = Trim(text);
+	if (line.empty() || line.size() > 200) return Miss();
+	if (line.find('\n') != std::string_view::npos || line.find('\r') != std::string_view::npos)
+		return Miss();
+	const bool added = EndsFold(line, "added.") || EndsFold(line, "added");
+	const bool removed = EndsFold(line, "removed.") || EndsFold(line, "removed");
+	if (!added && !removed) return Miss();
+	if (ContainsFold(line, "credits")) return Miss();
+	if (ContainsFold(line, "artifact")) return Miss();
+	Hit h;
+	h.ok = true;
+	h.kind = "game";
+	h.sub = added ? "item-add" : "item-remove";
+	h.value = "ITEM";
+	h.name = ContainsFold(line, "key") ? "KEY" : "ITEM";
+	return h;
+}
+
 // Purpose: generic Horizon game card for an unmatched HUD notice.
 // Empty, over-256, and newline lines stay Miss. artifact=true titles
-// ARTIFACT from the full source when the queued copy was cut.
+// ARTIFACT from the full source when the queued copy was cut. A key
+// name without Added. still titles KEY.
 inline Hit GameNotice(std::string_view text, bool artifact = false)
 {
 	const auto line = Trim(text);
 	if (line.empty() || line.size() > 256) return Miss();
 	if (line.find('\n') != std::string_view::npos || line.find('\r') != std::string_view::npos)
 		return Miss();
+	if (artifact || ContainsFold(line, "artifact")) {
+		Hit h;
+		h.ok = true;
+		h.kind = "game";
+		h.sub = "notice";
+		h.value = "GAME";
+		h.name = "ARTIFACT";
+		return h;
+	}
+	const auto item = ItemNotice(text);
+	if (item.ok) return item;
 	Hit h;
 	h.ok = true;
 	h.kind = "game";
 	h.sub = "notice";
 	h.value = "GAME";
-	h.name = (artifact || ContainsFold(line, "artifact")) ? "ARTIFACT" : "GAME";
+	h.name = ContainsFold(line, "key") ? "KEY" : "GAME";
 	return h;
 }
 

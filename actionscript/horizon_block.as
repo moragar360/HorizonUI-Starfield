@@ -2500,6 +2500,7 @@
          try { this.hzTickVitals(); } catch(e36v:Error) { }
          try { this.hz26Tick(); } catch(err26:Error) { }
          try { this.hzMsglogCaretTick(); } catch(eMlC:Error) { }
+         try { this.hzSplashTick(); } catch(eSp:Error) { }
          try { this.hzAfLoadWatch(); } catch(errAfW:Error) { }
          if(this.hzPlanAlertOn)
          {
@@ -3147,7 +3148,7 @@
          return ut + "|" + lt + "|" + body;
       }
 
-      // ---------- Message Log popup (0.43.0.7). Inside the 1000x660 F11 window. ----------
+      // ---------- Message Log popup (0.43.0.8). Inside the 1000x660 F11 window. ----------
       // v7 layout: 976x620, rows at least 28 px and wrap long text, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
       private static const HZ_ML_W:Number = 976;
@@ -3302,6 +3303,7 @@
 
       private function hzMsglogShown() : Array
       {
+         this.hzMsglogChipClamp();
          var out:Array = [];
          var q:String = this.hzMlFind != null ? this.hzMlFind.toLowerCase() : "";
          var want:String = this.hzMlChip > 0 && this.hzMlChip < HZ_ML_KIND.length ? String(HZ_ML_KIND[this.hzMlChip]) : "";
@@ -3310,6 +3312,7 @@
          {
             var r:Object = this.hzMlRows[i];
             if(!this.hzMlAllTime && int(r.sess) != this.hzMlSess) { i++; continue; }
+            if(!this.hzMsglogTypeOn(String(r.k))) { i++; continue; }
             if(want.length > 0 && String(r.k) != want) { i++; continue; }
             if(q.length > 0)
             {
@@ -3331,6 +3334,7 @@
          {
             var r:Object = this.hzMlRows[i];
             if(!this.hzMlAllTime && int(r.sess) != this.hzMlSess) { i++; continue; }
+            if(!this.hzMsglogTypeOn(kind.length > 0 ? kind : String(r.k))) { i++; continue; }
             if(kind.length > 0 && String(r.k) != kind) { i++; continue; }
             if(q.length > 0)
             {
@@ -3693,14 +3697,18 @@
          if(st.length > 0) { this.hzWT(b,st,ox + HZ_ML_W - 22,oy + 16,240,13,"sb",uint(T.mut),0.4,"right",13); }
 
          var overlayOn:Boolean = this.hzMlIsOverlay();
+         this.hzMsglogChipClamp();
          var cx:Number = ox + 22;
          var cy:Number = oy + 44;
          var i:int = 0;
+         var vis:Array = [];
          var chipWs:Array = [];
          var chipXs:Array = [];
          var chipYs:Array = [];
          while(i < HZ_ML_CHIPS.length)
          {
+            if(i != 0 && !this.hzMsglogTypeOn(String(HZ_ML_KIND[i]))) { i++; continue; }
+            vis.push(i);
             var cn:int = this.hzMsglogChipCount(String(HZ_ML_KIND[i]));
             var clab:String = String(HZ_ML_CHIPS[i]) + " " + String(cn);
             var on:Boolean = i == this.hzMlChip;
@@ -3723,15 +3731,16 @@
             if(bottom > chipBlockH) { chipBlockH = bottom; }
             i++;
          }
-         i = 0;
-         while(i < HZ_ML_CHIPS.length)
+         var j:int = 0;
+         while(j < vis.length)
          {
+            i = int(vis[j]);
             cn = this.hzMsglogChipCount(String(HZ_ML_KIND[i]));
             clab = String(HZ_ML_CHIPS[i]) + " " + String(cn);
             on = i == this.hzMlChip;
             dim = cn == 0 && i != 0;
-            var atx:Number = cx + Number(chipXs[i]);
-            var aty:Number = cy + Number(chipYs[i]);
+            var atx:Number = cx + Number(chipXs[j]);
+            var aty:Number = cy + Number(chipYs[j]);
             tw = this.hzWT(b,clab,atx + 8,aty + 6,180,13,"sb",on ? uint(T.ontxt) : (dim ? uint(T.off) : uint(T.txt)),1.2,"left",13);
             cw = Math.round(this.hzTW(tw) + 18);
             g.beginFill(on ? acc : uint(T.mut), on ? 0.9 : (dim ? 0.12 : 0.2));
@@ -3742,7 +3751,7 @@
             {
                this.hzMlHits.push({"id":"chip" + i,"x":atx,"y":aty,"w":cw,"h":28});
             }
-            i++;
+            j++;
          }
 
          var divY:Number = cy + chipBlockH + 8;
@@ -4011,6 +4020,13 @@
          return t.indexOf("," + k + ",") >= 0;
       }
 
+      // Off types are hidden from the list and their pills. They also stop recording.
+      private function hzMsglogChipClamp() : void
+      {
+         if(this.hzMlChip < 0 || this.hzMlChip >= HZ_ML_CHIPS.length) { this.hzMlChip = 0; }
+         if(this.hzMlChip != 0 && !this.hzMsglogTypeOn(String(HZ_ML_KIND[this.hzMlChip]))) { this.hzMlChip = 0; }
+      }
+
       private function hzMsglogTypeToggle(k:String) : void
       {
          var on:Boolean = this.hzMsglogTypeOn(k);
@@ -4026,6 +4042,7 @@
          if(!on) { out.push(k); }
          this.hzMlTypes = out.join(",");
          this.hzMlAct = "set|types|" + this.hzMlTypes;
+         this.hzMsglogChipClamp();
          this.hzMsglogSaveIni();
       }
 
@@ -4126,7 +4143,8 @@
             {
                this.hzWT(b,String(r.l),cx + 22,ry + 8,200,13,"sb",uint(T.txt),1.2,"left",13);
                this.hzSetTri(g,cx + cw - 86,ry + 16,-1,acc,0.9);
-               this.hzWT(b,String(this.hzMlHistory),cx + cw - 78,ry + 8,40,13,"sb",acc,0.5,"center",13);
+               // hzWT "center" x is the field center. The gap between the arrows is -81 to -35.
+               this.hzWT(b,String(this.hzMlHistory),cx + cw - 58,ry + 8,40,13,"sb",acc,0.5,"center",13);
                this.hzSetTri(g,cx + cw - 30,ry + 16,1,acc,0.9);
                this.hzMlHits.push({"id":"mlshistl","x":cx + cw - 100,"y":ry,"w":28,"h":32});
                this.hzMlHits.push({"id":"mlshistr","x":cx + cw - 44,"y":ry,"w":28,"h":32});
@@ -4367,7 +4385,14 @@
 
       private function hzMsglogChipStep(dir:int) : void
       {
-         this.hzMlChip = (this.hzMlChip + dir + HZ_ML_CHIPS.length) % HZ_ML_CHIPS.length;
+         var n:int = HZ_ML_CHIPS.length;
+         var i:int = 0;
+         do
+         {
+            this.hzMlChip = (this.hzMlChip + dir + n) % n;
+            i++;
+         } while(i < n && this.hzMlChip != 0 && !this.hzMsglogTypeOn(String(HZ_ML_KIND[this.hzMlChip])));
+         this.hzMsglogChipClamp();
          this.hzMlScroll = 0;
          this.hzMsglogDraw();
       }
@@ -4964,6 +4989,8 @@
          a.push("[UI]");
          a.push("; v0.34: 1 = the module status card on the SCANNER / COMMS tabs is folded to one line (click it in F11)");
          a.push("ModuleNoteCompact=" + (Number(p.ModuleNoteCompact) >= 0.5 || p.ModuleNoteCompact === true ? "1" : "0"));
+         a.push("; 1 = play the Horizon UI welcome splash after every save load");
+         a.push("ShowWelcomeOnLoad=" + (Number(p.ShowWelcomeOnLoad) >= 0.5 || p.ShowWelcomeOnLoad === true ? "1" : "0"));
          a.push("");
          try { this.hz31IniLines(a,p); } catch(err31w:Error) { }
          try { this.hz40ScanIniLines(a,p); } catch(err40w:Error) { }
@@ -5047,14 +5074,14 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.7";
+      private static const HZ_BUILD:String = "0.43.0.8";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":0,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"ShowWelcomeOnLoad":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -5183,7 +5210,8 @@
       // list geometry: heights per scrolling row (pill rows excluded)
       private function hzSetRowH(r:Object) : Number
       {
-         if(r.t == "m") { return (r.h ? 24 : 0) + this.hz34BanH(); }
+         if(r.t == "m") { return (r.h ? 24 : 0) + this.hz34BanH(r.mod != undefined ? String(r.mod) : ""); }
+         if(r.t == "g") { return 48; }
          if(r.t == "w") { return (r.h ? 24 : 0) + 44; }
          return (r.h ? 24 : 0) + 32 + (r.note ? (r.n13 ? 20 : 18) : 0) + 4;
       }
@@ -5368,7 +5396,15 @@
             if(r.t == "m")
             {
                try { this.hz30ModBanner(b,g,y,right,T,String(r.mod),i == this.hzSetRow,i); } catch(errMb:Error) { }
-               y += this.hz34BanH();
+               y += this.hz34BanH(String(r.mod));
+               lastShown = li;
+               li++;
+               continue;
+            }
+            if(r.t == "g")
+            {
+               try { this.hz31DrawPage(b,g,y,right,T,i == this.hzSetRow,i); } catch(errPg:Error) { }
+               y += 48;
                lastShown = li;
                li++;
                continue;
@@ -5984,7 +6020,14 @@
             if(id == "ok") { this.hzSetApply(); return; }
             if(id == "cancel") { this.hzSetCancel(); return; }
             if(id == "arrange") { this.hzArrEnter(); return; }
-            if(id.indexOf("tab") == 0) { this.hzSetTab = int(id.substr(3)); this.hzSetRow = 0; this.hzSetScroll = 0; dirty = true; }
+            if(id == "page0" || id == "page1")
+            {
+               this.hz31Page = id == "page1" ? 1 : 0;
+               if(this.hzSetPend != null) { this.hzSetPend._hz31page = this.hz31Page; }
+               this.hzSetScroll = 0;
+               dirty = true;
+            }
+            else if(id.indexOf("tab") == 0) { this.hzSetTab = int(id.substr(3)); this.hzSetRow = 0; this.hzSetScroll = 0; dirty = true; }
             else if(id.indexOf("lt") == 0 || id.indexOf("rt") == 0)
             {
                // cycler arrows: left = previous, right = next
@@ -6030,7 +6073,7 @@
                var ri:int = int(id.substr(3));
                this.hzSetRow = ri;
                var rr:Object = rows[ri];
-               if(rr.t == "b" || rr.t == "a" || rr.t == "c" || rr.t == "r" || rr.t == "q" || rr.t == "x" || rr.t == "m" || rr.t == "p") { this.hzSetChange(rr,1); if(this.hzArrange) { return; } }
+               if(rr.t == "b" || rr.t == "a" || rr.t == "c" || rr.t == "r" || rr.t == "q" || rr.t == "x" || rr.t == "m" || rr.t == "p" || rr.t == "g") { this.hzSetChange(rr,1); if(this.hzArrange) { return; } }
                else if(rr.t == "z" && !rr.dis) { this.hz34ZToggle(String(rr.k)); }
                dirty = true;
             }
@@ -9647,6 +9690,21 @@
 
       // our keycap action row from aButtons (sTextPressAndRelease / sTextHold / bVisible / bEnabled / iType).
       // g == null only measures. Returns the row width.
+      private function hzT19IsSteal(a:Object, aw:Object) : Boolean
+      {
+         if(a != null && Boolean(a.bStealing)) { return true; }
+         if(a == null || !(a.aButtons is Array)) { return false; }
+         for each(var b:Object in a.aButtons)
+         {
+            if(b == null) { continue; }
+            var t:int = b.iType != undefined ? int(b.iType) : -1;
+            var press:String = b.bPressAndRelease === false ? "" : this.hzT19Label(aw,t,false,b.sTextPressAndRelease);
+            var hold:String = b.bPressAndHold === false ? "" : this.hzT19Label(aw,t,true,b.sTextHold);
+            if(press.toUpperCase().indexOf("STEAL") >= 0 || hold.toUpperCase().indexOf("STEAL") >= 0) { return true; }
+         }
+         return false;
+      }
+
       private function hzT19Buttons(g:*, a:Object, aw:Object, x0:Number, y:Number, col:uint) : Number
       {
          var x:Number = x0;
@@ -9989,7 +10047,7 @@
          var g:* = this.hzT19G.graphics;
          g.clear();
          var dk:Boolean = this.hzDarkText();
-         var steal:Boolean = a != null && Boolean(a.bStealing);
+         var steal:Boolean = this.hzT19IsSteal(a,aw);
          var red:Boolean = kind == "foe" || steal;
          var tint:int = red ? int(dk ? this.hzMix(this.hzPanelFill(),HZ_RED,0.14) : 0x1A0B0E) : -1;
          var edge:int = red ? int(this.hzIconCol(HZ_RED)) : -1;
@@ -10024,9 +10082,9 @@
             var L38:Object = this.hz38PromptY();
             var dvY:Number = Number(L38.dv);
             H = hasBtn ? dvY + 8 + this.hzT19CapH() + 18 : dvY + 6;
-            this.hzPanel(g,W,H,18,-1,-1);
-            g.beginFill(this.hzIconCol(HZ_ACCENT),1); g.drawRoundRect(0,16,4,H - 32,4,4); g.endFill();
-            this.hzT19Tile(g,Math.round(W / 2),Number(L38.icy),HZ_ACCENT);
+            this.hzPanel(g,W,H,18,steal ? tint : -1,steal ? edge : -1);
+            g.beginFill(this.hzIconCol(steal ? HZ_RED : HZ_ACCENT),1); g.drawRoundRect(0,16,4,H - 32,4,4); g.endFill();
+            this.hzT19Tile(g,Math.round(W / 2),Number(L38.icy),steal ? HZ_RED : HZ_ACCENT);
             nmTf.visible = hdrTxt.length > 0;
             nmTf.x = PX; nmTf.width = cw;
             this.hzApplyFmt(o);
@@ -10034,10 +10092,14 @@
             this.hzTxtTop(nmTf,Number(L38.nt));
             if(hasBtn)
             {
-               g.lineStyle(1,dk ? 0x000000 : 0xFFFFFF,dk ? 0.18 : 0.13,true,"none");
-               g.moveTo(PX,dvY + 0.5); g.lineTo(W - PX,dvY + 0.5);
-               g.lineStyle();
-               this.hzT19Buttons(g,a,aw,Math.round((W - fbw) / 2),dvY + 8,HZ_ACCENT);
+               if(steal) { this.hzT19Line(g,dvY,W,true); }
+               else
+               {
+                  g.lineStyle(1,dk ? 0x000000 : 0xFFFFFF,dk ? 0.18 : 0.13,true,"none");
+                  g.moveTo(PX,dvY + 0.5); g.lineTo(W - PX,dvY + 0.5);
+                  g.lineStyle();
+               }
+               this.hzT19Buttons(g,a,aw,Math.round((W - fbw) / 2),dvY + 8,steal ? HZ_RED : HZ_ACCENT);
             }
          }
          else if(kind == "foe")
@@ -12792,6 +12854,7 @@
             var k:String = t.substr(0,eq).replace(/\s/g,"");
             var v:String = t.substr(eq + 1).replace(/^\s+|\s+$/g,"");
             if(sec == "comms" && k.toLowerCase() == "hzrev") { var rv:Number = Number(v); if(!isNaN(rv)) { this.hz31Rev = int(rv); } continue; }
+            if(sec == "comms" && k.toLowerCase() == "commspage") { this.hz31Page = (!isNaN(Number(v)) && Number(v) >= 0.5) ? 1 : 0; continue; }
             for each(var d:Array in HZ31_KEYS)
             {
                if(String(d[0]).toLowerCase() == k.toLowerCase() && d[5] == sec) { c[d[0]] = this.hz31Clamp(d,v); break; }
@@ -12902,7 +12965,7 @@
             "MissionToastTime":"seconds each toast stays (2 - 15)",
             "MissionToastMax":"toasts stacked at once (1 - 5), newest on top",
             "MissionToastSound":"1 = the game's quest sound plays (it is played by the game's banner; 0 is not supported yet)",
-            "ReactionCard":"Horizon card for the companion reaction line (Name liked that.): 0 = the game's line. English game text only; any other line stays the game's",
+            "ReactionCard":"Horizon cards for companion reactions (Name liked that.), other notices the game shows (GAME), and any such notice that contains Artifact (ARTIFACT): 0 = the game's line. English reaction text only; empty, save and calmed lines stay the game's. Long notices are shortened with \"...\" on the card and shown up to about 256 characters in the Message Log.",
             "DlgVisible":"options shown before scrolling: 0 = all (the card fits them), 1 - 12",
             "DlgCard":"1 panel behind the dialogue list, 0 text only",
             "DlgOffsetX":"-600 - 600, 1080p units, + moves the panel right (added to the default spot or the ARRANGE position)",
@@ -12938,6 +13001,8 @@
             a.push(d[0] + "=" + this.hz31Num(d,c[d[0]]));
             if(d[0] == "SubFont") { a.push("; " + cm.HzRev); a.push("HzRev=" + String(this.hz31Rev)); }
          }
+         a.push("; last COMMS page: 0 SUBTITLES, 1 DIALOGUE");
+         a.push("CommsPage=" + String(this.hz31Page));
          a.push("");
       }
 
@@ -12965,7 +13030,7 @@
       private function hz31CommsRows() : Array
       {
          if(this.hzSetPend != null) { this.hzSetPend._hz31page = this.hz31Page; }
-         var rows:Array = [{"k":"_hz30m_comms","l":"","t":"m","mod":"comms"},{"k":"_hz31page","l":"PAGE","t":"r","opts":["SUBTITLES","DIALOGUE"]}];
+         var rows:Array = [{"k":"_hz30m_comms","l":"","t":"m","mod":"comms"},{"k":"_hz31page","l":"","t":"g","opts":["SUBTITLES","DIALOGUE"]}];
          var fontOk:Boolean = this.hz30FontAvail();
          var fnote:String = "Global font is in TEXT.";
          var r:Object;
@@ -13526,7 +13591,7 @@
          var chk:Boolean = st !== 0 && st !== 1;
          var acc:uint = uint(T.acc);
          var pu:Number = this.hzScrH >= 360 ? 1080 / this.hzScrH : 1;
-         var cmp:Boolean = this.hz34NoteCmp;
+         var cmp:Boolean = this.hz34NoteCmp && on;
          var x0:Number = 22;
          var w:Number = Math.floor((right + 6 - 22 - 2) / pu) * pu;   // whole device pixels, 2 units clear of the scroll track
          var h:Number = cmp ? 34 : 84;
@@ -13544,10 +13609,10 @@
             g.beginFill(on ? acc : uint(T.line),on ? 0.16 : 0.1); g.drawCircle(ccx,ccy,11); g.endFill();
             if(on) { this.hz30Check(g,ccx,ccy,10,acc); }
             else { this.hz30Lock(g,ccx,ccy + 1,11,uint(T.mut),1,uint(T.fill)); }
-            var tt:TextField = this.hzWT(b,mod == "scanner" ? "SCANNER MODULE" : "COMMS MODULE",x0 + 44,y0 + 10,260,11,"bd",uint(T.txt),1.6);
+            var tt:TextField = this.hzWT(b,mod == "scanner" ? "SCANNER MODULE" : "COMMS MODULE",x0 + 44,y0 + 10,260,13,"bd",uint(T.txt),1.6,"left",13);
             var sx:Number = Math.round(x0 + 44 + this.hzTW(tt) + 14);
             var stx:String = on ? "INSTALLED" : (chk ? "CHECKING..." : "NOT INSTALLED");
-            this.hzWT(b,stx,sx,y0 + 10,Math.max(40,chx - 20 - sx),11,"sb",on ? acc : uint(T.lab),1.2);
+            this.hzWT(b,stx,sx,y0 + 10,Math.max(40,chx - 20 - sx),13,"sb",on ? acc : uint(T.lab),1.2,"left",13);
          }
          else
          {
@@ -13863,7 +13928,14 @@
       private static const HZ34_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face: run-time name only, never shown
       private var hz34Sc:Object = {};
       private var hz34Cm:Object = {};
-      private var hz34NoteCmp:Boolean = false;
+      private var hz34NoteCmp:Boolean = true;
+      private var hzSplashWelcome:Boolean = true;
+      private var hzSplash:Sprite = null;
+      private var hzSplashOn:Boolean = false;
+      private var hzSplashT0:Number = 0;
+      private var hzSplashCancel:Boolean = false;
+      private var hzSplashCancelT:Number = 0;
+      private var hzSplashName:String = "";
 
       private function hz34ScClamp(v:*) : Number
       {
@@ -13898,6 +13970,7 @@
       {
          if(k == "vitalslayout") { this.hz42VL = (!isNaN(nv) && nv >= 0.5) ? 1 : 0; this.hzLaidOut = false; return true; }   // v0.42.0
          if(k == "modulenotecompact") { this.hz34NoteCmp = !isNaN(nv) && nv >= 0.5; return true; }
+         if(k == "showwelcomeonload") { this.hzSplashWelcome = !isNaN(nv) && nv >= 0.5; return true; }
          for each(var c:Array in HZ34_CARDS)
          {
             var n:String = String(c[0]).toLowerCase();
@@ -13914,6 +13987,7 @@
             if(c[1]) { o[c[0] + "Compact"] = this.hz34CmClamp(this.hz34Cm[c[0]]); }
          }
          o.ModuleNoteCompact = this.hz34NoteCmp ? 1 : 0;
+         o.ShowWelcomeOnLoad = this.hzSplashWelcome ? 1 : 0;
          o.VitalsLayout = this.hz42VL;   // v0.42.0
       }
       private function hz34SetLive(p:Object) : void
@@ -13936,6 +14010,7 @@
             }
          }
          if(p.ModuleNoteCompact !== undefined) { this.hz34NoteCmp = Number(p.ModuleNoteCompact) >= 0.5 || p.ModuleNoteCompact === true; }
+         if(p.ShowWelcomeOnLoad !== undefined) { this.hzSplashWelcome = Number(p.ShowWelcomeOnLoad) >= 0.5 || p.ShowWelcomeOnLoad === true; }
          if(p.VitalsLayout !== undefined)   // v0.42.0: live preview / cancel
          {
             var vl:int = Number(p.VitalsLayout) >= 0.5 ? 1 : 0;
@@ -14122,7 +14197,214 @@
          g.endFill();
       }
       // banner row height: full card or the one-line form
-      private function hz34BanH() : Number { return this.hz34NoteCmp ? 44 : 96; }
+      private function hz34BanH(mod:String = "") : Number
+      {
+         var on:Boolean = mod.length == 0 ? true : this.hz30Mod[mod] === 1;
+         return (this.hz34NoteCmp && on) ? 44 : 96;
+      }
+
+      private function hz31DrawPage(b:Sprite, g:*, y:Number, right:Number, T:Object, sel:Boolean, idx:int) : void
+      {
+         var acc:uint = uint(T.acc);
+         var x0:Number = 22;
+         var w:Number = right + 6 - 22;
+         var h:Number = 40;
+         var y0:Number = y + 4;
+         var mid:Number = x0 + Math.round(w / 2);
+         var leftOn:Boolean = this.hz31Page == 0;
+         if(sel) { g.beginFill(acc,0.08); g.drawRoundRect(x0,y0,w,h,12,12); g.endFill(); }
+         g.beginFill(leftOn ? acc : uint(T.mut),leftOn ? 0.86 : 0.16);
+         g.drawRoundRect(x0,y0,mid - x0 - 2,h,12,12);
+         g.endFill();
+         g.beginFill(!leftOn ? acc : uint(T.mut),!leftOn ? 0.86 : 0.16);
+         g.drawRoundRect(mid + 2,y0,x0 + w - mid - 2,h,12,12);
+         g.endFill();
+         this.hzWT(b,"SUBTITLES",x0 + (mid - x0 - 2) / 2,y0 + 11,mid - x0 - 8,13,"sb",leftOn ? uint(T.ontxt) : uint(T.txt),1.2,"center",13);
+         this.hzWT(b,"DIALOGUE",mid + 2 + (x0 + w - mid - 2) / 2,y0 + 11,x0 + w - mid - 8,13,"sb",!leftOn ? uint(T.ontxt) : uint(T.txt),1.2,"center",13);
+         this.hzSetHits.push({"id":"page0","x":x0,"y":y0,"w":mid - x0,"h":h});
+         this.hzSetHits.push({"id":"page1","x":mid,"y":y0,"w":x0 + w - mid,"h":h});
+         this.hzSetHits.push({"id":"row" + idx,"x":x0,"y":y0,"w":w,"h":h});
+      }
+
+      public function hzSplashOnLoad() : void
+      {
+         if(!this.hzSplashWelcome) { return; }
+         if(this.hzInCombat) { return; }
+         if(this.hzSetIsOpen) { return; }
+         this.hzSplashStart();
+      }
+
+      private function hzSplashLead(x:Number) : Number
+      {
+         if(x <= 0) { return 0; }
+         if(x >= 1) { return 1; }
+         var tp:Number = x / 0.35;
+         if(tp > 1) { tp = 1; }
+         tp = tp * tp * (3 - 2 * tp);
+         return Math.pow(x,0.55) * tp;
+      }
+
+      private function hzSplashStart() : void
+      {
+         if(this.hzSplash == null)
+         {
+            this.hzSplash = new Sprite();
+            this.hzSplash.mouseEnabled = false;
+            this.hzSplash.mouseChildren = false;
+            this.addChildAt(this.hzSplash,0);
+         }
+         this.hzSplashOn = true;
+         this.hzSplashCancel = false;
+         this.hzSplashT0 = this.hz41Now();
+         this.hzSplashName = "";
+         try
+         {
+            var p:Object = this.hz37Cur();
+            if(p != null && String(p.n).length > 0) { this.hzSplashName = String(p.n); }
+         }
+         catch(eN:Error) { this.hzSplashName = ""; }
+         if(this.hzSplashName.length > 32) { this.hzSplashName = this.hzSplashName.substr(0,31) + "..."; }
+         this.hzSplash.visible = true;
+      }
+
+      private function hzSplashTick() : void
+      {
+         if(!this.hzSplashOn)
+         {
+            if(this.hzSplash != null) { this.hzSplash.visible = false; }
+            return;
+         }
+         var promptOn:Boolean = false;
+         try { promptOn = this.HorizonTarget_mc != null && this.HorizonTarget_mc.visible; } catch(eP:Error) { promptOn = false; }
+         if(!this.hzSplashCancel && (this.hzSetIsOpen || this.hzInCombat || promptOn || this.hzArrange))
+         {
+            this.hzSplashCancel = true;
+            this.hzSplashCancelT = this.hz41Now();
+         }
+         var t:Number = (this.hz41Now() - this.hzSplashT0) / 1000;
+         var fade:Number = 1;
+         if(this.hzSplashCancel)
+         {
+            fade = 1 - (this.hz41Now() - this.hzSplashCancelT) / 150;
+            if(fade <= 0) { this.hzSplashOn = false; this.hzSplash.visible = false; return; }
+         }
+         else if(t >= 5.6)
+         {
+            this.hzSplashOn = false;
+            this.hzSplash.visible = false;
+            return;
+         }
+         this.hzSplashDraw(t,fade);
+      }
+
+      private function hzSplashOutline(host:Sprite, txt:String, x:Number, y:Number, w:Number, fs:Number, face:String, fill:uint, fillA:Number, outA:Number, ls:Number) : void
+      {
+         var d:int = 2;
+         var o:uint = 0x04080C;
+         var ox:Array = [-d,0,d,-d,d,-d,0,d];
+         var oy:Array = [-d,-d,-d,0,0,d,d,d];
+         var i:int = 0;
+         while(i < 8 && outA > 0.01)
+         {
+            var ot:TextField = this.hzWT(host,txt,x + Number(ox[i]),y + Number(oy[i]),w,fs,face,o,ls,"center",13);
+            ot.alpha = outA;
+            i++;
+         }
+         var ft:TextField = this.hzWT(host,txt,x,y,w,fs,face,fill,ls,"center",13);
+         ft.alpha = fillA;
+      }
+
+      private function hzSplashStar(g:*, cx:Number, cy:Number, r:Number, col:uint, a:Number) : void
+      {
+         if(a <= 0.01 || r < 1) { return; }
+         g.beginFill(col,a);
+         g.moveTo(cx,cy - r);
+         g.lineTo(cx + r * 0.22,cy - r * 0.22);
+         g.lineTo(cx + r,cy);
+         g.lineTo(cx + r * 0.22,cy + r * 0.22);
+         g.lineTo(cx,cy + r);
+         g.lineTo(cx - r * 0.22,cy + r * 0.22);
+         g.lineTo(cx - r,cy);
+         g.lineTo(cx - r * 0.22,cy - r * 0.22);
+         g.lineTo(cx,cy - r);
+         g.endFill();
+         g.beginFill(0xFFFFFF,a);
+         g.drawCircle(cx,cy,Math.max(1.2,r * 0.22));
+         g.endFill();
+      }
+
+      private function hzSplashDraw(t:Number, fade:Number) : void
+      {
+         if(this.hzSplash == null) { return; }
+         while(this.hzSplash.numChildren > 0) { this.hzSplash.removeChildAt(0); }
+         this.hzSplash.graphics.clear();
+         var vr:Rectangle = this.hzVis();
+         var cx:Number = vr ? vr.x + vr.width / 2 : 960;
+         var cy:Number = vr ? vr.y + vr.height / 2 : 540;
+         var S:Number = 1;
+         try { if(this.hzTextScale >= 1.14) { S = 1.3; } } catch(eS:Error) { S = 1; }
+         var acc:uint = HZ_ACCENT;
+         var g:* = this.hzSplash.graphics;
+         var word:String = "HORIZON UI";
+         var fadeOut:Number = 1;
+         if(t > 4.6) { fadeOut = 1 - (t - 4.6) / 1.0; if(fadeOut < 0) { fadeOut = 0; } }
+         fadeOut *= fade;
+         var starIn:Number = t / 0.6; if(starIn > 1) { starIn = 1; } if(starIn < 0) { starIn = 0; }
+         var sweep:Number = 0;
+         if(t >= 0.6) { sweep = (t - 0.6) / 1.3; if(sweep > 1) { sweep = 1; } }
+         var x0:Number = cx - 220 * S;
+         var x1:Number = cx + 210 * S;
+         var xs:Number = x0 + (x1 - x0) * sweep;
+         if(t >= 0.6 && t < 2.8)
+         {
+            var trail:Number = Math.min(xs - x0,430 * S);
+            if(t > 1.9) { trail *= 1 - Math.min(1,(t - 1.9) / 0.9); }
+            var k:int = 0;
+            while(k < trail)
+            {
+               var f:Number = k / Math.max(1,trail);
+               var a:Number = Math.pow(1 - f,1.6) * 0.95 * fadeOut;
+               var th:Number = Math.max(1,(6 * (1 - f) + 0.8) * S);
+               g.beginFill(acc,a);
+               g.drawRect(xs - k - 1,cy - th / 2,1,th);
+               g.endFill();
+               k++;
+            }
+         }
+         var travelA:Number = 0;
+         if(t < 0.6) { travelA = starIn; }
+         else if(t < 1.9) { travelA = 1; }
+         else { travelA = 1 - Math.min(1,(t - 1.9) / 0.5); }
+         this.hzSplashStar(g,t < 0.6 ? x0 : xs,cy,10 * S * Math.max(starIn,0.2),acc,travelA * fadeOut);
+         var i:int = 0;
+         var chx:Number = cx - 200 * S;
+         while(i < word.length)
+         {
+            var ch:String = word.charAt(i);
+            if(ch != " ")
+            {
+               var r:Number = 0;
+               if(t >= 1.9) { r = (t - 1.9 - 0.05 * i) / 0.44; if(r < 0) { r = 0; } if(r > 1) { r = 1; } }
+               var fillA:Number = r * fadeOut;
+               var outA:Number = this.hzSplashLead(r) * this.hzSplashLead(fadeOut);
+               var col:uint = i >= 8 ? acc : 0xFFFFFF;
+               if(fillA > 0.01 || outA > 0.01) { this.hzSplashOutline(this.hzSplash,ch,chx,cy - 36 * S,48 * S,Math.round(64 * S),"bd",col,fillA,outA,1.2); }
+            }
+            chx += (i == 6 ? 28 : 36) * S;
+            i++;
+         }
+         var lg:Number = 0;
+         if(t >= 2.4) { lg = (t - 2.4) / 0.4; if(lg > 1) { lg = 1; } }
+         if(lg > 0.01) { this.hzSplashStar(g,cx - 236 * S,cy,10 * S,acc,this.hzSplashLead(lg) * fadeOut); }
+         var la:Number = 0;
+         if(t >= 2.8) { la = (t - 2.8) / 0.5; if(la > 1) { la = 1; } }
+         if(la > 0.01)
+         {
+            var line:String = this.hzSplashName.length > 0 ? ("Loading preset: " + this.hzSplashName) : "Loading default settings";
+            var lab:Number = this.hzSplashLead(la) * fadeOut;
+            this.hzSplashOutline(this.hzSplash,line,cx,cy + 48 * S,640 * S,Math.round(24 * S),"sb",0xFFFFFF,la * fadeOut,lab,0.4);
+         }
+      }
       // chevron: down = expand (compact), up = collapse (full)
       private function hz34Chev(g:*, cx:Number, cy:Number, up:Boolean, col:uint, a:Number) : void
       {
@@ -15139,6 +15421,7 @@
             var emptyDir:String = this.hz37St.pdir != undefined && String(this.hz37St.pdir).length > 0 ? String(this.hz37St.pdir) : "Data/Interface/HorizonUI/presets/user";
             rows.push({"k":"_hz37pick","l":"PRESET","t":"p","h":"PRESETS","off":true,"n13":true,"note":"No presets yet: save your own below" + (skip > 0 ? " - " + skip + " skipped (see log)" : ""),"info":"Presets are complete looks for Horizon UI. Saved ones go to " + emptyDir + "; the installer can add Moragar's Choice. Removing a saved preset from this list leaves its file there so you can erase it yourself."});
          }
+         rows.push({"k":"ShowWelcomeOnLoad","l":"SHOW WELCOME ON LOAD","t":"b","n13":true,"note":"Horizon UI splash after every save load. Never pauses the game.","info":"On: a short HORIZON UI splash plays after each save load, using your HUD accent. Off: no splash. The game never pauses."});
          rows.push({"k":"_hz37apply","l":"APPLY SELECTED PRESET","t":"x","btn":"APPLY","off":p == null,"n13":true,"note":this.hz37Note("_hz37apply",null),"info":"Your settings become exactly the defaults plus what the preset sets - anything it does not list goes back to its default. Your settings key, ScreenHeight and debug switches ([Debug]) stay as they are. Applies right away; UNDO LAST PRESET puts your old settings back."});
          rows.push({"k":"_hz37save","l":"SAVE CURRENT AS PRESET","t":"x","btn":"SAVE","n13":true,"note":this.hz37Note("_hz37save",null),"info":"Saves your current look as a preset in Data/Interface/HorizonUI/presets/user: every setting that differs from the defaults (card positions, sizes, colors, fonts, Comms and Scanner included; not your settings key or ScreenHeight). Type a name with the keyboard; with a controller, confirm the suggested name."});
          var delOff:Boolean = p == null || !p.u;

@@ -149,6 +149,7 @@ namespace HZ
 	std::atomic<std::uint64_t> g_adoptLogMs{0};
 	std::atomic<bool>          g_hudSafeHint{false};
 	std::atomic<bool>          g_uiLoading{false};
+	std::atomic<bool>          g_splashArmed{false};
 	std::atomic<bool>          g_uiMainMenu{false};
 	std::atomic<std::uint32_t> g_advTids[8]{};
 	std::atomic<int>           g_advTidN{0};
@@ -1402,9 +1403,16 @@ namespace HZ
 					std::string next;
 					if (!HZF::MergeMessageLogUser(exists, readOk, user, mlIni, next)) {
 						REX::WARN("message log save skipped (could not read HorizonUI.user.ini)");
-					} else if (HZF::WriteAtomic(P.user, next))
-						REX::INFO("message log settings saved");
-					else
+					} else if (HZF::WriteAtomic(P.user, next)) {
+						std::string types;
+						const auto p = mlIni.find("LogTypes=");
+						if (p != std::string::npos) {
+							auto e = mlIni.find('\r', p);
+							if (e == std::string::npos) e = mlIni.find('\n', p);
+							types = e == std::string::npos ? mlIni.substr(p) : mlIni.substr(p, e - p);
+						}
+						REX::INFO("message log settings saved {}", types);
+					} else
 						REX::WARN("message log save FAILED");
 				}
 			} catch (...) {
@@ -1871,6 +1879,7 @@ namespace HZ
 		bool throttle;
 		bool warning;
 		bool truncated;
+		bool artifact;
 		char text[257];
 		char sound[97];
 	};
@@ -1884,6 +1893,7 @@ namespace HZ
 	{
 		if (!a_ev || !a_out) return;
 		a_out->truncated = HzCopyRaw(a_out->text, sizeof(a_out->text), a_ev->text.c_str());
+		a_out->artifact = hzrx::LineHasArtifact(a_ev->text.c_str());
 		HzCopyRaw(a_out->sound, sizeof(a_out->sound), a_ev->sound.c_str());
 		a_out->throttle = a_ev->canThrottle;
 		a_out->warning = a_ev->isWarning;
@@ -1959,7 +1969,7 @@ namespace HZ
 	}
 #endif
 
-	void HzRxEnqueue(const char* a_text, bool a_truncated = false);
+	void HzRxEnqueue(const char* a_text, bool a_truncated = false, bool a_artifact = false);
 
 	class ShowHUDMessageSink final : public RE::BSTEventSink<RE::ShowHUDMessageEvent>
 	{
@@ -1982,7 +1992,7 @@ namespace HZ
 					snap.text, snap.sound, snap.throttle ? 1 : 0, snap.warning ? 1 : 0);
 #endif
 				// This thread is not the UI thread. Copy the text and return. Poll classifies and invokes Scaleform.
-				HzRxEnqueue(snap.text, snap.truncated);
+				HzRxEnqueue(snap.text, snap.truncated, snap.artifact);
 			} catch (const std::exception& ex) {
 				if (!g_hudMsgReadWarned.exchange(true, std::memory_order_relaxed))
 					REX::WARN("ShowHUDMessageEvent sink failed: {}", ex.what());
@@ -2054,13 +2064,13 @@ namespace HZ
 
 	void MsglogEnqueueHud(const char* a_text);
 
-	void HzRxEnqueue(const char* a_text, bool a_truncated)
+	void HzRxEnqueue(const char* a_text, bool a_truncated, bool a_artifact = false)
 	{
 		if (!a_text || !a_text[0]) return;
 		try {
 			std::lock_guard<std::mutex> lock(g_rxMu);
 			// 0.42.0.9: empty, duplicate, and over-cap notes are dropped in hzrx::Enqueue. The cap stays 8.
-			hzrx::Enqueue(g_rxQ, a_text, GetTickCount64(), kRxQueueMax, a_truncated);
+			hzrx::Enqueue(g_rxQ, a_text, GetTickCount64(), kRxQueueMax, a_truncated, a_artifact);
 		} catch (...) {
 		}
 		MsglogEnqueueHud(a_text);
@@ -4407,6 +4417,8 @@ namespace HZ
 			g_uiLoading.store(uiPub->IsMenuOpen("LoadingMenu"));
 			g_uiMainMenu.store(uiPub->IsMenuOpen("MainMenu"));
 			g_uiPause.store(uiPub->IsMenuOpen("PauseMenu"));
+			if (g_uiLoading.load(std::memory_order_relaxed))
+				g_splashArmed.store(true, std::memory_order_relaxed);
 			ScanPushHud(uiPub, now);
 		}
 		try { PublishCrossName(); } catch (...) {}
@@ -4425,6 +4437,8 @@ namespace HZ
 
 		const bool hudSafe = HudSafe();
 		g_hudSafeHint.store(hudSafe, std::memory_order_relaxed);
+		// lastHudAge can grow while hudSafe=0 (F11 or a full-screen menu): Poll()
+		// returns before the HUD tick. That gap is expected; the hook still heartbeats.
 		if (!hudSafe) {
 			if (HudSafe(false)) {   // v0.42.0 r3: only a scope is up: F11 stays blocked, the HUD-ready time is kept
 				if (g_open.load()) ResetSettingsState();
@@ -4447,6 +4461,10 @@ namespace HZ
 			g_scanWas42 = scan42;
 		}
 		if (!g_hudSince) g_hudSince = now;
+		if (!g_uiLoading.load(std::memory_order_relaxed)
+			&& g_splashArmed.exchange(false, std::memory_order_acq_rel)) {
+			try { HudInvoke("hzSplashOnLoad"); } catch (...) {}
+		}
 		if (now - g_hudSince < 3000) return;
 		if (!g_hudReadyLogged.exchange(true)) {
 			REX::INFO("HUD ready (stable 3s)");
