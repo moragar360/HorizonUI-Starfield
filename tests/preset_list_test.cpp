@@ -684,6 +684,10 @@ int main()
 		Expect(src.find("if (n.truncated)") == std::string::npos
 			&& src.find("hzpreset::EllipsizeHud(show, sizeof show, n.text)") != std::string::npos,
 			"EllipsizeHud always runs on the queued text");
+		Expect(src.find("void HzRxEnqueue(const char* a_text, bool a_truncated = false, bool a_artifact = false)") != std::string::npos, "defaults live on the HzRxEnqueue declaration");
+		Expect(src.find("void HzRxEnqueue(const char* a_text, bool a_truncated, bool a_artifact)") != std::string::npos
+			&& src.find("void HzRxEnqueue(const char* a_text, bool a_truncated, bool a_artifact = false)") == std::string::npos,
+			"the HzRxEnqueue definition does not repeat a default");
 		Expect(src.find("void HzRxEnqueue(const char* a_text, bool a_truncated") != std::string::npos, "the sink thread only enqueues");
 		Expect(src.find("std::lock_guard<std::mutex> lock(g_rxMu);") != std::string::npos, "the reaction queue is mutex locked");
 		Expect(src.find("kRxQueueMax") != std::string::npos, "the reaction queue is bounded");

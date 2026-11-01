@@ -2064,7 +2064,7 @@ namespace HZ
 
 	void MsglogEnqueueHud(const char* a_text);
 
-	void HzRxEnqueue(const char* a_text, bool a_truncated, bool a_artifact = false)
+	void HzRxEnqueue(const char* a_text, bool a_truncated, bool a_artifact)
 	{
 		if (!a_text || !a_text[0]) return;
 		try {
