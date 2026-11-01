@@ -1550,6 +1550,14 @@ namespace HZ
 		if (now) {
 			REX::INFO("hud: HUDMenu answers hzSettingsOpen - a Horizon UI hudmenu.gfx is loaded (any Horizon HUD since v0.18 answers; the F11 window shows its version)");
 			HudInvoke("hzEnsureHud", nullptr, nullptr, 0, true);
+			if (auto ui = RE::UI::GetSingleton()) {
+				if (auto m = MenuLive(ui, "HUDMenu", "hzLastError")) {
+					if (m->menuObj.HasMember("hzLastError"))
+						REX::INFO("hud: HUDMenu has hzLastError/hzEnsureHud");
+					else
+						REX::WARN("hud: HUDMenu lacks hzLastError - the loaded hudmenu.gfx predates 92c1d15");
+				}
+			}
 		} else REX::WARN("hud: HUDMenu does not answer hzSettingsOpen - the loaded hudmenu.gfx is not a Horizon UI HUD (another HUD replacer overrides it; check the load order)");
 	}
 

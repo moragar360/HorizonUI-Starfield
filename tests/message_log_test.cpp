@@ -3363,6 +3363,9 @@ int main()
 		Expect(main.find("OnSettingsKey(true)") != std::string::npos
 			&& main.find("HudInvoke(\"hzLastError\"") != std::string::npos,
 			"a failed F11 is retried once and movie errors are logged");
+		Expect(main.find("HasMember(\"hzLastError\")") != std::string::npos
+			&& main.find("hud: HUDMenu lacks hzLastError") != std::string::npos,
+			"the log says when the loaded HUDMenu predates hzLastError");
 		{
 			const auto key = AsFnBody(main, "void OnSettingsKey(", "void ResetSettingsState()");
 			Expect(key.find("!a_retry") != std::string::npos, "only the first F11 press arms a retry");
