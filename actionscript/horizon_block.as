@@ -3148,11 +3148,14 @@
       }
 
       // ---------- Message Log popup (0.43.0.7). Inside the 1000x660 F11 window. ----------
-      // v6 layout: 976x620, 10 visible rows at 28 px, time column 168 px, text at least 13 px. No new F keys.
+      // v7 layout: 976x620, rows at least 28 px and wrap long text, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
       private static const HZ_ML_W:Number = 976;
       private static const HZ_ML_H:Number = 620;
       private static const HZ_ML_ROW:Number = 28;
+      private static const HZ_ML_ROW_MAX:Number = 124;
+      private static const HZ_ML_LINE:Number = 16;
+      private static const HZ_ML_LIST:Number = 320;
       private static const HZ_ML_VIS:int = 10;
       private static const HZ_ML_CLOCK:Number = 168;
       private static const HZ_MLS_W:Number = 620;
@@ -3560,6 +3563,68 @@
          t.width = Math.round(maxW);
       }
 
+      private function hzMsglogTextW() : Number
+      {
+         var textW:Number = HZ_ML_W - 548;
+         if(textW < 80) { textW = 80; }
+         return textW;
+      }
+
+      private function hzMsglogRowLine(it:Object) : String
+      {
+         if(it == null) { return ""; }
+         var line:String = String(it.title);
+         if(String(it.text).length > 0 && String(it.text) != String(it.title)) { line += "  " + String(it.text); }
+         if(int(it.n) > 1) { line += "  x " + String(it.n); }
+         return line;
+      }
+
+      // Long log rows wrap. The HUD card is the only place that uses "...".
+      private function hzMsglogLineH(line:String, textW:Number) : Number
+      {
+         if(line == null) { line = ""; }
+         var w:Number = textW;
+         if(w < 80) { w = 80; }
+         var per:int = int(Math.max(8, Math.floor(w / 7.2)));
+         var n:int = line.length;
+         var lines:int = n <= 0 ? 1 : int(Math.ceil(n / per));
+         if(lines < 1) { lines = 1; }
+         if(lines > 7) { lines = 7; }
+         var h:Number = 10 + lines * HZ_ML_LINE;
+         if(h < HZ_ML_ROW) { h = HZ_ML_ROW; }
+         if(h > HZ_ML_ROW_MAX) { h = HZ_ML_ROW_MAX; }
+         return h;
+      }
+
+      private function hzMsglogWrap(t:TextField, maxW:Number, maxH:Number) : Number
+      {
+         if(t == null) { return HZ_ML_ROW; }
+         t.wordWrap = true;
+         t.multiline = true;
+         t.width = Math.round(maxW);
+         var h:Number = t.textHeight + 8;
+         if(h < 18) { h = 18; }
+         if(h > maxH) { h = maxH; }
+         t.height = Math.round(h);
+         return t.height;
+      }
+
+      private function hzMsglogFits(list:Array, from:int, want:int, budget:Number) : Boolean
+      {
+         if(list == null || want < from) { return false; }
+         var y:Number = 0;
+         var i:int = from;
+         while(i < list.length && y < budget)
+         {
+            var it:Object = list[i];
+            var h:Number = (it != null && it.g) ? HZ_ML_ROW : this.hzMsglogLineH(this.hzMsglogRowLine(it), this.hzMsglogTextW());
+            if(i == want) { return (y + h) <= budget || y == 0; }
+            y += h;
+            i++;
+         }
+         return false;
+      }
+
       private function hzMsglogDraw() : void
       {
          this.hzMsglogEnsure();
@@ -3697,11 +3762,11 @@
 
          var list:Array = this.hzMsglogList();
          var rowTop:Number = fy + 36;
-         var rowH:Number = 320;
+         var rowH:Number = HZ_ML_LIST;
          if(!overlayOn)
          {
          if(this.hzMlScroll < 0) { this.hzMlScroll = 0; }
-         var maxSc:int = Math.max(0,list.length - HZ_ML_VIS);
+         var maxSc:int = Math.max(0,list.length - 1);
          if(this.hzMlScroll > maxSc) { this.hzMlScroll = maxSc; }
          if(list.length == 0)
          {
@@ -3711,9 +3776,11 @@
          var li:int = this.hzMlScroll;
          var ry:Number = rowTop;
          var sel:Object = null;
-         while(li < list.length && vis < HZ_ML_VIS)
+         while(li < list.length && ry < rowTop + rowH)
          {
             var it:Object = list[li];
+            var rh:Number = it.g ? HZ_ML_ROW : this.hzMsglogLineH(this.hzMsglogRowLine(it), this.hzMsglogTextW());
+            if(ry + rh > rowTop + rowH && vis > 0) { break; }
             if(it.g)
             {
                this.hzWT(b,String(it.lab),ox + 28,ry + 6,400,13,"sb",acc,1.6,"left",13);
@@ -3728,31 +3795,28 @@
                if(isSel)
                {
                   g.beginFill(acc,0.13);
-                  g.drawRoundRect(ox + 18,ry,HZ_ML_W - 48,HZ_ML_ROW,14,14);
+                  g.drawRoundRect(ox + 18,ry,HZ_ML_W - 48,rh,14,14);
                   g.endFill();
                   g.beginFill(acc,1);
-                  g.drawRoundRect(ox + 18,ry + 6,3,16,3,3);
+                  g.drawRoundRect(ox + 18,ry + 6,3,Math.max(16, rh - 12),3,3);
                   g.endFill();
                }
                var tcol:uint = later ? uint(T.mut) : uint(T.txt);
                var clock:String = this.hzMsglogClockTxt(Number(it.ut));
                if(clock.length == 0) { clock = this.hzMsglogAgo(Number(it.ts)); }
                else { clock = clock + "  " + this.hzMsglogAgo(Number(it.ts)); }
-               var line:String = String(it.title);
-               if(String(it.text).length > 0 && String(it.text) != String(it.title)) { line += "  " + String(it.text); }
-               if(int(it.n) > 1) { line += "  x " + String(it.n); }
+               var line:String = this.hzMsglogRowLine(it);
                var locX:Number = ox + HZ_ML_W - 196;
                var chipX:Number = locX - 118;
                var iconX:Number = ox + 28 + HZ_ML_CLOCK + 8;
                var textX:Number = iconX + 22;
-               var textW:Number = chipX - textX - 8;
-               if(textW < 80) { textW = 80; }
+               var textW:Number = this.hzMsglogTextW();
                var rt:TextField = this.hzWT(b,clock,ox + 28,ry + 6,HZ_ML_CLOCK,13,"sb",tcol,0.4,"left",13);
                rt.alpha = aMul;
                this.hzMsglogKindIcon(g, iconX, ry + 6, String(it.k), later ? uint(T.mut) : acc, later ? 0.45 : 0.9);
                var tt:TextField = this.hzWT(b,line,textX,ry + 6,textW,13,"rg",tcol,0.3,"left",13);
                tt.alpha = aMul;
-               this.hzMsglogEllip(tt,textW);
+               this.hzMsglogWrap(tt,textW,rh - 8);
                var chipLab:String = later ? "from a later point" : (String(it.tag).length > 0 ? String(it.tag) : this.hzMsglogKindLab(String(it.k)));
                var chp:TextField = this.hzWT(b,chipLab,0,0,140,13,"sb",later ? uint(T.mut) : uint(T.lab),1.2,"left",13);
                var chw:Number = Math.min(108, Math.round(this.hzTW(chp) + 14));
@@ -3779,16 +3843,16 @@
                   g.lineTo(ox + HZ_ML_W - 40, ry + 8);
                   g.endFill();
                }
-               this.hzMlHits.push({"id":"row" + String(it.id),"x":ox + 18,"y":ry,"w":HZ_ML_W - 48,"h":HZ_ML_ROW,"rid":Number(it.id)});
+               this.hzMlHits.push({"id":"row" + String(it.id),"x":ox + 18,"y":ry,"w":HZ_ML_W - 48,"h":rh,"rid":Number(it.id)});
             }
-            ry += HZ_ML_ROW;
+            ry += rh;
             vis++;
             li++;
          }
          if(maxSc > 0)
          {
             var trX:Number = ox + HZ_ML_W - 16;
-            var thH:Number = Math.max(24, Math.round(rowH * HZ_ML_VIS / Math.max(1,list.length)));
+            var thH:Number = Math.max(24, Math.round(rowH * Math.max(1,vis) / Math.max(1,list.length)));
             var thY:Number = rowTop + (rowH - thH) * this.hzMlScroll / Math.max(1,maxSc);
             g.beginFill(uint(T.track),Number(T.ta));
             g.drawRoundRect(trX,rowTop,3,rowH,3,3);
@@ -4309,7 +4373,7 @@
             i++;
          }
          if(visAt < this.hzMlScroll) { this.hzMlScroll = visAt; }
-         if(visAt >= this.hzMlScroll + HZ_ML_VIS) { this.hzMlScroll = visAt - HZ_ML_VIS + 1; }
+         else if(!this.hzMsglogFits(list, this.hzMlScroll, visAt, HZ_ML_LIST)) { this.hzMlScroll = visAt; }
          this.hzMsglogDraw();
       }
 

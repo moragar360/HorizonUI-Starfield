@@ -1904,7 +1904,9 @@ function makeHzcHost(now) {
 	host.Messages_mc.parent = host.Messages_mc;
 	installAsFn(host, fnBody("private function hzcRxTrimC", "public function hzcRxSelfTest"));
 	installAsFn(host, fnBody("private function hzcRxNorm", "private function hzcRxTrimC"));
-	installAsFn(host, fnBody("private function hzcRxKey", "private function hzcRxOpenKey"));
+	installAsFn(host, fnBody("private function hzcRxKey", "private function hzcRxStem"));
+	installAsFn(host, fnBody("private function hzcRxStem", "private function hzcRxKeyMatch"));
+	installAsFn(host, fnBody("private function hzcRxKeyMatch", "private function hzcRxOpenKey"));
 	installAsFn(host, fnBody("private function hzcRxOpenKey", "private function hzcRxOpen"));
 	installAsFn(host, fnBody("private function hzcRxFind", "private function hzcRxOne"));
 	installAsFn(host, fnBody("private function hzcRxItemTx", "private function hzcRxReveal"));
@@ -1969,6 +1971,13 @@ function makeHzcHost(now) {
 		{ st: 1, linked: false, it: null, key: invHost.hzcRxKey("alarm line") }
 	];
 	expect(invHost.hzcRxClaim(invM.ShownMessageArray, invHost.hzcRxKey("alarm line")) === invNew, "inverting the claim guard steals a pending line");
+
+	const long = new Array(221).join("a");
+	const ellip = long.slice(0, 197) + "...";
+	expect(host.hzcRxKeyMatch(host.hzcRxKey(ellip), host.hzcRxKey(long)) === true, "an ellipsized card key covers the full vanilla line");
+	expect(host.hzcRxKeyMatch(host.hzcRxKey("short"), host.hzcRxKey("short other")) === false, "a short stem does not prefix-match another line");
+	const coverSrc = fnBody("private function hzcRxClaim", "private function hzcRxLink");
+	expect(coverSrc.indexOf("this.hzcRxKeyMatch(this.hzcRxKey(tx),key)") >= 0, "claim uses prefix match so a cut card covers the game's line");
 }
 
 if (failed) {

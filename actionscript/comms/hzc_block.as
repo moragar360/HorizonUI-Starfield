@@ -1570,11 +1570,28 @@
          if(s == null || s.length == 0) { return null; }
          return s.toLowerCase();
       }
+      // Drop a trailing ASCII "..." so an ellipsized card can cover the game's longer line.
+      private function hzcRxStem(k:String) : String
+      {
+         if(k == null || k.length < 4) { return k; }
+         if(k.substring(k.length - 3) == "...") { return k.substring(0,k.length - 3); }
+         return k;
+      }
+      private function hzcRxKeyMatch(a:String, b:String) : Boolean
+      {
+         if(a == null || b == null) { return false; }
+         if(a == b) { return true; }
+         var sa:String = this.hzcRxStem(a);
+         var sb:String = this.hzcRxStem(b);
+         if(sa.length >= 16 && b.indexOf(sa) == 0) { return true; }
+         if(sb.length >= 16 && a.indexOf(sb) == 0) { return true; }
+         return false;
+      }
       // Oldest card for this key that does not have a vanilla line yet.
       private function hzcRxOpenKey(key:String) : Object
       {
          if(key == null) { return null; }
-         for each(var e:Object in this.hzcRx) { if(e != null && e.key == key && e.it == null) { return e; } }
+         for each(var e:Object in this.hzcRx) { if(e != null && this.hzcRxKeyMatch(e.key,key) && e.it == null) { return e; } }
          return null;
       }
       // Oldest card for this text that does not have a vanilla line yet.
@@ -1824,7 +1841,7 @@
             if(it == null || this.hzcRxFind(it) != null) { continue; }
             var tx:String = this.hzcRxItemTx(it);
             if(tx.length == 0) { continue; }
-            if(this.hzcRxKey(tx) == key) { return it; }
+            if(this.hzcRxKeyMatch(this.hzcRxKey(tx),key)) { return it; }
          }
          return null;
       }

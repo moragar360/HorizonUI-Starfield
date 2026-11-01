@@ -3252,7 +3252,24 @@ int main()
 		Expect(as.find("HZ_ML_H") != std::string::npos && as.find("620") != std::string::npos,
 			"the log popup is 620 tall");
 		Expect(as.find("HZ_ML_VIS") != std::string::npos && as.find("HZ_ML_ROW") != std::string::npos,
-			"the log shows about 10 rows at 28 px");
+			"the log still has a 28 px minimum row");
+		Expect(as.find("function hzMsglogWrap") != std::string::npos
+			&& as.find("function hzMsglogLineH") != std::string::npos
+			&& as.find("function hzMsglogFits") != std::string::npos,
+			"long Message Log rows wrap and keep a per-row height");
+		{
+			const auto draw = AsFnBody(as, "private function hzMsglogDraw", "private function hzMsglogOverlayLayer");
+			Expect(draw.find("this.hzMsglogWrap(tt,textW,rh - 8)") != std::string::npos,
+				"the log row wraps the full text");
+			Expect(draw.find("this.hzMsglogEllip(tt,textW)") == std::string::npos,
+				"the log row does not cut the message with ...");
+			Expect(draw.find("\"h\":rh") != std::string::npos, "hit boxes use the wrapped row height");
+		}
+		{
+			const auto step = AsFnBody(as, "private function hzMsglogSelStep", "private function hzMsglogDoPin");
+			Expect(step.find("this.hzMsglogFits(list, this.hzMlScroll, visAt, HZ_ML_LIST)") != std::string::npos,
+				"selection scroll accounts for wrapped rows");
+		}
 		Expect(as.find("Starts empty") != std::string::npos, "the empty log has a starts-empty note");
 		Expect(as.find("from a later point") != std::string::npos, "later-point rows are labeled");
 		Expect(as.find("Clear this session?") != std::string::npos, "Clear session asks for a confirm");
