@@ -27,9 +27,13 @@ Pins that fail if this fix is reverted: `hzInitFields` assigns `hz30Mod` and `hz
 
 Still unverified in game. After the PC rebuild, `HorizonUI.log` must show `HorizonUI 0.43.0.9 loaded` and `movie builds: HUD 0.43.0.9`. Then either Horizon cards are up, or `hud: movie error hzBoot null ...` / `hzBuildCards.vitals` names the next failure. Do not treat a `HUD 0.43.0.8` line as this build.
 
+PC folders: compile and run xmake only in `C:\HorizonUI-repo` (the GitHub checkout). `C:\HorizonUI` is the old tree and is only the SWF compile tools. A text search of `hudmenu.gfx` cannot see `[-2,2,-2,2]`; the compiler stores those offsets as numbers. The decompile of `C:\Users\rschr\build\out_v043009\swf\hudmenu.gfx` containing `var ox:Array = [-2,2,-2,2]` is the offset check. `hzInitFields`, `hzBoot null`, and `0.43.0.9` are present in that movie, and `0.43.0.8` is absent. The DLL and eight movies are already built. The next PC step is the FOMOD zip only. Do not rebuild.
+
 The sections below are the earlier 0.43.0.8 pass. They are history. The install to test now is 0.43.0.9, staged under `C:\Users\rschr\build`.
 
 ## Building on your PC with Cursor
+
+Superseded for 0.43.0.9. Do not paste the prompt in this section. It points at `C:\HorizonUI`, which is not the GitHub checkout.
 
 1. On the Windows PC, open the Cursor app. Use File > Open Folder and open `C:\HorizonUI` (or the folder that already has this repo / `sfse-plugin`). If the Cursor CLI is not installed, install it from Cursor: Command Palette > "Install cursor command".
 2. Open a new Agent chat in that folder. Paste this prompt as-is:
