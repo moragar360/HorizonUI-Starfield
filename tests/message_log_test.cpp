@@ -763,8 +763,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.8", "file version is 0.43.0.8");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 8, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.9", "file version is 0.43.0.9");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 9, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -1560,7 +1560,7 @@ int main()
 		Expect(stillMid && stillFuture, "later-point flags survive a new capture");
 		Expect(b.nextId > futureId, "new rows take ids after the later-point rows");
 
-		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.8");
+		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.9");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok, "later-point flags round-trip through JSON");
 		Buffer restarted;
@@ -1610,7 +1610,7 @@ int main()
 		Buffer loaded;
 		loaded.LoadState(held);
 		ExpectEqI(static_cast<int>(loaded.nextId), 42, "LoadState keeps the persisted nextId");
-		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.8");
+		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.9");
 		Expect(json.find("\"nextId\": 42") != std::string::npos, "ToJson writes nextId");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok && parsed.state.nextId == 42, "FromJson reads the persisted nextId");
@@ -3362,14 +3362,38 @@ int main()
 				"a vitals throw unpublishes HorizonVitals_mc before the vanilla-hide gate can pass");
 		}
 		{
-			const auto boot = AsFnBody(as, "private function hzBoot", "public function hzEnsureHud");
-			Expect(boot.find("hzNoteErr(\"hzBoot null \"") != std::string::npos,
-				"hzBoot records which late fields were null");
+			const auto init = AsFnBody(as, "private function hzInitFields", "private function hzBoot");
+			Expect(init.find("hzNoteErr(\"hzBoot null \"") != std::string::npos
+				&& init.find("this.hz30Mod = {}") != std::string::npos
+				&& init.find("this.hzSetKeyOv = new Sprite()") != std::string::npos,
+				"hzInitFields fills every non-primitive field and logs the null names");
+			Expect(as.find("private var hz30Mod:Object = {}") == std::string::npos
+				&& as.find("private var hzSetKeyOv:Sprite = new Sprite()") == std::string::npos,
+				"object fields are not initialized in the instance header");
 		}
 		{
+			const auto boot = AsFnBody(as, "private function hzBoot", "public function hzEnsureHud");
 			const auto ens = AsFnBody(as, "public function hzEnsureHud", "private function hzBuild()");
+			const auto build = AsFnBody(as, "private function hzBuild()", "private function hzOnJetpack");
+			Expect(boot.find("this.hzInitFields()") != std::string::npos
+				&& ens.find("this.hzInitFields()") != std::string::npos
+				&& build.find("this.hzInitFields()") != std::string::npos,
+				"hzBoot, hzEnsureHud, and hzBuild assign fields before card work");
 			Expect(ens.find("HorizonCard_mc == null") != std::string::npos,
 				"a failed hzBuild does not run hzBuildCards again if the jetpack sprite already leaked");
+		}
+		{
+			const auto tick = AsFnBody(as, "private function hzSplashTick", "private function hzSplashBox");
+			const auto box = AsFnBody(as, "private function hzSplashBox", "private function hzSplashAlpha");
+			const auto make = AsFnBody(as, "private function hzSplashMake", "private function hzSplashGlyph");
+			Expect(tick.find("HorizonVitals_mc == null") != std::string::npos
+				&& tick.find("removeChildAt") == std::string::npos
+				&& tick.find("hzSplashApply") != std::string::npos,
+				"the splash tick skips a missing HUD and does not rebuild text");
+			Expect(box.find("[-2,2,-2,2]") != std::string::npos
+				&& box.find("GlowFilter") == std::string::npos
+				&& make.find("removeChildAt") != std::string::npos,
+				"the splash outline is four offsets, built once");
 		}
 		{
 			const auto fn = AsFnBody(as, "private function hzFontName", "private function hzApplyTypo");
@@ -3511,15 +3535,15 @@ int main()
 			"a save load can start the splash");
 		{
 			const auto ver = Slurp("src/hz_version.h");
-			Expect(ver.find("TEST_NOTE 0.43.0.8") != std::string::npos
-				&& ver.find("VORTEX_INSTALL 0.43.0.8") != std::string::npos,
-				"TEST_NOTE and VORTEX_INSTALL name 0.43.0.8");
+			Expect(ver.find("TEST_NOTE 0.43.0.9") != std::string::npos
+				&& ver.find("VORTEX_INSTALL 0.43.0.9") != std::string::npos,
+				"TEST_NOTE and VORTEX_INSTALL name 0.43.0.9");
 		}
 		Expect(as.find("MISSED BADGE") == std::string::npos,
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.8\"") != std::string::npos, "HUD movie build id is 0.43.0.8");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.9\"") != std::string::npos, "HUD movie build id is 0.43.0.9");
 		Expect(as.find("greyed") == std::string::npos, "notes use American grayed");
 		Expect(as.find("grayed") != std::string::npos, "locked rows are grayed");
 		Expect(as.find("F12") == std::string::npos || as.find("SETTINGS MENU KEY") != std::string::npos,

@@ -14,7 +14,7 @@
       public var HorizonCard_mc:Sprite = null;
       public var HorizonVitals_mc:Sprite = null;
       private var hzFont:String = null;
-      private var hzTexts:Array = [];
+      private var hzTexts:Array;
       private var hzJetPct:TextField = null;
       private var hzJetBar:Sprite = null;
       private var hzJetCharge:Number = 1;
@@ -36,15 +36,15 @@
       private var hzLowHealth:Boolean = false;
       private var hzPulseT:Number = 0;
       private var hzJetIconVec:Sprite = null;
-      private var hzCmpLabels:Array = [];
+      private var hzCmpLabels:Array;
       private var hzCmpCenter:TextField = null;
       private var hzEnvLoc:TextField = null;
       private var hzEnvStats:TextField = null;
       private var hzEnvHaz:TextField = null;
       private var hzEnvAff:TextField = null;
       private var hzEnvSoak:Sprite = null;
-      private var hzEnvHazards:Array = [];
-      private var hzEnvAffl:Array = [];
+      private var hzEnvHazards:Array;
+      private var hzEnvAffl:Array;
       private static const HZ_CMP_W:Number = 420;
       public var hzShowPlanet:Boolean = true;
       public var hzShowAfflictions:Boolean = true;
@@ -81,7 +81,7 @@
       public var HorizonQuest_mc:Sprite = null;
       private var hzQActive:TextField = null;
       private var hzQActiveSub:TextField = null;
-      private var hzQRows:Array = [];
+      private var hzQRows:Array;
       private var hzQPlanetHdr:TextField = null;
       private var hzQFooter:TextField = null;
       private var hzQHasAny:Boolean = false;
@@ -124,12 +124,12 @@
       // Visibility rule ids (one rule per card): 0 always, 1 combat only, 2 hide in ship, 3 weapon drawn only,
       // 4 jetpack in use / not full, 5 vitals below 100%, 6 only when afflicted
       private static const HZ_RULE_NAMES:Array = ["ALWAYS","COMBAT ONLY","HIDE IN SHIP","WEAPON DRAWN ONLY","IN USE / NOT FULL","WHEN NOT FULL (HP/O2)","ONLY WHEN AFFLICTED","ON XP / LEVEL / CREDITS","WHEN OVERWEIGHT","XP / LEVEL OR OVERWEIGHT"];
-      private var hzCardBodies:Array = [];
+      private var hzCardBodies:Array;
       private static const HZ_CARDCOLS:Array = [0x0B1218,0x16181C,0x0B1630,0x0A2226,0x1E1328,0x2A1014,0x3A4652,0xD5DBE0,0xF2F4F6,0xCCDFEE,0xF0E0C2,0xD2ECDF];
       private static const HZ_CARDNAMES:Array = ["SLATE","GRAPHITE","NAVY","DEEP TEAL","PLUM","CRIMSON","STORM GRAY","LIGHT GRAY","WHITE","PALE BLUE","PALE AMBER","PALE MINT"];
       public var hzAccentHex:int = -1; // AccentHex=#RRGGBB in ini adds a CUSTOM accent (last palette entry)
       public var hzCardHex:int = -1;   // CardHex=#RRGGBB in ini adds a CUSTOM card color
-      private var hzTiles:Array = [];
+      private var hzTiles:Array;
       // v0.27: EquipmentStyle removed - the Equipment card is always the new layout (A, C in compact mode)
       private var hzEqOld:Sprite = null;
       private var hzEqNew:Sprite = null;
@@ -143,7 +143,7 @@
       private var hzEqFlash:Number = 0;
       private var hzEqFlashFrom:Number = 0;
       private var hzEqLastClip:Number = -1;
-      private var hzCAmmoRow:Array = [];
+      private var hzCAmmoRow:Array;
       private var hzTypoKey:String = "";
       // v0.17
       private static const HZ_EQ_W:Number = 280;
@@ -185,14 +185,14 @@
       private var hzTgLeg:Boolean = false;
       private var hzTgDirty:Boolean = true;
       private var hzTgLastMode:int = -2;
-      private var hzTgHidden:Array = [];
+      private var hzTgHidden:Array;
       private var hzTgTextH:Number = 40;
       private var hzTgW:Number = 0;
       private var hzTgH:Number = 0;
       private var hzTgFramed:Boolean = false;
       private static const HZ_TG_W:Number = 260;
       private static const HZ_TGANCHOR_NAMES:Array = ["CROSSHAIR","FOLLOW TARGET"];
-      private var hzIcons:Array = [];
+      private var hzIcons:Array;
       private var hzEqLow:Boolean = false;
       private var hzEqPulse:Number = 0;
       private var hzEqAmmoIcon:Sprite = null;
@@ -215,7 +215,7 @@
       private static const HZ_PP_W:Number = 392;   // v0.31: was 336 (+16.7 %, longer planet / moon / station names)
       private var hzVitOld:Sprite = null;
       private var hzVitNew:Sprite = null;
-      private var hzVnBodies:Array = [];
+      private var hzVnBodies:Array;
       private var hzVnHp:TextField = null;
       private var hzVnO2:TextField = null;
       private var hzVnHpBar:Sprite = null;
@@ -234,7 +234,7 @@
       // layout edit (ARRANGE CARDS)
       private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages"];
       private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES"];
-      public var hzLay:Object = {};
+      public var hzLay:Object;
       private var hzLayOrig:Object = null;
       private var hzArrange:Boolean = false;
       private var hzArr_mc:Sprite = null;
@@ -243,7 +243,7 @@
       private var hzArrSel:String = null;
       private var hzArrDX:Number = 0;
       private var hzArrDY:Number = 0;
-      private var hzArrHits:Array = [];
+      private var hzArrHits:Array;
       private var hzArrPrev:Boolean = false;
       private var hzArrHover:String = "";
       // v0.33: the ARRANGE toolbar can be dragged (empty area / grip); offset from its default spot, kept in [Layout]
@@ -267,15 +267,15 @@
       private var hzObjRing:int = 0;             // ObjectRing: 0 off, 1 container lists only, 2 vanilla
       private var hzXh:Sprite = null;
       private var hzXhSig:String = "";
-      private var hzXhHid:Array = [];
+      private var hzXhHid:Array;
       private var hzIniLoader:URLLoader = null;
       public var hzFadeCards:Boolean = true;
       public var hzCombatDim:Boolean = true;
       public var hzDimAlpha:Number = 0.6;
       public var hzCompact:Boolean = false;
       public var hzHazardAlert:Boolean = true;
-      private var hzBars:Array = [];
-      private var hzFades:Array = [];
+      private var hzBars:Array;
+      private var hzFades:Array;
       private var hzInCombat:Boolean = false;
       private var hzPlanAlert:Sprite = null;
       private var hzPlanAlertOn:Boolean = false;
@@ -1412,7 +1412,7 @@
       }
 
       private var hzCmpDbgSp:Sprite = null;
-      private var hzCmpDbgPool:Array = [];
+      private var hzCmpDbgPool:Array;
       private var hzCmpDbgUsed:int = 0;
 
       private function hzKeys(o:Object) : String
@@ -2003,29 +2003,81 @@
          return this.hzLastErr;
       }
 
-      // Scaleform can leave late instance initializers null on a huge HUD class.
-      // TypeError #1009 on hz30Mod / hzSetKeyOv matches the 0.43.0.8 in-game log.
-      private function hzBoot() : void
+      private function hzInitFields() : void
       {
          var names:Array = [];
+         if(this.hzTexts == null) { this.hzTexts = []; names.push("hzTexts"); }
+         if(this.hzCmpLabels == null) { this.hzCmpLabels = []; names.push("hzCmpLabels"); }
+         if(this.hzEnvHazards == null) { this.hzEnvHazards = []; names.push("hzEnvHazards"); }
+         if(this.hzEnvAffl == null) { this.hzEnvAffl = []; names.push("hzEnvAffl"); }
+         if(this.hzQRows == null) { this.hzQRows = []; names.push("hzQRows"); }
+         if(this.hzCardBodies == null) { this.hzCardBodies = []; names.push("hzCardBodies"); }
+         if(this.hzTiles == null) { this.hzTiles = []; names.push("hzTiles"); }
+         if(this.hzCAmmoRow == null) { this.hzCAmmoRow = []; names.push("hzCAmmoRow"); }
+         if(this.hzTgHidden == null) { this.hzTgHidden = []; names.push("hzTgHidden"); }
+         if(this.hzIcons == null) { this.hzIcons = []; names.push("hzIcons"); }
+         if(this.hzVnBodies == null) { this.hzVnBodies = []; names.push("hzVnBodies"); }
+         if(this.hzLay == null) { this.hzLay = {}; names.push("hzLay"); }
+         if(this.hzArrHits == null) { this.hzArrHits = []; names.push("hzArrHits"); }
+         if(this.hzXhHid == null) { this.hzXhHid = []; names.push("hzXhHid"); }
+         if(this.hzBars == null) { this.hzBars = []; names.push("hzBars"); }
+         if(this.hzFades == null) { this.hzFades = []; names.push("hzFades"); }
+         if(this.hzCmpDbgPool == null) { this.hzCmpDbgPool = []; names.push("hzCmpDbgPool"); }
+         if(this.hzSetHits == null) { this.hzSetHits = []; names.push("hzSetHits"); }
+         if(this.hzPopLayers == null) { this.hzPopLayers = []; names.push("hzPopLayers"); }
+         if(this.hzMlHits == null) { this.hzMlHits = []; names.push("hzMlHits"); }
+         if(this.hzMlRows == null) { this.hzMlRows = []; names.push("hzMlRows"); }
+         if(this.hzMlOthers == null) { this.hzMlOthers = []; names.push("hzMlOthers"); }
+         if(this.hzSetKeyOv == null) { this.hzSetKeyOv = new Sprite(); names.push("hzSetKeyOv"); }
+         if(this.hzSetPvTf == null) { this.hzSetPvTf = []; names.push("hzSetPvTf"); }
+         if(this.hzSetPvAfCh == null) { this.hzSetPvAfCh = []; names.push("hzSetPvAfCh"); }
+         if(this.hzSz == null) { this.hzSz = []; names.push("hzSz"); }
+         if(this.hzFontOkMap == null) { this.hzFontOkMap = {}; names.push("hzFontOkMap"); }
+         if(this.hzCmpLbl19 == null) { this.hzCmpLbl19 = []; names.push("hzCmpLbl19"); }
+         if(this.hzAfChips == null) { this.hzAfChips = []; names.push("hzAfChips"); }
+         if(this.hzAfEnv == null) { this.hzAfEnv = []; names.push("hzAfEnv"); }
+         if(this.hzAfPers == null) { this.hzAfPers = []; names.push("hzAfPers"); }
+         if(this.hzAfSeen == null) { this.hzAfSeen = {}; names.push("hzAfSeen"); }
+         if(this.hzE19SymCache == null) { this.hzE19SymCache = {}; names.push("hzE19SymCache"); }
+         if(this.hzT19Rows == null) { this.hzT19Rows = []; names.push("hzT19Rows"); }
+         if(this.hzT19Cmp == null) { this.hzT19Cmp = []; names.push("hzT19Cmp"); }
+         if(this.hzT19Btn == null) { this.hzT19Btn = []; names.push("hzT19Btn"); }
+         if(this.hz26Dbg == null) { this.hz26Dbg = {}; names.push("hz26Dbg"); }
+         if(this.hz26PowCache == null) { this.hz26PowCache = {}; names.push("hz26PowCache"); }
+         if(this.hz26EnChips == null) { this.hz26EnChips = []; names.push("hz26EnChips"); }
+         if(this.hz26Nums == null) { this.hz26Nums = []; names.push("hz26Nums"); }
+         if(this.hz26Arcs == null) { this.hz26Arcs = []; names.push("hz26Arcs"); }
+         if(this.hz26VCache == null) { this.hz26VCache = {}; names.push("hz26VCache"); }
+         if(this.hz26VHid == null) { this.hz26VHid = {}; names.push("hz26VHid"); }
+         if(this.hz27Alerts == null) { this.hz27Alerts = []; names.push("hz27Alerts"); }
+         if(this.hz27QObjs == null) { this.hz27QObjs = []; names.push("hz27QObjs"); }
+         if(this.hz27QSubs == null) { this.hz27QSubs = []; names.push("hz27QSubs"); }
+         if(this.hz27QL == null) { this.hz27QL = []; names.push("hz27QL"); }
+         if(this.hz27QLD == null) { this.hz27QLD = []; names.push("hz27QLD"); }
+         if(this.hz31PxS == null) { this.hz31PxS = {}; names.push("hz31PxS"); }
          if(this.hz30Mod == null) { this.hz30Mod = {}; names.push("hz30Mod"); }
          if(this.hz30ModLdr == null) { this.hz30ModLdr = {}; names.push("hz30ModLdr"); }
          if(this.hz34Sc == null) { this.hz34Sc = {}; names.push("hz34Sc"); }
          if(this.hz34Cm == null) { this.hz34Cm = {}; names.push("hz34Cm"); }
-         if(this.hzTexts == null) { this.hzTexts = []; names.push("hzTexts"); }
-         if(this.hzIcons == null) { this.hzIcons = []; names.push("hzIcons"); }
-         if(this.hzCardBodies == null) { this.hzCardBodies = []; names.push("hzCardBodies"); }
-         if(this.hzTiles == null) { this.hzTiles = []; names.push("hzTiles"); }
-         if(this.hzBars == null) { this.hzBars = []; names.push("hzBars"); }
-         if(this.hzSz == null) { this.hzSz = []; names.push("hzSz"); }
-         if(this.hzFades == null) { this.hzFades = []; names.push("hzFades"); }
-         if(this.hzSetHits == null) { this.hzSetHits = []; names.push("hzSetHits"); }
-         if(this.hzSetKeyOv == null) { this.hzSetKeyOv = new Sprite(); names.push("hzSetKeyOv"); }
-         if(names.length > 0) { this.hzNoteErr("hzBoot null " + names.join(","), null); }
+         if(this.hz37St == null) { this.hz37St = {}; names.push("hz37St"); }
+         if(this.hz37Ps == null) { this.hz37Ps = []; names.push("hz37Ps"); }
+         if(this.hz37Q == null) { this.hz37Q = []; names.push("hz37Q"); }
+         if(this.hz37N == null) { this.hz37N = []; names.push("hz37N"); }
+         if(this.hz41SAP == null) { this.hz41SAP = {}; names.push("hz41SAP"); }
+         if(this.hz41VTx == null) { this.hz41VTx = []; names.push("hz41VTx"); }
+         if(names.length > 0) { names.reverse(); this.hzNoteErr("hzBoot null " + names.join(","), null); }
+      }
+
+      // Assigns every non-primitive instance field. Scaleform left late
+      // initializers null on this HUD class (TypeError #1009).
+      private function hzBoot() : void
+      {
+         this.hzInitFields();
       }
 
       public function hzEnsureHud() : Boolean
       {
+         this.hzInitFields();
          try { this.hzBoot(); } catch(eBoot:Error) { }
          try { this.hzArmOnFrame(); } catch(e0:Error) { }
          if(this.HorizonVitals_mc == null)
@@ -2052,6 +2104,7 @@
 
       private function hzBuild() : void
       {
+         this.hzInitFields();
          try { this.hzArmOnFrame(); } catch(eArm0:Error) { }
          try
          {
@@ -3130,7 +3183,7 @@
       private var hzSetTab:int = 0;
       private var hzSetRow:int = 0;
       private var hzSetHover:String = "";
-      private var hzSetHits:Array = [];
+      private var hzSetHits:Array;
       private var hzSetDrag:int = -1;
       private var hzSetPrevDown:Boolean = false;
       private var hzSetSaveText:String = "";
@@ -3186,7 +3239,7 @@
          return cur;
       }
 
-      private var hzPopLayers:Array = [];   // 0.43.0.1: extra F11 layers (log / settings / confirm). P1 is plumbing only.
+      private var hzPopLayers:Array;   // 0.43.0.1: extra F11 layers (log / settings / confirm). P1 is plumbing only.
 
       public function hzSettingsOpen() : Boolean
       {
@@ -3282,8 +3335,8 @@
       private static const HZ_ML_CHIPS:Array = ["ALL","MEDICAL","CREW","REACTIONS","BUSY","CRIME","CREDITS","QUEST","LOCATION","GAME","XP"];
       private static const HZ_ML_KIND:Array = ["","medical","crew","reaction","busy","crime","credits","quest","location","game","xp"];
       private var hzMlLayer:Sprite = null;
-      private var hzMlHits:Array = [];
-      private var hzMlRows:Array = [];
+      private var hzMlHits:Array;
+      private var hzMlRows:Array;
       private var hzMlSelId:Number = 0;
       private var hzMlScroll:int = 0;
       private var hzMlChip:int = 0;
@@ -3307,7 +3360,7 @@
       private var hzMlMissed:Boolean = true;
       private var hzMlFolder:String = "";
       private var hzMlOtherN:int = 0;
-      private var hzMlOthers:Array = [];
+      private var hzMlOthers:Array;
       private var hzMlSetRow:int = 0;
       private var hzMlSetScroll:int = 0;
       private var hzMlSaveIni:String = "";
@@ -5204,7 +5257,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.8";
+      private static const HZ_BUILD:String = "0.43.0.9";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -5215,16 +5268,16 @@
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
-      private var hzSetKeyOv:Sprite = new Sprite();   // keycap outlines, re-added above all window text each draw
+      private var hzSetKeyOv:Sprite;   // keycap outlines, re-added above all window text each draw
       private var hzSetPvBody:Sprite = null;
       private var hzSetPvDisc:Sprite = null;
       private var hzSetPvG:Sprite = null;
-      private var hzSetPvTf:Array = [];
+      private var hzSetPvTf:Array;
       private var hzSetPvTg:Sprite = null;     // v0.24 preview: crosshair + sample crosshair card (TargetScale / CrosshairStyle / ObjectRing / ScreenHeight)
       private var hzSetPvTgCard:Sprite = null;
       private var hzSetPvTgTf:Object = null;
       private var hzSetPvAf:Sprite = null;     // v0.24 preview: sample affliction chips in the pending AfflictionLayout
-      private var hzSetPvAfCh:Array = [];
+      private var hzSetPvAfCh:Array;
       private var hzSetPvOp:Sprite = null;     // v0.25 preview: HUD card (CardOpacity) vs container card (ContainerOpacity)
 
       private function hzSetIsDef(k:String, v:*) : Boolean
@@ -7891,8 +7944,8 @@
       public var hzClockFmt:int = 0;
       public var hzTempUnit:int = 0;
       public var hzAfLayout:int = 0;
-      private var hzSz:Array = [];
-      private var hzFontOkMap:Object = {};
+      private var hzSz:Array;
+      private var hzFontOkMap:Object;
       private var hzFontRetry:int = 0;
 
       private function hzV19() : Boolean
@@ -8287,7 +8340,7 @@
       private var hzCmpBody19:Sprite;
       private var hzCmpTicks19:Sprite;
       private var hzCmpMarks19:Sprite;
-      private var hzCmpLbl19:Array = [];
+      private var hzCmpLbl19:Array;
       private var hzCmpHead19:TextField;
       private var hzCmpPill19:Sprite;
       // v0.25 compact (strips) form: 420 x 40, cardinal labels only, short ticks, heading inside the strip
@@ -8729,11 +8782,11 @@
       // ---- AFFLICTIONS chips (>=190x48, r16): env hazards (global exposure bar) + personal effects (red name) ----
       private var hzAfOld:Sprite;
       private var hzAfNew:Sprite;
-      private var hzAfChips:Array = [];
-      private var hzAfEnv:Array = [];
-      private var hzAfPers:Array = [];
+      private var hzAfChips:Array;
+      private var hzAfEnv:Array;
+      private var hzAfPers:Array;
       private var hzAfSoak:Number = 0;
-      private var hzAfSeen:Object = {};
+      private var hzAfSeen:Object;
       private var hzAfRemeasure:Boolean = false;
       private var hzAfRemeasureAt:int = 0;
       private var hzAfLoadAt:int = 0;
@@ -9152,7 +9205,7 @@
       // v0.26: the previous symbol stays on screen until the new one exists (no generic-outline flash on a swap),
       // and every instance is cached per linkage name (a swap back is instant, nothing is re-created).
       // Failure of any kind = the generic Horizon outline.
-      private var hzE19SymCache:Object = {};
+      private var hzE19SymCache:Object;
       private function hzE19SetSym(name:String) : void
       {
          if(name == this.hzE19SymName) { return; }
@@ -9353,9 +9406,9 @@
       private var hzT19HdrR:TextField;
       private var hzT19Foot:TextField;
       private var hzT19FootR:TextField;
-      private var hzT19Rows:Array = [];
-      private var hzT19Cmp:Array = [];
-      private var hzT19Btn:Array = [];
+      private var hzT19Rows:Array;
+      private var hzT19Cmp:Array;
+      private var hzT19Btn:Array;
       private var hzT19Sig:String = "";
       private var hzT19Ver:int = 0;
       private var hzTgItems:Array = null;
@@ -10537,7 +10590,7 @@
       private static const HZ_ST_H:Number = 48;
       private var hz26StW:Number = 220;
       private var hz26StH:Number = 48;
-      private var hz26Dbg:Object = {};
+      private var hz26Dbg:Object;
       private var hz26Built:Boolean = false;
       // character data (PlayerData / PlayerInventoryData)
       private var hz26Name:String = "";
@@ -10604,7 +10657,7 @@
       private var hz26PowHas:Boolean = false;
       private var hz26PowKey:String = "";
       private var hz26PowSrc:String = "none";
-      private var hz26PowCache:Object = {};
+      private var hz26PowCache:Object;
       private var hz26PowObj:DisplayObject = null;
       private var hz26EqRowS:Sprite;
       private var hz26EqRowG:Sprite;
@@ -10628,7 +10681,7 @@
       private var hz26EnPct:TextField;
       private var hz26EnEmL:TextField;
       private var hz26EnEmR:TextField;
-      private var hz26EnChips:Array = [];
+      private var hz26EnChips:Array;
       private var hz26EnH:Number = 62;
       // stealth
       private var hz26St:Object = null;
@@ -10643,11 +10696,11 @@
       private var hz26HitT:Number = 0;
       private var hz26HitCrit:Boolean = false;
       private var hz26KillT:Number = 0;
-      private var hz26Nums:Array = [];
+      private var hz26Nums:Array;
       private var hz26Ring:Sprite;
-      private var hz26Arcs:Array = [];
-      private var hz26VCache:Object = {};
-      private var hz26VHid:Object = {};
+      private var hz26Arcs:Array;
+      private var hz26VCache:Object;
+      private var hz26VHid:Object;
 
       private function hz26Now() : Number
       {
@@ -12261,16 +12314,16 @@
       private var hz27LastCr:Number = NaN;
       private var hz27BioHid:Boolean = false;
       private var hz27ExitOn:Boolean = false;
-      private var hz27Alerts:Array = [];
+      private var hz27Alerts:Array;
       // quest tracker: sticky main objective + up to 3 sub-lines
       private var hz27QMain:String = "";
       private var hz27QMainT:Number = 0;
       private var hz27QMainDist:Number = NaN;
       private var hz27QMainOff:Boolean = false;
-      private var hz27QObjs:Array = [];
-      private var hz27QSubs:Array = [];
-      private var hz27QL:Array = [];
-      private var hz27QLD:Array = [];
+      private var hz27QObjs:Array;
+      private var hz27QSubs:Array;
+      private var hz27QL:Array;
+      private var hz27QLD:Array;
       private var hz27QH:Number = 78;
 
       private function hz27FolCol() : uint
@@ -12921,7 +12974,7 @@
       private var hz31C:Object = null;      // current [Comms] / [Scanner] values (numbers, SpeakerHex string)
       private var hz31Rev:int = 0;          // [Comms] HzRev from the file; every save writes +1
       private var hz31Page:int = 0;         // COMMS tab sub-page: 0 SUBTITLES, 1 DIALOGUE
-      private var hz31PxS:Object = {};      // proxy ghosts by layout key (+ "SpeakerD": the card that follows the dialogue panel)
+      private var hz31PxS:Object;      // proxy ghosts by layout key (+ "SpeakerD": the card that follows the dialogue panel)
 
       private function hz31Cfg() : Object
       {
@@ -13553,8 +13606,8 @@
       // only raises IOErrorEvent (caught). State: undefined/-1 checking, 0 absent, 1 present. Re-probed on every F11
       // open so an install / uninstall shows without restarting.
       private static const HZ30_MODS:Array = ["scanner","comms","font","comms_dialogue","es","edi","edi2","scope","notifications"];   // 0.43.0.1: + notifications.marker
-      private var hz30Mod:Object = {};
-      private var hz30ModLdr:Object = {};
+      private var hz30Mod:Object;
+      private var hz30ModLdr:Object;
       private var hz30ModT0:Number = 0;
       private var hz30ModTk:int = 0;
 
@@ -14058,8 +14111,8 @@
       // -1 now = GLOBAL). Edge-anchored ARRANGE positions use the real on-screen card size, so they stay put at any size.
       private static const HZ34_CARDS:Array = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false]];
       private static const HZ34_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face: run-time name only, never shown
-      private var hz34Sc:Object = {};
-      private var hz34Cm:Object = {};
+      private var hz34Sc:Object;
+      private var hz34Cm:Object;
       private var hz34NoteCmp:Boolean = true;
       private var hzSplashWelcome:Boolean = true;
       private var hzSplash:Sprite = null;
@@ -14361,6 +14414,7 @@
 
       public function hzSplashOnLoad() : void
       {
+         if(this.HorizonVitals_mc == null) { return; }
          if(!this.hzSplashWelcome) { return; }
          if(this.hzInCombat) { return; }
          if(this.hzSetIsOpen) { return; }
@@ -14379,6 +14433,7 @@
 
       private function hzSplashStart() : void
       {
+         if(this.HorizonVitals_mc == null) { return; }
          if(this.hzSplash == null)
          {
             this.hzSplash = new Sprite();
@@ -14397,11 +14452,19 @@
          }
          catch(eN:Error) { this.hzSplashName = ""; }
          if(this.hzSplashName.length > 32) { this.hzSplashName = this.hzSplashName.substr(0,31) + "..."; }
+         if(this.hzSplash.getChildByName("hzLetters") == null) { this.hzSplashMake(); }
+         else { this.hzSplashLine(); }
          this.hzSplash.visible = true;
       }
 
       private function hzSplashTick() : void
       {
+         if(this.HorizonVitals_mc == null)
+         {
+            this.hzSplashOn = false;
+            if(this.hzSplash != null) { this.hzSplash.visible = false; }
+            return;
+         }
          if(!this.hzSplashOn)
          {
             if(this.hzSplash != null) { this.hzSplash.visible = false; }
@@ -14427,46 +14490,62 @@
             this.hzSplash.visible = false;
             return;
          }
-         this.hzSplashDraw(t,fade);
+         this.hzSplashApply(t,fade);
       }
 
-      private function hzSplashOutline(host:Sprite, txt:String, x:Number, y:Number, w:Number, fs:Number, face:String, fill:uint, fillA:Number, outA:Number, ls:Number) : void
+      // Four 2 px offsets. Built once; the tick only changes alpha, x, and visible.
+      private function hzSplashBox(host:Sprite, txt:String, x:Number, y:Number, w:Number, fs:Number, face:String, fill:uint, ls:Number) : Sprite
       {
-         var d:int = 2;
-         var o:uint = 0x04080C;
-         var ox:Array = [-d,0,d,-d,d,-d,0,d];
-         var oy:Array = [-d,-d,-d,0,0,d,d,d];
+         var box:Sprite = new Sprite();
+         box.x = x;
+         box.y = y;
+         box.mouseEnabled = false;
+         box.mouseChildren = false;
+         host.addChild(box);
+         var ox:Array = [-2,2,-2,2];
+         var oy:Array = [-2,-2,2,2];
          var i:int = 0;
-         while(i < 8 && outA > 0.01)
+         while(i < 4)
          {
-            var ot:TextField = this.hzWT(host,txt,x + Number(ox[i]),y + Number(oy[i]),w,fs,face,o,ls,"center",13);
-            ot.alpha = outA;
+            var ot:TextField = this.hzWT(box,txt,Number(ox[i]),Number(oy[i]),w,fs,face,0x04080C,ls,"center",13);
+            ot.mouseEnabled = false;
             i++;
          }
-         var ft:TextField = this.hzWT(host,txt,x,y,w,fs,face,fill,ls,"center",13);
-         ft.alpha = fillA;
+         var ft:TextField = this.hzWT(box,txt,0,0,w,fs,face,fill,ls,"center",13);
+         ft.name = "f";
+         ft.mouseEnabled = false;
+         return box;
       }
 
-      private function hzSplashStar(g:*, cx:Number, cy:Number, r:Number, col:uint, a:Number) : void
+      private function hzSplashAlpha(box:Sprite, fillA:Number, outA:Number) : void
       {
-         if(a <= 0.01 || r < 1) { return; }
-         g.beginFill(col,a);
-         g.moveTo(cx,cy - r);
-         g.lineTo(cx + r * 0.22,cy - r * 0.22);
-         g.lineTo(cx + r,cy);
-         g.lineTo(cx + r * 0.22,cy + r * 0.22);
-         g.lineTo(cx,cy + r);
-         g.lineTo(cx - r * 0.22,cy + r * 0.22);
-         g.lineTo(cx - r,cy);
-         g.lineTo(cx - r * 0.22,cy - r * 0.22);
-         g.lineTo(cx,cy - r);
-         g.endFill();
-         g.beginFill(0xFFFFFF,a);
-         g.drawCircle(cx,cy,Math.max(1.2,r * 0.22));
-         g.endFill();
+         if(box == null) { return; }
+         var i:int = 0;
+         while(i < box.numChildren)
+         {
+            var ch:DisplayObject = box.getChildAt(i);
+            ch.alpha = ch.name == "f" ? fillA : outA;
+            ch.visible = ch.alpha > 0.01;
+            i++;
+         }
+         box.visible = fillA > 0.01 || outA > 0.01;
       }
 
-      private function hzSplashDraw(t:Number, fade:Number) : void
+      private function hzSplashLine() : void
+      {
+         var sub:Sprite = this.hzSplash.getChildByName("hzSub") as Sprite;
+         if(sub == null) { return; }
+         var line:String = this.hzSplashName.length > 0 ? ("Loading preset: " + this.hzSplashName) : "Loading default settings";
+         var i:int = 0;
+         while(i < sub.numChildren)
+         {
+            var tf:TextField = sub.getChildAt(i) as TextField;
+            if(tf != null) { tf.text = line; }
+            i++;
+         }
+      }
+
+      private function hzSplashMake() : void
       {
          if(this.hzSplash == null) { return; }
          while(this.hzSplash.numChildren > 0) { this.hzSplash.removeChildAt(0); }
@@ -14477,8 +14556,87 @@
          var S:Number = 1;
          try { if(this.hzTextScale >= 1.14) { S = 1.3; } } catch(eS:Error) { S = 1; }
          var acc:uint = HZ_ACCENT;
-         var g:* = this.hzSplash.graphics;
+         var streak:Sprite = new Sprite();
+         streak.name = "hzStreak";
+         streak.mouseEnabled = false;
+         var sg:* = streak.graphics;
+         var k:int = 0;
+         while(k < 24)
+         {
+            var f:Number = k / 24;
+            sg.beginFill(acc,Math.pow(1 - f,1.6) * 0.95);
+            sg.drawRect(-k * 8 * S, -Math.max(1,(6 * (1 - f) + 0.8) * S) / 2, 8 * S, Math.max(1,(6 * (1 - f) + 0.8) * S));
+            sg.endFill();
+            k++;
+         }
+         streak.y = cy;
+         this.hzSplash.addChild(streak);
+         var star:Sprite = new Sprite();
+         star.name = "hzStar";
+         star.mouseEnabled = false;
+         this.hzSplashGlyph(star.graphics,0,0,10 * S,acc);
+         star.y = cy;
+         this.hzSplash.addChild(star);
+         var letters:Sprite = new Sprite();
+         letters.name = "hzLetters";
+         letters.mouseEnabled = false;
+         letters.mouseChildren = false;
+         letters.y = cy - 36 * S;
          var word:String = "HORIZON UI";
+         var i:int = 0;
+         var chx:Number = cx - 200 * S;
+         while(i < word.length)
+         {
+            var ch:String = word.charAt(i);
+            if(ch != " ")
+            {
+               var col:uint = i >= 8 ? acc : 0xFFFFFF;
+               var box:Sprite = this.hzSplashBox(letters,ch,chx,0,48 * S,Math.round(64 * S),"bd",col,1.2);
+               box.name = "c" + i;
+            }
+            chx += (i == 6 ? 28 : 36) * S;
+            i++;
+         }
+         this.hzSplash.addChild(letters);
+         var logo:Sprite = new Sprite();
+         logo.name = "hzLogo";
+         logo.mouseEnabled = false;
+         this.hzSplashGlyph(logo.graphics,0,0,10 * S,acc);
+         logo.x = cx - 236 * S;
+         logo.y = cy;
+         this.hzSplash.addChild(logo);
+         var line:String = this.hzSplashName.length > 0 ? ("Loading preset: " + this.hzSplashName) : "Loading default settings";
+         var sub:Sprite = this.hzSplashBox(this.hzSplash,line,cx,cy + 48 * S,640 * S,Math.round(24 * S),"sb",0xFFFFFF,0.4);
+         sub.name = "hzSub";
+      }
+
+      private function hzSplashGlyph(g:*, cx:Number, cy:Number, r:Number, col:uint) : void
+      {
+         g.clear();
+         g.beginFill(col,1);
+         g.moveTo(cx,cy - r);
+         g.lineTo(cx + r * 0.22,cy - r * 0.22);
+         g.lineTo(cx + r,cy);
+         g.lineTo(cx + r * 0.22,cy + r * 0.22);
+         g.lineTo(cx,cy + r);
+         g.lineTo(cx - r * 0.22,cy + r * 0.22);
+         g.lineTo(cx - r,cy);
+         g.lineTo(cx - r * 0.22,cy - r * 0.22);
+         g.lineTo(cx,cy - r);
+         g.endFill();
+         g.beginFill(0xFFFFFF,1);
+         g.drawCircle(cx,cy,Math.max(1.2,r * 0.22));
+         g.endFill();
+      }
+
+      private function hzSplashApply(t:Number, fade:Number) : void
+      {
+         if(this.hzSplash == null) { return; }
+         if(this.hzSplash.getChildByName("hzLetters") == null) { this.hzSplashMake(); }
+         var S:Number = 1;
+         try { if(this.hzTextScale >= 1.14) { S = 1.3; } } catch(eS:Error) { S = 1; }
+         var vr:Rectangle = this.hzVis();
+         var cx:Number = vr ? vr.x + vr.width / 2 : 960;
          var fadeOut:Number = 1;
          if(t > 4.6) { fadeOut = 1 - (t - 4.6) / 1.0; if(fadeOut < 0) { fadeOut = 0; } }
          fadeOut *= fade;
@@ -14488,55 +14646,51 @@
          var x0:Number = cx - 220 * S;
          var x1:Number = cx + 210 * S;
          var xs:Number = x0 + (x1 - x0) * sweep;
-         if(t >= 0.6 && t < 2.8)
-         {
-            var trail:Number = Math.min(xs - x0,430 * S);
-            if(t > 1.9) { trail *= 1 - Math.min(1,(t - 1.9) / 0.9); }
-            var k:int = 0;
-            while(k < trail)
-            {
-               var f:Number = k / Math.max(1,trail);
-               var a:Number = Math.pow(1 - f,1.6) * 0.95 * fadeOut;
-               var th:Number = Math.max(1,(6 * (1 - f) + 0.8) * S);
-               g.beginFill(acc,a);
-               g.drawRect(xs - k - 1,cy - th / 2,1,th);
-               g.endFill();
-               k++;
-            }
-         }
          var travelA:Number = 0;
          if(t < 0.6) { travelA = starIn; }
          else if(t < 1.9) { travelA = 1; }
          else { travelA = 1 - Math.min(1,(t - 1.9) / 0.5); }
-         this.hzSplashStar(g,t < 0.6 ? x0 : xs,cy,10 * S * Math.max(starIn,0.2),acc,travelA * fadeOut);
-         var i:int = 0;
-         var chx:Number = cx - 200 * S;
-         while(i < word.length)
+         var star:Sprite = this.hzSplash.getChildByName("hzStar") as Sprite;
+         if(star != null)
          {
-            var ch:String = word.charAt(i);
-            if(ch != " ")
+            star.x = t < 0.6 ? x0 : xs;
+            star.alpha = travelA * fadeOut;
+            star.visible = star.alpha > 0.01;
+         }
+         var streak:Sprite = this.hzSplash.getChildByName("hzStreak") as Sprite;
+         if(streak != null)
+         {
+            var showStreak:Boolean = t >= 0.6 && t < 2.8;
+            streak.x = xs;
+            streak.alpha = showStreak ? fadeOut : 0;
+            streak.visible = showStreak && streak.alpha > 0.01;
+         }
+         var letters:Sprite = this.hzSplash.getChildByName("hzLetters") as Sprite;
+         if(letters != null)
+         {
+            var n:int = 0;
+            while(n < letters.numChildren)
             {
+               var box:Sprite = letters.getChildAt(n) as Sprite;
+               var idx:int = box != null ? int(String(box.name).substr(1)) : 0;
                var r:Number = 0;
-               if(t >= 1.9) { r = (t - 1.9 - 0.05 * i) / 0.44; if(r < 0) { r = 0; } if(r > 1) { r = 1; } }
-               var fillA:Number = r * fadeOut;
-               var outA:Number = this.hzSplashLead(r) * this.hzSplashLead(fadeOut);
-               var col:uint = i >= 8 ? acc : 0xFFFFFF;
-               if(fillA > 0.01 || outA > 0.01) { this.hzSplashOutline(this.hzSplash,ch,chx,cy - 36 * S,48 * S,Math.round(64 * S),"bd",col,fillA,outA,1.2); }
+               if(t >= 1.9) { r = (t - 1.9 - 0.05 * idx) / 0.44; if(r < 0) { r = 0; } if(r > 1) { r = 1; } }
+               this.hzSplashAlpha(box, r * fadeOut, this.hzSplashLead(r) * this.hzSplashLead(fadeOut));
+               n++;
             }
-            chx += (i == 6 ? 28 : 36) * S;
-            i++;
          }
          var lg:Number = 0;
          if(t >= 2.4) { lg = (t - 2.4) / 0.4; if(lg > 1) { lg = 1; } }
-         if(lg > 0.01) { this.hzSplashStar(g,cx - 236 * S,cy,10 * S,acc,this.hzSplashLead(lg) * fadeOut); }
+         var logo:Sprite = this.hzSplash.getChildByName("hzLogo") as Sprite;
+         if(logo != null)
+         {
+            logo.alpha = this.hzSplashLead(lg) * fadeOut;
+            logo.visible = logo.alpha > 0.01;
+         }
          var la:Number = 0;
          if(t >= 2.8) { la = (t - 2.8) / 0.5; if(la > 1) { la = 1; } }
-         if(la > 0.01)
-         {
-            var line:String = this.hzSplashName.length > 0 ? ("Loading preset: " + this.hzSplashName) : "Loading default settings";
-            var lab:Number = this.hzSplashLead(la) * fadeOut;
-            this.hzSplashOutline(this.hzSplash,line,cx,cy + 48 * S,640 * S,Math.round(24 * S),"sb",0xFFFFFF,la * fadeOut,lab,0.4);
-         }
+         var sub:Sprite = this.hzSplash.getChildByName("hzSub") as Sprite;
+         this.hzSplashAlpha(sub, la * fadeOut, this.hzSplashLead(la) * fadeOut);
       }
       // chevron: down = expand (compact), up = collapse (full)
       private function hz34Chev(g:*, cx:Number, cy:Number, up:Boolean, col:uint, a:Number) : void
@@ -14928,8 +15082,8 @@
       private var hz37Txt:String = null;     // merged text handed to hzOnIni
       private var hz37Refresh:Boolean = false;
       private var hz37Dll:Boolean = false;   // HorizonUI.dll 0.37+ answered
-      private var hz37St:Object = {};
-      private var hz37Ps:Array = [];
+      private var hz37St:Object;
+      private var hz37Ps:Array;
       private var hz37Sel:int = 0;
       private var hz37SelId:String = "";
       private var hz37Req:String = "";
@@ -14956,8 +15110,8 @@
       private var hz37Step:int = 0;          // 0 idle, n = reading hz37_FILES[n - 1]
       private var hz37T0:Number = 0;
       private var hz37Got:Array = null;
-      private var hz37Q:Array = [];          // callbacks of the running read
-      private var hz37N:Array = [];          // callbacks that arrived meanwhile (they get a fresh read)
+      private var hz37Q:Array;          // callbacks of the running read
+      private var hz37N:Array;          // callbacks that arrived meanwhile (they get a fresh read)
       private var hz37Leg:String = null;     // last text of HorizonUI.ini, or null when that open missed
       private var hz37LegTry:int = 0;        // 0 = not opened yet, 1 = opened once
       private function hz37Ws(c:String) : Boolean { return c == " " || c == "\t" || c == "\r" || c == "\n"; }
@@ -16168,9 +16322,9 @@
       private var hz41DllOn:Boolean = false;    // MonocleMenu open, as the DLL saw it
       private var hz41SA:Boolean = false;       // ARRANGE SCANNER is on (the ARRANGE CARDS engine runs on the mock panels)
       private var hz41SA_mc:Sprite = null;
-      private var hz41SAP:Object = {};
+      private var hz41SAP:Object;
       private var hz41SAOrig:Object = null;
-      private var hz41VTx:Array = [];        // r2: the value text fields of the kept vitals strip (updated in place)
+      private var hz41VTx:Array;        // r2: the value text fields of the kept vitals strip (updated in place)
       private var hz41VLay:String = "";      // r2: layout signature of the strip (a change rebuilds it)
       private var hz41Op:Number = 1;         // r2: the game's HUD opacity (HUDOpacityData fHUDOpacity)
       private var hz41OpSub:Boolean = false;

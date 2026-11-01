@@ -2,6 +2,33 @@
 
 An independent review will follow later. Do not treat this as approved.
 
+## 0.43.0.9 — null fields, splash lag, new file version
+
+Not approved. Schema stays `0.42.0`. File version and movie build ids are **0.43.0.9** so a log can be told apart from every earlier 0.43.0.8 SWF.
+
+In-game 0.43.0.8 (America/Phoenix, 2026-11-01): the live HUDMenu was this tree (`has hzLastError`, hash matched the build) and then threw `TypeError #1009` in `hzBuildCards` and `hzToggleSettings.redraw`. Vanilla bars were hidden, F11 was empty, and the game lagged. Bot 2: HUDMenu has hundreds of instance fields; `hzBoot` only recreated 13; `hzFontName` reads `hz30Mod` and F11 draw reads `hzSetKeyOv`. The splash rebuilt about 100 TextFields every frame for 5.6 s.
+
+Fix in `actionscript/horizon_block.as`:
+
+1. Removed `= []`, `= {}`, and `= new Sprite()` from 59 instance fields. `hzInitFields()` assigns each one if it is null, then `hzNoteErr("hzBoot null " + names)` with the late names first (the note is capped at 240 characters). `hzBoot()`, `hzBuild()`, and `hzEnsureHud()` call `hzInitFields()` before card work.
+2. `hzSplashTick` returns immediately when `HorizonVitals_mc == null`. Text is built once in `hzSplashMake` (four 2 px outline offsets, no new GlowFilter). The tick only changes alpha, x, and visible.
+3. DLL, HUD, Comms, scanner, and scope build strings are `0.43.0.9`.
+
+Verified on this Linux checkout (no Windows DLL and no SWF were built here):
+
+| Suite | Exit |
+|---|---|
+| `preset_list_test` | 0 |
+| `message_log_test` | 0 (callgraph OK: no Scaleform from `Poll()`, no file I/O on the UI path) |
+| `planet_alert_test.js` | 0 |
+| `reaction_match_test.js` | 0 |
+
+Pins that fail if this fix is reverted: `hzInitFields` assigns `hz30Mod` and `hzSetKeyOv` and logs `hzBoot null`; those declarations have no object initializer; `hzBoot` / `hzEnsureHud` / `hzBuild` call `hzInitFields`; `hzSplashTick` checks `HorizonVitals_mc == null` and does not `removeChildAt`; the outline offsets are `[-2,2,-2,2]`; `HZ_BUILD` and `HZ_FILE_VERSION_STR` are `0.43.0.9`; schema pin stays `0.42.0`.
+
+Still unverified in game. After the PC rebuild, `HorizonUI.log` must show `HorizonUI 0.43.0.9 loaded` and `movie builds: HUD 0.43.0.9`. Then either Horizon cards are up, or `hud: movie error hzBoot null ...` / `hzBuildCards.vitals` names the next failure. Do not treat a `HUD 0.43.0.8` line as this build.
+
+The sections below are the earlier 0.43.0.8 pass. They are history. The install to test now is 0.43.0.9, staged under `C:\Users\rschr\build`.
+
 ## Building on your PC with Cursor
 
 1. On the Windows PC, open the Cursor app. Use File > Open Folder and open `C:\HorizonUI` (or the folder that already has this repo / `sfse-plugin`). If the Cursor CLI is not installed, install it from Cursor: Command Palette > "Install cursor command".
