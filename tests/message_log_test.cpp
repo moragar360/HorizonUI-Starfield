@@ -3357,6 +3357,14 @@ int main()
 			Expect(cards.find("this.hzBoot()") != std::string::npos, "hzBuildCards boots late instance fields");
 			Expect(vit != std::string::npos && jet != std::string::npos && vit < jet,
 				"hzBuildCards builds vitals before jetpack so a jet #1009 cannot leave vanilla up");
+			const auto clear = cards.find("this.HorizonVitals_mc = null");
+			Expect(clear != std::string::npos && vit != std::string::npos && clear < vit,
+				"a vitals throw unpublishes HorizonVitals_mc before the vanilla-hide gate can pass");
+		}
+		{
+			const auto boot = AsFnBody(as, "private function hzBoot", "public function hzEnsureHud");
+			Expect(boot.find("hzNoteErr(\"hzBoot null \"") != std::string::npos,
+				"hzBoot records which late fields were null");
 		}
 		{
 			const auto ens = AsFnBody(as, "public function hzEnsureHud", "private function hzBuild()");

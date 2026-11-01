@@ -2007,19 +2007,21 @@
       // TypeError #1009 on hz30Mod / hzSetKeyOv matches the 0.43.0.8 in-game log.
       private function hzBoot() : void
       {
-         if(this.hz30Mod == null) { this.hz30Mod = {}; }
-         if(this.hz30ModLdr == null) { this.hz30ModLdr = {}; }
-         if(this.hz34Sc == null) { this.hz34Sc = {}; }
-         if(this.hz34Cm == null) { this.hz34Cm = {}; }
-         if(this.hzTexts == null) { this.hzTexts = []; }
-         if(this.hzIcons == null) { this.hzIcons = []; }
-         if(this.hzCardBodies == null) { this.hzCardBodies = []; }
-         if(this.hzTiles == null) { this.hzTiles = []; }
-         if(this.hzBars == null) { this.hzBars = []; }
-         if(this.hzSz == null) { this.hzSz = []; }
-         if(this.hzFades == null) { this.hzFades = []; }
-         if(this.hzSetHits == null) { this.hzSetHits = []; }
-         if(this.hzSetKeyOv == null) { this.hzSetKeyOv = new Sprite(); }
+         var names:Array = [];
+         if(this.hz30Mod == null) { this.hz30Mod = {}; names.push("hz30Mod"); }
+         if(this.hz30ModLdr == null) { this.hz30ModLdr = {}; names.push("hz30ModLdr"); }
+         if(this.hz34Sc == null) { this.hz34Sc = {}; names.push("hz34Sc"); }
+         if(this.hz34Cm == null) { this.hz34Cm = {}; names.push("hz34Cm"); }
+         if(this.hzTexts == null) { this.hzTexts = []; names.push("hzTexts"); }
+         if(this.hzIcons == null) { this.hzIcons = []; names.push("hzIcons"); }
+         if(this.hzCardBodies == null) { this.hzCardBodies = []; names.push("hzCardBodies"); }
+         if(this.hzTiles == null) { this.hzTiles = []; names.push("hzTiles"); }
+         if(this.hzBars == null) { this.hzBars = []; names.push("hzBars"); }
+         if(this.hzSz == null) { this.hzSz = []; names.push("hzSz"); }
+         if(this.hzFades == null) { this.hzFades = []; names.push("hzFades"); }
+         if(this.hzSetHits == null) { this.hzSetHits = []; names.push("hzSetHits"); }
+         if(this.hzSetKeyOv == null) { this.hzSetKeyOv = new Sprite(); names.push("hzSetKeyOv"); }
+         if(names.length > 0) { this.hzNoteErr("hzBoot null " + names.join(","), null); }
       }
 
       public function hzEnsureHud() : Boolean
@@ -2118,6 +2120,7 @@
             }
             catch(eVit:Error)
             {
+               this.HorizonVitals_mc = null;
                this.hzNoteErr("hzBuildCards.vitals",eVit);
                throw eVit;
             }
