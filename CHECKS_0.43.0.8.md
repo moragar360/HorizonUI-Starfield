@@ -2,6 +2,24 @@
 
 An independent review will follow later. Do not treat this as approved.
 
+## 0.43.0.12 — the F11 step is this press
+
+Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.12**.
+
+The 0.43.0.11 review: `hzSetStep` kept the last step of the previous draw, so a throw before the next draw was labeled `hzToggleSettings.redraw.rows`. `hzSetMark("place")` was never called. A redraw note stayed after a later draw succeeded. A skipped null bar (`hzMeter.b`, `hzSetSz.c`) stayed the vitals step until the next mark.
+
+`hzToggleSettings` now sets `hzSetStep` to empty on entry and marks `place` before `hzSetPlace`. A finished `hzSetDraw` drops the `hzToggleSettings.redraw` note and clears the step. A throw still keeps the step that was running. A null meter or a null size card returns without writing a step name. The splash is unchanged.
+
+A healed array is still quiet when the push succeeds. `hzBuildCards.vitals.hzCard.hzCardBodies` appears only if that push throws. This pass still does not name the 0.43.0.9 in-game object.
+
+The tree to build is `cursor/note-sibling-keys-4c32`. `feature/message-log-p2-ui` is still 0.43.0.10 until that branch is updated.
+
+DLL, HUD, Comms, scanner, and scope build strings are `0.43.0.12`. `HZ_COMMS_MSG_LOG` and `HZ_HUD_MSG_CAPTURE` stay `0`.
+
+Verified on this Linux checkout (no Windows DLL and no SWF were built here): the four suites. Still unverified in game.
+
+PC folders: compile and run xmake only in `C:\HorizonUI-repo`. `C:\HorizonUI` is only the SWF compile tools.
+
 ## 0.43.0.11 — both diagnoses, and a real null name
 
 Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.11**.

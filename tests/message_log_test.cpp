@@ -763,8 +763,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.11", "file version is 0.43.0.11");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 11, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.12", "file version is 0.43.0.12");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 12, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -3418,8 +3418,18 @@ int main()
 				"vitals text does not index a null HZ_TY_SIZE or hzCardBodies");
 			Expect(draw.find("hzToggleSettings.redraw.HZ_SET_TABS") != std::string::npos
 				&& draw.find("hzSetMark(\"HZ_SET_TABS\")") != std::string::npos
-				&& draw.find("hzSetMark(\"rows\")") != std::string::npos,
+				&& draw.find("hzSetMark(\"rows\")") != std::string::npos
+				&& draw.find("hzNoteDrop(\"hzToggleSettings.redraw\")") != std::string::npos,
 				"a null tab list is named after the version text");
+			const auto tog = AsFnBody(as, "public function hzToggleSettings", "private function hzSetCancel");
+			Expect(tog.find("this.hzSetStep = \"\"") != std::string::npos
+				&& tog.find("hzSetMark(\"place\")") != std::string::npos,
+				"an F11 press does not reuse the previous draw step");
+			const auto meter = AsFnBody(as, "private function hzMeter(", "private function hzTickBars");
+			const auto sz = AsFnBody(as, "private function hzSetSz(", "private function hzCW");
+			Expect(meter.find("hzVitMark(\"hzMeter.b\")") == std::string::npos
+				&& sz.find("hzVitMark(\"hzSetSz.c\")") == std::string::npos,
+				"a skipped null bar does not stay the vitals step");
 			Expect(as.find("hzVit@") == std::string::npos, "the vitals try does not wipe hzLastErr");
 		}
 		{
@@ -3562,15 +3572,15 @@ int main()
 			"a save load can start the splash");
 		{
 			const auto ver = Slurp("src/hz_version.h");
-			Expect(ver.find("TEST_NOTE 0.43.0.11") != std::string::npos
-				&& ver.find("VORTEX_INSTALL 0.43.0.11") != std::string::npos,
-				"TEST_NOTE and VORTEX_INSTALL name 0.43.0.11");
+			Expect(ver.find("TEST_NOTE 0.43.0.12") != std::string::npos
+				&& ver.find("VORTEX_INSTALL 0.43.0.12") != std::string::npos,
+				"TEST_NOTE and VORTEX_INSTALL name 0.43.0.12");
 		}
 		Expect(as.find("MISSED BADGE") == std::string::npos,
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.11\"") != std::string::npos, "HUD movie build id is 0.43.0.11");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.12\"") != std::string::npos, "HUD movie build id is 0.43.0.12");
 		Expect(as.find("greyed") == std::string::npos, "notes use American grayed");
 		Expect(as.find("grayed") != std::string::npos, "locked rows are grayed");
 		Expect(as.find("F12") == std::string::npos || as.find("SETTINGS MENU KEY") != std::string::npos,

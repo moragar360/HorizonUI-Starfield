@@ -973,7 +973,7 @@
       private function hzMeter(b:Sprite, w:Number, f:Number, col:uint) : void
       {
          this.hzVitMark("hzMeter");
-         if(b == null) { this.hzVitMark("hzMeter.b"); return; }
+         if(b == null) { return; }
          var e:Object = null;
          if(this.hzBars == null)
          {
@@ -4881,6 +4881,7 @@
          try { this.hzEnsureHud(); } catch(eEns:Error) { }
          try
          {
+            this.hzSetStep = "";
             if(!this.hzSetIsOpen && !this.hzArrange && this.hz40F11Block()) { return; }   // v0.42.0: F11 opens from the main HUD only (never while scanning)
             if(this.hzPopLayers != null && this.hzPopLayers.length > 0)
             {
@@ -4911,6 +4912,7 @@
             addChild(this.HorizonSettings_mc); // re-add = topmost, above every Horizon card
             this.HorizonSettings_mc.visible = true;
             this.hzSetCursor.visible = false;
+            this.hzSetMark("place");
             this.hzSetPlace();
             this.hzSetDraw();
          }
@@ -5434,7 +5436,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.11";
+      private static const HZ_BUILD:String = "0.43.0.12";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -6344,6 +6346,8 @@
          pv.x = Math.round(px + (226 - maxW * sc) / 2);
          pv.y = Math.round(py + 40 + (180 - th * sc) / 2);
          pv.visible = true;
+         this.hzNoteDrop("hzToggleSettings.redraw");
+         this.hzSetStep = "";
       }
 
       private function hzSetDrawCursor() : void
@@ -8168,7 +8172,7 @@
       private function hzSetSz(c:Sprite, w:Number, h:Number) : void
       {
          this.hzVitMark("hzSetSz");
-         if(!c) { this.hzVitMark("hzSetSz.c"); return; }
+         if(!c) { return; }
          if(this.hzSz == null) { this.hzVitMark("hzSetSz.hzSz"); this.hzSz = []; }
          for each(var o:Object in this.hzSz) { if(o.c == c) { o.w = w; o.h = h; this.hzVitMark("hzSetSz"); return; } }
          this.hzSz.push({"c":c,"w":w,"h":h});
