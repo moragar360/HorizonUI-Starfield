@@ -2,6 +2,28 @@
 
 An independent review will follow later. Do not treat this as approved.
 
+## 0.43.0.10 — the vitals card and the F11 page
+
+Not approved. Schema stays `0.42.0`. File version and the HUD movie id are **0.43.0.10**.
+
+In-game 0.43.0.9 (America/Phoenix, 2026-11-01, 14:19): the DLL and the HUD movie both loaded as 0.43.0.9. Health, oxygen, compass, and ammo stayed vanilla. F11 showed the window and the version, and the settings page was blank. The log was `hzToggleSettings.redraw: TypeError #1009` on the first key, then `hzEnsureHud.hzBuildCards: TypeError #1009` on the second. There was no `hzBoot null` line. `hzInitFields` had already assigned the instance arrays, and that did not stop the throw.
+
+The vitals try calls `hzCard` first. `hzCard` pushes `hzCardBodies`, then `hzText` formats through `hzApplyFmt`, which indexes `HZ_TY_SIZE`. The F11 chrome and the version are drawn with `hzWT` before that table is used. The next object on the F11 path is `HZ_SET_TABS`. A null there leaves the window and the version up and the page blank. `HZ35_INFO` and `HZ_SET_DEF` are the next statics on that page.
+
+`hzNoteErr` now leaves a note that already says `hzBuildCards.vitals`, `hzBuildCards.jet`, `hzBuildCards.rest`, or `hzToggleSettings.redraw` when a wrapper catch tries to replace it. The vitals try marks the step (`hzCard`, `hzBuildVitNew`, `hzMeter`, `hzSetSz`) and, when the object is null, the object name. The splash is unchanged: `hzSplashOnLoad` still returns when `HorizonVitals_mc` is null.
+
+The next log, if a build still throws, should show one of:
+
+`hud: movie error hzBuildCards.vitals.hzCard.hzCardBodies: TypeError #1009 Error #1009`
+
+`hud: movie error hzBuildCards.vitals.hzCard.HZ_TY_SIZE: TypeError #1009 Error #1009`
+
+`hud: movie error hzToggleSettings.redraw.HZ_SET_TABS: TypeError #1009 Error #1009`
+
+A finished vitals sprite is added only after those steps return, and it stays non-null so the next frame can hide the vanilla bars.
+
+Verified on this Linux checkout (no Windows DLL and no SWF were built here): the four suites below. Still unverified in game.
+
 ## 0.43.0.9 — null fields, splash lag, new file version
 
 Not approved. Schema stays `0.42.0`. File version and movie build ids are **0.43.0.9** so a log can be told apart from every earlier 0.43.0.8 SWF.
