@@ -3341,13 +3341,35 @@ int main()
 			"the HUD can attach ENTER_FRAME after a swallowed hzBuild error");
 		Expect(as.find("function hzLastError") != std::string::npos
 			&& as.find("function hzNoteErr") != std::string::npos
-			&& as.find("function hzBuildCards") != std::string::npos,
+			&& as.find("function hzBuildCards") != std::string::npos
+			&& as.find("function hzBoot") != std::string::npos,
 			"the movie keeps the last swallowed build or F11 error");
 		{
 			const auto build = AsFnBody(as, "private function hzBuild()", "private function hzOnJetpack");
 			Expect(build.find("hzArmOnFrame") != std::string::npos, "hzBuild arms the frame hook before card work");
 			Expect(build.find("hzNoteErr(\"hzBuild\"") != std::string::npos, "hzBuild notes a throw before rethrowing");
 			Expect(build.find("hzBuildCards") != std::string::npos, "hzBuild delegates the 0.43.0.7 card body");
+		}
+		{
+			const auto cards = AsFnBody(as, "private function hzBuildCards", "private function hzOnPlayerFrequent");
+			const auto vit = cards.find("hzNoteErr(\"hzBuildCards.vitals\"");
+			const auto jet = cards.find("hzNoteErr(\"hzBuildCards.jet\"");
+			Expect(cards.find("this.hzBoot()") != std::string::npos, "hzBuildCards boots late instance fields");
+			Expect(vit != std::string::npos && jet != std::string::npos && vit < jet,
+				"hzBuildCards builds vitals before jetpack so a jet #1009 cannot leave vanilla up");
+		}
+		{
+			const auto ens = AsFnBody(as, "public function hzEnsureHud", "private function hzBuild()");
+			Expect(ens.find("HorizonCard_mc == null") != std::string::npos,
+				"a failed hzBuild does not run hzBuildCards again if the jetpack sprite already leaked");
+		}
+		{
+			const auto fn = AsFnBody(as, "private function hzFontName", "private function hzApplyTypo");
+			Expect(fn.find("hz30Mod == null") != std::string::npos, "hzFontName does not index a null hz30Mod");
+		}
+		{
+			const auto draw = AsFnBody(as, "private function hzSetDraw()", "private function hzSetDrawCursor");
+			Expect(draw.find("hzSetKeyOv == null") != std::string::npos, "F11 draw creates a missing keycap overlay");
 		}
 		{
 			const auto onf = AsFnBody(as, "private function hzOnFrame", "private function hz42VehOnData");
