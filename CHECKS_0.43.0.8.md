@@ -20,20 +20,21 @@ Then:
 1. In C:\HorizonUI\sfse-plugin (or this repo if that is the plugin tree), run:
    xmake f -c -y -m releasedbg
    xmake build -y
-   Copy build\windows\x64\releasedbg\HorizonUI.dll to the Vortex/game SFSE Plugins folder only after the backup above.
+   Put the DLL, SWFs, and FOMOD in C:\Users\rschr\build the same way as 0.43.0.7.
+   Do not copy into the live Vortex staging folder or Data\SFSE\Plugins.
 2. Compile the SWFs and their _lrg twins from the AS sources using the existing C:\HorizonUI SWF import steps:
    - HUDMenu and HUDMenu_lrg from actionscript/horizon_block.as (this is the important one)
    - HUDMessagesMenu and HUDMessagesMenu_lrg (version pin)
    - MonocleMenu and MonocleMenu_lrg (version pin)
    - ScopeMenu and ScopeMenu_lrg (version pin)
-3. Package the FOMOD the same way you packaged 0.43.0.7.
+3. Package the FOMOD the same way you packaged 0.43.0.7, into C:\Users\rschr\build.
 4. Do not launch Starfield. Do not git commit or git push. Author stays Moragar. Never write HUSD. Move files; never delete.
 
-When done, tell me the DLL path, the SWF paths, the FOMOD zip path, and the backup folder paths.
+When done, tell me the DLL path, the SWF paths, the FOMOD zip path, and the backup folder paths. All of those should be under C:\Users\rschr\build.
 ```
 
 3. House rules the local agent must follow: move, never delete; no git commit or push from the PC; DLL author Moragar, never HUSD; do not launch the game.
-4. After it finishes, check: backups exist; `HorizonUI.log` is not written yet (game was not launched); the new DLL and SWFs are in the staging/FOMOD folder; version strings say 0.43.0.8. Then you install in Vortex when you are ready.
+4. After it finishes, check: backups exist; `HorizonUI.log` is not written yet (game was not launched); the new DLL, SWFs, and FOMOD zip are under `C:\Users\rschr\build`; version strings say 0.43.0.8. Then you install that FOMOD in Vortex when you are ready. Leave 0.43.0.7 deployed until then.
 
 ## (a) Repo tests (this cloud run)
 
