@@ -3255,8 +3255,18 @@ int main()
 			"the log still has a 28 px minimum row");
 		Expect(as.find("function hzMsglogWrap") != std::string::npos
 			&& as.find("function hzMsglogLineH") != std::string::npos
+			&& as.find("function hzMsglogGuessH") != std::string::npos
 			&& as.find("function hzMsglogFits") != std::string::npos,
 			"long Message Log rows wrap and keep a per-row height");
+		Expect(as.find("w / 7.2") == std::string::npos && as.find("w / 6.0") != std::string::npos,
+			"row height guess uses 6.0 px per character");
+		{
+			const auto lineH = AsFnBody(as, "private function hzMsglogLineH", "private function hzMsglogWrap");
+			Expect(lineH.find("t.textHeight") != std::string::npos || lineH.find("t.height") != std::string::npos,
+				"row height prefers a measured text field");
+			Expect(lineH.find("t.numLines") != std::string::npos, "row height can use numLines");
+			Expect(lineH.find("13") != std::string::npos, "measure text stays at least 13 px");
+		}
 		{
 			const auto draw = AsFnBody(as, "private function hzMsglogDraw", "private function hzMsglogOverlayLayer");
 			Expect(draw.find("this.hzMsglogWrap(tt,textW,rh - 8)") != std::string::npos,

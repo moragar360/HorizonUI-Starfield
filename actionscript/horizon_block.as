@@ -3579,13 +3579,13 @@
          return line;
       }
 
-      // Long log rows wrap. The HUD card is the only place that uses "...".
-      private function hzMsglogLineH(line:String, textW:Number) : Number
+      // Fallback when Scaleform has no measured height: 6.0 px per character, 7-line cap.
+      private function hzMsglogGuessH(line:String, textW:Number) : Number
       {
          if(line == null) { line = ""; }
          var w:Number = textW;
          if(w < 80) { w = 80; }
-         var per:int = int(Math.max(8, Math.floor(w / 7.2)));
+         var per:int = int(Math.max(8, Math.floor(w / 6.0)));
          var n:int = line.length;
          var lines:int = n <= 0 ? 1 : int(Math.ceil(n / per));
          if(lines < 1) { lines = 1; }
@@ -3594,6 +3594,35 @@
          if(h < HZ_ML_ROW) { h = HZ_ML_ROW; }
          if(h > HZ_ML_ROW_MAX) { h = HZ_ML_ROW_MAX; }
          return h;
+      }
+
+      // Long log rows wrap. Prefer the measured field; else guess at 6.0 px per character.
+      private function hzMsglogLineH(line:String, textW:Number) : Number
+      {
+         var w:Number = textW;
+         if(w < 80) { w = 80; }
+         var host:Sprite = this.hzMlLayer;
+         if(host != null)
+         {
+            try
+            {
+               var t:TextField = this.hzWT(host,line == null ? "" : line,-8000,-8000,w,13,"rg",0,0.3,"left",13);
+               this.hzMsglogWrap(t,w,HZ_ML_ROW_MAX - 8);
+               var h:Number = t.height + 10;
+               var nl:int = 0;
+               try { nl = int(t.numLines); } catch(eN:Error) { nl = 0; }
+               if((isNaN(h) || h < HZ_ML_ROW) && nl > 0) { h = 10 + Math.min(7,nl) * HZ_ML_LINE; }
+               if(t.parent != null) { t.parent.removeChild(t); }
+               if(!isNaN(h) && h >= 18)
+               {
+                  if(h < HZ_ML_ROW) { h = HZ_ML_ROW; }
+                  if(h > HZ_ML_ROW_MAX) { h = HZ_ML_ROW_MAX; }
+                  return h;
+               }
+            }
+            catch(eM:Error) { }
+         }
+         return this.hzMsglogGuessH(line,w);
       }
 
       private function hzMsglogWrap(t:TextField, maxW:Number, maxH:Number) : Number
