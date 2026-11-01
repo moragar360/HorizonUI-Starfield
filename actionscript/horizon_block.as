@@ -2009,6 +2009,10 @@
          {
             try { this.hzBuild(); } catch(e1:Error) { this.hzNoteErr("hzEnsureHud.hzBuild",e1); }
          }
+         if(this.HorizonVitals_mc == null)
+         {
+            try { this.hzBuildCards(); } catch(e1b:Error) { this.hzNoteErr("hzEnsureHud.hzBuildCards",e1b); }
+         }
          try { this.hzArmOnFrame(); } catch(e2:Error) { }
          try
          {
@@ -2028,6 +2032,35 @@
          try { this.hzArmOnFrame(); } catch(eArm0:Error) { }
          try
          {
+            this.hzBuildCards();
+         }
+         catch(e:Error)
+         {
+            this.hzNoteErr("hzBuild",e);
+            throw e;
+         }
+      }
+
+      private function hzOnJetpack(e:FromClientDataEvent) : *
+      {
+         var c:Number = Number(e.data.fJetpackCharge);
+         if(isNaN(c)) { return; }
+         this.hzFixFonts();
+         this.hzJetCharge = c;
+         var f:Number = c < 0 ? 1 : Math.max(0,Math.min(1,c));
+         this.hzJetPct.text = Math.round(f * 100) + "%";
+         if(this.hzCJet) { this.hzCJet.text = Math.round(f * 100) + "%"; this.hzMeter(this.hzCJetBar,80,f,f < 0.25 ? HZ_RED : HZ_ACCENT); }
+         this.hzMeter(this.hzJetBar,HZ_W - 32,f,f < 0.25 ? HZ_RED : HZ_ACCENT);
+         this.hzDot(this.hzDotJet,f < 0.25 ? HZ_RED : (f < 0.5 ? HZ_YELLOW : HZ_GREEN));
+         this.hzJetTrack(c);
+         this.hzRefreshVisibility();
+      }
+
+      // Same card body as 0.43.0.7 hzBuild. Kept off hzBuild so a large try/catch
+      // cannot VerifyError the constructor path, and hzEnsureHud can call it again
+      // if the thin hzBuild wrapper throws.
+      private function hzBuildCards() : void
+      {
          this.HZ_ACCENT = this.hzAccentOf(this.hzAccentChoice);
          var bw:Number = HZ_W - 32;
          // Jetpack card: header [art] JETPACK (BOOST) ... 100% (dot), slim bar tile
@@ -2099,27 +2132,6 @@
          try { this.hzBuildCompact(); } catch(eCmp:Error) { }
          try { this.hzArmOnFrame(); } catch(eArm1:Error) { }
          try { this.hzRefreshVisibility(); } catch(eVis:Error) { }
-         }
-         catch(e:Error)
-         {
-            this.hzNoteErr("hzBuild",e);
-            throw e;
-         }
-      }
-
-      private function hzOnJetpack(e:FromClientDataEvent) : *
-      {
-         var c:Number = Number(e.data.fJetpackCharge);
-         if(isNaN(c)) { return; }
-         this.hzFixFonts();
-         this.hzJetCharge = c;
-         var f:Number = c < 0 ? 1 : Math.max(0,Math.min(1,c));
-         this.hzJetPct.text = Math.round(f * 100) + "%";
-         if(this.hzCJet) { this.hzCJet.text = Math.round(f * 100) + "%"; this.hzMeter(this.hzCJetBar,80,f,f < 0.25 ? HZ_RED : HZ_ACCENT); }
-         this.hzMeter(this.hzJetBar,HZ_W - 32,f,f < 0.25 ? HZ_RED : HZ_ACCENT);
-         this.hzDot(this.hzDotJet,f < 0.25 ? HZ_RED : (f < 0.5 ? HZ_YELLOW : HZ_GREEN));
-         this.hzJetTrack(c);
-         this.hzRefreshVisibility();
       }
 
       private function hzOnPlayerFrequent(e:FromClientDataEvent) : *

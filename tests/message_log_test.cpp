@@ -3340,12 +3340,14 @@ int main()
 			&& as.find("function hzArmOnFrame") != std::string::npos,
 			"the HUD can attach ENTER_FRAME after a swallowed hzBuild error");
 		Expect(as.find("function hzLastError") != std::string::npos
-			&& as.find("function hzNoteErr") != std::string::npos,
+			&& as.find("function hzNoteErr") != std::string::npos
+			&& as.find("function hzBuildCards") != std::string::npos,
 			"the movie keeps the last swallowed build or F11 error");
 		{
 			const auto build = AsFnBody(as, "private function hzBuild()", "private function hzOnJetpack");
 			Expect(build.find("hzArmOnFrame") != std::string::npos, "hzBuild arms the frame hook before card work");
 			Expect(build.find("hzNoteErr(\"hzBuild\"") != std::string::npos, "hzBuild notes a throw before rethrowing");
+			Expect(build.find("hzBuildCards") != std::string::npos, "hzBuild delegates the 0.43.0.7 card body");
 		}
 		{
 			const auto onf = AsFnBody(as, "private function hzOnFrame", "private function hz42VehOnData");
@@ -3364,6 +3366,13 @@ int main()
 		{
 			const auto key = AsFnBody(main, "void OnSettingsKey(", "void ResetSettingsState()");
 			Expect(key.find("!a_retry") != std::string::npos, "only the first F11 press arms a retry");
+		}
+		{
+			const auto poll = AsFnBody(main, "void PollScaleform()", "void PollMessages()");
+			const auto retry = poll.find("OnSettingsKey(true)");
+			const auto take = poll.find("SettingsKeyHudTake");
+			Expect(retry != std::string::npos && take != std::string::npos && retry < take,
+				"a failed F11 is retried on the next HUD AdvanceFrame");
 		}
 		{
 			const auto key = AsFnBody(as, "public function hzSettingsKey", "private function hzSetChange");

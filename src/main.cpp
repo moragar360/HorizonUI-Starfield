@@ -1013,6 +1013,7 @@ namespace HZ
 	}
 
 	void PushDllFileVersion();   // v0.42.0.4: defined with the movie-build log
+	void LogHudMovieError();
 	std::atomic<bool> g_settingsToggleRetry{false};
 
 	void OnSettingsKey(bool a_retry = false)
@@ -1031,6 +1032,7 @@ namespace HZ
 		if (!ok && !a_retry) g_settingsToggleRetry.store(true, std::memory_order_relaxed);
 		if (a_retry) REX::INFO("hzToggleSettings retry {}", ok ? "OK" : "FAILED");
 		else REX::INFO("hzToggleSettings invoke {}", ok ? "OK" : "FAILED (HUD lacks function or HUDMenu missing)");
+		LogHudMovieError();
 	}
 
 	// ---------------- WndProc subclass: raw-input virtual cursor + input swallowing ----------------
@@ -1844,22 +1846,29 @@ namespace HZ
 		GValue a;
 		if (HudInvoke("hzBuildId", &a) && a.IsString() && a.GetString())
 			hud = a.GetString();
+		{
+			std::lock_guard lk(g_buildsMu);
+			if (!hud.empty()) g_buildsHud = std::move(hud);
+		}
+		LogHudMovieError();
+		BuildLogFlush();
+	}
+
+	void LogHudMovieError()
+	{
 		std::string movieErr;
 		GValue err;
 		if (HudInvoke("hzLastError", &err) && err.IsString() && err.GetString() && err.GetString()[0])
 			movieErr = err.GetString();
+		if (movieErr.empty()) return;
 		std::string movieErrLog;
 		{
 			std::lock_guard lk(g_buildsMu);
-			if (!hud.empty()) g_buildsHud = std::move(hud);
-			if (!movieErr.empty() && movieErr != g_buildsMovieErr) {
-				g_buildsMovieErr = movieErr;
-				movieErrLog = std::move(movieErr);
-			}
+			if (movieErr == g_buildsMovieErr) return;
+			g_buildsMovieErr = movieErr;
+			movieErrLog = std::move(movieErr);
 		}
-		if (!movieErrLog.empty())
-			REX::WARN("hud: movie error {}", movieErrLog);
-		BuildLogFlush();
+		REX::WARN("hud: movie error {}", movieErrLog);
 	}
 
 	void BuildLogMsg(ULONGLONG a_now)
@@ -4451,10 +4460,10 @@ namespace HZ
 				const auto age = now >= at ? now - at : 0;
 				REX::INFO("settings key latch expired (age={}ms)", age);
 			}
-			if (hzlog::SettingsKeyHudTake(had, at, now))
-				OnSettingsKey();
 			if (g_settingsToggleRetry.exchange(false, std::memory_order_acq_rel))
 				OnSettingsKey(true);
+			if (hzlog::SettingsKeyHudTake(had, at, now))
+				OnSettingsKey();
 		}
 
 		const bool hudSafe = HudSafe();
@@ -4486,6 +4495,8 @@ namespace HZ
 		if (!g_uiLoading.load(std::memory_order_relaxed)
 			&& g_splashArmed.exchange(false, std::memory_order_acq_rel)) {
 			try { HudInvoke("hzSplashOnLoad"); } catch (...) {}
+			HudInvoke("hzEnsureHud", nullptr, nullptr, 0, true);
+			LogHudMovieError();
 		}
 		if (now - g_hudSince < 3000) return;
 		if (!g_hudReadyLogged.exchange(true)) {
