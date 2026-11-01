@@ -86,6 +86,8 @@ Works in repo:
 5. Owned-item steal prompts are red via `bStealing` or button text STEAL (kind is `prompt`, not `item`).
 6. More vanilla lines become Horizon cards: Added./Removed. -> ITEM (or KEY if the line contains "key"); a key name without Added. -> KEY; artifact in the full `a_ev->text` still titles ARTIFACT after a 256-byte cut.
 
+Vanilla HUD / blank F11 (11:21 and 11:33 local, 2026-11-01): the live movie was 0.43.0.8. The first `hzBuildId` / `hzToggleSettings` can fail while `hzSetDllFileVersion` succeeds (GFx Invoke is false if the method throws). `hzBuild` is swallowed by the wrapper constructor; if it throws before ENTER_FRAME, vanilla stays up. Fix: arm the frame hook first, `hzEnsureHud` when the movie identifies as Horizon, guard F11 open, retry a failed toggle on the HUD tick. Needs a PC rebuild of HUDMenu + DLL.
+
 Unverified on Windows / in game:
 
 1. DLL / SWF / FOMOD. This environment cannot build the Windows plugin or compile movies.

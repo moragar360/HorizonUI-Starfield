@@ -3332,8 +3332,20 @@ int main()
 			const auto tog = AsFnBody(as, "public function hzToggleSettings", "private function hzSetCancel");
 			const auto close = AsFnBody(as, "private function hzSetClose", "public function hzTakeSaveIni");
 			Expect(tog.find("this.hzMsglogForceClose()") != std::string::npos, "F11 toggle ForceCloses the log overlay");
+			Expect(tog.find("this.hzEnsureHud()") != std::string::npos && tog.find("catch(eTog:Error)") != std::string::npos,
+				"F11 open is guarded so GFx Invoke does not fail on a throw");
 			Expect(close.find("this.hzMsglogForceClose()") != std::string::npos, "F11 close ForceCloses the log overlay");
 		}
+		Expect(as.find("function hzEnsureHud") != std::string::npos
+			&& as.find("function hzArmOnFrame") != std::string::npos,
+			"the HUD can attach ENTER_FRAME after a swallowed hzBuild error");
+		{
+			const auto build = AsFnBody(as, "private function hzBuild", "private function hzOnJetpack");
+			Expect(build.find("hzArmOnFrame") != std::string::npos, "hzBuild arms the frame hook before card work");
+		}
+		Expect(main.find("HudInvoke(\"hzEnsureHud\"") != std::string::npos
+			&& main.find("g_settingsToggleRetry") != std::string::npos,
+			"the DLL retries a failed F11 toggle on the HUD tick");
 		{
 			const auto key = AsFnBody(as, "public function hzSettingsKey", "private function hzSetChange");
 			Expect(key.find("xk == \"_msglog\" || xk == \"_arrange\"") != std::string::npos,

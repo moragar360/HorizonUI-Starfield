@@ -1013,6 +1013,7 @@ namespace HZ
 	}
 
 	void PushDllFileVersion();   // v0.42.0.4: defined with the movie-build log
+	std::atomic<bool> g_settingsToggleRetry{false};
 
 	void OnSettingsKey()
 	{
@@ -1023,7 +1024,12 @@ namespace HZ
 		if (!HudSafe()) { REX::INFO("ignored: full-screen or loading menu open"); return; }
 		if (ui->IsMenuOpen("MonocleMenu")) { REX::INFO("ignored: hand scanner open (F11 opens from the main HUD only)"); return; }   // v0.42.0
 		PushDllFileVersion();   // v0.42.0.4: the header reads this on the open that follows
+		// hzSetDllFileVersion can succeed while hzToggleSettings still throws; arm the
+		// Horizon widgets first, then retry the toggle on the next HUD AdvanceFrame.
+		HudInvoke("hzEnsureHud", nullptr, nullptr, 0, true);
 		bool ok = HudInvoke("hzToggleSettings", nullptr, nullptr, 0, true);
+		if (!ok) g_settingsToggleRetry.store(true, std::memory_order_relaxed);
+		else g_settingsToggleRetry.store(false, std::memory_order_relaxed);
 		REX::INFO("hzToggleSettings invoke {}", ok ? "OK" : "FAILED (HUD lacks function or HUDMenu missing)");
 	}
 
@@ -1539,8 +1545,10 @@ namespace HZ
 		const int now = (HudInvoke("hzSettingsOpen", &q) && q.IsBoolean()) ? 1 : 0;
 		if (now == g_hudOwner) return;
 		g_hudOwner = now;
-		if (now) REX::INFO("hud: HUDMenu answers hzSettingsOpen - a Horizon UI hudmenu.gfx is loaded (any Horizon HUD since v0.18 answers; the F11 window shows its version)");
-		else REX::WARN("hud: HUDMenu does not answer hzSettingsOpen - the loaded hudmenu.gfx is not a Horizon UI HUD (another HUD replacer overrides it; check the load order)");
+		if (now) {
+			REX::INFO("hud: HUDMenu answers hzSettingsOpen - a Horizon UI hudmenu.gfx is loaded (any Horizon HUD since v0.18 answers; the F11 window shows its version)");
+			HudInvoke("hzEnsureHud", nullptr, nullptr, 0, true);
+		} else REX::WARN("hud: HUDMenu does not answer hzSettingsOpen - the loaded hudmenu.gfx is not a Horizon UI HUD (another HUD replacer overrides it; check the load order)");
 	}
 
 	// ---------------- v0.40.3: the game's planet location banner while the Horizon scanner is open ----------------
@@ -4433,6 +4441,8 @@ namespace HZ
 			}
 			if (hzlog::SettingsKeyHudTake(had, at, now))
 				OnSettingsKey();
+			if (g_settingsToggleRetry.exchange(false, std::memory_order_acq_rel))
+				OnSettingsKey();
 		}
 
 		const bool hudSafe = HudSafe();
@@ -4469,6 +4479,7 @@ namespace HZ
 		if (!g_hudReadyLogged.exchange(true)) {
 			REX::INFO("HUD ready (stable 3s)");
 			HudOwnerCheck();
+			HudInvoke("hzEnsureHud", nullptr, nullptr, 0, true);
 			MsglogOnHudReady();
 		}
 		if (g_mlCapture.load()) {

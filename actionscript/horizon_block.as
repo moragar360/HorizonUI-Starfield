@@ -257,6 +257,7 @@
       private var hzCQDist:TextField = null;
       public var hzMargin:Number = 40;
       private var hzLaidOut:Boolean = false;
+      private var hzOnFrameOn:Boolean = false;
       private var hzCrossOn:Boolean = true;
       private var hzCrossIron:Boolean = false;   // HudCrosshairData.bIronSights
       private var hzCross3rd:Boolean = false;    // HudCrosshairData.bIn3rdPerson
@@ -1978,8 +1979,39 @@
          this.hzV19Redraw();
       }
 
+      // The wrapper constructor swallows hzBuild errors. Arm ENTER_FRAME first so
+      // vanilla hide / layout still run if a later card build throws.
+      private function hzArmOnFrame() : void
+      {
+         if(this.hzOnFrameOn) { return; }
+         addEventListener(Event.ENTER_FRAME,this.hzOnFrame);
+         this.hzOnFrameOn = true;
+      }
+
+      public function hzEnsureHud() : Boolean
+      {
+         try { this.hzArmOnFrame(); } catch(e0:Error) { }
+         if(this.HorizonVitals_mc == null)
+         {
+            try { this.hzBuild(); } catch(e1:Error) { }
+         }
+         try { this.hzArmOnFrame(); } catch(e2:Error) { }
+         try
+         {
+            if(!this.hzLaidOut)
+            {
+               this.hzLaidOut = this.hzLayout();
+               if(this.hzLaidOut) { this.hzLayEver = true; }
+            }
+            this.hzRefreshVisibility();
+         }
+         catch(e3:Error) { }
+         return this.HorizonVitals_mc != null;
+      }
+
       private function hzBuild() : void
       {
+         try { this.hzArmOnFrame(); } catch(eArm0:Error) { }
          this.HZ_ACCENT = this.hzAccentOf(this.hzAccentChoice);
          var bw:Number = HZ_W - 32;
          // Jetpack card: header [art] JETPACK (BOOST) ... 100% (dot), slim bar tile
@@ -2047,10 +2079,10 @@
          try { BSUIDataManager.Subscribe("ControlMapData",this.hz42VehOnMap); } catch(e42vm:Error) { }
          try { this.hz26Build(); } catch(err26:Error) { }
          try { this.hz40Init(); } catch(err40:Error) { }
-         this.hzLoadIni();
-         this.hzBuildCompact();
-         addEventListener(Event.ENTER_FRAME,this.hzOnFrame);
-         this.hzRefreshVisibility();
+         try { this.hzLoadIni(); } catch(eIni:Error) { }
+         try { this.hzBuildCompact(); } catch(eCmp:Error) { }
+         try { this.hzArmOnFrame(); } catch(eArm1:Error) { }
+         try { this.hzRefreshVisibility(); } catch(eVis:Error) { }
       }
 
       private function hzOnJetpack(e:FromClientDataEvent) : *
@@ -4537,38 +4569,49 @@
 
       public function hzToggleSettings() : void
       {
-         if(!this.hzSetIsOpen && !this.hzArrange && this.hz40F11Block()) { return; }   // v0.42.0: F11 opens from the main HUD only (never while scanning)
-         if(this.hzPopLayers != null && this.hzPopLayers.length > 0)
+         // GFx Invoke returns false if this throws. hzSetDllFileVersion can
+         // succeed on the same tick while an unguarded open still fails.
+         try { this.hzArmOnFrame(); } catch(eArm:Error) { }
+         try { this.hzEnsureHud(); } catch(eEns:Error) { }
+         try
          {
-            this.hzMsglogForceClose();
-            this.hzPopLayers = [];
+            if(!this.hzSetIsOpen && !this.hzArrange && this.hz40F11Block()) { return; }   // v0.42.0: F11 opens from the main HUD only (never while scanning)
+            if(this.hzPopLayers != null && this.hzPopLayers.length > 0)
+            {
+               this.hzMsglogForceClose();
+               this.hzPopLayers = [];
+            }
+            if(this.hzArrange) { this.hzArrExit(false); return; }
+            if(this.hzSetIsOpen) { this.hzSetCancel(); return; }
+            try { this.hz30ModProbeAll(); } catch(errMod:Error) { }
+            this.hzSetOrig = this.hzSetCurrent();
+            this.hzSetPend = this.hzSetCurrent();
+            this.hzSetTab = 0;
+            this.hzSetRow = 0;
+            this.hzSetScroll = 0;
+            this.hzSetDrag = -1;
+            this.hzSetHover = "";
+            if(this.HorizonSettings_mc == null)
+            {
+               this.HorizonSettings_mc = new Sprite();
+               this.hzSetBody = new Sprite();
+               this.HorizonSettings_mc.addChild(this.hzSetBody);
+               this.hzSetCursor = new Sprite();
+               this.HorizonSettings_mc.addChild(this.hzSetCursor);
+               this.HorizonSettings_mc.mouseEnabled = false;
+               this.HorizonSettings_mc.mouseChildren = false;
+            }
+            this.hzSetIsOpen = true;
+            addChild(this.HorizonSettings_mc); // re-add = topmost, above every Horizon card
+            this.HorizonSettings_mc.visible = true;
+            this.hzSetCursor.visible = false;
+            this.hzSetPlace();
+            this.hzSetDraw();
          }
-         if(this.hzArrange) { this.hzArrExit(false); return; }
-         if(this.hzSetIsOpen) { this.hzSetCancel(); return; }
-         try { this.hz30ModProbeAll(); } catch(errMod:Error) { }
-         this.hzSetOrig = this.hzSetCurrent();
-         this.hzSetPend = this.hzSetCurrent();
-         this.hzSetTab = 0;
-         this.hzSetRow = 0;
-         this.hzSetScroll = 0;
-         this.hzSetDrag = -1;
-         this.hzSetHover = "";
-         if(this.HorizonSettings_mc == null)
+         catch(eTog:Error)
          {
-            this.HorizonSettings_mc = new Sprite();
-            this.hzSetBody = new Sprite();
-            this.HorizonSettings_mc.addChild(this.hzSetBody);
-            this.hzSetCursor = new Sprite();
-            this.HorizonSettings_mc.addChild(this.hzSetCursor);
-            this.HorizonSettings_mc.mouseEnabled = false;
-            this.HorizonSettings_mc.mouseChildren = false;
+            try { if(this.hzSetIsOpen && this.HorizonSettings_mc != null) { this.hzSetDraw(); } } catch(eDraw:Error) { }
          }
-         this.hzSetIsOpen = true;
-         addChild(this.HorizonSettings_mc); // re-add = topmost, above every Horizon card
-         this.HorizonSettings_mc.visible = true;
-         this.hzSetCursor.visible = false;
-         this.hzSetPlace();
-         this.hzSetDraw();
       }
 
       // CANCEL: revert the live preview to the values captured at open.
