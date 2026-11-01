@@ -2,6 +2,26 @@
 
 An independent review will follow later. Do not treat this as approved.
 
+## 0.43.0.11 — both diagnoses, and a real null name
+
+Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.11**.
+
+The 0.43.0.10 review: a standing `hzBuildCards.vitals` note made `hzNoteKeep` drop `hzToggleSettings.redraw.HZ_SET_TABS`, so the F11 page could stay blank with no F11 name in the log. The `hzCardBodies` / `hzTiles` / `hzIcons` / `hzTexts` / `hzBars` / `hzVnBodies` / `hzSz` marks sat after `= []`, so they could not fire. `hzVit@` also replaced any note already stored.
+
+`hzNoteErr` now keeps a wrapper off a protected note, and appends a different protected key after ` | `. A longer phase of the same key still wins. The vitals try writes `hzVitStep` and does not assign `hzLastErr` until the catch. A null array is named, then set to `[]`. F11 draw marks `body`, `version`, `HZ_SET_TABS`, `hzSetRows`, and `rows`. Tab previous / next uses a local count when `HZ_SET_TABS` is null. The splash is unchanged.
+
+DLL, HUD, Comms, scanner, and scope build strings are `0.43.0.11`. `HorizonUI.default.ini` header and the Moragar preset `Version=` match that. `HZ_COMMS_MSG_LOG` and `HZ_HUD_MSG_CAPTURE` stay `0`.
+
+If the HUD is still vanilla and F11 is still blank, the log should show both, for example:
+
+`hud: movie error hzBuildCards.vitals.hzCard.HZ_TY_SIZE: TypeError #1009 Error #1009 | hzToggleSettings.redraw.rows: TypeError #1009 Error #1009`
+
+`rows` is the last F11 step that started. `HZ_SET_TABS` there means the throw was the tab list. This pass still does not know which object was null in the 0.43.0.9 game log. Do not treat it as approved.
+
+Verified on this Linux checkout (no Windows DLL and no SWF were built here): the four suites. Still unverified in game.
+
+PC folders: compile and run xmake only in `C:\HorizonUI-repo`. `C:\HorizonUI` is only the SWF compile tools.
+
 ## 0.43.0.10 — the vitals card and the F11 page
 
 Not approved. Schema stays `0.42.0`. File version and the HUD movie id are **0.43.0.10**.

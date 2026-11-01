@@ -259,6 +259,9 @@
       private var hzLaidOut:Boolean = false;
       private var hzOnFrameOn:Boolean = false;
       private var hzLastErr:String = "";
+      private var hzVitOn:Boolean = false;
+      private var hzVitStep:String = "";
+      private var hzSetStep:String = "";
       private var hzCrossOn:Boolean = true;
       private var hzCrossIron:Boolean = false;   // HudCrosshairData.bIronSights
       private var hzCross3rd:Boolean = false;    // HudCrosshairData.bIn3rdPerson
@@ -310,9 +313,9 @@
          var body:Sprite = new Sprite();
          body.name = "hzBody";
          p.addChild(body);
-         if(this.hzCardBodies == null) { this.hzCardBodies = []; }
-         if(this.hzCardBodies == null) { this.hzVitMark("hzCard.hzCardBodies"); }
-         else { this.hzCardBodies.push({"s":body,"w":w,"h":h,"k":"card"}); }
+         if(this.hzCardBodies == null) { this.hzVitMark("hzCard.hzCardBodies"); this.hzCardBodies = []; }
+         this.hzCardBodies.push({"s":body,"w":w,"h":h,"k":"card"});
+         this.hzVitMark("hzCard");
          this.hzDrawBody(body,w,h);
          if(icon != null) { this.hzIcon(p,icon,11,8,HZ_ACCENT); }
          if(title != null) { this.hzText(p,title,icon != null ? 29 : 12,7,150,12,HZ_LABEL,false,"hdr"); }
@@ -615,9 +618,9 @@
          t.x = x; t.y = y;
          p.addChild(t);
          var inner:Boolean = p.getChildByName("hzBody") != null;
-         if(this.hzTiles == null) { this.hzTiles = []; }
-         if(this.hzTiles == null) { this.hzVitMark("hzCard.hzTiles"); }
-         else { this.hzTiles.push({"s":t,"w":w,"h":h,"inner":inner}); }
+         if(this.hzTiles == null) { this.hzVitMark("hzCard.hzTiles"); this.hzTiles = []; }
+         this.hzTiles.push({"s":t,"w":w,"h":h,"inner":inner});
+         this.hzVitMark("hzTile");
          this.hzDrawTile(t,w,h,inner);
       }
 
@@ -646,9 +649,9 @@
          var s:Sprite = new Sprite();
          s.x = x; s.y = y;
          p.addChild(s);
-         if(this.hzIcons == null) { this.hzIcons = []; }
-         if(this.hzIcons == null) { this.hzVitMark("hzCard.hzIcons"); }
-         else { this.hzIcons.push({"s":s,"k":kind,"c":col}); }
+         if(this.hzIcons == null) { this.hzVitMark("hzCard.hzIcons"); this.hzIcons = []; }
+         this.hzIcons.push({"s":s,"k":kind,"c":col});
+         this.hzVitMark("hzIcon");
          this.hzIconDraw(s,kind,col);
       }
 
@@ -774,9 +777,9 @@
          p.addChild(t);
          var o:Object = {"tf":t,"size":size,"col":col,"right":right,"role":role,"keep":keepCol,"y0":y,"raw":null};
          if(role == "hdr") { o.raw = txt; }
-         if(this.hzTexts == null) { this.hzTexts = []; }
-         if(this.hzTexts == null) { this.hzVitMark("hzCard.hzTexts"); }
-         else { this.hzTexts.push(o); }
+         if(this.hzTexts == null) { this.hzVitMark("hzCard.hzTexts"); this.hzTexts = []; }
+         this.hzTexts.push(o);
+         this.hzVitMark("hzText");
          t.text = role == "hdr" ? this.hzHdrCase(txt) : txt;
          this.hzApplyFmt(o);
          return t;
@@ -826,6 +829,7 @@
          var tySize:Object = HZ_TY_SIZE;
          if(tySize == null) { this.hzVitMark("hzCard.HZ_TY_SIZE"); }
          var base:Number = (role != null && tySize != null && tySize[role] != undefined) ? Number(tySize[role]) : Number(o.size);
+         if(tySize != null) { this.hzVitMark("hzApplyFmt"); }
          var sz:int = int(Math.round(base * ts));
          var col:uint = uint(o.col);
          var al:Number = 1;
@@ -843,6 +847,7 @@
             var tyAl:Object = HZ_TY_ALPHA;
             if(tyAl == null) { this.hzVitMark("hzCard.HZ_TY_ALPHA"); }
             var ra:Number = tyAl != null && tyAl[role] != undefined ? Number(tyAl[role]) : 1;
+            if(tyAl != null) { this.hzVitMark("hzApplyFmt"); }
             if(ra < 1) { col = this.hzMix(col,this.hzPanelFill(),(1 - ra) * (lt ? 0.75 : 1)); }
             al = 1;
          }
@@ -970,8 +975,14 @@
          this.hzVitMark("hzMeter");
          if(b == null) { this.hzVitMark("hzMeter.b"); return; }
          var e:Object = null;
-         if(this.hzBars == null) { this.hzBars = []; }
-         if(this.hzBars == null) { this.hzVitMark("hzMeter.hzBars"); this.hzMeterDraw(b,w,f,col,f); return; }
+         if(this.hzBars == null)
+         {
+            this.hzVitMark("hzMeter.hzBars");
+            this.hzBars = [];
+            this.hzMeterDraw(b,w,f,col,f);
+            this.hzVitMark("hzMeter");
+            return;
+         }
          for each(var o:Object in this.hzBars) { if(o.b == b) { e = o; break; } }
          f = Math.max(0,Math.min(1,f));
          if(e == null)
@@ -2009,55 +2020,141 @@
          this.hzOnFrameOn = true;
       }
 
-      private function hzNoteErr(phase:String, e:Error) : void
+      private function hzNotePhase(s:String) : String
       {
-         var old:String = this.hzLastErr;
-         if(old != null && this.hzNoteKeep(old,String(phase)))
-         {
-            if(e == null || old.indexOf("#") >= 0) { return; }
-            phase = old;
-            var cut:int = phase.indexOf(":");
-            if(cut > 0) { phase = phase.substr(0,cut); }
-         }
-         var s:String = String(phase) + ": ";
-         if(e != null) { s += e.name + " #" + e.errorID + " " + e.message; }
-         if(s.length > 240) { s = s.substr(0,240); }
-         this.hzLastErr = s;
+         if(s == null) { return ""; }
+         var c:int = s.indexOf(":");
+         if(c > 0) { return s.substr(0,c); }
+         return s;
       }
 
-      // Wrapper catches must not erase a step or object note. A longer phase wins.
-      private function hzNoteKeep(old:String, phase:String) : Boolean
+      private function hzNoteKey(phase:String) : String
       {
-         var op:String = old;
-         var c:int = op.indexOf(":");
-         if(c > 0) { op = op.substr(0,c); }
          var keys:Array = ["hzBuildCards.vitals","hzBuildCards.jet","hzBuildCards.rest","hzToggleSettings.redraw"];
          var i:int = 0;
          while(i < keys.length)
          {
             var k:String = String(keys[i]);
-            if(op.indexOf(k) == 0 && phase.indexOf(k) != 0) { return true; }
-            if(op.indexOf(k) == 0 && phase.indexOf(k) == 0 && op.length > phase.length && op.indexOf(phase) == 0) { return true; }
+            if(phase != null && phase.indexOf(k) == 0) { return k; }
             i++;
          }
+         return "";
+      }
+
+      private function hzNoteText(phase:String, e:Error) : String
+      {
+         var s:String = String(phase) + ": ";
+         if(e != null) { s += e.name + " #" + e.errorID + " " + e.message; }
+         if(s.length > 240) { s = s.substr(0,240); }
+         return s;
+      }
+
+      private function hzNoteJoin(parts:Array) : void
+      {
+         var s:String = "";
+         var i:int = 0;
+         while(i < parts.length)
+         {
+            var p:String = String(parts[i]);
+            if(p.length > 0)
+            {
+               if(s.length > 0) { s += " | "; }
+               s += p;
+            }
+            i++;
+         }
+         if(s.length > 240) { s = s.substr(0,240); }
+         this.hzLastErr = s;
+      }
+
+      // Drop one protected key after that step succeeds. Leave every other key.
+      private function hzNoteDrop(key:String) : void
+      {
+         var old:String = this.hzLastErr;
+         if(old == null || old.length == 0) { return; }
+         var parts:Array = old.split(" | ");
+         var keep:Array = [];
+         var i:int = 0;
+         while(i < parts.length)
+         {
+            if(this.hzNoteKey(this.hzNotePhase(String(parts[i]))) != key) { keep.push(parts[i]); }
+            i++;
+         }
+         this.hzNoteJoin(keep);
+      }
+
+      // A wrapper catch must not erase a step note. A different protected key is appended.
+      private function hzNoteErr(phase:String, e:Error) : void
+      {
+         var add:String = this.hzNoteText(String(phase),e);
+         var old:String = this.hzLastErr;
+         if(old == null || old.length == 0) { this.hzLastErr = add; return; }
+         var parts:Array = old.split(" | ");
+         var nk:String = this.hzNoteKey(String(phase));
+         if(nk.length == 0)
+         {
+            var i0:int = 0;
+            var held:Boolean = false;
+            while(i0 < parts.length)
+            {
+               if(this.hzNoteKey(this.hzNotePhase(String(parts[i0]))).length > 0) { held = true; break; }
+               i0++;
+            }
+            if(held || this.hzNoteKeep(old,String(phase))) { return; }
+            this.hzLastErr = add;
+            return;
+         }
+         var hit:int = -1;
+         var i:int = 0;
+         while(i < parts.length)
+         {
+            if(this.hzNoteKey(this.hzNotePhase(String(parts[i]))) == nk) { hit = i; break; }
+            i++;
+         }
+         if(hit < 0)
+         {
+            var neu:Array = [add];
+            var j:int = 0;
+            while(j < parts.length) { neu.push(parts[j]); j++; }
+            this.hzNoteJoin(neu);
+            return;
+         }
+         var op:String = this.hzNotePhase(String(parts[hit]));
+         var np:String = String(phase);
+         if(op.length > np.length && op.indexOf(np) == 0)
+         {
+            if(e == null || String(parts[hit]).indexOf("#") >= 0) { return; }
+            parts[hit] = this.hzNoteText(op,e);
+            this.hzNoteJoin(parts);
+            return;
+         }
+         parts[hit] = add;
+         this.hzNoteJoin(parts);
+      }
+
+      // True when old must stay. A different key (nk != ok) is not a wrapper.
+      private function hzNoteKeep(old:String, phase:String) : Boolean
+      {
+         var op:String = this.hzNotePhase(old);
+         var ok:String = this.hzNoteKey(op);
+         var nk:String = this.hzNoteKey(phase);
+         if(ok.length == 0) { return false; }
+         if(nk.length > 0 && nk != ok) { return false; }
+         if(nk.length == 0) { return true; }
+         if(op.length > phase.length && op.indexOf(phase) == 0) { return true; }
          return false;
       }
 
-      // During the vitals try only (hzLastErr is "hzVit@"). The first object name sticks.
+      // Vitals breadcrumb. Writes hzVitStep only, never hzLastErr.
       private function hzVitMark(step:String) : void
       {
-         var cur:String = this.hzLastErr;
-         if(cur == null) { return; }
-         if(cur != "hzVit@" && cur.indexOf("hzBuildCards.vitals.") != 0) { return; }
-         if(cur.indexOf("hzBuildCards.vitals.") == 0)
-         {
-            var have:String = cur;
-            var c:int = have.indexOf(":");
-            if(c > 0) { have = have.substr(0,c); }
-            have = have.substr("hzBuildCards.vitals.".length);
-            if(have.indexOf(".") >= 0) { return; }
-         }
-         this.hzLastErr = "hzBuildCards.vitals." + step;
+         if(!this.hzVitOn) { return; }
+         this.hzVitStep = step;
+      }
+
+      private function hzSetMark(step:String) : void
+      {
+         this.hzSetStep = step;
       }
 
       public function hzLastError() : String
@@ -2207,7 +2304,8 @@
          {
             try
             {
-               this.hzLastErr = "hzVit@";
+               this.hzVitOn = true;
+               this.hzVitStep = "enter";
                this.HorizonVitals_mc = new Sprite();
                this.hzVitOld = new Sprite();
                this.HorizonVitals_mc.addChild(this.hzVitOld);
@@ -2233,18 +2331,16 @@
                this.HorizonVitals_mc.x = 960 - HZ_W * HZ_SCALE / 2;
                this.HorizonVitals_mc.y = 746 - 128 * HZ_SCALE;
                addChild(this.HorizonVitals_mc);
-               if(this.hzLastErr == "hzVit@" || (this.hzLastErr != null && this.hzLastErr.indexOf("hzBuildCards.vitals") == 0)) { this.hzLastErr = null; }
+               this.hzVitOn = false;
+               this.hzNoteDrop("hzBuildCards.vitals");
             }
             catch(eVit:Error)
             {
                this.HorizonVitals_mc = null;
+               this.hzVitOn = false;
                var phase:String = "hzBuildCards.vitals";
-               if(this.hzLastErr != null && this.hzLastErr.indexOf("hzBuildCards.vitals.") == 0)
-               {
-                  phase = this.hzLastErr;
-                  var col:int = phase.indexOf(":");
-                  if(col > 0) { phase = phase.substr(0,col); }
-               }
+               if(this.hzVitStep != null && this.hzVitStep.length > 0 && this.hzVitStep != "enter") { phase = "hzBuildCards.vitals." + this.hzVitStep; }
+               this.hzVitStep = "";
                this.hzNoteErr(phase,eVit);
                throw eVit;
             }
@@ -4820,8 +4916,16 @@
          }
          catch(eTog:Error)
          {
-            this.hzNoteErr("hzToggleSettings",eTog);
-            try { if(this.hzSetIsOpen && this.HorizonSettings_mc != null) { this.hzSetDraw(); } } catch(eDraw:Error) { this.hzNoteErr("hzToggleSettings.redraw",eDraw); }
+            var togPhase:String = "hzToggleSettings";
+            if(this.hzSetStep == "place") { togPhase = "hzToggleSettings.place"; }
+            else if(this.hzSetStep != null && this.hzSetStep.length > 0) { togPhase = "hzToggleSettings.redraw." + this.hzSetStep; }
+            this.hzNoteErr(togPhase,eTog);
+            try { if(this.hzSetIsOpen && this.HorizonSettings_mc != null) { this.hzSetDraw(); } } catch(eDraw:Error)
+            {
+               var redPhase:String = "hzToggleSettings.redraw";
+               if(this.hzSetStep != null && this.hzSetStep.length > 0) { redPhase = "hzToggleSettings.redraw." + this.hzSetStep; }
+               this.hzNoteErr(redPhase,eDraw);
+            }
          }
       }
 
@@ -4888,14 +4992,16 @@
          if(this.hz37Key(code)) { this.hzSetDraw(); return; }   // v0.37: preset name entry / pending confirm
          if(code.indexOf("ch:") == 0 || code == "bksp") { return; }
          var rows:Array = this.hzSetRows(this.hzSetTab);
+         var nTab:int = 9;
+         if(HZ_SET_TABS != null && HZ_SET_TABS.length > 0) { nTab = HZ_SET_TABS.length; }
          switch(code)
          {
             case "up": this.hz30RowStep(rows,-1); break;
             case "down": this.hz30RowStep(rows,1); break;
             case "left": this.hzSetChange(rows[this.hzSetRow],-1); break;
             case "right": this.hzSetChange(rows[this.hzSetRow],1); break;
-            case "tabprev": this.hzSetTab = (this.hzSetTab + HZ_SET_TABS.length - 1) % HZ_SET_TABS.length; this.hzSetRow = 0; this.hzSetScroll = 0; break;
-            case "tabnext": this.hzSetTab = (this.hzSetTab + 1) % HZ_SET_TABS.length; this.hzSetRow = 0; this.hzSetScroll = 0; break;
+            case "tabprev": this.hzSetTab = (this.hzSetTab + nTab - 1) % nTab; this.hzSetRow = 0; this.hzSetScroll = 0; break;
+            case "tabnext": this.hzSetTab = (this.hzSetTab + 1) % nTab; this.hzSetRow = 0; this.hzSetScroll = 0; break;
             // optional codes (a plugin build that forwards the mouse wheel); the selection follows the view
             case "wheelup": this.hzSetScrollBy(-1); break;
             case "wheeldown": this.hzSetScrollBy(1); break;
@@ -5328,7 +5434,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.10";
+      private static const HZ_BUILD:String = "0.43.0.11";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -5525,11 +5631,10 @@
 
       private function hzSetPush(o:Object) : void
       {
-         if(this.hzSetHits == null) { this.hzSetHits = []; }
          if(this.hzSetHits == null)
          {
-            if(this.hzLastErr == null || this.hzLastErr.indexOf("hzSetHits") < 0) { this.hzNoteErr("hzToggleSettings.redraw.hzSetHits",null); }
-            return;
+            this.hzNoteErr("hzToggleSettings.redraw.hzSetHits",null);
+            this.hzSetHits = [];
          }
          this.hzSetHits.push(o);
       }
@@ -5539,12 +5644,13 @@
          if(!this.HorizonSettings_mc || !this.hzSetPend) { return; }
          var b:Sprite = this.hzSetBody;
          if(!b) { return; }
+         this.hzSetMark("body");
          if(this.hzSetKeyOv == null) { this.hzSetKeyOv = new Sprite(); }
          while(b.numChildren > 0) { b.removeChildAt(0); }
          b.graphics.clear();
          this.hzSetKeyOv.graphics.clear();
          this.hzSetHits = [];
-         if(this.hzSetHits == null) { this.hzNoteErr("hzToggleSettings.redraw.hzSetHits",null); }
+         this.hzSetMark("chrome");
          var T:Object = this.hzSetTheme();
          var acc:uint = uint(T.acc);
          var W:Number = HZ_SET_W;
@@ -5564,12 +5670,14 @@
          // v0.42.0.4: exact DLL file version. HZ_BUILD until hzSetDllFileVersion arrives.
          // The last argument is a 13 px floor. hzWT multiplies by TextScale (clamped to 0.9) and rounds,
          // so a bare 13 would draw at 12 px when TextScale is 0.9.
+         this.hzSetMark("version");
          var hv:String = HZ_BUILD;
          if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
          var vt:TextField = this.hzWT(b,"v" + hv,W - 28,24,170,13,"sb",uint(T.mut),0.4,"right",13);
          g.beginFill(acc,1); g.drawCircle(Math.round(W - 28 - this.hzTW(vt) - 14),32,4); g.endFill();
          // tabs. HZ_SET_TABS is the first object after the version text. A null here
          // leaves the chrome and the version up and the page blank.
+         this.hzSetMark("HZ_SET_TABS");
          var tabs:Array = HZ_SET_TABS;
          if(tabs == null)
          {
@@ -5600,14 +5708,14 @@
             tbx.x = Math.round(tx - 2);
             if(i == this.hzSetTab) { g.beginFill(acc,1); g.drawRoundRect(tx,ty + 20,tw,2.5,2,2); g.endFill(); }
             var mods:Object = this.hz30Mod;
-            if(mods == null) { this.hz30Mod = {}; mods = this.hz30Mod; }
-            if(mods == null) { this.hzNoteErr("hzToggleSettings.redraw.hz30Mod",null); mods = {}; }
+            if(mods == null) { this.hzNoteErr("hzToggleSettings.redraw.hz30Mod",null); this.hz30Mod = {}; mods = {}; }
             if(i >= 7 && mods[i == 7 ? "scanner" : "comms"] !== 1) { this.hz30Lock(g,tx + tw + 7,ty + 5,9,uint(T.mut),0.9,uint(T.fill)); tw += 12; }
             this.hzSetPush({"id":"tab" + i,"x":tx - 6,"y":ty - 8,"w":tw + 12,"h":34});
             tx += tw + tgap;
             i++;
          }
          var tabEnd:Number = tx - tgap;
+         this.hzSetMark("hzSetRows");
          var rows:Array = this.hzSetRows(this.hzSetTab);
          if(this.hzSetRow >= rows.length) { this.hzSetRow = 0; }
          // CARDS tab: COMPACT MODE as a highlighted pill toggle at the top right of the tab header
@@ -5656,6 +5764,7 @@
          dimS.mouseEnabled = false; dimS.mouseChildren = false;
          dimS.alpha = 0.4;   // v0.30: locked rows: grayed, no hit areas
          b.addChild(dimS);
+         this.hzSetMark("rows");
          while(li < list.length)
          {
             var r:Object = list[li];
@@ -7991,14 +8100,14 @@
             var y:Number = i * 66;
             var b:Sprite = new Sprite(); b.y = y; b.name = "hzVnBody";
             p.addChild(b);
-            if(this.hzVnBodies == null) { this.hzVnBodies = []; }
-            if(this.hzVnBodies == null) { this.hzVitMark("hzBuildVitNew.hzVnBodies"); }
-            else { this.hzVnBodies.push(b); }
+            if(this.hzVnBodies == null) { this.hzVitMark("hzBuildVitNew.hzVnBodies"); this.hzVnBodies = []; }
+            this.hzVnBodies.push(b);
+            this.hzVitMark("hzBuildVitNew");
             var ic:Sprite = new Sprite(); ic.x = 13; ic.y = y + 12;
             p.addChild(ic);
-            if(this.hzIcons == null) { this.hzIcons = []; }
-            if(this.hzIcons == null) { this.hzVitMark("hzBuildVitNew.hzIcons"); }
-            else { this.hzIcons.push({"s":ic,"k":(i == 0 ? "vnheart" : "vno2"),"c":HZ_ACCENT,"acc":true}); }   // v0.35: icon + label follow the accent
+            if(this.hzIcons == null) { this.hzVitMark("hzBuildVitNew.hzIcons"); this.hzIcons = []; }
+            this.hzIcons.push({"s":ic,"k":(i == 0 ? "vnheart" : "vno2"),"c":HZ_ACCENT,"acc":true});   // v0.35: icon + label follow the accent
+            this.hzVitMark("hzBuildVitNew");
             this.hzHdr19(this.hzT(p,i == 0 ? "HEALTH" : "OXYGEN",50,y + 9,150,13,"sb","acc",2));
             var v:TextField = this.hzT(p,"--",HZ_VN_W - 14 - 160,y + 4,160,20,"sb","main",1,"right");
             var bar:Sprite = new Sprite(); bar.name = "hzThick8"; bar.x = 14; bar.y = y + 40;
@@ -8060,10 +8169,10 @@
       {
          this.hzVitMark("hzSetSz");
          if(!c) { this.hzVitMark("hzSetSz.c"); return; }
-         if(this.hzSz == null) { this.hzSz = []; }
-         if(this.hzSz == null) { this.hzVitMark("hzSetSz.hzSz"); return; }
-         for each(var o:Object in this.hzSz) { if(o.c == c) { o.w = w; o.h = h; return; } }
+         if(this.hzSz == null) { this.hzVitMark("hzSetSz.hzSz"); this.hzSz = []; }
+         for each(var o:Object in this.hzSz) { if(o.c == c) { o.w = w; o.h = h; this.hzVitMark("hzSetSz"); return; } }
          this.hzSz.push({"c":c,"w":w,"h":h});
+         this.hzVitMark("hzSetSz");
       }
 
       // on-screen size of a card (known v0.19 sizes; hidden classic children are not counted)
@@ -8146,9 +8255,9 @@
          t.width = w; t.height = fs + 10; t.x = x; t.y = y;
          p.addChild(t);
          var o:Object = {"tf":t,"size":fs,"fs":fs,"face":face,"tone":tone,"col":col,"ls":ls,"right":align == "right","center":align == "center","y0":y,"raw":null,"role":null,"keep":true};
-         if(this.hzTexts == null) { this.hzTexts = []; }
-         if(this.hzTexts == null) { this.hzVitMark("hzBuildVitNew.hzTexts"); }
-         else { this.hzTexts.push(o); }
+         if(this.hzTexts == null) { this.hzVitMark("hzBuildVitNew.hzTexts"); this.hzTexts = []; }
+         this.hzTexts.push(o);
+         this.hzVitMark("hzT");
          t.text = txt;
          this.hzApplyFmt(o);
          return t;
@@ -14368,8 +14477,7 @@
             {"k":"HoverScale","l":"HOVER CARDS: SIZE","t":"z","sub":true,"note":"Activate prompts, loose item / take card, compare and enemy tags"},
             {"k":"ContainerScale","l":"CONTAINER WINDOW: SIZE","t":"z","sub":true,"note":"The full container item list"}];
          var mods:Object = this.hz30Mod;
-         if(mods == null) { this.hz30Mod = {}; mods = this.hz30Mod; }
-         if(mods == null) { this.hzNoteErr("hzToggleSettings.redraw.hz30Mod",null); mods = {}; }
+         if(mods == null) { this.hzNoteErr("hzToggleSettings.redraw.hz30Mod",null); this.hz30Mod = {}; mods = {}; }
          var on:Boolean = mods["comms"] === 1;
          var mt:Object = {"k":"MissionToast","l":"MISSION TOAST","t":"b","h":"COMMS"};
          var ms:Object = {"k":"MissionToastScale","l":"SIZE","t":"z","sub":true};

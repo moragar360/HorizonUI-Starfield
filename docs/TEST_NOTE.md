@@ -1,8 +1,8 @@
-# Horizon UI 0.43.0.9 tester note
+# Horizon UI 0.43.0.11 tester note
 
 Pre-release first pass. Not approved. Debug compile flags stay off (`HZ_HUD_MSG_CAPTURE` 0, `HZ_COMMS_MSG_LOG` 0, `HZC_MSG_LOG` false, `hzcRxDbgOn` false). Settings schema stays 0.42.0.
 
-0.43.0.8 left the HUD vanilla and hid the game's bars (`TypeError #1009`, late instance fields null) and rebuilt the welcome splash every frame. 0.43.0.9 assigns those fields in `hzInitFields` and reuses the splash text. The log must say `HorizonUI 0.43.0.9 loaded` and `HUD 0.43.0.9`. An older `HUD 0.43.0.8` line means the new movie is not loaded.
+0.43.0.8 left the HUD vanilla and hid the game's bars (`TypeError #1009`, late instance fields null) and rebuilt the welcome splash every frame. 0.43.0.9 assigns those fields in `hzInitFields` and reuses the splash text. 0.43.0.11 keeps a vitals note and an F11 note in the same log line. The log must say `HorizonUI 0.43.0.11 loaded` and `HUD 0.43.0.11`. An older `HUD 0.43.0.10` line means the new movie is not loaded.
 
 ## What to look at
 
