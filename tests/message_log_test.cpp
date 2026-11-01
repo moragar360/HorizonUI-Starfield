@@ -763,8 +763,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.12", "file version is 0.43.0.12");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 12, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.13", "file version is 0.43.0.13");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 13, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -3411,7 +3411,8 @@ int main()
 				"a vitals step does not replace a standing note");
 			const auto card = AsFnBody(as, "private function hzCard(", "private function hzDrawBody");
 			const auto fmt = AsFnBody(as, "private function hzApplyFmt(", "private function hzTypoGuard");
-			const auto draw = AsFnBody(as, "private function hzSetDraw()", "private function hzSetDrawCursor");
+			const auto draw = AsFnBody(as, "private function hzSetDraw()", "private function hzSetListIdx");
+			const auto af = AsFnBody(as, "private function hzSetPvAfDraw", "private function hzSetDrawCursor");
 			Expect(card.find("this.hzVitMark(\"hzCard.hzCardBodies\"); this.hzCardBodies = [];") != std::string::npos
 				&& fmt.find("hzCard.HZ_TY_SIZE") != std::string::npos
 				&& fmt.find("HZ_TY_SIZE[role]") == std::string::npos,
@@ -3419,8 +3420,9 @@ int main()
 			Expect(draw.find("hzToggleSettings.redraw.HZ_SET_TABS") != std::string::npos
 				&& draw.find("hzSetMark(\"HZ_SET_TABS\")") != std::string::npos
 				&& draw.find("hzSetMark(\"rows\")") != std::string::npos
-				&& draw.find("hzNoteDrop(\"hzToggleSettings.redraw\")") != std::string::npos,
-				"a null tab list is named after the version text");
+				&& draw.find("hzNoteDrop(\"hzToggleSettings.redraw\")") != std::string::npos
+				&& af.find("hzNoteDrop") == std::string::npos,
+				"a finished settings page drops the redraw note");
 			const auto tog = AsFnBody(as, "public function hzToggleSettings", "private function hzSetCancel");
 			Expect(tog.find("this.hzSetStep = \"\"") != std::string::npos
 				&& tog.find("hzSetMark(\"place\")") != std::string::npos,
@@ -3437,7 +3439,7 @@ int main()
 			Expect(fn.find("hz30Mod == null") != std::string::npos, "hzFontName does not index a null hz30Mod");
 		}
 		{
-			const auto draw = AsFnBody(as, "private function hzSetDraw()", "private function hzSetDrawCursor");
+			const auto draw = AsFnBody(as, "private function hzSetDraw()", "private function hzSetListIdx");
 			Expect(draw.find("hzSetKeyOv == null") != std::string::npos, "F11 draw creates a missing keycap overlay");
 		}
 		{
@@ -3572,15 +3574,15 @@ int main()
 			"a save load can start the splash");
 		{
 			const auto ver = Slurp("src/hz_version.h");
-			Expect(ver.find("TEST_NOTE 0.43.0.12") != std::string::npos
-				&& ver.find("VORTEX_INSTALL 0.43.0.12") != std::string::npos,
-				"TEST_NOTE and VORTEX_INSTALL name 0.43.0.12");
+			Expect(ver.find("TEST_NOTE 0.43.0.13") != std::string::npos
+				&& ver.find("VORTEX_INSTALL 0.43.0.13") != std::string::npos,
+				"TEST_NOTE and VORTEX_INSTALL name 0.43.0.13");
 		}
 		Expect(as.find("MISSED BADGE") == std::string::npos,
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.12\"") != std::string::npos, "HUD movie build id is 0.43.0.12");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.13\"") != std::string::npos, "HUD movie build id is 0.43.0.13");
 		Expect(as.find("greyed") == std::string::npos, "notes use American grayed");
 		Expect(as.find("grayed") != std::string::npos, "locked rows are grayed");
 		Expect(as.find("F12") == std::string::npos || as.find("SETTINGS MENU KEY") != std::string::npos,

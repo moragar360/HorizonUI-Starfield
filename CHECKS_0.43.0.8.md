@@ -2,6 +2,22 @@
 
 An independent review will follow later. Do not treat this as approved.
 
+## 0.43.0.13 — the redraw note drops when the page finishes
+
+Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.13**.
+
+The 0.43.0.12 review: `hzNoteDrop("hzToggleSettings.redraw")` and the step clear sat at the end of `hzSetPvAfDraw`, the STYLE-tab affliction preview. `hzSetDraw` itself never dropped the note. The test span ran from `hzSetDraw` through `hzSetDrawCursor`, so it included that preview function and stayed green.
+
+Those two lines now sit after the window z-order block at the end of `hzSetDraw`, and ahead of `hzSetListIdx`. The affliction preview no longer contains them. The two early returns clear `hzSetStep` and do not drop the note. The test span for the drop ends at `hzSetListIdx`.
+
+The tree to build is `cursor/note-sibling-keys-4c32`. `feature/message-log-p2-ui` is still 0.43.0.10 until that branch is updated.
+
+DLL, HUD, Comms, scanner, and scope build strings are `0.43.0.13`. `HZ_COMMS_MSG_LOG` and `HZ_HUD_MSG_CAPTURE` stay `0`.
+
+Verified on this Linux checkout (no Windows DLL and no SWF were built here): the four suites. Still unverified in game.
+
+PC folders: compile and run xmake only in `C:\HorizonUI-repo`. `C:\HorizonUI` is only the SWF compile tools.
+
 ## 0.43.0.12 — the F11 step is this press
 
 Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.12**.
