@@ -258,6 +258,7 @@
       public var hzMargin:Number = 40;
       private var hzLaidOut:Boolean = false;
       private var hzOnFrameOn:Boolean = false;
+      private var hzLastErr:String = "";
       private var hzCrossOn:Boolean = true;
       private var hzCrossIron:Boolean = false;   // HudCrosshairData.bIronSights
       private var hzCross3rd:Boolean = false;    // HudCrosshairData.bIn3rdPerson
@@ -1988,12 +1989,25 @@
          this.hzOnFrameOn = true;
       }
 
+      private function hzNoteErr(phase:String, e:Error) : void
+      {
+         var s:String = String(phase) + ": ";
+         if(e != null) { s += e.name + " #" + e.errorID + " " + e.message; }
+         if(s.length > 240) { s = s.substr(0,240); }
+         this.hzLastErr = s;
+      }
+
+      public function hzLastError() : String
+      {
+         return this.hzLastErr;
+      }
+
       public function hzEnsureHud() : Boolean
       {
          try { this.hzArmOnFrame(); } catch(e0:Error) { }
          if(this.HorizonVitals_mc == null)
          {
-            try { this.hzBuild(); } catch(e1:Error) { }
+            try { this.hzBuild(); } catch(e1:Error) { this.hzNoteErr("hzEnsureHud.hzBuild",e1); }
          }
          try { this.hzArmOnFrame(); } catch(e2:Error) { }
          try
@@ -2005,13 +2019,15 @@
             }
             this.hzRefreshVisibility();
          }
-         catch(e3:Error) { }
+         catch(e3:Error) { this.hzNoteErr("hzEnsureHud.layout",e3); }
          return this.HorizonVitals_mc != null;
       }
 
       private function hzBuild() : void
       {
          try { this.hzArmOnFrame(); } catch(eArm0:Error) { }
+         try
+         {
          this.HZ_ACCENT = this.hzAccentOf(this.hzAccentChoice);
          var bw:Number = HZ_W - 32;
          // Jetpack card: header [art] JETPACK (BOOST) ... 100% (dot), slim bar tile
@@ -2083,6 +2099,12 @@
          try { this.hzBuildCompact(); } catch(eCmp:Error) { }
          try { this.hzArmOnFrame(); } catch(eArm1:Error) { }
          try { this.hzRefreshVisibility(); } catch(eVis:Error) { }
+         }
+         catch(e:Error)
+         {
+            this.hzNoteErr("hzBuild",e);
+            throw e;
+         }
       }
 
       private function hzOnJetpack(e:FromClientDataEvent) : *
@@ -2466,6 +2488,7 @@
       // Screen-only hide of vanilla clips Horizon replaces. Never removeChild; files untouched.
       private function hzOnFrame(e:Event) : void
       {
+         if(this.HorizonVitals_mc == null) { return; }
          var names:Array = [];
          var o:Object = null;
          this.hzFrameN++;
@@ -4610,7 +4633,8 @@
          }
          catch(eTog:Error)
          {
-            try { if(this.hzSetIsOpen && this.HorizonSettings_mc != null) { this.hzSetDraw(); } } catch(eDraw:Error) { }
+            this.hzNoteErr("hzToggleSettings",eTog);
+            try { if(this.hzSetIsOpen && this.HorizonSettings_mc != null) { this.hzSetDraw(); } } catch(eDraw:Error) { this.hzNoteErr("hzToggleSettings.redraw",eDraw); }
          }
       }
 

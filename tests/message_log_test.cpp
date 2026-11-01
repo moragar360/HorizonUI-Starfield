@@ -3339,13 +3339,32 @@ int main()
 		Expect(as.find("function hzEnsureHud") != std::string::npos
 			&& as.find("function hzArmOnFrame") != std::string::npos,
 			"the HUD can attach ENTER_FRAME after a swallowed hzBuild error");
+		Expect(as.find("function hzLastError") != std::string::npos
+			&& as.find("function hzNoteErr") != std::string::npos,
+			"the movie keeps the last swallowed build or F11 error");
 		{
-			const auto build = AsFnBody(as, "private function hzBuild", "private function hzOnJetpack");
+			const auto build = AsFnBody(as, "private function hzBuild()", "private function hzOnJetpack");
 			Expect(build.find("hzArmOnFrame") != std::string::npos, "hzBuild arms the frame hook before card work");
+			Expect(build.find("hzNoteErr(\"hzBuild\"") != std::string::npos, "hzBuild notes a throw before rethrowing");
+		}
+		{
+			const auto onf = AsFnBody(as, "private function hzOnFrame", "private function hz42VehOnData");
+			const auto brace = onf.find('{');
+			const auto gate = onf.find("if(this.HorizonVitals_mc == null) { return; }");
+			Expect(brace != std::string::npos && gate != std::string::npos && gate > brace
+				&& onf.find("var names", brace) > gate,
+				"hzOnFrame returns before hiding vanilla if vitals was never built");
 		}
 		Expect(main.find("HudInvoke(\"hzEnsureHud\"") != std::string::npos
 			&& main.find("g_settingsToggleRetry") != std::string::npos,
 			"the DLL retries a failed F11 toggle on the HUD tick");
+		Expect(main.find("OnSettingsKey(true)") != std::string::npos
+			&& main.find("HudInvoke(\"hzLastError\"") != std::string::npos,
+			"a failed F11 is retried once and movie errors are logged");
+		{
+			const auto key = AsFnBody(main, "void OnSettingsKey(", "void ResetSettingsState()");
+			Expect(key.find("!a_retry") != std::string::npos, "only the first F11 press arms a retry");
+		}
 		{
 			const auto key = AsFnBody(as, "public function hzSettingsKey", "private function hzSetChange");
 			Expect(key.find("xk == \"_msglog\" || xk == \"_arrange\"") != std::string::npos,

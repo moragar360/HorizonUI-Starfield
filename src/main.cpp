@@ -1015,9 +1015,9 @@ namespace HZ
 	void PushDllFileVersion();   // v0.42.0.4: defined with the movie-build log
 	std::atomic<bool> g_settingsToggleRetry{false};
 
-	void OnSettingsKey()
+	void OnSettingsKey(bool a_retry = false)
 	{
-		REX::INFO("Settings key pressed");
+		REX::INFO(a_retry ? "Settings key retry" : "Settings key pressed");
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) return;
 		if (TextMenuOpen(ui)) { REX::INFO("ignored: text/console/pause menu open"); return; }
@@ -1025,12 +1025,12 @@ namespace HZ
 		if (ui->IsMenuOpen("MonocleMenu")) { REX::INFO("ignored: hand scanner open (F11 opens from the main HUD only)"); return; }   // v0.42.0
 		PushDllFileVersion();   // v0.42.0.4: the header reads this on the open that follows
 		// hzSetDllFileVersion can succeed while hzToggleSettings still throws; arm the
-		// Horizon widgets first, then retry the toggle on the next HUD AdvanceFrame.
+		// Horizon widgets first, then retry the toggle once on the next HUD AdvanceFrame.
 		HudInvoke("hzEnsureHud", nullptr, nullptr, 0, true);
 		bool ok = HudInvoke("hzToggleSettings", nullptr, nullptr, 0, true);
-		if (!ok) g_settingsToggleRetry.store(true, std::memory_order_relaxed);
-		else g_settingsToggleRetry.store(false, std::memory_order_relaxed);
-		REX::INFO("hzToggleSettings invoke {}", ok ? "OK" : "FAILED (HUD lacks function or HUDMenu missing)");
+		if (!ok && !a_retry) g_settingsToggleRetry.store(true, std::memory_order_relaxed);
+		if (a_retry) REX::INFO("hzToggleSettings retry {}", ok ? "OK" : "FAILED");
+		else REX::INFO("hzToggleSettings invoke {}", ok ? "OK" : "FAILED (HUD lacks function or HUDMenu missing)");
 	}
 
 	// ---------------- WndProc subclass: raw-input virtual cursor + input swallowing ----------------
@@ -1819,6 +1819,7 @@ namespace HZ
 	std::string g_buildsLogged;
 	std::string g_buildsHud = "no build id (older than r3 or not Horizon)";
 	std::string g_buildsMsg = "no build id (older than r3, no Comms module or not open)";
+	std::string g_buildsMovieErr;
 	ULONGLONG   g_buildsHudNext = 0;
 	ULONGLONG   g_buildsMsgNext = 0;
 
@@ -1843,10 +1844,21 @@ namespace HZ
 		GValue a;
 		if (HudInvoke("hzBuildId", &a) && a.IsString() && a.GetString())
 			hud = a.GetString();
+		std::string movieErr;
+		GValue err;
+		if (HudInvoke("hzLastError", &err) && err.IsString() && err.GetString() && err.GetString()[0])
+			movieErr = err.GetString();
+		std::string movieErrLog;
 		{
 			std::lock_guard lk(g_buildsMu);
 			if (!hud.empty()) g_buildsHud = std::move(hud);
+			if (!movieErr.empty() && movieErr != g_buildsMovieErr) {
+				g_buildsMovieErr = movieErr;
+				movieErrLog = std::move(movieErr);
+			}
 		}
+		if (!movieErrLog.empty())
+			REX::WARN("hud: movie error {}", movieErrLog);
 		BuildLogFlush();
 	}
 
@@ -4442,7 +4454,7 @@ namespace HZ
 			if (hzlog::SettingsKeyHudTake(had, at, now))
 				OnSettingsKey();
 			if (g_settingsToggleRetry.exchange(false, std::memory_order_acq_rel))
-				OnSettingsKey();
+				OnSettingsKey(true);
 		}
 
 		const bool hudSafe = HudSafe();
