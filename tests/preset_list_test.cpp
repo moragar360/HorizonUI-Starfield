@@ -59,11 +59,11 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.7", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 7, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.8", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 8, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "verbose reaction trace is off for this release");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "unfiltered HUD capture is off for this release");
-	Expect(HzFileVersionOk("0.43.0.7"), "4-part version ok");
+	Expect(HzFileVersionOk("0.43.0.8"), "4-part version ok");
 	Expect(!HzFileVersionOk("0.42.0"), "3-part version is not the file version");
 	Expect(!HzFileVersionOk("v0.42.0.6"), "leading v is not accepted");
 	Expect(!HzFileVersionOk("0.42.0.6 "), "trailing space rejected");
@@ -244,6 +244,9 @@ int main()
 				std::cerr << "FAIL: GameNotice matched a newline\n";
 				++g_fails;
 			} else std::cout << "ok  miss GameNotice newline\n";
+			ok(hzmsg::GameNotice("Jacob's office key"), "game", "notice", "KEY", "GAME", hzmsg::kTierEnglish, "Jacob's office key is a KEY card");
+			ok(hzmsg::GameNotice("Jacob's office key Added."), "game", "item-add", "KEY", "ITEM", hzmsg::kTierEnglish, "key Added. is a KEY card");
+			ok(hzmsg::GameNotice("Digipick Added."), "game", "item-add", "ITEM", "ITEM", hzmsg::kTierEnglish, "item Added. is an ITEM card");
 			ok(hzmsg::GameNotice(std::string(201, 'A')), "game", "notice", "GAME", "GAME", hzmsg::kTierEnglish, "GameNotice 201-char is a card");
 			if (hzmsg::GameNotice(std::string(257, 'A')).ok) {
 				std::cerr << "FAIL: GameNotice matched a 257-char line\n";
@@ -378,6 +381,14 @@ int main()
 			std::deque<Note> aq;
 			Expect(hzrx::Enqueue(aq, art.c_str(), 4), "an over-long Artifact line is stored");
 			Expect(aq.front().artifact, "ARTIFACT is decided from the full source");
+			std::deque<Note> past;
+			std::string far(256, 'x');
+			far += " Artifact";
+			Expect(hzrx::LineHasArtifact(far.c_str()), "artifact after byte 256 is seen on the full line");
+			Expect(hzrx::Enqueue(past, std::string(256, 'x').c_str(), 5, 8, true, true),
+				"Enqueue can take artifact from the full event text");
+			Expect(past.front().artifact && !hzrx::LineHasArtifact(past.front().text),
+				"a 256-byte copy still titles ARTIFACT from a_ev->text");
 			const auto hit = hzmsg::GameNotice(aq.front().text, aq.front().artifact);
 			Expect(hit.ok && hit.name == "ARTIFACT", "a cut Artifact line titles ARTIFACT");
 		}
@@ -678,7 +689,11 @@ int main()
 		Expect(src.find("kRxQueueMax") != std::string::npos, "the reaction queue is bounded");
 		Expect(src.find("HasMember(\"hzcCardPush\")") != std::string::npos, "Poll invokes hzcCardPush only when the movie defines it");
 		Expect(src.find("kRxQueueMax = 8") != std::string::npos, "the HUD message queue holds 8");
-		Expect(src.find("hzrx::Enqueue(g_rxQ, a_text, GetTickCount64(), kRxQueueMax, a_truncated)") != std::string::npos, "the HUD queue uses the shared policy");
+		Expect(src.find("hzrx::Enqueue(g_rxQ, a_text, GetTickCount64(), kRxQueueMax, a_truncated, a_artifact)") != std::string::npos, "the HUD queue uses the shared policy");
+		Expect(src.find("a_out->artifact = hzrx::LineHasArtifact(a_ev->text.c_str())") != std::string::npos,
+			"artifact past byte 256 is read from a_ev->text");
+		Expect(src.find("char show[201];") != std::string::npos, "the card buffer is 200 bytes plus NUL");
+		Expect(src.find("char      text[257];") != std::string::npos, "RxNote keeps 256 bytes");
 		Expect(src.find("hud gmst: address id {} does not resolve, English fallback") != std::string::npos, "a missing settings id is logged and skipped");
 		Expect(src.find("hud form: address id {} does not resolve") != std::string::npos, "a missing form id is logged and skipped");
 		Expect(src.find("if (g_iniDebug) REX::INFO(\"hud gmst: address id {} does not resolve, English fallback\"") != std::string::npos, "the settings id line is behind Debug");
@@ -762,7 +777,7 @@ int main()
 			const auto cap = src.find("REX::INFO(\"hud capture: text=");
 			const auto capGate = src.rfind("#if HZ_HUD_MSG_CAPTURE", cap);
 			const auto capEnd = src.find("#endif", cap);
-			const auto push = src.find("HzRxEnqueue(snap.text, snap.truncated)", capEnd);
+			const auto push = src.find("HzRxEnqueue(snap.text, snap.truncated, snap.artifact)", capEnd);
 			Expect(cap != std::string::npos && capGate != std::string::npos && capEnd != std::string::npos && push != std::string::npos, "the capture line is gated and the enqueue is not");
 			Expect(capGate < cap && cap < capEnd && push > capEnd, "only the capture line is behind its flag");
 			const auto hud = src.find("REX::INFO(\"hud message: text=");
@@ -803,7 +818,7 @@ int main()
 		std::ifstream in("preset/HorizonUI.moragars-choice-0.42.0.ini");
 		Expect(static_cast<bool>(in), "preset ini opens");
 		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(ini.find("Version=0.43.0.7") != std::string::npos, "preset Version is the file version");
+		Expect(ini.find("Version=0.43.0.8") != std::string::npos, "preset Version is the file version");
 		Expect(ini.find("test DLL") == std::string::npos, "preset Debug note does not call this a test DLL");
 		Expect(ini.find("The comms message log is only in debug builds.") != std::string::npos, "release Debug note");
 		Expect(ini.find("VehicleExitPill") == std::string::npos, "the preset does not mirror the vehicle exit default");
@@ -815,7 +830,7 @@ int main()
 		Expect(static_cast<bool>(in), "default.ini opens");
 		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 		Expect(ini.find("\r\n") != std::string::npos, "default.ini stays CRLF");
-		Expect(ini.find("HorizonUI.default.ini (v0.43.0.7)") != std::string::npos,
+		Expect(ini.find("HorizonUI.default.ini (v0.43.0.8)") != std::string::npos,
 			"default.ini header is the file version");
 		const auto cards = ini.find("[Cards]");
 		const auto compass = ini.find("[Compass]");
@@ -830,6 +845,9 @@ int main()
 		Expect(comms != std::string::npos && scanner != std::string::npos && meter != std::string::npos && comms < meter && meter < scanner, "DlgPersuasionMeter defaults on under Comms");
 		Expect(ini.find("; 1 = Horizon persuasion meter (score, the highlighted reply, turns). 0 = the game's meter") != std::string::npos, "DlgPersuasionMeter has its comment");
 		Expect(ini.find("ReactionCard=1") != std::string::npos, "ReactionCard defaults on");
+		Expect(ini.find("ModuleNoteCompact=1") != std::string::npos, "module notices start collapsed");
+		Expect(ini.find("ShowWelcomeOnLoad=1") != std::string::npos, "the welcome splash defaults on");
+		Expect(ini.find("CommsPage=0") != std::string::npos, "COMMS starts on SUBTITLES");
 		Expect(ini.find("VitalsLayout=0") != std::string::npos, "VitalsLayout keeps its default");
 		Expect(ini.find("[Scope]") != std::string::npos && ini.find("ScopeHoldBreathChip=1") != std::string::npos, "the scope block is in the defaults");
 		Expect(ini.find("TempUnit=0") != std::string::npos, "temperature units default to Celsius");
@@ -959,7 +977,7 @@ int main()
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(lua.find("set_version(\"0.43.0.7\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.43.0.8\")") != std::string::npos, "xmake version is the 4-part file version");
 		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
 		std::ifstream cpp("res/horizonui-plugin.cpp.in");
 		Expect(static_cast<bool>(cpp), "plugin version template opens");

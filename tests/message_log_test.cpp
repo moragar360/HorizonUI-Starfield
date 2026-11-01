@@ -763,8 +763,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.7", "file version is 0.43.0.7");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 7, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.8", "file version is 0.43.0.8");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 8, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -1560,7 +1560,7 @@ int main()
 		Expect(stillMid && stillFuture, "later-point flags survive a new capture");
 		Expect(b.nextId > futureId, "new rows take ids after the later-point rows");
 
-		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.7");
+		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.8");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok, "later-point flags round-trip through JSON");
 		Buffer restarted;
@@ -1610,7 +1610,7 @@ int main()
 		Buffer loaded;
 		loaded.LoadState(held);
 		ExpectEqI(static_cast<int>(loaded.nextId), 42, "LoadState keeps the persisted nextId");
-		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.7");
+		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.8");
 		Expect(json.find("\"nextId\": 42") != std::string::npos, "ToJson writes nextId");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok && parsed.state.nextId == 42, "FromJson reads the persisted nextId");
@@ -3397,11 +3397,56 @@ int main()
 			&& as.find("\"HISTORY\"") != std::string::npos
 			&& as.find("OLD CHARACTERS") != std::string::npos && as.find("CLEAR HISTORY") != std::string::npos,
 			"the settings page has the planned rows");
+		Expect(as.find("cx + cw - 58") != std::string::npos && as.find("cx + cw - 78") == std::string::npos,
+			"HISTORY value is centered between the arrows");
+		{
+			const auto shown = AsFnBody(as, "private function hzMsglogShown", "private function hzMsglogChipCount");
+			Expect(shown.find("hzMsglogTypeOn") != std::string::npos,
+				"the log list skips types that are off");
+			const auto count = AsFnBody(as, "private function hzMsglogChipCount", "private function hzMsglogList");
+			Expect(count.find("hzMsglogTypeOn") != std::string::npos,
+				"pill counts skip types that are off");
+		}
+		Expect(as.find("function hzMsglogChipClamp") != std::string::npos,
+			"a hidden pill resets the selected chip");
+		Expect(as.find("function hzT19IsSteal") != std::string::npos
+			&& as.find("steal ? HZ_RED : HZ_ACCENT") != std::string::npos,
+			"a steal prompt uses red");
+		Expect(as.find("function hz31DrawPage") != std::string::npos
+			&& as.find("\"t\":\"g\"") != std::string::npos,
+			"COMMS uses the Option A page switch");
+		Expect(as.find("hz34NoteCmp && on") != std::string::npos,
+			"a missing module expands the notice");
+		Expect(as.find("function hzSplashOnLoad") != std::string::npos
+			&& as.find("function hzSplashLead") != std::string::npos
+			&& as.find("SHOW WELCOME ON LOAD") != std::string::npos,
+			"the welcome splash is present with an F11 toggle");
+		Expect(as.find("new GlowFilter") == std::string::npos
+			|| as.find("hzSplash") != std::string::npos,
+			"splash code is present");
+		Expect(as.find("hzSplash") != std::string::npos && as.find("GlowFilter") != std::string::npos,
+			"existing glow stays; splash adds none");
+		{
+			const auto splash = AsFnBody(as, "public function hzSplashOnLoad", "private function hzSplashLead");
+			Expect(splash.find("GlowFilter") == std::string::npos, "the splash adds no glow");
+		}
+		Expect(main.find("message log settings saved {}") != std::string::npos,
+			"the settings-saved line includes LogTypes");
+		Expect(main.find("lastHudAge can grow while hudSafe=0") != std::string::npos,
+			"a poll gap while a menu is open is expected");
+		Expect(main.find("HudInvoke(\"hzSplashOnLoad\")") != std::string::npos,
+			"a save load can start the splash");
+		{
+			const auto ver = Slurp("src/hz_version.h");
+			Expect(ver.find("TEST_NOTE 0.43.0.8") != std::string::npos
+				&& ver.find("VORTEX_INSTALL 0.43.0.8") != std::string::npos,
+				"TEST_NOTE and VORTEX_INSTALL name 0.43.0.8");
+		}
 		Expect(as.find("MISSED BADGE") == std::string::npos,
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.7\"") != std::string::npos, "HUD movie build id is 0.43.0.7");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.8\"") != std::string::npos, "HUD movie build id is 0.43.0.8");
 		Expect(as.find("greyed") == std::string::npos, "notes use American grayed");
 		Expect(as.find("grayed") != std::string::npos, "locked rows are grayed");
 		Expect(as.find("F12") == std::string::npos || as.find("SETTINGS MENU KEY") != std::string::npos,
