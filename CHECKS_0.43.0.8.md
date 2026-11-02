@@ -2,6 +2,34 @@
 
 An independent review will follow later. Do not treat this as approved.
 
+## 0.43.0.15 — one small function per static table
+
+Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.15**. `HZ_COMMS_MSG_LOG` and `HZ_HUD_MSG_CAPTURE` stay `0`.
+
+In-game 0.43.0.14 (America/Phoenix, 2026-11-01, about 19:16) showed only the vanilla HUD. The game crashed about one second after `HUD ready (stable 3s)`. HorizonUI.log ended on the HUD-ready lines. There was no `HUD 0.43.0.14` build id, no TypeError, no `#1009`, and no VerifyError. The minidump is `Starfield_11-02-02-17.dmp`. That matches a Scaleform reject or a native fault inside the single ~28 KB `hzInitStatics`, so the HUD class code never finished starting. The user rolled back to 0.43.0.7.
+
+Each of the 59 `Array` and `Object` tables is now its own function (`hzSt_HZ_TY_SIZE` through `hzSt_HZ41_SA_CMP`). Those functions assign the literal and do not call `names.push`. The declarations stay `private static var` with no initializer. `hzInitStatics` returns immediately until `hzStDone`, so an early `hzEnsureHud` cannot run every literal in one call.
+
+The DLL runs one stage per HUD frame, including during the 3 second wait. It logs `HUD stage begin <name>` before the invoke. The movie then logs `HUD init <name>`, or `HUD ctor error <name>` with the Error name, id, and message. The first Horizon action is `hzCtor`, which only queues `HUD ctor start 0.43.0.15`. After the 59 tables the stages are `fields`, `arm`, and `cards`. `cards` sets `hzStDone` and then calls `hzBuildCards`. The next frame logs `HUD ctor stages done`.
+
+A stop at `HUD stage begin <name>` with no following `HUD init <name>` means that stage faulted. The largest remaining stage is `HZ35_INFO` (about 8 KB of help text). `HZ40_SCAN_CM` is about 4 KB. A stop on either of those names means that function is still too big.
+
+`hzBuild` and `hzEnsureHud` log the error text through `hzDllLog` instead of an empty catch. The decompile snapshots `himp1`, `himp1.07`, `HUDMenu_1.as`, and `HUDMenu_1.07.as` are not the compile source and were not edited. The shell line the PC splices still has `try { this.hzBuild(); } catch(hzBuildErr:Error) { }`. The builder replaces that catch with a `hzDllLog` of the error text. `hzBuild` itself already logs before it rethrows, and it returns after `hzCtor` until the stages finish.
+
+`hzOnJetpack` still returns when `hzJetPct` is null, and it meters only when `hzJetBar` is not null. `hzOnPlayerFrequent` still runs `hz36HideTick`, returns when `hzVitHp` or `hzVitO2` is null, and meters only when `hzVitHpBar` or `hzVitO2Bar` is not null.
+
+`StartupIntro` defaults to off (`0` in `HorizonUI.default.ini`, `false` on the instance, `0` in `HZ_SET_DEF`). It is an F11 CONTROLS bool, label STARTUP INTRO, 13 px. While it is off, `hzSplashOnLoad` logs `splash skipped` and returns, even if an older `user.ini` still has `ShowWelcomeOnLoad=1`. While it is on, and the older welcome, combat, and F11 gates pass, the log says `splash start`. `hzOnFrame` still returns before hiding vanilla when `HorizonVitals_mc` is null. Outline offsets stay `[-2, 2, -2, 2]`. No new glow. No new F key.
+
+The log for a good start: `HorizonUI 0.43.0.15 loaded`, then `HUD ctor start 0.43.0.15`, then `HUD stage begin HZ_TY_SIZE` and `HUD init HZ_TY_SIZE`, through `fields`, `arm`, and `cards`, then `HUD ctor stages done`, and `splash skipped`. An older `HUD 0.43.0.14` line means this movie is not loaded. `HUD no build id` at movie-create time is the default string before `BuildLogHud`. It is not proof the class failed to link. Do not treat a movie id by itself as a built HUD.
+
+The long `"..."` card look is still unverified in game.
+
+The tree to build is `cursor/note-sibling-keys-4c32`. `feature/message-log-p2-ui` is still 0.43.0.10 (`63a10d4`) until that branch is updated.
+
+Verified on this Linux checkout (no Windows DLL, no SWF, and no game were built here): preset list tests passed; message log tests passed, including the Scaleform call graph (`Poll` does not reach `HudInvoke`; `PollScaleform` reaches `HudCtorPump`); planet alert 939 ok; reaction match 864 ok. Still unverified in game: Horizon cards actually up, F11 CARDS page filled, splash skipped by default, a later load with STARTUP INTRO on, and the long `"..."` cards. Only an in-game test can confirm this.
+
+PC folders: compile and run xmake only in `C:\HorizonUI-repo`. `C:\HorizonUI` is only the SWF compile tools.
+
 ## 0.43.0.14 — static tables are assigned before use
 
 Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.14**.

@@ -763,8 +763,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.14", "file version is 0.43.0.14");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 14, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.15", "file version is 0.43.0.15");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 15, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -3346,8 +3346,11 @@ int main()
 			"the movie keeps the last swallowed build or F11 error");
 		{
 			const auto build = AsFnBody(as, "private function hzBuild()", "private function hzOnJetpack");
-			Expect(build.find("hzArmOnFrame") != std::string::npos, "hzBuild arms the frame hook before card work");
-			Expect(build.find("hzNoteErr(\"hzBuild\"") != std::string::npos, "hzBuild notes a throw before rethrowing");
+			Expect(build.find("this.hzCtor()") != std::string::npos
+				&& build.find("!this.hzStDone") != std::string::npos
+				&& build.find("hzArmOnFrame") != std::string::npos, "hzBuild logs the ctor and waits for staged init");
+			Expect(build.find("HUD ctor error hzBuild ") != std::string::npos
+				&& build.find("hzNoteErr(\"hzBuild\"") != std::string::npos, "hzBuild logs a throw through the DLL before rethrowing");
 			Expect(build.find("hzBuildCards") != std::string::npos, "hzBuild delegates the 0.43.0.7 card body");
 		}
 		{
@@ -3440,19 +3443,30 @@ int main()
 				&& sz.find("hzVitMark(\"hzSetSz.c\")") == std::string::npos,
 				"a skipped null bar does not stay the vitals step");
 			Expect(as.find("hzVit@") == std::string::npos, "the vitals try does not wipe hzLastErr");
+			const auto ty = AsFnBody(as, "private function hzSt_HZ_TY_SIZE", "private function hzSt_HZ_TY_ALPHA");
+			const auto tabs = AsFnBody(as, "private function hzSt_HZ_SET_TABS", "private function hzSt_HZ_SET_DEF");
+			const auto def = AsFnBody(as, "private function hzSt_HZ_SET_DEF", "private function hzSt_HZ35_INFO");
+			const auto info = AsFnBody(as, "private function hzSt_HZ35_INFO", "private function hzSt_HZ_CARDCOLS");
 			const auto stat = AsFnBody(as, "private function hzInitStatics", "private function hzUseStatics");
-			Expect(stat.find("HZ_TY_SIZE = {") != std::string::npos
-				&& stat.find("HZ_TY_ALPHA = {") != std::string::npos
-				&& stat.find("HZ_SET_TABS = [") != std::string::npos
-				&& stat.find("HZ_SET_DEF = {") != std::string::npos
-				&& stat.find("HZ35_INFO = {") != std::string::npos
-				&& stat.find("HZ_CARDCOLS = [") != std::string::npos
-				&& stat.find("HZ_ACCENTS = [") != std::string::npos
-				&& stat.find("HZ_SET_TGS = [") != std::string::npos
-				&& stat.find("HZ_ML_CHIPS = [") != std::string::npos
-				&& stat.find("HZ31_DEF = {") != std::string::npos
-				&& stat.find("HZ34_CARDS = [") != std::string::npos,
-				"hzInitStatics assigns the tables used on the boot, build, and F11 paths");
+			const auto stages = AsFnBody(as, "private function hzSt_HZ_TY_SIZE", "private function hzStName");
+			Expect(ty.find("HZ_TY_SIZE = {") != std::string::npos
+				&& tabs.find("HZ_SET_TABS = [") != std::string::npos
+				&& def.find("HZ_SET_DEF = {") != std::string::npos
+				&& def.find("StartupIntro") != std::string::npos
+				&& info.find("HZ35_INFO = {") != std::string::npos
+				&& info.find("HZ_SET_DEF = {") == std::string::npos
+				&& def.find("HZ35_INFO = {") == std::string::npos
+				&& stat.find("HZ35_INFO = {") == std::string::npos
+				&& stat.find("if(!this.hzStDone)") != std::string::npos
+				&& stages.find("names.push") == std::string::npos,
+				"each static table is its own function, and startup does not run them all at once");
+			const auto ctor = AsFnBody(as, "public function hzCtor()", "public function hzCtorStep");
+			const auto step = AsFnBody(as, "public function hzCtorStep", "private function hzInitSt0");
+			Expect(ctor.find("HUD ctor start 0.43.0.15") != std::string::npos
+				&& ctor.find("hzSt_") == std::string::npos
+				&& step.find("mode == \"run\"") != std::string::npos
+				&& step.find("HUD ctor error ") != std::string::npos,
+				"the ctor logs before any table, and one stage runs per DLL call");
 			Expect(as.find("private static var HZ_TY_SIZE:Object;") != std::string::npos
 				&& as.find("private static const HZ_TY_SIZE") == std::string::npos
 				&& as.find("private static var HZ_SET_TABS:Array;") != std::string::npos
@@ -3463,10 +3477,18 @@ int main()
 			const auto freq = AsFnBody(as, "private function hzOnPlayerFrequent", "private var hzPlugActive");
 			const auto splash = AsFnBody(as, "private function hzSplashStart", "private function hzSplashTick");
 			Expect(jet.find("this.hzJetPct == null") != std::string::npos
+				&& jet.find("this.hzJetBar != null") != std::string::npos
 				&& freq.find("this.hzVitHp == null") != std::string::npos
 				&& freq.find("this.hzVitO2 == null") != std::string::npos
+				&& freq.find("this.hzVitHpBar != null") != std::string::npos
+				&& freq.find("this.hzVitO2Bar != null") != std::string::npos
 				&& splash.find("this.hzUseStatics()") != std::string::npos,
-				"jetpack and vitals text wait for their fields, and splash assigns statics first");
+				"jetpack and vitals text and bars wait for their fields");
+			const auto load = AsFnBody(as, "public function hzSplashOnLoad", "private function hzSplashLead");
+			Expect(load.find("!this.hzStartupIntro") != std::string::npos
+				&& load.find("splash skipped") != std::string::npos
+				&& load.find("splash start") != std::string::npos,
+				"the startup intro defaults off and logs skipped or start");
 		}
 		{
 			const auto fn = AsFnBody(as, "private function hzFontName", "private function hzApplyTypo");
@@ -3483,6 +3505,16 @@ int main()
 			Expect(brace != std::string::npos && gate != std::string::npos && gate > brace
 				&& onf.find("var names", brace) > gate,
 				"hzOnFrame returns before hiding vanilla if vitals was never built");
+		}
+		{
+			const auto job = AsFnBody(main, "void Poll()", "void PollScaleform()");
+			const auto pump = AsFnBody(main, "void HudCtorPump()", "void PollMessages()");
+			const auto sf = AsFnBody(main, "void PollScaleform()", "void DrainHudDllLog()");
+			Expect(job.find("HudCtorPump") == std::string::npos
+				&& sf.find("HudCtorPump()") != std::string::npos
+				&& pump.find("HUD stage begin") != std::string::npos
+				&& pump.find("hzCtorStep") != std::string::npos,
+				"the HUD frame logs one startup stage before it runs");
 		}
 		Expect(main.find("HudInvoke(\"hzEnsureHud\"") != std::string::npos
 			&& main.find("g_settingsToggleRetry") != std::string::npos,
@@ -3608,15 +3640,15 @@ int main()
 			"a save load can start the splash");
 		{
 			const auto ver = Slurp("src/hz_version.h");
-			Expect(ver.find("TEST_NOTE 0.43.0.14") != std::string::npos
-				&& ver.find("VORTEX_INSTALL 0.43.0.14") != std::string::npos,
-				"TEST_NOTE and VORTEX_INSTALL name 0.43.0.14");
+			Expect(ver.find("TEST_NOTE 0.43.0.15") != std::string::npos
+				&& ver.find("VORTEX_INSTALL 0.43.0.15") != std::string::npos,
+				"TEST_NOTE and VORTEX_INSTALL name 0.43.0.15");
 		}
 		Expect(as.find("MISSED BADGE") == std::string::npos,
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.14\"") != std::string::npos, "HUD movie build id is 0.43.0.14");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.15\"") != std::string::npos, "HUD movie build id is 0.43.0.15");
 		Expect(as.find("greyed") == std::string::npos, "notes use American grayed");
 		Expect(as.find("grayed") != std::string::npos, "locked rows are grayed");
 		Expect(as.find("F12") == std::string::npos || as.find("SETTINGS MENU KEY") != std::string::npos,

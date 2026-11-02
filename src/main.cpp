@@ -4402,6 +4402,9 @@ namespace HZ
 		}
 	}
 
+	void DrainHudDllLog();
+	void HudCtorPump();
+
 	// Purpose: job-thread poll. Capture, writer coordinator, file I/O,
 	// and load/quit flags. Never touches Scaleform (GetMenu / menuObj /
 	// Invoke). SFSE permanent tasks run on BSJobs in 1.16.244, not Main.
@@ -4450,6 +4453,7 @@ namespace HZ
 		g_hudPolls.fetch_add(1, std::memory_order_relaxed);
 		if (!g_uiPollLogged.exchange(true))
 			REX::INFO("thread: ui poll tid={}", tid);
+		HudCtorPump();
 		if (auto uiPub = RE::UI::GetSingleton()) {
 			g_uiLoading.store(uiPub->IsMenuOpen("LoadingMenu"));
 			g_uiMainMenu.store(uiPub->IsMenuOpen("MainMenu"));
@@ -4526,6 +4530,51 @@ namespace HZ
 		HWND wnd = GameWindow();
 		EnsureSubclass(wnd);
 		PollSettings(wnd, now);
+	}
+
+	// Pull queued HUD lines (ctor, one init stage, splash) into HorizonUI.log.
+	void DrainHudDllLog()
+	{
+		for (int i = 0; i < 12; ++i) {
+			GValue line;
+			if (!HudInvoke("hzTakeDllLog", &line) || !line.IsString() || !line.GetString() || !line.GetString()[0])
+				return;
+			REX::INFO("{}", line.GetString());
+		}
+	}
+
+	// One static-table stage per HUD frame. The begin line is logged before the stage runs.
+	void HudCtorPump()
+	{
+		static int state = 0;
+		if (state != 0) {
+			if (state == 1) DrainHudDllLog();
+			return;
+		}
+		std::string peek = "peek";
+		GValue mode(peek.c_str());
+		GValue ret;
+		if (!HudInvoke("hzCtorStep", &ret, &mode, 1)) {
+			REX::WARN("hud: hzCtorStep invoke failed");
+			state = -1;
+			DrainHudDllLog();
+			return;
+		}
+		DrainHudDllLog();
+		std::string name;
+		if (ret.IsString() && ret.GetString()) name = ret.GetString();
+		if (name.empty() || name == "done") {
+			state = 1;
+			REX::INFO("HUD ctor stages done");
+			return;
+		}
+		REX::INFO("HUD stage begin {}", name);
+		std::string run = "run";
+		GValue modeRun(run.c_str());
+		GValue ran;
+		if (!HudInvoke("hzCtorStep", &ran, &modeRun, 1))
+			REX::WARN("hud: hzCtorStep run failed {}", name);
+		DrainHudDllLog();
 	}
 
 	// Purpose: HUDMessagesMenu Invokes only. Runs from that movie's

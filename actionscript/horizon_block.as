@@ -259,6 +259,10 @@
       private var hzLaidOut:Boolean = false;
       private var hzOnFrameOn:Boolean = false;
       private var hzLastErr:String = "";
+      private var hzCtorStarted:Boolean = false;
+      private var hzStDone:Boolean = false;
+      private var hzStStep:int = 0;
+      private var hzDllLogQ:Array;
       private var hzVitOn:Boolean = false;
       private var hzVitStep:String = "";
       private var hzSetStep:String = "";
@@ -2162,15 +2166,30 @@
          return this.hzLastErr;
       }
 
-      // Scaleform can skip static initializers on this class the same way it skipped
-      // late instance fields. These tables are assigned here, before boot, build, F11, or splash use them.
-      private function hzInitStatics() : Array
+      // One table per function. Scaleform rejected the single 28 KB hzInitStatics in 0.43.0.14.
+      // The DLL runs one stage per HUD frame and logs that stage before the call.
+      private function hzSt_HZ_TY_SIZE() : void
       {
-         var names:Array = [];
-         if(HZ_TY_SIZE == null) { HZ_TY_SIZE = {"hdr":10,"val":16,"valS":14,"lbl":9,"sec":12,"big":24}; names.push("HZ_TY_SIZE"); }
-         if(HZ_TY_ALPHA == null) { HZ_TY_ALPHA = {"hdr":0.85,"val":1,"valS":1,"lbl":0.6,"sec":0.78,"big":1}; names.push("HZ_TY_ALPHA"); }
-         if(HZ_SET_TABS == null) { HZ_SET_TABS = ["CARDS","STYLE","TEXT","EFFECTS","RULES","COMPASS","CONTROLS","SCANNER","COMMS"]; names.push("HZ_SET_TABS"); }
-         if(HZ_SET_DEF == null) { HZ_SET_DEF = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"ShowWelcomeOnLoad":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1}; names.push("HZ_SET_DEF"); }
+         if(HZ_TY_SIZE == null) { HZ_TY_SIZE = {"hdr":10,"val":16,"valS":14,"lbl":9,"sec":12,"big":24}; }
+      }
+
+      private function hzSt_HZ_TY_ALPHA() : void
+      {
+         if(HZ_TY_ALPHA == null) { HZ_TY_ALPHA = {"hdr":0.85,"val":1,"valS":1,"lbl":0.6,"sec":0.78,"big":1}; }
+      }
+
+      private function hzSt_HZ_SET_TABS() : void
+      {
+         if(HZ_SET_TABS == null) { HZ_SET_TABS = ["CARDS","STYLE","TEXT","EFFECTS","RULES","COMPASS","CONTROLS","SCANNER","COMMS"]; }
+      }
+
+      private function hzSt_HZ_SET_DEF() : void
+      {
+         if(HZ_SET_DEF == null) { HZ_SET_DEF = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"ShowWelcomeOnLoad":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1,"StartupIntro":0}; }
+      }
+
+      private function hzSt_HZ35_INFO() : void
+      {
          if(HZ35_INFO == null)
          {
             HZ35_INFO = {
@@ -2222,40 +2241,171 @@
          "_size":"GLOBAL: this card uses HUD SCALE (STYLE tab). CUSTOM: it has its own size and HUD SCALE no longer changes it. Click the GLOBAL / CUSTOM chip or drag the slider to switch.",
          "_compact":"GLOBAL: this card takes its compact form whenever COMPACT MODE (top right) is on. ON / OFF: always compact / always full for this card only, whatever COMPACT MODE says.",
          "_rule":"When this card shows. ALWAYS, or only in the situation named (in combat, weapon drawn, not full ...). The card's own switch in CARDS still has to be on."};
-            names.push("HZ35_INFO");
          }
-         if(HZ_CARDCOLS == null) { HZ_CARDCOLS = [0x0B1218,0x16181C,0x0B1630,0x0A2226,0x1E1328,0x2A1014,0x3A4652,0xD5DBE0,0xF2F4F6,0xCCDFEE,0xF0E0C2,0xD2ECDF]; names.push("HZ_CARDCOLS"); }
-         if(HZ_ACCENTS == null) { HZ_ACCENTS = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C]; names.push("HZ_ACCENTS"); }
-         if(HZ_SET_TGS == null) { HZ_SET_TGS = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6]; names.push("HZ_SET_TGS"); }
-         if(HZ_ML_CHIPS == null) { HZ_ML_CHIPS = ["ALL","MEDICAL","CREW","REACTIONS","BUSY","CRIME","CREDITS","QUEST","LOCATION","GAME","XP"]; names.push("HZ_ML_CHIPS"); }
-         if(HZ31_DEF == null) { HZ31_DEF = {"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"TxtColIdx":0,"SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"ReactionCard":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"ShowSpeaker":1,"SpkColIdx":0,"SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgTxtIdx":0,"DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4}; names.push("HZ31_DEF"); }
-         if(HZ34_CARDS == null) { HZ34_CARDS = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false]]; names.push("HZ34_CARDS"); }
-         if(HZ_CARD == null) { HZ_CARD = ["N","NE","E","SE","S","SW","W","NW"]; names.push("HZ_CARD"); }
-         if(HZ_RULE_NAMES == null) { HZ_RULE_NAMES = ["ALWAYS","COMBAT ONLY","HIDE IN SHIP","WEAPON DRAWN ONLY","IN USE / NOT FULL","WHEN NOT FULL (HP/O2)","ONLY WHEN AFFLICTED","ON XP / LEVEL / CREDITS","WHEN OVERWEIGHT","XP / LEVEL OR OVERWEIGHT"]; names.push("HZ_RULE_NAMES"); }
-         if(HZ_CARDNAMES == null) { HZ_CARDNAMES = ["SLATE","GRAPHITE","NAVY","DEEP TEAL","PLUM","CRIMSON","STORM GRAY","LIGHT GRAY","WHITE","PALE BLUE","PALE AMBER","PALE MINT"]; names.push("HZ_CARDNAMES"); }
-         if(HZ_TONE_NAMES == null) { HZ_TONE_NAMES = ["AUTO","LIGHT TEXT","DARK TEXT"]; names.push("HZ_TONE_NAMES"); }
-         if(HZ_FONT_NAMES == null) { HZ_FONT_NAMES = ["EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"]; names.push("HZ_FONT_NAMES"); }
-         if(HZ_FONT_IDS == null) { HZ_FONT_IDS = [1,2,0,3]; names.push("HZ_FONT_IDS"); }
-         if(HZ_TGANCHOR_NAMES == null) { HZ_TGANCHOR_NAMES = ["CROSSHAIR","FOLLOW TARGET"]; names.push("HZ_TGANCHOR_NAMES"); }
-         if(HZ_LAY_KEYS == null) { HZ_LAY_KEYS = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages"]; names.push("HZ_LAY_KEYS"); }
-         if(HZ_LAY_NAMES == null) { HZ_LAY_NAMES = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES"]; names.push("HZ_LAY_NAMES"); }
-         if(HZ_HDRSTYLE_NAMES == null) { HZ_HDRSTYLE_NAMES = ["CAPS + SPACED","TITLE CASE"]; names.push("HZ_HDRSTYLE_NAMES"); }
-         if(HZ_SET_KEYS == null) { HZ_SET_KEYS = ["F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"]; names.push("HZ_SET_KEYS"); }
-         if(HZ_SET_ACCNAMES == null) { HZ_SET_ACCNAMES = ["CYAN","TEAL","AMBER","VIOLET","LIME","WHITE","ROSE","ORANGE","SKY","GOLD","MINT","STEEL","DEEP BLUE"]; names.push("HZ_SET_ACCNAMES"); }
-         if(HZ_ML_KIND == null) { HZ_ML_KIND = ["","medical","crew","reaction","busy","crime","credits","quest","location","game","xp"]; names.push("HZ_ML_KIND"); }
-         if(HZ_SET_TGS_N == null) { HZ_SET_TGS_N = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"]; names.push("HZ_SET_TGS_N"); }
-         if(HZ_SET_SCRH == null) { HZ_SET_SCRH = [0,720,900,1080,1200,1440,1600,2160]; names.push("HZ_SET_SCRH"); }
-         if(HZ_SET_SCRH_N == null) { HZ_SET_SCRH_N = ["OFF","720","900","1080","1200","1440","1600","2160"]; names.push("HZ_SET_SCRH_N"); }
-         if(HZ_RAR == null) { HZ_RAR = [0xF2F7F9,0x73CCDF,0x9A7BFF,0xEEC162,0xEEC162]; names.push("HZ_RAR"); }
-         if(HZ_RARN == null) { HZ_RARN = ["","RARE","EPIC","LEGENDARY","EXOTIC"]; names.push("HZ_RARN"); }
-         if(HZ_TIME_NAMES == null) { HZ_TIME_NAMES = ["OFF","LOCAL / GAME","PC/REAL","LOCAL / GAME + PC/REAL"]; names.push("HZ_TIME_NAMES"); }
-         if(HZ_CLOCK_NAMES == null) { HZ_CLOCK_NAMES = ["12 H","24 H"]; names.push("HZ_CLOCK_NAMES"); }
-         if(HZ_TEMP_NAMES == null) { HZ_TEMP_NAMES = ["°C","°F"]; names.push("HZ_TEMP_NAMES"); }
-         if(HZ_AFLAY_NAMES == null) { HZ_AFLAY_NAMES = ["COLUMN","ROW","ICONS ONLY"]; names.push("HZ_AFLAY_NAMES"); }
-         if(HZ_XH_NAMES == null) { HZ_XH_NAMES = ["VANILLA","HORIZON DOT","HORIZON CROSS","NONE"]; names.push("HZ_XH_NAMES"); }
-         if(HZ_RING_NAMES == null) { HZ_RING_NAMES = ["OFF","CONTAINERS ONLY","VANILLA"]; names.push("HZ_RING_NAMES"); }
-         if(HZ_FOL_PAL == null) { HZ_FOL_PAL = [0x5CFF7A,0xC6FF4A,0xFFD24A,0xFF6BD6,0xF4F8FA,0x5EE3A1]; names.push("HZ_FOL_PAL"); }
-         if(HZ_FOL_NAMES == null) { HZ_FOL_NAMES = ["BRIGHT GREEN","LIME","GOLD","PINK","WHITE","MINT"]; names.push("HZ_FOL_NAMES"); }
+      }
+
+      private function hzSt_HZ_CARDCOLS() : void
+      {
+         if(HZ_CARDCOLS == null) { HZ_CARDCOLS = [0x0B1218,0x16181C,0x0B1630,0x0A2226,0x1E1328,0x2A1014,0x3A4652,0xD5DBE0,0xF2F4F6,0xCCDFEE,0xF0E0C2,0xD2ECDF]; }
+      }
+
+      private function hzSt_HZ_ACCENTS() : void
+      {
+         if(HZ_ACCENTS == null) { HZ_ACCENTS = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C]; }
+      }
+
+      private function hzSt_HZ_SET_TGS() : void
+      {
+         if(HZ_SET_TGS == null) { HZ_SET_TGS = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6]; }
+      }
+
+      private function hzSt_HZ_ML_CHIPS() : void
+      {
+         if(HZ_ML_CHIPS == null) { HZ_ML_CHIPS = ["ALL","MEDICAL","CREW","REACTIONS","BUSY","CRIME","CREDITS","QUEST","LOCATION","GAME","XP"]; }
+      }
+
+      private function hzSt_HZ31_DEF() : void
+      {
+         if(HZ31_DEF == null) { HZ31_DEF = {"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"TxtColIdx":0,"SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"ReactionCard":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"ShowSpeaker":1,"SpkColIdx":0,"SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgTxtIdx":0,"DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4}; }
+      }
+
+      private function hzSt_HZ34_CARDS() : void
+      {
+         if(HZ34_CARDS == null) { HZ34_CARDS = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false]]; }
+      }
+
+      private function hzSt_HZ_CARD() : void
+      {
+         if(HZ_CARD == null) { HZ_CARD = ["N","NE","E","SE","S","SW","W","NW"]; }
+      }
+
+      private function hzSt_HZ_RULE_NAMES() : void
+      {
+         if(HZ_RULE_NAMES == null) { HZ_RULE_NAMES = ["ALWAYS","COMBAT ONLY","HIDE IN SHIP","WEAPON DRAWN ONLY","IN USE / NOT FULL","WHEN NOT FULL (HP/O2)","ONLY WHEN AFFLICTED","ON XP / LEVEL / CREDITS","WHEN OVERWEIGHT","XP / LEVEL OR OVERWEIGHT"]; }
+      }
+
+      private function hzSt_HZ_CARDNAMES() : void
+      {
+         if(HZ_CARDNAMES == null) { HZ_CARDNAMES = ["SLATE","GRAPHITE","NAVY","DEEP TEAL","PLUM","CRIMSON","STORM GRAY","LIGHT GRAY","WHITE","PALE BLUE","PALE AMBER","PALE MINT"]; }
+      }
+
+      private function hzSt_HZ_TONE_NAMES() : void
+      {
+         if(HZ_TONE_NAMES == null) { HZ_TONE_NAMES = ["AUTO","LIGHT TEXT","DARK TEXT"]; }
+      }
+
+      private function hzSt_HZ_FONT_NAMES() : void
+      {
+         if(HZ_FONT_NAMES == null) { HZ_FONT_NAMES = ["EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"]; }
+      }
+
+      private function hzSt_HZ_FONT_IDS() : void
+      {
+         if(HZ_FONT_IDS == null) { HZ_FONT_IDS = [1,2,0,3]; }
+      }
+
+      private function hzSt_HZ_TGANCHOR_NAMES() : void
+      {
+         if(HZ_TGANCHOR_NAMES == null) { HZ_TGANCHOR_NAMES = ["CROSSHAIR","FOLLOW TARGET"]; }
+      }
+
+      private function hzSt_HZ_LAY_KEYS() : void
+      {
+         if(HZ_LAY_KEYS == null) { HZ_LAY_KEYS = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages"]; }
+      }
+
+      private function hzSt_HZ_LAY_NAMES() : void
+      {
+         if(HZ_LAY_NAMES == null) { HZ_LAY_NAMES = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES"]; }
+      }
+
+      private function hzSt_HZ_HDRSTYLE_NAMES() : void
+      {
+         if(HZ_HDRSTYLE_NAMES == null) { HZ_HDRSTYLE_NAMES = ["CAPS + SPACED","TITLE CASE"]; }
+      }
+
+      private function hzSt_HZ_SET_KEYS() : void
+      {
+         if(HZ_SET_KEYS == null) { HZ_SET_KEYS = ["F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"]; }
+      }
+
+      private function hzSt_HZ_SET_ACCNAMES() : void
+      {
+         if(HZ_SET_ACCNAMES == null) { HZ_SET_ACCNAMES = ["CYAN","TEAL","AMBER","VIOLET","LIME","WHITE","ROSE","ORANGE","SKY","GOLD","MINT","STEEL","DEEP BLUE"]; }
+      }
+
+      private function hzSt_HZ_ML_KIND() : void
+      {
+         if(HZ_ML_KIND == null) { HZ_ML_KIND = ["","medical","crew","reaction","busy","crime","credits","quest","location","game","xp"]; }
+      }
+
+      private function hzSt_HZ_SET_TGS_N() : void
+      {
+         if(HZ_SET_TGS_N == null) { HZ_SET_TGS_N = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"]; }
+      }
+
+      private function hzSt_HZ_SET_SCRH() : void
+      {
+         if(HZ_SET_SCRH == null) { HZ_SET_SCRH = [0,720,900,1080,1200,1440,1600,2160]; }
+      }
+
+      private function hzSt_HZ_SET_SCRH_N() : void
+      {
+         if(HZ_SET_SCRH_N == null) { HZ_SET_SCRH_N = ["OFF","720","900","1080","1200","1440","1600","2160"]; }
+      }
+
+      private function hzSt_HZ_RAR() : void
+      {
+         if(HZ_RAR == null) { HZ_RAR = [0xF2F7F9,0x73CCDF,0x9A7BFF,0xEEC162,0xEEC162]; }
+      }
+
+      private function hzSt_HZ_RARN() : void
+      {
+         if(HZ_RARN == null) { HZ_RARN = ["","RARE","EPIC","LEGENDARY","EXOTIC"]; }
+      }
+
+      private function hzSt_HZ_TIME_NAMES() : void
+      {
+         if(HZ_TIME_NAMES == null) { HZ_TIME_NAMES = ["OFF","LOCAL / GAME","PC/REAL","LOCAL / GAME + PC/REAL"]; }
+      }
+
+      private function hzSt_HZ_CLOCK_NAMES() : void
+      {
+         if(HZ_CLOCK_NAMES == null) { HZ_CLOCK_NAMES = ["12 H","24 H"]; }
+      }
+
+      private function hzSt_HZ_TEMP_NAMES() : void
+      {
+         if(HZ_TEMP_NAMES == null) { HZ_TEMP_NAMES = ["°C","°F"]; }
+      }
+
+      private function hzSt_HZ_AFLAY_NAMES() : void
+      {
+         if(HZ_AFLAY_NAMES == null) { HZ_AFLAY_NAMES = ["COLUMN","ROW","ICONS ONLY"]; }
+      }
+
+      private function hzSt_HZ_XH_NAMES() : void
+      {
+         if(HZ_XH_NAMES == null) { HZ_XH_NAMES = ["VANILLA","HORIZON DOT","HORIZON CROSS","NONE"]; }
+      }
+
+      private function hzSt_HZ_RING_NAMES() : void
+      {
+         if(HZ_RING_NAMES == null) { HZ_RING_NAMES = ["OFF","CONTAINERS ONLY","VANILLA"]; }
+      }
+
+      private function hzSt_HZ_FOL_PAL() : void
+      {
+         if(HZ_FOL_PAL == null) { HZ_FOL_PAL = [0x5CFF7A,0xC6FF4A,0xFFD24A,0xFF6BD6,0xF4F8FA,0x5EE3A1]; }
+      }
+
+      private function hzSt_HZ_FOL_NAMES() : void
+      {
+         if(HZ_FOL_NAMES == null) { HZ_FOL_NAMES = ["BRIGHT GREEN","LIME","GOLD","PINK","WHITE","MINT"]; }
+      }
+
+      private function hzSt_HZ31_KEYS() : void
+      {
          if(HZ31_KEYS == null)
          {
             HZ31_KEYS = [
@@ -2274,30 +2424,335 @@
          ["DlgPersuadeStyle","i",0,0,2,"comms"],["DlgPersuadeColor","i",2,0,12,"comms"],["DlgPersuasionMeter","b",1,0,1,"comms"],["DlgMarkers","b",0,0,1,"comms"],["DlgInputDelay","i",150,0,1000,"comms"],
          ["DlgRolloverSound","i",0,0,1,"comms"],["DlgAnim","i",1,0,2,"comms"],
          ["DlgButtonBar","i",0,0,2,"comms"],["DlgQuickPickHint","b",1,0,1,"comms"],["DlgSelectHint","b",1,0,1,"comms"]];
-            names.push("HZ31_KEYS");
          }
-         if(HZ31_PROBE == null) { HZ31_PROBE = {"es":"Enhanced Subtitles - My Edits.ini","edi":"Enhanced Dialogue Interface - My Edits.ini","edi2":"Enhanced Dialogue Interface.ini"}; names.push("HZ31_PROBE"); }
-         if(HZ31_FONT_OPTS == null) { HZ31_FONT_OPTS = ["GLOBAL","EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"]; names.push("HZ31_FONT_OPTS"); }
-         if(HZ31_FONT_IDS == null) { HZ31_FONT_IDS = [-1,1,2,0,3]; names.push("HZ31_FONT_IDS"); }
-         if(HZ30_MODS == null) { HZ30_MODS = ["scanner","comms","font","comms_dialogue","es","edi","edi2","scope","notifications"]; names.push("HZ30_MODS"); }
-         if(HZ35_TOK == null) { HZ35_TOK = {"accent":0x3FD0E0,"bg":0x0B1218,"text":0xF2F7F9,"value":0xFFFFFF,"label":0xC4D2D9,"muted":0x96A6AE,"amber":0xF2A93B,"follower":0x3FE0B0,"exotic":0xB48CFF,"minPx":13}; names.push("HZ35_TOK"); }
-         if(hz37_FILES == null) { hz37_FILES = ["HorizonUI/HorizonUI.default.ini","HorizonUI/HorizonUI.user.ini","HorizonUI/HorizonUI.state.ini","HorizonUI/HorizonUI.ini"]; names.push("hz37_FILES"); }
-         if(HZ40_SCAN_KEYS == null) { HZ40_SCAN_KEYS = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]]; names.push("HZ40_SCAN_KEYS"); }
-         if(HZ40_SCAN_CM == null) { HZ40_SCAN_CM = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"]}; names.push("HZ40_SCAN_CM"); }
-         if(HZ40_POPUP == null) { HZ40_POPUP = ["HideQuestPopupsWhileScanning","DimTraitPopupDuringBioscan","TraitPopupDim"]; names.push("HZ40_POPUP"); }
-         if(HZ40_OPA_V == null) { HZ40_OPA_V = [-1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6]; names.push("HZ40_OPA_V"); }
-         if(HZ40_OPA_N == null) { HZ40_OPA_N = ["FOLLOW HUD","0.20","0.30","0.40","0.50","0.60","0.70","0.80","0.90","1.00","1.10","1.20","1.30","1.40","1.50","1.60"]; names.push("HZ40_OPA_N"); }
-         if(HZ40_MAR_V == null) { HZ40_MAR_V = [-1,20,30,40,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200]; names.push("HZ40_MAR_V"); }
-         if(HZ40_MAR_N == null) { HZ40_MAR_N = ["FOLLOW HUD","20","30","40","50","60","70","80","90","100","110","120","130","140","150","160","170","180","190","200"]; names.push("HZ40_MAR_N"); }
-         if(HZ40_CARDS == null) { HZ40_CARDS = ["HorizonCard_mc","HorizonVitals_mc","HorizonEnv_mc","HorizonAffl_mc","HorizonQuest_mc","HorizonCompactQuest_mc","HorizonAmmo_mc","HorizonCompact_mc","HorizonCompass_mc","HorizonChar_mc","HorizonXp_mc"]; names.push("HZ40_CARDS"); }
-         if(HZ43_VIT_CARDS == null) { HZ43_VIT_CARDS = ["HorizonCard_mc","HorizonVitals_mc","HorizonCompact_mc"]; names.push("HZ43_VIT_CARDS"); }
-         if(HZ41_VIT_KEYS == null) { HZ41_VIT_KEYS = ["ScanShowVitalsHealth","ScanShowVitalsO2","ScanShowVitalsBoost"]; names.push("HZ41_VIT_KEYS"); }
-         if(HZ41_VIT_IDS == null) { HZ41_VIT_IDS = ["hp","o2","bo"]; names.push("HZ41_VIT_IDS"); }
-         if(HZ41_VIT_LBL == null) { HZ41_VIT_LBL = ["HEALTH","O2","BOOST"]; names.push("HZ41_VIT_LBL"); }
-         if(HZ41_SA_PANELS == null) { HZ41_SA_PANELS = ["Planet","Bioscan","Signals","Traits","Social","Compass","Mode","Hints","Vitals"]; names.push("HZ41_SA_PANELS"); }
-         if(HZ41_SA_NAMES == null) { HZ41_SA_NAMES = ["PLANET","BIOSCAN","SIGNALS","TRAITS + RESOURCES","PERSON","COMPASS","MODE","BUTTON HINTS","VITALS"]; names.push("HZ41_SA_NAMES"); }
-         if(HZ41_SA_CMP == null) { HZ41_SA_CMP = ["Planet","Bioscan","Signals","Traits","Compass"]; names.push("HZ41_SA_CMP"); }
-         return names;
+      }
+
+      private function hzSt_HZ31_PROBE() : void
+      {
+         if(HZ31_PROBE == null) { HZ31_PROBE = {"es":"Enhanced Subtitles - My Edits.ini","edi":"Enhanced Dialogue Interface - My Edits.ini","edi2":"Enhanced Dialogue Interface.ini"}; }
+      }
+
+      private function hzSt_HZ31_FONT_OPTS() : void
+      {
+         if(HZ31_FONT_OPTS == null) { HZ31_FONT_OPTS = ["GLOBAL","EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"]; }
+      }
+
+      private function hzSt_HZ31_FONT_IDS() : void
+      {
+         if(HZ31_FONT_IDS == null) { HZ31_FONT_IDS = [-1,1,2,0,3]; }
+      }
+
+      private function hzSt_HZ30_MODS() : void
+      {
+         if(HZ30_MODS == null) { HZ30_MODS = ["scanner","comms","font","comms_dialogue","es","edi","edi2","scope","notifications"]; }
+      }
+
+      private function hzSt_HZ35_TOK() : void
+      {
+         if(HZ35_TOK == null) { HZ35_TOK = {"accent":0x3FD0E0,"bg":0x0B1218,"text":0xF2F7F9,"value":0xFFFFFF,"label":0xC4D2D9,"muted":0x96A6AE,"amber":0xF2A93B,"follower":0x3FE0B0,"exotic":0xB48CFF,"minPx":13}; }
+      }
+
+      private function hzSt_hz37_FILES() : void
+      {
+         if(hz37_FILES == null) { hz37_FILES = ["HorizonUI/HorizonUI.default.ini","HorizonUI/HorizonUI.user.ini","HorizonUI/HorizonUI.state.ini","HorizonUI/HorizonUI.ini"]; }
+      }
+
+      private function hzSt_HZ40_SCAN_KEYS() : void
+      {
+         if(HZ40_SCAN_KEYS == null) { HZ40_SCAN_KEYS = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]]; }
+      }
+
+      private function hzSt_HZ40_SCAN_CM() : void
+      {
+         if(HZ40_SCAN_CM == null) { HZ40_SCAN_CM = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"]}; }
+      }
+
+      private function hzSt_HZ40_POPUP() : void
+      {
+         if(HZ40_POPUP == null) { HZ40_POPUP = ["HideQuestPopupsWhileScanning","DimTraitPopupDuringBioscan","TraitPopupDim"]; }
+      }
+
+      private function hzSt_HZ40_OPA_V() : void
+      {
+         if(HZ40_OPA_V == null) { HZ40_OPA_V = [-1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6]; }
+      }
+
+      private function hzSt_HZ40_OPA_N() : void
+      {
+         if(HZ40_OPA_N == null) { HZ40_OPA_N = ["FOLLOW HUD","0.20","0.30","0.40","0.50","0.60","0.70","0.80","0.90","1.00","1.10","1.20","1.30","1.40","1.50","1.60"]; }
+      }
+
+      private function hzSt_HZ40_MAR_V() : void
+      {
+         if(HZ40_MAR_V == null) { HZ40_MAR_V = [-1,20,30,40,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200]; }
+      }
+
+      private function hzSt_HZ40_MAR_N() : void
+      {
+         if(HZ40_MAR_N == null) { HZ40_MAR_N = ["FOLLOW HUD","20","30","40","50","60","70","80","90","100","110","120","130","140","150","160","170","180","190","200"]; }
+      }
+
+      private function hzSt_HZ40_CARDS() : void
+      {
+         if(HZ40_CARDS == null) { HZ40_CARDS = ["HorizonCard_mc","HorizonVitals_mc","HorizonEnv_mc","HorizonAffl_mc","HorizonQuest_mc","HorizonCompactQuest_mc","HorizonAmmo_mc","HorizonCompact_mc","HorizonCompass_mc","HorizonChar_mc","HorizonXp_mc"]; }
+      }
+
+      private function hzSt_HZ43_VIT_CARDS() : void
+      {
+         if(HZ43_VIT_CARDS == null) { HZ43_VIT_CARDS = ["HorizonCard_mc","HorizonVitals_mc","HorizonCompact_mc"]; }
+      }
+
+      private function hzSt_HZ41_VIT_KEYS() : void
+      {
+         if(HZ41_VIT_KEYS == null) { HZ41_VIT_KEYS = ["ScanShowVitalsHealth","ScanShowVitalsO2","ScanShowVitalsBoost"]; }
+      }
+
+      private function hzSt_HZ41_VIT_IDS() : void
+      {
+         if(HZ41_VIT_IDS == null) { HZ41_VIT_IDS = ["hp","o2","bo"]; }
+      }
+
+      private function hzSt_HZ41_VIT_LBL() : void
+      {
+         if(HZ41_VIT_LBL == null) { HZ41_VIT_LBL = ["HEALTH","O2","BOOST"]; }
+      }
+
+      private function hzSt_HZ41_SA_PANELS() : void
+      {
+         if(HZ41_SA_PANELS == null) { HZ41_SA_PANELS = ["Planet","Bioscan","Signals","Traits","Social","Compass","Mode","Hints","Vitals"]; }
+      }
+
+      private function hzSt_HZ41_SA_NAMES() : void
+      {
+         if(HZ41_SA_NAMES == null) { HZ41_SA_NAMES = ["PLANET","BIOSCAN","SIGNALS","TRAITS + RESOURCES","PERSON","COMPASS","MODE","BUTTON HINTS","VITALS"]; }
+      }
+
+      private function hzSt_HZ41_SA_CMP() : void
+      {
+         if(HZ41_SA_CMP == null) { HZ41_SA_CMP = ["Planet","Bioscan","Signals","Traits","Compass"]; }
+      }
+
+      private function hzStName() : String
+      {
+         if(this.hzStStep == 59) { return "fields"; }
+         if(this.hzStStep == 60) { return "arm"; }
+         if(this.hzStStep == 61) { return "cards"; }
+         if(this.hzStStep < 0 || this.hzStStep > 61) { return "done"; }
+         var a:Array = ["HZ_TY_SIZE","HZ_TY_ALPHA","HZ_SET_TABS","HZ_SET_DEF","HZ35_INFO","HZ_CARDCOLS","HZ_ACCENTS","HZ_SET_TGS","HZ_ML_CHIPS","HZ31_DEF","HZ34_CARDS","HZ_CARD","HZ_RULE_NAMES","HZ_CARDNAMES","HZ_TONE_NAMES","HZ_FONT_NAMES","HZ_FONT_IDS","HZ_TGANCHOR_NAMES","HZ_LAY_KEYS","HZ_LAY_NAMES","HZ_HDRSTYLE_NAMES","HZ_SET_KEYS","HZ_SET_ACCNAMES","HZ_ML_KIND","HZ_SET_TGS_N","HZ_SET_SCRH","HZ_SET_SCRH_N","HZ_RAR","HZ_RARN","HZ_TIME_NAMES","HZ_CLOCK_NAMES","HZ_TEMP_NAMES","HZ_AFLAY_NAMES","HZ_XH_NAMES","HZ_RING_NAMES","HZ_FOL_PAL","HZ_FOL_NAMES","HZ31_KEYS","HZ31_PROBE","HZ31_FONT_OPTS","HZ31_FONT_IDS","HZ30_MODS","HZ35_TOK","hz37_FILES","HZ40_SCAN_KEYS","HZ40_SCAN_CM","HZ40_POPUP","HZ40_OPA_V","HZ40_OPA_N","HZ40_MAR_V","HZ40_MAR_N","HZ40_CARDS","HZ43_VIT_CARDS","HZ41_VIT_KEYS","HZ41_VIT_IDS","HZ41_VIT_LBL","HZ41_SA_PANELS","HZ41_SA_NAMES","HZ41_SA_CMP"];
+         return String(a[this.hzStStep]);
+      }
+      private function hzStRun0() : void
+      {
+         if(this.hzStStep == 0) { this.hzSt_HZ_TY_SIZE(); return; }
+         if(this.hzStStep == 1) { this.hzSt_HZ_TY_ALPHA(); return; }
+         if(this.hzStStep == 2) { this.hzSt_HZ_SET_TABS(); return; }
+         if(this.hzStStep == 3) { this.hzSt_HZ_SET_DEF(); return; }
+         if(this.hzStStep == 4) { this.hzSt_HZ35_INFO(); return; }
+         if(this.hzStStep == 5) { this.hzSt_HZ_CARDCOLS(); return; }
+         if(this.hzStStep == 6) { this.hzSt_HZ_ACCENTS(); return; }
+         if(this.hzStStep == 7) { this.hzSt_HZ_SET_TGS(); return; }
+         if(this.hzStStep == 8) { this.hzSt_HZ_ML_CHIPS(); return; }
+         if(this.hzStStep == 9) { this.hzSt_HZ31_DEF(); return; }
+         if(this.hzStStep == 10) { this.hzSt_HZ34_CARDS(); return; }
+         if(this.hzStStep == 11) { this.hzSt_HZ_CARD(); return; }
+      }
+      private function hzStRun1() : void
+      {
+         if(this.hzStStep == 12) { this.hzSt_HZ_RULE_NAMES(); return; }
+         if(this.hzStStep == 13) { this.hzSt_HZ_CARDNAMES(); return; }
+         if(this.hzStStep == 14) { this.hzSt_HZ_TONE_NAMES(); return; }
+         if(this.hzStStep == 15) { this.hzSt_HZ_FONT_NAMES(); return; }
+         if(this.hzStStep == 16) { this.hzSt_HZ_FONT_IDS(); return; }
+         if(this.hzStStep == 17) { this.hzSt_HZ_TGANCHOR_NAMES(); return; }
+         if(this.hzStStep == 18) { this.hzSt_HZ_LAY_KEYS(); return; }
+         if(this.hzStStep == 19) { this.hzSt_HZ_LAY_NAMES(); return; }
+         if(this.hzStStep == 20) { this.hzSt_HZ_HDRSTYLE_NAMES(); return; }
+         if(this.hzStStep == 21) { this.hzSt_HZ_SET_KEYS(); return; }
+         if(this.hzStStep == 22) { this.hzSt_HZ_SET_ACCNAMES(); return; }
+         if(this.hzStStep == 23) { this.hzSt_HZ_ML_KIND(); return; }
+      }
+      private function hzStRun2() : void
+      {
+         if(this.hzStStep == 24) { this.hzSt_HZ_SET_TGS_N(); return; }
+         if(this.hzStStep == 25) { this.hzSt_HZ_SET_SCRH(); return; }
+         if(this.hzStStep == 26) { this.hzSt_HZ_SET_SCRH_N(); return; }
+         if(this.hzStStep == 27) { this.hzSt_HZ_RAR(); return; }
+         if(this.hzStStep == 28) { this.hzSt_HZ_RARN(); return; }
+         if(this.hzStStep == 29) { this.hzSt_HZ_TIME_NAMES(); return; }
+         if(this.hzStStep == 30) { this.hzSt_HZ_CLOCK_NAMES(); return; }
+         if(this.hzStStep == 31) { this.hzSt_HZ_TEMP_NAMES(); return; }
+         if(this.hzStStep == 32) { this.hzSt_HZ_AFLAY_NAMES(); return; }
+         if(this.hzStStep == 33) { this.hzSt_HZ_XH_NAMES(); return; }
+         if(this.hzStStep == 34) { this.hzSt_HZ_RING_NAMES(); return; }
+         if(this.hzStStep == 35) { this.hzSt_HZ_FOL_PAL(); return; }
+      }
+      private function hzStRun3() : void
+      {
+         if(this.hzStStep == 36) { this.hzSt_HZ_FOL_NAMES(); return; }
+         if(this.hzStStep == 37) { this.hzSt_HZ31_KEYS(); return; }
+         if(this.hzStStep == 38) { this.hzSt_HZ31_PROBE(); return; }
+         if(this.hzStStep == 39) { this.hzSt_HZ31_FONT_OPTS(); return; }
+         if(this.hzStStep == 40) { this.hzSt_HZ31_FONT_IDS(); return; }
+         if(this.hzStStep == 41) { this.hzSt_HZ30_MODS(); return; }
+         if(this.hzStStep == 42) { this.hzSt_HZ35_TOK(); return; }
+         if(this.hzStStep == 43) { this.hzSt_hz37_FILES(); return; }
+         if(this.hzStStep == 44) { this.hzSt_HZ40_SCAN_KEYS(); return; }
+         if(this.hzStStep == 45) { this.hzSt_HZ40_SCAN_CM(); return; }
+         if(this.hzStStep == 46) { this.hzSt_HZ40_POPUP(); return; }
+         if(this.hzStStep == 47) { this.hzSt_HZ40_OPA_V(); return; }
+      }
+      private function hzStRun4() : void
+      {
+         if(this.hzStStep == 48) { this.hzSt_HZ40_OPA_N(); return; }
+         if(this.hzStStep == 49) { this.hzSt_HZ40_MAR_V(); return; }
+         if(this.hzStStep == 50) { this.hzSt_HZ40_MAR_N(); return; }
+         if(this.hzStStep == 51) { this.hzSt_HZ40_CARDS(); return; }
+         if(this.hzStStep == 52) { this.hzSt_HZ43_VIT_CARDS(); return; }
+         if(this.hzStStep == 53) { this.hzSt_HZ41_VIT_KEYS(); return; }
+         if(this.hzStStep == 54) { this.hzSt_HZ41_VIT_IDS(); return; }
+         if(this.hzStStep == 55) { this.hzSt_HZ41_VIT_LBL(); return; }
+         if(this.hzStStep == 56) { this.hzSt_HZ41_SA_PANELS(); return; }
+         if(this.hzStStep == 57) { this.hzSt_HZ41_SA_NAMES(); return; }
+         if(this.hzStStep == 58) { this.hzSt_HZ41_SA_CMP(); return; }
+         if(this.hzStStep == 59) { this.hzInitFields(); return; }
+         if(this.hzStStep == 60) { this.hzArmOnFrame(); return; }
+         if(this.hzStStep == 61) { this.hzStDone = true; this.hzBuildCards(); return; }
+      }
+      private function hzStRun() : void
+      {
+         if(this.hzStStep < 12) { this.hzStRun0(); return; }
+         if(this.hzStStep < 24) { this.hzStRun1(); return; }
+         if(this.hzStStep < 36) { this.hzStRun2(); return; }
+         if(this.hzStStep < 48) { this.hzStRun3(); return; }
+         if(this.hzStStep < 59) { this.hzStRun4(); return; }
+         this.hzStRun4();
+      }
+      private function hzErrText(e:Error) : String
+      {
+         if(e == null) { return "Error"; }
+         return e.name + " #" + e.errorID + " " + e.message;
+      }
+      public function hzDllLog(s:String) : void
+      {
+         if(s == null || s.length == 0) { return; }
+         if(this.hzDllLogQ == null) { this.hzDllLogQ = []; }
+         this.hzDllLogQ.push(s);
+      }
+      public function hzTakeDllLog() : String
+      {
+         if(this.hzDllLogQ == null || this.hzDllLogQ.length == 0) { return ""; }
+         return String(this.hzDllLogQ.shift());
+      }
+      // First Horizon action. Queues the ctor line and does not touch a table.
+      // HUDMenu onAddedToStage calls this. Log a thrown Error through hzDllLog.
+      public function hzCtor() : void
+      {
+         if(this.hzCtorStarted) { return; }
+         this.hzCtorStarted = true;
+         this.hzDllLog("HUD ctor start 0.43.0.15");
+      }
+      // mode peek names the next stage. mode run executes that one stage.
+      public function hzCtorStep(mode:String) : String
+      {
+         this.hzCtor();
+         var n:String = this.hzStName();
+         if(n == "done") { this.hzStDone = true; return "done"; }
+         if(mode == "run")
+         {
+            try { this.hzStRun(); this.hzDllLog("HUD init " + n); }
+            catch(e:Error)
+            {
+               this.hzDllLog("HUD ctor error " + n + " " + this.hzErrText(e));
+               this.hzNoteErr("hzBuild." + n, e);
+            }
+            this.hzStStep++;
+            if(this.hzStName() == "done") { this.hzStDone = true; }
+         }
+         return n;
+      }
+      private function hzInitSt0() : void
+      {
+         this.hzSt_HZ_TY_SIZE();
+         this.hzSt_HZ_TY_ALPHA();
+         this.hzSt_HZ_SET_TABS();
+         this.hzSt_HZ_SET_DEF();
+         this.hzSt_HZ35_INFO();
+         this.hzSt_HZ_CARDCOLS();
+         this.hzSt_HZ_ACCENTS();
+         this.hzSt_HZ_SET_TGS();
+         this.hzSt_HZ_ML_CHIPS();
+         this.hzSt_HZ31_DEF();
+         this.hzSt_HZ34_CARDS();
+         this.hzSt_HZ_CARD();
+      }
+      private function hzInitSt1() : void
+      {
+         this.hzSt_HZ_RULE_NAMES();
+         this.hzSt_HZ_CARDNAMES();
+         this.hzSt_HZ_TONE_NAMES();
+         this.hzSt_HZ_FONT_NAMES();
+         this.hzSt_HZ_FONT_IDS();
+         this.hzSt_HZ_TGANCHOR_NAMES();
+         this.hzSt_HZ_LAY_KEYS();
+         this.hzSt_HZ_LAY_NAMES();
+         this.hzSt_HZ_HDRSTYLE_NAMES();
+         this.hzSt_HZ_SET_KEYS();
+         this.hzSt_HZ_SET_ACCNAMES();
+         this.hzSt_HZ_ML_KIND();
+      }
+      private function hzInitSt2() : void
+      {
+         this.hzSt_HZ_SET_TGS_N();
+         this.hzSt_HZ_SET_SCRH();
+         this.hzSt_HZ_SET_SCRH_N();
+         this.hzSt_HZ_RAR();
+         this.hzSt_HZ_RARN();
+         this.hzSt_HZ_TIME_NAMES();
+         this.hzSt_HZ_CLOCK_NAMES();
+         this.hzSt_HZ_TEMP_NAMES();
+         this.hzSt_HZ_AFLAY_NAMES();
+         this.hzSt_HZ_XH_NAMES();
+         this.hzSt_HZ_RING_NAMES();
+         this.hzSt_HZ_FOL_PAL();
+      }
+      private function hzInitSt3() : void
+      {
+         this.hzSt_HZ_FOL_NAMES();
+         this.hzSt_HZ31_KEYS();
+         this.hzSt_HZ31_PROBE();
+         this.hzSt_HZ31_FONT_OPTS();
+         this.hzSt_HZ31_FONT_IDS();
+         this.hzSt_HZ30_MODS();
+         this.hzSt_HZ35_TOK();
+         this.hzSt_hz37_FILES();
+         this.hzSt_HZ40_SCAN_KEYS();
+         this.hzSt_HZ40_SCAN_CM();
+         this.hzSt_HZ40_POPUP();
+         this.hzSt_HZ40_OPA_V();
+      }
+      private function hzInitSt4() : void
+      {
+         this.hzSt_HZ40_OPA_N();
+         this.hzSt_HZ40_MAR_V();
+         this.hzSt_HZ40_MAR_N();
+         this.hzSt_HZ40_CARDS();
+         this.hzSt_HZ43_VIT_CARDS();
+         this.hzSt_HZ41_VIT_KEYS();
+         this.hzSt_HZ41_VIT_IDS();
+         this.hzSt_HZ41_VIT_LBL();
+         this.hzSt_HZ41_SA_PANELS();
+         this.hzSt_HZ41_SA_NAMES();
+         this.hzSt_HZ41_SA_CMP();
+      }
+      private function hzInitStatics() : Array
+      {
+         if(!this.hzStDone) { return []; }
+         this.hzInitSt0();
+         this.hzInitSt1();
+         this.hzInitSt2();
+         this.hzInitSt3();
+         this.hzInitSt4();
+         return [];
       }
 
       private function hzUseStatics() : void
@@ -2385,18 +2840,20 @@
 
       public function hzEnsureHud() : Boolean
       {
+         this.hzCtor();
+         if(!this.hzStDone) { return this.HorizonVitals_mc != null; }
          this.hzInitFields();
-         try { this.hzBoot(); } catch(eBoot:Error) { }
-         try { this.hzArmOnFrame(); } catch(e0:Error) { }
+         try { this.hzBoot(); } catch(eBoot:Error) { this.hzDllLog("HUD ctor error hzBoot " + this.hzErrText(eBoot)); this.hzNoteErr("hzBuild.hzBoot", eBoot); }
+         try { this.hzArmOnFrame(); } catch(e0:Error) { this.hzDllLog("HUD ctor error arm " + this.hzErrText(e0)); }
          if(this.HorizonVitals_mc == null)
          {
-            try { this.hzBuild(); } catch(e1:Error) { this.hzNoteErr("hzEnsureHud.hzBuild",e1); }
+            try { this.hzBuild(); } catch(e1:Error) { this.hzDllLog("HUD ctor error hzBuild " + this.hzErrText(e1)); this.hzNoteErr("hzEnsureHud.hzBuild",e1); }
          }
          if(this.HorizonVitals_mc == null && this.HorizonCard_mc == null)
          {
-            try { this.hzBuildCards(); } catch(e1b:Error) { this.hzNoteErr("hzEnsureHud.hzBuildCards",e1b); }
+            try { this.hzBuildCards(); } catch(e1b:Error) { this.hzDllLog("HUD ctor error hzBuildCards " + this.hzErrText(e1b)); this.hzNoteErr("hzEnsureHud.hzBuildCards",e1b); }
          }
-         try { this.hzArmOnFrame(); } catch(e2:Error) { }
+         try { this.hzArmOnFrame(); } catch(e2:Error) { this.hzDllLog("HUD ctor error arm " + this.hzErrText(e2)); }
          try
          {
             if(!this.hzLaidOut)
@@ -2412,14 +2869,17 @@
 
       private function hzBuild() : void
       {
+         this.hzCtor();
+         if(!this.hzStDone) { return; }
          this.hzInitFields();
-         try { this.hzArmOnFrame(); } catch(eArm0:Error) { }
+         try { this.hzArmOnFrame(); } catch(eArm0:Error) { this.hzDllLog("HUD ctor error arm " + this.hzErrText(eArm0)); }
          try
          {
             this.hzBuildCards();
          }
          catch(e:Error)
          {
+            this.hzDllLog("HUD ctor error hzBuild " + this.hzErrText(e));
             this.hzNoteErr("hzBuild",e);
             throw e;
          }
@@ -2435,7 +2895,7 @@
          var f:Number = c < 0 ? 1 : Math.max(0,Math.min(1,c));
          this.hzJetPct.text = Math.round(f * 100) + "%";
          if(this.hzCJet) { this.hzCJet.text = Math.round(f * 100) + "%"; this.hzMeter(this.hzCJetBar,80,f,f < 0.25 ? HZ_RED : HZ_ACCENT); }
-         this.hzMeter(this.hzJetBar,HZ_W - 32,f,f < 0.25 ? HZ_RED : HZ_ACCENT);
+         if(this.hzJetBar != null) { this.hzMeter(this.hzJetBar,HZ_W - 32,f,f < 0.25 ? HZ_RED : HZ_ACCENT); }
          this.hzDot(this.hzDotJet,f < 0.25 ? HZ_RED : (f < 0.5 ? HZ_YELLOW : HZ_GREEN));
          this.hzJetTrack(c);
          this.hzRefreshVisibility();
@@ -2570,7 +3030,7 @@
             var hf:Number = hp / mhp;
             this.hzVitHpF = hf;
             var hc:uint = hf <= 0.3 ? HZ_RED : (hf <= 0.6 ? HZ_YELLOW : HZ_GREEN);
-            this.hzMeter(this.hzVitHpBar,HZ_W - 32,hf,hc);
+            if(this.hzVitHpBar != null) { this.hzMeter(this.hzVitHpBar,HZ_W - 32,hf,hc); }
             if(this.hzVnHp) { this.hzVnHp.text = Math.round(hp) + " / " + Math.round(mhp); this.hzMeter(this.hzVnHpBar,HZ_VN_W - 28,hf,this.hz26WarnCol(hf,HZ_GREEN)); this.hzTxtTint(this.hzVnHp,hf < 0.35 ? this.hz26WarnCol(hf,HZ_GREEN) : null); this.hz26VnWarn(0,hf); }
             if(this.hzCHp) { this.hzCHp.text = Math.round(hp) + " / " + Math.round(mhp); this.hzMeter(this.hzCHpBar,80,hf,hc); }
             this.hzDot(this.hzDotVit,hc);
@@ -2583,7 +3043,7 @@
          {
             this.hzVitO2.text = Math.round(o2 / mo2 * 100) + "%";
             if(this.hzVnO2) { this.hzVnO2.text = Math.round(o2 / mo2 * 100) + "%"; this.hzMeter(this.hzVnO2Bar,HZ_VN_W - 28,o2 / mo2,this.hz26WarnCol(o2 / mo2,HZ_O2_BLUE)); this.hzTxtTint(this.hzVnO2,o2 / mo2 < 0.35 ? this.hz26WarnCol(o2 / mo2,HZ_O2_BLUE) : null); this.hz26VnWarn(1,o2 / mo2); }
-            this.hzMeter(this.hzVitO2Bar,HZ_W - 32,o2 / mo2,o2 / mo2 < 0.25 ? 0xF2735F : HZ_ACCENT);
+            if(this.hzVitO2Bar != null) { this.hzMeter(this.hzVitO2Bar,HZ_W - 32,o2 / mo2,o2 / mo2 < 0.25 ? 0xF2735F : HZ_ACCENT); }
             if(this.hzCO2) { this.hzCO2.text = Math.round(o2 / mo2 * 100) + "%"; this.hzMeter(this.hzCO2Bar,80,o2 / mo2,o2 / mo2 < 0.25 ? HZ_RED : HZ_ACCENT); }
          }
          if(!isNaN(o2) && mo2 > 0) { this.hzVitO2F = o2 / mo2; }
@@ -5509,6 +5969,7 @@
          a.push("ModuleNoteCompact=" + (Number(p.ModuleNoteCompact) >= 0.5 || p.ModuleNoteCompact === true ? "1" : "0"));
          a.push("; 1 = play the Horizon UI welcome splash after every save load");
          a.push("ShowWelcomeOnLoad=" + (Number(p.ShowWelcomeOnLoad) >= 0.5 || p.ShowWelcomeOnLoad === true ? "1" : "0"));
+         a.push("StartupIntro=" + (Number(p.StartupIntro) >= 0.5 || p.StartupIntro === true ? "1" : "0"));
          a.push("");
          try { this.hz31IniLines(a,p); } catch(err31w:Error) { }
          try { this.hz40ScanIniLines(a,p); } catch(err40w:Error) { }
@@ -5592,7 +6053,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.14";
+      private static const HZ_BUILD:String = "0.43.0.15";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static var HZ_SET_TGS:Array;
       private static var HZ_SET_TGS_N:Array;
@@ -14431,6 +14892,7 @@
       private var hz34Cm:Object;
       private var hz34NoteCmp:Boolean = true;
       private var hzSplashWelcome:Boolean = true;
+      private var hzStartupIntro:Boolean = false;
       private var hzSplash:Sprite = null;
       private var hzSplashOn:Boolean = false;
       private var hzSplashT0:Number = 0;
@@ -14473,6 +14935,7 @@
          if(k == "vitalslayout") { this.hz42VL = (!isNaN(nv) && nv >= 0.5) ? 1 : 0; this.hzLaidOut = false; return true; }   // v0.42.0
          if(k == "modulenotecompact") { this.hz34NoteCmp = !isNaN(nv) && nv >= 0.5; return true; }
          if(k == "showwelcomeonload") { this.hzSplashWelcome = !isNaN(nv) && nv >= 0.5; return true; }
+         if(k == "startupintro") { this.hzStartupIntro = !isNaN(nv) && nv >= 0.5; return true; }
          for each(var c:Array in HZ34_CARDS)
          {
             var n:String = String(c[0]).toLowerCase();
@@ -14490,6 +14953,7 @@
          }
          o.ModuleNoteCompact = this.hz34NoteCmp ? 1 : 0;
          o.ShowWelcomeOnLoad = this.hzSplashWelcome ? 1 : 0;
+         o.StartupIntro = this.hzStartupIntro ? 1 : 0;
          o.VitalsLayout = this.hz42VL;   // v0.42.0
       }
       private function hz34SetLive(p:Object) : void
@@ -14513,6 +14977,7 @@
          }
          if(p.ModuleNoteCompact !== undefined) { this.hz34NoteCmp = Number(p.ModuleNoteCompact) >= 0.5 || p.ModuleNoteCompact === true; }
          if(p.ShowWelcomeOnLoad !== undefined) { this.hzSplashWelcome = Number(p.ShowWelcomeOnLoad) >= 0.5 || p.ShowWelcomeOnLoad === true; }
+         if(p.StartupIntro !== undefined) { this.hzStartupIntro = Number(p.StartupIntro) >= 0.5 || p.StartupIntro === true; }
          if(p.VitalsLayout !== undefined)   // v0.42.0: live preview / cancel
          {
             var vl:int = Number(p.VitalsLayout) >= 0.5 ? 1 : 0;
@@ -14732,10 +15197,12 @@
 
       public function hzSplashOnLoad() : void
       {
+         if(!this.hzStartupIntro) { this.hzDllLog("splash skipped"); return; }
          if(this.HorizonVitals_mc == null) { return; }
-         if(!this.hzSplashWelcome) { return; }
+         if(!this.hzSplashWelcome) { this.hzDllLog("splash skipped"); return; }
          if(this.hzInCombat) { return; }
          if(this.hzSetIsOpen) { return; }
+         this.hzDllLog("splash start");
          this.hzSplashStart();
       }
 
@@ -16027,7 +16494,8 @@
             var emptyDir:String = this.hz37St.pdir != undefined && String(this.hz37St.pdir).length > 0 ? String(this.hz37St.pdir) : "Data/Interface/HorizonUI/presets/user";
             rows.push({"k":"_hz37pick","l":"PRESET","t":"p","h":"PRESETS","off":true,"n13":true,"note":"No presets yet: save your own below" + (skip > 0 ? " - " + skip + " skipped (see log)" : ""),"info":"Presets are complete looks for Horizon UI. Saved ones go to " + emptyDir + "; the installer can add Moragar's Choice. Removing a saved preset from this list leaves its file there so you can erase it yourself."});
          }
-         rows.push({"k":"ShowWelcomeOnLoad","l":"SHOW WELCOME ON LOAD","t":"b","n13":true,"note":"Horizon UI splash after every save load. Never pauses the game.","info":"On: a short HORIZON UI splash plays after each save load, using your HUD accent. Off: no splash. The game never pauses."});
+         rows.push({"k":"StartupIntro","l":"STARTUP INTRO","t":"b","n13":true,"note":"Off for this test. On plays the welcome splash.","info":"Off: the startup intro never runs, and the log says splash skipped. On: the welcome splash can play after a save load. This test build defaults to off."});
+         rows.push({"k":"ShowWelcomeOnLoad","l":"SHOW WELCOME ON LOAD","t":"b","n13":true,"note":"Horizon UI splash after every save load. Never pauses the game.","info":"On: a short HORIZON UI splash plays after each save load, using your HUD accent. Off: no splash. The game never pauses. STARTUP INTRO must also be on."});
          rows.push({"k":"_hz37apply","l":"APPLY SELECTED PRESET","t":"x","btn":"APPLY","off":p == null,"n13":true,"note":this.hz37Note("_hz37apply",null),"info":"Your settings become exactly the defaults plus what the preset sets - anything it does not list goes back to its default. Your settings key, ScreenHeight and debug switches ([Debug]) stay as they are. Applies right away; UNDO LAST PRESET puts your old settings back."});
          rows.push({"k":"_hz37save","l":"SAVE CURRENT AS PRESET","t":"x","btn":"SAVE","n13":true,"note":this.hz37Note("_hz37save",null),"info":"Saves your current look as a preset in Data/Interface/HorizonUI/presets/user: every setting that differs from the defaults (card positions, sizes, colors, fonts, Comms and Scanner included; not your settings key or ScreenHeight). Type a name with the keyboard; with a controller, confirm the suggested name."});
          var delOff:Boolean = p == null || !p.u;

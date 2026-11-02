@@ -4,23 +4,23 @@
 // res/HorizonUI.rc.in includes this header, and the plugin logs and sends the same
 // string (or the version resource that this header produced). Do not copy the
 // numbers into the resource script or into a log line.
-// Product version matches the file version (0.43.0.14). The settings-schema string
+// Product version matches the file version (0.43.0.15). The settings-schema string
 // in the plugin (HZF::kVersion, "0.42.0") is a different value: preset age and the
 // update backup compare against that, not against this file version.
-// 0.43.0.14 is a pre-release dev build. It assigns the static tables Scaleform
-// left null, which is the TypeError #1009 that kept the HUD vanilla after 0.43.0.9.
+// 0.43.0.15 is a pre-release dev build. Static tables are one small function each,
+// and the DLL logs each startup stage. The startup intro defaults to off.
 // Last modified: 2026-11-01.
 
 #define HZ_FILE_VERSION_MAJOR 0
 #define HZ_FILE_VERSION_MINOR 43
 #define HZ_FILE_VERSION_PATCH 0
-#define HZ_FILE_VERSION_BUILD 14
-#define HZ_FILE_VERSION_STR "0.43.0.14"
+#define HZ_FILE_VERSION_BUILD 15
+#define HZ_FILE_VERSION_STR "0.43.0.15"
 
-// TEST_NOTE 0.43.0.14: first pass. hzInitStatics assigns the static tables
-// before boot, build, F11, and splash. Not approved.
-// Long "..." notices still need an in-game look.
-// VORTEX_INSTALL 0.43.0.14: keep 0.43.0.7 in Vortex until this 0.43.0.14
+// TEST_NOTE 0.43.0.15: first pass. One small function per static table.
+// The DLL logs HUD ctor start, then each stage. Startup intro defaults off.
+// Not approved. Long "..." notices still need an in-game look.
+// VORTEX_INSTALL 0.43.0.15: keep 0.43.0.7 in Vortex until this 0.43.0.15
 // build is installed over it. Back up settings first. Do not delete files.
 
 // 0.43.0.9: 0 is the release state. 1 writes the verbose HUD-message trace (the
