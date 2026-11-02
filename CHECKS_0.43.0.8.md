@@ -2,6 +2,26 @@
 
 An independent review will follow later. Do not treat this as approved.
 
+## 0.43.0.16 — HUD invokes stay on the HUD thread, one card per frame
+
+Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.16**. `HZ_COMMS_MSG_LOG` and `HZ_HUD_MSG_CAPTURE` stay `0`.
+
+In-game 0.43.0.15 (America/Phoenix, 2026-11-01, about 19:59) crashed on save load. The user rolled back to 0.43.0.7. `HorizonUI 0.43.0.15 loaded` and `HUD ctor start 0.43.0.15` were on ui tid 507540. Every static stage from `HZ_TY_SIZE` through `arm` logged `HUD stage begin` and `HUD init` (62 begins, 61 inits). The last line was `HUD stage begin cards` at 19:59:10.131. The dump `Starfield_11-02-02-59.dmp` was written at 19:59:11.513. There was no `HUD ctor error`, no `HUD ctor stages done`, and no `splash skipped`. The stage lines used many movie-advance thread ids, not only 507540. That rules out the single-function size theory. The native crash is inside card build, and the prime suspect is a HUDMenu invoke from another movie's AdvanceFrame.
+
+`PollScaleform`, `HudCtorPump`, `DrainHudDllLog`, and every HUDMenu `Invoke` now run only when the advancing root is the stored HUDMenu root and the thread is the first HUD-root thread (`UiTidAllowsHudWork`). A later thread returns before `PollScaleform`. `MenuMovie` applies the same rule to every HUDMenu invoke, including `hz41DllScan`, `hzSetDllFileVersion`, and `hzCrossName`. The first skip logs once: `hud: skip HUDMenu invoke on tid N (ui tid M)`. HUDMessagesMenu and Scope stay on their own advances.
+
+The `cards` stage is fourteen frames: accent, vitals, jet, compass, planet, quest, target, fonts, listen, enemy, scan, ini, compact, show. The DLL logs `HUD card begin <name>` before the invoke. The movie logs `HUD card done <name>`, or `HUD ctor error card <name>` with the Error text. A stop on `HUD card begin` names the card that faulted.
+
+`BuildCards` defaults to on (`1` in `HorizonUI.default.ini`, `true` on the instance, `1` in `HZ_SET_DEF`). F11 CONTROLS shows BUILD CARDS at 13 px. The DLL reads the merged ini at load and pushes `hzSetBuildCards` before the stage pump. `BuildCards=0` under `[UI]` in `HorizonUI.user.ini`, written before the save load, skips `hzBuildCards`. The movie logs `cards skipped`, then the pump logs `HUD ctor stages done`. `StartupIntro` stays off, so the log also says `splash skipped`. With cards skipped, `hzEnsureHud` and `hzBuild` do not build cards, and the vanilla HUD stays up.
+
+`StartupIntro` still defaults to off. `hzOnFrame` still returns before hiding vanilla when `HorizonVitals_mc` is null. Outline offsets stay `[-2, 2, -2, 2]`. No new glow. No new F key.
+
+The tree to build is `cursor/note-sibling-keys-4c32`. `feature/message-log-p2-ui` is still 0.43.0.10 (`63a10d4`) until that branch is updated. Build from `C:\HorizonUI-Agent`.
+
+Verified on this Linux checkout (no Windows DLL, no SWF, and no game were built here): preset list tests passed; message log tests passed, including the Scaleform call graph; planet alert 939 ok; reaction match 864 ok. Still unverified in game. Only an in-game test can confirm this. A useful A/B is one load with `BuildCards=0` and, if that reaches `HUD ctor stages done` and `splash skipped` without a dump, a second load with `BuildCards=1`.
+
+PC folders: the desktop worker's checkout is `C:\HorizonUI-Agent`. `C:\HorizonUI` is only the SWF compile tools.
+
 ## 0.43.0.15 — one small function per static table
 
 Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.15**. `HZ_COMMS_MSG_LOG` and `HZ_HUD_MSG_CAPTURE` stay `0`.

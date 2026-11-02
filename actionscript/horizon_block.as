@@ -2185,7 +2185,7 @@
 
       private function hzSt_HZ_SET_DEF() : void
       {
-         if(HZ_SET_DEF == null) { HZ_SET_DEF = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"ShowWelcomeOnLoad":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1,"StartupIntro":0}; }
+         if(HZ_SET_DEF == null) { HZ_SET_DEF = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"ShowWelcomeOnLoad":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1,"StartupIntro":0,"BuildCards":1}; }
       }
 
       private function hzSt_HZ35_INFO() : void
@@ -2536,8 +2536,14 @@
       {
          if(this.hzStStep == 59) { return "fields"; }
          if(this.hzStStep == 60) { return "arm"; }
-         if(this.hzStStep == 61) { return "cards"; }
-         if(this.hzStStep < 0 || this.hzStStep > 61) { return "done"; }
+         if(this.hzStStep >= 61)
+         {
+            if(!this.hzBuildCardsOn) { return this.hzStStep == 61 ? "cards" : "done"; }
+            var cn:String = this.hzCardNameAt(this.hzStStep);
+            if(cn.length == 0) { return "done"; }
+            return "card " + cn;
+         }
+         if(this.hzStStep < 0) { return "done"; }
          var a:Array = ["HZ_TY_SIZE","HZ_TY_ALPHA","HZ_SET_TABS","HZ_SET_DEF","HZ35_INFO","HZ_CARDCOLS","HZ_ACCENTS","HZ_SET_TGS","HZ_ML_CHIPS","HZ31_DEF","HZ34_CARDS","HZ_CARD","HZ_RULE_NAMES","HZ_CARDNAMES","HZ_TONE_NAMES","HZ_FONT_NAMES","HZ_FONT_IDS","HZ_TGANCHOR_NAMES","HZ_LAY_KEYS","HZ_LAY_NAMES","HZ_HDRSTYLE_NAMES","HZ_SET_KEYS","HZ_SET_ACCNAMES","HZ_ML_KIND","HZ_SET_TGS_N","HZ_SET_SCRH","HZ_SET_SCRH_N","HZ_RAR","HZ_RARN","HZ_TIME_NAMES","HZ_CLOCK_NAMES","HZ_TEMP_NAMES","HZ_AFLAY_NAMES","HZ_XH_NAMES","HZ_RING_NAMES","HZ_FOL_PAL","HZ_FOL_NAMES","HZ31_KEYS","HZ31_PROBE","HZ31_FONT_OPTS","HZ31_FONT_IDS","HZ30_MODS","HZ35_TOK","hz37_FILES","HZ40_SCAN_KEYS","HZ40_SCAN_CM","HZ40_POPUP","HZ40_OPA_V","HZ40_OPA_N","HZ40_MAR_V","HZ40_MAR_N","HZ40_CARDS","HZ43_VIT_CARDS","HZ41_VIT_KEYS","HZ41_VIT_IDS","HZ41_VIT_LBL","HZ41_SA_PANELS","HZ41_SA_NAMES","HZ41_SA_CMP"];
          return String(a[this.hzStStep]);
       }
@@ -2616,7 +2622,46 @@
          if(this.hzStStep == 58) { this.hzSt_HZ41_SA_CMP(); return; }
          if(this.hzStStep == 59) { this.hzInitFields(); return; }
          if(this.hzStStep == 60) { this.hzArmOnFrame(); return; }
-         if(this.hzStStep == 61) { this.hzStDone = true; this.hzBuildCards(); return; }
+      }
+      private function hzCardNames() : Array
+      {
+         return ["accent","vitals","jet","compass","planet","quest","target","fonts","listen","enemy","scan","ini","compact","show"];
+      }
+      private function hzCardNameAt(step:int) : String
+      {
+         var names:Array = this.hzCardNames();
+         var i:int = step - 61;
+         if(i < 0 || i >= names.length) { return ""; }
+         return String(names[i]);
+      }
+      private function hzNoteCardsSkip() : void
+      {
+         if(this.hzCardsSkipLogged) { return; }
+         this.hzCardsSkipLogged = true;
+         this.hzDllLog("cards skipped");
+      }
+      private function hzCardRun() : void
+      {
+         if(!this.hzBuildCardsOn)
+         {
+            this.hzNoteCardsSkip();
+            this.hzStDone = true;
+            this.hzStStep = 61 + this.hzCardNames().length;
+            return;
+         }
+         var n:String = this.hzCardNameAt(this.hzStStep);
+         if(n.length == 0) { this.hzStDone = true; return; }
+         try
+         {
+            this.hzCardOne(n);
+            this.hzDllLog("HUD card done " + n);
+         }
+         catch(e:Error)
+         {
+            this.hzDllLog("HUD ctor error card " + n + " " + this.hzErrText(e));
+            this.hzNoteErr("hzBuildCards." + n, e);
+         }
+         if(this.hzStStep >= 61 + this.hzCardNames().length - 1) { this.hzStDone = true; }
       }
       private function hzStRun() : void
       {
@@ -2624,8 +2669,8 @@
          if(this.hzStStep < 24) { this.hzStRun1(); return; }
          if(this.hzStStep < 36) { this.hzStRun2(); return; }
          if(this.hzStStep < 48) { this.hzStRun3(); return; }
-         if(this.hzStStep < 59) { this.hzStRun4(); return; }
-         this.hzStRun4();
+         if(this.hzStStep < 61) { this.hzStRun4(); return; }
+         this.hzCardRun();
       }
       private function hzErrText(e:Error) : String
       {
@@ -2645,11 +2690,16 @@
       }
       // First Horizon action. Queues the ctor line and does not touch a table.
       // HUDMenu onAddedToStage calls this. Log a thrown Error through hzDllLog.
+      public function hzSetBuildCards(v:Object) : void
+      {
+         var s:String = String(v);
+         this.hzBuildCardsOn = !(v == false || v == 0 || v == null || s == "0" || s == "false" || s == "off");
+      }
       public function hzCtor() : void
       {
          if(this.hzCtorStarted) { return; }
          this.hzCtorStarted = true;
-         this.hzDllLog("HUD ctor start 0.43.0.15");
+         this.hzDllLog("HUD ctor start 0.43.0.16");
       }
       // mode peek names the next stage. mode run executes that one stage.
       public function hzCtorStep(mode:String) : String
@@ -2842,16 +2892,17 @@
       {
          this.hzCtor();
          if(!this.hzStDone) { return this.HorizonVitals_mc != null; }
+         if(!this.hzBuildCardsOn) { this.hzNoteCardsSkip(); return false; }
          this.hzInitFields();
          try { this.hzBoot(); } catch(eBoot:Error) { this.hzDllLog("HUD ctor error hzBoot " + this.hzErrText(eBoot)); this.hzNoteErr("hzBuild.hzBoot", eBoot); }
          try { this.hzArmOnFrame(); } catch(e0:Error) { this.hzDllLog("HUD ctor error arm " + this.hzErrText(e0)); }
          if(this.HorizonVitals_mc == null)
          {
-            try { this.hzBuild(); } catch(e1:Error) { this.hzDllLog("HUD ctor error hzBuild " + this.hzErrText(e1)); this.hzNoteErr("hzEnsureHud.hzBuild",e1); }
+            try { this.hzCardOne("vitals"); } catch(e1:Error) { this.hzDllLog("HUD ctor error card vitals " + this.hzErrText(e1)); this.hzNoteErr("hzEnsureHud.hzBuild",e1); }
          }
-         if(this.HorizonVitals_mc == null && this.HorizonCard_mc == null)
+         if(this.HorizonVitals_mc != null && this.HorizonCard_mc == null)
          {
-            try { this.hzBuildCards(); } catch(e1b:Error) { this.hzDllLog("HUD ctor error hzBuildCards " + this.hzErrText(e1b)); this.hzNoteErr("hzEnsureHud.hzBuildCards",e1b); }
+            try { this.hzCardOne("jet"); } catch(e1b:Error) { this.hzDllLog("HUD ctor error card jet " + this.hzErrText(e1b)); this.hzNoteErr("hzEnsureHud.hzBuildCards",e1b); }
          }
          try { this.hzArmOnFrame(); } catch(e2:Error) { this.hzDllLog("HUD ctor error arm " + this.hzErrText(e2)); }
          try
@@ -2871,11 +2922,13 @@
       {
          this.hzCtor();
          if(!this.hzStDone) { return; }
+         if(!this.hzBuildCardsOn) { this.hzNoteCardsSkip(); return; }
          this.hzInitFields();
          try { this.hzArmOnFrame(); } catch(eArm0:Error) { this.hzDllLog("HUD ctor error arm " + this.hzErrText(eArm0)); }
+         if(this.HorizonVitals_mc != null) { return; }
          try
          {
-            this.hzBuildCards();
+            this.hzCardOne("vitals");
          }
          catch(e:Error)
          {
@@ -2906,114 +2959,140 @@
       // if the thin hzBuild wrapper throws.
       private function hzBuildCards() : void
       {
+         if(!this.hzBuildCardsOn) { this.hzNoteCardsSkip(); return; }
+         var n:String = this.hzCardNameAt(61);
+         if(this.HorizonVitals_mc == null) { n = "vitals"; }
+         else if(this.HorizonCard_mc == null) { n = "jet"; }
+         else { return; }
+         this.hzCardOne(n);
+      }
+
+      private function hzCardOne(n:String) : void
+      {
+         if(n == "accent") { this.hzCardAccent(); return; }
+         if(n == "vitals") { this.hzCardVitals(); return; }
+         if(n == "jet") { this.hzCardJet(); return; }
+         if(n == "compass") { this.hzBuildCompass(); return; }
+         if(n == "planet") { this.hzBuildEnv(); return; }
+         if(n == "quest") { this.hzBuildQuest(); return; }
+         if(n == "target") { this.hzBuildTarget(); return; }
+         if(n == "fonts") { this.hzFixFonts(); return; }
+         if(n == "listen") { this.hzCardListen(); return; }
+         if(n == "enemy") { this.hz26Build(); return; }
+         if(n == "scan") { this.hz40Init(); return; }
+         if(n == "ini") { this.hzLoadIni(); return; }
+         if(n == "compact") { this.hzBuildCompact(); return; }
+         if(n == "show") { this.hzCardShow(); return; }
+      }
+
+      private function hzCardAccent() : void
+      {
          this.hzUseStatics();
          this.hzBoot();
-         var bw:Number = HZ_W - 32;
          try { this.HZ_ACCENT = this.hzAccentOf(this.hzAccentChoice); } catch(eAcc:Error) { this.hzNoteErr("hzBuildCards.accent",eAcc); }
-         // Vitals first so a jetpack #1009 cannot leave HorizonVitals_mc null (vanilla stays up).
-         if(this.HorizonVitals_mc == null)
-         {
-            try
-            {
-               this.hzVitOn = true;
-               this.hzVitStep = "enter";
-               this.HorizonVitals_mc = new Sprite();
-               this.hzVitOld = new Sprite();
-               this.HorizonVitals_mc.addChild(this.hzVitOld);
-               this.hzDotVit = this.hzCard(this.hzVitOld,HZ_W,128,"vitals","VITALS");
-               this.hzTile(this.hzVitOld,8,HZ_HDR + 6,HZ_W - 16,42);
-               this.hzIcon(this.hzVitOld,"heart",16,HZ_HDR + 12,HZ_ACCENT); if(this.hzIcons != null && this.hzIcons.length > 0) { this.hzIcons[this.hzIcons.length - 1].acc = true; }
-               this.hzVitHpLbl = this.hzText(this.hzVitOld,"HEALTH",33,HZ_HDR + 10,100,10,HZ_ACCENT,false,"lbl",true);
-               this.hzVitHp = this.hzText(this.hzVitOld,"--",HZ_W - 128,HZ_HDR + 7,112,15,HZ_VALUE,true,"val");
-               this.hzVitHpBar = new Sprite(); this.hzVitHpBar.x = 16; this.hzVitHpBar.y = HZ_HDR + 34;
-               this.hzVitOld.addChild(this.hzVitHpBar);
-               this.hzTile(this.hzVitOld,8,HZ_HDR + 52,HZ_W - 16,42);
-               this.hzIcon(this.hzVitOld,"o2",16,HZ_HDR + 58,HZ_ACCENT); if(this.hzIcons != null && this.hzIcons.length > 0) { this.hzIcons[this.hzIcons.length - 1].acc = true; }
-               this.hzVitO2Lbl = this.hzText(this.hzVitOld,"OXYGEN",33,HZ_HDR + 56,100,10,HZ_ACCENT,false,"lbl",true);
-               this.hzVitO2 = this.hzText(this.hzVitOld,"--",HZ_W - 128,HZ_HDR + 53,112,15,HZ_VALUE,true,"val");
-               this.hzVitO2Bar = new Sprite(); this.hzVitO2Bar.x = 16; this.hzVitO2Bar.y = HZ_HDR + 80;
-               this.hzVitOld.addChild(this.hzVitO2Bar);
-               this.hzVitBg = new Sprite();
-               this.hzVitOld.addChild(this.hzVitBg);
-               this.hzMeter(this.hzVitHpBar,bw,1,HZ_GREEN);
-               this.hzMeter(this.hzVitO2Bar,bw,1,HZ_ACCENT);
-               this.hzBuildVitNew();
-               this.HorizonVitals_mc.scaleX = this.HorizonVitals_mc.scaleY = HZ_SCALE;
-               this.HorizonVitals_mc.x = 960 - HZ_W * HZ_SCALE / 2;
-               this.HorizonVitals_mc.y = 746 - 128 * HZ_SCALE;
-               addChild(this.HorizonVitals_mc);
-               this.hzVitOn = false;
-               this.hzNoteDrop("hzBuildCards.vitals");
-            }
-            catch(eVit:Error)
-            {
-               this.HorizonVitals_mc = null;
-               this.hzVitOn = false;
-               var phase:String = "hzBuildCards.vitals";
-               if(this.hzVitStep != null && this.hzVitStep.length > 0 && this.hzVitStep != "enter") { phase = "hzBuildCards.vitals." + this.hzVitStep; }
-               this.hzVitStep = "";
-               this.hzNoteErr(phase,eVit);
-               throw eVit;
-            }
-         }
-         if(this.HorizonCard_mc == null)
-         {
-            try
-            {
-               this.HorizonCard_mc = new Sprite();
-               this.hzDotJet = this.hzCard(this.HorizonCard_mc,HZ_W,56,null,null);
-               this.hzJetIcon(this.HorizonCard_mc,10,7);
-               try
-               {
-                  var art:Sprite = this.hzBoostVector(24);
-                  art.x = 6; art.y = 2;
-                  this.HorizonCard_mc.addChild(art);
-                  if(this.hzJetIconVec) { this.hzJetIconVec.visible = false; }
-               }
-               catch(err:Error)
-               {
-               }
-               this.hzText(this.HorizonCard_mc,"JETPACK (BOOST)",34,7,150,12,HZ_LABEL,false,"hdr");
-               this.hzJetPct = this.hzText(this.HorizonCard_mc,"100%",HZ_W - 98,4,72,15,HZ_VALUE,true,"val");
-               this.hzTile(this.HorizonCard_mc,8,HZ_HDR + 6,HZ_W - 16,16);
-               this.hzJetBar = new Sprite(); this.hzJetBar.x = 16; this.hzJetBar.y = HZ_HDR + 12;
-               this.HorizonCard_mc.addChild(this.hzJetBar);
-               this.hzMeter(this.hzJetBar,bw,1,HZ_ACCENT);
-               this.hzBuildJet19();
-               this.HorizonCard_mc.scaleX = this.HorizonCard_mc.scaleY = HZ_SCALE;
-               this.HorizonCard_mc.x = 80;
-               this.HorizonCard_mc.y = 746 - (128 + 10 + 56) * HZ_SCALE;
-               addChild(this.HorizonCard_mc);
-            }
-            catch(eJet:Error)
-            {
-               this.hzNoteErr("hzBuildCards.jet",eJet);
-            }
-         }
+      }
+
+      // Vitals before jetpack so a jetpack #1009 cannot leave HorizonVitals_mc null.
+      private function hzCardVitals() : void
+      {
+         if(this.HorizonVitals_mc != null) { return; }
+         var bw:Number = HZ_W - 32;
          try
          {
-            this.hzBuildCompass();
-            this.hzBuildEnv();
-            this.hzBuildQuest();
-            this.hzBuildTarget();
-            this.hzFixFonts();
-            BSUIDataManager.Subscribe("HudJetpackData",this.hzOnJetpack);
-            BSUIDataManager.Subscribe("PlayerFrequentData",this.hzOnPlayerFrequent);
-            BSUIDataManager.Subscribe("PlayerData",this.hzOnPlayerData);
-            BSUIDataManager.Subscribe("HudCrosshairData",this.hzOnCrosshair);
-            try { BSUIDataManager.Subscribe("HUDVehicleData",this.hz42VehOnData); } catch(e42vs:Error) { }
-            try { BSUIDataManager.Subscribe("ControlMapData",this.hz42VehOnMap); } catch(e42vm:Error) { }
-            try { this.hz26Build(); } catch(err26:Error) { }
-            try { this.hz40Init(); } catch(err40:Error) { }
-            try { this.hzLoadIni(); } catch(eIni:Error) { }
-            try { this.hzBuildCompact(); } catch(eCmp:Error) { }
-            try { this.hzArmOnFrame(); } catch(eArm1:Error) { }
-            try { this.hzRefreshVisibility(); } catch(eVis:Error) { }
+            this.hzVitOn = true;
+            this.hzVitStep = "enter";
+            this.HorizonVitals_mc = new Sprite();
+            this.hzVitOld = new Sprite();
+            this.HorizonVitals_mc.addChild(this.hzVitOld);
+            this.hzDotVit = this.hzCard(this.hzVitOld,HZ_W,128,"vitals","VITALS");
+            this.hzTile(this.hzVitOld,8,HZ_HDR + 6,HZ_W - 16,42);
+            this.hzIcon(this.hzVitOld,"heart",16,HZ_HDR + 12,HZ_ACCENT); if(this.hzIcons != null && this.hzIcons.length > 0) { this.hzIcons[this.hzIcons.length - 1].acc = true; }
+            this.hzVitHpLbl = this.hzText(this.hzVitOld,"HEALTH",33,HZ_HDR + 10,100,10,HZ_ACCENT,false,"lbl",true);
+            this.hzVitHp = this.hzText(this.hzVitOld,"--",HZ_W - 128,HZ_HDR + 7,112,15,HZ_VALUE,true,"val");
+            this.hzVitHpBar = new Sprite(); this.hzVitHpBar.x = 16; this.hzVitHpBar.y = HZ_HDR + 34;
+            this.hzVitOld.addChild(this.hzVitHpBar);
+            this.hzTile(this.hzVitOld,8,HZ_HDR + 52,HZ_W - 16,42);
+            this.hzIcon(this.hzVitOld,"o2",16,HZ_HDR + 58,HZ_ACCENT); if(this.hzIcons != null && this.hzIcons.length > 0) { this.hzIcons[this.hzIcons.length - 1].acc = true; }
+            this.hzVitO2Lbl = this.hzText(this.hzVitOld,"OXYGEN",33,HZ_HDR + 56,100,10,HZ_ACCENT,false,"lbl",true);
+            this.hzVitO2 = this.hzText(this.hzVitOld,"--",HZ_W - 128,HZ_HDR + 53,112,15,HZ_VALUE,true,"val");
+            this.hzVitO2Bar = new Sprite(); this.hzVitO2Bar.x = 16; this.hzVitO2Bar.y = HZ_HDR + 80;
+            this.hzVitOld.addChild(this.hzVitO2Bar);
+            this.hzVitBg = new Sprite();
+            this.hzVitOld.addChild(this.hzVitBg);
+            this.hzMeter(this.hzVitHpBar,bw,1,HZ_GREEN);
+            this.hzMeter(this.hzVitO2Bar,bw,1,HZ_ACCENT);
+            this.hzBuildVitNew();
+            this.HorizonVitals_mc.scaleX = this.HorizonVitals_mc.scaleY = HZ_SCALE;
+            this.HorizonVitals_mc.x = 960 - HZ_W * HZ_SCALE / 2;
+            this.HorizonVitals_mc.y = 746 - 128 * HZ_SCALE;
+            addChild(this.HorizonVitals_mc);
+            this.hzVitOn = false;
+            this.hzNoteDrop("hzBuildCards.vitals");
          }
-         catch(eRest:Error)
+         catch(eVit:Error)
          {
-            this.hzNoteErr("hzBuildCards.rest",eRest);
+            this.HorizonVitals_mc = null;
+            this.hzVitOn = false;
+            var phase:String = "hzBuildCards.vitals";
+            if(this.hzVitStep != null && this.hzVitStep.length > 0 && this.hzVitStep != "enter") { phase = "hzBuildCards.vitals." + this.hzVitStep; }
+            this.hzVitStep = "";
+            this.hzNoteErr(phase,eVit);
+            throw eVit;
          }
+      }
+
+      private function hzCardJet() : void
+      {
+         if(this.HorizonCard_mc != null) { return; }
+         var bw:Number = HZ_W - 32;
+         try
+         {
+            this.HorizonCard_mc = new Sprite();
+            this.hzDotJet = this.hzCard(this.HorizonCard_mc,HZ_W,56,null,null);
+            this.hzJetIcon(this.HorizonCard_mc,10,7);
+            try
+            {
+               var art:Sprite = this.hzBoostVector(24);
+               art.x = 6; art.y = 2;
+               this.HorizonCard_mc.addChild(art);
+               if(this.hzJetIconVec) { this.hzJetIconVec.visible = false; }
+            }
+            catch(err:Error)
+            {
+            }
+            this.hzText(this.HorizonCard_mc,"JETPACK (BOOST)",34,7,150,12,HZ_LABEL,false,"hdr");
+            this.hzJetPct = this.hzText(this.HorizonCard_mc,"100%",HZ_W - 98,4,72,15,HZ_VALUE,true,"val");
+            this.hzTile(this.HorizonCard_mc,8,HZ_HDR + 6,HZ_W - 16,16);
+            this.hzJetBar = new Sprite(); this.hzJetBar.x = 16; this.hzJetBar.y = HZ_HDR + 12;
+            this.HorizonCard_mc.addChild(this.hzJetBar);
+            this.hzMeter(this.hzJetBar,bw,1,HZ_ACCENT);
+            this.hzBuildJet19();
+            this.HorizonCard_mc.scaleX = this.HorizonCard_mc.scaleY = HZ_SCALE;
+            this.HorizonCard_mc.x = 80;
+            this.HorizonCard_mc.y = 746 - (128 + 10 + 56) * HZ_SCALE;
+            addChild(this.HorizonCard_mc);
+         }
+         catch(eJet:Error)
+         {
+            this.hzNoteErr("hzBuildCards.jet",eJet);
+            throw eJet;
+         }
+      }
+
+      private function hzCardListen() : void
+      {
+         BSUIDataManager.Subscribe("HudJetpackData",this.hzOnJetpack);
+         BSUIDataManager.Subscribe("PlayerFrequentData",this.hzOnPlayerFrequent);
+         BSUIDataManager.Subscribe("PlayerData",this.hzOnPlayerData);
+         BSUIDataManager.Subscribe("HudCrosshairData",this.hzOnCrosshair);
+         try { BSUIDataManager.Subscribe("HUDVehicleData",this.hz42VehOnData); } catch(e42vs:Error) { }
+         try { BSUIDataManager.Subscribe("ControlMapData",this.hz42VehOnMap); } catch(e42vm:Error) { }
+      }
+
+      private function hzCardShow() : void
+      {
+         this.hzArmOnFrame();
+         this.hzRefreshVisibility();
       }
 
       private function hzOnPlayerFrequent(e:FromClientDataEvent) : *
@@ -5970,6 +6049,7 @@
          a.push("; 1 = play the Horizon UI welcome splash after every save load");
          a.push("ShowWelcomeOnLoad=" + (Number(p.ShowWelcomeOnLoad) >= 0.5 || p.ShowWelcomeOnLoad === true ? "1" : "0"));
          a.push("StartupIntro=" + (Number(p.StartupIntro) >= 0.5 || p.StartupIntro === true ? "1" : "0"));
+         a.push("BuildCards=" + (Number(p.BuildCards) >= 0.5 || p.BuildCards === true ? "1" : "0"));
          a.push("");
          try { this.hz31IniLines(a,p); } catch(err31w:Error) { }
          try { this.hz40ScanIniLines(a,p); } catch(err40w:Error) { }
@@ -6053,7 +6133,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.15";
+      private static const HZ_BUILD:String = "0.43.0.16";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static var HZ_SET_TGS:Array;
       private static var HZ_SET_TGS_N:Array;
@@ -14893,6 +14973,8 @@
       private var hz34NoteCmp:Boolean = true;
       private var hzSplashWelcome:Boolean = true;
       private var hzStartupIntro:Boolean = false;
+      private var hzBuildCardsOn:Boolean = true;
+      private var hzCardsSkipLogged:Boolean = false;
       private var hzSplash:Sprite = null;
       private var hzSplashOn:Boolean = false;
       private var hzSplashT0:Number = 0;
@@ -14936,6 +15018,7 @@
          if(k == "modulenotecompact") { this.hz34NoteCmp = !isNaN(nv) && nv >= 0.5; return true; }
          if(k == "showwelcomeonload") { this.hzSplashWelcome = !isNaN(nv) && nv >= 0.5; return true; }
          if(k == "startupintro") { this.hzStartupIntro = !isNaN(nv) && nv >= 0.5; return true; }
+         if(k == "buildcards") { this.hzBuildCardsOn = !isNaN(nv) && nv >= 0.5; return true; }
          for each(var c:Array in HZ34_CARDS)
          {
             var n:String = String(c[0]).toLowerCase();
@@ -14954,6 +15037,7 @@
          o.ModuleNoteCompact = this.hz34NoteCmp ? 1 : 0;
          o.ShowWelcomeOnLoad = this.hzSplashWelcome ? 1 : 0;
          o.StartupIntro = this.hzStartupIntro ? 1 : 0;
+         o.BuildCards = this.hzBuildCardsOn ? 1 : 0;
          o.VitalsLayout = this.hz42VL;   // v0.42.0
       }
       private function hz34SetLive(p:Object) : void
@@ -14978,6 +15062,7 @@
          if(p.ModuleNoteCompact !== undefined) { this.hz34NoteCmp = Number(p.ModuleNoteCompact) >= 0.5 || p.ModuleNoteCompact === true; }
          if(p.ShowWelcomeOnLoad !== undefined) { this.hzSplashWelcome = Number(p.ShowWelcomeOnLoad) >= 0.5 || p.ShowWelcomeOnLoad === true; }
          if(p.StartupIntro !== undefined) { this.hzStartupIntro = Number(p.StartupIntro) >= 0.5 || p.StartupIntro === true; }
+         if(p.BuildCards !== undefined) { this.hzBuildCardsOn = Number(p.BuildCards) >= 0.5 || p.BuildCards === true; }
          if(p.VitalsLayout !== undefined)   // v0.42.0: live preview / cancel
          {
             var vl:int = Number(p.VitalsLayout) >= 0.5 ? 1 : 0;
@@ -16494,6 +16579,7 @@
             var emptyDir:String = this.hz37St.pdir != undefined && String(this.hz37St.pdir).length > 0 ? String(this.hz37St.pdir) : "Data/Interface/HorizonUI/presets/user";
             rows.push({"k":"_hz37pick","l":"PRESET","t":"p","h":"PRESETS","off":true,"n13":true,"note":"No presets yet: save your own below" + (skip > 0 ? " - " + skip + " skipped (see log)" : ""),"info":"Presets are complete looks for Horizon UI. Saved ones go to " + emptyDir + "; the installer can add Moragar's Choice. Removing a saved preset from this list leaves its file there so you can erase it yourself."});
          }
+         rows.push({"k":"BuildCards","l":"BUILD CARDS","t":"b","n13":true,"note":"On builds the Horizon cards. Off skips them and logs cards skipped.","info":"On: Horizon builds its cards, one per frame. Off: hzBuildCards never runs, the vanilla HUD stays, and the log says cards skipped. For an A/B test, put BuildCards=0 under [UI] in HorizonUI.user.ini before you load a save. Default is on. STARTUP INTRO stays off for this test."});
          rows.push({"k":"StartupIntro","l":"STARTUP INTRO","t":"b","n13":true,"note":"Off for this test. On plays the welcome splash.","info":"Off: the startup intro never runs, and the log says splash skipped. On: the welcome splash can play after a save load. This test build defaults to off."});
          rows.push({"k":"ShowWelcomeOnLoad","l":"SHOW WELCOME ON LOAD","t":"b","n13":true,"note":"Horizon UI splash after every save load. Never pauses the game.","info":"On: a short HORIZON UI splash plays after each save load, using your HUD accent. Off: no splash. The game never pauses. STARTUP INTRO must also be on."});
          rows.push({"k":"_hz37apply","l":"APPLY SELECTED PRESET","t":"x","btn":"APPLY","off":p == null,"n13":true,"note":this.hz37Note("_hz37apply",null),"info":"Your settings become exactly the defaults plus what the preset sets - anything it does not list goes back to its default. Your settings key, ScreenHeight and debug switches ([Debug]) stay as they are. Applies right away; UNDO LAST PRESET puts your old settings back."});

@@ -1,12 +1,12 @@
 #pragma once
 
-// Purpose: poll follows the stored HUD / HUDMessages movie, not a
-// recorded thread. PollScaleform runs only on the stored HUDMenu
-// root's own AdvanceFrame. HUDMessagesMenu Invokes run only on that
-// movie's own advance. A reused movie-root address is cleared on
-// MenuMovieCreated (ABA). F11 is latched on the job poll and consumed
-// only from that latch. g_uiTid is a log hint only. Author: Moragar.
-// Last modified: 2026-10-29.
+// Purpose: HUDMenu work runs only on the stored HUDMenu root's own
+// AdvanceFrame, and only on the first thread that advanced that root.
+// Later threads skip it. HUDMessagesMenu Invokes stay on that movie's
+// own advance and are not tied to the HUD thread. A reused movie-root
+// address is cleared on MenuMovieCreated (ABA). F11 is latched on the
+// job poll and consumed only from that latch. Author: Moragar.
+// Last modified: 2026-11-01.
 
 #include <cstdint>
 #include <cstring>
@@ -131,11 +131,19 @@ inline bool StaleHudAdoptDue(std::uint64_t a_lastHudPollMs, std::uint64_t a_nowM
 	return a_nowMs < a_lastHudPollMs || (a_nowMs - a_lastHudPollMs) >= a_gapMs;
 }
 
-// Purpose: first HUD-root advance records a log hint. Later tids do
-// not replace it. Not a poll gate. Inputs: recorded hint and this tid.
+// Purpose: first HUD-root advance records the UI thread. Later tids do
+// not replace it. Inputs: recorded tid and this tid.
 inline bool UiTidRecordFirst(std::uint32_t a_recorded, std::uint32_t a_tid)
 {
 	return a_recorded == 0 && a_tid != 0;
+}
+
+// Purpose: HUDMenu Invoke and PollScaleform run only on that recorded
+// thread. A tid of 0, or a thread that is not the recorded one, skips.
+// Inputs: recorded UI tid and this tid. Outputs: true when HUD work may run.
+inline bool UiTidAllowsHudWork(std::uint32_t a_recorded, std::uint32_t a_tid)
+{
+	return a_recorded != 0 && a_tid != 0 && a_recorded == a_tid;
 }
 
 inline bool UiTidSwitchLogDue(std::uint64_t a_lastLogMs, std::uint64_t a_nowMs,
@@ -207,8 +215,9 @@ inline thread_local const void* g_advancingRoot = nullptr;
 inline thread_local PollMovie g_advancingMovie = PollMovie::None;
 
 // Purpose: the same movie-follow / ABA / F11-latch functions the DLL
-// calls. Tests drive this type so a mutant that gates on tid, heals,
-// double-fires F11, or Invokes a foreign movie is caught.
+// calls. Tests drive this type so a mutant that polls a later HUD tid,
+// heals the recorded tid, double-fires F11, or Invokes a foreign movie
+// is caught.
 // Author: Moragar. Last modified: 2026-10-29.
 struct PollGate
 {
@@ -281,6 +290,8 @@ struct PollGate
 		if (kind == PollMovie::Hud) {
 			if (UiTidRecordFirst(uiTidHint, a_tid))
 				uiTidHint = a_tid;
+			if (!UiTidAllowsHudWork(uiTidHint, a_tid))
+				return kind;
 			if (PollAlreadyIn(inHudPoll))
 				return kind;
 			inHudPoll = true;

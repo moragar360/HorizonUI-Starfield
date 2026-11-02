@@ -763,8 +763,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.15", "file version is 0.43.0.15");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 15, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.16", "file version is 0.43.0.16");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 16, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -2621,7 +2621,7 @@ int main()
 			&& main.find("UiTidRecordFirst") != std::string::npos
 			&& main.find("PollMovieForRoot") != std::string::npos
 			&& main.find("hz_ui_tid.h") != std::string::npos,
-			"the UI tid is a first-record log hint from the HUD root advance");
+			"the UI tid is recorded once from the HUD root advance");
 		Expect(main.find("g_uiTid.store(::GetCurrentThreadId()") == std::string::npos
 			&& main.find("AdoptHudAdvanceTid") == std::string::npos
 			&& main.find("UiTidOnHudAdvance") == std::string::npos
@@ -2649,11 +2649,13 @@ int main()
 			const auto next = main.find("void InstallAdvanceHook", hook);
 			const auto body = hook != std::string::npos && next > hook ? main.substr(hook, next - hook) : std::string();
 			Expect(body.find("HookTidAllowsPoll") == std::string::npos
-				&& body.find("skip PollScaleform") == std::string::npos
-				&& body.find("tid == g_uiTid") == std::string::npos
 				&& body.find("g_uiTid.load") != std::string::npos
-				&& body.find("UiTidRecordFirst") != std::string::npos,
-				"the hook does not gate PollScaleform on a recorded tid");
+				&& body.find("UiTidRecordFirst") != std::string::npos
+				&& body.find("UiTidAllowsHudWork") != std::string::npos
+				&& body.find("UiTidAllowsHudWork") < body.find("PollScaleform()")
+				&& body.find("LogHudWrongThreadOnce") != std::string::npos
+				&& main.find("skip HUDMenu invoke") != std::string::npos,
+				"the hook runs PollScaleform only on the recorded HUD thread");
 			Expect(body.find("PollMovieForRoot") != std::string::npos
 				&& body.find("PollHudOnThisAdvance") != std::string::npos
 				&& body.find("PollMsgOnThisAdvance") != std::string::npos
@@ -2714,8 +2716,9 @@ int main()
 			"HUD and HUDMessages polls are split by the advancing movie");
 		Expect(main.find("InvokeOnAdvancingMovie") != std::string::npos
 			&& main.find("InvokeRootMatches") != std::string::npos
-			&& main.find("refuse Invoke") != std::string::npos,
-			"MenuMovie refuses an Invoke whose root is not a_this");
+			&& main.find("refuse Invoke") != std::string::npos
+			&& main.find("UiTidAllowsHudWork") != std::string::npos,
+			"MenuMovie refuses an Invoke whose root is not a_this or whose thread is not the HUD thread");
 		Expect(main.find("g_buildsMu") != std::string::npos
 			&& main.find("lock_guard lk(g_buildsMu)") != std::string::npos
 			&& main.find("g_pushLogged.exchange") != std::string::npos
@@ -3351,7 +3354,10 @@ int main()
 				&& build.find("hzArmOnFrame") != std::string::npos, "hzBuild logs the ctor and waits for staged init");
 			Expect(build.find("HUD ctor error hzBuild ") != std::string::npos
 				&& build.find("hzNoteErr(\"hzBuild\"") != std::string::npos, "hzBuild logs a throw through the DLL before rethrowing");
-			Expect(build.find("hzBuildCards") != std::string::npos, "hzBuild delegates the 0.43.0.7 card body");
+			Expect(build.find("this.hzBuildCards()") == std::string::npos
+				&& build.find("hzNoteCardsSkip") != std::string::npos
+				&& build.find("hzCardOne(\"vitals\")") != std::string::npos,
+				"hzBuild does not run every card in one call");
 		}
 		{
 			const auto cards = AsFnBody(as, "private function hzBuildCards", "private function hzOnPlayerFrequent");
@@ -3453,6 +3459,7 @@ int main()
 				&& tabs.find("HZ_SET_TABS = [") != std::string::npos
 				&& def.find("HZ_SET_DEF = {") != std::string::npos
 				&& def.find("StartupIntro") != std::string::npos
+				&& def.find("BuildCards") != std::string::npos
 				&& info.find("HZ35_INFO = {") != std::string::npos
 				&& info.find("HZ_SET_DEF = {") == std::string::npos
 				&& def.find("HZ35_INFO = {") == std::string::npos
@@ -3462,7 +3469,7 @@ int main()
 				"each static table is its own function, and startup does not run them all at once");
 			const auto ctor = AsFnBody(as, "public function hzCtor()", "public function hzCtorStep");
 			const auto step = AsFnBody(as, "public function hzCtorStep", "private function hzInitSt0");
-			Expect(ctor.find("HUD ctor start 0.43.0.15") != std::string::npos
+			Expect(ctor.find("HUD ctor start 0.43.0.16") != std::string::npos
 				&& ctor.find("hzSt_") == std::string::npos
 				&& step.find("mode == \"run\"") != std::string::npos
 				&& step.find("HUD ctor error ") != std::string::npos,
@@ -3489,6 +3496,15 @@ int main()
 				&& load.find("splash skipped") != std::string::npos
 				&& load.find("splash start") != std::string::npos,
 				"the startup intro defaults off and logs skipped or start");
+			const auto cardsRun = AsFnBody(as, "private function hzCardRun()", "private function hzStRun()");
+			Expect(cardsRun.find("hzNoteCardsSkip") != std::string::npos
+				&& as.find("this.hzDllLog(\"cards skipped\")") != std::string::npos
+				&& cardsRun.find("HUD card done ") != std::string::npos
+				&& cardsRun.find("HUD ctor error card ") != std::string::npos
+				&& cardsRun.find("this.hzBuildCards()") == std::string::npos
+				&& as.find("public function hzSetBuildCards") != std::string::npos
+				&& as.find("private var hzBuildCardsOn:Boolean = true") != std::string::npos,
+				"cards run one at a time, and BuildCards=0 skips them");
 		}
 		{
 			const auto fn = AsFnBody(as, "private function hzFontName", "private function hzApplyTypo");
@@ -3513,6 +3529,7 @@ int main()
 			Expect(job.find("HudCtorPump") == std::string::npos
 				&& sf.find("HudCtorPump()") != std::string::npos
 				&& pump.find("HUD stage begin") != std::string::npos
+				&& pump.find("HUD card begin") != std::string::npos
 				&& pump.find("hzCtorStep") != std::string::npos,
 				"the HUD frame logs one startup stage before it runs");
 		}
@@ -3640,15 +3657,15 @@ int main()
 			"a save load can start the splash");
 		{
 			const auto ver = Slurp("src/hz_version.h");
-			Expect(ver.find("TEST_NOTE 0.43.0.15") != std::string::npos
-				&& ver.find("VORTEX_INSTALL 0.43.0.15") != std::string::npos,
-				"TEST_NOTE and VORTEX_INSTALL name 0.43.0.15");
+			Expect(ver.find("TEST_NOTE 0.43.0.16") != std::string::npos
+				&& ver.find("VORTEX_INSTALL 0.43.0.16") != std::string::npos,
+				"TEST_NOTE and VORTEX_INSTALL name 0.43.0.16");
 		}
 		Expect(as.find("MISSED BADGE") == std::string::npos,
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.15\"") != std::string::npos, "HUD movie build id is 0.43.0.15");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.16\"") != std::string::npos, "HUD movie build id is 0.43.0.16");
 		Expect(as.find("greyed") == std::string::npos, "notes use American grayed");
 		Expect(as.find("grayed") != std::string::npos, "locked rows are grayed");
 		Expect(as.find("F12") == std::string::npos || as.find("SETTINGS MENU KEY") != std::string::npos,
@@ -6480,7 +6497,7 @@ int main()
 					ExpectEqI(static_cast<int>(rec.hudPolls), 1, "the first HUD advance polls");
 					rec.OnAdvance(&hudRoot, 9, 10);
 					ExpectEqI(static_cast<int>(rec.uiTidHint), 5, "a later HUD tid does not heal the hint");
-					ExpectEqI(static_cast<int>(rec.hudPolls), 2, "a later HUD tid still polls");
+					ExpectEqI(static_cast<int>(rec.hudPolls), 1, "a later HUD tid does not poll");
 					rec.OnMenuCreated("PauseMenu", &hudRoot, 9);
 					Expect(!rec.IsStoredHudRoot(&hudRoot), "a reused non-HUD root clears the stored HUD pointer");
 					const auto beforeAba = rec.hudPolls;
@@ -6500,11 +6517,12 @@ int main()
 					std::uint64_t want = 0;
 					want += pump(replay, &hudRoot, kTidA, 0, 5000, 16);
 					const auto afterA = replay.hudPolls;
-					want += pump(replay, &hudRoot, kTidB, 5000, 15000, 16);
+					pump(replay, &hudRoot, kTidB, 5000, 15000, 16);
+					ExpectEqI(static_cast<int>(replay.hudPolls), static_cast<int>(afterA),
+						"the 10 s on tid B does not poll the HUD");
 					want += pump(replay, &hudRoot, kTidA, 15000, 75000, 16);
 					ExpectEqI(static_cast<int>(replay.hudPolls), static_cast<int>(want),
-						"every HUD-root advance polls across tid A, B, then A again");
-					Expect(replay.hudPolls > afterA, "the 10 s on tid B still polls");
+						"HUD polls return when the recorded thread advances the HUD root");
 					ExpectEqI(static_cast<int>(replay.uiTidHint), static_cast<int>(kTidA),
 						"the first HUD tid stays a log hint");
 					ExpectEqI(static_cast<int>(replay.lastHudPollTid), static_cast<int>(kTidA),
@@ -6521,7 +6539,7 @@ int main()
 						alt.OnAdvance(&hudRoot, tid, static_cast<std::uint64_t>(i) * 16);
 						alt.OnAdvance(&msgRoot, other, static_cast<std::uint64_t>(i) * 16);
 					}
-					ExpectEqI(static_cast<int>(alt.hudPolls), 64, "alternating workers still poll every HUD advance");
+					ExpectEqI(static_cast<int>(alt.hudPolls), 32, "only the first HUD thread polls");
 					ExpectEqI(static_cast<int>(alt.msgPolls), 64, "alternating workers still poll every messages advance");
 				}
 				{
@@ -6668,6 +6686,9 @@ int main()
 				Expect(!SettingsKeyEdge(true, true), "a held F11 does not retrigger");
 				Expect(UiTidRecordFirst(0, 5), "the first HUD tid is recorded as a hint");
 				Expect(!UiTidRecordFirst(5, 9), "a later tid does not replace the hint");
+				Expect(!UiTidAllowsHudWork(0, 5), "HUD work waits until a thread is recorded");
+				Expect(UiTidAllowsHudWork(5, 5), "the recorded HUD thread may invoke");
+				Expect(!UiTidAllowsHudWork(5, 9), "a later thread may not invoke the HUD");
 				Expect(PollHudOnThisAdvance(PollMovieForRoot(&hudRoot, &hudRoot, &msgRoot)),
 					"the HUD root selects the HUD poll");
 				Expect(PollMsgOnThisAdvance(PollMovieForRoot(&msgRoot, &hudRoot, &msgRoot)),

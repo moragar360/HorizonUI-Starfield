@@ -121,11 +121,13 @@ namespace HZ
 	// SFSE documents AddPermanentTask as "every frame on Main". Starfield
 	// 1.16.244 actually runs that queue on BSJobs workers (crash3: Invoke
 	// from "BSJobs 9"). TaskInterface has no UI-thread API. Scaleform
-	// Invokes run only from the stored movie's own AdvanceFrame
-	// (PollScaleform on HUDMenu, PollMessages on HUDMessagesMenu).
-	// g_uiTid is a first-record log hint, not a poll gate. Window-owner
-	// and any-menu tids are hints. See hz_ui_tid.h.
+	// HUDMenu Invokes run only from that movie's own AdvanceFrame, and
+	// only on the first thread that advanced it. Other movie threads skip.
+	// HUDMessagesMenu stays on its own advance. See hz_ui_tid.h.
 	std::atomic<std::uint32_t> g_uiTid{0};
+	std::atomic<bool>          g_buildCards{true};
+	std::atomic<bool>          g_buildCardsSent{false};
+	std::atomic<bool>          g_hudWrongThreadLogged{false};
 	std::atomic<std::uint32_t> g_loadTid{0};
 	std::atomic<std::uint32_t> g_jobTid{0};
 	std::atomic<bool>          g_inPoll{false};
@@ -829,6 +831,13 @@ namespace HZ
 			std::string v;
 			if (get("debug", v) && v == "1") g_iniDebug = true;
 			if (get("settingskey", v) && !v.empty()) key = v;
+			{
+				std::string bc = "1";
+				get("buildcards", bc);
+				const bool on = !(bc == "0" || bc == "false" || bc == "off");
+				g_buildCards.store(on, std::memory_order_release);
+				if (!on) REX::INFO("hud: BuildCards=0");
+			}
 			if (hzlog::IniReloadAppliesMsglog(a_reloadMsglog))
 				MsglogLoadSettings(d);
 		}
@@ -872,6 +881,14 @@ namespace HZ
 	// Refuses when the resolved root is not the advancing a_this.
 	// Inputs: UI, registered menu name, call-site label. Outputs: a
 	// live IMenu or null. Author: Moragar. Last modified: 2026-10-28.
+	// One line when a HUDMenu Invoke is skipped because this thread is not
+	// the first HUDMenu AdvanceFrame thread.
+	void LogHudWrongThreadOnce(std::uint32_t a_tid)
+	{
+		if (g_hudWrongThreadLogged.exchange(true, std::memory_order_acq_rel)) return;
+		REX::INFO("hud: skip HUDMenu invoke on tid {} (ui tid {})", a_tid, g_uiTid.load(std::memory_order_acquire));
+	}
+
 	RE::Scaleform::Ptr<RE::IMenu> MenuMovie(RE::UI* a_ui, const char* a_name, const char* a_where)
 	{
 #ifndef NDEBUG
@@ -885,6 +902,14 @@ namespace HZ
 		if (!menu || !menu->uiMovie || !menu->uiMovie->asMovieRoot) return {};
 		auto* root = menu->uiMovie->asMovieRoot.get();
 		const auto want = hzlog::InvokeMovieForMenu(a_name);
+		if (want == hzlog::InvokeMovie::Hud) {
+			const auto tid = ::GetCurrentThreadId();
+			const auto recorded = g_uiTid.load(std::memory_order_acquire);
+			if (!hzlog::UiTidAllowsHudWork(recorded, tid)) {
+				LogHudWrongThreadOnce(tid);
+				return {};
+			}
+		}
 		if (!hzlog::InvokeOnAdvancingMovie(hzlog::g_advancingMovie, want)
 			|| !hzlog::InvokeRootMatches(hzlog::g_advancingRoot, root)) {
 			const auto now = GetTickCount64();
@@ -4404,6 +4429,7 @@ namespace HZ
 
 	void DrainHudDllLog();
 	void HudCtorPump();
+	void PushBuildCardsOnce();
 
 	// Purpose: job-thread poll. Capture, writer coordinator, file I/O,
 	// and load/quit flags. Never touches Scaleform (GetMenu / menuObj /
@@ -4453,6 +4479,7 @@ namespace HZ
 		g_hudPolls.fetch_add(1, std::memory_order_relaxed);
 		if (!g_uiPollLogged.exchange(true))
 			REX::INFO("thread: ui poll tid={}", tid);
+		PushBuildCardsOnce();
 		HudCtorPump();
 		if (auto uiPub = RE::UI::GetSingleton()) {
 			g_uiLoading.store(uiPub->IsMenuOpen("LoadingMenu"));
@@ -4568,13 +4595,26 @@ namespace HZ
 			REX::INFO("HUD ctor stages done");
 			return;
 		}
-		REX::INFO("HUD stage begin {}", name);
+		if (name.rfind("card ", 0) == 0)
+			REX::INFO("HUD card begin {}", name.substr(5));
+		else
+			REX::INFO("HUD stage begin {}", name);
 		std::string run = "run";
 		GValue modeRun(run.c_str());
 		GValue ran;
 		if (!HudInvoke("hzCtorStep", &ran, &modeRun, 1))
 			REX::WARN("hud: hzCtorStep run failed {}", name);
 		DrainHudDllLog();
+	}
+
+	// Tell the HUD whether this load may build cards. Retries until the movie answers.
+	void PushBuildCardsOnce()
+	{
+		if (g_buildCardsSent.load(std::memory_order_acquire)) return;
+		const bool on = g_buildCards.load(std::memory_order_acquire);
+		GValue arg(on);
+		if (!HudInvoke("hzSetBuildCards", nullptr, &arg, 1)) return;
+		g_buildCardsSent.store(true, std::memory_order_release);
 	}
 
 	// Purpose: HUDMessagesMenu Invokes only. Runs from that movie's
@@ -4703,6 +4743,10 @@ namespace HZ
 		if (hzlog::PollHudOnThisAdvance(kind)) {
 			if (hzlog::UiTidRecordFirst(g_uiTid.load(std::memory_order_acquire), tid))
 				RecordUiTidOnce(tid, hzlog::kUiTidSourceHudRoot);
+			if (!hzlog::UiTidAllowsHudWork(g_uiTid.load(std::memory_order_acquire), tid)) {
+				LogHudWrongThreadOnce(tid);
+				return;
+			}
 			if (hzlog::PollAlreadyIn(g_inPoll.exchange(true, std::memory_order_acq_rel)))
 				return;
 			hzlog::g_advancingRoot = a_this;
