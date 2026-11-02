@@ -2,6 +2,32 @@
 
 An independent review will follow later. Do not treat this as approved.
 
+## 0.43.0.14 — static tables are assigned before use
+
+Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.14**.
+
+The 0.43.0.13 review failed the TypeError #1009 outage. In-game 0.43.0.9 (America/Phoenix, 2026-11-01, 14:19) already had `hzInitFields` run: there was no `hzBoot null` line, and `hzEnsureHud.hzBuildCards` plus `hzToggleSettings.redraw` still threw #1009. Health, oxygen, compass, and ammo stayed vanilla. F11 showed the window and the version, and the page was blank. 0.43.0.10 through 0.43.0.13 added notes. They did not assign the static tables those paths read.
+
+`hzInitStatics` now assigns all 59 `Array` and `Object` tables before boot, build, F11, or splash use them. The declarations are `private static var` with no initializer, because Scaleform can skip a declaration initializer and a `static const` cannot be assigned later. The literals live in the function body. `hzInitFields` calls it first and writes one note when any of those tables or the instance arrays were null (`hzInitStatics null ...` and, when both happened, `hzBoot null ...`). `hzBuildCards`, `hzSetDraw`, and `hzSplashStart` call `hzUseStatics` before they use a table. A second call after the assignment does not write the note again.
+
+The boot comment no longer says every non-primitive instance field is assigned. Sprites and text fields stay null until their card is built. `hzOnJetpack` returns when `hzJetPct` is null. `hzOnPlayerFrequent` still runs `hz36HideTick`, then returns when `hzVitHp` or `hzVitO2` is null, and it sets label and bar visibility only when that sprite exists.
+
+`hzInitStatics` holds every table in one function, including the long `HZ35_INFO` and scanner tables. A movie that never prints `HUD 0.43.0.14` would mean Scaleform rejected that function. That is still an in-game check.
+
+The local `HZ_SET_TABS` fallback in `hzSetDraw` stays. A healed instance array is still named before `= []`. `hzBuildCards.vitals.hzCard.hzCardBodies` appears only if that push throws. The splash is unchanged: it still returns when `HorizonVitals_mc` is null, welcome is off, the player is in combat, or F11 is open. `hzOnFrame` still returns before hiding vanilla when `HorizonVitals_mc` is null. Outline offsets stay `[-2, 2, -2, 2]`. No new glow. `HZ_COMMS_MSG_LOG` and `HZ_HUD_MSG_CAPTURE` stay `0`.
+
+A one-time `hzInitStatics null` line with no `#1009` means Scaleform left those tables null and this build assigned them. A `#1009` is a remaining throw. Do not treat a movie id by itself as a built HUD. An older `HUD 0.43.0.13` line means this movie is not loaded.
+
+The long `"..."` card look is still unverified in game. The historical "Message Log popup (0.43.0.8)" comment stays.
+
+The tree to build is `cursor/note-sibling-keys-4c32`. `feature/message-log-p2-ui` is still 0.43.0.10 until that branch is updated.
+
+DLL, HUD, Comms, scanner, and scope build strings are `0.43.0.14`.
+
+Verified on this Linux checkout (no Windows DLL, no SWF, and no game were built here): preset list tests passed; message log tests passed, including the Scaleform call graph; planet alert 939 ok; reaction match 864 ok. Still unverified in game: Horizon cards actually up, F11 CARDS page filled, splash, HISTORY / MEDICAL / COMMS / steal / KEY / ITEM, and the long `"..."` cards.
+
+PC folders: compile and run xmake only in `C:\HorizonUI-repo`. `C:\HorizonUI` is only the SWF compile tools.
+
 ## 0.43.0.13 — the redraw note drops when the page finishes
 
 Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.13**.

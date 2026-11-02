@@ -63,7 +63,7 @@
       private var hzBlg:DisplayObjectContainer = null;
       private var hzFrameN:int = 0;
       private static const HZ_ICON_HEX:String = "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000070000000e12122400000000010000000000000000000000000000000000000000000000020000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000001000000118796a58b3c4049d858585ae26362645c5b5b610001010105cc999904bfbf7f03aaaaaa027f7f7f010000000000000000010101027f7f7f000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000003ffffffbf1a1c20ff30323aff555558ff494747ff4b4a4c180a0a150000000000000000000000000000000000030303193d3d4703000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000241c1c23ff060606fb0c0c0efb706f72fa6f6d6cfe2e2f35a066666a9ec9c4be9ba19f9d63a4a4a72d999ea4b1191c22f135383fc6616061296f6f7600000000027f7f7f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003555555000000005052525cff626367fa3b3b3dfd44454afdaca8a4fb2c2c30ff8d8c8fe2868687b45a5a5cd7737171f7706e6dff6e6a66fd515053ff565353c965646404ffffff027f7f7f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000027f7f7f05000033d1787a82ff828289fb504e51fd49484afd5e5b58fd605e5efba6a19ff25b6472e74d596de0384050f9373f4dfb41464dfa7b7978fd3a393bdd4e4d4d09c6c6c60100000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003aaaaaa00000000885f5f63ffb3b4b6fa8d8e91fd8c8a89fd545354fd323232fd9f9ea0fdd4cdc8ffccc8c4ff838c9bff697181fd4a4e5bfd474d5ffb6d7788ff47474cd58f8c8900020202000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000103000000e65c626efe8995a7fb425062fd424c5bfd292c33fd252424fd525152fd979594fdf6f0e8fd85878bfc5e6471fd596668fd4a6065fc797e8afe8e8f92e168635f585f5c5c09ffffff01ffffff01ffffff000000000000000000000000000000000000000000000000000000000000000000000000027f7f7f000101018d3b414dfe687487fa9bacc3fd4a5b72fd434f5efd38414dfd2e2e31fd353435fd7d7977fdccc3b8fd717273fd3d3e49fd65979bfd6eb7bcfd4a4c52fdbab7b5fc5a5857ff444449946367730000000003555555000000000000000000000000000000000000000000000000000000000000000002007f7f0000000019475b70fa41454ffe797a7dfc5b5f65fd383f51fd588693fd4a6c78fd211c20fd262627fd878380fdcac2b9fd737170fd393a43fd6ea2a7fd76bcc2fd464951fda5a09cfb5a5a5afb777576f298969717c7c7c70000000001ffffff00000000000000000000000000000000000000000000000000000000043f3f3f00000000563e444aff959395faece7e1fd9e9891fd2c2a32fd609ba6fd4f707cfd090608fd494a4cfda39d97fdaba49cfd8b857efd3c3a3ffd6ea5abfd70b2b8fd494a50fda7a29cfd333233f93b3f49ff7e81886b93939300000000047f7f7f0000000000000000000000000000000000000000000000000000000004bfbfbf0000000074868891ffc6c4c5f9e8e3defd8d8782fd30333cfd62a8b2fd41545ffd0a0709fd3d414afd7c7b7dfd948e86fd8c877efd433f42fd73b0b6fd68a7aefd666161fdaca69ffd24252afa353f4bff515e6fc17a8699062a2a55027f7f7f0000000000000000000000000000000000000000000000000000000003aaaaaa00010101a4909296ffd3d0cdf9e9e4ddfd726c68fd2d343efd5c8592fd38404afd080708fd2c2f36fd40454ffd797470fd89837afd433f41fd5c898efd527b80fd776f6cfd9f9a93fd181419fd4d7c88fc608896ff838ca339435062000000000355555500000000000000000000000000000000000000000100000000000000081f3f3fe254555affc8c2bdfbb7b2acfd505053fd353941fd5f6371fd2e333bfd000102fd363940fd3e434efd4a4b4ffd898279fd3a3c3ffd3a3d44fd424348fd827d78fd838281fd110f17fd53828ef9598d9bfe6f6d766f65676900000000047f7f7f00000000000000000000000000000000000000000355555500000000343f3f49fe3f4147fc737982fd616873fd30343cfd363a42fd616772fd24262cfd4c4a48fd39393cfd2f333cfd494a4ffd888178fd3a3a3dfd252c36fd33373dfd87827bfd484b51fd0a060bfd577d89f94c8491ff9c929086cfc9c20000000004bfbfbf0000000000000000000000000000000000000000043f3f3f000000008c333438ff434955f98896acfd606671fd2f3238fd3d4149fd5d626ffd181b20fd7b7674fd7c7773fd1a1b21fd4f4f51fd847c74fd3b3a3bfd25292ffd434345fd7b7774fd1e2229fd0d0c10fd4c5d6bf93a5361ff8f8b8ca7d4cec40000000003ffffff0000000000000000000000000000000000000000027f7f7f00000000c3343840ff464c57fa4f5661fd2d3239fd25292efd3e434cfd616773fc111317fd292625fd78736efd19191cfd4c4948fd67625cfd3a3837fd333233fd5c5753fd5e5d5efd3a3b3efd16171afd4f5461fb373b48ff7d7d7fcad2c9c20000000001ffffff00000000000000000000000000000000000000000100000000000000c91f2329ff191c20fa414246fd3b4046fd171e24fd1e2022fd30343bfe12151bfc343736fd4f4b47fc131317fd585655fd54504cfd0e0f11fd151619fd595551fd474646fd888480fd1a1b1ffd525865fc3a404aff5f6674e49a989809aa8d71000000000100000000000000000000000000000000000000043f3f3f000000008633353cff4a4954f99597a1fd5c606cfd343239fd6c696ffc1b1d21f9192128ff45575ffc282a2cfd191c21fd515b6cfd484749fd484542fd4b4949fb464647fa43403efd2a2827fd181a20fd585f6cfc424751fd535966f86067762833333300000000027f7f7f00000000000000000000000000000000027f7f7f05666666b1333840ff478391fa55b5c9fd67b9c2fb438999ff627a85d03d3f483124292eec1e2126fb0e181ff92f3f50fd4b576afd262b36fc33373dfb393e46ff2b3039ff3f3f3dfd101216fd292d35fd444b58fd31373ffa272a2eff4f55615442485800000000043f3f3f00000000000000000000000002000000000000001b382525ff133340ff35a7c9fca3fafffdebfffffa85f6fffe2f95aade202a3100000000831b1b21ff262e39ff39536dfd2d343efb272b33ff252c37ff2c3947ce263138ba323a40fe151d26fc1a1d21fd333538fd28282df9353a41ff1e21255a2a2d3500000000043f3f3f00000000000000000000000000000000027f7f7f01000000691f5977f760c1e6fcd9fcfffbfbfdf9fc83e2faff1b7194a9182b33027f7f7f07242448682c3849d6202832fa1e1f23ff25262be723262d88272e380000010136212a3dff1b212afb2f2e34fd888892fc3d4955fe727480eb5c5a6218000000000101010100000000000000000000000000000000000000027fffff000000002789d1fff297e8fbfddafcfbfddcfffdeb84dff9502c75a20355aaaa01ffffff000000000000000003000000291f1f25401b1f230e243636000000000200000005330000c1333b49fe406b78fa5eb4c4fc70c9d3fc49aec1f541636e3337282d00000000027f7f7f00000000000000000000000000000000027fffff00000000507cbff2fe8ee6faf9cafbfbffb8fdffc47ad4f800010000000000000100ffff000000000355555500000000000000000000000000000000030000550100000003ffffffe217262fff2996b1faa0fcfffdf6fffff969e3ffff0f546b5d1b181b0000000004003f3f00000000000000000000000000000000027fffff000000004581c0f3f086d9fafab3fcfbfd93e5fb757ac4f602007f7f027fffff00000000000000000000000001000000020000000300000001000000000000000200007f027f7f7f7817333de7308eb3fbb3f6fffafdfffbfe91e4f88b24759d05333333027fffff000000000000000000000000000000000000000001ffffff000000001673ade7b98bd4faff9bf5ffa180caf81178a5e1000000000100ffff00000000000000000000000000000000010000000000000000000000000000000000000003aaffff000000007278cdf8ffa8f9fff7dcfffbff99ecfd417dd3ff000000000355aaff000000000000000000000000000000000000000000000000027fffff000000007c85cbf6cc85cff8197aadea000000000100ffff000000000000000000000000000000000000000000000000000000000000000000000000000000000355aaff03005555497dc0f4fd8adefafbb8fbfafb8bdefa4f70b7ee000000000355aaff00000000000000000000000000000000000000000000000001ffffff000000002c79b3e2327ab2e5000000000100ffff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100ffff00000000106f9fdfb282ccf9ff9dfaffd384d7fa1e6eaaee0000000001ffffff0000000000000000000000000000000000000000000000000000000000000000000000000000000001ffffff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000027f7fff000000002e7fb6eef489ddfb9083d0f70000000001ffffff0000000000000000000000000000000000000000000000000000000000000000000000000000000101ffffff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001ffffff00000000797ec3f4457dc3f300000000027fffff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100ffff076d91b6076d91b600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
-      private static const HZ_CARD:Array = ["N","NE","E","SE","S","SW","W","NW"];
+      private static var HZ_CARD:Array;
       private static const HZ_W:Number = 260;
       private var hzEnvTemp:TextField = null;
       private var hzEnvTempC:Number = NaN;
@@ -97,7 +97,7 @@
       private static const HZ_HCT_COMMAND:int = 8;
       private var HZ_ACCENT:uint = 0x3FD0E0;
       public var hzAccentChoice:int = 0; // 0 cyan, 1 teal, 2 amber, 3 violet, 4 lime, 5 white
-      private static const HZ_ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
+      private static var HZ_ACCENTS:Array;
       public var hzSmoothBars:Boolean = true;
       public var hzCardOpacity:Number = 1;
       public var hzContOpacity:Number = 1;   // v0.25 ContainerOpacity: crosshair target / container / item cards only
@@ -123,10 +123,10 @@
       public var hzRuleCompass:int = 0;
       // Visibility rule ids (one rule per card): 0 always, 1 combat only, 2 hide in ship, 3 weapon drawn only,
       // 4 jetpack in use / not full, 5 vitals below 100%, 6 only when afflicted
-      private static const HZ_RULE_NAMES:Array = ["ALWAYS","COMBAT ONLY","HIDE IN SHIP","WEAPON DRAWN ONLY","IN USE / NOT FULL","WHEN NOT FULL (HP/O2)","ONLY WHEN AFFLICTED","ON XP / LEVEL / CREDITS","WHEN OVERWEIGHT","XP / LEVEL OR OVERWEIGHT"];
+      private static var HZ_RULE_NAMES:Array;
       private var hzCardBodies:Array;
-      private static const HZ_CARDCOLS:Array = [0x0B1218,0x16181C,0x0B1630,0x0A2226,0x1E1328,0x2A1014,0x3A4652,0xD5DBE0,0xF2F4F6,0xCCDFEE,0xF0E0C2,0xD2ECDF];
-      private static const HZ_CARDNAMES:Array = ["SLATE","GRAPHITE","NAVY","DEEP TEAL","PLUM","CRIMSON","STORM GRAY","LIGHT GRAY","WHITE","PALE BLUE","PALE AMBER","PALE MINT"];
+      private static var HZ_CARDCOLS:Array;
+      private static var HZ_CARDNAMES:Array;
       public var hzAccentHex:int = -1; // AccentHex=#RRGGBB in ini adds a CUSTOM accent (last palette entry)
       public var hzCardHex:int = -1;   // CardHex=#RRGGBB in ini adds a CUSTOM card color
       private var hzTiles:Array;
@@ -161,12 +161,12 @@
       private var hzInvWeapName:String = "";
       // v0.18
       public var hzTextTone:int = 0; // 0 auto (from card color), 1 light text, 2 dark text
-      private static const HZ_TONE_NAMES:Array = ["AUTO","LIGHT TEXT","DARK TEXT"];
+      private static var HZ_TONE_NAMES:Array;
       public var hzFontFace:int = 1; // 0 game font, 1 Exo 2 via $Horizon_Font, 2 Roboto via $Horizon_Font_Alt (v0.29; needs fonts_horizon.swf + fontconfig)
       // v0.29: shown in this order; the stored ini values stay 0 = game, 1 = Exo 2 (unchanged meaning), 2 = Roboto (new)
       // v0.34: 3 = the game's own semibold face (run-time name only, never bundled; falls back to the game font)
-      private static const HZ_FONT_NAMES:Array = ["EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"];
-      private static const HZ_FONT_IDS:Array = [1,2,0,3];
+      private static var HZ_FONT_NAMES:Array;
+      private static var HZ_FONT_IDS:Array;
       private var hzFontOk:int = -1; // -1 unknown, 0 missing, 1 available
       public var hzPlanDetails:Boolean = false;
       public var hzShowTarget:Boolean = true;
@@ -191,7 +191,7 @@
       private var hzTgH:Number = 0;
       private var hzTgFramed:Boolean = false;
       private static const HZ_TG_W:Number = 260;
-      private static const HZ_TGANCHOR_NAMES:Array = ["CROSSHAIR","FOLLOW TARGET"];
+      private static var HZ_TGANCHOR_NAMES:Array;
       private var hzIcons:Array;
       private var hzEqLow:Boolean = false;
       private var hzEqPulse:Number = 0;
@@ -232,8 +232,8 @@
       public var hzCmpPlayerMark:Boolean = true;
       private var hzDbgCmp:String = "";
       // layout edit (ARRANGE CARDS)
-      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages"];
-      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES"];
+      private static var HZ_LAY_KEYS:Array;
+      private static var HZ_LAY_NAMES:Array;
       public var hzLay:Object;
       private var hzLayOrig:Object = null;
       private var hzArrange:Boolean = false;
@@ -297,11 +297,11 @@
       // ---- v0.14 typography: type scale roles (base px, before TextScale) ----
       // hdr = card header caps (accent, dimmed, letter-spaced), val = primary value (largest, white),
       // valS = primary value in tiles/strips, lbl = labels/units (small, ~60% alpha), sec = secondary info (medium, muted)
-      private static const HZ_TY_SIZE:Object = {"hdr":10,"val":16,"valS":14,"lbl":9,"sec":12,"big":24};
-      private static const HZ_TY_ALPHA:Object = {"hdr":0.85,"val":1,"valS":1,"lbl":0.6,"sec":0.78,"big":1};
+      private static var HZ_TY_SIZE:Object;
+      private static var HZ_TY_ALPHA:Object;
       private static const HZ_TY_WHITE:uint = 0xFFFFFF;
       private static const HZ_TY_MUTED:uint = 0xE2EDF2;
-      private static const HZ_HDRSTYLE_NAMES:Array = ["CAPS + SPACED","TITLE CASE"];
+      private static var HZ_HDRSTYLE_NAMES:Array;
       public var hzTextScale:Number = 1;
       public var hzHeaderStyle:int = 0; // 0 caps + letter-spaced, 1 normal (title case)
       public var hzTextShadow:Boolean = false; // v0.24: default off (crisp hard 1px drop when on)
@@ -2162,8 +2162,153 @@
          return this.hzLastErr;
       }
 
+      // Scaleform can skip static initializers on this class the same way it skipped
+      // late instance fields. These tables are assigned here, before boot, build, F11, or splash use them.
+      private function hzInitStatics() : Array
+      {
+         var names:Array = [];
+         if(HZ_TY_SIZE == null) { HZ_TY_SIZE = {"hdr":10,"val":16,"valS":14,"lbl":9,"sec":12,"big":24}; names.push("HZ_TY_SIZE"); }
+         if(HZ_TY_ALPHA == null) { HZ_TY_ALPHA = {"hdr":0.85,"val":1,"valS":1,"lbl":0.6,"sec":0.78,"big":1}; names.push("HZ_TY_ALPHA"); }
+         if(HZ_SET_TABS == null) { HZ_SET_TABS = ["CARDS","STYLE","TEXT","EFFECTS","RULES","COMPASS","CONTROLS","SCANNER","COMMS"]; names.push("HZ_SET_TABS"); }
+         if(HZ_SET_DEF == null) { HZ_SET_DEF = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"ShowWelcomeOnLoad":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1}; names.push("HZ_SET_DEF"); }
+         if(HZ35_INFO == null)
+         {
+            HZ35_INFO = {
+         "KeepInDialogue":"During a conversation the game clears each subtitle when the line ends. On: the last line stays on screen until the next line starts. Off: it disappears like the game's.",
+         "FixedInDialogue":"In dialogue the game moves its subtitles up (about 230 px, 290 on narrow screens). On: Horizon's card stays where it is. Off: it moves up the same way. Ignored once SUBTITLES is moved in ARRANGE CARDS.",
+         "SubMaxLines":"How many lines a subtitle may use at its normal width. A longer line first widens the card in small steps (up to 90 % of the screen), then adds lines. The text size never changes.",
+         "Subtitles":"On: Horizon draws the subtitles and hides the game's (alpha 0). If another subtitle mod is detected, Horizon pauses itself and shows a USE HORIZON row to switch back.",
+         "Dialogue":"On: Horizon draws the dialogue options; the game's list stays underneath (hidden) and still handles keys, controller and choosing. If another dialogue mod is detected, Horizon pauses itself. Applies from the next conversation.",
+         "_hz31usesub":"Horizon found another subtitle mod and paused its own subtitles so the two don't overlap (SubAutoPause=1). USE HORIZON sets SubAutoPause=0 so Horizon's subtitles show again.",
+         "_hz31usedlg":"Horizon found another dialogue mod and paused its own dialogue menu (DlgAutoPause=1). USE HORIZON sets DlgAutoPause=0; it applies from the next conversation.",
+         "DlgSaidStyle":"Options the game marks as already said. DIMMED: shown faded. HIDDEN: removed from the list; numbers 1 - 9 and the 1 OF N counter count only the shown options. If every option was said, all are shown. Persuasion lists never hide options. TAGGED: faded with a SAID chip.",
+         "DlgInputDelay":"After the option list opens, input is ignored for this long so a held key doesn't pick an option by accident. The game's own delay is 1000 ms; lower is faster.",
+         "DlgHoverScroll":"With the mouse resting on the top or bottom visible option for a quarter second, the list scrolls one option. Only matters when VISIBLE OPTIONS limits the list.",
+         "DlgButtonBar":"HORIZON: a restyled key strip under the options card. GAME BAR: the game's own button bar. HIDDEN: no bar at all - the keys still work.",
+         "DlgVisible":"How many options the card shows at once. ALL sizes the card to every option. A number limits it; the rest scroll with the selection, the wheel or hover.",
+         "DlgMoreHint":"With VISIBLE OPTIONS limited, a small 'N MORE' line shows how many more options there are.",
+         "DlgNumberKeys":"Keys 1 - 9 pick the option with that number. Numbers follow the shown options (HIDDEN already-said options are skipped).",
+         "DlgWheel":"The mouse wheel moves the selection up / down the options.",
+         "DlgRolloverSound":"GAME DEFAULT plays the game's rollover sound when the selection moves. OFF keeps it silent.",
+         "DlgAnim":"How the options card appears and leaves: OFF (instant), FAST, or VANILLA-LIKE (the game's timing).",
+         "DlgPersuadeStyle":"How persuasion options are marked: a CHIP, the option text in the tag color, or NONE.",
+         "DlgPersuasionMeter":"On: a Horizon meter for the persuasion challenge (the score, a ghost of the highlighted reply's points, and turns left). The game's meter stays in the movie at alpha 0, so its result animations keep running. Off: the game's meter.",
+         "DlgScale":"Width and text of the options card together. If the options don't fit the screen height, their text steps down to fit.",
+         "DlgOffsetX":"Moves the options card sideways, in 1080p pixels (+ = right). Added on top of the ARRANGE CARDS spot.",
+         "DlgOffsetY":"Moves the options card up or down, in 1080p pixels (+ = up). Added on top of the ARRANGE CARDS spot.",
+         "SubOffsetX":"Moves the subtitle card sideways, in 1080p pixels (+ = right). Added on top of POSITION or the ARRANGE CARDS spot.",
+         "SubOffsetY":"Moves the subtitle card up or down, in 1080p pixels (+ = up). Added on top of POSITION or the ARRANGE CARDS spot.",
+         "SubWidth":"The normal width of the subtitle card as a share of the screen. MAX LINES BEFORE WIDENING can widen it further for long lines.",
+         "SpeakerCard":"A small card with the speaker's name, shown for the whole conversation.",
+         "Margin":"Gap between the screen edges and the cards, in 1080p pixels. Cards placed in ARRANGE CARDS keep their distance from this margin, so they move with it.",
+         "ScreenHeight":"Set it to your vertical resolution (1080, 1440, 2160 ...) so the crosshair cards land on whole screen pixels and stay sharp. OFF = no snapping.",
+         "ObjectRing":"The ring and line the game draws around the object you look at. OFF: never. CONTAINERS ONLY: only on a container that shows its item list. VANILLA: as the game draws it.",
+         "CombatDim":"Out of combat (and not at low health) the HUD cards fade toward DIM OPACITY. On the current card style the fade is softened: 0.60 shows as about 0.84.",
+         "DimOpacity":"How far the cards fade out of combat (see DIM OUT OF COMBAT). Lower = fainter.",
+         "FadeCards":"Cards fade and slide in / out when they appear or hide, instead of popping.",
+         "TargetAnchor":"Where the hover cards (prompt, item, container, enemy) sit. CROSSHAIR: just below and right of the crosshair. FOLLOW TARGET: next to the object on screen, using the position the game reports for it (falls back to the crosshair when there is none).",
+         "SmoothBars":"On: Horizon's bars (health, O2, jetpack, hazard, ammo ...) glide to a new value over a few frames, and the health bars keep a short fading 'ghost' of what you just lost. Off: every bar jumps straight to the new value, no ghost.",
+         "HazardAlert":"On: while your exposure to an environmental hazard builds up (heat, cold, radiation, airborne, corrosive ...), the planet card gets a pulsing amber outline. Off: no outline; the hazard line, its exposure bar and the colored dot on the card stay.",
+         "TargetShowValue":"Value in credits and weight in kg on the item hover card and for the selected entry of a container list. Off: name, rarity and tags only.",
+         "TextShadow":"A soft dark drop shadow under every HUD card text (a light one on light cards). Helps on bright backgrounds; off is sharpest.",
+         "HeaderStyle":"Card titles in letter-spaced CAPS, or in Title Case with tight spacing.",
+         "SettingsKey":"The key that opens this window (handled by HorizonUI.dll). A new key takes effect after restarting the game.",
+         "ShowFollowers":"Markers for your follower and companions on the Horizon compass.",
+         "CompassMarkers":"Master switch for every Horizon compass marker below. Quest objectives always show while it is on.",
+         "ShowTarget":"Horizon's own card for the game's activate prompt (take, talk, open) and the item / container hover cards. Off = the game's prompt.",
+         "VehicleExitPill":"While you are in a vehicle, the hold-to-exit prompt is a Horizon pill: the key the game shows, then EXIT. A fill sweeps across while you hold, and the pill turns green with a check when the hold completes. The game's button stays at alpha 0, so the hold still finishes. Off shows the game's prompt.",
+         "PlanetDetails":"Adds a gravity / air line to the planet card.",
+         "TempUnit":"Planet card and scanner temperature units. The game value is Celsius. Fahrenheit is C times 9/5 plus 32, rounded. Default Celsius.",
+         "_size":"GLOBAL: this card uses HUD SCALE (STYLE tab). CUSTOM: it has its own size and HUD SCALE no longer changes it. Click the GLOBAL / CUSTOM chip or drag the slider to switch.",
+         "_compact":"GLOBAL: this card takes its compact form whenever COMPACT MODE (top right) is on. ON / OFF: always compact / always full for this card only, whatever COMPACT MODE says.",
+         "_rule":"When this card shows. ALWAYS, or only in the situation named (in combat, weapon drawn, not full ...). The card's own switch in CARDS still has to be on."};
+            names.push("HZ35_INFO");
+         }
+         if(HZ_CARDCOLS == null) { HZ_CARDCOLS = [0x0B1218,0x16181C,0x0B1630,0x0A2226,0x1E1328,0x2A1014,0x3A4652,0xD5DBE0,0xF2F4F6,0xCCDFEE,0xF0E0C2,0xD2ECDF]; names.push("HZ_CARDCOLS"); }
+         if(HZ_ACCENTS == null) { HZ_ACCENTS = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C]; names.push("HZ_ACCENTS"); }
+         if(HZ_SET_TGS == null) { HZ_SET_TGS = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6]; names.push("HZ_SET_TGS"); }
+         if(HZ_ML_CHIPS == null) { HZ_ML_CHIPS = ["ALL","MEDICAL","CREW","REACTIONS","BUSY","CRIME","CREDITS","QUEST","LOCATION","GAME","XP"]; names.push("HZ_ML_CHIPS"); }
+         if(HZ31_DEF == null) { HZ31_DEF = {"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"TxtColIdx":0,"SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"ReactionCard":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"ShowSpeaker":1,"SpkColIdx":0,"SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgTxtIdx":0,"DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4}; names.push("HZ31_DEF"); }
+         if(HZ34_CARDS == null) { HZ34_CARDS = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false]]; names.push("HZ34_CARDS"); }
+         if(HZ_CARD == null) { HZ_CARD = ["N","NE","E","SE","S","SW","W","NW"]; names.push("HZ_CARD"); }
+         if(HZ_RULE_NAMES == null) { HZ_RULE_NAMES = ["ALWAYS","COMBAT ONLY","HIDE IN SHIP","WEAPON DRAWN ONLY","IN USE / NOT FULL","WHEN NOT FULL (HP/O2)","ONLY WHEN AFFLICTED","ON XP / LEVEL / CREDITS","WHEN OVERWEIGHT","XP / LEVEL OR OVERWEIGHT"]; names.push("HZ_RULE_NAMES"); }
+         if(HZ_CARDNAMES == null) { HZ_CARDNAMES = ["SLATE","GRAPHITE","NAVY","DEEP TEAL","PLUM","CRIMSON","STORM GRAY","LIGHT GRAY","WHITE","PALE BLUE","PALE AMBER","PALE MINT"]; names.push("HZ_CARDNAMES"); }
+         if(HZ_TONE_NAMES == null) { HZ_TONE_NAMES = ["AUTO","LIGHT TEXT","DARK TEXT"]; names.push("HZ_TONE_NAMES"); }
+         if(HZ_FONT_NAMES == null) { HZ_FONT_NAMES = ["EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"]; names.push("HZ_FONT_NAMES"); }
+         if(HZ_FONT_IDS == null) { HZ_FONT_IDS = [1,2,0,3]; names.push("HZ_FONT_IDS"); }
+         if(HZ_TGANCHOR_NAMES == null) { HZ_TGANCHOR_NAMES = ["CROSSHAIR","FOLLOW TARGET"]; names.push("HZ_TGANCHOR_NAMES"); }
+         if(HZ_LAY_KEYS == null) { HZ_LAY_KEYS = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages"]; names.push("HZ_LAY_KEYS"); }
+         if(HZ_LAY_NAMES == null) { HZ_LAY_NAMES = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES"]; names.push("HZ_LAY_NAMES"); }
+         if(HZ_HDRSTYLE_NAMES == null) { HZ_HDRSTYLE_NAMES = ["CAPS + SPACED","TITLE CASE"]; names.push("HZ_HDRSTYLE_NAMES"); }
+         if(HZ_SET_KEYS == null) { HZ_SET_KEYS = ["F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"]; names.push("HZ_SET_KEYS"); }
+         if(HZ_SET_ACCNAMES == null) { HZ_SET_ACCNAMES = ["CYAN","TEAL","AMBER","VIOLET","LIME","WHITE","ROSE","ORANGE","SKY","GOLD","MINT","STEEL","DEEP BLUE"]; names.push("HZ_SET_ACCNAMES"); }
+         if(HZ_ML_KIND == null) { HZ_ML_KIND = ["","medical","crew","reaction","busy","crime","credits","quest","location","game","xp"]; names.push("HZ_ML_KIND"); }
+         if(HZ_SET_TGS_N == null) { HZ_SET_TGS_N = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"]; names.push("HZ_SET_TGS_N"); }
+         if(HZ_SET_SCRH == null) { HZ_SET_SCRH = [0,720,900,1080,1200,1440,1600,2160]; names.push("HZ_SET_SCRH"); }
+         if(HZ_SET_SCRH_N == null) { HZ_SET_SCRH_N = ["OFF","720","900","1080","1200","1440","1600","2160"]; names.push("HZ_SET_SCRH_N"); }
+         if(HZ_RAR == null) { HZ_RAR = [0xF2F7F9,0x73CCDF,0x9A7BFF,0xEEC162,0xEEC162]; names.push("HZ_RAR"); }
+         if(HZ_RARN == null) { HZ_RARN = ["","RARE","EPIC","LEGENDARY","EXOTIC"]; names.push("HZ_RARN"); }
+         if(HZ_TIME_NAMES == null) { HZ_TIME_NAMES = ["OFF","LOCAL / GAME","PC/REAL","LOCAL / GAME + PC/REAL"]; names.push("HZ_TIME_NAMES"); }
+         if(HZ_CLOCK_NAMES == null) { HZ_CLOCK_NAMES = ["12 H","24 H"]; names.push("HZ_CLOCK_NAMES"); }
+         if(HZ_TEMP_NAMES == null) { HZ_TEMP_NAMES = ["°C","°F"]; names.push("HZ_TEMP_NAMES"); }
+         if(HZ_AFLAY_NAMES == null) { HZ_AFLAY_NAMES = ["COLUMN","ROW","ICONS ONLY"]; names.push("HZ_AFLAY_NAMES"); }
+         if(HZ_XH_NAMES == null) { HZ_XH_NAMES = ["VANILLA","HORIZON DOT","HORIZON CROSS","NONE"]; names.push("HZ_XH_NAMES"); }
+         if(HZ_RING_NAMES == null) { HZ_RING_NAMES = ["OFF","CONTAINERS ONLY","VANILLA"]; names.push("HZ_RING_NAMES"); }
+         if(HZ_FOL_PAL == null) { HZ_FOL_PAL = [0x5CFF7A,0xC6FF4A,0xFFD24A,0xFF6BD6,0xF4F8FA,0x5EE3A1]; names.push("HZ_FOL_PAL"); }
+         if(HZ_FOL_NAMES == null) { HZ_FOL_NAMES = ["BRIGHT GREEN","LIME","GOLD","PINK","WHITE","MINT"]; names.push("HZ_FOL_NAMES"); }
+         if(HZ31_KEYS == null)
+         {
+            HZ31_KEYS = [
+         ["Subtitles","b",1,0,1,"comms"],["SubAutoPause","b",1,0,1,"comms"],["SubSize","f",1,0.7,1.8,"comms"],["SubWidth","i",50,30,90,"comms"],
+         ["SubBgOpacity","f",0.7,0,1,"comms"],["SubPosition","i",0,0,2,"comms"],["SubOffsetY","i",0,-300,300,"comms"],["SubAlign","i",0,0,1,"comms"],
+         ["SubTextColor","i",-1,-1,13,"comms"],["SubTextHex","s","",0,0,"comms"],["SubCard","b",1,0,1,"comms"],["SubOffsetX","i",0,-600,600,"comms"],
+         ["ShowSpeaker","b",1,0,1,"comms"],["SpeakerColor","i",-1,-1,13,"comms"],["SpeakerHex","s","",0,0,"comms"],["SpeakerCard","b",1,0,1,"comms"],
+         ["KeepInDialogue","b",1,0,1,"comms"],["FixedInDialogue","b",1,0,1,"comms"],["SubMaxLines","i",3,2,5,"comms"],["SubFont","i",-1,-1,3,"comms"],
+         ["MissionToast","b",1,0,1,"comms"],["MissionToastTime","i",5,2,15,"comms"],["MissionToastMax","i",3,1,5,"comms"],["MissionToastSound","b",1,0,1,"comms"],["MissionToastScale","z",-1,0.6,1.6,"comms"],["ReactionCard","b",1,0,1,"comms"],
+         ["Dialogue","b",1,0,1,"comms"],["DlgAutoPause","b",1,0,1,"comms"],["DlgLayout","i",0,0,2,"comms"],["DlgVisible","i",0,0,12,"comms"],
+         ["DlgMoreHint","b",1,0,1,"comms"],["DlgTextSize","f",1,0.8,1.6,"comms"],["DlgFont","i",-1,-1,3,"comms"],["DlgBgOpacity","f",0.85,0,1,"comms"],
+         ["DlgCard","b",1,0,1,"comms"],["DlgOffsetX","i",0,-600,600,"comms"],
+         ["DlgOffsetY","i",0,-400,400,"comms"],["DlgScale","f",1,0.7,1.5,"comms"],["DlgBgColor","i",0,0,12,"comms"],["DlgBgHex","s","",0,0,"comms"],
+         ["DlgTextColor","i",-1,-1,13,"comms"],["DlgTextHex","s","",0,0,"comms"],
+         ["DlgNumberKeys","b",1,0,1,"comms"],["DlgWheel","b",1,0,1,"comms"],["DlgHoverScroll","b",0,0,1,"comms"],["DlgSaidStyle","i",2,0,2,"comms"],
+         ["DlgPersuadeStyle","i",0,0,2,"comms"],["DlgPersuadeColor","i",2,0,12,"comms"],["DlgPersuasionMeter","b",1,0,1,"comms"],["DlgMarkers","b",0,0,1,"comms"],["DlgInputDelay","i",150,0,1000,"comms"],
+         ["DlgRolloverSound","i",0,0,1,"comms"],["DlgAnim","i",1,0,2,"comms"],
+         ["DlgButtonBar","i",0,0,2,"comms"],["DlgQuickPickHint","b",1,0,1,"comms"],["DlgSelectHint","b",1,0,1,"comms"]];
+            names.push("HZ31_KEYS");
+         }
+         if(HZ31_PROBE == null) { HZ31_PROBE = {"es":"Enhanced Subtitles - My Edits.ini","edi":"Enhanced Dialogue Interface - My Edits.ini","edi2":"Enhanced Dialogue Interface.ini"}; names.push("HZ31_PROBE"); }
+         if(HZ31_FONT_OPTS == null) { HZ31_FONT_OPTS = ["GLOBAL","EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"]; names.push("HZ31_FONT_OPTS"); }
+         if(HZ31_FONT_IDS == null) { HZ31_FONT_IDS = [-1,1,2,0,3]; names.push("HZ31_FONT_IDS"); }
+         if(HZ30_MODS == null) { HZ30_MODS = ["scanner","comms","font","comms_dialogue","es","edi","edi2","scope","notifications"]; names.push("HZ30_MODS"); }
+         if(HZ35_TOK == null) { HZ35_TOK = {"accent":0x3FD0E0,"bg":0x0B1218,"text":0xF2F7F9,"value":0xFFFFFF,"label":0xC4D2D9,"muted":0x96A6AE,"amber":0xF2A93B,"follower":0x3FE0B0,"exotic":0xB48CFF,"minPx":13}; names.push("HZ35_TOK"); }
+         if(hz37_FILES == null) { hz37_FILES = ["HorizonUI/HorizonUI.default.ini","HorizonUI/HorizonUI.user.ini","HorizonUI/HorizonUI.state.ini","HorizonUI/HorizonUI.ini"]; names.push("hz37_FILES"); }
+         if(HZ40_SCAN_KEYS == null) { HZ40_SCAN_KEYS = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]]; names.push("HZ40_SCAN_KEYS"); }
+         if(HZ40_SCAN_CM == null) { HZ40_SCAN_CM = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"]}; names.push("HZ40_SCAN_CM"); }
+         if(HZ40_POPUP == null) { HZ40_POPUP = ["HideQuestPopupsWhileScanning","DimTraitPopupDuringBioscan","TraitPopupDim"]; names.push("HZ40_POPUP"); }
+         if(HZ40_OPA_V == null) { HZ40_OPA_V = [-1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6]; names.push("HZ40_OPA_V"); }
+         if(HZ40_OPA_N == null) { HZ40_OPA_N = ["FOLLOW HUD","0.20","0.30","0.40","0.50","0.60","0.70","0.80","0.90","1.00","1.10","1.20","1.30","1.40","1.50","1.60"]; names.push("HZ40_OPA_N"); }
+         if(HZ40_MAR_V == null) { HZ40_MAR_V = [-1,20,30,40,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200]; names.push("HZ40_MAR_V"); }
+         if(HZ40_MAR_N == null) { HZ40_MAR_N = ["FOLLOW HUD","20","30","40","50","60","70","80","90","100","110","120","130","140","150","160","170","180","190","200"]; names.push("HZ40_MAR_N"); }
+         if(HZ40_CARDS == null) { HZ40_CARDS = ["HorizonCard_mc","HorizonVitals_mc","HorizonEnv_mc","HorizonAffl_mc","HorizonQuest_mc","HorizonCompactQuest_mc","HorizonAmmo_mc","HorizonCompact_mc","HorizonCompass_mc","HorizonChar_mc","HorizonXp_mc"]; names.push("HZ40_CARDS"); }
+         if(HZ43_VIT_CARDS == null) { HZ43_VIT_CARDS = ["HorizonCard_mc","HorizonVitals_mc","HorizonCompact_mc"]; names.push("HZ43_VIT_CARDS"); }
+         if(HZ41_VIT_KEYS == null) { HZ41_VIT_KEYS = ["ScanShowVitalsHealth","ScanShowVitalsO2","ScanShowVitalsBoost"]; names.push("HZ41_VIT_KEYS"); }
+         if(HZ41_VIT_IDS == null) { HZ41_VIT_IDS = ["hp","o2","bo"]; names.push("HZ41_VIT_IDS"); }
+         if(HZ41_VIT_LBL == null) { HZ41_VIT_LBL = ["HEALTH","O2","BOOST"]; names.push("HZ41_VIT_LBL"); }
+         if(HZ41_SA_PANELS == null) { HZ41_SA_PANELS = ["Planet","Bioscan","Signals","Traits","Social","Compass","Mode","Hints","Vitals"]; names.push("HZ41_SA_PANELS"); }
+         if(HZ41_SA_NAMES == null) { HZ41_SA_NAMES = ["PLANET","BIOSCAN","SIGNALS","TRAITS + RESOURCES","PERSON","COMPASS","MODE","BUTTON HINTS","VITALS"]; names.push("HZ41_SA_NAMES"); }
+         if(HZ41_SA_CMP == null) { HZ41_SA_CMP = ["Planet","Bioscan","Signals","Traits","Compass"]; names.push("HZ41_SA_CMP"); }
+         return names;
+      }
+
+      private function hzUseStatics() : void
+      {
+         var names:Array = this.hzInitStatics();
+         if(names.length > 0) { this.hzNoteErr("hzInitStatics null " + names.join(","), null); }
+      }
+
       private function hzInitFields() : void
       {
+         var snames:Array = this.hzInitStatics();
          var names:Array = [];
          if(this.hzTexts == null) { this.hzTexts = []; names.push("hzTexts"); }
          if(this.hzCmpLabels == null) { this.hzCmpLabels = []; names.push("hzCmpLabels"); }
@@ -2224,11 +2369,15 @@
          if(this.hz37N == null) { this.hz37N = []; names.push("hz37N"); }
          if(this.hz41SAP == null) { this.hz41SAP = {}; names.push("hz41SAP"); }
          if(this.hz41VTx == null) { this.hz41VTx = []; names.push("hz41VTx"); }
-         if(names.length > 0) { names.reverse(); this.hzNoteErr("hzBoot null " + names.join(","), null); }
+         var msg:String = "";
+         if(snames.length > 0) { msg = "hzInitStatics null " + snames.join(","); }
+         else if(this.hzLastErr != null && this.hzLastErr.indexOf("hzInitStatics null") == 0) { msg = this.hzLastErr; }
+         if(names.length > 0) { names.reverse(); if(msg.length > 0) { msg += " | "; } msg += "hzBoot null " + names.join(","); }
+         if((snames.length > 0 || names.length > 0) && msg.length > 0) { this.hzNoteErr(msg, null); }
       }
 
-      // Assigns every non-primitive instance field. Scaleform left late
-      // initializers null on this HUD class (TypeError #1009).
+      // Assigns the instance arrays, maps, and keycap overlay that Scaleform
+      // left null. Sprites and text fields stay null until their card is built.
       private function hzBoot() : void
       {
          this.hzInitFields();
@@ -2280,6 +2429,7 @@
       {
          var c:Number = Number(e.data.fJetpackCharge);
          if(isNaN(c)) { return; }
+         if(this.hzJetPct == null) { return; }
          this.hzFixFonts();
          this.hzJetCharge = c;
          var f:Number = c < 0 ? 1 : Math.max(0,Math.min(1,c));
@@ -2296,6 +2446,7 @@
       // if the thin hzBuild wrapper throws.
       private function hzBuildCards() : void
       {
+         this.hzUseStatics();
          this.hzBoot();
          var bw:Number = HZ_W - 32;
          try { this.HZ_ACCENT = this.hzAccentOf(this.hzAccentChoice); } catch(eAcc:Error) { this.hzNoteErr("hzBuildCards.accent",eAcc); }
@@ -2408,6 +2559,7 @@
       private function hzOnPlayerFrequent(e:FromClientDataEvent) : *
       {
          try { this.hz36HideTick(); } catch(e36q:Error) { }   // v0.36: the game re-shows HealthBarGhost_mc on these updates (heal)
+         if(this.hzVitHp == null || this.hzVitO2 == null) { return; }
          var d:Object = e.data;
          this.hzFixFonts();
          var hp:Number = Number(d.fHealth);
@@ -2436,8 +2588,12 @@
          }
          if(!isNaN(o2) && mo2 > 0) { this.hzVitO2F = o2 / mo2; }
          if(this.hzRuleVitals == 5) { this.hzRefreshVisibility(); }
-         this.hzVitHp.visible = this.hzVitHpLbl.visible = this.hzVitHpBar.visible = this.hzShowHealth;
-         this.hzVitO2.visible = this.hzVitO2Lbl.visible = this.hzVitO2Bar.visible = this.hzShowOxygen;
+         if(this.hzVitHpLbl != null) { this.hzVitHpLbl.visible = this.hzShowHealth; }
+         if(this.hzVitHpBar != null) { this.hzVitHpBar.visible = this.hzShowHealth; }
+         this.hzVitHp.visible = this.hzShowHealth;
+         if(this.hzVitO2Lbl != null) { this.hzVitO2Lbl.visible = this.hzShowOxygen; }
+         if(this.hzVitO2Bar != null) { this.hzVitO2Bar.visible = this.hzShowOxygen; }
+         this.hzVitO2.visible = this.hzShowOxygen;
       }
 
       private var hzPlugActive:Boolean = false;
@@ -3356,9 +3512,9 @@
       private var hzSetSaveText:String = "";
       private static const HZ_SET_W:Number = 1000;
       private static const HZ_SET_H:Number = 660;
-      private static const HZ_SET_TABS:Array = ["CARDS","STYLE","TEXT","EFFECTS","RULES","COMPASS","CONTROLS","SCANNER","COMMS"];   // v0.30: 7 SCANNER, 8 COMMS (optional modules)
-      private static const HZ_SET_KEYS:Array = ["F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"];
-      private static const HZ_SET_ACCNAMES:Array = ["CYAN","TEAL","AMBER","VIOLET","LIME","WHITE","ROSE","ORANGE","SKY","GOLD","MINT","STEEL","DEEP BLUE"];
+      private static var HZ_SET_TABS:Array;   // v0.30: 7 SCANNER, 8 COMMS (optional modules)
+      private static var HZ_SET_KEYS:Array;
+      private static var HZ_SET_ACCNAMES:Array;
 
       // Row definitions: k = INI key, t = b(ool) / n(umber slider) / a(ccent swatches) / r(choice) / q(rule) / l(value list) / c(key) / x(action)
       // h = section heading drawn above the row; pill = drawn as the highlighted toggle in the tab header (CARDS: COMPACT MODE)
@@ -3499,8 +3655,8 @@
       private static const HZ_ML_CLOCK:Number = 168;
       private static const HZ_MLS_W:Number = 620;
       private static const HZ_MLS_H:Number = 620;
-      private static const HZ_ML_CHIPS:Array = ["ALL","MEDICAL","CREW","REACTIONS","BUSY","CRIME","CREDITS","QUEST","LOCATION","GAME","XP"];
-      private static const HZ_ML_KIND:Array = ["","medical","crew","reaction","busy","crime","credits","quest","location","game","xp"];
+      private static var HZ_ML_CHIPS:Array;
+      private static var HZ_ML_KIND:Array;
       private var hzMlLayer:Sprite = null;
       private var hzMlHits:Array;
       private var hzMlRows:Array;
@@ -5436,14 +5592,14 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.13";
+      private static const HZ_BUILD:String = "0.43.0.14";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
-      private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
-      private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
-      private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
-      private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
+      private static var HZ_SET_TGS:Array;
+      private static var HZ_SET_TGS_N:Array;
+      private static var HZ_SET_SCRH:Array;
+      private static var HZ_SET_SCRH_N:Array;
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"ShowWelcomeOnLoad":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
+      private static var HZ_SET_DEF:Object;
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -5643,6 +5799,7 @@
 
       private function hzSetDraw() : void
       {
+         this.hzUseStatics();
          if(!this.HorizonSettings_mc || !this.hzSetPend) { this.hzSetStep = ""; return; }
          var b:Sprite = this.hzSetBody;
          if(!b) { this.hzSetStep = ""; return; }
@@ -8150,12 +8307,12 @@
       private static const HZ_BLUE:uint = 0x4DB6FF;
       // Item rarity colors read from the vanilla QuickContainerListEntry rarity frames (HUDRolloverActivationWidget.fla, Symbol 23):
       // Rare #73CCDF, Epic #9A7BFF, Legendary #EEC162. Exotic has no vanilla frame here -> legendary gold.
-      private static const HZ_RAR:Array = [0xF2F7F9,0x73CCDF,0x9A7BFF,0xEEC162,0xEEC162];
-      private static const HZ_RARN:Array = ["","RARE","EPIC","LEGENDARY","EXOTIC"];
-      private static const HZ_TIME_NAMES:Array = ["OFF","LOCAL / GAME","PC/REAL","LOCAL / GAME + PC/REAL"];
-      private static const HZ_CLOCK_NAMES:Array = ["12 H","24 H"];
-      private static const HZ_TEMP_NAMES:Array = ["°C","°F"];
-      private static const HZ_AFLAY_NAMES:Array = ["COLUMN","ROW","ICONS ONLY"];
+      private static var HZ_RAR:Array;
+      private static var HZ_RARN:Array;
+      private static var HZ_TIME_NAMES:Array;
+      private static var HZ_CLOCK_NAMES:Array;
+      private static var HZ_TEMP_NAMES:Array;
+      private static var HZ_AFLAY_NAMES:Array;
       public var hzTimeDisplay:int = 3;
       public var hzClockFmt:int = 0;
       public var hzTempUnit:int = 0;
@@ -9761,8 +9918,8 @@
       // Player_Interaction_ReticleAnim_mc (~22 px ring). We alpha-hide that clip (re-applied every frame) and draw our own
       // glyph at the reticle's center in whole device pixels. Every other uType (weapons, command 8, none) is untouched.
       private static const HZ_HCT_INTERACT:int = 7;
-      private static const HZ_XH_NAMES:Array = ["VANILLA","HORIZON DOT","HORIZON CROSS","NONE"];
-      private static const HZ_RING_NAMES:Array = ["OFF","CONTAINERS ONLY","VANILLA"];
+      private static var HZ_XH_NAMES:Array;
+      private static var HZ_RING_NAMES:Array;
 
       private function hzXhRestore() : void
       {
@@ -12524,8 +12681,8 @@
 
       // ===================== v0.27 =====================
       // follower marker color (COMPASS tab), CHARACTER card rule (RULES tab), quest sub-lines, PersonalAlertsData
-      private static const HZ_FOL_PAL:Array = [0x5CFF7A,0xC6FF4A,0xFFD24A,0xFF6BD6,0xF4F8FA,0x5EE3A1];
-      private static const HZ_FOL_NAMES:Array = ["BRIGHT GREEN","LIME","GOLD","PINK","WHITE","MINT"];
+      private static var HZ_FOL_PAL:Array;
+      private static var HZ_FOL_NAMES:Array;
       public var hzFolColor:int = 0;
       public var hzRuleChar:int = 0;
       private var hz27CharSecs:Number = 8;
@@ -13171,27 +13328,12 @@
       // ===================== v0.31: Comms (COMMS tab, [Comms] / [Scanner] keys, Arrange proxies) =====================
       // Defaults = COMMS_BUILD_SPEC_v031.md 6.1 / 6.2 and COMMS_DIALOGUE_ADDENDUM_v031.md 2. t: b 0/1, f float, i int, s string.
       // sec: the ini section the key is written to. These keys are read by the hudmessagesmenu / dialoguemenu patches.
-      private static const HZ31_KEYS:Array = [
-         ["Subtitles","b",1,0,1,"comms"],["SubAutoPause","b",1,0,1,"comms"],["SubSize","f",1,0.7,1.8,"comms"],["SubWidth","i",50,30,90,"comms"],
-         ["SubBgOpacity","f",0.7,0,1,"comms"],["SubPosition","i",0,0,2,"comms"],["SubOffsetY","i",0,-300,300,"comms"],["SubAlign","i",0,0,1,"comms"],
-         ["SubTextColor","i",-1,-1,13,"comms"],["SubTextHex","s","",0,0,"comms"],["SubCard","b",1,0,1,"comms"],["SubOffsetX","i",0,-600,600,"comms"],
-         ["ShowSpeaker","b",1,0,1,"comms"],["SpeakerColor","i",-1,-1,13,"comms"],["SpeakerHex","s","",0,0,"comms"],["SpeakerCard","b",1,0,1,"comms"],
-         ["KeepInDialogue","b",1,0,1,"comms"],["FixedInDialogue","b",1,0,1,"comms"],["SubMaxLines","i",3,2,5,"comms"],["SubFont","i",-1,-1,3,"comms"],
-         ["MissionToast","b",1,0,1,"comms"],["MissionToastTime","i",5,2,15,"comms"],["MissionToastMax","i",3,1,5,"comms"],["MissionToastSound","b",1,0,1,"comms"],["MissionToastScale","z",-1,0.6,1.6,"comms"],["ReactionCard","b",1,0,1,"comms"],
-         ["Dialogue","b",1,0,1,"comms"],["DlgAutoPause","b",1,0,1,"comms"],["DlgLayout","i",0,0,2,"comms"],["DlgVisible","i",0,0,12,"comms"],
-         ["DlgMoreHint","b",1,0,1,"comms"],["DlgTextSize","f",1,0.8,1.6,"comms"],["DlgFont","i",-1,-1,3,"comms"],["DlgBgOpacity","f",0.85,0,1,"comms"],
-         ["DlgCard","b",1,0,1,"comms"],["DlgOffsetX","i",0,-600,600,"comms"],
-         ["DlgOffsetY","i",0,-400,400,"comms"],["DlgScale","f",1,0.7,1.5,"comms"],["DlgBgColor","i",0,0,12,"comms"],["DlgBgHex","s","",0,0,"comms"],
-         ["DlgTextColor","i",-1,-1,13,"comms"],["DlgTextHex","s","",0,0,"comms"],
-         ["DlgNumberKeys","b",1,0,1,"comms"],["DlgWheel","b",1,0,1,"comms"],["DlgHoverScroll","b",0,0,1,"comms"],["DlgSaidStyle","i",2,0,2,"comms"],
-         ["DlgPersuadeStyle","i",0,0,2,"comms"],["DlgPersuadeColor","i",2,0,12,"comms"],["DlgPersuasionMeter","b",1,0,1,"comms"],["DlgMarkers","b",0,0,1,"comms"],["DlgInputDelay","i",150,0,1000,"comms"],
-         ["DlgRolloverSound","i",0,0,1,"comms"],["DlgAnim","i",1,0,2,"comms"],
-         ["DlgButtonBar","i",0,0,2,"comms"],["DlgQuickPickHint","b",1,0,1,"comms"],["DlgSelectHint","b",1,0,1,"comms"]];
-      private static const HZ31_DEF:Object = {"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"TxtColIdx":0,"SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"ReactionCard":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"ShowSpeaker":1,"SpkColIdx":0,"SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgTxtIdx":0,"DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4};
+      private static var HZ31_KEYS:Array;
+      private static var HZ31_DEF:Object;
       // URLLoader probes, relative to Data/Interface (same base as HorizonUI/HorizonUI.ini). Foreign mods are only reported.
-      private static const HZ31_PROBE:Object = {"es":"Enhanced Subtitles - My Edits.ini","edi":"Enhanced Dialogue Interface - My Edits.ini","edi2":"Enhanced Dialogue Interface.ini"};   // v0.38: no file probes for other HUD mods (an ini left behind is not an active HUD)
-      private static const HZ31_FONT_OPTS:Array = ["GLOBAL","EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"];
-      private static const HZ31_FONT_IDS:Array = [-1,1,2,0,3];
+      private static var HZ31_PROBE:Object;   // v0.38: no file probes for other HUD mods (an ini left behind is not an active HUD)
+      private static var HZ31_FONT_OPTS:Array;
+      private static var HZ31_FONT_IDS:Array;
       private var hz31C:Object = null;      // current [Comms] / [Scanner] values (numbers, SpeakerHex string)
       private var hz31Rev:int = 0;          // [Comms] HzRev from the file; every save writes +1
       private var hz31Page:int = 0;         // COMMS tab sub-page: 0 SUBTITLES, 1 DIALOGUE
@@ -13826,7 +13968,7 @@
       // URLLoader on the same relative path base the HUD already reads HorizonUI.ini from; a missing file / folder
       // only raises IOErrorEvent (caught). State: undefined/-1 checking, 0 absent, 1 present. Re-probed on every F11
       // open so an install / uninstall shows without restarting.
-      private static const HZ30_MODS:Array = ["scanner","comms","font","comms_dialogue","es","edi","edi2","scope","notifications"];   // 0.43.0.1: + notifications.marker
+      private static var HZ30_MODS:Array;   // 0.43.0.1: + notifications.marker
       private var hz30Mod:Object;
       private var hz30ModLdr:Object;
       private var hz30ModT0:Number = 0;
@@ -14156,7 +14298,7 @@
       // ===================== v0.35 info tooltips, compact follow, text shadow =====================
       // Shared design tokens (horizon-ui-starter/modules/core/design-tokens.json). Built-in defaults only: every ini / F11
       // setting overrides them. The accent / card color lists keep these as their first (default) entries.
-      private static const HZ35_TOK:Object = {"accent":0x3FD0E0,"bg":0x0B1218,"text":0xF2F7F9,"value":0xFFFFFF,"label":0xC4D2D9,"muted":0x96A6AE,"amber":0xF2A93B,"follower":0x3FE0B0,"exotic":0xB48CFF,"minPx":13};
+      private static var HZ35_TOK:Object;
       private static const HZ35_AMBER:uint = 0xF2A93B;
       // ---- Global Compact follow (item 5) ----
       // The compass / planet / equipment / character forms are applied through guarded setters (hzCmpC, hzPpC, hzE19Cm,
@@ -14217,55 +14359,7 @@
       private var hz35Tip:Object = null;
       private var hz35Mx:Number = NaN;
       private var hz35My:Number = NaN;
-      private static const HZ35_INFO:Object = {
-         "KeepInDialogue":"During a conversation the game clears each subtitle when the line ends. On: the last line stays on screen until the next line starts. Off: it disappears like the game's.",
-         "FixedInDialogue":"In dialogue the game moves its subtitles up (about 230 px, 290 on narrow screens). On: Horizon's card stays where it is. Off: it moves up the same way. Ignored once SUBTITLES is moved in ARRANGE CARDS.",
-         "SubMaxLines":"How many lines a subtitle may use at its normal width. A longer line first widens the card in small steps (up to 90 % of the screen), then adds lines. The text size never changes.",
-         "Subtitles":"On: Horizon draws the subtitles and hides the game's (alpha 0). If another subtitle mod is detected, Horizon pauses itself and shows a USE HORIZON row to switch back.",
-         "Dialogue":"On: Horizon draws the dialogue options; the game's list stays underneath (hidden) and still handles keys, controller and choosing. If another dialogue mod is detected, Horizon pauses itself. Applies from the next conversation.",
-         "_hz31usesub":"Horizon found another subtitle mod and paused its own subtitles so the two don't overlap (SubAutoPause=1). USE HORIZON sets SubAutoPause=0 so Horizon's subtitles show again.",
-         "_hz31usedlg":"Horizon found another dialogue mod and paused its own dialogue menu (DlgAutoPause=1). USE HORIZON sets DlgAutoPause=0; it applies from the next conversation.",
-         "DlgSaidStyle":"Options the game marks as already said. DIMMED: shown faded. HIDDEN: removed from the list; numbers 1 - 9 and the 1 OF N counter count only the shown options. If every option was said, all are shown. Persuasion lists never hide options. TAGGED: faded with a SAID chip.",
-         "DlgInputDelay":"After the option list opens, input is ignored for this long so a held key doesn't pick an option by accident. The game's own delay is 1000 ms; lower is faster.",
-         "DlgHoverScroll":"With the mouse resting on the top or bottom visible option for a quarter second, the list scrolls one option. Only matters when VISIBLE OPTIONS limits the list.",
-         "DlgButtonBar":"HORIZON: a restyled key strip under the options card. GAME BAR: the game's own button bar. HIDDEN: no bar at all - the keys still work.",
-         "DlgVisible":"How many options the card shows at once. ALL sizes the card to every option. A number limits it; the rest scroll with the selection, the wheel or hover.",
-         "DlgMoreHint":"With VISIBLE OPTIONS limited, a small 'N MORE' line shows how many more options there are.",
-         "DlgNumberKeys":"Keys 1 - 9 pick the option with that number. Numbers follow the shown options (HIDDEN already-said options are skipped).",
-         "DlgWheel":"The mouse wheel moves the selection up / down the options.",
-         "DlgRolloverSound":"GAME DEFAULT plays the game's rollover sound when the selection moves. OFF keeps it silent.",
-         "DlgAnim":"How the options card appears and leaves: OFF (instant), FAST, or VANILLA-LIKE (the game's timing).",
-         "DlgPersuadeStyle":"How persuasion options are marked: a CHIP, the option text in the tag color, or NONE.",
-         "DlgPersuasionMeter":"On: a Horizon meter for the persuasion challenge (the score, a ghost of the highlighted reply's points, and turns left). The game's meter stays in the movie at alpha 0, so its result animations keep running. Off: the game's meter.",
-         "DlgScale":"Width and text of the options card together. If the options don't fit the screen height, their text steps down to fit.",
-         "DlgOffsetX":"Moves the options card sideways, in 1080p pixels (+ = right). Added on top of the ARRANGE CARDS spot.",
-         "DlgOffsetY":"Moves the options card up or down, in 1080p pixels (+ = up). Added on top of the ARRANGE CARDS spot.",
-         "SubOffsetX":"Moves the subtitle card sideways, in 1080p pixels (+ = right). Added on top of POSITION or the ARRANGE CARDS spot.",
-         "SubOffsetY":"Moves the subtitle card up or down, in 1080p pixels (+ = up). Added on top of POSITION or the ARRANGE CARDS spot.",
-         "SubWidth":"The normal width of the subtitle card as a share of the screen. MAX LINES BEFORE WIDENING can widen it further for long lines.",
-         "SpeakerCard":"A small card with the speaker's name, shown for the whole conversation.",
-         "Margin":"Gap between the screen edges and the cards, in 1080p pixels. Cards placed in ARRANGE CARDS keep their distance from this margin, so they move with it.",
-         "ScreenHeight":"Set it to your vertical resolution (1080, 1440, 2160 ...) so the crosshair cards land on whole screen pixels and stay sharp. OFF = no snapping.",
-         "ObjectRing":"The ring and line the game draws around the object you look at. OFF: never. CONTAINERS ONLY: only on a container that shows its item list. VANILLA: as the game draws it.",
-         "CombatDim":"Out of combat (and not at low health) the HUD cards fade toward DIM OPACITY. On the current card style the fade is softened: 0.60 shows as about 0.84.",
-         "DimOpacity":"How far the cards fade out of combat (see DIM OUT OF COMBAT). Lower = fainter.",
-         "FadeCards":"Cards fade and slide in / out when they appear or hide, instead of popping.",
-         "TargetAnchor":"Where the hover cards (prompt, item, container, enemy) sit. CROSSHAIR: just below and right of the crosshair. FOLLOW TARGET: next to the object on screen, using the position the game reports for it (falls back to the crosshair when there is none).",
-         "SmoothBars":"On: Horizon's bars (health, O2, jetpack, hazard, ammo ...) glide to a new value over a few frames, and the health bars keep a short fading 'ghost' of what you just lost. Off: every bar jumps straight to the new value, no ghost.",
-         "HazardAlert":"On: while your exposure to an environmental hazard builds up (heat, cold, radiation, airborne, corrosive ...), the planet card gets a pulsing amber outline. Off: no outline; the hazard line, its exposure bar and the colored dot on the card stay.",
-         "TargetShowValue":"Value in credits and weight in kg on the item hover card and for the selected entry of a container list. Off: name, rarity and tags only.",
-         "TextShadow":"A soft dark drop shadow under every HUD card text (a light one on light cards). Helps on bright backgrounds; off is sharpest.",
-         "HeaderStyle":"Card titles in letter-spaced CAPS, or in Title Case with tight spacing.",
-         "SettingsKey":"The key that opens this window (handled by HorizonUI.dll). A new key takes effect after restarting the game.",
-         "ShowFollowers":"Markers for your follower and companions on the Horizon compass.",
-         "CompassMarkers":"Master switch for every Horizon compass marker below. Quest objectives always show while it is on.",
-         "ShowTarget":"Horizon's own card for the game's activate prompt (take, talk, open) and the item / container hover cards. Off = the game's prompt.",
-         "VehicleExitPill":"While you are in a vehicle, the hold-to-exit prompt is a Horizon pill: the key the game shows, then EXIT. A fill sweeps across while you hold, and the pill turns green with a check when the hold completes. The game's button stays at alpha 0, so the hold still finishes. Off shows the game's prompt.",
-         "PlanetDetails":"Adds a gravity / air line to the planet card.",
-         "TempUnit":"Planet card and scanner temperature units. The game value is Celsius. Fahrenheit is C times 9/5 plus 32, rounded. Default Celsius.",
-         "_size":"GLOBAL: this card uses HUD SCALE (STYLE tab). CUSTOM: it has its own size and HUD SCALE no longer changes it. Click the GLOBAL / CUSTOM chip or drag the slider to switch.",
-         "_compact":"GLOBAL: this card takes its compact form whenever COMPACT MODE (top right) is on. ON / OFF: always compact / always full for this card only, whatever COMPACT MODE says.",
-         "_rule":"When this card shows. ALWAYS, or only in the situation named (in combat, weapon drawn, not full ...). The card's own switch in CARDS still has to be on."};
+      private static var HZ35_INFO:Object;
       private function hz35InfoOf(r:Object) : String
       {
          if(r == null || r.pill) { return null; }
@@ -14331,7 +14425,7 @@
       // have a compact form. Jetpack, vitals and afflictions turn into the shared compact strips card, so they follow the
       // global Compact only. Hover / container cards keep [Style] HoverScale / ContainerScale (same meaning as before;
       // -1 now = GLOBAL). Edge-anchored ARRANGE positions use the real on-screen card size, so they stay put at any size.
-      private static const HZ34_CARDS:Array = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false]];
+      private static var HZ34_CARDS:Array;
       private static const HZ34_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face: run-time name only, never shown
       private var hz34Sc:Object;
       private var hz34Cm:Object;
@@ -14657,6 +14751,7 @@
 
       private function hzSplashStart() : void
       {
+         this.hzUseStatics();
          if(this.HorizonVitals_mc == null) { return; }
          if(this.hzSplash == null)
          {
@@ -15328,7 +15423,7 @@
       // file is normal: its IOErrorEvent is caught and counts as no file. The game logs every failed open, so
       // HorizonUI.ini is opened at most once, and only when Compose still needs that unshipped file.
       // No defaults file -> the legacy HorizonUI.ini is the base. Nothing at all -> null (callers keep built-in defaults).
-      private static const hz37_FILES:Array = ["HorizonUI/HorizonUI.default.ini","HorizonUI/HorizonUI.user.ini","HorizonUI/HorizonUI.state.ini","HorizonUI/HorizonUI.ini"];
+      private static var hz37_FILES:Array;
       private static const hz37_BOM:String = String.fromCharCode(0xFEFF);
       private var hz37Ldr:URLLoader = null;
       private var hz37Step:int = 0;          // 0 idle, n = reading hz37_FILES[n - 1]
@@ -16131,14 +16226,14 @@
       // The scanner movie (monoclemenu.swf / _lrg) reads the same [Scanner] keys itself; this movie writes them (F11) and
       // hides its own cards while the Horizon scanner is open. Types: b 0/1, i int, f float, z size, o -1 or a number,
       // p position (-1, L/R/C+n, T/B/C+n), s hex.
-      private static const HZ40_SCAN_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];
-      private static const HZ40_SCAN_CM:Object = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"]};
-      private static const HZ40_POPUP:Array = ["HideQuestPopupsWhileScanning","DimTraitPopupDuringBioscan","TraitPopupDim"];
-      private static const HZ40_OPA_V:Array = [-1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6];
-      private static const HZ40_OPA_N:Array = ["FOLLOW HUD","0.20","0.30","0.40","0.50","0.60","0.70","0.80","0.90","1.00","1.10","1.20","1.30","1.40","1.50","1.60"];
-      private static const HZ40_MAR_V:Array = [-1,20,30,40,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200];
-      private static const HZ40_MAR_N:Array = ["FOLLOW HUD","20","30","40","50","60","70","80","90","100","110","120","130","140","150","160","170","180","190","200"];
-      private static const HZ40_CARDS:Array = ["HorizonCard_mc","HorizonVitals_mc","HorizonEnv_mc","HorizonAffl_mc","HorizonQuest_mc","HorizonCompactQuest_mc","HorizonAmmo_mc","HorizonCompact_mc","HorizonCompass_mc","HorizonChar_mc","HorizonXp_mc"];
+      private static var HZ40_SCAN_KEYS:Array;
+      private static var HZ40_SCAN_CM:Object;
+      private static var HZ40_POPUP:Array;
+      private static var HZ40_OPA_V:Array;
+      private static var HZ40_OPA_N:Array;
+      private static var HZ40_MAR_V:Array;
+      private static var HZ40_MAR_N:Array;
+      private static var HZ40_CARDS:Array;
       private var hz40C:Object = null;          // current [Scanner] values
       private var hz40Scan:Boolean = false;     // the hand scanner is open (HudCompassData.bIsHandscannerOpen / FireForget)
       private var hz40Hide:Boolean = false;     // the Horizon cards are hidden for the scanner right now
@@ -16510,7 +16605,7 @@
       // v0.40.3: ScanShowVitals=1 (default) keeps the vitals cards on screen while the scanner hides the HUD: the jetpack / boost
       // card and the health / O2 card (in COMPACT MODE the compact strips), at their HUD place and size. Moving them and a
       // scanner-only form come with ARRANGE SCANNER.
-      private static const HZ43_VIT_CARDS:Array = ["HorizonCard_mc","HorizonVitals_mc","HorizonCompact_mc"];
+      private static var HZ43_VIT_CARDS:Array;
       private function hz43KeepVit() : Boolean
       {
          return false;   // v0.41.0: the vitals kept while scanning are the hz41V strip (ScanShowVitalsHealth / O2 / Boost)
@@ -16534,12 +16629,12 @@
       // one Horizon strip (hz41V) with the stats the player keeps (ScanShowVitalsHealth / O2 / Boost), full or compact
       // (ScanVitalsCompact), stacked or in a row (ScanVitalsLayout), at ScanVitalsX / ScanVitalsY (the scanner's position
       // format; -1 = bottom center). Text 13 px or larger at 1080p before HudScale.
-      private static const HZ41_VIT_KEYS:Array = ["ScanShowVitalsHealth","ScanShowVitalsO2","ScanShowVitalsBoost"];
-      private static const HZ41_VIT_IDS:Array = ["hp","o2","bo"];
-      private static const HZ41_VIT_LBL:Array = ["HEALTH","O2","BOOST"];
-      private static const HZ41_SA_PANELS:Array = ["Planet","Bioscan","Signals","Traits","Social","Compass","Mode","Hints","Vitals"];
-      private static const HZ41_SA_NAMES:Array = ["PLANET","BIOSCAN","SIGNALS","TRAITS + RESOURCES","PERSON","COMPASS","MODE","BUTTON HINTS","VITALS"];
-      private static const HZ41_SA_CMP:Array = ["Planet","Bioscan","Signals","Traits","Compass"];
+      private static var HZ41_VIT_KEYS:Array;
+      private static var HZ41_VIT_IDS:Array;
+      private static var HZ41_VIT_LBL:Array;
+      private static var HZ41_SA_PANELS:Array;
+      private static var HZ41_SA_NAMES:Array;
+      private static var HZ41_SA_CMP:Array;
       private var hz41V:Sprite = null;
       private var hz41VSig:String = "";
       private var hz41DllT:Number = 0;          // last DLL push (ms)

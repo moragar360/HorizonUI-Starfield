@@ -4,24 +4,23 @@
 // res/HorizonUI.rc.in includes this header, and the plugin logs and sends the same
 // string (or the version resource that this header produced). Do not copy the
 // numbers into the resource script or into a log line.
-// Product version matches the file version (0.43.0.13). The settings-schema string
+// Product version matches the file version (0.43.0.14). The settings-schema string
 // in the plugin (HZF::kVersion, "0.42.0") is a different value: preset age and the
 // update backup compare against that, not against this file version.
-// 0.43.0.13 is a pre-release dev build for Message Log P2 plus welcome splash,
-// COMMS page switch, steal-red, and more game cards.
+// 0.43.0.14 is a pre-release dev build. It assigns the static tables Scaleform
+// left null, which is the TypeError #1009 that kept the HUD vanilla after 0.43.0.9.
 // Last modified: 2026-11-01.
 
 #define HZ_FILE_VERSION_MAJOR 0
 #define HZ_FILE_VERSION_MINOR 43
 #define HZ_FILE_VERSION_PATCH 0
-#define HZ_FILE_VERSION_BUILD 13
-#define HZ_FILE_VERSION_STR "0.43.0.13"
+#define HZ_FILE_VERSION_BUILD 14
+#define HZ_FILE_VERSION_STR "0.43.0.14"
 
-// TEST_NOTE 0.43.0.13: first pass. HISTORY value no longer overlaps its arrow.
-// Off categories hide from the list and pills (and stop recording). Welcome
-// splash, COMMS Option A, red steal prompt, KEY/ITEM cards. Not approved.
+// TEST_NOTE 0.43.0.14: first pass. hzInitStatics assigns the static tables
+// before boot, build, F11, and splash. Not approved.
 // Long "..." notices still need an in-game look.
-// VORTEX_INSTALL 0.43.0.13: keep 0.43.0.7 in Vortex until this 0.43.0.13
+// VORTEX_INSTALL 0.43.0.14: keep 0.43.0.7 in Vortex until this 0.43.0.14
 // build is installed over it. Back up settings first. Do not delete files.
 
 // 0.43.0.9: 0 is the release state. 1 writes the verbose HUD-message trace (the
