@@ -32,7 +32,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.43.0.23";', "HUD build id is 0.43.0.23");
+pin('private static const HZ_BUILD:String = "0.43.0.24";', "HUD build id is 0.43.0.24");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
@@ -582,7 +582,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.23";') >= 0, rel + " build is 0.43.0.23");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.24";') >= 0, rel + " build is 0.43.0.24");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -817,7 +817,8 @@ pin('var sb:String = String(b.sub).length > 0 ? String(b.sub) : sys;', "a game s
 pin('var nm:String = String(b.txt).length > 0 ? String(b.txt) : "Affliction";', "an alert without a name uses Affliction");
 pin('out.push({"key":"p:" + sys,"name":"Affliction","sub":sys,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});', "a plain effect chip is Affliction plus the body system");
 pin('{"name":"Affliction","kind":"injury","env":false}', "the F11 preview uses Affliction as the fallback title");
-pin('this.hzHdr19(this.hzT(p,i == 0 ? "HEALTH" : "OXYGEN",50,y + 9,150,13,"sb","acc",2));', "the Vitals labels are SemiBold 13 / acc / 2 plus hzHdr19");
+pin('var lab:TextField = this.hzT(p,i == 0 ? "HEALTH" : "OXYGEN",50,y + 9,150,13,"sb","acc",2);', "the Vitals labels are SemiBold 13 / acc / 2");
+	pin('this.hzHdr19(lab);', "the Vitals labels still go through hzHdr19");
 	pin('this.hzT(p,"--",HZ_VN_W - 14 - 160,y + 4,160,20,"sb","main",1,"right");', "the Vitals value text hzVnHp / hzVnO2 is SemiBold 20 / main / 1");
 	pin('this.hz26Co2T = this.hzT(p,"",HZ_VN_W - 14 - 260,66 + 8,100,13,"sb","col",0.6,"right",HZ_RED);', "the Vitals CO2 secondary hz26Co2T is SemiBold 13 / col / 0.6");
 	pin('this.hz26RegenT = this.hzT(p,"",HZ_VN_W - 14 - 260,8,100,13,"sb","col",0.4,"right",HZ_GREEN);', "the Vitals regen secondary hz26RegenT is SemiBold 13 / col / 0.4");

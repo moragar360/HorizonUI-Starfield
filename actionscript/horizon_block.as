@@ -178,6 +178,7 @@
       public var hzShowTarget:Boolean = true;
       public var hzTgAnchor:int = 0; // 0 crosshair (frames the vanilla button bar), 1 follow fScreenX/Y
       public var hzTgShowValue:Boolean = true;
+      private var hzNameHover:int = 0;   // 0 compact pill (default), 1 the full name card. Any other value stays compact.
       public var HorizonTarget_mc:Sprite = null;
       private var hzTgBody:Sprite = null;
       private var hzTgChipBg:Sprite = null;
@@ -226,6 +227,8 @@
       private var hzVnO2:TextField = null;
       private var hzVnHpBar:Sprite = null;
       private var hzVnO2Bar:Sprite = null;
+      private var hzVnIc:Array = [];
+      private var hzVnLbl:Array = [];
       private static const HZ_O2_BLUE:uint = 0x4DB6FF;
       private var hzVitHpF:Number = 1;
       private var hzVitO2F:Number = 1;
@@ -1034,6 +1037,20 @@
       private function hzMeterDraw(b:Sprite, w:Number, f:Number, col:uint, ghost:Number) : void
       {
          var fw:Number = w * Math.max(0,Math.min(1,f));
+         if(b.name == "hzBarC")
+         {
+            // Compact health / O2 bar: same track, ghost, and color as hzThick8, 4 px tall.
+            var cg:* = b.graphics;
+            var bh:Number = 4;
+            var bc2:uint = this.hzDarkText() ? this.hzIconCol(col) : col;
+            cg.clear();
+            cg.beginFill(this.hzDarkText() ? 0x000000 : 0xFFFFFF,this.hzDarkText() ? 0.14 : 0.12);
+            cg.drawRoundRect(0,0,w,bh,bh,bh);
+            cg.endFill();
+            if(ghost > f + 0.002) { cg.beginFill(bc2,0.37); cg.drawRoundRect(0,0,Math.max(bh,w * Math.min(1,ghost)),bh,bh,bh); cg.endFill(); }
+            if(fw > 0) { cg.beginFill(bc2,1); cg.drawRoundRect(0,0,Math.max(bh,fw),bh,bh,bh); cg.endFill(); }
+            return;
+         }
          if(b.name == "hzThick8")
          {
             // v0.19 vitals bar: 8px, track white 30a (dark on light cards), ghost = bar color ~37%
@@ -3195,7 +3212,7 @@
          return ut + "|" + lt + "|" + body;
       }
 
-      // ---------- Message Log popup (0.43.0.23). Inside the 1000x660 F11 window. ----------
+      // ---------- Message Log popup (0.43.0.24). Inside the 1000x660 F11 window. ----------
       // v7 layout: 976x620, rows at least 28 px and wrap long text, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
       private static const HZ_ML_W:Number = 976;
@@ -4035,8 +4052,12 @@
          var g:* = b.graphics;
          var clearIds:String = this.hzMsglogClearIds();
          var n:int = clearIds.length == 0 ? 0 : clearIds.split(",").length;
-         var cw:Number = 420;
-         var ch:Number = 168;
+         var cw:Number = 560;
+         var noteW:Number = cw - 44;
+         var title:TextField = this.hzWT(b,"Clear this session?",0,0,noteW,15,"bd",uint(T.txt),2,"left",13);
+         var note:TextField = this.hzWT(b,"Removes " + String(n) + " shown unpinned messages. Hidden messages stay. Can't be undone.",0,0,noteW,13,"rg",uint(T.lab),0.3,"left",13);
+         var nh:Number = this.hzMsglogWrap(note,noteW,78);
+         var ch:Number = Math.max(168,46 + nh + 12 + 28 + 16);
          var cx:Number = ox + Math.round((HZ_ML_W - cw) / 2);
          var cy:Number = oy + Math.round((HZ_ML_H - ch) / 2);
          g.beginFill(0x000000,0.45);
@@ -4046,12 +4067,15 @@
          g.drawRoundRect(cx,cy,cw,ch,28,28);
          g.endFill();
          this.hz33Edge(b,cx,cy,cw,ch,28,uint(T.edge),Number(T.ea),1);
-         this.hzWT(b,"Clear this session?",cx + 22,cy + 18,cw - 44,15,"bd",uint(T.txt),2,"left",13);
-         this.hzWT(b,"Removes " + String(n) + " shown unpinned messages. Hidden messages stay. Can't be undone.",cx + 22,cy + 48,cw - 44,13,"rg",uint(T.lab),0.3,"left",13);
+         title.x = cx + 20;
+         title.y = cy + 14;
+         note.x = cx + 20;
+         note.y = cy + 46;
+         var btnY:Number = cy + ch - 48;
          var br:Number = cx + cw - 22;
          var hit0:int = this.hzSetHits.length;
-         br -= this.hzSetBtn(b,g,br,cy + 120,"CANCEL",false,false,this.hzMlHover == "cfcancel",T,"cfcancel",13,13) + 10;
-         this.hzSetBtn(b,g,br,cy + 120,"CLEAR",true,false,this.hzMlHover == "cfok",T,"cfok",13,13);
+         br -= this.hzSetBtn(b,g,br,btnY,"CANCEL",false,false,this.hzMlHover == "cfcancel",T,"cfcancel",13,13) + 10;
+         this.hzSetBtn(b,g,br,btnY,"CLEAR",true,false,this.hzMlHover == "cfok",T,"cfok",13,13);
          while(this.hzSetHits.length > hit0)
          {
             this.hzMlHits.push(this.hzSetHits.pop());
@@ -4223,12 +4247,16 @@
             }
             else if(r.id == "history")
             {
+               // hzMlHistSlot: the value has its own right-aligned slot, clear of both arrows, wide enough for 1000.
                this.hzWT(b,String(r.l),cx + 22,ry + 8,200,13,"sb",uint(T.txt),1.2,"left",13);
-               this.hzSetTri(g,cx + cw - 86,ry + 16,-1,acc,0.9);
-               this.hzWT(b,String(this.hzMlHistory),cx + cw - 78,ry + 8,40,13,"sb",acc,0.5,"center",13);
-               this.hzSetTri(g,cx + cw - 30,ry + 16,1,acc,0.9);
-               this.hzMlHits.push({"id":"mlshistl","x":cx + cw - 100,"y":ry,"w":28,"h":32});
-               this.hzMlHits.push({"id":"mlshistr","x":cx + cw - 44,"y":ry,"w":28,"h":32});
+               var leftTip:Number = cx + cw - 122;
+               var rightTip:Number = cx + cw - 20;
+               var slotR:Number = cx + cw - 36;
+               this.hzSetTri(g,leftTip,ry + 16,-1,acc,0.9);
+               this.hzWT(b,String(this.hzMlHistory),slotR,ry + 8,72,13,"sb",acc,0.5,"right",13);
+               this.hzSetTri(g,rightTip,ry + 16,1,acc,0.9);
+               this.hzMlHits.push({"id":"mlshistl","x":leftTip - 16,"y":ry,"w":28,"h":32});
+               this.hzMlHits.push({"id":"mlshistr","x":rightTip - 12,"y":ry,"w":28,"h":32});
             }
             else if(r.id == "old")
             {
@@ -4244,10 +4272,18 @@
             else if(r.type)
             {
                this.hzWT(b,String(r.l),cx + 22,ry + 8,180,13,"sb",uint(T.txt),1.2,"left",13);
-               this.hzWT(b,"SHOW",cx + cw - 292,ry + 8,52,13,"sb",uint(T.lab),0.4,"left",13);
-               this.hzSetSwitch(b,g,cx + cw - 228,ry + 16,this.hzMsglogViewOn(String(r.k)),T,false);
-               this.hzMlHits.push({"id":"mlsview" + String(r.k),"x":cx + cw - 300,"y":ry,"w":90,"h":32});
-               this.hzWT(b,"RECORD",cx + cw - 168,ry + 8,70,13,"sb",uint(T.lab),0.4,"left",13);
+               // SHOW uses the RECORD label-to-switch gap. The switch stays put; the label moves left to match it.
+               var recTf:TextField = this.hzWT(b,"RECORD",cx + cw - 168,ry + 8,70,13,"sb",uint(T.lab),0.4,"left",13);
+               var recGap:Number = (cx + cw - 22 - 38) - (recTf.x + this.hzTW(recTf));
+               if(!(recGap > 0)) { recGap = 16; }
+               var showR:Number = cx + cw - 228;
+               var showTf:TextField = this.hzWT(b,"SHOW",0,ry + 8,80,13,"sb",uint(T.lab),0.4,"left",13);
+               var showW:Number = this.hzTW(showTf);
+               showTf.x = Math.round(showR - 38 - recGap - showW);
+               if(showTf.x < cx + 210) { showTf.x = cx + 210; }
+               showTf.width = Math.max(52,Math.ceil(showW + 6));
+               this.hzSetSwitch(b,g,showR,ry + 16,this.hzMsglogViewOn(String(r.k)),T,false);
+               this.hzMlHits.push({"id":"mlsview" + String(r.k),"x":showTf.x - 4,"y":ry,"w":showR - (showTf.x - 4),"h":32});
                this.hzSetSwitch(b,g,cx + cw - 22,ry + 16,this.hzMsglogTypeOn(String(r.k)),T,false);
                this.hzMlHits.push({"id":"mlstype" + String(r.k),"x":cx + cw - 176,"y":ry,"w":160,"h":32});
             }
@@ -5182,14 +5218,14 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.23";
+      private static const HZ_BUILD:String = "0.43.0.24";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":0,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":0,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -7834,7 +7870,10 @@
             var ic:Sprite = new Sprite(); ic.x = 13; ic.y = y + 12;
             p.addChild(ic);
             this.hzIcons.push({"s":ic,"k":(i == 0 ? "vnheart" : "vno2"),"c":HZ_ACCENT,"acc":true});   // v0.35: icon + label follow the accent
-            this.hzHdr19(this.hzT(p,i == 0 ? "HEALTH" : "OXYGEN",50,y + 9,150,13,"sb","acc",2));
+            this.hzVnIc.push(ic);
+            var lab:TextField = this.hzT(p,i == 0 ? "HEALTH" : "OXYGEN",50,y + 9,150,13,"sb","acc",2);
+            this.hzHdr19(lab);
+            this.hzVnLbl.push(lab);
             var v:TextField = this.hzT(p,"--",HZ_VN_W - 14 - 160,y + 4,160,20,"sb","main",1,"right");
             var bar:Sprite = new Sprite(); bar.name = "hzThick8"; bar.x = 14; bar.y = y + 40;
             p.addChild(bar);
@@ -7842,7 +7881,7 @@
             this.hzMeter(bar,HZ_VN_W - 28,1,i == 0 ? HZ_GREEN : HZ_O2_BLUE);
             i++;
          }
-         this.hzSetSz(this.HorizonVitals_mc,HZ_VN_W,124);
+         this.hzSetSz(this.HorizonVitals_mc,this.hz42VW(),this.hz42VH());
          this.hzVnDraw();
       }
 
@@ -7853,10 +7892,11 @@
          {
             var g:* = b.graphics;
             g.clear();
-            this.hzPanel(g,HZ_VN_W,58,16);
+            var bodyH:Number = this.hz42BodyH();
+            this.hzPanel(g,HZ_VN_W,bodyH,16);
             // v0.26: warning stripe while the reading is amber / red
             var wf:Number = vi == 0 ? this.hz26VnF0 : this.hz26VnF1;
-            if(wf < 0.35) { this.hzAccStripe(g,58,this.hz26WarnCol(wf,HZ_GREEN)); }
+            if(wf < 0.35) { this.hzAccStripe(g,bodyH,this.hz26WarnCol(wf,HZ_GREEN)); }
             vi++;
          }
          for each(var bar:Sprite in [this.hzVnHpBar,this.hzVnO2Bar])
@@ -9964,7 +10004,7 @@
          // the key text can change (rebinding / controller): include it in the signature
          var keys:String = "";
          if(show) { var kk:int = 0; while(kk < 4) { keys += this.hzT19Key(aw,kk) + ":" + this.hzT19VanLbl(aw,kk,false) + ":" + this.hzT19VanLbl(aw,kk,true) + ","; kk++; } }
-         var sig:String = kind + "|" + m + "|" + sel + "|" + start + "|" + this.hzT19Ver + "|" + Math.round(this.hzTgGhost * 200) + "|" + this.hzTextScale + "|" + this.hzCardColor + "|" + this.hzContOpacity + "|" + HZ_ACCENT + "|" + this.hzTextTone + "|" + this.hzTgShowValue + "|" + this.hzFontFace + "|" + keys + "|" + show + "|" + this.hzTgScale + "|" + this.hz30Hover + "|" + this.hzScrH;
+         var sig:String = kind + "|" + m + "|" + sel + "|" + start + "|" + this.hzT19Ver + "|" + Math.round(this.hzTgGhost * 200) + "|" + this.hzTextScale + "|" + this.hzCardColor + "|" + this.hzContOpacity + "|" + HZ_ACCENT + "|" + this.hzTextTone + "|" + this.hzTgShowValue + "|" + this.hzFontFace + "|" + keys + "|" + show + "|" + this.hzTgScale + "|" + this.hz30Hover + "|" + this.hzScrH + "|" + this.hzNameHover + "|" + int(this.hzCardBgOpacity) + "|" + int(this.hzCardShadow) + "|" + (this.hzTextShadow ? 1 : 0) + "|" + this.hzHeaderStyle;
          if(sig != this.hzT19Sig)
          {
             this.hzT19Sig = sig;
@@ -10029,13 +10069,14 @@
       }
 
       // round icon tile with a neutral activation glyph (the prompt card for people and objects)
-      private function hzT19Tile(g:*, cx:Number, cy:Number, col:uint) : void
+      private function hzT19Tile(g:*, cx:Number, cy:Number, col:uint, rad:Number = 23) : void
       {
          var c:uint = this.hzIconCol(col);
-         this.hzTileDisc(g,cx,cy,23,col,0.67);
-         g.lineStyle(1,c,0.35,true); g.drawCircle(cx,cy,23); g.lineStyle();
-         g.lineStyle(1.6,c,0.9,true); g.drawCircle(cx,cy,7); g.lineStyle();
-         g.beginFill(c,1); g.drawCircle(cx,cy,2.6); g.endFill();
+         var sc:Number = rad / 23;
+         this.hzTileDisc(g,cx,cy,rad,col,0.67);
+         g.lineStyle(1,c,0.35,true); g.drawCircle(cx,cy,rad); g.lineStyle();
+         g.lineStyle(1.6,c,0.9,true); g.drawCircle(cx,cy,7 * sc); g.lineStyle();
+         g.beginFill(c,1); g.drawCircle(cx,cy,2.6 * sc); g.endFill();
       }
 
       // the player's CHARACTER card icon: round tile with an original vector bust
@@ -10148,6 +10189,53 @@
          g.lineStyle();
       }
 
+      // Compact name hover: one line of the existing prompt card. Icon, name, then the same key chip and verb.
+      // Colors, fill, shadow, and accent come from the live STYLE settings (hzPanel / HZ_ACCENT). Full is the block below.
+      private function hzT19PromptPill(g:*, a:Object, aw:Object, o:Object, nmTf:TextField, hdrTxt:String, hasBtn:Boolean, bw:Number) : Object
+      {
+         var cap:Number = this.hzT19CapH();
+         var H:Number = Math.max(40,cap + 14);
+         var rad:Number = 13;
+         if(rad > H / 2 - 4) { rad = H / 2 - 4; }
+         var padL:Number = 10;
+         var padR:Number = 12;
+         var gap:Number = 10;
+         o.center = false;
+         o.right = false;
+         o.ls = 1.2;
+         o.fs = 14;
+         o.size = 14;
+         o.chipCard = "Hover";
+         o.chipMin = 13;
+         this.hzTxtTint(nmTf,null);
+         this.hzApplyFmt(o);
+         var shown:String = this.hzUC(hdrTxt);
+         nmTf.text = shown;
+         var nmMax:Number = 220;
+         var nmW:Number = shown.length > 0 ? Math.min(nmMax,Math.max(24,this.hzTW(nmTf))) : 0;
+         var nameX:Number = padL + rad * 2 + 8;
+         var W:Number = nameX + nmW + (hasBtn ? gap + bw : 0) + padR;
+         if(W < 168) { W = 168; }
+         if(W > 520) { W = 520; }
+         var room:Number = W - padR - (hasBtn ? gap + bw : 0) - nameX;
+         if(room < 24) { room = 24; }
+         this.hzPanel(g,W,H,Math.round(H / 2));
+         this.hzT19Tile(g,padL + rad,Math.round(H / 2),HZ_ACCENT,rad);
+         nmTf.visible = shown.length > 0;
+         nmTf.x = nameX;
+         nmTf.width = Math.round(room);
+         this.hzApplyFmt(o);
+         if(nmTf.visible) { this.hzFitText(nmTf,shown,room); }
+         var nsz:Number = 14;
+         try { nsz = this.hzTextSz19(o,14); } catch(eSz:Error) { nsz = 14; }
+         this.hzTxtTop(nmTf,Math.round((H - nsz) / 2));
+         if(hasBtn)
+         {
+            this.hzT19Buttons(g,a,aw,Math.round(W - padR - bw),Math.round((H - cap) / 2),HZ_ACCENT);
+         }
+         return {"W":W,"H":H};
+      }
+
       private function hzT19Content(kind:String, a:Object, aw:Object, sel:int, start:int) : void
       {
          if(this.hzT19Kov) { this.hzT19Kov.graphics.clear(); }
@@ -10168,18 +10256,25 @@
          for each(var bo:Object in this.hzT19Btn) { bo.kp.visible = false; bo.lp.visible = false; bo.hh.visible = false; bo.kh.visible = false; bo.lh.visible = false; }
          var nmTf:TextField = this.hzT19Name;
          var o:Object = this.hzTxtObj(nmTf);
+         if(o != null) { o.chipCard = null; o.chipMin = 0; }
          var hdrTxt:String = a && a.sHeaderText != null ? this.hzT19Xl(String(a.sHeaderText)) : "";
          var rar:int = a && a.uRarity != undefined ? int(a.uRarity) : 0;
          var bw:Number = a ? this.hzT19Buttons(null,a,aw,0,0,acol) : 0;
          var hasBtn:Boolean = bw > 0;
-         if(kind == "prompt")
+         if(kind == "prompt" && this.hzNameHover != 1)
+         {
+            var pill:Object = this.hzT19PromptPill(g,a,aw,o,nmTf,hdrTxt,hasBtn,bw);
+            W = Number(pill.W);
+            H = Number(pill.H);
+         }
+         else if(kind == "prompt")
          {
             // v0.39 plain prompt card - people and objects alike: icon tile on top, the name (the game's header text)
             // centered below it, then the game's keycaps (TALK, OPEN, ...) centered. The v0.38 centered layout stays: the
             // title starts below the tile, so the two can never overlap.
             var PX:Number = HZ38_PR_PAD;
             var fbw:Number = bw;
-            o.center = true; o.right = false; o.ls = 2; o.fs = 16;
+            o.center = true; o.right = false; o.ls = 2; o.fs = 16; o.size = 16;
             this.hzTxtTint(nmTf,null);
             this.hzApplyFmt(o);
             nmTf.text = this.hzUC(hdrTxt);
@@ -10208,7 +10303,7 @@
          else if(kind == "foe")
          {
             W = Math.max(300,Math.round(bw + 40));
-            o.center = true; o.right = false; o.ls = 2.4; o.fs = 16;
+            o.center = true; o.right = false; o.ls = 2.4; o.fs = 16; o.size = 16;
             nmTf.visible = true;
             nmTf.x = 20; nmTf.width = W - 40;
             var en:String = this.hzTgEnName.length > 0 ? this.hzTgEnName : hdrTxt;
@@ -10242,7 +10337,7 @@
             if(it && it.uRarity != undefined) { rar = int(it.uRarity); }
             var nm:String = it && it.sName != null ? this.hzT19Xl(String(it.sName)) : hdrTxt;
             W = Math.max(kind == "cmp" ? 330 : 300,Math.round(bw + 36));
-            o.center = false; o.right = false; o.ls = 2; o.fs = 16;
+            o.center = false; o.right = false; o.ls = 2; o.fs = 16; o.size = 16;
             nmTf.visible = true;
             nmTf.x = 18; nmTf.width = W - 32;
             this.hzTxtTint(nmTf,rar > 0 ? uint(HZ_RAR[Math.min(4,rar)]) : null);
@@ -10336,7 +10431,7 @@
             var items:Array = this.hzTgItems;
             var n:int = items.length;
             W = Math.max(340,Math.round(bw + 28));
-            o.center = false; o.right = false; o.ls = 2; o.fs = 16;
+            o.center = false; o.right = false; o.ls = 2; o.fs = 16; o.size = 16;
             nmTf.visible = true;
             nmTf.x = 14; nmTf.width = W - 28;
             this.hzTxtTint(nmTf,steal ? HZ_RED : null);
@@ -11169,7 +11264,7 @@
          p.addChild(this.hz26Co2Bar);
          this.hz26Co2T = this.hzT(p,"",HZ_VN_W - 14 - 260,66 + 8,100,13,"sb","col",0.6,"right",HZ_RED);   // v0.42.0 r2: 13 px
          this.hz26Co2T.visible = false;
-         try { this.hz42VitApply(); } catch(err42v:Error) { }   // v0.42.0: the CO2 tail / text join the O2 row
+         try { this.hz42BarsApply(); } catch(err42v:Error) { }   // v0.42.0: the CO2 tail / text join the O2 row
       }
 
       private function hz26WarnCol(f:Number, okCol:uint) : uint
@@ -11189,11 +11284,12 @@
          if(showCo)
          {
             var cw:Number = Math.max(4,Math.round(bw * co));
-            cg.beginFill(this.hzIconCol(HZ_RED),0.9); cg.drawRoundRect(bw - cw,0,cw,8,8,8); cg.endFill();
+            var barH:Number = this.hz42BarTh();
+            cg.beginFill(this.hzIconCol(HZ_RED),0.9); cg.drawRoundRect(bw - cw,0,cw,barH,barH,barH); cg.endFill();
             this.hz26Co2T.text = "CO2 " + Math.round(co * 100) + "%";
             var vw:Number = this.hzVnO2 ? this.hzTW(this.hzVnO2) : 40;
             this.hz26Co2T.x = Math.round(HZ_VN_W - 14 - vw - 10 - 100);
-            this.hzTxtTop(this.hz26Co2T,66 + 12);
+            this.hzTxtTop(this.hz26Co2T,this.hz42Pitch() + (this.hzVitalsBars == 1 ? 6 : 12));
          }
          this.hz26Co2T.visible = showCo;
       }
@@ -11214,16 +11310,20 @@
          var x1:Number = Math.round(bw * Math.min(1,f + Math.max(gain,boost ? 0.04 : 0)));
          if(x1 - x0 < 3) { x1 = Math.min(bw,x0 + 3); }
          var gc:uint = this.hzIconCol(HZ_GREEN);
-         g.beginFill(gc,0.38); g.drawRect(x0,0,x1 - x0,8); g.endFill();
+         var slH:Number = this.hz42BarTh();
+         g.beginFill(gc,0.38); g.drawRect(x0,0,x1 - x0,slH); g.endFill();
          // chevrons drifting right inside the sliver
          this.hz26RegenPh = (this.hz26RegenPh + 0.6) % 10;
          var cx:Number = x0 + this.hz26RegenPh - 10;
+         var yA:Number = slH >= 8 ? 1.5 : 0.6;
+         var yB:Number = slH >= 8 ? 4 : 2;
+         var yC:Number = slH >= 8 ? 6.5 : 3.4;
          while(cx < x1)
          {
             if(cx >= x0 && cx + 4 <= x1)
             {
                g.lineStyle(1.2,gc,0.9,true);
-               g.moveTo(cx,1.5); g.lineTo(cx + 3,4); g.lineTo(cx,6.5);
+               g.moveTo(cx,yA); g.lineTo(cx + 3,yB); g.lineTo(cx,yC);
                g.lineStyle();
             }
             cx += 10;
@@ -14086,6 +14186,8 @@
       private function hz34Ini(k:String, nv:Number) : Boolean
       {
          if(k == "vitalslayout") { this.hz42VL = (!isNaN(nv) && nv >= 0.5) ? 1 : 0; this.hzLaidOut = false; return true; }   // v0.42.0
+         if(k == "namehover") { this.hzNameHover = (!isNaN(nv) && int(nv) == 1) ? 1 : 0; this.hzT19Sig = ""; return true; }
+         if(k == "vitalsbars") { this.hzVitalsBars = (!isNaN(nv) && int(nv) == 1) ? 1 : 0; this.hzLaidOut = false; try { this.hz42BarsApply(); } catch(eVb:Error) { } return true; }
          if(k == "modulenotecompact") { this.hz34NoteCmp = !isNaN(nv) && nv >= 0.5; return true; }
          for each(var c:Array in HZ34_CARDS)
          {
@@ -14104,6 +14206,8 @@
          }
          o.ModuleNoteCompact = this.hz34NoteCmp ? 1 : 0;
          o.VitalsLayout = this.hz42VL;   // v0.42.0
+         o.NameHover = this.hzNameHover == 1 ? 1 : 0;
+         o.VitalsBars = this.hzVitalsBars == 1 ? 1 : 0;
       }
       private function hz34SetLive(p:Object) : void
       {
@@ -14130,6 +14234,16 @@
             var vl:int = Number(p.VitalsLayout) >= 0.5 ? 1 : 0;
             if(vl != this.hz42VL) { this.hz42VL = vl; this.hz42VitApply(); this.hzLaidOut = false; }
          }
+         if(p.NameHover !== undefined)
+         {
+            var nh:int = int(p.NameHover) == 1 ? 1 : 0;
+            if(nh != this.hzNameHover) { this.hzNameHover = nh; this.hzT19Sig = ""; }
+         }
+         if(p.VitalsBars !== undefined)
+         {
+            var vb:int = int(p.VitalsBars) == 1 ? 1 : 0;
+            if(vb != this.hzVitalsBars) { this.hzVitalsBars = vb; try { this.hz42BarsApply(); } catch(eVb:Error) { } this.hzLaidOut = false; }
+         }
          if(cd) { this.hz26ChSig = ""; this.hzLaidOut = false; }
          if(sd) { this.hzApplyScale(); }
       }
@@ -14141,6 +14255,10 @@
          for each(var c:Array in HZ34_CARDS) { a.push(c[0] + "Scale=" + this.hz34ScStr(p[c[0] + "Scale"])); }
          a.push("; v0.42 vitals card layout: 0 = vertical (health above O2, default), 1 = horizontal (O2 beside health, one row); F11 > CARDS or ARRANGE CARDS (L)");
          a.push("VitalsLayout=" + (Number(p.VitalsLayout) >= 0.5 ? "1" : "0"));
+         a.push("; v0.43 name hover: 0 = compact one-line pill (default), 1 = the full card. Empty or any other value uses compact.");
+         a.push("NameHover=" + (int(p.NameHover) == 1 ? "1" : "0"));
+         a.push("; v0.43 health and oxygen bars: 0 = full (default), 1 = compact. Empty or any other value uses full.");
+         a.push("VitalsBars=" + (int(p.VitalsBars) == 1 ? "1" : "0"));
          a.push("; v0.34 card compact form: -1 = GLOBAL ([Style] Compact), 0 off, 1 on. Jetpack / vitals / afflictions follow the global Compact");
          for each(var d:Array in HZ34_CARDS) { if(d[1]) { a.push(d[0] + "Compact=" + String(this.hz34CmClamp(p[d[0] + "Compact"]))); } }
       }
@@ -14170,6 +14288,7 @@
             {"k":"ShowJetpack","l":"JETPACK CARD","t":"b","h":"CARDS"},this.hz34Sz("Jetpack",szn),
             {"k":"ShowVitals","l":"VITALS CARD","t":"b"},this.hz34Sz("Vitals"),
             {"k":"VitalsLayout","l":"VITALS LAYOUT","t":"r","opts":["VERTICAL","HORIZONTAL"],"ids":[0,1],"sub":true,"note":"VERTICAL = health above O2.  HORIZONTAL = O2 beside health (one row).  ARRANGE CARDS: L"},
+            {"k":"VitalsBars","l":"HEALTH AND O2 BARS","t":"r","opts":["FULL","COMPACT"],"ids":[0,1],"sub":true,"note":"COMPACT is a shorter bar. FULL is the current card."},
             {"k":"ShowCharacter","l":"CHARACTER CARD (LV / XP / CREDITS / MASS)","t":"b"},this.hz34Sz("Character"),this.hz34Cmp("Character",cmn),
             {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","sub":true},
             {"k":"ShowPlanet","l":"PLANET CARD","t":"b"},this.hz34Sz("Planet"),this.hz34Cmp("Planet"),
@@ -14184,6 +14303,7 @@
             {"k":"StealthMeter","l":"STEALTH METER (ABOVE CROSSHAIR)","t":"b"},this.hz34Sz("Stealth"),
             {"k":"CompactScale","l":"COMPACT STRIPS: SIZE","t":"z","note":"The jetpack / vitals / afflictions strips of COMPACT MODE"},
             {"k":"ShowTarget","l":"TARGET CARD (ACTIVATE PROMPT)","t":"b","h":"HOVER + CONTAINER"},
+            {"k":"NameHover","l":"NAME HOVER","t":"r","opts":["COMPACT","FULL"],"ids":[0,1],"sub":true,"note":"COMPACT is one line: icon, name, key. FULL is the taller card."},
             {"k":"HoverScale","l":"HOVER CARDS: SIZE","t":"z","sub":true,"note":"Activate prompts, loose item / take card, compare and enemy tags"},
             {"k":"ContainerScale","l":"CONTAINER WINDOW: SIZE","t":"z","sub":true,"note":"The full container item list"}];
          var on:Boolean = this.hz30Mod["comms"] === 1;
@@ -16661,15 +16781,87 @@
       // =================== end v0.41.0 ===================
       // =================== v0.42.0: main HUD vitals layout ([Cards] VitalsLayout) ===================
       // 0 = vertical (health body above the O2 body, card 330 x 124, unchanged), 1 = horizontal (the O2 body beside health,
-      // 8 px gap, card 668 x 58). Every child of the vitals form at y >= 60 (the O2 body, icon, label, value, bar, CO2 tail /
-      // text) lives in one row sprite (hz42VRow), moved by (338, -66) in the horizontal layout; nothing else is redrawn.
-      // The compact strips ignore it. ARRANGE positions use the real card size (edge anchors keep their edge).
+      // 8 px gap, card 668 x 58). In the full bar form every child at y >= 60 (the O2 body, icon, label, value, bar, CO2
+      // tail / text) lives in one row sprite (hz42VRow), moved by (338, -66) in the horizontal layout.
+      // VitalsBars 1 shortens that same card; the full form keeps 58 / 66 / -66. The compact strips ignore it.
+      // ARRANGE positions use the real card size (edge anchors keep their edge).
       private var hz42VL:int = 0;
       private var hz42VLOrig:int = -1;
       private var hz42VRow:Sprite = null;
+      private var hzVitalsBars:int = 0;   // 0 full (default), 1 compact. Any other value stays full.
+      private function hz42BodyH() : Number { return this.hzVitalsBars == 1 ? 40 : 58; }
+      private function hz42Pitch() : Number { return this.hz42BodyH() + 8; }
+      private function hz42BarTh() : Number { return this.hzVitalsBars == 1 ? 4 : 8; }
       private function hz42VW() : Number { return this.hz42VL == 1 ? HZ_VN_W * 2 + 8 : HZ_VN_W; }
-      private function hz42VH() : Number { return this.hz42VL == 1 ? 58 : 124; }
+      private function hz42VH() : Number { return this.hz42VL == 1 ? this.hz42BodyH() : this.hz42Pitch() + this.hz42BodyH(); }
       private function hz42VLName() : String { return this.hz42VL == 1 ? "HORIZONTAL" : "VERTICAL"; }
+      private function hz42UngroupVit() : void
+      {
+         if(!this.hzVitNew || this.hz42VRow == null) { return; }
+         var p:Sprite = this.hzVitNew;
+         var kids:Array = [];
+         var i:int = 0;
+         while(i < this.hz42VRow.numChildren) { kids.push(this.hz42VRow.getChildAt(i)); i++; }
+         for each(var d:DisplayObject in kids) { p.addChild(d); }
+         this.hz42VRow.x = 0;
+         this.hz42VRow.y = 0;
+      }
+      // Full keeps the built positions (body 58, pitch 66, bar 8, value 20). Compact shortens the same card.
+      private function hz42BarsApply() : void
+      {
+         if(!this.hzVitNew || this.hzVnBodies.length < 2) { return; }
+         this.hz42UngroupVit();
+         var compact:Boolean = this.hzVitalsBars == 1;
+         var pitch:Number = this.hz42Pitch();
+         var i:int = 0;
+         while(i < 2)
+         {
+            var y:Number = i * pitch;
+            var body:Sprite = Sprite(this.hzVnBodies[i]);
+            if(body) { body.y = y; }
+            if(i < this.hzVnIc.length && this.hzVnIc[i]) { Sprite(this.hzVnIc[i]).y = y + (compact ? 6 : 12); }
+            if(i < this.hzVnLbl.length && this.hzVnLbl[i])
+            {
+               var lo:Object = this.hzTxtObj(TextField(this.hzVnLbl[i]));
+               if(lo) { lo.y0 = y + (compact ? 8 : 9); this.hzApplyFmt(lo); }
+            }
+            var val:TextField = i == 0 ? this.hzVnHp : this.hzVnO2;
+            if(val)
+            {
+               var vo:Object = this.hzTxtObj(val);
+               if(vo)
+               {
+                  vo.fs = compact ? 13 : 20;
+                  vo.size = vo.fs;
+                  if(compact) { vo.chipCard = "Vitals"; vo.chipMin = 13; }
+                  else { vo.chipCard = null; vo.chipMin = 0; }
+                  vo.y0 = y + (compact ? 6 : 4);
+                  this.hzApplyFmt(vo);
+               }
+            }
+            var bar:Sprite = i == 0 ? this.hzVnHpBar : this.hzVnO2Bar;
+            if(bar)
+            {
+               bar.y = y + (compact ? 30 : 40);
+               bar.name = compact ? "hzBarC" : "hzThick8";
+            }
+            i++;
+         }
+         if(this.hz26Regen) { this.hz26Regen.y = compact ? 30 : 40; }
+         if(this.hz26RegenT)
+         {
+            var ro:Object = this.hzTxtObj(this.hz26RegenT);
+            if(ro) { ro.y0 = compact ? 6 : 8; this.hzApplyFmt(ro); }
+         }
+         if(this.hz26Co2Bar) { this.hz26Co2Bar.y = pitch + (compact ? 30 : 40); }
+         if(this.hz26Co2T)
+         {
+            var co:Object = this.hzTxtObj(this.hz26Co2T);
+            if(co) { co.y0 = pitch + (compact ? 6 : 8); this.hzApplyFmt(co); }
+         }
+         this.hz42VitApply();
+         this.hzVnDraw();
+      }
       private function hz42VitApply() : void
       {
          if(!this.hzVitNew || !this.HorizonVitals_mc) { return; }
@@ -16681,18 +16873,19 @@
             this.hz42VRow.mouseEnabled = false;
             p.addChild(this.hz42VRow);
          }
+         var cut:Number = this.hz42Pitch() - 6;
          var mv:Array = [];
          var i:int = 0;
          while(i < p.numChildren)
          {
             var ch:DisplayObject = p.getChildAt(i);
-            if(ch != this.hz42VRow && ch.y >= 60) { mv.push(ch); }
+            if(ch != this.hz42VRow && ch.y >= cut) { mv.push(ch); }
             i++;
          }
          for each(var d:DisplayObject in mv) { this.hz42VRow.addChild(d); }
          var hz:Boolean = this.hz42VL == 1;
          this.hz42VRow.x = hz ? HZ_VN_W + 8 : 0;
-         this.hz42VRow.y = hz ? -66 : 0;
+         this.hz42VRow.y = hz ? -this.hz42Pitch() : 0;
          this.hzSetSz(this.HorizonVitals_mc,this.hz42VW(),this.hz42VH());
       }
       private function hz42SetVL(v:int) : void

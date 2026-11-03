@@ -763,8 +763,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.23", "file version is 0.43.0.23");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 23, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.24", "file version is 0.43.0.24");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 24, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -1649,7 +1649,7 @@ int main()
 		Expect(stillMid && stillFuture, "later-point flags survive a new capture");
 		Expect(b.nextId > futureId, "new rows take ids after the later-point rows");
 
-		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.23");
+		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.24");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok, "later-point flags round-trip through JSON");
 		Buffer restarted;
@@ -1699,7 +1699,7 @@ int main()
 		Buffer loaded;
 		loaded.LoadState(held);
 		ExpectEqI(static_cast<int>(loaded.nextId), 42, "LoadState keeps the persisted nextId");
-		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.23");
+		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.24");
 		Expect(json.find("\"nextId\": 42") != std::string::npos, "ToJson writes nextId");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok && parsed.state.nextId == 42, "FromJson reads the persisted nextId");
@@ -3242,7 +3242,14 @@ int main()
 			int clears = 0;
 			const auto hud = main.find("void MsglogOnHudReady()");
 			const auto apply = main.find("void MsglogApplyLoad()");
-			const auto hudBody = hud != std::string::npos && apply > hud ? main.substr(hud, apply - hud) : std::string();
+			auto hudBody = hud != std::string::npos && apply > hud ? main.substr(hud, apply - hud) : std::string();
+			// Windows checkouts store the plugin as CRLF. Drop CR so the reset scan matches either ending.
+			std::string hudLf;
+			hudLf.reserve(hudBody.size());
+			for (char c : hudBody) {
+				if (c != '\r') hudLf.push_back(c);
+			}
+			hudBody.swap(hudLf);
 			for (std::size_t p = 0; (p = hudBody.find("g_mlHoldFlush = false;", p)) != std::string::npos; ++p)
 				++clears;
 			ExpectEqI(clears, 2, "both HUD-ready resets clear the hold-flush flag");
@@ -3251,6 +3258,12 @@ int main()
 			for (std::size_t p = 0; (p = hudBody.find(holdClear, p)) != std::string::npos; ++p)
 				++clearsHold;
 			ExpectEqI(clearsHold, 2, "both HUD-ready resets clear persistHold and holdTargetKey");
+			std::string crlfProbe = "g_mlHoldFlush = false;\r\n\t\t\t\t\tg_ml.NoteRetrySuccess();";
+			std::string crlfLf;
+			for (char c : crlfProbe) {
+				if (c != '\r') crlfLf.push_back(c);
+			}
+			Expect(crlfLf.find(holdClear) != std::string::npos, "HUD-ready reset scan matches a CRLF checkout");
 			int lineageResets = 0;
 			for (std::size_t p = 0; (p = hudBody.find("g_ml.ResetMemory()", p)) != std::string::npos; ++p)
 				++lineageResets;
@@ -3498,7 +3511,20 @@ int main()
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.23\"") != std::string::npos, "HUD movie build id is 0.43.0.23");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.24\"") != std::string::npos, "HUD movie build id is 0.43.0.24");
+		{
+			const auto confirm = AsFnBody(as, "private function hzMsglogDrawConfirm", "private function hzMsglogTypeOn");
+			Expect(confirm.find("hzMsglogWrap") != std::string::npos, "the clear confirm wraps its warning");
+			Expect(confirm.find("Can't be undone.") != std::string::npos, "the clear confirm keeps the full warning");
+			const auto settings = AsFnBody(as, "private function hzMsglogDrawSettings", "private function hzMsglogDrawHist");
+			Expect(settings.find("hzMlHistSlot") != std::string::npos, "the history value has its own slot");
+			Expect(settings.find("\"right\"") != std::string::npos, "the history value is right-aligned");
+			Expect(settings.find("SHOW uses the RECORD label-to-switch gap") != std::string::npos,
+				"SHOW uses the RECORD gap");
+		}
+		Expect(as.find("function hzT19PromptPill") != std::string::npos, "compact name hover is the existing prompt card");
+		Expect(as.find("NameHover") != std::string::npos && as.find("VitalsBars") != std::string::npos,
+			"the cards tab saves the new layout keys");
 		{
 			const auto shown = AsFnBody(as, "private function hzMsglogShown", "private function hzMsglogChipCount");
 			const auto chips = AsFnBody(as, "private function hzMsglogChipCount", "private function hzMsglogList");
@@ -3675,7 +3701,7 @@ int main()
 			"the Find keycap passes minPx 13");
 		Expect(as.find("hzSetBtn(b,g,bxr,by,\"BACK\",false,false,this.hzMlHover == \"back\",T,\"mlback\",13,13)") != std::string::npos,
 			"log buttons pass minPx 13");
-		Expect(as.find("hzSetBtn(b,g,br,cy + 120,\"CLEAR\",true,false,this.hzMlHover == \"cfok\",T,\"cfok\",13,13)") != std::string::npos,
+		Expect(as.find("hzSetBtn(b,g,br,btnY,\"CLEAR\",true,false,this.hzMlHover == \"cfok\",T,\"cfok\",13,13)") != std::string::npos,
 			"the confirm CLEAR button passes minPx 13");
 		ExpectEqI(TextScaleFloorPx(13, 13), 13, "TextScale 0.90 on a 13 px face stays 13");
 		ExpectEqI(TextScaleFloorPx(13, 0), 12, "without minPx, TextScale 0.90 drops 13 to 12");
