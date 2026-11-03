@@ -2713,7 +2713,7 @@
       {
          if(this.hzCtorStarted) { return; }
          this.hzCtorStarted = true;
-         this.hzDllLog("HUD ctor start 0.43.0.17");
+         this.hzDllLog("HUD ctor start 0.43.0.18");
       }
       // mode peek names the next stage. mode run executes that one stage.
       public function hzCtorStep(mode:String) : String
@@ -6149,7 +6149,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.17";
+      private static const HZ_BUILD:String = "0.43.0.18";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static var HZ_SET_TGS:Array;
       private static var HZ_SET_TGS_N:Array;
@@ -17215,8 +17215,8 @@
             var emptyDir:String = this.hz37St.pdir != undefined && String(this.hz37St.pdir).length > 0 ? String(this.hz37St.pdir) : "Data/Interface/HorizonUI/presets/user";
             rows.push({"k":"_hz37pick","l":"PRESET","t":"p","h":"PRESETS","off":true,"n13":true,"note":"No presets yet: save your own below" + (skip > 0 ? " - " + skip + " skipped (see log)" : ""),"info":"Presets are complete looks for Horizon UI. Saved ones go to " + emptyDir + "; the installer can add Moragar's Choice. Removing a saved preset from this list leaves its file there so you can erase it yourself."});
          }
-         rows.push({"k":"BuildCards","l":"BUILD CARDS","t":"b","n13":true,"note":"On builds the Horizon cards. Off skips them and logs cards skipped.","info":"On: Horizon builds its cards, one per frame. Off: hzBuildCards never runs, the vanilla HUD stays, and the log says cards skipped. For an A/B test, put BuildCards=0 under [UI] in HorizonUI.user.ini before you load a save. Default is on. STARTUP INTRO stays off for this test."});
-         rows.push({"k":"StartupIntro","l":"STARTUP INTRO","t":"b","n13":true,"note":"Off for this test. On plays the welcome splash.","info":"Off: the startup intro never runs, and the log says splash skipped. On: the welcome splash can play after a save load. This test build defaults to off."});
+         rows.push({"k":"BuildCards","l":"BUILD CARDS","t":"b","n13":true,"note":"On builds the Horizon cards. Off skips them and logs cards skipped.","info":"On: Horizon builds its cards, one per frame. Off: hzBuildCards never runs, the vanilla HUD stays, and the log says cards skipped. To skip cards, put BuildCards=0 under [UI] in HorizonUI.user.ini before you load a save. Default is on. STARTUP INTRO defaults to off."});
+         rows.push({"k":"StartupIntro","l":"STARTUP INTRO","t":"b","n13":true,"note":"Off skips the startup intro. On plays the welcome splash.","info":"Off: the startup intro never runs, and the log says splash skipped. On: the welcome splash can play after a save load. The default is off."});
          rows.push({"k":"ShowWelcomeOnLoad","l":"SHOW WELCOME ON LOAD","t":"b","n13":true,"note":"Horizon UI splash after every save load. Never pauses the game.","info":"On: a short HORIZON UI splash plays after each save load, using your HUD accent. Off: no splash. The game never pauses. STARTUP INTRO must also be on."});
          rows.push({"k":"_hz37apply","l":"APPLY SELECTED PRESET","t":"x","btn":"APPLY","off":p == null,"n13":true,"note":this.hz37Note("_hz37apply",null),"info":"Your settings become exactly the defaults plus what the preset sets - anything it does not list goes back to its default. Your settings key, ScreenHeight and debug switches ([Debug]) stay as they are. Applies right away; UNDO LAST PRESET puts your old settings back."});
          rows.push({"k":"_hz37save","l":"SAVE CURRENT AS PRESET","t":"x","btn":"SAVE","n13":true,"note":this.hz37Note("_hz37save",null),"info":"Saves your current look as a preset in Data/Interface/HorizonUI/presets/user: every setting that differs from the defaults (card positions, sizes, colors, fonts, Comms and Scanner included; not your settings key or ScreenHeight). Type a name with the keyboard; with a controller, confirm the suggested name."});

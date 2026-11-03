@@ -59,8 +59,10 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.17", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 17, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.18", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 18, "file version numbers");
+	Expect(HZF::IniFlagOn("1") && HZF::IniFlagOn("true") && HZF::IniFlagOn("ON") && HZF::IniFlagOn(" Yes "), "1 true on yes are on");
+	Expect(!HZF::IniFlagOn("0") && !HZF::IniFlagOn("False") && !HZF::IniFlagOn("Off") && !HZF::IniFlagOn("no") && !HZF::IniFlagOn("2") && !HZF::IniFlagOn(""), "every other ini flag value is off");
 	Expect(HZ_COMMS_MSG_LOG == 0, "verbose reaction trace is off for this release");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "unfiltered HUD capture is off for this release");
 	Expect(HzFileVersionOk("0.43.0.9"), "4-part version ok");
@@ -822,7 +824,7 @@ int main()
 		std::ifstream in("preset/HorizonUI.moragars-choice-0.42.0.ini");
 		Expect(static_cast<bool>(in), "preset ini opens");
 		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(ini.find("Version=0.43.0.17") != std::string::npos, "preset Version is the file version");
+		Expect(ini.find("Version=0.43.0.18") != std::string::npos, "preset Version is the file version");
 		Expect(ini.find("test DLL") == std::string::npos, "preset Debug note does not call this a test DLL");
 		Expect(ini.find("The comms message log is only in debug builds.") != std::string::npos, "release Debug note");
 		Expect(ini.find("VehicleExitPill") == std::string::npos, "the preset does not mirror the vehicle exit default");
@@ -834,7 +836,7 @@ int main()
 		Expect(static_cast<bool>(in), "default.ini opens");
 		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 		Expect(ini.find("\r\n") != std::string::npos, "default.ini stays CRLF");
-		Expect(ini.find("HorizonUI.default.ini (v0.43.0.17)") != std::string::npos,
+		Expect(ini.find("HorizonUI.default.ini (v0.43.0.18)") != std::string::npos,
 			"default.ini header is the file version");
 		const auto cards = ini.find("[Cards]");
 		const auto compass = ini.find("[Compass]");
@@ -851,7 +853,10 @@ int main()
 		Expect(ini.find("ReactionCard=1") != std::string::npos, "ReactionCard defaults on");
 		Expect(ini.find("ModuleNoteCompact=1") != std::string::npos, "module notices start collapsed");
 		Expect(ini.find("ShowWelcomeOnLoad=1") != std::string::npos, "the welcome splash defaults on");
-		Expect(ini.find("StartupIntro=0") != std::string::npos, "the startup intro defaults off for this test");
+		Expect(ini.find("StartupIntro=0") != std::string::npos, "the startup intro defaults off");
+		Expect(ini.find("for this test") == std::string::npos, "shipped default.ini does not call itself a test");
+		Expect(ini.find("personal alerts") != std::string::npos, "EnemyCard=0 names the cards it skips");
+		Expect(ini.find("F11 toggles have no effect") != std::string::npos, "EnemyCard=0 says the F11 toggles do nothing");
 		Expect(ini.find("BuildCards=1") != std::string::npos, "card build defaults on");
 		Expect(ini.find("EnemyCard=0") != std::string::npos, "the enemy card defaults off");
 		Expect(ini.find("CommsPage=0") != std::string::npos, "COMMS starts on SUBTITLES");
@@ -882,6 +887,16 @@ int main()
 				q = e + 1;
 			}
 			Expect(nLay == 17, "every arrangeable card has Layout X/Y in the defaults");
+			Expect(as.find("for this test") == std::string::npos, "F11 rows do not call this a test");
+			Expect(as.find("This test build") == std::string::npos, "F11 rows do not call this a test build");
+		}
+		{
+			std::ifstream cpp("src/main.cpp");
+			Expect(static_cast<bool>(cpp), "main.cpp opens");
+			std::string src((std::istreambuf_iterator<char>(cpp)), std::istreambuf_iterator<char>());
+			Expect(src.find("HZF::IniFlagOn(bc)") != std::string::npos && src.find("HZF::IniFlagOn(ec)") != std::string::npos,
+				"BuildCards and EnemyCard use the on-word parser");
+			Expect(src.find("== \"false\"") == std::string::npos, "the DLL flag parser is not a case-sensitive deny list");
 		}
 		{
 			const std::string full =
@@ -984,7 +999,7 @@ int main()
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(lua.find("set_version(\"0.43.0.17\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.43.0.18\")") != std::string::npos, "xmake version is the 4-part file version");
 		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
 		std::ifstream cpp("res/horizonui-plugin.cpp.in");
 		Expect(static_cast<bool>(cpp), "plugin version template opens");

@@ -837,14 +837,14 @@ namespace HZ
 			{
 				std::string bc = "1";
 				get("buildcards", bc);
-				const bool on = !(bc == "0" || bc == "false" || bc == "off");
+				const bool on = HZF::IniFlagOn(bc);
 				g_buildCards.store(on, std::memory_order_release);
 				if (!on) REX::INFO("hud: BuildCards=0");
 			}
 			{
 				std::string ec = "0";
 				get("enemycard", ec);
-				const bool on = !(ec == "0" || ec == "false" || ec == "off");
+				const bool on = HZF::IniFlagOn(ec);
 				g_enemyCard.store(on, std::memory_order_release);
 				REX::INFO("hud: EnemyCard={}", on ? 1 : 0);
 			}

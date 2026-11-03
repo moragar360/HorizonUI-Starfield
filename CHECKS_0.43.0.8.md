@@ -2,6 +2,16 @@
 
 An independent review will follow later. Do not treat this as approved.
 
+## 0.43.0.18 — ini on-words and a docs scrub
+
+Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.18**. `HZ_COMMS_MSG_LOG` and `HZ_HUD_MSG_CAPTURE` stay `0`.
+
+`EnemyCard` and `BuildCards` in `LoadIni` use `HZF::IniFlagOn`. Only `1`, `true`, `on`, and `yes` are on, in any case, with surrounding space ignored. Every other value is off, including `False` and `Off`. `StartupIntro` is not read by the DLL. The movie reads it in `hz34Ini` as a number, so `False` and `Off` already leave the intro off.
+
+The default.ini comment for `EnemyCard=0` names the character card, enemy health, stealth, the XP toast, combat FX, the regen sliver, equipment extras, and personal alerts. Their F11 toggles do nothing while the flag is 0. Shipped default.ini comments and the F11 BUILD CARDS and STARTUP INTRO rows no longer say this is a test.
+
+Card construction is unchanged from 0.43.0.17. Still unverified in game.
+
 ## 0.43.0.17 — skip the enemy card unless EnemyCard=1
 
 Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.17**. `HZ_COMMS_MSG_LOG` and `HZ_HUD_MSG_CAPTURE` stay `0`.
@@ -193,9 +203,9 @@ Pins that fail if this fix is reverted: `hzInitFields` assigns `hz30Mod` and `hz
 
 Still unverified in game. After the PC rebuild, `HorizonUI.log` must show `HorizonUI 0.43.0.9 loaded` and `movie builds: HUD 0.43.0.9`. Then either Horizon cards are up, or `hud: movie error hzBoot null ...` / `hzBuildCards.vitals` names the next failure. Do not treat a `HUD 0.43.0.8` line as this build.
 
-PC folders: compile and run xmake only in `C:\HorizonUI-repo` (the GitHub checkout). `C:\HorizonUI` is the old tree and is only the SWF compile tools. A text search of `hudmenu.gfx` cannot see `[-2,2,-2,2]`; the compiler stores those offsets as numbers. The decompile of `C:\Users\rschr\build\out_v043009\swf\hudmenu.gfx` containing `var ox:Array = [-2,2,-2,2]` is the offset check. `hzInitFields`, `hzBoot null`, and `0.43.0.9` are present in that movie, and `0.43.0.8` is absent. The DLL and eight movies are already built. The next PC step is the FOMOD zip only. Do not rebuild.
+PC folders: compile and run xmake only in `C:\HorizonUI-repo` (the GitHub checkout). `C:\HorizonUI` is the old tree and is only the SWF compile tools. A text search of `hudmenu.gfx` cannot see `[-2,2,-2,2]`; the compiler stores those offsets as numbers. The decompile of `%USERPROFILE%\build\out_v043009\swf\hudmenu.gfx` containing `var ox:Array = [-2,2,-2,2]` is the offset check. `hzInitFields`, `hzBoot null`, and `0.43.0.9` are present in that movie, and `0.43.0.8` is absent. The DLL and eight movies are already built. The next PC step is the FOMOD zip only. Do not rebuild.
 
-The sections below are the earlier 0.43.0.8 pass. They are history. The install to test now is 0.43.0.9, staged under `C:\Users\rschr\build`.
+The sections below are the earlier 0.43.0.8 pass. They are history. The install to test now is 0.43.0.9, staged under `%USERPROFILE%\build`.
 
 ## Building on your PC with Cursor
 
@@ -217,21 +227,21 @@ Then:
 1. In C:\HorizonUI\sfse-plugin (or this repo if that is the plugin tree), run:
    xmake f -c -y -m releasedbg
    xmake build -y
-   Put the DLL, SWFs, and FOMOD in C:\Users\rschr\build the same way as 0.43.0.7.
+   Put the DLL, SWFs, and FOMOD in %USERPROFILE%\build the same way as 0.43.0.7.
    Do not copy into the live Vortex staging folder or Data\SFSE\Plugins.
 2. Compile the SWFs and their _lrg twins from the AS sources using the existing C:\HorizonUI SWF import steps:
    - HUDMenu and HUDMenu_lrg from actionscript/horizon_block.as (this is the important one)
    - HUDMessagesMenu and HUDMessagesMenu_lrg (version pin)
    - MonocleMenu and MonocleMenu_lrg (version pin)
    - ScopeMenu and ScopeMenu_lrg (version pin)
-3. Package the FOMOD the same way you packaged 0.43.0.7, into C:\Users\rschr\build.
-4. Do not launch Starfield. Do not git commit or git push. Author stays Moragar. Never write HUSD. Move files; never delete.
+3. Package the FOMOD the same way you packaged 0.43.0.7, into %USERPROFILE%\build.
+4. Do not launch Starfield. Do not git commit or git push. Author stays Moragar. Move files; never delete.
 
-When done, tell me the DLL path, the SWF paths, the FOMOD zip path, and the backup folder paths. All of those should be under C:\Users\rschr\build.
+When done, tell me the DLL path, the SWF paths, the FOMOD zip path, and the backup folder paths. All of those should be under %USERPROFILE%\build.
 ```
 
-3. House rules the local agent must follow: move, never delete; no git commit or push from the PC; DLL author Moragar, never HUSD; do not launch the game.
-4. After it finishes, check: backups exist; `HorizonUI.log` is not written yet (game was not launched); the new DLL, SWFs, and FOMOD zip are under `C:\Users\rschr\build`; version strings say 0.43.0.8. Then you install that FOMOD in Vortex when you are ready. Leave 0.43.0.7 deployed until then.
+3. House rules the local agent must follow: move, never delete; no git commit or push from the PC; DLL author is Moragar; do not launch the game.
+4. After it finishes, check: backups exist; `HorizonUI.log` is not written yet (game was not launched); the new DLL, SWFs, and FOMOD zip are under `%USERPROFILE%\build`; version strings say 0.43.0.8. Then you install that FOMOD in Vortex when you are ready. Leave 0.43.0.7 deployed until then.
 
 ## (a) Repo tests (this cloud run)
 
@@ -261,7 +271,7 @@ Pin-kill score for this pass: the one stale enqueue pin was a real kill (test fa
 ## (b) House rules
 
 1. American spelling. `greyed` is absent in the HUD source; `grayed` stays.
-2. `HUSD` does not appear in `src/`. Author in `xmake.lua` is Moragar.
+2. The DLL author in `xmake.lua` is Moragar.
 3. New F11 copy uses 13 px (`HISTORY`, COMMS page labels, compact module titles). Compact notices stay at least 13 px.
 4. HUD `_lrg` shares `actionscript/horizon_block.as`. COMMS / scanner / scope / monocle twins only got the version pin. `himp1`, `himp1.07`, `HUDMenu_1.as`, and `HUDMenu_1.07.as` were not edited.
 5. No new glow. Splash uses an 8-offset 2 px dark outline. Existing `GlowFilter` on other HUD chrome is unchanged.

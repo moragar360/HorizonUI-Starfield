@@ -577,5 +577,15 @@ namespace HZF {
 				UnionHiddenPresetIds(a_out, SplitPresetIds(it->second.second));
 		}
 
+		// Purpose: read an on/off ini value. Only 1, true, on, and yes are on.
+		// Inputs: the raw value. Case and surrounding space do not matter.
+		// Outputs: true for those four words, false for every other value.
+		// Dependencies: Lower, Trim. Author: Moragar. Last modified: 2026-11-02.
+		inline bool IniFlagOn(const std::string& a_v)
+		{
+			const auto s = Lower(Trim(a_v));
+			return s == "1" || s == "true" || s == "on" || s == "yes";
+		}
+
 } // namespace HZF
 
