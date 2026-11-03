@@ -7,8 +7,12 @@
 const fs = require("fs");
 const path = require("path");
 
+function readText(p) {
+	return fs.readFileSync(p, "utf8").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
 const srcPath = path.join(__dirname, "..", "actionscript", "horizon_block.as");
-const src = fs.readFileSync(srcPath, "utf8");
+const src = readText(srcPath);
 
 const HOLD = 228;
 const REST = 246;
@@ -32,7 +36,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.43.0.24";', "HUD build id is 0.43.0.24");
+pin('private static const HZ_BUILD:String = "0.43.0.25";', "HUD build id is 0.43.0.25");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
@@ -56,12 +60,12 @@ expect(hzTempText(-5, 1) === "23 °F", "Mars formats as 23 °F");
 expect(hzTempText(null, 0) === "--", "a null temperature shows --");
 expect(hzTempText(Number.NaN, 0) === "--", "a NaN temperature shows --");
 {
-	const scan = fs.readFileSync(path.join(__dirname, "..", "actionscript", "scanner", "hzs_block.as"), "utf8");
+	const scan = readText(path.join(__dirname, "..", "actionscript", "scanner", "hzs_block.as"));
 	expect(scan.indexOf("var hasT:Boolean = env.fTemperature != null && !isNaN(Number(env.fTemperature));") >= 0, "scanner checks null before Number");
 	expect(scan.indexOf('cond.push(["TEMPERATURE",inShip || !hasT ? "--" : String(tShown) + tUnit]);') >= 0, "scanner shows -- for a null temperature");
 }
 {
-	const scan = fs.readFileSync(path.join(__dirname, "..", "actionscript", "scanner", "hzs_block.as"), "utf8");
+	const scan = readText(path.join(__dirname, "..", "actionscript", "scanner", "hzs_block.as"));
 	expect(scan.indexOf('cond.push(["LOCAL TIME",clk]);') >= 0, "scanner LOCAL TIME row is unchanged");
 }
 pin('"HudMessages"', "HUD Messages is an arrangeable layout key");
@@ -582,7 +586,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.24";') >= 0, rel + " build is 0.43.0.24");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.25";') >= 0, rel + " build is 0.43.0.25");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -697,7 +701,7 @@ pin("g.lineStyle(2,col,a,true,\"none\");", "the F11 cross uses a 2 px stroke");
 	expect(help && n <= 330, "vehicle exit help is 330 characters or fewer (" + n + ")");
 }
 
-const dlgBlock = fs.readFileSync(path.join(__dirname, "..", "actionscript", "comms", "hzd_block.as"), "utf8");
+const dlgBlock = readText(path.join(__dirname, "..", "actionscript", "comms", "hzd_block.as"));
 function dlgPin(snippet, msg) {
 	expect(dlgBlock.indexOf(snippet) >= 0, msg || snippet);
 }
@@ -1544,6 +1548,77 @@ function makeHud() {
 pin("function hzMlIsTop", "hzMlIsTop is the shared Message Log top-layer test");
 pin("function hzMsglogOverlayLayer", "overlays draw into a child Sprite added last");
 pin("function hzTakeMsglogIni", "the movie exposes a MessageLog-only take");
+
+// Compact name pill. hzFitText ellipsizes when the text is wider than maxW - 4, so a field
+// that is exactly the measured width cuts VASCO. Names at or under 220 px get 8 px of slack.
+// Icon and name are reserved first; the button row is limited to what remains of 520.
+function hzPillNameRoom(measured) {
+	if (!(measured > 0)) return 0;
+	if (measured <= 220) return measured + 8;
+	return 224;
+}
+function hzPillEllipsizes(measured) {
+	if (measured < 2) return false;
+	return measured > hzPillNameRoom(measured) - 4;
+}
+function hzPillLayout(namePx, btnPx) {
+	const padL = 10;
+	const rad = 13;
+	const padR = 12;
+	const gap = 10;
+	const nameX = padL + rad * 2 + 8;
+	const iconRight = padL + rad * 2;
+	const nameRoom = hzPillNameRoom(namePx);
+	const hasBtn = btnPx > 0;
+	let btnMax = 520 - padR - nameX - nameRoom - (hasBtn ? gap : 0);
+	if (btnMax < 0) btnMax = 0;
+	const fitBw = hasBtn && btnMax > 0 ? Math.min(btnPx, btnMax) : 0;
+	let w = nameX + nameRoom + (fitBw > 0 ? gap + fitBw : 0) + padR;
+	if (w < 168) w = 168;
+	if (w > 520) w = 520;
+	const btnX = nameX + nameRoom + gap;
+	return { w, nameX, nameRoom, iconRight, btnX, fitBw, btnMax, ellipsis: hzPillEllipsizes(namePx) };
+}
+expect("VASCO\r\n".replace(/\r\n/g, "\n").indexOf("VASCO\n") === 0, "a CRLF source scan matches the LF pin");
+{
+	const pill = src.slice(src.indexOf("private function hzT19PromptPill"), src.indexOf("private function hzT19Content"));
+	expect(pill.indexOf("var nmCap:Number = 220;") >= 0, "the pill name cap is 220");
+	expect(pill.indexOf("var nmSlack:Number = 8;") >= 0, "the pill name field keeps 8 px of slack");
+	expect(pill.indexOf("measured <= nmCap ? measured + nmSlack : nmCap + 4") >= 0, "only a name past 220 is cut");
+	expect(pill.indexOf("hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,btnMax)") >= 0, "the button row is measured after the name");
+	expect(pill.indexOf("nameX + nameRoom + gap") >= 0, "buttons start after the reserved name");
+	const names = [
+		["short", 36],
+		["medium", 72],
+		["long", 360]
+	];
+	for (let i = 0; i < names.length; i++) {
+		const label = names[i][0];
+		const px = names[i][1];
+		for (let k = 0; k < 2; k++) {
+			const btn = k === 0 ? 0 : 90;
+			const lay = hzPillLayout(px, btn);
+			const who = label + (btn ? " with a keycap" : " without a keycap");
+			expect(lay.ellipsis === (px > 220), who + " ellipsizes only past the 220 px cap");
+			expect(lay.w <= 520 && lay.w >= 168, who + " stays inside the pill width");
+			expect(lay.nameX > lay.iconRight, who + " keeps the name clear of the icon");
+			if (btn) {
+				expect(lay.btnX >= lay.nameX + lay.nameRoom, who + " keeps the keycap clear of the name");
+				expect(lay.btnX > lay.iconRight, who + " keeps the keycap clear of the icon");
+				expect(lay.fitBw <= lay.btnMax, who + " does not let the button row past its slot");
+			}
+		}
+	}
+	const wide = hzPillLayout(72, 450);
+	expect(wide.ellipsis === false, "VASCO stays whole beside a wide button row");
+	expect(wide.fitBw < 450 && wide.fitBw === wide.btnMax, "a 450 px button row is cut to the space after the name");
+	expect(wide.btnX > wide.iconRight && wide.btnX >= wide.nameX + wide.nameRoom, "a wide button row does not cover the icon or the name");
+	expect(wide.w <= 520, "a wide button row does not grow the pill past 520");
+	expect(hzPillEllipsizes(220) === false, "a name of exactly 220 px is not cut");
+	expect(hzPillEllipsizes(221) === true, "a name of 221 px is cut");
+}
+expect(src.indexOf("this.hzTxtTop(this.hz26RegenT,this.hzVitalsBars == 1 ? 6 : 9);") >= 0, "compact regen text uses the CO2 offset and full stays at 9");
+expect(src.indexOf("if(rows[ni].note) { rows[ni].n13 = true; }") >= 0, "CARDS tab notes use the 13 px note row");
 
 if (failed) {
 	console.error(failed + " failed");

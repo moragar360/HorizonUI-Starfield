@@ -9,8 +9,12 @@
 const fs = require("fs");
 const path = require("path");
 
+function readText(p) {
+	return fs.readFileSync(p, "utf8").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
 const srcPath = path.join(__dirname, "..", "actionscript", "comms", "hzc_block.as");
-const src = fs.readFileSync(srcPath, "utf8");
+const src = readText(srcPath);
 
 let failed = 0;
 function expect(cond, msg) {
@@ -21,6 +25,7 @@ function expect(cond, msg) {
 	failed++;
 	console.error("FAIL " + msg);
 }
+expect(src.indexOf("\r") < 0, "comms source scan drops CR so a Windows checkout still matches");
 
 function stringArray(name) {
 	const m = src.match(new RegExp(name + ":Array = \\[([^\\]]*)\\]"));
@@ -47,7 +52,7 @@ const DIR = numArray("HZC_RX_DIR");
 const NOT = stringArray("HZC_RX_NOT");
 const TITLE = stringArray("HZC_RX_TITLE");
 
-expect(src.indexOf('private static const HZC_BUILD:String = "0.43.0.24";') >= 0, "comms build id is 0.43.0.24");
+expect(src.indexOf('private static const HZC_BUILD:String = "0.43.0.25";') >= 0, "comms build id is 0.43.0.25");
 expect(src.indexOf('HudMessagesX') >= 0 && src.indexOf("function hzcMsgLayout") >= 0, "HUD Messages box reads a saved layout");
 expect(src.indexOf("x = Math.max(vr.x,Math.min(vr.right - w,x));") >= 0, "HUD Messages box is clamped on screen");
 expect(src.indexOf("y = Math.max(vr.y,Math.min(vr.bottom - h,y));") >= 0, "HUD Messages box is clamped vertically");
@@ -415,7 +420,7 @@ expect(src.indexOf("/\\x41/.test(\"A\")") >= 0, "the hex probe is in the self-te
 expect(src.indexOf("\\u00C0") < 0, "the name class no longer uses a unicode escape");
 expect(src.indexOf("loves|likes") < 0, "the sentence match is not a regex");
 {
-	const cpp = fs.readFileSync(path.join(__dirname, "..", "src", "main.cpp"), "utf8");
+	const cpp = readText(path.join(__dirname, "..", "src", "main.cpp"));
 	const poll = cpp.indexOf("void CommsRxPoll");
 	const invoke = cpp.indexOf('Invoke("hzcRxSelfTest"', poll);
 	const gate = cpp.indexOf("#if HZ_COMMS_MSG_LOG", poll);
@@ -1248,21 +1253,21 @@ function replacementProblem(arg) {
 	];
 	for (let ii = 0; ii < iniFiles.length; ii++) {
 		const rel = iniFiles[ii];
-		const text = fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
+		const text = readText(path.join(__dirname, "..", rel));
 		expect(text.indexOf("LegTry") >= 0 && text.indexOf('substr(pth.length - 13) == "HorizonUI.ini"') >= 0, rel + " opens the unshipped ini at most once");
 		expect(text.indexOf("Got[1] != null || this.") >= 0, rel + " skips HorizonUI.ini when defaults and another file are present");
 	}
-	const hud = fs.readFileSync(path.join(__dirname, "..", "actionscript", "horizon_block.as"), "utf8");
+	const hud = readText(path.join(__dirname, "..", "actionscript", "horizon_block.as"));
 	const fontFn = hud.slice(hud.indexOf("private function hzFontName"), hud.indexOf("private function hzApplyTypo"));
 	expect(fontFn.indexOf('hz30Mod["font"] !== 1') >= 0, "HUD waits for the font library");
 	expect(fontFn.indexOf('hzFontProbe("$Horizon_Font")') < fontFn.indexOf('"$Horizon_Font_Bold"'), "Bold is not looked up before the base face");
-	const scope = fs.readFileSync(path.join(__dirname, "..", "actionscript", "scope", "hzp_main.as"), "utf8");
+	const scope = readText(path.join(__dirname, "..", "actionscript", "scope", "hzp_main.as"));
 	expect(scope.indexOf("hzpFontLib !== 1") >= 0 && scope.indexOf('hzpProbe("$Horizon_Font")') < scope.indexOf('"$Horizon_Font_Bold"'), "scope waits for the font library");
-	const scopeTwin = fs.readFileSync(path.join(__dirname, "..", "actionscript", "scope", "imp", "pimp_scopemenu_lrg", "ScopeMenu.as"), "utf8");
+	const scopeTwin = readText(path.join(__dirname, "..", "actionscript", "scope", "imp", "pimp_scopemenu_lrg", "ScopeMenu.as"));
 	expect(scopeTwin.indexOf("hzpFontLib !== 1") >= 0, "the large scope waits for the font library");
-	const scan = fs.readFileSync(path.join(__dirname, "..", "actionscript", "scanner", "hzs_block.as"), "utf8");
+	const scan = readText(path.join(__dirname, "..", "actionscript", "scanner", "hzs_block.as"));
 	expect(scan.indexOf("hzsFontLib !== 1") >= 0 && scan.indexOf('hzsProbe("$Horizon_Font")') < scan.indexOf('"$Horizon_Font_Bold"'), "scanner waits for the font library");
-	const dlg = fs.readFileSync(path.join(__dirname, "..", "actionscript", "comms", "hzd_block.as"), "utf8");
+	const dlg = readText(path.join(__dirname, "..", "actionscript", "comms", "hzd_block.as"));
 	const dlgFont = dlg.slice(dlg.indexOf("private function hzdFont"), dlg.indexOf("private function hzdText"));
 	expect(dlgFont.indexOf("hzdProbe.font !== 1") >= 0 && dlgFont.indexOf("hzdFontProbe(base)") < dlgFont.indexOf("hzdFontProbe(base + role)"), "dialogue waits for the font library");
 }
@@ -1285,7 +1290,7 @@ const scanFiles = [
 ];
 for (let si = 0; si < scanFiles.length; si++) {
 	const rel = scanFiles[si];
-	const text = fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
+	const text = readText(path.join(__dirname, "..", rel));
 	const items = shippedRegexes(text);
 	for (let ri = 0; ri < items.length; ri++) {
 		const why = regexBanned(items[ri]);

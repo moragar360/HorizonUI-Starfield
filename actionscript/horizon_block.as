@@ -3212,7 +3212,7 @@
          return ut + "|" + lt + "|" + body;
       }
 
-      // ---------- Message Log popup (0.43.0.24). Inside the 1000x660 F11 window. ----------
+      // ---------- Message Log popup (0.43.0.25). Inside the 1000x660 F11 window. ----------
       // v7 layout: 976x620, rows at least 28 px and wrap long text, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
       private static const HZ_ML_W:Number = 976;
@@ -5238,7 +5238,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.24";
+      private static const HZ_BUILD:String = "0.43.0.25";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -9877,13 +9877,14 @@
 
       // our keycap action row from aButtons (sTextPressAndRelease / sTextHold / bVisible / bEnabled / iType).
       // g == null only measures. Returns the row width.
-      private function hzT19Buttons(g:*, a:Object, aw:Object, x0:Number, y:Number, col:uint) : Number
+      private function hzT19Buttons(g:*, a:Object, aw:Object, x0:Number, y:Number, col:uint, maxW:Number = 0) : Number
       {
          var x:Number = x0;
          var used:int = 0;
          var list:Array = (a && a.aButtons is Array) ? a.aButtons as Array : [];
          var dk:Boolean = this.hzDarkText();
          var c:uint = this.hzIconCol(col);
+         var limit:Number = maxW > 0 ? x0 + maxW : 0;   // 0 = the full row (the full hover card)
          for each(var b:Object in list)
          {
             if(used >= this.hzT19Btn.length) { break; }
@@ -9893,6 +9894,8 @@
             var press:String = b.bPressAndRelease === false ? "" : this.hzT19Label(aw,t,false,b.sTextPressAndRelease);
             var hold:String = b.bPressAndHold === false ? "" : this.hzT19Label(aw,t,true,b.sTextHold);
             if(press.length == 0 && hold.length == 0) { continue; }
+            var gapX:Number = x > x0 ? 16 : 0;
+            if(limit > 0 && x + gapX + 26 + 7 + 16 > limit) { break; }
             var on:Boolean = b.bEnabled !== false;
             var key:String = this.hzT19Key(aw,t);
             var slot:Object = this.hzT19Btn[used];
@@ -9906,8 +9909,10 @@
             var pairs:Array = [];
             if(press.length > 0) { pairs.push([false,press]); }
             if(hold.length > 0) { pairs.push([true,hold]); }
+            var stopRow:Boolean = false;
             for each(var pr:Array in pairs)
             {
+               if(stopRow) { break; }
                var isHold:Boolean = Boolean(pr[0]);
                var kt:TextField = TextField(isHold ? slot.kh : slot.kp);
                var lt:TextField = TextField(isHold ? slot.lh : slot.lp);
@@ -9918,9 +9923,11 @@
                   if(pairs.length > 1) { x += 14; }
                   var ht:TextField = TextField(slot.hh);
                   var hoTk:Object = this.hzTxtObj(ht); if(hoTk && hoTk.chipMin) { this.hzApplyFmt(hoTk); }
+                  var holdW:Number = this.hzTW(ht) + 6;
+                  if(limit > 0 && x + holdW > limit) { ht.visible = false; stopRow = true; break; }
                   ht.visible = g != null;
                   ht.x = this.hzSnapU(x,u); this.hzTxtTopU(ht,this.hzCapTop(ht,kcy),u);
-                  x += this.hzTW(ht) + 6;
+                  x += holdW;
                }
                var kc:uint = isHold || !on ? this.hzMix(c,this.hzPanelFill(),0.45) : c;
                this.hzTxtTint(kt,kc);
@@ -9928,6 +9935,7 @@
                // v0.24: keycap box lives on the DEVICE-pixel grid (1 unit = 1.5 px at 1440p x TargetScale 1.125),
                // so both edges of every keycap land on whole pixels; width padded so the glyph never nears the border
                var kw:Number = this.hzSnapU(Math.max(26,this.hzTW(kt) + 16),u);
+               if(limit > 0 && x + kw > limit) { kt.visible = false; stopRow = true; break; }
                x = this.hzSnapU(x,u);
                if(g != null) { this.hzKeycap(g,x,ky,kw,kh,kc,u,this.hzT19KeyOv()); }
                kt.visible = g != null;
@@ -9939,10 +9947,24 @@
                lt.text = isHold ? hold.toUpperCase() : press.toUpperCase();
                lt.visible = g != null;
                lt.x = this.hzSnapU(x,u); this.hzTxtTopU(lt,this.hzCapTop(lt,kcy),u);
-               x += this.hzTW(lt);
+               var piece:Number = this.hzTW(lt);
+               if(limit > 0 && x + piece > limit)
+               {
+                  var fitW:Number = limit - x;
+                  if(fitW >= 16) { this.hzFitText(lt,lt.text,fitW); piece = Math.min(fitW,this.hzTW(lt)); }
+                  else { lt.visible = false; piece = 0; }
+                  x += piece;
+                  if(x > limit) { x = limit; }
+                  stopRow = true;
+                  break;
+               }
+               x += piece;
             }
+            if(stopRow) { break; }
          }
-         return x - x0;
+         var rowW:Number = x - x0;
+         if(maxW > 0 && rowW > maxW) { rowW = maxW; }
+         return rowW;
       }
 
       private function hzT19Tick() : void
@@ -10216,6 +10238,8 @@
 
       // Compact name hover: one line of the existing prompt card. Icon, name, then the same key chip and verb.
       // Colors, fill, shadow, and accent come from the live STYLE settings (hzPanel / HZ_ACCENT). Full is the block below.
+      // hzPillNameSlack: the name field is the measured width plus 8 px (hzFitText keeps 4), so a name that fits the
+      // 220 px cap stays whole. Icon and name are reserved first. The button row is fit into what remains of 520.
       private function hzT19PromptPill(g:*, a:Object, aw:Object, o:Object, nmTf:TextField, hdrTxt:String, hasBtn:Boolean, bw:Number) : Object
       {
          var cap:Number = this.hzT19CapH();
@@ -10236,27 +10260,33 @@
          this.hzApplyFmt(o);
          var shown:String = this.hzUC(hdrTxt);
          nmTf.text = shown;
-         var nmMax:Number = 220;
-         var nmW:Number = shown.length > 0 ? Math.min(nmMax,Math.max(24,this.hzTW(nmTf))) : 0;
+         var nmCap:Number = 220;
+         var nmSlack:Number = 8;
+         var measured:Number = shown.length > 0 ? this.hzTW(nmTf) : 0;
+         var nameRoom:Number = 0;
+         if(measured > 0) { nameRoom = measured <= nmCap ? measured + nmSlack : nmCap + 4; }
          var nameX:Number = padL + rad * 2 + 8;
-         var W:Number = nameX + nmW + (hasBtn ? gap + bw : 0) + padR;
+         var btnMax:Number = 520 - padR - nameX - nameRoom - (hasBtn ? gap : 0);
+         if(btnMax < 0) { btnMax = 0; }
+         var fitBw:Number = 0;
+         if(hasBtn && btnMax > 0) { fitBw = this.hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,btnMax); }
+         if(fitBw > btnMax) { fitBw = btnMax; }
+         var W:Number = nameX + nameRoom + (fitBw > 0 ? gap + fitBw : 0) + padR;
          if(W < 168) { W = 168; }
          if(W > 520) { W = 520; }
-         var room:Number = W - padR - (hasBtn ? gap + bw : 0) - nameX;
-         if(room < 24) { room = 24; }
          this.hzPanel(g,W,H,Math.round(H / 2));
          this.hzT19Tile(g,padL + rad,Math.round(H / 2),HZ_ACCENT,rad);
          nmTf.visible = shown.length > 0;
          nmTf.x = nameX;
-         nmTf.width = Math.round(room);
+         nmTf.width = Math.round(nameRoom);
          this.hzApplyFmt(o);
-         if(nmTf.visible) { this.hzFitText(nmTf,shown,room); }
+         if(nmTf.visible) { this.hzFitText(nmTf,shown,nameRoom); }
          var nsz:Number = 14;
          try { nsz = this.hzTextSz19(o,14); } catch(eSz:Error) { nsz = 14; }
          this.hzTxtTop(nmTf,Math.round((H - nsz) / 2));
-         if(hasBtn)
+         if(fitBw > 0)
          {
-            this.hzT19Buttons(g,a,aw,Math.round(W - padR - bw),Math.round((H - cap) / 2),HZ_ACCENT);
+            this.hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),Math.round((H - cap) / 2),HZ_ACCENT,btnMax);
          }
          return {"W":W,"H":H};
       }
@@ -11358,7 +11388,7 @@
             this.hz26RegenT.text = "+" + Math.max(1,Math.round(gain * 100)) + "%";
             var vw:Number = this.hzVnHp ? this.hzTW(this.hzVnHp) : 60;
             this.hz26RegenT.x = Math.round(HZ_VN_W - 14 - vw - 10 - 100);
-            this.hzTxtTop(this.hz26RegenT,9);
+            this.hzTxtTop(this.hz26RegenT,this.hzVitalsBars == 1 ? 6 : 9);
          }
       }
 
@@ -14343,6 +14373,12 @@
          }
          rows.push(mt); rows.push(ms);
          try { this.hz42ScRows(rows); } catch(err42r:Error) { }   // v0.42.0 r2: SCOPE rows (only with the Scope module)
+         var ni:int = 0;
+         while(ni < rows.length)
+         {
+            if(rows[ni].note) { rows[ni].n13 = true; }
+            ni++;
+         }
          return rows;
       }
       // "z" row: GLOBAL -> CUSTOM toggle (row click / the chip)
