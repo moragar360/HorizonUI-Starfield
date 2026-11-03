@@ -3373,6 +3373,10 @@ int main()
 			const auto draw = AsFnBody(as, "private function hzMsglogDraw", "private function hzMsglogOverlayLayer");
 			Expect(draw.find("this.hzMsglogWrap(tt,textW,rh - 8)") != std::string::npos,
 				"the log row wraps the full text");
+			Expect(draw.find("hzMlHintSlot") != std::string::npos, "footer hints size to the label");
+			Expect(draw.find("hx += hk + 78") == std::string::npos, "footer hints do not use a fixed 70 px slot");
+			Expect(draw.find("hzMlAllTime") != std::string::npos, "ALL TIME sits clear of its switch");
+			Expect(draw.find("\"CLEAR SESSION\"") != std::string::npos, "the log page has a Clear session button");
 			Expect(draw.find("this.hzMsglogEllip(tt,textW)") == std::string::npos,
 				"the log row does not cut the message with ...");
 			Expect(draw.find("\"h\":rh") != std::string::npos, "hit boxes use the wrapped row height");
@@ -3516,6 +3520,8 @@ int main()
 			const auto confirm = AsFnBody(as, "private function hzMsglogDrawConfirm", "private function hzMsglogTypeOn");
 			Expect(confirm.find("hzMsglogWrap") != std::string::npos, "the clear confirm wraps its warning");
 			Expect(confirm.find("Can't be undone.") != std::string::npos, "the clear confirm keeps the full warning");
+			Expect(confirm.find("hzMsglogWrap(note,noteW,160)") != std::string::npos,
+				"the clear confirm measures the full warning");
 			const auto settings = AsFnBody(as, "private function hzMsglogDrawSettings", "private function hzMsglogDrawHist");
 			Expect(settings.find("hzMlHistSlot") != std::string::npos, "the history value has its own slot");
 			Expect(settings.find("\"right\"") != std::string::npos, "the history value is right-aligned");

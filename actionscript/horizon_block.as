@@ -3699,8 +3699,9 @@
          t.wordWrap = true;
          t.multiline = true;
          t.width = Math.round(maxW);
+         t.height = Math.round(maxH);
          var h:Number = t.textHeight + 8;
-         if(h < 18) { h = 18; }
+         if(isNaN(h) || h < 18) { h = 18; }
          if(h > maxH) { h = maxH; }
          t.height = Math.round(h);
          return t.height;
@@ -3773,7 +3774,7 @@
             var clab:String = String(HZ_ML_CHIPS[i]) + " " + String(cn);
             var on:Boolean = i == this.hzMlChip;
             var dim:Boolean = cn == 0 && i != 0;
-            var tw:TextField = this.hzWT(b,clab,0,0,180,13,"sb",on ? uint(T.ontxt) : (dim ? uint(T.off) : uint(T.txt)),1.2,"left",13);
+            var tw:TextField = this.hzWT(b,clab,0,0,280,13,"sb",on ? uint(T.ontxt) : (dim ? uint(T.off) : uint(T.txt)),1.2,"left",13);
             var cw:Number = Math.round(this.hzTW(tw) + 18);
             b.removeChild(tw);
             chipWs.push(cw);
@@ -3800,12 +3801,13 @@
             dim = cn == 0 && i != 0;
             var atx:Number = cx + Number(chipXs[i]);
             var aty:Number = cy + Number(chipYs[i]);
-            tw = this.hzWT(b,clab,atx + 8,aty + 6,180,13,"sb",on ? uint(T.ontxt) : (dim ? uint(T.off) : uint(T.txt)),1.2,"left",13);
+            tw = this.hzWT(b,clab,atx + 8,aty + 6,280,13,"sb",on ? uint(T.ontxt) : (dim ? uint(T.off) : uint(T.txt)),1.2,"left",13);
             cw = Math.round(this.hzTW(tw) + 18);
             g.beginFill(on ? acc : uint(T.mut), on ? 0.9 : (dim ? 0.12 : 0.2));
             g.drawRoundRect(atx,aty,cw,28,28,28);
             g.endFill();
             tw.x = atx + 8;
+            tw.width = Math.max(12,cw - 10);
             if(!overlayOn)
             {
                this.hzMlHits.push({"id":"chip" + i,"x":atx,"y":aty,"w":cw,"h":28});
@@ -3850,11 +3852,17 @@
             this.hzMlHits.push({"id":"find","x":ox + 22,"y":fy,"w":boxX + boxW - (ox + 22),"h":28});
          }
          var allOn:Boolean = this.hzMlAllTime;
-         this.hzSetSwitch(b,g,ox + HZ_ML_W - 22,fy + 18,allOn,T,false);
-         this.hzWT(b,"ALL TIME",ox + HZ_ML_W - 70,fy + 8,80,13,"sb",uint(T.lab),1.2,"right",13);
+         var allR:Number = ox + HZ_ML_W - 22;
+         this.hzSetSwitch(b,g,allR,fy + 18,allOn,T,false);
+         // hzMlAllTime: the words sit left of the switch with a gap, wide enough for the full label.
+         var atf:TextField = this.hzWT(b,"ALL TIME",0,fy + 8,220,13,"sb",uint(T.lab),1.2,"left",13);
+         var atw:Number = Math.ceil(this.hzTW(atf) + 6);
+         if(atw < 24) { atw = 8 * 13; }
+         atf.width = atw;
+         atf.x = Math.round(allR - 38 - 12 - atw);
          if(!overlayOn)
          {
-            this.hzMlHits.push({"id":"alltime","x":ox + HZ_ML_W - 120,"y":fy,"w":98,"h":28});
+            this.hzMlHits.push({"id":"alltime","x":atf.x - 4,"y":fy,"w":allR - (atf.x - 4),"h":28});
          }
 
          var list:Array = this.hzMsglogList();
@@ -4008,12 +4016,16 @@
          var hints:Array = this.hzMlPad
             ? [["LB/RB","CHIPS"],["A",pinLab],["X","SETTINGS"],["Y","CLEAR"],["B","BACK"]]
             : [["UP/DN","SELECT"],["ENTER",pinLab],["ESC","BACK"],["/","FIND"]];
+         // hzMlHintSlot: each hint is as wide as its words, so CLEAR, SETTINGS, UNPIN, and SELECT are not cut at 70 px.
          var hi:int = 0;
          while(hi < hints.length)
          {
             var hk:Number = this.hzSetKey(b,g,hx,hy,String(hints[hi][0]),uint(T.mut),22,13,13);
-            this.hzWT(b,String(hints[hi][1]),hx + hk + 6,hy + 4,70,13,"sb",uint(T.mut),1.2,"left",13);
-            hx += hk + 78;
+            var htf:TextField = this.hzWT(b,String(hints[hi][1]),hx + hk + 6,hy + 4,220,13,"sb",uint(T.mut),1.2,"left",13);
+            var hlw:Number = Math.ceil(this.hzTW(htf) + 6);
+            if(hlw < 24) { hlw = String(hints[hi][1]).length * 13; }
+            htf.width = hlw;
+            hx += hk + 6 + hlw + 14;
             hi++;
          }
          var by:Number = foot + 48;
@@ -4022,14 +4034,17 @@
          bxr -= this.hzSetBtn(b,g,bxr,by,"BACK",false,false,this.hzMlHover == "back",T,"mlback",13,13) + 10;
          bxr -= this.hzSetBtn(b,g,bxr,by,"CLEAR SESSION",false,true,this.hzMlHover == "clear",T,"mlclear",13,13) + 10;
          bxr -= this.hzSetBtn(b,g,bxr,by,pinLab,true,false,this.hzMlHover == "pin",T,"mlpin",13,13) + 10;
-         this.hzSetBtn(b,g,bxr,by,"SETTINGS",false,true,this.hzMlHover == "set",T,"mlset",13,13);
+         var setW:Number = this.hzSetBtn(b,g,bxr,by,"SETTINGS",false,true,this.hzMlHover == "set",T,"mlset",13,13);
          while(this.hzSetHits.length > hit0)
          {
             this.hzMlHits.push(this.hzSetHits.pop());
          }
          if(this.hzMlNotice.length > 0)
          {
-            this.hzWT(b,this.hzMlNotice,ox + 28,foot + 36,400,13,"sb",uint(T.note),0.4,"left",13);
+            var nMax:Number = (bxr - setW) - (ox + 28) - 12;
+            if(nMax < 40) { nMax = 40; }
+            var ntf:TextField = this.hzWT(b,this.hzMlNotice,ox + 28,foot + 36,nMax,13,"sb",uint(T.note),0.4,"left",13);
+            this.hzMsglogEllip(ntf,nMax);
          }
          }
          if(this.hzPopTop() == "logset" || this.hzPopTop() == "mlhist") { this.hzMsglogDrawSettings(T,acc,ox,oy); }
@@ -4056,7 +4071,10 @@
          var noteW:Number = cw - 44;
          var title:TextField = this.hzWT(b,"Clear this session?",0,0,noteW,15,"bd",uint(T.txt),2,"left",13);
          var note:TextField = this.hzWT(b,"Removes " + String(n) + " shown unpinned messages. Hidden messages stay. Can't be undone.",0,0,noteW,13,"rg",uint(T.lab),0.3,"left",13);
-         var nh:Number = this.hzMsglogWrap(note,noteW,78);
+         note.height = 160;
+         var nh:Number = this.hzMsglogWrap(note,noteW,160);
+         var guess:Number = this.hzMsglogGuessH(note.text,noteW);
+         if(nh < guess) { nh = guess; note.height = Math.round(nh); }
          var ch:Number = Math.max(168,46 + nh + 12 + 28 + 16);
          var cx:Number = ox + Math.round((HZ_ML_W - cw) / 2);
          var cy:Number = oy + Math.round((HZ_ML_H - ch) / 2);
@@ -4071,6 +4089,8 @@
          title.y = cy + 14;
          note.x = cx + 20;
          note.y = cy + 46;
+         b.addChild(title);
+         b.addChild(note);
          var btnY:Number = cy + ch - 48;
          var br:Number = cx + cw - 22;
          var hit0:int = this.hzSetHits.length;
@@ -5337,7 +5357,10 @@
       {
          var acc:uint = uint(T.acc);
          var t:TextField = this.hzWT(b,lab,0,y + (fs > 12 ? 5 : 6),220,fs,"sb",prim ? uint(T.ontxt) : uint(T.txt),1.8,"left",minPx);
-         var w:Number = Math.round(this.hzTW(t) + 28);
+         var tw:Number = Math.ceil(this.hzTW(t) + 8);
+         if(tw < 24) { tw = lab.length * 9 + Math.max(0,lab.length - 1) * 2; }
+         var w:Number = Math.round(tw + 20);
+         if(w < 44) { w = 44; }
          var x:Number = Math.round(R - w);
          g.beginFill(prim ? acc : uint(T.mut),prim ? (hov ? 1 : 0.8) : (hov ? 0.3 : 0.16));
          g.drawRoundRect(x,y,w,28,28,28);
@@ -5347,6 +5370,8 @@
             this.hz33Edge(b,x,y,w,28,28,acc,hov ? 1 : 0.85,1);
          }
          t.x = x + 12;
+         t.width = tw;
+         b.addChild(t);
          this.hzSetHits.push({"id":id,"x":x,"y":y,"w":w,"h":28});
          return w;
       }
