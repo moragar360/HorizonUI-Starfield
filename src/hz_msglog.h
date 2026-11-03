@@ -2114,29 +2114,23 @@ public:
 	}
 
 	// Purpose: drop only the listed unpinned rows from this launch. A hidden
-	// type is not in the list, so it stays. An empty list drops nothing.
-	// Pinned rows and earlier launches stay. Inputs: entry ids.
+	// type is not in the list, so it stays. An empty list, or a list that
+	// matches nothing, drops nothing and leaves every row intact. Pinned
+	// rows and earlier launches stay. Inputs: entry ids.
 	// Outputs: how many rows were removed. Author: Moragar. Last modified: 2026-11-02.
 	int ClearSessionIds(const std::vector<std::uint64_t>& a_ids)
 	{
 		if (a_ids.empty()) return 0;
-		int removed = 0;
-		std::vector<Entry> keep;
-		keep.reserve(entries.size());
-		for (auto& e : entries) {
-			bool drop = false;
-			if (e.sess == sess && e.pin == 0) {
-				for (const auto id : a_ids) {
-					if (id == e.id) { drop = true; break; }
-				}
+		const auto removed = std::erase_if(entries, [&](const Entry& e) {
+			if (e.sess != sess || e.pin != 0) return false;
+			for (const auto id : a_ids) {
+				if (id == e.id) return true;
 			}
-			if (drop) ++removed;
-			else keep.push_back(std::move(e));
-		}
-		if (!removed) return 0;
-		entries.swap(keep);
+			return false;
+		});
+		if (removed == 0) return 0;
 		BumpView();
-		return removed;
+		return static_cast<int>(removed);
 	}
 
 	void ClearHistory()

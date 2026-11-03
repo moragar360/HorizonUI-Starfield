@@ -763,8 +763,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.22", "file version is 0.43.0.22");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 22, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.23", "file version is 0.43.0.23");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 23, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -1480,6 +1480,62 @@ int main()
 		Expect(sawPin, "a pinned id stays");
 		Expect(sawOther, "a current row that was not listed stays");
 		}
+
+	// A miss must not move the rows. The old keep-vector returned before the swap.
+	{
+		Buffer miss;
+		Expect(miss.Offer(Cap(Kind::Game, "alpha line", 11'000, 10.0, "New Atlantis")) == OfferResult::Stored, "miss row a");
+		Expect(miss.Offer(Cap(Kind::Medical, "beta line", 21'000, 11.0, "Neon")) == OfferResult::Stored, "miss row b");
+		miss.entries[0].title = "Alpha Title";
+		miss.entries[0].tag = "alpha-tag";
+		miss.entries[0].text = "alpha line";
+		miss.entries[0].loc = "New Atlantis";
+		miss.entries[1].title = "Beta Title";
+		miss.entries[1].tag = "beta-tag";
+		miss.entries[1].text = "beta line";
+		miss.entries[1].loc = "Neon";
+		const auto id0 = miss.entries[0].id;
+		const auto id1 = miss.entries[1].id;
+		auto same0 = [&]() {
+			const auto& e = miss.entries[0];
+			return e.text == "alpha line" && e.title == "Alpha Title" && e.tag == "alpha-tag" && e.loc == "New Atlantis";
+		};
+		auto same1 = [&]() {
+			const auto& e = miss.entries[1];
+			return e.text == "beta line" && e.title == "Beta Title" && e.tag == "beta-tag" && e.loc == "Neon";
+		};
+		const auto gen0 = miss.viewGen;
+		ExpectEqI(miss.ClearSessionIds({999001, 999002}), 0, "a list that matches nothing removes nothing");
+		ExpectEqI(static_cast<int>(miss.entries.size()), 2, "a miss keeps both rows");
+		ExpectEqI(static_cast<int>(miss.viewGen), static_cast<int>(gen0), "a miss does not bump viewGen");
+		Expect(same0(), "a miss leaves the first row byte-identical");
+		Expect(same1(), "a miss leaves the second row byte-identical");
+
+		Expect(miss.Pin(id0), "pin the first row");
+		Expect(miss.Pin(id1), "pin the second row");
+		const auto genPin = miss.viewGen;
+		ExpectEqI(miss.ClearSessionIds({id0, id1}), 0, "an all-pinned list removes nothing");
+		ExpectEqI(static_cast<int>(miss.entries.size()), 2, "pinned rows stay");
+		ExpectEqI(static_cast<int>(miss.viewGen), static_cast<int>(genPin), "an all-pinned clear does not bump viewGen");
+		Expect(same0() && miss.entries[0].pin == 1, "the first pinned row stays byte-identical");
+		Expect(same1() && miss.entries[1].pin == 1, "the second pinned row stays byte-identical");
+
+		miss.entries[0].pin = 0;
+		miss.entries[1].pin = 0;
+		miss.entries[0].sess = 4;
+		miss.entries[1].sess = 7;
+		ExpectEqI(miss.ClearSessionIds({id0, id1}), 0, "other-session ids remove nothing");
+		Expect(same0(), "an other-session row stays byte-identical");
+		Expect(same1(), "the other session row stays byte-identical");
+
+		miss.entries[1].sess = miss.sess;
+		ExpectEqI(miss.ClearSessionIds({id0, id1}), 1, "a partial list removes only the current unpinned match");
+		ExpectEqI(static_cast<int>(miss.entries.size()), 1, "one row remains after a partial clear");
+		Expect(miss.entries[0].id == id0 && same0(), "the unmatched row stays byte-identical");
+		ExpectEqI(miss.ClearSessionIds({id0, id1}), 0, "a second clear with the same ids removes nothing");
+		ExpectEqI(static_cast<int>(miss.entries.size()), 1, "the second clear keeps the remaining row");
+		Expect(miss.entries[0].id == id0 && same0(), "the second clear leaves the remaining row byte-identical");
+		}
 		Expect(b.Offer(Cap(Kind::Game, "view gen row", 10'500)) == OfferResult::Deduped
 			|| b.Offer(Cap(Kind::Game, "view gen row two", 20'000)) == OfferResult::Stored,
 			"viewGen fixture still stores");
@@ -1593,7 +1649,7 @@ int main()
 		Expect(stillMid && stillFuture, "later-point flags survive a new capture");
 		Expect(b.nextId > futureId, "new rows take ids after the later-point rows");
 
-		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.22");
+		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.23");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok, "later-point flags round-trip through JSON");
 		Buffer restarted;
@@ -1643,7 +1699,7 @@ int main()
 		Buffer loaded;
 		loaded.LoadState(held);
 		ExpectEqI(static_cast<int>(loaded.nextId), 42, "LoadState keeps the persisted nextId");
-		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.22");
+		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.23");
 		Expect(json.find("\"nextId\": 42") != std::string::npos, "ToJson writes nextId");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok && parsed.state.nextId == 42, "FromJson reads the persisted nextId");
@@ -3316,6 +3372,14 @@ int main()
 		Expect(as.find("Starts empty") != std::string::npos, "the empty log has a starts-empty note");
 		Expect(as.find("from a later point") != std::string::npos, "later-point rows are labeled");
 		Expect(as.find("Clear this session?") != std::string::npos, "Clear session asks for a confirm");
+		{
+			const auto confirm = AsFnBody(as, "private function hzMsglogDrawConfirm", "private function hzMsglogTypeOn");
+			Expect(confirm.find("Can't be undone.") != std::string::npos, "session clear says it can't be undone");
+			Expect(confirm.find("Hidden messages stay.") != std::string::npos, "session clear says hidden messages stay");
+			const auto list = AsFnBody(as, "private function hzMsglogList", "private function hzMsglogGroup");
+			Expect(list.find("PINNED \" + String(this.hzMlPinN) + \" / \" + String(this.hzMlPinCap)") != std::string::npos,
+				"the PINNED header is the total pin count against the cap");
+		}
 		Expect(as.find("REACTIONS") != std::string::npos && as.find("ALL TIME") != std::string::npos,
 			"type chips and All time are drawn");
 		Expect(as.find("Find...") != std::string::npos, "Find is a search box with a Find... placeholder");
@@ -3434,7 +3498,7 @@ int main()
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.22\"") != std::string::npos, "HUD movie build id is 0.43.0.22");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.23\"") != std::string::npos, "HUD movie build id is 0.43.0.23");
 		{
 			const auto shown = AsFnBody(as, "private function hzMsglogShown", "private function hzMsglogChipCount");
 			const auto chips = AsFnBody(as, "private function hzMsglogChipCount", "private function hzMsglogList");

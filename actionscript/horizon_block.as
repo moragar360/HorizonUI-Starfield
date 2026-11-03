@@ -3195,7 +3195,7 @@
          return ut + "|" + lt + "|" + body;
       }
 
-      // ---------- Message Log popup (0.43.0.22). Inside the 1000x660 F11 window. ----------
+      // ---------- Message Log popup (0.43.0.23). Inside the 1000x660 F11 window. ----------
       // v7 layout: 976x620, rows at least 28 px and wrap long text, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
       private static const HZ_ML_W:Number = 976;
@@ -3409,7 +3409,7 @@
          }
          if(pins.length > 0)
          {
-            list.push({"g":1,"lab":"PINNED " + String(pins.length) + " / " + String(this.hzMlPinCap)});
+            list.push({"g":1,"lab":"PINNED " + String(this.hzMlPinN) + " / " + String(this.hzMlPinCap)});
             i = 0;
             while(i < pins.length) { list.push(pins[i]); i++; }
          }
@@ -4047,7 +4047,7 @@
          g.endFill();
          this.hz33Edge(b,cx,cy,cw,ch,28,uint(T.edge),Number(T.ea),1);
          this.hzWT(b,"Clear this session?",cx + 22,cy + 18,cw - 44,15,"bd",uint(T.txt),2,"left",13);
-         this.hzWT(b,"Removes " + String(n) + " shown unpinned messages. Hidden messages stay.",cx + 22,cy + 48,cw - 44,13,"rg",uint(T.lab),0.3,"left",13);
+         this.hzWT(b,"Removes " + String(n) + " shown unpinned messages. Hidden messages stay. Can't be undone.",cx + 22,cy + 48,cw - 44,13,"rg",uint(T.lab),0.3,"left",13);
          var br:Number = cx + cw - 22;
          var hit0:int = this.hzSetHits.length;
          br -= this.hzSetBtn(b,g,br,cy + 120,"CANCEL",false,false,this.hzMlHover == "cfcancel",T,"cfcancel",13,13) + 10;
@@ -5182,7 +5182,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.22";
+      private static const HZ_BUILD:String = "0.43.0.23";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
