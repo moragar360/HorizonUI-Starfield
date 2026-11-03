@@ -763,8 +763,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.20", "file version is 0.43.0.20");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 20, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.21", "file version is 0.43.0.21");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 21, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -1560,7 +1560,7 @@ int main()
 		Expect(stillMid && stillFuture, "later-point flags survive a new capture");
 		Expect(b.nextId > futureId, "new rows take ids after the later-point rows");
 
-		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.20");
+		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.21");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok, "later-point flags round-trip through JSON");
 		Buffer restarted;
@@ -1610,7 +1610,7 @@ int main()
 		Buffer loaded;
 		loaded.LoadState(held);
 		ExpectEqI(static_cast<int>(loaded.nextId), 42, "LoadState keeps the persisted nextId");
-		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.20");
+		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.21");
 		Expect(json.find("\"nextId\": 42") != std::string::npos, "ToJson writes nextId");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok && parsed.state.nextId == 42, "FromJson reads the persisted nextId");
@@ -3401,7 +3401,35 @@ int main()
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.20\"") != std::string::npos, "HUD movie build id is 0.43.0.20");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.21\"") != std::string::npos, "HUD movie build id is 0.43.0.21");
+		{
+			const auto shown = AsFnBody(as, "private function hzMsglogShown", "private function hzMsglogChipCount");
+			const auto chips = AsFnBody(as, "private function hzMsglogChipCount", "private function hzMsglogList");
+			const auto tog = AsFnBody(as, "private function hzMsglogTypeToggle", "private function hzMsglogSaveIni");
+			const auto panel = AsFnBody(as, "private function hzPanelA", "private function hzSetFillA");
+			const auto fill = AsFnBody(as, "private function hzSetFillA", "private function hzPanelFill");
+			Expect(shown.find("hzMsglogTypeOn") != std::string::npos, "the log list skips types that are off");
+			Expect(chips.find("hzMsglogTypeOn") != std::string::npos, "chip counts skip types that are off");
+			Expect(shown.find("splice") == std::string::npos && shown.find("hzMlRows =") == std::string::npos,
+				"the log filter does not delete stored rows");
+			Expect(tog.find("this.hzMlScroll = 0") != std::string::npos && tog.find("this.hzMlSelId = 0") != std::string::npos,
+				"turning a type off resets scroll and selection");
+			Expect(tog.find("splice") == std::string::npos && tog.find("hzMlRows") == std::string::npos,
+				"the type toggle does not remove stored rows");
+			Expect(as.find("No messages for the types that are on. Stored messages stay.") != std::string::npos,
+				"a filtered-empty log says the stored messages stay");
+			Expect(panel.find("hzCardBgOpacity") != std::string::npos && panel.find("92") != std::string::npos,
+				"card backgrounds use CardBgOpacity and keep today's alpha at 92");
+			Expect(fill.find("hzSetWinOpacity") != std::string::npos && fill.find("93") != std::string::npos,
+				"the F11 window uses SettingsOpacity and keeps today's fill at 93");
+			Expect(as.find("\"k\":\"CardBgOpacity\"") != std::string::npos && as.find("\"k\":\"SettingsOpacity\"") != std::string::npos,
+				"STYLE has the card background and settings window sliders");
+			Expect(as.find("\"CardBgOpacity\":92") != std::string::npos && as.find("\"SettingsOpacity\":93") != std::string::npos,
+				"the new opacity defaults match today's look");
+			const auto ini = Slurp("Interface/HorizonUI/HorizonUI.default.ini");
+			Expect(ini.find("CardBgOpacity=92") != std::string::npos, "default.ini card background is 92");
+			Expect(ini.find("SettingsOpacity=93") != std::string::npos, "default.ini settings window is 93");
+		}
 		Expect(as.find("function hz31DrawPage") != std::string::npos
 			&& as.find("\"t\":\"g\"") != std::string::npos
 			&& as.find("\"id\":\"page0\"") != std::string::npos

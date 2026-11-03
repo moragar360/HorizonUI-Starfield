@@ -100,6 +100,10 @@
       private static const HZ_ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       public var hzSmoothBars:Boolean = true;
       public var hzCardOpacity:Number = 1;
+      // 0-100. 92 reproduces today's panel alpha. 100 is a solid fill, so dark and bright card colors read.
+      public var hzCardBgOpacity:Number = 92;
+      // 0-100. 93 reproduces today's F11 window fill. Separate from the HUD card background.
+      public var hzSetWinOpacity:Number = 93;
       public var hzContOpacity:Number = 1;   // v0.25 ContainerOpacity: crosshair target / container / item cards only
       public var hzCardColor:int = 0; // 0 slate, 1 graphite, 2 navy, 3 deep teal, 4 plum, 5 crimson
       public var hzHudScale:Number = 1;
@@ -415,9 +419,28 @@
          return Math.max(0,Math.min(1,(this.hzCardOpacity - 1) / 0.6));
       }
 
+      // Card background alpha. base is the current dark or bright fill (0.92 and 0.96 on the main panel).
+      // CardBgOpacity 92 keeps that base. 0 is clear. 100 is solid for both, so the style color shows.
+      // CardOpacity still scales the result the way it did at 92. Author: Moragar. Last modified: 2026-11-02.
       private function hzPanelA(base:Number) : Number
       {
-         return Math.max(0,Math.min(1,base * Math.min(1,this.hzCardOpacity) + (1 - base) * this.hzOpExtra()));
+         var pct:Number = this.hzCardBgOpacity;
+         if(isNaN(pct)) { pct = 92; }
+         pct = Math.max(0,Math.min(100,pct));
+         var shaped:Number = pct <= 92 ? base * (pct / 92) : base + (1 - base) * ((pct - 92) / 8);
+         shaped = Math.max(0,Math.min(1,shaped));
+         var op:Number = Math.min(1,this.hzCardOpacity);
+         return Math.max(0,Math.min(1,shaped * op + (1 - shaped) * this.hzOpExtra()));
+      }
+
+      // F11 window fill. base is the theme fill (0.93 dark, 0.95 bright). 93 keeps it. 100 is solid.
+      private function hzSetFillA(base:Number) : Number
+      {
+         var pct:Number = this.hzSetWinOpacity;
+         if(isNaN(pct)) { pct = 93; }
+         pct = Math.max(0,Math.min(100,pct));
+         var a:Number = pct <= 93 ? base * (pct / 93) : base + (1 - base) * ((pct - 93) / 7);
+         return Math.max(0,Math.min(1,a));
       }
 
       private function hzPanelFill() : uint
@@ -1884,6 +1907,8 @@
                case "combatdim": this.hzCombatDim = bv; break;
                case "dimopacity": if(!isNaN(nv)) { this.hzDimAlpha = Math.max(0.1,Math.min(1,nv)); } break;
                case "cardopacity": if(!isNaN(nv)) { this.hzCardOpacity = Math.max(0.2,Math.min(1.6,nv)); } break;
+               case "cardbgopacity": if(!isNaN(nv)) { this.hzCardBgOpacity = Math.max(0,Math.min(100,nv)); } break;
+               case "settingsopacity": if(!isNaN(nv)) { this.hzSetWinOpacity = Math.max(0,Math.min(100,nv)); } break;
                case "containeropacity": if(!isNaN(nv)) { this.hzContOpacity = Math.max(0.2,Math.min(1.6,nv)); this.hzT19Sig = ""; } break;
                case "texttone": if(!isNaN(nv)) { this.hzTextTone = Math.max(0,Math.min(2,int(nv))); } break;
                case "fontface": if(!isNaN(nv)) { this.hzFontFace = Math.max(0,Math.min(3,int(nv))); } break;
@@ -3031,7 +3056,7 @@
          }
          if(tab == 1)
          {
-            return [{"k":"CardOpacity","l":"CARD OPACITY (HUD CARDS)","t":"n","mn":0.2,"mx":1.6,"st":0.05,"h":"PANEL"},{"k":"ContainerOpacity","l":"CONTAINER / CROSSHAIR CARD OPACITY","t":"n","mn":0.2,"mx":1.6,"st":0.05},{"k":"AccentColor","l":"ACCENT COLOR","t":"a","pal":this.hzAccPal(),"names":this.hzAccNames(),"note":"Also tints this window. Custom: AccentHex=#RRGGBB in the ini","h":"COLOR"},{"k":"CardColor","l":"CARD COLOR","t":"a","pal":this.hzCardPal(),"names":this.hzCardNames(),"note":"Light colors switch the text (and this window) to dark"},{"k":"HudScale","l":"HUD SCALE","t":"n","mn":0.7,"mx":1.4,"st":0.05,"h":"SIZE & PLACEMENT","note":"Every card on GLOBAL size. Per-card sizes are in CARDS"},{"k":"Margin","l":"SCREEN MARGIN","t":"n","mn":20,"mx":200,"st":10,"note":"Moves every card, ARRANGE-placed ones too (they keep their distance from it)"},{"k":"AfflictionLayout","l":"AFFLICTIONS LAYOUT","t":"r","opts":HZ_AFLAY_NAMES},{"k":"CrosshairStyle","l":"CROSSHAIR STYLE (INTERACT)","t":"r","opts":HZ_XH_NAMES,"h":"CROSSHAIR"},{"k":"ObjectRing","l":"OBJECT RING","t":"r","opts":HZ_RING_NAMES,"note":"The ring + line the game draws around the object you look at"},{"k":"ScreenHeight","l":"SCREEN HEIGHT (PIXEL SNAP)","t":"l","vals":HZ_SET_SCRH,"names":HZ_SET_SCRH_N,"note":"Your vertical resolution: crosshair cards snap to whole pixels"}];
+            return [{"k":"CardOpacity","l":"CARD OPACITY (HUD CARDS)","t":"n","mn":0.2,"mx":1.6,"st":0.05,"h":"PANEL"},{"k":"CardBgOpacity","l":"CARD BACKGROUND %","t":"n","mn":0,"mx":100,"st":1,"note":"0 is clear, 92 is today's translucency, 100 is solid. Dark and bright card colors both use it."},{"k":"ContainerOpacity","l":"CONTAINER / CROSSHAIR CARD OPACITY","t":"n","mn":0.2,"mx":1.6,"st":0.05},{"k":"SettingsOpacity","l":"SETTINGS WINDOW %","t":"n","mn":0,"mx":100,"st":1,"note":"Opacity of this window. 93 matches the current fill. 100 is solid."},{"k":"AccentColor","l":"ACCENT COLOR","t":"a","pal":this.hzAccPal(),"names":this.hzAccNames(),"note":"Also tints this window. Custom: AccentHex=#RRGGBB in the ini","h":"COLOR"},{"k":"CardColor","l":"CARD COLOR","t":"a","pal":this.hzCardPal(),"names":this.hzCardNames(),"note":"Light colors switch the text (and this window) to dark"},{"k":"HudScale","l":"HUD SCALE","t":"n","mn":0.7,"mx":1.4,"st":0.05,"h":"SIZE & PLACEMENT","note":"Every card on GLOBAL size. Per-card sizes are in CARDS"},{"k":"Margin","l":"SCREEN MARGIN","t":"n","mn":20,"mx":200,"st":10,"note":"Moves every card, ARRANGE-placed ones too (they keep their distance from it)"},{"k":"AfflictionLayout","l":"AFFLICTIONS LAYOUT","t":"r","opts":HZ_AFLAY_NAMES},{"k":"CrosshairStyle","l":"CROSSHAIR STYLE (INTERACT)","t":"r","opts":HZ_XH_NAMES,"h":"CROSSHAIR"},{"k":"ObjectRing","l":"OBJECT RING","t":"r","opts":HZ_RING_NAMES,"note":"The ring + line the game draws around the object you look at"},{"k":"ScreenHeight","l":"SCREEN HEIGHT (PIXEL SNAP)","t":"l","vals":HZ_SET_SCRH,"names":HZ_SET_SCRH_N,"note":"Your vertical resolution: crosshair cards snap to whole pixels"}];
          }
          if(tab == 2)
          {
@@ -3058,7 +3083,7 @@
 
       private function hzSetCurrent() : Object
       {
-         var cur:Object = {"ShowJetpack":this.hzShowJetpack,"JetpackAutoHide":this.hzJetpackAutoHide,"ShowVitals":this.hzShowVitals,"ShowPlanet":this.hzShowPlanet,"ShowAfflictions":this.hzShowAfflictions,"AfflictionsAutoHide":this.hzAfflAutoHide,"ShowAmmo":this.hzShowAmmo,"AmmoOnlyWhenDrawn":this.hzAmmoOnlyWhenDrawn,"ShowQuests":this.hzShowQuests,"ShowCompass":this.hzShowCompass,"VehicleExitPill":this.hzVehOn,"CompassMarkers":this.hzShowCompassMarkers,"CardOpacity":this.hzCardOpacity,"ContainerOpacity":this.hzContOpacity,"AccentColor":Math.max(0,Math.min(this.hzAccPal().length - 1,this.hzAccentChoice)),"Margin":this.hzMargin,"Compact":this.hzCompact,"SmoothBars":this.hzSmoothBars,"FadeCards":this.hzFadeCards,"CombatDim":this.hzCombatDim,"DimOpacity":this.hzDimAlpha,"HazardAlert":this.hzHazardAlert,"CardColor":Math.max(0,Math.min(this.hzCardPal().length - 1,this.hzCardColor)),"HudScale":this.hzHudScale,"AutoCenterVitals":this.hzAutoCenterVitals,"JetpackRule":this.hzRuleJetpack,"VitalsRule":this.hzRuleVitals,"PlanetRule":this.hzRulePlanet,"AfflictionsRule":this.hzRuleAffl,"AmmoRule":this.hzRuleAmmo,"QuestsRule":this.hzRuleQuests,"CompassRule":this.hzRuleCompass,"SettingsKey":this.hzSettingsKeyName,"ShowFollowers":this.hzCmpFollowers,"TextTone":this.hzTextTone,"FontFace":this.hzFontFace,"PlanetDetails":this.hzPlanDetails,"ShowTarget":this.hzShowTarget,"TargetAnchor":this.hzTgAnchor,"TargetShowValue":this.hzTgShowValue,"ShowLocations":this.hzCmpLocations,"ShowShip":this.hzCmpShip,"ShowEnemies":this.hzCmpEnemies,"ShowPlayerMarker":this.hzCmpPlayerMark,"TextScale":this.hzTextScale,"ContainerScale":this.hzTgScale,"ScreenHeight":this.hzScrH,"CrosshairStyle":this.hzXhStyle,"ObjectRing":this.hzObjRing,"HeaderStyle":this.hzHeaderStyle,"TextShadow":this.hzTextShadow,"TimeDisplay":this.hzTimeDisplay,"ClockFormat":this.hzClockFmt,"TempUnit":this.hzTempUnit,"AfflictionLayout":this.hzAfLayout};
+         var cur:Object = {"ShowJetpack":this.hzShowJetpack,"JetpackAutoHide":this.hzJetpackAutoHide,"ShowVitals":this.hzShowVitals,"ShowPlanet":this.hzShowPlanet,"ShowAfflictions":this.hzShowAfflictions,"AfflictionsAutoHide":this.hzAfflAutoHide,"ShowAmmo":this.hzShowAmmo,"AmmoOnlyWhenDrawn":this.hzAmmoOnlyWhenDrawn,"ShowQuests":this.hzShowQuests,"ShowCompass":this.hzShowCompass,"VehicleExitPill":this.hzVehOn,"CompassMarkers":this.hzShowCompassMarkers,"CardOpacity":this.hzCardOpacity,"CardBgOpacity":this.hzCardBgOpacity,"ContainerOpacity":this.hzContOpacity,"SettingsOpacity":this.hzSetWinOpacity,"AccentColor":Math.max(0,Math.min(this.hzAccPal().length - 1,this.hzAccentChoice)),"Margin":this.hzMargin,"Compact":this.hzCompact,"SmoothBars":this.hzSmoothBars,"FadeCards":this.hzFadeCards,"CombatDim":this.hzCombatDim,"DimOpacity":this.hzDimAlpha,"HazardAlert":this.hzHazardAlert,"CardColor":Math.max(0,Math.min(this.hzCardPal().length - 1,this.hzCardColor)),"HudScale":this.hzHudScale,"AutoCenterVitals":this.hzAutoCenterVitals,"JetpackRule":this.hzRuleJetpack,"VitalsRule":this.hzRuleVitals,"PlanetRule":this.hzRulePlanet,"AfflictionsRule":this.hzRuleAffl,"AmmoRule":this.hzRuleAmmo,"QuestsRule":this.hzRuleQuests,"CompassRule":this.hzRuleCompass,"SettingsKey":this.hzSettingsKeyName,"ShowFollowers":this.hzCmpFollowers,"TextTone":this.hzTextTone,"FontFace":this.hzFontFace,"PlanetDetails":this.hzPlanDetails,"ShowTarget":this.hzShowTarget,"TargetAnchor":this.hzTgAnchor,"TargetShowValue":this.hzTgShowValue,"ShowLocations":this.hzCmpLocations,"ShowShip":this.hzCmpShip,"ShowEnemies":this.hzCmpEnemies,"ShowPlayerMarker":this.hzCmpPlayerMark,"TextScale":this.hzTextScale,"ContainerScale":this.hzTgScale,"ScreenHeight":this.hzScrH,"CrosshairStyle":this.hzXhStyle,"ObjectRing":this.hzObjRing,"HeaderStyle":this.hzHeaderStyle,"TextShadow":this.hzTextShadow,"TimeDisplay":this.hzTimeDisplay,"ClockFormat":this.hzClockFmt,"TempUnit":this.hzTempUnit,"AfflictionLayout":this.hzAfLayout};
          try { this.hz26SetCur(cur); } catch(err26:Error) { }
          try { this.hz31SetCur(cur); } catch(err31:Error) { }
          try { this.hz34SetCur(cur); } catch(err34:Error) { }
@@ -3147,7 +3172,7 @@
          return ut + "|" + lt + "|" + body;
       }
 
-      // ---------- Message Log popup (0.43.0.20). Inside the 1000x660 F11 window. ----------
+      // ---------- Message Log popup (0.43.0.21). Inside the 1000x660 F11 window. ----------
       // v7 layout: 976x620, rows at least 28 px and wrap long text, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
       private static const HZ_ML_W:Number = 976;
@@ -3310,6 +3335,7 @@
          {
             var r:Object = this.hzMlRows[i];
             if(!this.hzMlAllTime && int(r.sess) != this.hzMlSess) { i++; continue; }
+            if(!this.hzMsglogTypeOn(String(r.k))) { i++; continue; }
             if(want.length > 0 && String(r.k) != want) { i++; continue; }
             if(q.length > 0)
             {
@@ -3331,6 +3357,7 @@
          {
             var r:Object = this.hzMlRows[i];
             if(!this.hzMlAllTime && int(r.sess) != this.hzMlSess) { i++; continue; }
+            if(!this.hzMsglogTypeOn(String(r.k))) { i++; continue; }
             if(kind.length > 0 && String(r.k) != kind) { i++; continue; }
             if(q.length > 0)
             {
@@ -3797,9 +3824,18 @@
          if(this.hzMlScroll < 0) { this.hzMlScroll = 0; }
          var maxSc:int = Math.max(0,list.length - 1);
          if(this.hzMlScroll > maxSc) { this.hzMlScroll = maxSc; }
+         var haveSel:Boolean = this.hzMlSelId == 0;
+         var si:int = 0;
+         while(!haveSel && si < list.length)
+         {
+            if(!list[si].g && Number(list[si].id) == this.hzMlSelId) { haveSel = true; }
+            si++;
+         }
+         if(!haveSel) { this.hzMlSelId = 0; }
          if(list.length == 0)
          {
-            this.hzWT(b,"Starts empty. Messages from before this log was on cannot be recovered.",ox + 28,rowTop + 40,HZ_ML_W - 56,13,"rg",uint(T.mut),0.3,"left",13);
+            var empty:String = this.hzMlRows.length > 0 ? "No messages for the types that are on. Stored messages stay." : "Starts empty. Messages from before this log was on cannot be recovered.";
+            this.hzWT(b,empty,ox + 28,rowTop + 40,HZ_ML_W - 56,13,"rg",uint(T.mut),0.3,"left",13);
          }
          var vis:int = 0;
          var li:int = this.hzMlScroll;
@@ -4027,6 +4063,12 @@
          this.hzMlTypes = out.join(",");
          this.hzMlAct = "set|types|" + this.hzMlTypes;
          this.hzMsglogSaveIni();
+         if(this.hzMlChip > 0 && this.hzMlChip < HZ_ML_KIND.length && !this.hzMsglogTypeOn(String(HZ_ML_KIND[this.hzMlChip])))
+         {
+            this.hzMlChip = 0;
+         }
+         this.hzMlScroll = 0;
+         this.hzMlSelId = 0;
       }
 
       private function hzMsglogSaveIni() : void
@@ -4750,6 +4792,15 @@
          if(p.TextTone != undefined && this.hzTextTone != int(p.TextTone)) { this.hzTextTone = int(p.TextTone); rd = true; }
          if(p.FontFace != undefined && this.hzFontFace != Math.max(0,Math.min(3,int(p.FontFace)))) { this.hzFontFace = Math.max(0,Math.min(3,int(p.FontFace))); rd = true; }
          if(Math.abs(this.hzCardOpacity - Number(p.CardOpacity)) > 0.001) { this.hzCardOpacity = Number(p.CardOpacity); rd = true; }
+         if(p.CardBgOpacity != undefined && !isNaN(Number(p.CardBgOpacity)))
+         {
+            var nbg:Number = Math.max(0,Math.min(100,Number(p.CardBgOpacity)));
+            if(Math.abs(this.hzCardBgOpacity - nbg) > 0.001) { this.hzCardBgOpacity = nbg; rd = true; }
+         }
+         if(p.SettingsOpacity != undefined && !isNaN(Number(p.SettingsOpacity)))
+         {
+            this.hzSetWinOpacity = Math.max(0,Math.min(100,Number(p.SettingsOpacity)));
+         }
          if(p.ContainerOpacity != undefined && !isNaN(Number(p.ContainerOpacity)) && Math.abs(this.hzContOpacity - Number(p.ContainerOpacity)) > 0.001) { this.hzContOpacity = Math.max(0.2,Math.min(1.6,Number(p.ContainerOpacity))); this.hzT19Sig = ""; }
          if(p.ShowTarget != undefined) { this.hzShowTarget = Boolean(p.ShowTarget); }
          if(p.TargetAnchor != undefined) { this.hzTgAnchor = int(p.TargetAnchor); }
@@ -4878,8 +4929,12 @@
          a.push("[Style]");
          a.push("; Card opacity 0.2 - 1.6 (above 1.0: fully opaque, then darker on dark cards / brighter on light cards)");
          a.push("CardOpacity=" + this.hzSetNum(Number(p.CardOpacity)));
+         a.push("; Card background 0 - 100. 92 is today's translucency. 100 is solid, so dark and bright card colors read. Missing key = 92.");
+         a.push("CardBgOpacity=" + int(Math.round(Number(p.CardBgOpacity != undefined ? p.CardBgOpacity : this.hzCardBgOpacity))));
          a.push("; Container / crosshair card opacity 0.2 - 1.6 (target tag, container list, item card); CardOpacity is for the HUD cards");
          a.push("ContainerOpacity=" + this.hzSetNum(Number(p.ContainerOpacity != undefined ? p.ContainerOpacity : 1)));
+         a.push("; F11 settings window background 0 - 100. 93 is today's fill. 100 is solid. Missing key = 93.");
+         a.push("SettingsOpacity=" + int(Math.round(Number(p.SettingsOpacity != undefined ? p.SettingsOpacity : this.hzSetWinOpacity))));
          a.push("; Text tone: 0 auto (dark text on light cards), 1 always light text, 2 always dark text");
          a.push("TextTone=" + int(p.TextTone));
          a.push("; Font: 1 Exo 2 (default), 2 Roboto, 0 game font, 3 game font semibold (built into the game, nothing to install). Exo 2 / Roboto need Interface/fonts_horizon.swf + fontconfig; the game font is used if missing");
@@ -5047,14 +5102,14 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.20";
+      private static const HZ_BUILD:String = "0.43.0.21";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":0,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":0,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -5087,9 +5142,9 @@
          var fill:uint = this.hzCardFill();   // color only (CardColor); never the opacity-adjusted panel fill
          if(lt)
          {
-            return {"lt":true,"fill":fill,"fa":0.95,"edge":0x000000,"ea":0.12,"txt":0x0E1A22,"lab":0x33454F,"mut":0x5F717B,"line":0x000000,"la":0.1,"acc":acc,"track":0x000000,"ta":0.12,"tile":0x000000,"tia":0.055,"off":0xAAB6BE,"note":0x8A6A00,"kon":0xFFFFFF,"koff":0xFFFFFF,"ontxt":0xFFFFFF};
+            return {"lt":true,"fill":fill,"fa":this.hzSetFillA(0.95),"edge":0x000000,"ea":0.12,"txt":0x0E1A22,"lab":0x33454F,"mut":0x5F717B,"line":0x000000,"la":0.1,"acc":acc,"track":0x000000,"ta":0.12,"tile":0x000000,"tia":0.055,"off":0xAAB6BE,"note":0x8A6A00,"kon":0xFFFFFF,"koff":0xFFFFFF,"ontxt":0xFFFFFF};
          }
-         return {"lt":false,"fill":fill,"fa":0.93,"edge":0xFFFFFF,"ea":0.1,"txt":0xF2F7F9,"lab":0xC4D2D9,"mut":0x96A6AE,"line":0xFFFFFF,"la":0.086,"acc":acc,"track":0xFFFFFF,"ta":0.12,"tile":0x060A0E,"tia":0.47,"off":0x46545E,"note":HZ_YELLOW,"kon":0x0B1218,"koff":0xE6ECF0,"ontxt":0x0B1218};
+         return {"lt":false,"fill":fill,"fa":this.hzSetFillA(0.93),"edge":0xFFFFFF,"ea":0.1,"txt":0xF2F7F9,"lab":0xC4D2D9,"mut":0x96A6AE,"line":0xFFFFFF,"la":0.086,"acc":acc,"track":0xFFFFFF,"ta":0.12,"tile":0x060A0E,"tia":0.47,"off":0x46545E,"note":HZ_YELLOW,"kon":0x0B1218,"koff":0xE6ECF0,"ontxt":0x0B1218};
       }
 
       // window text: own faces ("rg" / "sb" / "bd" via hzFontName per-face fallback), whole pixels, no filters.
@@ -5256,7 +5311,7 @@
          // soft shadow (stacked, no filter) + body + 1 px edge
          i = 0;
          while(i < 5) { g.beginFill(0x000000,0.07); g.drawRoundRect(-2 - i * 2,4 - i,W + 4 + i * 4,H + 4 + i * 3,(18 + i * 2) * 2,(18 + i * 2) * 2); g.endFill(); i++; }
-         g.beginFill(uint(T.fill),Number(T.fa));   // v0.25: fixed fill, ignores CardOpacity / ContainerOpacity / dimming
+         g.beginFill(uint(T.fill),Number(T.fa));   // ignores CardOpacity. fa follows SettingsOpacity.
          g.drawRoundRect(0,0,W,H,36,36);
          g.endFill();
          this.hz33Edge(b,0,0,W,H,36,uint(T.edge),Number(T.ea),1);   // v0.33: stroked edge on its own Sprite (no even-odd ring)
@@ -5528,7 +5583,7 @@
             var pvk:String = this.hzSetRow >= 0 && this.hzSetRow < rows.length ? String(rows[this.hzSetRow].k) : "";
             if(pvk == "ContainerScale" || pvk == "HoverScale" || pvk == "CrosshairStyle" || pvk == "ObjectRing" || pvk == "ScreenHeight") { this.hz30PvKey = pvk; this.hzSetPvTgDraw(b,g,W - 28 - 226,HZ_SET_TOP,T); }
             else if(pvk == "AfflictionLayout") { this.hzSetPvAfDraw(b,g,W - 28 - 226,HZ_SET_TOP,T); }
-            else if(pvk == "CardOpacity" || pvk == "ContainerOpacity") { this.hzSetPvOpDraw(b,g,W - 28 - 226,HZ_SET_TOP,T); }
+            else if(pvk == "CardOpacity" || pvk == "CardBgOpacity" || pvk == "ContainerOpacity" || pvk == "SettingsOpacity") { this.hzSetPvOpDraw(b,g,W - 28 - 226,HZ_SET_TOP,T); }
             else { this.hzSetPvDraw(b,g,W - 28 - 226,HZ_SET_TOP,T); }
          }
          // footer: keycap hints + buttons
@@ -5796,7 +5851,9 @@
          var P:Object = this.hzSetPend ? this.hzSetPend : {};
          var co:Number = P.CardOpacity != undefined ? Number(P.CardOpacity) : this.hzCardOpacity;
          var ko:Number = P.ContainerOpacity != undefined ? Number(P.ContainerOpacity) : this.hzContOpacity;
-         this.hzSetPvFrame(b,g,px,py,T,"OPACITY",["HUD cards: x" + this.hzSetNum(co) + "   Container: x" + this.hzSetNum(ko),"The settings window itself always","uses a fixed fill."]);
+         var bg:Number = P.CardBgOpacity != undefined ? Number(P.CardBgOpacity) : this.hzCardBgOpacity;
+         var wo:Number = P.SettingsOpacity != undefined ? Number(P.SettingsOpacity) : this.hzSetWinOpacity;
+         this.hzSetPvFrame(b,g,px,py,T,"OPACITY",["Cards x" + this.hzSetNum(co) + "  bg " + String(int(Math.round(bg))) + "%","Container x" + this.hzSetNum(ko),"Window " + String(int(Math.round(wo))) + "%"]);
          this.hzWT(b,"HUD CARD",px + 22,py + 44,180,9,"sb",uint(T.mut),1.6);
          this.hzWT(b,"CONTAINER / CROSSHAIR CARD",px + 22,py + 128,200,9,"sb",uint(T.mut),1.6);
          if(!this.hzSetPvOp) { this.hzSetPvOp = new Sprite(); this.hzSetPvOp.mouseEnabled = false; }
@@ -5818,11 +5875,14 @@
             k++;
          }
          var save:Number = this.hzCardOpacity;
+         var saveBg:Number = this.hzCardBgOpacity;
+         if(!isNaN(bg)) { this.hzCardBgOpacity = Math.max(0,Math.min(100,bg)); }
          this.hzCardOpacity = co;
          this.hzSetPvPanel(pg,X + 10,py + 68,180,42);
          this.hzCardOpacity = ko;
          this.hzSetPvPanel(pg,X + 10,py + 152,180,54);
          this.hzCardOpacity = save;
+         this.hzCardBgOpacity = saveBg;
          pv.visible = true;
       }
 
