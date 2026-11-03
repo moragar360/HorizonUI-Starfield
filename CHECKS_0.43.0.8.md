@@ -2,6 +2,22 @@
 
 An independent review will follow later. Do not treat this as approved.
 
+## 0.43.0.17 — skip the enemy card unless EnemyCard=1
+
+Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.17**. `HZ_COMMS_MSG_LOG` and `HZ_HUD_MSG_CAPTURE` stay `0`.
+
+In-game 0.43.0.16 crashed while building cards. The UI thread was 22948. Static stages passed. Cards ran one per frame through `listen`. The last line was `HUD card begin enemy` with no `done`. The dump came about 1.3 seconds later. The first-tid gate did not starve the pump, so it stays.
+
+`[UI] EnemyCard` defaults to `0` in `HorizonUI.default.ini`. The DLL reads it in `LoadIni` and pushes `hzSetEnemyCard` from `PollScaleform` before `HudCtorPump`, because the ini card runs after the enemy card. The movie default is `false`. When the flag is off, `hzEnemyFrame` logs `HUD card skipped enemy` and the pump continues with scan, ini, compact, and show.
+
+When `EnemyCard=1`, the enemy card is 133 frames. `HudCtorPump` logs `HUD enemy step N <what>` before the invoke. `hzEGo` queues the same line before that step's risky call. The builders are the 0.43.0.7 calls, split so one frame creates a child, sets up one text, creates a bar, subscribes, or calls `addChild`.
+
+Compared with 0.43.0.7 (`b4c368d`), `hz26Build` and the enemy-card builders were the same code before this split. 0.43.0.8 (the startup intro) did not change any function in that call set. Later builds only added null guards in `hzT`, `hzApplyFmt`, `hzFontName`, `hzSetSz`, `hzTxtObj`, and `hz34F`, plus `hzVitMark`. Those guards are not a behavior change once `hzInitFields` has run, and the field stage runs before cards. No intro-era edit of the enemy card itself showed up, so this build does not rewrite the card to an older body. The skip and the step log are the safety net.
+
+The startup intro is still in `hzSplashOnLoad` / `hzSplashStart` and still returns on `StartupIntro=0`. F11 COMMS still draws the full-width SUBTITLES / DIALOGUE switch in `hz31DrawPage`, under the install notice from `hz31CommsRows`. COMMS and SCANNER notices still start collapsed (`ModuleNoteCompact=1`, `hz34NoteCmp`).
+
+The tree to build is `cursor/note-sibling-keys-4c32`. Build from `C:\HorizonUI-Agent`. Still unverified in game.
+
 ## 0.43.0.16 — HUD invokes stay on the HUD thread, one card per frame
 
 Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.16**. `HZ_COMMS_MSG_LOG` and `HZ_HUD_MSG_CAPTURE` stay `0`.

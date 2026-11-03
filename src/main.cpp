@@ -127,6 +127,9 @@ namespace HZ
 	std::atomic<std::uint32_t> g_uiTid{0};
 	std::atomic<bool>          g_buildCards{true};
 	std::atomic<bool>          g_buildCardsSent{false};
+	// [UI] EnemyCard. Default off: the enemy card is the 0.43.0.16 crash site.
+	std::atomic<bool>          g_enemyCard{false};
+	std::atomic<bool>          g_enemyCardSent{false};
 	std::atomic<bool>          g_hudWrongThreadLogged{false};
 	std::atomic<std::uint32_t> g_loadTid{0};
 	std::atomic<std::uint32_t> g_jobTid{0};
@@ -837,6 +840,13 @@ namespace HZ
 				const bool on = !(bc == "0" || bc == "false" || bc == "off");
 				g_buildCards.store(on, std::memory_order_release);
 				if (!on) REX::INFO("hud: BuildCards=0");
+			}
+			{
+				std::string ec = "0";
+				get("enemycard", ec);
+				const bool on = !(ec == "0" || ec == "false" || ec == "off");
+				g_enemyCard.store(on, std::memory_order_release);
+				REX::INFO("hud: EnemyCard={}", on ? 1 : 0);
 			}
 			if (hzlog::IniReloadAppliesMsglog(a_reloadMsglog))
 				MsglogLoadSettings(d);
@@ -4430,6 +4440,7 @@ namespace HZ
 	void DrainHudDllLog();
 	void HudCtorPump();
 	void PushBuildCardsOnce();
+	void PushEnemyCardOnce();
 
 	// Purpose: job-thread poll. Capture, writer coordinator, file I/O,
 	// and load/quit flags. Never touches Scaleform (GetMenu / menuObj /
@@ -4480,6 +4491,7 @@ namespace HZ
 		if (!g_uiPollLogged.exchange(true))
 			REX::INFO("thread: ui poll tid={}", tid);
 		PushBuildCardsOnce();
+		PushEnemyCardOnce();
 		HudCtorPump();
 		if (auto uiPub = RE::UI::GetSingleton()) {
 			g_uiLoading.store(uiPub->IsMenuOpen("LoadingMenu"));
@@ -4595,7 +4607,9 @@ namespace HZ
 			REX::INFO("HUD ctor stages done");
 			return;
 		}
-		if (name.rfind("card ", 0) == 0)
+		if (name.rfind("enemy step ", 0) == 0)
+			REX::INFO("HUD {}", name);
+		else if (name.rfind("card ", 0) == 0)
 			REX::INFO("HUD card begin {}", name.substr(5));
 		else
 			REX::INFO("HUD stage begin {}", name);
@@ -4615,6 +4629,19 @@ namespace HZ
 		GValue arg(on);
 		if (!HudInvoke("hzSetBuildCards", nullptr, &arg, 1)) return;
 		g_buildCardsSent.store(true, std::memory_order_release);
+	}
+
+	// Purpose: push [UI] EnemyCard before the enemy card frame. The ini card
+	// runs after that frame, so the movie cannot read the key in time.
+	// Inputs: none. Outputs: one hzSetEnemyCard invoke. No disk.
+	// Author: Moragar. Last modified: 2026-11-02.
+	void PushEnemyCardOnce()
+	{
+		if (g_enemyCardSent.load(std::memory_order_acquire)) return;
+		const bool on = g_enemyCard.load(std::memory_order_acquire);
+		GValue arg(on);
+		if (!HudInvoke("hzSetEnemyCard", nullptr, &arg, 1)) return;
+		g_enemyCardSent.store(true, std::memory_order_release);
 	}
 
 	// Purpose: HUDMessagesMenu Invokes only. Runs from that movie's

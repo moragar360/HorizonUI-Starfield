@@ -2185,7 +2185,7 @@
 
       private function hzSt_HZ_SET_DEF() : void
       {
-         if(HZ_SET_DEF == null) { HZ_SET_DEF = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"ShowWelcomeOnLoad":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1,"StartupIntro":0,"BuildCards":1}; }
+         if(HZ_SET_DEF == null) { HZ_SET_DEF = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"ContainerOpacity":1,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"ShowWelcomeOnLoad":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1,"StartupIntro":0,"BuildCards":1,"EnemyCard":0}; }
       }
 
       private function hzSt_HZ35_INFO() : void
@@ -2541,6 +2541,11 @@
             if(!this.hzBuildCardsOn) { return this.hzStStep == 61 ? "cards" : "done"; }
             var cn:String = this.hzCardNameAt(this.hzStStep);
             if(cn.length == 0) { return "done"; }
+            if(cn == "enemy" && this.hzEnemyCard)
+            {
+               var es:int = this.hzEnemyOne < 1 ? 1 : this.hzEnemyOne;
+               if(es <= this.hzEnemyCount()) { return "enemy step " + es + " " + this.hzEnemyWhat(es); }
+            }
             return "card " + cn;
          }
          if(this.hzStStep < 0) { return "done"; }
@@ -2623,13 +2628,13 @@
          if(this.hzStStep == 59) { this.hzInitFields(); return; }
          if(this.hzStStep == 60) { this.hzArmOnFrame(); return; }
       }
-      private function hzCardNames() : Array
+      private function hzCtorCardNames() : Array
       {
          return ["accent","vitals","jet","compass","planet","quest","target","fonts","listen","enemy","scan","ini","compact","show"];
       }
       private function hzCardNameAt(step:int) : String
       {
-         var names:Array = this.hzCardNames();
+         var names:Array = this.hzCtorCardNames();
          var i:int = step - 61;
          if(i < 0 || i >= names.length) { return ""; }
          return String(names[i]);
@@ -2646,7 +2651,7 @@
          {
             this.hzNoteCardsSkip();
             this.hzStDone = true;
-            this.hzStStep = 61 + this.hzCardNames().length;
+            this.hzStStep = 61 + this.hzCtorCardNames().length;
             return;
          }
          var n:String = this.hzCardNameAt(this.hzStStep);
@@ -2654,14 +2659,14 @@
          try
          {
             this.hzCardOne(n);
-            this.hzDllLog("HUD card done " + n);
+            if(!this.hzEnemyHold) { this.hzDllLog("HUD card done " + n); }
          }
          catch(e:Error)
          {
             this.hzDllLog("HUD ctor error card " + n + " " + this.hzErrText(e));
             this.hzNoteErr("hzBuildCards." + n, e);
          }
-         if(this.hzStStep >= 61 + this.hzCardNames().length - 1) { this.hzStDone = true; }
+         if(this.hzStStep >= 61 + this.hzCtorCardNames().length - 1) { this.hzStDone = true; }
       }
       private function hzStRun() : void
       {
@@ -2695,11 +2700,20 @@
          var s:String = String(v);
          this.hzBuildCardsOn = !(v == false || v == 0 || v == null || s == "0" || s == "false" || s == "off");
       }
+      // Purpose: the DLL pushes [UI] EnemyCard before the enemy card frame.
+      // Inputs: 1/true builds the card one step per frame. 0/false skips it.
+      // Outputs: hzEnemyCard. Dependencies: HorizonUI.default.ini.
+      // Author: Moragar. Last modified: 2026-11-02.
+      public function hzSetEnemyCard(v:Object) : void
+      {
+         var s:String = String(v);
+         this.hzEnemyCard = !(v == false || v == 0 || v == null || s == "0" || s == "false" || s == "off");
+      }
       public function hzCtor() : void
       {
          if(this.hzCtorStarted) { return; }
          this.hzCtorStarted = true;
-         this.hzDllLog("HUD ctor start 0.43.0.16");
+         this.hzDllLog("HUD ctor start 0.43.0.17");
       }
       // mode peek names the next stage. mode run executes that one stage.
       public function hzCtorStep(mode:String) : String
@@ -2709,13 +2723,14 @@
          if(n == "done") { this.hzStDone = true; return "done"; }
          if(mode == "run")
          {
+            this.hzEnemyHold = false;
             try { this.hzStRun(); this.hzDllLog("HUD init " + n); }
             catch(e:Error)
             {
                this.hzDllLog("HUD ctor error " + n + " " + this.hzErrText(e));
                this.hzNoteErr("hzBuild." + n, e);
             }
-            this.hzStStep++;
+            if(!this.hzEnemyHold) { this.hzStStep++; }
             if(this.hzStName() == "done") { this.hzStDone = true; }
          }
          return n;
@@ -2978,7 +2993,7 @@
          if(n == "target") { this.hzBuildTarget(); return; }
          if(n == "fonts") { this.hzFixFonts(); return; }
          if(n == "listen") { this.hzCardListen(); return; }
-         if(n == "enemy") { this.hz26Build(); return; }
+         if(n == "enemy") { this.hzEnemyFrame(); return; }
          if(n == "scan") { this.hz40Init(); return; }
          if(n == "ini") { this.hzLoadIni(); return; }
          if(n == "compact") { this.hzBuildCompact(); return; }
@@ -6050,6 +6065,7 @@
          a.push("ShowWelcomeOnLoad=" + (Number(p.ShowWelcomeOnLoad) >= 0.5 || p.ShowWelcomeOnLoad === true ? "1" : "0"));
          a.push("StartupIntro=" + (Number(p.StartupIntro) >= 0.5 || p.StartupIntro === true ? "1" : "0"));
          a.push("BuildCards=" + (Number(p.BuildCards) >= 0.5 || p.BuildCards === true ? "1" : "0"));
+         a.push("EnemyCard=" + (Number(p.EnemyCard) >= 0.5 || p.EnemyCard === true ? "1" : "0"));
          a.push("");
          try { this.hz31IniLines(a,p); } catch(err31w:Error) { }
          try { this.hz40ScanIniLines(a,p); } catch(err40w:Error) { }
@@ -6133,7 +6149,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.16";
+      private static const HZ_BUILD:String = "0.43.0.17";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static var HZ_SET_TGS:Array;
       private static var HZ_SET_TGS_N:Array;
@@ -11621,6 +11637,198 @@
       private var hz26VCache:Object;
       private var hz26VHid:Object;
 
+      // Purpose: names for the enemy-card startup steps. One frame runs one step so a
+      // native crash keeps the DLL line logged before that step. Inputs: none.
+      // Outputs: the step labels, in build order. Dependencies: none.
+      // Author: Moragar. Last modified: 2026-11-02.
+      private function hzEnemyWhats() : Array
+      {
+         var a:Array = [
+            "edge sprite",
+            "edge addChild",
+            "char sprite",
+            "char face addChild",
+            "char gfx addChild",
+            "char name text",
+            "char name header",
+            "char skill text",
+            "char credits text",
+            "char level text",
+            "char xp text",
+            "char xp bar sprite",
+            "char xp bar addChild",
+            "char next text",
+            "char mass label",
+            "char mass value",
+            "char strip sprite",
+            "char strip addChild",
+            "char strip gfx sprite",
+            "char strip gfx addChild",
+            "char strip level text",
+            "char strip xp bar sprite",
+            "char strip xp bar addChild",
+            "char strip percent text",
+            "char strip mass text",
+            "char strip credits text",
+            "char strip skill text",
+            "char addChild",
+            "char set size",
+            "char sync",
+            "xp sprite",
+            "xp body sprite",
+            "xp body addChild",
+            "xp text",
+            "xp addChild",
+            "xp sync",
+            "enemy sprite",
+            "enemy gfx sprite",
+            "enemy gfx addChild",
+            "enemy level text",
+            "enemy name text",
+            "enemy name header",
+            "enemy percent text",
+            "enemy chip 1",
+            "enemy chip 2",
+            "enemy chip 3",
+            "enemy chip 4",
+            "enemy em label",
+            "enemy em value",
+            "enemy addChild",
+            "enemy set size",
+            "stealth sprite",
+            "stealth gfx sprite",
+            "stealth gfx addChild",
+            "stealth title text",
+            "stealth title chip",
+            "stealth detail text",
+            "stealth detail chip",
+            "stealth addChild",
+            "stealth set size",
+            "fx sprite",
+            "fx ring sprite",
+            "fx ring addChild",
+            "fx hit sprite",
+            "fx hit addChild",
+            "fx kill sprite",
+            "fx kill addChild",
+            "fx num 1 sprite",
+            "fx num 1 text",
+            "fx num 1 tag",
+            "fx num 1 addChild",
+            "fx num 2 sprite",
+            "fx num 2 text",
+            "fx num 2 tag",
+            "fx num 2 addChild",
+            "fx num 3 sprite",
+            "fx num 3 text",
+            "fx num 3 tag",
+            "fx num 3 addChild",
+            "fx num 4 sprite",
+            "fx num 4 text",
+            "fx num 4 tag",
+            "fx num 4 addChild",
+            "fx num 5 sprite",
+            "fx num 5 text",
+            "fx num 5 tag",
+            "fx num 5 addChild",
+            "fx num 6 sprite",
+            "fx num 6 text",
+            "fx num 6 tag",
+            "fx num 6 addChild",
+            "fx num 7 sprite",
+            "fx num 7 text",
+            "fx num 7 tag",
+            "fx num 7 addChild",
+            "fx num 8 sprite",
+            "fx num 8 text",
+            "fx num 8 tag",
+            "fx num 8 addChild",
+            "fx addChild",
+            "vit regen sprite",
+            "vit regen addChild",
+            "vit regen text",
+            "vit co2 sprite",
+            "vit co2 addChild",
+            "vit co2 text",
+            "vit apply",
+            "eq sprite",
+            "eq addChild",
+            "eq gfx sprite",
+            "eq gfx addChild",
+            "eq power glyph sprite",
+            "eq power glyph addChild",
+            "eq power hold sprite",
+            "eq power hold addChild",
+            "eq grenade text",
+            "eq power label",
+            "eq power value",
+            "subscribe PlayerData",
+            "subscribe PlayerInventoryData",
+            "subscribe PlayerFrequentData",
+            "subscribe WeaponData",
+            "subscribe XPData",
+            "subscribe HUDStealthData",
+            "subscribe HudHitKillIndicatorData",
+            "subscribe HUDDirectionalHitData",
+            "subscribe PlayerHealthBoostData",
+            "subscribe HUDStarbornPowersData",
+            "subscribe HudEnemyData",
+            "subscribe PersonalAlertsData",
+            "exitFrame listener",
+            "mark built",
+            "apply scale"
+         ];
+         return a;
+      }
+      private function hzEnemyWhat(n:int) : String
+      {
+         var a:Array = this.hzEnemyWhats();
+         if(n < 1 || n > a.length) { return "past end"; }
+         return String(a[n - 1]);
+      }
+      private function hzEnemyCount() : int
+      {
+         return this.hzEnemyWhats().length;
+      }
+      // True when this frame should run step n. The log is queued before the risky call.
+      private function hzEGo(n:int) : Boolean
+      {
+         if(this.hzEnemyOne != 0 && this.hzEnemyOne != n) { return false; }
+         if(this.hzEnemyOne != 0)
+         {
+            this.hzEnemyDid = true;
+            this.hzDllLog("HUD enemy step " + n + " " + this.hzEnemyWhat(n));
+         }
+         return true;
+      }
+      // Purpose: skip the enemy card, or run its next startup step.
+      // Inputs: none. Outputs: HUD card skipped enemy, or one step log.
+      // Dependencies: hz26Build and the ini flag pushed by the DLL.
+      // Author: Moragar. Last modified: 2026-11-02.
+      private function hzEnemyFrame() : void
+      {
+         this.hzEnemyHold = false;
+         if(!this.hzEnemyCard)
+         {
+            this.hzDllLog("HUD card skipped enemy");
+            return;
+         }
+         var n:int = this.hzEnemyOne < 1 ? 1 : this.hzEnemyOne;
+         var last:int = this.hzEnemyCount();
+         if(n > last) { return; }
+         this.hzEnemyOne = n;
+         this.hzEnemyDid = false;
+         try { this.hz26Build(); }
+         catch(e:Error) { this.hzDllLog("HUD ctor error enemy step " + n + " " + this.hzErrText(e)); }
+         if(n < last) { this.hzEnemyOne = n + 1; this.hzEnemyHold = true; }
+         else { this.hzEnemyOne = 0; }
+      }
+      private function hz26Sub(n:int, ev:String, fn:Function) : void
+      {
+         if(!this.hzEGo(n)) { return; }
+         try { BSUIDataManager.Subscribe(ev, fn); } catch(err:Error) { }
+      }
+
       private function hz26Now() : Number
       {
          return new Date().getTime();
@@ -11629,28 +11837,53 @@
       private function hz26Build() : void
       {
          try { this.hz26BuildEdge(); } catch(e0:Error) { this.HorizonEdge_mc = null; }
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
          try { this.hz26BuildChar(); } catch(e1:Error) { this.HorizonChar_mc = null; }
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
          try { this.hz26BuildXp(); } catch(e2:Error) { this.HorizonXp_mc = null; }
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
          try { this.hz26BuildEnemy(); } catch(e3:Error) { this.HorizonEnemy_mc = null; }
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
          try { this.hz26BuildStealth(); } catch(e4:Error) { this.HorizonStealth_mc = null; }
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
          try { this.hz26BuildFx(); } catch(e5:Error) { this.HorizonFx_mc = null; }
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
          try { this.hz26BuildVit(); } catch(e6:Error) { }
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
          try { this.hz26BuildEq(); } catch(e7:Error) { }
-         try { BSUIDataManager.Subscribe("PlayerData",this.hz26OnPlayer); } catch(s1:Error) { }
-         try { BSUIDataManager.Subscribe("PlayerInventoryData",this.hz26OnInv); } catch(s2:Error) { }
-         try { BSUIDataManager.Subscribe("PlayerFrequentData",this.hz26OnFreq); } catch(s3:Error) { }
-         try { BSUIDataManager.Subscribe("WeaponData",this.hz26OnWeapon); } catch(s4:Error) { }
-         try { BSUIDataManager.Subscribe("XPData",this.hz26OnXp); } catch(s5:Error) { }
-         try { BSUIDataManager.Subscribe("HUDStealthData",this.hz26OnStealth); } catch(s6:Error) { }
-         try { BSUIDataManager.Subscribe("HudHitKillIndicatorData",this.hz26OnHitKill); } catch(s7:Error) { }
-         try { BSUIDataManager.Subscribe("HUDDirectionalHitData",this.hz26OnDirHit); } catch(s8:Error) { }
-         try { BSUIDataManager.Subscribe("PlayerHealthBoostData",this.hz26OnBoost); } catch(s9:Error) { }
-         try { BSUIDataManager.Subscribe("HUDStarbornPowersData",this.hz26OnPowers); } catch(s10:Error) { }
-         try { BSUIDataManager.Subscribe("HudEnemyData",this.hz26OnEnemy); } catch(s11:Error) { }
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
+         this.hz26Sub(119,"PlayerData",this.hz26OnPlayer);
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
+         this.hz26Sub(120,"PlayerInventoryData",this.hz26OnInv);
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
+         this.hz26Sub(121,"PlayerFrequentData",this.hz26OnFreq);
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
+         this.hz26Sub(122,"WeaponData",this.hz26OnWeapon);
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
+         this.hz26Sub(123,"XPData",this.hz26OnXp);
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
+         this.hz26Sub(124,"HUDStealthData",this.hz26OnStealth);
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
+         this.hz26Sub(125,"HudHitKillIndicatorData",this.hz26OnHitKill);
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
+         this.hz26Sub(126,"HUDDirectionalHitData",this.hz26OnDirHit);
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
+         this.hz26Sub(127,"PlayerHealthBoostData",this.hz26OnBoost);
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
+         this.hz26Sub(128,"HUDStarbornPowersData",this.hz26OnPowers);
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
+         this.hz26Sub(129,"HudEnemyData",this.hz26OnEnemy);
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
          try { this.hz27Build(); } catch(s12:Error) { }
-         this.hz26Built = true;
-         this.hzApplyScale();
+         if(this.hzEnemyOne != 0 && this.hzEnemyDid) { return; }
+         if(this.hzEGo(132))
+         {
+            this.hz26Built = true;
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(133)) { this.hzApplyScale(); }
       }
+
 
       private function hz26Log(k:String, o:Object) : void
       {
@@ -11938,36 +12171,153 @@
       // ---------- character card (status card 360 x 150 / strip in compact mode) ----------
       private function hz26BuildChar() : void
       {
-         var c:Sprite = new Sprite();
-         c.mouseEnabled = false; c.mouseChildren = false;
-         this.HorizonChar_mc = c;
-         var f:Sprite = new Sprite(); c.addChild(f); this.hz26ChF = f;
-         this.hz26ChG = new Sprite(); f.addChild(this.hz26ChG);
+         var c:Sprite = this.HorizonChar_mc;
+         var f:Sprite = this.hz26ChF;
+         var s:Sprite = this.hz26ChS;
          var W:Number = HZ_CH_W;
-         this.hz26ChName = this.hzT(f,"CHARACTER",76,14,W - 90,15,"sb","main",2); this.hzHdr19(this.hz26ChName);
-         this.hz26ChSpT = this.hzT(f,"",0,0,100,10,"bd","col",0.8,"left",0xFFFFFF);
-         this.hz26ChSpT.visible = false;
-         this.hz26ChCr = this.hzT(f,"",W - 14 - 150,15,150,14,"sb","main",0.5,"right");
-         this.hz26ChLv = this.hzT(f,"LV --",76,43,100,16,"bd","acc",1);
-         this.hz26ChXpT = this.hzT(f,"",W - 14 - 200,46,200,12,"sb","mut",0.4,"right");
-         this.hz26ChXpBar = new Sprite(); this.hz26ChXpBar.x = 76; this.hz26ChXpBar.y = 70; f.addChild(this.hz26ChXpBar);
-         this.hz26ChNext = this.hzT(f,"",W - 14 - 200,80,200,11,"sb","dim",0.6,"right");
-         this.hz26ChML = this.hzT(f,"MASS",44,114,160,11,"sb","mut",1.6);
-         this.hz26ChMV = this.hzT(f,"",W - 14 - 200,110,200,14,"sb","main",0.5,"right");
-         var s:Sprite = new Sprite(); c.addChild(s); this.hz26ChS = s;
-         this.hz26ChSG = new Sprite(); s.addChild(this.hz26ChSG);
-         this.hz26ChsLv = this.hzT(s,"LV --",16,10,70,14,"bd","acc",1);
-         this.hz26ChsXpBar = new Sprite(); s.addChild(this.hz26ChsXpBar);
-         this.hz26ChsPct = this.hzT(s,"",0,11,60,12,"sb","mut",0.4);
-         this.hz26ChsMass = this.hzT(s,"",0,11,150,12,"sb","main",0.4);
-         this.hz26ChsCr = this.hzT(s,"",0,11,150,12,"sb","main",0.4);
-         this.hz26ChsSp = this.hzT(s,"",0,11,80,12,"bd","col",0.8,"left",HZ_AMB);
-         s.visible = false;
-         addChild(c);
-         c.visible = false;
-         this.hzSetSz(c,W,HZ_CH_H);
-         this.hz26CharSync();
+         if(this.hzEGo(3))
+         {
+            c = new Sprite();
+            c.mouseEnabled = false; c.mouseChildren = false;
+            this.HorizonChar_mc = c;
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(4))
+         {
+            f = new Sprite(); c.addChild(f); this.hz26ChF = f;
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(5))
+         {
+            this.hz26ChG = new Sprite(); f.addChild(this.hz26ChG);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(6))
+         {
+            this.hz26ChName = this.hzT(f,"CHARACTER",76,14,W - 90,15,"sb","main",2);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(7))
+         {
+            this.hzHdr19(this.hz26ChName);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(8))
+         {
+            this.hz26ChSpT = this.hzT(f,"",0,0,100,10,"bd","col",0.8,"left",0xFFFFFF);
+            this.hz26ChSpT.visible = false;
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(9))
+         {
+            this.hz26ChCr = this.hzT(f,"",W - 14 - 150,15,150,14,"sb","main",0.5,"right");
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(10))
+         {
+            this.hz26ChLv = this.hzT(f,"LV --",76,43,100,16,"bd","acc",1);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(11))
+         {
+            this.hz26ChXpT = this.hzT(f,"",W - 14 - 200,46,200,12,"sb","mut",0.4,"right");
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(12))
+         {
+            this.hz26ChXpBar = new Sprite(); this.hz26ChXpBar.x = 76; this.hz26ChXpBar.y = 70;
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(13))
+         {
+            f.addChild(this.hz26ChXpBar);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(14))
+         {
+            this.hz26ChNext = this.hzT(f,"",W - 14 - 200,80,200,11,"sb","dim",0.6,"right");
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(15))
+         {
+            this.hz26ChML = this.hzT(f,"MASS",44,114,160,11,"sb","mut",1.6);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(16))
+         {
+            this.hz26ChMV = this.hzT(f,"",W - 14 - 200,110,200,14,"sb","main",0.5,"right");
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(17))
+         {
+            s = new Sprite(); this.hz26ChS = s;
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(18))
+         {
+            c.addChild(s);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(19))
+         {
+            this.hz26ChSG = new Sprite();
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(20))
+         {
+            s.addChild(this.hz26ChSG);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(21))
+         {
+            this.hz26ChsLv = this.hzT(s,"LV --",16,10,70,14,"bd","acc",1);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(22))
+         {
+            this.hz26ChsXpBar = new Sprite();
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(23))
+         {
+            s.addChild(this.hz26ChsXpBar);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(24))
+         {
+            this.hz26ChsPct = this.hzT(s,"",0,11,60,12,"sb","mut",0.4);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(25))
+         {
+            this.hz26ChsMass = this.hzT(s,"",0,11,150,12,"sb","main",0.4);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(26))
+         {
+            this.hz26ChsCr = this.hzT(s,"",0,11,150,12,"sb","main",0.4);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(27))
+         {
+            this.hz26ChsSp = this.hzT(s,"",0,11,80,12,"bd","col",0.8,"left",HZ_AMB);
+            s.visible = false;
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(28))
+         {
+            c.visible = false;
+            addChild(c);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(29))
+         {
+            this.hzSetSz(c,W,HZ_CH_H);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(30)) { this.hz26CharSync(); }
       }
+
 
       private function hz26Bar(sp:Sprite, w:Number, h:Number, f:Number, col:uint, gFrom:Number, gA:Number) : void
       {
@@ -12133,15 +12483,38 @@
       // ---------- XP toast ----------
       private function hz26BuildXp() : void
       {
-         var c:Sprite = new Sprite();
-         c.mouseEnabled = false; c.mouseChildren = false;
-         this.HorizonXp_mc = c;
-         this.hz26XpBody = new Sprite(); c.addChild(this.hz26XpBody);
-         this.hz26XpT = this.hzT(c,"+0 XP",14,6,200,16,"bd","acc",1.2);
-         addChild(c);
-         c.visible = false;
-         this.hz26XpSync();
+         var c:Sprite = this.HorizonXp_mc;
+         if(this.hzEGo(31))
+         {
+            c = new Sprite();
+            c.mouseEnabled = false; c.mouseChildren = false;
+            this.HorizonXp_mc = c;
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(32))
+         {
+            this.hz26XpBody = new Sprite();
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(33))
+         {
+            c.addChild(this.hz26XpBody);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(34))
+         {
+            this.hz26XpT = this.hzT(c,"+0 XP",14,6,200,16,"bd","acc",1.2);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(35))
+         {
+            c.visible = false;
+            addChild(c);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(36)) { this.hz26XpSync(); }
       }
+
 
       private function hz26XpSync() : void
       {
@@ -12160,18 +12533,57 @@
       // ---------- vitals: warning stripe, CO2 tail, regen sliver ----------
       private function hz26BuildVit() : void
       {
-         if(!this.hzVitNew) { return; }
          var p:Sprite = this.hzVitNew;
-         this.hz26Regen = new Sprite(); this.hz26Regen.x = 14; this.hz26Regen.y = 40; this.hz26Regen.mouseEnabled = false;
-         p.addChild(this.hz26Regen);
-         this.hz26RegenT = this.hzT(p,"",HZ_VN_W - 14 - 260,8,100,13,"sb","col",0.4,"right",HZ_GREEN);   // v0.42.0 r2: 13 px
-         this.hz26RegenT.visible = false;
-         this.hz26Co2Bar = new Sprite(); this.hz26Co2Bar.x = 14; this.hz26Co2Bar.y = 66 + 40; this.hz26Co2Bar.mouseEnabled = false;
-         p.addChild(this.hz26Co2Bar);
-         this.hz26Co2T = this.hzT(p,"",HZ_VN_W - 14 - 260,66 + 8,100,13,"sb","col",0.6,"right",HZ_RED);   // v0.42.0 r2: 13 px
-         this.hz26Co2T.visible = false;
-         try { this.hz42VitApply(); } catch(err42v:Error) { }   // v0.42.0: the CO2 tail / text join the O2 row
+         if(this.hzEGo(101))
+         {
+            if(p)
+            {
+               this.hz26Regen = new Sprite(); this.hz26Regen.x = 14; this.hz26Regen.y = 40; this.hz26Regen.mouseEnabled = false;
+            }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(102))
+         {
+            if(p && this.hz26Regen) { p.addChild(this.hz26Regen); }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(103))
+         {
+            if(p)
+            {
+               this.hz26RegenT = this.hzT(p,"",HZ_VN_W - 14 - 260,8,100,13,"sb","col",0.4,"right",HZ_GREEN);
+               this.hz26RegenT.visible = false;
+            }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(104))
+         {
+            if(p)
+            {
+               this.hz26Co2Bar = new Sprite(); this.hz26Co2Bar.x = 14; this.hz26Co2Bar.y = 66 + 40; this.hz26Co2Bar.mouseEnabled = false;
+            }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(105))
+         {
+            if(p && this.hz26Co2Bar) { p.addChild(this.hz26Co2Bar); }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(106))
+         {
+            if(p)
+            {
+               this.hz26Co2T = this.hzT(p,"",HZ_VN_W - 14 - 260,66 + 8,100,13,"sb","col",0.6,"right",HZ_RED);
+               this.hz26Co2T.visible = false;
+            }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(107))
+         {
+            if(p) { try { this.hz42VitApply(); } catch(err42v:Error) { } }
+         }
       }
+
 
       private function hz26WarnCol(f:Number, okCol:uint) : uint
       {
@@ -12241,12 +12653,21 @@
       // ---------- screen-edge warning tint (stepped bands, center untouched) ----------
       private function hz26BuildEdge() : void
       {
-         var c:Sprite = new Sprite();
-         c.mouseEnabled = false; c.mouseChildren = false;
-         this.HorizonEdge_mc = c;
-         addChildAt(c,0);
-         c.visible = false;
+         var c:Sprite = this.HorizonEdge_mc;
+         if(this.hzEGo(1))
+         {
+            c = new Sprite();
+            c.mouseEnabled = false; c.mouseChildren = false;
+            this.HorizonEdge_mc = c;
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(2))
+         {
+            c.visible = false;
+            addChildAt(c,0);
+         }
       }
+
 
       private function hz26DrawEdge(vr:Rectangle) : void
       {
@@ -12300,19 +12721,69 @@
       // ---------- equipment extras: grenades + selected Starborn power (equipment_power_v1) ----------
       private function hz26BuildEq() : void
       {
-         if(!this.hzEq19 || this.hz26EqRowS) { return; }
-         var r:Sprite = new Sprite();
-         r.mouseEnabled = false; r.mouseChildren = false;
-         this.hzEq19.addChild(r);
-         this.hz26EqRowS = r;
-         this.hz26EqRowG = new Sprite(); r.addChild(this.hz26EqRowG);
-         this.hz26PowGly = new Sprite(); r.addChild(this.hz26PowGly);
-         this.hz26PowHold = new Sprite(); r.addChild(this.hz26PowHold);
-         this.hz26GrenT = this.hzT(r,"",0,0,60,12,"bd","main",0.5);   // v0.28: grenade chip text
-         this.hz26PowL = this.hzT(r,"POWER",0,0,80,12,"sb","mut",1.6);
-         this.hz26PowP = this.hzT(r,"",0,0,60,14,"sb","main",0.5,"right");
-         r.visible = false;
+         var r:Sprite = this.hz26EqRowS;
+         if(this.hzEGo(108))
+         {
+            if(this.hzEq19 != null && this.hz26EqRowS == null)
+            {
+               r = new Sprite();
+               r.mouseEnabled = false; r.mouseChildren = false;
+               r.visible = false;
+               this.hz26EqRowS = r;
+            }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(109))
+         {
+            if(this.hzEq19 != null && r != null && r.parent != this.hzEq19) { this.hzEq19.addChild(r); }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(110))
+         {
+            if(r != null && this.hz26EqRowG == null) { this.hz26EqRowG = new Sprite(); }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(111))
+         {
+            if(r != null && this.hz26EqRowG != null && this.hz26EqRowG.parent != r) { r.addChild(this.hz26EqRowG); }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(112))
+         {
+            if(r != null && this.hz26PowGly == null) { this.hz26PowGly = new Sprite(); }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(113))
+         {
+            if(r != null && this.hz26PowGly != null && this.hz26PowGly.parent != r) { r.addChild(this.hz26PowGly); }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(114))
+         {
+            if(r != null && this.hz26PowHold == null) { this.hz26PowHold = new Sprite(); }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(115))
+         {
+            if(r != null && this.hz26PowHold != null && this.hz26PowHold.parent != r) { r.addChild(this.hz26PowHold); }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(116))
+         {
+            if(r != null && this.hz26GrenT == null) { this.hz26GrenT = this.hzT(r,"",0,0,60,12,"bd","main",0.5); }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(117))
+         {
+            if(r != null && this.hz26PowL == null) { this.hz26PowL = this.hzT(r,"POWER",0,0,80,12,"sb","mut",1.6); }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(118))
+         {
+            if(r != null && this.hz26PowP == null) { this.hz26PowP = this.hzT(r,"",0,0,60,14,"sb","main",0.5,"right"); }
+         }
       }
+
 
       private function hz26EqChanged() : void
       {
@@ -12559,22 +13030,76 @@
       // ---------- enemy health (top center) ----------
       private function hz26BuildEnemy() : void
       {
-         var c:Sprite = new Sprite();
-         c.mouseEnabled = false; c.mouseChildren = false;
-         this.HorizonEnemy_mc = c;
-         this.hz26EnG = new Sprite(); c.addChild(this.hz26EnG);
-         this.hz26EnLv = this.hzT(c,"",0,0,70,10,"bd","col",0.8,"left",HZ_RED);
-         this.hz26EnName = this.hzT(c,"",110,12,HZ_EN_W - 220,15,"sb","col",2.2,"center",0xFF8A8A);
-         this.hzHdr19(this.hz26EnName);
-         this.hz26EnPct = this.hzT(c,"",HZ_EN_W - 14 - 80,13,80,13,"sb","main",0.4,"right");
+         var c:Sprite = this.HorizonEnemy_mc;
+         var W:Number = HZ_EN_W;
+         if(this.hzEGo(37))
+         {
+            c = new Sprite();
+            c.mouseEnabled = false; c.mouseChildren = false;
+            this.HorizonEnemy_mc = c;
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(38))
+         {
+            this.hz26EnG = new Sprite();
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(39))
+         {
+            c.addChild(this.hz26EnG);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(40))
+         {
+            this.hz26EnLv = this.hzT(c,"",0,0,70,10,"bd","col",0.8,"left",HZ_RED);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(41))
+         {
+            this.hz26EnName = this.hzT(c,"",110,12,W - 220,15,"sb","col",2.2,"center",0xFF8A8A);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(42))
+         {
+            this.hzHdr19(this.hz26EnName);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(43))
+         {
+            this.hz26EnPct = this.hzT(c,"",W - 14 - 80,13,80,13,"sb","main",0.4,"right");
+            if(this.hzEnemyOne != 0) { return; }
+         }
          var i:int = 0;
-         while(i < 4) { var ct:TextField = this.hzT(c,"",0,0,120,10,"bd","col",0.6,"left",0xF2C14E); ct.visible = false; this.hz26EnChips.push(ct); i++; }
-         this.hz26EnEmL = this.hzT(c,"EM",14,0,40,10,"sb","col",1.2,"left",HZ_O2_BLUE);
-         this.hz26EnEmR = this.hzT(c,"",HZ_EN_W - 14 - 160,0,160,11,"sb","col",0.8,"right",HZ_O2_BLUE);
-         addChild(c);
-         c.visible = false;
-         this.hzSetSz(c,HZ_EN_W,62);
+         while(i < 4)
+         {
+            if(this.hzEGo(44 + i))
+            {
+               var ct:TextField = this.hzT(c,"",0,0,120,10,"bd","col",0.6,"left",0xF2C14E);
+               ct.visible = false;
+               this.hz26EnChips.push(ct);
+               if(this.hzEnemyOne != 0) { return; }
+            }
+            i++;
+         }
+         if(this.hzEGo(48))
+         {
+            this.hz26EnEmL = this.hzT(c,"EM",14,0,40,10,"sb","col",1.2,"left",HZ_O2_BLUE);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(49))
+         {
+            this.hz26EnEmR = this.hzT(c,"",W - 14 - 160,0,160,11,"sb","col",0.8,"right",HZ_O2_BLUE);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(50))
+         {
+            c.visible = false;
+            addChild(c);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(51)) { this.hzSetSz(c,W,62); }
       }
+
 
       // legendary modifiers: not in the decompiled HUD data, so they are discovered at runtime (keys with "modif")
       private function hz26EnMods(e:Object) : Array
@@ -12707,20 +13232,58 @@
       // ---------- stealth pill (above the crosshair) ----------
       private function hz26BuildStealth() : void
       {
-         var c:Sprite = new Sprite();
-         c.mouseEnabled = false; c.mouseChildren = false;
-         this.HorizonStealth_mc = c;
-         this.hz26StG = new Sprite(); c.addChild(this.hz26StG);
-         this.hz26StT = this.hzT(c,"HIDDEN",50,7,160,14,"bd","col",1.8,"left",0xB2C0C7);
-         this.hzChip13(this.hz26StT,"Stealth");
-         this.hz26StD = this.hzT(c,"",50,26,160,10,"sb","mut",1.2);
-         this.hzChip13(this.hz26StD,"Stealth");
-         addChild(c);
-         c.visible = false;
-         this.hz26StW = HZ_ST_W;
-         this.hz26StH = HZ_ST_H;
-         this.hzSetSz(c,HZ_ST_W,HZ_ST_H);
+         var c:Sprite = this.HorizonStealth_mc;
+         if(this.hzEGo(52))
+         {
+            c = new Sprite();
+            c.mouseEnabled = false; c.mouseChildren = false;
+            this.HorizonStealth_mc = c;
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(53))
+         {
+            this.hz26StG = new Sprite();
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(54))
+         {
+            c.addChild(this.hz26StG);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(55))
+         {
+            this.hz26StT = this.hzT(c,"HIDDEN",50,7,160,14,"bd","col",1.8,"left",0xB2C0C7);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(56))
+         {
+            this.hzChip13(this.hz26StT,"Stealth");
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(57))
+         {
+            this.hz26StD = this.hzT(c,"",50,26,160,10,"sb","mut",1.2);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(58))
+         {
+            this.hzChip13(this.hz26StD,"Stealth");
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(59))
+         {
+            c.visible = false;
+            addChild(c);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(60))
+         {
+            this.hz26StW = HZ_ST_W;
+            this.hz26StH = HZ_ST_H;
+            this.hzSetSz(c,HZ_ST_W,HZ_ST_H);
+         }
       }
+
 
       private function hz26StPct(d:Object) : Number
       {
@@ -12804,25 +13367,80 @@
       // ---------- combat feedback: hit marker, kill X, damage numbers, direction ring ----------
       private function hz26BuildFx() : void
       {
-         var c:Sprite = new Sprite();
-         c.mouseEnabled = false; c.mouseChildren = false;
-         this.HorizonFx_mc = c;
-         this.hz26Ring = new Sprite(); c.addChild(this.hz26Ring);
-         this.hz26Hit = new Sprite(); c.addChild(this.hz26Hit);
-         this.hz26Kill = new Sprite(); c.addChild(this.hz26Kill);
+         var c:Sprite = this.HorizonFx_mc;
+         if(this.hzEGo(61))
+         {
+            c = new Sprite();
+            c.mouseEnabled = false; c.mouseChildren = false;
+            this.HorizonFx_mc = c;
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(62))
+         {
+            this.hz26Ring = new Sprite();
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(63))
+         {
+            c.addChild(this.hz26Ring);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(64))
+         {
+            this.hz26Hit = new Sprite();
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(65))
+         {
+            c.addChild(this.hz26Hit);
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(66))
+         {
+            this.hz26Kill = new Sprite();
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(67))
+         {
+            c.addChild(this.hz26Kill);
+            if(this.hzEnemyOne != 0) { return; }
+         }
          var i:int = 0;
          while(i < 8)
          {
-            var s:Sprite = new Sprite();
-            var t:TextField = this.hzT(s,"",-100,0,200,18,"bd","main",0.5,"center");
-            var tag:TextField = this.hzT(s,"",-100,-14,200,9,"sb","col",1.2,"center",HZ_AMB);
-            s.visible = false;
-            c.addChild(s);
-            this.hz26Nums.push({"s":s,"t":t,"tag":tag,"on":false,"t0":0,"x":0,"y":0});
+            var b:int = 68 + i * 4;
+            var s:Sprite = this.hzEnemyWorkSp;
+            if(this.hzEGo(b))
+            {
+               s = new Sprite();
+               this.hzEnemyWorkSp = s;
+               if(this.hzEnemyOne != 0) { return; }
+            }
+            if(this.hzEGo(b + 1))
+            {
+               this.hzEnemyWorkTf = this.hzT(s,"",-100,0,200,18,"bd","main",0.5,"center");
+               if(this.hzEnemyOne != 0) { return; }
+            }
+            if(this.hzEGo(b + 2))
+            {
+               this.hzEnemyWorkTg = this.hzT(s,"",-100,-14,200,9,"sb","col",1.2,"center",HZ_AMB);
+               if(this.hzEnemyOne != 0) { return; }
+            }
+            if(this.hzEGo(b + 3))
+            {
+               s.visible = false;
+               c.addChild(s);
+               this.hz26Nums.push({"s":s,"t":this.hzEnemyWorkTf,"tag":this.hzEnemyWorkTg,"on":false,"t0":0,"x":0,"y":0});
+               this.hzEnemyWorkSp = null;
+               this.hzEnemyWorkTf = null;
+               this.hzEnemyWorkTg = null;
+               if(this.hzEnemyOne != 0) { return; }
+            }
             i++;
          }
-         addChild(c);
+         if(this.hzEGo(100)) { addChild(c); }
       }
+
 
       private function hz26Center() : Point
       {
@@ -13616,9 +14234,17 @@
 
       private function hz27Build() : void
       {
-         try { BSUIDataManager.Subscribe("PersonalAlertsData",this.hz27OnPersAlerts); } catch(s1:Error) { }
-         try { addEventListener("exitFrame",this.hz27OnExit); this.hz27ExitOn = true; } catch(s2:Error) { }
+         if(this.hzEGo(130))
+         {
+            try { BSUIDataManager.Subscribe("PersonalAlertsData",this.hz27OnPersAlerts); } catch(s1:Error) { }
+            if(this.hzEnemyOne != 0) { return; }
+         }
+         if(this.hzEGo(131))
+         {
+            try { addEventListener("exitFrame",this.hz27OnExit); this.hz27ExitOn = true; } catch(s2:Error) { }
+         }
       }
+
 
       private function hz27Tick(now:Number) : void
       {
@@ -14974,6 +15600,13 @@
       private var hzSplashWelcome:Boolean = true;
       private var hzStartupIntro:Boolean = false;
       private var hzBuildCardsOn:Boolean = true;
+      private var hzEnemyCard:Boolean = false;
+      private var hzEnemyOne:int = 0;
+      private var hzEnemyDid:Boolean = false;
+      private var hzEnemyHold:Boolean = false;
+      private var hzEnemyWorkSp:Sprite = null;
+      private var hzEnemyWorkTf:TextField = null;
+      private var hzEnemyWorkTg:TextField = null;
       private var hzCardsSkipLogged:Boolean = false;
       private var hzSplash:Sprite = null;
       private var hzSplashOn:Boolean = false;
@@ -15019,6 +15652,7 @@
          if(k == "showwelcomeonload") { this.hzSplashWelcome = !isNaN(nv) && nv >= 0.5; return true; }
          if(k == "startupintro") { this.hzStartupIntro = !isNaN(nv) && nv >= 0.5; return true; }
          if(k == "buildcards") { this.hzBuildCardsOn = !isNaN(nv) && nv >= 0.5; return true; }
+         if(k == "enemycard") { this.hzEnemyCard = !isNaN(nv) && nv >= 0.5; return true; }
          for each(var c:Array in HZ34_CARDS)
          {
             var n:String = String(c[0]).toLowerCase();
@@ -15038,6 +15672,7 @@
          o.ShowWelcomeOnLoad = this.hzSplashWelcome ? 1 : 0;
          o.StartupIntro = this.hzStartupIntro ? 1 : 0;
          o.BuildCards = this.hzBuildCardsOn ? 1 : 0;
+         o.EnemyCard = this.hzEnemyCard ? 1 : 0;
          o.VitalsLayout = this.hz42VL;   // v0.42.0
       }
       private function hz34SetLive(p:Object) : void
@@ -15063,6 +15698,7 @@
          if(p.ShowWelcomeOnLoad !== undefined) { this.hzSplashWelcome = Number(p.ShowWelcomeOnLoad) >= 0.5 || p.ShowWelcomeOnLoad === true; }
          if(p.StartupIntro !== undefined) { this.hzStartupIntro = Number(p.StartupIntro) >= 0.5 || p.StartupIntro === true; }
          if(p.BuildCards !== undefined) { this.hzBuildCardsOn = Number(p.BuildCards) >= 0.5 || p.BuildCards === true; }
+         if(p.EnemyCard !== undefined) { this.hzEnemyCard = Number(p.EnemyCard) >= 0.5 || p.EnemyCard === true; }
          if(p.VitalsLayout !== undefined)   // v0.42.0: live preview / cancel
          {
             var vl:int = Number(p.VitalsLayout) >= 0.5 ? 1 : 0;
