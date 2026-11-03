@@ -258,6 +258,9 @@
       public var hzMargin:Number = 40;
       private var hzLaidOut:Boolean = false;
       private var hzOnFrameOn:Boolean = false;
+      private var hzTorn:Boolean = false;
+      private var hzHorizonFailed:Boolean = false;
+      private var hzVanillaBack:Boolean = false;
       private var hzLastErr:String = "";
       private var hzCtorStarted:Boolean = false;
       private var hzStDone:Boolean = false;
@@ -1840,7 +1843,7 @@
          var vw:Number = br.x - tl.x;
          var vh:Number = br.y - tl.y;
          var li:int = 0;
-         while(li < HZ_LAY_KEYS.length)
+         if(HZ_LAY_KEYS != null && this.hzLay != null) while(li < HZ_LAY_KEYS.length)
          {
             var lk:String = HZ_LAY_KEYS[li];
             var lo:Object = this.hzLay[lk];
@@ -1968,7 +1971,7 @@
                case "scopeholdbreathchip": case "scopechipx": case "scopechipy": case "scopechipscale": this.hz42ScIni(k,v,nv); break;   // v0.42.0 r2: [Scope]
                case "arrangebarx": if(!isNaN(nv) && !this.hzArrTbDrag) { this.hzArrTbDX = nv; } break;
                case "arrangebary": if(!isNaN(nv) && !this.hzArrTbDrag) { this.hzArrTbDY = nv; } break;
-               default: if(!this.hz34Ini(k,nv) && !this.hz26Ini(k,bv,nv)) { this.hzIniLayoutKey(k,nv); } break;
+               default: if(!this.hz34Ini(k,nv,v) && !this.hz26Ini(k,bv,nv)) { this.hzIniLayoutKey(k,nv); } break;
             }
          }
          // v0.26 migration: TargetScale multiplied HudScale; ContainerScale is absolute -> keep the on-screen size
@@ -2019,6 +2022,7 @@
       // vanilla hide / layout still run if a later card build throws.
       private function hzArmOnFrame() : void
       {
+         this.hzTorn = false;
          if(this.hzOnFrameOn) { return; }
          addEventListener(Event.ENTER_FRAME,this.hzOnFrame);
          this.hzOnFrameOn = true;
@@ -2650,6 +2654,7 @@
          if(!this.hzBuildCardsOn)
          {
             this.hzNoteCardsSkip();
+            try { this.hzVanillaRestore(); } catch(eRest:Error) { }
             this.hzStDone = true;
             this.hzStStep = 61 + this.hzCtorCardNames().length;
             return;
@@ -2713,7 +2718,12 @@
       {
          if(this.hzCtorStarted) { return; }
          this.hzCtorStarted = true;
-         this.hzDllLog("HUD ctor start 0.43.0.18");
+         this.hzDllLog("HUD ctor start 0.43.0.19");
+         if(this.hzBuildCardsOn)
+         {
+            try { this.hzVanillaHideNow(); this.hzDllLog("HUD vanilla hidden"); }
+            catch(eHide:Error) { this.hzDllLog("HUD vanilla hide " + this.hzErrText(eHide)); }
+         }
       }
       // mode peek names the next stage. mode run executes that one stage.
       public function hzCtorStep(mode:String) : String
@@ -2829,71 +2839,66 @@
       private function hzInitFields() : void
       {
          var snames:Array = this.hzInitStatics();
-         var names:Array = [];
-         if(this.hzTexts == null) { this.hzTexts = []; names.push("hzTexts"); }
-         if(this.hzCmpLabels == null) { this.hzCmpLabels = []; names.push("hzCmpLabels"); }
-         if(this.hzEnvHazards == null) { this.hzEnvHazards = []; names.push("hzEnvHazards"); }
-         if(this.hzEnvAffl == null) { this.hzEnvAffl = []; names.push("hzEnvAffl"); }
-         if(this.hzQRows == null) { this.hzQRows = []; names.push("hzQRows"); }
-         if(this.hzCardBodies == null) { this.hzCardBodies = []; names.push("hzCardBodies"); }
-         if(this.hzTiles == null) { this.hzTiles = []; names.push("hzTiles"); }
-         if(this.hzCAmmoRow == null) { this.hzCAmmoRow = []; names.push("hzCAmmoRow"); }
-         if(this.hzTgHidden == null) { this.hzTgHidden = []; names.push("hzTgHidden"); }
-         if(this.hzIcons == null) { this.hzIcons = []; names.push("hzIcons"); }
-         if(this.hzVnBodies == null) { this.hzVnBodies = []; names.push("hzVnBodies"); }
-         if(this.hzLay == null) { this.hzLay = {}; names.push("hzLay"); }
-         if(this.hzArrHits == null) { this.hzArrHits = []; names.push("hzArrHits"); }
-         if(this.hzXhHid == null) { this.hzXhHid = []; names.push("hzXhHid"); }
-         if(this.hzBars == null) { this.hzBars = []; names.push("hzBars"); }
-         if(this.hzFades == null) { this.hzFades = []; names.push("hzFades"); }
-         if(this.hzCmpDbgPool == null) { this.hzCmpDbgPool = []; names.push("hzCmpDbgPool"); }
-         if(this.hzSetHits == null) { this.hzSetHits = []; names.push("hzSetHits"); }
-         if(this.hzPopLayers == null) { this.hzPopLayers = []; names.push("hzPopLayers"); }
-         if(this.hzMlHits == null) { this.hzMlHits = []; names.push("hzMlHits"); }
-         if(this.hzMlRows == null) { this.hzMlRows = []; names.push("hzMlRows"); }
-         if(this.hzMlOthers == null) { this.hzMlOthers = []; names.push("hzMlOthers"); }
-         if(this.hzSetKeyOv == null) { this.hzSetKeyOv = new Sprite(); names.push("hzSetKeyOv"); }
-         if(this.hzSetPvTf == null) { this.hzSetPvTf = []; names.push("hzSetPvTf"); }
-         if(this.hzSetPvAfCh == null) { this.hzSetPvAfCh = []; names.push("hzSetPvAfCh"); }
-         if(this.hzSz == null) { this.hzSz = []; names.push("hzSz"); }
-         if(this.hzFontOkMap == null) { this.hzFontOkMap = {}; names.push("hzFontOkMap"); }
-         if(this.hzCmpLbl19 == null) { this.hzCmpLbl19 = []; names.push("hzCmpLbl19"); }
-         if(this.hzAfChips == null) { this.hzAfChips = []; names.push("hzAfChips"); }
-         if(this.hzAfEnv == null) { this.hzAfEnv = []; names.push("hzAfEnv"); }
-         if(this.hzAfPers == null) { this.hzAfPers = []; names.push("hzAfPers"); }
-         if(this.hzAfSeen == null) { this.hzAfSeen = {}; names.push("hzAfSeen"); }
-         if(this.hzE19SymCache == null) { this.hzE19SymCache = {}; names.push("hzE19SymCache"); }
-         if(this.hzT19Rows == null) { this.hzT19Rows = []; names.push("hzT19Rows"); }
-         if(this.hzT19Cmp == null) { this.hzT19Cmp = []; names.push("hzT19Cmp"); }
-         if(this.hzT19Btn == null) { this.hzT19Btn = []; names.push("hzT19Btn"); }
-         if(this.hz26Dbg == null) { this.hz26Dbg = {}; names.push("hz26Dbg"); }
-         if(this.hz26PowCache == null) { this.hz26PowCache = {}; names.push("hz26PowCache"); }
-         if(this.hz26EnChips == null) { this.hz26EnChips = []; names.push("hz26EnChips"); }
-         if(this.hz26Nums == null) { this.hz26Nums = []; names.push("hz26Nums"); }
-         if(this.hz26Arcs == null) { this.hz26Arcs = []; names.push("hz26Arcs"); }
-         if(this.hz26VCache == null) { this.hz26VCache = {}; names.push("hz26VCache"); }
-         if(this.hz26VHid == null) { this.hz26VHid = {}; names.push("hz26VHid"); }
-         if(this.hz27Alerts == null) { this.hz27Alerts = []; names.push("hz27Alerts"); }
-         if(this.hz27QObjs == null) { this.hz27QObjs = []; names.push("hz27QObjs"); }
-         if(this.hz27QSubs == null) { this.hz27QSubs = []; names.push("hz27QSubs"); }
-         if(this.hz27QL == null) { this.hz27QL = []; names.push("hz27QL"); }
-         if(this.hz27QLD == null) { this.hz27QLD = []; names.push("hz27QLD"); }
-         if(this.hz31PxS == null) { this.hz31PxS = {}; names.push("hz31PxS"); }
-         if(this.hz30Mod == null) { this.hz30Mod = {}; names.push("hz30Mod"); }
-         if(this.hz30ModLdr == null) { this.hz30ModLdr = {}; names.push("hz30ModLdr"); }
-         if(this.hz34Sc == null) { this.hz34Sc = {}; names.push("hz34Sc"); }
-         if(this.hz34Cm == null) { this.hz34Cm = {}; names.push("hz34Cm"); }
-         if(this.hz37St == null) { this.hz37St = {}; names.push("hz37St"); }
-         if(this.hz37Ps == null) { this.hz37Ps = []; names.push("hz37Ps"); }
-         if(this.hz37Q == null) { this.hz37Q = []; names.push("hz37Q"); }
-         if(this.hz37N == null) { this.hz37N = []; names.push("hz37N"); }
-         if(this.hz41SAP == null) { this.hz41SAP = {}; names.push("hz41SAP"); }
-         if(this.hz41VTx == null) { this.hz41VTx = []; names.push("hz41VTx"); }
-         var msg:String = "";
-         if(snames.length > 0) { msg = "hzInitStatics null " + snames.join(","); }
-         else if(this.hzLastErr != null && this.hzLastErr.indexOf("hzInitStatics null") == 0) { msg = this.hzLastErr; }
-         if(names.length > 0) { names.reverse(); if(msg.length > 0) { msg += " | "; } msg += "hzBoot null " + names.join(","); }
-         if((snames.length > 0 || names.length > 0) && msg.length > 0) { this.hzNoteErr(msg, null); }
+         if(snames != null && snames.length > 0) { this.hzDllLog("HUD boot skip statics " + snames.join(",")); }
+         try { if(this.hzTexts == null) { this.hzTexts = []; this.hzDllLog("HUD boot fill hzTexts"); } } catch(eB0:Error) { this.hzDllLog("HUD boot skip hzTexts"); }
+         try { if(this.hzCmpLabels == null) { this.hzCmpLabels = []; this.hzDllLog("HUD boot fill hzCmpLabels"); } } catch(eB1:Error) { this.hzDllLog("HUD boot skip hzCmpLabels"); }
+         try { if(this.hzEnvHazards == null) { this.hzEnvHazards = []; this.hzDllLog("HUD boot fill hzEnvHazards"); } } catch(eB2:Error) { this.hzDllLog("HUD boot skip hzEnvHazards"); }
+         try { if(this.hzEnvAffl == null) { this.hzEnvAffl = []; this.hzDllLog("HUD boot fill hzEnvAffl"); } } catch(eB3:Error) { this.hzDllLog("HUD boot skip hzEnvAffl"); }
+         try { if(this.hzQRows == null) { this.hzQRows = []; this.hzDllLog("HUD boot fill hzQRows"); } } catch(eB4:Error) { this.hzDllLog("HUD boot skip hzQRows"); }
+         try { if(this.hzCardBodies == null) { this.hzCardBodies = []; this.hzDllLog("HUD boot fill hzCardBodies"); } } catch(eB5:Error) { this.hzDllLog("HUD boot skip hzCardBodies"); }
+         try { if(this.hzTiles == null) { this.hzTiles = []; this.hzDllLog("HUD boot fill hzTiles"); } } catch(eB6:Error) { this.hzDllLog("HUD boot skip hzTiles"); }
+         try { if(this.hzCAmmoRow == null) { this.hzCAmmoRow = []; this.hzDllLog("HUD boot fill hzCAmmoRow"); } } catch(eB7:Error) { this.hzDllLog("HUD boot skip hzCAmmoRow"); }
+         try { if(this.hzTgHidden == null) { this.hzTgHidden = []; this.hzDllLog("HUD boot fill hzTgHidden"); } } catch(eB8:Error) { this.hzDllLog("HUD boot skip hzTgHidden"); }
+         try { if(this.hzIcons == null) { this.hzIcons = []; this.hzDllLog("HUD boot fill hzIcons"); } } catch(eB9:Error) { this.hzDllLog("HUD boot skip hzIcons"); }
+         try { if(this.hzVnBodies == null) { this.hzVnBodies = []; this.hzDllLog("HUD boot fill hzVnBodies"); } } catch(eB10:Error) { this.hzDllLog("HUD boot skip hzVnBodies"); }
+         try { if(this.hzLay == null) { this.hzLay = {}; this.hzDllLog("HUD boot fill hzLay"); } } catch(eB11:Error) { this.hzDllLog("HUD boot skip hzLay"); }
+         try { if(this.hzArrHits == null) { this.hzArrHits = []; this.hzDllLog("HUD boot fill hzArrHits"); } } catch(eB12:Error) { this.hzDllLog("HUD boot skip hzArrHits"); }
+         try { if(this.hzXhHid == null) { this.hzXhHid = []; this.hzDllLog("HUD boot fill hzXhHid"); } } catch(eB13:Error) { this.hzDllLog("HUD boot skip hzXhHid"); }
+         try { if(this.hzBars == null) { this.hzBars = []; this.hzDllLog("HUD boot fill hzBars"); } } catch(eB14:Error) { this.hzDllLog("HUD boot skip hzBars"); }
+         try { if(this.hzFades == null) { this.hzFades = []; this.hzDllLog("HUD boot fill hzFades"); } } catch(eB15:Error) { this.hzDllLog("HUD boot skip hzFades"); }
+         try { if(this.hzCmpDbgPool == null) { this.hzCmpDbgPool = []; this.hzDllLog("HUD boot fill hzCmpDbgPool"); } } catch(eB16:Error) { this.hzDllLog("HUD boot skip hzCmpDbgPool"); }
+         try { if(this.hzSetHits == null) { this.hzSetHits = []; this.hzDllLog("HUD boot fill hzSetHits"); } } catch(eB17:Error) { this.hzDllLog("HUD boot skip hzSetHits"); }
+         try { if(this.hzPopLayers == null) { this.hzPopLayers = []; this.hzDllLog("HUD boot fill hzPopLayers"); } } catch(eB18:Error) { this.hzDllLog("HUD boot skip hzPopLayers"); }
+         try { if(this.hzMlHits == null) { this.hzMlHits = []; this.hzDllLog("HUD boot fill hzMlHits"); } } catch(eB19:Error) { this.hzDllLog("HUD boot skip hzMlHits"); }
+         try { if(this.hzMlRows == null) { this.hzMlRows = []; this.hzDllLog("HUD boot fill hzMlRows"); } } catch(eB20:Error) { this.hzDllLog("HUD boot skip hzMlRows"); }
+         try { if(this.hzMlOthers == null) { this.hzMlOthers = []; this.hzDllLog("HUD boot fill hzMlOthers"); } } catch(eB21:Error) { this.hzDllLog("HUD boot skip hzMlOthers"); }
+         try { if(this.hzSetKeyOv == null) { this.hzSetKeyOv = new Sprite(); this.hzDllLog("HUD boot fill hzSetKeyOv"); } } catch(eB22:Error) { this.hzDllLog("HUD boot skip hzSetKeyOv"); }
+         try { if(this.hzSetPvTf == null) { this.hzSetPvTf = []; this.hzDllLog("HUD boot fill hzSetPvTf"); } } catch(eB23:Error) { this.hzDllLog("HUD boot skip hzSetPvTf"); }
+         try { if(this.hzSetPvAfCh == null) { this.hzSetPvAfCh = []; this.hzDllLog("HUD boot fill hzSetPvAfCh"); } } catch(eB24:Error) { this.hzDllLog("HUD boot skip hzSetPvAfCh"); }
+         try { if(this.hzSz == null) { this.hzSz = []; this.hzDllLog("HUD boot fill hzSz"); } } catch(eB25:Error) { this.hzDllLog("HUD boot skip hzSz"); }
+         try { if(this.hzFontOkMap == null) { this.hzFontOkMap = {}; this.hzDllLog("HUD boot fill hzFontOkMap"); } } catch(eB26:Error) { this.hzDllLog("HUD boot skip hzFontOkMap"); }
+         try { if(this.hzCmpLbl19 == null) { this.hzCmpLbl19 = []; this.hzDllLog("HUD boot fill hzCmpLbl19"); } } catch(eB27:Error) { this.hzDllLog("HUD boot skip hzCmpLbl19"); }
+         try { if(this.hzAfChips == null) { this.hzAfChips = []; this.hzDllLog("HUD boot fill hzAfChips"); } } catch(eB28:Error) { this.hzDllLog("HUD boot skip hzAfChips"); }
+         try { if(this.hzAfEnv == null) { this.hzAfEnv = []; this.hzDllLog("HUD boot fill hzAfEnv"); } } catch(eB29:Error) { this.hzDllLog("HUD boot skip hzAfEnv"); }
+         try { if(this.hzAfPers == null) { this.hzAfPers = []; this.hzDllLog("HUD boot fill hzAfPers"); } } catch(eB30:Error) { this.hzDllLog("HUD boot skip hzAfPers"); }
+         try { if(this.hzAfSeen == null) { this.hzAfSeen = {}; this.hzDllLog("HUD boot fill hzAfSeen"); } } catch(eB31:Error) { this.hzDllLog("HUD boot skip hzAfSeen"); }
+         try { if(this.hzE19SymCache == null) { this.hzE19SymCache = {}; this.hzDllLog("HUD boot fill hzE19SymCache"); } } catch(eB32:Error) { this.hzDllLog("HUD boot skip hzE19SymCache"); }
+         try { if(this.hzT19Rows == null) { this.hzT19Rows = []; this.hzDllLog("HUD boot fill hzT19Rows"); } } catch(eB33:Error) { this.hzDllLog("HUD boot skip hzT19Rows"); }
+         try { if(this.hzT19Cmp == null) { this.hzT19Cmp = []; this.hzDllLog("HUD boot fill hzT19Cmp"); } } catch(eB34:Error) { this.hzDllLog("HUD boot skip hzT19Cmp"); }
+         try { if(this.hzT19Btn == null) { this.hzT19Btn = []; this.hzDllLog("HUD boot fill hzT19Btn"); } } catch(eB35:Error) { this.hzDllLog("HUD boot skip hzT19Btn"); }
+         try { if(this.hz26Dbg == null) { this.hz26Dbg = {}; this.hzDllLog("HUD boot fill hz26Dbg"); } } catch(eB36:Error) { this.hzDllLog("HUD boot skip hz26Dbg"); }
+         try { if(this.hz26PowCache == null) { this.hz26PowCache = {}; this.hzDllLog("HUD boot fill hz26PowCache"); } } catch(eB37:Error) { this.hzDllLog("HUD boot skip hz26PowCache"); }
+         try { if(this.hz26EnChips == null) { this.hz26EnChips = []; this.hzDllLog("HUD boot fill hz26EnChips"); } } catch(eB38:Error) { this.hzDllLog("HUD boot skip hz26EnChips"); }
+         try { if(this.hz26Nums == null) { this.hz26Nums = []; this.hzDllLog("HUD boot fill hz26Nums"); } } catch(eB39:Error) { this.hzDllLog("HUD boot skip hz26Nums"); }
+         try { if(this.hz26Arcs == null) { this.hz26Arcs = []; this.hzDllLog("HUD boot fill hz26Arcs"); } } catch(eB40:Error) { this.hzDllLog("HUD boot skip hz26Arcs"); }
+         try { if(this.hz26VCache == null) { this.hz26VCache = {}; this.hzDllLog("HUD boot fill hz26VCache"); } } catch(eB41:Error) { this.hzDllLog("HUD boot skip hz26VCache"); }
+         try { if(this.hz26VHid == null) { this.hz26VHid = {}; this.hzDllLog("HUD boot fill hz26VHid"); } } catch(eB42:Error) { this.hzDllLog("HUD boot skip hz26VHid"); }
+         try { if(this.hz27Alerts == null) { this.hz27Alerts = []; this.hzDllLog("HUD boot fill hz27Alerts"); } } catch(eB43:Error) { this.hzDllLog("HUD boot skip hz27Alerts"); }
+         try { if(this.hz27QObjs == null) { this.hz27QObjs = []; this.hzDllLog("HUD boot fill hz27QObjs"); } } catch(eB44:Error) { this.hzDllLog("HUD boot skip hz27QObjs"); }
+         try { if(this.hz27QSubs == null) { this.hz27QSubs = []; this.hzDllLog("HUD boot fill hz27QSubs"); } } catch(eB45:Error) { this.hzDllLog("HUD boot skip hz27QSubs"); }
+         try { if(this.hz27QL == null) { this.hz27QL = []; this.hzDllLog("HUD boot fill hz27QL"); } } catch(eB46:Error) { this.hzDllLog("HUD boot skip hz27QL"); }
+         try { if(this.hz27QLD == null) { this.hz27QLD = []; this.hzDllLog("HUD boot fill hz27QLD"); } } catch(eB47:Error) { this.hzDllLog("HUD boot skip hz27QLD"); }
+         try { if(this.hz31PxS == null) { this.hz31PxS = {}; this.hzDllLog("HUD boot fill hz31PxS"); } } catch(eB48:Error) { this.hzDllLog("HUD boot skip hz31PxS"); }
+         try { if(this.hz30Mod == null) { this.hz30Mod = {}; this.hzDllLog("HUD boot fill hz30Mod"); } } catch(eB49:Error) { this.hzDllLog("HUD boot skip hz30Mod"); }
+         try { if(this.hz30ModLdr == null) { this.hz30ModLdr = {}; this.hzDllLog("HUD boot fill hz30ModLdr"); } } catch(eB50:Error) { this.hzDllLog("HUD boot skip hz30ModLdr"); }
+         try { if(this.hz34Sc == null) { this.hz34Sc = {}; this.hzDllLog("HUD boot fill hz34Sc"); } } catch(eB51:Error) { this.hzDllLog("HUD boot skip hz34Sc"); }
+         try { if(this.hz34Cm == null) { this.hz34Cm = {}; this.hzDllLog("HUD boot fill hz34Cm"); } } catch(eB52:Error) { this.hzDllLog("HUD boot skip hz34Cm"); }
+         try { if(this.hz37St == null) { this.hz37St = {}; this.hzDllLog("HUD boot fill hz37St"); } } catch(eB53:Error) { this.hzDllLog("HUD boot skip hz37St"); }
+         try { if(this.hz37Ps == null) { this.hz37Ps = []; this.hzDllLog("HUD boot fill hz37Ps"); } } catch(eB54:Error) { this.hzDllLog("HUD boot skip hz37Ps"); }
+         try { if(this.hz37Q == null) { this.hz37Q = []; this.hzDllLog("HUD boot fill hz37Q"); } } catch(eB55:Error) { this.hzDllLog("HUD boot skip hz37Q"); }
+         try { if(this.hz37N == null) { this.hz37N = []; this.hzDllLog("HUD boot fill hz37N"); } } catch(eB56:Error) { this.hzDllLog("HUD boot skip hz37N"); }
+         try { if(this.hz41SAP == null) { this.hz41SAP = {}; this.hzDllLog("HUD boot fill hz41SAP"); } } catch(eB57:Error) { this.hzDllLog("HUD boot skip hz41SAP"); }
+         try { if(this.hz41VTx == null) { this.hz41VTx = []; this.hzDllLog("HUD boot fill hz41VTx"); } } catch(eB58:Error) { this.hzDllLog("HUD boot skip hz41VTx"); }
       }
 
       // Assigns the instance arrays, maps, and keycap overlay that Scaleform
@@ -3107,7 +3112,20 @@
       private function hzCardShow() : void
       {
          this.hzArmOnFrame();
-         this.hzRefreshVisibility();
+         try { this.hzApplyScale(); } catch(eSc:Error) { this.hzDllLog("HUD layout scale " + this.hzErrText(eSc)); }
+         try
+         {
+            this.hzLaidOut = this.hzLayout();
+            if(this.hzLaidOut) { this.hzLayEver = true; this.hzDllLog("HUD layout done"); }
+            else { this.hzDllLog("HUD layout wait"); }
+         }
+         catch(eLay:Error) { this.hzDllLog("HUD layout error " + this.hzErrText(eLay)); }
+         try { this.hzRefreshVisibility(); } catch(eVis:Error) { }
+         if(this.hzBuildCardsOn && this.HorizonVitals_mc == null)
+         {
+            this.hzHorizonFailed = true;
+            try { this.hzVanillaRestore(); } catch(eRest:Error) { }
+         }
       }
 
       private function hzOnPlayerFrequent(e:FromClientDataEvent) : *
@@ -3481,9 +3499,12 @@
       // Screen-only hide of vanilla clips Horizon replaces. Never removeChild; files untouched.
       private function hzOnFrame(e:Event) : void
       {
-         if(this.HorizonVitals_mc == null) { return; }
-         var names:Array = [];
-         var o:Object = null;
+         if(!this.hzBuildCardsOn || this.hzHorizonFailed)
+         {
+            try { this.hzVanillaRestore(); } catch(eRest:Error) { }
+            return;
+         }
+         try { this.hzVanillaHideNow(); } catch(eHide:Error) { }
          this.hzFrameN++;
          try { this.hz42VehTick(); } catch(e42v:Error) { }   // 0.42.0.7: own try, first, so a throw later in this frame cannot skip the exit pill
          try { this.hz40Frame(); } catch(e40f:Error) { }
@@ -3491,18 +3512,7 @@
          try { this.hz35CmpTick(); } catch(e35c:Error) { }   // v0.35: global Compact follow
          if(this.hzHideCache == null || this.hzFrameN % 90 == 1 || this.hz36HideStale)
          {
-            this.hzHideTries++;
-            this.hzHideCache = [];
-            this.hz36HideStale = false;
-            if(this.hzHideVanillaBoost) { names.push("JetpackMeterWrapper_mc","JetpackMeterAnim_mc"); }
-            if(this.hzHideVanillaCompass) { names.push("WatchOutline_mc","WatchPointerOutline_mc","WatchIconsWidget_mc","MissionIconsWidget_mc","EnemyIconsWidget_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"); }
-            if(this.hzHideVanillaWatch) { names.push("O2CO2_mc","O2CO2thin_mc","WatchOutline_mc","WatchPointerOutline_mc","BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"); }
-            if(this.hzHideVanillaAmmo) { names.push("EquippedWeaponAmmo_mc","EquippedWeaponAmmoTotal_mc","VerticalDivider_mc","EquippedWeaponIconHolder_mc"); }
-            if(this.hzHideVanillaHealth) { names.push("HealthBar_mc","HealthBarEmpty_mc","HealthBarGhost_mc","HealthBarDamage_mc","HealthBarIncrease_mc","Health_mc"); }
-            for each(var n:String in names)
-            {
-               try { this.hz36HideFind(this,n,this.hzHideCache); } catch(e36f:Error) { }   // v0.36: parent + name kept
-            }
+            this.hzVanillaCollect();
          }
          try { this.hz36HideTick(); } catch(e36a:Error) { }   // v0.36: hide first, so a throw below can't skip it
          if(this.hz40Hide) { try { this.hz40ForceHide(); } catch(e40a:Error) { } }
@@ -3527,20 +3537,15 @@
             }
          }
          // v0.26: after the first good layout a pending relayout runs on the very next frame (was: every 15th frame, cards hidden meanwhile)
-         if(!this.hzLaidOut && (this.hzLayEver || this.hzFrameN % 15 == 2)) { this.hzLaidOut = this.hzLayout(); if(this.hzLaidOut) { this.hzLayEver = true; } }
+         if(!this.hzLaidOut && (this.hzLayEver || this.hzFrameN % 15 == 2))
+         {
+            try { this.hzLaidOut = this.hzLayout(); if(this.hzLaidOut) { this.hzLayEver = true; } }
+            catch(eLay:Error) { this.hzDllLog("HUD layout error " + this.hzErrText(eLay)); }
+         }
          if(this.hzFrameN % 15 == 7) { try { this.hzTypoGuard(); } catch(e36g:Error) { } }
          try { this.hzEqTick(); } catch(e36e:Error) { }
          if(this.hz30ModT0 > 0) { try { this.hz30ModTick(); } catch(errMt:Error) { this.hz30ModT0 = 0; } }
          if(this.hzFrameN % 30 == 11) { try { this.hzPpClock(); } catch(errClk:Error) { } }
-         if(this.hzFontFace >= 1 && this.hzFontFace <= 3 && this.hzFontRetry < 6 && this.hzFrameN % 300 == 150 && (this.hzFontFace == 3 || this.hz30Mod["font"] === 1))
-         {
-            // fontlibs can register late: re-probe faces that failed (a few times in the first ~60 s)
-            var fbefore:String = this.hzFontName() + this.hzFontName("rg") + this.hzFontName("bd");
-            var fbad:Boolean = false;
-            for(var fk:String in this.hzFontOkMap) { if(this.hzFontOkMap[fk] != 1) { delete this.hzFontOkMap[fk]; fbad = true; } }
-            if(fbad) { this.hzFontRetry++; if(this.hzFontName() + this.hzFontName("rg") + this.hzFontName("bd") != fbefore) { this.hzApplyTypo(); } else { try { this.hzAfRetryLayout(); } catch(errAf:Error) { } } }
-            else { this.hzFontRetry = 6; }
-         }
          try { this.hzTgTick(); } catch(errTg:Error) { try { this.hzTgRestore(); this.HorizonTarget_mc.visible = false; } catch(errTg2:Error) { } }
          try { this.hzXhTick(); } catch(errXh:Error) { try { this.hzXhRestore(); if(this.hzXh) { this.hzXh.visible = false; } } catch(errXh2:Error) { } }
          try { this.hzTickBars(); } catch(e36b:Error) { }
@@ -3788,7 +3793,7 @@
          t.setTextFormat(f);
          t.textColor = col;
          t.filters = this.hz35Shadow(false);
-         try { t.antiAliasType = "advanced"; t.gridFitType = "pixel"; } catch(err:Error) { }
+         try { t.antiAliasType = "advanced"; } catch(err:Error) { }
          p.addChild(t);
          return t;
       }
@@ -4134,6 +4139,45 @@
          if(this.hzArrange) { this.hzArrExit(false); }
          if(this.hzSetIsOpen) { this.hzSetCancel(); }
          try { this.hz37Reset(); } catch(e37:Error) { }
+      }
+
+      // Purpose: drop HUD listeners and loaders when the menu is leaving.
+      // Inputs: none. Outputs: one HUD teardown line. F11 closes first.
+      // Dependencies: hzSettingsCloseAll. Author: Moragar. Last modified: 2026-11-02.
+      public function hzHudTeardown() : void
+      {
+         if(this.hzTorn) { return; }
+         this.hzTorn = true;
+         try { this.hzSettingsCloseAll(); } catch(eClose:Error) { }
+         try
+         {
+            removeEventListener(Event.ENTER_FRAME,this.hzOnFrame);
+            this.hzOnFrameOn = false;
+         }
+         catch(eFrame:Error) { }
+         try
+         {
+            if(this.hz27ExitOn) { removeEventListener("exitFrame",this.hz27OnExit); }
+            this.hz27ExitOn = false;
+         }
+         catch(eExit:Error) { }
+         try
+         {
+            if(this.hz30ModLdr != null)
+            {
+               for(var k:String in this.hz30ModLdr)
+               {
+                  var l:URLLoader = this.hz30ModLdr[k] as URLLoader;
+                  if(l != null) { try { l.close(); } catch(eL:Error) { } }
+                  this.hz30ModLdr[k] = null;
+               }
+            }
+         }
+         catch(eMod:Error) { }
+         try { if(this.hz37Ldr != null) { this.hz37Ldr.close(); this.hz37Ldr = null; } } catch(e37:Error) { }
+         try { if(this.hzE19Ldr != null) { this.hzE19Ldr.close(); } } catch(e19:Error) { }
+         try { if(this.hzIniLoader != null) { this.hzIniLoader.close(); } } catch(eIni:Error) { }
+         this.hzDllLog("HUD teardown");
       }
 
       public function hzPopPush(id:String) : void
@@ -6149,7 +6193,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.18";
+      private static const HZ_BUILD:String = "0.43.0.19";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static var HZ_SET_TGS:Array;
       private static var HZ_SET_TGS_N:Array;
@@ -6222,7 +6266,7 @@
          else if(align == "center") { t.x = Math.round(x - w / 2); }
          else { t.x = Math.round(x - 2); }
          t.y = Math.round(y - 3 - (sz - fs) / 2);
-         try { t.antiAliasType = "advanced"; t.gridFitType = "pixel"; } catch(errAA:Error) { }
+         try { t.antiAliasType = "advanced"; } catch(errAA:Error) { }
          p.addChild(t);
          return t;
       }
@@ -8876,7 +8920,7 @@
       public var hzAfLayout:int = 0;
       private var hzSz:Array;
       private var hzFontOkMap:Object;
-      private var hzFontRetry:int = 0;
+      private var hzFontSentW:Number = NaN;
 
       private function hzV19() : Boolean
       {
@@ -9022,9 +9066,6 @@
          try
          {
             tf.antiAliasType = "advanced";
-            tf.gridFitType = sz >= 14 ? "subpixel" : "pixel";
-            tf.sharpness = 60;
-            tf.thickness = sz <= 12 ? 60 : (sz <= 15 ? 35 : 15);
          }
          catch(errAA:Error) { }
          tf.filters = this.hzTy19Filters();
@@ -9068,8 +9109,27 @@
       }
 
       // one font face probe (cached); "$Horizon_Font*" only counts when it really renders glyphs
+      private function hzFontSentinel() : Number
+      {
+         if(!isNaN(this.hzFontSentW)) { return this.hzFontSentW; }
+         this.hzFontSentW = 0;
+         try
+         {
+            var b:TextField = new TextField();
+            b.embedFonts = true;
+            var bf:TextFormat = new TextFormat("$Horizon_NoSuchFace_x",20,0xFFFFFF);
+            b.defaultTextFormat = bf;
+            b.text = "WMW";
+            b.setTextFormat(bf);
+            if(b.textWidth > 0) { this.hzFontSentW = b.textWidth; }
+         }
+         catch(errS:Error) { this.hzFontSentW = 0; }
+         return this.hzFontSentW;
+      }
+
       private function hzFontProbe(n:String) : Boolean
       {
+         if(this.hzFontOkMap == null) { this.hzFontOkMap = {}; }
          if(this.hzFontOkMap[n] != undefined) { return this.hzFontOkMap[n] == 1; }
          var ok:Boolean = false;
          try
@@ -9083,14 +9143,9 @@
             ok = t.textWidth > 8 && t.textHeight > 4;
             if(ok)
             {
-               // a font the player does not have may silently fall back to a default face: compare with a name that never exists
-               var b:TextField = new TextField();
-               b.embedFonts = true;
-               var bf:TextFormat = new TextFormat("$Horizon_NoSuchFace_x",20,0xFFFFFF);
-               b.defaultTextFormat = bf;
-               b.text = "WMW";
-               b.setTextFormat(bf);
-               if(b.textWidth > 0 && Math.abs(b.textWidth - t.textWidth) < 0.01) { ok = false; }
+               // a missing face can fall back to a default. The sentinel width is measured once.
+               var sw:Number = this.hzFontSentinel();
+               if(sw > 0 && Math.abs(sw - t.textWidth) < 0.01) { ok = false; }
             }
          }
          catch(err:Error) { ok = false; }
@@ -11790,19 +11845,15 @@
       {
          return this.hzEnemyWhats().length;
       }
-      // True when this frame should run step n. The log is queued before the risky call.
+      // True when this frame should run step n. The DLL already logged the step.
       private function hzEGo(n:int) : Boolean
       {
          if(this.hzEnemyOne != 0 && this.hzEnemyOne != n) { return false; }
-         if(this.hzEnemyOne != 0)
-         {
-            this.hzEnemyDid = true;
-            this.hzDllLog("HUD enemy step " + n + " " + this.hzEnemyWhat(n));
-         }
+         if(this.hzEnemyOne != 0) { this.hzEnemyDid = true; }
          return true;
       }
       // Purpose: skip the enemy card, or run its next startup step.
-      // Inputs: none. Outputs: HUD card skipped enemy, or one step log.
+      // Inputs: none. Outputs: HUD card skipped enemy when the card is off.
       // Dependencies: hz26Build and the ini flag pushed by the DLL.
       // Author: Moragar. Last modified: 2026-11-02.
       private function hzEnemyFrame() : void
@@ -13502,7 +13553,9 @@
 
       private function hz26TickFx(now:Number, base:Boolean) : void
       {
-         if(!this.HorizonFx_mc) { return; }
+         if(!this.hz26Built || !this.HorizonFx_mc || this.hz26Hit == null || this.hz26Kill == null || this.hz26Ring == null) { return; }
+         if(this.hz26Nums == null) { this.hz26Nums = []; }
+         if(this.hz26Arcs == null) { this.hz26Arcs = []; }
          var on:Boolean = base && !this.hzArrange;
          this.HorizonFx_mc.visible = on;
          var c:Point = this.hz26Center();
@@ -14149,6 +14202,8 @@
       // listed in PersonalEffectsData, otherwise 90 s
       private function hz27PersMerge(pers:Array) : Array
       {
+         if(pers == null) { return []; }
+         if(this.hz27Alerts == null) { return pers; }
          var now:Number = this.hz26Now();
          var cats:Array = [];
          for each(var p:Object in pers) { cats.push(String(p.cat)); }
@@ -14176,7 +14231,7 @@
          {
             var names:Array = [];
             for each(var r:Object in out) { names.push(String(r.name) + (r.sub ? " / " + String(r.sub) : "")); }
-            this.hz26Dbg["Afflictions"] = "effects=" + pers.length + " alerts=" + keep.length + " -> " + names.join(", ");
+            if(this.hz26Dbg != null) { this.hz26Dbg["Afflictions"] = "effects=" + pers.length + " alerts=" + keep.length + " -> " + names.join(", "); }
          }
          return out;
       }
@@ -14248,6 +14303,7 @@
 
       private function hz27Tick(now:Number) : void
       {
+         if(!this.hz26Built || this.hz27Alerts == null) { return; }
          try { this.hz27BioHide(); } catch(e1:Error) { }
          try { this.hz31DetHide(); } catch(err31d:Error) { }
          if(this.hz27Alerts.length > 0 && this.hzFrameN % 60 == 23) { try { if(this.hzAfNew) { this.hzAfSync(); } } catch(e2:Error) { } }
@@ -15220,6 +15276,10 @@
 
       private function hz30ModChanged(n:String) : void
       {
+         if(n == "font")
+         {
+            this.hzFontOkMap = {};
+         }
          if(n == "font" && (this.hzFontFace == 1 || this.hzFontFace == 2))
          {
             this.hzApplyTypo();
@@ -15434,6 +15494,67 @@
          }
       }
 
+      // Purpose: find the vanilla clips Horizon replaces. Same list the frame tick used.
+      // Inputs: none. Outputs: hzHideCache. Dependencies: hz36HideFind.
+      // Author: Moragar. Last modified: 2026-11-02.
+      private function hzVanillaCollect() : void
+      {
+         var names:Array = [];
+         this.hzHideTries++;
+         this.hzHideCache = [];
+         this.hz36HideStale = false;
+         if(this.hzHideVanillaBoost) { names.push("JetpackMeterWrapper_mc","JetpackMeterAnim_mc"); }
+         if(this.hzHideVanillaCompass) { names.push("WatchOutline_mc","WatchPointerOutline_mc","WatchIconsWidget_mc","MissionIconsWidget_mc","EnemyIconsWidget_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"); }
+         if(this.hzHideVanillaWatch) { names.push("O2CO2_mc","O2CO2thin_mc","WatchOutline_mc","WatchPointerOutline_mc","BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"); }
+         if(this.hzHideVanillaAmmo) { names.push("EquippedWeaponAmmo_mc","EquippedWeaponAmmoTotal_mc","VerticalDivider_mc","EquippedWeaponIconHolder_mc"); }
+         if(this.hzHideVanillaHealth) { names.push("HealthBar_mc","HealthBarEmpty_mc","HealthBarGhost_mc","HealthBarDamage_mc","HealthBarIncrease_mc","Health_mc"); }
+         for each(var n:String in names)
+         {
+            try { this.hz36HideFind(this,n,this.hzHideCache); } catch(e36f:Error) { }
+         }
+      }
+
+      // Purpose: hide vanilla HUD clips at ctor time, before cards exist.
+      // Inputs: none. Outputs: none. Dependencies: hzVanillaCollect, hz36HideTick.
+      // Author: Moragar. Last modified: 2026-11-02.
+      private function hzVanillaHideNow() : void
+      {
+         if(this.hzHideCache == null) { this.hzVanillaCollect(); }
+         this.hz36HideTick();
+         this.hzVanillaBack = false;
+      }
+
+      // Purpose: put vanilla clips back when Horizon will not replace them.
+      // Inputs: none. Outputs: one HUD vanilla restored line. Dependencies: hzHideCache.
+      // Author: Moragar. Last modified: 2026-11-02.
+      private function hzVanillaRestore() : void
+      {
+         if(this.hzHideCache == null) { return; }
+         for each(var e:Object in this.hzHideCache)
+         {
+            if(e == null) { continue; }
+            var d:DisplayObject = e.d as DisplayObject;
+            try
+            {
+               var p:DisplayObjectContainer = e.p as DisplayObjectContainer;
+               if(p != null)
+               {
+                  var cur:DisplayObject = p.getChildByName(String(e.n));
+                  if(cur != null) { d = cur; }
+               }
+            }
+            catch(errP:Error) { }
+            if(d == null) { continue; }
+            d.visible = true;
+            if(d.alpha == 0) { d.alpha = 1; }
+         }
+         if(!this.hzVanillaBack)
+         {
+            this.hzVanillaBack = true;
+            this.hzDllLog("HUD vanilla restored");
+         }
+      }
+
       // ---- outline ring into an existing Graphics (cards redraw into one cleared Graphics) ----
       // Same pieces as hz34Ring (4 pixel-snapped bars + 4 quarter rings, fills only): a stroked drawRoundRect loses its
       // right edge in Scaleform (its path starts and ends there), an even-odd double round rect leaks a wedge.
@@ -15639,20 +15760,29 @@
       private function hz34Eff(v:Number) : Number { return !isNaN(v) && v > 0 ? v : this.hzHudScale; }
       private function hz34C(card:String) : Boolean
       {
+         if(this.hz34Cm == null) { return this.hzCompact; }
          var n:int = this.hz34CmClamp(this.hz34Cm[card]);
          if(n == 1) { return true; }
          if(n == 0) { return false; }
          return this.hzCompact;
       }
       // ini keys (lower case, section-agnostic like the rest of the HUD parser)
-      private function hz34Ini(k:String, nv:Number) : Boolean
+      private function hzIniFlagOn(v:String) : Boolean
+      {
+         if(v == null) { return false; }
+         var s:String = String(v).toLowerCase();
+         while(s.length > 0 && (s.charAt(0) == " " || s.charAt(0) == "\t")) { s = s.substr(1); }
+         while(s.length > 0 && (s.charAt(s.length - 1) == " " || s.charAt(s.length - 1) == "\t")) { s = s.substr(0,s.length - 1); }
+         return s == "1" || s == "true" || s == "on" || s == "yes";
+      }
+      private function hz34Ini(k:String, nv:Number, raw:String = null) : Boolean
       {
          if(k == "vitalslayout") { this.hz42VL = (!isNaN(nv) && nv >= 0.5) ? 1 : 0; this.hzLaidOut = false; return true; }   // v0.42.0
          if(k == "modulenotecompact") { this.hz34NoteCmp = !isNaN(nv) && nv >= 0.5; return true; }
          if(k == "showwelcomeonload") { this.hzSplashWelcome = !isNaN(nv) && nv >= 0.5; return true; }
-         if(k == "startupintro") { this.hzStartupIntro = !isNaN(nv) && nv >= 0.5; return true; }
-         if(k == "buildcards") { this.hzBuildCardsOn = !isNaN(nv) && nv >= 0.5; return true; }
-         if(k == "enemycard") { this.hzEnemyCard = !isNaN(nv) && nv >= 0.5; return true; }
+         if(k == "startupintro") { this.hzStartupIntro = this.hzIniFlagOn(raw); return true; }
+         if(k == "buildcards") { this.hzBuildCardsOn = this.hzIniFlagOn(raw); return true; }
+         if(k == "enemycard") { this.hzEnemyCard = this.hzIniFlagOn(raw); return true; }
          for each(var c:Array in HZ34_CARDS)
          {
             var n:String = String(c[0]).toLowerCase();

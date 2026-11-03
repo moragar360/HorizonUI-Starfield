@@ -2,6 +2,22 @@
 
 An independent review will follow later. Do not treat this as approved.
 
+## 0.43.0.19 — boot, vanilla hide, F11 text, and quit
+
+Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.19**. `HZ_COMMS_MSG_LOG` and `HZ_HUD_MSG_CAPTURE` stay `0`.
+
+In-game 0.43.0.18 did not crash. Cards stayed in the top left because `hzCardShow` never laid them out, and the log stored one `hzBoot null` note after the field assigns. Each field is now its own try. A skip logs `HUD boot skip <name>` and the rest still run. `hzCardShow` runs `hzApplyScale` and `hzLayout`, and logs `HUD layout done`. With `EnemyCard=0` the enemy tick returns before it touches the hz26 or hz27 clips.
+
+Vanilla clips hide at the start of `hzCtor` (`HUD vanilla hidden`), before the staged tables. They come back only when `BuildCards=0` or the vitals card never appears (`HUD vanilla restored`).
+
+F11 no longer sets `gridFitType`, `sharpness`, or `thickness` on a TextField. The missing-face width is measured once (`hzFontSentinel`). A failed face stays in `hzFontOkMap` instead of being probed again every few seconds. A full settings redraw still runs only when the page, the hover, or the value changes.
+
+Quitting to the main menu or a loading screen, or losing HUDMenu, closes F11. If the HUD movie has not advanced for a second, the DLL releases look and fight without an Invoke and logs `settings closed (HUD not advancing)`. It also logs `hudSafe 1 to 0` (and back) and `HUD teardown`. The ctor pump state and the BuildCards and EnemyCard sent flags reset so the next HUDMenu starts clean. Inventory still closes F11 and does not reset that pump.
+
+`hz34Ini` uses the same on-words as the DLL (`1`, `true`, `on`, `yes`). The movie no longer queues a second `HUD enemy step` line. The DLL line before the invoke stays.
+
+The tree to build is `cursor/note-sibling-keys-4c32`. Build from `C:\HorizonUI-Agent`. Still unverified in game.
+
 ## 0.43.0.18 — ini on-words and a docs scrub
 
 Not approved. Schema stays `0.42.0`. File version and every movie build id are **0.43.0.18**. `HZ_COMMS_MSG_LOG` and `HZ_HUD_MSG_CAPTURE` stay `0`.

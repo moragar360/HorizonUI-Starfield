@@ -4,27 +4,29 @@
 // res/HorizonUI.rc.in includes this header, and the plugin logs and sends the same
 // string (or the version resource that this header produced). Do not copy the
 // numbers into the resource script or into a log line.
-// Product version matches the file version (0.43.0.18). The settings-schema string
+// Product version matches the file version (0.43.0.19). The settings-schema string
 // in the plugin (HZF::kVersion, "0.42.0") is a different value: preset age and the
 // update backup compare against that, not against this file version.
-// 0.43.0.18 is a pre-release dev build. HUDMenu invokes stay on the first HUD
+// 0.43.0.19 is a pre-release dev build. HUDMenu invokes stay on the first HUD
 // advance thread. Cards build one per frame. BuildCards defaults on. EnemyCard
 // defaults off. The startup intro defaults to off. EnemyCard and BuildCards
 // accept only 1, true, on, and yes, in any case. Any other value is off.
+// Boot fills one field at a time. Vanilla hides at ctor. F11 does not set
+// gridFitType, sharpness, or thickness. A stalled HUD releases look and fight.
 // Last modified: 2026-11-02.
 
 #define HZ_FILE_VERSION_MAJOR 0
 #define HZ_FILE_VERSION_MINOR 43
 #define HZ_FILE_VERSION_PATCH 0
-#define HZ_FILE_VERSION_BUILD 18
-#define HZ_FILE_VERSION_STR "0.43.0.18"
+#define HZ_FILE_VERSION_BUILD 19
+#define HZ_FILE_VERSION_STR "0.43.0.19"
 
-// TEST_NOTE 0.43.0.18: first pass. HUD invokes stay on the recorded UI thread.
+// TEST_NOTE 0.43.0.19: first pass. HUD invokes stay on the recorded UI thread.
 // Cards build one per frame. EnemyCard=0 logs HUD card skipped enemy.
 // BuildCards=0 logs cards skipped. Startup intro stays off.
 // EnemyCard and BuildCards treat only 1, true, on, and yes as on.
 // Not approved. Long "..." notices still need an in-game look.
-// VORTEX_INSTALL 0.43.0.18: keep 0.43.0.7 in Vortex until this 0.43.0.18
+// VORTEX_INSTALL 0.43.0.19: keep 0.43.0.7 in Vortex until this 0.43.0.19
 // build is installed over it. Back up settings first. Do not delete files.
 
 // 0.43.0.9: 0 is the release state. 1 writes the verbose HUD-message trace (the

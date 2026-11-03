@@ -4441,6 +4441,7 @@ namespace HZ
 	void HudCtorPump();
 	void PushBuildCardsOnce();
 	void PushEnemyCardOnce();
+	void NoteSafeEdge(bool a_now, bool a_canInvoke, std::uint64_t a_hudAgeMs);
 
 	// Purpose: job-thread poll. Capture, writer coordinator, file I/O,
 	// and load/quit flags. Never touches Scaleform (GetMenu / menuObj /
@@ -4521,6 +4522,7 @@ namespace HZ
 		g_hudSafeHint.store(hudSafe, std::memory_order_relaxed);
 		// lastHudAge can grow while hudSafe=0 (F11 or a full-screen menu): Poll()
 		// returns before the HUD tick. That gap is expected; the hook still heartbeats.
+		NoteSafeEdge(hudSafe, true, 0);
 		if (!hudSafe) {
 			if (HudSafe(false)) {   // v0.42.0 r3: only a scope is up: F11 stays blocked, the HUD-ready time is kept
 				if (g_open.load()) ResetSettingsState();
@@ -4582,12 +4584,89 @@ namespace HZ
 		}
 	}
 
+	// Ctor pump state. File scope so a torn-down HUDMenu can start it again.
+	int  g_ctorState = 0;
+	int  g_hudSafePrev = -1;
+	bool g_hudTorn = false;
+	RE::Scaleform::GFx::ASMovieRootBase* g_pumpRoot = nullptr;
+
+	// Purpose: clear the one-shot ctor pump and the ini pushes.
+	// Inputs: none. Outputs: g_ctorState 0. Dependencies: none.
+	// Author: Moragar. Last modified: 2026-11-02.
+	void ResetHudPump()
+	{
+		g_ctorState = 0;
+		g_buildCardsSent.store(false, std::memory_order_release);
+		g_enemyCardSent.store(false, std::memory_order_release);
+	}
+
+	// Purpose: a new HUDMenu root restarts the pump. The first root does not.
+	// Inputs: the live root, or null when that menu is gone.
+	// Outputs: HUD pump reset when a root is replaced. Dependencies: ResetHudPump.
+	// Author: Moragar. Last modified: 2026-11-02.
+	void RememberHudRoot(RE::Scaleform::GFx::ASMovieRootBase* a_root)
+	{
+		if (a_root == g_pumpRoot) return;
+		const bool again = g_pumpRoot != nullptr || g_ctorState != 0
+			|| g_buildCardsSent.load(std::memory_order_acquire)
+			|| g_enemyCardSent.load(std::memory_order_acquire);
+		g_pumpRoot = a_root;
+		if (!again) return;
+		ResetHudPump();
+		g_hudTorn = false;
+		REX::INFO("HUD pump reset");
+	}
+
+	// Purpose: log hudSafe edges. Close F11 without an Invoke when the HUD
+	// movie is not advancing. Tear down on the main menu, a loading screen,
+	// or when HUDMenu is gone. Inventory keeps the pump.
+	// Inputs: current hudSafe, whether this thread may Invoke, HUD poll age.
+	// Outputs: hudSafe N to M, and one HUD teardown. Dependencies: HudInvoke.
+	// Author: Moragar. Last modified: 2026-11-02.
+	void NoteSafeEdge(bool a_now, bool a_canInvoke, std::uint64_t a_hudAgeMs)
+	{
+		// A live HUD poll owns the edge. The heartbeat logs only after the movie stalls.
+		if (!a_canInvoke && a_hudAgeMs < 1000) return;
+		const int n = a_now ? 1 : 0;
+		if (g_hudSafePrev != n) {
+			if (g_hudSafePrev >= 0)
+				REX::INFO("hudSafe {} to {}", g_hudSafePrev, n);
+			g_hudSafePrev = n;
+			if (n == 1) g_hudTorn = false;
+		}
+		if (a_now) return;
+		auto ui = RE::UI::GetSingleton();
+		const bool hudOpen = ui && ui->IsMenuOpen("HUDMenu");
+		const bool mainMenu = ui && ui->IsMenuOpen("MainMenu");
+		const bool loading = ui && ui->IsMenuOpen("LoadingMenu");
+		const bool leave = !hudOpen || mainMenu || loading;
+		if (!leave) return;
+		const bool stalled = !a_canInvoke && a_hudAgeMs >= 1000;
+		if (!a_canInvoke && !stalled) return;
+		// A loading screen that is still advancing keeps the ctor pump.
+		// The main menu, a gone HUDMenu, or a stalled movie does not.
+		if (a_canInvoke && hudOpen && !mainMenu) return;
+		if (g_hudTorn) return;
+		if (!a_canInvoke || !hudOpen) {
+			if (g_open.load() || g_blocked) {
+				g_open.store(false);
+				g_swallow = false;
+				SetControlsBlocked(false);
+				REX::INFO("settings closed (HUD not advancing)");
+			}
+		} else {
+			HudInvoke("hzHudTeardown", nullptr, nullptr, 0, true);
+		}
+		ResetHudPump();
+		g_hudTorn = true;
+		REX::INFO("HUD teardown");
+	}
+
 	// One static-table stage per HUD frame. The begin line is logged before the stage runs.
 	void HudCtorPump()
 	{
-		static int state = 0;
-		if (state != 0) {
-			if (state == 1) DrainHudDllLog();
+		if (g_ctorState != 0) {
+			if (g_ctorState == 1) DrainHudDllLog();
 			return;
 		}
 		std::string peek = "peek";
@@ -4595,7 +4674,7 @@ namespace HZ
 		GValue ret;
 		if (!HudInvoke("hzCtorStep", &ret, &mode, 1)) {
 			REX::WARN("hud: hzCtorStep invoke failed");
-			state = -1;
+			g_ctorState = -1;
 			DrainHudDllLog();
 			return;
 		}
@@ -4603,7 +4682,7 @@ namespace HZ
 		std::string name;
 		if (ret.IsString() && ret.GetString()) name = ret.GetString();
 		if (name.empty() || name == "done") {
-			state = 1;
+			g_ctorState = 1;
 			REX::INFO("HUD ctor stages done");
 			return;
 		}
@@ -4754,6 +4833,7 @@ namespace HZ
 				g_hudSafeHint.store(hudSafe, std::memory_order_relaxed);
 				const auto lastHud = g_lastHudPollMs.load(std::memory_order_relaxed);
 				const auto age = lastHud && now >= lastHud ? now - lastHud : 0;
+				NoteSafeEdge(hudSafe, false, age);
 				REX::INFO("scaleform: poll alive calls={} lastTid={} hudSafe={} root={} uiTid={} hudPolls={} lastHudAge={} hudRoot={} msgRoot={}",
 					n, g_lastHudPollTid.load(std::memory_order_relaxed),
 					hudSafe ? 1 : 0,
@@ -4857,8 +4937,10 @@ namespace HZ
 		auto* root = (a_menu->uiMovie && a_menu->uiMovie->asMovieRoot)
 			? a_menu->uiMovie->asMovieRoot.get() : nullptr;
 		auto hud = g_hudRoot.load(std::memory_order_acquire);
-		if (hzlog::ShouldClearReusedHudRoot(hud, root, isHud))
-			g_hudRoot.compare_exchange_strong(hud, nullptr, std::memory_order_acq_rel);
+		if (hzlog::ShouldClearReusedHudRoot(hud, root, isHud)) {
+			if (g_hudRoot.compare_exchange_strong(hud, nullptr, std::memory_order_acq_rel))
+				RememberHudRoot(nullptr);
+		}
 		auto msg = g_hudMsgRoot.load(std::memory_order_acquire);
 		if (hzlog::ShouldClearReusedHudRoot(msg, root, isMsg))
 			g_hudMsgRoot.compare_exchange_strong(msg, nullptr, std::memory_order_acq_rel);
@@ -4866,8 +4948,10 @@ namespace HZ
 		if (hzlog::ShouldClearReusedHudRoot(scope, root, isScope))
 			g_scopeRoot.compare_exchange_strong(scope, nullptr, std::memory_order_acq_rel);
 		if (!root) return;
-		if (isHud)
+		if (isHud) {
+			RememberHudRoot(root);
 			g_hudRoot.store(root, std::memory_order_release);
+		}
 		else if (isMsg)
 			g_hudMsgRoot.store(root, std::memory_order_release);
 		else if (isScope)
