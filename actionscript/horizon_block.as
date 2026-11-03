@@ -2428,7 +2428,9 @@
          var cardBase:Boolean = base && !this.hz40Hide;   // v0.40: the cards only; combat feedback keeps base
          var full:Boolean = !this.hzCompact && cardBase;
          var vitBase:Boolean = base && !this.hz40Hide;   // v0.41.0: the HUD vitals cards hide too; hz41V draws the kept vitals
-         var vitFull:Boolean = !this.hzCompact && vitBase;
+         // VitalsBars compact reuses the COMPACT MODE strips. If either is on, that one card shows and the full cards stay hidden.
+         var merged:Boolean = this.hzCompact || this.hzVitalsBars == 1;
+         var vitFull:Boolean = !merged && vitBase;
          if(this.hzArrange) { this.hzArrShowAll(); return; }
          if(this.HorizonCard_mc) { this.hzShow(this.HorizonCard_mc,vitFull && this.hzShowJetpack && this.hzRuleOk(this.hzRuleJetpack)); }
          if(this.HorizonVitals_mc) { this.hzShow(this.HorizonVitals_mc,vitFull && this.hzShowVitals && this.hzRuleOk(this.hzRuleVitals)); }
@@ -2440,7 +2442,7 @@
          // the Equipment card also shows in compact mode (layout C); the old compact ammo strip stays hidden
          if(this.HorizonAmmo_mc) { this.hzShow(this.HorizonAmmo_mc,cardBase && this.hzShowAmmo && this.hzRuleOk(this.hzRuleAmmo)); }
          for each(var cr:DisplayObject in this.hzCAmmoRow) { cr.visible = false; }
-         if(this.HorizonCompact_mc) { this.hzShow(this.HorizonCompact_mc,this.hzCompact && vitBase); }
+         if(this.HorizonCompact_mc) { this.hzShow(this.HorizonCompact_mc,merged && vitBase && (this.hzCompact || this.hzShowVitals || this.hzShowJetpack)); }
          if(this.HorizonCompass_mc) { this.hzShow(this.HorizonCompass_mc,cardBase && this.hzShowCompass && this.hzRuleOk(this.hzRuleCompass)); }
          try { this.hz26Vis(base); } catch(err26:Error) { }
       }
@@ -3212,7 +3214,7 @@
          return ut + "|" + lt + "|" + body;
       }
 
-      // ---------- Message Log popup (0.43.0.25). Inside the 1000x660 F11 window. ----------
+      // ---------- Message Log popup (0.43.0.26). Inside the 1000x660 F11 window. ----------
       // v7 layout: 976x620, rows at least 28 px and wrap long text, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
       private static const HZ_ML_W:Number = 976;
@@ -4341,8 +4343,15 @@
       {
          var b:Sprite = this.hzMsglogOverlayLayer();
          var g:* = b.graphics;
-         var cw:Number = 420;
-         var ch:Number = 168;
+         var cw:Number = 480;
+         var noteW:Number = cw - 44;
+         var title:TextField = this.hzWT(b,"Clear all history?",0,0,noteW,15,"bd",uint(T.txt),2,"left",13);
+         var note:TextField = this.hzWT(b,"Removes every unpinned message for this character. Pins stay. Can't be undone.",0,0,noteW,13,"rg",uint(T.lab),0.3,"left",13);
+         note.height = 160;
+         var nh:Number = this.hzMsglogWrap(note,noteW,160);
+         var guess:Number = this.hzMsglogGuessH(note.text,noteW);
+         if(nh < guess) { nh = guess; note.height = Math.round(nh); }
+         var ch:Number = Math.max(168,46 + nh + 12 + 28 + 16);
          var cx:Number = ox + Math.round((HZ_ML_W - cw) / 2);
          var cy:Number = oy + Math.round((HZ_ML_H - ch) / 2);
          g.beginFill(0x000000,0.45);
@@ -4352,12 +4361,17 @@
          g.drawRoundRect(cx,cy,cw,ch,28,28);
          g.endFill();
          this.hz33Edge(b,cx,cy,cw,ch,28,uint(T.edge),Number(T.ea),1);
-         this.hzWT(b,"Clear all history?",cx + 22,cy + 18,cw - 44,15,"bd",uint(T.txt),2,"left",13);
-         this.hzWT(b,"Removes every unpinned message for this character. Pins stay. Can't be undone.",cx + 22,cy + 48,cw - 44,13,"rg",uint(T.lab),0.3,"left",13);
+         title.x = cx + 20;
+         title.y = cy + 14;
+         note.x = cx + 20;
+         note.y = cy + 46;
+         b.addChild(title);
+         b.addChild(note);
+         var btnY:Number = cy + ch - 48;
          var br:Number = cx + cw - 22;
          var hit0:int = this.hzSetHits.length;
-         br -= this.hzSetBtn(b,g,br,cy + 120,"CANCEL",false,false,this.hzMlHover == "mhcancel",T,"mhcancel",13,13) + 10;
-         this.hzSetBtn(b,g,br,cy + 120,"CLEAR",true,false,this.hzMlHover == "mhok",T,"mhok",13,13);
+         br -= this.hzSetBtn(b,g,br,btnY,"CANCEL",false,false,this.hzMlHover == "mhcancel",T,"mhcancel",13,13) + 10;
+         this.hzSetBtn(b,g,br,btnY,"CLEAR",true,false,this.hzMlHover == "mhok",T,"mhok",13,13);
          while(this.hzSetHits.length > hit0) { this.hzMlHits.push(this.hzSetHits.pop()); }
       }
 
@@ -4387,7 +4401,8 @@
          while(i < this.hzMlOthers.length && ry < cy + ch - 64)
          {
             var oc:Object = this.hzMlOthers[i];
-            this.hzWT(b,String(oc.name),cx + 22,ry,300,13,"sb",uint(T.txt),1.2,"left",13);
+            var nmCh:TextField = this.hzWT(b,String(oc.name),cx + 22,ry,300,13,"sb",uint(T.txt),1.2,"left",13);
+            this.hzMsglogEllip(nmCh,300);
             this.hzWT(b,String(oc.n) + " messages",cx + cw - 22,ry,160,13,"rg",uint(T.mut),0.3,"right",13);
             ry += 28;
             i++;
@@ -5238,7 +5253,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.25";
+      private static const HZ_BUILD:String = "0.43.0.26";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -5376,13 +5391,57 @@
          return w;
       }
 
+      // Note column width. Matches the row note field (right edge minus the 40 px gutter).
+      private function hzSetNoteW() : Number
+      {
+         var prev:Boolean = this.hzSetTab == 1 || this.hzSetTab == 2;
+         var right:Number = HZ_SET_W - 28 - (prev ? 250 : 0);
+         var w:Number = right - 40;
+         if(w < 80) { w = 80; }
+         return w;
+      }
+
+      // One line when the note fits. A longer confirm grows, same wrap as the Message Log popups.
+      private function hzSetNoteH(r:Object) : Number
+      {
+         if(r == null || !r.note) { return 0; }
+         var px:int = (this.hzSetTab == 1 || r.n13) ? 13 : 11;
+         var one:Number = px >= 13 ? 20 : 18;
+         var w:Number = this.hzSetNoteW();
+         var key:String = String(r.note) + "|" + w + "|" + px;
+         if(r.nhK == key && !isNaN(Number(r.nh))) { return Number(r.nh); }
+         var h:Number = one;
+         var host:Sprite = this.hzSetBody != null ? this.hzSetBody : this.HorizonSettings_mc;
+         if(host != null)
+         {
+            try
+            {
+               var t:TextField = this.hzWT(host,String(r.note),-4000,-4000,w,px,"rg",0,0.2,"left",13);
+               t.wordWrap = false;
+               t.multiline = false;
+               t.width = 4000;
+               t.text = String(r.note);
+               if(this.hzTW(t) > w + 1)
+               {
+                  h = this.hzMsglogWrap(t,w,160);
+                  if(h < one) { h = one; }
+               }
+               if(t.parent != null) { t.parent.removeChild(t); }
+            }
+            catch(eNh:Error) { h = one; }
+         }
+         r.nhK = key;
+         r.nh = h;
+         return h;
+      }
+
       // list geometry: heights per scrolling row (pill rows excluded)
       private function hzSetRowH(r:Object) : Number
       {
          if(r.t == "m") { return (r.h ? 24 : 0) + this.hz34BanH(); }
          if(r.t == "g") { return 48; }
          if(r.t == "w") { return (r.h ? 24 : 0) + 44; }
-         return (r.h ? 24 : 0) + 32 + (r.note ? (r.n13 ? 20 : 18) : 0) + 4;
+         return (r.h ? 24 : 0) + 32 + this.hzSetNoteH(r) + 4;
       }
 
       // scroll so the selected row is fully visible ("selection follows"); also computes the max scroll
@@ -5696,8 +5755,12 @@
             if(r.note)
             {
                var notePx:int = (this.hzSetTab == 1 || r.n13) ? 13 : 11;
-               this.hzWT(b,String(r.note),(r.dis ? 56 : 34) + (r.sub ? 22 : 0),y - 2,right - 40,notePx,"rg",uint(T.note),0.2,"left",13);
-               y += notePx >= 13 ? 20 : 18;
+               var nw:Number = this.hzSetNoteW();
+               var nh:Number = this.hzSetNoteH(r);
+               var nt:TextField = this.hzWT(b,String(r.note),(r.dis ? 56 : 34) + (r.sub ? 22 : 0),y - 2,nw,notePx,"rg",uint(T.note),0.2,"left",13);
+               var oneN:Number = notePx >= 13 ? 20 : 18;
+               if(nh > oneN) { this.hzMsglogWrap(nt,nw,160); nt.height = Math.round(nh); }
+               y += nh;
             }
             y += 4;
             lastShown = li;
@@ -9875,9 +9938,48 @@
          return this.hzSnapU(Math.max(24,Math.max(keySz,holdSz) + 10),u);
       }
 
+      // Compact pill only. The cap hugs the shared line size. The full card keeps hzT19CapH.
+      private function hzT19PillCap(lineFs:Number) : Number
+      {
+         var u:Number = this.hzT19U();
+         var sz:int = this.hzChipSzOn(lineFs,"Hover",13);
+         return this.hzSnapU(Math.max(22,sz + 8),u);
+      }
+
+      private function hzT19FaceFs(tf:TextField, fs:Number) : void
+      {
+         var o:Object = this.hzTxtObj(tf);
+         if(!o) { return; }
+         if(Number(o.fs) == fs && Number(o.size) == fs) { return; }
+         o.fs = fs;
+         o.size = fs;
+         this.hzApplyFmt(o);
+      }
+
+      // lineFs > 0 is the compact pill: name, key letter, and verb share that size. 0 restores the full card.
+      private function hzT19RowFace(slot:Object, lineFs:Number) : void
+      {
+         if(lineFs > 0)
+         {
+            this.hzT19FaceFs(slot.kp,lineFs);
+            this.hzT19FaceFs(slot.kh,lineFs);
+            this.hzT19FaceFs(slot.lp,lineFs);
+            this.hzT19FaceFs(slot.lh,lineFs);
+            this.hzT19FaceFs(slot.hh,lineFs);
+         }
+         else
+         {
+            this.hzT19FaceFs(slot.kp,12);
+            this.hzT19FaceFs(slot.kh,12);
+            this.hzT19FaceFs(slot.lp,13);
+            this.hzT19FaceFs(slot.lh,13);
+            this.hzT19FaceFs(slot.hh,11);
+         }
+      }
+
       // our keycap action row from aButtons (sTextPressAndRelease / sTextHold / bVisible / bEnabled / iType).
       // g == null only measures. Returns the row width.
-      private function hzT19Buttons(g:*, a:Object, aw:Object, x0:Number, y:Number, col:uint, maxW:Number = 0) : Number
+      private function hzT19Buttons(g:*, a:Object, aw:Object, x0:Number, y:Number, col:uint, maxW:Number = 0, lineFs:Number = 0) : Number
       {
          var x:Number = x0;
          var used:int = 0;
@@ -9899,10 +10001,11 @@
             var on:Boolean = b.bEnabled !== false;
             var key:String = this.hzT19Key(aw,t);
             var slot:Object = this.hzT19Btn[used];
+            this.hzT19RowFace(slot,lineFs);
             // v0.26: caps 24 units tall (was 20); key glyph + labels centered on the cap by their real ascent
             var u:Number = this.hzT19U();
             var ky:Number = this.hzSnapU(y,u);
-            var kh:Number = this.hzT19CapH();
+            var kh:Number = lineFs > 0 ? this.hzT19PillCap(lineFs) : this.hzT19CapH();
             var kcy:Number = ky + kh / 2;
             used++;
             if(x > x0) { x += 16; }
@@ -10240,20 +10343,22 @@
       // Colors, fill, shadow, and accent come from the live STYLE settings (hzPanel / HZ_ACCENT). Full is the block below.
       // hzPillNameSlack: the name field is the measured width plus 8 px (hzFitText keeps 4), so a name that fits the
       // 220 px cap stays whole. Icon and name are reserved first. The button row is fit into what remains of 520.
+      // hzPillLine: name, key letter, and verb share one size and one cap-center, so they sit on one baseline.
       private function hzT19PromptPill(g:*, a:Object, aw:Object, o:Object, nmTf:TextField, hdrTxt:String, hasBtn:Boolean, bw:Number) : Object
       {
-         var cap:Number = this.hzT19CapH();
-         var H:Number = Math.max(40,cap + 14);
-         var rad:Number = 13;
+         var lineFs:Number = 14;
+         var cap:Number = this.hzT19PillCap(lineFs);
+         var H:Number = Math.max(52,cap + 24);
+         var rad:Number = 16;
          if(rad > H / 2 - 4) { rad = H / 2 - 4; }
-         var padL:Number = 10;
-         var padR:Number = 12;
-         var gap:Number = 10;
+         var padL:Number = 16;
+         var padR:Number = 20;
+         var gap:Number = 14;
          o.center = false;
          o.right = false;
          o.ls = 1.2;
-         o.fs = 14;
-         o.size = 14;
+         o.fs = lineFs;
+         o.size = lineFs;
          o.chipCard = "Hover";
          o.chipMin = 13;
          this.hzTxtTint(nmTf,null);
@@ -10265,14 +10370,14 @@
          var measured:Number = shown.length > 0 ? this.hzTW(nmTf) : 0;
          var nameRoom:Number = 0;
          if(measured > 0) { nameRoom = measured <= nmCap ? measured + nmSlack : nmCap + 4; }
-         var nameX:Number = padL + rad * 2 + 8;
+         var nameX:Number = padL + rad * 2 + 12;
          var btnMax:Number = 520 - padR - nameX - nameRoom - (hasBtn ? gap : 0);
          if(btnMax < 0) { btnMax = 0; }
          var fitBw:Number = 0;
-         if(hasBtn && btnMax > 0) { fitBw = this.hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,btnMax); }
+         if(hasBtn && btnMax > 0) { fitBw = this.hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,btnMax,lineFs); }
          if(fitBw > btnMax) { fitBw = btnMax; }
          var W:Number = nameX + nameRoom + (fitBw > 0 ? gap + fitBw : 0) + padR;
-         if(W < 168) { W = 168; }
+         if(W < 196) { W = 196; }
          if(W > 520) { W = 520; }
          this.hzPanel(g,W,H,Math.round(H / 2));
          this.hzT19Tile(g,padL + rad,Math.round(H / 2),HZ_ACCENT,rad);
@@ -10281,12 +10386,13 @@
          nmTf.width = Math.round(nameRoom);
          this.hzApplyFmt(o);
          if(nmTf.visible) { this.hzFitText(nmTf,shown,nameRoom); }
-         var nsz:Number = 14;
-         try { nsz = this.hzTextSz19(o,14); } catch(eSz:Error) { nsz = 14; }
-         this.hzTxtTop(nmTf,Math.round((H - nsz) / 2));
+         var u:Number = this.hzT19U();
+         var yBtn:Number = this.hzSnapU((H - cap) / 2,u);
+         var cy:Number = yBtn + cap / 2;
+         this.hzTxtTopU(nmTf,this.hzCapTop(nmTf,cy),u);
          if(fitBw > 0)
          {
-            this.hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),Math.round((H - cap) / 2),HZ_ACCENT,btnMax);
+            this.hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,btnMax,lineFs);
          }
          return {"W":W,"H":H};
       }
@@ -14242,7 +14348,7 @@
       {
          if(k == "vitalslayout") { this.hz42VL = (!isNaN(nv) && nv >= 0.5) ? 1 : 0; this.hzLaidOut = false; return true; }   // v0.42.0
          if(k == "namehover") { this.hzNameHover = (!isNaN(nv) && int(nv) == 1) ? 1 : 0; this.hzT19Sig = ""; return true; }
-         if(k == "vitalsbars") { this.hzVitalsBars = (!isNaN(nv) && int(nv) == 1) ? 1 : 0; this.hzLaidOut = false; try { this.hz42BarsApply(); } catch(eVb:Error) { } return true; }
+         if(k == "vitalsbars") { this.hzVitalsBars = (!isNaN(nv) && int(nv) == 1) ? 1 : 0; this.hzLaidOut = false; try { this.hz42BarsApply(); } catch(eVb:Error) { } try { this.hzRefreshVisibility(); } catch(eVr:Error) { } return true; }
          if(k == "modulenotecompact") { this.hz34NoteCmp = !isNaN(nv) && nv >= 0.5; return true; }
          for each(var c:Array in HZ34_CARDS)
          {
@@ -14297,7 +14403,7 @@
          if(p.VitalsBars !== undefined)
          {
             var vb:int = int(p.VitalsBars) == 1 ? 1 : 0;
-            if(vb != this.hzVitalsBars) { this.hzVitalsBars = vb; try { this.hz42BarsApply(); } catch(eVb:Error) { } this.hzLaidOut = false; }
+            if(vb != this.hzVitalsBars) { this.hzVitalsBars = vb; try { this.hz42BarsApply(); } catch(eVb:Error) { } try { this.hzRefreshVisibility(); } catch(eVr:Error) { } this.hzLaidOut = false; }
          }
          if(cd) { this.hz26ChSig = ""; this.hzLaidOut = false; }
          if(sd) { this.hzApplyScale(); }
@@ -14312,7 +14418,7 @@
          a.push("VitalsLayout=" + (Number(p.VitalsLayout) >= 0.5 ? "1" : "0"));
          a.push("; v0.43 name hover: 0 = compact one-line pill (default), 1 = the full card. Empty or any other value uses compact.");
          a.push("NameHover=" + (int(p.NameHover) == 1 ? "1" : "0"));
-         a.push("; v0.43 health and oxygen bars: 0 = full (default), 1 = compact. Empty or any other value uses full.");
+         a.push("; v0.43 health and oxygen: 0 = full cards (default), 1 = the COMPACT MODE card (boost, health, and oxygen together). If COMPACT MODE is on, that same card shows either way. Empty or any other value uses full.");
          a.push("VitalsBars=" + (int(p.VitalsBars) == 1 ? "1" : "0"));
          a.push("; v0.34 card compact form: -1 = GLOBAL ([Style] Compact), 0 off, 1 on. Jetpack / vitals / afflictions follow the global Compact");
          for each(var d:Array in HZ34_CARDS) { if(d[1]) { a.push(d[0] + "Compact=" + String(this.hz34CmClamp(p[d[0] + "Compact"]))); } }
@@ -14343,7 +14449,7 @@
             {"k":"ShowJetpack","l":"JETPACK CARD","t":"b","h":"CARDS"},this.hz34Sz("Jetpack",szn),
             {"k":"ShowVitals","l":"VITALS CARD","t":"b"},this.hz34Sz("Vitals"),
             {"k":"VitalsLayout","l":"VITALS LAYOUT","t":"r","opts":["VERTICAL","HORIZONTAL"],"ids":[0,1],"sub":true,"note":"VERTICAL = health above O2.  HORIZONTAL = O2 beside health (one row).  ARRANGE CARDS: L"},
-            {"k":"VitalsBars","l":"HEALTH AND O2 BARS","t":"r","opts":["FULL","COMPACT"],"ids":[0,1],"sub":true,"note":"COMPACT is a shorter bar. FULL is the current card."},
+            {"k":"VitalsBars","l":"HEALTH AND O2 BARS","t":"r","opts":["FULL","COMPACT"],"ids":[0,1],"sub":true,"note":"COMPACT uses the same boost, health, and oxygen card as COMPACT MODE. FULL keeps the separate cards. If either is on, that merged card shows."},
             {"k":"ShowCharacter","l":"CHARACTER CARD (LV / XP / CREDITS / MASS)","t":"b"},this.hz34Sz("Character"),this.hz34Cmp("Character",cmn),
             {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","sub":true},
             {"k":"ShowPlanet","l":"PLANET CARD","t":"b"},this.hz34Sz("Planet"),this.hz34Cmp("Planet"),
@@ -16844,7 +16950,7 @@
       // 0 = vertical (health body above the O2 body, card 330 x 124, unchanged), 1 = horizontal (the O2 body beside health,
       // 8 px gap, card 668 x 58). In the full bar form every child at y >= 60 (the O2 body, icon, label, value, bar, CO2
       // tail / text) lives in one row sprite (hz42VRow), moved by (338, -66) in the horizontal layout.
-      // VitalsBars 1 shortens that same card; the full form keeps 58 / 66 / -66. The compact strips ignore it.
+      // VitalsBars 1 shows the COMPACT MODE strips instead of this card. The full form keeps 58 / 66 / -66.
       // ARRANGE positions use the real card size (edge anchors keep their edge).
       private var hz42VL:int = 0;
       private var hz42VLOrig:int = -1;

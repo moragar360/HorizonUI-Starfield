@@ -36,7 +36,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.43.0.25";', "HUD build id is 0.43.0.25");
+pin('private static const HZ_BUILD:String = "0.43.0.26";', "HUD build id is 0.43.0.26");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
@@ -585,8 +585,8 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneLf = stripped.includes("\n");
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
-	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.25";') >= 0, rel + " build is 0.43.0.25");
+	else expect((!hasCrlf && !loneCr && loneLf) || (hasCrlf && !loneLf && !loneCr), rel + " stays LF or a CRLF checkout");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.26";') >= 0, rel + " build is 0.43.0.26");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -1236,7 +1236,7 @@ for (let di = 0; di < dlgFiles.length; di++) {
 	const loneLf = stripped.includes("\n");
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
-	else expect(!hasCrlf && !loneCr && loneLf, rel + " stays LF");
+	else expect((!hasCrlf && !loneCr && loneLf) || (hasCrlf && !loneLf && !loneCr), rel + " stays LF or a CRLF checkout");
 	const tail = dlgTail(buf);
 	expect(tail === dlgTailBlock, rel + " persuasion meter matches the dialogue block");
 	if (rel.indexOf("dimp-Lrg") >= 0) expect(buf.toString("utf8").indexOf("private static const HZD_LRG:Boolean = true;") >= 0, "large dialogue stays large");
@@ -1562,11 +1562,11 @@ function hzPillEllipsizes(measured) {
 	return measured > hzPillNameRoom(measured) - 4;
 }
 function hzPillLayout(namePx, btnPx) {
-	const padL = 10;
-	const rad = 13;
-	const padR = 12;
-	const gap = 10;
-	const nameX = padL + rad * 2 + 8;
+	const padL = 16;
+	const rad = 16;
+	const padR = 20;
+	const gap = 14;
+	const nameX = padL + rad * 2 + 12;
 	const iconRight = padL + rad * 2;
 	const nameRoom = hzPillNameRoom(namePx);
 	const hasBtn = btnPx > 0;
@@ -1574,7 +1574,7 @@ function hzPillLayout(namePx, btnPx) {
 	if (btnMax < 0) btnMax = 0;
 	const fitBw = hasBtn && btnMax > 0 ? Math.min(btnPx, btnMax) : 0;
 	let w = nameX + nameRoom + (fitBw > 0 ? gap + fitBw : 0) + padR;
-	if (w < 168) w = 168;
+	if (w < 196) w = 196;
 	if (w > 520) w = 520;
 	const btnX = nameX + nameRoom + gap;
 	return { w, nameX, nameRoom, iconRight, btnX, fitBw, btnMax, ellipsis: hzPillEllipsizes(namePx) };
@@ -1585,7 +1585,9 @@ expect("VASCO\r\n".replace(/\r\n/g, "\n").indexOf("VASCO\n") === 0, "a CRLF sour
 	expect(pill.indexOf("var nmCap:Number = 220;") >= 0, "the pill name cap is 220");
 	expect(pill.indexOf("var nmSlack:Number = 8;") >= 0, "the pill name field keeps 8 px of slack");
 	expect(pill.indexOf("measured <= nmCap ? measured + nmSlack : nmCap + 4") >= 0, "only a name past 220 is cut");
-	expect(pill.indexOf("hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,btnMax)") >= 0, "the button row is measured after the name");
+	expect(pill.indexOf("var lineFs:Number = 14;") >= 0, "the pill name, key, and verb share one size");
+	expect(pill.indexOf("hzCapTop(nmTf,cy)") >= 0, "the pill name uses the keycap center");
+	expect(pill.indexOf("hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,btnMax,lineFs)") >= 0, "the button row is measured after the name");
 	expect(pill.indexOf("nameX + nameRoom + gap") >= 0, "buttons start after the reserved name");
 	const names = [
 		["short", 36],
@@ -1618,6 +1620,8 @@ expect("VASCO\r\n".replace(/\r\n/g, "\n").indexOf("VASCO\n") === 0, "a CRLF sour
 	expect(hzPillEllipsizes(221) === true, "a name of 221 px is cut");
 }
 expect(src.indexOf("this.hzTxtTop(this.hz26RegenT,this.hzVitalsBars == 1 ? 6 : 9);") >= 0, "compact regen text uses the CO2 offset and full stays at 9");
+expect(src.indexOf("var merged:Boolean = this.hzCompact || this.hzVitalsBars == 1;") >= 0, "either COMPACT MODE or VitalsBars compact uses the merged strips");
+expect(src.indexOf("hzMsglogWrap(note,noteW,160)") >= 0, "the history confirm wraps its warning");
 expect(src.indexOf("if(rows[ni].note) { rows[ni].n13 = true; }") >= 0, "CARDS tab notes use the 13 px note row");
 
 if (failed) {

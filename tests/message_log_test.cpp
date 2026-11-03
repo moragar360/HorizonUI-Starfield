@@ -763,8 +763,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.25", "file version is 0.43.0.25");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 25, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.26", "file version is 0.43.0.26");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 26, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -1649,7 +1649,7 @@ int main()
 		Expect(stillMid && stillFuture, "later-point flags survive a new capture");
 		Expect(b.nextId > futureId, "new rows take ids after the later-point rows");
 
-		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.25");
+		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.26");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok, "later-point flags round-trip through JSON");
 		Buffer restarted;
@@ -1699,7 +1699,7 @@ int main()
 		Buffer loaded;
 		loaded.LoadState(held);
 		ExpectEqI(static_cast<int>(loaded.nextId), 42, "LoadState keeps the persisted nextId");
-		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.25");
+		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.26");
 		Expect(json.find("\"nextId\": 42") != std::string::npos, "ToJson writes nextId");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok && parsed.state.nextId == 42, "FromJson reads the persisted nextId");
@@ -3515,13 +3515,16 @@ int main()
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.25\"") != std::string::npos, "HUD movie build id is 0.43.0.25");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.26\"") != std::string::npos, "HUD movie build id is 0.43.0.26");
 		{
 			const auto confirm = AsFnBody(as, "private function hzMsglogDrawConfirm", "private function hzMsglogTypeOn");
 			Expect(confirm.find("hzMsglogWrap") != std::string::npos, "the clear confirm wraps its warning");
 			Expect(confirm.find("Can't be undone.") != std::string::npos, "the clear confirm keeps the full warning");
 			Expect(confirm.find("hzMsglogWrap(note,noteW,160)") != std::string::npos,
 				"the clear confirm measures the full warning");
+			const auto hist = AsFnBody(as, "private function hzMsglogDrawHist", "private function hzMsglogDrawChars");
+			Expect(hist.find("hzMsglogWrap(note,noteW,160)") != std::string::npos, "the history confirm wraps its warning");
+			Expect(hist.find("Pins stay. Can't be undone.") != std::string::npos, "the history confirm keeps the full warning");
 			const auto settings = AsFnBody(as, "private function hzMsglogDrawSettings", "private function hzMsglogDrawHist");
 			Expect(settings.find("hzMlHistSlot") != std::string::npos, "the history value has its own slot");
 			Expect(settings.find("\"right\"") != std::string::npos, "the history value is right-aligned");
