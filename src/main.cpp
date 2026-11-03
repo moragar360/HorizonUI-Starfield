@@ -3721,6 +3721,60 @@ namespace HZ
 		MsglogRequestWrite(true);
 	}
 
+	// Purpose: remove only the ids the movie lists. Those are the shown,
+	// unpinned rows from this launch, so a hidden type stays. An empty list
+	// deletes nothing. The write path matches Clear session. Author: Moragar.
+	// Last modified: 2026-11-02.
+	void MsglogClearSessionIds(std::string_view a_list)
+	{
+		try {
+			std::vector<std::uint64_t> ids;
+			std::size_t i = 0;
+			while (i < a_list.size()) {
+				while (i < a_list.size() && (a_list[i] == ',' || a_list[i] == ' ')) ++i;
+				if (i >= a_list.size()) break;
+				std::size_t j = i;
+				while (j < a_list.size() && a_list[j] != ',') ++j;
+				auto tok = a_list.substr(i, j - i);
+				while (!tok.empty() && (tok.back() == ' ' || tok.back() == '\t')) tok.remove_suffix(1);
+				i = j < a_list.size() ? j + 1 : a_list.size();
+				if (tok.empty()) continue;
+				try {
+					const auto id = static_cast<std::uint64_t>(std::stoull(std::string(tok)));
+					if (id != 0) ids.push_back(id);
+				} catch (...) {
+				}
+			}
+			if (ids.empty()) return;
+			hzlog::WriteDecision d;
+			bool emptied = false;
+			{
+				std::lock_guard lk(g_mlMu);
+				if (g_ml.buf.ClearSessionIds(ids) <= 0) return;
+				g_ml.dirty = true;
+				const auto key = g_ml.buf.character.key;
+				g_mlWrites.OnRow(key);
+				emptied = g_ml.buf.entries.empty();
+				if (emptied) {
+					hzlog::StampLastPlayed(g_ml.buf.lastPlayedTs, hzlog::EpochSeconds());
+					g_mlWrites.SetPersist(g_ml.buf.settings.persist);
+					if (!hzlog::ClearSessionWrites(true, g_ml.buf.settings.persist,
+							g_ml.persistHold, hzlog::ValidLogKey(key)))
+						return;
+					g_ml.fileGate.BumpCancel(key);
+					d = g_mlWrites.OnClear(key, g_ml.buf.Snapshot());
+					g_ml.writePending = g_mlWrites.AnyWritePending();
+				}
+			}
+			if (emptied) {
+				if (d.queue) MsglogPushDecision(d);
+				return;
+			}
+			MsglogRequestWrite(true);
+		} catch (...) {
+		}
+	}
+
 	void MsglogApplyUiAct(const char* a_s)
 	{
 		if (!a_s || !*a_s) return;
@@ -3742,6 +3796,10 @@ namespace HZ
 		const auto op = s.substr(0, p);
 		if (op == "set") {
 			MsglogApplySet(s.substr(p + 1));
+			return;
+		}
+		if (op == "clearsess") {
+			MsglogClearSessionIds(s.substr(p + 1));
 			return;
 		}
 		std::uint64_t id = 0;

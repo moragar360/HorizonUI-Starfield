@@ -2113,6 +2113,32 @@ public:
 		BumpView();
 	}
 
+	// Purpose: drop only the listed unpinned rows from this launch. A hidden
+	// type is not in the list, so it stays. An empty list drops nothing.
+	// Pinned rows and earlier launches stay. Inputs: entry ids.
+	// Outputs: how many rows were removed. Author: Moragar. Last modified: 2026-11-02.
+	int ClearSessionIds(const std::vector<std::uint64_t>& a_ids)
+	{
+		if (a_ids.empty()) return 0;
+		int removed = 0;
+		std::vector<Entry> keep;
+		keep.reserve(entries.size());
+		for (auto& e : entries) {
+			bool drop = false;
+			if (e.sess == sess && e.pin == 0) {
+				for (const auto id : a_ids) {
+					if (id == e.id) { drop = true; break; }
+				}
+			}
+			if (drop) ++removed;
+			else keep.push_back(std::move(e));
+		}
+		if (!removed) return 0;
+		entries.swap(keep);
+		BumpView();
+		return removed;
+	}
+
 	void ClearHistory()
 	{
 		std::vector<Entry> keep;

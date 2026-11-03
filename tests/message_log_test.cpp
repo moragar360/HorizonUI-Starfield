@@ -763,8 +763,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.21", "file version is 0.43.0.21");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 21, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.22", "file version is 0.43.0.22");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 22, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -1447,6 +1447,39 @@ int main()
 		const auto g3 = b.viewGen;
 		b.ClearSession();
 		Expect(b.viewGen > g3, "ClearSession bumps viewGen");
+
+		// Listed clear: hidden, pinned, and earlier-launch rows stay.
+		{
+		Buffer listed;
+		Expect(listed.Offer(Cap(Kind::Game, "earlier launch", 10'000)) == OfferResult::Stored, "listed clear earlier");
+		Expect(listed.Offer(Cap(Kind::Game, "drop me", 20'000)) == OfferResult::Stored, "listed clear drop");
+		Expect(listed.Offer(Cap(Kind::Medical, "pinned stay", 30'000)) == OfferResult::Stored, "listed clear pin");
+		Expect(listed.Offer(Cap(Kind::Crew, "unlisted stay", 40'000)) == OfferResult::Stored, "listed clear unlisted");
+		ExpectEqI(static_cast<int>(listed.entries.size()), 4, "four rows before a listed clear");
+		const auto keepId = listed.entries[0].id;
+		const auto dropId = listed.entries[1].id;
+		const auto pinId = listed.entries[2].id;
+		const auto otherId = listed.entries[3].id;
+		Expect(listed.Pin(pinId), "pin one current row");
+		listed.entries[0].sess = 9;
+		const auto gen = listed.viewGen;
+		ExpectEqI(listed.ClearSessionIds({}), 0, "an empty id list deletes nothing");
+		ExpectEqI(static_cast<int>(listed.entries.size()), 4, "empty list keeps every row");
+		ExpectEqI(static_cast<int>(listed.viewGen), static_cast<int>(gen), "an empty list does not bump viewGen");
+		ExpectEqI(listed.ClearSessionIds({keepId, dropId, pinId}), 1, "only the current unpinned listed row drops");
+		Expect(listed.viewGen > gen, "a listed clear bumps viewGen");
+		bool sawKeep = false, sawDrop = false, sawPin = false, sawOther = false;
+		for (const auto& e : listed.entries) {
+			if (e.id == keepId) sawKeep = true;
+			if (e.id == dropId) sawDrop = true;
+			if (e.id == pinId) sawPin = true;
+			if (e.id == otherId) sawOther = true;
+		}
+		Expect(sawKeep, "an earlier-launch row stays even when listed");
+		Expect(!sawDrop, "the listed current unpinned row is gone");
+		Expect(sawPin, "a pinned id stays");
+		Expect(sawOther, "a current row that was not listed stays");
+		}
 		Expect(b.Offer(Cap(Kind::Game, "view gen row", 10'500)) == OfferResult::Deduped
 			|| b.Offer(Cap(Kind::Game, "view gen row two", 20'000)) == OfferResult::Stored,
 			"viewGen fixture still stores");
@@ -1560,7 +1593,7 @@ int main()
 		Expect(stillMid && stillFuture, "later-point flags survive a new capture");
 		Expect(b.nextId > futureId, "new rows take ids after the later-point rows");
 
-		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.21");
+		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.22");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok, "later-point flags round-trip through JSON");
 		Buffer restarted;
@@ -1610,7 +1643,7 @@ int main()
 		Buffer loaded;
 		loaded.LoadState(held);
 		ExpectEqI(static_cast<int>(loaded.nextId), 42, "LoadState keeps the persisted nextId");
-		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.21");
+		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.22");
 		Expect(json.find("\"nextId\": 42") != std::string::npos, "ToJson writes nextId");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok && parsed.state.nextId == 42, "FromJson reads the persisted nextId");
@@ -3401,34 +3434,55 @@ int main()
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.21\"") != std::string::npos, "HUD movie build id is 0.43.0.21");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.22\"") != std::string::npos, "HUD movie build id is 0.43.0.22");
 		{
 			const auto shown = AsFnBody(as, "private function hzMsglogShown", "private function hzMsglogChipCount");
 			const auto chips = AsFnBody(as, "private function hzMsglogChipCount", "private function hzMsglogList");
-			const auto tog = AsFnBody(as, "private function hzMsglogTypeToggle", "private function hzMsglogSaveIni");
-			const auto panel = AsFnBody(as, "private function hzPanelA", "private function hzSetFillA");
-			const auto fill = AsFnBody(as, "private function hzSetFillA", "private function hzPanelFill");
-			Expect(shown.find("hzMsglogTypeOn") != std::string::npos, "the log list skips types that are off");
-			Expect(chips.find("hzMsglogTypeOn") != std::string::npos, "chip counts skip types that are off");
+			const auto tog = AsFnBody(as, "private function hzMsglogTypeToggle", "private function hzMsglogViewOn");
+			const auto view = AsFnBody(as, "private function hzMsglogViewToggle", "private function hzMsglogClearIds");
+			const auto panel = AsFnBody(as, "private function hzPanelA", "private function hzCardShA");
+			const auto sh = AsFnBody(as, "private function hzCardShA", "private function hzSetFillA");
+			const auto fill = AsFnBody(as, "private function hzSetFillA", "private function hzPctOr");
+			const auto paint = AsFnBody(as, "private function hzPanel(", "private function hzTileDisc");
+			Expect(shown.find("hzMsglogViewOn") != std::string::npos, "the log list skips hidden types");
+			Expect(shown.find("hzMsglogTypeOn") == std::string::npos, "the log list does not use the capture toggle");
+			Expect(chips.find("hzMsglogViewOn") != std::string::npos && chips.find("hzMsglogTypeOn") == std::string::npos,
+				"chip counts follow the view filter");
 			Expect(shown.find("splice") == std::string::npos && shown.find("hzMlRows =") == std::string::npos,
 				"the log filter does not delete stored rows");
-			Expect(tog.find("this.hzMlScroll = 0") != std::string::npos && tog.find("this.hzMlSelId = 0") != std::string::npos,
-				"turning a type off resets scroll and selection");
+			Expect(tog.find("set|types|") != std::string::npos, "RECORD still updates LogTypes");
+			Expect(tog.find("hzMlHide") == std::string::npos, "RECORD does not change the view filter");
+			Expect(tog.find("hzMlScroll") == std::string::npos && tog.find("hzMlSelId") == std::string::npos,
+				"RECORD does not reset the list");
 			Expect(tog.find("splice") == std::string::npos && tog.find("hzMlRows") == std::string::npos,
 				"the type toggle does not remove stored rows");
-			Expect(as.find("No messages for the types that are on. Stored messages stay.") != std::string::npos,
+			Expect(view.find("this.hzMlHide") != std::string::npos && view.find("set|types|") == std::string::npos,
+				"SHOW only hides rows");
+			Expect(view.find("this.hzMlScroll = 0") != std::string::npos, "SHOW resets the scroll");
+			Expect(as.find("No messages for the types that are shown. Stored messages stay.") != std::string::npos,
 				"a filtered-empty log says the stored messages stay");
-			Expect(panel.find("hzCardBgOpacity") != std::string::npos && panel.find("92") != std::string::npos,
-				"card backgrounds use CardBgOpacity and keep today's alpha at 92");
-			Expect(fill.find("hzSetWinOpacity") != std::string::npos && fill.find("93") != std::string::npos,
-				"the F11 window uses SettingsOpacity and keeps today's fill at 93");
-			Expect(as.find("\"k\":\"CardBgOpacity\"") != std::string::npos && as.find("\"k\":\"SettingsOpacity\"") != std::string::npos,
-				"STYLE has the card background and settings window sliders");
-			Expect(as.find("\"CardBgOpacity\":92") != std::string::npos && as.find("\"SettingsOpacity\":93") != std::string::npos,
-				"the new opacity defaults match today's look");
+			Expect(as.find("clearsess|") != std::string::npos, "clear session sends the shown ids");
+			Expect(as.find("\"mlsview\"") != std::string::npos || as.find("mlsview") != std::string::npos,
+				"SHOW is its own switch");
+			Expect(panel.find("pct / 100") != std::string::npos && panel.find("hzOpExtra") == std::string::npos,
+				"card alpha is linear and does not add the extra opacity");
+			Expect(panel.find("hzCardOpacity < 1") != std::string::npos, "CardOpacity below 1 still thins the fill");
+			Expect(sh.find("pct / 12") != std::string::npos && sh.find("hzCardBgOpacity <= 0") != std::string::npos,
+				"card shadow scales from the built-in strength and is clear at 0");
+			Expect(fill.find("Math.max(30") != std::string::npos && fill.find("pct / 100") != std::string::npos,
+				"the settings window is linear with a floor of 30");
+			Expect(paint.find("hzCardShA") != std::string::npos, "every hzPanel card uses the shadow slider");
+			Expect(as.find("\"k\":\"CardBgOpacity\"") != std::string::npos && as.find("\"k\":\"SettingsOpacity\"") != std::string::npos
+				&& as.find("\"k\":\"CardShadow\"") != std::string::npos,
+				"STYLE has the card background, card shadow, and settings window sliders");
+			Expect(as.find("\"CardBgOpacity\":92") != std::string::npos && as.find("\"SettingsOpacity\":93") != std::string::npos
+				&& as.find("\"CardShadow\":12") != std::string::npos,
+				"the opacity and shadow defaults are 92, 93, and 12");
 			const auto ini = Slurp("Interface/HorizonUI/HorizonUI.default.ini");
 			Expect(ini.find("CardBgOpacity=92") != std::string::npos, "default.ini card background is 92");
 			Expect(ini.find("SettingsOpacity=93") != std::string::npos, "default.ini settings window is 93");
+			Expect(ini.find("CardShadow=12") != std::string::npos, "default.ini card shadow is 12");
+			Expect(ini.find("today's") == std::string::npos, "default.ini does not say today's");
 		}
 		Expect(as.find("function hz31DrawPage") != std::string::npos
 			&& as.find("\"t\":\"g\"") != std::string::npos
@@ -3487,6 +3541,18 @@ int main()
 				"emptied Clear respects persistHold");
 			Expect(body.find("MsglogRequestWrite(true)") != std::string::npos,
 				"Clear session still rewrites when earlier rows remain");
+		}
+		Expect(Slurp("src/hz_msglog.h").find("int ClearSessionIds(") != std::string::npos,
+			"the buffer can clear a listed set of ids");
+		{
+			const auto act = main.find("void MsglogApplyUiAct");
+			const auto next = main.find("void MsglogPollUi()", act);
+			const auto body = act != std::string::npos && next > act ? main.substr(act, next - act) : std::string();
+			const auto listed = body.find("op == \"clearsess\"");
+			const auto one = body.find("std::stoull");
+			Expect(listed != std::string::npos && one != std::string::npos && listed < one,
+				"clearsess with ids is parsed before a single id");
+			Expect(body.find("MsglogClearSessionIds") != std::string::npos, "the act calls the listed clear");
 		}
 		{
 			const auto poll = main.find("void MsglogPollUi()");

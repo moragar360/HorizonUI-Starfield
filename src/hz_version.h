@@ -4,26 +4,27 @@
 // res/HorizonUI.rc.in includes this header, and the plugin logs and sends the same
 // string (or the version resource that this header produced). Do not copy the
 // numbers into the resource script or into a log line.
-// Product version matches the file version (0.43.0.21). The settings-schema string
+// Product version matches the file version (0.43.0.22). The settings-schema string
 // in the plugin (HZF::kVersion, "0.42.0") is a different value: preset age and the
 // update backup compare against that, not against this file version.
-// 0.43.0.21 is a pre-release dev build for Message Log P2 (F11 log UI and settings).
-// It adds the card-background and F11-window opacity sliders, and filters the Message Log by type.
+// 0.43.0.22 is a pre-release dev build for Message Log P2 (F11 log UI and settings).
+// Card background and the settings window are linear percents. Card shadow drives the
+// existing stacked fills. The log view filter does not change what is recorded.
 // Last modified: 2026-11-02.
 
 #define HZ_FILE_VERSION_MAJOR 0
 #define HZ_FILE_VERSION_MINOR 43
 #define HZ_FILE_VERSION_PATCH 0
-#define HZ_FILE_VERSION_BUILD 21
-#define HZ_FILE_VERSION_STR "0.43.0.21"
+#define HZ_FILE_VERSION_BUILD 22
+#define HZ_FILE_VERSION_STR "0.43.0.22"
 
-// 0.43.0.21: 0 is the release state. 1 writes the verbose HUD-message trace (the
+// 0.43.0.22: 0 is the release state. 1 writes the verbose HUD-message trace (the
 // "hud message:" line and the Comms movie queue as "comms msg:" lines). The card
 // backup (the queue, Poll, hzcCardPush, and the one-line "comms reaction:" status)
 // stays compiled either way. The settings schema above is not this switch.
 #define HZ_COMMS_MSG_LOG 0
 
-// 0.43.0.21: 0 is the release state. 1 logs every ShowHUDMessageEvent as
+// 0.43.0.22: 0 is the release state. 1 logs every ShowHUDMessageEvent as
 // "hud capture:" with no text filter. It is independent of HZ_COMMS_MSG_LOG.
 #define HZ_HUD_MSG_CAPTURE 0
 

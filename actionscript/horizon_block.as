@@ -100,10 +100,12 @@
       private static const HZ_ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       public var hzSmoothBars:Boolean = true;
       public var hzCardOpacity:Number = 1;
-      // 0-100. 92 reproduces today's panel alpha. 100 is a solid fill, so dark and bright card colors read.
+      // 0-100. 92 is alpha 0.92, the main dark panel. 0 is clear. 100 is solid.
       public var hzCardBgOpacity:Number = 92;
-      // 0-100. 93 reproduces today's F11 window fill. Separate from the HUD card background.
+      // 30-100. 93 is alpha 0.93. The window never drops below 30.
       public var hzSetWinOpacity:Number = 93;
+      // 0-100. 12 is the built-in card shadow. 0 is none. 100 is strong.
+      public var hzCardShadow:Number = 12;
       public var hzContOpacity:Number = 1;   // v0.25 ContainerOpacity: crosshair target / container / item cards only
       public var hzCardColor:int = 0; // 0 slate, 1 graphite, 2 navy, 3 deep teal, 4 plum, 5 crimson
       public var hzHudScale:Number = 1;
@@ -328,7 +330,7 @@
          var g:* = s.graphics;
          g.clear();
          // borderless: one clean translucent panel, no outline / header cap / divider (the only frame since v0.24)
-         g.beginFill(0x000000,0.1 + 0.2 * this.hzOpExtra());
+         g.beginFill(0x000000,this.hzCardShA(0.1));
          g.drawRoundRect(-1,1,w + 2,h + 2,20,20);
          g.endFill();
          g.beginFill(this.hzPanelFill(),this.hzPanelA(this.hzLight() ? 0.9 : 0.8));
@@ -344,6 +346,9 @@
          var g:* = s.graphics;
          g.clear();
          g.lineStyle();
+         g.beginFill(0x000000,this.hzCardShA(0.22));
+         g.drawRoundRect(2,4,HZ_CMP_W,36,16,16);
+         g.endFill();
          g.beginFill(this.hzPanelFill(),this.hzPanelA(0.74));
          g.drawRoundRect(0,0,HZ_CMP_W,36,16,16);
          g.endFill();
@@ -413,34 +418,56 @@
          return this.hzLight();
       }
 
-      // Opacity > 1: alpha clamps at 1, the rest pushes the panel color further (darker / brighter) + stronger shadow.
+      // Opacity above 1 pushes the panel color further (darker or brighter). Shadow strength is CardShadow.
       private function hzOpExtra() : Number
       {
          return Math.max(0,Math.min(1,(this.hzCardOpacity - 1) / 0.6));
       }
 
-      // Card background alpha. base is the current dark or bright fill (0.92 and 0.96 on the main panel).
-      // CardBgOpacity 92 keeps that base. 0 is clear. 100 is solid for both, so the style color shows.
-      // CardOpacity still scales the result the way it did at 92. Author: Moragar. Last modified: 2026-11-02.
+      // Card background alpha, linear in the slider. 0 is clear, 100 is solid, on every caller.
+      // CardOpacity below 1 still thins the fill. Above 1 it does not add alpha (that was hzOpExtra,
+      // which pinned the slider near solid). base is unused so dark and bright cards share one map.
+      // Author: Moragar. Last modified: 2026-11-02.
       private function hzPanelA(base:Number) : Number
       {
          var pct:Number = this.hzCardBgOpacity;
          if(isNaN(pct)) { pct = 92; }
          pct = Math.max(0,Math.min(100,pct));
-         var shaped:Number = pct <= 92 ? base * (pct / 92) : base + (1 - base) * ((pct - 92) / 8);
-         shaped = Math.max(0,Math.min(1,shaped));
-         var op:Number = Math.min(1,this.hzCardOpacity);
-         return Math.max(0,Math.min(1,shaped * op + (1 - shaped) * this.hzOpExtra()));
+         var a:Number = pct / 100;
+         if(this.hzCardOpacity < 1) { a = a * Math.max(0,this.hzCardOpacity); }
+         return Math.max(0,Math.min(1,a));
       }
 
-      // F11 window fill. base is the theme fill (0.93 dark, 0.95 bright). 93 keeps it. 100 is solid.
+      // Painted card shadow (the stacked black rects). 12 keeps the built-in strength. 0 is none.
+      // A clear card (CardBgOpacity 0) draws no shadow. No filter and no glow. Author: Moragar.
+      private function hzCardShA(base:Number) : Number
+      {
+         var pct:Number = this.hzCardShadow;
+         if(isNaN(pct)) { pct = 12; }
+         pct = Math.max(0,Math.min(100,pct));
+         if(this.hzCardBgOpacity <= 0) { return 0; }
+         return Math.max(0,Math.min(1,base * (pct / 12)));
+      }
+
+      // F11 window fill. Linear percent, with a floor of 30 so the window cannot vanish.
+      // 93 is alpha 0.93. 100 is solid. base is unused so both themes follow the slider.
       private function hzSetFillA(base:Number) : Number
       {
          var pct:Number = this.hzSetWinOpacity;
          if(isNaN(pct)) { pct = 93; }
-         pct = Math.max(0,Math.min(100,pct));
-         var a:Number = pct <= 93 ? base * (pct / 93) : base + (1 - base) * ((pct - 93) / 7);
-         return Math.max(0,Math.min(1,a));
+         pct = Math.max(30,Math.min(100,pct));
+         return pct / 100;
+      }
+
+      // Empty or non-numeric percent text uses def. Otherwise clamp to floor..100.
+      private function hzPctOr(v:String, def:Number, floor:Number) : Number
+      {
+         if(v == null) { return def; }
+         var t:String = String(v).replace(/^\s+|\s+$/g,"");
+         if(t.length == 0) { return def; }
+         var n:Number = Number(t);
+         if(isNaN(n)) { return def; }
+         return Math.max(floor,Math.min(100,n));
       }
 
       private function hzPanelFill() : uint
@@ -1085,11 +1112,6 @@
          var g:Sprite = new Sprite();
          this.hzCardBodies.push({"s":g,"w":HZ_CMP_W,"h":36,"k":"cmp"});
          this.hzDrawCmpBody(g);
-         var sh:Sprite = new Sprite();
-         sh.graphics.beginFill(0x000000,0.22);
-         sh.graphics.drawRoundRect(2,4,HZ_CMP_W,36,16,16);
-         sh.graphics.endFill();
-         this.HorizonCompass_mc.addChild(sh);
          this.HorizonCompass_mc.addChild(g);
          for each(var n:String in HZ_CARD)
          {
@@ -1907,8 +1929,9 @@
                case "combatdim": this.hzCombatDim = bv; break;
                case "dimopacity": if(!isNaN(nv)) { this.hzDimAlpha = Math.max(0.1,Math.min(1,nv)); } break;
                case "cardopacity": if(!isNaN(nv)) { this.hzCardOpacity = Math.max(0.2,Math.min(1.6,nv)); } break;
-               case "cardbgopacity": if(!isNaN(nv)) { this.hzCardBgOpacity = Math.max(0,Math.min(100,nv)); } break;
-               case "settingsopacity": if(!isNaN(nv)) { this.hzSetWinOpacity = Math.max(0,Math.min(100,nv)); } break;
+               case "cardbgopacity": this.hzCardBgOpacity = this.hzPctOr(v,92,0); break;
+               case "settingsopacity": this.hzSetWinOpacity = this.hzPctOr(v,93,30); break;
+               case "cardshadow": this.hzCardShadow = this.hzPctOr(v,12,0); break;
                case "containeropacity": if(!isNaN(nv)) { this.hzContOpacity = Math.max(0.2,Math.min(1.6,nv)); this.hzT19Sig = ""; } break;
                case "texttone": if(!isNaN(nv)) { this.hzTextTone = Math.max(0,Math.min(2,int(nv))); } break;
                case "fontface": if(!isNaN(nv)) { this.hzFontFace = Math.max(0,Math.min(3,int(nv))); } break;
@@ -3056,7 +3079,7 @@
          }
          if(tab == 1)
          {
-            return [{"k":"CardOpacity","l":"CARD OPACITY (HUD CARDS)","t":"n","mn":0.2,"mx":1.6,"st":0.05,"h":"PANEL"},{"k":"CardBgOpacity","l":"CARD BACKGROUND %","t":"n","mn":0,"mx":100,"st":1,"note":"0 is clear, 92 is today's translucency, 100 is solid. Dark and bright card colors both use it."},{"k":"ContainerOpacity","l":"CONTAINER / CROSSHAIR CARD OPACITY","t":"n","mn":0.2,"mx":1.6,"st":0.05},{"k":"SettingsOpacity","l":"SETTINGS WINDOW %","t":"n","mn":0,"mx":100,"st":1,"note":"Opacity of this window. 93 matches the current fill. 100 is solid."},{"k":"AccentColor","l":"ACCENT COLOR","t":"a","pal":this.hzAccPal(),"names":this.hzAccNames(),"note":"Also tints this window. Custom: AccentHex=#RRGGBB in the ini","h":"COLOR"},{"k":"CardColor","l":"CARD COLOR","t":"a","pal":this.hzCardPal(),"names":this.hzCardNames(),"note":"Light colors switch the text (and this window) to dark"},{"k":"HudScale","l":"HUD SCALE","t":"n","mn":0.7,"mx":1.4,"st":0.05,"h":"SIZE & PLACEMENT","note":"Every card on GLOBAL size. Per-card sizes are in CARDS"},{"k":"Margin","l":"SCREEN MARGIN","t":"n","mn":20,"mx":200,"st":10,"note":"Moves every card, ARRANGE-placed ones too (they keep their distance from it)"},{"k":"AfflictionLayout","l":"AFFLICTIONS LAYOUT","t":"r","opts":HZ_AFLAY_NAMES},{"k":"CrosshairStyle","l":"CROSSHAIR STYLE (INTERACT)","t":"r","opts":HZ_XH_NAMES,"h":"CROSSHAIR"},{"k":"ObjectRing","l":"OBJECT RING","t":"r","opts":HZ_RING_NAMES,"note":"The ring + line the game draws around the object you look at"},{"k":"ScreenHeight","l":"SCREEN HEIGHT (PIXEL SNAP)","t":"l","vals":HZ_SET_SCRH,"names":HZ_SET_SCRH_N,"note":"Your vertical resolution: crosshair cards snap to whole pixels"}];
+            return [{"k":"CardOpacity","l":"CARD OPACITY (HUD CARDS)","t":"n","mn":0.2,"mx":1.6,"st":0.05,"h":"PANEL"},{"k":"CardBgOpacity","l":"CARD BACKGROUND %","t":"n","mn":0,"mx":100,"st":1,"pct":1,"n13":true,"note":"0 is clear. 100 is a solid card color. Dark and bright cards both use it."},{"k":"CardShadow","l":"CARD SHADOW %","t":"n","mn":0,"mx":100,"st":1,"pct":1,"n13":true,"note":"0 is none. 12 is the built-in strength. 100 is a strong shadow."},{"k":"ContainerOpacity","l":"CONTAINER / CROSSHAIR CARD OPACITY","t":"n","mn":0.2,"mx":1.6,"st":0.05},{"k":"SettingsOpacity","l":"SETTINGS WINDOW %","t":"n","mn":30,"mx":100,"st":1,"pct":1,"n13":true,"note":"Opacity of this window. 30 is the minimum. 100 is solid."},{"k":"AccentColor","l":"ACCENT COLOR","t":"a","pal":this.hzAccPal(),"names":this.hzAccNames(),"note":"Also tints this window. Custom: AccentHex=#RRGGBB in the ini","n13":true,"h":"COLOR"},{"k":"CardColor","l":"CARD COLOR","t":"a","pal":this.hzCardPal(),"names":this.hzCardNames(),"note":"Light colors switch the text (and this window) to dark","n13":true},{"k":"HudScale","l":"HUD SCALE","t":"n","mn":0.7,"mx":1.4,"st":0.05,"h":"SIZE & PLACEMENT","note":"Every card on GLOBAL size. Per-card sizes are in CARDS","n13":true},{"k":"Margin","l":"SCREEN MARGIN","t":"n","mn":20,"mx":200,"st":10,"note":"Moves every card, ARRANGE-placed ones too (they keep their distance from it)","n13":true},{"k":"AfflictionLayout","l":"AFFLICTIONS LAYOUT","t":"r","opts":HZ_AFLAY_NAMES},{"k":"CrosshairStyle","l":"CROSSHAIR STYLE (INTERACT)","t":"r","opts":HZ_XH_NAMES,"h":"CROSSHAIR"},{"k":"ObjectRing","l":"OBJECT RING","t":"r","opts":HZ_RING_NAMES,"note":"The ring + line the game draws around the object you look at","n13":true},{"k":"ScreenHeight","l":"SCREEN HEIGHT (PIXEL SNAP)","t":"l","vals":HZ_SET_SCRH,"names":HZ_SET_SCRH_N,"note":"Your vertical resolution: crosshair cards snap to whole pixels","n13":true}];
          }
          if(tab == 2)
          {
@@ -3083,7 +3106,7 @@
 
       private function hzSetCurrent() : Object
       {
-         var cur:Object = {"ShowJetpack":this.hzShowJetpack,"JetpackAutoHide":this.hzJetpackAutoHide,"ShowVitals":this.hzShowVitals,"ShowPlanet":this.hzShowPlanet,"ShowAfflictions":this.hzShowAfflictions,"AfflictionsAutoHide":this.hzAfflAutoHide,"ShowAmmo":this.hzShowAmmo,"AmmoOnlyWhenDrawn":this.hzAmmoOnlyWhenDrawn,"ShowQuests":this.hzShowQuests,"ShowCompass":this.hzShowCompass,"VehicleExitPill":this.hzVehOn,"CompassMarkers":this.hzShowCompassMarkers,"CardOpacity":this.hzCardOpacity,"CardBgOpacity":this.hzCardBgOpacity,"ContainerOpacity":this.hzContOpacity,"SettingsOpacity":this.hzSetWinOpacity,"AccentColor":Math.max(0,Math.min(this.hzAccPal().length - 1,this.hzAccentChoice)),"Margin":this.hzMargin,"Compact":this.hzCompact,"SmoothBars":this.hzSmoothBars,"FadeCards":this.hzFadeCards,"CombatDim":this.hzCombatDim,"DimOpacity":this.hzDimAlpha,"HazardAlert":this.hzHazardAlert,"CardColor":Math.max(0,Math.min(this.hzCardPal().length - 1,this.hzCardColor)),"HudScale":this.hzHudScale,"AutoCenterVitals":this.hzAutoCenterVitals,"JetpackRule":this.hzRuleJetpack,"VitalsRule":this.hzRuleVitals,"PlanetRule":this.hzRulePlanet,"AfflictionsRule":this.hzRuleAffl,"AmmoRule":this.hzRuleAmmo,"QuestsRule":this.hzRuleQuests,"CompassRule":this.hzRuleCompass,"SettingsKey":this.hzSettingsKeyName,"ShowFollowers":this.hzCmpFollowers,"TextTone":this.hzTextTone,"FontFace":this.hzFontFace,"PlanetDetails":this.hzPlanDetails,"ShowTarget":this.hzShowTarget,"TargetAnchor":this.hzTgAnchor,"TargetShowValue":this.hzTgShowValue,"ShowLocations":this.hzCmpLocations,"ShowShip":this.hzCmpShip,"ShowEnemies":this.hzCmpEnemies,"ShowPlayerMarker":this.hzCmpPlayerMark,"TextScale":this.hzTextScale,"ContainerScale":this.hzTgScale,"ScreenHeight":this.hzScrH,"CrosshairStyle":this.hzXhStyle,"ObjectRing":this.hzObjRing,"HeaderStyle":this.hzHeaderStyle,"TextShadow":this.hzTextShadow,"TimeDisplay":this.hzTimeDisplay,"ClockFormat":this.hzClockFmt,"TempUnit":this.hzTempUnit,"AfflictionLayout":this.hzAfLayout};
+         var cur:Object = {"ShowJetpack":this.hzShowJetpack,"JetpackAutoHide":this.hzJetpackAutoHide,"ShowVitals":this.hzShowVitals,"ShowPlanet":this.hzShowPlanet,"ShowAfflictions":this.hzShowAfflictions,"AfflictionsAutoHide":this.hzAfflAutoHide,"ShowAmmo":this.hzShowAmmo,"AmmoOnlyWhenDrawn":this.hzAmmoOnlyWhenDrawn,"ShowQuests":this.hzShowQuests,"ShowCompass":this.hzShowCompass,"VehicleExitPill":this.hzVehOn,"CompassMarkers":this.hzShowCompassMarkers,"CardOpacity":this.hzCardOpacity,"CardBgOpacity":this.hzCardBgOpacity,"CardShadow":this.hzCardShadow,"ContainerOpacity":this.hzContOpacity,"SettingsOpacity":this.hzSetWinOpacity,"AccentColor":Math.max(0,Math.min(this.hzAccPal().length - 1,this.hzAccentChoice)),"Margin":this.hzMargin,"Compact":this.hzCompact,"SmoothBars":this.hzSmoothBars,"FadeCards":this.hzFadeCards,"CombatDim":this.hzCombatDim,"DimOpacity":this.hzDimAlpha,"HazardAlert":this.hzHazardAlert,"CardColor":Math.max(0,Math.min(this.hzCardPal().length - 1,this.hzCardColor)),"HudScale":this.hzHudScale,"AutoCenterVitals":this.hzAutoCenterVitals,"JetpackRule":this.hzRuleJetpack,"VitalsRule":this.hzRuleVitals,"PlanetRule":this.hzRulePlanet,"AfflictionsRule":this.hzRuleAffl,"AmmoRule":this.hzRuleAmmo,"QuestsRule":this.hzRuleQuests,"CompassRule":this.hzRuleCompass,"SettingsKey":this.hzSettingsKeyName,"ShowFollowers":this.hzCmpFollowers,"TextTone":this.hzTextTone,"FontFace":this.hzFontFace,"PlanetDetails":this.hzPlanDetails,"ShowTarget":this.hzShowTarget,"TargetAnchor":this.hzTgAnchor,"TargetShowValue":this.hzTgShowValue,"ShowLocations":this.hzCmpLocations,"ShowShip":this.hzCmpShip,"ShowEnemies":this.hzCmpEnemies,"ShowPlayerMarker":this.hzCmpPlayerMark,"TextScale":this.hzTextScale,"ContainerScale":this.hzTgScale,"ScreenHeight":this.hzScrH,"CrosshairStyle":this.hzXhStyle,"ObjectRing":this.hzObjRing,"HeaderStyle":this.hzHeaderStyle,"TextShadow":this.hzTextShadow,"TimeDisplay":this.hzTimeDisplay,"ClockFormat":this.hzClockFmt,"TempUnit":this.hzTempUnit,"AfflictionLayout":this.hzAfLayout};
          try { this.hz26SetCur(cur); } catch(err26:Error) { }
          try { this.hz31SetCur(cur); } catch(err31:Error) { }
          try { this.hz34SetCur(cur); } catch(err34:Error) { }
@@ -3172,7 +3195,7 @@
          return ut + "|" + lt + "|" + body;
       }
 
-      // ---------- Message Log popup (0.43.0.21). Inside the 1000x660 F11 window. ----------
+      // ---------- Message Log popup (0.43.0.22). Inside the 1000x660 F11 window. ----------
       // v7 layout: 976x620, rows at least 28 px and wrap long text, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
       private static const HZ_ML_W:Number = 976;
@@ -3210,6 +3233,7 @@
       private var hzMlPersist:Boolean = true;
       private var hzMlHistory:int = 500;
       private var hzMlTypes:String = "medical,crew,reaction,busy,crime,credits,quest,location,xp,game";
+      private var hzMlHide:String = "";   // view-only. Kinds listed here stay recorded and stored.
       private var hzMlMissed:Boolean = true;
       private var hzMlFolder:String = "";
       private var hzMlOtherN:int = 0;
@@ -3335,7 +3359,7 @@
          {
             var r:Object = this.hzMlRows[i];
             if(!this.hzMlAllTime && int(r.sess) != this.hzMlSess) { i++; continue; }
-            if(!this.hzMsglogTypeOn(String(r.k))) { i++; continue; }
+            if(!this.hzMsglogViewOn(String(r.k))) { i++; continue; }
             if(want.length > 0 && String(r.k) != want) { i++; continue; }
             if(q.length > 0)
             {
@@ -3357,7 +3381,7 @@
          {
             var r:Object = this.hzMlRows[i];
             if(!this.hzMlAllTime && int(r.sess) != this.hzMlSess) { i++; continue; }
-            if(!this.hzMsglogTypeOn(String(r.k))) { i++; continue; }
+            if(!this.hzMsglogViewOn(String(r.k))) { i++; continue; }
             if(kind.length > 0 && String(r.k) != kind) { i++; continue; }
             if(q.length > 0)
             {
@@ -3385,7 +3409,7 @@
          }
          if(pins.length > 0)
          {
-            list.push({"g":1,"lab":"PINNED " + String(this.hzMlPinN) + " / " + String(this.hzMlPinCap)});
+            list.push({"g":1,"lab":"PINNED " + String(pins.length) + " / " + String(this.hzMlPinCap)});
             i = 0;
             while(i < pins.length) { list.push(pins[i]); i++; }
          }
@@ -3834,7 +3858,7 @@
          if(!haveSel) { this.hzMlSelId = 0; }
          if(list.length == 0)
          {
-            var empty:String = this.hzMlRows.length > 0 ? "No messages for the types that are on. Stored messages stay." : "Starts empty. Messages from before this log was on cannot be recovered.";
+            var empty:String = this.hzMlRows.length > 0 ? "No messages for the types that are shown. Stored messages stay." : "Starts empty. Messages from before this log was on cannot be recovered.";
             this.hzWT(b,empty,ox + 28,rowTop + 40,HZ_ML_W - 56,13,"rg",uint(T.mut),0.3,"left",13);
          }
          var vis:int = 0;
@@ -4009,14 +4033,8 @@
       {
          var b:Sprite = this.hzMsglogOverlayLayer();
          var g:* = b.graphics;
-         var n:int = 0;
-         var i:int = 0;
-         while(i < this.hzMlRows.length)
-         {
-            var r:Object = this.hzMlRows[i];
-            if(int(r.sess) == this.hzMlSess && int(r.pin) == 0) { n++; }
-            i++;
-         }
+         var clearIds:String = this.hzMsglogClearIds();
+         var n:int = clearIds.length == 0 ? 0 : clearIds.split(",").length;
          var cw:Number = 420;
          var ch:Number = 168;
          var cx:Number = ox + Math.round((HZ_ML_W - cw) / 2);
@@ -4029,7 +4047,7 @@
          g.endFill();
          this.hz33Edge(b,cx,cy,cw,ch,28,uint(T.edge),Number(T.ea),1);
          this.hzWT(b,"Clear this session?",cx + 22,cy + 18,cw - 44,15,"bd",uint(T.txt),2,"left",13);
-         this.hzWT(b,"Removes " + String(n) + " unpinned messages from this launch. Can't be undone.",cx + 22,cy + 48,cw - 44,13,"rg",uint(T.lab),0.3,"left",13);
+         this.hzWT(b,"Removes " + String(n) + " shown unpinned messages. Hidden messages stay.",cx + 22,cy + 48,cw - 44,13,"rg",uint(T.lab),0.3,"left",13);
          var br:Number = cx + cw - 22;
          var hit0:int = this.hzSetHits.length;
          br -= this.hzSetBtn(b,g,br,cy + 120,"CANCEL",false,false,this.hzMlHover == "cfcancel",T,"cfcancel",13,13) + 10;
@@ -4063,12 +4081,50 @@
          this.hzMlTypes = out.join(",");
          this.hzMlAct = "set|types|" + this.hzMlTypes;
          this.hzMsglogSaveIni();
-         if(this.hzMlChip > 0 && this.hzMlChip < HZ_ML_KIND.length && !this.hzMsglogTypeOn(String(HZ_ML_KIND[this.hzMlChip])))
+      }
+
+      // View filter only. Does not change LogTypes, so a hidden type is still recorded.
+      private function hzMsglogViewOn(k:String) : Boolean
+      {
+         if(k == null || k.length == 0) { return true; }
+         var t:String = "," + this.hzMlHide + ",";
+         return t.indexOf("," + k + ",") < 0;
+      }
+
+      private function hzMsglogViewToggle(k:String) : void
+      {
+         var shown:Boolean = this.hzMsglogViewOn(k);
+         var parts:Array = this.hzMlHide.split(",");
+         var out:Array = [];
+         var i:int = 0;
+         while(i < parts.length)
+         {
+            var p:String = String(parts[i]);
+            if(p.length > 0 && p != k) { out.push(p); }
+            i++;
+         }
+         if(shown) { out.push(k); }
+         this.hzMlHide = out.join(",");
+         if(this.hzMlChip > 0 && this.hzMlChip < HZ_ML_KIND.length && !this.hzMsglogViewOn(String(HZ_ML_KIND[this.hzMlChip])))
          {
             this.hzMlChip = 0;
          }
          this.hzMlScroll = 0;
          this.hzMlSelId = 0;
+      }
+
+      private function hzMsglogClearIds() : String
+      {
+         var rows:Array = this.hzMsglogShown();
+         var out:Array = [];
+         var i:int = 0;
+         while(i < rows.length)
+         {
+            var r:Object = rows[i];
+            if(int(r.sess) == this.hzMlSess && int(r.pin) == 0) { out.push(String(Number(r.id))); }
+            i++;
+         }
+         return out.join(",");
       }
 
       private function hzMsglogSaveIni() : void
@@ -4108,6 +4164,7 @@
          ];
          if(!this.hzMlPersist) { rows.push({"id":"folder","k":"folder","l":"FOLDER"}); }
          rows.push({"id":"history","k":"history","l":"HISTORY"});
+         rows.push({"id":"viewnote","k":"viewnote","l":"SHOW hides rows in this log. RECORD chooses what is saved."});
          var i:int = 1;
          while(i < HZ_ML_KIND.length)
          {
@@ -4180,20 +4237,19 @@
                this.hzSetBtn(b,g,cx + cw - 18,ry + 4,"VIEW LIST",false,true,this.hzMlHover == "mlslist",T,"mlslist",13,13);
                while(this.hzSetHits.length > hit0) { this.hzMlHits.push(this.hzSetHits.pop()); }
             }
+            else if(r.id == "viewnote")
+            {
+               this.hzWT(b,String(r.l),cx + 22,ry + 8,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
+            }
             else if(r.type)
             {
-               var mid:Number = cx + Math.round(cw / 2);
-               this.hzWT(b,String(r.l),cx + 22,ry + 8,200,13,"sb",uint(T.txt),1.2,"left",13);
-               this.hzSetSwitch(b,g,mid - 16,ry + 16,this.hzMsglogTypeOn(String(r.k)),T,false);
-               this.hzMlHits.push({"id":"mlstype" + String(r.k),"x":cx + 14,"y":ry,"w":mid - cx - 20,"h":32});
-               if(i + 1 < rows.length && rows[i + 1].type)
-               {
-                  var r2:Object = rows[i + 1];
-                  this.hzWT(b,String(r2.l),mid + 8,ry + 8,200,13,"sb",uint(T.txt),1.2,"left",13);
-                  this.hzSetSwitch(b,g,cx + cw - 22,ry + 16,this.hzMsglogTypeOn(String(r2.k)),T,false);
-                  this.hzMlHits.push({"id":"mlstype" + String(r2.k),"x":mid,"y":ry,"w":cx + cw - 14 - mid,"h":32});
-                  i++;
-               }
+               this.hzWT(b,String(r.l),cx + 22,ry + 8,180,13,"sb",uint(T.txt),1.2,"left",13);
+               this.hzWT(b,"SHOW",cx + cw - 292,ry + 8,52,13,"sb",uint(T.lab),0.4,"left",13);
+               this.hzSetSwitch(b,g,cx + cw - 228,ry + 16,this.hzMsglogViewOn(String(r.k)),T,false);
+               this.hzMlHits.push({"id":"mlsview" + String(r.k),"x":cx + cw - 300,"y":ry,"w":90,"h":32});
+               this.hzWT(b,"RECORD",cx + cw - 168,ry + 8,70,13,"sb",uint(T.lab),0.4,"left",13);
+               this.hzSetSwitch(b,g,cx + cw - 22,ry + 16,this.hzMsglogTypeOn(String(r.k)),T,false);
+               this.hzMlHits.push({"id":"mlstype" + String(r.k),"x":cx + cw - 176,"y":ry,"w":160,"h":32});
             }
             else
             {
@@ -4319,6 +4375,12 @@
             if(this.hzMlHistory > 1000) { this.hzMlHistory = 1000; }
             this.hzMlAct = "set|history|" + String(this.hzMlHistory);
          }
+         else if(id.indexOf("mlsview") == 0)
+         {
+            var vk:String = id.substr(7);
+            if(vk.length > 0) { this.hzMsglogViewToggle(vk); this.hzMsglogDraw(); }
+            return;
+         }
          else if(id.indexOf("type") == 0 || id.indexOf("mlstype") == 0)
          {
             var k:String = id.indexOf("mlstype") == 0 ? id.substr(7) : "";
@@ -4330,7 +4392,12 @@
                   k = String(rows[this.hzMlSetRow].k);
                }
             }
-            if(k.length > 0) { this.hzMsglogTypeToggle(k); this.hzMsglogDraw(); return; }
+            if(k.length > 0)
+            {
+               this.hzMsglogTypeToggle(k);
+               this.hzMsglogDraw();
+               return;
+            }
          }
          else if(id == "old" || id == "mlslist")
          {
@@ -4364,7 +4431,13 @@
             if(code == "cancel") { this.hzPopPop(); this.hzMsglogDraw(); return; }
             if(code == "up") { this.hzMlSetRow--; if(this.hzMlSetRow < 0) { this.hzMlSetRow = 0; } this.hzMsglogDraw(); return; }
             if(code == "down") { this.hzMlSetRow++; if(this.hzMlSetRow >= setN) { this.hzMlSetRow = setN - 1; } this.hzMsglogDraw(); return; }
-            if(code == "left") { this.hzMsglogSetAct(String(this.hzMsglogSetRows()[this.hzMlSetRow].id), -1); return; }
+            if(code == "left")
+            {
+               var showRow:Object = this.hzMsglogSetRows()[this.hzMlSetRow];
+               if(showRow != null && showRow.type) { this.hzMsglogSetAct("mlsview" + String(showRow.k), -1); }
+               else if(showRow != null) { this.hzMsglogSetAct(String(showRow.id), -1); }
+               return;
+            }
             if(code == "right" || code == "ok") { this.hzMsglogSetToggle(); return; }
             if(code == "pady") { this.hzPopPush("mlhist"); this.hzMsglogDraw(); return; }
             if(code == "wheelup") { this.hzMlSetRow--; if(this.hzMlSetRow < 0) { this.hzMlSetRow = 0; } this.hzMsglogDraw(); return; }
@@ -4478,7 +4551,7 @@
       private function hzMsglogDoClear() : void
       {
          if(this.hzPopTop() == "mlconfirm") { this.hzPopPop(); }
-         this.hzMlAct = "clearsess";
+         this.hzMlAct = "clearsess|" + this.hzMsglogClearIds();
          this.hzMsglogDraw();
       }
 
@@ -4536,7 +4609,7 @@
             if(this.hzMlHover == "mlslist") { this.hzMsglogSetAct("old", 0); return; }
             if(this.hzMlHover == "mlshistl") { this.hzMsglogSetAct("mlshistl", -1); return; }
             if(this.hzMlHover == "mlshistr") { this.hzMsglogSetAct("mlshistr", 1); return; }
-            if(this.hzMlHover.indexOf("mlstype") == 0) { this.hzMsglogSetAct(this.hzMlHover, 0); return; }
+            if(this.hzMlHover.indexOf("mlsview") == 0 || this.hzMlHover.indexOf("mlstype") == 0) { this.hzMsglogSetAct(this.hzMlHover, 0); return; }
             if(this.hzMlHover.indexOf("mls") == 0) { this.hzMsglogSetAct(this.hzMlHover.substr(3), 0); return; }
             return;
          }
@@ -4792,14 +4865,19 @@
          if(p.TextTone != undefined && this.hzTextTone != int(p.TextTone)) { this.hzTextTone = int(p.TextTone); rd = true; }
          if(p.FontFace != undefined && this.hzFontFace != Math.max(0,Math.min(3,int(p.FontFace)))) { this.hzFontFace = Math.max(0,Math.min(3,int(p.FontFace))); rd = true; }
          if(Math.abs(this.hzCardOpacity - Number(p.CardOpacity)) > 0.001) { this.hzCardOpacity = Number(p.CardOpacity); rd = true; }
-         if(p.CardBgOpacity != undefined && !isNaN(Number(p.CardBgOpacity)))
+         if(p.CardBgOpacity != undefined)
          {
-            var nbg:Number = Math.max(0,Math.min(100,Number(p.CardBgOpacity)));
+            var nbg:Number = this.hzPctOr(String(p.CardBgOpacity),92,0);
             if(Math.abs(this.hzCardBgOpacity - nbg) > 0.001) { this.hzCardBgOpacity = nbg; rd = true; }
          }
-         if(p.SettingsOpacity != undefined && !isNaN(Number(p.SettingsOpacity)))
+         if(p.CardShadow != undefined)
          {
-            this.hzSetWinOpacity = Math.max(0,Math.min(100,Number(p.SettingsOpacity)));
+            var ncs:Number = this.hzPctOr(String(p.CardShadow),12,0);
+            if(Math.abs(this.hzCardShadow - ncs) > 0.001) { this.hzCardShadow = ncs; rd = true; }
+         }
+         if(p.SettingsOpacity != undefined)
+         {
+            this.hzSetWinOpacity = this.hzPctOr(String(p.SettingsOpacity),93,30);
          }
          if(p.ContainerOpacity != undefined && !isNaN(Number(p.ContainerOpacity)) && Math.abs(this.hzContOpacity - Number(p.ContainerOpacity)) > 0.001) { this.hzContOpacity = Math.max(0.2,Math.min(1.6,Number(p.ContainerOpacity))); this.hzT19Sig = ""; }
          if(p.ShowTarget != undefined) { this.hzShowTarget = Boolean(p.ShowTarget); }
@@ -4929,11 +5007,13 @@
          a.push("[Style]");
          a.push("; Card opacity 0.2 - 1.6 (above 1.0: fully opaque, then darker on dark cards / brighter on light cards)");
          a.push("CardOpacity=" + this.hzSetNum(Number(p.CardOpacity)));
-         a.push("; Card background 0 - 100. 92 is today's translucency. 100 is solid, so dark and bright card colors read. Missing key = 92.");
+         a.push("; Card background 0 - 100. Linear alpha. 0 is clear, 92 is 92 percent, 100 is solid. Empty or non-numeric = 92.");
          a.push("CardBgOpacity=" + int(Math.round(Number(p.CardBgOpacity != undefined ? p.CardBgOpacity : this.hzCardBgOpacity))));
+         a.push("; Card shadow 0 - 100. 0 is none, 12 is the built-in strength, 100 is strong. Empty or non-numeric = 12.");
+         a.push("CardShadow=" + int(Math.round(Number(p.CardShadow != undefined ? p.CardShadow : this.hzCardShadow))));
          a.push("; Container / crosshair card opacity 0.2 - 1.6 (target tag, container list, item card); CardOpacity is for the HUD cards");
          a.push("ContainerOpacity=" + this.hzSetNum(Number(p.ContainerOpacity != undefined ? p.ContainerOpacity : 1)));
-         a.push("; F11 settings window background 0 - 100. 93 is today's fill. 100 is solid. Missing key = 93.");
+         a.push("; F11 window background 30 - 100. Linear alpha. 30 is the minimum, 93 is 93 percent, 100 is solid. Empty or non-numeric = 93.");
          a.push("SettingsOpacity=" + int(Math.round(Number(p.SettingsOpacity != undefined ? p.SettingsOpacity : this.hzSetWinOpacity))));
          a.push("; Text tone: 0 auto (dark text on light cards), 1 always light text, 2 always dark text");
          a.push("TextTone=" + int(p.TextTone));
@@ -5102,14 +5182,14 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.21";
+      private static const HZ_BUILD:String = "0.43.0.22";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":0,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":0,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -5478,7 +5558,9 @@
                var bw:Number = prev ? 150 : 200;
                var bx:Number = R - 56 - bw;
                var fr:Number = Math.max(0,Math.min(1,(Number(v) - r.mn) / (r.mx - r.mn)));
-               this.hzWT(b,r.st < 1 ? this.hzSetNum(Number(v)) : String(int(Math.round(Number(v)))),R,cy - 9,56,13,"sb",vcol,0.5,"right");
+               var vlab:String = r.st < 1 ? this.hzSetNum(Number(v)) : String(int(Math.round(Number(v))));
+               if(r.pct) { vlab = String(int(Math.round(Number(v)))) + "%"; }
+               this.hzWT(b,vlab,R,cy - 9,56,13,"sb",vcol,0.5,"right");
                g.beginFill(uint(T.track),Number(T.ta)); g.drawRoundRect(bx,cy - 2,bw,4,4,4); g.endFill();
                if(fr > 0) { g.beginFill(acc,1); g.drawRoundRect(bx,cy - 2,Math.max(4,Math.round(bw * fr)),4,4,4); g.endFill(); }
                var kx:Number = Math.round(bx + bw * fr);
@@ -5552,8 +5634,9 @@
             y += 32;
             if(r.note)
             {
-               this.hzWT(b,String(r.note),(r.dis ? 56 : 34) + (r.sub ? 22 : 0),y - 2,right - 40,r.n13 ? 13 : 11,"rg",uint(T.note),0.2);
-               y += r.n13 ? 20 : 18;
+               var notePx:int = (this.hzSetTab == 1 || r.n13) ? 13 : 11;
+               this.hzWT(b,String(r.note),(r.dis ? 56 : 34) + (r.sub ? 22 : 0),y - 2,right - 40,notePx,"rg",uint(T.note),0.2,"left",13);
+               y += notePx >= 13 ? 20 : 18;
             }
             y += 4;
             lastShown = li;
@@ -5583,7 +5666,7 @@
             var pvk:String = this.hzSetRow >= 0 && this.hzSetRow < rows.length ? String(rows[this.hzSetRow].k) : "";
             if(pvk == "ContainerScale" || pvk == "HoverScale" || pvk == "CrosshairStyle" || pvk == "ObjectRing" || pvk == "ScreenHeight") { this.hz30PvKey = pvk; this.hzSetPvTgDraw(b,g,W - 28 - 226,HZ_SET_TOP,T); }
             else if(pvk == "AfflictionLayout") { this.hzSetPvAfDraw(b,g,W - 28 - 226,HZ_SET_TOP,T); }
-            else if(pvk == "CardOpacity" || pvk == "CardBgOpacity" || pvk == "ContainerOpacity" || pvk == "SettingsOpacity") { this.hzSetPvOpDraw(b,g,W - 28 - 226,HZ_SET_TOP,T); }
+            else if(pvk == "CardOpacity" || pvk == "CardBgOpacity" || pvk == "CardShadow" || pvk == "ContainerOpacity" || pvk == "SettingsOpacity") { this.hzSetPvOpDraw(b,g,W - 28 - 226,HZ_SET_TOP,T); }
             else { this.hzSetPvDraw(b,g,W - 28 - 226,HZ_SET_TOP,T); }
          }
          // footer: keycap hints + buttons
@@ -5853,7 +5936,8 @@
          var ko:Number = P.ContainerOpacity != undefined ? Number(P.ContainerOpacity) : this.hzContOpacity;
          var bg:Number = P.CardBgOpacity != undefined ? Number(P.CardBgOpacity) : this.hzCardBgOpacity;
          var wo:Number = P.SettingsOpacity != undefined ? Number(P.SettingsOpacity) : this.hzSetWinOpacity;
-         this.hzSetPvFrame(b,g,px,py,T,"OPACITY",["Cards x" + this.hzSetNum(co) + "  bg " + String(int(Math.round(bg))) + "%","Container x" + this.hzSetNum(ko),"Window " + String(int(Math.round(wo))) + "%"]);
+         var sh:Number = P.CardShadow != undefined ? Number(P.CardShadow) : this.hzCardShadow;
+         this.hzSetPvFrame(b,g,px,py,T,"OPACITY",["Cards " + String(int(Math.round(bg))) + "%  shadow " + String(int(Math.round(sh))) + "%","Container x" + this.hzSetNum(ko),"Window " + String(int(Math.round(wo))) + "%"]);
          this.hzWT(b,"HUD CARD",px + 22,py + 44,180,9,"sb",uint(T.mut),1.6);
          this.hzWT(b,"CONTAINER / CROSSHAIR CARD",px + 22,py + 128,200,9,"sb",uint(T.mut),1.6);
          if(!this.hzSetPvOp) { this.hzSetPvOp = new Sprite(); this.hzSetPvOp.mouseEnabled = false; }
@@ -5876,20 +5960,25 @@
          }
          var save:Number = this.hzCardOpacity;
          var saveBg:Number = this.hzCardBgOpacity;
+         var saveSh:Number = this.hzCardShadow;
          if(!isNaN(bg)) { this.hzCardBgOpacity = Math.max(0,Math.min(100,bg)); }
+         if(!isNaN(sh)) { this.hzCardShadow = Math.max(0,Math.min(100,sh)); }
          this.hzCardOpacity = co;
          this.hzSetPvPanel(pg,X + 10,py + 68,180,42);
          this.hzCardOpacity = ko;
          this.hzSetPvPanel(pg,X + 10,py + 152,180,54);
          this.hzCardOpacity = save;
          this.hzCardBgOpacity = saveBg;
+         this.hzCardShadow = saveSh;
          pv.visible = true;
       }
 
       private function hzSetPvPanel(g:*, x:Number, y:Number, w:Number, h:Number) : void
       {
-         var lt:Boolean = this.hzLight();
-         g.beginFill(this.hzPanelFill(),this.hzPanelA(lt ? 0.96 : 0.92));
+         g.beginFill(0x000000,this.hzCardShA(0.055));
+         g.drawRoundRect(x + 3,y + 4,w,h,24,24);
+         g.endFill();
+         g.beginFill(this.hzPanelFill(),this.hzPanelA(1));
          g.drawRoundRect(x,y,w,h,24,24);
          g.endFill();
          g.beginFill(this.hzIconCol(HZ_ACCENT),1);
@@ -6679,7 +6768,7 @@
          var g:* = this.hzEqBody.graphics;
          var lt:Boolean = this.hzLight();
          g.clear();
-         g.beginFill(0x000000,0.12 + 0.2 * this.hzOpExtra());
+         g.beginFill(0x000000,this.hzCardShA(0.12));
          g.drawRoundRect(-1,1,HZ_EQ_W + 2,h + 2,18,18);
          g.endFill();
          // +0.1 opacity vs the other cards: readable over bright scenery, still translucent
@@ -7313,7 +7402,7 @@
          var lt:Boolean = this.hzLight();
          var fill:uint = steal ? this.hzMix(this.hzPanelFill(),HZ_RED,lt ? 0.18 : 0.22) : this.hzPanelFill();
          g.clear();
-         g.beginFill(0x000000,0.12 + 0.2 * this.hzOpExtra());
+         g.beginFill(0x000000,this.hzCardShA(0.12));
          g.drawRoundRect(-1,1,w + 2,h + 2,18,18);
          g.endFill();
          g.beginFill(fill,this.hzPanelA(lt ? 0.92 : 0.86));
@@ -7838,12 +7927,12 @@
       private function hzPanel(g:*, w:Number, h:Number, r:Number, tint:int = -1, edge:int = -1) : void
       {
          var lt:Boolean = this.hzLight();
-         var x:Number = this.hzOpExtra();
          var rr:Number = Math.min(r,h / 2);
+         var sa:Number = this.hzCardShA(0.055 * (lt ? 0.55 : 1));
          var i:int = 0;
          while(i < 4)
          {
-            g.beginFill(0x000000,(0.055 + 0.035 * x) * (lt ? 0.55 : 1));
+            g.beginFill(0x000000,sa);
             g.drawRoundRect(-1 - i,2 - i * 0.5,w + 2 + i * 2,h + 1 + i * 2,(rr + i) * 2,(rr + i) * 2);
             g.endFill();
             i++;
