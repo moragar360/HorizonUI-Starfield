@@ -1238,19 +1238,19 @@ namespace HZ
 	}
 
 	RE::BSInputEnableLayer* g_layer = nullptr;
-	bool                    g_blocked = false;
+	std::atomic<bool>       g_blocked{ false };
 
 	// While the settings window is open, disable camera look + fighting (so clicks don't fire).
 	void SetControlsBlocked(bool a_block)
 	{
-		if (a_block == g_blocked) return;
-		if (!a_block && !g_layer) { g_blocked = false; return; }
+		if (a_block == g_blocked.load(std::memory_order_relaxed)) return;
+		if (!a_block && !g_layer) { g_blocked.store(false, std::memory_order_relaxed); return; }
 		if (!g_layer) {
 			auto mgr = RE::BSInputEnableManager::GetSingleton();
 			if (!mgr || !mgr->AllocateNewLayer(&g_layer, "HorizonUI settings") || !g_layer) { g_layer = nullptr; return; }
 		}
 		g_layer->EnableUserEvent(RE::USER_EVENT_FLAG::Looking | RE::USER_EVENT_FLAG::Fighting, !a_block);
-		g_blocked = a_block;
+		g_blocked.store(a_block, std::memory_order_relaxed);
 		REX::INFO("settings open={} (look/fight {})", a_block, a_block ? "blocked" : "restored");
 	}
 
@@ -1261,6 +1261,75 @@ namespace HZ
 	bool      g_scanWas42 = false;   // v0.42.0: MonocleMenu was open at the last poll
 	ULONGLONG g_lastOpen = 0;
 	ULONGLONG g_nextOpenPoll = 0;
+	// A full-screen menu (StatusMenu is the character screen) pauses the HUD
+	// movie. PollScaleform then never runs. These remember the menu and that
+	// F11 still needs hzSettingsCloseAll once the HUD root advances again.
+	std::atomic<bool>        g_coverClose{ false };
+	std::atomic<const char*> g_coverName{ nullptr };
+
+	// Purpose: drop F11 look/fight and the swallow latch with no Scaleform
+	// call. The HUD movie may already be hidden or paused. Inputs: the
+	// covering menu name. Outputs: controls restored, one log line.
+	// Author: Moragar. Last modified: 2026-11-02.
+	void ReleaseSettingsNative(const char* a_menu)
+	{
+		const bool wasOpen = g_open.exchange(false, std::memory_order_acq_rel);
+		const bool wasSwallow = g_swallow.exchange(false, std::memory_order_acq_rel);
+		const bool wasBlocked = g_blocked.load(std::memory_order_relaxed);
+		if (!wasOpen && !wasSwallow && !wasBlocked) return;
+		OnSettingsOpenChanged(false);
+		SetControlsBlocked(false);
+		g_coverClose.store(true, std::memory_order_release);
+		REX::INFO("settings closed (menu {}, no invoke)", a_menu && a_menu[0] ? a_menu : "?");
+	}
+
+	// Purpose: log a covering menu opening and closing, and release F11
+	// without Invoke while it is up. Menu-map only. StatusMenu is the
+	// vanilla character screen. Inputs: none. Outputs: edge log lines.
+	// Author: Moragar. Last modified: 2026-11-02.
+	void NoteCoveringMenu()
+	{
+		auto ui = RE::UI::GetSingleton();
+		const bool covered = ui && !HudMenusClear(ui, false);
+		const char* name = covered ? HudBlockingMenu(ui) : nullptr;
+		const char* prev = g_coverName.exchange(name, std::memory_order_acq_rel);
+		if (prev != name) {
+			g_hudSafeAt = 0;
+			if (prev && std::strcmp(prev, "StatusMenu") == 0)
+				REX::INFO("character menu closed");
+			else if (prev && prev[0])
+				REX::INFO("menu closed: {}", prev);
+			if (name && std::strcmp(name, "StatusMenu") == 0)
+				REX::INFO("character menu open");
+			else if (name && name[0])
+				REX::INFO("menu open: {}", name);
+		}
+		if (covered)
+			ReleaseSettingsNative(name);
+	}
+
+	// Purpose: close F11 in the HUD movie after the covering menu is gone
+	// and this thread is inside that movie's AdvanceFrame. Inputs: none.
+	// Outputs: hzSettingsCloseAll, one log line. Author: Moragar.
+	// Last modified: 2026-11-02.
+	void FinishCoveredClose()
+	{
+		if (!g_coverClose.load(std::memory_order_acquire)) return;
+		const bool closed = HudInvoke("hzSettingsCloseAll", nullptr, nullptr, 0, true);
+		if (!closed) {
+			for (int attempt = 0; attempt < 2; ++attempt) {
+				GValue open;
+				if (!(HudInvoke("hzSettingsOpen", &open) && open.IsBoolean() && open.GetBoolean()))
+					break;
+				HudInvoke("hzToggleSettings", nullptr, nullptr, 0, true);
+			}
+		}
+		g_open.store(false, std::memory_order_release);
+		g_swallow.store(false, std::memory_order_release);
+		SetControlsBlocked(false);
+		g_coverClose.store(false, std::memory_order_release);
+		REX::INFO("settings closed (F11 movie)");
+	}
 
 	void ResetSettingsState()
 	{
@@ -4403,12 +4472,26 @@ namespace HZ
 		g_hudPolls.fetch_add(1, std::memory_order_relaxed);
 		if (!g_uiPollLogged.exchange(true))
 			REX::INFO("thread: ui poll tid={}", tid);
+		// A covering menu (the character screen is StatusMenu) can hide or
+		// pause this movie between frames. Read the menu map first and return
+		// before any Invoke. The non-HUD advance path does the same release.
+		try { NoteCoveringMenu(); } catch (...) {}
 		if (auto uiPub = RE::UI::GetSingleton()) {
 			g_uiLoading.store(uiPub->IsMenuOpen("LoadingMenu"));
 			g_uiMainMenu.store(uiPub->IsMenuOpen("MainMenu"));
 			g_uiPause.store(uiPub->IsMenuOpen("PauseMenu"));
-			ScanPushHud(uiPub, now);
 		}
+		if (g_coverName.load(std::memory_order_acquire) != nullptr) {
+			const char* menu = g_coverName.load(std::memory_order_acquire);
+			if (g_hudSince)
+				REX::INFO("HUD not ready (loading/menu {})", menu ? menu : "?");
+			g_hudSince = 0;
+			g_hudReadyLogged.store(false);
+			g_hudSafeHint.store(false, std::memory_order_relaxed);
+			return;
+		}
+		if (auto uiPub = RE::UI::GetSingleton())
+			ScanPushHud(uiPub, now);
 		try { PublishCrossName(); } catch (...) {}
 		if (g_mlHudReadyReq.exchange(false))
 			MsglogOnHudReady();
@@ -4431,13 +4514,15 @@ namespace HZ
 				return;
 			}
 			if (g_hudSince) {
-				REX::INFO("HUD not ready (loading/menu {})", HudBlockingMenu(RE::UI::GetSingleton()));
-				ResetSettingsState();
+				const char* menu = HudBlockingMenu(RE::UI::GetSingleton());
+				REX::INFO("HUD not ready (loading/menu {})", menu);
+				ReleaseSettingsNative(menu);
 			}
 			g_hudSince = 0;
 			g_hudReadyLogged.store(false);
 			return;
 		}
+		FinishCoveredClose();
 		// v0.42.0: the hand scanner opened while the F11 window / ARRANGE is up: close it once (close-only, as for the
 		// full-screen menus). Edge-triggered, so it runs once per scanner open; nothing happens while F11 is closed.
 		{
@@ -4567,6 +4652,10 @@ namespace HZ
 			g_hookAliveNext.store(now + hzlog::kHookAlivePeriodMs, std::memory_order_relaxed);
 		}
 		try { TryAdoptLiveRoot(a_this, now); } catch (...) {}
+		const auto hudBeat = g_hudRoot.load(std::memory_order_acquire);
+		if (!(a_this && hudBeat && a_this == hudBeat)) {
+			try { NoteCoveringMenu(); } catch (...) {}
+		}
 		const auto lastBeat = g_pollHeartbeatMs.load(std::memory_order_relaxed);
 		if (hzlog::PollHeartbeatDue(lastBeat, now, hzlog::kPollHeartbeatMs)) {
 			auto expected = lastBeat;

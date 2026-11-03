@@ -3147,7 +3147,7 @@
          return ut + "|" + lt + "|" + body;
       }
 
-      // ---------- Message Log popup (0.43.0.7). Inside the 1000x660 F11 window. ----------
+      // ---------- Message Log popup (0.43.0.20). Inside the 1000x660 F11 window. ----------
       // v7 layout: 976x620, rows at least 28 px and wrap long text, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
       private static const HZ_ML_W:Number = 976;
@@ -5047,7 +5047,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.7";
+      private static const HZ_BUILD:String = "0.43.0.20";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -5184,6 +5184,7 @@
       private function hzSetRowH(r:Object) : Number
       {
          if(r.t == "m") { return (r.h ? 24 : 0) + this.hz34BanH(); }
+         if(r.t == "g") { return 48; }
          if(r.t == "w") { return (r.h ? 24 : 0) + 44; }
          return (r.h ? 24 : 0) + 32 + (r.note ? (r.n13 ? 20 : 18) : 0) + 4;
       }
@@ -5369,6 +5370,14 @@
             {
                try { this.hz30ModBanner(b,g,y,right,T,String(r.mod),i == this.hzSetRow,i); } catch(errMb:Error) { }
                y += this.hz34BanH();
+               lastShown = li;
+               li++;
+               continue;
+            }
+            if(r.t == "g")
+            {
+               try { this.hz31DrawPage(b,g,y,right,T,i == this.hzSetRow,i); } catch(errPg:Error) { }
+               y += 48;
                lastShown = li;
                li++;
                continue;
@@ -5984,7 +5993,14 @@
             if(id == "ok") { this.hzSetApply(); return; }
             if(id == "cancel") { this.hzSetCancel(); return; }
             if(id == "arrange") { this.hzArrEnter(); return; }
-            if(id.indexOf("tab") == 0) { this.hzSetTab = int(id.substr(3)); this.hzSetRow = 0; this.hzSetScroll = 0; dirty = true; }
+            if(id == "page0" || id == "page1")
+            {
+               this.hz31Page = id == "page1" ? 1 : 0;
+               if(this.hzSetPend != null) { this.hzSetPend._hz31page = this.hz31Page; }
+               this.hzSetScroll = 0;
+               dirty = true;
+            }
+            else if(id.indexOf("tab") == 0) { this.hzSetTab = int(id.substr(3)); this.hzSetRow = 0; this.hzSetScroll = 0; dirty = true; }
             else if(id.indexOf("lt") == 0 || id.indexOf("rt") == 0)
             {
                // cycler arrows: left = previous, right = next
@@ -6030,7 +6046,7 @@
                var ri:int = int(id.substr(3));
                this.hzSetRow = ri;
                var rr:Object = rows[ri];
-               if(rr.t == "b" || rr.t == "a" || rr.t == "c" || rr.t == "r" || rr.t == "q" || rr.t == "x" || rr.t == "m" || rr.t == "p") { this.hzSetChange(rr,1); if(this.hzArrange) { return; } }
+               if(rr.t == "b" || rr.t == "a" || rr.t == "c" || rr.t == "r" || rr.t == "q" || rr.t == "x" || rr.t == "m" || rr.t == "p" || rr.t == "g") { this.hzSetChange(rr,1); if(this.hzArrange) { return; } }
                else if(rr.t == "z" && !rr.dis) { this.hz34ZToggle(String(rr.k)); }
                dirty = true;
             }
@@ -12962,10 +12978,34 @@
          if(f.length > 0) { return "Installed. Another subtitle mod is also installed: its HUD messages file may have replaced Horizon's."; }
          return this.hz31On("comms_dialogue") ? "Installed: subtitles, speaker card, scanner popups (set in SCANNER) and dialogue." : "Installed: subtitles, speaker card and scanner popups (set in SCANNER). Horizon dialogue not installed.";
       }
+      // Full-width SUBTITLES / DIALOGUE switch. The row hit is pushed first
+      // so a click on a half (pushed after) wins. 13 px labels.
+      private function hz31DrawPage(b:Sprite, g:*, y:Number, right:Number, T:Object, sel:Boolean, idx:int) : void
+      {
+         var acc:uint = uint(T.acc);
+         var x0:Number = 22;
+         var w:Number = right + 6 - 22;
+         var h:Number = 40;
+         var y0:Number = y + 4;
+         var mid:Number = x0 + Math.round(w / 2);
+         var leftOn:Boolean = this.hz31Page == 0;
+         if(sel) { g.beginFill(acc,0.08); g.drawRoundRect(x0,y0,w,h,12,12); g.endFill(); }
+         g.beginFill(leftOn ? acc : uint(T.mut),leftOn ? 0.86 : 0.16);
+         g.drawRoundRect(x0,y0,mid - x0 - 2,h,12,12);
+         g.endFill();
+         g.beginFill(!leftOn ? acc : uint(T.mut),!leftOn ? 0.86 : 0.16);
+         g.drawRoundRect(mid + 2,y0,x0 + w - mid - 2,h,12,12);
+         g.endFill();
+         this.hzWT(b,"SUBTITLES",x0 + (mid - x0 - 2) / 2,y0 + 11,mid - x0 - 8,13,"sb",leftOn ? uint(T.ontxt) : uint(T.txt),1.2,"center",13);
+         this.hzWT(b,"DIALOGUE",mid + 2 + (x0 + w - mid - 2) / 2,y0 + 11,x0 + w - mid - 8,13,"sb",!leftOn ? uint(T.ontxt) : uint(T.txt),1.2,"center",13);
+         this.hzSetHits.push({"id":"row" + idx,"x":x0,"y":y0,"w":w,"h":h});
+         this.hzSetHits.push({"id":"page0","x":x0,"y":y0,"w":mid - x0,"h":h});
+         this.hzSetHits.push({"id":"page1","x":mid,"y":y0,"w":x0 + w - mid,"h":h});
+      }
       private function hz31CommsRows() : Array
       {
          if(this.hzSetPend != null) { this.hzSetPend._hz31page = this.hz31Page; }
-         var rows:Array = [{"k":"_hz30m_comms","l":"","t":"m","mod":"comms"},{"k":"_hz31page","l":"PAGE","t":"r","opts":["SUBTITLES","DIALOGUE"]}];
+         var rows:Array = [{"k":"_hz30m_comms","l":"","t":"m","mod":"comms"},{"k":"_hz31page","l":"","t":"g","opts":["SUBTITLES","DIALOGUE"]}];
          var fontOk:Boolean = this.hz30FontAvail();
          var fnote:String = "Global font is in TEXT.";
          var r:Object;

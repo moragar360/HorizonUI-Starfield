@@ -763,8 +763,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.7", "file version is 0.43.0.7");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 7, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.20", "file version is 0.43.0.20");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 20, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -1560,7 +1560,7 @@ int main()
 		Expect(stillMid && stillFuture, "later-point flags survive a new capture");
 		Expect(b.nextId > futureId, "new rows take ids after the later-point rows");
 
-		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.7");
+		const auto json = ToJson(b.Snapshot(), "HorizonUI 0.43.0.20");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok, "later-point flags round-trip through JSON");
 		Buffer restarted;
@@ -1610,7 +1610,7 @@ int main()
 		Buffer loaded;
 		loaded.LoadState(held);
 		ExpectEqI(static_cast<int>(loaded.nextId), 42, "LoadState keeps the persisted nextId");
-		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.7");
+		const auto json = ToJson(loaded.Snapshot(), "HorizonUI 0.43.0.20");
 		Expect(json.find("\"nextId\": 42") != std::string::npos, "ToJson writes nextId");
 		auto parsed = FromJson(json);
 		Expect(parsed.ok && parsed.state.nextId == 42, "FromJson reads the persisted nextId");
@@ -3401,7 +3401,44 @@ int main()
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.0.7\"") != std::string::npos, "HUD movie build id is 0.43.0.7");
+		Expect(as.find("HZ_BUILD:String = \"0.43.0.20\"") != std::string::npos, "HUD movie build id is 0.43.0.20");
+		Expect(as.find("function hz31DrawPage") != std::string::npos
+			&& as.find("\"t\":\"g\"") != std::string::npos
+			&& as.find("\"id\":\"page0\"") != std::string::npos
+			&& as.find("\"id\":\"page1\"") != std::string::npos,
+			"COMMS uses the full-width page switch");
+		Expect(main.find("character menu open") != std::string::npos
+			&& main.find("character menu closed") != std::string::npos,
+			"the character screen logs open and close");
+		Expect(main.find("settings closed (menu {}, no invoke)") != std::string::npos,
+			"a covering menu releases F11 with no Invoke");
+		Expect(main.find("settings closed (F11 movie)") != std::string::npos,
+			"F11 closes in the movie after that menu is gone");
+		{
+			const auto note = main.find("void NoteCoveringMenu()");
+			const auto next = main.find("void FinishCoveredClose()", note);
+			const auto body = note != std::string::npos && next > note ? main.substr(note, next - note) : std::string();
+			Expect(body.find("HudInvoke") == std::string::npos && body.find("HudSafe(") == std::string::npos,
+				"the covering-menu path does not Invoke or call HudSafe");
+			Expect(body.find("HudMenusClear") != std::string::npos,
+				"the covering-menu path reads the menu map only");
+		}
+		{
+			const auto poll = main.find("void PollScaleform()");
+			const auto next = main.find("void PollMessages()", poll);
+			const auto body = poll != std::string::npos && next > poll ? main.substr(poll, next - poll) : std::string();
+			const auto note = body.find("NoteCoveringMenu()");
+			const auto scan = body.find("ScanPushHud");
+			const auto fin = body.find("FinishCoveredClose()");
+			const auto settings = body.find("PollSettings");
+			Expect(note != std::string::npos && scan != std::string::npos && note < scan,
+				"PollScaleform checks the covering menu before a HUD Invoke");
+			Expect(fin != std::string::npos && settings != std::string::npos && fin < settings,
+				"the movie close runs only after the HUD is clear");
+			const auto covered = body.find("g_coverName.load");
+			Expect(covered != std::string::npos && covered < scan,
+				"a covering menu returns before ScanPushHud");
+		}
 		Expect(as.find("greyed") == std::string::npos, "notes use American grayed");
 		Expect(as.find("grayed") != std::string::npos, "locked rows are grayed");
 		Expect(as.find("F12") == std::string::npos || as.find("SETTINGS MENU KEY") != std::string::npos,
