@@ -149,6 +149,11 @@ namespace HZ
 	std::atomic<std::uint64_t> g_adoptLogMs{0};
 	std::atomic<bool>          g_hudSafeHint{false};
 	std::atomic<bool>          g_uiLoading{false};
+	std::atomic<bool>          g_splashArmed{false};
+	std::atomic<bool>          g_splashDefer{false};
+	std::atomic<bool>          g_splashWatch{false};
+	std::atomic<int>           g_splashTries{0};
+	ULONGLONG                  g_splashWatchSince{0};
 	std::atomic<bool>          g_uiMainMenu{false};
 	std::atomic<std::uint32_t> g_advTids[8]{};
 	std::atomic<int>           g_advTidN{0};
@@ -4449,8 +4454,12 @@ namespace HZ
 				const bool saving = op == Op::kAutosave || op == Op::kQuicksave || op == Op::kManualSave
 					|| op == Op::kExitSaveToMainMenu || op == Op::kExitSaveToDesktop;
 				const bool loading = op == Op::kLoad || op == Op::kQuickload || op == Op::kLoadMostRecent || op == Op::kLoadNamedFile;
-				if (loading && st == St::kBegin)
+				if (loading && st == St::kBegin) {
 					g_mlLoadReq.store(true);
+					g_splashArmed.store(true, std::memory_order_relaxed);
+					g_splashDefer.store(true, std::memory_order_relaxed);
+					g_splashTries.store(0, std::memory_order_relaxed);
+				}
 				if (saving && (st == St::kSaveCompleted || st == St::kBegin))
 					g_mlSaveReq.store(true);
 				if ((op == Op::kExitSaveToMainMenu || op == Op::kExitSaveToDesktop)
@@ -4481,6 +4490,57 @@ namespace HZ
 			REX::WARN("SaveLoadEvent sink failed: unknown error");
 		}
 	}
+
+	// Purpose: play the startup intro once the loading menu has closed and the HUD is up.
+	// The movie builds the splash on first use and returns start, skipped, later, or done.
+	// A failed invoke is ignored. This never pauses the game. Author: Moragar.
+	// Last modified: 2026-11-03.
+	void SplashPoll(ULONGLONG a_now)
+	{
+		if (g_splashDefer.load(std::memory_order_relaxed)) {
+			// The load has not covered the HUD yet. Wait so the splash does not play under the load screen.
+		} else if (g_splashArmed.load(std::memory_order_relaxed)) {
+			GValue ret;
+			bool ok = false;
+			try { ok = HudInvoke("hzSplashOnLoad", &ret); } catch (...) { ok = false; }
+			if (!ok) {
+				if (g_splashTries.fetch_add(1, std::memory_order_relaxed) > 120)
+					g_splashArmed.store(false, std::memory_order_relaxed);
+			} else if (ret.IsString() && ret.GetString()) {
+				const std::string s = ret.GetString();
+				if (s == "later") {
+					if (g_splashTries.fetch_add(1, std::memory_order_relaxed) > 180)
+						g_splashArmed.store(false, std::memory_order_relaxed);
+				} else if (s == "start") {
+					g_splashArmed.store(false, std::memory_order_relaxed);
+					g_splashWatch.store(true, std::memory_order_relaxed);
+					g_splashWatchSince = a_now;
+					REX::INFO("HUD intro start");
+				} else {
+					g_splashArmed.store(false, std::memory_order_relaxed);
+					REX::INFO("HUD intro skipped");
+				}
+			} else {
+				g_splashArmed.store(false, std::memory_order_relaxed);
+			}
+		}
+		if (!g_splashWatch.load(std::memory_order_relaxed)) return;
+		if (g_splashWatchSince != 0 && a_now > g_splashWatchSince && a_now - g_splashWatchSince > 8000) {
+			g_splashWatch.store(false, std::memory_order_relaxed);
+			return;
+		}
+		GValue phase;
+		try {
+			if (HudInvoke("hzSplashPhase", &phase) && phase.IsString() && phase.GetString()
+				&& std::string(phase.GetString()) == "done") {
+				g_splashWatch.store(false, std::memory_order_relaxed);
+				REX::INFO("HUD intro done");
+			}
+		} catch (...) {
+			g_splashWatch.store(false, std::memory_order_relaxed);
+		}
+	}
+
 
 	// Purpose: job-thread poll. Capture, writer coordinator, file I/O,
 	// and load/quit flags. Never touches Scaleform (GetMenu / menuObj /
@@ -4538,8 +4598,15 @@ namespace HZ
 			g_uiLoading.store(uiPub->IsMenuOpen("LoadingMenu"));
 			g_uiMainMenu.store(uiPub->IsMenuOpen("MainMenu"));
 			g_uiPause.store(uiPub->IsMenuOpen("PauseMenu"));
+			if (g_uiLoading.load(std::memory_order_relaxed)) {
+				g_splashArmed.store(true, std::memory_order_relaxed);
+				g_splashDefer.store(false, std::memory_order_relaxed);
+				g_splashTries.store(0, std::memory_order_relaxed);
+			}
 		}
 		if (g_coverName.load(std::memory_order_acquire) != nullptr) {
+			if (g_splashArmed.load(std::memory_order_relaxed))
+				g_splashDefer.store(false, std::memory_order_relaxed);
 			const char* menu = g_coverName.load(std::memory_order_acquire);
 			if (g_hudSince)
 				REX::INFO("HUD not ready (loading/menu {})", menu ? menu : "?");
@@ -4571,6 +4638,8 @@ namespace HZ
 				if (g_open.load()) ResetSettingsState();
 				return;
 			}
+			if (g_splashArmed.load(std::memory_order_relaxed))
+				g_splashDefer.store(false, std::memory_order_relaxed);
 			if (g_hudSince) {
 				const char* menu = HudBlockingMenu(RE::UI::GetSingleton());
 				REX::INFO("HUD not ready (loading/menu {})", menu);
@@ -4590,6 +4659,7 @@ namespace HZ
 			g_scanWas42 = scan42;
 		}
 		if (!g_hudSince) g_hudSince = now;
+		try { SplashPoll(now); } catch (...) {}
 		if (now - g_hudSince < 3000) return;
 		if (!g_hudReadyLogged.exchange(true)) {
 			REX::INFO("HUD ready (stable 3s)");
