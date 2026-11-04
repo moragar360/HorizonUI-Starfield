@@ -3116,7 +3116,7 @@
          }
          if(tab == 3)
          {
-            return [{"k":"SmoothBars","l":"SMOOTH BARS","t":"b","h":"CARDS"},{"k":"FadeCards","l":"FADE CARDS","t":"b"},{"k":"CombatDim","l":"DIM OUT OF COMBAT","t":"b"},{"k":"DimOpacity","l":"DIM OPACITY","t":"n","mn":0.2,"mx":1,"st":0.05},{"k":"HazardAlert","l":"HAZARD ALERT","t":"b"},{"k":"AutoCenterVitals","l":"CENTER VITALS WHEN EQUIPMENT HIDDEN","t":"b","note":"Ignored once the vitals card is moved in ARRANGE CARDS"},{"k":"TargetAnchor","l":"TARGET: ANCHOR","t":"r","opts":HZ_TGANCHOR_NAMES,"h":"TARGET"},{"k":"TargetShowValue","l":"TARGET: ITEM VALUE / WEIGHT","t":"b"},{"k":"EdgePulse","l":"LOW HEALTH / O2 SCREEN-EDGE PULSE","t":"b","h":"WARNINGS"},{"k":"XpToast","l":"XP GAIN TOAST","t":"b","note":"With the Comms module the game's own +XP popup is hidden while this is on"},{"k":"RegenSliver","l":"HEALING REGEN SLIVER","t":"b"},{"k":"HitMarkers","l":"HIT MARKER + KILL X","t":"b","h":"COMBAT FEEDBACK"},{"k":"DamageNumbers","l":"FLOATING DAMAGE NUMBERS","t":"b"},{"k":"DirectionRing","l":"DAMAGE DIRECTION RING","t":"b"}];
+            return [{"k":"StartupIntro","l":"WELCOME INTRO","t":"b","h":"WELCOME","n13":true,"note":"Plays HORIZON UI on save load"},{"k":"SmoothBars","l":"SMOOTH BARS","t":"b","h":"CARDS"},{"k":"FadeCards","l":"FADE CARDS","t":"b"},{"k":"CombatDim","l":"DIM OUT OF COMBAT","t":"b"},{"k":"DimOpacity","l":"DIM OPACITY","t":"n","mn":0.2,"mx":1,"st":0.05},{"k":"HazardAlert","l":"HAZARD ALERT","t":"b"},{"k":"AutoCenterVitals","l":"CENTER VITALS WHEN EQUIPMENT HIDDEN","t":"b","note":"Ignored once the vitals card is moved in ARRANGE CARDS"},{"k":"TargetAnchor","l":"TARGET: ANCHOR","t":"r","opts":HZ_TGANCHOR_NAMES,"h":"TARGET"},{"k":"TargetShowValue","l":"TARGET: ITEM VALUE / WEIGHT","t":"b"},{"k":"EdgePulse","l":"LOW HEALTH / O2 SCREEN-EDGE PULSE","t":"b","h":"WARNINGS"},{"k":"XpToast","l":"XP GAIN TOAST","t":"b","note":"With the Comms module the game's own +XP popup is hidden while this is on"},{"k":"RegenSliver","l":"HEALING REGEN SLIVER","t":"b"},{"k":"HitMarkers","l":"HIT MARKER + KILL X","t":"b","h":"COMBAT FEEDBACK"},{"k":"DamageNumbers","l":"FLOATING DAMAGE NUMBERS","t":"b"},{"k":"DirectionRing","l":"DAMAGE DIRECTION RING","t":"b"}];
          }
          if(tab == 4)
          {
@@ -3224,7 +3224,7 @@
          return ut + "|" + lt + "|" + body;
       }
 
-      // ---------- Message Log popup (0.43.0.31). Inside the 1000x660 F11 window. ----------
+      // ---------- Message Log popup (0.43.0.32). Inside the 1000x660 F11 window. ----------
       // v7 layout: 976x620, rows at least 28 px and wrap long text, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
       private static const HZ_ML_W:Number = 976;
@@ -4717,6 +4717,8 @@
          if(this.hzArrange) { this.hzArrExit(false); return; }
          if(this.hzSetIsOpen) { this.hzSetCancel(); return; }
          try { this.hz30ModProbeAll(); } catch(errMod:Error) { }
+         // SCANNER and COMMS start folded every time F11 opens. The chevron still opens the card for this visit.
+         this.hz34NoteCmp = true;
          this.hzSetOrig = this.hzSetCurrent();
          this.hzSetPend = this.hzSetCurrent();
          this.hzSetTab = 0;
@@ -5178,7 +5180,7 @@
          a.push("ArrangeBarY=" + String(Math.round(this.hzArrTbDY)));
          a.push("");
          a.push("[UI]");
-         a.push("; v0.34: 1 = the module status card on the SCANNER / COMMS tabs is folded to one line (click it in F11)");
+         a.push("; 1 = the SCANNER / COMMS module card starts folded. F11 opens it folded every time. The chevron unfolds it for that visit.");
          a.push("ModuleNoteCompact=" + (Number(p.ModuleNoteCompact) >= 0.5 || p.ModuleNoteCompact === true ? "1" : "0"));
          a.push("; 1 = the HORIZON UI welcome splash after every save load. Accent color, no panel. It never pauses the game and never takes input. 0 = off.");
          a.push("StartupIntro=" + (Number(p.StartupIntro) >= 0.5 || p.StartupIntro === true ? "1" : "0"));
@@ -5265,14 +5267,14 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.31";
+      private static const HZ_BUILD:String = "0.43.0.32";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":0,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -10356,9 +10358,9 @@
 
       // Compact name hover: one line of the existing prompt card. Icon, name, then the same key chip and verb.
       // Colors, fill, shadow, and accent come from the live STYLE settings (hzPanel / HZ_ACCENT). Full is the block below.
-      // hzPillNameSlack: the name field is the measured width plus 8 px (hzFitText keeps 4), so a name that fits the
-      // 220 px cap stays whole. Icon and name are reserved first. The button row is fit into what remains of 520.
-      // hzPillLine: name, key letter, and verb share one size and one cap-center, so they sit on one baseline.
+      // Verbs are measured in full and never shortened. The name keeps up to 220 px, plus 8 px when it fits that cap.
+      // The pill grows with the line up to 640 px. Past that, only the name gives up space. A verb row wider than
+      // that still draws whole, so the pill may pass 640. Name, key letter, and verb share one size and one cap-center.
       private function hzT19PromptPill(g:*, a:Object, aw:Object, o:Object, nmTf:TextField, hdrTxt:String, hasBtn:Boolean, bw:Number) : Object
       {
          var lineFs:Number = 14;
@@ -10386,17 +10388,24 @@
          var nmCap:Number = 220;
          var nmSlack:Number = 8;
          var measured:Number = shown.length > 0 ? this.hzTW(nmTf) : 0;
-         var nameRoom:Number = 0;
-         if(measured > 0) { nameRoom = measured <= nmCap ? measured + nmSlack : nmCap + 4; }
+         var nameWant:Number = 0;
+         if(measured > 0) { nameWant = measured <= nmCap ? measured + nmSlack : nmCap + 4; }
          var nameX:Number = padL + rad * 2 + 12;
-         var btnMax:Number = 520 - padR - nameX - nameRoom - (hasBtn ? gap : 0);
-         if(btnMax < 0) { btnMax = 0; }
-         var fitBw:Number = 0;
-         if(hasBtn && btnMax > 0) { fitBw = this.hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,btnMax,lineFs); }
-         if(fitBw > btnMax) { fitBw = btnMax; }
-         var W:Number = nameX + nameRoom + (fitBw > 0 ? gap + fitBw : 0) + padR;
+         var pillMax:Number = 640;
+         var fullBw:Number = 0;
+         if(hasBtn) { fullBw = this.hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,0,lineFs); }
+         var gapUse:Number = fullBw > 0 ? gap : 0;
+         var nameRoom:Number = nameWant;
+         var fitBw:Number = fullBw;
+         var W:Number = nameX + nameRoom + gapUse + fitBw + padR;
+         if(W > pillMax)
+         {
+            var room:Number = pillMax - nameX - padR - gapUse - fitBw;
+            if(room < 36) { room = 36; }
+            if(nameRoom > room) { nameRoom = room; }
+            W = nameX + nameRoom + gapUse + fitBw + padR;
+         }
          if(W < 196) { W = 196; }
-         if(W > 520) { W = 520; }
          this.hzPanel(g,W,H,Math.round(H / 2));
          this.hzT19Tile(g,padL + rad,Math.round(H / 2),HZ_ACCENT,rad);
          nmTf.visible = shown.length > 0;
@@ -10410,7 +10419,7 @@
          this.hzTxtTopU(nmTf,this.hzCapTop(nmTf,cy),u);
          if(fitBw > 0)
          {
-            this.hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,btnMax,lineFs);
+            this.hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,0,lineFs);
          }
          return {"W":W,"H":H};
       }
@@ -17485,7 +17494,7 @@
       }
       // =================== end v0.42.0 r2 ===================
 
-      // 0.43.0.31: a hidden strip moves onto a row that is still showing, so the card bounds close up.
+      // 0.43.0.32: a hidden strip moves onto a row that is still showing, so the card bounds close up.
       // The sprite's x and y stay put. The always-hidden ammo row at y = 0 is left where it is.
       private function hz43OrigY() : void
       {
@@ -17533,7 +17542,7 @@
          this.hz43MoveStrip(this.hzCJetA,this.hzCJetB,90,jetBase,jetOn);
       }
 
-      // 0.43.0.31 startup intro. hudmenu and hudmenu_lrg share this block, so the splash scales in both.
+      // 0.43.0.32 startup intro. hudmenu and hudmenu_lrg share this block, so the splash scales in both.
       // Sprites are built on first use. No static tables. A failure hides the splash and leaves the HUD up.
       public function hzSplashOnLoad() : String
       {
