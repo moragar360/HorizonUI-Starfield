@@ -4,7 +4,21 @@ All notable changes to Horizon UI are listed here, newest first. The format foll
 
 Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never published; 0.41.0 replaced 0.40.3, and its entry includes the changes prepared for 0.40.3.
 
-## [0.43.0.31-alpha] - Unreleased (pending)
+## [0.43.0.32-alpha] - Unreleased (pending)
+
+### Fixed
+- **Compact name pill:** every verb shows in full (Use, Recycle, Talk, Trade, Steal, Search, Open, and the rest). A long name is the part that shortens. The pill can grow up to 640 px. The name stays in the accent color, and in red on a steal prompt.
+- **SCANNER and COMMS:** the module status box starts collapsed every time F11 opens. The chevron still expands it for that visit.
+
+### Added
+- **WELCOME INTRO** in F11 > EFFECTS turns the save-load intro on or off. It reads and writes the existing `[UI] StartupIntro` setting (`1` on, `0` off). It saves with the other rows, and it is included in presets and Restore Defaults. The ini key still works. Off still logs that the intro was skipped.
+
+### Changed
+- **SFSE plugin** rebuilt for 0.43.0.32 (`HorizonUI.dll`, file and product version 0.43.0.32).
+
+## [0.43.0.31-alpha] - 2026-11-03
+
+Released as v0.43.0.31-alpha.
 
 Alpha pre-release. This entry covers everything since 0.42.0.13-alpha. The settings schema stays 0.42.0, so your `HorizonUI.user.ini` carries over.
 

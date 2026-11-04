@@ -36,7 +36,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.43.0.31";', "HUD build id is 0.43.0.31");
+pin('private static const HZ_BUILD:String = "0.43.0.32";', "HUD build id is 0.43.0.32");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
@@ -586,7 +586,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect((!hasCrlf && !loneCr && loneLf) || (hasCrlf && !loneLf && !loneCr), rel + " stays LF or a CRLF checkout");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.31";') >= 0, rel + " build is 0.43.0.31");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.32";') >= 0, rel + " build is 0.43.0.32");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -1549,46 +1549,53 @@ pin("function hzMlIsTop", "hzMlIsTop is the shared Message Log top-layer test");
 pin("function hzMsglogOverlayLayer", "overlays draw into a child Sprite added last");
 pin("function hzTakeMsglogIni", "the movie exposes a MessageLog-only take");
 
-// Compact name pill. hzFitText ellipsizes when the text is wider than maxW - 4, so a field
-// that is exactly the measured width cuts VASCO. Names at or under 220 px get 8 px of slack.
-// Icon and name are reserved first; the button row is limited to what remains of 520.
-function hzPillNameRoom(measured) {
+// Compact name pill. Verbs are measured in full and never shortened. A name at or under 220 px
+// gets 8 px of slack. The pill grows up to 640 px; past that, only the name gives up space.
+function hzPillNameWant(measured) {
 	if (!(measured > 0)) return 0;
 	if (measured <= 220) return measured + 8;
 	return 224;
 }
-function hzPillEllipsizes(measured) {
+function hzPillEllipsizes(measured, nameRoom) {
+	const room = nameRoom == null ? hzPillNameWant(measured) : nameRoom;
 	if (measured < 2) return false;
-	return measured > hzPillNameRoom(measured) - 4;
+	return measured > room - 4;
 }
 function hzPillLayout(namePx, btnPx) {
 	const padL = 16;
 	const rad = 16;
 	const padR = 20;
 	const gap = 14;
+	const pillMax = 640;
 	const nameX = padL + rad * 2 + 12;
 	const iconRight = padL + rad * 2;
-	const nameRoom = hzPillNameRoom(namePx);
-	const hasBtn = btnPx > 0;
-	let btnMax = 520 - padR - nameX - nameRoom - (hasBtn ? gap : 0);
-	if (btnMax < 0) btnMax = 0;
-	const fitBw = hasBtn && btnMax > 0 ? Math.min(btnPx, btnMax) : 0;
-	let w = nameX + nameRoom + (fitBw > 0 ? gap + fitBw : 0) + padR;
+	const nameWant = hzPillNameWant(namePx);
+	const fitBw = btnPx > 0 ? btnPx : 0;
+	const gapUse = fitBw > 0 ? gap : 0;
+	let nameRoom = nameWant;
+	let w = nameX + nameRoom + gapUse + fitBw + padR;
+	if (w > pillMax) {
+		let room = pillMax - nameX - padR - gapUse - fitBw;
+		if (room < 36) room = 36;
+		if (nameRoom > room) nameRoom = room;
+		w = nameX + nameRoom + gapUse + fitBw + padR;
+	}
 	if (w < 196) w = 196;
-	if (w > 520) w = 520;
 	const btnX = nameX + nameRoom + gap;
-	return { w, nameX, nameRoom, iconRight, btnX, fitBw, btnMax, ellipsis: hzPillEllipsizes(namePx) };
+	return { w, nameX, nameRoom, iconRight, btnX, fitBw, ellipsis: hzPillEllipsizes(namePx, nameRoom), verbsCut: btnPx > 0 && fitBw < btnPx };
 }
 expect("VASCO\r\n".replace(/\r\n/g, "\n").indexOf("VASCO\n") === 0, "a CRLF source scan matches the LF pin");
 {
 	const pill = src.slice(src.indexOf("private function hzT19PromptPill"), src.indexOf("private function hzT19Content"));
 	expect(pill.indexOf("var nmCap:Number = 220;") >= 0, "the pill name cap is 220");
 	expect(pill.indexOf("var nmSlack:Number = 8;") >= 0, "the pill name field keeps 8 px of slack");
-	expect(pill.indexOf("measured <= nmCap ? measured + nmSlack : nmCap + 4") >= 0, "only a name past 220 is cut");
+	expect(pill.indexOf("measured <= nmCap ? measured + nmSlack : nmCap + 4") >= 0, "a name past 220 is capped before the verb row is considered");
+	expect(pill.indexOf("var pillMax:Number = 640;") >= 0, "the pill grows only up to 640 px for the name");
 	expect(pill.indexOf("var lineFs:Number = 14;") >= 0, "the pill name, key, and verb share one size");
 	expect(pill.indexOf("hzCapTop(nmTf,cy)") >= 0, "the pill name uses the keycap center");
-	expect(pill.indexOf("hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,btnMax,lineFs)") >= 0, "the button row is measured after the name");
-	expect(pill.indexOf("nameX + nameRoom + gap") >= 0, "buttons start after the reserved name");
+	expect(pill.indexOf("hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,0,lineFs)") >= 0, "verbs are measured in full");
+	expect(pill.indexOf("nameX + nameRoom + gap") >= 0, "buttons start after the name");
+	expect(pill.indexOf("btnMax") < 0, "the pill does not give the verb row a width limit");
 	expect(pill.indexOf('o.tone = "acc"') >= 0, "the compact pill name uses the text accent");
 	expect(pill.indexOf("o.tint = null") >= 0, "the compact pill name does not keep another tint");
 	expect(pill.indexOf("Boolean(a.bStealing)") >= 0, "the compact pill uses the existing steal flag");
@@ -1606,7 +1613,7 @@ expect("VASCO\r\n".replace(/\r\n/g, "\n").indexOf("VASCO\n") === 0, "a CRLF sour
 	expect(stealOff.tone === "acc" && stealOff.tint === null, "a normal prompt draws the name in the accent");
 	expect(pillNameColor(true).tint === "HZ_RED" && pillNameColor(false).tint === null && pillNameColor(true).tint === "HZ_RED", "steal and normal each set their own color");
 	expect(pill.indexOf("var lineFs:Number = 14;") >= 0, "the pill name stays 14 px");
-	expect(pill.indexOf("hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,btnMax,lineFs)") >= 0, "verbs and key chips still draw on the button row");
+	expect(pill.indexOf("hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,0,lineFs)") >= 0, "verbs and key chips draw in full");
 	const fullPrompt = src.slice(src.indexOf('else if(kind == "prompt")'), src.indexOf('else if(kind == "foe")'));
 	expect(fullPrompt.indexOf("this.hzTxtTint(nmTf,null)") >= 0, "the full name card keeps its body color");
 	expect(fullPrompt.indexOf('o.tone = "acc"') < 0, "the full name card does not take the pill accent");
@@ -1623,22 +1630,41 @@ expect("VASCO\r\n".replace(/\r\n/g, "\n").indexOf("VASCO\n") === 0, "a CRLF sour
 			const lay = hzPillLayout(px, btn);
 			const who = label + (btn ? " with a keycap" : " without a keycap");
 			expect(lay.ellipsis === (px > 220), who + " ellipsizes only past the 220 px cap");
-			expect(lay.w <= 520 && lay.w >= 168, who + " stays inside the pill width");
+			expect(lay.w <= 640 && lay.w >= 196, who + " stays inside the pill width");
+			expect(lay.verbsCut === false, who + " does not cut the verbs");
 			expect(lay.nameX > lay.iconRight, who + " keeps the name clear of the icon");
 			if (btn) {
+				expect(lay.fitBw === btn, who + " keeps the verb row whole");
 				expect(lay.btnX >= lay.nameX + lay.nameRoom, who + " keeps the keycap clear of the name");
 				expect(lay.btnX > lay.iconRight, who + " keeps the keycap clear of the icon");
-				expect(lay.fitBw <= lay.btnMax, who + " does not let the button row past its slot");
 			}
 		}
 	}
 	const wide = hzPillLayout(72, 450);
-	expect(wide.ellipsis === false, "VASCO stays whole beside a wide button row");
-	expect(wide.fitBw < 450 && wide.fitBw === wide.btnMax, "a 450 px button row is cut to the space after the name");
-	expect(wide.btnX > wide.iconRight && wide.btnX >= wide.nameX + wide.nameRoom, "a wide button row does not cover the icon or the name");
-	expect(wide.w <= 520, "a wide button row does not grow the pill past 520");
+	expect(wide.ellipsis === false, "a short name stays whole beside a wide verb row");
+	expect(wide.fitBw === 450, "a 450 px verb row is not cut");
+	expect(wide.btnX > wide.iconRight && wide.btnX >= wide.nameX + wide.nameRoom, "a wide verb row does not cover the icon or the name");
+	expect(wide.w <= 640 && wide.w > 520, "a wide verb row grows the pill past 520 and stays within 640");
 	expect(hzPillEllipsizes(220) === false, "a name of exactly 220 px is not cut");
 	expect(hzPillEllipsizes(221) === true, "a name of 221 px is cut");
+	function hzVerbPx(label) { return 40 + label.length * 11; }
+	function hzTwoVerbs(a, b) { return hzVerbPx(a) + 16 + hzVerbPx(b); }
+	const verbNames = ["Trade", "Recycle", "Use", "Talk", "Steal", "Search", "Open"];
+	for (let i = 0; i < verbNames.length; i++) {
+		for (let j = i + 1; j < verbNames.length; j++) {
+			const row = hzTwoVerbs(verbNames[i], verbNames[j]);
+			const lay = hzPillLayout(360, row);
+			const who = verbNames[i] + " + " + verbNames[j];
+			expect(lay.verbsCut === false && lay.fitBw === row, who + " keeps both verbs whole");
+			expect(lay.btnX >= lay.nameX + lay.nameRoom, who + " keeps the verbs clear of the name");
+			expect(lay.w <= 640 || lay.nameRoom <= 36, who + " grows only until the name is at its floor");
+		}
+	}
+	const workbench = hzPillLayout(280, hzTwoVerbs("Use", "Recycle"));
+	expect(workbench.fitBw === hzTwoVerbs("Use", "Recycle") && workbench.ellipsis === true, "a long workbench name shortens and Use plus Recycle stay whole");
+	expect(workbench.w > 520 && workbench.w <= 640, "Use plus Recycle on a long name grows the pill within 640");
+	const crowded = hzPillLayout(360, 450);
+	expect(crowded.fitBw === 450 && crowded.verbsCut === false && crowded.ellipsis === true && crowded.nameRoom < 224, "past 640 only the name shortens");
 }
 expect(src.indexOf("this.hzTxtTop(this.hz26RegenT,this.hzVitalsBars == 1 ? 6 : 9);") >= 0, "compact regen text uses the CO2 offset and full stays at 9");
 expect(src.indexOf("var merged:Boolean = this.hzCompact || this.hzVitalsBars == 1;") >= 0, "either COMPACT MODE or VitalsBars compact uses the merged strips");
@@ -1649,6 +1675,20 @@ expect(src.indexOf('case "Compact": ok = merged && (this.hzCompact || this.hzSho
 expect(src.indexOf("(this.hzCompact || this.hzShowJetpack) && this.hzRuleOk(this.hzRuleJetpack)") >= 0, "the merged card follows the jetpack rule");
 expect(src.indexOf("(this.hzCompact || this.hzShowVitals) && this.hzRuleOk(this.hzRuleVitals)") >= 0, "the merged card follows the vitals rule");
 expect(src.indexOf('"StartupIntro":1') >= 0, "the welcome splash defaults on in the settings object");
+{
+	const effects = src.slice(src.indexOf("if(tab == 3)"), src.indexOf("if(tab == 4)"));
+	expect(effects.indexOf('"k":"StartupIntro","l":"WELCOME INTRO","t":"b"') >= 0, "WELCOME INTRO is an on/off row on EFFECTS");
+	expect(effects.indexOf('"note":"Plays HORIZON UI on save load"') >= 0, "the welcome row says it plays on save load");
+	expect(effects.indexOf('"n13":true') >= 0, "the welcome info line stays at least 13 px");
+	expect(effects.indexOf("StartupIntro") < effects.indexOf("SmoothBars"), "the welcome row is on the EFFECTS tab");
+	expect(src.indexOf('if(!this.hzSplashWelcome) { this.hzSplashState = "skipped"; return "skipped"; }') >= 0, "an intro that is off still returns skipped");
+	const open = src.slice(src.indexOf("public function hzToggleSettings"), src.indexOf("private function hzSetCancel"));
+	const fold = open.indexOf("this.hz34NoteCmp = true;");
+	const cap = open.indexOf("this.hzSetOrig = this.hzSetCurrent();");
+	expect(fold >= 0 && cap >= 0 && fold < cap, "F11 starts the module card folded before it captures settings");
+	expect(src.indexOf('if(r.t == "m") { this.hz34NoteCmp = !this.hz34NoteCmp;') >= 0, "the module chevron still folds and unfolds");
+	expect(src.indexOf('"ModuleNoteCompact":1') >= 0, "the module card defaults to folded");
+}
 expect(src.indexOf("public function hzSplashOnLoad()") >= 0, "the welcome splash is invoked by name");
 expect(src.indexOf("Loading default settings") >= 0, "the splash names default settings when no preset is set");
 expect(src.indexOf("var peak:Number = 0.88;") >= 0, "the splash does not hold full opacity");
