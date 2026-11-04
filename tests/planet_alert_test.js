@@ -36,7 +36,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.43.0.30";', "HUD build id is 0.43.0.30");
+pin('private static const HZ_BUILD:String = "0.43.0.31";', "HUD build id is 0.43.0.31");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
@@ -586,7 +586,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect((!hasCrlf && !loneCr && loneLf) || (hasCrlf && !loneLf && !loneCr), rel + " stays LF or a CRLF checkout");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.30";') >= 0, rel + " build is 0.43.0.30");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.31";') >= 0, rel + " build is 0.43.0.31");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -1667,10 +1667,14 @@ expect(src.indexOf("this.hz41Now()") >= 0 && src.indexOf("getTimer(") < 0, "the 
 	expect(src.indexOf('var word:String = "HORIZON UI";') >= 0, "the wordmark is HORIZON UI, including UI");
 	expect(src.indexOf("var left:Number = cx - span / 2;") >= 0, "the wordmark is centered on the stage");
 	expect(src.indexOf("(t - 0.04 * idx) / 0.40") >= 0, "the letters fade in before the sweep");
-	expect(src.indexOf("if(t >= 1.0) { sweep = (t - 1.0) / 1.2;") >= 0, "the star sweeps once after the wordmark");
-	expect(src.indexOf("var sweeping:Boolean = t >= 1.0 && t < 2.2;") >= 0, "the sweep is a single pass");
-	expect(src.indexOf("if(t >= 2.4) { la = (t - 2.4) / 0.5;") >= 0, "the preset line fades in after the sweep");
-	expect(src.indexOf("else if(t >= 5.6)") >= 0, "the splash still ends at about 5.6 s");
+	expect(src.indexOf("if(t >= 1.0) { sweep = (t - 1.0) / 2.0;") >= 0, "the star sweeps once after the wordmark");
+	expect(src.indexOf("var sweeping:Boolean = t >= 1.0 && t < 3.0;") >= 0, "the sweep is a single pass of about 2 s");
+	expect(src.indexOf("if(t >= 1.0) { sweepIn = (t - 1.0) / 0.1;") >= 0, "the sweep fades in over a short ramp");
+	expect(src.indexOf("if(t >= 2.9) { sweepOut = 1 - (t - 2.9) / 0.1;") >= 0, "the sweep fades out over a short ramp");
+	expect(src.indexOf("if(t >= 2.75) { lg = (t - 2.75) / 0.35;") >= 0, "the resting star follows the sweep");
+	expect(src.indexOf("if(t >= 3.1) { la = (t - 3.1) / 0.5;") >= 0, "the preset line fades in after the sweep");
+	expect(src.indexOf("if(t > 5.0) { fadeOut = 1 - (t - 5.0) / 1.0;") >= 0, "the fade out is still about 1 s");
+	expect(src.indexOf("else if(t >= 6.0)") >= 0, "the splash ends at about 6.0 s");
 	expect(src.indexOf("hzSplashMeasure") >= 0, "letter fields are measured");
 	expect(src.indexOf("36) * S") < 0 && src.indexOf("0,48 * S") < 0, "letter fields are not a fixed 48 px pitch");
 	const reflow = src.slice(src.indexOf("private function hz43OrigY"), src.indexOf("public function hzSplashOnLoad"));
@@ -1679,8 +1683,14 @@ expect(src.indexOf("this.hz41Now()") >= 0 && src.indexOf("getTimer(") < 0, "the 
 	expect(src.indexOf("this.hz43Reflow(vitWant,jetWant)") >= 0, "play mode reflows the visible strips");
 	expect(src.indexOf("this.hz43Reflow(true,true)") >= 0, "ARRANGE shows the full merged card");
 }
+function hzSplashTravel(t) {
+	if (t < 1.0 || t >= 3.0) return 0;
+	const inn = Math.min(1, (t - 1.0) / 0.1);
+	const out = t >= 2.9 ? Math.max(0, 1 - (t - 2.9) / 0.1) : 1;
+	return inn * out;
+}
 function hzSplashPhase(t) {
-	const fadeOut = t > 4.6 ? Math.max(0, 1 - (t - 4.6) / 1.0) : 1;
+	const fadeOut = t > 5.0 ? Math.max(0, 1 - (t - 5.0) / 1.0) : 1;
 	const letter = function (idx) {
 		let r = (t - 0.04 * idx) / 0.40;
 		if (r < 0) r = 0;
@@ -1688,25 +1698,33 @@ function hzSplashPhase(t) {
 		return r * fadeOut;
 	};
 	let sweep = 0;
-	if (t >= 1.0) sweep = Math.min(1, (t - 1.0) / 1.2);
-	const sweeping = t >= 1.0 && t < 2.2;
+	if (t >= 1.0) sweep = Math.min(1, (t - 1.0) / 2.0);
+	const sweeping = t >= 1.0 && t < 3.0;
 	let preset = 0;
-	if (t >= 2.4) preset = Math.min(1, (t - 2.4) / 0.5);
-	return { h: letter(0), i: letter(9), sweep: sweep, sweeping: sweeping, preset: preset * fadeOut, fadeOut: fadeOut };
+	if (t >= 3.1) preset = Math.min(1, (t - 3.1) / 0.5);
+	const peak = 0.88;
+	return { h: letter(0), i: letter(9), sweep: sweep, sweeping: sweeping, preset: preset * fadeOut, fadeOut: fadeOut, star: hzSplashTravel(t) * fadeOut * peak };
 }
 {
 	const early = hzSplashPhase(0.2);
 	expect(early.h > 0 && early.i === 0 && !early.sweeping && early.preset === 0, "HORIZON starts before UI, the sweep, and the preset line");
 	const on = hzSplashPhase(0.9);
 	expect(on.h === 1 && on.i === 1 && !on.sweeping && on.preset === 0, "HORIZON UI is fully on before the star moves");
-	const mid = hzSplashPhase(1.6);
-	expect(mid.h === 1 && mid.i === 1 && mid.sweeping && mid.sweep > 0 && mid.sweep < 1 && mid.preset === 0, "the star sweeps once while the wordmark stays on");
-	const after = hzSplashPhase(2.6);
-	expect(!after.sweeping && after.sweep === 1 && after.i === 1 && after.preset > 0 && after.preset < 1, "the preset line starts after the sweep");
-	const held = hzSplashPhase(3.2);
+	const mid = hzSplashPhase(2.0);
+	expect(mid.h === 1 && mid.i === 1 && mid.sweeping && mid.sweep === 0.5 && mid.preset === 0 && mid.star === 0.88, "the star sweeps once at the splash peak while the wordmark stays on");
+	const after = hzSplashPhase(3.3);
+	expect(!after.sweeping && after.sweep === 1 && after.i === 1 && after.preset > 0 && after.preset < 1 && after.star === 0, "the preset line starts after the sweep");
+	const held = hzSplashPhase(4.4);
 	expect(held.i === 1 && held.preset === 1 && held.fadeOut === 1 && !held.sweeping, "the wordmark and the preset line hold together");
-	const out = hzSplashPhase(5.2);
+	const out = hzSplashPhase(5.6);
 	expect(out.fadeOut < 0.5 && out.fadeOut > 0 && out.i === out.fadeOut, "everything fades out across the last second");
+	let atPeak = 0;
+	for (let ms = 1000; ms < 3000; ms += 10) if (hzSplashTravel(ms / 1000) === 1) atPeak += 10;
+	expect(atPeak >= 1600, "the star holds the splash peak for most of the crossing");
+	expect(hzSplashPhase(1.05).star < 0.88 && hzSplashPhase(2.95).star < 0.88, "the short ramps are the only time the star is below the peak");
+	const apply = src.slice(src.indexOf("private function hzSplashApply"), src.indexOf("end v0.40 Scanner"));
+	expect(apply.indexOf("GlowFilter") < 0 && apply.indexOf(".filters") < 0, "the sweep adds no glow or filters");
+	expect(apply.indexOf("var peak:Number = 0.88;") >= 0 && apply.indexOf("travelA * fadeOut * peak") >= 0, "the traveling star uses the splash peak and nothing brighter");
 }
 function hzSplashFields(measured, fs) {
 	const pad = 10;

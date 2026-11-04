@@ -3224,7 +3224,7 @@
          return ut + "|" + lt + "|" + body;
       }
 
-      // ---------- Message Log popup (0.43.0.30). Inside the 1000x660 F11 window. ----------
+      // ---------- Message Log popup (0.43.0.31). Inside the 1000x660 F11 window. ----------
       // v7 layout: 976x620, rows at least 28 px and wrap long text, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
       private static const HZ_ML_W:Number = 976;
@@ -5265,7 +5265,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.30";
+      private static const HZ_BUILD:String = "0.43.0.31";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -17485,7 +17485,7 @@
       }
       // =================== end v0.42.0 r2 ===================
 
-      // 0.43.0.30: a hidden strip moves onto a row that is still showing, so the card bounds close up.
+      // 0.43.0.31: a hidden strip moves onto a row that is still showing, so the card bounds close up.
       // The sprite's x and y stay put. The always-hidden ammo row at y = 0 is left where it is.
       private function hz43OrigY() : void
       {
@@ -17533,7 +17533,7 @@
          this.hz43MoveStrip(this.hzCJetA,this.hzCJetB,90,jetBase,jetOn);
       }
 
-      // 0.43.0.30 startup intro. hudmenu and hudmenu_lrg share this block, so the splash scales in both.
+      // 0.43.0.31 startup intro. hudmenu and hudmenu_lrg share this block, so the splash scales in both.
       // Sprites are built on first use. No static tables. A failure hides the splash and leaves the HUD up.
       public function hzSplashOnLoad() : String
       {
@@ -17707,7 +17707,7 @@
             fade = 1 - (this.hz41Now() - this.hzSplashCancelT) / 150;
             if(fade <= 0) { this.hzSplashOn = false; this.hzSplash.visible = false; this.hzSplashState = "done"; return; }
          }
-         else if(t >= 5.6)
+         else if(t >= 6.0)
          {
             this.hzSplashOn = false;
             this.hzSplash.visible = false;
@@ -17921,7 +17921,7 @@
          if(this.hzSplash.getChildByName("hzLetters") == null) { this.hzSplashMake(); }
          var peak:Number = 0.88;
          var fadeOut:Number = 1;
-         if(t > 4.6) { fadeOut = 1 - (t - 4.6) / 1.0; if(fadeOut < 0) { fadeOut = 0; } }
+         if(t > 5.0) { fadeOut = 1 - (t - 5.0) / 1.0; if(fadeOut < 0) { fadeOut = 0; } }
          fadeOut *= fade;
          // Letters first, including the I in UI (index 9). That letter is full at 0.76 s, before the sweep.
          var letters:Sprite = this.hzSplash.getChildByName("hzLetters") as Sprite;
@@ -17939,17 +17939,17 @@
                n++;
             }
          }
-         // One sweep, and only after the wordmark is fully on.
+         // One sweep after the wordmark is fully on. About 2 s (1.0 to 3.0). Short ramps hold the splash peak. No glow.
          var sweep:Number = 0;
-         if(t >= 1.0) { sweep = (t - 1.0) / 1.2; if(sweep > 1) { sweep = 1; } }
+         if(t >= 1.0) { sweep = (t - 1.0) / 2.0; if(sweep > 1) { sweep = 1; } }
          var x0:Number = this.hzSplashX0;
          var x1:Number = this.hzSplashXN;
          var xs:Number = x0 + (x1 - x0) * sweep;
-         var sweeping:Boolean = t >= 1.0 && t < 2.2;
+         var sweeping:Boolean = t >= 1.0 && t < 3.0;
          var sweepIn:Number = 0;
-         if(t >= 1.0) { sweepIn = (t - 1.0) / 0.2; if(sweepIn > 1) { sweepIn = 1; } }
+         if(t >= 1.0) { sweepIn = (t - 1.0) / 0.1; if(sweepIn > 1) { sweepIn = 1; } }
          var sweepOut:Number = 1;
-         if(t >= 2.0) { sweepOut = 1 - (t - 2.0) / 0.2; if(sweepOut < 0) { sweepOut = 0; } }
+         if(t >= 2.9) { sweepOut = 1 - (t - 2.9) / 0.1; if(sweepOut < 0) { sweepOut = 0; } }
          var travelA:Number = sweeping ? sweepIn * sweepOut : 0;
          var star:Sprite = this.hzSplash.getChildByName("hzStar") as Sprite;
          if(star != null)
@@ -17965,9 +17965,9 @@
             streak.alpha = sweeping ? travelA * fadeOut * peak : 0;
             streak.visible = sweeping && streak.alpha > 0.01;
          }
-         // The resting star fades in where the sweep began. It does not travel.
+         // The resting star fades in where the sweep began. It follows the sweep and does not travel.
          var lg:Number = 0;
-         if(t >= 2.05) { lg = (t - 2.05) / 0.35; if(lg > 1) { lg = 1; } }
+         if(t >= 2.75) { lg = (t - 2.75) / 0.35; if(lg > 1) { lg = 1; } }
          var logo:Sprite = this.hzSplash.getChildByName("hzLogo") as Sprite;
          if(logo != null)
          {
@@ -17975,7 +17975,7 @@
             logo.visible = logo.alpha > 0.01;
          }
          var la:Number = 0;
-         if(t >= 2.4) { la = (t - 2.4) / 0.5; if(la > 1) { la = 1; } }
+         if(t >= 3.1) { la = (t - 3.1) / 0.5; if(la > 1) { la = 1; } }
          var sub:Sprite = this.hzSplash.getChildByName("hzSub") as Sprite;
          this.hzSplashAlpha(sub,la * fadeOut * peak,this.hzSplashLead(la) * this.hzSplashLead(fadeOut) * peak);
       }
