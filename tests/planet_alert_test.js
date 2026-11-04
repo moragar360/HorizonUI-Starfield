@@ -36,7 +36,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.43.0.27";', "HUD build id is 0.43.0.27");
+pin('private static const HZ_BUILD:String = "0.43.0.28";', "HUD build id is 0.43.0.28");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
@@ -586,7 +586,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect((!hasCrlf && !loneCr && loneLf) || (hasCrlf && !loneLf && !loneCr), rel + " stays LF or a CRLF checkout");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.27";') >= 0, rel + " build is 0.43.0.27");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.28";') >= 0, rel + " build is 0.43.0.28");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -1632,6 +1632,129 @@ expect(src.indexOf("public function hzSplashOnLoad()") >= 0, "the welcome splash
 expect(src.indexOf("Loading default settings") >= 0, "the splash names default settings when no preset is set");
 expect(src.indexOf("var peak:Number = 0.88;") >= 0, "the splash does not hold full opacity");
 expect(src.indexOf("this.hz41Now()") >= 0 && src.indexOf("getTimer(") < 0, "the splash times itself from hz41Now");
+{
+	const start = src.slice(src.indexOf("private function hzSplashStart"), src.indexOf("private function hzSplashTick"));
+	const nameFn = src.slice(src.indexOf("private function hzSplashActiveName"), src.indexOf("private function hzSplashMeasure"));
+	expect(start.indexOf("hzSplashActiveName") >= 0, "the splash reads the loaded preset");
+	expect(start.indexOf("hz37Cur") < 0, "the splash does not read the F11 row");
+	expect(nameFn.indexOf("hz37St.last") >= 0, "the loaded preset id is last= from the file state");
+	expect(nameFn.indexOf("hz37Cur") < 0, "the preset lookup is not the F11 row");
+	expect(src.indexOf("substr(0,31)") < 0, "a long preset name is not cut at 32 characters");
+	expect(src.indexOf("private function hzSplashFit") >= 0, "a long preset name is fitted to the line");
+	const scaleFn = src.slice(src.indexOf("private function hzSplashS"), src.indexOf("private function hzSplashActiveName"));
+	expect(scaleFn.indexOf("hzTextScale") < 0, "the splash stage scale does not also apply TextScale");
+	expect(src.indexOf("var left:Number = cx - span / 2;") >= 0, "the wordmark is centered on the stage");
+	expect(src.indexOf("hzSplashMeasure") >= 0, "letter fields are measured");
+	expect(src.indexOf("36) * S") < 0 && src.indexOf("0,48 * S") < 0, "letter fields are not a fixed 48 px pitch");
+	const reflow = src.slice(src.indexOf("private function hz43OrigY"), src.indexOf("public function hzSplashOnLoad"));
+	expect(reflow.indexOf("ch.y = oy - oldBase + newBase") >= 0, "a hidden strip moves onto the rows that remain");
+	expect(reflow.indexOf("HorizonCompact_mc.x") < 0 && reflow.indexOf("HorizonCompact_mc.y") < 0, "reflow does not move the merged card");
+	expect(src.indexOf("this.hz43Reflow(vitWant,jetWant)") >= 0, "play mode reflows the visible strips");
+	expect(src.indexOf("this.hz43Reflow(true,true)") >= 0, "ARRANGE shows the full merged card");
+}
+function hzSplashFields(measured, fs) {
+	const pad = 10;
+	const out = [];
+	for (let i = 0; i < measured.length; i++) {
+		const mw = measured[i];
+		let fw = mw > 0 ? mw + pad : fs + pad;
+		if (fw < fs) fw = fs;
+		out.push(fw);
+	}
+	return out;
+}
+function hzSplashLay(cx, measured, fs, S) {
+	const gap = 4;
+	const fields = hzSplashFields(measured, fs);
+	const starD = 20 * S;
+	const starGap = Math.max(4, 8 * S);
+	const wordSpace = fs * 0.34;
+	let span = starD + starGap;
+	for (let i = 0; i < fields.length; i++) {
+		if (i > 0) span += (i === 7 ? wordSpace : gap);
+		span += fields[i];
+	}
+	const left = cx - span / 2;
+	let x = left + starD + starGap;
+	const boxes = [];
+	for (let i = 0; i < fields.length; i++) {
+		if (i > 0) x += (i === 7 ? wordSpace : gap);
+		boxes.push({ l: x, r: x + fields[i], w: fields[i] });
+		x += fields[i];
+	}
+	return { left: left, right: left + span, starR: left + starD, boxes: boxes, wordSpace: wordSpace, gap: gap };
+}
+function hzSplashNoClip(lay, glyphs) {
+	if (lay.starR > lay.boxes[0].l) return false;
+	for (let i = 0; i < lay.boxes.length; i++) {
+		if (lay.boxes[i].w + 0.01 < glyphs[i]) return false;
+		if (i > 0 && lay.boxes[i].l + 0.01 < lay.boxes[i - 1].r) return false;
+	}
+	return true;
+}
+{
+	const wide = [64, 64, 52, 24, 50, 64, 64, 62, 22];
+	const at1 = hzSplashLay(960, wide, 64, 1);
+	expect(Math.abs((at1.left + at1.right) / 2 - 960) < 0.01, "the star and the wordmark center at TextScale 1");
+	expect(hzSplashNoClip(at1, wide), "64 px letters do not clip or overlap at TextScale 1");
+	expect(at1.boxes[7].l - at1.boxes[6].r + 0.01 >= at1.wordSpace, "the word space after N clears the next letter");
+	const fat = [95, 95, 80, 40, 78, 95, 95, 90, 36];
+	const at115 = hzSplashLay(960, fat, 64, 1);
+	expect(Math.abs((at115.left + at115.right) / 2 - 960) < 0.01, "the wordmark stays centered when the glyphs are 95 px");
+	expect(hzSplashNoClip(at115, fat), "95 px glyphs are not stuck in a 62 px field");
+	const stage = 2560 / 1920;
+	const fs = Math.round(64 * stage);
+	const big = fat.map(function (w) { return Math.round(w * stage); });
+	const at4k = hzSplashLay(1280, big, fs, stage);
+	expect(Math.abs((at4k.left + at4k.right) / 2 - 1280) < 0.01, "a wide stage still centers the wordmark");
+	expect(hzSplashNoClip(at4k, big), "a wide stage does not clip the letters");
+	const missing = hzSplashFields([0, 0, 0, 0, 0, 0, 0, 0], 64);
+	expect(missing.every(function (w) { return w >= 64; }), "a missing textWidth still gets a field at least as wide as the font");
+}
+function hzSplashFit(name, fieldW, charW) {
+	const prefix = "Loading preset: ";
+	const measure = function (s) { return s.length * charW; };
+	if (measure(prefix + name) + 8 <= fieldW) return prefix + name;
+	let best = prefix + "...";
+	let lo = 0;
+	let hi = name.length;
+	while (lo <= hi) {
+		const mid = Math.floor((lo + hi) / 2);
+		const cand = prefix + name.slice(0, mid) + "...";
+		if (measure(cand) + 8 <= fieldW) { best = cand; lo = mid + 1; }
+		else hi = mid - 1;
+	}
+	return best;
+}
+{
+	const preset = hzSplashFit("Moragar's Choice", 640, 14);
+	expect(preset === "Loading preset: Moragar's Choice", "a real preset name is shown in full when it fits");
+	const longName = "Moragar's Very Long Choice Of Settings For The Whole Hud";
+	const fitted = hzSplashFit(longName, 420, 14);
+	expect(fitted.indexOf("Loading preset: ") === 0 && fitted.slice(-3) === "...", "a long preset keeps the prefix and an ellipsis");
+	expect(fitted.length * 14 + 8 <= 420, "the ellipsis stays inside the line width");
+	expect(fitted.indexOf(longName) < 0, "a long preset is not left to clip at the field edge");
+}
+function hz43Row(vitOn, jetOn) {
+	const vitBase = vitOn ? 30 : 0;
+	let jetBase = 0;
+	if (jetOn && vitOn) jetBase = 90;
+	else if (jetOn) jetBase = 30;
+	else if (vitOn) jetBase = 60;
+	const move = function (y, oldBase, newBase) { return y - oldBase + newBase; };
+	return { o2: move(30, 30, vitBase), hp: move(60, 30, vitBase), jet: move(90, 90, jetBase) };
+}
+{
+	const both = hz43Row(true, true);
+	expect(both.o2 === 30 && both.hp === 60 && both.jet === 90, "both strips keep the stacked rows");
+	const jetOff = hz43Row(true, false);
+	expect(jetOff.o2 === 30 && jetOff.hp === 60 && jetOff.jet === 60, "a hidden boost row parks on the health row");
+	expect(jetOff.jet <= jetOff.hp + 24, "a hidden boost row leaves no band under health");
+	const jetOn = hz43Row(false, true);
+	expect(jetOn.jet === 30 && jetOn.o2 === 0 && jetOn.hp === 30, "boost moves up when the vitals rows are hidden");
+	const again = hz43Row(true, true);
+	expect(again.jet === 90 && again.o2 === 30, "showing boost again restores the full card");
+}
 expect(src.indexOf("hzMsglogWrap(note,noteW,160)") >= 0, "the history confirm wraps its warning");
 expect(src.indexOf("if(rows[ni].note) { rows[ni].n13 = true; }") >= 0, "CARDS tab notes use the 13 px note row");
 

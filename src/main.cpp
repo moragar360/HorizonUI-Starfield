@@ -152,6 +152,8 @@ namespace HZ
 	std::atomic<bool>          g_splashArmed{false};
 	std::atomic<bool>          g_splashDefer{false};
 	std::atomic<bool>          g_splashWatch{false};
+	std::atomic<std::uint64_t> g_splashPushedGen{0};
+	std::atomic<bool>          g_splashLoadNoted{false};
 	std::atomic<int>           g_splashTries{0};
 	ULONGLONG                  g_splashWatchSince{0};
 	std::atomic<bool>          g_uiMainMenu{false};
@@ -1372,6 +1374,7 @@ namespace HZ
 	std::string       g_fileMsglogIni;
 	std::atomic<bool> g_fileStateReady{false};
 	std::atomic<bool> g_fileStateWant{true};
+	std::atomic<std::uint64_t> g_fileStateGen{0};
 	std::atomic<bool> g_fileActReady{false};
 	std::atomic<bool> g_fileReplyReady{false};
 	std::atomic<bool> g_fileSaveReady{false};
@@ -1410,6 +1413,7 @@ namespace HZ
 				std::lock_guard lk(g_fileMu);
 				g_fileState = st;
 				g_fileStateReady.store(true);
+				g_fileStateGen.fetch_add(1, std::memory_order_relaxed);
 			} catch (...) {
 				REX::WARN("files: preset scan failed");
 			}
@@ -4459,6 +4463,7 @@ namespace HZ
 					g_splashArmed.store(true, std::memory_order_relaxed);
 					g_splashDefer.store(true, std::memory_order_relaxed);
 					g_splashTries.store(0, std::memory_order_relaxed);
+					g_fileStateWant.store(true, std::memory_order_relaxed);
 				}
 				if (saving && (st == St::kSaveCompleted || st == St::kBegin))
 					g_mlSaveReq.store(true);
@@ -4491,12 +4496,38 @@ namespace HZ
 		}
 	}
 
+	// Purpose: give the splash the preset list already scanned on the job thread.
+	// No disk. A newer scan (after the save load) is pushed again. The movie reads last=.
+	// Author: Moragar. Last modified: 2026-11-03.
+	void SplashEnsureState()
+	{
+		std::string st;
+		std::uint64_t gen = 0;
+		{
+			std::lock_guard lk(g_fileMu);
+			if (!g_fileStateReady.load(std::memory_order_relaxed)) return;
+			gen = g_fileStateGen.load(std::memory_order_relaxed);
+			st = g_fileState;
+		}
+		if (st.empty() || gen == 0) return;
+		if (gen == g_splashPushedGen.load(std::memory_order_relaxed)) return;
+		GValue arg(st.c_str());
+		try {
+			if (HudInvoke("hzSetFileState", nullptr, &arg, 1))
+				g_splashPushedGen.store(gen, std::memory_order_relaxed);
+		} catch (...) {
+		}
+	}
+
 	// Purpose: play the startup intro once the loading menu has closed and the HUD is up.
+	// Only a save-load event arms it. A loading screen that is not a save load never does.
 	// The movie builds the splash on first use and returns start, skipped, later, or done.
 	// A failed invoke is ignored. This never pauses the game. Author: Moragar.
 	// Last modified: 2026-11-03.
 	void SplashPoll(ULONGLONG a_now)
 	{
+		if (g_splashArmed.load(std::memory_order_relaxed) || g_splashWatch.load(std::memory_order_relaxed))
+			SplashEnsureState();
 		if (g_splashDefer.load(std::memory_order_relaxed)) {
 			// The load has not covered the HUD yet. Wait so the splash does not play under the load screen.
 		} else if (g_splashArmed.load(std::memory_order_relaxed)) {
@@ -4599,9 +4630,14 @@ namespace HZ
 			g_uiMainMenu.store(uiPub->IsMenuOpen("MainMenu"));
 			g_uiPause.store(uiPub->IsMenuOpen("PauseMenu"));
 			if (g_uiLoading.load(std::memory_order_relaxed)) {
-				g_splashArmed.store(true, std::memory_order_relaxed);
-				g_splashDefer.store(false, std::memory_order_relaxed);
-				g_splashTries.store(0, std::memory_order_relaxed);
+				// Fast travel, doors, grav jumps, and landing use this same menu.
+				// They must not arm the intro. A save load already set g_splashArmed.
+				if (g_splashArmed.load(std::memory_order_relaxed))
+					g_splashDefer.store(false, std::memory_order_relaxed);
+				else if (!g_splashLoadNoted.exchange(true, std::memory_order_relaxed))
+					REX::INFO("HUD intro skipped (not a save load)");
+			} else {
+				g_splashLoadNoted.store(false, std::memory_order_relaxed);
 			}
 		}
 		if (g_coverName.load(std::memory_order_acquire) != nullptr) {

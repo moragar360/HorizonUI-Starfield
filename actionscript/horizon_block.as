@@ -1772,6 +1772,7 @@
 
       private function hzBuildCompact() : void
       {
+         this.hzCOrigY = null;
          var a:Array = null;
          this.HorizonCompact_mc = new Sprite();
          var n0:int = this.HorizonCompact_mc.numChildren;
@@ -2450,7 +2451,7 @@
          var jetWant:Boolean = (this.hzCompact || this.hzShowJetpack) && this.hzRuleOk(this.hzRuleJetpack);
          var vitWant:Boolean = (this.hzCompact || this.hzShowVitals) && this.hzRuleOk(this.hzRuleVitals);
          if(this.HorizonCompact_mc) { this.hzShow(this.HorizonCompact_mc,merged && vitBase && (jetWant || vitWant)); }
-         if(merged && this.HorizonCompact_mc) { this.hz43StripVis(this.hzCVitA,this.hzCVitB,vitWant); this.hz43StripVis(this.hzCJetA,this.hzCJetB,jetWant); }
+         if(merged && this.HorizonCompact_mc) { this.hz43Reflow(vitWant,jetWant); }
          if(this.HorizonCompass_mc) { this.hzShow(this.HorizonCompass_mc,cardBase && this.hzShowCompass && this.hzRuleOk(this.hzRuleCompass)); }
          try { this.hz26Vis(base); } catch(err26:Error) { }
       }
@@ -3223,7 +3224,7 @@
          return ut + "|" + lt + "|" + body;
       }
 
-      // ---------- Message Log popup (0.43.0.27). Inside the 1000x660 F11 window. ----------
+      // ---------- Message Log popup (0.43.0.28). Inside the 1000x660 F11 window. ----------
       // v7 layout: 976x620, rows at least 28 px and wrap long text, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
       private static const HZ_ML_W:Number = 976;
@@ -5264,7 +5265,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.27";
+      private static const HZ_BUILD:String = "0.43.0.28";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -6456,7 +6457,7 @@
             if(c) { this.hzShow(c,on.indexOf(c) >= 0); }
          }
          try { this.hz26CharSync(); this.hz26XpSync(); this.hzE19Sync(); } catch(err26:Error) { }
-         try { if(on.indexOf(this.HorizonCompact_mc) >= 0) { this.hz43StripVis(this.hzCVitA,this.hzCVitB,true); this.hz43StripVis(this.hzCJetA,this.hzCJetB,true); } } catch(eArr:Error) { }
+         try { if(on.indexOf(this.HorizonCompact_mc) >= 0) { this.hz43Reflow(true,true); } } catch(eArr:Error) { }
       }
 
       private function hzLayCopy(src:Object) : Object
@@ -16976,6 +16977,7 @@
       private var hzCVitB:int = 0;
       private var hzCJetA:int = 0;
       private var hzCJetB:int = 0;
+      private var hzCOrigY:Array = null;
       private var hzSplashWelcome:Boolean = true;
       private var hzSplash:Sprite = null;
       private var hzSplashOn:Boolean = false;
@@ -16986,6 +16988,11 @@
       private var hzSplashName:String = "";
       private var hzSplashState:String = "idle";
       private var hzSplashAcc:uint = 0;
+      private var hzSplashX0:Number = 0;
+      private var hzSplashXN:Number = 0;
+      private var hzSplashSubW:Number = 640;
+      private var hzSplashSubFs:Number = 24;
+      private var hzSplashLineShown:String = "";
       private function hz42BodyH() : Number { return this.hzVitalsBars == 1 ? 40 : 58; }
       private function hz42Pitch() : Number { return this.hz42BodyH() + 8; }
       private function hz42BarTh() : Number { return this.hzVitalsBars == 1 ? 4 : 8; }
@@ -17474,22 +17481,55 @@
       }
       // =================== end v0.42.0 r2 ===================
 
-      // 0.43.0.27: show or hide one compact strip (oxygen+health, or boost) without rebuilding the card.
-      private function hz43StripVis(a:int, b:int, on:Boolean) : void
+      // 0.43.0.28: a hidden strip moves onto a row that is still showing, so the card bounds close up.
+      // The sprite's x and y stay put. The always-hidden ammo row at y = 0 is left where it is.
+      private function hz43OrigY() : void
       {
-         if(this.HorizonCompact_mc == null || b <= a) { return; }
-         var i:int = a;
-         var n:int = this.HorizonCompact_mc.numChildren;
-         if(b > n) { b = n; }
-         while(i < b)
+         if(this.hzCOrigY != null || this.HorizonCompact_mc == null) { return; }
+         this.hzCOrigY = [];
+         var i:int = 0;
+         while(i < this.HorizonCompact_mc.numChildren)
          {
             var ch:DisplayObject = this.HorizonCompact_mc.getChildAt(i);
-            if(ch != null) { ch.visible = on; }
+            this.hzCOrigY.push(ch != null ? ch.y : 0);
             i++;
          }
       }
 
-      // 0.43.0.27 startup intro. hudmenu and hudmenu_lrg share this block, so the splash scales in both.
+      private function hz43MoveStrip(a:int, b:int, oldBase:Number, newBase:Number, on:Boolean) : void
+      {
+         if(this.HorizonCompact_mc == null || b <= a) { return; }
+         var n:int = this.HorizonCompact_mc.numChildren;
+         if(b > n) { b = n; }
+         var i:int = a;
+         while(i < b)
+         {
+            var ch:DisplayObject = this.HorizonCompact_mc.getChildAt(i);
+            if(ch != null)
+            {
+               var oy:Number = ch.y;
+               if(this.hzCOrigY != null && i < this.hzCOrigY.length) { oy = Number(this.hzCOrigY[i]); }
+               ch.y = oy - oldBase + newBase;
+               ch.visible = on;
+            }
+            i++;
+         }
+      }
+
+      private function hz43Reflow(vitOn:Boolean, jetOn:Boolean) : void
+      {
+         if(this.HorizonCompact_mc == null) { return; }
+         this.hz43OrigY();
+         var vitBase:Number = vitOn ? 30 : 0;
+         var jetBase:Number = 0;
+         if(jetOn && vitOn) { jetBase = 90; }
+         else if(jetOn) { jetBase = 30; }
+         else if(vitOn) { jetBase = 60; }
+         this.hz43MoveStrip(this.hzCVitA,this.hzCVitB,30,vitBase,vitOn);
+         this.hz43MoveStrip(this.hzCJetA,this.hzCJetB,90,jetBase,jetOn);
+      }
+
+      // 0.43.0.28 startup intro. hudmenu and hudmenu_lrg share this block, so the splash scales in both.
       // Sprites are built on first use. No static tables. A failure hides the splash and leaves the HUD up.
       public function hzSplashOnLoad() : String
       {
@@ -17532,9 +17572,86 @@
       private function hzSplashS(vr:Rectangle) : Number
       {
          var s:Number = 1;
-         try { if(this.hzTextScale >= 1.14) { s = 1.3; } } catch(eS:Error) { s = 1; }
-         if(vr != null && vr.width >= 2400) { s = Math.max(s,vr.width / 1920); }
+         if(vr != null && vr.width >= 2400) { s = vr.width / 1920; }
          return s;
+      }
+
+      // last= from the DLL file state, matched to any preset. The F11 row is not the loaded preset.
+      private function hzSplashActiveName() : String
+      {
+         var last:String = "";
+         try
+         {
+            if(this.hz37St != null && this.hz37St.last != undefined) { last = this.hz37Trim(String(this.hz37St.last)).toLowerCase(); }
+         }
+         catch(eLast:Error) { last = ""; }
+         if(last.length == 0) { return ""; }
+         for each(var p:Object in this.hz37Ps)
+         {
+            if(p != null && String(p.id).toLowerCase() == last)
+            {
+               var n:String = p.n != undefined ? String(p.n) : "";
+               if(n.length > 0) { return n; }
+            }
+         }
+         return "";
+      }
+
+      private function hzSplashMeasure(txt:String, fs:Number, face:String, ls:Number) : Number
+      {
+         var host:Sprite = new Sprite();
+         host.mouseEnabled = false;
+         host.mouseChildren = false;
+         host.x = -8000;
+         host.y = -8000;
+         var w:Number = 0;
+         try
+         {
+            this.addChild(host);
+            var tf:TextField = this.hzWT(host,txt,0,0,4000,fs,face,0xFFFFFF,ls,"left",13);
+            w = this.hzTW(tf);
+         }
+         catch(eM:Error) { w = 0; }
+         try { if(host.parent != null) { host.parent.removeChild(host); } } catch(eR:Error) { }
+         if(!(w > 0)) { return 0; }
+         return w;
+      }
+
+      // Keep the "Loading preset: " prefix. Cut the name, with an ellipsis, to the line width.
+      private function hzSplashFit(name:String, fieldW:Number, fs:Number) : String
+      {
+         var prefix:String = "Loading preset: ";
+         var full:String = prefix + name;
+         if(this.hzSplashMeasure(full,fs,"sb",0.4) + 8 <= fieldW) { return full; }
+         var best:String = prefix + "...";
+         var lo:int = 0;
+         var hi:int = name.length;
+         while(lo <= hi)
+         {
+            var mid:int = int((lo + hi) / 2);
+            var cand:String = prefix + name.substr(0,mid) + "...";
+            if(this.hzSplashMeasure(cand,fs,"sb",0.4) + 8 <= fieldW) { best = cand; lo = mid + 1; }
+            else { hi = mid - 1; }
+         }
+         return best;
+      }
+
+      private function hzSplashLineText() : String
+      {
+         if(this.hzSplashName == null || this.hzSplashName.length == 0) { return "Loading default settings"; }
+         var fs:Number = this.hzSplashSubFs > 0 ? this.hzSplashSubFs : 24;
+         var w:Number = this.hzSplashSubW > 0 ? this.hzSplashSubW : 640;
+         return this.hzSplashFit(this.hzSplashName,w,fs);
+      }
+
+      private function hzSplashRefreshName() : void
+      {
+         var n:String = "";
+         try { n = this.hzSplashActiveName(); } catch(eA:Error) { n = ""; }
+         if(n.length == 0 && this.hzSplashName != null && this.hzSplashName.length > 0) { return; }
+         if(n == this.hzSplashName && this.hzSplashLineShown != null && this.hzSplashLineShown.length > 0) { return; }
+         this.hzSplashName = n;
+         this.hzSplashLine();
       }
 
       private function hzSplashStart() : void
@@ -17552,15 +17669,9 @@
          this.hzSplashCancel = false;
          this.hzSplashT0 = this.hz41Now();
          this.hzSplashName = "";
-         try
-         {
-            var p:Object = this.hz37Cur();
-            if(p != null && String(p.n).length > 0) { this.hzSplashName = String(p.n); }
-         }
-         catch(eN:Error) { this.hzSplashName = ""; }
-         if(this.hzSplashName.length > 32) { this.hzSplashName = this.hzSplashName.substr(0,31) + "..."; }
-         if(this.hzSplash.getChildByName("hzLetters") == null || this.hzSplashAcc != HZ_ACCENT) { this.hzSplashMake(); }
-         else { this.hzSplashLine(); }
+         this.hzSplashLineShown = "";
+         try { this.hzSplashName = this.hzSplashActiveName(); } catch(eN:Error) { this.hzSplashName = ""; }
+         this.hzSplashMake();
          this.hzSplash.visible = true;
       }
 
@@ -17599,6 +17710,7 @@
             this.hzSplashState = "done";
             return;
          }
+         try { this.hzSplashRefreshName(); } catch(eNm:Error) { }
          this.hzSplashApply(t,fade);
       }
 
@@ -17648,9 +17760,11 @@
 
       private function hzSplashLine() : void
       {
+         if(this.hzSplash == null) { return; }
          var sub:Sprite = this.hzSplash.getChildByName("hzSub") as Sprite;
          if(sub == null) { return; }
-         var line:String = this.hzSplashName.length > 0 ? ("Loading preset: " + this.hzSplashName) : "Loading default settings";
+         var line:String = this.hzSplashLineText();
+         this.hzSplashLineShown = line;
          var i:int = 0;
          while(i < sub.numChildren)
          {
@@ -17697,31 +17811,85 @@
          letters.mouseEnabled = false;
          letters.mouseChildren = false;
          letters.y = cy - 36 * S;
-         var word:String = "HORIZON UI";
-         var i:int = 0;
-         var chx:Number = cx - 200 * S;
-         while(i < word.length)
-         {
-            var ch:String = word.charAt(i);
-            if(ch != " ")
-            {
-               var box:Sprite = this.hzSplashBox(letters,ch,chx,0,48 * S,Math.round(64 * S),"bd",acc,1.2);
-               box.name = "c" + i;
-            }
-            chx += (i == 6 ? 28 : 36) * S;
-            i++;
-         }
+         this.hzSplashLayWord(letters,cx,S,acc);
          this.hzSplash.addChild(letters);
          var logo:Sprite = new Sprite();
          logo.name = "hzLogo";
          logo.mouseEnabled = false;
          this.hzSplashGlyph(logo.graphics,0,0,10 * S,acc);
-         logo.x = cx - 236 * S;
+         logo.x = this.hzSplashX0;
          logo.y = cy;
          this.hzSplash.addChild(logo);
-         var line:String = this.hzSplashName.length > 0 ? ("Loading preset: " + this.hzSplashName) : "Loading default settings";
-         var sub:Sprite = this.hzSplashBox(this.hzSplash,line,cx,cy + 48 * S,640 * S,Math.round(24 * S),"sb",acc,0.4);
+         var subFs:Number = Math.round(24 * S);
+         var subW:Number = 640 * S;
+         this.hzSplashSubFs = subFs;
+         this.hzSplashSubW = subW;
+         var line:String = this.hzSplashLineText();
+         this.hzSplashLineShown = line;
+         var sub:Sprite = this.hzSplashBox(this.hzSplash,line,cx,cy + 48 * S,subW,subFs,"sb",acc,0.4);
          sub.name = "hzSub";
+      }
+
+      // Each letter field is the measured glyph plus padding. The star is part of the centered group.
+      private function hzSplashLayWord(letters:Sprite, cx:Number, S:Number, acc:uint) : void
+      {
+         var fs:Number = Math.round(64 * S);
+         var pad:Number = 10;
+         var gap:Number = 4;
+         var word:String = "HORIZON UI";
+         var widths:Array = [];
+         var i:int = 0;
+         while(i < word.length)
+         {
+            var ch:String = word.charAt(i);
+            if(ch != " ")
+            {
+               var mw:Number = this.hzSplashMeasure(ch,fs,"bd",1.2);
+               var fw:Number = mw > 0 ? mw + pad : fs + pad;
+               if(fw < fs) { fw = fs; }
+               widths[i] = fw;
+            }
+            i++;
+         }
+         var starD:Number = 20 * S;
+         var starGap:Number = Math.max(4,8 * S);
+         var wordSpace:Number = fs * 0.34;
+         var span:Number = starD + starGap;
+         var prev:Boolean = false;
+         i = 0;
+         while(i < word.length)
+         {
+            if(word.charAt(i) != " ")
+            {
+               if(prev) { span += (i == 8 ? wordSpace : gap); }
+               span += Number(widths[i]);
+               prev = true;
+            }
+            i++;
+         }
+         var left:Number = cx - span / 2;
+         this.hzSplashX0 = left + starD / 2;
+         var x:Number = left + starD + starGap;
+         var nCenter:Number = this.hzSplashX0;
+         prev = false;
+         i = 0;
+         while(i < word.length)
+         {
+            var ch2:String = word.charAt(i);
+            if(ch2 != " ")
+            {
+               if(prev) { x += (i == 8 ? wordSpace : gap); }
+               var fw2:Number = Number(widths[i]);
+               var center:Number = x + fw2 / 2;
+               var box:Sprite = this.hzSplashBox(letters,ch2,center,0,fw2,fs,"bd",acc,1.2);
+               box.name = "c" + i;
+               if(i == 6) { nCenter = center; }
+               x += fw2;
+               prev = true;
+            }
+            i++;
+         }
+         this.hzSplashXN = nCenter;
       }
 
       private function hzSplashGlyph(g:*, cx:Number, cy:Number, r:Number, col:uint) : void
@@ -17747,9 +17915,6 @@
       {
          if(this.hzSplash == null) { return; }
          if(this.hzSplash.getChildByName("hzLetters") == null) { this.hzSplashMake(); }
-         var vr:Rectangle = this.hzVis();
-         var S:Number = this.hzSplashS(vr);
-         var cx:Number = vr ? vr.x + vr.width / 2 : 960;
          var peak:Number = 0.88;
          var fadeOut:Number = 1;
          if(t > 4.6) { fadeOut = 1 - (t - 4.6) / 1.0; if(fadeOut < 0) { fadeOut = 0; } }
@@ -17757,8 +17922,8 @@
          var starIn:Number = t / 0.6; if(starIn > 1) { starIn = 1; } if(starIn < 0) { starIn = 0; }
          var sweep:Number = 0;
          if(t >= 0.6) { sweep = (t - 0.6) / 1.3; if(sweep > 1) { sweep = 1; } }
-         var x0:Number = cx - 220 * S;
-         var x1:Number = cx + 16 * S;
+         var x0:Number = this.hzSplashX0;
+         var x1:Number = this.hzSplashXN;
          var xs:Number = x0 + (x1 - x0) * sweep;
          var travelA:Number = 0;
          if(t < 0.6) { travelA = starIn; }

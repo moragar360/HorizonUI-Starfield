@@ -77,11 +77,11 @@ Log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
 
 3. The plugin is written to `build\windows\x64\releasedbg\HorizonUI.dll`.
 
-Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.43.0.27 loaded`.
+Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.43.0.28 loaded`.
 
 ### Release checklist: companion reaction log
 
-0.43.0.27 is a pre-release dev build (Message Log P2: capture, storage, the F11 log screen, and Message Log settings). The default name hover changed to Compact (one line: icon, name, key). Full is the taller card, in F11, CARDS, NAME HOVER. Moragar's Choice keeps Compact. VitalsBars compact uses the same merged boost, health, and oxygen card as COMPACT MODE. Full stays the default. That merged card follows the jetpack and vitals show rules, and ARRANGE can move it when either compact setting is on. [UI] StartupIntro=1 plays the welcome splash after each save load. `HZ_HUD_MSG_CAPTURE` is `0`, `HZ_COMMS_MSG_LOG` is `0`, `HZC_MSG_LOG` is `false`, and `hzcRxDbgOn` defaults to `false`. The card backup stays compiled: the queue, Poll, `hzcCardPush`, and the one-line `comms reaction:` status (including `hzcRxWhy`). The one-time `comms reaction selftest:` lines are not part of that trace. They stay on when `Debug=0`. The settings schema stays `0.42.0`.
+0.43.0.28 is a pre-release dev build (Message Log P2: capture, storage, the F11 log screen, and Message Log settings). The default name hover changed to Compact (one line: icon, name, key). Full is the taller card, in F11, CARDS, NAME HOVER. Moragar's Choice keeps Compact. VitalsBars compact uses the same merged boost, health, and oxygen card as COMPACT MODE. Full stays the default. That merged card follows the jetpack and vitals show rules, and ARRANGE can move it when either compact setting is on. [UI] StartupIntro=1 plays the welcome splash after a save load only. The wordmark is measured and centered, the preset line uses the loaded preset, and a hidden boost row closes up. `HZ_HUD_MSG_CAPTURE` is `0`, `HZ_COMMS_MSG_LOG` is `0`, `HZC_MSG_LOG` is `false`, and `hzcRxDbgOn` defaults to `false`. The card backup stays compiled: the queue, Poll, `hzcCardPush`, and the one-line `comms reaction:` status (including `hzcRxWhy`). The one-time `comms reaction selftest:` lines are not part of that trace. They stay on when `Debug=0`. The settings schema stays `0.42.0`.
 
 To turn the traces back on for an in-game check:
 
@@ -95,7 +95,7 @@ To turn the traces back on for an in-game check:
 
 ## Message Log (planned, not released)
 
-0.43.0.27 is Message Log P2: capture, storage, the F11 Message Log, and the Message Log SETTINGS page. The default name hover changed to Compact. Full is in F11, CARDS. VitalsBars compact uses the COMPACT MODE vitals card. Full stays the default. ARRANGE moves that merged card, and [UI] StartupIntro plays the welcome splash after each save load.
+0.43.0.28 is Message Log P2: capture, storage, the F11 Message Log, and the Message Log SETTINGS page. The default name hover changed to Compact. Full is in F11, CARDS. VitalsBars compact uses the COMPACT MODE vitals card. Full stays the default. ARRANGE moves that merged card, and [UI] StartupIntro plays the welcome splash after a save load only. The wordmark is measured and centered, the preset line uses the loaded preset, and a hidden boost row closes up.
 
 - The log starts empty. It records only while `Record=1` and only the types in `LogTypes`.
 - It cannot recover messages from before install, or from while Record was off.
