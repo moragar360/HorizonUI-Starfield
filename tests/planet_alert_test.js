@@ -36,7 +36,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.43.0.28";', "HUD build id is 0.43.0.28");
+pin('private static const HZ_BUILD:String = "0.43.0.29";', "HUD build id is 0.43.0.29");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
@@ -586,7 +586,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect((!hasCrlf && !loneCr && loneLf) || (hasCrlf && !loneLf && !loneCr), rel + " stays LF or a CRLF checkout");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.28";') >= 0, rel + " build is 0.43.0.28");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.29";') >= 0, rel + " build is 0.43.0.29");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -1589,6 +1589,13 @@ expect("VASCO\r\n".replace(/\r\n/g, "\n").indexOf("VASCO\n") === 0, "a CRLF sour
 	expect(pill.indexOf("hzCapTop(nmTf,cy)") >= 0, "the pill name uses the keycap center");
 	expect(pill.indexOf("hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,btnMax,lineFs)") >= 0, "the button row is measured after the name");
 	expect(pill.indexOf("nameX + nameRoom + gap") >= 0, "buttons start after the reserved name");
+	expect(pill.indexOf('o.tone = "acc"') >= 0, "the compact pill name uses the text accent");
+	expect(pill.indexOf("o.tint = null") >= 0, "the compact pill name does not keep another tint");
+	expect(pill.indexOf("var lineFs:Number = 14;") >= 0, "the pill name stays 14 px");
+	expect(pill.indexOf("hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,btnMax,lineFs)") >= 0, "verbs and key chips still draw on the button row");
+	const fullPrompt = src.slice(src.indexOf('else if(kind == "prompt")'), src.indexOf('else if(kind == "foe")'));
+	expect(fullPrompt.indexOf("this.hzTxtTint(nmTf,null)") >= 0, "the full name card keeps its body color");
+	expect(fullPrompt.indexOf('o.tone = "acc"') < 0, "the full name card does not take the pill accent");
 	const names = [
 		["short", 36],
 		["medium", 72],
@@ -1643,7 +1650,13 @@ expect(src.indexOf("this.hz41Now()") >= 0 && src.indexOf("getTimer(") < 0, "the 
 	expect(src.indexOf("private function hzSplashFit") >= 0, "a long preset name is fitted to the line");
 	const scaleFn = src.slice(src.indexOf("private function hzSplashS"), src.indexOf("private function hzSplashActiveName"));
 	expect(scaleFn.indexOf("hzTextScale") < 0, "the splash stage scale does not also apply TextScale");
+	expect(src.indexOf('var word:String = "HORIZON UI";') >= 0, "the wordmark is HORIZON UI, including UI");
 	expect(src.indexOf("var left:Number = cx - span / 2;") >= 0, "the wordmark is centered on the stage");
+	expect(src.indexOf("(t - 0.04 * idx) / 0.40") >= 0, "the letters fade in before the sweep");
+	expect(src.indexOf("if(t >= 1.0) { sweep = (t - 1.0) / 1.2;") >= 0, "the star sweeps once after the wordmark");
+	expect(src.indexOf("var sweeping:Boolean = t >= 1.0 && t < 2.2;") >= 0, "the sweep is a single pass");
+	expect(src.indexOf("if(t >= 2.4) { la = (t - 2.4) / 0.5;") >= 0, "the preset line fades in after the sweep");
+	expect(src.indexOf("else if(t >= 5.6)") >= 0, "the splash still ends at about 5.6 s");
 	expect(src.indexOf("hzSplashMeasure") >= 0, "letter fields are measured");
 	expect(src.indexOf("36) * S") < 0 && src.indexOf("0,48 * S") < 0, "letter fields are not a fixed 48 px pitch");
 	const reflow = src.slice(src.indexOf("private function hz43OrigY"), src.indexOf("public function hzSplashOnLoad"));
@@ -1651,6 +1664,35 @@ expect(src.indexOf("this.hz41Now()") >= 0 && src.indexOf("getTimer(") < 0, "the 
 	expect(reflow.indexOf("HorizonCompact_mc.x") < 0 && reflow.indexOf("HorizonCompact_mc.y") < 0, "reflow does not move the merged card");
 	expect(src.indexOf("this.hz43Reflow(vitWant,jetWant)") >= 0, "play mode reflows the visible strips");
 	expect(src.indexOf("this.hz43Reflow(true,true)") >= 0, "ARRANGE shows the full merged card");
+}
+function hzSplashPhase(t) {
+	const fadeOut = t > 4.6 ? Math.max(0, 1 - (t - 4.6) / 1.0) : 1;
+	const letter = function (idx) {
+		let r = (t - 0.04 * idx) / 0.40;
+		if (r < 0) r = 0;
+		if (r > 1) r = 1;
+		return r * fadeOut;
+	};
+	let sweep = 0;
+	if (t >= 1.0) sweep = Math.min(1, (t - 1.0) / 1.2);
+	const sweeping = t >= 1.0 && t < 2.2;
+	let preset = 0;
+	if (t >= 2.4) preset = Math.min(1, (t - 2.4) / 0.5);
+	return { h: letter(0), i: letter(9), sweep: sweep, sweeping: sweeping, preset: preset * fadeOut, fadeOut: fadeOut };
+}
+{
+	const early = hzSplashPhase(0.2);
+	expect(early.h > 0 && early.i === 0 && !early.sweeping && early.preset === 0, "HORIZON starts before UI, the sweep, and the preset line");
+	const on = hzSplashPhase(0.9);
+	expect(on.h === 1 && on.i === 1 && !on.sweeping && on.preset === 0, "HORIZON UI is fully on before the star moves");
+	const mid = hzSplashPhase(1.6);
+	expect(mid.h === 1 && mid.i === 1 && mid.sweeping && mid.sweep > 0 && mid.sweep < 1 && mid.preset === 0, "the star sweeps once while the wordmark stays on");
+	const after = hzSplashPhase(2.6);
+	expect(!after.sweeping && after.sweep === 1 && after.i === 1 && after.preset > 0 && after.preset < 1, "the preset line starts after the sweep");
+	const held = hzSplashPhase(3.2);
+	expect(held.i === 1 && held.preset === 1 && held.fadeOut === 1 && !held.sweeping, "the wordmark and the preset line hold together");
+	const out = hzSplashPhase(5.2);
+	expect(out.fadeOut < 0.5 && out.fadeOut > 0 && out.i === out.fadeOut, "everything fades out across the last second");
 }
 function hzSplashFields(measured, fs) {
 	const pad = 10;
