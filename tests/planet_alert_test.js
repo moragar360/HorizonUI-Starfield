@@ -36,7 +36,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.43.0.29";', "HUD build id is 0.43.0.29");
+pin('private static const HZ_BUILD:String = "0.43.0.30";', "HUD build id is 0.43.0.30");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
@@ -586,7 +586,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect((!hasCrlf && !loneCr && loneLf) || (hasCrlf && !loneLf && !loneCr), rel + " stays LF or a CRLF checkout");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.29";') >= 0, rel + " build is 0.43.0.29");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.0.30";') >= 0, rel + " build is 0.43.0.30");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -1591,6 +1591,20 @@ expect("VASCO\r\n".replace(/\r\n/g, "\n").indexOf("VASCO\n") === 0, "a CRLF sour
 	expect(pill.indexOf("nameX + nameRoom + gap") >= 0, "buttons start after the reserved name");
 	expect(pill.indexOf('o.tone = "acc"') >= 0, "the compact pill name uses the text accent");
 	expect(pill.indexOf("o.tint = null") >= 0, "the compact pill name does not keep another tint");
+	expect(pill.indexOf("Boolean(a.bStealing)") >= 0, "the compact pill uses the existing steal flag");
+	expect(pill.indexOf("o.tint = HZ_RED") >= 0, "a steal name uses the existing red");
+	expect(pill.indexOf('if(stealName) { o.tone = "main"; o.tint = HZ_RED; }') >= 0, "steal sets red and the body tone on that draw");
+	expect(pill.indexOf('else { o.tone = "acc"; o.tint = null; }') >= 0, "a normal prompt clears red and uses the accent");
+	expect(src.indexOf('var stealSig:int = (show && a != null && Boolean(a.bStealing)) ? 1 : 0;') >= 0, "switching steal redraws the name");
+	function pillNameColor(steal) {
+		if (steal) return { tone: "main", tint: "HZ_RED" };
+		return { tone: "acc", tint: null };
+	}
+	const stealOn = pillNameColor(true);
+	const stealOff = pillNameColor(false);
+	expect(stealOn.tint === "HZ_RED" && stealOn.tone === "main", "a steal prompt draws the name in red");
+	expect(stealOff.tone === "acc" && stealOff.tint === null, "a normal prompt draws the name in the accent");
+	expect(pillNameColor(true).tint === "HZ_RED" && pillNameColor(false).tint === null && pillNameColor(true).tint === "HZ_RED", "steal and normal each set their own color");
 	expect(pill.indexOf("var lineFs:Number = 14;") >= 0, "the pill name stays 14 px");
 	expect(pill.indexOf("hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,btnMax,lineFs)") >= 0, "verbs and key chips still draw on the button row");
 	const fullPrompt = src.slice(src.indexOf('else if(kind == "prompt")'), src.indexOf('else if(kind == "foe")'));

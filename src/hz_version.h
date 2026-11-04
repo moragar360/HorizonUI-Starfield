@@ -4,33 +4,33 @@
 // res/HorizonUI.rc.in includes this header, and the plugin logs and sends the same
 // string (or the version resource that this header produced). Do not copy the
 // numbers into the resource script or into a log line.
-// Product version matches the file version (0.43.0.29). The settings-schema string
+// Product version matches the file version (0.43.0.30). The settings-schema string
 // in the plugin (HZF::kVersion, "0.42.0") is a different value: preset age and the
 // update backup compare against that, not against this file version.
-// 0.43.0.29 is a pre-release dev build for Message Log P2 (F11 log UI and settings).
+// 0.43.0.30 is a pre-release dev build for Message Log P2 (F11 log UI and settings).
 // The default name hover changed to Compact (one line). Full is in F11, CARDS.
 // VitalsBars compact uses the COMPACT MODE card (boost, health, and oxygen). Full stays the default.
 // ARRANGE lists that merged card whenever COMPACT MODE or VitalsBars compact is on.
 // The merged card follows JetpackRule, VitalsRule, and JetpackAutoHide.
 // [UI] StartupIntro=1 plays the welcome splash after a save load only. 0 turns it off.
 // The wordmark is measured and centered, the preset line uses the loaded preset, and a hidden boost row closes up.
-// The compact name pill draws the name in the text accent. The splash shows the wordmark, one star sweep, then the preset line.
+// The compact name pill draws the name in the text accent. A steal prompt draws that name in red. The splash shows the wordmark, one star sweep, then the preset line.
 // A listed session clear that matches nothing leaves every stored row intact.
 // Last modified: 2026-11-03.
 
 #define HZ_FILE_VERSION_MAJOR 0
 #define HZ_FILE_VERSION_MINOR 43
 #define HZ_FILE_VERSION_PATCH 0
-#define HZ_FILE_VERSION_BUILD 29
-#define HZ_FILE_VERSION_STR "0.43.0.29"
+#define HZ_FILE_VERSION_BUILD 30
+#define HZ_FILE_VERSION_STR "0.43.0.30"
 
-// 0.43.0.29: 0 is the release state. 1 writes the verbose HUD-message trace (the
+// 0.43.0.30: 0 is the release state. 1 writes the verbose HUD-message trace (the
 // "hud message:" line and the Comms movie queue as "comms msg:" lines). The card
 // backup (the queue, Poll, hzcCardPush, and the one-line "comms reaction:" status)
 // stays compiled either way. The settings schema above is not this switch.
 #define HZ_COMMS_MSG_LOG 0
 
-// 0.43.0.29: 0 is the release state. 1 logs every ShowHUDMessageEvent as
+// 0.43.0.30: 0 is the release state. 1 logs every ShowHUDMessageEvent as
 // "hud capture:" with no text filter. It is independent of HZ_COMMS_MSG_LOG.
 #define HZ_HUD_MSG_CAPTURE 0
 

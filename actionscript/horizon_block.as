@@ -3224,7 +3224,7 @@
          return ut + "|" + lt + "|" + body;
       }
 
-      // ---------- Message Log popup (0.43.0.29). Inside the 1000x660 F11 window. ----------
+      // ---------- Message Log popup (0.43.0.30). Inside the 1000x660 F11 window. ----------
       // v7 layout: 976x620, rows at least 28 px and wrap long text, time column 168 px, text at least 13 px. No new F keys.
       // Decision A (2026-10-27): every later-point row is dimmed, not just pins.
       private static const HZ_ML_W:Number = 976;
@@ -5265,7 +5265,7 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.29";
+      private static const HZ_BUILD:String = "0.43.0.30";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -10168,7 +10168,8 @@
          // the key text can change (rebinding / controller): include it in the signature
          var keys:String = "";
          if(show) { var kk:int = 0; while(kk < 4) { keys += this.hzT19Key(aw,kk) + ":" + this.hzT19VanLbl(aw,kk,false) + ":" + this.hzT19VanLbl(aw,kk,true) + ","; kk++; } }
-         var sig:String = kind + "|" + m + "|" + sel + "|" + start + "|" + this.hzT19Ver + "|" + Math.round(this.hzTgGhost * 200) + "|" + this.hzTextScale + "|" + this.hzCardColor + "|" + this.hzContOpacity + "|" + HZ_ACCENT + "|" + this.hzTextTone + "|" + this.hzTgShowValue + "|" + this.hzFontFace + "|" + keys + "|" + show + "|" + this.hzTgScale + "|" + this.hz30Hover + "|" + this.hzScrH + "|" + this.hzNameHover + "|" + int(this.hzCardBgOpacity) + "|" + int(this.hzCardShadow) + "|" + (this.hzTextShadow ? 1 : 0) + "|" + this.hzHeaderStyle;
+         var stealSig:int = (show && a != null && Boolean(a.bStealing)) ? 1 : 0;
+         var sig:String = kind + "|" + m + "|" + sel + "|" + start + "|" + this.hzT19Ver + "|" + Math.round(this.hzTgGhost * 200) + "|" + this.hzTextScale + "|" + this.hzCardColor + "|" + this.hzContOpacity + "|" + HZ_ACCENT + "|" + this.hzTextTone + "|" + this.hzTgShowValue + "|" + this.hzFontFace + "|" + keys + "|" + show + "|" + this.hzTgScale + "|" + this.hz30Hover + "|" + this.hzScrH + "|" + this.hzNameHover + "|" + int(this.hzCardBgOpacity) + "|" + int(this.hzCardShadow) + "|" + (this.hzTextShadow ? 1 : 0) + "|" + this.hzHeaderStyle + "|" + stealSig;
          if(sig != this.hzT19Sig)
          {
             this.hzT19Sig = sig;
@@ -10375,9 +10376,10 @@
          o.size = lineFs;
          o.chipCard = "Hover";
          o.chipMin = 13;
-         // Name only. Verbs and key chips stay on the button row. hzTextAccent follows the live STYLE accent.
-         o.tone = "acc";
-         o.tint = null;
+         // Name only. A steal prompt uses HZ_RED. Anything else uses the live text accent. Set both every draw.
+         var stealName:Boolean = a != null && Boolean(a.bStealing);
+         if(stealName) { o.tone = "main"; o.tint = HZ_RED; }
+         else { o.tone = "acc"; o.tint = null; }
          this.hzApplyFmt(o);
          var shown:String = this.hzUC(hdrTxt);
          nmTf.text = shown;
@@ -17483,7 +17485,7 @@
       }
       // =================== end v0.42.0 r2 ===================
 
-      // 0.43.0.29: a hidden strip moves onto a row that is still showing, so the card bounds close up.
+      // 0.43.0.30: a hidden strip moves onto a row that is still showing, so the card bounds close up.
       // The sprite's x and y stay put. The always-hidden ammo row at y = 0 is left where it is.
       private function hz43OrigY() : void
       {
@@ -17531,7 +17533,7 @@
          this.hz43MoveStrip(this.hzCJetA,this.hzCJetB,90,jetBase,jetOn);
       }
 
-      // 0.43.0.29 startup intro. hudmenu and hudmenu_lrg share this block, so the splash scales in both.
+      // 0.43.0.30 startup intro. hudmenu and hudmenu_lrg share this block, so the splash scales in both.
       // Sprites are built on first use. No static tables. A failure hides the splash and leaves the HUD up.
       public function hzSplashOnLoad() : String
       {
