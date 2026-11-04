@@ -15,7 +15,7 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 - **Modular:** a core HUD plus optional **Horizon Font**, **Comms** (subtitles, dialogue and companion reactions), the **Message Log** (a searchable history of your HUD messages), the optional **Scanner**, Horizon's own hand scanner screen, and the optional **Scope** module, a Horizon hold-breath chip for weapon scopes. Core is always installed; the modules are optional parts of the same FOMOD installer and need Core.
 
 ## New in 0.43.0.32 (alpha)
-- **Compact name pill:** verbs such as Use and Recycle always show in full. A long name is the part that shortens, and the pill can grow up to 640 px. The accent name and the red steal name are unchanged.
+- **Compact name pill:** verbs such as Use and Recycle always show in full. A long name is the part that shortens, and the pill grows as needed so verbs are never cut. The accent name and the red steal name are unchanged.
 - **SCANNER and COMMS:** the module status box starts collapsed every time F11 opens. The chevron still expands it.
 - **Welcome intro switch:** F11 > EFFECTS > **WELCOME INTRO** turns the save-load intro on or off. It uses the existing `[UI] StartupIntro` setting (`1` on, `0` off). The ini key still works, and off still logs that the intro was skipped.
 
