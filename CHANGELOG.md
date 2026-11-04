@@ -4,10 +4,12 @@ All notable changes to Horizon UI are listed here, newest first. The format foll
 
 Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never published; 0.41.0 replaced 0.40.3, and its entry includes the changes prepared for 0.40.3.
 
-## [0.43.0.32-alpha] - Unreleased (pending)
+## [0.43.0.32-alpha] - 2026-11-03
+
+Released as v0.43.0.32-alpha.
 
 ### Fixed
-- **Compact name pill:** every verb shows in full (Use, Recycle, Talk, Trade, Steal, Search, Open, and the rest). A long name is the part that shortens. The pill can grow up to 640 px. The name stays in the accent color, and in red on a steal prompt.
+- **Compact name pill:** every verb shows in full (Use, Recycle, Talk, Trade, Steal, Search, Open, and the rest). A long name is the part that shortens, and the pill grows as needed so verbs are never cut. The name stays in the accent color, and in red on a steal prompt.
 - **SCANNER and COMMS:** the module status box starts collapsed every time F11 opens. The chevron still expands it for that visit.
 
 ### Added
