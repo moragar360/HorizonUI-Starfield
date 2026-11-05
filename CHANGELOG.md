@@ -4,7 +4,9 @@ All notable changes to Horizon UI are listed here, newest first. The format foll
 
 Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never published; 0.41.0 replaced 0.40.3, and its entry includes the changes prepared for 0.40.3.
 
-## [0.43.0.33-alpha] - Unreleased (pending)
+## [0.43.0.33-alpha] - 2026-11-04
+
+Released as v0.43.0.33-alpha.
 
 ### Changed
 - **Moragar's Choice** is the author's current in-game layout. The file is `preset/HorizonUI.moragars-choice.ini` (the installer still adds it as `moragars_choice.ini`). `[Comms] HzRev` stays `0`, the default save counter.
