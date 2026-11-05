@@ -53,11 +53,16 @@ std::atomic<AdvanceFn> g_origAdvance{ nullptr };
 int g_formCount = 0;
 bool g_formCapped = false;
 UINT g_pingMsg = 0;
-constexpr std::uintptr_t kPingResult = 0x48534201;
 constexpr int kWinInstall = 1;
 constexpr int kWinRemove = 2;
 constexpr int kWinConfirm = 3;
+constexpr const wchar_t* kPrevProp = L"HorizonShipBuilder.PrevWndProc";
 std::atomic<std::uint32_t> g_pingHits{ 0 };
+std::atomic<std::uint32_t> g_pingSerial{ 0 };
+std::atomic<std::uint32_t> g_pingPosted{ 0 };
+std::atomic<std::uint32_t> g_pingSeen{ 0 };
+std::atomic<std::uintptr_t> g_msgHook{ 0 };
+std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_hudRoot{ nullptr };
 
 constexpr const char* kHudText =
 	"Horizon Ship Builder probe: this line is only a test. Nothing was changed.";
@@ -161,11 +166,14 @@ void LogCursor(const char* when)
 
 LRESULT CALLBACK ProbeWnd(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-	const auto chain = reinterpret_cast<WNDPROC>(g_prev.load());
+	auto chain = reinterpret_cast<WNDPROC>(g_prev.load());
+	if (!hsb::ChainIsLive(chain)) {
+		chain = reinterpret_cast<WNDPROC>(GetPropW(hwnd, kPrevProp));
+		if (hsb::ChainIsLive(chain)) g_prev.store(reinterpret_cast<std::uintptr_t>(chain));
+	}
 	if (g_pingMsg != 0 && msg == g_pingMsg) {
 		g_pingHits.fetch_add(1);
-		if (chain) CallWindowProcW(chain, hwnd, msg, wp, lp);
-		return static_cast<LRESULT>(kPingResult);
+		g_pingSeen.store(static_cast<std::uint32_t>(wp));
 	}
 	const bool down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
 	const bool mouse = msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP || msg == WM_RBUTTONDOWN ||
@@ -220,12 +228,22 @@ void InstallOnWindowThread(HWND hwnd)
 		Fact("F37", "install skipped off the window thread");
 		return;
 	}
-	if (g_hooked.load() && g_hwnd.load() == hwnd) {
+	if (g_hooked.load() && g_hwnd.load() == hwnd &&
+		hsb::ChainIsLive(reinterpret_cast<void*>(g_prev.load()))) {
 		Fact("F37", "hook already in the chain");
 		return;
 	}
 	auto* current = reinterpret_cast<WNDPROC>(GetWindowLongPtrW(hwnd, GWLP_WNDPROC));
 	if (current == ProbeWnd) {
+		auto prev = g_prev.load();
+		if (!hsb::ChainIsLive(reinterpret_cast<void*>(prev)))
+			prev = reinterpret_cast<std::uintptr_t>(GetPropW(hwnd, kPrevProp));
+		if (!hsb::ChainIsLive(reinterpret_cast<void*>(prev))) {
+			Fact("F37", "probe procedure already installed with an empty chain");
+			return;
+		}
+		SetPropW(hwnd, kPrevProp, reinterpret_cast<HANDLE>(prev));
+		g_prev.store(prev);
 		g_hwnd.store(hwnd);
 		g_hooked.store(true);
 		Fact("F37", "probe procedure already installed");
@@ -233,10 +251,11 @@ void InstallOnWindowThread(HWND hwnd)
 	}
 	auto* prev = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(ProbeWnd)));
 	auto* now = reinterpret_cast<WNDPROC>(GetWindowLongPtrW(hwnd, GWLP_WNDPROC));
-	if (now != ProbeWnd) {
+	if (now != ProbeWnd || !hsb::ChainIsLive(prev)) {
 		Fact("F37", "hook installed=0");
 		return;
 	}
+	SetPropW(hwnd, kPrevProp, reinterpret_cast<HANDLE>(prev));
 	g_prev.store(reinterpret_cast<std::uintptr_t>(prev));
 	g_hwnd.store(hwnd);
 	g_hooked.store(true);
@@ -256,6 +275,10 @@ void RemoveOnWindowThread(HWND hwnd)
 	}
 	auto* current = reinterpret_cast<WNDPROC>(GetWindowLongPtrW(hwnd, GWLP_WNDPROC));
 	const auto chain = reinterpret_cast<WNDPROC>(g_prev.load());
+	if (!hsb::ChainIsLive(chain)) {
+		Fact("F37", "probe procedure already installed with an empty chain");
+		return;
+	}
 	if (!hsb::ShouldRestoreWndProc(current, reinterpret_cast<void*>(ProbeWnd))) {
 		g_removeSettled.store(true);
 		Fact("F37", "left a newer window procedure in place; probe stays next and stops logging");
@@ -267,6 +290,7 @@ void RemoveOnWindowThread(HWND hwnd)
 		Fact("F37", "left a newer window procedure in place; probe stays next and stops logging");
 		return;
 	}
+	RemovePropW(hwnd, kPrevProp);
 	g_hooked.store(false);
 	g_hwnd.store(nullptr);
 	g_prev.store(0);
@@ -307,16 +331,25 @@ struct ArmShutdown
 
 ArmShutdown g_armShutdown;
 
-LRESULT CALLBACK CallWndThunk(int code, WPARAM wp, LPARAM lp)
+void DispatchWindowOp(int op, HWND hwnd)
 {
-	if (code == HC_ACTION) {
+	if (op == kWinInstall) InstallOnWindowThread(hwnd);
+	else if (op == kWinRemove) RemoveOnWindowThread(hwnd);
+	else if (op == kWinConfirm) ConfirmOrReinstall(hwnd);
+}
+
+LRESULT CALLBACK GetMsgThunk(int code, WPARAM wp, LPARAM lp)
+{
+	if (code >= 0 && g_winOp.load() != 0) {
 		const int op = g_winOp.exchange(0);
 		HWND hwnd = g_hwnd.load();
 		if (!hwnd) hwnd = GameWindow();
-		if (op == kWinInstall) InstallOnWindowThread(hwnd);
-		else if (op == kWinRemove) RemoveOnWindowThread(hwnd ? hwnd : g_hwnd.load());
-		else if (op == kWinConfirm) ConfirmOrReinstall(hwnd);
+		DispatchWindowOp(op, hwnd);
+		const auto hook = reinterpret_cast<HHOOK>(g_msgHook.exchange(0));
+		if (hook) UnhookWindowsHookEx(hook);
 	}
+	(void)wp;
+	(void)lp;
 	return CallNextHookEx(nullptr, code, wp, lp);
 }
 
@@ -326,24 +359,24 @@ void RunOnWindowThread(HWND hwnd, int op)
 	const DWORD tid = GetWindowThreadProcessId(hwnd, nullptr);
 	if (tid == 0) return;
 	if (tid == GetCurrentThreadId()) {
-		if (op == kWinInstall) InstallOnWindowThread(hwnd);
-		else if (op == kWinRemove) RemoveOnWindowThread(hwnd);
-		else ConfirmOrReinstall(hwnd);
+		DispatchWindowOp(op, hwnd);
 		return;
 	}
+	int idle = 0;
+	if (!g_winOp.compare_exchange_strong(idle, op)) return;
 	g_hwnd.store(hwnd);
-	g_winOp.store(op);
-	HHOOK hook = SetWindowsHookExW(WH_CALLWNDPROC, CallWndThunk, nullptr, tid);
+	HHOOK hook = SetWindowsHookExW(WH_GETMESSAGE, GetMsgThunk, nullptr, tid);
 	if (!hook) {
 		g_winOp.store(0);
 		Fact("F37", "window-thread hook could not be scheduled");
 		return;
 	}
-	DWORD_PTR ignored = 0;
-	SendMessageTimeoutW(hwnd, WM_NULL, 0, 0, SMTO_ABORTIFHUNG, 200, &ignored);
-	UnhookWindowsHookEx(hook);
-	if (g_winOp.exchange(0) == op) {
-		Fact("F37", "window-thread hook did not run");
+	g_msgHook.store(reinterpret_cast<std::uintptr_t>(hook));
+	if (!PostMessageW(hwnd, WM_NULL, 0, 0)) {
+		UnhookWindowsHookEx(hook);
+		g_msgHook.store(0);
+		g_winOp.store(0);
+		Fact("F37", "window-thread request was not posted");
 	}
 }
 
@@ -486,11 +519,11 @@ int HudNotify(RE::BSTEventSource<RE::ShowHUDMessageEvent>* source, RE::ShowHUDMe
 	}
 }
 
-void TryHudOnce()
+void TryHudOnce(const char* which)
 {
 	bool expected = false;
 	if (!g_hudTried.compare_exchange_strong(expected, true)) return;
-	Fact("F31", "begin one HUD notify on the movie thread");
+	Fact("F31", std::string("begin one HUD notify on ") + which);
 	int fault = 0;
 	auto* source = HudSource(&fault);
 	if (fault || !source) {
@@ -504,16 +537,40 @@ void TryHudOnce()
 	event.isWarning = false;
 	const int notified = HudNotify(source, &event);
 	char buf[96];
-	snprintf(buf, sizeof(buf), "notify=%d textChars=%d thread=advance",
-		notified, static_cast<int>(std::char_traits<char>::length(kHudText)));
+	snprintf(buf, sizeof(buf), "notify=%d textChars=%d thread=%s",
+		notified, static_cast<int>(std::char_traits<char>::length(kHudText)), which);
 	Fact("F31", buf);
+}
+
+void NoteHudRoot()
+{
+	if (g_hudRoot.load()) return;
+	auto* ui = RE::UI::GetSingleton();
+	if (!ui) return;
+	auto menu = ui->GetMenu("HUDMenu");
+	if (menu && menu->uiMovie && menu->uiMovie->asMovieRoot)
+		g_hudRoot.store(menu->uiMovie->asMovieRoot.get());
+}
+
+// The one test line posts from the ship builder movie's AdvanceFrame when
+// that movie advances after it closes. HUDMenu's AdvanceFrame is the
+// fallback when the ship movie is not the one advancing.
+void MaybeHudOnThisAdvance(RE::Scaleform::GFx::ASMovieRootBase* self)
+{
+	if (!g_hudPending.load() || !self) return;
+	NoteHudRoot();
+	const bool onShip = self == g_shipRoot.load() && !g_menuOpen.load();
+	const bool onHud = g_hudRoot.load() && self == g_hudRoot.load();
+	if (!onShip && !onHud) return;
+	if (!g_hudPending.exchange(false)) return;
+	TryHudOnce(onShip ? "ship-advance" : "hud-advance");
 }
 
 void HsbAdvance(RE::Scaleform::GFx::ASMovieRootBase* self, bool next)
 {
 	const auto orig = g_origAdvance.load();
 	if (orig && orig != &HsbAdvance) orig(self, next);
-	if (g_hudPending.exchange(false)) TryHudOnce();
+	MaybeHudOnThisAdvance(self);
 	auto* ship = g_shipRoot.load();
 	if (!self || !ship || self != ship || !g_menuOpen.load()) return;
 	const auto now = GetTickCount64();
@@ -589,6 +646,8 @@ void OnMenuMovie(RE::IMenu* menu)
 {
 	if (!menu) return;
 	EnsureSink();
+	if (menu->menuName == "HUDMenu" && menu->uiMovie && menu->uiMovie->asMovieRoot)
+		g_hudRoot.store(menu->uiMovie->asMovieRoot.get());
 	const char* raw = menu->menuName.c_str();
 	const std::string name = raw ? raw : "";
 	if (name.find("Ship") == std::string::npos && name.find("Space") == std::string::npos &&
@@ -600,12 +659,14 @@ void OnMenuMovie(RE::IMenu* menu)
 		InstallAdvanceHook(menu->uiMovie->asMovieRoot.get());
 }
 
-bool PingReachesProbe(HWND hwnd)
+void PostProbePing(HWND hwnd)
 {
-	if (!hwnd || g_pingMsg == 0) return false;
-	DWORD_PTR result = 0;
-	const auto ok = SendMessageTimeoutW(hwnd, g_pingMsg, 0, 0, SMTO_ABORTIFHUNG, 50, &result);
-	return ok != 0 && result == kPingResult;
+	if (!hwnd || g_pingMsg == 0 || g_pingPosted.load() != 0) return;
+	const auto serial = g_pingSerial.fetch_add(1) + 1;
+	if (PostMessageW(hwnd, g_pingMsg, static_cast<WPARAM>(serial), 0))
+		g_pingPosted.store(serial);
+	else
+		RunOnWindowThread(hwnd, kWinConfirm);
 }
 
 // JOBTICK-BEGIN
@@ -624,8 +685,15 @@ void JobTick()
 			}
 		} else if (hsb::ProbePollDue(now, lastHook)) {
 			lastHook = now;
-			if (hsb::HookWasRipped(true, PingReachesProbe(hwnd)))
-				RunOnWindowThread(hwnd, kWinConfirm);
+			const auto posted = g_pingPosted.load();
+			if (posted != 0) {
+				const bool reached = g_pingSeen.load() == posted;
+				g_pingPosted.store(0);
+				if (hsb::HookWasRipped(true, reached))
+					RunOnWindowThread(hwnd, kWinConfirm);
+			}
+			if (g_hooked.load() && g_pingPosted.load() == 0)
+				PostProbePing(hwnd);
 		}
 	} else if (g_hooked.load() && !g_removeSettled.load()) {
 		RunOnWindowThread(hwnd, kWinRemove);
