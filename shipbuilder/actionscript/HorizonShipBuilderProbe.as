@@ -1,10 +1,10 @@
 package
 {
+   import Shared.AS3.Data.BSUIDataManager;
    import flash.display.Sprite;
    import flash.events.Event;
    import flash.events.KeyboardEvent;
    import flash.events.MouseEvent;
-   import flash.text.Font;
    import flash.text.TextField;
    import flash.text.TextFieldType;
    import flash.text.TextFormat;
@@ -94,13 +94,8 @@ package
       
       private function buildOverlay():void
       {
-         var face:String = this.faceName();
          var label:TextFormat = new TextFormat();
          label.size = 13;
-         if(face.length > 0)
-         {
-            label.font = face;
-         }
          label.color = 0xF2E6C8;
          
          this.capture = new Sprite();
@@ -145,10 +140,6 @@ package
          this.field.x = 284;
          this.field.y = 49;
          this.field.text = "Type here";
-         if(face.length > 0)
-         {
-            this.field.embedFonts = true;
-         }
          this.panel.addChild(this.field);
          
          this.status = this.makeText(label,8,82,444,78,"Log is on. Capture is off.");
@@ -167,10 +158,6 @@ package
          box.width = param4;
          box.height = param5;
          box.text = param6;
-         if(param1.font != null && String(param1.font).length > 0)
-         {
-            box.embedFonts = true;
-         }
          return box;
       }
       
@@ -186,16 +173,6 @@ package
          var caption:TextField = this.makeText(param1,6,4,param5 - 8,20,param2);
          button.addChild(caption);
          return button;
-      }
-      
-      private function faceName():String
-      {
-         var found:Array = Font.enumerateFonts(false);
-         if(found != null && found.length > 0)
-         {
-            return Font(found[0]).fontName;
-         }
-         return "";
       }
       
       private function onToggle(param1:MouseEvent):void

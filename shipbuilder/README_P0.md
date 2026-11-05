@@ -21,17 +21,69 @@ xmake build -y HorizonShipBuilder
 
 The target is `HorizonShipBuilder`. It does not link Horizon UI. Copy `build\windows\x64\releasedbg\HorizonShipBuilder.dll` to `Data\SFSE\Plugins\`. Leave the game's menu files alone until the movie steps below.
 
-## Compile the two movies
+## Desktop builder: produce the two probe movies
 
-This repo does not contain a compiled menu. A from-scratch SWF would replace the builder, so do not make one.
+The player does not compile these. On the HorizonUI-Desktop builder, quit Starfield first, then splice the probe class into copies of the two vanilla movies. A from-scratch SWF would replace the builder, so do not make one. Compile against the classes already inside each vanilla movie. `HorizonShipBuilderProbe.as` imports `Shared.AS3.Data.BSUIDataManager`, which the vanilla movie already contains.
 
-1. Copy the game's `spaceshipeditormenu.swf` and `spaceshipeditormenu_lrg.swf` to a work folder. Leave the copies in the game untouched until the work copies compile.
-2. Add `shipbuilder/actionscript/HorizonShipBuilderProbe.as` to the ActionScript sources for those movies. The same class goes in both.
-3. Follow `shipbuilder/actionscript/document_splice.as`. Add the member, the two methods, the `onAddedToStage` lines, and the first lines of `ProcessUserEvent`. Do not return early from `ProcessUserEvent`.
-4. Compile both movies with the desktop builder.
-5. When you are ready to test, put the two results where the game loads those menu names. Keep the vanilla files so you can put them back yourself. The probe never deletes or moves them.
+`<Starfield>` below is the game folder, for example `C:\Program Files (x86)\Steam\steamapps\common\Starfield`.
+
+```
+mkdir shipbuilder\work\normal shipbuilder\work\lrg shipbuilder\Interface
+ffdec -export script shipbuilder\work\normal "<Starfield>\Data\Interface\spaceshipeditormenu.swf"
+ffdec -export script shipbuilder\work\lrg "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf"
+copy /Y shipbuilder\actionscript\HorizonShipBuilderProbe.as shipbuilder\work\normal\HorizonShipBuilderProbe.as
+copy /Y shipbuilder\actionscript\HorizonShipBuilderProbe.as shipbuilder\work\lrg\HorizonShipBuilderProbe.as
+```
+
+Edit the exported `SpaceshipEditorMenu.as` in both work folders using `shipbuilder/actionscript/document_splice.as`. Add `import HorizonShipBuilderProbe;`, the member, the two methods, and the `ProcessUserEvent` lines. If that decompile already has `onAddedToStage`, append the two probe lines at the end of it. If it has no `onAddedToStage`, add the override from the splice notes. Do not return early from `ProcessUserEvent`.
+
+```
+ffdec -importScript "<Starfield>\Data\Interface\spaceshipeditormenu.swf" shipbuilder\Interface\spaceshipeditormenu.swf shipbuilder\work\normal
+ffdec -importScript "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf" shipbuilder\Interface\spaceshipeditormenu_lrg.swf shipbuilder\work\lrg
+```
+
+Those two outputs are the probe movies. Leave the game's copies untouched until the install step.
+
+## Install and restore
+
+Quit Starfield before every copy, including the backup and the restore.
+
+Game files:
+
+`<Starfield>\Data\Interface\spaceshipeditormenu.swf`
+
+`<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf`
+
+Named backup:
+
+`%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup`
+
+```
+mkdir "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup"
+copy /Y "<Starfield>\Data\Interface\spaceshipeditormenu.swf" "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup\spaceshipeditormenu.swf"
+copy /Y "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf" "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup\spaceshipeditormenu_lrg.swf"
+copy /Y "build\windows\x64\releasedbg\HorizonShipBuilder.dll" "<Starfield>\Data\SFSE\Plugins\HorizonShipBuilder.dll"
+copy /Y "shipbuilder\Interface\spaceshipeditormenu.swf" "<Starfield>\Data\Interface\spaceshipeditormenu.swf"
+copy /Y "shipbuilder\Interface\spaceshipeditormenu_lrg.swf" "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf"
+```
 
 The DLL still answers the menu, window, form, and HUD-message checks if the movie is not spliced yet. Movie lines stay empty until the splice is in the loaded SWF.
+
+Restore, after you quit the game:
+
+```
+copy /Y "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup\spaceshipeditormenu.swf" "<Starfield>\Data\Interface\spaceshipeditormenu.swf"
+copy /Y "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup\spaceshipeditormenu_lrg.swf" "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf"
+```
+
+Check that vanilla is back. `fc` prints no differences when the pair matches:
+
+```
+fc /b "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup\spaceshipeditormenu.swf" "<Starfield>\Data\Interface\spaceshipeditormenu.swf"
+fc /b "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup\spaceshipeditormenu_lrg.swf" "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf"
+```
+
+You can leave `HorizonShipBuilder.dll` in `Data\SFSE\Plugins` or remove that one file yourself. The probe does not delete it.
 
 ## In the game
 
@@ -91,7 +143,7 @@ If you use a pad, press the sticks, the d-pad, and the face buttons in the build
 
 ### #13 HUD message
 
-Close the builder once. The probe posts one message, one time per launch: "Horizon Ship Builder probe: this line is only a test. Nothing was changed." Read `FACT F31`. `notify=1` means the call returned. `GetEventSource faulted` means the address lookup failed and the on-screen line was not sent. The close event's opening flag is `FACT F19 | closeEvent`.
+Close the builder once. The probe posts one message, one time per launch, on the next movie advance: "Horizon Ship Builder probe: this line is only a test. Nothing was changed." Read `FACT F31`. `notify=1` and `thread=advance` means the call ran on that movie thread. `GetEventSource faulted` means the address lookup failed and the on-screen line was not sent. The close event's opening flag is `FACT F19 | closeEvent`.
 
 ### #14 Hex field
 
@@ -109,7 +161,9 @@ Press L, then Ctrl+L, with capture off and with no text box focused. `FACT F16` 
 
 ### #17 Arrange capture
 
-Turn on Capture layer. The stage gets a light blue wash. The panel stays on top so you can turn it off. The hook still does not swallow.
+Use a throwaway save for this test. With the capture layer on, the game can still delete a part, change a variant, move the floor, undo, or open the exit confirm. Those are the game's own actions. The probe only records them.
+
+Turn on Capture layer. The stage gets a light blue wash. The panel stays on top so you can turn it off. The hook still forwards every message.
 
 - Drag across the 3D view. Read `LAYER` for down, move, and up. Watch the camera. In Add mode, with a ghost part, click the view and watch whether a part is selected or placed. `AFTER layer down` compares the data feeds. A camera move may leave `same=1`.
 - Press Left and Right. Watch the variant. Read `USER` if the splice logged the event, and `AFTER`.

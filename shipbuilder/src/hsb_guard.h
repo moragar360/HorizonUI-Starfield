@@ -15,6 +15,20 @@ inline constexpr const char* kProbeFile = "HorizonShipBuilder_probe.log";
 inline constexpr const char* kMenuName = "SpaceshipEditorMenu";
 inline constexpr int kFormCap = 40;
 inline constexpr std::size_t kFactCap = 480;
+inline constexpr std::uint64_t kProbePollMs = 250;
+
+inline bool ProbePollDue(std::uint64_t now, std::uint64_t last)
+{
+	if (last == 0) return true;
+	return now >= last && now - last >= kProbePollMs;
+}
+
+// A ping that does not reach the probe means a newer subclass restored
+// over it. The hook flag must clear so the next pass can install again.
+inline bool HookWasRipped(bool wasHooked, bool pingReachedProbe)
+{
+	return wasHooked && !pingReachedProbe;
+}
 
 inline bool IsSep(char c)
 {
