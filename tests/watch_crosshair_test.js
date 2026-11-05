@@ -13,6 +13,7 @@ function readText(p) {
 const root = path.join(__dirname, "..");
 const as = readText(path.join(root, "actionscript", "horizon_block.as"));
 const ini = readText(path.join(root, "Interface", "HorizonUI", "HorizonUI.default.ini"));
+const preset = readText(path.join(root, "preset", "HorizonUI.moragars-choice.ini"));
 
 let failed = 0;
 function expect(cond, msg) {
@@ -128,6 +129,17 @@ expect(reticleBody.indexOf("hzXh") < 0, "the rule does not touch the interact gl
 expect(reticleBody.indexOf("hz43VanillaReticle") >= 0, "restore checks the game show rule");
 expect(funcBody(as, "hz43ReticleHide").indexOf("HZ_HCT_INTERACT") >= 0, "the interact type is never hidden here");
 expect(as.indexOf("this.hz43Reticle()") < as.indexOf("this.hzXhTick()"), "the ring is restored before the glyph is drawn");
+
+expect(ini.indexOf("WatchX=-1") >= 0 && ini.indexOf("WatchY=-1") >= 0, "default watch position is the lower-left home");
+expect(ini.indexOf("WatchScale=-1") >= 0, "watch size defaults to HudScale");
+expect(as.indexOf('"Watch","Enemy"') < 0 && as.indexOf('"HudMessages","Watch"') >= 0, "Watch is an Arrange key");
+expect(as.indexOf('"WATCH"') >= 0, "Arrange names the watch");
+expect(as.indexOf('["Watch",false]') >= 0, "Watch has its own size entry");
+expect(as.indexOf('this.hz34Sz("Watch")') >= 0, "F11 has a watch size row");
+expect(placeBody.indexOf('hzLayHas("Watch")') >= 0, "a saved watch position is detected");
+expect(as.indexOf("function hz43ApplyHome") >= 0 && as.indexOf("function hz43ApplySaved") >= 0, "home and saved placement are separate");
+expect(preset.indexOf("WatchStyle=0") >= 0 && preset.indexOf("CrosshairRule=0") >= 0, "Moragar's Choice sets both rules to the default");
+expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's Choice does not move the watch");
 
 if (failed) {
 	console.error(failed + " failed");

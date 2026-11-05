@@ -9,8 +9,8 @@ Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never publish
 Not published. No tag. The settings schema stays 0.42.0, so an existing `HorizonUI.user.ini` carries over. `WatchStyle` and `CrosshairRule` stay at their defaults until you change them.
 
 ### Added
-- **Watch** in F11 > CARDS. `WatchStyle` under `[Cards Extra]`: 0 off (default), 1 the game's watch, 2 the game's watch tinted with your card color and accent, 3 Horizon digital, 4 Horizon analog. Off matches the previous HUD. Arrange positions stay put. If a showing card overlaps that corner, the watch sits above the card.
-- **Crosshair visibility** in F11 > RULES. `CrosshairRule` under `[Rules]`: 0 always (default), 1 only with a weapon drawn, 2 off. This gates the center reticle only. `CrosshairStyle` is unchanged.
+- **Watch** in F11 > CARDS. `WatchStyle` under `[Cards Extra]`: 0 off (default), 1 the game's watch, 2 the game's watch tinted with your card color and accent, 3 Horizon digital, 4 Horizon analog. Off matches the previous HUD. Horizon Digital and Analog are Arrange cards. `WatchX` and `WatchY` save the spot (`-1` is the lower-left home). `WatchScale` is the size (`-1` is HudScale). While the watch is still at the home, a showing card in that corner lifts it 8 px. A saved spot stays put. `hudmenu` and `hudmenu_lrg` share the watch, so both use the same spot.
+- **Crosshair visibility** in F11 > RULES. `CrosshairRule` under `[Rules]`: 0 always (default), 1 only with a weapon drawn, 2 off. This hides the aiming dot or reticle only. The center interact ring and its glyph stay. A restore puts back only a hide this rule made, and it leaves an iron-sights hide alone. `CrosshairStyle` is unchanged.
 
 ### Changed
 - **SFSE plugin** file and product version are 0.43.1.0. This build is not a release download yet.
