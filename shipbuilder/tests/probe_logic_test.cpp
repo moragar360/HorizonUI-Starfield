@@ -115,6 +115,8 @@ int main()
 	Expect(hsb::HookWasRipped(true, false), "a missed ping clears the hook");
 	Expect(!hsb::HookWasRipped(true, true), "a live ping keeps the hook");
 	Expect(!hsb::HookWasRipped(false, false), "an absent hook is not a rip");
+	Expect(hsb::ChainIsLive(reinterpret_cast<const void*>(1)), "a stored procedure can be called");
+	Expect(!hsb::ChainIsLive(nullptr), "an empty chain is not live");
 
 	const std::string dirty = hsb::FactLine("F16", "line\r\nnext");
 	Expect(dirty.find('\n') == std::string::npos && dirty.find('\r') == std::string::npos, "facts stay on one line");
@@ -152,9 +154,11 @@ int main()
 		"arrange tests are in the readme");
 	Expect(readme.find("Data\\Interface\\spaceshipeditormenu.swf") != std::string::npos, "normal movie path");
 	Expect(readme.find("Data\\Interface\\spaceshipeditormenu_lrg.swf") != std::string::npos, "large movie path");
+	Expect(readme.find("Starfield - Interface.ba2") != std::string::npos, "archive source");
+	Expect(readme.find("spaceshipeditormenu*.swf") != std::string::npos, "loose movie check");
 	Expect(readme.find("HorizonShipBuilder_vanilla_backup") != std::string::npos, "named backup");
 	Expect(readme.find("throwaway save") != std::string::npos, "throwaway save warning");
-	Expect(readme.find("fc /b") != std::string::npos, "restore check");
+	Expect(readme.find("hud-advance") != std::string::npos, "HUD advance is the documented post");
 
 	const std::string lua = ReadFile(repo / "xmake.lua");
 	Expect(lua.find("target(\"HorizonShipBuilder\")") != std::string::npos, "probe target");
@@ -167,6 +171,8 @@ int main()
 	Expect(plugin.find("ProbeMayAppend") != std::string::npos, "plugin checks the log path");
 	Expect(plugin.find("ShouldRestoreWndProc") != std::string::npos, "plugin uses the unhook rule");
 	Expect(plugin.find(std::string("swallowed") + "=0") != std::string::npos, "the hook does not swallow");
+	Expect(plugin.find("SendMessage") == std::string::npos, "the job side does not wait on the window");
+	Expect(plugin.find("PostMessageW") != std::string::npos, "the job side posts to the window");
 	Expect(plugin.find("DllMain") != std::string::npos, "unload unhook");
 	Expect(plugin.find("AdvanceFrame") != std::string::npos, "movie advance hook");
 	const auto jobA = plugin.find("JOBTICK-BEGIN");

@@ -30,6 +30,13 @@ inline bool HookWasRipped(bool wasHooked, bool pingReachedProbe)
 	return wasHooked && !pingReachedProbe;
 }
 
+// An installed probe must call the previous procedure. An empty chain
+// would drop input on the default procedure and never reach the game.
+inline bool ChainIsLive(const void* previous)
+{
+	return previous != nullptr;
+}
+
 inline bool IsSep(char c)
 {
 	return c == '/' || c == '\\';

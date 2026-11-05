@@ -23,65 +23,99 @@ The target is `HorizonShipBuilder`. It does not link Horizon UI. Copy `build\win
 
 ## Desktop builder: produce the two probe movies
 
-The player does not compile these. On the HorizonUI-Desktop builder, quit Starfield first, then splice the probe class into copies of the two vanilla movies. A from-scratch SWF would replace the builder, so do not make one. Compile against the classes already inside each vanilla movie. `HorizonShipBuilderProbe.as` imports `Shared.AS3.Data.BSUIDataManager`, which the vanilla movie already contains.
+The player does not compile these. Quit Starfield first. A stock install keeps `spaceshipeditormenu.swf` and `spaceshipeditormenu_lrg.swf` inside `Data\Starfield - Interface.ba2`, not as loose files. The builder extracts those two movies from the archive, splices the probe, and writes loose probe SWFs under `shipbuilder\Interface`. A from-scratch SWF would replace the builder, so do not make one. Compile against the classes already inside each vanilla movie. `HorizonShipBuilderProbe.as` imports `Shared.AS3.Data.BSUIDataManager`, which the vanilla movie already contains.
 
 `<Starfield>` below is the game folder, for example `C:\Program Files (x86)\Steam\steamapps\common\Starfield`.
 
+If a loose movie is already in `Data\Interface`, that file is the one to splice (a loose vanilla extract, or another mod). If `dir` lists nothing, extract from the archive:
+
 ```
-mkdir shipbuilder\work\normal shipbuilder\work\lrg shipbuilder\Interface
-ffdec -export script shipbuilder\work\normal "<Starfield>\Data\Interface\spaceshipeditormenu.swf"
-ffdec -export script shipbuilder\work\lrg "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf"
+dir /b "<Starfield>\Data\Interface\spaceshipeditormenu*.swf"
+mkdir shipbuilder\work\ba2 shipbuilder\work\normal shipbuilder\work\lrg shipbuilder\Interface
+bsarch unpack "<Starfield>\Data\Starfield - Interface.ba2" shipbuilder\work\ba2
+```
+
+`bsarch` may be `Archive2` with `-extract=shipbuilder\work\ba2` instead. Copy `spaceshipeditormenu.swf` and `spaceshipeditormenu_lrg.swf` out of the extract folder. Those copies are the ffdec inputs below. Do not write back into the `.ba2`.
+
+```
+ffdec -export script shipbuilder\work\normal shipbuilder\work\ba2\spaceshipeditormenu.swf
+ffdec -export script shipbuilder\work\lrg shipbuilder\work\ba2\spaceshipeditormenu_lrg.swf
 copy /Y shipbuilder\actionscript\HorizonShipBuilderProbe.as shipbuilder\work\normal\HorizonShipBuilderProbe.as
 copy /Y shipbuilder\actionscript\HorizonShipBuilderProbe.as shipbuilder\work\lrg\HorizonShipBuilderProbe.as
 ```
 
+When the source was a loose file, point ffdec at that loose path instead of `shipbuilder\work\ba2\...`.
+
 Edit the exported `SpaceshipEditorMenu.as` in both work folders using `shipbuilder/actionscript/document_splice.as`. Add `import HorizonShipBuilderProbe;`, the member, the two methods, and the `ProcessUserEvent` lines. If that decompile already has `onAddedToStage`, append the two probe lines at the end of it. If it has no `onAddedToStage`, add the override from the splice notes. Do not return early from `ProcessUserEvent`.
 
 ```
-ffdec -importScript "<Starfield>\Data\Interface\spaceshipeditormenu.swf" shipbuilder\Interface\spaceshipeditormenu.swf shipbuilder\work\normal
-ffdec -importScript "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf" shipbuilder\Interface\spaceshipeditormenu_lrg.swf shipbuilder\work\lrg
+ffdec -importScript shipbuilder\work\ba2\spaceshipeditormenu.swf shipbuilder\Interface\spaceshipeditormenu.swf shipbuilder\work\normal
+ffdec -importScript shipbuilder\work\ba2\spaceshipeditormenu_lrg.swf shipbuilder\Interface\spaceshipeditormenu_lrg.swf shipbuilder\work\lrg
 ```
 
-Those two outputs are the probe movies. Leave the game's copies untouched until the install step.
+Those two outputs are the probe movies.
 
 ## Install and restore
 
-Quit Starfield before every copy, including the backup and the restore.
+Quit Starfield before every copy, delete, or move.
 
-Game files:
+Loose paths the game prefers over the archive:
 
 `<Starfield>\Data\Interface\spaceshipeditormenu.swf`
 
 `<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf`
 
-Named backup:
+Named backup, used only when a loose movie is already there:
 
 `%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup`
+
+See whether loose movies exist:
+
+```
+dir /b "<Starfield>\Data\Interface\spaceshipeditormenu*.swf"
+```
+
+No file name means a stock archive install. Back up nothing. A listed name means a loose vanilla or another mod. Back that file up before you replace it:
 
 ```
 mkdir "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup"
 copy /Y "<Starfield>\Data\Interface\spaceshipeditormenu.swf" "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup\spaceshipeditormenu.swf"
 copy /Y "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf" "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup\spaceshipeditormenu_lrg.swf"
+```
+
+Skip a `copy` whose source is missing. Then install the DLL and the loose probe movies:
+
+```
 copy /Y "build\windows\x64\releasedbg\HorizonShipBuilder.dll" "<Starfield>\Data\SFSE\Plugins\HorizonShipBuilder.dll"
+mkdir "<Starfield>\Data\Interface"
 copy /Y "shipbuilder\Interface\spaceshipeditormenu.swf" "<Starfield>\Data\Interface\spaceshipeditormenu.swf"
 copy /Y "shipbuilder\Interface\spaceshipeditormenu_lrg.swf" "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf"
 ```
 
 The DLL still answers the menu, window, form, and HUD-message checks if the movie is not spliced yet. Movie lines stay empty until the splice is in the loaded SWF.
 
-Restore, after you quit the game:
+Restore, after you quit the game.
+
+Stock archive install: delete the loose probe movies so the archive copies load again. Move them out instead of deleting if you want to keep the probe files:
+
+```
+del "<Starfield>\Data\Interface\spaceshipeditormenu.swf"
+del "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf"
+dir /b "<Starfield>\Data\Interface\spaceshipeditormenu*.swf"
+```
+
+The check passes when that `dir` prints no file name.
+
+Loose movie that you backed up: put those files back, then confirm they match the backup:
 
 ```
 copy /Y "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup\spaceshipeditormenu.swf" "<Starfield>\Data\Interface\spaceshipeditormenu.swf"
 copy /Y "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup\spaceshipeditormenu_lrg.swf" "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf"
-```
-
-Check that vanilla is back. `fc` prints no differences when the pair matches:
-
-```
 fc /b "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup\spaceshipeditormenu.swf" "<Starfield>\Data\Interface\spaceshipeditormenu.swf"
 fc /b "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup\spaceshipeditormenu_lrg.swf" "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf"
 ```
+
+`fc` prints no differences when the pair matches.
 
 You can leave `HorizonShipBuilder.dll` in `Data\SFSE\Plugins` or remove that one file yourself. The probe does not delete it.
 
@@ -143,7 +177,7 @@ If you use a pad, press the sticks, the d-pad, and the face buttons in the build
 
 ### #13 HUD message
 
-Close the builder once. The probe posts one message, one time per launch, on the next movie advance: "Horizon Ship Builder probe: this line is only a test. Nothing was changed." Read `FACT F31`. `notify=1` and `thread=advance` means the call ran on that movie thread. `GetEventSource faulted` means the address lookup failed and the on-screen line was not sent. The close event's opening flag is `FACT F19 | closeEvent`.
+Close the builder once. The probe posts one message, one time per launch: "Horizon Ship Builder probe: this line is only a test. Nothing was changed." By design that post runs on the ship builder movie's AdvanceFrame when that movie advances after it closes. HUDMenu's AdvanceFrame posts it when the ship movie is not the one advancing. Read `FACT F31`. `thread=ship-advance` or `thread=hud-advance` names which one ran. `notify=1` means the call returned. `GetEventSource faulted` means the address lookup failed and the on-screen line was not sent. The close event's opening flag is `FACT F19 | closeEvent`.
 
 ### #14 Hex field
 
