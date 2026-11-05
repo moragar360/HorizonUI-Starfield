@@ -246,14 +246,14 @@ inline std::string PresetContentKey(const std::string& a_text)
 // Inputs: user flag (true for presets\user) and the file name only.
 // Outputs: true for a shipped file whose name does not start with "HorizonUI.".
 // The installer copy is moragars_choice.ini. The loose file is
-// HorizonUI.moragars-choice-0.42.0.ini.
+// HorizonUI.moragars-choice.ini.
 // Dependencies: none.
-// Last modified: 2026-10-20.
+// Last modified: 2026-11-04.
 inline bool IsInstallerPresetFile(bool a_user, const std::string& a_fileName)
 {
 	if (a_user) return false;
 	const std::string f = Lower(a_fileName);
-	// "HorizonUI." is the loose package name (HorizonUI.moragars-choice-0.42.0.ini), not the installer file.
+	// "HorizonUI." is the loose package name (HorizonUI.moragars-choice.ini), not the installer file.
 	return !f.starts_with("horizonui.");
 }
 
