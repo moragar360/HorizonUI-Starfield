@@ -94,3 +94,19 @@ target("HorizonUI")
         table.insert(files, path.join(target:configdir(), "horizonui-plugin.cpp"))
         target:set("files", files)
     end)
+
+-- Read-only ship builder probe. Separate target. It does not link Horizon UI.
+target("HorizonShipBuilder")
+    set_version("0.0.1")
+    add_rules("commonlibsf.plugin", {
+        name = "HorizonShipBuilder",
+        author = "Moragar",
+        description = "Horizon Ship Builder read-only probe",
+        email = "208107460+moragar360@users.noreply.github.com"
+    })
+
+    add_files("shipbuilder/src/**.cpp")
+    add_headerfiles("shipbuilder/src/**.h")
+    add_includedirs("shipbuilder/src")
+    set_pcxxheader("shipbuilder/src/pch.h")
+    add_syslinks("user32", "shell32", "ole32")
