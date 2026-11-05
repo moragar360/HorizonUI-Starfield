@@ -1996,7 +1996,7 @@
                case "containerscale": if(!isNaN(nv)) { this.hzTgScale = this.hz34ScClamp(nv); this.hzTgScaleSet = true; this.hzT19Sig = ""; } break;
                case "crosshairstyle": if(!isNaN(nv)) { this.hzXhStyle = Math.max(0,Math.min(3,int(nv))); this.hzXhSig = ""; } break;
                case "crosshairrule": if(!isNaN(nv)) { this.hzCrossRule = Math.max(0,Math.min(2,int(nv))); } break;
-               case "watchstyle": if(!isNaN(nv)) { this.hzWatchStyle = Math.max(0,Math.min(4,int(nv))); this.hz43Sig = ""; this.hzHideCache = null; } break;
+               case "watchstyle": if(!isNaN(nv)) { this.hzWatchStyle = Math.max(0,Math.min(4,int(nv))); this.hz43Force = true; this.hzHideCache = null; } break;
                case "objectring": if(!isNaN(nv)) { this.hzObjRing = Math.max(0,Math.min(2,int(nv))); } break;
                case "screenheight": if(!isNaN(nv)) { this.hzScrH = nv >= 360 && nv <= 4320 ? int(nv) : 0; this.hzT19Sig = ""; } break;
                case "headerstyle": if(!isNaN(nv)) { this.hzHeaderStyle = Math.max(0,Math.min(1,int(nv))); this.hzApplyTypo(); } break;
@@ -5020,7 +5020,7 @@
          if(p.WatchStyle != undefined && !isNaN(Number(p.WatchStyle)))
          {
             var nws:int = Math.max(0,Math.min(4,int(p.WatchStyle)));
-            if(nws != this.hzWatchStyle) { this.hzWatchStyle = nws; this.hz43Sig = ""; this.hzHideCache = null; }
+            if(nws != this.hzWatchStyle) { this.hzWatchStyle = nws; this.hz43Force = true; this.hzHideCache = null; }
          }
          if(p.ObjectRing != undefined && !isNaN(Number(p.ObjectRing))) { this.hzObjRing = Math.max(0,Math.min(2,int(p.ObjectRing))); }
          if(p.ContainerScale != undefined && !isNaN(Number(p.ContainerScale))) { this.hzTgScale = this.hz34ScClamp(p.ContainerScale); this.hzT19Sig = ""; }
@@ -18035,9 +18035,66 @@
       private static const HZ43_R:Number = 132;
       private var hz43Watch:Sprite = null;
       private var hz43Face:Sprite = null;
-      private var hz43Sig:String = "";
+      private var hz43Force:Boolean = true;
       private var hz43TintOn:Boolean = false;
       private var hz43RetHid:Boolean = false;
+      private var hz43H:int = 0;
+      private var hz43M:int = 0;
+      private var hz43Ut:int = 0;
+      private var hz43Ok:int = 0;
+      private var hz43DayB:int = -100000;
+      private var hz43PcH:int = -1;
+      private var hz43PcM:int = -1;
+      private var hz43PcFr:int = -100000;
+      private var hz43PcTxt:String = "--";
+      private var hz43LastH:int = -1;
+      private var hz43LastM:int = -1;
+      private var hz43LastUt:int = -1;
+      private var hz43LastOk:int = -1;
+      private var hz43LastDay:int = -100000;
+      private var hz43LastHead:int = -100000;
+      private var hz43LastO2:int = -1;
+      private var hz43LastCo2:int = -1;
+      private var hz43LastPcH:int = -1;
+      private var hz43LastPcM:int = -1;
+      private var hz43LastTemp:int = -100000;
+      private var hz43LastUnit:int = -1;
+      private var hz43LastClk:int = -1;
+      private var hz43LastAcc:uint = 0xFFFFFFFF;
+      private var hz43LastAtt:int = -1;
+      private var hz43Att:int = 0;
+      private var hz43LastMode:int = -1;
+      private var hz43Body:String = null;
+      private var hz43LastBody:String = null;
+      private var hz43VrL:Number = NaN;
+      private var hz43VrT:Number = NaN;
+      private var hz43VrR:Number = NaN;
+      private var hz43VrB:Number = NaN;
+      private var hz43Lx:Number = 0;
+      private var hz43Ly:Number = 0;
+      private var hz43Rx:Number = 0;
+      private var hz43Ry:Number = 0;
+      private var hz43HaveVr:Boolean = false;
+      private var hz43VrTick:int = 0;
+      private var hz43VrSeen:int = -1;
+      private var hz43P0:Point = null;
+      private var hz43P1:Point = null;
+      private var hz43Cx:Array = null;
+      private var hz43Cy:Array = null;
+      private var hz43Cw:Array = null;
+      private var hz43Chh:Array = null;
+      private var hz43Cv:Array = null;
+      private var hz43Pm:Number = NaN;
+      private var hz43Ps:Number = NaN;
+      private var hz43CtCard:ColorTransform = null;
+      private var hz43CtAcc:ColorTransform = null;
+      private var hz43CtId:ColorTransform = null;
+      private var hz43TintCard:uint = 0xFFFFFFFF;
+      private var hz43TintAcc:uint = 0xFFFFFFFF;
+      private var hz43FillSeen:int = -99999;
+      private var hz43HexSeen:int = -99999;
+      private var hz43FillU:uint = 0;
+      private var hz43TintD:Array = null;
       private var hz43LocT:TextField = null;
       private var hz43LocL:TextField = null;
       private var hz43RealT:TextField = null;
@@ -18088,32 +18145,68 @@
          }
       }
 
-      private function hz43HM() : Object
+      // Writes the clock into fields. No object, and no string, on the steady path.
+      private function hz43Read() : void
       {
          if(this.hzPpDay >= 0)
          {
             var hh:Number = (this.hzPpDay * 24) % 24;
-            var H:int = int(Math.floor(hh));
-            var M:int = int(Math.floor((hh - H) * 60));
-            return {"h":H,"m":M,"ut":false,"ok":true};
+            this.hz43H = int(Math.floor(hh));
+            this.hz43M = int(Math.floor((hh - this.hz43H) * 60));
+            this.hz43Ut = 0;
+            this.hz43Ok = 1;
+            this.hz43DayB = int(Math.round(this.hzPpDay * 1000));
+            return;
          }
          if(this.hzPpUT >= 0)
          {
-            var uh:int = int(Math.floor(this.hzPpUT)) % 24;
-            var um:int = int(Math.floor((this.hzPpUT - Math.floor(this.hzPpUT)) * 60));
-            return {"h":uh,"m":um,"ut":true,"ok":true};
+            var whole:Number = Math.floor(this.hzPpUT);
+            this.hz43H = int(whole) % 24;
+            this.hz43M = int(Math.floor((this.hzPpUT - whole) * 60));
+            this.hz43Ut = 1;
+            this.hz43Ok = 1;
+            this.hz43DayB = int(Math.round(((this.hzPpUT % 24) / 24) * 1000));
+            return;
          }
-         return {"h":0,"m":0,"ut":false,"ok":false};
+         this.hz43H = 0;
+         this.hz43M = 0;
+         this.hz43Ut = 0;
+         this.hz43Ok = 0;
+         this.hz43DayB = -1;
       }
 
-      private function hz43Real() : String
+      // One Date, at most once a second, and only while the digital face is showing.
+      // The frame counter is the same cheap gate the planet clock already uses.
+      private function hz43PcSample() : void
       {
+         if(this.hzWatchStyle != 3) { return; }
+         if(this.hz43PcH >= 0 && ((this.hzFrameN - this.hz43PcFr) < 60 || (this.hzFrameN % 60) != 11)) { return; }
+         this.hz43PcFr = this.hzFrameN;
          try
          {
             var dt:Date = new Date();
-            return this.hzFmtClock(dt.getHours(),dt.getMinutes());
+            var h:int = dt.getHours();
+            var m:int = dt.getMinutes();
+            if(h != this.hz43PcH || m != this.hz43PcM || this.hzClockFmt != this.hz43LastClk)
+            {
+               this.hz43PcH = h;
+               this.hz43PcM = m;
+               this.hz43PcTxt = this.hzFmtClock(h,m);
+            }
          }
-         catch(err:Error) { return "--"; }
+         catch(err:Error)
+         {
+            this.hz43PcH = -2;
+            this.hz43PcM = -2;
+            this.hz43PcTxt = "--";
+         }
+      }
+
+      private function hz43AttCode() : int
+      {
+         if(this.hz26O2F < 0.35) { return 1; }
+         if(this.hz26Co2F > 0.35) { return 2; }
+         return 0;
       }
 
       private function hz43Band(g:*, cx:Number, cy:Number, r0:Number, r1:Number, a0:Number, a1:Number, col:uint, al:Number) : void
@@ -18241,10 +18334,10 @@
          w.visible = false;
       }
 
-      private function hz43Attn() : String
+      private function hz43AttWord() : String
       {
-         if(this.hz26O2F < 0.35) { return "LOW O2"; }
-         if(this.hz26Co2F > 0.35) { return "HIGH CO2"; }
+         if(this.hz43Att == 1) { return "LOW O2"; }
+         if(this.hz43Att == 2) { return "HIGH CO2"; }
          return "";
       }
 
@@ -18260,7 +18353,6 @@
          this.hz43O2L.visible = this.hz43CO2L.visible = true;
          this.hz43Half(g,this.hz26O2F,true,HZ43_O2,digital);
          this.hz43Half(g,this.hz26Co2F,false,HZ43_CO2,digital);
-         var hm:Object = this.hz43HM();
          var day:Number = this.hzPpDay >= 0 ? this.hzPpDay : (this.hzPpUT >= 0 ? (this.hzPpUT % 24) / 24 : -1);
          if(digital)
          {
@@ -18278,7 +18370,7 @@
             }
             this.hz43Ticks(g);
             this.hz43Diamond(g,0,-HZ43_R + 22);
-            this.hz43Hands(g,hm);
+            this.hz43Hands(g);
             this.hz43Dial(g,0,78,day);
             this.hz43PmT.x = -18; this.hz43PmT.y = 62;
             this.hz43DayT.x = -24; this.hz43DayT.y = 80;
@@ -18290,9 +18382,9 @@
             this.hz43BodyT.y = 84;
             this.hz43TempT.y = 104;
          }
-         var attn:String = this.hz43Attn();
+         var attn:String = this.hz43AttWord();
          this.hz43AttT.visible = attn.length > 0;
-         this.hz43AttT.text = attn.length > 0 ? attn : "";
+         this.hz43AttT.text = attn;
          if(attn.length > 0)
          {
             this.hz43AttT.y = digital ? 122 : 108;
@@ -18308,19 +18400,19 @@
          this.hz43RealL.text = "PC/REAL";
          this.hz43O2L.text = "O2";
          this.hz43CO2L.text = "CO2";
-         if(hm.ok)
+         if(this.hz43Ok != 0)
          {
-            var clock:String = hm.ut ? (this.hzPad2(int(hm.h)) + ":" + this.hzPad2(int(hm.m)) + " UT") : this.hzFmtClock(int(hm.h),int(hm.m));
+            var clock:String = this.hz43Ut != 0 ? (this.hzPad2(this.hz43H) + ":" + this.hzPad2(this.hz43M) + " UT") : this.hzFmtClock(this.hz43H,this.hz43M);
             this.hz43LocT.text = clock;
-            this.hz43PmT.text = int(hm.h) >= 12 ? "PM" : "AM";
+            this.hz43PmT.text = this.hz43H >= 12 ? "PM" : "AM";
          }
          else
          {
             this.hz43LocT.text = "--";
             this.hz43PmT.text = "PM";
          }
-         this.hz43RealT.text = this.hz43Real();
-         var body:String = this.hzPpBodyName && String(this.hzPpBodyName).length > 0 ? String(this.hzPpBodyName) : "--";
+         this.hz43RealT.text = this.hz43PcTxt;
+         var body:String = this.hz43Body != null && this.hz43Body.length > 0 ? this.hz43Body : "--";
          this.hz43BodyT.text = body;
          this.hz43TempT.text = isNaN(this.hzEnvTempC) ? "--" : this.hzTempText(this.hzEnvTempC);
          this.hz43DayT.text = "DAY";
@@ -18398,10 +18490,10 @@
          g.endFill();
       }
 
-      private function hz43Hands(g:*, hm:Object) : void
+      private function hz43Hands(g:*) : void
       {
-         var h:Number = hm.ok ? Number(hm.h) : 0;
-         var m:Number = hm.ok ? Number(hm.m) : 0;
+         var h:Number = this.hz43Ok != 0 ? this.hz43H : 0;
+         var m:Number = this.hz43Ok != 0 ? this.hz43M : 0;
          var ha:Number = -Math.PI / 2 + ((h % 12) + m / 60) * (Math.PI / 6);
          var ma:Number = -Math.PI / 2 + m * (Math.PI / 30);
          this.hz43Hand(g,ha,52,3,0xF2F7F9);
@@ -18425,7 +18517,71 @@
          g.endFill();
       }
 
-      private function hz43Hits(c:Sprite, cx:Number, cy:Number, rad:Number) : Number
+      private function hz43CardAt(i:int) : Sprite
+      {
+         if(i == 0) { return this.HorizonChar_mc; }
+         if(i == 1) { return this.HorizonVitals_mc; }
+         if(i == 2) { return this.HorizonCard_mc; }
+         return this.HorizonCompact_mc;
+      }
+
+      private function hz43CardCache() : void
+      {
+         if(this.hz43Cx != null) { return; }
+         this.hz43Cx = [NaN,NaN,NaN,NaN];
+         this.hz43Cy = [NaN,NaN,NaN,NaN];
+         this.hz43Cw = [NaN,NaN,NaN,NaN];
+         this.hz43Chh = [NaN,NaN,NaN,NaN];
+         this.hz43Cv = [0,0,0,0];
+      }
+
+      // True when this card's rect changed. The number slots are created once.
+      private function hz43CardMoved(i:int) : Boolean
+      {
+         var c:Sprite = this.hz43CardAt(i);
+         var vis:int = (c && c.visible && c.alpha > 0.2) ? 1 : 0;
+         var x:Number = c ? c.x : 0;
+         var y:Number = c ? c.y : 0;
+         var w:Number = vis != 0 ? c.width : 0;
+         var h:Number = vis != 0 ? c.height : 0;
+         var ch:Boolean = vis != int(this.hz43Cv[i]) || x != Number(this.hz43Cx[i]) || y != Number(this.hz43Cy[i]) || w != Number(this.hz43Cw[i]) || h != Number(this.hz43Chh[i]);
+         this.hz43Cv[i] = vis;
+         this.hz43Cx[i] = x;
+         this.hz43Cy[i] = y;
+         this.hz43Cw[i] = w;
+         this.hz43Chh[i] = h;
+         return ch;
+      }
+
+      private function hz43Locals() : Boolean
+      {
+         var vr:Rectangle = Extensions.visibleRect;
+         if(vr == null || vr.width < 100 || stage == null) { return false; }
+         if(this.hz43HaveVr && vr.left == this.hz43VrL && vr.top == this.hz43VrT && vr.right == this.hz43VrR && vr.bottom == this.hz43VrB) { return true; }
+         if(this.hz43P0 == null) { this.hz43P0 = new Point(); this.hz43P1 = new Point(); }
+         this.hz43P0.x = vr.left;
+         this.hz43P0.y = vr.top;
+         this.hz43P1.x = vr.right;
+         this.hz43P1.y = vr.bottom;
+         var tl:Point = globalToLocal(this.hz43P0);
+         var br:Point = globalToLocal(this.hz43P1);
+         if(tl == null || br == null || isNaN(tl.x) || br.x - tl.x < 100) { return false; }
+         this.hz43Lx = tl.x;
+         this.hz43Ly = tl.y;
+         this.hz43Rx = br.x;
+         this.hz43Ry = br.y;
+         this.hz43VrL = vr.left;
+         this.hz43VrT = vr.top;
+         this.hz43VrR = vr.right;
+         this.hz43VrB = vr.bottom;
+         this.hz43HaveVr = true;
+         this.hz43VrTick++;
+         if(tl != this.hz43P0) { this.hz43P0 = tl; }
+         if(br != this.hz43P1) { this.hz43P1 = br; }
+         return true;
+      }
+
+      private function hz43Hit(c:Sprite, cx:Number, cy:Number, rad:Number) : Number
       {
          if(!c || !c.visible || c.alpha <= 0.2) { return NaN; }
          var cw:Number = c.width;
@@ -18439,53 +18595,96 @@
 
       private function hz43Place() : void
       {
-         var vr:Rectangle = Extensions.visibleRect;
-         if(!this.hz43Watch || vr == null || vr.width < 100 || stage == null) { return; }
-         var tl:Point = globalToLocal(new Point(vr.left,vr.top));
-         var br:Point = globalToLocal(new Point(vr.right,vr.bottom));
-         if(isNaN(tl.x) || br.x - tl.x < 100) { return; }
+         if(!this.hz43Watch || !this.hz43Locals()) { return; }
          var sc:Number = this.hz34S("Watch");
          if(!(sc > 0.05)) { sc = 1; }
          this.hz43Watch.scaleX = this.hz43Watch.scaleY = sc;
+         this.hz43CardCache();
+         var m0:Boolean = this.hz43CardMoved(0);
+         var m1:Boolean = this.hz43CardMoved(1);
+         var m2:Boolean = this.hz43CardMoved(2);
+         var m3:Boolean = this.hz43CardMoved(3);
+         var vrCh:Boolean = this.hz43VrTick != this.hz43VrSeen;
+         if(!m0 && !m1 && !m2 && !m3 && !vrCh && sc == this.hz43Ps && this.hzMargin == this.hz43Pm) { return; }
+         this.hz43VrSeen = this.hz43VrTick;
+         this.hz43Ps = sc;
+         this.hz43Pm = this.hzMargin;
          var rad:Number = HZ43_R * sc;
-         var cx:Number = tl.x + this.hzMargin + rad;
-         var cy:Number = br.y - this.hzMargin - rad;
+         var cx:Number = this.hz43Lx + this.hzMargin + rad;
+         var cy:Number = this.hz43Ry - this.hzMargin - rad;
          var guard:int = 0;
          while(guard < 6)
          {
-            var top:Number = NaN;
-            var cards:Array = [this.HorizonChar_mc,this.HorizonVitals_mc,this.HorizonCard_mc,this.HorizonCompact_mc];
-            var i:int = 0;
-            while(i < cards.length)
-            {
-               var t:Number = this.hz43Hits(cards[i] as Sprite,cx,cy,rad);
-               if(!isNaN(t) && (isNaN(top) || t < top)) { top = t; }
-               i++;
-            }
+            var top:Number = this.hz43Hit(this.HorizonChar_mc,cx,cy,rad);
+            var t1:Number = this.hz43Hit(this.HorizonVitals_mc,cx,cy,rad);
+            var t2:Number = this.hz43Hit(this.HorizonCard_mc,cx,cy,rad);
+            var t3:Number = this.hz43Hit(this.HorizonCompact_mc,cx,cy,rad);
+            if(!isNaN(t1) && (isNaN(top) || t1 < top)) { top = t1; }
+            if(!isNaN(t2) && (isNaN(top) || t2 < top)) { top = t2; }
+            if(!isNaN(t3) && (isNaN(top) || t3 < top)) { top = t3; }
             if(isNaN(top)) { break; }
             cy = top - 8 - rad;
             guard++;
          }
-         var minY:Number = tl.y + this.hzMargin + rad;
+         var minY:Number = this.hz43Ly + this.hzMargin + rad;
          if(cy < minY) { cy = minY; }
          this.hz43Watch.x = cx;
          this.hz43Watch.y = cy;
       }
 
-      private function hz43TintClip(d:DisplayObject, col:uint, amt:Number) : void
+      private static const HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","BioConditionBase_mc","EnvConditionBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc"];
+
+      // Card color lookup builds a palette array. Keep the uint and rebuild it only when the color changes.
+      private function hz43Fill() : uint
       {
-         if(!d) { return; }
-         var r:int = (col >> 16) & 255;
-         var gg:int = (col >> 8) & 255;
-         var b:int = col & 255;
-         var keep:Number = 1 - amt;
-         d.transform.colorTransform = new ColorTransform(keep,keep,keep,1,r * amt,gg * amt,b * amt,0);
+         if(this.hzCardColor != this.hz43FillSeen || this.hzCardHex != this.hz43HexSeen)
+         {
+            this.hz43FillSeen = this.hzCardColor;
+            this.hz43HexSeen = this.hzCardHex;
+            this.hz43FillU = this.hzCardFill();
+         }
+         return this.hz43FillU;
       }
 
-      private function hz43ClearTint(d:DisplayObject) : void
+      private function hz43IdCt() : ColorTransform
       {
-         if(!d) { return; }
-         d.transform.colorTransform = new ColorTransform();
+         if(this.hz43CtId == null) { this.hz43CtId = new ColorTransform(); }
+         return this.hz43CtId;
+      }
+
+      private function hz43Ct(slot:int, col:uint, amt:Number) : ColorTransform
+      {
+         var ct:ColorTransform = slot == 0 ? this.hz43CtCard : this.hz43CtAcc;
+         var prev:uint = slot == 0 ? this.hz43TintCard : this.hz43TintAcc;
+         if(ct == null || prev != col)
+         {
+            var r:int = (col >> 16) & 255;
+            var gg:int = (col >> 8) & 255;
+            var b:int = col & 255;
+            var keep:Number = 1 - amt;
+            if(ct == null) { ct = new ColorTransform(); }
+            ct.redMultiplier = keep;
+            ct.greenMultiplier = keep;
+            ct.blueMultiplier = keep;
+            ct.alphaMultiplier = 1;
+            ct.redOffset = r * amt;
+            ct.greenOffset = gg * amt;
+            ct.blueOffset = b * amt;
+            ct.alphaOffset = 0;
+            if(slot == 0) { this.hz43CtCard = ct; this.hz43TintCard = col; }
+            else { this.hz43CtAcc = ct; this.hz43TintAcc = col; }
+         }
+         return ct;
+      }
+
+      private function hz43TintAt(i:int) : DisplayObject
+      {
+         if(this.hz43TintD == null) { this.hz43TintD = new Array(HZ43_TINT_N.length); }
+         var d:DisplayObject = this.hz43TintD[i] as DisplayObject;
+         if(d != null && d.parent == this.hzBlg) { return d; }
+         d = this.hzBlg.getChildByName(HZ43_TINT_N[i] as String);
+         this.hz43TintD[i] = d;
+         return d;
       }
 
       private function hz43Tint() : void
@@ -18493,33 +18692,72 @@
          if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
          if(!this.hzBlg) { return; }
          var want:Boolean = this.hzWatchStyle == 2 && !this.hzUserHidden;
-         var names:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","BioConditionBase_mc","EnvConditionBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc"];
-         var accentNames:Array = ["WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc"];
          var i:int = 0;
          if(!want)
          {
             if(!this.hz43TintOn) { return; }
-            while(i < names.length)
+            if(this.hz43CtId == null) { this.hz43IdCt(); }
+            while(i < HZ43_TINT_N.length)
             {
-               this.hz43ClearTint(this.hzBlg.getChildByName(String(names[i])));
+               var clr:DisplayObject = this.hz43TintAt(i);
+               if(clr) { clr.transform.colorTransform = this.hz43IdCt(); }
                i++;
             }
             this.hz43TintOn = false;
             return;
          }
-         while(i < names.length)
+         var card:uint = this.hz43Fill();
+         var acc:uint = uint(this.HZ_ACCENT);
+         var ctCard:ColorTransform = this.hz43Ct(0,card,0.55);
+         var ctAcc:ColorTransform = this.hz43Ct(1,acc,0.72);
+         while(i < HZ43_TINT_N.length)
          {
-            var n:String = String(names[i]);
-            var accent:Boolean = accentNames.indexOf(n) >= 0;
-            this.hz43TintClip(this.hzBlg.getChildByName(n),accent ? uint(this.HZ_ACCENT) : this.hzCardFill(),accent ? 0.72 : 0.55);
+            var clip:DisplayObject = this.hz43TintAt(i);
+            if(clip) { clip.transform.colorTransform = (i >= 1 && i <= 3) ? ctAcc : ctCard; }
             i++;
          }
          this.hz43TintOn = true;
       }
 
+      private function hz43Dirty() : Boolean
+      {
+         this.hz43Read();
+         this.hz43PcSample();
+         if(this.hz43PcH >= 0 && this.hzClockFmt != this.hz43LastClk) { this.hz43PcTxt = this.hzFmtClock(this.hz43PcH,this.hz43PcM); }
+         var head:int = int(Math.round(this.hzCmpDeg));
+         var o2:int = int(Math.round(this.hz26O2F * 100));
+         var co2:int = int(Math.round(this.hz26Co2F * 100));
+         var tp:int = isNaN(this.hzEnvTempC) ? -100000 : int(Math.round(this.hzEnvTempC));
+         var acc:uint = uint(this.HZ_ACCENT);
+         var att:int = this.hz43AttCode();
+         var body:String = this.hzPpBodyName;
+         var ch:Boolean = this.hz43Force || this.hzWatchStyle != this.hz43LastMode || this.hz43H != this.hz43LastH || this.hz43M != this.hz43LastM || this.hz43Ut != this.hz43LastUt || this.hz43Ok != this.hz43LastOk || this.hz43DayB != this.hz43LastDay || head != this.hz43LastHead || o2 != this.hz43LastO2 || co2 != this.hz43LastCo2 || this.hz43PcH != this.hz43LastPcH || this.hz43PcM != this.hz43LastPcM || tp != this.hz43LastTemp || this.hzTempUnit != this.hz43LastUnit || this.hzClockFmt != this.hz43LastClk || acc != this.hz43LastAcc || att != this.hz43LastAtt || body != this.hz43LastBody;
+         if(!ch) { return false; }
+         this.hz43Force = false;
+         this.hz43LastMode = this.hzWatchStyle;
+         this.hz43LastH = this.hz43H;
+         this.hz43LastM = this.hz43M;
+         this.hz43LastUt = this.hz43Ut;
+         this.hz43LastOk = this.hz43Ok;
+         this.hz43LastDay = this.hz43DayB;
+         this.hz43LastHead = head;
+         this.hz43LastO2 = o2;
+         this.hz43LastCo2 = co2;
+         this.hz43LastPcH = this.hz43PcH;
+         this.hz43LastPcM = this.hz43PcM;
+         this.hz43LastTemp = tp;
+         this.hz43LastUnit = this.hzTempUnit;
+         this.hz43LastClk = this.hzClockFmt;
+         this.hz43LastAcc = acc;
+         this.hz43LastAtt = att;
+         this.hz43Att = att;
+         this.hz43Body = body;
+         this.hz43LastBody = body;
+         return true;
+      }
+
       private function hz43Frame() : void
       {
-         this.hz43SyncHide();
          if(this.hzWatchStyle == 2) { this.hz43Tint(); }
          else if(this.hz43TintOn) { this.hz43Tint(); }
          var show:Boolean = (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && !this.hzUserHidden;
@@ -18530,14 +18768,7 @@
          }
          this.hz43Build();
          this.hz43Place();
-         var hm:Object = this.hz43HM();
-         var attn:String = this.hz43Attn();
-         var sig:String = this.hzWatchStyle + "|" + int(hm.h) + ":" + int(hm.m) + "|" + (hm.ut ? 1 : 0) + "|" + (hm.ok ? 1 : 0) + "|" + Math.round(this.hzCmpDeg) + "|" + Math.round(this.hz26O2F * 100) + "|" + Math.round(this.hz26Co2F * 100) + "|" + this.hz43Real() + "|" + String(this.hzPpBodyName) + "|" + (isNaN(this.hzEnvTempC) ? "-" : String(Math.round(this.hzEnvTempC))) + "|" + this.hzTempUnit + "|" + this.hzClockFmt + "|" + uint(this.HZ_ACCENT) + "|" + attn + "|" + Math.round(this.hzPpDay * 1000);
-         if(sig != this.hz43Sig)
-         {
-            this.hz43Sig = sig;
-            this.hz43Draw(this.hzWatchStyle);
-         }
+         if(this.hz43Dirty()) { this.hz43Draw(this.hzWatchStyle); }
          this.hz43Watch.visible = true;
       }
       // =================== end Horizon UI (HUD module) ===================
