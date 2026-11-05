@@ -103,6 +103,32 @@ expect(weaponOut(false, false, true, true, 2) === false, "unarmed reticle does n
 expect(weaponOut(false, false, false, true, 0) === false, "no ammo display is not drawn");
 expect(weaponOut(false, false, true, true, 7) === true, "third person uses the same test while interacting");
 
+function aimingHidden(rule, weaponOutNow, crossType) {
+	if (crossType === 7) return false;
+	if (rule >= 2) return true;
+	if (rule === 1) return !weaponOutNow;
+	return false;
+}
+expect(aimingHidden(2, true, 0) === true, "off hides an aiming reticle");
+expect(aimingHidden(2, true, 7) === false, "off leaves the interact ring");
+expect(aimingHidden(1, false, 0) === true, "a holstered weapon hides the aiming dot");
+expect(aimingHidden(1, false, 7) === false, "a holstered weapon still shows the interact ring");
+expect(aimingHidden(1, true, 0) === false, "a drawn weapon shows the aiming reticle");
+expect(aimingHidden(0, false, 0) === false, "always leaves the aiming reticle to the game");
+
+function restoreOwn(owned, sameObject, stillHidden, vanillaWants) {
+	return owned && sameObject && stillHidden && vanillaWants;
+}
+expect(restoreOwn(true, true, true, false) === false, "iron sights stay hidden when our hide ends");
+expect(restoreOwn(true, true, true, true) === true, "our own hide is the one that is restored");
+expect(restoreOwn(false, true, true, true) === false, "a hide this rule does not own is left alone");
+
+const reticleBody = funcBody(as, "hz43Reticle");
+expect(reticleBody.indexOf("hzXh") < 0, "the rule does not touch the interact glyph");
+expect(reticleBody.indexOf("hz43VanillaReticle") >= 0, "restore checks the game show rule");
+expect(funcBody(as, "hz43ReticleHide").indexOf("HZ_HCT_INTERACT") >= 0, "the interact type is never hidden here");
+expect(as.indexOf("this.hz43Reticle()") < as.indexOf("this.hzXhTick()"), "the ring is restored before the glyph is drawn");
+
 if (failed) {
 	console.error(failed + " failed");
 	process.exit(1);
