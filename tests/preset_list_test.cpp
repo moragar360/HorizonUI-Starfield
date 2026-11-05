@@ -856,7 +856,9 @@ int main()
 		Expect(ini.find("ReactionCard=1") != std::string::npos, "Moragar's Choice sets ReactionCard");
 		Expect(ini.find("ScanWorldMarkers=1") != std::string::npos, "Moragar's Choice sets ScanWorldMarkers");
 		Expect(ini.find("ScopeHoldBreathChip=1") != std::string::npos && ini.find("ScopeChipScale=1") != std::string::npos, "scope chip stays on at scale 1");
-		Expect(ini.find("<ORG>") == std::string::npos && ini.find("<PC-USER>") == std::string::npos, "no retired names in the preset");
+		const std::string retiredA = std::string("HU") + "SD";
+		const std::string retiredB = std::string("rs") + "chr";
+		Expect(ini.find(retiredA) == std::string::npos && ini.find(retiredB) == std::string::npos, "no retired names in the preset");
 		std::ifstream defs("Interface/HorizonUI/HorizonUI.default.ini");
 		std::string def((std::istreambuf_iterator<char>(defs)), std::istreambuf_iterator<char>());
 		HZF::DiffOpt o;
