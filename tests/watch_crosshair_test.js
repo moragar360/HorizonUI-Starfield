@@ -52,6 +52,36 @@ expect(block.indexOf("ReticleBase_mc") >= 0, "only the center reticle is gated")
 expect(block.indexOf("HorizonChar_mc") >= 0, "watch yields to the character card");
 expect(as.indexOf("case \"crosshairstyle\"") >= 0, "CrosshairStyle parser stays");
 
+function funcBody(src, name) {
+	const key = "function " + name + "(";
+	const i = src.indexOf(key);
+	expect(i >= 0, "function " + name);
+	if (i < 0) return "";
+	const brace = src.indexOf("{", i);
+	let depth = 0;
+	for (let p = brace; p < src.length; p++) {
+		if (src[p] === "{") depth++;
+		else if (src[p] === "}") {
+			depth--;
+			if (depth === 0) return src.slice(brace, p + 1);
+		}
+	}
+	return "";
+}
+
+const frameBody = funcBody(as, "hz43Frame");
+const placeBody = funcBody(as, "hz43Place");
+const tintBody = funcBody(as, "hz43Tint");
+expect(frameBody.indexOf("hz43SyncHide") < 0, "sync hide is not called from the watch frame");
+expect(as.split("this.hz43SyncHide()").length - 1 === 1, "sync hide runs once per frame");
+expect(frameBody.indexOf("new ") < 0, "the watch frame allocates nothing");
+expect(placeBody.indexOf("new Point") < 0 && placeBody.indexOf("new Array") < 0, "placement reuses its points and card slots");
+expect(tintBody.indexOf("new ColorTransform") < 0 && tintBody.indexOf("new Array") < 0, "style 2 reuses its color transforms");
+expect(block.split("new Date(").length - 1 === 1, "the PC clock builds one Date");
+expect(block.indexOf("hz43PcSample") >= 0 && block.indexOf("% 60") >= 0, "the PC clock is gated by the frame counter");
+expect(block.indexOf("hz43DayB") >= 0 && block.indexOf("hz43LastO2") >= 0, "dirty checks use number buckets");
+expect(block.indexOf("hz43Sig") < 0, "the dirty check does not build a signature string");
+
 // Dawn is 0.25 and dusk is 0.75 of fLocalPlanetTime. The day arc runs the top half.
 function dialAngle(day) {
 	if (day >= 0.25 && day <= 0.75) return Math.PI + (day - 0.25) / 0.5 * Math.PI;
