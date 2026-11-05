@@ -2583,8 +2583,8 @@
             else { this.hzFontRetry = 6; }
          }
          try { this.hzTgTick(); } catch(errTg:Error) { try { this.hzTgRestore(); this.HorizonTarget_mc.visible = false; } catch(errTg2:Error) { } }
-         try { this.hzXhTick(); } catch(errXh:Error) { try { this.hzXhRestore(); if(this.hzXh) { this.hzXh.visible = false; } } catch(errXh2:Error) { } }
          try { this.hz43Reticle(); } catch(e43r:Error) { }
+         try { this.hzXhTick(); } catch(errXh:Error) { try { this.hzXhRestore(); if(this.hzXh) { this.hzXh.visible = false; } } catch(errXh2:Error) { } }
          try { this.hz43Frame(); } catch(e43f:Error) { }
          try { this.hzTickBars(); } catch(e36b:Error) { }
          try { this.hzTickFades(); } catch(e36d:Error) { }
@@ -18037,7 +18037,8 @@
       private var hz43Face:Sprite = null;
       private var hz43Force:Boolean = true;
       private var hz43TintOn:Boolean = false;
-      private var hz43RetHid:Boolean = false;
+      private var hz43RetOwn:Boolean = false;
+      private var hz43RetObj:DisplayObject = null;
       private var hz43H:int = 0;
       private var hz43M:int = 0;
       private var hz43Ut:int = 0;
@@ -18119,29 +18120,48 @@
          }
       }
 
-      private function hz43ReticleOn() : Boolean
+      // Same show rule the game uses for the center reticle, including iron sights.
+      private function hz43VanillaReticle() : Boolean
       {
-         if(this.hzCrossRule >= 2) { return false; }
-         if(this.hzCrossRule == 1) { return this.hzWeaponOut(); }
-         return true;
+         return this.hzCrossOn && (!this.hzCrossIron || this.hzCross3rd || this.hzCrossTool);
       }
 
-      // Gate CenterGroup_mc.ReticleBase_mc and the Horizon interact glyph. Nothing else.
+      // Hide the aiming dot only. Type 7 is the interact ring, and this rule never touches it or the glyph.
+      private function hz43ReticleHide() : Boolean
+      {
+         if(this.hzCrossType == HZ_HCT_INTERACT) { return false; }
+         if(this.hzCrossRule >= 2) { return true; }
+         if(this.hzCrossRule == 1) { return !this.hzWeaponOut(); }
+         return false;
+      }
+
+      // Remember the clip this rule hid. A later show puts it back only when the game still wants it shown.
       private function hz43Reticle() : void
       {
          var rb:DisplayObject = null;
          try { rb = this.CenterGroup_mc ? this.CenterGroup_mc.ReticleBase_mc as DisplayObject : null; } catch(e1:Error) { rb = null; }
-         if(!this.hz43ReticleOn())
+         if(this.hz43RetOwn && rb != this.hz43RetObj)
          {
-            if(rb && rb.visible) { rb.visible = false; }
-            this.hz43RetHid = true;
-            if(this.hzXh) { this.hzXh.visible = false; }
+            this.hz43RetOwn = false;
+            this.hz43RetObj = null;
+         }
+         if(this.hz43ReticleHide())
+         {
+            if(!rb) { return; }
+            if(!this.hz43RetOwn)
+            {
+               if(!rb.visible) { return; }
+               this.hz43RetObj = rb;
+               this.hz43RetOwn = true;
+            }
+            if(this.hz43RetOwn && rb == this.hz43RetObj) { rb.visible = false; }
             return;
          }
-         if(this.hz43RetHid)
+         if(this.hz43RetOwn)
          {
-            this.hz43RetHid = false;
-            if(rb) { rb.visible = true; }
+            if(rb && rb == this.hz43RetObj && !rb.visible && this.hz43VanillaReticle()) { rb.visible = true; }
+            this.hz43RetOwn = false;
+            this.hz43RetObj = null;
          }
       }
 
