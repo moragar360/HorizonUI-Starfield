@@ -241,8 +241,8 @@
       public var hzCmpPlayerMark:Boolean = true;
       private var hzDbgCmp:String = "";
       // layout edit (ARRANGE CARDS)
-      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages"];
-      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES"];
+      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages","Watch"];
+      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES","WATCH"];
       public var hzLay:Object = {};
       private var hzLayOrig:Object = null;
       private var hzArrange:Boolean = false;
@@ -547,7 +547,7 @@
       private function hzApplyScale() : void
       {
          // v0.34: each card has its own factor ([Cards] <Card>Scale, -1 = HudScale)
-         var m:Array = [[this.HorizonCard_mc,"Jetpack"],[this.HorizonVitals_mc,"Vitals"],[this.HorizonEnv_mc,"Planet"],[this.HorizonAffl_mc,"Afflictions"],[this.HorizonAmmo_mc,"Equipment"],[this.HorizonQuest_mc,"Quests"],[this.HorizonCompass_mc,"Compass"],[this.HorizonCompact_mc,"Compact"],[this.HorizonCompactQuest_mc,"Quests"],[this.HorizonChar_mc,"Character"],[this.HorizonEnemy_mc,"Enemy"],[this.HorizonStealth_mc,"Stealth"],[this.HorizonXp_mc,"XpToast"]];
+         var m:Array = [[this.HorizonCard_mc,"Jetpack"],[this.HorizonVitals_mc,"Vitals"],[this.HorizonEnv_mc,"Planet"],[this.HorizonAffl_mc,"Afflictions"],[this.HorizonAmmo_mc,"Equipment"],[this.HorizonQuest_mc,"Quests"],[this.HorizonCompass_mc,"Compass"],[this.HorizonCompact_mc,"Compact"],[this.HorizonCompactQuest_mc,"Quests"],[this.HorizonChar_mc,"Character"],[this.HorizonEnemy_mc,"Enemy"],[this.HorizonStealth_mc,"Stealth"],[this.HorizonXp_mc,"XpToast"],[this.hz43Watch,"Watch"]];
          for each(var e:Array in m)
          {
             var c:Sprite = e[0] as Sprite;
@@ -5297,7 +5297,7 @@
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1,"WatchStyle":0,"CrosshairRule":0};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -6398,6 +6398,10 @@
             case "Stealth": return [this.HorizonStealth_mc].filter(this.hzNotNull);
             case "XpToast": return [this.HorizonXp_mc].filter(this.hzNotNull);
             case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": return this.hz31PxOn(k) ? [this.hz31Px(k)] : [];
+            case "Watch":
+               if(this.hzWatchStyle != 3 && this.hzWatchStyle != 4) { return []; }
+               this.hz43Build();
+               return this.hz43Watch ? [this.hz43Watch] : [];
          }
          return [];
       }
@@ -6460,6 +6464,7 @@
                case "Stealth": ok = this.hzStealthOn; break;
                case "XpToast": ok = this.hzXpToastOn; break;
                case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": ok = this.hz31PxOn(k); break;   // v0.31 / v0.32: Comms proxies
+               case "Watch": ok = this.hzWatchStyle == 3 || this.hzWatchStyle == 4; break;
             }
             if(ok)
             {
@@ -14361,7 +14366,7 @@
       // have a compact form. Jetpack, vitals and afflictions turn into the shared compact strips card, so they follow the
       // global Compact only. Hover / container cards keep [Style] HoverScale / ContainerScale (same meaning as before;
       // -1 now = GLOBAL). Edge-anchored ARRANGE positions use the real on-screen card size, so they stay put at any size.
-      private static const HZ34_CARDS:Array = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false]];
+      private static const HZ34_CARDS:Array = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false],["Watch",false]];
       private static const HZ34_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face: run-time name only, never shown
       private var hz34Sc:Object = {};
       private var hz34Cm:Object = {};
@@ -14508,7 +14513,7 @@
             {"k":"VitalsLayout","l":"VITALS LAYOUT","t":"r","opts":["VERTICAL","HORIZONTAL"],"ids":[0,1],"sub":true,"note":"VERTICAL = health above O2.  HORIZONTAL = O2 beside health (one row).  ARRANGE CARDS: L"},
             {"k":"VitalsBars","l":"HEALTH AND O2 BARS","t":"r","opts":["FULL","COMPACT"],"ids":[0,1],"sub":true,"note":"COMPACT uses the same boost, health, and oxygen card as COMPACT MODE. FULL keeps the separate cards. If either is on, that merged card shows."},
             {"k":"ShowCharacter","l":"CHARACTER CARD (LV / XP / CREDITS / MASS)","t":"b"},this.hz34Sz("Character"),this.hz34Cmp("Character",cmn),
-            {"k":"WatchStyle","l":"WATCH","t":"r","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4],"note":"Lower left. OFF is today's HUD. Arrange positions stay put. If a card overlaps that corner, the watch sits above the card."},
+            {"k":"WatchStyle","l":"WATCH","t":"r","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4],"note":"Lower left until you move it in Arrange. A saved spot stays put. While it is still at the default, a showing card in that corner lifts the watch 8 px above the card."},this.hz34Sz("Watch"),
             {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","sub":true},
             {"k":"ShowPlanet","l":"PLANET CARD","t":"b"},this.hz34Sz("Planet"),this.hz34Cmp("Planet"),
             {"k":"PlanetDetails","l":"PLANET: GRAVITY / AIR LINE","t":"b"},
@@ -18020,7 +18025,8 @@
 
       // =================== 0.43.1.0 watch + center-reticle rule ===================
       // hudmenu and hudmenu_lrg share this block, so both movies get the same watch.
-      // The watch is not an Arrange card. Saved card positions are not changed.
+      // Arrange saves the Horizon watch as WatchX / WatchY, same edge anchors as the other cards.
+      // -1 is the lower-left home. A saved spot is used as-is. The 8 px lift runs only while it is still at that home.
       // Home is the lower-left corner, inside the screen margin (the vanilla watch slot).
       // If a showing card overlaps that home (character, vitals, jetpack, or the compact stack),
       // the watch moves up and sits 8 px above that card. Cards stay where Arrange put them.
@@ -18087,6 +18093,17 @@
       private var hz43Cv:Array = null;
       private var hz43Pm:Number = NaN;
       private var hz43Ps:Number = NaN;
+      private var hz43WasSaved:Boolean = false;
+      private var hz43Ax:int = -1;
+      private var hz43Ay:int = -1;
+      private var hz43Dx:Number = NaN;
+      private var hz43Dy:Number = NaN;
+      private var hz43NxS:int = -1;
+      private var hz43NyS:int = -1;
+      private var hz43Fx:Number = NaN;
+      private var hz43Fy:Number = NaN;
+      private var hz43TL:Point = null;
+      private var hz43BR:Point = null;
       private var hz43CtCard:ColorTransform = null;
       private var hz43CtAcc:ColorTransform = null;
       private var hz43CtId:ColorTransform = null;
@@ -18323,25 +18340,28 @@
          w.name = "HorizonWatch_mc";
          this.hz43Face = new Sprite();
          this.hz43Face.mouseEnabled = false;
+         this.hz43Face.mouseChildren = false;
+         this.hz43Face.x = HZ43_R;
+         this.hz43Face.y = HZ43_R;
          w.addChild(this.hz43Face);
-         this.hz43O2L = this.hzT(w,"O2",-HZ43_R + 8,-8,40,13,"sb","main",1);
-         this.hz43CO2L = this.hzT(w,"CO2",HZ43_R - 52,-8,48,13,"sb","main",1,"right");
-         this.hz43LocT = this.hzT(w,"12:00",-90,-6,180,22,"sb","main",0,"center");
-         this.hz43LocL = this.hzT(w,"LOCAL/GAME",-90,22,180,13,"sb","dim",0.6,"center");
-         this.hz43RealT = this.hzT(w,"12:00",-80,40,160,16,"rg","mut",0,"center");
-         this.hz43RealL = this.hzT(w,"PC/REAL",-70,60,140,13,"sb","dim",0.6,"center");
-         this.hz43BodyT = this.hzT(w,"--",-100,84,200,14,"sb","main",1.2,"center");
-         this.hz43TempT = this.hzT(w,"--",-80,104,160,13,"sb","acc",0.4,"center");
-         this.hz43PmT = this.hzT(w,"PM",-16,-58,36,13,"sb","dim",0.4,"center");
-         this.hz43DayT = this.hzT(w,"DAY",-22,-40,48,13,"sb","main",0.6,"center");
-         this.hz43AttT = this.hzT(w,"",-90,120,180,13,"sb","col",0.4,"center",HZ43_ATTN);
+         this.hz43O2L = this.hzT(this.hz43Face,"O2",-HZ43_R + 8,-8,40,13,"sb","main",1);
+         this.hz43CO2L = this.hzT(this.hz43Face,"CO2",HZ43_R - 52,-8,48,13,"sb","main",1,"right");
+         this.hz43LocT = this.hzT(this.hz43Face,"12:00",-90,-6,180,22,"sb","main",0,"center");
+         this.hz43LocL = this.hzT(this.hz43Face,"LOCAL/GAME",-90,22,180,13,"sb","dim",0.6,"center");
+         this.hz43RealT = this.hzT(this.hz43Face,"12:00",-80,40,160,16,"rg","mut",0,"center");
+         this.hz43RealL = this.hzT(this.hz43Face,"PC/REAL",-70,60,140,13,"sb","dim",0.6,"center");
+         this.hz43BodyT = this.hzT(this.hz43Face,"--",-100,84,200,14,"sb","main",1.2,"center");
+         this.hz43TempT = this.hzT(this.hz43Face,"--",-80,104,160,13,"sb","acc",0.4,"center");
+         this.hz43PmT = this.hzT(this.hz43Face,"PM",-16,-58,36,13,"sb","dim",0.4,"center");
+         this.hz43DayT = this.hzT(this.hz43Face,"DAY",-22,-40,48,13,"sb","main",0.6,"center");
+         this.hz43AttT = this.hzT(this.hz43Face,"",-90,120,180,13,"sb","col",0.4,"center",HZ43_ATTN);
          this.hz43AttT.visible = false;
          this.hz43Cards = [];
          var cn:Array = ["N","NE","E","SE","S","SW","W","NW"];
          var ci:int = 0;
          while(ci < cn.length)
          {
-            var ct:TextField = this.hzT(w,String(cn[ci]),-24,-24,48,13,"sb","main",0.4,"center");
+            var ct:TextField = this.hzT(this.hz43Face,String(cn[ci]),-24,-24,48,13,"sb","main",0.4,"center");
             ct.visible = false;
             this.hz43Cards.push(ct);
             ci++;
@@ -18350,6 +18370,7 @@
          for each(var tf:TextField in fields) { this.hz43Mark13(tf); }
          for each(var cf:TextField in this.hz43Cards) { this.hz43Mark13(cf); }
          addChild(w);
+         this.hzSetSz(w,HZ43_R * 2,HZ43_R * 2);
          this.hz43Watch = w;
          w.visible = false;
       }
@@ -18601,24 +18622,70 @@
          return true;
       }
 
-      private function hz43Hit(c:Sprite, cx:Number, cy:Number, rad:Number) : Number
+      private function hz43OverlapTop(c:Sprite, x:Number, y:Number, d:Number) : Number
       {
          if(!c || !c.visible || c.alpha <= 0.2) { return NaN; }
          var cw:Number = c.width;
          var ch:Number = c.height;
          if(!(cw > 2) || !(ch > 2)) { return NaN; }
-         var wx0:Number = cx - rad;
-         var wy0:Number = cy - rad;
-         var hit:Boolean = wx0 < c.x + cw && wx0 + rad * 2 > c.x && wy0 < c.y + ch && wy0 + rad * 2 > c.y;
+         var hit:Boolean = x < c.x + cw && x + d > c.x && y < c.y + ch && y + d > c.y;
          return hit ? c.y : NaN;
       }
 
-      private function hz43Place() : void
+      private function hz43LayNum(v:*) : Number
       {
-         if(!this.hz43Watch || !this.hz43Locals()) { return; }
-         var sc:Number = this.hz34S("Watch");
-         if(!(sc > 0.05)) { sc = 1; }
-         this.hz43Watch.scaleX = this.hz43Watch.scaleY = sc;
+         var n:Number = Number(v);
+         return isNaN(n) ? 0 : n;
+      }
+
+      // True when the saved anchor changed. NaN is stored as 0 so a steady frame does not look new.
+      private function hz43LayStamp(lo:Object) : Boolean
+      {
+         var ax:int = lo.ax == "R" ? 2 : (lo.ax == "C" ? 1 : 0);
+         var ay:int = lo.ay == "B" ? 2 : (lo.ay == "C" ? 1 : 0);
+         var dx:Number = this.hz43LayNum(lo.dx);
+         var dy:Number = this.hz43LayNum(lo.dy);
+         var nx:int = lo.nx ? 1 : 0;
+         var ny:int = lo.ny ? 1 : 0;
+         var fx:Number = this.hz43LayNum(lo.x);
+         var fy:Number = this.hz43LayNum(lo.y);
+         var same:Boolean = ax == this.hz43Ax && ay == this.hz43Ay && dx == this.hz43Dx && dy == this.hz43Dy && nx == this.hz43NxS && ny == this.hz43NyS && fx == this.hz43Fx && fy == this.hz43Fy;
+         if(same) { return false; }
+         this.hz43Ax = ax;
+         this.hz43Ay = ay;
+         this.hz43Dx = dx;
+         this.hz43Dy = dy;
+         this.hz43NxS = nx;
+         this.hz43NyS = ny;
+         this.hz43Fx = fx;
+         this.hz43Fy = fy;
+         return true;
+      }
+
+      private function hz43ApplySaved(sc:Number) : void
+      {
+         var lo:Object = this.hzLay["Watch"];
+         if(!lo) { return; }
+         var stamp:Boolean = this.hz43LayStamp(lo);
+         var vrCh:Boolean = this.hz43VrTick != this.hz43VrSeen;
+         if(!stamp && !vrCh && sc == this.hz43Ps) { return; }
+         this.hz43VrSeen = this.hz43VrTick;
+         this.hz43Ps = sc;
+         if(this.hz43TL == null) { this.hz43TL = new Point(); this.hz43BR = new Point(); }
+         this.hz43TL.x = this.hz43Lx;
+         this.hz43TL.y = this.hz43Ly;
+         this.hz43BR.x = this.hz43Rx;
+         this.hz43BR.y = this.hz43Ry;
+         var cw:Number = this.hzCW(this.hz43Watch);
+         var ch:Number = this.hzCH(this.hz43Watch);
+         if(!(cw > 1)) { cw = HZ43_R * 2 * sc; }
+         if(!(ch > 1)) { ch = HZ43_R * 2 * sc; }
+         var p:Point = this.hz30Resolve("Watch",lo,cw,ch,this.hz43TL,this.hz43BR);
+         this.hzPlace(this.hz43Watch,p.x,p.y);
+      }
+
+      private function hz43ApplyHome(sc:Number) : void
+      {
          this.hz43CardCache();
          var m0:Boolean = this.hz43CardMoved(0);
          var m1:Boolean = this.hz43CardMoved(1);
@@ -18629,27 +18696,55 @@
          this.hz43VrSeen = this.hz43VrTick;
          this.hz43Ps = sc;
          this.hz43Pm = this.hzMargin;
-         var rad:Number = HZ43_R * sc;
-         var cx:Number = this.hz43Lx + this.hzMargin + rad;
-         var cy:Number = this.hz43Ry - this.hzMargin - rad;
+         var d:Number = HZ43_R * 2 * sc;
+         var x:Number = this.hz43Lx + this.hzMargin;
+         var y:Number = this.hz43Ry - this.hzMargin - d;
          var guard:int = 0;
          while(guard < 6)
          {
-            var top:Number = this.hz43Hit(this.HorizonChar_mc,cx,cy,rad);
-            var t1:Number = this.hz43Hit(this.HorizonVitals_mc,cx,cy,rad);
-            var t2:Number = this.hz43Hit(this.HorizonCard_mc,cx,cy,rad);
-            var t3:Number = this.hz43Hit(this.HorizonCompact_mc,cx,cy,rad);
+            var top:Number = this.hz43OverlapTop(this.HorizonChar_mc,x,y,d);
+            var t1:Number = this.hz43OverlapTop(this.HorizonVitals_mc,x,y,d);
+            var t2:Number = this.hz43OverlapTop(this.HorizonCard_mc,x,y,d);
+            var t3:Number = this.hz43OverlapTop(this.HorizonCompact_mc,x,y,d);
             if(!isNaN(t1) && (isNaN(top) || t1 < top)) { top = t1; }
             if(!isNaN(t2) && (isNaN(top) || t2 < top)) { top = t2; }
             if(!isNaN(t3) && (isNaN(top) || t3 < top)) { top = t3; }
             if(isNaN(top)) { break; }
-            cy = top - 8 - rad;
+            y = top - 8 - d;
             guard++;
          }
-         var minY:Number = this.hz43Ly + this.hzMargin + rad;
-         if(cy < minY) { cy = minY; }
-         this.hz43Watch.x = cx;
-         this.hz43Watch.y = cy;
+         var minY:Number = this.hz43Ly + this.hzMargin;
+         if(y < minY) { y = minY; }
+         this.hzPlace(this.hz43Watch,x,y);
+      }
+
+      private function hz43Place() : void
+      {
+         if(!this.hz43Watch || !this.hz43Locals()) { return; }
+         var sc:Number = this.hz34S("Watch");
+         if(!(sc > 0.05)) { sc = 1; }
+         this.hz43Watch.scaleX = this.hz43Watch.scaleY = sc;
+         var saved:Boolean = this.hzLayHas("Watch");
+         if(saved != this.hz43WasSaved)
+         {
+            this.hz43WasSaved = saved;
+            this.hz43Ps = NaN;
+            this.hz43Ax = -1;
+         }
+         if(saved)
+         {
+            if(this.hzArrange && this.hzArrDrag == "Watch")
+            {
+               var drag:Object = this.hzLay["Watch"];
+               if(drag) { this.hz43LayStamp(drag); }
+               this.hz43VrSeen = this.hz43VrTick;
+               this.hz43Ps = sc;
+               return;
+            }
+            this.hz43ApplySaved(sc);
+            return;
+         }
+         this.hz43ApplyHome(sc);
       }
 
       private static const HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","BioConditionBase_mc","EnvConditionBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc"];

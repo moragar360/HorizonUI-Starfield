@@ -13,9 +13,11 @@ Unreleased first pass. No tag, no publish, no merge. Starfield was not launched.
 
 ## Watch layout
 
-The watch is not an Arrange card. Saved positions are not rewritten.
+Arrange lists the watch when Horizon Digital or Analog is on. `WatchX` and `WatchY` use the same edge anchors as the other cards (`L` / `R` / `C` and `T` / `B` / `C`, plus an offset). `-1` is the lower-left home. `WatchScale` is the size entry (`-1` means HudScale, or 0.60 to 1.60 for this face). `hudmenu` and `hudmenu_lrg` share this block, so both use the same saved spot. Existing `HorizonUI.user.ini` files are not rewritten. A missing `WatchX` stays at the home. Other cards' saved positions are left as they are.
 
-Its home is the lower-left corner, inside the screen margin, where the game's watch sits. If a showing character, vitals, jetpack, or compact card overlaps that circle, the watch moves up and sits 8 px above the card. The card stays put. On Moragar's Choice the character card is the lower-left card and the vitals card is centered, so the watch sits above the character card. On the stock layout the vitals card is lower-left, so the watch sits above that stack instead of covering it.
+The home is the lower-left corner, inside the screen margin, where the game's watch sits. While the watch is still at that home, a showing character, vitals, jetpack, or compact card that overlaps it lifts the watch 8 px above the card. The card stays put. Once `WatchX` / `WatchY` is a saved spot, the lift stops and the saved spot is used. On Moragar's Choice the character card is the lower-left card and the vitals card is centered, and the preset does not set `WatchX`, so the watch still sits above the character card until you move the watch itself. On the stock layout the vitals card is lower-left, so the watch sits above that stack instead of covering it.
+
+Styles 1 and 2 are the game's own watch. Arrange does not drag that clip.
 
 ## Data feeds
 
@@ -42,7 +44,11 @@ Style 0 keeps the vanilla watch hidden, which is today's behavior. Styles 1 and 
 
 `hzSetWeaponDrawn` exists on the movie, but this plugin never calls it, so `hzPlugActive` stays false. The fallback is `WeaponData.bDisplayAmmo` and `HudCrosshairData.bEnabled` and crosshair type not 2 (unarmed). Type 7 (interact) still counts as drawn when ammo is showing, so looking at something you can use does not hide the reticle if the weapon is out.
 
-Third person uses that same test. `bIn3rdPerson` is stored for the existing interact-reticle rule and is not a separate branch here. An idle third-person dot is hidden when ammo is not displayed or the type is unarmed. Drawing a gun that sets `bDisplayAmmo` shows the center reticle again, in third person and in first person. Iron sights are left to the game once the rule says the reticle may show. The rule does not hide prompts, target cards, hit markers, the kill X, the damage ring, or the stealth pill. `CrosshairStyle` is unchanged.
+Third person uses that same test. `bIn3rdPerson` is stored for the existing interact-reticle rule and is not a separate branch here. An idle third-person dot is hidden when ammo is not displayed or the type is unarmed. Drawing a gun that sets `bDisplayAmmo` shows the aiming reticle again, in third person and in first person.
+
+The rule hides only that aiming dot or reticle. Crosshair type 7 is the center interact ring, and Weapon drawn and Off leave it up when you look at something you can use. The interact glyph is unchanged. Restore remembers the clip this rule hid. It shows that clip again only when this rule was the one that hid it and the game still wants it, including the iron-sights check. A hide from iron sights, or from any other system, is not forced back on. The rule does not hide prompts, target cards, hit markers, the kill X, the damage ring, or the stealth pill. `CrosshairStyle` is unchanged.
+
+While styles 1 to 4 are on, the watch frame does not build a clock object, a signature string, placement points, or a style-2 color transform every frame. Those are cached and rebuilt when a number changes: the minute, the day-fraction bucket, O2, CO2, temperature, heading, card rects, and the accent or card color. The PC clock reads the time at most once a second from the frame counter. The vanilla-watch hide runs once per frame.
 
 ## Risks
 
@@ -58,6 +64,6 @@ Third person uses that same test. `bIn3rdPerson` is stored for the existing inte
 2. F11 > CARDS > WATCH. Step Off, Vanilla, Vanilla + Horizon, Horizon Digital, Horizon Analog. Save, reload, and confirm the ini key.
 3. Digital: O2 left, CO2 right, compass diamond, day sub-dial, both clocks, planet and temperature. No planet picture and no rectangular card.
 4. Analog: flush rim arcs, hands on game time, diamond at 12, day sub-dial at 6, planet and temperature at the top.
-5. With the character card in the lower-left, the watch sits above it and the card does not jump. Move the card in Arrange, save, and confirm the card's saved spot is unchanged.
+5. With the character card in the lower-left, the watch sits above it and the card does not jump. Move the watch in Arrange, save, reload, and confirm `WatchX` / `WatchY` hold the spot and the watch no longer lifts for the card. Reset puts it back on the lower-left home, and the lift returns. Move a card, save, and confirm that card's saved spot is unchanged.
 6. Drop O2 or raise CO2. The orange LOW O2 or HIGH CO2 line appears. Restore them and it leaves.
-7. F11 > RULES > CROSSHAIR. Always matches today. Weapon drawn hides the center dot while the weapon is holstered, including in third person, and shows it when the weapon is out. Prompts, the target card, a hit marker, a kill X, the damage ring, and the stealth pill still appear. Off hides only the center reticle. Crosshair Style still switches the interact glyph when the reticle is allowed.
+7. F11 > RULES > CROSSHAIR. Always matches today. Weapon drawn hides the aiming dot while the weapon is holstered, including in third person, and shows it when the weapon is out. Looking at something you can use still shows the center ring and the interact glyph, with the weapon holstered and with the rule Off. Iron sights still hide the reticle. Prompts, the target card, a hit marker, a kill X, the damage ring, and the stealth pill still appear. Crosshair Style still switches the interact glyph.
