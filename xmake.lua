@@ -110,3 +110,10 @@ target("HorizonShipBuilder")
     add_includedirs("shipbuilder/src")
     set_pcxxheader("shipbuilder/src/pch.h")
     add_syslinks("user32", "shell32", "ole32")
+
+-- Host-side logic test. Off by default so a plugin build does not need it.
+target("probe_logic_test")
+    set_default(false)
+    set_kind("binary")
+    add_files("shipbuilder/tests/probe_logic_test.cpp")
+    add_includedirs("shipbuilder/src")

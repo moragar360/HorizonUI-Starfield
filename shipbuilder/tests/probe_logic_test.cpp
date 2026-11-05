@@ -108,12 +108,23 @@ int main()
 	Expect(hsb::NextFormSlot(0) == 1, "first form slot");
 	Expect(hsb::NextFormSlot(39) == 40, "last form slot");
 	Expect(hsb::NextFormSlot(40) == -1, "form cap");
+	Expect(hsb::ProbePollDue(1000, 0), "first poll is due");
+	Expect(!hsb::ProbePollDue(100, 100), "same stamp is not due");
+	Expect(hsb::ProbePollDue(1000, 1000 - hsb::kProbePollMs), "modest interval elapsed");
+	Expect(!hsb::ProbePollDue(1000, 1000 - 1), "shorter than the modest interval waits");
+	Expect(hsb::HookWasRipped(true, false), "a missed ping clears the hook");
+	Expect(!hsb::HookWasRipped(true, true), "a live ping keeps the hook");
+	Expect(!hsb::HookWasRipped(false, false), "an absent hook is not a rip");
 
 	const std::string dirty = hsb::FactLine("F16", "line\r\nnext");
 	Expect(dirty.find('\n') == std::string::npos && dirty.find('\r') == std::string::npos, "facts stay on one line");
 	Expect(hsb::kMenuName == std::string("SpaceshipEditorMenu"), "menu name");
 
-	const fs::path root = fs::path(HSB_REPO_ROOT) / "shipbuilder";
+	fs::path repo = fs::path(__FILE__).parent_path().parent_path().parent_path();
+#ifdef HSB_REPO_ROOT
+	if (std::string(HSB_REPO_ROOT).size() > 0) repo = fs::path(HSB_REPO_ROOT);
+#endif
+	const fs::path root = repo / "shipbuilder";
 	const std::string retiredA = std::string("HU") + "SD";
 	const std::string retiredB = std::string("rs") + "chr";
 	ScanTree(root);
@@ -121,11 +132,16 @@ int main()
 	const std::string probe = ReadFile(root / "actionscript" / "HorizonShipBuilderProbe.as");
 	Expect(probe.find("captureOn = false") != std::string::npos, "capture starts off");
 	Expect(probe.find("label.size = 13") != std::string::npos, "overlay is 13 px");
+	Expect(probe.find("import Shared.AS3.Data.BSUIDataManager;") != std::string::npos, "data manager import");
+	Expect(probe.find(".font") == std::string::npos, "overlay sets no font");
+	Expect(probe.find("embedFonts") == std::string::npos, "overlay leaves the embedded face");
 	Expect(probe.find("spaceshipeditormenu") == std::string::npos, "the class does not name a replacement movie");
 
 	const std::string splice = ReadFile(root / "actionscript" / "document_splice.as");
 	Expect(splice.find("spaceshipeditormenu.swf") != std::string::npos, "normal movie is named");
 	Expect(splice.find("spaceshipeditormenu_lrg.swf") != std::string::npos, "large movie is named");
+	Expect(splice.find("import HorizonShipBuilderProbe;") != std::string::npos, "probe import");
+	Expect(splice.find("has no onAddedToStage") != std::string::npos, "missing stage handler is covered");
 	Expect(splice.find("hsbProbePing") != std::string::npos, "ping splice");
 	Expect(splice.find("ProcessUserEvent") != std::string::npos, "user-event splice");
 
@@ -134,9 +150,16 @@ int main()
 	Expect(readme.find("F.1") != std::string::npos, "readme lists the live tests");
 	Expect(readme.find("#16") != std::string::npos && readme.find("#17") != std::string::npos && readme.find("#18") != std::string::npos,
 		"arrange tests are in the readme");
+	Expect(readme.find("Data\\Interface\\spaceshipeditormenu.swf") != std::string::npos, "normal movie path");
+	Expect(readme.find("Data\\Interface\\spaceshipeditormenu_lrg.swf") != std::string::npos, "large movie path");
+	Expect(readme.find("HorizonShipBuilder_vanilla_backup") != std::string::npos, "named backup");
+	Expect(readme.find("throwaway save") != std::string::npos, "throwaway save warning");
+	Expect(readme.find("fc /b") != std::string::npos, "restore check");
 
-	const std::string lua = ReadFile(fs::path(HSB_REPO_ROOT) / "xmake.lua");
+	const std::string lua = ReadFile(repo / "xmake.lua");
 	Expect(lua.find("target(\"HorizonShipBuilder\")") != std::string::npos, "probe target");
+	Expect(lua.find("target(\"probe_logic_test\")") != std::string::npos, "logic test target");
+	Expect(lua.find("set_default(false)") != std::string::npos, "logic test is not a default build");
 	Expect(lua.find("set_version(\"0.43.0.33\")") != std::string::npos, "core version stays");
 	Expect(lua.find(retiredA) == std::string::npos && lua.find(retiredB) == std::string::npos, "xmake has no retired names");
 
@@ -144,6 +167,25 @@ int main()
 	Expect(plugin.find("ProbeMayAppend") != std::string::npos, "plugin checks the log path");
 	Expect(plugin.find("ShouldRestoreWndProc") != std::string::npos, "plugin uses the unhook rule");
 	Expect(plugin.find(std::string("swallowed") + "=0") != std::string::npos, "the hook does not swallow");
+	Expect(plugin.find("DllMain") != std::string::npos, "unload unhook");
+	Expect(plugin.find("AdvanceFrame") != std::string::npos, "movie advance hook");
+	const auto jobA = plugin.find("JOBTICK-BEGIN");
+	const auto jobB = plugin.find("JOBTICK-END");
+	Expect(jobA != std::string::npos && jobB != std::string::npos && jobB > jobA, "job tick is marked");
+	if (jobA != std::string::npos && jobB > jobA) {
+		const auto job = plugin.substr(jobA, jobB - jobA);
+		Expect(job.find("Invoke") == std::string::npos, "job tick does not call into Scaleform");
+		Expect(job.find("SetWindowLongPtr") == std::string::npos, "job tick does not change the window procedure");
+		Expect(job.find("_wfopen") == std::string::npos, "job tick does not open the log itself");
+	}
+	const auto wnd = plugin.find("CALLBACK ProbeWnd");
+	const auto afterWnd = plugin.find("FindGameWindow", wnd == std::string::npos ? 0 : wnd);
+	Expect(wnd != std::string::npos && afterWnd != std::string::npos, "window procedure is present");
+	if (wnd != std::string::npos && afterWnd > wnd) {
+		const auto body = plugin.substr(wnd, afterWnd - wnd);
+		Expect(body.find("_wfopen") == std::string::npos, "window procedure does not touch the log file");
+		Expect(body.find("SetWindowLongPtr") == std::string::npos, "window procedure does not reinstall itself");
+	}
 
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";
