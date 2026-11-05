@@ -14,6 +14,13 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 - **Customizable:** more than 100 settings, Arrange Cards and Arrange Scanner to move anything (the scope's hold-breath chip included), a vertical or horizontal Vitals card, colors, fonts, sizes, and presets you can save and switch.
 - **Modular:** a core HUD plus optional **Horizon Font**, **Comms** (subtitles, dialogue and companion reactions), the **Message Log** (a searchable history of your HUD messages), the optional **Scanner**, Horizon's own hand scanner screen, and the optional **Scope** module, a Horizon hold-breath chip for weapon scopes. Core is always installed; the modules are optional parts of the same FOMOD installer and need Core.
 
+## New in 0.43.1.0 (alpha, unreleased)
+
+This build is not published and has no release tag. Install steps below still describe the published 0.43.0.33 download.
+
+- **Watch** (F11 > CARDS > WATCH): Off (default, same as today), Vanilla, Vanilla + Horizon (your card color and accent), Horizon Digital, or Horizon Analog. Both Horizon faces are round, with no card behind them and no planet art. Digital is the segmented O2 / CO2 ring with an in-face compass, a day sub-dial, local and PC time, and the planet name and temperature. Analog uses the same O2 / CO2 arcs flush on the rim, hour and minute hands, and the day sub-dial at 6 o'clock. Arrange positions are not moved. If a showing card overlaps that corner, the watch sits above the card.
+- **Crosshair** (F11 > RULES > CROSSHAIR): Always (default), Weapon drawn, or Off. Only the center reticle is gated. Prompts, target cards, hit markers, the kill X, the damage ring, and the stealth pill stay. Crosshair Style is a separate setting.
+
 ## New in 0.43.0.33 (alpha)
 - **Moragar's Choice** matches the author's current in-game layout, including the scanner card positions. The source file is `preset/HorizonUI.moragars-choice.ini`. The installer still places it at `Interface\HorizonUI\presets\moragars_choice.ini`.
 

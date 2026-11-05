@@ -4,6 +4,17 @@ All notable changes to Horizon UI are listed here, newest first. The format foll
 
 Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never published; 0.41.0 replaced 0.40.3, and its entry includes the changes prepared for 0.40.3.
 
+## [0.43.1.0-alpha] - unreleased
+
+Not published. No tag. The settings schema stays 0.42.0, so an existing `HorizonUI.user.ini` carries over. `WatchStyle` and `CrosshairRule` stay at their defaults until you change them.
+
+### Added
+- **Watch** in F11 > CARDS. `WatchStyle` under `[Cards Extra]`: 0 off (default), 1 the game's watch, 2 the game's watch tinted with your card color and accent, 3 Horizon digital, 4 Horizon analog. Off matches the previous HUD. Arrange positions stay put. If a showing card overlaps that corner, the watch sits above the card.
+- **Crosshair visibility** in F11 > RULES. `CrosshairRule` under `[Rules]`: 0 always (default), 1 only with a weapon drawn, 2 off. This gates the center reticle only. `CrosshairStyle` is unchanged.
+
+### Changed
+- **SFSE plugin** file and product version are 0.43.1.0. This build is not a release download yet.
+
 ## [0.43.0.33-alpha] - 2026-11-04
 
 Released as v0.43.0.33-alpha.
