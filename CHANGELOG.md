@@ -4,6 +4,12 @@ All notable changes to Horizon UI are listed here, newest first. The format foll
 
 Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never published; 0.41.0 replaced 0.40.3, and its entry includes the changes prepared for 0.40.3.
 
+## [0.43.0.33-alpha] - Unreleased (pending)
+
+### Changed
+- **Moragar's Choice** is the author's current in-game layout. The file is `preset/HorizonUI.moragars-choice.ini` (the installer still adds it as `moragars_choice.ini`). `[Comms] HzRev` stays `0`, the default save counter.
+- **SFSE plugin** rebuilt for 0.43.0.33 (`HorizonUI.dll`, file and product version 0.43.0.33).
+
 ## [0.43.0.32-alpha] - 2026-11-03
 
 Released as v0.43.0.32-alpha.
@@ -180,6 +186,7 @@ Alpha pre-release. This entry covers everything since 0.42.0.13-alpha. The setti
 - **SFSE plugin** (`HorizonUI.dll`): F11 window input, mouse wheel, settings files and presets.
 - **Requirements:** SFSE and Address Library for SFSE Plugins, both required.
 
+[0.43.0.32-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.0.32-alpha
 [0.43.0.31-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.0.31-alpha
 [0.42.0.13-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.42.0.13-alpha
 [0.41.0-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.41.0-alpha

@@ -14,6 +14,9 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 - **Customizable:** more than 100 settings, Arrange Cards and Arrange Scanner to move anything (the scope's hold-breath chip included), a vertical or horizontal Vitals card, colors, fonts, sizes, and presets you can save and switch.
 - **Modular:** a core HUD plus optional **Horizon Font**, **Comms** (subtitles, dialogue and companion reactions), the **Message Log** (a searchable history of your HUD messages), the optional **Scanner**, Horizon's own hand scanner screen, and the optional **Scope** module, a Horizon hold-breath chip for weapon scopes. Core is always installed; the modules are optional parts of the same FOMOD installer and need Core.
 
+## New in 0.43.0.33 (alpha)
+- **Moragar's Choice** matches the author's current in-game layout, including the scanner card positions. The source file is `preset/HorizonUI.moragars-choice.ini`. The installer still places it at `Interface\HorizonUI\presets\moragars_choice.ini`.
+
 ## New in 0.43.0.32 (alpha)
 - **Compact name pill:** verbs such as Use and Recycle always show in full. A long name is the part that shortens, and the pill grows as needed so verbs are never cut. The accent name and the red steal name are unchanged.
 - **SCANNER and COMMS:** the module status box starts collapsed every time F11 opens. The chevron still expands it.
@@ -66,7 +69,7 @@ The Message Log is a history of the messages Horizon shows on your HUD, so you c
 - **Starfield** (PC). Tested on game version 1.16.244.
 - **[Starfield Script Extender (SFSE)](https://sfse.silverlock.org/)** for that game version. SFSE isn't included, so install it separately and launch with `sfse_loader.exe`.
 - **[Address Library for SFSE Plugins](https://www.nexusmods.com/starfield/mods/3256)** for that game version (required). It isn't included; `HorizonUI.dll` needs it to load.
-- **Horizon UI Core**, always required. The FOMOD (`HorizonUI-0.43.0.32-FOMOD.zip`) installs it automatically; Comms, the Message Log, the Scanner and Scope are optional modules inside it, not separate mods. They all need Core's `HorizonUI.dll`, settings files, F11 menu and HUD.
+- **Horizon UI Core**, always required. The FOMOD (`HorizonUI-0.43.0.33-FOMOD.zip`) installs it automatically; Comms, the Message Log, the Scanner and Scope are optional modules inside it, not separate mods. They all need Core's `HorizonUI.dll`, settings files, F11 menu and HUD.
 - **Loose files enabled** in `Documents\My Games\Starfield\StarfieldCustom.ini` (create it if missing):
 
   ```ini
@@ -78,13 +81,13 @@ The Message Log is a history of the messages Horizon shows on your HUD, so you c
   Without this, Starfield ignores loose interface files and you'll see the vanilla HUD.
 
 ## Install
-Download the one **FOMOD installer**, `HorizonUI-0.43.0.32-FOMOD.zip`, from [Releases](https://github.com/moragar360/HorizonUI-Starfield/releases), and install it with Vortex or Mod Organizer 2. **Core** (the HUD, the settings files, the F11 menu and `HorizonUI.dll`) is always required and installs automatically. The installer then walks you through Font, Settings Preset and the optional modules: Comms (subtitles and dialogue), Scanner, Scope and Message Log. Those modules are part of the same download, not separate mods, and they need Core.
+Download the one **FOMOD installer**, `HorizonUI-0.43.0.33-FOMOD.zip`, from [Releases](https://github.com/moragar360/HorizonUI-Starfield/releases), and install it with Vortex or Mod Organizer 2. **Core** (the HUD, the settings files, the F11 menu and `HorizonUI.dll`) is always required and installs automatically. The installer then walks you through Font, Settings Preset and the optional modules: Comms (subtitles and dialogue), Scanner, Scope and Message Log. Those modules are part of the same download, not separate mods, and they need Core.
 
 **Scope:** the Scope module changes the scope view and is ticked by default. If you use another scope mod, untick Scope.
 
 **Comms:** Comms replaces subtitle mods (such as Enhanced Subtitles) and dialogue menu mods (such as Enhanced Dialogue Interface). Uninstall yours first. **StarUI HUD** replaces the same HUD file as Horizon UI, so uninstall it too.
 
-**Updating from 0.42.x:** install 0.43.0.32 over your existing Horizon UI. Your `HorizonUI.user.ini` and saved presets are kept, and the new settings start at their defaults. The name hover is now Compact by default; to get the taller card back, choose **FULL** under NAME HOVER in F11 > CARDS. In Vortex, an update reuses your earlier installer choices; to change them, right-click the mod and choose Reinstall.
+**Updating from 0.42.x:** install 0.43.0.33 over your existing Horizon UI. Your `HorizonUI.user.ini` and saved presets are kept, and the new settings start at their defaults. The name hover is now Compact by default; to get the taller card back, choose **FULL** under NAME HOVER in F11 > CARDS. In Vortex, an update reuses your earlier installer choices; to change them, right-click the mod and choose Reinstall.
 
 For a manual install, extract the zip and copy the contents of its `00 Core` folder into `Data\`, then the folders of any parts you want (`01 Horizon Font`, `02 Preset - Moragars Choice`, `10 Comms`, `11 Comms Dialogue`, `20 Scanner`, `30 Scope`, `40 Notifications` for the Message Log). Skip the `fomod` folder, and don't create `HorizonUI.user.ini` yourself; F11 makes it.
 
@@ -123,7 +126,7 @@ Plugin log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
 
 3. The plugin is written to `build\windows\x64\releasedbg\HorizonUI.dll`.
 
-Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.43.0.32 loaded`.
+Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.43.0.33 loaded`.
 
 ### Debug traces (developers)
 Release builds keep the extra debug traces off: `HZ_HUD_MSG_CAPTURE` is `0`, `HZ_COMMS_MSG_LOG` is `0`, `HZC_MSG_LOG` is `false` and `hzcRxDbgOn` defaults to `false`. The one-line `comms reaction:` status and the one-time `comms reaction selftest:` lines stay on. To turn the traces back on for an in-game check:

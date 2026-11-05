@@ -59,11 +59,11 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.32", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 32, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.0.33", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 0 && HZ_FILE_VERSION_BUILD == 33, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "verbose reaction trace is off for this release");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "unfiltered HUD capture is off for this release");
-	Expect(HzFileVersionOk("0.43.0.32"), "4-part version ok");
+	Expect(HzFileVersionOk("0.43.0.33"), "4-part version ok");
 	Expect(!HzFileVersionOk("0.42.0"), "3-part version is not the file version");
 	Expect(!HzFileVersionOk("v0.42.0.6"), "leading v is not accepted");
 	Expect(!HzFileVersionOk("0.42.0.6 "), "trailing space rejected");
@@ -307,7 +307,7 @@ int main()
 	Expect(PresetContentKey(bodyA) != PresetContentKey(bodyC), "a different setting counts as different");
 
 	Expect(IsInstallerPresetFile(false, "moragars_choice.ini"), "installer file");
-	Expect(!IsInstallerPresetFile(false, "HorizonUI.moragars-choice-0.42.0.ini"), "standalone package file");
+	Expect(!IsInstallerPresetFile(false, "HorizonUI.moragars-choice.ini"), "standalone package file");
 	Expect(!IsInstallerPresetFile(true, "moragars_choice.ini"), "a saved copy is not the installer file");
 	ExpectEq(NormalizePresetName("  Moragar's   Choice\t"), "moragar's choice", "name key folds case and space");
 	ExpectEq(NormalizePresetName("Moragar's" "\xC2\xA0" "Choice"), "moragar's choice", "UTF-8 NBSP folds to a space");
@@ -534,19 +534,19 @@ int main()
 	{
 		std::vector<Candidate> items = {
 			C("s:moragars_choice.ini", false, "Moragar's Choice", "moragars_choice.ini", same.c_str(), 10),
-			C("s:HorizonUI.moragars-choice-0.42.0.ini", false, "moragar's   choice", "HorizonUI.moragars-choice-0.42.0.ini", same.c_str(), 99),
+			C("s:HorizonUI.moragars-choice.ini", false, "moragar's   choice", "HorizonUI.moragars-choice.ini", same.c_str(), 99),
 		};
 		const auto keep = DedupePresetIndices(items, drops);
 		Expect(keep.size() == 1 && keep[0] == 0, "same settings keep the installer copy");
 		Expect(drops.size() == 1 && drops[0].line.find("same settings, kept the installer copy") != std::string::npos, "installer reason");
-		Expect(drops[0].line.find("s:HorizonUI.moragars-choice-0.42.0.ini") != std::string::npos, "standalone id is the one hidden");
+		Expect(drops[0].line.find("s:HorizonUI.moragars-choice.ini") != std::string::npos, "standalone id is the one hidden");
 	}
 
 	// Same name, different settings: the newer file wins, even when it is the loose copy.
 	{
 		std::vector<Candidate> items = {
 			C("s:moragars_choice.ini", false, "Moragar's Choice", "moragars_choice.ini", same.c_str(), 10),
-			C("s:HorizonUI.moragars-choice-0.42.0.ini", false, "Moragar's Choice", "HorizonUI.moragars-choice-0.42.0.ini", other.c_str(), 50),
+			C("s:HorizonUI.moragars-choice.ini", false, "Moragar's Choice", "HorizonUI.moragars-choice.ini", other.c_str(), 50),
 		};
 		const auto keep = DedupePresetIndices(items, drops);
 		Expect(keep.size() == 1 && keep[0] == 1, "different settings keep the newer file");
@@ -556,7 +556,7 @@ int main()
 	// Different settings, same timestamp: installer copy, then the smaller id.
 	{
 		std::vector<Candidate> items = {
-			C("s:HorizonUI.moragars-choice-0.42.0.ini", false, "Moragar's Choice", "HorizonUI.moragars-choice-0.42.0.ini", other.c_str(), 7),
+			C("s:HorizonUI.moragars-choice.ini", false, "Moragar's Choice", "HorizonUI.moragars-choice.ini", other.c_str(), 7),
 			C("s:moragars_choice.ini", false, "Moragar's Choice", "moragars_choice.ini", same.c_str(), 7),
 		};
 		const auto keep = DedupePresetIndices(items, drops);
@@ -581,13 +581,13 @@ int main()
 	{
 		std::vector<Candidate> items = {
 			C("s:moragars_choice.ini", false, "Moragar's Choice", "moragars_choice.ini", same.c_str(), 500),
-			C("s:HorizonUI.moragars-choice-0.42.0.ini", false, "Moragar's Choice", "HorizonUI.moragars-choice-0.42.0.ini", same.c_str(), 400),
+			C("s:HorizonUI.moragars-choice.ini", false, "Moragar's Choice", "HorizonUI.moragars-choice.ini", same.c_str(), 400),
 			C("u:my_look.ini", true, "Moragar's Choice", "my_look.ini", other.c_str(), 20),
 		};
 		const auto keep = DedupePresetIndices(items, drops);
 		Expect(keep.size() == 2 && keep[0] == 0 && keep[1] == 2, "newer shipped file does not hide a different saved preset");
 		Expect(drops.size() == 1 && drops[0].line.find("u:") == std::string::npos, "the hide log does not name a saved preset");
-		Expect(drops[0].line.find("s:HorizonUI.moragars-choice-0.42.0.ini") != std::string::npos, "the loose shipped copy is the one hidden");
+		Expect(drops[0].line.find("s:HorizonUI.moragars-choice.ini") != std::string::npos, "the loose shipped copy is the one hidden");
 	}
 
 	// Two saved presets with one name are both shown. Dedupe does not apply to presets\\user.
@@ -604,7 +604,7 @@ int main()
 	{
 		std::vector<Candidate> items = {
 			C("s:moragars_choice.ini", false, "Moragar's Choice", "moragars_choice.ini", same.c_str(), 10),
-			C("s:HorizonUI.moragars-choice-0.42.0.ini", false, "Moragar's" "\xC2\xA0" "Choice", "HorizonUI.moragars-choice-0.42.0.ini", same.c_str(), 99),
+			C("s:HorizonUI.moragars-choice.ini", false, "Moragar's" "\xC2\xA0" "Choice", "HorizonUI.moragars-choice.ini", same.c_str(), 99),
 		};
 		const auto keep = DedupePresetIndices(items, drops);
 		Expect(keep.size() == 1 && keep[0] == 0, "NBSP still matches the shipped name");
@@ -822,12 +822,29 @@ int main()
 	}
 
 	{
-		std::ifstream in("preset/HorizonUI.moragars-choice-0.42.0.ini");
+		std::ifstream in("preset/HorizonUI.moragars-choice.ini");
 		Expect(static_cast<bool>(in), "preset ini opens");
 		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(ini.find("Version=0.43.0.32") != std::string::npos, "preset Version is the file version");
+		Expect(ini.find("\r\n") != std::string::npos, "Moragar's Choice stays CRLF");
+		Expect(ini.find("Name=Moragar's Choice") != std::string::npos, "preset name");
+		Expect(ini.find("Author=Moragar") != std::string::npos, "preset author");
+		Expect(ini.find("Version=0.43.0.33") != std::string::npos, "preset Version is the file version");
+		Expect(ini.find("Description=The author's own settings, matching the Nexus screenshots.") != std::string::npos, "preset description");
 		Expect(ini.find("NameHover=0") != std::string::npos, "Moragar's Choice sets NameHover");
 		Expect(ini.find("VitalsBars=0") != std::string::npos, "Moragar's Choice sets VitalsBars");
+		Expect(ini.find("StealthScale=1.15") != std::string::npos, "Moragar's Choice sets StealthScale");
+		Expect(ini.find("VitalsLayout=1") != std::string::npos, "Moragar's Choice sets VitalsLayout");
+		Expect(ini.find("HoverScale=0.7") != std::string::npos, "Moragar's Choice sets HoverScale");
+		Expect(ini.find("TextShadow=1") != std::string::npos, "Moragar's Choice sets TextShadow");
+		Expect(ini.find("StealthX=C-3") != std::string::npos && ini.find("StealthY=C127") != std::string::npos, "stealth card position");
+		Expect(ini.find("MissionToastX=R172") != std::string::npos, "mission toast position");
+		Expect(ini.find("ArrangeBarX=-292") != std::string::npos && ini.find("ArrangeBarY=-183") != std::string::npos, "arrange bar position");
+		Expect(ini.find("HudMessagesX=R-10") != std::string::npos && ini.find("HudMessagesY=T180") != std::string::npos, "HUD messages position");
+		Expect(ini.find("ScanPlanetCompact=0") != std::string::npos, "scanner planet card is not compact");
+		Expect(ini.find("ScanSocialX=C-240") != std::string::npos && ini.find("ScanVitalsLayout=1") != std::string::npos, "scanner arrange keys");
+		Expect(ini.find("ScopeChipX=-5") != std::string::npos && ini.find("ScopeChipY=46") != std::string::npos, "scope chip position");
+		Expect(ini.find("HzRev=0") != std::string::npos, "shipped HzRev is the default counter");
+		Expect(ini.find("HzRev=81") == std::string::npos && ini.find("HzRev=11") == std::string::npos, "a play session count is not shipped");
 		Expect(ini.find("StartupIntro=1") != std::string::npos, "Moragar's Choice turns the welcome splash on");
 		Expect(ini.find("test DLL") == std::string::npos, "preset Debug note does not call this a test DLL");
 		Expect(ini.find("The comms message log is only in debug builds.") != std::string::npos, "release Debug note");
@@ -836,6 +853,22 @@ int main()
 		Expect(ini.find("CardBgOpacity=92") != std::string::npos, "Moragar's Choice sets CardBgOpacity");
 		Expect(ini.find("SettingsOpacity=93") != std::string::npos, "Moragar's Choice sets SettingsOpacity");
 		Expect(ini.find("CardShadow=12") != std::string::npos, "Moragar's Choice sets CardShadow");
+		Expect(ini.find("ReactionCard=1") != std::string::npos, "Moragar's Choice sets ReactionCard");
+		Expect(ini.find("ScanWorldMarkers=1") != std::string::npos, "Moragar's Choice sets ScanWorldMarkers");
+		Expect(ini.find("ScopeHoldBreathChip=1") != std::string::npos && ini.find("ScopeChipScale=1") != std::string::npos, "scope chip stays on at scale 1");
+		Expect(ini.find("HUSD") == std::string::npos && ini.find("rschr") == std::string::npos, "no retired names in the preset");
+		std::ifstream defs("Interface/HorizonUI/HorizonUI.default.ini");
+		std::string def((std::istreambuf_iterator<char>(defs)), std::istreambuf_iterator<char>());
+		HZF::DiffOpt o;
+		o.keepUnknownKeys = false;
+		o.keepUnknownSections = false;
+		const auto applied = HZF::Diff(ini, def, "", o);
+		Expect(applied.find("StealthX=C-3") != std::string::npos, "applying the preset writes the stealth position");
+		Expect(applied.find("HudMessagesX=R-10") != std::string::npos, "applying the preset writes the HUD messages position");
+		Expect(applied.find("ScanPlanetCompact=0") != std::string::npos, "applying the preset writes the planet compact flag");
+		Expect(applied.find("ScopeChipX=-5") != std::string::npos, "applying the preset writes the scope chip position");
+		Expect(applied.find("HzRev=") == std::string::npos, "HzRev 0 matches the default and is not copied into user.ini");
+		Expect(applied.find("[Preset]") == std::string::npos, "applying a preset drops the Preset header");
 	}
 
 	{
@@ -843,7 +876,7 @@ int main()
 		Expect(static_cast<bool>(in), "default.ini opens");
 		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 		Expect(ini.find("\r\n") != std::string::npos, "default.ini stays CRLF");
-		Expect(ini.find("HorizonUI.default.ini (v0.43.0.32)") != std::string::npos,
+		Expect(ini.find("HorizonUI.default.ini (v0.43.0.33)") != std::string::npos,
 			"default.ini header is the file version");
 		const auto cards = ini.find("[Cards]");
 		const auto compass = ini.find("[Compass]");
@@ -991,7 +1024,7 @@ int main()
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(lua.find("set_version(\"0.43.0.32\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.43.0.33\")") != std::string::npos, "xmake version is the 4-part file version");
 		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
 		std::ifstream cpp("res/horizonui-plugin.cpp.in");
 		Expect(static_cast<bool>(cpp), "plugin version template opens");
