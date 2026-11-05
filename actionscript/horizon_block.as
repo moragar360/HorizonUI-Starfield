@@ -271,6 +271,8 @@
       private var hzCross3rd:Boolean = false;    // HudCrosshairData.bIn3rdPerson
       private var hzCrossTool:Boolean = false;   // HudCrosshairData.bIsToolGrip
       private var hzXhStyle:int = 1;             // CrosshairStyle: 0 vanilla, 1 Horizon dot, 2 Horizon cross, 3 none (interact reticle only)
+      private var hzCrossRule:int = 0;           // CrosshairRule: 0 always, 1 weapon drawn, 2 off. Center reticle only.
+      private var hzWatchStyle:int = 0;          // WatchStyle: 0 off, 1 vanilla, 2 vanilla + Horizon colors, 3 digital, 4 analog
       private var hzObjRing:int = 0;             // ObjectRing: 0 off, 1 container lists only, 2 vanilla
       private var hzXh:Sprite = null;
       private var hzXhSig:String = "";
@@ -1993,6 +1995,8 @@
                case "targetscale": if(!isNaN(nv)) { this.hzTgScaleLeg = nv; } break;   // pre-v0.26 key, migrated below
                case "containerscale": if(!isNaN(nv)) { this.hzTgScale = this.hz34ScClamp(nv); this.hzTgScaleSet = true; this.hzT19Sig = ""; } break;
                case "crosshairstyle": if(!isNaN(nv)) { this.hzXhStyle = Math.max(0,Math.min(3,int(nv))); this.hzXhSig = ""; } break;
+               case "crosshairrule": if(!isNaN(nv)) { this.hzCrossRule = Math.max(0,Math.min(2,int(nv))); } break;
+               case "watchstyle": if(!isNaN(nv)) { this.hzWatchStyle = Math.max(0,Math.min(4,int(nv))); this.hz43Sig = ""; this.hzHideCache = null; } break;
                case "objectring": if(!isNaN(nv)) { this.hzObjRing = Math.max(0,Math.min(2,int(nv))); } break;
                case "screenheight": if(!isNaN(nv)) { this.hzScrH = nv >= 360 && nv <= 4320 ? int(nv) : 0; this.hzT19Sig = ""; } break;
                case "headerstyle": if(!isNaN(nv)) { this.hzHeaderStyle = Math.max(0,Math.min(1,int(nv))); this.hzApplyTypo(); } break;
@@ -2517,13 +2521,22 @@
          try { this.hz40Frame(); } catch(e40f:Error) { }
          try { this.hz42QmFont(); } catch(e42q:Error) { }   // v0.40.2: in-world quest-marker labels in the Horizon face
          try { this.hz35CmpTick(); } catch(e35c:Error) { }   // v0.35: global Compact follow
+         try { this.hz43SyncHide(); } catch(e43h:Error) { }
          if(this.hzHideCache == null || this.hzFrameN % 90 == 1 || this.hz36HideStale)
          {
             this.hzHideTries++;
             this.hzHideCache = [];
             this.hz36HideStale = false;
             if(this.hzHideVanillaBoost) { names.push("JetpackMeterWrapper_mc","JetpackMeterAnim_mc"); }
-            if(this.hzHideVanillaCompass) { names.push("WatchOutline_mc","WatchPointerOutline_mc","WatchIconsWidget_mc","MissionIconsWidget_mc","EnemyIconsWidget_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"); }
+            if(this.hzHideVanillaCompass)
+            {
+               names.push("WatchIconsWidget_mc","MissionIconsWidget_mc","EnemyIconsWidget_mc");
+               // Styles 1 and 2 show the game's lower-left watch. Those clips stay out of the compass hide.
+               if(this.hzWatchStyle != 1 && this.hzWatchStyle != 2)
+               {
+                  names.push("WatchOutline_mc","WatchPointerOutline_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc");
+               }
+            }
             if(this.hzHideVanillaWatch) { names.push("O2CO2_mc","O2CO2thin_mc","WatchOutline_mc","WatchPointerOutline_mc","BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"); }
             if(this.hzHideVanillaAmmo) { names.push("EquippedWeaponAmmo_mc","EquippedWeaponAmmoTotal_mc","VerticalDivider_mc","EquippedWeaponIconHolder_mc"); }
             if(this.hzHideVanillaHealth) { names.push("HealthBar_mc","HealthBarEmpty_mc","HealthBarGhost_mc","HealthBarDamage_mc","HealthBarIncrease_mc","Health_mc"); }
@@ -2571,6 +2584,8 @@
          }
          try { this.hzTgTick(); } catch(errTg:Error) { try { this.hzTgRestore(); this.HorizonTarget_mc.visible = false; } catch(errTg2:Error) { } }
          try { this.hzXhTick(); } catch(errXh:Error) { try { this.hzXhRestore(); if(this.hzXh) { this.hzXh.visible = false; } } catch(errXh2:Error) { } }
+         try { this.hz43Reticle(); } catch(e43r:Error) { }
+         try { this.hz43Frame(); } catch(e43f:Error) { }
          try { this.hzTickBars(); } catch(e36b:Error) { }
          try { this.hzTickFades(); } catch(e36d:Error) { }
          try { this.hzTickVitals(); } catch(e36v:Error) { }
@@ -3120,7 +3135,7 @@
          }
          if(tab == 4)
          {
-            return [{"k":"JetpackRule","l":"JETPACK","t":"q","ids":[0,4,1,2],"h":"WHEN EACH CARD SHOWS"},{"k":"VitalsRule","l":"VITALS","t":"q","ids":[0,5,1,2]},{"k":"PlanetRule","l":"PLANET","t":"q","ids":[0,1,2]},{"k":"AfflictionsRule","l":"AFFLICTIONS","t":"q","ids":[0,6,1,2]},{"k":"AmmoRule","l":"EQUIPMENT","t":"q","ids":[0,3,1,2]},{"k":"QuestsRule","l":"QUEST TRACKER","t":"q","ids":[0,1,2]},{"k":"CompassRule","l":"COMPASS","t":"q","ids":[0,1,2]},{"k":"CharacterRule","l":"CHARACTER CARD","t":"q","ids":[0,7,8,9,1,2],"note":"XP / level / credits / skill point: shows for 8 s, then fades (CharacterShowSeconds in the ini)"}];
+            return [{"k":"JetpackRule","l":"JETPACK","t":"q","ids":[0,4,1,2],"h":"WHEN EACH CARD SHOWS"},{"k":"VitalsRule","l":"VITALS","t":"q","ids":[0,5,1,2]},{"k":"PlanetRule","l":"PLANET","t":"q","ids":[0,1,2]},{"k":"AfflictionsRule","l":"AFFLICTIONS","t":"q","ids":[0,6,1,2]},{"k":"AmmoRule","l":"EQUIPMENT","t":"q","ids":[0,3,1,2]},{"k":"QuestsRule","l":"QUEST TRACKER","t":"q","ids":[0,1,2]},{"k":"CompassRule","l":"COMPASS","t":"q","ids":[0,1,2]},{"k":"CharacterRule","l":"CHARACTER CARD","t":"q","ids":[0,7,8,9,1,2],"note":"XP / level / credits / skill point: shows for 8 s, then fades (CharacterShowSeconds in the ini)"},{"k":"CrosshairRule","l":"CROSSHAIR","t":"r","opts":["ALWAYS","WEAPON DRAWN","OFF"],"ids":[0,1,2],"h":"CENTER RETICLE","note":"The center reticle only. Prompts, target cards, hit markers, the kill X, the damage ring, and the stealth pill stay."}];
          }
          if(tab == 5)
          {
@@ -5001,6 +5016,12 @@
          this.hzRuleCompass = int(p.CompassRule);
          this.hzDrawMag();
          if(p.CrosshairStyle != undefined && !isNaN(Number(p.CrosshairStyle))) { this.hzXhStyle = Math.max(0,Math.min(3,int(p.CrosshairStyle))); this.hzXhSig = ""; }
+         if(p.CrosshairRule != undefined && !isNaN(Number(p.CrosshairRule))) { this.hzCrossRule = Math.max(0,Math.min(2,int(p.CrosshairRule))); }
+         if(p.WatchStyle != undefined && !isNaN(Number(p.WatchStyle)))
+         {
+            var nws:int = Math.max(0,Math.min(4,int(p.WatchStyle)));
+            if(nws != this.hzWatchStyle) { this.hzWatchStyle = nws; this.hz43Sig = ""; this.hzHideCache = null; }
+         }
          if(p.ObjectRing != undefined && !isNaN(Number(p.ObjectRing))) { this.hzObjRing = Math.max(0,Math.min(2,int(p.ObjectRing))); }
          if(p.ContainerScale != undefined && !isNaN(Number(p.ContainerScale))) { this.hzTgScale = this.hz34ScClamp(p.ContainerScale); this.hzT19Sig = ""; }
          if(p.ScreenHeight != undefined && !isNaN(Number(p.ScreenHeight))) { var nsh0:Number = Number(p.ScreenHeight); this.hzScrH = nsh0 >= 360 && nsh0 <= 4320 ? int(nsh0) : 0; }
@@ -5160,6 +5181,8 @@
          {
             a.push(rk + "=" + int(p[rk]));
          }
+         a.push("; Crosshair visibility: 0 always (default), 1 only with weapon drawn, 2 off");
+         a.push("CrosshairRule=" + int(p.CrosshairRule != undefined ? p.CrosshairRule : this.hzCrossRule));
          a.push("; Seconds the character card stays after an XP / level / credits event (rules 7 and 9), 2 - 60");
          a.push("CharacterShowSeconds=" + String(Math.round(this.hz27CharSecs * 10) / 10));
          a.push("; Vitals slide to the exact center when the Equipment card is hidden (ignored if the vitals card was moved)");
@@ -5267,14 +5290,14 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.33";
+      private static const HZ_BUILD:String = "0.43.1.0";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1,"WatchStyle":0,"CrosshairRule":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -12468,6 +12491,8 @@
          a.push("[Cards Extra]");
          a.push("; Character card: name, LV + XP bar, skill points, credits, mass / overweight (strip in compact mode)");
          a.push("ShowCharacter=" + this.hzB(p.ShowCharacter));
+         a.push("; Wrist watch, lower left: 0 off (default), 1 vanilla, 2 vanilla with Horizon colors, 3 Horizon digital, 4 Horizon analog");
+         a.push("WatchStyle=" + int(p.WatchStyle != undefined ? p.WatchStyle : this.hzWatchStyle));
          a.push("; Enemy health bar at the top center (LV, name, %, legendary stars / modifiers, EM / stunned). Hides the vanilla bar.");
          a.push("EnemyBar=" + this.hzB(p.EnemyBar));
          a.push("; Stealth pill above the crosshair while sneaking. Hides the vanilla stealth meter.");
@@ -14397,6 +14422,8 @@
          o.VitalsLayout = this.hz42VL;   // v0.42.0
          o.NameHover = this.hzNameHover == 1 ? 1 : 0;
          o.VitalsBars = this.hzVitalsBars == 1 ? 1 : 0;
+         o.WatchStyle = this.hzWatchStyle;
+         o.CrosshairRule = this.hzCrossRule;
          o.StartupIntro = this.hzSplashWelcome ? 1 : 0;
       }
       private function hz34SetLive(p:Object) : void
@@ -14481,6 +14508,7 @@
             {"k":"VitalsLayout","l":"VITALS LAYOUT","t":"r","opts":["VERTICAL","HORIZONTAL"],"ids":[0,1],"sub":true,"note":"VERTICAL = health above O2.  HORIZONTAL = O2 beside health (one row).  ARRANGE CARDS: L"},
             {"k":"VitalsBars","l":"HEALTH AND O2 BARS","t":"r","opts":["FULL","COMPACT"],"ids":[0,1],"sub":true,"note":"COMPACT uses the same boost, health, and oxygen card as COMPACT MODE. FULL keeps the separate cards. If either is on, that merged card shows."},
             {"k":"ShowCharacter","l":"CHARACTER CARD (LV / XP / CREDITS / MASS)","t":"b"},this.hz34Sz("Character"),this.hz34Cmp("Character",cmn),
+            {"k":"WatchStyle","l":"WATCH","t":"r","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4],"note":"Lower left. OFF is today's HUD. Arrange positions stay put. If a card overlaps that corner, the watch sits above the card."},
             {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","sub":true},
             {"k":"ShowPlanet","l":"PLANET CARD","t":"b"},this.hz34Sz("Planet"),this.hz34Cmp("Planet"),
             {"k":"PlanetDetails","l":"PLANET: GRAVITY / AIR LINE","t":"b"},
@@ -17989,4 +18017,527 @@
          this.hzSplashAlpha(sub,la * fadeOut * peak,this.hzSplashLead(la) * this.hzSplashLead(fadeOut) * peak);
       }
       // =================== end v0.40 Scanner ===================
+
+      // =================== 0.43.1.0 watch + center-reticle rule ===================
+      // hudmenu and hudmenu_lrg share this block, so both movies get the same watch.
+      // The watch is not an Arrange card. Saved card positions are not changed.
+      // Home is the lower-left corner, inside the screen margin (the vanilla watch slot).
+      // If a showing card overlaps that home (character, vitals, jetpack, or the compact stack),
+      // the watch moves up and sits 8 px above that card. Cards stay where Arrange put them.
+      // Dawn and dusk are not a separate feed. The day sub-dial maps LocalEnvData_Frequent.fLocalPlanetTime
+      // with the same 0.25 / 0.75 split the planet disc already uses (sun while the fraction is in that range).
+      // If that fraction is missing, galactic standard time (fGalacticStandardTime) fills the clock and the marker.
+      // If both are missing, the hands sit at 12 and the sun marker is hidden.
+      // Analog seconds are not drawn: the game-time feed is hours and minutes.
+      private static const HZ43_O2:uint = 0x4DB6FF;
+      private static const HZ43_CO2:uint = 0xE8C547;
+      private static const HZ43_ATTN:uint = 0xF28A4F;
+      private static const HZ43_R:Number = 132;
+      private var hz43Watch:Sprite = null;
+      private var hz43Face:Sprite = null;
+      private var hz43Sig:String = "";
+      private var hz43TintOn:Boolean = false;
+      private var hz43RetHid:Boolean = false;
+      private var hz43LocT:TextField = null;
+      private var hz43LocL:TextField = null;
+      private var hz43RealT:TextField = null;
+      private var hz43RealL:TextField = null;
+      private var hz43BodyT:TextField = null;
+      private var hz43TempT:TextField = null;
+      private var hz43O2L:TextField = null;
+      private var hz43CO2L:TextField = null;
+      private var hz43PmT:TextField = null;
+      private var hz43DayT:TextField = null;
+      private var hz43AttT:TextField = null;
+      private var hz43Cards:Array = null;
+
+      private function hz43SyncHide() : void
+      {
+         var showVan:Boolean = this.hzWatchStyle == 1 || this.hzWatchStyle == 2;
+         var hide:Boolean = !showVan;
+         if(hide != this.hzHideVanillaWatch)
+         {
+            this.hzHideVanillaWatch = hide;
+            this.hzHideCache = null;
+         }
+      }
+
+      private function hz43ReticleOn() : Boolean
+      {
+         if(this.hzCrossRule >= 2) { return false; }
+         if(this.hzCrossRule == 1) { return this.hzWeaponOut(); }
+         return true;
+      }
+
+      // Gate CenterGroup_mc.ReticleBase_mc and the Horizon interact glyph. Nothing else.
+      private function hz43Reticle() : void
+      {
+         var rb:DisplayObject = null;
+         try { rb = this.CenterGroup_mc ? this.CenterGroup_mc.ReticleBase_mc as DisplayObject : null; } catch(e1:Error) { rb = null; }
+         if(!this.hz43ReticleOn())
+         {
+            if(rb && rb.visible) { rb.visible = false; }
+            this.hz43RetHid = true;
+            if(this.hzXh) { this.hzXh.visible = false; }
+            return;
+         }
+         if(this.hz43RetHid)
+         {
+            this.hz43RetHid = false;
+            if(rb) { rb.visible = true; }
+         }
+      }
+
+      private function hz43HM() : Object
+      {
+         if(this.hzPpDay >= 0)
+         {
+            var hh:Number = (this.hzPpDay * 24) % 24;
+            var H:int = int(Math.floor(hh));
+            var M:int = int(Math.floor((hh - H) * 60));
+            return {"h":H,"m":M,"ut":false,"ok":true};
+         }
+         if(this.hzPpUT >= 0)
+         {
+            var uh:int = int(Math.floor(this.hzPpUT)) % 24;
+            var um:int = int(Math.floor((this.hzPpUT - Math.floor(this.hzPpUT)) * 60));
+            return {"h":uh,"m":um,"ut":true,"ok":true};
+         }
+         return {"h":0,"m":0,"ut":false,"ok":false};
+      }
+
+      private function hz43Real() : String
+      {
+         try
+         {
+            var dt:Date = new Date();
+            return this.hzFmtClock(dt.getHours(),dt.getMinutes());
+         }
+         catch(err:Error) { return "--"; }
+      }
+
+      private function hz43Band(g:*, cx:Number, cy:Number, r0:Number, r1:Number, a0:Number, a1:Number, col:uint, al:Number) : void
+      {
+         if(a1 < a0) { a1 += Math.PI * 2; }
+         var n:int = Math.max(3,int(Math.ceil((a1 - a0) / (Math.PI / 28))));
+         var i:int = 0;
+         g.beginFill(col,al);
+         g.moveTo(cx + Math.cos(a0) * r1,cy + Math.sin(a0) * r1);
+         while(i <= n)
+         {
+            var a:Number = a0 + (a1 - a0) * i / n;
+            g.lineTo(cx + Math.cos(a) * r1,cy + Math.sin(a) * r1);
+            i++;
+         }
+         i = n;
+         while(i >= 0)
+         {
+            var b:Number = a0 + (a1 - a0) * i / n;
+            g.lineTo(cx + Math.cos(b) * r0,cy + Math.sin(b) * r0);
+            i--;
+         }
+         g.endFill();
+      }
+
+      private function hz43Half(g:*, frac:Number, left:Boolean, col:uint, segmented:Boolean) : void
+      {
+         var f:Number = frac;
+         if(f < 0) { f = 0; }
+         if(f > 1) { f = 1; }
+         var a0:Number = left ? Math.PI / 2 : -Math.PI / 2;
+         var span:Number = Math.PI;
+         var gap:Number = segmented ? 0.045 : 0;
+         var parts:int = segmented ? 10 : 1;
+         var i:int = 0;
+         while(i < parts)
+         {
+            var u0:Number = i / parts;
+            var u1:Number = (i + 1) / parts;
+            var s0:Number = a0 + span * u0 + gap * 0.5;
+            var s1:Number = a0 + span * u1 - gap * 0.5;
+            if(s1 > s0)
+            {
+               var on:Boolean = f >= (u0 + u1) * 0.5;
+               this.hz43Band(g,0,0,HZ43_R - 14,HZ43_R - 4,s0,s1,col,on ? 0.95 : 0.22);
+            }
+            i++;
+         }
+      }
+
+      // Dawn at the left of the dial, dusk at the right, day across the top.
+      // 0.25 is dawn and 0.75 is dusk. Outside that, the marker rides the lower night arc.
+      private function hz43Dial(g:*, cx:Number, cy:Number, day:Number) : void
+      {
+         var rd:Number = 28;
+         g.lineStyle(1.5,0xF2F7F9,0.35);
+         g.drawCircle(cx,cy,rd);
+         g.lineStyle();
+         this.hz43Band(g,cx,cy,rd - 3,rd,Math.PI,Math.PI * 2,this.HZ_ACCENT,0.9);
+         if(day < 0) { return; }
+         var ang:Number = 0;
+         if(day >= 0.25 && day <= 0.75)
+         {
+            ang = Math.PI + (day - 0.25) / 0.5 * Math.PI;
+         }
+         else
+         {
+            var night:Number = day < 0.25 ? day + 0.25 : day - 0.75;
+            ang = (night / 0.5) * Math.PI;
+         }
+         var sx:Number = cx + Math.cos(ang) * (rd - 1);
+         var sy:Number = cy + Math.sin(ang) * (rd - 1);
+         var sun:Boolean = day >= 0.25 && day <= 0.75;
+         g.beginFill(sun ? 0xFFD678 : 0xC8D7EB,1);
+         g.drawCircle(sx,sy,3.2);
+         g.endFill();
+      }
+
+      private function hz43Mark13(tf:TextField) : void
+      {
+         var o:Object = this.hzTxtObj(tf);
+         if(!o) { return; }
+         o.chipCard = "Watch";
+         o.chipMin = 13;
+         try { this.hzApplyFmt(o); } catch(err:Error) { }
+      }
+
+      private function hz43Build() : void
+      {
+         if(this.hz43Watch) { return; }
+         var w:Sprite = new Sprite();
+         w.mouseEnabled = false;
+         w.mouseChildren = false;
+         w.name = "HorizonWatch_mc";
+         this.hz43Face = new Sprite();
+         this.hz43Face.mouseEnabled = false;
+         w.addChild(this.hz43Face);
+         this.hz43O2L = this.hzT(w,"O2",-HZ43_R + 8,-8,40,13,"sb","main",1);
+         this.hz43CO2L = this.hzT(w,"CO2",HZ43_R - 52,-8,48,13,"sb","main",1,"right");
+         this.hz43LocT = this.hzT(w,"12:00",-90,-6,180,22,"sb","main",0,"center");
+         this.hz43LocL = this.hzT(w,"LOCAL/GAME",-90,22,180,13,"sb","dim",0.6,"center");
+         this.hz43RealT = this.hzT(w,"12:00",-80,40,160,16,"rg","mut",0,"center");
+         this.hz43RealL = this.hzT(w,"PC/REAL",-70,60,140,13,"sb","dim",0.6,"center");
+         this.hz43BodyT = this.hzT(w,"--",-100,84,200,14,"sb","main",1.2,"center");
+         this.hz43TempT = this.hzT(w,"--",-80,104,160,13,"sb","acc",0.4,"center");
+         this.hz43PmT = this.hzT(w,"PM",-16,-58,36,13,"sb","dim",0.4,"center");
+         this.hz43DayT = this.hzT(w,"DAY",-22,-40,48,13,"sb","main",0.6,"center");
+         this.hz43AttT = this.hzT(w,"",-90,120,180,13,"sb","col",0.4,"center",HZ43_ATTN);
+         this.hz43AttT.visible = false;
+         this.hz43Cards = [];
+         var cn:Array = ["N","NE","E","SE","S","SW","W","NW"];
+         var ci:int = 0;
+         while(ci < cn.length)
+         {
+            var ct:TextField = this.hzT(w,String(cn[ci]),-24,-24,48,13,"sb","main",0.4,"center");
+            ct.visible = false;
+            this.hz43Cards.push(ct);
+            ci++;
+         }
+         var fields:Array = [this.hz43O2L,this.hz43CO2L,this.hz43LocT,this.hz43LocL,this.hz43RealT,this.hz43RealL,this.hz43BodyT,this.hz43TempT,this.hz43PmT,this.hz43DayT,this.hz43AttT];
+         for each(var tf:TextField in fields) { this.hz43Mark13(tf); }
+         for each(var cf:TextField in this.hz43Cards) { this.hz43Mark13(cf); }
+         addChild(w);
+         this.hz43Watch = w;
+         w.visible = false;
+      }
+
+      private function hz43Attn() : String
+      {
+         if(this.hz26O2F < 0.35) { return "LOW O2"; }
+         if(this.hz26Co2F > 0.35) { return "HIGH CO2"; }
+         return "";
+      }
+
+      private function hz43Draw(mode:int) : void
+      {
+         var g:* = this.hz43Face.graphics;
+         g.clear();
+         g.beginFill(0x0A1218,0.62);
+         g.drawCircle(0,0,HZ43_R - 2);
+         g.endFill();
+         var digital:Boolean = mode == 3;
+         this.hz43LocT.visible = this.hz43LocL.visible = this.hz43RealT.visible = this.hz43RealL.visible = digital;
+         this.hz43O2L.visible = this.hz43CO2L.visible = true;
+         this.hz43Half(g,this.hz26O2F,true,HZ43_O2,digital);
+         this.hz43Half(g,this.hz26Co2F,false,HZ43_CO2,digital);
+         var hm:Object = this.hz43HM();
+         var day:Number = this.hzPpDay >= 0 ? this.hzPpDay : (this.hzPpUT >= 0 ? (this.hzPpUT % 24) / 24 : -1);
+         if(digital)
+         {
+            this.hz43Compass(g);
+            this.hz43Dial(g,0,-46,day);
+            this.hz43PmT.x = -18; this.hz43PmT.y = -62;
+            this.hz43DayT.x = -24; this.hz43DayT.y = -44;
+         }
+         else
+         {
+            if(this.hz43Cards)
+            {
+               var hi:int = 0;
+               while(hi < this.hz43Cards.length) { TextField(this.hz43Cards[hi]).visible = false; hi++; }
+            }
+            this.hz43Ticks(g);
+            this.hz43Diamond(g,0,-HZ43_R + 22);
+            this.hz43Hands(g,hm);
+            this.hz43Dial(g,0,78,day);
+            this.hz43PmT.x = -18; this.hz43PmT.y = 62;
+            this.hz43DayT.x = -24; this.hz43DayT.y = 80;
+            this.hz43BodyT.y = -78;
+            this.hz43TempT.y = -58;
+         }
+         if(digital)
+         {
+            this.hz43BodyT.y = 84;
+            this.hz43TempT.y = 104;
+         }
+         var attn:String = this.hz43Attn();
+         this.hz43AttT.visible = attn.length > 0;
+         this.hz43AttT.text = attn.length > 0 ? attn : "";
+         if(attn.length > 0)
+         {
+            this.hz43AttT.y = digital ? 122 : 108;
+            this.hzTxtTint(this.hz43AttT,HZ43_ATTN);
+            var ay:Number = this.hz43AttT.y + 8;
+            g.beginFill(HZ43_ATTN,1);
+            g.moveTo(-86,ay + 6);
+            g.lineTo(-74,ay + 6);
+            g.lineTo(-80,ay);
+            g.endFill();
+         }
+         this.hz43LocL.text = "LOCAL/GAME";
+         this.hz43RealL.text = "PC/REAL";
+         this.hz43O2L.text = "O2";
+         this.hz43CO2L.text = "CO2";
+         if(hm.ok)
+         {
+            var clock:String = hm.ut ? (this.hzPad2(int(hm.h)) + ":" + this.hzPad2(int(hm.m)) + " UT") : this.hzFmtClock(int(hm.h),int(hm.m));
+            this.hz43LocT.text = clock;
+            this.hz43PmT.text = int(hm.h) >= 12 ? "PM" : "AM";
+         }
+         else
+         {
+            this.hz43LocT.text = "--";
+            this.hz43PmT.text = "PM";
+         }
+         this.hz43RealT.text = this.hz43Real();
+         var body:String = this.hzPpBodyName && String(this.hzPpBodyName).length > 0 ? String(this.hzPpBodyName) : "--";
+         this.hz43BodyT.text = body;
+         this.hz43TempT.text = isNaN(this.hzEnvTempC) ? "--" : this.hzTempText(this.hzEnvTempC);
+         this.hz43DayT.text = "DAY";
+      }
+
+      private function hz43Compass(g:*) : void
+      {
+         this.hz43Diamond(g,0,-HZ43_R + 36);
+         var base:int = int(Math.round(this.hzCmpDeg / 15)) * 15;
+         var k:int = -4;
+         var shown:Array = [];
+         while(k <= 4)
+         {
+            var hd:int = base + k * 15;
+            var rel:Number = hd - this.hzCmpDeg;
+            while(rel > 180) { rel -= 360; }
+            while(rel < -180) { rel += 360; }
+            var a:Number = -Math.PI / 2 + rel * Math.PI / 180;
+            var inner:Number = HZ43_R - 52;
+            var outer:Number = HZ43_R - 40;
+            g.lineStyle(hd % 45 == 0 ? 2 : 1,0xF2F7F9,hd % 45 == 0 ? 0.9 : 0.45);
+            g.moveTo(Math.cos(a) * inner,Math.sin(a) * inner);
+            g.lineTo(Math.cos(a) * outer,Math.sin(a) * outer);
+            g.lineStyle();
+            if(hd % 45 == 0 && Math.abs(rel) >= 10 && Math.abs(rel) <= 58)
+            {
+               var idx:int = (int(Math.round(((hd % 360) + 360) % 360 / 45)) ) % 8;
+               shown.push(idx);
+               if(this.hz43Cards && this.hz43Cards[idx])
+               {
+                  var lt:TextField = this.hz43Cards[idx] as TextField;
+                  var lx:Number = Math.cos(a) * (inner - 16);
+                  var ly:Number = Math.sin(a) * (inner - 16);
+                  lt.x = lx - 24;
+                  lt.y = ly - 8;
+                  lt.visible = true;
+               }
+            }
+            k++;
+         }
+         if(this.hz43Cards)
+         {
+            var hi:int = 0;
+            while(hi < this.hz43Cards.length)
+            {
+               if(shown.indexOf(hi) < 0) { TextField(this.hz43Cards[hi]).visible = false; }
+               hi++;
+            }
+         }
+      }
+
+      private function hz43Ticks(g:*) : void
+      {
+         var n:int = 0;
+         while(n < 12)
+         {
+            var a:Number = -Math.PI / 2 + n * Math.PI / 6;
+            var inner:Number = n % 3 == 0 ? HZ43_R - 30 : HZ43_R - 24;
+            g.lineStyle(n % 3 == 0 ? 2 : 1,0xF2F7F9,0.85);
+            g.moveTo(Math.cos(a) * inner,Math.sin(a) * inner);
+            g.lineTo(Math.cos(a) * (HZ43_R - 16),Math.sin(a) * (HZ43_R - 16));
+            g.lineStyle();
+            n++;
+         }
+      }
+
+      private function hz43Diamond(g:*, x:Number, y:Number) : void
+      {
+         g.beginFill(this.HZ_ACCENT,1);
+         g.moveTo(x,y - 6);
+         g.lineTo(x + 5,y);
+         g.lineTo(x,y + 6);
+         g.lineTo(x - 5,y);
+         g.lineTo(x,y - 6);
+         g.endFill();
+      }
+
+      private function hz43Hands(g:*, hm:Object) : void
+      {
+         var h:Number = hm.ok ? Number(hm.h) : 0;
+         var m:Number = hm.ok ? Number(hm.m) : 0;
+         var ha:Number = -Math.PI / 2 + ((h % 12) + m / 60) * (Math.PI / 6);
+         var ma:Number = -Math.PI / 2 + m * (Math.PI / 30);
+         this.hz43Hand(g,ha,52,3,0xF2F7F9);
+         this.hz43Hand(g,ma,74,2,this.HZ_ACCENT);
+         g.beginFill(this.HZ_ACCENT,1);
+         g.drawCircle(0,0,4);
+         g.endFill();
+      }
+
+      private function hz43Hand(g:*, a:Number, len:Number, th:Number, col:uint) : void
+      {
+         var x:Number = Math.cos(a) * len;
+         var y:Number = Math.sin(a) * len;
+         var px:Number = -Math.sin(a) * th;
+         var py:Number = Math.cos(a) * th;
+         g.beginFill(col,0.95);
+         g.moveTo(px,py);
+         g.lineTo(x + px * 0.3,y + py * 0.3);
+         g.lineTo(-px * 0.3 + x,-py * 0.3 + y);
+         g.lineTo(-px,-py);
+         g.endFill();
+      }
+
+      private function hz43Hits(c:Sprite, cx:Number, cy:Number, rad:Number) : Number
+      {
+         if(!c || !c.visible || c.alpha <= 0.2) { return NaN; }
+         var cw:Number = c.width;
+         var ch:Number = c.height;
+         if(!(cw > 2) || !(ch > 2)) { return NaN; }
+         var wx0:Number = cx - rad;
+         var wy0:Number = cy - rad;
+         var hit:Boolean = wx0 < c.x + cw && wx0 + rad * 2 > c.x && wy0 < c.y + ch && wy0 + rad * 2 > c.y;
+         return hit ? c.y : NaN;
+      }
+
+      private function hz43Place() : void
+      {
+         var vr:Rectangle = Extensions.visibleRect;
+         if(!this.hz43Watch || vr == null || vr.width < 100 || stage == null) { return; }
+         var tl:Point = globalToLocal(new Point(vr.left,vr.top));
+         var br:Point = globalToLocal(new Point(vr.right,vr.bottom));
+         if(isNaN(tl.x) || br.x - tl.x < 100) { return; }
+         var sc:Number = this.hz34S("Watch");
+         if(!(sc > 0.05)) { sc = 1; }
+         this.hz43Watch.scaleX = this.hz43Watch.scaleY = sc;
+         var rad:Number = HZ43_R * sc;
+         var cx:Number = tl.x + this.hzMargin + rad;
+         var cy:Number = br.y - this.hzMargin - rad;
+         var guard:int = 0;
+         while(guard < 6)
+         {
+            var top:Number = NaN;
+            var cards:Array = [this.HorizonChar_mc,this.HorizonVitals_mc,this.HorizonCard_mc,this.HorizonCompact_mc];
+            var i:int = 0;
+            while(i < cards.length)
+            {
+               var t:Number = this.hz43Hits(cards[i] as Sprite,cx,cy,rad);
+               if(!isNaN(t) && (isNaN(top) || t < top)) { top = t; }
+               i++;
+            }
+            if(isNaN(top)) { break; }
+            cy = top - 8 - rad;
+            guard++;
+         }
+         var minY:Number = tl.y + this.hzMargin + rad;
+         if(cy < minY) { cy = minY; }
+         this.hz43Watch.x = cx;
+         this.hz43Watch.y = cy;
+      }
+
+      private function hz43TintClip(d:DisplayObject, col:uint, amt:Number) : void
+      {
+         if(!d) { return; }
+         var r:int = (col >> 16) & 255;
+         var gg:int = (col >> 8) & 255;
+         var b:int = col & 255;
+         var keep:Number = 1 - amt;
+         d.transform.colorTransform = new ColorTransform(keep,keep,keep,1,r * amt,gg * amt,b * amt,0);
+      }
+
+      private function hz43ClearTint(d:DisplayObject) : void
+      {
+         if(!d) { return; }
+         d.transform.colorTransform = new ColorTransform();
+      }
+
+      private function hz43Tint() : void
+      {
+         if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
+         if(!this.hzBlg) { return; }
+         var want:Boolean = this.hzWatchStyle == 2 && !this.hzUserHidden;
+         var names:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","BioConditionBase_mc","EnvConditionBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc"];
+         var accentNames:Array = ["WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc"];
+         var i:int = 0;
+         if(!want)
+         {
+            if(!this.hz43TintOn) { return; }
+            while(i < names.length)
+            {
+               this.hz43ClearTint(this.hzBlg.getChildByName(String(names[i])));
+               i++;
+            }
+            this.hz43TintOn = false;
+            return;
+         }
+         while(i < names.length)
+         {
+            var n:String = String(names[i]);
+            var accent:Boolean = accentNames.indexOf(n) >= 0;
+            this.hz43TintClip(this.hzBlg.getChildByName(n),accent ? uint(this.HZ_ACCENT) : this.hzCardFill(),accent ? 0.72 : 0.55);
+            i++;
+         }
+         this.hz43TintOn = true;
+      }
+
+      private function hz43Frame() : void
+      {
+         this.hz43SyncHide();
+         if(this.hzWatchStyle == 2) { this.hz43Tint(); }
+         else if(this.hz43TintOn) { this.hz43Tint(); }
+         var show:Boolean = (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && !this.hzUserHidden;
+         if(!show)
+         {
+            if(this.hz43Watch) { this.hz43Watch.visible = false; }
+            return;
+         }
+         this.hz43Build();
+         this.hz43Place();
+         var hm:Object = this.hz43HM();
+         var attn:String = this.hz43Attn();
+         var sig:String = this.hzWatchStyle + "|" + int(hm.h) + ":" + int(hm.m) + "|" + (hm.ut ? 1 : 0) + "|" + (hm.ok ? 1 : 0) + "|" + Math.round(this.hzCmpDeg) + "|" + Math.round(this.hz26O2F * 100) + "|" + Math.round(this.hz26Co2F * 100) + "|" + this.hz43Real() + "|" + String(this.hzPpBodyName) + "|" + (isNaN(this.hzEnvTempC) ? "-" : String(Math.round(this.hzEnvTempC))) + "|" + this.hzTempUnit + "|" + this.hzClockFmt + "|" + uint(this.HZ_ACCENT) + "|" + attn + "|" + Math.round(this.hzPpDay * 1000);
+         if(sig != this.hz43Sig)
+         {
+            this.hz43Sig = sig;
+            this.hz43Draw(this.hzWatchStyle);
+         }
+         this.hz43Watch.visible = true;
+      }
       // =================== end Horizon UI (HUD module) ===================
