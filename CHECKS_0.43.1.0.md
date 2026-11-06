@@ -24,7 +24,7 @@ Styles 1 and 2 are the game's own watch. Arrange does not drag that clip.
 | Element | Feed | Fallback |
 | --- | --- | --- |
 | Local / game time and analog hands | `LocalEnvData_Frequent.fLocalPlanetTime` (0 to 1 of the local day), same clock as the planet card | Galactic standard time `fGalacticStandardTime` when the local day is missing (flying ship, or hours-per-day is 0). Hands sit at 12 and the local line is `--` when both are missing. |
-| PC / real time | `Date` hours and minutes, same formatter as the planet card (`ClockFormat`) | `--` if the clock throws |
+| PC / real time | `Date` hours and minutes, same formatter as the planet card (`ClockFormat`) | The last good reading if the clock throws. With none yet, the planet card's real minutes. `--` only when both are missing. A failed read still waits a second. |
 | Day sub-dial | Same local-day fraction. Dawn is 0.25 and dusk is 0.75, the split the planet disc already uses for sun versus moon. The marker rides the top arc between those two and the lower arc at night. | Galactic time divided by 24 when the local fraction is missing. No marker when both are missing. There is no sun-altitude feed. |
 | Planet name | `LocalEnvironmentData` body name, already stored as `hzPpBodyName` | `--` |
 | Temperature | `LocalEnvironmentData.fTemperature` in Celsius, through `hzTempText` so `TempUnit` still applies | `--` in a flying ship or when the value is missing |
@@ -35,6 +35,8 @@ Styles 1 and 2 are the game's own watch. Arrange does not drag that clip.
 | Attention | O2 below 0.35 or CO2 above 0.35. Orange `#F28A4F`, a triangle, and the words LOW O2 or HIGH CO2. LOW O2 wins when both are true. | Hidden when neither threshold is crossed |
 
 Analog seconds are not drawn. The game-time feed is hours and minutes.
+
+The afflictions card hides the vanilla bio popup on its own, including while styles 1 and 2 show the game's watch. The red detection ring follows the stealth pill, the enemy bar, and the edge pulse, not the watch style. It comes back when those cues are off, or when this HUD is hidden.
 
 Style 0 keeps the vanilla watch hidden, which is today's behavior. Styles 1 and 2 show `BottomLeftGroup`. The older hide set those clips to `visible = false` and `alpha = 0` and never put them back, so choosing Vanilla after Off left a blank corner. Styles 1 and 2 restore that group once (a single trace lists the clip names) and then leave the game's own show and hide alone. Style 1 is the stock watch. Style 2 tints the watch clips with the card color and the pointer / O2 clips with the accent, and it does not add a second planet name. No new glow. Styles 3 and 4 hide that group again and draw the Horizon face. The Horizon face is a round disc so the type can be read. It is not a card panel and it has no planet art. Nothing under the face names its position.
 

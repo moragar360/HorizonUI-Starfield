@@ -19,6 +19,11 @@ Not published. No tag. The settings schema stays 0.42.0, so an existing `Horizon
 - **Crosshair Off, and Weapon drawn while holstered,** keep the aiming dot hidden when the game shows it again on a target or an NPC. The interact ring and glyph stay up.
 - The watch no longer shows a line that names its place on the screen.
 
+### Fixed
+- **Quest tracker:** a new quest name clears the previous objective instead of keeping it under the new title. Sub-lines are 13 px.
+- **Afflictions and the detection ring** no longer follow the watch style. The bio popup hides while the afflictions card is on. The red ring hides while the stealth pill, the enemy bar, or the edge pulse is on.
+- **Watch PC time** keeps the last good reading when the clock throws, or the planet card's real time when this face has none yet. A failed read does not build a new clock every frame.
+
 ## [0.43.0.33-alpha] - 2026-11-04
 
 Released as v0.43.0.33-alpha.
