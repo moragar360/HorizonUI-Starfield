@@ -78,7 +78,9 @@ function isSelected(st, q) {
 	if (!q) return false;
 	const qid = idOf(q, "uQuestID");
 	const did = idOf(q, "uDisplayedQuestID");
-	if (st.id.length > 0 || st.disp.length > 0) {
+	const hasU = qid.length > 0 || did.length > 0;
+	const hasS = st.id.length > 0 || st.disp.length > 0;
+	if (hasU && hasS) {
 		if (qid.length > 0 && (qid === st.id || qid === st.disp)) return true;
 		if (did.length > 0 && (did === st.id || did === st.disp)) return true;
 		return false;
@@ -96,9 +98,26 @@ function isProse(q) {
 
 function carriesSteps(q) {
 	if (!q || isProse(q)) return false;
+	if (Array.isArray(q.ObjectiveDataA)) return true;
 	if (q.uType === undefined || q.uType === null) return true;
 	const t = Number(q.uType);
 	return t === 0 || t === 3 || t === 4 || t === 5 || t === 6 || t === 7 || t === 9;
+}
+
+function buffer(st, q) {
+	if (!q || isProse(q) || !Array.isArray(q.ObjectiveDataA)) return;
+	const name = q.strQuestName != null ? String(q.strQuestName) : "";
+	if (!name) return;
+	const savedId = st.id;
+	const savedDisp = st.disp;
+	const saved = st.objs.slice();
+	setObjs(st, q);
+	st.id = idOf(q, "uQuestID");
+	st.disp = idOf(q, "uDisplayedQuestID");
+	remember(st, q);
+	st.id = savedId;
+	st.disp = savedDisp;
+	st.objs = saved;
 }
 
 function setObjs(st, q) {
@@ -241,10 +260,12 @@ function setTitle(st, name) {
 function onUpdate(st, entries) {
 	let accepted = false;
 	for (const q of entries) {
-		if (!isSelected(st, q) || isProse(q) || !carriesSteps(q)) continue;
-		setObjs(st, q);
-		remember(st, q);
-		accepted = true;
+		if (isProse(q)) continue;
+		if (isSelected(st, q) && carriesSteps(q)) {
+			setObjs(st, q);
+			remember(st, q);
+			accepted = true;
+		} else buffer(st, q);
 	}
 	if (!accepted) return;
 	refresh(st);
@@ -306,6 +327,41 @@ expect(st.objs.length === 0 && st.text === "" && st.subs.length === 0 && absent(
 setTitle(st, "Yumi");
 expect(st.text === "Yumi" && st.dist === "127 m" && st.subs.length === 0 && absent(st, ["Washakie", "Report back", "Well", "Tuala"]), "switching to Yumi shows only Yumi, with no previous steps and no hold");
 
+const late = tracker();
+setTitle(late, "POWER FROM BEYOND");
+updateQuests(late, markers);
+expect(late.text === "" && late.subs.length === 0 && absent(late, ["Yumi", "Well", "Tuala", "Washakie"]), "a title with no steps yet shows no foreign markers");
+onUpdate(late, [{
+	strQuestName: "POWER FROM BEYOND",
+	uType: 15,
+	ObjectiveDataA: [
+		{ strObjectiveText: "Scan the anomaly" },
+		{ strObjectiveText: "Return to the lodge" },
+	],
+}]);
+expect(late.text === "Scan the anomaly" && late.subs.length === 1 && late.subs[0].t === "Return to the lodge" && absent(late, ["Yumi", "Well", "Tuala", "Washakie"]), "a later step update fills the subtitle and the bullet");
+
+const early = tracker();
+onUpdate(early, [{
+	strQuestName: "POWER FROM BEYOND",
+	uQuestID: 7,
+	uType: 15,
+	ObjectiveDataA: [
+		{ strObjectiveText: "Scan the anomaly" },
+		{ strObjectiveText: "Return to the lodge" },
+	],
+}]);
+expect(early.text === "" && early.name === "", "an update before the title does not invent a card");
+setTitle(early, "POWER FROM BEYOND");
+updateQuests(early, markers);
+expect(early.text === "Scan the anomaly" && early.subs.length === 1 && early.subs[0].t === "Return to the lodge" && absent(early, ["Yumi", "Well", "Tuala", "Washakie"]), "the title picks up the buffered steps");
+
+const named = tracker();
+setTitle(named, "PFB");
+onUpdate(named, [{ strQuestName: "PFB", uQuestID: 1, ObjectiveDataA: [{ strObjectiveText: "Washakie" }] }]);
+onUpdate(named, [{ strQuestName: "PFB", ObjectiveDataA: [{ strObjectiveText: "Talk to the contact" }] }]);
+expect(named.text === "Talk to the contact" && named.id === "1" && absent(named, ["Washakie", "Yumi"]), "a name-only update still applies after an id is stored");
+
 const pick = funcBody(as, "hz27PickMain");
 expect(pick.indexOf("3000") < 0 && pick.indexOf("list[0]") < 0 && pick.indexOf("hzHeld") < 0, "the subtitle has no hold and no foreign-marker fallback");
 expect(pick.indexOf("hz27QFirst") >= 0 && pick.indexOf("hz27QMark") >= 0, "the subtitle is the selected quest's first open step");
@@ -318,6 +374,9 @@ const upd = funcBody(as, "hzOnQuestUpdate");
 expect(upd.indexOf("uQuestID") >= 0 && upd.indexOf("uDisplayedQuestID") >= 0, "an update must match the selected quest id");
 expect(upd.indexOf("hz27QIsProse") >= 0 && funcBody(as, "hz27QIsProse").indexOf("HDT_QUEST_TEXT_UPDATED") >= 0, "quest-text and summary updates are not steps");
 expect(upd.indexOf("hz27QBuildSubs") >= 0 && upd.indexOf("hzQSync") >= 0, "the update handler rebuilds the bullets and syncs the card");
+expect(upd.indexOf("hz27QBuffer") >= 0, "an update is kept until the title arrives");
+expect(funcBody(as, "hz27QCarriesSteps").indexOf("ObjectiveDataA") >= 0, "a step list is accepted even when the type is outside the old list");
+expect(funcBody(as, "hz27QIsSelected").indexOf("strQuestName") >= 0, "a name can still match after an id is stored");
 const title = funcBody(as, "hzSetQuestTitle");
 expect(title.indexOf("hz27QClearSteps") >= 0 && title.indexOf("hz27QApplyCache") >= 0 && title.indexOf("hzUpdateQuests") >= 0, "a new title clears, restores that quest's steps, and reruns the marker lookup");
 const build = funcBody(as, "hz27QBuild");
