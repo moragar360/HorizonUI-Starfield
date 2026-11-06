@@ -13,11 +13,11 @@ Unreleased first pass. No tag, no publish, no merge. Starfield was not launched.
 
 ## Watch layout
 
-Arrange lists the watch for styles 1 through 4. Styles 1 and 2 move the named game-watch clips only, not the whole lower-left group, and style 2's tint follows those clips. `WatchX` and `WatchY` use the same edge anchors as the other cards (`L` / `R` / `C` and `T` / `B` / `C`, plus an offset). `-1` is the lower-left home. `WatchScale` is the size entry (`-1` means HudScale, or 0.60 to 1.60 for this face). `hudmenu` and `hudmenu_lrg` share this block, so both use the same saved spot. Existing `HorizonUI.user.ini` files are not rewritten. A missing `WatchX` stays at the home. Other cards' saved positions are left as they are.
+Arrange lists the watch for styles 1 through 4. Styles 1 and 2 move the game watch as one assembly, not the whole lower-left group, and style 2's tint follows that same watch. `WatchX` and `WatchY` use the same edge anchors as the other cards (`L` / `R` / `C` and `T` / `B` / `C`, plus an offset). `-1` is the lower-left home. `WatchScale` is the size entry (`-1` means HudScale, or 0.60 to 1.60 for this face). `hudmenu` and `hudmenu_lrg` share this block, so both use the same saved spot. Existing `HorizonUI.user.ini` files are not rewritten. A missing `WatchX` stays at the home. Other cards' saved positions are left as they are.
 
 The home is the lower-left corner, inside the screen margin, where the game's watch sits. While the watch is still at that home, a showing character, vitals, jetpack, or compact card that overlaps it lifts the watch 8 px above the card. The card stays put. Once `WatchX` / `WatchY` is a saved spot, the lift stops and the saved spot is used. On Moragar's Choice the character card is the lower-left card and the vitals card is centered, and the preset does not set `WatchX`, so the watch still sits above the character card until you move the watch itself. On the stock layout the vitals card is lower-left, so the watch sits above that stack instead of covering it.
 
-Styles 1 and 2 are the game's own watch. Arrange moves those named clips with the same `WatchX` / `WatchY` / `WatchScale` spot. The bio alerts, env alerts, detection ring, and location alert stay put.
+Styles 1 and 2 are the game's own watch, shown as one assembly and tinted for style 2. Arrange moves that whole watch together, including the top bar, the outer ring, the face, the heading chevron, and the in-face markers, with the same `WatchX` / `WatchY` / `WatchScale` spot. The character card, bio alerts, env alerts, detection ring, location alert, and autopilot stay put.
 
 ## Data feeds
 
@@ -38,7 +38,7 @@ Analog seconds are not drawn. The game-time feed is hours and minutes.
 
 The afflictions card hides the vanilla bio popup on its own, including while styles 1 and 2 show the game's watch. The red detection ring follows the stealth pill, the enemy bar, and the edge pulse, not the watch style. It comes back when those cues are off, or when this HUD is hidden.
 
-Style 0 keeps the vanilla watch hidden, which is today's behavior. Styles 1 and 2 show `BottomLeftGroup`. The older hide set those clips to `visible = false` and `alpha = 0` and never put them back, so choosing Vanilla after Off left a blank corner. Styles 1 and 2 restore that group once (a single trace lists the clip names) and then leave the game's own show and hide alone. Style 1 is the stock watch. Style 2 tints the watch clips with the card color and the pointer / O2 clips with the accent, and it does not add a second planet name. No new glow. Styles 3 and 4 hide that group again and draw the Horizon face. The Horizon face is a round disc so the type can be read. It is not a card panel and it has no planet art. Nothing under the face names its position.
+Style 0 keeps the vanilla watch hidden, which is today's behavior. Styles 1 and 2 show `BottomLeftGroup`. The older hide set those clips to `visible = false` and `alpha = 0` and never put them back, so choosing Vanilla after Off left a blank corner. Styles 1 and 2 restore that group once (a single trace lists the clip names) and then leave the game's own show and hide alone. Style 1 is the stock watch. Style 2 tints that same watch with the card color and the pointer / O2 clips with the accent, and it does not add a second planet name. No new glow. Styles 3 and 4 hide the vanilla chrome and draw the Horizon face, and they keep the live nearby object and character markers on that face. The Horizon face is a round disc so the type can be read. It is not a card panel and it has no planet art. Nothing under the face names its position.
 
 ## Weapon drawn
 
@@ -54,7 +54,7 @@ While styles 1 to 4 are on, the watch frame does not build a clock object, a sig
 
 ## Risks
 
-- Style 2 tints named clips on `BottomLeftGroup`. A clip the game renamed will stay untinted. The watch shape is still the game's.
+- Style 2 tints the game watch. A clip the game renamed can stay untinted. The watch shape is still the game's. If the top bar is an unnamed shape outside every watch-named clip, Arrange can still leave it at the home. The trace `HZ43 watch unit=` lists the clips that moved.
 - The Horizon face is large (132 px radius before HUD scale). On a crowded lower-left it stacks above the cards and can sit high.
 - Compass letters on the digital face are 13 px, so the top of the face is busier than the mock.
 - A holstered weapon that still reports `bDisplayAmmo` will keep the reticle. A drawn melee weapon that does not report ammo will hide it.
@@ -65,7 +65,7 @@ While styles 1 to 4 are on, the watch frame does not build a clock object, a sig
 1. Update over 0.43.0.33 without touching `HorizonUI.user.ini`. The watch stays off and the reticle stays as it is.
 2. F11 > CARDS > WATCH. Step Off, Vanilla, Vanilla + Horizon, Horizon Digital, Horizon Analog. Save, reload, and confirm the ini key.
 3. Digital: O2 fills from 7 o'clock, CO2 from 5 o'clock. Compass diamond, both clocks (local at 16 px, PC at 13 px) in the center, planet and temperature. No day sub-dial on this face, no planet picture, and no rectangular card.
-4. Analog: flush rim arcs, the same top-arc compass as digital, hands on game time, day sub-dial at 6, planet and temperature at the top.
+4. Analog: flush rim arcs, the same top-arc compass as digital, hands on game time, day sub-dial at 6, planet name and temperature below the compass letters.
 5. With the character card in the lower-left, the watch sits above it and the card does not jump. Move the watch in Arrange, save, reload, and confirm `WatchX` / `WatchY` hold the spot and the watch no longer lifts for the card. Reset puts it back on the lower-left home, and the lift returns. Move a card, save, and confirm that card's saved spot is unchanged.
 6. Drop O2 or raise CO2. The orange LOW O2 or HIGH CO2 line appears. Restore them and it leaves.
 7. F11 > RULES > CROSSHAIR. Always matches today. Weapon drawn hides the aiming dot while the weapon is holstered, including in third person, and shows it when the weapon is out. Looking at something you can use still shows the center ring and the interact glyph, with the weapon holstered and with the rule Off. Iron sights still hide the reticle. Prompts, the target card, a hit marker, a kill X, the damage ring, and the stealth pill still appear. Crosshair Style still switches the interact glyph.
