@@ -2530,11 +2530,11 @@
             if(this.hzHideVanillaBoost) { names.push("JetpackMeterWrapper_mc","JetpackMeterAnim_mc"); }
             if(this.hzHideVanillaCompass)
             {
-               names.push("WatchIconsWidget_mc","MissionIconsWidget_mc","EnemyIconsWidget_mc");
-               // Styles 1 and 2 show the game's lower-left watch. Those clips stay out of the compass hide.
+               names.push("MissionIconsWidget_mc","EnemyIconsWidget_mc");
+               // Styles 1 and 2 show the game's watch. Those clips stay out of the compass hide.
                if(this.hzWatchStyle != 1 && this.hzWatchStyle != 2)
                {
-                  names.push("WatchOutline_mc","WatchPointerOutline_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc");
+                  names.push("WatchIconsWidget_mc","WatchOutline_mc","WatchPointerOutline_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc");
                }
             }
             if(this.hzHideVanillaWatch) { names.push("O2CO2_mc","O2CO2thin_mc","WatchOutline_mc","WatchPointerOutline_mc","BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"); }
@@ -14513,7 +14513,7 @@
             {"k":"VitalsLayout","l":"VITALS LAYOUT","t":"r","opts":["VERTICAL","HORIZONTAL"],"ids":[0,1],"sub":true,"note":"VERTICAL = health above O2.  HORIZONTAL = O2 beside health (one row).  ARRANGE CARDS: L"},
             {"k":"VitalsBars","l":"HEALTH AND O2 BARS","t":"r","opts":["FULL","COMPACT"],"ids":[0,1],"sub":true,"note":"COMPACT uses the same boost, health, and oxygen card as COMPACT MODE. FULL keeps the separate cards. If either is on, that merged card shows."},
             {"k":"ShowCharacter","l":"CHARACTER CARD (LV / XP / CREDITS / MASS)","t":"b"},this.hz34Sz("Character"),this.hz34Cmp("Character",cmn),
-            {"k":"WatchStyle","l":"WATCH","t":"r","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4],"note":"Lower left until you move it in Arrange. A saved spot stays put. While it is still at the default, a showing card in that corner lifts the watch 8 px above the card."},this.hz34Sz("Watch"),
+            {"k":"WatchStyle","l":"WATCH","t":"r","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4],"note":"Horizon Digital and Analog can be moved in Arrange Cards. A saved spot stays put."},this.hz34Sz("Watch"),
             {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","sub":true},
             {"k":"ShowPlanet","l":"PLANET CARD","t":"b"},this.hz34Sz("Planet"),this.hz34Cmp("Planet"),
             {"k":"PlanetDetails","l":"PLANET: GRAVITY / AIR LINE","t":"b"},
@@ -18045,6 +18045,14 @@
       private var hz43TintOn:Boolean = false;
       private var hz43RetOwn:Boolean = false;
       private var hz43RetObj:DisplayObject = null;
+      private var hz43VanShown:int = 0;
+      private var hz43VanTries:int = 0;
+      private var hz43VanLogged:Boolean = false;
+      private var hz43Kid:Array = null;
+      private var hz43KidHid:Array = null;
+      private var hz43KidN:int = 0;
+      private var hz43KidSeen:int = -1;
+      private var hz43KidOn:Boolean = false;
       private var hz43H:int = 0;
       private var hz43M:int = 0;
       private var hz43Ut:int = 0;
@@ -18126,6 +18134,57 @@
       private var hz43AttT:TextField = null;
       private var hz43Cards:Array = null;
 
+      // Clips the old watch hide turns off. Styles 1 and 2 put these back. Bio and env alerts stay on their own rules.
+      private static const HZ43_VAN_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","WatchIconsWidget_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"];
+      private static const HZ43_VAN_A:Array = ["BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"];
+
+      // Puts the game watch back on BottomLeftGroup. One trace names the clips that were found. No font name.
+      private function hz43ShowVanilla() : Boolean
+      {
+         if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
+         if(!this.hzBlg) { return false; }
+         var found:String = "";
+         var hits:int = 0;
+         var n:int = 0;
+         while(n < HZ43_VAN_N.length)
+         {
+            var name:String = String(HZ43_VAN_N[n]);
+            var clip:DisplayObject = this.hzFindByName(this.hzBlg,name,0);
+            if(clip)
+            {
+               clip.visible = true;
+               clip.alpha = 1;
+               var p:DisplayObjectContainer = clip.parent;
+               while(p != null && p != this)
+               {
+                  if(!p.visible) { p.visible = true; }
+                  if(p == this.hzBlg) { break; }
+                  p = p.parent;
+               }
+               if(found.length > 0) { found += ","; }
+               found += name;
+               hits++;
+            }
+            n++;
+         }
+         n = 0;
+         while(n < HZ43_VAN_A.length)
+         {
+            var fade:DisplayObject = this.hzFindByName(this.hzBlg,String(HZ43_VAN_A[n]),0);
+            if(fade && fade.alpha == 0) { fade.alpha = 1; }
+            n++;
+         }
+         this.hz43VanTries++;
+         if(hits == 0 && this.hz43VanTries < 180) { return false; }
+         if(!this.hz43VanLogged)
+         {
+            this.hz43VanLogged = true;
+            if(this.hzDebug) { this.hz26Dbg["Watch"] = "vanilla " + found; }
+            trace("HZ43 vanilla watch path=" + (found.length > 0 ? found : "none"));
+         }
+         return true;
+      }
+
       private function hz43SyncHide() : void
       {
          var showVan:Boolean = this.hzWatchStyle == 1 || this.hzWatchStyle == 2;
@@ -18134,6 +18193,13 @@
          {
             this.hzHideVanillaWatch = hide;
             this.hzHideCache = null;
+            if(showVan) { this.hz43VanShown = 0; this.hz43VanTries = 0; }
+         }
+         // The hide sets visible false and alpha 0, and it does not put them back.
+         // Styles 1 and 2 restore the game's watch once, then leave its own conditions alone.
+         if(showVan && this.hz43VanShown == 0)
+         {
+            if(this.hz43ShowVanilla()) { this.hz43VanShown = 1; }
          }
       }
 
@@ -18143,43 +18209,126 @@
          return this.hzCrossOn && (!this.hzCrossIron || this.hzCross3rd || this.hzCrossTool);
       }
 
-      // Hide the aiming dot only. Type 7 is the interact ring, and this rule never touches it or the glyph.
+      // The aiming dot should stay hidden. Type 7 is not an exception: the ring is handled apart from the dot.
       private function hz43ReticleHide() : Boolean
       {
-         if(this.hzCrossType == HZ_HCT_INTERACT) { return false; }
          if(this.hzCrossRule >= 2) { return true; }
          if(this.hzCrossRule == 1) { return !this.hzWeaponOut(); }
          return false;
       }
 
       // Remember the clip this rule hid. A later show puts it back only when the game still wants it shown.
+      // A swapped or re-shown aiming clip is hidden again. Type 7 keeps ReticleBase up so the ring and glyph stay.
       private function hz43Reticle() : void
       {
          var rb:DisplayObject = null;
          try { rb = this.CenterGroup_mc ? this.CenterGroup_mc.ReticleBase_mc as DisplayObject : null; } catch(e1:Error) { rb = null; }
-         if(this.hz43RetOwn && rb != this.hz43RetObj)
+         var interact:Boolean = this.hzCrossType == HZ_HCT_INTERACT;
+         if(!this.hz43ReticleHide())
          {
+            this.hz43KidShow();
+            if(this.hz43RetOwn && rb && rb == this.hz43RetObj && !rb.visible && this.hz43VanillaReticle()) { rb.visible = true; }
             this.hz43RetOwn = false;
             this.hz43RetObj = null;
-         }
-         if(this.hz43ReticleHide())
-         {
-            if(!rb) { return; }
-            if(!this.hz43RetOwn)
-            {
-               if(!rb.visible) { return; }
-               this.hz43RetObj = rb;
-               this.hz43RetOwn = true;
-            }
-            if(this.hz43RetOwn && rb == this.hz43RetObj) { rb.visible = false; }
             return;
          }
-         if(this.hz43RetOwn)
+         if(!rb) { return; }
+         if(interact)
          {
-            if(rb && rb == this.hz43RetObj && !rb.visible && this.hz43VanillaReticle()) { rb.visible = true; }
+            // The ring and the glyph need this clip visible. Hide only the other children.
+            if(this.hz43VanillaReticle())
+            {
+               if(this.hz43RetOwn && rb == this.hz43RetObj && !rb.visible) { rb.visible = true; }
+               this.hz43HideDotKids(rb as DisplayObjectContainer);
+            }
             this.hz43RetOwn = false;
             this.hz43RetObj = null;
+            return;
          }
+         this.hz43KidShow();
+         if(rb.visible)
+         {
+            this.hz43RetObj = rb;
+            this.hz43RetOwn = true;
+            rb.visible = false;
+            return;
+         }
+         if(this.hz43RetOwn && rb == this.hz43RetObj) { rb.visible = false; }
+      }
+
+      // One array, created once. Only children this rule turned off are turned back on.
+      private function hz43KidPrep() : void
+      {
+         if(this.hz43Kid != null) { return; }
+         this.hz43Kid = new Array(8);
+         this.hz43KidHid = new Array(8);
+         var i:int = 0;
+         while(i < 8) { this.hz43KidHid[i] = 0; i++; }
+      }
+
+      private function hz43HideDotKids(box:DisplayObjectContainer) : void
+      {
+         if(box == null) { return; }
+         this.hz43KidPrep();
+         var stale:Boolean = box.numChildren != this.hz43KidSeen;
+         var k:int = 0;
+         if(!stale)
+         {
+            while(k < this.hz43KidN)
+            {
+               var held:DisplayObject = this.hz43Kid[k] as DisplayObject;
+               if(held != null && held.parent != box) { stale = true; }
+               k++;
+            }
+         }
+         if(stale)
+         {
+            this.hz43KidSeen = box.numChildren;
+            var z:int = 0;
+            while(z < 8) { this.hz43KidHid[z] = 0; z++; }
+            var n:int = 0;
+            var i:int = 0;
+            while(i < box.numChildren && n < 8)
+            {
+               var ch:DisplayObject = box.getChildAt(i);
+               if(ch && ch.name != "Player_Interaction_ReticleAnim_mc")
+               {
+                  this.hz43Kid[n] = ch;
+                  n++;
+               }
+               i++;
+            }
+            this.hz43KidN = n;
+         }
+         k = 0;
+         while(k < this.hz43KidN)
+         {
+            var d:DisplayObject = this.hz43Kid[k] as DisplayObject;
+            if(d && d.visible)
+            {
+               d.visible = false;
+               this.hz43KidHid[k] = 1;
+               this.hz43KidOn = true;
+            }
+            k++;
+         }
+      }
+
+      private function hz43KidShow() : void
+      {
+         if(!this.hz43KidOn || this.hz43Kid == null) { return; }
+         var k:int = 0;
+         while(k < this.hz43KidN)
+         {
+            if(int(this.hz43KidHid[k]) != 0)
+            {
+               var d:DisplayObject = this.hz43Kid[k] as DisplayObject;
+               if(d) { d.visible = true; }
+               this.hz43KidHid[k] = 0;
+            }
+            k++;
+         }
+         this.hz43KidOn = false;
       }
 
       // Writes the clock into fields. No object, and no string, on the steady path.
@@ -18269,57 +18418,115 @@
          g.endFill();
       }
 
-      private function hz43Half(g:*, frac:Number, left:Boolean, col:uint, segmented:Boolean) : void
+      // 7 o'clock and 5 o'clock. Screen y grows downward, so clockwise is an increasing angle.
+      private function hz43O2Start() : Number { return Math.PI / 2 + Math.PI / 6; }
+      private function hz43CO2Start() : Number { return Math.PI / 2 - Math.PI / 6; }
+
+      private function hz43InSweep(mid:Number, start:Number, dir:Number, len:Number) : Boolean
       {
-         var f:Number = frac;
-         if(f < 0) { f = 0; }
-         if(f > 1) { f = 1; }
-         var a0:Number = left ? Math.PI / 2 : -Math.PI / 2;
-         var span:Number = Math.PI;
-         var gap:Number = segmented ? 0.045 : 0;
-         var parts:int = segmented ? 10 : 1;
+         if(len <= 0) { return false; }
+         var d:Number = mid - start;
+         if(dir < 0) { d = -d; }
+         var turn:Number = Math.PI * 2;
+         while(d < 0) { d += turn; }
+         while(d >= turn) { d -= turn; }
+         return d <= len;
+      }
+
+      // Full ring sits on the face edge. O2 grows clockwise from 7 o'clock, at most halfway (ends at 1 o'clock).
+      // CO2 grows counter-clockwise from 5 o'clock, at most halfway (ends at 11 o'clock). Empty parts stay gray.
+      private function hz43Gauge(g:*, o2:Number, co2:Number, segmented:Boolean) : void
+      {
+         var fo:Number = o2;
+         var fc:Number = co2;
+         if(fo < 0) { fo = 0; }
+         if(fo > 1) { fo = 1; }
+         if(fc < 0) { fc = 0; }
+         if(fc > 1) { fc = 1; }
+         var o2n:Number = fo * Math.PI;
+         var co2n:Number = fc * Math.PI;
+         var o2s:Number = this.hz43O2Start();
+         var co2s:Number = this.hz43CO2Start();
+         var r1:Number = HZ43_R - 1;
+         var r0:Number = segmented ? HZ43_R - 12 : HZ43_R - 9;
+         var gray:uint = 0x6E7C86;
+         if(!segmented)
+         {
+            this.hz43Band(g,0,0,r0,r1,0,Math.PI * 2,gray,0.28);
+            if(o2n > 0.02) { this.hz43Band(g,0,0,r0,r1,o2s,o2s + o2n,HZ43_O2,0.95); }
+            if(co2n > 0.02) { this.hz43Band(g,0,0,r0,r1,co2s - co2n,co2s,HZ43_CO2,0.95); }
+            return;
+         }
+         var parts:int = 24;
+         var step:Number = Math.PI * 2 / parts;
+         var gap:Number = 0.045;
          var i:int = 0;
          while(i < parts)
          {
-            var u0:Number = i / parts;
-            var u1:Number = (i + 1) / parts;
-            var s0:Number = a0 + span * u0 + gap * 0.5;
-            var s1:Number = a0 + span * u1 - gap * 0.5;
-            if(s1 > s0)
-            {
-               var on:Boolean = f >= (u0 + u1) * 0.5;
-               this.hz43Band(g,0,0,HZ43_R - 14,HZ43_R - 4,s0,s1,col,on ? 0.95 : 0.22);
-            }
+            var mid:Number = -Math.PI + (i + 0.5) * step;
+            var s0:Number = -Math.PI + i * step + gap * 0.5;
+            var s1:Number = -Math.PI + (i + 1) * step - gap * 0.5;
+            var col:uint = gray;
+            var al:Number = 0.28;
+            if(this.hz43InSweep(mid,o2s,1,o2n)) { col = HZ43_O2; al = 0.95; }
+            else if(this.hz43InSweep(mid,co2s,-1,co2n)) { col = HZ43_CO2; al = 0.95; }
+            if(s1 > s0) { this.hz43Band(g,0,0,r0,r1,s0,s1,col,al); }
+            i++;
+         }
+      }
+
+      private function hz43Sun(g:*, x:Number, y:Number, day:Boolean) : void
+      {
+         g.beginFill(day ? 0xFFD678 : 0xC8D7EB,1);
+         g.drawCircle(x,y,day ? 3.2 : 2.4);
+         g.endFill();
+         if(!day) { return; }
+         var i:int = 0;
+         while(i < 4)
+         {
+            var a:Number = i * Math.PI / 2;
+            g.lineStyle(1,0xFFD678,0.9);
+            g.moveTo(x + Math.cos(a) * 4.4,y + Math.sin(a) * 4.4);
+            g.lineTo(x + Math.cos(a) * 6.4,y + Math.sin(a) * 6.4);
+            g.lineStyle();
             i++;
          }
       }
 
       // Dawn at the left of the dial, dusk at the right, day across the top.
       // 0.25 is dawn and 0.75 is dusk. Outside that, the marker rides the lower night arc.
+      // Filled disc, a thin gold progress arc, and a sun or moon on the rim. PM and DAY sit inside the disc.
       private function hz43Dial(g:*, cx:Number, cy:Number, day:Number) : void
       {
-         var rd:Number = 28;
-         g.lineStyle(1.5,0xF2F7F9,0.35);
+         var rd:Number = 26;
+         g.beginFill(0x070C10,0.96);
          g.drawCircle(cx,cy,rd);
-         g.lineStyle();
-         this.hz43Band(g,cx,cy,rd - 3,rd,Math.PI,Math.PI * 2,this.HZ_ACCENT,0.9);
+         g.endFill();
          if(day < 0) { return; }
          var ang:Number = 0;
-         if(day >= 0.25 && day <= 0.75)
+         var sun:Boolean = day >= 0.25 && day <= 0.75;
+         if(sun)
          {
             ang = Math.PI + (day - 0.25) / 0.5 * Math.PI;
+            this.hz43Band(g,cx,cy,rd - 3.5,rd - 0.6,Math.PI,ang,this.HZ_ACCENT,0.95);
          }
          else
          {
             var night:Number = day < 0.25 ? day + 0.25 : day - 0.75;
             ang = (night / 0.5) * Math.PI;
+            this.hz43Band(g,cx,cy,rd - 3.5,rd - 0.6,0,ang,this.HZ_ACCENT,0.55);
          }
-         var sx:Number = cx + Math.cos(ang) * (rd - 1);
-         var sy:Number = cy + Math.sin(ang) * (rd - 1);
-         var sun:Boolean = day >= 0.25 && day <= 0.75;
-         g.beginFill(sun ? 0xFFD678 : 0xC8D7EB,1);
-         g.drawCircle(sx,sy,3.2);
-         g.endFill();
+         this.hz43Sun(g,cx + Math.cos(ang) * (rd - 1),cy + Math.sin(ang) * (rd - 1),sun);
+      }
+
+      // Labels sit inside the face, at 7 o'clock and 5 o'clock, not on the rim.
+      private function hz43GaugeLabel(tf:TextField, ang:Number) : void
+      {
+         if(!tf) { return; }
+         var rad:Number = HZ43_R - 36;
+         tf.x = Math.cos(ang) * rad - 22;
+         tf.y = Math.sin(ang) * rad - 8;
+         tf.visible = true;
       }
 
       private function hz43Mark13(tf:TextField) : void
@@ -18387,20 +18594,26 @@
          var g:* = this.hz43Face.graphics;
          g.clear();
          g.beginFill(0x0A1218,0.62);
-         g.drawCircle(0,0,HZ43_R - 2);
+         g.drawCircle(0,0,HZ43_R - 1);
          g.endFill();
          var digital:Boolean = mode == 3;
          this.hz43LocT.visible = this.hz43LocL.visible = this.hz43RealT.visible = this.hz43RealL.visible = digital;
-         this.hz43O2L.visible = this.hz43CO2L.visible = true;
-         this.hz43Half(g,this.hz26O2F,true,HZ43_O2,digital);
-         this.hz43Half(g,this.hz26Co2F,false,HZ43_CO2,digital);
+         this.hz43Gauge(g,this.hz26O2F,this.hz26Co2F,digital);
+         this.hz43GaugeLabel(this.hz43O2L,this.hz43O2Start());
+         this.hz43GaugeLabel(this.hz43CO2L,this.hz43CO2Start());
          var day:Number = this.hzPpDay >= 0 ? this.hzPpDay : (this.hzPpUT >= 0 ? (this.hzPpUT % 24) / 24 : -1);
          if(digital)
          {
             this.hz43Compass(g);
-            this.hz43Dial(g,0,-46,day);
-            this.hz43PmT.x = -18; this.hz43PmT.y = -62;
-            this.hz43DayT.x = -24; this.hz43DayT.y = -44;
+            this.hz43Dial(g,0,-58,day);
+            this.hz43PmT.x = -18; this.hz43PmT.y = -70;
+            this.hz43DayT.x = -24; this.hz43DayT.y = -52;
+            this.hz43LocL.y = -16;
+            this.hz43LocT.y = 2;
+            this.hz43RealL.y = 28;
+            this.hz43RealT.y = 44;
+            this.hz43BodyT.y = 66;
+            this.hz43TempT.y = 84;
          }
          else
          {
@@ -18410,31 +18623,26 @@
                while(hi < this.hz43Cards.length) { TextField(this.hz43Cards[hi]).visible = false; hi++; }
             }
             this.hz43Ticks(g);
-            this.hz43Diamond(g,0,-HZ43_R + 22);
+            this.hz43Diamond(g,0,-HZ43_R + 20,4);
             this.hz43Hands(g);
-            this.hz43Dial(g,0,78,day);
-            this.hz43PmT.x = -18; this.hz43PmT.y = 62;
-            this.hz43DayT.x = -24; this.hz43DayT.y = 80;
-            this.hz43BodyT.y = -78;
-            this.hz43TempT.y = -58;
-         }
-         if(digital)
-         {
-            this.hz43BodyT.y = 84;
-            this.hz43TempT.y = 104;
+            this.hz43Dial(g,0,64,day);
+            this.hz43PmT.x = -18; this.hz43PmT.y = 52;
+            this.hz43DayT.x = -24; this.hz43DayT.y = 68;
+            this.hz43BodyT.y = -90;
+            this.hz43TempT.y = -70;
          }
          var attn:String = this.hz43AttWord();
          this.hz43AttT.visible = attn.length > 0;
          this.hz43AttT.text = attn;
          if(attn.length > 0)
          {
-            this.hz43AttT.y = digital ? 122 : 108;
+            this.hz43AttT.y = digital ? 102 : 24;
             this.hzTxtTint(this.hz43AttT,HZ43_ATTN);
-            var ay:Number = this.hz43AttT.y + 8;
+            var ay:Number = this.hz43AttT.y + 4;
             g.beginFill(HZ43_ATTN,1);
-            g.moveTo(-86,ay + 6);
-            g.lineTo(-74,ay + 6);
-            g.lineTo(-80,ay);
+            g.moveTo(-78,ay);
+            g.lineTo(-72,ay + 6);
+            g.lineTo(-84,ay + 6);
             g.endFill();
          }
          this.hz43LocL.text = "LOCAL/GAME";
@@ -18459,9 +18667,10 @@
          this.hz43DayT.text = "DAY";
       }
 
+      // Heading ticks and letters stay on the top inner arc. The diamond is the fixed top mark.
       private function hz43Compass(g:*) : void
       {
-         this.hz43Diamond(g,0,-HZ43_R + 36);
+         this.hz43Diamond(g,0,-HZ43_R + 26,4);
          var base:int = int(Math.round(this.hzCmpDeg / 15)) * 15;
          var k:int = -4;
          var shown:Array = [];
@@ -18471,22 +18680,23 @@
             var rel:Number = hd - this.hzCmpDeg;
             while(rel > 180) { rel -= 360; }
             while(rel < -180) { rel += 360; }
+            if(Math.abs(rel) > 52) { k++; continue; }
             var a:Number = -Math.PI / 2 + rel * Math.PI / 180;
-            var inner:Number = HZ43_R - 52;
-            var outer:Number = HZ43_R - 40;
-            g.lineStyle(hd % 45 == 0 ? 2 : 1,0xF2F7F9,hd % 45 == 0 ? 0.9 : 0.45);
+            var outer:Number = HZ43_R - 20;
+            var inner:Number = HZ43_R - 32;
+            g.lineStyle(hd % 45 == 0 ? 2 : 1,0xF2F7F9,hd % 45 == 0 ? 0.9 : 0.4);
             g.moveTo(Math.cos(a) * inner,Math.sin(a) * inner);
             g.lineTo(Math.cos(a) * outer,Math.sin(a) * outer);
             g.lineStyle();
-            if(hd % 45 == 0 && Math.abs(rel) >= 10 && Math.abs(rel) <= 58)
+            var ly:Number = Math.sin(a) * (HZ43_R - 48);
+            if(hd % 45 == 0 && Math.abs(rel) >= 8 && ly < -HZ43_R + 96)
             {
                var idx:int = (int(Math.round(((hd % 360) + 360) % 360 / 45)) ) % 8;
                shown.push(idx);
                if(this.hz43Cards && this.hz43Cards[idx])
                {
                   var lt:TextField = this.hz43Cards[idx] as TextField;
-                  var lx:Number = Math.cos(a) * (inner - 16);
-                  var ly:Number = Math.sin(a) * (inner - 16);
+                  var lx:Number = Math.cos(a) * (HZ43_R - 48);
                   lt.x = lx - 24;
                   lt.y = ly - 8;
                   lt.visible = true;
@@ -18511,23 +18721,23 @@
          while(n < 12)
          {
             var a:Number = -Math.PI / 2 + n * Math.PI / 6;
-            var inner:Number = n % 3 == 0 ? HZ43_R - 30 : HZ43_R - 24;
-            g.lineStyle(n % 3 == 0 ? 2 : 1,0xF2F7F9,0.85);
+            var inner:Number = n % 3 == 0 ? HZ43_R - 28 : HZ43_R - 22;
+            g.lineStyle(n % 3 == 0 ? 2 : 1,0xF2F7F9,0.9);
             g.moveTo(Math.cos(a) * inner,Math.sin(a) * inner);
-            g.lineTo(Math.cos(a) * (HZ43_R - 16),Math.sin(a) * (HZ43_R - 16));
+            g.lineTo(Math.cos(a) * (HZ43_R - 14),Math.sin(a) * (HZ43_R - 14));
             g.lineStyle();
             n++;
          }
       }
 
-      private function hz43Diamond(g:*, x:Number, y:Number) : void
+      private function hz43Diamond(g:*, x:Number, y:Number, s:Number = 5) : void
       {
          g.beginFill(this.HZ_ACCENT,1);
-         g.moveTo(x,y - 6);
-         g.lineTo(x + 5,y);
-         g.lineTo(x,y + 6);
-         g.lineTo(x - 5,y);
-         g.lineTo(x,y - 6);
+         g.moveTo(x,y - s);
+         g.lineTo(x + s * 0.8,y);
+         g.lineTo(x,y + s);
+         g.lineTo(x - s * 0.8,y);
+         g.lineTo(x,y - s);
          g.endFill();
       }
 
@@ -18537,10 +18747,10 @@
          var m:Number = this.hz43Ok != 0 ? this.hz43M : 0;
          var ha:Number = -Math.PI / 2 + ((h % 12) + m / 60) * (Math.PI / 6);
          var ma:Number = -Math.PI / 2 + m * (Math.PI / 30);
-         this.hz43Hand(g,ha,52,3,0xF2F7F9);
-         this.hz43Hand(g,ma,74,2,this.HZ_ACCENT);
+         this.hz43Hand(g,ha,50,3.4,0xF2F7F9);
+         this.hz43Hand(g,ma,72,2.2,0xF2F7F9);
          g.beginFill(this.HZ_ACCENT,1);
-         g.drawCircle(0,0,4);
+         g.drawCircle(0,0,5);
          g.endFill();
       }
 
@@ -18747,7 +18957,7 @@
          this.hz43ApplyHome(sc);
       }
 
-      private static const HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","BioConditionBase_mc","EnvConditionBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc"];
+      private static const HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"];
 
       // Card color lookup builds a palette array. Keep the uint and rebuild it only when the color changes.
       private function hz43Fill() : uint

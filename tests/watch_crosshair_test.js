@@ -83,6 +83,32 @@ expect(block.indexOf("hz43PcSample") >= 0 && block.indexOf("% 60") >= 0, "the PC
 expect(block.indexOf("hz43DayB") >= 0 && block.indexOf("hz43LastO2") >= 0, "dirty checks use number buckets");
 expect(block.indexOf("hz43Sig") < 0, "the dirty check does not build a signature string");
 
+expect(as.indexOf("Lower left until") < 0, "the watch does not name its screen position");
+expect(block.indexOf("function hz43ShowVanilla") >= 0, "styles 1 and 2 restore the game watch");
+expect(block.indexOf("clip.alpha = 1") >= 0, "a restored watch clip gets its alpha back");
+expect(block.indexOf("BottomLeftGroup_mc") >= 0 && block.indexOf("WatchOutline_mc") >= 0, "the vanilla path is BottomLeftGroup");
+expect(block.indexOf("HZ43 vanilla watch path=") >= 0, "the vanilla clip path is traced once");
+expect(block.indexOf("hz43LocL.y = -16") >= 0 && block.indexOf("hz43LocT.y = 2") >= 0, "the local label sits above the local time");
+expect(block.indexOf("hz43RealL.y = 28") >= 0 && block.indexOf("hz43RealT.y = 44") >= 0, "the PC label sits above the PC time");
+expect(block.indexOf("hz43Dial(g,0,-58,day)") >= 0 && block.indexOf("hz43Dial(g,0,64,day)") >= 0, "digital dial is high and analog dial is at 6 o'clock");
+expect(block.indexOf("Math.PI / 2 + Math.PI / 6") >= 0 && block.indexOf("Math.PI / 2 - Math.PI / 6") >= 0, "gauges start at 7 o'clock and 5 o'clock");
+expect(block.indexOf("0x6E7C86") >= 0, "unfilled gauge segments are gray");
+expect(block.indexOf("hz43Hand(g,ma,72,2.2,0xF2F7F9)") >= 0, "the minute hand is white");
+expect(block.indexOf("ly < -HZ43_R + 96") >= 0, "compass letters stay on the top arc");
+
+// 3 o'clock is 0, and clockwise is an increasing angle. 7 o'clock is PI/2 + PI/6.
+// A full O2 sweep is half a turn and ends at 1 o'clock. A full CO2 sweep ends at 11 o'clock.
+function normAngle(a) {
+	const t = Math.PI * 2;
+	let x = a % t;
+	if (x < 0) x += t;
+	return x;
+}
+const o2Start = Math.PI / 2 + Math.PI / 6;
+const co2Start = Math.PI / 2 - Math.PI / 6;
+expect(Math.abs(normAngle(o2Start + Math.PI) - (Math.PI * 5) / 3) < 1e-9, "full O2 ends at 1 o'clock");
+expect(Math.abs(normAngle(co2Start - Math.PI) - (Math.PI * 4) / 3) < 1e-9, "full CO2 ends at 11 o'clock");
+
 // Dawn is 0.25 and dusk is 0.75 of fLocalPlanetTime. The day arc runs the top half.
 function dialAngle(day) {
 	if (day >= 0.25 && day <= 0.75) return Math.PI + (day - 0.25) / 0.5 * Math.PI;
@@ -104,18 +130,26 @@ expect(weaponOut(false, false, true, true, 2) === false, "unarmed reticle does n
 expect(weaponOut(false, false, false, true, 0) === false, "no ammo display is not drawn");
 expect(weaponOut(false, false, true, true, 7) === true, "third person uses the same test while interacting");
 
-function aimingHidden(rule, weaponOutNow, crossType) {
-	if (crossType === 7) return false;
+function dotHidden(rule, weaponOutNow) {
 	if (rule >= 2) return true;
 	if (rule === 1) return !weaponOutNow;
 	return false;
 }
-expect(aimingHidden(2, true, 0) === true, "off hides an aiming reticle");
-expect(aimingHidden(2, true, 7) === false, "off leaves the interact ring");
-expect(aimingHidden(1, false, 0) === true, "a holstered weapon hides the aiming dot");
-expect(aimingHidden(1, false, 7) === false, "a holstered weapon still shows the interact ring");
-expect(aimingHidden(1, true, 0) === false, "a drawn weapon shows the aiming reticle");
-expect(aimingHidden(0, false, 0) === false, "always leaves the aiming reticle to the game");
+expect(dotHidden(2, true) === true, "off hides the aiming dot");
+expect(dotHidden(2, false) === true, "off hides the aiming dot while holstered");
+expect(dotHidden(1, false) === true, "a holstered weapon hides the aiming dot");
+expect(dotHidden(1, true) === false, "a drawn weapon shows the aiming reticle");
+expect(dotHidden(0, false) === false, "always leaves the aiming reticle to the game");
+
+// A visible aiming clip is hidden again even after the tracked instance was dropped.
+function rehideVisible(ruleWantsDot, clipVisible, owned) {
+	if (!ruleWantsDot) return owned;
+	if (clipVisible) return true;
+	return owned;
+}
+expect(rehideVisible(true, true, false) === true, "a re-shown aiming clip is hidden again");
+expect(rehideVisible(true, false, false) === false, "an already hidden clip this rule does not own stays unowned");
+expect(rehideVisible(false, true, true) === true, "turning the rule off still knows which hide it owns");
 
 function restoreOwn(owned, sameObject, stillHidden, vanillaWants) {
 	return owned && sameObject && stillHidden && vanillaWants;
@@ -127,7 +161,10 @@ expect(restoreOwn(false, true, true, true) === false, "a hide this rule does not
 const reticleBody = funcBody(as, "hz43Reticle");
 expect(reticleBody.indexOf("hzXh") < 0, "the rule does not touch the interact glyph");
 expect(reticleBody.indexOf("hz43VanillaReticle") >= 0, "restore checks the game show rule");
-expect(funcBody(as, "hz43ReticleHide").indexOf("HZ_HCT_INTERACT") >= 0, "the interact type is never hidden here");
+expect(reticleBody.indexOf("HZ_HCT_INTERACT") >= 0, "interact keeps its own path");
+expect(reticleBody.indexOf("if(!rb.visible) { return; }") < 0, "a visible swap is not ignored");
+expect(funcBody(as, "hz43ReticleHide").indexOf("HZ_HCT_INTERACT") < 0, "the aiming-dot rule does not turn off for interact");
+expect(funcBody(as, "hz43HideDotKids").indexOf("Player_Interaction_ReticleAnim_mc") >= 0, "the interact ring clip is not one of the hidden children");
 expect(as.indexOf("this.hz43Reticle()") < as.indexOf("this.hzXhTick()"), "the ring is restored before the glyph is drawn");
 
 expect(ini.indexOf("WatchX=-1") >= 0 && ini.indexOf("WatchY=-1") >= 0, "default watch position is the lower-left home");
