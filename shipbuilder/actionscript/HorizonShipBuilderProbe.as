@@ -1,13 +1,17 @@
 package
 {
    import Shared.AS3.Data.BSUIDataManager;
+   import flash.display.DisplayObject;
+   import flash.display.DisplayObjectContainer;
    import flash.display.Sprite;
    import flash.events.Event;
    import flash.events.KeyboardEvent;
    import flash.events.MouseEvent;
+   import flash.text.Font;
    import flash.text.TextField;
    import flash.text.TextFieldType;
    import flash.text.TextFormat;
+   import flash.ui.Keyboard;
    import flash.utils.getDefinitionByName;
    
    public class HorizonShipBuilderProbe extends Sprite
@@ -30,6 +34,13 @@ package
       private var watchBase:String;
       private var moveSkips:int;
       private var providers:Array;
+      private var useEmbed:Boolean;
+      private var frameN:int;
+      private var hotF7:int;
+      private var hotF8:int;
+      private var hotF9:int;
+      private var helpNoted:Boolean;
+      private var lastParts:String;
       
       public function HorizonShipBuilderProbe(param1:Object)
       {
@@ -45,13 +56,35 @@ package
          this.lastExit = "";
          this.watchLeft = 0;
          this.moveSkips = 0;
+         this.useEmbed = false;
+         this.frameN = 0;
+         this.hotF7 = -1000;
+         this.hotF8 = -1000;
+         this.hotF9 = -1000;
+         this.helpNoted = false;
+         this.lastParts = "";
          this.providers = ["StaticData","HangarData","FloorData","PartEntries","UpgradeEntries","ModuleVariant","ModuleInfo","ShipBuilderHelpList","FlightCheckData","SystemUpgradeData","ColorInitializationData","ColorSelectionData","ShipStats","CostSummaryData","NotificationBadgeData","ExitConfirmationData","ShipHangarModuleInfoData","RepairButtonData"];
          addEventListener(Event.ADDED_TO_STAGE,this.onStage);
       }
       
       public function ping():String
       {
-         return "0.0.1.0";
+         return "0.0.2.0";
+      }
+      
+      public function stageBox():String
+      {
+         if(stage == null) { return "stage=0x0"; }
+         return "stage=" + stage.stageWidth + "x" + stage.stageHeight;
+      }
+      
+      // Bits from the window hook: 1 mark, 2 capture, 4 dump. Does not swallow the key.
+      public function hsbProbeHotkey(param1:Number):void
+      {
+         var bits:int = int(param1);
+         if((bits & 1) != 0) { this.takeHot(7); }
+         if((bits & 2) != 0) { this.takeHot(8); }
+         if((bits & 4) != 0) { this.takeHot(9); }
       }
       
       public function takeLines():String
@@ -64,6 +97,12 @@ package
       public function noteUserEvent(param1:String, param2:Boolean):void
       {
          this.note("USER " + param1 + " down=" + param2 + " capture=" + this.captureOn + " field=" + this.fieldFocused());
+         if(param2)
+         {
+            if(param1 == "F7") { this.takeHot(7); }
+            else if(param1 == "F8") { this.takeHot(8); }
+            else if(param1 == "F9") { this.takeHot(9); }
+         }
          if(this.captureOn && param2)
          {
             this.arm("user " + param1);
@@ -73,7 +112,8 @@ package
       private function onStage(param1:Event):void
       {
          removeEventListener(Event.ADDED_TO_STAGE,this.onStage);
-         this.buildOverlay();
+         this.note("KEYS F7=mark F8=capture F9=dump");
+         this.buildOverlay(this.labelFormat());
          this.note("MOVIE url=" + this.urlOf(root) + " stage=" + stage.stageWidth + "x" + stage.stageHeight);
          this.noteRect();
          this.noteClips();
@@ -87,17 +127,14 @@ package
          stage.addEventListener(MouseEvent.MOUSE_UP,this.onStageMouse,true,0,true);
          stage.addEventListener(MouseEvent.MOUSE_MOVE,this.onStageMouse,true,0,true);
          stage.addEventListener(MouseEvent.MOUSE_WHEEL,this.onStageMouse,true,0,true);
+         stage.addEventListener(MouseEvent.CLICK,this.onStageMouse,true,0,true);
          stage.addEventListener(KeyboardEvent.KEY_DOWN,this.onKey,false,0,true);
          stage.addEventListener(Event.ENTER_FRAME,this.onFrame);
          stage.addEventListener(Event.RESIZE,this.onResize);
       }
       
-      private function buildOverlay():void
+      private function buildOverlay(label:TextFormat):void
       {
-         var label:TextFormat = new TextFormat();
-         label.size = 13;
-         label.color = 0xF2E6C8;
-         
          this.capture = new Sprite();
          this.capture.mouseEnabled = false;
          this.capture.mouseChildren = false;
@@ -110,24 +147,35 @@ package
          
          this.panel = new Sprite();
          this.panel.graphics.beginFill(0x12110E,0.72);
-         this.panel.graphics.drawRect(0,0,460,168);
+         this.panel.graphics.drawRect(0,0,520,188);
          this.panel.graphics.endFill();
          this.panel.x = 8;
          this.panel.y = 8;
+         this.panel.addEventListener(MouseEvent.MOUSE_DOWN,this.onPanelMouse);
+         this.panel.addEventListener(MouseEvent.MOUSE_UP,this.onPanelMouse);
+         this.panel.addEventListener(MouseEvent.MOUSE_WHEEL,this.onPanelMouse);
+         this.panel.addEventListener(MouseEvent.CLICK,this.onPanelMouse);
          addChild(this.panel);
          
-         var title:TextField = this.makeText(label,8,6,444,36,"Horizon Ship Builder probe 0.0.1.0. Read only. Capture is off.");
+         var title:TextField = this.makeText(label,8,6,504,22,"Horizon Ship Builder probe 0.0.2.0. Read only. Capture is off.");
          this.panel.addChild(title);
+         var keys:TextField = this.makeText(label,8,28,504,20,"F7 mark colors. F8 capture layer. F9 dump parts.");
+         this.panel.addChild(keys);
          
-         var toggle:Sprite = this.makeButton(label,"Capture layer",8,46,140,28);
-         toggle.addEventListener(MouseEvent.CLICK,this.onToggle);
-         this.panel.addChild(toggle);
-         
-         var mark:Sprite = this.makeButton(label,"Mark colors",156,46,120,28);
+         var mark:Sprite = this.makeButton(label,"F7 Mark colors",8,52,150,28);
          mark.addEventListener(MouseEvent.CLICK,this.onMark);
          this.panel.addChild(mark);
          
+         var toggle:Sprite = this.makeButton(label,"F8 Capture",166,52,130,28);
+         toggle.addEventListener(MouseEvent.CLICK,this.onToggle);
+         this.panel.addChild(toggle);
+         
+         var dump:Sprite = this.makeButton(label,"F9 Dump",304,52,100,28);
+         dump.addEventListener(MouseEvent.CLICK,this.onDumpClick);
+         this.panel.addChild(dump);
+         
          this.field = new TextField();
+         this.field.embedFonts = this.useEmbed;
          this.field.defaultTextFormat = label;
          this.field.type = TextFieldType.INPUT;
          this.field.border = true;
@@ -137,12 +185,13 @@ package
          this.field.textColor = 0xF2E6C8;
          this.field.width = 160;
          this.field.height = 22;
-         this.field.x = 284;
-         this.field.y = 49;
+         this.field.x = 8;
+         this.field.y = 86;
          this.field.text = "Type here";
+         this.field.setTextFormat(label);
          this.panel.addChild(this.field);
          
-         this.status = this.makeText(label,8,82,444,78,"Log is on. Capture is off.");
+         this.status = this.makeText(label,8,112,504,68,"Log is on. Capture is off.");
          this.status.wordWrap = true;
          this.panel.addChild(this.status);
       }
@@ -150,6 +199,7 @@ package
       private function makeText(param1:TextFormat, param2:Number, param3:Number, param4:Number, param5:Number, param6:String):TextField
       {
          var box:TextField = new TextField();
+         box.embedFonts = this.useEmbed;
          box.defaultTextFormat = param1;
          box.mouseEnabled = false;
          box.selectable = false;
@@ -158,7 +208,79 @@ package
          box.width = param4;
          box.height = param5;
          box.text = param6;
+         box.setTextFormat(param1);
          return box;
+      }
+      
+      // Copy the face a vanilla text field in this movie already uses. The name stays off the panel.
+      private function labelFormat():TextFormat
+      {
+         var fmt:TextFormat = new TextFormat();
+         fmt.size = 13;
+         fmt.color = 0xF2E6C8;
+         var sample:TextField = this.findVanillaField();
+         if(sample != null)
+         {
+            var src:TextFormat = sample.getTextFormat();
+            if(src == null || src.font == null || String(src.font).length == 0) { src = sample.defaultTextFormat; }
+            if(src != null && src.font != null && String(src.font).length > 0)
+            {
+               fmt.font = src.font;
+               this.useEmbed = sample.embedFonts;
+               var from:String = "field";
+               if(sample.parent != null && sample.parent.name != null && String(sample.parent.name).length > 0) { from = String(sample.parent.name); }
+               this.note("FONT copied=1 fieldEmbed=" + (sample.embedFonts ? 1 : 0) + " from=" + from);
+               return fmt;
+            }
+         }
+         var embedded:Array = Font.enumerateFonts(true);
+         if(embedded != null && embedded.length > 0)
+         {
+            var face:Font = embedded[0] as Font;
+            if(face != null && face.fontName != null && face.fontName.length > 0)
+            {
+               fmt.font = face.fontName;
+               this.useEmbed = true;
+               this.note("FONT copied=0 embedded=1 count=" + embedded.length);
+               return fmt;
+            }
+         }
+         this.note("FONT copied=0 embedded=0");
+         return fmt;
+      }
+      
+      private function findVanillaField():TextField
+      {
+         var rootClip:DisplayObjectContainer = this.host as DisplayObjectContainer;
+         if(rootClip == null) { return null; }
+         var i:int = 0;
+         while(i < rootClip.numChildren)
+         {
+            var child:DisplayObject = rootClip.getChildAt(i);
+            if(child != this)
+            {
+               var hit:TextField = this.findField(child,0);
+               if(hit != null) { return hit; }
+            }
+            i++;
+         }
+         return null;
+      }
+      
+      private function findField(param1:Object, param2:int):TextField
+      {
+         if(param1 == null || param2 > 8) { return null; }
+         if(param1 is TextField) { return param1 as TextField; }
+         var box:DisplayObjectContainer = param1 as DisplayObjectContainer;
+         if(box == null) { return null; }
+         var i:int = 0;
+         while(i < box.numChildren)
+         {
+            var hit:TextField = this.findField(box.getChildAt(i),param2 + 1);
+            if(hit != null) { return hit; }
+            i++;
+         }
+         return null;
       }
       
       private function makeButton(param1:TextFormat, param2:String, param3:Number, param4:Number, param5:Number, param6:Number):Sprite
@@ -196,6 +318,33 @@ package
          this.note("MARK module=" + this.lastModule + " color=" + this.lastColor + " stats=" + this.lastStats);
       }
       
+      private function onDumpClick(param1:MouseEvent):void
+      {
+         this.onDump();
+      }
+      
+      private function onDump():void
+      {
+         this.note("DUMP parts=" + this.lastParts + " module=" + this.lastModule + " stats=" + this.lastStats);
+      }
+      
+      private function onPanelMouse(param1:MouseEvent):void
+      {
+         this.note("PANEL " + param1.type + " x=" + int(param1.stageX) + " y=" + int(param1.stageY) + " delta=" + param1.delta);
+      }
+      
+      // A second path for the same press is ignored for a short run of frames. The key is not swallowed.
+      private function takeHot(param1:int):void
+      {
+         var last:int = param1 == 7 ? this.hotF7 : (param1 == 8 ? this.hotF8 : this.hotF9);
+         if(this.frameN - last < 30) { return; }
+         if(param1 == 7) { this.hotF7 = this.frameN; this.onMark(null); }
+         else if(param1 == 8) { this.hotF8 = this.frameN; this.onToggle(null); }
+         else if(param1 == 9) { this.hotF9 = this.frameN; this.onDump(); }
+         else { return; }
+         this.note("HOTKEY F" + param1);
+      }
+      
       private function onStageMouse(param1:MouseEvent):void
       {
          if(param1.type == MouseEvent.MOUSE_MOVE)
@@ -221,6 +370,9 @@ package
       private function onKey(param1:KeyboardEvent):void
       {
          this.note("KEY code=" + param1.keyCode + " char=" + param1.charCode + " ctrl=" + param1.ctrlKey + " shift=" + param1.shiftKey + " alt=" + param1.altKey + " field=" + this.fieldFocused() + " capture=" + this.captureOn);
+         if(param1.keyCode == Keyboard.F7) { this.takeHot(7); }
+         else if(param1.keyCode == Keyboard.F8) { this.takeHot(8); }
+         else if(param1.keyCode == Keyboard.F9) { this.takeHot(9); }
          if(this.fieldFocused() || this.captureOn)
          {
             this.arm("key " + param1.keyCode);
@@ -235,6 +387,7 @@ package
       
       private function onFrame(param1:Event):void
       {
+         this.frameN++;
          if(this.watchLeft <= 0)
          {
             return;
@@ -307,6 +460,10 @@ package
             this.seen[param1] = shape;
             this.note("DATA " + param1 + " keys=" + shape);
          }
+         if(param1 == "ShipBuilderHelpList")
+         {
+            this.noteHelp(data);
+         }
          if(param1 == "PartEntries")
          {
             this.onParts(data);
@@ -349,10 +506,32 @@ package
          }
       }
       
+      private function noteHelp(param1:Object):void
+      {
+         if(this.helpNoted || param1 == null) { return; }
+         var list:Object = param1.aHelpList;
+         if(list == null)
+         {
+            this.helpNoted = true;
+            this.note("HELP absent keys=" + this.keysOf(param1));
+            return;
+         }
+         this.helpNoted = true;
+         var count:int = int(list.length);
+         this.note("HELP count=" + count + " rowKeys=" + this.keysOf(count > 0 ? list[0] : null));
+         var i:int = 0;
+         while(i < count && i < 40)
+         {
+            this.note("HELP " + i + " " + this.primitiveSample(list[i]));
+            i++;
+         }
+      }
+      
       private function onParts(param1:Object):void
       {
          if(param1 == null)
          {
+            this.lastParts = "empty";
             this.note("PARTS empty");
             return;
          }
@@ -363,7 +542,8 @@ package
             count = int(list.length);
          }
          var category:String = this.pick(param1,"sCategoryName");
-         this.note("PARTS category=" + category + " index=" + this.pick(param1,"iCategoryIndex") + " stat=" + this.pick(param1,"sStatName1") + " count=" + count + " rowKeys=" + this.keysOf(count > 0 ? list[0] : null));
+         this.lastParts = "category=" + category + " index=" + this.pick(param1,"iCategoryIndex") + " stat=" + this.pick(param1,"sStatName1") + " count=" + count;
+         this.note("PARTS " + this.lastParts + " rowKeys=" + this.keysOf(count > 0 ? list[0] : null));
          var shown:int = 0;
          var i:int = 0;
          while(i < count && shown < 24)

@@ -1,6 +1,6 @@
 # Horizon Ship Builder, phase P0
 
-Read-only probe. Version 0.0.1.0. It answers the live tests in spec F.1 as far as a log can, including Arrange tests #16, #17, and #18.
+Read-only probe. Version 0.0.2.0. It answers the live tests in spec F.1 as far as a log can, including Arrange tests #16, #17, and #18.
 
 The probe writes one file:
 
@@ -127,7 +127,7 @@ Each step says what you do, then which log line to read. Lines look like `FACT F
 
 ### #1 Movie and menu
 
-Open the builder. Read `FACT F19`. It records the menu name `SpaceshipEditorMenu`, whether the menu object exists, and whether `hsbProbePing` invoked. A ping of `0.0.1.0` means the splice is live. `invoke=0` means the loaded movie does not have the splice yet.
+Open the builder. Read `FACT F19`. It records the menu name `SpaceshipEditorMenu`, whether the menu object exists, and whether `hsbProbePing` invoked. A ping of `0.0.2.0` means the splice is live. `invoke=0` means the loaded movie does not have the splice yet.
 
 `FACT movie | MOVIE url=` names the SWF that loaded. `SUBSCRIBE ok` and `DATA` lines list provider keys for PartEntries, ModuleInfo, ShipStats, CostSummaryData, ShipBuilderHelpList, and the Color providers. `CLIPS` lists which document clips are present and their sizes. Satellite movies that are not separate menus show up only as clips or as the document URL. `movie created` lines name ship-related menus SFSE reports.
 
@@ -137,7 +137,7 @@ With capture off, press H and the slash key. Read `FACT F16` for the window (`ke
 
 ### #3 Colors
 
-Press Mark colors and read `FACT movie | MARK`. Change the game's color sliders. Press Mark colors again. Cancel, then press Mark colors again. The `COLOR` and `MARK` lines are the HSB values the providers sent. Do this with one part selected, then two, then the whole ship. Accept only on a ship you are willing to repaint. The probe never sends a color event. Unset colors show up as empty HSB fields if the provider omits them.
+Press F7 and read `FACT movie | MARK`. The panel button is only a label. Clicks may never reach it. Change the game's color sliders. Press Mark colors again. Cancel, then press Mark colors again. The `COLOR` and `MARK` lines are the HSB values the providers sent. Do this with one part selected, then two, then the whole ship. Accept only on a ship you are willing to repaint. The probe never sends a color event. Unset colors show up as empty HSB fields if the provider omits them.
 
 ### #4 Category jump
 
@@ -197,7 +197,7 @@ Press L, then Ctrl+L, with capture off and with no text box focused. `FACT F16` 
 
 Use a throwaway save for this test. With the capture layer on, the game can still delete a part, change a variant, move the floor, undo, or open the exit confirm. Those are the game's own actions. The probe only records them.
 
-Turn on Capture layer. The stage gets a light blue wash. The panel stays on top so you can turn it off. The hook still forwards every message.
+Press F8 to turn on Capture layer. The stage gets a light blue wash. The panel stays on top. Press F8 again, after a short pause, to turn it off. The hook still forwards every message.
 
 - Drag across the 3D view. Read `LAYER` for down, move, and up. Watch the camera. In Add mode, with a ghost part, click the view and watch whether a part is selected or placed. `AFTER layer down` compares the data feeds. A camera move may leave `same=1`.
 - Press Left and Right. Watch the variant. Read `USER` if the splice logged the event, and `AFTER`.
@@ -212,6 +212,14 @@ Turn on Capture layer. The stage gets a light blue wash. The panel stays on top 
 The probe does not save a layout and does not write an ini. Restart survival is not tested.
 
 At each of 1080p, 1440p, 3440x1440, and 1280x720, open the builder once on the normal movie and once on the large-font movie. Read `RECT`, `stage=`, and `CLIPS` for that session. Those are the measurements a later layout can clamp to. Changing resolution during one visit also logs `RESIZE` and a new `RECT`.
+
+## P0.1
+
+Version 0.0.2.0, after the first in-game run. Rebuild both probe movies from the updated script and the splice notes (`hsbProbeHotkey` and `hsbProbeStage`), and copy the new DLL, before this pass. The panel copies its text face and embed flag from a vanilla text field in the loaded movie, so the words are not empty boxes. The face name is not printed. Clicks still may not reach the movie, so the actions are keys. `FACT boot` records `F7=mark`, `F8=capture`, and `F9=dump`. The panel shows the same three.
+
+Enter build mode. Select a part and a category. Press F7, then F8, then F8 again after a short pause, then F9. Read `HOTKEY`, `MARK`, `CAPTURE`, and `DUMP`. `DUMP` is the current PartEntries, ModuleInfo, and ShipStats snapshot. An empty hangar list is still a useful dump: it should say the count is 0 until a category has rows.
+
+Then repeat #16 and #17. `FACT movie | STAGE` is a mouseDown, mouseUp, mouseWheel, or click the stage heard. `FACT movie | PANEL` is the same event on the panel. No PANEL line and no STAGE line for a click means the movie never got it. `FACT map` is once per open: the window client size next to the stage size. `FACT movie | HELP` is the vanilla ShipBuilderHelpList keys, once per open. The probe still does not swallow. `swallowed=0` stays on the window lines.
 
 ## What the log is for
 

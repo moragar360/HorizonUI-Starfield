@@ -46,6 +46,8 @@ std::atomic<bool> g_resetForms{ false };
 std::atomic<bool> g_pingDone{ false };
 std::atomic<int> g_pingTries{ 0 };
 std::atomic<bool> g_inShipPoll{ false };
+std::atomic<unsigned> g_hotbits{ 0 };
+std::atomic<bool> g_mapped{ false };
 
 using AdvanceFn = void (*)(RE::Scaleform::GFx::ASMovieRootBase*, bool);
 std::atomic<AdvanceFn> g_origAdvance{ nullptr };
@@ -131,6 +133,7 @@ void PrepareLog()
 	g_logReady.store(true);
 	Fact("boot", "HorizonShipBuilder " HSB_FILE_VERSION_STR " read-only");
 	Fact("boot", "writes this log only; does not change the ship or a save");
+	Fact("boot", "keys F7=mark F8=capture F9=dump");
 	FlushLog();
 }
 
@@ -148,6 +151,9 @@ const char* KeyLabel(WPARAM vk)
 	case 'Z': return "Z";
 	case 'H': return "H";
 	case VK_OEM_2: return "Slash";
+	case VK_F7: return "F7";
+	case VK_F8: return "F8";
+	case VK_F9: return "F9";
 	default: return "";
 	}
 }
@@ -186,6 +192,13 @@ LRESULT CALLBACK ProbeWnd(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 			const DWORD last = g_lastMove.load();
 			if (now - last < 100) skip = true;
 			else g_lastMove.store(now);
+		}
+		if (!skip && down && (lp & 0x40000000) == 0) {
+			unsigned bit = 0;
+			if (wp == VK_F7) bit = 1u;
+			else if (wp == VK_F8) bit = 2u;
+			else if (wp == VK_F9) bit = 4u;
+			if (bit != 0) g_hotbits.fetch_or(bit);
 		}
 		if (!skip) {
 			const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -440,6 +453,30 @@ void NoteMovieLine(const std::string& clean)
 	Fact("movie", clean);
 }
 
+void NoteWindowMap(RE::IMenu* menu)
+{
+	HWND hwnd = g_hwnd.load();
+	if (!hwnd) hwnd = GameWindow();
+	RECT rc{};
+	int cw = 0;
+	int ch = 0;
+	if (hwnd && GetClientRect(hwnd, &rc)) {
+		cw = rc.right - rc.left;
+		ch = rc.bottom - rc.top;
+	}
+	std::string stage = "stage=unknown";
+	if (menu && menu->menuObj.IsObject()) {
+		RE::Scaleform::GFx::Value result;
+		if (menu->menuObj.Invoke("hsbProbeStage", &result)) {
+			const std::string got = InvokeString(result);
+			if (!got.empty()) stage = got;
+		}
+	}
+	char buf[220];
+	snprintf(buf, sizeof(buf), "client=%dx%d %s", cw, ch, stage.c_str());
+	Fact("map", buf);
+}
+
 void PollShipOnAdvance()
 {
 	if (g_inShipPoll.exchange(true)) return;
@@ -485,6 +522,14 @@ void PollShipOnAdvance()
 		}
 	}
 	if (!menu->menuObj.IsObject()) return;
+	if (!g_mapped.exchange(true)) NoteWindowMap(menu.get());
+	const unsigned bits = g_hotbits.exchange(0);
+	if (bits != 0) {
+		RE::Scaleform::GFx::Value arg;
+		arg = static_cast<double>(bits);
+		if (!menu->menuObj.Invoke("hsbProbeHotkey", nullptr, &arg, 1))
+			Fact("movie", "hotkey invoke failed");
+	}
 	RE::Scaleform::GFx::Value lines;
 	if (!menu->menuObj.Invoke("hsbTakeLines", &lines)) return;
 	const std::string blob = InvokeString(lines);
@@ -618,11 +663,14 @@ public:
 				g_lastPoll.store(0);
 				g_resetForms.store(true);
 				g_removeSettled.store(false);
+				g_mapped.store(false);
+				g_hotbits.store(0);
 				Fact("F19", "builder opened");
 				Fact("F37", GetModuleHandleA("HorizonUI.dll") ? "HorizonUI.dll is loaded" : "HorizonUI.dll is not loaded");
 				LogCursor("open");
 			} else {
 				Fact("F19", "builder closed");
+				g_hotbits.store(0);
 				g_hudPending.store(true);
 			}
 			Fact("F19", event.opening ? "closeEvent opening=1" : "closeEvent opening=0");
