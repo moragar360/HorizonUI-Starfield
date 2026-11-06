@@ -205,10 +205,45 @@ expect(funcBody(as, "hz43VanClip").indexOf("getChildByName") < 0, "Arrange does 
 expect(funcBody(as, "hz43VanWrite").indexOf("hzBlg.x") < 0 && funcBody(as, "hz43VanWrite").indexOf("hzBlg.y") < 0, "Arrange does not drag the lower-left group");
 expect(as.indexOf("HZ43 watch unit=") >= 0, "the moved watch assembly is traced once");
 expect(funcBody(as, "hz43VanEnsure").indexOf("drawCircle(90,90,90)") < 0, "the Arrange box is the watch bounds, not a circle parked above it");
-expect(as.indexOf('names.push("WatchIconsWidget_mc"') < 0, "Horizon faces do not hide the live marker widget");
 expect(drawBody.indexOf("hz43BodyT.y = -22") >= 0 && drawBody.indexOf("hz43TempT.y = -4") >= 0, "the analog planet name sits below the compass letters");
 expect(funcBody(as, "hzT19Buttons").indexOf("isHold || !on") < 0, "an enabled hold is not drawn as disabled");
 expect(funcBody(as, "hz38HideVanilla").indexOf("hzT19KeepHold") >= 0, "the hold button stays able to receive the key");
+expect(funcBody(as, "hz38HideVanilla").indexOf("hzT19HideA(aw") < 0, "the activation widget is not alpha-hidden");
+expect(funcBody(as, "hz38HideVanilla").indexOf("hzT19HidePromptTree") >= 0, "prompt art is hidden off the hold path");
+expect(funcBody(as, "hzT19KeepHold").indexOf("p.alpha < 1") >= 0, "hold ancestors are restored to alpha 1");
+
+const onFrame = funcBody(as, "hzOnFrame");
+const style0At = onFrame.indexOf("hzWatchStyle == 0");
+const pushMark = onFrame.indexOf('names.push("WatchIconsWidget_mc","WatchPointerOutline_mc")');
+expect(style0At >= 0 && pushMark > style0At, "style 0 hides the leftover radar and nearby markers");
+expect(onFrame.indexOf("keepMark") >= 0 && onFrame.indexOf("hzWatchStyle == 3") >= 0 && onFrame.indexOf("hzWatchStyle == 4") >= 0, "Horizon faces still keep the live markers");
+expect(funcBody(as, "hz43ShowVanilla").indexOf("hz43VanBlgChrome(false)") >= 0, "vanilla restores unnamed watch chrome");
+expect(funcBody(as, "hz43VanChrome").indexOf("hz43VanBlgChrome(hide)") >= 0, "Horizon faces hide unnamed cap art with the vanilla bezel");
+expect(funcBody(as, "hz43VanNamed").indexOf("name.length == 0") >= 0, "unnamed shapes belong to the watch assembly");
+expect(funcBody(as, "hz43VanSkip").indexOf("name.length == 0) { return true; }") < 0, "unnamed chrome is not skipped from the watch assembly");
+expect(funcBody(as, "hz43VanSkip").indexOf("name.length == 0) { return false; }") >= 0, "unnamed shapes stay in the watch assembly");
+
+function leftoverWatchVisible(style, clip) {
+	const alerts = ["EnemyDetectionAnim_mc", "Autopilot_mc", "EnvAlertText", "BioAlertText", "LocationAlertText"];
+	if (alerts.indexOf(clip) >= 0) return true;
+	const mark = clip === "WatchIconsWidget_mc" || clip === "WatchPointerOutline_mc";
+	if (style === 0) return false;
+	if (style === 3 || style === 4) return mark;
+	return true;
+}
+expect(leftoverWatchVisible(0, "WatchIconsWidget_mc") === false, "off hides the inner radar");
+expect(leftoverWatchVisible(0, "WatchPointerOutline_mc") === false, "off hides the heading outline");
+expect(leftoverWatchVisible(0, "EnemyDetectionAnim_mc") === true, "off leaves the detection ring");
+expect(leftoverWatchVisible(3, "WatchIconsWidget_mc") === true, "digital keeps nearby markers");
+expect(leftoverWatchVisible(4, "WatchIconsWidget_mc") === true, "analog keeps nearby markers");
+expect(leftoverWatchVisible(1, "WatchIconsWidget_mc") === true, "vanilla keeps nearby markers");
+expect(leftoverWatchVisible(3, "WatchOutline_mc") === false, "digital hides the vanilla bezel");
+
+function holdPathLive(awAlphaHidden, ancestorAlphaRestored) {
+	return ancestorAlphaRestored ? 1 : (awAlphaHidden ? 0 : 1);
+}
+expect(holdPathLive(true, false) === 0, "an alpha-0 ancestor blocks the hold");
+expect(holdPathLive(false, true) === 1, "restored ancestors keep the hold live");
 
 expect(ini.indexOf("WatchX=-1") >= 0 && ini.indexOf("WatchY=-1") >= 0, "default watch position is the lower-left home");
 expect(ini.indexOf("WatchScale=-1") >= 0, "watch size defaults to HudScale");
