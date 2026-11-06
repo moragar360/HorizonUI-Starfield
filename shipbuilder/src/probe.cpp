@@ -623,7 +623,7 @@ void InvokeText(RE::IMenu* menu, const char* name, const std::string& text)
 {
 	if (!menu || text.empty()) return;
 	RE::Scaleform::GFx::Value arg;
-	arg = text;
+	arg = text.c_str();
 	menu->menuObj.Invoke(name, nullptr, &arg, 1);
 }
 
