@@ -6,6 +6,7 @@ package
    import flash.events.Event;
    import flash.events.MouseEvent;
    import flash.geom.Point;
+   import flash.geom.Rectangle;
    import flash.text.TextField;
    import flash.text.TextFieldType;
    import flash.text.TextFormat;
@@ -209,8 +210,8 @@ package
       private function onFrame(param1:Event):void
       {
          this.frameN++;
-         if(this.mapped || this.frameN < 3) { return; }
-         if(this.frameN > 8 && !this.mapped) { this.mapClips(); }
+         if(this.frameN < 3 || this.arranging || this.conflict) { return; }
+         if(!this.mapped || (this.frameN % 8) == 0) { this.syncPanels(); }
       }
       
       private function copyFormat():TextFormat
@@ -316,44 +317,61 @@ package
          this.openSettings();
       }
       
-      private function mapClips():void
+      private function syncPanels():void
       {
-         this.mapped = true;
-         var found:Array = [];
-         this.collect(this.host as DisplayObjectContainer,0,found);
-         if(this.otherBuilder(found)) { this.conflict = true; }
-         if(this.conflict)
+         if(!this.mapped)
          {
-            this.showBanner("Another ship builder mod is loaded. Horizon Ship Builder is standing aside.");
-            this.note("CONFLICT step-aside");
-            var i0:int = 0;
-            while(i0 < this.cards.length)
+            var found:Array = [];
+            this.collect(this.host as DisplayObjectContainer,0,found);
+            this.inventory(found);
+            if(this.otherBuilder(found))
             {
-               (this.cards[i0].card as Sprite).visible = false;
-               i0++;
+               this.conflict = true;
+               this.showBanner("Another ship builder mod is loaded. Horizon Ship Builder is standing aside.");
+               this.note("CONFLICT step-aside");
+               var i0:int = 0;
+               while(i0 < this.cards.length)
+               {
+                  (this.cards[i0].card as Sprite).visible = false;
+                  i0++;
+               }
+               this.mapped = true;
+               return;
             }
-            return;
          }
-         this.assignNames(found);
-         this.assignSpots(found);
          var report:String = "";
          var i:int = 0;
-         while(i < this.cards.length)
+         while(i < IDS.length)
          {
-            var row:Object = this.cards[i];
-            var clip:DisplayObject = row.clip as DisplayObject;
-            if(report.length > 0) { report += ","; }
-            report += row.id + "=" + (clip != null && clip.name != null ? clip.name : "none");
-            if(clip != null)
+            var id:String = String(IDS[i]);
+            var row:Object = this.cardBy(id);
+            if(id == "Cluster")
             {
-               row.hx = clip.x;
-               row.hy = clip.y;
+               i++;
+               continue;
+            }
+            var clip:DisplayObject = this.clipByName(id);
+            if(report.length > 0) { report += ","; }
+            report += id + "=" + (clip != null && clip.name != null ? clip.name : "none");
+            if(this.followsGame(id))
+            {
+               this.release(row);
+               this.strokeBehind(this.clipLive(clip) ? clip : null,id);
+            }
+            else if(clip != null && this.clipLive(clip) && !this.blocked(clip))
+            {
+               this.hold(row,clip);
+            }
+            else
+            {
+               this.release(row);
+               this.strokeBehind(null,id);
             }
             i++;
          }
-         this.note("MAP " + report);
-         this.inventory(found);
-         this.placeAll(false);
+         this.strokeHangar();
+         if(!this.mapped) { this.note("MAP " + report); }
+         this.mapped = true;
          this.redraw();
       }
       
@@ -400,93 +418,204 @@ package
       
       private function aliases(param1:String):Array
       {
-         if(param1 == "Power") { return ["PowerAllocation_mc","PowerAllocationPanel_mc","PowerPanel_mc","ShipPower_mc","Power_mc"]; }
-         if(param1 == "Module") { return ["ModuleInfo_mc","ModuleInfoCard_mc","SelectedModule_mc","ModuleCard_mc","Module_mc"]; }
-         if(param1 == "Credits") { return ["CostSummary_mc","CostSummaryPanel_mc","Credits_mc","VendorCredits_mc","Cost_mc"]; }
-         if(param1 == "Browser") { return ["PartList_mc","PartsList_mc","PartBrowser_mc","CategoryList_mc","ShipParts_mc","Browser_mc"]; }
-         if(param1 == "Stats") { return ["ShipStats_mc","ShipStatsPanel_mc","StatsPanel_mc","Stats_mc","StatBar_mc"]; }
-         if(param1 == "Hints") { return ["ButtonBar_mc","ButtonHintBar_mc","Hints_mc","HintBar_mc"]; }
+         if(param1 == "Power") { return ["PowerAllocation_mc"]; }
+         if(param1 == "Module") { return ["ModuleInfoCard_mc"]; }
+         if(param1 == "Credits") { return ["CostSummary_mc"]; }
+         if(param1 == "Browser") { return ["ModulePalette_mc"]; }
+         if(param1 == "Stats") { return ["ShipStatsFooter_mc"]; }
+         if(param1 == "Hints") { return ["ButtonBar_mc"]; }
          return [];
       }
       
-      private function assignNames(param1:Array):void
+      private function followsGame(param1:String):Boolean
       {
-         var i:int = 0;
-         while(i < IDS.length)
-         {
-            if(String(IDS[i]) == "Cluster") { i++; continue; }
-            var names:Array = this.aliases(String(IDS[i]));
-            var n:int = 0;
-            while(n < names.length)
-            {
-               var hit:DisplayObject = this.findNamed(param1,String(names[n]));
-               if(hit != null && !this.taken(hit) && !this.blocked(hit))
-               {
-                  this.cardBy(String(IDS[i])).clip = hit;
-                  break;
-               }
-               n++;
-            }
-            i++;
-         }
+         return param1 == "Credits" || param1 == "Hints";
       }
       
-      private function findNamed(param1:Array, param2:String):DisplayObject
+      private function clipByName(param1:String):DisplayObject
       {
-         var i:int = 0;
-         while(i < param1.length)
+         var names:Array = this.aliases(param1);
+         var n:int = 0;
+         while(n < names.length)
          {
-            if(String(param1[i].name) == param2) { return param1[i].clip as DisplayObject; }
+            var name:String = String(names[n]);
+            var direct:DisplayObject = null;
+            try { direct = this.host[name] as DisplayObject; } catch(err:Error) { direct = null; }
+            if(direct != null) { return direct; }
+            var walked:DisplayObject = this.findDeep(this.host as DisplayObjectContainer,name,0);
+            if(walked != null) { return walked; }
+            n++;
+         }
+         return null;
+      }
+      
+      private function findDeep(param1:DisplayObjectContainer, param2:String, param3:int):DisplayObject
+      {
+         if(param1 == null || param3 > 6) { return null; }
+         var i:int = 0;
+         while(i < param1.numChildren)
+         {
+            var child:DisplayObject = param1.getChildAt(i);
+            if(child.name == param2) { return child; }
+            if(child is DisplayObjectContainer)
+            {
+               var hit:DisplayObject = this.findDeep(child as DisplayObjectContainer,param2,param3 + 1);
+               if(hit != null) { return hit; }
+            }
             i++;
          }
          return null;
       }
       
-      private function assignSpots(param1:Array):void
+      private function clipLive(param1:DisplayObject):Boolean
       {
-         var spec:Array = this.spots();
-         var i:int = 0;
-         while(i < spec.length)
+         if(param1 == null) { return false; }
+         var node:DisplayObject = param1;
+         var guard:int = 0;
+         while(node != null && guard < 8)
          {
-            var row:Object = this.cardBy(String(spec[i].id));
-            if(row != null && row.clip == null)
-            {
-               var best:DisplayObject = null;
-               var bestD:Number = 220;
-               var k:int = 0;
-               while(k < param1.length)
-               {
-                  var item:Object = param1[k];
-                  var clip:DisplayObject = item.clip as DisplayObject;
-                  if(clip != null && !this.taken(clip) && !this.blocked(clip) && item.w < 1200 && item.h < 1000)
-                  {
-                     var gp:Point = clip.localToGlobal(new Point(0,0));
-                     var cx:Number = gp.x + Number(item.w) / 2;
-                     var cy:Number = gp.y + Number(item.h) / 2;
-                     var d:Number = Math.abs(cx - Number(spec[i].x)) + Math.abs(cy - Number(spec[i].y));
-                     if(d < bestD) { bestD = d; best = clip; }
-                  }
-                  k++;
-               }
-               if(best != null) { row.clip = best; }
-            }
-            i++;
+            if(!node.visible) { return false; }
+            node = node.parent;
+            guard++;
+         }
+         var box:Rectangle = null;
+         try { box = param1.getBounds(stage); } catch(err:Error) { box = null; }
+         if(box == null) { return false; }
+         if(box.width < 40 || box.height < 24) { return false; }
+         if(box.width > 1700 || box.height > 1000) { return false; }
+         return true;
+      }
+      
+      private function hold(param1:Object, param2:DisplayObject):void
+      {
+         var card:Sprite = param1.card as Sprite;
+         if(param2.parent == card)
+         {
+            param1.clip = param2;
+            return;
+         }
+         var parent:DisplayObjectContainer = param2.parent as DisplayObjectContainer;
+         if(parent == null) { return; }
+         var local:Rectangle = param2.getBounds(param2);
+         var world:Rectangle = param2.getBounds(stage);
+         param1.homeParent = parent;
+         param1.homeIndex = parent.getChildIndex(param2);
+         param1.homeX = param2.x;
+         param1.homeY = param2.y;
+         parent.removeChild(param2);
+         card.addChild(param2);
+         var pad:Number = 10;
+         card.x = world.x - pad;
+         card.y = world.y - pad - 26;
+         var dest:Point = card.globalToLocal(new Point(world.x,world.y));
+         param2.x = dest.x - local.x;
+         param2.y = dest.y - local.y;
+         param1.ww = world.width + pad * 2;
+         param1.hh = world.height + pad * 2 + 26;
+         param1.clip = param2;
+         card.mouseEnabled = true;
+         card.mouseChildren = true;
+      }
+      
+      private function release(param1:Object):void
+      {
+         var card:Sprite = param1.card as Sprite;
+         var clip:DisplayObject = param1.clip as DisplayObject;
+         if(clip != null && clip.parent == card && param1.homeParent != null)
+         {
+            card.removeChild(clip);
+            var parent:DisplayObjectContainer = param1.homeParent as DisplayObjectContainer;
+            var index:int = int(param1.homeIndex);
+            if(index < 0 || index > parent.numChildren) { index = parent.numChildren; }
+            parent.addChildAt(clip,index);
+            clip.x = Number(param1.homeX);
+            clip.y = Number(param1.homeY);
+         }
+         param1.clip = null;
+         param1.ww = 0;
+         param1.hh = 0;
+         card.visible = false;
+         card.graphics.clear();
+      }
+      
+      private function strokeBehind(param1:DisplayObject, param2:String):void
+      {
+         var frameName:String = "HsbFrame" + param2;
+         if(param1 == null || param1.parent == null)
+         {
+            this.removeFrame(frameName);
+            return;
+         }
+         var parent:DisplayObjectContainer = param1.parent as DisplayObjectContainer;
+         var frame:Sprite = parent.getChildByName(frameName) as Sprite;
+         if(frame == null)
+         {
+            frame = new Sprite();
+            frame.name = frameName;
+            frame.mouseEnabled = false;
+            frame.mouseChildren = false;
+            parent.addChildAt(frame,parent.getChildIndex(param1));
+         }
+         else if(frame.parent == parent)
+         {
+            var clipAt:int = parent.getChildIndex(param1);
+            var frameAt:int = parent.getChildIndex(frame);
+            if(frameAt != clipAt - 1) { parent.setChildIndex(frame,clipAt); }
+         }
+         var box:Rectangle = param1.getBounds(parent);
+         var g:* = frame.graphics;
+         g.clear();
+         g.lineStyle(1.5,this.accentColor(),0.95);
+         g.drawRoundRect(box.x - 8,box.y - 8,box.width + 16,box.height + 16,14,14);
+         g.lineStyle();
+      }
+      
+      private function removeFrame(param1:String):void
+      {
+         var host:DisplayObjectContainer = this.host as DisplayObjectContainer;
+         var frame:DisplayObject = this.findDeep(host,param1,0);
+         if(frame != null && frame.parent != null)
+         {
+            (frame.parent as DisplayObjectContainer).removeChild(frame);
          }
       }
       
-      private function spots():Array
+      private function strokeHangar():void
       {
-         var r:Object = this.view();
-         var sx:Number = r.width / 1920;
-         var sy:Number = r.height / 1080;
-         return [
-            {"id":"Power","x":r.x + 208 * sx,"y":r.y + 158 * sy},
-            {"id":"Module","x":r.x + 208 * sx,"y":r.y + 520 * sy},
-            {"id":"Credits","x":r.x + 1193 * sx,"y":r.y + 89 * sy},
-            {"id":"Browser","x":r.x + 1638 * sx,"y":r.y + 460 * sy},
-            {"id":"Stats","x":r.x + 1156 * sx,"y":r.y + 995 * sy},
-            {"id":"Hints","x":r.x + 1516 * sx,"y":r.y + 914 * sy}
-         ];
+         var hangar:DisplayObjectContainer = null;
+         try { hangar = this.host["HangarInfoPanel_mc"] as DisplayObjectContainer; } catch(err:Error) { hangar = null; }
+         if(hangar == null || !hangar.visible)
+         {
+            var n:int = 0;
+            while(n < 6)
+            {
+               this.removeFrame("Hangar" + n);
+               n++;
+            }
+            return;
+         }
+         var i:int = 0;
+         var used:int = 0;
+         while(i < hangar.numChildren && used < 6)
+         {
+            var child:DisplayObject = hangar.getChildAt(i);
+            var name:String = child.name != null ? child.name : "";
+            if(name != "ShipSelector_mc" && name.indexOf("Hsb") != 0 && this.clipLive(child))
+            {
+               var hb:Rectangle = child.getBounds(stage);
+               if(hb.width <= 700 && hb.height <= 820)
+               {
+                  this.strokeBehind(child,"Hangar" + used);
+                  used++;
+               }
+            }
+            i++;
+         }
+         while(used < 6)
+         {
+            this.removeFrame("Hangar" + used);
+            used++;
+         }
       }
       
       private function taken(param1:DisplayObject):Boolean
@@ -552,7 +681,14 @@ package
             var card:Sprite = row.card as Sprite;
             var x:Number = spot.x;
             var y:Number = spot.y;
-            if(!param1) { x = this.resolveX(row.id,spot,r); y = this.resolveY(row.id,spot,r); }
+            var rawX:String = this.lay[row.id + "X"] != null ? String(this.lay[row.id + "X"]) : "-1";
+            var rawY:String = this.lay[row.id + "Y"] != null ? String(this.lay[row.id + "Y"]) : "-1";
+            if(!param1 && rawX == "-1" && rawY == "-1") { i++; continue; }
+            if(!param1)
+            {
+               if(rawX != "-1") { x = this.resolveX(row.id,spot,r); }
+               if(rawY != "-1") { y = this.resolveY(row.id,spot,r); }
+            }
             x = this.clamp(x,r.x,r.x + r.width - spot.w);
             y = this.clamp(y,r.y,r.y + r.height - spot.h);
             card.x = x;
@@ -585,8 +721,7 @@ package
          out.Credits = {"x":out.Browser.x - 12 - 363,"y":param1.y + m,"w":363,"h":102};
          out.Hints = {"x":param1.x + param1.width - m - 744,"y":param1.y + param1.height - m - statsH - 8 - hintsH,"w":744,"h":hintsH};
          out.Stats = {"x":param1.x + Math.max(m,400 * param1.width / 1920),"y":param1.y + param1.height - m - statsH,"w":Math.min(1464,param1.width - m * 2),"h":statsH};
-         var cw:Number = 200;
-         out.Cluster = {"x":param1.x + (param1.width - cw) / 2,"y":param1.y + 8,"w":cw,"h":40};
+         out.Cluster = {"x":param1.x + m,"y":param1.y + 8,"w":190,"h":40};
          return out;
       }
       
@@ -631,13 +766,26 @@ package
             var spot:Object = box[row.id];
             var g:* = card.graphics;
             g.clear();
-            var show:Boolean = row.id == "Cluster" || row.clip != null || this.arranging;
+            var wide:Number = Number(row.ww) > 0 ? Number(row.ww) : spot.w;
+            var high:Number = Number(row.hh) > 0 ? Number(row.hh) : spot.h;
+            var show:Boolean = row.id == "Cluster" || (row.clip != null && !this.followsGame(String(row.id))) || (this.arranging && !this.followsGame(String(row.id)));
             card.visible = show && !this.conflict;
+            if(row.id == "Cluster")
+            {
+               card.mouseEnabled = false;
+               card.mouseChildren = true;
+               var saved:String = this.lay["ClusterX"] != null ? String(this.lay["ClusterX"]) : "-1";
+               if(!this.arranging && saved == "-1")
+               {
+                  card.x = r.x + this.margin;
+                  card.y = r.y + 8;
+               }
+            }
             if(row.id != "Cluster" && show)
             {
-               g.lineStyle(1.5,c,0.9);
-               g.beginFill(0x121610,0.9);
-               g.drawRoundRect(0,0,spot.w,spot.h,16,16);
+               g.lineStyle(1.5,c,0.95);
+               g.beginFill(0x121610,0.82);
+               g.drawRoundRect(0,0,wide,high,16,16);
                g.endFill();
                g.lineStyle();
             }
@@ -661,8 +809,8 @@ package
             addChild(this.titleT);
          }
          this.titleT.textColor = c;
-         this.titleT.x = r.x + this.margin + 370;
-         this.titleT.y = r.y + 14;
+         this.titleT.x = r.x + this.margin + 200;
+         this.titleT.y = r.y + 10;
          if(!this.mapped)
          {
             var j:int = 0;
@@ -908,15 +1056,18 @@ package
             var row:Object = this.cards[i];
             var card:Sprite = row.card as Sprite;
             var spot:Object = boxes[row.id];
+            var wide:Number = Number(row.ww) > 0 ? Number(row.ww) : spot.w;
+            var high:Number = Number(row.hh) > 0 ? Number(row.hh) : spot.h;
             var on:Boolean = this.sel == row.id || this.dragId == row.id;
+            if(this.followsGame(String(row.id)) && row.clip == null && !card.visible) { i++; continue; }
             g.lineStyle(on ? 2 : 1.5,on ? this.accentColor() : 0xFFFFFF,on ? 1 : 0.55);
             g.beginFill(this.accentColor(),on ? 0.1 : 0.03);
-            g.drawRoundRect(card.x - 4,card.y - 4,spot.w + 8,spot.h + 8,16,16);
+            g.drawRoundRect(card.x - 4,card.y - 4,wide + 8,high + 8,16,16);
             g.endFill();
             this.ensureLabel(row.id,this.panelLabel(String(row.id)),card.x,card.y - 22,on);
-            if(this.overlaps(card.x,card.y,spot.w,spot.h,clear))
+            if(this.overlaps(card.x,card.y,wide,high,clear))
             {
-               this.chip(g,card.x + 8,card.y + spot.h - 28);
+               this.chip(g,card.x + 8,card.y + high - 28);
             }
             i++;
          }
