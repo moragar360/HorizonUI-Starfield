@@ -14,6 +14,10 @@ Not published. No tag. The settings schema stays 0.42.0, so an existing `Horizon
 
 ### Changed
 - **SFSE plugin** file and product version are 0.43.1.0. This build is not a release download yet.
+- **Watch styles 1 and 2** show the game's watch again. The old hide had cleared it and did not put it back. Style 2 still tints that watch and does not add a second planet name.
+- **Horizon Digital and Analog** match the round faces: O2 runs clockwise from 7 o'clock, CO2 counter-clockwise from 5 o'clock, and empty segments are gray. The day dial is a filled disc. Compass letters stay on the top arc. The local and PC labels sit above their times. Analog hands are white, with a gold hub, and the day dial sits at 6 o'clock.
+- **Crosshair Off, and Weapon drawn while holstered,** keep the aiming dot hidden when the game shows it again on a target or an NPC. The interact ring and glyph stay up.
+- The watch no longer shows a line that names its place on the screen.
 
 ## [0.43.0.33-alpha] - 2026-11-04
 
