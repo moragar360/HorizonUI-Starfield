@@ -9,18 +9,18 @@ Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never publish
 Not published. No tag. The settings schema stays 0.42.0, so an existing `HorizonUI.user.ini` carries over. `WatchStyle` and `CrosshairRule` stay at their defaults until you change them.
 
 ### Added
-- **Watch** in F11 > CARDS. `WatchStyle` under `[Cards Extra]`: 0 off (default), 1 the game's watch, 2 the game's watch tinted with your card color and accent, 3 Horizon digital, 4 Horizon analog. Off matches the previous HUD. Horizon Digital and Analog are Arrange cards. `WatchX` and `WatchY` save the spot (`-1` is the lower-left home). `WatchScale` is the size (`-1` is HudScale). While the watch is still at the home, a showing card in that corner lifts it 8 px. A saved spot stays put. `hudmenu` and `hudmenu_lrg` share the watch, so both use the same spot.
+- **Watch** in F11 > CARDS. `WatchStyle` under `[Cards Extra]`: 0 off (default), 1 the game's watch, 2 the game's watch tinted with your card color and accent, 3 Horizon digital, 4 Horizon analog. Off matches the previous HUD. Every watch face is an Arrange card. Styles 1 and 2 move the game's watch clips only, and leave the rest of the lower-left group where it is. `WatchX` and `WatchY` save the spot (`-1` is the lower-left home). `WatchScale` is the size (`-1` is HudScale). While the Horizon watch is still at the home, a showing card in that corner lifts it 8 px. A saved spot stays put. `hudmenu` and `hudmenu_lrg` share the watch, so both use the same spot.
 - **Crosshair visibility** in F11 > RULES. `CrosshairRule` under `[Rules]`: 0 always (default), 1 only with a weapon drawn, 2 off. This hides the aiming dot or reticle only. The center interact ring and its glyph stay. A restore puts back only a hide this rule made, and it leaves an iron-sights hide alone. `CrosshairStyle` is unchanged.
 
 ### Changed
 - **SFSE plugin** file and product version are 0.43.1.0. This build is not a release download yet.
 - **Watch styles 1 and 2** show the game's watch again. The old hide had cleared it and did not put it back. Style 2 still tints that watch and does not add a second planet name.
-- **Horizon Digital and Analog** match the round faces: O2 runs clockwise from 7 o'clock, CO2 counter-clockwise from 5 o'clock, and empty segments are gray. The day dial is a filled disc. Compass letters stay on the top arc. The local and PC labels sit above their times. Analog hands are white, with a gold hub, and the day dial sits at 6 o'clock.
-- **Crosshair Off, and Weapon drawn while holstered,** keep the aiming dot hidden when the game shows it again on a target or an NPC. The interact ring and glyph stay up.
+- **Horizon Digital and Analog** match the round faces: O2 runs clockwise from 7 o'clock, CO2 counter-clockwise from 5 o'clock, and empty segments are gray. Analog keeps the filled day dial at 6 o'clock. Digital has no day dial, and its times sit in the center of the face (local at 16 px, PC at 13 px). Compass letters stay on the top arc. The local and PC labels sit above their times. Analog hands are white, with a gold hub.
+- **Crosshair Off, and Weapon drawn while holstered,** keep the aiming dot hidden when the game shows it again on a target or an NPC. The interact ring and glyph stay while you are looking at something you can use. After you look away, the leftover center circle hides too.
 - The watch no longer shows a line that names its place on the screen.
 
 ### Fixed
-- **Quest tracker:** steps come only from the selected quest's open objectives. Compass markers supply a distance for those steps and do not add another quest's marker. The title and the steps refresh together when the selected quest changes. Sub-lines are 13 px.
+- **Quest tracker:** steps come only from the selected quest's open objectives. Compass markers supply a distance for those steps and do not add another quest's marker. A step update that arrives before the title, or a title that arrives before the steps, still fills that quest's card. A later name-only update still applies. The title and the steps refresh together when the selected quest changes. Sub-lines are 13 px.
 - **Afflictions and the detection ring** no longer follow the watch style. The bio popup hides while the afflictions card is on. The red ring hides while the stealth pill, the enemy bar, or the edge pulse is on.
 - **Watch PC time** keeps the last good reading when the clock throws, or the planet card's real time when this face has none yet. A failed read does not build a new clock every frame.
 

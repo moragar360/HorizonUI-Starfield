@@ -91,9 +91,11 @@ expect(block.indexOf("function hz43ShowVanilla") >= 0, "styles 1 and 2 restore t
 expect(block.indexOf("clip.alpha = 1") >= 0, "a restored watch clip gets its alpha back");
 expect(block.indexOf("BottomLeftGroup_mc") >= 0 && block.indexOf("WatchOutline_mc") >= 0, "the vanilla path is BottomLeftGroup");
 expect(block.indexOf("HZ43 vanilla watch path=") >= 0, "the vanilla clip path is traced once");
-expect(block.indexOf("hz43LocL.y = -16") >= 0 && block.indexOf("hz43LocT.y = 2") >= 0, "the local label sits above the local time");
-expect(block.indexOf("hz43RealL.y = 28") >= 0 && block.indexOf("hz43RealT.y = 44") >= 0, "the PC label sits above the PC time");
-expect(block.indexOf("hz43Dial(g,0,-58,day)") >= 0 && block.indexOf("hz43Dial(g,0,64,day)") >= 0, "digital dial is high and analog dial is at 6 o'clock");
+expect(block.indexOf("180,16,\"sb\"") >= 0 && block.indexOf("160,13,\"rg\"") >= 0, "digital local time is 16 px and PC time is 13 px");
+expect(block.indexOf("hz43LocL.y = -40") >= 0 && block.indexOf("hz43LocT.y = -22") >= 0, "the local label sits above the local time");
+expect(block.indexOf("hz43RealL.y = 2") >= 0 && block.indexOf("hz43RealT.y = 18") >= 0, "the PC label sits above the PC time");
+expect(block.indexOf("hz43Dial(g,0,-58,day)") < 0 && block.indexOf("hz43PmT.visible = false") >= 0 && block.indexOf("hz43DayT.visible = false") >= 0, "the digital face has no day dial");
+expect(block.indexOf("hz43Dial(g,0,64,day)") >= 0 && block.indexOf("hz43PmT.visible = true") >= 0, "the analog day dial stays at 6 o'clock");
 expect(block.indexOf("Math.PI / 2 + Math.PI / 6") >= 0 && block.indexOf("Math.PI / 2 - Math.PI / 6") >= 0, "gauges start at 7 o'clock and 5 o'clock");
 expect(block.indexOf("0x6E7C86") >= 0, "unfilled gauge segments are gray");
 expect(block.indexOf("hz43Hand(g,ma,72,2.2,0xF2F7F9)") >= 0, "the minute hand is white");
@@ -168,7 +170,24 @@ expect(reticleBody.indexOf("HZ_HCT_INTERACT") >= 0, "interact keeps its own path
 expect(reticleBody.indexOf("if(!rb.visible) { return; }") < 0, "a visible swap is not ignored");
 expect(funcBody(as, "hz43ReticleHide").indexOf("HZ_HCT_INTERACT") < 0, "the aiming-dot rule does not turn off for interact");
 expect(funcBody(as, "hz43HideDotKids").indexOf("Player_Interaction_ReticleAnim_mc") >= 0, "the interact ring clip is not one of the hidden children");
+expect(funcBody(as, "hz43RingSet").indexOf("Player_Interaction_ReticleAnim_mc") >= 0, "look-away can hide the interact circle");
+expect(reticleBody.indexOf("hz43RingSet") >= 0, "the aiming rule owns the leftover circle");
 expect(as.indexOf("this.hz43Reticle()") < as.indexOf("this.hzXhTick()"), "the ring is restored before the glyph is drawn");
+
+function ringHidden(ruleWantsDot, interacting) {
+	if (!ruleWantsDot) return false;
+	return !interacting;
+}
+expect(ringHidden(true, false) === true, "look-away hides the leftover circle");
+expect(ringHidden(true, true) === false, "looking at an interactable keeps the ring");
+expect(ringHidden(false, false) === false, "the rule off leaves the ring to the game");
+
+expect(funcBody(as, "hzLayClips").indexOf("hzWatchStyle == 1") >= 0, "styles 1 and 2 have an Arrange clip");
+expect(funcBody(as, "hzArrList").indexOf("hzWatchStyle == 1") >= 0, "styles 1 and 2 show a Watch handle");
+expect(as.indexOf("Horizon Digital and Analog can be moved") < 0, "the F11 note is not limited to Digital and Analog");
+expect(as.indexOf("Every watch face can be moved in Arrange Cards") >= 0, "the F11 note includes every watch face");
+expect(funcBody(as, "hz43VanClip").indexOf("HZ43_VAN_N") >= 0, "Arrange moves the named vanilla watch clips");
+expect(funcBody(as, "hz43VanWrite").indexOf("hzBlg.x") < 0 && funcBody(as, "hz43VanWrite").indexOf("hzBlg.y") < 0, "Arrange does not drag the lower-left group");
 
 expect(ini.indexOf("WatchX=-1") >= 0 && ini.indexOf("WatchY=-1") >= 0, "default watch position is the lower-left home");
 expect(ini.indexOf("WatchScale=-1") >= 0, "watch size defaults to HudScale");
