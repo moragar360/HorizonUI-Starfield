@@ -1,5 +1,5 @@
 // Purpose: check the probe's read-only rules without the game.
-// Author: Moragar. Last modified: 2026-11-04.
+// Author: Moragar. Last modified: 2026-11-06.
 
 #include "hsb_arrange.h"
 #include "hsb_guard.h"
@@ -19,6 +19,19 @@ static void Expect(bool ok, const char* text)
 	if (ok) return;
 	std::cerr << "FAIL: " << text << "\n";
 	++g_fails;
+}
+
+// Allowlist checks are string checks. The prefix is the process temp directory
+// so the fixture is not a profile path.
+static std::string DocsTail(char sep)
+{
+	std::string out = fs::temp_directory_path().string();
+	if (out.empty() || (out.back() != '/' && out.back() != '\\')) out.push_back(sep);
+	out += "My Games";
+	out.push_back(sep);
+	out += "Starfield";
+	out.push_back(sep);
+	return out;
 }
 
 static std::string ReadFile(const fs::path& path)
@@ -89,14 +102,16 @@ static void ScanTree(const fs::path& root)
 
 int main()
 {
-	const std::string good = std::string("C:\\Users\\A\\Documents\\My Games\\Starfield\\SFSE\\Logs\\") + hsb::kProbeFile;
-	const std::string goodSlash = std::string("C:/Users/A/Documents/My Games/Starfield/SFSE/Logs/") + hsb::kProbeFile;
+	const std::string docs = DocsTail('\\');
+	const std::string docsSlash = DocsTail('/');
+	const std::string good = docs + "SFSE\\Logs\\" + hsb::kProbeFile;
+	const std::string goodSlash = docsSlash + "SFSE/Logs/" + hsb::kProbeFile;
 	Expect(hsb::ProbeMayAppend(good), "documents log is allowed");
 	Expect(hsb::ProbeMayAppend(goodSlash), "forward-slash log is allowed");
 	Expect(!hsb::ProbeMayAppend(std::string("D:\\Steam\\steamapps\\common\\Starfield\\Data\\") + hsb::kProbeFile), "game data is refused");
-	Expect(!hsb::ProbeMayAppend(std::string("C:\\Users\\A\\Documents\\My Games\\Starfield\\Saves\\") + hsb::kProbeFile), "saves are refused");
-	Expect(!hsb::ProbeMayAppend(std::string("C:\\Users\\A\\Documents\\My Games\\Starfield\\SFSE\\Logs\\other.log")), "other names are refused");
-	Expect(!hsb::ProbeMayAppend(std::string("C:\\Users\\A\\Documents\\My Games\\Starfield\\SFSE\\Logs\\..\\") + hsb::kProbeFile), "dot-dot is refused");
+	Expect(!hsb::ProbeMayAppend(docs + "Saves\\" + hsb::kProbeFile), "saves are refused");
+	Expect(!hsb::ProbeMayAppend(docs + "SFSE\\Logs\\other.log"), "other names are refused");
+	Expect(!hsb::ProbeMayAppend(docs + "SFSE\\Logs\\..\\" + hsb::kProbeFile), "dot-dot is refused");
 
 	Expect(hsb::ShouldRestoreWndProc(reinterpret_cast<void*>(1), reinterpret_cast<void*>(1)), "restore when we still own the hook");
 	Expect(!hsb::ShouldRestoreWndProc(reinterpret_cast<void*>(2), reinterpret_cast<void*>(1)), "leave a newer procedure");
@@ -241,7 +256,7 @@ int main()
 	Expect(merged.find("PowerX=") == std::string::npos, "default positions are dropped");
 	Expect(merged.find("BrowserX=R20") != std::string::npos, "a moved panel is kept");
 	Expect(merged.find("AccentColor=") == std::string::npos, "the default accent is dropped");
-	const std::string iniPath = std::string("C:\\Users\\A\\Documents\\My Games\\Starfield\\Data\\Interface\\HorizonUI\\shipbuilder\\") + "HorizonShipBuilder.user.ini";
+	const std::string iniPath = DocsTail('\\') + "Data\\Interface\\HorizonUI\\shipbuilder\\HorizonShipBuilder.user.ini";
 	Expect(hsb::IniMayWrite(iniPath), "the user ini path is allowed");
 	Expect(!hsb::IniMayWrite(std::string("D:\\Steam\\steamapps\\common\\Starfield\\") + "HorizonShipBuilder.user.ini"), "the game folder is refused");
 	Expect(std::string(HSB_FILE_VERSION_STR) == "0.1.0.0", "plugin version is 0.1.0.0");
