@@ -268,6 +268,9 @@ int main()
 	Expect(gold.find("COVERS THE SHIP VIEW") != std::string::npos, "overlap chip");
 	Expect(gold.find("SELECTED MODULE") != std::string::npos, "module label");
 	Expect(gold.find("PARTS BROWSER") != std::string::npos, "browser label");
+	Expect(gold.find("ModulePalette_mc") != std::string::npos, "parts list uses the game clip");
+	Expect(gold.find("HangarInfoPanel_mc") != std::string::npos, "hangar overview is recognized");
+	Expect(gold.find("assignSpots") == std::string::npos, "hidden panels are not grabbed by proximity");
 	Expect(gold.find(std::string("get") + "Timer") == std::string::npos, "gold movie has no timer");
 	Expect(gold.find(std::string("Glow") + "Filter") == std::string::npos, "gold movie has no glow");
 	Expect(gold.find("Keyboard.F") == std::string::npos, "gold movie has no probe keys");
