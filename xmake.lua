@@ -97,7 +97,7 @@ target("HorizonUI")
 
 -- Read-only ship builder probe. Separate target. It does not link Horizon UI.
 target("HorizonShipBuilder")
-    set_version("0.0.1")
+    set_version("0.0.2")
     add_rules("commonlibsf.plugin", {
         name = "HorizonShipBuilder",
         author = "Moragar",

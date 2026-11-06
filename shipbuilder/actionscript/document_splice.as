@@ -40,6 +40,16 @@ package
       //       return this.hsbProbe != null ? this.hsbProbe.takeLines() : "";
       //    }
       //
+      //    public function hsbProbeHotkey(param1:Number):void
+      //    {
+      //       if(this.hsbProbe != null) { this.hsbProbe.hsbProbeHotkey(param1); }
+      //    }
+      //
+      //    public function hsbProbeStage():String
+      //    {
+      //       return this.hsbProbe != null ? this.hsbProbe.stageBox() : "";
+      //    }
+      //
       // 5. ProcessUserEvent returns Boolean. Add this as the first lines.
       //    Do not return from these lines. Let the vanilla body keep running.
       //    public function ProcessUserEvent(param1:String, param2:Boolean):Boolean

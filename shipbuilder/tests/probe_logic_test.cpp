@@ -133,10 +133,16 @@ int main()
 
 	const std::string probe = ReadFile(root / "actionscript" / "HorizonShipBuilderProbe.as");
 	Expect(probe.find("captureOn = false") != std::string::npos, "capture starts off");
-	Expect(probe.find("label.size = 13") != std::string::npos, "overlay is 13 px");
+	Expect(probe.find("fmt.size = 13") != std::string::npos, "overlay is 13 px");
 	Expect(probe.find("import Shared.AS3.Data.BSUIDataManager;") != std::string::npos, "data manager import");
-	Expect(probe.find(".font") == std::string::npos, "overlay sets no font");
-	Expect(probe.find("embedFonts") == std::string::npos, "overlay leaves the embedded face");
+	Expect(probe.find("embedFonts") != std::string::npos, "overlay uses the embedded face");
+	Expect(probe.find("defaultTextFormat") != std::string::npos, "overlay copies a vanilla text format");
+	Expect(probe.find("$MAIN_Font") == std::string::npos, "the face name is not written out");
+	Expect(probe.find("Keyboard.F7") != std::string::npos && probe.find("Keyboard.F8") != std::string::npos && probe.find("Keyboard.F9") != std::string::npos, "F7 F8 F9 are the probe keys");
+	Expect(probe.find("stopPropagation") == std::string::npos, "probe keys are not swallowed");
+	Expect(probe.find("PANEL ") != std::string::npos, "panel mouse is logged");
+	Expect(probe.find("noteHelp") != std::string::npos, "help list is logged");
+	Expect(probe.find("0.0.2.0") != std::string::npos, "probe movie version");
 	Expect(probe.find("spaceshipeditormenu") == std::string::npos, "the class does not name a replacement movie");
 
 	const std::string splice = ReadFile(root / "actionscript" / "document_splice.as");
@@ -146,6 +152,9 @@ int main()
 	Expect(splice.find("has no onAddedToStage") != std::string::npos, "missing stage handler is covered");
 	Expect(splice.find("hsbProbePing") != std::string::npos, "ping splice");
 	Expect(splice.find("ProcessUserEvent") != std::string::npos, "user-event splice");
+	Expect(splice.find("hsbProbeHotkey") != std::string::npos, "hotkey splice");
+	Expect(splice.find("hsbProbeStage") != std::string::npos, "stage-size splice");
+	Expect(splice.find("Do not return") != std::string::npos, "user events are not swallowed");
 
 	const std::string readme = ReadFile(root / "README_P0.md");
 	Expect(readme.find("xmake build -y HorizonShipBuilder") != std::string::npos, "build step");
@@ -159,6 +168,9 @@ int main()
 	Expect(readme.find("HorizonShipBuilder_vanilla_backup") != std::string::npos, "named backup");
 	Expect(readme.find("throwaway save") != std::string::npos, "throwaway save warning");
 	Expect(readme.find("hud-advance") != std::string::npos, "HUD advance is the documented post");
+	Expect(readme.find("0.0.2.0") != std::string::npos, "readme names the probe version");
+	Expect(readme.find("P0.1") != std::string::npos, "readme has the P0.1 pass");
+	Expect(readme.find("F7") != std::string::npos && readme.find("F8") != std::string::npos && readme.find("F9") != std::string::npos, "readme names the probe keys");
 
 	const std::string lua = ReadFile(repo / "xmake.lua");
 	Expect(lua.find("target(\"HorizonShipBuilder\")") != std::string::npos, "probe target");
@@ -171,6 +183,10 @@ int main()
 	Expect(plugin.find("ProbeMayAppend") != std::string::npos, "plugin checks the log path");
 	Expect(plugin.find("ShouldRestoreWndProc") != std::string::npos, "plugin uses the unhook rule");
 	Expect(plugin.find(std::string("swallowed") + "=0") != std::string::npos, "the hook does not swallow");
+	Expect(plugin.find("VK_F7") != std::string::npos, "F7 is recognized at the window");
+	Expect(plugin.find("hsbProbeHotkey") != std::string::npos, "hotkey is delivered on the movie thread");
+	Expect(plugin.find("GetClientRect") != std::string::npos, "client size is read for the map");
+	Expect(plugin.find("keys F7=mark") != std::string::npos, "boot logs the key map");
 	Expect(plugin.find("SendMessage") == std::string::npos, "the job side does not wait on the window");
 	Expect(plugin.find("PostMessageW") != std::string::npos, "the job side posts to the window");
 	Expect(plugin.find("DllMain") != std::string::npos, "unload unhook");
@@ -191,6 +207,7 @@ int main()
 		const auto body = plugin.substr(wnd, afterWnd - wnd);
 		Expect(body.find("_wfopen") == std::string::npos, "window procedure does not touch the log file");
 		Expect(body.find("SetWindowLongPtr") == std::string::npos, "window procedure does not reinstall itself");
+		Expect(body.find("Invoke") == std::string::npos, "window procedure does not call into Scaleform");
 	}
 
 	if (g_fails) {
