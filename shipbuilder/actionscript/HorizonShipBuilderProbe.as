@@ -38,7 +38,7 @@ package
       private var frameN:int;
       private var hotF7:int;
       private var hotF8:int;
-      private var hotF9:int;
+      private var hotF6:int;
       private var helpNoted:Boolean;
       private var lastParts:String;
       
@@ -60,7 +60,7 @@ package
          this.frameN = 0;
          this.hotF7 = -1000;
          this.hotF8 = -1000;
-         this.hotF9 = -1000;
+         this.hotF6 = -1000;
          this.helpNoted = false;
          this.lastParts = "";
          this.providers = ["StaticData","HangarData","FloorData","PartEntries","UpgradeEntries","ModuleVariant","ModuleInfo","ShipBuilderHelpList","FlightCheckData","SystemUpgradeData","ColorInitializationData","ColorSelectionData","ShipStats","CostSummaryData","NotificationBadgeData","ExitConfirmationData","ShipHangarModuleInfoData","RepairButtonData"];
@@ -84,7 +84,7 @@ package
          var bits:int = int(param1);
          if((bits & 1) != 0) { this.takeHot(7); }
          if((bits & 2) != 0) { this.takeHot(8); }
-         if((bits & 4) != 0) { this.takeHot(9); }
+         if((bits & 4) != 0) { this.takeHot(6); }
       }
       
       public function takeLines():String
@@ -101,7 +101,7 @@ package
          {
             if(param1 == "F7") { this.takeHot(7); }
             else if(param1 == "F8") { this.takeHot(8); }
-            else if(param1 == "F9") { this.takeHot(9); }
+            else if(param1 == "F6") { this.takeHot(6); }
          }
          if(this.captureOn && param2)
          {
@@ -112,7 +112,7 @@ package
       private function onStage(param1:Event):void
       {
          removeEventListener(Event.ADDED_TO_STAGE,this.onStage);
-         this.note("KEYS F7=mark F8=capture F9=dump");
+         this.note("KEYS F7=mark F8=capture F6=dump");
          this.buildOverlay(this.labelFormat());
          this.note("MOVIE url=" + this.urlOf(root) + " stage=" + stage.stageWidth + "x" + stage.stageHeight);
          this.noteRect();
@@ -159,7 +159,7 @@ package
          
          var title:TextField = this.makeText(label,8,6,504,22,"Horizon Ship Builder probe 0.0.2.0. Read only. Capture is off.");
          this.panel.addChild(title);
-         var keys:TextField = this.makeText(label,8,28,504,20,"F7 mark colors. F8 capture layer. F9 dump parts.");
+         var keys:TextField = this.makeText(label,8,28,504,20,"F7 mark colors. F8 capture layer. F6 dump parts.");
          this.panel.addChild(keys);
          
          var mark:Sprite = this.makeButton(label,"F7 Mark colors",8,52,150,28);
@@ -170,7 +170,7 @@ package
          toggle.addEventListener(MouseEvent.CLICK,this.onToggle);
          this.panel.addChild(toggle);
          
-         var dump:Sprite = this.makeButton(label,"F9 Dump",304,52,100,28);
+         var dump:Sprite = this.makeButton(label,"F6 Dump",304,52,100,28);
          dump.addEventListener(MouseEvent.CLICK,this.onDumpClick);
          this.panel.addChild(dump);
          
@@ -233,7 +233,7 @@ package
                return fmt;
             }
          }
-         var embedded:Array = Font.enumerateFonts(true);
+         var embedded:Array = Font.enumerateFonts(false);
          if(embedded != null && embedded.length > 0)
          {
             var face:Font = embedded[0] as Font;
@@ -336,11 +336,11 @@ package
       // A second path for the same press is ignored for a short run of frames. The key is not swallowed.
       private function takeHot(param1:int):void
       {
-         var last:int = param1 == 7 ? this.hotF7 : (param1 == 8 ? this.hotF8 : this.hotF9);
+         var last:int = param1 == 7 ? this.hotF7 : (param1 == 8 ? this.hotF8 : this.hotF6);
          if(this.frameN - last < 30) { return; }
          if(param1 == 7) { this.hotF7 = this.frameN; this.onMark(null); }
          else if(param1 == 8) { this.hotF8 = this.frameN; this.onToggle(null); }
-         else if(param1 == 9) { this.hotF9 = this.frameN; this.onDump(); }
+         else if(param1 == 6) { this.hotF6 = this.frameN; this.onDump(); }
          else { return; }
          this.note("HOTKEY F" + param1);
       }
@@ -372,7 +372,7 @@ package
          this.note("KEY code=" + param1.keyCode + " char=" + param1.charCode + " ctrl=" + param1.ctrlKey + " shift=" + param1.shiftKey + " alt=" + param1.altKey + " field=" + this.fieldFocused() + " capture=" + this.captureOn);
          if(param1.keyCode == Keyboard.F7) { this.takeHot(7); }
          else if(param1.keyCode == Keyboard.F8) { this.takeHot(8); }
-         else if(param1.keyCode == Keyboard.F9) { this.takeHot(9); }
+         else if(param1.keyCode == Keyboard.F6) { this.takeHot(6); }
          if(this.fieldFocused() || this.captureOn)
          {
             this.arm("key " + param1.keyCode);

@@ -133,7 +133,7 @@ void PrepareLog()
 	g_logReady.store(true);
 	Fact("boot", "HorizonShipBuilder " HSB_FILE_VERSION_STR " read-only");
 	Fact("boot", "writes this log only; does not change the ship or a save");
-	Fact("boot", "keys F7=mark F8=capture F9=dump");
+	Fact("boot", "keys F7=mark F8=capture F6=dump");
 	FlushLog();
 }
 
@@ -153,7 +153,7 @@ const char* KeyLabel(WPARAM vk)
 	case VK_OEM_2: return "Slash";
 	case VK_F7: return "F7";
 	case VK_F8: return "F8";
-	case VK_F9: return "F9";
+	case VK_F6: return "F6";
 	default: return "";
 	}
 }
@@ -197,7 +197,7 @@ LRESULT CALLBACK ProbeWnd(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 			unsigned bit = 0;
 			if (wp == VK_F7) bit = 1u;
 			else if (wp == VK_F8) bit = 2u;
-			else if (wp == VK_F9) bit = 4u;
+			else if (wp == VK_F6) bit = 4u;
 			if (bit != 0) g_hotbits.fetch_or(bit);
 		}
 		if (!skip) {

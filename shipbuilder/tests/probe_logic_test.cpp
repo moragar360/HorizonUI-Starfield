@@ -138,7 +138,10 @@ int main()
 	Expect(probe.find("embedFonts") != std::string::npos, "overlay uses the embedded face");
 	Expect(probe.find("defaultTextFormat") != std::string::npos, "overlay copies a vanilla text format");
 	Expect(probe.find("$MAIN_Font") == std::string::npos, "the face name is not written out");
-	Expect(probe.find("Keyboard.F7") != std::string::npos && probe.find("Keyboard.F8") != std::string::npos && probe.find("Keyboard.F9") != std::string::npos, "F7 F8 F9 are the probe keys");
+	Expect(probe.find("Keyboard.F7") != std::string::npos && probe.find("Keyboard.F8") != std::string::npos && probe.find("Keyboard.F6") != std::string::npos, "F7 F8 F6 are the probe keys");
+	Expect(probe.find("Keyboard.F9") == std::string::npos, "F9 is not a probe key");
+	Expect(probe.find("enumerateFonts(false)") != std::string::npos, "the font fallback is embedded faces only");
+	Expect(probe.find("enumerateFonts(true)") == std::string::npos, "the font fallback does not include device faces");
 	Expect(probe.find("stopPropagation") == std::string::npos, "probe keys are not swallowed");
 	Expect(probe.find("PANEL ") != std::string::npos, "panel mouse is logged");
 	Expect(probe.find("noteHelp") != std::string::npos, "help list is logged");
@@ -170,7 +173,7 @@ int main()
 	Expect(readme.find("hud-advance") != std::string::npos, "HUD advance is the documented post");
 	Expect(readme.find("0.0.2.0") != std::string::npos, "readme names the probe version");
 	Expect(readme.find("P0.1") != std::string::npos, "readme has the P0.1 pass");
-	Expect(readme.find("F7") != std::string::npos && readme.find("F8") != std::string::npos && readme.find("F9") != std::string::npos, "readme names the probe keys");
+	Expect(readme.find("F7") != std::string::npos && readme.find("F8") != std::string::npos && readme.find("F6=dump") != std::string::npos, "readme names the probe keys");
 
 	const std::string lua = ReadFile(repo / "xmake.lua");
 	Expect(lua.find("target(\"HorizonShipBuilder\")") != std::string::npos, "probe target");
@@ -183,7 +186,8 @@ int main()
 	Expect(plugin.find("ProbeMayAppend") != std::string::npos, "plugin checks the log path");
 	Expect(plugin.find("ShouldRestoreWndProc") != std::string::npos, "plugin uses the unhook rule");
 	Expect(plugin.find(std::string("swallowed") + "=0") != std::string::npos, "the hook does not swallow");
-	Expect(plugin.find("VK_F7") != std::string::npos, "F7 is recognized at the window");
+	Expect(plugin.find("VK_F7") != std::string::npos && plugin.find("VK_F6") != std::string::npos, "F7 and F6 are recognized at the window");
+	Expect(plugin.find("VK_F9") == std::string::npos, "F9 is not recognized as the dump key");
 	Expect(plugin.find("hsbProbeHotkey") != std::string::npos, "hotkey is delivered on the movie thread");
 	Expect(plugin.find("GetClientRect") != std::string::npos, "client size is read for the map");
 	Expect(plugin.find("keys F7=mark") != std::string::npos, "boot logs the key map");
