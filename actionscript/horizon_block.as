@@ -2251,7 +2251,16 @@
       private var hzQTitle:TextField = null;
       public function hzSetQuestTitle(name:String) : void
       {
-         if(String(name != null ? name : "").toLowerCase() != String(this.hzQName != null ? this.hzQName : "").toLowerCase()) { this.hz27QMain = ""; this.hz27QObjs = []; this.hz27QSubs = []; }
+         if(String(name != null ? name : "").toLowerCase() != String(this.hzQName != null ? this.hzQName : "").toLowerCase())
+         {
+            this.hz27QMain = "";
+            this.hz27QObjs = [];
+            this.hz27QSubs = [];
+            this.hzQObjStr = "";
+            this.hzQDistStr = "";
+            if(this.hzQActive) { this.hzQActive.text = "No active objective"; }
+            if(this.hzQActiveSub) { this.hzQActiveSub.text = ""; }
+         }
          if(this.hzQTitle)
          {
             this.hzQTitle.text = name && name.length > 0 ? name.toUpperCase() : "ACTIVE OBJECTIVE";
@@ -12755,8 +12764,8 @@
          var i:int = 0;
          while(i < 3)
          {
-            var tf:TextField = this.hzT(p,"",74,60 + i * 20,HZ_Q19_W - 74 - 14,11,"rg","mut",0.2);
-            var td:TextField = this.hzT(p,"",HZ_Q19_W - 14 - 80,60 + i * 20,80,11,"sb","mut",0.5,"right");
+            var tf:TextField = this.hzT(p,"",74,60 + i * 22,HZ_Q19_W - 74 - 14,13,"rg","mut",0.2);
+            var td:TextField = this.hzT(p,"",HZ_Q19_W - 14 - 80,60 + i * 22,80,13,"sb","mut",0.5,"right");
             tf.visible = false;
             td.visible = false;
             this.hz27QL.push(tf);
@@ -12784,14 +12793,14 @@
                var d:String = String(s.d);
                td.text = d;
                td.visible = d.length > 0;
-               this.hzTxtTop(td,y0 + i * 20);
+               this.hzTxtTop(td,y0 + i * 22);
                var lw:Number = HZ_Q19_W - 74 - 14 - (d.length > 0 ? this.hzTW(td) + 10 : 0);
                this.hzFitText(tf,(s.opt ? "+ OPTIONAL  " : "+  ") + String(s.t),lw);
-               this.hzTxtTop(tf,y0 + i * 20);
+               this.hzTxtTop(tf,y0 + i * 22);
             }
             i++;
          }
-         var h:Number = n > 0 ? Math.max(78,y0 + n * 20 + 8) : 78;
+         var h:Number = n > 0 ? Math.max(78,y0 + n * 22 + 8) : 78;
          if(h != this.hz27QH)
          {
             this.hz27QH = h;
@@ -12887,13 +12896,13 @@
       }
 
       // vanilla left-side affliction popup (BottomLeftGroup BioAlertText / BioCondition_mc / BioAlertBG_mc):
-      // hidden while our Afflictions card is on, restored when it is off. Never removed.
+      // hidden while the Afflictions card is on, including when styles 1 and 2 show the game's watch. Never removed.
       // r4: by visible, never alpha (the BottomLeftGroup timeline animates their alpha). The game never writes their visible, so
-      // the restore is visible = true; BioCondition_mc / BioAlertBG_mc stay to the vanilla watch hide while that is on.
+      // the restore is visible = true. BioCondition_mc / BioAlertBG_mc stay hidden while the watch hide still owns them.
       private function hz27BioHide() : void
       {
          if(!this.hzBlg) { return; }
-         var want:Boolean = this.hzShowAfflictions && this.hzHideVanillaWatch && !this.hzUserHidden;
+         var want:Boolean = this.hzShowAfflictions && !this.hzUserHidden;
          if(!want && !this.hz27BioHid) { return; }
          for each(var n:String in ["BioAlertText","BioCondition_mc","BioAlertBG_mc"])
          {
@@ -12906,16 +12915,17 @@
       }
 
       // v0.31: the red ring on the left is BottomLeftGroup.EnemyDetectionAnim_mc (vanilla plays "Open" while in combat
-      // and detected, so it shows up together with low health). It was left out of the watch hide on purpose before
-      // Horizon had its own combat cues; the stealth pill, enemy bar and EdgePulse cover it now. Hidden by alpha
-      // only (vanilla drives it with gotoAndPlay / gotoAndStop and never sets alpha), re-applied every frame and
-      // after the timeline (exitFrame), never removed; restored when the vanilla watch is shown again.
+      // and detected, so it shows up together with low health). The stealth pill, enemy bar, and edge pulse cover it.
+      // That hide does not follow WatchStyle. Hidden by alpha only (vanilla drives it with gotoAndPlay / gotoAndStop
+      // and never sets alpha), re-applied every frame and after the timeline (exitFrame), never removed. Restored
+      // when those cues are off, or when the player hides this HUD.
       private var hz31DetHid:Boolean = false;
 
       private function hz31DetHide() : void
       {
          if(!this.hzBlg) { return; }
-         var want:Boolean = this.hzHideVanillaWatch && !this.hzUserHidden;
+         var cues:Boolean = this.hzStealthOn || this.hzEnemyBarOn || this.hzEdgePulse;
+         var want:Boolean = cues && !this.hzUserHidden;
          if(!want && !this.hz31DetHid) { return; }
          var c:DisplayObject = this.hzBlg.getChildByName("EnemyDetectionAnim_mc");
          if(c) { c.alpha = want ? 0 : 1; }
@@ -18362,30 +18372,46 @@
       }
 
       // One Date, at most once a second, and only while the digital face is showing.
-      // The frame counter is the same cheap gate the planet clock already uses.
+      // The frame counter is the same cheap gate the planet clock already uses. A throw still
+      // stamps the frame, so a failing clock does not allocate again until the next second.
       private function hz43PcSample() : void
       {
          if(this.hzWatchStyle != 3) { return; }
-         if(this.hz43PcH >= 0 && ((this.hzFrameN - this.hz43PcFr) < 60 || (this.hzFrameN % 60) != 11)) { return; }
+         if(this.hz43PcFr >= 0 && ((this.hzFrameN - this.hz43PcFr) < 60 || (this.hzFrameN % 60) != 11)) { return; }
          this.hz43PcFr = this.hzFrameN;
          try
          {
             var dt:Date = new Date();
             var h:int = dt.getHours();
             var m:int = dt.getMinutes();
-            if(h != this.hz43PcH || m != this.hz43PcM || this.hzClockFmt != this.hz43LastClk)
-            {
-               this.hz43PcH = h;
-               this.hz43PcM = m;
-               this.hz43PcTxt = this.hzFmtClock(h,m);
-            }
+            this.hz43PcApply(h,m);
          }
          catch(err:Error)
          {
-            this.hz43PcH = -2;
-            this.hz43PcM = -2;
-            this.hz43PcTxt = "--";
+            this.hz43PcFallback();
          }
+      }
+
+      private function hz43PcApply(h:int, m:int) : void
+      {
+         if(h != this.hz43PcH || m != this.hz43PcM || this.hzClockFmt != this.hz43LastClk)
+         {
+            this.hz43PcH = h;
+            this.hz43PcM = m;
+            this.hz43PcTxt = this.hzFmtClock(h,m);
+         }
+      }
+
+      // Last good reading stays. With none yet, use the planet card's real minutes. "--" only when both are missing.
+      private function hz43PcFallback() : void
+      {
+         if(this.hz43PcH >= 0) { return; }
+         if(this.hzPpRealMin >= 0)
+         {
+            this.hz43PcApply(int(this.hzPpRealMin / 60),this.hzPpRealMin % 60);
+            return;
+         }
+         this.hz43PcTxt = "--";
       }
 
       private function hz43AttCode() : int
