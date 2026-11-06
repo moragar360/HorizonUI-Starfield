@@ -200,8 +200,15 @@ expect(funcBody(as, "hzLayClips").indexOf("hzWatchStyle == 1") >= 0, "styles 1 a
 expect(funcBody(as, "hzArrList").indexOf("hzWatchStyle == 1") >= 0, "styles 1 and 2 show a Watch handle");
 expect(as.indexOf("Horizon Digital and Analog can be moved") < 0, "the F11 note is not limited to Digital and Analog");
 expect(as.indexOf("Every watch face can be moved in Arrange Cards") >= 0, "the F11 note includes every watch face");
-expect(funcBody(as, "hz43VanClip").indexOf("HZ43_VAN_N") >= 0, "Arrange moves the named vanilla watch clips");
+expect(funcBody(as, "hz43VanCapture").indexOf("HZ43_VAN_N") >= 0 && funcBody(as, "hz43VanCapture").indexOf("hzFindByName") >= 0, "Arrange finds the game watch anywhere under the lower-left group");
+expect(funcBody(as, "hz43VanClip").indexOf("getChildByName") < 0, "Arrange does not look only at direct children");
 expect(funcBody(as, "hz43VanWrite").indexOf("hzBlg.x") < 0 && funcBody(as, "hz43VanWrite").indexOf("hzBlg.y") < 0, "Arrange does not drag the lower-left group");
+expect(as.indexOf("HZ43 watch unit=") >= 0, "the moved watch assembly is traced once");
+expect(funcBody(as, "hz43VanEnsure").indexOf("drawCircle(90,90,90)") < 0, "the Arrange box is the watch bounds, not a circle parked above it");
+expect(as.indexOf('names.push("WatchIconsWidget_mc"') < 0, "Horizon faces do not hide the live marker widget");
+expect(drawBody.indexOf("hz43BodyT.y = -22") >= 0 && drawBody.indexOf("hz43TempT.y = -4") >= 0, "the analog planet name sits below the compass letters");
+expect(funcBody(as, "hzT19Buttons").indexOf("isHold || !on") < 0, "an enabled hold is not drawn as disabled");
+expect(funcBody(as, "hz38HideVanilla").indexOf("hzT19KeepHold") >= 0, "the hold button stays able to receive the key");
 
 expect(ini.indexOf("WatchX=-1") >= 0 && ini.indexOf("WatchY=-1") >= 0, "default watch position is the lower-left home");
 expect(ini.indexOf("WatchScale=-1") >= 0, "watch size defaults to HudScale");

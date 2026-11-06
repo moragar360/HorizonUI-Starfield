@@ -14,8 +14,8 @@ Not published. No tag. The settings schema stays 0.42.0, so an existing `Horizon
 
 ### Changed
 - **SFSE plugin** file and product version are 0.43.1.0. This build is not a release download yet.
-- **Watch styles 1 and 2** show the game's watch again. The old hide had cleared it and did not put it back. Style 2 still tints that watch and does not add a second planet name.
-- **Horizon Digital and Analog** match the round faces: O2 runs clockwise from 7 o'clock, CO2 counter-clockwise from 5 o'clock, and empty segments are gray. Analog keeps the filled day dial at 6 o'clock. Digital has no day dial, and its times sit in the center of the face (local at 16 px, PC at 13 px). Both faces draw the same top-arc compass, with heading ticks and N / NE / E letters. The local and PC labels sit above their times. Analog hands are white, with a gold hub.
+- **Watch styles 1 and 2** show the game's watch again, as one assembly. Arrange moves that whole watch together, including the top bar, the ring, the face, the heading chevron, and the in-face markers. The character card, alerts, detection, and autopilot stay put. Style 2 still tints that watch and does not add a second planet name.
+- **Horizon Digital and Analog** match the round faces: O2 runs clockwise from 7 o'clock, CO2 counter-clockwise from 5 o'clock, and empty segments are gray. Analog keeps the filled day dial at 6 o'clock. Digital has no day dial, and its times sit in the center of the face (local at 16 px, PC at 13 px). Both faces draw the same top-arc compass, with heading ticks and N / NE / E letters. The analog planet name sits below those letters. The local and PC labels sit above their times. Analog hands are white, with a gold hub. The live nearby markers stay on these faces. The vanilla chrome stays hidden.
 - **Crosshair Off, and Weapon drawn while holstered,** keep the aiming dot hidden when the game shows it again on a target, an NPC, or while you walk. The interact ring and glyph stay while you are looking at something you can use. After you look away, the leftover center circle hides too.
 - The watch no longer shows a line that names its place on the screen.
 
@@ -23,6 +23,7 @@ Not published. No tag. The settings schema stays 0.42.0, so an existing `Horizon
 - **Quest tracker:** steps come only from the selected quest's open objectives. Compass markers supply a distance for those steps and do not add another quest's marker. A step update that arrives before the title, or a title that arrives before the steps, still fills that quest's card. A later name-only update still applies. The title and the steps refresh together when the selected quest changes. Sub-lines are 13 px.
 - **Afflictions and the detection ring** no longer follow the watch style. The bio popup hides while the afflictions card is on. The red ring hides while the stealth pill, the enemy bar, or the edge pulse is on.
 - **Watch PC time** keeps the last good reading when the clock throws, or the planet card's real time when this face has none yet. A failed read does not build a new clock every frame.
+- **Outpost beacon hold:** an enabled Hold key stays in its normal color. The vanilla hold button is kept visible so the game still receives the hold. A filling meter draws on the Horizon keycap. A hold the game marks disabled stays gray.
 
 ## [0.43.0.33-alpha] - 2026-11-04
 

@@ -2540,10 +2540,10 @@
                // Styles 1 and 2 show the game's watch. Those clips stay out of the compass hide.
                if(this.hzWatchStyle != 1 && this.hzWatchStyle != 2)
                {
-                  names.push("WatchIconsWidget_mc","WatchOutline_mc","WatchPointerOutline_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc");
+                  names.push("WatchOutline_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc");
                }
             }
-            if(this.hzHideVanillaWatch) { names.push("O2CO2_mc","O2CO2thin_mc","WatchOutline_mc","WatchPointerOutline_mc","BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"); }
+            if(this.hzHideVanillaWatch) { names.push("O2CO2_mc","O2CO2thin_mc","WatchOutline_mc","BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"); }
             if(this.hzHideVanillaAmmo) { names.push("EquippedWeaponAmmo_mc","EquippedWeaponAmmoTotal_mc","VerticalDivider_mc","EquippedWeaponIconHolder_mc"); }
             if(this.hzHideVanillaHealth) { names.push("HealthBar_mc","HealthBarEmpty_mc","HealthBarGhost_mc","HealthBarDamage_mc","HealthBarIncrease_mc","Health_mc"); }
             for each(var n:String in names)
@@ -2565,7 +2565,7 @@
                while(bi < this.hzBlg.numChildren)
                {
                   var bc:DisplayObject = this.hzBlg.getChildAt(bi);
-                  if(bc && bc.visible && bc.name != "EnemyDetectionAnim_mc" && bc.name != "Autopilot_mc" && bc.name != "EnvAlertText" && bc.name != "BioAlertText" && bc.name != "LocationAlertText")
+                  if(bc && bc.visible && bc.name != "EnemyDetectionAnim_mc" && bc.name != "Autopilot_mc" && bc.name != "EnvAlertText" && bc.name != "BioAlertText" && bc.name != "LocationAlertText" && bc.name != "WatchIconsWidget_mc" && bc.name != "WatchPointerOutline_mc")
                   {
                      bc.visible = false;
                   }
@@ -9901,6 +9901,36 @@
          return 1080 / this.hzScrH / sc;
       }
 
+      // The hold meter lives on the vanilla button. Alpha hides the art; visible=false drops the hold.
+      private function hzT19KeepHold(aw:Object) : void
+      {
+         var i:int = 0;
+         while(i < 4)
+         {
+            var btn:Object = this.hzT19BtnClip(aw,i);
+            var d:DisplayObject = btn as DisplayObject;
+            if(d && !d.visible) { d.visible = true; }
+            i++;
+         }
+      }
+
+      // 0..1 while the vanilla hold meter is filling. -1 when this button has no meter.
+      private function hzT19HoldFrac(btn:Object) : Number
+      {
+         if(!btn) { return -1; }
+         var m:Object = null;
+         try { m = btn.HoldMeter_mc; } catch(e1:Error) { m = null; }
+         if(m == null) { try { m = btn.HoldBar_mc; } catch(e2:Error) { m = null; } }
+         if(m == null) { try { m = btn.Meter_mc; } catch(e3:Error) { m = null; } }
+         if(m == null) { return -1; }
+         var s:Number = Number(m.scaleX);
+         if(!isNaN(s) && s >= 0 && s <= 1.001) { return s > 1 ? 1 : s; }
+         var total:int = int(m.totalFrames);
+         var frame:int = int(m.currentFrame);
+         if(total > 1 && frame >= 1) { return (frame - 1) / (total - 1); }
+         return -1;
+      }
+
       // vanilla button clip for an aButtons iType (HUDRolloverActivationWidget: A/X top bar, Y/B bottom bar)
       private function hzT19BtnClip(aw:Object, t:int) : Object
       {
@@ -10090,7 +10120,7 @@
                   ht.x = this.hzSnapU(x,u); this.hzTxtTopU(ht,this.hzCapTop(ht,kcy),u);
                   x += holdW;
                }
-               var kc:uint = isHold || !on ? this.hzMix(c,this.hzPanelFill(),0.45) : c;
+               var kc:uint = !on ? this.hzMix(c,this.hzPanelFill(),0.45) : c;
                this.hzTxtTint(kt,kc);
                kt.text = key;
                // v0.24: keycap box lives on the DEVICE-pixel grid (1 unit = 1.5 px at 1440p x TargetScale 1.125),
@@ -10104,7 +10134,14 @@
                kt.x = this.hzSnapU(x + (kw - this.hzTW(kt)) / 2 - 2,u);
                this.hzTxtTopU(kt,this.hzCapTop(kt,kcy),u);
                x += kw + 7;
-               this.hzTxtTint(lt,isHold || !on ? 0xA8B6BE : (col == HZ_ACCENT ? null : col));
+               this.hzTxtTint(lt,!on ? 0xA8B6BE : (col == HZ_ACCENT ? null : col));
+               var holdP:Number = isHold ? this.hzT19HoldFrac(this.hzT19BtnClip(aw,t)) : -1;
+               if(g != null && holdP > 0.02)
+               {
+                  g.beginFill(kc,0.9);
+                  g.drawRect(x - kw - 7,ky + kh - 3,kw * holdP,3);
+                  g.endFill();
+               }
                lt.text = isHold ? hold.toUpperCase() : press.toUpperCase();
                lt.visible = g != null;
                lt.x = this.hzSnapU(x,u); this.hzTxtTopU(lt,this.hzCapTop(lt,kcy),u);
@@ -10211,7 +10248,7 @@
          else { this.hzT19LastHp = -1; this.hzTgGhost = -1; }
          // the key text can change (rebinding / controller): include it in the signature
          var keys:String = "";
-         if(show) { var kk:int = 0; while(kk < 4) { keys += this.hzT19Key(aw,kk) + ":" + this.hzT19VanLbl(aw,kk,false) + ":" + this.hzT19VanLbl(aw,kk,true) + ","; kk++; } }
+         if(show) { var kk:int = 0; while(kk < 4) { var hf:Number = this.hzT19HoldFrac(this.hzT19BtnClip(aw,kk)); keys += this.hzT19Key(aw,kk) + ":" + this.hzT19VanLbl(aw,kk,false) + ":" + this.hzT19VanLbl(aw,kk,true) + ":" + (hf < 0 ? "-" : String(int(hf * 8))) + ","; kk++; } }
          var stealSig:int = (show && a != null && Boolean(a.bStealing)) ? 1 : 0;
          var sig:String = kind + "|" + m + "|" + sel + "|" + start + "|" + this.hzT19Ver + "|" + Math.round(this.hzTgGhost * 200) + "|" + this.hzTextScale + "|" + this.hzCardColor + "|" + this.hzContOpacity + "|" + HZ_ACCENT + "|" + this.hzTextTone + "|" + this.hzTgShowValue + "|" + this.hzFontFace + "|" + keys + "|" + show + "|" + this.hzTgScale + "|" + this.hz30Hover + "|" + this.hzScrH + "|" + this.hzNameHover + "|" + int(this.hzCardBgOpacity) + "|" + int(this.hzCardShadow) + "|" + (this.hzTextShadow ? 1 : 0) + "|" + this.hzHeaderStyle + "|" + stealSig;
          if(sig != this.hzT19Sig)
@@ -13191,6 +13228,7 @@
          try { this.hz41LocHide(); } catch(err41l:Error) { }   // r3
          try { this.hz41QmHide(); } catch(err41q:Error) { }    // r3
          try { this.hz43Reticle(); } catch(err43x:Error) { }
+         try { this.hz43VanLate(); } catch(err43v:Error) { }
       }
 
       private function hz27Build() : void
@@ -16092,6 +16130,7 @@
       {
          try { this.hzT19HideA(rw.RolloverActivationHolder_mc as DisplayObject); } catch(eH:Error) { }
          try { this.hzT19HideA(aw as DisplayObject); } catch(eA:Error) { }
+         this.hzT19KeepHold(aw);
          // ObjectRing: 0 always hidden, 1 shown for container lists only, 2 as the game draws it
          if(this.hzObjRing == 0 || (this.hzObjRing == 1 && kind != "list")) { this.hzT19HideReticle(rw); }
          else { this.hzT19ShowReticle(rw); }
@@ -18314,8 +18353,15 @@
       private var hz43VanP:Point = null;
       private var hz43VanHX:Number = 0;
       private var hz43VanHY:Number = 0;
-      private var hz43VanUX:Number = 1;
-      private var hz43VanUY:Number = 1;
+      private var hz43VanUXA:Array = null;
+      private var hz43VanUYA:Array = null;
+      private var hz43VanOX:Array = null;
+      private var hz43VanOY:Array = null;
+      private var hz43VanNm:Array = null;
+      private var hz43VanN:int = 0;
+      private var hz43VanRad:Number = 0;
+      private var hz43VanHW:Number = 180;
+      private var hz43VanHH:Number = 180;
       private var hz43VanCap:int = 0;
       private var hz43VanWrote:Boolean = false;
       private var hz43VnAx:int = -2;
@@ -18336,6 +18382,9 @@
       private var hz43VanShown:int = 0;
       private var hz43VanTries:int = 0;
       private var hz43VanLogged:Boolean = false;
+      private var hz43VanUnitLog:Boolean = false;
+      private var hz43HidA:Array = null;
+      private var hz43HidN:int = 0;
       private var hz43Kid:Array = null;
       private var hz43KidHid:Array = null;
       private var hz43KidN:int = 0;
@@ -18422,8 +18471,10 @@
       private var hz43AttT:TextField = null;
       private var hz43Cards:Array = null;
 
-      // Clips the old watch hide turns off. Styles 1 and 2 put these back. Bio and env alerts stay on their own rules.
+      // The game watch is one assembly. These names find its pieces, including the top bar and the marker pips.
+      // Styles 1 and 2 move the outermost piece so the children ride with it. Styles 3 and 4 hide the chrome and keep the markers.
       private static const HZ43_VAN_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","WatchIconsWidget_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"];
+      private static const HZ43_VAN_MARK:Array = ["WatchIconsWidget_mc","WatchPointerOutline_mc"];
       private static const HZ43_VAN_A:Array = ["BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"];
 
       // Puts the game watch back on BottomLeftGroup. One trace names the clips that were found. No font name.
@@ -18954,8 +19005,8 @@
             this.hz43DayT.visible = true;
             this.hz43PmT.x = -18; this.hz43PmT.y = 52;
             this.hz43DayT.x = -24; this.hz43DayT.y = 68;
-            this.hz43BodyT.y = -90;
-            this.hz43TempT.y = -70;
+            this.hz43BodyT.y = -22;
+            this.hz43TempT.y = -4;
          }
          var attn:String = this.hz43AttWord();
          this.hz43AttT.visible = attn.length > 0;
@@ -19254,7 +19305,7 @@
          this.hzPlace(this.hz43Watch,x,y);
       }
 
-      // Arrange handle for styles 1 and 2. It moves the named watch clips, not the whole lower-left group.
+      // Arrange handle for styles 1 and 2. One box covers the whole game watch.
       private function hz43VanEnsure() : Sprite
       {
          if(this.hz43VanHnd) { return this.hz43VanHnd; }
@@ -19264,101 +19315,274 @@
          s.name = "HorizonWatchMove_mc";
          var g:* = s.graphics;
          g.beginFill(0x000000,1);
-         g.drawCircle(90,90,90);
+         g.drawRect(0,0,180,180);
          g.endFill();
          addChild(s);
          s.visible = false;
          s.alpha = 0;
          this.hz43VanHnd = s;
-         var n:int = HZ43_VAN_N.length;
+         var n:int = 16;
          this.hz43VanD = new Array(n);
          this.hz43VanX = new Array(n);
          this.hz43VanY = new Array(n);
          this.hz43VanSX = new Array(n);
          this.hz43VanSY = new Array(n);
          this.hz43VanGot = new Array(n);
+         this.hz43VanUXA = new Array(n);
+         this.hz43VanUYA = new Array(n);
+         this.hz43VanOX = new Array(n);
+         this.hz43VanOY = new Array(n);
+         this.hz43VanNm = new Array(n);
          this.hz43VanP = new Point();
+         this.hz43HidA = new Array(32);
          var i:int = 0;
          while(i < n) { this.hz43VanGot[i] = 0; i++; }
          return s;
       }
 
+      // A named watch piece, found anywhere under BottomLeftGroup. Not only a direct child.
       private function hz43VanClip(i:int) : DisplayObject
       {
-         if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
-         if(!this.hzBlg || this.hz43VanD == null) { return null; }
-         var d:DisplayObject = this.hz43VanD[i] as DisplayObject;
-         if(d != null && d.parent == this.hzBlg) { return d; }
-         d = this.hzBlg.getChildByName(HZ43_VAN_N[i] as String);
-         this.hz43VanD[i] = d;
-         return d;
+         if(this.hz43VanD == null || i < 0 || i >= this.hz43VanN) { return null; }
+         return this.hz43VanD[i] as DisplayObject;
       }
 
-      private function hz43VanCapture() : void
+      private function hz43VanSkip(name:String) : Boolean
       {
-         if(this.hz43VanCap != 0 || !this.hzBlg || this.hz43VanP == null) { return; }
-         var a:DisplayObject = this.hz43VanClip(0);
-         if(!a) { return; }
-         var n:int = HZ43_VAN_N.length;
+         if(name == null || name.length == 0) { return true; }
+         if(name == "EnemyDetectionAnim_mc" || name == "Autopilot_mc") { return true; }
+         if(name.indexOf("Alert") >= 0) { return true; }
+         if(name.indexOf("Bio") == 0 || name.indexOf("Env") == 0) { return true; }
+         if(name.indexOf("Horizon") == 0 || name.indexOf("Mission") == 0 || name.indexOf("Enemy") == 0) { return true; }
+         return false;
+      }
+
+      private function hz43VanNamed(name:String) : Boolean
+      {
+         if(this.hz43VanSkip(name)) { return false; }
          var i:int = 0;
-         while(i < n)
+         while(i < HZ43_VAN_N.length)
          {
-            var d:DisplayObject = this.hz43VanClip(i);
-            if(d)
-            {
-               this.hz43VanX[i] = d.x;
-               this.hz43VanY[i] = d.y;
-               this.hz43VanSX[i] = d.scaleX;
-               this.hz43VanSY[i] = d.scaleY;
-               this.hz43VanGot[i] = 1;
-            }
+            if(name == String(HZ43_VAN_N[i])) { return true; }
             i++;
          }
+         return name.indexOf("Watch") == 0;
+      }
+
+      private function hz43VanSafe(box:DisplayObjectContainer) : Boolean
+      {
+         if(!box || box == this.hzBlg) { return false; }
+         if(this.hz43VanSkip(box.name)) { return false; }
+         var i:int = 0;
+         while(i < box.numChildren)
+         {
+            var ch:DisplayObject = box.getChildAt(i);
+            var cn:String = ch ? ch.name : "";
+            if(cn != null && cn.length > 0 && !this.hz43VanNamed(cn)) { return false; }
+            i++;
+         }
+         return true;
+      }
+
+      private function hz43VanRootOf(clip:DisplayObject) : DisplayObject
+      {
+         var root:DisplayObject = clip;
+         var p:DisplayObjectContainer = clip.parent;
+         while(p != null && p != this && p != this.hzBlg)
+         {
+            if(!this.hz43VanSafe(p)) { break; }
+            root = p;
+            p = p.parent;
+         }
+         if(root == this.hzBlg || root == this) { return clip; }
+         return root;
+      }
+
+      private function hz43VanAdd(root:DisplayObject) : void
+      {
+         if(!root || root == this.hzBlg || this.hz43VanN >= 16) { return; }
+         var i:int = 0;
+         while(i < this.hz43VanN)
+         {
+            if(this.hz43VanD[i] == root) { return; }
+            i++;
+         }
+         this.hz43VanD[this.hz43VanN] = root;
+         this.hz43VanNm[this.hz43VanN] = root.name;
+         this.hz43VanN++;
+      }
+
+      private function hz43VanGather(box:DisplayObjectContainer, depth:int) : void
+      {
+         if(!box || depth > 4) { return; }
+         var i:int = 0;
+         while(i < box.numChildren)
+         {
+            var ch:DisplayObject = box.getChildAt(i);
+            if(ch && this.hz43VanNamed(ch.name)) { this.hz43VanAdd(this.hz43VanRootOf(ch)); }
+            if(ch is DisplayObjectContainer && !this.hz43VanSkip(ch.name)) { this.hz43VanGather(DisplayObjectContainer(ch),depth + 1); }
+            i++;
+         }
+      }
+
+      private function hz43VanUnitOf(parent:DisplayObjectContainer) : void
+      {
          this.hz43VanP.x = 0;
          this.hz43VanP.y = 0;
-         var g0:Point = this.hzBlg.localToGlobal(this.hz43VanP);
+         var g0:Point = parent.localToGlobal(this.hz43VanP);
          this.hz43VanP.x = 1;
          this.hz43VanP.y = 0;
-         var gx:Point = this.hzBlg.localToGlobal(this.hz43VanP);
+         var gx:Point = parent.localToGlobal(this.hz43VanP);
          this.hz43VanP.x = 0;
          this.hz43VanP.y = 1;
-         var gy:Point = this.hzBlg.localToGlobal(this.hz43VanP);
+         var gy:Point = parent.localToGlobal(this.hz43VanP);
          var ux:Number = gx.x - g0.x;
          var uy:Number = gy.y - g0.y;
          if(!(ux > 0.01 || ux < -0.01)) { ux = 1; }
          if(!(uy > 0.01 || uy < -0.01)) { uy = 1; }
-         this.hz43VanUX = ux;
-         this.hz43VanUY = uy;
-         this.hz43VanP.x = 0;
-         this.hz43VanP.y = 0;
-         var go:Point = a.localToGlobal(this.hz43VanP);
-         var lp:Point = this.globalToLocal(go);
-         if(lp == null || isNaN(lp.x)) { return; }
-         this.hz43VanHX = lp.x - 90;
-         this.hz43VanHY = lp.y - 90;
+         this.hz43VanUXA[this.hz43VanN] = ux;
+         this.hz43VanUYA[this.hz43VanN] = uy;
+      }
+
+      // One assembly: the outermost watch clips. Nested pieces stay inside them, so the top bar cannot be left behind.
+      private function hz43VanCapture() : void
+      {
+         if(this.hz43VanCap != 0 || !this.hzBlg || this.hz43VanP == null) { return; }
+         this.hz43VanN = 0;
+         var k:int = 0;
+         while(k < HZ43_VAN_N.length)
+         {
+            var named:DisplayObject = this.hzFindByName(this.hzBlg,String(HZ43_VAN_N[k]),0);
+            if(named) { this.hz43VanAdd(this.hz43VanRootOf(named)); }
+            k++;
+         }
+         this.hz43VanGather(this.hzBlg,0);
+         if(this.hz43VanN == 0) { return; }
+         var left:Number = 0;
+         var top:Number = 0;
+         var right:Number = 0;
+         var bot:Number = 0;
+         var any:Boolean = false;
+         var names:String = "";
+         var i:int = 0;
+         var count:int = this.hz43VanN;
+         this.hz43VanN = 0;
+         while(i < count)
+         {
+            var d:DisplayObject = this.hz43VanD[i] as DisplayObject;
+            if(d && d.parent is DisplayObjectContainer)
+            {
+               var slot:int = this.hz43VanN;
+               this.hz43VanUnitOf(d.parent);
+               this.hz43VanD[slot] = d;
+               this.hz43VanNm[slot] = d.name;
+               this.hz43VanX[slot] = d.x;
+               this.hz43VanY[slot] = d.y;
+               this.hz43VanSX[slot] = d.scaleX;
+               this.hz43VanSY[slot] = d.scaleY;
+               this.hz43VanGot[slot] = 1;
+               this.hz43VanOX[slot] = this.hz43VanX[slot];
+               this.hz43VanOY[slot] = this.hz43VanY[slot];
+               var b:Rectangle = d.getBounds(this);
+               if(b && b.width > 1 && b.height > 1)
+               {
+                  if(!any || b.x < left) { left = b.x; }
+                  if(!any || b.y < top) { top = b.y; }
+                  if(!any || b.x + b.width > right) { right = b.x + b.width; }
+                  if(!any || b.y + b.height > bot) { bot = b.y + b.height; }
+                  any = true;
+               }
+               var pn:String = d.parent ? d.parent.name : "";
+               if(names.length > 0) { names += ","; }
+               names += String(d.name) + "<" + pn + ">";
+               this.hz43VanN++;
+            }
+            i++;
+         }
+         if(!any)
+         {
+            left = 0;
+            top = 0;
+            right = 180;
+            bot = 180;
+         }
+         this.hz43VanHX = left;
+         this.hz43VanHY = top;
+         this.hz43VanHW = right - left;
+         this.hz43VanHH = bot - top;
+         if(!(this.hz43VanHW > 2)) { this.hz43VanHW = 180; }
+         if(!(this.hz43VanHH > 2)) { this.hz43VanHH = 180; }
+         this.hz43VanRad = this.hz43VanHW;
+         var cx:Number = this.hz43VanHX + this.hz43VanHW / 2;
+         var cy:Number = this.hz43VanHY + this.hz43VanHH / 2;
+         var oi:int = 0;
+         while(oi < this.hz43VanN)
+         {
+            var od:DisplayObject = this.hz43VanD[oi] as DisplayObject;
+            if(od && od.parent)
+            {
+               this.hz43VanP.x = Number(this.hz43VanX[oi]);
+               this.hz43VanP.y = Number(this.hz43VanY[oi]);
+               var mid:Point = od.parent.localToGlobal(this.hz43VanP);
+               var ml:Point = this.globalToLocal(mid);
+               var ux0:Number = Number(this.hz43VanUXA[oi]);
+               var uy0:Number = Number(this.hz43VanUYA[oi]);
+               if(ml && (ux0 > 0.01 || ux0 < -0.01) && (uy0 > 0.01 || uy0 < -0.01))
+               {
+                  this.hz43VanOX[oi] = Number(this.hz43VanX[oi]) + (cx - ml.x) / ux0;
+                  this.hz43VanOY[oi] = Number(this.hz43VanY[oi]) + (cy - ml.y) / uy0;
+               }
+            }
+            oi++;
+         }
+         var hnd:Sprite = this.hz43VanHnd;
+         if(hnd)
+         {
+            var hg:* = hnd.graphics;
+            hg.clear();
+            hg.beginFill(0x000000,1);
+            hg.drawRect(0,0,this.hz43VanHW,this.hz43VanHH);
+            hg.endFill();
+         }
+         if(!this.hz43VanUnitLog)
+         {
+            this.hz43VanUnitLog = true;
+            var kids:String = "";
+            var bi:int = 0;
+            while(bi < this.hzBlg.numChildren)
+            {
+               var bc:DisplayObject = this.hzBlg.getChildAt(bi);
+               if(kids.length > 0) { kids += ","; }
+               kids += bc && bc.name && bc.name.length > 0 ? bc.name : "(unnamed)";
+               bi++;
+            }
+            trace("HZ43 watch unit=" + names);
+            trace("HZ43 blg=" + kids);
+         }
          this.hz43VanCap = 1;
       }
 
       private function hz43VanWrite(dx:Number, dy:Number, sc:Number) : void
       {
          if(this.hz43VanCap == 0) { return; }
-         var lx:Number = dx / this.hz43VanUX;
-         var ly:Number = dy / this.hz43VanUY;
-         var ax:Number = Number(this.hz43VanX[0]);
-         var ay:Number = Number(this.hz43VanY[0]);
-         var n:int = HZ43_VAN_N.length;
          var i:int = 0;
-         while(i < n)
+         while(i < this.hz43VanN)
          {
             if(int(this.hz43VanGot[i]) != 0)
             {
                var d:DisplayObject = this.hz43VanClip(i);
                if(d)
                {
+                  var ux:Number = Number(this.hz43VanUXA[i]);
+                  var uy:Number = Number(this.hz43VanUYA[i]);
+                  if(!(ux > 0.01 || ux < -0.01)) { ux = 1; }
+                  if(!(uy > 0.01 || uy < -0.01)) { uy = 1; }
                   var hx:Number = Number(this.hz43VanX[i]);
                   var hy:Number = Number(this.hz43VanY[i]);
-                  d.x = ax + (hx - ax) * sc + lx;
-                  d.y = ay + (hy - ay) * sc + ly;
+                  var ox:Number = Number(this.hz43VanOX[i]);
+                  var oy:Number = Number(this.hz43VanOY[i]);
+                  d.x = ox + (hx - ox) * sc + dx / ux;
+                  d.y = oy + (hy - oy) * sc + dy / uy;
                   d.scaleX = Number(this.hz43VanSX[i]) * sc;
                   d.scaleY = Number(this.hz43VanSY[i]) * sc;
                }
@@ -19366,6 +19590,132 @@
             i++;
          }
          this.hz43VanWrote = sc != 1 || dx != 0 || dy != 0;
+      }
+
+      private function hz43VanHoldsMark(box:DisplayObjectContainer) : Boolean
+      {
+         if(!box) { return false; }
+         var i:int = 0;
+         while(i < HZ43_VAN_MARK.length)
+         {
+            if(box.name == String(HZ43_VAN_MARK[i])) { return true; }
+            if(this.hzFindByName(box,String(HZ43_VAN_MARK[i]),0) != null) { return true; }
+            i++;
+         }
+         return false;
+      }
+
+      private function hz43VanNote(d:DisplayObject) : void
+      {
+         if(!d || this.hz43HidA == null || this.hz43HidN >= 32) { return; }
+         var i:int = 0;
+         while(i < this.hz43HidN)
+         {
+            if(this.hz43HidA[i] == d) { return; }
+            i++;
+         }
+         this.hz43HidA[this.hz43HidN] = d;
+         this.hz43HidN++;
+      }
+
+      private function hz43VanRestoreHid() : void
+      {
+         var i:int = 0;
+         while(i < this.hz43HidN)
+         {
+            var d:DisplayObject = this.hz43HidA[i] as DisplayObject;
+            if(d)
+            {
+               d.visible = true;
+               d.alpha = 1;
+            }
+            this.hz43HidA[i] = null;
+            i++;
+         }
+         this.hz43HidN = 0;
+      }
+
+      // Styles 3 and 4 hide the vanilla bezel and labels. The live marker clips stay visible.
+      private function hz43VanChrome(hide:Boolean) : void
+      {
+         if(!hide) { this.hz43VanRestoreHid(); }
+         var i:int = 0;
+         while(i < HZ43_VAN_N.length)
+         {
+            var name:String = String(HZ43_VAN_N[i]);
+            var mark:Boolean = name == "WatchIconsWidget_mc" || name == "WatchPointerOutline_mc";
+            var clip:DisplayObject = this.hzFindByName(this.hzBlg,name,0);
+            if(clip)
+            {
+               var box:DisplayObjectContainer = clip as DisplayObjectContainer;
+               var keep:Boolean = mark || (box != null && this.hz43VanHoldsMark(box));
+               if(hide && mark)
+               {
+                  if(!clip.visible) { clip.visible = true; }
+                  if(clip.alpha < 1) { clip.alpha = 1; }
+                  var up:DisplayObjectContainer = clip.parent;
+                  while(up != null && up != this)
+                  {
+                     if(!up.visible) { up.visible = true; }
+                     if(up.alpha < 1) { up.alpha = 1; }
+                     if(up == this.hzBlg) { break; }
+                     up = up.parent;
+                  }
+                  var sib:DisplayObjectContainer = clip.parent;
+                  if(sib != null && sib != this.hzBlg && sib != this)
+                  {
+                     var si:int = 0;
+                     while(si < sib.numChildren)
+                     {
+                        var sc:DisplayObject = sib.getChildAt(si);
+                        var scMark:Boolean = sc && (sc.name == "WatchIconsWidget_mc" || sc.name == "WatchPointerOutline_mc" || (sc is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(sc))));
+                        if(sc && !scMark)
+                        {
+                           if(sc.visible || sc.alpha != 0) { this.hz43VanNote(sc); }
+                           sc.visible = false;
+                           sc.alpha = 0;
+                        }
+                        si++;
+                     }
+                  }
+               }
+               else if(hide && box != null && keep && !mark)
+               {
+                  if(!clip.visible) { clip.visible = true; }
+                  if(clip.alpha < 1) { clip.alpha = 1; }
+                  var ci:int = 0;
+                  while(ci < box.numChildren)
+                  {
+                     var ch:DisplayObject = box.getChildAt(ci);
+                     var chMark:Boolean = ch && (ch.name == "WatchIconsWidget_mc" || ch.name == "WatchPointerOutline_mc" || (ch is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(ch))));
+                     if(ch && !chMark)
+                     {
+                        if(ch.visible || ch.alpha != 0) { this.hz43VanNote(ch); }
+                        if(ch.visible) { ch.visible = false; }
+                        if(ch.alpha != 0) { ch.alpha = 0; }
+                     }
+                     else if(ch)
+                     {
+                        if(!ch.visible) { ch.visible = true; }
+                        if(ch.alpha < 1) { ch.alpha = 1; }
+                     }
+                     ci++;
+                  }
+               }
+               else if(hide && !keep)
+               {
+                  if(clip.visible || clip.alpha != 0) { this.hz43VanNote(clip); }
+                  if(clip.visible) { clip.visible = false; }
+                  if(clip.alpha != 0) { clip.alpha = 0; }
+               }
+               else if(!hide)
+               {
+                  if(!clip.visible) { clip.visible = true; }
+                  if(clip.alpha < 1) { clip.alpha = 1; }
+               }
+            }
+            i++;
+         }
       }
 
       private function hz43VanResolve(sc:Number) : void
@@ -19396,8 +19746,16 @@
          this.hz43TL.y = this.hz43Ly;
          this.hz43BR.x = this.hz43Rx;
          this.hz43BR.y = this.hz43Ry;
-         var p:Point = this.hz30Resolve("Watch",lo,180,180,this.hz43TL,this.hz43BR);
+         var p:Point = this.hz30Resolve("Watch",lo,this.hz43VanHW,this.hz43VanHH,this.hz43TL,this.hz43BR);
          this.hzPlace(this.hz43VanHnd,p.x,p.y);
+      }
+
+      private function hz43VanSc() : Number
+      {
+         var custom:Number = this.hz34Sc["Watch"];
+         var sc:Number = custom > 0 ? this.hz34S("Watch") / HZ_SCALE : 1;
+         if(!(sc > 0.05)) { sc = 1; }
+         return sc;
       }
 
       private function hz43VanPlace() : void
@@ -19414,10 +19772,9 @@
          var hnd:Sprite = this.hz43VanEnsure();
          this.hz43VanCapture();
          if(this.hz43VanCap == 0) { return; }
+         if(this.hz43HidN > 0) { this.hz43VanChrome(false); }
          hnd.visible = true;
-         var custom:Number = this.hz34Sc["Watch"];
-         var sc:Number = custom > 0 ? this.hz34S("Watch") / HZ_SCALE : 1;
-         if(!(sc > 0.05)) { sc = 1; }
+         var sc:Number = this.hz43VanSc();
          var drag:Boolean = this.hzArrange && this.hzArrDrag == "Watch";
          var saved:Boolean = this.hzLayHas("Watch");
          if(!saved && !drag)
@@ -19429,6 +19786,35 @@
          if(!drag) { this.hz43VanResolve(sc); }
          if(!drag && this.hz43VnAx == -2) { return; }
          this.hz43VanWrite(hnd.x - this.hz43VanHX,hnd.y - this.hz43VanHY,sc);
+      }
+
+      // Styles 3 and 4 keep the live markers on the Horizon face. The rest of the vanilla watch stays hidden.
+      private function hz43VanHorizon() : void
+      {
+         if(this.hzWatchStyle != 3 && this.hzWatchStyle != 4) { return; }
+         if(!this.hz43Watch) { return; }
+         if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
+         if(!this.hzBlg) { return; }
+         this.hz43VanEnsure();
+         this.hz43VanCapture();
+         if(this.hz43VanCap == 0) { return; }
+         this.hz43VanChrome(true);
+         var sc:Number = this.hz43Watch.scaleX;
+         if(!(sc > 0.05)) { sc = 1; }
+         var face:Number = HZ43_R * 2 * sc;
+         var fit:Number = this.hz43VanRad > 2 ? face / this.hz43VanRad : 1;
+         if(!(fit > 0.05)) { fit = 1; }
+         var cx:Number = this.hz43Watch.x + HZ43_R * sc;
+         var cy:Number = this.hz43Watch.y + HZ43_R * sc;
+         var hx:Number = this.hz43VanHX + this.hz43VanHW / 2;
+         var hy:Number = this.hz43VanHY + this.hz43VanHH / 2;
+         this.hz43VanWrite(cx - hx,cy - hy,fit);
+      }
+
+      private function hz43VanLate() : void
+      {
+         if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4) { this.hz43VanHorizon(); }
+         else { this.hz43VanPlace(); }
       }
 
       private function hz43Place() : void
@@ -19509,8 +19895,8 @@
       {
          if(this.hz43TintD == null) { this.hz43TintD = new Array(HZ43_TINT_N.length); }
          var d:DisplayObject = this.hz43TintD[i] as DisplayObject;
-         if(d != null && d.parent == this.hzBlg) { return d; }
-         d = this.hzBlg.getChildByName(HZ43_TINT_N[i] as String);
+         if(d != null && d.parent != null) { return d; }
+         d = this.hzFindByName(this.hzBlg,HZ43_TINT_N[i] as String,0);
          this.hz43TintD[i] = d;
          return d;
       }
@@ -19586,10 +19972,10 @@
 
       private function hz43Frame() : void
       {
-         this.hz43VanPlace();
+         var show:Boolean = (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && !this.hzUserHidden;
+         if(!show) { this.hz43VanPlace(); }
          if(this.hzWatchStyle == 2) { this.hz43Tint(); }
          else if(this.hz43TintOn) { this.hz43Tint(); }
-         var show:Boolean = (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && !this.hzUserHidden;
          if(!show)
          {
             if(this.hz43Watch) { this.hz43Watch.visible = false; }
@@ -19597,6 +19983,7 @@
          }
          this.hz43Build();
          this.hz43Place();
+         this.hz43VanHorizon();
          if(this.hz43Dirty()) { this.hz43Draw(this.hzWatchStyle); }
          this.hz43Watch.visible = true;
       }
