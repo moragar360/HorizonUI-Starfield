@@ -20,7 +20,7 @@ Not published. No tag. The settings schema stays 0.42.0, so an existing `Horizon
 - The watch no longer shows a line that names its place on the screen.
 
 ### Fixed
-- **Quest tracker:** a new quest name clears the previous objective instead of keeping it under the new title. Sub-lines are 13 px.
+- **Quest tracker:** steps come only from the selected quest's open objectives. Compass markers supply a distance for those steps and do not add another quest's marker. The title and the steps refresh together when the selected quest changes. Sub-lines are 13 px.
 - **Afflictions and the detection ring** no longer follow the watch style. The bio popup hides while the afflictions card is on. The red ring hides while the stealth pill, the enemy bar, or the edge pulse is on.
 - **Watch PC time** keeps the last good reading when the clock throws, or the planet card's real time when this face has none yet. A failed read does not build a new clock every frame.
 

@@ -1295,29 +1295,10 @@
 
       private function hzUpdateQuests(mm:Array) : void
       {
-         // v0.27: the first marker in aMissionMarkers is not stable (the game re-orders main / optional objectives),
-         // which made the tracker flip between them. Sticky main objective + the others as sub-lines.
-         var seen:Array = [];
-         var active:Object = null;
-         var list:Array = [];
-         for each(var o:Object in mm)
-         {
-            if(!o || !this.hzIsQuestType(uint(o.uiMarkerIconType))) { continue; }
-            var t:String = o.strText ? String(o.strText) : "";
-            if(t == "" || seen.indexOf(t) >= 0) { continue; }
-            seen.push(t);
-            list.push(o);
-         }
-         try { active = this.hz27PickMain(list); } catch(errQ:Error) { active = list.length > 0 ? list[0] : null; }
-         try { this.hz27QBuildSubs(list,active); } catch(errQ2:Error) { this.hz27QSubs = []; }
-         this.hzQHasAny = seen.length > 0;
-         this.hzQActive.text = active ? String(active.strText) : "No active objective";
-         this.hzQActiveSub.text = active ? (uint(active.uiMarkerIconType) == MapMarkerUtils.MIT_MARKER_QUEST_OFFPLANET ? "OFF PLANET" : this.hzFmtDist(Number(active.fDistanceToPlayer))) : "";
-         if(this.hzCQText) { this.hzCQText.text = this.hzQActive.text; }
-         if(this.hzCQDist) { this.hzCQDist.text = this.hzQActiveSub.text; }
-         this.hzQObjStr = active ? String(active.strText) : "";
-         this.hzQDistStr = this.hzQActiveSub.text;
-         this.hzQSync();
+         // Markers are a distance lookup for the selected quest. They never add another quest's row.
+         if(mm) { this.hz27QMarks = mm; }
+         this.hz27QFill(mm ? mm : this.hz27QMarks);
+         this.hz27QRefresh();
       }
 
       // Compass markers: quest = gold diamond, enemy = red dot, others = small gray tick.
@@ -2251,22 +2232,24 @@
       private var hzQTitle:TextField = null;
       public function hzSetQuestTitle(name:String) : void
       {
-         if(String(name != null ? name : "").toLowerCase() != String(this.hzQName != null ? this.hzQName : "").toLowerCase())
+         var next:String = name != null ? name : "";
+         var changed:Boolean = next.toLowerCase() != String(this.hzQName != null ? this.hzQName : "").toLowerCase();
+         if(changed)
          {
-            this.hz27QMain = "";
-            this.hz27QObjs = [];
-            this.hz27QSubs = [];
-            this.hzQObjStr = "";
-            this.hzQDistStr = "";
-            if(this.hzQActive) { this.hzQActive.text = "No active objective"; }
-            if(this.hzQActiveSub) { this.hzQActiveSub.text = ""; }
+            this.hz27QClearSteps();
+            this.hz27QApplyCache(next);
          }
          if(this.hzQTitle)
          {
-            this.hzQTitle.text = name && name.length > 0 ? name.toUpperCase() : "ACTIVE OBJECTIVE";
+            this.hzQTitle.text = next.length > 0 ? next.toUpperCase() : "ACTIVE OBJECTIVE";
          }
-         this.hzQName = name != null ? name : "";
-         this.hzQSync();
+         this.hzQName = next;
+         if(changed)
+         {
+            if(this.hz27QMarks) { this.hzUpdateQuests(this.hz27QMarks); }
+            else { this.hz27QRefresh(); }
+         }
+         else { this.hzQSync(); }
       }
       private function hzOnQuestData(e:FromClientDataEvent) : *
       {
@@ -2291,16 +2274,24 @@
       {
          var a:Array = e.data ? e.data.QuestUpdatesA as Array : null;
          if(!a) { return; }
-         for(var i:int = a.length - 1; i >= 0; i--)
+         var accepted:Boolean = false;
+         var i:int = 0;
+         while(i < a.length)
          {
             var q:Object = a[i];
-            if(q && q.bActiveQuest === true && q.strQuestName && q.bCompleted !== true && q.bFailed !== true)
-            {
-               this.hzSetQuestTitle(String(q.strQuestName));
-               try { this.hz27QSetObjs(q); } catch(errO:Error) { }
-               return;
-            }
+            i++;
+            // Selected quest only: uQuestID or uDisplayedQuestID, otherwise the name. Prose is not a step.
+            if(!this.hz27QIsSelected(q) || this.hz27QIsProse(q) || !this.hz27QCarriesSteps(q)) { continue; }
+            try { this.hz27QSetObjs(q); } catch(errO:Error) { this.hz27QObjs = []; }
+            this.hz27QRemember(q);
+            accepted = true;
          }
+         if(!accepted) { return; }
+         var active:Object = null;
+         try { active = this.hz27PickMain(this.hz27QList); } catch(errQ:Error) { active = null; }
+         try { this.hz27QBuildSubs(this.hz27QList, active); } catch(errS:Error) { this.hz27QSubs.length = 0; }
+         this.hz27QWrite(active);
+         this.hzQSync();
       }
       private function hzOnInventory(e:FromClientDataEvent) : *
       {
@@ -12560,13 +12551,26 @@
       private var hz27BioHid:Boolean = false;
       private var hz27ExitOn:Boolean = false;
       private var hz27Alerts:Array = [];
-      // quest tracker: sticky main objective + up to 3 sub-lines
+      // quest tracker: open steps of the selected quest, up to 3 sub-lines. Compass markers only supply distance.
+      private static const HZ27_UT_QUEST_TEXT:uint = 11; // QuestMessage.HDT_QUEST_TEXT_UPDATED, including the summary body
       private var hz27QMain:String = "";
-      private var hz27QMainT:Number = 0;
-      private var hz27QMainDist:Number = NaN;
-      private var hz27QMainOff:Boolean = false;
       private var hz27QObjs:Array = [];
       private var hz27QSubs:Array = [];
+      private var hz27QList:Array = [];
+      private var hz27QMarks:Array = null;
+      private var hz27QId:String = "";
+      private var hz27QDisp:String = "";
+      private var hz27QCache:Array = [];
+      private var hz27QBare:Object = {"strText":"","fDistanceToPlayer":0,"uiMarkerIconType":0};
+      private var hz27QPool:Array = [{"t":"","opt":false,"d":"","src":"","m":0,"off":false,"has":false},{"t":"","opt":false,"d":"","src":"","m":0,"off":false,"has":false},{"t":"","opt":false,"d":"","src":"","m":0,"off":false,"has":false}];
+      private var hz27OptRe:RegExp = new RegExp("\\(\\s*optional\\s*\\)|^\\s*optional\\b","i");
+      private var hz27OptR1:RegExp = new RegExp("\\s*\\(\\s*optional\\s*\\)\\s*","i");
+      private var hz27OptR2:RegExp = new RegExp("^\\s*optional\\s*[:\\-]?\\s*","i");
+      private var hz27OptR3:RegExp = new RegExp("^\\s+|\\s+$","g");
+      private var hz27ActHas:Boolean = false;
+      private var hz27ActOff:Boolean = false;
+      private var hz27ActM:Number = 0;
+      private var hz27ActTxt:String = "";
       private var hz27QL:Array = [];
       private var hz27QLD:Array = [];
       private var hz27QH:Number = 78;
@@ -12651,112 +12655,310 @@
       }
 
       // ---------- Quest tracker ----------
+      // Subtitle and bullets are the selected quest's open ObjectiveDataA steps. A compass marker is only a distance.
       private function hz27IsOpt(t:String) : Boolean
       {
          if(t == null) { return false; }
-         var re:RegExp = new RegExp("\\(\\s*optional\\s*\\)|^\\s*optional\\b","i");
-         return re.test(t);
+         return this.hz27OptRe.test(t);
       }
 
       private function hz27OptStrip(t:String) : String
       {
-         var r1:RegExp = new RegExp("\\s*\\(\\s*optional\\s*\\)\\s*","ig");
-         var r2:RegExp = new RegExp("^\\s*optional\\s*[:\\-]?\\s*","i");
-         var r3:RegExp = new RegExp("^\\s+|\\s+$","g");
-         var s:String = t.replace(r1," ");
-         s = s.replace(r2,"");
-         return s.replace(r3,"");
+         this.hz27OptR3.lastIndex = 0;
+         var s:String = t.replace(this.hz27OptR1," ");
+         s = s.replace(this.hz27OptR2,"");
+         return s.replace(this.hz27OptR3,"");
       }
 
-      private function hz27QKeep(o:Object) : void
+      private function hz27QIdOf(q:Object, key:String) : String
       {
-         this.hz27QMain = String(o.strText);
-         this.hz27QMainT = this.hz26Now();
-         this.hz27QMainDist = Number(o.fDistanceToPlayer);
-         this.hz27QMainOff = uint(o.uiMarkerIconType) == MapMarkerUtils.MIT_MARKER_QUEST_OFFPLANET;
+         if(!q || q[key] == undefined || q[key] == null) { return ""; }
+         return String(q[key]);
       }
 
-      // main objective: keep the current one while its marker is listed (and for 3 s gaps); otherwise the quest's
-      // first open objective (QuestUpdateData order), then the first non-optional on-planet marker, then the first
+      // Stored quest id or displayed id, otherwise the selected name. A different id cannot refill the steps.
+      private function hz27QIsSelected(q:Object) : Boolean
+      {
+         if(!q) { return false; }
+         var qid:String = this.hz27QIdOf(q,"uQuestID");
+         var did:String = this.hz27QIdOf(q,"uDisplayedQuestID");
+         if(this.hz27QId.length > 0 || this.hz27QDisp.length > 0)
+         {
+            if(qid.length > 0 && (qid == this.hz27QId || qid == this.hz27QDisp)) { return true; }
+            if(did.length > 0 && (did == this.hz27QId || did == this.hz27QDisp)) { return true; }
+            return false;
+         }
+         var nm:String = q.strQuestName != null ? String(q.strQuestName) : "";
+         var cur:String = this.hzQName != null ? this.hzQName : "";
+         return cur.length > 0 && nm.toLowerCase() == cur.toLowerCase();
+      }
+
+      // Quest-text and summary updates are prose, not steps. HDT_QUEST_TEXT_UPDATED is 11. A summary entry is bSummary.
+      private function hz27QIsProse(q:Object) : Boolean
+      {
+         // HDT_QUEST_TEXT_UPDATED and a summary entry are prose, not steps.
+         if(!q) { return false; }
+         if(q.bSummary === true || q.bQuestText === true) { return true; }
+         if(q.uType == undefined || q.uType == null) { return false; }
+         return uint(q.uType) == HZ27_UT_QUEST_TEXT;
+      }
+
+      // Objective and quest-added updates carry the step list. Timer, experience, and prose do not.
+      private function hz27QCarriesSteps(q:Object) : Boolean
+      {
+         if(!q || this.hz27QIsProse(q)) { return false; }
+         if(q.uType == undefined || q.uType == null) { return true; }
+         var t:uint = uint(q.uType);
+         return t == 0 || t == 3 || t == 4 || t == 5 || t == 6 || t == 7 || t == 9;
+      }
+
+      private function hz27QClearSteps() : void
+      {
+         this.hz27QMain = "";
+         this.hz27QObjs.length = 0;
+         this.hz27QSubs.length = 0;
+         this.hz27QId = "";
+         this.hz27QDisp = "";
+         this.hzQObjStr = "";
+         this.hzQDistStr = "";
+         this.hz27ActHas = false;
+         this.hz27ActTxt = "";
+         if(this.hzQActive) { this.hzQActive.text = "No active objective"; }
+         if(this.hzQActiveSub) { this.hzQActiveSub.text = ""; }
+      }
+
+      private function hz27QApplyCache(name:String) : void
+      {
+         var key:String = name.toLowerCase();
+         var i:int = 0;
+         while(i < this.hz27QCache.length)
+         {
+            var hit:Object = this.hz27QCache[i];
+            i++;
+            if(String(hit.name).toLowerCase() != key) { continue; }
+            this.hz27QId = hit.id != null ? String(hit.id) : "";
+            this.hz27QDisp = hit.disp != null ? String(hit.disp) : "";
+            this.hz27QObjs.length = 0;
+            var src:Array = hit.objs as Array;
+            var j:int = 0;
+            while(src && j < src.length) { this.hz27QObjs.push(String(src[j])); j++; }
+            return;
+         }
+      }
+
+      private function hz27QRemember(q:Object) : void
+      {
+         var qid:String = this.hz27QIdOf(q,"uQuestID");
+         var did:String = this.hz27QIdOf(q,"uDisplayedQuestID");
+         if(qid.length > 0) { this.hz27QId = qid; }
+         if(did.length > 0) { this.hz27QDisp = did; }
+         var name:String = q.strQuestName != null ? String(q.strQuestName) : (this.hzQName != null ? this.hzQName : "");
+         if(name.length == 0) { return; }
+         var key:String = name.toLowerCase();
+         var hit:Object = null;
+         var i:int = 0;
+         while(i < this.hz27QCache.length)
+         {
+            if(String(this.hz27QCache[i].name).toLowerCase() == key) { hit = this.hz27QCache[i]; break; }
+            i++;
+         }
+         if(!hit)
+         {
+            hit = {"name":name,"id":"","disp":"","objs":[]};
+            this.hz27QCache.push(hit);
+         }
+         hit.name = name;
+         if(this.hz27QId.length > 0) { hit.id = this.hz27QId; }
+         if(this.hz27QDisp.length > 0) { hit.disp = this.hz27QDisp; }
+         var dst:Array = hit.objs as Array;
+         dst.length = 0;
+         var j:int = 0;
+         while(j < this.hz27QObjs.length) { dst.push(String(this.hz27QObjs[j])); j++; }
+      }
+
+      private function hz27QFill(mm:Array) : void
+      {
+         this.hz27QList.length = 0;
+         if(!mm) { return; }
+         var i:int = 0;
+         while(i < mm.length)
+         {
+            var o:Object = mm[i];
+            i++;
+            if(!o || !this.hzIsQuestType(uint(o.uiMarkerIconType))) { continue; }
+            var t:String = o.strText ? String(o.strText) : "";
+            if(t.length == 0 || this.hz27QHasText(t)) { continue; }
+            this.hz27QList.push(o);
+         }
+      }
+
+      private function hz27QHasText(t:String) : Boolean
+      {
+         var i:int = 0;
+         while(i < this.hz27QList.length)
+         {
+            if(String(this.hz27QList[i].strText) == t) { return true; }
+            i++;
+         }
+         return false;
+      }
+
+      private function hz27QMark(list:Array, text:String) : Object
+      {
+         if(!list) { return null; }
+         var i:int = 0;
+         while(i < list.length)
+         {
+            var o:Object = list[i];
+            i++;
+            if(o && String(o.strText) == text) { return o; }
+         }
+         return null;
+      }
+
+      private function hz27QFirst() : String
+      {
+         var any:String = "";
+         var i:int = 0;
+         while(i < this.hz27QObjs.length)
+         {
+            var ob:String = String(this.hz27QObjs[i]);
+            i++;
+            if(any.length == 0) { any = ob; }
+            if(!this.hz27IsOpt(ob)) { return ob; }
+         }
+         return any;
+      }
+
+      // Subtitle: the first open objective of the selected quest. A matching marker supplies the distance.
+      // No timed hold, and no marker that belongs to another quest.
       private function hz27PickMain(list:Array) : Object
       {
-         var now:Number = this.hz26Now();
-         var o:Object = null;
-         if(this.hz27QMain.length > 0)
-         {
-            for each(o in list) { if(String(o.strText) == this.hz27QMain) { this.hz27QKeep(o); return o; } }
-            if(now - this.hz27QMainT < 3000)
-            {
-               var held:Object = {"strText":this.hz27QMain,"fDistanceToPlayer":this.hz27QMainDist,"hzHeld":true};
-               held.uiMarkerIconType = this.hz27QMainOff ? MapMarkerUtils.MIT_MARKER_QUEST_OFFPLANET : MapMarkerUtils.MIT_MARKER_QUEST;
-               return held;
-            }
-         }
-         var pick:Object = null;
-         for each(var ob:String in this.hz27QObjs)
-         {
-            if(pick != null || this.hz27IsOpt(ob)) { continue; }
-            for each(o in list) { if(pick == null && String(o.strText) == ob) { pick = o; } }
-         }
-         if(pick == null)
-         {
-            for each(o in list)
-            {
-               if(pick == null && !this.hz27IsOpt(String(o.strText)) && uint(o.uiMarkerIconType) != MapMarkerUtils.MIT_MARKER_QUEST_OFFPLANET) { pick = o; }
-            }
-         }
-         if(pick == null && list.length > 0) { pick = list[0]; }
-         if(pick != null) { this.hz27QKeep(pick); } else { this.hz27QMain = ""; }
-         return pick;
+         var text:String = this.hz27QFirst();
+         if(text.length == 0) { this.hz27QMain = ""; return null; }
+         var mk:Object = this.hz27QMark(list, text);
+         if(mk) { this.hz27QMain = text; return mk; }
+         this.hz27QBare.strText = text;
+         this.hz27QBare.fDistanceToPlayer = 0;
+         this.hz27QBare.uiMarkerIconType = 0;
+         this.hz27QMain = text;
+         return this.hz27QBare;
       }
 
-      private function hz27QSubSort(a:Object, b:Object) : int
-      {
-         if(Boolean(a.opt) != Boolean(b.opt)) { return a.opt ? 1 : -1; }
-         var ta:String = String(a.t).toLowerCase();
-         var tb:String = String(b.t).toLowerCase();
-         return ta < tb ? -1 : (ta > tb ? 1 : 0);
-      }
-
-      // other objectives of the tracked quest as sub-lines (markers first, then open objectives without a marker)
+      // Bullets come only from the selected quest's open steps. Markers are a distance lookup. An empty step list adds none.
       private function hz27QBuildSubs(list:Array, active:Object) : void
       {
-         var subs:Array = [];
-         var texts:Array = [];
          var mt:String = active ? String(active.strText) : "";
-         for each(var o:Object in list)
+         var n:int = 0;
+         var i:int = 0;
+         while(i < this.hz27QObjs.length && n < 3)
          {
-            var t:String = String(o.strText);
-            texts.push(t);
-            if(t == mt) { continue; }
-            var off:Boolean = uint(o.uiMarkerIconType) == MapMarkerUtils.MIT_MARKER_QUEST_OFFPLANET;
-            subs.push({"t":this.hz27OptStrip(t),"opt":this.hz27IsOpt(t),"d":off ? "OFF PLANET" : this.hzFmtDist(Number(o.fDistanceToPlayer))});
+            var ob:String = String(this.hz27QObjs[i]);
+            i++;
+            if(ob == mt) { continue; }
+            var slot:Object = this.hz27QPool[n];
+            var mk:Object = this.hz27QMark(list, ob);
+            var has:Boolean = mk != null;
+            var off:Boolean = has && uint(mk.uiMarkerIconType) == MapMarkerUtils.MIT_MARKER_QUEST_OFFPLANET;
+            var meters:Number = has ? Number(mk.fDistanceToPlayer) : 0;
+            if(slot.src != ob || slot.has != has || slot.off != off || (has && slot.m != meters))
+            {
+               slot.src = ob;
+               slot.has = has;
+               slot.off = off;
+               slot.m = meters;
+               slot.t = this.hz27OptStrip(ob);
+               slot.opt = this.hz27IsOpt(ob);
+               slot.d = !has ? "" : (off ? "OFF PLANET" : this.hzFmtDist(meters));
+            }
+            n++;
          }
-         for each(var ob:String in this.hz27QObjs)
+         var a:int = 0;
+         while(a < n)
          {
-            if(ob == mt || texts.indexOf(ob) >= 0) { continue; }
-            subs.push({"t":this.hz27OptStrip(ob),"opt":this.hz27IsOpt(ob),"d":""});
+            var b:int = a + 1;
+            while(b < n)
+            {
+               var pa:Object = this.hz27QPool[a];
+               var pb:Object = this.hz27QPool[b];
+               var swap:Boolean = false;
+               if(Boolean(pb.opt) != Boolean(pa.opt)) { swap = !pb.opt; }
+               else { swap = String(pb.t).toLowerCase() < String(pa.t).toLowerCase(); }
+               if(swap)
+               {
+                  this.hz27QPool[a] = pb;
+                  this.hz27QPool[b] = pa;
+               }
+               b++;
+            }
+            a++;
          }
-         subs.sort(this.hz27QSubSort);
-         while(subs.length > 3) { subs.pop(); }
-         this.hz27QSubs = subs;
+         this.hz27QSubs.length = 0;
+         var j:int = 0;
+         while(j < n) { this.hz27QSubs.push(this.hz27QPool[j]); j++; }
       }
 
-      // QuestUpdateData: open objectives of the active quest (ObjectiveDataA, same fields as the game's ObjectivesList)
+      private function hz27QActiveDist(active:Object) : String
+      {
+         if(!active)
+         {
+            if(this.hz27ActHas || this.hz27ActTxt.length > 0) { this.hz27ActHas = false; this.hz27ActTxt = ""; }
+            return "";
+         }
+         var off:Boolean = uint(active.uiMarkerIconType) == MapMarkerUtils.MIT_MARKER_QUEST_OFFPLANET;
+         var meters:Number = Number(active.fDistanceToPlayer);
+         if(this.hz27ActHas && this.hz27ActOff == off && (off || this.hz27ActM == meters) && this.hz27QMain == (active.strText != null ? String(active.strText) : "")) { return this.hz27ActTxt; }
+         this.hz27ActHas = true;
+         this.hz27ActOff = off;
+         this.hz27ActM = meters;
+         this.hz27ActTxt = off ? "OFF PLANET" : this.hzFmtDist(meters);
+         return this.hz27ActTxt;
+      }
+
+      private function hz27QWrite(active:Object) : void
+      {
+         var text:String = active ? String(active.strText) : "";
+         var dist:String = this.hz27QActiveDist(active);
+         var show:String = text.length > 0 ? text : "No active objective";
+         if(this.hzQObjStr != text || this.hzQDistStr != dist)
+         {
+            this.hzQObjStr = text;
+            this.hzQDistStr = dist;
+            if(this.hzQActive) { this.hzQActive.text = show; }
+            if(this.hzQActiveSub) { this.hzQActiveSub.text = dist; }
+            if(this.hzCQText) { this.hzCQText.text = show; }
+            if(this.hzCQDist) { this.hzCQDist.text = dist; }
+         }
+         this.hzQHasAny = text.length > 0;
+      }
+
+      private function hz27QRefresh() : void
+      {
+         var active:Object = null;
+         try { active = this.hz27PickMain(this.hz27QList); } catch(errQ:Error) { active = null; }
+         try { this.hz27QBuildSubs(this.hz27QList, active); } catch(errS:Error) { this.hz27QSubs.length = 0; }
+         this.hz27QWrite(active);
+         this.hzQSync();
+      }
+
+      // Open steps of the selected quest. A missing or invalid ObjectiveDataA clears the list.
       private function hz27QSetObjs(q:Object) : void
       {
-         var a:Array = q.ObjectiveDataA as Array;
-         if(!a) { return; }
+         this.hz27QObjs.length = 0;
+         var a:Array = (q != null) ? q.ObjectiveDataA as Array : null;
+         if(!a) { this.hz27QObjs = []; return; }
          this.hz26Log("QuestObjectives",a);
-         var out:Array = [];
-         for each(var ob:Object in a)
+         var i:int = 0;
+         while(i < a.length)
          {
+            var ob:Object = a[i];
+            i++;
             if(!ob || ob.strObjectiveText == null) { continue; }
             if(ob.bCompleted === true || ob.bFailed === true || ob.bDormant === true) { continue; }
+            if(ob.bSummary === true || ob.bQuestText === true) { continue; }
             var s:String = String(ob.strObjectiveText);
-            if(s.length > 0 && out.indexOf(s) < 0) { out.push(s); }
+            if(s.length > 0 && this.hz27QObjs.indexOf(s) < 0) { this.hz27QObjs.push(s); }
          }
-         this.hz27QObjs = out;
       }
 
       private function hz27QBuild(p:Sprite) : void

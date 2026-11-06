@@ -4,7 +4,7 @@ Unreleased first pass. No tag, no publish, no merge. Starfield was not launched.
 
 ## What was checked here
 
-- `message_log_test`, `preset_list_test`, `planet_alert_test.js`, `reaction_match_test.js`, and `watch_crosshair_test.js` passed.
+- `message_log_test`, `preset_list_test`, `planet_alert_test.js`, `reaction_match_test.js`, `watch_crosshair_test.js`, and `quest_tracker_test.js` passed.
 - File version is 0.43.1.0 in `src/hz_version.h`, both `set_version` lines, `HZ_BUILD`, and the module build constants. The settings schema stays `0.42.0`.
 - `WatchStyle=0` and `CrosshairRule=0` are the defaults. Existing installs that omit the keys keep today's HUD and today's reticle.
 - The new watch block has no `getTimer` and no new glow. No new F key. Watch text is created at 13 px or larger, then held to a 13 px on-screen floor at the HUD scale.
@@ -64,7 +64,7 @@ While styles 1 to 4 are on, the watch frame does not build a clock object, a sig
 
 1. Update over 0.43.0.33 without touching `HorizonUI.user.ini`. The watch stays off and the reticle stays as it is.
 2. F11 > CARDS > WATCH. Step Off, Vanilla, Vanilla + Horizon, Horizon Digital, Horizon Analog. Save, reload, and confirm the ini key.
-3. Digital: O2 left, CO2 right, compass diamond, day sub-dial, both clocks, planet and temperature. No planet picture and no rectangular card.
+3. Digital: O2 fills from 7 o'clock, CO2 from 5 o'clock. Compass diamond, day sub-dial, both clocks, planet and temperature. No planet picture and no rectangular card.
 4. Analog: flush rim arcs, hands on game time, diamond at 12, day sub-dial at 6, planet and temperature at the top.
 5. With the character card in the lower-left, the watch sits above it and the card does not jump. Move the watch in Arrange, save, reload, and confirm `WatchX` / `WatchY` hold the spot and the watch no longer lifts for the card. Reset puts it back on the lower-left home, and the lift returns. Move a card, save, and confirm that card's saved spot is unchanged.
 6. Drop O2 or raise CO2. The orange LOW O2 or HIGH CO2 line appears. Restore them and it leaves.
