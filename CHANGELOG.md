@@ -15,8 +15,8 @@ Not published. No tag. The settings schema stays 0.42.0, so an existing `Horizon
 ### Changed
 - **SFSE plugin** file and product version are 0.43.1.0. This build is not a release download yet.
 - **Watch styles 1 and 2** show the game's watch again. The old hide had cleared it and did not put it back. Style 2 still tints that watch and does not add a second planet name.
-- **Horizon Digital and Analog** match the round faces: O2 runs clockwise from 7 o'clock, CO2 counter-clockwise from 5 o'clock, and empty segments are gray. Analog keeps the filled day dial at 6 o'clock. Digital has no day dial, and its times sit in the center of the face (local at 16 px, PC at 13 px). Compass letters stay on the top arc. The local and PC labels sit above their times. Analog hands are white, with a gold hub.
-- **Crosshair Off, and Weapon drawn while holstered,** keep the aiming dot hidden when the game shows it again on a target or an NPC. The interact ring and glyph stay while you are looking at something you can use. After you look away, the leftover center circle hides too.
+- **Horizon Digital and Analog** match the round faces: O2 runs clockwise from 7 o'clock, CO2 counter-clockwise from 5 o'clock, and empty segments are gray. Analog keeps the filled day dial at 6 o'clock. Digital has no day dial, and its times sit in the center of the face (local at 16 px, PC at 13 px). Both faces draw the same top-arc compass, with heading ticks and N / NE / E letters. The local and PC labels sit above their times. Analog hands are white, with a gold hub.
+- **Crosshair Off, and Weapon drawn while holstered,** keep the aiming dot hidden when the game shows it again on a target, an NPC, or while you walk. The interact ring and glyph stay while you are looking at something you can use. After you look away, the leftover center circle hides too.
 - The watch no longer shows a line that names its place on the screen.
 
 ### Fixed

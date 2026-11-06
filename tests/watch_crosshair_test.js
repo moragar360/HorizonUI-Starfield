@@ -100,6 +100,10 @@ expect(block.indexOf("Math.PI / 2 + Math.PI / 6") >= 0 && block.indexOf("Math.PI
 expect(block.indexOf("0x6E7C86") >= 0, "unfilled gauge segments are gray");
 expect(block.indexOf("hz43Hand(g,ma,72,2.2,0xF2F7F9)") >= 0, "the minute hand is white");
 expect(block.indexOf("ly < -HZ43_R + 96") >= 0, "compass letters stay on the top arc");
+const drawBody = funcBody(as, "hz43Draw");
+expect(drawBody.split("hz43Compass(g)").length - 1 === 2, "digital and analog both draw the compass");
+expect(drawBody.indexOf("hz43Diamond(g,0,-HZ43_R + 20,4)") < 0, "analog does not draw a second top mark");
+expect(drawBody.indexOf("hz43Cards[hi]).visible = false") < 0, "analog does not hide the compass letters");
 
 // 3 o'clock is 0, and clockwise is an increasing angle. 7 o'clock is PI/2 + PI/6.
 // A full O2 sweep is half a turn and ends at 1 o'clock. A full CO2 sweep ends at 11 o'clock.
@@ -181,6 +185,16 @@ function ringHidden(ruleWantsDot, interacting) {
 expect(ringHidden(true, false) === true, "look-away hides the leftover circle");
 expect(ringHidden(true, true) === false, "looking at an interactable keeps the ring");
 expect(ringHidden(false, false) === false, "the rule off leaves the ring to the game");
+
+function aimingDotVisible(ruleWantsDot, gameShowedDot) {
+	if (!ruleWantsDot) return gameShowedDot;
+	return false;
+}
+expect(aimingDotVisible(true, true) === false, "a holstered walk does not leave the aiming dot visible");
+expect(aimingDotVisible(true, false) === false, "a holstered stand keeps the aiming dot hidden");
+expect(aimingDotVisible(false, true) === true, "the rule off leaves a shown aiming dot to the game");
+expect(reticleBody.indexOf("hz43HideDotKids") >= 0, "a shown aiming dot is hidden again");
+expect(funcBody(as, "hz27OnExit").indexOf("this.hz43Reticle()") >= 0, "the hide runs again after the walk timeline");
 
 expect(funcBody(as, "hzLayClips").indexOf("hzWatchStyle == 1") >= 0, "styles 1 and 2 have an Arrange clip");
 expect(funcBody(as, "hzArrList").indexOf("hzWatchStyle == 1") >= 0, "styles 1 and 2 show a Watch handle");
