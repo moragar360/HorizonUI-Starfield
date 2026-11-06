@@ -6,6 +6,7 @@
 // Author: Moragar. Last modified: 2026-11-04.
 
 #include "hsb_guard.h"
+#include "hsb_arrange.h"
 #include "hsb_version.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -19,6 +20,8 @@
 #include <deque>
 #include <mutex>
 #include <string>
+#include <utility>
+#include <vector>
 
 void (*g_shutdownUnhook)() = nullptr;
 
@@ -48,6 +51,25 @@ std::atomic<int> g_pingTries{ 0 };
 std::atomic<bool> g_inShipPoll{ false };
 std::atomic<unsigned> g_hotbits{ 0 };
 std::atomic<bool> g_mapped{ false };
+std::atomic<bool> g_probeDebug{ false };
+std::atomic<bool> g_capture{ false };
+std::atomic<bool> g_arrange{ false };
+std::atomic<bool> g_feedOpen{ false };
+std::atomic<int> g_movieGen{ 0 };
+std::atomic<int> g_saveResult{ -1 };
+std::atomic<bool> g_applyPending{ false };
+std::atomic<bool> g_writeIni{ false };
+std::atomic<bool> g_needApply{ false };
+std::atomic<bool> g_debugSent{ false };
+std::mutex g_evMu;
+struct Ev { int kind; int a; int b; int c; };
+std::deque<Ev> g_ev;
+std::mutex g_iniMu;
+std::string g_apply;
+std::vector<std::pair<std::string, std::string>> g_updates;
+std::wstring g_iniPath;
+int g_stageW = 1920;
+int g_stageH = 1080;
 
 using AdvanceFn = void (*)(RE::Scaleform::GFx::ASMovieRootBase*, bool);
 std::atomic<AdvanceFn> g_origAdvance{ nullptr };
@@ -131,9 +153,8 @@ void PrepareLog()
 	}
 	g_logPath = std::move(path);
 	g_logReady.store(true);
-	Fact("boot", "HorizonShipBuilder " HSB_FILE_VERSION_STR " read-only");
-	Fact("boot", "writes this log only; does not change the ship or a save");
-	Fact("boot", "keys F7=mark F8=capture F6=dump");
+	Fact("boot", "HorizonShipBuilder " HSB_FILE_VERSION_STR);
+	Fact("boot", "probe overlay off");
 	FlushLog();
 }
 
@@ -182,10 +203,61 @@ LRESULT CALLBACK ProbeWnd(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 		g_pingSeen.store(static_cast<std::uint32_t>(wp));
 	}
 	const bool down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+	const bool up = msg == WM_KEYUP || msg == WM_SYSKEYUP;
 	const bool mouse = msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP || msg == WM_RBUTTONDOWN ||
 		msg == WM_RBUTTONUP || msg == WM_MBUTTONDOWN || msg == WM_MBUTTONUP || msg == WM_MOUSEWHEEL ||
 		msg == WM_MOUSEMOVE;
-	if (g_menuOpen.load() && (down || mouse)) {
+	if (g_menuOpen.load() && (down || up || mouse)) {
+		const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+		const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+		const bool arranging = g_arrange.load();
+		const bool captured = g_capture.load();
+		if (down && (lp & 0x40000000) == 0 && hsb::IsArrangeEntry(captured, ctrl, static_cast<unsigned>(wp))) {
+			g_feedOpen.store(true);
+			g_arrange.store(true);
+			g_capture.store(true);
+			return 0;
+		}
+		if (down && (lp & 0x40000000) == 0 && hsb::IsProbeHotkey(g_probeDebug.load(), static_cast<unsigned>(wp))) {
+			unsigned bit = 0;
+			if (wp == VK_F7) bit = 1u;
+			else if (wp == VK_F8) bit = 2u;
+			else if (wp == VK_F6) bit = 4u;
+			if (bit != 0) g_hotbits.fetch_or(bit);
+		}
+		const bool eatKey = (down || up) && hsb::EatKey(captured);
+		const bool eatMouse = mouse && hsb::EatMouse(arranging);
+		if (eatKey || eatMouse) {
+			Ev ev{};
+			if (mouse) {
+				RECT rc{};
+				int cw = 1;
+				int ch = 1;
+				if (GetClientRect(hwnd, &rc)) {
+					cw = rc.right - rc.left;
+					ch = rc.bottom - rc.top;
+				}
+				if (cw < 1) cw = 1;
+				if (ch < 1) ch = 1;
+				const int sx = static_cast<short>(LOWORD(lp)) * g_stageW / cw;
+				const int sy = static_cast<short>(HIWORD(lp)) * g_stageH / ch;
+				ev.a = sx;
+				ev.b = sy;
+				if (msg == WM_LBUTTONDOWN) ev.kind = 1;
+				else if (msg == WM_LBUTTONUP) ev.kind = 2;
+				else ev.kind = 3;
+			} else if (down) {
+				ev.kind = 4;
+				ev.a = static_cast<int>(wp);
+				ev.b = shift ? 1 : 0;
+			}
+			if (ev.kind != 0) {
+				std::lock_guard lock(g_evMu);
+				if (ev.kind == 3 && !g_ev.empty() && g_ev.back().kind == 3) g_ev.back() = ev;
+				else if (g_ev.size() < 32) g_ev.push_back(ev);
+			}
+			return 0;
+		}
 		bool skip = false;
 		if (msg == WM_MOUSEMOVE) {
 			const DWORD now = GetTickCount();
@@ -193,15 +265,7 @@ LRESULT CALLBACK ProbeWnd(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 			if (now - last < 100) skip = true;
 			else g_lastMove.store(now);
 		}
-		if (!skip && down && (lp & 0x40000000) == 0) {
-			unsigned bit = 0;
-			if (wp == VK_F7) bit = 1u;
-			else if (wp == VK_F8) bit = 2u;
-			else if (wp == VK_F6) bit = 4u;
-			if (bit != 0) g_hotbits.fetch_or(bit);
-		}
-		if (!skip) {
-			const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+		if (!skip && (down || mouse)) {
 			const short x = static_cast<short>(LOWORD(lp));
 			const short y = static_cast<short>(HIWORD(lp));
 			char buf[192];
@@ -422,8 +486,60 @@ FormRead ReadForm(std::uint32_t formId)
 	return out;
 }
 
+void QueueUpdate(std::string key, std::string value)
+{
+	std::lock_guard lock(g_iniMu);
+	for (auto& row : g_updates) {
+		if (hsb::EqualsFold(row.first, key)) {
+			row.second = std::move(value);
+			return;
+		}
+	}
+	g_updates.emplace_back(std::move(key), std::move(value));
+}
+
+void ParseState(const std::string& line)
+{
+	g_capture.store(line.find("capture=1") != std::string::npos);
+	g_arrange.store(line.find("arrange=1") != std::string::npos);
+	const auto stage = line.find("stage=");
+	if (stage != std::string::npos) {
+		int w = 0;
+		int h = 0;
+		if (sscanf(line.c_str() + stage, "stage=%dx%d", &w, &h) == 2 && w > 0 && h > 0) {
+			g_stageW = w;
+			g_stageH = h;
+		}
+	}
+}
+
 void NoteMovieLine(const std::string& clean)
 {
+	if (clean.rfind("STATE ", 0) == 0) {
+		ParseState(clean);
+		return;
+	}
+	if (clean.rfind("ACCENT ", 0) == 0) {
+		QueueUpdate("AccentColor", clean.substr(7));
+		g_writeIni.store(true);
+		return;
+	}
+	if (clean.rfind("HEX ", 0) == 0) {
+		QueueUpdate("AccentHex", clean.substr(4));
+		QueueUpdate("AccentColor", "13");
+		g_writeIni.store(true);
+		return;
+	}
+	if (clean.rfind("ARRANGE ", 0) == 0) {
+		const std::string body = clean.substr(8);
+		if (body == "END") {
+			g_writeIni.store(true);
+			return;
+		}
+		const auto eq = body.find('=');
+		if (eq != std::string::npos && eq > 0) QueueUpdate(body.substr(0, eq), body.substr(eq + 1));
+		return;
+	}
 	std::uint32_t formId = 0;
 	if (hsb::ParseFormLine(clean, formId)) {
 		const int slot = hsb::NextFormSlot(g_formCount);
@@ -477,6 +593,66 @@ void NoteWindowMap(RE::IMenu* menu)
 	Fact("map", buf);
 }
 
+std::string TakeFeed()
+{
+	std::deque<Ev> batch;
+	{
+		std::lock_guard lock(g_evMu);
+		batch.swap(g_ev);
+	}
+	std::string out;
+	if (g_feedOpen.exchange(false)) out += "K open\n";
+	for (const auto& ev : batch) {
+		char buf[64];
+		if (ev.kind == 1) snprintf(buf, sizeof(buf), "M D %d %d\n", ev.a, ev.b);
+		else if (ev.kind == 2) snprintf(buf, sizeof(buf), "M U %d %d\n", ev.a, ev.b);
+		else if (ev.kind == 3) snprintf(buf, sizeof(buf), "M M %d %d\n", ev.a, ev.b);
+		else if (ev.kind == 4) {
+			const char* token = hsb::ArrangeKeyToken(static_cast<unsigned>(ev.a), ev.b != 0);
+			if (!token || !token[0]) continue;
+			snprintf(buf, sizeof(buf), "K %s\n", token);
+		} else {
+			continue;
+		}
+		out += buf;
+	}
+	return out;
+}
+
+void InvokeText(RE::IMenu* menu, const char* name, const std::string& text)
+{
+	if (!menu || text.empty()) return;
+	RE::Scaleform::GFx::Value arg;
+	arg = text;
+	menu->menuObj.Invoke(name, nullptr, &arg, 1);
+}
+
+void DriveArrange(RE::IMenu* menu)
+{
+	if (!menu) return;
+	if (g_applyPending.exchange(false)) {
+		std::string blob;
+		{
+			std::lock_guard lock(g_iniMu);
+			blob = g_apply;
+		}
+		InvokeText(menu, "hsbApply", blob);
+	}
+	if (g_probeDebug.load() && !g_debugSent.exchange(true)) {
+		RE::Scaleform::GFx::Value arg;
+		arg = 1.0;
+		menu->menuObj.Invoke("hsbSetDebug", nullptr, &arg, 1);
+	}
+	const std::string feed = TakeFeed();
+	InvokeText(menu, "hsbFeed", feed);
+	const int saved = g_saveResult.exchange(-1);
+	if (saved >= 0) {
+		RE::Scaleform::GFx::Value arg;
+		arg = static_cast<double>(saved);
+		menu->menuObj.Invoke("hsbSaved", nullptr, &arg, 1);
+	}
+}
+
 void PollShipOnAdvance()
 {
 	if (g_inShipPoll.exchange(true)) return;
@@ -515,6 +691,7 @@ void PollShipOnAdvance()
 			ping = InvokeString(result);
 		}
 		Fact("F19", std::string(invoked ? "invoke=1" : "invoke=0") + " ping=" + hsb::SanitizeFact(ping));
+		if (invoked && ping.rfind("0.1", 0) == 0) g_movieGen.store(1);
 		if (invoked && !ping.empty()) g_pingDone.store(true);
 		else if (g_pingTries.fetch_add(1) > 40) {
 			g_pingDone.store(true);
@@ -524,12 +701,13 @@ void PollShipOnAdvance()
 	if (!menu->menuObj.IsObject()) return;
 	if (!g_mapped.exchange(true)) NoteWindowMap(menu.get());
 	const unsigned bits = g_hotbits.exchange(0);
-	if (bits != 0) {
+	if (bits != 0 && g_probeDebug.load()) {
 		RE::Scaleform::GFx::Value arg;
 		arg = static_cast<double>(bits);
 		if (!menu->menuObj.Invoke("hsbProbeHotkey", nullptr, &arg, 1))
 			Fact("movie", "hotkey invoke failed");
 	}
+	if (g_movieGen.load() == 1) DriveArrange(menu.get());
 	RE::Scaleform::GFx::Value lines;
 	if (!menu->menuObj.Invoke("hsbTakeLines", &lines)) return;
 	const std::string blob = InvokeString(lines);
@@ -607,6 +785,10 @@ void MaybeHudOnThisAdvance(RE::Scaleform::GFx::ASMovieRootBase* self)
 	const bool onShip = self == g_shipRoot.load() && !g_menuOpen.load();
 	const bool onHud = g_hudRoot.load() && self == g_hudRoot.load();
 	if (!onShip && !onHud) return;
+	if (!g_probeDebug.load()) {
+		g_hudPending.store(false);
+		return;
+	}
 	if (!g_hudPending.exchange(false)) return;
 	TryHudOnce(onShip ? "ship-advance" : "hud-advance");
 }
@@ -620,7 +802,7 @@ void HsbAdvance(RE::Scaleform::GFx::ASMovieRootBase* self, bool next)
 	if (!self || !ship || self != ship || !g_menuOpen.load()) return;
 	const auto now = GetTickCount64();
 	const auto last = g_lastPoll.load();
-	if (!hsb::ProbePollDue(now, last)) return;
+	if (g_movieGen.load() != 1 && !hsb::ProbePollDue(now, last)) return;
 	g_lastPoll.store(now);
 	try { PollShipOnAdvance(); } catch (...) {
 		Fact("F19", "movie poll faulted");
@@ -665,6 +847,7 @@ public:
 				g_removeSettled.store(false);
 				g_mapped.store(false);
 				g_hotbits.store(0);
+				g_needApply.store(true);
 				Fact("F19", "builder opened");
 				Fact("F37", GetModuleHandleA("HorizonUI.dll") ? "HorizonUI.dll is loaded" : "HorizonUI.dll is not loaded");
 				LogCursor("open");
@@ -717,10 +900,165 @@ void PostProbePing(HWND hwnd)
 		RunOnWindowThread(hwnd, kWinConfirm);
 }
 
+bool CoreIniMayRead(const std::wstring& path)
+{
+	const std::string narrow = NarrowPath(path);
+	if (narrow.empty() || hsb::HasDotDot(narrow)) return false;
+	if (!hsb::EndsWithFold(narrow, "HorizonUI.user.ini") && !hsb::EndsWithFold(narrow, "HorizonUI.default.ini")) return false;
+	if (!hsb::ContainsFold(narrow, "My Games") || !hsb::ContainsFold(narrow, "Starfield")) return false;
+	if (!hsb::ContainsFold(narrow, "Interface")) return false;
+	if (hsb::ContainsFold(narrow, "shipbuilder")) return false;
+	if (hsb::ContainsFold(narrow, "steamapps")) return false;
+	return true;
+}
+
+std::string ReadTextFile(const std::wstring& path, bool iniUser)
+{
+	const std::string narrow = NarrowPath(path);
+	if (iniUser) {
+		if (!hsb::IniMayWrite(narrow)) return {};
+	} else if (!CoreIniMayRead(path)) {
+		return {};
+	}
+	FILE* file = nullptr;
+	if (_wfopen_s(&file, path.c_str(), L"rb") != 0 || !file) return {};
+	std::string out;
+	char buf[1024];
+	size_t n = 0;
+	while ((n = fread(buf, 1, sizeof(buf), file)) > 0) {
+		out.append(buf, n);
+		if (out.size() > 200000) break;
+	}
+	fclose(file);
+	return out;
+}
+
+void EnsureIniDirs(const std::wstring& filePath)
+{
+	std::wstring dir = filePath;
+	const auto slash = dir.find_last_of(L"\\/");
+	if (slash == std::wstring::npos) return;
+	dir.resize(slash);
+	std::wstring built;
+	for (wchar_t c : dir) {
+		built.push_back(c);
+		if (c == L'\\' || c == L'/') CreateDirectoryW(built.c_str(), nullptr);
+	}
+	CreateDirectoryW(dir.c_str(), nullptr);
+}
+
+void BuildApply()
+{
+	PWSTR docs = nullptr;
+	if (FAILED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &docs)) || !docs) return;
+	std::wstring root = docs;
+	CoTaskMemFree(docs);
+	g_iniPath = root + L"\\My Games\\Starfield\\Data\\Interface\\HorizonUI\\shipbuilder\\HorizonShipBuilder.user.ini";
+	const std::string ini = ReadTextFile(g_iniPath, true);
+	const std::string coreUser = ReadTextFile(root + L"\\My Games\\Starfield\\Data\\Interface\\HorizonUI\\HorizonUI.user.ini", false);
+	const std::string coreDefault = ReadTextFile(root + L"\\My Games\\Starfield\\Data\\Interface\\HorizonUI\\HorizonUI.default.ini", false);
+	const bool coreFound = !coreUser.empty() || !coreDefault.empty();
+	const std::string& coreIni = !coreUser.empty() ? coreUser : coreDefault;
+	const int accent = hsb::StyleInt(ini, "AccentColor", hsb::kAccentDefault);
+	const int margin = hsb::StyleInt(ini, "ScreenMargin", hsb::kMarginDefault);
+	const int probe = hsb::StyleInt(ini, "Probe", 0);
+	const int coreColor = hsb::StyleInt(coreIni, "AccentColor", hsb::kAccentDefault);
+	g_probeDebug.store(probe == 1);
+	if (probe == 1) Fact("boot", "keys F7=mark F8=capture F6=dump");
+	const bool conflict = GetModuleHandleA("StarUIShipBuilder.dll") != nullptr;
+	std::string hex;
+	std::string coreHex;
+	auto grabHex = [](const std::string& text) {
+		std::string section;
+		std::size_t at = 0;
+		while (at <= text.size()) {
+			const auto next = text.find('\n', at);
+			const std::string line = text.substr(at, next == std::string::npos ? std::string::npos : next - at);
+			std::string key, value;
+			if (hsb::SplitKey(line, key, value) && hsb::EqualsFold(key, "AccentHex") && hsb::ValidHex(value)) return hsb::CanonHex(value);
+			if (next == std::string::npos) break;
+			at = next + 1;
+			(void)section;
+		}
+		return std::string();
+	};
+	hex = grabHex(ini);
+	coreHex = grabHex(coreIni);
+	const int resolved = hsb::ResolveAccent(accent, hex, coreFound, coreColor, coreHex);
+	const bool keys = ini.find("Arrange=0") == std::string::npos;
+	std::string blob;
+	blob += "accent=" + std::to_string(resolved) + "\n";
+	blob += "hex=" + (resolved == 13 && !hex.empty() ? hex : std::string("-")) + "\n";
+	blob += std::string("core=") + (coreFound ? "1" : "0") + "\n";
+	blob += std::string("probe=") + (probe == 1 ? "1" : "0") + "\n";
+	blob += "margin=" + std::to_string(margin > 0 ? margin : hsb::kMarginDefault) + "\n";
+	blob += std::string("conflict=") + (conflict ? "1" : "0") + "\n";
+	blob += std::string("keys=") + (keys ? "1" : "0") + "\n";
+	const char* panels[] = {"Power","Module","Credits","Browser","Stats","Hints","Cluster"};
+	for (const char* name : panels) {
+		for (const char* axis : {"X", "Y"}) {
+			const std::string key = std::string(name) + axis;
+			std::string value = "-1";
+			const auto at = ini.find(key + "=");
+			if (at != std::string::npos) {
+				const auto end = ini.find_first_of("\r\n", at);
+				const auto eq = ini.find('=', at);
+				if (eq != std::string::npos) value = hsb::Trim(ini.substr(eq + 1, end == std::string::npos ? std::string::npos : end - eq - 1));
+			}
+			if (!hsb::ValidArrangeValue(key, value)) value = "-1";
+			blob += key + "=" + value + "\n";
+		}
+	}
+	blob += "ArrangeBarX=" + std::to_string(hsb::StyleInt(ini, "ArrangeBarX", 0)) + "\n";
+	blob += "ArrangeBarY=" + std::to_string(hsb::StyleInt(ini, "ArrangeBarY", 0)) + "\n";
+	{
+		std::lock_guard lock(g_iniMu);
+		g_apply = blob;
+	}
+	g_applyPending.store(true);
+}
+
+void WriteIniNow()
+{
+	if (g_iniPath.empty()) BuildApply();
+	if (!hsb::IniMayWrite(NarrowPath(g_iniPath))) {
+		g_saveResult.store(0);
+		return;
+	}
+	std::vector<std::pair<std::string, std::string>> updates;
+	{
+		std::lock_guard lock(g_iniMu);
+		updates.swap(g_updates);
+	}
+	if (updates.empty()) {
+		g_saveResult.store(1);
+		return;
+	}
+	EnsureIniDirs(g_iniPath);
+	const std::string existing = ReadTextFile(g_iniPath, true);
+	const std::string merged = hsb::MergeUserIni(existing, updates);
+	const std::wstring temp = g_iniPath + L".tmp";
+	FILE* file = nullptr;
+	if (_wfopen_s(&file, temp.c_str(), L"wb") != 0 || !file) {
+		g_saveResult.store(0);
+		return;
+	}
+	fwrite(merged.data(), 1, merged.size(), file);
+	fclose(file);
+	if (!MoveFileExW(temp.c_str(), g_iniPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+		g_saveResult.store(0);
+		return;
+	}
+	g_saveResult.store(1);
+	Fact("ini", "user file merged");
+}
+
 // JOBTICK-BEGIN
 void JobTick()
 {
 	FlushLog();
+	if (g_needApply.exchange(false)) BuildApply();
+	if (g_writeIni.exchange(false)) WriteIniNow();
 	HWND hwnd = g_hooked.load() ? g_hwnd.load() : nullptr;
 	if (!hwnd) hwnd = GameWindow();
 	const auto now = GetTickCount64();
@@ -753,7 +1091,7 @@ bool Boot()
 {
 	g_pingMsg = RegisterWindowMessageW(L"HorizonShipBuilder.ProbePing");
 	PrepareLog();
-	REX::INFO("HorizonShipBuilder {} read-only probe", HSB_FILE_VERSION_STR);
+	REX::INFO("HorizonShipBuilder {}", HSB_FILE_VERSION_STR);
 	EnsureSink();
 	if (!g_sinkReady.load()) Fact("F19", "UI singleton missing at load; sink retries on movie create");
 	if (auto* menus = SFSE::GetMenuInterface()) menus->Register(&OnMenuMovie);

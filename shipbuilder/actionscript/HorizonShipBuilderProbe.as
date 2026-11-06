@@ -41,11 +41,15 @@ package
       private var hotF6:int;
       private var helpNoted:Boolean;
       private var lastParts:String;
+      private var debugOn:Boolean;
+      private var started:Boolean;
       
-      public function HorizonShipBuilderProbe(param1:Object)
+      public function HorizonShipBuilderProbe(param1:Object, param2:Boolean = false)
       {
          super();
          this.host = param1;
+         this.debugOn = param2;
+         this.started = false;
          this.lines = [];
          this.seen = {};
          this.sentForms = {};
@@ -70,6 +74,13 @@ package
       public function ping():String
       {
          return "0.0.2.0";
+      }
+      
+      // The overlay, the F keys, and the data subscriptions stay off until this is set.
+      public function enableDebug():void
+      {
+         this.debugOn = true;
+         if(stage != null) { this.startProbe(); }
       }
       
       public function stageBox():String
@@ -112,6 +123,18 @@ package
       private function onStage(param1:Event):void
       {
          removeEventListener(Event.ADDED_TO_STAGE,this.onStage);
+         if(!this.debugOn)
+         {
+            this.note("PROBE off");
+            return;
+         }
+         this.startProbe();
+      }
+      
+      private function startProbe():void
+      {
+         if(this.started) { return; }
+         this.started = true;
          this.note("KEYS F7=mark F8=capture F6=dump");
          this.buildOverlay(this.labelFormat());
          this.note("MOVIE url=" + this.urlOf(root) + " stage=" + stage.stageWidth + "x" + stage.stageHeight);

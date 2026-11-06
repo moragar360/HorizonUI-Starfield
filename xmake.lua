@@ -95,13 +95,13 @@ target("HorizonUI")
         target:set("files", files)
     end)
 
--- Read-only ship builder probe. Separate target. It does not link Horizon UI.
+-- Ship Builder plugin. Separate target. It does not link Horizon UI.
 target("HorizonShipBuilder")
-    set_version("0.0.2")
+    set_version("0.1.0")
     add_rules("commonlibsf.plugin", {
         name = "HorizonShipBuilder",
         author = "Moragar",
-        description = "Horizon Ship Builder read-only probe",
+        description = "Horizon Ship Builder",
         email = "208107460+moragar360@users.noreply.github.com"
     })
 
@@ -110,6 +110,25 @@ target("HorizonShipBuilder")
     add_includedirs("shipbuilder/src")
     set_pcxxheader("shipbuilder/src/pch.h")
     add_syslinks("user32", "shell32", "ole32")
+
+    -- Own version resource so ProductName is Horizon Ship Builder, not the HUD product.
+    on_config(function (target)
+        local own_rc = path.join(target:scriptdir(), "shipbuilder", "res", "HorizonShipBuilder.rc.in")
+        local cfg = {}
+        for _, f in ipairs(table.wrap(target:get("configfiles"))) do
+            local name = path.filename(f)
+            if name ~= "commonlib-plugin.rc.in" then table.insert(cfg, f) end
+        end
+        table.insert(cfg, own_rc)
+        target:set("configfiles", cfg)
+        local files = {}
+        for _, f in ipairs(table.wrap(target:get("files"))) do
+            local name = path.filename(f)
+            if name ~= "commonlib-plugin.rc" then table.insert(files, f) end
+        end
+        table.insert(files, path.join(target:configdir(), "HorizonShipBuilder.rc"))
+        target:set("files", files)
+    end)
 
 -- Host-side logic test. Off by default so a plugin build does not need it.
 target("probe_logic_test")

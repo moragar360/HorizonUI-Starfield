@@ -1,7 +1,9 @@
 // Purpose: check the probe's read-only rules without the game.
 // Author: Moragar. Last modified: 2026-11-04.
 
+#include "hsb_arrange.h"
 #include "hsb_guard.h"
+#include "hsb_version.h"
 
 #include <filesystem>
 #include <fstream>
@@ -75,7 +77,8 @@ static void ScanTree(const fs::path& root)
 		}
 		Expect(body.find(dispatch) == std::string::npos, "no event dispatch");
 		Expect(body.find(del) == std::string::npos, "no file delete");
-		Expect(body.find(move) == std::string::npos, "no file move");
+		if (body.find(move) != std::string::npos)
+			Expect(rel.find("probe.cpp") != std::string::npos, "file replace stays in the plugin");
 		Expect(body.find(rmdir) == std::string::npos, "no directory remove");
 		Expect(body.find(files) == std::string::npos || rel.find("/tests/") != std::string::npos,
 			"filesystem only in the test");
@@ -213,6 +216,62 @@ int main()
 		Expect(body.find("SetWindowLongPtr") == std::string::npos, "window procedure does not reinstall itself");
 		Expect(body.find("Invoke") == std::string::npos, "window procedure does not call into Scaleform");
 	}
+
+	Expect(!hsb::IsProbeHotkey(false, hsb::kVkF6), "probe keys stay off");
+	Expect(hsb::IsProbeHotkey(true, hsb::kVkF7), "probe keys exist when debug is on");
+	Expect(hsb::IsArrangeEntry(false, true, hsb::kVkL), "ctrl L opens arrange");
+	Expect(!hsb::IsArrangeEntry(false, false, hsb::kVkL), "bare L is not an arrange key");
+	Expect(!hsb::IsArrangeEntry(true, true, hsb::kVkL), "arrange entry waits until capture ends");
+	Expect(hsb::EatKey(true) && !hsb::EatKey(false), "keys are eaten only while captured");
+	Expect(hsb::EatMouse(true) && !hsb::EatMouse(false), "mouse is eaten only in arrange");
+	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkDelete, false)) == "noop", "delete stays unbound");
+	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkBack, false)) == "noop", "backspace stays unbound");
+	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkEsc, false)) == "cancel", "escape cancels");
+	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkLeft, true)) == "left40", "shift arrow is the long nudge");
+	Expect(hsb::kAccentGold == 0xE8C547, "default accent is gold");
+	Expect(hsb::ResolveAccent(-1, "", false, 3, "") == hsb::kAccentDefault, "missing hud accent stays gold");
+	Expect(hsb::ResolveAccent(4, "", false, 3, "") == 4, "a swatch is kept");
+	Expect(hsb::ResolveAccent(13, "E8C547", false, 3, "") == 13, "custom hex is kept");
+	Expect(hsb::ResolveAccent(13, "zz", false, 3, "") == hsb::kAccentDefault, "bad hex falls back to gold");
+	Expect(hsb::ValidArrangeValue("PowerX", "L10"), "left anchor is valid");
+	Expect(!hsb::ValidArrangeValue("PowerX", "nope"), "bad anchor is ignored");
+	Expect(hsb::IsDefaultArrange("PowerX", "-1"), "default spots are not saved");
+	const std::string merged = hsb::MergeUserIni("[Notes]\nKeep=1\n", {{"PowerX", "-1"}, {"BrowserX", "R20"}, {"AccentColor", "9"}});
+	Expect(merged.find("Keep=1") != std::string::npos, "other ini sections stay");
+	Expect(merged.find("PowerX=") == std::string::npos, "default positions are dropped");
+	Expect(merged.find("BrowserX=R20") != std::string::npos, "a moved panel is kept");
+	Expect(merged.find("AccentColor=") == std::string::npos, "the default accent is dropped");
+	const std::string iniPath = std::string("C:\\Users\\A\\Documents\\My Games\\Starfield\\Data\\Interface\\HorizonUI\\shipbuilder\\") + "HorizonShipBuilder.user.ini";
+	Expect(hsb::IniMayWrite(iniPath), "the user ini path is allowed");
+	Expect(!hsb::IniMayWrite(std::string("D:\\Steam\\steamapps\\common\\Starfield\\") + "HorizonShipBuilder.user.ini"), "the game folder is refused");
+	Expect(std::string(HSB_FILE_VERSION_STR) == "0.1.0.0", "plugin version is 0.1.0.0");
+
+	const std::string gold = ReadFile(root / "actionscript" / "HorizonShipBuilder.as");
+	Expect(gold.find("0.1.0.0") != std::string::npos, "gold movie version");
+	Expect(gold.find("E8C547") != std::string::npos, "gold accent number");
+	Expect(gold.find("ARRANGE PANELS") != std::string::npos, "arrange entry button");
+	Expect(gold.find("COVERS THE SHIP VIEW") != std::string::npos, "overlap chip");
+	Expect(gold.find("SELECTED MODULE") != std::string::npos, "module label");
+	Expect(gold.find("PARTS BROWSER") != std::string::npos, "browser label");
+	Expect(gold.find(std::string("get") + "Timer") == std::string::npos, "gold movie has no timer");
+	Expect(gold.find(std::string("Glow") + "Filter") == std::string::npos, "gold movie has no glow");
+	Expect(gold.find("Keyboard.F") == std::string::npos, "gold movie has no probe keys");
+	Expect(gold.find("aPartList") == std::string::npos, "gold movie does not touch the parts array");
+	Expect(gold.find("BSUIDataManager") == std::string::npos, "gold movie does not subscribe");
+
+	Expect(probe.find("enableDebug") != std::string::npos, "probe can be turned on");
+	Expect(probe.find("PROBE off") != std::string::npos, "probe stays quiet by default");
+	Expect(splice.find("import HorizonShipBuilder;") != std::string::npos, "gold import");
+	Expect(splice.find("hsbApply") != std::string::npos, "apply splice");
+	Expect(splice.find("hsbFeed") != std::string::npos, "feed splice");
+
+	const std::string rc = ReadFile(root / "res" / "HorizonShipBuilder.rc.in");
+	Expect(rc.find("Horizon Ship Builder") != std::string::npos, "product name is the builder");
+	Expect(rc.find("0.43") == std::string::npos, "the builder resource does not inherit the hud version");
+
+	const std::string defaults = ReadFile(root / "Interface" / "HorizonUI" / "shipbuilder" / "HorizonShipBuilder.default.ini");
+	Expect(defaults.find("AccentColor=9") != std::string::npos, "default accent index");
+	Expect(defaults.find("Probe=0") != std::string::npos, "probe defaults off");
 
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";
