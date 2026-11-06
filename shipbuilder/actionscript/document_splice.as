@@ -4,59 +4,85 @@ package
    // Splice the steps below into BOTH vanilla movies:
    // spaceshipeditormenu.swf and spaceshipeditormenu_lrg.swf.
    // Keep the vanilla document class. Do not replace either movie with a new one.
-   // Compile against the classes already in that vanilla movie, including
-   // Shared.AS3.Data.BSUIDataManager. HorizonShipBuilderProbe.as imports it.
+   // Compile HorizonShipBuilder.as and HorizonShipBuilderProbe.as against the classes
+   // already in that vanilla movie, including Shared.AS3.Data.BSUIDataManager.
    public class HorizonShipBuilderSpliceNotes
    {
-      // 1. Put HorizonShipBuilderProbe.as in the same script list as the document class.
+      // 1. Put both scripts in the same script list as the document class.
       //    Inside the SpaceshipEditorMenu package, add:
+      //    import HorizonShipBuilder;
       //    import HorizonShipBuilderProbe;
       //
       // 2. Add this member on SpaceshipEditorMenu:
-      //    public var hsbProbe:HorizonShipBuilderProbe;
+      //    public var hsb:HorizonShipBuilder;
       //
       // 3. If the class already overrides onAddedToStage, add these lines at the
       //    end of that function, after super.onAddedToStage() and the vanilla
       //    data subscriptions:
-      //    this.hsbProbe = new HorizonShipBuilderProbe(this);
-      //    this.addChild(this.hsbProbe);
+      //    this.hsb = new HorizonShipBuilder(this);
+      //    this.addChild(this.hsb);
       //
       //    If this decompile has no onAddedToStage, add the override:
       //    override public function onAddedToStage():void
       //    {
       //       super.onAddedToStage();
-      //       this.hsbProbe = new HorizonShipBuilderProbe(this);
-      //       this.addChild(this.hsbProbe);
+      //       this.hsb = new HorizonShipBuilder(this);
+      //       this.addChild(this.hsb);
       //    }
+      //
+      //    Do not construct HorizonShipBuilderProbe here. The gold layer creates
+      //    it only when the user ini sets Probe=1. The default path has no
+      //    overlay and no F keys.
       //
       // 4. Add these methods. menuObj.Invoke looks them up on the document.
       //    public function hsbProbePing():String
       //    {
-      //       return this.hsbProbe != null ? this.hsbProbe.ping() : "";
+      //       return this.hsb != null ? this.hsb.ping() : "";
       //    }
       //
       //    public function hsbTakeLines():String
       //    {
-      //       return this.hsbProbe != null ? this.hsbProbe.takeLines() : "";
+      //       return this.hsb != null ? this.hsb.takeLines() : "";
       //    }
       //
       //    public function hsbProbeHotkey(param1:Number):void
       //    {
-      //       if(this.hsbProbe != null) { this.hsbProbe.hsbProbeHotkey(param1); }
       //    }
       //
       //    public function hsbProbeStage():String
       //    {
-      //       return this.hsbProbe != null ? this.hsbProbe.stageBox() : "";
+      //       return this.hsb != null ? this.hsb.stageBox() : "";
       //    }
       //
-      // 5. ProcessUserEvent returns Boolean. Add this as the first lines.
-      //    Do not return from these lines. Let the vanilla body keep running.
+      //    public function hsbSetDebug(param1:Number):void
+      //    {
+      //       if(this.hsb != null) { this.hsb.setDebug(param1); }
+      //    }
+      //
+      //    public function hsbApply(param1:String):void
+      //    {
+      //       if(this.hsb != null) { this.hsb.apply(param1); }
+      //    }
+      //
+      //    public function hsbFeed(param1:String):void
+      //    {
+      //       if(this.hsb != null) { this.hsb.feed(param1); }
+      //    }
+      //
+      //    public function hsbSaved(param1:Number):void
+      //    {
+      //       if(this.hsb != null) { this.hsb.saved(param1); }
+      //    }
+      //
+      // 5. ProcessUserEvent returns Boolean. When Arrange or Settings is open,
+      //    return true before the vanilla body so Esc does not open the exit
+      //    confirm. Do not return early on the default path. Let the vanilla
+      //    body keep running then.
       //    public function ProcessUserEvent(param1:String, param2:Boolean):Boolean
       //    {
-      //       if(this.hsbProbe != null)
+      //       if(this.hsb != null && this.hsb.wantsEvent(param1, param2))
       //       {
-      //          this.hsbProbe.noteUserEvent(param1, param2);
+      //          return true;
       //       }
       //       // vanilla body stays here
       //    }

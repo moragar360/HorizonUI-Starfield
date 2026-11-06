@@ -2,6 +2,8 @@
 
 Read-only probe. Version 0.0.2.0. It answers the live tests in spec F.1 as far as a log can, including Arrange tests #16, #17, and #18.
 
+Plugin 0.1.0.0 draws the gold screens and Arrange on the default path. The probe overlay and the F7, F8, and F6=dump keys stay off unless the user file sets Probe=1. Button prompts stay icons. The parts list stays the game's list. Ctrl+L and the gear button open Arrange. The user file is `Documents\My Games\Starfield\Data\Interface\HorizonUI\shipbuilder\HorizonShipBuilder.user.ini`. A ping of 0.1.0.0 means the gold splice is live. The P0.1 steps below still describe the probe when Probe=1.
+
 The probe writes one file:
 
 `Documents\My Games\Starfield\SFSE\Logs\HorizonShipBuilder_probe.log`
@@ -40,13 +42,15 @@ bsarch unpack "<Starfield>\Data\Starfield - Interface.ba2" shipbuilder\work\ba2
 ```
 ffdec -export script shipbuilder\work\normal shipbuilder\work\ba2\spaceshipeditormenu.swf
 ffdec -export script shipbuilder\work\lrg shipbuilder\work\ba2\spaceshipeditormenu_lrg.swf
+copy /Y shipbuilder\actionscript\HorizonShipBuilder.as shipbuilder\work\normal\HorizonShipBuilder.as
+copy /Y shipbuilder\actionscript\HorizonShipBuilder.as shipbuilder\work\lrg\HorizonShipBuilder.as
 copy /Y shipbuilder\actionscript\HorizonShipBuilderProbe.as shipbuilder\work\normal\HorizonShipBuilderProbe.as
 copy /Y shipbuilder\actionscript\HorizonShipBuilderProbe.as shipbuilder\work\lrg\HorizonShipBuilderProbe.as
 ```
 
 When the source was a loose file, point ffdec at that loose path instead of `shipbuilder\work\ba2\...`.
 
-Edit the exported `SpaceshipEditorMenu.as` in both work folders using `shipbuilder/actionscript/document_splice.as`. Add `import HorizonShipBuilderProbe;`, the member, the two methods, and the `ProcessUserEvent` lines. If that decompile already has `onAddedToStage`, append the two probe lines at the end of it. If it has no `onAddedToStage`, add the override from the splice notes. Do not return early from `ProcessUserEvent`.
+Edit the exported `SpaceshipEditorMenu.as` in both work folders using `shipbuilder/actionscript/document_splice.as`. Add both imports, the member, and the methods in those notes. If that decompile already has `onAddedToStage`, append the gold lines at the end of it. If it has no `onAddedToStage`, add the override from the splice notes. Return early from `ProcessUserEvent` only when Arrange or Settings wants the key.
 
 ```
 ffdec -importScript shipbuilder\work\ba2\spaceshipeditormenu.swf shipbuilder\Interface\spaceshipeditormenu.swf shipbuilder\work\normal
