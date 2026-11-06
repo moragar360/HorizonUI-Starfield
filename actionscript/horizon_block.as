@@ -13190,6 +13190,7 @@
          try { this.hz31DetHide(); } catch(err31d:Error) { }
          try { this.hz41LocHide(); } catch(err41l:Error) { }   // r3
          try { this.hz41QmHide(); } catch(err41q:Error) { }    // r3
+         try { this.hz43Reticle(); } catch(err43x:Error) { }
       }
 
       private function hz27Build() : void
@@ -18534,16 +18535,15 @@
             this.hz43RetObj = null;
             return;
          }
-         this.hz43KidShow();
+         // A walk can show this clip again after the standing hide. Hide it, and the aiming children, whenever it is showing.
          this.hz43RingSet(rb as DisplayObjectContainer,false);
-         if(rb.visible)
+         this.hz43HideDotKids(rb as DisplayObjectContainer);
+         if(rb.visible || (this.hz43RetOwn && rb == this.hz43RetObj))
          {
             this.hz43RetObj = rb;
             this.hz43RetOwn = true;
             rb.visible = false;
-            return;
          }
-         if(this.hz43RetOwn && rb == this.hz43RetObj) { rb.visible = false; }
       }
 
       // One array, created once. Only children this rule turned off are turned back on.
@@ -18946,13 +18946,8 @@
          }
          else
          {
-            if(this.hz43Cards)
-            {
-               var hi:int = 0;
-               while(hi < this.hz43Cards.length) { TextField(this.hz43Cards[hi]).visible = false; hi++; }
-            }
             this.hz43Ticks(g);
-            this.hz43Diamond(g,0,-HZ43_R + 20,4);
+            this.hz43Compass(g);
             this.hz43Hands(g);
             this.hz43Dial(g,0,64,day);
             this.hz43PmT.visible = true;
