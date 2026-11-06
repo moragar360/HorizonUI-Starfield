@@ -2544,6 +2544,8 @@
                }
             }
             if(this.hzHideVanillaWatch) { names.push("O2CO2_mc","O2CO2thin_mc","WatchOutline_mc","BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"); }
+            // Style 0 must hide the inner radar and nearby markers. Styles 3 and 4 keep those clips on the Horizon face.
+            if(this.hzWatchStyle == 0) { names.push("WatchIconsWidget_mc","WatchPointerOutline_mc"); }
             if(this.hzHideVanillaAmmo) { names.push("EquippedWeaponAmmo_mc","EquippedWeaponAmmoTotal_mc","VerticalDivider_mc","EquippedWeaponIconHolder_mc"); }
             if(this.hzHideVanillaHealth) { names.push("HealthBar_mc","HealthBarEmpty_mc","HealthBarGhost_mc","HealthBarDamage_mc","HealthBarIncrease_mc","Health_mc"); }
             for each(var n:String in names)
@@ -2565,7 +2567,8 @@
                while(bi < this.hzBlg.numChildren)
                {
                   var bc:DisplayObject = this.hzBlg.getChildAt(bi);
-                  if(bc && bc.visible && bc.name != "EnemyDetectionAnim_mc" && bc.name != "Autopilot_mc" && bc.name != "EnvAlertText" && bc.name != "BioAlertText" && bc.name != "LocationAlertText" && bc.name != "WatchIconsWidget_mc" && bc.name != "WatchPointerOutline_mc")
+                  var keepMark:Boolean = (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && bc && (bc.name == "WatchIconsWidget_mc" || bc.name == "WatchPointerOutline_mc");
+                  if(bc && bc.visible && !keepMark && bc.name != "EnemyDetectionAnim_mc" && bc.name != "Autopilot_mc" && bc.name != "EnvAlertText" && bc.name != "BioAlertText" && bc.name != "LocationAlertText")
                   {
                      bc.visible = false;
                   }
@@ -9532,6 +9535,7 @@
       private var hzT19Rows:Array = [];
       private var hzT19Cmp:Array = [];
       private var hzT19Btn:Array = [];
+      private var hzT19HoldB:Array = null;
       private var hzT19Sig:String = "";
       private var hzT19Ver:int = 0;
       private var hzTgItems:Array = null;
@@ -9901,15 +9905,114 @@
          return 1080 / this.hzScrH / sc;
       }
 
-      // The hold meter lives on the vanilla button. Alpha hides the art; visible=false drops the hold.
+      // The hold meter lives on the vanilla button. Alpha 0 on an ancestor drops the hold.
+      // Keep the button and every clip above it live; hide only sibling prompt art.
+      private function hzT19HoldBtns(aw:Object) : Array
+      {
+         if(this.hzT19HoldB == null) { this.hzT19HoldB = new Array(4); }
+         var i:int = 0;
+         while(i < 4)
+         {
+            this.hzT19HoldB[i] = this.hzT19BtnClip(aw,i) as DisplayObject;
+            i++;
+         }
+         return this.hzT19HoldB;
+      }
+
+      private function hzT19HoldMeterName(name:String) : Boolean
+      {
+         return name == "HoldMeter_mc" || name == "HoldBar_mc" || name == "Meter_mc";
+      }
+
+      private function hzT19IsHoldBtn(d:DisplayObject, buttons:Array) : Boolean
+      {
+         if(!d || !buttons) { return false; }
+         var i:int = 0;
+         while(i < buttons.length)
+         {
+            if(buttons[i] == d) { return true; }
+            i++;
+         }
+         return false;
+      }
+
+      private function hzT19OnHoldPath(d:DisplayObject, buttons:Array) : Boolean
+      {
+         if(!d || !buttons) { return false; }
+         if(this.hzT19IsHoldBtn(d,buttons)) { return true; }
+         var i:int = 0;
+         while(i < buttons.length)
+         {
+            var b:DisplayObject = buttons[i] as DisplayObject;
+            var p:DisplayObjectContainer = b ? b.parent : null;
+            while(p != null && p != this)
+            {
+               if(p == d) { return true; }
+               p = p.parent;
+            }
+            i++;
+         }
+         return false;
+      }
+
+      private function hzT19HideBtnArt(box:DisplayObjectContainer) : void
+      {
+         if(!box) { return; }
+         var i:int = 0;
+         while(i < box.numChildren)
+         {
+            var ch:DisplayObject = box.getChildAt(i);
+            if(ch && this.hzT19HoldMeterName(ch.name)) { }
+            else if(ch)
+            {
+               this.hzT19HideA(ch);
+            }
+            i++;
+         }
+      }
+
+      private function hzT19HidePromptTree(box:DisplayObjectContainer, buttons:Array) : void
+      {
+         if(!box) { return; }
+         var i:int = 0;
+         while(i < box.numChildren)
+         {
+            var ch:DisplayObject = box.getChildAt(i);
+            if(ch && this.hzT19IsHoldBtn(ch,buttons))
+            {
+               this.hzT19HideBtnArt(ch as DisplayObjectContainer);
+            }
+            else if(ch && this.hzT19OnHoldPath(ch,buttons) && ch is DisplayObjectContainer)
+            {
+               this.hzT19HidePromptTree(DisplayObjectContainer(ch),buttons);
+            }
+            else if(ch)
+            {
+               this.hzT19HideA(ch);
+            }
+            i++;
+         }
+      }
+
       private function hzT19KeepHold(aw:Object) : void
       {
          var i:int = 0;
          while(i < 4)
          {
-            var btn:Object = this.hzT19BtnClip(aw,i);
-            var d:DisplayObject = btn as DisplayObject;
-            if(d && !d.visible) { d.visible = true; }
+            var d:DisplayObject = this.hzT19BtnClip(aw,i) as DisplayObject;
+            if(d)
+            {
+               if(!d.visible) { d.visible = true; }
+               if(d.alpha < 1) { d.alpha = 1; }
+               var p:DisplayObjectContainer = d.parent;
+               while(p != null && p != this)
+               {
+                  if(!p.visible) { p.visible = true; }
+                  if(p.alpha < 1) { p.alpha = 1; }
+                  try { if(p == this.RolloverWidget_mc) { break; } } catch(e0:Error) { }
+                  p = p.parent;
+               }
+            }
             i++;
          }
       }
@@ -16126,10 +16229,28 @@
          return {"icy":31,"nt":60,"dv":86};
       }
       // ---- vanilla prompt: hidden only behind a drawn Horizon card ----
+      // Do not alpha-hide the activation widget. Scaleform drops holds through an alpha-0 ancestor.
+      // Hide sibling prompt art instead, then keep the hold button and its parents live.
       private function hz38HideVanilla(rw:Object, aw:Object, kind:String) : void
       {
-         try { this.hzT19HideA(rw.RolloverActivationHolder_mc as DisplayObject); } catch(eH:Error) { }
-         try { this.hzT19HideA(aw as DisplayObject); } catch(eA:Error) { }
+         var buttons:Array = this.hzT19HoldBtns(aw);
+         try
+         {
+            var ad:DisplayObjectContainer = aw as DisplayObjectContainer;
+            if(ad) { this.hzT19HidePromptTree(ad,buttons); }
+         }
+         catch(eA:Error) { }
+         try
+         {
+            var hd:DisplayObject = rw.RolloverActivationHolder_mc as DisplayObject;
+            var hdc:DisplayObjectContainer = hd as DisplayObjectContainer;
+            if(hd && hd != (aw as DisplayObject))
+            {
+               if(hdc && this.hzT19OnHoldPath(hd,buttons)) { this.hzT19HidePromptTree(hdc,buttons); }
+               else { this.hzT19HideA(hd); }
+            }
+         }
+         catch(eH:Error) { }
          this.hzT19KeepHold(aw);
          // ObjectRing: 0 always hidden, 1 shown for container lists only, 2 as the game draws it
          if(this.hzObjRing == 0 || (this.hzObjRing == 1 && kind != "list")) { this.hzT19HideReticle(rw); }
@@ -18513,6 +18634,7 @@
             if(fade && fade.alpha == 0) { fade.alpha = 1; }
             n++;
          }
+         this.hz43VanBlgChrome(false);
          this.hz43VanTries++;
          if(hits == 0 && this.hz43VanTries < 180) { return false; }
          if(!this.hz43VanLogged)
@@ -19349,7 +19471,8 @@
 
       private function hz43VanSkip(name:String) : Boolean
       {
-         if(name == null || name.length == 0) { return true; }
+         if(name == null) { return true; }
+         if(name.length == 0) { return false; }
          if(name == "EnemyDetectionAnim_mc" || name == "Autopilot_mc") { return true; }
          if(name.indexOf("Alert") >= 0) { return true; }
          if(name.indexOf("Bio") == 0 || name.indexOf("Env") == 0) { return true; }
@@ -19357,8 +19480,15 @@
          return false;
       }
 
+      private function hz43VanMarkName(name:String) : Boolean
+      {
+         return name == "WatchIconsWidget_mc" || name == "WatchPointerOutline_mc";
+      }
+
       private function hz43VanNamed(name:String) : Boolean
       {
+         if(name == null) { return false; }
+         if(name.length == 0) { return true; }
          if(this.hz43VanSkip(name)) { return false; }
          var i:int = 0;
          while(i < HZ43_VAN_N.length)
@@ -19635,6 +19765,33 @@
          this.hz43HidN = 0;
       }
 
+      // Direct BottomLeftGroup children that are watch chrome, including unnamed cap art.
+      // Alerts, detection, autopilot, and the live marker clips stay on their own rules.
+      private function hz43VanBlgChrome(hide:Boolean) : void
+      {
+         if(!this.hzBlg) { return; }
+         var i:int = 0;
+         while(i < this.hzBlg.numChildren)
+         {
+            var d:DisplayObject = this.hzBlg.getChildAt(i);
+            var n:String = d ? d.name : "";
+            var holds:Boolean = d is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(d));
+            if(!d || this.hz43VanSkip(n) || this.hz43VanMarkName(n) || !this.hz43VanNamed(n) || holds) { }
+            else if(hide)
+            {
+               if(d.visible || d.alpha != 0) { this.hz43VanNote(d); }
+               d.visible = false;
+               d.alpha = 0;
+            }
+            else
+            {
+               if(!d.visible) { d.visible = true; }
+               if(d.alpha < 1) { d.alpha = 1; }
+            }
+            i++;
+         }
+      }
+
       // Styles 3 and 4 hide the vanilla bezel and labels. The live marker clips stay visible.
       private function hz43VanChrome(hide:Boolean) : void
       {
@@ -19643,7 +19800,7 @@
          while(i < HZ43_VAN_N.length)
          {
             var name:String = String(HZ43_VAN_N[i]);
-            var mark:Boolean = name == "WatchIconsWidget_mc" || name == "WatchPointerOutline_mc";
+            var mark:Boolean = this.hz43VanMarkName(name);
             var clip:DisplayObject = this.hzFindByName(this.hzBlg,name,0);
             if(clip)
             {
@@ -19716,6 +19873,7 @@
             }
             i++;
          }
+         this.hz43VanBlgChrome(hide);
       }
 
       private function hz43VanResolve(sc:Number) : void

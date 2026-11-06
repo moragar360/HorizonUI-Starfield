@@ -23,7 +23,9 @@ Not published. No tag. The settings schema stays 0.42.0, so an existing `Horizon
 - **Quest tracker:** steps come only from the selected quest's open objectives. Compass markers supply a distance for those steps and do not add another quest's marker. A step update that arrives before the title, or a title that arrives before the steps, still fills that quest's card. A later name-only update still applies. The title and the steps refresh together when the selected quest changes. Sub-lines are 13 px.
 - **Afflictions and the detection ring** no longer follow the watch style. The bio popup hides while the afflictions card is on. The red ring hides while the stealth pill, the enemy bar, or the edge pulse is on.
 - **Watch PC time** keeps the last good reading when the clock throws, or the planet card's real time when this face has none yet. A failed read does not build a new clock every frame.
-- **Outpost beacon hold:** an enabled Hold key stays in its normal color. The vanilla hold button is kept visible so the game still receives the hold. A filling meter draws on the Horizon keycap. A hold the game marks disabled stays gray.
+- **Watch Off** hides the leftover inner radar, nearby markers, heading outline, and unnamed cap art. The character card stays.
+- **Vanilla watch** shows the complete game watch again, including the thick top cap / outer bar. Unnamed watch chrome is restored and moved with the named clips. Style 2 still tints that same watch.
+- **Outpost beacon hold:** an enabled Hold key stays in its normal color. The vanilla hold path stays at full alpha so the game receives the hold. Prompt art is still hidden, so a second vanilla bar does not sit on the Horizon card. A filling meter draws on the Horizon keycap. A hold the game marks disabled stays gray.
 
 ## [0.43.0.33-alpha] - 2026-11-04
 
