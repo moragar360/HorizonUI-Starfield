@@ -18623,7 +18623,7 @@
       private static const HZ43_VAN_MAX:int = 24;
       private static const HZ43_VAN_FACE:Number = 221;
       // Unique package token for the next diagnostic gfx. Autoname prefix is not watch ownership.
-      private static const HZ43_DIAG:String = "r12-pointer-mark-20261107";
+      private static const HZ43_DIAG:String = "r13-annulus-hide-20261107";
 
       private function hz43VanInfoName(name:String) : Boolean
       {
@@ -18675,6 +18675,7 @@
          if(!d) { return false; }
          if(this.hz43VanSkip(d.name)) { return false; }
          if(this.hz43VanCapClip(d)) { return true; }
+         if(this.hz43VanRingClip(d)) { return true; }
          if(!this.hz43VanNamed(d.name)) { return false; }
          if(this.hzBlg == null || d.parent == this.hzBlg) { return true; }
          var root:DisplayObject = this.hz43VanRootOf(d);
@@ -19597,10 +19598,9 @@
          return name.indexOf("instance") == 0;
       }
 
-      // Native cap: PHC sprite 1337 depth 1 characterId 926 at (0, -0.25) beside WatchOutline_mc (0, 0).
-      // FadeIn CXFORM depths 1/3/5/9. After sibling Arrange both clips get the same dx/sc, so the pair stays.
-      // Other unnamed frame-1 locals fail this pose: (110.5, 110.5) and the scaleY-0 ticks at y 141.65.
-      // Runtime also listed instance546/548/550; those names are not mapped to depths here.
+      // Native cap: unnamed filled disc beside WatchOutline_mc at (0, -0.25). Pose is outline-relative.
+      // Autoname prefix is a type check, not ownership. Collapsed INFO ticks fail scale. The filled
+      // annulus at the face center is a different unnamed sibling (hz43VanRingClip), not this cap.
       private function hz43VanCapClip(d:DisplayObject) : Boolean
       {
          if(!d || this.hzBlg == null || d.parent != this.hzBlg) { return false; }
@@ -19608,12 +19608,6 @@
          if(!this.hz43VanInstName(d.name)) { return false; }
          if(d.scaleX < 0.5 && d.scaleX > -0.5) { return false; }
          if(d.scaleY < 0.5 && d.scaleY > -0.5) { return false; }
-         var i:int = 0;
-         while(this.hz43VanD != null && i < this.hz43VanN)
-         {
-            if(this.hz43VanD[i] == d) { return true; }
-            i++;
-         }
          var outline:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
          if(outline && outline.parent == this.hzBlg)
          {
@@ -19622,6 +19616,39 @@
             return dx > -2 && dx < 2 && dy > -2 && dy < 2;
          }
          return d.x > -2 && d.x < 2 && d.y > -2 && d.y < 2;
+      }
+
+      // Native filled watch annulus, same pixels on normal and large PHC. Not WatchOutline stroke.
+      // Identity is unnamed, outline-centered on the 221 px face, not cap pose, not collapsed ticks,
+      // and sandwiched between EnvConditionBase_mc and EnemyDetectionAnim_mc. No symbol id, depth,
+      // or session autoname. INFO ticks and named bio/env/detection stay on native rules.
+      private function hz43VanRingClip(d:DisplayObject) : Boolean
+      {
+         if(!d || this.hzBlg == null || d.parent != this.hzBlg) { return false; }
+         if(this.hz43VanSkip(d.name)) { return false; }
+         if(!this.hz43VanInstName(d.name)) { return false; }
+         if(d.scaleX < 0.5 && d.scaleX > -0.5) { return false; }
+         if(d.scaleY < 0.5 && d.scaleY > -0.5) { return false; }
+         var outline:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         var ox:Number = 0;
+         var oy:Number = 0;
+         if(outline && outline.parent == this.hzBlg)
+         {
+            ox = outline.x;
+            oy = outline.y;
+         }
+         var mid:Number = HZ43_VAN_FACE * 0.5;
+         var dx:Number = d.x - ox;
+         var dy:Number = d.y - oy;
+         if(dx <= mid - 2 || dx >= mid + 2 || dy <= mid - 2 || dy >= mid + 2) { return false; }
+         var idx:int = -1;
+         try { idx = this.hzBlg.getChildIndex(d); } catch(eRing:Error) { return false; }
+         if(idx < 1 || idx >= this.hzBlg.numChildren - 1) { return false; }
+         var prev:DisplayObject = this.hzBlg.getChildAt(idx - 1);
+         var next:DisplayObject = this.hzBlg.getChildAt(idx + 1);
+         var pn:String = prev && prev.name != null ? prev.name : "";
+         var nn:String = next && next.name != null ? next.name : "";
+         return pn == "EnvConditionBase_mc" && nn == "EnemyDetectionAnim_mc";
       }
 
       private function hz43VanNamed(name:String) : Boolean
@@ -19693,7 +19720,7 @@
          while(i < this.hzBlg.numChildren)
          {
             var ch:DisplayObject = this.hzBlg.getChildAt(i);
-            if(ch && (this.hz43VanNamed(ch.name) || this.hz43VanCapClip(ch))) { this.hz43VanAdd(ch); }
+            if(ch && (this.hz43VanNamed(ch.name) || this.hz43VanCapClip(ch) || this.hz43VanRingClip(ch))) { this.hz43VanAdd(ch); }
             i++;
          }
       }
@@ -20018,8 +20045,9 @@
          this.hz43HidN = 0;
       }
 
-      // Direct BottomLeftGroup watch chrome, including the verified cap. Autoname prefix is not enough.
-      // Alerts, detection, center art, and INFO ticks stay on their own rules. Show does not write alpha.
+      // Direct BottomLeftGroup watch chrome, including the verified cap and filled annulus.
+      // Autoname prefix is not enough. Alerts, detection, and INFO ticks stay on native rules.
+      // Show does not write alpha.
       private function hz43VanBlgChrome(hide:Boolean) : void
       {
          if(!this.hzBlg) { return; }
@@ -20029,13 +20057,14 @@
             var d:DisplayObject = this.hzBlg.getChildAt(i);
             var n:String = d ? d.name : "";
             var capArt:Boolean = this.hz43VanCapClip(d);
+            var ringArt:Boolean = this.hz43VanRingClip(d);
             var holds:Boolean = d is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(d));
-            if(!d || this.hz43VanSkip(n) || this.hz43VanMarkName(n) || (!this.hz43VanNamed(n) && !capArt) || holds) { }
+            if(!d || this.hz43VanSkip(n) || this.hz43VanMarkName(n) || (!this.hz43VanNamed(n) && !capArt && !ringArt) || holds) { }
             else if(hide)
             {
                this.hz43StHide(d);
             }
-            else if(capArt)
+            else if(capArt || ringArt)
             {
                if(!d.visible) { d.visible = true; }
             }
@@ -20212,7 +20241,15 @@
          var pv:String = "";
          var pd:DisplayObject = this.hzFindByName(this.hzBlg,"WatchPointerOutline_mc",0);
          if(pd) { pv = String(pd.visible) + "," + pd.x + "," + pd.y; }
-         var sig:String = this.hzWatchStyle + "|" + this.hz43VanCap + "|" + this.hz43VanWrote + "|" + this.hz43MarkMoved + "|" + this.hz43HidN + "|" + ov + "|" + pv;
+         var rv:String = "";
+         var ri:int = 0;
+         while(this.hzBlg && ri < this.hzBlg.numChildren)
+         {
+            var rd:DisplayObject = this.hzBlg.getChildAt(ri);
+            if(rd && this.hz43VanRingClip(rd)) { rv = String(rd.visible) + "," + rd.x + "," + rd.y; break; }
+            ri++;
+         }
+         var sig:String = this.hzWatchStyle + "|" + this.hz43VanCap + "|" + this.hz43VanWrote + "|" + this.hz43MarkMoved + "|" + this.hz43HidN + "|" + ov + "|" + pv + "|" + rv;
          if(sig == this.hz43DumpSig) { return; }
          this.hz43DumpSig = sig;
          var fx:String = "none";
@@ -20250,7 +20287,7 @@
                   }
                }
                catch(eCt:Error) { }
-               trace("HZ43 sib " + nm + " vis=" + d.visible + " a=" + d.alpha + " ctA=" + cta + " ctO=" + cto + " x=" + d.x + " y=" + d.y + " sx=" + d.scaleX + " sy=" + d.scaleY + " capArt=" + (this.hz43VanCapClip(d) ? 1 : 0));
+               trace("HZ43 sib " + nm + " vis=" + d.visible + " a=" + d.alpha + " ctA=" + cta + " ctO=" + cto + " x=" + d.x + " y=" + d.y + " sx=" + d.scaleX + " sy=" + d.scaleY + " capArt=" + (this.hz43VanCapClip(d) ? 1 : 0) + " ringArt=" + (this.hz43VanRingClip(d) ? 1 : 0));
             }
             i++;
          }
