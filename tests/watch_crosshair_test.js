@@ -238,6 +238,12 @@ expect(as.indexOf("function hz43StRestore") < 0 && as.indexOf("function hz43StCa
 expect(funcBody(as, "hz43VanRestoreHid").indexOf("hz43VanWatchClip") >= 0, "restore only touches verified watch clips");
 expect(funcBody(as, "hz43VanRestoreHid").indexOf("d.alpha") < 0 && funcBody(as, "hz43VanNote").indexOf("d.alpha") < 0 && as.indexOf("hz43HidAl") < 0, "restore does not write a stored FadeIn alpha");
 expect(funcBody(as, "hz43VanRestoreHid").indexOf("hz43VanEnvWant") >= 0 && funcBody(as, "hz43VanRestoreHid").indexOf("hz43VanGameVis") >= 0, "restore applies payload formulas to the four native vis clips");
+expect(funcBody(as, "hz43VanHorizon").indexOf("hz43VanChrome(true)") >= 0 && funcBody(as, "hz43VanHorizon").indexOf("if(this.hz43VanCap == 0) { return; }") < 0, "custom chrome hide does not wait on Arrange capture");
+expect(funcBody(as, "hz43VanHorizon").indexOf("hz43VanWrite(cx - rx,cy - ry,1,true)") >= 0, "custom moves live markers only at native scale");
+expect(funcBody(as, "hz43VanHorizon").indexOf("face / this.hz43VanRad") < 0 && funcBody(as, "hz43VanWrite").indexOf("marks") >= 0, "custom does not fit-scale the native assembly");
+expect(funcBody(as, "hz43VanRingMid").indexOf("HZ43_VAN_FACE / 2") >= 0 && funcBody(as, "hz43VanRingMid").indexOf("getBounds") < 0, "marker follow uses outline local center, not hidden getBounds");
+expect(funcBody(as, "hz43VanDump").indexOf("vis=") >= 0 && funcBody(as, "hz43VanDump").indexOf(" a=") >= 0, "HZ43 dump reports vis and alpha separately");
+expect(funcBody(as, "hz43ShowVanilla").indexOf("hz43VanDump(\"vanilla\")") >= 0, "Vanilla restore dumps sibling vis and alpha");
 expect(funcBody(as, "hz43VanNote").indexOf("hz43HidV") < 0 && funcBody(as, "hz43VanRestoreHid").indexOf("hz43HidV") < 0, "hide identity list does not sample clip.visible for restore");
 expect(funcBody(as, "hzOnLocalEnv").indexOf("hz43VanEnvCache") >= 0, "LocalEnvironmentData updates the watch vis cache");
 expect(funcBody(as, "hz43VanEnvCache").indexOf("bInSpaceship") >= 0 && funcBody(as, "hz43VanEnvCache").indexOf("bIsLanded") >= 0 && funcBody(as, "hz43VanEnvCache").indexOf("bIsShipInCruiseMode") >= 0, "cache uses native local and cruise keys");
@@ -426,8 +432,14 @@ const GAME_VIS = { DayCycleBase_mc: 1, OffPlanet_mc: 1, Autopilot_mc: 1, locatio
 const MARK_NAMES = { WatchIconsWidget_mc: 1, WatchPointerOutline_mc: 1, MissionIconsWidget_mc: 1, EnemyIconsWidget_mc: 1 };
 const OTHER_HIDES = { HealthBar_mc: 1, EquippedWeaponAmmo_mc: 1, JetpackMeterWrapper_mc: 1 };
 
-function makeClip(name, visible, alpha) {
-	return { name: name, visible: visible, alpha: alpha, alphaMultiplier: alpha };
+function makeClip(name, visible, alpha, x, y) {
+	return {
+		name: name, visible: visible, alpha: alpha, alphaMultiplier: alpha,
+		x: x || 0, y: y || 0, x0: x || 0, y0: y || 0, scaleX: 1, scaleY: 1
+	};
+}
+function displayed(d) {
+	return !!(d && d.visible && d.alpha > 0);
 }
 function isWatchClip(d) {
 	return !!(d && WATCH_NAMES[d.name]);
@@ -505,6 +517,60 @@ function restoreHid(state) {
 function showVanilla(state) {
 	restoreHid(state);
 }
+function captureWatch(state) {
+	const outline = state.clips.WatchOutline_mc;
+	const o2 = state.clips.O2CO2_mc;
+	if (!outline || !o2) {
+		state.vanCap = 0;
+		return;
+	}
+	if (state.vanCap && (state.vanWrote || state.markMoved)) return;
+	const names = Object.keys(state.clips);
+	state.units = [];
+	for (let i = 0; i < names.length; i++) {
+		const d = state.clips[names[i]];
+		if (!isWatchClip(d)) continue;
+		d.x0 = d.x;
+		d.y0 = d.y;
+		state.units.push(d);
+	}
+	state.vanCap = 1;
+}
+function ringMid(state) {
+	const d = state.clips.WatchOutline_mc;
+	if (!d) return null;
+	return { x: d.x + 221 / 2, y: d.y + 221 / 2 };
+}
+function vanWrite(state, dx, dy, sc, marks) {
+	if (!state.vanCap) return;
+	const units = state.units || [];
+	for (let i = 0; i < units.length; i++) {
+		const d = units[i];
+		if (marks && !MARK_NAMES[d.name]) continue;
+		const useSc = marks ? 1 : sc;
+		d.x = d.x0 + (d.x0 - d.x0) * useSc + dx;
+		d.y = d.y0 + (d.y0 - d.y0) * useSc + dy;
+		if (!marks) {
+			d.scaleX = useSc;
+			d.scaleY = useSc;
+		}
+	}
+	if (marks) {
+		if (dx !== 0 || dy !== 0) state.markMoved = true;
+	} else {
+		state.vanWrote = sc !== 1 || dx !== 0 || dy !== 0;
+	}
+}
+function vanHorizon(state) {
+	chromeHide(state.clips, state.hid, true);
+	captureWatch(state);
+	const face = state.face;
+	const ring = ringMid(state);
+	if (state.vanCap && ring && face) {
+		const sc = face.sc || 1;
+		vanWrite(state, face.x + 132 * sc - ring.x, face.y + 132 * sc - ring.y, 1, true);
+	}
+}
 function chromeHide(clips, hid, keepMarks) {
 	const names = Object.keys(clips);
 	for (let i = 0; i < names.length; i++) {
@@ -531,24 +597,30 @@ function makeWatchState(payload) {
 		hideWatch: true,
 		vanShown: 0,
 		hid: [],
+		vanCap: 0,
+		vanWrote: false,
+		markMoved: false,
+		units: [],
+		face: { x: 0, y: 80, sc: 1, visible: false },
 		envGot: 0,
 		envLocal: false,
 		envCruise: false,
 		envLang: "",
 		clips: {
-			WatchOutline_mc: makeClip("WatchOutline_mc", true, 0),
-			O2CO2_mc: makeClip("O2CO2_mc", true, 0),
-			O2CO2thin_mc: makeClip("O2CO2thin_mc", true, 0),
-			WatchIconsWidget_mc: makeClip("WatchIconsWidget_mc", true, 1),
-			MissionIconsWidget_mc: makeClip("MissionIconsWidget_mc", true, 1),
-			EnemyIconsWidget_mc: makeClip("EnemyIconsWidget_mc", true, 1),
-			Temperature_mc: makeClip("Temperature_mc", true, 0),
-			Oxygen_mc: makeClip("Oxygen_mc", true, 0),
-			Grav_mc: makeClip("Grav_mc", true, 0),
-			OffPlanet_mc: makeClip("OffPlanet_mc", false, 0),
-			DayCycleBase_mc: makeClip("DayCycleBase_mc", true, 0),
-			locationNameBase_mc: makeClip("locationNameBase_mc", true, 0),
-			Autopilot_mc: makeClip("Autopilot_mc", false, 0),
+			WatchOutline_mc: makeClip("WatchOutline_mc", true, 0, 0, 0),
+			O2CO2_mc: makeClip("O2CO2_mc", true, 0, 21.7, 89.85),
+			O2CO2thin_mc: makeClip("O2CO2thin_mc", true, 0, 16.1, 88.3),
+			WatchIconsWidget_mc: makeClip("WatchIconsWidget_mc", true, 1, 111.35, 111.45),
+			WatchPointerOutline_mc: makeClip("WatchPointerOutline_mc", true, 0, 111, 111),
+			MissionIconsWidget_mc: makeClip("MissionIconsWidget_mc", true, 1, 111.35, 111.45),
+			EnemyIconsWidget_mc: makeClip("EnemyIconsWidget_mc", true, 1, 111.35, 111.45),
+			Temperature_mc: makeClip("Temperature_mc", true, 0, 79.7, 133.75),
+			Oxygen_mc: makeClip("Oxygen_mc", true, 0, 112.95, 133.75),
+			Grav_mc: makeClip("Grav_mc", true, 0, 149.7, 133.75),
+			OffPlanet_mc: makeClip("OffPlanet_mc", false, 0, 110.45, 104.45),
+			DayCycleBase_mc: makeClip("DayCycleBase_mc", true, 0, 110.5, 110.5),
+			locationNameBase_mc: makeClip("locationNameBase_mc", true, 0, 110.15, 139.75),
+			Autopilot_mc: makeClip("Autopilot_mc", false, 0, 110.45, 104.45),
 			HealthBar_mc: makeClip("HealthBar_mc", true, 1),
 			EquippedWeaponAmmo_mc: makeClip("EquippedWeaponAmmo_mc", true, 1),
 			JetpackMeterWrapper_mc: makeClip("JetpackMeterWrapper_mc", true, 1)
@@ -565,7 +637,20 @@ function applyWatchStyle(state, style) {
 		if (showVan) state.vanShown = 0;
 	}
 	hideTick(state.clips, state.hid, style);
-	if (hideWatch) chromeHide(state.clips, state.hid, style === 3 || style === 4);
+	if (style === 3 || style === 4) {
+		state.face.visible = true;
+		vanHorizon(state);
+	} else if (hideWatch) {
+		state.face.visible = false;
+		chromeHide(state.clips, state.hid, false);
+	}
+	if (showVan) {
+		state.face.visible = false;
+		if (state.markMoved) {
+			vanWrite(state, 0, 0, 1, false);
+			state.markMoved = false;
+		}
+	}
 	if (showVan && state.vanShown === 0) {
 		showVanilla(state);
 		state.vanShown = 1;
@@ -673,13 +758,27 @@ expect(digitalRound.clips.WatchOutline_mc.visible === false, "Digital hides nati
 expect(digitalRound.clips.WatchIconsWidget_mc.visible === true, "Digital keeps location markers");
 expect(digitalRound.clips.MissionIconsWidget_mc.visible === true, "Digital keeps mission markers");
 expect(digitalRound.clips.EnemyIconsWidget_mc.visible === true, "Digital keeps enemy markers");
+expect(digitalRound.clips.O2CO2_mc.x === 21.7 && digitalRound.clips.WatchOutline_mc.x === 0, "Digital does not drag native O2 or outline locals");
+expect(digitalRound.clips.O2CO2_mc.scaleX === 1 && digitalRound.clips.WatchOutline_mc.scaleX === 1, "Digital does not scale native chrome");
+expect(digitalRound.clips.WatchIconsWidget_mc.x === 111.35 + (0 + 132 - 110.5), "Digital moves location markers from the outline center to the Horizon face");
+expect(displayed(digitalRound.clips.WatchOutline_mc) === false, "hidden Digital chrome at FadeIn alpha 0 is not displayed");
 expect(digitalRound.clips.HealthBar_mc.visible === false, "health stays hidden on Digital");
 applyWatchStyle(digitalRound, 1);
 expect(digitalRound.clips.WatchOutline_mc.visible === true, "Digital then Vanilla restores the outline");
+expect(digitalRound.clips.WatchIconsWidget_mc.x === 111.35, "Vanilla restores marker locals captured before the custom write");
+expect(digitalRound.clips.WatchOutline_mc.visible === true && digitalRound.clips.WatchOutline_mc.alpha === 0, "Vanilla vis undo does not write FadeIn alpha");
+expect(displayed(digitalRound.clips.WatchOutline_mc) === false, "Vanilla vis-true does not display native chrome at alpha 0");
 expect(digitalRound.clips.DayCycleBase_mc.visible === true && digitalRound.clips.OffPlanet_mc.visible === false, "Digital then Vanilla restores planet day true and off-planet false");
 expect(digitalRound.clips.MissionIconsWidget_mc.visible === true, "Digital then Vanilla keeps mission markers");
 expect(digitalRound.clips.HealthBar_mc.visible === false && digitalRound.clips.EquippedWeaponAmmo_mc.visible === false, "health and ammo stay hidden after Digital then Vanilla");
 expect(digitalRound.clips.JetpackMeterWrapper_mc.visible === false, "boost stays hidden after Digital then Vanilla");
+
+const noCap = makeWatchState();
+delete noCap.clips.O2CO2_mc;
+applyWatchStyle(noCap, 3);
+expect(noCap.vanCap === 0, "missing O2 bar does not latch Arrange capture");
+expect(noCap.clips.WatchOutline_mc.visible === false, "custom still hides the native outline when capture has not latched");
+expect(noCap.clips.WatchIconsWidget_mc.visible === true && noCap.clips.WatchIconsWidget_mc.x === 111.35, "custom keeps markers at native locals until capture can follow the face");
 
 const f11Live = makeWatchState();
 applyWatchStyle(f11Live, 0);
@@ -708,6 +807,8 @@ expect(checks.indexOf("wait for the next native") < 0 && checks.indexOf("How soo
 expect(checks.indexOf("LocalEnvironmentData") >= 0 && checks.indexOf("bIsShipInCruiseMode") >= 0, "CHECKS describes restoring the four vis clips from payload formulas");
 expect(checks.indexOf("FadeInPlanetInfo") >= 0, "CHECKS records that INFO appearance is timeline alpha");
 expect(checks.indexOf("does not display") >= 0, "CHECKS does not treat INFO vis-true as shown at alpha 0");
+expect(checks.indexOf("move only the live marker widgets") >= 0, "CHECKS describes custom marker-only follow");
+expect(checks.indexOf("HZ43 dump") >= 0 && checks.indexOf("vis/alpha") >= 0, "CHECKS records vis and alpha sibling dumps");
 expect(checks.indexOf("health") >= 0 && checks.indexOf("ammo") >= 0 && checks.indexOf("boost") >= 0, "CHECKS records that health ammo and boost stay off the watch hid list");
 expect(checks.indexOf("FadeIn") >= 0 || checks.indexOf("native") >= 0, "CHECKS describes native watch passthrough");
 expect(checks.indexOf("not proven freeze") >= 0, "CHECKS reports FadeIn on invisible children as unknown, not a freeze");
