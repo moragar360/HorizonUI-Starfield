@@ -1677,6 +1677,7 @@
          if(this.hzDebug) { this.hzDbgEnv = "LocalEnvironmentData: " + this.hzKeys(d) + "\n" + this.hzDbgEnv.split("\n").slice(1).join("\n"); }
          if(pk != this.hzPpKind) { this.hzPpKind = pk; this.hzPpDrawIcon(); }
          this.hzPpSync();
+         this.hz43VanEnvCache(d);
       }
 
       private function hzOnEnvEffects(e:FromClientDataEvent) : *
@@ -18514,8 +18515,11 @@
       private var hz43VanLogged:Boolean = false;
       private var hz43VanUnitLog:Boolean = false;
       private var hz43HidA:Array = null;
-      private var hz43HidV:Array = null;
       private var hz43HidN:int = 0;
+      private var hz43EnvGot:int = 0;
+      private var hz43EnvLocal:Boolean = false;
+      private var hz43EnvCruise:Boolean = false;
+      private var hz43EnvLang:String = "";
       private var hz43Kid:Array = null;
       private var hz43KidHid:Array = null;
       private var hz43KidN:int = 0;
@@ -18620,11 +18624,37 @@
          return false;
       }
 
-      // Native LocalEnvironmentData / UpdateLocationName write these. Off hides them by visible.
-      // Restore puts back the last visibility the game was observed to have, not always true.
+      // The only four native .visible assignments in BottomLeftGroup.as.
       private function hz43VanGameVis(name:String) : Boolean
       {
          return name == "DayCycleBase_mc" || name == "OffPlanet_mc" || name == "Autopilot_mc" || name == "locationNameBase_mc";
+      }
+
+      // Cache native LocalEnvironmentData vis intent. Same keys as BottomLeftGroup.as.
+      // Does not write clips; Off still hides, Vanilla restore applies hz43VanEnvWant.
+      private function hz43VanEnvCache(d:Object) : void
+      {
+         if(!d) { return; }
+         this.hz43EnvLocal = Boolean(d.bInSpaceship) && !d.bIsLanded;
+         this.hz43EnvCruise = Boolean(d.bIsShipInCruiseMode);
+         this.hz43EnvLang = d.sLanguage != null ? String(d.sLanguage) : "";
+         this.hz43EnvGot = 1;
+      }
+
+      // Native formulas: Day=!local, OffPlanet=local&&!cruise, Autopilot=local&&cruise,
+      // locationName = sLanguage != ja && != zhhans. onAdded UpdateLocationName("","") is true.
+      private function hz43VanEnvWant(name:String) : Boolean
+      {
+         if(name == "locationNameBase_mc")
+         {
+            var lang:String = this.hz43EnvLang;
+            return lang != "ja" && lang != "zhhans";
+         }
+         if(this.hz43EnvGot == 0) { return false; }
+         if(name == "DayCycleBase_mc") { return !this.hz43EnvLocal; }
+         if(name == "OffPlanet_mc") { return this.hz43EnvLocal && !this.hz43EnvCruise; }
+         if(name == "Autopilot_mc") { return this.hz43EnvLocal && this.hz43EnvCruise; }
+         return false;
       }
 
       // A BottomLeftGroup watch-assembly clip. Health, ammo, and boost are never this.
@@ -18667,7 +18697,7 @@
       }
 
       // Puts the game watch back on BottomLeftGroup. Undo Horizon Off / custom hides only.
-      // Do not write alpha. Game-owned visibility returns to the last observed native vis.
+      // Do not write alpha. The four native vis clips use the last LocalEnvironmentData formulas.
       // Horizon-drawn watch text stays off this face.
       private function hz43ShowVanilla() : Boolean
       {
@@ -19518,7 +19548,6 @@
          this.hz43VanNm = new Array(n);
          this.hz43VanP = new Point();
          this.hz43HidA = new Array(HZ43_HID_MAX);
-         this.hz43HidV = new Array(HZ43_HID_MAX);
          var i:int = 0;
          while(i < n) { this.hz43VanGot[i] = 0; i++; }
          return s;
@@ -19832,26 +19861,20 @@
       {
          if(!d || !this.hz43VanWatchClip(d)) { return; }
          if(this.hz43HidA == null) { this.hz43HidA = new Array(HZ43_HID_MAX); }
-         if(this.hz43HidV == null) { this.hz43HidV = new Array(HZ43_HID_MAX); }
          var i:int = 0;
          while(i < this.hz43HidN)
          {
-            if(this.hz43HidA[i] == d)
-            {
-               // A native show during Off is visible until this hide tick. A native hide is not observable.
-               if(this.hz43VanGameVis(d.name) && d.visible) { this.hz43HidV[i] = true; }
-               return;
-            }
+            if(this.hz43HidA[i] == d) { return; }
             i++;
          }
          if(this.hz43HidN >= HZ43_HID_MAX) { return; }
          this.hz43HidA[this.hz43HidN] = d;
-         this.hz43HidV[this.hz43HidN] = d.visible;
          this.hz43HidN++;
       }
 
       // Release Horizon visible-hides of watch siblings. Never writes alpha.
-      // Game-owned clips return to the last observed native vis (true or false), not always true.
+      // Day/OffPlanet/Autopilot/locationName use payload formulas, not sampled clip.visible.
+      // Temp/Oxygen/Grav undo our vis hide only; native FadeInPlanetInfo owns their alpha.
       private function hz43VanRestoreHid() : void
       {
          var i:int = 0;
@@ -19862,8 +19885,11 @@
             {
                if(this.hz43VanGameVis(d.name))
                {
-                  var want:Boolean = this.hz43HidV != null && this.hz43HidV[i];
-                  if(d.visible != want) { d.visible = want; }
+                  if(this.hz43EnvGot != 0 || d.name == "locationNameBase_mc")
+                  {
+                     var want:Boolean = this.hz43VanEnvWant(d.name);
+                     if(d.visible != want) { d.visible = want; }
+                  }
                }
                else if(!d.visible)
                {
@@ -19871,7 +19897,6 @@
                }
             }
             this.hz43HidA[i] = null;
-            if(this.hz43HidV != null) { this.hz43HidV[i] = false; }
             i++;
          }
          this.hz43HidN = 0;
