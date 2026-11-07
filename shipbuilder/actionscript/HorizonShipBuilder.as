@@ -1787,7 +1787,32 @@ package
       
       private function isProtectedName(param1:String):Boolean
       {
-         return this.foldHas(param1,"entry") || this.foldHas(param1,"categor") || this.foldHas(param1,"scroll") || this.foldHas(param1,"button") || this.foldHas(param1,"slider") || this.foldHas(param1,"pip") || this.foldHas(param1,"input") || this.foldHas(param1,"list") || this.foldHas(param1,"tab") || this.foldHas(param1,"select") || this.foldHas(param1,"alloc") || this.foldHas(param1,"meter") || this.foldHas(param1,"reactor") || this.foldHas(param1,"equip");
+         return this.foldHas(param1,"entry") || this.foldHas(param1,"categor") || this.foldHas(param1,"scroll") || this.foldHas(param1,"button") || this.foldHas(param1,"slider") || this.foldHas(param1,"pip") || this.foldHas(param1,"input") || this.foldHas(param1,"list") || this.foldHas(param1,"tab") || this.foldHas(param1,"select") || this.foldHas(param1,"alloc") || this.foldHas(param1,"meter") || this.foldHas(param1,"reactor") || this.foldHas(param1,"equip") || this.boundHas(param1,"mask") || this.boundHas(param1,"hitarea") || this.boundHas(param1,"hit") || this.boundHas(param1,"hotspot");
+      }
+      
+      private function boundHas(param1:String, param2:String):Boolean
+      {
+         if(param1 == null || param2 == null || param2.length == 0 || param1.length < param2.length) { return false; }
+         var needle:String = param2.toLowerCase();
+         var i:int = 0;
+         while(i + needle.length <= param1.length)
+         {
+            if(param1.substr(i,needle.length).toLowerCase() == needle)
+            {
+               var boundary:Boolean = i == 0;
+               if(!boundary)
+               {
+                  var prev:int = param1.charCodeAt(i - 1);
+                  var cur:int = param1.charCodeAt(i);
+                  var prevLetter:Boolean = (prev >= 65 && prev <= 90) || (prev >= 97 && prev <= 122);
+                  var camel:Boolean = prev >= 97 && prev <= 122 && cur >= 65 && cur <= 90;
+                  boundary = !prevLetter || camel;
+               }
+               if(boundary) { return true; }
+            }
+            i++;
+         }
+         return false;
       }
       
       private function isBackdropName(param1:String):Boolean

@@ -83,12 +83,37 @@ inline bool MayRemoveChild(std::string_view name)
 	return IsOurNode(name);
 }
 
+// A token at the start, after a non-letter, or at a camel-case break.
+// "hit" matches Hit_mc and BackgroundHit, and does not match "white".
+inline bool HasBoundToken(std::string_view name, std::string_view token)
+{
+	if (token.empty() || name.size() < token.size()) return false;
+	for (std::size_t i = 0; i + token.size() <= name.size(); ++i) {
+		bool match = true;
+		for (std::size_t j = 0; j < token.size(); ++j) {
+			if (FoldInterior(name[i + j]) != FoldInterior(token[j])) {
+				match = false;
+				break;
+			}
+		}
+		if (!match) continue;
+		if (i == 0) return true;
+		const char prev = name[i - 1];
+		const char cur = name[i];
+		const bool prevLetter = (prev >= 'A' && prev <= 'Z') || (prev >= 'a' && prev <= 'z');
+		const bool camel = prev >= 'a' && prev <= 'z' && cur >= 'A' && cur <= 'Z';
+		if (!prevLetter || camel) return true;
+	}
+	return false;
+}
+
 inline bool IsProtectedName(std::string_view name)
 {
 	return HasToken(name, "entry") || HasToken(name, "categor") || HasToken(name, "scroll") || HasToken(name, "button")
 		|| HasToken(name, "slider") || HasToken(name, "pip") || HasToken(name, "input") || HasToken(name, "list")
 		|| HasToken(name, "tab") || HasToken(name, "select") || HasToken(name, "alloc") || HasToken(name, "meter")
-		|| HasToken(name, "reactor") || HasToken(name, "equip");
+		|| HasToken(name, "reactor") || HasToken(name, "equip") || HasBoundToken(name, "mask")
+		|| HasBoundToken(name, "hitarea") || HasBoundToken(name, "hit") || HasBoundToken(name, "hotspot");
 }
 
 inline bool IsBackdropName(std::string_view name)

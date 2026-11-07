@@ -119,6 +119,15 @@ static void CheckInteriorLifecycle()
 	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Module, wordmark) == hsb::FadeKind::None, "an unnamed shape is not treated as a logo");
 	hsb::InteriorChild mask{"Background_mc", false, 0, 0, 0, 0.9f, 0.9f, false, true, false};
 	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Browser, mask) == hsb::FadeKind::None, "a mask is not faded");
+	hsb::InteriorChild namedMask{"BackgroundMask_mc", false, 0, 0, 0, 0.9f, 0.9f, false, false, false};
+	Expect(hsb::IsProtectedName(namedMask.name), "a mask name is protected without a live link");
+	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Browser, namedMask) == hsb::FadeKind::None, "a mask-named shape is not faded");
+	Expect(hsb::DecideFade(true, hsb::InteriorPanel::Browser, namedMask) == hsb::FadeAction::Restore, "a faded mask name is restored");
+	hsb::InteriorChild hitName{"HitArea_mc", false, 0, 0, 0, 0.2f, 0.2f, false, false, false};
+	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Module, hitName) == hsb::FadeKind::None, "a hit-area name is not faded");
+	Expect(hsb::IsProtectedName("Hotspot_mc"), "a hotspot name is protected");
+	Expect(!hsb::IsProtectedName("Background_mc"), "a plain background name can still fade");
+	Expect(!hsb::IsProtectedName("White_mc"), "hit is not matched inside an unrelated word");
 	hsb::InteriorChild hit{"Background_mc", false, 0, 0, 0, 0.4f, 0.4f, false, false, true};
 	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Power, hit) == hsb::FadeKind::None, "a hit target is not faded");
 	hsb::InteriorChild emptyHost{"", false, 0, 0, 0, 0.2f, 0.2f, true, false, false};
@@ -421,6 +430,9 @@ int main()
 	Expect(gold.find("revalidateFades") != std::string::npos, "fades are checked again each pass");
 	Expect(gold.find("hitArea") != std::string::npos && gold.find(".mask") != std::string::npos, "masks and hit targets are inspected");
 	Expect(gold.find("canHoldContent") != std::string::npos, "containers are not treated as decoration");
+	Expect(gold.find("boundHas(param1,\"mask\")") != std::string::npos, "the movie protects mask names");
+	Expect(gold.find("boundHas(param1,\"hitarea\")") != std::string::npos, "the movie protects hit area names");
+	Expect(gold.find("boundHas(param1,\"hit\")") != std::string::npos, "the movie protects hit names");
 	Expect(gold.find("addChildAt(plate") == std::string::npos, "the plate is not inserted into the clip");
 	Expect(gold.find("panelMovable") != std::string::npos, "only safe panels are handles");
 	Expect(gold.find("param1.embedFonts") != std::string::npos, "an embedded face name is skipped");
