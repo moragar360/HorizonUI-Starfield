@@ -93,6 +93,12 @@ package
       private var modWhy:String;
       private var modFacts:String;
       private var modTint:uint;
+      private var modFailed:Boolean;
+      private var modView:Object;
+      private var modVals:Array;
+      private var modValsKey:String;
+      private var modValsSaid:String;
+      private var modValsLeft:int;
       
       public function HorizonShipBuilder(param1:Object)
       {
@@ -143,6 +149,12 @@ package
          this.modWhy = "";
          this.modFacts = "";
          this.modTint = 0;
+         this.modFailed = false;
+         this.modView = null;
+         this.modVals = [];
+         this.modValsKey = "";
+         this.modValsSaid = "";
+         this.modValsLeft = 24;
          this.mouseEnabled = false;
          this.mouseChildren = true;
          addEventListener(Event.ADDED_TO_STAGE,this.onStage);
@@ -791,7 +803,8 @@ package
       private function strokeBehind(param1:DisplayObject, param2:String):void
       {
          var frameName:String = "HsbFrame" + param2;
-         if(param1 == null || param1.parent == null || (param2 == "Module" && this.modOn))
+         if(param2 == "Module" && this.modOn) { return; }
+         if(param1 == null || param1.parent == null)
          {
             this.removeFrame(frameName);
             return;
@@ -975,7 +988,7 @@ package
          if(Math.abs(x - box.x) <= 1 && Math.abs(y - box.y) <= 1) { return; }
          this.moveNative(clip,x - box.x,y - box.y);
          this.strokeBehind(clip,param1);
-         if(param1 == "Module" && this.modOn) { this.seatModule(clip); }
+         if(param1 == "Module" && this.modOn) { this.seatModule(this.modNative); }
       }
       
       private function layoutBoxes(param1:Object):Object
@@ -1028,6 +1041,7 @@ package
       private function redraw():void
       {
          var r:Object = this.view();
+         this.modView = r;
          var box:Object = this.layoutBoxes(r);
          var c:uint = this.accentColor();
          var i:int = 0;
@@ -1100,7 +1114,7 @@ package
                j++;
             }
          }
-         if(this.modOn && this.accentColor() != this.modTint) { this.paintModule(); }
+         if(this.modOn && this.accentColor() != this.modTint) { this.paintSafe(); }
       }
       
       private function openSettings():void
@@ -1618,7 +1632,7 @@ package
             this.moveNative(clip,x - live.x,y - live.y);
             this.strokeBehind(clip,param1);
             this.parkHeading(param1,clip);
-            if(param1 == "Module" && this.modOn) { this.seatModule(clip); }
+            if(param1 == "Module" && this.modOn) { this.seatModule(this.modNative); }
          }
          var spot:Object = {"x":x,"y":y,"w":size.width,"h":size.height};
          this.storeAnchor(param1,x,y,spot,r);
@@ -2156,7 +2170,8 @@ package
       
       private function parkHeading(param1:String, param2:DisplayObject):void
       {
-         if((param1 != "Power" && param1 != "Module" && param1 != "Browser") || (param1 == "Module" && this.modOn))
+         if(param1 == "Module" && this.modOn) { return; }
+         if(param1 != "Power" && param1 != "Module" && param1 != "Browser")
          {
             this.removeHeading(param1);
             return;
@@ -2290,23 +2305,22 @@ package
          }
          if(data == null) { return; }
          this.modData = data;
-         if(this.modOn) { this.paintModule(); }
+         this.modFailed = false;
+         var was:Boolean = this.modOn;
+         this.syncModule();
+         if(was && this.modOn) { this.paintSafe(); }
       }
       
       private function syncModule():void
       {
          var clip:DisplayObject = this.clipByName("Module");
-         if(this.arranging)
-         {
-            if(this.modOn) { this.seatModule(this.modNative); }
-            return;
-         }
          if(this.modOn && clip != this.modNative) { this.dropModule(); }
          var why:String = this.moduleGate(clip);
          if(why == "on")
          {
             if(!this.modOn) { this.holdModule(clip); }
-            this.seatModule(clip);
+            if(this.modOn) { this.seatModule(this.modNative); }
+            else { why = "paint"; }
          }
          else if(this.modOn) { this.dropModule(); }
          var said:String = why == "on" ? why + this.modFacts : why;
@@ -2314,6 +2328,17 @@ package
          {
             this.modWhy = said;
             this.note("MODCARD " + said);
+         }
+         if(why == "on" && this.modValsKey != this.modValsSaid && this.modValsLeft > 0)
+         {
+            this.modValsSaid = this.modValsKey;
+            this.modValsLeft--;
+            var v:int = 0;
+            while(v < this.modVals.length)
+            {
+               this.note("MODVALS " + this.modVals[v]);
+               v++;
+            }
          }
       }
       
@@ -2326,8 +2351,10 @@ package
          if(param1 == null || param1.parent == null) { return "clip"; }
          var data:Object = this.modData;
          if(data == null || data.sModuleName == null || String(data.sModuleName).length == 0) { return "data"; }
+         if(this.modFailed) { return "paint"; }
          if(!Boolean(data.bShowWidget) || !this.chainShown(param1)) { return "hidden"; }
          if(this.hangarShown()) { return "hangar"; }
+         if(this.arranging && !this.modOn) { return "arrange"; }
          return "on";
       }
       
@@ -2351,16 +2378,16 @@ package
          return hangar != null && hangar.visible;
       }
       
+      // Our card is painted before the game card is touched, so a bad payload leaves it alone.
       private function holdModule(param1:DisplayObject):void
       {
-         if(this.modCard == null) { this.buildModule(); }
+         if(!this.paintSafe()) { return; }
          this.modNative = param1;
-         this.modAlpha = param1.alpha;
+         this.modAlpha = param1.alpha > 0 ? param1.alpha : 1;
          param1.alpha = 0;
          this.modOn = true;
-         this.strokeBehind(param1,"Module");
+         this.removeFrame("HsbFrameModule");
          this.removeHeading("Module");
-         this.paintModule();
       }
       
       private function dropModule():void
@@ -2371,10 +2398,27 @@ package
          if(this.modCard != null) { this.modCard.visible = false; }
       }
       
+      // A throw keeps the game card up until the next payload.
+      private function paintSafe():Boolean
+      {
+         try
+         {
+            if(this.modCard == null) { this.buildModule(); }
+            this.paintModule();
+            return true;
+         }
+         catch(err:Error)
+         {
+         }
+         this.modFailed = true;
+         this.dropModule();
+         return false;
+      }
+      
       // Right above the game card in its own parent, so menu popups still draw over it.
       private function seatModule(param1:DisplayObject):void
       {
-         if(this.modCard == null || param1 == null) { return; }
+         if(this.modCard == null || param1 == null || param1 != this.modNative) { return; }
          var parent:DisplayObjectContainer = param1.parent;
          if(parent == null) { return; }
          var at:int = parent.getChildIndex(param1);
@@ -2385,10 +2429,23 @@ package
             if(mine != at + 1) { parent.setChildIndex(this.modCard,mine > at ? at + 1 : at); }
          }
          var box:Rectangle = param1.getBounds(parent);
+         var y:Number = this.arranging ? box.y : this.liftModule(parent,box.y,this.modCard.height);
          this.modCard.x = Math.round(box.x);
-         this.modCard.y = Math.round(box.y);
+         this.modCard.y = Math.round(y);
          this.modCard.visible = true;
          if(param1.alpha != 0) { param1.alpha = 0; }
+      }
+      
+      // Outside Arrange a card taller than the room under the game card is lifted to stay on
+      // screen. Arrange seats it exactly, so a drag and a saved spot use the game card's top.
+      private function liftModule(param1:DisplayObjectContainer, param2:Number, param3:Number):Number
+      {
+         var r:Object = this.modView;
+         if(r == null) { return param2; }
+         var top:Point = param1.globalToLocal(this.localToGlobal(new Point(r.x,r.y)));
+         var low:Point = param1.globalToLocal(this.localToGlobal(new Point(r.x,r.y + r.height)));
+         if(param2 + param3 <= low.y) { return param2; }
+         return Math.max(top.y,low.y - param3);
       }
       
       private function cardW():Number
@@ -2461,6 +2518,20 @@ package
          param1.setTextFormat(fmt);
       }
       
+      // The game's own label key, upper-cased once translated. A kept key shows the English
+      // word and counts toward keys= in the log.
+      private function putKey(param1:TextField, param2:String, param3:String, param4:uint):int
+      {
+         this.put(param1,param2,param4);
+         if(param1.text.charAt(0) == "$")
+         {
+            this.put(param1,param3,param4);
+            return 1;
+         }
+         param1.text = param1.text.toUpperCase();
+         return 0;
+      }
+      
       private function moduleRow(param1:int):Object
       {
          var body:int = this.lrg ? 16 : 14;
@@ -2510,16 +2581,33 @@ package
          return GlobalFunc.FormatNumberToString(Number(param1.fValue),2);
       }
       
-      // The game marks a change by frame only. The chip prints that diff with the value's rule.
+      // The game marks a change by frame only, so the chip is new text. A diff too small to
+      // show at the value's places gets no chip.
       private function diffText(param1:Object):String
       {
          var diff:Number = Number(param1.fDiff);
          if(!(diff > 0) && !(diff < 0)) { return ""; }
          var sign:String = diff > 0 ? "+" : "-";
          if(String(param1.text) == "$CLASS") { return sign; }
-         var size:Number = Math.abs(diff);
-         if(param1.bPercentage) { return sign + GlobalFunc.FormatNumberToString(size * 100) + "%"; }
-         return sign + GlobalFunc.FormatNumberToString(size,2);
+         var size:String = param1.bPercentage ? this.chipNumber(Math.abs(diff) * 100,0) : this.chipNumber(Math.abs(diff),2);
+         if(size == "0") { return ""; }
+         return sign + size + (param1.bPercentage ? "%" : "");
+      }
+      
+      // FormatNumberToString cuts the text of toString, which turns float noise such as
+      // 1.2e-7 into "1.2". toFixed never writes an exponent below 1e21.
+      private function chipNumber(param1:Number, param2:int):String
+      {
+         var text:String = param1.toFixed(6);
+         var dot:int = text.indexOf(".");
+         if(dot < 0) { return text; }
+         text = param2 > 0 ? text.substring(0,dot + 1 + param2) : text.substring(0,dot);
+         if(text.indexOf(".") >= 0)
+         {
+            while(text.charAt(text.length - 1) == "0") { text = text.substring(0,text.length - 1); }
+            if(text.charAt(text.length - 1) == ".") { text = text.substring(0,text.length - 1); }
+         }
+         return text;
       }
       
       private function moduleNumber(param1:*):String
@@ -2571,6 +2659,7 @@ package
          y += 6;
          var stats:Array = data.aStats as Array;
          var count:int = stats == null ? 0 : Math.min(stats.length,10);
+         var vals:Array = [];
          var i:int = 0;
          while(i < count)
          {
@@ -2578,6 +2667,7 @@ package
             var row:Object = this.moduleRow(i);
             var label:TextField = row.label as TextField;
             var value:TextField = row.value as TextField;
+            var shown:String = this.statText(stat);
             this.put(label,stat.text,0xC3D1D8);
             if(label.text.charAt(0) == "$") { kept++; }
             else { label.text = label.text.toUpperCase(); }
@@ -2587,12 +2677,13 @@ package
             var rowH:Number = Math.max(pitch,label.height + 6);
             label.y = y + (rowH - label.height) / 2;
             label.visible = true;
-            this.put(value,this.statText(stat),0xFFFFFF);
+            this.put(value,shown,0xFFFFFF);
             value.x = right - valueW;
             value.width = valueW;
             value.y = y + (rowH - value.height) / 2;
             value.visible = true;
-            this.paintChip(row,stat,ink,y,rowH);
+            var chip:String = this.paintChip(row,stat,ink,y,rowH);
+            vals.push("s" + (i + 1) + "=" + String(stat.fValue) + "/" + String(stat.fDiff) + "/" + (stat.bPercentage ? 1 : 0) + ">" + shown + (chip.length > 0 ? "/" + chip : ""));
             y += rowH;
             i++;
          }
@@ -2640,8 +2731,8 @@ package
             y += 14;
          }
          var half:Number = w / 2 + 14;
-         this.put(this.modValueL,"VALUE",0xA4A994);
-         this.put(this.modMassL,"MASS",0xA4A994);
+         kept += this.putKey(this.modValueL,"$VALUE","VALUE",0xA4A994);
+         kept += this.putKey(this.modMassL,"$MASS","MASS",0xA4A994);
          this.modValueL.x = pad;
          this.modMassL.x = half;
          this.modValueL.y = y;
@@ -2667,10 +2758,14 @@ package
          g.drawRoundRect(1,1,w - 2,y - 2,12,12);
          g.endFill();
          this.modFacts = " rows=" + count + " skills=" + need + " keys=" + kept + " inb=" + (Boolean(data.bInBuilderMode) ? 1 : 0) + " w=" + w;
+         var head:String = "cost=" + String(data.iModuleCost) + ">" + this.modValue.text + " mass=" + String(data.iModuleMass) + ">" + this.modMass.text;
+         this.modVals = [head + (vals.length > 0 ? " " + vals.slice(0,5).join(" ") : "")];
+         if(vals.length > 5) { this.modVals.push(vals.slice(5).join(" ")); }
+         this.modValsKey = this.modVals.join(" ");
       }
       
       // Higher is green and lower is red, as the game's HigherValue and LowerValue frames.
-      private function paintChip(param1:Object, param2:Object, param3:*, param4:Number, param5:Number):void
+      private function paintChip(param1:Object, param2:Object, param3:*, param4:Number, param5:Number):String
       {
          var w:Number = this.cardW();
          var pad:Number = this.cardPad();
@@ -2685,13 +2780,14 @@ package
             param3.beginFill(0x5E6359,1);
             param3.drawRect(w - pad - 14,param4 + param5 / 2,12,1.5);
             param3.endFill();
-            return;
+            return "";
          }
          var up:Boolean = Number(param2.fDiff) > 0;
          this.put(tag,text,up ? 0x69FEB3 : 0xFF6868);
-         var chipW:Number = Math.max(28,tag.textWidth + 14);
-         tag.width = tag.textWidth + 6;
-         tag.x = (chipW - tag.textWidth) / 2 - 2;
+         var room:Number = (this.lrg ? 80 : 67) - 8;
+         var chipW:Number = Math.min(Math.max(28,tag.textWidth + 14),room);
+         tag.width = Math.min(tag.textWidth + 6,chipW - 4);
+         tag.x = Math.max(2,(chipW - tag.textWidth) / 2 - 2);
          tag.y = (chipH - tag.height) / 2;
          chip.graphics.beginFill(up ? 0x1A302E : 0x301E24,1);
          chip.graphics.drawRoundRect(0,0,chipW,chipH,8,8);
@@ -2699,6 +2795,7 @@ package
          chip.x = w - pad - 2 - chipW;
          chip.y = param4 + (param5 - chipH) / 2;
          chip.visible = true;
+         return text;
       }
       
       // ModuleAttributeIcon writes the rank with "$(Rank #)" and DoSubstitutions.

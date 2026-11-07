@@ -48,16 +48,34 @@ inline int CardSmallestPx(const CardMetrics& m)
 	return std::min({m.headPx, m.namePx, m.bodyPx, m.chipPx, m.bigPx});
 }
 
-// AS3 Number.toString in fixed notation, for the magnitudes a stat uses.
+// AS3 Number.toString (ECMA-262 Number::toString): the shortest digits that read back,
+// with an exponent below 1e-6 and from 1e21 up.
 inline std::string NumberText(double value)
 {
 	if (std::isnan(value)) return "NaN";
-	if (std::isinf(value)) return value < 0 ? "-Infinity" : "Infinity";
 	if (value == 0) return "0";
-	char buf[512];
-	const auto out = std::to_chars(buf, buf + sizeof(buf), value, std::chars_format::fixed);
+	if (std::isinf(value)) return value < 0 ? "-Infinity" : "Infinity";
+	char buf[64];
+	const auto out = std::to_chars(buf, buf + sizeof(buf), std::fabs(value), std::chars_format::scientific);
 	if (out.ec != std::errc{}) return "NaN";
-	return std::string(buf, out.ptr);
+	const std::string_view sci(buf, static_cast<std::size_t>(out.ptr - buf));
+	const auto e = sci.find('e');
+	std::string digits;
+	for (const char c : sci.substr(0, e))
+		if (c != '.') digits.push_back(c);
+	int exp10 = 0;
+	std::string_view tail = sci.substr(e + 1);
+	if (!tail.empty() && tail.front() == '+') tail.remove_prefix(1);
+	std::from_chars(tail.data(), tail.data() + tail.size(), exp10);
+	const std::string sign = value < 0 ? "-" : "";
+	const int k = static_cast<int>(digits.size());
+	const int n = exp10 + 1;
+	if (k <= n && n <= 21) return sign + digits + std::string(static_cast<std::size_t>(n - k), '0');
+	if (0 < n && n <= 21) return sign + digits.substr(0, n) + "." + digits.substr(n);
+	if (-6 < n && n <= 0) return sign + "0." + std::string(static_cast<std::size_t>(-n), '0') + digits;
+	const std::string power = std::string(n - 1 < 0 ? "-" : "+") + std::to_string(std::abs(n - 1));
+	if (k == 1) return sign + digits + "e" + power;
+	return sign + digits.substr(0, 1) + "." + digits.substr(1) + "e" + power;
 }
 
 // GlobalFunc.FormatNumberToString(value, places) with its third argument false.
@@ -128,8 +146,27 @@ inline std::string StatValueText(const CardStat& stat)
 	return FormatNumber(stat.value, 2);
 }
 
-// The game shows a change by frame only. The chip prints that diff with the value's rule.
-// A class change has no number to print, so its chip is the sign alone.
+// The movie's chipNumber: toFixed(6), cut after the given places, trailing zeros dropped.
+// Float noise reads as 0 here, where the game's cut of toString would print exponent digits.
+inline std::string ChipNumber(double size, unsigned places)
+{
+	if (!std::isfinite(size) || std::fabs(size) >= 1e21) return NumberText(size);
+	char buf[512];
+	const auto out = std::to_chars(buf, buf + sizeof(buf), size, std::chars_format::fixed, 6);
+	if (out.ec != std::errc{}) return "0";
+	std::string text(buf, out.ptr);
+	const auto dot = text.find('.');
+	if (dot == std::string::npos) return text;
+	text = places > 0 ? text.substr(0, dot + 1 + places) : text.substr(0, dot);
+	if (text.find('.') != std::string::npos) {
+		while (!text.empty() && text.back() == '0') text.pop_back();
+		if (!text.empty() && text.back() == '.') text.pop_back();
+	}
+	return text;
+}
+
+// The game shows a change by frame only, so the chip is new text. A class change has no
+// number to print, so its chip is the sign alone. A diff that reads 0 gets no chip.
 inline std::string DiffChipText(const CardStat& stat)
 {
 	const DiffTone tone = ToneOf(stat.diff);
@@ -137,8 +174,20 @@ inline std::string DiffChipText(const CardStat& stat)
 	const std::string sign = tone == DiffTone::Higher ? "+" : "-";
 	if (IsClassStat(stat.text)) return sign;
 	const double size = std::fabs(stat.diff);
-	if (stat.percentage) return sign + FormatNumber(size * 100) + "%";
-	return sign + FormatNumber(size, 2);
+	const std::string text = stat.percentage ? ChipNumber(size * 100, 0) : ChipNumber(size, 2);
+	if (text == "0") return {};
+	return sign + text + (stat.percentage ? "%" : "");
+}
+
+// A chip never reaches the value column: it keeps 6 px clear of the value's right edge.
+inline int ChipRoom(const CardMetrics& m)
+{
+	return m.width - m.pad - m.valueRight - 8;
+}
+
+inline int ChipWidth(const CardMetrics& m, int textWidth)
+{
+	return std::min(std::max(28, textWidth + 14), ChipRoom(m));
 }
 
 inline int CardStatRows(int count)
@@ -175,7 +224,7 @@ inline bool LabelKeptKey(std::string_view shown)
 	return !shown.empty() && shown.front() == '$';
 }
 
-enum class CardGate { Face, Conflict, Map, Clip, Data, Hidden, Hangar, On };
+enum class CardGate { Face, Conflict, Map, Clip, Data, Paint, Hidden, Hangar, Arrange, On };
 
 struct CardState {
 	bool faceProven = false;
@@ -183,12 +232,16 @@ struct CardState {
 	bool mapped = false;
 	bool nativeSeated = false;
 	bool hasName = false;
+	bool paintFailed = false;
 	bool showWidget = false;
 	bool nativeShown = false;
 	bool hangarShown = false;
+	bool arranging = false;
+	bool cardUp = false;
 };
 
-// First failing check wins, so the log names one reason.
+// First failing check wins, so the log names one reason. Arrange never brings the card up,
+// so the handle stays what it was when Arrange opened.
 inline CardGate ModuleCardGate(const CardState& s)
 {
 	if (!s.faceProven) return CardGate::Face;
@@ -196,8 +249,10 @@ inline CardGate ModuleCardGate(const CardState& s)
 	if (!s.mapped) return CardGate::Map;
 	if (!s.nativeSeated) return CardGate::Clip;
 	if (!s.hasName) return CardGate::Data;
+	if (s.paintFailed) return CardGate::Paint;
 	if (!s.showWidget || !s.nativeShown) return CardGate::Hidden;
 	if (s.hangarShown) return CardGate::Hangar;
+	if (s.arranging && !s.cardUp) return CardGate::Arrange;
 	return CardGate::On;
 }
 
@@ -209,8 +264,10 @@ inline const char* CardGateName(CardGate gate)
 	case CardGate::Map: return "map";
 	case CardGate::Clip: return "clip";
 	case CardGate::Data: return "data";
+	case CardGate::Paint: return "paint";
 	case CardGate::Hidden: return "hidden";
 	case CardGate::Hangar: return "hangar";
+	case CardGate::Arrange: return "arrange";
 	case CardGate::On: return "on";
 	}
 	return "face";
@@ -222,10 +279,25 @@ inline float NativeCardAlpha(CardGate gate, float saved)
 	return gate == CardGate::On ? 0.0f : saved;
 }
 
+// The alpha kept for the game card when ours goes up. A 0 is never kept, so a drop can
+// never leave both cards invisible.
+inline float HeldAlpha(float current)
+{
+	return current > 0 ? current : 1.0f;
+}
+
 // Our card's top left is the game card's top left.
 inline ArrangeBox CardSeat(const ArrangeBox& native, int cardW, int cardH)
 {
 	return {native.x, native.y, cardW, cardH};
+}
+
+// The movie's liftModule: outside Arrange a card that would pass the bottom edge is lifted
+// to stay on screen. Arrange seats it exactly.
+inline int CardSeatY(int nativeY, int cardH, int viewTop, int viewBottom, bool arranging)
+{
+	if (arranging || nativeY + cardH <= viewBottom) return nativeY;
+	return std::max(viewTop, viewBottom - cardH);
 }
 
 struct ArrangeView {

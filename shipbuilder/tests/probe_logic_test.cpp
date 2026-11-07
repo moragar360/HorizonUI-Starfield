@@ -187,6 +187,19 @@ static void CheckModuleCard()
 	Expect(hsb::FormatNumber(12.9) == "12", "no places cuts to the whole number");
 	Expect(hsb::FormatNumber(std::numeric_limits<double>::quiet_NaN()) == "NaN", "a bad number reads as the game would show it");
 	Expect(hsb::CardNumberText(true, 10) == "10" && hsb::CardNumberText(false, 10).empty(), "a missing cost or mass stays blank");
+	Expect(hsb::NumberText(1.1920928955078125e-07) == "1.1920928955078125e-7" && hsb::NumberText(1e-7) == "1e-7",
+		"toString writes an exponent below 1e-6");
+	Expect(hsb::NumberText(0.000001) == "0.000001" && hsb::NumberText(1.5e-6) == "0.0000015", "toString keeps 1e-6 in plain digits");
+	Expect(hsb::NumberText(1e21) == "1e+21" && hsb::NumberText(123456789012345680000.0) == "123456789012345680000",
+		"toString writes an exponent from 1e21 up");
+	Expect(hsb::NumberText(1152921504606846976.0) == "1152921504606847000" && hsb::NumberText(-0.0) == "0" && hsb::NumberText(-2.5) == "-2.5",
+		"toString keeps the shortest digits");
+	Expect(hsb::FormatNumber(1.1920928955078125e-07, 2) == "1.19", "a tiny stat is cut as the game card cuts it");
+	Expect(hsb::FormatNumber(1e-7, 2) == "1e-7" && hsb::FormatNumber(1e21) == "1e+21", "text without a point is kept as the game keeps it");
+	Expect(hsb::ChipNumber(1.1920928955078125e-07, 2) == "0" && hsb::ChipNumber(5e-9 * 100, 0) == "0", "chip float noise reads 0");
+	Expect(hsb::ChipNumber(0.1 + 0.2, 2) == "0.3" && hsb::ChipNumber(0.336, 2) == "0.33" && hsb::ChipNumber(6, 2) == "6",
+		"a chip cuts to the value's places and drops trailing zeros");
+	Expect(hsb::ChipNumber(0.07 * 100, 0) == "7" && hsb::ChipNumber(0.29 * 100, 0) == "29", "a percent chip reads a whole percent");
 
 	const hsb::CardStat hab[] = {
 		{"$HULL", 5, 0, false},
@@ -225,6 +238,14 @@ static void CheckModuleCard()
 	Expect(hsb::CharCodeText(77) == "M" && hsb::CharCodeText(65.9) == "A", "class letters come from the char code");
 	Expect(hsb::ToneOf(std::numeric_limits<double>::quiet_NaN()) == hsb::DiffTone::Same && hsb::ToneOf(-0.0) == hsb::DiffTone::Same,
 		"a missing diff is the default frame");
+	Expect(hsb::DiffChipText({"$HULL", 5, 1.1920928955078125e-07, false}).empty(), "float noise in a diff gets no chip");
+	Expect(hsb::DiffChipText({"$REPAIR", 0.125, 5e-9, true}).empty(), "float noise in a percent diff gets no chip");
+	Expect(hsb::DiffChipText({"$MASS_LIMIT", 1, -0.004, false}).empty(), "a diff below two places gets no chip");
+	Expect(hsb::DiffChipText({"$HULL", 5, 0.1 + 0.2, false}) == "+0.3", "a chip has no float tail");
+	Expect(hsb::DiffChipText({"$CLASS", 67, 1e-9, false}) == "+", "a class change keeps its sign");
+	Expect(hsb::ChipRoom(normal) == 59 && hsb::ChipRoom(large) == 72, "chip room ends 6 px short of the value column");
+	Expect(hsb::ChipWidth(normal, 4) == 28 && hsb::ChipWidth(normal, 30) == 44 && hsb::ChipWidth(normal, 90) == 59 && hsb::ChipWidth(large, 90) == 72,
+		"a long chip is capped short of the value column");
 
 	Expect(hsb::CardStatRows(11) == 10 && hsb::CardStatRows(3) == 3 && hsb::CardStatRows(-1) == 0, "the card shows up to ten stats");
 	Expect(hsb::CardSkillRows(3) == 2 && hsb::CardSkillRows(0) == 0, "the card shows up to two skills");
@@ -241,11 +262,23 @@ static void CheckModuleCard()
 	state.nativeSeated = true;
 	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Data, "the card waits for a module name");
 	state.hasName = true;
+	state.paintFailed = true;
+	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Paint, "a failed paint keeps the game card until the next payload");
+	state.paintFailed = false;
 	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Hidden, "the card follows the show flag");
 	state.showWidget = true;
 	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Hidden, "the card follows the game card's visibility");
 	state.nativeShown = true;
 	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::On, "a shown game card with data brings ours up");
+	state.arranging = true;
+	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Arrange, "arrange does not bring our card up");
+	state.cardUp = true;
+	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::On, "a card already up stays up through arrange");
+	state.showWidget = false;
+	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Hidden, "a hidden game card drops ours even in arrange");
+	state.showWidget = true;
+	state.arranging = false;
+	state.cardUp = false;
 	state.hangarShown = true;
 	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Hangar, "the hangar overview keeps the game card");
 	state.hangarShown = false;
@@ -256,6 +289,11 @@ static void CheckModuleCard()
 	Expect(hsb::NativeCardAlpha(hsb::CardGate::On, 1.0f) == 0.0f, "the game card is hidden in place while ours is up");
 	Expect(hsb::NativeCardAlpha(hsb::CardGate::Hidden, 1.0f) == 1.0f && hsb::NativeCardAlpha(hsb::CardGate::Hangar, 0.8f) == 0.8f,
 		"every other state puts the game card's alpha back");
+	Expect(hsb::HeldAlpha(0.0f) == 1.0f && hsb::HeldAlpha(0.6f) == 0.6f, "a zero alpha is never kept for the game card");
+	Expect(hsb::CardSeatY(610, 400, 0, 1080, false) == 610, "a card that fits sits on the game card's top");
+	Expect(hsb::CardSeatY(610, 660, 0, 1080, false) == 420, "a tall card is lifted to stay on screen");
+	Expect(hsb::CardSeatY(610, 660, 0, 1080, true) == 610, "arrange seats the card exactly");
+	Expect(hsb::CardSeatY(100, 1200, 0, 1080, false) == 0, "a card taller than the screen keeps its top on screen");
 
 	const hsb::ArrangeView view{0, 0, 1920, 1080};
 	const hsb::ArrangeBox home{34, 300, 360, 470};
@@ -274,7 +312,11 @@ static void CheckModuleCard()
 	const hsb::CardDrag low = hsb::DragCard(home, normal.width, 400, 40, 900, view, hsb::kMarginDefault);
 	Expect(low.card.y == 610 && low.ax == "L6", "a drag keeps the taller game box on screen");
 	Expect(hsb::PlaceSaved(low.ax, low.ay, home, view, hsb::kMarginDefault).y == low.native.y, "a spot at the bottom edge reloads without a clamp");
-	Expect(hsb::CardSeat(home, normal.width, 400).x == home.x, "reset and cancel put our card back on the game card's home");
+	const hsb::ArrangeBox shortHome{34, 300, 360, 300};
+	const hsb::CardDrag tall = hsb::DragCard(shortHome, normal.width, 620, 40, 900, view, hsb::kMarginDefault);
+	Expect(tall.card.y == 460 && tall.card.y + 620 <= view.h, "a drag keeps a card taller than the game card on screen");
+	Expect(tall.ay == "C70" && hsb::PlaceSaved(tall.ax, tall.ay, shortHome, view, hsb::kMarginDefault).y == tall.native.y,
+		"a taller card's spot is stored with the game card's size and reloads in place");
 
 	const hsb::ArrangeView wide{0, 0, 2560, 1440};
 	const hsb::ArrangeBox bigHome{40, 380, 420, 560};
@@ -289,6 +331,22 @@ static std::size_t CountOf(const std::string& text, const std::string& needle)
 	std::size_t n = 0;
 	for (std::size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + needle.size())) ++n;
 	return n;
+}
+
+// One movie function, through its closing brace at member indent.
+static std::string FunctionBody(const std::string& source, const std::string& name)
+{
+	const std::string head = "private function " + name + "(";
+	const std::size_t at = source.find(head);
+	if (at == std::string::npos) return {};
+	const std::string close = "\n      }\n";
+	const std::size_t end = source.find(close, at + head.size());
+	return source.substr(at, end == std::string::npos ? std::string::npos : end + close.size() - at);
+}
+
+static std::string Pick(const hsb::CardMetrics& large, const hsb::CardMetrics& normal, int hsb::CardMetrics::*field)
+{
+	return "this.lrg ? " + std::to_string(large.*field) + " : " + std::to_string(normal.*field);
 }
 
 static void CheckFaceProof()
@@ -336,8 +394,9 @@ static bool NotesHideFaces(const std::string& source)
 			|| line.find("line +=") != std::string::npos || line.find("var report") != std::string::npos
 			|| line.find("var line") != std::string::npos;
 		if (!logs) continue;
-		if (line.find("FACES[") != std::string::npos || line.find("names[") != std::string::npos
-			|| line.find("labelFace") != std::string::npos || line.find("fieldFace(") != std::string::npos)
+		if (line.find("FACES") != std::string::npos || line.find("names[") != std::string::npos
+			|| line.find("labelFace") != std::string::npos || line.find("fieldFace(") != std::string::npos
+			|| line.find(".font") != std::string::npos)
 			return false;
 		for (std::size_t at = line.find("this.face"); at != std::string::npos; at = line.find("this.face", at + 1)) {
 			const std::size_t next = at + 9;
@@ -652,10 +711,38 @@ int main()
 	Expect(gold.find("\"HsbModuleCard\"") != std::string::npos, "our card is a named Horizon node");
 	Expect(gold.find("this.modCard.mouseEnabled = false;") != std::string::npos && gold.find("this.modCard.mouseChildren = false;") != std::string::npos,
 		"our card takes no mouse");
-	Expect(gold.find("param1.alpha = 0;") != std::string::npos && gold.find("this.modNative.alpha = this.modAlpha;") != std::string::npos,
-		"the game card is hidden in place and its alpha comes back");
-	Expect(gold.find("modNative.visible") == std::string::npos, "the game card's visible flag is left to the menu");
-	Expect(gold.find("parent.addChildAt(this.modCard,at + 1);") != std::string::npos, "our card sits right above the game card");
+	const std::string hold = FunctionBody(gold, "holdModule");
+	const std::string seat = FunctionBody(gold, "seatModule");
+	const std::string drop = FunctionBody(gold, "dropModule");
+	Expect(hold.find("if(!this.paintSafe()) { return; }") < hold.find("param1.alpha = 0;") && hold.find("param1.alpha = 0;") != std::string::npos,
+		"our card is painted before the game card is hidden");
+	Expect(hold.find("this.modAlpha = param1.alpha > 0 ? param1.alpha : 1;") != std::string::npos, "a zero alpha is never kept");
+	Expect(seat.find("if(param1.alpha != 0) { param1.alpha = 0; }") != std::string::npos && seat.find("param1 != this.modNative") != std::string::npos,
+		"only the held game card is kept at alpha 0");
+	Expect(drop.find("this.modNative.alpha = this.modAlpha;") != std::string::npos, "a drop puts the game card's alpha back");
+	for (const std::string* body : {&hold, &seat, &drop}) {
+		Expect(!body->empty() && body->find("param1.visible") == std::string::npos && body->find("modNative.visible") == std::string::npos &&
+			body->find("removeChild") == std::string::npos && body->find("addChild(param1") == std::string::npos &&
+			body->find("addChildAt(param1") == std::string::npos &&
+			CountOf(*body, ".x =") == CountOf(*body, "this.modCard.x =") && CountOf(*body, ".y =") == CountOf(*body, "this.modCard.y ="),
+			"the game card is hidden by alpha only and never moved or reparented");
+	}
+	Expect(gold.find("modNative.visible") == std::string::npos && gold.find("removeChild(this.modNative") == std::string::npos,
+		"the game card's visible flag and parent are left to the menu");
+	Expect(seat.find("parent.addChildAt(this.modCard,at + 1);") != std::string::npos, "our card sits right above the game card");
+	Expect(seat.find("this.arranging ? box.y : this.liftModule(parent,box.y,this.modCard.height)") != std::string::npos &&
+		gold.find("this.modView = r;") != std::string::npos, "outside arrange a tall card is lifted onto the screen");
+	Expect(FunctionBody(gold, "liftModule").find("this.view()") == std::string::npos, "the per-frame lift does not look up the view");
+	Expect(FunctionBody(gold, "placeNative").find("this.seatModule(this.modNative)") != std::string::npos &&
+		FunctionBody(gold, "moveLive").find("this.seatModule(this.modNative)") != std::string::npos &&
+		FunctionBody(gold, "resetArrange").find("if(this.modOn) { this.seatModule(this.modNative); }") != std::string::npos &&
+		FunctionBody(gold, "cancelArrange").find("if(this.modOn) { this.seatModule(this.modNative); }") != std::string::npos,
+		"a saved spot, a drag, reset, and cancel bring our card back with the game card");
+	Expect(FunctionBody(gold, "paintSafe").find("catch(err:Error)") != std::string::npos && FunctionBody(gold, "paintSafe").find("this.dropModule();") != std::string::npos,
+		"a paint that throws drops our card");
+	Expect(FunctionBody(gold, "onModuleInfo").find("this.syncModule();") != std::string::npos, "a payload is shown or dropped at once");
+	Expect(FunctionBody(gold, "moduleGate").find("if(this.arranging && !this.modOn) { return \"arrange\"; }") != std::string::npos,
+		"arrange does not bring our card up");
 	Expect(gold.find("if(this.face.length == 0) { return \"face\"; }") != std::string::npos, "the card waits for a proven face");
 	Expect(gold.find("Boolean(data.bShowWidget)") != std::string::npos && gold.find("this.chainShown(param1)") != std::string::npos,
 		"the card follows the game card's visibility");
@@ -669,20 +756,46 @@ int main()
 		"the rank is translated as the game writes it");
 	Expect(gold.find("Math.min(stats.length,10)") != std::string::npos && gold.find("Math.min(skills.length,2)") != std::string::npos,
 		"ten stats and two skills");
-	Expect(gold.find("return this.lrg ? 410 : 350;") != std::string::npos && gold.find("return this.lrg ? 20 : 18;") != std::string::npos,
-		"card width and padding match the twin");
-	Expect(gold.find("var pitch:Number = this.lrg ? 34 : 30;") != std::string::npos && gold.find("var chipH:Number = this.lrg ? 26 : 22;") != std::string::npos &&
-		gold.find("var barH:Number = this.lrg ? 28 : 24;") != std::string::npos && gold.find("var right:Number = w - pad - (this.lrg ? 80 : 67);") != std::string::npos &&
-		gold.find("this.cardText(this.lrg ? 24 : 21,true)") != std::string::npos, "card metrics match the twin");
+	const hsb::CardMetrics lrgCard = hsb::CardSize(true);
+	const hsb::CardMetrics nrmCard = hsb::CardSize(false);
+	using M = hsb::CardMetrics;
+	Expect(gold.find("return " + Pick(lrgCard, nrmCard, &M::width) + ";") != std::string::npos &&
+		gold.find("return " + Pick(lrgCard, nrmCard, &M::pad) + ";") != std::string::npos, "card width and padding come from the twin");
+	Expect(gold.find("var pitch:Number = " + Pick(lrgCard, nrmCard, &M::rowPitch) + ";") != std::string::npos &&
+		gold.find("var chipH:Number = " + Pick(lrgCard, nrmCard, &M::chipH) + ";") != std::string::npos &&
+		gold.find("var barH:Number = " + Pick(lrgCard, nrmCard, &M::barH) + ";") != std::string::npos &&
+		gold.find("var big:Number = " + Pick(lrgCard, nrmCard, &M::bigPx) + ";") != std::string::npos &&
+		gold.find("this.cardText(" + Pick(lrgCard, nrmCard, &M::namePx) + ",true)") != std::string::npos &&
+		gold.find("var head:int = " + Pick(lrgCard, nrmCard, &M::headPx) + ";") != std::string::npos &&
+		gold.find("var body:int = " + Pick(lrgCard, nrmCard, &M::bodyPx) + ";") != std::string::npos &&
+		gold.find("var small:int = " + Pick(lrgCard, nrmCard, &M::chipPx) + ";") != std::string::npos,
+		"card text sizes and rows come from the twin");
+	const std::string column = "this.lrg ? " + std::to_string(lrgCard.width - lrgCard.pad - lrgCard.valueRight) + " : " +
+		std::to_string(nrmCard.width - nrmCard.pad - nrmCard.valueRight);
+	Expect(gold.find("var right:Number = w - pad - (" + column + ");") != std::string::npos &&
+		gold.find("var room:Number = (" + column + ") - 8;") != std::string::npos, "the value column and chip room come from the twin");
+	Expect(gold.find("var chipW:Number = Math.min(Math.max(28,tag.textWidth + 14),room);") != std::string::npos, "the chip width matches the twin");
+	Expect(FunctionBody(gold, "chipNumber").find("param1.toFixed(6)") != std::string::npos && FunctionBody(gold, "diffText").find("if(size == \"0\") { return \"\"; }") != std::string::npos,
+		"a chip never prints float noise");
+	Expect(FunctionBody(gold, "diffText").find("FormatNumberToString") == std::string::npos, "the chip does not cut an exponent's digits");
+	Expect(gold.find("this.putKey(this.modValueL,\"$VALUE\",\"VALUE\",") != std::string::npos && gold.find("this.putKey(this.modMassL,\"$MASS\",\"MASS\",") != std::string::npos,
+		"value and mass use the game's label keys");
 	Expect(gold.find("stackModule") == std::string::npos && gold.find("placeSlot") == std::string::npos && gold.find("this.moved") == std::string::npos,
 		"the game card's fields are not moved");
 	Expect(gold.find("return this.modCard.getBounds(this);") != std::string::npos, "arrange outlines our card");
 	Expect(gold.find("return this.modNative.getBounds(this);") != std::string::npos, "module anchors use the game card's size");
 	Expect(gold.find("Math.max(live.height,size.height)") != std::string::npos, "a drag keeps both boxes on screen");
-	Expect(CountOf(gold, "if(this.modOn) { this.seatModule(this.modNative); }") >= 3, "arrange, reset, and cancel bring our card back with the game card");
 	Expect(gold.find("Swap cost") == std::string::npos && gold.find("Hab 2x2") == std::string::npos, "the card prints no mock-only text");
 	Expect(readme.find("MODCARD on") != std::string::npos && readme.find("FONT try=") != std::string::npos, "the readme names the card and face log lines");
 	Expect(readme.find("_lrg") != std::string::npos && readme.find("ModuleInfo") != std::string::npos, "the readme covers the large movie and the card's data");
+	Expect(readme.find("MODCARD listen ok") != std::string::npos && readme.find("`paint`") != std::string::npos && readme.find("`arrange`") != std::string::npos,
+		"the readme lists every card state");
+	Expect(readme.find("`MODVALS`") != std::string::npos && readme.find("this mod removed") != std::string::npos,
+		"the readme says how to compare the card with the payload");
+	Expect(gold.find("this.note(\"MODVALS \" + this.modVals[v]);") != std::string::npos && gold.find("this.modValsLeft = 24;") != std::string::npos,
+		"payload numbers and shown text are logged for a bounded number of modules");
+	Expect(!NotesHideFaces("         this.note(\"FONT face=\" + fmt.font);") && !NotesHideFaces("         this.note(\"FONT list=\" + FACES.join(\",\"));") &&
+		NotesHideFaces("         this.note(\"FONT try=\" + this.faceTries);"), "the face scan catches a face name in a log line");
 
 	Expect(probe.find("enableDebug") != std::string::npos, "probe can be turned on");
 	Expect(probe.find("PROBE off") != std::string::npos, "probe stays quiet by default");
