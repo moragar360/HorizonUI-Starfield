@@ -29,7 +29,11 @@ The player does not compile these. Quit Starfield first. A stock install keeps `
 
 `<Starfield>` below is the game folder, for example `C:\Program Files (x86)\Steam\steamapps\common\Starfield`.
 
-If a loose movie is already in `Data\Interface`, that file is the one to splice (a loose vanilla extract, or another mod). If `dir` lists nothing, extract from the archive:
+If a loose movie is already in `Data\Interface`, that file is the one to splice (a loose vanilla extract, or another mod). Check the `Data\Interface` folder under `Documents\My Games\Starfield` too.
+
+A plugin can also carry these movies in its own `.ba2`, and a Creation is a plugin. A Creation's files may sit in the `Data` folder under `Documents\My Games\Starfield` rather than the game folder. Before you splice, open or unpack each enabled plugin's `.ba2` with the archive tool below and look for `interface/spaceshipeditormenu.swf` and `interface/spaceshipeditormenu_lrg.swf`. If one has them, stop and report which plugin, because a loose movie made from the game's archive would cover that plugin's movie. Do not change the other plugin's files.
+
+If `dir` lists nothing and no plugin archive has the movies, extract from the game's archive:
 
 ```
 dir /b "<Starfield>\Data\Interface\spaceshipeditormenu*.swf"
@@ -231,7 +235,7 @@ Bring the probe log back with a note of what you saw the ship do on #16 and #17.
 
 ## 0.1.1.0 face and Selected Module card
 
-This pass checks two things: that Horizon text uses a game face that has the glyphs, and the one Selected Module card. The parts list, categories, scrolling, keyboard, pad, and mouse stay the game's. Power, credits, stats, and the hangar overview are unchanged.
+This pass checks two things: that Horizon text uses a game face that has the glyphs, and the one Selected Module card. The parts list, categories, scrolling, keyboard, pad, and mouse stay the game's. The movie does not read or send category data, so categories, including ones another mod adds, come from the game as before. Power, credits, stats, and the hangar overview are unchanged.
 
 The face test runs when the builder opens. `FONT try=` lists each candidate by index as wide/narrow/tall widths and a `+` or `-`: `e1` to `e3` are the mapped names as embedded text, `n4` is the face of the game's module name field (`n4=na` when that field was not found), and `d1` to `d3` are the mapped names as device text. `n=` and `nd=` are the same widths for a name that cannot exist, embedded and device. `pick=` names the first candidate that passed. `pick=0` means none passed. The movie then tries again at frames 30 and 120, three tries in all. `FONTSRC` codes the face of five game text fields: `f1` to `f3` match a mapped candidate, `x$` is another mapped name, `x` is a plain face, `x0` has none, and `na` means the field was not found. Each code but `na` ends in `e` for embedded text or `d` for device text, as in `f1e`. Face names are not printed.
 
@@ -243,12 +247,12 @@ The card shows what ModuleInfo sends: name, up to 10 stats, description, up to 2
 
 Check on the normal movie, then on `spaceshipeditormenu_lrg.swf`:
 
-- A hab, a weapon, and a reactor or shield. Compare each with a screenshot of the same part taken with this mod removed. `MODVALS` lines put each payload number next to the text the card showed: `cost=` and `mass=`, then `s1=` to `s10=` as value/diff/percent flag, `>`, then the shown value and chip. They are written when a module's values change, for up to 24 modules per visit. A class stat is a letter.
+- A hab, a weapon, and a reactor or shield, from whichever category holds each. Compare each with a screenshot of the same part taken with this mod removed and every other mod, Creations included, left as it is. `MODVALS` lines put each payload number next to the text the card showed: `cost=` and `mass=`, then `s1=` to `s10=` as value/diff/percent flag, `>`, then the shown value and chip. They are written when a module's values change, for up to 24 modules per visit. A class stat is a letter.
 - Text is readable, with no boxes. Small card text is 13 px on the normal movie and 16 px on the large movie.
-- The parts list, categories, scrolling, keyboard, pad, and mouse work as before.
+- The parts list, categories, scrolling, keyboard, pad, and mouse work as before. That includes categories another mod adds: the same tab names, order, and parts as with this mod removed.
 - The hangar overview keeps the game card.
 - Arrange, from Ctrl+L or the gear: the outline is the gold card. Move it and Save. Close and reopen the builder, and it is in the same spot. Reset puts it home. Cancel undoes a move.
-- The hex field still takes typing.
+- The hex field still takes typing. After Done, check that the arrow keys still move the parts list. Closing Settings clears keyboard focus when the hex field has it. If the arrows stop, note whether they come back after a category change.
 
 Bring back the log and a screenshot of the card for each part type on both movies.
 

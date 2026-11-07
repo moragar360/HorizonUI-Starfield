@@ -706,6 +706,18 @@ int main()
 	Expect(gold.find(std::string("Glow") + "Filter") == std::string::npos, "gold movie has no glow");
 	Expect(gold.find("Keyboard.F") == std::string::npos, "gold movie has no probe keys");
 	Expect(gold.find("aPartList") == std::string::npos, "gold movie does not touch the parts array");
+	Expect(gold.find("SetCategory") == std::string::npos && gold.find("CategoryName") == std::string::npos && gold.find("iCategoryIndex") == std::string::npos,
+		"the gold movie neither reads nor writes categories, so another mod's categories pass through untouched");
+	Expect(CountOf(gold, "ModuleEntries_mc") == 1 && FunctionBody(gold, "noteFaces").find("[\"ModuleEntries_mc\"]") != std::string::npos,
+		"the parts list is only read, for the face log");
+	Expect(CountOf(gold, ".focus = ") == 1 &&
+		FunctionBody(gold, "closeSettings").find("if(stage != null && this.hexBox != null && stage.focus == this.hexBox) { stage.focus = null; }") != std::string::npos,
+		"the movie takes keyboard focus from nothing but its own hex field");
+	const std::string guard = FunctionBody(gold, "isProtectedName");
+	Expect(guard.find("\"categor\"") != std::string::npos && guard.find("\"list\"") != std::string::npos && guard.find("\"entry\"") != std::string::npos &&
+		guard.find("\"scroll\"") != std::string::npos && guard.find("\"tab\"") != std::string::npos && guard.find("\"select\"") != std::string::npos &&
+		guard.find("\"input\"") != std::string::npos && guard.find("\"button\"") != std::string::npos,
+		"category, list, scroll, and input art is never faded");
 	Expect(CountOf(gold, "BSUIDataManager.Subscribe(") == 1 && gold.find("BSUIDataManager.Subscribe(\"ModuleInfo\",this.onModuleInfo)") != std::string::npos,
 		"the gold movie subscribes to ModuleInfo only");
 	Expect(gold.find("BSUIDataManager.Unsubscribe") == std::string::npos && gold.find("BSUIDataManager.Flush") == std::string::npos,
@@ -821,6 +833,9 @@ int main()
 		"the readme lists every card state");
 	Expect(readme.find("`MODVALS`") != std::string::npos && readme.find("this mod removed") != std::string::npos,
 		"the readme says how to compare the card with the payload");
+	Expect(readme.find("interface/spaceshipeditormenu_lrg.swf") != std::string::npos && readme.find("Creations included") != std::string::npos &&
+		readme.find("another mod adds") != std::string::npos && readme.find("arrow keys still move the parts list") != std::string::npos,
+		"the readme checks other plugins' movies, keeps other mods for the comparison, and checks list keys after the hex field");
 	Expect(gold.find("this.note(\"MODVALS \" + this.modVals[v]);") != std::string::npos && gold.find("this.modValsLeft = 24;") != std::string::npos,
 		"payload numbers and shown text are logged for a bounded number of modules");
 	Expect(!NotesHideFaces("         this.note(\"FONT face=\" + fmt.font);") && !NotesHideFaces("         this.note(\"FONT list=\" + FACES.join(\",\"));") &&
