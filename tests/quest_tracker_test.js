@@ -383,7 +383,7 @@ const build = funcBody(as, "hz27QBuild");
 expect(build.indexOf(',13,"rg","mut"') >= 0 && build.indexOf(",11,") < 0, "quest sub-lines are 13 px");
 
 expect(checks.split("\n")[6].indexOf("quest_tracker_test.js") >= 0, "CHECKS lists the quest tracker suite");
-expect(checks.split("\n")[66].indexOf("Digital: O2 fills from 7 o'clock, CO2 from 5 o'clock") >= 0, "CHECKS names the digital gauge starts");
+expect(checks.indexOf("Digital: O2 fills from 7 o'clock, CO2 from 5 o'clock") >= 0, "CHECKS names the digital gauge starts");
 expect(log.indexOf("steps come only from the selected quest") >= 0, "the changelog describes the selected-quest tracker");
 
 const bio = funcBody(as, "hz27BioHide");

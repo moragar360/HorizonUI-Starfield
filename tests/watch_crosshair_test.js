@@ -14,6 +14,7 @@ const root = path.join(__dirname, "..");
 const as = readText(path.join(root, "actionscript", "horizon_block.as"));
 const ini = readText(path.join(root, "Interface", "HorizonUI", "HorizonUI.default.ini"));
 const preset = readText(path.join(root, "preset", "HorizonUI.moragars-choice.ini"));
+const checks = readText(path.join(root, "CHECKS_0.43.1.0.md"));
 
 let failed = 0;
 function expect(cond, msg) {
@@ -205,10 +206,222 @@ expect(funcBody(as, "hz43VanClip").indexOf("getChildByName") < 0, "Arrange does 
 expect(funcBody(as, "hz43VanWrite").indexOf("hzBlg.x") < 0 && funcBody(as, "hz43VanWrite").indexOf("hzBlg.y") < 0, "Arrange does not drag the lower-left group");
 expect(as.indexOf("HZ43 watch unit=") >= 0, "the moved watch assembly is traced once");
 expect(funcBody(as, "hz43VanEnsure").indexOf("drawCircle(90,90,90)") < 0, "the Arrange box is the watch bounds, not a circle parked above it");
-expect(as.indexOf('names.push("WatchIconsWidget_mc"') < 0, "Horizon faces do not hide the live marker widget");
 expect(drawBody.indexOf("hz43BodyT.y = -22") >= 0 && drawBody.indexOf("hz43TempT.y = -4") >= 0, "the analog planet name sits below the compass letters");
 expect(funcBody(as, "hzT19Buttons").indexOf("isHold || !on") < 0, "an enabled hold is not drawn as disabled");
 expect(funcBody(as, "hz38HideVanilla").indexOf("hzT19KeepHold") >= 0, "the hold button stays able to receive the key");
+expect(funcBody(as, "hz38HideVanilla").indexOf("hzT19HideA(aw") < 0, "the activation widget is not alpha-hidden");
+expect(funcBody(as, "hz38HideVanilla").indexOf("hzT19HidePromptTree") >= 0, "prompt art is hidden off the hold path");
+expect(funcBody(as, "hzT19KeepHold").indexOf("p.alpha < 1") >= 0, "hold ancestors are restored to alpha 1");
+
+const onFrame = funcBody(as, "hzOnFrame");
+const style0At = onFrame.indexOf("hzWatchStyle == 0");
+const pushMark = onFrame.indexOf('names.push("WatchIconsWidget_mc","WatchPointerOutline_mc")');
+expect(style0At >= 0 && pushMark > style0At, "style 0 hides the leftover radar and nearby markers");
+expect(onFrame.indexOf("keepMark") >= 0 && onFrame.indexOf("hzWatchStyle == 3") >= 0 && onFrame.indexOf("hzWatchStyle == 4") >= 0, "Horizon faces still keep the live markers");
+expect(funcBody(as, "hz43ShowVanilla").indexOf("hz43VanBlgChrome(false)") >= 0, "vanilla restores unnamed watch chrome");
+expect(funcBody(as, "hz43ShowVanilla").indexOf("this.hz43StRestore()") >= 0, "vanilla restores recorded native readout state");
+expect(funcBody(as, "hz43ShowVanilla").indexOf("hz43VanInfoName(name)") >= 0, "vanilla does not force extra info clips on");
+expect(as.indexOf('HZ43_VAN_INFO:Array = ["Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"]') >= 0, "temperature and gravity stay game-driven on vanilla");
+expect(funcBody(as, "hz43VanRestoreHid").indexOf("hz43VanInfoName") >= 0, "undoing Horizon chrome does not force extra info clips");
+expect(funcBody(as, "hz43VanChrome").indexOf("this.hz43StRestore()") >= 0, "chrome restore puts recorded readout state back");
+expect(funcBody(as, "hz43VanChrome").indexOf("!hide && !this.hz43VanInfoName(name)") >= 0, "vanilla chrome restore skips extra info clips");
+expect(funcBody(as, "hz36HideTick").indexOf("hz43StHide") >= 0, "the hide tick records native readout state before it hides");
+expect(funcBody(as, "hz43VanNote").indexOf("hz43VanInfoName(d.name)") >= 0, "the chrome hid list does not take native readouts");
+expect(funcBody(as, "hz43StCapture").indexOf("if(d.visible)") >= 0 && funcBody(as, "hz43StCapture").indexOf("if(d.alpha != 0)") >= 0, "later hide frames do not store Horizon's own hide as native");
+expect(funcBody(as, "hz43Frame").indexOf("hz43Watch.visible = false") >= 0, "vanilla hides the Horizon-drawn watch");
+expect(drawBody.indexOf("hz43TempT.text") >= 0 && drawBody.indexOf("hz43BodyT.text") >= 0, "digital and analog still draw planet and temperature");
+expect(funcBody(as, "hz43VanChrome").indexOf("hz43VanBlgChrome(hide)") >= 0, "Horizon faces hide unnamed cap art with the vanilla bezel");
+expect(funcBody(as, "hz43VanNamed").indexOf("name.length == 0") >= 0, "unnamed shapes belong to the watch assembly");
+expect(funcBody(as, "hz43VanSkip").indexOf("name.length == 0) { return true; }") < 0, "unnamed chrome is not skipped from the watch assembly");
+expect(funcBody(as, "hz43VanSkip").indexOf("name.length == 0) { return false; }") >= 0, "unnamed shapes stay in the watch assembly");
+
+function leftoverWatchVisible(style, clip) {
+	const alerts = ["EnemyDetectionAnim_mc", "Autopilot_mc", "EnvAlertText", "BioAlertText", "LocationAlertText"];
+	if (alerts.indexOf(clip) >= 0) return true;
+	const mark = clip === "WatchIconsWidget_mc" || clip === "WatchPointerOutline_mc";
+	if (style === 0) return false;
+	if (style === 3 || style === 4) return mark;
+	return true;
+}
+expect(leftoverWatchVisible(0, "WatchIconsWidget_mc") === false, "off hides the inner radar");
+expect(leftoverWatchVisible(0, "WatchPointerOutline_mc") === false, "off hides the heading outline");
+expect(leftoverWatchVisible(0, "EnemyDetectionAnim_mc") === true, "off leaves the detection ring");
+expect(leftoverWatchVisible(3, "WatchIconsWidget_mc") === true, "digital keeps nearby markers");
+expect(leftoverWatchVisible(4, "WatchIconsWidget_mc") === true, "analog keeps nearby markers");
+expect(leftoverWatchVisible(1, "WatchIconsWidget_mc") === true, "vanilla keeps nearby markers");
+expect(leftoverWatchVisible(3, "WatchOutline_mc") === false, "digital hides the vanilla bezel");
+
+const INFO_NAMES = ["Temperature_mc", "Oxygen_mc", "Grav_mc", "OffPlanet_mc"];
+function isInfoName(name) {
+	return INFO_NAMES.indexOf(name) >= 0;
+}
+
+function makeClip(name, visible, alpha) {
+	return { name: name, visible: visible, alpha: alpha };
+}
+
+function stCapture(st, d) {
+	for (let i = 0; i < st.length; i++) {
+		if (st[i].d === d) {
+			if (d.visible) st[i].v = 1;
+			if (d.alpha !== 0) st[i].a = d.alpha;
+			return;
+		}
+	}
+	st.push({ d: d, v: d.visible ? 1 : 0, a: d.alpha });
+}
+
+function stHide(st, d) {
+	stCapture(st, d);
+	d.visible = false;
+	d.alpha = 0;
+}
+
+function stRestore(st) {
+	for (let i = 0; i < st.length; i++) {
+		st[i].d.visible = st[i].v !== 0;
+		st[i].d.alpha = st[i].a;
+	}
+	st.length = 0;
+}
+
+function noteFace(hid, d) {
+	if (isInfoName(d.name)) return;
+	if (hid.indexOf(d) < 0) hid.push(d);
+}
+
+function hideTick(style, clips, st) {
+	if (style === 1 || style === 2) return;
+	for (let i = 0; i < INFO_NAMES.length; i++) {
+		stHide(st, clips[INFO_NAMES[i]]);
+	}
+}
+
+function chromeHide(clips, hid, st) {
+	const names = Object.keys(clips);
+	for (let i = 0; i < names.length; i++) {
+		const d = clips[names[i]];
+		if (isInfoName(d.name)) stHide(st, d);
+		else {
+			noteFace(hid, d);
+			d.visible = false;
+			d.alpha = 0;
+		}
+	}
+}
+
+function chromeShow(clips, hid, st) {
+	for (let i = 0; i < hid.length; i++) {
+		if (!isInfoName(hid[i].name)) {
+			hid[i].visible = true;
+			hid[i].alpha = 1;
+		}
+	}
+	hid.length = 0;
+	stRestore(st);
+	const names = Object.keys(clips);
+	for (let i = 0; i < names.length; i++) {
+		if (isInfoName(names[i])) continue;
+		clips[names[i]].visible = true;
+		clips[names[i]].alpha = 1;
+	}
+}
+
+function showVanilla(clips, st) {
+	stRestore(st);
+	const names = Object.keys(clips);
+	for (let i = 0; i < names.length; i++) {
+		if (isInfoName(names[i])) continue;
+		clips[names[i]].visible = true;
+		clips[names[i]].alpha = 1;
+	}
+}
+
+function switchStyle(fromStyle, toStyle, natives) {
+	const clips = {
+		Temperature_mc: makeClip("Temperature_mc", natives.tempVisible, natives.tempAlpha),
+		Oxygen_mc: makeClip("Oxygen_mc", natives.oxVisible, natives.oxAlpha),
+		Grav_mc: makeClip("Grav_mc", natives.gravVisible, natives.gravAlpha),
+		OffPlanet_mc: makeClip("OffPlanet_mc", natives.offVisible, natives.offAlpha),
+		WatchOutline_mc: makeClip("WatchOutline_mc", true, 1),
+		locationNameBase_mc: makeClip("locationNameBase_mc", true, 1)
+	};
+	const st = [];
+	const hid = [];
+	if (fromStyle !== 1 && fromStyle !== 2) hideTick(fromStyle, clips, st);
+	if (fromStyle === 3 || fromStyle === 4) chromeHide(clips, hid, st);
+	if (toStyle === 1 || toStyle === 2) {
+		showVanilla(clips, st);
+		if (hid.length > 0) chromeShow(clips, hid, st);
+	}
+	hideTick(toStyle, clips, st);
+	return { clips: clips, st: st, hid: hid };
+}
+
+const offToVanillaShown = switchStyle(0, 1, {
+	tempVisible: true, tempAlpha: 1,
+	oxVisible: true, oxAlpha: 1,
+	gravVisible: true, gravAlpha: 0.5,
+	offVisible: true, offAlpha: 1
+});
+expect(offToVanillaShown.clips.Temperature_mc.visible === true && offToVanillaShown.clips.Temperature_mc.alpha === 1, "Off then Vanilla restores a native-shown temperature clip");
+expect(offToVanillaShown.clips.Grav_mc.visible === true && offToVanillaShown.clips.Grav_mc.alpha === 0.5, "Off then Vanilla restores recorded gravity alpha, not 1");
+expect(offToVanillaShown.st.length === 0, "Off then Vanilla clears the native-readout store");
+expect(offToVanillaShown.hid.length === 0, "Off then Vanilla leaves the chrome hid list empty");
+
+const offToVanillaHidden = switchStyle(0, 2, {
+	tempVisible: false, tempAlpha: 1,
+	oxVisible: false, oxAlpha: 0,
+	gravVisible: false, gravAlpha: 1,
+	offVisible: false, offAlpha: 1
+});
+expect(offToVanillaHidden.clips.Temperature_mc.visible === false && offToVanillaHidden.clips.Temperature_mc.alpha === 1, "Off then Vanilla+Horizon does not force a native-hidden temperature clip");
+expect(offToVanillaHidden.clips.Oxygen_mc.visible === false && offToVanillaHidden.clips.Oxygen_mc.alpha === 0, "Off then Vanilla+Horizon leaves a native-hidden oxygen clip hidden");
+expect(offToVanillaHidden.clips.WatchOutline_mc.visible === true && offToVanillaHidden.clips.WatchOutline_mc.alpha === 1, "Off then Vanilla+Horizon still restores the watch outline");
+
+const digitalToVanillaShown = switchStyle(3, 1, {
+	tempVisible: true, tempAlpha: 1,
+	oxVisible: true, oxAlpha: 1,
+	gravVisible: true, gravAlpha: 1,
+	offVisible: true, offAlpha: 1
+});
+expect(digitalToVanillaShown.clips.Temperature_mc.visible === true && digitalToVanillaShown.clips.Temperature_mc.alpha === 1, "Digital then Vanilla restores a native-shown temperature clip");
+expect(digitalToVanillaShown.clips.locationNameBase_mc.visible === true, "Digital then Vanilla restores the native planet name");
+expect(digitalToVanillaShown.st.length === 0 && digitalToVanillaShown.hid.length === 0, "Digital then Vanilla clears hid-list and readout store");
+
+const analogToVanillaHidden = switchStyle(4, 2, {
+	tempVisible: false, tempAlpha: 1,
+	oxVisible: false, oxAlpha: 1,
+	gravVisible: false, gravAlpha: 1,
+	offVisible: false, offAlpha: 1
+});
+expect(analogToVanillaHidden.clips.Temperature_mc.visible === false && analogToVanillaHidden.clips.Temperature_mc.alpha === 1, "Analog then Vanilla+Horizon does not force a native-hidden temperature clip");
+expect(analogToVanillaHidden.clips.WatchOutline_mc.visible === true, "Analog then Vanilla+Horizon still restores the watch outline");
+expect(analogToVanillaHidden.st.length === 0 && analogToVanillaHidden.hid.length === 0, "Analog then Vanilla+Horizon clears hid-list and readout store");
+
+const gameShowDuringOff = {
+	tempVisible: true, tempAlpha: 1,
+	oxVisible: true, oxAlpha: 1,
+	gravVisible: true, gravAlpha: 1,
+	offVisible: true, offAlpha: 1
+};
+const live = makeClip("Temperature_mc", true, 1);
+const liveSt = [];
+stHide(liveSt, live);
+live.visible = true;
+live.alpha = 0;
+stHide(liveSt, live);
+stRestore(liveSt);
+expect(live.visible === true && live.alpha === 1, "a game visible=true during Off does not replace stored alpha with Horizon's 0");
+expect(live.alpha !== 0, "game writing visible cannot recover an unrestored alpha 0, so restore must write alpha");
+expect(checks.indexOf("if the game later shows those clips, they appear") < 0, "CHECKS does not claim game visible recovers the current hide");
+expect(checks.indexOf("cannot recover an unrestored") >= 0, "CHECKS names that visible cannot recover unrestored alpha 0");
+
+function holdPathLive(awAlphaHidden, ancestorAlphaRestored) {
+	return ancestorAlphaRestored ? 1 : (awAlphaHidden ? 0 : 1);
+}
+expect(holdPathLive(true, false) === 0, "an alpha-0 ancestor blocks the hold");
+expect(holdPathLive(false, true) === 1, "restored ancestors keep the hold live");
 
 expect(ini.indexOf("WatchX=-1") >= 0 && ini.indexOf("WatchY=-1") >= 0, "default watch position is the lower-left home");
 expect(ini.indexOf("WatchScale=-1") >= 0, "watch size defaults to HudScale");
