@@ -244,12 +244,17 @@ expect(funcBody(as, "hz43VanHorizon").indexOf("face / this.hz43VanRad") < 0 && f
 expect(funcBody(as, "hz43VanRingMid").indexOf("HZ43_VAN_FACE / 2") >= 0 && funcBody(as, "hz43VanRingMid").indexOf("getBounds") < 0, "marker follow uses outline local center, not hidden getBounds");
 expect(funcBody(as, "hz43VanDump").indexOf("vis=") >= 0 && funcBody(as, "hz43VanDump").indexOf(" a=") >= 0, "HZ43 dump reports vis and alpha separately");
 expect(funcBody(as, "hz43ShowVanilla").indexOf("hz43VanDump(\"vanilla\")") >= 0, "Vanilla restore dumps sibling vis and alpha");
-expect(funcBody(as, "hz43VanInstName").indexOf('name.indexOf("instance") == 0') >= 0, "instance66 is unnamed cap chrome, not an empty-string name");
-expect(funcBody(as, "hz43VanNamed").indexOf("hz43VanInstName") >= 0 && funcBody(as, "hz43VanWatchClip").indexOf("hz43VanInstName") >= 0, "capture and own-hide treat instance names as BLG chrome");
-expect(funcBody(as, "hz43VanBlgChrome").indexOf("hz43VanInstName") >= 0, "Vanilla chrome restore unhides instance cap names");
+expect(funcBody(as, "hz43VanInstName").indexOf('name.indexOf("instance") == 0') >= 0, "Scaleform autonames are detected as a type, not as ownership");
+expect(funcBody(as, "hz43VanNamed").indexOf("hz43VanInstName") < 0, "autoname prefix is not VanNamed ownership");
+expect(funcBody(as, "hz43VanWatchClip").indexOf("hz43VanCapClip") >= 0 && funcBody(as, "hz43VanGather").indexOf("hz43VanCapClip") >= 0, "capture and own-hide use verified cap identity");
+expect(funcBody(as, "hz43VanBlgChrome").indexOf("hz43VanCapClip") >= 0 && funcBody(as, "hz43VanBlgChrome").indexOf("hz43VanInstName") < 0, "chrome hide and restore use verified cap identity");
+expect(funcBody(as, "hz43VanCapClip").indexOf("WatchOutline_mc") >= 0, "cap identity is outline-relative native pose");
+expect(funcBody(as, "hz43VanCapClip").indexOf("scaleY") >= 0, "collapsed INFO ticks are not the cap");
+expect(funcBody(as, "hz43VanCapClip").indexOf('"instance66"') < 0, "cap identity is not hardcoded instance66");
 expect(funcBody(as, "hz43VanDump").indexOf("ctA=") >= 0 && funcBody(as, "hz43VanDump").indexOf("HZ43_DIAG") >= 0, "dump records ColorTransform alpha and the diagnostic package token");
+expect(funcBody(as, "hz43VanDump").indexOf("capArt=") >= 0, "dump marks which autonamed sibling is the verified cap");
 expect(funcBody(as, "hz43VanDump").indexOf("hz43VanNamed") < 0, "dump lists every BottomLeftGroup child, not only VanNamed clips");
-expect(as.indexOf('HZ43_DIAG:String = "r9-inst66-ct-20261107"') >= 0, "next gfx can prove package r9-inst66-ct-20261107");
+expect(as.indexOf('HZ43_DIAG:String = "r9-cappose-20261107"') >= 0, "next gfx can prove package r9-cappose-20261107");
 expect(funcBody(as, "hz43VanCapture").indexOf('hz43VanDump("cap")') >= 0, "dump after capture latch prints cap=1");
 expect(funcBody(as, "hz43VanWrite").indexOf("write-marks") >= 0, "dump runs at native and marker writes");
 expect(funcBody(as, "hz43VanNote").indexOf("hz43HidV") < 0 && funcBody(as, "hz43VanRestoreHid").indexOf("hz43HidV") < 0, "hide identity list does not sample clip.visible for restore");
@@ -288,7 +293,7 @@ expect(as.indexOf('HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_m
 expect(funcBody(as, "hz43Frame").indexOf("hz43Watch.visible = false") >= 0, "vanilla hides the Horizon-drawn watch");
 expect(drawBody.indexOf("hz43TempT.text") >= 0 && drawBody.indexOf("hz43BodyT.text") >= 0, "digital and analog still draw planet and temperature");
 expect(funcBody(as, "hz43VanChrome").indexOf("hz43VanBlgChrome(hide)") >= 0, "Horizon faces hide unnamed cap art with the vanilla bezel");
-expect(funcBody(as, "hz43VanInstName").indexOf("name.length == 0") >= 0 && funcBody(as, "hz43VanNamed").indexOf("hz43VanInstName") >= 0, "unnamed shapes belong to the watch assembly");
+expect(funcBody(as, "hz43VanInstName").indexOf("name.length == 0") >= 0 && funcBody(as, "hz43VanCapClip").indexOf("hz43VanInstName") >= 0, "empty PlaceObject names can still be the cap after pose check");
 expect(funcBody(as, "hz43VanSkip").indexOf("name.length == 0) { return true; }") < 0, "unnamed chrome is not skipped from the watch assembly");
 expect(funcBody(as, "hz43VanSkip").indexOf("name.length == 0) { return false; }") >= 0, "unnamed shapes stay in the watch assembly");
 
@@ -331,10 +336,16 @@ function vanSkip(name) {
 function vanNamed(name) {
 	if (name == null) return false;
 	if (vanSkip(name)) return false;
-	if (name.length === 0) return true;
 	if (name === "MissionIconsWidget_mc" || name === "EnemyIconsWidget_mc" || name === "Autopilot_mc") return true;
 	if (VAN_N.indexOf(name) >= 0) return true;
 	return name.indexOf("Watch") === 0;
+}
+function vanCapClip(d, outline) {
+	if (!d || vanSkip(d.name)) return false;
+	if (!(d.name === "" || (typeof d.name === "string" && d.name.indexOf("instance") === 0))) return false;
+	if (Math.abs(d.scaleX) < 0.5 || Math.abs(d.scaleY) < 0.5) return false;
+	if (outline) return Math.abs(d.x - outline.x) < 2 && Math.abs(d.y - outline.y) < 2;
+	return Math.abs(d.x) < 2 && Math.abs(d.y) < 2;
 }
 function newRootOf(clip, blg) {
 	let root = clip;
@@ -354,20 +365,25 @@ const unnamedInner = { name: "", parent: o2anim, x: 0, y: 0 };
 o2anim.kids = [unnamedInner];
 o2co2.kids = [o2anim, co2anim];
 const outline = { name: "WatchOutline_mc", parent: blg, x: 0, y: 0 };
-const unnamedCap = { name: "", parent: blg, x: 0, y: -0.25 };
+const unnamedCap = { name: "", parent: blg, x: 0, y: -0.25, scaleX: 1, scaleY: 1 };
 const pointer = { name: "WatchPointerOutline_mc", parent: blg, x: 111, y: 111 };
 const icons = { name: "WatchIconsWidget_mc", parent: blg, x: 111.35, y: 111.45 };
 const mission = { name: "MissionIconsWidget_mc", parent: blg, x: 111.35, y: 111.45 };
 const enemy = { name: "EnemyIconsWidget_mc", parent: blg, x: 111.35, y: 111.45 };
 const thin = { name: "O2CO2thin_mc", parent: blg, x: 16.1, y: 88.3 };
 const bio = { name: "BioCondition_mc", parent: blg, x: 96.25, y: 24.45 };
+const envBase = { name: "EnvConditionBase_mc", parent: blg, x: 109.65, y: 111.45 };
+const envAlert = { name: "EnvAlertText", parent: blg, x: 110.75, y: 110.25 };
 const detect = { name: "EnemyDetectionAnim_mc", parent: blg, x: 110.5, y: 110.5 };
-const blgKids = [unnamedCap, outline, pointer, o2co2, thin, icons, mission, enemy, bio, detect];
+const inst546 = { name: "instance546", parent: blg, x: 110.5, y: 110.5, scaleX: 1, scaleY: 1 };
+const inst548 = { name: "instance548", parent: blg, x: 87.2, y: 141.65, scaleX: 0.000076293945, scaleY: 0 };
+const inst550 = { name: "instance550", parent: blg, x: 139.45, y: 141.65, scaleX: 0.000076293945, scaleY: 0 };
+const blgKids = [unnamedCap, outline, pointer, o2co2, thin, icons, mission, enemy, bio, envBase, envAlert, detect, inst546, inst548, inst550];
 
-function gatherSiblings(kids) {
+function gatherSiblings(kids, ring) {
 	const units = [];
 	for (let i = 0; i < kids.length; i++) {
-		if (vanNamed(kids[i].name)) units.push(kids[i]);
+		if (vanNamed(kids[i].name) || vanCapClip(kids[i], ring)) units.push(kids[i]);
 	}
 	return units;
 }
@@ -389,23 +405,34 @@ function oldRootOf(clip) {
 	}
 	return root;
 }
+function vanNamedOld(name) {
+	if (name == null) return false;
+	if (vanSkip(name)) return false;
+	if (name.length === 0 || (typeof name === "string" && name.indexOf("instance") === 0)) return true;
+	return vanNamed(name);
+}
 function gatherNestedOld(node, depth, out) {
 	if (!node || depth > 4) return;
 	const kids = node === blg ? blgKids : node.kids;
 	if (!kids) return;
 	for (let i = 0; i < kids.length; i++) {
 		const ch = kids[i];
-		if (vanNamed(ch.name)) out.push(oldRootOf(ch));
+		if (vanNamedOld(ch.name)) out.push(oldRootOf(ch));
 		if (!vanSkip(ch.name)) gatherNestedOld(ch, depth + 1, out);
 	}
 }
 
-const siblingUnits = gatherSiblings(blgKids);
+const siblingUnits = gatherSiblings(blgKids, outline);
 expect(siblingUnits.indexOf(o2co2) >= 0 && siblingUnits.indexOf(outline) >= 0, "native ring and O2 bar are sibling units");
 expect(siblingUnits.indexOf(unnamedCap) >= 0, "unnamed cap is a BottomLeftGroup sibling unit");
+expect(siblingUnits.indexOf(inst546) < 0 && siblingUnits.indexOf(inst548) < 0 && siblingUnits.indexOf(inst550) < 0, "autonamed center art and INFO ticks are not watch units");
 expect(siblingUnits.indexOf(o2anim) < 0 && siblingUnits.indexOf(co2anim) < 0, "inner O2Anim_mc is not a unit");
-expect(siblingUnits.indexOf(bio) < 0 && siblingUnits.indexOf(detect) < 0, "bio and detection are not watch units");
+expect(siblingUnits.indexOf(bio) < 0 && siblingUnits.indexOf(envBase) < 0 && siblingUnits.indexOf(envAlert) < 0 && siblingUnits.indexOf(detect) < 0, "bio env alert and detection are not watch units");
 expect(siblingUnits.indexOf(mission) >= 0 && siblingUnits.indexOf(enemy) >= 0, "mission and enemy widgets move with the watch");
+expect(vanCapClip({ name: "instance66", x: 110.5, y: 110.5, scaleX: 1, scaleY: 1 }, outline) === false, "instance66 at center-art pose is not the cap");
+expect(vanCapClip({ name: "instance546", x: 0, y: -0.25, scaleX: 1, scaleY: 1 }, outline) === true, "cap identity follows pose, not the session instance number");
+expect(vanNamed("instance66") === false && vanNamed("instance546") === false, "autoname prefix is not a named watch unit");
+expect(vanSkip("BioCondition_mc") && vanSkip("EnvConditionBase_mc") && vanSkip("EnvAlertText") && vanSkip("BioAlertText"), "named bio and env clips stay skipped");
 expect(newRootOf(o2anim, blg) === o2co2, "O2Anim_mc maps to O2CO2_mc");
 expect(newRootOf(unnamedInner, blg) === o2co2, "unnamed art inside O2Anim_mc maps to O2CO2_mc, not itself");
 const oldNested = [];
@@ -452,8 +479,8 @@ function displayed(d) {
 function isInstName(name) {
 	return name === "" || (typeof name === "string" && name.indexOf("instance") === 0);
 }
-function isWatchClip(d) {
-	return !!(d && (WATCH_NAMES[d.name] || isInstName(d.name)));
+function isWatchClip(d, outline) {
+	return !!(d && (WATCH_NAMES[d.name] || vanCapClip(d, outline)));
 }
 function hidHas(hid, clip) {
 	for (let i = 0; i < hid.length; i++) {
@@ -485,20 +512,21 @@ function envWant(state, name) {
 function planetPayload() {
 	return { bInSpaceship: false, bIsLanded: false, bIsShipInCruiseMode: false, sLanguage: "" };
 }
-function noteClip(hid, d) {
-	if (!isWatchClip(d)) return;
+function noteClip(hid, d, outline) {
+	if (!isWatchClip(d, outline)) return;
 	for (let i = 0; i < hid.length; i++) {
 		if (hid[i].d === d) return;
 	}
 	hid.push({ d: d });
 }
-function stHideWatch(hid, d) {
-	noteClip(hid, d);
+function stHideWatch(hid, d, outline) {
+	noteClip(hid, d, outline);
 	d.visible = false;
 }
 function hideTick(clips, hid, style) {
 	const showVan = style === 1 || style === 2;
 	const keepMarks = style === 3 || style === 4;
+	const outline = clips.WatchOutline_mc;
 	const names = Object.keys(clips);
 	for (let i = 0; i < names.length; i++) {
 		const d = clips[names[i]];
@@ -507,16 +535,17 @@ function hideTick(clips, hid, style) {
 			d.alpha = 0;
 			continue;
 		}
-		if (!isWatchClip(d) || showVan) continue;
+		if (!isWatchClip(d, outline) || showVan) continue;
 		if (keepMarks && MARK_NAMES[d.name]) continue;
-		stHideWatch(hid, d);
+		stHideWatch(hid, d, outline);
 	}
 }
 function restoreHid(state) {
 	const hid = state.hid;
+	const outline = state.clips.WatchOutline_mc;
 	for (let i = 0; i < hid.length; i++) {
 		const d = hid[i].d;
-		if (!isWatchClip(d)) continue;
+		if (!isWatchClip(d, outline)) continue;
 		if (GAME_VIS[d.name]) {
 			if (state.envGot || d.name === "locationNameBase_mc") d.visible = envWant(state, d.name);
 		} else if (!d.visible) {
@@ -540,7 +569,7 @@ function captureWatch(state) {
 	state.units = [];
 	for (let i = 0; i < names.length; i++) {
 		const d = state.clips[names[i]];
-		if (!isWatchClip(d)) continue;
+		if (!isWatchClip(d, outline)) continue;
 		d.x0 = d.x;
 		d.y0 = d.y;
 		state.units.push(d);
@@ -583,15 +612,16 @@ function vanHorizon(state) {
 	}
 }
 function chromeHide(clips, hid, keepMarks) {
+	const outline = clips.WatchOutline_mc;
 	const names = Object.keys(clips);
 	for (let i = 0; i < names.length; i++) {
 		const d = clips[names[i]];
-		if (!isWatchClip(d)) continue;
+		if (!isWatchClip(d, outline)) continue;
 		if (keepMarks && MARK_NAMES[d.name]) {
 			d.visible = true;
 			continue;
 		}
-		stHideWatch(hid, d);
+		stHideWatch(hid, d, outline);
 	}
 }
 function tintRgb(clip, amt) {
@@ -619,6 +649,9 @@ function makeWatchState(payload) {
 		envLang: "",
 		clips: {
 			instance66: makeClip("instance66", true, 0, 0, -0.25),
+			instance546: makeClip("instance546", true, 0, 110.5, 110.5),
+			instance548: makeClip("instance548", true, 0, 87.2, 141.65),
+			instance550: makeClip("instance550", true, 0, 139.45, 141.65),
 			WatchOutline_mc: makeClip("WatchOutline_mc", true, 0, 0, 0),
 			O2CO2_mc: makeClip("O2CO2_mc", true, 0, 21.7, 89.85),
 			O2CO2thin_mc: makeClip("O2CO2thin_mc", true, 0, 16.1, 88.3),
@@ -633,11 +666,20 @@ function makeWatchState(payload) {
 			DayCycleBase_mc: makeClip("DayCycleBase_mc", true, 0, 110.5, 110.5),
 			locationNameBase_mc: makeClip("locationNameBase_mc", true, 0, 110.15, 139.75),
 			Autopilot_mc: makeClip("Autopilot_mc", false, 0, 110.45, 104.45),
+			BioCondition_mc: makeClip("BioCondition_mc", true, 0, 96.25, 24.45),
+			EnvConditionBase_mc: makeClip("EnvConditionBase_mc", true, 0, 109.65, 111.45),
+			EnvAlertText: makeClip("EnvAlertText", true, 0, 110.75, 110.25),
+			BioAlertText: makeClip("BioAlertText", true, 0, 110.85, 86.35),
+			EnemyDetectionAnim_mc: makeClip("EnemyDetectionAnim_mc", true, 1, 110.5, 110.5),
 			HealthBar_mc: makeClip("HealthBar_mc", true, 1),
 			EquippedWeaponAmmo_mc: makeClip("EquippedWeaponAmmo_mc", true, 1),
 			JetpackMeterWrapper_mc: makeClip("JetpackMeterWrapper_mc", true, 1)
 		}
 	};
+	state.clips.instance548.scaleX = 0.000076293945;
+	state.clips.instance548.scaleY = 0;
+	state.clips.instance550.scaleX = 0.000076293945;
+	state.clips.instance550.scaleY = 0;
 	if (payload !== null) envCache(state, payload || planetPayload());
 	return state;
 }
@@ -773,6 +815,11 @@ expect(digitalRound.clips.EnemyIconsWidget_mc.visible === true, "Digital keeps e
 expect(digitalRound.clips.O2CO2_mc.x === 21.7 && digitalRound.clips.WatchOutline_mc.x === 0, "Digital does not drag native O2 or outline locals");
 expect(digitalRound.clips.instance66.x === 0 && digitalRound.clips.instance66.y === -0.25, "Digital does not drag native cap instance66 locals");
 expect(digitalRound.clips.instance66.visible === false, "Digital hides native cap instance66 with chrome");
+expect(digitalRound.clips.instance546.visible === true && digitalRound.clips.instance546.x === 110.5 && digitalRound.clips.instance546.y === 110.5, "Digital does not hide or move autonamed center art");
+expect(digitalRound.clips.instance548.visible === true && digitalRound.clips.instance548.x === 87.2 && digitalRound.clips.instance548.scaleY === 0, "Digital does not hide or move autonamed INFO tick 548");
+expect(digitalRound.clips.instance550.visible === true && digitalRound.clips.instance550.x === 139.45 && digitalRound.clips.instance550.scaleY === 0, "Digital does not hide or move autonamed INFO tick 550");
+expect(digitalRound.clips.BioCondition_mc.visible === true && digitalRound.clips.EnvConditionBase_mc.visible === true, "Digital does not own named bio or env condition clips");
+expect(digitalRound.clips.EnvAlertText.visible === true && digitalRound.clips.BioAlertText.visible === true && digitalRound.clips.EnemyDetectionAnim_mc.visible === true, "Digital leaves named env/bio alerts and detection on native rules");
 expect(digitalRound.clips.O2CO2_mc.scaleX === 1 && digitalRound.clips.WatchOutline_mc.scaleX === 1, "Digital does not scale native chrome");
 expect(digitalRound.clips.WatchIconsWidget_mc.x === 111.35 + (0 + 132 - 110.5), "Digital moves location markers from the outline center to the Horizon face");
 expect(displayed(digitalRound.clips.WatchOutline_mc) === false, "hidden Digital chrome at FadeIn alpha 0 is not displayed");
@@ -780,6 +827,7 @@ expect(digitalRound.clips.HealthBar_mc.visible === false, "health stays hidden o
 applyWatchStyle(digitalRound, 1);
 expect(digitalRound.clips.WatchOutline_mc.visible === true, "Digital then Vanilla restores the outline");
 expect(digitalRound.clips.instance66.visible === true && digitalRound.clips.instance66.x === 0, "Digital then Vanilla restores instance66 vis and native cap local");
+expect(digitalRound.clips.instance546.x === 110.5 && digitalRound.clips.instance548.y === 141.65 && digitalRound.clips.instance550.x === 139.45, "Digital then Vanilla does not Arrange the extra autonamed siblings");
 expect(digitalRound.clips.WatchIconsWidget_mc.x === 111.35, "Vanilla restores marker locals captured before the custom write");
 expect(digitalRound.clips.WatchOutline_mc.visible === true && digitalRound.clips.WatchOutline_mc.alpha === 0, "Vanilla vis undo does not write FadeIn alpha");
 expect(displayed(digitalRound.clips.WatchOutline_mc) === false, "Vanilla vis-true does not display native chrome at alpha 0");
@@ -808,6 +856,36 @@ expect(f11Live.clips.DayCycleBase_mc.visible === true && f11Live.clips.Autopilot
 expect(f11Live.clips.MissionIconsWidget_mc.visible === true && f11Live.clips.EnemyIconsWidget_mc.visible === true, "repeated F11 cycles keep mission and enemy markers on Vanilla");
 expect(f11Live.clips.HealthBar_mc.visible === false && f11Live.clips.JetpackMeterWrapper_mc.visible === false, "repeated F11 cycles never restore health or boost");
 expect(f11Live.clips.Temperature_mc.alpha === 0 && f11Live.clips.Oxygen_mc.alpha === 0 && f11Live.clips.Grav_mc.alpha === 0, "F11 cycles never force INFO alpha");
+expect(f11Live.clips.instance546.visible === true && f11Live.clips.instance548.visible === true && f11Live.clips.instance550.visible === true, "F11 cycles never own-hide the extra autonamed BLG siblings");
+
+const offExtra = makeWatchState();
+applyWatchStyle(offExtra, 0);
+expect(offExtra.clips.instance66.visible === false, "Off hides the verified cap");
+expect(offExtra.clips.instance546.visible === true && offExtra.clips.instance548.visible === true && offExtra.clips.instance550.visible === true, "Off does not hide autonamed center art or INFO ticks");
+expect(offExtra.clips.BioCondition_mc.visible === true && offExtra.clips.EnvAlertText.visible === true && offExtra.clips.EnemyDetectionAnim_mc.visible === true, "Off does not hide named bio env alerts or detection through watch ownership");
+
+const savedLay = makeWatchState();
+applyWatchStyle(savedLay, 1);
+captureWatch(savedLay);
+expect(savedLay.units.indexOf(savedLay.clips.instance66) >= 0, "saved Arrange capture includes the verified cap");
+expect(savedLay.units.indexOf(savedLay.clips.instance546) < 0 && savedLay.units.indexOf(savedLay.clips.instance548) < 0 && savedLay.units.indexOf(savedLay.clips.instance550) < 0, "saved Arrange capture excludes the extra autonamed siblings");
+vanWrite(savedLay, -40, -40, 1, false);
+expect(savedLay.clips.instance66.x === -40 && savedLay.clips.WatchOutline_mc.x === -40, "saved L-40 moves the cap with the outline");
+expect(savedLay.clips.instance66.y === -40.25 && savedLay.clips.WatchOutline_mc.y === -40, "saved B-40 keeps the native cap to outline offset");
+expect(savedLay.clips.instance546.x === 110.5 && savedLay.clips.instance546.y === 110.5, "saved L-40 B-40 does not move autonamed center art");
+expect(savedLay.clips.instance548.x === 87.2 && savedLay.clips.instance548.y === 141.65 && savedLay.clips.instance548.scaleY === 0, "saved L-40 B-40 does not move or scale INFO tick 548");
+expect(savedLay.clips.instance550.x === 139.45 && savedLay.clips.instance550.y === 141.65 && savedLay.clips.instance550.scaleY === 0, "saved L-40 B-40 does not move or scale INFO tick 550");
+expect(vanCapClip(savedLay.clips.instance66, savedLay.clips.WatchOutline_mc) === true, "cap identity stays outline-relative after saved Arrange");
+expect(vanCapClip(savedLay.clips.instance546, savedLay.clips.WatchOutline_mc) === false, "center art still fails cap pose after saved Arrange");
+
+const geo = makeWatchState();
+expect(isWatchClip(geo.clips.instance66, geo.clips.WatchOutline_mc) === true, "session instance66 at native cap pose is watch chrome");
+geo.clips.instance66.x = 110.5;
+geo.clips.instance66.y = 110.5;
+expect(isWatchClip(geo.clips.instance66, geo.clips.WatchOutline_mc) === false, "the same autoname at center-art geometry is not watch chrome");
+geo.clips.instance546.x = 0;
+geo.clips.instance546.y = -0.25;
+expect(isWatchClip(geo.clips.instance546, geo.clips.WatchOutline_mc) === true, "cap identity follows native pose across autoname numbers");
 
 const live = makeWatchState();
 applyWatchStyle(live, 1);
@@ -824,6 +902,8 @@ expect(checks.indexOf("FadeInPlanetInfo") >= 0, "CHECKS records that INFO appear
 expect(checks.indexOf("does not display") >= 0, "CHECKS does not treat INFO vis-true as shown at alpha 0");
 expect(checks.indexOf("move only the live marker widgets") >= 0, "CHECKS describes custom marker-only follow");
 expect(checks.indexOf("HZ43 dump") >= 0 && checks.indexOf("vis/alpha") >= 0, "CHECKS records vis and alpha sibling dumps");
+expect(checks.indexOf("r9-cappose-20261107") >= 0, "CHECKS records the cap-pose diagnostic package token");
+expect(checks.indexOf("instance546") >= 0 && checks.indexOf("characterId 1237") >= 0, "CHECKS records the extra autonamed BLG siblings are not the cap");
 expect(checks.indexOf("health") >= 0 && checks.indexOf("ammo") >= 0 && checks.indexOf("boost") >= 0, "CHECKS records that health ammo and boost stay off the watch hid list");
 expect(checks.indexOf("FadeIn") >= 0 || checks.indexOf("native") >= 0, "CHECKS describes native watch passthrough");
 expect(checks.indexOf("not proven freeze") >= 0, "CHECKS reports FadeIn on invisible children as unknown, not a freeze");

@@ -18614,8 +18614,8 @@
       private static const HZ43_VAN_A:Array = ["BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"];
       private static const HZ43_VAN_MAX:int = 24;
       private static const HZ43_VAN_FACE:Number = 221;
-      // Unique package token for the next diagnostic gfx. Scaleform names the native cap instance66, not "".
-      private static const HZ43_DIAG:String = "r9-inst66-ct-20261107";
+      // Unique package token for the next diagnostic gfx. Autoname prefix is not watch ownership.
+      private static const HZ43_DIAG:String = "r9-cappose-20261107";
 
       private function hz43VanInfoName(name:String) : Boolean
       {
@@ -18666,12 +18666,8 @@
       {
          if(!d) { return false; }
          if(this.hz43VanSkip(d.name)) { return false; }
-         var n:String = d.name;
-         if(this.hz43VanInstName(n))
-         {
-            return this.hzBlg != null && d.parent == this.hzBlg;
-         }
-         if(!this.hz43VanNamed(n)) { return false; }
+         if(this.hz43VanCapClip(d)) { return true; }
+         if(!this.hz43VanNamed(d.name)) { return false; }
          if(this.hzBlg == null || d.parent == this.hzBlg) { return true; }
          var root:DisplayObject = this.hz43VanRootOf(d);
          return root != null && this.hz43VanNamed(root.name);
@@ -19581,7 +19577,7 @@
          return name == "WatchIconsWidget_mc" || name == "WatchPointerOutline_mc" || name == "MissionIconsWidget_mc" || name == "EnemyIconsWidget_mc";
       }
 
-      // Runtime PHC names the depth-1 cap instance66. Empty-string checks do not see it.
+      // Scaleform autoname for an unnamed PlaceObject. Not watch ownership by itself.
       private function hz43VanInstName(name:String) : Boolean
       {
          if(name == null) { return false; }
@@ -19589,11 +19585,37 @@
          return name.indexOf("instance") == 0;
       }
 
+      // Native cap: PHC sprite 1337 depth 1 characterId 926 at (0, -0.25) beside WatchOutline_mc (0, 0).
+      // FadeIn CXFORM depths 1/3/5/9. After sibling Arrange both clips get the same dx/sc, so the pair stays.
+      // Other unnamed BLG clips fail this: depth 278 char 1237 at (110.5, 110.5), depths 298/300 char 1271
+      // at (87.2, 141.65) and (139.45, 141.65) with scaleY 0. Autoname numbers are not stable across movies.
+      private function hz43VanCapClip(d:DisplayObject) : Boolean
+      {
+         if(!d || this.hzBlg == null || d.parent != this.hzBlg) { return false; }
+         if(this.hz43VanSkip(d.name)) { return false; }
+         if(!this.hz43VanInstName(d.name)) { return false; }
+         if(d.scaleX < 0.5 && d.scaleX > -0.5) { return false; }
+         if(d.scaleY < 0.5 && d.scaleY > -0.5) { return false; }
+         var i:int = 0;
+         while(this.hz43VanD != null && i < this.hz43VanN)
+         {
+            if(this.hz43VanD[i] == d) { return true; }
+            i++;
+         }
+         var outline:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         if(outline && outline.parent == this.hzBlg)
+         {
+            var dx:Number = d.x - outline.x;
+            var dy:Number = d.y - outline.y;
+            return dx > -2 && dx < 2 && dy > -2 && dy < 2;
+         }
+         return d.x > -2 && d.x < 2 && d.y > -2 && d.y < 2;
+      }
+
       private function hz43VanNamed(name:String) : Boolean
       {
          if(name == null) { return false; }
          if(this.hz43VanSkip(name)) { return false; }
-         if(this.hz43VanInstName(name)) { return true; }
          if(name == "MissionIconsWidget_mc" || name == "EnemyIconsWidget_mc" || name == "Autopilot_mc") { return true; }
          var i:int = 0;
          while(i < HZ43_VAN_N.length)
@@ -19659,7 +19681,7 @@
          while(i < this.hzBlg.numChildren)
          {
             var ch:DisplayObject = this.hzBlg.getChildAt(i);
-            if(ch && this.hz43VanNamed(ch.name)) { this.hz43VanAdd(ch); }
+            if(ch && (this.hz43VanNamed(ch.name) || this.hz43VanCapClip(ch))) { this.hz43VanAdd(ch); }
             i++;
          }
       }
@@ -19934,8 +19956,8 @@
          this.hz43HidN = 0;
       }
 
-      // Direct BottomLeftGroup children that are watch chrome, including unnamed cap art.
-      // Alerts and detection stay on their own rules. Show does not write alpha: native FadeIn owns it.
+      // Direct BottomLeftGroup watch chrome, including the verified cap. Autoname prefix is not enough.
+      // Alerts, detection, center art, and INFO ticks stay on their own rules. Show does not write alpha.
       private function hz43VanBlgChrome(hide:Boolean) : void
       {
          if(!this.hzBlg) { return; }
@@ -19944,13 +19966,14 @@
          {
             var d:DisplayObject = this.hzBlg.getChildAt(i);
             var n:String = d ? d.name : "";
+            var capArt:Boolean = this.hz43VanCapClip(d);
             var holds:Boolean = d is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(d));
-            if(!d || this.hz43VanSkip(n) || this.hz43VanMarkName(n) || !this.hz43VanNamed(n) || holds) { }
+            if(!d || this.hz43VanSkip(n) || this.hz43VanMarkName(n) || (!this.hz43VanNamed(n) && !capArt) || holds) { }
             else if(hide)
             {
                this.hz43StHide(d);
             }
-            else if(this.hz43VanInstName(n))
+            else if(capArt)
             {
                if(!d.visible) { d.visible = true; }
             }
@@ -20111,7 +20134,7 @@
          return this.globalToLocal(g);
       }
 
-      // vis/alpha/CT/x/y for every BottomLeftGroup child, including instance66. Deduped. Does not change clips.
+      // vis/alpha/CT/x/y for every BottomLeftGroup child. Observer only: does not hide, move, or restore.
       private function hz43VanDump(why:String) : void
       {
          var sig:String = why + "|" + this.hzWatchStyle + "|" + this.hz43VanCap + "|" + this.hz43VanWrote + "|" + this.hz43MarkMoved + "|" + this.hz43HidN;
@@ -20147,7 +20170,7 @@
                   if(ct) { cta = ct.alphaMultiplier; }
                }
                catch(eCt:Error) { }
-               trace("HZ43 sib " + nm + " vis=" + d.visible + " a=" + d.alpha + " ctA=" + cta + " x=" + d.x + " y=" + d.y + " sx=" + d.scaleX + " sy=" + d.scaleY);
+               trace("HZ43 sib " + nm + " vis=" + d.visible + " a=" + d.alpha + " ctA=" + cta + " x=" + d.x + " y=" + d.y + " sx=" + d.scaleX + " sy=" + d.scaleY + " capArt=" + (this.hz43VanCapClip(d) ? 1 : 0));
             }
             i++;
          }
