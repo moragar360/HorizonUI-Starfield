@@ -842,35 +842,136 @@ int main()
 	Expect(CountOf(gold, "ModuleEntries_mc") == 2 && FunctionBody(gold, "noteFaces").find("[\"ModuleEntries_mc\"]") != std::string::npos &&
 		FunctionBody(gold, "nativeList").find("list = this.host[\"ModulePalette_mc\"][\"ModuleEntries_mc\"] as InteractiveObject;") != std::string::npos,
 		"the parts list is read for the face log and named as the focus target, never changed");
-	const std::string give = FunctionBody(gold, "giveFocus");
-	Expect(CountOf(gold, ".focus = ") == 2 && CountOf(give, "stage.focus = param1;") == 2 &&
-		InOrder(give, {"stage.focus = param1;", "if(stage.focus != param1) { stage.focus = param1; }"}),
+	Expect(FunctionBody(gold, "giveFocus") == R"AS(private function giveFocus(param1:InteractiveObject):void
+      {
+         stage.focus = param1;
+         if(stage.focus != param1) { stage.focus = param1; }
+      }
+)AS" && CountOf(gold, ".focus = ") == 2,
 		"focus moves only through giveFocus, which assigns once more if the menu put it back");
-	Expect(CountOf(gold, "this.giveFocus(") == 2 && CountOf(gold, "giveFocus(this.hexBox)") == 1 && CountOf(gold, "giveFocus(list)") == 1,
-		"the movie gives focus only to its hex field and back to the game list");
-	const std::string hexField = FunctionBody(gold, "onHexField");
-	Expect(CountOf(gold, "this.onHexField") == 1 && gold.find("this.hexBox.addEventListener(MouseEvent.CLICK,this.onHexField);") != std::string::npos &&
-		InOrder(hexField, {"if(stage == null || !this.setOpen) { return; }", "if(stage.focus != this.hexBox)", "this.giveFocus(this.hexBox);",
-			"this.hexBox.setSelection(0,this.hexBox.text.length);", "this.note(\"SETTINGS hex focus=\" + this.focusName(stage.focus));"}),
-		"a click on the hex field gives it focus with the code selected, as the game's rename field does");
-	const std::string closing = FunctionBody(gold, "closeSettings");
-	Expect(InOrder(closing, {"var was:Boolean = this.setOpen;", "this.setOpen = false;", "if(stage == null) { return; }",
-			"var held:String = this.focusName(stage.focus);", "if(held == \"hex\" || held == \"ours\")",
-			"var list:InteractiveObject = this.nativeList();", "if(list != null && !this.chainShown(list)) { list = null; }", "this.giveFocus(list);",
-			"if(was || held == \"hex\" || held == \"ours\") { this.note(\"SETTINGS close focus=\" + held + \">\" + this.focusName(stage.focus)); }"}),
-		"closing Settings hands focus from our layer to the game list while it shows, else to nothing, and logs both holders");
-	Expect(CountOf(closing, "giveFocus") == 1 && CountOf(closing, "held == \"hex\"") == 2, "Settings moves focus only when our layer holds it");
-	const std::string holder = FunctionBody(gold, "focusName");
-	Expect(InOrder(holder, {"if(param1 == null) { return \"none\"; }", "if(param1 == this.hexBox) { return \"hex\"; }",
-			"if(this.contains(param1)) { return \"ours\"; }", "var list:DisplayObjectContainer = this.nativeList() as DisplayObjectContainer;",
-			"if(list != null && list.contains(param1)) { return \"list\"; }", "return \"other\";"}) && CountOf(holder, "return") == 5,
+	Expect(CountOf(gold, "this.giveFocus(") == 2 && CountOf(gold, "this.giveFocus(this.hexBox);") == 1 && CountOf(gold, "this.giveFocus(back);") == 1,
+		"the movie gives focus only to its hex field and back to the game");
+	Expect(CountOf(gold, "this.focusBack") == 3 && CountOf(gold, "this.focusBack = stage.focus;") == 1 && CountOf(gold, "this.focusBack = null;") == 1,
+		"only the hex click notes the game's focus holder, and closing Settings forgets it");
+	Expect(FunctionBody(gold, "onHexField") == R"AS(private function onHexField(param1:MouseEvent):void
+      {
+         if(stage == null || !this.setOpen) { return; }
+         var held:String = this.focusName(stage.focus);
+         if(held != "hex" && held != "ours") { this.focusBack = stage.focus; }
+         this.giveFocus(this.hexBox);
+         this.hexBox.setSelection(0,this.hexBox.text.length);
+         this.note("SETTINGS hex focus=" + held + ">" + this.focusName(stage.focus));
+      }
+)AS" && CountOf(gold, "this.onHexField") == 1 && gold.find("this.hexBox.addEventListener(MouseEvent.CLICK,this.onHexField);") != std::string::npos,
+		"each click on the hex field notes the game holder, gives the field focus, and selects the code, as the game's rename field does");
+	Expect(FunctionBody(gold, "closeSettings") == R"AS(private function closeSettings():void
+      {
+         var was:Boolean = this.setOpen;
+         this.setOpen = false;
+         if(this.setLayer != null) { this.setLayer.visible = false; }
+         var back:InteractiveObject = this.focusBack;
+         this.focusBack = null;
+         if(stage == null) { return; }
+         var held:String = this.focusName(stage.focus);
+         if(held == "hex" || held == "ours")
+         {
+            if(back == null || back.stage == null)
+            {
+               back = this.nativeList();
+               if(back != null && !this.chainShown(back)) { back = null; }
+            }
+            this.giveFocus(back);
+         }
+         if(was || held == "hex" || held == "ours") { this.note("SETTINGS close focus=" + held + ">" + this.focusName(stage.focus)); }
+      }
+)AS",
+		"closing Settings gives focus back to the game holder the hex field took it from, else to the shown list, else to nothing, and logs both holders");
+	Expect(FunctionBody(gold, "nativeList") == R"AS(private function nativeList():InteractiveObject
+      {
+         var list:InteractiveObject = null;
+         try { list = this.host["ModulePalette_mc"]["ModuleEntries_mc"] as InteractiveObject; } catch(err:Error) { list = null; }
+         return list;
+      }
+)AS",
+		"the focus fallback is the game's parts list");
+	Expect(FunctionBody(gold, "focusName") == R"AS(private function focusName(param1:InteractiveObject):String
+      {
+         if(param1 == null) { return "none"; }
+         if(param1 == this.hexBox) { return "hex"; }
+         if(this.contains(param1)) { return "ours"; }
+         var list:DisplayObjectContainer = this.nativeList() as DisplayObjectContainer;
+         if(list != null && list.contains(param1)) { return "list"; }
+         return "other";
+      }
+)AS",
 		"the focus log names a kind, never a clip");
-	const std::string wants = FunctionBody(gold, "wantsEvent", "public");
-	Expect(InOrder(wants, {"if(!this.arranging && !this.setOpen) { return false; }", "if(param2) { return true; }",
-			"if(param1 == \"Escape\" || param1 == \"Cancel\") { this.cancelTop(); return true; }",
-			"if(param1 == \"Accept\" || param1 == \"Enter\") { if(this.arranging) { this.okArrange(); } return true; }"}) &&
-		wants.find("!param2") == std::string::npos && CountOf(wants, "return false;") == 1,
-		"Settings and Arrange swallow the press and act on the release, as the game's buttons do");
+	Expect(FunctionBody(gold, "chainShown") == R"AS(private function chainShown(param1:DisplayObject):Boolean
+      {
+         var node:DisplayObject = param1;
+         var guard:int = 0;
+         while(node != null && guard < 12)
+         {
+            if(!node.visible) { return false; }
+            node = node.parent;
+            guard++;
+         }
+         return param1.stage != null;
+      }
+)AS",
+		"the list fallback needs the list and every parent shown and on stage");
+	Expect(FunctionBody(gold, "cancelTop") == R"AS(private function cancelTop():void
+      {
+         if(this.arranging) { this.cancelArrange(); }
+         else { this.closeSettings(); }
+      }
+)AS",
+		"cancel closes Arrange first, else Settings");
+	Expect(FunctionBody(gold, "wantsEvent", "public") == R"AS(public function wantsEvent(param1:String, param2:Boolean):Boolean
+      {
+         var open:Boolean = this.arranging || this.setOpen;
+         if(param2)
+         {
+            this.heldEvents[param1] = open;
+            return open;
+         }
+         var held:Boolean = this.heldEvents[param1] == true;
+         delete this.heldEvents[param1];
+         if(!open) { return held; }
+         if(param1 == "Escape" || param1 == "Cancel") { this.cancelTop(); return true; }
+         if(param1 == "Accept" || param1 == "Enter") { if(this.arranging) { this.okArrange(); } return true; }
+         return true;
+      }
+)AS" && CountOf(gold, "this.heldEvents") == 4 && gold.find("         this.heldEvents = {};\n") != std::string::npos,
+		"Settings and Arrange swallow the press and act on the release, and a swallowed press keeps its release from the game after they close");
+	Expect(FunctionBody(gold, "onFeed").find(R"AS(         if(!this.arranging)
+         {
+            if(token == "cancel") { this.cancelTop(); }
+            return;
+         }
+         if(token == "cancel") { this.cancelArrange(); return; }
+         if(token == "ok") { this.okArrange(); return; }
+)AS") != std::string::npos,
+		"the plugin's cancel closes Settings or cancels Arrange, and its ok accepts Arrange");
+	Expect(FunctionBody(gold, "pushState").find("         var capture:int = (this.arranging || this.setOpen) ? 1 : 0;\n         this.lines.push(\"STATE capture=\" + capture + ") != std::string::npos,
+		"the plugin captures keys while Settings or Arrange is open");
+	Expect(CountOf(gold, "this.note(\"HEX ") == 1 && gold.find("         this.note(\"HEX \" + this.accentHex);\n") != std::string::npos &&
+		CountOf(gold, "this.note(\"ACCENT ") == 2 && CountOf(gold, "this.note(\"ARRANGE ") == 6 && CountOf(gold, "this.note(\"STATE ") == 0 &&
+		CountOf(gold, "this.note(\"FORM ") == 0 && CountOf(gold, "this.lines.push(\"") == 1,
+		"only the movie's save lines use the prefixes the plugin writes to the ini");
+	Expect(FunctionBody(gold, "onHex").find("         this.note(\"SETTINGS custom focus=\" + this.focusName(stage != null ? stage.focus : null) + \" length=\" + hex.length);\n         if(hex.length != 6) { return; }\n") != std::string::npos,
+		"CUSTOM logs the focus kind and the code length before it accepts or ignores the code");
+	Expect(FunctionBody(gold, "textFormat") == R"AS(private function textFormat(param1:int, param2:uint):TextFormat
+      {
+         var floor:int = this.lrg ? 16 : 13;
+         var fmt:TextFormat = new TextFormat();
+         if(this.face.length > 0) { fmt.font = this.face; }
+         fmt.size = param1 < floor ? floor : param1;
+         fmt.color = param2;
+         return fmt;
+      }
+)AS" && CountOf(gold, "$Horizon_") == 1 && gold.find("NO_FACE:String = \"$Horizon_NoSuchFace_x\";") != std::string::npos &&
+		gold.find("fonts_horizon") == std::string::npos && gold.find("Exo") == std::string::npos && gold.find("Roboto") == std::string::npos,
+		"text uses only the face the probe picked, and the movie names no Horizon font");
 	const std::string guard = FunctionBody(gold, "isProtectedName");
 	Expect(guard.find("\"categor\"") != std::string::npos && guard.find("\"list\"") != std::string::npos && guard.find("\"entry\"") != std::string::npos &&
 		guard.find("\"scroll\"") != std::string::npos && guard.find("\"tab\"") != std::string::npos && guard.find("\"select\"") != std::string::npos &&

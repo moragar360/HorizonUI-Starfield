@@ -49,6 +49,8 @@ package
       private var setLayer:Sprite;
       private var setOpen:Boolean;
       private var hexBox:TextField;
+      private var focusBack:InteractiveObject;
+      private var heldEvents:Object;
       private var arrLayer:Sprite;
       private var arranging:Boolean;
       private var armed:Boolean;
@@ -128,6 +130,7 @@ package
          this.notedFaces = 0;
          this.pt = new Point();
          this.setOpen = false;
+         this.heldEvents = {};
          this.arranging = false;
          this.armed = false;
          this.ignorePress = false;
@@ -256,12 +259,20 @@ package
          }
       }
       
-      // The game's buttons fire on release. Settings and Arrange act on the release too, so the
-      // release cannot reach the game's Cancel button after they close.
+      // The game's buttons fire on release. Settings and Arrange swallow the press and act on the
+      // release. A release whose press they swallowed stays swallowed after they close, so it
+      // cannot reach the game's Cancel button.
       public function wantsEvent(param1:String, param2:Boolean):Boolean
       {
-         if(!this.arranging && !this.setOpen) { return false; }
-         if(param2) { return true; }
+         var open:Boolean = this.arranging || this.setOpen;
+         if(param2)
+         {
+            this.heldEvents[param1] = open;
+            return open;
+         }
+         var held:Boolean = this.heldEvents[param1] == true;
+         delete this.heldEvents[param1];
+         if(!open) { return held; }
          if(param1 == "Escape" || param1 == "Cancel") { this.cancelTop(); return true; }
          if(param1 == "Accept" || param1 == "Enter") { if(this.arranging) { this.okArrange(); } return true; }
          return true;
@@ -1228,16 +1239,15 @@ package
       }
       
       // The game's rename field takes focus the same way when editing starts. A click alone may
-      // not move focus in this menu. The code is selected so six typed characters replace it.
+      // not move focus in this menu. Each click selects the code so six typed characters replace it.
       private function onHexField(param1:MouseEvent):void
       {
          if(stage == null || !this.setOpen) { return; }
-         if(stage.focus != this.hexBox)
-         {
-            this.giveFocus(this.hexBox);
-            this.hexBox.setSelection(0,this.hexBox.text.length);
-         }
-         this.note("SETTINGS hex focus=" + this.focusName(stage.focus));
+         var held:String = this.focusName(stage.focus);
+         if(held != "hex" && held != "ours") { this.focusBack = stage.focus; }
+         this.giveFocus(this.hexBox);
+         this.hexBox.setSelection(0,this.hexBox.text.length);
+         this.note("SETTINGS hex focus=" + held + ">" + this.focusName(stage.focus));
       }
       
       private function onHex(param1:MouseEvent):void
@@ -1251,6 +1261,7 @@ package
             if(ch != "#") { hex += ch; }
             i++;
          }
+         this.note("SETTINGS custom focus=" + this.focusName(stage != null ? stage.focus : null) + " length=" + hex.length);
          if(hex.length != 6) { return; }
          this.accent = 13;
          this.accentHex = hex.toUpperCase();
@@ -1276,20 +1287,26 @@ package
          this.closeSettings();
       }
       
-      // The game list hears arrow keys and Enter only while it holds focus. ModulePalette.Update
-      // gives it focus while it shows and clears focus otherwise, so Settings hands back the same way.
+      // The game list hears arrow keys and Enter only while it holds focus. If Settings holds focus
+      // at close, focus goes back to the game object the hex field took it from while that object
+      // is on stage. Otherwise it goes to the parts list while the list shows, as ModulePalette.Update does.
       private function closeSettings():void
       {
          var was:Boolean = this.setOpen;
          this.setOpen = false;
          if(this.setLayer != null) { this.setLayer.visible = false; }
+         var back:InteractiveObject = this.focusBack;
+         this.focusBack = null;
          if(stage == null) { return; }
          var held:String = this.focusName(stage.focus);
          if(held == "hex" || held == "ours")
          {
-            var list:InteractiveObject = this.nativeList();
-            if(list != null && !this.chainShown(list)) { list = null; }
-            this.giveFocus(list);
+            if(back == null || back.stage == null)
+            {
+               back = this.nativeList();
+               if(back != null && !this.chainShown(back)) { back = null; }
+            }
+            this.giveFocus(back);
          }
          if(was || held == "hex" || held == "ours") { this.note("SETTINGS close focus=" + held + ">" + this.focusName(stage.focus)); }
       }
