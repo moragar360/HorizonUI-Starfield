@@ -939,6 +939,19 @@ int main()
 	Expect(readme.find("interface/spaceshipeditormenu_lrg.swf") != std::string::npos && readme.find("Creations included") != std::string::npos &&
 		readme.find("another mod adds") != std::string::npos && readme.find("arrow keys still move the parts list") != std::string::npos,
 		"the readme checks other plugins' movies, keeps other mods for the comparison, and checks list keys after the hex field");
+	Expect(readme.find("6A66089EE9410ECB126B4BEDE8BED81551E5661555AA1F50FA217C495404C2EC") != std::string::npos &&
+		readme.find("3457A49CF9B79A346C4B3FCFA7EF360B10CCC86D41899B6D8004DF12E90F2C67") != std::string::npos &&
+		readme.find("Stop and report it rather than splicing.") != std::string::npos,
+		"the readme checks the splice source against the stock movies' hashes");
+	Expect(readme.find("interface/spaceshipeditormenu_assetlibrary2.swf") != std::string::npos &&
+		readme.find("interface/spaceshipeditormenu_assetlibrary2_lrg.swf") != std::string::npos &&
+		readme.find("Do not enable StarUI Ship Builder with this mod.") != std::string::npos,
+		"the readme checks other mods' card library and keeps StarUI Ship Builder off");
+	Expect(readme.find("## 0.1.1.0 FONT PROBE + one-card candidate") != std::string::npos && readme.find("Neither is proven in game.") != std::string::npos &&
+		readme.find("face and Selected Module card") == std::string::npos,
+		"the readme names this pass a font probe and a card candidate");
+	Expect(readme.find("Every stock language config maps all three.") != std::string::npos && readme.find("needs no other Horizon mod") != std::string::npos,
+		"the readme says the face candidates are stock names and the movie stands alone");
 	Expect(readme.find("`SETTINGS hex focus=hex`") != std::string::npos && readme.find("`SETTINGS close focus=`") != std::string::npos &&
 		readme.find("after must read `list`") != std::string::npos && readme.find("It never reads `hex` or `ours`.") != std::string::npos,
 		"the readme gates the focus hand-back on log lines");

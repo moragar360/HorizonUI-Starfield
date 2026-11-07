@@ -29,9 +29,9 @@ The player does not compile these. Quit Starfield first. A stock install keeps `
 
 `<Starfield>` below is the game folder, for example `C:\Program Files (x86)\Steam\steamapps\common\Starfield`.
 
-If a loose movie is already in `Data\Interface`, that file is the one to splice (a loose vanilla extract, or another mod). Check the `Data\Interface` folder under `Documents\My Games\Starfield` too.
+If a loose movie is already in `Data\Interface`, check it against the stock SHA-256 values below. A stock copy can be spliced. Anything else came from another mod: stop and report it. Check the `Data\Interface` folder under `Documents\My Games\Starfield` too.
 
-A plugin can also carry these movies in its own `.ba2`, and a Creation is a plugin. A Creation's files may sit in the `Data` folder under `Documents\My Games\Starfield` rather than the game folder. Before you splice, open or unpack each enabled plugin's `.ba2` with the archive tool below and look for `interface/spaceshipeditormenu.swf` and `interface/spaceshipeditormenu_lrg.swf`. If one has them, stop and report which plugin, because a loose movie made from the game's archive would cover that plugin's movie. Do not change the other plugin's files.
+A plugin can also carry these movies in its own `.ba2`, and a Creation is a plugin. A Creation's files may sit in the `Data` folder under `Documents\My Games\Starfield` rather than the game folder. Before you splice, open or unpack each enabled plugin's `.ba2` with the archive tool below and look for `interface/spaceshipeditormenu.swf` and `interface/spaceshipeditormenu_lrg.swf`, and for the game card's library, `interface/spaceshipeditormenu_assetlibrary2.swf` and `interface/spaceshipeditormenu_assetlibrary2_lrg.swf`. A loose movie made from the game's archive would cover that plugin's menu movie, and the gold card would hide that plugin's card. If one has any of them, stop and report which plugin. Do not change the other plugin's files.
 
 If `dir` lists nothing and no plugin archive has the movies, extract from the game's archive:
 
@@ -42,6 +42,13 @@ bsarch unpack "<Starfield>\Data\Starfield - Interface.ba2" shipbuilder\work\ba2
 ```
 
 `bsarch` may be `Archive2` with `-extract=shipbuilder\work\ba2` instead. Copy `spaceshipeditormenu.swf` and `spaceshipeditormenu_lrg.swf` out of the extract folder. Those copies are the ffdec inputs below. Do not write back into the `.ba2`.
+
+For game version 1.16.244 the stock movies have these SHA-256 values. Check both copies before ffdec, for example with `certutil -hashfile shipbuilder\work\ba2\spaceshipeditormenu.swf SHA256`:
+
+- `spaceshipeditormenu.swf`, 260994 bytes: `6A66089EE9410ECB126B4BEDE8BED81551E5661555AA1F50FA217C495404C2EC`
+- `spaceshipeditormenu_lrg.swf`, 260965 bytes: `3457A49CF9B79A346C4B3FCFA7EF360B10CCC86D41899B6D8004DF12E90F2C67`
+
+A different value means another mod's movie or another game version. Stop and report it rather than splicing.
 
 ```
 ffdec -export script shipbuilder\work\normal shipbuilder\work\ba2\spaceshipeditormenu.swf
@@ -233,15 +240,17 @@ Then repeat #16 and #17. `FACT movie | STAGE` is a mouseDown, mouseUp, mouseWhee
 
 Bring the probe log back with a note of what you saw the ship do on #16 and #17. Those two together decide whether a later Arrange mode can rely on a full-stage layer, and whether the window hook can sit beside Horizon UI.
 
-## 0.1.1.0 face and Selected Module card
+## 0.1.1.0 FONT PROBE + one-card candidate
 
-This pass checks two things: that Horizon text uses a game face that has the glyphs, and the one Selected Module card. The parts list, categories, scrolling, keyboard, pad, and mouse stay the game's. The movie does not read or send category data, so categories, including ones another mod adds, come from the game as before. Power, credits, stats, and the hangar overview are unchanged.
+This pass is a font probe and one Selected Module card candidate. Neither is proven in game. The probe reports whether Horizon text can use a game face that has the glyphs, and the card stays a candidate until the checks below pass. The parts list, categories, scrolling, keyboard, pad, and mouse stay the game's. The movie does not read or send category data, so categories, including ones another mod adds, come from the game as before. Power, credits, stats, and the hangar overview are unchanged.
+
+The builder movies embed no fonts. Their text names a font such as `$MAIN_Font_Bold`, and each language's `fontconfig` maps that name to a face in the game's font library (`fonts_en.swf`, `fonts_ja.swf`, or `fonts_zhcn.swf`). The three candidates are those names: `$NB_Grotesk_Semibold` (the game card's title), `$MAIN_Font_Bold` (the menu's own text), and `$MAIN_Font`. Every stock language config maps all three. The movie does not use the Horizon font names that the HUD package adds to the English config, so it needs no other Horizon mod. A mapped name only means the face is there to try. Whether it passes in game is what `FONT` reports.
 
 The face test runs when the builder opens. `FONT try=` lists each candidate by index as wide/narrow/tall widths and a `+` or `-`: `e1` to `e3` are the mapped names as embedded text, `n4` is the face of the game's module name field (`n4=na` when that field was not found), and `d1` to `d3` are the mapped names as device text. `n=` and `nd=` are the same widths for a name that cannot exist, embedded and device. `pick=` names the first candidate that passed. `pick=0` means none passed. The movie then tries again at frames 30 and 120, three tries in all. `FONTSRC` codes the face of five game text fields: `f1` to `f3` match a mapped candidate, `x$` is another mapped name, `x` is a plain face, `x0` has none, and `na` means the field was not found. Each code but `na` ends in `e` for embedded text or `d` for device text, as in `f1e`. Face names are not printed.
 
 The face test measures Latin letters. In a language that does not use them, the card shows only if that language's font map covers the candidate, which is untested. `FONTSRC name=` with `f1` to `f3` means the game's own module name uses a mapped candidate.
 
-`MODCARD listen ok` means the movie subscribed to ModuleInfo, the same data the game card reads. `MODCARD listen miss` means it could not, and the game card stays. With a face picked, select a part. The gold card takes the game card's place. The game card stays on the menu at alpha 0, so the menu keeps filling, sizing, and showing it. `MODCARD on` adds `rows=` (stats shown, at most 10), `skills=` (at most 2), `keys=` (fields that kept a `$` key, so translation did not run on the new text), `inb=` (the build mode flag), and `w=` (card width). A new `MODCARD on` line is written when those counts change. Any other `MODCARD` state names why the game card shows instead: `face`, `conflict`, `map`, `clip`, `data`, `paint` (drawing the card failed; the next payload tries again), `hidden`, `hangar`, or `arrange` (Arrange was open when the card would have come up).
+`MODCARD listen ok` means the movie subscribed to ModuleInfo, the same data the game card reads. `MODCARD listen miss` means it could not, and the game card stays. With a face picked, select a part. The gold card takes the game card's place. The game card is not drawn by the menu movie: the menu places `ModuleInfoCard_mc`, an instance of `ModuleInfoCard` from `spaceshipeditormenu_assetlibrary2.swf` (`_lrg` for the large menu). The gold card sits just above that instance. The game card stays on the menu at alpha 0, so the menu keeps filling, sizing, and showing it. `MODCARD on` adds `rows=` (stats shown, at most 10), `skills=` (at most 2), `keys=` (fields that kept a `$` key, so translation did not run on the new text), `inb=` (the build mode flag), and `w=` (card width). A new `MODCARD on` line is written when those counts change. Any other `MODCARD` state names why the game card shows instead: `face`, `conflict`, `map`, `clip`, `data`, `paint` (drawing the card failed; the next payload tries again), `hidden`, `hangar`, or `arrange` (Arrange was open when the card would have come up).
 
 The card shows what ModuleInfo sends: name, up to 10 stats, description, up to 2 required skills, value, and mass. Numbers follow the game card: two places cut, not rounded, percent as a whole number, a class stat as a letter, and no thousands separator (1560, not 1,560). A changed stat gets a green or red chip with the size of the change. The chip rounds away float noise at six places before it cuts, so it can read +0.29 beside a value the game cut to 0.28. A change too small to show at those places gets no chip. A chip too wide for its room drops its places, or shows only its sign. The mock's subtitle, mass chip, and swap cost line are not drawn, because ModuleInfo does not carry them. The maker logo and the skill badge art are drawn by the game card, so they are hidden with it. A card taller than the room below its spot is lifted to stay on screen. In Arrange it sits exactly on the game card's spot.
 
@@ -259,7 +268,9 @@ Bring back the log and a screenshot of the card for each part type on both movie
 
 ## Vortex zip
 
-This package is Horizon Ship Builder alone. It is not the HUD installer and it has no component picker. Quit the game first. The two movies in the zip must be the spliced movies, not stock archive copies. The default ini ships with the mod. The plugin still reads the player file under Documents when that file exists.
+This package is Horizon Ship Builder alone. It is not the HUD installer and it has no component picker. Quit the game first. The two movies in the zip must be the spliced movies, not stock archive copies, so neither matches a stock SHA-256 value above. The default ini ships with the mod. The plugin still reads the player file under Documents when that file exists.
+
+StarUI Ship Builder ships its own `spaceshipeditormenu.swf`, `spaceshipeditormenu_lrg.swf`, and game card library. With both mods enabled, Vortex reports a file conflict, and either winner leaves a mix the checks above did not cover. Do not enable StarUI Ship Builder with this mod.
 
 From the repo root, after the desktop builder has produced the DLL and both movies:
 
