@@ -23,6 +23,10 @@ struct InteriorChild {
 	float relY = 0;
 	float relW = 0;
 	float relH = 0;
+	// A Sprite or MovieClip can gain rows later. A Shape cannot.
+	bool canHoldContent = false;
+	bool isMask = false;
+	bool isHit = false;
 };
 
 struct TextStyle {
@@ -99,19 +103,31 @@ inline bool IsLogoName(std::string_view name)
 		|| HasToken(name, "company") || HasToken(name, "emblem") || HasToken(name, "wordmark");
 }
 
+// Only a named decorative shape. Containers, masks, and hit areas stay visible.
 inline FadeKind ClassifyFade(InteriorPanel panel, const InteriorChild& child)
 {
-	if (child.hasText || IsOurNode(child.name) || IsProtectedName(child.name)) return FadeKind::None;
+	if (child.hasText || child.canHoldContent || child.childCount > 0) return FadeKind::None;
+	if (child.isMask || child.isHit || IsOurNode(child.name) || IsProtectedName(child.name)) return FadeKind::None;
 	if (IsBackdropName(child.name)) return FadeKind::Backdrop;
-	if (panel != InteriorPanel::Power && child.childCount == 0 && child.relW >= 0.55f && child.relH >= 0.40f) {
-		return FadeKind::Backdrop;
-	}
 	if (panel == InteriorPanel::Module && IsLogoName(child.name)) return FadeKind::Logo;
-	if (panel == InteriorPanel::Module && child.relY <= 0.55f) {
-		const float area = child.relW * child.relH;
-		if (area >= 0.08f && area <= 0.42f && child.relH <= 0.55f && child.relW >= 0.25f) return FadeKind::Logo;
-	}
 	return FadeKind::None;
+}
+
+enum class FadeAction { Leave, Fade, Restore };
+
+// A node faded while empty is checked again. Content, a mask, or a hit target restores it.
+inline FadeAction DecideFade(bool alreadyFaded, InteriorPanel panel, const InteriorChild& child)
+{
+	const bool eligible = ClassifyFade(panel, child) != FadeKind::None;
+	if (eligible && !alreadyFaded) return FadeAction::Fade;
+	if (!eligible && alreadyFaded) return FadeAction::Restore;
+	return FadeAction::Leave;
+}
+
+// The plate is drawn on the frame behind the clip. Nothing is inserted into the clip.
+inline bool MayInsertInsideClip()
+{
+	return false;
 }
 
 inline int Luma(int rgb)

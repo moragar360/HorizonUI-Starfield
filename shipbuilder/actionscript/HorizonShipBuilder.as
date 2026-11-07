@@ -2,6 +2,7 @@ package
 {
    import flash.display.DisplayObject;
    import flash.display.DisplayObjectContainer;
+   import flash.display.Shape;
    import flash.display.Sprite;
    import flash.events.Event;
    import flash.events.MouseEvent;
@@ -1664,7 +1665,7 @@ package
       
       private function dressInteriors():void
       {
-         this.dropLostFades();
+         this.revalidateFades();
          var ids:Array = ["Power","Module","Browser","Credits","Stats"];
          var n:int = 0;
          while(n < ids.length)
@@ -1686,7 +1687,7 @@ package
       
       private function dressClip(param1:String, param2:DisplayObjectContainer):void
       {
-         if(param1 != "Power") { this.ensurePlate(param2); }
+         if(param1 != "Power") { this.paintPlate(param1,param2); }
          this.fadeInside(param1,param2,param2,0);
          this.recolorTree(param2,0);
          if(param1 == "Module") { this.stackModule(param2); }
@@ -1701,38 +1702,26 @@ package
          this.removeHeading(param1);
       }
       
-      private function ensurePlate(param1:DisplayObjectContainer):void
+      private function paintPlate(param1:String, param2:DisplayObject):void
       {
-         var plate:Sprite = param1.getChildByName("HsbPlate") as Sprite;
-         if(plate == null)
-         {
-            plate = new Sprite();
-            plate.name = "HsbPlate";
-            plate.mouseEnabled = false;
-            plate.mouseChildren = false;
-            param1.addChildAt(plate,0);
-         }
-         else if(param1.getChildIndex(plate) != 0)
-         {
-            param1.setChildIndex(plate,0);
-         }
-         var box:Rectangle = param1.getBounds(param1);
-         if(box.width < 8 || box.height < 8) { return; }
-         plate.x = box.x;
-         plate.y = box.y;
-         var g:* = plate.graphics;
+         if(param2 == null || param2.parent == null) { return; }
+         var parent:DisplayObjectContainer = param2.parent as DisplayObjectContainer;
+         var frame:Sprite = parent.getChildByName("HsbFrame" + param1) as Sprite;
+         if(frame == null) { return; }
+         var box:Rectangle = param2.getBounds(parent);
+         var g:* = frame.graphics;
          g.clear();
          g.beginFill(0x121610,0.94);
-         g.drawRoundRect(0,0,box.width,box.height,12,12);
+         g.drawRoundRect(box.x - 8,box.y - 8,box.width + 16,box.height + 16,14,14);
          g.endFill();
-         g.lineStyle(1.5,0xE8C547,0.95);
-         g.drawRoundRect(1,1,Math.max(1,box.width - 2),Math.max(1,box.height - 2),12,12);
+         g.lineStyle(1.5,this.accentColor(),0.95);
+         g.drawRoundRect(box.x - 8,box.y - 8,box.width + 16,box.height + 16,14,14);
+         g.lineStyle();
       }
       
       private function fadeInside(param1:String, param2:DisplayObjectContainer, param3:DisplayObjectContainer, param4:int):void
       {
          if(param3 == null || param4 > 3) { return; }
-         var panelBox:Rectangle = param2.getBounds(param2);
          var i:int = 0;
          while(i < param3.numChildren)
          {
@@ -1743,17 +1732,9 @@ package
                i++;
                continue;
             }
-            var has:Boolean = this.nodeHasText(child);
-            var kids:int = child is DisplayObjectContainer ? (child as DisplayObjectContainer).numChildren : 0;
-            var cb:Rectangle = child.getBounds(param2);
-            var relX:Number = panelBox.width > 1 ? (cb.x - panelBox.x) / panelBox.width : 0;
-            var relY:Number = panelBox.height > 1 ? (cb.y - panelBox.y) / panelBox.height : 0;
-            var relW:Number = panelBox.width > 1 ? cb.width / panelBox.width : 0;
-            var relH:Number = panelBox.height > 1 ? cb.height / panelBox.height : 0;
-            var kind:String = this.classifyFade(param1,cname,has,kids,relX,relY,relW,relH);
-            if(kind != "none")
+            if(this.fadeEligible(param1,child,param2))
             {
-               this.rememberFade(child);
+               this.rememberFade(child,param1);
             }
             else if(child is DisplayObjectContainer)
             {
@@ -1763,18 +1744,40 @@ package
          }
       }
       
-      private function classifyFade(param1:String, param2:String, param3:Boolean, param4:int, param5:Number, param6:Number, param7:Number, param8:Number):String
+      private function fadeEligible(param1:String, param2:DisplayObject, param3:DisplayObject):Boolean
       {
-         if(param3 || this.isOurNode(param2) || this.isProtectedName(param2)) { return "none"; }
-         if(this.isBackdropName(param2)) { return "backdrop"; }
-         if(param1 != "Power" && param4 == 0 && param7 >= 0.55 && param8 >= 0.40) { return "backdrop"; }
-         if(param1 == "Module" && this.isLogoName(param2)) { return "logo"; }
-         if(param1 == "Module" && param6 <= 0.55)
+         if(param2 == null) { return false; }
+         var cname:String = param2.name == null ? "" : String(param2.name);
+         if(this.nodeHasText(param2) || this.canHoldContent(param2)) { return false; }
+         if(param2 is DisplayObjectContainer && (param2 as DisplayObjectContainer).numChildren > 0) { return false; }
+         if(this.isOurNode(cname) || this.isProtectedName(cname)) { return false; }
+         if(this.usedAs(param3,param2,"mask",0) || this.usedAs(param3,param2,"hit",0)) { return false; }
+         if(this.isBackdropName(cname)) { return true; }
+         if(param1 == "Module" && this.isLogoName(cname)) { return true; }
+         return false;
+      }
+      
+      private function canHoldContent(param1:DisplayObject):Boolean
+      {
+         return param1 is DisplayObjectContainer && !(param1 is Shape);
+      }
+      
+      private function usedAs(param1:DisplayObject, param2:DisplayObject, param3:String, param4:int):Boolean
+      {
+         if(param1 == null || param2 == null || param4 > 8) { return false; }
+         if(param3 == "mask" && param1.mask == param2) { return true; }
+         if(param3 == "hit" && param1.hitArea == param2) { return true; }
+         if(param1 is DisplayObjectContainer)
          {
-            var area:Number = param7 * param8;
-            if(area >= 0.08 && area <= 0.42 && param8 <= 0.55 && param7 >= 0.25) { return "logo"; }
+            var box:DisplayObjectContainer = param1 as DisplayObjectContainer;
+            var i:int = 0;
+            while(i < box.numChildren)
+            {
+               if(this.usedAs(box.getChildAt(i),param2,param3,param4 + 1)) { return true; }
+               i++;
+            }
          }
-         return "none";
+         return false;
       }
       
       private function isOurNode(param1:String):Boolean
@@ -1821,7 +1824,7 @@ package
          return false;
       }
       
-      private function rememberFade(param1:DisplayObject):void
+      private function rememberFade(param1:DisplayObject, param2:String):void
       {
          var i:int = 0;
          while(i < this.fades.length)
@@ -1829,19 +1832,33 @@ package
             if(this.fades[i].target == param1) { return; }
             i++;
          }
-         this.fades.push({"target":param1,"alpha":param1.alpha,"mouse":param1.mouseEnabled});
+         this.fades.push({"target":param1,"alpha":param1.alpha,"mouse":param1.mouseEnabled,"panel":param2});
          param1.alpha = 0;
          param1.mouseEnabled = false;
       }
       
-      private function dropLostFades():void
+      private function revalidateFades():void
       {
          var kept:Array = [];
          var i:int = 0;
          while(i < this.fades.length)
          {
-            var target:DisplayObject = this.fades[i].target as DisplayObject;
-            if(target != null && target.parent != null) { kept.push(this.fades[i]); }
+            var item:Object = this.fades[i];
+            var target:DisplayObject = item.target as DisplayObject;
+            if(target != null && target.parent != null)
+            {
+               var root:DisplayObject = this.clipByName(String(item.panel));
+               if(root == null) { root = target.parent; }
+               if(this.fadeEligible(String(item.panel),target,root))
+               {
+                  kept.push(item);
+               }
+               else
+               {
+                  target.alpha = Number(item.alpha);
+                  target.mouseEnabled = item.mouse == true;
+               }
+            }
             i++;
          }
          this.fades = kept;
