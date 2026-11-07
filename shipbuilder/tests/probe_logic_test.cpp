@@ -3,6 +3,7 @@
 
 #include "hsb_arrange.h"
 #include "hsb_guard.h"
+#include "hsb_interior.h"
 #include "hsb_version.h"
 
 #include <filesystem>
@@ -89,6 +90,61 @@ static void CheckArrangeLifecycle()
 	};
 	Expect(hsb::ArrangeDefault(powerLive, 7) == 0, "a live power panel can be the default");
 	Expect(hsb::ArrangeHit(powerLive, 7, 100, 60) == 0, "a live power panel can be hit");
+}
+
+static void CheckInteriorLifecycle()
+{
+	hsb::InteriorChild entries{"ModuleEntries_mc", true, 12, 0, 0.1f, 0.9f, 0.8f};
+	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Browser, entries) == hsb::FadeKind::None, "the parts list is not faded");
+	hsb::InteriorChild categories{"ModulePaletteCategories_mc", true, 6, 0, 0, 0.9f, 0.12f};
+	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Browser, categories) == hsb::FadeKind::None, "category tabs are not faded");
+	hsb::InteriorChild pips{"PowerPips_mc", false, 6, 0, 0, 0.9f, 0.8f};
+	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Power, pips) == hsb::FadeKind::None, "power pips are not faded");
+	hsb::InteriorChild powerShape{"", false, 0, 0, 0, 0.9f, 0.8f};
+	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Power, powerShape) == hsb::FadeKind::None, "a power graphic is not covered by a size guess");
+	Expect(!hsb::MayCoverWithPlate(hsb::InteriorPanel::Power), "power does not get an opaque plate");
+	Expect(hsb::MayCoverWithPlate(hsb::InteriorPanel::Browser), "the parts browser can take a plate");
+	hsb::InteriorChild background{"ContentBackground_mc", false, 0, 0, 0, 0.95f, 0.9f};
+	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Module, background) == hsb::FadeKind::Backdrop, "a named background can be faded");
+	hsb::InteriorChild textBack{"Background_mc", true, 2, 0, 0, 0.9f, 0.9f};
+	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Stats, textBack) == hsb::FadeKind::None, "a background that holds text stays");
+	hsb::InteriorChild logo{"ManufacturerLogo_mc", false, 4, 0.1f, 0.05f, 0.4f, 0.25f};
+	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Module, logo) == hsb::FadeKind::Logo, "the manufacturer logo can be faded");
+	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Browser, logo) == hsb::FadeKind::None, "a logo name is not faded on the parts list");
+	hsb::InteriorChild wordmark{"", false, 3, 0.12f, 0.08f, 0.5f, 0.28f};
+	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Module, wordmark) == hsb::FadeKind::Logo, "an upper wordmark with no text is logo art");
+	Expect(!hsb::MayRemoveChild("ModuleEntries_mc"), "game rows are not removed");
+	Expect(hsb::MayRemoveChild("HsbPlate"), "only our plate may be removed");
+
+	const hsb::TextStyle selected = hsb::StyleText(0x1A1A1A, "RowText");
+	Expect(selected.color == 0x1A1A1A && selected.keepFace && selected.keepEmbed, "selected row text keeps its dark color and face");
+	const hsb::TextStyle row = hsb::StyleText(0xC5D0DC, "RowText");
+	Expect(row.color == hsb::kOffwhite && row.keepFace && row.keepEmbed, "a light row shifts to offwhite without a new face");
+	const hsb::TextStyle tab = hsb::StyleText(0xD8DEE6, "CategoryTab");
+	Expect(tab.color == hsb::kGold && tab.keepEmbed, "a category label can go gold");
+	const hsb::TextStyle fresh = hsb::StyleText(0xB7C3CE, "RowText");
+	Expect(fresh.color == hsb::kOffwhite && selected.color == 0x1A1A1A, "a new category row is recolored and the selection stays dark");
+
+	Expect(hsb::HeadingPx(false) >= 13 && hsb::HeadingPx(true) >= 16, "section headings meet the size floor");
+	Expect(hsb::TitlePx(false) >= 13 && hsb::TitlePx(true) >= 16, "the title meets the size floor");
+	Expect(!hsb::ShowBuilderTitle(false) && hsb::ShowBuilderTitle(true), "the title pill waits for the parts builder");
+
+	const hsb::ModuleField fields[] = {
+		{"ManufacturerLogo_mc", ""},
+		{"tfName", "HopeTech Shell Fuselage A"},
+		{"tfDesc", "External shell for your hab modules."},
+		{"tfValue", "0"},
+		{"tfMass", "0"},
+	};
+	hsb::ModulePlace placed[4];
+	const int n = hsb::PlaceModule(fields, 5, 360, 420, placed, 4);
+	Expect(n == 4, "the module stack uses the four native fields");
+	Expect(placed[0].slot == hsb::ModuleSlot::Name && placed[0].index == 1, "the native name is the name slot");
+	Expect(placed[1].slot == hsb::ModuleSlot::Description && placed[1].y > placed[0].y, "the description sits under the name");
+	Expect(placed[2].slot == hsb::ModuleSlot::Value && placed[3].slot == hsb::ModuleSlot::Mass, "value and mass stay native numbers");
+	Expect(std::string(fields[placed[0].index].text) == "HopeTech Shell Fuselage A", "the stack does not invent a module name");
+	hsb::ModulePlace none[4];
+	Expect(hsb::PlaceModule(nullptr, 0, 360, 420, none, 4) == 0, "an empty card invents no stats");
 }
 
 static std::string ReadFile(const fs::path& path)
@@ -301,6 +357,7 @@ int main()
 	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkEsc, false)) == "cancel", "escape cancels");
 	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkLeft, true)) == "left40", "shift arrow is the long nudge");
 	CheckArrangeLifecycle();
+	CheckInteriorLifecycle();
 	Expect(hsb::kAccentGold == 0xE8C547, "default accent is gold");
 	Expect(hsb::ResolveAccent(-1, "", false, 3, "") == hsb::kAccentDefault, "missing hud accent stays gold");
 	Expect(hsb::ResolveAccent(4, "", false, 3, "") == 4, "a swatch is kept");

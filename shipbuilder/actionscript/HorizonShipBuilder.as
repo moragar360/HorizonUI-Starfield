@@ -63,6 +63,9 @@ package
       private var frameN:int;
       private var banner:TextField;
       private var notedMap:Boolean;
+      private var fades:Array;
+      private var moved:Array;
+      private var pill:Sprite;
       
       public function HorizonShipBuilder(param1:Object)
       {
@@ -100,6 +103,8 @@ package
          this.keysOn = true;
          this.frameN = 0;
          this.notedMap = false;
+         this.fades = [];
+         this.moved = [];
          this.mouseEnabled = false;
          this.mouseChildren = true;
          addEventListener(Event.ADDED_TO_STAGE,this.onStage);
@@ -312,7 +317,9 @@ package
          this.gear.addEventListener(MouseEvent.CLICK,this.onGear);
          box.addChild(this.gear);
          var hide:TextField = this.makeText("HIDE ALL",52,10,140,22,this.bodyPx,0xF4F0E4);
+         hide.name = "HsbHide";
          hide.mouseEnabled = false;
+         hide.visible = false;
          box.addChild(hide);
          this.paintGear();
       }
@@ -387,6 +394,7 @@ package
             i++;
          }
          this.applyNativeAnchors();
+         this.dressInteriors();
          this.strokeHangar();
          if(!this.mapped) { this.note("MAP " + report); }
          this.mapped = true;
@@ -885,8 +893,8 @@ package
             addChild(this.titleT);
          }
          this.titleT.textColor = c;
-         this.titleT.x = r.x + this.margin + 200;
-         this.titleT.y = r.y + 10;
+         this.titleT.visible = false;
+         this.parkTitle(r);
          if(!this.mapped)
          {
             var j:int = 0;
@@ -1412,6 +1420,7 @@ package
             var clip:DisplayObject = this.clipByName(param1);
             this.moveNative(clip,x - live.x,y - live.y);
             this.strokeBehind(clip,param1);
+            this.parkHeading(param1,clip);
          }
          var spot:Object = {"x":x,"y":y,"w":live.width,"h":live.height};
          this.storeAnchor(param1,x,y,spot,r);
@@ -1651,6 +1660,545 @@ package
          if(param1 < param2) { return param2; }
          if(param1 > param3) { return param3; }
          return param1;
+      }
+      
+      private function dressInteriors():void
+      {
+         this.dropLostFades();
+         var ids:Array = ["Power","Module","Browser","Credits","Stats"];
+         var n:int = 0;
+         while(n < ids.length)
+         {
+            var id:String = String(ids[n]);
+            var clip:DisplayObject = this.clipByName(id);
+            if(this.clipLive(clip) && clip is DisplayObjectContainer)
+            {
+               this.dressClip(id,clip as DisplayObjectContainer);
+            }
+            else
+            {
+               this.clearInterior(id,clip);
+            }
+            n++;
+         }
+         this.parkTitle(this.view());
+      }
+      
+      private function dressClip(param1:String, param2:DisplayObjectContainer):void
+      {
+         if(param1 != "Power") { this.ensurePlate(param2); }
+         this.fadeInside(param1,param2,param2,0);
+         this.recolorTree(param2,0);
+         if(param1 == "Module") { this.stackModule(param2); }
+         this.parkHeading(param1,param2);
+      }
+      
+      private function clearInterior(param1:String, param2:DisplayObject):void
+      {
+         if(param2 != null) { this.restoreFades(param2); }
+         this.removeOurChild(param2,"HsbPlate");
+         this.restoreMoves(param2);
+         this.removeHeading(param1);
+      }
+      
+      private function ensurePlate(param1:DisplayObjectContainer):void
+      {
+         var plate:Sprite = param1.getChildByName("HsbPlate") as Sprite;
+         if(plate == null)
+         {
+            plate = new Sprite();
+            plate.name = "HsbPlate";
+            plate.mouseEnabled = false;
+            plate.mouseChildren = false;
+            param1.addChildAt(plate,0);
+         }
+         else if(param1.getChildIndex(plate) != 0)
+         {
+            param1.setChildIndex(plate,0);
+         }
+         var box:Rectangle = param1.getBounds(param1);
+         if(box.width < 8 || box.height < 8) { return; }
+         plate.x = box.x;
+         plate.y = box.y;
+         var g:* = plate.graphics;
+         g.clear();
+         g.beginFill(0x121610,0.94);
+         g.drawRoundRect(0,0,box.width,box.height,12,12);
+         g.endFill();
+         g.lineStyle(1.5,0xE8C547,0.95);
+         g.drawRoundRect(1,1,Math.max(1,box.width - 2),Math.max(1,box.height - 2),12,12);
+      }
+      
+      private function fadeInside(param1:String, param2:DisplayObjectContainer, param3:DisplayObjectContainer, param4:int):void
+      {
+         if(param3 == null || param4 > 3) { return; }
+         var panelBox:Rectangle = param2.getBounds(param2);
+         var i:int = 0;
+         while(i < param3.numChildren)
+         {
+            var child:DisplayObject = param3.getChildAt(i);
+            var cname:String = child.name == null ? "" : String(child.name);
+            if(this.isOurNode(cname) || this.isProtectedName(cname))
+            {
+               i++;
+               continue;
+            }
+            var has:Boolean = this.nodeHasText(child);
+            var kids:int = child is DisplayObjectContainer ? (child as DisplayObjectContainer).numChildren : 0;
+            var cb:Rectangle = child.getBounds(param2);
+            var relX:Number = panelBox.width > 1 ? (cb.x - panelBox.x) / panelBox.width : 0;
+            var relY:Number = panelBox.height > 1 ? (cb.y - panelBox.y) / panelBox.height : 0;
+            var relW:Number = panelBox.width > 1 ? cb.width / panelBox.width : 0;
+            var relH:Number = panelBox.height > 1 ? cb.height / panelBox.height : 0;
+            var kind:String = this.classifyFade(param1,cname,has,kids,relX,relY,relW,relH);
+            if(kind != "none")
+            {
+               this.rememberFade(child);
+            }
+            else if(child is DisplayObjectContainer)
+            {
+               this.fadeInside(param1,param2,child as DisplayObjectContainer,param4 + 1);
+            }
+            i++;
+         }
+      }
+      
+      private function classifyFade(param1:String, param2:String, param3:Boolean, param4:int, param5:Number, param6:Number, param7:Number, param8:Number):String
+      {
+         if(param3 || this.isOurNode(param2) || this.isProtectedName(param2)) { return "none"; }
+         if(this.isBackdropName(param2)) { return "backdrop"; }
+         if(param1 != "Power" && param4 == 0 && param7 >= 0.55 && param8 >= 0.40) { return "backdrop"; }
+         if(param1 == "Module" && this.isLogoName(param2)) { return "logo"; }
+         if(param1 == "Module" && param6 <= 0.55)
+         {
+            var area:Number = param7 * param8;
+            if(area >= 0.08 && area <= 0.42 && param8 <= 0.55 && param7 >= 0.25) { return "logo"; }
+         }
+         return "none";
+      }
+      
+      private function isOurNode(param1:String):Boolean
+      {
+         return param1 != null && param1.length >= 3 && param1.charAt(0) == "H" && param1.charAt(1) == "s" && param1.charAt(2) == "b";
+      }
+      
+      private function isProtectedName(param1:String):Boolean
+      {
+         return this.foldHas(param1,"entry") || this.foldHas(param1,"categor") || this.foldHas(param1,"scroll") || this.foldHas(param1,"button") || this.foldHas(param1,"slider") || this.foldHas(param1,"pip") || this.foldHas(param1,"input") || this.foldHas(param1,"list") || this.foldHas(param1,"tab") || this.foldHas(param1,"select") || this.foldHas(param1,"alloc") || this.foldHas(param1,"meter") || this.foldHas(param1,"reactor") || this.foldHas(param1,"equip");
+      }
+      
+      private function isBackdropName(param1:String):Boolean
+      {
+         return this.foldHas(param1,"background") || this.foldHas(param1,"backdrop") || this.foldHas(param1,"border") || this.foldHas(param1,"plate") || this.foldHas(param1,"shadow") || this.foldHas(param1,"gradient");
+      }
+      
+      private function isLogoName(param1:String):Boolean
+      {
+         return this.foldHas(param1,"logo") || this.foldHas(param1,"brand") || this.foldHas(param1,"manufact") || this.foldHas(param1,"company") || this.foldHas(param1,"emblem") || this.foldHas(param1,"wordmark");
+      }
+      
+      private function foldHas(param1:String, param2:String):Boolean
+      {
+         if(param1 == null || param2 == null || param2.length == 0) { return false; }
+         return param1.toLowerCase().indexOf(param2.toLowerCase()) >= 0;
+      }
+      
+      private function nodeHasText(param1:DisplayObject):Boolean
+      {
+         if(param1 is TextField)
+         {
+            var text:String = (param1 as TextField).text;
+            return text != null && text.length > 0;
+         }
+         if(!(param1 is DisplayObjectContainer)) { return false; }
+         var box:DisplayObjectContainer = param1 as DisplayObjectContainer;
+         var i:int = 0;
+         while(i < box.numChildren)
+         {
+            if(this.nodeHasText(box.getChildAt(i))) { return true; }
+            i++;
+         }
+         return false;
+      }
+      
+      private function rememberFade(param1:DisplayObject):void
+      {
+         var i:int = 0;
+         while(i < this.fades.length)
+         {
+            if(this.fades[i].target == param1) { return; }
+            i++;
+         }
+         this.fades.push({"target":param1,"alpha":param1.alpha,"mouse":param1.mouseEnabled});
+         param1.alpha = 0;
+         param1.mouseEnabled = false;
+      }
+      
+      private function dropLostFades():void
+      {
+         var kept:Array = [];
+         var i:int = 0;
+         while(i < this.fades.length)
+         {
+            var target:DisplayObject = this.fades[i].target as DisplayObject;
+            if(target != null && target.parent != null) { kept.push(this.fades[i]); }
+            i++;
+         }
+         this.fades = kept;
+      }
+      
+      private function restoreFades(param1:DisplayObject):void
+      {
+         var kept:Array = [];
+         var i:int = 0;
+         while(i < this.fades.length)
+         {
+            var item:Object = this.fades[i];
+            var target:DisplayObject = item.target as DisplayObject;
+            if(this.ownsNode(param1,target))
+            {
+               if(target != null)
+               {
+                  target.alpha = Number(item.alpha);
+                  target.mouseEnabled = item.mouse == true;
+               }
+            }
+            else
+            {
+               kept.push(item);
+            }
+            i++;
+         }
+         this.fades = kept;
+      }
+      
+      private function ownsNode(param1:DisplayObject, param2:DisplayObject):Boolean
+      {
+         if(param1 == null || param2 == null) { return false; }
+         var node:DisplayObject = param2;
+         var guard:int = 0;
+         while(node != null && guard < 10)
+         {
+            if(node == param1) { return true; }
+            node = node.parent;
+            guard++;
+         }
+         return false;
+      }
+      
+      private function removeOurChild(param1:DisplayObject, param2:String):void
+      {
+         if(!(param1 is DisplayObjectContainer)) { return; }
+         if(!this.isOurNode(param2)) { return; }
+         var box:DisplayObjectContainer = param1 as DisplayObjectContainer;
+         var child:DisplayObject = box.getChildByName(param2);
+         if(child != null) { box.removeChild(child); }
+      }
+      
+      private function removeHeading(param1:String):void
+      {
+         var node:DisplayObject = this.findDeep(this.host as DisplayObjectContainer,"HsbHead" + param1,0);
+         if(node != null && node.parent != null && this.isOurNode(node.name))
+         {
+            (node.parent as DisplayObjectContainer).removeChild(node);
+         }
+      }
+      
+      private function parkHeading(param1:String, param2:DisplayObject):void
+      {
+         if(param1 != "Power" && param1 != "Module" && param1 != "Browser")
+         {
+            this.removeHeading(param1);
+            return;
+         }
+         if(param2 == null || param2.parent == null) { return; }
+         var parent:DisplayObjectContainer = param2.parent as DisplayObjectContainer;
+         var headName:String = "HsbHead" + param1;
+         var label:String = param1 == "Power" ? "POWER" : (param1 == "Module" ? "SELECTED MODULE" : "PARTS BROWSER");
+         var px:int = this.lrg ? 16 : 13;
+         var head:TextField = parent.getChildByName(headName) as TextField;
+         if(head == null)
+         {
+            head = this.makeText(label,0,0,360,px + 12,px,0xE8C547);
+            head.name = headName;
+            head.mouseEnabled = false;
+            parent.addChild(head);
+         }
+         var box:Rectangle = param2.getBounds(parent);
+         head.x = box.x;
+         head.y = box.y - (px + 8);
+         if(head.y < 2) { head.y = box.y + 4; }
+      }
+      
+      private function parkTitle(param1:Object):void
+      {
+         var live:Boolean = this.clipLive(this.clipByName("Browser"));
+         if(this.pill == null)
+         {
+            this.pill = new Sprite();
+            this.pill.name = "HsbTitle";
+            this.pill.mouseEnabled = false;
+            this.pill.mouseChildren = false;
+            var px0:int = this.lrg ? 20 : 16;
+            var label0:TextField = this.makeText("HORIZON SHIP BUILDER",18,5,390,px0 + 10,px0,0xE8C547);
+            label0.name = "HsbTitleText";
+            this.pill.addChild(label0);
+            addChild(this.pill);
+         }
+         this.pill.visible = live && !this.conflict;
+         if(!this.pill.visible) { return; }
+         var wide:Number = this.lrg ? 460 : 420;
+         var high:Number = this.lrg ? 40 : 34;
+         var g:* = this.pill.graphics;
+         g.clear();
+         g.lineStyle(1.5,0xE8C547,1);
+         g.beginFill(0x141810,0.94);
+         g.drawRoundRect(0,0,wide,high,16,16);
+         g.endFill();
+         this.pill.x = param1.x + Math.max(this.margin,param1.width * 0.34);
+         this.pill.y = param1.y + 6;
+      }
+      
+      private function recolorTree(param1:DisplayObjectContainer, param2:int):void
+      {
+         if(param1 == null || param2 > 8) { return; }
+         var i:int = 0;
+         while(i < param1.numChildren)
+         {
+            var child:DisplayObject = param1.getChildAt(i);
+            var cname:String = child.name == null ? "" : String(child.name);
+            if(this.isOurNode(cname))
+            {
+               i++;
+               continue;
+            }
+            if(child is TextField)
+            {
+               this.recolorField(child as TextField);
+            }
+            else if(child is DisplayObjectContainer)
+            {
+               this.recolorTree(child as DisplayObjectContainer,param2 + 1);
+            }
+            i++;
+         }
+      }
+      
+      private function recolorField(param1:TextField):void
+      {
+         var rgb:int = param1.textColor;
+         var style:int = this.styleColor(rgb,param1.name == null ? "" : String(param1.name));
+         if(style == rgb) { return; }
+         var fmt:TextFormat = param1.defaultTextFormat;
+         if(fmt == null) { fmt = new TextFormat(); }
+         fmt.color = style;
+         param1.defaultTextFormat = fmt;
+         param1.textColor = style;
+         param1.setTextFormat(fmt);
+      }
+      
+      private function styleColor(param1:int, param2:String):int
+      {
+         if(this.luma(param1) < 90) { return param1; }
+         if(this.foldHas(param2,"header") || this.foldHas(param2,"title") || this.foldHas(param2,"categor") || this.foldHas(param2,"label") || this.foldHas(param2,"tab"))
+         {
+            return 0xE8C547;
+         }
+         return 0xF4F0E4;
+      }
+      
+      private function luma(param1:int):int
+      {
+         var r:int = (param1 >> 16) & 255;
+         var g:int = (param1 >> 8) & 255;
+         var b:int = param1 & 255;
+         return int((r * 3 + g * 6 + b) / 10);
+      }
+      
+      private function stackModule(param1:DisplayObjectContainer):void
+      {
+         var fields:Array = [];
+         this.collectFields(param1,0,fields);
+         var nameAt:int = -1;
+         var descAt:int = -1;
+         var valueAt:int = -1;
+         var massAt:int = -1;
+         var i:int = 0;
+         while(i < fields.length)
+         {
+            var slot:String = this.slotOf(String(fields[i].name),String(fields[i].text));
+            if(slot == "name" && nameAt < 0) { nameAt = i; }
+            else if(slot == "desc" && descAt < 0) { descAt = i; }
+            else if(slot == "value" && valueAt < 0) { valueAt = i; }
+            else if(slot == "mass" && massAt < 0) { massAt = i; }
+            i++;
+         }
+         if(nameAt < 0 || descAt < 0)
+         {
+            var longest:int = -1;
+            var n:int = 0;
+            while(n < fields.length)
+            {
+               var sample:String = String(fields[n].text);
+               if(this.hasLetter(sample) && sample.length >= 4 && n != nameAt && n != descAt && n != valueAt && n != massAt)
+               {
+                  if(longest < 0 || sample.length > String(fields[longest].text).length) { longest = n; }
+               }
+               n++;
+            }
+            if(descAt < 0 && longest >= 0 && String(fields[longest].text).length >= 12) { descAt = longest; }
+            if(nameAt < 0)
+            {
+               var k:int = 0;
+               while(k < fields.length)
+               {
+                  var word:String = String(fields[k].text);
+                  if(k != descAt && k != valueAt && k != massAt && this.hasLetter(word) && word.length >= 4 && word.length <= 48)
+                  {
+                     nameAt = k;
+                     break;
+                  }
+                  k++;
+               }
+            }
+         }
+         if(valueAt < 0 || massAt < 0)
+         {
+            var v:int = 0;
+            while(v < fields.length)
+            {
+               if(v != nameAt && v != descAt && v != valueAt && v != massAt && this.numericText(String(fields[v].text)))
+               {
+                  if(valueAt < 0) { valueAt = v; }
+                  else if(massAt < 0) { massAt = v; }
+               }
+               v++;
+            }
+         }
+         var box:Rectangle = param1.getBounds(param1);
+         var yName:Number = box.y + 36;
+         var yDesc:Number = box.y + 68;
+         var yStat:Number = box.y + box.height - 56;
+         if(yStat < yDesc + 28) { yStat = yDesc + 28; }
+         var x0:Number = box.x + 16;
+         var xMass:Number = box.x + (box.width > 40 ? box.width / 2 : 16);
+         this.placeSlot(param1,fields,nameAt,x0,yName);
+         this.placeSlot(param1,fields,descAt,x0,yDesc);
+         this.placeSlot(param1,fields,valueAt,x0,yStat);
+         this.placeSlot(param1,fields,massAt,xMass,yStat);
+      }
+      
+      private function placeSlot(param1:DisplayObjectContainer, param2:Array, param3:int, param4:Number, param5:Number):void
+      {
+         if(param3 < 0 || param3 >= param2.length) { return; }
+         var field:TextField = param2[param3].field as TextField;
+         if(field == null) { return; }
+         this.rememberMove(field);
+         var parent:DisplayObjectContainer = field.parent as DisplayObjectContainer;
+         if(parent == null) { return; }
+         var world:Point = param1.localToGlobal(new Point(param4,param5));
+         var dest:Point = parent.globalToLocal(world);
+         field.x = dest.x;
+         field.y = dest.y;
+      }
+      
+      private function rememberMove(param1:TextField):void
+      {
+         var i:int = 0;
+         while(i < this.moved.length)
+         {
+            if(this.moved[i].field == param1) { return; }
+            i++;
+         }
+         this.moved.push({"field":param1,"x":param1.x,"y":param1.y});
+      }
+      
+      private function restoreMoves(param1:DisplayObject):void
+      {
+         var kept:Array = [];
+         var i:int = 0;
+         while(i < this.moved.length)
+         {
+            var item:Object = this.moved[i];
+            var field:DisplayObject = item.field as DisplayObject;
+            if(this.ownsNode(param1,field))
+            {
+               if(field != null)
+               {
+                  field.x = Number(item.x);
+                  field.y = Number(item.y);
+               }
+            }
+            else
+            {
+               kept.push(item);
+            }
+            i++;
+         }
+         this.moved = kept;
+      }
+      
+      private function collectFields(param1:DisplayObjectContainer, param2:int, param3:Array):void
+      {
+         if(param1 == null || param2 > 6) { return; }
+         var i:int = 0;
+         while(i < param1.numChildren)
+         {
+            var child:DisplayObject = param1.getChildAt(i);
+            var cname:String = child.name == null ? "" : String(child.name);
+            if(this.isOurNode(cname))
+            {
+               i++;
+               continue;
+            }
+            if(child is TextField)
+            {
+               var tf:TextField = child as TextField;
+               param3.push({"field":tf,"name":cname,"text":tf.text == null ? "" : tf.text});
+            }
+            else if(child is DisplayObjectContainer)
+            {
+               this.collectFields(child as DisplayObjectContainer,param2 + 1,param3);
+            }
+            i++;
+         }
+      }
+      
+      private function slotOf(param1:String, param2:String):String
+      {
+         if(this.foldHas(param1,"mass")) { return "mass"; }
+         if(this.foldHas(param1,"value") || this.foldHas(param1,"cost") || this.foldHas(param1,"credit")) { return "value"; }
+         if(this.foldHas(param1,"desc") || this.foldHas(param1,"flavor") || this.foldHas(param1,"summary")) { return "desc"; }
+         if(this.foldHas(param1,"name") || this.foldHas(param1,"title") || this.foldHas(param1,"header")) { return "name"; }
+         return "skip";
+      }
+      
+      private function hasLetter(param1:String):Boolean
+      {
+         if(param1 == null) { return false; }
+         var i:int = 0;
+         while(i < param1.length)
+         {
+            var c:int = param1.charCodeAt(i);
+            if((c >= 65 && c <= 90) || (c >= 97 && c <= 122)) { return true; }
+            i++;
+         }
+         return false;
+      }
+      
+      private function numericText(param1:String):Boolean
+      {
+         if(param1 == null || param1.length == 0 || param1.length > 8) { return false; }
+         var digit:Boolean = false;
+         var i:int = 0;
+         while(i < param1.length)
+         {
+            var c:int = param1.charCodeAt(i);
+            if(c >= 48 && c <= 57) { digit = true; }
+            else if(c != 44 && c != 46 && c != 32) { return false; }
+            i++;
+         }
+         return digit;
       }
       
       private function makeText(param1:String, param2:Number, param3:Number, param4:Number, param5:Number, param6:int, param7:uint):TextField
