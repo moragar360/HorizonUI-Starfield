@@ -18492,9 +18492,15 @@
       private var hz43VanHW:Number = 180;
       private var hz43VanHH:Number = 180;
       private var hz43VanCap:int = 0;
+      private var hz43VanFadeN:int = 0;
+      private var hz43VanFadeAt:int = -1;
       private var hz43VanNeed:int = 1;
       private var hz43VanKids:int = -1;
       private var hz43VanWrote:Boolean = false;
+      private var hz43VanWdx:Number = NaN;
+      private var hz43VanWdy:Number = NaN;
+      private var hz43VanWsc:Number = NaN;
+      private var hz43VanWmk:int = -1;
       private var hz43VnAx:int = -2;
       private var hz43VnAy:int = -2;
       private var hz43VnDx:Number = NaN;
@@ -18615,7 +18621,7 @@
       private static const HZ43_VAN_MAX:int = 24;
       private static const HZ43_VAN_FACE:Number = 221;
       // Unique package token for the next diagnostic gfx. Autoname prefix is not watch ownership.
-      private static const HZ43_DIAG:String = "r9-cappose-ctao-20261107";
+      private static const HZ43_DIAG:String = "r10-fade-follow-20261107";
 
       private function hz43VanInfoName(name:String) : Boolean
       {
@@ -19849,7 +19855,45 @@
          this.hz43VanKids = this.hzBlg.numChildren;
          this.hz43VanNeed = 0;
          this.hz43VanCap = 1;
+         this.hz43VanFadeN = 0;
+         this.hz43VanFadeAt = -1;
          this.hz43VanDump("cap");
+      }
+
+      // Native FadeIn is 10 frames of CXFORM on depths 1/3/5/9 (cap/outline/needle/O2). Per-frame VanWrite
+      // of x/y during that tween left those clips at a=0/ctA=0 while unwritten instance546 rose 0 → 0.109 → 1.
+      // Do not treat INFO (Temperature/Oxygen/Grav) as FadeIn-complete; those stay on FadeInPlanetInfo.
+      private function hz43VanFadeSeen(d:DisplayObject) : Boolean
+      {
+         if(!d) { return false; }
+         if(d.alpha > 0.9) { return true; }
+         try
+         {
+            var ct:ColorTransform = d.transform.colorTransform;
+            if(ct && ct.alphaMultiplier > 0.9) { return true; }
+         }
+         catch(eFade:Error) { }
+         return false;
+      }
+
+      private function hz43VanFadeOk() : Boolean
+      {
+         if(this.hz43VanCap == 0) { return false; }
+         if(this.hz43VanFadeSeen(this.hzFindByName(this.hzBlg,"WatchOutline_mc",0))) { return true; }
+         if(this.hz43VanFadeSeen(this.hzFindByName(this.hzBlg,"O2CO2_mc",0))) { return true; }
+         var i:int = 0;
+         while(i < this.hz43VanN)
+         {
+            var cap:DisplayObject = this.hz43VanClip(i);
+            if(cap && this.hz43VanCapClip(cap) && this.hz43VanFadeSeen(cap)) { return true; }
+            i++;
+         }
+         if(this.hz43VanFadeAt != this.hzFrameN)
+         {
+            this.hz43VanFadeAt = this.hzFrameN;
+            this.hz43VanFadeN++;
+         }
+         return this.hz43VanFadeN >= 16;
       }
 
       // Whole-assembly write keeps native relative locals. marks=true moves only live marker widgets
@@ -19857,6 +19901,14 @@
       private function hz43VanWrite(dx:Number, dy:Number, sc:Number, marks:Boolean = false) : void
       {
          if(this.hz43VanCap == 0) { return; }
+         var mk:int = marks ? 1 : 0;
+         var ddx:Number = dx - this.hz43VanWdx;
+         var ddy:Number = dy - this.hz43VanWdy;
+         var dsc:Number = sc - this.hz43VanWsc;
+         if(this.hz43VanWmk == mk && ddx < 0.05 && ddx > -0.05 && ddy < 0.05 && ddy > -0.05 && dsc < 0.001 && dsc > -0.001)
+         {
+            if((marks && this.hz43MarkMoved) || (!marks && (this.hz43VanWrote || (dx == 0 && dy == 0 && sc == 1)))) { return; }
+         }
          var i:int = 0;
          while(i < this.hz43VanN)
          {
@@ -19895,6 +19947,10 @@
          {
             this.hz43VanWrote = sc != 1 || dx != 0 || dy != 0;
          }
+         this.hz43VanWdx = dx;
+         this.hz43VanWdy = dy;
+         this.hz43VanWsc = sc;
+         this.hz43VanWmk = mk;
          this.hz43VanDump(marks ? "write-marks" : "write");
       }
 
@@ -20111,6 +20167,12 @@
          var sc:Number = this.hz43VanSc();
          var drag:Boolean = this.hzArrange && this.hzArrDrag == "Watch";
          var saved:Boolean = this.hzLayHas("Watch");
+         if(!drag && !this.hz43VanFadeOk())
+         {
+            this.hzPlace(hnd,this.hz43VanHX,this.hz43VanHY);
+            this.hz43VanDump("fade-wait");
+            return;
+         }
          if(!saved && !drag)
          {
             this.hzPlace(hnd,this.hz43VanHX,this.hz43VanHY);
@@ -20119,6 +20181,7 @@
          }
          if(!drag) { this.hz43VanResolve(sc); }
          if(!drag && this.hz43VnAx == -2) { return; }
+         if(drag) { this.hz43VanWmk = -1; }
          this.hz43VanWrite(hnd.x - this.hz43VanHX,hnd.y - this.hz43VanHY,sc);
       }
 
@@ -20137,7 +20200,10 @@
       // vis/alpha/CT/x/y for every BottomLeftGroup child. Observer only: does not hide, move, or restore.
       private function hz43VanDump(why:String) : void
       {
-         var sig:String = why + "|" + this.hzWatchStyle + "|" + this.hz43VanCap + "|" + this.hz43VanWrote + "|" + this.hz43MarkMoved + "|" + this.hz43HidN;
+         var ov:String = "";
+         var od:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         if(od) { ov = String(od.visible) + "," + od.x + "," + od.y + "," + od.alpha; }
+         var sig:String = this.hzWatchStyle + "|" + this.hz43VanCap + "|" + this.hz43VanWrote + "|" + this.hz43MarkMoved + "|" + this.hz43HidN + "|" + ov;
          if(sig == this.hz43DumpSig) { return; }
          this.hz43DumpSig = sig;
          var fx:String = "none";
@@ -20195,6 +20261,11 @@
          }
          this.hz43VanEnsure();
          this.hz43VanCapture();
+         if(this.hz43VanWrote)
+         {
+            this.hz43VanWrite(0,0,1);
+            this.hz43VanWrote = false;
+         }
          this.hz43VanChrome(true);
          var sc:Number = this.hz43Watch.scaleX;
          if(!(sc > 0.05)) { sc = 1; }
