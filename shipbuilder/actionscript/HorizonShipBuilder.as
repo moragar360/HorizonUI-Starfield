@@ -48,6 +48,9 @@ package
       private var sel:String;
       private var barDx:Number;
       private var barDy:Number;
+      private var openBarX:Number;
+      private var openBarY:Number;
+      private var openLay:Object;
       private var barDrag:Boolean;
       private var barGx:Number;
       private var barGy:Number;
@@ -82,9 +85,12 @@ package
          this.armed = false;
          this.ignorePress = false;
          this.dragId = "";
-         this.sel = "Power";
+         this.sel = "";
          this.barDx = 0;
          this.barDy = 0;
+         this.openBarX = 0;
+         this.openBarY = 0;
+         this.openLay = {};
          this.barDrag = false;
          this.snap = [];
          this.vis = [];
@@ -221,13 +227,19 @@ package
          fmt.color = 0xF4F0E4;
          this.useEmbed = false;
          var sample:TextField = this.findLatinField(this.host as DisplayObjectContainer,0);
-         if(sample != null)
-         {
-            var src:TextFormat = sample.getTextFormat();
-            if(src == null || src.font == null || String(src.font).length == 0) { src = sample.defaultTextFormat; }
-            if(src != null && src.font != null && String(src.font).length > 0) { fmt.font = src.font; }
-         }
+         var face:String = this.latinFace(sample);
+         if(face.length > 0) { fmt.font = face; }
          return fmt;
+      }
+      
+      private function latinFace(param1:TextField):String
+      {
+         if(param1 == null || param1.embedFonts) { return ""; }
+         if(!this.hasLatin(param1.text)) { return ""; }
+         var src:TextFormat = param1.getTextFormat();
+         if(src == null || src.font == null || String(src.font).length == 0) { src = param1.defaultTextFormat; }
+         if(src == null || src.font == null) { return ""; }
+         return String(src.font);
       }
       
       private function findLatinField(param1:DisplayObjectContainer, param2:int):TextField
@@ -237,7 +249,7 @@ package
          while(i < param1.numChildren)
          {
             var child:DisplayObject = param1.getChildAt(i);
-            if(child != this && child is TextField && this.hasLatin((child as TextField).text)) { return child as TextField; }
+            if(child != this && child is TextField && this.latinFace(child as TextField).length > 0) { return child as TextField; }
             if(child != this && child is DisplayObjectContainer)
             {
                var hit:TextField = this.findLatinField(child as DisplayObjectContainer,param2 + 1);
@@ -273,8 +285,9 @@ package
          {
             var card:Sprite = new Sprite();
             card.name = "Hsb" + String(IDS[i]);
-            card.mouseEnabled = true;
-            card.mouseChildren = true;
+            var gameCard:Boolean = this.followsGame(String(IDS[i]));
+            card.mouseEnabled = !gameCard;
+            card.mouseChildren = !gameCard;
             addChild(card);
             var title:TextField = this.makeText(this.panelLabel(String(IDS[i])),16,12,330,22,this.bodyPx,this.accentColor());
             card.addChild(title);
@@ -368,22 +381,12 @@ package
             var clip:DisplayObject = this.clipByName(id);
             if(report.length > 0) { report += ","; }
             report += id + "=" + (clip != null && clip.name != null ? clip.name : "none");
-            if(this.followsGame(id))
-            {
-               this.release(row);
-               this.strokeBehind(this.clipLive(clip) ? clip : null,id);
-            }
-            else if(clip != null && this.clipLive(clip) && !this.blocked(clip))
-            {
-               this.hold(row,clip);
-            }
-            else
-            {
-               this.release(row);
-               this.strokeBehind(null,id);
-            }
+            this.release(row);
+            this.strokeBehind(this.clipLive(clip) ? clip : null,id);
+            this.captureHome(row,clip);
             i++;
          }
+         this.applyNativeAnchors();
          this.strokeHangar();
          if(!this.mapped) { this.note("MAP " + report); }
          this.mapped = true;
@@ -448,6 +451,67 @@ package
          return param1 == "Credits" || param1 == "Hints" || param1 == "Power" || param1 == "Module" || param1 == "Browser" || param1 == "Stats";
       }
       
+      // Credits and the button bar stay where the menu writes them.
+      // The other live panels and the gear move in place.
+      private function panelMovable(param1:String):Boolean
+      {
+         return param1 == "Power" || param1 == "Module" || param1 == "Browser" || param1 == "Stats" || param1 == "Cluster";
+      }
+      
+      private function liveBounds(param1:String):Rectangle
+      {
+         if(!this.panelMovable(param1)) { return null; }
+         if(param1 == "Cluster")
+         {
+            var rowC:Object = this.cardBy("Cluster");
+            if(rowC == null) { return null; }
+            var cardC:Sprite = rowC.card as Sprite;
+            if(cardC == null || !cardC.visible) { return null; }
+            return cardC.getBounds(this);
+         }
+         var clip:DisplayObject = this.clipByName(param1);
+         if(!this.clipLive(clip)) { return null; }
+         return clip.getBounds(this);
+      }
+      
+      private function eligible(param1:String):Boolean
+      {
+         var box:Rectangle = this.liveBounds(param1);
+         return box != null && box.width >= 24 && box.height >= 24;
+      }
+      
+      private function defaultSel():String
+      {
+         var i:int = 0;
+         while(i < IDS.length)
+         {
+            if(this.eligible(String(IDS[i]))) { return String(IDS[i]); }
+            i++;
+         }
+         return "";
+      }
+      
+      private function captureHome(param1:Object, param2:DisplayObject):void
+      {
+         if(param1 == null || param1.homed == true) { return; }
+         if(!this.panelMovable(String(param1.id)) || String(param1.id) == "Cluster") { return; }
+         if(!this.clipLive(param2)) { return; }
+         param1.homeX = param2.x;
+         param1.homeY = param2.y;
+         param1.homed = true;
+      }
+      
+      private function moveNative(param1:DisplayObject, param2:Number, param3:Number):void
+      {
+         if(param1 == null) { return; }
+         var parent:DisplayObjectContainer = param1.parent as DisplayObjectContainer;
+         if(parent == null) { return; }
+         var origin:Point = parent.globalToLocal(this.localToGlobal(new Point(0,0)));
+         var shifted:Point = parent.globalToLocal(this.localToGlobal(new Point(param2,param3)));
+         param1.x += shifted.x - origin.x;
+         param1.y += shifted.y - origin.y;
+      }
+      
       private function clipByName(param1:String):DisplayObject
       {
          var names:Array = this.aliases(param1);
@@ -500,37 +564,6 @@ package
          if(box.width < 40 || box.height < 24) { return false; }
          if(box.width > 1700 || box.height > 1000) { return false; }
          return true;
-      }
-      
-      private function hold(param1:Object, param2:DisplayObject):void
-      {
-         var card:Sprite = param1.card as Sprite;
-         if(param2.parent == card)
-         {
-            param1.clip = param2;
-            return;
-         }
-         var parent:DisplayObjectContainer = param2.parent as DisplayObjectContainer;
-         if(parent == null) { return; }
-         var local:Rectangle = param2.getBounds(param2);
-         var world:Rectangle = param2.getBounds(stage);
-         param1.homeParent = parent;
-         param1.homeIndex = parent.getChildIndex(param2);
-         param1.homeX = param2.x;
-         param1.homeY = param2.y;
-         parent.removeChild(param2);
-         card.addChild(param2);
-         var pad:Number = 10;
-         card.x = world.x - pad;
-         card.y = world.y - pad - 26;
-         var dest:Point = card.globalToLocal(new Point(world.x,world.y));
-         param2.x = dest.x - local.x;
-         param2.y = dest.y - local.y;
-         param1.ww = world.width + pad * 2;
-         param1.hh = world.height + pad * 2 + 26;
-         param1.clip = param2;
-         card.mouseEnabled = true;
-         card.mouseChildren = true;
       }
       
       private function release(param1:Object):void
@@ -687,39 +720,60 @@ package
       
       private function placeAll(param1:Boolean):void
       {
+         this.applyNativeAnchors();
+      }
+      
+      private function applyNativeAnchors():void
+      {
          var r:Object = this.view();
-         var box:Object = this.layoutBoxes(r);
          var i:int = 0;
-         while(i < this.cards.length)
+         while(i < IDS.length)
          {
-            var row:Object = this.cards[i];
-            var spot:Object = box[row.id];
-            var card:Sprite = row.card as Sprite;
-            var x:Number = spot.x;
-            var y:Number = spot.y;
-            var rawX:String = this.lay[row.id + "X"] != null ? String(this.lay[row.id + "X"]) : "-1";
-            var rawY:String = this.lay[row.id + "Y"] != null ? String(this.lay[row.id + "Y"]) : "-1";
-            if(!param1 && rawX == "-1" && rawY == "-1") { i++; continue; }
-            if(!param1)
-            {
-               if(rawX != "-1") { x = this.resolveX(row.id,spot,r); }
-               if(rawY != "-1") { y = this.resolveY(row.id,spot,r); }
-            }
-            x = this.clamp(x,r.x,r.x + r.width - spot.w);
-            y = this.clamp(y,r.y,r.y + r.height - spot.h);
-            card.x = x;
-            card.y = y;
-            row.cx = x;
-            row.cy = y;
-            if(param1)
-            {
-               row.dx = x;
-               row.dy = y;
-            }
-            var clip:DisplayObject = row.clip as DisplayObject;
-            if(clip != null && row.id != "Cluster") { this.adopt(card,clip); }
+            var id:String = String(IDS[i]);
+            if(id == "Cluster") { this.placeCluster(r); }
+            else if(this.panelMovable(id)) { this.placeNative(id,r); }
             i++;
          }
+      }
+      
+      private function placeCluster(param1:Object):void
+      {
+         var rawX:String = this.lay["ClusterX"] != null ? String(this.lay["ClusterX"]) : "-1";
+         var rawY:String = this.lay["ClusterY"] != null ? String(this.lay["ClusterY"]) : "-1";
+         if(rawX == "-1" && rawY == "-1") { return; }
+         var row:Object = this.cardBy("Cluster");
+         if(row == null) { return; }
+         var card:Sprite = row.card as Sprite;
+         var box:Rectangle = card.getBounds(this);
+         var spot:Object = {"x":box.x,"y":box.y,"w":box.width,"h":box.height};
+         var x:Number = box.x;
+         var y:Number = box.y;
+         if(rawX != "-1") { x = this.resolveX("Cluster",spot,param1); }
+         if(rawY != "-1") { y = this.resolveY("Cluster",spot,param1); }
+         x = this.clamp(x,param1.x,param1.x + param1.width - box.width);
+         y = this.clamp(y,param1.y,param1.y + param1.height - box.height);
+         card.x += x - box.x;
+         card.y += y - box.y;
+      }
+      
+      private function placeNative(param1:String, param2:Object):void
+      {
+         var rawX:String = this.lay[param1 + "X"] != null ? String(this.lay[param1 + "X"]) : "-1";
+         var rawY:String = this.lay[param1 + "Y"] != null ? String(this.lay[param1 + "Y"]) : "-1";
+         if(rawX == "-1" && rawY == "-1") { return; }
+         var clip:DisplayObject = this.clipByName(param1);
+         if(!this.clipLive(clip)) { return; }
+         var box:Rectangle = clip.getBounds(this);
+         var spot:Object = {"x":box.x,"y":box.y,"w":box.width,"h":box.height};
+         var x:Number = box.x;
+         var y:Number = box.y;
+         if(rawX != "-1") { x = this.resolveX(param1,spot,param2); }
+         if(rawY != "-1") { y = this.resolveY(param1,spot,param2); }
+         x = this.clamp(x,param2.x,param2.x + param2.width - box.width);
+         y = this.clamp(y,param2.y,param2.y + param2.height - box.height);
+         if(Math.abs(x - box.x) <= 1 && Math.abs(y - box.y) <= 1) { return; }
+         this.moveNative(clip,x - box.x,y - box.y);
+         this.strokeBehind(clip,param1);
       }
       
       private function layoutBoxes(param1:Object):Object
@@ -784,8 +838,14 @@ package
             g.clear();
             var wide:Number = Number(row.ww) > 0 ? Number(row.ww) : spot.w;
             var high:Number = Number(row.hh) > 0 ? Number(row.hh) : spot.h;
-            var show:Boolean = row.id == "Cluster" || (row.clip != null && !this.followsGame(String(row.id))) || (this.arranging && !this.followsGame(String(row.id)));
+            var show:Boolean = row.id == "Cluster";
             card.visible = show && !this.conflict;
+            if(this.followsGame(String(row.id)))
+            {
+               card.mouseEnabled = false;
+               card.mouseChildren = false;
+               card.visible = false;
+            }
             if(row.id == "Cluster")
             {
                card.mouseEnabled = false;
@@ -985,8 +1045,8 @@ package
          this.arranging = true;
          this.ignorePress = true;
          this.dragId = "";
-         this.sel = "Power";
          this.remember();
+         this.sel = this.defaultSel();
          this.showStandIns(true);
          if(this.arrLayer == null)
          {
@@ -1004,15 +1064,29 @@ package
          this.snap = [];
          this.vis = [];
          this.homes = [];
+         this.openBarX = this.barDx;
+         this.openBarY = this.barDy;
+         this.openLay = {};
          var i:int = 0;
          while(i < this.cards.length)
          {
             var card:Sprite = this.cards[i].card as Sprite;
-            var clip:DisplayObject = this.cards[i].clip as DisplayObject;
+            var id:String = String(this.cards[i].id);
+            var clip:DisplayObject = this.clipByName(id);
             this.snap.push({"x":card.x,"y":card.y});
-            this.vis.push(clip != null ? clip.visible : true);
-            this.homes.push({"x":this.cards[i].hx,"y":this.cards[i].hy});
-            if(clip != null) { clip.visible = true; }
+            this.vis.push(true);
+            if(clip != null && this.panelMovable(id) && id != "Cluster")
+            {
+               this.homes.push({"x":clip.x,"y":clip.y,"ok":true});
+            }
+            else
+            {
+               this.homes.push({"x":0,"y":0,"ok":false});
+            }
+            var ax:String = this.lay[id + "X"] != null ? String(this.lay[id + "X"]) : "-1";
+            var ay:String = this.lay[id + "Y"] != null ? String(this.lay[id + "Y"]) : "-1";
+            this.openLay[id + "X"] = ax;
+            this.openLay[id + "Y"] = ay;
             i++;
          }
       }
@@ -1024,20 +1098,7 @@ package
          {
             var card:Sprite = this.cards[i].card as Sprite;
             var stand:DisplayObject = card.getChildByName("HsbSample");
-            if(param1 && this.cards[i].clip == null && this.cards[i].id != "Cluster")
-            {
-               if(stand == null)
-               {
-                  var sample:TextField = this.makeText("SAMPLE",24,48,160,24,this.bodyPx,0xF4F0E4);
-                  sample.name = "HsbSample";
-                  sample.mouseEnabled = false;
-                  card.addChild(sample);
-               }
-            }
-            else if(stand != null)
-            {
-               card.removeChild(stand);
-            }
+            if(stand != null) { card.removeChild(stand); }
             i++;
          }
       }
@@ -1076,20 +1137,26 @@ package
          while(i < this.cards.length)
          {
             var row:Object = this.cards[i];
-            var card:Sprite = row.card as Sprite;
-            var spot:Object = boxes[row.id];
-            var wide:Number = Number(row.ww) > 0 ? Number(row.ww) : spot.w;
-            var high:Number = Number(row.hh) > 0 ? Number(row.hh) : spot.h;
+            var wide:Number = 0;
+            var high:Number = 0;
             var on:Boolean = this.sel == row.id || this.dragId == row.id;
-            if(this.followsGame(String(row.id)) && row.clip == null && !card.visible) { i++; continue; }
+            if(!this.eligible(String(row.id)))
+            {
+               this.hideLabel(String(row.id));
+               i++;
+               continue;
+            }
+            var live:Rectangle = this.liveBounds(String(row.id));
+            wide = live.width;
+            high = live.height;
             g.lineStyle(on ? 2 : 1.5,on ? this.accentColor() : 0xFFFFFF,on ? 1 : 0.55);
             g.beginFill(this.accentColor(),on ? 0.1 : 0.03);
-            g.drawRoundRect(card.x - 4,card.y - 4,wide + 8,high + 8,16,16);
+            g.drawRoundRect(live.x - 4,live.y - 4,wide + 8,high + 8,16,16);
             g.endFill();
-            this.ensureLabel(row.id,this.panelLabel(String(row.id)),card.x,card.y - 22,on);
-            if(this.overlaps(card.x,card.y,wide,high,clear))
+            this.ensureLabel(row.id,this.panelLabel(String(row.id)),live.x,live.y - 22,on);
+            if(this.overlaps(live.x,live.y,wide,high,clear))
             {
-               this.chip(g,card.x + 8,card.y + high - 28);
+               this.chip(g,live.x + 8,live.y + high - 28);
             }
             i++;
          }
@@ -1252,13 +1319,13 @@ package
                this.dragDy = lp.y - this.barGy;
                return;
             }
-            if(hit.length > 0)
+            if(hit.length > 0 && this.eligible(hit))
             {
                this.sel = hit;
                this.dragId = hit;
-               var card:Sprite = this.cardBy(hit).card as Sprite;
-               this.dragDx = lp.x - card.x;
-               this.dragDy = lp.y - card.y;
+               var live:Rectangle = this.liveBounds(hit);
+               this.dragDx = lp.x - live.x;
+               this.dragDy = lp.y - live.y;
             }
             else
             {
@@ -1277,9 +1344,9 @@ package
                this.drawArrange();
                return;
             }
-            if(this.dragId.length > 0)
+            if(this.dragId.length > 0 && this.eligible(this.dragId))
             {
-               this.moveCard(this.dragId,lp.x - this.dragDx,lp.y - this.dragDy);
+               this.moveLive(this.dragId,lp.x - this.dragDx,lp.y - this.dragDy);
                this.drawArrange();
             }
             return;
@@ -1303,32 +1370,50 @@ package
             i++;
          }
          if(param1 >= this.barGx && param1 <= this.barGx + 720 && param2 >= this.barGy && param2 <= this.barGy + 96) { return "bar"; }
-         var boxes:Object = this.layoutBoxes(this.view());
          var k:int = this.cards.length - 1;
          while(k >= 0)
          {
-            var row:Object = this.cards[k];
-            var card:Sprite = row.card as Sprite;
-            var spot:Object = boxes[row.id];
-            if(param1 >= card.x && param1 <= card.x + spot.w && param2 >= card.y && param2 <= card.y + spot.h) { return String(row.id); }
+            var id:String = String(this.cards[k].id);
+            if(this.eligible(id))
+            {
+               var live:Rectangle = this.liveBounds(id);
+               if(param1 >= live.x && param1 <= live.x + live.width && param2 >= live.y && param2 <= live.y + live.height) { return id; }
+            }
             k--;
          }
          return "";
       }
       
-      private function moveCard(param1:String, param2:Number, param3:Number):void
+      private function hideLabel(param1:String):void
       {
+         if(this.arrLayer == null) { return; }
+         var field:TextField = this.arrLayer.getChildByName("lb" + param1) as TextField;
+         if(field != null) { field.visible = false; }
+      }
+      
+      private function moveLive(param1:String, param2:Number, param3:Number):void
+      {
+         if(!this.eligible(param1)) { return; }
+         var live:Rectangle = this.liveBounds(param1);
+         if(live == null) { return; }
          var r:Object = this.view();
-         var boxes:Object = this.layoutBoxes(r);
-         var spot:Object = boxes[param1];
          var x:Number = r.x + Math.round((param2 - r.x) / 10) * 10;
          var y:Number = r.y + Math.round((param3 - r.y) / 10) * 10;
-         x = this.clamp(x,r.x,r.x + r.width - spot.w);
-         y = this.clamp(y,r.y,r.y + r.height - spot.h);
-         var row:Object = this.cardBy(param1);
-         var card:Sprite = row.card as Sprite;
-         card.x = x;
-         card.y = y;
+         x = this.clamp(x,r.x,r.x + r.width - live.width);
+         y = this.clamp(y,r.y,r.y + r.height - live.height);
+         if(param1 == "Cluster")
+         {
+            var card:Sprite = this.cardBy(param1).card as Sprite;
+            card.x += x - live.x;
+            card.y += y - live.y;
+         }
+         else
+         {
+            var clip:DisplayObject = this.clipByName(param1);
+            this.moveNative(clip,x - live.x,y - live.y);
+            this.strokeBehind(clip,param1);
+         }
+         var spot:Object = {"x":x,"y":y,"w":live.width,"h":live.height};
          this.storeAnchor(param1,x,y,spot,r);
       }
       
@@ -1358,25 +1443,37 @@ package
       
       private function nudge(param1:Number, param2:Number):void
       {
-         var row:Object = this.cardBy(this.sel);
-         if(row == null) { return; }
-         var card:Sprite = row.card as Sprite;
-         this.moveCard(this.sel,card.x + param1,card.y + param2);
+         if(!this.eligible(this.sel)) { return; }
+         var live:Rectangle = this.liveBounds(this.sel);
+         if(live == null) { return; }
+         this.moveLive(this.sel,live.x + param1,live.y + param2);
          this.drawArrange();
       }
       
       private function cycle(param1:int):void
       {
+         var order:Array = [];
          var i:int = 0;
          while(i < IDS.length)
          {
-            if(String(IDS[i]) == this.sel) { break; }
+            if(this.eligible(String(IDS[i]))) { order.push(String(IDS[i])); }
             i++;
          }
-         var n:int = i + param1;
-         if(n < 0) { n = IDS.length - 1; }
-         if(n >= IDS.length) { n = 0; }
-         this.sel = String(IDS[n]);
+         if(order.length == 0)
+         {
+            this.sel = "";
+            this.drawArrange();
+            return;
+         }
+         var at:int = order.indexOf(this.sel);
+         if(at < 0) { this.sel = param1 < 0 ? String(order[order.length - 1]) : String(order[0]); }
+         else
+         {
+            var n:int = at + param1;
+            if(n < 0) { n = order.length - 1; }
+            if(n >= order.length) { n = 0; }
+            this.sel = String(order[n]);
+         }
          this.drawArrange();
       }
       
@@ -1385,18 +1482,29 @@ package
          this.lay = {};
          this.barDx = 0;
          this.barDy = 0;
+         var r:Object = this.view();
          var i:int = 0;
          while(i < this.cards.length)
          {
-            var clip:DisplayObject = this.cards[i].clip as DisplayObject;
-            if(clip != null && this.cards[i].id != "Cluster")
+            var id:String = String(this.cards[i].id);
+            if(id == "Cluster")
             {
-               clip.x = 12;
-               clip.y = 34;
+               var card:Sprite = this.cards[i].card as Sprite;
+               card.x = r.x + this.margin;
+               card.y = r.y + 8;
+            }
+            else if(this.cards[i].homed == true)
+            {
+               var clip:DisplayObject = this.clipByName(id);
+               if(clip != null)
+               {
+                  clip.x = Number(this.cards[i].homeX);
+                  clip.y = Number(this.cards[i].homeY);
+                  this.strokeBehind(this.clipLive(clip) ? clip : null,id);
+               }
             }
             i++;
          }
-         this.placeAll(true);
          this.drawArrange();
       }
       
@@ -1406,6 +1514,11 @@ package
          while(i < IDS.length)
          {
             var id:String = String(IDS[i]);
+            if(!this.panelMovable(id))
+            {
+               this.lay[id + "X"] = "-1";
+               this.lay[id + "Y"] = "-1";
+            }
             var x:String = this.lay[id + "X"] != null ? String(this.lay[id + "X"]) : "-1";
             var y:String = this.lay[id + "Y"] != null ? String(this.lay[id + "Y"]) : "-1";
             this.note("ARRANGE " + id + "X=" + x);
@@ -1421,12 +1534,26 @@ package
       
       private function cancelArrange():void
       {
+         if(this.openLay != null) { this.lay = this.openLay; }
+         this.barDx = this.openBarX;
+         this.barDy = this.openBarY;
          var i:int = 0;
          while(i < this.cards.length)
          {
             var card:Sprite = this.cards[i].card as Sprite;
             card.x = this.snap[i].x;
             card.y = this.snap[i].y;
+            var id:String = String(this.cards[i].id);
+            if(i < this.homes.length && this.homes[i].ok == true)
+            {
+               var clip:DisplayObject = this.clipByName(id);
+               if(clip != null)
+               {
+                  clip.x = Number(this.homes[i].x);
+                  clip.y = Number(this.homes[i].y);
+                  this.strokeBehind(this.clipLive(clip) ? clip : null,id);
+               }
+            }
             i++;
          }
          this.finishArrange(false);
@@ -1464,17 +1591,6 @@ package
          }
          this.banner.text = param1;
          this.banner.visible = true;
-      }
-      
-      private function adopt(param1:Sprite, param2:DisplayObject):void
-      {
-         if(param2.parent == param1) { return; }
-         var parent:DisplayObjectContainer = param2.parent as DisplayObjectContainer;
-         if(parent == null) { return; }
-         parent.removeChild(param2);
-         param1.addChild(param2);
-         param2.x = 12;
-         param2.y = 34;
       }
       
       private function accentColor():uint
