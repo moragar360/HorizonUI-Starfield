@@ -256,10 +256,12 @@ package
          }
       }
       
+      // The game's buttons fire on release. Settings and Arrange act on the release too, so the
+      // release cannot reach the game's Cancel button after they close.
       public function wantsEvent(param1:String, param2:Boolean):Boolean
       {
          if(!this.arranging && !this.setOpen) { return false; }
-         if(!param2) { return this.arranging || this.setOpen; }
+         if(param2) { return true; }
          if(param1 == "Escape" || param1 == "Cancel") { this.cancelTop(); return true; }
          if(param1 == "Accept" || param1 == "Enter") { if(this.arranging) { this.okArrange(); } return true; }
          return true;

@@ -253,6 +253,7 @@ Check on the normal movie, then on `spaceshipeditormenu_lrg.swf`:
 - The hangar overview keeps the game card.
 - Arrange, from Ctrl+L or the gear: the outline is the gold card. Move it and Save. Close and reopen the builder, and it is in the same spot. Reset puts it home. Cancel undoes a move.
 - Settings and keyboard focus, in build mode with the parts list showing. Click the hex field: the log shows `SETTINGS hex focus=hex` and the code is selected. Type six characters, then CUSTOM. Close Settings four ways, reopening between them: DONE, Esc, a swatch, and ARRANGE PANELS followed by Cancel. Each close writes `SETTINGS close focus=` with the holder before and after `>`, and after must read `list`. Then the arrow keys still move the parts list, and Enter does what it does with this mod removed. After reading `hex` or `ours`, or arrows that stop, is a failure: bring back the log. In the hangar overview the parts list is hidden, so after reads `none`, or `other` when a game panel such as rename holds focus. It never reads `hex` or `ours`.
+- Esc and the pad's B button close Settings and Arrange and do nothing else: no exit prompt, no part deselected, and build mode stays. Settings and Arrange act when the button is released, as the game's buttons do.
 
 Bring back the log and a screenshot of the card for each part type on both movies.
 

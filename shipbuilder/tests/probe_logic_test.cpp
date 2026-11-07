@@ -351,9 +351,9 @@ static std::size_t CountOf(const std::string& text, const std::string& needle)
 }
 
 // One movie function, through its closing brace at member indent.
-static std::string FunctionBody(const std::string& source, const std::string& name)
+static std::string FunctionBody(const std::string& source, const std::string& name, const std::string& access = "private")
 {
-	const std::string head = "private function " + name + "(";
+	const std::string head = access + " function " + name + "(";
 	const std::size_t at = source.find(head);
 	if (at == std::string::npos) return {};
 	const std::string close = "\n      }\n";
@@ -794,6 +794,12 @@ int main()
 			"if(this.contains(param1)) { return \"ours\"; }", "var list:DisplayObjectContainer = this.nativeList() as DisplayObjectContainer;",
 			"if(list != null && list.contains(param1)) { return \"list\"; }", "return \"other\";"}) && CountOf(holder, "return") == 5,
 		"the focus log names a kind, never a clip");
+	const std::string wants = FunctionBody(gold, "wantsEvent", "public");
+	Expect(InOrder(wants, {"if(!this.arranging && !this.setOpen) { return false; }", "if(param2) { return true; }",
+			"if(param1 == \"Escape\" || param1 == \"Cancel\") { this.cancelTop(); return true; }",
+			"if(param1 == \"Accept\" || param1 == \"Enter\") { if(this.arranging) { this.okArrange(); } return true; }"}) &&
+		wants.find("!param2") == std::string::npos && CountOf(wants, "return false;") == 1,
+		"Settings and Arrange swallow the press and act on the release, as the game's buttons do");
 	const std::string guard = FunctionBody(gold, "isProtectedName");
 	Expect(guard.find("\"categor\"") != std::string::npos && guard.find("\"list\"") != std::string::npos && guard.find("\"entry\"") != std::string::npos &&
 		guard.find("\"scroll\"") != std::string::npos && guard.find("\"tab\"") != std::string::npos && guard.find("\"select\"") != std::string::npos &&
@@ -936,6 +942,7 @@ int main()
 	Expect(readme.find("`SETTINGS hex focus=hex`") != std::string::npos && readme.find("`SETTINGS close focus=`") != std::string::npos &&
 		readme.find("after must read `list`") != std::string::npos && readme.find("It never reads `hex` or `ours`.") != std::string::npos,
 		"the readme gates the focus hand-back on log lines");
+	Expect(readme.find("act when the button is released") != std::string::npos, "the readme checks that Esc and B close our panels and do nothing else");
 	Expect(gold.find("this.note(\"MODVALS \" + this.modVals[v]);") != std::string::npos && gold.find("this.modValsLeft = 24;") != std::string::npos,
 		"payload numbers and shown text are logged for a bounded number of modules");
 	Expect(!NotesHideFaces("         this.note(\"FONT face=\" + fmt.font);") && !NotesHideFaces("         this.note(\"FONT list=\" + FACES.join(\",\"));") &&
