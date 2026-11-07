@@ -255,7 +255,14 @@ expect(funcBody(as, "hz43VanDump").indexOf("ctA=") >= 0 && funcBody(as, "hz43Van
 expect(funcBody(as, "hz43VanDump").indexOf("alphaMultiplier") >= 0 && funcBody(as, "hz43VanDump").indexOf("alphaOffset") >= 0, "dump reads both CXFORM alpha terms");
 expect(funcBody(as, "hz43VanDump").indexOf("capArt=") >= 0, "dump marks which autonamed sibling is the verified cap");
 expect(funcBody(as, "hz43VanDump").indexOf("hz43VanNamed") < 0, "dump lists every BottomLeftGroup child, not only VanNamed clips");
-expect(as.indexOf('HZ43_DIAG:String = "r9-cappose-ctao-20261107"') >= 0, "next gfx can prove package r9-cappose-ctao-20261107");
+expect(as.indexOf('HZ43_DIAG:String = "r10-fade-follow-20261107"') >= 0, "next gfx can prove package r10-fade-follow-20261107");
+expect(funcBody(as, "hz43VanPlace").indexOf("hz43VanFadeOk") >= 0, "Vanilla Arrange waits for native FadeIn before writing siblings");
+expect(funcBody(as, "hz43VanFadeSeen").indexOf("alphaMultiplier") >= 0 && funcBody(as, "hz43VanFadeSeen").indexOf("d.alpha") >= 0, "Fade wait reads outline/O2/cap alpha and ColorTransform, and does not write alpha");
+expect(funcBody(as, "hz43VanFadeSeen").indexOf("d.alpha =") < 0 && funcBody(as, "hz43VanPlace").indexOf("clip.alpha = 1") < 0, "Fade wait does not force outline alpha to 1");
+expect(funcBody(as, "hz43VanFadeOk").indexOf("O2CO2_mc") >= 0 && funcBody(as, "hz43VanFadeOk").indexOf("Temperature") < 0, "Fade wait uses outline/O2/cap, not INFO");
+expect(funcBody(as, "hz43VanHorizon").indexOf("hz43VanWrote") >= 0 && funcBody(as, "hz43VanHorizon").indexOf("hz43VanWrite(0,0,1)") >= 0, "Digital restores native locals before marker follow");
+expect(funcBody(as, "hz43VanWrite").indexOf("hz43VanWmk") >= 0, "identical Arrange writes are skipped so FadeIn is not poked every frame");
+expect(funcBody(as, "hz43VanDump").indexOf('why + "|"') < 0, "dump signature does not include why, so write-marks/horizon pairs do not retrigger");
 expect(funcBody(as, "hz43VanCapture").indexOf('hz43VanDump("cap")') >= 0, "dump after capture latch prints cap=1");
 expect(funcBody(as, "hz43VanWrite").indexOf("write-marks") >= 0, "dump runs at native and marker writes");
 expect(funcBody(as, "hz43VanNote").indexOf("hz43HidV") < 0 && funcBody(as, "hz43VanRestoreHid").indexOf("hz43HidV") < 0, "hide identity list does not sample clip.visible for restore");
@@ -652,8 +659,21 @@ function ringMid(state) {
 	if (!d) return null;
 	return { x: d.x + 221 / 2, y: d.y + 221 / 2 };
 }
+function fadeSeen(d) {
+	return !!(d && d.alpha > 0.9);
+}
+function fadeOk(state) {
+	if (!state.vanCap) return false;
+	if (fadeSeen(state.clips.WatchOutline_mc) || fadeSeen(state.clips.O2CO2_mc) || fadeSeen(state.clips.instance66)) return true;
+	state.fadeN = (state.fadeN || 0) + 1;
+	return state.fadeN >= 16;
+}
 function vanWrite(state, dx, dy, sc, marks) {
-	if (!state.vanCap) return;
+	if (!state.vanCap) return false;
+	const mk = marks ? 1 : 0;
+	if (state.wmk === mk && Math.abs((state.wdx || 0) - dx) < 0.05 && Math.abs((state.wdy || 0) - dy) < 0.05 && Math.abs((state.wsc || 0) - sc) < 0.001) {
+		if ((marks && state.markMoved) || (!marks && (state.vanWrote || (dx === 0 && dy === 0 && sc === 1)))) return false;
+	}
 	const units = state.units || [];
 	for (let i = 0; i < units.length; i++) {
 		const d = units[i];
@@ -671,10 +691,26 @@ function vanWrite(state, dx, dy, sc, marks) {
 	} else {
 		state.vanWrote = sc !== 1 || dx !== 0 || dy !== 0;
 	}
+	state.wdx = dx;
+	state.wdy = dy;
+	state.wsc = sc;
+	state.wmk = mk;
+	state.writeN = (state.writeN || 0) + 1;
+	return true;
+}
+function vanPlaceSaved(state, dx, dy) {
+	captureWatch(state);
+	if (!fadeOk(state)) return false;
+	vanWrite(state, dx, dy, 1, false);
+	return true;
 }
 function vanHorizon(state) {
-	chromeHide(state.clips, state.hid, true);
 	captureWatch(state);
+	if (state.vanWrote) {
+		vanWrite(state, 0, 0, 1, false);
+		state.vanWrote = false;
+	}
+	chromeHide(state.clips, state.hid, true);
 	const face = state.face;
 	const ring = ringMid(state);
 	if (state.vanCap && ring && face) {
@@ -712,6 +748,9 @@ function makeWatchState(payload) {
 		vanCap: 0,
 		vanWrote: false,
 		markMoved: false,
+		fadeN: 0,
+		wmk: -1,
+		writeN: 0,
 		units: [],
 		face: { x: 0, y: 80, sc: 1, visible: false },
 		envGot: 0,
@@ -949,6 +988,71 @@ expect(savedLay.clips.instance550.x === 139.45 && savedLay.clips.instance550.y =
 expect(vanCapClip(savedLay.clips.instance66, savedLay.clips.WatchOutline_mc) === true, "cap identity stays outline-relative after saved Arrange");
 expect(vanCapClip(savedLay.clips.instance546, savedLay.clips.WatchOutline_mc) === false, "extra autoname instance546 still fails cap pose after saved Arrange");
 
+const fadeLay = makeWatchState();
+applyWatchStyle(fadeLay, 1);
+captureWatch(fadeLay);
+expect(fadeLay.clips.WatchOutline_mc.alpha === 0 && fadeLay.clips.instance66.alpha === 0, "first-load chrome starts at native FadeIn alpha 0");
+expect(vanPlaceSaved(fadeLay, -64.3, 34.85) === false, "saved Arrange does not write siblings while native FadeIn alpha is still 0");
+expect(fadeLay.clips.WatchOutline_mc.x === 0 && fadeLay.clips.instance66.x === 0, "deferred Arrange leaves cap and outline at native locals");
+expect(fadeLay.clips.WatchIconsWidget_mc.x === 111.35 && fadeLay.clips.instance546.x === 110.5, "deferred Arrange does not move markers or extra autoname instance546");
+fadeLay.clips.WatchOutline_mc.alpha = 1;
+fadeLay.clips.O2CO2_mc.alpha = 1;
+fadeLay.clips.instance66.alpha = 1;
+expect(vanPlaceSaved(fadeLay, -64.3, 34.85) === true, "saved Arrange writes after native FadeIn alpha is live");
+expect(fadeLay.clips.WatchOutline_mc.x === -64.3 && fadeLay.clips.instance66.x === -64.3, "post-FadeIn Arrange moves the cap with the outline");
+expect(fadeLay.clips.WatchIconsWidget_mc.x === 111.35 - 64.3, "post-FadeIn Arrange moves markers with the assembly");
+expect(fadeLay.clips.instance546.x === 110.5, "post-FadeIn Arrange still does not move extra autoname instance546");
+const writes = fadeLay.writeN;
+vanPlaceSaved(fadeLay, -64.3, 34.85);
+expect(fadeLay.writeN === writes, "a second identical saved Arrange write is skipped");
+
+const fadeTimeout = makeWatchState();
+applyWatchStyle(fadeTimeout, 1);
+captureWatch(fadeTimeout);
+let waited = 0;
+while (waited < 15) {
+	expect(vanPlaceSaved(fadeTimeout, -40, -40) === false, "FadeIn timeout has not latched yet at frame " + waited);
+	waited++;
+}
+expect(fadeTimeout.clips.WatchOutline_mc.x === 0, "16-frame FadeIn wait still has not written");
+expect(vanPlaceSaved(fadeTimeout, -40, -40) === true, "Arrange writes after 16 frames if chrome alpha never rises");
+expect(fadeTimeout.clips.WatchOutline_mc.x === -40 && fadeTimeout.clips.Temperature_mc.alpha === 0, "timeout write does not force INFO alpha");
+
+const split = makeWatchState();
+split.clips.WatchOutline_mc.alpha = 1;
+split.clips.O2CO2_mc.alpha = 1;
+split.clips.instance66.alpha = 1;
+applyWatchStyle(split, 1);
+captureWatch(split);
+vanWrite(split, -64.3, 34.85, 1, false);
+split.face = { x: 0, y: 868.5, sc: 0.8, visible: true };
+applyWatchStyle(split, 3);
+expect(split.clips.WatchOutline_mc.x === 0 && split.clips.O2CO2_mc.x === 21.7 && split.clips.instance66.x === 0, "Digital restores arranged native locals before marker follow");
+expect(split.clips.WatchOutline_mc.visible === false && split.clips.instance66.visible === false, "Digital still hides outline and cap after restore");
+expect(split.clips.WatchIconsWidget_mc.x === 111.35 + (0 + 132 * 0.8 - 110.5), "Digital markers follow the face from the restored outline center");
+expect(split.clips.instance546.visible === true && split.clips.instance546.x === 110.5, "Digital does not hide or move extra autoname instance546");
+expect(split.clips.WatchOutline_mc.alpha === 1 && split.clips.Temperature_mc.alpha === 0, "Digital hide does not write chrome or INFO alpha");
+
+const back = makeWatchState();
+back.clips.WatchOutline_mc.alpha = 1;
+back.clips.O2CO2_mc.alpha = 1;
+back.clips.instance66.alpha = 1;
+back.clips.DayCycleBase_mc.alpha = 1;
+back.clips.locationNameBase_mc.alpha = 1;
+applyWatchStyle(back, 1);
+applyWatchStyle(back, 3);
+expect(back.clips.WatchOutline_mc.visible === false && back.clips.WatchOutline_mc.alpha === 1, "Digital hides outline vis and leaves post-FadeIn alpha");
+expect(back.clips.Temperature_mc.visible === false && back.clips.Temperature_mc.alpha === 0, "Digital hides INFO vis and does not reconstruct FadeInPlanetInfo");
+applyWatchStyle(back, 1);
+expect(back.clips.WatchOutline_mc.visible === true && back.clips.WatchOutline_mc.alpha === 1, "Digital then Vanilla restores outline vis and keeps native FadeIn alpha");
+expect(back.clips.instance66.visible === true && back.clips.instance66.alpha === 1, "Digital then Vanilla restores cap vis and does not force-write alpha");
+expect(back.clips.O2CO2_mc.visible === true && back.clips.O2CO2_mc.alpha === 1, "Digital then Vanilla restores O2 vis at native FadeIn alpha");
+expect(back.clips.DayCycleBase_mc.visible === true && back.clips.locationNameBase_mc.visible === true, "Digital then Vanilla restores day and location vis from payload");
+expect(back.clips.Temperature_mc.visible === true && back.clips.Temperature_mc.alpha === 0, "Digital then Vanilla undoes INFO vis hide and does not force FadeInPlanetInfo alpha");
+expect(back.clips.Oxygen_mc.alpha === 0 && back.clips.Grav_mc.alpha === 0, "Digital then Vanilla does not force-show Oxygen or Grav");
+expect(back.clips.instance546.visible === true && back.clips.instance546.x === 110.5, "Digital then Vanilla does not own extra autoname instance546");
+expect(back.clips.HealthBar_mc.visible === false && back.clips.EquippedWeaponAmmo_mc.visible === false && back.clips.JetpackMeterWrapper_mc.visible === false, "Digital then Vanilla leaves health ammo and boost hidden");
+
 const geo = makeWatchState();
 expect(isWatchClip(geo.clips.instance66, geo.clips.WatchOutline_mc) === true, "session instance66 at native cap pose is watch chrome");
 geo.clips.instance66.x = 110.5;
@@ -973,7 +1077,10 @@ expect(checks.indexOf("FadeInPlanetInfo") >= 0, "CHECKS records that INFO appear
 expect(checks.indexOf("does not display") >= 0, "CHECKS does not treat INFO vis-true as shown at alpha 0");
 expect(checks.indexOf("move only the live marker widgets") >= 0, "CHECKS describes custom marker-only follow");
 expect(checks.indexOf("HZ43 dump") >= 0 && checks.indexOf("vis/alpha") >= 0, "CHECKS records vis and alpha sibling dumps");
-expect(checks.indexOf("r9-cappose-ctao-20261107") >= 0, "CHECKS records the cap-pose diagnostic package token");
+expect(checks.indexOf("r10-fade-follow-20261107") >= 0, "CHECKS records the fade-follow diagnostic package token");
+expect(checks.indexOf("does not write a stored FadeIn alpha") >= 0 && checks.indexOf("Digital then Vanilla") >= 0, "CHECKS records Digital then Vanilla restore without forcing INFO alpha");
+expect(checks.indexOf("write-marks") >= 0 && checks.indexOf("does not include why") >= 0, "CHECKS records dump signature omit why");
+expect(checks.indexOf("not in the r10 Scaleform log") >= 0, "CHECKS does not claim Digital then Vanilla was in the logged F11 sequence");
 expect(checks.indexOf("alphaOffset") >= 0 && checks.indexOf("alphaMultiplier") >= 0, "CHECKS records dump of both CXFORM alpha terms");
 expect(checks.indexOf("instance546") >= 0 && checks.indexOf("not mapped") >= 0, "CHECKS records extra runtime autonames without mapping them to PHC depths");
 expect(checks.indexOf("health") >= 0 && checks.indexOf("ammo") >= 0 && checks.indexOf("boost") >= 0, "CHECKS records that health ammo and boost stay off the watch hid list");
