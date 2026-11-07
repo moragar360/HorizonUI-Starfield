@@ -1,7 +1,8 @@
 // Purpose: check the probe's read-only rules without the game.
-// Author: Moragar. Last modified: 2026-11-06.
+// Author: Moragar. Last modified: 2026-11-07.
 
 #include "hsb_arrange.h"
+#include "hsb_face.h"
 #include "hsb_guard.h"
 #include "hsb_interior.h"
 #include "hsb_version.h"
@@ -9,6 +10,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
+#include <sstream>
 #include <string>
 
 namespace fs = std::filesystem;
@@ -175,6 +178,64 @@ static void CheckInteriorLifecycle()
 	Expect(std::string(fields[placed[0].index].text) == "HopeTech Shell Fuselage A", "the stack does not invent a module name");
 	hsb::ModulePlace none[4];
 	Expect(hsb::PlaceModule(nullptr, 0, 360, 420, none, 4) == 0, "an empty card invents no stats");
+}
+
+static void CheckFaceProof()
+{
+	const hsb::FaceMeasure boxes{96, 96, 24};
+	const hsb::FaceMeasure grotesk{152, 43, 24};
+	const hsb::FaceMeasure none{};
+	Expect(!hsb::FaceProven(boxes, none), "box glyphs with one advance are not a face");
+	Expect(hsb::FaceProven(grotesk, boxes), "proportional letters prove a face");
+	Expect(!hsb::FaceProven(grotesk, grotesk), "a face that measures like a missing name is not proven");
+	Expect(!hsb::FaceProven(none, boxes), "an empty measure is not proven");
+	Expect(!hsb::FaceProven({std::numeric_limits<float>::quiet_NaN(), 43, 24}, boxes), "a bad measure is not proven");
+	Expect(!hsb::FaceProven({152, 43, 3}, boxes), "a field with no height is not proven");
+	Expect(!hsb::FaceProven({60, 40, 24}, boxes), "a narrow W is not proven");
+
+	hsb::FaceCandidate order[7] = {
+		{boxes, true, true},
+		{grotesk, true, true},
+		{{148, 40, 24}, true, true},
+		{{}, true, false},
+		{grotesk, false, true},
+		{grotesk, false, true},
+		{grotesk, false, true},
+	};
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 1, "the first proven mapped name wins");
+	order[1].measure = boxes;
+	order[2].measure = boxes;
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 4, "device text is tried only after every embedded name fails");
+	order[3] = {{150, 41, 24}, true, true};
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 3, "the module-name face comes before device text");
+	for (auto& c : order) c.measure = boxes;
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == -1, "no proof leaves the earlier text path");
+	Expect(hsb::PickFace(nullptr, 7, boxes, boxes) == -1, "no list is no proof");
+	Expect(hsb::TextPx(11, false) == 13 && hsb::TextPx(13, true) == 16 && hsb::TextPx(21, false) == 21,
+		"text keeps the 13 and 16 px floors");
+}
+
+// Lines that build log text may carry candidate tags and metrics, never a face name.
+static bool NotesHideFaces(const std::string& source)
+{
+	std::istringstream in(source);
+	std::string line;
+	while (std::getline(in, line)) {
+		const bool logs = line.find("this.note(") != std::string::npos || line.find("report +=") != std::string::npos
+			|| line.find("line +=") != std::string::npos || line.find("var report") != std::string::npos
+			|| line.find("var line") != std::string::npos;
+		if (!logs) continue;
+		if (line.find("FACES[") != std::string::npos || line.find("names[") != std::string::npos
+			|| line.find("labelFace") != std::string::npos || line.find("fieldFace(") != std::string::npos)
+			return false;
+		for (std::size_t at = line.find("this.face"); at != std::string::npos; at = line.find("this.face", at + 1)) {
+			const std::size_t next = at + 9;
+			const char c = next < line.size() ? line[next] : ' ';
+			const bool ident = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+			if (!ident) return false;
+		}
+	}
+	return true;
 }
 
 static std::string ReadFile(const fs::path& path)
@@ -388,6 +449,7 @@ int main()
 	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkLeft, true)) == "left40", "shift arrow is the long nudge");
 	CheckArrangeLifecycle();
 	CheckInteriorLifecycle();
+	CheckFaceProof();
 	Expect(hsb::kAccentGold == 0xE8C547, "default accent is gold");
 	Expect(hsb::ResolveAccent(-1, "", false, 3, "") == hsb::kAccentDefault, "missing hud accent stays gold");
 	Expect(hsb::ResolveAccent(4, "", false, 3, "") == 4, "a swatch is kept");
@@ -404,10 +466,31 @@ int main()
 	const std::string iniPath = DocsTail('\\') + "Data\\Interface\\HorizonUI\\shipbuilder\\HorizonShipBuilder.user.ini";
 	Expect(hsb::IniMayWrite(iniPath), "the user ini path is allowed");
 	Expect(!hsb::IniMayWrite(std::string("D:\\Steam\\steamapps\\common\\Starfield\\") + "HorizonShipBuilder.user.ini"), "the game folder is refused");
-	Expect(std::string(HSB_FILE_VERSION_STR) == "0.1.0.0", "plugin version is 0.1.0.0");
+	Expect(std::string(HSB_FILE_VERSION_STR) == "0.1.1.0", "plugin version is 0.1.1.0");
+	Expect(lua.find("set_version(\"0.1.1\")") != std::string::npos, "the builder target version matches the plugin");
 
 	const std::string gold = ReadFile(root / "actionscript" / "HorizonShipBuilder.as");
-	Expect(gold.find("0.1.0.0") != std::string::npos, "gold movie version");
+	Expect(gold.find("return \"0.1.1.0\"") != std::string::npos && gold.find("BUILDER 0.1.1.0") != std::string::npos,
+		"gold movie version");
+	Expect(gold.find("0.1.0.0") == std::string::npos, "no stale gold version");
+	Expect(gold.find("\"$NB_Grotesk_Semibold\",\"$MAIN_Font_Bold\",\"$MAIN_Font\"") != std::string::npos,
+		"mapped candidates are tried in order");
+	Expect(gold.find("$Horizon_NoSuchFace_x") != std::string::npos, "a face is compared with a name that cannot exist");
+	Expect(gold.find("\"WWWWWWWW\"") != std::string::npos && gold.find("\"iiiiiiii\"") != std::string::npos,
+		"wide and narrow letters are measured");
+	Expect(gold.find("wide < narrow * 1.6") != std::string::npos, "the movie ratio matches the twin");
+	Expect(gold.find("Math.abs(wide - missWide) < 0.5") != std::string::npos, "the movie closeness matches the twin");
+	Expect(gold.find("\"ModuleInfoCard_mc\",\"ModuleLabel_mc\",\"text_tf\"") != std::string::npos,
+		"the fallback face is the module name field, not the first field");
+	Expect(gold.find("\"FONT try=\"") != std::string::npos && gold.find("\"FONTSRC \"") != std::string::npos,
+		"the face proof is logged");
+	Expect(NotesHideFaces(gold), "log lines name candidates by index only");
+	Expect(gold.find("box.embedFonts = this.faceEmbed") != std::string::npos, "horizon text uses the proven embed flag");
+	Expect(gold.find("this.hexBox.embedFonts = this.faceEmbed") != std::string::npos, "the hex field uses the proven face");
+	Expect(gold.find("this.hexBox.type = TextFieldType.INPUT") != std::string::npos, "the hex field stays editable");
+	Expect(gold.find("var floor:int = this.lrg ? 16 : 13;") != std::string::npos, "text floors are 13 and 16 px");
+	Expect(gold.find("findLatinField") == std::string::npos, "the face is not taken from the first text field");
+	Expect(gold.find("enumerateFonts") == std::string::npos, "the face is not the first enumerated font");
 	Expect(gold.find("E8C547") != std::string::npos, "gold accent number");
 	Expect(gold.find("ARRANGE PANELS") != std::string::npos, "arrange entry button");
 	Expect(gold.find("COVERS THE SHIP VIEW") != std::string::npos, "overlap chip");
@@ -417,8 +500,6 @@ int main()
 	Expect(gold.find("HangarInfoPanel_mc") != std::string::npos, "hangar overview is recognized");
 	Expect(gold.find("assignSpots") == std::string::npos, "hidden panels are not grabbed by proximity");
 	Expect(gold.find("sample.embedFonts") == std::string::npos, "embed flag is not copied from the first field");
-	Expect(gold.find("embedFonts = false") != std::string::npos, "horizon text does not embed a subset face");
-	Expect(gold.find("findLatinField") != std::string::npos, "horizon text looks for a latin face");
 	Expect(gold.find("param1 == \"Browser\"") != std::string::npos, "parts list stays on the menu");
 	Expect(gold.find("param1 == \"Power\"") != std::string::npos && gold.find("param1 == \"Stats\"") != std::string::npos,
 		"power and the footer stay on the menu");
@@ -435,7 +516,6 @@ int main()
 	Expect(gold.find("boundHas(param1,\"hit\")") != std::string::npos, "the movie protects hit names");
 	Expect(gold.find("addChildAt(plate") == std::string::npos, "the plate is not inserted into the clip");
 	Expect(gold.find("panelMovable") != std::string::npos, "only safe panels are handles");
-	Expect(gold.find("param1.embedFonts") != std::string::npos, "an embedded face name is skipped");
 	Expect(gold.find("parent.removeChild") == std::string::npos, "game clips are not taken off the menu");
 	Expect(readme.find("game root") != std::string::npos, "the readme names the game root");
 	Expect(readme.find("Data folder as the mod root") == std::string::npos, "the readme does not call Data the mod root");

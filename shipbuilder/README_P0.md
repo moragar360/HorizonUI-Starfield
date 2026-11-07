@@ -2,7 +2,7 @@
 
 Read-only probe. Version 0.0.2.0. It answers the live tests in spec F.1 as far as a log can, including Arrange tests #16, #17, and #18.
 
-Plugin 0.1.0.0 draws the gold screens and Arrange on the default path. The probe overlay and the F7, F8, and F6=dump keys stay off unless the user file sets Probe=1. Button prompts stay icons. The parts list stays the game's list. Ctrl+L and the gear button open Arrange. The user file is `Documents\My Games\Starfield\Data\Interface\HorizonUI\shipbuilder\HorizonShipBuilder.user.ini`. A ping of 0.1.0.0 means the gold splice is live. The P0.1 steps below still describe the probe when Probe=1.
+Plugin 0.1.1.0 draws the gold screens and Arrange on the default path. The probe overlay and the F7, F8, and F6=dump keys stay off unless the user file sets Probe=1. Button prompts stay icons. The parts list stays the game's list. Ctrl+L and the gear button open Arrange. The user file is `Documents\My Games\Starfield\Data\Interface\HorizonUI\shipbuilder\HorizonShipBuilder.user.ini`. A ping of 0.1.1.0 means the gold splice is live. The P0.1 steps below still describe the probe when Probe=1.
 
 The probe writes one file:
 
@@ -236,7 +236,7 @@ This package is Horizon Ship Builder alone. It is not the HUD installer and it h
 From the repo root, after the desktop builder has produced the DLL and both movies:
 
 ```
-sh shipbuilder/package_vortex.sh build\windows\x64\releasedbg\HorizonShipBuilder.dll shipbuilder\Interface\spaceshipeditormenu.swf shipbuilder\Interface\spaceshipeditormenu_lrg.swf HorizonShipBuilder-0.1.0.0.zip
+sh shipbuilder/package_vortex.sh build\windows\x64\releasedbg\HorizonShipBuilder.dll shipbuilder\Interface\spaceshipeditormenu.swf shipbuilder\Interface\spaceshipeditormenu_lrg.swf HorizonShipBuilder-0.1.1.0.zip
 ```
 
 The zip contains only:

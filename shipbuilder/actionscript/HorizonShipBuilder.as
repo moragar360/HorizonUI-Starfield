@@ -18,6 +18,9 @@ package
       private static const ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       private static const IDS:Array = ["Power","Module","Credits","Browser","Stats","Hints","Cluster"];
       private static const FIXED:Array = ["FlightCheck_mc","SystemUpgrade_mc","ExitConfirmation_mc","ShipRename_mc","RepairMeter_mc","ColorPicker_mc","Background_mc","MessagePopup_mc"];
+      // Mapped names go through the game's font library. The log names a candidate by index only.
+      private static const FACES:Array = ["$NB_Grotesk_Semibold","$MAIN_Font_Bold","$MAIN_Font"];
+      private static const NO_FACE:String = "$Horizon_NoSuchFace_x";
       
       private var host:Object;
       private var lines:Array;
@@ -31,8 +34,12 @@ package
       private var margin:int;
       private var lrg:Boolean;
       private var bodyPx:int;
-      private var useEmbed:Boolean;
-      private var faceFmt:TextFormat;
+      private var face:String;
+      private var faceEmbed:Boolean;
+      private var facePick:String;
+      private var faceTries:int;
+      private var texts:Array;
+      private var notedFaces:int;
       private var pt:Point;
       private var gear:Sprite;
       private var titleT:TextField;
@@ -82,7 +89,12 @@ package
          this.margin = 34;
          this.lrg = false;
          this.bodyPx = 13;
-         this.useEmbed = false;
+         this.face = "";
+         this.faceEmbed = false;
+         this.facePick = "0";
+         this.faceTries = 0;
+         this.texts = [];
+         this.notedFaces = 0;
          this.pt = new Point();
          this.setOpen = false;
          this.arranging = false;
@@ -113,7 +125,7 @@ package
       
       public function ping():String
       {
-         return "0.1.0.0";
+         return "0.1.1.0";
       }
       
       public function stageBox():String
@@ -212,53 +224,197 @@ package
          try { url = String(root.loaderInfo.url); } catch(err:Error) { url = ""; }
          this.lrg = url.indexOf("_lrg") >= 0;
          this.bodyPx = this.lrg ? 16 : 13;
-         this.faceFmt = this.copyFormat();
+         this.proveFace();
          this.buildCards();
          this.buildGear();
          stage.addEventListener(Event.ENTER_FRAME,this.onFrame);
-         this.note("BUILDER 0.1.0.0 gold lrg=" + (this.lrg ? 1 : 0));
+         this.note("BUILDER 0.1.1.0 gold lrg=" + (this.lrg ? 1 : 0));
       }
       
       private function onFrame(param1:Event):void
       {
          this.frameN++;
+         if(this.face.length == 0 && this.faceTries < 3 && (this.frameN == 30 || this.frameN == 120))
+         {
+            this.proveFace();
+            if(this.face.length > 0) { this.refreshFaces(); }
+         }
          if(this.frameN < 3 || this.arranging || this.conflict) { return; }
          if(!this.mapped || (this.frameN % 8) == 0) { this.syncPanels(); }
       }
       
-      private function copyFormat():TextFormat
+      // Candidates in order: mapped names as embedded text, the face of the game's module name
+      // field, then mapped names as device text. Box glyphs share one advance, so a face counts
+      // only when W and i measure apart and the pair differs from a name that cannot exist.
+      private function proveFace():void
       {
-         var fmt:TextFormat = new TextFormat();
-         fmt.size = this.bodyPx;
-         fmt.color = 0xF4F0E4;
-         this.useEmbed = false;
-         var sample:TextField = this.findLatinField(this.host as DisplayObjectContainer,0);
-         var face:String = this.latinFace(sample);
-         if(face.length > 0) { fmt.font = face; }
-         return fmt;
+         this.faceTries++;
+         this.face = "";
+         this.faceEmbed = false;
+         var none:Array = this.measureFace(NO_FACE,true);
+         var noneDev:Array = this.measureFace(NO_FACE,false);
+         var names:Array = [];
+         var embeds:Array = [];
+         var tags:Array = [];
+         var i:int = 0;
+         while(i < FACES.length)
+         {
+            names.push(String(FACES[i]));
+            embeds.push(true);
+            tags.push("e" + (i + 1));
+            i++;
+         }
+         var label:TextField = this.pathField(["ModuleInfoCard_mc","ModuleLabel_mc","text_tf"]);
+         var labelFace:String = this.fieldFace(label);
+         var hasLabel:Boolean = labelFace.length > 0;
+         if(hasLabel)
+         {
+            names.push(labelFace);
+            embeds.push(label.embedFonts);
+            tags.push("n4");
+         }
+         i = 0;
+         while(i < FACES.length)
+         {
+            names.push(String(FACES[i]));
+            embeds.push(false);
+            tags.push("d" + (i + 1));
+            i++;
+         }
+         var pick:String = "0";
+         var report:String = "n=" + this.metric(none) + " nd=" + this.metric(noneDev) + (hasLabel ? "" : " n4=na");
+         var k:int = 0;
+         while(k < names.length)
+         {
+            var embed:Boolean = embeds[k] == true;
+            var m:Array = this.measureFace(String(names[k]),embed);
+            var ok:Boolean = this.faceProven(m,embed ? none : noneDev);
+            report += " " + String(tags[k]) + "=" + this.metric(m) + (ok ? "+" : "-");
+            if(ok && pick == "0")
+            {
+               pick = String(tags[k]);
+               this.face = String(names[k]);
+               this.faceEmbed = embed;
+            }
+            k++;
+         }
+         this.facePick = pick;
+         this.note("FONT try=" + this.faceTries + " pick=" + pick + " " + report);
       }
       
-      private function latinFace(param1:TextField):String
+      private function measureFace(param1:String, param2:Boolean):Array
       {
-         if(param1 == null || param1.embedFonts) { return ""; }
-         if(!this.hasLatin(param1.text)) { return ""; }
-         var src:TextFormat = param1.getTextFormat();
-         if(src == null || src.font == null || String(src.font).length == 0) { src = param1.defaultTextFormat; }
-         if(src == null || src.font == null) { return ""; }
-         return String(src.font);
+         var out:Array = [0,0,0];
+         try
+         {
+            var meter:TextField = new TextField();
+            meter.embedFonts = param2;
+            var fmt:TextFormat = new TextFormat(param1,20,0xFFFFFF);
+            meter.defaultTextFormat = fmt;
+            meter.text = "WWWWWWWW";
+            meter.setTextFormat(fmt);
+            out[0] = meter.textWidth;
+            out[2] = meter.textHeight;
+            meter.text = "iiiiiiii";
+            meter.setTextFormat(fmt);
+            out[1] = meter.textWidth;
+         }
+         catch(err:Error)
+         {
+            out = [0,0,0];
+         }
+         return out;
       }
       
-      private function findLatinField(param1:DisplayObjectContainer, param2:int):TextField
+      private function faceProven(param1:Array, param2:Array):Boolean
       {
-         if(param1 == null || param2 > 6) { return null; }
+         var wide:Number = Number(param1[0]);
+         var narrow:Number = Number(param1[1]);
+         var tall:Number = Number(param1[2]);
+         if(!(wide > 8) || !(narrow > 0) || !(tall > 4)) { return false; }
+         if(wide < narrow * 1.6) { return false; }
+         var missWide:Number = Number(param2[0]);
+         var missNarrow:Number = Number(param2[1]);
+         if(missWide > 0 && Math.abs(wide - missWide) < 0.5 && Math.abs(narrow - missNarrow) < 0.5) { return false; }
+         return true;
+      }
+      
+      private function metric(param1:Array):String
+      {
+         return int(Number(param1[0])) + "/" + int(Number(param1[1])) + "/" + int(Number(param1[2]));
+      }
+      
+      private function refreshFaces():void
+      {
+         var kept:Array = [];
+         var i:int = 0;
+         while(i < this.texts.length)
+         {
+            var box:TextField = this.texts[i] as TextField;
+            if(box != null && box.parent != null)
+            {
+               var fmt:TextFormat = box.defaultTextFormat;
+               fmt.font = this.face;
+               box.embedFonts = this.faceEmbed;
+               box.defaultTextFormat = fmt;
+               box.setTextFormat(fmt);
+               kept.push(box);
+            }
+            i++;
+         }
+         this.texts = kept;
+      }
+      
+      private function pathField(param1:Array):TextField
+      {
+         var node:Object = this.host;
+         var i:int = 0;
+         while(node != null && i < param1.length)
+         {
+            var name:String = String(param1[i]);
+            var next:Object = null;
+            try { next = node[name]; } catch(err:Error) { next = null; }
+            if(next == null && node is DisplayObjectContainer) { next = (node as DisplayObjectContainer).getChildByName(name); }
+            node = next;
+            i++;
+         }
+         return node as TextField;
+      }
+      
+      private function fieldFace(param1:TextField):String
+      {
+         if(param1 == null) { return ""; }
+         var fmt:TextFormat = null;
+         try { fmt = param1.getTextFormat(); } catch(err:Error) { fmt = null; }
+         if(fmt == null || fmt.font == null || String(fmt.font).length == 0) { fmt = param1.defaultTextFormat; }
+         if(fmt == null || fmt.font == null) { return ""; }
+         return String(fmt.font);
+      }
+      
+      // f1-f3 match a mapped candidate, x$ is another mapped name, x is a plain face, x0 has none.
+      private function faceCode(param1:TextField):String
+      {
+         if(param1 == null) { return "na"; }
+         var font:String = this.fieldFace(param1);
+         var at:int = FACES.indexOf(font);
+         var code:String = "x";
+         if(at >= 0) { code = "f" + (at + 1); }
+         else if(font.length == 0) { code = "x0"; }
+         else if(font.charAt(0) == "$") { code = "x$"; }
+         return code + (param1.embedFonts ? "e" : "d");
+      }
+      
+      private function rowField(param1:DisplayObjectContainer, param2:int):TextField
+      {
+         if(param1 == null || param2 > 5) { return null; }
          var i:int = 0;
          while(i < param1.numChildren)
          {
             var child:DisplayObject = param1.getChildAt(i);
-            if(child != this && child is TextField && this.latinFace(child as TextField).length > 0) { return child as TextField; }
-            if(child != this && child is DisplayObjectContainer)
+            if(child is TextField && child.name == "text_tf" && child.parent != null && child.parent.name == "Text_mc" && child.parent.parent != null && child.parent.parent.name == "Module_mc") { return child as TextField; }
+            if(child is DisplayObjectContainer)
             {
-               var hit:TextField = this.findLatinField(child as DisplayObjectContainer,param2 + 1);
+               var hit:TextField = this.rowField(child as DisplayObjectContainer,param2 + 1);
                if(hit != null) { return hit; }
             }
             i++;
@@ -266,22 +422,17 @@ package
          return null;
       }
       
-      private function hasLatin(param1:String):Boolean
+      private function noteFaces(param1:String):void
       {
-         if(param1 == null) { return false; }
-         var letters:int = 0;
-         var i:int = 0;
-         while(i < param1.length)
-         {
-            var c:int = param1.charCodeAt(i);
-            if((c >= 65 && c <= 90) || (c >= 97 && c <= 122))
-            {
-               letters++;
-               if(letters >= 4) { return true; }
-            }
-            i++;
-         }
-         return false;
+         var entries:DisplayObjectContainer = null;
+         try { entries = this.host["ModulePalette_mc"]["ModuleEntries_mc"] as DisplayObjectContainer; } catch(err:Error) { entries = null; }
+         var line:String = "FONTSRC " + param1 + " pick=" + this.facePick;
+         line += " name=" + this.faceCode(this.pathField(["ModuleInfoCard_mc","ModuleLabel_mc","text_tf"]));
+         line += " stat=" + this.faceCode(this.pathField(["ModuleInfoCard_mc","InfoCardContent_mc","StatEntry1_mc","StatLabel_mc","text_tf"]));
+         line += " desc=" + this.faceCode(this.pathField(["ModuleInfoCard_mc","InfoCardContent_mc","Description_mc","text_tf"]));
+         line += " head=" + this.faceCode(this.pathField(["ModulePalette_mc","ModuleHeader_mc","Text_mc","text_tf"]));
+         line += " row=" + this.faceCode(this.rowField(entries,0));
+         this.note(line);
       }
       
       private function buildCards():void
@@ -398,6 +549,16 @@ package
          this.dressInteriors();
          this.strokeHangar();
          if(!this.mapped) { this.note("MAP " + report); }
+         if(this.notedFaces == 0)
+         {
+            this.notedFaces = 1;
+            this.noteFaces("map");
+         }
+         if(this.notedFaces == 1 && this.clipLive(this.clipByName("Module")))
+         {
+            this.notedFaces = 2;
+            this.noteFaces("card");
+         }
          this.mapped = true;
          this.redraw();
       }
@@ -959,8 +1120,8 @@ package
             i++;
          }
          this.hexBox = new TextField();
-         this.hexBox.embedFonts = false;
-         this.hexBox.defaultTextFormat = this.faceFmt;
+         this.hexBox.embedFonts = this.faceEmbed;
+         this.hexBox.defaultTextFormat = this.textFormat(this.bodyPx,0xF4F0E4);
          this.hexBox.type = TextFieldType.INPUT;
          this.hexBox.border = true;
          this.hexBox.borderColor = this.accentColor();
@@ -968,10 +1129,11 @@ package
          this.hexBox.backgroundColor = 0x1C1A16;
          this.hexBox.textColor = 0xF4F0E4;
          this.hexBox.width = 140;
-         this.hexBox.height = 26;
+         this.hexBox.height = this.bodyPx + 13;
          this.hexBox.x = x0 + 24;
          this.hexBox.y = y0 + 180;
          this.hexBox.text = this.accentHex.length == 6 ? this.accentHex : "E8C547";
+         this.texts.push(this.hexBox);
          this.setLayer.addChild(this.hexBox);
          var hexBtn:Sprite = this.makeButton("CUSTOM",x0 + 176,y0 + 180,110,28,false);
          hexBtn.addEventListener(MouseEvent.CLICK,this.onHex);
@@ -2243,14 +2405,22 @@ package
          return digit;
       }
       
+      // Without a proven face this stays the earlier device-text path.
+      private function textFormat(param1:int, param2:uint):TextFormat
+      {
+         var floor:int = this.lrg ? 16 : 13;
+         var fmt:TextFormat = new TextFormat();
+         if(this.face.length > 0) { fmt.font = this.face; }
+         fmt.size = param1 < floor ? floor : param1;
+         fmt.color = param2;
+         return fmt;
+      }
+      
       private function makeText(param1:String, param2:Number, param3:Number, param4:Number, param5:Number, param6:int, param7:uint):TextField
       {
          var box:TextField = new TextField();
-         var fmt:TextFormat = new TextFormat();
-         if(this.faceFmt != null && this.faceFmt.font != null) { fmt.font = this.faceFmt.font; }
-         fmt.size = param6 < 13 ? 13 : param6;
-         fmt.color = param7;
-         box.embedFonts = false;
+         var fmt:TextFormat = this.textFormat(param6,param7);
+         box.embedFonts = this.faceEmbed;
          box.defaultTextFormat = fmt;
          box.mouseEnabled = false;
          box.selectable = false;
@@ -2260,6 +2430,7 @@ package
          box.height = param5;
          box.text = param1;
          box.setTextFormat(fmt);
+         this.texts.push(box);
          return box;
       }
       
