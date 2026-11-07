@@ -18614,6 +18614,8 @@
       private static const HZ43_VAN_A:Array = ["BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"];
       private static const HZ43_VAN_MAX:int = 24;
       private static const HZ43_VAN_FACE:Number = 221;
+      // Unique package token for the next diagnostic gfx. Scaleform names the native cap instance66, not "".
+      private static const HZ43_DIAG:String = "r9-inst66-ct-20261107";
 
       private function hz43VanInfoName(name:String) : Boolean
       {
@@ -18665,7 +18667,7 @@
          if(!d) { return false; }
          if(this.hz43VanSkip(d.name)) { return false; }
          var n:String = d.name;
-         if(n != null && n.length == 0)
+         if(this.hz43VanInstName(n))
          {
             return this.hzBlg != null && d.parent == this.hzBlg;
          }
@@ -19579,11 +19581,19 @@
          return name == "WatchIconsWidget_mc" || name == "WatchPointerOutline_mc" || name == "MissionIconsWidget_mc" || name == "EnemyIconsWidget_mc";
       }
 
+      // Runtime PHC names the depth-1 cap instance66. Empty-string checks do not see it.
+      private function hz43VanInstName(name:String) : Boolean
+      {
+         if(name == null) { return false; }
+         if(name.length == 0) { return true; }
+         return name.indexOf("instance") == 0;
+      }
+
       private function hz43VanNamed(name:String) : Boolean
       {
          if(name == null) { return false; }
          if(this.hz43VanSkip(name)) { return false; }
-         if(name.length == 0) { return true; }
+         if(this.hz43VanInstName(name)) { return true; }
          if(name == "MissionIconsWidget_mc" || name == "EnemyIconsWidget_mc" || name == "Autopilot_mc") { return true; }
          var i:int = 0;
          while(i < HZ43_VAN_N.length)
@@ -19809,12 +19819,15 @@
                kids += bc && bc.name && bc.name.length > 0 ? bc.name : "(unnamed)";
                bi++;
             }
+            trace("HZ43 diag=" + HZ43_DIAG + " watch unit=" + names);
             trace("HZ43 watch unit=" + names);
+            trace("HZ43 diag=" + HZ43_DIAG + " blg=" + kids);
             trace("HZ43 blg=" + kids);
          }
          this.hz43VanKids = this.hzBlg.numChildren;
          this.hz43VanNeed = 0;
          this.hz43VanCap = 1;
+         this.hz43VanDump("cap");
       }
 
       // Whole-assembly write keeps native relative locals. marks=true moves only live marker widgets
@@ -19860,6 +19873,7 @@
          {
             this.hz43VanWrote = sc != 1 || dx != 0 || dy != 0;
          }
+         this.hz43VanDump(marks ? "write-marks" : "write");
       }
 
       private function hz43VanHoldsMark(box:DisplayObjectContainer) : Boolean
@@ -19936,7 +19950,7 @@
             {
                this.hz43StHide(d);
             }
-            else if(n.length == 0)
+            else if(this.hz43VanInstName(n))
             {
                if(!d.visible) { d.visible = true; }
             }
@@ -20097,7 +20111,7 @@
          return this.globalToLocal(g);
       }
 
-      // vis/alpha/x/y per watch sibling. Deduped by style+cap+wrote. Does not change clips.
+      // vis/alpha/CT/x/y for every BottomLeftGroup child, including instance66. Deduped. Does not change clips.
       private function hz43VanDump(why:String) : void
       {
          var sig:String = why + "|" + this.hzWatchStyle + "|" + this.hz43VanCap + "|" + this.hz43VanWrote + "|" + this.hz43MarkMoved + "|" + this.hz43HidN;
@@ -20108,7 +20122,12 @@
          {
             fx = this.hz43Watch.x + "," + this.hz43Watch.y + " vis=" + this.hz43Watch.visible + " sc=" + this.hz43Watch.scaleX;
          }
-         trace("HZ43 dump why=" + why + " style=" + this.hzWatchStyle + " cap=" + this.hz43VanCap + " wrote=" + this.hz43VanWrote + " marks=" + this.hz43MarkMoved + " hidN=" + this.hz43HidN + " envGot=" + this.hz43EnvGot + " face=" + fx);
+         var hx:String = "none";
+         if(this.hz43VanHnd)
+         {
+            hx = this.hz43VanHnd.x + "," + this.hz43VanHnd.y;
+         }
+         trace("HZ43 dump diag=" + HZ43_DIAG + " why=" + why + " style=" + this.hzWatchStyle + " cap=" + this.hz43VanCap + " wrote=" + this.hz43VanWrote + " marks=" + this.hz43MarkMoved + " hidN=" + this.hz43HidN + " envGot=" + this.hz43EnvGot + " vanSc=" + this.hz43VanSc() + " face=" + fx + " hnd=" + hx);
          if(!this.hzBlg)
          {
             trace("HZ43 dump blg=null");
@@ -20118,10 +20137,17 @@
          while(i < this.hzBlg.numChildren)
          {
             var d:DisplayObject = this.hzBlg.getChildAt(i);
-            if(d && (this.hz43VanNamed(d.name) || this.hz43VanMarkName(d.name)))
+            if(d)
             {
                var nm:String = d.name != null && d.name.length > 0 ? d.name : "(unnamed)";
-               trace("HZ43 sib " + nm + " vis=" + d.visible + " a=" + d.alpha + " x=" + d.x + " y=" + d.y + " sx=" + d.scaleX + " sy=" + d.scaleY);
+               var cta:Number = -1;
+               try
+               {
+                  var ct:ColorTransform = d.transform.colorTransform;
+                  if(ct) { cta = ct.alphaMultiplier; }
+               }
+               catch(eCt:Error) { }
+               trace("HZ43 sib " + nm + " vis=" + d.visible + " a=" + d.alpha + " ctA=" + cta + " x=" + d.x + " y=" + d.y + " sx=" + d.scaleX + " sy=" + d.scaleY);
             }
             i++;
          }

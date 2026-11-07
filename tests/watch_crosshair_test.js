@@ -244,6 +244,14 @@ expect(funcBody(as, "hz43VanHorizon").indexOf("face / this.hz43VanRad") < 0 && f
 expect(funcBody(as, "hz43VanRingMid").indexOf("HZ43_VAN_FACE / 2") >= 0 && funcBody(as, "hz43VanRingMid").indexOf("getBounds") < 0, "marker follow uses outline local center, not hidden getBounds");
 expect(funcBody(as, "hz43VanDump").indexOf("vis=") >= 0 && funcBody(as, "hz43VanDump").indexOf(" a=") >= 0, "HZ43 dump reports vis and alpha separately");
 expect(funcBody(as, "hz43ShowVanilla").indexOf("hz43VanDump(\"vanilla\")") >= 0, "Vanilla restore dumps sibling vis and alpha");
+expect(funcBody(as, "hz43VanInstName").indexOf('name.indexOf("instance") == 0') >= 0, "instance66 is unnamed cap chrome, not an empty-string name");
+expect(funcBody(as, "hz43VanNamed").indexOf("hz43VanInstName") >= 0 && funcBody(as, "hz43VanWatchClip").indexOf("hz43VanInstName") >= 0, "capture and own-hide treat instance names as BLG chrome");
+expect(funcBody(as, "hz43VanBlgChrome").indexOf("hz43VanInstName") >= 0, "Vanilla chrome restore unhides instance cap names");
+expect(funcBody(as, "hz43VanDump").indexOf("ctA=") >= 0 && funcBody(as, "hz43VanDump").indexOf("HZ43_DIAG") >= 0, "dump records ColorTransform alpha and the diagnostic package token");
+expect(funcBody(as, "hz43VanDump").indexOf("hz43VanNamed") < 0, "dump lists every BottomLeftGroup child, not only VanNamed clips");
+expect(as.indexOf('HZ43_DIAG:String = "r9-inst66-ct-20261107"') >= 0, "next gfx can prove package r9-inst66-ct-20261107");
+expect(funcBody(as, "hz43VanCapture").indexOf('hz43VanDump("cap")') >= 0, "dump after capture latch prints cap=1");
+expect(funcBody(as, "hz43VanWrite").indexOf("write-marks") >= 0, "dump runs at native and marker writes");
 expect(funcBody(as, "hz43VanNote").indexOf("hz43HidV") < 0 && funcBody(as, "hz43VanRestoreHid").indexOf("hz43HidV") < 0, "hide identity list does not sample clip.visible for restore");
 expect(funcBody(as, "hzOnLocalEnv").indexOf("hz43VanEnvCache") >= 0, "LocalEnvironmentData updates the watch vis cache");
 expect(funcBody(as, "hz43VanEnvCache").indexOf("bInSpaceship") >= 0 && funcBody(as, "hz43VanEnvCache").indexOf("bIsLanded") >= 0 && funcBody(as, "hz43VanEnvCache").indexOf("bIsShipInCruiseMode") >= 0, "cache uses native local and cruise keys");
@@ -280,7 +288,7 @@ expect(as.indexOf('HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_m
 expect(funcBody(as, "hz43Frame").indexOf("hz43Watch.visible = false") >= 0, "vanilla hides the Horizon-drawn watch");
 expect(drawBody.indexOf("hz43TempT.text") >= 0 && drawBody.indexOf("hz43BodyT.text") >= 0, "digital and analog still draw planet and temperature");
 expect(funcBody(as, "hz43VanChrome").indexOf("hz43VanBlgChrome(hide)") >= 0, "Horizon faces hide unnamed cap art with the vanilla bezel");
-expect(funcBody(as, "hz43VanNamed").indexOf("name.length == 0") >= 0, "unnamed shapes belong to the watch assembly");
+expect(funcBody(as, "hz43VanInstName").indexOf("name.length == 0") >= 0 && funcBody(as, "hz43VanNamed").indexOf("hz43VanInstName") >= 0, "unnamed shapes belong to the watch assembly");
 expect(funcBody(as, "hz43VanSkip").indexOf("name.length == 0) { return true; }") < 0, "unnamed chrome is not skipped from the watch assembly");
 expect(funcBody(as, "hz43VanSkip").indexOf("name.length == 0) { return false; }") >= 0, "unnamed shapes stay in the watch assembly");
 
@@ -441,8 +449,11 @@ function makeClip(name, visible, alpha, x, y) {
 function displayed(d) {
 	return !!(d && d.visible && d.alpha > 0);
 }
+function isInstName(name) {
+	return name === "" || (typeof name === "string" && name.indexOf("instance") === 0);
+}
 function isWatchClip(d) {
-	return !!(d && WATCH_NAMES[d.name]);
+	return !!(d && (WATCH_NAMES[d.name] || isInstName(d.name)));
 }
 function hidHas(hid, clip) {
 	for (let i = 0; i < hid.length; i++) {
@@ -607,6 +618,7 @@ function makeWatchState(payload) {
 		envCruise: false,
 		envLang: "",
 		clips: {
+			instance66: makeClip("instance66", true, 0, 0, -0.25),
 			WatchOutline_mc: makeClip("WatchOutline_mc", true, 0, 0, 0),
 			O2CO2_mc: makeClip("O2CO2_mc", true, 0, 21.7, 89.85),
 			O2CO2thin_mc: makeClip("O2CO2thin_mc", true, 0, 16.1, 88.3),
@@ -759,12 +771,15 @@ expect(digitalRound.clips.WatchIconsWidget_mc.visible === true, "Digital keeps l
 expect(digitalRound.clips.MissionIconsWidget_mc.visible === true, "Digital keeps mission markers");
 expect(digitalRound.clips.EnemyIconsWidget_mc.visible === true, "Digital keeps enemy markers");
 expect(digitalRound.clips.O2CO2_mc.x === 21.7 && digitalRound.clips.WatchOutline_mc.x === 0, "Digital does not drag native O2 or outline locals");
+expect(digitalRound.clips.instance66.x === 0 && digitalRound.clips.instance66.y === -0.25, "Digital does not drag native cap instance66 locals");
+expect(digitalRound.clips.instance66.visible === false, "Digital hides native cap instance66 with chrome");
 expect(digitalRound.clips.O2CO2_mc.scaleX === 1 && digitalRound.clips.WatchOutline_mc.scaleX === 1, "Digital does not scale native chrome");
 expect(digitalRound.clips.WatchIconsWidget_mc.x === 111.35 + (0 + 132 - 110.5), "Digital moves location markers from the outline center to the Horizon face");
 expect(displayed(digitalRound.clips.WatchOutline_mc) === false, "hidden Digital chrome at FadeIn alpha 0 is not displayed");
 expect(digitalRound.clips.HealthBar_mc.visible === false, "health stays hidden on Digital");
 applyWatchStyle(digitalRound, 1);
 expect(digitalRound.clips.WatchOutline_mc.visible === true, "Digital then Vanilla restores the outline");
+expect(digitalRound.clips.instance66.visible === true && digitalRound.clips.instance66.x === 0, "Digital then Vanilla restores instance66 vis and native cap local");
 expect(digitalRound.clips.WatchIconsWidget_mc.x === 111.35, "Vanilla restores marker locals captured before the custom write");
 expect(digitalRound.clips.WatchOutline_mc.visible === true && digitalRound.clips.WatchOutline_mc.alpha === 0, "Vanilla vis undo does not write FadeIn alpha");
 expect(displayed(digitalRound.clips.WatchOutline_mc) === false, "Vanilla vis-true does not display native chrome at alpha 0");
