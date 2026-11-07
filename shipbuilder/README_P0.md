@@ -252,7 +252,7 @@ Check on the normal movie, then on `spaceshipeditormenu_lrg.swf`:
 - The parts list, categories, scrolling, keyboard, pad, and mouse work as before. That includes categories another mod adds: the same tab names, order, and parts as with this mod removed.
 - The hangar overview keeps the game card.
 - Arrange, from Ctrl+L or the gear: the outline is the gold card. Move it and Save. Close and reopen the builder, and it is in the same spot. Reset puts it home. Cancel undoes a move.
-- The hex field still takes typing. After Done, check that the arrow keys still move the parts list. Closing Settings clears keyboard focus when the hex field has it. If the arrows stop, note whether they come back after a category change.
+- Settings and keyboard focus, in build mode with the parts list showing. Click the hex field: the log shows `SETTINGS hex focus=hex` and the code is selected. Type six characters, then CUSTOM. Close Settings four ways, reopening between them: DONE, Esc, a swatch, and ARRANGE PANELS followed by Cancel. Each close writes `SETTINGS close focus=` with the holder before and after `>`, and after must read `list`. Then the arrow keys still move the parts list, and Enter does what it does with this mod removed. After reading `hex` or `ours`, or arrows that stop, is a failure: bring back the log. In the hangar overview the parts list is hidden, so after reads `none`, or `other` when a game panel such as rename holds focus. It never reads `hex` or `ours`.
 
 Bring back the log and a screenshot of the card for each part type on both movies.
 

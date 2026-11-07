@@ -4,6 +4,7 @@ package
    import Shared.GlobalFunc;
    import flash.display.DisplayObject;
    import flash.display.DisplayObjectContainer;
+   import flash.display.InteractiveObject;
    import flash.display.Shape;
    import flash.display.Sprite;
    import flash.events.Event;
@@ -1190,6 +1191,7 @@ package
          this.hexBox.x = x0 + 24;
          this.hexBox.y = y0 + 180;
          this.hexBox.text = this.accentHex.length == 6 ? this.accentHex : "E8C547";
+         this.hexBox.addEventListener(MouseEvent.CLICK,this.onHexField);
          this.texts.push(this.hexBox);
          this.setLayer.addChild(this.hexBox);
          var hexBtn:Sprite = this.makeButton("CUSTOM",x0 + 176,y0 + 180,110,28,false);
@@ -1221,6 +1223,19 @@ package
          this.note("ACCENT " + n);
          this.redraw();
          this.closeSettings();
+      }
+      
+      // The game's rename field takes focus the same way when editing starts. A click alone may
+      // not move focus in this menu. The code is selected so six typed characters replace it.
+      private function onHexField(param1:MouseEvent):void
+      {
+         if(stage == null || !this.setOpen) { return; }
+         if(stage.focus != this.hexBox)
+         {
+            this.giveFocus(this.hexBox);
+            this.hexBox.setSelection(0,this.hexBox.text.length);
+         }
+         this.note("SETTINGS hex focus=" + this.focusName(stage.focus));
       }
       
       private function onHex(param1:MouseEvent):void
@@ -1259,11 +1274,48 @@ package
          this.closeSettings();
       }
       
+      // The game list hears arrow keys and Enter only while it holds focus. ModulePalette.Update
+      // gives it focus while it shows and clears focus otherwise, so Settings hands back the same way.
       private function closeSettings():void
       {
+         var was:Boolean = this.setOpen;
          this.setOpen = false;
          if(this.setLayer != null) { this.setLayer.visible = false; }
-         if(stage != null && this.hexBox != null && stage.focus == this.hexBox) { stage.focus = null; }
+         if(stage == null) { return; }
+         var held:String = this.focusName(stage.focus);
+         if(held == "hex" || held == "ours")
+         {
+            var list:InteractiveObject = this.nativeList();
+            if(list != null && !this.chainShown(list)) { list = null; }
+            this.giveFocus(list);
+         }
+         if(was || held == "hex" || held == "ours") { this.note("SETTINGS close focus=" + held + ">" + this.focusName(stage.focus)); }
+      }
+      
+      // IMenu can put focus back on the object that just lost it after a click. That restore
+      // runs once, so a second assignment sticks.
+      private function giveFocus(param1:InteractiveObject):void
+      {
+         stage.focus = param1;
+         if(stage.focus != param1) { stage.focus = param1; }
+      }
+      
+      private function nativeList():InteractiveObject
+      {
+         var list:InteractiveObject = null;
+         try { list = this.host["ModulePalette_mc"]["ModuleEntries_mc"] as InteractiveObject; } catch(err:Error) { list = null; }
+         return list;
+      }
+      
+      // Names the focus holder for the log by kind only.
+      private function focusName(param1:InteractiveObject):String
+      {
+         if(param1 == null) { return "none"; }
+         if(param1 == this.hexBox) { return "hex"; }
+         if(this.contains(param1)) { return "ours"; }
+         var list:DisplayObjectContainer = this.nativeList() as DisplayObjectContainer;
+         if(list != null && list.contains(param1)) { return "list"; }
+         return "other";
       }
       
       private function openArrange():void

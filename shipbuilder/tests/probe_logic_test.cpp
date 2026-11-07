@@ -361,6 +361,17 @@ static std::string FunctionBody(const std::string& source, const std::string& na
 	return source.substr(at, end == std::string::npos ? std::string::npos : end + close.size() - at);
 }
 
+static bool InOrder(const std::string& text, const std::vector<std::string>& parts)
+{
+	std::size_t at = 0;
+	for (const std::string& part : parts) {
+		const std::size_t hit = text.find(part, at);
+		if (hit == std::string::npos) return false;
+		at = hit + part.size();
+	}
+	return true;
+}
+
 static std::string Pick(const hsb::CardMetrics& large, const hsb::CardMetrics& normal, int hsb::CardMetrics::*field)
 {
 	return "this.lrg ? " + std::to_string(large.*field) + " : " + std::to_string(normal.*field);
@@ -757,11 +768,32 @@ int main()
 	Expect(gold.find("aPartList") == std::string::npos, "gold movie does not touch the parts array");
 	Expect(gold.find("SetCategory") == std::string::npos && gold.find("CategoryName") == std::string::npos && gold.find("iCategoryIndex") == std::string::npos,
 		"the gold movie neither reads nor writes categories, so another mod's categories pass through untouched");
-	Expect(CountOf(gold, "ModuleEntries_mc") == 1 && FunctionBody(gold, "noteFaces").find("[\"ModuleEntries_mc\"]") != std::string::npos,
-		"the parts list is only read, for the face log");
-	Expect(CountOf(gold, ".focus = ") == 1 &&
-		FunctionBody(gold, "closeSettings").find("if(stage != null && this.hexBox != null && stage.focus == this.hexBox) { stage.focus = null; }") != std::string::npos,
-		"the movie takes keyboard focus from nothing but its own hex field");
+	Expect(CountOf(gold, "ModuleEntries_mc") == 2 && FunctionBody(gold, "noteFaces").find("[\"ModuleEntries_mc\"]") != std::string::npos &&
+		FunctionBody(gold, "nativeList").find("list = this.host[\"ModulePalette_mc\"][\"ModuleEntries_mc\"] as InteractiveObject;") != std::string::npos,
+		"the parts list is read for the face log and named as the focus target, never changed");
+	const std::string give = FunctionBody(gold, "giveFocus");
+	Expect(CountOf(gold, ".focus = ") == 2 && CountOf(give, "stage.focus = param1;") == 2 &&
+		InOrder(give, {"stage.focus = param1;", "if(stage.focus != param1) { stage.focus = param1; }"}),
+		"focus moves only through giveFocus, which assigns once more if the menu put it back");
+	Expect(CountOf(gold, "this.giveFocus(") == 2 && CountOf(gold, "giveFocus(this.hexBox)") == 1 && CountOf(gold, "giveFocus(list)") == 1,
+		"the movie gives focus only to its hex field and back to the game list");
+	const std::string hexField = FunctionBody(gold, "onHexField");
+	Expect(CountOf(gold, "this.onHexField") == 1 && gold.find("this.hexBox.addEventListener(MouseEvent.CLICK,this.onHexField);") != std::string::npos &&
+		InOrder(hexField, {"if(stage == null || !this.setOpen) { return; }", "if(stage.focus != this.hexBox)", "this.giveFocus(this.hexBox);",
+			"this.hexBox.setSelection(0,this.hexBox.text.length);", "this.note(\"SETTINGS hex focus=\" + this.focusName(stage.focus));"}),
+		"a click on the hex field gives it focus with the code selected, as the game's rename field does");
+	const std::string closing = FunctionBody(gold, "closeSettings");
+	Expect(InOrder(closing, {"var was:Boolean = this.setOpen;", "this.setOpen = false;", "if(stage == null) { return; }",
+			"var held:String = this.focusName(stage.focus);", "if(held == \"hex\" || held == \"ours\")",
+			"var list:InteractiveObject = this.nativeList();", "if(list != null && !this.chainShown(list)) { list = null; }", "this.giveFocus(list);",
+			"if(was || held == \"hex\" || held == \"ours\") { this.note(\"SETTINGS close focus=\" + held + \">\" + this.focusName(stage.focus)); }"}),
+		"closing Settings hands focus from our layer to the game list while it shows, else to nothing, and logs both holders");
+	Expect(CountOf(closing, "giveFocus") == 1 && CountOf(closing, "held == \"hex\"") == 2, "Settings moves focus only when our layer holds it");
+	const std::string holder = FunctionBody(gold, "focusName");
+	Expect(InOrder(holder, {"if(param1 == null) { return \"none\"; }", "if(param1 == this.hexBox) { return \"hex\"; }",
+			"if(this.contains(param1)) { return \"ours\"; }", "var list:DisplayObjectContainer = this.nativeList() as DisplayObjectContainer;",
+			"if(list != null && list.contains(param1)) { return \"list\"; }", "return \"other\";"}) && CountOf(holder, "return") == 5,
+		"the focus log names a kind, never a clip");
 	const std::string guard = FunctionBody(gold, "isProtectedName");
 	Expect(guard.find("\"categor\"") != std::string::npos && guard.find("\"list\"") != std::string::npos && guard.find("\"entry\"") != std::string::npos &&
 		guard.find("\"scroll\"") != std::string::npos && guard.find("\"tab\"") != std::string::npos && guard.find("\"select\"") != std::string::npos &&
@@ -901,6 +933,9 @@ int main()
 	Expect(readme.find("interface/spaceshipeditormenu_lrg.swf") != std::string::npos && readme.find("Creations included") != std::string::npos &&
 		readme.find("another mod adds") != std::string::npos && readme.find("arrow keys still move the parts list") != std::string::npos,
 		"the readme checks other plugins' movies, keeps other mods for the comparison, and checks list keys after the hex field");
+	Expect(readme.find("`SETTINGS hex focus=hex`") != std::string::npos && readme.find("`SETTINGS close focus=`") != std::string::npos &&
+		readme.find("after must read `list`") != std::string::npos && readme.find("It never reads `hex` or `ours`.") != std::string::npos,
+		"the readme gates the focus hand-back on log lines");
 	Expect(gold.find("this.note(\"MODVALS \" + this.modVals[v]);") != std::string::npos && gold.find("this.modValsLeft = 24;") != std::string::npos,
 		"payload numbers and shown text are logged for a bounded number of modules");
 	Expect(!NotesHideFaces("         this.note(\"FONT face=\" + fmt.font);") && !NotesHideFaces("         this.note(\"FONT list=\" + FACES.join(\",\"));") &&
