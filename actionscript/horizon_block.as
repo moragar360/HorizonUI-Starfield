@@ -18596,9 +18596,24 @@
       // Styles 1 and 2 move the outermost piece so the children ride with it. Styles 3 and 4 hide the chrome and keep the markers.
       private static const HZ43_VAN_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","WatchIconsWidget_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"];
       private static const HZ43_VAN_MARK:Array = ["WatchIconsWidget_mc","WatchPointerOutline_mc"];
+      // Native readouts the game shows and hides on its own. Vanilla must not force these on.
+      private static const HZ43_VAN_INFO:Array = ["Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"];
       private static const HZ43_VAN_A:Array = ["BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"];
 
+      private function hz43VanInfoName(name:String) : Boolean
+      {
+         var i:int = 0;
+         while(i < HZ43_VAN_INFO.length)
+         {
+            if(name == String(HZ43_VAN_INFO[i])) { return true; }
+            i++;
+         }
+         return false;
+      }
+
       // Puts the game watch back on BottomLeftGroup. One trace names the clips that were found. No font name.
+      // Styles 1 and 2 are a passthrough of that watch: undo a Horizon hide of the face, and leave
+      // Temperature / Oxygen / Grav / OffPlanet to the game. Do not draw Horizon text onto it.
       private function hz43ShowVanilla() : Boolean
       {
          if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
@@ -18609,6 +18624,7 @@
          while(n < HZ43_VAN_N.length)
          {
             var name:String = String(HZ43_VAN_N[n]);
+            if(this.hz43VanInfoName(name)) { n++; continue; }
             var clip:DisplayObject = this.hzFindByName(this.hzBlg,name,0);
             if(clip)
             {
@@ -19754,7 +19770,8 @@
          while(i < this.hz43HidN)
          {
             var d:DisplayObject = this.hz43HidA[i] as DisplayObject;
-            if(d)
+            var n:String = d ? d.name : "";
+            if(d && !this.hz43VanInfoName(n))
             {
                d.visible = true;
                d.alpha = 1;
@@ -19783,7 +19800,7 @@
                d.visible = false;
                d.alpha = 0;
             }
-            else
+            else if(!this.hz43VanInfoName(n))
             {
                if(!d.visible) { d.visible = true; }
                if(d.alpha < 1) { d.alpha = 1; }
@@ -19865,7 +19882,7 @@
                   if(clip.visible) { clip.visible = false; }
                   if(clip.alpha != 0) { clip.alpha = 0; }
                }
-               else if(!hide)
+               else if(!hide && !this.hz43VanInfoName(name))
                {
                   if(!clip.visible) { clip.visible = true; }
                   if(clip.alpha < 1) { clip.alpha = 1; }

@@ -218,6 +218,12 @@ const pushMark = onFrame.indexOf('names.push("WatchIconsWidget_mc","WatchPointer
 expect(style0At >= 0 && pushMark > style0At, "style 0 hides the leftover radar and nearby markers");
 expect(onFrame.indexOf("keepMark") >= 0 && onFrame.indexOf("hzWatchStyle == 3") >= 0 && onFrame.indexOf("hzWatchStyle == 4") >= 0, "Horizon faces still keep the live markers");
 expect(funcBody(as, "hz43ShowVanilla").indexOf("hz43VanBlgChrome(false)") >= 0, "vanilla restores unnamed watch chrome");
+expect(funcBody(as, "hz43ShowVanilla").indexOf("hz43VanInfoName(name)") >= 0, "vanilla does not force extra info clips on");
+expect(as.indexOf('HZ43_VAN_INFO:Array = ["Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"]') >= 0, "temperature and gravity stay game-driven on vanilla");
+expect(funcBody(as, "hz43VanRestoreHid").indexOf("hz43VanInfoName") >= 0, "undoing Horizon chrome does not force extra info clips");
+expect(funcBody(as, "hz43VanChrome").indexOf("!hide && !this.hz43VanInfoName(name)") >= 0, "vanilla chrome restore skips extra info clips");
+expect(funcBody(as, "hz43Frame").indexOf("hz43Watch.visible = false") >= 0, "vanilla hides the Horizon-drawn watch");
+expect(drawBody.indexOf("hz43TempT.text") >= 0 && drawBody.indexOf("hz43BodyT.text") >= 0, "digital and analog still draw planet and temperature");
 expect(funcBody(as, "hz43VanChrome").indexOf("hz43VanBlgChrome(hide)") >= 0, "Horizon faces hide unnamed cap art with the vanilla bezel");
 expect(funcBody(as, "hz43VanNamed").indexOf("name.length == 0") >= 0, "unnamed shapes belong to the watch assembly");
 expect(funcBody(as, "hz43VanSkip").indexOf("name.length == 0) { return true; }") < 0, "unnamed chrome is not skipped from the watch assembly");
@@ -238,6 +244,19 @@ expect(leftoverWatchVisible(3, "WatchIconsWidget_mc") === true, "digital keeps n
 expect(leftoverWatchVisible(4, "WatchIconsWidget_mc") === true, "analog keeps nearby markers");
 expect(leftoverWatchVisible(1, "WatchIconsWidget_mc") === true, "vanilla keeps nearby markers");
 expect(leftoverWatchVisible(3, "WatchOutline_mc") === false, "digital hides the vanilla bezel");
+
+function vanillaForcesClip(name) {
+	const info = ["Temperature_mc", "Oxygen_mc", "Grav_mc", "OffPlanet_mc"];
+	return info.indexOf(name) < 0;
+}
+expect(vanillaForcesClip("Temperature_mc") === false, "vanilla does not force the temperature readout");
+expect(vanillaForcesClip("Oxygen_mc") === false, "vanilla does not force the oxygen readout");
+expect(vanillaForcesClip("Grav_mc") === false, "vanilla does not force the gravity readout");
+expect(vanillaForcesClip("OffPlanet_mc") === false, "vanilla does not force the off-planet readout");
+expect(vanillaForcesClip("WatchOutline_mc") === true, "vanilla still restores the watch outline");
+expect(vanillaForcesClip("locationNameBase_mc") === true, "vanilla still restores the native planet name");
+expect(vanillaForcesClip("O2CO2_mc") === true, "vanilla still restores the native O2 and CO2 arcs");
+expect(vanillaForcesClip("DayCycleBase_mc") === true, "vanilla still restores the native inner face");
 
 function holdPathLive(awAlphaHidden, ancestorAlphaRestored) {
 	return ancestorAlphaRestored ? 1 : (awAlphaHidden ? 0 : 1);
