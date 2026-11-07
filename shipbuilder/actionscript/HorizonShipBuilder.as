@@ -1,5 +1,7 @@
 package
 {
+   import Shared.AS3.Data.BSUIDataManager;
+   import Shared.GlobalFunc;
    import flash.display.DisplayObject;
    import flash.display.DisplayObjectContainer;
    import flash.display.Shape;
@@ -72,8 +74,25 @@ package
       private var banner:TextField;
       private var notedMap:Boolean;
       private var fades:Array;
-      private var moved:Array;
       private var pill:Sprite;
+      private var modCard:Sprite;
+      private var modLines:Shape;
+      private var modHead:TextField;
+      private var modName:TextField;
+      private var modDesc:TextField;
+      private var modValueL:TextField;
+      private var modMassL:TextField;
+      private var modValue:TextField;
+      private var modMass:TextField;
+      private var modRows:Array;
+      private var modSkills:Array;
+      private var modData:Object;
+      private var modNative:DisplayObject;
+      private var modAlpha:Number;
+      private var modOn:Boolean;
+      private var modWhy:String;
+      private var modFacts:String;
+      private var modTint:uint;
       
       public function HorizonShipBuilder(param1:Object)
       {
@@ -117,7 +136,13 @@ package
          this.frameN = 0;
          this.notedMap = false;
          this.fades = [];
-         this.moved = [];
+         this.modRows = [];
+         this.modSkills = [];
+         this.modAlpha = 1;
+         this.modOn = false;
+         this.modWhy = "";
+         this.modFacts = "";
+         this.modTint = 0;
          this.mouseEnabled = false;
          this.mouseChildren = true;
          addEventListener(Event.ADDED_TO_STAGE,this.onStage);
@@ -227,6 +252,7 @@ package
          this.proveFace();
          this.buildCards();
          this.buildGear();
+         this.listenModule();
          stage.addEventListener(Event.ENTER_FRAME,this.onFrame);
          this.note("BUILDER 0.1.1.0 gold lrg=" + (this.lrg ? 1 : 0));
       }
@@ -239,8 +265,9 @@ package
             this.proveFace();
             if(this.face.length > 0) { this.refreshFaces(); }
          }
-         if(this.frameN < 3 || this.arranging || this.conflict) { return; }
-         if(!this.mapped || (this.frameN % 8) == 0) { this.syncPanels(); }
+         if(this.frameN < 3) { return; }
+         if(!this.arranging && !this.conflict && (!this.mapped || (this.frameN % 8) == 0)) { this.syncPanels(); }
+         this.syncModule();
       }
       
       // Candidates in order: mapped names as embedded text, the face of the game's module name
@@ -639,6 +666,10 @@ package
             if(cardC == null || !cardC.visible) { return null; }
             return cardC.getBounds(this);
          }
+         if(param1 == "Module" && this.modOn && this.modCard != null && this.modCard.parent != null && this.modCard.visible)
+         {
+            return this.modCard.getBounds(this);
+         }
          var clip:DisplayObject = this.clipByName(param1);
          if(!this.clipLive(clip)) { return null; }
          return clip.getBounds(this);
@@ -760,7 +791,7 @@ package
       private function strokeBehind(param1:DisplayObject, param2:String):void
       {
          var frameName:String = "HsbFrame" + param2;
-         if(param1 == null || param1.parent == null)
+         if(param1 == null || param1.parent == null || (param2 == "Module" && this.modOn))
          {
             this.removeFrame(frameName);
             return;
@@ -944,6 +975,7 @@ package
          if(Math.abs(x - box.x) <= 1 && Math.abs(y - box.y) <= 1) { return; }
          this.moveNative(clip,x - box.x,y - box.y);
          this.strokeBehind(clip,param1);
+         if(param1 == "Module" && this.modOn) { this.seatModule(clip); }
       }
       
       private function layoutBoxes(param1:Object):Object
@@ -1068,6 +1100,7 @@ package
                j++;
             }
          }
+         if(this.modOn && this.accentColor() != this.modTint) { this.paintModule(); }
       }
       
       private function openSettings():void
@@ -1568,10 +1601,11 @@ package
          var live:Rectangle = this.liveBounds(param1);
          if(live == null) { return; }
          var r:Object = this.view();
+         var size:Rectangle = this.anchorBox(param1,live);
          var x:Number = r.x + Math.round((param2 - r.x) / 10) * 10;
          var y:Number = r.y + Math.round((param3 - r.y) / 10) * 10;
-         x = this.clamp(x,r.x,r.x + r.width - live.width);
-         y = this.clamp(y,r.y,r.y + r.height - live.height);
+         x = this.clamp(x,r.x,r.x + r.width - Math.max(live.width,size.width));
+         y = this.clamp(y,r.y,r.y + r.height - Math.max(live.height,size.height));
          if(param1 == "Cluster")
          {
             var card:Sprite = this.cardBy(param1).card as Sprite;
@@ -1584,9 +1618,21 @@ package
             this.moveNative(clip,x - live.x,y - live.y);
             this.strokeBehind(clip,param1);
             this.parkHeading(param1,clip);
+            if(param1 == "Module" && this.modOn) { this.seatModule(clip); }
          }
-         var spot:Object = {"x":x,"y":y,"w":live.width,"h":live.height};
+         var spot:Object = {"x":x,"y":y,"w":size.width,"h":size.height};
          this.storeAnchor(param1,x,y,spot,r);
+      }
+      
+      // Our card's top left is the game card's top left. Module anchors use the game card's
+      // size, so a spot saved over our card reloads in place before our card is up.
+      private function anchorBox(param1:String, param2:Rectangle):Rectangle
+      {
+         if(param1 == "Module" && this.modOn && this.modNative != null && this.modNative.parent != null)
+         {
+            return this.modNative.getBounds(this);
+         }
+         return param2;
       }
       
       private function storeAnchor(param1:String, param2:Number, param3:Number, param4:Object, param5:Object):void
@@ -1677,6 +1723,7 @@ package
             }
             i++;
          }
+         if(this.modOn) { this.seatModule(this.modNative); }
          this.drawArrange();
       }
       
@@ -1728,6 +1775,7 @@ package
             }
             i++;
          }
+         if(this.modOn) { this.seatModule(this.modNative); }
          this.finishArrange(false);
       }
       
@@ -1834,7 +1882,7 @@ package
          {
             var id:String = String(ids[n]);
             var clip:DisplayObject = this.clipByName(id);
-            if(this.clipLive(clip) && clip is DisplayObjectContainer)
+            if(this.clipLive(clip) && clip is DisplayObjectContainer && !(id == "Module" && this.modOn))
             {
                this.dressClip(id,clip as DisplayObjectContainer);
             }
@@ -1852,7 +1900,6 @@ package
          if(param1 != "Power") { this.paintPlate(param1,param2); }
          this.fadeInside(param1,param2,param2,0);
          this.recolorTree(param2,0);
-         if(param1 == "Module") { this.stackModule(param2); }
          this.parkHeading(param1,param2);
       }
       
@@ -1860,7 +1907,6 @@ package
       {
          if(param2 != null) { this.restoreFades(param2); }
          this.removeOurChild(param2,"HsbPlate");
-         this.restoreMoves(param2);
          this.removeHeading(param1);
       }
       
@@ -2110,7 +2156,7 @@ package
       
       private function parkHeading(param1:String, param2:DisplayObject):void
       {
-         if(param1 != "Power" && param1 != "Module" && param1 != "Browser")
+         if((param1 != "Power" && param1 != "Module" && param1 != "Browser") || (param1 == "Module" && this.modOn))
          {
             this.removeHeading(param1);
             return;
@@ -2219,190 +2265,465 @@ package
          return int((r * 3 + g * 6 + b) / 10);
       }
       
-      private function stackModule(param1:DisplayObjectContainer):void
+      // The Selected Module card reads ModuleInfo only. The game card stays where the menu
+      // put it, at alpha 0, so the menu keeps filling, sizing, and showing it.
+      private function listenModule():void
       {
-         var fields:Array = [];
-         this.collectFields(param1,0,fields);
-         var nameAt:int = -1;
-         var descAt:int = -1;
-         var valueAt:int = -1;
-         var massAt:int = -1;
-         var i:int = 0;
-         while(i < fields.length)
+         try
          {
-            var slot:String = this.slotOf(String(fields[i].name),String(fields[i].text));
-            if(slot == "name" && nameAt < 0) { nameAt = i; }
-            else if(slot == "desc" && descAt < 0) { descAt = i; }
-            else if(slot == "value" && valueAt < 0) { valueAt = i; }
-            else if(slot == "mass" && massAt < 0) { massAt = i; }
-            i++;
+            BSUIDataManager.Subscribe("ModuleInfo",this.onModuleInfo);
+            this.note("MODCARD listen ok");
          }
-         if(nameAt < 0 || descAt < 0)
+         catch(err:Error)
          {
-            var longest:int = -1;
-            var n:int = 0;
-            while(n < fields.length)
-            {
-               var sample:String = String(fields[n].text);
-               if(this.hasLetter(sample) && sample.length >= 4 && n != nameAt && n != descAt && n != valueAt && n != massAt)
-               {
-                  if(longest < 0 || sample.length > String(fields[longest].text).length) { longest = n; }
-               }
-               n++;
-            }
-            if(descAt < 0 && longest >= 0 && String(fields[longest].text).length >= 12) { descAt = longest; }
-            if(nameAt < 0)
-            {
-               var k:int = 0;
-               while(k < fields.length)
-               {
-                  var word:String = String(fields[k].text);
-                  if(k != descAt && k != valueAt && k != massAt && this.hasLetter(word) && word.length >= 4 && word.length <= 48)
-                  {
-                     nameAt = k;
-                     break;
-                  }
-                  k++;
-               }
-            }
+            this.note("MODCARD listen miss");
          }
-         if(valueAt < 0 || massAt < 0)
-         {
-            var v:int = 0;
-            while(v < fields.length)
-            {
-               if(v != nameAt && v != descAt && v != valueAt && v != massAt && this.numericText(String(fields[v].text)))
-               {
-                  if(valueAt < 0) { valueAt = v; }
-                  else if(massAt < 0) { massAt = v; }
-               }
-               v++;
-            }
-         }
-         var box:Rectangle = param1.getBounds(param1);
-         var yName:Number = box.y + 36;
-         var yDesc:Number = box.y + 68;
-         var yStat:Number = box.y + box.height - 56;
-         if(yStat < yDesc + 28) { yStat = yDesc + 28; }
-         var x0:Number = box.x + 16;
-         var xMass:Number = box.x + (box.width > 40 ? box.width / 2 : 16);
-         this.placeSlot(param1,fields,nameAt,x0,yName);
-         this.placeSlot(param1,fields,descAt,x0,yDesc);
-         this.placeSlot(param1,fields,valueAt,x0,yStat);
-         this.placeSlot(param1,fields,massAt,xMass,yStat);
       }
       
-      private function placeSlot(param1:DisplayObjectContainer, param2:Array, param3:int, param4:Number, param5:Number):void
+      private function onModuleInfo(param1:Object):void
       {
-         if(param3 < 0 || param3 >= param2.length) { return; }
-         var field:TextField = param2[param3].field as TextField;
-         if(field == null) { return; }
-         this.rememberMove(field);
-         var parent:DisplayObjectContainer = field.parent as DisplayObjectContainer;
+         var data:Object = null;
+         try { data = param1.data; } catch(err:Error) { data = null; }
+         if(data == null)
+         {
+            try { data = param1.target.data; } catch(err2:Error) { data = null; }
+         }
+         if(data == null) { return; }
+         this.modData = data;
+         if(this.modOn) { this.paintModule(); }
+      }
+      
+      private function syncModule():void
+      {
+         var clip:DisplayObject = this.clipByName("Module");
+         if(this.arranging)
+         {
+            if(this.modOn) { this.seatModule(this.modNative); }
+            return;
+         }
+         if(this.modOn && clip != this.modNative) { this.dropModule(); }
+         var why:String = this.moduleGate(clip);
+         if(why == "on")
+         {
+            if(!this.modOn) { this.holdModule(clip); }
+            this.seatModule(clip);
+         }
+         else if(this.modOn) { this.dropModule(); }
+         var said:String = why == "on" ? why + this.modFacts : why;
+         if(said != this.modWhy)
+         {
+            this.modWhy = said;
+            this.note("MODCARD " + said);
+         }
+      }
+      
+      // The first failing check names the state in the log.
+      private function moduleGate(param1:DisplayObject):String
+      {
+         if(this.face.length == 0) { return "face"; }
+         if(this.conflict) { return "conflict"; }
+         if(!this.mapped) { return "map"; }
+         if(param1 == null || param1.parent == null) { return "clip"; }
+         var data:Object = this.modData;
+         if(data == null || data.sModuleName == null || String(data.sModuleName).length == 0) { return "data"; }
+         if(!Boolean(data.bShowWidget) || !this.chainShown(param1)) { return "hidden"; }
+         if(this.hangarShown()) { return "hangar"; }
+         return "on";
+      }
+      
+      private function chainShown(param1:DisplayObject):Boolean
+      {
+         var node:DisplayObject = param1;
+         var guard:int = 0;
+         while(node != null && guard < 12)
+         {
+            if(!node.visible) { return false; }
+            node = node.parent;
+            guard++;
+         }
+         return param1.stage != null;
+      }
+      
+      private function hangarShown():Boolean
+      {
+         var hangar:DisplayObject = null;
+         try { hangar = this.host["HangarInfoPanel_mc"] as DisplayObject; } catch(err:Error) { hangar = null; }
+         return hangar != null && hangar.visible;
+      }
+      
+      private function holdModule(param1:DisplayObject):void
+      {
+         if(this.modCard == null) { this.buildModule(); }
+         this.modNative = param1;
+         this.modAlpha = param1.alpha;
+         param1.alpha = 0;
+         this.modOn = true;
+         this.strokeBehind(param1,"Module");
+         this.removeHeading("Module");
+         this.paintModule();
+      }
+      
+      private function dropModule():void
+      {
+         if(this.modNative != null) { this.modNative.alpha = this.modAlpha; }
+         this.modNative = null;
+         this.modOn = false;
+         if(this.modCard != null) { this.modCard.visible = false; }
+      }
+      
+      // Right above the game card in its own parent, so menu popups still draw over it.
+      private function seatModule(param1:DisplayObject):void
+      {
+         if(this.modCard == null || param1 == null) { return; }
+         var parent:DisplayObjectContainer = param1.parent;
          if(parent == null) { return; }
-         var world:Point = param1.localToGlobal(new Point(param4,param5));
-         var dest:Point = parent.globalToLocal(world);
-         field.x = dest.x;
-         field.y = dest.y;
+         var at:int = parent.getChildIndex(param1);
+         if(this.modCard.parent != parent) { parent.addChildAt(this.modCard,at + 1); }
+         else
+         {
+            var mine:int = parent.getChildIndex(this.modCard);
+            if(mine != at + 1) { parent.setChildIndex(this.modCard,mine > at ? at + 1 : at); }
+         }
+         var box:Rectangle = param1.getBounds(parent);
+         this.modCard.x = Math.round(box.x);
+         this.modCard.y = Math.round(box.y);
+         this.modCard.visible = true;
+         if(param1.alpha != 0) { param1.alpha = 0; }
       }
       
-      private function rememberMove(param1:TextField):void
+      private function cardW():Number
       {
-         var i:int = 0;
-         while(i < this.moved.length)
+         return this.lrg ? 410 : 350;
+      }
+      
+      private function cardPad():Number
+      {
+         return this.lrg ? 20 : 18;
+      }
+      
+      private function buildModule():void
+      {
+         var head:int = this.lrg ? 16 : 13;
+         var body:int = this.lrg ? 16 : 14;
+         var big:int = this.lrg ? 30 : 26;
+         this.modCard = new Sprite();
+         this.modCard.name = "HsbModuleCard";
+         this.modCard.mouseEnabled = false;
+         this.modCard.mouseChildren = false;
+         this.modCard.visible = false;
+         this.modLines = new Shape();
+         this.modCard.addChild(this.modLines);
+         this.modHead = this.cardText(head,false);
+         this.spaceOut(this.modHead,2);
+         this.modName = this.cardText(this.lrg ? 24 : 21,true);
+         this.modDesc = this.cardText(body,true);
+         this.modValueL = this.cardText(head,false);
+         this.modMassL = this.cardText(head,false);
+         this.modValue = this.cardText(big,false);
+         this.modMass = this.cardText(big,false);
+      }
+      
+      private function cardText(param1:int, param2:Boolean):TextField
+      {
+         var field:TextField = this.makeText("",0,0,200,param1 + 10,param1,0xFFFFFF);
+         if(param2)
          {
-            if(this.moved[i].field == param1) { return; }
+            field.multiline = true;
+            field.wordWrap = true;
+         }
+         this.modCard.addChild(field);
+         return field;
+      }
+      
+      private function spaceOut(param1:TextField, param2:Number):void
+      {
+         var fmt:TextFormat = param1.defaultTextFormat;
+         fmt.letterSpacing = param2;
+         param1.defaultTextFormat = fmt;
+         param1.setTextFormat(fmt);
+      }
+      
+      private function alignRight(param1:TextField):void
+      {
+         var fmt:TextFormat = param1.defaultTextFormat;
+         fmt.align = "right";
+         param1.defaultTextFormat = fmt;
+         param1.setTextFormat(fmt);
+      }
+      
+      // A $ key is translated when the field takes it, as on the game card.
+      private function put(param1:TextField, param2:Object, param3:uint):void
+      {
+         var fmt:TextFormat = param1.defaultTextFormat;
+         fmt.color = param3;
+         param1.defaultTextFormat = fmt;
+         param1.text = param2 == null ? "" : String(param2);
+         param1.setTextFormat(fmt);
+      }
+      
+      private function moduleRow(param1:int):Object
+      {
+         var body:int = this.lrg ? 16 : 14;
+         var small:int = this.lrg ? 16 : 13;
+         while(this.modRows.length <= param1)
+         {
+            var label:TextField = this.cardText(body,true);
+            var value:TextField = this.cardText(body,false);
+            this.alignRight(value);
+            var chip:Sprite = new Sprite();
+            chip.mouseEnabled = false;
+            chip.mouseChildren = false;
+            var tag:TextField = this.makeText("",0,0,96,small + 8,small,0xFFFFFF);
+            chip.addChild(tag);
+            this.modCard.addChild(chip);
+            this.modRows.push({"label":label,"value":value,"chip":chip,"tag":tag});
+         }
+         return this.modRows[param1];
+      }
+      
+      private function moduleSkill(param1:int):Object
+      {
+         var body:int = this.lrg ? 16 : 14;
+         while(this.modSkills.length <= param1)
+         {
+            var skill:TextField = this.cardText(body,false);
+            var rank:TextField = this.cardText(body,false);
+            this.alignRight(rank);
+            this.modSkills.push({"skill":skill,"rank":rank});
+         }
+         return this.modSkills[param1];
+      }
+      
+      // Unused rows sit at the card's corner, so they never widen its bounds.
+      private function park(param1:DisplayObject):void
+      {
+         param1.visible = false;
+         param1.x = 0;
+         param1.y = 0;
+      }
+      
+      // ModuleInfoCard.UpdateValues formats each stat this way.
+      private function statText(param1:Object):String
+      {
+         if(String(param1.text) == "$CLASS") { return String.fromCharCode(param1.fValue); }
+         if(param1.bPercentage) { return GlobalFunc.FormatNumberToString(Number(param1.fValue) * 100) + "%"; }
+         return GlobalFunc.FormatNumberToString(Number(param1.fValue),2);
+      }
+      
+      // The game marks a change by frame only. The chip prints that diff with the value's rule.
+      private function diffText(param1:Object):String
+      {
+         var diff:Number = Number(param1.fDiff);
+         if(!(diff > 0) && !(diff < 0)) { return ""; }
+         var sign:String = diff > 0 ? "+" : "-";
+         if(String(param1.text) == "$CLASS") { return sign; }
+         var size:Number = Math.abs(diff);
+         if(param1.bPercentage) { return sign + GlobalFunc.FormatNumberToString(size * 100) + "%"; }
+         return sign + GlobalFunc.FormatNumberToString(size,2);
+      }
+      
+      private function moduleNumber(param1:*):String
+      {
+         if(param1 == null) { return ""; }
+         return GlobalFunc.FormatNumberToString(Number(param1));
+      }
+      
+      private function rule(param1:*, param2:Number):void
+      {
+         var inset:Number = this.lrg ? 18 : 16;
+         param1.beginFill(0x1D2328,1);
+         param1.drawRect(inset,param2,this.cardW() - inset * 2,1);
+         param1.endFill();
+      }
+      
+      private function paintModule():void
+      {
+         var data:Object = this.modData;
+         if(data == null || this.modCard == null) { return; }
+         var w:Number = this.cardW();
+         var pad:Number = this.cardPad();
+         var pitch:Number = this.lrg ? 34 : 30;
+         var barH:Number = this.lrg ? 28 : 24;
+         var big:Number = this.lrg ? 30 : 26;
+         var right:Number = w - pad - (this.lrg ? 80 : 67);
+         var valueW:Number = this.lrg ? 100 : 90;
+         var inner:Number = w - pad * 2;
+         var c:uint = this.accentColor();
+         this.modTint = c;
+         var ink:* = this.modLines.graphics;
+         ink.clear();
+         var kept:int = 0;
+         this.put(this.modHead,"SELECTED MODULE",c);
+         this.modHead.x = pad;
+         this.modHead.y = pad - 4;
+         this.modHead.width = inner;
+         var y:Number = this.modHead.y + this.modHead.height + 3;
+         this.put(this.modName,data.sModuleName,0xFFFFFF);
+         this.modName.x = pad + 13;
+         this.modName.y = y;
+         this.modName.width = inner - 13;
+         this.modName.height = this.modName.textHeight + 6;
+         ink.beginFill(c,1);
+         ink.drawRect(pad + 1,y + 3,3,barH);
+         ink.endFill();
+         y += Math.max(this.modName.height,barH + 6) + 10;
+         this.rule(ink,y);
+         y += 6;
+         var stats:Array = data.aStats as Array;
+         var count:int = stats == null ? 0 : Math.min(stats.length,10);
+         var i:int = 0;
+         while(i < count)
+         {
+            var stat:Object = stats[i];
+            var row:Object = this.moduleRow(i);
+            var label:TextField = row.label as TextField;
+            var value:TextField = row.value as TextField;
+            this.put(label,stat.text,0xC3D1D8);
+            if(label.text.charAt(0) == "$") { kept++; }
+            else { label.text = label.text.toUpperCase(); }
+            label.x = pad;
+            label.width = right - valueW - pad - 4;
+            label.height = label.textHeight + 6;
+            var rowH:Number = Math.max(pitch,label.height + 6);
+            label.y = y + (rowH - label.height) / 2;
+            label.visible = true;
+            this.put(value,this.statText(stat),0xFFFFFF);
+            value.x = right - valueW;
+            value.width = valueW;
+            value.y = y + (rowH - value.height) / 2;
+            value.visible = true;
+            this.paintChip(row,stat,ink,y,rowH);
+            y += rowH;
             i++;
          }
-         this.moved.push({"field":param1,"x":param1.x,"y":param1.y});
-      }
-      
-      private function restoreMoves(param1:DisplayObject):void
-      {
-         var kept:Array = [];
-         var i:int = 0;
-         while(i < this.moved.length)
+         while(i < this.modRows.length)
          {
-            var item:Object = this.moved[i];
-            var field:DisplayObject = item.field as DisplayObject;
-            if(this.ownsNode(param1,field))
-            {
-               if(field != null)
-               {
-                  field.x = Number(item.x);
-                  field.y = Number(item.y);
-               }
-            }
-            else
-            {
-               kept.push(item);
-            }
+            this.park(this.modRows[i].label as TextField);
+            this.park(this.modRows[i].value as TextField);
+            (this.modRows[i].chip as Sprite).graphics.clear();
+            this.park(this.modRows[i].chip as Sprite);
             i++;
          }
-         this.moved = kept;
-      }
-      
-      private function collectFields(param1:DisplayObjectContainer, param2:int, param3:Array):void
-      {
-         if(param1 == null || param2 > 6) { return; }
-         var i:int = 0;
-         while(i < param1.numChildren)
+         if(count > 0)
          {
-            var child:DisplayObject = param1.getChildAt(i);
-            var cname:String = child.name == null ? "" : String(child.name);
-            if(this.isOurNode(cname))
-            {
-               i++;
-               continue;
-            }
-            if(child is TextField)
-            {
-               var tf:TextField = child as TextField;
-               param3.push({"field":tf,"name":cname,"text":tf.text == null ? "" : tf.text});
-            }
-            else if(child is DisplayObjectContainer)
-            {
-               this.collectFields(child as DisplayObjectContainer,param2 + 1,param3);
-            }
-            i++;
+            y += 10;
+            this.rule(ink,y);
          }
-      }
-      
-      private function slotOf(param1:String, param2:String):String
-      {
-         if(this.foldHas(param1,"mass")) { return "mass"; }
-         if(this.foldHas(param1,"value") || this.foldHas(param1,"cost") || this.foldHas(param1,"credit")) { return "value"; }
-         if(this.foldHas(param1,"desc") || this.foldHas(param1,"flavor") || this.foldHas(param1,"summary")) { return "desc"; }
-         if(this.foldHas(param1,"name") || this.foldHas(param1,"title") || this.foldHas(param1,"header")) { return "name"; }
-         return "skip";
-      }
-      
-      private function hasLetter(param1:String):Boolean
-      {
-         if(param1 == null) { return false; }
-         var i:int = 0;
-         while(i < param1.length)
+         y += 16;
+         this.put(this.modDesc,data.sDescription,0xCDDCE3);
+         this.modDesc.x = pad;
+         this.modDesc.y = y;
+         this.modDesc.width = inner;
+         this.modDesc.height = this.modDesc.textHeight + 6;
+         y += Math.max(this.modDesc.height,this.lrg ? 62 : 54) + 12;
+         this.rule(ink,y);
+         y += 14;
+         var skills:Array = data.aRequiredAttributes as Array;
+         var need:int = skills == null ? 0 : Math.min(skills.length,2);
+         var s:int = 0;
+         while(s < need)
          {
-            var c:int = param1.charCodeAt(i);
-            if((c >= 65 && c <= 90) || (c >= 97 && c <= 122)) { return true; }
-            i++;
+            if(this.paintSkill(this.moduleSkill(s),skills[s],y)) { kept++; }
+            y += pitch;
+            s++;
          }
-         return false;
+         while(s < this.modSkills.length)
+         {
+            this.park(this.modSkills[s].skill as TextField);
+            this.park(this.modSkills[s].rank as TextField);
+            s++;
+         }
+         if(need > 0)
+         {
+            y += 8;
+            this.rule(ink,y);
+            y += 14;
+         }
+         var half:Number = w / 2 + 14;
+         this.put(this.modValueL,"VALUE",0xA4A994);
+         this.put(this.modMassL,"MASS",0xA4A994);
+         this.modValueL.x = pad;
+         this.modMassL.x = half;
+         this.modValueL.y = y;
+         this.modMassL.y = y;
+         this.modValueL.width = half - pad - 8;
+         this.modMassL.width = w - pad - half;
+         y += this.modValueL.height + 2;
+         this.put(this.modValue,this.moduleNumber(data.iModuleCost),0xFFFFFF);
+         this.put(this.modMass,this.moduleNumber(data.iModuleMass),0xFFFFFF);
+         this.modValue.x = pad;
+         this.modMass.x = half;
+         this.modValue.y = y;
+         this.modMass.y = y;
+         this.modValue.width = half - pad - 8;
+         this.modMass.width = w - pad - half;
+         y += big + 14 + pad;
+         var g:* = this.modCard.graphics;
+         g.clear();
+         g.beginFill(0x2A323A,1);
+         g.drawRoundRect(0,0,w,y,14,14);
+         g.endFill();
+         g.beginFill(0x0E141A,1);
+         g.drawRoundRect(1,1,w - 2,y - 2,12,12);
+         g.endFill();
+         this.modFacts = " rows=" + count + " skills=" + need + " keys=" + kept + " inb=" + (Boolean(data.bInBuilderMode) ? 1 : 0) + " w=" + w;
       }
       
-      private function numericText(param1:String):Boolean
+      // Higher is green and lower is red, as the game's HigherValue and LowerValue frames.
+      private function paintChip(param1:Object, param2:Object, param3:*, param4:Number, param5:Number):void
       {
-         if(param1 == null || param1.length == 0 || param1.length > 8) { return false; }
-         var digit:Boolean = false;
-         var i:int = 0;
-         while(i < param1.length)
+         var w:Number = this.cardW();
+         var pad:Number = this.cardPad();
+         var chipH:Number = this.lrg ? 26 : 22;
+         var chip:Sprite = param1.chip as Sprite;
+         var tag:TextField = param1.tag as TextField;
+         var text:String = this.diffText(param2);
+         chip.graphics.clear();
+         if(text.length == 0)
          {
-            var c:int = param1.charCodeAt(i);
-            if(c >= 48 && c <= 57) { digit = true; }
-            else if(c != 44 && c != 46 && c != 32) { return false; }
-            i++;
+            this.park(chip);
+            param3.beginFill(0x5E6359,1);
+            param3.drawRect(w - pad - 14,param4 + param5 / 2,12,1.5);
+            param3.endFill();
+            return;
          }
-         return digit;
+         var up:Boolean = Number(param2.fDiff) > 0;
+         this.put(tag,text,up ? 0x69FEB3 : 0xFF6868);
+         var chipW:Number = Math.max(28,tag.textWidth + 14);
+         tag.width = tag.textWidth + 6;
+         tag.x = (chipW - tag.textWidth) / 2 - 2;
+         tag.y = (chipH - tag.height) / 2;
+         chip.graphics.beginFill(up ? 0x1A302E : 0x301E24,1);
+         chip.graphics.drawRoundRect(0,0,chipW,chipH,8,8);
+         chip.graphics.endFill();
+         chip.x = w - pad - 2 - chipW;
+         chip.y = param4 + (param5 - chipH) / 2;
+         chip.visible = true;
+      }
+      
+      // ModuleAttributeIcon writes the rank with "$(Rank #)" and DoSubstitutions.
+      // Returns true when a field kept its $ key, so the log can say translation did not run.
+      private function paintSkill(param1:Object, param2:Object, param3:Number):Boolean
+      {
+         var w:Number = this.cardW();
+         var pad:Number = this.cardPad();
+         var pitch:Number = this.lrg ? 34 : 30;
+         var has:Boolean = Boolean(param2.bHasSkill);
+         var skill:TextField = param1.skill as TextField;
+         var rank:TextField = param1.rank as TextField;
+         this.put(skill,param2.sName,has ? 0xF4F0E4 : 0xFF6868);
+         this.put(rank,"$(Rank #)",has ? 0xA4A994 : 0xFF6868);
+         var keyed:Boolean = rank.text.charAt(0) == "$" || skill.text.charAt(0) == "$";
+         rank.text = GlobalFunc.DoSubstitutions(rank.text,[param2.uRank]);
+         skill.x = pad;
+         skill.width = w - pad * 2 - 112;
+         rank.x = w - pad - 110;
+         rank.width = 110;
+         skill.y = param3 + (pitch - skill.height) / 2;
+         rank.y = skill.y;
+         skill.visible = true;
+         rank.visible = true;
+         return keyed;
       }
       
       // Without a proven face this stays the earlier device-text path.

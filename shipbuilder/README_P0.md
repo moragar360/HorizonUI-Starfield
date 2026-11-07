@@ -229,6 +229,25 @@ Then repeat #16 and #17. `FACT movie | STAGE` is a mouseDown, mouseUp, mouseWhee
 
 Bring the probe log back with a note of what you saw the ship do on #16 and #17. Those two together decide whether a later Arrange mode can rely on a full-stage layer, and whether the window hook can sit beside Horizon UI.
 
+## 0.1.1.0 face and Selected Module card
+
+This pass checks two things: that Horizon text uses a game face that has the glyphs, and the one Selected Module card. The parts list, categories, scrolling, keyboard, pad, and mouse stay the game's. Power, credits, stats, and the hangar overview are unchanged.
+
+The face test runs when the builder opens. `FONT try=` lists each candidate by index with its measured widths and a `+` or `-`. `pick=` names the first candidate that passed. `pick=0` means none passed. The movie then tries again at frames 30 and 120, three tries in all. `FONTSRC` codes the face of five game text fields against the candidates. Face names are not printed.
+
+With a face picked, select a part. The gold card takes the game card's place and reads ModuleInfo, the same data the game card reads. The game card stays on the menu at alpha 0, so the menu keeps filling, sizing, and showing it. `MODCARD on` adds `rows=` (stats shown, at most 10), `skills=` (at most 2), `keys=` (fields that kept a `$` key, so translation did not run on the new text), `inb=` (the build mode flag), and `w=` (card width). Any other `MODCARD` state names why the game card shows instead: `face`, `conflict`, `map`, `clip`, `data`, `hidden`, or `hangar`.
+
+Check on the normal movie, then on `spaceshipeditormenu_lrg.swf`:
+
+- A hab, a weapon, and a reactor or shield. Name, stats, description, required skills, value, and mass match what the game card showed. A changed stat has a green or red chip. A class stat is a letter.
+- Text is readable, with no boxes. Small card text is 13 px on the normal movie and 16 px on the large movie.
+- The parts list, categories, scrolling, keyboard, pad, and mouse work as before.
+- The hangar overview keeps the game card.
+- Arrange, from Ctrl+L or the gear: the outline is the gold card. Move it and Save. Close and reopen the builder, and it is in the same spot. Reset puts it home. Cancel undoes a move.
+- The hex field still takes typing.
+
+Bring back the log and a screenshot of the card for each part type on both movies.
+
 ## Vortex zip
 
 This package is Horizon Ship Builder alone. It is not the HUD installer and it has no component picker. Quit the game first. The two movies in the zip must be the spliced movies, not stock archive copies. The default ini ships with the mod. The plugin still reads the player file under Documents when that file exists.

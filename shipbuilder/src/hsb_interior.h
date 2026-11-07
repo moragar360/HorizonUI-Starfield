@@ -13,8 +13,6 @@ enum class InteriorPanel { Power, Module, Browser, Credits, Stats, Other };
 
 enum class FadeKind { None, Backdrop, Logo };
 
-enum class ModuleSlot { Skip, Name, Description, Value, Mass };
-
 struct InteriorChild {
 	std::string_view name;
 	bool hasText = false;
@@ -33,18 +31,6 @@ struct TextStyle {
 	int color = 0xF4F0E4;
 	bool keepFace = true;
 	bool keepEmbed = true;
-};
-
-struct ModuleField {
-	std::string_view name;
-	std::string_view text;
-};
-
-struct ModulePlace {
-	int index = -1;
-	ModuleSlot slot = ModuleSlot::Skip;
-	int x = 0;
-	int y = 0;
 };
 
 inline constexpr int kOffwhite = 0xF4F0E4;
@@ -204,95 +190,10 @@ inline bool MayCoverWithPlate(InteriorPanel panel)
 	return panel != InteriorPanel::Power;
 }
 
-inline bool HasLetter(std::string_view text)
+// The game card's own fields are never moved. The Selected Module card shows the data.
+inline bool MayMoveModuleFields()
 {
-	for (char c : text) {
-		const char f = FoldInterior(c);
-		if (f >= 'a' && f <= 'z') return true;
-	}
 	return false;
-}
-
-inline bool NumericText(std::string_view text)
-{
-	if (text.empty() || text.size() > 8) return false;
-	bool digit = false;
-	for (char c : text) {
-		if (c >= '0' && c <= '9') digit = true;
-		else if (c != ',' && c != '.' && c != ' ') return false;
-	}
-	return digit;
-}
-
-inline ModuleSlot SlotOf(std::string_view name, std::string_view text)
-{
-	if (HasToken(name, "mass")) return ModuleSlot::Mass;
-	if (HasToken(name, "value") || HasToken(name, "cost") || HasToken(name, "credit")) return ModuleSlot::Value;
-	if (HasToken(name, "desc") || HasToken(name, "flavor") || HasToken(name, "summary")) return ModuleSlot::Description;
-	if (HasToken(name, "name") || HasToken(name, "title") || HasToken(name, "header")) return ModuleSlot::Name;
-	(void)text;
-	return ModuleSlot::Skip;
-}
-
-// Places only fields that already exist. Missing slots stay empty.
-inline int PlaceModule(const ModuleField* fields, int count, int cardW, int cardH, ModulePlace* out, int outMax)
-{
-	if (!fields || !out || count <= 0 || outMax <= 0) return 0;
-	int name = -1;
-	int desc = -1;
-	int value = -1;
-	int mass = -1;
-	for (int i = 0; i < count; ++i) {
-		const ModuleSlot slot = SlotOf(fields[i].name, fields[i].text);
-		if (slot == ModuleSlot::Name && name < 0) name = i;
-		else if (slot == ModuleSlot::Description && desc < 0) desc = i;
-		else if (slot == ModuleSlot::Value && value < 0) value = i;
-		else if (slot == ModuleSlot::Mass && mass < 0) mass = i;
-	}
-	if (name < 0 || desc < 0) {
-		int longest = -1;
-		for (int i = 0; i < count; ++i) {
-			if (!HasLetter(fields[i].text) || fields[i].text.size() < 4) continue;
-			if (i == name || i == desc || i == value || i == mass) continue;
-			if (longest < 0 || fields[i].text.size() > fields[longest].text.size()) longest = i;
-		}
-		if (desc < 0 && longest >= 0 && fields[longest].text.size() >= 12) desc = longest;
-		if (name < 0) {
-			for (int i = 0; i < count; ++i) {
-				if (i == desc || i == value || i == mass) continue;
-				if (!HasLetter(fields[i].text) || fields[i].text.size() < 4 || fields[i].text.size() > 48) continue;
-				name = i;
-				break;
-			}
-		}
-	}
-	if (value < 0 || mass < 0) {
-		for (int i = 0; i < count; ++i) {
-			if (i == name || i == desc || i == value || i == mass) continue;
-			if (!NumericText(fields[i].text)) continue;
-			if (value < 0) value = i;
-			else if (mass < 0) mass = i;
-		}
-	}
-	const int yName = 36;
-	const int yDesc = 68;
-	int yStat = cardH - 56;
-	if (yStat < yDesc + 28) yStat = yDesc + 28;
-	const int xMass = cardW > 40 ? cardW / 2 : 16;
-	int n = 0;
-	auto push = [&](int index, ModuleSlot slot, int x, int y) {
-		if (index < 0 || n >= outMax) return;
-		out[n].index = index;
-		out[n].slot = slot;
-		out[n].x = x;
-		out[n].y = y;
-		++n;
-	};
-	push(name, ModuleSlot::Name, 16, yName);
-	push(desc, ModuleSlot::Description, 16, yDesc);
-	push(value, ModuleSlot::Value, 16, yStat);
-	push(mass, ModuleSlot::Mass, xMass, yStat);
-	return n;
 }
 
 } // namespace hsb
