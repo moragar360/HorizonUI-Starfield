@@ -260,8 +260,26 @@ expect(funcBody(as, "hz43VanPlace").indexOf("hz43VanFadeOk") >= 0, "Vanilla Arra
 expect(funcBody(as, "hz43VanFadeSeen").indexOf("alphaMultiplier") >= 0 && funcBody(as, "hz43VanFadeSeen").indexOf("d.alpha") >= 0, "Fade wait reads outline/O2/cap alpha and ColorTransform, and does not write alpha");
 expect(funcBody(as, "hz43VanFadeSeen").indexOf("d.alpha =") < 0 && funcBody(as, "hz43VanPlace").indexOf("clip.alpha = 1") < 0, "Fade wait does not force outline alpha to 1");
 expect(funcBody(as, "hz43VanFadeOk").indexOf("O2CO2_mc") >= 0 && funcBody(as, "hz43VanFadeOk").indexOf("Temperature") < 0, "Fade wait uses outline/O2/cap, not INFO");
+expect(funcBody(as, "hz43VanFadeSeen").indexOf("d.alpha > 0.9") >= 0 && funcBody(as, "hz43VanFadeSeen").indexOf("ct.alphaMultiplier > 0.9") >= 0, "Fade readiness is DisplayObject.alpha OR ColorTransform alphaMultiplier");
+expect(funcBody(as, "hz43VanFadeOk").indexOf("hz43VanFadeSeen") >= 0, "FadeOk uses FadeSeen for the alpha OR ctA threshold");
+expect(funcBody(as, "hz43VanFadeOk").indexOf("hz43VanFadeAt != this.hzFrameN") >= 0 && funcBody(as, "hz43VanFadeOk").indexOf("hz43VanFadeN >= 16") >= 0, "Fade wait counts distinct hzFrameN ticks and latches at 16");
+expect(onFrame.indexOf("this.hzFrameN++") >= 0 && onFrame.indexOf("this.hz43Frame()") > onFrame.indexOf("this.hzFrameN++"), "enterFrame increments hzFrameN once then calls the watch frame");
+expect(funcBody(as, "hz27OnExit").indexOf("hzFrameN") < 0 && funcBody(as, "hz27OnExit").indexOf("this.hz43VanLate()") >= 0, "exitFrame VanLate does not increment hzFrameN");
+const placeFade = funcBody(as, "hz43VanPlace");
+const markUndoAt = placeFade.indexOf("if(this.hz43MarkMoved) { this.hz43VanWrite(0,0,1); this.hz43MarkMoved = false; }");
+const chromeUndoAt = placeFade.indexOf("if(this.hz43HidN > 0) { this.hz43VanChrome(false); }");
+const fadeWaitAt = placeFade.indexOf("if(!drag && !this.hz43VanFadeOk())");
+const savedWriteAt = placeFade.indexOf("this.hz43VanWrite(hnd.x - this.hz43VanHX,hnd.y - this.hz43VanHY,sc)");
+expect(markUndoAt >= 0 && chromeUndoAt > markUndoAt && fadeWaitAt > chromeUndoAt && savedWriteAt > fadeWaitAt, "Digital then Vanilla MarkMoved undo runs before chrome restore, fade wait, and saved Arrange");
+expect(placeFade.indexOf("if(!drag && !this.hz43VanFadeOk())") >= 0 && placeFade.indexOf("if(drag) { this.hz43VanWmk = -1; }") >= 0, "Arrange drag bypasses FadeIn wait and busts the identical-write latch");
+expect(placeFade.indexOf(".alpha =") < 0 && funcBody(as, "hz43VanWrite").indexOf(".alpha =") < 0, "Fade timeout and Arrange write do not assign clip alpha");
 expect(funcBody(as, "hz43VanHorizon").indexOf("hz43VanWrote") >= 0 && funcBody(as, "hz43VanHorizon").indexOf("hz43VanWrite(0,0,1)") >= 0, "Digital restores native locals before marker follow");
-expect(funcBody(as, "hz43VanWrite").indexOf("hz43VanWmk") >= 0, "identical Arrange writes are skipped so FadeIn is not poked every frame");
+const horBody = funcBody(as, "hz43VanHorizon");
+const restAt = horBody.indexOf("this.hz43VanWrite(0,0,1)");
+const horChromeAt = horBody.indexOf("this.hz43VanChrome(true)");
+const marksAt = horBody.indexOf("this.hz43VanWrite(cx - rx,cy - ry,1,true)");
+expect(restAt >= 0 && horChromeAt > restAt && marksAt > horChromeAt, "custom restore-native runs before chrome hide and marker follow");
+expect(funcBody(as, "hz43VanWrite").indexOf("hz43VanWmk") >= 0, "identical Arrange writes are skipped");
 expect(funcBody(as, "hz43VanDump").indexOf('why + "|"') < 0, "dump signature does not include why, so write-marks/horizon pairs do not retrigger");
 expect(funcBody(as, "hz43VanCapture").indexOf('hz43VanDump("cap")') >= 0, "dump after capture latch prints cap=1");
 expect(funcBody(as, "hz43VanWrite").indexOf("write-marks") >= 0, "dump runs at native and marker writes");
@@ -493,7 +511,10 @@ function isWatchClip(d, outline) {
 }
 function asInner(name) {
 	const body = funcBody(as, name);
-	return body.replace(/^\{\s*/, "").replace(/\s*\}$/, "").replace(/var\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[A-Za-z0-9_.]+/g, "var $1");
+	return body.replace(/^\{\s*/, "").replace(/\s*\}$/, "")
+		.replace(/var\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[A-Za-z0-9_.]+/g, "var $1")
+		.replace(/catch\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[A-Za-z0-9_.]+\s*\)/g, "catch($1)")
+		.replace(/\s+as\s+[A-Za-z_][A-Za-z0-9_.]*/g, "");
 }
 function bindAsMethod(host, name, args) {
 	host[name] = Function.apply(null, args.concat(["with(this){\n" + asInner(name) + "\n}"])).bind(host);
@@ -560,6 +581,101 @@ prodHost.hz43VanGather();
 expect(prodHost.hz43VanD.indexOf(inst66) >= 0 && prodHost.hz43VanD.indexOf(outline) >= 0, "production Gather adds the session cap and outline");
 expect(prodHost.hz43VanD.indexOf(inst546) < 0 && prodHost.hz43VanD.indexOf(inst548) < 0 && prodHost.hz43VanD.indexOf(inst550) < 0, "production Gather does not add the extra runtime autonames");
 expect(prodHost.hz43VanD.indexOf(bio) < 0 && prodHost.hz43VanD.indexOf(envBase) < 0 && prodHost.hz43VanD.indexOf(envAlert) < 0, "production Gather does not add named bio or env clips");
+
+function makeFadeClip(name, x, y, alpha) {
+	return {
+		name: name,
+		visible: true,
+		alpha: alpha,
+		x: x,
+		y: y,
+		scaleX: 1,
+		scaleY: 1,
+		transform: { colorTransform: { alphaMultiplier: alpha, alphaOffset: 0 } }
+	};
+}
+function makeFadeHost() {
+	const outlineC = makeFadeClip("WatchOutline_mc", 0, 0, 0);
+	const o2C = makeFadeClip("O2CO2_mc", 21.7, 89.85, 0);
+	const capC = makeFadeClip("instance66", 0, -0.25, 0);
+	const tempC = makeFadeClip("Temperature_mc", 79.7, 133.75, 0);
+	const kids = [capC, outlineC, o2C, tempC];
+	const fadeBlg = {
+		name: "BottomLeftGroup_mc",
+		kids: kids,
+		getChildAt: function(i) { return this.kids[i]; }
+	};
+	if (!Object.prototype.hasOwnProperty.call(fadeBlg, "numChildren")) {
+		Object.defineProperty(fadeBlg, "numChildren", { get: function() { return this.kids.length; } });
+	}
+	for (let i = 0; i < kids.length; i++) kids[i].parent = fadeBlg;
+	const host = {
+		hzBlg: fadeBlg,
+		hzFrameN: 0,
+		hz43VanCap: 1,
+		hz43VanFadeN: 0,
+		hz43VanFadeAt: -1,
+		hz43VanN: 1,
+		hz43VanD: [capC],
+		outline: outlineC,
+		o2: o2C,
+		cap: capC,
+		temp: tempC,
+		hzFindByName: function(root, name) {
+			if (!root) return null;
+			const list = root.kids || [];
+			for (let i = 0; i < list.length; i++) {
+				if (list[i] && list[i].name === name) return list[i];
+			}
+			return null;
+		}
+	};
+	bindAsMethod(host, "hz43VanSkip", ["name"]);
+	bindAsMethod(host, "hz43VanInstName", ["name"]);
+	bindAsMethod(host, "hz43VanCapClip", ["d"]);
+	bindAsMethod(host, "hz43VanClip", ["i"]);
+	bindAsMethod(host, "hz43VanFadeSeen", ["d"]);
+	bindAsMethod(host, "hz43VanFadeOk", []);
+	return host;
+}
+const fadeTick = makeFadeHost();
+expect(fadeTick.hz43VanCapClip(fadeTick.cap) === true, "production fade host cap identity matches session instance66 pose");
+fadeTick.hzFrameN = 1;
+expect(fadeTick.hz43VanFadeOk() === false, "production FadeOk is false on the first hzFrameN while chrome alpha and ctA are 0");
+expect(fadeTick.hz43VanFadeN === 1, "production FadeOk counts the first distinct hzFrameN");
+expect(fadeTick.hz43VanFadeOk() === false && fadeTick.hz43VanFadeN === 1, "enter+exit on the same hzFrameN counts once");
+for (let fr = 2; fr <= 15; fr++) {
+	fadeTick.hzFrameN = fr;
+	expect(fadeTick.hz43VanFadeOk() === false, "production FadeOk stays false at distinct hzFrameN " + fr);
+	expect(fadeTick.hz43VanFadeOk() === false && fadeTick.hz43VanFadeN === fr, "a second call on hzFrameN " + fr + " does not double-count");
+}
+expect(fadeTick.outline.alpha === 0 && fadeTick.outline.transform.colorTransform.alphaMultiplier === 0, "16-tick boundary still has chrome alpha 0 and ctA 0");
+fadeTick.hzFrameN = 16;
+expect(fadeTick.hz43VanFadeOk() === true, "production FadeOk latches true on the 16th distinct hzFrameN");
+expect(fadeTick.outline.alpha === 0 && fadeTick.temp.alpha === 0, "16-tick timeout still writes readiness at chrome alpha 0 and does not raise INFO alpha");
+
+const fadeAlpha = makeFadeHost();
+fadeAlpha.outline.alpha = 0.91;
+expect(fadeAlpha.hz43VanFadeOk() === true, "production FadeOk is true when outline DisplayObject.alpha is above 0.9");
+const fadeCt = makeFadeHost();
+fadeCt.outline.alpha = 0;
+fadeCt.outline.transform.colorTransform.alphaMultiplier = 0.91;
+expect(fadeCt.hz43VanFadeOk() === true, "production FadeOk is true when outline ColorTransform alphaMultiplier is above 0.9 and alpha is 0");
+const fadeEdge = makeFadeHost();
+fadeEdge.outline.alpha = 0.9;
+fadeEdge.outline.transform.colorTransform.alphaMultiplier = 0.9;
+expect(fadeEdge.hz43VanFadeOk() === false, "production FadeOk requires alpha or ctA strictly greater than 0.9");
+const fadeInfo = makeFadeHost();
+fadeInfo.temp.alpha = 1;
+fadeInfo.temp.transform.colorTransform.alphaMultiplier = 1;
+expect(fadeInfo.hz43VanFadeOk() === false, "production FadeOk ignores INFO Temperature alpha");
+const fadeCap = makeFadeHost();
+fadeCap.cap.alpha = 0.91;
+expect(fadeCap.hz43VanFadeOk() === true, "production FadeOk is true when the verified cap alpha is above 0.9");
+const fadeO2 = makeFadeHost();
+fadeO2.o2.alpha = 0;
+fadeO2.o2.transform.colorTransform.alphaMultiplier = 0.91;
+expect(fadeO2.hz43VanFadeOk() === true, "production FadeOk is true on O2 ColorTransform alphaMultiplier when outline alpha is 0");
 function hidHas(hid, clip) {
 	for (let i = 0; i < hid.length; i++) {
 		if (hid[i].d === clip) return true;
@@ -1081,6 +1197,9 @@ expect(checks.indexOf("r10-fade-follow-20261107") >= 0, "CHECKS records the fade
 expect(checks.indexOf("does not write a stored FadeIn alpha") >= 0 && checks.indexOf("Digital then Vanilla") >= 0, "CHECKS records Digital then Vanilla restore without forcing INFO alpha");
 expect(checks.indexOf("write-marks") >= 0 && checks.indexOf("does not include why") >= 0, "CHECKS records dump signature omit why");
 expect(checks.indexOf("not in the r10 Scaleform log") >= 0, "CHECKS does not claim Digital then Vanilla was in the logged F11 sequence");
+expect(checks.indexOf("not causal runtime proof") >= 0 && checks.indexOf("measured correlation") >= 0, "CHECKS does not claim transform writes freeze native FadeIn as proven");
+expect(checks.indexOf("unresolved") >= 0 && changelog.indexOf("unresolved") >= 0, "docs record the gray bezel identity as unresolved");
+expect(checks.indexOf("hzFrameN") >= 0, "CHECKS records Fade wait as distinct hzFrameN ticks");
 expect(checks.indexOf("alphaOffset") >= 0 && checks.indexOf("alphaMultiplier") >= 0, "CHECKS records dump of both CXFORM alpha terms");
 expect(checks.indexOf("instance546") >= 0 && checks.indexOf("not mapped") >= 0, "CHECKS records extra runtime autonames without mapping them to PHC depths");
 expect(checks.indexOf("health") >= 0 && checks.indexOf("ammo") >= 0 && checks.indexOf("boost") >= 0, "CHECKS records that health ammo and boost stay off the watch hid list");
