@@ -24,7 +24,7 @@ Not published. No tag. The settings schema stays 0.42.0, so an existing `Horizon
 - **Afflictions and the detection ring** no longer follow the watch style. The bio popup hides while the afflictions card is on. The red ring hides while the stealth pill, the enemy bar, or the edge pulse is on.
 - **Watch PC time** keeps the last good reading when the clock throws, or the planet card's real time when this face has none yet. A failed read does not build a new clock every frame.
 - **Watch Off** hides the leftover inner radar, nearby markers, heading outline, and unnamed cap art. The character card stays.
-- **Vanilla watch** shows the complete game watch again, including the thick top cap / outer bar. Unnamed watch chrome is restored and moved with the named clips. Style 2 still tints that same watch.
+- **Vanilla watch** is a passthrough of the game's watch, including the thick top cap / outer bar. Horizon does not force the native temperature, oxygen, gravity, or off-planet readouts on, and it does not draw Horizon watch text onto that face. Unnamed watch chrome is restored and moved with the named clips. Style 2 still tints that same watch.
 - **Outpost beacon hold:** an enabled Hold key stays in its normal color. The vanilla hold path stays at full alpha so the game receives the hold. Prompt art is still hidden, so a second vanilla bar does not sit on the Horizon card. A filling meter draws on the Horizon keycap. A hold the game marks disabled stays gray.
 
 ## [0.43.0.33-alpha] - 2026-11-04
