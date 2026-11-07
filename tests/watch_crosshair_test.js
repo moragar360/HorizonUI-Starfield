@@ -219,15 +219,23 @@ const pushMark = onFrame.indexOf('names.push("WatchIconsWidget_mc","WatchPointer
 expect(style0At >= 0 && pushMark > style0At, "style 0 hides the leftover radar and nearby markers");
 expect(onFrame.indexOf("keepMark") >= 0 && onFrame.indexOf("hzWatchStyle == 3") >= 0 && onFrame.indexOf("hzWatchStyle == 4") >= 0, "Horizon faces still keep the live markers");
 expect(funcBody(as, "hz43ShowVanilla").indexOf("hz43VanBlgChrome(false)") >= 0, "vanilla restores unnamed watch chrome");
-expect(funcBody(as, "hz43ShowVanilla").indexOf("this.hz43StRestore()") >= 0, "vanilla restores recorded native readout state");
+expect(funcBody(as, "hz43ShowVanilla").indexOf("this.hz43InfoHide()") >= 0, "vanilla hides extra native readouts after restoring the face");
+expect(funcBody(as, "hz43ShowVanilla").indexOf("hz43StRestore") < 0, "vanilla does not restore extra native readouts");
 expect(funcBody(as, "hz43ShowVanilla").indexOf("hz43VanInfoName(name)") >= 0, "vanilla does not force extra info clips on");
-expect(as.indexOf('HZ43_VAN_INFO:Array = ["Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"]') >= 0, "temperature and gravity stay game-driven on vanilla");
+expect(as.indexOf('HZ43_VAN_INFO:Array = ["Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"]') >= 0, "extra native readout names stay listed");
+expect(as.indexOf("function hz43StRestore") < 0 && as.indexOf("function hz43StCapture") < 0, "there is no snapshot restore of extra native readouts");
 expect(funcBody(as, "hz43VanRestoreHid").indexOf("hz43VanInfoName") >= 0, "undoing Horizon chrome does not force extra info clips");
-expect(funcBody(as, "hz43VanChrome").indexOf("this.hz43StRestore()") >= 0, "chrome restore puts recorded readout state back");
+expect(funcBody(as, "hz43VanChrome").indexOf("this.hz43InfoHide()") >= 0, "chrome restore hides extra native readouts");
+expect(funcBody(as, "hz43VanChrome").indexOf("hz43StRestore") < 0, "chrome restore does not resurrect extra native readouts");
 expect(funcBody(as, "hz43VanChrome").indexOf("!hide && !this.hz43VanInfoName(name)") >= 0, "vanilla chrome restore skips extra info clips");
-expect(funcBody(as, "hz36HideTick").indexOf("hz43StHide") >= 0, "the hide tick records native readout state before it hides");
+expect(funcBody(as, "hz43SyncHide").indexOf("hz43InfoHide") >= 0, "live vanilla frames keep extra native readouts hidden");
+expect(funcBody(as, "hz36HideTick").indexOf("hz43StHide") >= 0, "the hide tick hides extra native readouts");
 expect(funcBody(as, "hz43VanNote").indexOf("hz43VanInfoName(d.name)") >= 0, "the chrome hid list does not take native readouts");
-expect(funcBody(as, "hz43StCapture").indexOf("if(d.visible)") >= 0 && funcBody(as, "hz43StCapture").indexOf("if(d.alpha != 0)") >= 0, "later hide frames do not store Horizon's own hide as native");
+expect(onFrame.indexOf('names.push("WatchOutline_mc","DayCycleBase_mc","locationNameBase_mc")') >= 0, "vanilla face clips leave the compass hide");
+expect(onFrame.indexOf('names.push("Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc")') >= 0, "extra native readouts stay in the hide list on every style");
+expect(onFrame.indexOf('names.push("WatchOutline_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc"') < 0, "vanilla face restore is not bundled with extra readouts");
+expect(as.indexOf('HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc"]') >= 0, "style 2 tints the original watch face only");
+expect(as.indexOf('HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc"') < 0, "style 2 does not tint extra native readouts");
 expect(funcBody(as, "hz43Frame").indexOf("hz43Watch.visible = false") >= 0, "vanilla hides the Horizon-drawn watch");
 expect(drawBody.indexOf("hz43TempT.text") >= 0 && drawBody.indexOf("hz43BodyT.text") >= 0, "digital and analog still draw planet and temperature");
 expect(funcBody(as, "hz43VanChrome").indexOf("hz43VanBlgChrome(hide)") >= 0, "Horizon faces hide unnamed cap art with the vanilla bezel");
@@ -260,29 +268,21 @@ function makeClip(name, visible, alpha) {
 	return { name: name, visible: visible, alpha: alpha };
 }
 
-function stCapture(st, d) {
-	for (let i = 0; i < st.length; i++) {
-		if (st[i].d === d) {
-			if (d.visible) st[i].v = 1;
-			if (d.alpha !== 0) st[i].a = d.alpha;
-			return;
-		}
+function infoHidden(clips) {
+	for (let i = 0; i < INFO_NAMES.length; i++) {
+		const d = clips[INFO_NAMES[i]];
+		if (d.visible !== false || d.alpha !== 0) return false;
 	}
-	st.push({ d: d, v: d.visible ? 1 : 0, a: d.alpha });
+	return true;
 }
 
-function stHide(st, d) {
-	stCapture(st, d);
+function stHide(d) {
 	d.visible = false;
 	d.alpha = 0;
 }
 
-function stRestore(st) {
-	for (let i = 0; i < st.length; i++) {
-		st[i].d.visible = st[i].v !== 0;
-		st[i].d.alpha = st[i].a;
-	}
-	st.length = 0;
+function infoHide(clips) {
+	for (let i = 0; i < INFO_NAMES.length; i++) stHide(clips[INFO_NAMES[i]]);
 }
 
 function noteFace(hid, d) {
@@ -290,18 +290,34 @@ function noteFace(hid, d) {
 	if (hid.indexOf(d) < 0) hid.push(d);
 }
 
-function hideTick(style, clips, st) {
-	if (style === 1 || style === 2) return;
-	for (let i = 0; i < INFO_NAMES.length; i++) {
-		stHide(st, clips[INFO_NAMES[i]]);
+function showVanilla(clips) {
+	const names = Object.keys(clips);
+	for (let i = 0; i < names.length; i++) {
+		if (isInfoName(names[i])) continue;
+		clips[names[i]].visible = true;
+		clips[names[i]].alpha = 1;
 	}
+	infoHide(clips);
 }
 
-function chromeHide(clips, hid, st) {
+function restoreHid(hid) {
+	for (let i = 0; i < hid.length; i++) {
+		if (!isInfoName(hid[i].name)) {
+			hid[i].visible = true;
+			hid[i].alpha = 1;
+		}
+	}
+	hid.length = 0;
+}
+
+function chromeHide(clips, hid) {
+	clips.WatchOutline_mc.visible = true;
+	clips.WatchOutline_mc.alpha = 1;
 	const names = Object.keys(clips);
 	for (let i = 0; i < names.length; i++) {
 		const d = clips[names[i]];
-		if (isInfoName(d.name)) stHide(st, d);
+		if (d.name === "WatchOutline_mc") continue;
+		if (isInfoName(d.name)) stHide(d);
 		else {
 			noteFace(hid, d);
 			d.visible = false;
@@ -310,112 +326,141 @@ function chromeHide(clips, hid, st) {
 	}
 }
 
-function chromeShow(clips, hid, st) {
-	for (let i = 0; i < hid.length; i++) {
-		if (!isInfoName(hid[i].name)) {
-			hid[i].visible = true;
-			hid[i].alpha = 1;
+function chromeShow(clips, hid) {
+	restoreHid(hid);
+	const names = Object.keys(clips);
+	for (let i = 0; i < names.length; i++) {
+		if (isInfoName(names[i])) continue;
+		clips[names[i]].visible = true;
+		clips[names[i]].alpha = 1;
+	}
+	infoHide(clips);
+}
+
+function makeWatchState(natives) {
+	return {
+		style: 0,
+		hideWatch: true,
+		vanShown: 0,
+		hid: [],
+		clips: {
+			Temperature_mc: makeClip("Temperature_mc", natives.tempVisible, natives.tempAlpha),
+			Oxygen_mc: makeClip("Oxygen_mc", natives.oxVisible, natives.oxAlpha),
+			Grav_mc: makeClip("Grav_mc", natives.gravVisible, natives.gravAlpha),
+			OffPlanet_mc: makeClip("OffPlanet_mc", natives.offVisible, natives.offAlpha),
+			WatchOutline_mc: makeClip("WatchOutline_mc", true, 1),
+			locationNameBase_mc: makeClip("locationNameBase_mc", true, 1),
+			O2CO2_mc: makeClip("O2CO2_mc", true, 1)
 		}
-	}
-	hid.length = 0;
-	stRestore(st);
-	const names = Object.keys(clips);
-	for (let i = 0; i < names.length; i++) {
-		if (isInfoName(names[i])) continue;
-		clips[names[i]].visible = true;
-		clips[names[i]].alpha = 1;
-	}
-}
-
-function showVanilla(clips, st) {
-	stRestore(st);
-	const names = Object.keys(clips);
-	for (let i = 0; i < names.length; i++) {
-		if (isInfoName(names[i])) continue;
-		clips[names[i]].visible = true;
-		clips[names[i]].alpha = 1;
-	}
-}
-
-function switchStyle(fromStyle, toStyle, natives) {
-	const clips = {
-		Temperature_mc: makeClip("Temperature_mc", natives.tempVisible, natives.tempAlpha),
-		Oxygen_mc: makeClip("Oxygen_mc", natives.oxVisible, natives.oxAlpha),
-		Grav_mc: makeClip("Grav_mc", natives.gravVisible, natives.gravAlpha),
-		OffPlanet_mc: makeClip("OffPlanet_mc", natives.offVisible, natives.offAlpha),
-		WatchOutline_mc: makeClip("WatchOutline_mc", true, 1),
-		locationNameBase_mc: makeClip("locationNameBase_mc", true, 1)
 	};
-	const st = [];
-	const hid = [];
-	if (fromStyle !== 1 && fromStyle !== 2) hideTick(fromStyle, clips, st);
-	if (fromStyle === 3 || fromStyle === 4) chromeHide(clips, hid, st);
-	if (toStyle === 1 || toStyle === 2) {
-		showVanilla(clips, st);
-		if (hid.length > 0) chromeShow(clips, hid, st);
-	}
-	hideTick(toStyle, clips, st);
-	return { clips: clips, st: st, hid: hid };
 }
 
-const offToVanillaShown = switchStyle(0, 1, {
+function applyWatchStyle(state, style) {
+	const showVan = style === 1 || style === 2;
+	const hideWatch = !showVan;
+	if (hideWatch !== state.hideWatch) {
+		state.hideWatch = hideWatch;
+		if (showVan) state.vanShown = 0;
+	}
+	if (showVan && state.vanShown === 0) {
+		showVanilla(state.clips);
+		state.vanShown = 1;
+	}
+	if (showVan && state.vanShown === 1) infoHide(state.clips);
+	infoHide(state.clips);
+	if (style === 3 || style === 4) chromeHide(state.clips, state.hid);
+	if (showVan && state.hid.length > 0) chromeShow(state.clips, state.hid);
+	state.style = style;
+}
+
+const nativesShown = {
 	tempVisible: true, tempAlpha: 1,
 	oxVisible: true, oxAlpha: 1,
 	gravVisible: true, gravAlpha: 0.5,
 	offVisible: true, offAlpha: 1
-});
-expect(offToVanillaShown.clips.Temperature_mc.visible === true && offToVanillaShown.clips.Temperature_mc.alpha === 1, "Off then Vanilla restores a native-shown temperature clip");
-expect(offToVanillaShown.clips.Grav_mc.visible === true && offToVanillaShown.clips.Grav_mc.alpha === 0.5, "Off then Vanilla restores recorded gravity alpha, not 1");
-expect(offToVanillaShown.st.length === 0, "Off then Vanilla clears the native-readout store");
-expect(offToVanillaShown.hid.length === 0, "Off then Vanilla leaves the chrome hid list empty");
-
-const offToVanillaHidden = switchStyle(0, 2, {
+};
+const nativesHidden = {
 	tempVisible: false, tempAlpha: 1,
 	oxVisible: false, oxAlpha: 0,
 	gravVisible: false, gravAlpha: 1,
 	offVisible: false, offAlpha: 1
-});
-expect(offToVanillaHidden.clips.Temperature_mc.visible === false && offToVanillaHidden.clips.Temperature_mc.alpha === 1, "Off then Vanilla+Horizon does not force a native-hidden temperature clip");
-expect(offToVanillaHidden.clips.Oxygen_mc.visible === false && offToVanillaHidden.clips.Oxygen_mc.alpha === 0, "Off then Vanilla+Horizon leaves a native-hidden oxygen clip hidden");
-expect(offToVanillaHidden.clips.WatchOutline_mc.visible === true && offToVanillaHidden.clips.WatchOutline_mc.alpha === 1, "Off then Vanilla+Horizon still restores the watch outline");
-
-const digitalToVanillaShown = switchStyle(3, 1, {
-	tempVisible: true, tempAlpha: 1,
-	oxVisible: true, oxAlpha: 1,
-	gravVisible: true, gravAlpha: 1,
-	offVisible: true, offAlpha: 1
-});
-expect(digitalToVanillaShown.clips.Temperature_mc.visible === true && digitalToVanillaShown.clips.Temperature_mc.alpha === 1, "Digital then Vanilla restores a native-shown temperature clip");
-expect(digitalToVanillaShown.clips.locationNameBase_mc.visible === true, "Digital then Vanilla restores the native planet name");
-expect(digitalToVanillaShown.st.length === 0 && digitalToVanillaShown.hid.length === 0, "Digital then Vanilla clears hid-list and readout store");
-
-const analogToVanillaHidden = switchStyle(4, 2, {
-	tempVisible: false, tempAlpha: 1,
-	oxVisible: false, oxAlpha: 1,
-	gravVisible: false, gravAlpha: 1,
-	offVisible: false, offAlpha: 1
-});
-expect(analogToVanillaHidden.clips.Temperature_mc.visible === false && analogToVanillaHidden.clips.Temperature_mc.alpha === 1, "Analog then Vanilla+Horizon does not force a native-hidden temperature clip");
-expect(analogToVanillaHidden.clips.WatchOutline_mc.visible === true, "Analog then Vanilla+Horizon still restores the watch outline");
-expect(analogToVanillaHidden.st.length === 0 && analogToVanillaHidden.hid.length === 0, "Analog then Vanilla+Horizon clears hid-list and readout store");
-
-const gameShowDuringOff = {
-	tempVisible: true, tempAlpha: 1,
-	oxVisible: true, oxAlpha: 1,
-	gravVisible: true, gravAlpha: 1,
-	offVisible: true, offAlpha: 1
 };
-const live = makeClip("Temperature_mc", true, 1);
-const liveSt = [];
-stHide(liveSt, live);
-live.visible = true;
-live.alpha = 0;
-stHide(liveSt, live);
-stRestore(liveSt);
-expect(live.visible === true && live.alpha === 1, "a game visible=true during Off does not replace stored alpha with Horizon's 0");
-expect(live.alpha !== 0, "game writing visible cannot recover an unrestored alpha 0, so restore must write alpha");
-expect(checks.indexOf("if the game later shows those clips, they appear") < 0, "CHECKS does not claim game visible recovers the current hide");
-expect(checks.indexOf("cannot recover an unrestored") >= 0, "CHECKS names that visible cannot recover unrestored alpha 0");
+
+const offTo1 = makeWatchState(nativesShown);
+applyWatchStyle(offTo1, 0);
+applyWatchStyle(offTo1, 1);
+expect(infoHidden(offTo1.clips), "Off then Vanilla keeps extra native readouts hidden even if they started visible");
+expect(offTo1.clips.WatchOutline_mc.visible === true && offTo1.clips.O2CO2_mc.visible === true, "Off then Vanilla still restores the watch face");
+expect(offTo1.hid.length === 0, "Off then Vanilla leaves the chrome hid list empty");
+
+const offTo2 = makeWatchState(nativesHidden);
+applyWatchStyle(offTo2, 0);
+applyWatchStyle(offTo2, 2);
+expect(infoHidden(offTo2.clips), "Off then Vanilla+Horizon keeps extra native readouts hidden");
+expect(offTo2.clips.WatchOutline_mc.visible === true && offTo2.clips.locationNameBase_mc.visible === true, "Off then Vanilla+Horizon still restores outline and planet name");
+
+const oneTwo = makeWatchState(nativesShown);
+applyWatchStyle(oneTwo, 0);
+applyWatchStyle(oneTwo, 1);
+applyWatchStyle(oneTwo, 2);
+expect(infoHidden(oneTwo.clips) && oneTwo.vanShown === 1, "Vanilla then Vanilla+Horizon does not re-run face restore and keeps extra readouts hidden");
+applyWatchStyle(oneTwo, 1);
+expect(infoHidden(oneTwo.clips) && oneTwo.clips.WatchOutline_mc.visible === true, "returning to Vanilla after color style keeps extra readouts hidden");
+
+const digitalRound = makeWatchState(nativesShown);
+applyWatchStyle(digitalRound, 0);
+applyWatchStyle(digitalRound, 1);
+applyWatchStyle(digitalRound, 3);
+expect(infoHidden(digitalRound.clips), "Digital hides extra native readouts");
+expect(digitalRound.hid.length > 0, "Digital records face chrome on the hid list");
+applyWatchStyle(digitalRound, 1);
+expect(infoHidden(digitalRound.clips), "Digital then Vanilla does not restore extra native readouts");
+expect(digitalRound.clips.locationNameBase_mc.visible === true && digitalRound.clips.WatchOutline_mc.visible === true, "Digital then Vanilla restores planet name and outline");
+expect(digitalRound.hid.length === 0, "Digital then Vanilla clears the hid list");
+
+const analogRound = makeWatchState(nativesHidden);
+applyWatchStyle(analogRound, 0);
+applyWatchStyle(analogRound, 2);
+applyWatchStyle(analogRound, 4);
+applyWatchStyle(analogRound, 2);
+expect(infoHidden(analogRound.clips), "Analog then Vanilla+Horizon keeps extra native readouts hidden");
+expect(analogRound.clips.WatchOutline_mc.visible === true, "Analog then Vanilla+Horizon still restores the watch outline");
+expect(analogRound.hid.length === 0, "Analog then Vanilla+Horizon clears the hid list");
+
+const f11Live = makeWatchState(nativesShown);
+applyWatchStyle(f11Live, 0);
+applyWatchStyle(f11Live, 1);
+applyWatchStyle(f11Live, 2);
+applyWatchStyle(f11Live, 3);
+applyWatchStyle(f11Live, 4);
+applyWatchStyle(f11Live, 2);
+applyWatchStyle(f11Live, 1);
+expect(infoHidden(f11Live.clips), "repeated F11 style cycles leave extra native readouts hidden on Vanilla");
+expect(f11Live.clips.WatchOutline_mc.visible === true && f11Live.clips.O2CO2_mc.visible === true, "repeated F11 style cycles still restore the original watch face");
+
+const parentReplay = makeWatchState(nativesShown);
+parentReplay.clips.WatchOutline_mc.visible = false;
+parentReplay.clips.WatchOutline_mc.alpha = 0;
+parentReplay.clips.Temperature_mc.visible = true;
+parentReplay.clips.Temperature_mc.alpha = 1;
+chromeHide(parentReplay.clips, parentReplay.hid);
+expect(parentReplay.clips.WatchOutline_mc.visible === true, "custom-face chrome shows the parent watch outline");
+expect(parentReplay.clips.Temperature_mc.visible === false && parentReplay.clips.Temperature_mc.alpha === 0, "custom-face chrome hides an INFO child after showing the parent");
+chromeShow(parentReplay.clips, parentReplay.hid);
+expect(parentReplay.clips.WatchOutline_mc.visible === true && parentReplay.clips.locationNameBase_mc.visible === true, "hid-list replay restores face chrome");
+expect(parentReplay.clips.Temperature_mc.visible === false && parentReplay.clips.Temperature_mc.alpha === 0, "hid-list replay does not resurrect an INFO child");
+expect(parentReplay.hid.length === 0, "hid-list replay clears the hid list");
+
+const live = makeWatchState(nativesHidden);
+applyWatchStyle(live, 1);
+live.clips.Temperature_mc.visible = true;
+live.clips.Temperature_mc.alpha = 1;
+live.clips.Grav_mc.visible = true;
+live.clips.Grav_mc.alpha = 1;
+applyWatchStyle(live, 1);
+expect(infoHidden(live.clips), "a later game show during Vanilla is hidden again the next frame");
+expect(checks.indexOf("if the game later shows those clips, they appear") < 0, "CHECKS does not claim game visible recovers extra readouts on vanilla");
+expect(checks.indexOf("Styles 1 and 2 keep Temperature_mc") >= 0 || checks.indexOf("keep those four clips hidden") >= 0, "CHECKS says styles 1 and 2 keep extra native readouts hidden");
 
 function holdPathLive(awAlphaHidden, ancestorAlphaRestored) {
 	return ancestorAlphaRestored ? 1 : (awAlphaHidden ? 0 : 1);
