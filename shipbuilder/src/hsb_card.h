@@ -192,15 +192,21 @@ inline std::string ShortChip(std::string_view chip)
 	return std::string(whole);
 }
 
+// A chip box is its text plus kChipPadPx and at least kChipMinPx wide. The movie's
+// paintChip uses the same numbers.
+inline constexpr int kChipPadPx = 14;
+inline constexpr int kChipMinPx = 28;
+inline constexpr int kChipGapPx = 8;
+
 // A chip never reaches the value column: it keeps 6 px clear of the value's right edge.
 inline int ChipRoom(const CardMetrics& m)
 {
-	return m.width - m.pad - m.valueRight - 8;
+	return m.width - m.pad - m.valueRight - kChipGapPx;
 }
 
 inline int ChipWidth(const CardMetrics& m, int textWidth)
 {
-	return std::min(std::max(28, textWidth + 14), ChipRoom(m));
+	return std::min(std::max(kChipMinPx, textWidth + kChipPadPx), ChipRoom(m));
 }
 
 inline int CardStatRows(int count)

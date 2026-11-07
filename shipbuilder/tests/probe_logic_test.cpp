@@ -8,12 +8,14 @@
 #include "hsb_interior.h"
 #include "hsb_version.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -249,6 +251,16 @@ static void CheckModuleCard()
 		hsb::ShortChip("+1.5e+21") == "+", "a short chip never reads as no change or a wrong number");
 	Expect(hsb::ChipNumber(1.5e21, 2) == "1.5e+21" && hsb::ChipNumber(std::numeric_limits<double>::infinity(), 2) == "Infinity",
 		"a chip keeps toFixed's exponent text whole");
+	{
+		bool whole = true;
+		for (const double size : {1e-7, 0.0049, 0.005, 0.0123, 0.1 + 0.2, 0.125, 0.5, 1.0, 1.5, 12.345, 1e19, 1.5e19})
+			for (const double sign : {1.0, -1.0}) {
+				const std::string chip = hsb::DiffChipText(hsb::CardStat{"50%", 0.5, sign * size, true});
+				if (chip.find('.') != std::string::npos && chip.find('e') == std::string::npos) whole = false;
+			}
+		Expect(whole && hsb::ShortChip(hsb::DiffChipText(hsb::CardStat{"50%", 0.5, 1.5e19, true})) == "+",
+			"a percent chip has places only as exponent text, so a short chip never cuts a percent number");
+	}
 	Expect(hsb::ChipWidth(normal, 4) == 28 && hsb::ChipWidth(normal, 30) == 44 && hsb::ChipWidth(normal, 90) == 59 && hsb::ChipWidth(large, 90) == 72,
 		"a long chip is capped short of the value column");
 
@@ -387,6 +399,29 @@ static void CheckFaceProof()
 	Expect(hsb::PickFace(nullptr, 7, boxes, boxes) == -1, "no list is no proof");
 	Expect(hsb::TextPx(11, false) == 13 && hsb::TextPx(13, true) == 16 && hsb::TextPx(21, false) == 21,
 		"text keeps the 13 and 16 px floors");
+}
+
+// Every line that uses the picked face name itself, trimmed and sorted. A log line can
+// carry the name through a temp, so the gold movie's uses are checked against a fixed list.
+static std::vector<std::string> FaceUses(const std::string& source)
+{
+	std::vector<std::string> uses;
+	std::istringstream in(source);
+	std::string line;
+	while (std::getline(in, line)) {
+		for (std::size_t at = line.find("this.face"); at != std::string::npos; at = line.find("this.face", at + 1)) {
+			const std::size_t next = at + 9;
+			const char c = next < line.size() ? line[next] : ' ';
+			const bool ident = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+			if (ident) continue;
+			const auto first = line.find_first_not_of(" \t");
+			const auto last = line.find_last_not_of(" \t\r");
+			uses.push_back(first == std::string::npos ? std::string() : line.substr(first, last - first + 1));
+			break;
+		}
+	}
+	std::sort(uses.begin(), uses.end());
+	return uses;
 }
 
 // Lines that build log text may carry candidate tags and metrics, never a face name.
@@ -661,6 +696,20 @@ int main()
 	Expect(gold.find("\"FONT try=\"") != std::string::npos && gold.find("\"FONTSRC \"") != std::string::npos,
 		"the face proof is logged");
 	Expect(NotesHideFaces(gold), "log lines name candidates by index only");
+	{
+		std::vector<std::string> allowed = {
+			"this.face = \"\";",
+			"this.face = \"\";",
+			"this.face = String(names[k]);",
+			"if(this.face.length == 0 && this.faceTries < 3 && (this.frameN == 30 || this.frameN == 120))",
+			"if(this.face.length > 0) { this.refreshFaces(); }",
+			"fmt.font = this.face;",
+			"if(this.face.length == 0) { return \"face\"; }",
+			"if(this.face.length > 0) { fmt.font = this.face; }",
+		};
+		std::sort(allowed.begin(), allowed.end());
+		Expect(FaceUses(gold) == allowed, "the picked face name only sets and tests faces, so no temp can carry it to a log");
+	}
 	Expect(gold.find("box.embedFonts = this.faceEmbed") != std::string::npos, "horizon text uses the proven embed flag");
 	Expect(gold.find("this.hexBox.embedFonts = this.faceEmbed") != std::string::npos, "the hex field uses the proven face");
 	Expect(gold.find("this.hexBox.type = TextFieldType.INPUT") != std::string::npos, "the hex field stays editable");
@@ -749,7 +798,16 @@ int main()
 	Expect(gold.find("modNative.visible") == std::string::npos && gold.find("removeChild(this.modNative") == std::string::npos,
 		"the game card's visible flag and parent are left to the menu");
 	Expect(seat.find("parent.addChildAt(this.modCard,at + 1);") != std::string::npos, "our card sits right above the game card");
+	Expect(seat.find("this.modCard.y = Math.round(y);\n         this.modCard.visible = true;") != std::string::npos &&
+		seat.find("if(mine != at + 1) { parent.setChildIndex(this.modCard,mine > at ? at + 1 : at); }") != std::string::npos &&
+		CountOf(seat, "setChildIndex(") == 1 && CountOf(seat, "addChildAt(") == 1,
+		"a seat shows our card and keeps it right above the game card");
+	Expect(FunctionBody(gold, "paintModule").find("g.drawRoundRect(1,1,w - 2,y - 2,12,12);\n         g.endFill();\n         this.modHigh = y;") != std::string::npos &&
+		CountOf(gold, "this.modHigh = ") == 2, "the lift height is the painted background's full height");
 	const std::string lift = FunctionBody(gold, "liftModule");
+	Expect(lift.find("this.liftTop = param1.globalToLocal(this.localToGlobal(new Point(r.x,r.y))).y;") != std::string::npos &&
+		lift.find("this.liftLow = param1.globalToLocal(this.localToGlobal(new Point(r.x,r.y + r.height))).y;") != std::string::npos,
+		"the cached edges are the view's top and bottom in the card's parent");
 	Expect(seat.find("this.arranging ? box.y : this.liftModule(parent,box.y,this.modHigh)") != std::string::npos &&
 		gold.find("this.modView = r;") != std::string::npos && gold.find("this.modHigh = y;") != std::string::npos,
 		"outside arrange a tall card is lifted onto the screen");
@@ -776,7 +834,9 @@ int main()
 	Expect(FunctionBody(gold, "moduleGate").find("if(this.arranging && !this.modOn) { return \"arrange\"; }") != std::string::npos,
 		"arrange does not bring our card up");
 	const std::string chipBody = FunctionBody(gold, "paintChip");
-	Expect(chipBody.find("text = this.shortChip(text);") != std::string::npos && chipBody.find("text = text.charAt(0);") != std::string::npos,
+	const std::string putTag = "\n            this.put(tag,text,up ? 0x69FEB3 : 0xFF6868);";
+	Expect(CountOf(chipBody, "if(tag.textWidth + " + std::to_string(hsb::kChipPadPx) + " > room)") == 2 &&
+		chipBody.find("text = this.shortChip(text);" + putTag) != std::string::npos && chipBody.find("text = text.charAt(0);" + putTag) != std::string::npos,
 		"a chip too wide for its room is shortened, never clipped");
 	const std::string shortBody = FunctionBody(gold, "shortChip");
 	Expect(shortBody.find("if(dot < 0 || param1.indexOf(\"e\") >= 0) { return param1.charAt(0); }") != std::string::npos &&
@@ -814,8 +874,13 @@ int main()
 	const std::string column = "this.lrg ? " + std::to_string(lrgCard.width - lrgCard.pad - lrgCard.valueRight) + " : " +
 		std::to_string(nrmCard.width - nrmCard.pad - nrmCard.valueRight);
 	Expect(gold.find("var right:Number = w - pad - (" + column + ");") != std::string::npos &&
-		gold.find("var room:Number = (" + column + ") - 8;") != std::string::npos, "the value column and chip room come from the twin");
-	Expect(gold.find("var chipW:Number = Math.min(Math.max(28,tag.textWidth + 14),room);") != std::string::npos, "the chip width matches the twin");
+		gold.find("var room:Number = (" + column + ") - " + std::to_string(hsb::kChipGapPx) + ";") != std::string::npos,
+		"the value column and chip room come from the twin");
+	Expect(gold.find("var chipW:Number = Math.min(Math.max(" + std::to_string(hsb::kChipMinPx) + ",tag.textWidth + " +
+		std::to_string(hsb::kChipPadPx) + "),room);") != std::string::npos, "the chip width matches the twin");
+	Expect(FunctionBody(gold, "diffText").find(
+		"var size:String = param1.bPercentage ? this.chipNumber(Math.abs(diff) * 100,0) : this.chipNumber(Math.abs(diff),2);") != std::string::npos,
+		"a percent chip is a whole percent and other chips keep two places, as in the twin");
 	Expect(FunctionBody(gold, "chipNumber").find("param1.toFixed(6)") != std::string::npos && FunctionBody(gold, "diffText").find("if(size == \"0\") { return \"\"; }") != std::string::npos,
 		"a chip never prints float noise");
 	Expect(FunctionBody(gold, "diffText").find("FormatNumberToString") == std::string::npos, "the chip does not cut an exponent's digits");
