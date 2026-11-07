@@ -1377,6 +1377,9 @@ expect(checks.indexOf("not in the r10 Scaleform log") >= 0, "CHECKS does not cla
 expect(checks.indexOf("not causal runtime proof") >= 0 && checks.indexOf("measured correlation") >= 0, "CHECKS does not claim transform writes freeze native FadeIn as proven");
 expect(checks.indexOf("medium causal confidence") >= 0 && changelog.indexOf("medium causal confidence") >= 0, "CHECKS grades the r10 freeze inference as medium confidence correlation");
 expect(checks.indexOf("unresolved") >= 0 && changelog.indexOf("unresolved") >= 0, "docs record the gray bezel identity as unresolved");
+expect(checks.indexOf("shape 927") >= 0 && checks.indexOf("sprite 928") >= 0, "CHECKS records native Off ring art as WatchOutline stroke 0..221px");
+expect(checks.indexOf("not a visual fix") >= 0 && changelog.indexOf("not that visual fix") >= 0, "docs record r12 Off leftover after heading-outline hide");
+expect(checks.indexOf("not r12 user-accepted") >= 0 && changelog.indexOf("does not claim Digital/Analog") >= 0, "docs do not treat Digital Analog or sun card as r12 accepted");
 expect(checks.indexOf("hzFrameN") >= 0, "CHECKS records Fade wait as distinct hzFrameN ticks");
 expect(checks.indexOf("fail-open") >= 0 && changelog.indexOf("fail-open") >= 0 && checks.indexOf("TintRgb") >= 0 && checks.indexOf("FadeN") >= 0, "CHECKS records fail-open timeout, style-2 tint during wait, and Capture FadeN latch");
 expect(checks.indexOf("alphaOffset") >= 0 && checks.indexOf("alphaMultiplier") >= 0, "CHECKS records dump of both CXFORM alpha terms");
