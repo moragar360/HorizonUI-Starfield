@@ -228,3 +228,24 @@ Then repeat #16 and #17. `FACT movie | STAGE` is a mouseDown, mouseUp, mouseWhee
 ## What the log is for
 
 Bring the probe log back with a note of what you saw the ship do on #16 and #17. Those two together decide whether a later Arrange mode can rely on a full-stage layer, and whether the window hook can sit beside Horizon UI.
+
+## Vortex zip
+
+This package is Horizon Ship Builder alone. It is not the HUD installer and it has no component picker. Quit the game first. The two movies in the zip must be the spliced movies, not stock archive copies. The default ini ships with the mod. The plugin still reads the player file under Documents when that file exists.
+
+From the repo root, after the desktop builder has produced the DLL and both movies:
+
+```
+sh shipbuilder/package_vortex.sh build\windows\x64\releasedbg\HorizonShipBuilder.dll shipbuilder\Interface\spaceshipeditormenu.swf shipbuilder\Interface\spaceshipeditormenu_lrg.swf HorizonShipBuilder-0.1.0.0.zip
+```
+
+The zip contains only:
+
+```
+Data/SFSE/Plugins/HorizonShipBuilder.dll
+Data/Interface/spaceshipeditormenu.swf
+Data/Interface/spaceshipeditormenu_lrg.swf
+Data/Interface/HorizonUI/shipbuilder/HorizonShipBuilder.default.ini
+```
+
+In Vortex, install that zip from file. Vortex uses the Data folder as the mod root, so the DLL and both movies land on their game paths without a manual mapping. Do not merge this zip with the HUD package.
