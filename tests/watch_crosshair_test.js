@@ -98,6 +98,7 @@ expect(block.indexOf("hz43LocL.y = -40") >= 0 && block.indexOf("hz43LocT.y = -22
 expect(block.indexOf("hz43RealL.y = 2") >= 0 && block.indexOf("hz43RealT.y = 18") >= 0, "the PC label sits above the PC time");
 expect(block.indexOf("hz43Dial(g,0,-58,day)") < 0 && block.indexOf("hz43PmT.visible = false") >= 0 && block.indexOf("hz43DayT.visible = false") >= 0, "the digital face has no day dial");
 expect(block.indexOf("hz43Dial(g,0,64,day)") >= 0 && block.indexOf("hz43PmT.visible = true") >= 0, "the analog day dial stays at 6 o'clock");
+expect(funcBody(as, "hz43Dial").indexOf("hz43Sun") < 0 && funcBody(as, "hz43Dial").indexOf("hz43Band") >= 0 && as.indexOf('this.hz43DayT.text = "DAY"') >= 0, "analog keeps DAY and the day subdial and does not draw the sun marker");
 expect(block.indexOf("Math.PI / 2 + Math.PI / 6") >= 0 && block.indexOf("Math.PI / 2 - Math.PI / 6") >= 0, "gauges start at 7 o'clock and 5 o'clock");
 expect(block.indexOf("0x6E7C86") >= 0, "unfilled gauge segments are gray");
 expect(block.indexOf("hz43Hand(g,ma,72,2.2,0xF2F7F9)") >= 0, "the minute hand is white");
@@ -254,8 +255,14 @@ expect(funcBody(as, "hz43VanCapClip").indexOf('"instance66"') < 0, "cap identity
 expect(funcBody(as, "hz43VanDump").indexOf("ctA=") >= 0 && funcBody(as, "hz43VanDump").indexOf("ctO=") >= 0 && funcBody(as, "hz43VanDump").indexOf("HZ43_DIAG") >= 0, "dump records ColorTransform alphaMultiplier and alphaOffset and the diagnostic package token");
 expect(funcBody(as, "hz43VanDump").indexOf("alphaMultiplier") >= 0 && funcBody(as, "hz43VanDump").indexOf("alphaOffset") >= 0, "dump reads both CXFORM alpha terms");
 expect(funcBody(as, "hz43VanDump").indexOf("capArt=") >= 0, "dump marks which autonamed sibling is the verified cap");
+expect(funcBody(as, "hz43VanDump").indexOf("ctrArt=") < 0 && as.indexOf("function hz43VanCenterArt") < 0, "r11 did not prove center-art pixels, so that hide is not in this package");
+expect(funcBody(as, "hz43VanWatchClip").indexOf("hz43VanCenterArt") < 0 && funcBody(as, "hz43VanGather").indexOf("hz43VanCenterArt") < 0, "center art stays off watch ownership");
+expect(funcBody(as, "hz43VanPlace").indexOf("hz43VanFadeOk") >= 0 && funcBody(as, "hz43TintRgb").indexOf("redMultiplier") >= 0, "styles 1 and 2 keep Fade wait and RGB-only tint");
 expect(funcBody(as, "hz43VanDump").indexOf("hz43VanNamed") < 0, "dump lists every BottomLeftGroup child, not only VanNamed clips");
-expect(as.indexOf('HZ43_DIAG:String = "r10-fade-follow-20261107"') >= 0, "next gfx can prove package r10-fade-follow-20261107");
+expect(as.indexOf('HZ43_DIAG:String = "r12-pointer-mark-20261107"') >= 0, "next gfx can prove package r12-pointer-mark-20261107");
+expect(funcBody(as, "hz43VanDump").indexOf("WatchPointerOutline_mc") >= 0, "dump signature includes heading-outline vis so later Off frames are not collapsed into the first write");
+expect(funcBody(as, "hz43SyncHide").indexOf("hz43HideStyle") >= 0 && funcBody(as, "hz43SyncHide").indexOf("hzHideCache = null") >= 0, "WatchStyle change rebuilds hide cache, including Digital then Off");
+expect(onFrame.indexOf('else if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4) { names.push("WatchPointerOutline_mc"); }') >= 0, "custom hideTick owns the heading outline");
 expect(funcBody(as, "hz43VanPlace").indexOf("hz43VanFadeOk") >= 0, "Vanilla Arrange waits for native FadeIn before writing siblings");
 expect(funcBody(as, "hz43VanFadeSeen").indexOf("alphaMultiplier") >= 0 && funcBody(as, "hz43VanFadeSeen").indexOf("d.alpha") >= 0, "Fade wait reads outline/O2/cap alpha and ColorTransform, and does not write alpha");
 expect(funcBody(as, "hz43VanFadeSeen").indexOf("d.alpha =") < 0 && funcBody(as, "hz43VanPlace").indexOf("clip.alpha = 1") < 0, "Fade wait does not force outline alpha to 1");
@@ -302,7 +309,8 @@ expect(as.indexOf("private var hz43EnvLang:String = \"\"") >= 0, "location langu
 expect(funcBody(as, "hz43StHide").indexOf("d.alpha") < 0, "watch own-hide does not write alpha");
 expect(funcBody(as, "hz36HideTick").indexOf("hz43VanWatchClip") >= 0, "hide tick own-hides watch clips apart from health ammo boost");
 expect(funcBody(as, "hz43VanNote").indexOf("hz43VanWatchClip") >= 0, "the hid list refuses non-watch clips");
-expect(as.indexOf('HZ43_VAN_MARK:Array = ["WatchIconsWidget_mc","WatchPointerOutline_mc","MissionIconsWidget_mc","EnemyIconsWidget_mc"]') >= 0, "live markers include mission and enemy widgets");
+expect(as.indexOf('HZ43_VAN_MARK:Array = ["WatchIconsWidget_mc","MissionIconsWidget_mc","EnemyIconsWidget_mc"]') >= 0, "live markers are nearby, mission, and enemy widgets");
+expect(funcBody(as, "hz43VanMarkName").indexOf("WatchPointerOutline_mc") < 0, "heading outline is not a custom keep-mark");
 expect(as.indexOf("HZ43_HID_MAX:int = 40") >= 0 && funcBody(as, "hz43VanNote").indexOf(">= 32") < 0, "the watch hid list is a 40-slot identity cap");
 expect(funcBody(as, "hz43VanRestoreHid").indexOf("HealthBar") < 0 && funcBody(as, "hz43VanNote").indexOf("HealthBar") < 0, "health is not on the watch hid list");
 expect(funcBody(as, "hz43VanGameVis").indexOf("DayCycleBase_mc") >= 0 && funcBody(as, "hz43VanGameVis").indexOf("Autopilot_mc") >= 0, "game-owned visibility includes day cycle and autopilot");
@@ -334,7 +342,7 @@ expect(funcBody(as, "hz43VanSkip").indexOf("name.length == 0) { return false; }"
 function leftoverWatchVisible(style, clip) {
 	const alerts = ["EnemyDetectionAnim_mc", "EnvAlertText", "BioAlertText", "LocationAlertText"];
 	if (alerts.indexOf(clip) >= 0) return true;
-	const mark = clip === "WatchIconsWidget_mc" || clip === "WatchPointerOutline_mc" || clip === "MissionIconsWidget_mc" || clip === "EnemyIconsWidget_mc";
+	const mark = clip === "WatchIconsWidget_mc" || clip === "MissionIconsWidget_mc" || clip === "EnemyIconsWidget_mc";
 	if (style === 0) return false;
 	if (style === 3 || style === 4) return mark;
 	return true;
@@ -347,6 +355,8 @@ expect(leftoverWatchVisible(0, "EnemyDetectionAnim_mc") === true, "off leaves th
 expect(leftoverWatchVisible(3, "WatchIconsWidget_mc") === true, "digital keeps nearby markers");
 expect(leftoverWatchVisible(3, "MissionIconsWidget_mc") === true, "digital keeps mission markers");
 expect(leftoverWatchVisible(3, "EnemyIconsWidget_mc") === true, "digital keeps enemy markers");
+expect(leftoverWatchVisible(3, "WatchPointerOutline_mc") === false, "digital hides the heading outline with chrome");
+expect(leftoverWatchVisible(4, "WatchPointerOutline_mc") === false, "analog hides the heading outline with chrome");
 expect(leftoverWatchVisible(4, "WatchIconsWidget_mc") === true, "analog keeps nearby markers");
 expect(leftoverWatchVisible(4, "MissionIconsWidget_mc") === true, "analog keeps mission markers");
 expect(leftoverWatchVisible(4, "EnemyIconsWidget_mc") === true, "analog keeps enemy markers");
@@ -499,7 +509,7 @@ const WATCH_NAMES = {
 	DayCycleBase_mc: 1, locationNameBase_mc: 1, Autopilot_mc: 1
 };
 const GAME_VIS = { DayCycleBase_mc: 1, OffPlanet_mc: 1, Autopilot_mc: 1, locationNameBase_mc: 1 };
-const MARK_NAMES = { WatchIconsWidget_mc: 1, WatchPointerOutline_mc: 1, MissionIconsWidget_mc: 1, EnemyIconsWidget_mc: 1 };
+const MARK_NAMES = { WatchIconsWidget_mc: 1, MissionIconsWidget_mc: 1, EnemyIconsWidget_mc: 1 };
 const OTHER_HIDES = { HealthBar_mc: 1, EquippedWeaponAmmo_mc: 1, JetpackMeterWrapper_mc: 1 };
 
 function makeClip(name, visible, alpha, x, y) {
@@ -515,6 +525,9 @@ function isInstName(name) {
 	return name === "" || (typeof name === "string" && name.indexOf("instance") === 0);
 }
 function isWatchClip(d, outline) {
+	return !!(d && (WATCH_NAMES[d.name] || vanCapClip(d, outline)));
+}
+function isArrangeClip(d, outline) {
 	return !!(d && (WATCH_NAMES[d.name] || vanCapClip(d, outline)));
 }
 function asInner(name) {
@@ -684,6 +697,33 @@ const fadeO2 = makeFadeHost();
 fadeO2.o2Clip.alpha = 0;
 fadeO2.o2Clip.transform.colorTransform.alphaMultiplier = 0.91;
 expect(fadeO2.hz43VanFadeOk() === true, "production FadeOk is true on O2 ColorTransform alphaMultiplier when outline alpha is 0");
+
+function makeSyncHideHost(style) {
+	const host = {
+		hzWatchStyle: style,
+		hz43HideStyle: -1,
+		hzHideVanillaWatch: true,
+		hzHideCache: ["stale"],
+		hz43VanShown: 0,
+		hz43VanTries: 0,
+		hz43ShowVanilla: function() { return false; }
+	};
+	bindAsMethod(host, "hz43SyncHide", []);
+	return host;
+}
+const syncCustom = makeSyncHideHost(3);
+syncCustom.hz43SyncHide();
+expect(syncCustom.hzHideCache === null && syncCustom.hz43HideStyle === 3, "production SyncHide drops a stale hide cache when WatchStyle latches");
+syncCustom.hzHideCache = ["built"];
+syncCustom.hz43SyncHide();
+expect(syncCustom.hzHideCache && syncCustom.hzHideCache[0] === "built", "production SyncHide keeps the hide cache on the same WatchStyle");
+syncCustom.hzWatchStyle = 0;
+syncCustom.hz43SyncHide();
+expect(syncCustom.hzHideCache === null && syncCustom.hz43HideStyle === 0, "production SyncHide rebuilds hide cache on Digital then Off while hideWatch stays true");
+const markHost = { hz43VanMarkName: null };
+bindAsMethod(markHost, "hz43VanMarkName", ["name"]);
+expect(markHost.hz43VanMarkName("WatchIconsWidget_mc") === true && markHost.hz43VanMarkName("MissionIconsWidget_mc") === true && markHost.hz43VanMarkName("EnemyIconsWidget_mc") === true, "production keep-mark still names nearby mission and enemy widgets");
+expect(markHost.hz43VanMarkName("WatchPointerOutline_mc") === false && markHost.hz43VanMarkName("WatchOutline_mc") === false, "production keep-mark rejects heading outline and bezel");
 
 function makePlaceHost() {
 	const host = makeFadeHost();
@@ -894,7 +934,7 @@ function captureWatch(state) {
 	state.units = [];
 	for (let i = 0; i < names.length; i++) {
 		const d = state.clips[names[i]];
-		if (!isWatchClip(d, outline)) continue;
+		if (!isArrangeClip(d, outline)) continue;
 		d.x0 = d.x;
 		d.y0 = d.y;
 		state.units.push(d);
@@ -1172,7 +1212,8 @@ expect(digitalRound.clips.EnemyIconsWidget_mc.visible === true, "Digital keeps e
 expect(digitalRound.clips.O2CO2_mc.x === 21.7 && digitalRound.clips.WatchOutline_mc.x === 0, "Digital does not drag native O2 or outline locals");
 expect(digitalRound.clips.instance66.x === 0 && digitalRound.clips.instance66.y === -0.25, "Digital does not drag native cap instance66 locals");
 expect(digitalRound.clips.instance66.visible === false, "Digital hides native cap instance66 with chrome");
-expect(digitalRound.clips.instance546.visible === true && digitalRound.clips.instance546.x === 110.5 && digitalRound.clips.instance546.y === 110.5, "Digital does not hide or move extra autoname instance546");
+expect(digitalRound.clips.WatchPointerOutline_mc.visible === false && digitalRound.clips.WatchPointerOutline_mc.x === 111, "Digital hides the heading outline with chrome and does not move it with live markers");
+expect(digitalRound.clips.instance546.visible === true && digitalRound.clips.instance546.x === 110.5 && digitalRound.clips.instance546.y === 110.5 && digitalRound.clips.instance546.alpha === 0, "Digital does not hide or move extra autoname instance546");
 expect(digitalRound.clips.instance548.visible === true && digitalRound.clips.instance548.x === 87.2 && digitalRound.clips.instance548.scaleY === 0, "Digital does not hide or move extra autoname instance548");
 expect(digitalRound.clips.instance550.visible === true && digitalRound.clips.instance550.x === 139.45 && digitalRound.clips.instance550.scaleY === 0, "Digital does not hide or move extra autoname instance550");
 expect(digitalRound.clips.BioCondition_mc.visible === true && digitalRound.clips.EnvConditionBase_mc.visible === true, "Digital does not own named bio or env condition clips");
@@ -1183,6 +1224,7 @@ expect(displayed(digitalRound.clips.WatchOutline_mc) === false, "hidden Digital 
 expect(digitalRound.clips.HealthBar_mc.visible === false, "health stays hidden on Digital");
 applyWatchStyle(digitalRound, 1);
 expect(digitalRound.clips.WatchOutline_mc.visible === true, "Digital then Vanilla restores the outline");
+expect(digitalRound.clips.WatchPointerOutline_mc.visible === true && digitalRound.clips.WatchPointerOutline_mc.x === 111, "Digital then Vanilla restores the heading outline at native local");
 expect(digitalRound.clips.instance66.visible === true && digitalRound.clips.instance66.x === 0, "Digital then Vanilla restores instance66 vis and native cap local");
 expect(digitalRound.clips.instance546.x === 110.5 && digitalRound.clips.instance548.y === 141.65 && digitalRound.clips.instance550.x === 139.45, "Digital then Vanilla does not Arrange the extra autonamed siblings");
 expect(digitalRound.clips.WatchIconsWidget_mc.x === 111.35, "Vanilla restores marker locals captured before the custom write");
@@ -1213,12 +1255,14 @@ expect(f11Live.clips.DayCycleBase_mc.visible === true && f11Live.clips.Autopilot
 expect(f11Live.clips.MissionIconsWidget_mc.visible === true && f11Live.clips.EnemyIconsWidget_mc.visible === true, "repeated F11 cycles keep mission and enemy markers on Vanilla");
 expect(f11Live.clips.HealthBar_mc.visible === false && f11Live.clips.JetpackMeterWrapper_mc.visible === false, "repeated F11 cycles never restore health or boost");
 expect(f11Live.clips.Temperature_mc.alpha === 0 && f11Live.clips.Oxygen_mc.alpha === 0 && f11Live.clips.Grav_mc.alpha === 0, "F11 cycles never force INFO alpha");
-expect(f11Live.clips.instance546.visible === true && f11Live.clips.instance548.visible === true && f11Live.clips.instance550.visible === true, "F11 cycles never own-hide the extra autonamed BLG siblings");
+expect(f11Live.clips.instance546.visible === true && f11Live.clips.instance548.visible === true && f11Live.clips.instance550.visible === true, "F11 back to Vanilla leaves extra autonames on native rules");
+expect(f11Live.clips.WatchPointerOutline_mc.visible === true, "F11 back to Vanilla restores the heading outline");
 
 const offExtra = makeWatchState();
 applyWatchStyle(offExtra, 0);
 expect(offExtra.clips.instance66.visible === false, "Off hides the verified cap");
-expect(offExtra.clips.instance546.visible === true && offExtra.clips.instance548.visible === true && offExtra.clips.instance550.visible === true, "Off does not hide extra runtime autonames");
+expect(offExtra.clips.WatchPointerOutline_mc.visible === false, "Off hides the heading outline");
+expect(offExtra.clips.instance546.visible === true && offExtra.clips.instance548.visible === true && offExtra.clips.instance550.visible === true, "Off leaves extra autonames on native rules");
 expect(offExtra.clips.BioCondition_mc.visible === true && offExtra.clips.EnvAlertText.visible === true && offExtra.clips.EnemyDetectionAnim_mc.visible === true, "Off does not hide named bio env alerts or detection through watch ownership");
 
 const savedLay = makeWatchState();
@@ -1276,6 +1320,7 @@ split.face = { x: 0, y: 868.5, sc: 0.8, visible: true };
 applyWatchStyle(split, 3);
 expect(split.clips.WatchOutline_mc.x === 0 && split.clips.O2CO2_mc.x === 21.7 && split.clips.instance66.x === 0, "Digital restores arranged native locals before marker follow");
 expect(split.clips.WatchOutline_mc.visible === false && split.clips.instance66.visible === false, "Digital still hides outline and cap after restore");
+expect(split.clips.WatchPointerOutline_mc.visible === false && split.clips.WatchPointerOutline_mc.x === 111, "Digital hides the heading outline and does not follow it to the face");
 expect(split.clips.WatchIconsWidget_mc.x === 111.35 + (0 + 132 * 0.8 - 110.5), "Digital markers follow the face from the restored outline center");
 expect(split.clips.instance546.visible === true && split.clips.instance546.x === 110.5, "Digital does not hide or move extra autoname instance546");
 expect(split.clips.WatchOutline_mc.alpha === 1 && split.clips.Temperature_mc.alpha === 0, "Digital hide does not write chrome or INFO alpha");
@@ -1322,9 +1367,10 @@ expect(checks.indexOf("wait for the next native") < 0 && checks.indexOf("How soo
 expect(checks.indexOf("LocalEnvironmentData") >= 0 && checks.indexOf("bIsShipInCruiseMode") >= 0, "CHECKS describes restoring the four vis clips from payload formulas");
 expect(checks.indexOf("FadeInPlanetInfo") >= 0, "CHECKS records that INFO appearance is timeline alpha");
 expect(checks.indexOf("does not display") >= 0, "CHECKS does not treat INFO vis-true as shown at alpha 0");
-expect(checks.indexOf("move only the live marker widgets") >= 0, "CHECKS describes custom marker-only follow");
+expect(checks.indexOf("move only the live nearby, mission, and enemy marker widgets") >= 0, "CHECKS describes custom marker-only follow");
 expect(checks.indexOf("HZ43 dump") >= 0 && checks.indexOf("vis/alpha") >= 0, "CHECKS records vis and alpha sibling dumps");
-expect(checks.indexOf("r10-fade-follow-20261107") >= 0, "CHECKS records the fade-follow diagnostic package token");
+expect(checks.indexOf("r12-pointer-mark-20261107") >= 0, "CHECKS records the pointer-mark diagnostic package token");
+expect(checks.indexOf("WatchPointerOutline_mc") >= 0 && checks.indexOf("keep-mark") >= 0, "CHECKS records that heading outline left keep-mark");
 expect(checks.indexOf("does not write a stored FadeIn alpha") >= 0 && checks.indexOf("Digital then Vanilla") >= 0, "CHECKS records Digital then Vanilla restore without forcing INFO alpha");
 expect(checks.indexOf("write-marks") >= 0 && checks.indexOf("does not include why") >= 0, "CHECKS records dump signature omit why");
 expect(checks.indexOf("not in the r10 Scaleform log") >= 0, "CHECKS does not claim Digital then Vanilla was in the logged F11 sequence");
