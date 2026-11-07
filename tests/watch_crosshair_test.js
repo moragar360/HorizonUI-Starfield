@@ -235,13 +235,14 @@ expect(funcBody(as, "hz43ShowVanilla").indexOf("hz43VanInfoName(name)") >= 0, "v
 expect(as.indexOf('HZ43_VAN_INFO:Array = ["Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"]') >= 0, "native conditional readout names stay listed");
 expect(as.indexOf("function hz43StRestore") < 0 && as.indexOf("function hz43StCapture") < 0, "there is no separate snapshot restore of native info");
 expect(funcBody(as, "hz43VanRestoreHid").indexOf("hz43VanWatchClip") >= 0, "restore only touches verified watch clips");
-expect(funcBody(as, "hz43VanRestoreHid").indexOf("hz43HidV") < 0 && funcBody(as, "hz43VanRestoreHid").indexOf("d.alpha") < 0, "restore does not write a stored FadeIn alpha");
-expect(funcBody(as, "hz43VanRestoreHid").indexOf("hz43VanGameVis") >= 0, "restore does not force-show game-owned visibility clips");
+expect(funcBody(as, "hz43VanRestoreHid").indexOf("d.alpha") < 0 && funcBody(as, "hz43VanNote").indexOf("d.alpha") < 0 && as.indexOf("hz43HidAl") < 0, "restore does not write a stored FadeIn alpha");
+expect(funcBody(as, "hz43VanRestoreHid").indexOf("hz43HidV") >= 0 && funcBody(as, "hz43VanRestoreHid").indexOf("hz43VanGameVis") >= 0, "restore puts back last observed game vis, not always true");
+expect(funcBody(as, "hz43VanNote").indexOf("hz43HidV") >= 0 && funcBody(as, "hz43VanNote").indexOf("d.visible") >= 0, "first hide records native vis before our hide");
 expect(funcBody(as, "hz43StHide").indexOf("d.alpha") < 0, "watch own-hide does not write alpha");
 expect(funcBody(as, "hz36HideTick").indexOf("hz43VanWatchClip") >= 0, "hide tick own-hides watch clips apart from health ammo boost");
 expect(funcBody(as, "hz43VanNote").indexOf("hz43VanWatchClip") >= 0, "the hid list refuses non-watch clips");
 expect(as.indexOf('HZ43_VAN_MARK:Array = ["WatchIconsWidget_mc","WatchPointerOutline_mc","MissionIconsWidget_mc","EnemyIconsWidget_mc"]') >= 0, "live markers include mission and enemy widgets");
-expect(as.indexOf("HZ43_HID_MAX:int = 40") >= 0 && funcBody(as, "hz43VanNote").indexOf(">= 32") < 0, "the watch hid list is a 40-slot identity cap, not a 32-slot vis/alpha snapshot");
+expect(as.indexOf("HZ43_HID_MAX:int = 40") >= 0 && funcBody(as, "hz43VanNote").indexOf(">= 32") < 0, "the watch hid list is a 40-slot identity cap");
 expect(funcBody(as, "hz43VanRestoreHid").indexOf("HealthBar") < 0 && funcBody(as, "hz43VanNote").indexOf("HealthBar") < 0, "health is not on the watch hid list");
 expect(funcBody(as, "hz43VanGameVis").indexOf("DayCycleBase_mc") >= 0 && funcBody(as, "hz43VanGameVis").indexOf("Autopilot_mc") >= 0, "game-owned visibility includes day cycle and autopilot");
 expect(as.indexOf("function hz43IdCt") < 0 && as.indexOf("function hz43Ct(") < 0, "style 2 no longer assigns a cached identity ColorTransform");
@@ -422,12 +423,21 @@ function makeClip(name, visible, alpha) {
 function isWatchClip(d) {
 	return !!(d && WATCH_NAMES[d.name]);
 }
+function hidHas(hid, clip) {
+	for (let i = 0; i < hid.length; i++) {
+		if (hid[i].d === clip) return true;
+	}
+	return false;
+}
 function noteClip(hid, d) {
 	if (!isWatchClip(d)) return;
 	for (let i = 0; i < hid.length; i++) {
-		if (hid[i] === d) return;
+		if (hid[i].d === d) {
+			if (GAME_VIS[d.name] && d.visible) hid[i].vis = true;
+			return;
+		}
 	}
-	hid.push(d);
+	hid.push({ d: d, vis: d.visible });
 }
 function stHideWatch(hid, d) {
 	noteClip(hid, d);
@@ -451,8 +461,10 @@ function hideTick(clips, hid, style) {
 }
 function restoreHid(hid) {
 	for (let i = 0; i < hid.length; i++) {
-		const d = hid[i];
-		if (isWatchClip(d) && !GAME_VIS[d.name] && !d.visible) d.visible = true;
+		const d = hid[i].d;
+		if (!isWatchClip(d)) continue;
+		if (GAME_VIS[d.name]) d.visible = !!hid[i].vis;
+		else if (!d.visible) d.visible = true;
 	}
 	hid.length = 0;
 }
@@ -526,19 +538,50 @@ function applyWatchStyle(state, style) {
 const fade = makeWatchState();
 applyWatchStyle(fade, 0);
 expect(fade.clips.WatchOutline_mc.visible === false && fade.clips.WatchOutline_mc.alpha === 0, "Off hides the ring by visible and leaves FadeIn alpha 0");
-expect(fade.hid.indexOf(fade.clips.HealthBar_mc) < 0 && fade.hid.indexOf(fade.clips.EquippedWeaponAmmo_mc) < 0 && fade.hid.indexOf(fade.clips.JetpackMeterWrapper_mc) < 0, "Off does not put health ammo or boost on the watch hid list");
+expect(!hidHas(fade.hid, fade.clips.HealthBar_mc) && !hidHas(fade.hid, fade.clips.EquippedWeaponAmmo_mc) && !hidHas(fade.hid, fade.clips.JetpackMeterWrapper_mc), "Off does not put health ammo or boost on the watch hid list");
 fade.clips.WatchOutline_mc.alpha = 1;
 fade.clips.O2CO2_mc.alpha = 1;
 applyWatchStyle(fade, 1);
 expect(fade.clips.WatchOutline_mc.visible === true && fade.clips.WatchOutline_mc.alpha === 1, "Off then Vanilla shows the ring and keeps post-FadeIn alpha");
 expect(fade.clips.O2CO2thin_mc.visible === true && fade.clips.O2CO2thin_mc.alpha === 0, "Vanilla does not force the native-0 thin bar on");
 expect(fade.clips.Temperature_mc.visible === true && fade.clips.Temperature_mc.alpha === 0, "Vanilla releases native temp visible and leaves its alpha");
-expect(fade.clips.DayCycleBase_mc.visible === false, "Vanilla does not force-show DayCycle after Off hid it");
-expect(fade.clips.OffPlanet_mc.visible === false, "Vanilla does not force-show OffPlanet");
-expect(fade.clips.Autopilot_mc.visible === false, "Vanilla does not force-show Autopilot");
+expect(fade.clips.DayCycleBase_mc.visible === true && fade.clips.locationNameBase_mc.visible === true, "Off then Vanilla restores last observed true day and location with no new event");
+expect(fade.clips.OffPlanet_mc.visible === false && fade.clips.Autopilot_mc.visible === false, "Off then Vanilla restores last observed false off-planet and autopilot with no new event");
 expect(fade.clips.HealthBar_mc.visible === false && fade.clips.HealthBar_mc.alpha === 0, "health stays hidden through Off then Vanilla");
 expect(fade.clips.EquippedWeaponAmmo_mc.visible === false && fade.clips.JetpackMeterWrapper_mc.visible === false, "ammo and boost stay hidden through Off then Vanilla");
 expect(fade.hid.length === 0, "Off then Vanilla leaves the watch hid list empty");
+
+const ship = makeWatchState();
+ship.clips.DayCycleBase_mc.visible = false;
+ship.clips.OffPlanet_mc.visible = true;
+ship.clips.Autopilot_mc.visible = false;
+ship.clips.locationNameBase_mc.visible = true;
+applyWatchStyle(ship, 0);
+applyWatchStyle(ship, 1);
+expect(ship.clips.DayCycleBase_mc.visible === false && ship.clips.Autopilot_mc.visible === false, "ship Off then Vanilla keeps day and autopilot false with no new event");
+expect(ship.clips.OffPlanet_mc.visible === true && ship.clips.locationNameBase_mc.visible === true, "ship Off then Vanilla keeps off-planet and location true with no new event");
+expect(ship.clips.HealthBar_mc.visible === false, "health stays hidden through ship Off then Vanilla");
+
+const cruise = makeWatchState();
+cruise.clips.DayCycleBase_mc.visible = false;
+cruise.clips.OffPlanet_mc.visible = false;
+cruise.clips.Autopilot_mc.visible = true;
+applyWatchStyle(cruise, 0);
+applyWatchStyle(cruise, 1);
+expect(cruise.clips.Autopilot_mc.visible === true, "cruise Off then Vanilla restores last observed true autopilot");
+expect(cruise.clips.OffPlanet_mc.visible === false && cruise.clips.DayCycleBase_mc.visible === false, "cruise Off then Vanilla keeps off-planet and day false");
+
+const duringOff = makeWatchState();
+applyWatchStyle(duringOff, 0);
+duringOff.clips.OffPlanet_mc.visible = true;
+duringOff.clips.DayCycleBase_mc.visible = true;
+applyWatchStyle(duringOff, 0);
+expect(duringOff.clips.OffPlanet_mc.visible === false, "Off still hides a native show until Vanilla");
+applyWatchStyle(duringOff, 1);
+expect(duringOff.clips.OffPlanet_mc.visible === true, "a native show during Off is restored on Vanilla");
+expect(duringOff.clips.DayCycleBase_mc.visible === true, "a still-true day write during Off is restored on Vanilla");
+expect(duringOff.clips.Autopilot_mc.visible === false, "autopilot stays false when no native show arrived during Off");
+expect(duringOff.clips.HealthBar_mc.visible === false, "health stays hidden after a native watch event during Off");
 
 const oneTwo = makeWatchState();
 applyWatchStyle(oneTwo, 0);
@@ -563,6 +606,7 @@ expect(digitalRound.clips.EnemyIconsWidget_mc.visible === true, "Digital keeps e
 expect(digitalRound.clips.HealthBar_mc.visible === false, "health stays hidden on Digital");
 applyWatchStyle(digitalRound, 1);
 expect(digitalRound.clips.WatchOutline_mc.visible === true, "Digital then Vanilla restores the outline");
+expect(digitalRound.clips.DayCycleBase_mc.visible === true && digitalRound.clips.OffPlanet_mc.visible === false, "Digital then Vanilla restores last observed day true and off-planet false");
 expect(digitalRound.clips.MissionIconsWidget_mc.visible === true, "Digital then Vanilla keeps mission markers");
 expect(digitalRound.clips.HealthBar_mc.visible === false && digitalRound.clips.EquippedWeaponAmmo_mc.visible === false, "health and ammo stay hidden after Digital then Vanilla");
 expect(digitalRound.clips.JetpackMeterWrapper_mc.visible === false, "boost stays hidden after Digital then Vanilla");
@@ -576,6 +620,7 @@ applyWatchStyle(f11Live, 4);
 applyWatchStyle(f11Live, 2);
 applyWatchStyle(f11Live, 1);
 expect(f11Live.clips.WatchOutline_mc.visible === true && f11Live.clips.O2CO2_mc.visible === true, "repeated F11 style cycles still restore the original watch face");
+expect(f11Live.clips.DayCycleBase_mc.visible === true && f11Live.clips.Autopilot_mc.visible === false, "repeated F11 cycles restore last observed day true and autopilot false");
 expect(f11Live.clips.MissionIconsWidget_mc.visible === true && f11Live.clips.EnemyIconsWidget_mc.visible === true, "repeated F11 cycles keep mission and enemy markers on Vanilla");
 expect(f11Live.clips.HealthBar_mc.visible === false && f11Live.clips.JetpackMeterWrapper_mc.visible === false, "repeated F11 cycles never restore health or boost");
 
@@ -588,8 +633,11 @@ expect(live.clips.HealthBar_mc.visible === false, "a later Vanilla frame does no
 expect(funcBody(as, "hz43ShowVanilla").indexOf("clip.alpha = 1") < 0, "vanilla does not force the thin bar to alpha 1");
 expect(checks.indexOf("keep those four clips hidden") < 0, "CHECKS does not keep-hide native info on vanilla");
 expect(checks.indexOf("keep those four extra native readout clips hidden") < 0, "CHECKS risks do not keep-hide native info every frame");
+expect(checks.indexOf("wait for the next native") < 0 && checks.indexOf("How soon that write repeats") < 0, "CHECKS does not accept missing native events as Off to Vanilla restore");
+expect(checks.indexOf("last") >= 0 && checks.indexOf("observed") >= 0, "CHECKS describes restoring last observed game vis");
 expect(checks.indexOf("health") >= 0 && checks.indexOf("ammo") >= 0 && checks.indexOf("boost") >= 0, "CHECKS records that health ammo and boost stay off the watch hid list");
 expect(checks.indexOf("FadeIn") >= 0 || checks.indexOf("native") >= 0, "CHECKS describes native watch passthrough");
+expect(checks.indexOf("not proven freeze") >= 0, "CHECKS reports FadeIn on invisible children as unknown, not a freeze");
 
 function holdPathLive(awAlphaHidden, ancestorAlphaRestored) {
 	return ancestorAlphaRestored ? 1 : (awAlphaHidden ? 0 : 1);

@@ -18514,6 +18514,7 @@
       private var hz43VanLogged:Boolean = false;
       private var hz43VanUnitLog:Boolean = false;
       private var hz43HidA:Array = null;
+      private var hz43HidV:Array = null;
       private var hz43HidN:int = 0;
       private var hz43Kid:Array = null;
       private var hz43KidHid:Array = null;
@@ -18620,7 +18621,7 @@
       }
 
       // Native LocalEnvironmentData / UpdateLocationName write these. Off hides them by visible.
-      // Vanilla release does not write visible, so a later game event is not overwritten by a stale snapshot.
+      // Restore puts back the last visibility the game was observed to have, not always true.
       private function hz43VanGameVis(name:String) : Boolean
       {
          return name == "DayCycleBase_mc" || name == "OffPlanet_mc" || name == "Autopilot_mc" || name == "locationNameBase_mc";
@@ -18666,7 +18667,7 @@
       }
 
       // Puts the game watch back on BottomLeftGroup. Undo Horizon Off / custom hides only.
-      // Do not write alpha or force-show native conditional clips; FadeIn and the game own those.
+      // Do not write alpha. Game-owned visibility returns to the last observed native vis.
       // Horizon-drawn watch text stays off this face.
       private function hz43ShowVanilla() : Boolean
       {
@@ -19517,6 +19518,7 @@
          this.hz43VanNm = new Array(n);
          this.hz43VanP = new Point();
          this.hz43HidA = new Array(HZ43_HID_MAX);
+         this.hz43HidV = new Array(HZ43_HID_MAX);
          var i:int = 0;
          while(i < n) { this.hz43VanGot[i] = 0; i++; }
          return s;
@@ -19830,30 +19832,46 @@
       {
          if(!d || !this.hz43VanWatchClip(d)) { return; }
          if(this.hz43HidA == null) { this.hz43HidA = new Array(HZ43_HID_MAX); }
-         if(this.hz43HidN >= HZ43_HID_MAX) { return; }
+         if(this.hz43HidV == null) { this.hz43HidV = new Array(HZ43_HID_MAX); }
          var i:int = 0;
          while(i < this.hz43HidN)
          {
-            if(this.hz43HidA[i] == d) { return; }
+            if(this.hz43HidA[i] == d)
+            {
+               // A native show during Off is visible until this hide tick. A native hide is not observable.
+               if(this.hz43VanGameVis(d.name) && d.visible) { this.hz43HidV[i] = true; }
+               return;
+            }
             i++;
          }
+         if(this.hz43HidN >= HZ43_HID_MAX) { return; }
          this.hz43HidA[this.hz43HidN] = d;
+         this.hz43HidV[this.hz43HidN] = d.visible;
          this.hz43HidN++;
       }
 
       // Release Horizon visible-hides of watch siblings. Never writes alpha.
-      // Clips the game writes (day cycle, off-planet, autopilot, location name) are not force-shown.
+      // Game-owned clips return to the last observed native vis (true or false), not always true.
       private function hz43VanRestoreHid() : void
       {
          var i:int = 0;
          while(i < this.hz43HidN)
          {
             var d:DisplayObject = this.hz43HidA[i] as DisplayObject;
-            if(d && this.hz43VanWatchClip(d) && !this.hz43VanGameVis(d.name))
+            if(d && this.hz43VanWatchClip(d))
             {
-               if(!d.visible) { d.visible = true; }
+               if(this.hz43VanGameVis(d.name))
+               {
+                  var want:Boolean = this.hz43HidV != null && this.hz43HidV[i];
+                  if(d.visible != want) { d.visible = want; }
+               }
+               else if(!d.visible)
+               {
+                  d.visible = true;
+               }
             }
             this.hz43HidA[i] = null;
+            if(this.hz43HidV != null) { this.hz43HidV[i] = false; }
             i++;
          }
          this.hz43HidN = 0;
