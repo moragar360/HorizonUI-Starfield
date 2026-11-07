@@ -1132,22 +1132,32 @@ int main()
 	Expect(readme.find("whether a face has another script's glyphs, and how it draws them, is untested.") != std::string::npos &&
 		readme.find("which is untested") == std::string::npos,
 		"the readme says the font map is stock and only other scripts' glyphs are untested");
-	Expect(readme.find("so neither check is known to fire for it, and the gold card can cover its card. This rule is the guard.") != std::string::npos,
-		"the readme does not lean on the StarUI checks");
+	Expect(readme.find("The StarUI Ship Builder 1.4 copy checked for this work is staged in Vortex, not deployed, and only its `Interface` movies were listed. So neither check is known to fire for it, and the gold card can cover its card. This rule is the guard.") != std::string::npos &&
+		readme.find("ships only Interface files") == std::string::npos,
+		"the readme does not lean on the StarUI checks or claim more than the staged files show");
+	Expect(readme.find("For game version 1.16.244, from one extract, a loose library is stock only with these values:") != std::string::npos,
+		"the readme ties the stock library values to the game version they came from");
 	Expect(readme.find("the log shows `SETTINGS hex focus=` with the holder before and after `>`, here `list>hex`, and the code is selected. Each click selects the whole code again.") != std::string::npos &&
-		readme.find("the log shows `SETTINGS custom focus=hex length=6`, then `HEX` and the code") != std::string::npos &&
+		readme.find("the log shows `SETTINGS custom focus=hex length=6`, the gold changes to the typed code, and the log shows `FACT ini | user file merged`. The plugin saves the code to the player ini as `AccentHex` and does not log it.") != std::string::npos &&
+		readme.find("then `HEX` and the code") == std::string::npos &&
+		plugin.find("\tFact(\"ini\", \"user file merged\");\n") != std::string::npos &&
 		readme.find("Typing that leaves the code unchanged is a failure even when the log reads `hex`.") != std::string::npos &&
-		readme.find("Each close writes `SETTINGS close focus=` with the holder before and after `>`. When before is `hex` or `ours`, after must read the holder the hex click read before `>`, here `list`. Otherwise after equals before.") != std::string::npos &&
-		readme.find("A first hex click that reads `hex>hex` or `ours>hex` means the game moved focus before the mod could note the holder.") != std::string::npos,
-		"the readme gates the focus hand-back on log lines and on typing");
-	Expect(readme.find("Repeat one hex click and one close wherever the gear shows: in the hangar overview, in Flight Check, in paint mode, and while renaming the ship.") != std::string::npos,
-		"the readme checks the focus hand-back on every screen with the gear");
+		readme.find("Each close writes `SETTINGS close focus=` with the holder before and after `>`. If before is `list`, `other`, or `none`, after equals before. If before is `hex` or `ours` and the session's first hex click read `list` or `other` before `>`, after must read that holder, here `list`. Otherwise after reads `list` while the parts list shows, and `none` when it is hidden.") != std::string::npos &&
+		readme.find("Here, with the parts list holding focus, a first hex click that reads `hex>hex` or `ours>hex` means the game moved focus before the mod could note the holder. Report it. Then CUSTOM may read `focus=ours`, and the close falls back to the parts list.") != std::string::npos,
+		"the readme gates the focus hand-back on log lines and on typing, and grades a close by the holder the hex click noted");
+	Expect(readme.find("Repeat one hex click and one close wherever the gear shows: in the hangar overview, in Flight Check, in paint mode, and while renaming the ship. Grade the close by the same rule") != std::string::npos &&
+		readme.find("In the hangar overview the parts list is hidden and nothing usually holds focus, so the hex click reads `none`, `hex`, or `ours` before `>`, and the close's after reads `none`.") != std::string::npos &&
+		readme.find("Where a game object such as the rename field holds focus, expect `other>hex`, then `hex>other`.") != std::string::npos &&
+		readme.find("The close's after must read what that hex click read before `>`") == std::string::npos,
+		"the readme checks the focus hand-back on every screen with the gear, including the hangar's empty start");
 	Expect(readme.find("Check Esc tapped and held for about a second, and B the same, in Settings and in Arrange.") != std::string::npos &&
-		readme.find("act when the key or button is released, as the game's buttons do, and neither half should reach the game.") != std::string::npos &&
+		readme.find("act when the key or pad button is released, as the game's buttons do, and neither half should reach the game.") != std::string::npos &&
 		readme.find("Enter in Arrange acts as OK, also on release. Arrange's arrow keys act on the press and repeat while held.") != std::string::npos &&
-		readme.find("Click OK and CANCEL in Arrange with the mouse: the click does not reach the parts list or the game's buttons.") != std::string::npos &&
-		readme.find("act when the button is released") == std::string::npos,
-		"the readme checks that Esc, Enter, B, and Arrange's mouse buttons act on release and reach only our panels");
+		readme.find("Arrange's mouse buttons act on the press, and the plugin eats the release too. Arrange ignores the first mouse press after it opens, so the first click does nothing. After that, click OK and CANCEL in Arrange with the mouse: the click does not reach the parts list or the game's buttons.") != std::string::npos &&
+		readme.find("act when the button is released") == std::string::npos &&
+		FunctionBody(gold, "openArrange").find("\n         this.ignorePress = true;\n") != std::string::npos &&
+		FunctionBody(gold, "onPointer").find("if(param1 == \"D\")\n         {\n            if(this.ignorePress) { this.ignorePress = false; return; }\n") != std::string::npos,
+		"the readme checks that Esc, Enter, and B act on release, that Arrange's mouse acts on the press after the ignored first press, and that only our panels hear them");
 	Expect(gold.find("this.note(\"MODVALS \" + this.modVals[v]);") != std::string::npos && gold.find("this.modValsLeft = 24;") != std::string::npos,
 		"payload numbers and shown text are logged for a bounded number of modules");
 	Expect(!NotesHideFaces("         this.note(\"FONT face=\" + fmt.font);") && !NotesHideFaces("         this.note(\"FONT list=\" + FACES.join(\",\"));") &&
