@@ -2536,13 +2536,13 @@
             if(this.hzHideVanillaBoost) { names.push("JetpackMeterWrapper_mc","JetpackMeterAnim_mc"); }
             if(this.hzHideVanillaCompass)
             {
-               names.push("MissionIconsWidget_mc","EnemyIconsWidget_mc");
-               // Styles 1 and 2 show the game's watch face. Extra native readouts stay hidden on every style.
+               // Styles 1 and 2 leave the native watch, including its marker widgets and conditional info.
                if(this.hzWatchStyle != 1 && this.hzWatchStyle != 2)
                {
+                  names.push("MissionIconsWidget_mc","EnemyIconsWidget_mc");
                   names.push("WatchOutline_mc","DayCycleBase_mc","locationNameBase_mc");
+                  names.push("Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc");
                }
-               names.push("Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc");
             }
             if(this.hzHideVanillaWatch) { names.push("O2CO2_mc","O2CO2thin_mc","WatchOutline_mc","BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"); }
             // Style 0 must hide the inner radar and nearby markers. Styles 3 and 4 keep those clips on the Horizon face.
@@ -2569,9 +2569,9 @@
                {
                   var bc:DisplayObject = this.hzBlg.getChildAt(bi);
                   var keepMark:Boolean = (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && bc && (bc.name == "WatchIconsWidget_mc" || bc.name == "WatchPointerOutline_mc");
-                  if(bc && this.hz43VanInfoName(bc.name)) { bi++; continue; }
-                  if(bc && bc.visible && !keepMark && bc.name != "EnemyDetectionAnim_mc" && bc.name != "Autopilot_mc" && bc.name != "EnvAlertText" && bc.name != "BioAlertText" && bc.name != "LocationAlertText")
+                  if(bc && bc.visible && !keepMark && bc.name != "EnemyDetectionAnim_mc" && bc.name != "EnvAlertText" && bc.name != "BioAlertText" && bc.name != "LocationAlertText" && !(bc.name != null && (bc.name.indexOf("Bio") == 0 || bc.name.indexOf("Env") == 0)))
                   {
+                     this.hz43VanNote(bc);
                      bc.visible = false;
                   }
                   bi++;
@@ -14561,7 +14561,7 @@
             catch(errP:Error) { }
             if(d == null) { continue; }
             if(d.stage == null) { this.hz36HideStale = true; }
-            if(this.hz43VanInfoName(String(e.n))) { this.hz43StHide(d); continue; }
+            if(d.visible || d.alpha != 0) { this.hz43VanNote(d); }
             if(d.visible) { d.visible = false; }
             if(d.alpha != 0) { d.alpha = 0; }
          }
@@ -18487,6 +18487,10 @@
       private var hz43VanHW:Number = 180;
       private var hz43VanHH:Number = 180;
       private var hz43VanCap:int = 0;
+      private var hz43VanNeed:int = 1;
+      private var hz43VanKids:int = -1;
+      private var hz43HidV:Array = null;
+      private var hz43HidAl:Array = null;
       private var hz43VanWrote:Boolean = false;
       private var hz43VnAx:int = -2;
       private var hz43VnAy:int = -2;
@@ -18595,13 +18599,16 @@
       private var hz43AttT:TextField = null;
       private var hz43Cards:Array = null;
 
-      // The game watch is one assembly. These names find its pieces, including the top bar and the marker pips.
-      // Styles 1 and 2 move the outermost piece so the children ride with it. Styles 3 and 4 hide the chrome and keep the markers.
+      // Native watch pieces are BottomLeftGroup siblings, not one parent. Arrange writes each sibling root.
+      // Nested clips (O2CO2_mc.O2Anim_mc) stay inside their sibling and are never their own unit.
+      // Styles 3 and 4 hide the chrome and keep the markers.
       private static const HZ43_VAN_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","WatchIconsWidget_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"];
       private static const HZ43_VAN_MARK:Array = ["WatchIconsWidget_mc","WatchPointerOutline_mc"];
-      // Extra native readouts. Styles 1 and 2 keep these hidden. Off and the custom faces hide them too.
+      // Native conditional readouts. Styles 1 and 2 leave the game's rules in place. Off and custom hide them with the chrome.
       private static const HZ43_VAN_INFO:Array = ["Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"];
       private static const HZ43_VAN_A:Array = ["BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"];
+      private static const HZ43_VAN_MAX:int = 24;
+      private static const HZ43_VAN_FACE:Number = 221;
 
       private function hz43VanInfoName(name:String) : Boolean
       {
@@ -18614,18 +18621,19 @@
          return false;
       }
 
-      // Purpose: hide one extra native readout. Inputs: d — Temperature_mc, Oxygen_mc,
-      // Grav_mc, or OffPlanet_mc. Outputs: visible=false and alpha=0. Styles 1 and 2
-      // keep this hide; restoring the face must not undo it.
+      // Purpose: hide one native watch clip Horizon currently owns (Off / custom chrome).
+      // Inputs: d — a BottomLeftGroup watch sibling. Outputs: visible=false and alpha=0.
+      // Styles 1 and 2 do not call this; native FadeIn and LocalEnvironmentData keep those clips.
       private function hz43StHide(d:DisplayObject) : void
       {
          if(!d) { return; }
+         if(d.visible || d.alpha != 0) { this.hz43VanNote(d); }
          if(d.visible) { d.visible = false; }
          if(d.alpha != 0) { d.alpha = 0; }
       }
 
-      // Purpose: hide all extra native readouts under BottomLeftGroup.
-      // Inputs: hzBlg. Outputs: each INFO clip at visible=false and alpha=0.
+      // Purpose: hide native conditional readouts with Off / custom chrome.
+      // Inputs: hzBlg. Outputs: each INFO clip noted then hidden. Not used on styles 1 and 2.
       private function hz43InfoHide() : void
       {
          if(!this.hzBlg) { return; }
@@ -18638,13 +18646,15 @@
          }
       }
 
-      // Puts the game watch back on BottomLeftGroup. One trace names the clips that were found. No font name.
-      // Styles 1 and 2 are a passthrough of that watch: undo a Horizon hide of the face, then hide
-      // Temperature / Oxygen / Grav / OffPlanet again. Do not draw Horizon text onto the face.
+      // Puts the game watch back on BottomLeftGroup. Undo Horizon Off / custom hides only.
+      // Do not write alpha or force-show native conditional clips; FadeIn and the game own those.
+      // Horizon-drawn watch text stays off this face.
       private function hz43ShowVanilla() : Boolean
       {
          if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
          if(!this.hzBlg) { return false; }
+         this.hz43VanRestoreHid();
+         this.hz43VanBlgChrome(false);
          var found:String = "";
          var hits:int = 0;
          var n:int = 0;
@@ -18655,15 +18665,6 @@
             var clip:DisplayObject = this.hzFindByName(this.hzBlg,name,0);
             if(clip)
             {
-               clip.visible = true;
-               clip.alpha = 1;
-               var p:DisplayObjectContainer = clip.parent;
-               while(p != null && p != this)
-               {
-                  if(!p.visible) { p.visible = true; }
-                  if(p == this.hzBlg) { break; }
-                  p = p.parent;
-               }
                if(found.length > 0) { found += ","; }
                found += name;
                hits++;
@@ -18677,8 +18678,6 @@
             if(fade && fade.alpha == 0) { fade.alpha = 1; }
             n++;
          }
-         this.hz43VanBlgChrome(false);
-         this.hz43InfoHide();
          this.hz43VanTries++;
          if(hits == 0 && this.hz43VanTries < 180) { return false; }
          if(!this.hz43VanLogged)
@@ -18700,13 +18699,10 @@
             this.hzHideCache = null;
             if(showVan) { this.hz43VanShown = 0; this.hz43VanTries = 0; }
          }
-         // Face clips are restored by ShowVanilla. Extra native readouts stay hidden on styles 1 and 2,
-         // including live F11 1↔2 which does not re-run ShowVanilla.
          if(showVan && this.hz43VanShown == 0)
          {
             if(this.hz43ShowVanilla()) { this.hz43VanShown = 1; }
          }
-         if(showVan && this.hz43VanShown == 1) { this.hz43InfoHide(); }
       }
 
       // Same show rule the game uses for the center reticle, including iron sights.
@@ -19488,7 +19484,7 @@
          s.visible = false;
          s.alpha = 0;
          this.hz43VanHnd = s;
-         var n:int = 16;
+         var n:int = HZ43_VAN_MAX;
          this.hz43VanD = new Array(n);
          this.hz43VanX = new Array(n);
          this.hz43VanY = new Array(n);
@@ -19502,6 +19498,8 @@
          this.hz43VanNm = new Array(n);
          this.hz43VanP = new Point();
          this.hz43HidA = new Array(32);
+         this.hz43HidV = new Array(32);
+         this.hz43HidAl = new Array(32);
          var i:int = 0;
          while(i < n) { this.hz43VanGot[i] = 0; i++; }
          return s;
@@ -19518,10 +19516,10 @@
       {
          if(name == null) { return true; }
          if(name.length == 0) { return false; }
-         if(name == "EnemyDetectionAnim_mc" || name == "Autopilot_mc") { return true; }
+         if(name == "EnemyDetectionAnim_mc") { return true; }
          if(name.indexOf("Alert") >= 0) { return true; }
          if(name.indexOf("Bio") == 0 || name.indexOf("Env") == 0) { return true; }
-         if(name.indexOf("Horizon") == 0 || name.indexOf("Mission") == 0 || name.indexOf("Enemy") == 0) { return true; }
+         if(name.indexOf("Horizon") == 0) { return true; }
          return false;
       }
 
@@ -19533,8 +19531,9 @@
       private function hz43VanNamed(name:String) : Boolean
       {
          if(name == null) { return false; }
-         if(name.length == 0) { return true; }
          if(this.hz43VanSkip(name)) { return false; }
+         if(name.length == 0) { return true; }
+         if(name == "MissionIconsWidget_mc" || name == "EnemyIconsWidget_mc" || name == "Autopilot_mc") { return true; }
          var i:int = 0;
          while(i < HZ43_VAN_N.length)
          {
@@ -19544,38 +19543,42 @@
          return name.indexOf("Watch") == 0;
       }
 
-      private function hz43VanSafe(box:DisplayObjectContainer) : Boolean
-      {
-         if(!box || box == this.hzBlg) { return false; }
-         if(this.hz43VanSkip(box.name)) { return false; }
-         var i:int = 0;
-         while(i < box.numChildren)
-         {
-            var ch:DisplayObject = box.getChildAt(i);
-            var cn:String = ch ? ch.name : "";
-            if(cn != null && cn.length > 0 && !this.hz43VanNamed(cn)) { return false; }
-            i++;
-         }
-         return true;
-      }
-
+      // Direct BottomLeftGroup child that owns clip. Nested O2Anim_mc maps to O2CO2_mc, never to itself.
       private function hz43VanRootOf(clip:DisplayObject) : DisplayObject
       {
+         if(!clip || clip == this.hzBlg || clip == this) { return null; }
          var root:DisplayObject = clip;
          var p:DisplayObjectContainer = clip.parent;
          while(p != null && p != this && p != this.hzBlg)
          {
-            if(!this.hz43VanSafe(p)) { break; }
             root = p;
             p = p.parent;
          }
-         if(root == this.hzBlg || root == this) { return clip; }
+         if(p != this.hzBlg) { return null; }
+         if(this.hz43VanSkip(root.name)) { return null; }
          return root;
+      }
+
+      private function hz43VanHasAncestorUnit(d:DisplayObject) : Boolean
+      {
+         var p:DisplayObjectContainer = d ? d.parent : null;
+         while(p != null && p != this.hzBlg && p != this)
+         {
+            var i:int = 0;
+            while(i < this.hz43VanN)
+            {
+               if(this.hz43VanD[i] == p) { return true; }
+               i++;
+            }
+            p = p.parent;
+         }
+         return false;
       }
 
       private function hz43VanAdd(root:DisplayObject) : void
       {
-         if(!root || root == this.hzBlg || this.hz43VanN >= 16) { return; }
+         if(!root || root == this.hzBlg || this.hz43VanN >= HZ43_VAN_MAX) { return; }
+         if(this.hz43VanHasAncestorUnit(root)) { return; }
          var i:int = 0;
          while(i < this.hz43VanN)
          {
@@ -19587,15 +19590,15 @@
          this.hz43VanN++;
       }
 
-      private function hz43VanGather(box:DisplayObjectContainer, depth:int) : void
+      // Only BottomLeftGroup siblings. Recursing into O2CO2_mc would add O2Anim_mc as a second unit.
+      private function hz43VanGather() : void
       {
-         if(!box || depth > 4) { return; }
+         if(!this.hzBlg) { return; }
          var i:int = 0;
-         while(i < box.numChildren)
+         while(i < this.hzBlg.numChildren)
          {
-            var ch:DisplayObject = box.getChildAt(i);
-            if(ch && this.hz43VanNamed(ch.name)) { this.hz43VanAdd(this.hz43VanRootOf(ch)); }
-            if(ch is DisplayObjectContainer && !this.hz43VanSkip(ch.name)) { this.hz43VanGather(DisplayObjectContainer(ch),depth + 1); }
+            var ch:DisplayObject = this.hzBlg.getChildAt(i);
+            if(ch && this.hz43VanNamed(ch.name)) { this.hz43VanAdd(ch); }
             i++;
          }
       }
@@ -19619,10 +19622,15 @@
          this.hz43VanUYA[this.hz43VanN] = uy;
       }
 
-      // One assembly: the outermost watch clips. Nested pieces stay inside them, so the top bar cannot be left behind.
+      // Sibling roots under BottomLeftGroup. Do not latch a partial list forever.
       private function hz43VanCapture() : void
       {
-         if(this.hz43VanCap != 0 || !this.hzBlg || this.hz43VanP == null) { return; }
+         if(!this.hzBlg || this.hz43VanP == null) { return; }
+         if(this.hz43VanCap != 0)
+         {
+            if(this.hz43VanWrote) { return; }
+            if(this.hz43VanNeed == 0 && this.hzBlg.numChildren == this.hz43VanKids) { return; }
+         }
          this.hz43VanN = 0;
          var k:int = 0;
          while(k < HZ43_VAN_N.length)
@@ -19631,7 +19639,7 @@
             if(named) { this.hz43VanAdd(this.hz43VanRootOf(named)); }
             k++;
          }
-         this.hz43VanGather(this.hzBlg,0);
+         this.hz43VanGather();
          if(this.hz43VanN == 0) { return; }
          var left:Number = 0;
          var top:Number = 0;
@@ -19645,7 +19653,8 @@
          while(i < count)
          {
             var d:DisplayObject = this.hz43VanD[i] as DisplayObject;
-            if(d && d.parent is DisplayObjectContainer)
+            if(d && d.parent != this.hzBlg) { }
+            else if(d && d.parent is DisplayObjectContainer)
             {
                var slot:int = this.hz43VanN;
                this.hz43VanUnitOf(d.parent);
@@ -19674,19 +19683,37 @@
             }
             i++;
          }
+         var hasOutline:Boolean = false;
+         var hasO2:Boolean = false;
+         var oiChk:int = 0;
+         while(oiChk < this.hz43VanN)
+         {
+            var nmChk:String = String(this.hz43VanNm[oiChk]);
+            if(nmChk == "WatchOutline_mc") { hasOutline = true; }
+            if(nmChk == "O2CO2_mc") { hasO2 = true; }
+            oiChk++;
+         }
+         if(!hasOutline || !hasO2)
+         {
+            this.hz43VanNeed = 1;
+            this.hz43VanCap = 0;
+            this.hz43VanKids = this.hzBlg.numChildren;
+            return;
+         }
          if(!any)
          {
             left = 0;
             top = 0;
-            right = 180;
-            bot = 180;
+            right = HZ43_VAN_FACE;
+            bot = HZ43_VAN_FACE;
+            any = true;
          }
          this.hz43VanHX = left;
          this.hz43VanHY = top;
          this.hz43VanHW = right - left;
          this.hz43VanHH = bot - top;
-         if(!(this.hz43VanHW > 2)) { this.hz43VanHW = 180; }
-         if(!(this.hz43VanHH > 2)) { this.hz43VanHH = 180; }
+         if(!(this.hz43VanHW > 2)) { this.hz43VanHW = HZ43_VAN_FACE; }
+         if(!(this.hz43VanHH > 2)) { this.hz43VanHH = HZ43_VAN_FACE; }
          this.hz43VanRad = this.hz43VanHW;
          var cx:Number = this.hz43VanHX + this.hz43VanHW / 2;
          var cy:Number = this.hz43VanHY + this.hz43VanHH / 2;
@@ -19734,6 +19761,8 @@
             trace("HZ43 watch unit=" + names);
             trace("HZ43 blg=" + kids);
          }
+         this.hz43VanKids = this.hzBlg.numChildren;
+         this.hz43VanNeed = 0;
          this.hz43VanCap = 1;
       }
 
@@ -19746,7 +19775,7 @@
             if(int(this.hz43VanGot[i]) != 0)
             {
                var d:DisplayObject = this.hz43VanClip(i);
-               if(d)
+               if(d && !this.hz43VanHasAncestorUnit(d))
                {
                   var ux:Number = Number(this.hz43VanUXA[i]);
                   var uy:Number = Number(this.hz43VanUYA[i]);
@@ -19782,8 +19811,11 @@
 
       private function hz43VanNote(d:DisplayObject) : void
       {
-         if(!d || this.hz43HidA == null || this.hz43HidN >= 32) { return; }
-         if(this.hz43VanInfoName(d.name)) { return; }
+         if(!d) { return; }
+         if(this.hz43HidA == null) { this.hz43HidA = new Array(32); }
+         if(this.hz43HidV == null) { this.hz43HidV = new Array(32); }
+         if(this.hz43HidAl == null) { this.hz43HidAl = new Array(32); }
+         if(this.hz43HidN >= 32) { return; }
          var i:int = 0;
          while(i < this.hz43HidN)
          {
@@ -19791,6 +19823,8 @@
             i++;
          }
          this.hz43HidA[this.hz43HidN] = d;
+         this.hz43HidV[this.hz43HidN] = d.visible;
+         this.hz43HidAl[this.hz43HidN] = d.alpha;
          this.hz43HidN++;
       }
 
@@ -19800,11 +19834,11 @@
          while(i < this.hz43HidN)
          {
             var d:DisplayObject = this.hz43HidA[i] as DisplayObject;
-            var n:String = d ? d.name : "";
-            if(d && !this.hz43VanInfoName(n))
+            if(d)
             {
-               d.visible = true;
-               d.alpha = 1;
+               d.visible = this.hz43HidV[i] ? true : false;
+               var a:Number = Number(this.hz43HidAl[i]);
+               d.alpha = isNaN(a) ? 1 : a;
             }
             this.hz43HidA[i] = null;
             i++;
@@ -19813,7 +19847,7 @@
       }
 
       // Direct BottomLeftGroup children that are watch chrome, including unnamed cap art.
-      // Alerts, detection, autopilot, and the live marker clips stay on their own rules.
+      // Alerts and detection stay on their own rules. Show does not write alpha: native FadeIn owns it.
       private function hz43VanBlgChrome(hide:Boolean) : void
       {
          if(!this.hzBlg) { return; }
@@ -19826,18 +19860,11 @@
             if(!d || this.hz43VanSkip(n) || this.hz43VanMarkName(n) || !this.hz43VanNamed(n) || holds) { }
             else if(hide)
             {
-               if(this.hz43VanInfoName(n)) { this.hz43StHide(d); }
-               else
-               {
-                  if(d.visible || d.alpha != 0) { this.hz43VanNote(d); }
-                  d.visible = false;
-                  d.alpha = 0;
-               }
+               this.hz43StHide(d);
             }
-            else if(!this.hz43VanInfoName(n))
+            else if(n.length == 0)
             {
                if(!d.visible) { d.visible = true; }
-               if(d.alpha < 1) { d.alpha = 1; }
             }
             i++;
          }
@@ -19846,7 +19873,7 @@
       // Styles 3 and 4 hide the vanilla bezel and labels. The live marker clips stay visible.
       private function hz43VanChrome(hide:Boolean) : void
       {
-         if(!hide) { this.hz43VanRestoreHid(); this.hz43InfoHide(); }
+         if(!hide) { this.hz43VanRestoreHid(); this.hz43VanBlgChrome(false); return; }
          var i:int = 0;
          while(i < HZ43_VAN_N.length)
          {
@@ -19879,13 +19906,7 @@
                         var scMark:Boolean = sc && (sc.name == "WatchIconsWidget_mc" || sc.name == "WatchPointerOutline_mc" || (sc is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(sc))));
                         if(sc && !scMark)
                         {
-                           if(this.hz43VanInfoName(sc.name)) { this.hz43StHide(sc); }
-                           else
-                           {
-                              if(sc.visible || sc.alpha != 0) { this.hz43VanNote(sc); }
-                              sc.visible = false;
-                              sc.alpha = 0;
-                           }
+                           this.hz43StHide(sc);
                         }
                         si++;
                      }
@@ -19902,13 +19923,7 @@
                      var chMark:Boolean = ch && (ch.name == "WatchIconsWidget_mc" || ch.name == "WatchPointerOutline_mc" || (ch is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(ch))));
                      if(ch && !chMark)
                      {
-                        if(this.hz43VanInfoName(ch.name)) { this.hz43StHide(ch); }
-                        else
-                        {
-                           if(ch.visible || ch.alpha != 0) { this.hz43VanNote(ch); }
-                           if(ch.visible) { ch.visible = false; }
-                           if(ch.alpha != 0) { ch.alpha = 0; }
-                        }
+                        this.hz43StHide(ch);
                      }
                      else if(ch)
                      {
@@ -19920,18 +19935,7 @@
                }
                else if(hide && !keep)
                {
-                  if(this.hz43VanInfoName(name)) { this.hz43StHide(clip); }
-                  else
-                  {
-                     if(clip.visible || clip.alpha != 0) { this.hz43VanNote(clip); }
-                     if(clip.visible) { clip.visible = false; }
-                     if(clip.alpha != 0) { clip.alpha = 0; }
-                  }
-               }
-               else if(!hide && !this.hz43VanInfoName(name))
-               {
-                  if(!clip.visible) { clip.visible = true; }
-                  if(clip.alpha < 1) { clip.alpha = 1; }
+                  this.hz43StHide(clip);
                }
             }
             i++;
