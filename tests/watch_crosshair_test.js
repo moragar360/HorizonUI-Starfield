@@ -15,6 +15,7 @@ const as = readText(path.join(root, "actionscript", "horizon_block.as"));
 const ini = readText(path.join(root, "Interface", "HorizonUI", "HorizonUI.default.ini"));
 const preset = readText(path.join(root, "preset", "HorizonUI.moragars-choice.ini"));
 const checks = readText(path.join(root, "CHECKS_0.43.1.0.md"));
+const changelog = readText(path.join(root, "CHANGELOG.md"));
 
 let failed = 0;
 function expect(cond, msg) {
@@ -236,8 +237,15 @@ expect(as.indexOf('HZ43_VAN_INFO:Array = ["Temperature_mc","Oxygen_mc","Grav_mc"
 expect(as.indexOf("function hz43StRestore") < 0 && as.indexOf("function hz43StCapture") < 0, "there is no separate snapshot restore of native info");
 expect(funcBody(as, "hz43VanRestoreHid").indexOf("hz43VanWatchClip") >= 0, "restore only touches verified watch clips");
 expect(funcBody(as, "hz43VanRestoreHid").indexOf("d.alpha") < 0 && funcBody(as, "hz43VanNote").indexOf("d.alpha") < 0 && as.indexOf("hz43HidAl") < 0, "restore does not write a stored FadeIn alpha");
-expect(funcBody(as, "hz43VanRestoreHid").indexOf("hz43HidV") >= 0 && funcBody(as, "hz43VanRestoreHid").indexOf("hz43VanGameVis") >= 0, "restore puts back last observed game vis, not always true");
-expect(funcBody(as, "hz43VanNote").indexOf("hz43HidV") >= 0 && funcBody(as, "hz43VanNote").indexOf("d.visible") >= 0, "first hide records native vis before our hide");
+expect(funcBody(as, "hz43VanRestoreHid").indexOf("hz43VanEnvWant") >= 0 && funcBody(as, "hz43VanRestoreHid").indexOf("hz43VanGameVis") >= 0, "restore applies payload formulas to the four native vis clips");
+expect(funcBody(as, "hz43VanNote").indexOf("hz43HidV") < 0 && funcBody(as, "hz43VanRestoreHid").indexOf("hz43HidV") < 0, "hide identity list does not sample clip.visible for restore");
+expect(funcBody(as, "hzOnLocalEnv").indexOf("hz43VanEnvCache") >= 0, "LocalEnvironmentData updates the watch vis cache");
+expect(funcBody(as, "hz43VanEnvCache").indexOf("bInSpaceship") >= 0 && funcBody(as, "hz43VanEnvCache").indexOf("bIsLanded") >= 0 && funcBody(as, "hz43VanEnvCache").indexOf("bIsShipInCruiseMode") >= 0, "cache uses native local and cruise keys");
+expect(funcBody(as, "hz43VanEnvWant").indexOf('lang != "ja"') >= 0 && funcBody(as, "hz43VanEnvWant").indexOf('lang != "zhhans"') >= 0, "location vis matches native UpdateLocationName");
+expect(funcBody(as, "hz43VanEnvWant").indexOf("!this.hz43EnvLocal") >= 0, "day vis is not local");
+expect(funcBody(as, "hz43VanEnvWant").indexOf("this.hz43EnvLocal && !this.hz43EnvCruise") >= 0, "off-planet vis is local and not cruise");
+expect(funcBody(as, "hz43VanEnvWant").indexOf("this.hz43EnvLocal && this.hz43EnvCruise") >= 0, "autopilot vis is local and cruise");
+expect(as.indexOf("private var hz43EnvLang:String = \"\"") >= 0, "location language starts as onAdded empty string");
 expect(funcBody(as, "hz43StHide").indexOf("d.alpha") < 0, "watch own-hide does not write alpha");
 expect(funcBody(as, "hz36HideTick").indexOf("hz43VanWatchClip") >= 0, "hide tick own-hides watch clips apart from health ammo boost");
 expect(funcBody(as, "hz43VanNote").indexOf("hz43VanWatchClip") >= 0, "the hid list refuses non-watch clips");
@@ -247,6 +255,7 @@ expect(funcBody(as, "hz43VanRestoreHid").indexOf("HealthBar") < 0 && funcBody(as
 expect(funcBody(as, "hz43VanGameVis").indexOf("DayCycleBase_mc") >= 0 && funcBody(as, "hz43VanGameVis").indexOf("Autopilot_mc") >= 0, "game-owned visibility includes day cycle and autopilot");
 expect(as.indexOf("function hz43IdCt") < 0 && as.indexOf("function hz43Ct(") < 0, "style 2 no longer assigns a cached identity ColorTransform");
 expect(funcBody(as, "hz43TintRgb").indexOf("alphaMultiplier") < 0 && funcBody(as, "hz43TintClear").indexOf("alphaMultiplier") < 0, "style 2 tint and clear do not write alphaMultiplier");
+expect(as.indexOf('HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc"]') >= 0 && funcBody(as, "hz43VanRestoreHid").indexOf("Temperature_mc") < 0, "restore does not special-case INFO names or force their alpha");
 expect(onFrame.indexOf("hzWatchStyle == 0") >= 0 && onFrame.indexOf('names.push("MissionIconsWidget_mc","EnemyIconsWidget_mc")') >= 0, "Off still hides mission and enemy widgets");
 expect(funcBody(as, "hz43VanMarkName").indexOf("MissionIconsWidget_mc") >= 0, "custom keep-mark includes mission widgets");
 expect(funcBody(as, "hz43VanChrome").indexOf("this.hz43InfoHide()") < 0, "chrome restore does not re-hide native info");
@@ -429,15 +438,36 @@ function hidHas(hid, clip) {
 	}
 	return false;
 }
+function nativeLocal(d) {
+	return Boolean(d.bInSpaceship) && !d.bIsLanded;
+}
+function envCache(state, d) {
+	if (!d) return;
+	state.envLocal = nativeLocal(d);
+	state.envCruise = Boolean(d.bIsShipInCruiseMode);
+	state.envLang = d.sLanguage != null ? String(d.sLanguage) : "";
+	state.envGot = 1;
+}
+function envWant(state, name) {
+	if (name === "locationNameBase_mc") {
+		const lang = state.envLang != null ? String(state.envLang) : "";
+		return lang !== "ja" && lang !== "zhhans";
+	}
+	if (!state.envGot) return false;
+	if (name === "DayCycleBase_mc") return !state.envLocal;
+	if (name === "OffPlanet_mc") return state.envLocal && !state.envCruise;
+	if (name === "Autopilot_mc") return state.envLocal && state.envCruise;
+	return false;
+}
+function planetPayload() {
+	return { bInSpaceship: false, bIsLanded: false, bIsShipInCruiseMode: false, sLanguage: "" };
+}
 function noteClip(hid, d) {
 	if (!isWatchClip(d)) return;
 	for (let i = 0; i < hid.length; i++) {
-		if (hid[i].d === d) {
-			if (GAME_VIS[d.name] && d.visible) hid[i].vis = true;
-			return;
-		}
+		if (hid[i].d === d) return;
 	}
-	hid.push({ d: d, vis: d.visible });
+	hid.push({ d: d });
 }
 function stHideWatch(hid, d) {
 	noteClip(hid, d);
@@ -459,17 +489,21 @@ function hideTick(clips, hid, style) {
 		stHideWatch(hid, d);
 	}
 }
-function restoreHid(hid) {
+function restoreHid(state) {
+	const hid = state.hid;
 	for (let i = 0; i < hid.length; i++) {
 		const d = hid[i].d;
 		if (!isWatchClip(d)) continue;
-		if (GAME_VIS[d.name]) d.visible = !!hid[i].vis;
-		else if (!d.visible) d.visible = true;
+		if (GAME_VIS[d.name]) {
+			if (state.envGot || d.name === "locationNameBase_mc") d.visible = envWant(state, d.name);
+		} else if (!d.visible) {
+			d.visible = true;
+		}
 	}
 	hid.length = 0;
 }
-function showVanilla(clips, hid) {
-	restoreHid(hid);
+function showVanilla(state) {
+	restoreHid(state);
 }
 function chromeHide(clips, hid, keepMarks) {
 	const names = Object.keys(clips);
@@ -491,12 +525,16 @@ function tintClear(clip) {
 	clip.redMultiplier = 1;
 	clip.redOffset = 0;
 }
-function makeWatchState() {
-	return {
+function makeWatchState(payload) {
+	const state = {
 		style: 0,
 		hideWatch: true,
 		vanShown: 0,
 		hid: [],
+		envGot: 0,
+		envLocal: false,
+		envCruise: false,
+		envLang: "",
 		clips: {
 			WatchOutline_mc: makeClip("WatchOutline_mc", true, 0),
 			O2CO2_mc: makeClip("O2CO2_mc", true, 0),
@@ -516,6 +554,8 @@ function makeWatchState() {
 			JetpackMeterWrapper_mc: makeClip("JetpackMeterWrapper_mc", true, 1)
 		}
 	};
+	if (payload !== null) envCache(state, payload || planetPayload());
+	return state;
 }
 function applyWatchStyle(state, style) {
 	const showVan = style === 1 || style === 2;
@@ -527,13 +567,17 @@ function applyWatchStyle(state, style) {
 	hideTick(state.clips, state.hid, style);
 	if (hideWatch) chromeHide(state.clips, state.hid, style === 3 || style === 4);
 	if (showVan && state.vanShown === 0) {
-		showVanilla(state.clips, state.hid);
+		showVanilla(state);
 		state.vanShown = 1;
 	}
 	hideTick(state.clips, state.hid, style);
-	if (showVan) restoreHid(state.hid);
+	if (showVan) restoreHid(state);
 	state.style = style;
 }
+
+expect(nativeLocal({ bInSpaceship: true, bIsLanded: false }) === true, "local is in spaceship and not landed");
+expect(nativeLocal({ bInSpaceship: true, bIsLanded: true }) === false, "landed ship is not local");
+expect(nativeLocal({ bInSpaceship: false, bIsLanded: false }) === false, "planet is not local");
 
 const fade = makeWatchState();
 applyWatchStyle(fade, 0);
@@ -544,50 +588,76 @@ fade.clips.O2CO2_mc.alpha = 1;
 applyWatchStyle(fade, 1);
 expect(fade.clips.WatchOutline_mc.visible === true && fade.clips.WatchOutline_mc.alpha === 1, "Off then Vanilla shows the ring and keeps post-FadeIn alpha");
 expect(fade.clips.O2CO2thin_mc.visible === true && fade.clips.O2CO2thin_mc.alpha === 0, "Vanilla does not force the native-0 thin bar on");
-expect(fade.clips.Temperature_mc.visible === true && fade.clips.Temperature_mc.alpha === 0, "Vanilla releases native temp visible and leaves its alpha");
-expect(fade.clips.DayCycleBase_mc.visible === true && fade.clips.locationNameBase_mc.visible === true, "Off then Vanilla restores last observed true day and location with no new event");
-expect(fade.clips.OffPlanet_mc.visible === false && fade.clips.Autopilot_mc.visible === false, "Off then Vanilla restores last observed false off-planet and autopilot with no new event");
+expect(fade.clips.Temperature_mc.visible === true && fade.clips.Temperature_mc.alpha === 0, "Off vis undo on Temperature does not display INFO at FadeInPlanetInfo alpha 0");
+expect(fade.clips.Oxygen_mc.visible === true && fade.clips.Oxygen_mc.alpha === 0, "Off vis undo on Oxygen does not display INFO at alpha 0");
+expect(fade.clips.Grav_mc.visible === true && fade.clips.Grav_mc.alpha === 0, "Off vis undo on Grav does not display INFO at alpha 0");
+expect(fade.clips.DayCycleBase_mc.visible === true && fade.clips.locationNameBase_mc.visible === true, "planet payload restores day and location true");
+expect(fade.clips.OffPlanet_mc.visible === false && fade.clips.Autopilot_mc.visible === false, "planet payload restores off-planet and autopilot false");
 expect(fade.clips.HealthBar_mc.visible === false && fade.clips.HealthBar_mc.alpha === 0, "health stays hidden through Off then Vanilla");
 expect(fade.clips.EquippedWeaponAmmo_mc.visible === false && fade.clips.JetpackMeterWrapper_mc.visible === false, "ammo and boost stay hidden through Off then Vanilla");
 expect(fade.hid.length === 0, "Off then Vanilla leaves the watch hid list empty");
 
-const ship = makeWatchState();
-ship.clips.DayCycleBase_mc.visible = false;
-ship.clips.OffPlanet_mc.visible = true;
-ship.clips.Autopilot_mc.visible = false;
-ship.clips.locationNameBase_mc.visible = true;
+const noEnv = makeWatchState(null);
+applyWatchStyle(noEnv, 0);
+applyWatchStyle(noEnv, 1);
+expect(noEnv.clips.locationNameBase_mc.visible === true, "onAdded empty language restores location true before first env payload");
+expect(noEnv.clips.DayCycleBase_mc.visible === false && noEnv.clips.OffPlanet_mc.visible === false && noEnv.clips.Autopilot_mc.visible === false, "day off-planet and autopilot wait for the first LocalEnvironmentData");
+
+const ship = makeWatchState({ bInSpaceship: true, bIsLanded: false, bIsShipInCruiseMode: false, sLanguage: "" });
 applyWatchStyle(ship, 0);
 applyWatchStyle(ship, 1);
-expect(ship.clips.DayCycleBase_mc.visible === false && ship.clips.Autopilot_mc.visible === false, "ship Off then Vanilla keeps day and autopilot false with no new event");
-expect(ship.clips.OffPlanet_mc.visible === true && ship.clips.locationNameBase_mc.visible === true, "ship Off then Vanilla keeps off-planet and location true with no new event");
+expect(ship.clips.DayCycleBase_mc.visible === false && ship.clips.Autopilot_mc.visible === false, "ship payload restores day and autopilot false");
+expect(ship.clips.OffPlanet_mc.visible === true && ship.clips.locationNameBase_mc.visible === true, "ship payload restores off-planet and location true");
 expect(ship.clips.HealthBar_mc.visible === false, "health stays hidden through ship Off then Vanilla");
 
-const cruise = makeWatchState();
-cruise.clips.DayCycleBase_mc.visible = false;
-cruise.clips.OffPlanet_mc.visible = false;
-cruise.clips.Autopilot_mc.visible = true;
+const cruise = makeWatchState({ bInSpaceship: true, bIsLanded: false, bIsShipInCruiseMode: true, sLanguage: "" });
 applyWatchStyle(cruise, 0);
 applyWatchStyle(cruise, 1);
-expect(cruise.clips.Autopilot_mc.visible === true, "cruise Off then Vanilla restores last observed true autopilot");
-expect(cruise.clips.OffPlanet_mc.visible === false && cruise.clips.DayCycleBase_mc.visible === false, "cruise Off then Vanilla keeps off-planet and day false");
+expect(cruise.clips.Autopilot_mc.visible === true, "cruise payload restores autopilot true");
+expect(cruise.clips.OffPlanet_mc.visible === false && cruise.clips.DayCycleBase_mc.visible === false, "cruise payload restores off-planet and day false");
 
 const duringOff = makeWatchState();
 applyWatchStyle(duringOff, 0);
-duringOff.clips.OffPlanet_mc.visible = true;
-duringOff.clips.DayCycleBase_mc.visible = true;
+envCache(duringOff, { bInSpaceship: true, bIsLanded: false, bIsShipInCruiseMode: false, sLanguage: "" });
 applyWatchStyle(duringOff, 0);
-expect(duringOff.clips.OffPlanet_mc.visible === false, "Off still hides a native show until Vanilla");
+expect(duringOff.clips.OffPlanet_mc.visible === false, "Off still hides after a boarding payload until Vanilla");
 applyWatchStyle(duringOff, 1);
-expect(duringOff.clips.OffPlanet_mc.visible === true, "a native show during Off is restored on Vanilla");
-expect(duringOff.clips.DayCycleBase_mc.visible === true, "a still-true day write during Off is restored on Vanilla");
-expect(duringOff.clips.Autopilot_mc.visible === false, "autopilot stays false when no native show arrived during Off");
+expect(duringOff.clips.OffPlanet_mc.visible === true, "boarding during Off restores off-planet true from the payload");
+expect(duringOff.clips.DayCycleBase_mc.visible === false, "boarding during Off restores day false from the payload");
+expect(duringOff.clips.Autopilot_mc.visible === false, "boarding without cruise restores autopilot false");
 expect(duringOff.clips.HealthBar_mc.visible === false, "health stays hidden after a native watch event during Off");
+
+const landed = makeWatchState({ bInSpaceship: true, bIsLanded: false, bIsShipInCruiseMode: false, sLanguage: "" });
+applyWatchStyle(landed, 0);
+envCache(landed, { bInSpaceship: true, bIsLanded: true, bIsShipInCruiseMode: false, sLanguage: "" });
+applyWatchStyle(landed, 1);
+expect(landed.clips.DayCycleBase_mc.visible === true && landed.clips.OffPlanet_mc.visible === false, "landing during Off restores day true and off-planet false");
+
+const cruiseDuringOff = makeWatchState({ bInSpaceship: true, bIsLanded: false, bIsShipInCruiseMode: false, sLanguage: "" });
+applyWatchStyle(cruiseDuringOff, 0);
+envCache(cruiseDuringOff, { bInSpaceship: true, bIsLanded: false, bIsShipInCruiseMode: true, sLanguage: "" });
+applyWatchStyle(cruiseDuringOff, 1);
+expect(cruiseDuringOff.clips.Autopilot_mc.visible === true && cruiseDuringOff.clips.OffPlanet_mc.visible === false, "cruise during Off restores autopilot true and off-planet false");
+
+const jaDuringOff = makeWatchState();
+applyWatchStyle(jaDuringOff, 0);
+envCache(jaDuringOff, { bInSpaceship: false, bIsLanded: false, bIsShipInCruiseMode: false, sLanguage: "ja" });
+applyWatchStyle(jaDuringOff, 1);
+expect(jaDuringOff.clips.locationNameBase_mc.visible === false, "ja language during Off restores location hidden");
+expect(jaDuringOff.clips.DayCycleBase_mc.visible === true, "ja language does not change planet day vis");
+
+const zhDuringOff = makeWatchState();
+applyWatchStyle(zhDuringOff, 0);
+envCache(zhDuringOff, { bInSpaceship: false, bIsLanded: false, bIsShipInCruiseMode: false, sLanguage: "zhhans" });
+applyWatchStyle(zhDuringOff, 1);
+expect(zhDuringOff.clips.locationNameBase_mc.visible === false, "zhhans language during Off restores location hidden");
 
 const oneTwo = makeWatchState();
 applyWatchStyle(oneTwo, 0);
 applyWatchStyle(oneTwo, 1);
 tintRgb(oneTwo.clips.O2CO2thin_mc, 0.55);
 expect(oneTwo.clips.O2CO2thin_mc.alpha === 0, "style 2 tint leaves native thin-bar alpha 0");
+expect(oneTwo.clips.Temperature_mc.alpha === 0, "style 2 does not force INFO alpha");
 applyWatchStyle(oneTwo, 2);
 tintRgb(oneTwo.clips.O2CO2thin_mc, 0.55);
 applyWatchStyle(oneTwo, 1);
@@ -606,7 +676,7 @@ expect(digitalRound.clips.EnemyIconsWidget_mc.visible === true, "Digital keeps e
 expect(digitalRound.clips.HealthBar_mc.visible === false, "health stays hidden on Digital");
 applyWatchStyle(digitalRound, 1);
 expect(digitalRound.clips.WatchOutline_mc.visible === true, "Digital then Vanilla restores the outline");
-expect(digitalRound.clips.DayCycleBase_mc.visible === true && digitalRound.clips.OffPlanet_mc.visible === false, "Digital then Vanilla restores last observed day true and off-planet false");
+expect(digitalRound.clips.DayCycleBase_mc.visible === true && digitalRound.clips.OffPlanet_mc.visible === false, "Digital then Vanilla restores planet day true and off-planet false");
 expect(digitalRound.clips.MissionIconsWidget_mc.visible === true, "Digital then Vanilla keeps mission markers");
 expect(digitalRound.clips.HealthBar_mc.visible === false && digitalRound.clips.EquippedWeaponAmmo_mc.visible === false, "health and ammo stay hidden after Digital then Vanilla");
 expect(digitalRound.clips.JetpackMeterWrapper_mc.visible === false, "boost stays hidden after Digital then Vanilla");
@@ -620,9 +690,10 @@ applyWatchStyle(f11Live, 4);
 applyWatchStyle(f11Live, 2);
 applyWatchStyle(f11Live, 1);
 expect(f11Live.clips.WatchOutline_mc.visible === true && f11Live.clips.O2CO2_mc.visible === true, "repeated F11 style cycles still restore the original watch face");
-expect(f11Live.clips.DayCycleBase_mc.visible === true && f11Live.clips.Autopilot_mc.visible === false, "repeated F11 cycles restore last observed day true and autopilot false");
+expect(f11Live.clips.DayCycleBase_mc.visible === true && f11Live.clips.Autopilot_mc.visible === false, "repeated F11 cycles restore planet day true and autopilot false");
 expect(f11Live.clips.MissionIconsWidget_mc.visible === true && f11Live.clips.EnemyIconsWidget_mc.visible === true, "repeated F11 cycles keep mission and enemy markers on Vanilla");
 expect(f11Live.clips.HealthBar_mc.visible === false && f11Live.clips.JetpackMeterWrapper_mc.visible === false, "repeated F11 cycles never restore health or boost");
+expect(f11Live.clips.Temperature_mc.alpha === 0 && f11Live.clips.Oxygen_mc.alpha === 0 && f11Live.clips.Grav_mc.alpha === 0, "F11 cycles never force INFO alpha");
 
 const live = makeWatchState();
 applyWatchStyle(live, 1);
@@ -634,10 +705,13 @@ expect(funcBody(as, "hz43ShowVanilla").indexOf("clip.alpha = 1") < 0, "vanilla d
 expect(checks.indexOf("keep those four clips hidden") < 0, "CHECKS does not keep-hide native info on vanilla");
 expect(checks.indexOf("keep those four extra native readout clips hidden") < 0, "CHECKS risks do not keep-hide native info every frame");
 expect(checks.indexOf("wait for the next native") < 0 && checks.indexOf("How soon that write repeats") < 0, "CHECKS does not accept missing native events as Off to Vanilla restore");
-expect(checks.indexOf("last") >= 0 && checks.indexOf("observed") >= 0, "CHECKS describes restoring last observed game vis");
+expect(checks.indexOf("LocalEnvironmentData") >= 0 && checks.indexOf("bIsShipInCruiseMode") >= 0, "CHECKS describes restoring the four vis clips from payload formulas");
+expect(checks.indexOf("FadeInPlanetInfo") >= 0, "CHECKS records that INFO appearance is timeline alpha");
+expect(checks.indexOf("does not display") >= 0, "CHECKS does not treat INFO vis-true as shown at alpha 0");
 expect(checks.indexOf("health") >= 0 && checks.indexOf("ammo") >= 0 && checks.indexOf("boost") >= 0, "CHECKS records that health ammo and boost stay off the watch hid list");
 expect(checks.indexOf("FadeIn") >= 0 || checks.indexOf("native") >= 0, "CHECKS describes native watch passthrough");
 expect(checks.indexOf("not proven freeze") >= 0, "CHECKS reports FadeIn on invisible children as unknown, not a freeze");
+expect(checks.indexOf("last observed") < 0 && changelog.indexOf("last observed") < 0, "docs no longer claim sampled clip vis");
 
 function holdPathLive(awAlphaHidden, ancestorAlphaRestored) {
 	return ancestorAlphaRestored ? 1 : (awAlphaHidden ? 0 : 1);
