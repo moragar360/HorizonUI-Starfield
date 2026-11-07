@@ -2551,8 +2551,9 @@
                }
             }
             if(this.hzHideVanillaWatch) { names.push("O2CO2_mc","O2CO2thin_mc","WatchOutline_mc","BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"); }
-            // Style 0 must hide the inner radar and nearby markers. Styles 3 and 4 keep those clips on the Horizon face.
+            // Style 0 hides the inner radar and nearby markers. Custom also hides the heading outline; 3/4 keep the marker widgets.
             if(this.hzWatchStyle == 0) { names.push("WatchIconsWidget_mc","WatchPointerOutline_mc"); }
+            else if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4) { names.push("WatchPointerOutline_mc"); }
             if(this.hzHideVanillaAmmo) { names.push("EquippedWeaponAmmo_mc","EquippedWeaponAmmoTotal_mc","VerticalDivider_mc","EquippedWeaponIconHolder_mc"); }
             if(this.hzHideVanillaHealth) { names.push("HealthBar_mc","HealthBarEmpty_mc","HealthBarGhost_mc","HealthBarDamage_mc","HealthBarIncrease_mc","Health_mc"); }
             for each(var n:String in names)
@@ -18528,6 +18529,7 @@
       private var hz43EnvLang:String = "";
       private var hz43MarkMoved:Boolean = false;
       private var hz43DumpSig:String = "";
+      private var hz43HideStyle:int = -1;
       private var hz43Kid:Array = null;
       private var hz43KidHid:Array = null;
       private var hz43KidN:int = 0;
@@ -18611,9 +18613,9 @@
 
       // Native watch pieces are BottomLeftGroup siblings, not one parent. Arrange writes each sibling root.
       // Nested clips (O2CO2_mc.O2Anim_mc) stay inside their sibling and are never their own unit.
-      // Styles 3 and 4 hide the chrome and keep the markers.
+      // Styles 3 and 4 hide the chrome and keep the live marker widgets. Heading outline is chrome, not a marker.
       private static const HZ43_VAN_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","WatchIconsWidget_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"];
-      private static const HZ43_VAN_MARK:Array = ["WatchIconsWidget_mc","WatchPointerOutline_mc","MissionIconsWidget_mc","EnemyIconsWidget_mc"];
+      private static const HZ43_VAN_MARK:Array = ["WatchIconsWidget_mc","MissionIconsWidget_mc","EnemyIconsWidget_mc"];
       private static const HZ43_HID_MAX:int = 40;
       // Native conditional readouts. Styles 1 and 2 leave the game's rules in place. Off and custom hide them with the chrome.
       private static const HZ43_VAN_INFO:Array = ["Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"];
@@ -18621,7 +18623,7 @@
       private static const HZ43_VAN_MAX:int = 24;
       private static const HZ43_VAN_FACE:Number = 221;
       // Unique package token for the next diagnostic gfx. Autoname prefix is not watch ownership.
-      private static const HZ43_DIAG:String = "r10-fade-follow-20261107";
+      private static const HZ43_DIAG:String = "r12-pointer-mark-20261107";
 
       private function hz43VanInfoName(name:String) : Boolean
       {
@@ -18750,6 +18752,11 @@
       {
          var showVan:Boolean = this.hzWatchStyle == 1 || this.hzWatchStyle == 2;
          var hide:Boolean = !showVan;
+         if(this.hz43HideStyle != this.hzWatchStyle)
+         {
+            this.hz43HideStyle = this.hzWatchStyle;
+            this.hzHideCache = null;
+         }
          if(hide != this.hzHideVanillaWatch)
          {
             this.hzHideVanillaWatch = hide;
@@ -19096,7 +19103,7 @@
 
       // Dawn at the left of the dial, dusk at the right, day across the top.
       // 0.25 is dawn and 0.75 is dusk. Outside that, the marker rides the lower night arc.
-      // Filled disc, a thin gold progress arc, and a sun or moon on the rim. PM and DAY sit inside the disc.
+      // Filled disc and a thin gold progress arc. PM and DAY sit inside the disc. No sun/moon marker.
       private function hz43Dial(g:*, cx:Number, cy:Number, day:Number) : void
       {
          var rd:Number = 26;
@@ -19117,7 +19124,6 @@
             ang = (night / 0.5) * Math.PI;
             this.hz43Band(g,cx,cy,rd - 3.5,rd - 0.6,0,ang,this.HZ_ACCENT,0.55);
          }
-         this.hz43Sun(g,cx + Math.cos(ang) * (rd - 1),cy + Math.sin(ang) * (rd - 1),sun);
       }
 
       // Labels sit inside the face, at 7 o'clock and 5 o'clock, not on the rim.
@@ -19580,7 +19586,7 @@
 
       private function hz43VanMarkName(name:String) : Boolean
       {
-         return name == "WatchIconsWidget_mc" || name == "WatchPointerOutline_mc" || name == "MissionIconsWidget_mc" || name == "EnemyIconsWidget_mc";
+         return name == "WatchIconsWidget_mc" || name == "MissionIconsWidget_mc" || name == "EnemyIconsWidget_mc";
       }
 
       // Scaleform autoname for an unnamed PlaceObject. Not watch ownership by itself.
@@ -20203,7 +20209,10 @@
          var ov:String = "";
          var od:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
          if(od) { ov = String(od.visible) + "," + od.x + "," + od.y + "," + od.alpha; }
-         var sig:String = this.hzWatchStyle + "|" + this.hz43VanCap + "|" + this.hz43VanWrote + "|" + this.hz43MarkMoved + "|" + this.hz43HidN + "|" + ov;
+         var pv:String = "";
+         var pd:DisplayObject = this.hzFindByName(this.hzBlg,"WatchPointerOutline_mc",0);
+         if(pd) { pv = String(pd.visible) + "," + pd.x + "," + pd.y; }
+         var sig:String = this.hzWatchStyle + "|" + this.hz43VanCap + "|" + this.hz43VanWrote + "|" + this.hz43MarkMoved + "|" + this.hz43HidN + "|" + ov + "|" + pv;
          if(sig == this.hz43DumpSig) { return; }
          this.hz43DumpSig = sig;
          var fx:String = "none";
