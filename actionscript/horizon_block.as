@@ -18493,6 +18493,7 @@
       private var hz43VanHW:Number = 180;
       private var hz43VanHH:Number = 180;
       private var hz43VanCap:int = 0;
+      private var hz43VanRing:DisplayObject = null;
       private var hz43VanFadeN:int = 0;
       private var hz43VanFadeAt:int = -1;
       private var hz43VanNeed:int = 1;
@@ -18623,7 +18624,7 @@
       private static const HZ43_VAN_MAX:int = 24;
       private static const HZ43_VAN_FACE:Number = 221;
       // Unique package token for the next diagnostic gfx. Autoname prefix is not watch ownership.
-      private static const HZ43_DIAG:String = "r13-annulus-hide-20261107";
+      private static const HZ43_DIAG:String = "r14-annulus-obj-20261107";
 
       private function hz43VanInfoName(name:String) : Boolean
       {
@@ -19619,10 +19620,12 @@
       }
 
       // Native filled watch annulus, same pixels on normal and large PHC. Not WatchOutline stroke.
-      // Identity is unnamed, outline-centered on the 221 px face, not cap pose, not collapsed ticks,
-      // and sandwiched between EnvConditionBase_mc and EnemyDetectionAnim_mc. No symbol id, depth,
-      // or session autoname. INFO ticks and named bio/env/detection stay on native rules.
-      private function hz43VanRingClip(d:DisplayObject) : Boolean
+      // Positive proof is unnamed, outline-centered on the native 221 px face, not cap pose, not
+      // collapsed ticks, sandwiched between EnvConditionBase_mc and EnemyDetectionAnim_mc.
+      // No symbol id, depth, or session autoname. After that proof, identity is the object, so
+      // WatchScale != 1 (live local 110.5*sc) and translation do not drop hide/Arrange.
+      // Dead cache recaptures only from that native geometry; a scaled unnamed clip is not stolen.
+      private function hz43VanRingProof(d:DisplayObject) : Boolean
       {
          if(!d || this.hzBlg == null || d.parent != this.hzBlg) { return false; }
          if(this.hz43VanSkip(d.name)) { return false; }
@@ -19649,6 +19652,19 @@
          var pn:String = prev && prev.name != null ? prev.name : "";
          var nn:String = next && next.name != null ? next.name : "";
          return pn == "EnvConditionBase_mc" && nn == "EnemyDetectionAnim_mc";
+      }
+
+      private function hz43VanRingClip(d:DisplayObject) : Boolean
+      {
+         if(!d || this.hzBlg == null) { return false; }
+         if(this.hz43VanRing != null)
+         {
+            if(this.hz43VanRing.parent == this.hzBlg) { return d == this.hz43VanRing; }
+            this.hz43VanRing = null;
+         }
+         if(!this.hz43VanRingProof(d)) { return false; }
+         this.hz43VanRing = d;
+         return true;
       }
 
       private function hz43VanNamed(name:String) : Boolean
@@ -19763,6 +19779,14 @@
          }
          this.hz43VanGather();
          if(this.hz43VanN == 0) { return; }
+         var originX:Number = 0;
+         var originY:Number = 0;
+         var outlineCap:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         if(outlineCap && outlineCap.parent == this.hzBlg)
+         {
+            originX = outlineCap.x;
+            originY = outlineCap.y;
+         }
          var left:Number = 0;
          var top:Number = 0;
          var right:Number = 0;
@@ -19787,8 +19811,8 @@
                this.hz43VanSX[slot] = d.scaleX;
                this.hz43VanSY[slot] = d.scaleY;
                this.hz43VanGot[slot] = 1;
-               this.hz43VanOX[slot] = this.hz43VanX[slot];
-               this.hz43VanOY[slot] = this.hz43VanY[slot];
+               this.hz43VanOX[slot] = originX;
+               this.hz43VanOY[slot] = originY;
                var b:Rectangle = d.getBounds(this);
                if(b && b.width > 1 && b.height > 1)
                {
@@ -20417,6 +20441,24 @@
          clip.transform.colorTransform = ct;
       }
 
+      // Unnamed cap and filled annulus. Uses object identity after native proof, so WatchScale
+      // != 1 still tints the captured annulus. RGB only; TintRgb keeps both CT alpha terms.
+      private function hz43TintUnnamed(clear:Boolean, col:uint, amt:Number) : void
+      {
+         if(!this.hzBlg) { return; }
+         var i:int = 0;
+         while(i < this.hzBlg.numChildren)
+         {
+            var d:DisplayObject = this.hzBlg.getChildAt(i);
+            if(d && (this.hz43VanCapClip(d) || this.hz43VanRingClip(d)))
+            {
+               if(clear) { this.hz43TintClear(d); }
+               else { this.hz43TintRgb(d,col,amt); }
+            }
+            i++;
+         }
+      }
+
       private function hz43Tint() : void
       {
          if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
@@ -20431,6 +20473,7 @@
                this.hz43TintClear(this.hz43TintAt(i));
                i++;
             }
+            this.hz43TintUnnamed(true,0,0);
             this.hz43TintOn = false;
             return;
          }
@@ -20441,6 +20484,7 @@
             this.hz43TintRgb(this.hz43TintAt(i),(i >= 1 && i <= 3) ? acc : card,(i >= 1 && i <= 3) ? 0.72 : 0.55);
             i++;
          }
+         this.hz43TintUnnamed(false,card,0.55);
          this.hz43TintOn = true;
       }
 

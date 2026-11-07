@@ -249,9 +249,12 @@ expect(funcBody(as, "hz43VanInstName").indexOf('name.indexOf("instance") == 0') 
 expect(funcBody(as, "hz43VanNamed").indexOf("hz43VanInstName") < 0, "autoname prefix is not VanNamed ownership");
 expect(funcBody(as, "hz43VanWatchClip").indexOf("hz43VanCapClip") >= 0 && funcBody(as, "hz43VanGather").indexOf("hz43VanCapClip") >= 0, "capture and own-hide use verified cap identity");
 expect(funcBody(as, "hz43VanWatchClip").indexOf("hz43VanRingClip") >= 0 && funcBody(as, "hz43VanGather").indexOf("hz43VanRingClip") >= 0, "capture and own-hide use filled-annulus identity");
-expect(funcBody(as, "hz43VanRingClip").indexOf("EnvConditionBase_mc") >= 0 && funcBody(as, "hz43VanRingClip").indexOf("EnemyDetectionAnim_mc") >= 0, "annulus identity uses named sandwich shared by normal and large PHC");
-expect(funcBody(as, "hz43VanRingClip").indexOf("1237") < 0 && funcBody(as, "hz43VanRingClip").indexOf("1115") < 0 && funcBody(as, "hz43VanRingClip").indexOf("278") < 0, "annulus identity does not hardcode normal or large symbol or depth ids");
-expect(funcBody(as, "hz43VanRingClip").indexOf('"instance') < 0, "annulus identity does not hardcode a session autoname");
+expect(funcBody(as, "hz43VanRingClip").indexOf("hz43VanRingProof") >= 0 && funcBody(as, "hz43VanRingClip").indexOf("hz43VanRing.parent") >= 0, "annulus identity is the cached object after native proof");
+expect(funcBody(as, "hz43VanRingProof").indexOf("EnvConditionBase_mc") >= 0 && funcBody(as, "hz43VanRingProof").indexOf("EnemyDetectionAnim_mc") >= 0, "annulus proof uses named sandwich shared by normal and large PHC");
+expect(funcBody(as, "hz43VanRingProof").indexOf("1237") < 0 && funcBody(as, "hz43VanRingProof").indexOf("1115") < 0 && funcBody(as, "hz43VanRingProof").indexOf("278") < 0, "annulus identity does not hardcode normal or large symbol or depth ids");
+expect(funcBody(as, "hz43VanRingProof").indexOf('"instance') < 0 && funcBody(as, "hz43VanRingClip").indexOf('"instance') < 0, "annulus identity does not hardcode a session autoname");
+expect(funcBody(as, "hz43VanCapClip").indexOf("hz43VanD") < 0, "cap identity is not a gathered-unit shortcut");
+expect(funcBody(as, "hz43VanCapture").indexOf("originX") >= 0 && funcBody(as, "hz43VanWrite").indexOf("(hx - ox) * useSc") >= 0, "whole Arrange scales sibling locals from the outline origin");
 expect(funcBody(as, "hz43VanBlgChrome").indexOf("hz43VanCapClip") >= 0 && funcBody(as, "hz43VanBlgChrome").indexOf("hz43VanInstName") < 0, "chrome hide and restore use verified cap identity");
 expect(funcBody(as, "hz43VanCapClip").indexOf("WatchOutline_mc") >= 0, "cap identity is outline-relative native pose");
 expect(funcBody(as, "hz43VanCapClip").indexOf("scaleY") >= 0, "collapsed INFO ticks are not the cap");
@@ -263,8 +266,10 @@ expect(funcBody(as, "hz43VanDump").indexOf("ctrArt=") < 0 && as.indexOf("functio
 expect(funcBody(as, "hz43VanDump").indexOf("ringArt=") >= 0, "dump marks which sibling is the filled watch annulus");
 expect(funcBody(as, "hz43VanWatchClip").indexOf("hz43VanCenterArt") < 0 && funcBody(as, "hz43VanGather").indexOf("hz43VanCenterArt") < 0, "broad center-art helper stays out of ownership");
 expect(funcBody(as, "hz43VanPlace").indexOf("hz43VanFadeOk") >= 0 && funcBody(as, "hz43TintRgb").indexOf("redMultiplier") >= 0, "styles 1 and 2 keep Fade wait and RGB-only tint");
+expect(funcBody(as, "hz43Tint").indexOf("hz43TintUnnamed") >= 0 && funcBody(as, "hz43TintUnnamed").indexOf("hz43VanRingClip") >= 0, "style 2 tints unnamed watch chrome including the filled annulus");
+expect(funcBody(as, "hz43TintUnnamed").indexOf("hz43TintRgb") >= 0 && funcBody(as, "hz43TintUnnamed").indexOf("hz43TintClear") >= 0 && funcBody(as, "hz43TintUnnamed").indexOf("alphaMultiplier") < 0, "unnamed chrome tint uses TintRgb/TintClear and does not write alpha");
 expect(funcBody(as, "hz43VanDump").indexOf("hz43VanNamed") < 0, "dump lists every BottomLeftGroup child, not only VanNamed clips");
-expect(as.indexOf('HZ43_DIAG:String = "r13-annulus-hide-20261107"') >= 0, "next gfx can prove package r13-annulus-hide-20261107");
+expect(as.indexOf('HZ43_DIAG:String = "r14-annulus-obj-20261107"') >= 0, "next gfx can prove package r14-annulus-obj-20261107");
 expect(funcBody(as, "hz43VanDump").indexOf("WatchPointerOutline_mc") >= 0, "dump signature includes heading-outline vis so later Off frames are not collapsed into the first write");
 expect(funcBody(as, "hz43SyncHide").indexOf("hz43HideStyle") >= 0 && funcBody(as, "hz43SyncHide").indexOf("hzHideCache = null") >= 0, "WatchStyle change rebuilds hide cache, including Digital then Off");
 expect(onFrame.indexOf('else if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4) { names.push("WatchPointerOutline_mc"); }') >= 0, "custom hideTick owns the heading outline");
@@ -396,7 +401,7 @@ function vanCapClip(d, outline) {
 	if (outline) return Math.abs(d.x - outline.x) < 2 && Math.abs(d.y - outline.y) < 2;
 	return Math.abs(d.x) < 2 && Math.abs(d.y) < 2;
 }
-function vanRingClip(d, outline) {
+function vanRingProof(d, outline) {
 	if (!d || vanSkip(d.name)) return false;
 	if (!(d.name === "" || (typeof d.name === "string" && d.name.indexOf("instance") === 0))) return false;
 	if (Math.abs(d.scaleX) < 0.5 || Math.abs(d.scaleY) < 0.5) return false;
@@ -409,6 +414,15 @@ function vanRingClip(d, outline) {
 	const idx = kids.indexOf(d);
 	if (idx < 1 || idx >= kids.length - 1) return false;
 	return kids[idx - 1] && kids[idx - 1].name === "EnvConditionBase_mc" && kids[idx + 1] && kids[idx + 1].name === "EnemyDetectionAnim_mc";
+}
+function vanRingClip(d, outline) {
+	if (!d) return false;
+	const blg = d.parent;
+	if (blg && blg.vanRing && blg.vanRing.parent === blg) return d === blg.vanRing;
+	if (blg) blg.vanRing = null;
+	if (!vanRingProof(d, outline)) return false;
+	if (blg) blg.vanRing = d;
+	return true;
 }
 function newRootOf(clip, blg) {
 	let root = clip;
@@ -583,6 +597,7 @@ function makeProductionHost(kids) {
 		HZ43_VAN_MAX: 24,
 		HZ43_VAN_FACE: 221,
 		HZ43_VAN_N: VAN_N,
+		hz43VanRing: null,
 		hzFindByName: function(root, name) {
 			if (!root) return null;
 			if (root.name === name) return root;
@@ -607,7 +622,10 @@ function makeProductionHost(kids) {
 	bindAsMethod(host, "hz43VanHasAncestorUnit", ["d"]);
 	bindAsMethod(host, "hz43VanAdd", ["root"]);
 	bindAsMethod(host, "hz43VanCapClip", ["d"]);
+	bindAsMethod(host, "hz43VanRingProof", ["d"]);
 	bindAsMethod(host, "hz43VanRingClip", ["d"]);
+	bindAsMethod(host, "hz43VanRootOf", ["clip"]);
+	bindAsMethod(host, "hz43VanWatchClip", ["d"]);
 	bindAsMethod(host, "hz43VanGather", []);
 	return host;
 }
@@ -669,6 +687,32 @@ lrgHost.hz43VanNm = [];
 lrgHost.hz43VanGather();
 expect(lrgHost.hz43VanD.indexOf(lrgAnnulus) >= 0 && lrgHost.hz43VanD.indexOf(lrgO2) >= 0 && lrgHost.hz43VanD.indexOf(lrgDetect) < 0, "large PHC gather owns the annulus and named O2, not detection");
 blg.kids = blgKids;
+inst546.x = 88.4;
+inst546.y = 88.4;
+inst546.scaleX = 0.8;
+inst546.scaleY = 0.8;
+expect(prodHost.hz43VanRingClip(inst546) === true, "production RingClip keeps the captured annulus object at WatchScale 0.8 local 88.4");
+expect(prodHost.hz43VanRingProof(inst546) === false, "native annulus proof does not widen to 88.4");
+expect(prodHost.hz43VanWatchClip(inst546) === true, "production WatchClip still owns the captured annulus after scale");
+expect(prodHost.hz43VanCapClip(inst546) === false && prodHost.hz43VanCapClip(inst66) === true, "scaled annulus is not the cap; cap pose still holds");
+expect(prodHost.hz43VanRingClip(inst548) === false && prodHost.hz43VanWatchClip(inst548) === false, "collapsed INFO tick stays excluded at scaled locals");
+const stealScale = { name: "instance99", parent: blg, x: 88.4, y: 88.4, scaleX: 0.8, scaleY: 0.8 };
+expect(prodHost.hz43VanRingClip(stealScale) === false, "a different clip at 88.4 is not stolen as the annulus");
+const deadAnnulus = inst546;
+deadAnnulus.parent = { name: "gone" };
+prodHost.hz43VanRing = deadAnnulus;
+const bornScaled = { name: "instance200", parent: blg, x: 88.4, y: 88.4, scaleX: 1, scaleY: 1 };
+expect(prodHost.hz43VanRingClip(bornScaled) === false, "recreated clip at scaled pose is not captured");
+inst546.parent = blg;
+inst546.x = 110.5;
+inst546.y = 110.5;
+inst546.scaleX = 1;
+inst546.scaleY = 1;
+prodHost.hz43VanRing = null;
+expect(prodHost.hz43VanRingClip(inst546) === true, "recreated native 110.5 sandwich recaptures the annulus");
+prodHost.hz43VanRing = null;
+inst546.x = 110.5;
+inst546.y = 110.5;
 
 function makeFadeClip(name, x, y, alpha) {
 	return {
@@ -836,8 +880,8 @@ function makePlaceHost() {
 	host.hz43VanUYA = [1, 1, 1, 1];
 	host.hz43VanX = [0, 21.7, 0, 111.35];
 	host.hz43VanY = [0, 89.85, -0.25, 111.45];
-	host.hz43VanOX = [0, 21.7, 0, 111.35];
-	host.hz43VanOY = [0, 89.85, -0.25, 111.45];
+	host.hz43VanOX = [0, 0, 0, 0];
+	host.hz43VanOY = [0, 0, 0, 0];
 	host.hz43VanSX = [1, 1, 1, 1];
 	host.hz43VanSY = [1, 1, 1, 1];
 	bindAsMethod(host, "hz43VanMarkName", ["name"]);
@@ -914,6 +958,176 @@ const writeMarks = makePlaceHost();
 writeMarks.hz43VanWrite(-10, 5, 0.8, true);
 expect(writeMarks.outlineClip.x === 0 && writeMarks.capClip.x === 0 && writeMarks.o2Clip.x === 21.7, "production marks write does not move outline, cap, or O2");
 expect(writeMarks.iconsClip.x === 111.35 - 10 && writeMarks.iconsClip.y === 111.45 + 5 && writeMarks.iconsClip.scaleX === 1, "production marks write moves WatchIconsWidget_mc at scale 1");
+const writeScale = makePlaceHost();
+writeScale.hz43VanWrite(-40, 20, 0.8, false);
+expect(Math.abs(writeScale.outlineClip.x - -40) < 1e-9 && Math.abs(writeScale.o2Clip.x - (21.7 * 0.8 - 40)) < 1e-9, "production VanWrite scale 0.8 moves locals from the outline origin");
+expect(Math.abs(writeScale.capClip.y - (-0.25 * 0.8 + 20)) < 1e-9 && Math.abs(writeScale.iconsClip.x - (111.35 * 0.8 - 40)) < 1e-9, "production VanWrite scale 0.8 keeps cap and markers in the assembly");
+expect(writeScale.outlineClip.scaleX === 0.8 && writeScale.capClip.alpha === 0, "production VanWrite scale 0.8 writes clip scale and does not assign alpha");
+
+function makeCtClip(name, x, y, opts) {
+	opts = opts || {};
+	return {
+		name: name,
+		visible: true,
+		alpha: opts.alpha != null ? opts.alpha : 1,
+		x: x,
+		y: y,
+		scaleX: opts.scaleX != null ? opts.scaleX : 1,
+		scaleY: opts.scaleY != null ? opts.scaleY : 1,
+		transform: {
+			colorTransform: {
+				redMultiplier: 1,
+				greenMultiplier: 1,
+				blueMultiplier: 1,
+				redOffset: 0,
+				greenOffset: 0,
+				blueOffset: 0,
+				alphaMultiplier: opts.ctA != null ? opts.ctA : 0.25,
+				alphaOffset: opts.ctO != null ? opts.ctO : 7
+			}
+		}
+	};
+}
+function makeAssemblyHost() {
+	const box = { name: "BottomLeftGroup_mc", kids: [] };
+	const cap = makeCtClip("instance66", 0, -0.25);
+	const outlineC = makeCtClip("WatchOutline_mc", 0, 0);
+	const pointer = makeCtClip("WatchPointerOutline_mc", 111, 111);
+	const o2 = makeCtClip("O2CO2_mc", 21.7, 89.85);
+	const thin = makeCtClip("O2CO2thin_mc", 16.1, 88.3);
+	const day = makeCtClip("DayCycleBase_mc", 110.5, 110.5);
+	const loc = makeCtClip("locationNameBase_mc", 110.15, 139.75);
+	const env = makeCtClip("EnvConditionBase_mc", 109.65, 111.45);
+	const ring = makeCtClip("instance546", 110.5, 110.5);
+	const detect = makeCtClip("EnemyDetectionAnim_mc", 110.5, 110.5);
+	const tick = makeCtClip("instance548", 87.2, 141.65, { scaleX: 0.000076293945, scaleY: 0, ctA: 1, ctO: 0 });
+	const temp = makeCtClip("Temperature_mc", 79.7, 133.75, { ctA: 0.5, ctO: 3 });
+	const kids = [cap, outlineC, pointer, o2, thin, day, loc, env, ring, detect, tick, temp];
+	box.kids = kids;
+	box.getChildAt = function(i) { return this.kids[i]; };
+	box.getChildIndex = function(d) {
+		const i = this.kids.indexOf(d);
+		if (i < 0) throw new Error("not a child");
+		return i;
+	};
+	if (!Object.prototype.hasOwnProperty.call(box, "numChildren")) {
+		Object.defineProperty(box, "numChildren", { get: function() { return this.kids.length; } });
+	}
+	for (let i = 0; i < kids.length; i++) kids[i].parent = box;
+	const host = makeProductionHost(kids);
+	host.hzBlg = box;
+	host.capClip = cap;
+	host.outlineClip = outlineC;
+	host.ringClip = ring;
+	host.tickClip = tick;
+	host.tempClip = temp;
+	host.detectClip = detect;
+	host.o2Clip = o2;
+	host.HZ43_HID_MAX = 40;
+	host.hz43HidA = new Array(40);
+	host.hz43HidN = 0;
+	host.hz43EnvGot = 1;
+	host.hz43EnvLocal = false;
+	host.hz43EnvCruise = false;
+	host.hz43EnvLang = "";
+	host.hzWatchStyle = 1;
+	host.hzUserHidden = false;
+	host.hz43TintOn = false;
+	host.hz43TintD = null;
+	host.HZ43_TINT_N = ["WatchOutline_mc", "WatchPointerOutline_mc", "O2CO2_mc", "O2CO2thin_mc", "DayCycleBase_mc", "locationNameBase_mc"];
+	host.HZ_ACCENT = 0xAABBCC;
+	host.hz43Fill = function() { return 0x446688; };
+	host.hz43VanCap = 1;
+	host.hz43VanWrote = false;
+	host.hz43MarkMoved = false;
+	host.hz43VanWdx = Number.NaN;
+	host.hz43VanWdy = Number.NaN;
+	host.hz43VanWsc = Number.NaN;
+	host.hz43VanWmk = -1;
+	const units = [outlineC, o2, cap, ring, pointer, thin, day, loc];
+	host.hz43VanN = units.length;
+	host.hz43VanD = units.slice();
+	host.hz43VanNm = units.map(function(u) { return u.name; });
+	host.hz43VanGot = units.map(function() { return 1; });
+	host.hz43VanUXA = units.map(function() { return 1; });
+	host.hz43VanUYA = units.map(function() { return 1; });
+	host.hz43VanX = units.map(function(u) { return u.x; });
+	host.hz43VanY = units.map(function(u) { return u.y; });
+	host.hz43VanOX = units.map(function() { return 0; });
+	host.hz43VanOY = units.map(function() { return 0; });
+	host.hz43VanSX = units.map(function(u) { return u.scaleX; });
+	host.hz43VanSY = units.map(function(u) { return u.scaleY; });
+	host.int = function(n) { return n | 0; };
+	host.uint = function(n) { return n >>> 0; };
+	host.hz43VanDump = function() {};
+	bindAsMethod(host, "hz43VanClip", ["i"]);
+	bindAsMethod(host, "hz43VanMarkName", ["name"]);
+	bindAsMethod(host, "hz43VanWrite", ["dx", "dy", "sc", "marks"]);
+	bindAsMethod(host, "hz43VanNote", ["d"]);
+	bindAsMethod(host, "hz43StHide", ["d"]);
+	bindAsMethod(host, "hz43VanGameVis", ["name"]);
+	bindAsMethod(host, "hz43VanEnvWant", ["name"]);
+	bindAsMethod(host, "hz43VanRestoreHid", []);
+	bindAsMethod(host, "hz43TintRgb", ["clip", "col", "amt"]);
+	bindAsMethod(host, "hz43TintClear", ["clip"]);
+	bindAsMethod(host, "hz43TintAt", ["i"]);
+	bindAsMethod(host, "hz43TintUnnamed", ["clear", "col", "amt"]);
+	bindAsMethod(host, "hz43Tint", []);
+	return host;
+}
+
+const asm08 = makeAssemblyHost();
+expect(asm08.hz43VanRingClip(asm08.ringClip) === true, "assembly host caches the annulus at native 110.5");
+asm08.hz43VanWrite(-40, 10, 0.8, false);
+expect(Math.abs(asm08.ringClip.x - (110.5 * 0.8 - 40)) < 1e-9 && Math.abs(asm08.ringClip.y - (110.5 * 0.8 + 10)) < 1e-9, "production VanWrite scale 0.8 moves the annulus to 88.4 plus translation");
+expect(asm08.hz43VanRingProof(asm08.ringClip) === false && asm08.hz43VanRingClip(asm08.ringClip) === true, "live proof fails at 88.4 and cached object identity still owns the annulus");
+expect(asm08.hz43VanWatchClip(asm08.ringClip) === true && asm08.hz43VanWatchClip(asm08.tickClip) === false, "WatchClip owns the scaled annulus and still excludes the collapsed tick");
+expect(asm08.hz43VanCapClip(asm08.ringClip) === false && asm08.hz43VanCapClip(asm08.capClip) === true, "ring/cap distinction holds after scale 0.8");
+const ringA = asm08.ringClip.transform.colorTransform.alphaMultiplier;
+const ringO = asm08.ringClip.transform.colorTransform.alphaOffset;
+asm08.hz43StHide(asm08.ringClip);
+expect(asm08.ringClip.visible === false && asm08.ringClip.transform.colorTransform.alphaMultiplier === ringA && asm08.ringClip.transform.colorTransform.alphaOffset === ringO, "Off hide at scaled pose vis-hides the captured annulus and does not write CT alpha");
+expect(asm08.tickClip.visible === true && asm08.detectClip.visible === true && asm08.tempClip.visible === true, "scaled Off hide does not take INFO ticks, detection, or Temperature");
+asm08.hzWatchStyle = 3;
+asm08.hz43VanWrite(0, 0, 1, false);
+asm08.hz43VanWrote = false;
+expect(Math.abs(asm08.ringClip.x - 110.5) < 1e-9, "style 3 restores native annulus local before custom hide");
+asm08.hz43StHide(asm08.ringClip);
+expect(asm08.ringClip.visible === false, "style 3 hides the annulus with chrome");
+asm08.hzWatchStyle = 0;
+asm08.hz43StHide(asm08.ringClip);
+expect(asm08.ringClip.visible === false, "style 0 keeps the annulus hidden");
+asm08.hzWatchStyle = 1;
+asm08.hz43VanRestoreHid();
+expect(asm08.ringClip.visible === true && asm08.ringClip.transform.colorTransform.alphaMultiplier === ringA, "style 1 restores annulus vis without writing CT alpha");
+
+const asm12 = makeAssemblyHost();
+asm12.hz43VanRingClip(asm12.ringClip);
+asm12.hz43VanWrite(20, -15, 1.2, false);
+expect(Math.abs(asm12.ringClip.x - (110.5 * 1.2 + 20)) < 1e-9 && Math.abs(asm12.outlineClip.x - 20) < 1e-9, "production VanWrite scale 1.2 keeps the annulus in the assembly");
+expect(asm12.hz43VanRingClip(asm12.ringClip) === true && asm12.hz43VanRingProof(asm12.ringClip) === false, "cached annulus identity survives scale 1.2");
+asm12.hz43StHide(asm12.ringClip);
+expect(asm12.ringClip.visible === false && asm12.tickClip.visible === true, "scale 1.2 Off hide owns the annulus and not the collapsed tick");
+asm12.hz43VanRestoreHid();
+expect(asm12.ringClip.visible === true, "scale 1.2 Vanilla restore shows the annulus");
+
+const asmTint = makeAssemblyHost();
+asmTint.hz43VanRingClip(asmTint.ringClip);
+asmTint.hz43VanWrite(0, 0, 0.8, false);
+asmTint.hzWatchStyle = 2;
+asmTint.hz43Tint();
+expect(Math.abs(asmTint.ringClip.transform.colorTransform.redMultiplier - 0.45) < 1e-9 && Math.abs(asmTint.ringClip.transform.colorTransform.redOffset - (0x44 * 0.55)) < 1e-9, "style 2 TintRgb tints the scaled annulus RGB");
+expect(asmTint.ringClip.transform.colorTransform.alphaMultiplier === 0.25 && asmTint.ringClip.transform.colorTransform.alphaOffset === 7, "style 2 annulus tint preserves both CT alpha fields");
+expect(Math.abs(asmTint.capClip.transform.colorTransform.redMultiplier - 0.45) < 1e-9 && asmTint.capClip.transform.colorTransform.alphaMultiplier === 0.25, "style 2 tints unnamed cap RGB and preserves cap CT alpha");
+expect(asmTint.tempClip.transform.colorTransform.redMultiplier === 1 && asmTint.tempClip.transform.colorTransform.alphaMultiplier === 0.5 && asmTint.tempClip.transform.colorTransform.alphaOffset === 3, "style 2 does not tint Temperature RGB or alpha");
+expect(asmTint.detectClip.transform.colorTransform.redMultiplier === 1 && asmTint.tickClip.transform.colorTransform.redMultiplier === 1, "style 2 does not tint detection or collapsed INFO ticks");
+asmTint.hzWatchStyle = 1;
+asmTint.hz43Tint();
+expect(asmTint.ringClip.transform.colorTransform.redMultiplier === 1 && asmTint.ringClip.transform.colorTransform.redOffset === 0, "leaving style 2 TintClear restores annulus RGB");
+expect(asmTint.ringClip.transform.colorTransform.alphaMultiplier === 0.25 && asmTint.ringClip.transform.colorTransform.alphaOffset === 7, "TintClear restore preserves annulus CT alpha");
+expect(asmTint.tempClip.transform.colorTransform.alphaMultiplier === 0.5 && asmTint.tempClip.transform.colorTransform.redMultiplier === 1, "TintClear does not touch unrelated Temperature");
+blg.kids = blgKids;
+
 function hidHas(hid, clip) {
 	for (let i = 0; i < hid.length; i++) {
 		if (hid[i].d === clip) return true;
@@ -1033,8 +1247,10 @@ function vanWrite(state, dx, dy, sc, marks) {
 		const d = units[i];
 		if (marks && !MARK_NAMES[d.name]) continue;
 		const useSc = marks ? 1 : sc;
-		d.x = d.x0 + (d.x0 - d.x0) * useSc + dx;
-		d.y = d.y0 + (d.y0 - d.y0) * useSc + dy;
+		const ox = state.clips && state.clips.WatchOutline_mc ? state.clips.WatchOutline_mc.x0 : 0;
+		const oy = state.clips && state.clips.WatchOutline_mc ? state.clips.WatchOutline_mc.y0 : 0;
+		d.x = ox + (d.x0 - ox) * useSc + dx;
+		d.y = oy + (d.y0 - oy) * useSc + dy;
 		if (!marks) {
 			d.scaleX = useSc;
 			d.scaleY = useSc;
@@ -1452,6 +1668,7 @@ expect(checks.indexOf("move only the live nearby, mission, and enemy marker widg
 expect(checks.indexOf("HZ43 dump") >= 0 && checks.indexOf("vis/alpha") >= 0, "CHECKS records vis and alpha sibling dumps");
 expect(checks.indexOf("r12-pointer-mark-20261107") >= 0, "CHECKS records the pointer-mark diagnostic package token");
 expect(checks.indexOf("r13-annulus-hide-20261107") >= 0, "CHECKS records the annulus-hide diagnostic package token");
+expect(checks.indexOf("r14-annulus-obj-20261107") >= 0 && checks.indexOf("88.4") >= 0, "CHECKS records the cached-object diagnostic package token and scaled local");
 expect(checks.indexOf("WatchPointerOutline_mc") >= 0 && checks.indexOf("keep-mark") >= 0, "CHECKS records that heading outline left keep-mark");
 expect(checks.indexOf("does not write a stored FadeIn alpha") >= 0 && checks.indexOf("Digital then Vanilla") >= 0, "CHECKS records Digital then Vanilla restore without forcing INFO alpha");
 expect(checks.indexOf("write-marks") >= 0 && checks.indexOf("does not include why") >= 0, "CHECKS records dump signature omit why");
