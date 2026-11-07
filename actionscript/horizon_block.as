@@ -2568,6 +2568,7 @@
                {
                   var bc:DisplayObject = this.hzBlg.getChildAt(bi);
                   var keepMark:Boolean = (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && bc && (bc.name == "WatchIconsWidget_mc" || bc.name == "WatchPointerOutline_mc");
+                  if(bc && this.hz43VanInfoName(bc.name)) { bi++; continue; }
                   if(bc && bc.visible && !keepMark && bc.name != "EnemyDetectionAnim_mc" && bc.name != "Autopilot_mc" && bc.name != "EnvAlertText" && bc.name != "BioAlertText" && bc.name != "LocationAlertText")
                   {
                      bc.visible = false;
@@ -14559,6 +14560,7 @@
             catch(errP:Error) { }
             if(d == null) { continue; }
             if(d.stage == null) { this.hz36HideStale = true; }
+            if(this.hz43VanInfoName(String(e.n))) { this.hz43StHide(d); continue; }
             if(d.visible) { d.visible = false; }
             if(d.alpha != 0) { d.alpha = 0; }
          }
@@ -18506,6 +18508,10 @@
       private var hz43VanUnitLog:Boolean = false;
       private var hz43HidA:Array = null;
       private var hz43HidN:int = 0;
+      private var hz43StD:Array = null;
+      private var hz43StV:Array = null;
+      private var hz43StA:Array = null;
+      private var hz43StN:int = 0;
       private var hz43Kid:Array = null;
       private var hz43KidHid:Array = null;
       private var hz43KidN:int = 0;
@@ -18611,13 +18617,87 @@
          return false;
       }
 
+      // Purpose: allocate the native-readout snapshot slots once.
+      // Inputs: none. Outputs: hz43StD / hz43StV / hz43StA. Dependencies: none.
+      private function hz43StPrep() : void
+      {
+         if(this.hz43StD != null) { return; }
+         this.hz43StD = new Array(8);
+         this.hz43StV = new Array(8);
+         this.hz43StA = new Array(8);
+         this.hz43StN = 0;
+      }
+
+      // Purpose: remember native visible and alpha before Horizon hides a readout.
+      // Inputs: d — Temperature_mc, Oxygen_mc, Grav_mc, or OffPlanet_mc.
+      // Outputs: a slot in hz43StD / hz43StV / hz43StA. The clip is not changed.
+      // Capture while the clip still looks native (visible or alpha != 0). After
+      // Horizon hid it, later frames must not store our own visible=false / alpha=0
+      // as the native values. If the game re-shows the clip during Off or a custom
+      // face, refresh the stored visible and any non-zero alpha before we hide again.
+      private function hz43StCapture(d:DisplayObject) : void
+      {
+         if(!d) { return; }
+         this.hz43StPrep();
+         var i:int = 0;
+         while(i < this.hz43StN)
+         {
+            if(this.hz43StD[i] == d)
+            {
+               if(d.visible) { this.hz43StV[i] = 1; }
+               if(d.alpha != 0) { this.hz43StA[i] = d.alpha; }
+               return;
+            }
+            i++;
+         }
+         if(this.hz43StN >= 8) { return; }
+         this.hz43StD[this.hz43StN] = d;
+         this.hz43StV[this.hz43StN] = d.visible ? 1 : 0;
+         this.hz43StA[this.hz43StN] = d.alpha;
+         this.hz43StN++;
+      }
+
+      // Purpose: hide a native readout after its native state is stored.
+      // Inputs: d — the clip. Outputs: visible=false and alpha=0 on d.
+      private function hz43StHide(d:DisplayObject) : void
+      {
+         if(!d) { return; }
+         this.hz43StCapture(d);
+         if(d.visible) { d.visible = false; }
+         if(d.alpha != 0) { d.alpha = 0; }
+      }
+
+      // Purpose: undo Horizon's hide of native readouts, then stop writing them.
+      // Inputs: stored slots. Outputs: each clip's recorded visible and alpha; hz43StN = 0.
+      // A clip the game had hidden stays hidden. Vanilla does not force every clip on.
+      // Game writing visible=true cannot recover an unrestored alpha=0, so this write
+      // must put the recorded alpha back.
+      private function hz43StRestore() : void
+      {
+         var i:int = 0;
+         while(i < this.hz43StN)
+         {
+            var d:DisplayObject = this.hz43StD[i] as DisplayObject;
+            if(d)
+            {
+               d.visible = int(this.hz43StV[i]) != 0;
+               d.alpha = Number(this.hz43StA[i]);
+            }
+            this.hz43StD[i] = null;
+            i++;
+         }
+         this.hz43StN = 0;
+      }
+
       // Puts the game watch back on BottomLeftGroup. One trace names the clips that were found. No font name.
-      // Styles 1 and 2 are a passthrough of that watch: undo a Horizon hide of the face, and leave
-      // Temperature / Oxygen / Grav / OffPlanet to the game. Do not draw Horizon text onto it.
+      // Styles 1 and 2 are a passthrough of that watch: undo a Horizon hide of the face, restore each
+      // native readout to the visible and alpha recorded before Horizon hid it, then stop writing those
+      // four clips. Do not draw Horizon text onto the face.
       private function hz43ShowVanilla() : Boolean
       {
          if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
          if(!this.hzBlg) { return false; }
+         this.hz43StRestore();
          var found:String = "";
          var hits:int = 0;
          var n:int = 0;
@@ -18672,8 +18752,7 @@
             this.hzHideCache = null;
             if(showVan) { this.hz43VanShown = 0; this.hz43VanTries = 0; }
          }
-         // The hide sets visible false and alpha 0, and it does not put them back.
-         // Styles 1 and 2 restore the game's watch once, then leave its own conditions alone.
+         // Face clips are restored by ShowVanilla. Native readouts restore recorded visible and alpha, then Vanilla stops writing them.
          if(showVan && this.hz43VanShown == 0)
          {
             if(this.hz43ShowVanilla()) { this.hz43VanShown = 1; }
@@ -19754,6 +19833,7 @@
       private function hz43VanNote(d:DisplayObject) : void
       {
          if(!d || this.hz43HidA == null || this.hz43HidN >= 32) { return; }
+         if(this.hz43VanInfoName(d.name)) { return; }
          var i:int = 0;
          while(i < this.hz43HidN)
          {
@@ -19796,9 +19876,13 @@
             if(!d || this.hz43VanSkip(n) || this.hz43VanMarkName(n) || !this.hz43VanNamed(n) || holds) { }
             else if(hide)
             {
-               if(d.visible || d.alpha != 0) { this.hz43VanNote(d); }
-               d.visible = false;
-               d.alpha = 0;
+               if(this.hz43VanInfoName(n)) { this.hz43StHide(d); }
+               else
+               {
+                  if(d.visible || d.alpha != 0) { this.hz43VanNote(d); }
+                  d.visible = false;
+                  d.alpha = 0;
+               }
             }
             else if(!this.hz43VanInfoName(n))
             {
@@ -19812,7 +19896,7 @@
       // Styles 3 and 4 hide the vanilla bezel and labels. The live marker clips stay visible.
       private function hz43VanChrome(hide:Boolean) : void
       {
-         if(!hide) { this.hz43VanRestoreHid(); }
+         if(!hide) { this.hz43VanRestoreHid(); this.hz43StRestore(); }
          var i:int = 0;
          while(i < HZ43_VAN_N.length)
          {
@@ -19845,9 +19929,13 @@
                         var scMark:Boolean = sc && (sc.name == "WatchIconsWidget_mc" || sc.name == "WatchPointerOutline_mc" || (sc is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(sc))));
                         if(sc && !scMark)
                         {
-                           if(sc.visible || sc.alpha != 0) { this.hz43VanNote(sc); }
-                           sc.visible = false;
-                           sc.alpha = 0;
+                           if(this.hz43VanInfoName(sc.name)) { this.hz43StHide(sc); }
+                           else
+                           {
+                              if(sc.visible || sc.alpha != 0) { this.hz43VanNote(sc); }
+                              sc.visible = false;
+                              sc.alpha = 0;
+                           }
                         }
                         si++;
                      }
@@ -19864,9 +19952,13 @@
                      var chMark:Boolean = ch && (ch.name == "WatchIconsWidget_mc" || ch.name == "WatchPointerOutline_mc" || (ch is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(ch))));
                      if(ch && !chMark)
                      {
-                        if(ch.visible || ch.alpha != 0) { this.hz43VanNote(ch); }
-                        if(ch.visible) { ch.visible = false; }
-                        if(ch.alpha != 0) { ch.alpha = 0; }
+                        if(this.hz43VanInfoName(ch.name)) { this.hz43StHide(ch); }
+                        else
+                        {
+                           if(ch.visible || ch.alpha != 0) { this.hz43VanNote(ch); }
+                           if(ch.visible) { ch.visible = false; }
+                           if(ch.alpha != 0) { ch.alpha = 0; }
+                        }
                      }
                      else if(ch)
                      {
@@ -19878,9 +19970,13 @@
                }
                else if(hide && !keep)
                {
-                  if(clip.visible || clip.alpha != 0) { this.hz43VanNote(clip); }
-                  if(clip.visible) { clip.visible = false; }
-                  if(clip.alpha != 0) { clip.alpha = 0; }
+                  if(this.hz43VanInfoName(name)) { this.hz43StHide(clip); }
+                  else
+                  {
+                     if(clip.visible || clip.alpha != 0) { this.hz43VanNote(clip); }
+                     if(clip.visible) { clip.visible = false; }
+                     if(clip.alpha != 0) { clip.alpha = 0; }
+                  }
                }
                else if(!hide && !this.hz43VanInfoName(name))
                {
