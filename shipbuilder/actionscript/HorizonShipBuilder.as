@@ -219,36 +219,51 @@ package
          var fmt:TextFormat = new TextFormat();
          fmt.size = this.bodyPx;
          fmt.color = 0xF4F0E4;
-         var sample:TextField = this.findField(this.host as DisplayObjectContainer,0);
+         this.useEmbed = false;
+         var sample:TextField = this.findLatinField(this.host as DisplayObjectContainer,0);
          if(sample != null)
          {
             var src:TextFormat = sample.getTextFormat();
-            if(src == null || src.font == null) { src = sample.defaultTextFormat; }
-            if(src != null && src.font != null && String(src.font).length > 0)
-            {
-               fmt.font = src.font;
-               this.useEmbed = sample.embedFonts;
-            }
+            if(src == null || src.font == null || String(src.font).length == 0) { src = sample.defaultTextFormat; }
+            if(src != null && src.font != null && String(src.font).length > 0) { fmt.font = src.font; }
          }
          return fmt;
       }
       
-      private function findField(param1:DisplayObjectContainer, param2:int):TextField
+      private function findLatinField(param1:DisplayObjectContainer, param2:int):TextField
       {
          if(param1 == null || param2 > 6) { return null; }
          var i:int = 0;
          while(i < param1.numChildren)
          {
             var child:DisplayObject = param1.getChildAt(i);
-            if(child is TextField) { return child as TextField; }
-            if(child is DisplayObjectContainer)
+            if(child != this && child is TextField && this.hasLatin((child as TextField).text)) { return child as TextField; }
+            if(child != this && child is DisplayObjectContainer)
             {
-               var hit:TextField = this.findField(child as DisplayObjectContainer,param2 + 1);
+               var hit:TextField = this.findLatinField(child as DisplayObjectContainer,param2 + 1);
                if(hit != null) { return hit; }
             }
             i++;
          }
          return null;
+      }
+      
+      private function hasLatin(param1:String):Boolean
+      {
+         if(param1 == null) { return false; }
+         var letters:int = 0;
+         var i:int = 0;
+         while(i < param1.length)
+         {
+            var c:int = param1.charCodeAt(i);
+            if((c >= 65 && c <= 90) || (c >= 97 && c <= 122))
+            {
+               letters++;
+               if(letters >= 4) { return true; }
+            }
+            i++;
+         }
+         return false;
       }
       
       private function buildCards():void
@@ -427,9 +442,10 @@ package
          return [];
       }
       
+      // Game clips stay on the menu. Removing the parts list from the stage can drop its rows.
       private function followsGame(param1:String):Boolean
       {
-         return param1 == "Credits" || param1 == "Hints";
+         return param1 == "Credits" || param1 == "Hints" || param1 == "Power" || param1 == "Module" || param1 == "Browser" || param1 == "Stats";
       }
       
       private function clipByName(param1:String):DisplayObject
@@ -845,10 +861,16 @@ package
          g.endFill();
          g.lineStyle(1.5,this.accentColor(),1);
          g.beginFill(0x141810,0.96);
-         g.drawRoundRect(r.x + 700 * r.width / 1920,r.y + 80,520,560,18,18);
+         var panelW:Number = 520;
+         var panelH:Number = 560;
+         var panelX:Number = r.x + (r.width - panelW) / 2;
+         var panelY:Number = r.y + 180;
+         if(panelX < r.x + this.margin) { panelX = r.x + this.margin; }
+         if(panelY + panelH > r.y + r.height - this.margin) { panelY = r.y + r.height - this.margin - panelH; }
+         g.drawRoundRect(panelX,panelY,panelW,panelH,18,18);
          g.endFill();
-         var x0:Number = r.x + 700 * r.width / 1920;
-         var y0:Number = r.y + 80;
+         var x0:Number = panelX;
+         var y0:Number = panelY;
          this.setLayer.addChild(this.makeText("SETTINGS",x0 + 24,y0 + 16,240,28,this.bodyPx + 4,this.accentColor()));
          this.setLayer.addChild(this.makeText("APPEARANCE",x0 + 24,y0 + 58,240,22,this.bodyPx + 1,0xF4F0E4));
          var i:int = 0;
@@ -868,7 +890,7 @@ package
             i++;
          }
          this.hexBox = new TextField();
-         this.hexBox.embedFonts = this.useEmbed;
+         this.hexBox.embedFonts = false;
          this.hexBox.defaultTextFormat = this.faceFmt;
          this.hexBox.type = TextFieldType.INPUT;
          this.hexBox.border = true;
@@ -1522,7 +1544,7 @@ package
          if(this.faceFmt != null && this.faceFmt.font != null) { fmt.font = this.faceFmt.font; }
          fmt.size = param6 < 13 ? 13 : param6;
          fmt.color = param7;
-         box.embedFonts = this.useEmbed;
+         box.embedFonts = false;
          box.defaultTextFormat = fmt;
          box.mouseEnabled = false;
          box.selectable = false;

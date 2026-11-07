@@ -271,6 +271,19 @@ int main()
 	Expect(gold.find("ModulePalette_mc") != std::string::npos, "parts list uses the game clip");
 	Expect(gold.find("HangarInfoPanel_mc") != std::string::npos, "hangar overview is recognized");
 	Expect(gold.find("assignSpots") == std::string::npos, "hidden panels are not grabbed by proximity");
+	Expect(gold.find("sample.embedFonts") == std::string::npos, "embed flag is not copied from the first field");
+	Expect(gold.find("embedFonts = false") != std::string::npos, "horizon text does not embed a subset face");
+	Expect(gold.find("findLatinField") != std::string::npos, "horizon text looks for a latin face");
+	Expect(gold.find("param1 == \"Browser\"") != std::string::npos, "parts list stays on the menu");
+	Expect(gold.find("param1 == \"Power\"") != std::string::npos && gold.find("param1 == \"Stats\"") != std::string::npos,
+		"power and the footer stay on the menu");
+	Expect(gold.find("r.y + 180") != std::string::npos, "settings sits below the credit strip");
+	Expect(gold.find("700 * r.width") == std::string::npos, "settings is not parked on the credits");
+	const std::string vortex = ReadFile(root / "package_vortex.sh");
+	Expect(vortex.find("Data/SFSE/Plugins/HorizonShipBuilder.dll") != std::string::npos, "vortex zip has the plugin path");
+	Expect(vortex.find("Data/Interface/spaceshipeditormenu.swf") != std::string::npos, "vortex zip has the normal movie");
+	Expect(vortex.find("Data/Interface/spaceshipeditormenu_lrg.swf") != std::string::npos, "vortex zip has the large movie");
+	Expect(vortex.find("HorizonShipBuilder.default.ini") != std::string::npos, "vortex zip has the default ini");
 	Expect(gold.find(std::string("get") + "Timer") == std::string::npos, "gold movie has no timer");
 	Expect(gold.find(std::string("Glow") + "Filter") == std::string::npos, "gold movie has no glow");
 	Expect(gold.find("Keyboard.F") == std::string::npos, "gold movie has no probe keys");
