@@ -18615,7 +18615,7 @@
       private static const HZ43_VAN_MAX:int = 24;
       private static const HZ43_VAN_FACE:Number = 221;
       // Unique package token for the next diagnostic gfx. Autoname prefix is not watch ownership.
-      private static const HZ43_DIAG:String = "r9-cappose-20261107";
+      private static const HZ43_DIAG:String = "r9-cappose-ctao-20261107";
 
       private function hz43VanInfoName(name:String) : Boolean
       {
@@ -19587,8 +19587,8 @@
 
       // Native cap: PHC sprite 1337 depth 1 characterId 926 at (0, -0.25) beside WatchOutline_mc (0, 0).
       // FadeIn CXFORM depths 1/3/5/9. After sibling Arrange both clips get the same dx/sc, so the pair stays.
-      // Other unnamed BLG clips fail this: depth 278 char 1237 at (110.5, 110.5), depths 298/300 char 1271
-      // at (87.2, 141.65) and (139.45, 141.65) with scaleY 0. Autoname numbers are not stable across movies.
+      // Other unnamed frame-1 locals fail this pose: (110.5, 110.5) and the scaleY-0 ticks at y 141.65.
+      // Runtime also listed instance546/548/550; those names are not mapped to depths here.
       private function hz43VanCapClip(d:DisplayObject) : Boolean
       {
          if(!d || this.hzBlg == null || d.parent != this.hzBlg) { return false; }
@@ -20164,13 +20164,18 @@
             {
                var nm:String = d.name != null && d.name.length > 0 ? d.name : "(unnamed)";
                var cta:Number = -1;
+               var cto:Number = -1;
                try
                {
                   var ct:ColorTransform = d.transform.colorTransform;
-                  if(ct) { cta = ct.alphaMultiplier; }
+                  if(ct)
+                  {
+                     cta = ct.alphaMultiplier;
+                     cto = ct.alphaOffset;
+                  }
                }
                catch(eCt:Error) { }
-               trace("HZ43 sib " + nm + " vis=" + d.visible + " a=" + d.alpha + " ctA=" + cta + " x=" + d.x + " y=" + d.y + " sx=" + d.scaleX + " sy=" + d.scaleY + " capArt=" + (this.hz43VanCapClip(d) ? 1 : 0));
+               trace("HZ43 sib " + nm + " vis=" + d.visible + " a=" + d.alpha + " ctA=" + cta + " ctO=" + cto + " x=" + d.x + " y=" + d.y + " sx=" + d.scaleX + " sy=" + d.scaleY + " capArt=" + (this.hz43VanCapClip(d) ? 1 : 0));
             }
             i++;
          }

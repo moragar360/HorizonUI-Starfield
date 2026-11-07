@@ -251,10 +251,11 @@ expect(funcBody(as, "hz43VanBlgChrome").indexOf("hz43VanCapClip") >= 0 && funcBo
 expect(funcBody(as, "hz43VanCapClip").indexOf("WatchOutline_mc") >= 0, "cap identity is outline-relative native pose");
 expect(funcBody(as, "hz43VanCapClip").indexOf("scaleY") >= 0, "collapsed INFO ticks are not the cap");
 expect(funcBody(as, "hz43VanCapClip").indexOf('"instance66"') < 0, "cap identity is not hardcoded instance66");
-expect(funcBody(as, "hz43VanDump").indexOf("ctA=") >= 0 && funcBody(as, "hz43VanDump").indexOf("HZ43_DIAG") >= 0, "dump records ColorTransform alpha and the diagnostic package token");
+expect(funcBody(as, "hz43VanDump").indexOf("ctA=") >= 0 && funcBody(as, "hz43VanDump").indexOf("ctO=") >= 0 && funcBody(as, "hz43VanDump").indexOf("HZ43_DIAG") >= 0, "dump records ColorTransform alphaMultiplier and alphaOffset and the diagnostic package token");
+expect(funcBody(as, "hz43VanDump").indexOf("alphaMultiplier") >= 0 && funcBody(as, "hz43VanDump").indexOf("alphaOffset") >= 0, "dump reads both CXFORM alpha terms");
 expect(funcBody(as, "hz43VanDump").indexOf("capArt=") >= 0, "dump marks which autonamed sibling is the verified cap");
 expect(funcBody(as, "hz43VanDump").indexOf("hz43VanNamed") < 0, "dump lists every BottomLeftGroup child, not only VanNamed clips");
-expect(as.indexOf('HZ43_DIAG:String = "r9-cappose-20261107"') >= 0, "next gfx can prove package r9-cappose-20261107");
+expect(as.indexOf('HZ43_DIAG:String = "r9-cappose-ctao-20261107"') >= 0, "next gfx can prove package r9-cappose-ctao-20261107");
 expect(funcBody(as, "hz43VanCapture").indexOf('hz43VanDump("cap")') >= 0, "dump after capture latch prints cap=1");
 expect(funcBody(as, "hz43VanWrite").indexOf("write-marks") >= 0, "dump runs at native and marker writes");
 expect(funcBody(as, "hz43VanNote").indexOf("hz43HidV") < 0 && funcBody(as, "hz43VanRestoreHid").indexOf("hz43HidV") < 0, "hide identity list does not sample clip.visible for restore");
@@ -273,7 +274,7 @@ expect(as.indexOf("HZ43_HID_MAX:int = 40") >= 0 && funcBody(as, "hz43VanNote").i
 expect(funcBody(as, "hz43VanRestoreHid").indexOf("HealthBar") < 0 && funcBody(as, "hz43VanNote").indexOf("HealthBar") < 0, "health is not on the watch hid list");
 expect(funcBody(as, "hz43VanGameVis").indexOf("DayCycleBase_mc") >= 0 && funcBody(as, "hz43VanGameVis").indexOf("Autopilot_mc") >= 0, "game-owned visibility includes day cycle and autopilot");
 expect(as.indexOf("function hz43IdCt") < 0 && as.indexOf("function hz43Ct(") < 0, "style 2 no longer assigns a cached identity ColorTransform");
-expect(funcBody(as, "hz43TintRgb").indexOf("alphaMultiplier") < 0 && funcBody(as, "hz43TintClear").indexOf("alphaMultiplier") < 0, "style 2 tint and clear do not write alphaMultiplier");
+expect(funcBody(as, "hz43TintRgb").indexOf("alphaMultiplier") < 0 && funcBody(as, "hz43TintClear").indexOf("alphaMultiplier") < 0 && funcBody(as, "hz43TintRgb").indexOf("alphaOffset") < 0, "style 2 tint and clear do not write alphaMultiplier or alphaOffset");
 expect(as.indexOf('HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc"]') >= 0 && funcBody(as, "hz43VanRestoreHid").indexOf("Temperature_mc") < 0, "restore does not special-case INFO names or force their alpha");
 expect(onFrame.indexOf("hzWatchStyle == 0") >= 0 && onFrame.indexOf('names.push("MissionIconsWidget_mc","EnemyIconsWidget_mc")') >= 0, "Off still hides mission and enemy widgets");
 expect(funcBody(as, "hz43VanMarkName").indexOf("MissionIconsWidget_mc") >= 0, "custom keep-mark includes mission widgets");
@@ -366,6 +367,7 @@ o2anim.kids = [unnamedInner];
 o2co2.kids = [o2anim, co2anim];
 const outline = { name: "WatchOutline_mc", parent: blg, x: 0, y: 0 };
 const unnamedCap = { name: "", parent: blg, x: 0, y: -0.25, scaleX: 1, scaleY: 1 };
+const inst66 = { name: "instance66", parent: blg, x: 0, y: -0.25, scaleX: 1, scaleY: 1 };
 const pointer = { name: "WatchPointerOutline_mc", parent: blg, x: 111, y: 111 };
 const icons = { name: "WatchIconsWidget_mc", parent: blg, x: 111.35, y: 111.45 };
 const mission = { name: "MissionIconsWidget_mc", parent: blg, x: 111.35, y: 111.45 };
@@ -378,7 +380,7 @@ const detect = { name: "EnemyDetectionAnim_mc", parent: blg, x: 110.5, y: 110.5 
 const inst546 = { name: "instance546", parent: blg, x: 110.5, y: 110.5, scaleX: 1, scaleY: 1 };
 const inst548 = { name: "instance548", parent: blg, x: 87.2, y: 141.65, scaleX: 0.000076293945, scaleY: 0 };
 const inst550 = { name: "instance550", parent: blg, x: 139.45, y: 141.65, scaleX: 0.000076293945, scaleY: 0 };
-const blgKids = [unnamedCap, outline, pointer, o2co2, thin, icons, mission, enemy, bio, envBase, envAlert, detect, inst546, inst548, inst550];
+const blgKids = [unnamedCap, inst66, outline, pointer, o2co2, thin, icons, mission, enemy, bio, envBase, envAlert, detect, inst546, inst548, inst550];
 
 function gatherSiblings(kids, ring) {
 	const units = [];
@@ -424,12 +426,12 @@ function gatherNestedOld(node, depth, out) {
 
 const siblingUnits = gatherSiblings(blgKids, outline);
 expect(siblingUnits.indexOf(o2co2) >= 0 && siblingUnits.indexOf(outline) >= 0, "native ring and O2 bar are sibling units");
-expect(siblingUnits.indexOf(unnamedCap) >= 0, "unnamed cap is a BottomLeftGroup sibling unit");
-expect(siblingUnits.indexOf(inst546) < 0 && siblingUnits.indexOf(inst548) < 0 && siblingUnits.indexOf(inst550) < 0, "autonamed center art and INFO ticks are not watch units");
+expect(siblingUnits.indexOf(unnamedCap) >= 0 && siblingUnits.indexOf(inst66) >= 0, "empty-name and session instance66 at cap pose are BottomLeftGroup units");
+expect(siblingUnits.indexOf(inst546) < 0 && siblingUnits.indexOf(inst548) < 0 && siblingUnits.indexOf(inst550) < 0, "extra runtime autonames at non-cap native locals are not watch units");
 expect(siblingUnits.indexOf(o2anim) < 0 && siblingUnits.indexOf(co2anim) < 0, "inner O2Anim_mc is not a unit");
 expect(siblingUnits.indexOf(bio) < 0 && siblingUnits.indexOf(envBase) < 0 && siblingUnits.indexOf(envAlert) < 0 && siblingUnits.indexOf(detect) < 0, "bio env alert and detection are not watch units");
 expect(siblingUnits.indexOf(mission) >= 0 && siblingUnits.indexOf(enemy) >= 0, "mission and enemy widgets move with the watch");
-expect(vanCapClip({ name: "instance66", x: 110.5, y: 110.5, scaleX: 1, scaleY: 1 }, outline) === false, "instance66 at center-art pose is not the cap");
+expect(vanCapClip({ name: "instance66", x: 110.5, y: 110.5, scaleX: 1, scaleY: 1 }, outline) === false, "session cap name at a non-cap native local is not the cap");
 expect(vanCapClip({ name: "instance546", x: 0, y: -0.25, scaleX: 1, scaleY: 1 }, outline) === true, "cap identity follows pose, not the session instance number");
 expect(vanNamed("instance66") === false && vanNamed("instance546") === false, "autoname prefix is not a named watch unit");
 expect(vanSkip("BioCondition_mc") && vanSkip("EnvConditionBase_mc") && vanSkip("EnvAlertText") && vanSkip("BioAlertText"), "named bio and env clips stay skipped");
@@ -482,6 +484,75 @@ function isInstName(name) {
 function isWatchClip(d, outline) {
 	return !!(d && (WATCH_NAMES[d.name] || vanCapClip(d, outline)));
 }
+function asInner(name) {
+	const body = funcBody(as, name);
+	return body.replace(/^\{\s*/, "").replace(/\s*\}$/, "").replace(/var\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[A-Za-z0-9_.]+/g, "var $1");
+}
+function bindAsMethod(host, name, args) {
+	host[name] = Function.apply(null, args.concat(["with(this){\n" + asInner(name) + "\n}"])).bind(host);
+}
+function makeProductionHost(kids) {
+	blg.kids = kids;
+	blg.getChildAt = function(i) { return this.kids[i]; };
+	if (!Object.prototype.hasOwnProperty.call(blg, "numChildren")) {
+		Object.defineProperty(blg, "numChildren", { get: function() { return this.kids.length; } });
+	}
+	const host = {
+		hzBlg: blg,
+		hz43VanD: [],
+		hz43VanNm: [],
+		hz43VanN: 0,
+		HZ43_VAN_MAX: 24,
+		HZ43_VAN_N: VAN_N,
+		hzFindByName: function(root, name) {
+			if (!root) return null;
+			if (root.name === name) return root;
+			const list = root.kids || [];
+			for (let i = 0; i < list.length; i++) {
+				if (list[i] && list[i].name === name) return list[i];
+			}
+			return null;
+		}
+	};
+	bindAsMethod(host, "hz43VanSkip", ["name"]);
+	bindAsMethod(host, "hz43VanInstName", ["name"]);
+	bindAsMethod(host, "hz43VanNamed", ["name"]);
+	bindAsMethod(host, "hz43VanHasAncestorUnit", ["d"]);
+	bindAsMethod(host, "hz43VanAdd", ["root"]);
+	bindAsMethod(host, "hz43VanCapClip", ["d"]);
+	bindAsMethod(host, "hz43VanGather", []);
+	return host;
+}
+function gatherEmptyNameOnly(kids) {
+	const units = [];
+	for (let i = 0; i < kids.length; i++) {
+		if (vanNamed(kids[i].name) || kids[i].name === "") units.push(kids[i]);
+	}
+	return units;
+}
+function gatherBroadPrefix(kids) {
+	const units = [];
+	for (let i = 0; i < kids.length; i++) {
+		if (vanNamed(kids[i].name) || isInstName(kids[i].name)) units.push(kids[i]);
+	}
+	return units;
+}
+outline.x = 0; outline.y = 0;
+o2co2.x = 21.7; o2co2.y = 89.85;
+const emptyOnly = gatherEmptyNameOnly(blgKids);
+expect(emptyOnly.indexOf(unnamedCap) >= 0 && emptyOnly.indexOf(inst66) < 0, "empty-name-only gather twin misses the session instance66 cap");
+expect(emptyOnly.indexOf(inst546) < 0 && emptyOnly.indexOf(inst548) < 0 && emptyOnly.indexOf(inst550) < 0, "empty-name-only gather twin does not see the extra runtime autonames");
+const broadPrefix = gatherBroadPrefix(blgKids);
+expect(broadPrefix.indexOf(inst66) >= 0 && broadPrefix.indexOf(inst546) >= 0 && broadPrefix.indexOf(inst548) >= 0 && broadPrefix.indexOf(inst550) >= 0, "broad instance* gather takes the extra runtime autonames");
+const prodHost = makeProductionHost(blgKids);
+expect(prodHost.hz43VanInstName("instance66") === true && prodHost.hz43VanNamed("instance66") === false, "production InstName is a type check, not VanNamed ownership");
+expect(prodHost.hz43VanInstName("instance546") === true && prodHost.hz43VanNamed("instance546") === false, "production VanNamed rejects extra autoname instance546");
+expect(prodHost.hz43VanCapClip(inst66) === true, "production CapClip accepts session instance66 at cap pose");
+expect(prodHost.hz43VanCapClip(inst546) === false && prodHost.hz43VanCapClip(inst548) === false && prodHost.hz43VanCapClip(inst550) === false, "production CapClip rejects extra autonames at non-cap native locals");
+prodHost.hz43VanGather();
+expect(prodHost.hz43VanD.indexOf(inst66) >= 0 && prodHost.hz43VanD.indexOf(outline) >= 0, "production Gather adds the session cap and outline");
+expect(prodHost.hz43VanD.indexOf(inst546) < 0 && prodHost.hz43VanD.indexOf(inst548) < 0 && prodHost.hz43VanD.indexOf(inst550) < 0, "production Gather does not add the extra runtime autonames");
+expect(prodHost.hz43VanD.indexOf(bio) < 0 && prodHost.hz43VanD.indexOf(envBase) < 0 && prodHost.hz43VanD.indexOf(envAlert) < 0, "production Gather does not add named bio or env clips");
 function hidHas(hid, clip) {
 	for (let i = 0; i < hid.length; i++) {
 		if (hid[i].d === clip) return true;
@@ -815,9 +886,9 @@ expect(digitalRound.clips.EnemyIconsWidget_mc.visible === true, "Digital keeps e
 expect(digitalRound.clips.O2CO2_mc.x === 21.7 && digitalRound.clips.WatchOutline_mc.x === 0, "Digital does not drag native O2 or outline locals");
 expect(digitalRound.clips.instance66.x === 0 && digitalRound.clips.instance66.y === -0.25, "Digital does not drag native cap instance66 locals");
 expect(digitalRound.clips.instance66.visible === false, "Digital hides native cap instance66 with chrome");
-expect(digitalRound.clips.instance546.visible === true && digitalRound.clips.instance546.x === 110.5 && digitalRound.clips.instance546.y === 110.5, "Digital does not hide or move autonamed center art");
-expect(digitalRound.clips.instance548.visible === true && digitalRound.clips.instance548.x === 87.2 && digitalRound.clips.instance548.scaleY === 0, "Digital does not hide or move autonamed INFO tick 548");
-expect(digitalRound.clips.instance550.visible === true && digitalRound.clips.instance550.x === 139.45 && digitalRound.clips.instance550.scaleY === 0, "Digital does not hide or move autonamed INFO tick 550");
+expect(digitalRound.clips.instance546.visible === true && digitalRound.clips.instance546.x === 110.5 && digitalRound.clips.instance546.y === 110.5, "Digital does not hide or move extra autoname instance546");
+expect(digitalRound.clips.instance548.visible === true && digitalRound.clips.instance548.x === 87.2 && digitalRound.clips.instance548.scaleY === 0, "Digital does not hide or move extra autoname instance548");
+expect(digitalRound.clips.instance550.visible === true && digitalRound.clips.instance550.x === 139.45 && digitalRound.clips.instance550.scaleY === 0, "Digital does not hide or move extra autoname instance550");
 expect(digitalRound.clips.BioCondition_mc.visible === true && digitalRound.clips.EnvConditionBase_mc.visible === true, "Digital does not own named bio or env condition clips");
 expect(digitalRound.clips.EnvAlertText.visible === true && digitalRound.clips.BioAlertText.visible === true && digitalRound.clips.EnemyDetectionAnim_mc.visible === true, "Digital leaves named env/bio alerts and detection on native rules");
 expect(digitalRound.clips.O2CO2_mc.scaleX === 1 && digitalRound.clips.WatchOutline_mc.scaleX === 1, "Digital does not scale native chrome");
@@ -861,7 +932,7 @@ expect(f11Live.clips.instance546.visible === true && f11Live.clips.instance548.v
 const offExtra = makeWatchState();
 applyWatchStyle(offExtra, 0);
 expect(offExtra.clips.instance66.visible === false, "Off hides the verified cap");
-expect(offExtra.clips.instance546.visible === true && offExtra.clips.instance548.visible === true && offExtra.clips.instance550.visible === true, "Off does not hide autonamed center art or INFO ticks");
+expect(offExtra.clips.instance546.visible === true && offExtra.clips.instance548.visible === true && offExtra.clips.instance550.visible === true, "Off does not hide extra runtime autonames");
 expect(offExtra.clips.BioCondition_mc.visible === true && offExtra.clips.EnvAlertText.visible === true && offExtra.clips.EnemyDetectionAnim_mc.visible === true, "Off does not hide named bio env alerts or detection through watch ownership");
 
 const savedLay = makeWatchState();
@@ -872,17 +943,17 @@ expect(savedLay.units.indexOf(savedLay.clips.instance546) < 0 && savedLay.units.
 vanWrite(savedLay, -40, -40, 1, false);
 expect(savedLay.clips.instance66.x === -40 && savedLay.clips.WatchOutline_mc.x === -40, "saved L-40 moves the cap with the outline");
 expect(savedLay.clips.instance66.y === -40.25 && savedLay.clips.WatchOutline_mc.y === -40, "saved B-40 keeps the native cap to outline offset");
-expect(savedLay.clips.instance546.x === 110.5 && savedLay.clips.instance546.y === 110.5, "saved L-40 B-40 does not move autonamed center art");
-expect(savedLay.clips.instance548.x === 87.2 && savedLay.clips.instance548.y === 141.65 && savedLay.clips.instance548.scaleY === 0, "saved L-40 B-40 does not move or scale INFO tick 548");
-expect(savedLay.clips.instance550.x === 139.45 && savedLay.clips.instance550.y === 141.65 && savedLay.clips.instance550.scaleY === 0, "saved L-40 B-40 does not move or scale INFO tick 550");
+expect(savedLay.clips.instance546.x === 110.5 && savedLay.clips.instance546.y === 110.5, "saved L-40 B-40 does not move extra autoname instance546");
+expect(savedLay.clips.instance548.x === 87.2 && savedLay.clips.instance548.y === 141.65 && savedLay.clips.instance548.scaleY === 0, "saved L-40 B-40 does not move or scale extra autoname instance548");
+expect(savedLay.clips.instance550.x === 139.45 && savedLay.clips.instance550.y === 141.65 && savedLay.clips.instance550.scaleY === 0, "saved L-40 B-40 does not move or scale extra autoname instance550");
 expect(vanCapClip(savedLay.clips.instance66, savedLay.clips.WatchOutline_mc) === true, "cap identity stays outline-relative after saved Arrange");
-expect(vanCapClip(savedLay.clips.instance546, savedLay.clips.WatchOutline_mc) === false, "center art still fails cap pose after saved Arrange");
+expect(vanCapClip(savedLay.clips.instance546, savedLay.clips.WatchOutline_mc) === false, "extra autoname instance546 still fails cap pose after saved Arrange");
 
 const geo = makeWatchState();
 expect(isWatchClip(geo.clips.instance66, geo.clips.WatchOutline_mc) === true, "session instance66 at native cap pose is watch chrome");
 geo.clips.instance66.x = 110.5;
 geo.clips.instance66.y = 110.5;
-expect(isWatchClip(geo.clips.instance66, geo.clips.WatchOutline_mc) === false, "the same autoname at center-art geometry is not watch chrome");
+expect(isWatchClip(geo.clips.instance66, geo.clips.WatchOutline_mc) === false, "the same autoname at a non-cap native local is not watch chrome");
 geo.clips.instance546.x = 0;
 geo.clips.instance546.y = -0.25;
 expect(isWatchClip(geo.clips.instance546, geo.clips.WatchOutline_mc) === true, "cap identity follows native pose across autoname numbers");
@@ -902,8 +973,9 @@ expect(checks.indexOf("FadeInPlanetInfo") >= 0, "CHECKS records that INFO appear
 expect(checks.indexOf("does not display") >= 0, "CHECKS does not treat INFO vis-true as shown at alpha 0");
 expect(checks.indexOf("move only the live marker widgets") >= 0, "CHECKS describes custom marker-only follow");
 expect(checks.indexOf("HZ43 dump") >= 0 && checks.indexOf("vis/alpha") >= 0, "CHECKS records vis and alpha sibling dumps");
-expect(checks.indexOf("r9-cappose-20261107") >= 0, "CHECKS records the cap-pose diagnostic package token");
-expect(checks.indexOf("instance546") >= 0 && checks.indexOf("characterId 1237") >= 0, "CHECKS records the extra autonamed BLG siblings are not the cap");
+expect(checks.indexOf("r9-cappose-ctao-20261107") >= 0, "CHECKS records the cap-pose diagnostic package token");
+expect(checks.indexOf("alphaOffset") >= 0 && checks.indexOf("alphaMultiplier") >= 0, "CHECKS records dump of both CXFORM alpha terms");
+expect(checks.indexOf("instance546") >= 0 && checks.indexOf("not mapped") >= 0, "CHECKS records extra runtime autonames without mapping them to PHC depths");
 expect(checks.indexOf("health") >= 0 && checks.indexOf("ammo") >= 0 && checks.indexOf("boost") >= 0, "CHECKS records that health ammo and boost stay off the watch hid list");
 expect(checks.indexOf("FadeIn") >= 0 || checks.indexOf("native") >= 0, "CHECKS describes native watch passthrough");
 expect(checks.indexOf("not proven freeze") >= 0, "CHECKS reports FadeIn on invisible children as unknown, not a freeze");
