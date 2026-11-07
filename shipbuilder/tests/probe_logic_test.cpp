@@ -1111,10 +1111,15 @@ int main()
 	Expect(readme.find("interface/spaceshipeditormenu_lrg.swf") != std::string::npos && readme.find("Creations included") != std::string::npos &&
 		readme.find("another mod adds") != std::string::npos && readme.find("arrow keys still move the parts list") != std::string::npos,
 		"the readme checks other plugins' movies, keeps other mods for the comparison, and checks list keys after the hex field");
-	Expect(readme.find("6A66089EE9410ECB126B4BEDE8BED81551E5661555AA1F50FA217C495404C2EC") != std::string::npos &&
-		readme.find("3457A49CF9B79A346C4B3FCFA7EF360B10CCC86D41899B6D8004DF12E90F2C67") != std::string::npos &&
-		readme.find("Stop and report it rather than splicing.") != std::string::npos,
-		"the readme checks the splice source against the stock movies' hashes");
+	Expect(readme.find("\n- `spaceshipeditormenu.swf`, 260994 bytes: `6A66089EE9410ECB126B4BEDE8BED81551E5661555AA1F50FA217C495404C2EC`\n") != std::string::npos &&
+		readme.find("\n- `spaceshipeditormenu_lrg.swf`, 260965 bytes: `3457A49CF9B79A346C4B3FCFA7EF360B10CCC86D41899B6D8004DF12E90F2C67`\n") != std::string::npos &&
+		readme.find("Stop and report it rather than splicing.") != std::string::npos &&
+		readme.find("`certutil` prints lower case, so compare without regard to case:") != std::string::npos,
+		"the readme checks the splice source against the stock movies' sizes and hashes");
+	Expect(readme.find("\n- `spaceshipeditormenu_assetlibrary2.swf`, 151358 bytes: `2B6D854C3C66973C2948246D1D1DA21A3ADA314B5FDD1899DA375FBCCB8052BC`\n") != std::string::npos &&
+		readme.find("\n- `spaceshipeditormenu_assetlibrary2_lrg.swf`, 152427 bytes: `4793E8C3D710647D53D0C91333162E158DE7E1F70D1671A28A53F27A67F5370B`\n") != std::string::npos &&
+		readme.find("\n- `spaceshipeditormenu_assetlibrary.swf`, 8335 bytes: `9352241D92EE288D6F4D1457E82F2F2CCD842CF9D4F1353EFD29DC38471DF624`\n") != std::string::npos,
+		"the readme gives the stock libraries' sizes and hashes");
 	Expect(readme.find("interface/spaceshipeditormenu_assetlibrary2.swf") != std::string::npos &&
 		readme.find("interface/spaceshipeditormenu_assetlibrary2_lrg.swf") != std::string::npos &&
 		readme.find("Do not enable StarUI Ship Builder with this mod.") != std::string::npos,
@@ -1124,10 +1129,25 @@ int main()
 		"the readme names this pass a font probe and a card candidate");
 	Expect(readme.find("Every stock language config maps all three.") != std::string::npos && readme.find("needs no other Horizon mod") != std::string::npos,
 		"the readme says the face candidates are stock names and the movie stands alone");
-	Expect(readme.find("`SETTINGS hex focus=hex`") != std::string::npos && readme.find("`SETTINGS close focus=`") != std::string::npos &&
-		readme.find("after must read `list`") != std::string::npos && readme.find("It never reads `hex` or `ours`.") != std::string::npos,
-		"the readme gates the focus hand-back on log lines");
-	Expect(readme.find("act when the button is released") != std::string::npos, "the readme checks that Esc and B close our panels and do nothing else");
+	Expect(readme.find("whether a face has another script's glyphs, and how it draws them, is untested.") != std::string::npos &&
+		readme.find("which is untested") == std::string::npos,
+		"the readme says the font map is stock and only other scripts' glyphs are untested");
+	Expect(readme.find("so neither check is known to fire for it, and the gold card can cover its card. This rule is the guard.") != std::string::npos,
+		"the readme does not lean on the StarUI checks");
+	Expect(readme.find("the log shows `SETTINGS hex focus=` with the holder before and after `>`, here `list>hex`, and the code is selected. Each click selects the whole code again.") != std::string::npos &&
+		readme.find("the log shows `SETTINGS custom focus=hex length=6`, then `HEX` and the code") != std::string::npos &&
+		readme.find("Typing that leaves the code unchanged is a failure even when the log reads `hex`.") != std::string::npos &&
+		readme.find("Each close writes `SETTINGS close focus=` with the holder before and after `>`. When before is `hex` or `ours`, after must read the holder the hex click read before `>`, here `list`. Otherwise after equals before.") != std::string::npos &&
+		readme.find("A first hex click that reads `hex>hex` or `ours>hex` means the game moved focus before the mod could note the holder.") != std::string::npos,
+		"the readme gates the focus hand-back on log lines and on typing");
+	Expect(readme.find("Repeat one hex click and one close wherever the gear shows: in the hangar overview, in Flight Check, in paint mode, and while renaming the ship.") != std::string::npos,
+		"the readme checks the focus hand-back on every screen with the gear");
+	Expect(readme.find("Check Esc tapped and held for about a second, and B the same, in Settings and in Arrange.") != std::string::npos &&
+		readme.find("act when the key or button is released, as the game's buttons do, and neither half should reach the game.") != std::string::npos &&
+		readme.find("Enter in Arrange acts as OK, also on release. Arrange's arrow keys act on the press and repeat while held.") != std::string::npos &&
+		readme.find("Click OK and CANCEL in Arrange with the mouse: the click does not reach the parts list or the game's buttons.") != std::string::npos &&
+		readme.find("act when the button is released") == std::string::npos,
+		"the readme checks that Esc, Enter, B, and Arrange's mouse buttons act on release and reach only our panels");
 	Expect(gold.find("this.note(\"MODVALS \" + this.modVals[v]);") != std::string::npos && gold.find("this.modValsLeft = 24;") != std::string::npos,
 		"payload numbers and shown text are logged for a bounded number of modules");
 	Expect(!NotesHideFaces("         this.note(\"FONT face=\" + fmt.font);") && !NotesHideFaces("         this.note(\"FONT list=\" + FACES.join(\",\"));") &&

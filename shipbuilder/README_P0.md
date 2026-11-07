@@ -43,10 +43,16 @@ bsarch unpack "<Starfield>\Data\Starfield - Interface.ba2" shipbuilder\work\ba2
 
 `bsarch` may be `Archive2` with `-extract=shipbuilder\work\ba2` instead. Copy `spaceshipeditormenu.swf` and `spaceshipeditormenu_lrg.swf` out of the extract folder. Those copies are the ffdec inputs below. Do not write back into the `.ba2`.
 
-For game version 1.16.244 the stock movies have these SHA-256 values. Check both copies before ffdec, for example with `certutil -hashfile shipbuilder\work\ba2\spaceshipeditormenu.swf SHA256`:
+For game version 1.16.244 the stock movies have these SHA-256 values. Check both copies before ffdec, for example with `certutil -hashfile shipbuilder\work\ba2\spaceshipeditormenu.swf SHA256`. `certutil` prints lower case, so compare without regard to case:
 
 - `spaceshipeditormenu.swf`, 260994 bytes: `6A66089EE9410ECB126B4BEDE8BED81551E5661555AA1F50FA217C495404C2EC`
 - `spaceshipeditormenu_lrg.swf`, 260965 bytes: `3457A49CF9B79A346C4B3FCFA7EF360B10CCC86D41899B6D8004DF12E90F2C67`
+
+The `dir` line above also lists the builder's libraries. A loose library is stock only with these values:
+
+- `spaceshipeditormenu_assetlibrary2.swf`, 151358 bytes: `2B6D854C3C66973C2948246D1D1DA21A3ADA314B5FDD1899DA375FBCCB8052BC`
+- `spaceshipeditormenu_assetlibrary2_lrg.swf`, 152427 bytes: `4793E8C3D710647D53D0C91333162E158DE7E1F70D1671A28A53F27A67F5370B`
+- `spaceshipeditormenu_assetlibrary.swf`, 8335 bytes: `9352241D92EE288D6F4D1457E82F2F2CCD842CF9D4F1353EFD29DC38471DF624`
 
 A different value means another mod's movie or another game version. Stop and report it rather than splicing.
 
@@ -248,7 +254,7 @@ The builder movies embed no fonts. Their text names a font such as `$MAIN_Font_B
 
 The face test runs when the builder opens. `FONT try=` lists each candidate by index as wide/narrow/tall widths and a `+` or `-`: `e1` to `e3` are the mapped names as embedded text, `n4` is the face of the game's module name field (`n4=na` when that field was not found), and `d1` to `d3` are the mapped names as device text. `n=` and `nd=` are the same widths for a name that cannot exist, embedded and device. `pick=` names the first candidate that passed. `pick=0` means none passed. The movie then tries again at frames 30 and 120, three tries in all. `FONTSRC` codes the face of five game text fields: `f1` to `f3` match a mapped candidate, `x$` is another mapped name, `x` is a plain face, `x0` has none, and `na` means the field was not found. Each code but `na` ends in `e` for embedded text or `d` for device text, as in `f1e`. Face names are not printed.
 
-The face test measures Latin letters. In a language that does not use them, the card shows only if that language's font map covers the candidate, which is untested. `FONTSRC name=` with `f1` to `f3` means the game's own module name uses a mapped candidate.
+The face test measures Latin letters. Every stock language config maps the candidates, but whether a face has another script's glyphs, and how it draws them, is untested. In a language that does not use Latin letters, check the card for boxes before relying on it. `FONTSRC name=` with `f1` to `f3` means the game's own module name uses a mapped candidate.
 
 `MODCARD listen ok` means the movie subscribed to ModuleInfo, the same data the game card reads. `MODCARD listen miss` means it could not, and the game card stays. With a face picked, select a part. The gold card takes the game card's place. The game card is not drawn by the menu movie: the menu places `ModuleInfoCard_mc`, an instance of `ModuleInfoCard` from `spaceshipeditormenu_assetlibrary2.swf` (`_lrg` for the large menu). The gold card sits just above that instance. The game card stays on the menu at alpha 0, so the menu keeps filling, sizing, and showing it. `MODCARD on` adds `rows=` (stats shown, at most 10), `skills=` (at most 2), `keys=` (fields that kept a `$` key, so translation did not run on the new text), `inb=` (the build mode flag), and `w=` (card width). A new `MODCARD on` line is written when those counts change. Any other `MODCARD` state names why the game card shows instead: `face`, `conflict`, `map`, `clip`, `data`, `paint` (drawing the card failed; the next payload tries again), `hidden`, `hangar`, or `arrange` (Arrange was open when the card would have come up).
 
@@ -261,8 +267,9 @@ Check on the normal movie, then on `spaceshipeditormenu_lrg.swf`:
 - The parts list, categories, scrolling, keyboard, pad, and mouse work as before. That includes categories another mod adds: the same tab names, order, and parts as with this mod removed.
 - The hangar overview keeps the game card.
 - Arrange, from Ctrl+L or the gear: the outline is the gold card. Move it and Save. Close and reopen the builder, and it is in the same spot. Reset puts it home. Cancel undoes a move.
-- Settings and keyboard focus, in build mode with the parts list showing. Click the hex field: the log shows `SETTINGS hex focus=hex` and the code is selected. Type six characters, then CUSTOM. Close Settings four ways, reopening between them: DONE, Esc, a swatch, and ARRANGE PANELS followed by Cancel. Each close writes `SETTINGS close focus=` with the holder before and after `>`, and after must read `list`. Then the arrow keys still move the parts list, and Enter does what it does with this mod removed. After reading `hex` or `ours`, or arrows that stop, is a failure: bring back the log. In the hangar overview the parts list is hidden, so after reads `none`, or `other` when a game panel such as rename holds focus. It never reads `hex` or `ours`.
-- Esc and the pad's B button close Settings and Arrange and do nothing else: no exit prompt, no part deselected, and build mode stays. Settings and Arrange act when the button is released, as the game's buttons do.
+- Settings and keyboard focus, in build mode with the parts list showing. Click the hex field: the log shows `SETTINGS hex focus=` with the holder before and after `>`, here `list>hex`, and the code is selected. Each click selects the whole code again. Type six characters, then CUSTOM: the log shows `SETTINGS custom focus=hex length=6`, then `HEX` and the code, and the gold changes to it. Typing that leaves the code unchanged is a failure even when the log reads `hex`. Close Settings four ways, reopening between them: DONE, Esc, a swatch, and ARRANGE PANELS followed by Cancel. Each close writes `SETTINGS close focus=` with the holder before and after `>`. When before is `hex` or `ours`, after must read the holder the hex click read before `>`, here `list`. Otherwise after equals before. Then the arrow keys still move the parts list, and Enter does what it does with this mod removed. After reading `hex` or `ours`, or arrows that stop, is a failure: bring back the log. A first hex click that reads `hex>hex` or `ours>hex` means the game moved focus before the mod could note the holder. Report it, because then the close falls back to the parts list while it shows, or to nothing.
+- Repeat one hex click and one close wherever the gear shows: in the hangar overview, in Flight Check, in paint mode, and while renaming the ship. The close's after must read what that hex click read before `>`, and that screen's keys work as before.
+- Esc and the pad's B button close Settings and Arrange and do nothing else: no exit prompt, no part deselected, and build mode stays. Check Esc tapped and held for about a second, and B the same, in Settings and in Arrange. Settings and Arrange act when the key or button is released, as the game's buttons do, and neither half should reach the game. Enter in Arrange acts as OK, also on release. Arrange's arrow keys act on the press and repeat while held. Click OK and CANCEL in Arrange with the mouse: the click does not reach the parts list or the game's buttons.
 
 Bring back the log and a screenshot of the card for each part type on both movies.
 
@@ -270,7 +277,7 @@ Bring back the log and a screenshot of the card for each part type on both movie
 
 This package is Horizon Ship Builder alone. It is not the HUD installer and it has no component picker. Quit the game first. The two movies in the zip must be the spliced movies, not stock archive copies, so neither matches a stock SHA-256 value above. The default ini ships with the mod. The plugin still reads the player file under Documents when that file exists.
 
-StarUI Ship Builder ships its own `spaceshipeditormenu.swf`, `spaceshipeditormenu_lrg.swf`, and game card library. With both mods enabled, Vortex reports a file conflict, and either winner leaves a mix the checks above did not cover. Do not enable StarUI Ship Builder with this mod.
+StarUI Ship Builder ships its own `spaceshipeditormenu.swf`, `spaceshipeditormenu_lrg.swf`, and game card library. With both mods enabled, Vortex reports a file conflict, and either winner leaves a mix the checks above did not cover. Do not enable StarUI Ship Builder with this mod. The mod's own StarUI checks look for a `StarUIShipBuilder.dll` module and a menu clip named for StarUI. StarUI Ship Builder 1.4 ships only Interface files, so neither check is known to fire for it, and the gold card can cover its card. This rule is the guard.
 
 From the repo root, after the desktop builder has produced the DLL and both movies:
 
