@@ -179,6 +179,19 @@ inline std::string DiffChipText(const CardStat& stat)
 	return sign + text + (stat.percentage ? "%" : "");
 }
 
+// The movie's shortChip: a chip too wide for its room drops its places, as a cut would.
+// A whole part of 0 would read as no change, so that chip keeps its sign alone. A chip
+// still too wide after that is the sign alone.
+inline std::string ShortChip(std::string_view chip)
+{
+	if (chip.empty()) return {};
+	const auto dot = chip.find('.');
+	if (dot == std::string_view::npos || chip.find('e') != std::string_view::npos) return std::string(chip.substr(0, 1));
+	const std::string_view whole = chip.substr(0, dot);
+	if (whole.size() == 2 && whole[1] == '0') return std::string(chip.substr(0, 1));
+	return std::string(whole);
+}
+
 // A chip never reaches the value column: it keeps 6 px clear of the value's right edge.
 inline int ChipRoom(const CardMetrics& m)
 {

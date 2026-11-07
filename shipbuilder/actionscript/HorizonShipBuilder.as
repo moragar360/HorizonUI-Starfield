@@ -99,6 +99,11 @@ package
       private var modValsKey:String;
       private var modValsSaid:String;
       private var modValsLeft:int;
+      private var modHigh:Number;
+      private var liftView:Object;
+      private var liftParent:DisplayObjectContainer;
+      private var liftTop:Number;
+      private var liftLow:Number;
       
       public function HorizonShipBuilder(param1:Object)
       {
@@ -155,6 +160,11 @@ package
          this.modValsKey = "";
          this.modValsSaid = "";
          this.modValsLeft = 24;
+         this.modHigh = 0;
+         this.liftView = null;
+         this.liftParent = null;
+         this.liftTop = 0;
+         this.liftLow = 0;
          this.mouseEnabled = false;
          this.mouseChildren = true;
          addEventListener(Event.ADDED_TO_STAGE,this.onStage);
@@ -1261,6 +1271,7 @@ package
          if(this.conflict || this.arranging) { return; }
          this.closeSettings();
          this.arranging = true;
+         if(this.modOn) { this.seatModule(this.modNative); }
          this.ignorePress = true;
          this.dragId = "";
          this.remember();
@@ -2308,7 +2319,7 @@ package
          this.modFailed = false;
          var was:Boolean = this.modOn;
          this.syncModule();
-         if(was && this.modOn) { this.paintSafe(); }
+         if(was && this.modOn && this.paintSafe()) { this.seatModule(this.modNative); }
       }
       
       private function syncModule():void
@@ -2429,7 +2440,7 @@ package
             if(mine != at + 1) { parent.setChildIndex(this.modCard,mine > at ? at + 1 : at); }
          }
          var box:Rectangle = param1.getBounds(parent);
-         var y:Number = this.arranging ? box.y : this.liftModule(parent,box.y,this.modCard.height);
+         var y:Number = this.arranging ? box.y : this.liftModule(parent,box.y,this.modHigh);
          this.modCard.x = Math.round(box.x);
          this.modCard.y = Math.round(y);
          this.modCard.visible = true;
@@ -2442,10 +2453,15 @@ package
       {
          var r:Object = this.modView;
          if(r == null) { return param2; }
-         var top:Point = param1.globalToLocal(this.localToGlobal(new Point(r.x,r.y)));
-         var low:Point = param1.globalToLocal(this.localToGlobal(new Point(r.x,r.y + r.height)));
-         if(param2 + param3 <= low.y) { return param2; }
-         return Math.max(top.y,low.y - param3);
+         if(r != this.liftView || param1 != this.liftParent)
+         {
+            this.liftView = r;
+            this.liftParent = param1;
+            this.liftTop = param1.globalToLocal(this.localToGlobal(new Point(r.x,r.y))).y;
+            this.liftLow = param1.globalToLocal(this.localToGlobal(new Point(r.x,r.y + r.height))).y;
+         }
+         if(param2 + param3 <= this.liftLow) { return param2; }
+         return Math.max(this.liftTop,this.liftLow - param3);
       }
       
       private function cardW():Number
@@ -2594,13 +2610,23 @@ package
          return sign + size + (param1.bPercentage ? "%" : "");
       }
       
+      // A chip too wide for its room drops its places, as a cut would. A whole part of 0 would
+      // read as no change, so that chip keeps its sign alone.
+      private function shortChip(param1:String):String
+      {
+         var dot:int = param1.indexOf(".");
+         if(dot < 0 || param1.indexOf("e") >= 0) { return param1.charAt(0); }
+         var whole:String = param1.substring(0,dot);
+         return whole.length == 2 && whole.charAt(1) == "0" ? param1.charAt(0) : whole;
+      }
+      
       // FormatNumberToString cuts the text of toString, which turns float noise such as
       // 1.2e-7 into "1.2". toFixed never writes an exponent below 1e21.
       private function chipNumber(param1:Number, param2:int):String
       {
          var text:String = param1.toFixed(6);
          var dot:int = text.indexOf(".");
-         if(dot < 0) { return text; }
+         if(dot < 0 || text.indexOf("e") >= 0) { return text; }
          text = param2 > 0 ? text.substring(0,dot + 1 + param2) : text.substring(0,dot);
          if(text.indexOf(".") >= 0)
          {
@@ -2757,6 +2783,7 @@ package
          g.beginFill(0x0E141A,1);
          g.drawRoundRect(1,1,w - 2,y - 2,12,12);
          g.endFill();
+         this.modHigh = y;
          this.modFacts = " rows=" + count + " skills=" + need + " keys=" + kept + " inb=" + (Boolean(data.bInBuilderMode) ? 1 : 0) + " w=" + w;
          var head:String = "cost=" + String(data.iModuleCost) + ">" + this.modValue.text + " mass=" + String(data.iModuleMass) + ">" + this.modMass.text;
          this.modVals = [head + (vals.length > 0 ? " " + vals.slice(0,5).join(" ") : "")];
@@ -2783,8 +2810,18 @@ package
             return "";
          }
          var up:Boolean = Number(param2.fDiff) > 0;
-         this.put(tag,text,up ? 0x69FEB3 : 0xFF6868);
          var room:Number = (this.lrg ? 80 : 67) - 8;
+         this.put(tag,text,up ? 0x69FEB3 : 0xFF6868);
+         if(tag.textWidth + 14 > room)
+         {
+            text = this.shortChip(text);
+            this.put(tag,text,up ? 0x69FEB3 : 0xFF6868);
+         }
+         if(tag.textWidth + 14 > room)
+         {
+            text = text.charAt(0);
+            this.put(tag,text,up ? 0x69FEB3 : 0xFF6868);
+         }
          var chipW:Number = Math.min(Math.max(28,tag.textWidth + 14),room);
          tag.width = Math.min(tag.textWidth + 6,chipW - 4);
          tag.x = Math.max(2,(chipW - tag.textWidth) / 2 - 2);

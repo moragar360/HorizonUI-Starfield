@@ -244,6 +244,11 @@ static void CheckModuleCard()
 	Expect(hsb::DiffChipText({"$HULL", 5, 0.1 + 0.2, false}) == "+0.3", "a chip has no float tail");
 	Expect(hsb::DiffChipText({"$CLASS", 67, 1e-9, false}) == "+", "a class change keeps its sign");
 	Expect(hsb::ChipRoom(normal) == 59 && hsb::ChipRoom(large) == 72, "chip room ends 6 px short of the value column");
+	Expect(hsb::ShortChip("+1234.56") == "+1234" && hsb::ShortChip("+9.5") == "+9", "a chip too wide drops its places");
+	Expect(hsb::ShortChip("-0.25") == "-" && hsb::ShortChip("+12345%") == "+" && hsb::ShortChip("+Infinity") == "+" &&
+		hsb::ShortChip("+1.5e+21") == "+", "a short chip never reads as no change or a wrong number");
+	Expect(hsb::ChipNumber(1.5e21, 2) == "1.5e+21" && hsb::ChipNumber(std::numeric_limits<double>::infinity(), 2) == "Infinity",
+		"a chip keeps toFixed's exponent text whole");
 	Expect(hsb::ChipWidth(normal, 4) == 28 && hsb::ChipWidth(normal, 30) == 44 && hsb::ChipWidth(normal, 90) == 59 && hsb::ChipWidth(large, 90) == 72,
 		"a long chip is capped short of the value column");
 
@@ -392,7 +397,7 @@ static bool NotesHideFaces(const std::string& source)
 	while (std::getline(in, line)) {
 		const bool logs = line.find("this.note(") != std::string::npos || line.find("report +=") != std::string::npos
 			|| line.find("line +=") != std::string::npos || line.find("var report") != std::string::npos
-			|| line.find("var line") != std::string::npos;
+			|| line.find("var line") != std::string::npos || line.find("lines.push(") != std::string::npos;
 		if (!logs) continue;
 		if (line.find("FACES") != std::string::npos || line.find("names[") != std::string::npos
 			|| line.find("labelFace") != std::string::npos || line.find("fieldFace(") != std::string::npos
@@ -724,15 +729,25 @@ int main()
 		Expect(!body->empty() && body->find("param1.visible") == std::string::npos && body->find("modNative.visible") == std::string::npos &&
 			body->find("removeChild") == std::string::npos && body->find("addChild(param1") == std::string::npos &&
 			body->find("addChildAt(param1") == std::string::npos &&
-			CountOf(*body, ".x =") == CountOf(*body, "this.modCard.x =") && CountOf(*body, ".y =") == CountOf(*body, "this.modCard.y ="),
+			CountOf(*body, ".x =") == CountOf(*body, "this.modCard.x =") && CountOf(*body, ".y =") == CountOf(*body, "this.modCard.y =") &&
+			body->find("param1.x") == std::string::npos && body->find("param1.y") == std::string::npos &&
+			body->find("moveNative(") == std::string::npos && body->find("setChildIndex(param1") == std::string::npos,
 			"the game card is hidden by alpha only and never moved or reparented");
 	}
 	Expect(gold.find("modNative.visible") == std::string::npos && gold.find("removeChild(this.modNative") == std::string::npos,
 		"the game card's visible flag and parent are left to the menu");
 	Expect(seat.find("parent.addChildAt(this.modCard,at + 1);") != std::string::npos, "our card sits right above the game card");
-	Expect(seat.find("this.arranging ? box.y : this.liftModule(parent,box.y,this.modCard.height)") != std::string::npos &&
-		gold.find("this.modView = r;") != std::string::npos, "outside arrange a tall card is lifted onto the screen");
-	Expect(FunctionBody(gold, "liftModule").find("this.view()") == std::string::npos, "the per-frame lift does not look up the view");
+	const std::string lift = FunctionBody(gold, "liftModule");
+	Expect(seat.find("this.arranging ? box.y : this.liftModule(parent,box.y,this.modHigh)") != std::string::npos &&
+		gold.find("this.modView = r;") != std::string::npos && gold.find("this.modHigh = y;") != std::string::npos,
+		"outside arrange a tall card is lifted onto the screen");
+	Expect(lift.find("if(param2 + param3 <= this.liftLow) { return param2; }") != std::string::npos &&
+		lift.find("return Math.max(this.liftTop,this.liftLow - param3);") != std::string::npos && CountOf(lift, "return") == 3 &&
+		CountOf(lift, "return param2;") == 2, "the lift matches the twin");
+	Expect(lift.find("this.view()") == std::string::npos && lift.find("if(r != this.liftView || param1 != this.liftParent)") != std::string::npos,
+		"the per-frame lift reuses the cached view edges");
+	Expect(FunctionBody(gold, "openArrange").find("this.arranging = true;\n         if(this.modOn) { this.seatModule(this.modNative); }") != std::string::npos,
+		"arrange outlines our card where it will sit");
 	Expect(FunctionBody(gold, "placeNative").find("this.seatModule(this.modNative)") != std::string::npos &&
 		FunctionBody(gold, "moveLive").find("this.seatModule(this.modNative)") != std::string::npos &&
 		FunctionBody(gold, "resetArrange").find("if(this.modOn) { this.seatModule(this.modNative); }") != std::string::npos &&
@@ -740,9 +755,23 @@ int main()
 		"a saved spot, a drag, reset, and cancel bring our card back with the game card");
 	Expect(FunctionBody(gold, "paintSafe").find("catch(err:Error)") != std::string::npos && FunctionBody(gold, "paintSafe").find("this.dropModule();") != std::string::npos,
 		"a paint that throws drops our card");
-	Expect(FunctionBody(gold, "onModuleInfo").find("this.syncModule();") != std::string::npos, "a payload is shown or dropped at once");
+	const std::string payload = FunctionBody(gold, "onModuleInfo");
+	Expect(payload.find("this.syncModule();") != std::string::npos &&
+		payload.find("if(was && this.modOn && this.paintSafe()) { this.seatModule(this.modNative); }") != std::string::npos,
+		"a payload is shown or dropped at once and seated with its new height");
+	Expect(payload.find("this.modFailed = false;") != std::string::npos && FunctionBody(gold, "moduleGate").find("if(this.modFailed) { return \"paint\"; }") != std::string::npos,
+		"a failed paint holds the game card until the next payload");
 	Expect(FunctionBody(gold, "moduleGate").find("if(this.arranging && !this.modOn) { return \"arrange\"; }") != std::string::npos,
 		"arrange does not bring our card up");
+	const std::string chipBody = FunctionBody(gold, "paintChip");
+	Expect(chipBody.find("text = this.shortChip(text);") != std::string::npos && chipBody.find("text = text.charAt(0);") != std::string::npos,
+		"a chip too wide for its room is shortened, never clipped");
+	const std::string shortBody = FunctionBody(gold, "shortChip");
+	Expect(shortBody.find("if(dot < 0 || param1.indexOf(\"e\") >= 0) { return param1.charAt(0); }") != std::string::npos &&
+		shortBody.find("return whole.length == 2 && whole.charAt(1) == \"0\" ? param1.charAt(0) : whole;") != std::string::npos &&
+		CountOf(shortBody, "return") == 2, "the movie shortens a chip as the twin does");
+	Expect(FunctionBody(gold, "chipNumber").find("if(dot < 0 || text.indexOf(\"e\") >= 0) { return text; }") != std::string::npos,
+		"the movie keeps toFixed's exponent text whole, as the twin does");
 	Expect(gold.find("if(this.face.length == 0) { return \"face\"; }") != std::string::npos, "the card waits for a proven face");
 	Expect(gold.find("Boolean(data.bShowWidget)") != std::string::npos && gold.find("this.chainShown(param1)") != std::string::npos,
 		"the card follows the game card's visibility");
@@ -795,7 +824,8 @@ int main()
 	Expect(gold.find("this.note(\"MODVALS \" + this.modVals[v]);") != std::string::npos && gold.find("this.modValsLeft = 24;") != std::string::npos,
 		"payload numbers and shown text are logged for a bounded number of modules");
 	Expect(!NotesHideFaces("         this.note(\"FONT face=\" + fmt.font);") && !NotesHideFaces("         this.note(\"FONT list=\" + FACES.join(\",\"));") &&
-		NotesHideFaces("         this.note(\"FONT try=\" + this.faceTries);"), "the face scan catches a face name in a log line");
+		!NotesHideFaces("         this.lines.push(\"FONT \" + this.face);") && NotesHideFaces("         this.note(\"FONT try=\" + this.faceTries);"),
+		"the face scan catches a face name in a log line");
 
 	Expect(probe.find("enableDebug") != std::string::npos, "probe can be turned on");
 	Expect(probe.find("PROBE off") != std::string::npos, "probe stays quiet by default");
