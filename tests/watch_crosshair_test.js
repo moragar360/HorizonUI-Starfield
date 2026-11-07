@@ -1380,6 +1380,11 @@ expect(checks.indexOf("unresolved") >= 0 && changelog.indexOf("unresolved") >= 0
 expect(checks.indexOf("shape 927") >= 0 && checks.indexOf("sprite 928") >= 0, "CHECKS records native Off ring art as WatchOutline stroke 0..221px");
 expect(checks.indexOf("not a visual fix") >= 0 && changelog.indexOf("not that visual fix") >= 0, "docs record r12 Off leftover after heading-outline hide");
 expect(checks.indexOf("not r12 user-accepted") >= 0 && changelog.indexOf("does not claim Digital/Analog") >= 0, "docs do not treat Digital Analog or sun card as r12 accepted");
+expect(checks.indexOf("c323f1d36e65cf92874c12eef5fed3601f29506529c075cf17cb930e8af9a6f6") >= 0, "CHECKS records actual r12 SFSE SHA");
+expect(checks.indexOf("#676767") >= 0 && changelog.indexOf("#676767") >= 0, "docs record native outline stroke color from PHC shape 927");
+expect(checks.indexOf("hidN=12") >= 0 && checks.indexOf("vis=false") >= 0, "CHECKS records r12 Off hidN and pointer vis=false");
+expect(checks.indexOf("why=cap") >= 0 && checks.indexOf("style-0 load") >= 0, "CHECKS does not treat first cap dump as a style-0 load header");
+expect(checks.indexOf("DefineShape") >= 0 && changelog.indexOf("shape records are still unknown") >= 0, "docs keep characterId 1237 content unknown");
 expect(checks.indexOf("hzFrameN") >= 0, "CHECKS records Fade wait as distinct hzFrameN ticks");
 expect(checks.indexOf("fail-open") >= 0 && changelog.indexOf("fail-open") >= 0 && checks.indexOf("TintRgb") >= 0 && checks.indexOf("FadeN") >= 0, "CHECKS records fail-open timeout, style-2 tint during wait, and Capture FadeN latch");
 expect(checks.indexOf("alphaOffset") >= 0 && checks.indexOf("alphaMultiplier") >= 0, "CHECKS records dump of both CXFORM alpha terms");
