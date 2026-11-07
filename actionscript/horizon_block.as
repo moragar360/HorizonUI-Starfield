@@ -18520,6 +18520,8 @@
       private var hz43EnvLocal:Boolean = false;
       private var hz43EnvCruise:Boolean = false;
       private var hz43EnvLang:String = "";
+      private var hz43MarkMoved:Boolean = false;
+      private var hz43DumpSig:String = "";
       private var hz43Kid:Array = null;
       private var hz43KidHid:Array = null;
       private var hz43KidN:int = 0;
@@ -18736,6 +18738,7 @@
             if(this.hzDebug) { this.hz26Dbg["Watch"] = "vanilla " + found; }
             trace("HZ43 vanilla watch path=" + (found.length > 0 ? found : "none"));
          }
+         this.hz43VanDump("vanilla");
          return true;
       }
 
@@ -19814,7 +19817,9 @@
          this.hz43VanCap = 1;
       }
 
-      private function hz43VanWrite(dx:Number, dy:Number, sc:Number) : void
+      // Whole-assembly write keeps native relative locals. marks=true moves only live marker widgets
+      // at scale 1 so custom faces do not scale or drag cap / O2 / outline.
+      private function hz43VanWrite(dx:Number, dy:Number, sc:Number, marks:Boolean = false) : void
       {
          if(this.hz43VanCap == 0) { return; }
          var i:int = 0;
@@ -19823,7 +19828,9 @@
             if(int(this.hz43VanGot[i]) != 0)
             {
                var d:DisplayObject = this.hz43VanClip(i);
-               if(d && !this.hz43VanHasAncestorUnit(d))
+               var nm:String = d ? d.name : String(this.hz43VanNm[i]);
+               if(marks && !this.hz43VanMarkName(nm)) { }
+               else if(d && !this.hz43VanHasAncestorUnit(d))
                {
                   var ux:Number = Number(this.hz43VanUXA[i]);
                   var uy:Number = Number(this.hz43VanUYA[i]);
@@ -19833,15 +19840,26 @@
                   var hy:Number = Number(this.hz43VanY[i]);
                   var ox:Number = Number(this.hz43VanOX[i]);
                   var oy:Number = Number(this.hz43VanOY[i]);
-                  d.x = ox + (hx - ox) * sc + dx / ux;
-                  d.y = oy + (hy - oy) * sc + dy / uy;
-                  d.scaleX = Number(this.hz43VanSX[i]) * sc;
-                  d.scaleY = Number(this.hz43VanSY[i]) * sc;
+                  var useSc:Number = marks ? 1 : sc;
+                  d.x = ox + (hx - ox) * useSc + dx / ux;
+                  d.y = oy + (hy - oy) * useSc + dy / uy;
+                  if(!marks)
+                  {
+                     d.scaleX = Number(this.hz43VanSX[i]) * sc;
+                     d.scaleY = Number(this.hz43VanSY[i]) * sc;
+                  }
                }
             }
             i++;
          }
-         this.hz43VanWrote = sc != 1 || dx != 0 || dy != 0;
+         if(marks)
+         {
+            if(dx != 0 || dy != 0) { this.hz43MarkMoved = true; }
+         }
+         else
+         {
+            this.hz43VanWrote = sc != 1 || dx != 0 || dy != 0;
+         }
       }
 
       private function hz43VanHoldsMark(box:DisplayObjectContainer) : Boolean
@@ -20041,6 +20059,7 @@
          if(!vanilla)
          {
             if(this.hz43VanWrote) { this.hz43VanWrite(0,0,1); this.hz43VanWrote = false; }
+            if(this.hz43MarkMoved) { this.hz43VanWrite(0,0,1); this.hz43MarkMoved = false; }
             if(this.hz43VanHnd) { this.hz43VanHnd.visible = false; }
             return;
          }
@@ -20049,6 +20068,7 @@
          var hnd:Sprite = this.hz43VanEnsure();
          this.hz43VanCapture();
          if(this.hz43VanCap == 0) { return; }
+         if(this.hz43MarkMoved) { this.hz43VanWrite(0,0,1); this.hz43MarkMoved = false; }
          if(this.hz43HidN > 0) { this.hz43VanChrome(false); }
          hnd.visible = true;
          var sc:Number = this.hz43VanSc();
@@ -20065,27 +20085,75 @@
          this.hz43VanWrite(hnd.x - this.hz43VanHX,hnd.y - this.hz43VanHY,sc);
       }
 
-      // Styles 3 and 4 keep the live markers on the Horizon face. The rest of the vanilla watch stays hidden.
+      // Native ring center in HUDMenu space from outline local, not getBounds of hidden clips.
+      private function hz43VanRingMid() : Point
+      {
+         if(!this.hzBlg || this.hz43VanP == null) { return null; }
+         var d:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         if(!d || !d.parent) { return null; }
+         this.hz43VanP.x = d.x + HZ43_VAN_FACE / 2;
+         this.hz43VanP.y = d.y + HZ43_VAN_FACE / 2;
+         var g:Point = d.parent.localToGlobal(this.hz43VanP);
+         return this.globalToLocal(g);
+      }
+
+      // vis/alpha/x/y per watch sibling. Deduped by style+cap+wrote. Does not change clips.
+      private function hz43VanDump(why:String) : void
+      {
+         var sig:String = why + "|" + this.hzWatchStyle + "|" + this.hz43VanCap + "|" + this.hz43VanWrote + "|" + this.hz43MarkMoved + "|" + this.hz43HidN;
+         if(sig == this.hz43DumpSig) { return; }
+         this.hz43DumpSig = sig;
+         var fx:String = "none";
+         if(this.hz43Watch)
+         {
+            fx = this.hz43Watch.x + "," + this.hz43Watch.y + " vis=" + this.hz43Watch.visible + " sc=" + this.hz43Watch.scaleX;
+         }
+         trace("HZ43 dump why=" + why + " style=" + this.hzWatchStyle + " cap=" + this.hz43VanCap + " wrote=" + this.hz43VanWrote + " marks=" + this.hz43MarkMoved + " hidN=" + this.hz43HidN + " envGot=" + this.hz43EnvGot + " face=" + fx);
+         if(!this.hzBlg)
+         {
+            trace("HZ43 dump blg=null");
+            return;
+         }
+         var i:int = 0;
+         while(i < this.hzBlg.numChildren)
+         {
+            var d:DisplayObject = this.hzBlg.getChildAt(i);
+            if(d && (this.hz43VanNamed(d.name) || this.hz43VanMarkName(d.name)))
+            {
+               var nm:String = d.name != null && d.name.length > 0 ? d.name : "(unnamed)";
+               trace("HZ43 sib " + nm + " vis=" + d.visible + " a=" + d.alpha + " x=" + d.x + " y=" + d.y + " sx=" + d.scaleX + " sy=" + d.scaleY);
+            }
+            i++;
+         }
+      }
+
+      // Styles 3 and 4 hide native chrome and keep live markers. Do not scale or drag cap / O2 / outline.
+      // Capture failure still hides chrome. Markers follow the Horizon face from the outline center.
       private function hz43VanHorizon() : void
       {
          if(this.hzWatchStyle != 3 && this.hzWatchStyle != 4) { return; }
          if(!this.hz43Watch) { return; }
          if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
-         if(!this.hzBlg) { return; }
+         if(!this.hzBlg)
+         {
+            this.hz43VanDump("horizon-noblg");
+            return;
+         }
          this.hz43VanEnsure();
          this.hz43VanCapture();
-         if(this.hz43VanCap == 0) { return; }
          this.hz43VanChrome(true);
          var sc:Number = this.hz43Watch.scaleX;
          if(!(sc > 0.05)) { sc = 1; }
-         var face:Number = HZ43_R * 2 * sc;
-         var fit:Number = this.hz43VanRad > 2 ? face / this.hz43VanRad : 1;
-         if(!(fit > 0.05)) { fit = 1; }
          var cx:Number = this.hz43Watch.x + HZ43_R * sc;
          var cy:Number = this.hz43Watch.y + HZ43_R * sc;
-         var hx:Number = this.hz43VanHX + this.hz43VanHW / 2;
-         var hy:Number = this.hz43VanHY + this.hz43VanHH / 2;
-         this.hz43VanWrite(cx - hx,cy - hy,fit);
+         var ring:Point = this.hz43VanRingMid();
+         var rx:Number = ring ? ring.x : Number.NaN;
+         var ry:Number = ring ? ring.y : Number.NaN;
+         if(this.hz43VanCap != 0 && ring)
+         {
+            this.hz43VanWrite(cx - rx,cy - ry,1,true);
+         }
+         this.hz43VanDump("horizon");
       }
 
       private function hz43VanLate() : void
