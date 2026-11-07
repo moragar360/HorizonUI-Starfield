@@ -248,4 +248,4 @@ Data/Interface/spaceshipeditormenu_lrg.swf
 Data/Interface/HorizonUI/shipbuilder/HorizonShipBuilder.default.ini
 ```
 
-In Vortex, install that zip from file. Vortex uses the Data folder as the mod root, so the DLL and both movies land on their game paths without a manual mapping. Do not merge this zip with the HUD package.
+In Vortex, install that zip from file. The deployment root is the game root (.). The archive contains one Data folder, so the install yields Data/SFSE/Plugins and Data/Interface. It does not nest another Data folder. Do not merge this zip with the HUD package.

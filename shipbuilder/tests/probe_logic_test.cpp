@@ -34,6 +34,63 @@ static std::string DocsTail(char sep)
 	return out;
 }
 
+static void CheckArrangeLifecycle()
+{
+	hsb::ArrangePanel hidden[] = {
+		{"Power", false, {100, 40, 350, 240}},
+		{"Module", true, {100, 300, 350, 200}},
+		{"Credits", true, {900, 40, 363, 102}},
+		{"Browser", true, {1200, 40, 500, 600}},
+		{"Stats", false, {400, 900, 800, 96}},
+		{"Hints", true, {700, 840, 744, 48}},
+		{"Cluster", true, {40, 8, 190, 40}},
+	};
+	const int sel = hsb::ArrangeDefault(hidden, 7);
+	Expect(sel == 1 && hidden[sel].id == "Module", "default handle is the first live panel");
+	Expect(hsb::ArrangeHit(hidden, 7, 120, 80) < 0, "a hidden power box is not a hit");
+	Expect(hsb::ArrangeHit(hidden, 7, 950, 60) < 0, "credits are not a handle");
+	Expect(hsb::ArrangeHit(hidden, 7, 760, 860) < 0, "the button bar is not a handle");
+	const int mod = hsb::ArrangeHit(hidden, 7, 150, 340);
+	Expect(mod == 1, "a click hits the live module");
+	int next = hsb::ArrangeCycle(hidden, 7, mod, 1);
+	Expect(next >= 0 && hidden[next].id == "Browser", "cycle skips credits");
+	next = hsb::ArrangeCycle(hidden, 7, next, 1);
+	Expect(next >= 0 && hidden[next].id == "Cluster", "cycle skips hidden stats and the button bar");
+	next = hsb::ArrangeCycle(hidden, 7, next, 1);
+	Expect(next == 1, "cycle wraps to the first live handle");
+	Expect(hsb::ArrangeCycle(hidden, 7, -1, 1) == 1, "an invalid selection lands on the first live handle");
+	const int powerX = hidden[0].bounds.x;
+	Expect(!hsb::ArrangeTryMove(hidden[0], 15, 0, 0, 0, 0, 0, 1920, 1080), "a hidden panel does not move");
+	Expect(hidden[0].bounds.x == powerX, "a rejected move leaves the native box");
+	Expect(hsb::ArrangeTryMove(hidden[1], 15, 0, 0, 0, 0, 0, 1920, 1080), "a live panel moves in place");
+	Expect(hidden[1].bounds.x == 120, "the native box snaps with the drag");
+	const hsb::ArrangeBox frame = hsb::ArrangeFrame(hidden[1].bounds, 8);
+	Expect(frame.x == hidden[1].bounds.x - 8 && frame.y == hidden[1].bounds.y - 8, "the frame follows the native box");
+
+	hsb::ArrangePanel onlyGear[] = {
+		{"Power", false, {100, 40, 350, 240}},
+		{"Module", false, {100, 300, 350, 200}},
+		{"Credits", true, {900, 40, 363, 102}},
+		{"Browser", false, {1200, 40, 500, 600}},
+		{"Stats", false, {400, 900, 800, 96}},
+		{"Hints", true, {700, 840, 744, 48}},
+		{"Cluster", true, {40, 8, 190, 40}},
+	};
+	Expect(hsb::ArrangeDefault(onlyGear, 7) == 6, "the gear is the handle when builder panels are hidden");
+
+	hsb::ArrangePanel powerLive[] = {
+		{"Power", true, {80, 40, 350, 240}},
+		{"Module", true, {80, 300, 350, 200}},
+		{"Credits", false, {0, 0, 0, 0}},
+		{"Browser", false, {0, 0, 0, 0}},
+		{"Stats", false, {0, 0, 0, 0}},
+		{"Hints", false, {0, 0, 0, 0}},
+		{"Cluster", true, {40, 8, 190, 40}},
+	};
+	Expect(hsb::ArrangeDefault(powerLive, 7) == 0, "a live power panel can be the default");
+	Expect(hsb::ArrangeHit(powerLive, 7, 100, 60) == 0, "a live power panel can be hit");
+}
+
 static std::string ReadFile(const fs::path& path)
 {
 	std::ifstream in(path, std::ios::binary);
@@ -243,6 +300,7 @@ int main()
 	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkBack, false)) == "noop", "backspace stays unbound");
 	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkEsc, false)) == "cancel", "escape cancels");
 	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkLeft, true)) == "left40", "shift arrow is the long nudge");
+	CheckArrangeLifecycle();
 	Expect(hsb::kAccentGold == 0xE8C547, "default accent is gold");
 	Expect(hsb::ResolveAccent(-1, "", false, 3, "") == hsb::kAccentDefault, "missing hud accent stays gold");
 	Expect(hsb::ResolveAccent(4, "", false, 3, "") == 4, "a swatch is kept");
@@ -279,11 +337,21 @@ int main()
 		"power and the footer stay on the menu");
 	Expect(gold.find("r.y + 180") != std::string::npos, "settings sits below the credit strip");
 	Expect(gold.find("700 * r.width") == std::string::npos, "settings is not parked on the credits");
+	Expect(gold.find("this.sel = \"Power\"") == std::string::npos, "arrange does not start on power");
+	Expect(gold.find("defaultSel") != std::string::npos, "selection starts at the first live handle");
+	Expect(gold.find("moveNative") != std::string::npos, "a drag translates the game clip");
+	Expect(gold.find("panelMovable") != std::string::npos, "only safe panels are handles");
+	Expect(gold.find("param1.embedFonts") != std::string::npos, "an embedded face name is skipped");
+	Expect(gold.find("parent.removeChild") == std::string::npos, "game clips are not taken off the menu");
+	Expect(readme.find("game root") != std::string::npos, "the readme names the game root");
+	Expect(readme.find("Data folder as the mod root") == std::string::npos, "the readme does not call Data the mod root");
 	const std::string vortex = ReadFile(root / "package_vortex.sh");
 	Expect(vortex.find("Data/SFSE/Plugins/HorizonShipBuilder.dll") != std::string::npos, "vortex zip has the plugin path");
 	Expect(vortex.find("Data/Interface/spaceshipeditormenu.swf") != std::string::npos, "vortex zip has the normal movie");
 	Expect(vortex.find("Data/Interface/spaceshipeditormenu_lrg.swf") != std::string::npos, "vortex zip has the large movie");
 	Expect(vortex.find("HorizonShipBuilder.default.ini") != std::string::npos, "vortex zip has the default ini");
+	Expect(vortex.find("game root") != std::string::npos, "the package script names the game root");
+	Expect(vortex.find("Data/Data") == std::string::npos, "the package script does not nest Data");
 	Expect(gold.find(std::string("get") + "Timer") == std::string::npos, "gold movie has no timer");
 	Expect(gold.find(std::string("Glow") + "Filter") == std::string::npos, "gold movie has no glow");
 	Expect(gold.find("Keyboard.F") == std::string::npos, "gold movie has no probe keys");

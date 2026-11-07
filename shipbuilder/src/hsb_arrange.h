@@ -102,6 +102,99 @@ inline int ClampSpan(int value, int lo, int hi)
 	return value;
 }
 
+// Arrange handles are live panels we can translate without taking them off the menu.
+// Credits and the button bar are not handles: the menu writes their x and y.
+struct ArrangeBox {
+	int x = 0;
+	int y = 0;
+	int w = 0;
+	int h = 0;
+};
+
+struct ArrangePanel {
+	std::string_view id;
+	bool live = false;
+	ArrangeBox bounds{};
+};
+
+inline bool ArrangeMovableId(std::string_view id)
+{
+	return id == "Power" || id == "Module" || id == "Browser" || id == "Stats" || id == "Cluster";
+}
+
+inline bool ArrangeEligible(const ArrangePanel& panel)
+{
+	if (!panel.live || !ArrangeMovableId(panel.id)) return false;
+	return panel.bounds.w >= 24 && panel.bounds.h >= 24;
+}
+
+inline int ArrangeDefault(const ArrangePanel* panels, int count)
+{
+	if (!panels || count <= 0) return -1;
+	for (int i = 0; i < count; ++i) {
+		if (ArrangeEligible(panels[i])) return i;
+	}
+	return -1;
+}
+
+inline int ArrangeHit(const ArrangePanel* panels, int count, int x, int y)
+{
+	if (!panels || count <= 0) return -1;
+	for (int i = count - 1; i >= 0; --i) {
+		if (!ArrangeEligible(panels[i])) continue;
+		const ArrangeBox& b = panels[i].bounds;
+		if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return i;
+	}
+	return -1;
+}
+
+inline int ArrangeCycle(const ArrangePanel* panels, int count, int selected, int dir)
+{
+	if (!panels || count <= 0 || dir == 0) return -1;
+	int ids[8];
+	int n = 0;
+	for (int i = 0; i < count && n < 8; ++i) {
+		if (ArrangeEligible(panels[i])) ids[n++] = i;
+	}
+	if (n == 0) return -1;
+	int pos = -1;
+	for (int i = 0; i < n; ++i) {
+		if (ids[i] == selected) pos = i;
+	}
+	if (pos < 0) return dir > 0 ? ids[0] : ids[n - 1];
+	const int step = dir > 0 ? 1 : -1;
+	int next = pos + step;
+	if (next < 0) next = n - 1;
+	if (next >= n) next = 0;
+	return ids[next];
+}
+
+inline ArrangeBox ArrangeShift(ArrangeBox bounds, int dx, int dy, int originX, int originY, int viewX, int viewY, int viewW, int viewH)
+{
+	const int x = SnapTo(bounds.x + dx, originX, kSnap);
+	const int y = SnapTo(bounds.y + dy, originY, kSnap);
+	bounds.x = ClampSpan(x, viewX, viewX + viewW - bounds.w);
+	bounds.y = ClampSpan(y, viewY, viewY + viewH - bounds.h);
+	return bounds;
+}
+
+// A rejected move leaves the native bounds alone. A kept move is the new native position.
+inline bool ArrangeTryMove(ArrangePanel& panel, int dx, int dy, int originX, int originY, int viewX, int viewY, int viewW, int viewH)
+{
+	if (!ArrangeEligible(panel)) return false;
+	panel.bounds = ArrangeShift(panel.bounds, dx, dy, originX, originY, viewX, viewY, viewW, viewH);
+	return true;
+}
+
+inline ArrangeBox ArrangeFrame(ArrangeBox native, int pad)
+{
+	native.x -= pad;
+	native.y -= pad;
+	native.w += pad * 2;
+	native.h += pad * 2;
+	return native;
+}
+
 inline bool IsHexDigit(char c)
 {
 	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');

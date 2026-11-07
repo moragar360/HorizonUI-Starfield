@@ -1,6 +1,8 @@
 #!/bin/sh
 # Stage a Vortex-installable zip for Horizon Ship Builder alone.
-# Vortex copies a top-level Data folder into the game. No manual file mapping.
+# Deployment root is the game root (".").
+# The archive contains one Data folder. Installing it at the game root
+# yields Data/SFSE/Plugins and Data/Interface.
 # This is not the combined HUD installer.
 #
 # Usage:
