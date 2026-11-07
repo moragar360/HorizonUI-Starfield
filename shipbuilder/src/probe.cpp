@@ -3,7 +3,7 @@
 // The permanent task is a BSJobs worker. It flushes the log and asks the
 // window thread to install or remove the hook. Scaleform runs from the
 // movie AdvanceFrame hook, on the thread that advanced that movie.
-// Author: Moragar. Last modified: 2026-11-04.
+// Author: Moragar. Last modified: 2026-11-07.
 
 #include "hsb_guard.h"
 #include "hsb_arrange.h"
@@ -64,6 +64,9 @@ std::atomic<bool> g_debugSent{ false };
 std::mutex g_evMu;
 struct Ev { int kind; int a; int b; int c; };
 std::deque<Ev> g_ev;
+// Window thread only.
+hsb::PressLedger g_keysEaten;
+hsb::PressLedger g_buttonsEaten;
 std::mutex g_iniMu;
 std::string g_apply;
 std::vector<std::pair<std::string, std::string>> g_updates;
@@ -179,6 +182,19 @@ const char* KeyLabel(WPARAM vk)
 	}
 }
 
+unsigned MouseButton(UINT msg)
+{
+	switch (msg) {
+	case WM_LBUTTONDOWN:
+	case WM_LBUTTONUP: return 1;
+	case WM_RBUTTONDOWN:
+	case WM_RBUTTONUP: return 2;
+	case WM_MBUTTONDOWN:
+	case WM_MBUTTONUP: return 3;
+	default: return 0;
+	}
+}
+
 void LogCursor(const char* when)
 {
 	CURSORINFO info{};
@@ -207,12 +223,17 @@ LRESULT CALLBACK ProbeWnd(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 	const bool mouse = msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP || msg == WM_RBUTTONDOWN ||
 		msg == WM_RBUTTONUP || msg == WM_MBUTTONDOWN || msg == WM_MBUTTONUP || msg == WM_MOUSEWHEEL ||
 		msg == WM_MOUSEMOVE;
+	if (!g_menuOpen.load() && (down || up || mouse)) {
+		g_keysEaten.Clear();
+		g_buttonsEaten.Clear();
+	}
 	if (g_menuOpen.load() && (down || up || mouse)) {
 		const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
 		const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
 		const bool arranging = g_arrange.load();
 		const bool captured = g_capture.load();
 		if (down && (lp & 0x40000000) == 0 && hsb::IsArrangeEntry(captured, ctrl, static_cast<unsigned>(wp))) {
+			g_keysEaten.Set(static_cast<unsigned>(wp), true);
 			g_feedOpen.store(true);
 			g_arrange.store(true);
 			g_capture.store(true);
@@ -225,11 +246,23 @@ LRESULT CALLBACK ProbeWnd(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 			else if (wp == VK_F6) bit = 4u;
 			if (bit != 0) g_hotbits.fetch_or(bit);
 		}
-		const bool eatKey = (down || up) && hsb::EatKey(captured);
-		const bool eatMouse = mouse && hsb::EatMouse(arranging);
-		if (eatKey || eatMouse) {
+		const unsigned vk = static_cast<unsigned>(wp);
+		const bool repeat = down && (lp & 0x40000000) != 0;
+		hsb::EdgeCall keyCall{};
+		if (down || up) {
+			keyCall = hsb::KeyEdge(down, repeat, captured, g_keysEaten.Held(vk), vk);
+			if (!repeat) g_keysEaten.Set(vk, down && keyCall.eat);
+		}
+		const unsigned button = MouseButton(msg);
+		const bool release = msg == WM_LBUTTONUP || msg == WM_RBUTTONUP || msg == WM_MBUTTONUP;
+		hsb::EdgeCall mouseCall{};
+		if (mouse) {
+			mouseCall = hsb::MouseEdge(button != 0, release, arranging, g_buttonsEaten.Held(button));
+			if (button != 0) g_buttonsEaten.Set(button, !release && mouseCall.eat);
+		}
+		if (keyCall.eat || mouseCall.eat) {
 			Ev ev{};
-			if (mouse) {
+			if (mouseCall.feed) {
 				RECT rc{};
 				int cw = 1;
 				int ch = 1;
@@ -246,9 +279,9 @@ LRESULT CALLBACK ProbeWnd(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 				if (msg == WM_LBUTTONDOWN) ev.kind = 1;
 				else if (msg == WM_LBUTTONUP) ev.kind = 2;
 				else ev.kind = 3;
-			} else if (down) {
+			} else if (keyCall.feed) {
 				ev.kind = 4;
-				ev.a = static_cast<int>(wp);
+				ev.a = static_cast<int>(vk);
 				ev.b = shift ? 1 : 0;
 			}
 			if (ev.kind != 0) {

@@ -2,10 +2,11 @@
 
 // Purpose: pure rules for Arrange, the gold accent, and the user ini.
 // No game calls. The movie and the plugin both follow these rules.
-// Author: Moragar. Last modified: 2026-11-06.
+// Author: Moragar. Last modified: 2026-11-07.
 
 #include "hsb_guard.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -63,6 +64,58 @@ inline bool EatMouse(bool arranging)
 {
 	return arranging;
 }
+
+// Esc and Enter act on release, as the game's buttons do. Arrange's other keys act on the
+// press, so a held key repeats.
+inline bool KeyTokenOnRelease(unsigned vk)
+{
+	return vk == kVkEsc || vk == kVkReturn;
+}
+
+struct EdgeCall
+{
+	bool eat = false;
+	bool feed = false;
+};
+
+// The game gets both halves of a press or neither. A release, or a repeat, follows what the hook
+// did with the first press, even after capture or Arrange ends. pressEaten says the hook ate
+// the first press of this key or button.
+inline EdgeCall KeyEdge(bool down, bool repeat, bool captured, bool pressEaten, unsigned vk)
+{
+	EdgeCall call;
+	if (!down) call.eat = pressEaten;
+	else if (repeat) call.eat = EatKey(captured) || pressEaten;
+	else call.eat = EatKey(captured);
+	call.feed = call.eat && EatKey(captured) && down != KeyTokenOnRelease(vk);
+	return call;
+}
+
+inline EdgeCall MouseEdge(bool button, bool release, bool arranging, bool pressEaten)
+{
+	EdgeCall call;
+	call.eat = button && release ? pressEaten : EatMouse(arranging);
+	call.feed = call.eat && EatMouse(arranging);
+	return call;
+}
+
+// Which keys or buttons are held from a press the hook ate. Only the window procedure uses it.
+class PressLedger
+{
+public:
+	bool Held(unsigned code) const { return code < kCodes && held_[code]; }
+
+	void Set(unsigned code, bool eaten)
+	{
+		if (code < kCodes) held_[code] = eaten;
+	}
+
+	void Clear() { held_.fill(false); }
+
+private:
+	static constexpr unsigned kCodes = 256;
+	std::array<bool, kCodes> held_{};
+};
 
 // Swallowed keys that Arrange itself does not use. Delete and Backspace stay unbound.
 inline const char* ArrangeKeyToken(unsigned vk, bool shift)

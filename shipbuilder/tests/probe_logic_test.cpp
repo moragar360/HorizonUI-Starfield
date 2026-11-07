@@ -655,7 +655,24 @@ int main()
 		Expect(body.find("_wfopen") == std::string::npos, "window procedure does not touch the log file");
 		Expect(body.find("SetWindowLongPtr") == std::string::npos, "window procedure does not reinstall itself");
 		Expect(body.find("Invoke") == std::string::npos, "window procedure does not call into Scaleform");
+		Expect(InOrder(body, {
+				"\tif (!g_menuOpen.load() && (down || up || mouse)) {\n\t\tg_keysEaten.Clear();\n\t\tg_buttonsEaten.Clear();\n\t}\n",
+				"\t\t\tg_keysEaten.Set(static_cast<unsigned>(wp), true);\n\t\t\tg_feedOpen.store(true);\n",
+				"\t\tconst unsigned vk = static_cast<unsigned>(wp);\n\t\tconst bool repeat = down && (lp & 0x40000000) != 0;\n",
+				"\t\tif (down || up) {\n\t\t\tkeyCall = hsb::KeyEdge(down, repeat, captured, g_keysEaten.Held(vk), vk);\n\t\t\tif (!repeat) g_keysEaten.Set(vk, down && keyCall.eat);\n\t\t}\n",
+				"\t\tconst unsigned button = MouseButton(msg);\n\t\tconst bool release = msg == WM_LBUTTONUP || msg == WM_RBUTTONUP || msg == WM_MBUTTONUP;\n",
+				"\t\tif (mouse) {\n\t\t\tmouseCall = hsb::MouseEdge(button != 0, release, arranging, g_buttonsEaten.Held(button));\n\t\t\tif (button != 0) g_buttonsEaten.Set(button, !release && mouseCall.eat);\n\t\t}\n",
+				"\t\tif (keyCall.eat || mouseCall.eat) {\n\t\t\tEv ev{};\n\t\t\tif (mouseCall.feed) {\n",
+				"\t\t\t} else if (keyCall.feed) {\n\t\t\t\tev.kind = 4;\n\t\t\t\tev.a = static_cast<int>(vk);\n"}),
+			"the window procedure eats and feeds only through KeyEdge and MouseEdge, and pairs each release with its press");
+		Expect(body.find("hsb::EatKey(") == std::string::npos && body.find("hsb::EatMouse(") == std::string::npos && body.find("else if (down) {") == std::string::npos,
+			"the window procedure has no other eat or feed rule");
 	}
+	Expect(plugin.find("// Window thread only.\nhsb::PressLedger g_keysEaten;\nhsb::PressLedger g_buttonsEaten;\n") != std::string::npos &&
+		CountOf(plugin, "g_keysEaten.") == 4 && CountOf(plugin, "g_buttonsEaten.") == 3,
+		"only the window procedure touches the press ledgers");
+	Expect(plugin.find("unsigned MouseButton(UINT msg)\n{\n\tswitch (msg) {\n\tcase WM_LBUTTONDOWN:\n\tcase WM_LBUTTONUP: return 1;\n\tcase WM_RBUTTONDOWN:\n\tcase WM_RBUTTONUP: return 2;\n\tcase WM_MBUTTONDOWN:\n\tcase WM_MBUTTONUP: return 3;\n\tdefault: return 0;\n\t}\n}\n") != std::string::npos,
+		"each mouse button has its own ledger slot, and moves and the wheel have none");
 
 	Expect(!hsb::IsProbeHotkey(false, hsb::kVkF6), "probe keys stay off");
 	Expect(hsb::IsProbeHotkey(true, hsb::kVkF7), "probe keys exist when debug is on");
@@ -667,7 +684,61 @@ int main()
 	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkDelete, false)) == "noop", "delete stays unbound");
 	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkBack, false)) == "noop", "backspace stays unbound");
 	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkEsc, false)) == "cancel", "escape cancels");
+	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkReturn, false)) == "ok", "enter accepts");
 	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkLeft, true)) == "left40", "shift arrow is the long nudge");
+	Expect(hsb::KeyTokenOnRelease(hsb::kVkEsc) && hsb::KeyTokenOnRelease(hsb::kVkReturn) && !hsb::KeyTokenOnRelease(hsb::kVkLeft) &&
+		!hsb::KeyTokenOnRelease(hsb::kVkTab) && !hsb::KeyTokenOnRelease(hsb::kVkL),
+		"Esc and Enter act on release, Arrange's other keys on the press");
+	{
+		const hsb::EdgeCall escDown = hsb::KeyEdge(true, false, true, false, hsb::kVkEsc);
+		const hsb::EdgeCall escRepeat = hsb::KeyEdge(true, true, true, true, hsb::kVkEsc);
+		const hsb::EdgeCall escUp = hsb::KeyEdge(false, false, true, true, hsb::kVkEsc);
+		const hsb::EdgeCall escUpLate = hsb::KeyEdge(false, false, false, true, hsb::kVkEsc);
+		const hsb::EdgeCall escUpFree = hsb::KeyEdge(false, false, true, false, hsb::kVkEsc);
+		Expect(escDown.eat && !escDown.feed && escRepeat.eat && !escRepeat.feed, "an Esc press or repeat in capture is eaten and waits for the release");
+		Expect(escUp.eat && escUp.feed, "the Esc release in capture is eaten and fed");
+		Expect(escUpLate.eat && !escUpLate.feed, "an Esc release after capture ends is eaten when its press was, and does nothing");
+		Expect(!escUpFree.eat && !escUpFree.feed, "a release whose press the game saw reaches the game");
+		const hsb::EdgeCall leftDown = hsb::KeyEdge(true, false, true, false, hsb::kVkLeft);
+		const hsb::EdgeCall leftRepeat = hsb::KeyEdge(true, true, true, true, hsb::kVkLeft);
+		const hsb::EdgeCall heldRepeat = hsb::KeyEdge(true, true, true, false, hsb::kVkLeft);
+		const hsb::EdgeCall lateRepeat = hsb::KeyEdge(true, true, false, true, hsb::kVkLeft);
+		const hsb::EdgeCall freeRepeat = hsb::KeyEdge(true, true, false, false, hsb::kVkLeft);
+		const hsb::EdgeCall leftUp = hsb::KeyEdge(false, false, true, true, hsb::kVkLeft);
+		const hsb::EdgeCall freeDown = hsb::KeyEdge(true, false, false, true, hsb::kVkLeft);
+		Expect(leftDown.eat && leftDown.feed && leftRepeat.eat && leftRepeat.feed && heldRepeat.eat && heldRepeat.feed,
+			"arrow presses and repeats in capture are eaten and nudge");
+		Expect(lateRepeat.eat && !lateRepeat.feed, "a repeat after capture ends follows its eaten press");
+		Expect(!freeRepeat.eat && !freeRepeat.feed, "a repeat of a press the game saw reaches the game outside capture");
+		Expect(leftUp.eat && !leftUp.feed, "an arrow release is eaten without a token");
+		Expect(!freeDown.eat && !freeDown.feed, "a first press outside capture reaches the game");
+	}
+	{
+		const hsb::EdgeCall press = hsb::MouseEdge(true, false, true, false);
+		const hsb::EdgeCall releaseIn = hsb::MouseEdge(true, true, true, true);
+		const hsb::EdgeCall releaseLate = hsb::MouseEdge(true, true, false, true);
+		const hsb::EdgeCall releaseFree = hsb::MouseEdge(true, true, true, false);
+		const hsb::EdgeCall move = hsb::MouseEdge(false, false, true, false);
+		const hsb::EdgeCall moveOut = hsb::MouseEdge(false, false, false, true);
+		const hsb::EdgeCall pressOut = hsb::MouseEdge(true, false, false, true);
+		Expect(press.eat && press.feed && releaseIn.eat && releaseIn.feed, "Arrange eats and feeds its clicks");
+		Expect(releaseLate.eat && !releaseLate.feed, "a button release after Arrange ends is eaten when its press was, and does nothing");
+		Expect(!releaseFree.eat && !releaseFree.feed, "a button release whose press the game saw reaches the game");
+		Expect(move.eat && move.feed && !moveOut.eat && !moveOut.feed, "moves and the wheel follow Arrange only");
+		Expect(!pressOut.eat && !pressOut.feed, "a press outside Arrange reaches the game");
+	}
+	{
+		hsb::PressLedger ledger;
+		Expect(!ledger.Held(hsb::kVkEsc), "nothing is held at first");
+		ledger.Set(hsb::kVkEsc, true);
+		ledger.Set(300, true);
+		Expect(ledger.Held(hsb::kVkEsc) && !ledger.Held(hsb::kVkReturn) && !ledger.Held(300), "the ledger keeps key codes only");
+		ledger.Set(hsb::kVkEsc, false);
+		Expect(!ledger.Held(hsb::kVkEsc), "a release clears its key");
+		ledger.Set(hsb::kVkLeft, true);
+		ledger.Clear();
+		Expect(!ledger.Held(hsb::kVkLeft), "clearing forgets every key");
+	}
 	CheckArrangeLifecycle();
 	CheckInteriorLifecycle();
 	CheckFaceProof();
