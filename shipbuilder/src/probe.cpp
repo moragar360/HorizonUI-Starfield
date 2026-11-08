@@ -16,12 +16,13 @@
 //    and what the movie hands over (log, STATE, HOT and SET lines; file requests).
 // Outputs: the movie calls listed at DriveMovie, the user ini, the builder's pill and scheme
 //    files, and the log. Dependencies: CommonLibSF (SFSE), Win32, and the hsb_*.h headers.
-// Author: Moragar. Last modified: 2026-11-07.
+// Author: Moragar. Last modified: 2026-11-08.
 
 #include "hsb_guard.h"
 #include "hsb_arrange.h"
 #include "hsb_files.h"
 #include "hsb_input.h"
+#include "hsb_profile.h"
 #include "hsb_settings.h"
 #include "hsb_version.h"
 
@@ -30,6 +31,7 @@
 #include <windowsx.h>
 #include <objbase.h>
 #include <shlobj.h>
+#include <io.h>
 
 #include <atomic>
 #include <cstdint>
@@ -1154,7 +1156,8 @@ bool CoreIniMayRead(const std::wstring& path)
 // The largest ini (ours or the HUD's) the plugin reads in full.
 constexpr std::size_t kUserIniCap = 200000;
 
-// Reads at most cap bytes. Returns false when the file is missing, unreadable or larger.
+// Reads at most cap bytes. Returns false when the file is missing, unreadable, fails partway
+// (a cut-short read must never pass for the whole file) or is larger.
 bool ReadCapped(const std::wstring& path, std::size_t cap, std::string& out)
 {
 	out.clear();
@@ -1170,9 +1173,10 @@ bool ReadCapped(const std::wstring& path, std::size_t cap, std::string& out)
 		}
 		out.append(buf, n);
 	}
+	const bool failed = ferror(file) != 0;
 	fclose(file);
-	if (!fits) out.clear();
-	return fits;
+	if (!fits || failed) out.clear();
+	return fits && !failed;
 }
 
 std::string ReadTextFile(const std::wstring& path, bool iniUser)
@@ -1202,16 +1206,17 @@ void EnsureDirsFor(const std::wstring& filePath)
 	CreateDirectoryW(dir.c_str(), nullptr);
 }
 
-// Writes a .tmp twin and renames it over the target, so a crash mid-write never leaves a
-// half file where the player's data was.
+// Writes a .tmp twin, flushes it to disk and renames it over the target, so a crash or power
+// loss mid-write never leaves a half or zero-filled file where the player's data was.
 bool WriteReplace(const std::wstring& path, const std::string& text)
 {
 	const std::wstring temp = path + L".tmp";
 	FILE* file = nullptr;
 	if (_wfopen_s(&file, temp.c_str(), L"wb") != 0 || !file) return false;
 	const bool wrote = fwrite(text.data(), 1, text.size(), file) == text.size();
+	const bool flushed = wrote && fflush(file) == 0 && _commit(_fileno(file)) == 0;
 	const bool closed = fclose(file) == 0;
-	if (!wrote || !closed) return false;
+	if (!flushed || !closed) return false;
 	return MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
 }
 
@@ -1291,14 +1296,53 @@ std::string ListShares(std::string_view kind)
 	return out;
 }
 
+// The pill profile, its backup and its bad copy in Documents, each gated by
+// hsb::BuilderFileMayTouch before it is opened. The rules are hsb_profile.h's.
+class Win32ProfileDisk final : public hsb::ProfileDisk {
+public:
+	bool MayTouch(hsb::ProfileFile file, bool write) override { return hsb::BuilderFileMayTouch(NarrowPath(PathOf(file)), write); }
+
+	bool Exists(hsb::ProfileFile file) override
+	{
+		if (GetFileAttributesW(PathOf(file).c_str()) != INVALID_FILE_ATTRIBUTES) return true;
+		const DWORD err = GetLastError();
+		return err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND;
+	}
+
+	bool Read(hsb::ProfileFile file, std::size_t cap, std::string& out) override { return ReadCapped(PathOf(file), cap, out); }
+
+	bool WriteReplace(hsb::ProfileFile file, std::string_view text) override { return probe_impl::WriteReplace(PathOf(file), std::string(text)); }
+
+	hsb::MoveResult MoveNoReplace(hsb::ProfileFile from, hsb::ProfileFile to) override
+	{
+		if (MoveFileExW(PathOf(from).c_str(), PathOf(to).c_str(), MOVEFILE_WRITE_THROUGH)) return hsb::MoveResult::kOk;
+		const DWORD err = GetLastError();
+		return err == ERROR_ALREADY_EXISTS || err == ERROR_FILE_EXISTS ? hsb::MoveResult::kExists : hsb::MoveResult::kFailed;
+	}
+
+	void EnsureDir() override { EnsureDirsFor(PathOf(hsb::ProfileFile::kProfile)); }
+
+private:
+	static std::wstring PathOf(hsb::ProfileFile file)
+	{
+		const std::string_view name = file == hsb::ProfileFile::kBackup ? hsb::kProfileBackup : (file == hsb::ProfileFile::kBad ? hsb::kProfileBad : hsb::kProfileName);
+		return g_docsBuilder + WidenAscii(name);
+	}
+};
+
+// Job thread only.
+hsb::ProfileState g_profileState;
+
 // Purpose: run one file request from the movie.
 // Inputs: one request line (see hsb_files.h). Outputs: the reply line for hsbFiles; a line
 //    that does not parse still gets a failure reply when it starts with a request id.
 // Rules: hsb::CheckRequest decides what may happen; hsb::BuilderFileMayTouch gates every path
-//    before it is opened. Nothing is deleted: a profile write first copies the old profile
-//    to ShipBuilderPills.bak and does not write when that copy fails; an unreadable profile
-//    is renamed to ShipBuilderPills.bad.json. A failed profile read replies "missing" or
-//    "unreadable" so the movie never saves its defaults over a profile it could not read.
+//    before it is opened. Nothing is deleted. The profile follows hsb_profile.h: a read says
+//    why it failed ("missing", "damaged" or "unreadable") so the movie never saves over a
+//    profile it could not use; a write first backs up the old profile, read whole, to
+//    ShipBuilderPills.bak; a damaged profile is renamed to ShipBuilderPills.bad.json, never
+//    over an earlier one, and when that fails, writes are refused for the rest of the visit.
+//    A share file with a NUL byte is refused, as no reply may carry one.
 // Logging: kind, verb and result only.
 std::string RunFileRequest(const std::string& line)
 {
@@ -1312,32 +1356,25 @@ std::string RunFileRequest(const std::string& line)
 	bool ok = false;
 	std::string payload;
 	std::string failReason;
-	const std::wstring profile = g_docsBuilder + WidenAscii(hsb::kProfileName);
+	Win32ProfileDisk disk;
 	switch (verb) {
 	case hsb::FileVerb::kProfileRead: {
-		const bool mayRead = hsb::BuilderFileMayTouch(NarrowPath(profile), false);
-		ok = mayRead && ReadCapped(profile, hsb::kMaxProfileBytes, payload);
-		if (!ok) failReason = mayRead && !FileExists(profile) ? hsb::kReadMissing : hsb::kReadUnreadable;
+		hsb::ProfileResult result = hsb::ProfileRead(disk, g_profileState);
+		ok = result.ok;
+		if (ok) payload = std::move(result.payload);
+		else failReason = std::move(result.payload);
 		break;
 	}
 	case hsb::FileVerb::kProfileWrite: {
-		const std::string body = hsb::UnescapeText(r.body);
-		const std::wstring backup = g_docsBuilder + WidenAscii(hsb::kProfileBackup);
-		if (body.size() > hsb::kMaxProfileBytes || !hsb::BuilderFileMayTouch(NarrowPath(profile), true) ||
-			!hsb::BuilderFileMayTouch(NarrowPath(backup), true))
-			break;
-		EnsureDirsFor(profile);
-		if (FileExists(profile) && !CopyFileW(profile.c_str(), backup.c_str(), FALSE)) {
-			Fact("files", "profile backup failed; write skipped");
-			break;
-		}
-		ok = WriteReplace(profile, body);
+		hsb::ProfileResult result = hsb::ProfileWrite(disk, g_profileState, hsb::UnescapeText(r.body));
+		ok = result.ok;
+		failReason = std::move(result.payload);
 		break;
 	}
 	case hsb::FileVerb::kProfileBad: {
-		const std::wstring bad = g_docsBuilder + WidenAscii(hsb::kProfileBad);
-		if (!hsb::BuilderFileMayTouch(NarrowPath(profile), true) || !hsb::BuilderFileMayTouch(NarrowPath(bad), true)) break;
-		ok = !FileExists(profile) || MoveFileExW(profile.c_str(), bad.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+		hsb::ProfileResult result = hsb::ProfileSetAside(disk, g_profileState);
+		ok = result.ok;
+		failReason = std::move(result.payload);
 		break;
 	}
 	case hsb::FileVerb::kList:
@@ -1348,7 +1385,7 @@ std::string RunFileRequest(const std::string& line)
 		for (const auto& dir : ShareDirs(r.kind, r.args[0])) {
 			const std::wstring path = dir + WidenAscii(r.args[1]);
 			if (!hsb::BuilderFileMayTouch(NarrowPath(path), false) || !FileExists(path)) continue;
-			ok = ReadCapped(path, hsb::kMaxShareBytes, payload);
+			ok = ReadCapped(path, hsb::kMaxShareBytes, payload) && !hsb::HasNul(payload);
 			break;
 		}
 		break;

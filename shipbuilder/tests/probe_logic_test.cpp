@@ -13,6 +13,7 @@
 #include "hsb_files.h"
 #include "hsb_guard.h"
 #include "hsb_input.h"
+#include "hsb_profile.h"
 #include "hsb_settings.h"
 #include "hsb_version.h"
 
@@ -22,6 +23,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <set>
 #include <sstream>
 #include <string>
@@ -574,11 +576,25 @@ static void CheckFiles()
 	Expect(verb("13\tPILLS\tREAD\tsaves\ta.json\t") == hsb::FileVerb::kBad && verb("14\tOTHER\tREAD\tuser\ta.json\t") == hsb::FileVerb::kBad &&
 		verb("15\tPILLS\tDELETE\tuser\ta.json\t") == hsb::FileVerb::kBad, "other folders, kinds and verbs are refused");
 	Expect(verb("16\tPILLS\tWRITE\tuser\ta.json\t" + std::string(hsb::kMaxShareBytes * 2 + 1, 'x')) == hsb::FileVerb::kBad, "share writes are capped");
+	{
+		hsb::FileRequest big;
+		big.id = "17";
+		big.kind = "PROFILE";
+		big.verb = "WRITE";
+		big.body = std::string(hsb::kMaxProfileBytes * 2 + 1, 'x');
+		const bool over = hsb::CheckRequest(big) == hsb::FileVerb::kBad;
+		big.body.pop_back();
+		Expect(over && hsb::CheckRequest(big) == hsb::FileVerb::kProfileWrite && verb("18\tPROFILE\tWRITE\t" + std::string(hsb::kMaxRequestBytes, 'x')) == hsb::FileVerb::kBad,
+			"an escaped profile body is capped at twice the profile cap, and a request line at the request cap");
+	}
 	Expect(hsb::FileReply("a1", true, "x\ny") == "a1\t1\tx\\ny" && hsb::FileReply("a2", false, "") == "a2\t0\t", "replies escape their payload");
 	Expect(hsb::RequestId("a1\tPILLS") == "a1" && hsb::RequestId("123456789012\tX") == "123456789012" && hsb::RequestId("a1").empty() &&
 		hsb::RequestId("A1\tX").empty() && hsb::RequestId("\tX").empty() && hsb::RequestId("1234567890123\tX").empty(),
 		"a request that does not parse still gets a failure reply when its id is valid");
-	Expect(hsb::kReadMissing == "missing" && hsb::kReadUnreadable == "unreadable", "a failed profile read says why");
+	Expect(hsb::kReadMissing == "missing" && hsb::kReadUnreadable == "unreadable" && hsb::kReadDamaged == "damaged", "a failed profile read says why");
+	Expect(hsb::FileReply("a3", true, std::string("{\"a\":1}\0junk", 12)) == "a3\t0\t" && hsb::FileReply("a4", false, std::string(3, '\0')) == "a4\t0\t" &&
+			hsb::HasNul(std::string(1, '\0')) && !hsb::HasNul("{}"),
+		"a payload with a NUL byte becomes a failure with no payload, so it cannot cut off the replies after it");
 	Expect(!hsb::SafeShareName("Con.json", "PILLS") && !hsb::SafeShareName("nul.ini", "SCHEMES") && !hsb::SafeShareName("COM1.json", "PILLS") &&
 		!hsb::SafeShareName("lpt9.json", "PILLS") && !hsb::SafeShareName("AUX.json", "PILLS") && hsb::SafeShareName("Cone.json", "PILLS") &&
 		hsb::SafeShareName("COM.json", "PILLS") && hsb::SafeShareName("com10.json", "PILLS"), "Windows device names are refused");
@@ -602,6 +618,255 @@ static void CheckFiles()
 		"anything else is refused");
 	Expect(std::string(hsb::KindFolder("PILLS")) == "pills" && std::string(hsb::KindFolder("SCHEMES")) == "schemes" && std::string(hsb::KindFolder("X")).empty(),
 		"each kind has its own folder");
+}
+
+// ---- pill profile rules on a failing disk (hsb_profile.h) ----------------------------------
+
+// A disk whose every step can fail on purpose. A missing key in files is a missing file.
+struct FakeDisk final : hsb::ProfileDisk {
+	std::map<hsb::ProfileFile, std::string> files;
+	std::set<hsb::ProfileFile> gated;       // MayTouch refuses
+	std::set<hsb::ProfileFile> unreadable;  // present, but a read fails (locked, I/O error)
+	std::set<hsb::ProfileFile> unwritable;  // the write or its rename fails; the file is unchanged
+	std::set<hsb::ProfileFile> unknown;     // the system cannot say whether it is there
+	bool moveFails = false;                 // the rename fails for another reason (locked, read only)
+	int writes = 0;
+	int moves = 0;
+
+	bool MayTouch(hsb::ProfileFile file, bool) override { return gated.count(file) == 0; }
+	bool Exists(hsb::ProfileFile file) override { return files.count(file) > 0 || unknown.count(file) > 0; }
+	bool Read(hsb::ProfileFile file, std::size_t cap, std::string& out) override
+	{
+		out.clear();
+		const auto at = files.find(file);
+		if (at == files.end() || unreadable.count(file) > 0 || at->second.size() > cap) return false;
+		out = at->second;
+		return true;
+	}
+	bool WriteReplace(hsb::ProfileFile file, std::string_view text) override
+	{
+		if (unwritable.count(file) > 0) return false;
+		files[file] = std::string(text);
+		++writes;
+		return true;
+	}
+	hsb::MoveResult MoveNoReplace(hsb::ProfileFile from, hsb::ProfileFile to) override
+	{
+		if (files.count(to) > 0) return hsb::MoveResult::kExists;
+		if (moveFails || files.count(from) == 0) return hsb::MoveResult::kFailed;
+		files[to] = files[from];
+		files.erase(from);
+		++moves;
+		return hsb::MoveResult::kOk;
+	}
+	void EnsureDir() override {}
+
+	std::string At(hsb::ProfileFile file) const
+	{
+		const auto at = files.find(file);
+		return at == files.end() ? std::string("<none>") : at->second;
+	}
+};
+
+static void CheckProfile()
+{
+	using hsb::ProfileFile;
+	const ProfileFile P = ProfileFile::kProfile, B = ProfileFile::kBackup, X = ProfileFile::kBad;
+	const std::string good = "{\"type\":\"HorizonShipBuilderPills\",\"version\":1,\"pills\":[]}";
+	const std::string damaged = "{\"type\":\"HorizonShipBuilderPills\",\"version\":1,\"pills\":[";
+	const std::string zeros(4096, '\0');
+	const std::string embedded = std::string("{\"type\":\"Horizon") + '\0' + "ShipBuilderPills\"}";
+
+	// PROFILE READ
+	{
+		FakeDisk d;
+		hsb::ProfileState s;
+		auto r = hsb::ProfileRead(d, s);
+		Expect(!r.ok && r.payload == hsb::kReadMissing, "READ: no profile is missing, so the movie may start fresh");
+		d.files[P] = good;
+		r = hsb::ProfileRead(d, s);
+		Expect(r.ok && r.payload == good, "READ: a profile is returned whole");
+		d.unreadable.insert(P);
+		r = hsb::ProfileRead(d, s);
+		Expect(!r.ok && r.payload == hsb::kReadUnreadable && d.At(P) == good, "READ: a profile that cannot be read is unreadable and left alone");
+		d.unreadable.clear();
+		d.gated.insert(P);
+		r = hsb::ProfileRead(d, s);
+		Expect(!r.ok && r.payload == hsb::kReadUnreadable, "READ: a profile the gate refuses is unreadable, never missing");
+		d.gated.clear();
+		d.files.erase(P);
+		d.unknown.insert(P);
+		r = hsb::ProfileRead(d, s);
+		Expect(!r.ok && r.payload == hsb::kReadUnreadable, "READ: a profile the system cannot confirm missing is unreadable");
+		d.unknown.clear();
+		d.files[P] = std::string(hsb::kMaxProfileBytes + 1, ' ');
+		r = hsb::ProfileRead(d, s);
+		Expect(!r.ok && r.payload == hsb::kReadUnreadable, "READ: a profile over the cap is unreadable");
+		d.files[P] = std::string(hsb::kMaxProfileBytes, ' ');
+		r = hsb::ProfileRead(d, s);
+		Expect(r.ok && r.payload.size() == hsb::kMaxProfileBytes && hsb::kMaxProfileBytes > hsb::kMaxShareBytes,
+			"READ: a profile at the profile cap reads whole, larger than any share file");
+		for (const std::string* nul : {&zeros, &embedded}) {
+			d.files[P] = *nul;
+			r = hsb::ProfileRead(d, s);
+			Expect(!r.ok && r.payload == hsb::kReadDamaged && d.At(P) == *nul && d.writes == 0 && d.moves == 0,
+				"READ: a profile with a NUL byte (zero-filled, or one inside) is damaged, not empty, and left alone");
+		}
+		s.held = true;
+		d.files[P] = good;
+		r = hsb::ProfileRead(d, s);
+		Expect(r.ok && !s.held, "READ: a new visit clears the hold");
+	}
+
+	// PROFILE WRITE
+	{
+		FakeDisk d;
+		hsb::ProfileState s;
+		auto r = hsb::ProfileWrite(d, s, good);
+		Expect(r.ok && d.At(P) == good && d.files.count(B) == 0, "WRITE: a first profile needs no backup");
+		r = hsb::ProfileWrite(d, s, "second");
+		Expect(r.ok && d.At(P) == "second" && d.At(B) == good, "WRITE: the old profile goes to the backup first");
+
+		d.unwritable.insert(B);
+		r = hsb::ProfileWrite(d, s, "third");
+		Expect(!r.ok && r.payload == hsb::kProfileBackupFailed && d.At(P) == "second" && d.At(B) == good,
+			"WRITE: when the backup fails, nothing is written");
+		d.unwritable = {P};
+		r = hsb::ProfileWrite(d, s, "third");
+		Expect(!r.ok && r.payload == hsb::kProfileFailed && d.At(P) == "second" && d.At(B) == "second",
+			"WRITE: when the profile write fails, the profile is as it was and the backup holds it too");
+		d.unwritable.clear();
+
+		const int before = d.writes;
+		d.files[P] = "second";
+		d.files[B] = good;
+		d.unreadable.insert(P);
+		r = hsb::ProfileWrite(d, s, "third");
+		Expect(!r.ok && r.payload == hsb::kReadUnreadable && d.At(P) == "second" && d.At(B) == good && d.writes == before,
+			"WRITE: a profile that cannot be read whole is never backed up or replaced");
+		d.unreadable.clear();
+		d.unknown.insert(P);
+		d.files.erase(P);
+		r = hsb::ProfileWrite(d, s, "third");
+		Expect(!r.ok && r.payload == hsb::kReadUnreadable && d.files.count(P) == 0 && d.At(B) == good && d.writes == before,
+			"WRITE: a profile the system cannot confirm missing is never written over");
+		d.unknown.clear();
+		for (const std::string* nul : {&zeros, &embedded}) {
+			d.files[P] = *nul;
+			r = hsb::ProfileWrite(d, s, "third");
+			Expect(!r.ok && r.payload == hsb::kReadDamaged && d.At(P) == *nul && d.At(B) == good && d.writes == before,
+				"WRITE: a profile with a NUL byte is never copied over the good backup or saved over");
+		}
+		d.files[P] = good;
+		for (const ProfileFile gate : {P, B}) {
+			d.gated = {gate};
+			r = hsb::ProfileWrite(d, s, "third");
+			Expect(!r.ok && d.At(P) == good && d.writes == before, "WRITE: a file the gate refuses is never written");
+		}
+		d.gated.clear();
+		r = hsb::ProfileWrite(d, s, std::string(hsb::kMaxProfileBytes + 1, ' '));
+		Expect(!r.ok && d.At(P) == good && d.writes == before, "WRITE: a profile over the cap is refused");
+		{
+			FakeDisk c;
+			hsb::ProfileState cs;
+			const std::string full(hsb::kMaxProfileBytes, 'a');
+			c.files[P] = full;
+			r = hsb::ProfileWrite(c, cs, std::string(hsb::kMaxProfileBytes, 'b'));
+			Expect(r.ok && c.At(B) == full && c.At(P) == std::string(hsb::kMaxProfileBytes, 'b'),
+				"WRITE: a profile at the cap is written, and an old one at the cap is backed up");
+		}
+		s.held = true;
+		r = hsb::ProfileWrite(d, s, "third");
+		Expect(!r.ok && r.payload == hsb::kProfileHeld && d.At(P) == good && d.At(B) == good && d.writes == before,
+			"WRITE: after a failed set-aside nothing is written");
+	}
+
+	// PROFILE BAD
+	{
+		FakeDisk d;
+		hsb::ProfileState s;
+		auto r = hsb::ProfileSetAside(d, s);
+		Expect(r.ok && !s.held && d.moves == 0, "BAD: with no profile there is nothing to set aside");
+		d.files[P] = damaged;
+		r = hsb::ProfileSetAside(d, s);
+		Expect(r.ok && !s.held && d.files.count(P) == 0 && d.At(X) == damaged, "BAD: the damaged profile becomes the bad copy");
+
+		d.files[P] = "damaged again";
+		r = hsb::ProfileSetAside(d, s);
+		Expect(!r.ok && r.payload == hsb::kProfileBadExists && s.held && d.At(X) == damaged && d.At(P) == "damaged again",
+			"BAD: an earlier bad copy is never replaced, and the new damaged profile stays where it is");
+
+		FakeDisk f;
+		hsb::ProfileState t;
+		f.files[P] = damaged;
+		f.moveFails = true;
+		r = hsb::ProfileSetAside(f, t);
+		Expect(!r.ok && r.payload == hsb::kProfileFailed && t.held && f.At(P) == damaged && f.files.count(X) == 0,
+			"BAD: a rename that fails leaves the profile in place and holds writes");
+		f.moveFails = false;
+		r = hsb::ProfileSetAside(f, t);
+		Expect(r.ok && !t.held && f.At(X) == damaged, "BAD: a set-aside that works clears the hold");
+
+		for (const ProfileFile gate : {P, X}) {
+			FakeDisk g;
+			hsb::ProfileState u;
+			g.files[P] = damaged;
+			g.gated = {gate};
+			r = hsb::ProfileSetAside(g, u);
+			Expect(!r.ok && r.payload == hsb::kProfileFailed && u.held && g.At(P) == damaged && g.moves == 0, "BAD: a file the gate refuses is never moved");
+		}
+		FakeDisk h;
+		hsb::ProfileState v;
+		h.unknown.insert(P);
+		h.moveFails = true;
+		r = hsb::ProfileSetAside(h, v);
+		Expect(!r.ok && v.held, "BAD: a profile the system cannot confirm missing must move before writes go on");
+	}
+
+	// Review A3's case: a damaged profile, a good backup, and a set-aside that fails because a
+	// bad copy is already there or the rename fails. No save may touch any of the three files.
+	for (const bool exists : {true, false}) {
+		FakeDisk d;
+		hsb::ProfileState s;
+		d.files[P] = damaged;
+		d.files[B] = good;
+		if (exists) d.files[X] = "older damaged";
+		else d.moveFails = true;
+		auto r = hsb::ProfileRead(d, s);
+		Expect(r.ok && r.payload == damaged, "A3: the damaged profile reads (the movie finds it does not parse)");
+		r = hsb::ProfileSetAside(d, s);
+		Expect(!r.ok && r.payload == (exists ? hsb::kProfileBadExists : hsb::kProfileFailed), "A3: the set-aside fails and says why");
+		for (int save = 0; save < 2; ++save) {
+			r = hsb::ProfileWrite(d, s, "starter pills plus one change");
+			Expect(!r.ok && r.payload == hsb::kProfileHeld, "A3: every save in that visit is refused");
+		}
+		Expect(d.At(P) == damaged && d.At(B) == good && d.At(X) == (exists ? "older damaged" : "<none>") && d.writes == 0,
+			"A3: the damaged profile, the good backup and the earlier bad copy are all unchanged");
+		r = hsb::ProfileRead(d, s);
+		Expect(r.ok && r.payload == damaged && !s.held, "A3: the next visit reads the same damaged profile and tries again");
+		d.files.erase(X);
+		d.moveFails = false;
+		r = hsb::ProfileSetAside(d, s);
+		Expect(r.ok && d.At(X) == damaged && d.files.count(P) == 0, "A3: once the way is clear, the damaged profile is set aside");
+		r = hsb::ProfileWrite(d, s, "fresh");
+		Expect(r.ok && d.At(P) == "fresh" && d.At(B) == good && d.At(X) == damaged, "A3: then saving starts fresh and the good backup is still there");
+	}
+
+	// A zero-filled profile after a power loss: it is damaged, set aside, and the good backup stays.
+	{
+		FakeDisk d;
+		hsb::ProfileState s;
+		d.files[P] = zeros;
+		d.files[B] = good;
+		auto r = hsb::ProfileRead(d, s);
+		Expect(!r.ok && r.payload == hsb::kReadDamaged, "zeros: the profile reads as damaged, not as no profile");
+		r = hsb::ProfileWrite(d, s, "fresh");
+		Expect(!r.ok && d.At(P) == zeros && d.At(B) == good, "zeros: a save before the set-aside is refused and the backup stays");
+		r = hsb::ProfileSetAside(d, s);
+		Expect(r.ok && d.At(X) == zeros, "zeros: the zero-filled file is kept as the bad copy");
+		r = hsb::ProfileWrite(d, s, "fresh");
+		Expect(r.ok && d.At(P) == "fresh" && d.At(B) == good, "zeros: the first save after it needs no backup and keeps the good one");
+	}
 }
 
 // ---- tree scan ----------------------------------------------------------------------------
@@ -1005,9 +1270,30 @@ static void CheckMovie(const fs::path& root)
 		Expect(Has(hub, "internal var pillsLock:String = \"loading\";"), "pill saves wait for the profile reply");
 		Expect(Has(profile, "this.lockPills(param2 == \"missing\" ? \"\" : \"unreadable\");") &&
 			Has(profile, "this.lockPills(count == HsbPillModel.LOAD_NEWER ? \"newer\" : \"toolong\");") &&
-			InOrder(profile, {"else if(count == HsbPillModel.LOAD_BAD)", "this.pillsLock = \"\";", "this.fileOp(\"PROFILE\",[\"BAD\"],\"\",null);",
-				"else if(count == HsbPillModel.LOAD_FAILED)", "this.lockPills(\"unreadable\");"}),
+			InOrder(profile, {"if(param2 == \"damaged\") { this.setAsideProfile(); }", "else if(count == HsbPillModel.LOAD_BAD) { this.setAsideProfile(); }",
+				"else if(count == HsbPillModel.LOAD_FAILED)", "this.lockPills(\"unreadable\");"}) &&
+			!Has(hub, "this.fileOp(\"PROFILE\",[\"BAD\"],\"\",null);"),
 			"only a missing or damaged profile may be replaced, and a profile the model fails to take in is left alone");
+		// Review A3: a set-aside that fails must not let the next save replace the damaged profile.
+		Expect(InOrder(FunctionBody(hub, "setAsideProfile"), {"this.lockPills(\"setaside\");", "this.fileOp(\"PROFILE\",[\"BAD\"],\"\",this.onSetAside);"}),
+			"saving stays locked until the plugin answers the set-aside");
+		const std::string aside = FunctionBody(hub, "onSetAside");
+		Expect(InOrder(aside, {"if(!param1)", "this.lockPills(param2 == \"exists\" ? \"badexists\" : \"badfailed\");", "return;",
+				   "this.pillsSetAside = true;", "this.lockPills(\"\");", "if(this.pillsWaiting)", "this.pillsWaiting = false;", "this.savePills();"}),
+			"a failed set-aside keeps saving locked; one that works opens it and runs the save that waited");
+		Expect(InOrder(save, {"if(this.pillsLock.length > 0 && !retry)", "if(this.pillsLock == \"setaside\") { this.pillsWaiting = true; }",
+				   "if(this.pillsLock == \"loading\" && !this.pillsTried)", "this.pillsTried = true;", "return;"}),
+			"a save refused during the set-aside waits for it, and one refused while loading says so");
+		const std::string warn = FunctionBody(hub, "pillsWarning", "internal");
+		Expect(Has(warn, "case \"setaside\": return \"Pill changes wait: the damaged pills file is being set aside\";") &&
+				Has(warn, "case \"badexists\": return \"Pill changes are not saved: the pills file is damaged\\nMove ShipBuilderPills.bad.json away, then reopen the builder\";") &&
+				Has(warn, "case \"badfailed\": return \"Pill changes are not saved: the pills file is damaged\\nIt could not be renamed to ShipBuilderPills.bad.json\";") &&
+				Has(warn, "case \"loading\": return this.pillsTried ? \"Pill changes are not saved yet: the pills file has not loaded\" : \"\";") &&
+				Has(warn, "if(this.pillsSetAside) { return \"The damaged pills file is kept as ShipBuilderPills.bad.json\"; }"),
+			"every set-aside outcome and an early save are explained on screen");
+		Expect(InOrder(browser, {"var pillsWarn:String = this.hsb.pillsWarning();", "var warnLines:Array = pillsWarn.split(\"\\n\");",
+				   "y = this.paintNoteLine(w,pad,y,String(warnLines[wl]),HsbKit.ORANGE);"}),
+			"each warning line gets its own row");
 		// Review A3: crafted JSON never throws. Object's own member names are never keys, and the
 		// parser, the model and the readers each end in a catch.
 		Expect(InOrder(json, {"private static const RESERVED:Array = [\"constructor\",\"hasOwnProperty\",\"isPrototypeOf\",\"propertyIsEnumerable\","
@@ -1186,13 +1472,34 @@ static void CheckPlugin(const fs::path& root)
 	Expect(Has(plugin, "Fact(\"input\", CountsNow());"), "the close line holds counts only");
 
 	const std::string runFile = CppBody(plugin, "std::string RunFileRequest(");
-	Expect(!runFile.empty() && CountOf(runFile, "BuilderFileMayTouch(") >= 5, "every builder file goes through BuilderFileMayTouch");
-	Expect(InOrder(runFile, {"CopyFileW(", "WriteReplace("}), "a profile write keeps a backup first");
-	Expect(InOrder(runFile, {"if (FileExists(profile) && !CopyFileW(profile.c_str(), backup.c_str(), FALSE)) {",
-			   "Fact(\"files\", \"profile backup failed; write skipped\");", "break;", "ok = WriteReplace(profile, body);"}),
-		"a profile write without its backup copy is skipped");
-	Expect(Has(runFile, "if (!ok) failReason = mayRead && !FileExists(profile) ? hsb::kReadMissing : hsb::kReadUnreadable;") &&
-		Has(runFile, "if (!ok) payload = failReason;"), "a failed profile read tells the movie whether the file is missing");
+	const auto diskAt = plugin.find("class Win32ProfileDisk final : public hsb::ProfileDisk {");
+	const auto diskEnd = diskAt == std::string::npos ? std::string::npos : plugin.find("\n};\n", diskAt);
+	const std::string disk = diskEnd == std::string::npos ? std::string() : plugin.substr(diskAt, diskEnd - diskAt);
+	Expect(!runFile.empty() && CountOf(runFile, "BuilderFileMayTouch(") >= 2 &&
+			Has(disk, "bool MayTouch(hsb::ProfileFile file, bool write) override { return hsb::BuilderFileMayTouch(NarrowPath(PathOf(file)), write); }"),
+		"every builder file goes through BuilderFileMayTouch");
+	Expect(Has(runFile, "Win32ProfileDisk disk;") && Has(runFile, "hsb::ProfileResult result = hsb::ProfileRead(disk, g_profileState);") &&
+			Has(runFile, "hsb::ProfileResult result = hsb::ProfileWrite(disk, g_profileState, hsb::UnescapeText(r.body));") &&
+			Has(runFile, "hsb::ProfileResult result = hsb::ProfileSetAside(disk, g_profileState);") && !Has(plugin, "CopyFileW("),
+		"the profile's read, write and set-aside follow hsb_profile.h");
+	Expect(Has(plugin, "// Job thread only.\nhsb::ProfileState g_profileState;\n") && CountOf(plugin, "g_profileState") == CountOf(runFile, "g_profileState") + 1,
+		"only the file jobs touch the profile hold");
+	Expect(Has(disk, "if (MoveFileExW(PathOf(from).c_str(), PathOf(to).c_str(), MOVEFILE_WRITE_THROUGH)) return hsb::MoveResult::kOk;") &&
+			Has(disk, "return err == ERROR_ALREADY_EXISTS || err == ERROR_FILE_EXISTS ? hsb::MoveResult::kExists : hsb::MoveResult::kFailed;") &&
+			!Has(disk, "MOVEFILE_REPLACE_EXISTING") && CountOf(plugin, "MOVEFILE_REPLACE_EXISTING") == 1,
+		"a set-aside never replaces an earlier bad copy");
+	Expect(Has(disk, "return err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND;"), "a profile counts as missing only when the system says so");
+	Expect(InOrder(runFile, {"if (ok) payload = std::move(result.payload);", "else failReason = std::move(result.payload);"}) &&
+			Has(runFile, "if (!ok) payload = failReason;"),
+		"a failed profile request tells the movie why");
+	Expect(Has(runFile, "ok = ReadCapped(path, hsb::kMaxShareBytes, payload) && !hsb::HasNul(payload);"), "a share file with a NUL byte is refused");
+	const std::string writeReplace = CppBody(plugin, "bool WriteReplace(");
+	Expect(InOrder(writeReplace, {"const std::wstring temp = path + L\".tmp\";", std::string("_wf") + "open_s(&file, temp.c_str(), L\"wb\")",
+				   "const bool flushed = wrote && fflush(file) == 0 && _commit(_fileno(file)) == 0;", "if (!flushed || !closed) return false;",
+				   "MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)"}),
+		"a write goes to a .tmp twin, is flushed to disk, then renamed over the file");
+	Expect(InOrder(CppBody(plugin, "bool ReadCapped("), {"const bool failed = ferror(file) != 0;", "fclose(file);", "return fits && !failed;"}),
+		"a read that fails partway never passes for the whole file");
 	Expect(InOrder(runFile, {"if (!hsb::ParseFileRequest(line, r)) {", "const std::string id = hsb::RequestId(line);",
 			   "return id.empty() ? std::string() : hsb::FileReply(id, false, \"\");"}), "a request that does not parse is answered");
 	const std::string writeIni = CppBody(plugin, "void WriteIniNow(");
@@ -1203,7 +1510,8 @@ static void CheckPlugin(const fs::path& root)
 	Expect(Has(CppBody(plugin, "bool CoreIniMayRead("), "return hsb::HudIniMayRead(NarrowPath(path), NarrowPath(HudIniDir()));") &&
 		Has(CppBody(plugin, "std::wstring HudIniDir("), R"CPP(return dir + L"\\Data\\Interface\\HorizonUI\\";)CPP"),
 		"the HUD ini is read from the HUD's own folder only");
-	Expect(Has(runFile, "MoveFileExW(") && !Has(plugin, std::string("Delete") + "File"), "a bad profile is renamed, never deleted");
+	Expect(Has(disk, "MoveFileExW(") && !Has(plugin, std::string("Delete") + "File") && !Has(plugin, "_wremove") && !Has(plugin, "_wunlink"),
+		"a bad profile is renamed, never deleted");
 	Expect(Has(plugin, "Fact(\"files\""), "file jobs are logged");
 	const std::string apply = CppBody(plugin, "void BuildApply(");
 	Expect(Has(apply, "const std::wstring hudDir = HudIniDir();") && Has(apply, "FileExists(hudDir + L\"HorizonUI.user.ini\")") &&
@@ -1293,6 +1601,7 @@ int main()
 	CheckInput();
 	CheckSettings();
 	CheckFiles();
+	CheckProfile();
 	Expect(hsb::kAccentGold == 0xE8C547, "default accent is gold");
 	Expect(hsb::ResolveAccent(-1, "", false, 3, "") == hsb::kAccentDefault && hsb::ResolveAccent(-1, "", true, 3, "") == 3,
 		"follow uses the HUD accent only when the HUD ini is found");

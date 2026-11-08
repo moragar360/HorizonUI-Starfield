@@ -19,7 +19,7 @@ package
    // Backend limits shown in the interface: maker and size come from part names; value, mass,
    //    class and card stats are known only after a part was previewed; categories are learned
    //    by stepping through them; "on ship" and "hidden by level" have no game data.
-   // Author: Moragar. Last modified: 2026-11-07.
+   // Author: Moragar. Last modified: 2026-11-08.
    public class HsbBrowser extends HsbBox
    {
       private static const KNOWN_MAKERS:Array = [["Nova Galactic","Nova Galactic"],["Taiyo Astroneering","Taiyo Astroneering"],["Taiyo","Taiyo Astroneering"],["Stroud-Eklund","Stroud-Eklund"],["Stroud","Stroud-Eklund"],["HopeTech","HopeTech"],["Deimos","Deimos"],["Amun Dunn","Amun Dunn"],["Slayton Aerospace","Slayton Aerospace"],["White Dwarf","White Dwarf"],["Protectorate Systems","Protectorate Systems"],["Light Scan","Light Scan"]];
@@ -1490,7 +1490,12 @@ package
          }
          if(this.readOnly) { y = this.paintNoteLine(w,pad,y,"Read-only while Flight Check is open",HsbKit.MUTED); }
          var pillsWarn:String = this.hsb.pillsWarning();
-         if(pillsWarn.length > 0 && !this.grid && !this.readOnly) { y = this.paintNoteLine(w,pad,y,pillsWarn,HsbKit.ORANGE); }
+         if(pillsWarn.length > 0 && !this.grid && !this.readOnly)
+         {
+            var warnLines:Array = pillsWarn.split("\n");
+            var wl:int = 0;
+            while(wl < warnLines.length) { y = this.paintNoteLine(w,pad,y,String(warnLines[wl]),HsbKit.ORANGE); wl++; }
+         }
          this.pitch = this.hsb.density == "detailed" || this.grid || this.readOnly ? k.u(50) : k.u(37);
          var footH:Number = k.u(30);
          this.listTop = y;
