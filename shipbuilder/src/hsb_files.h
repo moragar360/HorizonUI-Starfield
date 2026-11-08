@@ -97,9 +97,43 @@ inline const char* KindExtension(std::string_view kind)
 	return "";
 }
 
+// The id of a request line that did not parse, so the movie still gets a failure reply and
+// its callback runs. Empty when the line does not start with a valid id and a tab.
+inline std::string RequestId(std::string_view line)
+{
+	const auto tab = line.find('\t');
+	if (tab == std::string_view::npos || tab == 0 || tab > 12) return {};
+	for (std::size_t i = 0; i < tab; ++i) {
+		const char c = line[i];
+		if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z'))) return {};
+	}
+	return std::string(line.substr(0, tab));
+}
+
+// A failed PROFILE READ says why: with "missing" the movie may start from its defaults; with
+// "unreadable" a profile exists that could not be read, and the movie must not save over it.
+inline constexpr std::string_view kReadMissing = "missing";
+inline constexpr std::string_view kReadUnreadable = "unreadable";
+
 inline bool FolderOk(std::string_view folder)
 {
 	return folder == "packs" || folder == "user";
+}
+
+// Windows opens CON, PRN, AUX, NUL, COM0-COM9 and LPT0-LPT9 as devices whatever the extension,
+// so "Con.json" would never reach the disk.
+inline bool ReservedDeviceName(std::string_view stem)
+{
+	auto startsFold = [&](std::string_view name) {
+		if (stem.size() < name.size()) return false;
+		for (std::size_t i = 0; i < name.size(); ++i) {
+			if (Fold(stem[i]) != name[i]) return false;
+		}
+		return true;
+	};
+	if (stem.size() == 3) return startsFold("con") || startsFold("prn") || startsFold("aux") || startsFold("nul");
+	if (stem.size() == 4 && stem[3] >= '0' && stem[3] <= '9') return startsFold("com") || startsFold("lpt");
+	return false;
 }
 
 // Purpose: accept a shared file name: 1..40 safe characters plus the kind's extension, so a
@@ -112,6 +146,7 @@ inline bool SafeShareName(std::string_view name, std::string_view kind)
 	const std::string_view stem = name.substr(0, name.size() - ext.size());
 	if (stem.empty() || stem.size() > kMaxFileStem) return false;
 	if (stem.front() == ' ' || stem.back() == ' ') return false;
+	if (ReservedDeviceName(stem)) return false;
 	for (char c : stem) {
 		const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ' ' || c == '-' || c == '_';
 		if (!ok) return false;

@@ -410,4 +410,73 @@ inline std::string SettingOr(std::string_view ini, std::string_view section, std
 	return s.isDefault && s.value.empty() ? std::string(fallback) : s.value;
 }
 
+// Purpose: decide whether a settings save may write the user ini. Inputs: whether the file
+//    exists, and whether it was read in full. Outputs: true when a merge cannot lose lines.
+// Rule (the HUD's, commit 7850269): an existing file that could not be read, or was too large
+//    to read, is never treated as empty; merging into "" would drop every other line in it.
+inline bool UserReadAllowsWrite(bool exists, bool readOk)
+{
+	return !exists || readOk;
+}
+
+// Purpose: put settings that could not be written back in front of the queue, so the next
+//    SET END tries again. Inputs: the live queue and the failed batch. Outputs: the queue,
+//    in the failed batch's order first. A value queued since the failure is newer and wins
+//    over the failed one for the same key. The queue stays within kMaxSettingUpdates.
+inline void RequeueSettings(std::vector<Setting>& queue, const std::vector<Setting>& failed)
+{
+	std::vector<Setting> out;
+	out.reserve(failed.size() + queue.size());
+	for (const auto& s : failed) {
+		bool newer = false;
+		for (const auto& q : queue) newer = newer || (EqualsFold(q.section, s.section) && EqualsFold(q.key, s.key));
+		if (!newer && out.size() < kMaxSettingUpdates) out.push_back(s);
+	}
+	for (const auto& q : queue) {
+		if (out.size() < kMaxSettingUpdates) out.push_back(q);
+	}
+	queue.swap(out);
+}
+
+// The HUD's own AccentColor default (HorizonUI.default.ini: 0, cyan).
+inline constexpr int kHudAccentDefault = 0;
+
+struct HudAccent {
+	int color = kHudAccentDefault;
+	std::string hex;
+};
+
+// Purpose: the HUD's accent as the HUD resolves it. Inputs: the text of HorizonUI.user.ini and
+//    HorizonUI.default.ini (either may be empty). Outputs: AccentColor and a valid AccentHex.
+// Rule: [Style] only; the user file holds only what differs from the defaults, so it wins key
+//    by key over the default file, and with neither key the HUD's own default applies.
+inline HudAccent LayerHudAccent(std::string_view user, std::string_view def)
+{
+	HudAccent out;
+	bool found = false;
+	std::string color = IniValue(user, "Style", "AccentColor", found);
+	if (!found) color = IniValue(def, "Style", "AccentColor", found);
+	if (found) {
+		bool ok = false;
+		const int n = ParseInt(color, ok);
+		if (ok) out.color = n;
+	}
+	std::string hex = IniValue(user, "Style", "AccentHex", found);
+	if (!found) hex = IniValue(def, "Style", "AccentHex", found);
+	if (found && ValidHex(hex)) out.hex = CanonHex(hex);
+	return out;
+}
+
+// Purpose: the only files outside shipbuilder\ the plugin opens are the HUD's two ini files,
+//    read-only, at the exact folder the HUD itself uses (<game>\Data\Interface\HorizonUI\).
+// Inputs: the full path and that folder (with its trailing separator).
+inline bool HudIniMayRead(std::string_view path, std::string_view hudDir)
+{
+	if (path.empty() || hudDir.empty() || HasDotDot(path) || HasDotDot(hudDir)) return false;
+	if (!EndsWithFold(hudDir, "\\Data\\Interface\\HorizonUI\\")) return false;
+	if (path.size() <= hudDir.size() || !EqualsFold(path.substr(0, hudDir.size()), hudDir)) return false;
+	const std::string_view name = path.substr(hudDir.size());
+	return EqualsFold(name, "HorizonUI.user.ini") || EqualsFold(name, "HorizonUI.default.ini");
+}
+
 }  // namespace hsb

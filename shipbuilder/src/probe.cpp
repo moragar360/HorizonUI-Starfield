@@ -411,15 +411,18 @@ bool HandleBuilderInput(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 		const bool alt = msg == WM_SYSKEYDOWN || (GetKeyState(VK_MENU) & 0x8000) != 0;
 		const hsb::KeyCall call = hsb::KeyPress(vk, KeyChar(vk), ctrl, alt, shift, repeat, in);
 		if (!repeat) g_keysEaten.Set(vk, call.eat);
+		// The auto-repeats of a press Horizon took stay Horizon's until the release, even after
+		// that press closed the last popup: the game sees both halves of a key press or neither.
+		const bool eat = call.eat || (repeat && g_keysEaten.Held(vk));
 		if (call.token[0] != '\0') Feed(std::string("K ") + call.token, false);
 		// A translated WM_CHAR follows its key press before the next press, so it goes with
 		// the press: the game never gets a character for a key it did not see.
-		g_eatChar = call.eat;
-		if (call.eat) {
+		g_eatChar = eat;
+		if (eat) {
 			g_cKeys.fetch_add(1);
-			if (in.text) FeedTypedChars(vk, lp, in);
+			if (in.text && call.eat) FeedTypedChars(vk, lp, in);
 		}
-		return call.eat;
+		return eat;
 	}
 	case WM_KEYUP:
 	case WM_SYSKEYUP: {
@@ -704,7 +707,7 @@ void NoteMovieLine(const std::string& raw, const std::string& clean)
 			g_writeIni.store(true);
 			return;
 		}
-		if (!set && body == "open") {
+		if (!set && (body == "open" || body == "saved" || body == "cancel")) {
 			Fact("movie", clean);
 			return;
 		}
@@ -1102,17 +1105,27 @@ void PostProbePing(HWND hwnd)
 		RunOnWindowThread(hwnd, kWinConfirm);
 }
 
+// The HUD's own folder, built the way the HUD builds it (src/main.cpp IniPath): the game
+// executable's folder plus Data\Interface\HorizonUI\. Empty when the path is not known.
+std::wstring HudIniDir()
+{
+	wchar_t exe[MAX_PATH] = {};
+	const DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
+	if (n == 0 || n >= MAX_PATH) return {};
+	std::wstring dir(exe, n);
+	const auto slash = dir.find_last_of(L"\\/");
+	if (slash == std::wstring::npos) return {};
+	dir.resize(slash);
+	return dir + L"\\Data\\Interface\\HorizonUI\\";
+}
+
 bool CoreIniMayRead(const std::wstring& path)
 {
-	const std::string narrow = NarrowPath(path);
-	if (narrow.empty() || hsb::HasDotDot(narrow)) return false;
-	if (!hsb::EndsWithFold(narrow, "HorizonUI.user.ini") && !hsb::EndsWithFold(narrow, "HorizonUI.default.ini")) return false;
-	if (!hsb::ContainsFold(narrow, "My Games") || !hsb::ContainsFold(narrow, "Starfield")) return false;
-	if (!hsb::ContainsFold(narrow, "Interface")) return false;
-	if (hsb::ContainsFold(narrow, "shipbuilder")) return false;
-	if (hsb::ContainsFold(narrow, "steamapps")) return false;
-	return true;
+	return hsb::HudIniMayRead(NarrowPath(path), NarrowPath(HudIniDir()));
 }
+
+// The largest ini (ours or the HUD's) the plugin reads in full.
+constexpr std::size_t kUserIniCap = 200000;
 
 // Reads at most cap bytes. Returns false when the file is missing, unreadable or larger.
 bool ReadCapped(const std::wstring& path, std::size_t cap, std::string& out)
@@ -1144,7 +1157,7 @@ std::string ReadTextFile(const std::wstring& path, bool iniUser)
 		return {};
 	}
 	std::string out;
-	if (!ReadCapped(path, 200000, out)) return {};
+	if (!ReadCapped(path, kUserIniCap, out)) return {};
 	return out;
 }
 
@@ -1247,26 +1260,34 @@ std::string ListShares(std::string_view kind)
 }
 
 // Purpose: run one file request from the movie.
-// Inputs: one request line (see hsb_files.h). Outputs: the reply line for hsbFiles.
+// Inputs: one request line (see hsb_files.h). Outputs: the reply line for hsbFiles; a line
+//    that does not parse still gets a failure reply when it starts with a request id.
 // Rules: hsb::CheckRequest decides what may happen; hsb::BuilderFileMayTouch gates every path
 //    before it is opened. Nothing is deleted: a profile write first copies the old profile
-//    to ShipBuilderPills.bak, and an unreadable profile is renamed to ShipBuilderPills.bad.json.
+//    to ShipBuilderPills.bak and does not write when that copy fails; an unreadable profile
+//    is renamed to ShipBuilderPills.bad.json. A failed profile read replies "missing" or
+//    "unreadable" so the movie never saves its defaults over a profile it could not read.
 // Logging: kind, verb and result only.
 std::string RunFileRequest(const std::string& line)
 {
 	hsb::FileRequest r;
 	if (!hsb::ParseFileRequest(line, r)) {
 		Fact("files", "request unreadable");
-		return {};
+		const std::string id = hsb::RequestId(line);
+		return id.empty() ? std::string() : hsb::FileReply(id, false, "");
 	}
 	const hsb::FileVerb verb = hsb::CheckRequest(r);
 	bool ok = false;
 	std::string payload;
+	std::string failReason;
 	const std::wstring profile = g_docsBuilder + WidenAscii(hsb::kProfileName);
 	switch (verb) {
-	case hsb::FileVerb::kProfileRead:
-		ok = hsb::BuilderFileMayTouch(NarrowPath(profile), false) && ReadCapped(profile, hsb::kMaxProfileBytes, payload);
+	case hsb::FileVerb::kProfileRead: {
+		const bool mayRead = hsb::BuilderFileMayTouch(NarrowPath(profile), false);
+		ok = mayRead && ReadCapped(profile, hsb::kMaxProfileBytes, payload);
+		if (!ok) failReason = mayRead && !FileExists(profile) ? hsb::kReadMissing : hsb::kReadUnreadable;
 		break;
+	}
 	case hsb::FileVerb::kProfileWrite: {
 		const std::string body = hsb::UnescapeText(r.body);
 		const std::wstring backup = g_docsBuilder + WidenAscii(hsb::kProfileBackup);
@@ -1274,7 +1295,10 @@ std::string RunFileRequest(const std::string& line)
 			!hsb::BuilderFileMayTouch(NarrowPath(backup), true))
 			break;
 		EnsureDirsFor(profile);
-		if (FileExists(profile) && !CopyFileW(profile.c_str(), backup.c_str(), FALSE)) Fact("files", "profile backup failed");
+		if (FileExists(profile) && !CopyFileW(profile.c_str(), backup.c_str(), FALSE)) {
+			Fact("files", "profile backup failed; write skipped");
+			break;
+		}
 		ok = WriteReplace(profile, body);
 		break;
 	}
@@ -1310,8 +1334,9 @@ std::string RunFileRequest(const std::string& line)
 	case hsb::FileVerb::kBad:
 		break;
 	}
-	if (!ok) payload.clear();
-	Fact("files", r.kind.substr(0, 8) + " " + r.verb.substr(0, 8) + (verb == hsb::FileVerb::kBad ? " refused" : (ok ? " ok" : " failed")));
+	if (!ok) payload = failReason;
+	Fact("files", r.kind.substr(0, 8) + " " + r.verb.substr(0, 8) + (verb == hsb::FileVerb::kBad ? " refused" : (ok ? " ok" : " failed")) +
+		(failReason.empty() ? std::string() : " " + failReason));
 	return hsb::FileReply(r.id, ok, payload);
 }
 
@@ -1374,9 +1399,11 @@ bool StarUiFilesPresent(const std::wstring& docsRoot)
 }
 
 // Purpose: build the hsbApply text from the user ini and the HUD's accent.
-// Inputs: HorizonShipBuilder.user.ini (whitelisted values only), HorizonUI.user.ini or
-//    HorizonUI.default.ini when the HUD is installed (read only, for "follow the HUD").
+// Inputs: HorizonShipBuilder.user.ini (whitelisted values only); the HUD's HorizonUI.user.ini
+//    and HorizonUI.default.ini from the HUD's own folder (read only, for "follow the HUD"),
+//    layered the way the HUD layers them.
 // Outputs: g_apply, one key=value per line, and g_applyPending for the movie thread.
+// Dependencies: hsb_settings.h (whitelist, LayerHudAccent, HudIniMayRead).
 void BuildApply()
 {
 	PWSTR docs = nullptr;
@@ -1387,19 +1414,15 @@ void BuildApply()
 	g_gameBuilder = GameDataBuilderDir();
 	g_iniPath = g_docsBuilder + L"HorizonShipBuilder.user.ini";
 	const std::string ini = ReadTextFile(g_iniPath, true);
-	const std::string coreUser = ReadTextFile(root + L"\\My Games\\Starfield\\Data\\Interface\\HorizonUI\\HorizonUI.user.ini", false);
-	const std::string coreDefault = ReadTextFile(root + L"\\My Games\\Starfield\\Data\\Interface\\HorizonUI\\HorizonUI.default.ini", false);
-	const bool coreFound = !coreUser.empty() || !coreDefault.empty();
-	const std::string& coreIni = !coreUser.empty() ? coreUser : coreDefault;
-	auto grabHex = [](const std::string& text) {
-		for (const auto& line : hsb::SplitLines(text)) {
-			std::string key, value;
-			if (hsb::SplitKey(line, key, value) && hsb::EqualsFold(key, "AccentHex") && hsb::ValidHex(value)) return hsb::CanonHex(value);
-		}
-		return std::string();
-	};
-	const std::string coreHex = grabHex(coreIni);
-	const int coreAccent = coreFound ? hsb::ResolveAccent(hsb::StyleInt(coreIni, "AccentColor", hsb::kAccentDefault), coreHex, false, 0, "") : -1;
+	const std::wstring hudDir = HudIniDir();
+	const bool hudUserFound = !hudDir.empty() && FileExists(hudDir + L"HorizonUI.user.ini");
+	const bool hudDefaultFound = !hudDir.empty() && FileExists(hudDir + L"HorizonUI.default.ini");
+	const std::string coreUser = hudUserFound ? ReadTextFile(hudDir + L"HorizonUI.user.ini", false) : std::string();
+	const std::string coreDefault = hudDefaultFound ? ReadTextFile(hudDir + L"HorizonUI.default.ini", false) : std::string();
+	const bool coreFound = hudUserFound || hudDefaultFound;
+	const hsb::HudAccent hud = hsb::LayerHudAccent(coreUser, coreDefault);
+	const std::string coreHex = hud.hex;
+	const int coreAccent = coreFound ? hsb::ResolveAccent(hud.color, coreHex, false, 0, "") : -1;
 	const std::string hex = hsb::SettingOr(ini, "Style", "AccentHex", "");
 	const bool probe = hsb::SettingOr(ini, "Debug", "Probe", "0") == "1";
 	g_probeDebug.store(probe);
@@ -1441,6 +1464,19 @@ void BuildApply()
 	g_applyPending.store(true);
 }
 
+// Settings that could not be written go back in the queue for the next SET END.
+void RequeueUpdates(const std::vector<hsb::Setting>& failed)
+{
+	std::lock_guard lock(g_iniMu);
+	hsb::RequeueSettings(g_updates, failed);
+}
+
+// Purpose: merge the queued settings into HorizonShipBuilder.user.ini (on the job thread,
+//    after the movie's SET END). Inputs: g_updates and the file on disk. Outputs: the merged
+//    file, g_saveResult (1 saved, 0 not saved) for the movie, and one log fact.
+// Rules: an existing file that cannot be read in full is never merged as if it were empty
+//    (hsb::UserReadAllowsWrite); a skipped or failed write puts the batch back in the queue.
+// Dependencies: hsb_settings.h (whitelist, merge, requeue), ReadCapped, WriteReplace.
 void WriteIniNow()
 {
 	if (g_iniPath.empty()) BuildApply();
@@ -1462,11 +1498,20 @@ void WriteIniNow()
 		return;
 	}
 	EnsureDirsFor(g_iniPath);
-	const std::string existing = ReadTextFile(g_iniPath, true);
+	std::string existing;
+	const bool exists = FileExists(g_iniPath);
+	const bool readOk = exists && ReadCapped(g_iniPath, kUserIniCap, existing);
+	if (!hsb::UserReadAllowsWrite(exists, readOk)) {
+		RequeueUpdates(updates);
+		g_saveResult.store(0);
+		Fact("ini", "user file unreadable; write skipped n=" + std::to_string(updates.size()));
+		return;
+	}
 	const std::string merged = hsb::MergeSettings(existing, updates);
 	if (!WriteReplace(g_iniPath, merged)) {
+		RequeueUpdates(updates);
 		g_saveResult.store(0);
-		Fact("ini", "user file write failed");
+		Fact("ini", "user file write failed n=" + std::to_string(updates.size()));
 		return;
 	}
 	g_saveResult.store(1);

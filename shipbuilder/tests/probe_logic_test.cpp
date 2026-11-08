@@ -17,6 +17,7 @@
 #include "hsb_version.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -491,6 +492,37 @@ static void CheckSettings()
 	Expect(hsb::MergeSettings("[Style]\n;AccentColor=3\n", {set("Style", "AccentColor", "4")}) == "[Style]\n;AccentColor=3\nAccentColor=4\n",
 		"a commented-out key is not edited");
 
+	// A save never merges over a user file it could not read, and a skipped save is retried.
+	Expect(hsb::UserReadAllowsWrite(false, false) && hsb::UserReadAllowsWrite(true, true) && !hsb::UserReadAllowsWrite(true, false),
+		"an existing user ini that could not be read is never merged over");
+	{
+		std::vector<hsb::Setting> queue = {set("Style", "AccentColor", "5")};
+		hsb::RequeueSettings(queue, {set("Style", "AccentColor", "3"), set("Layout", "ScreenMargin", "50")});
+		Expect(queue.size() == 2 && queue[0].key == "ScreenMargin" && queue[1].key == "AccentColor" && queue[1].value == "5",
+			"a failed batch goes back in front, and a newer value for the same key wins");
+		std::vector<hsb::Setting> full(hsb::kMaxSettingUpdates, set("Layout", "ScreenMargin", "40"));
+		hsb::RequeueSettings(full, {set("Style", "AccentColor", "3")});
+		Expect(full.size() == hsb::kMaxSettingUpdates && full.front().key == "AccentColor", "the requeued queue stays within its cap");
+	}
+
+	// The HUD accent is read as the HUD reads it: its own folder, user over default, default 0.
+	{
+		const hsb::HudAccent none = hsb::LayerHudAccent("", "");
+		Expect(hsb::kHudAccentDefault == 0 && none.color == 0 && none.hex.empty(), "with no HUD ini values the HUD's own default accent applies");
+		const hsb::HudAccent def = hsb::LayerHudAccent("", "[Style]\nAccentColor=4\nAccentHex=#a1b2c3\n");
+		Expect(def.color == 4 && def.hex == "A1B2C3", "the HUD default file is read");
+		const hsb::HudAccent user = hsb::LayerHudAccent("[Style]\nAccentColor=7\n", "[Style]\nAccentColor=4\nAccentHex=A1B2C3\n");
+		Expect(user.color == 7 && user.hex == "A1B2C3", "the HUD user file wins key by key");
+		const hsb::HudAccent other = hsb::LayerHudAccent("[Style]\nAccentHex=zz\n[Layout]\nAccentColor=3\n", "");
+		Expect(other.color == 0 && other.hex.empty(), "only [Style] counts and a bad hex is dropped");
+		const std::string hud = "D:\\Games\\Starfield\\Data\\Interface\\HorizonUI\\";
+		Expect(hsb::HudIniMayRead(hud + "HorizonUI.user.ini", hud) && hsb::HudIniMayRead(hud + "horizonui.DEFAULT.ini", hud), "the HUD's two ini files may be read");
+		Expect(!hsb::HudIniMayRead(hud + "HorizonUI.ini", hud) && !hsb::HudIniMayRead(hud + "shipbuilder\\HorizonUI.user.ini", hud) &&
+			!hsb::HudIniMayRead(hud + "..\\HorizonUI.user.ini", hud) && !hsb::HudIniMayRead("D:\\Other\\HorizonUI.user.ini", hud) &&
+			!hsb::HudIniMayRead(hud + "HorizonUI.user.ini", "D:\\Games\\Starfield\\Data\\") && !hsb::HudIniMayRead("", hud),
+			"nothing else outside the builder's folders is read");
+	}
+
 	bool found = false;
 	const std::string ini = "[Style]\nAccentColor=3 ; note\n[Layout]\nScreenMargin=500\nUiScale=1.2\n[Panels]\nPower=0\nStats=1\nBogus=0\nCredits=0\n"
 		"[Columns]\nHabs=Value,Mass\nHabsSort=Value-\nBad Key=Value\n";
@@ -540,6 +572,13 @@ static void CheckFiles()
 		verb("15\tPILLS\tDELETE\tuser\ta.json\t") == hsb::FileVerb::kBad, "other folders, kinds and verbs are refused");
 	Expect(verb("16\tPILLS\tWRITE\tuser\ta.json\t" + std::string(hsb::kMaxShareBytes * 2 + 1, 'x')) == hsb::FileVerb::kBad, "share writes are capped");
 	Expect(hsb::FileReply("a1", true, "x\ny") == "a1\t1\tx\\ny" && hsb::FileReply("a2", false, "") == "a2\t0\t", "replies escape their payload");
+	Expect(hsb::RequestId("a1\tPILLS") == "a1" && hsb::RequestId("123456789012\tX") == "123456789012" && hsb::RequestId("a1").empty() &&
+		hsb::RequestId("A1\tX").empty() && hsb::RequestId("\tX").empty() && hsb::RequestId("1234567890123\tX").empty(),
+		"a request that does not parse still gets a failure reply when its id is valid");
+	Expect(hsb::kReadMissing == "missing" && hsb::kReadUnreadable == "unreadable", "a failed profile read says why");
+	Expect(!hsb::SafeShareName("Con.json", "PILLS") && !hsb::SafeShareName("nul.ini", "SCHEMES") && !hsb::SafeShareName("COM1.json", "PILLS") &&
+		!hsb::SafeShareName("lpt9.json", "PILLS") && !hsb::SafeShareName("AUX.json", "PILLS") && hsb::SafeShareName("Cone.json", "PILLS") &&
+		hsb::SafeShareName("COM.json", "PILLS") && hsb::SafeShareName("com10.json", "PILLS"), "Windows device names are refused");
 	Expect(hsb::ListRow("user", "a.json", 12) == "user\ta.json\t12", "list rows are folder, name, bytes");
 
 	const std::string docs = DocsTail('\\') + "Data\\Interface\\HorizonUI\\shipbuilder\\";
@@ -917,7 +956,9 @@ static void CheckPlugin(const fs::path& root)
 	Expect(Has(input, "hsb::PointerEdge(false, false, true, hsb::HotContains(hot, sx, sy), false);") && Has(input, "hsb::WheelSteps(GET_WHEEL_DELTA_WPARAM(wp), g_wheelRest);"),
 		"the wheel follows PointerEdge and keeps fine-wheel remainders");
 	Expect(Has(input, "const hsb::KeyCall call = hsb::KeyPress(vk, KeyChar(vk), ctrl, alt, shift, repeat, in);") && Has(input, "if (!repeat) g_keysEaten.Set(vk, call.eat);") &&
-		Has(input, "g_eatChar = call.eat;"), "keys follow KeyPress, and a character goes with its key");
+		Has(input, "g_eatChar = eat;"), "keys follow KeyPress, and a character goes with its key");
+	Expect(InOrder(input, {"if (!repeat) g_keysEaten.Set(vk, call.eat);", "const bool eat = call.eat || (repeat && g_keysEaten.Held(vk));", "return eat;"}),
+		"the repeats of a key Horizon took stay Horizon's until its release");
 	Expect(Has(input, "case WM_INPUT:\n\t\tg_cRaw.fetch_add(1);\n\t\treturn false;"), "raw input is counted and passed on");
 	Expect(Has(input, "case WM_MOUSEMOVE:") && Has(input, "if (hsb::MoveEdge().feed) Feed(\"M M \"") && Has(input, "return false;\n\t}\n\tcase WM_LBUTTONDOWN:"),
 		"moves are fed and never swallowed");
@@ -931,9 +972,26 @@ static void CheckPlugin(const fs::path& root)
 	const std::string runFile = CppBody(plugin, "std::string RunFileRequest(");
 	Expect(!runFile.empty() && CountOf(runFile, "BuilderFileMayTouch(") >= 5, "every builder file goes through BuilderFileMayTouch");
 	Expect(InOrder(runFile, {"CopyFileW(", "WriteReplace("}), "a profile write keeps a backup first");
+	Expect(InOrder(runFile, {"if (FileExists(profile) && !CopyFileW(profile.c_str(), backup.c_str(), FALSE)) {",
+			   "Fact(\"files\", \"profile backup failed; write skipped\");", "break;", "ok = WriteReplace(profile, body);"}),
+		"a profile write without its backup copy is skipped");
+	Expect(Has(runFile, "if (!ok) failReason = mayRead && !FileExists(profile) ? hsb::kReadMissing : hsb::kReadUnreadable;") &&
+		Has(runFile, "if (!ok) payload = failReason;"), "a failed profile read tells the movie whether the file is missing");
+	Expect(InOrder(runFile, {"if (!hsb::ParseFileRequest(line, r)) {", "const std::string id = hsb::RequestId(line);",
+			   "return id.empty() ? std::string() : hsb::FileReply(id, false, \"\");"}), "a request that does not parse is answered");
+	const std::string writeIni = CppBody(plugin, "void WriteIniNow(");
+	Expect(InOrder(writeIni, {"const bool readOk = exists && ReadCapped(g_iniPath, kUserIniCap, existing);", "if (!hsb::UserReadAllowsWrite(exists, readOk)) {",
+			   "RequeueUpdates(updates);", "hsb::MergeSettings(existing, updates);", "if (!WriteReplace(g_iniPath, merged)) {", "RequeueUpdates(updates);"}),
+		"the user ini is merged only after a full read, and a skipped or failed save is retried");
+	Expect(Has(CppBody(plugin, "bool CoreIniMayRead("), "return hsb::HudIniMayRead(NarrowPath(path), NarrowPath(HudIniDir()));") &&
+		Has(CppBody(plugin, "std::wstring HudIniDir("), R"CPP(return dir + L"\\Data\\Interface\\HorizonUI\\";)CPP"),
+		"the HUD ini is read from the HUD's own folder only");
 	Expect(Has(runFile, "MoveFileExW(") && !Has(plugin, std::string("Delete") + "File"), "a bad profile is renamed, never deleted");
 	Expect(Has(plugin, "Fact(\"files\""), "file jobs are logged");
 	const std::string apply = CppBody(plugin, "void BuildApply(");
+	Expect(Has(apply, "const hsb::HudAccent hud = hsb::LayerHudAccent(coreUser, coreDefault);") &&
+		Has(apply, "const int coreAccent = coreFound ? hsb::ResolveAccent(hud.color, coreHex, false, 0, \"\") : -1;"),
+		"the HUD accent is layered as the HUD layers it");
 	for (const char* key : {"accent=", "hex=", "core=", "coreaccent=", "corehex=", "probe=", "margin=", "conflict=", "starfiles=", "keys=", "opacity=", "scale=",
 			 "density=", "bymaker=", "remember=", "notice=", "keyhide=", "keyfind=", "panel.", "col.", "ArrangeBarX=", "ArrangeBarY="}) {
 		Expect(Has(apply, std::string("\"") + key), std::string("the plugin applies ") + key);
