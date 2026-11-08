@@ -1330,10 +1330,14 @@ static void CheckMovie(const fs::path& root)
 		"the Colours gap marker moves under its button rather than cross the card's edge");
 	// The plugin refuses a profile write it cannot back up; the player must see that, and the
 	// next change must still be allowed to save.
-	Expect(InOrder(FunctionBody(hub, "savePills", "internal"), {"note(\"PILLS save \" + (param1 ? \"ok\" : \"failed\"));",
-				"if(pillsSaveFailed != !param1)", "pillsSaveFailed = !param1;", "if(browser != null) { browser.invalidate(); }"}) &&
+	Expect(InOrder(FunctionBody(hub, "savePills", "internal"), {"note(\"PILLS save \" + (param1 ? \"ok\" : \"failed\")",
+				"pillsSaveFailed = !param1;", "if(browser != null && pillsWarning() != was) { browser.invalidate(); }"}) &&
 			Has(FunctionBody(hub, "pillsWarning", "internal"), "if(this.pillsSaveFailed) { return \"Pill changes are not saved: the pills file could not be written\"; }") &&
-			!Has(FunctionBody(hub, "savePills", "internal"), "lockPills(\"failed\")"),
+			[&] {
+				const std::string body = FunctionBody(hub, "savePills", "internal");
+				const std::size_t write = body.find("this.fileOp(\"PROFILE\",[\"WRITE\"]");
+				return write != std::string::npos && !Has(body.substr(write), "lockPills(");
+			}(),
 		"a failed pill save is shown on screen and clears on the next save that succeeds");
 	// The browser (and the Colours card, which shares its height) ends 10 px above the hints bar
 	// on both movies: the large movie's bars are taller than the normal movie's.
@@ -1392,7 +1396,7 @@ static void CheckMovie(const fs::path& root)
 		Expect(Has(profile, "this.lockPills(param2 == \"missing\" ? \"\" : \"unreadable\");") &&
 			Has(profile, "this.lockPills(count == HsbPillModel.LOAD_NEWER ? \"newer\" : \"toolong\");") &&
 			InOrder(profile, {"if(param2 == \"damaged\") { this.setAsideProfile(); }", "else if(count == HsbPillModel.LOAD_BAD) { this.setAsideProfile(); }",
-				"else if(count == HsbPillModel.LOAD_FAILED)", "this.lockPills(\"unreadable\");"}) &&
+				"else if(count == HsbPillModel.LOAD_FAILED)", "this.lockPills(\"loadfailed\");"}) &&
 			!Has(hub, "this.fileOp(\"PROFILE\",[\"BAD\"],\"\",null);"),
 			"only a missing or damaged profile may be replaced, and a profile the model fails to take in is left alone");
 		// Review A3: a set-aside that fails must not let the next save replace the damaged profile.
@@ -1400,16 +1404,21 @@ static void CheckMovie(const fs::path& root)
 			"saving stays locked until the plugin answers the set-aside");
 		const std::string aside = FunctionBody(hub, "onSetAside");
 		Expect(InOrder(aside, {"if(!param1)", "this.lockPills(param2 == \"exists\" ? \"badexists\" : \"badfailed\");", "return;",
-				   "this.pillsSetAside = true;", "this.pillsBakKept = true;", "this.lockPills(\"\");", "if(this.pillsWaiting)", "this.pillsWaiting = false;",
-				   "this.savePills();"}),
+				   "this.pillsSetAside = true;", "this.pillsBakKept = true;", "this.lockPills(\"\");", "this.runWaitingSave();"}) &&
+				InOrder(FunctionBody(hub, "runWaitingSave"), {"if(!this.pillsWaiting) { return; }", "this.pillsWaiting = false;", "this.savePills();"}),
 			"a failed set-aside keeps saving locked; one that works opens it and runs the save that waited");
 		// Review A4: an empty or blank profile starts fresh with a line on screen, and a visit that
 		// starts without a loaded profile never claims the backup holds the list just replaced.
-		Expect(InOrder(profile, {"this.pillsBakKept = param2 == \"missing\";", "this.lockPills(param2 == \"missing\" ? \"\" : \"unreadable\");", "return;",
-				   "if(isBlank(param2))", "this.pillsEmpty = true;", "this.pillsBakKept = true;", "this.lockPills(\"\");", "this.note(\"PILLS profile empty\");",
-				   "return;", "var count:int = this.pills.load(param2);"}) &&
+		Expect(InOrder(profile, {"this.pillsBakKept = param2 == \"missing\";", "this.lockPills(param2 == \"missing\" ? \"\" : \"unreadable\");",
+				   "if(param2 == \"missing\") { this.runWaitingSave(); }", "return;", "if(isBlank(param2))", "this.pillsEmpty = true;", "this.pillsBakKept = true;",
+				   "this.lockPills(\"\");", "this.note(\"PILLS profile empty\");", "this.runWaitingSave();", "return;", "var count:int = this.pills.load(param2);"}) &&
 				!Has(profile, "param2.length == 0"),
 			"an empty or blank profile is a fresh start that says so, and the visit keeps the backup");
+		// Review A4 NIT 3 and Review B4 NIT 1: a change made before the profile reply is saved once
+		// saving opens on the pills on screen, or dropped with a line when a profile loads over it.
+		Expect(InOrder(profile, {"if(count >= 0)", "this.pillsLock = \"\";", "this.pillsDropped = this.pillsWaiting;", "this.pillsWaiting = false;"}) &&
+				CountOf(profile, "this.runWaitingSave();") == 2 && CountOf(hub, "this.runWaitingSave();") == 3,
+			"a save refused while loading runs when saving opens on the pills shown, and is dropped with a line when a profile loads");
 		Expect(Has(FunctionBody(hub, "isBlank", "internal static"), "return param1 == null || /^[ \\t\\r\\n]*$/.test(param1);") &&
 				Has(ReadFile(root / "src" / "hsb_profile.h"), "return text.find_first_not_of(\" \\t\\r\\n\") == std::string_view::npos;"),
 			"the movie and the plugin agree on what a blank profile is");
@@ -1417,17 +1426,47 @@ static void CheckMovie(const fs::path& root)
 				   {"var bakLine:String = this.hsb.pillsBakKept ? \"An earlier list may be kept as a .bak backup.\" : \"Your previous list is kept as a .bak backup.\";",
 					   "[\"This removes the pill from your list.\",bakLine,\"Horizon never deletes pill files you exported or imported.\"]"}),
 			"the remove dialog promises the previous list only when the backup holds it");
-		Expect(InOrder(save, {"if(this.pillsLock.length > 0 && !retry)", "if(this.pillsLock == \"setaside\") { this.pillsWaiting = true; }",
-				   "if(this.pillsLock == \"loading\" && !this.pillsTried)", "this.pillsTried = true;", "return;"}),
-			"a save refused during the set-aside waits for it, and one refused while loading says so");
+		Expect(InOrder(save, {"if(this.pillsLock.length > 0 && !retry)", "if((this.pillsLock == \"loading\" || this.pillsLock == \"setaside\") && !this.pillsWaiting)",
+				   "this.pillsWaiting = true;", "return;"}),
+			"a save refused while the profile loads or is set aside waits for it");
+		// Review A4 NIT 4: the plugin answers a request refused by its full queue ahead of older
+		// queued ones, so an older save's reply never decides whether the pills shown are on disk.
+		Expect(InOrder(save, {"var seq:int = ++this.pillsSaveSeq;", "this.fileOp(\"PROFILE\",[\"WRITE\"],text,function(param1:Boolean, param2:String):void",
+				   "if(seq != pillsSaveSeq) { return; }", "var was:String = pillsWarning();", "pillsSaveFailed = !param1;", "if(param1) { pillsDropped = false; }",
+				   "if(browser != null && pillsWarning() != was) { browser.invalidate(); }"}) &&
+				CountOf(hub, "pillsSaveFailed = ") == 1 && CountOf(hub, "++this.pillsSaveSeq") == 1,
+			"only the latest pill save's reply sets or clears the could-not-be-written line");
 		const std::string warn = FunctionBody(hub, "pillsWarning", "internal");
 		Expect(Has(warn, "case \"setaside\": return \"Pill changes wait: the damaged pills file is being set aside\";") &&
-				Has(warn, "case \"badexists\": return \"Pill changes are not saved: the pills file is damaged\\nMove ShipBuilderPills.bad.json away, then reopen the builder\";") &&
-				Has(warn, "case \"badfailed\": return \"Pill changes are not saved: the pills file is damaged\\nIt could not be renamed to ShipBuilderPills.bad.json\";") &&
-				Has(warn, "case \"loading\": return this.pillsTried ? \"Pill changes are not saved yet: the pills file has not loaded\" : \"\";") &&
-				InOrder(warn, {"if(this.pillsSetAside) { return \"The damaged pills file is kept as ShipBuilderPills.bad.json\\nAn older copy may be in ShipBuilderPills.bak\"; }",
+				Has(warn, "case \"badexists\": return \"Pill changes are not saved: the pills file is damaged\\nMove ShipBuilderPills.bad.json away, then reopen the builder"
+						  "\\nIt is in Data\\\\Interface\\\\HorizonUI\\\\shipbuilder\\\\\";") &&
+				Has(warn, "case \"badfailed\": return \"Pill changes are not saved: the pills file is damaged\\nIt could not be renamed to ShipBuilderPills.bad.json"
+						  "\\nClose programs using the pills file, then reopen the builder\";") &&
+				Has(warn, "case \"loading\": return this.pillsWaiting ? \"Pill changes wait: the pills file is still loading\" : \"\";") &&
+				Has(warn, "case \"loadfailed\": return \"Pill changes are not saved: the pills file could not be loaded\";") &&
+				InOrder(warn, {"if(this.pillsSaveFailed) { return \"Pill changes are not saved: the pills file could not be written\"; }",
+								  "if(this.pillsDropped) { return \"Pill changes made while the pills file loaded were not kept\"; }",
+								  "if(this.pillsSetAside) { return \"The damaged pills file is kept as ShipBuilderPills.bad.json\\nAn older copy may be in ShipBuilderPills.bak\"; }",
 								  "if(this.pillsEmpty) { return \"The pills file was empty, so the starter pills are shown\\nAn older copy may be in ShipBuilderPills.bak\"; }"}),
 			"every set-aside outcome, an empty profile and an early save are explained on screen");
+		{
+			// Every lock the movie sets has its own line, so saving never stops without one.
+			std::set<std::string> locks;
+			for (std::size_t at = hub.find("lockPills("); at != std::string::npos; at = hub.find("lockPills(", at + 1)) {
+				const std::size_t end = hub.find(')', at);
+				const std::string call = hub.substr(at, end == std::string::npos ? std::string::npos : end - at);
+				for (const char* lead : {"lockPills(\"", "? \"", ": \""}) {
+					for (std::size_t q = call.find(lead); q != std::string::npos; q = call.find(lead, q + 1)) {
+						const std::size_t from = q + std::string(lead).size();
+						const std::size_t close = call.find('"', from);
+						if (close != std::string::npos && close > from) locks.insert(call.substr(from, close - from));
+					}
+				}
+			}
+			bool lined = locks.size() >= 9;
+			for (const auto& lock : locks) lined = lined && Has(warn, "case \"" + lock + "\": return \"");
+			Expect(lined, "every pill lock the movie sets has its own line on screen");
+		}
 		Expect(InOrder(browser, {"var pillsWarn:String = this.hsb.pillsWarning();", "var warnLines:Array = pillsWarn.split(\"\\n\");",
 				   "y = this.paintNoteLine(w,pad,y,String(warnLines[wl]),HsbKit.ORANGE);"}),
 			"each warning line gets its own row");
