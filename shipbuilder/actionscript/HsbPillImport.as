@@ -14,11 +14,14 @@ package
    //    (countMatches, tabNameFor, tabKeyNow, columnLabel, afterPills), HorizonShipBuilder
    //    (fileOp, savePills, setSetting, saveSettings, popups).
    // Limits: at most 40 files are read; a file the DLL refuses or that does not parse is listed
-   //    as "Can't read · skipped". Names and text from shared files are shown, never logged.
+   //    as "Can't read · skipped". The preview lists at most six column-set lines, the last
+   //    saying how many more, so the switch under them stays inside the dialog. Names and text
+   //    from shared files are shown, never logged.
    // Author: Moragar. Last modified: 2026-11-08.
    public class HsbPillImport extends HsbBox
    {
       private static const MAX_FILES:int = 40;
+      private static const MAX_SET_LINES:int = 6;
       private static const FOLDER_TEXT:String = "Data\\Interface\\HorizonUI\\shipbuilder\\pills\\";
 
       private var hsb:HorizonShipBuilder;
@@ -380,7 +383,7 @@ package
          // Mockup 3 fits four pill cards (one with a name clash) above the column sets; a card
          // that does not fit, with room left for the "more" line, waits for the scroll.
          var cardH:Number = k.u(58);
-         var colsH:Number = setCount > 0 ? k.u(26) + setCount * k.u(19) + k.u(34) : 0;
+         var colsH:Number = setCount > 0 ? k.u(26) + Math.min(setCount,MAX_SET_LINES) * k.u(19) + k.u(34) : 0;
          var limit:Number = bottom - colsH;
          var shown:int = 0;
          var i:int = this.rightScroll;
@@ -406,8 +409,16 @@ package
             y += 2;
             k.label(this,param1,y,"COLUMNS",13,k.accent,true,2);
             y += k.u(22);
+            var setLines:int = 0;
             for(key in e.columnSets)
             {
+               if(setCount > MAX_SET_LINES && setLines == MAX_SET_LINES - 1)
+               {
+                  k.label(this,param1,y,"+" + (setCount - setLines) + " more column sets",13,HsbKit.MUTED,false,0,param3);
+                  y += k.u(19);
+                  break;
+               }
+               setLines++;
                var cols:Array = e.columnSets[key] as Array;
                var names:Array = [];
                var c:int = 0;

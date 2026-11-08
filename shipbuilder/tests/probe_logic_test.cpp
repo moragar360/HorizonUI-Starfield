@@ -1483,6 +1483,18 @@ static void CheckMovie(const fs::path& root)
 								     "items.push({\"label\":\"Manage pills\\u2026\",\"id\":\"manage\",\"accent\":true});"}),
 				"the More chip, the only way to Import, Export and Manage, is always in the pill row");
 		}
+		// Review B4 NIT 4: a pack with many column sets keeps its list and switch inside the dialog.
+		{
+			const std::string importBox = ReadFile(as / "HsbPillImport.as");
+			const std::string right = FunctionBody(importBox, "paintRight");
+			Expect(Has(importBox, "private static const MAX_SET_LINES:int = 6;") &&
+					InOrder(right, {"var colsH:Number = setCount > 0 ? k.u(26) + Math.min(setCount,MAX_SET_LINES) * k.u(19) + k.u(34) : 0;",
+							   "var limit:Number = bottom - colsH;", "var setLines:int = 0;", "for(key in e.columnSets)",
+							   "if(setCount > MAX_SET_LINES && setLines == MAX_SET_LINES - 1)",
+							   "k.label(this,param1,y,\"+\" + (setCount - setLines) + \" more column sets\",13,HsbKit.MUTED,false,0,param3);", "break;",
+							   "setLines++;", "k.toggle(g,param1,y + 2,this.useColumns);"}),
+				"the Import preview lists at most six column-set lines, so its switch stays inside the dialog");
+		}
 		// Review A4 SHOULD-FIX 2: the lines that keep a damaged, newer or unreadable profile from
 		// being saved over, each pinned so a one-character slip fails here.
 		Expect(InOrder(profile, {"var count:int = this.pills.load(param2);", "if(count >= 0)", "this.pillsLock = \"\";",
