@@ -1834,6 +1834,8 @@ package
       }
 
       // Pills in the row: on pills solid, off pills dashed, then "+ N More" and "+ New pill".
+      // The More chip is always there, as "+ More" when no pill is hidden: Import, Export and
+      // Manage (mocks 3, 14, 15 and 16) open only from its menu.
       private function paintPills(param1:Number, param2:Number, param3:Number):Number
       {
          var k:HsbKit = this.kit;
@@ -1860,9 +1862,9 @@ package
             var p:Object = row[i];
             var on:Boolean = this.hsb.pills.isOn(String(p.id));
             var pw:Number = this.pillWidth(String(p.name),on ? PILL_ON : PILL_OFF);
-            var moreW:Number = this.pillWidth((more + row.length - i) + " More",PILL_BUTTON);
             var last:Boolean = i == row.length - 1 && more == 0;
-            if(x + pw + gap + (last ? 0 : moreW + gap) + newW > limit)
+            var moreW:Number = this.pillWidth(last ? "More" : (more + row.length - i) + " More",PILL_BUTTON);
+            if(x + pw + gap + moreW + gap + newW > limit)
             {
                var r:int = i;
                while(r < row.length) { this.overflow.push(String(row[r].id)); r++; }
@@ -1890,23 +1892,17 @@ package
             x += pw + gap;
             i++;
          }
-         if(more > 0)
-         {
-            var mw:Number = this.pillWidth(more + " More",PILL_BUTTON);
-            k.fill(g,x,param3,mw,ph,ph / 2,0x1A2128,1);
-            k.outline(g,x,param3,mw,ph,ph / 2,HsbKit.EDGE_HI,1);
-            k.icon(g,"plus",x + 8,param3 + (ph - 12) / 2,12,HsbKit.TEXT,1);
-            var mt:TextField = k.text(13,HsbKit.TEXT);
-            k.put(mt,more + " More");
-            k.fit(mt);
-            this.add(mt,x + 24,param3 + (ph - mt.height) / 2);
-            this.hit(x,param3,mw,ph,"more");
-            x += mw + gap;
-         }
-         else
-         {
-            this.hit(x,param3,0,0,"more");
-         }
+         var moreText:String = more > 0 ? more + " More" : "More";
+         var mw:Number = this.pillWidth(moreText,PILL_BUTTON);
+         k.fill(g,x,param3,mw,ph,ph / 2,0x1A2128,1);
+         k.outline(g,x,param3,mw,ph,ph / 2,HsbKit.EDGE_HI,1);
+         k.icon(g,"plus",x + 8,param3 + (ph - 12) / 2,12,HsbKit.TEXT,1);
+         var mt:TextField = k.text(13,HsbKit.TEXT);
+         k.put(mt,moreText);
+         k.fit(mt);
+         this.add(mt,x + 24,param3 + (ph - mt.height) / 2);
+         this.hit(x,param3,mw,ph,"more");
+         x += mw + gap;
          k.dashed(g,x,param3,newW,ph,ph / 2,HsbKit.MUTED,1);
          k.icon(g,"plus",x + 8,param3 + (ph - 12) / 2,12,HsbKit.TEXT,1);
          var nt:TextField = k.text(13,HsbKit.TEXT);

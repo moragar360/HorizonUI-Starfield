@@ -1470,6 +1470,19 @@ static void CheckMovie(const fs::path& root)
 		Expect(InOrder(browser, {"var pillsWarn:String = this.hsb.pillsWarning();", "var warnLines:Array = pillsWarn.split(\"\\n\");",
 				   "y = this.paintNoteLine(w,pad,y,String(warnLines[wl]),HsbKit.ORANGE);"}),
 			"each warning line gets its own row");
+		// Review B4 SHOULD-FIX 2: Import, Export and Manage open only from the More menu, so its
+		// chip is drawn even when every pill of the tab is in the row.
+		{
+			const std::string pillRow = FunctionBody(browser, "paintPills");
+			Expect(InOrder(pillRow, {"var moreW:Number = this.pillWidth(last ? \"More\" : (more + row.length - i) + \" More\",PILL_BUTTON);",
+					   "if(x + pw + gap + moreW + gap + newW > limit)", "var moreText:String = more > 0 ? more + \" More\" : \"More\";",
+					   "this.hit(x,param3,mw,ph,\"more\");", "this.hit(x,param3,newW,ph,\"newpill\");"}) &&
+					CountOf(pillRow, "\"more\")") == 1 && !Has(pillRow, "if(more > 0)") &&
+					InOrder(FunctionBody(browser, "openMore"), {"items.push({\"label\":\"Import pills\\u2026\",\"id\":\"import\",\"accent\":true});",
+								     "items.push({\"label\":\"Export / Share\\u2026\",\"id\":\"export\",\"accent\":true});",
+								     "items.push({\"label\":\"Manage pills\\u2026\",\"id\":\"manage\",\"accent\":true});"}),
+				"the More chip, the only way to Import, Export and Manage, is always in the pill row");
+		}
 		// Review A4 SHOULD-FIX 2: the lines that keep a damaged, newer or unreadable profile from
 		// being saved over, each pinned so a one-character slip fails here.
 		Expect(InOrder(profile, {"var count:int = this.pills.load(param2);", "if(count >= 0)", "this.pillsLock = \"\";",
