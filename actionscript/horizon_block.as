@@ -2194,6 +2194,9 @@
       private var hzPerfOn:Boolean = false;
       private var hzPerfN:Object = null;
       private var hzPerfT0:Object = null;
+      private var hzPerfTickHadContent:Boolean = false;
+      private var hzPerfTickHadAct:Boolean = false;
+      private var hzPerfTickHadItems:Boolean = false;
       private var hzDbgCross:String = "";
       private var hzDbgWeap:String = "";
       private var hzDbgText:TextField = null;
@@ -7384,7 +7387,7 @@
          try { this.hzTgAct = e.data; } catch(err:Error) { this.hzTgAct = null; }
          this.hzTgDirty = true;
          var pay:String = this.hzT19ActPay(this.hzTgAct);
-         if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.act++; }
+         if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.act++; this.hzPerfTickHadAct = true; }
          if(pay != this.hzT19ActCached)
          {
             this.hzT19ActCached = pay;
@@ -7398,7 +7401,7 @@
          if(this.hzPerfSkipLive()) { return; }
          try { this.hzTgItems = (e.data && e.data.aItems is Array) ? e.data.aItems as Array : null; } catch(err:Error) { this.hzTgItems = null; }
          var pay:String = this.hzT19ItemsPay(this.hzTgItems);
-         if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.items++; }
+         if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.items++; this.hzPerfTickHadItems = true; }
          if(pay != this.hzT19ItemsCached)
          {
             this.hzT19ItemsCached = pay;
@@ -10389,7 +10392,15 @@
       // Author: Moragar. Last modified: 2026-11-08.
       private function hzPerfResetN() : void
       {
-         this.hzPerfN = {"frames":0,"tick":0,"tickMs":0,"tickMax":0,"content":0,"contentMs":0,"contentMax":0,"act":0,"actCh":0,"items":0,"itemsCh":0,"twHit":0,"twMiss":0,"holdPaint":0,"barPaint":0,"fixture":0,"skipGfx":0};
+         this.hzPerfN = {"frames":0,"tick":0,"tickMs":0,"tickMax":0,"content":0,"contentMs":0,"contentMax":0,"c2":0,"c5":0,"c10":0,"act":0,"actCh":0,"items":0,"itemsCh":0,"twHit":0,"twMiss":0,"holdPaint":0,"barPaint":0,"fixture":0,"skipGfx":0,"tickMaxHadContent":0,"tickMaxHadAct":0,"tickMaxHadItems":0};
+         this.hzPerfTickHadContent = false;
+         this.hzPerfTickHadAct = false;
+         this.hzPerfTickHadItems = false;
+      }
+      public function hzPerfReset() : void
+      {
+         if(!this.hzPerfOn) { return; }
+         this.hzPerfResetN();
       }
       private function hzPerfApply() : void
       {
@@ -10415,6 +10426,12 @@
          if(!this.hzPerfOn) { return; }
          if(!this.hzPerfT0) { this.hzPerfT0 = {}; }
          this.hzPerfT0[n] = this.hz41Now();
+         if(n == "tick")
+         {
+            this.hzPerfTickHadContent = false;
+            this.hzPerfTickHadAct = false;
+            this.hzPerfTickHadItems = false;
+         }
       }
       private function hzPerfEnd(n:String) : void
       {
@@ -10425,13 +10442,29 @@
          var maxK:String = n + "Max";
          if(this.hzPerfN[msK] == undefined) { this.hzPerfN[msK] = 0; }
          this.hzPerfN[msK] = int(this.hzPerfN[msK]) + dt;
-         if(this.hzPerfN[maxK] == undefined || dt > int(this.hzPerfN[maxK])) { this.hzPerfN[maxK] = dt; }
+         if(this.hzPerfN[maxK] == undefined || dt > int(this.hzPerfN[maxK]))
+         {
+            this.hzPerfN[maxK] = dt;
+            if(n == "tick")
+            {
+               this.hzPerfN.tickMaxHadContent = this.hzPerfTickHadContent ? 1 : 0;
+               this.hzPerfN.tickMaxHadAct = this.hzPerfTickHadAct ? 1 : 0;
+               this.hzPerfN.tickMaxHadItems = this.hzPerfTickHadItems ? 1 : 0;
+            }
+         }
+         if(n == "content")
+         {
+            this.hzPerfTickHadContent = true;
+            if(dt > 2) { this.hzPerfN.c2 = int(this.hzPerfN.c2) + 1; }
+            if(dt > 5) { this.hzPerfN.c5 = int(this.hzPerfN.c5) + 1; }
+            if(dt > 10) { this.hzPerfN.c10 = int(this.hzPerfN.c10) + 1; }
+         }
       }
       public function hzPerfSnapshot() : String
       {
          if(!this.hzPerfOn || this.hzPerfN == null) { return "as diag=0 clock=hz41Now_ms"; }
          var n:Object = this.hzPerfN;
-         var s:String = "as diag=1 mode=" + this.hzPerfMode + " frames=" + n.frames + " tick=" + n.tick + " tickMs=" + n.tickMs + " tickMax=" + n.tickMax + " content=" + n.content + " contentMs=" + n.contentMs + " contentMax=" + n.contentMax + " act=" + n.act + " actCh=" + n.actCh + " items=" + n.items + " itemsCh=" + n.itemsCh + " twHit=" + n.twHit + " twMiss=" + n.twMiss + " hold=" + n.holdPaint + " bar=" + n.barPaint + " fixture=" + n.fixture + " skipGfx=" + n.skipGfx + " clock=hz41Now_ms";
+         var s:String = "as diag=1 mode=" + this.hzPerfMode + " frames=" + n.frames + " tick=" + n.tick + " tickMs=" + n.tickMs + " tickMax=" + n.tickMax + " content=" + n.content + " contentMs=" + n.contentMs + " contentMax=" + n.contentMax + " c2=" + n.c2 + " c5=" + n.c5 + " c10=" + n.c10 + " act=" + n.act + " actCh=" + n.actCh + " items=" + n.items + " itemsCh=" + n.itemsCh + " twHit=" + n.twHit + " twMiss=" + n.twMiss + " hold=" + n.holdPaint + " bar=" + n.barPaint + " fixture=" + n.fixture + " skipGfx=" + n.skipGfx + " tickMaxHadContent=" + n.tickMaxHadContent + " tickMaxHadAct=" + n.tickMaxHadAct + " tickMaxHadItems=" + n.tickMaxHadItems + " clock=hz41Now_ms";
          if(s.length > 1400) { s = s.substr(0,1400); }
          this.hzPerfResetN();
          return s;

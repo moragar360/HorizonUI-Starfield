@@ -123,6 +123,7 @@ namespace HZ
 	std::atomic<int>  g_perfScan{1};       // Mode F: 1 draw, 0 suppress.
 	std::atomic<int>  g_perfDumpWas{0};
 	std::atomic<bool> g_perfDumpReq{false};
+	hzperf::DumpCtl   g_perfCtl{};
 	hzperf::Agg       g_perfAgg{};
 	std::atomic<std::uint64_t> g_qpcFreq{0};
 
@@ -846,12 +847,19 @@ namespace HZ
 		return hzperf::DiagOn(g_perfDiag.load(std::memory_order_relaxed));
 	}
 	void HzPerfDumpOnce();
+	void HzPerfArmWindow();
 
 	void HzPerfNote(hzperf::Bucket a_b, std::uint64_t a_t0)
 	{
 		if (!HzPerfOn()) return;
+		if (a_b == hzperf::kPollHud && hzperf::TakeSkipPoll(g_perfCtl)) return;
 		const auto t1 = HzQpc();
-		if (t1 >= a_t0) hzperf::Add(g_perfAgg.b[a_b], t1 - a_t0);
+		if (t1 < a_t0) return;
+		const auto dt = t1 - a_t0;
+		if (a_b == hzperf::kMovieAdvance)
+			hzperf::AddMovie(g_perfAgg, dt, HzQpcFreq());
+		else
+			hzperf::AddBucket(g_perfAgg, a_b, dt);
 	}
 
 	void LoadIni(bool a_reloadMsglog = true)
@@ -862,6 +870,7 @@ namespace HZ
 		g_perfMode.store(0, std::memory_order_relaxed);
 		g_perfScan.store(1, std::memory_order_relaxed);
 		int dump = 0;
+		int waitSec = hzperf::kWaitDefault;
 		std::string text;
 		const auto  P = FilesP();
 		// v0.37: HorizonUI.default.ini with HorizonUI.user.ini laid over (legacy HorizonUI.ini only when there is no default)
@@ -882,6 +891,7 @@ namespace HZ
 			if (get("perfmode", v)) g_perfMode.store(hzperf::ParseMode(v), std::memory_order_relaxed);
 			if (get("perfscan", v)) g_perfScan.store(hzperf::Parse01(v), std::memory_order_relaxed);
 			if (get("perfdump", v)) dump = hzperf::Parse01(v);
+			if (get("perfdumpwait", v)) waitSec = hzperf::ParseWaitSec(v);
 			if (get("settingskey", v) && !v.empty()) key = v;
 			if (hzlog::IniReloadAppliesMsglog(a_reloadMsglog))
 				MsglogLoadSettings(d);
@@ -892,9 +902,12 @@ namespace HZ
 		g_scan = sc;
 		g_vk = static_cast<int>(MapVirtualKeyW(sc > 0x7F ? (0xE000 | (sc & 0x7F)) : sc, MAPVK_VSC_TO_VK_EX));
 		REX::INFO("SettingsKey={} scan=0x{:X} vk=0x{:X}", key, g_scan.load(), g_vk.load());
+		g_perfCtl.waitSec.store(hzperf::ClampWaitSec(waitSec), std::memory_order_relaxed);
 		const int was = g_perfDumpWas.exchange(dump, std::memory_order_acq_rel);
-		if (hzperf::DumpEdge(was, dump) && HzPerfOn())
+		if (hzperf::DumpEdge(was, dump) && HzPerfOn()) {
+			hzperf::ArmDump(g_perfCtl, waitSec);
 			g_perfDumpReq.store(true, std::memory_order_release);
+		}
 	}
 
 	HWND GameWindow()
@@ -4757,7 +4770,12 @@ namespace HZ
 		}
 		if (!g_hudSince) g_hudSince = now;
 		try { SplashPoll(now); } catch (...) {}
-		if (now - g_hudSince < 3000) return;
+		if (now - g_hudSince < 3000) {
+			if (g_perfCtl.windowArmed.load(std::memory_order_relaxed)) {
+				try { HzPerfDumpOnce(); } catch (...) {}
+			}
+			return;
+		}
 		if (!g_hudReadyLogged.exchange(true)) {
 			REX::INFO("HUD ready (stable 3s)");
 			HudOwnerCheck();
@@ -4776,21 +4794,47 @@ namespace HZ
 		HWND wnd = GameWindow();
 		EnsureSubclass(wnd);
 		PollSettings(wnd, now);
-		try { HzPerfDumpOnce(); } catch (...) {}
+		if (g_perfDumpReq.load(std::memory_order_relaxed)) {
+			try { HzPerfArmWindow(); } catch (...) {}
+			try { HzPerfDumpOnce(); } catch (...) {}
+		}
 	}
 
-	// Purpose: one explicit dump. Invokes hzPerfSnapshot at most once per
-	// PerfDump 0->1. No per-frame log, no file besides HorizonUI.log, no worker.
+	// Purpose: first HUD-ready (3s) starts the dump window. Resets native and AS
+	// counters once, latches dump-at = now + PerfDumpWait. No dump on this poll.
+	// PauseMenu later does not re-enter: windowArmed stays set. Author: Moragar.
+	// Last modified: 2026-11-08.
+	void HzPerfArmWindow()
+	{
+		if (hzperf::OnHudFirstReady(g_perfCtl, HzPerfOn(), GetTickCount64()) != hzperf::ReadyOp::ResetWindow)
+			return;
+		hzperf::BeginDump(g_perfAgg);
+		hzperf::Reset(g_perfAgg);
+		const auto now = HzQpc();
+		g_perfAgg.windowStart.store(now, std::memory_order_relaxed);
+		g_perfAgg.waitUs.store(hzperf::WaitUsFromSec(g_perfCtl.waitSec.load(std::memory_order_relaxed)),
+			std::memory_order_relaxed);
+		hzperf::EndDump(g_perfAgg);
+		try { HudInvoke("hzPerfReset"); } catch (...) {}
+	}
+
+	// Purpose: one explicit dump after first HUD-ready + PerfDumpWait.
+	// Invokes hzPerfSnapshot at most once per PerfDump 0->1. PauseMenu does not
+	// drop the request. No dump while HudSafe is false. No new 3s wait after
+	// pause. Dump-frame pollHud is skipped (skipPoll). No per-frame log.
 	// Inputs: HUD AdvanceFrame. Outputs: one INFO line. Author: Moragar.
 	// Last modified: 2026-11-08.
 	void HzPerfDumpOnce()
 	{
-		if (!g_perfDumpReq.exchange(false, std::memory_order_acq_rel)) return;
+		if (!g_perfDumpReq.load(std::memory_order_acquire)) return;
 		if (!HzPerfOn()) return;
+		if (hzperf::OnHudSafePoll(g_perfCtl, true, true, GetTickCount64()) != hzperf::DumpOp::Fire)
+			return;
+		if (!g_perfDumpReq.exchange(false, std::memory_order_acq_rel)) return;
+		hzperf::ConsumeDump(g_perfCtl);
+		hzperf::BeginDump(g_perfAgg);
 		const auto freq = HzQpcFreq();
 		const auto now = HzQpc();
-		if (!g_perfAgg.windowStart.load(std::memory_order_relaxed))
-			g_perfAgg.windowStart.store(now, std::memory_order_relaxed);
 		char native[hzperf::kDumpMax];
 		hzperf::FormatNative(g_perfAgg, freq, now,
 			g_perfDiag.load(std::memory_order_relaxed),
@@ -4799,17 +4843,15 @@ namespace HZ
 			native, hzperf::kDumpMax);
 		std::string as = "as=missing";
 		try {
-			const auto t0 = HzQpc();
 			GValue r;
 			if (HudInvoke("hzPerfSnapshot", &r) && r.IsString() && r.GetString())
 				as = hzpreset::Utf8Prefix(r.GetString(), 1400);
-			HzPerfNote(hzperf::kInvoke, t0);
 		} catch (...) {
 			as = "as=throw";
 		}
-		REX::INFO("perf dump {} {}", native, as);
 		hzperf::Reset(g_perfAgg);
-		g_perfAgg.windowStart.store(HzQpc(), std::memory_order_relaxed);
+		hzperf::EndDump(g_perfAgg);
+		REX::INFO("perf dump {} {}", native, as);
 	}
 
 	// Purpose: HUDMessagesMenu Invokes only. Runs from that movie's
@@ -4905,9 +4947,10 @@ namespace HZ
 			orig(a_this, a_next);
 		if (tAdv0) {
 			HzPerfNote(hzperf::kMovieAdvance, tAdv0);
-			g_perfAgg.frames.fetch_add(1, std::memory_order_relaxed);
-			if (!g_perfAgg.windowStart.load(std::memory_order_relaxed))
-				g_perfAgg.windowStart.store(tAdv0, std::memory_order_relaxed);
+			if (g_perfAgg.dumping.load(std::memory_order_acquire) == 0) {
+				g_perfAgg.frames.fetch_add(1, std::memory_order_relaxed);
+				hzperf::NoteWindowStart(g_perfAgg, tAdv0);
+			}
 		}
 		const auto tid = ::GetCurrentThreadId();
 		LogAdvanceTid(tid);
