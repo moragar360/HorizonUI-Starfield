@@ -241,8 +241,8 @@
       public var hzCmpPlayerMark:Boolean = true;
       private var hzDbgCmp:String = "";
       // layout edit (ARRANGE CARDS)
-      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages"];
-      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES"];
+      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages","Watch"];
+      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES","WATCH"];
       public var hzLay:Object = {};
       private var hzLayOrig:Object = null;
       private var hzArrange:Boolean = false;
@@ -271,6 +271,8 @@
       private var hzCross3rd:Boolean = false;    // HudCrosshairData.bIn3rdPerson
       private var hzCrossTool:Boolean = false;   // HudCrosshairData.bIsToolGrip
       private var hzXhStyle:int = 1;             // CrosshairStyle: 0 vanilla, 1 Horizon dot, 2 Horizon cross, 3 none (interact reticle only)
+      private var hzCrossRule:int = 0;           // CrosshairRule: 0 always, 1 weapon drawn, 2 off. Center reticle only.
+      private var hzWatchStyle:int = 0;          // WatchStyle: 0 off, 1 vanilla, 2 vanilla + Horizon colors, 3 digital, 4 analog
       private var hzObjRing:int = 0;             // ObjectRing: 0 off, 1 container lists only, 2 vanilla
       private var hzXh:Sprite = null;
       private var hzXhSig:String = "";
@@ -545,7 +547,7 @@
       private function hzApplyScale() : void
       {
          // v0.34: each card has its own factor ([Cards] <Card>Scale, -1 = HudScale)
-         var m:Array = [[this.HorizonCard_mc,"Jetpack"],[this.HorizonVitals_mc,"Vitals"],[this.HorizonEnv_mc,"Planet"],[this.HorizonAffl_mc,"Afflictions"],[this.HorizonAmmo_mc,"Equipment"],[this.HorizonQuest_mc,"Quests"],[this.HorizonCompass_mc,"Compass"],[this.HorizonCompact_mc,"Compact"],[this.HorizonCompactQuest_mc,"Quests"],[this.HorizonChar_mc,"Character"],[this.HorizonEnemy_mc,"Enemy"],[this.HorizonStealth_mc,"Stealth"],[this.HorizonXp_mc,"XpToast"]];
+         var m:Array = [[this.HorizonCard_mc,"Jetpack"],[this.HorizonVitals_mc,"Vitals"],[this.HorizonEnv_mc,"Planet"],[this.HorizonAffl_mc,"Afflictions"],[this.HorizonAmmo_mc,"Equipment"],[this.HorizonQuest_mc,"Quests"],[this.HorizonCompass_mc,"Compass"],[this.HorizonCompact_mc,"Compact"],[this.HorizonCompactQuest_mc,"Quests"],[this.HorizonChar_mc,"Character"],[this.HorizonEnemy_mc,"Enemy"],[this.HorizonStealth_mc,"Stealth"],[this.HorizonXp_mc,"XpToast"],[this.hz43Watch,"Watch"]];
          for each(var e:Array in m)
          {
             var c:Sprite = e[0] as Sprite;
@@ -1293,29 +1295,10 @@
 
       private function hzUpdateQuests(mm:Array) : void
       {
-         // v0.27: the first marker in aMissionMarkers is not stable (the game re-orders main / optional objectives),
-         // which made the tracker flip between them. Sticky main objective + the others as sub-lines.
-         var seen:Array = [];
-         var active:Object = null;
-         var list:Array = [];
-         for each(var o:Object in mm)
-         {
-            if(!o || !this.hzIsQuestType(uint(o.uiMarkerIconType))) { continue; }
-            var t:String = o.strText ? String(o.strText) : "";
-            if(t == "" || seen.indexOf(t) >= 0) { continue; }
-            seen.push(t);
-            list.push(o);
-         }
-         try { active = this.hz27PickMain(list); } catch(errQ:Error) { active = list.length > 0 ? list[0] : null; }
-         try { this.hz27QBuildSubs(list,active); } catch(errQ2:Error) { this.hz27QSubs = []; }
-         this.hzQHasAny = seen.length > 0;
-         this.hzQActive.text = active ? String(active.strText) : "No active objective";
-         this.hzQActiveSub.text = active ? (uint(active.uiMarkerIconType) == MapMarkerUtils.MIT_MARKER_QUEST_OFFPLANET ? "OFF PLANET" : this.hzFmtDist(Number(active.fDistanceToPlayer))) : "";
-         if(this.hzCQText) { this.hzCQText.text = this.hzQActive.text; }
-         if(this.hzCQDist) { this.hzCQDist.text = this.hzQActiveSub.text; }
-         this.hzQObjStr = active ? String(active.strText) : "";
-         this.hzQDistStr = this.hzQActiveSub.text;
-         this.hzQSync();
+         // Markers are a distance lookup for the selected quest. They never add another quest's row.
+         if(mm) { this.hz27QMarks = mm; }
+         this.hz27QFill(mm ? mm : this.hz27QMarks);
+         this.hz27QRefresh();
       }
 
       // Compass markers: quest = gold diamond, enemy = red dot, others = small gray tick.
@@ -1694,6 +1677,7 @@
          if(this.hzDebug) { this.hzDbgEnv = "LocalEnvironmentData: " + this.hzKeys(d) + "\n" + this.hzDbgEnv.split("\n").slice(1).join("\n"); }
          if(pk != this.hzPpKind) { this.hzPpKind = pk; this.hzPpDrawIcon(); }
          this.hzPpSync();
+         this.hz43VanEnvCache(d);
       }
 
       private function hzOnEnvEffects(e:FromClientDataEvent) : *
@@ -1958,7 +1942,7 @@
                case "texttone": if(!isNaN(nv)) { this.hzTextTone = Math.max(0,Math.min(2,int(nv))); } break;
                case "fontface": if(!isNaN(nv)) { this.hzFontFace = Math.max(0,Math.min(3,int(nv))); } break;
                case "timedisplay": if(!isNaN(nv)) { this.hzTimeDisplay = Math.max(0,Math.min(3,int(nv))); } break;
-               case "clockformat": if(!isNaN(nv)) { this.hzClockFmt = Math.max(0,Math.min(1,int(nv))); } break;
+               case "clockformat": if(!isNaN(nv)) { this.hzClockFmt = Math.max(0,Math.min(1,int(nv))); try { this.hzPpLayout(); } catch(eClk:Error) { } } break;
                case "tempunit": if(!isNaN(nv)) { this.hzTempUnit = Math.max(0,Math.min(1,int(nv))); } break;
                case "afflictionlayout": if(!isNaN(nv)) { this.hzAfLayout = Math.max(0,Math.min(2,int(nv))); } break;
                case "planetdetails": this.hzPlanDetails = bv; break;
@@ -1993,6 +1977,8 @@
                case "targetscale": if(!isNaN(nv)) { this.hzTgScaleLeg = nv; } break;   // pre-v0.26 key, migrated below
                case "containerscale": if(!isNaN(nv)) { this.hzTgScale = this.hz34ScClamp(nv); this.hzTgScaleSet = true; this.hzT19Sig = ""; } break;
                case "crosshairstyle": if(!isNaN(nv)) { this.hzXhStyle = Math.max(0,Math.min(3,int(nv))); this.hzXhSig = ""; } break;
+               case "crosshairrule": if(!isNaN(nv)) { this.hzCrossRule = Math.max(0,Math.min(2,int(nv))); } break;
+               case "watchstyle": if(!isNaN(nv)) { this.hzWatchStyle = Math.max(0,Math.min(4,int(nv))); this.hz43Force = true; this.hzHideCache = null; this.hz43VanShown = 0; this.hz43VanTries = 0; } break;
                case "objectring": if(!isNaN(nv)) { this.hzObjRing = Math.max(0,Math.min(2,int(nv))); } break;
                case "screenheight": if(!isNaN(nv)) { this.hzScrH = nv >= 360 && nv <= 4320 ? int(nv) : 0; this.hzT19Sig = ""; } break;
                case "headerstyle": if(!isNaN(nv)) { this.hzHeaderStyle = Math.max(0,Math.min(1,int(nv))); this.hzApplyTypo(); } break;
@@ -2247,13 +2233,24 @@
       private var hzQTitle:TextField = null;
       public function hzSetQuestTitle(name:String) : void
       {
-         if(String(name != null ? name : "").toLowerCase() != String(this.hzQName != null ? this.hzQName : "").toLowerCase()) { this.hz27QMain = ""; this.hz27QObjs = []; this.hz27QSubs = []; }
+         var next:String = name != null ? name : "";
+         var changed:Boolean = next.toLowerCase() != String(this.hzQName != null ? this.hzQName : "").toLowerCase();
+         if(changed)
+         {
+            this.hz27QClearSteps();
+            this.hz27QApplyCache(next);
+         }
          if(this.hzQTitle)
          {
-            this.hzQTitle.text = name && name.length > 0 ? name.toUpperCase() : "ACTIVE OBJECTIVE";
+            this.hzQTitle.text = next.length > 0 ? next.toUpperCase() : "ACTIVE OBJECTIVE";
          }
-         this.hzQName = name != null ? name : "";
-         this.hzQSync();
+         this.hzQName = next;
+         if(changed)
+         {
+            if(this.hz27QMarks) { this.hzUpdateQuests(this.hz27QMarks); }
+            else { this.hz27QRefresh(); }
+         }
+         else { this.hzQSync(); }
       }
       private function hzOnQuestData(e:FromClientDataEvent) : *
       {
@@ -2278,16 +2275,30 @@
       {
          var a:Array = e.data ? e.data.QuestUpdatesA as Array : null;
          if(!a) { return; }
-         for(var i:int = a.length - 1; i >= 0; i--)
+         var accepted:Boolean = false;
+         var i:int = 0;
+         while(i < a.length)
          {
             var q:Object = a[i];
-            if(q && q.bActiveQuest === true && q.strQuestName && q.bCompleted !== true && q.bFailed !== true)
+            i++;
+            // Selected quest only: uQuestID or uDisplayedQuestID when both sides have an id, otherwise the name.
+            // A name-only update still matches after an id is stored. Prose is not a step.
+            // An update for another quest is buffered by name so a later title can use it, and it is not drawn.
+            if(this.hz27QIsProse(q)) { continue; }
+            if(this.hz27QIsSelected(q) && this.hz27QCarriesSteps(q))
             {
-               this.hzSetQuestTitle(String(q.strQuestName));
-               try { this.hz27QSetObjs(q); } catch(errO:Error) { }
-               return;
+               try { this.hz27QSetObjs(q); } catch(errO:Error) { this.hz27QObjs = []; }
+               this.hz27QRemember(q);
+               accepted = true;
             }
+            else { this.hz27QBuffer(q); }
          }
+         if(!accepted) { return; }
+         var active:Object = null;
+         try { active = this.hz27PickMain(this.hz27QList); } catch(errQ:Error) { active = null; }
+         try { this.hz27QBuildSubs(this.hz27QList, active); } catch(errS:Error) { this.hz27QSubs.length = 0; }
+         this.hz27QWrite(active);
+         this.hzQSync();
       }
       private function hzOnInventory(e:FromClientDataEvent) : *
       {
@@ -2517,14 +2528,32 @@
          try { this.hz40Frame(); } catch(e40f:Error) { }
          try { this.hz42QmFont(); } catch(e42q:Error) { }   // v0.40.2: in-world quest-marker labels in the Horizon face
          try { this.hz35CmpTick(); } catch(e35c:Error) { }   // v0.35: global Compact follow
+         try { this.hz43SyncHide(); } catch(e43h:Error) { }
          if(this.hzHideCache == null || this.hzFrameN % 90 == 1 || this.hz36HideStale)
          {
             this.hzHideTries++;
             this.hzHideCache = [];
             this.hz36HideStale = false;
             if(this.hzHideVanillaBoost) { names.push("JetpackMeterWrapper_mc","JetpackMeterAnim_mc"); }
-            if(this.hzHideVanillaCompass) { names.push("WatchOutline_mc","WatchPointerOutline_mc","WatchIconsWidget_mc","MissionIconsWidget_mc","EnemyIconsWidget_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"); }
-            if(this.hzHideVanillaWatch) { names.push("O2CO2_mc","O2CO2thin_mc","WatchOutline_mc","WatchPointerOutline_mc","BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"); }
+            if(this.hzHideVanillaCompass)
+            {
+               // Styles 1 and 2 leave the native watch. Custom 3/4 hide chrome and keep mission/enemy markers.
+               if(this.hzWatchStyle == 0)
+               {
+                  names.push("MissionIconsWidget_mc","EnemyIconsWidget_mc");
+                  names.push("WatchOutline_mc","DayCycleBase_mc","locationNameBase_mc");
+                  names.push("Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc");
+               }
+               else if(this.hzWatchStyle != 1 && this.hzWatchStyle != 2)
+               {
+                  names.push("WatchOutline_mc","DayCycleBase_mc","locationNameBase_mc");
+                  names.push("Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc");
+               }
+            }
+            if(this.hzHideVanillaWatch) { names.push("O2CO2_mc","O2CO2thin_mc","WatchOutline_mc","BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"); }
+            // Style 0 hides the inner radar and nearby markers. Custom also hides the heading outline; 3/4 keep the marker widgets.
+            if(this.hzWatchStyle == 0) { names.push("WatchIconsWidget_mc","WatchPointerOutline_mc"); }
+            else if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4) { names.push("WatchPointerOutline_mc"); }
             if(this.hzHideVanillaAmmo) { names.push("EquippedWeaponAmmo_mc","EquippedWeaponAmmoTotal_mc","VerticalDivider_mc","EquippedWeaponIconHolder_mc"); }
             if(this.hzHideVanillaHealth) { names.push("HealthBar_mc","HealthBarEmpty_mc","HealthBarGhost_mc","HealthBarDamage_mc","HealthBarIncrease_mc","Health_mc"); }
             for each(var n:String in names)
@@ -2546,9 +2575,10 @@
                while(bi < this.hzBlg.numChildren)
                {
                   var bc:DisplayObject = this.hzBlg.getChildAt(bi);
-                  if(bc && bc.visible && bc.name != "EnemyDetectionAnim_mc" && bc.name != "Autopilot_mc" && bc.name != "EnvAlertText" && bc.name != "BioAlertText" && bc.name != "LocationAlertText")
+                  var keepMark:Boolean = (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && bc && this.hz43VanMarkName(bc.name);
+                  if(bc && bc.visible && !keepMark && bc.name != "EnemyDetectionAnim_mc" && bc.name != "EnvAlertText" && bc.name != "BioAlertText" && bc.name != "LocationAlertText" && !(bc.name != null && (bc.name.indexOf("Bio") == 0 || bc.name.indexOf("Env") == 0)))
                   {
-                     bc.visible = false;
+                     this.hz43StHide(bc);
                   }
                   bi++;
                }
@@ -2570,7 +2600,9 @@
             else { this.hzFontRetry = 6; }
          }
          try { this.hzTgTick(); } catch(errTg:Error) { try { this.hzTgRestore(); this.HorizonTarget_mc.visible = false; } catch(errTg2:Error) { } }
+         try { this.hz43Reticle(); } catch(e43r:Error) { }
          try { this.hzXhTick(); } catch(errXh:Error) { try { this.hzXhRestore(); if(this.hzXh) { this.hzXh.visible = false; } } catch(errXh2:Error) { } }
+         try { this.hz43Frame(); } catch(e43f:Error) { }
          try { this.hzTickBars(); } catch(e36b:Error) { }
          try { this.hzTickFades(); } catch(e36d:Error) { }
          try { this.hzTickVitals(); } catch(e36v:Error) { }
@@ -3120,7 +3152,7 @@
          }
          if(tab == 4)
          {
-            return [{"k":"JetpackRule","l":"JETPACK","t":"q","ids":[0,4,1,2],"h":"WHEN EACH CARD SHOWS"},{"k":"VitalsRule","l":"VITALS","t":"q","ids":[0,5,1,2]},{"k":"PlanetRule","l":"PLANET","t":"q","ids":[0,1,2]},{"k":"AfflictionsRule","l":"AFFLICTIONS","t":"q","ids":[0,6,1,2]},{"k":"AmmoRule","l":"EQUIPMENT","t":"q","ids":[0,3,1,2]},{"k":"QuestsRule","l":"QUEST TRACKER","t":"q","ids":[0,1,2]},{"k":"CompassRule","l":"COMPASS","t":"q","ids":[0,1,2]},{"k":"CharacterRule","l":"CHARACTER CARD","t":"q","ids":[0,7,8,9,1,2],"note":"XP / level / credits / skill point: shows for 8 s, then fades (CharacterShowSeconds in the ini)"}];
+            return [{"k":"JetpackRule","l":"JETPACK","t":"q","ids":[0,4,1,2],"h":"WHEN EACH CARD SHOWS"},{"k":"VitalsRule","l":"VITALS","t":"q","ids":[0,5,1,2]},{"k":"PlanetRule","l":"PLANET","t":"q","ids":[0,1,2]},{"k":"AfflictionsRule","l":"AFFLICTIONS","t":"q","ids":[0,6,1,2]},{"k":"AmmoRule","l":"EQUIPMENT","t":"q","ids":[0,3,1,2]},{"k":"QuestsRule","l":"QUEST TRACKER","t":"q","ids":[0,1,2]},{"k":"CompassRule","l":"COMPASS","t":"q","ids":[0,1,2]},{"k":"CharacterRule","l":"CHARACTER CARD","t":"q","ids":[0,7,8,9,1,2],"note":"XP / level / credits / skill point: shows for 8 s, then fades (CharacterShowSeconds in the ini)"},{"k":"CrosshairRule","l":"CROSSHAIR","t":"r","opts":["ALWAYS","WEAPON DRAWN","OFF"],"ids":[0,1,2],"h":"CENTER RETICLE","note":"The center reticle only. Prompts, target cards, hit markers, the kill X, the damage ring, and the stealth pill stay."}];
          }
          if(tab == 5)
          {
@@ -5001,6 +5033,19 @@
          this.hzRuleCompass = int(p.CompassRule);
          this.hzDrawMag();
          if(p.CrosshairStyle != undefined && !isNaN(Number(p.CrosshairStyle))) { this.hzXhStyle = Math.max(0,Math.min(3,int(p.CrosshairStyle))); this.hzXhSig = ""; }
+         if(p.CrosshairRule != undefined && !isNaN(Number(p.CrosshairRule))) { this.hzCrossRule = Math.max(0,Math.min(2,int(p.CrosshairRule))); }
+         if(p.WatchStyle != undefined && !isNaN(Number(p.WatchStyle)))
+         {
+            var nws:int = Math.max(0,Math.min(4,int(p.WatchStyle)));
+            if(nws != this.hzWatchStyle)
+            {
+               this.hzWatchStyle = nws;
+               this.hz43Force = true;
+               this.hzHideCache = null;
+               this.hz43VanShown = 0;
+               this.hz43VanTries = 0;
+            }
+         }
          if(p.ObjectRing != undefined && !isNaN(Number(p.ObjectRing))) { this.hzObjRing = Math.max(0,Math.min(2,int(p.ObjectRing))); }
          if(p.ContainerScale != undefined && !isNaN(Number(p.ContainerScale))) { this.hzTgScale = this.hz34ScClamp(p.ContainerScale); this.hzT19Sig = ""; }
          if(p.ScreenHeight != undefined && !isNaN(Number(p.ScreenHeight))) { var nsh0:Number = Number(p.ScreenHeight); this.hzScrH = nsh0 >= 360 && nsh0 <= 4320 ? int(nsh0) : 0; }
@@ -5104,7 +5149,7 @@
          a.push("FontFace=" + int(p.FontFace));
          a.push("; Planet card time: 0 off, 1 LOCAL planet time (GAME hh:mm UT where there is no local day), 2 PC/REAL clock, 3 both");
          a.push("TimeDisplay=" + int(p.TimeDisplay));
-         a.push("; Clock format for LOCAL and PC: 0 12-hour (AM/PM), 1 24-hour (GAME UT is always 24-hour, like the game)");
+         a.push("; Clock format for LOCAL, GAME, and PC: 0 12-hour (AM/PM), 1 24-hour");
          a.push("ClockFormat=" + int(p.ClockFormat));
          a.push("; Temperature units on the planet card and scanner: 0 Celsius, 1 Fahrenheit (default Celsius)");
          a.push("TempUnit=" + int(p.TempUnit != undefined ? p.TempUnit : this.hzTempUnit));
@@ -5160,6 +5205,8 @@
          {
             a.push(rk + "=" + int(p[rk]));
          }
+         a.push("; Crosshair visibility: 0 always (default), 1 only with weapon drawn, 2 off");
+         a.push("CrosshairRule=" + int(p.CrosshairRule != undefined ? p.CrosshairRule : this.hzCrossRule));
          a.push("; Seconds the character card stays after an XP / level / credits event (rules 7 and 9), 2 - 60");
          a.push("CharacterShowSeconds=" + String(Math.round(this.hz27CharSecs * 10) / 10));
          a.push("; Vitals slide to the exact center when the Equipment card is hidden (ignored if the vitals card was moved)");
@@ -5267,14 +5314,14 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.0.33";
+      private static const HZ_BUILD:String = "0.43.1.0";
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -6375,6 +6422,18 @@
             case "Stealth": return [this.HorizonStealth_mc].filter(this.hzNotNull);
             case "XpToast": return [this.HorizonXp_mc].filter(this.hzNotNull);
             case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": return this.hz31PxOn(k) ? [this.hz31Px(k)] : [];
+            case "Watch":
+               if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4)
+               {
+                  this.hz43Build();
+                  return this.hz43Watch ? [this.hz43Watch] : [];
+               }
+               if(this.hzWatchStyle == 1 || this.hzWatchStyle == 2)
+               {
+                  var vh:Sprite = this.hz43VanEnsure();
+                  return vh ? [vh] : [];
+               }
+               return [];
          }
          return [];
       }
@@ -6437,6 +6496,7 @@
                case "Stealth": ok = this.hzStealthOn; break;
                case "XpToast": ok = this.hzXpToastOn; break;
                case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": ok = this.hz31PxOn(k); break;   // v0.31 / v0.32: Comms proxies
+               case "Watch": ok = this.hzWatchStyle == 1 || this.hzWatchStyle == 2 || this.hzWatchStyle == 3 || this.hzWatchStyle == 4; break;
             }
             if(ok)
             {
@@ -7858,22 +7918,22 @@
             var y:Number = Number(ys[ri]);
             if(loc && showUT)
             {
-               // game time as the game shows it: always 24-hour "HH:MM UT" (ClockFormat does not apply)
+               // GAME source (in ship / no local day). ClockFormat applies: 12H AM/PM, 24H "HH:MM UT".
                var uh:int = int(Math.floor(this.hzPpUT)) % 24;
                var um:int = int(Math.floor((this.hzPpUT - Math.floor(this.hzPpUT)) * 60));
-               tf.text = this.hzPad2(uh) + ":" + this.hzPad2(um) + " UT";
+               tf.text = this.hzFmtLocGame(uh,um,true);
             }
             else if(loc)
             {
                var hh:Number = (this.hzPpDay * 24) % 24;
                var H:int = int(Math.floor(hh));
                var M:int = int(Math.floor((hh - H) * 60));
-               tf.text = this.hzFmtClock(H,M);
+               tf.text = this.hzFmtLocGame(H,M,false);
             }
             else { tf.text = realStr; }
             this.hzTxtTop(tf,loc ? y : y + 1);
             this.hzTxtTop(lb,y + 4);
-            // v0.24 row = [glyph] LABEL value, e.g. "GAME 18:29 UT" / "LOCAL 6:42 PM" / "PC 8:28 PM", value flush right
+            // row = [glyph] LABEL value, e.g. "LOCAL/GAME 6:55 PM" / "LOCAL/GAME 18:55 UT" / "PC/REAL 5:41 PM"
             var tw:Number = this.hzTW(tf);
             tf.x = Math.round(r - tf.width + 2);
             var lw:Number = this.hzTW(lb);
@@ -8291,6 +8351,14 @@
          var h12:int = h % 12;
          if(h12 == 0) { h12 = 12; }
          return h12 + ":" + this.hzPad2(m) + " " + (h < 12 ? "AM" : "PM");
+      }
+
+      // LOCAL/GAME value on the planet card, F11 STYLE preview (copies those fields), and digital watch.
+      // game=true is the GAME UT source. 24H keeps "HH:MM UT"; 12H uses AM/PM and does not force 24-hour digits.
+      private function hzFmtLocGame(h:int, m:int, game:Boolean) : String
+      {
+         if(game && this.hzClockFmt == 1) { return this.hzPad2(h) + ":" + this.hzPad2(m) + " UT"; }
+         return this.hzFmtClock(h,m);
       }
 
       private function hzFmtInt(v:Number) : String
@@ -9490,6 +9558,7 @@
       private var hzT19Rows:Array = [];
       private var hzT19Cmp:Array = [];
       private var hzT19Btn:Array = [];
+      private var hzT19HoldB:Array = null;
       private var hzT19Sig:String = "";
       private var hzT19Ver:int = 0;
       private var hzTgItems:Array = null;
@@ -9859,6 +9928,135 @@
          return 1080 / this.hzScrH / sc;
       }
 
+      // The hold meter lives on the vanilla button. Alpha 0 on an ancestor drops the hold.
+      // Keep the button and every clip above it live; hide only sibling prompt art.
+      private function hzT19HoldBtns(aw:Object) : Array
+      {
+         if(this.hzT19HoldB == null) { this.hzT19HoldB = new Array(4); }
+         var i:int = 0;
+         while(i < 4)
+         {
+            this.hzT19HoldB[i] = this.hzT19BtnClip(aw,i) as DisplayObject;
+            i++;
+         }
+         return this.hzT19HoldB;
+      }
+
+      private function hzT19HoldMeterName(name:String) : Boolean
+      {
+         return name == "HoldMeter_mc" || name == "HoldBar_mc" || name == "Meter_mc";
+      }
+
+      private function hzT19IsHoldBtn(d:DisplayObject, buttons:Array) : Boolean
+      {
+         if(!d || !buttons) { return false; }
+         var i:int = 0;
+         while(i < buttons.length)
+         {
+            if(buttons[i] == d) { return true; }
+            i++;
+         }
+         return false;
+      }
+
+      private function hzT19OnHoldPath(d:DisplayObject, buttons:Array) : Boolean
+      {
+         if(!d || !buttons) { return false; }
+         if(this.hzT19IsHoldBtn(d,buttons)) { return true; }
+         var i:int = 0;
+         while(i < buttons.length)
+         {
+            var b:DisplayObject = buttons[i] as DisplayObject;
+            var p:DisplayObjectContainer = b ? b.parent : null;
+            while(p != null && p != this)
+            {
+               if(p == d) { return true; }
+               p = p.parent;
+            }
+            i++;
+         }
+         return false;
+      }
+
+      private function hzT19HideBtnArt(box:DisplayObjectContainer) : void
+      {
+         if(!box) { return; }
+         var i:int = 0;
+         while(i < box.numChildren)
+         {
+            var ch:DisplayObject = box.getChildAt(i);
+            if(ch && this.hzT19HoldMeterName(ch.name)) { }
+            else if(ch)
+            {
+               this.hzT19HideA(ch);
+            }
+            i++;
+         }
+      }
+
+      private function hzT19HidePromptTree(box:DisplayObjectContainer, buttons:Array) : void
+      {
+         if(!box) { return; }
+         var i:int = 0;
+         while(i < box.numChildren)
+         {
+            var ch:DisplayObject = box.getChildAt(i);
+            if(ch && this.hzT19IsHoldBtn(ch,buttons))
+            {
+               this.hzT19HideBtnArt(ch as DisplayObjectContainer);
+            }
+            else if(ch && this.hzT19OnHoldPath(ch,buttons) && ch is DisplayObjectContainer)
+            {
+               this.hzT19HidePromptTree(DisplayObjectContainer(ch),buttons);
+            }
+            else if(ch)
+            {
+               this.hzT19HideA(ch);
+            }
+            i++;
+         }
+      }
+
+      private function hzT19KeepHold(aw:Object) : void
+      {
+         var i:int = 0;
+         while(i < 4)
+         {
+            var d:DisplayObject = this.hzT19BtnClip(aw,i) as DisplayObject;
+            if(d)
+            {
+               if(!d.visible) { d.visible = true; }
+               if(d.alpha < 1) { d.alpha = 1; }
+               var p:DisplayObjectContainer = d.parent;
+               while(p != null && p != this)
+               {
+                  if(!p.visible) { p.visible = true; }
+                  if(p.alpha < 1) { p.alpha = 1; }
+                  try { if(p == this.RolloverWidget_mc) { break; } } catch(e0:Error) { }
+                  p = p.parent;
+               }
+            }
+            i++;
+         }
+      }
+
+      // 0..1 while the vanilla hold meter is filling. -1 when this button has no meter.
+      private function hzT19HoldFrac(btn:Object) : Number
+      {
+         if(!btn) { return -1; }
+         var m:Object = null;
+         try { m = btn.HoldMeter_mc; } catch(e1:Error) { m = null; }
+         if(m == null) { try { m = btn.HoldBar_mc; } catch(e2:Error) { m = null; } }
+         if(m == null) { try { m = btn.Meter_mc; } catch(e3:Error) { m = null; } }
+         if(m == null) { return -1; }
+         var s:Number = Number(m.scaleX);
+         if(!isNaN(s) && s >= 0 && s <= 1.001) { return s > 1 ? 1 : s; }
+         var total:int = int(m.totalFrames);
+         var frame:int = int(m.currentFrame);
+         if(total > 1 && frame >= 1) { return (frame - 1) / (total - 1); }
+         return -1;
+      }
+
       // vanilla button clip for an aButtons iType (HUDRolloverActivationWidget: A/X top bar, Y/B bottom bar)
       private function hzT19BtnClip(aw:Object, t:int) : Object
       {
@@ -10048,7 +10246,7 @@
                   ht.x = this.hzSnapU(x,u); this.hzTxtTopU(ht,this.hzCapTop(ht,kcy),u);
                   x += holdW;
                }
-               var kc:uint = isHold || !on ? this.hzMix(c,this.hzPanelFill(),0.45) : c;
+               var kc:uint = !on ? this.hzMix(c,this.hzPanelFill(),0.45) : c;
                this.hzTxtTint(kt,kc);
                kt.text = key;
                // v0.24: keycap box lives on the DEVICE-pixel grid (1 unit = 1.5 px at 1440p x TargetScale 1.125),
@@ -10062,7 +10260,14 @@
                kt.x = this.hzSnapU(x + (kw - this.hzTW(kt)) / 2 - 2,u);
                this.hzTxtTopU(kt,this.hzCapTop(kt,kcy),u);
                x += kw + 7;
-               this.hzTxtTint(lt,isHold || !on ? 0xA8B6BE : (col == HZ_ACCENT ? null : col));
+               this.hzTxtTint(lt,!on ? 0xA8B6BE : (col == HZ_ACCENT ? null : col));
+               var holdP:Number = isHold ? this.hzT19HoldFrac(this.hzT19BtnClip(aw,t)) : -1;
+               if(g != null && holdP > 0.02)
+               {
+                  g.beginFill(kc,0.9);
+                  g.drawRect(x - kw - 7,ky + kh - 3,kw * holdP,3);
+                  g.endFill();
+               }
                lt.text = isHold ? hold.toUpperCase() : press.toUpperCase();
                lt.visible = g != null;
                lt.x = this.hzSnapU(x,u); this.hzTxtTopU(lt,this.hzCapTop(lt,kcy),u);
@@ -10169,7 +10374,7 @@
          else { this.hzT19LastHp = -1; this.hzTgGhost = -1; }
          // the key text can change (rebinding / controller): include it in the signature
          var keys:String = "";
-         if(show) { var kk:int = 0; while(kk < 4) { keys += this.hzT19Key(aw,kk) + ":" + this.hzT19VanLbl(aw,kk,false) + ":" + this.hzT19VanLbl(aw,kk,true) + ","; kk++; } }
+         if(show) { var kk:int = 0; while(kk < 4) { var hf:Number = this.hzT19HoldFrac(this.hzT19BtnClip(aw,kk)); keys += this.hzT19Key(aw,kk) + ":" + this.hzT19VanLbl(aw,kk,false) + ":" + this.hzT19VanLbl(aw,kk,true) + ":" + (hf < 0 ? "-" : String(int(hf * 8))) + ","; kk++; } }
          var stealSig:int = (show && a != null && Boolean(a.bStealing)) ? 1 : 0;
          var sig:String = kind + "|" + m + "|" + sel + "|" + start + "|" + this.hzT19Ver + "|" + Math.round(this.hzTgGhost * 200) + "|" + this.hzTextScale + "|" + this.hzCardColor + "|" + this.hzContOpacity + "|" + HZ_ACCENT + "|" + this.hzTextTone + "|" + this.hzTgShowValue + "|" + this.hzFontFace + "|" + keys + "|" + show + "|" + this.hzTgScale + "|" + this.hz30Hover + "|" + this.hzScrH + "|" + this.hzNameHover + "|" + int(this.hzCardBgOpacity) + "|" + int(this.hzCardShadow) + "|" + (this.hzTextShadow ? 1 : 0) + "|" + this.hzHeaderStyle + "|" + stealSig;
          if(sig != this.hzT19Sig)
@@ -12468,6 +12673,8 @@
          a.push("[Cards Extra]");
          a.push("; Character card: name, LV + XP bar, skill points, credits, mass / overweight (strip in compact mode)");
          a.push("ShowCharacter=" + this.hzB(p.ShowCharacter));
+         a.push("; Wrist watch, lower left: 0 off (default), 1 vanilla, 2 vanilla with Horizon colors, 3 Horizon digital, 4 Horizon analog");
+         a.push("WatchStyle=" + int(p.WatchStyle != undefined ? p.WatchStyle : this.hzWatchStyle));
          a.push("; Enemy health bar at the top center (LV, name, %, legendary stars / modifiers, EM / stunned). Hides the vanilla bar.");
          a.push("EnemyBar=" + this.hzB(p.EnemyBar));
          a.push("; Stealth pill above the crosshair while sneaking. Hides the vanilla stealth meter.");
@@ -12521,13 +12728,27 @@
       private var hz27BioHid:Boolean = false;
       private var hz27ExitOn:Boolean = false;
       private var hz27Alerts:Array = [];
-      // quest tracker: sticky main objective + up to 3 sub-lines
+      // quest tracker: open steps of the selected quest, up to 3 sub-lines. Compass markers only supply distance.
+      private static const HZ27_UT_QUEST_TEXT:uint = 11; // QuestMessage.HDT_QUEST_TEXT_UPDATED, including the summary body
       private var hz27QMain:String = "";
-      private var hz27QMainT:Number = 0;
-      private var hz27QMainDist:Number = NaN;
-      private var hz27QMainOff:Boolean = false;
       private var hz27QObjs:Array = [];
+      private var hz27QBuf:Array = [];
       private var hz27QSubs:Array = [];
+      private var hz27QList:Array = [];
+      private var hz27QMarks:Array = null;
+      private var hz27QId:String = "";
+      private var hz27QDisp:String = "";
+      private var hz27QCache:Array = [];
+      private var hz27QBare:Object = {"strText":"","fDistanceToPlayer":0,"uiMarkerIconType":0};
+      private var hz27QPool:Array = [{"t":"","opt":false,"d":"","src":"","m":0,"off":false,"has":false},{"t":"","opt":false,"d":"","src":"","m":0,"off":false,"has":false},{"t":"","opt":false,"d":"","src":"","m":0,"off":false,"has":false}];
+      private var hz27OptRe:RegExp = new RegExp("\\(\\s*optional\\s*\\)|^\\s*optional\\b","i");
+      private var hz27OptR1:RegExp = new RegExp("\\s*\\(\\s*optional\\s*\\)\\s*","i");
+      private var hz27OptR2:RegExp = new RegExp("^\\s*optional\\s*[:\\-]?\\s*","i");
+      private var hz27OptR3:RegExp = new RegExp("^\\s+|\\s+$","g");
+      private var hz27ActHas:Boolean = false;
+      private var hz27ActOff:Boolean = false;
+      private var hz27ActM:Number = 0;
+      private var hz27ActTxt:String = "";
       private var hz27QL:Array = [];
       private var hz27QLD:Array = [];
       private var hz27QH:Number = 78;
@@ -12612,112 +12833,344 @@
       }
 
       // ---------- Quest tracker ----------
+      // Subtitle and bullets are the selected quest's open ObjectiveDataA steps. A compass marker is only a distance.
       private function hz27IsOpt(t:String) : Boolean
       {
          if(t == null) { return false; }
-         var re:RegExp = new RegExp("\\(\\s*optional\\s*\\)|^\\s*optional\\b","i");
-         return re.test(t);
+         return this.hz27OptRe.test(t);
       }
 
       private function hz27OptStrip(t:String) : String
       {
-         var r1:RegExp = new RegExp("\\s*\\(\\s*optional\\s*\\)\\s*","ig");
-         var r2:RegExp = new RegExp("^\\s*optional\\s*[:\\-]?\\s*","i");
-         var r3:RegExp = new RegExp("^\\s+|\\s+$","g");
-         var s:String = t.replace(r1," ");
-         s = s.replace(r2,"");
-         return s.replace(r3,"");
+         this.hz27OptR3.lastIndex = 0;
+         var s:String = t.replace(this.hz27OptR1," ");
+         s = s.replace(this.hz27OptR2,"");
+         return s.replace(this.hz27OptR3,"");
       }
 
-      private function hz27QKeep(o:Object) : void
+      private function hz27QIdOf(q:Object, key:String) : String
       {
-         this.hz27QMain = String(o.strText);
-         this.hz27QMainT = this.hz26Now();
-         this.hz27QMainDist = Number(o.fDistanceToPlayer);
-         this.hz27QMainOff = uint(o.uiMarkerIconType) == MapMarkerUtils.MIT_MARKER_QUEST_OFFPLANET;
+         if(!q || q[key] == undefined || q[key] == null) { return ""; }
+         return String(q[key]);
       }
 
-      // main objective: keep the current one while its marker is listed (and for 3 s gaps); otherwise the quest's
-      // first open objective (QuestUpdateData order), then the first non-optional on-planet marker, then the first
-      private function hz27PickMain(list:Array) : Object
+      // Ids match when both sides have one. Otherwise the quest name, including a name-only update after an id is stored.
+      private function hz27QIsSelected(q:Object) : Boolean
       {
-         var now:Number = this.hz26Now();
-         var o:Object = null;
-         if(this.hz27QMain.length > 0)
+         if(!q) { return false; }
+         var qid:String = this.hz27QIdOf(q,"uQuestID");
+         var did:String = this.hz27QIdOf(q,"uDisplayedQuestID");
+         var hasU:Boolean = qid.length > 0 || did.length > 0;
+         var hasS:Boolean = this.hz27QId.length > 0 || this.hz27QDisp.length > 0;
+         if(hasU && hasS)
          {
-            for each(o in list) { if(String(o.strText) == this.hz27QMain) { this.hz27QKeep(o); return o; } }
-            if(now - this.hz27QMainT < 3000)
-            {
-               var held:Object = {"strText":this.hz27QMain,"fDistanceToPlayer":this.hz27QMainDist,"hzHeld":true};
-               held.uiMarkerIconType = this.hz27QMainOff ? MapMarkerUtils.MIT_MARKER_QUEST_OFFPLANET : MapMarkerUtils.MIT_MARKER_QUEST;
-               return held;
-            }
+            if(qid.length > 0 && (qid == this.hz27QId || qid == this.hz27QDisp)) { return true; }
+            if(did.length > 0 && (did == this.hz27QId || did == this.hz27QDisp)) { return true; }
+            return false;
          }
-         var pick:Object = null;
-         for each(var ob:String in this.hz27QObjs)
-         {
-            if(pick != null || this.hz27IsOpt(ob)) { continue; }
-            for each(o in list) { if(pick == null && String(o.strText) == ob) { pick = o; } }
-         }
-         if(pick == null)
-         {
-            for each(o in list)
-            {
-               if(pick == null && !this.hz27IsOpt(String(o.strText)) && uint(o.uiMarkerIconType) != MapMarkerUtils.MIT_MARKER_QUEST_OFFPLANET) { pick = o; }
-            }
-         }
-         if(pick == null && list.length > 0) { pick = list[0]; }
-         if(pick != null) { this.hz27QKeep(pick); } else { this.hz27QMain = ""; }
-         return pick;
+         var nm:String = q.strQuestName != null ? String(q.strQuestName) : "";
+         var cur:String = this.hzQName != null ? this.hzQName : "";
+         return cur.length > 0 && nm.toLowerCase() == cur.toLowerCase();
       }
 
-      private function hz27QSubSort(a:Object, b:Object) : int
+      // Quest-text and summary updates are prose, not steps. HDT_QUEST_TEXT_UPDATED is 11. A summary entry is bSummary.
+      private function hz27QIsProse(q:Object) : Boolean
       {
-         if(Boolean(a.opt) != Boolean(b.opt)) { return a.opt ? 1 : -1; }
-         var ta:String = String(a.t).toLowerCase();
-         var tb:String = String(b.t).toLowerCase();
-         return ta < tb ? -1 : (ta > tb ? 1 : 0);
+         // HDT_QUEST_TEXT_UPDATED and a summary entry are prose, not steps.
+         if(!q) { return false; }
+         if(q.bSummary === true || q.bQuestText === true) { return true; }
+         if(q.uType == undefined || q.uType == null) { return false; }
+         return uint(q.uType) == HZ27_UT_QUEST_TEXT;
       }
 
-      // other objectives of the tracked quest as sub-lines (markers first, then open objectives without a marker)
-      private function hz27QBuildSubs(list:Array, active:Object) : void
+      // A real ObjectiveDataA is a step list even when uType is missing or outside the known set. Prose is not.
+      // A missing array still clears, and only for the types that carry steps.
+      private function hz27QCarriesSteps(q:Object) : Boolean
       {
-         var subs:Array = [];
-         var texts:Array = [];
-         var mt:String = active ? String(active.strText) : "";
-         for each(var o:Object in list)
-         {
-            var t:String = String(o.strText);
-            texts.push(t);
-            if(t == mt) { continue; }
-            var off:Boolean = uint(o.uiMarkerIconType) == MapMarkerUtils.MIT_MARKER_QUEST_OFFPLANET;
-            subs.push({"t":this.hz27OptStrip(t),"opt":this.hz27IsOpt(t),"d":off ? "OFF PLANET" : this.hzFmtDist(Number(o.fDistanceToPlayer))});
-         }
-         for each(var ob:String in this.hz27QObjs)
-         {
-            if(ob == mt || texts.indexOf(ob) >= 0) { continue; }
-            subs.push({"t":this.hz27OptStrip(ob),"opt":this.hz27IsOpt(ob),"d":""});
-         }
-         subs.sort(this.hz27QSubSort);
-         while(subs.length > 3) { subs.pop(); }
-         this.hz27QSubs = subs;
+         if(!q || this.hz27QIsProse(q)) { return false; }
+         var a:Array = q.ObjectiveDataA as Array;
+         if(a) { return true; }
+         if(q.uType == undefined || q.uType == null) { return true; }
+         var t:uint = uint(q.uType);
+         return t == 0 || t == 3 || t == 4 || t == 5 || t == 6 || t == 7 || t == 9;
       }
 
-      // QuestUpdateData: open objectives of the active quest (ObjectiveDataA, same fields as the game's ObjectivesList)
-      private function hz27QSetObjs(q:Object) : void
+      // Keep a quest's steps under its name without touching the card on screen.
+      private function hz27QBuffer(q:Object) : void
       {
+         if(!q || this.hz27QIsProse(q)) { return; }
          var a:Array = q.ObjectiveDataA as Array;
          if(!a) { return; }
-         this.hz26Log("QuestObjectives",a);
-         var out:Array = [];
-         for each(var ob:Object in a)
+         var name:String = q.strQuestName != null ? String(q.strQuestName) : "";
+         if(name.length == 0) { return; }
+         var live:Array = this.hz27QObjs;
+         var id:String = this.hz27QId;
+         var disp:String = this.hz27QDisp;
+         this.hz27QObjs = this.hz27QBuf;
+         this.hz27QId = "";
+         this.hz27QDisp = "";
+         try
          {
+            this.hz27QSetObjs(q);
+            var qid:String = this.hz27QIdOf(q,"uQuestID");
+            var did:String = this.hz27QIdOf(q,"uDisplayedQuestID");
+            if(qid.length > 0) { this.hz27QId = qid; }
+            if(did.length > 0) { this.hz27QDisp = did; }
+            this.hz27QRemember(q);
+         }
+         catch(errB:Error) { }
+         this.hz27QObjs = live;
+         this.hz27QId = id;
+         this.hz27QDisp = disp;
+      }
+
+      private function hz27QClearSteps() : void
+      {
+         this.hz27QMain = "";
+         this.hz27QObjs.length = 0;
+         this.hz27QSubs.length = 0;
+         this.hz27QId = "";
+         this.hz27QDisp = "";
+         this.hzQObjStr = "";
+         this.hzQDistStr = "";
+         this.hz27ActHas = false;
+         this.hz27ActTxt = "";
+         if(this.hzQActive) { this.hzQActive.text = "No active objective"; }
+         if(this.hzQActiveSub) { this.hzQActiveSub.text = ""; }
+      }
+
+      private function hz27QApplyCache(name:String) : void
+      {
+         var key:String = name.toLowerCase();
+         var i:int = 0;
+         while(i < this.hz27QCache.length)
+         {
+            var hit:Object = this.hz27QCache[i];
+            i++;
+            if(String(hit.name).toLowerCase() != key) { continue; }
+            this.hz27QId = hit.id != null ? String(hit.id) : "";
+            this.hz27QDisp = hit.disp != null ? String(hit.disp) : "";
+            this.hz27QObjs.length = 0;
+            var src:Array = hit.objs as Array;
+            var j:int = 0;
+            while(src && j < src.length) { this.hz27QObjs.push(String(src[j])); j++; }
+            return;
+         }
+      }
+
+      private function hz27QRemember(q:Object) : void
+      {
+         var qid:String = this.hz27QIdOf(q,"uQuestID");
+         var did:String = this.hz27QIdOf(q,"uDisplayedQuestID");
+         if(qid.length > 0) { this.hz27QId = qid; }
+         if(did.length > 0) { this.hz27QDisp = did; }
+         var name:String = q.strQuestName != null ? String(q.strQuestName) : (this.hzQName != null ? this.hzQName : "");
+         if(name.length == 0) { return; }
+         var key:String = name.toLowerCase();
+         var hit:Object = null;
+         var i:int = 0;
+         while(i < this.hz27QCache.length)
+         {
+            if(String(this.hz27QCache[i].name).toLowerCase() == key) { hit = this.hz27QCache[i]; break; }
+            i++;
+         }
+         if(!hit)
+         {
+            hit = {"name":name,"id":"","disp":"","objs":[]};
+            this.hz27QCache.push(hit);
+         }
+         hit.name = name;
+         if(this.hz27QId.length > 0) { hit.id = this.hz27QId; }
+         if(this.hz27QDisp.length > 0) { hit.disp = this.hz27QDisp; }
+         var dst:Array = hit.objs as Array;
+         dst.length = 0;
+         var j:int = 0;
+         while(j < this.hz27QObjs.length) { dst.push(String(this.hz27QObjs[j])); j++; }
+      }
+
+      private function hz27QFill(mm:Array) : void
+      {
+         this.hz27QList.length = 0;
+         if(!mm) { return; }
+         var i:int = 0;
+         while(i < mm.length)
+         {
+            var o:Object = mm[i];
+            i++;
+            if(!o || !this.hzIsQuestType(uint(o.uiMarkerIconType))) { continue; }
+            var t:String = o.strText ? String(o.strText) : "";
+            if(t.length == 0 || this.hz27QHasText(t)) { continue; }
+            this.hz27QList.push(o);
+         }
+      }
+
+      private function hz27QHasText(t:String) : Boolean
+      {
+         var i:int = 0;
+         while(i < this.hz27QList.length)
+         {
+            if(String(this.hz27QList[i].strText) == t) { return true; }
+            i++;
+         }
+         return false;
+      }
+
+      private function hz27QMark(list:Array, text:String) : Object
+      {
+         if(!list) { return null; }
+         var i:int = 0;
+         while(i < list.length)
+         {
+            var o:Object = list[i];
+            i++;
+            if(o && String(o.strText) == text) { return o; }
+         }
+         return null;
+      }
+
+      private function hz27QFirst() : String
+      {
+         var any:String = "";
+         var i:int = 0;
+         while(i < this.hz27QObjs.length)
+         {
+            var ob:String = String(this.hz27QObjs[i]);
+            i++;
+            if(any.length == 0) { any = ob; }
+            if(!this.hz27IsOpt(ob)) { return ob; }
+         }
+         return any;
+      }
+
+      // Subtitle: the first open objective of the selected quest. A matching marker supplies the distance.
+      // No timed hold, and no marker that belongs to another quest.
+      private function hz27PickMain(list:Array) : Object
+      {
+         var text:String = this.hz27QFirst();
+         if(text.length == 0) { this.hz27QMain = ""; return null; }
+         var mk:Object = this.hz27QMark(list, text);
+         if(mk) { this.hz27QMain = text; return mk; }
+         this.hz27QBare.strText = text;
+         this.hz27QBare.fDistanceToPlayer = 0;
+         this.hz27QBare.uiMarkerIconType = 0;
+         this.hz27QMain = text;
+         return this.hz27QBare;
+      }
+
+      // Bullets come only from the selected quest's open steps. Markers are a distance lookup. An empty step list adds none.
+      private function hz27QBuildSubs(list:Array, active:Object) : void
+      {
+         var mt:String = active ? String(active.strText) : "";
+         var n:int = 0;
+         var i:int = 0;
+         while(i < this.hz27QObjs.length && n < 3)
+         {
+            var ob:String = String(this.hz27QObjs[i]);
+            i++;
+            if(ob == mt) { continue; }
+            var slot:Object = this.hz27QPool[n];
+            var mk:Object = this.hz27QMark(list, ob);
+            var has:Boolean = mk != null;
+            var off:Boolean = has && uint(mk.uiMarkerIconType) == MapMarkerUtils.MIT_MARKER_QUEST_OFFPLANET;
+            var meters:Number = has ? Number(mk.fDistanceToPlayer) : 0;
+            if(slot.src != ob || slot.has != has || slot.off != off || (has && slot.m != meters))
+            {
+               slot.src = ob;
+               slot.has = has;
+               slot.off = off;
+               slot.m = meters;
+               slot.t = this.hz27OptStrip(ob);
+               slot.opt = this.hz27IsOpt(ob);
+               slot.d = !has ? "" : (off ? "OFF PLANET" : this.hzFmtDist(meters));
+            }
+            n++;
+         }
+         var a:int = 0;
+         while(a < n)
+         {
+            var b:int = a + 1;
+            while(b < n)
+            {
+               var pa:Object = this.hz27QPool[a];
+               var pb:Object = this.hz27QPool[b];
+               var swap:Boolean = false;
+               if(Boolean(pb.opt) != Boolean(pa.opt)) { swap = !pb.opt; }
+               else { swap = String(pb.t).toLowerCase() < String(pa.t).toLowerCase(); }
+               if(swap)
+               {
+                  this.hz27QPool[a] = pb;
+                  this.hz27QPool[b] = pa;
+               }
+               b++;
+            }
+            a++;
+         }
+         this.hz27QSubs.length = 0;
+         var j:int = 0;
+         while(j < n) { this.hz27QSubs.push(this.hz27QPool[j]); j++; }
+      }
+
+      private function hz27QActiveDist(active:Object) : String
+      {
+         if(!active)
+         {
+            if(this.hz27ActHas || this.hz27ActTxt.length > 0) { this.hz27ActHas = false; this.hz27ActTxt = ""; }
+            return "";
+         }
+         var off:Boolean = uint(active.uiMarkerIconType) == MapMarkerUtils.MIT_MARKER_QUEST_OFFPLANET;
+         var meters:Number = Number(active.fDistanceToPlayer);
+         if(this.hz27ActHas && this.hz27ActOff == off && (off || this.hz27ActM == meters) && this.hz27QMain == (active.strText != null ? String(active.strText) : "")) { return this.hz27ActTxt; }
+         this.hz27ActHas = true;
+         this.hz27ActOff = off;
+         this.hz27ActM = meters;
+         this.hz27ActTxt = off ? "OFF PLANET" : this.hzFmtDist(meters);
+         return this.hz27ActTxt;
+      }
+
+      private function hz27QWrite(active:Object) : void
+      {
+         var text:String = active ? String(active.strText) : "";
+         var dist:String = this.hz27QActiveDist(active);
+         var show:String = text.length > 0 ? text : "No active objective";
+         if(this.hzQObjStr != text || this.hzQDistStr != dist)
+         {
+            this.hzQObjStr = text;
+            this.hzQDistStr = dist;
+            if(this.hzQActive) { this.hzQActive.text = show; }
+            if(this.hzQActiveSub) { this.hzQActiveSub.text = dist; }
+            if(this.hzCQText) { this.hzCQText.text = show; }
+            if(this.hzCQDist) { this.hzCQDist.text = dist; }
+         }
+         this.hzQHasAny = text.length > 0;
+      }
+
+      private function hz27QRefresh() : void
+      {
+         var active:Object = null;
+         try { active = this.hz27PickMain(this.hz27QList); } catch(errQ:Error) { active = null; }
+         try { this.hz27QBuildSubs(this.hz27QList, active); } catch(errS:Error) { this.hz27QSubs.length = 0; }
+         this.hz27QWrite(active);
+         this.hzQSync();
+      }
+
+      // Open steps of the selected quest. A missing or invalid ObjectiveDataA clears the list.
+      private function hz27QSetObjs(q:Object) : void
+      {
+         this.hz27QObjs.length = 0;
+         var a:Array = (q != null) ? q.ObjectiveDataA as Array : null;
+         if(!a) { this.hz27QObjs = []; return; }
+         this.hz26Log("QuestObjectives",a);
+         var i:int = 0;
+         while(i < a.length)
+         {
+            var ob:Object = a[i];
+            i++;
             if(!ob || ob.strObjectiveText == null) { continue; }
             if(ob.bCompleted === true || ob.bFailed === true || ob.bDormant === true) { continue; }
+            if(ob.bSummary === true || ob.bQuestText === true) { continue; }
             var s:String = String(ob.strObjectiveText);
-            if(s.length > 0 && out.indexOf(s) < 0) { out.push(s); }
+            if(s.length > 0 && this.hz27QObjs.indexOf(s) < 0) { this.hz27QObjs.push(s); }
          }
-         this.hz27QObjs = out;
       }
 
       private function hz27QBuild(p:Sprite) : void
@@ -12725,8 +13178,8 @@
          var i:int = 0;
          while(i < 3)
          {
-            var tf:TextField = this.hzT(p,"",74,60 + i * 20,HZ_Q19_W - 74 - 14,11,"rg","mut",0.2);
-            var td:TextField = this.hzT(p,"",HZ_Q19_W - 14 - 80,60 + i * 20,80,11,"sb","mut",0.5,"right");
+            var tf:TextField = this.hzT(p,"",74,60 + i * 22,HZ_Q19_W - 74 - 14,13,"rg","mut",0.2);
+            var td:TextField = this.hzT(p,"",HZ_Q19_W - 14 - 80,60 + i * 22,80,13,"sb","mut",0.5,"right");
             tf.visible = false;
             td.visible = false;
             this.hz27QL.push(tf);
@@ -12754,14 +13207,14 @@
                var d:String = String(s.d);
                td.text = d;
                td.visible = d.length > 0;
-               this.hzTxtTop(td,y0 + i * 20);
+               this.hzTxtTop(td,y0 + i * 22);
                var lw:Number = HZ_Q19_W - 74 - 14 - (d.length > 0 ? this.hzTW(td) + 10 : 0);
                this.hzFitText(tf,(s.opt ? "+ OPTIONAL  " : "+  ") + String(s.t),lw);
-               this.hzTxtTop(tf,y0 + i * 20);
+               this.hzTxtTop(tf,y0 + i * 22);
             }
             i++;
          }
-         var h:Number = n > 0 ? Math.max(78,y0 + n * 20 + 8) : 78;
+         var h:Number = n > 0 ? Math.max(78,y0 + n * 22 + 8) : 78;
          if(h != this.hz27QH)
          {
             this.hz27QH = h;
@@ -12857,13 +13310,13 @@
       }
 
       // vanilla left-side affliction popup (BottomLeftGroup BioAlertText / BioCondition_mc / BioAlertBG_mc):
-      // hidden while our Afflictions card is on, restored when it is off. Never removed.
+      // hidden while the Afflictions card is on, including when styles 1 and 2 show the game's watch. Never removed.
       // r4: by visible, never alpha (the BottomLeftGroup timeline animates their alpha). The game never writes their visible, so
-      // the restore is visible = true; BioCondition_mc / BioAlertBG_mc stay to the vanilla watch hide while that is on.
+      // the restore is visible = true. BioCondition_mc / BioAlertBG_mc stay hidden while the watch hide still owns them.
       private function hz27BioHide() : void
       {
          if(!this.hzBlg) { return; }
-         var want:Boolean = this.hzShowAfflictions && this.hzHideVanillaWatch && !this.hzUserHidden;
+         var want:Boolean = this.hzShowAfflictions && !this.hzUserHidden;
          if(!want && !this.hz27BioHid) { return; }
          for each(var n:String in ["BioAlertText","BioCondition_mc","BioAlertBG_mc"])
          {
@@ -12876,16 +13329,17 @@
       }
 
       // v0.31: the red ring on the left is BottomLeftGroup.EnemyDetectionAnim_mc (vanilla plays "Open" while in combat
-      // and detected, so it shows up together with low health). It was left out of the watch hide on purpose before
-      // Horizon had its own combat cues; the stealth pill, enemy bar and EdgePulse cover it now. Hidden by alpha
-      // only (vanilla drives it with gotoAndPlay / gotoAndStop and never sets alpha), re-applied every frame and
-      // after the timeline (exitFrame), never removed; restored when the vanilla watch is shown again.
+      // and detected, so it shows up together with low health). The stealth pill, enemy bar, and edge pulse cover it.
+      // That hide does not follow WatchStyle. Hidden by alpha only (vanilla drives it with gotoAndPlay / gotoAndStop
+      // and never sets alpha), re-applied every frame and after the timeline (exitFrame), never removed. Restored
+      // when those cues are off, or when the player hides this HUD.
       private var hz31DetHid:Boolean = false;
 
       private function hz31DetHide() : void
       {
          if(!this.hzBlg) { return; }
-         var want:Boolean = this.hzHideVanillaWatch && !this.hzUserHidden;
+         var cues:Boolean = this.hzStealthOn || this.hzEnemyBarOn || this.hzEdgePulse;
+         var want:Boolean = cues && !this.hzUserHidden;
          if(!want && !this.hz31DetHid) { return; }
          var c:DisplayObject = this.hzBlg.getChildByName("EnemyDetectionAnim_mc");
          if(c) { c.alpha = want ? 0 : 1; }
@@ -12899,6 +13353,8 @@
          try { this.hz31DetHide(); } catch(err31d:Error) { }
          try { this.hz41LocHide(); } catch(err41l:Error) { }   // r3
          try { this.hz41QmHide(); } catch(err41q:Error) { }    // r3
+         try { this.hz43Reticle(); } catch(err43x:Error) { }
+         try { this.hz43VanLate(); } catch(err43v:Error) { }
       }
 
       private function hz27Build() : void
@@ -14126,6 +14582,7 @@
             catch(errP:Error) { }
             if(d == null) { continue; }
             if(d.stage == null) { this.hz36HideStale = true; }
+            if(this.hz43VanWatchClip(d)) { this.hz43StHide(d); continue; }
             if(d.visible) { d.visible = false; }
             if(d.alpha != 0) { d.alpha = 0; }
          }
@@ -14336,7 +14793,7 @@
       // have a compact form. Jetpack, vitals and afflictions turn into the shared compact strips card, so they follow the
       // global Compact only. Hover / container cards keep [Style] HoverScale / ContainerScale (same meaning as before;
       // -1 now = GLOBAL). Edge-anchored ARRANGE positions use the real on-screen card size, so they stay put at any size.
-      private static const HZ34_CARDS:Array = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false]];
+      private static const HZ34_CARDS:Array = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false],["Watch",false]];
       private static const HZ34_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face: run-time name only, never shown
       private var hz34Sc:Object = {};
       private var hz34Cm:Object = {};
@@ -14397,6 +14854,8 @@
          o.VitalsLayout = this.hz42VL;   // v0.42.0
          o.NameHover = this.hzNameHover == 1 ? 1 : 0;
          o.VitalsBars = this.hzVitalsBars == 1 ? 1 : 0;
+         o.WatchStyle = this.hzWatchStyle;
+         o.CrosshairRule = this.hzCrossRule;
          o.StartupIntro = this.hzSplashWelcome ? 1 : 0;
       }
       private function hz34SetLive(p:Object) : void
@@ -14481,6 +14940,7 @@
             {"k":"VitalsLayout","l":"VITALS LAYOUT","t":"r","opts":["VERTICAL","HORIZONTAL"],"ids":[0,1],"sub":true,"note":"VERTICAL = health above O2.  HORIZONTAL = O2 beside health (one row).  ARRANGE CARDS: L"},
             {"k":"VitalsBars","l":"HEALTH AND O2 BARS","t":"r","opts":["FULL","COMPACT"],"ids":[0,1],"sub":true,"note":"COMPACT uses the same boost, health, and oxygen card as COMPACT MODE. FULL keeps the separate cards. If either is on, that merged card shows."},
             {"k":"ShowCharacter","l":"CHARACTER CARD (LV / XP / CREDITS / MASS)","t":"b"},this.hz34Sz("Character"),this.hz34Cmp("Character",cmn),
+            {"k":"WatchStyle","l":"WATCH","t":"r","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4],"note":"Original Vanilla Watch or Horizon Watch"},this.hz34Sz("Watch"),
             {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","sub":true},
             {"k":"ShowPlanet","l":"PLANET CARD","t":"b"},this.hz34Sz("Planet"),this.hz34Cmp("Planet"),
             {"k":"PlanetDetails","l":"PLANET: GRAVITY / AIR LINE","t":"b"},
@@ -15793,10 +16253,29 @@
          return {"icy":31,"nt":60,"dv":86};
       }
       // ---- vanilla prompt: hidden only behind a drawn Horizon card ----
+      // Do not alpha-hide the activation widget. Scaleform drops holds through an alpha-0 ancestor.
+      // Hide sibling prompt art instead, then keep the hold button and its parents live.
       private function hz38HideVanilla(rw:Object, aw:Object, kind:String) : void
       {
-         try { this.hzT19HideA(rw.RolloverActivationHolder_mc as DisplayObject); } catch(eH:Error) { }
-         try { this.hzT19HideA(aw as DisplayObject); } catch(eA:Error) { }
+         var buttons:Array = this.hzT19HoldBtns(aw);
+         try
+         {
+            var ad:DisplayObjectContainer = aw as DisplayObjectContainer;
+            if(ad) { this.hzT19HidePromptTree(ad,buttons); }
+         }
+         catch(eA:Error) { }
+         try
+         {
+            var hd:DisplayObject = rw.RolloverActivationHolder_mc as DisplayObject;
+            var hdc:DisplayObjectContainer = hd as DisplayObjectContainer;
+            if(hd && hd != (aw as DisplayObject))
+            {
+               if(hdc && this.hzT19OnHoldPath(hd,buttons)) { this.hzT19HidePromptTree(hdc,buttons); }
+               else { this.hzT19HideA(hd); }
+            }
+         }
+         catch(eH:Error) { }
+         this.hzT19KeepHold(aw);
          // ObjectRing: 0 always hidden, 1 shown for container lists only, 2 as the game draws it
          if(this.hzObjRing == 0 || (this.hzObjRing == 1 && kind != "list")) { this.hzT19HideReticle(rw); }
          else { this.hzT19ShowReticle(rw); }
@@ -17989,4 +18468,2109 @@
          this.hzSplashAlpha(sub,la * fadeOut * peak,this.hzSplashLead(la) * this.hzSplashLead(fadeOut) * peak);
       }
       // =================== end v0.40 Scanner ===================
+
+      // =================== 0.43.1.0 watch + center-reticle rule ===================
+      // hudmenu and hudmenu_lrg share this block, so both movies get the same watch.
+      // Arrange saves the Horizon watch as WatchX / WatchY, same edge anchors as the other cards.
+      // -1 is the lower-left home. A saved spot is used as-is. The 8 px lift runs only while it is still at that home.
+      // Home is the lower-left corner, inside the screen margin (the vanilla watch slot).
+      // If a showing card overlaps that home (character, vitals, jetpack, or the compact stack),
+      // the watch moves up and sits 8 px above that card. Cards stay where Arrange put them.
+      // Analog no longer draws a 6 o'clock day sub-dial or the PM/DAY readout inside it.
+      // Hands use LocalEnvData_Frequent.fLocalPlanetTime, or galactic standard time when that fraction is missing.
+      // If both are missing, the hands sit at 12. Analog seconds are not drawn: the game-time feed is hours and minutes.
+      private static const HZ43_O2:uint = 0x4DB6FF;
+      private static const HZ43_CO2:uint = 0xE8C547;
+      private static const HZ43_ATTN:uint = 0xF28A4F;
+      private static const HZ43_R:Number = 132;
+      private var hz43Watch:Sprite = null;
+      private var hz43Ring:DisplayObject = null;
+      private var hz43RingOwn:Boolean = false;
+      private var hz43VanHnd:Sprite = null;
+      private var hz43VanD:Array = null;
+      private var hz43VanX:Array = null;
+      private var hz43VanY:Array = null;
+      private var hz43VanSX:Array = null;
+      private var hz43VanSY:Array = null;
+      private var hz43VanGot:Array = null;
+      private var hz43VanP:Point = null;
+      private var hz43VanHX:Number = 0;
+      private var hz43VanHY:Number = 0;
+      private var hz43VanUXA:Array = null;
+      private var hz43VanUYA:Array = null;
+      private var hz43VanOX:Array = null;
+      private var hz43VanOY:Array = null;
+      private var hz43VanNm:Array = null;
+      private var hz43VanN:int = 0;
+      private var hz43VanRad:Number = 0;
+      private var hz43VanHW:Number = 180;
+      private var hz43VanHH:Number = 180;
+      private var hz43VanCap:int = 0;
+      private var hz43VanRing:DisplayObject = null;
+      private var hz43VanFadeN:int = 0;
+      private var hz43VanFadeAt:int = -1;
+      private var hz43VanNeed:int = 1;
+      private var hz43VanKids:int = -1;
+      private var hz43VanWrote:Boolean = false;
+      private var hz43VanWdx:Number = NaN;
+      private var hz43VanWdy:Number = NaN;
+      private var hz43VanWsc:Number = NaN;
+      private var hz43VanWmk:int = -1;
+      private var hz43VnAx:int = -2;
+      private var hz43VnAy:int = -2;
+      private var hz43VnDx:Number = NaN;
+      private var hz43VnDy:Number = NaN;
+      private var hz43VnNx:int = -2;
+      private var hz43VnNy:int = -2;
+      private var hz43VnFx:Number = NaN;
+      private var hz43VnFy:Number = NaN;
+      private var hz43VnSc:Number = NaN;
+      private var hz43VnVr:int = -1;
+      private var hz43Face:Sprite = null;
+      private var hz43Force:Boolean = true;
+      private var hz43TintOn:Boolean = false;
+      private var hz43RetOwn:Boolean = false;
+      private var hz43RetObj:DisplayObject = null;
+      private var hz43VanShown:int = 0;
+      private var hz43VanTries:int = 0;
+      private var hz43VanLogged:Boolean = false;
+      private var hz43VanUnitLog:Boolean = false;
+      private var hz43HidA:Array = null;
+      private var hz43HidN:int = 0;
+      private var hz43EnvGot:int = 0;
+      private var hz43EnvLocal:Boolean = false;
+      private var hz43EnvCruise:Boolean = false;
+      private var hz43EnvLang:String = "";
+      private var hz43MarkMoved:Boolean = false;
+      private var hz43DumpSig:String = "";
+      private var hz43HideStyle:int = -1;
+      private var hz43Kid:Array = null;
+      private var hz43KidHid:Array = null;
+      private var hz43KidN:int = 0;
+      private var hz43KidSeen:int = -1;
+      private var hz43KidOn:Boolean = false;
+      private var hz43H:int = 0;
+      private var hz43M:int = 0;
+      private var hz43Ut:int = 0;
+      private var hz43Ok:int = 0;
+      private var hz43DayB:int = -100000;
+      private var hz43PcH:int = -1;
+      private var hz43PcM:int = -1;
+      private var hz43PcFr:int = -100000;
+      private var hz43PcTxt:String = "--";
+      private var hz43LastH:int = -1;
+      private var hz43LastM:int = -1;
+      private var hz43LastUt:int = -1;
+      private var hz43LastOk:int = -1;
+      private var hz43LastDay:int = -100000;
+      private var hz43LastHead:int = -100000;
+      private var hz43LastO2:int = -1;
+      private var hz43LastCo2:int = -1;
+      private var hz43LastPcH:int = -1;
+      private var hz43LastPcM:int = -1;
+      private var hz43LastTemp:int = -100000;
+      private var hz43LastUnit:int = -1;
+      private var hz43LastClk:int = -1;
+      private var hz43LastAcc:uint = 0xFFFFFFFF;
+      private var hz43LastAtt:int = -1;
+      private var hz43Att:int = 0;
+      private var hz43LastMode:int = -1;
+      private var hz43Body:String = null;
+      private var hz43LastBody:String = null;
+      private var hz43VrL:Number = NaN;
+      private var hz43VrT:Number = NaN;
+      private var hz43VrR:Number = NaN;
+      private var hz43VrB:Number = NaN;
+      private var hz43Lx:Number = 0;
+      private var hz43Ly:Number = 0;
+      private var hz43Rx:Number = 0;
+      private var hz43Ry:Number = 0;
+      private var hz43HaveVr:Boolean = false;
+      private var hz43VrTick:int = 0;
+      private var hz43VrSeen:int = -1;
+      private var hz43P0:Point = null;
+      private var hz43P1:Point = null;
+      private var hz43Cx:Array = null;
+      private var hz43Cy:Array = null;
+      private var hz43Cw:Array = null;
+      private var hz43Chh:Array = null;
+      private var hz43Cv:Array = null;
+      private var hz43Pm:Number = NaN;
+      private var hz43Ps:Number = NaN;
+      private var hz43WasSaved:Boolean = false;
+      private var hz43Ax:int = -1;
+      private var hz43Ay:int = -1;
+      private var hz43Dx:Number = NaN;
+      private var hz43Dy:Number = NaN;
+      private var hz43NxS:int = -1;
+      private var hz43NyS:int = -1;
+      private var hz43Fx:Number = NaN;
+      private var hz43Fy:Number = NaN;
+      private var hz43TL:Point = null;
+      private var hz43BR:Point = null;
+      private var hz43FillSeen:int = -99999;
+      private var hz43HexSeen:int = -99999;
+      private var hz43FillU:uint = 0;
+      private var hz43TintD:Array = null;
+      private var hz43LocT:TextField = null;
+      private var hz43LocL:TextField = null;
+      private var hz43RealT:TextField = null;
+      private var hz43RealL:TextField = null;
+      private var hz43BodyT:TextField = null;
+      private var hz43TempT:TextField = null;
+      private var hz43O2L:TextField = null;
+      private var hz43CO2L:TextField = null;
+      private var hz43PmT:TextField = null;
+      private var hz43DayT:TextField = null;
+      private var hz43AttT:TextField = null;
+      private var hz43Cards:Array = null;
+
+      // Native watch pieces are BottomLeftGroup siblings, not one parent. Arrange writes each sibling root.
+      // Nested clips (O2CO2_mc.O2Anim_mc) stay inside their sibling and are never their own unit.
+      // Styles 3 and 4 hide the chrome and keep the live marker widgets. Heading outline is chrome, not a marker.
+      private static const HZ43_VAN_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","WatchIconsWidget_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"];
+      private static const HZ43_VAN_MARK:Array = ["WatchIconsWidget_mc","MissionIconsWidget_mc","EnemyIconsWidget_mc"];
+      private static const HZ43_HID_MAX:int = 40;
+      // Native conditional readouts. Styles 1 and 2 leave the game's rules in place. Off and custom hide them with the chrome.
+      private static const HZ43_VAN_INFO:Array = ["Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"];
+      private static const HZ43_VAN_A:Array = ["BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"];
+      private static const HZ43_VAN_MAX:int = 24;
+      private static const HZ43_VAN_FACE:Number = 221;
+      // Unique package token for the next diagnostic gfx. Autoname prefix is not watch ownership.
+      private static const HZ43_DIAG:String = "r15-vanilla-restore-20261108";
+
+      private function hz43VanInfoName(name:String) : Boolean
+      {
+         var i:int = 0;
+         while(i < HZ43_VAN_INFO.length)
+         {
+            if(name == String(HZ43_VAN_INFO[i])) { return true; }
+            i++;
+         }
+         return false;
+      }
+
+      // The only four native .visible assignments in BottomLeftGroup.as.
+      private function hz43VanGameVis(name:String) : Boolean
+      {
+         return name == "DayCycleBase_mc" || name == "OffPlanet_mc" || name == "Autopilot_mc" || name == "locationNameBase_mc";
+      }
+
+      // Cache native LocalEnvironmentData vis intent. Same keys as BottomLeftGroup.as.
+      // Does not write clips; Off still hides, Vanilla restore applies hz43VanEnvWant.
+      private function hz43VanEnvCache(d:Object) : void
+      {
+         if(!d) { return; }
+         this.hz43EnvLocal = Boolean(d.bInSpaceship) && !d.bIsLanded;
+         this.hz43EnvCruise = Boolean(d.bIsShipInCruiseMode);
+         this.hz43EnvLang = d.sLanguage != null ? String(d.sLanguage) : "";
+         this.hz43EnvGot = 1;
+      }
+
+      // Native formulas: Day=!local, OffPlanet=local&&!cruise, Autopilot=local&&cruise,
+      // locationName = sLanguage != ja && != zhhans. onAdded UpdateLocationName("","") is true.
+      private function hz43VanEnvWant(name:String) : Boolean
+      {
+         if(name == "locationNameBase_mc")
+         {
+            var lang:String = this.hz43EnvLang;
+            return lang != "ja" && lang != "zhhans";
+         }
+         if(this.hz43EnvGot == 0) { return false; }
+         if(name == "DayCycleBase_mc") { return !this.hz43EnvLocal; }
+         if(name == "OffPlanet_mc") { return this.hz43EnvLocal && !this.hz43EnvCruise; }
+         if(name == "Autopilot_mc") { return this.hz43EnvLocal && this.hz43EnvCruise; }
+         return false;
+      }
+
+      // A BottomLeftGroup watch-assembly clip. Health, ammo, and boost are never this.
+      private function hz43VanWatchClip(d:DisplayObject) : Boolean
+      {
+         if(!d) { return false; }
+         if(this.hz43VanSkip(d.name)) { return false; }
+         if(this.hz43VanCapClip(d)) { return true; }
+         if(this.hz43VanRingClip(d)) { return true; }
+         if(!this.hz43VanNamed(d.name)) { return false; }
+         if(this.hzBlg == null || d.parent == this.hzBlg) { return true; }
+         var root:DisplayObject = this.hz43VanRootOf(d);
+         return root != null && this.hz43VanNamed(root.name);
+      }
+
+      // Purpose: own-hide one native watch sibling. Inputs: d — a verified watch clip.
+      // Outputs: visible=false. Never writes alpha (native FadeIn / thin-bar CXFORM).
+      private function hz43StHide(d:DisplayObject) : void
+      {
+         if(!d || !this.hz43VanWatchClip(d)) { return; }
+         this.hz43VanNote(d);
+         if(d.visible) { d.visible = false; }
+      }
+
+      // Purpose: hide native conditional readouts with Off / custom chrome.
+      // Inputs: hzBlg. Outputs: each INFO clip noted then hidden. Not used on styles 1 and 2.
+      private function hz43InfoHide() : void
+      {
+         if(!this.hzBlg) { return; }
+         var i:int = 0;
+         while(i < HZ43_VAN_INFO.length)
+         {
+            var d:DisplayObject = this.hzFindByName(this.hzBlg,String(HZ43_VAN_INFO[i]),0);
+            if(d) { this.hz43StHide(d); }
+            i++;
+         }
+      }
+
+      // Puts the game watch back on BottomLeftGroup. Undo Horizon Off / custom hides only.
+      // Do not write alpha. The four native vis clips use the last LocalEnvironmentData formulas.
+      // Horizon-drawn watch text stays off this face.
+      private function hz43ShowVanilla() : Boolean
+      {
+         if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
+         if(!this.hzBlg) { return false; }
+         this.hz43VanRestoreHid();
+         this.hz43VanBlgChrome(false);
+         var found:String = "";
+         var hits:int = 0;
+         var n:int = 0;
+         while(n < HZ43_VAN_N.length)
+         {
+            var name:String = String(HZ43_VAN_N[n]);
+            if(this.hz43VanInfoName(name)) { n++; continue; }
+            var clip:DisplayObject = this.hzFindByName(this.hzBlg,name,0);
+            if(clip)
+            {
+               if(found.length > 0) { found += ","; }
+               found += name;
+               hits++;
+            }
+            n++;
+         }
+         n = 0;
+         while(n < HZ43_VAN_A.length)
+         {
+            var fade:DisplayObject = this.hzFindByName(this.hzBlg,String(HZ43_VAN_A[n]),0);
+            if(fade && fade.alpha == 0) { fade.alpha = 1; }
+            n++;
+         }
+         this.hz43VanTries++;
+         if(hits == 0 && this.hz43VanTries < 180) { return false; }
+         if(!this.hz43VanLogged)
+         {
+            this.hz43VanLogged = true;
+            if(this.hzDebug) { this.hz26Dbg["Watch"] = "vanilla " + found; }
+            trace("HZ43 vanilla watch path=" + (found.length > 0 ? found : "none"));
+         }
+         this.hz43VanDump("vanilla");
+         return true;
+      }
+
+      private function hz43SyncHide() : void
+      {
+         var showVan:Boolean = this.hzWatchStyle == 1 || this.hzWatchStyle == 2;
+         var hide:Boolean = !showVan;
+         if(this.hz43HideStyle != this.hzWatchStyle)
+         {
+            this.hz43HideStyle = this.hzWatchStyle;
+            this.hzHideCache = null;
+         }
+         if(hide != this.hzHideVanillaWatch)
+         {
+            this.hzHideVanillaWatch = hide;
+            this.hzHideCache = null;
+            if(showVan) { this.hz43VanShown = 0; this.hz43VanTries = 0; }
+         }
+         if(showVan && this.hz43VanShown == 0)
+         {
+            if(this.hz43ShowVanilla()) { this.hz43VanShown = 1; }
+         }
+         else if(showVan)
+         {
+            this.hz43VanRestoreHid();
+            this.hz43VanBlgChrome(false);
+         }
+      }
+
+      // Same show rule the game uses for the center reticle, including iron sights.
+      private function hz43VanillaReticle() : Boolean
+      {
+         return this.hzCrossOn && (!this.hzCrossIron || this.hzCross3rd || this.hzCrossTool);
+      }
+
+      // The aiming dot should stay hidden. Type 7 is not an exception: the ring is handled apart from the dot.
+      private function hz43ReticleHide() : Boolean
+      {
+         if(this.hzCrossRule >= 2) { return true; }
+         if(this.hzCrossRule == 1) { return !this.hzWeaponOut(); }
+         return false;
+      }
+
+      // Remember the clip this rule hid. A later show puts it back only when the game still wants it shown.
+      // A swapped or re-shown aiming clip is hidden again. Type 7 keeps ReticleBase up so the ring and glyph stay.
+      private function hz43Reticle() : void
+      {
+         var rb:DisplayObject = null;
+         try { rb = this.CenterGroup_mc ? this.CenterGroup_mc.ReticleBase_mc as DisplayObject : null; } catch(e1:Error) { rb = null; }
+         var interact:Boolean = this.hzCrossType == HZ_HCT_INTERACT;
+         if(!this.hz43ReticleHide())
+         {
+            this.hz43KidShow();
+            if(rb) { this.hz43RingSet(rb as DisplayObjectContainer,true); }
+            if(this.hz43RetOwn && rb && rb == this.hz43RetObj && !rb.visible && this.hz43VanillaReticle()) { rb.visible = true; }
+            this.hz43RetOwn = false;
+            this.hz43RetObj = null;
+            return;
+         }
+         if(!rb) { return; }
+         if(interact)
+         {
+            // The ring and the glyph need this clip visible. Hide only the other children.
+            this.hz43RingSet(rb as DisplayObjectContainer,true);
+            if(this.hz43VanillaReticle())
+            {
+               if(this.hz43RetOwn && rb == this.hz43RetObj && !rb.visible) { rb.visible = true; }
+               this.hz43HideDotKids(rb as DisplayObjectContainer);
+            }
+            this.hz43RetOwn = false;
+            this.hz43RetObj = null;
+            return;
+         }
+         // A walk can show this clip again after the standing hide. Hide it, and the aiming children, whenever it is showing.
+         this.hz43RingSet(rb as DisplayObjectContainer,false);
+         this.hz43HideDotKids(rb as DisplayObjectContainer);
+         if(rb.visible || (this.hz43RetOwn && rb == this.hz43RetObj))
+         {
+            this.hz43RetObj = rb;
+            this.hz43RetOwn = true;
+            rb.visible = false;
+         }
+      }
+
+      // One array, created once. Only children this rule turned off are turned back on.
+      private function hz43KidPrep() : void
+      {
+         if(this.hz43Kid != null) { return; }
+         this.hz43Kid = new Array(8);
+         this.hz43KidHid = new Array(8);
+         var i:int = 0;
+         while(i < 8) { this.hz43KidHid[i] = 0; i++; }
+      }
+
+      private function hz43HideDotKids(box:DisplayObjectContainer) : void
+      {
+         if(box == null) { return; }
+         this.hz43KidPrep();
+         var stale:Boolean = box.numChildren != this.hz43KidSeen;
+         var k:int = 0;
+         if(!stale)
+         {
+            while(k < this.hz43KidN)
+            {
+               var held:DisplayObject = this.hz43Kid[k] as DisplayObject;
+               if(held != null && held.parent != box) { stale = true; }
+               k++;
+            }
+         }
+         if(stale)
+         {
+            this.hz43KidSeen = box.numChildren;
+            var z:int = 0;
+            while(z < 8) { this.hz43KidHid[z] = 0; z++; }
+            var n:int = 0;
+            var i:int = 0;
+            while(i < box.numChildren && n < 8)
+            {
+               var ch:DisplayObject = box.getChildAt(i);
+               if(ch && ch.name != "Player_Interaction_ReticleAnim_mc")
+               {
+                  this.hz43Kid[n] = ch;
+                  n++;
+               }
+               i++;
+            }
+            this.hz43KidN = n;
+         }
+         k = 0;
+         while(k < this.hz43KidN)
+         {
+            var d:DisplayObject = this.hz43Kid[k] as DisplayObject;
+            if(d && d.visible)
+            {
+               d.visible = false;
+               this.hz43KidHid[k] = 1;
+               this.hz43KidOn = true;
+            }
+            k++;
+         }
+      }
+
+      // Hide the leftover interact circle after look-away. While type 7, the ring stays.
+      private function hz43RingSet(box:DisplayObjectContainer, show:Boolean) : void
+      {
+         if(box == null) { return; }
+         var d:DisplayObject = this.hz43Ring;
+         if(d == null || d.parent != box)
+         {
+            d = box.getChildByName("Player_Interaction_ReticleAnim_mc");
+            this.hz43Ring = d;
+         }
+         if(!d) { return; }
+         if(show)
+         {
+            if(this.hz43RingOwn && !d.visible) { d.visible = true; }
+            this.hz43RingOwn = false;
+            return;
+         }
+         if(d.visible || this.hz43RingOwn)
+         {
+            d.visible = false;
+            this.hz43RingOwn = true;
+         }
+      }
+
+      private function hz43KidShow() : void
+      {
+         if(!this.hz43KidOn || this.hz43Kid == null) { return; }
+         var k:int = 0;
+         while(k < this.hz43KidN)
+         {
+            if(int(this.hz43KidHid[k]) != 0)
+            {
+               var d:DisplayObject = this.hz43Kid[k] as DisplayObject;
+               if(d) { d.visible = true; }
+               this.hz43KidHid[k] = 0;
+            }
+            k++;
+         }
+         this.hz43KidOn = false;
+      }
+
+      // Writes the clock into fields. No object, and no string, on the steady path.
+      private function hz43Read() : void
+      {
+         if(this.hzPpDay >= 0)
+         {
+            var hh:Number = (this.hzPpDay * 24) % 24;
+            this.hz43H = int(Math.floor(hh));
+            this.hz43M = int(Math.floor((hh - this.hz43H) * 60));
+            this.hz43Ut = 0;
+            this.hz43Ok = 1;
+            this.hz43DayB = int(Math.round(this.hzPpDay * 1000));
+            return;
+         }
+         if(this.hzPpUT >= 0)
+         {
+            var whole:Number = Math.floor(this.hzPpUT);
+            this.hz43H = int(whole) % 24;
+            this.hz43M = int(Math.floor((this.hzPpUT - whole) * 60));
+            this.hz43Ut = 1;
+            this.hz43Ok = 1;
+            this.hz43DayB = int(Math.round(((this.hzPpUT % 24) / 24) * 1000));
+            return;
+         }
+         this.hz43H = 0;
+         this.hz43M = 0;
+         this.hz43Ut = 0;
+         this.hz43Ok = 0;
+         this.hz43DayB = -1;
+      }
+
+      // One Date, at most once a second, and only while the digital face is showing.
+      // The frame counter is the same cheap gate the planet clock already uses. A throw still
+      // stamps the frame, so a failing clock does not allocate again until the next second.
+      private function hz43PcSample() : void
+      {
+         if(this.hzWatchStyle != 3) { return; }
+         if(this.hz43PcFr >= 0 && ((this.hzFrameN - this.hz43PcFr) < 60 || (this.hzFrameN % 60) != 11)) { return; }
+         this.hz43PcFr = this.hzFrameN;
+         try
+         {
+            var dt:Date = new Date();
+            var h:int = dt.getHours();
+            var m:int = dt.getMinutes();
+            this.hz43PcApply(h,m);
+         }
+         catch(err:Error)
+         {
+            this.hz43PcFallback();
+         }
+      }
+
+      private function hz43PcApply(h:int, m:int) : void
+      {
+         if(h != this.hz43PcH || m != this.hz43PcM || this.hzClockFmt != this.hz43LastClk)
+         {
+            this.hz43PcH = h;
+            this.hz43PcM = m;
+            this.hz43PcTxt = this.hzFmtClock(h,m);
+         }
+      }
+
+      // Last good reading stays. With none yet, use the planet card's real minutes. "--" only when both are missing.
+      private function hz43PcFallback() : void
+      {
+         if(this.hz43PcH >= 0) { return; }
+         if(this.hzPpRealMin >= 0)
+         {
+            this.hz43PcApply(int(this.hzPpRealMin / 60),this.hzPpRealMin % 60);
+            return;
+         }
+         this.hz43PcTxt = "--";
+      }
+
+      private function hz43AttCode() : int
+      {
+         if(this.hz26O2F < 0.35) { return 1; }
+         if(this.hz26Co2F > 0.35) { return 2; }
+         return 0;
+      }
+
+      private function hz43Band(g:*, cx:Number, cy:Number, r0:Number, r1:Number, a0:Number, a1:Number, col:uint, al:Number) : void
+      {
+         if(a1 < a0) { a1 += Math.PI * 2; }
+         var n:int = Math.max(3,int(Math.ceil((a1 - a0) / (Math.PI / 28))));
+         var i:int = 0;
+         g.beginFill(col,al);
+         g.moveTo(cx + Math.cos(a0) * r1,cy + Math.sin(a0) * r1);
+         while(i <= n)
+         {
+            var a:Number = a0 + (a1 - a0) * i / n;
+            g.lineTo(cx + Math.cos(a) * r1,cy + Math.sin(a) * r1);
+            i++;
+         }
+         i = n;
+         while(i >= 0)
+         {
+            var b:Number = a0 + (a1 - a0) * i / n;
+            g.lineTo(cx + Math.cos(b) * r0,cy + Math.sin(b) * r0);
+            i--;
+         }
+         g.endFill();
+      }
+
+      // 7 o'clock and 5 o'clock. Screen y grows downward, so clockwise is an increasing angle.
+      private function hz43O2Start() : Number { return Math.PI / 2 + Math.PI / 6; }
+      private function hz43CO2Start() : Number { return Math.PI / 2 - Math.PI / 6; }
+
+      private function hz43InSweep(mid:Number, start:Number, dir:Number, len:Number) : Boolean
+      {
+         if(len <= 0) { return false; }
+         var d:Number = mid - start;
+         if(dir < 0) { d = -d; }
+         var turn:Number = Math.PI * 2;
+         while(d < 0) { d += turn; }
+         while(d >= turn) { d -= turn; }
+         return d <= len;
+      }
+
+      // Full ring sits on the face edge. O2 grows clockwise from 7 o'clock, at most halfway (ends at 1 o'clock).
+      // CO2 grows counter-clockwise from 5 o'clock, at most halfway (ends at 11 o'clock). Empty parts stay gray.
+      private function hz43Gauge(g:*, o2:Number, co2:Number, segmented:Boolean) : void
+      {
+         var fo:Number = o2;
+         var fc:Number = co2;
+         if(fo < 0) { fo = 0; }
+         if(fo > 1) { fo = 1; }
+         if(fc < 0) { fc = 0; }
+         if(fc > 1) { fc = 1; }
+         var o2n:Number = fo * Math.PI;
+         var co2n:Number = fc * Math.PI;
+         var o2s:Number = this.hz43O2Start();
+         var co2s:Number = this.hz43CO2Start();
+         var r1:Number = HZ43_R - 1;
+         var r0:Number = segmented ? HZ43_R - 12 : HZ43_R - 9;
+         var gray:uint = 0x6E7C86;
+         if(!segmented)
+         {
+            this.hz43Band(g,0,0,r0,r1,0,Math.PI * 2,gray,0.28);
+            if(o2n > 0.02) { this.hz43Band(g,0,0,r0,r1,o2s,o2s + o2n,HZ43_O2,0.95); }
+            if(co2n > 0.02) { this.hz43Band(g,0,0,r0,r1,co2s - co2n,co2s,HZ43_CO2,0.95); }
+            return;
+         }
+         var parts:int = 24;
+         var step:Number = Math.PI * 2 / parts;
+         var gap:Number = 0.045;
+         var i:int = 0;
+         while(i < parts)
+         {
+            var mid:Number = -Math.PI + (i + 0.5) * step;
+            var s0:Number = -Math.PI + i * step + gap * 0.5;
+            var s1:Number = -Math.PI + (i + 1) * step - gap * 0.5;
+            var col:uint = gray;
+            var al:Number = 0.28;
+            if(this.hz43InSweep(mid,o2s,1,o2n)) { col = HZ43_O2; al = 0.95; }
+            else if(this.hz43InSweep(mid,co2s,-1,co2n)) { col = HZ43_CO2; al = 0.95; }
+            if(s1 > s0) { this.hz43Band(g,0,0,r0,r1,s0,s1,col,al); }
+            i++;
+         }
+      }
+
+      private function hz43Sun(g:*, x:Number, y:Number, day:Boolean) : void
+      {
+         g.beginFill(day ? 0xFFD678 : 0xC8D7EB,1);
+         g.drawCircle(x,y,day ? 3.2 : 2.4);
+         g.endFill();
+         if(!day) { return; }
+         var i:int = 0;
+         while(i < 4)
+         {
+            var a:Number = i * Math.PI / 2;
+            g.lineStyle(1,0xFFD678,0.9);
+            g.moveTo(x + Math.cos(a) * 4.4,y + Math.sin(a) * 4.4);
+            g.lineTo(x + Math.cos(a) * 6.4,y + Math.sin(a) * 6.4);
+            g.lineStyle();
+            i++;
+         }
+      }
+
+      // Dawn at the left of the dial, dusk at the right, day across the top.
+      // 0.25 is dawn and 0.75 is dusk. Outside that, the marker rides the lower night arc.
+      // Filled disc and a thin gold progress arc. PM and DAY sit inside the disc. No sun/moon marker.
+      private function hz43Dial(g:*, cx:Number, cy:Number, day:Number) : void
+      {
+         var rd:Number = 26;
+         g.beginFill(0x070C10,0.96);
+         g.drawCircle(cx,cy,rd);
+         g.endFill();
+         if(day < 0) { return; }
+         var ang:Number = 0;
+         var sun:Boolean = day >= 0.25 && day <= 0.75;
+         if(sun)
+         {
+            ang = Math.PI + (day - 0.25) / 0.5 * Math.PI;
+            this.hz43Band(g,cx,cy,rd - 3.5,rd - 0.6,Math.PI,ang,this.HZ_ACCENT,0.95);
+         }
+         else
+         {
+            var night:Number = day < 0.25 ? day + 0.25 : day - 0.75;
+            ang = (night / 0.5) * Math.PI;
+            this.hz43Band(g,cx,cy,rd - 3.5,rd - 0.6,0,ang,this.HZ_ACCENT,0.55);
+         }
+      }
+
+      // Labels sit inside the face, at 7 o'clock and 5 o'clock, not on the rim.
+      private function hz43GaugeLabel(tf:TextField, ang:Number) : void
+      {
+         if(!tf) { return; }
+         var rad:Number = HZ43_R - 36;
+         tf.x = Math.cos(ang) * rad - 22;
+         tf.y = Math.sin(ang) * rad - 8;
+         tf.visible = true;
+      }
+
+      private function hz43Mark13(tf:TextField) : void
+      {
+         var o:Object = this.hzTxtObj(tf);
+         if(!o) { return; }
+         o.chipCard = "Watch";
+         o.chipMin = 13;
+         try { this.hzApplyFmt(o); } catch(err:Error) { }
+      }
+
+      private function hz43Build() : void
+      {
+         if(this.hz43Watch) { return; }
+         var w:Sprite = new Sprite();
+         w.mouseEnabled = false;
+         w.mouseChildren = false;
+         w.name = "HorizonWatch_mc";
+         this.hz43Face = new Sprite();
+         this.hz43Face.mouseEnabled = false;
+         this.hz43Face.mouseChildren = false;
+         this.hz43Face.x = HZ43_R;
+         this.hz43Face.y = HZ43_R;
+         w.addChild(this.hz43Face);
+         this.hz43O2L = this.hzT(this.hz43Face,"O2",-HZ43_R + 8,-8,40,13,"sb","main",1);
+         this.hz43CO2L = this.hzT(this.hz43Face,"CO2",HZ43_R - 52,-8,48,13,"sb","main",1,"right");
+         this.hz43LocT = this.hzT(this.hz43Face,"12:00",-90,-6,180,16,"sb","main",0,"center");
+         this.hz43LocL = this.hzT(this.hz43Face,"LOCAL/GAME",-90,22,180,13,"sb","dim",0.6,"center");
+         this.hz43RealT = this.hzT(this.hz43Face,"12:00",-80,40,160,13,"rg","mut",0,"center");
+         this.hz43RealL = this.hzT(this.hz43Face,"PC/REAL",-70,60,140,13,"sb","dim",0.6,"center");
+         this.hz43BodyT = this.hzT(this.hz43Face,"--",-100,84,200,14,"sb","main",1.2,"center");
+         this.hz43TempT = this.hzT(this.hz43Face,"--",-80,104,160,13,"sb","acc",0.4,"center");
+         this.hz43PmT = this.hzT(this.hz43Face,"PM",-16,-58,36,13,"sb","dim",0.4,"center");
+         this.hz43DayT = this.hzT(this.hz43Face,"DAY",-22,-40,48,13,"sb","main",0.6,"center");
+         this.hz43AttT = this.hzT(this.hz43Face,"",-90,120,180,13,"sb","col",0.4,"center",HZ43_ATTN);
+         this.hz43AttT.visible = false;
+         this.hz43Cards = [];
+         var cn:Array = ["N","NE","E","SE","S","SW","W","NW"];
+         var ci:int = 0;
+         while(ci < cn.length)
+         {
+            var ct:TextField = this.hzT(this.hz43Face,String(cn[ci]),-24,-24,48,13,"sb","main",0.4,"center");
+            ct.visible = false;
+            this.hz43Cards.push(ct);
+            ci++;
+         }
+         var fields:Array = [this.hz43O2L,this.hz43CO2L,this.hz43LocT,this.hz43LocL,this.hz43RealT,this.hz43RealL,this.hz43BodyT,this.hz43TempT,this.hz43PmT,this.hz43DayT,this.hz43AttT];
+         for each(var tf:TextField in fields) { this.hz43Mark13(tf); }
+         for each(var cf:TextField in this.hz43Cards) { this.hz43Mark13(cf); }
+         addChild(w);
+         this.hzSetSz(w,HZ43_R * 2,HZ43_R * 2);
+         this.hz43Watch = w;
+         w.visible = false;
+      }
+
+      private function hz43AttWord() : String
+      {
+         if(this.hz43Att == 1) { return "LOW O2"; }
+         if(this.hz43Att == 2) { return "HIGH CO2"; }
+         return "";
+      }
+
+      private function hz43Draw(mode:int) : void
+      {
+         var g:* = this.hz43Face.graphics;
+         g.clear();
+         g.beginFill(0x0A1218,0.62);
+         g.drawCircle(0,0,HZ43_R - 1);
+         g.endFill();
+         var digital:Boolean = mode == 3;
+         this.hz43LocT.visible = this.hz43LocL.visible = this.hz43RealT.visible = this.hz43RealL.visible = digital;
+         this.hz43PmT.visible = false;
+         this.hz43DayT.visible = false;
+         this.hz43Gauge(g,this.hz26O2F,this.hz26Co2F,digital);
+         this.hz43GaugeLabel(this.hz43O2L,this.hz43O2Start());
+         this.hz43GaugeLabel(this.hz43CO2L,this.hz43CO2Start());
+         if(digital)
+         {
+            this.hz43Compass(g);
+            this.hz43LocL.y = -40;
+            this.hz43LocT.y = -22;
+            this.hz43RealL.y = 2;
+            this.hz43RealT.y = 18;
+            this.hz43BodyT.y = 48;
+            this.hz43TempT.y = 68;
+         }
+         else
+         {
+            this.hz43Ticks(g);
+            this.hz43Compass(g);
+            this.hz43Hands(g);
+            this.hz43BodyT.y = -22;
+            this.hz43TempT.y = -4;
+         }
+         var attn:String = this.hz43AttWord();
+         this.hz43AttT.visible = attn.length > 0;
+         this.hz43AttT.text = attn;
+         if(attn.length > 0)
+         {
+            this.hz43AttT.y = digital ? 102 : 24;
+            this.hzTxtTint(this.hz43AttT,HZ43_ATTN);
+            var ay:Number = this.hz43AttT.y + 4;
+            g.beginFill(HZ43_ATTN,1);
+            g.moveTo(-78,ay);
+            g.lineTo(-72,ay + 6);
+            g.lineTo(-84,ay + 6);
+            g.endFill();
+         }
+         this.hz43LocL.text = "LOCAL/GAME";
+         this.hz43RealL.text = "PC/REAL";
+         this.hz43O2L.text = "O2";
+         this.hz43CO2L.text = "CO2";
+         if(this.hz43Ok != 0)
+         {
+            this.hz43LocT.text = this.hzFmtLocGame(this.hz43H,this.hz43M,this.hz43Ut != 0);
+         }
+         else
+         {
+            this.hz43LocT.text = "--";
+         }
+         this.hz43RealT.text = this.hz43PcTxt;
+         var body:String = this.hz43Body != null && this.hz43Body.length > 0 ? this.hz43Body : "--";
+         this.hz43BodyT.text = body;
+         this.hz43TempT.text = isNaN(this.hzEnvTempC) ? "--" : this.hzTempText(this.hzEnvTempC);
+      }
+
+      // Heading ticks and letters stay on the top inner arc. The diamond is the fixed top mark.
+      private function hz43Compass(g:*) : void
+      {
+         this.hz43Diamond(g,0,-HZ43_R + 26,4);
+         var base:int = int(Math.round(this.hzCmpDeg / 15)) * 15;
+         var k:int = -4;
+         var shown:Array = [];
+         while(k <= 4)
+         {
+            var hd:int = base + k * 15;
+            var rel:Number = hd - this.hzCmpDeg;
+            while(rel > 180) { rel -= 360; }
+            while(rel < -180) { rel += 360; }
+            if(Math.abs(rel) > 52) { k++; continue; }
+            var a:Number = -Math.PI / 2 + rel * Math.PI / 180;
+            var outer:Number = HZ43_R - 20;
+            var inner:Number = HZ43_R - 32;
+            g.lineStyle(hd % 45 == 0 ? 2 : 1,0xF2F7F9,hd % 45 == 0 ? 0.9 : 0.4);
+            g.moveTo(Math.cos(a) * inner,Math.sin(a) * inner);
+            g.lineTo(Math.cos(a) * outer,Math.sin(a) * outer);
+            g.lineStyle();
+            var ly:Number = Math.sin(a) * (HZ43_R - 48);
+            if(hd % 45 == 0 && Math.abs(rel) >= 8 && ly < -HZ43_R + 96)
+            {
+               var idx:int = (int(Math.round(((hd % 360) + 360) % 360 / 45)) ) % 8;
+               shown.push(idx);
+               if(this.hz43Cards && this.hz43Cards[idx])
+               {
+                  var lt:TextField = this.hz43Cards[idx] as TextField;
+                  var lx:Number = Math.cos(a) * (HZ43_R - 48);
+                  lt.x = lx - 24;
+                  lt.y = ly - 8;
+                  lt.visible = true;
+               }
+            }
+            k++;
+         }
+         if(this.hz43Cards)
+         {
+            var hi:int = 0;
+            while(hi < this.hz43Cards.length)
+            {
+               if(shown.indexOf(hi) < 0) { TextField(this.hz43Cards[hi]).visible = false; }
+               hi++;
+            }
+         }
+      }
+
+      private function hz43Ticks(g:*) : void
+      {
+         var n:int = 0;
+         while(n < 12)
+         {
+            var a:Number = -Math.PI / 2 + n * Math.PI / 6;
+            var inner:Number = n % 3 == 0 ? HZ43_R - 28 : HZ43_R - 22;
+            g.lineStyle(n % 3 == 0 ? 2 : 1,0xF2F7F9,0.9);
+            g.moveTo(Math.cos(a) * inner,Math.sin(a) * inner);
+            g.lineTo(Math.cos(a) * (HZ43_R - 14),Math.sin(a) * (HZ43_R - 14));
+            g.lineStyle();
+            n++;
+         }
+      }
+
+      private function hz43Diamond(g:*, x:Number, y:Number, s:Number = 5) : void
+      {
+         g.beginFill(this.HZ_ACCENT,1);
+         g.moveTo(x,y - s);
+         g.lineTo(x + s * 0.8,y);
+         g.lineTo(x,y + s);
+         g.lineTo(x - s * 0.8,y);
+         g.lineTo(x,y - s);
+         g.endFill();
+      }
+
+      private function hz43Hands(g:*) : void
+      {
+         var h:Number = this.hz43Ok != 0 ? this.hz43H : 0;
+         var m:Number = this.hz43Ok != 0 ? this.hz43M : 0;
+         var ha:Number = -Math.PI / 2 + ((h % 12) + m / 60) * (Math.PI / 6);
+         var ma:Number = -Math.PI / 2 + m * (Math.PI / 30);
+         this.hz43Hand(g,ha,50,3.4,0xF2F7F9);
+         this.hz43Hand(g,ma,72,2.2,0xF2F7F9);
+         g.beginFill(this.HZ_ACCENT,1);
+         g.drawCircle(0,0,5);
+         g.endFill();
+      }
+
+      private function hz43Hand(g:*, a:Number, len:Number, th:Number, col:uint) : void
+      {
+         var x:Number = Math.cos(a) * len;
+         var y:Number = Math.sin(a) * len;
+         var px:Number = -Math.sin(a) * th;
+         var py:Number = Math.cos(a) * th;
+         g.beginFill(col,0.95);
+         g.moveTo(px,py);
+         g.lineTo(x + px * 0.3,y + py * 0.3);
+         g.lineTo(-px * 0.3 + x,-py * 0.3 + y);
+         g.lineTo(-px,-py);
+         g.endFill();
+      }
+
+      private function hz43CardAt(i:int) : Sprite
+      {
+         if(i == 0) { return this.HorizonChar_mc; }
+         if(i == 1) { return this.HorizonVitals_mc; }
+         if(i == 2) { return this.HorizonCard_mc; }
+         return this.HorizonCompact_mc;
+      }
+
+      private function hz43CardCache() : void
+      {
+         if(this.hz43Cx != null) { return; }
+         this.hz43Cx = [NaN,NaN,NaN,NaN];
+         this.hz43Cy = [NaN,NaN,NaN,NaN];
+         this.hz43Cw = [NaN,NaN,NaN,NaN];
+         this.hz43Chh = [NaN,NaN,NaN,NaN];
+         this.hz43Cv = [0,0,0,0];
+      }
+
+      // True when this card's rect changed. The number slots are created once.
+      private function hz43CardMoved(i:int) : Boolean
+      {
+         var c:Sprite = this.hz43CardAt(i);
+         var vis:int = (c && c.visible && c.alpha > 0.2) ? 1 : 0;
+         var x:Number = c ? c.x : 0;
+         var y:Number = c ? c.y : 0;
+         var w:Number = vis != 0 ? c.width : 0;
+         var h:Number = vis != 0 ? c.height : 0;
+         var ch:Boolean = vis != int(this.hz43Cv[i]) || x != Number(this.hz43Cx[i]) || y != Number(this.hz43Cy[i]) || w != Number(this.hz43Cw[i]) || h != Number(this.hz43Chh[i]);
+         this.hz43Cv[i] = vis;
+         this.hz43Cx[i] = x;
+         this.hz43Cy[i] = y;
+         this.hz43Cw[i] = w;
+         this.hz43Chh[i] = h;
+         return ch;
+      }
+
+      private function hz43Locals() : Boolean
+      {
+         var vr:Rectangle = Extensions.visibleRect;
+         if(vr == null || vr.width < 100 || stage == null) { return false; }
+         if(this.hz43HaveVr && vr.left == this.hz43VrL && vr.top == this.hz43VrT && vr.right == this.hz43VrR && vr.bottom == this.hz43VrB) { return true; }
+         if(this.hz43P0 == null) { this.hz43P0 = new Point(); this.hz43P1 = new Point(); }
+         this.hz43P0.x = vr.left;
+         this.hz43P0.y = vr.top;
+         this.hz43P1.x = vr.right;
+         this.hz43P1.y = vr.bottom;
+         var tl:Point = globalToLocal(this.hz43P0);
+         var br:Point = globalToLocal(this.hz43P1);
+         if(tl == null || br == null || isNaN(tl.x) || br.x - tl.x < 100) { return false; }
+         this.hz43Lx = tl.x;
+         this.hz43Ly = tl.y;
+         this.hz43Rx = br.x;
+         this.hz43Ry = br.y;
+         this.hz43VrL = vr.left;
+         this.hz43VrT = vr.top;
+         this.hz43VrR = vr.right;
+         this.hz43VrB = vr.bottom;
+         this.hz43HaveVr = true;
+         this.hz43VrTick++;
+         if(tl != this.hz43P0) { this.hz43P0 = tl; }
+         if(br != this.hz43P1) { this.hz43P1 = br; }
+         return true;
+      }
+
+      private function hz43OverlapTop(c:Sprite, x:Number, y:Number, d:Number) : Number
+      {
+         if(!c || !c.visible || c.alpha <= 0.2) { return NaN; }
+         var cw:Number = c.width;
+         var ch:Number = c.height;
+         if(!(cw > 2) || !(ch > 2)) { return NaN; }
+         var hit:Boolean = x < c.x + cw && x + d > c.x && y < c.y + ch && y + d > c.y;
+         return hit ? c.y : NaN;
+      }
+
+      private function hz43LayNum(v:*) : Number
+      {
+         var n:Number = Number(v);
+         return isNaN(n) ? 0 : n;
+      }
+
+      // True when the saved anchor changed. NaN is stored as 0 so a steady frame does not look new.
+      private function hz43LayStamp(lo:Object) : Boolean
+      {
+         var ax:int = lo.ax == "R" ? 2 : (lo.ax == "C" ? 1 : 0);
+         var ay:int = lo.ay == "B" ? 2 : (lo.ay == "C" ? 1 : 0);
+         var dx:Number = this.hz43LayNum(lo.dx);
+         var dy:Number = this.hz43LayNum(lo.dy);
+         var nx:int = lo.nx ? 1 : 0;
+         var ny:int = lo.ny ? 1 : 0;
+         var fx:Number = this.hz43LayNum(lo.x);
+         var fy:Number = this.hz43LayNum(lo.y);
+         var same:Boolean = ax == this.hz43Ax && ay == this.hz43Ay && dx == this.hz43Dx && dy == this.hz43Dy && nx == this.hz43NxS && ny == this.hz43NyS && fx == this.hz43Fx && fy == this.hz43Fy;
+         if(same) { return false; }
+         this.hz43Ax = ax;
+         this.hz43Ay = ay;
+         this.hz43Dx = dx;
+         this.hz43Dy = dy;
+         this.hz43NxS = nx;
+         this.hz43NyS = ny;
+         this.hz43Fx = fx;
+         this.hz43Fy = fy;
+         return true;
+      }
+
+      private function hz43ApplySaved(sc:Number) : void
+      {
+         var lo:Object = this.hzLay["Watch"];
+         if(!lo) { return; }
+         var stamp:Boolean = this.hz43LayStamp(lo);
+         var vrCh:Boolean = this.hz43VrTick != this.hz43VrSeen;
+         if(!stamp && !vrCh && sc == this.hz43Ps) { return; }
+         this.hz43VrSeen = this.hz43VrTick;
+         this.hz43Ps = sc;
+         if(this.hz43TL == null) { this.hz43TL = new Point(); this.hz43BR = new Point(); }
+         this.hz43TL.x = this.hz43Lx;
+         this.hz43TL.y = this.hz43Ly;
+         this.hz43BR.x = this.hz43Rx;
+         this.hz43BR.y = this.hz43Ry;
+         var cw:Number = this.hzCW(this.hz43Watch);
+         var ch:Number = this.hzCH(this.hz43Watch);
+         if(!(cw > 1)) { cw = HZ43_R * 2 * sc; }
+         if(!(ch > 1)) { ch = HZ43_R * 2 * sc; }
+         var p:Point = this.hz30Resolve("Watch",lo,cw,ch,this.hz43TL,this.hz43BR);
+         this.hzPlace(this.hz43Watch,p.x,p.y);
+      }
+
+      private function hz43ApplyHome(sc:Number) : void
+      {
+         this.hz43CardCache();
+         var m0:Boolean = this.hz43CardMoved(0);
+         var m1:Boolean = this.hz43CardMoved(1);
+         var m2:Boolean = this.hz43CardMoved(2);
+         var m3:Boolean = this.hz43CardMoved(3);
+         var vrCh:Boolean = this.hz43VrTick != this.hz43VrSeen;
+         if(!m0 && !m1 && !m2 && !m3 && !vrCh && sc == this.hz43Ps && this.hzMargin == this.hz43Pm) { return; }
+         this.hz43VrSeen = this.hz43VrTick;
+         this.hz43Ps = sc;
+         this.hz43Pm = this.hzMargin;
+         var d:Number = HZ43_R * 2 * sc;
+         var x:Number = this.hz43Lx + this.hzMargin;
+         var y:Number = this.hz43Ry - this.hzMargin - d;
+         var guard:int = 0;
+         while(guard < 6)
+         {
+            var top:Number = this.hz43OverlapTop(this.HorizonChar_mc,x,y,d);
+            var t1:Number = this.hz43OverlapTop(this.HorizonVitals_mc,x,y,d);
+            var t2:Number = this.hz43OverlapTop(this.HorizonCard_mc,x,y,d);
+            var t3:Number = this.hz43OverlapTop(this.HorizonCompact_mc,x,y,d);
+            if(!isNaN(t1) && (isNaN(top) || t1 < top)) { top = t1; }
+            if(!isNaN(t2) && (isNaN(top) || t2 < top)) { top = t2; }
+            if(!isNaN(t3) && (isNaN(top) || t3 < top)) { top = t3; }
+            if(isNaN(top)) { break; }
+            y = top - 8 - d;
+            guard++;
+         }
+         var minY:Number = this.hz43Ly + this.hzMargin;
+         if(y < minY) { y = minY; }
+         this.hzPlace(this.hz43Watch,x,y);
+      }
+
+      // Arrange handle for styles 1 and 2. One box covers the whole game watch.
+      private function hz43VanEnsure() : Sprite
+      {
+         if(this.hz43VanHnd) { return this.hz43VanHnd; }
+         var s:Sprite = new Sprite();
+         s.mouseEnabled = false;
+         s.mouseChildren = false;
+         s.name = "HorizonWatchMove_mc";
+         var g:* = s.graphics;
+         g.beginFill(0x000000,1);
+         g.drawRect(0,0,180,180);
+         g.endFill();
+         addChild(s);
+         s.visible = false;
+         s.alpha = 0;
+         this.hz43VanHnd = s;
+         var n:int = HZ43_VAN_MAX;
+         this.hz43VanD = new Array(n);
+         this.hz43VanX = new Array(n);
+         this.hz43VanY = new Array(n);
+         this.hz43VanSX = new Array(n);
+         this.hz43VanSY = new Array(n);
+         this.hz43VanGot = new Array(n);
+         this.hz43VanUXA = new Array(n);
+         this.hz43VanUYA = new Array(n);
+         this.hz43VanOX = new Array(n);
+         this.hz43VanOY = new Array(n);
+         this.hz43VanNm = new Array(n);
+         this.hz43VanP = new Point();
+         this.hz43HidA = new Array(HZ43_HID_MAX);
+         var i:int = 0;
+         while(i < n) { this.hz43VanGot[i] = 0; i++; }
+         return s;
+      }
+
+      // A named watch piece, found anywhere under BottomLeftGroup. Not only a direct child.
+      private function hz43VanClip(i:int) : DisplayObject
+      {
+         if(this.hz43VanD == null || i < 0 || i >= this.hz43VanN) { return null; }
+         return this.hz43VanD[i] as DisplayObject;
+      }
+
+      private function hz43VanSkip(name:String) : Boolean
+      {
+         if(name == null) { return true; }
+         if(name.length == 0) { return false; }
+         if(name == "EnemyDetectionAnim_mc") { return true; }
+         if(name.indexOf("Alert") >= 0) { return true; }
+         if(name.indexOf("Bio") == 0 || name.indexOf("Env") == 0) { return true; }
+         if(name.indexOf("Horizon") == 0) { return true; }
+         return false;
+      }
+
+      private function hz43VanMarkName(name:String) : Boolean
+      {
+         return name == "WatchIconsWidget_mc" || name == "MissionIconsWidget_mc" || name == "EnemyIconsWidget_mc";
+      }
+
+      // Scaleform autoname for an unnamed PlaceObject. Not watch ownership by itself.
+      private function hz43VanInstName(name:String) : Boolean
+      {
+         if(name == null) { return false; }
+         if(name.length == 0) { return true; }
+         return name.indexOf("instance") == 0;
+      }
+
+      // Native cap: unnamed filled disc beside WatchOutline_mc at (0, -0.25). Pose is outline-relative.
+      // Autoname prefix is a type check, not ownership. Collapsed INFO ticks fail scale. The filled
+      // annulus at the face center is a different unnamed sibling (hz43VanRingClip), not this cap.
+      private function hz43VanCapClip(d:DisplayObject) : Boolean
+      {
+         if(!d || this.hzBlg == null || d.parent != this.hzBlg) { return false; }
+         if(this.hz43VanSkip(d.name)) { return false; }
+         if(!this.hz43VanInstName(d.name)) { return false; }
+         if(d.scaleX < 0.5 && d.scaleX > -0.5) { return false; }
+         if(d.scaleY < 0.5 && d.scaleY > -0.5) { return false; }
+         var outline:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         if(outline && outline.parent == this.hzBlg)
+         {
+            var dx:Number = d.x - outline.x;
+            var dy:Number = d.y - outline.y;
+            return dx > -2 && dx < 2 && dy > -2 && dy < 2;
+         }
+         return d.x > -2 && d.x < 2 && d.y > -2 && d.y < 2;
+      }
+
+      // Native filled watch annulus, same pixels on normal and large PHC. Not WatchOutline stroke.
+      // Positive proof is unnamed, outline-centered on the native 221 px face, not cap pose, not
+      // collapsed ticks, sandwiched between EnvConditionBase_mc and EnemyDetectionAnim_mc.
+      // No symbol id, depth, or session autoname. After that proof, identity is the object, so
+      // WatchScale != 1 (live local 110.5*sc) and translation do not drop hide/Arrange.
+      // Dead cache recaptures only from that native geometry; a scaled unnamed clip is not stolen.
+      private function hz43VanRingProof(d:DisplayObject) : Boolean
+      {
+         if(!d || this.hzBlg == null || d.parent != this.hzBlg) { return false; }
+         if(this.hz43VanSkip(d.name)) { return false; }
+         if(!this.hz43VanInstName(d.name)) { return false; }
+         if(d.scaleX < 0.5 && d.scaleX > -0.5) { return false; }
+         if(d.scaleY < 0.5 && d.scaleY > -0.5) { return false; }
+         var outline:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         var ox:Number = 0;
+         var oy:Number = 0;
+         if(outline && outline.parent == this.hzBlg)
+         {
+            ox = outline.x;
+            oy = outline.y;
+         }
+         var mid:Number = HZ43_VAN_FACE * 0.5;
+         var dx:Number = d.x - ox;
+         var dy:Number = d.y - oy;
+         if(dx <= mid - 2 || dx >= mid + 2 || dy <= mid - 2 || dy >= mid + 2) { return false; }
+         var idx:int = -1;
+         try { idx = this.hzBlg.getChildIndex(d); } catch(eRing:Error) { return false; }
+         if(idx < 1 || idx >= this.hzBlg.numChildren - 1) { return false; }
+         var prev:DisplayObject = this.hzBlg.getChildAt(idx - 1);
+         var next:DisplayObject = this.hzBlg.getChildAt(idx + 1);
+         var pn:String = prev && prev.name != null ? prev.name : "";
+         var nn:String = next && next.name != null ? next.name : "";
+         return pn == "EnvConditionBase_mc" && nn == "EnemyDetectionAnim_mc";
+      }
+
+      private function hz43VanRingClip(d:DisplayObject) : Boolean
+      {
+         if(!d || this.hzBlg == null) { return false; }
+         if(this.hz43VanRing != null)
+         {
+            if(this.hz43VanRing.parent == this.hzBlg) { return d == this.hz43VanRing; }
+            this.hz43VanRing = null;
+         }
+         if(!this.hz43VanRingProof(d)) { return false; }
+         this.hz43VanRing = d;
+         return true;
+      }
+
+      private function hz43VanNamed(name:String) : Boolean
+      {
+         if(name == null) { return false; }
+         if(this.hz43VanSkip(name)) { return false; }
+         if(name == "MissionIconsWidget_mc" || name == "EnemyIconsWidget_mc" || name == "Autopilot_mc") { return true; }
+         var i:int = 0;
+         while(i < HZ43_VAN_N.length)
+         {
+            if(name == String(HZ43_VAN_N[i])) { return true; }
+            i++;
+         }
+         return name.indexOf("Watch") == 0;
+      }
+
+      // Direct BottomLeftGroup child that owns clip. Nested O2Anim_mc maps to O2CO2_mc, never to itself.
+      private function hz43VanRootOf(clip:DisplayObject) : DisplayObject
+      {
+         if(!clip || clip == this.hzBlg || clip == this) { return null; }
+         var root:DisplayObject = clip;
+         var p:DisplayObjectContainer = clip.parent;
+         while(p != null && p != this && p != this.hzBlg)
+         {
+            root = p;
+            p = p.parent;
+         }
+         if(p != this.hzBlg) { return null; }
+         if(this.hz43VanSkip(root.name)) { return null; }
+         return root;
+      }
+
+      private function hz43VanHasAncestorUnit(d:DisplayObject) : Boolean
+      {
+         var p:DisplayObjectContainer = d ? d.parent : null;
+         while(p != null && p != this.hzBlg && p != this)
+         {
+            var i:int = 0;
+            while(i < this.hz43VanN)
+            {
+               if(this.hz43VanD[i] == p) { return true; }
+               i++;
+            }
+            p = p.parent;
+         }
+         return false;
+      }
+
+      private function hz43VanAdd(root:DisplayObject) : void
+      {
+         if(!root || root == this.hzBlg || this.hz43VanN >= HZ43_VAN_MAX) { return; }
+         if(this.hz43VanHasAncestorUnit(root)) { return; }
+         var i:int = 0;
+         while(i < this.hz43VanN)
+         {
+            if(this.hz43VanD[i] == root) { return; }
+            i++;
+         }
+         this.hz43VanD[this.hz43VanN] = root;
+         this.hz43VanNm[this.hz43VanN] = root.name;
+         this.hz43VanN++;
+      }
+
+      // Only BottomLeftGroup siblings. Recursing into O2CO2_mc would add O2Anim_mc as a second unit.
+      private function hz43VanGather() : void
+      {
+         if(!this.hzBlg) { return; }
+         var i:int = 0;
+         while(i < this.hzBlg.numChildren)
+         {
+            var ch:DisplayObject = this.hzBlg.getChildAt(i);
+            if(ch && (this.hz43VanNamed(ch.name) || this.hz43VanCapClip(ch) || this.hz43VanRingClip(ch))) { this.hz43VanAdd(ch); }
+            i++;
+         }
+      }
+
+      private function hz43VanUnitOf(parent:DisplayObjectContainer) : void
+      {
+         this.hz43VanP.x = 0;
+         this.hz43VanP.y = 0;
+         var g0:Point = parent.localToGlobal(this.hz43VanP);
+         this.hz43VanP.x = 1;
+         this.hz43VanP.y = 0;
+         var gx:Point = parent.localToGlobal(this.hz43VanP);
+         this.hz43VanP.x = 0;
+         this.hz43VanP.y = 1;
+         var gy:Point = parent.localToGlobal(this.hz43VanP);
+         var ux:Number = gx.x - g0.x;
+         var uy:Number = gy.y - g0.y;
+         if(!(ux > 0.01 || ux < -0.01)) { ux = 1; }
+         if(!(uy > 0.01 || uy < -0.01)) { uy = 1; }
+         this.hz43VanUXA[this.hz43VanN] = ux;
+         this.hz43VanUYA[this.hz43VanN] = uy;
+      }
+
+      // Sibling roots under BottomLeftGroup. Do not latch a partial list forever.
+      private function hz43VanCapture() : void
+      {
+         if(!this.hzBlg || this.hz43VanP == null) { return; }
+         if(this.hz43VanCap != 0)
+         {
+            if(this.hz43VanWrote) { return; }
+            if(this.hz43VanNeed == 0 && this.hzBlg.numChildren == this.hz43VanKids) { return; }
+         }
+         this.hz43VanN = 0;
+         var k:int = 0;
+         while(k < HZ43_VAN_N.length)
+         {
+            var named:DisplayObject = this.hzFindByName(this.hzBlg,String(HZ43_VAN_N[k]),0);
+            if(named) { this.hz43VanAdd(this.hz43VanRootOf(named)); }
+            k++;
+         }
+         this.hz43VanGather();
+         if(this.hz43VanN == 0) { return; }
+         var originX:Number = 0;
+         var originY:Number = 0;
+         var outlineCap:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         if(outlineCap && outlineCap.parent == this.hzBlg)
+         {
+            originX = outlineCap.x;
+            originY = outlineCap.y;
+         }
+         var left:Number = 0;
+         var top:Number = 0;
+         var right:Number = 0;
+         var bot:Number = 0;
+         var any:Boolean = false;
+         var names:String = "";
+         var i:int = 0;
+         var count:int = this.hz43VanN;
+         this.hz43VanN = 0;
+         while(i < count)
+         {
+            var d:DisplayObject = this.hz43VanD[i] as DisplayObject;
+            if(d && d.parent != this.hzBlg) { }
+            else if(d && d.parent is DisplayObjectContainer)
+            {
+               var slot:int = this.hz43VanN;
+               this.hz43VanUnitOf(d.parent);
+               this.hz43VanD[slot] = d;
+               this.hz43VanNm[slot] = d.name;
+               this.hz43VanX[slot] = d.x;
+               this.hz43VanY[slot] = d.y;
+               this.hz43VanSX[slot] = d.scaleX;
+               this.hz43VanSY[slot] = d.scaleY;
+               this.hz43VanGot[slot] = 1;
+               this.hz43VanOX[slot] = originX;
+               this.hz43VanOY[slot] = originY;
+               var b:Rectangle = d.getBounds(this);
+               if(b && b.width > 1 && b.height > 1)
+               {
+                  if(!any || b.x < left) { left = b.x; }
+                  if(!any || b.y < top) { top = b.y; }
+                  if(!any || b.x + b.width > right) { right = b.x + b.width; }
+                  if(!any || b.y + b.height > bot) { bot = b.y + b.height; }
+                  any = true;
+               }
+               var pn:String = d.parent ? d.parent.name : "";
+               if(names.length > 0) { names += ","; }
+               names += String(d.name) + "<" + pn + ">";
+               this.hz43VanN++;
+            }
+            i++;
+         }
+         var hasOutline:Boolean = false;
+         var hasO2:Boolean = false;
+         var oiChk:int = 0;
+         while(oiChk < this.hz43VanN)
+         {
+            var nmChk:String = String(this.hz43VanNm[oiChk]);
+            if(nmChk == "WatchOutline_mc") { hasOutline = true; }
+            if(nmChk == "O2CO2_mc") { hasO2 = true; }
+            oiChk++;
+         }
+         if(!hasOutline || !hasO2)
+         {
+            this.hz43VanNeed = 1;
+            this.hz43VanCap = 0;
+            this.hz43VanKids = this.hzBlg.numChildren;
+            return;
+         }
+         if(!any)
+         {
+            left = 0;
+            top = 0;
+            right = HZ43_VAN_FACE;
+            bot = HZ43_VAN_FACE;
+            any = true;
+         }
+         this.hz43VanHX = left;
+         this.hz43VanHY = top;
+         this.hz43VanHW = right - left;
+         this.hz43VanHH = bot - top;
+         if(!(this.hz43VanHW > 2)) { this.hz43VanHW = HZ43_VAN_FACE; }
+         if(!(this.hz43VanHH > 2)) { this.hz43VanHH = HZ43_VAN_FACE; }
+         this.hz43VanRad = this.hz43VanHW;
+         var cx:Number = this.hz43VanHX + this.hz43VanHW / 2;
+         var cy:Number = this.hz43VanHY + this.hz43VanHH / 2;
+         var oi:int = 0;
+         while(oi < this.hz43VanN)
+         {
+            var od:DisplayObject = this.hz43VanD[oi] as DisplayObject;
+            if(od && od.parent)
+            {
+               this.hz43VanP.x = Number(this.hz43VanX[oi]);
+               this.hz43VanP.y = Number(this.hz43VanY[oi]);
+               var mid:Point = od.parent.localToGlobal(this.hz43VanP);
+               var ml:Point = this.globalToLocal(mid);
+               var ux0:Number = Number(this.hz43VanUXA[oi]);
+               var uy0:Number = Number(this.hz43VanUYA[oi]);
+               if(ml && (ux0 > 0.01 || ux0 < -0.01) && (uy0 > 0.01 || uy0 < -0.01))
+               {
+                  this.hz43VanOX[oi] = Number(this.hz43VanX[oi]) + (cx - ml.x) / ux0;
+                  this.hz43VanOY[oi] = Number(this.hz43VanY[oi]) + (cy - ml.y) / uy0;
+               }
+            }
+            oi++;
+         }
+         var hnd:Sprite = this.hz43VanHnd;
+         if(hnd)
+         {
+            var hg:* = hnd.graphics;
+            hg.clear();
+            hg.beginFill(0x000000,1);
+            hg.drawRect(0,0,this.hz43VanHW,this.hz43VanHH);
+            hg.endFill();
+         }
+         if(!this.hz43VanUnitLog)
+         {
+            this.hz43VanUnitLog = true;
+            var kids:String = "";
+            var bi:int = 0;
+            while(bi < this.hzBlg.numChildren)
+            {
+               var bc:DisplayObject = this.hzBlg.getChildAt(bi);
+               if(kids.length > 0) { kids += ","; }
+               kids += bc && bc.name && bc.name.length > 0 ? bc.name : "(unnamed)";
+               bi++;
+            }
+            trace("HZ43 diag=" + HZ43_DIAG + " watch unit=" + names);
+            trace("HZ43 watch unit=" + names);
+            trace("HZ43 diag=" + HZ43_DIAG + " blg=" + kids);
+            trace("HZ43 blg=" + kids);
+         }
+         this.hz43VanKids = this.hzBlg.numChildren;
+         this.hz43VanNeed = 0;
+         this.hz43VanCap = 1;
+         this.hz43VanFadeN = 0;
+         this.hz43VanFadeAt = -1;
+         this.hz43VanDump("cap");
+      }
+
+      // Native FadeIn is 10 frames of CXFORM on depths 1/3/5/9 (cap/outline/needle/O2). Per-frame VanWrite
+      // of x/y during that tween left those clips at a=0/ctA=0 while unwritten instance546 rose 0 → 0.109 → 1.
+      // Do not treat INFO (Temperature/Oxygen/Grav) as FadeIn-complete; those stay on FadeInPlanetInfo.
+      private function hz43VanFadeSeen(d:DisplayObject) : Boolean
+      {
+         if(!d) { return false; }
+         if(d.alpha > 0.9) { return true; }
+         try
+         {
+            var ct:ColorTransform = d.transform.colorTransform;
+            if(ct && ct.alphaMultiplier > 0.9) { return true; }
+         }
+         catch(eFade:Error) { }
+         return false;
+      }
+
+      private function hz43VanFadeOk() : Boolean
+      {
+         if(this.hz43VanCap == 0) { return false; }
+         if(this.hz43VanFadeSeen(this.hzFindByName(this.hzBlg,"WatchOutline_mc",0))) { return true; }
+         if(this.hz43VanFadeSeen(this.hzFindByName(this.hzBlg,"O2CO2_mc",0))) { return true; }
+         var i:int = 0;
+         while(i < this.hz43VanN)
+         {
+            var cap:DisplayObject = this.hz43VanClip(i);
+            if(cap && this.hz43VanCapClip(cap) && this.hz43VanFadeSeen(cap)) { return true; }
+            i++;
+         }
+         if(this.hz43VanFadeAt != this.hzFrameN)
+         {
+            this.hz43VanFadeAt = this.hzFrameN;
+            this.hz43VanFadeN++;
+         }
+         return this.hz43VanFadeN >= 16;
+      }
+
+      // Whole-assembly write keeps native relative locals. marks=true moves only live marker widgets
+      // at scale 1 so custom faces do not scale or drag cap / O2 / outline.
+      private function hz43VanWrite(dx:Number, dy:Number, sc:Number, marks:Boolean = false) : void
+      {
+         if(this.hz43VanCap == 0) { return; }
+         var mk:int = marks ? 1 : 0;
+         var ddx:Number = dx - this.hz43VanWdx;
+         var ddy:Number = dy - this.hz43VanWdy;
+         var dsc:Number = sc - this.hz43VanWsc;
+         if(this.hz43VanWmk == mk && ddx < 0.05 && ddx > -0.05 && ddy < 0.05 && ddy > -0.05 && dsc < 0.001 && dsc > -0.001)
+         {
+            if((marks && this.hz43MarkMoved) || (!marks && (this.hz43VanWrote || (dx == 0 && dy == 0 && sc == 1)))) { return; }
+         }
+         var i:int = 0;
+         while(i < this.hz43VanN)
+         {
+            if(int(this.hz43VanGot[i]) != 0)
+            {
+               var d:DisplayObject = this.hz43VanClip(i);
+               var nm:String = d ? d.name : String(this.hz43VanNm[i]);
+               if(marks && !this.hz43VanMarkName(nm)) { }
+               else if(d && !this.hz43VanHasAncestorUnit(d))
+               {
+                  var ux:Number = Number(this.hz43VanUXA[i]);
+                  var uy:Number = Number(this.hz43VanUYA[i]);
+                  if(!(ux > 0.01 || ux < -0.01)) { ux = 1; }
+                  if(!(uy > 0.01 || uy < -0.01)) { uy = 1; }
+                  var hx:Number = Number(this.hz43VanX[i]);
+                  var hy:Number = Number(this.hz43VanY[i]);
+                  var ox:Number = Number(this.hz43VanOX[i]);
+                  var oy:Number = Number(this.hz43VanOY[i]);
+                  var useSc:Number = marks ? 1 : sc;
+                  d.x = ox + (hx - ox) * useSc + dx / ux;
+                  d.y = oy + (hy - oy) * useSc + dy / uy;
+                  if(!marks)
+                  {
+                     d.scaleX = Number(this.hz43VanSX[i]) * sc;
+                     d.scaleY = Number(this.hz43VanSY[i]) * sc;
+                  }
+               }
+            }
+            i++;
+         }
+         if(marks)
+         {
+            if(dx != 0 || dy != 0) { this.hz43MarkMoved = true; }
+         }
+         else
+         {
+            this.hz43VanWrote = sc != 1 || dx != 0 || dy != 0;
+         }
+         this.hz43VanWdx = dx;
+         this.hz43VanWdy = dy;
+         this.hz43VanWsc = sc;
+         this.hz43VanWmk = mk;
+         this.hz43VanDump(marks ? "write-marks" : "write");
+      }
+
+      private function hz43VanHoldsMark(box:DisplayObjectContainer) : Boolean
+      {
+         if(!box) { return false; }
+         var i:int = 0;
+         while(i < HZ43_VAN_MARK.length)
+         {
+            if(box.name == String(HZ43_VAN_MARK[i])) { return true; }
+            if(this.hzFindByName(box,String(HZ43_VAN_MARK[i]),0) != null) { return true; }
+            i++;
+         }
+         return false;
+      }
+
+      private function hz43VanNote(d:DisplayObject) : void
+      {
+         if(!d || !this.hz43VanWatchClip(d)) { return; }
+         if(this.hz43HidA == null) { this.hz43HidA = new Array(HZ43_HID_MAX); }
+         var i:int = 0;
+         while(i < this.hz43HidN)
+         {
+            if(this.hz43HidA[i] == d) { return; }
+            i++;
+         }
+         if(this.hz43HidN >= HZ43_HID_MAX) { return; }
+         this.hz43HidA[this.hz43HidN] = d;
+         this.hz43HidN++;
+      }
+
+      // Release Horizon visible-hides of watch siblings. Never writes alpha.
+      // Day/OffPlanet/Autopilot/locationName use payload formulas, not sampled clip.visible.
+      // Temp/Oxygen/Grav undo our vis hide only; native FadeInPlanetInfo owns their alpha.
+      private function hz43VanRestoreHid() : void
+      {
+         var i:int = 0;
+         while(i < this.hz43HidN)
+         {
+            var d:DisplayObject = this.hz43HidA[i] as DisplayObject;
+            if(d && this.hz43VanWatchClip(d))
+            {
+               if(this.hz43VanGameVis(d.name))
+               {
+                  if(this.hz43EnvGot != 0 || d.name == "locationNameBase_mc")
+                  {
+                     var want:Boolean = this.hz43VanEnvWant(d.name);
+                     if(d.visible != want) { d.visible = want; }
+                  }
+               }
+               else if(!d.visible)
+               {
+                  d.visible = true;
+               }
+            }
+            this.hz43HidA[i] = null;
+            i++;
+         }
+         this.hz43HidN = 0;
+      }
+
+      // Undo our vis hide on one watch sibling. Never writes alpha. The four native vis
+      // clips use payload formulas, not a stored visible bit.
+      private function hz43VanShowClip(d:DisplayObject) : void
+      {
+         if(!d) { return; }
+         if(this.hz43VanGameVis(d.name))
+         {
+            if(this.hz43EnvGot != 0 || d.name == "locationNameBase_mc")
+            {
+               var want:Boolean = this.hz43VanEnvWant(d.name);
+               if(d.visible != want) { d.visible = want; }
+            }
+            return;
+         }
+         if(!d.visible) { d.visible = true; }
+      }
+
+      // Direct BottomLeftGroup watch chrome, including the verified cap and filled annulus.
+      // Autoname prefix is not enough. Alerts, detection, and INFO ticks stay on native rules.
+      // Hide notes then vis-hides. Show restores named chrome, marks, cap, and annulus vis
+      // even when the hid list missed a clip. Show does not write alpha.
+      private function hz43VanBlgChrome(hide:Boolean) : void
+      {
+         if(!this.hzBlg) { return; }
+         var i:int = 0;
+         while(i < this.hzBlg.numChildren)
+         {
+            var d:DisplayObject = this.hzBlg.getChildAt(i);
+            var n:String = d ? d.name : "";
+            var capArt:Boolean = this.hz43VanCapClip(d);
+            var ringArt:Boolean = this.hz43VanRingClip(d);
+            var holds:Boolean = false;
+            if(d) { holds = this.hz43VanHoldsMark(d as DisplayObjectContainer); }
+            var mark:Boolean = this.hz43VanMarkName(n);
+            var named:Boolean = this.hz43VanNamed(n);
+            if(!d || this.hz43VanSkip(n)) { }
+            else if(hide)
+            {
+               if(!mark && !holds && (named || capArt || ringArt)) { this.hz43StHide(d); }
+            }
+            else if(mark || named || capArt || ringArt)
+            {
+               this.hz43VanShowClip(d);
+            }
+            i++;
+         }
+      }
+
+      // Styles 3 and 4 hide the vanilla bezel and labels. The live marker clips stay visible.
+      private function hz43VanChrome(hide:Boolean) : void
+      {
+         if(!hide) { this.hz43VanRestoreHid(); this.hz43VanBlgChrome(false); return; }
+         var i:int = 0;
+         while(i < HZ43_VAN_N.length)
+         {
+            var name:String = String(HZ43_VAN_N[i]);
+            var mark:Boolean = this.hz43VanMarkName(name);
+            var clip:DisplayObject = this.hzFindByName(this.hzBlg,name,0);
+            if(clip)
+            {
+               var box:DisplayObjectContainer = clip as DisplayObjectContainer;
+               var keep:Boolean = mark || (box != null && this.hz43VanHoldsMark(box));
+               if(hide && mark)
+               {
+                  if(!clip.visible) { clip.visible = true; }
+                  var up:DisplayObjectContainer = clip.parent;
+                  while(up != null && up != this)
+                  {
+                     if(!up.visible) { up.visible = true; }
+                     if(up == this.hzBlg) { break; }
+                     up = up.parent;
+                  }
+                  var sib:DisplayObjectContainer = clip.parent;
+                  if(sib != null && sib != this.hzBlg && sib != this)
+                  {
+                     var si:int = 0;
+                     while(si < sib.numChildren)
+                     {
+                        var sc:DisplayObject = sib.getChildAt(si);
+                        var scMark:Boolean = sc && (this.hz43VanMarkName(sc.name) || (sc is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(sc))));
+                        if(sc && !scMark)
+                        {
+                           this.hz43StHide(sc);
+                        }
+                        si++;
+                     }
+                  }
+               }
+               else if(hide && box != null && keep && !mark)
+               {
+                  if(!clip.visible) { clip.visible = true; }
+                  var ci:int = 0;
+                  while(ci < box.numChildren)
+                  {
+                     var ch:DisplayObject = box.getChildAt(ci);
+                     var chMark:Boolean = ch && (this.hz43VanMarkName(ch.name) || (ch is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(ch))));
+                     if(ch && !chMark)
+                     {
+                        this.hz43StHide(ch);
+                     }
+                     else if(ch)
+                     {
+                        if(!ch.visible) { ch.visible = true; }
+                     }
+                     ci++;
+                  }
+               }
+               else if(hide && !keep)
+               {
+                  this.hz43StHide(clip);
+               }
+            }
+            i++;
+         }
+         this.hz43VanBlgChrome(hide);
+      }
+
+      private function hz43VanResolve(sc:Number) : void
+      {
+         var lo:Object = this.hzLay["Watch"];
+         if(!lo || !this.hz43Locals()) { return; }
+         var ax:int = lo.ax == "R" ? 2 : (lo.ax == "C" ? 1 : 0);
+         var ay:int = lo.ay == "B" ? 2 : (lo.ay == "C" ? 1 : 0);
+         var dx:Number = this.hz43LayNum(lo.dx);
+         var dy:Number = this.hz43LayNum(lo.dy);
+         var nx:int = lo.nx ? 1 : 0;
+         var ny:int = lo.ny ? 1 : 0;
+         var fx:Number = this.hz43LayNum(lo.x);
+         var fy:Number = this.hz43LayNum(lo.y);
+         if(ax == this.hz43VnAx && ay == this.hz43VnAy && dx == this.hz43VnDx && dy == this.hz43VnDy && nx == this.hz43VnNx && ny == this.hz43VnNy && fx == this.hz43VnFx && fy == this.hz43VnFy && sc == this.hz43VnSc && this.hz43VrTick == this.hz43VnVr) { return; }
+         this.hz43VnAx = ax;
+         this.hz43VnAy = ay;
+         this.hz43VnDx = dx;
+         this.hz43VnDy = dy;
+         this.hz43VnNx = nx;
+         this.hz43VnNy = ny;
+         this.hz43VnFx = fx;
+         this.hz43VnFy = fy;
+         this.hz43VnSc = sc;
+         this.hz43VnVr = this.hz43VrTick;
+         if(this.hz43TL == null) { this.hz43TL = new Point(); this.hz43BR = new Point(); }
+         this.hz43TL.x = this.hz43Lx;
+         this.hz43TL.y = this.hz43Ly;
+         this.hz43BR.x = this.hz43Rx;
+         this.hz43BR.y = this.hz43Ry;
+         var p:Point = this.hz30Resolve("Watch",lo,this.hz43VanHW,this.hz43VanHH,this.hz43TL,this.hz43BR);
+         this.hzPlace(this.hz43VanHnd,p.x,p.y);
+      }
+
+      private function hz43VanSc() : Number
+      {
+         var custom:Number = this.hz34Sc["Watch"];
+         var sc:Number = custom > 0 ? this.hz34S("Watch") / HZ_SCALE : 1;
+         if(!(sc > 0.05)) { sc = 1; }
+         return sc;
+      }
+
+      private function hz43VanPlace() : void
+      {
+         var vanilla:Boolean = this.hzWatchStyle == 1 || this.hzWatchStyle == 2;
+         if(!vanilla)
+         {
+            if(this.hz43VanWrote) { this.hz43VanWrite(0,0,1); this.hz43VanWrote = false; }
+            if(this.hz43MarkMoved) { this.hz43VanWrite(0,0,1); this.hz43MarkMoved = false; }
+            if(this.hz43VanHnd) { this.hz43VanHnd.visible = false; }
+            return;
+         }
+         if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
+         if(!this.hzBlg) { return; }
+         var hnd:Sprite = this.hz43VanEnsure();
+         this.hz43VanCapture();
+         if(this.hz43VanCap == 0) { return; }
+         if(this.hz43MarkMoved) { this.hz43VanWrite(0,0,1); this.hz43MarkMoved = false; }
+         // Catch-up and HUD recreate: hidN can already be 0 while named chrome is still vis=false
+         // (r13 17280 / 53968). Always undo vis hide here. Never write alpha.
+         this.hz43VanChrome(false);
+         hnd.visible = true;
+         var sc:Number = this.hz43VanSc();
+         var drag:Boolean = this.hzArrange && this.hzArrDrag == "Watch";
+         var saved:Boolean = this.hzLayHas("Watch");
+         if(!drag && !this.hz43VanFadeOk())
+         {
+            this.hzPlace(hnd,this.hz43VanHX,this.hz43VanHY);
+            this.hz43VanDump("fade-wait");
+            return;
+         }
+         if(!saved && !drag)
+         {
+            this.hzPlace(hnd,this.hz43VanHX,this.hz43VanHY);
+            if(sc != 1 || this.hz43VanWrote) { this.hz43VanWrite(0,0,sc); }
+            return;
+         }
+         if(!drag) { this.hz43VanResolve(sc); }
+         if(!drag && this.hz43VnAx == -2) { return; }
+         if(drag) { this.hz43VanWmk = -1; }
+         this.hz43VanWrite(hnd.x - this.hz43VanHX,hnd.y - this.hz43VanHY,sc);
+      }
+
+      // Native ring center in HUDMenu space from outline local, not getBounds of hidden clips.
+      private function hz43VanRingMid() : Point
+      {
+         if(!this.hzBlg || this.hz43VanP == null) { return null; }
+         var d:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         if(!d || !d.parent) { return null; }
+         this.hz43VanP.x = d.x + HZ43_VAN_FACE / 2;
+         this.hz43VanP.y = d.y + HZ43_VAN_FACE / 2;
+         var g:Point = d.parent.localToGlobal(this.hz43VanP);
+         return this.globalToLocal(g);
+      }
+
+      // vis/alpha/CT/x/y for every BottomLeftGroup child. Observer only: does not hide, move, or restore.
+      private function hz43VanDump(why:String) : void
+      {
+         var ov:String = "";
+         var od:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         if(od) { ov = String(od.visible) + "," + od.x + "," + od.y + "," + od.alpha; }
+         var pv:String = "";
+         var pd:DisplayObject = this.hzFindByName(this.hzBlg,"WatchPointerOutline_mc",0);
+         if(pd) { pv = String(pd.visible) + "," + pd.x + "," + pd.y; }
+         var rv:String = "";
+         var ri:int = 0;
+         while(this.hzBlg && ri < this.hzBlg.numChildren)
+         {
+            var rd:DisplayObject = this.hzBlg.getChildAt(ri);
+            if(rd && this.hz43VanRingClip(rd)) { rv = String(rd.visible) + "," + rd.x + "," + rd.y; break; }
+            ri++;
+         }
+         var sig:String = this.hzWatchStyle + "|" + this.hz43VanCap + "|" + this.hz43VanWrote + "|" + this.hz43MarkMoved + "|" + this.hz43HidN + "|" + ov + "|" + pv + "|" + rv;
+         if(sig == this.hz43DumpSig) { return; }
+         this.hz43DumpSig = sig;
+         var fx:String = "none";
+         if(this.hz43Watch)
+         {
+            fx = this.hz43Watch.x + "," + this.hz43Watch.y + " vis=" + this.hz43Watch.visible + " sc=" + this.hz43Watch.scaleX;
+         }
+         var hx:String = "none";
+         if(this.hz43VanHnd)
+         {
+            hx = this.hz43VanHnd.x + "," + this.hz43VanHnd.y;
+         }
+         trace("HZ43 dump diag=" + HZ43_DIAG + " why=" + why + " style=" + this.hzWatchStyle + " cap=" + this.hz43VanCap + " wrote=" + this.hz43VanWrote + " marks=" + this.hz43MarkMoved + " hidN=" + this.hz43HidN + " envGot=" + this.hz43EnvGot + " vanSc=" + this.hz43VanSc() + " face=" + fx + " hnd=" + hx);
+         if(!this.hzBlg)
+         {
+            trace("HZ43 dump blg=null");
+            return;
+         }
+         var i:int = 0;
+         while(i < this.hzBlg.numChildren)
+         {
+            var d:DisplayObject = this.hzBlg.getChildAt(i);
+            if(d)
+            {
+               var nm:String = d.name != null && d.name.length > 0 ? d.name : "(unnamed)";
+               var cta:Number = -1;
+               var cto:Number = -1;
+               try
+               {
+                  var ct:ColorTransform = d.transform.colorTransform;
+                  if(ct)
+                  {
+                     cta = ct.alphaMultiplier;
+                     cto = ct.alphaOffset;
+                  }
+               }
+               catch(eCt:Error) { }
+               trace("HZ43 sib " + nm + " vis=" + d.visible + " a=" + d.alpha + " ctA=" + cta + " ctO=" + cto + " x=" + d.x + " y=" + d.y + " sx=" + d.scaleX + " sy=" + d.scaleY + " capArt=" + (this.hz43VanCapClip(d) ? 1 : 0) + " ringArt=" + (this.hz43VanRingClip(d) ? 1 : 0));
+            }
+            i++;
+         }
+      }
+
+      // Styles 3 and 4 hide native chrome and keep live markers. Do not scale or drag cap / O2 / outline.
+      // Capture failure still hides chrome. Markers follow the Horizon face from the outline center.
+      private function hz43VanHorizon() : void
+      {
+         if(this.hzWatchStyle != 3 && this.hzWatchStyle != 4) { return; }
+         if(!this.hz43Watch) { return; }
+         if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
+         if(!this.hzBlg)
+         {
+            this.hz43VanDump("horizon-noblg");
+            return;
+         }
+         this.hz43VanEnsure();
+         this.hz43VanCapture();
+         if(this.hz43VanWrote)
+         {
+            this.hz43VanWrite(0,0,1);
+            this.hz43VanWrote = false;
+         }
+         this.hz43VanChrome(true);
+         var sc:Number = this.hz43Watch.scaleX;
+         if(!(sc > 0.05)) { sc = 1; }
+         var cx:Number = this.hz43Watch.x + HZ43_R * sc;
+         var cy:Number = this.hz43Watch.y + HZ43_R * sc;
+         var ring:Point = this.hz43VanRingMid();
+         var rx:Number = ring ? ring.x : Number.NaN;
+         var ry:Number = ring ? ring.y : Number.NaN;
+         if(this.hz43VanCap != 0 && ring)
+         {
+            this.hz43VanWrite(cx - rx,cy - ry,1,true);
+         }
+         this.hz43VanDump("horizon");
+      }
+
+      private function hz43VanLate() : void
+      {
+         if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4) { this.hz43VanHorizon(); }
+         else { this.hz43VanPlace(); }
+      }
+
+      private function hz43Place() : void
+      {
+         if(!this.hz43Watch || !this.hz43Locals()) { return; }
+         var sc:Number = this.hz34S("Watch");
+         if(!(sc > 0.05)) { sc = 1; }
+         this.hz43Watch.scaleX = this.hz43Watch.scaleY = sc;
+         var saved:Boolean = this.hzLayHas("Watch");
+         if(saved != this.hz43WasSaved)
+         {
+            this.hz43WasSaved = saved;
+            this.hz43Ps = NaN;
+            this.hz43Ax = -1;
+         }
+         if(saved)
+         {
+            if(this.hzArrange && this.hzArrDrag == "Watch")
+            {
+               var drag:Object = this.hzLay["Watch"];
+               if(drag) { this.hz43LayStamp(drag); }
+               this.hz43VrSeen = this.hz43VrTick;
+               this.hz43Ps = sc;
+               return;
+            }
+            this.hz43ApplySaved(sc);
+            return;
+         }
+         this.hz43ApplyHome(sc);
+      }
+
+      private static const HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc"];
+
+      // Card color lookup builds a palette array. Keep the uint and rebuild it only when the color changes.
+      private function hz43Fill() : uint
+      {
+         if(this.hzCardColor != this.hz43FillSeen || this.hzCardHex != this.hz43HexSeen)
+         {
+            this.hz43FillSeen = this.hzCardColor;
+            this.hz43HexSeen = this.hzCardHex;
+            this.hz43FillU = this.hzCardFill();
+         }
+         return this.hz43FillU;
+      }
+
+      private function hz43TintAt(i:int) : DisplayObject
+      {
+         if(this.hz43TintD == null) { this.hz43TintD = new Array(HZ43_TINT_N.length); }
+         var d:DisplayObject = this.hz43TintD[i] as DisplayObject;
+         if(d != null && d.parent != null) { return d; }
+         d = this.hzFindByName(this.hzBlg,HZ43_TINT_N[i] as String,0);
+         this.hz43TintD[i] = d;
+         return d;
+      }
+
+      // RGB only. Native FadeIn and the thin bar own alphaMultiplier / alphaOffset.
+      private function hz43TintRgb(clip:DisplayObject, col:uint, amt:Number) : void
+      {
+         if(!clip) { return; }
+         var ct:ColorTransform = clip.transform.colorTransform;
+         var r:int = (col >> 16) & 255;
+         var gg:int = (col >> 8) & 255;
+         var b:int = col & 255;
+         var keep:Number = 1 - amt;
+         ct.redMultiplier = keep;
+         ct.greenMultiplier = keep;
+         ct.blueMultiplier = keep;
+         ct.redOffset = r * amt;
+         ct.greenOffset = gg * amt;
+         ct.blueOffset = b * amt;
+         clip.transform.colorTransform = ct;
+      }
+
+      private function hz43TintClear(clip:DisplayObject) : void
+      {
+         if(!clip) { return; }
+         var ct:ColorTransform = clip.transform.colorTransform;
+         ct.redMultiplier = 1;
+         ct.greenMultiplier = 1;
+         ct.blueMultiplier = 1;
+         ct.redOffset = 0;
+         ct.greenOffset = 0;
+         ct.blueOffset = 0;
+         clip.transform.colorTransform = ct;
+      }
+
+      // Unnamed cap and filled annulus. Uses object identity after native proof, so WatchScale
+      // != 1 still tints the captured annulus. RGB only; TintRgb keeps both CT alpha terms.
+      private function hz43TintUnnamed(clear:Boolean, col:uint, amt:Number) : void
+      {
+         if(!this.hzBlg) { return; }
+         var i:int = 0;
+         while(i < this.hzBlg.numChildren)
+         {
+            var d:DisplayObject = this.hzBlg.getChildAt(i);
+            if(d && (this.hz43VanCapClip(d) || this.hz43VanRingClip(d)))
+            {
+               if(clear) { this.hz43TintClear(d); }
+               else { this.hz43TintRgb(d,col,amt); }
+            }
+            i++;
+         }
+      }
+
+      private function hz43Tint() : void
+      {
+         if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
+         if(!this.hzBlg) { return; }
+         var want:Boolean = this.hzWatchStyle == 2 && !this.hzUserHidden;
+         var i:int = 0;
+         if(!want)
+         {
+            if(!this.hz43TintOn) { return; }
+            while(i < HZ43_TINT_N.length)
+            {
+               this.hz43TintClear(this.hz43TintAt(i));
+               i++;
+            }
+            this.hz43TintUnnamed(true,0,0);
+            this.hz43TintOn = false;
+            return;
+         }
+         var card:uint = this.hz43Fill();
+         var acc:uint = uint(this.HZ_ACCENT);
+         while(i < HZ43_TINT_N.length)
+         {
+            this.hz43TintRgb(this.hz43TintAt(i),(i >= 1 && i <= 3) ? acc : card,(i >= 1 && i <= 3) ? 0.72 : 0.55);
+            i++;
+         }
+         this.hz43TintUnnamed(false,card,0.55);
+         this.hz43TintOn = true;
+      }
+
+      private function hz43Dirty() : Boolean
+      {
+         this.hz43Read();
+         this.hz43PcSample();
+         if(this.hz43PcH >= 0 && this.hzClockFmt != this.hz43LastClk) { this.hz43PcTxt = this.hzFmtClock(this.hz43PcH,this.hz43PcM); }
+         var head:int = int(Math.round(this.hzCmpDeg));
+         var o2:int = int(Math.round(this.hz26O2F * 100));
+         var co2:int = int(Math.round(this.hz26Co2F * 100));
+         var tp:int = isNaN(this.hzEnvTempC) ? -100000 : int(Math.round(this.hzEnvTempC));
+         var acc:uint = uint(this.HZ_ACCENT);
+         var att:int = this.hz43AttCode();
+         var body:String = this.hzPpBodyName;
+         var ch:Boolean = this.hz43Force || this.hzWatchStyle != this.hz43LastMode || this.hz43H != this.hz43LastH || this.hz43M != this.hz43LastM || this.hz43Ut != this.hz43LastUt || this.hz43Ok != this.hz43LastOk || this.hz43DayB != this.hz43LastDay || head != this.hz43LastHead || o2 != this.hz43LastO2 || co2 != this.hz43LastCo2 || this.hz43PcH != this.hz43LastPcH || this.hz43PcM != this.hz43LastPcM || tp != this.hz43LastTemp || this.hzTempUnit != this.hz43LastUnit || this.hzClockFmt != this.hz43LastClk || acc != this.hz43LastAcc || att != this.hz43LastAtt || body != this.hz43LastBody;
+         if(!ch) { return false; }
+         this.hz43Force = false;
+         this.hz43LastMode = this.hzWatchStyle;
+         this.hz43LastH = this.hz43H;
+         this.hz43LastM = this.hz43M;
+         this.hz43LastUt = this.hz43Ut;
+         this.hz43LastOk = this.hz43Ok;
+         this.hz43LastDay = this.hz43DayB;
+         this.hz43LastHead = head;
+         this.hz43LastO2 = o2;
+         this.hz43LastCo2 = co2;
+         this.hz43LastPcH = this.hz43PcH;
+         this.hz43LastPcM = this.hz43PcM;
+         this.hz43LastTemp = tp;
+         this.hz43LastUnit = this.hzTempUnit;
+         this.hz43LastClk = this.hzClockFmt;
+         this.hz43LastAcc = acc;
+         this.hz43LastAtt = att;
+         this.hz43Att = att;
+         this.hz43Body = body;
+         this.hz43LastBody = body;
+         return true;
+      }
+
+      private function hz43Frame() : void
+      {
+         var show:Boolean = (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && !this.hzUserHidden;
+         if(!show) { this.hz43VanPlace(); }
+         if(this.hzWatchStyle == 2) { this.hz43Tint(); }
+         else if(this.hz43TintOn) { this.hz43Tint(); }
+         if(!show)
+         {
+            if(this.hz43Watch) { this.hz43Watch.visible = false; }
+            return;
+         }
+         this.hz43Build();
+         this.hz43Place();
+         this.hz43VanHorizon();
+         if(this.hz43Dirty()) { this.hz43Draw(this.hzWatchStyle); }
+         this.hz43Watch.visible = true;
+      }
       // =================== end Horizon UI (HUD module) ===================
