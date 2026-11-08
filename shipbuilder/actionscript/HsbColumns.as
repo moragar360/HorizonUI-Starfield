@@ -96,8 +96,7 @@ package
             if(dragging)
             {
                k.fill(g,inset,ry,w - inset * 2,rowH,7,HsbKit.SELECT,1);
-               k.outline(g,inset,ry,w - inset * 2,rowH,7,k.accentDim(0.6),1);
-               k.fill(g,3,ry + 6,3,rowH - 12,1.5,k.accent,1);
+               k.fill(g,inset + 1,ry + 9,3,rowH - 18,1.5,k.accent,1);
             }
             else { k.fill(g,inset,ry,w - inset * 2,rowH,7,HsbKit.ROW,1); }
             k.icon(g,"handle",inset + 12,ry + (rowH - 16) / 2,16,HsbKit.LABEL,1);

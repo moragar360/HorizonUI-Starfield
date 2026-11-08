@@ -958,6 +958,13 @@ static void CheckMovie(const fs::path& root)
 		"the Arrange bar grows so its how-to line never runs under RESET");
 	Expect(Has(FunctionBody(hub, "diffText", "internal static"), "var size:String = param1.bPercentage ? chipNumber(Math.abs(diff) * 100,0) : chipNumber(Math.abs(diff),2);") &&
 		Has(FunctionBody(hub, "diffText", "internal static"), "if(size == \"0\") { return \"\"; }"), "chips follow the twin");
+	{
+		const auto dragRow = FunctionBody(ReadFile(as / "HsbColumns.as"), "paint", "internal");
+		Expect(InOrder(dragRow, {"if(dragging)", "k.fill(g,inset,ry,w - inset * 2,rowH,7,HsbKit.SELECT,1);",
+					"k.fill(g,inset + 1,ry + 9,3,rowH - 18,1.5,k.accent,1);"}) &&
+				!Has(dragRow, "k.accentDim(0.6)"),
+			"the dragged column row is a filled row with its accent stripe inside, without an outline");
+	}
 	Expect(Has(FunctionBody(hub, "shortChip", "internal static"), "if(dot < 0 || param1.indexOf(\"e\") >= 0) { return param1.charAt(0); }") &&
 		Has(FunctionBody(hub, "shortChip", "internal static"), "return whole.length == 2 && whole.charAt(1) == \"0\" ? param1.charAt(0) : whole;"),
 		"short chips follow the twin");
