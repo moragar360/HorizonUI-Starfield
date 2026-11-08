@@ -1431,6 +1431,52 @@ static void CheckMovie(const fs::path& root)
 		Expect(InOrder(browser, {"var pillsWarn:String = this.hsb.pillsWarning();", "var warnLines:Array = pillsWarn.split(\"\\n\");",
 				   "y = this.paintNoteLine(w,pad,y,String(warnLines[wl]),HsbKit.ORANGE);"}),
 			"each warning line gets its own row");
+		// Review A4 SHOULD-FIX 2: the lines that keep a damaged, newer or unreadable profile from
+		// being saved over, each pinned so a one-character slip fails here.
+		Expect(InOrder(profile, {"var count:int = this.pills.load(param2);", "if(count >= 0)", "this.pillsLock = \"\";",
+				   "else if(count == HsbPillModel.LOAD_BAD) { this.setAsideProfile(); }", "else if(count == HsbPillModel.LOAD_FAILED)", "else",
+				   "this.lockPills(count == HsbPillModel.LOAD_NEWER ? \"newer\" : \"toolong\");"}) &&
+				CountOf(profile, "if(count >= 0)") == 1 && CountOf(profile, "this.pillsLock = \"\";") == 1,
+			"only a profile that loads opens saving; a damaged one is set aside and every other result stays locked");
+		const std::string loadBody = FunctionBody(model, "load", "internal");
+		Expect(InOrder(loadBody, {"if(param1.length > HsbJson.MAX_CHARS) { return LOAD_TOO_BIG; }", "var data:* = HsbJson.parse(param1);",
+				   "if(data == null || typeof data != \"object\" || String(data.type) != PROFILE_TYPE) { return LOAD_BAD; }",
+				   "if(Number(data.version) > VERSION) { return LOAD_NEWER; }", "if(!(data.pills is Array)) { return LOAD_BAD; }", "var next:Array = [];"}) &&
+				CountOf(loadBody, "return LOAD_BAD;") == 2,
+			"load calls a file of the wrong type or without a pills array damaged, and a newer one newer");
+		{
+			std::map<std::string, long> codes;
+			for (const char* name : {"LOAD_BAD", "LOAD_TOO_BIG", "LOAD_NEWER", "LOAD_FAILED"}) {
+				const std::string head = std::string("internal static const ") + name + ":int = ";
+				const std::size_t at = model.find(head);
+				codes[name] = at == std::string::npos ? 0 : std::strtol(model.c_str() + at + head.size(), nullptr, 10);
+			}
+			std::set<long> distinct;
+			bool negative = true;
+			for (const auto& code : codes) {
+				distinct.insert(code.second);
+				negative = negative && code.second < 0;
+			}
+			Expect(negative && distinct.size() == 4, "load's four failure results are below zero and distinct, so none reads as a pill count or as another");
+		}
+		Expect(Has(warn, "case \"unreadable\": return \"Pill changes are not saved: the pills file could not be read\";") &&
+				Has(warn, "case \"newer\": return \"Pill changes are not saved: the pills file is from a newer version\";") &&
+				Has(warn, "case \"toolong\": return \"Pill changes are not saved: the pills file is too long to read\";"),
+			"an unreadable, newer or too long profile is explained on screen");
+		Expect(InOrder(FunctionBody(hub, "fileOp", "internal"), {"if(this.fileOut.length > FILE_QUEUE_MAX)", "var dropped:String = String(this.fileOut.shift());",
+				   "var dropCb:Function = this.fileWait[dropId] as Function;", "delete this.fileWait[dropId];", "try { dropCb(false,\"\"); }",
+				   "catch(err:Error) { this.note(\"FILE reply failed \" + err.errorID); }"}),
+			"a request dropped from a full queue answers its caller with a failure, so a dropped READ never leaves saving waiting");
+		Expect(InOrder(FunctionBody(hub, "files", "public"), {"var cb:Function = this.fileWait[id] as Function;", "delete this.fileWait[id];",
+				   "try { cb(String(parts[1]) == \"1\",parts.length > 2 ? unescapeText(String(parts.slice(2).join(\"\\t\"))) : \"\"); }",
+				   "catch(err:Error) { this.note(\"FILE reply failed \" + err.errorID); }"}),
+			"a file reply whose callback throws is noted, and the replies after it still run");
+		{
+			const std::string import = ReadFile(as / "HsbPillImport.as");
+			Expect(Has(import, "var usable:Boolean = e.loading != true && e.bad != true && list != null && list.length > 0;") &&
+					Has(FunctionBody(import, "readOne"), "if(data != null && data.pills is Array && (data.pills as Array).length > 0)"),
+				"an import entry with no pills is never usable or taken in");
+		}
 		// Review A3: crafted JSON never throws. Object's own member names are never keys, and the
 		// parser, the model and the readers each end in a catch.
 		Expect(InOrder(json, {"private static const RESERVED:Array = [\"constructor\",\"hasOwnProperty\",\"isPrototypeOf\",\"propertyIsEnumerable\","
