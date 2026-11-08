@@ -102,6 +102,13 @@ package
       private var pillsWaiting:Boolean = false;
       // The damaged profile was set aside this visit, so the starter pills are shown.
       private var pillsSetAside:Boolean = false;
+      // The profile was empty or blank (only spaces, tabs and line ends), so the starter pills
+      // are shown.
+      private var pillsEmpty:Boolean = false;
+      // This visit started without a loaded profile (none, an empty one, or one set aside), so
+      // the plugin keeps ShipBuilderPills.bak as it was: it may hold an older list than the last
+      // save.
+      internal var pillsBakKept:Boolean = false;
       internal var rememberLayout:Boolean = true;
       internal var startOpen:Object;
       internal var autoFlight:Boolean = true;
@@ -2499,12 +2506,13 @@ package
       //    pills, or the defaults with saving locked when a profile exists that the movie cannot
       //    use. Saving stays locked ("loading") until this reply, so an early edit never
       //    replaces the file.
-      // Rules: only "missing" (or an empty file) may start fresh and be saved over. A damaged
-      //    profile (one that does not parse, or "damaged": a NUL byte) is set aside by the DLL
-      //    (PROFILE BAD), and saving stays locked ("setaside") until the DLL confirms it is out
-      //    of the way (onSetAside). One that could not be read, is too long to parse, comes from
-      //    a newer version or that the model failed to take in is left as it is and never
-      //    saved over.
+      // Rules: only "missing" (or an empty or blank file) may start fresh and be saved over; the
+      //    DLL then keeps ShipBuilderPills.bak as it was for the visit, and an empty or blank
+      //    file says so on screen. A damaged profile (one that does not parse, or "damaged": a
+      //    NUL byte) is set aside by the DLL (PROFILE BAD), and saving stays locked ("setaside")
+      //    until the DLL confirms it is out of the way (onSetAside). One that could not be read,
+      //    is too long to parse, comes from a newer version or that the model failed to take in
+      //    is left as it is and never saved over.
       private function onProfile(param1:Boolean, param2:String):void
       {
          if(!param1)
@@ -2512,15 +2520,18 @@ package
             if(param2 == "damaged") { this.setAsideProfile(); }
             else
             {
+               this.pillsBakKept = param2 == "missing";
                this.lockPills(param2 == "missing" ? "" : "unreadable");
                this.note("PILLS profile " + (param2 == "missing" ? "none" : "unreadable, saving off"));
             }
             return;
          }
-         if(param2.length == 0)
+         if(isBlank(param2))
          {
+            this.pillsEmpty = true;
+            this.pillsBakKept = true;
             this.lockPills("");
-            this.note("PILLS profile none");
+            this.note("PILLS profile empty");
             return;
          }
          var count:int = this.pills.load(param2);
@@ -2553,9 +2564,10 @@ package
 
       // Purpose: take the DLL's answer to PROFILE BAD. Inputs: ok, and on a failure the reason:
       //    "exists" when a ShipBuilderPills.bad.json is already there, otherwise "failed".
-      // Outputs: on ok, saving opens with the starter pills and a save refused meanwhile runs.
-      //    On a failure, saving stays locked for this visit and the damaged file stays where it
-      //    is; the next visit tries again.
+      // Outputs: on ok, saving opens with the starter pills, the DLL keeps ShipBuilderPills.bak
+      //    as it was for the visit, and a save refused meanwhile runs. On a failure, saving
+      //    stays locked for this visit and the damaged file stays where it is; the next visit
+      //    tries again.
       private function onSetAside(param1:Boolean, param2:String):void
       {
          if(!param1)
@@ -2565,6 +2577,7 @@ package
             return;
          }
          this.pillsSetAside = true;
+         this.pillsBakKept = true;
          this.lockPills("");
          this.note("PILLS profile set aside");
          if(this.pillsWaiting)
@@ -2580,8 +2593,15 @@ package
          if(this.browser != null) { this.browser.invalidate(); }
       }
 
-      // The lines the browser shows while pill changes cannot be saved, or after the damaged
-      // profile was set aside; empty when there is nothing to say. Lines are joined by "\n".
+      // True for text with nothing but JSON whitespace (spaces, tabs, line ends), as the DLL's
+      // ProfileBlank: such a profile holds no pills.
+      internal static function isBlank(param1:String):Boolean
+      {
+         return param1 == null || /^[ \t\r\n]*$/.test(param1);
+      }
+
+      // The lines the browser shows while pill changes cannot be saved, or after the profile
+      // was set aside or empty; empty when there is nothing to say. Lines are joined by "\n".
       internal function pillsWarning():String
       {
          switch(this.pillsLock)
@@ -2597,7 +2617,8 @@ package
             case "unsavable": return "Pill changes are not saved: a pill holds data the file cannot keep";
          }
          if(this.pillsSaveFailed) { return "Pill changes are not saved: the pills file could not be written"; }
-         if(this.pillsSetAside) { return "The damaged pills file is kept as ShipBuilderPills.bad.json"; }
+         if(this.pillsSetAside) { return "The damaged pills file is kept as ShipBuilderPills.bad.json\nAn older copy may be in ShipBuilderPills.bak"; }
+         if(this.pillsEmpty) { return "The pills file was empty, so the starter pills are shown\nAn older copy may be in ShipBuilderPills.bak"; }
          return "";
       }
 

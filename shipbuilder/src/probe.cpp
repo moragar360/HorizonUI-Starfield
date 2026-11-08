@@ -1238,10 +1238,11 @@ hsb::ProfileState g_profileState;
 //    before it is opened. Nothing is deleted. The profile follows hsb_profile.h on the
 //    Documents shipbuilder folder: a read says why it failed ("missing", "damaged" or
 //    "unreadable") so the movie never saves over a profile it could not use; a write first
-//    backs up the old profile, read whole, to ShipBuilderPills.bak; a damaged profile is
-//    renamed to ShipBuilderPills.bad.json, never over an earlier one, and when that fails,
-//    writes are refused for the rest of the visit. A share file with a NUL byte is refused,
-//    as no reply may carry one.
+//    backs up the old profile, read whole, to ShipBuilderPills.bak, unless it is blank or the
+//    visit started without a loaded profile (that visit keeps the backup as it was); a
+//    damaged profile is renamed to ShipBuilderPills.bad.json, never over an earlier one, and
+//    when that fails, writes are refused for the rest of the visit. A share file with a NUL
+//    byte is refused, as no reply may carry one.
 // Logging: kind, verb and result only.
 std::string RunFileRequest(const std::string& line)
 {

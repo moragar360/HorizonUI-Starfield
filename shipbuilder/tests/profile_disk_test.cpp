@@ -124,10 +124,15 @@ int main()
 	const std::string over(hsb::kMaxProfileBytes + 1, 'x');
 	Put(kJson, over);
 	r = hsb::ProfileRead(disk, s);
-	Expect(!r.ok && r.payload == hsb::kReadUnreadable, "a profile over the cap is unreadable, never missing");
+	Expect(!r.ok && r.payload == hsb::kReadUnreadable && s.held, "a profile over the cap is unreadable, never missing, and holds writes");
 	r = hsb::ProfileWrite(disk, s, good);
+	Expect(!r.ok && r.payload == hsb::kProfileHeld, "WRITE in that visit is held");
+	{
+		hsb::ProfileState unread;
+		r = hsb::ProfileWrite(disk, unread, good);
+	}
 	Expect(!r.ok && r.payload == hsb::kReadUnreadable && Bytes(kJson) == over && Bytes(kBak) == "second",
-		"a profile over the cap is never backed up or replaced");
+		"WRITE's own read finds it over the cap too: never backed up or replaced");
 
 	// A damaged profile, and an earlier bad copy in the way: the real rename never replaces it.
 	Clear();
@@ -158,17 +163,30 @@ int main()
 	// A profile locked with no sharing is unreadable, never missing, and never saved over.
 	HANDLE locked = Hold(kJson, 0);
 	r = hsb::ProfileRead(disk, s);
-	Expect(!r.ok && r.payload == hsb::kReadUnreadable, "READ of a profile locked with no sharing: unreadable");
+	Expect(!r.ok && r.payload == hsb::kReadUnreadable && s.held, "READ of a profile locked with no sharing: unreadable, and writes are held");
 	r = hsb::ProfileWrite(disk, s, "starters");
-	Expect(!r.ok && r.payload == hsb::kReadUnreadable, "WRITE cannot read the old profile for its backup, so it is refused");
+	Expect(!r.ok && r.payload == hsb::kProfileHeld, "WRITE in that visit is held");
+	{
+		hsb::ProfileState unread;
+		r = hsb::ProfileWrite(disk, unread, "starters");
+	}
+	Expect(!r.ok && r.payload == hsb::kReadUnreadable, "WRITE's own read cannot read the old profile for its backup, so it is refused");
 	CloseHandle(locked);
 	Expect(Bytes(kJson) == damaged && Bytes(kBak) == good, "the locked profile and the good .bak are unchanged");
 
 	// Once the way is clear, the set-aside works and saving starts fresh.
+	r = hsb::ProfileRead(disk, s);
+	Expect(r.ok && r.payload == damaged && !s.held, "the next visit reads the damaged profile again");
 	r = hsb::ProfileSetAside(disk, s);
-	Expect(r.ok && !s.held && Bytes(kBad) == damaged && !Present(kJson), "BAD moves the damaged profile to .bad.json");
+	Expect(r.ok && !s.held && s.keepBackup && Bytes(kBad) == damaged && !Present(kJson), "BAD moves the damaged profile to .bad.json, and the visit keeps .bak");
 	r = hsb::ProfileWrite(disk, s, "fresh");
 	Expect(r.ok && Bytes(kJson) == "fresh" && Bytes(kBak) == good, "the first save after it keeps the good .bak");
+	r = hsb::ProfileWrite(disk, s, "fresh again");
+	Expect(r.ok && Bytes(kJson) == "fresh again" && Bytes(kBak) == good, "and so does the second");
+	r = hsb::ProfileRead(disk, s);
+	Expect(r.ok && r.payload == "fresh again" && !s.keepBackup, "the next visit loads the new profile");
+	r = hsb::ProfileWrite(disk, s, "next visit");
+	Expect(r.ok && Bytes(kJson) == "next visit" && Bytes(kBak) == "fresh again" && Bytes(kBad) == damaged, "and backs it up as usual");
 
 	// A second damaged profile never replaces the first bad copy.
 	Put(kJson, "damaged again");
@@ -177,19 +195,69 @@ int main()
 		"a second damaged profile never replaces the first .bad.json");
 
 	// A zero-filled profile after a power loss.
+	const std::string zeros(4096, '\0');
 	Clear();
 	Put(kBak, good);
-	Put(kJson, std::string(4096, '\0'));
+	Put(kJson, zeros);
 	r = hsb::ProfileRead(disk, s);
-	Expect(!r.ok && r.payload == hsb::kReadDamaged, "READ of a zero-filled profile: damaged, not empty");
+	Expect(!r.ok && r.payload == hsb::kReadDamaged && s.held, "READ of a zero-filled profile: damaged, not empty, and writes are held");
 	r = hsb::ProfileWrite(disk, s, "fresh");
-	Expect(!r.ok && r.payload == hsb::kReadDamaged && Bytes(kBak) == good, "WRITE never copies zeros over the good .bak");
+	Expect(!r.ok && r.payload == hsb::kProfileHeld && Bytes(kBak) == good, "WRITE before the set-aside is held");
+	{
+		hsb::ProfileState unread;
+		r = hsb::ProfileWrite(disk, unread, "fresh");
+	}
+	Expect(!r.ok && r.payload == hsb::kReadDamaged && Bytes(kBak) == good && Bytes(kJson) == zeros, "WRITE's own read never copies zeros over the good .bak");
+	r = hsb::ProfileSetAside(disk, s);
+	Expect(r.ok && s.keepBackup && Bytes(kBad) == zeros, "BAD keeps the zeros as .bad.json");
+	for (const char* save : {"fresh", "fresh again"}) {
+		r = hsb::ProfileWrite(disk, s, save);
+		Expect(r.ok && Bytes(kJson) == save && Bytes(kBak) == good, "each save after it keeps the good .bak");
+	}
+
+	// Review A4: an empty or blank profile is a fresh start that never costs the good .bak.
+	for (const std::string& blank : {std::string(), std::string(" \r\n\t \r\n")}) {
+		Clear();
+		Put(kJson, blank);
+		Put(kBak, good);
+		r = hsb::ProfileRead(disk, s);
+		Expect(r.ok && r.payload == blank && s.keepBackup && !s.held, "READ of an empty or blank profile: ok, and the visit keeps .bak");
+		for (const char* save : {"first", "second"}) {
+			r = hsb::ProfileWrite(disk, s, save);
+			Expect(r.ok && Bytes(kJson) == save && Bytes(kBak) == good && !Present(kBad), "each save in that visit keeps the good .bak");
+		}
+		r = hsb::ProfileRead(disk, s);
+		r = hsb::ProfileWrite(disk, s, "third");
+		Expect(r.ok && Bytes(kJson) == "third" && Bytes(kBak) == "second", "the next visit backs up what it loaded");
+		Clear();
+		Put(kJson, blank);
+		Put(kBak, good);
+		hsb::ProfileState unread;
+		r = hsb::ProfileWrite(disk, unread, "first");
+		Expect(r.ok && Bytes(kJson) == "first" && Bytes(kBak) == good, "an empty or blank old profile is never copied over .bak");
+	}
+
+	// No profile but a .bak (removed by hand or by a tool): the visit keeps .bak, even one that
+	// another program holds open.
+	Clear();
+	Put(kBak, good);
+	HANDLE bakLocked = Hold(kBak, 0);
+	r = hsb::ProfileRead(disk, s);
+	Expect(!r.ok && r.payload == hsb::kReadMissing && s.keepBackup, "READ with no profile and a .bak: missing, and the visit keeps .bak");
+	for (const char* save : {"first", "second"}) {
+		r = hsb::ProfileWrite(disk, s, save);
+		Expect(r.ok && Bytes(kJson) == save, "each save in that visit works without touching .bak");
+	}
+	CloseHandle(bakLocked);
+	Expect(Bytes(kBak) == good, "and .bak is unchanged");
 
 	// Read-only files are never replaced.
 	Clear();
 	Put(kJson, good);
 	Put(kBak, "old backup");
 	SetFileAttributesW(PathOf(kBak).c_str(), FILE_ATTRIBUTE_READONLY);
+	r = hsb::ProfileRead(disk, s);
+	Expect(r.ok && r.payload == good && !s.keepBackup, "READ of a good profile: the visit backs it up");
 	r = hsb::ProfileWrite(disk, s, "new");
 	Expect(!r.ok && r.payload == hsb::kProfileBackupFailed && Bytes(kJson) == good && Bytes(kBak) == "old backup",
 		"a read-only .bak: the backup fails, so the profile is not replaced");
@@ -204,8 +272,11 @@ int main()
 	Clear();
 	CreateDirectoryW(PathOf(kJson).c_str(), nullptr);
 	r = hsb::ProfileRead(disk, s);
-	Expect(!r.ok && r.payload == hsb::kReadUnreadable, "a folder named ShipBuilderPills.json reads as unreadable, never missing");
-	r = hsb::ProfileWrite(disk, s, "new");
+	Expect(!r.ok && r.payload == hsb::kReadUnreadable && s.held, "a folder named ShipBuilderPills.json reads as unreadable, never missing");
+	{
+		hsb::ProfileState unread;
+		r = hsb::ProfileWrite(disk, unread, "new");
+	}
 	Expect(!r.ok && r.payload == hsb::kReadUnreadable && !Present(kBak), "and is never written over");
 	Clear();
 	Put(kJson, damaged);

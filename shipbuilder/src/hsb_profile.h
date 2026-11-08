@@ -9,10 +9,13 @@
 // Rules: nothing is deleted, and no file is replaced from bytes that were not read whole and
 //    checked first. A profile with a NUL byte is damaged: JSON text never holds one, a crash
 //    can leave a file of zeros, and the movie receives replies as one C string, so it would
-//    see such a file cut short or empty. The backup is written only from a profile read whole
-//    without a NUL. A set-aside never replaces an earlier ShipBuilderPills.bad.json; when it
-//    fails, writes are refused until the next read (the next visit), so the damaged profile is
-//    never saved over.
+//    see such a file cut short or empty. The backup is written only from a profile read whole,
+//    without a NUL and not blank. A visit that starts without a loaded profile (none, a blank
+//    one, or one set aside) while a backup is there never replaces that backup: it may hold
+//    the player's last good pills. A set-aside never replaces an earlier
+//    ShipBuilderPills.bad.json. Writes are held, so the profile is never saved over even if
+//    the movie asks: until it is set aside when it holds a NUL byte, and until the next read
+//    (the next visit) when it could not be read or a set-aside failed.
 // Dependencies: hsb_files.h (file names, read reasons, caps); no game or Windows calls.
 // Author: Moragar. Last modified: 2026-11-08.
 
@@ -40,6 +43,12 @@ inline constexpr std::string_view ProfileFileName(ProfileFile file)
 	return file == ProfileFile::kBackup ? kProfileBackup : (file == ProfileFile::kBad ? kProfileBad : kProfileName);
 }
 
+// Empty, or only spaces, tabs and line breaks: such a profile holds no pills.
+inline bool ProfileBlank(std::string_view text)
+{
+	return text.find_first_not_of(" \t\r\n") == std::string_view::npos;
+}
+
 class ProfileDisk {
 public:
 	virtual ~ProfileDisk() = default;
@@ -57,10 +66,14 @@ public:
 	virtual void EnsureDir() = 0;
 };
 
-// One visit's memory, kept by the plugin's job thread.
+// One visit's memory, kept by the plugin's job thread. ProfileRead starts a visit.
 struct ProfileState {
-	// A set-aside failed this visit, so the damaged profile is still where a write would go.
+	// Writes are refused this visit: the profile could not be read, holds a NUL byte and is not
+	// set aside yet, or a set-aside failed. Each leaves it where a write would go.
 	bool held = false;
+	// The visit started without a loaded profile while a backup was there, so no write this
+	// visit replaces the backup.
+	bool keepBackup = false;
 };
 
 struct ProfileResult {
@@ -70,37 +83,50 @@ struct ProfileResult {
 };
 
 // Purpose: PROFILE READ, the movie's first request each visit.
-// Outputs: ok and the text; or a failure with kReadMissing (no profile: the movie may start
-//    fresh), kReadDamaged (a NUL byte: the movie sets it aside) or kReadUnreadable (it could
-//    not be read or checked: the movie must not save over it). Clears held.
+// Outputs: ok and the text (empty or blank text: the movie starts fresh); or a failure with
+//    kReadMissing (no profile: the movie may start fresh), kReadDamaged (a NUL byte: the movie
+//    sets it aside) or kReadUnreadable (it could not be read or checked: the movie must not
+//    save over it). Starts the visit's state: held after kReadDamaged or kReadUnreadable, and
+//    keepBackup when no profile is loaded and a backup is there.
 inline ProfileResult ProfileRead(ProfileDisk& disk, ProfileState& state)
 {
 	state.held = false;
+	state.keepBackup = false;
 	ProfileResult r;
 	if (!disk.MayTouch(ProfileFile::kProfile, false)) {
+		state.held = true;
 		r.payload = kReadUnreadable;
 		return r;
 	}
 	std::string text;
 	if (!disk.Read(ProfileFile::kProfile, kMaxProfileBytes, text)) {
-		r.payload = disk.Exists(ProfileFile::kProfile) ? kReadUnreadable : kReadMissing;
+		if (disk.Exists(ProfileFile::kProfile)) {
+			state.held = true;
+			r.payload = kReadUnreadable;
+			return r;
+		}
+		state.keepBackup = disk.Exists(ProfileFile::kBackup);
+		r.payload = kReadMissing;
 		return r;
 	}
 	if (HasNul(text)) {
+		state.held = true;
 		r.payload = kReadDamaged;
 		return r;
 	}
+	if (ProfileBlank(text)) state.keepBackup = disk.Exists(ProfileFile::kBackup);
 	r.ok = true;
 	r.payload = std::move(text);
 	return r;
 }
 
 // Purpose: PROFILE WRITE. Inputs: the movie's profile text (unescaped).
-// Outputs: ok; or a failure with kProfileHeld (a set-aside failed this visit), kReadUnreadable
-//    (the old profile could not be read whole, so it has no backup), kReadDamaged (the old
-//    profile has a NUL byte), kProfileBackupFailed or kProfileFailed. Empty when refused.
-// Rules: the old profile goes to the backup first, from the bytes read and checked here; the
-//    new profile is written only when that worked. A missing profile needs no backup.
+// Outputs: ok; or a failure with kProfileHeld (writes are held this visit, see ProfileState),
+//    kReadUnreadable (the old profile could not be read whole), kReadDamaged (the old profile
+//    has a NUL byte), kProfileBackupFailed or kProfileFailed. Empty when refused.
+// Rules: the old profile is read whole and checked before it is replaced. It goes to the
+//    backup first, from the bytes read here, unless it is blank or the visit keeps the backup;
+//    the new profile is written only when that worked. A missing profile needs no backup.
 inline ProfileResult ProfileWrite(ProfileDisk& disk, const ProfileState& state, std::string_view text)
 {
 	ProfileResult r;
@@ -120,7 +146,7 @@ inline ProfileResult ProfileWrite(ProfileDisk& disk, const ProfileState& state, 
 			r.payload = kReadDamaged;
 			return r;
 		}
-		if (!disk.WriteReplace(ProfileFile::kBackup, old)) {
+		if (!state.keepBackup && !ProfileBlank(old) && !disk.WriteReplace(ProfileFile::kBackup, old)) {
 			r.payload = kProfileBackupFailed;
 			return r;
 		}
@@ -134,9 +160,10 @@ inline ProfileResult ProfileWrite(ProfileDisk& disk, const ProfileState& state, 
 }
 
 // Purpose: PROFILE BAD: move the damaged profile to ShipBuilderPills.bad.json.
-// Outputs: ok when it moved, or when there is no profile to move; otherwise a failure with
-//    kProfileBadExists (a bad copy is already there and is never replaced) or kProfileFailed,
-//    and writes are refused until the next read.
+// Outputs: ok when it moved, or when there is no profile to move, and then keepBackup is set
+//    when a backup is there; otherwise a failure with kProfileBadExists (a bad copy is already
+//    there and is never replaced) or kProfileFailed, and writes are refused until the next
+//    read.
 inline ProfileResult ProfileSetAside(ProfileDisk& disk, ProfileState& state)
 {
 	ProfileResult r;
@@ -145,14 +172,10 @@ inline ProfileResult ProfileSetAside(ProfileDisk& disk, ProfileState& state)
 		r.payload = kProfileFailed;
 		return r;
 	}
-	if (!disk.Exists(ProfileFile::kProfile)) {
-		state.held = false;
-		r.ok = true;
-		return r;
-	}
-	const MoveResult moved = disk.MoveNoReplace(ProfileFile::kProfile, ProfileFile::kBad);
+	const MoveResult moved = disk.Exists(ProfileFile::kProfile) ? disk.MoveNoReplace(ProfileFile::kProfile, ProfileFile::kBad) : MoveResult::kOk;
 	if (moved == MoveResult::kOk) {
 		state.held = false;
+		state.keepBackup = disk.Exists(ProfileFile::kBackup);
 		r.ok = true;
 		return r;
 	}

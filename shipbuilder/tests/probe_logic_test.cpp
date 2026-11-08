@@ -876,6 +876,115 @@ static void CheckProfile()
 		Expect(r.ok && d.At(X) == zeros, "zeros: the zero-filled file is kept as the bad copy");
 		r = hsb::ProfileWrite(d, s, "fresh");
 		Expect(r.ok && d.At(P) == "fresh" && d.At(B) == good, "zeros: the first save after it needs no backup and keeps the good one");
+		r = hsb::ProfileWrite(d, s, "fresh again");
+		Expect(r.ok && d.At(P) == "fresh again" && d.At(B) == good && d.At(X) == zeros, "zeros: so does every later save in that visit");
+	}
+
+	// Review A4: an empty or blank profile (a crash between truncate and write, a sync conflict,
+	// a hand edit) is a fresh start. It is never copied over the backup, and no save in that
+	// visit rotates the last good copy out of it.
+	Expect(hsb::ProfileBlank("") && hsb::ProfileBlank(" \t\r\n") && !hsb::ProfileBlank(" {") && !hsb::ProfileBlank("\v") && !hsb::ProfileBlank(zeros),
+		"blank: only JSON whitespace is blank, and a NUL byte is not");
+	for (const std::string& blank : {std::string(), std::string(" \t\r\n \r\n")}) {
+		FakeDisk d;
+		hsb::ProfileState s;
+		d.files[P] = blank;
+		d.files[B] = good;
+		auto r = hsb::ProfileRead(d, s);
+		Expect(r.ok && r.payload == blank && s.keepBackup && !s.held, "blank: the profile reads, and the visit keeps the backup");
+		for (const char* save : {"first", "second", "third"}) {
+			r = hsb::ProfileWrite(d, s, save);
+			Expect(r.ok && d.At(P) == save && d.At(B) == good && d.files.count(X) == 0, "blank: every save in that visit keeps the good backup");
+		}
+		r = hsb::ProfileRead(d, s);
+		Expect(r.ok && r.payload == "third" && !s.keepBackup, "blank: the next visit loads the saved pills");
+		r = hsb::ProfileWrite(d, s, "fourth");
+		Expect(r.ok && d.At(P) == "fourth" && d.At(B) == "third", "blank: and backs them up as usual");
+	}
+	{
+		FakeDisk d;
+		hsb::ProfileState s;
+		d.files[P] = "";
+		auto r = hsb::ProfileWrite(d, s, "first");
+		Expect(r.ok && d.At(P) == "first" && d.files.count(B) == 0, "blank: an empty old profile is never copied to the backup");
+		d.files[P] = " \r\n";
+		d.files[B] = good;
+		r = hsb::ProfileWrite(d, s, "second");
+		Expect(r.ok && d.At(P) == "second" && d.At(B) == good, "blank: a blank old profile never replaces a good backup");
+	}
+
+	// A missing profile with a backup there (removed by hand or by a tool): the backup stays for
+	// the visit. A first visit has none, so its second save makes one as before.
+	{
+		FakeDisk d;
+		hsb::ProfileState s;
+		d.files[B] = good;
+		auto r = hsb::ProfileRead(d, s);
+		Expect(!r.ok && r.payload == hsb::kReadMissing && s.keepBackup, "missing: a visit with no profile and a backup keeps it");
+		for (const char* save : {"first", "second"}) {
+			r = hsb::ProfileWrite(d, s, save);
+			Expect(r.ok && d.At(P) == save && d.At(B) == good, "missing: each save in that visit keeps the good backup");
+		}
+		FakeDisk e;
+		hsb::ProfileState t;
+		r = hsb::ProfileRead(e, t);
+		Expect(!r.ok && r.payload == hsb::kReadMissing && !t.keepBackup, "missing: a first visit has no backup to keep");
+		r = hsb::ProfileWrite(e, t, "first");
+		Expect(r.ok && e.files.count(B) == 0, "missing: its first save needs no backup");
+		r = hsb::ProfileWrite(e, t, "second");
+		Expect(r.ok && e.At(P) == "second" && e.At(B) == "first", "missing: its second save backs up the first");
+		FakeDisk f;
+		hsb::ProfileState u;
+		f.unknown.insert(B);
+		r = hsb::ProfileRead(f, u);
+		r = hsb::ProfileWrite(f, u, "first");
+		r = hsb::ProfileWrite(f, u, "second");
+		Expect(r.ok && u.keepBackup && f.files.count(B) == 0 && f.At(P) == "second",
+			"missing: a backup the system cannot confirm missing is kept, never written over");
+	}
+
+	// After a set-aside the backup may hold the player's last good pills: the visit keeps it,
+	// whether the damaged profile had a NUL byte or did not parse.
+	for (const std::string* bad : {&damaged, &zeros}) {
+		FakeDisk d;
+		hsb::ProfileState s;
+		d.files[P] = *bad;
+		d.files[B] = good;
+		auto r = hsb::ProfileRead(d, s);
+		r = hsb::ProfileSetAside(d, s);
+		Expect(r.ok && s.keepBackup && !s.held && d.At(X) == *bad, "set aside: the visit keeps the backup");
+		for (const char* save : {"first", "second", "third"}) {
+			r = hsb::ProfileWrite(d, s, save);
+			Expect(r.ok && d.At(P) == save && d.At(B) == good && d.At(X) == *bad, "set aside: each save keeps the good backup and the bad copy");
+		}
+		FakeDisk e;
+		hsb::ProfileState t;
+		e.files[P] = *bad;
+		r = hsb::ProfileRead(e, t);
+		r = hsb::ProfileSetAside(e, t);
+		Expect(r.ok && !t.keepBackup, "set aside: with no backup there is none to keep");
+		r = hsb::ProfileWrite(e, t, "first");
+		r = hsb::ProfileWrite(e, t, "second");
+		Expect(r.ok && e.At(B) == "first" && e.At(X) == *bad, "set aside: so the second save backs up the first");
+	}
+
+	// The plugin holds writes on its own after a read that failed or found a NUL byte, so a
+	// save the movie should never send still changes nothing.
+	for (int how = 0; how < 3; ++how) {
+		FakeDisk d;
+		hsb::ProfileState s;
+		const std::string old = how == 2 ? zeros : good;
+		d.files[P] = old;
+		d.files[B] = good;
+		if (how == 0) d.unreadable.insert(P);
+		if (how == 1) d.gated.insert(P);
+		auto r = hsb::ProfileRead(d, s);
+		Expect(!r.ok && s.held && !s.keepBackup, "held: a read that fails, is gated or finds a NUL byte holds writes");
+		d.unreadable.clear();
+		d.gated.clear();
+		r = hsb::ProfileWrite(d, s, "starter pills");
+		Expect(!r.ok && r.payload == hsb::kProfileHeld && d.At(P) == old && d.At(B) == good && d.writes == 0 && d.moves == 0,
+			"held: a save after it changes nothing, even once the profile could be read");
 	}
 }
 
@@ -1291,8 +1400,23 @@ static void CheckMovie(const fs::path& root)
 			"saving stays locked until the plugin answers the set-aside");
 		const std::string aside = FunctionBody(hub, "onSetAside");
 		Expect(InOrder(aside, {"if(!param1)", "this.lockPills(param2 == \"exists\" ? \"badexists\" : \"badfailed\");", "return;",
-				   "this.pillsSetAside = true;", "this.lockPills(\"\");", "if(this.pillsWaiting)", "this.pillsWaiting = false;", "this.savePills();"}),
+				   "this.pillsSetAside = true;", "this.pillsBakKept = true;", "this.lockPills(\"\");", "if(this.pillsWaiting)", "this.pillsWaiting = false;",
+				   "this.savePills();"}),
 			"a failed set-aside keeps saving locked; one that works opens it and runs the save that waited");
+		// Review A4: an empty or blank profile starts fresh with a line on screen, and a visit that
+		// starts without a loaded profile never claims the backup holds the list just replaced.
+		Expect(InOrder(profile, {"this.pillsBakKept = param2 == \"missing\";", "this.lockPills(param2 == \"missing\" ? \"\" : \"unreadable\");", "return;",
+				   "if(isBlank(param2))", "this.pillsEmpty = true;", "this.pillsBakKept = true;", "this.lockPills(\"\");", "this.note(\"PILLS profile empty\");",
+				   "return;", "var count:int = this.pills.load(param2);"}) &&
+				!Has(profile, "param2.length == 0"),
+			"an empty or blank profile is a fresh start that says so, and the visit keeps the backup");
+		Expect(Has(FunctionBody(hub, "isBlank", "internal static"), "return param1 == null || /^[ \\t\\r\\n]*$/.test(param1);") &&
+				Has(ReadFile(root / "src" / "hsb_profile.h"), "return text.find_first_not_of(\" \\t\\r\\n\") == std::string_view::npos;"),
+			"the movie and the plugin agree on what a blank profile is");
+		Expect(InOrder(FunctionBody(ReadFile(as / "HsbPillEditor.as"), "askDelete"),
+				   {"var bakLine:String = this.hsb.pillsBakKept ? \"An earlier list may be kept as a .bak backup.\" : \"Your previous list is kept as a .bak backup.\";",
+					   "[\"This removes the pill from your list.\",bakLine,\"Horizon never deletes pill files you exported or imported.\"]"}),
+			"the remove dialog promises the previous list only when the backup holds it");
 		Expect(InOrder(save, {"if(this.pillsLock.length > 0 && !retry)", "if(this.pillsLock == \"setaside\") { this.pillsWaiting = true; }",
 				   "if(this.pillsLock == \"loading\" && !this.pillsTried)", "this.pillsTried = true;", "return;"}),
 			"a save refused during the set-aside waits for it, and one refused while loading says so");
@@ -1301,8 +1425,9 @@ static void CheckMovie(const fs::path& root)
 				Has(warn, "case \"badexists\": return \"Pill changes are not saved: the pills file is damaged\\nMove ShipBuilderPills.bad.json away, then reopen the builder\";") &&
 				Has(warn, "case \"badfailed\": return \"Pill changes are not saved: the pills file is damaged\\nIt could not be renamed to ShipBuilderPills.bad.json\";") &&
 				Has(warn, "case \"loading\": return this.pillsTried ? \"Pill changes are not saved yet: the pills file has not loaded\" : \"\";") &&
-				Has(warn, "if(this.pillsSetAside) { return \"The damaged pills file is kept as ShipBuilderPills.bad.json\"; }"),
-			"every set-aside outcome and an early save are explained on screen");
+				InOrder(warn, {"if(this.pillsSetAside) { return \"The damaged pills file is kept as ShipBuilderPills.bad.json\\nAn older copy may be in ShipBuilderPills.bak\"; }",
+								  "if(this.pillsEmpty) { return \"The pills file was empty, so the starter pills are shown\\nAn older copy may be in ShipBuilderPills.bak\"; }"}),
+			"every set-aside outcome, an empty profile and an early save are explained on screen");
 		Expect(InOrder(browser, {"var pillsWarn:String = this.hsb.pillsWarning();", "var warnLines:Array = pillsWarn.split(\"\\n\");",
 				   "y = this.paintNoteLine(w,pad,y,String(warnLines[wl]),HsbKit.ORANGE);"}),
 			"each warning line gets its own row");
@@ -1627,6 +1752,11 @@ static void CheckDocs(const fs::path& repo, const fs::path& root)
 		Has(readme, "flushed to disk") && Has(readme, "holds a NUL byte, or cannot be copied to `.bak`") &&
 		Has(readme, "`Move ShipBuilderPills.bad.json away, then reopen the builder`") && !Has(readme, "renamed to `ShipBuilderPills.bad.json`, so it is kept"),
 		"the readme says how a damaged profile is set aside and when a profile save is skipped");
+	Expect(Has(readme, "unless the old profile is empty or blank") && Has(readme, "A profile that is not valid pill JSON, or holds NUL bytes, is renamed") &&
+			Has(readme, "keeps `ShipBuilderPills.bak` as it was until the builder closes") && Has(readme, "then copy `ShipBuilderPills.bak` over it") &&
+			Has(readme, "`The pills file was empty, so the starter pills are shown`") && !Has(readme, "the second save replaces it") &&
+			!Has(readme, "A profile the movie cannot read, including one holding NUL bytes, is renamed"),
+		"the readme says which profiles are renamed, when the backup is kept, and how to restore it");
 
 	Expect(Has(vortex, "Data/SFSE/Plugins/HorizonShipBuilder.dll") && Has(vortex, "Data/Interface/spaceshipeditormenu.swf") &&
 		Has(vortex, "Data/Interface/spaceshipeditormenu_lrg.swf") && Has(vortex, "HorizonShipBuilder.default.ini") && Has(vortex, "game root") &&

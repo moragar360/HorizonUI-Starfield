@@ -595,13 +595,15 @@ package
          return "";
       }
 
-      // Mockup 16. The profile write keeps the previous file as a .bak; pill files are never
-      // deleted.
+      // Mockup 16. The profile write keeps the previous file as a .bak, except in a visit that
+      // started without a loaded profile: the DLL then keeps the older .bak (pillsBakKept).
+      // Pill files are never deleted.
       private function askDelete():void
       {
          var self:HsbPillEditor = this;
          var target:Object = this.orig;
-         HsbDialog.confirm(this.kit,this.hsb,"Remove pill from list?",String(target.name),["This removes the pill from your list.","Your previous list is kept as a .bak backup.","Horizon never deletes pill files you exported or imported."],"Yes",function(param1:Boolean):void
+         var bakLine:String = this.hsb.pillsBakKept ? "An earlier list may be kept as a .bak backup." : "Your previous list is kept as a .bak backup.";
+         HsbDialog.confirm(this.kit,this.hsb,"Remove pill from list?",String(target.name),["This removes the pill from your list.",bakLine,"Horizon never deletes pill files you exported or imported."],"Yes",function(param1:Boolean):void
          {
             if(!param1) { return; }
             var model:HsbPillModel = self.hsb.pills;
