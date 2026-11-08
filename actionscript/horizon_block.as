@@ -1951,6 +1951,10 @@
                case "targetshowvalue": this.hzTgShowValue = bv; break;
                case "compact": this.hzCompact = bv; break;
                case "debug": this.hzDebug = bv; this.hzDbgShow(); this.hzDbgEnvSub(); break;
+               case "perfdiag": this.hzPerfDiag = bv; this.hzPerfApply(); break;
+               case "perfmode": if(!isNaN(nv)) { this.hzPerfMode = int(nv); if(this.hzPerfMode < 0 || this.hzPerfMode > 7) { this.hzPerfMode = 0; } this.hzPerfApply(); } break;
+               case "perfdump": this.hzPerfDumpIni = bv; this.hzPerfApply(); break;
+               case "perfscan": this.hzPerfScan = bv; this.hzPerfApply(); break;
                case "hazardalert": this.hzHazardAlert = bv; break;
                case "accentcolor": if(!isNaN(nv)) { this.hzAccentChoice = Math.max(0,Math.min(HZ_ACCENTS.length,int(nv))); } break;
                case "magazinebar": this.hzMagBar = bv; this.hzDrawMag(); break;
@@ -2181,6 +2185,15 @@
       }
       private var hzCrossType:Number = -1;
       public var hzDebug:Boolean = false;
+      // [Debug] PerfDiag. Off in production. Separate from hzDebug (the overlay).
+      private var hzPerfDiag:Boolean = false;
+      private var hzPerfMode:int = 0;
+      private var hzPerfScan:Boolean = true;
+      private var hzPerfDumpIni:Boolean = false;
+      private var hzPerfDumpSeen:Boolean = false;
+      private var hzPerfOn:Boolean = false;
+      private var hzPerfN:Object = null;
+      private var hzPerfT0:Object = null;
       private var hzDbgCross:String = "";
       private var hzDbgWeap:String = "";
       private var hzDbgText:TextField = null;
@@ -2599,7 +2612,9 @@
             if(fbad) { this.hzFontRetry++; if(this.hzFontName() + this.hzFontName("rg") + this.hzFontName("bd") != fbefore) { this.hzApplyTypo(); } else { try { this.hzAfRetryLayout(); } catch(errAf:Error) { } } }
             else { this.hzFontRetry = 6; }
          }
+         if(this.hzPerfOn) { this.hzPerfBegin("tick"); }
          try { this.hzTgTick(); } catch(errTg:Error) { try { this.hzTgRestore(); this.HorizonTarget_mc.visible = false; } catch(errTg2:Error) { } }
+         if(this.hzPerfOn) { this.hzPerfEnd("tick"); if(this.hzPerfN) { this.hzPerfN.frames++; } }
          try { this.hz43Reticle(); } catch(e43r:Error) { }
          try { this.hzXhTick(); } catch(errXh:Error) { try { this.hzXhRestore(); if(this.hzXh) { this.hzXh.visible = false; } } catch(errXh2:Error) { } }
          try { this.hz43Frame(); } catch(e43f:Error) { }
@@ -5245,6 +5260,10 @@
          a.push("[Debug]");
          a.push("; 1 shows a live data readout (for troubleshooting)");
          a.push("Debug=" + this.hzB(this.hzDebug));
+         a.push("PerfDiag=" + this.hzB(this.hzPerfDiag));
+         a.push("PerfMode=" + String(this.hzPerfMode));
+         a.push("PerfDump=" + this.hzB(this.hzPerfDumpIni));
+         a.push("PerfScan=" + this.hzB(this.hzPerfScan));
          return a.join("\r\n") + "\r\n";
       }
 
@@ -7361,16 +7380,30 @@
 
       private function hzOnTgAct(e:FromClientDataEvent) : *
       {
+         if(this.hzPerfSkipLive()) { return; }
          try { this.hzTgAct = e.data; } catch(err:Error) { this.hzTgAct = null; }
          this.hzTgDirty = true;
-         this.hzT19Ver++;
+         var pay:String = this.hzT19ActPay(this.hzTgAct);
+         if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.act++; }
+         if(pay != this.hzT19ActCached)
+         {
+            this.hzT19ActCached = pay;
+            if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.actCh++; }
+         }
       }
 
       // HUDRolloverItemData.aItems (the container list the game feeds ContainerList_mc.InitializeEntries)
       private function hzOnTgItems(e:FromClientDataEvent) : *
       {
+         if(this.hzPerfSkipLive()) { return; }
          try { this.hzTgItems = (e.data && e.data.aItems is Array) ? e.data.aItems as Array : null; } catch(err:Error) { this.hzTgItems = null; }
-         this.hzT19Ver++;
+         var pay:String = this.hzT19ItemsPay(this.hzTgItems);
+         if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.items++; }
+         if(pay != this.hzT19ItemsCached)
+         {
+            this.hzT19ItemsCached = pay;
+            if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.itemsCh++; }
+         }
       }
 
       private function hzOnTgRoll(e:FromClientDataEvent) : *
@@ -7384,6 +7417,7 @@
 
       private function hzOnTgEnemy(e:FromClientDataEvent) : *
       {
+         if(this.hzPerfSkipLive()) { return; }
          var found:Object = null;
          try
          {
@@ -7403,7 +7437,14 @@
          var rk:int = found && found.uLegendaryRank != undefined ? int(found.uLegendaryRank) : 0;
          var ons:Boolean = found != null && found.bOnScreen !== false;
          if(enm != this.hzTgEnName || rk != this.hzTgRank || ons != this.hzTgOnScr) { this.hzTgEnName = enm; this.hzTgRank = rk; this.hzTgOnScr = ons; this.hzT19Ver++; }
-         if(hp != this.hzTgHpV || leg != this.hzTgLeg) { this.hzTgHpV = hp; this.hzTgLeg = leg; this.hzTgDirty = true; this.hzT19Ver++; }
+         if(hp != this.hzTgHpV || leg != this.hzTgLeg)
+         {
+            var legCh:Boolean = leg != this.hzTgLeg;
+            this.hzTgHpV = hp;
+            this.hzTgLeg = leg;
+            this.hzTgDirty = true;
+            if(legCh) { this.hzT19Ver++; }
+         }
       }
 
       // vanilla modes: 0 BASIC, 1 SINGLE_ITEM, 2 SINGLE_ITEM_WITH_CARD (styled); 3-5 scanner / inventory stay vanilla
@@ -8315,6 +8356,16 @@
       private function hzTW(tf:TextField) : Number
       {
          if(!tf) { return 0; }
+         var o:Object = this.hzTxtObj(tf);
+         var txt:String = tf.text;
+         // FontFace / TextScale / HeaderStyle can change tracking without o.ls changing. Include them so F11 apply misses.
+         if(o && o.twTxt === txt && o.twFs == o.fs && o.twLsVal == o.ls && o.twLsMode == this.hzLsMode
+            && o.twFace == this.hzFontFace && o.twTs == this.hzTextScale && o.twHdr == this.hzHeaderStyle && !isNaN(Number(o.twW)))
+         {
+            if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.twHit++; }
+            return Number(o.twW);
+         }
+         if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.twMiss++; }
          var w:Number = tf.textWidth;
          if(this.hzLsMode < 0)
          {
@@ -8336,6 +8387,17 @@
             var ls:Number = 0;
             try { ls = Number(tf.getTextFormat().letterSpacing); } catch(err2:Error) { ls = 0; }
             if(!isNaN(ls) && ls > 0 && tf.text.length > 1) { w += ls * (tf.text.length - 1); }
+         }
+         if(o)
+         {
+            o.twTxt = txt;
+            o.twW = w;
+            o.twFs = o.fs;
+            o.twLsVal = o.ls;
+            o.twLsMode = this.hzLsMode;
+            o.twFace = this.hzFontFace;
+            o.twTs = this.hzTextScale;
+            o.twHdr = this.hzHeaderStyle;
          }
          return w;
       }
@@ -9575,6 +9637,15 @@
       private var hzT19W:Number = 300;
       private var hzT19H:Number = 60;
       private var hzT19Keys:String = "";
+      private var hzT19BarG:Sprite;
+      private var hzT19HoldG:Sprite;
+      private var hzT19ActCached:String = "";
+      private var hzT19ItemsCached:String = "";
+      private var hzT19BarY:Number = 0;
+      private var hzT19BarW:Number = 0;
+      private var hzT19BarOn:Boolean = false;
+      private var hzT19BarSig:String = "";
+      private var hzT19HoldSig:String = "";
 
       private function hzBuildTg19() : void
       {
@@ -9583,6 +9654,8 @@
          this.hzTg19 = p;
          this.HorizonTarget_mc.addChild(p);
          this.hzT19G = new Sprite(); p.addChild(this.hzT19G);
+         this.hzT19BarG = new Sprite(); p.addChild(this.hzT19BarG);
+         this.hzT19HoldG = new Sprite(); p.addChild(this.hzT19HoldG);
          this.hzT19Name = this.hzT(p,"",18,11,260,16,"sb","main",2);
          this.hzHdr19(this.hzT19Name);
          this.hzT19Meta = this.hzT(p,"",100,34,180,13,"rg","mut",0.5,"right");
@@ -10197,6 +10270,10 @@
       {
          var x:Number = x0;
          var used:int = 0;
+         if(g != null)
+         {
+            for each(var clr:Object in this.hzT19Btn) { clr.holdOn = false; }
+         }
          var list:Array = (a && a.aButtons is Array) ? a.aButtons as Array : [];
          var dk:Boolean = this.hzDarkText();
          var c:uint = this.hzIconCol(col);
@@ -10261,12 +10338,15 @@
                this.hzTxtTopU(kt,this.hzCapTop(kt,kcy),u);
                x += kw + 7;
                this.hzTxtTint(lt,!on ? 0xA8B6BE : (col == HZ_ACCENT ? null : col));
-               var holdP:Number = isHold ? this.hzT19HoldFrac(this.hzT19BtnClip(aw,t)) : -1;
-               if(g != null && holdP > 0.02)
+               if(g != null && isHold)
                {
-                  g.beginFill(kc,0.9);
-                  g.drawRect(x - kw - 7,ky + kh - 3,kw * holdP,3);
-                  g.endFill();
+                  slot.holdOn = true;
+                  slot.holdX = x - kw - 7;
+                  slot.holdY = ky + kh - 3;
+                  slot.holdW = kw;
+                  slot.holdH = 3;
+                  slot.holdC = kc;
+                  slot.holdT = t;
                }
                lt.text = isHold ? hold.toUpperCase() : press.toUpperCase();
                lt.visible = g != null;
@@ -10291,10 +10371,205 @@
          return rowW;
       }
 
+      // Purpose: off-by-default HUD timing and isolation gates. hz41Now is milliseconds only.
+      // Inputs: [Debug] PerfDiag / PerfMode / PerfScan. Outputs: counters for hzPerfSnapshot.
+      // Author: Moragar. Last modified: 2026-11-08.
+      private function hzPerfResetN() : void
+      {
+         this.hzPerfN = {"frames":0,"tick":0,"tickMs":0,"tickMax":0,"content":0,"contentMs":0,"contentMax":0,"act":0,"actCh":0,"items":0,"itemsCh":0,"twHit":0,"twMiss":0,"holdPaint":0,"barPaint":0,"fixture":0,"skipGfx":0};
+      }
+      private function hzPerfApply() : void
+      {
+         this.hzPerfOn = this.hzPerfDiag === true;
+         if(this.hzPerfOn && this.hzPerfN == null) { this.hzPerfResetN(); }
+         if(!this.hzPerfOn) { this.hzPerfDumpSeen = false; }
+         if(this.hzPerfMode != 2 && this.hzT19Sig == "FIXTURE") { this.hzT19Sig = ""; }
+      }
+      private function hzPerfSkipLive() : Boolean
+      {
+         return this.hzPerfOn && this.hzPerfMode == 2;
+      }
+      private function hzPerfSkipHover() : Boolean
+      {
+         return this.hzPerfOn && (this.hzPerfMode == 1 || this.hzPerfMode == 7);
+      }
+      private function hzPerfSkipTarget() : Boolean
+      {
+         return this.hzPerfOn && this.hzPerfMode == 7;
+      }
+      private function hzPerfBegin(n:String) : void
+      {
+         if(!this.hzPerfOn) { return; }
+         if(!this.hzPerfT0) { this.hzPerfT0 = {}; }
+         this.hzPerfT0[n] = this.hz41Now();
+      }
+      private function hzPerfEnd(n:String) : void
+      {
+         if(!this.hzPerfOn || this.hzPerfN == null || this.hzPerfT0 == null) { return; }
+         var dt:int = int(this.hz41Now() - Number(this.hzPerfT0[n]));
+         this.hzPerfN[n] = int(this.hzPerfN[n]) + 1;
+         var msK:String = n + "Ms";
+         var maxK:String = n + "Max";
+         if(this.hzPerfN[msK] == undefined) { this.hzPerfN[msK] = 0; }
+         this.hzPerfN[msK] = int(this.hzPerfN[msK]) + dt;
+         if(this.hzPerfN[maxK] == undefined || dt > int(this.hzPerfN[maxK])) { this.hzPerfN[maxK] = dt; }
+      }
+      public function hzPerfSnapshot() : String
+      {
+         if(!this.hzPerfOn || this.hzPerfN == null) { return "as diag=0 clock=hz41Now_ms"; }
+         var n:Object = this.hzPerfN;
+         var s:String = "as diag=1 mode=" + this.hzPerfMode + " frames=" + n.frames + " tick=" + n.tick + " tickMs=" + n.tickMs + " tickMax=" + n.tickMax + " content=" + n.content + " contentMs=" + n.contentMs + " contentMax=" + n.contentMax + " act=" + n.act + " actCh=" + n.actCh + " items=" + n.items + " itemsCh=" + n.itemsCh + " twHit=" + n.twHit + " twMiss=" + n.twMiss + " hold=" + n.holdPaint + " bar=" + n.barPaint + " fixture=" + n.fixture + " skipGfx=" + n.skipGfx + " clock=hz41Now_ms";
+         if(s.length > 1400) { s = s.substr(0,1400); }
+         this.hzPerfResetN();
+         return s;
+      }
+      private function hzT19ItemPay(it:Object) : String
+      {
+         if(!it) { return ""; }
+         var s:String = String(it.sName) + ":" + String(it.uCount) + ":" + String(it.uRarity) + ":" + String(it.uValue) + ":" + String(it.fWeight) + ":" + String(it.iFilterFlag);
+         var wi:Object = it.WeaponInfo;
+         if(wi) { s += ":W" + String(wi.fRateOfFire) + ":" + String(wi.fRange) + ":" + String(wi.fAccuracy); }
+         var ai:Object = it.ArmorInfo;
+         if(ai) { s += ":A" + String(ai.fThermalResist) + ":" + String(ai.fAirborneResist) + ":" + String(ai.fCorrosiveResist) + ":" + String(ai.fRadiationResist); }
+         if(it.aElementalStats is Array)
+         {
+            var dmg:Number = 0;
+            for each(var es:Object in it.aElementalStats) { if(es && !isNaN(Number(es.fValue))) { dmg += Number(es.fValue); } }
+            s += ":E" + String(dmg);
+         }
+         return s;
+      }
+      private function hzT19ActPay(a:Object) : String
+      {
+         if(!a) { return "0"; }
+         var s:String = (a.bShowRolloverActivation ? "1" : "0") + "|" + int(a.uMode) + "|" + String(a.sHeaderText) + "|" + (a.bStealing ? "1" : "0") + "|" + (a.bContraband ? "1" : "0") + "|" + int(a.uRarity) + "|" + String(a.iSingleItemValue) + "|" + String(a.fSingleItemWeight);
+         s += "|I" + this.hzT19ItemPay(a.ItemData) + "|C" + this.hzT19ItemPay(a.CompareItemData);
+         var list:Array = (a.aButtons is Array) ? a.aButtons as Array : [];
+         var i:int = 0;
+         while(i < list.length)
+         {
+            var b:Object = list[i];
+            if(b) { s += "|B" + int(b.iType) + ":" + (b.bVisible === false ? "0" : "1") + ":" + (b.bEnabled === false ? "0" : "1") + ":" + String(b.sTextPressAndRelease) + ":" + String(b.sTextHold); }
+            i++;
+         }
+         return s;
+      }
+      private function hzT19ItemsPay(items:Array) : String
+      {
+         if(!items) { return "0"; }
+         var s:String = String(items.length);
+         var i:int = 0;
+         while(i < items.length)
+         {
+            var e:Object = items[i];
+            if(e) { s += "|" + String(e.sName) + ":" + String(e.uCount) + ":" + String(e.uRarity) + ":" + String(e.uValue) + ":" + String(e.fWeight); }
+            i++;
+         }
+         return s;
+      }
+      private function hzT19PaintFoeBars() : void
+      {
+         if(!this.hzT19BarG) { return; }
+         var f:Number = Math.max(0,Math.min(1,this.hzTgHpV));
+         var gh:Number = Math.max(f,this.hzTgGhost);
+         var sig:String = (this.hzT19BarOn ? "1" : "0") + "|" + String(this.hzT19BarW) + "|" + String(this.hzT19BarY) + "|" + String(int(f * 200)) + "|" + String(int(gh * 200));
+         if(sig == this.hzT19BarSig) { return; }
+         this.hzT19BarSig = sig;
+         var g:* = this.hzT19BarG.graphics;
+         g.clear();
+         if(!this.hzT19BarOn) { this.hzT19BarG.visible = false; return; }
+         this.hzT19BarG.visible = true;
+         var hw:Number = this.hzT19BarW;
+         var by:Number = this.hzT19BarY;
+         var dk:Boolean = this.hzDarkText();
+         var rc:uint = this.hzIconCol(HZ_RED);
+         g.beginFill(dk ? 0x000000 : 0xFFFFFF,dk ? 0.14 : 0.12); g.drawRoundRect(20,by,hw,7,7,7); g.endFill();
+         if(gh > f + 0.002) { g.beginFill(rc,0.37); g.drawRoundRect(20,by,Math.max(7,hw * gh),7,7,7); g.endFill(); }
+         if(f > 0) { g.beginFill(rc,1); g.drawRoundRect(20,by,Math.max(7,hw * f),7,7,7); g.endFill(); }
+         if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.barPaint++; }
+      }
+      private function hzT19PaintHold(aw:Object) : void
+      {
+         if(!this.hzT19HoldG) { return; }
+         var sig:String = "";
+         var draws:Array = [];
+         for each(var slot:Object in this.hzT19Btn)
+         {
+            if(!slot || slot.holdOn !== true) { continue; }
+            var frac:Number = this.hzT19HoldFrac(this.hzT19BtnClip(aw,int(slot.holdT)));
+            if(frac <= 0.02) { continue; }
+            sig += int(slot.holdT) + ":" + String(int(frac * 100)) + ":" + String(slot.holdX) + ",";
+            draws.push(slot,frac);
+         }
+         if(sig == this.hzT19HoldSig) { return; }
+         this.hzT19HoldSig = sig;
+         var g:* = this.hzT19HoldG.graphics;
+         g.clear();
+         var any:Boolean = false;
+         var di:int = 0;
+         while(di < draws.length)
+         {
+            var ds:Object = draws[di];
+            var df:Number = Number(draws[di + 1]);
+            any = true;
+            g.beginFill(uint(ds.holdC),0.9);
+            g.drawRect(Number(ds.holdX),Number(ds.holdY),Number(ds.holdW) * df,Number(ds.holdH));
+            g.endFill();
+            di += 2;
+         }
+         this.hzT19HoldG.visible = any;
+         if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.holdPaint++; }
+      }
+      private function hzT19Fixture() : void
+      {
+         if(!this.hzTg19 || !this.hzT19G) { return; }
+         if(this.hzT19Sig == "FIXTURE") { this.hzTg19.visible = true; this.HorizonTarget_mc.visible = true; this.HorizonTarget_mc.alpha = 1; return; }
+         this.hzT19Sig = "FIXTURE";
+         var g:* = this.hzT19G.graphics;
+         g.clear();
+         if(this.hzT19BarG) { this.hzT19BarG.graphics.clear(); this.hzT19BarG.visible = false; }
+         if(this.hzT19HoldG) { this.hzT19HoldG.graphics.clear(); this.hzT19HoldG.visible = false; }
+         var nmTf:TextField = this.hzT19Name;
+         var o:Object = this.hzTxtObj(nmTf);
+         if(o != null) { o.center = true; o.right = false; o.ls = 2; o.fs = 16; o.size = 16; o.tone = "main"; }
+         this.hzApplyFmt(o);
+         nmTf.text = "HZ PERF FIXTURE";
+         nmTf.visible = true;
+         var W:Number = 300;
+         var H:Number = 72;
+         this.hzPanel(g,W,H,18,-1,-1);
+         nmTf.x = 16; nmTf.width = W - 32;
+         this.hzFitText(nmTf,"HZ PERF FIXTURE",W - 32);
+         this.hzTxtTop(nmTf,12);
+         this.hzT19Meta.visible = true;
+         this.hzT19Meta.text = "DIAGNOSTIC NOT GAME DATA";
+         this.hzT19Meta.x = 16; this.hzT19Meta.width = W - 32;
+         this.hzTxtTop(this.hzT19Meta,40);
+         this.hzT19W = W; this.hzT19H = H;
+         this.hzTg19.visible = true;
+         this.HorizonTarget_mc.visible = true;
+         this.HorizonTarget_mc.alpha = 1;
+         this.HorizonTarget_mc.x = 80; this.HorizonTarget_mc.y = 80;
+         if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.fixture++; }
+      }
+
       private function hzT19Tick() : void
       {
+         if(this.hzPerfSkipTarget())
+         {
+            if(this.HorizonTarget_mc && this.HorizonTarget_mc.visible) { this.hzT19Off(); }
+            if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.skipGfx++; }
+            return;
+         }
+         if(this.hzPerfOn && this.hzPerfMode == 2) { this.hzT19Fixture(); return; }
          if(this.hzTgOld) { this.hzTgOld.visible = false; }
          if(!this.hzTg19) { this.hzT19Off(); return; }
+         if(this.hzPerfSkipHover())
+         {
+            if(this.HorizonTarget_mc && this.HorizonTarget_mc.visible) { this.hzT19Off(); }
+            if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.skipGfx++; }
+            return;
+         }
          var aw:Object = null;
          var rw:Object = null;
          try { rw = this.RolloverWidget_mc; aw = rw ? rw.RolloverActivation_mc : null; } catch(err:Error) { aw = null; }
@@ -10372,18 +10647,21 @@
             else if(this.hzTgGhost > hp) { this.hzTgGhost = Math.max(hp,this.hzTgGhost - 0.012); }
          }
          else { this.hzT19LastHp = -1; this.hzTgGhost = -1; }
-         // the key text can change (rebinding / controller): include it in the signature
+         // the key text can change (rebinding / controller): include identity, not hold fill, in the signature
          var keys:String = "";
-         if(show) { var kk:int = 0; while(kk < 4) { var hf:Number = this.hzT19HoldFrac(this.hzT19BtnClip(aw,kk)); keys += this.hzT19Key(aw,kk) + ":" + this.hzT19VanLbl(aw,kk,false) + ":" + this.hzT19VanLbl(aw,kk,true) + ":" + (hf < 0 ? "-" : String(int(hf * 8))) + ","; kk++; } }
+         if(show) { var kk:int = 0; while(kk < 4) { keys += this.hzT19Key(aw,kk) + ":" + this.hzT19VanLbl(aw,kk,false) + ":" + this.hzT19VanLbl(aw,kk,true) + ","; kk++; } }
          var stealSig:int = (show && a != null && Boolean(a.bStealing)) ? 1 : 0;
-         var sig:String = kind + "|" + m + "|" + sel + "|" + start + "|" + this.hzT19Ver + "|" + Math.round(this.hzTgGhost * 200) + "|" + this.hzTextScale + "|" + this.hzCardColor + "|" + this.hzContOpacity + "|" + HZ_ACCENT + "|" + this.hzTextTone + "|" + this.hzTgShowValue + "|" + this.hzFontFace + "|" + keys + "|" + show + "|" + this.hzTgScale + "|" + this.hz30Hover + "|" + this.hzScrH + "|" + this.hzNameHover + "|" + int(this.hzCardBgOpacity) + "|" + int(this.hzCardShadow) + "|" + (this.hzTextShadow ? 1 : 0) + "|" + this.hzHeaderStyle + "|" + stealSig;
+         var sig:String = kind + "|" + m + "|" + sel + "|" + start + "|" + this.hzT19Ver + "|" + this.hzT19ActCached + "|" + this.hzT19ItemsCached + "|" + this.hzTgEnName + "|" + this.hzTgRank + "|" + (this.hzTgLeg ? 1 : 0) + "|" + this.hzTextScale + "|" + this.hzCardColor + "|" + this.hzContOpacity + "|" + HZ_ACCENT + "|" + this.hzTextTone + "|" + this.hzTgShowValue + "|" + this.hzFontFace + "|" + keys + "|" + show + "|" + this.hzTgScale + "|" + this.hz30Hover + "|" + this.hzScrH + "|" + this.hzNameHover + "|" + int(this.hzCardBgOpacity) + "|" + int(this.hzCardShadow) + "|" + (this.hzTextShadow ? 1 : 0) + "|" + this.hzHeaderStyle + "|" + stealSig;
          if(sig != this.hzT19Sig)
          {
             this.hzT19Sig = sig;
+            this.hzT19BarSig = "";
+            this.hzT19HoldSig = "";
             // ContainerOpacity drives the panel alpha of the crosshair cards only (HUD cards keep CardOpacity)
             var opSave:Number = this.hzCardOpacity;
             this.hzCardOpacity = this.hzContOpacity;
             this.hz38DrawOk = false;
+            if(this.hzPerfOn) { this.hzPerfBegin("content"); }
             try { this.hzT19Content(kind,show ? a : null,aw,sel,start); this.hz38DrawOk = true; }
             catch(eOp:Error)
             {
@@ -10392,8 +10670,13 @@
                this.hz38DrawErr++;
                if(this.hz38DrawErr <= 30) { this.hzT19Sig = ""; }
             }
+            if(this.hzPerfOn) { this.hzPerfEnd("content"); }
             this.hzCardOpacity = opSave;
          }
+         if(kind == "foe") { this.hzT19PaintFoeBars(); }
+         else if(this.hzT19BarOn) { this.hzT19BarOn = false; this.hzT19PaintFoeBars(); }
+         if(show) { this.hzT19PaintHold(aw); }
+         else if(this.hzT19HoldG) { this.hzT19HoldG.graphics.clear(); this.hzT19HoldG.visible = false; }
          var W:Number = this.hzT19W;
          var H:Number = this.hzT19H;
          // anchor: the crosshair (RolloverWidget_mc is locked to the safe-rect center); TargetAnchor=1 follows the object
@@ -10634,6 +10917,7 @@
          if(this.hzT19Kov) { this.hzT19Kov.graphics.clear(); }
          var g:* = this.hzT19G.graphics;
          g.clear();
+         this.hzT19BarOn = false;
          var dk:Boolean = this.hzDarkText();
          var steal:Boolean = a != null && Boolean(a.bStealing);
          var red:Boolean = kind == "foe" || steal;
@@ -10710,13 +10994,9 @@
             this.hzPanel(g,W,H,18,tint,edge);
             i = 0;
             while(i < stars) { this.hzT19Star(g,W / 2 + (i - (stars - 1) / 2) * 15,36,this.hzIconCol(0xF2C14E)); i++; }
-            var f:Number = Math.max(0,Math.min(1,this.hzTgHpV));
-            var gh:Number = Math.max(f,this.hzTgGhost);
-            var hw:Number = W - 40;
-            var rc:uint = this.hzIconCol(HZ_RED);
-            g.beginFill(dk ? 0x000000 : 0xFFFFFF,dk ? 0.14 : 0.12); g.drawRoundRect(20,by,hw,7,7,7); g.endFill();
-            if(gh > f + 0.002) { g.beginFill(rc,0.37); g.drawRoundRect(20,by,Math.max(7,hw * gh),7,7,7); g.endFill(); }
-            if(f > 0) { g.beginFill(rc,1); g.drawRoundRect(20,by,Math.max(7,hw * f),7,7,7); g.endFill(); }
+            this.hzT19BarY = by;
+            this.hzT19BarW = W - 40;
+            this.hzT19BarOn = true;
             if(hasBtn)
             {
                this.hzT19Line(g,by + 16,W,true);

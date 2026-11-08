@@ -76,6 +76,7 @@
 #include "hz_rx_queue.h"
 #include "hz_msglog.h"
 #include "hz_ui_tid.h"
+#include "hz_perf.h"
 #include "preset_dedupe.h"
 
 // v0.37: the settings-file code (HZF) replaces files through this (temp file + MoveFileExW)
@@ -117,6 +118,13 @@ namespace HZ
 	std::atomic<int>           g_vk{VK_F11};
 	bool          g_wasDownJob = false;
 	std::atomic<bool> g_iniDebug{false};   // [Debug] Debug=1. Gates the one-time hud form, gmst, address, and hold-breath lines.
+	std::atomic<int>  g_perfDiag{0};       // [Debug] PerfDiag=1. Separate from Debug. Off in production.
+	std::atomic<int>  g_perfMode{0};       // 0 baseline, 1-7 modes A-G.
+	std::atomic<int>  g_perfScan{1};       // Mode F: 1 draw, 0 suppress.
+	std::atomic<int>  g_perfDumpWas{0};
+	std::atomic<bool> g_perfDumpReq{false};
+	hzperf::Agg       g_perfAgg{};
+	std::atomic<std::uint64_t> g_qpcFreq{0};
 
 	// SFSE documents AddPermanentTask as "every frame on Main". Starfield
 	// 1.16.244 actually runs that queue on BSJobs workers (crash3: Invoke
@@ -814,10 +822,46 @@ namespace HZ
 			REX::INFO("thread: window-owner tid={} (hint only)", tid);
 	}
 
+	// Purpose: QueryPerformanceCounter tick. 0 if the frequency is unknown.
+	// Not GetTickCount64 (that is ~15.6 ms). Author: Moragar. Last modified: 2026-11-08.
+	std::uint64_t HzQpcFreq()
+	{
+		auto f = g_qpcFreq.load(std::memory_order_acquire);
+		if (f) return f;
+		LARGE_INTEGER q{};
+		if (!::QueryPerformanceFrequency(&q) || q.QuadPart <= 0) return 0;
+		g_qpcFreq.store(static_cast<std::uint64_t>(q.QuadPart), std::memory_order_release);
+		return static_cast<std::uint64_t>(q.QuadPart);
+	}
+
+	std::uint64_t HzQpc()
+	{
+		LARGE_INTEGER t{};
+		if (!::QueryPerformanceCounter(&t) || t.QuadPart < 0) return 0;
+		return static_cast<std::uint64_t>(t.QuadPart);
+	}
+
+	bool HzPerfOn()
+	{
+		return hzperf::DiagOn(g_perfDiag.load(std::memory_order_relaxed));
+	}
+	void HzPerfDumpOnce();
+
+	void HzPerfNote(hzperf::Bucket a_b, std::uint64_t a_t0)
+	{
+		if (!HzPerfOn()) return;
+		const auto t1 = HzQpc();
+		if (t1 >= a_t0) hzperf::Add(g_perfAgg.b[a_b], t1 - a_t0);
+	}
+
 	void LoadIni(bool a_reloadMsglog = true)
 	{
 		std::string key = "F11";
 		g_iniDebug = false;
+		g_perfDiag.store(0, std::memory_order_relaxed);
+		g_perfMode.store(0, std::memory_order_relaxed);
+		g_perfScan.store(1, std::memory_order_relaxed);
+		int dump = 0;
 		std::string text;
 		const auto  P = FilesP();
 		// v0.37: HorizonUI.default.ini with HorizonUI.user.ini laid over (legacy HorizonUI.ini only when there is no default)
@@ -834,6 +878,10 @@ namespace HZ
 			};
 			std::string v;
 			if (get("debug", v) && v == "1") g_iniDebug = true;
+			if (get("perfdiag", v)) g_perfDiag.store(hzperf::Parse01(v), std::memory_order_relaxed);
+			if (get("perfmode", v)) g_perfMode.store(hzperf::ParseMode(v), std::memory_order_relaxed);
+			if (get("perfscan", v)) g_perfScan.store(hzperf::Parse01(v), std::memory_order_relaxed);
+			if (get("perfdump", v)) dump = hzperf::Parse01(v);
 			if (get("settingskey", v) && !v.empty()) key = v;
 			if (hzlog::IniReloadAppliesMsglog(a_reloadMsglog))
 				MsglogLoadSettings(d);
@@ -844,6 +892,9 @@ namespace HZ
 		g_scan = sc;
 		g_vk = static_cast<int>(MapVirtualKeyW(sc > 0x7F ? (0xE000 | (sc & 0x7F)) : sc, MAPVK_VSC_TO_VK_EX));
 		REX::INFO("SettingsKey={} scan=0x{:X} vk=0x{:X}", key, g_scan.load(), g_vk.load());
+		const int was = g_perfDumpWas.exchange(dump, std::memory_order_acq_rel);
+		if (hzperf::DumpEdge(was, dump) && HzPerfOn())
+			g_perfDumpReq.store(true, std::memory_order_release);
 	}
 
 	HWND GameWindow()
@@ -1689,10 +1740,15 @@ namespace HZ
 	{
 		bool open = false;
 		if (!ScanPushReady(a_ui, a_now, g_scanHudNext, g_pushOpenHud, open)) return;
+		if (HzPerfOn() && hzperf::SkipScanPushInvoke(g_perfMode.load(std::memory_order_relaxed),
+				g_perfScan.load(std::memory_order_relaxed)))
+			return;
+		const auto t0 = HzPerfOn() ? HzQpc() : 0;
 		GValue arg(open);
 		bool ok = false;
 		if (auto hud = MenuLive(a_ui, "HUDMenu", "hz41DllScan"); hud && hud->menuObj.HasMember("hz41DllScan"))
 			ok = hud->menuObj.Invoke("hz41DllScan", nullptr, &arg, 1);
+		if (t0) HzPerfNote(hzperf::kScanPush, t0);
 		ScanPushLog(open, ok, true);
 		g_pushOpenHud = open;
 	}
@@ -1702,10 +1758,15 @@ namespace HZ
 	{
 		bool open = false;
 		if (!ScanPushReady(a_ui, a_now, g_scanMsgNext, g_pushOpenMsg, open)) return;
+		if (HzPerfOn() && hzperf::SkipScanPushInvoke(g_perfMode.load(std::memory_order_relaxed),
+				g_perfScan.load(std::memory_order_relaxed)))
+			return;
+		const auto t0 = HzPerfOn() ? HzQpc() : 0;
 		GValue arg(open);
 		bool ok = false;
 		if (auto msg = MenuLive(a_ui, "HUDMessagesMenu", "hzcDllScan"); msg && msg->menuObj.HasMember("hzcDllScan"))
 			ok = msg->menuObj.Invoke("hzcDllScan", nullptr, &arg, 1);
+		if (t0) HzPerfNote(hzperf::kScanPush, t0);
 		ScanPushLog(open, ok, false);
 		g_pushOpenMsg = open;
 	}
@@ -4611,7 +4672,7 @@ namespace HZ
 	// root's own AdvanceFrame on whatever thread advanced it. F11 is
 	// consumed from the job-thread latch. No HUDMessagesMenu Invoke.
 	// Inputs: none. Outputs: HUD invokes. No disk. Author: Moragar.
-	// Last modified: 2026-10-28.
+	// Last modified: 2026-11-08.
 	void PollScaleform()
 	{
 		const auto now = GetTickCount64();
@@ -4715,6 +4776,40 @@ namespace HZ
 		HWND wnd = GameWindow();
 		EnsureSubclass(wnd);
 		PollSettings(wnd, now);
+		try { HzPerfDumpOnce(); } catch (...) {}
+	}
+
+	// Purpose: one explicit dump. Invokes hzPerfSnapshot at most once per
+	// PerfDump 0->1. No per-frame log, no file besides HorizonUI.log, no worker.
+	// Inputs: HUD AdvanceFrame. Outputs: one INFO line. Author: Moragar.
+	// Last modified: 2026-11-08.
+	void HzPerfDumpOnce()
+	{
+		if (!g_perfDumpReq.exchange(false, std::memory_order_acq_rel)) return;
+		if (!HzPerfOn()) return;
+		const auto freq = HzQpcFreq();
+		const auto now = HzQpc();
+		if (!g_perfAgg.windowStart.load(std::memory_order_relaxed))
+			g_perfAgg.windowStart.store(now, std::memory_order_relaxed);
+		char native[hzperf::kDumpMax];
+		hzperf::FormatNative(g_perfAgg, freq, now,
+			g_perfDiag.load(std::memory_order_relaxed),
+			g_perfMode.load(std::memory_order_relaxed),
+			g_perfScan.load(std::memory_order_relaxed),
+			native, hzperf::kDumpMax);
+		std::string as = "as=missing";
+		try {
+			const auto t0 = HzQpc();
+			GValue r;
+			if (HudInvoke("hzPerfSnapshot", &r) && r.IsString() && r.GetString())
+				as = hzpreset::Utf8Prefix(r.GetString(), 1400);
+			HzPerfNote(hzperf::kInvoke, t0);
+		} catch (...) {
+			as = "as=throw";
+		}
+		REX::INFO("perf dump {} {}", native, as);
+		hzperf::Reset(g_perfAgg);
+		g_perfAgg.windowStart.store(HzQpc(), std::memory_order_relaxed);
 	}
 
 	// Purpose: HUDMessagesMenu Invokes only. Runs from that movie's
@@ -4803,8 +4898,17 @@ namespace HZ
 		const auto orig = g_origAdvance.load(std::memory_order_acquire);
 		if (orig == &HookedAdvanceFrame)
 			return;
+		const auto hudPre = g_hudRoot.load(std::memory_order_acquire);
+		const bool timeHud = HzPerfOn() && a_this && hudPre && a_this == hudPre;
+		const auto tAdv0 = timeHud ? HzQpc() : 0;
 		if (orig)
 			orig(a_this, a_next);
+		if (tAdv0) {
+			HzPerfNote(hzperf::kMovieAdvance, tAdv0);
+			g_perfAgg.frames.fetch_add(1, std::memory_order_relaxed);
+			if (!g_perfAgg.windowStart.load(std::memory_order_relaxed))
+				g_perfAgg.windowStart.store(tAdv0, std::memory_order_relaxed);
+		}
 		const auto tid = ::GetCurrentThreadId();
 		LogAdvanceTid(tid);
 		const auto now = GetTickCount64();
@@ -4851,7 +4955,11 @@ namespace HZ
 				return;
 			hzlog::g_advancingRoot = a_this;
 			hzlog::g_advancingMovie = hzlog::PollMovie::Hud;
-			try { PollScaleform(); } catch (...) {}
+			{
+				const auto t0 = HzPerfOn() ? HzQpc() : 0;
+				try { PollScaleform(); } catch (...) {}
+				if (t0) HzPerfNote(hzperf::kPollHud, t0);
+			}
 			hzlog::g_advancingRoot = nullptr;
 			hzlog::g_advancingMovie = hzlog::PollMovie::None;
 			g_inPoll.store(false, std::memory_order_release);
@@ -4862,7 +4970,11 @@ namespace HZ
 				return;
 			hzlog::g_advancingRoot = a_this;
 			hzlog::g_advancingMovie = hzlog::PollMovie::HudMessages;
-			try { PollMessages(); } catch (...) {}
+			{
+				const auto t0 = HzPerfOn() ? HzQpc() : 0;
+				try { PollMessages(); } catch (...) {}
+				if (t0) HzPerfNote(hzperf::kPollMsg, t0);
+			}
 			hzlog::g_advancingRoot = nullptr;
 			hzlog::g_advancingMovie = hzlog::PollMovie::None;
 			g_inMsgPoll.store(false, std::memory_order_release);

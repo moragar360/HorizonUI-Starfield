@@ -20,7 +20,9 @@
 // The splash shows the wordmark, one star sweep of about 2 seconds, then the preset line, and ends at about 6 seconds.
 // A listed session clear that matches nothing leaves every stored row intact.
 // Moragar's Choice is preset/HorizonUI.moragars-choice.ini. [Comms] HzRev stays 0.
-// Last modified: 2026-11-04.
+// Last modified: 2026-11-08.
+// Performance diagnostics (off by default) live under [Debug] PerfDiag / PerfMode / PerfDump / PerfScan.
+// They do not change the file version or the settings schema.
 
 #define HZ_FILE_VERSION_MAJOR 0
 #define HZ_FILE_VERSION_MINOR 43
