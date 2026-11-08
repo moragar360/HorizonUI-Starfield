@@ -1,8 +1,10 @@
 #pragma once
 
-// Purpose: the rules the gold movie follows for the Selected Module card.
-// The card reads ModuleInfo only. Numbers go through the game's FormatNumberToString,
-// so a value reads as it does on the game card. The game card stays in place at alpha 0.
+// Purpose: C++ twins of the movie's number, chip and anchor rules, so the host test can
+// pin them. The Selected Module card reads ModuleInfo only; numbers go through the game's
+// FormatNumberToString, so a value reads as it does on the game card.
+// Inputs/outputs: plain values; no game calls. The movie (HorizonShipBuilder.as statText,
+// diffText, shortChip, chipNumber, storeAnchor, resolve) is the code that runs in game.
 // Author: Moragar. Last modified: 2026-11-07.
 
 #include "hsb_arrange.h"
@@ -21,32 +23,6 @@ namespace hsb {
 // ModuleInfoCard shows ten stats and two skills.
 inline constexpr int kCardStats = 10;
 inline constexpr int kCardSkills = 2;
-
-struct CardMetrics {
-	int width = 350;
-	int pad = 18;
-	int headPx = 13;
-	int namePx = 21;
-	int bodyPx = 14;
-	int chipPx = 13;
-	int bigPx = 26;
-	int rowPitch = 30;
-	int chipH = 22;
-	int barH = 24;
-	int valueRight = 265;
-};
-
-// Mock 1 measured at 1920 wide. The large movie keeps its 16 px floor.
-inline CardMetrics CardSize(bool large)
-{
-	if (large) return {410, 20, 16, 24, 16, 16, 30, 34, 26, 28, 310};
-	return {350, 18, 13, 21, 14, 13, 26, 30, 22, 24, 265};
-}
-
-inline int CardSmallestPx(const CardMetrics& m)
-{
-	return std::min({m.headPx, m.namePx, m.bodyPx, m.chipPx, m.bigPx});
-}
 
 // AS3 Number.toString (ECMA-262 Number::toString): the shortest digits that read back,
 // with an exponent below 1e-6 and from 1e21 up.
@@ -192,23 +168,6 @@ inline std::string ShortChip(std::string_view chip)
 	return std::string(whole);
 }
 
-// A chip box is its text plus kChipPadPx and at least kChipMinPx wide. The movie's
-// paintChip uses the same numbers.
-inline constexpr int kChipPadPx = 14;
-inline constexpr int kChipMinPx = 28;
-inline constexpr int kChipGapPx = 8;
-
-// A chip never reaches the value column: it keeps 6 px clear of the value's right edge.
-inline int ChipRoom(const CardMetrics& m)
-{
-	return m.width - m.pad - m.valueRight - kChipGapPx;
-}
-
-inline int ChipWidth(const CardMetrics& m, int textWidth)
-{
-	return std::min(std::max(kChipMinPx, textWidth + kChipPadPx), ChipRoom(m));
-}
-
 inline int CardStatRows(int count)
 {
 	return std::clamp(count, 0, kCardStats);
@@ -237,95 +196,6 @@ inline std::string Substitute(std::string_view text, const std::vector<std::stri
 	return out;
 }
 
-// The movie upper-cases a label only after the field has translated it.
-inline bool LabelKeptKey(std::string_view shown)
-{
-	return !shown.empty() && shown.front() == '$';
-}
-
-enum class CardGate { Face, Conflict, Map, Clip, Data, Paint, Hidden, Hangar, Arrange, On };
-
-struct CardState {
-	bool faceProven = false;
-	bool conflict = false;
-	bool mapped = false;
-	bool nativeSeated = false;
-	bool hasName = false;
-	bool paintFailed = false;
-	bool showWidget = false;
-	bool nativeShown = false;
-	bool hangarShown = false;
-	bool arranging = false;
-	bool cardUp = false;
-};
-
-// First failing check wins, so the log names one reason. Arrange never brings the card up,
-// so the handle stays what it was when Arrange opened.
-inline CardGate ModuleCardGate(const CardState& s)
-{
-	if (!s.faceProven) return CardGate::Face;
-	if (s.conflict) return CardGate::Conflict;
-	if (!s.mapped) return CardGate::Map;
-	if (!s.nativeSeated) return CardGate::Clip;
-	if (!s.hasName) return CardGate::Data;
-	if (s.paintFailed) return CardGate::Paint;
-	if (!s.showWidget || !s.nativeShown) return CardGate::Hidden;
-	if (s.hangarShown) return CardGate::Hangar;
-	if (s.arranging && !s.cardUp) return CardGate::Arrange;
-	return CardGate::On;
-}
-
-inline const char* CardGateName(CardGate gate)
-{
-	switch (gate) {
-	case CardGate::Face: return "face";
-	case CardGate::Conflict: return "conflict";
-	case CardGate::Map: return "map";
-	case CardGate::Clip: return "clip";
-	case CardGate::Data: return "data";
-	case CardGate::Paint: return "paint";
-	case CardGate::Hidden: return "hidden";
-	case CardGate::Hangar: return "hangar";
-	case CardGate::Arrange: return "arrange";
-	case CardGate::On: return "on";
-	}
-	return "face";
-}
-
-// Only the game card's alpha changes, and only while ours is up.
-inline float NativeCardAlpha(CardGate gate, float saved)
-{
-	return gate == CardGate::On ? 0.0f : saved;
-}
-
-// The alpha kept for the game card when ours goes up. A 0 is never kept, so a drop can
-// never leave both cards invisible.
-inline float HeldAlpha(float current)
-{
-	return current > 0 ? current : 1.0f;
-}
-
-// Our card's top left is the game card's top left.
-inline ArrangeBox CardSeat(const ArrangeBox& native, int cardW, int cardH)
-{
-	return {native.x, native.y, cardW, cardH};
-}
-
-// The movie's liftModule: outside Arrange a card that would pass the bottom edge is lifted
-// to stay on screen. Arrange seats it exactly.
-inline int CardSeatY(int nativeY, int cardH, int viewTop, int viewBottom, bool arranging)
-{
-	if (arranging || nativeY + cardH <= viewBottom) return nativeY;
-	return std::max(viewTop, viewBottom - cardH);
-}
-
-struct ArrangeView {
-	int x = 0;
-	int y = 0;
-	int w = 1920;
-	int h = 1080;
-};
-
 // AS3 Math.round: halves go up.
 inline int RoundHalfUp(double value)
 {
@@ -344,7 +214,7 @@ inline std::string StoreAnchor(bool xAxis, int pos, int size, int viewPos, int v
 	return std::string(xAxis ? "R" : "B") + std::to_string(RoundHalfUp(viewPos + viewSize - margin - size - pos));
 }
 
-// The movie's resolveX and resolveY. A value it cannot read keeps the current spot.
+// The movie's resolve for one axis. A value it cannot read keeps the current spot.
 inline double ResolveAnchor(bool xAxis, std::string_view value, double current, int size, int viewPos, int viewSize, int margin)
 {
 	const std::string v = Trim(value);
@@ -357,49 +227,6 @@ inline double ResolveAnchor(bool xAxis, std::string_view value, double current, 
 	if (edge == (xAxis ? 'R' : 'B')) return viewPos + viewSize - margin - size - off;
 	if (edge == 'C') return viewPos + (viewSize - size) / 2.0 + off;
 	return current;
-}
-
-// placeNative: resolve with the game card's size, then keep that box on screen.
-inline ArrangeBox PlaceSaved(std::string_view ax, std::string_view ay, ArrangeBox native, const ArrangeView& view, int margin)
-{
-	int x = static_cast<int>(ResolveAnchor(true, ax, native.x, native.w, view.x, view.w, margin));
-	int y = static_cast<int>(ResolveAnchor(false, ay, native.y, native.h, view.y, view.h, margin));
-	x = ClampSpan(x, view.x, view.x + view.w - native.w);
-	y = ClampSpan(y, view.y, view.y + view.h - native.h);
-	return {x, y, native.w, native.h};
-}
-
-// A drag keeps both boxes on screen, so a saved spot reloads without a clamp moving it.
-inline ArrangeBox CardMoveSpan(const ArrangeBox& card, const ArrangeBox& native)
-{
-	return {card.x, card.y, std::max(card.w, native.w), std::max(card.h, native.h)};
-}
-
-struct CardDrag {
-	ArrangeBox native;
-	ArrangeBox card;
-	std::string ax;
-	std::string ay;
-};
-
-// moveLive with our card up: the outline is our card, the game card moves by the same
-// step, and the anchor is stored with the game card's size.
-inline CardDrag DragCard(ArrangeBox native, int cardW, int cardH, int toX, int toY, const ArrangeView& view, int margin)
-{
-	const ArrangeBox card = CardSeat(native, cardW, cardH);
-	const ArrangeBox span = CardMoveSpan(card, native);
-	int x = SnapTo(toX, view.x, kSnap);
-	int y = SnapTo(toY, view.y, kSnap);
-	x = ClampSpan(x, view.x, view.x + view.w - span.w);
-	y = ClampSpan(y, view.y, view.y + view.h - span.h);
-	native.x += x - card.x;
-	native.y += y - card.y;
-	CardDrag out;
-	out.native = native;
-	out.card = CardSeat(native, cardW, cardH);
-	out.ax = StoreAnchor(true, x, native.w, view.x, view.w, margin);
-	out.ay = StoreAnchor(false, y, native.h, view.y, view.h, margin);
-	return out;
 }
 
 } // namespace hsb

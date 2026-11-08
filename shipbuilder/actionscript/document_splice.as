@@ -86,9 +86,9 @@ package
       //    }
       //
       // 5. ProcessUserEvent returns Boolean. While a Horizon popup, dialog, text
-      //    field or Arrange is open, return true before the vanilla body so Esc
-      //    does not open the exit confirm. Do not return early on the default
-      //    path. Let the vanilla body keep running then.
+      //    field, the category grid or Arrange is open, return true before the
+      //    vanilla body so Esc does not open the exit confirm. Do not return early
+      //    on the default path. Let the vanilla body keep running then.
       //    public function ProcessUserEvent(param1:String, param2:Boolean):Boolean
       //    {
       //       if(this.hsb != null && this.hsb.wantsEvent(param1, param2))

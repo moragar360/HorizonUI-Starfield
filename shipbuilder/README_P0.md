@@ -1,16 +1,62 @@
-# Horizon Ship Builder, phase P0
+# Horizon Ship Builder 0.2.0.0
 
-Read-only probe. Version 0.0.2.0. It answers the live tests in spec F.1 as far as a log can, including Arrange tests #16, #17, and #18.
+Horizon Ship Builder is a standalone SFSE plugin and a pair of spliced menu movies. It needs no other Horizon mod. Version 0.2.0.0 draws the whole ship builder from the approved gold mocks 1 to 17: power, the selected module card, credits, the parts browser with makers, variants, find, pills, sort and columns, the pill editor, pill import and export, the category grid, collapsed panels, colours with schemes, Flight Check, Settings, the More menu, the StarUI notice, and Arrange. The game's own builder keeps running underneath: its panels stay on the menu at alpha 0, so their data, focus, controller routing and engine events keep working, and every ship action is the game's own event.
 
-Plugin 0.1.1.0 draws the gold screens and Arrange on the default path. The probe overlay and the F7, F8, and F6=dump keys stay off unless the user file sets Probe=1. Button prompts stay icons. The parts list stays the game's list. Ctrl+L and the gear button open Arrange. The user file is `Documents\My Games\Starfield\Data\Interface\HorizonUI\shipbuilder\HorizonShipBuilder.user.ini`. A ping of 0.1.1.0 means the gold splice is live. The P0.1 steps below still describe the probe when Probe=1.
+The player file is `Documents\My Games\Starfield\Data\Interface\HorizonUI\shipbuilder\HorizonShipBuilder.user.ini`. The log is `Documents\My Games\Starfield\SFSE\Logs\HorizonShipBuilder_probe.log`. A ping of 0.2.0.0 in the log means the 0.2 splice is live.
 
-The probe writes one file:
+## Why the 0.1 buttons were dead (p5)
 
-`Documents\My Games\Starfield\SFSE\Logs\HorizonShipBuilder_probe.log`
+In the p5 session (0.1.1.0, game 1.16.244) Settings opened from the gear, and then 23 left-button press and release pairs reached the plugin's window procedure (`WM_LBUTTONDOWN` and `WM_LBUTTONUP`, `swallowed=0`). None of them produced a Horizon note: no swatch, CUSTOM, ARRANGE or key line. The 0.1 Settings buttons were Scaleform sprites waiting for `MouseEvent.CLICK`. The plugin passed every click on to the game, and the ship editor consumed the press for the 3D view before Scaleform raised a mouse event for the sprite under the cursor. So the window saw the click, the game saw the click, and no Horizon control ever did. The hook only ate mouse input while Arrange was open.
 
-It does not change the ship, a save, or the game folder. It does not swallow keys or mouse buttons. A window message is logged and then passed on. The full-stage layer starts off. Turn it on only for the steps that say so. Use a ship you can spare if you try color Accept or a delete, because those are the game's own actions, not the probe's.
+0.2 stops depending on Scaleform mouse events:
 
-SFSE also writes its usual plugin log when the DLL loads. The facts for these tests are the probe log above.
+- The movie publishes the rectangles of its visible panels each frame (`HOT x,y,w,h;...`), or `HOT all` while a popup, dialog, text field, the category grid or Arrange is open.
+- The plugin converts every left press, release and move to stage units and feeds it to the movie (`M D`, `M U`, `M M`), with the wheel as `W`. A press inside a published rectangle is swallowed, and its release goes with it, so the game gets both halves of a click or neither.
+- The movie hit-tests the fed point against its own boxes and runs the control. No Horizon class adds a `MouseEvent` listener.
+- Keys follow the same rule. While a popup, text field, the category grid or Arrange is open, the plugin swallows keys and feeds navigation tokens (`K ok`, `K cancel`, arrows, Tab, Page Up and Down, Backspace, Delete) and typed characters (`C`). Otherwise it takes only Horizon's own keys: Ctrl+L for Arrange, and the Hide all and Find keys from Settings. Alt combinations, the Windows keys and Print Screen always reach the game and Windows.
+- Controller buttons still arrive through `ProcessUserEvent`. While Horizon captures input it consumes them; Accept and Cancel act on release, and a cancel that arrives both as a key token and as the game's event acts once.
+
+What a log cannot prove yet: whether a swallowed window message is enough to keep a click from the 3D editor. If the game reads buttons through raw input or DirectInput instead of window messages, the editor could still react under a Horizon panel, while the Horizon control still works. The close line `FACT input | ... raw=` counts `WM_INPUT` messages so the desktop run shows whether the raw input path exists. This is the first desktop gate below.
+
+## What the panels read and send
+
+| Panel | Game data | Game action |
+| --- | --- | --- |
+| Power (mock 1) | `PowerAllocation`, `ShipStats` | none; pips show the game's values |
+| Selected module (mock 1) | `ModuleInfo`, `ModuleVariant`, `CostSummaryData` | none |
+| Credits (mock 1) | `CostSummaryData` | none |
+| Parts browser (mocks 1, 4, 5) | `PartEntries`, `UpgradeEntries`, `ModuleInfo` | `ShipEditor_PreviewShipPart`, `ShipEditor_SelectedShipPart`, `ShipEditor_ChangeModuleCategory` |
+| Hints (mock 1) | `ShipBuilderHelpList`, `ControlMapData` | `ShipEditor_OnHintButtonActivated` with the hint's own event |
+| Stats footer (mock 1) | `ShipStats` | none |
+| Colours (mocks 6, 7) | `ColorInitializationData`, `ColorSelectionData`, `ColorSwatchesHue`, `ColorSwatchesSaturation`, `ColorSwatchesBrightness`, `ColorSwatchesRecentUI` | `ShipEditor_OnColorPickerTabChanged`, `ShipEditor_OnColorPickerControlChanged`, `ShipEditor_OnColorSliderMouseInput`, `ShipEditor_OnRecentColorSwatchClicked`, and the hint event for accept |
+| Flight Check (mock 13) | `FlightCheckData` | `ShipEditor_OnFlightCheckTabChanged` |
+
+Every event name is one the vanilla menu sends, with the same parameters. The movie never writes the parts array or category data, so categories another mod adds, such as ShipBuilderCategories (ESM only), come from the game as before.
+
+The game panels the Horizon panels stand in for are hidden with alpha 0 and `mouseChildren = false`, never with `visible = false` and never moved or reparented. No plate is drawn behind a game panel. Arrow keys still move the game's hidden parts list; the browser re-feeds it in Horizon's filtered and sorted order. Flight Check's Weapons tab shows the game's own weapon groups panel, because Horizon has no data for it.
+
+## Backend gaps, shown in the UI
+
+These mock features have no game data or action. Each is drawn as in the mock and marked in place, never faked:
+
+- Colours: the game applies colours to the parts selected before colour mode, so there is no "apply to" choice (`Not in the game: colours go to the parts you selected before Colors`). There is no "take from a part". A hex code is worked out from the game's hue, saturation and brightness, so it is shown with `~`.
+- Pills: `Fits reactor` and `On my ship` have no game data (`No game data`), so pills with those rules match nothing. Value, class and card stats are known only for parts already previewed this visit.
+- Settings: `Open Flight Check on errors` has no game signal (`No game signal`) and stays off.
+- Flight Check messages have no fix actions in the game, so none are drawn.
+
+## Files
+
+The plugin reads and writes only these, all under `Documents\My Games\Starfield\Data\Interface\HorizonUI\shipbuilder\`:
+
+- `HorizonShipBuilder.user.ini`: settings and Arrange spots. A value equal to its default is removed. Unknown lines and comments are kept.
+- `ShipBuilderPills.json`: the pill profile. Each write first copies the old file to `ShipBuilderPills.bak`. A profile the movie cannot read is renamed to `ShipBuilderPills.bad.json`, so it is kept.
+- `pills\user\*.json` and `schemes\user\*.ini`: exported pills and colour schemes.
+
+It reads, and never writes, `pills\packs\*.json` and `schemes\packs\*.ini` in that folder and in `<Starfield>\Data\Interface\HorizonUI\shipbuilder\`, where a mod manager installs packs. It reads the HUD's `HorizonUI.user.ini` or `HorizonUI.default.ini` only for "follow the HUD accent". File names are letters, digits, space, dash and underscore. Shared files are capped at 64 KiB and the profile at 256 KiB. Nothing is deleted. Every write goes to a `.tmp` file that is renamed over the old one.
+
+The movie shows these paths relative to `Documents\My Games\Starfield`, for example `Data\Interface\HorizonUI\shipbuilder\schemes\user\`. Mock 7 shows `shipschemes`; the real folder is `shipbuilder\schemes`, next to the pills.
+
+The log holds counts, ids and tokens only. It never holds key names, typed characters, pill or scheme names, or file contents.
 
 ## Build the plugin
 
@@ -21,17 +67,17 @@ xmake f -c -y -m releasedbg
 xmake build -y HorizonShipBuilder
 ```
 
-The target is `HorizonShipBuilder`. It does not link Horizon UI. Copy `build\windows\x64\releasedbg\HorizonShipBuilder.dll` to `Data\SFSE\Plugins\`. Leave the game's menu files alone until the movie steps below.
+The target is `HorizonShipBuilder`. It does not link Horizon UI. The host logic test is `xmake build probe_logic_test`; on Linux, `g++ -std=c++20 -Ishipbuilder/src -DHSB_REPO_ROOT='"<repo>"' shipbuilder/tests/probe_logic_test.cpp -o plt && ./plt`.
 
-## Desktop builder: produce the two probe movies
+## Desktop builder: produce the two movies
 
-The player does not compile these. Quit Starfield first. A stock install keeps `spaceshipeditormenu.swf` and `spaceshipeditormenu_lrg.swf` inside `Data\Starfield - Interface.ba2`, not as loose files. The builder extracts those two movies from the archive, splices the probe, and writes loose probe SWFs under `shipbuilder\Interface`. A from-scratch SWF would replace the builder, so do not make one. Compile against the classes already inside each vanilla movie. `HorizonShipBuilderProbe.as` imports `Shared.AS3.Data.BSUIDataManager`, which the vanilla movie already contains.
+The player does not compile these. Quit Starfield first. A stock install keeps `spaceshipeditormenu.swf` and `spaceshipeditormenu_lrg.swf` inside `Data\Starfield - Interface.ba2`, not as loose files. The builder extracts those two movies from the archive, splices the Horizon classes, and writes loose movies under `shipbuilder\Interface`. A from-scratch SWF would replace the builder, so do not make one. Compile against the classes already inside each vanilla movie: the Horizon classes import `Shared.AS3.Data.BSUIDataManager`, `Shared.AS3.Events.CustomEvent` and `Shared.GlobalFunc`, which the vanilla movie already contains.
 
 `<Starfield>` below is the game folder, for example `C:\Program Files (x86)\Steam\steamapps\common\Starfield`.
 
 If a loose movie is already in `Data\Interface`, check it against the stock SHA-256 values below. A stock copy can be spliced. Anything else came from another mod: stop and report it. Check the `Data\Interface` folder under `Documents\My Games\Starfield` too.
 
-A plugin can also carry these movies in its own `.ba2`, and a Creation is a plugin. A Creation's files may sit in the `Data` folder under `Documents\My Games\Starfield` rather than the game folder. Before you splice, open or unpack each enabled plugin's `.ba2` with the archive tool below and look for `interface/spaceshipeditormenu.swf` and `interface/spaceshipeditormenu_lrg.swf`, and for the game card's library, `interface/spaceshipeditormenu_assetlibrary2.swf` and `interface/spaceshipeditormenu_assetlibrary2_lrg.swf`. A loose movie made from the game's archive would cover that plugin's menu movie, and the gold card would hide that plugin's card. If one has any of them, stop and report which plugin. Do not change the other plugin's files.
+A plugin can also carry these movies in its own `.ba2`, and a Creation is a plugin. A Creation's files may sit in the `Data` folder under `Documents\My Games\Starfield` rather than the game folder. Before you splice, open or unpack each enabled plugin's `.ba2` with the archive tool below and look for `interface/spaceshipeditormenu.swf` and `interface/spaceshipeditormenu_lrg.swf`, and for the game card's library, `interface/spaceshipeditormenu_assetlibrary2.swf` and `interface/spaceshipeditormenu_assetlibrary2_lrg.swf`. A loose movie made from the game's archive would cover that plugin's menu movie. If one has any of them, stop and report which plugin. Do not change the other plugin's files.
 
 If `dir` lists nothing and no plugin archive has the movies, extract from the game's archive:
 
@@ -59,22 +105,24 @@ A different value means another mod's movie or another game version. Stop and re
 ```
 ffdec -export script shipbuilder\work\normal shipbuilder\work\ba2\spaceshipeditormenu.swf
 ffdec -export script shipbuilder\work\lrg shipbuilder\work\ba2\spaceshipeditormenu_lrg.swf
-copy /Y shipbuilder\actionscript\HorizonShipBuilder.as shipbuilder\work\normal\HorizonShipBuilder.as
-copy /Y shipbuilder\actionscript\HorizonShipBuilder.as shipbuilder\work\lrg\HorizonShipBuilder.as
-copy /Y shipbuilder\actionscript\HorizonShipBuilderProbe.as shipbuilder\work\normal\HorizonShipBuilderProbe.as
-copy /Y shipbuilder\actionscript\HorizonShipBuilderProbe.as shipbuilder\work\lrg\HorizonShipBuilderProbe.as
+copy /Y shipbuilder\actionscript\HorizonShipBuilder.as shipbuilder\work\normal\
+copy /Y shipbuilder\actionscript\HorizonShipBuilderProbe.as shipbuilder\work\normal\
+copy /Y shipbuilder\actionscript\Hsb*.as shipbuilder\work\normal\
+copy /Y shipbuilder\actionscript\HorizonShipBuilder.as shipbuilder\work\lrg\
+copy /Y shipbuilder\actionscript\HorizonShipBuilderProbe.as shipbuilder\work\lrg\
+copy /Y shipbuilder\actionscript\Hsb*.as shipbuilder\work\lrg\
 ```
 
 When the source was a loose file, point ffdec at that loose path instead of `shipbuilder\work\ba2\...`.
 
-Edit the exported `SpaceshipEditorMenu.as` in both work folders using `shipbuilder/actionscript/document_splice.as`. Add both imports, the member, and the methods in those notes. If that decompile already has `onAddedToStage`, append the gold lines at the end of it. If it has no `onAddedToStage`, add the override from the splice notes. Return early from `ProcessUserEvent` only when Arrange or Settings wants the key.
+Edit the exported `SpaceshipEditorMenu.as` in both work folders using `shipbuilder/actionscript/document_splice.as`: both imports, the member, the `onAddedToStage` lines (or the override when the decompile has none), the `hsb*` methods, and the `ProcessUserEvent` early return. Every one of those methods must be present: the plugin calls `hsbProbePing`, `hsbTakeLines`, `hsbProbeStage`, `hsbSetDebug`, `hsbApply`, `hsbFeed`, `hsbSaved`, `hsbTakeFiles` and `hsbFiles`.
 
 ```
 ffdec -importScript shipbuilder\work\ba2\spaceshipeditormenu.swf shipbuilder\Interface\spaceshipeditormenu.swf shipbuilder\work\normal
 ffdec -importScript shipbuilder\work\ba2\spaceshipeditormenu_lrg.swf shipbuilder\Interface\spaceshipeditormenu_lrg.swf shipbuilder\work\lrg
 ```
 
-Those two outputs are the probe movies.
+Those two outputs are the movies.
 
 ## Install and restore
 
@@ -104,7 +152,7 @@ copy /Y "<Starfield>\Data\Interface\spaceshipeditormenu.swf" "%USERPROFILE%\Docu
 copy /Y "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf" "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_backup\spaceshipeditormenu_lrg.swf"
 ```
 
-Skip a `copy` whose source is missing. Then install the DLL and the loose probe movies:
+Skip a `copy` whose source is missing. Then install the DLL and the loose movies:
 
 ```
 copy /Y "build\windows\x64\releasedbg\HorizonShipBuilder.dll" "<Starfield>\Data\SFSE\Plugins\HorizonShipBuilder.dll"
@@ -113,11 +161,11 @@ copy /Y "shipbuilder\Interface\spaceshipeditormenu.swf" "<Starfield>\Data\Interf
 copy /Y "shipbuilder\Interface\spaceshipeditormenu_lrg.swf" "<Starfield>\Data\Interface\spaceshipeditormenu_lrg.swf"
 ```
 
-The DLL still answers the menu, window, form, and HUD-message checks if the movie is not spliced yet. Movie lines stay empty until the splice is in the loaded SWF.
+With an older movie, or none, the plugin feeds no input and swallows nothing: it only logs the menu, window and HUD-message checks.
 
 Restore, after you quit the game.
 
-Stock archive install: delete the loose probe movies so the archive copies load again. Move them out instead of deleting if you want to keep the probe files:
+Stock archive install: delete the loose movies so the archive copies load again. Move them out instead of deleting if you want to keep them:
 
 ```
 del "<Starfield>\Data\Interface\spaceshipeditormenu.swf"
@@ -138,151 +186,47 @@ fc /b "%USERPROFILE%\Documents\My Games\Starfield\HorizonShipBuilder_vanilla_bac
 
 `fc` prints no differences when the pair matches.
 
-You can leave `HorizonShipBuilder.dll` in `Data\SFSE\Plugins` or remove that one file yourself. The probe does not delete it.
+You can leave `HorizonShipBuilder.dll` in `Data\SFSE\Plugins` or remove that one file yourself. The plugin does not delete it.
 
-## In the game
+## Desktop gates
 
-Launch Starfield with SFSE. Open the ship builder. A panel sits at the top left. Its text is 13 px. Capture is off. The log grows while the builder is open.
+Use a throwaway save: every ship action here is the game's own action. Run each gate on the normal movie, then on `spaceshipeditormenu_lrg.swf`. Log lines look like `FACT movie | ...`.
 
-Each step says what you do, then which log line to read. Lines look like `FACT F19 | ...`. Visual answers (the camera, a placed part, the cursor) are what you see. The log cannot see the 3D view.
+1. Clicks stay with Horizon. Open the builder: `FACT F19 | invoke=1 ping=0.2.0.0`, then `FACT movie | BUILDER 0.2.0.0`. Click a parts browser row, a pill, the gear, and a Settings switch with a part selected on the ship. Each control acts, and the ship does not deselect, select, or place anything under the panel. On close, `FACT input | presses=N eaten=M ... raw=R`: `eaten` counts presses inside Horizon panels. If the 3D editor still reacts to clicks on panels, the game reads the mouse another way (raw input when `raw` is above 0, otherwise likely DirectInput), and swallowing window messages is not enough. Report it with the log.
+2. Clicks over the ship still build. Outside the panels, click, drag and use the wheel on the ship: the camera, selection and placement work as with this mod removed.
+3. Keys. With nothing open, H hides all panels and H shows them again; `/` opens Find in the browser. Type in Find: the letters go to the field and no builder hotkey fires. Esc closes the innermost thing first (Find, then a dialog, then Settings), one step per press, and never opens the exit prompt while Horizon has something open. Alt+Tab and Alt+F4 still work with a popup open.
+4. Controller. With the pad, open Settings from the gear: Up and Down move the focus ring, A activates, B closes. With nothing open, every pad button does what it does with this mod removed.
+5. Text. Faces: `FONT try=... pick=` names the face by index; `pick=0` means text uses the default face. The browser's category tabs are rotated text, which Scaleform draws only with an embedded face, so with `pick=d1` to `d3` (device text) the rotated labels may be missing. Report the `pick` value with a screenshot. Body text is 13 px on the normal movie and 16 px on the large movie, and captions are 12 px and 15 px; check for boxes in any language you use.
+6. Data. A hab, a weapon and a reactor or shield: the Selected Module card matches the game's card with this mod removed and every other mod, Creations included, left as it is. Power pips, credits, and the stats footer match the game's numbers.
+7. Categories. The browser's category tabs and the grid (mock 4) list the same categories, in the same order, as with this mod removed, including ones another mod adds. Opening the grid steps once around the categories to learn their names and counts (`CATEGORIES read total=`), and ends on the category it started from.
+8. Colours (mocks 6, 7). Select parts, enter colour mode, move a slot's sliders, pick a recent swatch, preview a scheme and accept or cancel. Export a scheme and find it in `schemes\user`. The applied colours match the game's own picker.
+9. Pills (mocks 2, 3, 5, 14, 15, 16). Make a pill, edit it, export it (`pills\user`), import a pack, delete a pill. Close and reopen the builder: pills are kept, and `ShipBuilderPills.bak` exists after the second save.
+10. Columns, sort, density, group by maker (mocks 5, 8): each survives a reopen.
+11. Arrange (mock 17), from Ctrl+L or the gear: drag panels, arrows nudge, Shift+arrows nudge further, Enter saves, Esc cancels, Reset puts panels home. Saved spots survive a reopen and a resolution change.
+12. Flight Check (mock 13): tabs switch with the mouse and with the game's keys; the Weapons tab shows the game's own panel.
+13. Settings (mock 9): every switch and slider changes the builder at once and survives a reopen.
+14. HUD message. Close the builder once with `Probe=1` in the player file: `FACT F31 | ... thread=ship-advance` or `thread=hud-advance`.
 
-### #1 Movie and menu
+Bring back the log and a screenshot of each mock's screen on both movies.
 
-Open the builder. Read `FACT F19`. It records the menu name `SpaceshipEditorMenu`, whether the menu object exists, and whether `hsbProbePing` invoked. A ping of `0.0.2.0` means the splice is live. `invoke=0` means the loaded movie does not have the splice yet.
+## Unknowns
 
-`FACT movie | MOVIE url=` names the SWF that loaded. `SUBSCRIBE ok` and `DATA` lines list provider keys for PartEntries, ModuleInfo, ShipStats, CostSummaryData, ShipBuilderHelpList, and the Color providers. `CLIPS` lists which document clips are present and their sizes. Satellite movies that are not separate menus show up only as clips or as the document URL. `movie created` lines name ship-related menus SFSE reports.
-
-### #2 Keys and a text field
-
-With capture off, press H and the slash key. Read `FACT F16` for the window (`key=H`, `key=Slash`) and `FACT movie | KEY` if the movie heard them. Then click the type-in box and type letters, a hex word, Backspace, and Delete. The box line is `field=true`. `AFTER key` says whether ModuleInfo, ShipStats, color, or the exit data changed in the next half second. Watch the ship: if a part vanishes, the game still treated Delete as a delete. This probe does not swallow, so it does not answer "can a later build swallow" by doing it. The log says `swallowed=0`.
-
-### #3 Colors
-
-Press F7 and read `FACT movie | MARK`. The panel button is only a label. Clicks may never reach it. Change the game's color sliders. Press Mark colors again. Cancel, then press Mark colors again. The `COLOR` and `MARK` lines are the HSB values the providers sent. Do this with one part selected, then two, then the whole ship. Accept only on a ship you are willing to repaint. The probe never sends a color event. Unset colors show up as empty HSB fields if the provider omits them.
-
-### #4 Category jump
-
-Not run. Sending a category offset can change the builder. The probe does not send one.
-
-### #5 Variants
-
-Not run as a write. Left and Right are observed in #17. The probe does not pick a variant by form id.
-
-### #6 One category through the DLL
-
-Select a category. `FACT movie | PARTS` is the category name, index, stat name, and row fields. `FACT F2a` is a read-only lookup of up to 24 form ids from that category: editor id and form type. Maker, class, and size are logged as `not-exposed` because this probe does not invent them from the name. Change category to record another set. The lookup cap is 40 per category burst.
-
-### #7 Costs
-
-`FACT movie | COST` logs `uTotalCredits` when that provider exists, in the builder and at a vendor if you open one. The probe does not perform a swap.
-
-### #8 Files
-
-Not run. The probe refuses every path except its own log. It does not write under Steam `Data` or under saves.
-
-### #9 Scale
-
-`FACT movie | RECT` is `visibleRect` when the movie exposes it, and `stage=` is the stage size. `CLIPS` is the panel sizes in the loaded movie. Repeat on the normal movie and on `spaceshipeditormenu_lrg.swf`. This one session records one resolution. #18 is the full set.
-
-### #10 Conflicts
-
-Install StarUI Ship Builder, the Free Lanes patch, Compact Ship Builder UI, or UIPlayNice only if you already want that test. The probe does not detect them. Compare `MOVIE url` and whether the vanilla clips are present. Try each load order yourself. The probe still only writes its log.
-
-### #11 Freeze
-
-Not provoked. Do not open the HUD arrange screen from inside the builder for this probe. The old freeze is out of scope here.
-
-### #12 Controller
-
-If you use a pad, press the sticks, the d-pad, and the face buttons in the builder. The window hook may not see pad input. Record what the builder did, and any `USER` or `KEY` line that appears. A pad-only pass is still yours to watch.
-
-### #13 HUD message
-
-Close the builder once. The probe posts one message, one time per launch: "Horizon Ship Builder probe: this line is only a test. Nothing was changed." By design that post runs on the ship builder movie's AdvanceFrame when that movie advances after it closes. HUDMenu's AdvanceFrame posts it when the ship movie is not the one advancing. Read `FACT F31`. `thread=ship-advance` or `thread=hud-advance` names which one ran. `notify=1` means the call returned. `GetEventSource faulted` means the address lookup failed and the on-screen line was not sent. The close event's opening flag is `FACT F19 | closeEvent`.
-
-### #14 Hex field
-
-Use the same type-in box as #2. Type a hex value such as `A1B2C3`. Read `KEY` with `field=true`. Watch whether G, J, or another builder hotkey also fires as a `USER` line while the box is focused.
-
-### #15 FOMOD
-
-Not in this probe. Packaging is a later branch.
-
-### #16 Arrange input
-
-Capture stays off. Move the mouse over the 3D view, click, drag, and use the wheel. A `FACT movie | STAGE` line means the movie received that event. No STAGE line for a click on the ship means the movie did not see it. `FACT F17` is the same event at the game window (`msg` is the Windows message, `swallowed=0`). `FACT F16 | open cursorQuery` records whether Windows reported the cursor as showing. That is the native cursor check.
-
-Press L, then Ctrl+L, with capture off and with no text box focused. `FACT F16` shows `key=L` and `ctrl=0` or `ctrl=1`. Watch the builder. A window line proves the key reached the probe. It does not prove the builder ignored it. Write down what the builder and any other mod did.
-
-### #17 Arrange capture
-
-Use a throwaway save for this test. With the capture layer on, the game can still delete a part, change a variant, move the floor, undo, or open the exit confirm. Those are the game's own actions. The probe only records them.
-
-Press F8 to turn on Capture layer. The stage gets a light blue wash. The panel stays on top. Press F8 again, after a short pause, to turn it off. The hook still forwards every message.
-
-- Drag across the 3D view. Read `LAYER` for down, move, and up. Watch the camera. In Add mode, with a ghost part, click the view and watch whether a part is selected or placed. `AFTER layer down` compares the data feeds. A camera move may leave `same=1`.
-- Press Left and Right. Watch the variant. Read `USER` if the splice logged the event, and `AFTER`.
-- Press Delete and Backspace. Watch whether a piece is removed.
-- Press R and F. Watch the floor.
-- Press Z and Ctrl+Z. Watch for a flip or an undo.
-- Press Esc. `EXIT` changes if the exit confirmation data changed. Watch the confirm dialog.
-- Repeat the same pass with Horizon UI installed, then with `HorizonUI.dll` removed. `FACT F37` says whether that DLL was loaded, whether the probe installed its procedure, and on close whether it restored the previous procedure. If a newer procedure is on top, the probe leaves it there, stays behind it, and stops logging until the builder opens again. Run the Core-present pass and the Core-absent pass in two launches so the HUD-message test and the hook each start clean.
-
-### #18 Arrange layout
-
-The probe does not save a layout and does not write an ini. Restart survival is not tested.
-
-At each of 1080p, 1440p, 3440x1440, and 1280x720, open the builder once on the normal movie and once on the large-font movie. Read `RECT`, `stage=`, and `CLIPS` for that session. Those are the measurements a later layout can clamp to. Changing resolution during one visit also logs `RESIZE` and a new `RECT`.
-
-## P0.1
-
-Version 0.0.2.0, after the first in-game run. Rebuild both probe movies from the updated script and the splice notes (`hsbProbeHotkey` and `hsbProbeStage`), and copy the new DLL, before this pass. The panel copies its text face and embed flag from a vanilla text field in the loaded movie. If that copy misses, the fallback is an embedded face only. The face name is not printed. Clicks still may not reach the movie, so the actions are keys. `FACT boot` records `F7=mark`, `F8=capture`, and `F6=dump`. The panel shows the same three. Dump is F6, not F9. F9 is Quickload, and the probe does not swallow, so that key would load a save. F6 is not a default gameplay bind and it is not one of the builder keys already in use.
-
-Enter build mode. Select a part and a category. Press F7, then F8, then F8 again after a short pause, then F6. Read `HOTKEY`, `MARK`, `CAPTURE`, and `DUMP`. `DUMP` is the current PartEntries, ModuleInfo, and ShipStats snapshot. An empty hangar list is still a useful dump: it should say the count is 0 until a category has rows.
-
-Then repeat #16 and #17. `FACT movie | STAGE` is a mouseDown, mouseUp, mouseWheel, or click the stage heard. `FACT movie | PANEL` is the same event on the panel. No PANEL line and no STAGE line for a click means the movie never got it. `FACT map` is once per open: the window client size next to the stage size. `FACT movie | HELP` is the vanilla ShipBuilderHelpList keys, once per open. The probe still does not swallow. `swallowed=0` stays on the window lines.
-
-## What the log is for
-
-Bring the probe log back with a note of what you saw the ship do on #16 and #17. Those two together decide whether a later Arrange mode can rely on a full-stage layer, and whether the window hook can sit beside Horizon UI.
-
-## 0.1.1.0 FONT PROBE + one-card candidate
-
-This pass is a font probe and one Selected Module card candidate. Neither is proven in game. The probe reports whether Horizon text can use a game face that has the glyphs, and the card stays a candidate until the checks below pass. The parts list, categories, scrolling, keyboard, pad, and mouse stay the game's. The movie does not read or send category data, so categories, including ones another mod adds, come from the game as before. Power, credits, stats, and the hangar overview are unchanged.
-
-The builder movies embed no fonts. Their text names a font such as `$MAIN_Font_Bold`, and each language's `fontconfig` maps that name to a face in the game's font library (`fonts_en.swf`, `fonts_ja.swf`, or `fonts_zhcn.swf`). The three candidates are those names: `$NB_Grotesk_Semibold` (the game card's title), `$MAIN_Font_Bold` (the menu's own text), and `$MAIN_Font`. Every stock language config maps all three. The movie does not use the Horizon font names that the HUD package adds to the English config, so it needs no other Horizon mod. A mapped name only means the face is there to try. Whether it passes in game is what `FONT` reports.
-
-The face test runs when the builder opens. `FONT try=` lists each candidate by index as wide/narrow/tall widths and a `+` or `-`: `e1` to `e3` are the mapped names as embedded text, `n4` is the face of the game's module name field (`n4=na` when that field was not found), and `d1` to `d3` are the mapped names as device text. `n=` and `nd=` are the same widths for a name that cannot exist, embedded and device. `pick=` names the first candidate that passed. `pick=0` means none passed. The movie then tries again at frames 30 and 120, three tries in all. `FONTSRC` codes the face of five game text fields: `f1` to `f3` match a mapped candidate, `x$` is another mapped name, `x` is a plain face, `x0` has none, and `na` means the field was not found. Each code but `na` ends in `e` for embedded text or `d` for device text, as in `f1e`. Face names are not printed.
-
-The face test measures Latin letters. Every stock language config maps the candidates, but whether a face has another script's glyphs, and how it draws them, is untested. In a language that does not use Latin letters, check the card for boxes before relying on it. `FONTSRC name=` with `f1` to `f3` means the game's own module name uses a mapped candidate.
-
-`MODCARD listen ok` means the movie subscribed to ModuleInfo, the same data the game card reads. `MODCARD listen miss` means it could not, and the game card stays. With a face picked, select a part. The gold card takes the game card's place. The game card is not drawn by the menu movie: the menu places `ModuleInfoCard_mc`, an instance of `ModuleInfoCard` from `spaceshipeditormenu_assetlibrary2.swf` (`_lrg` for the large menu). The gold card sits just above that instance. The game card stays on the menu at alpha 0, so the menu keeps filling, sizing, and showing it. `MODCARD on` adds `rows=` (stats shown, at most 10), `skills=` (at most 2), `keys=` (fields that kept a `$` key, so translation did not run on the new text), `inb=` (the build mode flag), and `w=` (card width). A new `MODCARD on` line is written when those counts change. Any other `MODCARD` state names why the game card shows instead: `face`, `conflict`, `map`, `clip`, `data`, `paint` (drawing the card failed; the next payload tries again), `hidden`, `hangar`, or `arrange` (Arrange was open when the card would have come up).
-
-The card shows what ModuleInfo sends: name, up to 10 stats, description, up to 2 required skills, value, and mass. Numbers follow the game card: two places cut, not rounded, percent as a whole number, a class stat as a letter, and no thousands separator (1560, not 1,560). A changed stat gets a green or red chip with the size of the change. The chip rounds away float noise at six places before it cuts, so it can read +0.29 beside a value the game cut to 0.28. A change too small to show at those places gets no chip. A chip too wide for its room drops its places, or shows only its sign. The mock's subtitle, mass chip, and swap cost line are not drawn, because ModuleInfo does not carry them. The maker logo and the skill badge art are drawn by the game card, so they are hidden with it. A card taller than the room below its spot is lifted to stay on screen. In Arrange it sits exactly on the game card's spot.
-
-Check on the normal movie, then on `spaceshipeditormenu_lrg.swf`:
-
-- A hab, a weapon, and a reactor or shield, from whichever category holds each. Compare each with a screenshot of the same part taken with this mod removed and every other mod, Creations included, left as it is. `MODVALS` lines put each payload number next to the text the card showed: `cost=` and `mass=`, then `s1=` to `s10=` as value/diff/percent flag, `>`, then the shown value and chip. They are written when a module's values change, for up to 24 modules per visit. A class stat is a letter.
-- Text is readable, with no boxes. Small card text is 13 px on the normal movie and 16 px on the large movie.
-- The parts list, categories, scrolling, keyboard, pad, and mouse work as before. That includes categories another mod adds: the same tab names, order, and parts as with this mod removed.
-- The hangar overview keeps the game card.
-- Arrange, from Ctrl+L or the gear: the outline is the gold card. Move it and Save. Close and reopen the builder, and it is in the same spot. Reset puts it home. Cancel undoes a move.
-- Settings and keyboard focus, in build mode with the parts list showing. Click the hex field: the log shows `SETTINGS hex focus=` with the holder before and after `>`, here `list>hex`, and the code is selected. Each click selects the whole code again. Type six characters, then CUSTOM: the log shows `SETTINGS custom focus=hex length=6`, the gold changes to the typed code, and the log shows `FACT ini | user file merged`. The plugin saves the code to the player ini as `AccentHex` and does not log it. Typing that leaves the code unchanged is a failure even when the log reads `hex`. Close Settings four ways, reopening between them: DONE, Esc, a swatch, and ARRANGE PANELS followed by Cancel. Each close writes `SETTINGS close focus=` with the holder before and after `>`. If before is `list`, `other`, or `none`, after equals before. If before is `hex` or `ours` and the session's first hex click read `list` or `other` before `>`, after must read that holder, here `list`. Otherwise after reads `list` while the parts list shows, and `none` when it is hidden. Then the arrow keys still move the parts list, and Enter does what it does with this mod removed. A close that breaks this rule, or arrows that stop, is a failure: bring back the log. Here, with the parts list holding focus, a first hex click that reads `hex>hex` or `ours>hex` means the game moved focus before the mod could note the holder. Report it. Then CUSTOM may read `focus=ours`, and the close falls back to the parts list.
-- Repeat one hex click and one close wherever the gear shows: in the hangar overview, in Flight Check, in paint mode, and while renaming the ship. Grade the close by the same rule, and that screen's keys work as before. In the hangar overview the parts list is hidden and nothing usually holds focus, so the hex click reads `none`, `hex`, or `ours` before `>`, and the close's after reads `none`. Where a game object such as the rename field holds focus, expect `other>hex`, then `hex>other`. There, as in build mode, a hex click that reads `hex>hex` or `ours>hex` is the case to report.
-- Esc and the pad's B button close Settings and Arrange and do nothing else: no exit prompt, no part deselected, and build mode stays. Check Esc tapped and held for about a second, and B the same, in Settings and in Arrange. Settings and Arrange act when the key or pad button is released, as the game's buttons do, and neither half should reach the game. Enter in Arrange acts as OK, also on release. Arrange's arrow keys act on the press and repeat while held. Arrange's mouse buttons act on the press, and the plugin eats the release too. Arrange ignores the first mouse press after it opens, so the first click does nothing. After that, click OK and CANCEL in Arrange with the mouse: the click does not reach the parts list or the game's buttons.
-
-Bring back the log and a screenshot of the card for each part type on both movies.
+- Whether swallowed window messages keep clicks from the 3D editor (gate 1).
+- Whether rotated category labels draw with the face the probe picks (gate 5).
+- StarUI detection is by file name only. `StarUIShipBuilder.dll` loaded means Horizon stands down (mock 10). A file named `StarUI*` in `Data\SFSE\Plugins` or `Data\Interface`, or `StarUI*Ship*` in `Data`, shows the notice (mock 11). The StarUI Ship Builder 1.4 copy checked for this work is staged in Vortex, not deployed, and only its `Interface` movies were listed. So neither check is known to fire for it. Do not enable StarUI Ship Builder with this mod.
+- Colour slider steps are sent one per frame; whether the game applies each step before the next is untested.
+- How fonts draw other scripts' glyphs is untested. Every stock language config maps all three face candidates (`$NB_Grotesk_Semibold`, `$MAIN_Font_Bold`, `$MAIN_Font`).
 
 ## Vortex zip
 
-This package is Horizon Ship Builder alone. It is not the HUD installer and it has no component picker. Quit the game first. The two movies in the zip must be the spliced movies, not stock archive copies, so neither matches a stock SHA-256 value above. The default ini ships with the mod. The plugin still reads the player file under Documents when that file exists.
+This package is Horizon Ship Builder alone. It is not the HUD installer and it has no component picker. Quit the game first. The two movies in the zip must be the spliced movies, not stock archive copies, so neither matches a stock SHA-256 value above. The default ini ships with the mod and documents every key. The plugin reads the player file under Documents when that file exists.
 
-StarUI Ship Builder ships its own `spaceshipeditormenu.swf`, `spaceshipeditormenu_lrg.swf`, and game card library. With both mods enabled, Vortex reports a file conflict, and either winner leaves a mix the checks above did not cover. Do not enable StarUI Ship Builder with this mod. The mod's own StarUI checks look for a `StarUIShipBuilder.dll` module and a menu clip named for StarUI. The StarUI Ship Builder 1.4 copy checked for this work is staged in Vortex, not deployed, and only its `Interface` movies were listed. So neither check is known to fire for it, and the gold card can cover its card. This rule is the guard.
+StarUI Ship Builder ships its own `spaceshipeditormenu.swf`, `spaceshipeditormenu_lrg.swf`, and game card library. With both mods enabled, Vortex reports a file conflict, and either winner leaves a mix the checks above did not cover. Do not enable StarUI Ship Builder with this mod.
 
 From the repo root, after the desktop builder has produced the DLL and both movies:
 
 ```
-sh shipbuilder/package_vortex.sh build\windows\x64\releasedbg\HorizonShipBuilder.dll shipbuilder\Interface\spaceshipeditormenu.swf shipbuilder\Interface\spaceshipeditormenu_lrg.swf HorizonShipBuilder-0.1.1.0.zip
+sh shipbuilder/package_vortex.sh build\windows\x64\releasedbg\HorizonShipBuilder.dll shipbuilder\Interface\spaceshipeditormenu.swf shipbuilder\Interface\spaceshipeditormenu_lrg.swf HorizonShipBuilder-0.2.0.0.zip
 ```
 
 The zip contains only:

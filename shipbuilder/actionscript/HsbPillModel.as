@@ -478,7 +478,8 @@ package
                   var c:int = 0;
                   while(c < (data.columnSets[tab] as Array).length && cols.length < MAX_COLUMNS)
                   {
-                     cols.push(columnId(String(data.columnSets[tab][c])));
+                     var id:String = columnId(String(data.columnSets[tab][c]));
+                     if(id.length > 0) { cols.push(id); }
                      c++;
                   }
                   sets[tabKey(tab)] = cols;

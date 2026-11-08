@@ -50,7 +50,7 @@ package
          super();
       }
 
-      // Text sizes grow 20% in the large-font movie and never drop below 13 units (house rule).
+      // Text sizes grow 20% in the large-font movie. Captions are the floor: 12 units, 15 large.
       internal function size(param1:Number):int
       {
          var n:Number = this.lrg ? Math.round(param1 * 1.2) : param1;

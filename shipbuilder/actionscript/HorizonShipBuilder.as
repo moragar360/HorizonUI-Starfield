@@ -424,7 +424,8 @@ package
             if(this.faceProven(bold,this.kit.embed ? none : noneDev)) { this.kit.boldFace = String(FACES[1]); }
          }
          this.facePick = pick;
-         this.note("FONT try=" + this.faceTries + " pick=" + pick + " bold=" + (this.kit.boldFace.length > 0 ? 1 : 0) + " " + report);
+         var boldOk:int = this.kit.boldFace.length > 0 ? 1 : 0;
+         this.note("FONT try=" + this.faceTries + " pick=" + pick + " bold=" + boldOk + " " + report);
       }
 
       private function measureFace(param1:String, param2:Boolean):Array

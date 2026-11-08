@@ -45,15 +45,17 @@ inline int PickFace(const FaceCandidate* list, int count, const FaceMeasure& mis
 	return -1;
 }
 
+// HsbKit.size: text grows 20% in the large-font movie (Math.round), and captions are the floor.
 inline int TextFloorPx(bool large)
 {
-	return large ? 16 : 13;
+	return large ? 15 : 12;
 }
 
 inline int TextPx(int px, bool large)
 {
 	const int floor = TextFloorPx(large);
-	return px < floor ? floor : px;
+	const int n = large ? static_cast<int>(px * 1.2 + 0.5) : px;
+	return n < floor ? floor : n;
 }
 
 } // namespace hsb

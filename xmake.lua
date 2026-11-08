@@ -97,7 +97,7 @@ target("HorizonUI")
 
 -- Ship Builder plugin. Separate target. It does not link Horizon UI.
 target("HorizonShipBuilder")
-    set_version("0.1.1")
+    set_version("0.2.0")
     add_rules("commonlibsf.plugin", {
         name = "HorizonShipBuilder",
         author = "Moragar",

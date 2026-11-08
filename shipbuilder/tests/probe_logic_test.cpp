@@ -1,11 +1,19 @@
-// Purpose: check the probe's read-only rules without the game.
+// Purpose: host checks for Horizon Ship Builder 0.2 without the game. Part one runs the
+//    plugin's pure rules (input, files, settings, log guard, face proof, number twins). Part two
+//    pins the movie, the plugin, the splice notes, the README and the package to each other, so
+//    a change on one side that the other side does not follow fails here.
+// Inputs: the repo tree (HSB_REPO_ROOT, else this file's location).
+// Outputs: one FAIL line per broken check; exit code 0 only when every check passes.
+// Dependencies: shipbuilder/src headers; std::filesystem (this test only).
 // Author: Moragar. Last modified: 2026-11-07.
 
 #include "hsb_arrange.h"
 #include "hsb_card.h"
 #include "hsb_face.h"
+#include "hsb_files.h"
 #include "hsb_guard.h"
-#include "hsb_interior.h"
+#include "hsb_input.h"
+#include "hsb_settings.h"
 #include "hsb_version.h"
 
 #include <algorithm>
@@ -13,6 +21,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -21,15 +30,15 @@ namespace fs = std::filesystem;
 
 static int g_fails = 0;
 
-static void Expect(bool ok, const char* text)
+static void Expect(bool ok, const std::string& text)
 {
 	if (ok) return;
 	std::cerr << "FAIL: " << text << "\n";
 	++g_fails;
 }
 
-// Allowlist checks are string checks. The prefix is the process temp directory
-// so the fixture is not a profile path.
+// Path checks are string checks. The prefix is the process temp directory, so the fixture
+// is not a real profile path.
 static std::string DocsTail(char sep)
 {
 	std::string out = fs::temp_directory_path().string();
@@ -41,313 +50,16 @@ static std::string DocsTail(char sep)
 	return out;
 }
 
-static void CheckArrangeLifecycle()
-{
-	hsb::ArrangePanel hidden[] = {
-		{"Power", false, {100, 40, 350, 240}},
-		{"Module", true, {100, 300, 350, 200}},
-		{"Credits", true, {900, 40, 363, 102}},
-		{"Browser", true, {1200, 40, 500, 600}},
-		{"Stats", false, {400, 900, 800, 96}},
-		{"Hints", true, {700, 840, 744, 48}},
-		{"Cluster", true, {40, 8, 190, 40}},
-	};
-	const int sel = hsb::ArrangeDefault(hidden, 7);
-	Expect(sel == 1 && hidden[sel].id == "Module", "default handle is the first live panel");
-	Expect(hsb::ArrangeHit(hidden, 7, 120, 80) < 0, "a hidden power box is not a hit");
-	Expect(hsb::ArrangeHit(hidden, 7, 950, 60) < 0, "credits are not a handle");
-	Expect(hsb::ArrangeHit(hidden, 7, 760, 860) < 0, "the button bar is not a handle");
-	const int mod = hsb::ArrangeHit(hidden, 7, 150, 340);
-	Expect(mod == 1, "a click hits the live module");
-	int next = hsb::ArrangeCycle(hidden, 7, mod, 1);
-	Expect(next >= 0 && hidden[next].id == "Browser", "cycle skips credits");
-	next = hsb::ArrangeCycle(hidden, 7, next, 1);
-	Expect(next >= 0 && hidden[next].id == "Cluster", "cycle skips hidden stats and the button bar");
-	next = hsb::ArrangeCycle(hidden, 7, next, 1);
-	Expect(next == 1, "cycle wraps to the first live handle");
-	Expect(hsb::ArrangeCycle(hidden, 7, -1, 1) == 1, "an invalid selection lands on the first live handle");
-	const int powerX = hidden[0].bounds.x;
-	Expect(!hsb::ArrangeTryMove(hidden[0], 15, 0, 0, 0, 0, 0, 1920, 1080), "a hidden panel does not move");
-	Expect(hidden[0].bounds.x == powerX, "a rejected move leaves the native box");
-	Expect(hsb::ArrangeTryMove(hidden[1], 15, 0, 0, 0, 0, 0, 1920, 1080), "a live panel moves in place");
-	Expect(hidden[1].bounds.x == 120, "the native box snaps with the drag");
-	const hsb::ArrangeBox frame = hsb::ArrangeFrame(hidden[1].bounds, 8);
-	Expect(frame.x == hidden[1].bounds.x - 8 && frame.y == hidden[1].bounds.y - 8, "the frame follows the native box");
-
-	hsb::ArrangePanel onlyGear[] = {
-		{"Power", false, {100, 40, 350, 240}},
-		{"Module", false, {100, 300, 350, 200}},
-		{"Credits", true, {900, 40, 363, 102}},
-		{"Browser", false, {1200, 40, 500, 600}},
-		{"Stats", false, {400, 900, 800, 96}},
-		{"Hints", true, {700, 840, 744, 48}},
-		{"Cluster", true, {40, 8, 190, 40}},
-	};
-	Expect(hsb::ArrangeDefault(onlyGear, 7) == 6, "the gear is the handle when builder panels are hidden");
-
-	hsb::ArrangePanel powerLive[] = {
-		{"Power", true, {80, 40, 350, 240}},
-		{"Module", true, {80, 300, 350, 200}},
-		{"Credits", false, {0, 0, 0, 0}},
-		{"Browser", false, {0, 0, 0, 0}},
-		{"Stats", false, {0, 0, 0, 0}},
-		{"Hints", false, {0, 0, 0, 0}},
-		{"Cluster", true, {40, 8, 190, 40}},
-	};
-	Expect(hsb::ArrangeDefault(powerLive, 7) == 0, "a live power panel can be the default");
-	Expect(hsb::ArrangeHit(powerLive, 7, 100, 60) == 0, "a live power panel can be hit");
-}
-
-static void CheckInteriorLifecycle()
-{
-	hsb::InteriorChild entries{"ModuleEntries_mc", true, 12, 0, 0.1f, 0.9f, 0.8f};
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Browser, entries) == hsb::FadeKind::None, "the parts list is not faded");
-	hsb::InteriorChild categories{"ModulePaletteCategories_mc", true, 6, 0, 0, 0.9f, 0.12f};
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Browser, categories) == hsb::FadeKind::None, "category tabs are not faded");
-	hsb::InteriorChild pips{"PowerPips_mc", false, 6, 0, 0, 0.9f, 0.8f};
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Power, pips) == hsb::FadeKind::None, "power pips are not faded");
-	hsb::InteriorChild powerShape{"", false, 0, 0, 0, 0.9f, 0.8f};
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Power, powerShape) == hsb::FadeKind::None, "a power graphic is not covered by a size guess");
-	Expect(!hsb::MayCoverWithPlate(hsb::InteriorPanel::Power), "power does not get an opaque plate");
-	Expect(hsb::MayCoverWithPlate(hsb::InteriorPanel::Browser), "the parts browser can take a plate");
-	hsb::InteriorChild background{"Background_mc", false, 0, 0, 0, 0.95f, 0.9f, false, false, false};
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Module, background) == hsb::FadeKind::Backdrop, "a decorative background shape can be faded");
-	hsb::InteriorChild holder{"ContentBackground_mc", false, 0, 0, 0, 0.95f, 0.9f, true, false, false};
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Module, holder) == hsb::FadeKind::None, "an empty container is not faded");
-	hsb::InteriorChild textBack{"Background_mc", true, 2, 0, 0, 0.9f, 0.9f, true, false, false};
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Stats, textBack) == hsb::FadeKind::None, "a background that holds text stays");
-	hsb::InteriorChild logoClip{"ManufacturerLogo_mc", false, 4, 0.1f, 0.05f, 0.4f, 0.25f, true, false, false};
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Module, logoClip) == hsb::FadeKind::None, "a logo container is not faded");
-	hsb::InteriorChild logoLeaf{"Logo_mc", false, 0, 0.1f, 0.05f, 0.4f, 0.25f, false, false, false};
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Module, logoLeaf) == hsb::FadeKind::Logo, "a logo shape can be faded");
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Browser, logoLeaf) == hsb::FadeKind::None, "a logo shape is not faded on the parts list");
-	hsb::InteriorChild wordmark{"", false, 0, 0.12f, 0.08f, 0.5f, 0.28f, false, false, false};
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Module, wordmark) == hsb::FadeKind::None, "an unnamed shape is not treated as a logo");
-	hsb::InteriorChild mask{"Background_mc", false, 0, 0, 0, 0.9f, 0.9f, false, true, false};
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Browser, mask) == hsb::FadeKind::None, "a mask is not faded");
-	hsb::InteriorChild namedMask{"BackgroundMask_mc", false, 0, 0, 0, 0.9f, 0.9f, false, false, false};
-	Expect(hsb::IsProtectedName(namedMask.name), "a mask name is protected without a live link");
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Browser, namedMask) == hsb::FadeKind::None, "a mask-named shape is not faded");
-	Expect(hsb::DecideFade(true, hsb::InteriorPanel::Browser, namedMask) == hsb::FadeAction::Restore, "a faded mask name is restored");
-	hsb::InteriorChild hitName{"HitArea_mc", false, 0, 0, 0, 0.2f, 0.2f, false, false, false};
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Module, hitName) == hsb::FadeKind::None, "a hit-area name is not faded");
-	Expect(hsb::IsProtectedName("Hotspot_mc"), "a hotspot name is protected");
-	Expect(!hsb::IsProtectedName("Background_mc"), "a plain background name can still fade");
-	Expect(!hsb::IsProtectedName("White_mc"), "hit is not matched inside an unrelated word");
-	hsb::InteriorChild hit{"Background_mc", false, 0, 0, 0, 0.4f, 0.4f, false, false, true};
-	Expect(hsb::ClassifyFade(hsb::InteriorPanel::Power, hit) == hsb::FadeKind::None, "a hit target is not faded");
-	hsb::InteriorChild emptyHost{"", false, 0, 0, 0, 0.2f, 0.2f, true, false, false};
-	Expect(hsb::DecideFade(false, hsb::InteriorPanel::Browser, emptyHost) == hsb::FadeAction::Leave, "an empty row host is left alone");
-	hsb::InteriorChild populated = emptyHost;
-	populated.hasText = true;
-	populated.childCount = 4;
-	Expect(hsb::DecideFade(true, hsb::InteriorPanel::Browser, populated) == hsb::FadeAction::Restore, "a host that gains rows is restored");
-	Expect(hsb::DecideFade(false, hsb::InteriorPanel::Module, background) == hsb::FadeAction::Fade, "a decorative shape can fade");
-	hsb::InteriorChild grew = background;
-	grew.canHoldContent = true;
-	grew.childCount = 2;
-	grew.hasText = true;
-	Expect(hsb::DecideFade(true, hsb::InteriorPanel::Module, grew) == hsb::FadeAction::Restore, "a shape that later holds text is restored");
-	Expect(!hsb::MayInsertInsideClip(), "the plate is not inserted into the game clip");
-	Expect(!hsb::MayRemoveChild("ModuleEntries_mc"), "game rows are not removed");
-	Expect(hsb::MayRemoveChild("HsbPlate"), "only our plate may be removed");
-
-	const hsb::TextStyle selected = hsb::StyleText(0x1A1A1A, "RowText");
-	Expect(selected.color == 0x1A1A1A && selected.keepFace && selected.keepEmbed, "selected row text keeps its dark color and face");
-	const hsb::TextStyle row = hsb::StyleText(0xC5D0DC, "RowText");
-	Expect(row.color == hsb::kOffwhite && row.keepFace && row.keepEmbed, "a light row shifts to offwhite without a new face");
-	const hsb::TextStyle tab = hsb::StyleText(0xD8DEE6, "CategoryTab");
-	Expect(tab.color == hsb::kGold && tab.keepEmbed, "a category label can go gold");
-	const hsb::TextStyle fresh = hsb::StyleText(0xB7C3CE, "RowText");
-	Expect(fresh.color == hsb::kOffwhite && selected.color == 0x1A1A1A, "a new category row is recolored and the selection stays dark");
-
-	Expect(hsb::HeadingPx(false) >= 13 && hsb::HeadingPx(true) >= 16, "section headings meet the size floor");
-	Expect(hsb::TitlePx(false) >= 13 && hsb::TitlePx(true) >= 16, "the title meets the size floor");
-	Expect(!hsb::ShowBuilderTitle(false) && hsb::ShowBuilderTitle(true), "the title pill waits for the parts builder");
-	Expect(!hsb::MayMoveModuleFields(), "the game card's fields stay where the menu put them");
-}
-
-static void CheckModuleCard()
-{
-	const hsb::CardMetrics normal = hsb::CardSize(false);
-	const hsb::CardMetrics large = hsb::CardSize(true);
-	Expect(normal.width == 350 && normal.pad == 18, "the normal card is mock 1 at 1920 wide");
-	Expect(large.width == 410 && large.pad == 20, "the large card is wider for the large movie");
-	Expect(hsb::CardSmallestPx(normal) >= hsb::TextFloorPx(false), "normal card text is 13 px or more");
-	Expect(hsb::CardSmallestPx(large) >= hsb::TextFloorPx(true), "large card text is 16 px or more");
-	Expect(normal.headPx == 13 && large.headPx == 16 && normal.chipPx == 13 && large.chipPx == 16, "the smallest card text sits on each floor");
-	Expect(normal.valueRight == normal.width - normal.pad - 67 && large.valueRight == large.width - large.pad - 80,
-		"the value column matches the movie");
-
-	Expect(hsb::FormatNumber(13, 2) == "13", "a whole stat has no decimals");
-	Expect(hsb::FormatNumber(0.5, 2) == "0.5", "a half keeps one place");
-	Expect(hsb::FormatNumber(1.23456, 2) == "1.23", "two places are kept");
-	Expect(hsb::FormatNumber(2.675, 2) == "2.67", "the game cuts and does not round");
-	Expect(hsb::FormatNumber(0.1 + 0.2, 2) == "0.30", "float noise is cut away");
-	Expect(hsb::FormatNumber(-0.75, 2) == "-0.75", "a negative keeps its sign");
-	Expect(hsb::FormatNumber(1560) == "1560", "the value has no group marks, as on the game card");
-	Expect(hsb::FormatNumber(12.9) == "12", "no places cuts to the whole number");
-	Expect(hsb::FormatNumber(std::numeric_limits<double>::quiet_NaN()) == "NaN", "a bad number reads as the game would show it");
-	Expect(hsb::CardNumberText(true, 10) == "10" && hsb::CardNumberText(false, 10).empty(), "a missing cost or mass stays blank");
-	Expect(hsb::NumberText(1.1920928955078125e-07) == "1.1920928955078125e-7" && hsb::NumberText(1e-7) == "1e-7",
-		"toString writes an exponent below 1e-6");
-	Expect(hsb::NumberText(0.000001) == "0.000001" && hsb::NumberText(1.5e-6) == "0.0000015", "toString keeps 1e-6 in plain digits");
-	Expect(hsb::NumberText(1e21) == "1e+21" && hsb::NumberText(123456789012345680000.0) == "123456789012345680000",
-		"toString writes an exponent from 1e21 up");
-	Expect(hsb::NumberText(1152921504606846976.0) == "1152921504606847000" && hsb::NumberText(-0.0) == "0" && hsb::NumberText(-2.5) == "-2.5",
-		"toString keeps the shortest digits");
-	Expect(hsb::FormatNumber(1.1920928955078125e-07, 2) == "1.19", "a tiny stat is cut as the game card cuts it");
-	Expect(hsb::FormatNumber(1e-7, 2) == "1e-7" && hsb::FormatNumber(1e21) == "1e+21", "text without a point is kept as the game keeps it");
-	Expect(hsb::ChipNumber(1.1920928955078125e-07, 2) == "0" && hsb::ChipNumber(5e-9 * 100, 0) == "0", "chip float noise reads 0");
-	Expect(hsb::ChipNumber(0.1 + 0.2, 2) == "0.3" && hsb::ChipNumber(0.336, 2) == "0.33" && hsb::ChipNumber(6, 2) == "6",
-		"a chip cuts to the value's places and drops trailing zeros");
-	Expect(hsb::ChipNumber(0.07 * 100, 0) == "7" && hsb::ChipNumber(0.29 * 100, 0) == "29", "a percent chip reads a whole percent");
-
-	const hsb::CardStat hab[] = {
-		{"$HULL", 5, 0, false},
-		{"$PASSENGER_SLOTS", 0, 0, false},
-		{"$CREW_STATIONS", 6, 6, false},
-	};
-	Expect(hsb::StatValueText(hab[0]) == "5" && hsb::StatValueText(hab[1]) == "0" && hsb::StatValueText(hab[2]) == "6",
-		"hab stats read as the game card");
-	Expect(hsb::DiffChipText(hab[0]).empty() && hsb::DiffChipText(hab[2]) == "+6", "only a changed hab stat gets a chip");
-	Expect(hsb::ToneOf(hab[2].diff) == hsb::DiffTone::Higher, "a higher stat uses the higher tone");
-
-	const hsb::CardStat weapon[] = {
-		{"$HULL_DMG", 13, 0, false},
-		{"$SHIELD_DMG", 4, 0, false},
-		{"$MAX_POWER", 4, 1, false},
-		{"Hull", 1, -2, false},
-		{"$CREW_CAPACITY", 0.5, 0, false},
-		{"$FIRE_RATE", 0.83333, -0.25, false},
-	};
-	Expect(hsb::StatValueText(weapon[0]) == "13" && hsb::StatValueText(weapon[4]) == "0.5" && hsb::StatValueText(weapon[5]) == "0.83",
-		"weapon stats read as the game card");
-	Expect(hsb::DiffChipText(weapon[2]) == "+1" && hsb::DiffChipText(weapon[3]) == "-2" && hsb::DiffChipText(weapon[5]) == "-0.25",
-		"weapon diffs keep the value's places");
-	Expect(hsb::ToneOf(weapon[3].diff) == hsb::DiffTone::Lower, "a lower stat uses the lower tone");
-
-	const hsb::CardStat reactor[] = {
-		{"$CLASS", 66, 1, false},
-		{"$POWER", 18, 3, false},
-		{"$REPAIR", 0.125, 0.05, true},
-		{"$SHIELD_REGEN", 0.07, 0, true},
-	};
-	Expect(hsb::StatValueText(reactor[0]) == "B", "the class stat is a letter");
-	Expect(hsb::DiffChipText(reactor[0]) == "+", "a class change shows its sign only");
-	Expect(hsb::StatValueText(reactor[2]) == "12%" && hsb::DiffChipText(reactor[2]) == "+5%", "a percent stat is cut to a whole percent");
-	Expect(hsb::StatValueText(reactor[3]) == "7%", "a percent with float noise reads as a whole percent");
-	Expect(hsb::CharCodeText(77) == "M" && hsb::CharCodeText(65.9) == "A", "class letters come from the char code");
-	Expect(hsb::ToneOf(std::numeric_limits<double>::quiet_NaN()) == hsb::DiffTone::Same && hsb::ToneOf(-0.0) == hsb::DiffTone::Same,
-		"a missing diff is the default frame");
-	Expect(hsb::DiffChipText({"$HULL", 5, 1.1920928955078125e-07, false}).empty(), "float noise in a diff gets no chip");
-	Expect(hsb::DiffChipText({"$REPAIR", 0.125, 5e-9, true}).empty(), "float noise in a percent diff gets no chip");
-	Expect(hsb::DiffChipText({"$MASS_LIMIT", 1, -0.004, false}).empty(), "a diff below two places gets no chip");
-	Expect(hsb::DiffChipText({"$HULL", 5, 0.1 + 0.2, false}) == "+0.3", "a chip has no float tail");
-	Expect(hsb::DiffChipText({"$CLASS", 67, 1e-9, false}) == "+", "a class change keeps its sign");
-	Expect(hsb::ChipRoom(normal) == 59 && hsb::ChipRoom(large) == 72, "chip room ends 6 px short of the value column");
-	Expect(hsb::ShortChip("+1234.56") == "+1234" && hsb::ShortChip("+9.5") == "+9", "a chip too wide drops its places");
-	Expect(hsb::ShortChip("-0.25") == "-" && hsb::ShortChip("+12345%") == "+" && hsb::ShortChip("+Infinity") == "+" &&
-		hsb::ShortChip("+1.5e+21") == "+", "a short chip never reads as no change or a wrong number");
-	Expect(hsb::ChipNumber(1.5e21, 2) == "1.5e+21" && hsb::ChipNumber(std::numeric_limits<double>::infinity(), 2) == "Infinity",
-		"a chip keeps toFixed's exponent text whole");
-	{
-		bool whole = true;
-		for (const double size : {1e-7, 0.0049, 0.005, 0.0123, 0.1 + 0.2, 0.125, 0.5, 1.0, 1.5, 12.345, 1e19, 1.5e19})
-			for (const double sign : {1.0, -1.0}) {
-				const std::string chip = hsb::DiffChipText(hsb::CardStat{"50%", 0.5, sign * size, true});
-				if (chip.find('.') != std::string::npos && chip.find('e') == std::string::npos) whole = false;
-			}
-		Expect(whole && hsb::ShortChip(hsb::DiffChipText(hsb::CardStat{"50%", 0.5, 1.5e19, true})) == "+",
-			"a percent chip has places only as exponent text, so a short chip never cuts a percent number");
-	}
-	Expect(hsb::ChipWidth(normal, 4) == 28 && hsb::ChipWidth(normal, 30) == 44 && hsb::ChipWidth(normal, 90) == 59 && hsb::ChipWidth(large, 90) == 72,
-		"a long chip is capped short of the value column");
-
-	Expect(hsb::CardStatRows(11) == 10 && hsb::CardStatRows(3) == 3 && hsb::CardStatRows(-1) == 0, "the card shows up to ten stats");
-	Expect(hsb::CardSkillRows(3) == 2 && hsb::CardSkillRows(0) == 0, "the card shows up to two skills");
-	Expect(hsb::Substitute("Rank {0}", {"2"}) == "Rank 2", "the rank goes into the translated text");
-	Expect(hsb::Substitute("$(Rank #)", {"2"}) == "$(Rank #)", "an untranslated key is left as it is");
-	Expect(hsb::LabelKeptKey("$HULL") && !hsb::LabelKeptKey("HULL") && !hsb::LabelKeptKey(""), "a kept key is counted for the log");
-
-	hsb::CardState state;
-	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Face, "no proven face keeps the game card");
-	state.faceProven = true;
-	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Map, "the card waits for the panel map");
-	state.mapped = true;
-	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Clip, "the card needs the game card on the menu");
-	state.nativeSeated = true;
-	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Data, "the card waits for a module name");
-	state.hasName = true;
-	state.paintFailed = true;
-	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Paint, "a failed paint keeps the game card until the next payload");
-	state.paintFailed = false;
-	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Hidden, "the card follows the show flag");
-	state.showWidget = true;
-	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Hidden, "the card follows the game card's visibility");
-	state.nativeShown = true;
-	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::On, "a shown game card with data brings ours up");
-	state.arranging = true;
-	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Arrange, "arrange does not bring our card up");
-	state.cardUp = true;
-	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::On, "a card already up stays up through arrange");
-	state.showWidget = false;
-	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Hidden, "a hidden game card drops ours even in arrange");
-	state.showWidget = true;
-	state.arranging = false;
-	state.cardUp = false;
-	state.hangarShown = true;
-	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Hangar, "the hangar overview keeps the game card");
-	state.hangarShown = false;
-	state.conflict = true;
-	Expect(hsb::ModuleCardGate(state) == hsb::CardGate::Conflict, "another builder keeps the game card");
-	Expect(std::string(hsb::CardGateName(hsb::CardGate::On)) == "on" && std::string(hsb::CardGateName(hsb::CardGate::Face)) == "face",
-		"gate names match the log");
-	Expect(hsb::NativeCardAlpha(hsb::CardGate::On, 1.0f) == 0.0f, "the game card is hidden in place while ours is up");
-	Expect(hsb::NativeCardAlpha(hsb::CardGate::Hidden, 1.0f) == 1.0f && hsb::NativeCardAlpha(hsb::CardGate::Hangar, 0.8f) == 0.8f,
-		"every other state puts the game card's alpha back");
-	Expect(hsb::HeldAlpha(0.0f) == 1.0f && hsb::HeldAlpha(0.6f) == 0.6f, "a zero alpha is never kept for the game card");
-	Expect(hsb::CardSeatY(610, 400, 0, 1080, false) == 610, "a card that fits sits on the game card's top");
-	Expect(hsb::CardSeatY(610, 660, 0, 1080, false) == 420, "a tall card is lifted to stay on screen");
-	Expect(hsb::CardSeatY(610, 660, 0, 1080, true) == 610, "arrange seats the card exactly");
-	Expect(hsb::CardSeatY(100, 1200, 0, 1080, false) == 0, "a card taller than the screen keeps its top on screen");
-
-	const hsb::ArrangeView view{0, 0, 1920, 1080};
-	const hsb::ArrangeBox home{34, 300, 360, 470};
-	const hsb::ArrangeBox seat = hsb::CardSeat(home, normal.width, 400);
-	Expect(seat.x == home.x && seat.y == home.y && seat.w == normal.width, "our card's top left is the game card's top left");
-	const hsb::CardDrag moved = hsb::DragCard(home, normal.width, 400, 523, 607, view, hsb::kMarginDefault);
-	Expect(moved.card.x == 520 && moved.card.y == 610, "a drag snaps our card to the grid");
-	Expect(moved.native.x == moved.card.x && moved.native.y == moved.card.y, "the game card moves under ours");
-	Expect(moved.ax == "C-260" && moved.ay == "B-34", "the module anchor uses the game card's size");
-	const hsb::ArrangeBox back = hsb::PlaceSaved(moved.ax, moved.ay, home, view, hsb::kMarginDefault);
-	Expect(back.x == moved.native.x && back.y == moved.native.y, "a saved spot reloads where it was left");
-	Expect(hsb::CardSeat(back, normal.width, 400).y == moved.card.y, "our card comes back with the game card");
-	const std::string cardSized = hsb::StoreAnchor(false, moved.card.y, 400, view.y, view.h, hsb::kMarginDefault);
-	Expect(hsb::PlaceSaved(moved.ax, cardSized, home, view, hsb::kMarginDefault).y != moved.native.y,
-		"an anchor stored with our card's size would reload somewhere else");
-	const hsb::CardDrag low = hsb::DragCard(home, normal.width, 400, 40, 900, view, hsb::kMarginDefault);
-	Expect(low.card.y == 610 && low.ax == "L6", "a drag keeps the taller game box on screen");
-	Expect(hsb::PlaceSaved(low.ax, low.ay, home, view, hsb::kMarginDefault).y == low.native.y, "a spot at the bottom edge reloads without a clamp");
-	const hsb::ArrangeBox shortHome{34, 300, 360, 300};
-	const hsb::CardDrag tall = hsb::DragCard(shortHome, normal.width, 620, 40, 900, view, hsb::kMarginDefault);
-	Expect(tall.card.y == 460 && tall.card.y + 620 <= view.h, "a drag keeps a card taller than the game card on screen");
-	Expect(tall.ay == "C70" && hsb::PlaceSaved(tall.ax, tall.ay, shortHome, view, hsb::kMarginDefault).y == tall.native.y,
-		"a taller card's spot is stored with the game card's size and reloads in place");
-
-	const hsb::ArrangeView wide{0, 0, 2560, 1440};
-	const hsb::ArrangeBox bigHome{40, 380, 420, 560};
-	const hsb::CardDrag bigMove = hsb::DragCard(bigHome, large.width, 470, 1900, 120, wide, hsb::kMarginDefault);
-	const hsb::ArrangeBox bigBack = hsb::PlaceSaved(bigMove.ax, bigMove.ay, bigHome, wide, hsb::kMarginDefault);
-	Expect(bigBack.x == bigMove.native.x && bigBack.y == bigMove.native.y, "the large card round-trips a saved spot");
-	Expect(bigMove.ax[0] == 'R' && bigMove.ay[0] == 'T', "a large card near the top right keeps those edges");
-}
-
 static std::size_t CountOf(const std::string& text, const std::string& needle)
 {
 	std::size_t n = 0;
 	for (std::size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + needle.size())) ++n;
 	return n;
+}
+
+static bool Has(const std::string& text, const std::string& needle)
+{
+	return text.find(needle) != std::string::npos;
 }
 
 // One movie function, through its closing brace at member indent.
@@ -361,6 +73,15 @@ static std::string FunctionBody(const std::string& source, const std::string& na
 	return source.substr(at, end == std::string::npos ? std::string::npos : end + close.size() - at);
 }
 
+// One plugin function, from its head through the first closing brace at column 0.
+static std::string CppBody(const std::string& source, const std::string& head)
+{
+	const std::size_t at = source.find(head);
+	if (at == std::string::npos) return {};
+	const std::size_t end = source.find("\n}\n", at);
+	return source.substr(at, end == std::string::npos ? std::string::npos : end + 3 - at);
+}
+
 static bool InOrder(const std::string& text, const std::vector<std::string>& parts)
 {
 	std::size_t at = 0;
@@ -372,12 +93,58 @@ static bool InOrder(const std::string& text, const std::vector<std::string>& par
 	return true;
 }
 
-static std::string Pick(const hsb::CardMetrics& large, const hsb::CardMetrics& normal, int hsb::CardMetrics::*field)
+static std::string ReadFile(const fs::path& path)
 {
-	return "this.lrg ? " + std::to_string(large.*field) + " : " + std::to_string(normal.*field);
+	std::ifstream in(path, std::ios::binary);
+	return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
-static void CheckFaceProof()
+static bool HasNul(const std::string& text)
+{
+	return text.find('\0') != std::string::npos;
+}
+
+// ---- log guard -------------------------------------------------------------------------
+
+static void CheckGuard()
+{
+	const std::string docs = DocsTail('\\');
+	const std::string docsSlash = DocsTail('/');
+	Expect(hsb::ProbeMayAppend(docs + "SFSE\\Logs\\" + hsb::kProbeFile), "documents log is allowed");
+	Expect(hsb::ProbeMayAppend(docsSlash + "SFSE/Logs/" + hsb::kProbeFile), "forward-slash log is allowed");
+	Expect(!hsb::ProbeMayAppend(std::string("D:\\Steam\\steamapps\\common\\Starfield\\Data\\") + hsb::kProbeFile), "game data is refused");
+	Expect(!hsb::ProbeMayAppend(docs + "Saves\\" + hsb::kProbeFile), "saves are refused");
+	Expect(!hsb::ProbeMayAppend(docs + "SFSE\\Logs\\other.log"), "other names are refused");
+	Expect(!hsb::ProbeMayAppend(docs + "SFSE\\Logs\\..\\" + hsb::kProbeFile), "dot-dot is refused");
+
+	Expect(hsb::ShouldRestoreWndProc(reinterpret_cast<void*>(1), reinterpret_cast<void*>(1)), "restore when we still own the hook");
+	Expect(!hsb::ShouldRestoreWndProc(reinterpret_cast<void*>(2), reinterpret_cast<void*>(1)), "leave a newer procedure");
+	Expect(!hsb::ShouldRestoreWndProc(nullptr, reinterpret_cast<void*>(1)), "do not restore a null procedure");
+
+	std::uint32_t id = 0;
+	Expect(hsb::ParseFormLine("FORM 00000014", id) && id == 0x14u, "form line parses");
+	Expect(hsb::ParseFormLine("FORM 0000abcd", id) && id == 0xABCDu, "form hex folds");
+	Expect(!hsb::ParseFormLine("FORM 000000014", id), "nine digits are refused");
+	Expect(!hsb::ParseFormLine("FORM note", id), "words are not form ids");
+	Expect(hsb::NextFormSlot(0) == 1 && hsb::NextFormSlot(39) == 40 && hsb::NextFormSlot(40) == -1, "form lookups are capped at 40");
+	Expect(hsb::ProbePollDue(1000, 0) && !hsb::ProbePollDue(100, 100), "first poll is due, the same stamp is not");
+	Expect(hsb::ProbePollDue(1000, 1000 - hsb::kProbePollMs) && !hsb::ProbePollDue(1000, 999), "polls wait the modest interval");
+	Expect(hsb::HookWasRipped(true, false) && !hsb::HookWasRipped(true, true) && !hsb::HookWasRipped(false, false), "a missed ping clears the hook");
+	Expect(hsb::ChainIsLive(reinterpret_cast<const void*>(1)) && !hsb::ChainIsLive(nullptr), "an empty chain is not live");
+	const std::string dirty = hsb::FactLine("F16", "line\r\nnext");
+	Expect(!Has(dirty, "\n") && !Has(dirty, "\r"), "facts stay on one line");
+	Expect(hsb::kMenuName == std::string("SpaceshipEditorMenu"), "menu name");
+
+	const std::string iniPath = docs + "Data\\Interface\\HorizonUI\\shipbuilder\\HorizonShipBuilder.user.ini";
+	Expect(hsb::IniMayWrite(iniPath), "the user ini path is allowed");
+	Expect(!hsb::IniMayWrite(std::string("D:\\Steam\\steamapps\\common\\Starfield\\Data\\Interface\\HorizonUI\\shipbuilder\\") + "HorizonShipBuilder.user.ini"),
+		"the game folder ini is refused");
+	Expect(!hsb::IniMayWrite(docs + "Data\\Interface\\HorizonUI\\shipbuilder\\other.ini"), "another ini name is refused");
+}
+
+// ---- face proof and text size twins -----------------------------------------------------
+
+static void CheckFace()
 {
 	const hsb::FaceMeasure boxes{96, 96, 24};
 	const hsb::FaceMeasure grotesk{152, 43, 24};
@@ -406,33 +173,484 @@ static void CheckFaceProof()
 	order[3] = {{150, 41, 24}, true, true};
 	Expect(hsb::PickFace(order, 7, boxes, boxes) == 3, "the module-name face comes before device text");
 	for (auto& c : order) c.measure = boxes;
-	Expect(hsb::PickFace(order, 7, boxes, boxes) == -1, "no proof leaves the earlier text path");
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == -1, "no proof leaves the default text path");
 	Expect(hsb::PickFace(nullptr, 7, boxes, boxes) == -1, "no list is no proof");
-	Expect(hsb::TextPx(11, false) == 13 && hsb::TextPx(13, true) == 16 && hsb::TextPx(21, false) == 21,
-		"text keeps the 13 and 16 px floors");
+
+	Expect(hsb::TextPx(13, false) == 13 && hsb::TextPx(13, true) == 16, "body text is 13 px, 16 px in the large movie");
+	Expect(hsb::TextPx(12, false) == 12 && hsb::TextPx(12, true) == 15, "captions are 12 px, 15 px in the large movie");
+	Expect(hsb::TextPx(10, false) == 12 && hsb::TextPx(10, true) == 15, "nothing drops below the caption floor");
+	Expect(hsb::TextPx(14, true) == 17 && hsb::TextPx(21, false) == 21, "larger text scales by 1.2 with Math.round");
 }
 
-// Every line that uses the picked face name itself, trimmed and sorted. A log line can
-// carry the name through a temp, so the gold movie's uses are checked against a fixed list.
-static std::vector<std::string> FaceUses(const std::string& source)
+// ---- number, chip and anchor twins -------------------------------------------------------
+
+static void CheckNumbers()
 {
-	std::vector<std::string> uses;
-	std::istringstream in(source);
-	std::string line;
-	while (std::getline(in, line)) {
-		for (std::size_t at = line.find("this.face"); at != std::string::npos; at = line.find("this.face", at + 1)) {
-			const std::size_t next = at + 9;
-			const char c = next < line.size() ? line[next] : ' ';
-			const bool ident = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
-			if (ident) continue;
-			const auto first = line.find_first_not_of(" \t");
-			const auto last = line.find_last_not_of(" \t\r");
-			uses.push_back(first == std::string::npos ? std::string() : line.substr(first, last - first + 1));
-			break;
-		}
+	Expect(hsb::FormatNumber(13, 2) == "13", "a whole stat has no decimals");
+	Expect(hsb::FormatNumber(0.5, 2) == "0.5", "a half keeps one place");
+	Expect(hsb::FormatNumber(1.23456, 2) == "1.23", "two places are kept");
+	Expect(hsb::FormatNumber(2.675, 2) == "2.67", "the game cuts and does not round");
+	Expect(hsb::FormatNumber(0.1 + 0.2, 2) == "0.30", "float noise is cut away");
+	Expect(hsb::FormatNumber(-0.75, 2) == "-0.75", "a negative keeps its sign");
+	Expect(hsb::FormatNumber(1560) == "1560", "the value has no group marks, as on the game card");
+	Expect(hsb::FormatNumber(12.9) == "12", "no places cuts to the whole number");
+	Expect(hsb::FormatNumber(std::numeric_limits<double>::quiet_NaN()) == "NaN", "a bad number reads as the game would show it");
+	Expect(hsb::CardNumberText(true, 10) == "10" && hsb::CardNumberText(false, 10).empty(), "a missing cost or mass stays blank");
+	Expect(hsb::NumberText(1.1920928955078125e-07) == "1.1920928955078125e-7" && hsb::NumberText(1e-7) == "1e-7",
+		"toString writes an exponent below 1e-6");
+	Expect(hsb::NumberText(0.000001) == "0.000001" && hsb::NumberText(1.5e-6) == "0.0000015", "toString keeps 1e-6 in plain digits");
+	Expect(hsb::NumberText(1e21) == "1e+21" && hsb::NumberText(123456789012345680000.0) == "123456789012345680000",
+		"toString writes an exponent from 1e21 up");
+	Expect(hsb::NumberText(1152921504606846976.0) == "1152921504606847000" && hsb::NumberText(-0.0) == "0" && hsb::NumberText(-2.5) == "-2.5",
+		"toString keeps the shortest digits");
+	Expect(hsb::FormatNumber(1.1920928955078125e-07, 2) == "1.19", "a tiny stat is cut as the game card cuts it");
+	Expect(hsb::FormatNumber(1e-7, 2) == "1e-7" && hsb::FormatNumber(1e21) == "1e+21", "text without a point is kept as the game keeps it");
+	Expect(hsb::ChipNumber(1.1920928955078125e-07, 2) == "0" && hsb::ChipNumber(5e-9 * 100, 0) == "0", "chip float noise reads 0");
+	Expect(hsb::ChipNumber(0.1 + 0.2, 2) == "0.3" && hsb::ChipNumber(0.336, 2) == "0.33" && hsb::ChipNumber(6, 2) == "6",
+		"a chip cuts to the value's places and drops trailing zeros");
+	Expect(hsb::ChipNumber(0.07 * 100, 0) == "7" && hsb::ChipNumber(0.29 * 100, 0) == "29", "a percent chip reads a whole percent");
+	Expect(hsb::ChipNumber(1.5e21, 2) == "1.5e+21" && hsb::ChipNumber(std::numeric_limits<double>::infinity(), 2) == "Infinity",
+		"a chip keeps toFixed's exponent text whole");
+
+	const hsb::CardStat hab[] = {{"$HULL", 5, 0, false}, {"$PASSENGER_SLOTS", 0, 0, false}, {"$CREW_STATIONS", 6, 6, false}};
+	Expect(hsb::StatValueText(hab[0]) == "5" && hsb::StatValueText(hab[1]) == "0" && hsb::StatValueText(hab[2]) == "6", "hab stats read as the game card");
+	Expect(hsb::DiffChipText(hab[0]).empty() && hsb::DiffChipText(hab[2]) == "+6", "only a changed hab stat gets a chip");
+	Expect(hsb::ToneOf(hab[2].diff) == hsb::DiffTone::Higher, "a higher stat uses the higher tone");
+	const hsb::CardStat weapon[] = {{"$HULL_DMG", 13, 0, false}, {"$MAX_POWER", 4, 1, false}, {"Hull", 1, -2, false}, {"$FIRE_RATE", 0.83333, -0.25, false}};
+	Expect(hsb::StatValueText(weapon[0]) == "13" && hsb::StatValueText(weapon[3]) == "0.83", "weapon stats read as the game card");
+	Expect(hsb::DiffChipText(weapon[1]) == "+1" && hsb::DiffChipText(weapon[2]) == "-2" && hsb::DiffChipText(weapon[3]) == "-0.25",
+		"weapon diffs keep the value's places");
+	Expect(hsb::ToneOf(weapon[2].diff) == hsb::DiffTone::Lower, "a lower stat uses the lower tone");
+	const hsb::CardStat reactor[] = {{"$CLASS", 66, 1, false}, {"$REPAIR", 0.125, 0.05, true}, {"$SHIELD_REGEN", 0.07, 0, true}};
+	Expect(hsb::StatValueText(reactor[0]) == "B" && hsb::DiffChipText(reactor[0]) == "+", "the class stat is a letter and its chip a sign");
+	Expect(hsb::StatValueText(reactor[1]) == "12%" && hsb::DiffChipText(reactor[1]) == "+5%", "a percent stat is cut to a whole percent");
+	Expect(hsb::StatValueText(reactor[2]) == "7%", "a percent with float noise reads as a whole percent");
+	Expect(hsb::CharCodeText(77) == "M" && hsb::CharCodeText(65.9) == "A", "class letters come from the char code");
+	Expect(hsb::ToneOf(std::numeric_limits<double>::quiet_NaN()) == hsb::DiffTone::Same && hsb::ToneOf(-0.0) == hsb::DiffTone::Same,
+		"a missing diff is the default frame");
+	Expect(hsb::DiffChipText({"$HULL", 5, 1.1920928955078125e-07, false}).empty() && hsb::DiffChipText({"$REPAIR", 0.125, 5e-9, true}).empty(),
+		"float noise in a diff gets no chip");
+	Expect(hsb::DiffChipText({"$MASS_LIMIT", 1, -0.004, false}).empty(), "a diff below two places gets no chip");
+	Expect(hsb::DiffChipText({"$HULL", 5, 0.1 + 0.2, false}) == "+0.3", "a chip has no float tail");
+	Expect(hsb::ShortChip("+1234.56") == "+1234" && hsb::ShortChip("+9.5") == "+9", "a chip too wide drops its places");
+	Expect(hsb::ShortChip("-0.25") == "-" && hsb::ShortChip("+12345%") == "+" && hsb::ShortChip("+Infinity") == "+" && hsb::ShortChip("+1.5e+21") == "+",
+		"a short chip never reads as no change or a wrong number");
+	Expect(hsb::CardStatRows(11) == 10 && hsb::CardStatRows(-1) == 0 && hsb::CardSkillRows(3) == 2, "the card shows up to ten stats and two skills");
+	Expect(hsb::Substitute("Rank {0}", {"2"}) == "Rank 2" && hsb::Substitute("$(Rank #)", {"2"}) == "$(Rank #)", "substitutions follow DoSubstitutions");
+
+	// Anchors round-trip at 1080p and on a wide screen.
+	const int margin = hsb::kMarginDefault;
+	Expect(hsb::StoreAnchor(true, 34, 350, 0, 1920, margin) == "L0" && hsb::ResolveAnchor(true, "L0", 0, 350, 0, 1920, margin) == 34,
+		"a panel at the left margin stores L0");
+	Expect(hsb::StoreAnchor(true, 785, 350, 0, 1920, margin) == "C0" && hsb::ResolveAnchor(true, "C0", 0, 350, 0, 1920, margin) == 785,
+		"a centred panel stores C0");
+	Expect(hsb::StoreAnchor(true, 1386, 500, 0, 1920, margin) == "R0" && hsb::ResolveAnchor(true, "R0", 0, 500, 0, 1920, margin) == 1386,
+		"a panel at the right margin stores R0");
+	Expect(hsb::StoreAnchor(false, 900, 96, 0, 1080, margin) == "B50" && hsb::ResolveAnchor(false, "B50", 0, 96, 0, 1080, margin) == 900,
+		"a footer stores its distance from the bottom");
+	Expect(hsb::ResolveAnchor(true, "-1", 77, 350, 0, 1920, margin) == 77 && hsb::ResolveAnchor(true, "Q5", 77, 350, 0, 1920, margin) == 77 &&
+		hsb::ResolveAnchor(true, "Lx", 77, 350, 0, 1920, margin) == 77, "a default or unreadable anchor keeps the current spot");
+	for (int x : {0, 120, 700, 1200, 2100}) {
+		const std::string a = hsb::StoreAnchor(true, x, 420, 0, 2560, margin);
+		Expect(hsb::ResolveAnchor(true, a, -999, 420, 0, 2560, margin) == x, "a wide-screen anchor round-trips at x=" + std::to_string(x));
 	}
-	std::sort(uses.begin(), uses.end());
-	return uses;
+}
+
+// ---- window input rules (hsb_input.h) -------------------------------------------------------
+
+static void CheckInput()
+{
+	hsb::HotArea area = hsb::ParseHot("all");
+	Expect(area.all && hsb::HotContains(area, -5000, 9000), "HOT all swallows everywhere");
+	area = hsb::ParseHot("none");
+	Expect(!area.all && area.rects.empty() && !hsb::HotContains(area, 10, 10), "HOT none swallows nothing");
+	Expect(hsb::ParseHot("").rects.empty(), "an empty HOT body swallows nothing");
+	area = hsb::ParseHot("10,20,300,400;5,5,0,10;1,2,3;a,b,c,d;-5,-6,7,8;1,2,30000,4;");
+	Expect(area.rects.size() == 2 && area.rects[1].x == -5 && area.rects[1].y == -6, "bad rectangles are skipped and good ones kept");
+	Expect(hsb::HotContains(area, 10, 20) && hsb::HotContains(area, 309, 419), "a rectangle includes its top-left and last pixel");
+	Expect(!hsb::HotContains(area, 310, 20) && !hsb::HotContains(area, 9, 20) && !hsb::HotContains(area, 10, 420), "a rectangle excludes its far edges");
+	{
+		std::string many;
+		for (int i = 0; i < 40; ++i) many += (i ? ";" : "") + std::to_string(i * 10) + ",0,5,5";
+		Expect(static_cast<int>(hsb::ParseHot(many).rects.size()) == hsb::kMaxHotRects, "at most 32 rectangles are kept");
+	}
+
+	int sx = 0;
+	int sy = 0;
+	hsb::ClientToStage(1280, 720, 2560, 1440, hsb::StageView{}, sx, sy);
+	Expect(sx == 960 && sy == 540, "1440p client maps to the 1080p stage");
+	hsb::ClientToStage(2559, 1439, 2560, 1440, hsb::StageView{}, sx, sy);
+	Expect(sx == 1919 && sy == 1079, "the last client pixel maps inside the stage");
+	hsb::ClientToStage(0, 0, 3440, 1440, hsb::StageView{-330, 0, 2580, 1080}, sx, sy);
+	Expect(sx == -330 && sy == 0, "a wide view starts left of the stage");
+	hsb::ClientToStage(5, 5, 0, 0, hsb::StageView{}, sx, sy);
+	Expect(sx == 9600 && sy == 5400, "a zero client size does not divide by zero");
+
+	hsb::InputState prev;
+	hsb::InputState s = hsb::ParseState("STATE capture=1 text=0 arrange=0 stage=2560x1440 view=0,0,1920,1080 keys=1 hide=72 find=47", prev);
+	Expect(s.capture && !s.text && !s.arrange && s.arrangeKey && s.hideChar == 72 && s.findChar == 47, "STATE flags and keys parse");
+	Expect(s.stageW == 2560 && s.stageH == 1440 && s.view.w == 1920 && s.view.h == 1080, "STATE stage and view parse");
+	hsb::InputState t = hsb::ParseState("STATE text=1 hide=999 find=x view=0,0,50,50", s);
+	Expect(t.capture && t.text && t.hideChar == 0 && t.findChar == 47 && t.view.w == 1920, "a missing or bad field keeps or clears safely");
+	Expect(!hsb::ParseState("STATE keys=0", s).arrangeKey, "keys=0 turns Ctrl+L off");
+
+	hsb::PointerCall c = hsb::PointerEdge(true, false, false, true, false);
+	Expect(c.eat && c.feed, "a press inside a Horizon panel is swallowed and fed");
+	c = hsb::PointerEdge(true, false, false, false, false);
+	Expect(!c.eat && c.feed, "a press outside is fed and reaches the game");
+	c = hsb::PointerEdge(false, true, false, false, true);
+	Expect(c.eat && c.feed, "a release follows its swallowed press, wherever it lands");
+	c = hsb::PointerEdge(false, true, false, true, false);
+	Expect(!c.eat && c.feed, "a release whose press the game saw reaches the game, even over a panel");
+	c = hsb::PointerEdge(false, false, true, true, false);
+	Expect(c.eat && c.feed, "the wheel over a panel is swallowed");
+	c = hsb::PointerEdge(false, false, true, false, false);
+	Expect(!c.eat && c.feed, "the wheel over the ship reaches the game");
+	Expect(!hsb::PointerEdge(false, false, false, true, true).feed, "nothing else is fed");
+	Expect(hsb::MoveEdge().feed && !hsb::MoveEdge().eat, "moves are fed and never swallowed");
+
+	const struct {
+		unsigned vk;
+		bool shift;
+		const char* token;
+	} nav[] = {
+		{hsb::kVkEscKey, false, "cancel"}, {hsb::kVkReturnKey, false, "ok"}, {hsb::kVkLeftKey, false, "left"}, {hsb::kVkLeftKey, true, "left40"},
+		{hsb::kVkRightKey, true, "right40"}, {hsb::kVkUpKey, false, "up"}, {hsb::kVkDownKey, true, "down40"}, {hsb::kVkTabKey, false, "tab"},
+		{hsb::kVkTabKey, true, "tabprev"}, {hsb::kVkPriorKey, false, "pgup"}, {hsb::kVkNextKey, false, "pgdn"}, {hsb::kVkBackKey, false, "bksp"},
+		{hsb::kVkDeleteKey, false, "del"}, {'G', false, ""}, {0x70, false, ""},
+	};
+	for (const auto& n : nav) Expect(std::string(hsb::NavToken(n.vk, n.shift)) == n.token, std::string("nav token ") + n.token);
+
+	hsb::InputState idle;
+	idle.hideChar = 'H';
+	idle.findChar = '/';
+	auto press = [](unsigned vk, int ch, bool ctrl, bool alt, bool shift, bool repeat, const hsb::InputState& st) {
+		return hsb::KeyPress(vk, ch, ctrl, alt, shift, repeat, st);
+	};
+	hsb::KeyCall k = press('H', 'H', false, false, false, false, idle);
+	Expect(k.eat && std::string(k.token) == "hide", "the hide key is taken when nothing is open");
+	k = press(0xBF, '/', false, false, false, false, idle);
+	Expect(k.eat && std::string(k.token) == "find", "the find key is taken when nothing is open");
+	k = press('G', 'G', false, false, false, false, idle);
+	Expect(!k.eat && std::string(k.token).empty(), "a builder key reaches the game when nothing is open");
+	k = press(hsb::kVkEscKey, 27, false, false, false, false, idle);
+	Expect(!k.eat, "Esc reaches the game when nothing is open");
+	k = press('L', 'L', true, false, false, false, idle);
+	Expect(k.eat && std::string(k.token) == "open", "Ctrl+L opens Arrange");
+	hsb::InputState noArrange = idle;
+	noArrange.arrangeKey = false;
+	Expect(!press('L', 'L', true, false, false, false, noArrange).eat, "Ctrl+L reaches the game when Settings turned it off");
+	Expect(!press('H', 'H', true, false, false, false, idle).eat, "Ctrl+H is not the hide key");
+	Expect(!press('H', 'H', false, false, false, true, idle).eat, "a held hide key does not repeat");
+	Expect(!press('H', 'H', false, true, false, false, idle).eat, "Alt+H reaches the game");
+	hsb::InputState off = idle;
+	off.hideChar = 0;
+	Expect(!press('H', 'H', false, false, false, false, off).eat, "a hide key the game uses (sent as 0) reaches the game");
+
+	hsb::InputState cap;
+	cap.capture = true;
+	k = press(hsb::kVkEscKey, 27, false, false, false, false, cap);
+	Expect(k.eat && std::string(k.token) == "cancel", "Esc in a popup is swallowed and cancels");
+	k = press(hsb::kVkEscKey, 27, false, false, false, true, cap);
+	Expect(k.eat && std::string(k.token).empty(), "a held Esc is swallowed without cancelling twice");
+	k = press('G', 'G', false, false, false, false, cap);
+	Expect(k.eat && std::string(k.token).empty(), "a builder key is swallowed while a popup is open");
+	k = press(hsb::kVkLeftKey, 0, false, false, true, true, cap);
+	Expect(k.eat && std::string(k.token) == "left40", "held arrows repeat in a popup");
+	Expect(!press(0x73, 0, false, true, false, false, cap).eat, "Alt+F4 reaches Windows with a popup open");
+	Expect(!press(hsb::kVkLWinKey, 0, false, false, false, false, cap).eat && !press(hsb::kVkRWinKey, 0, false, false, false, false, cap).eat,
+		"the Windows keys reach Windows");
+	Expect(!press(hsb::kVkSnapshotKey, 0, false, false, false, false, cap).eat, "Print Screen reaches Windows");
+	Expect(!press('Q', 'Q', true, true, false, false, cap).eat, "Ctrl+Alt outside a text field is an Alt combination");
+	hsb::InputState text;
+	text.text = true;
+	Expect(press('Q', 'Q', true, true, false, false, text).eat, "AltGr in a text field types, so it is swallowed");
+	Expect(!press(0x09, 9, false, true, false, false, text).eat, "Alt+Tab reaches Windows from a text field");
+	hsb::InputState arrange;
+	arrange.arrange = true;
+	Expect(press(hsb::kVkUpKey, 0, false, false, false, false, arrange).eat, "Arrange swallows its keys");
+
+	Expect(hsb::CharForText('a', text) && hsb::CharForText(0xE9, text) && !hsb::CharForText(31, text) && !hsb::CharForText(127, text) &&
+		!hsb::CharForText(0xD800, text), "a text field gets printable characters only");
+	Expect(!hsb::CharForText('a', cap), "characters go nowhere without a text field");
+
+	int rest = 0;
+	Expect(hsb::WheelSteps(120, rest) == 1 && rest == 0, "one notch is one step");
+	Expect(hsb::WheelSteps(60, rest) == 0 && rest == 60 && hsb::WheelSteps(60, rest) == 1 && rest == 0, "half notches add up");
+	Expect(hsb::WheelSteps(-240, rest) == -2 && rest == 0, "two notches down are two steps");
+	Expect(hsb::WheelSteps(-60, rest) == 0 && hsb::WheelSteps(-60, rest) == -1 && rest == 0, "half notches down add up");
+	rest = 60;
+	Expect(hsb::WheelSteps(-120, rest) == 0 && rest == -60, "a reversed wheel keeps its remainder");
+
+	hsb::InputCounts counts{1, 2, 3, 4, 5, 6, 7};
+	Expect(hsb::CountsLine(counts) == "presses=1 eaten=2 wheel=3 keys=4 chars=5 dropped=6 raw=7", "the close line is counts only");
+
+	hsb::PressLedger ledger;
+	ledger.Set(hsb::kVkEscKey, true);
+	ledger.Set(300, true);
+	Expect(ledger.Held(hsb::kVkEscKey) && !ledger.Held(hsb::kVkReturnKey) && !ledger.Held(300), "the ledger keeps key codes only");
+	ledger.Set(hsb::kVkEscKey, false);
+	Expect(!ledger.Held(hsb::kVkEscKey), "a release clears its key");
+	ledger.Set(hsb::kVkLeftKey, true);
+	ledger.Clear();
+	Expect(!ledger.Held(hsb::kVkLeftKey), "clearing forgets every key");
+	Expect(!hsb::IsProbeHotkey(false, hsb::kVkF6) && hsb::IsProbeHotkey(true, hsb::kVkF7) && !hsb::IsProbeHotkey(true, 0x78),
+		"probe keys exist only with Probe=1, and F9 is never one");
+}
+
+// ---- user ini whitelist and merge (hsb_settings.h) ---------------------------------------
+
+static bool Accepts(const char* section, const char* key, const char* value, const char* canon = nullptr, int isDefault = -1)
+{
+	hsb::Setting s;
+	if (!hsb::CheckSetting(section, key, value, s)) return false;
+	if (canon && s.value != canon) return false;
+	if (isDefault >= 0 && s.isDefault != (isDefault == 1)) return false;
+	return true;
+}
+
+static void CheckSettings()
+{
+	Expect(Accepts("Style", "AccentColor", "9", "9", 1) && Accepts("style", "accentcolor", " 3 ", "3", 0) && Accepts("Style", "AccentColor", "-1", "-1", 0),
+		"AccentColor takes -1 to 13, 9 is the default");
+	Expect(!Accepts("Style", "AccentColor", "14") && !Accepts("Style", "AccentColor", "-2") && !Accepts("Style", "AccentColor", "x"), "AccentColor refuses others");
+	Expect(Accepts("Style", "AccentHex", "", "", 1) && Accepts("Style", "AccentHex", "#a1b2c3", "A1B2C3", 0), "AccentHex is empty or six hex digits");
+	Expect(!Accepts("Style", "AccentHex", "zzzzzz") && !Accepts("Style", "AccentHex", "12345"), "AccentHex refuses others");
+	Expect(Accepts("Style", "CardOpacity", "1", "1.00", 1) && Accepts("Style", "CardOpacity", "0.85", "0.85", 0) && Accepts("Style", "CardOpacity", "0.4", "0.40", 0),
+		"CardOpacity is 0.40 to 1.00 with two places");
+	Expect(!Accepts("Style", "CardOpacity", "0.39") && !Accepts("Style", "CardOpacity", "1.01") && !Accepts("Style", "CardOpacity", "0.855") &&
+		!Accepts("Style", "CardOpacity", "-1") && !Accepts("Style", "CardOpacity", "."), "CardOpacity refuses others");
+	Expect(Accepts("Layout", "ScreenMargin", "34", "34", 1) && Accepts("Layout", "ScreenMargin", "0") && Accepts("Layout", "ScreenMargin", "120"),
+		"ScreenMargin is 0 to 120");
+	Expect(!Accepts("Layout", "ScreenMargin", "121") && !Accepts("Layout", "ScreenMargin", "-1"), "ScreenMargin refuses others");
+	Expect(Accepts("Layout", "UiScale", "1.00", "1.00", 1) && Accepts("Layout", "UiScale", "0.8", "0.80", 0) && Accepts("Layout", "UiScale", "1.3", "1.30", 0),
+		"UiScale is 0.80 to 1.30");
+	Expect(!Accepts("Layout", "UiScale", "1.31") && !Accepts("Layout", "UiScale", "0.79"), "UiScale refuses others");
+	Expect(Accepts("Layout", "Density", "compact", "compact", 1) && Accepts("Layout", "Density", "Detailed", "detailed", 0) && !Accepts("Layout", "Density", "big"),
+		"Density is compact or detailed");
+	Expect(Accepts("Layout", "GroupByMaker", "0", "0", 1) && Accepts("Layout", "GroupByMaker", "1", "1", 0) && !Accepts("Layout", "GroupByMaker", "2") &&
+		Accepts("Layout", "RememberLayout", "1", "1", 1) && Accepts("Layout", "RememberLayout", "0", "0", 0), "flags are 0 or 1");
+	Expect(Accepts("Panels", "power", "0", "0", 0) && Accepts("Panels", "Cluster", "1", "1", 1) && !Accepts("Panels", "Colors", "0") && !Accepts("Panels", "Power", "yes"),
+		"Panels holds the seven panel ids as 0 or 1");
+	{
+		hsb::Setting p;
+		Expect(hsb::CheckSetting("Panels", "power", "0", p) && p.key == "Power", "panel ids are written in canonical case");
+	}
+	Expect(Accepts("Notices", "ShowConflictNotice", "1", "1", 1) && Accepts("Notices", "ShowConflictNotice", "0", "0", 0) && !Accepts("Notices", "Other", "0"),
+		"Notices holds the StarUI notice only");
+	Expect(Accepts("Keys", "Arrange", "l", "L", 1) && Accepts("Keys", "Arrange", "0", "0", 0) && !Accepts("Keys", "Arrange", "K"), "Arrange is L or 0");
+	Expect(Accepts("Keys", "HideAll", "h", "H", 1) && Accepts("Keys", "HideAll", "J", "J", 0) && Accepts("Keys", "HideAll", "0", "0", 0) &&
+		Accepts("Keys", "Find", "/", "/", 1) && Accepts("Keys", "Find", "\\", "\\", 0) && Accepts("Keys", "Find", "=", "=", 0), "hotkeys are one bindable key or 0");
+	Expect(!Accepts("Keys", "HideAll", ";") && !Accepts("Keys", "HideAll", "#") && !Accepts("Keys", "HideAll", "HH") && !Accepts("Keys", "Other", "J"),
+		"hotkeys refuse ini comment characters, words and other names");
+	Expect(Accepts("Columns", "Habs", "", "", 1) && Accepts("Columns", "Habs", "Value,Mass", "Value,Mass", 0) && Accepts("Columns", "HabsSort", "Value-", "Value-", 0),
+		"Columns holds column lists and sorts");
+	Expect(!Accepts("Columns", "Habs", "Value,,Mass") && !Accepts("Columns", "Habs", "a,b,c,d,e,f,g,h,i") && !Accepts("Columns", "HabsSort", "Value--") &&
+		!Accepts("Columns", "Grav Drives", "Value") && !Accepts("Columns", std::string(37, 'a').c_str(), "Value"), "Columns refuses bad ids and keys");
+	Expect(Accepts("Debug", "Probe", "0", "0", 1) && Accepts("Debug", "Probe", "1", "1", 0) && !Accepts("Debug", "Other", "1"), "Debug holds Probe only");
+	Expect(Accepts("Arrange", "PowerX", "l10", "L10", 0) && Accepts("Arrange", "PowerY", "T-5", "T-5", 0) && Accepts("Arrange", "PowerX", "-1", "-1", 1) &&
+		Accepts("Arrange", "ArrangeBarX", "0", "0", 1) && Accepts("Arrange", "ArrangeBarY", "-12", "-12", 0), "Arrange holds anchors and the bar offset");
+	Expect(!Accepts("Arrange", "PowerX", "X10") && !Accepts("Arrange", "PowerY", "B4001") && !Accepts("Arrange", "ColorsX", "L0") && !Accepts("Foo", "Bar", "1"),
+		"Arrange and unknown sections refuse the rest");
+
+	hsb::Setting s;
+	Expect(hsb::ParseSetBody("Style.AccentColor=3", s) && s.section == "Style" && s.key == "AccentColor" && s.value == "3", "a SET body parses");
+	Expect(hsb::ParseSetBody("Style.CardOpacity=0.85", s) && s.value == "0.85", "a SET value may hold a dot");
+	Expect(hsb::ParseSetBody("Keys.HideAll==", s) && s.value == "=" && hsb::ParseSetBody("Keys.Find=.", s) && s.value == ".", "a key binding may be = or .");
+	Expect(hsb::ParseSetBody("Style.AccentHex=", s) && s.isDefault, "an empty SET value is the default");
+	Expect(!hsb::ParseSetBody("StyleAccentColor=3", s) && !hsb::ParseSetBody(".AccentColor=3", s) && !hsb::ParseSetBody("Style.=3", s) &&
+		!hsb::ParseSetBody("Columns.Habs.x=Value", s), "malformed SET bodies are refused");
+	Expect(hsb::ParseArrangeBody("PowerX=L10", s) && s.section == "Arrange" && hsb::ParseArrangeBody("ArrangeBarY=-12", s), "ARRANGE bodies parse");
+	Expect(!hsb::ParseArrangeBody("=L10", s) && !hsb::ParseArrangeBody("PowerX", s), "malformed ARRANGE bodies are refused");
+
+	auto set = [](const char* section, const char* key, const char* value) {
+		hsb::Setting out;
+		hsb::CheckSetting(section, key, value, out);
+		return out;
+	};
+	Expect(hsb::MergeSettings("", {set("Style", "AccentColor", "3")}) == "[Style]\nAccentColor=3\n", "a new file gets the section and key");
+	Expect(hsb::MergeSettings("", {set("Style", "AccentColor", "9")}).empty(), "a default never creates a line");
+	Expect(hsb::MergeSettings("", {set("Style", "AccentColor", "3"), set("Style", "AccentColor", "4")}) == "[Style]\nAccentColor=4\n", "a later update wins");
+	const std::string notes = "; my notes\n[Style]\nAccentColor=3 ; old\nCardOpacity=0.85\n\n[Layout]\nScreenMargin=50\n";
+	Expect(hsb::MergeSettings(notes, {set("Style", "AccentColor", "5")}) == "; my notes\n[Style]\nAccentColor=5\nCardOpacity=0.85\n\n[Layout]\nScreenMargin=50\n",
+		"a key is edited in place and comments elsewhere stay");
+	Expect(hsb::MergeSettings(notes, {set("Style", "AccentColor", "9")}) == "; my notes\n[Style]\nCardOpacity=0.85\n\n[Layout]\nScreenMargin=50\n",
+		"a default removes the key");
+	Expect(hsb::MergeSettings("[Style]\nAccentColor=3\n\n[Layout]\nScreenMargin=50\n", {set("Style", "CardOpacity", "0.85")}) ==
+		"[Style]\nAccentColor=3\nCardOpacity=0.85\n\n[Layout]\nScreenMargin=50\n", "a missing key goes after its section's last entry");
+	Expect(hsb::MergeSettings("[Style]\nAccentColor=3\nAccentColor=4\n", {set("Style", "AccentColor", "5")}) == "[Style]\nAccentColor=5\n",
+		"a key listed twice is kept once");
+	Expect(hsb::MergeSettings("[Style]\nAccentColor=3\n[Layout]\nScreenMargin=50\n[Style]\nAccentColor=4\n", {set("Style", "AccentColor", "6")}) ==
+		"[Style]\nAccentColor=6\n[Layout]\nScreenMargin=50\n[Style]\n", "a key in a repeated section is kept once, at its first spot");
+	Expect(hsb::MergeSettings("[Style]\nFoo=bar\n", {set("Style", "AccentColor", "3")}) == "[Style]\nFoo=bar\nAccentColor=3\n", "unknown lines stay");
+	Expect(hsb::MergeSettings("[Style]\r\nAccentColor=3\r\n", {set("Style", "CardOpacity", "0.85")}) == "[Style]\nAccentColor=3\nCardOpacity=0.85\n",
+		"CRLF files are rewritten with plain line ends");
+	Expect(hsb::MergeSettings("[Style]\nAccentColor=3\n", {set("Layout", "ScreenMargin", "50")}) == "[Style]\nAccentColor=3\n\n[Layout]\nScreenMargin=50\n",
+		"a missing section is added at the end");
+	Expect(hsb::MergeSettings("[style]\naccentcolor=3\n", {set("Style", "AccentColor", "4")}) == "[style]\nAccentColor=4\n", "keys and sections match without case");
+	Expect(hsb::MergeSettings("[Style]\n;AccentColor=3\n", {set("Style", "AccentColor", "4")}) == "[Style]\n;AccentColor=3\nAccentColor=4\n",
+		"a commented-out key is not edited");
+
+	bool found = false;
+	const std::string ini = "[Style]\nAccentColor=3 ; note\n[Layout]\nScreenMargin=500\nUiScale=1.2\n[Panels]\nPower=0\nStats=1\nBogus=0\nCredits=0\n"
+		"[Columns]\nHabs=Value,Mass\nHabsSort=Value-\nBad Key=Value\n";
+	Expect(hsb::IniValue(ini, "Style", "AccentColor", found) == "3" && found, "IniValue reads a value without its comment");
+	hsb::IniValue(ini, "Layout", "AccentColor", found);
+	Expect(!found, "IniValue reads only the named section");
+	Expect(hsb::SectionSettings(ini, "Panels").size() == 2 && hsb::SectionSettings(ini, "Columns").size() == 2, "SectionSettings keeps valid changed keys only");
+	Expect(hsb::SettingOr(ini, "Layout", "ScreenMargin", "34") == "34" && hsb::SettingOr(ini, "Layout", "UiScale", "1.00") == "1.20" &&
+		hsb::SettingOr(ini, "Layout", "Density", "compact") == "compact", "SettingOr falls back on bad or missing values");
+	Expect(hsb::SettingOr("[Style]\nAccentHex=\n", "Style", "AccentHex", "-") == "-", "an empty hex falls back");
+}
+
+// ---- builder files (hsb_files.h) --------------------------------------------------------------
+
+static void CheckFiles()
+{
+	const std::string raw = "line one\nline\ttwo \\ end\r\n";
+	Expect(hsb::EscapeText(raw) == "line one\\nline\\ttwo \\\\ end\\n", "escaping keeps one line and drops CR");
+	Expect(hsb::UnescapeText(hsb::EscapeText(raw)) == "line one\nline\ttwo \\ end\n", "unescaping restores the text");
+
+	hsb::FileRequest r;
+	Expect(hsb::ParseFileRequest("a1\tPILLS\tREAD\tpacks\tExplorer pack.json\t", r) && r.id == "a1" && r.kind == "PILLS" && r.verb == "READ" &&
+		r.args.size() == 2 && r.args[1] == "Explorer pack.json" && r.body.empty(), "a read request parses");
+	Expect(hsb::ParseFileRequest("7\tPROFILE\tWRITE\t{\\n}", r) && r.args.empty() && r.body == "{\\n}", "the body is the last field");
+	Expect(!hsb::ParseFileRequest("A1\tPILLS\tLIST\t", r) && !hsb::ParseFileRequest("1\tPILLS", r) && !hsb::ParseFileRequest("", r) &&
+		!hsb::ParseFileRequest("1234567890123\tPILLS\tLIST\t", r), "ids are short lowercase tokens and requests have four fields");
+
+	Expect(hsb::SafeShareName("My crew habs.json", "PILLS") && hsb::SafeShareName("gold_scheme-2.ini", "SCHEMES"), "plain names are allowed");
+	Expect(!hsb::SafeShareName("..\\x.json", "PILLS") && !hsb::SafeShareName("a/b.json", "PILLS") && !hsb::SafeShareName("x.ini", "PILLS") &&
+		!hsb::SafeShareName(" x.json", "PILLS") && !hsb::SafeShareName(".json", "PILLS") && !hsb::SafeShareName(std::string(41, 'a') + ".json", "PILLS") &&
+		!hsb::SafeShareName("x.json", "PROFILE") && !hsb::SafeShareName("c\xC3\xA9.json", "PILLS"), "names cannot leave their folder or kind");
+
+	auto verb = [](const std::string& line) {
+		hsb::FileRequest q;
+		if (!hsb::ParseFileRequest(line, q)) return hsb::FileVerb::kBad;
+		return hsb::CheckRequest(q);
+	};
+	Expect(verb("1\tPROFILE\tREAD\t") == hsb::FileVerb::kProfileRead && verb("2\tPROFILE\tWRITE\t{}") == hsb::FileVerb::kProfileWrite &&
+		verb("3\tPROFILE\tBAD\t") == hsb::FileVerb::kProfileBad, "profile verbs");
+	Expect(verb("4\tPROFILE\tREAD\tuser\t") == hsb::FileVerb::kBad && verb("5\tPROFILE\tDELETE\t") == hsb::FileVerb::kBad, "the profile takes no names and no delete");
+	Expect(verb("6\tPILLS\tLIST\t") == hsb::FileVerb::kList && verb("7\tSCHEMES\tLIST\t") == hsb::FileVerb::kList && verb("8\tPILLS\tLIST\tuser\t") == hsb::FileVerb::kBad,
+		"LIST takes no arguments");
+	Expect(verb("9\tPILLS\tREAD\tpacks\ta.json\t") == hsb::FileVerb::kRead && verb("10\tSCHEMES\tREAD\tuser\tb.ini\t") == hsb::FileVerb::kRead, "reads use either folder");
+	Expect(verb("11\tPILLS\tWRITE\tuser\ta.json\t{}") == hsb::FileVerb::kWrite && verb("12\tPILLS\tWRITE\tpacks\ta.json\t{}") == hsb::FileVerb::kBad,
+		"writes go to user only");
+	Expect(verb("13\tPILLS\tREAD\tsaves\ta.json\t") == hsb::FileVerb::kBad && verb("14\tOTHER\tREAD\tuser\ta.json\t") == hsb::FileVerb::kBad &&
+		verb("15\tPILLS\tDELETE\tuser\ta.json\t") == hsb::FileVerb::kBad, "other folders, kinds and verbs are refused");
+	Expect(verb("16\tPILLS\tWRITE\tuser\ta.json\t" + std::string(hsb::kMaxShareBytes * 2 + 1, 'x')) == hsb::FileVerb::kBad, "share writes are capped");
+	Expect(hsb::FileReply("a1", true, "x\ny") == "a1\t1\tx\\ny" && hsb::FileReply("a2", false, "") == "a2\t0\t", "replies escape their payload");
+	Expect(hsb::ListRow("user", "a.json", 12) == "user\ta.json\t12", "list rows are folder, name, bytes");
+
+	const std::string docs = DocsTail('\\') + "Data\\Interface\\HorizonUI\\shipbuilder\\";
+	const std::string game = "D:\\Steam\\steamapps\\common\\Starfield\\Data\\Interface\\HorizonUI\\shipbuilder\\";
+	Expect(hsb::BuilderFileMayTouch(docs + "ShipBuilderPills.json", true) && hsb::BuilderFileMayTouch(docs + "ShipBuilderPills.json.tmp", true) &&
+		hsb::BuilderFileMayTouch(docs + "ShipBuilderPills.bak", true) && hsb::BuilderFileMayTouch(docs + "ShipBuilderPills.bad.json", true),
+		"the profile, its temp, backup and bad copy may be written in Documents");
+	Expect(hsb::BuilderFileMayTouch(docs + "pills\\user\\a.json", true) && hsb::BuilderFileMayTouch(docs + "schemes\\user\\b.ini", true),
+		"user shares may be written in Documents");
+	Expect(!hsb::BuilderFileMayTouch(docs + "pills\\packs\\a.json", true) && hsb::BuilderFileMayTouch(docs + "pills\\packs\\a.json", false),
+		"packs are read only");
+	Expect(!hsb::BuilderFileMayTouch(game + "pills\\user\\a.json", true) && hsb::BuilderFileMayTouch(game + "pills\\packs\\a.json", false),
+		"the game folder is never written and its packs may be read");
+	Expect(!hsb::BuilderFileMayTouch(docs + "pills\\user\\..\\..\\x.json", true) && !hsb::BuilderFileMayTouch(docs + "pills\\user\\a.ini", true) &&
+		!hsb::BuilderFileMayTouch(docs + "schemes\\user\\a.json", false) && !hsb::BuilderFileMayTouch(docs + "pills\\ShipBuilderPills.json", true) &&
+		!hsb::BuilderFileMayTouch(DocsTail('\\') + "Saves\\Interface\\HorizonUI\\shipbuilder\\ShipBuilderPills.json", true) &&
+		!hsb::BuilderFileMayTouch(docs + "HorizonShipBuilder.user.ini", true) && !hsb::BuilderFileMayTouch("", false),
+		"anything else is refused");
+	Expect(std::string(hsb::KindFolder("PILLS")) == "pills" && std::string(hsb::KindFolder("SCHEMES")) == "schemes" && std::string(hsb::KindFolder("X")).empty(),
+		"each kind has its own folder");
+}
+
+// ---- tree scan ----------------------------------------------------------------------------
+
+static const std::set<std::string>& VanillaEvents()
+{
+	// Every name is sent by the vanilla spaceship editor scripts with the same parameters.
+	static const std::set<std::string> names = {
+		"ShipEditor_ChangeModuleCategory", "ShipEditor_OnColorPickerControlChanged", "ShipEditor_OnColorPickerTabChanged",
+		"ShipEditor_OnColorSliderMouseInput", "ShipEditor_OnFlightCheckTabChanged", "ShipEditor_OnHintButtonActivated",
+		"ShipEditor_OnRecentColorSwatchClicked", "ShipEditor_PreviewShipPart", "ShipEditor_SelectedShipPart",
+	};
+	return names;
+}
+
+static void ScanTree(const fs::path& root)
+{
+	const std::string retiredA = std::string("HU") + "SD";
+	const std::string retiredB = std::string("rs") + "chr";
+	const std::string userDir = std::string("C:") + "\\Users";
+	const std::string timer = std::string("get") + "Timer";
+	const std::string glow = std::string("Glow") + "Filter";
+	const std::string shipEdit = std::string("Ship") + "Editor_";
+	const std::string shipBuild = std::string("Ship") + "Builder_";
+	const std::string dispatch = std::string("dispatch") + "Event";
+	const std::string del = std::string("Delete") + "File";
+	const std::string move = std::string("Move") + "File";
+	const std::string copy = std::string("Copy") + "File";
+	const std::string rmdir = std::string("Remove") + "Directory";
+	const std::string files = std::string("std::") + "filesystem";
+	const std::string wideOpen = std::string("_wf") + "open_s";
+	const std::string stream = std::string("of") + "stream";
+	const std::string mouseListen = std::string("addEventListener(") + "MouseEvent";
+	const std::string mojibake = std::string("\xC3\xA2\xE2\x82\xAC");
+	std::error_code err;
+	if (!fs::exists(root, err)) {
+		Expect(false, "scan root exists");
+		return;
+	}
+	std::size_t scanned = 0;
+	for (auto it = fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied, err);
+		it != fs::recursive_directory_iterator(); it.increment(err)) {
+		if (err) break;
+		if (!it->is_regular_file()) continue;
+		const std::string body = ReadFile(it->path());
+		if (HasNul(body)) continue;
+		++scanned;
+		const std::string rel = it->path().lexically_normal().generic_string();
+		const std::string name = it->path().filename().string();
+		const bool test = Has(rel, "/tests/");
+		const bool plugin = name == "probe.cpp";
+		const bool horizonMovie = name.size() > 3 && name.substr(name.size() - 3) == ".as" && name != "document_splice.as" &&
+			name != "HorizonShipBuilderProbe.as";
+		auto fail = [&](const std::string& why) { Expect(false, rel + ": " + why); };
+		if (Has(body, retiredA) || Has(body, retiredB)) fail("retired name");
+		if (Has(body, userDir)) fail("a private user folder path");
+		if (Has(body, mojibake)) fail("mojibake");
+		if (body.size() >= 3 && body.compare(0, 3, "\xEF\xBB\xBF") == 0) fail("a UTF-8 byte order mark");
+		if (Has(body, timer)) fail("a timer call");
+		if (Has(body, glow)) fail("a glow filter");
+		for (std::size_t at = body.find(shipEdit); at != std::string::npos; at = body.find(shipEdit, at + 1)) {
+			std::size_t end = at + shipEdit.size();
+			while (end < body.size() && ((body[end] >= 'A' && body[end] <= 'Z') || (body[end] >= 'a' && body[end] <= 'z'))) ++end;
+			const std::string event = body.substr(at, end - at);
+			if (!horizonMovie && !test && name != "README_P0.md") fail("an editor event name outside the movie");
+			else if (!test && !VanillaEvents().count(event)) fail("an editor event the vanilla menu does not send: " + event);
+		}
+		for (std::size_t at = body.find(shipBuild); at != std::string::npos; at = body.find(shipBuild, at + shipBuild.size())) {
+			const bool logName = at >= 7 && body.compare(at - 7, 7, "Horizon") == 0;
+			if (!logName && !test) fail("a builder event name");
+		}
+		if (Has(body, dispatch) && name != "HorizonShipBuilder.as" && !test) fail("an event dispatch outside the hub");
+		if (Has(body, del) || Has(body, rmdir)) fail("a delete call");
+		if ((Has(body, move) || Has(body, copy)) && !plugin && !test) fail("a file move or copy outside the plugin");
+		if (Has(body, files) && !test) fail("std::filesystem outside the test");
+		if ((Has(body, wideOpen) || Has(body, stream)) && !plugin) fail("a file writer outside the plugin");
+		if (horizonMovie && Has(body, mouseListen)) fail("a Scaleform mouse listener on a Horizon control");
+	}
+	Expect(scanned > 30, "the scan reads the tree");
+}
+
+// True when the line uses the field itself, not a longer name such as this.faceTries.
+static bool UsesField(const std::string& line, const std::string& field)
+{
+	for (std::size_t at = line.find(field); at != std::string::npos; at = line.find(field, at + 1)) {
+		const std::size_t next = at + field.size();
+		const char c = next < line.size() ? line[next] : ' ';
+		const bool ident = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+		if (!ident) return true;
+	}
+	return false;
 }
 
 // Lines that build log text may carry candidate tags and metrics, never a face name.
@@ -441,742 +659,374 @@ static bool NotesHideFaces(const std::string& source)
 	std::istringstream in(source);
 	std::string line;
 	while (std::getline(in, line)) {
-		const bool logs = line.find("this.note(") != std::string::npos || line.find("report +=") != std::string::npos
-			|| line.find("line +=") != std::string::npos || line.find("var report") != std::string::npos
-			|| line.find("var line") != std::string::npos || line.find("lines.push(") != std::string::npos;
+		const bool logs = Has(line, "note(") || Has(line, "report +=") || Has(line, "var report") || Has(line, "lines.push(");
 		if (!logs) continue;
-		if (line.find("FACES") != std::string::npos || line.find("names[") != std::string::npos
-			|| line.find("labelFace") != std::string::npos || line.find("fieldFace(") != std::string::npos
-			|| line.find(".font") != std::string::npos)
+		if (Has(line, "FACES") || Has(line, "names[") || Has(line, "labelFace") || Has(line, "fieldFace(") || Has(line, ".font") ||
+			UsesField(line, "kit.face") || UsesField(line, "this.face") || UsesField(line, "kit.boldFace"))
 			return false;
-		for (std::size_t at = line.find("this.face"); at != std::string::npos; at = line.find("this.face", at + 1)) {
-			const std::size_t next = at + 9;
-			const char c = next < line.size() ? line[next] : ' ';
-			const bool ident = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
-			if (!ident) return false;
-		}
 	}
 	return true;
 }
 
-static std::string ReadFile(const fs::path& path)
-{
-	std::ifstream in(path, std::ios::binary);
-	return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-}
+// ---- movie pins ---------------------------------------------------------------------------------
 
-static bool HasNul(const std::string& text)
+static void CheckMovie(const fs::path& root)
 {
-	return text.find('\0') != std::string::npos;
-}
+	const fs::path as = root / "actionscript";
+	const std::string hub = ReadFile(as / "HorizonShipBuilder.as");
+	const std::string box = ReadFile(as / "HsbBox.as");
+	const std::string browser = ReadFile(as / "HsbBrowser.as");
+	const std::string settings = ReadFile(as / "HsbSettings.as");
+	const std::string colors = ReadFile(as / "HsbColors.as");
+	const std::string editor = ReadFile(as / "HsbPillEditor.as");
+	const std::string kit = ReadFile(as / "HsbKit.as");
+	const std::string splice = ReadFile(as / "document_splice.as");
+	Expect(!hub.empty() && !box.empty() && !browser.empty() && !settings.empty() && !colors.empty() && !kit.empty() && !splice.empty(), "movie sources read");
 
-static void ScanTree(const fs::path& root)
-{
-	const std::string retiredA = std::string("HU") + "SD";
-	const std::string retiredB = std::string("rs") + "chr";
-	const std::string timer = std::string("get") + "Timer";
-	const std::string glow = std::string("Glow") + "Filter";
-	const std::string shipEdit = std::string("Ship") + "Editor_";
-	const std::string shipBuild = std::string("Ship") + "Builder_";
-	const std::string dispatch = std::string("dispatch") + "Event";
-	const std::string del = std::string("Delete") + "File";
-	const std::string move = std::string("Move") + "File";
-	const std::string rmdir = std::string("Remove") + "Directory";
-	const std::string files = std::string("std::") + "filesystem";
-	const std::string wideOpen = std::string("_wf") + "open_s";
-	const std::string stream = std::string("of") + "stream";
-	std::error_code err;
-	if (!fs::exists(root, err)) {
-		Expect(false, "scan root exists");
-		return;
+	Expect(Has(hub, "internal static const VERSION:String = \"0.2.0.0\";") && Has(hub, "this.note(\"BUILDER \" + VERSION"), "the movie is 0.2.0.0");
+	Expect(!Has(hub, "\"0.1.1.0\"") && !Has(hub, "\"0.1.0.0\""), "no stale movie version");
+
+	// The p5 fix: no Horizon control waits for a Scaleform mouse event. Boxes take Scaleform hit
+	// tests (so the engine sees UI under the cursor) and the hub hit-tests fed points itself.
+	Expect(InOrder(box, {"this.mouseEnabled = true;", "this.mouseChildren = false;"}), "a Horizon box is one hit target");
+	Expect(InOrder(hub, {"this.mouseEnabled = false;", "this.mouseChildren = true;"}), "the hub itself takes no hits");
+	Expect(Has(FunctionBody(hub, "onToken"), "if(kind == \"M\" && bits.length >= 4)") && Has(FunctionBody(hub, "onToken"), "if(kind == \"W\" && bits.length >= 4)") &&
+		Has(FunctionBody(hub, "onToken"), "if(kind == \"K\") { this.onKey(param1.substring(2)); return; }") &&
+		Has(FunctionBody(hub, "onToken"), "if(kind == \"C\" && bits.length >= 2) { this.onChar(int(bits[1])); return; }"),
+		"the movie reads every feed token the plugin writes");
+	Expect(Has(FunctionBody(hub, "pushState"),
+			"\"STATE capture=\" + (this.capturing() ? 1 : 0) + \" text=\" + (this.textOwner != null ? 1 : 0) + \" arrange=\" + (arranging ? 1 : 0) + \" stage=\" + w + \"x\" + h + \" view=\" + this.viewText() + \" keys=\" + (this.keyArrange != \"0\" ? 1 : 0) + \" hide=\" + this.keyCode(this.keyHide) + \" find=\" + this.keyCode(this.keyFind)"),
+		"STATE carries every field the plugin reads");
+	{
+		hsb::InputState st = hsb::ParseState("STATE capture=0 text=1 arrange=1 stage=1920x1080 view=0,0,1920,1080 keys=0 hide=72 find=0", hsb::InputState{});
+		Expect(!st.capture && st.text && st.arrange && !st.arrangeKey && st.hideChar == 72 && st.findChar == 0, "the plugin reads the movie's STATE format");
 	}
-	for (auto it = fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied, err);
-		it != fs::recursive_directory_iterator(); it.increment(err)) {
-		if (err) break;
-		if (!it->is_regular_file()) continue;
-		const std::string body = ReadFile(it->path());
-		if (HasNul(body)) continue;
-		const auto rel = it->path().lexically_normal().generic_string();
-		Expect(body.find(retiredA) == std::string::npos, "retired name A");
-		Expect(body.find(retiredB) == std::string::npos, "retired name B");
-		Expect(body.find(timer) == std::string::npos, "no timer call");
-		Expect(body.find(glow) == std::string::npos, "no glow");
-		Expect(body.find(shipEdit) == std::string::npos, "no editor event name");
-		{
-			bool shipHit = false;
-			for (std::size_t at = 0; (at = body.find(shipBuild, at)) != std::string::npos; at += shipBuild.size()) {
-				const bool logName = at >= 7 && body.compare(at - 7, 7, "Horizon") == 0;
-				if (!logName) shipHit = true;
-			}
-			if (shipHit) {
-				std::cerr << "FAIL: " << rel << " builder event name\n";
-				++g_fails;
+	const std::string hot = FunctionBody(hub, "hotText");
+	Expect(Has(hot, "if(this.conflict || this.kit == null) { return \"none\"; }") && Has(hot, "if(this.capturing()) { return \"all\"; }") &&
+		Has(hot, "out.join(\";\")"), "HOT is none when stood down, all while capturing, else the shown boxes");
+	Expect(Has(FunctionBody(hub, "capturing", "internal"), "this.gridOpen()") && Has(FunctionBody(hub, "gridOpen"), "this.browser.gridOpen && this.shown(\"Browser\")"),
+		"the category grid captures input");
+	Expect(FunctionBody(hub, "wantsEvent", "public") == R"AS(public function wantsEvent(param1:String, param2:Boolean):Boolean
+      {
+         var open:Boolean = this.capturing();
+         if(param2)
+         {
+            this.heldEvents[param1] = open ? this.frameN : -1;
+            if(open) { this.padEvent(param1); }
+            return open;
+         }
+         var pressed:int = this.heldEvents[param1] != null ? int(this.heldEvents[param1]) : -1;
+         delete this.heldEvents[param1];
+         var held:Boolean = pressed >= 0;
+         if(!open || !held) { return held || open; }
+         // The same key press may also have arrived as a DLL key token (cancelTop/acceptTop
+         // stamp the frame), so a release acts only when nothing acted since its press.
+         if(param1 == "Escape" || param1 == "Cancel") { if(this.lastCancel < pressed) { this.cancelTop("pad"); } return true; }
+         if(param1 == "Accept" || param1 == "Enter") { if(this.lastOk < pressed) { this.acceptTop("pad"); } return true; }
+         return true;
+      }
+)AS", "controller events are consumed only while Horizon captures, Accept and Cancel act once on release");
+	Expect(Has(FunctionBody(hub, "cancelTop", "internal"), "if(this.frameN - this.lastCancel < DOUBLE_FRAMES) { return; }") &&
+		Has(FunctionBody(hub, "acceptTop", "internal"), "if(this.frameN - this.lastOk < DOUBLE_FRAMES) { return; }"), "a cancel or accept acts once per press");
+	Expect(Has(FunctionBody(hub, "cancelTop", "internal"), "if(this.gridOpen()) { this.browser.closeGrid(); }"), "Esc closes the category grid");
+
+	// Vanilla panels stay alive: alpha 0 and no mouse, never invisible, moved or reparented.
+	const std::string cover = FunctionBody(hub, "cover");
+	Expect(Has(cover, "if(c.alpha != 0) { c.alpha = 0; }") && Has(cover, "(c as DisplayObjectContainer).mouseChildren = false;") &&
+		Has(cover, "c.alpha = Number(row.alpha);") && !Has(cover, "visible") && !Has(cover, "removeChild") && !Has(cover, "addChild") &&
+		!Has(cover, ".x =") && !Has(cover, ".y ="), "game panels are hidden by alpha only and restored as found");
+	for (const char* clip : {"ModulePalette_mc", "ModuleInfoCard_mc", "CostSummary_mc", "PowerAllocation_mc", "ColorPicker_mc", "FlightCheck_mc"}) {
+		Expect(!Has(hub, std::string(clip) + "\"].visible") && !Has(hub, std::string(clip) + ".visible"), std::string("the movie never hides ") + clip);
+	}
+	Expect(!Has(hub, "aPartList") && !Has(browser, "aPartList = "), "the movie never writes the parts array");
+	Expect(CountOf(hub, "BSUIDataManager.dispatchEvent(") == 1 && Has(FunctionBody(hub, "send", "internal"), "BSUIDataManager.dispatchEvent(new CustomEvent(param1,param2));"),
+		"every game action goes through one send");
+	Expect(Has(FunctionBody(hub, "send", "internal"), "if(this.debugOn) { this.note(\"SEND \" + param1); }"), "sent events are logged only with Probe=1");
+
+	// Backend gaps are marked in the UI.
+	Expect(Has(colors, "\"Not in the game: colours go to the parts you selected before Colors\""), "the colour target gap is shown");
+	Expect(Has(colors, "\"~#\" + HsbKit.hex6("), "a worked-out hex is marked with ~");
+	Expect(CountOf(editor, "\"note\":\"No game data\"") == 2, "pill rules without game data are marked");
+	Expect(Has(settings, "\"Open Flight Check on errors\",\"autoflight\",false,false,\"No game signal\""), "the Flight Check setting is marked");
+
+	// Settings and files agree with the plugin.
+	{
+		const std::string head = "private static const BINDABLE:String = \"";
+		const std::size_t at = settings.find(head);
+		std::string bindable;
+		if (at != std::string::npos) {
+			for (std::size_t i = at + head.size(); i < settings.size() && settings[i] != '"'; ++i) {
+				if (settings[i] == '\\' && i + 1 < settings.size()) ++i;
+				bindable.push_back(settings[i]);
 			}
 		}
-		Expect(body.find(dispatch) == std::string::npos, "no event dispatch");
-		Expect(body.find(del) == std::string::npos, "no file delete");
-		if (body.find(move) != std::string::npos)
-			Expect(rel.find("probe.cpp") != std::string::npos, "file replace stays in the plugin");
-		Expect(body.find(rmdir) == std::string::npos, "no directory remove");
-		Expect(body.find(files) == std::string::npos || rel.find("/tests/") != std::string::npos,
-			"filesystem only in the test");
-		const bool writer = body.find(wideOpen) != std::string::npos || body.find(stream) != std::string::npos;
-		if (writer) Expect(rel.find("probe.cpp") != std::string::npos, "only the plugin opens a file");
+		Expect(bindable == hsb::kBindableKeys, "the movie's key picker binds exactly the keys the plugin accepts");
 	}
+	Expect(Has(hub, "internal static const PANELS:Array = [\"Power\",\"Module\",\"Credits\",\"Browser\",\"Stats\",\"Hints\",\"Cluster\"];"),
+		"the movie's panel ids are the plugin's");
+	{
+		// Every literal setting the movie writes passes the whitelist with a value of its kind.
+		const std::vector<std::string> sources = {hub, browser, settings, ReadFile(as / "HsbPillImport.as")};
+		std::size_t literal = 0;
+		for (const std::string& src : sources) {
+			for (std::size_t at = src.find("setSetting(\""); at != std::string::npos; at = src.find("setSetting(\"", at + 1)) {
+				const std::size_t s1 = at + 12;
+				const std::size_t e1 = src.find('"', s1);
+				if (e1 == std::string::npos || src.compare(e1, 3, "\",\"") != 0) continue;
+				const std::size_t e2 = src.find('"', e1 + 3);
+				if (e2 == std::string::npos) continue;
+				const std::string section = src.substr(s1, e1 - s1);
+				const std::string key = src.substr(e1 + 3, e2 - e1 - 3);
+				std::string sample = "1";
+				if (key == "AccentColor") sample = "3";
+				else if (key == "AccentHex") sample = "A1B2C3";
+				else if (key == "CardOpacity") sample = "0.85";
+				else if (key == "ScreenMargin") sample = "40";
+				else if (key == "UiScale") sample = "1.10";
+				else if (key == "Density") sample = "detailed";
+				else if (key == "HideAll" || key == "Find") sample = "J";
+				hsb::Setting out;
+				Expect(hsb::CheckSetting(section, key, sample, out), "the plugin accepts the movie's setting " + section + "." + key);
+				++literal;
+			}
+		}
+		Expect(literal >= 20, "the movie's literal settings were found");
+	}
+	{
+		// The Settings reset writes exactly the whitelist defaults.
+		const std::string reset = FunctionBody(settings, "resetAll");
+		const std::size_t at = reset.find("var pairs:Array = [");
+		std::size_t pairs = 0;
+		if (at != std::string::npos) {
+			const std::string list = reset.substr(at, reset.find(";\n", at) - at);
+			for (std::size_t p = list.find("[\""); p != std::string::npos; p = list.find("[\"", p + 1)) {
+				const std::size_t end = list.find("\"]", p);
+				if (end == std::string::npos) break;
+				std::vector<std::string> parts;
+				std::string cell;
+				for (std::size_t i = p + 2; i < end; ++i) {
+					if (list.compare(i, 3, "\",\"") == 0) {
+						parts.push_back(cell);
+						cell.clear();
+						i += 2;
+						continue;
+					}
+					cell.push_back(list[i]);
+				}
+				parts.push_back(cell);
+				hsb::Setting out;
+				Expect(parts.size() == 3 && hsb::CheckSetting(parts[0], parts[1], parts[2], out) && out.isDefault,
+					"Settings reset writes the default for " + (parts.size() > 1 ? parts[0] + "." + parts[1] : std::string("?")));
+				++pairs;
+			}
+		}
+		Expect(pairs == 11, "Settings reset covers every fixed setting");
+	}
+	Expect(Has(hub, "private static const FILE_QUEUE_MAX:int = 64;"), "the movie's file queue matches the plugin's cap");
+	Expect(Has(FunctionBody(hub, "applyKey"), "case \"keyhide\": this.keyHide = v; break;") && Has(FunctionBody(hub, "applyKey"), "case \"starfiles\":") &&
+		Has(FunctionBody(hub, "applyKey"), "if(param1.indexOf(\"panel.\") == 0)") && Has(FunctionBody(hub, "applyKey"), "else if(param1.indexOf(\"col.\") == 0)"),
+		"the movie reads the keys the plugin applies");
+
+	// Face proof: mapped names first, measured against a name that cannot exist.
+	Expect(Has(hub, "FACES:Array = [\"$NB_Grotesk_Semibold\",\"$MAIN_Font_Bold\",\"$MAIN_Font\"];") &&
+		Has(hub, "NO_FACE:String = \"$Horizon_NoSuchFace_x\";") && CountOf(hub, "$Horizon_") == 1, "face candidates are the stock mapped names");
+	Expect(Has(hub, "meter.text = \"WWWWWWWW\";") && Has(hub, "meter.text = \"iiiiiiii\";") && Has(hub, "if(wide < narrow * 1.6) { return false; }") &&
+		Has(hub, "Math.abs(wide - missWide) < 0.5"), "the movie's face rule matches the twin");
+	Expect(Has(hub, "this.pathField([\"ModuleInfoCard_mc\",\"ModuleLabel_mc\",\"text_tf\"])"), "the fallback face is the module name field");
+	Expect(Has(hub, "this.note(\"FONT try=\" + this.faceTries + \" pick=\" + pick + \" bold=\" + boldOk + \" \" + report);"), "the face proof is logged by index");
+	for (const auto& entry : fs::directory_iterator(as)) {
+		if (entry.path().extension() != ".as") continue;
+		Expect(NotesHideFaces(ReadFile(entry.path())), entry.path().filename().string() + ": log lines name faces by index only");
+	}
+	Expect(!NotesHideFaces("         this.note(\"FONT face=\" + this.kit.face);") && !NotesHideFaces("         this.note(\"FONT list=\" + FACES.join(\",\"));") &&
+		NotesHideFaces("         this.note(\"FONT try=\" + this.faceTries);"), "the face scan catches a face name in a log line");
+	Expect(Has(kit, "var n:Number = this.lrg ? Math.round(param1 * 1.2) : param1;") && Has(kit, "var floor:Number = this.lrg ? 15 : 12;"),
+		"the movie's text sizes match the twin");
+	Expect(!Has(hub, "fonts_horizon") && !Has(kit, "Exo") && !Has(kit, "Roboto"), "the movie names no Horizon font");
+
+	// Number twins: the movie code that runs in game.
+	Expect(FunctionBody(hub, "statText", "internal static") == R"AS(internal static function statText(param1:Object):String
+      {
+         if(String(param1.text) == "$CLASS") { return String.fromCharCode(param1.fValue); }
+         if(param1.bPercentage) { return GlobalFunc.FormatNumberToString(Number(param1.fValue) * 100) + "%"; }
+         return GlobalFunc.FormatNumberToString(Number(param1.fValue),2);
+      }
+)AS", "stat text follows the game card, as the twin does");
+	Expect(Has(FunctionBody(hub, "diffText", "internal static"), "var size:String = param1.bPercentage ? chipNumber(Math.abs(diff) * 100,0) : chipNumber(Math.abs(diff),2);") &&
+		Has(FunctionBody(hub, "diffText", "internal static"), "if(size == \"0\") { return \"\"; }"), "chips follow the twin");
+	Expect(Has(FunctionBody(hub, "shortChip", "internal static"), "if(dot < 0 || param1.indexOf(\"e\") >= 0) { return param1.charAt(0); }") &&
+		Has(FunctionBody(hub, "shortChip", "internal static"), "return whole.length == 2 && whole.charAt(1) == \"0\" ? param1.charAt(0) : whole;"),
+		"short chips follow the twin");
+	Expect(Has(FunctionBody(hub, "chipNumber", "internal static"), "var text:String = param1.toFixed(6);") &&
+		Has(FunctionBody(hub, "chipNumber", "internal static"), "if(dot < 0 || text.indexOf(\"e\") >= 0) { return text; }"), "chip numbers follow the twin");
+	const std::string anchor = FunctionBody(hub, "storeAnchor", "internal");
+	Expect(Has(anchor, "if(Math.abs(midX - cx) >= r.width / 6)") && Has(anchor, "dx = Math.round(param2 - (r.x + this.margin));") &&
+		Has(anchor, "dx = Math.round(r.x + r.width - this.margin - param4 - param2);") && Has(anchor, "var dx:Number = Math.round(param2 - (cx - param4 / 2));"),
+		"anchors are stored as the twin stores them");
+	const std::string resolve = FunctionBody(hub, "resolve");
+	Expect(Has(resolve, "if(edge == param6) { return param4 + this.margin + off; }") && Has(resolve, "if(edge == param7) { return param4 + param5 - this.margin - param3 - off; }") &&
+		Has(resolve, "if(edge == \"C\") { return param4 + (param5 - param3) / 2 + off; }"), "anchors resolve as the twin resolves them");
+
+	// Splice notes name every method the plugin invokes.
+	for (const char* method : {"hsbProbePing", "hsbTakeLines", "hsbProbeStage", "hsbSetDebug", "hsbApply", "hsbFeed", "hsbSaved", "hsbTakeFiles", "hsbFiles"}) {
+		Expect(Has(splice, std::string("public function ") + method + "("), std::string("the splice adds ") + method);
+	}
+	Expect(Has(splice, "if(this.hsb != null && this.hsb.wantsEvent(param1, param2))") && Has(splice, "Do not return early") &&
+		Has(splice, "the category grid or Arrange is open"), "the splice consumes controller events only while Horizon captures");
+	Expect(Has(splice, "has no onAddedToStage") && Has(splice, "import HorizonShipBuilder;") && Has(splice, "Do not construct HorizonShipBuilderProbe here."),
+		"the splice builds the hub and leaves the probe to Probe=1");
+
+	const std::string probe = ReadFile(as / "HorizonShipBuilderProbe.as");
+	Expect(Has(probe, "captureOn = false") && Has(probe, "enumerateFonts(false)") && !Has(probe, "enumerateFonts(true)") && !Has(probe, "stopPropagation") &&
+		!Has(probe, "Keyboard.F9") && Has(probe, "PROBE off"), "the debug probe stays quiet and swallows nothing");
+}
+
+// ---- plugin pins --------------------------------------------------------------------------------
+
+static void CheckPlugin(const fs::path& root)
+{
+	const std::string plugin = ReadFile(root / "src" / "probe.cpp");
+	Expect(!plugin.empty(), "plugin source read");
+	Expect(Has(plugin, "ProbeMayAppend") && Has(plugin, "ShouldRestoreWndProc") && Has(plugin, "DllMain") && Has(plugin, "AdvanceFrame"),
+		"the plugin keeps its log guard, unhook rule and movie hook");
+	Expect(!Has(plugin, "SendMessage") && Has(plugin, "PostMessageW"), "the job side never waits on the window");
+	Expect(Has(plugin, "if (invoked && ping.rfind(\"0.2\", 0) == 0) g_movieGen.store(kMovieGen);"), "only a 0.2 movie gets fed input");
+	Expect(Has(plugin, "constexpr std::size_t kFileQueueCap = 64;"), "the plugin's file queue matches the movie's cap");
+
+	const auto jobA = plugin.find("JOBTICK-BEGIN");
+	const auto jobB = plugin.find("JOBTICK-END");
+	Expect(jobA != std::string::npos && jobB != std::string::npos && jobB > jobA, "job tick is marked");
+	if (jobA != std::string::npos && jobB != std::string::npos && jobB > jobA) {
+		const std::string job = plugin.substr(jobA, jobB - jobA);
+		Expect(!Has(job, "Invoke") && !Has(job, "SetWindowLongPtr") && !Has(job, "_wfopen"), "the job tick neither calls Scaleform nor opens files itself");
+		Expect(Has(job, "RunFileJobs()"), "file requests run on the job tick");
+	}
+
+	const std::string wnd = CppBody(plugin, "LRESULT CALLBACK ProbeWnd(");
+	const std::string input = CppBody(plugin, "bool HandleBuilderInput(");
+	const std::string typed = CppBody(plugin, "void FeedTypedChars(");
+	Expect(!wnd.empty() && !input.empty() && !typed.empty(), "the window procedure and input path are present");
+	Expect(Has(wnd, "if (g_menuOpen.load() && g_movieGen.load() == kMovieGen) {\n\t\tif (HandleBuilderInput(hwnd, msg, wp, lp)) return 0;"),
+		"input is handled only while a 0.2 builder is open");
+	for (const std::string* body : {&wnd, &input, &typed}) {
+		Expect(!Has(*body, "Fact(") && !Has(*body, "_wfopen") && !Has(*body, "Invoke") && !Has(*body, "SetWindowLongPtr"),
+			"the window thread logs nothing per message, opens no file and never calls Scaleform");
+	}
+	Expect(Has(input, "hsb::PointerEdge(!release, release, false, hsb::HotContains(hot, sx, sy), g_buttonsEaten.Held(button));") &&
+		Has(input, "g_buttonsEaten.Set(button, !release && call.eat);"), "buttons follow PointerEdge, and a release follows its press");
+	Expect(Has(input, "hsb::PointerEdge(false, false, true, hsb::HotContains(hot, sx, sy), false);") && Has(input, "hsb::WheelSteps(GET_WHEEL_DELTA_WPARAM(wp), g_wheelRest);"),
+		"the wheel follows PointerEdge and keeps fine-wheel remainders");
+	Expect(Has(input, "const hsb::KeyCall call = hsb::KeyPress(vk, KeyChar(vk), ctrl, alt, shift, repeat, in);") && Has(input, "if (!repeat) g_keysEaten.Set(vk, call.eat);") &&
+		Has(input, "g_eatChar = call.eat;"), "keys follow KeyPress, and a character goes with its key");
+	Expect(Has(input, "case WM_INPUT:\n\t\tg_cRaw.fetch_add(1);\n\t\treturn false;"), "raw input is counted and passed on");
+	Expect(Has(input, "case WM_MOUSEMOVE:") && Has(input, "if (hsb::MoveEdge().feed) Feed(\"M M \"") && Has(input, "return false;\n\t}\n\tcase WM_LBUTTONDOWN:"),
+		"moves are fed and never swallowed");
+	Expect(Has(plugin, "// Window thread only.\nhsb::PressLedger g_keysEaten;\nhsb::PressLedger g_buttonsEaten;\n") &&
+		CountOf(plugin, "g_keysEaten.") == CountOf(input, "g_keysEaten.") + CountOf(wnd, "g_keysEaten.") &&
+		CountOf(plugin, "g_buttonsEaten.") == CountOf(input, "g_buttonsEaten.") + CountOf(wnd, "g_buttonsEaten."), "only the window thread touches the press ledgers");
+	Expect(Has(typed, "ToUnicodeEx(vk, scan, state, buf, 4, 4, GetKeyboardLayout(0));") && Has(typed, "if (!hsb::CharForText(code, in)) continue;"),
+		"typed characters keep the dead-key state and pass CharForText");
+	Expect(Has(plugin, "Fact(\"input\", CountsNow());"), "the close line holds counts only");
+
+	const std::string runFile = CppBody(plugin, "std::string RunFileRequest(");
+	Expect(!runFile.empty() && CountOf(runFile, "BuilderFileMayTouch(") >= 5, "every builder file goes through BuilderFileMayTouch");
+	Expect(InOrder(runFile, {"CopyFileW(", "WriteReplace("}), "a profile write keeps a backup first");
+	Expect(Has(runFile, "MoveFileExW(") && !Has(plugin, std::string("Delete") + "File"), "a bad profile is renamed, never deleted");
+	Expect(Has(plugin, "Fact(\"files\""), "file jobs are logged");
+	const std::string apply = CppBody(plugin, "void BuildApply(");
+	for (const char* key : {"accent=", "hex=", "core=", "coreaccent=", "corehex=", "probe=", "margin=", "conflict=", "starfiles=", "keys=", "opacity=", "scale=",
+			 "density=", "bymaker=", "remember=", "notice=", "keyhide=", "keyfind=", "panel.", "col.", "ArrangeBarX=", "ArrangeBarY="}) {
+		Expect(Has(apply, std::string("\"") + key), std::string("the plugin applies ") + key);
+	}
+	Expect(Has(plugin, "hsb::MergeSettings(") && Has(plugin, "Fact(\"ini\", \"user file merged n=\""), "the user ini is merged through the whitelist");
+	Expect(!Has(plugin, "VK_F9"), "F9 is never a plugin key");
+}
+
+// ---- docs, package and versions ---------------------------------------------------------------
+
+static void CheckDocs(const fs::path& repo, const fs::path& root)
+{
+	const std::string readme = ReadFile(root / "README_P0.md");
+	const std::string lua = ReadFile(repo / "xmake.lua");
+	const std::string rc = ReadFile(root / "res" / "HorizonShipBuilder.rc.in");
+	const std::string vortex = ReadFile(root / "package_vortex.sh");
+	const std::string defaults = ReadFile(root / "Interface" / "HorizonUI" / "shipbuilder" / "HorizonShipBuilder.default.ini");
+
+	Expect(std::string(HSB_FILE_VERSION_STR) == "0.2.0.0", "plugin version is 0.2.0.0");
+	Expect(Has(lua, "set_version(\"0.2.0\")") && Has(lua, "set_version(\"0.43.0.33\")"), "the builder target is 0.2.0 and the core version stays");
+	Expect(Has(lua, "target(\"HorizonShipBuilder\")") && Has(lua, "target(\"probe_logic_test\")") && Has(lua, "set_default(false)"), "xmake targets");
+	Expect(Has(rc, "Horizon Ship Builder") && !Has(rc, "0.43"), "the resource names the builder and not the HUD version");
+
+	Expect(Has(readme, "# Horizon Ship Builder 0.2.0.0") && Has(readme, "HorizonShipBuilder-0.2.0.0.zip"), "the readme names 0.2.0.0");
+	Expect(Has(readme, "xmake build -y HorizonShipBuilder") && Has(readme, "Data\\Interface\\spaceshipeditormenu.swf") &&
+		Has(readme, "Data\\Interface\\spaceshipeditormenu_lrg.swf") && Has(readme, "Starfield - Interface.ba2") && Has(readme, "spaceshipeditormenu*.swf") &&
+		Has(readme, "HorizonShipBuilder_vanilla_backup") && Has(readme, "throwaway save") && Has(readme, "game root"), "the readme keeps build, install and restore");
+	Expect(Has(readme, "copy /Y shipbuilder\\actionscript\\Hsb*.as shipbuilder\\work\\normal\\") && Has(readme, "copy /Y shipbuilder\\actionscript\\Hsb*.as shipbuilder\\work\\lrg\\"),
+		"the readme copies every Horizon class into both movies");
+	Expect(Has(readme, "\n- `spaceshipeditormenu.swf`, 260994 bytes: `6A66089EE9410ECB126B4BEDE8BED81551E5661555AA1F50FA217C495404C2EC`\n") &&
+		Has(readme, "\n- `spaceshipeditormenu_lrg.swf`, 260965 bytes: `3457A49CF9B79A346C4B3FCFA7EF360B10CCC86D41899B6D8004DF12E90F2C67`\n") &&
+		Has(readme, "\n- `spaceshipeditormenu_assetlibrary2.swf`, 151358 bytes: `2B6D854C3C66973C2948246D1D1DA21A3ADA314B5FDD1899DA375FBCCB8052BC`\n") &&
+		Has(readme, "Stop and report it rather than splicing."), "the readme checks the splice source against the stock movies");
+	Expect(Has(readme, "interface/spaceshipeditormenu_lrg.swf") && Has(readme, "Creations included") && Has(readme, "another mod adds") &&
+		Has(readme, "Do not enable StarUI Ship Builder with this mod."), "the readme keeps the conflict checks");
+	Expect(Has(readme, "## Why the 0.1 buttons were dead (p5)") && Has(readme, "23 left-button press and release pairs") && Has(readme, "MouseEvent.CLICK"),
+		"the readme explains the dead-button mechanism");
+	Expect(Has(readme, "`FACT input | presses=N eaten=M ... raw=R`") && Has(readme, "`CATEGORIES read total=`") && Has(readme, "FONT try=") &&
+		Has(readme, "ping=0.2.0.0") && Has(readme, "thread=hud-advance"), "the readme names the log lines the gates read");
+	Expect(Has(readme, "## Backend gaps, shown in the UI") && Has(readme, "No game data") && Has(readme, "No game signal") &&
+		Has(readme, "Not in the game: colours go to the parts you selected before Colors"), "the readme lists the marked backend gaps");
+	Expect(Has(readme, "## Unknowns") && Has(readme, "Every stock language config maps all three") && Has(readme, "needs no other Horizon mod"),
+		"the readme lists the unknowns and stands alone");
+	for (const auto& event : VanillaEvents()) Expect(Has(readme, "`" + event + "`"), "the readme lists " + event);
+	Expect(!Has(readme, "Data folder as the mod root"), "the readme does not call Data the mod root");
+
+	Expect(Has(vortex, "Data/SFSE/Plugins/HorizonShipBuilder.dll") && Has(vortex, "Data/Interface/spaceshipeditormenu.swf") &&
+		Has(vortex, "Data/Interface/spaceshipeditormenu_lrg.swf") && Has(vortex, "HorizonShipBuilder.default.ini") && Has(vortex, "game root") &&
+		!Has(vortex, "Data/Data"), "the package holds the plugin, both movies and the default ini at the game root");
+
+	// Every key in the shipped defaults is whitelisted and is its own default.
+	std::string section;
+	std::size_t keys = 0;
+	std::istringstream in(defaults);
+	std::string line;
+	while (std::getline(in, line)) {
+		const std::string name = hsb::SectionName(line);
+		if (!name.empty()) {
+			section = name;
+			continue;
+		}
+		std::string k, v;
+		if (!hsb::SplitKey(line, k, v)) continue;
+		hsb::Setting out;
+		Expect(hsb::CheckSetting(section, k, v, out) && out.isDefault, "default ini " + section + "." + k + " is a whitelisted default");
+		++keys;
+	}
+	Expect(keys >= 35, "the default ini lists every setting");
+	Expect(Has(defaults, "AccentColor=9") && Has(defaults, "Probe=0") && Has(defaults, "HideAll=H") && Has(defaults, "Find=/"), "default accent, probe and keys");
 }
 
 int main()
 {
-	const std::string docs = DocsTail('\\');
-	const std::string docsSlash = DocsTail('/');
-	const std::string good = docs + "SFSE\\Logs\\" + hsb::kProbeFile;
-	const std::string goodSlash = docsSlash + "SFSE/Logs/" + hsb::kProbeFile;
-	Expect(hsb::ProbeMayAppend(good), "documents log is allowed");
-	Expect(hsb::ProbeMayAppend(goodSlash), "forward-slash log is allowed");
-	Expect(!hsb::ProbeMayAppend(std::string("D:\\Steam\\steamapps\\common\\Starfield\\Data\\") + hsb::kProbeFile), "game data is refused");
-	Expect(!hsb::ProbeMayAppend(docs + "Saves\\" + hsb::kProbeFile), "saves are refused");
-	Expect(!hsb::ProbeMayAppend(docs + "SFSE\\Logs\\other.log"), "other names are refused");
-	Expect(!hsb::ProbeMayAppend(docs + "SFSE\\Logs\\..\\" + hsb::kProbeFile), "dot-dot is refused");
-
-	Expect(hsb::ShouldRestoreWndProc(reinterpret_cast<void*>(1), reinterpret_cast<void*>(1)), "restore when we still own the hook");
-	Expect(!hsb::ShouldRestoreWndProc(reinterpret_cast<void*>(2), reinterpret_cast<void*>(1)), "leave a newer procedure");
-	Expect(!hsb::ShouldRestoreWndProc(nullptr, reinterpret_cast<void*>(1)), "do not restore a null procedure");
-
-	std::uint32_t id = 0;
-	Expect(hsb::ParseFormLine("FORM 00000014", id) && id == 0x14u, "form line parses");
-	Expect(hsb::ParseFormLine("FORM 0000abcd", id) && id == 0xABCDu, "form hex folds");
-	Expect(!hsb::ParseFormLine("FORM 000000014", id), "nine digits are refused");
-	Expect(!hsb::ParseFormLine("FORM note", id), "words are not form ids");
-	Expect(!hsb::ParseFormLine("CAPTURE on", id), "capture is not a lookup");
-	Expect(hsb::NextFormSlot(0) == 1, "first form slot");
-	Expect(hsb::NextFormSlot(39) == 40, "last form slot");
-	Expect(hsb::NextFormSlot(40) == -1, "form cap");
-	Expect(hsb::ProbePollDue(1000, 0), "first poll is due");
-	Expect(!hsb::ProbePollDue(100, 100), "same stamp is not due");
-	Expect(hsb::ProbePollDue(1000, 1000 - hsb::kProbePollMs), "modest interval elapsed");
-	Expect(!hsb::ProbePollDue(1000, 1000 - 1), "shorter than the modest interval waits");
-	Expect(hsb::HookWasRipped(true, false), "a missed ping clears the hook");
-	Expect(!hsb::HookWasRipped(true, true), "a live ping keeps the hook");
-	Expect(!hsb::HookWasRipped(false, false), "an absent hook is not a rip");
-	Expect(hsb::ChainIsLive(reinterpret_cast<const void*>(1)), "a stored procedure can be called");
-	Expect(!hsb::ChainIsLive(nullptr), "an empty chain is not live");
-
-	const std::string dirty = hsb::FactLine("F16", "line\r\nnext");
-	Expect(dirty.find('\n') == std::string::npos && dirty.find('\r') == std::string::npos, "facts stay on one line");
-	Expect(hsb::kMenuName == std::string("SpaceshipEditorMenu"), "menu name");
+	CheckGuard();
+	CheckFace();
+	CheckNumbers();
+	CheckInput();
+	CheckSettings();
+	CheckFiles();
+	Expect(hsb::kAccentGold == 0xE8C547, "default accent is gold");
+	Expect(hsb::ResolveAccent(-1, "", false, 3, "") == hsb::kAccentDefault && hsb::ResolveAccent(-1, "", true, 3, "") == 3,
+		"follow uses the HUD accent only when the HUD ini is found");
+	Expect(hsb::ResolveAccent(13, "E8C547", false, 3, "") == 13 && hsb::ResolveAccent(13, "zz", false, 3, "") == hsb::kAccentDefault, "a bad custom hex falls back to gold");
 
 	fs::path repo = fs::path(__FILE__).parent_path().parent_path().parent_path();
 #ifdef HSB_REPO_ROOT
 	if (std::string(HSB_REPO_ROOT).size() > 0) repo = fs::path(HSB_REPO_ROOT);
 #endif
 	const fs::path root = repo / "shipbuilder";
-	const std::string retiredA = std::string("HU") + "SD";
-	const std::string retiredB = std::string("rs") + "chr";
 	ScanTree(root);
-
-	const std::string probe = ReadFile(root / "actionscript" / "HorizonShipBuilderProbe.as");
-	Expect(probe.find("captureOn = false") != std::string::npos, "capture starts off");
-	Expect(probe.find("fmt.size = 13") != std::string::npos, "overlay is 13 px");
-	Expect(probe.find("import Shared.AS3.Data.BSUIDataManager;") != std::string::npos, "data manager import");
-	Expect(probe.find("embedFonts") != std::string::npos, "overlay uses the embedded face");
-	Expect(probe.find("defaultTextFormat") != std::string::npos, "overlay copies a vanilla text format");
-	Expect(probe.find("$MAIN_Font") == std::string::npos, "the face name is not written out");
-	Expect(probe.find("Keyboard.F7") != std::string::npos && probe.find("Keyboard.F8") != std::string::npos && probe.find("Keyboard.F6") != std::string::npos, "F7 F8 F6 are the probe keys");
-	Expect(probe.find("Keyboard.F9") == std::string::npos, "F9 is not a probe key");
-	Expect(probe.find("enumerateFonts(false)") != std::string::npos, "the font fallback is embedded faces only");
-	Expect(probe.find("enumerateFonts(true)") == std::string::npos, "the font fallback does not include device faces");
-	Expect(probe.find("stopPropagation") == std::string::npos, "probe keys are not swallowed");
-	Expect(probe.find("PANEL ") != std::string::npos, "panel mouse is logged");
-	Expect(probe.find("noteHelp") != std::string::npos, "help list is logged");
-	Expect(probe.find("0.0.2.0") != std::string::npos, "probe movie version");
-	Expect(probe.find("spaceshipeditormenu") == std::string::npos, "the class does not name a replacement movie");
-
-	const std::string splice = ReadFile(root / "actionscript" / "document_splice.as");
-	Expect(splice.find("spaceshipeditormenu.swf") != std::string::npos, "normal movie is named");
-	Expect(splice.find("spaceshipeditormenu_lrg.swf") != std::string::npos, "large movie is named");
-	Expect(splice.find("import HorizonShipBuilderProbe;") != std::string::npos, "probe import");
-	Expect(splice.find("has no onAddedToStage") != std::string::npos, "missing stage handler is covered");
-	Expect(splice.find("hsbProbePing") != std::string::npos, "ping splice");
-	Expect(splice.find("ProcessUserEvent") != std::string::npos, "user-event splice");
-	Expect(splice.find("hsbProbeHotkey") != std::string::npos, "hotkey splice");
-	Expect(splice.find("hsbProbeStage") != std::string::npos, "stage-size splice");
-	Expect(splice.find("Do not return") != std::string::npos, "user events are not swallowed");
-
-	const std::string readme = ReadFile(root / "README_P0.md");
-	Expect(readme.find("xmake build -y HorizonShipBuilder") != std::string::npos, "build step");
-	Expect(readme.find("F.1") != std::string::npos, "readme lists the live tests");
-	Expect(readme.find("#16") != std::string::npos && readme.find("#17") != std::string::npos && readme.find("#18") != std::string::npos,
-		"arrange tests are in the readme");
-	Expect(readme.find("Data\\Interface\\spaceshipeditormenu.swf") != std::string::npos, "normal movie path");
-	Expect(readme.find("Data\\Interface\\spaceshipeditormenu_lrg.swf") != std::string::npos, "large movie path");
-	Expect(readme.find("Starfield - Interface.ba2") != std::string::npos, "archive source");
-	Expect(readme.find("spaceshipeditormenu*.swf") != std::string::npos, "loose movie check");
-	Expect(readme.find("HorizonShipBuilder_vanilla_backup") != std::string::npos, "named backup");
-	Expect(readme.find("throwaway save") != std::string::npos, "throwaway save warning");
-	Expect(readme.find("hud-advance") != std::string::npos, "HUD advance is the documented post");
-	Expect(readme.find("0.0.2.0") != std::string::npos, "readme names the probe version");
-	Expect(readme.find("P0.1") != std::string::npos, "readme has the P0.1 pass");
-	Expect(readme.find("F7") != std::string::npos && readme.find("F8") != std::string::npos && readme.find("F6=dump") != std::string::npos, "readme names the probe keys");
-
-	const std::string lua = ReadFile(repo / "xmake.lua");
-	Expect(lua.find("target(\"HorizonShipBuilder\")") != std::string::npos, "probe target");
-	Expect(lua.find("target(\"probe_logic_test\")") != std::string::npos, "logic test target");
-	Expect(lua.find("set_default(false)") != std::string::npos, "logic test is not a default build");
-	Expect(lua.find("set_version(\"0.43.0.33\")") != std::string::npos, "core version stays");
-	Expect(lua.find(retiredA) == std::string::npos && lua.find(retiredB) == std::string::npos, "xmake has no retired names");
-
-	const std::string plugin = ReadFile(root / "src" / "probe.cpp");
-	Expect(plugin.find("ProbeMayAppend") != std::string::npos, "plugin checks the log path");
-	Expect(plugin.find("ShouldRestoreWndProc") != std::string::npos, "plugin uses the unhook rule");
-	Expect(plugin.find(std::string("swallowed") + "=0") != std::string::npos, "the hook does not swallow");
-	Expect(plugin.find("VK_F7") != std::string::npos && plugin.find("VK_F6") != std::string::npos, "F7 and F6 are recognized at the window");
-	Expect(plugin.find("VK_F9") == std::string::npos, "F9 is not recognized as the dump key");
-	Expect(plugin.find("hsbProbeHotkey") != std::string::npos, "hotkey is delivered on the movie thread");
-	Expect(plugin.find("GetClientRect") != std::string::npos, "client size is read for the map");
-	Expect(plugin.find("keys F7=mark") != std::string::npos, "boot logs the key map");
-	Expect(plugin.find("SendMessage") == std::string::npos, "the job side does not wait on the window");
-	Expect(plugin.find("PostMessageW") != std::string::npos, "the job side posts to the window");
-	Expect(plugin.find("DllMain") != std::string::npos, "unload unhook");
-	Expect(plugin.find("AdvanceFrame") != std::string::npos, "movie advance hook");
-	const auto jobA = plugin.find("JOBTICK-BEGIN");
-	const auto jobB = plugin.find("JOBTICK-END");
-	Expect(jobA != std::string::npos && jobB != std::string::npos && jobB > jobA, "job tick is marked");
-	if (jobA != std::string::npos && jobB > jobA) {
-		const auto job = plugin.substr(jobA, jobB - jobA);
-		Expect(job.find("Invoke") == std::string::npos, "job tick does not call into Scaleform");
-		Expect(job.find("SetWindowLongPtr") == std::string::npos, "job tick does not change the window procedure");
-		Expect(job.find("_wfopen") == std::string::npos, "job tick does not open the log itself");
-	}
-	const auto wnd = plugin.find("CALLBACK ProbeWnd");
-	const auto afterWnd = plugin.find("FindGameWindow", wnd == std::string::npos ? 0 : wnd);
-	Expect(wnd != std::string::npos && afterWnd != std::string::npos, "window procedure is present");
-	if (wnd != std::string::npos && afterWnd > wnd) {
-		const auto body = plugin.substr(wnd, afterWnd - wnd);
-		Expect(body.find("_wfopen") == std::string::npos, "window procedure does not touch the log file");
-		Expect(body.find("SetWindowLongPtr") == std::string::npos, "window procedure does not reinstall itself");
-		Expect(body.find("Invoke") == std::string::npos, "window procedure does not call into Scaleform");
-		Expect(InOrder(body, {
-				"\tif (!g_menuOpen.load() && (down || up || mouse)) {\n\t\tg_keysEaten.Clear();\n\t\tg_buttonsEaten.Clear();\n\t}\n",
-				"\t\t\tg_keysEaten.Set(static_cast<unsigned>(wp), true);\n\t\t\tg_feedOpen.store(true);\n",
-				"\t\tconst unsigned vk = static_cast<unsigned>(wp);\n\t\tconst bool repeat = down && (lp & 0x40000000) != 0;\n",
-				"\t\tif (down || up) {\n\t\t\tkeyCall = hsb::KeyEdge(down, repeat, captured, g_keysEaten.Held(vk), vk);\n\t\t\tif (!repeat) g_keysEaten.Set(vk, down && keyCall.eat);\n\t\t}\n",
-				"\t\tconst unsigned button = MouseButton(msg);\n\t\tconst bool release = msg == WM_LBUTTONUP || msg == WM_RBUTTONUP || msg == WM_MBUTTONUP;\n",
-				"\t\tif (mouse) {\n\t\t\tmouseCall = hsb::MouseEdge(button != 0, release, arranging, g_buttonsEaten.Held(button));\n\t\t\tif (button != 0) g_buttonsEaten.Set(button, !release && mouseCall.eat);\n\t\t}\n",
-				"\t\tif (keyCall.eat || mouseCall.eat) {\n\t\t\tEv ev{};\n\t\t\tif (mouseCall.feed) {\n",
-				"\t\t\t} else if (keyCall.feed) {\n\t\t\t\tev.kind = 4;\n\t\t\t\tev.a = static_cast<int>(vk);\n"}),
-			"the window procedure eats and feeds only through KeyEdge and MouseEdge, and pairs each release with its press");
-		Expect(body.find("hsb::EatKey(") == std::string::npos && body.find("hsb::EatMouse(") == std::string::npos && body.find("else if (down) {") == std::string::npos,
-			"the window procedure has no other eat or feed rule");
-	}
-	Expect(plugin.find("// Window thread only.\nhsb::PressLedger g_keysEaten;\nhsb::PressLedger g_buttonsEaten;\n") != std::string::npos &&
-		CountOf(plugin, "g_keysEaten.") == 4 && CountOf(plugin, "g_buttonsEaten.") == 3,
-		"only the window procedure touches the press ledgers");
-	Expect(plugin.find("unsigned MouseButton(UINT msg)\n{\n\tswitch (msg) {\n\tcase WM_LBUTTONDOWN:\n\tcase WM_LBUTTONUP: return 1;\n\tcase WM_RBUTTONDOWN:\n\tcase WM_RBUTTONUP: return 2;\n\tcase WM_MBUTTONDOWN:\n\tcase WM_MBUTTONUP: return 3;\n\tdefault: return 0;\n\t}\n}\n") != std::string::npos,
-		"each mouse button has its own ledger slot, and moves and the wheel have none");
-
-	Expect(!hsb::IsProbeHotkey(false, hsb::kVkF6), "probe keys stay off");
-	Expect(hsb::IsProbeHotkey(true, hsb::kVkF7), "probe keys exist when debug is on");
-	Expect(hsb::IsArrangeEntry(false, true, hsb::kVkL), "ctrl L opens arrange");
-	Expect(!hsb::IsArrangeEntry(false, false, hsb::kVkL), "bare L is not an arrange key");
-	Expect(!hsb::IsArrangeEntry(true, true, hsb::kVkL), "arrange entry waits until capture ends");
-	Expect(hsb::EatKey(true) && !hsb::EatKey(false), "keys are eaten only while captured");
-	Expect(hsb::EatMouse(true) && !hsb::EatMouse(false), "mouse is eaten only in arrange");
-	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkDelete, false)) == "noop", "delete stays unbound");
-	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkBack, false)) == "noop", "backspace stays unbound");
-	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkEsc, false)) == "cancel", "escape cancels");
-	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkReturn, false)) == "ok", "enter accepts");
-	Expect(std::string(hsb::ArrangeKeyToken(hsb::kVkLeft, true)) == "left40", "shift arrow is the long nudge");
-	Expect(hsb::KeyTokenOnRelease(hsb::kVkEsc) && hsb::KeyTokenOnRelease(hsb::kVkReturn) && !hsb::KeyTokenOnRelease(hsb::kVkLeft) &&
-		!hsb::KeyTokenOnRelease(hsb::kVkTab) && !hsb::KeyTokenOnRelease(hsb::kVkL),
-		"Esc and Enter act on release, Arrange's other keys on the press");
-	{
-		const hsb::EdgeCall escDown = hsb::KeyEdge(true, false, true, false, hsb::kVkEsc);
-		const hsb::EdgeCall escRepeat = hsb::KeyEdge(true, true, true, true, hsb::kVkEsc);
-		const hsb::EdgeCall escUp = hsb::KeyEdge(false, false, true, true, hsb::kVkEsc);
-		const hsb::EdgeCall escUpLate = hsb::KeyEdge(false, false, false, true, hsb::kVkEsc);
-		const hsb::EdgeCall escUpFree = hsb::KeyEdge(false, false, true, false, hsb::kVkEsc);
-		Expect(escDown.eat && !escDown.feed && escRepeat.eat && !escRepeat.feed, "an Esc press or repeat in capture is eaten and waits for the release");
-		Expect(escUp.eat && escUp.feed, "the Esc release in capture is eaten and fed");
-		Expect(escUpLate.eat && !escUpLate.feed, "an Esc release after capture ends is eaten when its press was, and does nothing");
-		Expect(!escUpFree.eat && !escUpFree.feed, "a release whose press the game saw reaches the game");
-		const hsb::EdgeCall leftDown = hsb::KeyEdge(true, false, true, false, hsb::kVkLeft);
-		const hsb::EdgeCall leftRepeat = hsb::KeyEdge(true, true, true, true, hsb::kVkLeft);
-		const hsb::EdgeCall heldRepeat = hsb::KeyEdge(true, true, true, false, hsb::kVkLeft);
-		const hsb::EdgeCall lateRepeat = hsb::KeyEdge(true, true, false, true, hsb::kVkLeft);
-		const hsb::EdgeCall freeRepeat = hsb::KeyEdge(true, true, false, false, hsb::kVkLeft);
-		const hsb::EdgeCall leftUp = hsb::KeyEdge(false, false, true, true, hsb::kVkLeft);
-		const hsb::EdgeCall freeDown = hsb::KeyEdge(true, false, false, true, hsb::kVkLeft);
-		Expect(leftDown.eat && leftDown.feed && leftRepeat.eat && leftRepeat.feed && heldRepeat.eat && heldRepeat.feed,
-			"arrow presses and repeats in capture are eaten and nudge");
-		Expect(lateRepeat.eat && !lateRepeat.feed, "a repeat after capture ends follows its eaten press");
-		Expect(!freeRepeat.eat && !freeRepeat.feed, "a repeat of a press the game saw reaches the game outside capture");
-		Expect(leftUp.eat && !leftUp.feed, "an arrow release is eaten without a token");
-		Expect(!freeDown.eat && !freeDown.feed, "a first press outside capture reaches the game");
-	}
-	{
-		const hsb::EdgeCall press = hsb::MouseEdge(true, false, true, false);
-		const hsb::EdgeCall releaseIn = hsb::MouseEdge(true, true, true, true);
-		const hsb::EdgeCall releaseLate = hsb::MouseEdge(true, true, false, true);
-		const hsb::EdgeCall releaseFree = hsb::MouseEdge(true, true, true, false);
-		const hsb::EdgeCall move = hsb::MouseEdge(false, false, true, false);
-		const hsb::EdgeCall moveOut = hsb::MouseEdge(false, false, false, true);
-		const hsb::EdgeCall pressOut = hsb::MouseEdge(true, false, false, true);
-		Expect(press.eat && press.feed && releaseIn.eat && releaseIn.feed, "Arrange eats and feeds its clicks");
-		Expect(releaseLate.eat && !releaseLate.feed, "a button release after Arrange ends is eaten when its press was, and does nothing");
-		Expect(!releaseFree.eat && !releaseFree.feed, "a button release whose press the game saw reaches the game");
-		Expect(move.eat && move.feed && !moveOut.eat && !moveOut.feed, "moves and the wheel follow Arrange only");
-		Expect(!pressOut.eat && !pressOut.feed, "a press outside Arrange reaches the game");
-	}
-	{
-		hsb::PressLedger ledger;
-		Expect(!ledger.Held(hsb::kVkEsc), "nothing is held at first");
-		ledger.Set(hsb::kVkEsc, true);
-		ledger.Set(300, true);
-		Expect(ledger.Held(hsb::kVkEsc) && !ledger.Held(hsb::kVkReturn) && !ledger.Held(300), "the ledger keeps key codes only");
-		ledger.Set(hsb::kVkEsc, false);
-		Expect(!ledger.Held(hsb::kVkEsc), "a release clears its key");
-		ledger.Set(hsb::kVkLeft, true);
-		ledger.Clear();
-		Expect(!ledger.Held(hsb::kVkLeft), "clearing forgets every key");
-	}
-	CheckArrangeLifecycle();
-	CheckInteriorLifecycle();
-	CheckFaceProof();
-	CheckModuleCard();
-	Expect(hsb::kAccentGold == 0xE8C547, "default accent is gold");
-	Expect(hsb::ResolveAccent(-1, "", false, 3, "") == hsb::kAccentDefault, "missing hud accent stays gold");
-	Expect(hsb::ResolveAccent(4, "", false, 3, "") == 4, "a swatch is kept");
-	Expect(hsb::ResolveAccent(13, "E8C547", false, 3, "") == 13, "custom hex is kept");
-	Expect(hsb::ResolveAccent(13, "zz", false, 3, "") == hsb::kAccentDefault, "bad hex falls back to gold");
-	Expect(hsb::ValidArrangeValue("PowerX", "L10"), "left anchor is valid");
-	Expect(!hsb::ValidArrangeValue("PowerX", "nope"), "bad anchor is ignored");
-	Expect(hsb::IsDefaultArrange("PowerX", "-1"), "default spots are not saved");
-	const std::string merged = hsb::MergeUserIni("[Notes]\nKeep=1\n", {{"PowerX", "-1"}, {"BrowserX", "R20"}, {"AccentColor", "9"}});
-	Expect(merged.find("Keep=1") != std::string::npos, "other ini sections stay");
-	Expect(merged.find("PowerX=") == std::string::npos, "default positions are dropped");
-	Expect(merged.find("BrowserX=R20") != std::string::npos, "a moved panel is kept");
-	Expect(merged.find("AccentColor=") == std::string::npos, "the default accent is dropped");
-	const std::string iniPath = DocsTail('\\') + "Data\\Interface\\HorizonUI\\shipbuilder\\HorizonShipBuilder.user.ini";
-	Expect(hsb::IniMayWrite(iniPath), "the user ini path is allowed");
-	Expect(!hsb::IniMayWrite(std::string("D:\\Steam\\steamapps\\common\\Starfield\\") + "HorizonShipBuilder.user.ini"), "the game folder is refused");
-	Expect(std::string(HSB_FILE_VERSION_STR) == "0.1.1.0", "plugin version is 0.1.1.0");
-	Expect(lua.find("set_version(\"0.1.1\")") != std::string::npos, "the builder target version matches the plugin");
-
-	const std::string gold = ReadFile(root / "actionscript" / "HorizonShipBuilder.as");
-	Expect(gold.find("return \"0.1.1.0\"") != std::string::npos && gold.find("BUILDER 0.1.1.0") != std::string::npos,
-		"gold movie version");
-	Expect(gold.find("0.1.0.0") == std::string::npos, "no stale gold version");
-	Expect(gold.find("\"$NB_Grotesk_Semibold\",\"$MAIN_Font_Bold\",\"$MAIN_Font\"") != std::string::npos,
-		"mapped candidates are tried in order");
-	Expect(gold.find("$Horizon_NoSuchFace_x") != std::string::npos, "a face is compared with a name that cannot exist");
-	Expect(gold.find("\"WWWWWWWW\"") != std::string::npos && gold.find("\"iiiiiiii\"") != std::string::npos,
-		"wide and narrow letters are measured");
-	Expect(gold.find("wide < narrow * 1.6") != std::string::npos, "the movie ratio matches the twin");
-	Expect(gold.find("Math.abs(wide - missWide) < 0.5") != std::string::npos, "the movie closeness matches the twin");
-	Expect(gold.find("\"ModuleInfoCard_mc\",\"ModuleLabel_mc\",\"text_tf\"") != std::string::npos,
-		"the fallback face is the module name field, not the first field");
-	Expect(gold.find("\"FONT try=\"") != std::string::npos && gold.find("\"FONTSRC \"") != std::string::npos,
-		"the face proof is logged");
-	Expect(NotesHideFaces(gold), "log lines name candidates by index only");
-	{
-		std::vector<std::string> allowed = {
-			"this.face = \"\";",
-			"this.face = \"\";",
-			"this.face = String(names[k]);",
-			"if(this.face.length == 0 && this.faceTries < 3 && (this.frameN == 30 || this.frameN == 120))",
-			"if(this.face.length > 0) { this.refreshFaces(); }",
-			"fmt.font = this.face;",
-			"if(this.face.length == 0) { return \"face\"; }",
-			"if(this.face.length > 0) { fmt.font = this.face; }",
-		};
-		std::sort(allowed.begin(), allowed.end());
-		Expect(FaceUses(gold) == allowed, "the picked face name only sets and tests faces, so no temp can carry it to a log");
-	}
-	Expect(gold.find("box.embedFonts = this.faceEmbed") != std::string::npos, "horizon text uses the proven embed flag");
-	Expect(gold.find("this.hexBox.embedFonts = this.faceEmbed") != std::string::npos, "the hex field uses the proven face");
-	Expect(gold.find("this.hexBox.type = TextFieldType.INPUT") != std::string::npos, "the hex field stays editable");
-	Expect(gold.find("var floor:int = this.lrg ? 16 : 13;") != std::string::npos, "text floors are 13 and 16 px");
-	Expect(gold.find("findLatinField") == std::string::npos, "the face is not taken from the first text field");
-	Expect(gold.find("enumerateFonts") == std::string::npos, "the face is not the first enumerated font");
-	Expect(gold.find("E8C547") != std::string::npos, "gold accent number");
-	Expect(gold.find("ARRANGE PANELS") != std::string::npos, "arrange entry button");
-	Expect(gold.find("COVERS THE SHIP VIEW") != std::string::npos, "overlap chip");
-	Expect(gold.find("SELECTED MODULE") != std::string::npos, "module label");
-	Expect(gold.find("PARTS BROWSER") != std::string::npos, "browser label");
-	Expect(gold.find("ModulePalette_mc") != std::string::npos, "parts list uses the game clip");
-	Expect(gold.find("HangarInfoPanel_mc") != std::string::npos, "hangar overview is recognized");
-	Expect(gold.find("assignSpots") == std::string::npos, "hidden panels are not grabbed by proximity");
-	Expect(gold.find("sample.embedFonts") == std::string::npos, "embed flag is not copied from the first field");
-	Expect(gold.find("param1 == \"Browser\"") != std::string::npos, "parts list stays on the menu");
-	Expect(gold.find("param1 == \"Power\"") != std::string::npos && gold.find("param1 == \"Stats\"") != std::string::npos,
-		"power and the footer stay on the menu");
-	Expect(gold.find("r.y + 180") != std::string::npos, "settings sits below the credit strip");
-	Expect(gold.find("700 * r.width") == std::string::npos, "settings is not parked on the credits");
-	Expect(gold.find("this.sel = \"Power\"") == std::string::npos, "arrange does not start on power");
-	Expect(gold.find("defaultSel") != std::string::npos, "selection starts at the first live handle");
-	Expect(gold.find("moveNative") != std::string::npos, "a drag translates the game clip");
-	Expect(gold.find("revalidateFades") != std::string::npos, "fades are checked again each pass");
-	Expect(gold.find("hitArea") != std::string::npos && gold.find(".mask") != std::string::npos, "masks and hit targets are inspected");
-	Expect(gold.find("canHoldContent") != std::string::npos, "containers are not treated as decoration");
-	Expect(gold.find("boundHas(param1,\"mask\")") != std::string::npos, "the movie protects mask names");
-	Expect(gold.find("boundHas(param1,\"hitarea\")") != std::string::npos, "the movie protects hit area names");
-	Expect(gold.find("boundHas(param1,\"hit\")") != std::string::npos, "the movie protects hit names");
-	Expect(gold.find("addChildAt(plate") == std::string::npos, "the plate is not inserted into the clip");
-	Expect(gold.find("panelMovable") != std::string::npos, "only safe panels are handles");
-	Expect(gold.find("parent.removeChild") == std::string::npos, "game clips are not taken off the menu");
-	Expect(readme.find("game root") != std::string::npos, "the readme names the game root");
-	Expect(readme.find("Data folder as the mod root") == std::string::npos, "the readme does not call Data the mod root");
-	const std::string vortex = ReadFile(root / "package_vortex.sh");
-	Expect(vortex.find("Data/SFSE/Plugins/HorizonShipBuilder.dll") != std::string::npos, "vortex zip has the plugin path");
-	Expect(vortex.find("Data/Interface/spaceshipeditormenu.swf") != std::string::npos, "vortex zip has the normal movie");
-	Expect(vortex.find("Data/Interface/spaceshipeditormenu_lrg.swf") != std::string::npos, "vortex zip has the large movie");
-	Expect(vortex.find("HorizonShipBuilder.default.ini") != std::string::npos, "vortex zip has the default ini");
-	Expect(vortex.find("game root") != std::string::npos, "the package script names the game root");
-	Expect(vortex.find("Data/Data") == std::string::npos, "the package script does not nest Data");
-	Expect(gold.find(std::string("get") + "Timer") == std::string::npos, "gold movie has no timer");
-	Expect(gold.find(std::string("Glow") + "Filter") == std::string::npos, "gold movie has no glow");
-	Expect(gold.find("Keyboard.F") == std::string::npos, "gold movie has no probe keys");
-	Expect(gold.find("aPartList") == std::string::npos, "gold movie does not touch the parts array");
-	Expect(gold.find("SetCategory") == std::string::npos && gold.find("CategoryName") == std::string::npos && gold.find("iCategoryIndex") == std::string::npos,
-		"the gold movie neither reads nor writes categories, so another mod's categories pass through untouched");
-	Expect(CountOf(gold, "ModuleEntries_mc") == 2 && FunctionBody(gold, "noteFaces").find("[\"ModuleEntries_mc\"]") != std::string::npos &&
-		FunctionBody(gold, "nativeList").find("list = this.host[\"ModulePalette_mc\"][\"ModuleEntries_mc\"] as InteractiveObject;") != std::string::npos,
-		"the parts list is read for the face log and named as the focus target, never changed");
-	Expect(FunctionBody(gold, "giveFocus") == R"AS(private function giveFocus(param1:InteractiveObject):void
-      {
-         stage.focus = param1;
-         if(stage.focus != param1) { stage.focus = param1; }
-      }
-)AS" && CountOf(gold, ".focus = ") == 2,
-		"focus moves only through giveFocus, which assigns once more if the menu put it back");
-	Expect(CountOf(gold, "this.giveFocus(") == 2 && CountOf(gold, "this.giveFocus(this.hexBox);") == 1 && CountOf(gold, "this.giveFocus(back);") == 1,
-		"the movie gives focus only to its hex field and back to the game");
-	Expect(CountOf(gold, "this.focusBack") == 3 && CountOf(gold, "this.focusBack = stage.focus;") == 1 && CountOf(gold, "this.focusBack = null;") == 1,
-		"only the hex click notes the game's focus holder, and closing Settings forgets it");
-	Expect(FunctionBody(gold, "onHexField") == R"AS(private function onHexField(param1:MouseEvent):void
-      {
-         if(stage == null || !this.setOpen) { return; }
-         var held:String = this.focusName(stage.focus);
-         if(held != "hex" && held != "ours") { this.focusBack = stage.focus; }
-         this.giveFocus(this.hexBox);
-         this.hexBox.setSelection(0,this.hexBox.text.length);
-         this.note("SETTINGS hex focus=" + held + ">" + this.focusName(stage.focus));
-      }
-)AS" && CountOf(gold, "this.onHexField") == 1 && gold.find("this.hexBox.addEventListener(MouseEvent.CLICK,this.onHexField);") != std::string::npos,
-		"each click on the hex field notes the game holder, gives the field focus, and selects the code, as the game's rename field does");
-	Expect(FunctionBody(gold, "closeSettings") == R"AS(private function closeSettings():void
-      {
-         var was:Boolean = this.setOpen;
-         this.setOpen = false;
-         if(this.setLayer != null) { this.setLayer.visible = false; }
-         var back:InteractiveObject = this.focusBack;
-         this.focusBack = null;
-         if(stage == null) { return; }
-         var held:String = this.focusName(stage.focus);
-         if(held == "hex" || held == "ours")
-         {
-            if(back == null || back.stage == null)
-            {
-               back = this.nativeList();
-               if(back != null && !this.chainShown(back)) { back = null; }
-            }
-            this.giveFocus(back);
-         }
-         if(was || held == "hex" || held == "ours") { this.note("SETTINGS close focus=" + held + ">" + this.focusName(stage.focus)); }
-      }
-)AS",
-		"closing Settings gives focus back to the game holder the hex field took it from, else to the shown list, else to nothing, and logs both holders");
-	Expect(FunctionBody(gold, "nativeList") == R"AS(private function nativeList():InteractiveObject
-      {
-         var list:InteractiveObject = null;
-         try { list = this.host["ModulePalette_mc"]["ModuleEntries_mc"] as InteractiveObject; } catch(err:Error) { list = null; }
-         return list;
-      }
-)AS",
-		"the focus fallback is the game's parts list");
-	Expect(FunctionBody(gold, "focusName") == R"AS(private function focusName(param1:InteractiveObject):String
-      {
-         if(param1 == null) { return "none"; }
-         if(param1 == this.hexBox) { return "hex"; }
-         if(this.contains(param1)) { return "ours"; }
-         var list:DisplayObjectContainer = this.nativeList() as DisplayObjectContainer;
-         if(list != null && list.contains(param1)) { return "list"; }
-         return "other";
-      }
-)AS",
-		"the focus log names a kind, never a clip");
-	Expect(FunctionBody(gold, "chainShown") == R"AS(private function chainShown(param1:DisplayObject):Boolean
-      {
-         var node:DisplayObject = param1;
-         var guard:int = 0;
-         while(node != null && guard < 12)
-         {
-            if(!node.visible) { return false; }
-            node = node.parent;
-            guard++;
-         }
-         return param1.stage != null;
-      }
-)AS",
-		"the list fallback needs the list and every parent shown and on stage");
-	Expect(FunctionBody(gold, "cancelTop") == R"AS(private function cancelTop():void
-      {
-         if(this.arranging) { this.cancelArrange(); }
-         else { this.closeSettings(); }
-      }
-)AS",
-		"cancel closes Arrange first, else Settings");
-	Expect(FunctionBody(gold, "wantsEvent", "public") == R"AS(public function wantsEvent(param1:String, param2:Boolean):Boolean
-      {
-         var open:Boolean = this.arranging || this.setOpen;
-         if(param2)
-         {
-            this.heldEvents[param1] = open;
-            return open;
-         }
-         var held:Boolean = this.heldEvents[param1] == true;
-         delete this.heldEvents[param1];
-         if(!open) { return held; }
-         if(param1 == "Escape" || param1 == "Cancel") { this.cancelTop(); return true; }
-         if(param1 == "Accept" || param1 == "Enter") { if(this.arranging) { this.okArrange(); } return true; }
-         return true;
-      }
-)AS" && CountOf(gold, "this.heldEvents") == 4 && gold.find("         this.heldEvents = {};\n") != std::string::npos,
-		"Settings and Arrange swallow the press and act on the release, and a swallowed press keeps its release from the game after they close");
-	Expect(FunctionBody(gold, "onFeed").find(R"AS(         if(!this.arranging)
-         {
-            if(token == "cancel") { this.cancelTop(); }
-            return;
-         }
-         if(token == "cancel") { this.cancelArrange(); return; }
-         if(token == "ok") { this.okArrange(); return; }
-)AS") != std::string::npos,
-		"the plugin's cancel closes Settings or cancels Arrange, and its ok accepts Arrange");
-	Expect(FunctionBody(gold, "pushState").find("         var capture:int = (this.arranging || this.setOpen) ? 1 : 0;\n         this.lines.push(\"STATE capture=\" + capture + ") != std::string::npos,
-		"the plugin captures keys while Settings or Arrange is open");
-	Expect(CountOf(gold, "this.note(\"HEX ") == 1 && gold.find("         this.note(\"HEX \" + this.accentHex);\n") != std::string::npos &&
-		CountOf(gold, "this.note(\"ACCENT ") == 2 && CountOf(gold, "this.note(\"ARRANGE ") == 6 && CountOf(gold, "this.note(\"STATE ") == 0 &&
-		CountOf(gold, "this.note(\"FORM ") == 0 && CountOf(gold, "this.lines.push(\"") == 1,
-		"only the movie's save lines use the prefixes the plugin writes to the ini");
-	Expect(FunctionBody(gold, "onHex").find("         this.note(\"SETTINGS custom focus=\" + this.focusName(stage != null ? stage.focus : null) + \" length=\" + hex.length);\n         if(hex.length != 6) { return; }\n") != std::string::npos,
-		"CUSTOM logs the focus kind and the code length before it accepts or ignores the code");
-	Expect(FunctionBody(gold, "textFormat") == R"AS(private function textFormat(param1:int, param2:uint):TextFormat
-      {
-         var floor:int = this.lrg ? 16 : 13;
-         var fmt:TextFormat = new TextFormat();
-         if(this.face.length > 0) { fmt.font = this.face; }
-         fmt.size = param1 < floor ? floor : param1;
-         fmt.color = param2;
-         return fmt;
-      }
-)AS" && CountOf(gold, "$Horizon_") == 1 && gold.find("NO_FACE:String = \"$Horizon_NoSuchFace_x\";") != std::string::npos &&
-		gold.find("fonts_horizon") == std::string::npos && gold.find("Exo") == std::string::npos && gold.find("Roboto") == std::string::npos,
-		"text uses only the face the probe picked, and the movie names no Horizon font");
-	const std::string guard = FunctionBody(gold, "isProtectedName");
-	Expect(guard.find("\"categor\"") != std::string::npos && guard.find("\"list\"") != std::string::npos && guard.find("\"entry\"") != std::string::npos &&
-		guard.find("\"scroll\"") != std::string::npos && guard.find("\"tab\"") != std::string::npos && guard.find("\"select\"") != std::string::npos &&
-		guard.find("\"input\"") != std::string::npos && guard.find("\"button\"") != std::string::npos,
-		"category, list, scroll, and input art is never faded");
-	Expect(CountOf(gold, "BSUIDataManager.Subscribe(") == 1 && gold.find("BSUIDataManager.Subscribe(\"ModuleInfo\",this.onModuleInfo)") != std::string::npos,
-		"the gold movie subscribes to ModuleInfo only");
-	Expect(gold.find("BSUIDataManager.Unsubscribe") == std::string::npos && gold.find("BSUIDataManager.Flush") == std::string::npos,
-		"the gold movie leaves the game's subscriptions alone");
-	Expect(gold.find("data.aStats") != std::string::npos && gold.find("data.iModuleCost") != std::string::npos &&
-		gold.find("data.iModuleMass") != std::string::npos && gold.find("data.sDescription") != std::string::npos &&
-		gold.find("data.aRequiredAttributes") != std::string::npos, "the card reads the payload fields");
-	Expect(gold.find("\"HsbModuleCard\"") != std::string::npos, "our card is a named Horizon node");
-	Expect(gold.find("this.modCard.mouseEnabled = false;") != std::string::npos && gold.find("this.modCard.mouseChildren = false;") != std::string::npos,
-		"our card takes no mouse");
-	const std::string hold = FunctionBody(gold, "holdModule");
-	const std::string seat = FunctionBody(gold, "seatModule");
-	const std::string drop = FunctionBody(gold, "dropModule");
-	Expect(hold.find("if(!this.paintSafe()) { return; }") < hold.find("param1.alpha = 0;") && hold.find("param1.alpha = 0;") != std::string::npos,
-		"our card is painted before the game card is hidden");
-	Expect(hold.find("this.modAlpha = param1.alpha > 0 ? param1.alpha : 1;") != std::string::npos, "a zero alpha is never kept");
-	Expect(seat.find("if(param1.alpha != 0) { param1.alpha = 0; }") != std::string::npos && seat.find("param1 != this.modNative") != std::string::npos,
-		"only the held game card is kept at alpha 0");
-	Expect(drop.find("this.modNative.alpha = this.modAlpha;") != std::string::npos, "a drop puts the game card's alpha back");
-	for (const std::string* body : {&hold, &seat, &drop}) {
-		Expect(!body->empty() && body->find("param1.visible") == std::string::npos && body->find("modNative.visible") == std::string::npos &&
-			body->find("removeChild") == std::string::npos && body->find("addChild(param1") == std::string::npos &&
-			body->find("addChildAt(param1") == std::string::npos &&
-			CountOf(*body, ".x =") == CountOf(*body, "this.modCard.x =") && CountOf(*body, ".y =") == CountOf(*body, "this.modCard.y =") &&
-			body->find("param1.x") == std::string::npos && body->find("param1.y") == std::string::npos &&
-			body->find("moveNative(") == std::string::npos && body->find("setChildIndex(param1") == std::string::npos,
-			"the game card is hidden by alpha only and never moved or reparented");
-	}
-	Expect(gold.find("modNative.visible") == std::string::npos && gold.find("removeChild(this.modNative") == std::string::npos,
-		"the game card's visible flag and parent are left to the menu");
-	Expect(seat.find("parent.addChildAt(this.modCard,at + 1);") != std::string::npos, "our card sits right above the game card");
-	Expect(seat.find("this.modCard.y = Math.round(y);\n         this.modCard.visible = true;") != std::string::npos &&
-		seat.find("if(mine != at + 1) { parent.setChildIndex(this.modCard,mine > at ? at + 1 : at); }") != std::string::npos &&
-		CountOf(seat, "setChildIndex(") == 1 && CountOf(seat, "addChildAt(") == 1,
-		"a seat shows our card and keeps it right above the game card");
-	Expect(FunctionBody(gold, "paintModule").find("g.drawRoundRect(1,1,w - 2,y - 2,12,12);\n         g.endFill();\n         this.modHigh = y;") != std::string::npos &&
-		CountOf(gold, "this.modHigh = ") == 2, "the lift height is the painted background's full height");
-	const std::string lift = FunctionBody(gold, "liftModule");
-	Expect(lift.find("this.liftTop = param1.globalToLocal(this.localToGlobal(new Point(r.x,r.y))).y;") != std::string::npos &&
-		lift.find("this.liftLow = param1.globalToLocal(this.localToGlobal(new Point(r.x,r.y + r.height))).y;") != std::string::npos,
-		"the cached edges are the view's top and bottom in the card's parent");
-	Expect(seat.find("this.arranging ? box.y : this.liftModule(parent,box.y,this.modHigh)") != std::string::npos &&
-		gold.find("this.modView = r;") != std::string::npos && gold.find("this.modHigh = y;") != std::string::npos,
-		"outside arrange a tall card is lifted onto the screen");
-	Expect(lift.find("if(param2 + param3 <= this.liftLow) { return param2; }") != std::string::npos &&
-		lift.find("return Math.max(this.liftTop,this.liftLow - param3);") != std::string::npos && CountOf(lift, "return") == 3 &&
-		CountOf(lift, "return param2;") == 2, "the lift matches the twin");
-	Expect(lift.find("this.view()") == std::string::npos && lift.find("if(r != this.liftView || param1 != this.liftParent)") != std::string::npos,
-		"the per-frame lift reuses the cached view edges");
-	Expect(FunctionBody(gold, "openArrange").find("this.arranging = true;\n         if(this.modOn) { this.seatModule(this.modNative); }") != std::string::npos,
-		"arrange outlines our card where it will sit");
-	Expect(FunctionBody(gold, "placeNative").find("this.seatModule(this.modNative)") != std::string::npos &&
-		FunctionBody(gold, "moveLive").find("this.seatModule(this.modNative)") != std::string::npos &&
-		FunctionBody(gold, "resetArrange").find("if(this.modOn) { this.seatModule(this.modNative); }") != std::string::npos &&
-		FunctionBody(gold, "cancelArrange").find("if(this.modOn) { this.seatModule(this.modNative); }") != std::string::npos,
-		"a saved spot, a drag, reset, and cancel bring our card back with the game card");
-	Expect(FunctionBody(gold, "paintSafe").find("catch(err:Error)") != std::string::npos && FunctionBody(gold, "paintSafe").find("this.dropModule();") != std::string::npos,
-		"a paint that throws drops our card");
-	const std::string payload = FunctionBody(gold, "onModuleInfo");
-	Expect(payload.find("this.syncModule();") != std::string::npos &&
-		payload.find("if(was && this.modOn && this.paintSafe()) { this.seatModule(this.modNative); }") != std::string::npos,
-		"a payload is shown or dropped at once and seated with its new height");
-	Expect(payload.find("this.modFailed = false;") != std::string::npos && FunctionBody(gold, "moduleGate").find("if(this.modFailed) { return \"paint\"; }") != std::string::npos,
-		"a failed paint holds the game card until the next payload");
-	Expect(FunctionBody(gold, "moduleGate").find("if(this.arranging && !this.modOn) { return \"arrange\"; }") != std::string::npos,
-		"arrange does not bring our card up");
-	const std::string chipBody = FunctionBody(gold, "paintChip");
-	const std::string putTag = "\n            this.put(tag,text,up ? 0x69FEB3 : 0xFF6868);";
-	Expect(CountOf(chipBody, "if(tag.textWidth + " + std::to_string(hsb::kChipPadPx) + " > room)") == 2 &&
-		chipBody.find("text = this.shortChip(text);" + putTag) != std::string::npos && chipBody.find("text = text.charAt(0);" + putTag) != std::string::npos,
-		"a chip too wide for its room is shortened, never clipped");
-	const std::string shortBody = FunctionBody(gold, "shortChip");
-	Expect(shortBody.find("if(dot < 0 || param1.indexOf(\"e\") >= 0) { return param1.charAt(0); }") != std::string::npos &&
-		shortBody.find("return whole.length == 2 && whole.charAt(1) == \"0\" ? param1.charAt(0) : whole;") != std::string::npos &&
-		CountOf(shortBody, "return") == 2, "the movie shortens a chip as the twin does");
-	Expect(FunctionBody(gold, "chipNumber").find("if(dot < 0 || text.indexOf(\"e\") >= 0) { return text; }") != std::string::npos,
-		"the movie keeps toFixed's exponent text whole, as the twin does");
-	Expect(gold.find("if(this.face.length == 0) { return \"face\"; }") != std::string::npos, "the card waits for a proven face");
-	Expect(gold.find("Boolean(data.bShowWidget)") != std::string::npos && gold.find("this.chainShown(param1)") != std::string::npos,
-		"the card follows the game card's visibility");
-	Expect(gold.find("if(this.hangarShown()) { return \"hangar\"; }") != std::string::npos, "the hangar overview keeps the game card");
-	Expect(gold.find("\"MODCARD \"") != std::string::npos && gold.find("\" keys=\"") != std::string::npos, "the card state is logged");
-	Expect(gold.find("GlobalFunc.FormatNumberToString(Number(param1.fValue),2)") != std::string::npos, "stats use the game's two-place rule");
-	Expect(gold.find("GlobalFunc.FormatNumberToString(Number(param1.fValue) * 100) + \"%\"") != std::string::npos, "percent stats match the game");
-	Expect(gold.find("String.fromCharCode(param1.fValue)") != std::string::npos && gold.find("== \"$CLASS\"") != std::string::npos,
-		"the class stat is a letter");
-	Expect(gold.find("this.put(rank,\"$(Rank #)\"") != std::string::npos && gold.find("GlobalFunc.DoSubstitutions(rank.text,[param2.uRank])") != std::string::npos,
-		"the rank is translated as the game writes it");
-	Expect(gold.find("Math.min(stats.length,10)") != std::string::npos && gold.find("Math.min(skills.length,2)") != std::string::npos,
-		"ten stats and two skills");
-	const hsb::CardMetrics lrgCard = hsb::CardSize(true);
-	const hsb::CardMetrics nrmCard = hsb::CardSize(false);
-	using M = hsb::CardMetrics;
-	Expect(gold.find("return " + Pick(lrgCard, nrmCard, &M::width) + ";") != std::string::npos &&
-		gold.find("return " + Pick(lrgCard, nrmCard, &M::pad) + ";") != std::string::npos, "card width and padding come from the twin");
-	Expect(gold.find("var pitch:Number = " + Pick(lrgCard, nrmCard, &M::rowPitch) + ";") != std::string::npos &&
-		gold.find("var chipH:Number = " + Pick(lrgCard, nrmCard, &M::chipH) + ";") != std::string::npos &&
-		gold.find("var barH:Number = " + Pick(lrgCard, nrmCard, &M::barH) + ";") != std::string::npos &&
-		gold.find("var big:Number = " + Pick(lrgCard, nrmCard, &M::bigPx) + ";") != std::string::npos &&
-		gold.find("this.cardText(" + Pick(lrgCard, nrmCard, &M::namePx) + ",true)") != std::string::npos &&
-		gold.find("var head:int = " + Pick(lrgCard, nrmCard, &M::headPx) + ";") != std::string::npos &&
-		gold.find("var body:int = " + Pick(lrgCard, nrmCard, &M::bodyPx) + ";") != std::string::npos &&
-		gold.find("var small:int = " + Pick(lrgCard, nrmCard, &M::chipPx) + ";") != std::string::npos,
-		"card text sizes and rows come from the twin");
-	const std::string column = "this.lrg ? " + std::to_string(lrgCard.width - lrgCard.pad - lrgCard.valueRight) + " : " +
-		std::to_string(nrmCard.width - nrmCard.pad - nrmCard.valueRight);
-	Expect(gold.find("var right:Number = w - pad - (" + column + ");") != std::string::npos &&
-		gold.find("var room:Number = (" + column + ") - " + std::to_string(hsb::kChipGapPx) + ";") != std::string::npos,
-		"the value column and chip room come from the twin");
-	Expect(gold.find("var chipW:Number = Math.min(Math.max(" + std::to_string(hsb::kChipMinPx) + ",tag.textWidth + " +
-		std::to_string(hsb::kChipPadPx) + "),room);") != std::string::npos, "the chip width matches the twin");
-	Expect(FunctionBody(gold, "diffText").find(
-		"var size:String = param1.bPercentage ? this.chipNumber(Math.abs(diff) * 100,0) : this.chipNumber(Math.abs(diff),2);") != std::string::npos,
-		"a percent chip is a whole percent and other chips keep two places, as in the twin");
-	Expect(FunctionBody(gold, "chipNumber").find("param1.toFixed(6)") != std::string::npos && FunctionBody(gold, "diffText").find("if(size == \"0\") { return \"\"; }") != std::string::npos,
-		"a chip never prints float noise");
-	Expect(FunctionBody(gold, "diffText").find("FormatNumberToString") == std::string::npos, "the chip does not cut an exponent's digits");
-	Expect(gold.find("this.putKey(this.modValueL,\"$VALUE\",\"VALUE\",") != std::string::npos && gold.find("this.putKey(this.modMassL,\"$MASS\",\"MASS\",") != std::string::npos,
-		"value and mass use the game's label keys");
-	Expect(gold.find("stackModule") == std::string::npos && gold.find("placeSlot") == std::string::npos && gold.find("this.moved") == std::string::npos,
-		"the game card's fields are not moved");
-	Expect(gold.find("return this.modCard.getBounds(this);") != std::string::npos, "arrange outlines our card");
-	Expect(gold.find("return this.modNative.getBounds(this);") != std::string::npos, "module anchors use the game card's size");
-	Expect(gold.find("Math.max(live.height,size.height)") != std::string::npos, "a drag keeps both boxes on screen");
-	Expect(gold.find("Swap cost") == std::string::npos && gold.find("Hab 2x2") == std::string::npos, "the card prints no mock-only text");
-	Expect(readme.find("MODCARD on") != std::string::npos && readme.find("FONT try=") != std::string::npos, "the readme names the card and face log lines");
-	Expect(readme.find("_lrg") != std::string::npos && readme.find("ModuleInfo") != std::string::npos, "the readme covers the large movie and the card's data");
-	Expect(readme.find("MODCARD listen ok") != std::string::npos && readme.find("`paint`") != std::string::npos && readme.find("`arrange`") != std::string::npos,
-		"the readme lists every card state");
-	Expect(readme.find("`MODVALS`") != std::string::npos && readme.find("this mod removed") != std::string::npos,
-		"the readme says how to compare the card with the payload");
-	Expect(readme.find("interface/spaceshipeditormenu_lrg.swf") != std::string::npos && readme.find("Creations included") != std::string::npos &&
-		readme.find("another mod adds") != std::string::npos && readme.find("arrow keys still move the parts list") != std::string::npos,
-		"the readme checks other plugins' movies, keeps other mods for the comparison, and checks list keys after the hex field");
-	Expect(readme.find("\n- `spaceshipeditormenu.swf`, 260994 bytes: `6A66089EE9410ECB126B4BEDE8BED81551E5661555AA1F50FA217C495404C2EC`\n") != std::string::npos &&
-		readme.find("\n- `spaceshipeditormenu_lrg.swf`, 260965 bytes: `3457A49CF9B79A346C4B3FCFA7EF360B10CCC86D41899B6D8004DF12E90F2C67`\n") != std::string::npos &&
-		readme.find("Stop and report it rather than splicing.") != std::string::npos &&
-		readme.find("`certutil` prints lower case, so compare without regard to case:") != std::string::npos,
-		"the readme checks the splice source against the stock movies' sizes and hashes");
-	Expect(readme.find("\n- `spaceshipeditormenu_assetlibrary2.swf`, 151358 bytes: `2B6D854C3C66973C2948246D1D1DA21A3ADA314B5FDD1899DA375FBCCB8052BC`\n") != std::string::npos &&
-		readme.find("\n- `spaceshipeditormenu_assetlibrary2_lrg.swf`, 152427 bytes: `4793E8C3D710647D53D0C91333162E158DE7E1F70D1671A28A53F27A67F5370B`\n") != std::string::npos &&
-		readme.find("\n- `spaceshipeditormenu_assetlibrary.swf`, 8335 bytes: `9352241D92EE288D6F4D1457E82F2F2CCD842CF9D4F1353EFD29DC38471DF624`\n") != std::string::npos,
-		"the readme gives the stock libraries' sizes and hashes");
-	Expect(readme.find("interface/spaceshipeditormenu_assetlibrary2.swf") != std::string::npos &&
-		readme.find("interface/spaceshipeditormenu_assetlibrary2_lrg.swf") != std::string::npos &&
-		readme.find("Do not enable StarUI Ship Builder with this mod.") != std::string::npos,
-		"the readme checks other mods' card library and keeps StarUI Ship Builder off");
-	Expect(readme.find("## 0.1.1.0 FONT PROBE + one-card candidate") != std::string::npos && readme.find("Neither is proven in game.") != std::string::npos &&
-		readme.find("face and Selected Module card") == std::string::npos,
-		"the readme names this pass a font probe and a card candidate");
-	Expect(readme.find("Every stock language config maps all three.") != std::string::npos && readme.find("needs no other Horizon mod") != std::string::npos,
-		"the readme says the face candidates are stock names and the movie stands alone");
-	Expect(readme.find("whether a face has another script's glyphs, and how it draws them, is untested.") != std::string::npos &&
-		readme.find("which is untested") == std::string::npos,
-		"the readme says the font map is stock and only other scripts' glyphs are untested");
-	Expect(readme.find("The StarUI Ship Builder 1.4 copy checked for this work is staged in Vortex, not deployed, and only its `Interface` movies were listed. So neither check is known to fire for it, and the gold card can cover its card. This rule is the guard.") != std::string::npos &&
-		readme.find("ships only Interface files") == std::string::npos,
-		"the readme does not lean on the StarUI checks or claim more than the staged files show");
-	Expect(readme.find("For game version 1.16.244, from one extract, a loose library is stock only with these values:") != std::string::npos,
-		"the readme ties the stock library values to the game version they came from");
-	Expect(readme.find("the log shows `SETTINGS hex focus=` with the holder before and after `>`, here `list>hex`, and the code is selected. Each click selects the whole code again.") != std::string::npos &&
-		readme.find("the log shows `SETTINGS custom focus=hex length=6`, the gold changes to the typed code, and the log shows `FACT ini | user file merged`. The plugin saves the code to the player ini as `AccentHex` and does not log it.") != std::string::npos &&
-		readme.find("then `HEX` and the code") == std::string::npos &&
-		plugin.find("\tFact(\"ini\", \"user file merged\");\n") != std::string::npos &&
-		readme.find("Typing that leaves the code unchanged is a failure even when the log reads `hex`.") != std::string::npos &&
-		readme.find("Each close writes `SETTINGS close focus=` with the holder before and after `>`. If before is `list`, `other`, or `none`, after equals before. If before is `hex` or `ours` and the session's first hex click read `list` or `other` before `>`, after must read that holder, here `list`. Otherwise after reads `list` while the parts list shows, and `none` when it is hidden.") != std::string::npos &&
-		readme.find("Here, with the parts list holding focus, a first hex click that reads `hex>hex` or `ours>hex` means the game moved focus before the mod could note the holder. Report it. Then CUSTOM may read `focus=ours`, and the close falls back to the parts list.") != std::string::npos,
-		"the readme gates the focus hand-back on log lines and on typing, and grades a close by the holder the hex click noted");
-	Expect(readme.find("Repeat one hex click and one close wherever the gear shows: in the hangar overview, in Flight Check, in paint mode, and while renaming the ship. Grade the close by the same rule") != std::string::npos &&
-		readme.find("In the hangar overview the parts list is hidden and nothing usually holds focus, so the hex click reads `none`, `hex`, or `ours` before `>`, and the close's after reads `none`.") != std::string::npos &&
-		readme.find("Where a game object such as the rename field holds focus, expect `other>hex`, then `hex>other`.") != std::string::npos &&
-		readme.find("The close's after must read what that hex click read before `>`") == std::string::npos,
-		"the readme checks the focus hand-back on every screen with the gear, including the hangar's empty start");
-	Expect(readme.find("Check Esc tapped and held for about a second, and B the same, in Settings and in Arrange.") != std::string::npos &&
-		readme.find("act when the key or pad button is released, as the game's buttons do, and neither half should reach the game.") != std::string::npos &&
-		readme.find("Enter in Arrange acts as OK, also on release. Arrange's arrow keys act on the press and repeat while held.") != std::string::npos &&
-		readme.find("Arrange's mouse buttons act on the press, and the plugin eats the release too. Arrange ignores the first mouse press after it opens, so the first click does nothing. After that, click OK and CANCEL in Arrange with the mouse: the click does not reach the parts list or the game's buttons.") != std::string::npos &&
-		readme.find("act when the button is released") == std::string::npos &&
-		FunctionBody(gold, "openArrange").find("\n         this.ignorePress = true;\n") != std::string::npos &&
-		FunctionBody(gold, "onPointer").find("if(param1 == \"D\")\n         {\n            if(this.ignorePress) { this.ignorePress = false; return; }\n") != std::string::npos,
-		"the readme checks that Esc, Enter, and B act on release, that Arrange's mouse acts on the press after the ignored first press, and that only our panels hear them");
-	Expect(gold.find("this.note(\"MODVALS \" + this.modVals[v]);") != std::string::npos && gold.find("this.modValsLeft = 24;") != std::string::npos,
-		"payload numbers and shown text are logged for a bounded number of modules");
-	Expect(!NotesHideFaces("         this.note(\"FONT face=\" + fmt.font);") && !NotesHideFaces("         this.note(\"FONT list=\" + FACES.join(\",\"));") &&
-		!NotesHideFaces("         this.lines.push(\"FONT \" + this.face);") && NotesHideFaces("         this.note(\"FONT try=\" + this.faceTries);"),
-		"the face scan catches a face name in a log line");
-
-	Expect(probe.find("enableDebug") != std::string::npos, "probe can be turned on");
-	Expect(probe.find("PROBE off") != std::string::npos, "probe stays quiet by default");
-	Expect(splice.find("import HorizonShipBuilder;") != std::string::npos, "gold import");
-	Expect(splice.find("hsbApply") != std::string::npos, "apply splice");
-	Expect(splice.find("hsbFeed") != std::string::npos, "feed splice");
-
-	const std::string rc = ReadFile(root / "res" / "HorizonShipBuilder.rc.in");
-	Expect(rc.find("Horizon Ship Builder") != std::string::npos, "product name is the builder");
-	Expect(rc.find("0.43") == std::string::npos, "the builder resource does not inherit the hud version");
-
-	const std::string defaults = ReadFile(root / "Interface" / "HorizonUI" / "shipbuilder" / "HorizonShipBuilder.default.ini");
-	Expect(defaults.find("AccentColor=9") != std::string::npos, "default accent index");
-	Expect(defaults.find("Probe=0") != std::string::npos, "probe defaults off");
+	CheckMovie(root);
+	CheckPlugin(root);
+	CheckDocs(repo, root);
 
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";

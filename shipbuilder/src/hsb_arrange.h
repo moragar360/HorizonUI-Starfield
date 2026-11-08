@@ -1,102 +1,32 @@
 #pragma once
 
-// Purpose: pure rules for Arrange, the gold accent, and the user ini.
-// No game calls. The movie and the plugin both follow these rules.
+// Purpose: pure rules for Arrange values, the gold accent, and the user ini path.
+// No game calls. The movie and the plugin both follow these rules. Settings whitelist and
+// merging live in hsb_settings.h; window input rules live in hsb_input.h.
 // Author: Moragar. Last modified: 2026-11-07.
 
 #include "hsb_guard.h"
 
 #include <array>
-#include <cstdint>
 #include <string>
 #include <string_view>
-#include <utility>
-#include <vector>
 
 namespace hsb {
 
 inline constexpr int kMarginDefault = 34;
 inline constexpr int kAccentDefault = 9;
 inline constexpr int kAccentGold = 0xE8C547;
-inline constexpr int kSnap = 10;
-inline constexpr int kGrid = 40;
-inline constexpr int kNudge = 10;
-inline constexpr int kNudgeFast = 40;
 inline constexpr int kOffsetLimit = 4000;
 
 // F6, F7, F8. Off unless the user ini turns the probe on.
 inline constexpr unsigned kVkF6 = 0x75;
 inline constexpr unsigned kVkF7 = 0x76;
 inline constexpr unsigned kVkF8 = 0x77;
-inline constexpr unsigned kVkL = 'L';
-inline constexpr unsigned kVkEsc = 0x1B;
-inline constexpr unsigned kVkReturn = 0x0D;
-inline constexpr unsigned kVkLeft = 0x25;
-inline constexpr unsigned kVkUp = 0x26;
-inline constexpr unsigned kVkRight = 0x27;
-inline constexpr unsigned kVkDown = 0x28;
-inline constexpr unsigned kVkTab = 0x09;
-inline constexpr unsigned kVkPrior = 0x21;
-inline constexpr unsigned kVkNext = 0x22;
-inline constexpr unsigned kVkDelete = 0x2E;
-inline constexpr unsigned kVkBack = 0x08;
 
 inline bool IsProbeHotkey(bool debug, unsigned vk)
 {
 	if (!debug) return false;
 	return vk == kVkF6 || vk == kVkF7 || vk == kVkF8;
-}
-
-// Bare L is not an entry key. Ctrl+L is the fallback that does not take a vanilla builder key.
-inline bool IsArrangeEntry(bool captured, bool ctrl, unsigned vk)
-{
-	return !captured && ctrl && (vk == kVkL || vk == 'l');
-}
-
-// While Arrange or the settings popup is up, keys do not reach the builder.
-// Mouse is eaten only in Arrange, so a drag cannot move the ship.
-inline bool EatKey(bool captured)
-{
-	return captured;
-}
-
-inline bool EatMouse(bool arranging)
-{
-	return arranging;
-}
-
-// Esc and Enter act on release, as the game's buttons do. Arrange's other keys act on the
-// press, so a held key repeats.
-inline bool KeyTokenOnRelease(unsigned vk)
-{
-	return vk == kVkEsc || vk == kVkReturn;
-}
-
-struct EdgeCall
-{
-	bool eat = false;
-	bool feed = false;
-};
-
-// The game gets both halves of a press or neither. A release, or a repeat, follows what the hook
-// did with the first press, even after capture or Arrange ends. pressEaten says the hook ate
-// the first press of this key or button.
-inline EdgeCall KeyEdge(bool down, bool repeat, bool captured, bool pressEaten, unsigned vk)
-{
-	EdgeCall call;
-	if (!down) call.eat = pressEaten;
-	else if (repeat) call.eat = EatKey(captured) || pressEaten;
-	else call.eat = EatKey(captured);
-	call.feed = call.eat && EatKey(captured) && down != KeyTokenOnRelease(vk);
-	return call;
-}
-
-inline EdgeCall MouseEdge(bool button, bool release, bool arranging, bool pressEaten)
-{
-	EdgeCall call;
-	call.eat = button && release ? pressEaten : EatMouse(arranging);
-	call.feed = call.eat && EatMouse(arranging);
-	return call;
 }
 
 // Which keys or buttons are held from a press the hook ate. Only the window procedure uses it.
@@ -116,137 +46,6 @@ private:
 	static constexpr unsigned kCodes = 256;
 	std::array<bool, kCodes> held_{};
 };
-
-// Swallowed keys that Arrange itself does not use. Delete and Backspace stay unbound.
-inline const char* ArrangeKeyToken(unsigned vk, bool shift)
-{
-	switch (vk) {
-	case kVkEsc: return "cancel";
-	case kVkReturn: return "ok";
-	case kVkLeft: return shift ? "left40" : "left";
-	case kVkRight: return shift ? "right40" : "right";
-	case kVkUp: return shift ? "up40" : "up";
-	case kVkDown: return shift ? "down40" : "down";
-	case kVkTab: return shift ? "tabprev" : "tab";
-	case kVkPrior: return "tabprev";
-	case kVkNext: return "tab";
-	case kVkDelete: return "noop";
-	case kVkBack: return "noop";
-	default: return "";
-	}
-}
-
-inline int SnapTo(int value, int origin, int grid)
-{
-	if (grid <= 1) return value;
-	const int delta = value - origin;
-	int steps = delta / grid;
-	const int rem = delta % grid;
-	if (rem >= grid / 2) ++steps;
-	if (rem <= -((grid + 1) / 2)) --steps;
-	return origin + steps * grid;
-}
-
-inline int ClampSpan(int value, int lo, int hi)
-{
-	if (hi < lo) return lo;
-	if (value < lo) return lo;
-	if (value > hi) return hi;
-	return value;
-}
-
-// Arrange handles are live panels we can translate without taking them off the menu.
-// Credits and the button bar are not handles: the menu writes their x and y.
-struct ArrangeBox {
-	int x = 0;
-	int y = 0;
-	int w = 0;
-	int h = 0;
-};
-
-struct ArrangePanel {
-	std::string_view id;
-	bool live = false;
-	ArrangeBox bounds{};
-};
-
-inline bool ArrangeMovableId(std::string_view id)
-{
-	return id == "Power" || id == "Module" || id == "Browser" || id == "Stats" || id == "Cluster";
-}
-
-inline bool ArrangeEligible(const ArrangePanel& panel)
-{
-	if (!panel.live || !ArrangeMovableId(panel.id)) return false;
-	return panel.bounds.w >= 24 && panel.bounds.h >= 24;
-}
-
-inline int ArrangeDefault(const ArrangePanel* panels, int count)
-{
-	if (!panels || count <= 0) return -1;
-	for (int i = 0; i < count; ++i) {
-		if (ArrangeEligible(panels[i])) return i;
-	}
-	return -1;
-}
-
-inline int ArrangeHit(const ArrangePanel* panels, int count, int x, int y)
-{
-	if (!panels || count <= 0) return -1;
-	for (int i = count - 1; i >= 0; --i) {
-		if (!ArrangeEligible(panels[i])) continue;
-		const ArrangeBox& b = panels[i].bounds;
-		if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return i;
-	}
-	return -1;
-}
-
-inline int ArrangeCycle(const ArrangePanel* panels, int count, int selected, int dir)
-{
-	if (!panels || count <= 0 || dir == 0) return -1;
-	int ids[8];
-	int n = 0;
-	for (int i = 0; i < count && n < 8; ++i) {
-		if (ArrangeEligible(panels[i])) ids[n++] = i;
-	}
-	if (n == 0) return -1;
-	int pos = -1;
-	for (int i = 0; i < n; ++i) {
-		if (ids[i] == selected) pos = i;
-	}
-	if (pos < 0) return dir > 0 ? ids[0] : ids[n - 1];
-	const int step = dir > 0 ? 1 : -1;
-	int next = pos + step;
-	if (next < 0) next = n - 1;
-	if (next >= n) next = 0;
-	return ids[next];
-}
-
-inline ArrangeBox ArrangeShift(ArrangeBox bounds, int dx, int dy, int originX, int originY, int viewX, int viewY, int viewW, int viewH)
-{
-	const int x = SnapTo(bounds.x + dx, originX, kSnap);
-	const int y = SnapTo(bounds.y + dy, originY, kSnap);
-	bounds.x = ClampSpan(x, viewX, viewX + viewW - bounds.w);
-	bounds.y = ClampSpan(y, viewY, viewY + viewH - bounds.h);
-	return bounds;
-}
-
-// A rejected move leaves the native bounds alone. A kept move is the new native position.
-inline bool ArrangeTryMove(ArrangePanel& panel, int dx, int dy, int originX, int originY, int viewX, int viewY, int viewW, int viewH)
-{
-	if (!ArrangeEligible(panel)) return false;
-	panel.bounds = ArrangeShift(panel.bounds, dx, dy, originX, originY, viewX, viewY, viewW, viewH);
-	return true;
-}
-
-inline ArrangeBox ArrangeFrame(ArrangeBox native, int pad)
-{
-	native.x -= pad;
-	native.y -= pad;
-	native.w += pad * 2;
-	native.h += pad * 2;
-	return native;
-}
 
 inline bool IsHexDigit(char c)
 {
@@ -291,12 +90,6 @@ inline bool IsArrangeKey(std::string_view key)
 	const char axis = key.back();
 	if (axis != 'X' && axis != 'x' && axis != 'Y' && axis != 'y') return false;
 	return KnownPanel(key.substr(0, key.size() - 1));
-}
-
-inline bool IsStyleKey(std::string_view key)
-{
-	return EqualsFold(key, "AccentColor") || EqualsFold(key, "AccentHex") || EqualsFold(key, "ScreenMargin") ||
-		EqualsFold(key, "Probe") || EqualsFold(key, "Arrange");
 }
 
 inline int ParseInt(std::string_view text, bool& ok)
@@ -354,7 +147,8 @@ inline bool ValidArrangeValue(std::string_view key, std::string_view value)
 	const std::string v = Trim(value);
 	if (v == "-1") return true;
 	if (v.size() < 2) return false;
-	const char edge = v[0];
+	// A hand-edited file may use lower case; CanonArrange writes it back in upper case.
+	const char edge = (v[0] >= 'a' && v[0] <= 'z') ? static_cast<char>(v[0] - 'a' + 'A') : v[0];
 	const bool x = key.back() == 'X' || key.back() == 'x';
 	const bool edgeOk = x ? (edge == 'L' || edge == 'R' || edge == 'C') : (edge == 'T' || edge == 'B' || edge == 'C');
 	if (!edgeOk) return false;
@@ -427,172 +221,6 @@ inline std::string CanonArrange(std::string_view key, std::string_view value)
 		if (v[0] >= 'a' && v[0] <= 'z') v[0] = static_cast<char>(v[0] - 'a' + 'A');
 	}
 	return name + "=" + v;
-}
-
-// Merge changed keys into the user file. Defaults are dropped. Other sections stay.
-inline std::string MergeUserIni(std::string_view existing, const std::vector<std::pair<std::string, std::string>>& updates)
-{
-	struct Row { std::string key, value; };
-	std::vector<std::pair<std::string, std::vector<std::string>>> sections;
-	std::vector<Row> arrange;
-	std::vector<Row> style;
-	auto findRow = [](std::vector<Row>& rows, std::string_view key) -> Row* {
-		for (auto& row : rows) {
-			if (EqualsFold(row.key, key)) return &row;
-		}
-		return nullptr;
-	};
-	std::string current;
-	bool seenArrange = false;
-	bool seenStyle = false;
-	auto flushLine = [&](const std::string& line) {
-		if (EqualsFold(current, "Arrange")) {
-			std::string key, value;
-			if (SplitKey(line, key, value) && IsArrangeKey(key) && ValidArrangeValue(key, value) && !IsDefaultArrange(key, value)) {
-				const std::string canon = CanonArrange(key, value);
-				const auto eq = canon.find('=');
-				Row row{canon.substr(0, eq), canon.substr(eq + 1)};
-				if (Row* have = findRow(arrange, row.key)) have->value = row.value;
-				else arrange.push_back(row);
-			}
-			return;
-		}
-		if (EqualsFold(current, "Style") || EqualsFold(current, "Layout") || EqualsFold(current, "Debug") || EqualsFold(current, "Keys")) {
-			std::string key, value;
-			if (SplitKey(line, key, value)) {
-				if (Row* have = findRow(style, key)) have->value = value;
-				else style.push_back(Row{key, value});
-			}
-			return;
-		}
-		if (!sections.empty()) sections.back().second.push_back(line);
-	};
-	std::size_t at = 0;
-	while (at <= existing.size()) {
-		const auto next = existing.find('\n', at);
-		std::string line(existing.substr(at, next == std::string::npos ? std::string::npos : next - at));
-		if (!line.empty() && line.back() == '\r') line.pop_back();
-		const std::string sec = SectionName(line);
-		if (!sec.empty()) {
-			current = sec;
-			if (EqualsFold(sec, "Arrange")) seenArrange = true;
-			else if (EqualsFold(sec, "Style") || EqualsFold(sec, "Layout") || EqualsFold(sec, "Debug") || EqualsFold(sec, "Keys")) {
-				if (!seenStyle) seenStyle = true;
-			} else {
-				sections.push_back({sec, {}});
-			}
-		} else {
-			flushLine(line);
-		}
-		if (next == std::string::npos) break;
-		at = next + 1;
-	}
-	(void)seenArrange;
-	(void)seenStyle;
-	for (const auto& upd : updates) {
-		if (IsArrangeKey(upd.first)) {
-			if (!ValidArrangeValue(upd.first, upd.second)) continue;
-			if (IsDefaultArrange(upd.first, upd.second)) {
-				const std::string canon = CanonArrange(upd.first, upd.second);
-				const auto eq = canon.find('=');
-				const std::string key = canon.substr(0, eq);
-				std::vector<Row> kept;
-				for (const auto& row : arrange) {
-					if (!EqualsFold(row.key, key)) kept.push_back(row);
-				}
-				arrange.swap(kept);
-				continue;
-			}
-			const std::string canon = CanonArrange(upd.first, upd.second);
-			const auto eq = canon.find('=');
-			Row row{canon.substr(0, eq), canon.substr(eq + 1)};
-			if (Row* have = findRow(arrange, row.key)) have->value = row.value;
-			else arrange.push_back(std::move(row));
-			continue;
-		}
-		if (!IsStyleKey(upd.first)) continue;
-		if (EqualsFold(upd.first, "AccentColor")) {
-			bool ok = false;
-			const int n = ParseInt(Trim(upd.second), ok);
-			if (!ok || n < -1 || n > 13) continue;
-			if (n == kAccentDefault) {
-				std::vector<Row> kept;
-				for (const auto& row : style) {
-					if (!EqualsFold(row.key, "AccentColor")) kept.push_back(row);
-				}
-				style.swap(kept);
-				continue;
-			}
-		}
-		if (EqualsFold(upd.first, "AccentHex")) {
-			if (!ValidHex(upd.second)) continue;
-		}
-		if (EqualsFold(upd.first, "ScreenMargin")) {
-			bool ok = false;
-			const int n = ParseInt(Trim(upd.second), ok);
-			if (!ok || n < 0 || n > 200) continue;
-			if (n == kMarginDefault) {
-				std::vector<Row> kept;
-				for (const auto& row : style) {
-					if (!EqualsFold(row.key, "ScreenMargin")) kept.push_back(row);
-				}
-				style.swap(kept);
-				continue;
-			}
-		}
-		if (EqualsFold(upd.first, "Probe")) {
-			const std::string v = Trim(upd.second);
-			if (v == "0") {
-				std::vector<Row> kept;
-				for (const auto& row : style) {
-					if (!EqualsFold(row.key, "Probe")) kept.push_back(row);
-				}
-				style.swap(kept);
-				continue;
-			}
-			if (v != "1") continue;
-		}
-		if (Row* have = findRow(style, upd.first)) have->value = Trim(upd.second);
-		else style.push_back(Row{std::string(upd.first), Trim(upd.second)});
-	}
-	std::string out;
-	auto addSection = [&](const char* name, const std::vector<Row>& rows) {
-		if (rows.empty()) return;
-		if (!out.empty() && out.back() != '\n') out.push_back('\n');
-		out += "[";
-		out += name;
-		out += "]\n";
-		for (const auto& row : rows) {
-			out += row.key;
-			out += "=";
-			out += row.value;
-			out += "\n";
-		}
-	};
-	std::vector<Row> styleRows, layoutRows, debugRows, keyRows;
-	for (const auto& row : style) {
-		if (EqualsFold(row.key, "AccentColor") || EqualsFold(row.key, "AccentHex")) styleRows.push_back(row);
-		else if (EqualsFold(row.key, "ScreenMargin")) layoutRows.push_back(row);
-		else if (EqualsFold(row.key, "Probe")) debugRows.push_back(row);
-		else if (EqualsFold(row.key, "Arrange")) keyRows.push_back(row);
-	}
-	addSection("Style", styleRows);
-	addSection("Layout", layoutRows);
-	addSection("Debug", debugRows);
-	addSection("Keys", keyRows);
-	addSection("Arrange", arrange);
-	for (const auto& sec : sections) {
-		if (!out.empty() && out.back() != '\n') out.push_back('\n');
-		out += "[";
-		out += sec.first;
-		out += "]\n";
-		for (const auto& line : sec.second) {
-			if (Trim(line).empty()) continue;
-			out += line;
-			out += "\n";
-		}
-	}
-	return out;
 }
 
 inline int StyleInt(std::string_view ini, std::string_view key, int fallback)
