@@ -3,7 +3,7 @@
 // Purpose: the pill profile's read, write and set-aside rules (PROFILE READ, WRITE and BAD),
 //    on a disk the caller supplies, so the same rules run in the plugin and in tests whose
 //    disk fails on purpose.
-// Inputs: a ProfileDisk (probe.cpp's Win32ProfileDisk, or a test fake); the visit's
+// Inputs: a ProfileDisk (hsb_win32_files.h's Win32ProfileDisk, or a test fake); the visit's
 //    ProfileState; the movie's text for a write.
 // Outputs: a ProfileResult: ok and the profile text, or a failure and its reason.
 // Rules: nothing is deleted, and no file is replaced from bytes that were not read whole and
@@ -33,6 +33,12 @@ inline constexpr std::string_view kProfileHeld = "held";
 inline constexpr std::string_view kProfileBackupFailed = "backup";
 inline constexpr std::string_view kProfileFailed = "failed";
 inline constexpr std::string_view kProfileBadExists = "exists";
+
+// The file's name in the builder folder.
+inline constexpr std::string_view ProfileFileName(ProfileFile file)
+{
+	return file == ProfileFile::kBackup ? kProfileBackup : (file == ProfileFile::kBad ? kProfileBad : kProfileName);
+}
 
 class ProfileDisk {
 public:

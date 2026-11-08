@@ -136,3 +136,10 @@ target("probe_logic_test")
     set_kind("binary")
     add_files("shipbuilder/tests/probe_logic_test.cpp")
     add_includedirs("shipbuilder/src")
+
+-- The plugin's own Win32 file code on a real disk (a temp folder). Windows only; off by default.
+target("profile_disk_test")
+    set_default(false)
+    set_kind("binary")
+    add_files("shipbuilder/tests/profile_disk_test.cpp")
+    add_includedirs("shipbuilder/src")

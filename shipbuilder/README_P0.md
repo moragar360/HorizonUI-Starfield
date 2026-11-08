@@ -67,7 +67,7 @@ xmake f -c -y -m releasedbg
 xmake build -y HorizonShipBuilder
 ```
 
-The target is `HorizonShipBuilder`. It does not link Horizon UI. The host logic test is `xmake build probe_logic_test`; on Linux, `g++ -std=c++20 -Ishipbuilder/src -DHSB_REPO_ROOT='"<repo>"' shipbuilder/tests/probe_logic_test.cpp -o plt && ./plt`.
+The target is `HorizonShipBuilder`. It does not link Horizon UI. The host logic test is `xmake build probe_logic_test`; on Linux, `g++ -std=c++20 -Ishipbuilder/src -DHSB_REPO_ROOT='"<repo>"' shipbuilder/tests/probe_logic_test.cpp -o plt && ./plt`. The Windows disk test, `xmake build profile_disk_test`, runs the plugin's own file code on a temp folder: real renames, sharing locks, read-only files and folders in a file's place. It must print `profile_disk_test passed`.
 
 ## Desktop builder: produce the two movies
 

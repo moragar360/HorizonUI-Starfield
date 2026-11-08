@@ -1,0 +1,240 @@
+// Purpose: Windows check of the plugin's own file code (hsb_win32_files.h) under the pill
+//    profile rules (hsb_profile.h), on a real disk: a temp folder shaped like the player's
+//    Documents shipbuilder folder. It covers what the logic test's fake disk cannot: the real
+//    rename that never replaces, sharing locks, read-only files, a folder where a file should
+//    be, and the names and caps the Win32 code passes on.
+// Inputs: none (the folder is made under GetTempPathW). Outputs: one FAIL line per broken
+//    check; exit code 0 only when every check passes.
+// How to run: xmake build profile_disk_test, then run it on Windows. Or build it with
+//    mingw-w64 (x86_64-w64-mingw32-g++ -std=c++20 -static -Ishipbuilder/src) and run it under
+//    wine, which is not Windows.
+// Rules: only the test's own setup writes or deletes files directly, and only in its temp
+//    folder; the plugin never deletes.
+// Dependencies: hsb_win32_files.h, hsb_profile.h.
+// Author: Moragar. Last modified: 2026-11-08.
+
+#include "hsb_profile.h"
+#include "hsb_win32_files.h"
+
+#include <cstdio>
+#include <iostream>
+#include <string>
+
+using hsb::ProfileFile;
+using hsb::w32::Win32ProfileDisk;
+
+static int g_fails = 0;
+static int g_checks = 0;
+static std::wstring g_folder;
+
+static void Expect(bool ok, const std::string& text)
+{
+	++g_checks;
+	if (ok) return;
+	std::cerr << "FAIL: " << text << "\n";
+	++g_fails;
+}
+
+static const char* const kJson = "ShipBuilderPills.json";
+static const char* const kBak = "ShipBuilderPills.bak";
+static const char* const kBad = "ShipBuilderPills.bad.json";
+
+static std::wstring PathOf(const char* name)
+{
+	return g_folder + hsb::w32::WidenAscii(name);
+}
+
+// The file's bytes, or "<none>" when it cannot be read.
+static std::string Bytes(const char* name)
+{
+	std::string out;
+	return hsb::w32::ReadCapped(PathOf(name), 1 << 20, out) ? out : std::string("<none>");
+}
+
+static bool Present(const char* name)
+{
+	return GetFileAttributesW(PathOf(name).c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
+// Test setup only.
+static void Put(const char* name, const std::string& text)
+{
+	FILE* file = nullptr;
+	if (_wfopen_s(&file, PathOf(name).c_str(), L"wb") != 0 || !file) {
+		Expect(false, std::string("setup: write ") + name);
+		return;
+	}
+	fwrite(text.data(), 1, text.size(), file);
+	fclose(file);
+}
+
+// Test setup only: the plugin never deletes.
+static void Clear()
+{
+	for (const char* name : {kJson, kBak, kBad, "ShipBuilderPills.json.tmp", "ShipBuilderPills.bak.tmp"}) {
+		SetFileAttributesW(PathOf(name).c_str(), FILE_ATTRIBUTE_NORMAL);
+		DeleteFileW(PathOf(name).c_str());
+		RemoveDirectoryW(PathOf(name).c_str());
+	}
+}
+
+// Test setup only: another program holding the file open.
+static HANDLE Hold(const char* name, DWORD share)
+{
+	HANDLE h = CreateFileW(PathOf(name).c_str(), GENERIC_READ, share, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	Expect(h != INVALID_HANDLE_VALUE, std::string("setup: open ") + name);
+	return h;
+}
+
+int main()
+{
+	wchar_t tmp[MAX_PATH] = {};
+	const DWORD n = GetTempPathW(MAX_PATH, tmp);
+	if (n == 0 || n >= MAX_PATH) {
+		std::cerr << "FAIL: no temp folder\n";
+		return 1;
+	}
+	const std::wstring base = std::wstring(tmp) + L"hsb-profile-test-" + std::to_wstring(GetCurrentProcessId()) + L"\\";
+	g_folder = base + L"My Games\\Starfield\\Data\\Interface\\HorizonUI\\shipbuilder\\";
+	Win32ProfileDisk disk(g_folder);
+	hsb::ProfileState s;
+	const std::string good = "{\"type\":\"horizon.shipbuilder\",\"version\":2,\"pills\":[]}";
+	const std::string damaged = "{\"type\":\"horizon.shipbuilder\",\"version\":2,\"pills\":[";
+
+	// Names, the folder, and the first saves.
+	Expect(disk.PathOf(ProfileFile::kProfile) == PathOf(kJson) && disk.PathOf(ProfileFile::kBackup) == PathOf(kBak) &&
+			disk.PathOf(ProfileFile::kBad) == PathOf(kBad),
+		"the profile, its backup and its bad copy each have their own name in the folder");
+	Expect(!disk.Exists(ProfileFile::kProfile), "a profile whose folder is not there yet is missing (path not found)");
+	auto r = hsb::ProfileRead(disk, s);
+	Expect(!r.ok && r.payload == hsb::kReadMissing, "READ before the folder exists: missing");
+	r = hsb::ProfileWrite(disk, s, good);
+	Expect(r.ok && Bytes(kJson) == good && !Present(kBak), "WRITE makes the folder and writes the first profile, with no backup");
+	Expect(disk.Exists(ProfileFile::kProfile) && !disk.Exists(ProfileFile::kBackup), "Exists: the profile is there, the backup is not (file not found)");
+	r = hsb::ProfileWrite(disk, s, "second");
+	Expect(r.ok && Bytes(kJson) == "second" && Bytes(kBak) == good, "WRITE copies the old profile to .bak, then replaces it");
+	Expect(!Present("ShipBuilderPills.json.tmp") && !Present("ShipBuilderPills.bak.tmp"), "WRITE leaves no .tmp after the rename");
+
+	// Caps: a profile larger than any share file reads and writes whole; one over the cap does not.
+	const std::string big(hsb::kMaxShareBytes * 2, 'x');
+	r = hsb::ProfileWrite(disk, s, big);
+	Expect(r.ok && Bytes(kJson) == big, "a profile twice the share cap is written whole");
+	r = hsb::ProfileRead(disk, s);
+	Expect(r.ok && r.payload == big, "and read whole");
+	const std::string over(hsb::kMaxProfileBytes + 1, 'x');
+	Put(kJson, over);
+	r = hsb::ProfileRead(disk, s);
+	Expect(!r.ok && r.payload == hsb::kReadUnreadable, "a profile over the cap is unreadable, never missing");
+	r = hsb::ProfileWrite(disk, s, good);
+	Expect(!r.ok && r.payload == hsb::kReadUnreadable && Bytes(kJson) == over && Bytes(kBak) == "second",
+		"a profile over the cap is never backed up or replaced");
+
+	// A damaged profile, and an earlier bad copy in the way: the real rename never replaces it.
+	Clear();
+	Put(kJson, damaged);
+	Put(kBak, good);
+	Put(kBad, "older damaged");
+	r = hsb::ProfileRead(disk, s);
+	Expect(r.ok && r.payload == damaged, "READ returns damaged JSON for the movie to judge");
+	r = hsb::ProfileSetAside(disk, s);
+	Expect(!r.ok && r.payload == hsb::kProfileBadExists && s.held, "BAD with a .bad.json there: exists, and writes are held");
+	r = hsb::ProfileWrite(disk, s, "starters");
+	Expect(!r.ok && r.payload == hsb::kProfileHeld, "WRITE while held is refused");
+	Expect(Bytes(kJson) == damaged && Bytes(kBak) == good && Bytes(kBad) == "older damaged",
+		"the damaged profile, the good .bak and the earlier .bad.json are all unchanged");
+
+	// The rename fails because another program has the profile open.
+	DeleteFileW(PathOf(kBad).c_str());
+	HANDLE shared = Hold(kJson, FILE_SHARE_READ);
+	r = hsb::ProfileRead(disk, s);
+	Expect(r.ok && r.payload == damaged && !s.held, "READ works alongside a reader; a new visit clears the hold");
+	r = hsb::ProfileSetAside(disk, s);
+	Expect(!r.ok && r.payload == hsb::kProfileFailed && s.held, "BAD while the profile is open elsewhere: failed, and writes are held");
+	r = hsb::ProfileWrite(disk, s, "starters");
+	Expect(!r.ok && r.payload == hsb::kProfileHeld && Bytes(kJson) == damaged && Bytes(kBak) == good && !Present(kBad),
+		"WRITE after that failure is refused, and nothing changed");
+	CloseHandle(shared);
+
+	// A profile locked with no sharing is unreadable, never missing, and never saved over.
+	HANDLE locked = Hold(kJson, 0);
+	r = hsb::ProfileRead(disk, s);
+	Expect(!r.ok && r.payload == hsb::kReadUnreadable, "READ of a profile locked with no sharing: unreadable");
+	r = hsb::ProfileWrite(disk, s, "starters");
+	Expect(!r.ok && r.payload == hsb::kReadUnreadable, "WRITE cannot read the old profile for its backup, so it is refused");
+	CloseHandle(locked);
+	Expect(Bytes(kJson) == damaged && Bytes(kBak) == good, "the locked profile and the good .bak are unchanged");
+
+	// Once the way is clear, the set-aside works and saving starts fresh.
+	r = hsb::ProfileSetAside(disk, s);
+	Expect(r.ok && !s.held && Bytes(kBad) == damaged && !Present(kJson), "BAD moves the damaged profile to .bad.json");
+	r = hsb::ProfileWrite(disk, s, "fresh");
+	Expect(r.ok && Bytes(kJson) == "fresh" && Bytes(kBak) == good, "the first save after it keeps the good .bak");
+
+	// A second damaged profile never replaces the first bad copy.
+	Put(kJson, "damaged again");
+	r = hsb::ProfileSetAside(disk, s);
+	Expect(!r.ok && r.payload == hsb::kProfileBadExists && Bytes(kBad) == damaged && Bytes(kJson) == "damaged again",
+		"a second damaged profile never replaces the first .bad.json");
+
+	// A zero-filled profile after a power loss.
+	Clear();
+	Put(kBak, good);
+	Put(kJson, std::string(4096, '\0'));
+	r = hsb::ProfileRead(disk, s);
+	Expect(!r.ok && r.payload == hsb::kReadDamaged, "READ of a zero-filled profile: damaged, not empty");
+	r = hsb::ProfileWrite(disk, s, "fresh");
+	Expect(!r.ok && r.payload == hsb::kReadDamaged && Bytes(kBak) == good, "WRITE never copies zeros over the good .bak");
+
+	// Read-only files are never replaced.
+	Clear();
+	Put(kJson, good);
+	Put(kBak, "old backup");
+	SetFileAttributesW(PathOf(kBak).c_str(), FILE_ATTRIBUTE_READONLY);
+	r = hsb::ProfileWrite(disk, s, "new");
+	Expect(!r.ok && r.payload == hsb::kProfileBackupFailed && Bytes(kJson) == good && Bytes(kBak) == "old backup",
+		"a read-only .bak: the backup fails, so the profile is not replaced");
+	SetFileAttributesW(PathOf(kBak).c_str(), FILE_ATTRIBUTE_NORMAL);
+	SetFileAttributesW(PathOf(kJson).c_str(), FILE_ATTRIBUTE_READONLY);
+	r = hsb::ProfileWrite(disk, s, "new");
+	Expect(!r.ok && r.payload == hsb::kProfileFailed && Bytes(kJson) == good && Bytes(kBak) == good,
+		"a read-only profile is never replaced, and .bak holds the same profile");
+	SetFileAttributesW(PathOf(kJson).c_str(), FILE_ATTRIBUTE_NORMAL);
+
+	// Folders where files should be.
+	Clear();
+	CreateDirectoryW(PathOf(kJson).c_str(), nullptr);
+	r = hsb::ProfileRead(disk, s);
+	Expect(!r.ok && r.payload == hsb::kReadUnreadable, "a folder named ShipBuilderPills.json reads as unreadable, never missing");
+	r = hsb::ProfileWrite(disk, s, "new");
+	Expect(!r.ok && r.payload == hsb::kReadUnreadable && !Present(kBak), "and is never written over");
+	Clear();
+	Put(kJson, damaged);
+	CreateDirectoryW(PathOf(kBad).c_str(), nullptr);
+	r = hsb::ProfileSetAside(disk, s);
+	Expect(!r.ok && s.held && Bytes(kJson) == damaged, "a folder named ShipBuilderPills.bad.json blocks the set-aside; the profile stays, and writes are held");
+
+	// The gate: without a Documents folder nothing is opened.
+	Clear();
+	Win32ProfileDisk nowhere(L"");
+	hsb::ProfileState t;
+	r = hsb::ProfileRead(nowhere, t);
+	Expect(!r.ok && r.payload == hsb::kReadUnreadable, "no Documents folder: READ is refused by BuilderFileMayTouch, so unreadable");
+	r = hsb::ProfileWrite(nowhere, t, good);
+	Expect(!r.ok, "no Documents folder: WRITE is refused");
+	r = hsb::ProfileSetAside(nowhere, t);
+	Expect(!r.ok && t.held, "no Documents folder: BAD is refused, and writes are held");
+
+	Clear();
+	for (std::wstring dir = g_folder; dir.size() > base.size();) {
+		dir.pop_back();
+		RemoveDirectoryW(dir.c_str());
+		dir.resize(dir.find_last_of(L'\\') + 1);
+	}
+	RemoveDirectoryW(base.c_str());
+	if (g_fails) {
+		std::cerr << g_fails << " of " << g_checks << " failed\n";
+		return 1;
+	}
+	std::cout << "profile_disk_test passed " << g_checks << " checks\n";
+	return 0;
+}

@@ -630,6 +630,7 @@ struct FakeDisk final : hsb::ProfileDisk {
 	std::set<hsb::ProfileFile> unwritable;  // the write or its rename fails; the file is unchanged
 	std::set<hsb::ProfileFile> unknown;     // the system cannot say whether it is there
 	bool moveFails = false;                 // the rename fails for another reason (locked, read only)
+	bool noDir = false;                     // the folder is not there until EnsureDir makes it
 	int writes = 0;
 	int moves = 0;
 
@@ -645,7 +646,7 @@ struct FakeDisk final : hsb::ProfileDisk {
 	}
 	bool WriteReplace(hsb::ProfileFile file, std::string_view text) override
 	{
-		if (unwritable.count(file) > 0) return false;
+		if (unwritable.count(file) > 0 || noDir) return false;
 		files[file] = std::string(text);
 		++writes;
 		return true;
@@ -659,7 +660,7 @@ struct FakeDisk final : hsb::ProfileDisk {
 		++moves;
 		return hsb::MoveResult::kOk;
 	}
-	void EnsureDir() override {}
+	void EnsureDir() override { noDir = false; }
 
 	std::string At(hsb::ProfileFile file) const
 	{
@@ -676,6 +677,10 @@ static void CheckProfile()
 	const std::string damaged = "{\"type\":\"HorizonShipBuilderPills\",\"version\":1,\"pills\":[";
 	const std::string zeros(4096, '\0');
 	const std::string embedded = std::string("{\"type\":\"Horizon") + '\0' + "ShipBuilderPills\"}";
+
+	Expect(hsb::ProfileFileName(P) == "ShipBuilderPills.json" && hsb::ProfileFileName(B) == "ShipBuilderPills.bak" &&
+			hsb::ProfileFileName(X) == "ShipBuilderPills.bad.json",
+		"names: the profile, its backup and its bad copy each have their own file");
 
 	// PROFILE READ
 	{
@@ -716,14 +721,19 @@ static void CheckProfile()
 		d.files[P] = good;
 		r = hsb::ProfileRead(d, s);
 		Expect(r.ok && !s.held, "READ: a new visit clears the hold");
+		s.held = true;
+		d.files.erase(P);
+		r = hsb::ProfileRead(d, s);
+		Expect(!r.ok && r.payload == hsb::kReadMissing && !s.held, "READ: a new visit with no profile clears an earlier visit's hold, so it can start fresh");
 	}
 
 	// PROFILE WRITE
 	{
 		FakeDisk d;
 		hsb::ProfileState s;
+		d.noDir = true;
 		auto r = hsb::ProfileWrite(d, s, good);
-		Expect(r.ok && d.At(P) == good && d.files.count(B) == 0, "WRITE: a first profile needs no backup");
+		Expect(r.ok && d.At(P) == good && d.files.count(B) == 0, "WRITE: the folder is made first, and a first profile needs no backup");
 		r = hsb::ProfileWrite(d, s, "second");
 		Expect(r.ok && d.At(P) == "second" && d.At(B) == good, "WRITE: the old profile goes to the backup first");
 
@@ -917,7 +927,9 @@ static void ScanTree(const fs::path& root)
 		const std::string rel = it->path().lexically_normal().generic_string();
 		const std::string name = it->path().filename().string();
 		const bool test = Has(rel, "/tests/");
-		const bool plugin = name == "probe.cpp";
+		const bool plugin = name == "probe.cpp" || name == "hsb_win32_files.h";
+		// Its setup writes and clears files in its own temp folder (checked in CheckPlugin).
+		const bool diskTest = test && name == "profile_disk_test.cpp";
 		const bool horizonMovie = name.size() > 3 && name.substr(name.size() - 3) == ".as" && name != "document_splice.as" &&
 			name != "HorizonShipBuilderProbe.as";
 		auto fail = [&](const std::string& why) { Expect(false, rel + ": " + why); };
@@ -939,10 +951,10 @@ static void ScanTree(const fs::path& root)
 			if (!logName && !test) fail("a builder event name");
 		}
 		if (Has(body, dispatch) && name != "HorizonShipBuilder.as" && !test) fail("an event dispatch outside the hub");
-		if (Has(body, del) || Has(body, rmdir)) fail("a delete call");
+		if ((Has(body, del) || Has(body, rmdir)) && !diskTest) fail("a delete call");
 		if ((Has(body, move) || Has(body, copy)) && !plugin && !test) fail("a file move or copy outside the plugin");
 		if (Has(body, files) && !test) fail("std::filesystem outside the test");
-		if ((Has(body, wideOpen) || Has(body, stream)) && !plugin) fail("a file writer outside the plugin");
+		if ((Has(body, wideOpen) || Has(body, stream)) && !plugin && !diskTest) fail("a file writer outside the plugin");
 		if (horizonMovie && Has(body, mouseListen)) fail("a Scaleform mouse listener on a Horizon control");
 	}
 	Expect(scanned > 30, "the scan reads the tree");
@@ -1471,35 +1483,74 @@ static void CheckPlugin(const fs::path& root)
 		"typed characters keep the dead-key state and pass CharForText");
 	Expect(Has(plugin, "Fact(\"input\", CountsNow());"), "the close line holds counts only");
 
+	// The Win32 file code lives in hsb_win32_files.h, so tests/profile_disk_test.cpp runs the
+	// same code on a real disk; probe.cpp keeps no copy of its own.
+	const std::string w32 = ReadFile(root / "src" / "hsb_win32_files.h");
+	Expect(Has(plugin, "#include \"hsb_win32_files.h\"") && Has(plugin, "using hsb::w32::Win32ProfileDisk;") && Has(plugin, "using hsb::w32::ReadCapped;") &&
+			Has(plugin, "using hsb::w32::WriteReplace;") && !Has(plugin, "bool ReadCapped(") && !Has(plugin, "bool WriteReplace(") &&
+			!Has(plugin, "class Win32ProfileDisk") && !Has(plugin, "std::string NarrowPath("),
+		"the plugin uses the shared Win32 file code");
+	{
+		const std::string diskTest = ReadFile(root / "tests" / "profile_disk_test.cpp");
+		Expect(Has(diskTest, "#include \"hsb_win32_files.h\""), "the Windows disk test runs the plugin's own file code");
+		std::size_t calls = 0;
+		std::size_t inFolder = 0;
+		for (const std::string& call : {std::string("Delete") + "FileW(", std::string("Remove") + "DirectoryW("}) {
+			for (std::size_t at = diskTest.find(call); at != std::string::npos; at = diskTest.find(call, at + call.size())) {
+				++calls;
+				const std::string arg = diskTest.substr(at + call.size(), 12);
+				if (arg.rfind("PathOf(", 0) == 0 || arg.rfind("dir.c_str()", 0) == 0 || arg.rfind("base.c_str()", 0) == 0) ++inFolder;
+			}
+		}
+		Expect(calls > 0 && calls == inFolder && Has(diskTest, "const std::wstring base = std::wstring(tmp) + L\"hsb-profile-test-\" + std::to_wstring(GetCurrentProcessId()) + L\"\\\\\";") &&
+				Has(diskTest, "g_folder = base + L\"My Games\\\\Starfield\\\\Data\\\\Interface\\\\HorizonUI\\\\shipbuilder\\\\\";"),
+			"the Windows disk test clears files only in its own temp folder");
+	}
 	const std::string runFile = CppBody(plugin, "std::string RunFileRequest(");
-	const auto diskAt = plugin.find("class Win32ProfileDisk final : public hsb::ProfileDisk {");
-	const auto diskEnd = diskAt == std::string::npos ? std::string::npos : plugin.find("\n};\n", diskAt);
-	const std::string disk = diskEnd == std::string::npos ? std::string() : plugin.substr(diskAt, diskEnd - diskAt);
+	const auto diskAt = w32.find("class Win32ProfileDisk final : public ProfileDisk {");
+	const auto diskEnd = diskAt == std::string::npos ? std::string::npos : w32.find("\n};\n", diskAt);
+	const std::string disk = diskEnd == std::string::npos ? std::string() : w32.substr(diskAt, diskEnd - diskAt);
 	Expect(!runFile.empty() && CountOf(runFile, "BuilderFileMayTouch(") >= 2 &&
-			Has(disk, "bool MayTouch(hsb::ProfileFile file, bool write) override { return hsb::BuilderFileMayTouch(NarrowPath(PathOf(file)), write); }"),
+			Has(disk, "bool MayTouch(ProfileFile file, bool write) override { return BuilderFileMayTouch(NarrowPath(PathOf(file)), write); }"),
 		"every builder file goes through BuilderFileMayTouch");
-	Expect(Has(runFile, "Win32ProfileDisk disk;") && Has(runFile, "hsb::ProfileResult result = hsb::ProfileRead(disk, g_profileState);") &&
+	Expect(Has(runFile, "Win32ProfileDisk disk(g_docsBuilder);") && Has(runFile, "hsb::ProfileResult result = hsb::ProfileRead(disk, g_profileState);") &&
 			Has(runFile, "hsb::ProfileResult result = hsb::ProfileWrite(disk, g_profileState, hsb::UnescapeText(r.body));") &&
-			Has(runFile, "hsb::ProfileResult result = hsb::ProfileSetAside(disk, g_profileState);") && !Has(plugin, "CopyFileW("),
-		"the profile's read, write and set-aside follow hsb_profile.h");
+			Has(runFile, "hsb::ProfileResult result = hsb::ProfileSetAside(disk, g_profileState);") && !Has(plugin, "CopyFileW(") && !Has(w32, "CopyFileW("),
+		"the profile's read, write and set-aside follow hsb_profile.h in the Documents shipbuilder folder");
 	Expect(Has(plugin, "// Job thread only.\nhsb::ProfileState g_profileState;\n") && CountOf(plugin, "g_profileState") == CountOf(runFile, "g_profileState") + 1,
 		"only the file jobs touch the profile hold");
-	Expect(Has(disk, "if (MoveFileExW(PathOf(from).c_str(), PathOf(to).c_str(), MOVEFILE_WRITE_THROUGH)) return hsb::MoveResult::kOk;") &&
-			Has(disk, "return err == ERROR_ALREADY_EXISTS || err == ERROR_FILE_EXISTS ? hsb::MoveResult::kExists : hsb::MoveResult::kFailed;") &&
-			!Has(disk, "MOVEFILE_REPLACE_EXISTING") && CountOf(plugin, "MOVEFILE_REPLACE_EXISTING") == 1,
+	// Review A4: each line of the profile disk, so a slip in one is not passed by every check.
+	Expect(Has(disk, "std::wstring PathOf(ProfileFile file) const { return folder_ + WidenAscii(ProfileFileName(file)); }"),
+		"each profile file has its own path (names checked in CheckProfile)");
+	Expect(InOrder(disk, {"bool Exists(ProfileFile file) override", "if (GetFileAttributesW(PathOf(file).c_str()) != INVALID_FILE_ATTRIBUTES) return true;",
+				   "const DWORD err = GetLastError();", "return err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND;"}),
+		"a profile file counts as missing only when the system says so");
+	Expect(Has(disk, "bool Read(ProfileFile file, std::size_t cap, std::string& out) override { return ReadCapped(PathOf(file), cap, out); }") &&
+			Has(disk, "bool WriteReplace(ProfileFile file, std::string_view text) override { return w32::WriteReplace(PathOf(file), std::string(text)); }") &&
+			Has(disk, "void EnsureDir() override { EnsureDirsFor(PathOf(ProfileFile::kProfile)); }"),
+		"the profile disk reads with the cap it is given, writes the file it is given, and makes the profile's folder");
+	Expect(Has(disk, "if (MoveFileExW(PathOf(from).c_str(), PathOf(to).c_str(), MOVEFILE_WRITE_THROUGH)) return MoveResult::kOk;") &&
+			Has(disk, "return err == ERROR_ALREADY_EXISTS || err == ERROR_FILE_EXISTS ? MoveResult::kExists : MoveResult::kFailed;") &&
+			!Has(disk, "MOVEFILE_REPLACE_EXISTING") && CountOf(w32, "MOVEFILE_REPLACE_EXISTING") == 1 && !Has(plugin, "MOVEFILE_REPLACE_EXISTING") &&
+			!Has(plugin, "MoveFileExW("),
 		"a set-aside never replaces an earlier bad copy");
-	Expect(Has(disk, "return err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND;"), "a profile counts as missing only when the system says so");
 	Expect(InOrder(runFile, {"if (ok) payload = std::move(result.payload);", "else failReason = std::move(result.payload);"}) &&
 			Has(runFile, "if (!ok) payload = failReason;"),
 		"a failed profile request tells the movie why");
-	Expect(Has(runFile, "ok = ReadCapped(path, hsb::kMaxShareBytes, payload) && !hsb::HasNul(payload);"), "a share file with a NUL byte is refused");
-	const std::string writeReplace = CppBody(plugin, "bool WriteReplace(");
+	Expect(Has(runFile, "ok = ReadCapped(path, hsb::kMaxShareBytes, payload) && !hsb::HasNul(payload);") &&
+			Has(runFile, "if (dirs.empty() || body.size() > hsb::kMaxShareBytes) break;"),
+		"a share file with a NUL byte is refused, and share files are read and written within their cap");
+	const std::string writeReplace = CppBody(w32, "inline bool WriteReplace(");
 	Expect(InOrder(writeReplace, {"const std::wstring temp = path + L\".tmp\";", std::string("_wf") + "open_s(&file, temp.c_str(), L\"wb\")",
 				   "const bool flushed = wrote && fflush(file) == 0 && _commit(_fileno(file)) == 0;", "if (!flushed || !closed) return false;",
 				   "MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)"}),
 		"a write goes to a .tmp twin, is flushed to disk, then renamed over the file");
-	Expect(InOrder(CppBody(plugin, "bool ReadCapped("), {"const bool failed = ferror(file) != 0;", "fclose(file);", "return fits && !failed;"}),
-		"a read that fails partway never passes for the whole file");
+	Expect(InOrder(CppBody(w32, "inline bool ReadCapped("), {"if (out.size() + n > cap) {", "fits = false;", "out.append(buf, n);",
+				   "const bool failed = ferror(file) != 0;", "fclose(file);", "if (!fits || failed) out.clear();", "return fits && !failed;"}),
+		"a read over its cap, or one that fails partway, never passes for the whole file");
+	Expect(InOrder(CppBody(w32, "inline void EnsureDirsFor("), {"for (wchar_t c : dir) {", "built.push_back(c);",
+				   "if (c == L'\\\\' || c == L'/') CreateDirectoryW(built.c_str(), nullptr);", "CreateDirectoryW(dir.c_str(), nullptr);"}),
+		"a write first makes every folder on its way");
 	Expect(InOrder(runFile, {"if (!hsb::ParseFileRequest(line, r)) {", "const std::string id = hsb::RequestId(line);",
 			   "return id.empty() ? std::string() : hsb::FileReply(id, false, \"\");"}), "a request that does not parse is answered");
 	const std::string writeIni = CppBody(plugin, "void WriteIniNow(");
@@ -1510,8 +1561,10 @@ static void CheckPlugin(const fs::path& root)
 	Expect(Has(CppBody(plugin, "bool CoreIniMayRead("), "return hsb::HudIniMayRead(NarrowPath(path), NarrowPath(HudIniDir()));") &&
 		Has(CppBody(plugin, "std::wstring HudIniDir("), R"CPP(return dir + L"\\Data\\Interface\\HorizonUI\\";)CPP"),
 		"the HUD ini is read from the HUD's own folder only");
-	Expect(Has(disk, "MoveFileExW(") && !Has(plugin, std::string("Delete") + "File") && !Has(plugin, "_wremove") && !Has(plugin, "_wunlink"),
-		"a bad profile is renamed, never deleted");
+	for (const std::string* code : {&plugin, &w32}) {
+		Expect(!Has(*code, std::string("Delete") + "File") && !Has(*code, "_wremove") && !Has(*code, "_wunlink") && !Has(*code, std::string("Remove") + "Directory"),
+			"a bad profile is renamed, never deleted");
+	}
 	Expect(Has(plugin, "Fact(\"files\""), "file jobs are logged");
 	const std::string apply = CppBody(plugin, "void BuildApply(");
 	Expect(Has(apply, "const std::wstring hudDir = HudIniDir();") && Has(apply, "FileExists(hudDir + L\"HorizonUI.user.ini\")") &&
@@ -1542,7 +1595,10 @@ static void CheckDocs(const fs::path& repo, const fs::path& root)
 
 	Expect(std::string(HSB_FILE_VERSION_STR) == "0.2.0.0", "plugin version is 0.2.0.0");
 	Expect(Has(lua, "set_version(\"0.2.0\")") && Has(lua, "set_version(\"0.43.0.33\")"), "the builder target is 0.2.0 and the core version stays");
-	Expect(Has(lua, "target(\"HorizonShipBuilder\")") && Has(lua, "target(\"probe_logic_test\")") && Has(lua, "set_default(false)"), "xmake targets");
+	Expect(Has(lua, "target(\"HorizonShipBuilder\")") && Has(lua, "target(\"probe_logic_test\")") && Has(lua, "set_default(false)") &&
+			InOrder(lua, {"target(\"profile_disk_test\")", "set_default(false)", "add_files(\"shipbuilder/tests/profile_disk_test.cpp\")"}) &&
+			Has(readme, "xmake build profile_disk_test"),
+		"xmake targets, and the readme says how to run the Windows disk test");
 	Expect(Has(rc, "Horizon Ship Builder") && !Has(rc, "0.43"), "the resource names the builder and not the HUD version");
 
 	Expect(Has(readme, "# Horizon Ship Builder 0.2.0.0") && Has(readme, "HorizonShipBuilder-0.2.0.0.zip"), "the readme names 0.2.0.0");
