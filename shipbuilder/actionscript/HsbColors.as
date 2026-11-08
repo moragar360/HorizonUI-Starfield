@@ -851,7 +851,7 @@ package
             case "export":
                var s:Object = this.chosen >= 0 ? this.schemes[this.chosen] : null;
                if(s == null && this.allKnown()) { s = {"name":"My ship colors","source":"user","author":"","file":"","slots":this.currentSlots()}; }
-               if(s != null) { this.writeScheme(s,String(s.source) != "starter"); }
+               if(s != null) { this.writeScheme(s,String(s.source) == "user"); }
                break;
             case "import":
                this.loadSchemes();

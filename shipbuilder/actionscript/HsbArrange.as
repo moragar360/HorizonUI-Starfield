@@ -377,8 +377,12 @@ package
             this.paint();
             return;
          }
-         var dx:Number = param1 == "left" ? -NUDGE : (param1 == "right" ? NUDGE : 0);
-         var dy:Number = param1 == "up" ? -NUDGE : (param1 == "down" ? NUDGE : 0);
+         // Shift+arrow arrives as left40, right40, up40, down40: one drawn grid cell.
+         var fast:Boolean = param1.length > 2 && param1.substring(param1.length - 2) == "40";
+         var dir:String = fast ? param1.substring(0,param1.length - 2) : param1;
+         var step:Number = fast ? GRID_DRAWN : NUDGE;
+         var dx:Number = dir == "left" ? -step : (dir == "right" ? step : 0);
+         var dy:Number = dir == "up" ? -step : (dir == "down" ? step : 0);
          if((dx != 0 || dy != 0) && this.sel >= 0)
          {
             var it:Object = this.items[this.sel];

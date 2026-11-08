@@ -51,6 +51,7 @@ package
       private static const LOG_CAP:int = 200;
       // A cancel or accept can arrive both as a DLL key token and as the game's own event.
       private static const DOUBLE_FRAMES:int = 6;
+      private static const FILE_QUEUE_MAX:int = 64;
 
       private var host:Object;
       internal var kit:HsbKit;
@@ -1829,7 +1830,12 @@ package
 
       internal function capturing():Boolean
       {
-         return this.pops.length > 0 || this.textOwner != null || (this.arrange != null && this.arrange.visible);
+         return this.pops.length > 0 || this.textOwner != null || (this.arrange != null && this.arrange.visible) || this.gridOpen();
+      }
+
+      private function gridOpen():Boolean
+      {
+         return this.browser != null && this.browser.gridOpen && this.shown("Browser");
       }
 
       private function pushState():void
@@ -1848,7 +1854,7 @@ package
       }
 
       // The rectangles the DLL swallows presses and wheel in: every visible Horizon box, or the
-      // whole screen while a popup, dialog, text field or Arrange is open.
+      // whole screen while a popup, dialog, text field, the category grid or Arrange is open.
       private function hotText():String
       {
          if(this.conflict || this.kit == null) { return "none"; }
@@ -1946,6 +1952,11 @@ package
             if(top.lightDismiss) { this.closePop(top,false); }
             return;
          }
+         if(top == null && this.gridOpen() && !this.browser.contains2(param2,param3))
+         {
+            this.browser.closeGrid();
+            return;
+         }
          var target:HsbBox = this.boxAt(param2,param3);
          if(target == null) { return; }
          var hit:Object = target.hitAt(param2,param3);
@@ -2004,6 +2015,11 @@ package
             top.onKey(param1);
             return;
          }
+         if(this.gridOpen())
+         {
+            this.browser.onKey(param1);
+            return;
+         }
          if(param1 == "open") { this.openArrange(); return; }
          if(param1 == "hide") { this.toggleHide(); return; }
          if(param1 == "find" && this.shown("Browser")) { this.browser.startFind(); return; }
@@ -2024,8 +2040,12 @@ package
             return;
          }
          var top:HsbBox = this.topPop();
-         if(top == null) { return; }
          var map:Object = {"Up":"up","Down":"down","Left":"left","Right":"right","LShoulder":"tabprev","RShoulder":"tab","XButton":"x","YButton":"y"};
+         if(top == null)
+         {
+            if(this.gridOpen() && map[param1] != null) { this.browser.onKey(String(map[param1])); }
+            return;
+         }
          if(map[param1] != null) { top.onKey(String(map[param1])); }
          else if(param1 != "Accept" && param1 != "Cancel" && param1 != "Escape" && param1 != "Enter" && this.debugOn) { this.note("PAD unhandled " + param1); }
       }
@@ -2040,7 +2060,9 @@ package
          if(top != null)
          {
             if(!top.onKey("cancel")) { this.closePop(top,false); }
+            return;
          }
+         if(this.gridOpen()) { this.browser.closeGrid(); }
       }
 
       internal function acceptTop(param1:String):void
@@ -2050,7 +2072,8 @@ package
          if(this.textOwner != null && this.textOwner.onKey("ok")) { return; }
          if(this.arrange != null && this.arrange.visible) { this.arrange.ok(); return; }
          var top:HsbBox = this.topPop();
-         if(top != null) { top.onKey("ok"); }
+         if(top != null) { top.onKey("ok"); return; }
+         if(this.gridOpen()) { this.browser.onKey("ok"); }
       }
 
       // Central actions for the simple panels; popups and the browser handle their own ids.
@@ -2327,7 +2350,21 @@ package
             i++;
          }
          this.fileOut.push(clean.join("\t") + "\t" + escapeText(param3));
-         if(this.fileOut.length > 32) { this.fileOut.shift(); }
+         // The DLL drains this every frame, so a full queue means the DLL is not answering.
+         // The oldest request fails at once rather than waiting for a reply that cannot come.
+         if(this.fileOut.length > FILE_QUEUE_MAX)
+         {
+            var dropped:String = String(this.fileOut.shift());
+            var dropId:String = dropped.substring(0,dropped.indexOf("\t"));
+            var dropCb:Function = this.fileWait[dropId] as Function;
+            delete this.fileWait[dropId];
+            this.note("FILE queue full dropped=1");
+            if(dropCb != null)
+            {
+               try { dropCb(false,""); }
+               catch(err:Error) { this.note("FILE reply failed " + err.errorID); }
+            }
+         }
       }
 
       internal static function escapeText(param1:String):String

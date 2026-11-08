@@ -24,6 +24,7 @@ package
       private static const SCALE_MIN:Number = 0.8;
       private static const SCALE_MAX:Number = 1.3;
       private static const STEP:Number = 0.05;
+      private static const BINDABLE:String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/\\.,-=[]'`";
 
       private var hsb:HorizonShipBuilder;
       private var before:Object;
@@ -598,6 +599,9 @@ package
             this.paint();
             return;
          }
+         // The plugin matches hotkeys by the unshifted key character, and ; or # would read as
+         // an ini comment, so only these keys can be bound.
+         if(BINDABLE.indexOf(c) < 0) { return; }
          var key:String = this.editing;
          this.stopEditing();
          this.setKey(key,c);

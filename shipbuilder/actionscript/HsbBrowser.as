@@ -1112,6 +1112,22 @@ package
          this.invalidate();
       }
 
+      // The hub treats the open category grid like a popup: it captures keys and the pad, and
+      // ESC, B or a press outside the browser closes it without picking a category.
+      internal function get gridOpen():Boolean
+      {
+         return this.grid;
+      }
+
+      internal function closeGrid():void
+      {
+         if(!this.grid) { return; }
+         this.grid = false;
+         this.gridFocus = -1;
+         this.makerChip = "";
+         this.afterFilter();
+      }
+
       private function sortBy(param1:String):void
       {
          if(this.sortCol == param1) { this.sortDesc = !this.sortDesc; }
