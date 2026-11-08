@@ -38,6 +38,10 @@ function pin(snippet, msg) {
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
 pin('private static const HZ_BUILD:String = "0.43.1.0";', "HUD build id is 0.43.1.0");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
+pin("tf.text = this.hzFmtLocGame(uh,um,true);", "GAME Local/Game value honors ClockFormat");
+pin("tf.text = this.hzFmtLocGame(H,M,false);", "LOCAL Local/Game value honors ClockFormat");
+expect(src.indexOf("GAME UT is always 24-hour") < 0, "planet card no longer hardcodes GAME as 24-hour");
+expect(src.indexOf("private function hzFmtLocGame") >= 0, "shared LOCAL/GAME clock helper exists");
 pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
 pin("if(isLoc && this.hzPpShowUT)", "preview clock glyph does not read the label text");
