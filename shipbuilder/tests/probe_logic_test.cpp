@@ -790,6 +790,15 @@ static void CheckMovie(const fs::path& root)
 	Expect(Has(FunctionBody(hub, "cancelTop", "internal"), "if(this.frameN - this.lastCancel < DOUBLE_FRAMES) { return; }") &&
 		Has(FunctionBody(hub, "acceptTop", "internal"), "if(this.frameN - this.lastOk < DOUBLE_FRAMES) { return; }"), "a cancel or accept acts once per press");
 	Expect(Has(FunctionBody(hub, "cancelTop", "internal"), "if(this.gridOpen()) { this.browser.closeGrid(); }"), "Esc closes the category grid");
+	// Find makes the movie capture every press and key, so it may never outlive its field on
+	// screen: folding or hiding the browser, opening a popup or pressing elsewhere ends it.
+	Expect(Has(FunctionBody(browser, "endFind", "internal"), "if(this.findOn) { this.stopFind(); }") &&
+			Has(FunctionBody(hub, "paint"), "if(!this.browser.visible || this.browser.collapsed) { this.browser.endFind(); }") &&
+			InOrder(FunctionBody(hub, "openPop", "internal"), {"if(this.browser != null) { this.browser.endFind(); }", "this.pops.push(param1);"}) &&
+			InOrder(FunctionBody(hub, "onPointer"), {"this.browser.closeGrid();",
+				"if(top == null && this.textOwner == this.browser && !this.browser.contains2(param2,param3)) { this.browser.endFind(); }",
+				"var target:HsbBox = this.boxAt(param2,param3);"}),
+		"Find ends when the browser folds or hides, a popup opens or a press lands outside the browser");
 
 	// Vanilla panels stay alive: alpha 0 and no mouse, never invisible, moved or reparented.
 	const std::string cover = FunctionBody(hub, "cover");
@@ -1011,8 +1020,13 @@ static void CheckMovie(const fs::path& root)
 			Has(FunctionBody(flight, "selectedTab"), "var n:int = int(bar.selectedIndex);"), "the highlighted tab is the game's selected tab");
 		const std::string readOnly = FunctionBody(browser, "setReadOnly", "internal");
 		Expect(Has(hub, "this.browser.setReadOnly(flightOn);") && !Has(hub, "this.browser.readOnly =") &&
-				InOrder(readOnly, {"if(this.readOnly == param1) { return; }", "this.closeGrid();", "this.invalidate();"}),
+				InOrder(readOnly, {"if(this.readOnly == param1) { return; }", "this.endFind();", "this.closeGrid();", "this.invalidate();"}),
 			"opening or closing Flight Check repaints the list in its read-only view");
+		// Leaving Flight Check, the game refills its hidden list in game order (PartEntries, then the
+		// palette's Update) while Horizon's list is still read-only; without a fresh feed a hover or
+		// click would pick the part at that row of the game's order.
+		Expect(InOrder(readOnly, {"if(param1)", "else", "this.rebuild();", "this.refeed();", "this.ensureVisible(this.selId);", "this.invalidate();"}),
+			"leaving Flight Check rebuilds the grouped rows and feeds the hidden list again");
 		Expect(Has(FunctionBody(browser, "paint", "internal"), "if(!this.readOnly) { y = this.paintStrip(w,pad,y); }") &&
 				Has(FunctionBody(browser, "paintStripTop"), "if(!this.upgrade && live) { this.hit(param2,y,title.width + 6,k.u(32),\"grid\"); }") &&
 				Has(FunctionBody(browser, "findBox"), "if(live) { this.hit(param1,param2,param3,param4,\"find\"); }"),

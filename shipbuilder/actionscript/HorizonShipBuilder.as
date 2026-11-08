@@ -992,6 +992,9 @@ package
             case "Browser":
                this.browser.visible = this.shown("Browser");
                this.browser.collapsed = this.folded("Browser");
+               // A folded or hidden browser cannot keep Find: it would hold every press and key
+               // with no field on screen.
+               if(!this.browser.visible || this.browser.collapsed) { this.browser.endFind(); }
                this.browser.invalidate();
                break;
             case "Colors":
@@ -2008,6 +2011,9 @@ package
             this.browser.closeGrid();
             return;
          }
+         // A press outside the browser ends Find like a click away from a text field; a Horizon
+         // control under the press still acts on it.
+         if(top == null && this.textOwner == this.browser && !this.browser.contains2(param2,param3)) { this.browser.endFind(); }
          var target:HsbBox = this.boxAt(param2,param3);
          if(target == null) { return; }
          var hit:Object = target.hitAt(param2,param3);
@@ -2214,6 +2220,9 @@ package
 
       internal function openPop(param1:HsbBox):void
       {
+         // Find keeps its text but stops typing, so ESC closes the popup instead of clearing
+         // the search, and a popup with its own field gets the keyboard cleanly.
+         if(this.browser != null) { this.browser.endFind(); }
          var at:int = this.pops.indexOf(param1);
          if(at >= 0) { this.pops.splice(at,1); }
          this.pops.push(param1);

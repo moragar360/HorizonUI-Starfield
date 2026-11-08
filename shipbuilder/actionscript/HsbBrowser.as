@@ -1030,6 +1030,14 @@ package
          this.invalidate();
       }
 
+      // Ends typing and keeps the text as a filter, as ENTER does. Find holds the keyboard and,
+      // through capture, every press on screen, so the hub ends it whenever the field leaves the
+      // screen, a popup opens or the player presses outside the browser.
+      internal function endFind():void
+      {
+         if(this.findOn) { this.stopFind(); }
+      }
+
       override internal function onKey(param1:String):Boolean
       {
          if(!this.findOn)
@@ -1184,16 +1192,25 @@ package
 
       // Purpose: switch the list to Flight Check's read-only view (mockup 13) or back.
       // Inputs: param1, true while Flight Check is open. Outputs: none; repaints on a change.
-      // Dependencies: stopFind, closeGrid. Typing and the category grid end, since neither may
-      // change the list while Flight Check is reading it.
+      // Dependencies: endFind, closeGrid, rebuild, refeed. Typing and the category grid end,
+      //    since neither may change the list while Flight Check is reading it. On the way out the
+      //    game has already refilled its hidden list in game order (PartEntries, then the
+      //    palette's Update) while this list was still read-only, so the rows are rebuilt with
+      //    their groups and fed again: a hover or click picks parts by Horizon's order.
       internal function setReadOnly(param1:Boolean):void
       {
          if(this.readOnly == param1) { return; }
          this.readOnly = param1;
          if(param1)
          {
-            if(this.findOn) { this.stopFind(); }
+            this.endFind();
             this.closeGrid();
+         }
+         else
+         {
+            this.rebuild();
+            this.refeed();
+            this.ensureVisible(this.selId);
          }
          this.invalidate();
       }
