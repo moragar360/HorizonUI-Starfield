@@ -946,6 +946,16 @@ static void CheckMovie(const fs::path& root)
 			Has(FunctionBody(hub, "pillsWarning", "internal"), "if(this.pillsSaveFailed) { return \"Pill changes are not saved: the pills file could not be written\"; }") &&
 			!Has(FunctionBody(hub, "savePills", "internal"), "lockPills(\"failed\")"),
 		"a failed pill save is shown on screen and clears on the next save that succeeds");
+	// The browser (and the Colours card, which shares its height) ends 10 px above the hints bar
+	// on both movies: the large movie's bars are taller than the normal movie's.
+	const std::string fit = FunctionBody(browser, "fitHeight", "internal");
+	Expect(Has(fit, "var bars:Number = this.kit.u(HorizonShipBuilder.STATS_HEIGHT) + this.kit.u(HorizonShipBuilder.HINTS_HEIGHT);") &&
+			Has(fit, "var room:Number = (r.height - edge * 2 - HorizonShipBuilder.BAR_GAP - 10) / sc - bars;") &&
+			Has(hub, "var h:Number = k.u(STATS_HEIGHT);") && Has(hub, "var h:Number = k.u(HINTS_HEIGHT);") &&
+			Has(FunctionBody(hub, "place", "internal"), "this.stats.y - BAR_GAP - this.hints.boxH * sc"),
+		"the browser keeps clear of the hints and stats bars on both movies");
+	Expect(Has(FunctionBody(ReadFile(as / "HsbArrange.as"), "paintBar"), "var w:Number = Math.max(k.u(680),30 + how.width + 6 + bw * 3 + 16 + 14);"),
+		"the Arrange bar grows so its how-to line never runs under RESET");
 	Expect(Has(FunctionBody(hub, "diffText", "internal static"), "var size:String = param1.bPercentage ? chipNumber(Math.abs(diff) * 100,0) : chipNumber(Math.abs(diff),2);") &&
 		Has(FunctionBody(hub, "diffText", "internal static"), "if(size == \"0\") { return \"\"; }"), "chips follow the twin");
 	Expect(Has(FunctionBody(hub, "shortChip", "internal static"), "if(dot < 0 || param1.indexOf(\"e\") >= 0) { return param1.charAt(0); }") &&

@@ -200,7 +200,13 @@ package
       {
          var k:HsbKit = this.kit;
          var g:Graphics = this.gfx;
-         var w:Number = k.u(680);
+         var bh:Number = k.u(26);
+         var bw:Number = k.u(88);
+         var how:TextField = k.label(this,0,0,"Drag a panel \u00B7 arrows nudge \u00B7 ENTER save \u00B7 ESC cancel",13,HsbKit.LABEL);
+         // Mockup 17's bar is 680 wide. It grows when the how-to line and the three buttons
+         // (with their 8 px gaps and 14 px inset) would not fit beside each other, as the large
+         // movie's text and buttons do not, so the line never runs under RESET.
+         var w:Number = Math.max(k.u(680),30 + how.width + 6 + bw * 3 + 16 + 14);
          var h:Number = k.u(74);
          var x:Number = Number(param1.x) + (Number(param1.width) - w) / 2 + this.barX;
          var y:Number = Number(param1.y) + Number(param1.height) * 0.4 + this.barY;
@@ -212,10 +218,9 @@ package
          k.fill(g,x,y + 10,3,h - 20,1.5,k.accent,1);
          k.icon(g,"handle",x + 10,y + 26,16,HsbKit.LABEL,1);
          k.label(this,x + 30,y + 12,"ARRANGE PANELS",15,HsbKit.TEXT,true,1.5);
-         k.label(this,x + 30,y + 12 + k.u(24),"Drag a panel \u00B7 arrows nudge \u00B7 ENTER save \u00B7 ESC cancel",13,HsbKit.LABEL,false,0,w - 330);
-         var bh:Number = k.u(26);
+         how.x = x + 30;
+         how.y = y + 12 + k.u(24);
          var by:Number = y + h - bh - 12;
-         var bw:Number = k.u(88);
          var cx:Number = x + w - 14 - bw;
          k.button(this,cx,by,"CANCEL","outline","cancel",null,bh,bw);
          k.button(this,cx - 8 - bw,by,"OK","accent","ok",null,bh,bw);

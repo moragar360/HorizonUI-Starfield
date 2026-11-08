@@ -56,6 +56,12 @@ package
       // A cancel or accept can arrive both as a DLL key token and as the game's own event.
       private static const DOUBLE_FRAMES:int = 6;
       private static const FILE_QUEUE_MAX:int = 64;
+      // The stats and hints bars' heights before HsbKit.u, and the gap place() leaves between
+      // them (mockup 1: 96, 43 and 11 px). HsbBrowser.fitHeight reads them to end the browser
+      // 10 px above the hints, as the mockup does (883 and 893).
+      internal static const STATS_HEIGHT:Number = 96;
+      internal static const HINTS_HEIGHT:Number = 43;
+      internal static const BAR_GAP:Number = 11;
       // Panels with a collapsed tab. Hide all folds these to their tabs (mockup 12); Colors and
       // Flight Check have no tab, so Hide all removes them.
       private static const TABBED:Object = {"Power":true,"Module":true,"Credits":true,"Stats":true,"Hints":true,"Browser":true};
@@ -1103,7 +1109,7 @@ package
          this.stats.y = bottom - this.stats.boxH * sc;
          if(this.folded("Stats")) { this.stats.x = r.x + (r.width - this.stats.boxW * sc) / 2; this.stats.y = r.y + r.height - 28 - this.stats.boxH * sc; }
          this.hints.x = right + 1 - this.hints.boxW * sc;
-         this.hints.y = (this.folded("Stats") || !this.stats.visible ? bottom - this.hints.boxH * sc : this.stats.y - 11 - this.hints.boxH * sc);
+         this.hints.y = (this.folded("Stats") || !this.stats.visible ? bottom - this.hints.boxH * sc : this.stats.y - BAR_GAP - this.hints.boxH * sc);
          if(this.folded("Hints")) { this.hints.y = r.y + r.height - 28 - this.hints.boxH * sc; }
          this.anchorAll(r);
          if(this.notice.visible)
@@ -1711,7 +1717,7 @@ package
          }
          var r:Object = this.viewRect();
          var w:Number = Math.min(1464,r.width - (this.margin + 391 + 31));
-         var h:Number = k.u(96);
+         var h:Number = k.u(STATS_HEIGHT);
          k.card(g,0,0,w,h);
          var cols:int = defs.length + 1;
          var cw:Number = (w - 40) / cols;
@@ -1773,7 +1779,7 @@ package
          if(!b.visible) { return; }
          var k:HsbKit = this.kit;
          var g:Graphics = b.gfx;
-         var h:Number = k.u(43);
+         var h:Number = k.u(HINTS_HEIGHT);
          if(this.folded("Hints"))
          {
             var kl:TextField = k.text(13,HsbKit.TEXT,true,1.5);

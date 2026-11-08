@@ -1510,10 +1510,17 @@ package
          if(moved) { this.hsb.place(); }
       }
 
+      // Purpose: the browser's height, which the Colours card shares. Outputs: 846 (mockup 1) at
+      //    most and 420 at least; in between the browser ends 10 px above the hints bar. The
+      //    bars' heights come from the hub, so the large movie's taller bars, a wider screen
+      //    margin and the UI scale keep that room.
       internal function fitHeight():Number
       {
          var r:Object = this.hsb.viewRect();
-         var room:Number = r.height - (this.hsb.margin + 3) - 190;
+         var edge:Number = this.hsb.margin + 3;
+         var sc:Number = this.hsb.uiScale > 0 ? this.hsb.uiScale : 1;
+         var bars:Number = this.kit.u(HorizonShipBuilder.STATS_HEIGHT) + this.kit.u(HorizonShipBuilder.HINTS_HEIGHT);
+         var room:Number = (r.height - edge * 2 - HorizonShipBuilder.BAR_GAP - 10) / sc - bars;
          return Math.max(420,Math.min(846,room));
       }
 
