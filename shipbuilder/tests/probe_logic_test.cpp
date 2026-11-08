@@ -922,6 +922,30 @@ static void CheckMovie(const fs::path& root)
          return GlobalFunc.FormatNumberToString(Number(param1.fValue),2);
       }
 )AS", "stat text follows the game card, as the twin does");
+	// The list prints a part stat as the card does, so a fire rate of 0.67 does not read "0" in
+	// its column: up to 2 places, none for percentages and the game's whole numbers.
+	Expect(Has(FunctionBody(browser, "cellText"), "return HsbKit.num(param1,this.placesOf(param2)) + this.unitOf(param2);") &&
+			Has(FunctionBody(browser, "rangeText"), "HsbKit.range(lo,hi,this.placesOf(param2)) + this.unitOf(param2)") &&
+			Has(FunctionBody(browser, "placesOf"), "if(param1 == this.statId || param1 == \"value\" || param1 == \"mass\" || param1 == \"variants\") { return 0; }") &&
+			Has(FunctionBody(browser, "placesOf"), "return this.statPct[param1] === true ? 0 : 2;") &&
+			Has(FunctionBody(kit, "num", "internal static"), "return GlobalFunc.FormatNumberToString(n,param2);") &&
+			Has(FunctionBody(kit, "range", "internal static"), "return lo == hi ? lo : lo + \"\\u2013\" + hi;") &&
+			Has(editor, "HsbKit.num(rule.value,2)"),
+		"list cells, group ranges and rule values show part stats to the card's places");
+	Expect(Has(FunctionBody(browser, "cellValue", "internal"), "if(param2 == \"name\") { return String(param1.name); }") &&
+			Has(FunctionBody(browser, "columnLabel", "internal"), "{\"name\":\"Name\",") &&
+			Has(FunctionBody(browser, "openSort"), "self.setSort(String(param2),false);") && !Has(FunctionBody(browser, "openSort"), "self.sortCol =") &&
+			InOrder(FunctionBody(browser, "setSort"), {"this.sortCol = param1;", "this.hsb.setSetting(\"Columns\",this.tabId + \"Sort\",", "this.hsb.saveSettings();", "this.afterFilter();"}),
+		"sorting by name orders the rows by name, and every sort choice is saved so the next PartEntries keeps it");
+	Expect(Has(colors, "var below:Boolean = gap.x + gap.width > w - pad;") && Has(colors, "if(below) { gap.x = bx; gap.y = y + k.u(26) + 4; }"),
+		"the Colours gap marker moves under its button rather than cross the card's edge");
+	// The plugin refuses a profile write it cannot back up; the player must see that, and the
+	// next change must still be allowed to save.
+	Expect(InOrder(FunctionBody(hub, "savePills", "internal"), {"note(\"PILLS save \" + (param1 ? \"ok\" : \"failed\"));",
+				"if(pillsSaveFailed != !param1)", "pillsSaveFailed = !param1;", "if(browser != null) { browser.invalidate(); }"}) &&
+			Has(FunctionBody(hub, "pillsWarning", "internal"), "if(this.pillsSaveFailed) { return \"Pill changes are not saved: the pills file could not be written\"; }") &&
+			!Has(FunctionBody(hub, "savePills", "internal"), "lockPills(\"failed\")"),
+		"a failed pill save is shown on screen and clears on the next save that succeeds");
 	Expect(Has(FunctionBody(hub, "diffText", "internal static"), "var size:String = param1.bPercentage ? chipNumber(Math.abs(diff) * 100,0) : chipNumber(Math.abs(diff),2);") &&
 		Has(FunctionBody(hub, "diffText", "internal static"), "if(size == \"0\") { return \"\"; }"), "chips follow the twin");
 	Expect(Has(FunctionBody(hub, "shortChip", "internal static"), "if(dot < 0 || param1.indexOf(\"e\") >= 0) { return param1.charAt(0); }") &&

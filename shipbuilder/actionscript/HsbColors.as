@@ -462,8 +462,11 @@ package
             var known:Boolean = this.allKnown();
             bx += this.iconButton(bx,y,"save","SAVE AS SCHEME",known ? "save" : "") + 10;
             var tw:Number = this.iconButton(bx,y,"dropper","TAKE FROM A PART","");
-            k.label(this,bx + tw + 8,y + 6,"No game data",12,HsbKit.ORANGE);
-            y += k.u(26) + 16;
+            var gap:TextField = k.label(this,bx + tw + 8,y + 6,"No game data",12,HsbKit.ORANGE);
+            var below:Boolean = gap.x + gap.width > w - pad;
+            // The gap marker goes under its button when it would cross the card's edge.
+            if(below) { gap.x = bx; gap.y = y + k.u(26) + 4; }
+            y += k.u(26) + 16 + (below ? gap.height + 2 : 0);
          }
          k.hline(g,pad,y,w - pad * 2,HsbKit.EDGE,1);
          y += 14;

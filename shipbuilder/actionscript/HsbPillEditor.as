@@ -217,7 +217,7 @@ package
             else
             {
                var numOn:Boolean = this.editing == "num" + param1;
-               var text:String = numOn ? this.editText + "|" : HsbKit.num(rule.value);
+               var text:String = numOn ? this.editText + "|" : HsbKit.num(rule.value,2);
                var nv:TextField = k.text(14,HsbKit.TEXT,true);
                k.put(nv,text);
                k.fit(nv);

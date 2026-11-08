@@ -439,7 +439,7 @@ package
       internal function columnLabel(param1:String):String
       {
          if(param1 == this.statId) { return this.statName.length > 0 ? this.statName : "Stat"; }
-         var map:Object = {"value":"Value","mass":"Mass","variants":"Variants","maker":"Maker","size":"Size","class":"Class"};
+         var map:Object = {"name":"Name","value":"Value","mass":"Mass","variants":"Variants","maker":"Maker","size":"Size","class":"Class"};
          if(map[param1] != null) { return String(map[param1]); }
          if(this.statLabels[param1] != null)
          {
@@ -451,6 +451,7 @@ package
 
       internal function cellValue(param1:Object, param2:String):*
       {
+         if(param2 == "name") { return String(param1.name); }
          if(param2 == this.statId) { return isNaN(Number(param1.stat1)) ? null : Number(param1.stat1); }
          if(param2 == "value") { return param1.value; }
          if(param2 == "mass") { return param1.mass; }
@@ -1233,12 +1234,18 @@ package
 
       private function sortBy(param1:String):void
       {
-         if(this.sortCol == param1) { this.sortDesc = !this.sortDesc; }
-         else
-         {
-            this.sortCol = param1;
-            this.sortDesc = param1 == "value" || param1 == "mass" || param1 == this.statId;
-         }
+         if(this.sortCol == param1) { this.setSort(param1,!this.sortDesc); }
+         else { this.setSort(param1,param1 == "value" || param1 == "mass" || param1 == this.statId); }
+      }
+
+      // Purpose: set the tab's sort and remember it. Inputs: param1, a column id, "name", or ""
+      //    for game order; param2, high to low. Outputs: none; the list re-sorts.
+      // Every way to sort comes through here: each PartEntries re-applies the saved sort, so an
+      // unsaved choice would flip back on the game's next update.
+      private function setSort(param1:String, param2:Boolean):void
+      {
+         this.sortCol = param1;
+         this.sortDesc = param1.length > 0 && param2;
          this.hsb.columnSets[this.tabId + "Sort"] = this.sortCol + (this.sortDesc ? "-" : "");
          this.hsb.setSetting("Columns",this.tabId + "Sort",this.sortCol.length > 0 ? this.sortCol + (this.sortDesc ? "-" : "") : "");
          this.hsb.saveSettings();
@@ -1259,8 +1266,7 @@ package
          var self:HsbBrowser = this;
          var menu:HsbDialog = HsbDialog.menu(this.kit,this.hsb,"SORT",items,function(param1:String, param2:*):void
          {
-            if(String(param2) == "") { self.sortCol = ""; self.sortDesc = false; self.afterFilter(); }
-            else if(String(param2) == "name") { self.sortCol = "name"; self.sortDesc = false; self.afterFilter(); }
+            if(String(param2) == "" || String(param2) == "name") { self.setSort(String(param2),false); }
             else { self.sortBy(String(param2)); }
          });
          this.popBelow(menu,"sort");
@@ -1936,10 +1942,16 @@ package
          var g:Graphics = this.gfx;
          var hh:Number = k.u(32);
          k.fill(g,param2,param3,param1 - param2 * 2,hh,6,HsbKit.HEAD,1);
-         var nt:TextField = k.text(13,HsbKit.LABEL);
+         var byName:Boolean = this.sortCol == "name";
+         var nt:TextField = k.text(13,byName ? k.accent : HsbKit.LABEL,byName);
          k.put(nt,"Name");
          k.fit(nt);
          this.add(nt,param2 + 14,param3 + (hh - nt.height) / 2);
+         if(byName)
+         {
+            k.icon(g,this.sortDesc ? "sortDown" : "sortUp",nt.x + nt.width,param3 + (hh - 14) / 2,14,k.accent,1);
+            k.fill(g,nt.x + 2,param3 + hh - 5,nt.textWidth,2,0,k.accent,1);
+         }
          this.hit(param2,param3,nt.width + 30,hh,"head","name");
          var cols:Array = this.columns();
          var i:int = 0;
@@ -1953,7 +1965,7 @@ package
             k.put(t,this.columnLabel(id));
             // A label may reach left to the label before it (the first one to "Name"), as
             // "Crew stations" does in mockup 1; a right-aligned field ends its text 2 px in.
-            var prevEnd:Number = i == 0 ? nt.x + nt.width + 12 : left + (this.sortCol == String(cols[i - 1]) ? 18 : 10);
+            var prevEnd:Number = i == 0 ? nt.x + nt.width + (byName ? 26 : 12) : left + (this.sortCol == String(cols[i - 1]) ? 18 : 10);
             k.fit(t,right - prevEnd + 6);
             this.add(t,right + 2 - t.width,param3 + (hh - t.height) / 2);
             if(sorted)
@@ -1972,12 +1984,21 @@ package
       {
          if(param1 == null) { return "\u2014"; }
          if(param1 is String) { return String(param1); }
-         return HsbKit.num(param1) + this.unitOf(param2);
+         return HsbKit.num(param1,this.placesOf(param2)) + this.unitOf(param2);
       }
 
       private function unitOf(param1:String):String
       {
          return param1 != this.statId && this.statPct[param1] === true ? "%" : "";
+      }
+
+      // Decimal places for a column, as the part card shows them (statText): up to 2 for a part
+      // stat, none for a percentage or for the game's whole numbers (value, mass, variants and
+      // the tab's own stat).
+      private function placesOf(param1:String):uint
+      {
+         if(param1 == this.statId || param1 == "value" || param1 == "mass" || param1 == "variants") { return 0; }
+         return this.statPct[param1] === true ? 0 : 2;
       }
 
       private function rangeText(param1:Array, param2:String):String
@@ -2002,7 +2023,7 @@ package
             i++;
          }
          if(text.length > 0) { return text; }
-         return isNaN(lo) ? HsbKit.range(lo,hi) : HsbKit.range(lo,hi) + this.unitOf(param2);
+         return isNaN(lo) ? HsbKit.range(lo,hi) : HsbKit.range(lo,hi,this.placesOf(param2)) + this.unitOf(param2);
       }
 
       private function paintList(param1:Number, param2:Number, param3:Number):void

@@ -466,20 +466,23 @@ package
          return total;
       }
 
-      // FormatNumberToString is what the game uses for every number on these panels.
-      internal static function num(param1:*):String
+      // FormatNumberToString is what the game uses for every number on these panels. param2 is
+      // the most decimal places shown: the game's lists and totals use none, the part card 2.
+      internal static function num(param1:*, param2:uint = 0):String
       {
          if(param1 == null || param1 === undefined) { return ""; }
          var n:Number = Number(param1);
          if(isNaN(n)) { return ""; }
-         return GlobalFunc.FormatNumberToString(n);
+         return GlobalFunc.FormatNumberToString(n,param2);
       }
 
-      internal static function range(param1:Number, param2:Number):String
+      // Two ends that print the same (12.2 and 12.7 at no places) show as one number.
+      internal static function range(param1:Number, param2:Number, param3:uint = 0):String
       {
          if(isNaN(param1) || isNaN(param2)) { return "\u2014"; }
-         if(param1 == param2) { return num(param1); }
-         return num(param1) + "\u2013" + num(param2);
+         var lo:String = num(param1,param3);
+         var hi:String = num(param2,param3);
+         return lo == hi ? lo : lo + "\u2013" + hi;
       }
 
       internal static function hex6(param1:uint):String

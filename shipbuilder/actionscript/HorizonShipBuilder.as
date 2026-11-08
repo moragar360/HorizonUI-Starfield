@@ -85,6 +85,10 @@ package
       internal var byMaker:Boolean = false;
       // Why pill changes cannot be saved this session ("" when they can); see onProfile.
       internal var pillsLock:String = "loading";
+      // The plugin answered the last pill save with a failure (no backup copy, or the file could
+      // not be written). Saving stays open: every save writes every pill, so the next change
+      // tries again and a save that succeeds clears this.
+      private var pillsSaveFailed:Boolean = false;
       internal var rememberLayout:Boolean = true;
       internal var startOpen:Object;
       internal var autoFlight:Boolean = true;
@@ -2529,14 +2533,16 @@ package
             case "full": return "Pill changes are not saved: too many pills and rules for one file";
             case "unsavable": return "Pill changes are not saved: a pill holds data the file cannot keep";
          }
+         if(this.pillsSaveFailed) { return "Pill changes are not saved: the pills file could not be written"; }
          return "";
       }
 
       // Purpose: write the pill profile. Inputs: the pill model. Outputs: one PROFILE WRITE, or
-      //    none while saving is locked. Rule: the movie never writes what its own reader would
-      //    refuse (longer than HsbJson.MAX_CHARS, or text HsbJson.parse rejects), so a saved
-      //    profile always loads again. "full" and "unsavable" clear on the next save that passes,
-      //    so removing the pills that caused them unlocks saving.
+      //    none while saving is locked; a failed reply shows pillsWarning's "could not be
+      //    written" line until a later save succeeds. Rule: the movie never writes what its own
+      //    reader would refuse (longer than HsbJson.MAX_CHARS, or text HsbJson.parse rejects),
+      //    so a saved profile always loads again. "full" and "unsavable" clear on the next save
+      //    that passes, so removing the pills that caused them unlocks saving.
       internal function savePills():void
       {
          var retry:Boolean = this.pillsLock == "full" || this.pillsLock == "unsavable";
@@ -2562,6 +2568,11 @@ package
          this.fileOp("PROFILE",["WRITE"],text,function(param1:Boolean, param2:String):void
          {
             note("PILLS save " + (param1 ? "ok" : "failed"));
+            if(pillsSaveFailed != !param1)
+            {
+               pillsSaveFailed = !param1;
+               if(browser != null) { browser.invalidate(); }
+            }
          });
       }
 
