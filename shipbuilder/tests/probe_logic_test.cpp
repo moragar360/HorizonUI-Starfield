@@ -734,8 +734,24 @@ static void CheckMovie(const fs::path& root)
 		Has(FunctionBody(hub, "onToken"), "if(kind == \"C\" && bits.length >= 2) { this.onChar(int(bits[1])); return; }"),
 		"the movie reads every feed token the plugin writes");
 	Expect(Has(FunctionBody(hub, "pushState"),
-			"\"STATE capture=\" + (this.capturing() ? 1 : 0) + \" text=\" + (this.textOwner != null ? 1 : 0) + \" arrange=\" + (arranging ? 1 : 0) + \" stage=\" + w + \"x\" + h + \" view=\" + this.viewText() + \" keys=\" + (this.keyArrange != \"0\" ? 1 : 0) + \" hide=\" + this.keyCode(this.keyHide) + \" find=\" + this.keyCode(this.keyFind)"),
+			R"AS("STATE capture=" + (this.capturing() ? 1 : 0) + " text=" + (this.textOwner != null ? 1 : 0) + " arrange=" + (arranging ? 1 : 0) + " stage=" + w + "x" + h + " view=" + this.viewText() + " keys=" + (hotkeys && this.keyArrange != "0" ? 1 : 0) + " hide=" + (hotkeys ? this.keyCode(this.keyHide) : 0) + " find=" + (hotkeys ? this.keyCode(this.keyFind) : 0))AS"),
 		"STATE carries every field the plugin reads");
+	{
+		// Horizon's hotkeys stand aside while the player types a ship name or Horizon is not drawn.
+		const std::string hk = FunctionBody(hub, "hotkeysAllowed");
+		Expect(Has(FunctionBody(hub, "pushState"), "var hotkeys:Boolean = this.hotkeysAllowed();") &&
+			Has(hk, "if(this.conflict || this.kit == null) { return false; }") &&
+			Has(hk, "if(this.nativeOn(\"ShipRename_mc\") || this.nativeOn(\"HangarInfoPanel_mc\")) { return false; }") &&
+			Has(hk, "if(field != null && field.type == TextFieldType.INPUT && !this.contains(field)) { return false; }"),
+			"hide, find and Arrange keys reach the game while a vanilla text field or the rename screen is up");
+		Expect(InOrder(FunctionBody(hub, "onKey"), {"if(!this.hotkeysAllowed()) { return; }", "if(param1 == \"open\")", "if(param1 == \"hide\")", "if(param1 == \"find\""}),
+			"a hotkey token that arrives late is ignored when hotkeys stand aside");
+	}
+	Expect(FunctionBody(hub, "wantsStick", "public") == R"AS(public function wantsStick():Boolean
+      {
+         return this.capturing();
+      }
+)AS", "the stick is consumed only while Horizon captures");
 	{
 		hsb::InputState st = hsb::ParseState("STATE capture=0 text=1 arrange=1 stage=1920x1080 view=0,0,1920,1080 keys=0 hide=72 find=0", hsb::InputState{});
 		Expect(!st.capture && st.text && st.arrange && !st.arrangeKey && st.hideChar == 72 && st.findChar == 0, "the plugin reads the movie's STATE format");
@@ -783,7 +799,7 @@ static void CheckMovie(const fs::path& root)
 	Expect(Has(FunctionBody(hub, "send", "internal"), "if(this.debugOn) { this.note(\"SEND \" + param1); }"), "sent events are logged only with Probe=1");
 
 	// Backend gaps are marked in the UI.
-	Expect(Has(colors, "\"Not in the game: colours go to the parts you selected before Colors\""), "the colour target gap is shown");
+	Expect(Has(colors, "\"Not in the game: colors go to the parts you selected before Colors\""), "the colour target gap is shown");
 	Expect(Has(colors, "\"~#\" + HsbKit.hex6("), "a worked-out hex is marked with ~");
 	Expect(CountOf(editor, "\"note\":\"No game data\"") == 2, "pill rules without game data are marked");
 	Expect(Has(settings, "\"Open Flight Check on errors\",\"autoflight\",false,false,\"No game signal\""), "the Flight Check setting is marked");
@@ -914,6 +930,85 @@ static void CheckMovie(const fs::path& root)
 		Has(splice, "the category grid or Arrange is open"), "the splice consumes controller events only while Horizon captures");
 	Expect(Has(splice, "has no onAddedToStage") && Has(splice, "import HorizonShipBuilder;") && Has(splice, "Do not construct HorizonShipBuilderProbe here."),
 		"the splice builds the hub and leaves the probe to Probe=1");
+	Expect(Has(splice, "public function OnLeftStickInput(param1:Number, param2:Number, param3:Number, param4:Boolean, param5:Boolean, param6:uint):Boolean") &&
+		Has(splice, "if(this.hsb != null && this.hsb.wantsStick())"), "the splice keeps the stick off the hidden lists while Horizon captures");
+
+	// Pill profile safety: never save over a file the movie could not use, never write what it
+	// could not read back, and never save before the profile reply.
+	{
+		const std::string profile = FunctionBody(hub, "onProfile");
+		const std::string save = FunctionBody(hub, "savePills", "internal");
+		const std::string json = ReadFile(as / "HsbJson.as");
+		const std::string model = ReadFile(as / "HsbPillModel.as");
+		Expect(Has(hub, "internal var pillsLock:String = \"loading\";"), "pill saves wait for the profile reply");
+		Expect(Has(profile, "this.lockPills(param2 == \"missing\" ? \"\" : \"unreadable\");") &&
+			Has(profile, "this.lockPills(count == HsbPillModel.LOAD_NEWER ? \"newer\" : \"toolong\");") &&
+			InOrder(profile, {"else if(count == HsbPillModel.LOAD_BAD)", "this.pillsLock = \"\";", "this.fileOp(\"PROFILE\",[\"BAD\"],\"\",null);"}),
+			"only a missing or damaged profile may be replaced");
+		Expect(InOrder(save, {"if(this.pillsLock.length > 0 && this.pillsLock != \"full\")", "return;", "if(text.length > HsbJson.MAX_CHARS)",
+				   "this.lockPills(\"full\");", "return;", "this.fileOp(\"PROFILE\",[\"WRITE\"],text,"}), "the movie never writes a profile it could not read back");
+		Expect(Has(model, "if(param1.length > HsbJson.MAX_CHARS) { return LOAD_TOO_BIG; }"), "a profile too long to parse is reported as such");
+		Expect(Has(browser, "var pillsWarn:String = this.hsb.pillsWarning();"), "the browser says when pill changes are not saved");
+		const std::string head = "internal static const MAX_CHARS:int = ";
+		const std::size_t at = json.find(head);
+		const long maxChars = at == std::string::npos ? -1 : std::strtol(json.c_str() + at + head.size(), nullptr, 10);
+		Expect(maxChars > 0 && static_cast<std::size_t>(maxChars) * 3 <= hsb::kMaxProfileBytes &&
+			static_cast<std::size_t>(maxChars) * 3 + 64 <= hsb::kMaxRequestBytes, "the movie's largest profile fits the plugin's read and request caps");
+	}
+
+	// Card numbers are cached only for the previewed part while the palette and card are shown.
+	{
+		const std::string learn = FunctionBody(browser, "learn", "internal");
+		Expect(InOrder(learn, {"if(param1 == null || !Boolean(param1.bShowWidget)) { return; }", "if(this.data == null || !Boolean(this.data.bShowWidget)) { return; }",
+				   "if(this.cleanText(param1.sModuleName).toLowerCase() != this.cleanText(r.name).toLowerCase()) { return; }", "row.stats = {};"}),
+			"ModuleInfo for another module never lands on the previewed row");
+		Expect(InOrder(FunctionBody(browser, "onParts", "internal"), {"if(!Boolean(param1.bShowWidget))", "this.previewId = \"\";", "this.nativeSel = \"\";"}),
+			"a closed palette forgets its preview");
+		Expect(Has(browser, "private var pending:int = -1;"), "a category jump starts with nothing pending");
+		Expect(Has(FunctionBody(browser, "goCategory"), "this.changeCategory(offset > 0 ? 1 : -1);") &&
+			Has(FunctionBody(browser, "stepPending"), "this.changeCategory(dir);"), "category jumps move one step per event, as LB and RB do");
+		Expect(Has(FunctionBody(browser, "gridKey"), "if(this.discover == null) { this.pick(int(keys[this.gridFocus])); }"),
+			"the category grid takes no pick while it is still reading the ring");
+		Expect(Has(learn, "row.stats[sid] = pct ? Number(s.fValue) * 100 : Number(s.fValue);") &&
+			Has(FunctionBody(browser, "unitOf"), "return param1 != this.statId && this.statPct[param1] === true ? \"%\" : \"\";"),
+			"percentage stats are cached, compared and shown in percent, as the game card shows them");
+	}
+
+	Expect(Has(colors, "if(!isNaN(hsbNow[0]) && !isNaN(hsbNow[1]) && !isNaN(hsbNow[2])) { this.slots[tab] = hsbNow; }") &&
+		Has(FunctionBody(colors, "clamp01", "private static"), "if(isNaN(param1)) { return 0; }"), "a slot colour is never NaN");
+	Expect(Has(FunctionBody(ReadFile(as / "HsbDialog.as"), "safeFileName", "internal static"), "return device ? out + \"_\" : out;"),
+		"an exported name is never a Windows device name");
+	// Flight Check tabs click the game's own tab bar, which selects and reports the tab itself.
+	{
+		const std::string flight = ReadFile(as / "HsbFlight.as");
+		const std::string act = FunctionBody(flight, "onAct", "override internal");
+		Expect(InOrder(act, {"entry = bar != null ? bar.GetClipByIndex(index) as EventDispatcher : null;",
+				   "if(!this.hsb.clickNative(entry) && index >= 0 && index < this.tabTypes.length)",
+				   "this.hsb.send(\"ShipEditor_OnFlightCheckTabChanged\",{\"tabType\":int(this.tabTypes[index])});"}),
+			"a Flight Check tab click goes through the game's tab bar");
+		Expect(Has(FunctionBody(hub, "clickNative", "internal"), "param1.dispatchEvent(new MouseEvent(MouseEvent.CLICK));"),
+			"the hub presses the vanilla control with a plain click");
+		Expect(Has(FunctionBody(flight, "nativeTabs"), "return host.FlightCheck_mc.FlightCheckCategories_mc;") &&
+			Has(FunctionBody(flight, "selectedTab"), "var n:int = int(bar.selectedIndex);"), "the highlighted tab is the game's selected tab");
+		const std::string readOnly = FunctionBody(browser, "setReadOnly", "internal");
+		Expect(Has(hub, "this.browser.setReadOnly(flightOn);") && !Has(hub, "this.browser.readOnly =") &&
+				InOrder(readOnly, {"if(this.readOnly == param1) { return; }", "this.closeGrid();", "this.invalidate();"}),
+			"opening or closing Flight Check repaints the list in its read-only view");
+		Expect(Has(FunctionBody(browser, "paint", "internal"), "if(!this.readOnly) { y = this.paintStrip(w,pad,y); }") &&
+				Has(FunctionBody(browser, "paintStripTop"), "if(!this.upgrade && live) { this.hit(param2,y,title.width + 6,k.u(32),\"grid\"); }") &&
+				Has(FunctionBody(browser, "findBox"), "if(live) { this.hit(param1,param2,param3,param4,\"find\"); }"),
+			"the read-only list offers no pills, sort, columns, category steps or Find");
+	}
+
+	// Hide all folds the tabbed panels to their tabs (mockup 12), and opening any tab shows all.
+	{
+		Expect(Has(FunctionBody(hub, "shown"), "return !this.hideAll || TABBED[param1] == true;") &&
+				Has(FunctionBody(hub, "folded"), "return this.collapsed[param1] == true || this.hideAll;") &&
+				!Has(hub, "this.collapsed[\"Browser\"] == true") && Has(hub, "this.browser.collapsed = this.folded(\"Browser\");"),
+			"Hide all leaves each panel's tab on screen");
+		Expect(InOrder(FunctionBody(hub, "setCollapsed", "internal"), {"if(!param2 && this.hideAll) { this.toggleHide(); }", "if(param2) { this.collapsed[param1] = true; }"}),
+			"opening a tab while everything is folded brings every panel back");
+	}
 
 	const std::string probe = ReadFile(as / "HorizonShipBuilderProbe.as");
 	Expect(Has(probe, "captureOn = false") && Has(probe, "enumerateFonts(false)") && !Has(probe, "enumerateFonts(true)") && !Has(probe, "stopPropagation") &&
@@ -1032,7 +1127,7 @@ static void CheckDocs(const fs::path& repo, const fs::path& root)
 	Expect(Has(readme, "`FACT input | presses=N eaten=M ... raw=R`") && Has(readme, "`CATEGORIES read total=`") && Has(readme, "FONT try=") &&
 		Has(readme, "ping=0.2.0.0") && Has(readme, "thread=hud-advance"), "the readme names the log lines the gates read");
 	Expect(Has(readme, "## Backend gaps, shown in the UI") && Has(readme, "No game data") && Has(readme, "No game signal") &&
-		Has(readme, "Not in the game: colours go to the parts you selected before Colors"), "the readme lists the marked backend gaps");
+		Has(readme, "Not in the game: colors go to the parts you selected before Colors"), "the readme lists the marked backend gaps");
 	Expect(Has(readme, "## Unknowns") && Has(readme, "Every stock language config maps all three") && Has(readme, "needs no other Horizon mod"),
 		"the readme lists the unknowns and stands alone");
 	for (const auto& event : VanillaEvents()) Expect(Has(readme, "`" + event + "`"), "the readme lists " + event);

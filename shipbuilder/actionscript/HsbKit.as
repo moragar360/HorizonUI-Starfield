@@ -36,6 +36,8 @@ package
       internal static const ORANGE:uint = 0xF28A4F;
       internal static const ORANGE_BG:uint = 0x2E1D12;
       internal static const INK_ON_ACCENT:uint = 0x15130A;
+      // Room around a button label (11 each side).
+      private static const BUTTON_PAD:Number = 22;
 
       internal var accent:uint = 0xE8C547;
       internal var opacity:Number = 0.94;
@@ -128,12 +130,27 @@ package
          this.put(param1,param1.text.toUpperCase(),param4);
       }
 
-      // Width fits the text so the next item can sit after it.
+      // Width fits the text so the next item can sit after it. A text wider than the room ends
+      // in an ellipsis (the longest start that fits) instead of being cut through a letter.
       internal function fit(param1:TextField, param2:Number = 0):Number
       {
          param1.width = Math.max(4,param1.textWidth + 6);
          param1.height = param1.textHeight + 6;
-         if(param2 > 0 && param1.width > param2) { param1.width = param2; }
+         if(param2 > 0 && param1.width > param2)
+         {
+            var full:String = param1.text;
+            var lo:int = 0;
+            var hi:int = full.length - 1;
+            while(lo < hi)
+            {
+               var mid:int = (lo + hi + 1) >> 1;
+               param1.text = full.substring(0,mid) + "\u2026";
+               if(param1.textWidth + 6 <= param2) { lo = mid; }
+               else { hi = mid - 1; }
+            }
+            param1.text = full.substring(0,lo) + "\u2026";
+            param1.width = param2;
+         }
          return param1.width;
       }
 
@@ -229,10 +246,11 @@ package
          var at:Number = 0;
          while(at < len)
          {
-            var end:Number = Math.min(len,at + 4);
+            // Mockup 1 dashes: 5 px on, 3 px off.
+            var end:Number = Math.min(len,at + 5);
             param1.moveTo(param2 + dx * at,param3 + dy * at);
             param1.lineTo(param2 + dx * end,param3 + dy * end);
-            at += 7;
+            at += 8;
          }
       }
 
@@ -361,7 +379,7 @@ package
          var t:TextField = this.text(13,ink,true,1);
          this.put(t,param4);
          this.fit(t);
-         var w:Number = Math.max(param9,t.width + 22);
+         var w:Number = Math.max(param9,t.width + BUTTON_PAD);
          if(param5 == "accent") { this.fill(g,param2,param3,w,h,h / 2,this.accent,1); }
          else
          {
@@ -381,9 +399,21 @@ package
          return w;
       }
 
+      // Width button() gives a label (param2 is the same minimum), so a row can be right-aligned
+      // before it is drawn.
+      internal function buttonWidth(param1:String, param2:Number = 0):Number
+      {
+         var t:TextField = this.text(13,TEXT,true,1);
+         this.put(t,param1);
+         this.fit(t);
+         return Math.max(param2,t.width + BUTTON_PAD);
+      }
+
       // Segmented control; the chosen segment is filled with the accent. Each segment records a
-      // hit with its index as data. A disabled control draws dim and records no hits.
-      internal function segments(param1:HsbBox, param2:Number, param3:Number, param4:Array, param5:int, param6:String, param7:Number = 0, param8:Boolean = true):Number
+      // hit with its index as data. A disabled control draws dim and records no hits. param9 and
+      // param10 are the padding around each label and its letter spacing; a crowded row
+      // (mockup 6, APPLY TO) uses 16 and 0.6 before it shortens labels.
+      internal function segments(param1:HsbBox, param2:Number, param3:Number, param4:Array, param5:int, param6:String, param7:Number = 0, param8:Boolean = true, param9:Number = 20, param10:Number = 1.2):Number
       {
          var g:Graphics = param1.gfx;
          var h:Number = param7 > 0 ? param7 : this.u(26);
@@ -393,11 +423,11 @@ package
          while(i < param4.length)
          {
             var on:Boolean = i == param5 && param8;
-            var t:TextField = this.text(12,on ? INK_ON_ACCENT : (param8 ? LABEL : DIM),true,1.2);
+            var t:TextField = this.text(12,on ? INK_ON_ACCENT : (param8 ? LABEL : DIM),true,param10);
             this.put(t,String(param4[i]));
             this.fit(t);
             fields.push(t);
-            total += t.width + 20;
+            total += t.width + param9;
             i++;
          }
          this.fill(g,param2,param3,total,h,6,FIELD,1);
@@ -407,13 +437,30 @@ package
          while(i < fields.length)
          {
             var tf:TextField = fields[i] as TextField;
-            var sw:Number = tf.width + 20;
+            var sw:Number = tf.width + param9;
             if(i == param5 && param8) { this.fill(g,x + 2,param3 + 2,sw - 4,h - 4,5,this.accent,1); }
-            tf.x = x + 10;
+            tf.x = x + param9 / 2;
             tf.y = param3 + (h - tf.height) / 2;
             param1.addChild(tf);
             if(param8) { param1.hit(x,param3,sw,h,param6,i); }
             x += sw;
+            i++;
+         }
+         return total;
+      }
+
+      // Width segments() gives these labels with the same padding (param2) and letter spacing
+      // (param3), so a crowded row can be fitted before it is drawn.
+      internal function segmentsWidth(param1:Array, param2:Number = 20, param3:Number = 1.2):Number
+      {
+         var total:Number = 0;
+         var t:TextField = this.text(12,LABEL,true,param3);
+         var i:int = 0;
+         while(i < param1.length)
+         {
+            this.put(t,String(param1[i]));
+            this.fit(t);
+            total += t.width + param2;
             i++;
          }
          return total;
@@ -575,6 +622,13 @@ package
                param1.lineTo(cx,param4 + s * 0.52);
                param1.lineTo(param3 + s * 0.75,param4 + s * 0.74);
                break;
+            case "dockU":
+               param1.moveTo(param3 + s * 0.22,param4 + s * 0.24);
+               param1.lineTo(param3 + s * 0.78,param4 + s * 0.24);
+               param1.moveTo(param3 + s * 0.26,param4 + s * 0.72);
+               param1.lineTo(cx,param4 + s * 0.44);
+               param1.lineTo(param3 + s * 0.74,param4 + s * 0.72);
+               break;
             case "dockL":
                param1.moveTo(param3 + s * 0.24,param4 + s * 0.2);
                param1.lineTo(param3 + s * 0.24,param4 + s * 0.8);
@@ -688,8 +742,9 @@ package
                var hr:int = 0;
                while(hr < 3)
                {
-                  param1.drawCircle(param3 + s * 0.38,param4 + s * (0.28 + hr * 0.22),s * 0.06);
-                  param1.drawCircle(param3 + s * 0.62,param4 + s * (0.28 + hr * 0.22),s * 0.06);
+                  // Mockup 8 grip: two columns of three 3 px dots.
+                  param1.drawCircle(param3 + s * 0.36,param4 + s * (0.25 + hr * 0.25),s * 0.095);
+                  param1.drawCircle(param3 + s * 0.64,param4 + s * (0.25 + hr * 0.25),s * 0.095);
                   hr++;
                }
                param1.endFill();
@@ -736,6 +791,13 @@ package
                param1.lineTo(cx,param4 + s * 0.6);
                param1.moveTo(cx,param4 + s * 0.7);
                param1.lineTo(cx,param4 + s * 0.72);
+               break;
+            case "alert":
+               param1.drawCircle(cx,cy,s * 0.42);
+               param1.moveTo(cx,param4 + s * 0.28);
+               param1.lineTo(cx,param4 + s * 0.54);
+               param1.moveTo(cx,param4 + s * 0.68);
+               param1.lineTo(cx,param4 + s * 0.7);
                break;
             case "info":
                param1.drawCircle(cx,cy,s * 0.42);

@@ -1,6 +1,7 @@
 package
 {
    import flash.display.Graphics;
+   import flash.events.EventDispatcher;
    import flash.text.TextField;
 
    // Purpose: the Flight Check card from gold mockup 13, in the Selected Module card's slot:
@@ -9,9 +10,11 @@ package
    // Inputs: FlightCheckData {aFlightCheckTabs [{sName, iTabType}], bShowMessages,
    //    bShowWeapons, aMessages [{uMessageType 0 nominal / 1 warning / 2 error, sHeaderText,
    //    sBodyText}]}; pointer and wheel routed by the builder.
-   // Outputs: a tab click sends ShipEditor_OnFlightCheckTabChanged {tabType}, as the vanilla
-   //    tab bar does. The keys keep working through the game's own (hidden) tab bar.
-   // Dependencies: HorizonShipBuilder (send, keyName), HsbKit.
+   // Outputs: a tab click clicks the same tab of the game's own (hidden) tab bar, which selects
+   //    it and sends ShipEditor_OnFlightCheckTabChanged {tabType} itself, so the bar, its keys
+   //    and the game agree on the tab. Without that bar the event is sent directly.
+   // Dependencies: HorizonShipBuilder (send, clickNative, keyName, hostClip), HsbKit, the vanilla
+   //    FlightCheck_mc.FlightCheckCategories_mc (BSTabbedSelection: selectedIndex, GetClipByIndex).
    // Backend limits: the game gives no fix actions per message, so none are drawn; the
    //    Weapons tab shows the game's own weapon groups panel (Horizon steps aside for it).
    // Author: Moragar. Last modified: 2026-11-07.
@@ -24,6 +27,7 @@ package
       private var hsb:HorizonShipBuilder;
       private var scroll:int = 0;
       private var lastCount:int = -1;
+      private var tabTypes:Array = [];
 
       public function HsbFlight(param1:HsbKit, param2:HorizonShipBuilder)
       {
@@ -120,19 +124,21 @@ package
          var x:Number = param2;
          var prev:String = this.hsb.keyName("PrevCategory");
          if(prev.length > 0) { x += k.keycap(this,x,param3,prev,HsbKit.LABEL,capH) + 14; }
-         var weapons:Boolean = Boolean(param1.bShowWeapons);
+         var picked:int = this.selectedTab(tabs.length,Boolean(param1.bShowWeapons));
+         this.tabTypes = [];
          var i:int = 0;
          while(i < tabs.length)
          {
             var tab:Object = tabs[i];
-            var on:Boolean = tabs.length == 2 ? (i == 1) == weapons : i == 0;
+            this.tabTypes.push(int(tab.iTabType));
+            var on:Boolean = i == picked;
             var tf:TextField = k.text(13,on ? k.accent : HsbKit.LABEL,true,1.5);
             k.put(tf,tab.sName);
             k.put(tf,tf.text.toUpperCase());
             k.fit(tf);
             this.add(tf,x,param3 + (capH - tf.height) / 2);
             if(on) { k.fill(g,x,param3 + capH + 3,tf.width - 4,2,0,k.accent,1); }
-            this.hit(x - 4,param3 - 4,tf.width + 8,capH + 10,"tab",int(tab.iTabType));
+            this.hit(x - 4,param3 - 4,tf.width + 8,capH + 10,"tab",i);
             x += tf.width + 16;
             i++;
          }
@@ -228,7 +234,49 @@ package
 
       override internal function onAct(param1:String, param2:*):void
       {
-         if(param1 == "tab") { this.hsb.send("ShipEditor_OnFlightCheckTabChanged",{"tabType":int(param2)}); }
+         if(param1 != "tab") { return; }
+         var index:int = int(param2);
+         var entry:EventDispatcher = null;
+         try
+         {
+            var bar:Object = this.nativeTabs();
+            entry = bar != null ? bar.GetClipByIndex(index) as EventDispatcher : null;
+         }
+         catch(err:Error) { entry = null; }
+         if(!this.hsb.clickNative(entry) && index >= 0 && index < this.tabTypes.length)
+         {
+            this.hsb.send("ShipEditor_OnFlightCheckTabChanged",{"tabType":int(this.tabTypes[index])});
+         }
+         this.hsb.mark("Flight");
+      }
+
+      // The game's own tab bar, kept alive under Horizon; null when the clip is not there.
+      private function nativeTabs():Object
+      {
+         try
+         {
+            var host:Object = this.hsb.hostClip();
+            if(host != null && host.FlightCheck_mc != null) { return host.FlightCheck_mc.FlightCheckCategories_mc; }
+         }
+         catch(err:Error) { }
+         return null;
+      }
+
+      // The tab the game's bar has selected; without the bar, the Weapons tab is the second of
+      // two while the game shows weapon groups, else the first.
+      private function selectedTab(param1:int, param2:Boolean):int
+      {
+         try
+         {
+            var bar:Object = this.nativeTabs();
+            if(bar != null && bar.selectedIndex != null)
+            {
+               var n:int = int(bar.selectedIndex);
+               if(n >= 0 && n < param1) { return n; }
+            }
+         }
+         catch(err:Error) { }
+         return param1 == 2 && param2 ? 1 : 0;
       }
    }
 }

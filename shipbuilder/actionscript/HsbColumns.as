@@ -202,7 +202,7 @@ package
          var key:String;
          for(key in this.hsb.columnSets)
          {
-            if(key == this.browser.tabKeyNow() || key.indexOf("Sort") == key.length - 4) { continue; }
+            if(key == this.browser.tabKeyNow() || (key.length > 4 && key.substr(-4) == "Sort")) { continue; }
             if(String(this.hsb.columnSets[key]).length == 0) { continue; }
             names.push(this.browser.tabNameFor(key));
          }

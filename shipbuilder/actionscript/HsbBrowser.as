@@ -24,6 +24,17 @@ package
    {
       private static const KNOWN_MAKERS:Array = [["Nova Galactic","Nova Galactic"],["Taiyo Astroneering","Taiyo Astroneering"],["Taiyo","Taiyo Astroneering"],["Stroud-Eklund","Stroud-Eklund"],["Stroud","Stroud-Eklund"],["HopeTech","HopeTech"],["Deimos","Deimos"],["Amun Dunn","Amun Dunn"],["Slayton Aerospace","Slayton Aerospace"],["White Dwarf","White Dwarf"],["Protectorate Systems","Protectorate Systems"],["Light Scan","Light Scan"]];
       private static const DWELL_FRAMES:int = 5;
+      // Mockup 1: the controls sit 16 in from the card edge, the list rows only 10.
+      private static const LIST_PAD:Number = 10;
+      // Maker rows are taller than part rows in the compact list (41 against 37 in mockup 1).
+      private static const GROUP_EXTRA:Number = 4;
+      // Mockup 1 gaps under the tab row, the pager and the title row.
+      private static const TAB_ROW_GAP:Number = 16;
+      private static const PAGER_GAP:Number = 20;
+      private static const TITLE_ROW_GAP:Number = 14;
+      private static const PILL_ON:int = 0;
+      private static const PILL_OFF:int = 1;
+      private static const PILL_BUTTON:int = 2;
 
       private var hsb:HorizonShipBuilder;
       internal var collapsed:Boolean = false;
@@ -40,6 +51,8 @@ package
       private var catTotal:int = -1;
       private var seen:Object;
       private var statLabels:Object;
+      // Stat ids the game marks bPercentage: cached and compared in percent, shown with "%".
+      private var statPct:Object;
       private var previewId:String = "";
       private var selId:String = "";
       private var nativeSel:String = "";
@@ -51,6 +64,7 @@ package
       private var grid:Boolean = false;
       private var findText:String = "";
       private var findOn:Boolean = false;
+      private var colsPop:HsbColumns;
       private var sortCol:String = "";
       private var sortDesc:Boolean = false;
       private var makerChip:String = "";
@@ -64,10 +78,12 @@ package
       private var pitch:Number = 37;
       private var unchecked:int = 0;
       private var discover:Object;
-      private var pending:int = 0;
+      // The category a jump is heading for; -1 when no jump is under way.
+      private var pending:int = -1;
       private var gridFocus:int = -1;
       private var lastPaint:int = -1;
       private var columnPreview:Array = null;
+      private var makerRest:Array = [];
 
       public function HsbBrowser(param1:HsbKit, param2:HorizonShipBuilder)
       {
@@ -77,6 +93,7 @@ package
          this.cats = {};
          this.seen = {};
          this.statLabels = {};
+         this.statPct = {};
          this.flat = [];
          this.shownRows = [];
          this.leaves = [];
@@ -95,7 +112,13 @@ package
       internal function onParts(param1:Object):void
       {
          this.data = param1;
-         if(!Boolean(param1.bShowWidget)) { this.invalidate(); return; }
+         if(!Boolean(param1.bShowWidget))
+         {
+            this.previewId = "";
+            this.nativeSel = "";
+            this.invalidate();
+            return;
+         }
          this.upgrade = Boolean(param1.bIsUpgradeMode);
          var raw:String = String(param1.sCategoryName);
          var t:TextField = this.kit.text(13,0);
@@ -165,12 +188,24 @@ package
       }
 
       // ModuleInfo describes the part the game previews; cache its numbers for columns and pills.
+      // Purpose: cache the numbers the game's card shows (ModuleInfo) under the previewed row,
+      //    so the list can show and sort Value, Mass and stat columns for parts already seen.
+      // Rules: ModuleInfo also arrives for modules picked on the ship while the palette is closed,
+      //    and a late one can describe the previous preview, so it is kept only while the palette
+      //    and the card are shown and only when its name is the previewed row's name. A part
+      //    with no match keeps a dash rather than another part's numbers.
       internal function learn(param1:Object):void
       {
+         if(param1 == null || !Boolean(param1.bShowWidget)) { return; }
+         if(this.data == null || !Boolean(this.data.bShowWidget)) { return; }
          var id:String = this.previewId.length > 0 ? this.previewId : this.nativeSel;
          if(id.length == 0) { return; }
+         var r:Object = this.rowById(id);
+         if(r == null) { return; }
+         if(this.cleanText(param1.sModuleName).toLowerCase() != this.cleanText(r.name).toLowerCase()) { return; }
          var row:Object = this.seen[id];
-         if(row == null) { row = {"stats":{}}; this.seen[id] = row; }
+         if(row == null) { row = {}; this.seen[id] = row; }
+         row.stats = {};
          row.value = param1.iModuleCost != null ? Number(param1.iModuleCost) : null;
          row.mass = param1.iModuleMass != null ? Number(param1.iModuleMass) : null;
          var stats:Array = param1.aStats as Array;
@@ -185,14 +220,15 @@ package
                var sid:String = HsbPillModel.columnId(raw).toLowerCase();
                if(sid.length > 0)
                {
-                  row.stats[sid] = Number(s.fValue);
+                  var pct:Boolean = Boolean(s.bPercentage);
+                  row.stats[sid] = pct ? Number(s.fValue) * 100 : Number(s.fValue);
+                  if(pct) { this.statPct[sid] = true; }
                   if(this.statLabels[sid] == null) { this.statLabels[sid] = this.cleanText(raw); }
                }
             }
             i++;
          }
-         var r:Object = this.rowById(id);
-         if(r != null) { this.fill(r); }
+         this.fill(r);
          this.rebuild();
          this.invalidate();
       }
@@ -351,7 +387,8 @@ package
             var cat:Object = this.cats[key];
             if(cat != null && HsbPillModel.tabKey(String(cat.raw)) == param1) { return String(cat.name); }
          }
-         return param1 == "*" ? "All tabs" : param1;
+         // A tab the builder has not visited yet reads from its key: "GravDrives" as "Grav Drives".
+         return param1 == "*" ? "All tabs" : HsbPillModel.words(param1,true);
       }
 
       internal function tabColumns():Array
@@ -409,7 +446,7 @@ package
             var s:String = String(this.statLabels[param1]);
             return s.charAt(0).toUpperCase() + s.substring(1).toLowerCase();
          }
-         return param1;
+         return HsbPillModel.spokenName(param1);
       }
 
       internal function cellValue(param1:Object, param2:String):*
@@ -835,14 +872,46 @@ package
             f++;
          }
          if(at < 0) { return; }
-         var per:int = this.perPage();
          if(at < this.scroll) { this.scroll = at; }
-         else if(at >= this.scroll + per) { this.scroll = at - per + 1; }
+         else { while(this.scroll < at && !this.fits(this.scroll,at)) { this.scroll++; } }
       }
 
       private function perPage():int
       {
          return Math.max(1,int(this.listH / this.pitch));
+      }
+
+      private function rowPitch(param1:Object):Number
+      {
+         var tall:Boolean = param1 != null && param1.type == "group" && this.hsb.density != "detailed" && !this.grid && !this.readOnly;
+         return tall ? this.pitch + this.kit.u(GROUP_EXTRA) : this.pitch;
+      }
+
+      // True when rows from..to of the tree all show at once.
+      private function fits(param1:int, param2:int):Boolean
+      {
+         var used:Number = 0;
+         var i:int = param1;
+         while(i <= param2 && i < this.flat.length)
+         {
+            used += this.rowPitch(this.flat[i]);
+            i++;
+         }
+         return used <= this.listH;
+      }
+
+      // The highest scroll position that still fills the list: the last row shows at the bottom.
+      private function lastStart():int
+      {
+         var room:Number = this.listH;
+         var i:int = this.flat.length - 1;
+         while(i >= 0)
+         {
+            room -= this.rowPitch(this.flat[i]);
+            if(room < 0) { break; }
+            i--;
+         }
+         return Math.max(0,i + 1);
       }
 
       // ---- categories ----------------------------------------------------------------------
@@ -853,8 +922,9 @@ package
          this.hsb.send("ShipEditor_ChangeModuleCategory",{"iCategoryOffset":param1});
       }
 
-      // Jumps to a category. If the game moves only one step per event, the remaining steps are
-      // sent as each new category arrives.
+      // Jumps to a category one step at a time, the way the vanilla LB and RB move (offset -1 or
+      // +1; the game's handling of larger offsets is not known). stepPending sends the next
+      // step as each new category arrives, the short way round the ring.
       private function goCategory(param1:int):void
       {
          if(param1 == this.catIndex) { return; }
@@ -866,7 +936,7 @@ package
          }
          this.pending = param1;
          this.pendingTries = 0;
-         this.changeCategory(offset);
+         this.changeCategory(offset > 0 ? 1 : -1);
       }
 
       private var pendingTries:int = 0;
@@ -1001,7 +1071,7 @@ package
          if(param1 == "right" || param1 == "down") { this.gridFocus = Math.min(keys.length - 1,this.gridFocus + 1); this.invalidate(); return true; }
          if(param1 == "ok" && this.gridFocus >= 0)
          {
-            this.pick(int(keys[this.gridFocus]));
+            if(this.discover == null) { this.pick(int(keys[this.gridFocus])); }
             return true;
          }
          return false;
@@ -1040,8 +1110,7 @@ package
 
       override internal function onWheel(param1:Number, param2:Number, param3:Number):void
       {
-         var max:int = Math.max(0,this.flat.length - this.perPage());
-         this.scroll = HorizonShipBuilder.clampInt(this.scroll - int(param1) * 3,0,max);
+         this.scroll = HorizonShipBuilder.clampInt(this.scroll - int(param1) * 3,0,this.lastStart());
          this.invalidate();
       }
 
@@ -1065,6 +1134,7 @@ package
                this.makerChip = String(param2);
                this.afterFilter();
                break;
+            case "makermore": this.openMakers(); break;
             case "find": this.startFind(); break;
             case "pill":
                this.hsb.pills.toggle(String(param2));
@@ -1109,6 +1179,22 @@ package
          this.goCategory(param1);
          this.grid = false;
          this.gridFocus = -1;
+         this.invalidate();
+      }
+
+      // Purpose: switch the list to Flight Check's read-only view (mockup 13) or back.
+      // Inputs: param1, true while Flight Check is open. Outputs: none; repaints on a change.
+      // Dependencies: stopFind, closeGrid. Typing and the category grid end, since neither may
+      // change the list while Flight Check is reading it.
+      internal function setReadOnly(param1:Boolean):void
+      {
+         if(this.readOnly == param1) { return; }
+         this.readOnly = param1;
+         if(param1)
+         {
+            if(this.findOn) { this.stopFind(); }
+            this.closeGrid();
+         }
          this.invalidate();
       }
 
@@ -1161,6 +1247,26 @@ package
             else { self.sortBy(String(param2)); }
          });
          this.popBelow(menu,"sort");
+      }
+
+      // The makers that did not fit on the grid's maker row (mockup 4 shows three).
+      private function openMakers():void
+      {
+         var items:Array = [];
+         var i:int = 0;
+         while(i < this.makerRest.length)
+         {
+            var mname:String = String(this.makerRest[i]);
+            items.push({"label":mname,"id":"maker","data":mname,"on":this.makerChip == mname,"right":String(this.countMaker(mname))});
+            i++;
+         }
+         var self:HsbBrowser = this;
+         var menu:HsbDialog = HsbDialog.menu(this.kit,this.hsb,"MAKER",items,function(param1:String, param2:*):void
+         {
+            self.makerChip = String(param2);
+            self.afterFilter();
+         });
+         this.popBelow(menu,"makermore");
       }
 
       private function openMore():void
@@ -1227,7 +1333,9 @@ package
          // Mockup 8: the chooser hangs left of the browser, its top just under the sort row.
          pop.anchorX = this.x + (226 - pop.boxW) * this.scaleX;
          pop.anchorY = this.y + (this.ctrlY + this.kit.u(28) + 4) * this.scaleY;
+         this.colsPop = pop;
          this.hsb.openPop(pop);
+         this.invalidate();
       }
 
       private function popBelow(param1:HsbBox, param2:String):void
@@ -1241,7 +1349,11 @@ package
          }
          if(at != null)
          {
-            param1.anchorX = this.x + Number(at.x) * this.scaleX;
+            // Mockup 14: the menu hangs under its button but stays inside the browser card.
+            // Popups take the panels' scale when they open, so the browser's scale applies.
+            var left:Number = this.x + Number(at.x) * this.scaleX;
+            var right:Number = this.x + (this.boxW - 8 - param1.boxW) * this.scaleX;
+            param1.anchorX = Math.max(this.x + 8 * this.scaleX,Math.min(left,right));
             param1.anchorY = this.y + (Number(at.y) + Number(at.h) + 6) * this.scaleY;
          }
          this.hsb.openPop(param1);
@@ -1336,19 +1448,28 @@ package
          k.card(this.graphics,0,0,w,h);
          var pad:Number = 16;
          var y:Number = 14;
-         if(this.hsb.bannerWanted()) { y = this.paintBanner(w,pad,y); }
          if(this.grid) { y = this.paintGridTop(w,pad,y); }
-         else { y = this.paintStrip(w,pad,y); }
-         if(this.readOnly) { y = this.paintNoteLine(w,pad,y,"Flight Check is open \u00B7 the list is read-only"); }
+         else
+         {
+            // The notice yields while Find is typing so the field stays in view.
+            var banner:Boolean = this.hsb.bannerWanted() && !this.findOn;
+            if(banner) { y = this.paintBanner(w,pad,y,this.stripTopHeight()); }
+            else { y = this.paintStripTop(w,pad,y); }
+            // Mockup 13: while Flight Check reads the list there are no pills, sort or columns.
+            if(!this.readOnly) { y = this.paintStrip(w,pad,y); }
+         }
+         if(this.readOnly) { y = this.paintNoteLine(w,pad,y,"Read-only while Flight Check is open",HsbKit.MUTED); }
+         var pillsWarn:String = this.hsb.pillsWarning();
+         if(pillsWarn.length > 0 && !this.grid && !this.readOnly) { y = this.paintNoteLine(w,pad,y,pillsWarn,HsbKit.ORANGE); }
          this.pitch = this.hsb.density == "detailed" || this.grid || this.readOnly ? k.u(50) : k.u(37);
          var footH:Number = k.u(30);
          this.listTop = y;
          this.listH = h - y - footH - 8;
-         if(this.grid || this.readOnly) { this.paintSimpleList(w,pad,y); }
-         else { this.paintList(w,pad,y); }
+         if(this.grid || this.readOnly) { this.paintSimpleList(w,LIST_PAD,y); }
+         else { this.paintList(w,LIST_PAD,y); }
          var foot:TextField = k.text(13,HsbKit.MUTED);
          var footText:String = "Group rows show ranges \u00B7 open one for single values";
-         if(this.unchecked > 0) { footText = this.unchecked + " parts not checked yet \u00B7 preview a part to check it"; }
+         if(this.unchecked > 0 && !this.readOnly) { footText = this.unchecked + " parts not checked yet \u00B7 preview a part to check it"; }
          else if(this.grid || this.readOnly || !this.hsb.byMaker) { footText = this.shownCount() + " of " + this.rows.length + " shown" + (this.flat.length > this.perPage() ? " \u00B7 scroll for more" : ""); }
          k.put(foot,footText);
          k.fit(foot,w - pad * 2);
@@ -1410,30 +1531,41 @@ package
          this.sized(tw,th);
       }
 
-      // Mockup 11.
-      private function paintBanner(param1:Number, param2:Number, param3:Number):Number
+      // Mockup 11: the notice takes the place of the category tabs and the title row while it
+      // is up, so the pills and the list keep their mockup 1 places. param4 is the height of
+      // the rows it covers; a longer message grows the notice instead of clipping it.
+      private function paintBanner(param1:Number, param2:Number, param3:Number, param4:Number):Number
       {
          var k:HsbKit = this.kit;
          var w:Number = param1 - param2 * 2;
-         var h:Number = k.u(96);
-         k.fill(this.gfx,param2,param3,w,h,8,HsbKit.ORANGE_BG,1);
-         k.outline(this.gfx,param2,param3,w,h,8,HsbKit.ORANGE,1);
-         k.icon(this.gfx,"warn",param2 + 12,param3 + 12,18,HsbKit.ORANGE,1);
+         var textX:Number = param2 + 38;
+         var btnH:Number = k.u(28);
+         var neverW:Number = k.buttonWidth("Don't show");
+         var dismissW:Number = k.buttonWidth("Dismiss");
+         var neverX:Number = param2 + w - 12 - neverW;
+         var dismissX:Number = neverX - 8 - dismissW;
          var tag:TextField = k.text(12,HsbKit.ORANGE,true,1.5);
          k.put(tag,"WARNING");
          k.fit(tag);
-         this.add(tag,param2 + 38,param3 + 12);
+         this.add(tag,textX,param3 + 10);
          var t1:TextField = k.text(14,HsbKit.TEXT,true);
          k.put(t1,"StarUI Ship Builder files found");
          k.fit(t1,w - 50);
-         this.add(t1,param2 + 38,param3 + 30);
+         this.add(t1,textX,tag.y + tag.height + 2);
          var t2:TextField = k.text(13,HsbKit.LABEL);
+         t2.multiline = true;
+         t2.wordWrap = true;
+         t2.width = dismissX - 12 - textX;
          k.put(t2,"Horizon is active. If the builder looks wrong, disable one mod and restart.");
-         k.fit(t2,w - 50);
-         this.add(t2,param2 + 38,param3 + 50);
-         var bx:Number = param2 + 38;
-         bx += this.button(bx,param3 + h - k.u(28) - 8,"Dismiss","banner.dismiss",false) + 8;
-         this.button(bx,param3 + h - k.u(28) - 8,"Don't show","banner.never",false);
+         t2.height = t2.textHeight + 6;
+         this.add(t2,textX,t1.y + t1.height);
+         var h:Number = Math.max(param4 - 10,t2.y + t2.height + 8 - param3);
+         k.fill(this.gfx,param2,param3,w,h,8,HsbKit.ORANGE_BG,1);
+         k.outline(this.gfx,param2,param3,w,h,8,HsbKit.ORANGE,1);
+         k.icon(this.gfx,"alert",param2 + 12,param3 + 10,18,HsbKit.ORANGE,1);
+         var by:Number = param3 + h - btnH - 10;
+         k.button(this,dismissX,by,"Dismiss","outline","banner.dismiss");
+         k.button(this,neverX,by,"Don't show","orange","banner.never");
          return param3 + h + 10;
       }
 
@@ -1442,33 +1574,46 @@ package
          return this.kit.button(this,param1,param2,param3,param5 ? "accent" : "outline",param4,param6);
       }
 
-      private function paintNoteLine(param1:Number, param2:Number, param3:Number, param4:String):Number
+      private function paintNoteLine(param1:Number, param2:Number, param3:Number, param4:String, param5:uint):Number
       {
-         var t:TextField = this.kit.text(13,HsbKit.ORANGE);
+         var t:TextField = this.kit.text(13,param5);
          this.kit.put(t,param4);
          this.kit.fit(t,param1 - param2 * 2);
          this.add(t,param2,param3);
          return param3 + t.height + 6;
       }
 
-      // Mockup 1: LB, previous / current / next, RB; pager; title and find; pills; status;
-      // sort, columns, by maker, density; column headers.
-      private function paintStrip(param1:Number, param2:Number, param3:Number):Number
+      // Height paintStripTop() uses, so the conflict notice can stand in for those rows.
+      private function stripTopHeight():Number
+      {
+         var k:HsbKit = this.kit;
+         return (this.upgrade ? 0 : k.u(24) + TAB_ROW_GAP + PAGER_GAP) + k.u(32) + TITLE_ROW_GAP;
+      }
+
+      // Mockup 1, top rows: LB, previous / current / next, RB; pager; title and find.
+      private function paintStripTop(param1:Number, param2:Number, param3:Number):Number
       {
          var k:HsbKit = this.kit;
          var g:Graphics = this.gfx;
          var y:Number = param3;
          var d:Object = this.data != null ? this.data : {};
          var capH:Number = k.u(24);
+         // Flight Check takes the category keys while it is open (they switch its tabs), so the
+         // read-only list shows its categories without live keys or hits.
+         var live:Boolean = !this.readOnly;
+         var capInk:uint = live ? HsbKit.LABEL : HsbKit.DIM;
          if(!this.upgrade)
          {
             var lb:String = this.hsb.keyName("PrevCategory");
             var rb:String = this.hsb.keyName("NextCategory");
-            k.keycap(this,param2,y,lb.length > 0 ? lb : "LB",HsbKit.LABEL,capH);
+            k.keycap(this,param2,y,lb.length > 0 ? lb : "LB",capInk,capH);
             var rbw:Number = Math.max(capH,k.u(28));
-            k.keycap(this,param1 - param2 - rbw,y,rb.length > 0 ? rb : "RB",HsbKit.LABEL,capH);
-            this.hit(param2 - 4,y - 4,capH + 12,capH + 8,"tab",-1);
-            this.hit(param1 - param2 - rbw - 4,y - 4,rbw + 8,capH + 8,"tab",1);
+            k.keycap(this,param1 - param2 - rbw,y,rb.length > 0 ? rb : "RB",capInk,capH);
+            if(live)
+            {
+               this.hit(param2 - 4,y - 4,capH + 12,capH + 8,"tab",-1);
+               this.hit(param1 - param2 - rbw - 4,y - 4,rbw + 8,capH + 8,"tab",1);
+            }
             var names:Array = [this.cleanText(d.sPrevCategoryName),this.tabName,this.cleanText(d.sNextCategoryName)];
             var tx:Number = param2 + capH + 18;
             var t:int = 0;
@@ -1478,12 +1623,14 @@ package
                k.put(tab,String(names[t]).toUpperCase());
                k.fit(tab,(param1 - param2 * 2 - capH * 2 - 40) / 3);
                this.add(tab,tx,y + (capH - tab.height) / 2);
-               if(t == 1) { k.fill(g,tx,y + capH + 4,tab.width - 4,2,0,k.accent,1); }
-               this.hit(tx - 4,y - 4,tab.width + 8,capH + 8,"tab",t - 1);
+               // The underline spans the letters only: the field has a 2 px gutter and the last
+               // letter carries its spacing.
+               if(t == 1) { k.fill(g,tx + 2,y + capH + 1,Math.min(tab.width - 4,tab.textWidth - 2),2,0,k.accent,1); }
+               if(live) { this.hit(tx - 4,y - 4,tab.width + 8,capH + 8,"tab",t - 1); }
                tx += tab.width + 18;
                t++;
             }
-            y += capH + 14;
+            y += capH + TAB_ROW_GAP;
             var segs:int = this.catTotal > 0 ? this.catTotal : 14;
             var segGap:Number = 6;
             var segW:Number = (param1 - param2 * 2 - (segs - 1) * segGap) / segs;
@@ -1494,14 +1641,14 @@ package
                k.fill(g,param2 + s * (segW + segGap),y,segW,3,1.5,active ? k.accent : 0x343B41,1);
                s++;
             }
-            y += 16;
+            y += PAGER_GAP;
          }
          var title:TextField = k.text(20,HsbKit.TEXT,true,3);
          k.put(title,this.tabName.toUpperCase());
          k.fit(title,k.u(150));
          this.add(title,param2 + 2,y + (k.u(32) - title.height) / 2);
-         if(!this.upgrade) { this.hit(param2,y,title.width + 6,k.u(32),"grid"); }
-         var fx:Number = param2 + Math.max(k.u(92),title.width + 16);
+         if(!this.upgrade && live) { this.hit(param2,y,title.width + 6,k.u(32),"grid"); }
+         var fx:Number = param2 + Math.max(k.u(70),title.width + 8);
          var collapseW:Number = k.u(30);
          var fw:Number = param1 - param2 - fx - collapseW - 6;
          this.findBox(fx,y,fw,k.u(32),this.tabName.length > 0 ? "Find " + this.tabName.toLowerCase() : "Find parts");
@@ -1510,8 +1657,16 @@ package
          k.outline(g,param1 - param2 - cb,y + (k.u(32) - cb) / 2,cb,cb,5,HsbKit.EDGE_HI,1);
          k.icon(g,"dockR",param1 - param2 - cb + 3,y + (k.u(32) - cb) / 2 + 3,cb - 6,HsbKit.LABEL,1);
          this.hit(param1 - param2 - cb - 4,y,cb + 8,k.u(32),"collapse");
-         y += k.u(32) + 12;
-         y = this.paintPills(param1,param2,y);
+         return y + k.u(32) + TITLE_ROW_GAP;
+      }
+
+      // Mockup 1, below the title: pills; status; sort, columns, by maker, density; column
+      // headers.
+      private function paintStrip(param1:Number, param2:Number, param3:Number):Number
+      {
+         var k:HsbKit = this.kit;
+         var g:Graphics = this.gfx;
+         var y:Number = this.paintPills(param1,param2,param3);
          var showing:TextField = k.text(14,HsbKit.TEXT);
          k.put(showing,"Showing " + this.shownCount() + " of " + this.rows.length);
          k.fit(showing);
@@ -1525,60 +1680,75 @@ package
             k.fit(what,param1 - param2 * 2 - showing.width - clearW - 20);
             this.add(what,param1 - param2 - clearW - 10 - what.width,y + 3);
          }
-         y += k.u(30);
+         y += k.u(35);
          this.ctrlY = y;
-         var sl:TextField = k.text(13,HsbKit.LABEL,false,1.5);
-         k.put(sl,"SORT");
-         k.fit(sl);
-         this.add(sl,param2,y + (k.u(28) - sl.height) / 2);
-         var sx:Number = param2 + sl.width + 8;
-         var sortT:TextField = k.text(13,HsbKit.TEXT);
-         k.put(sortT,this.sortCol.length > 0 ? this.columnLabel(this.sortCol) : "Game order");
-         k.fit(sortT);
-         var sw:Number = sortT.width + k.u(42);
-         this.fieldBox(sx,y,sw,k.u(28));
-         this.add(sortT,sx + 10,y + (k.u(28) - sortT.height) / 2);
-         if(this.sortCol.length > 0) { k.icon(g,this.sortDesc ? "sortDown" : "sortUp",sx + 10 + sortT.width + 2,y + (k.u(28) - 10) / 2,10,k.accent,1); }
-         k.icon(g,"chevD",sx + sw - 18,y + (k.u(28) - 12) / 2,12,HsbKit.LABEL,1);
-         this.hit(sx,y,sw,k.u(28),"sort");
-         var cx:Number = sx + sw + 12;
-         var colT:TextField = k.text(13,HsbKit.TEXT,true,1.5);
+         var rh:Number = k.u(28);
+         // Laid out from the right edge first (density pair, BY MAKER switch, its label) so the
+         // sort and columns boxes take only the room left and can never run into it.
+         var dw:Number = k.u(58);
+         var dx:Number = param1 - param2 - dw;
+         k.outline(g,dx,y,dw,rh,6,HsbKit.EDGE_HI,1);
+         var bs:Number = (dw - 6) / 2;
+         var dens:Array = ["compact","detailed"];
+         var dd:int = 0;
+         while(dd < 2)
+         {
+            var on2:Boolean = this.hsb.density == String(dens[dd]);
+            var bx:Number = dx + 2 + dd * (bs + 2);
+            if(on2) { k.fill(g,bx,y + 2,bs,rh - 4,5,k.accent,1); }
+            k.icon(g,dd == 0 ? "rows" : "compact",bx + (bs - 18) / 2,y + (rh - 18) / 2,18,on2 ? HsbKit.INK_ON_ACCENT : HsbKit.TEXT,1);
+            this.hit(bx,y,bs,rh,"density",String(dens[dd]));
+            dd++;
+         }
+         var tgx:Number = dx - 16 - k.u(38);
+         k.toggle(g,tgx,y + (rh - k.u(18)) / 2,this.hsb.byMaker);
+         var bm:TextField = k.text(13,HsbKit.LABEL,false,1);
+         k.put(bm,"BY MAKER");
+         k.fit(bm);
+         var bmx:Number = tgx - 7 - bm.width;
+         this.add(bm,bmx,y + (rh - bm.height) / 2);
+         this.hit(bmx - 4,y,tgx + k.u(38) - bmx + 4,rh,"bymaker");
+         // Mockup 8: the button stays lit while its chooser is open.
+         var colsOpen:Boolean = this.colsPop != null && this.colsPop.parent != null;
+         var colT:TextField = k.text(13,colsOpen ? k.accent : HsbKit.TEXT,true,1);
          k.put(colT,"COLUMNS");
          k.fit(colT);
          var colN:TextField = k.text(13,k.accent,true);
          k.put(colN,String(this.columns().length));
          k.fit(colN);
-         var cw:Number = 12 + 14 + 6 + colT.width + 6 + colN.width + 10;
-         this.fieldBox(cx,y,cw,k.u(28));
-         k.icon(g,"columns",cx + 10,y + (k.u(28) - 14) / 2,14,HsbKit.TEXT,1);
-         this.add(colT,cx + 30,y + (k.u(28) - colT.height) / 2);
-         this.add(colN,cx + 30 + colT.width + 6,y + (k.u(28) - colN.height) / 2);
-         this.hit(cx,y,cw,k.u(28),"columns");
-         var dx:Number = param1 - param2 - k.u(56);
-         var bm:TextField = k.text(13,HsbKit.LABEL,false,1.5);
-         k.put(bm,"BY MAKER");
-         k.fit(bm);
-         var tgx:Number = dx - 10 - k.u(38);
-         this.add(bm,tgx - 8 - bm.width,y + (k.u(28) - bm.height) / 2);
-         k.toggle(g,tgx,y + (k.u(28) - k.u(18)) / 2,this.hsb.byMaker);
-         this.hit(tgx - 8 - bm.width,y,bm.width + 16 + k.u(38),k.u(28),"bymaker");
-         var dens:Array = [["compact","rows"],["detailed","compact"]];
-         var dd:int = 0;
-         while(dd < 2)
-         {
-            var on2:Boolean = this.hsb.density == String(dens[dd][0]);
-            var bx:Number = dx + dd * k.u(28);
-            var bs:Number = k.u(26);
-            if(on2) { k.fill(g,bx,y + 1,bs,bs,5,k.accent,1); }
-            else { k.outline(g,bx,y + 1,bs,bs,5,HsbKit.EDGE_HI,1); }
-            k.icon(g,dd == 0 ? "rows" : "compact",bx + 4,y + 5,bs - 8,on2 ? HsbKit.INK_ON_ACCENT : HsbKit.TEXT,1);
-            this.hit(bx,y,bs,k.u(28),"density",String(dens[dd][0]));
-            dd++;
-         }
-         y += k.u(28) + 10;
-         k.hline(g,param2,y,param1 - param2 * 2,0x1D2328,1);
-         y += 10;
-         return this.paintHeader(param1,param2,y);
+         var cw:Number = k.u(22) + colT.textWidth + 7 + colN.textWidth + 8;
+         var sorted:Boolean = this.sortCol.length > 0;
+         // Box chrome around the label: 11 in, the direction arrow when sorted, the chevron.
+         var chrome:Number = sorted ? k.u(46) : k.u(37);
+         var sortT:TextField = k.text(13,HsbKit.TEXT);
+         k.put(sortT,sorted ? this.columnLabel(this.sortCol) : "Game order");
+         k.fit(sortT);
+         var sl:TextField = k.text(13,HsbKit.LABEL,false,1);
+         k.put(sl,"SORT");
+         k.fit(sl);
+         var sx:Number = param2 + sl.textWidth + 7;
+         var room:Number = bmx - 9 - cw - 10 - chrome + 6;
+         // The SORT caption gives way before the chosen sort is cut short.
+         if(sortT.width > room - sx) { sx = param2; }
+         else { this.add(sl,param2,y + (rh - sl.height) / 2); }
+         k.fit(sortT,Math.max(k.u(30),room - sx));
+         var sw:Number = Math.min(sortT.width - 6,sortT.textWidth) + chrome;
+         this.fieldBox(sx,y,sw,rh);
+         this.add(sortT,sx + 9,y + (rh - sortT.height) / 2);
+         if(sorted) { k.icon(g,this.sortDesc ? "sortDown" : "sortUp",sx + 11 + Math.min(sortT.width - 6,sortT.textWidth),y + (rh - 14) / 2,14,k.accent,1); }
+         k.icon(g,"chevD",sx + sw - 21,y + (rh - 14) / 2,14,HsbKit.LABEL,1);
+         this.hit(sx,y,sw,rh,"sort");
+         var cx:Number = sx + sw + 10;
+         this.fieldBox(cx,y,cw,rh);
+         if(colsOpen) { k.outline(g,cx,y,cw,rh,6,k.accent,1); }
+         k.icon(g,"columns",cx + 4,y + (rh - 18) / 2,18,colsOpen ? k.accent : HsbKit.TEXT,1);
+         this.add(colT,cx + k.u(22) - 2,y + (rh - colT.height) / 2);
+         this.add(colN,cx + k.u(22) + colT.textWidth + 7 - 2,y + (rh - colN.height) / 2);
+         this.hit(cx,y,cw,rh,"columns");
+         y += rh + 13;
+         k.hline(g,LIST_PAD,y,param1 - LIST_PAD * 2,0x1D2328,1);
+         y += 12;
+         return this.paintHeader(param1,LIST_PAD,y);
       }
 
       private function fieldBox(param1:Number, param2:Number, param3:Number, param4:Number):void
@@ -1591,16 +1761,18 @@ package
       {
          var k:HsbKit = this.kit;
          var g:Graphics = this.gfx;
+         // startFind refuses while Flight Check reads the list, so the field is drawn inert then.
+         var live:Boolean = !this.readOnly;
          k.fill(g,param1,param2,param3,param4,8,HsbKit.FIELD,1);
-         k.outline(g,param1,param2,param3,param4,8,this.findOn ? k.accent : HsbKit.EDGE_HI,1);
-         k.icon(g,"search",param1 + 10,param2 + (param4 - 16) / 2,16,HsbKit.LABEL,1);
-         var t:TextField = k.text(14,this.findText.length > 0 ? HsbKit.TEXT : HsbKit.MUTED);
+         k.outline(g,param1,param2,param3,param4,8,this.findOn ? k.accent : (live ? HsbKit.EDGE_HI : HsbKit.EDGE),1);
+         k.icon(g,"search",param1 + 10,param2 + (param4 - 16) / 2,16,live ? HsbKit.LABEL : HsbKit.DIM,1);
+         var t:TextField = k.text(14,this.findText.length > 0 ? HsbKit.TEXT : (live ? HsbKit.MUTED : HsbKit.DIM));
          k.put(t,this.findText.length > 0 ? this.findText + (this.findOn ? "|" : "") : (this.findOn ? "|" : param5));
          k.fit(t,param3 - 80);
          this.add(t,param1 + 34,param2 + (param4 - t.height) / 2);
          var key:String = this.hsb.keyFind.length > 0 && this.hsb.keyFind != "0" ? this.hsb.keyFind : "";
-         if(key.length > 0) { k.keycap(this,param1 + param3 - 10 - k.u(26),param2 + (param4 - k.u(22)) / 2,key,HsbKit.LABEL); }
-         this.hit(param1,param2,param3,param4,"find");
+         if(key.length > 0 && live) { k.keycap(this,param1 + param3 - 10 - k.u(26),param2 + (param4 - k.u(22)) / 2,key,HsbKit.LABEL); }
+         if(live) { this.hit(param1,param2,param3,param4,"find"); }
       }
 
       private function clearButton(param1:Number, param2:Number):Number
@@ -1637,17 +1809,18 @@ package
          }
          var x:Number = param2;
          var limit:Number = param1 - param2;
-         var newW:Number = this.pillWidth("+ New pill");
+         var gap:Number = 7;
+         var newW:Number = this.pillWidth("New pill",PILL_BUTTON);
          this.overflow = [];
          i = 0;
          while(i < row.length)
          {
             var p:Object = row[i];
             var on:Boolean = this.hsb.pills.isOn(String(p.id));
-            var label:String = (on ? "\u2713 " : "") + String(p.name);
-            var pw:Number = this.pillWidth(label) + 16;
-            var moreW:Number = this.pillWidth("+ " + (more + row.length - i) + " More");
-            if(x + pw + 8 + moreW + 8 + newW > limit)
+            var pw:Number = this.pillWidth(String(p.name),on ? PILL_ON : PILL_OFF);
+            var moreW:Number = this.pillWidth((more + row.length - i) + " More",PILL_BUTTON);
+            var last:Boolean = i == row.length - 1 && more == 0;
+            if(x + pw + gap + (last ? 0 : moreW + gap) + newW > limit)
             {
                var r:int = i;
                while(r < row.length) { this.overflow.push(String(row[r].id)); r++; }
@@ -1657,42 +1830,44 @@ package
             var ok:Boolean = HsbPillModel.usable(p);
             if(on) { k.fill(g,x,param3,pw,ph,ph / 2,k.accent,1); }
             else { k.dashed(g,x,param3,pw,ph,ph / 2,ok ? k.accent : HsbKit.DIM,1); }
-            var lx:Number = x + 12;
+            // Glyph boxes are wider than the glyphs: the check starts 2 px and the diamond
+            // 2 px inside their boxes, so the boxes sit 2 px left of where the shapes show.
+            var lx:Number = x + 10;
             if(on)
             {
                k.icon(g,"check",lx,param3 + (ph - 12) / 2,12,HsbKit.INK_ON_ACCENT,1);
-               lx += 16;
+               lx += 15;
             }
             k.icon(g,"diamond",lx,param3 + (ph - 10) / 2,10,on ? HsbKit.INK_ON_ACCENT : (ok ? k.accent : HsbKit.DIM),1);
-            lx += 14;
-            var t:TextField = k.text(13,on ? HsbKit.INK_ON_ACCENT : (ok ? HsbKit.TEXT : HsbKit.DIM),true);
+            lx += 13;
+            var t:TextField = k.text(13,on ? HsbKit.INK_ON_ACCENT : (ok ? HsbKit.TEXT : HsbKit.DIM));
             k.put(t,String(p.name));
             k.fit(t);
             this.add(t,lx,param3 + (ph - t.height) / 2);
             if(ok) { this.hit(x,param3,pw,ph,"pill",String(p.id)); }
-            x += pw + 8;
+            x += pw + gap;
             i++;
          }
          if(more > 0)
          {
-            var mw:Number = this.pillWidth("+ " + more + " More");
+            var mw:Number = this.pillWidth(more + " More",PILL_BUTTON);
             k.fill(g,x,param3,mw,ph,ph / 2,0x1A2128,1);
             k.outline(g,x,param3,mw,ph,ph / 2,HsbKit.EDGE_HI,1);
             k.icon(g,"plus",x + 8,param3 + (ph - 12) / 2,12,HsbKit.TEXT,1);
-            var mt:TextField = k.text(13,HsbKit.TEXT,true);
+            var mt:TextField = k.text(13,HsbKit.TEXT);
             k.put(mt,more + " More");
             k.fit(mt);
             this.add(mt,x + 24,param3 + (ph - mt.height) / 2);
             this.hit(x,param3,mw,ph,"more");
-            x += mw + 8;
+            x += mw + gap;
          }
          else
          {
             this.hit(x,param3,0,0,"more");
          }
-         k.dashed(g,x,param3,newW,ph,ph / 2,HsbKit.LABEL,1);
+         k.dashed(g,x,param3,newW,ph,ph / 2,HsbKit.MUTED,1);
          k.icon(g,"plus",x + 8,param3 + (ph - 12) / 2,12,HsbKit.TEXT,1);
-         var nt:TextField = k.text(13,HsbKit.TEXT,true);
+         var nt:TextField = k.text(13,HsbKit.TEXT);
          k.put(nt,"New pill");
          k.fit(nt);
          this.add(nt,x + 24,param3 + (ph - nt.height) / 2);
@@ -1700,18 +1875,42 @@ package
          return param3 + ph + 10;
       }
 
-      private function pillWidth(param1:String):Number
+      // Mockup 1 pill sizes around the name: on pills hold a check and a diamond, off pills a
+      // diamond, the More and New pill buttons a plus.
+      private function pillWidth(param1:String, param2:int):Number
       {
-         var t:TextField = this.kit.text(13,0,true);
+         var t:TextField = this.kit.text(13,0);
          this.kit.put(t,param1);
-         return t.textWidth + 40;
+         if(param2 == PILL_ON) { return t.textWidth + 52; }
+         if(param2 == PILL_OFF) { return t.textWidth + 36; }
+         return t.textWidth + 37;
       }
 
+      // Right edge of column param3 (-1: the end of the name area). Mockup 1 sets columns from
+      // the right, leaving room for the sort arrow: Value holds credit ranges and is 110 wide,
+      // the others 75. When they would leave the name under 40% of the row they shrink evenly.
       private function colX(param1:Number, param2:Number, param3:int, param4:int):Number
       {
-         var nameW:Number = (param1 - param2 * 2) * (param4 >= 4 ? 0.34 : 0.42);
-         var rest:Number = param1 - param2 * 2 - nameW - 10;
-         return param2 + nameW + rest * (param3 + 1) / param4;
+         var cols:Array = this.columns();
+         var k:HsbKit = this.kit;
+         var right:Number = param1 - param2 - k.u(26);
+         var sum:Number = 0;
+         var i:int = 0;
+         while(i < cols.length)
+         {
+            sum += k.u(String(cols[i]) == "value" ? 110 : 75);
+            i++;
+         }
+         var room:Number = (param1 - param2 * 2) * 0.6 - k.u(26);
+         var scale:Number = sum > room && sum > 0 ? room / sum : 1;
+         var x:Number = right;
+         i = cols.length - 1;
+         while(i > param3 && i >= 0)
+         {
+            x -= k.u(String(cols[i]) == "value" ? 110 : 75) * scale;
+            i--;
+         }
+         return x;
       }
 
       private function paintHeader(param1:Number, param2:Number, param3:Number):Number
@@ -1731,28 +1930,37 @@ package
          {
             var id:String = String(cols[i]);
             var right:Number = this.colX(param1,param2,i,cols.length);
+            var left:Number = this.colX(param1,param2,i - 1,cols.length);
             var sorted:Boolean = this.sortCol == id;
             var t:TextField = k.text(13,sorted ? k.accent : HsbKit.LABEL,sorted,0,"right");
             k.put(t,this.columnLabel(id));
-            t.width = 110;
-            var shift:Number = sorted ? 14 : 0;
-            this.add(t,right - 110 - shift,param3 + (hh - t.height) / 2);
+            // A label may reach left to the label before it (the first one to "Name"), as
+            // "Crew stations" does in mockup 1; a right-aligned field ends its text 2 px in.
+            var prevEnd:Number = i == 0 ? nt.x + nt.width + 12 : left + (this.sortCol == String(cols[i - 1]) ? 18 : 10);
+            k.fit(t,right - prevEnd + 6);
+            this.add(t,right + 2 - t.width,param3 + (hh - t.height) / 2);
             if(sorted)
             {
-               k.icon(g,this.sortDesc ? "sortDown" : "sortUp",right - 12,param3 + (hh - 10) / 2,10,k.accent,1);
-               k.fill(g,right - shift - Math.min(110,t.textWidth) - 2,param3 + hh - 6,Math.min(110,t.textWidth) + shift + 2,2,0,k.accent,1);
+               var tw:Number = Math.min(t.width - 6,t.textWidth);
+               k.icon(g,this.sortDesc ? "sortDown" : "sortUp",right + 2,param3 + (hh - 14) / 2,14,k.accent,1);
+               k.fill(g,right - tw,param3 + hh - 5,tw,2,0,k.accent,1);
             }
-            this.hit(right - 90,param3,90,hh,"head",id);
+            this.hit(left,param3,right - left + (i == cols.length - 1 ? k.u(26) : 0),hh,"head",id);
             i++;
          }
-         return param3 + hh + 6;
+         return param3 + hh + 8;
       }
 
       private function cellText(param1:*, param2:String):String
       {
          if(param1 == null) { return "\u2014"; }
          if(param1 is String) { return String(param1); }
-         return HsbKit.num(param1);
+         return HsbKit.num(param1) + this.unitOf(param2);
+      }
+
+      private function unitOf(param1:String):String
+      {
+         return param1 != this.statId && this.statPct[param1] === true ? "%" : "";
       }
 
       private function rangeText(param1:Array, param2:String):String
@@ -1777,7 +1985,7 @@ package
             i++;
          }
          if(text.length > 0) { return text; }
-         return HsbKit.range(lo,hi);
+         return isNaN(lo) ? HsbKit.range(lo,hi) : HsbKit.range(lo,hi) + this.unitOf(param2);
       }
 
       private function paintList(param1:Number, param2:Number, param3:Number):void
@@ -1785,11 +1993,10 @@ package
          var k:HsbKit = this.kit;
          var g:Graphics = this.gfx;
          var cols:Array = this.columns();
-         var per:int = this.perPage();
-         var max:int = Math.max(0,this.flat.length - per);
+         var max:int = this.lastStart();
          if(this.scroll > max) { this.scroll = max; }
          var y:Number = param3;
-         var rowH:Number = this.pitch - 4;
+         var bottom:Number = param3 + this.listH;
          var detailed:Boolean = this.hsb.density == "detailed";
          if(this.flat.length == 0)
          {
@@ -1799,80 +2006,115 @@ package
             this.add(none,param2 + 14,y + 12);
             return;
          }
+         var x0:Number = param2;
+         var wRow:Number = param1 - param2 * 2;
+         var shown:int = 0;
          var i:int = this.scroll;
-         while(i < this.flat.length && i < this.scroll + per)
+         while(i < this.flat.length)
          {
             var item:Object = this.flat[i];
-            var indent:Number = int(item.depth) * k.u(20);
-            var x0:Number = param2;
-            var wRow:Number = param1 - param2 * 2;
+            var rp:Number = this.rowPitch(item);
+            if(shown > 0 && y + rp > bottom) { break; }
+            var rowH:Number = rp - 3;
+            var depth:int = int(item.depth);
+            var indent:Number = depth * k.u(20);
+            // Tree guides (mockup 1): one line per open level, running through its children.
+            var lv:int = 0;
+            while(lv < depth)
+            {
+               k.vline(g,x0 + 18 + lv * 24,y,rp,0x2A3238,1);
+               lv++;
+            }
+            var cells:Array = this.paintCells(item,cols,param1,param2,y,rowH);
+            // Names run up to the first column's text, not to its box, as long names do in
+            // mockup 1 ("TAIYO ASTRONEERING" reaches into the Crew stations box).
+            var nameEnd:Number = (cells.length > 0 ? this.colX(param1,param2,0,cols.length) - (cells[0] as TextField).textWidth : x0 + wRow) - 14;
             if(item.type == "group" || item.type == "sub")
             {
                var isGroup:Boolean = item.type == "group";
                if(isGroup) { k.fill(g,x0,y,wRow,rowH,6,item.open ? HsbKit.ROW_OPEN : HsbKit.ROW,1); }
                k.icon(g,item.open ? "chevD" : "chevR",x0 + 12 + indent,y + (rowH - 14) / 2,14,item.open && isGroup ? k.accent : HsbKit.TEXT,1);
-               var gl:TextField = k.text(isGroup ? 13 : 14,item.open && isGroup ? k.accent : HsbKit.TEXT,true,isGroup ? 2 : 0);
-               k.put(gl,isGroup ? String(item.label).toUpperCase() : String(item.label));
-               k.fit(gl,this.colX(param1,param2,-1,cols.length) - x0 - 70 - indent);
-               this.add(gl,x0 + 32 + indent,y + (rowH - gl.height) / 2);
                var chipText:String = isGroup ? String((item.rows as Array).length) : (item.rows as Array).length + " variants";
-               k.countChip(this,x0 + 32 + indent + gl.width + 6,y + (rowH - k.u(20)) / 2,chipText,isGroup && item.open);
-               var c:int = 0;
-               while(c < cols.length)
-               {
-                  var rt:TextField = k.text(13,0xB8BEC2,false,0,"right");
-                  k.put(rt,this.rangeText(item.rows as Array,String(cols[c])));
-                  rt.width = 120;
-                  this.add(rt,this.colX(param1,param2,c,cols.length) - 120,y + (rowH - rt.height) / 2);
-                  c++;
-               }
+               var chipT:TextField = k.text(12,0,true);
+               k.put(chipT,chipText);
+               var chipW:Number = Math.max(k.u(20),chipT.textWidth + k.u(12));
+               var gl:TextField = k.text(isGroup ? 13 : 14,HsbKit.TEXT,true,isGroup ? 2 : 0);
+               k.put(gl,isGroup ? String(item.label).toUpperCase() : String(item.label));
+               k.fit(gl,Math.max(k.u(40),nameEnd - (x0 + 32 + indent) - 6 - chipW));
+               this.add(gl,x0 + 32 + indent,y + (rowH - gl.height) / 2);
+               k.countChip(this,x0 + 32 + indent + gl.width + 4,y + (rowH - k.u(20)) / 2,chipText,isGroup && item.open);
                this.hit(x0,y,wRow,rowH,"group",item.key);
             }
             else
             {
                var row:Object = item.row;
                var sel:Boolean = String(row.id) == this.selId;
+               // Part names under a size row line up past its chevron; under a maker they start
+               // where the size rows' chevrons do.
+               var nx:Number = x0 + 14 + indent + (depth >= 2 ? 6 : 0);
                if(sel)
                {
-                  k.fill(g,x0,y,wRow,rowH,6,HsbKit.SELECT,1);
-                  k.fill(g,x0 + 12 + indent,y + 8,3,rowH - 16,0,k.accent,1);
+                  var hx:Number = depth > 0 ? nx - 11 : x0;
+                  k.fill(g,hx,y,x0 + wRow - hx,rowH,6,HsbKit.SELECT,1);
+                  k.fill(g,hx + 2,y + 8,3,rowH - 16,0,k.accent,1);
                }
                var color:uint = Boolean(row.disabled) ? HsbKit.DIM : HsbKit.TEXT;
                var nl:TextField = k.text(14,color,sel);
                k.put(nl,String(item.short));
-               k.fit(nl,this.colX(param1,param2,-1,cols.length) - x0 - 40 - indent);
+               k.fit(nl,Math.max(k.u(40),nameEnd - nx));
                var ny:Number = detailed ? y + 4 : y + (rowH - nl.height) / 2;
-               this.add(nl,x0 + 24 + indent,ny);
-               if(int(row.variants) > 1)
-               {
-                  k.countChip(this,x0 + 24 + indent + nl.width + 6,ny + (nl.height - k.u(20)) / 2,"\u25C6 " + int(row.variants),false);
-               }
+               this.add(nl,nx,ny);
                if(detailed)
                {
                   var sub:TextField = k.text(12,HsbKit.MUTED);
                   var line:Array = [String(row.maker)];
                   if(String(row.size).length > 0) { line.push(String(row.size)); }
                   if(sel && this.variantLine().length > 0) { line.push(this.variantLine()); }
+                  else if(int(row.variants) > 1) { line.push(int(row.variants) + " variants"); }
                   k.put(sub,line.join(" \u00B7 "));
-                  k.fit(sub,this.colX(param1,param2,-1,cols.length) - x0 - 40 - indent);
-                  this.add(sub,x0 + 24 + indent,ny + nl.height - 2);
-               }
-               var cc:int = 0;
-               while(cc < cols.length)
-               {
-                  var v:* = this.cellValue(row,String(cols[cc]));
-                  var vt:TextField = k.text(14,v == null ? HsbKit.DIM : color,sel || String(cols[cc]) == this.sortCol,0,"right");
-                  k.put(vt,this.cellText(v,String(cols[cc])));
-                  vt.width = 110;
-                  this.add(vt,this.colX(param1,param2,cc,cols.length) - 110,y + (rowH - vt.height) / 2);
-                  cc++;
+                  k.fit(sub,Math.max(k.u(40),nameEnd - nx));
+                  this.add(sub,nx,ny + nl.height - 2);
                }
                this.hit(x0,y,wRow,rowH,"leaf",String(row.id));
             }
-            y += this.pitch;
+            y += rp;
+            shown++;
             i++;
          }
-         this.scrollBar(param1,param2,param3,per);
+         this.scrollBar(param1,param2,param3,shown);
+      }
+
+      // The column cells of one tree row, right-aligned to the header labels: ranges on maker
+      // and size rows, values on part rows (bold when selected or in the sorted column).
+      private function paintCells(param1:Object, param2:Array, param3:Number, param4:Number, param5:Number, param6:Number):Array
+      {
+         var k:HsbKit = this.kit;
+         var out:Array = [];
+         var leaf:Boolean = param1.type == "leaf";
+         var sel:Boolean = leaf && String(param1.row.id) == this.selId;
+         var color:uint = leaf && Boolean(param1.row.disabled) ? HsbKit.DIM : HsbKit.TEXT;
+         var c:int = 0;
+         while(c < param2.length)
+         {
+            var id:String = String(param2[c]);
+            var tf:TextField;
+            if(leaf)
+            {
+               var v:* = this.cellValue(param1.row,id);
+               tf = k.text(14,v == null ? HsbKit.DIM : color,sel || id == this.sortCol,0,"right");
+               k.put(tf,this.cellText(v,id));
+            }
+            else
+            {
+               tf = k.text(13,0xB8BEC2,false,0,"right");
+               k.put(tf,this.rangeText(param1.rows as Array,id));
+            }
+            tf.width = 120;
+            this.add(tf,this.colX(param3,param4,c,param2.length) + 2 - tf.width,param5 + (param6 - tf.height) / 2);
+            out.push(tf);
+            c++;
+         }
+         return out;
       }
 
       private function scrollBar(param1:Number, param2:Number, param3:Number, param4:int):void
@@ -1972,52 +2214,58 @@ package
          k.put(count,this.discover != null ? "reading tabs\u2026 " + keys.length : String(this.catTotal > 0 ? this.catTotal : keys.length));
          k.fit(count);
          this.add(count,param2 + capH + 18 + title.width + 8,y + (capH - count.height) / 2);
-         y += capH + 16;
+         y += capH + 26;
          this.findBox(param2,y,param1 - param2 * 2,k.u(32),"Find parts");
-         y += k.u(32) + 14;
+         y += k.u(32) + 18;
          var x:Number = param2;
-         var chipH:Number = k.u(34);
+         // Mockup 4 chip: 30 high, icon, name, count; three to a row at the normal size.
+         var chipH:Number = k.u(31);
          var i:int = 0;
          while(i < keys.length)
          {
             var cat:Object = this.cats[keys[i]];
             var name:String = String(cat.name).toUpperCase();
-            var t:TextField = k.text(13,HsbKit.TEXT,true,1.5);
+            var t:TextField = k.text(13,HsbKit.TEXT,true,1);
             k.put(t,name);
             k.fit(t);
             var n:TextField = k.text(12,HsbKit.LABEL,true);
             k.put(n,int(cat.count) >= 0 ? String(cat.count) : "\u00B7");
             k.fit(n);
-            var cw:Number = 12 + 20 + 8 + t.width + 8 + Math.max(k.u(24),n.width + 12) + 10;
-            if(x + cw > param1 - param2) { x = param2; y += chipH + 8; }
+            var nw:Number = Math.max(k.u(28),n.textWidth + 14);
+            var cw:Number = 38 + t.textWidth + 10 + nw + 6;
+            if(x + cw > param1 - param2) { x = param2; y += chipH + 11; }
             var active:Boolean = int(keys[i]) == this.catIndex;
             var empty:Boolean = int(cat.count) == 0;
             var focus:Boolean = i == this.gridFocus;
             if(active) { k.fill(g,x,y,cw,chipH,chipH / 2,k.accent,1); }
             else { k.fill(g,x,y,cw,chipH,chipH / 2,0x161C22,empty ? 0.6 : 1); k.outline(g,x,y,cw,chipH,chipH / 2,focus ? HsbKit.TEXT : HsbKit.EDGE_HI,1,focus ? 2 : 1); }
             var ink:uint = active ? HsbKit.INK_ON_ACCENT : (empty ? HsbKit.DIM : HsbKit.TEXT);
-            k.icon(g,this.catIcon(String(cat.name)),x + 12,y + (chipH - 18) / 2,18,ink,1);
+            k.icon(g,this.catIcon(String(cat.name)),x + 10,y + (chipH - 18) / 2,18,ink,1);
             k.put(t,name,ink);
-            this.add(t,x + 40,y + (chipH - t.height) / 2);
-            var nw:Number = Math.max(k.u(24),n.width + 12);
-            k.fill(g,x + 40 + t.width + 8,y + (chipH - k.u(20)) / 2,nw,k.u(20),5,active ? HsbKit.mix(HsbKit.INK_ON_ACCENT,k.accent,0.2) : 0x262D33,1);
-            k.put(n,n.text,active ? k.accent : HsbKit.LABEL);
-            this.add(n,x + 40 + t.width + 8 + (nw - n.width) / 2,y + (chipH - n.height) / 2);
+            this.add(t,x + 36,y + (chipH - t.height) / 2);
+            var nx:Number = x + 38 + t.textWidth + 10;
+            // On the accent chip the count sits on a dark chip in light ink, as in mockup 4.
+            k.fill(g,nx,y + (chipH - k.u(18)) / 2,nw,k.u(18),5,active ? HsbKit.INK_ON_ACCENT : 0x262D33,active ? 0.85 : 1);
+            k.put(n,n.text,active ? HsbKit.TEXT : HsbKit.LABEL);
+            this.add(n,nx + (nw - n.width) / 2,y + (chipH - n.height) / 2);
             if(!empty) { this.hit(x,y,cw,chipH,"cat",int(keys[i])); }
             x += cw + 8;
             i++;
          }
-         y += chipH + 14;
+         y += chipH + 19;
          k.hline(g,param2,y,param1 - param2 * 2);
-         y += 12;
+         y += 10;
          var ml:TextField = k.text(13,HsbKit.LABEL,false,1.5);
          k.put(ml,"MAKER");
          k.fit(ml);
          this.add(ml,param2,y + (k.u(28) - ml.height) / 2);
          var mx:Number = param2 + ml.width + 12;
          var makers:Array = ["All"].concat(this.makerNames());
+         var right:Number = param1 - param2;
+         var moreW:Number = k.u(48);
+         this.makerRest = [];
          var m:int = 0;
-         while(m < makers.length && mx < param1 - param2 - 60)
+         while(m < makers.length)
          {
             var mname:String = String(makers[m]);
             var cnt:int = mname == "All" ? this.rows.length : this.countMaker(mname);
@@ -2028,6 +2276,13 @@ package
             k.put(mn,String(cnt));
             k.fit(mn);
             var mw:Number = 12 + mt.width + 6 + Math.max(k.u(22),mn.width + 10) + 8;
+            // Makers that do not fit go behind a "+N" chip, which lists them in a menu.
+            var last:Boolean = m == makers.length - 1;
+            if(m > 0 && mx + mw + (last ? 0 : 8 + moreW) > right)
+            {
+               this.makerRest = makers.slice(m);
+               break;
+            }
             var picked:Boolean = (this.makerChip == "" && mname == "All") || this.makerChip == mname;
             k.fill(g,mx,y,mw,k.u(28),k.u(14),0x161C22,1);
             k.outline(g,mx,y,mw,k.u(28),k.u(14),picked ? k.accent : HsbKit.EDGE_HI,1);
@@ -2037,18 +2292,35 @@ package
             mx += mw + 8;
             m++;
          }
-         y += k.u(28) + 12;
+         if(this.makerRest.length > 0)
+         {
+            var hidden:Boolean = this.makerRest.indexOf(this.makerChip) >= 0;
+            var rt:TextField = k.text(13,HsbKit.TEXT,true);
+            k.put(rt,"+" + this.makerRest.length);
+            k.fit(rt);
+            var rw:Number = Math.max(moreW,rt.width + 20);
+            k.fill(g,mx,y,rw,k.u(28),k.u(14),0x161C22,1);
+            k.outline(g,mx,y,rw,k.u(28),k.u(14),hidden ? k.accent : HsbKit.EDGE_HI,1);
+            this.add(rt,mx + (rw - rt.width) / 2,y + (k.u(28) - rt.height) / 2);
+            this.hit(mx,y,rw,k.u(28),"makermore");
+         }
+         y += k.u(28) + 10;
          var av:TextField = k.text(14,HsbKit.TEXT,true);
          k.put(av,this.tabName.toUpperCase() + " \u00B7 " + this.availableCount() + " available");
          k.fit(av);
          this.add(av,param2,y);
-         y += av.height + 4;
-         k.icon(g,"gear",param2,y + 2,14,k.accent,1);
-         var note:TextField = k.text(13,HsbKit.LABEL);
-         k.put(note,"Change this in Settings (gear icon)");
-         k.fit(note);
-         this.add(note,param2 + 20,y);
-         y += note.height + 10;
+         // Mockup 4 also counts parts "hidden by level or location" with a Settings hint. The game
+         // sends only the parts it offers here, so the hidden count has no data; parts it sends
+         // flagged as unavailable stay in the list, dimmed, and are counted as locked instead.
+         var locked:int = this.rows.length - this.availableCount();
+         if(locked > 0)
+         {
+            var lk:TextField = k.text(13,k.accent);
+            k.put(lk,locked + " locked \u00B7 dimmed in the list");
+            k.fit(lk,param1 - param2 * 2 - av.width - 12);
+            this.add(lk,param2 + av.width + 10,y + (av.height - lk.height) / 2);
+         }
+         y += av.height + 12;
          return y;
       }
 

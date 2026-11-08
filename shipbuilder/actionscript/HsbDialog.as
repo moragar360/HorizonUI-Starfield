@@ -117,7 +117,13 @@ package
             i++;
          }
          out = HsbPillModel.trim(out);
-         return out.length > 0 ? out : "pill";
+         if(out.length == 0) { return "pill"; }
+         // Windows opens CON, PRN, AUX, NUL, COM0-9 and LPT0-9 as devices whatever the
+         // extension (the DLL refuses them), so such a name gets a trailing underscore.
+         var low:String = out.toLowerCase();
+         var device:Boolean = ["con","prn","aux","nul"].indexOf(low) >= 0 ||
+            (low.length == 4 && (low.substr(0,3) == "com" || low.substr(0,3) == "lpt") && low.charCodeAt(3) >= 48 && low.charCodeAt(3) <= 57);
+         return device ? out + "_" : out;
       }
 
       internal function paint():void

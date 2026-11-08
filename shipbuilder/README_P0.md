@@ -14,7 +14,7 @@ In the p5 session (0.1.1.0, game 1.16.244) Settings opened from the gear, and th
 - The plugin converts every left press, release and move to stage units and feeds it to the movie (`M D`, `M U`, `M M`), with the wheel as `W`. A press inside a published rectangle is swallowed, and its release goes with it, so the game gets both halves of a click or neither.
 - The movie hit-tests the fed point against its own boxes and runs the control. No Horizon class adds a `MouseEvent` listener.
 - Keys follow the same rule. While a popup, text field, the category grid or Arrange is open, the plugin swallows keys and feeds navigation tokens (`K ok`, `K cancel`, arrows, Tab, Page Up and Down, Backspace, Delete) and typed characters (`C`). Otherwise it takes only Horizon's own keys: Ctrl+L for Arrange, and the Hide all and Find keys from Settings. Alt combinations, the Windows keys and Print Screen always reach the game and Windows.
-- Controller buttons still arrive through `ProcessUserEvent`. While Horizon captures input it consumes them; Accept and Cancel act on release, and a cancel that arrives both as a key token and as the game's event acts once.
+- Controller buttons still arrive through `ProcessUserEvent`. While Horizon captures input it consumes them; Accept and Cancel act on release, and a cancel that arrives both as a key token and as the game's event acts once. The left stick arrives through `OnLeftStickInput`; while Horizon captures input it is consumed too, so it does not scroll the hidden lists.
 
 What a log cannot prove yet: whether a swallowed window message is enough to keep a click from the 3D editor. If the game reads buttons through raw input or DirectInput instead of window messages, the editor could still react under a Horizon panel, while the Horizon control still works. The close line `FACT input | ... raw=` counts `WM_INPUT` messages so the desktop run shows whether the raw input path exists. This is the first desktop gate below.
 
@@ -39,7 +39,7 @@ The game panels the Horizon panels stand in for are hidden with alpha 0 and `mou
 
 These mock features have no game data or action. Each is drawn as in the mock and marked in place, never faked:
 
-- Colours: the game applies colours to the parts selected before colour mode, so there is no "apply to" choice (`Not in the game: colours go to the parts you selected before Colors`). There is no "take from a part". A hex code is worked out from the game's hue, saturation and brightness, so it is shown with `~`.
+- Colours: the game applies colours to the parts selected before colour mode, so there is no "apply to" choice (`Not in the game: colors go to the parts you selected before Colors`). There is no "take from a part". A hex code is worked out from the game's hue, saturation and brightness, so it is shown with `~`.
 - Pills: `Fits reactor` and `On my ship` have no game data (`No game data`), so pills with those rules match nothing. Value, class and card stats are known only for parts already previewed this visit.
 - Settings: `Open Flight Check on errors` has no game signal (`No game signal`) and stays off.
 - Flight Check messages have no fix actions in the game, so none are drawn.
@@ -115,7 +115,7 @@ copy /Y shipbuilder\actionscript\Hsb*.as shipbuilder\work\lrg\
 
 When the source was a loose file, point ffdec at that loose path instead of `shipbuilder\work\ba2\...`.
 
-Edit the exported `SpaceshipEditorMenu.as` in both work folders using `shipbuilder/actionscript/document_splice.as`: both imports, the member, the `onAddedToStage` lines (or the override when the decompile has none), the `hsb*` methods, and the `ProcessUserEvent` early return. Every one of those methods must be present: the plugin calls `hsbProbePing`, `hsbTakeLines`, `hsbProbeStage`, `hsbSetDebug`, `hsbApply`, `hsbFeed`, `hsbSaved`, `hsbTakeFiles` and `hsbFiles`.
+Edit the exported `SpaceshipEditorMenu.as` in both work folders using `shipbuilder/actionscript/document_splice.as`: both imports, the member, the `onAddedToStage` lines (or the override when the decompile has none), the `hsb*` methods, the `ProcessUserEvent` early return, and the `OnLeftStickInput` early return. Every one of those methods must be present: the plugin calls `hsbProbePing`, `hsbTakeLines`, `hsbProbeStage`, `hsbSetDebug`, `hsbApply`, `hsbFeed`, `hsbSaved`, `hsbTakeFiles` and `hsbFiles`.
 
 ```
 ffdec -importScript shipbuilder\work\ba2\spaceshipeditormenu.swf shipbuilder\Interface\spaceshipeditormenu.swf shipbuilder\work\normal
@@ -194,7 +194,7 @@ Use a throwaway save: every ship action here is the game's own action. Run each 
 
 1. Clicks stay with Horizon. Open the builder: `FACT F19 | invoke=1 ping=0.2.0.0`, then `FACT movie | BUILDER 0.2.0.0`. Click a parts browser row, a pill, the gear, and a Settings switch with a part selected on the ship. Each control acts, and the ship does not deselect, select, or place anything under the panel. On close, `FACT input | presses=N eaten=M ... raw=R`: `eaten` counts presses inside Horizon panels. If the 3D editor still reacts to clicks on panels, the game reads the mouse another way (raw input when `raw` is above 0, otherwise likely DirectInput), and swallowing window messages is not enough. Report it with the log.
 2. Clicks over the ship still build. Outside the panels, click, drag and use the wheel on the ship: the camera, selection and placement work as with this mod removed.
-3. Keys. With nothing open, H hides all panels and H shows them again; `/` opens Find in the browser. Type in Find: the letters go to the field and no builder hotkey fires. Esc closes the innermost thing first (Find, then a dialog, then Settings), one step per press, and never opens the exit prompt while Horizon has something open. Alt+Tab and Alt+F4 still work with a popup open.
+3. Keys. With nothing open, H folds every panel to its tab and the header button reads SHOW ALL (mock 12); H, or opening any tab, brings them all back. `/` opens Find in the browser. Type in Find: the letters go to the field and no builder hotkey fires. Esc closes the innermost thing first (Find, then a dialog, then Settings), one step per press, and never opens the exit prompt while Horizon has something open. Alt+Tab and Alt+F4 still work with a popup open.
 4. Controller. With the pad, open Settings from the gear: Up and Down move the focus ring, A activates, B closes. With nothing open, every pad button does what it does with this mod removed.
 5. Text. Faces: `FONT try=... pick=` names the face by index; `pick=0` means text uses the default face. The browser's category tabs are rotated text, which Scaleform draws only with an embedded face, so with `pick=d1` to `d3` (device text) the rotated labels may be missing. Report the `pick` value with a screenshot. Body text is 13 px on the normal movie and 16 px on the large movie, and captions are 12 px and 15 px; check for boxes in any language you use.
 6. Data. A hab, a weapon and a reactor or shield: the Selected Module card matches the game's card with this mod removed and every other mod, Creations included, left as it is. Power pips, credits, and the stats footer match the game's numbers.
@@ -203,7 +203,7 @@ Use a throwaway save: every ship action here is the game's own action. Run each 
 9. Pills (mocks 2, 3, 5, 14, 15, 16). Make a pill, edit it, export it (`pills\user`), import a pack, delete a pill. Close and reopen the builder: pills are kept, and `ShipBuilderPills.bak` exists after the second save.
 10. Columns, sort, density, group by maker (mocks 5, 8): each survives a reopen.
 11. Arrange (mock 17), from Ctrl+L or the gear: drag panels, arrows nudge, Shift+arrows nudge further, Enter saves, Esc cancels, Reset puts panels home. Saved spots survive a reopen and a resolution change.
-12. Flight Check (mock 13): tabs switch with the mouse and with the game's keys; the Weapons tab shows the game's own panel.
+12. Flight Check (mock 13): the browser list turns read-only as soon as Flight Check opens; tabs switch with the mouse and with the game's keys; the Weapons tab shows the game's own panel.
 13. Settings (mock 9): every switch and slider changes the builder at once and survives a reopen.
 14. HUD message. Close the builder once with `Probe=1` in the player file: `FACT F31 | ... thread=ship-advance` or `thread=hud-advance`.
 

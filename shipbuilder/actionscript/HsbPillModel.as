@@ -22,6 +22,13 @@ package
       internal static const VERSION:int = 2;
       internal static const FIELDS:Array = ["maker","size","class","value","stat","canAfford","fitsReactor","onMyShip"];
       internal static const NO_BACKEND:Array = ["fitsReactor","onMyShip"];
+      // load() results below zero. Only LOAD_BAD is a damaged file the DLL may set aside as
+      // .bad.json; a file too long to parse or from a newer version is left alone, unsaved.
+      internal static const LOAD_BAD:int = -1;
+      internal static const LOAD_TOO_BIG:int = -2;
+      internal static const LOAD_NEWER:int = -3;
+      // Lowercase id -> words of the mixed-case spelling it arrived in (see columnId).
+      private static var spoken:Object = {};
 
       internal var pills:Array;
       internal var on:Object;
@@ -50,8 +57,8 @@ package
       {
          if(param1.indexOf("stat:") == 0)
          {
-            var named:String = param2 != null && param2[param1.substring(5)] != null ? String(param2[param1.substring(5)]) : param1.substring(5);
-            return named;
+            var sid:String = param1.substring(5);
+            return param2 != null && param2[sid] != null ? String(param2[sid]) : spokenName(sid);
          }
          var map:Object = {"maker":"Maker","size":"Size","class":"Class","value":"Value","canAfford":"Can afford","fitsReactor":"Fits reactor","onMyShip":"On my ship"};
          return map[param1] != null ? String(map[param1]) : param1;
@@ -273,9 +280,10 @@ package
          {
             var r:Object = rules[i];
             var label:String = fieldLabel(String(r.field),param2);
-            if(r.values is Array) { bits.push(label + " " + (r.values as Array).join("/")); }
+            // Mockup 3 wording: "Grav jump thrust at least 40", "Size 1x1, 2x1", "Can afford".
+            if(r.values is Array) { bits.push(label + " " + (r.values as Array).join(", ")); }
             else if(String(r.op) == "is") { bits.push(label); }
-            else { bits.push(label + (String(r.op) == "atLeast" ? " \u2265 " : " \u2264 ") + String(r.value)); }
+            else { bits.push(label + " " + opLabel(String(r.op)) + " " + String(r.value)); }
             i++;
          }
          return bits.join(" \u00B7 ");
@@ -366,6 +374,9 @@ package
          return out;
       }
 
+      // Column and stat ids are lowercase letters and digits: the browser keys learned stats in
+      // lowercase, so "Mass" in an ini or a pack must name the same column as "mass". The case
+      // an id arrived in is kept as words for display until the game names that stat.
       internal static function columnId(param1:String):String
       {
          var out:String = "";
@@ -376,7 +387,34 @@ package
             if((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9")) { out += c; }
             i++;
          }
+         var id:String = out.toLowerCase();
+         if(id != out && spoken[id] == null) { spoken[id] = words(out,false); }
+         return id;
+      }
+
+      // "GravJumpThrust" reads "Grav jump thrust"; with param2 set, "GravDrives" reads
+      // "Grav Drives" (tab keys keep their capitals, as category names do).
+      internal static function words(param1:String, param2:Boolean):String
+      {
+         var out:String = "";
+         var i:int = 0;
+         while(i < param1.length)
+         {
+            var c:String = param1.charAt(i);
+            var prev:String = i > 0 ? param1.charAt(i - 1) : "";
+            var upper:Boolean = c >= "A" && c <= "Z";
+            var after:Boolean = (prev >= "a" && prev <= "z") || (prev >= "0" && prev <= "9");
+            if(upper && after) { out += " "; }
+            out += i == 0 || param2 ? c : c.toLowerCase();
+            i++;
+         }
          return out;
+      }
+
+      // The display name for an id the game has not named (yet): its words, or the id itself.
+      internal static function spokenName(param1:String):String
+      {
+         return spoken[param1] != null ? String(spoken[param1]) : param1;
       }
 
       internal static function trim(param1:String):String
@@ -387,10 +425,11 @@ package
       // Returns the number of pills loaded, or -1 when the file is not a valid profile.
       internal function load(param1:String):int
       {
+         if(param1.length > HsbJson.MAX_CHARS) { return LOAD_TOO_BIG; }
          var data:* = HsbJson.parse(param1);
-         if(data == null || typeof data != "object" || String(data.type) != PROFILE_TYPE) { return -1; }
-         if(Number(data.version) > VERSION) { return -1; }
-         if(!(data.pills is Array)) { return -1; }
+         if(data == null || typeof data != "object" || String(data.type) != PROFILE_TYPE) { return LOAD_BAD; }
+         if(Number(data.version) > VERSION) { return LOAD_NEWER; }
+         if(!(data.pills is Array)) { return LOAD_BAD; }
          var next:Array = [];
          var i:int = 0;
          while(i < (data.pills as Array).length && next.length < MAX_PILLS)
@@ -453,7 +492,8 @@ package
          if(String(data.type) == PILL_TYPE)
          {
             var one:Object = clean(data);
-            return one == null ? null : {"kind":"pill","name":one.name,"author":"","description":"","pills":[one],"columnSets":null};
+            if(one == null) { return null; }
+            return {"kind":"pill","name":one.name,"author":data.author is String ? String(data.author).substring(0,48) : "","description":data.description is String ? String(data.description).substring(0,200) : "","pills":[one],"columnSets":null};
          }
          if(String(data.type) != PACK_TYPE || !(data.pills is Array)) { return null; }
          var list:Array = [];

@@ -5,11 +5,15 @@ package
    import Shared.GlobalFunc;
    import flash.display.DisplayObject;
    import flash.display.DisplayObjectContainer;
+   import flash.display.InteractiveObject;
    import flash.display.Graphics;
    import flash.display.Sprite;
    import flash.events.Event;
+   import flash.events.EventDispatcher;
+   import flash.events.MouseEvent;
    import flash.geom.Point;
    import flash.text.TextField;
+   import flash.text.TextFieldType;
    import flash.text.TextFormat;
    import flash.utils.getDefinitionByName;
 
@@ -52,6 +56,9 @@ package
       // A cancel or accept can arrive both as a DLL key token and as the game's own event.
       private static const DOUBLE_FRAMES:int = 6;
       private static const FILE_QUEUE_MAX:int = 64;
+      // Panels with a collapsed tab. Hide all folds these to their tabs (mockup 12); Colors and
+      // Flight Check have no tab, so Hide all removes them.
+      private static const TABBED:Object = {"Power":true,"Module":true,"Credits":true,"Stats":true,"Hints":true,"Browser":true};
 
       private var host:Object;
       internal var kit:HsbKit;
@@ -76,6 +83,8 @@ package
       internal var uiScale:Number = 1;
       internal var density:String = "compact";
       internal var byMaker:Boolean = false;
+      // Why pill changes cannot be saved this session ("" when they can); see onProfile.
+      internal var pillsLock:String = "loading";
       internal var rememberLayout:Boolean = true;
       internal var startOpen:Object;
       internal var autoFlight:Boolean = true;
@@ -330,6 +339,15 @@ package
          if(param1 == "Escape" || param1 == "Cancel") { if(this.lastCancel < pressed) { this.cancelTop("pad"); } return true; }
          if(param1 == "Accept" || param1 == "Enter") { if(this.lastOk < pressed) { this.acceptTop("pad"); } return true; }
          return true;
+      }
+
+      // Purpose: the front of the vanilla OnLeftStickInput chain. While Horizon captures input
+      //    the stick must not scroll the hidden palette or Flight Check list behind a popup.
+      // Outputs: true when the splice should return before the vanilla body.
+      // Dependencies: the splice calls this before the vanilla chain.
+      public function wantsStick():Boolean
+      {
+         return this.capturing();
       }
 
       private function onStage(param1:Event):void
@@ -683,6 +701,25 @@ package
          }
       }
 
+      // Purpose: press a control of a hidden vanilla panel, so the vanilla handler runs as if the
+      //    player clicked it and sends the game's event itself (the Flight Check tab bar selects
+      //    the tab, then reports it). Inputs: the vanilla clip. Outputs: true when delivered.
+      internal function clickNative(param1:EventDispatcher):Boolean
+      {
+         if(param1 == null) { return false; }
+         try
+         {
+            param1.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+            if(this.debugOn) { this.note("NATIVE click"); }
+            return true;
+         }
+         catch(err:Error)
+         {
+            this.note("NATIVE click fault " + err.errorID);
+         }
+         return false;
+      }
+
       internal function sendHint(param1:String):void
       {
          if(param1 == null || param1.length == 0) { return; }
@@ -839,7 +876,7 @@ package
                changed = true;
             }
          }
-         this.browser.readOnly = flightOn;
+         this.browser.setReadOnly(flightOn);
          this.coverAll(hangar);
          if(changed) { this.place(); }
          this.paintDirty();
@@ -931,7 +968,15 @@ package
 
       private function shown(param1:String):Boolean
       {
-         return this.vis[param1] == true && !this.hideAll;
+         if(this.vis[param1] != true) { return false; }
+         return !this.hideAll || TABBED[param1] == true;
+      }
+
+      // A panel draws as its tab when the player collapsed it or while Hide all is on; Show all
+      // brings back each panel's own state.
+      private function folded(param1:String):Boolean
+      {
+         return this.collapsed[param1] == true || this.hideAll;
       }
 
       private function paint(param1:String):void
@@ -946,7 +991,7 @@ package
             case "Cluster": this.paintCluster(); break;
             case "Browser":
                this.browser.visible = this.shown("Browser");
-               this.browser.collapsed = this.collapsed["Browser"] == true;
+               this.browser.collapsed = this.folded("Browser");
                this.browser.invalidate();
                break;
             case "Colors":
@@ -1043,16 +1088,16 @@ package
          var slot:Number = (this.kit.lrg ? 560 : 501) * sc;
          this.credits.x = right - slot - 13 - this.credits.boxW * sc;
          this.credits.y = top + 1;
-         if(this.collapsed["Credits"] == true) { this.credits.x = right - slot - 13 - (this.kit.lrg ? 400 : 363) * sc; }
+         if(this.folded("Credits")) { this.credits.x = right - slot - 13 - (this.kit.lrg ? 400 : 363) * sc; }
          this.cluster.x = this.credits.x - 5 - this.cluster.boxW * sc;
-         if(this.collapsed["Credits"] == true) { this.cluster.x = this.credits.x - 5 - this.cluster.boxW * sc; }
+         if(this.folded("Credits")) { this.cluster.x = this.credits.x - 5 - this.cluster.boxW * sc; }
          this.cluster.y = top;
          this.stats.x = right + 1 - this.stats.boxW * sc;
          this.stats.y = bottom - this.stats.boxH * sc;
-         if(this.collapsed["Stats"] == true) { this.stats.x = r.x + (r.width - this.stats.boxW * sc) / 2; this.stats.y = r.y + r.height - 28 - this.stats.boxH * sc; }
+         if(this.folded("Stats")) { this.stats.x = r.x + (r.width - this.stats.boxW * sc) / 2; this.stats.y = r.y + r.height - 28 - this.stats.boxH * sc; }
          this.hints.x = right + 1 - this.hints.boxW * sc;
-         this.hints.y = (this.collapsed["Stats"] == true || !this.stats.visible ? bottom - this.hints.boxH * sc : this.stats.y - 11 - this.hints.boxH * sc);
-         if(this.collapsed["Hints"] == true) { this.hints.y = r.y + r.height - 28 - this.hints.boxH * sc; }
+         this.hints.y = (this.folded("Stats") || !this.stats.visible ? bottom - this.hints.boxH * sc : this.stats.y - 11 - this.hints.boxH * sc);
+         if(this.folded("Hints")) { this.hints.y = r.y + r.height - 28 - this.hints.boxH * sc; }
          this.anchorAll(r);
          if(this.notice.visible)
          {
@@ -1146,7 +1191,7 @@ package
          var total:int = int(s.iReactorPower);
          if(total <= 0) { total = int(p.iReactor); }
          var w:Number = k.lrg ? 390 : 350;
-         if(this.collapsed["Power"] == true)
+         if(this.folded("Power"))
          {
             var pillW:Number = k.u(196);
             var pillH:Number = k.u(34);
@@ -1171,7 +1216,7 @@ package
          k.putCaps(title,"$POWER","POWER");
          k.fit(title);
          b.add(title,20,14);
-         this.collapseButton(b,w - 20 - k.u(22),12,"chevUU","power.close");
+         this.collapseButton(b,w - 20 - k.u(22),12,"dockU","power.close");
          var aside:TextField = k.text(14,HsbKit.MUTED,false,0,"right");
          k.put(aside,assigned + " of " + total + " assigned");
          aside.width = 200;
@@ -1215,7 +1260,10 @@ package
          var cls:String = this.reactorClass(int(s.iReactorClass));
          var chipW:Number = 0;
          if(cls.length > 0) { chipW = k.keycap(b,20,rowY,cls,k.accent,k.u(24)) + 10; }
-         var rl:TextField = k.text(13,HsbKit.LABEL,false,1.5);
+         // Mockup 1 spaces these captions 1.5; the large movie's wider face needs the room for
+         // EQUIP POWER, so both captions there sit tighter.
+         var capSpacing:Number = k.lrg ? 0.6 : 1.5;
+         var rl:TextField = k.text(13,HsbKit.LABEL,false,capSpacing);
          k.putCaps(rl,"$REACTOR","REACTOR");
          k.fit(rl);
          b.add(rl,20 + chipW,rowY + 2);
@@ -1224,14 +1272,16 @@ package
          k.fit(rv);
          b.add(rv,rl.x + rl.width + 14,rowY);
          var equip:Number = Number(s.iWeaponPower) + Number(s.iEnginePower) + Number(s.iShieldPower);
-         var ev:TextField = k.text(16,HsbKit.TEXT,true,0,"right");
+         var ev:TextField = k.text(16,HsbKit.TEXT,true);
          k.put(ev,isNaN(equip) ? "" : HsbKit.num(equip));
-         ev.width = 60;
-         b.add(ev,w - 20 - 60,rowY);
-         var el:TextField = k.text(13,HsbKit.LABEL,false,1.5,"right");
+         k.fit(ev);
+         b.add(ev,w - 20 - ev.width + 2,rowY);
+         // The label sits against its value and never reaches the reactor number: a long
+         // translation ends in an ellipsis instead.
+         var el:TextField = k.text(13,HsbKit.LABEL,false,capSpacing);
          k.putCaps(el,"$EQUIP POWER","EQUIP POWER");
-         el.width = 150;
-         b.add(el,w - 20 - 60 - 8 - 150,rowY + 2);
+         k.fit(el,Math.max(k.u(40),ev.x - 8 - (rv.x + rv.width + 16)));
+         b.add(el,ev.x - 8 - el.width + 2,rowY + 2);
          b.boxW = w;
          b.boxH = h;
       }
@@ -1281,7 +1331,7 @@ package
          var w:Number = k.lrg ? 390 : 350;
          var pad:Number = 20;
          var g:Graphics = b.gfx;
-         if(this.collapsed["Module"] == true)
+         if(this.folded("Module"))
          {
             var nm:TextField = k.text(14,HsbKit.TEXT,true);
             k.put(nm,data.sModuleName);
@@ -1529,7 +1579,7 @@ package
          var g:Graphics = b.gfx;
          var total:String = HsbKit.num(d.uTotalCredits);
          var refund:Boolean = Number(d.uTotalCredits) != 0 && !Boolean(d.bBuying);
-         if(this.collapsed["Credits"] == true)
+         if(this.folded("Credits"))
          {
             var tl:TextField = k.text(13,k.accent,true,2);
             k.putCaps(tl,"$TOTAL","TOTAL");
@@ -1553,6 +1603,9 @@ package
          var vendor:Boolean = d.uVendorCredits != null;
          var rows:Array = [["$VENDOR CREDITS","VENDOR CREDITS",HsbKit.num(d.uVendorCredits)],["$YOUR CREDITS","YOUR CREDITS",HsbKit.num(d.uPlayerCredits)]];
          var y:Number = 12;
+         // Mockup 5: the collapse button sits at the top right; the values keep its column clear.
+         var valueRight:Number = w - 20 - k.u(22) - 10;
+         this.collapseButton(b,w - 20 - k.u(22),y + (pitch - k.u(22)) / 2,"dockU","credits.close");
          var i:int = 0;
          while(i < rows.length)
          {
@@ -1564,13 +1617,10 @@ package
             var v:TextField = k.text(15,HsbKit.TEXT,false,0,"right");
             k.put(v,rows[i][2]);
             v.width = 140;
-            b.add(v,w - 20 - 140,y + (pitch - v.height) / 2);
+            b.add(v,valueRight - 140,y + (pitch - v.height) / 2);
             y += pitch;
             i++;
          }
-         y += 2;
-         k.hline(g,20,y,w - 40);
-         y += 2;
          var t1:TextField = k.text(13,k.accent,true,1.5);
          k.putCaps(t1,"$TOTAL","TOTAL");
          k.fit(t1);
@@ -1578,8 +1628,7 @@ package
          var t2:TextField = k.text(15,refund ? HsbKit.GREEN : k.accent,true,0,"right");
          k.put(t2,total);
          t2.width = 140;
-         b.add(t2,w - 20 - 22 - 8 - 140,y + (pitch - t2.height) / 2);
-         this.collapseButton(b,w - 20 - k.u(22),y + (pitch - k.u(22)) / 2,"chevU","credits.close");
+         b.add(t2,valueRight - 140,y + (pitch - t2.height) / 2);
          y += pitch + 8;
          k.card(b.graphics,0,0,w,y);
          b.boxW = w;
@@ -1599,7 +1648,7 @@ package
          var g:Graphics = b.gfx;
          var preview:Boolean = Boolean(d.bShowingPreview);
          var defs:Array = [["$HULL","HULL","iHealth",false,""],["$SHIELD","SHIELD","iShield",false,""],["$CARGO","CARGO","iCargo",false,""],["$MAX CREW","MAX CREW","iCrew",false,""],["$JUMP RANGE","JUMP RANGE","iJumpRange",false," LY"],["$MOBILITY","MOBILITY","iMobility",false,""],["$TOP SPEED","TOP SPEED","iSpeed",false,""],["$MASS","MASS","iMass",true,""]];
-         if(this.collapsed["Stats"] == true)
+         if(this.folded("Stats"))
          {
             var picks:Array = [];
             var j:int = 0;
@@ -1718,7 +1767,7 @@ package
          var k:HsbKit = this.kit;
          var g:Graphics = b.gfx;
          var h:Number = k.u(43);
-         if(this.collapsed["Hints"] == true)
+         if(this.folded("Hints"))
          {
             var kl:TextField = k.text(13,HsbKit.TEXT,true,1.5);
             k.put(kl,"KEYS");
@@ -1836,7 +1885,7 @@ package
 
       private function gridOpen():Boolean
       {
-         return this.browser != null && this.browser.gridOpen && this.shown("Browser");
+         return this.browser != null && this.browser.gridOpen && this.shown("Browser") && !this.folded("Browser");
       }
 
       private function pushState():void
@@ -1844,7 +1893,8 @@ package
          var w:int = stage != null ? stage.stageWidth : 0;
          var h:int = stage != null ? stage.stageHeight : 0;
          var arranging:Boolean = this.arrange != null && this.arrange.visible;
-         var line:String = "STATE capture=" + (this.capturing() ? 1 : 0) + " text=" + (this.textOwner != null ? 1 : 0) + " arrange=" + (arranging ? 1 : 0) + " stage=" + w + "x" + h + " view=" + this.viewText() + " keys=" + (this.keyArrange != "0" ? 1 : 0) + " hide=" + this.keyCode(this.keyHide) + " find=" + this.keyCode(this.keyFind);
+         var hotkeys:Boolean = this.hotkeysAllowed();
+         var line:String = "STATE capture=" + (this.capturing() ? 1 : 0) + " text=" + (this.textOwner != null ? 1 : 0) + " arrange=" + (arranging ? 1 : 0) + " stage=" + w + "x" + h + " view=" + this.viewText() + " keys=" + (hotkeys && this.keyArrange != "0" ? 1 : 0) + " hide=" + (hotkeys ? this.keyCode(this.keyHide) : 0) + " find=" + (hotkeys ? this.keyCode(this.keyFind) : 0);
          this.lines.unshift(line);
          var nextHot:String = this.hotText();
          if(nextHot != this.hot)
@@ -2021,9 +2071,25 @@ package
             this.browser.onKey(param1);
             return;
          }
+         if(!this.hotkeysAllowed()) { return; }
          if(param1 == "open") { this.openArrange(); return; }
          if(param1 == "hide") { this.toggleHide(); return; }
-         if(param1 == "find" && this.shown("Browser")) { this.browser.startFind(); return; }
+         if(param1 == "find" && this.shown("Browser") && !this.folded("Browser")) { this.browser.startFind(); return; }
+      }
+
+      // Purpose: whether Horizon's own hotkeys (Hide all, Find, Ctrl+L for Arrange) may act.
+      // Outputs: false while the player types in a vanilla text field (the ship-rename screen
+      //    turns the name into an INPUT field with stage focus), while that screen is up, in the
+      //    hangar view and while Horizon stands down for StarUI. STATE then sends keys=0 hide=0
+      //    find=0, so the DLL lets those keys and their characters reach the game.
+      private function hotkeysAllowed():Boolean
+      {
+         if(this.conflict || this.kit == null) { return false; }
+         if(this.nativeOn("ShipRename_mc") || this.nativeOn("HangarInfoPanel_mc")) { return false; }
+         var focus:InteractiveObject = stage != null ? stage.focus : null;
+         var field:TextField = focus as TextField;
+         if(field != null && field.type == TextFieldType.INPUT && !this.contains(field)) { return false; }
+         return true;
       }
 
       private function onChar(param1:int):void
@@ -2103,6 +2169,8 @@ package
 
       internal function setCollapsed(param1:String, param2:Boolean):void
       {
+         // Opening any tab while everything is folded means Show all.
+         if(!param2 && this.hideAll) { this.toggleHide(); }
          if(param2) { this.collapsed[param1] = true; }
          else { delete this.collapsed[param1]; }
          this.mark(param1);
@@ -2394,22 +2462,85 @@ package
          return out;
       }
 
+      // Purpose: take the pill profile the DLL read at open. Inputs: the reply (ok, text); on a
+      //    failed read the text is "missing" or "unreadable". Outputs: the loaded pills, or the
+      //    defaults with saving locked when a profile exists that the movie cannot use. Saving
+      //    stays locked ("loading") until this reply, so an early edit never replaces the file.
+      // Rules: only "missing" (or an empty file) may start fresh and be saved over. A damaged
+      //    profile is set aside by the DLL (PROFILE BAD); one that could not be read, is too long
+      //    to parse or comes from a newer version is left as it is and never saved over.
       private function onProfile(param1:Boolean, param2:String):void
       {
-         if(!param1 || param2.length == 0)
+         if(!param1)
          {
+            this.lockPills(param2 == "missing" ? "" : "unreadable");
+            this.note("PILLS profile " + (param2 == "missing" ? "none" : "unreadable, saving off"));
+            return;
+         }
+         if(param2.length == 0)
+         {
+            this.lockPills("");
             this.note("PILLS profile none");
             return;
          }
          var count:int = this.pills.load(param2);
-         this.note("PILLS profile " + (count >= 0 ? "loaded n=" + count : "bad kept defaults"));
-         if(count < 0) { this.fileOp("PROFILE",["BAD"],"",null); }
+         if(count >= 0)
+         {
+            this.pillsLock = "";
+            this.note("PILLS profile loaded n=" + count);
+         }
+         else if(count == HsbPillModel.LOAD_BAD)
+         {
+            this.pillsLock = "";
+            this.note("PILLS profile bad kept defaults");
+            this.fileOp("PROFILE",["BAD"],"",null);
+         }
+         else
+         {
+            this.lockPills(count == HsbPillModel.LOAD_NEWER ? "newer" : "toolong");
+            this.note("PILLS profile " + (count == HsbPillModel.LOAD_NEWER ? "newer" : "too long") + ", saving off");
+         }
          this.browser.invalidate();
       }
 
+      private function lockPills(param1:String):void
+      {
+         this.pillsLock = param1;
+         if(this.browser != null) { this.browser.invalidate(); }
+      }
+
+      // The line the browser shows while pill changes cannot be saved; empty when they can.
+      internal function pillsWarning():String
+      {
+         switch(this.pillsLock)
+         {
+            case "unreadable": return "Pill changes are not saved: the pills file could not be read";
+            case "newer": return "Pill changes are not saved: the pills file is from a newer version";
+            case "toolong": return "Pill changes are not saved: the pills file is too long to read";
+            case "full": return "Pill changes are not saved: too many pills and rules for one file";
+         }
+         return "";
+      }
+
+      // Purpose: write the pill profile. Inputs: the pill model. Outputs: one PROFILE WRITE, or
+      //    none while saving is locked. Rule: the movie never writes what its own reader would
+      //    refuse (HsbJson.MAX_CHARS), so a saved profile always loads again.
       internal function savePills():void
       {
-         this.fileOp("PROFILE",["WRITE"],this.pills.save(),function(param1:Boolean, param2:String):void
+         if(this.pillsLock.length > 0 && this.pillsLock != "full")
+         {
+            this.note("PILLS save refused " + this.pillsLock);
+            return;
+         }
+         var text:String = this.pills.save();
+         if(text.length > HsbJson.MAX_CHARS)
+         {
+            this.lockPills("full");
+            this.note("PILLS save refused toolong");
+            return;
+         }
+         if(this.pillsLock == "full") { this.lockPills(""); }
+         this.fileOp("PROFILE",["WRITE"],text,function(param1:Boolean, param2:String):void
          {
             note("PILLS save " + (param1 ? "ok" : "failed"));
          });

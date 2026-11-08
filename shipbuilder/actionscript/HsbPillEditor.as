@@ -87,7 +87,7 @@ package
          y += fh + 30;
          var rl:TextField = k.label(this,pad,y,"RULES",13,k.accent,true,2);
          k.label(this,pad + rl.width + 12,y,this.rules().length + " of " + HsbPillModel.MAX_RULES,13,HsbKit.LABEL);
-         var segW:Number = this.segWidth(["MATCH ALL","MATCH ANY"]);
+         var segW:Number = this.kit.segmentsWidth(["MATCH ALL","MATCH ANY"]);
          k.segments(this,w - pad - segW,y - 6,["MATCH ALL","MATCH ANY"],String(this.draft.match) == "any" ? 1 : 0,"match",k.u(28));
          y += k.u(27);
          k.label(this,pad,y,String(this.draft.match) == "any" ? "A part shows up if it passes any rule." : "A part shows up only if it passes every rule.",13,HsbKit.LABEL,false,0,w - pad * 2);
@@ -125,7 +125,7 @@ package
          var tabs:Array = this.draft.tabs as Array;
          var applies:int = tabs != null && tabs.indexOf("*") >= 0 ? 1 : (tabs != null && tabs.length == 1 && String(tabs[0]) == this.tabId ? 0 : -1);
          var aLabels:Array = ["THIS TAB (" + this.tabName.toUpperCase() + ")","ALL TABS"];
-         var aW:Number = this.segWidth(aLabels);
+         var aW:Number = this.kit.segmentsWidth(aLabels);
          k.segments(this,w - pad - aW,y,aLabels,applies,"applies",k.u(28));
          if(applies < 0)
          {
@@ -178,20 +178,6 @@ package
          this.boxW = w;
          this.boxH = y;
          this.drawFocus();
-      }
-
-      private function segWidth(param1:Array):Number
-      {
-         var total:Number = 0;
-         var t:TextField = this.kit.text(12,0,true,1.2);
-         var i:int = 0;
-         while(i < param1.length)
-         {
-            this.kit.put(t,String(param1[i]));
-            total += Math.max(4,t.textWidth + 6) + 20;
-            i++;
-         }
-         return total;
       }
 
       // One rule row: field, operator, value (chips, number or switch), remove.
@@ -257,7 +243,11 @@ package
          var g:Graphics = this.gfx;
          k.fill(g,param1,param2,param3,param4,5,HsbKit.FIELD,1);
          k.outline(g,param1,param2,param3,param4,5,HsbKit.EDGE_HI,1);
-         k.label(this,param1 + 8,param2 + (param4 - k.u(22)) / 2,param5,14,HsbKit.TEXT,false,0,param3 - 30);
+         // Mockup 2 fits "Crew stations" in the field box; a name that would be cut at 14 is set at 13.
+         var probe:TextField = k.text(14,HsbKit.TEXT);
+         k.put(probe,param5);
+         var size:int = probe.textWidth + 6 > param3 - 30 ? 13 : 14;
+         k.label(this,param1 + 8,param2 + (param4 - k.u(size == 14 ? 22 : 20)) / 2,param5,size,HsbKit.TEXT,false,0,param3 - 30);
          if(param6.length > 0)
          {
             k.icon(g,"chevD",param1 + param3 - 20,param2 + (param4 - 13) / 2,13,HsbKit.LABEL,1);

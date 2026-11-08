@@ -102,7 +102,10 @@ package
       {
          this.sel = param1;
          var tab:int = int(param1.iSelectedTab);
-         this.slots[tab] = [Number(param1.fHue),Number(param1.fSaturation),Number(param1.fBrightness)];
+         // ColorInitializationData.aSelection carries only the tab and control (vanilla reads
+         // nothing else), so a slot colour is kept only when all three values are numbers.
+         var hsbNow:Array = [Number(param1.fHue),Number(param1.fSaturation),Number(param1.fBrightness)];
+         if(!isNaN(hsbNow[0]) && !isNaN(hsbNow[1]) && !isNaN(hsbNow[2])) { this.slots[tab] = hsbNow; }
          if(this.waitTab >= 0 && tab == this.waitTab) { this.waitTab = -1; }
       }
 
@@ -276,6 +279,7 @@ package
 
       private static function clamp01(param1:Number):Number
       {
+         if(isNaN(param1)) { return 0; }
          return param1 < 0 ? 0 : (param1 > 1 ? 1 : param1);
       }
 
@@ -417,12 +421,19 @@ package
             this.add(part,w - pad - part.width,y + 4);
          }
          y += k.u(42);
-         k.label(this,pad,y + 4,"APPLY TO",13,k.accent,true,2);
-         var labels:Array = ["SELECTED PART","ALL OF THIS TYPE","WHOLE SHIP"];
-         var segW:Number = this.segWidth(labels);
-         k.segments(this,w - pad - segW,y,labels,-1,"applyto",k.u(26),false);
+         var applyL:TextField = k.label(this,pad,y + 4,"APPLY TO",13,k.accent,true,2);
+         // The segments must clear the label (mockup 6); the short set is for long translations
+         // and the large movie.
+         var room:Number = w - pad * 2 - applyL.width - 12;
+         var labels:Array = ["SELECTED PART","ALL OF TYPE","WHOLE SHIP"];
+         var segPad:Number = 20;
+         var segSpace:Number = 1.2;
+         if(this.kit.segmentsWidth(labels) > room) { segPad = 16; segSpace = 0.6; }
+         if(this.kit.segmentsWidth(labels,segPad,segSpace) > room) { labels = ["PART","TYPE","SHIP"]; segPad = 20; segSpace = 1.2; }
+         var segW:Number = this.kit.segmentsWidth(labels,segPad,segSpace);
+         k.segments(this,w - pad - segW,y,labels,-1,"applyto",k.u(26),false,segPad,segSpace);
          y += k.u(30);
-         k.label(this,pad,y,"Not in the game: colours go to the parts you selected before Colors",12,HsbKit.ORANGE,false,0,w - pad * 2);
+         k.label(this,pad,y,"Not in the game: colors go to the parts you selected before Colors",12,HsbKit.ORANGE,false,0,w - pad * 2);
          y += k.u(24);
          k.label(this,pad,y,"CURRENT COLORS",13,k.accent,true,2);
          var hint:TextField = k.text(13,HsbKit.LABEL,false,0,"right");
@@ -502,20 +513,7 @@ package
          return true;
       }
 
-      private function segWidth(param1:Array):Number
-      {
-         var total:Number = 0;
-         var t:TextField = this.kit.text(12,0,true,1.2);
-         var i:int = 0;
-         while(i < param1.length)
-         {
-            this.kit.put(t,String(param1[i]));
-            total += Math.max(4,t.textWidth + 6) + 20;
-            i++;
-         }
-         return total;
-      }
-
+      // The width HsbKit.segments draws for these labels, padding and letter spacing.
       private function iconButtonWidth(param1:String):Number
       {
          var t:TextField = this.kit.text(13,0,true,1.5);
@@ -849,6 +847,9 @@ package
                this.hsb.endText(this);
                break;
             case "export":
+               // Exporting writes the file only (mockup 7): a running preview ends first, so the
+               // ship goes back to its own colors and the result box is what shows.
+               if(this.previewing) { this.cancelPreview(); }
                var s:Object = this.chosen >= 0 ? this.schemes[this.chosen] : null;
                if(s == null && this.allKnown()) { s = {"name":"My ship colors","source":"user","author":"","file":"","slots":this.currentSlots()}; }
                if(s != null) { this.writeScheme(s,String(s.source) == "user"); }

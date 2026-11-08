@@ -372,17 +372,20 @@ package
             y += d.height + 6;
          }
          k.label(this,param1,y + 4,"PILLS",13,k.accent,true,2);
-         y += k.u(28);
-         var cardH:Number = k.u(56);
-         var colsH:Number = setCount > 0 ? k.u(30) + setCount * k.u(20) + k.u(48) : 0;
-         var room:Number = bottom - y - colsH;
+         y += k.u(26);
+         // Mockup 3 fits four pill cards (one with a name clash) above the column sets; a card
+         // that does not fit, with room left for the "more" line, waits for the scroll.
+         var cardH:Number = k.u(58);
+         var colsH:Number = setCount > 0 ? k.u(26) + setCount * k.u(19) + k.u(34) : 0;
+         var limit:Number = bottom - colsH;
          var shown:int = 0;
          var i:int = this.rightScroll;
          while(i < list.length)
          {
             var state:String = this.pillState(list[i]);
-            var need:Number = cardH + (state == "clash" ? k.u(36) : 0) + 8;
-            if(y + need > param2 + 4 + room && shown > 0)
+            var need:Number = cardH + (state == "clash" ? k.u(34) : 0) + 8;
+            var moreH:Number = i < list.length - 1 ? k.u(22) : 0;
+            if(y + need + moreH > limit && shown > 0)
             {
                k.label(this,param1,y,(list.length - i) + " more \u00B7 scroll",12,HsbKit.MUTED);
                y += k.u(22);
@@ -396,9 +399,9 @@ package
          this.rightRows = shown;
          if(setCount > 0)
          {
-            y += 4;
+            y += 2;
             k.label(this,param1,y,"COLUMNS",13,k.accent,true,2);
-            y += k.u(26);
+            y += k.u(22);
             for(key in e.columnSets)
             {
                var cols:Array = e.columnSets[key] as Array;
@@ -406,11 +409,13 @@ package
                var c:int = 0;
                while(c < cols.length) { names.push(this.browser.columnLabel(String(cols[c]))); c++; }
                k.label(this,param1,y,this.browser.tabNameFor(key) + ": " + names.join(", "),13,HsbKit.LABEL,false,0,param3);
-               y += k.u(20);
+               y += k.u(19);
             }
-            y += 6;
+            y += 4;
             k.toggle(g,param1,y + 2,this.useColumns);
-            k.label(this,param1 + k.u(38) + 10,y,this.useColumns ? "Use these column sets" : "Your own column sets stay unless you choose to use these.",13,HsbKit.MUTED,false,0,param3 - k.u(48));
+            // Mockup 3 says "Your own column sets stay unless you choose to use these."; the switch
+            // is that choice, so its label names what turning it on does.
+            k.label(this,param1 + k.u(38) + 10,y,"Use these column sets instead of yours",13,this.useColumns ? HsbKit.LABEL : HsbKit.MUTED,false,0,param3 - k.u(48));
             this.hit(param1 - 4,y - 4,param3 + 8,k.u(28),"usecols");
          }
       }
@@ -420,32 +425,59 @@ package
          var k:HsbKit = this.kit;
          var g:Graphics = this.gfx;
          var clash:Boolean = param3 == "clash";
-         var totalH:Number = param7 + (clash ? k.u(36) : 0);
+         var totalH:Number = param7 + (clash ? k.u(34) : 0);
          k.fill(g,param4 - 8,param5,param6 + 8,param7,8,HsbKit.ROW,1);
          if(clash)
          {
             k.fill(g,param4 - 8,param5 + param7,param6 + 8,totalH - param7,8,HsbKit.ORANGE_BG,0.6);
             k.outline(g,param4 - 8,param5,param6 + 8,totalH,8,HsbKit.ORANGE,1);
          }
-         k.icon(g,"diamond",param4 + 2,param5 + 12,12,k.accent,1);
-         var nm:TextField = k.label(this,param4 + 20,param5 + 8,String(param2.name),14,HsbKit.TEXT,true,0,param6 * 0.5);
+         if(clash)
+         {
+            // Mockup 3: an orange WARNING tag sits on the clash card's top edge.
+            var warn:TextField = k.text(12,HsbKit.ORANGE,true,1.5);
+            k.put(warn,"WARNING");
+            k.fit(warn);
+            var tagH:Number = k.u(22);
+            var tagW:Number = 26 + warn.width + 8;
+            var tagY:Number = param5 - tagH / 2;
+            k.fill(g,param4,tagY,tagW,tagH,tagH / 2,HsbKit.ORANGE_BG,1);
+            k.outline(g,param4,tagY,tagW,tagH,tagH / 2,HsbKit.ORANGE,1);
+            k.icon(g,"alert",param4 + 7,tagY + (tagH - 13) / 2,13,HsbKit.ORANGE,1);
+            this.add(warn,param4 + 24,tagY + (tagH - warn.height) / 2);
+         }
+         var top:Number = param5 + (clash ? 13 : 9);
+         k.icon(g,"diamond",param4 + 2,top + 4,12,k.accent,1);
+         var nm:TextField = k.label(this,param4 + 20,top,String(param2.name),14,HsbKit.TEXT,true,0,param6 * 0.5);
          var tabs:Array = param2.tabs as Array;
          var tabKey:String = tabs != null && tabs.length > 0 ? String(tabs[0]) : "*";
-         k.label(this,nm.x + nm.width + 4,param5 + 9,this.browser.tabNameFor(tabKey),13,HsbKit.MUTED,false,0,param6 * 0.3);
+         k.label(this,nm.x + nm.width + 4,top + 1,this.browser.tabNameFor(tabKey),13,HsbKit.MUTED,false,0,param6 * 0.3);
          var here:Boolean = tabs == null || tabs.indexOf("*") >= 0 || tabs.indexOf(this.browser.tabKeyNow()) >= 0;
          var mt:TextField = k.text(13,param3 == "added" ? HsbKit.MUTED : HsbKit.GREEN,true,0,"right");
          k.put(mt,param3 == "added" ? "Already added" : (here ? "Matches " + this.browser.countMatches(param2) : "Other tab"));
          mt.width = 140;
-         this.add(mt,param4 + param6 - 140 - 8,param5 + 9);
-         k.label(this,param4 + 20,param5 + 8 + k.u(22),HsbPillModel.summary(param2,this.browser.statNames()),13,HsbKit.LABEL,false,0,param6 - 30);
+         this.add(mt,param4 + param6 - 140 - 8,top + 1);
+         k.label(this,param4 + 20,top + k.u(24),HsbPillModel.summary(param2,this.browser.statNames()),13,HsbKit.LABEL,false,0,param6 - 30);
          if(!clash) { return; }
-         var ay:Number = param5 + param7 + (k.u(36) - k.u(26)) / 2;
-         var tag:TextField = k.label(this,param4 + 2,ay + 4,"Name already used",13,HsbKit.ORANGE,true);
+         var ay:Number = param5 + param7 + (k.u(34) - k.u(26)) / 2;
          var opts:Array = ["RENAME","REPLACE","SKIP"];
          var pick:int = opts.indexOf(this.choiceFor(param1).toUpperCase());
-         var sw:Number = this.segWidth(opts);
-         var sx:Number = Math.max(tag.x + tag.width + 10,param4 + param6 - sw - 4);
-         k.segments(this,sx,ay,opts,pick,"choice",k.u(26));
+         var right:Number = param4 + param6 - 4;
+         var note:String = "Name already used";
+         var segPad:Number = 20;
+         var segSpace:Number = 1.2;
+         // The large movie's wider face runs out of room first: tighter segments, then a
+         // shorter note, so the choice never leaves the card.
+         var probe:TextField = k.text(13,HsbKit.ORANGE,true);
+         k.put(probe,note);
+         k.fit(probe);
+         var room:Number = right - (param4 + 2 + probe.width + 10);
+         if(k.segmentsWidth(opts) > room) { segPad = 14; segSpace = 0.6; }
+         if(k.segmentsWidth(opts,segPad,segSpace) > room) { note = "Name used"; }
+         var tag:TextField = k.label(this,param4 + 2,ay + 4,note,13,HsbKit.ORANGE,true);
+         var sw:Number = k.segmentsWidth(opts,segPad,segSpace);
+         var sx:Number = Math.max(tag.x + tag.width + 10,right - sw);
+         k.segments(this,sx,ay,opts,pick,"choice",k.u(26),true,segPad,segSpace);
          // segments() records each option with its index; the pill index rides in the id.
          var i:int = this.hits.length - 1;
          var n:int = 0;
@@ -455,20 +487,6 @@ package
             i--;
             n++;
          }
-      }
-
-      private function segWidth(param1:Array):Number
-      {
-         var total:Number = 0;
-         var t:TextField = this.kit.text(12,0,true,1.2);
-         var i:int = 0;
-         while(i < param1.length)
-         {
-            this.kit.put(t,String(param1[i]));
-            total += Math.max(4,t.textWidth + 6) + 20;
-            i++;
-         }
-         return total;
       }
 
       // ---- input ---------------------------------------------------------------------------

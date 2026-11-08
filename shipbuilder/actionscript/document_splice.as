@@ -97,5 +97,17 @@ package
       //       }
       //       // vanilla body stays here
       //    }
+      //
+      // 6. OnLeftStickInput returns Boolean. While Horizon captures input, return true
+      //    before the vanilla body so the stick does not scroll the hidden palette or
+      //    Flight Check list behind a Horizon popup. Keep the vanilla body otherwise.
+      //    public function OnLeftStickInput(param1:Number, param2:Number, param3:Number, param4:Boolean, param5:Boolean, param6:uint):Boolean
+      //    {
+      //       if(this.hsb != null && this.hsb.wantsStick())
+      //       {
+      //          return true;
+      //       }
+      //       // vanilla body stays here
+      //    }
    }
 }
