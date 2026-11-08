@@ -4,8 +4,9 @@ package
    // Splice the steps below into BOTH vanilla movies:
    // spaceshipeditormenu.swf and spaceshipeditormenu_lrg.swf.
    // Keep the vanilla document class. Do not replace either movie with a new one.
-   // Compile HorizonShipBuilder.as and HorizonShipBuilderProbe.as against the classes
-   // already in that vanilla movie, including Shared.AS3.Data.BSUIDataManager.
+   // Compile every .as file in this folder except this one (HorizonShipBuilder, Hsb*, and
+   // HorizonShipBuilderProbe) against the classes already in that vanilla movie, including
+   // Shared.AS3.Data.BSUIDataManager and Shared.AS3.Events.CustomEvent.
    public class HorizonShipBuilderSpliceNotes
    {
       // 1. Put both scripts in the same script list as the document class.
@@ -74,10 +75,20 @@ package
       //       if(this.hsb != null) { this.hsb.saved(param1); }
       //    }
       //
-      // 5. ProcessUserEvent returns Boolean. When Arrange or Settings is open,
-      //    return true before the vanilla body so Esc does not open the exit
-      //    confirm. Do not return early on the default path. Let the vanilla
-      //    body keep running then.
+      //    public function hsbTakeFiles():String
+      //    {
+      //       return this.hsb != null ? this.hsb.takeFiles() : "";
+      //    }
+      //
+      //    public function hsbFiles(param1:String):void
+      //    {
+      //       if(this.hsb != null) { this.hsb.files(param1); }
+      //    }
+      //
+      // 5. ProcessUserEvent returns Boolean. While a Horizon popup, dialog, text
+      //    field or Arrange is open, return true before the vanilla body so Esc
+      //    does not open the exit confirm. Do not return early on the default
+      //    path. Let the vanilla body keep running then.
       //    public function ProcessUserEvent(param1:String, param2:Boolean):Boolean
       //    {
       //       if(this.hsb != null && this.hsb.wantsEvent(param1, param2))

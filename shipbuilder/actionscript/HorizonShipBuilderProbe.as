@@ -705,14 +705,16 @@ package
       
       private function urlOf(param1:Object):String
       {
+         var url:String = "";
          try
          {
-            return String(param1.loaderInfo.url);
+            url = String(param1.loaderInfo.url);
          }
          catch(err:Error)
          {
-            return "";
+            url = "";
          }
+         return url;
       }
       
       private function note(param1:String):void

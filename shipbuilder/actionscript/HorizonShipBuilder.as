@@ -1,190 +1,193 @@
 package
 {
    import Shared.AS3.Data.BSUIDataManager;
+   import Shared.AS3.Events.CustomEvent;
    import Shared.GlobalFunc;
    import flash.display.DisplayObject;
    import flash.display.DisplayObjectContainer;
-   import flash.display.InteractiveObject;
-   import flash.display.Shape;
+   import flash.display.Graphics;
    import flash.display.Sprite;
    import flash.events.Event;
-   import flash.events.MouseEvent;
    import flash.geom.Point;
-   import flash.geom.Rectangle;
    import flash.text.TextField;
-   import flash.text.TextFieldType;
    import flash.text.TextFormat;
    import flash.utils.getDefinitionByName;
-   
+
+   // Purpose: Horizon Ship Builder 0.2. Draws the whole builder interface from the approved gold
+   //    mockups and drives the game's own builder underneath it. The vanilla panels stay alive at
+   //    alpha 0 so their data, focus, controller routing and engine events keep working.
+   // Inputs: the vanilla menu object (host); game data feeds through BSUIDataManager; pointer,
+   //    wheel, key and character tokens fed by HorizonShipBuilder.dll (feed); settings from the
+   //    DLL (apply); file replies (files); controller events through wantsEvent.
+   // Outputs: game events (BSUIDataManager.dispatchEvent); log, state, hot-rectangle and
+   //    setting lines for the DLL (takeLines); file requests (takeFiles).
+   // Dependencies: the vanilla SpaceshipEditorMenu document class (spliced, see
+   //    document_splice.as), HsbKit, HsbBox, HsbBrowser, HsbSettings, HsbPillModel, HsbPillEditor,
+   //    HsbPillImport, HsbDialog, HsbColors, HsbFlight, HsbArrange, HsbJson,
+   //    HorizonShipBuilderProbe (debug only).
+   // Why the pointer comes from the DLL: in-game logs (p5) showed presses over the ship view go
+   //    to the editor before Scaleform, so Scaleform CLICK never fired on Horizon controls. The
+   //    DLL feeds every pointer event and swallows the ones over the rectangles we publish.
+   // Author: Moragar. Last modified: 2026-11-07.
    public class HorizonShipBuilder extends Sprite
    {
-      private static const ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
-      private static const IDS:Array = ["Power","Module","Credits","Browser","Stats","Hints","Cluster"];
-      private static const FIXED:Array = ["FlightCheck_mc","SystemUpgrade_mc","ExitConfirmation_mc","ShipRename_mc","RepairMeter_mc","ColorPicker_mc","Background_mc","MessagePopup_mc"];
+      internal static const VERSION:String = "0.2.0.0";
+      internal static const ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
+      internal static const PANELS:Array = ["Power","Module","Credits","Browser","Stats","Hints","Cluster"];
       // Mapped names go through the game's font library. The log names a candidate by index only.
       private static const FACES:Array = ["$NB_Grotesk_Semibold","$MAIN_Font_Bold","$MAIN_Font"];
       private static const NO_FACE:String = "$Horizon_NoSuchFace_x";
-      
+      // Vanilla clips each Horizon panel stands in for.
+      private static const COVERS:Object = {
+         "Power":["PowerAllocation_mc","ReactorStats_mc","EquipmentStat_mc"],
+         "Module":["ModuleInfoCard_mc"],
+         "Credits":["CostSummary_mc"],
+         "Browser":["ModulePalette_mc"],
+         "Stats":["ShipStatsFooter_mc","StatFooterBar_mc"],
+         "Hints":["ButtonBar_mc"],
+         "Colors":["ColorPicker_mc"],
+         "Flight":["FlightCheck_mc"]
+      };
+      private static const LOG_CAP:int = 200;
+      // A cancel or accept can arrive both as a DLL key token and as the game's own event.
+      private static const DOUBLE_FRAMES:int = 6;
+
       private var host:Object;
+      internal var kit:HsbKit;
       private var lines:Array;
+      private var fileOut:Array;
+      private var fileWait:Object;
+      private var fileSeq:int;
       private var probe:HorizonShipBuilderProbe;
-      private var cards:Array;
-      private var mapped:Boolean;
-      private var conflict:Boolean;
-      private var accent:int;
-      private var accentHex:String;
-      private var core:Boolean;
-      private var margin:int;
-      private var lrg:Boolean;
-      private var bodyPx:int;
-      private var face:String;
-      private var faceEmbed:Boolean;
-      private var facePick:String;
-      private var faceTries:int;
-      private var texts:Array;
-      private var notedFaces:int;
-      private var pt:Point;
-      private var gear:Sprite;
-      private var titleT:TextField;
-      private var setLayer:Sprite;
-      private var setOpen:Boolean;
-      private var hexBox:TextField;
-      private var focusBack:InteractiveObject;
-      private var heldEvents:Object;
-      private var arrLayer:Sprite;
-      private var arranging:Boolean;
-      private var armed:Boolean;
-      private var ignorePress:Boolean;
-      private var dragId:String;
-      private var dragDx:Number;
-      private var dragDy:Number;
-      private var sel:String;
-      private var barDx:Number;
-      private var barDy:Number;
-      private var openBarX:Number;
-      private var openBarY:Number;
-      private var openLay:Object;
-      private var barDrag:Boolean;
-      private var barGx:Number;
-      private var barGy:Number;
-      private var snap:Array;
-      private var vis:Array;
-      private var homes:Array;
-      private var lay:Object;
-      private var pendingSave:Boolean;
-      private var keysOn:Boolean;
       private var frameN:int;
-      private var banner:TextField;
-      private var notedMap:Boolean;
-      private var fades:Array;
-      private var pill:Sprite;
-      private var modCard:Sprite;
-      private var modLines:Shape;
-      private var modHead:TextField;
-      private var modName:TextField;
-      private var modDesc:TextField;
-      private var modValueL:TextField;
-      private var modMassL:TextField;
-      private var modValue:TextField;
-      private var modMass:TextField;
-      private var modRows:Array;
-      private var modSkills:Array;
-      private var modData:Object;
-      private var modNative:DisplayObject;
-      private var modAlpha:Number;
-      private var modOn:Boolean;
-      private var modWhy:String;
-      private var modFacts:String;
-      private var modTint:uint;
-      private var modFailed:Boolean;
-      private var modView:Object;
-      private var modVals:Array;
-      private var modValsKey:String;
-      private var modValsSaid:String;
-      private var modValsLeft:int;
-      private var modHigh:Number;
-      private var liftView:Object;
-      private var liftParent:DisplayObjectContainer;
-      private var liftTop:Number;
-      private var liftLow:Number;
-      
+      private var faceTries:int;
+      private var facePick:String;
+      private var debugOn:Boolean;
+
+      internal var accent:int = 9;
+      internal var accentHex:String = "";
+      internal var follow:Boolean = false;
+      internal var coreFound:Boolean = false;
+      internal var coreAccent:int = -1;
+      internal var coreHex:String = "";
+      internal var opacity:Number = 1;
+      internal var margin:int = 34;
+      internal var uiScale:Number = 1;
+      internal var density:String = "compact";
+      internal var byMaker:Boolean = false;
+      internal var rememberLayout:Boolean = true;
+      internal var startOpen:Object;
+      internal var autoFlight:Boolean = true;
+      internal var columnSets:Object;
+      internal var keyHide:String = "H";
+      internal var keyFind:String = "/";
+      internal var keyArrange:String = "L";
+      internal var showConflict:Boolean = true;
+      internal var conflict:Boolean = false;
+      internal var starFiles:Boolean = false;
+      internal var lay:Object;
+      internal var barDx:Number = 0;
+      internal var barDy:Number = 0;
+      private var applied:Boolean;
+      private var saveNote:String = "";
+
+      internal var collapsed:Object;
+      internal var hideAll:Boolean = false;
+      private var bannerGone:Boolean = false;
+      private var stoodDown:Boolean = false;
+
+      internal var dPower:Object;
+      internal var dStats:Object;
+      internal var dCost:Object;
+      internal var dModule:Object;
+      internal var dVariant:Object;
+      internal var dHelp:Array;
+      internal var dControls:Array;
+      internal var padUi:uint = 0;
+      internal var dFlight:Object;
+      internal var dColorInit:Object;
+      internal var dColorSel:Object;
+      internal var dStatic:Object;
+      internal var dHangar:Object;
+
+      private var power:HsbBox;
+      private var card:HsbBox;
+      private var cluster:HsbBox;
+      private var credits:HsbBox;
+      private var stats:HsbBox;
+      private var hints:HsbBox;
+      private var notice:HsbBox;
+      internal var browser:HsbBrowser;
+      internal var colors:HsbColors;
+      internal var flight:HsbFlight;
+      internal var pills:HsbPillModel;
+      private var layer:Sprite;
+      private var popLayer:Sprite;
+      private var pops:Array;
+      private var arrange:HsbArrange;
+
+      private var vis:Object;
+      private var covered:Object;
+      private var dirty:Object;
+      private var hot:String = "";
+      private var heldEvents:Object;
+      private var lastCancel:int = -100;
+      private var lastOk:int = -100;
+      private var dragBox:HsbBox;
+      private var textOwner:HsbBox;
+      private var pointerX:Number = -1;
+      private var pointerY:Number = -1;
+      private var hoverBox:HsbBox;
+      private var leaks:int = 0;
+
       public function HorizonShipBuilder(param1:Object)
       {
          super();
          this.host = param1;
          this.lines = [];
-         this.cards = [];
-         this.mapped = false;
-         this.conflict = false;
-         this.accent = 9;
-         this.accentHex = "";
-         this.core = false;
-         this.margin = 34;
-         this.lrg = false;
-         this.bodyPx = 13;
-         this.face = "";
-         this.faceEmbed = false;
-         this.facePick = "0";
-         this.faceTries = 0;
-         this.texts = [];
-         this.notedFaces = 0;
-         this.pt = new Point();
-         this.setOpen = false;
-         this.heldEvents = {};
-         this.arranging = false;
-         this.armed = false;
-         this.ignorePress = false;
-         this.dragId = "";
-         this.sel = "";
-         this.barDx = 0;
-         this.barDy = 0;
-         this.openBarX = 0;
-         this.openBarY = 0;
-         this.openLay = {};
-         this.barDrag = false;
-         this.snap = [];
-         this.vis = [];
-         this.homes = [];
-         this.lay = {};
-         this.pendingSave = false;
-         this.keysOn = true;
+         this.fileOut = [];
+         this.fileWait = {};
+         this.fileSeq = 0;
          this.frameN = 0;
-         this.notedMap = false;
-         this.fades = [];
-         this.modRows = [];
-         this.modSkills = [];
-         this.modAlpha = 1;
-         this.modOn = false;
-         this.modWhy = "";
-         this.modFacts = "";
-         this.modTint = 0;
-         this.modFailed = false;
-         this.modView = null;
-         this.modVals = [];
-         this.modValsKey = "";
-         this.modValsSaid = "";
-         this.modValsLeft = 24;
-         this.modHigh = 0;
-         this.liftView = null;
-         this.liftParent = null;
-         this.liftTop = 0;
-         this.liftLow = 0;
+         this.faceTries = 0;
+         this.facePick = "0";
+         this.debugOn = false;
+         this.startOpen = {"Power":true,"Module":true,"Credits":true,"Browser":true,"Stats":true,"Hints":true};
+         this.columnSets = {};
+         this.lay = {};
+         this.collapsed = {};
+         this.vis = {};
+         this.covered = {};
+         this.dirty = {};
+         this.pops = [];
+         this.heldEvents = {};
+         this.dHelp = [];
+         this.dControls = [];
+         // Boxes are mouse targets so Scaleform sees Horizon as the topmost entity under the
+         // pointer; nothing listens to Scaleform mouse events (the DLL feeds the pointer).
          this.mouseEnabled = false;
          this.mouseChildren = true;
          addEventListener(Event.ADDED_TO_STAGE,this.onStage);
       }
-      
+
+      // Purpose: handshake. The DLL drives this movie only when the reply starts with "0.2".
+      // Inputs: none. Outputs: the movie version. Dependencies: none.
       public function ping():String
       {
-         return "0.1.1.0";
+         return VERSION;
       }
-      
+
+      // Purpose: report the stage size for the DLL's window map log line.
+      // Inputs: none. Outputs: "stage=WxH view=x,y,w,h". Dependencies: stage, visibleRect.
       public function stageBox():String
       {
          if(stage == null) { return "stage=0x0"; }
-         return "stage=" + stage.stageWidth + "x" + stage.stageHeight;
+         return "stage=" + stage.stageWidth + "x" + stage.stageHeight + " view=" + this.viewText();
       }
-      
+
+      // Purpose: hand queued lines to the DLL once per frame. The first line is always STATE;
+      //    HOT follows when the swallowed rectangles changed.
+      // Inputs: none. Outputs: newline-joined lines. Dependencies: the DLL's AdvanceFrame poll.
       public function takeLines():String
       {
          this.pushState();
@@ -192,10 +195,49 @@ package
          this.lines = [];
          return text;
       }
-      
+
+      // Purpose: hand queued file requests (pill and scheme files) to the DLL.
+      // Inputs: none. Outputs: tab-separated request lines; contents escaped (\\ \n \t).
+      // Dependencies: the DLL's file job, which only touches the builder's own folders.
+      public function takeFiles():String
+      {
+         var text:String = this.fileOut.join("\n");
+         this.fileOut = [];
+         return text;
+      }
+
+      // Purpose: receive file replies. Each line is "id<TAB>ok<TAB>payload".
+      // Inputs: reply text from the DLL. Outputs: calls the waiting callback.
+      // Dependencies: requests queued by fileOp.
+      public function files(param1:String):void
+      {
+         if(param1 == null || param1.length == 0) { return; }
+         var rows:Array = param1.split("\n");
+         var i:int = 0;
+         while(i < rows.length)
+         {
+            var parts:Array = String(rows[i]).split("\t");
+            if(parts.length >= 2)
+            {
+               var id:String = String(parts[0]);
+               var cb:Function = this.fileWait[id] as Function;
+               delete this.fileWait[id];
+               if(cb != null)
+               {
+                  try { cb(String(parts[1]) == "1",parts.length > 2 ? unescapeText(String(parts.slice(2).join("\t"))) : ""); }
+                  catch(err:Error) { this.note("FILE reply failed " + err.errorID); }
+               }
+            }
+            i++;
+         }
+      }
+
+      // Purpose: turn on the debug probe (Probe=1 in the user ini).
+      // Inputs: 1 to enable. Outputs: none. Dependencies: HorizonShipBuilderProbe.
       public function setDebug(param1:Number):void
       {
          if(int(param1) != 1) { return; }
+         this.debugOn = true;
          if(this.probe == null)
          {
             this.probe = new HorizonShipBuilderProbe(this.host,true);
@@ -206,7 +248,10 @@ package
             this.probe.enableDebug();
          }
       }
-      
+
+      // Purpose: receive settings resolved by the DLL from the default and user ini files.
+      // Inputs: key=value lines (see BuildApply in probe.cpp). Unknown keys are kept as layout.
+      // Outputs: redraws with the new settings. Dependencies: none.
       public function apply(param1:String):void
       {
          if(param1 == null) { return; }
@@ -216,28 +261,28 @@ package
          {
             var line:String = String(rows[i]);
             var eq:int = line.indexOf("=");
-            if(eq > 0)
-            {
-               var key:String = line.substring(0,eq);
-               var val:String = line.substring(eq + 1);
-               if(key == "accent") { this.accent = int(val); }
-               else if(key == "hex") { this.accentHex = val == "-" ? "" : val; }
-               else if(key == "core") { this.core = val == "1"; }
-               else if(key == "probe") { if(val == "1") { this.setDebug(1); } }
-               else if(key == "margin") { this.margin = int(val); }
-               else if(key == "conflict") { if(val == "1") { this.conflict = true; } }
-               else if(key == "keys") { this.keysOn = val != "0"; }
-               else if(key == "ArrangeBarX") { this.barDx = Number(val); }
-               else if(key == "ArrangeBarY") { this.barDy = Number(val); }
-               else { this.lay[key] = val; }
-            }
+            if(eq > 0) { this.applyKey(line.substring(0,eq),line.substring(eq + 1)); }
             i++;
          }
-         if(this.accent < -1 || this.accent > 13) { this.accent = 9; }
-         this.redraw();
-         if(this.mapped) { this.placeAll(false); }
+         if(this.accent < 0 || this.accent > 13) { this.accent = 9; }
+         if(!this.applied)
+         {
+            this.applied = true;
+            var k:int = 0;
+            while(k < PANELS.length)
+            {
+               var id:String = String(PANELS[k]);
+               if(this.startOpen[id] === false) { this.collapsed[id] = true; }
+               k++;
+            }
+            this.note("SETTINGS applied scale=" + this.uiScale + " density=" + this.density + " maker=" + (this.byMaker ? 1 : 0));
+         }
+         this.restyle();
       }
-      
+
+      // Purpose: receive the DLL's input tokens for this frame.
+      // Inputs: lines "M D|U|M x y eaten", "W steps x y eaten", "K token", "C code".
+      // Outputs: drives Horizon controls. Dependencies: HOT rectangles published by pushState.
       public function feed(param1:String):void
       {
          if(param1 == null || param1.length == 0) { return; }
@@ -245,75 +290,85 @@ package
          var i:int = 0;
          while(i < rows.length)
          {
-            this.onFeed(String(rows[i]));
+            try { this.onToken(String(rows[i])); }
+            catch(err:Error) { this.note("FEED fault " + err.errorID + " at " + String(rows[i]).substr(0,2)); }
             i++;
          }
       }
-      
+
+      // Purpose: the DLL's reply after it merged SET or ARRANGE lines into the user ini.
+      // Inputs: 1 saved, 0 failed. Outputs: a note in the open popup. Dependencies: WriteIniNow.
       public function saved(param1:Number):void
       {
-         this.pendingSave = false;
-         if(int(param1) != 1 && this.arrLayer != null)
-         {
-            this.note("SAVE failed");
-         }
+         this.saveNote = int(param1) == 1 ? "" : "Could not save. Changes last until you close the game.";
+         if(int(param1) != 1) { this.note("SAVE failed"); }
+         var top:HsbBox = this.topPop();
+         if(top is HsbSettings) { (top as HsbSettings).setSaveNote(this.saveNote); }
       }
-      
-      // The game's buttons fire on release. Settings and Arrange swallow the press and act on the
-      // release. A release whose press they swallowed stays swallowed after they close, so it
-      // cannot reach the game's Cancel button.
+
+      // Purpose: the front of the vanilla ProcessUserEvent chain. While a Horizon popup, dialog,
+      //    text field or Arrange is open, every controller or key event is ours, so Esc inside a
+      //    dialog never exits the builder. A release whose press we took stays ours after close.
+      // Inputs: the event name and whether it is the press. Outputs: true when consumed.
+      // Dependencies: the splice calls this before the vanilla chain.
       public function wantsEvent(param1:String, param2:Boolean):Boolean
       {
-         var open:Boolean = this.arranging || this.setOpen;
+         var open:Boolean = this.capturing();
          if(param2)
          {
-            this.heldEvents[param1] = open;
+            this.heldEvents[param1] = open ? this.frameN : -1;
+            if(open) { this.padEvent(param1); }
             return open;
          }
-         var held:Boolean = this.heldEvents[param1] == true;
+         var pressed:int = this.heldEvents[param1] != null ? int(this.heldEvents[param1]) : -1;
          delete this.heldEvents[param1];
-         if(!open) { return held; }
-         if(param1 == "Escape" || param1 == "Cancel") { this.cancelTop(); return true; }
-         if(param1 == "Accept" || param1 == "Enter") { if(this.arranging) { this.okArrange(); } return true; }
+         var held:Boolean = pressed >= 0;
+         if(!open || !held) { return held || open; }
+         // The same key press may also have arrived as a DLL key token (cancelTop/acceptTop
+         // stamp the frame), so a release acts only when nothing acted since its press.
+         if(param1 == "Escape" || param1 == "Cancel") { if(this.lastCancel < pressed) { this.cancelTop("pad"); } return true; }
+         if(param1 == "Accept" || param1 == "Enter") { if(this.lastOk < pressed) { this.acceptTop("pad"); } return true; }
          return true;
       }
-      
+
       private function onStage(param1:Event):void
       {
          removeEventListener(Event.ADDED_TO_STAGE,this.onStage);
          var url:String = "";
          try { url = String(root.loaderInfo.url); } catch(err:Error) { url = ""; }
-         this.lrg = url.indexOf("_lrg") >= 0;
-         this.bodyPx = this.lrg ? 16 : 13;
+         this.kit = new HsbKit();
+         this.kit.lrg = url.indexOf("_lrg") >= 0;
          this.proveFace();
-         this.buildCards();
-         this.buildGear();
-         this.listenModule();
+         this.pills = new HsbPillModel();
+         this.build();
+         this.listen();
+         this.fileOp("PROFILE",["READ"],"",this.onProfile);
          stage.addEventListener(Event.ENTER_FRAME,this.onFrame);
-         this.note("BUILDER 0.1.1.0 gold lrg=" + (this.lrg ? 1 : 0));
+         this.note("BUILDER " + VERSION + " gold lrg=" + (this.kit.lrg ? 1 : 0));
       }
-      
+
       private function onFrame(param1:Event):void
       {
          this.frameN++;
-         if(this.face.length == 0 && this.faceTries < 3 && (this.frameN == 30 || this.frameN == 120))
+         if(this.kit.face.length == 0 && this.faceTries < 3 && (this.frameN == 30 || this.frameN == 120))
          {
             this.proveFace();
-            if(this.face.length > 0) { this.refreshFaces(); }
+            if(this.kit.face.length > 0) { this.kit.refreshFaces(); this.restyle(); }
          }
-         if(this.frameN < 3) { return; }
-         if(!this.arranging && !this.conflict && (!this.mapped || (this.frameN % 8) == 0)) { this.syncPanels(); }
-         this.syncModule();
+         if(this.frameN < 2) { return; }
+         try { this.adapt(); }
+         catch(err:Error) { if(this.frameN % 120 == 0) { this.note("ADAPT fault " + err.errorID); } }
       }
-      
+
       // Candidates in order: mapped names as embedded text, the face of the game's module name
       // field, then mapped names as device text. Box glyphs share one advance, so a face counts
       // only when W and i measure apart and the pair differs from a name that cannot exist.
       private function proveFace():void
       {
          this.faceTries++;
-         this.face = "";
-         this.faceEmbed = false;
+         this.kit.face = "";
+         this.kit.boldFace = "";
+         this.kit.embed = false;
          var none:Array = this.measureFace(NO_FACE,true);
          var noneDev:Array = this.measureFace(NO_FACE,false);
          var names:Array = [];
@@ -356,15 +411,21 @@ package
             if(ok && pick == "0")
             {
                pick = String(tags[k]);
-               this.face = String(names[k]);
-               this.faceEmbed = embed;
+               this.kit.face = String(names[k]);
+               this.kit.embed = embed;
             }
             k++;
          }
+         // The bold face must render the same way (embedded or device) as the body face.
+         if(this.kit.face.length > 0 && this.kit.face != String(FACES[1]))
+         {
+            var bold:Array = this.measureFace(String(FACES[1]),this.kit.embed);
+            if(this.faceProven(bold,this.kit.embed ? none : noneDev)) { this.kit.boldFace = String(FACES[1]); }
+         }
          this.facePick = pick;
-         this.note("FONT try=" + this.faceTries + " pick=" + pick + " " + report);
+         this.note("FONT try=" + this.faceTries + " pick=" + pick + " bold=" + (this.kit.boldFace.length > 0 ? 1 : 0) + " " + report);
       }
-      
+
       private function measureFace(param1:String, param2:Boolean):Array
       {
          var out:Array = [0,0,0];
@@ -388,7 +449,7 @@ package
          }
          return out;
       }
-      
+
       private function faceProven(param1:Array, param2:Array):Boolean
       {
          var wide:Number = Number(param1[0]);
@@ -401,33 +462,12 @@ package
          if(missWide > 0 && Math.abs(wide - missWide) < 0.5 && Math.abs(narrow - missNarrow) < 0.5) { return false; }
          return true;
       }
-      
+
       private function metric(param1:Array):String
       {
          return int(Number(param1[0])) + "/" + int(Number(param1[1])) + "/" + int(Number(param1[2]));
       }
-      
-      private function refreshFaces():void
-      {
-         var kept:Array = [];
-         var i:int = 0;
-         while(i < this.texts.length)
-         {
-            var box:TextField = this.texts[i] as TextField;
-            if(box != null && box.parent != null)
-            {
-               var fmt:TextFormat = box.defaultTextFormat;
-               fmt.font = this.face;
-               box.embedFonts = this.faceEmbed;
-               box.defaultTextFormat = fmt;
-               box.setTextFormat(fmt);
-               kept.push(box);
-            }
-            i++;
-         }
-         this.texts = kept;
-      }
-      
+
       private function pathField(param1:Array):TextField
       {
          var node:Object = this.host;
@@ -443,7 +483,7 @@ package
          }
          return node as TextField;
       }
-      
+
       private function fieldFace(param1:TextField):String
       {
          if(param1 == null) { return ""; }
@@ -453,1504 +493,484 @@ package
          if(fmt == null || fmt.font == null) { return ""; }
          return String(fmt.font);
       }
-      
-      // f1-f3 match a mapped candidate, x$ is another mapped name, x is a plain face, x0 has none.
-      private function faceCode(param1:TextField):String
+
+      private function applyKey(param1:String, param2:String):void
       {
-         if(param1 == null) { return "na"; }
-         var font:String = this.fieldFace(param1);
-         var at:int = FACES.indexOf(font);
-         var code:String = "x";
-         if(at >= 0) { code = "f" + (at + 1); }
-         else if(font.length == 0) { code = "x0"; }
-         else if(font.charAt(0) == "$") { code = "x$"; }
-         return code + (param1.embedFonts ? "e" : "d");
-      }
-      
-      private function rowField(param1:DisplayObjectContainer, param2:int):TextField
-      {
-         if(param1 == null || param2 > 5) { return null; }
-         var i:int = 0;
-         while(i < param1.numChildren)
+         var v:String = param2;
+         switch(param1)
          {
-            var child:DisplayObject = param1.getChildAt(i);
-            if(child is TextField && child.name == "text_tf" && child.parent != null && child.parent.name == "Text_mc" && child.parent.parent != null && child.parent.parent.name == "Module_mc") { return child as TextField; }
-            if(child is DisplayObjectContainer)
+            case "accent":
+               // AccentColor=-1 in the ini means follow the HUD's accent; the swatch shown as
+               // chosen then stays the default.
+               if(int(v) == -1) { this.follow = true; }
+               else { this.follow = false; this.accent = int(v); }
+               break;
+            case "hex": this.accentHex = v == "-" ? "" : v; break;
+            case "core": this.coreFound = v == "1"; break;
+            case "coreaccent": this.coreAccent = int(v); break;
+            case "corehex": this.coreHex = v == "-" ? "" : v; break;
+            case "probe": if(v == "1") { this.setDebug(1); } break;
+            case "margin": this.margin = clampInt(int(v),0,200); break;
+            case "conflict": if(v == "1") { this.conflict = true; } break;
+            case "starfiles": this.starFiles = v == "1"; break;
+            case "keys": if(v == "0") { this.keyArrange = "0"; } break;
+            case "opacity": this.opacity = clampNum(Number(v),0.4,1,1); break;
+            case "scale": this.uiScale = clampNum(Number(v),0.8,1.3,1); break;
+            case "density": this.density = v == "detailed" ? "detailed" : "compact"; break;
+            case "bymaker": this.byMaker = v == "1"; break;
+            case "remember": this.rememberLayout = v != "0"; break;
+            case "autoflight": this.autoFlight = v != "0"; break;
+            case "notice": this.showConflict = v != "0"; break;
+            case "keyhide": this.keyHide = v; break;
+            case "keyfind": this.keyFind = v; break;
+            case "keyarrange": this.keyArrange = v; break;
+            case "ArrangeBarX": this.barDx = Number(v); break;
+            case "ArrangeBarY": this.barDy = Number(v); break;
+            default:
+               if(param1.indexOf("panel.") == 0) { this.startOpen[param1.substring(6)] = v != "0"; }
+               else if(param1.indexOf("col.") == 0) { this.columnSets[param1.substring(4)] = v; }
+               else { this.lay[param1] = v; }
+         }
+      }
+
+      // Purpose: the accent in use. Follow uses the HUD's own index and hex (read by the DLL from
+      //    the HUD ini) when the HUD is installed; otherwise the builder's own choice.
+      // Inputs: none. Outputs: an RGB colour. Dependencies: ACCENTS (the HUD's palette order).
+      internal function accentColor():uint
+      {
+         var i:int = this.accent;
+         var hex:String = this.accentHex;
+         if(this.follow && this.coreFound && this.coreAccent >= 0)
+         {
+            i = this.coreAccent;
+            hex = this.coreHex;
+         }
+         if(i == 13 && hex.length == 6)
+         {
+            var n:int = HsbKit.parseHex(hex);
+            if(n >= 0) { return uint(n); }
+         }
+         if(i < 0 || i > 12) { i = 9; }
+         return uint(ACCENTS[i]);
+      }
+
+      // Re-applies colours, opacity and scale everywhere after a settings change.
+      internal function restyle():void
+      {
+         if(this.kit == null) { return; }
+         this.kit.accent = this.accentColor();
+         this.kit.opacity = 0.94 * this.opacity;
+         this.markAll();
+      }
+
+      internal function markAll():void
+      {
+         this.dirty = {"Power":true,"Module":true,"Credits":true,"Browser":true,"Stats":true,"Hints":true,"Cluster":true,"Colors":true,"Flight":true,"Notice":true};
+         if(this.browser != null) { this.browser.invalidate(); }
+      }
+
+      internal function mark(param1:String):void
+      {
+         this.dirty[param1] = true;
+      }
+
+      // Purpose: queue one setting for the DLL to merge into HorizonShipBuilder.user.ini.
+      // Inputs: section, key, value (validated again by the DLL against its whitelist).
+      // Outputs: a SET line; the write happens at saveSettings. Dependencies: WriteIniNow.
+      internal function setSetting(param1:String, param2:String, param3:String):void
+      {
+         this.note("SET " + param1 + "." + param2 + "=" + param3);
+      }
+
+      internal function saveSettings():void
+      {
+         this.note("SET END");
+      }
+
+      private function build():void
+      {
+         this.layer = new Sprite();
+         this.layer.name = "HsbPanels";
+         this.layer.mouseEnabled = false;
+         this.layer.mouseChildren = true;
+         addChild(this.layer);
+         this.power = this.box("HsbPower");
+         this.card = this.box("HsbModule");
+         this.flight = new HsbFlight(this.kit,this);
+         this.layer.addChild(this.flight);
+         this.credits = this.box("HsbCredits");
+         this.cluster = this.box("HsbCluster");
+         this.browser = new HsbBrowser(this.kit,this);
+         this.layer.addChild(this.browser);
+         this.colors = new HsbColors(this.kit,this);
+         this.layer.addChild(this.colors);
+         this.hints = this.box("HsbHints");
+         this.stats = this.box("HsbStats");
+         this.notice = this.box("HsbNotice");
+         this.popLayer = new Sprite();
+         this.popLayer.name = "HsbPopups";
+         this.popLayer.mouseEnabled = false;
+         this.popLayer.mouseChildren = true;
+         addChild(this.popLayer);
+         this.restyle();
+      }
+
+      private function box(param1:String):HsbBox
+      {
+         var b:HsbBox = new HsbBox(this.kit,param1);
+         this.layer.addChild(b);
+         return b;
+      }
+
+      private function listen():void
+      {
+         this.sub("PowerAllocation",function(param1:Object):void { dPower = param1; mark("Power"); });
+         this.sub("ShipStats",function(param1:Object):void { dStats = param1; mark("Power"); mark("Stats"); mark("Module"); });
+         this.sub("CostSummaryData",function(param1:Object):void { dCost = param1; mark("Credits"); mark("Module"); browser.invalidate(); });
+         this.sub("ModuleInfo",function(param1:Object):void { dModule = param1; browser.learn(param1); mark("Module"); });
+         this.sub("ModuleVariant",function(param1:Object):void { dVariant = param1; mark("Module"); browser.invalidate(); });
+         this.sub("ShipBuilderHelpList",function(param1:Object):void { dHelp = param1.aHelpList as Array; if(dHelp == null) { dHelp = []; } mark("Hints"); });
+         this.sub("ControlMapData",function(param1:Object):void { dControls = param1.vMappedEvents as Array; if(dControls == null) { dControls = []; } padUi = uint(param1.uiController); markAll(); });
+         this.sub("FlightCheckData",function(param1:Object):void { dFlight = param1; mark("Flight"); });
+         this.sub("ColorInitializationData",function(param1:Object):void { dColorInit = param1; colors.onInit(param1); mark("Colors"); });
+         this.sub("ColorSelectionData",function(param1:Object):void { dColorSel = param1; colors.onSelection(param1); mark("Colors"); });
+         this.sub("ColorSwatchesRecentUI",function(param1:Object):void { colors.onRecent(param1.aSwatches as Array); mark("Colors"); });
+         this.sub("ColorSwatchesHue",function(param1:Object):void { colors.onGradient(0,param1.aSwatches as Array); mark("Colors"); });
+         this.sub("ColorSwatchesSaturation",function(param1:Object):void { colors.onGradient(1,param1.aSwatches as Array); mark("Colors"); });
+         this.sub("ColorSwatchesBrightness",function(param1:Object):void { colors.onGradient(2,param1.aSwatches as Array); mark("Colors"); });
+         this.sub("StaticData",function(param1:Object):void { dStatic = param1; });
+         this.sub("HangarData",function(param1:Object):void { dHangar = param1; });
+         this.sub("PartEntries",function(param1:Object):void { browser.onParts(param1); });
+         this.sub("UpgradeEntries",function(param1:Object):void { browser.onParts(param1); });
+      }
+
+      // Every feed is wrapped: one failing panel must not stop the others or the vanilla menu.
+      private function sub(param1:String, param2:Function):void
+      {
+         var self:HorizonShipBuilder = this;
+         try
+         {
+            BSUIDataManager.Subscribe(param1,function(param3:Object):void
             {
-               var hit:TextField = this.rowField(child as DisplayObjectContainer,param2 + 1);
-               if(hit != null) { return hit; }
-            }
-            i++;
+               var data:Object = null;
+               try { data = param3.data; } catch(err:Error) { data = null; }
+               if(data == null) { return; }
+               try { param2(data); }
+               catch(err2:Error) { self.note("FEED " + param1 + " fault " + err2.errorID); }
+            });
          }
-         return null;
-      }
-      
-      private function noteFaces(param1:String):void
-      {
-         var entries:DisplayObjectContainer = null;
-         try { entries = this.host["ModulePalette_mc"]["ModuleEntries_mc"] as DisplayObjectContainer; } catch(err:Error) { entries = null; }
-         var line:String = "FONTSRC " + param1 + " pick=" + this.facePick;
-         line += " name=" + this.faceCode(this.pathField(["ModuleInfoCard_mc","ModuleLabel_mc","text_tf"]));
-         line += " stat=" + this.faceCode(this.pathField(["ModuleInfoCard_mc","InfoCardContent_mc","StatEntry1_mc","StatLabel_mc","text_tf"]));
-         line += " desc=" + this.faceCode(this.pathField(["ModuleInfoCard_mc","InfoCardContent_mc","Description_mc","text_tf"]));
-         line += " head=" + this.faceCode(this.pathField(["ModulePalette_mc","ModuleHeader_mc","Text_mc","text_tf"]));
-         line += " row=" + this.faceCode(this.rowField(entries,0));
-         this.note(line);
-      }
-      
-      private function buildCards():void
-      {
-         var i:int = 0;
-         while(i < IDS.length)
+         catch(err3:Error)
          {
-            var card:Sprite = new Sprite();
-            card.name = "Hsb" + String(IDS[i]);
-            var gameCard:Boolean = this.followsGame(String(IDS[i]));
-            card.mouseEnabled = !gameCard;
-            card.mouseChildren = !gameCard;
-            addChild(card);
-            var title:TextField = this.makeText(this.panelLabel(String(IDS[i])),16,12,330,22,this.bodyPx,this.accentColor());
-            card.addChild(title);
-            this.cards.push({"id":String(IDS[i]),"card":card,"title":title,"clip":null,"hx":0,"hy":0,"cx":0,"cy":0});
-            i++;
+            this.note("LISTEN miss " + param1);
          }
-         this.redraw();
       }
-      
-      private function buildGear():void
+
+      // Purpose: send one event to the game, exactly as the vanilla controls do.
+      // Inputs: event name and its parameter object. Outputs: none.
+      // Dependencies: BSUIDataManager.dispatchEvent and Shared.AS3.Events.CustomEvent.
+      internal function send(param1:String, param2:Object):void
       {
-         var cluster:Object = this.cardBy("Cluster");
-         if(cluster == null) { return; }
-         var box:Sprite = cluster.card as Sprite;
-         box.mouseEnabled = true;
-         box.mouseChildren = true;
-         this.gear = new Sprite();
-         this.gear.name = "HsbGear";
-         this.gear.buttonMode = true;
-         this.gear.x = 0;
-         this.gear.y = 0;
-         this.gear.addEventListener(MouseEvent.CLICK,this.onGear);
-         box.addChild(this.gear);
-         var hide:TextField = this.makeText("HIDE ALL",52,10,140,22,this.bodyPx,0xF4F0E4);
-         hide.name = "HsbHide";
-         hide.mouseEnabled = false;
-         hide.visible = false;
-         box.addChild(hide);
-         this.paintGear();
+         try
+         {
+            BSUIDataManager.dispatchEvent(new CustomEvent(param1,param2));
+            if(this.debugOn) { this.note("SEND " + param1); }
+         }
+         catch(err:Error)
+         {
+            this.note("SEND fault " + param1 + " " + err.errorID);
+         }
       }
-      
-      private function paintGear():void
+
+      internal function sendHint(param1:String):void
       {
-         if(this.gear == null) { return; }
-         var g:* = this.gear.graphics;
-         g.clear();
-         var c:uint = this.accentColor();
-         g.lineStyle(1.5,c,1);
-         g.beginFill(0x121610,0.92);
-         g.drawRoundRect(0,0,38,38,10,10);
-         g.endFill();
-         g.drawCircle(19,19,6);
-         var i:int = 0;
-         while(i < 8)
-         {
-            var a:Number = i * 3.14159265 / 4;
-            g.moveTo(19 + Math.cos(a) * 8,19 + Math.sin(a) * 8);
-            g.lineTo(19 + Math.cos(a) * 12,19 + Math.sin(a) * 12);
-            i++;
-         }
-         g.lineStyle();
+         if(param1 == null || param1.length == 0) { return; }
+         this.send("ShipEditor_OnHintButtonActivated",{"buttonAction":param1});
       }
-      
-      private function onGear(param1:MouseEvent):void
-      {
-         if(this.arranging || this.conflict) { return; }
-         this.openSettings();
-      }
-      
-      private function syncPanels():void
-      {
-         if(!this.mapped)
-         {
-            var found:Array = [];
-            this.collect(this.host as DisplayObjectContainer,0,found);
-            this.inventory(found);
-            if(this.otherBuilder(found))
-            {
-               this.conflict = true;
-               this.showBanner("Another ship builder mod is loaded. Horizon Ship Builder is standing aside.");
-               this.note("CONFLICT step-aside");
-               var i0:int = 0;
-               while(i0 < this.cards.length)
-               {
-                  (this.cards[i0].card as Sprite).visible = false;
-                  i0++;
-               }
-               this.mapped = true;
-               return;
-            }
-         }
-         var report:String = "";
-         var i:int = 0;
-         while(i < IDS.length)
-         {
-            var id:String = String(IDS[i]);
-            var row:Object = this.cardBy(id);
-            if(id == "Cluster")
-            {
-               i++;
-               continue;
-            }
-            var clip:DisplayObject = this.clipByName(id);
-            if(report.length > 0) { report += ","; }
-            report += id + "=" + (clip != null && clip.name != null ? clip.name : "none");
-            this.release(row);
-            this.strokeBehind(this.clipLive(clip) ? clip : null,id);
-            this.captureHome(row,clip);
-            i++;
-         }
-         this.applyNativeAnchors();
-         this.dressInteriors();
-         this.strokeHangar();
-         if(!this.mapped) { this.note("MAP " + report); }
-         if(this.notedFaces == 0)
-         {
-            this.notedFaces = 1;
-            this.noteFaces("map");
-         }
-         if(this.notedFaces == 1 && this.clipLive(this.clipByName("Module")))
-         {
-            this.notedFaces = 2;
-            this.noteFaces("card");
-         }
-         this.mapped = true;
-         this.redraw();
-      }
-      
-      private function otherBuilder(param1:Array):Boolean
+
+      // Purpose: find the event of a hint the game shows right now (for buttons that must do
+      //    exactly what a game hint does, such as accepting colours).
+      // Inputs: candidate event names in order of preference. Outputs: the first displayed
+      //    hint's event that matches, or "" when the game shows none of them.
+      // Dependencies: ShipBuilderHelpList (dHelp).
+      internal function hintEvent(param1:Array):String
       {
          var i:int = 0;
          while(i < param1.length)
          {
-            var name:String = String(param1[i].name).toLowerCase();
-            if(name.indexOf("starui") >= 0) { return true; }
-            i++;
-         }
-         return false;
-      }
-      
-      private function collect(param1:DisplayObjectContainer, param2:int, param3:Array):void
-      {
-         if(param1 == null || param2 > 5) { return; }
-         var i:int = 0;
-         while(i < param1.numChildren)
-         {
-            var child:DisplayObject = param1.getChildAt(i);
-            if(child != this && child.name != null && child.name.indexOf("Hsb") != 0)
+            var k:int = 0;
+            while(this.dHelp != null && k < this.dHelp.length)
             {
-               var w:Number = child.width;
-               var h:Number = child.height;
-               if(w > 40 && h > 24)
-               {
-                  param3.push({"clip":child,"name":child.name,"w":w,"h":h});
-               }
-               if(child is DisplayObjectContainer) { this.collect(child as DisplayObjectContainer,param2 + 1,param3); }
+               var hint:Object = this.dHelp[k];
+               if(hint != null && hint.bDisplayed != false && String(hint.sEvent) == String(param1[i])) { return String(hint.sEvent); }
+               k++;
             }
-            i++;
-         }
-      }
-      
-      private function panelLabel(param1:String):String
-      {
-         if(param1 == "Module") { return "SELECTED MODULE"; }
-         if(param1 == "Browser") { return "PARTS BROWSER"; }
-         if(param1 == "Cluster") { return "TOP CLUSTER"; }
-         return param1.toUpperCase();
-      }
-      
-      private function aliases(param1:String):Array
-      {
-         if(param1 == "Power") { return ["PowerAllocation_mc"]; }
-         if(param1 == "Module") { return ["ModuleInfoCard_mc"]; }
-         if(param1 == "Credits") { return ["CostSummary_mc"]; }
-         if(param1 == "Browser") { return ["ModulePalette_mc"]; }
-         if(param1 == "Stats") { return ["ShipStatsFooter_mc"]; }
-         if(param1 == "Hints") { return ["ButtonBar_mc"]; }
-         return [];
-      }
-      
-      // Game clips stay on the menu. Removing the parts list from the stage can drop its rows.
-      private function followsGame(param1:String):Boolean
-      {
-         return param1 == "Credits" || param1 == "Hints" || param1 == "Power" || param1 == "Module" || param1 == "Browser" || param1 == "Stats";
-      }
-      
-      // Credits and the button bar stay where the menu writes them.
-      // The other live panels and the gear move in place.
-      private function panelMovable(param1:String):Boolean
-      {
-         return param1 == "Power" || param1 == "Module" || param1 == "Browser" || param1 == "Stats" || param1 == "Cluster";
-      }
-      
-      private function liveBounds(param1:String):Rectangle
-      {
-         if(!this.panelMovable(param1)) { return null; }
-         if(param1 == "Cluster")
-         {
-            var rowC:Object = this.cardBy("Cluster");
-            if(rowC == null) { return null; }
-            var cardC:Sprite = rowC.card as Sprite;
-            if(cardC == null || !cardC.visible) { return null; }
-            return cardC.getBounds(this);
-         }
-         if(param1 == "Module" && this.modOn && this.modCard != null && this.modCard.parent != null && this.modCard.visible)
-         {
-            return this.modCard.getBounds(this);
-         }
-         var clip:DisplayObject = this.clipByName(param1);
-         if(!this.clipLive(clip)) { return null; }
-         return clip.getBounds(this);
-      }
-      
-      private function eligible(param1:String):Boolean
-      {
-         var box:Rectangle = this.liveBounds(param1);
-         return box != null && box.width >= 24 && box.height >= 24;
-      }
-      
-      private function defaultSel():String
-      {
-         var i:int = 0;
-         while(i < IDS.length)
-         {
-            if(this.eligible(String(IDS[i]))) { return String(IDS[i]); }
             i++;
          }
          return "";
       }
-      
-      private function captureHome(param1:Object, param2:DisplayObject):void
+
+      internal function hostClip():Object
       {
-         if(param1 == null || param1.homed == true) { return; }
-         if(!this.panelMovable(String(param1.id)) || String(param1.id) == "Cluster") { return; }
-         if(!this.clipLive(param2)) { return; }
-         param1.homeX = param2.x;
-         param1.homeY = param2.y;
-         param1.homed = true;
+         return this.host;
       }
-      
-      private function moveNative(param1:DisplayObject, param2:Number, param3:Number):void
+
+      // Purpose: tell whether a Horizon key is also mapped by the game in this menu.
+      // Inputs: a one-character key label. Outputs: the game's event name, or "" when free.
+      // Dependencies: ControlMapData (dControls); keyboard names only.
+      internal function keyClash(param1:String):String
       {
-         if(param1 == null) { return; }
-         var parent:DisplayObjectContainer = param1.parent as DisplayObjectContainer;
-         if(parent == null) { return; }
-         var origin:Point = parent.globalToLocal(this.localToGlobal(new Point(0,0)));
-         var shifted:Point = parent.globalToLocal(this.localToGlobal(new Point(param2,param3)));
-         param1.x += shifted.x - origin.x;
-         param1.y += shifted.y - origin.y;
-      }
-      
-      private function clipByName(param1:String):DisplayObject
-      {
-         var names:Array = this.aliases(param1);
-         var n:int = 0;
-         while(n < names.length)
-         {
-            var name:String = String(names[n]);
-            var direct:DisplayObject = null;
-            try { direct = this.host[name] as DisplayObject; } catch(err:Error) { direct = null; }
-            if(direct != null) { return direct; }
-            var walked:DisplayObject = this.findDeep(this.host as DisplayObjectContainer,name,0);
-            if(walked != null) { return walked; }
-            n++;
-         }
-         return null;
-      }
-      
-      private function findDeep(param1:DisplayObjectContainer, param2:String, param3:int):DisplayObject
-      {
-         if(param1 == null || param3 > 6) { return null; }
+         if(param1 == null || param1.length != 1 || param1 == "0" || this.dControls == null || this.padUi > 0) { return ""; }
+         var want:String = param1.toUpperCase();
          var i:int = 0;
-         while(i < param1.numChildren)
+         while(i < this.dControls.length)
          {
-            var child:DisplayObject = param1.getChildAt(i);
-            if(child.name == param2) { return child; }
-            if(child is DisplayObjectContainer)
+            var row:Object = this.dControls[i];
+            if(row != null && pcLabel(String(row.strButtonName)).toUpperCase() == want) { return String(row.strUserEventName); }
+            i++;
+         }
+         return "";
+      }
+
+      // The character code the DLL watches for a Horizon key; 0 when off or taken by the game.
+      private function keyCode(param1:String):int
+      {
+         if(param1 == null || param1.length != 1 || param1 == "0") { return 0; }
+         if(this.keyClash(param1).length > 0) { return 0; }
+         return param1.toUpperCase().charCodeAt(0);
+      }
+
+      // The key name the game shows for an event, from the live control map (as ButtonKeyHelper).
+      internal function keyName(param1:String):String
+      {
+         if(param1 == null || this.dControls == null) { return ""; }
+         var pad:Boolean = this.padUi > 0;
+         var i:int = 0;
+         while(i < this.dControls.length)
+         {
+            var row:Object = this.dControls[i];
+            if(row != null && String(row.strUserEventName) == param1)
             {
-               var hit:DisplayObject = this.findDeep(child as DisplayObjectContainer,param2,param3 + 1);
-               if(hit != null) { return hit; }
+               var names:Array = row.aButtonName as Array;
+               var raw:String = names != null && names.length > 1 ? String(names.join("")) : String(row.strButtonName);
+               return pad ? padLabel(raw) : pcLabel(raw);
             }
             i++;
          }
-         return null;
+         return "";
       }
-      
-      private function clipLive(param1:DisplayObject):Boolean
+
+      // The game maps controller names to glyph-font letters (Xbox X is "C"); without that font
+      // the plain button name is the readable choice.
+      private static function padLabel(param1:String):String
       {
-         if(param1 == null) { return false; }
-         var node:DisplayObject = param1;
-         var guard:int = 0;
-         while(node != null && guard < 8)
-         {
-            if(!node.visible) { return false; }
-            node = node.parent;
-            guard++;
-         }
-         var box:Rectangle = null;
-         try { box = param1.getBounds(stage); } catch(err:Error) { box = null; }
-         if(box == null) { return false; }
-         if(box.width < 40 || box.height < 24) { return false; }
-         if(box.width > 1700 || box.height > 1000) { return false; }
-         return true;
+         var map:Object = {"Xenon_A":"A","Xenon_B":"B","Xenon_X":"X","Xenon_Y":"Y","Xenon_L1":"LB","Xenon_R1":"RB","Xenon_L2":"LT","Xenon_R2":"RT","Xenon_LS":"LS","Xenon_RS":"RS","Xenon_L3":"L3","Xenon_R3":"R3","Xenon_Start":"MENU","Xenon_Select":"VIEW","PSN_A":"\u2715","PSN_B":"\u25CB","PSN_X":"\u25A1","PSN_Y":"\u25B3","PSN_L1":"L1","PSN_R1":"R1","PSN_L2":"L2","PSN_R2":"R2","DPad_Left":"\u2190","DPad_Right":"\u2192","DPad_Up":"\u2191","DPad_Down":"\u2193","DPad_LR":"\u2190 \u2192","DPad_UD":"\u2191 \u2193"};
+         if(map[param1] != null) { return String(map[param1]); }
+         return param1.replace("Xenon_","").replace("PSN_","");
       }
-      
-      private function release(param1:Object):void
+
+      private static function pcLabel(param1:String):String
       {
-         var card:Sprite = param1.card as Sprite;
-         var clip:DisplayObject = param1.clip as DisplayObject;
-         if(clip != null && clip.parent == card && param1.homeParent != null)
-         {
-            card.removeChild(clip);
-            var parent:DisplayObjectContainer = param1.homeParent as DisplayObjectContainer;
-            var index:int = int(param1.homeIndex);
-            if(index < 0 || index > parent.numChildren) { index = parent.numChildren; }
-            parent.addChildAt(clip,index);
-            clip.x = Number(param1.homeX);
-            clip.y = Number(param1.homeY);
-         }
-         param1.clip = null;
-         param1.ww = 0;
-         param1.hh = 0;
-         card.visible = false;
-         card.graphics.clear();
+         var mapped:* = null;
+         try { mapped = GlobalFunc.NameToTextMap["PC" + param1]; } catch(err:Error) { mapped = null; }
+         if(mapped != null) { return String(mapped); }
+         if(param1.length == 1) { return param1.toUpperCase(); }
+         return param1;
       }
-      
-      private function strokeBehind(param1:DisplayObject, param2:String):void
+
+      private function clip(param1:String):DisplayObject
       {
-         var frameName:String = "HsbFrame" + param2;
-         if(param2 == "Module" && this.modOn) { return; }
-         if(param1 == null || param1.parent == null)
-         {
-            this.removeFrame(frameName);
-            return;
-         }
-         var parent:DisplayObjectContainer = param1.parent as DisplayObjectContainer;
-         var frame:Sprite = parent.getChildByName(frameName) as Sprite;
-         if(frame == null)
-         {
-            frame = new Sprite();
-            frame.name = frameName;
-            frame.mouseEnabled = false;
-            frame.mouseChildren = false;
-            parent.addChildAt(frame,parent.getChildIndex(param1));
-         }
-         else if(frame.parent == parent)
-         {
-            var clipAt:int = parent.getChildIndex(param1);
-            var frameAt:int = parent.getChildIndex(frame);
-            if(frameAt != clipAt - 1) { parent.setChildIndex(frame,clipAt); }
-         }
-         var box:Rectangle = param1.getBounds(parent);
-         var g:* = frame.graphics;
-         g.clear();
-         g.lineStyle(1.5,this.accentColor(),0.95);
-         g.drawRoundRect(box.x - 8,box.y - 8,box.width + 16,box.height + 16,14,14);
-         g.lineStyle();
-      }
-      
-      private function removeFrame(param1:String):void
-      {
-         var host:DisplayObjectContainer = this.host as DisplayObjectContainer;
-         var frame:DisplayObject = this.findDeep(host,param1,0);
-         if(frame != null && frame.parent != null)
-         {
-            (frame.parent as DisplayObjectContainer).removeChild(frame);
-         }
-      }
-      
-      private function strokeHangar():void
-      {
-         var hangar:DisplayObjectContainer = null;
-         try { hangar = this.host["HangarInfoPanel_mc"] as DisplayObjectContainer; } catch(err:Error) { hangar = null; }
-         if(hangar == null || !hangar.visible)
-         {
-            var n:int = 0;
-            while(n < 6)
-            {
-               this.removeFrame("Hangar" + n);
-               n++;
-            }
-            return;
-         }
-         var i:int = 0;
-         var used:int = 0;
-         while(i < hangar.numChildren && used < 6)
-         {
-            var child:DisplayObject = hangar.getChildAt(i);
-            var name:String = child.name != null ? child.name : "";
-            if(name != "ShipSelector_mc" && name.indexOf("Hsb") != 0 && this.clipLive(child))
-            {
-               var hb:Rectangle = child.getBounds(stage);
-               if(hb.width <= 700 && hb.height <= 820)
-               {
-                  this.strokeBehind(child,"Hangar" + used);
-                  used++;
-               }
-            }
-            i++;
-         }
-         while(used < 6)
-         {
-            this.removeFrame("Hangar" + used);
-            used++;
-         }
-      }
-      
-      private function taken(param1:DisplayObject):Boolean
-      {
-         var i:int = 0;
-         while(i < this.cards.length)
-         {
-            if(this.cards[i].clip == param1) { return true; }
-            i++;
-         }
-         return false;
-      }
-      
-      private function blocked(param1:DisplayObject):Boolean
-      {
-         var node:DisplayObject = param1;
-         var guard:int = 0;
-         while(node != null && guard < 8)
-         {
-            var name:String = node.name != null ? node.name : "";
-            var i:int = 0;
-            while(i < FIXED.length)
-            {
-               if(name == String(FIXED[i])) { return true; }
-               i++;
-            }
-            node = node.parent;
-            guard++;
-         }
-         return false;
-      }
-      
-      private function inventory(param1:Array):void
-      {
-         if(this.notedMap) { return; }
-         this.notedMap = true;
-         var text:String = "";
-         var i:int = 0;
-         var shown:int = 0;
-         while(i < param1.length && shown < 24)
-         {
-            var item:Object = param1[i];
-            if(Number(item.w) > 80 && Number(item.h) > 40)
-            {
-               if(text.length > 0) { text += ","; }
-               text += item.name + ":" + int(item.w) + "x" + int(item.h);
-               shown++;
-            }
-            i++;
-         }
-         this.note("CLIPS " + text);
-      }
-      
-      private function placeAll(param1:Boolean):void
-      {
-         this.applyNativeAnchors();
-      }
-      
-      private function applyNativeAnchors():void
-      {
-         var r:Object = this.view();
-         var i:int = 0;
-         while(i < IDS.length)
-         {
-            var id:String = String(IDS[i]);
-            if(id == "Cluster") { this.placeCluster(r); }
-            else if(this.panelMovable(id)) { this.placeNative(id,r); }
-            i++;
-         }
-      }
-      
-      private function placeCluster(param1:Object):void
-      {
-         var rawX:String = this.lay["ClusterX"] != null ? String(this.lay["ClusterX"]) : "-1";
-         var rawY:String = this.lay["ClusterY"] != null ? String(this.lay["ClusterY"]) : "-1";
-         if(rawX == "-1" && rawY == "-1") { return; }
-         var row:Object = this.cardBy("Cluster");
-         if(row == null) { return; }
-         var card:Sprite = row.card as Sprite;
-         var box:Rectangle = card.getBounds(this);
-         var spot:Object = {"x":box.x,"y":box.y,"w":box.width,"h":box.height};
-         var x:Number = box.x;
-         var y:Number = box.y;
-         if(rawX != "-1") { x = this.resolveX("Cluster",spot,param1); }
-         if(rawY != "-1") { y = this.resolveY("Cluster",spot,param1); }
-         x = this.clamp(x,param1.x,param1.x + param1.width - box.width);
-         y = this.clamp(y,param1.y,param1.y + param1.height - box.height);
-         card.x += x - box.x;
-         card.y += y - box.y;
-      }
-      
-      private function placeNative(param1:String, param2:Object):void
-      {
-         var rawX:String = this.lay[param1 + "X"] != null ? String(this.lay[param1 + "X"]) : "-1";
-         var rawY:String = this.lay[param1 + "Y"] != null ? String(this.lay[param1 + "Y"]) : "-1";
-         if(rawX == "-1" && rawY == "-1") { return; }
-         var clip:DisplayObject = this.clipByName(param1);
-         if(!this.clipLive(clip)) { return; }
-         var box:Rectangle = clip.getBounds(this);
-         var spot:Object = {"x":box.x,"y":box.y,"w":box.width,"h":box.height};
-         var x:Number = box.x;
-         var y:Number = box.y;
-         if(rawX != "-1") { x = this.resolveX(param1,spot,param2); }
-         if(rawY != "-1") { y = this.resolveY(param1,spot,param2); }
-         x = this.clamp(x,param2.x,param2.x + param2.width - box.width);
-         y = this.clamp(y,param2.y,param2.y + param2.height - box.height);
-         if(Math.abs(x - box.x) <= 1 && Math.abs(y - box.y) <= 1) { return; }
-         this.moveNative(clip,x - box.x,y - box.y);
-         this.strokeBehind(clip,param1);
-         if(param1 == "Module" && this.modOn) { this.seatModule(this.modNative); }
-      }
-      
-      private function layoutBoxes(param1:Object):Object
-      {
-         var m:Number = this.margin;
-         var bw:Number = this.lrg ? 560 : 501;
-         var powerH:Number = 240;
-         var moduleH:Number = 460;
-         var statsH:Number = 96;
-         var hintsH:Number = 48;
-         var out:Object = {};
-         out.Power = {"x":param1.x + m,"y":param1.y + m,"w":350,"h":powerH};
-         out.Module = {"x":param1.x + m,"y":param1.y + m + powerH + 12,"w":350,"h":moduleH};
-         out.Browser = {"x":param1.x + param1.width - m - bw,"y":param1.y + m,"w":bw,"h":Math.min(846,param1.height - m * 2 - statsH - 20)};
-         out.Credits = {"x":out.Browser.x - 12 - 363,"y":param1.y + m,"w":363,"h":102};
-         out.Hints = {"x":param1.x + param1.width - m - 744,"y":param1.y + param1.height - m - statsH - 8 - hintsH,"w":744,"h":hintsH};
-         out.Stats = {"x":param1.x + Math.max(m,400 * param1.width / 1920),"y":param1.y + param1.height - m - statsH,"w":Math.min(1464,param1.width - m * 2),"h":statsH};
-         out.Cluster = {"x":param1.x + m,"y":param1.y + 8,"w":190,"h":40};
+         var out:DisplayObject = null;
+         try { out = this.host[param1] as DisplayObject; } catch(err:Error) { out = null; }
          return out;
       }
-      
-      private function resolveX(param1:String, param2:Object, param3:Object):Number
+
+      // Shown means the vanilla code asked for this clip: visible itself and in every parent.
+      private function nativeOn(param1:String):Boolean
       {
-         var raw:String = this.lay[param1 + "X"] != null ? String(this.lay[param1 + "X"]) : "-1";
-         if(raw == "-1" || raw.length < 2) { return param2.x; }
-         var edge:String = raw.charAt(0);
-         var off:Number = Number(raw.substring(1));
-         if(isNaN(off)) { return param2.x; }
-         var x:Number = param2.x;
-         if(edge == "L") { x = param3.x + this.margin + off; }
-         else if(edge == "R") { x = param3.x + param3.width - this.margin - param2.w - off; }
-         else if(edge == "C") { x = param3.x + (param3.width - param2.w) / 2 + off; }
-         return x;
-      }
-      
-      private function resolveY(param1:String, param2:Object, param3:Object):Number
-      {
-         var raw:String = this.lay[param1 + "Y"] != null ? String(this.lay[param1 + "Y"]) : "-1";
-         if(raw == "-1" || raw.length < 2) { return param2.y; }
-         var edge:String = raw.charAt(0);
-         var off:Number = Number(raw.substring(1));
-         if(isNaN(off)) { return param2.y; }
-         var y:Number = param2.y;
-         if(edge == "T") { y = param3.y + this.margin + off; }
-         else if(edge == "B") { y = param3.y + param3.height - this.margin - param2.h - off; }
-         else if(edge == "C") { y = param3.y + (param3.height - param2.h) / 2 + off; }
-         return y;
-      }
-      
-      private function redraw():void
-      {
-         var r:Object = this.view();
-         this.modView = r;
-         var box:Object = this.layoutBoxes(r);
-         var c:uint = this.accentColor();
-         var i:int = 0;
-         while(i < this.cards.length)
+         var c:DisplayObject = this.clip(param1);
+         if(c == null) { return false; }
+         var node:DisplayObject = c;
+         var depth:int = 0;
+         while(node != null && depth < 8)
          {
-            var row:Object = this.cards[i];
-            var card:Sprite = row.card as Sprite;
-            var spot:Object = box[row.id];
-            var g:* = card.graphics;
-            g.clear();
-            var wide:Number = Number(row.ww) > 0 ? Number(row.ww) : spot.w;
-            var high:Number = Number(row.hh) > 0 ? Number(row.hh) : spot.h;
-            var show:Boolean = row.id == "Cluster";
-            card.visible = show && !this.conflict;
-            if(this.followsGame(String(row.id)))
-            {
-               card.mouseEnabled = false;
-               card.mouseChildren = false;
-               card.visible = false;
-            }
-            if(row.id == "Cluster")
-            {
-               card.mouseEnabled = false;
-               card.mouseChildren = true;
-               var saved:String = this.lay["ClusterX"] != null ? String(this.lay["ClusterX"]) : "-1";
-               if(!this.arranging && saved == "-1")
-               {
-                  card.x = r.x + this.margin;
-                  card.y = r.y + 8;
-               }
-            }
-            if(row.id != "Cluster" && show)
-            {
-               g.lineStyle(1.5,c,0.95);
-               g.beginFill(0x121610,0.82);
-               g.drawRoundRect(0,0,wide,high,16,16);
-               g.endFill();
-               g.lineStyle();
-            }
-            var title:TextField = row.title as TextField;
-            if(title != null)
-            {
-               title.textColor = c;
-               var tf:TextFormat = title.defaultTextFormat;
-               tf.color = c;
-               tf.size = row.id == "Cluster" ? this.bodyPx : (this.bodyPx + 1);
-               title.setTextFormat(tf);
-               title.visible = row.id != "Cluster";
-            }
-            i++;
+            if(!node.visible) { return false; }
+            if(node == this.host) { return true; }
+            node = node.parent;
+            depth++;
          }
-         this.paintGear();
-         if(this.titleT == null)
+         return true;
+      }
+
+      // Purpose: once per frame, mirror which vanilla panels the game shows, keep the matching
+      //    vanilla clips alive but unseen (alpha 0, children off the mouse), and redraw what changed.
+      // Why alpha and not visible=false: vanilla gates its own work on .visible (the palette's
+      //    preview event and controller routing), so hiding with visible would stop the game.
+      private function adapt():void
+      {
+         if(this.conflict)
          {
-            this.titleT = this.makeText("HORIZON SHIP BUILDER",0,0,360,24,this.bodyPx,c);
-            this.titleT.mouseEnabled = false;
-            addChild(this.titleT);
+            this.standDown();
+            return;
          }
-         this.titleT.textColor = c;
-         this.titleT.visible = false;
-         this.parkTitle(r);
-         if(!this.mapped)
+         var hangar:Boolean = this.nativeOn("HangarInfoPanel_mc");
+         var builder:Boolean = this.nativeOn("PowerAllocation_mc");
+         var colorOn:Boolean = this.nativeOn("ColorPicker_mc");
+         var flightOn:Boolean = this.nativeOn("FlightCheck_mc");
+         var want:Object = {};
+         want.Power = builder && !hangar;
+         want.Module = this.nativeOn("ModuleInfoCard_mc") && !hangar && !flightOn;
+         want.Credits = this.nativeOn("CostSummary_mc") && !hangar;
+         want.Browser = (this.nativeOn("ModulePalette_mc") || flightOn) && !hangar && !colorOn;
+         want.Stats = this.nativeOn("ShipStatsFooter_mc") && !hangar;
+         want.Hints = this.nativeOn("ButtonBar_mc") && !hangar;
+         want.Cluster = (builder || colorOn) && !hangar;
+         want.Colors = colorOn && !hangar;
+         want.Flight = flightOn && !hangar;
+         var changed:Boolean = false;
+         var key:String;
+         for(key in want)
          {
-            var j:int = 0;
-            while(j < this.cards.length)
+            if(this.vis[key] != want[key])
             {
-               var home:Object = box[this.cards[j].id];
-               (this.cards[j].card as Sprite).x = home.x;
-               (this.cards[j].card as Sprite).y = home.y;
-               j++;
+               this.vis[key] = want[key];
+               this.dirty[key] = true;
+               changed = true;
             }
          }
-         if(this.modOn && this.accentColor() != this.modTint) { this.paintSafe(); }
+         this.browser.readOnly = flightOn;
+         this.coverAll(hangar);
+         if(changed) { this.place(); }
+         this.paintDirty();
+         this.browser.tick();
+         this.colors.tick();
+         if(this.arrange != null && this.arrange.visible) { this.arrange.tick(); }
       }
-      
-      private function openSettings():void
+
+      private function coverAll(param1:Boolean):void
       {
-         if(this.setLayer == null) { this.buildSettings(); }
-         this.setOpen = true;
-         this.setLayer.visible = true;
-         addChild(this.setLayer);
-         this.note("SETTINGS open");
-      }
-      
-      private function buildSettings():void
-      {
-         this.setLayer = new Sprite();
-         this.setLayer.name = "HsbSettings";
-         this.setLayer.visible = false;
-         var g:* = this.setLayer.graphics;
-         var r:Object = this.view();
-         g.beginFill(0x000000,0.45);
-         g.drawRect(r.x,r.y,r.width,r.height);
-         g.endFill();
-         g.lineStyle(1.5,this.accentColor(),1);
-         g.beginFill(0x141810,0.96);
-         var panelW:Number = 520;
-         var panelH:Number = 560;
-         var panelX:Number = r.x + (r.width - panelW) / 2;
-         var panelY:Number = r.y + 180;
-         if(panelX < r.x + this.margin) { panelX = r.x + this.margin; }
-         if(panelY + panelH > r.y + r.height - this.margin) { panelY = r.y + r.height - this.margin - panelH; }
-         g.drawRoundRect(panelX,panelY,panelW,panelH,18,18);
-         g.endFill();
-         var x0:Number = panelX;
-         var y0:Number = panelY;
-         this.setLayer.addChild(this.makeText("SETTINGS",x0 + 24,y0 + 16,240,28,this.bodyPx + 4,this.accentColor()));
-         this.setLayer.addChild(this.makeText("APPEARANCE",x0 + 24,y0 + 58,240,22,this.bodyPx + 1,0xF4F0E4));
-         var i:int = 0;
-         while(i < ACCENTS.length)
+         var weapons:Boolean = this.dFlight != null && Boolean(this.dFlight.bShowWeapons);
+         var key:String;
+         for(key in COVERS)
          {
-            var sw:Sprite = new Sprite();
-            sw.name = "sw" + i;
-            var sg:* = sw.graphics;
-            sg.beginFill(uint(ACCENTS[i]),1);
-            sg.drawRoundRect(0,0,28,28,8,8);
-            sg.endFill();
-            sw.x = x0 + 24 + (i % 7) * 36;
-            sw.y = y0 + 96 + int(i / 7) * 36;
-            sw.buttonMode = true;
-            sw.addEventListener(MouseEvent.CLICK,this.onSwatch);
-            this.setLayer.addChild(sw);
-            i++;
-         }
-         this.hexBox = new TextField();
-         this.hexBox.embedFonts = this.faceEmbed;
-         this.hexBox.defaultTextFormat = this.textFormat(this.bodyPx,0xF4F0E4);
-         this.hexBox.type = TextFieldType.INPUT;
-         this.hexBox.border = true;
-         this.hexBox.borderColor = this.accentColor();
-         this.hexBox.background = true;
-         this.hexBox.backgroundColor = 0x1C1A16;
-         this.hexBox.textColor = 0xF4F0E4;
-         this.hexBox.width = 140;
-         this.hexBox.height = this.bodyPx + 13;
-         this.hexBox.x = x0 + 24;
-         this.hexBox.y = y0 + 180;
-         this.hexBox.text = this.accentHex.length == 6 ? this.accentHex : "E8C547";
-         this.hexBox.addEventListener(MouseEvent.CLICK,this.onHexField);
-         this.texts.push(this.hexBox);
-         this.setLayer.addChild(this.hexBox);
-         var hexBtn:Sprite = this.makeButton("CUSTOM",x0 + 176,y0 + 180,110,28,false);
-         hexBtn.addEventListener(MouseEvent.CLICK,this.onHex);
-         this.setLayer.addChild(hexBtn);
-         if(this.core)
-         {
-            var hud:Sprite = this.makeButton("FOLLOW HUD",x0 + 300,y0 + 180,150,28,false);
-            hud.addEventListener(MouseEvent.CLICK,this.onFollow);
-            this.setLayer.addChild(hud);
-         }
-         var arr:Sprite = this.makeButton("ARRANGE PANELS",x0 + 24,y0 + 240,472,40,true);
-         arr.addEventListener(MouseEvent.CLICK,this.onArrangeBtn);
-         this.setLayer.addChild(arr);
-         this.setLayer.addChild(this.makeText("Drag panels on the next screen. The parts list stays the game list.",x0 + 24,y0 + 292,472,44,this.bodyPx,0xC8C0B0));
-         var done:Sprite = this.makeButton("DONE",x0 + 360,y0 + 500,132,36,true);
-         done.addEventListener(MouseEvent.CLICK,this.onDone);
-         this.setLayer.addChild(done);
-         addChild(this.setLayer);
-      }
-      
-      private function onSwatch(param1:MouseEvent):void
-      {
-         var name:String = param1.currentTarget.name;
-         var n:int = int(name.substring(2));
-         if(n < 0 || n > 12) { return; }
-         this.accent = n;
-         this.accentHex = "";
-         this.note("ACCENT " + n);
-         this.redraw();
-         this.closeSettings();
-      }
-      
-      // The game's rename field takes focus the same way when editing starts. A click alone may
-      // not move focus in this menu. Each click selects the code so six typed characters replace it.
-      private function onHexField(param1:MouseEvent):void
-      {
-         if(stage == null || !this.setOpen) { return; }
-         var held:String = this.focusName(stage.focus);
-         if(held != "hex" && held != "ours") { this.focusBack = stage.focus; }
-         this.giveFocus(this.hexBox);
-         this.hexBox.setSelection(0,this.hexBox.text.length);
-         this.note("SETTINGS hex focus=" + held + ">" + this.focusName(stage.focus));
-      }
-      
-      private function onHex(param1:MouseEvent):void
-      {
-         var raw:String = this.hexBox != null ? this.hexBox.text : "";
-         var hex:String = "";
-         var i:int = 0;
-         while(i < raw.length)
-         {
-            var ch:String = raw.charAt(i);
-            if(ch != "#") { hex += ch; }
-            i++;
-         }
-         this.note("SETTINGS custom focus=" + this.focusName(stage != null ? stage.focus : null) + " length=" + hex.length);
-         if(hex.length != 6) { return; }
-         this.accent = 13;
-         this.accentHex = hex.toUpperCase();
-         this.note("HEX " + this.accentHex);
-         this.redraw();
-      }
-      
-      private function onFollow(param1:MouseEvent):void
-      {
-         this.accent = -1;
-         this.note("ACCENT -1");
-         this.redraw();
-      }
-      
-      private function onArrangeBtn(param1:MouseEvent):void
-      {
-         this.closeSettings();
-         this.openArrange();
-      }
-      
-      private function onDone(param1:MouseEvent):void
-      {
-         this.closeSettings();
-      }
-      
-      // The game list hears arrow keys and Enter only while it holds focus. If Settings holds focus
-      // at close, focus goes back to the game object the hex field took it from while that object
-      // is on stage. Otherwise it goes to the parts list while the list shows, as ModulePalette.Update does.
-      private function closeSettings():void
-      {
-         var was:Boolean = this.setOpen;
-         this.setOpen = false;
-         if(this.setLayer != null) { this.setLayer.visible = false; }
-         var back:InteractiveObject = this.focusBack;
-         this.focusBack = null;
-         if(stage == null) { return; }
-         var held:String = this.focusName(stage.focus);
-         if(held == "hex" || held == "ours")
-         {
-            if(back == null || back.stage == null)
+            var on:Boolean = !param1;
+            if(key == "Flight" && weapons) { on = false; }
+            var names:Array = COVERS[key] as Array;
+            var i:int = 0;
+            while(i < names.length)
             {
-               back = this.nativeList();
-               if(back != null && !this.chainShown(back)) { back = null; }
-            }
-            this.giveFocus(back);
-         }
-         if(was || held == "hex" || held == "ours") { this.note("SETTINGS close focus=" + held + ">" + this.focusName(stage.focus)); }
-      }
-      
-      // IMenu can put focus back on the object that just lost it after a click. That restore
-      // runs once, so a second assignment sticks.
-      private function giveFocus(param1:InteractiveObject):void
-      {
-         stage.focus = param1;
-         if(stage.focus != param1) { stage.focus = param1; }
-      }
-      
-      private function nativeList():InteractiveObject
-      {
-         var list:InteractiveObject = null;
-         try { list = this.host["ModulePalette_mc"]["ModuleEntries_mc"] as InteractiveObject; } catch(err:Error) { list = null; }
-         return list;
-      }
-      
-      // Names the focus holder for the log by kind only.
-      private function focusName(param1:InteractiveObject):String
-      {
-         if(param1 == null) { return "none"; }
-         if(param1 == this.hexBox) { return "hex"; }
-         if(this.contains(param1)) { return "ours"; }
-         var list:DisplayObjectContainer = this.nativeList() as DisplayObjectContainer;
-         if(list != null && list.contains(param1)) { return "list"; }
-         return "other";
-      }
-      
-      private function openArrange():void
-      {
-         if(this.conflict || this.arranging) { return; }
-         this.closeSettings();
-         this.arranging = true;
-         if(this.modOn) { this.seatModule(this.modNative); }
-         this.ignorePress = true;
-         this.dragId = "";
-         this.remember();
-         this.sel = this.defaultSel();
-         this.showStandIns(true);
-         if(this.arrLayer == null)
-         {
-            this.arrLayer = new Sprite();
-            this.arrLayer.name = "HsbArrange";
-         }
-         this.arrLayer.visible = true;
-         addChild(this.arrLayer);
-         this.drawArrange();
-         this.note("ARRANGE open");
-      }
-      
-      private function remember():void
-      {
-         this.snap = [];
-         this.vis = [];
-         this.homes = [];
-         this.openBarX = this.barDx;
-         this.openBarY = this.barDy;
-         this.openLay = {};
-         var i:int = 0;
-         while(i < this.cards.length)
-         {
-            var card:Sprite = this.cards[i].card as Sprite;
-            var id:String = String(this.cards[i].id);
-            var clip:DisplayObject = this.clipByName(id);
-            this.snap.push({"x":card.x,"y":card.y});
-            this.vis.push(true);
-            if(clip != null && this.panelMovable(id) && id != "Cluster")
-            {
-               this.homes.push({"x":clip.x,"y":clip.y,"ok":true});
-            }
-            else
-            {
-               this.homes.push({"x":0,"y":0,"ok":false});
-            }
-            var ax:String = this.lay[id + "X"] != null ? String(this.lay[id + "X"]) : "-1";
-            var ay:String = this.lay[id + "Y"] != null ? String(this.lay[id + "Y"]) : "-1";
-            this.openLay[id + "X"] = ax;
-            this.openLay[id + "Y"] = ay;
-            i++;
-         }
-      }
-      
-      private function showStandIns(param1:Boolean):void
-      {
-         var i:int = 0;
-         while(i < this.cards.length)
-         {
-            var card:Sprite = this.cards[i].card as Sprite;
-            var stand:DisplayObject = card.getChildByName("HsbSample");
-            if(stand != null) { card.removeChild(stand); }
-            i++;
-         }
-      }
-      
-      private function drawArrange():void
-      {
-         if(this.arrLayer == null) { return; }
-         var g:* = this.arrLayer.graphics;
-         g.clear();
-         var r:Object = this.view();
-         g.beginFill(0x000000,0.25);
-         g.drawRect(r.x,r.y,r.width,r.height);
-         g.endFill();
-         g.lineStyle(1,0xFFFFFF,0.06);
-         var gx:Number = r.x;
-         while(gx <= r.x + r.width)
-         {
-            g.moveTo(gx,r.y);
-            g.lineTo(gx,r.y + r.height);
-            gx += 40;
-         }
-         var gy:Number = r.y;
-         while(gy <= r.y + r.height)
-         {
-            g.moveTo(r.x,gy);
-            g.lineTo(r.x + r.width,gy);
-            gy += 40;
-         }
-         g.lineStyle(1,this.accentColor(),0.18);
-         g.moveTo(r.x + r.width / 2,r.y);
-         g.lineTo(r.x + r.width / 2,r.y + r.height);
-         var boxes:Object = this.layoutBoxes(r);
-         var clear:Object = {"x":boxes.Power.x + boxes.Power.w + 16,"y":boxes.Credits.y + boxes.Credits.h + 8,"w":boxes.Browser.x - (boxes.Power.x + boxes.Power.w) - 32,"h":boxes.Hints.y - (boxes.Credits.y + boxes.Credits.h) - 16};
-         this.dash(g,clear.x,clear.y,clear.w,clear.h,0xF28A4F);
-         var i:int = 0;
-         while(i < this.cards.length)
-         {
-            var row:Object = this.cards[i];
-            var wide:Number = 0;
-            var high:Number = 0;
-            var on:Boolean = this.sel == row.id || this.dragId == row.id;
-            if(!this.eligible(String(row.id)))
-            {
-               this.hideLabel(String(row.id));
+               this.cover(String(names[i]),on);
                i++;
-               continue;
             }
-            var live:Rectangle = this.liveBounds(String(row.id));
-            wide = live.width;
-            high = live.height;
-            g.lineStyle(on ? 2 : 1.5,on ? this.accentColor() : 0xFFFFFF,on ? 1 : 0.55);
-            g.beginFill(this.accentColor(),on ? 0.1 : 0.03);
-            g.drawRoundRect(live.x - 4,live.y - 4,wide + 8,high + 8,16,16);
-            g.endFill();
-            this.ensureLabel(row.id,this.panelLabel(String(row.id)),live.x,live.y - 22,on);
-            if(this.overlaps(live.x,live.y,wide,high,clear))
+         }
+      }
+
+      private function cover(param1:String, param2:Boolean):void
+      {
+         var c:DisplayObject = this.clip(param1);
+         if(c == null) { return; }
+         var row:Object = this.covered[param1];
+         if(param2)
+         {
+            if(row == null)
             {
-               this.chip(g,live.x + 8,live.y + high - 28);
+               row = {"alpha":c.alpha,"kids":c is DisplayObjectContainer ? (c as DisplayObjectContainer).mouseChildren : false};
+               this.covered[param1] = row;
             }
-            i++;
+            if(c.alpha != 0) { c.alpha = 0; }
+            if(c is DisplayObjectContainer) { (c as DisplayObjectContainer).mouseChildren = false; }
          }
-         g.lineStyle();
-         var tw:Number = 720;
-         var th:Number = 96;
-         var tx:Number = r.x + (r.width - tw) / 2 + this.barDx;
-         var ty:Number = r.y + r.height * 0.42 + this.barDy;
-         tx = this.clamp(tx,r.x,r.x + r.width - tw);
-         ty = this.clamp(ty,r.y,r.y + r.height - th);
-         this.barGx = tx;
-         this.barGy = ty;
-         g.lineStyle(1.5,this.accentColor(),0.95);
-         g.beginFill(0x10160F,0.94);
-         g.drawRoundRect(tx,ty,tw,th,16,16);
-         g.endFill();
-         var d:int = 0;
-         while(d < 6)
+         else if(row != null)
          {
-            g.beginFill(0xFFFFFF,0.55);
-            g.drawCircle(tx + 14 + (d % 2) * 6,ty + 22 + int(d / 2) * 7,1.6);
-            g.endFill();
-            d++;
+            c.alpha = Number(row.alpha);
+            if(c is DisplayObjectContainer) { (c as DisplayObjectContainer).mouseChildren = row.kids == true; }
+            delete this.covered[param1];
          }
-         this.ensureLabel("hint","Drag a panel  ·  arrows nudge  ·  Tab next  ·  ENTER save  ·  ESC cancel",tx + 28,ty + 14,false);
-         this.ensureLabel("nudge","NUDGE",tx + 28,ty + 58,false);
-         this.button(g,"nL",tx + 110,ty + 54,36,28,"<");
-         this.button(g,"nR",tx + 152,ty + 54,36,28,">");
-         this.button(g,"nU",tx + 194,ty + 54,36,28,"^");
-         this.button(g,"nD",tx + 236,ty + 54,36,28,"v");
-         this.button(g,"reset",tx + tw - 300,ty + 54,88,28,"RESET");
-         this.button(g,"ok",tx + tw - 204,ty + 54,88,28,"OK");
-         this.button(g,"cancel",tx + tw - 108,ty + 54,88,28,"CANCEL");
       }
-      
-      private function button(param1:*, param2:String, param3:Number, param4:Number, param5:Number, param6:Number, param7:String):void
+
+      // Another ship builder's DLL is loaded: Horizon steps aside, restores every vanilla clip and
+      // shows the notice from mockup 10 once.
+      private function standDown():void
       {
-         var gold:Boolean = param2 == "ok";
-         param1.lineStyle(1,gold ? this.accentColor() : 0x5A6A76,0.9);
-         param1.beginFill(gold ? this.accentColor() : 0x26343F,gold ? 0.9 : 0.85);
-         param1.drawRoundRect(param3,param4,param5,param6,8,8);
-         param1.endFill();
-         this.ensureLabel(param2,param7,param3,param4 + 4,false);
+         if(this.stoodDown) { return; }
+         this.stoodDown = true;
+         var key:String;
+         for(key in COVERS)
+         {
+            var names:Array = COVERS[key] as Array;
+            var i:int = 0;
+            while(i < names.length) { this.cover(String(names[i]),false); i++; }
+         }
+         this.layer.visible = false;
+         this.layer.addChild(this.notice);
+         this.notice.visible = true;
+         this.layer.visible = true;
+         var k:int = 0;
+         while(k < this.layer.numChildren)
+         {
+            var child:DisplayObject = this.layer.getChildAt(k);
+            child.visible = child == this.notice;
+            k++;
+         }
+         this.paintStepAside();
+         this.note("CONFLICT stood down");
       }
-      
-      private function ensureLabel(param1:String, param2:String, param3:Number, param4:Number, param5:Boolean):void
+
+      private function paintDirty():void
       {
-         var field:TextField = this.arrLayer.getChildByName("lb" + param1) as TextField;
-         if(field == null)
+         var key:String;
+         for(key in this.dirty)
          {
-            field = this.makeText(param2,param3,param4,280,22,this.bodyPx,param5 ? this.accentColor() : 0xF4F0E4);
-            field.name = "lb" + param1;
-            field.mouseEnabled = false;
-            this.arrLayer.addChild(field);
+            if(this.dirty[key] != true) { continue; }
+            try { this.paint(key); }
+            catch(err:Error) { this.note("PAINT " + key + " fault " + err.errorID); }
          }
-         field.text = param2;
-         field.x = param3;
-         field.y = param4;
-         field.visible = true;
+         this.dirty = {};
       }
-      
-      private function chip(param1:*, param2:Number, param3:Number):void
+
+      private function shown(param1:String):Boolean
       {
-         param1.lineStyle(1,0xF28A4F,1);
-         param1.beginFill(0x2A160C,0.92);
-         param1.drawRoundRect(param2,param3,210,24,8,8);
-         param1.endFill();
-         param1.beginFill(0xF28A4F,1);
-         param1.moveTo(param2 + 8,param3 + 16);
-         param1.lineTo(param2 + 14,param3 + 6);
-         param1.lineTo(param2 + 20,param3 + 16);
-         param1.lineTo(param2 + 8,param3 + 16);
-         param1.endFill();
-         this.ensureLabel("warn" + int(param2),"COVERS THE SHIP VIEW",param2 + 26,param3 + 2,false);
+         return this.vis[param1] == true && !this.hideAll;
       }
-      
-      private function dash(param1:*, param2:Number, param3:Number, param4:Number, param5:Number, param6:uint):void
+
+      private function paint(param1:String):void
       {
-         param1.lineStyle(1.5,param6,0.9);
-         var x:Number = param2;
-         while(x < param2 + param4)
+         switch(param1)
          {
-            param1.moveTo(x,param3);
-            param1.lineTo(Math.min(x + 8,param2 + param4),param3);
-            param1.moveTo(x,param3 + param5);
-            param1.lineTo(Math.min(x + 8,param2 + param4),param3 + param5);
-            x += 14;
+            case "Power": this.paintPower(); break;
+            case "Module": this.paintCard(); break;
+            case "Credits": this.paintCredits(); break;
+            case "Stats": this.paintStats(); break;
+            case "Hints": this.paintHints(); break;
+            case "Cluster": this.paintCluster(); break;
+            case "Browser":
+               this.browser.visible = this.shown("Browser");
+               this.browser.collapsed = this.collapsed["Browser"] == true;
+               this.browser.invalidate();
+               break;
+            case "Colors":
+               this.colors.visible = this.shown("Colors");
+               if(this.colors.visible) { this.colors.paint(); }
+               break;
+            case "Flight":
+               this.flight.visible = this.shown("Flight");
+               if(this.flight.visible) { this.flight.paint(this.dFlight); }
+               break;
+            case "Notice": this.paintNotice(); break;
          }
-         var y:Number = param3;
-         while(y < param3 + param5)
-         {
-            param1.moveTo(param2,y);
-            param1.lineTo(param2,Math.min(y + 8,param3 + param5));
-            param1.moveTo(param2 + param4,y);
-            param1.lineTo(param2 + param4,Math.min(y + 8,param3 + param5));
-            y += 14;
-         }
-         param1.lineStyle();
+         this.place();
       }
-      
-      private function overlaps(param1:Number, param2:Number, param3:Number, param4:Number, param5:Object):Boolean
-      {
-         return param1 < param5.x + param5.w && param1 + param3 > param5.x && param2 < param5.y + param5.h && param2 + param4 > param5.y;
-      }
-      
-      private function onFeed(param1:String):void
-      {
-         if(param1.indexOf("M ") == 0)
-         {
-            var bits:Array = param1.split(" ");
-            if(bits.length < 4) { return; }
-            this.onPointer(String(bits[1]),Number(bits[2]),Number(bits[3]));
-            return;
-         }
-         if(param1.indexOf("K ") != 0) { return; }
-         var token:String = param1.substring(2);
-         if(token == "open")
-         {
-            if(this.keysOn && !this.arranging && !this.conflict) { this.openArrange(); }
-            return;
-         }
-         if(!this.arranging)
-         {
-            if(token == "cancel") { this.cancelTop(); }
-            return;
-         }
-         if(token == "cancel") { this.cancelArrange(); return; }
-         if(token == "ok") { this.okArrange(); return; }
-         if(token == "noop") { return; }
-         if(token == "tab") { this.cycle(1); return; }
-         if(token == "tabprev") { this.cycle(-1); return; }
-         var step:Number = token.indexOf("40") >= 0 ? 40 : 10;
-         if(token.indexOf("left") == 0) { this.nudge(-step,0); }
-         else if(token.indexOf("right") == 0) { this.nudge(step,0); }
-         else if(token.indexOf("up") == 0) { this.nudge(0,-step); }
-         else if(token.indexOf("down") == 0) { this.nudge(0,step); }
-      }
-      
-      private function onPointer(param1:String, param2:Number, param3:Number):void
-      {
-         if(!this.arranging) { return; }
-         this.pt.x = param2;
-         this.pt.y = param3;
-         var lp:Point = this.globalToLocal(this.pt);
-         if(param1 == "D")
-         {
-            if(this.ignorePress) { this.ignorePress = false; return; }
-            var hit:String = this.hitAt(lp.x,lp.y);
-            if(hit == "ok") { this.okArrange(); return; }
-            if(hit == "cancel") { this.cancelArrange(); return; }
-            if(hit == "reset") { this.resetArrange(); return; }
-            if(hit == "nL") { this.nudge(-10,0); return; }
-            if(hit == "nR") { this.nudge(10,0); return; }
-            if(hit == "nU") { this.nudge(0,-10); return; }
-            if(hit == "nD") { this.nudge(0,10); return; }
-            if(hit == "bar")
-            {
-               this.barDrag = true;
-               this.dragDx = lp.x - this.barGx;
-               this.dragDy = lp.y - this.barGy;
-               return;
-            }
-            if(hit.length > 0 && this.eligible(hit))
-            {
-               this.sel = hit;
-               this.dragId = hit;
-               var live:Rectangle = this.liveBounds(hit);
-               this.dragDx = lp.x - live.x;
-               this.dragDy = lp.y - live.y;
-            }
-            else
-            {
-               this.dragId = "";
-            }
-            this.drawArrange();
-            return;
-         }
-         if(param1 == "M")
-         {
-            if(this.barDrag)
-            {
-               var r:Object = this.view();
-               this.barDx = (lp.x - this.dragDx) - (r.x + (r.width - 720) / 2);
-               this.barDy = (lp.y - this.dragDy) - (r.y + r.height * 0.42);
-               this.drawArrange();
-               return;
-            }
-            if(this.dragId.length > 0 && this.eligible(this.dragId))
-            {
-               this.moveLive(this.dragId,lp.x - this.dragDx,lp.y - this.dragDy);
-               this.drawArrange();
-            }
-            return;
-         }
-         if(param1 == "U")
-         {
-            this.barDrag = false;
-            this.dragId = "";
-            this.drawArrange();
-         }
-      }
-      
-      private function hitAt(param1:Number, param2:Number):String
-      {
-         var names:Array = ["ok","cancel","reset","nL","nR","nU","nD"];
-         var i:int = 0;
-         while(i < names.length)
-         {
-            var field:TextField = this.arrLayer.getChildByName("lb" + names[i]) as TextField;
-            if(field != null && param1 >= field.x - 8 && param1 <= field.x + 96 && param2 >= field.y - 6 && param2 <= field.y + 28) { return String(names[i]); }
-            i++;
-         }
-         if(param1 >= this.barGx && param1 <= this.barGx + 720 && param2 >= this.barGy && param2 <= this.barGy + 96) { return "bar"; }
-         var k:int = this.cards.length - 1;
-         while(k >= 0)
-         {
-            var id:String = String(this.cards[k].id);
-            if(this.eligible(id))
-            {
-               var live:Rectangle = this.liveBounds(id);
-               if(param1 >= live.x && param1 <= live.x + live.width && param2 >= live.y && param2 <= live.y + live.height) { return id; }
-            }
-            k--;
-         }
-         return "";
-      }
-      
-      private function hideLabel(param1:String):void
-      {
-         if(this.arrLayer == null) { return; }
-         var field:TextField = this.arrLayer.getChildByName("lb" + param1) as TextField;
-         if(field != null) { field.visible = false; }
-      }
-      
-      private function moveLive(param1:String, param2:Number, param3:Number):void
-      {
-         if(!this.eligible(param1)) { return; }
-         var live:Rectangle = this.liveBounds(param1);
-         if(live == null) { return; }
-         var r:Object = this.view();
-         var size:Rectangle = this.anchorBox(param1,live);
-         var x:Number = r.x + Math.round((param2 - r.x) / 10) * 10;
-         var y:Number = r.y + Math.round((param3 - r.y) / 10) * 10;
-         x = this.clamp(x,r.x,r.x + r.width - Math.max(live.width,size.width));
-         y = this.clamp(y,r.y,r.y + r.height - Math.max(live.height,size.height));
-         if(param1 == "Cluster")
-         {
-            var card:Sprite = this.cardBy(param1).card as Sprite;
-            card.x += x - live.x;
-            card.y += y - live.y;
-         }
-         else
-         {
-            var clip:DisplayObject = this.clipByName(param1);
-            this.moveNative(clip,x - live.x,y - live.y);
-            this.strokeBehind(clip,param1);
-            this.parkHeading(param1,clip);
-            if(param1 == "Module" && this.modOn) { this.seatModule(this.modNative); }
-         }
-         var spot:Object = {"x":x,"y":y,"w":size.width,"h":size.height};
-         this.storeAnchor(param1,x,y,spot,r);
-      }
-      
-      // Our card's top left is the game card's top left. Module anchors use the game card's
-      // size, so a spot saved over our card reloads in place before our card is up.
-      private function anchorBox(param1:String, param2:Rectangle):Rectangle
-      {
-         if(param1 == "Module" && this.modOn && this.modNative != null && this.modNative.parent != null)
-         {
-            return this.modNative.getBounds(this);
-         }
-         return param2;
-      }
-      
-      private function storeAnchor(param1:String, param2:Number, param3:Number, param4:Object, param5:Object):void
-      {
-         var midX:Number = param2 + param4.w / 2;
-         var midY:Number = param3 + param4.h / 2;
-         var cx:Number = param5.x + param5.width / 2;
-         var cy:Number = param5.y + param5.height / 2;
-         var ax:String = "C";
-         var dx:Number = Math.round(param2 - (cx - param4.w / 2));
-         if(Math.abs(midX - cx) >= param5.width / 6)
-         {
-            if(midX < cx) { ax = "L"; dx = Math.round(param2 - (param5.x + this.margin)); }
-            else { ax = "R"; dx = Math.round(param5.x + param5.width - this.margin - param4.w - param2); }
-         }
-         var ay:String = "C";
-         var dy:Number = Math.round(param3 - (cy - param4.h / 2));
-         if(Math.abs(midY - cy) >= param5.height / 6)
-         {
-            if(midY < cy) { ay = "T"; dy = Math.round(param3 - (param5.y + this.margin)); }
-            else { ay = "B"; dy = Math.round(param5.y + param5.height - this.margin - param4.h - param3); }
-         }
-         this.lay[param1 + "X"] = ax + String(int(dx));
-         this.lay[param1 + "Y"] = ay + String(int(dy));
-      }
-      
-      private function nudge(param1:Number, param2:Number):void
-      {
-         if(!this.eligible(this.sel)) { return; }
-         var live:Rectangle = this.liveBounds(this.sel);
-         if(live == null) { return; }
-         this.moveLive(this.sel,live.x + param1,live.y + param2);
-         this.drawArrange();
-      }
-      
-      private function cycle(param1:int):void
-      {
-         var order:Array = [];
-         var i:int = 0;
-         while(i < IDS.length)
-         {
-            if(this.eligible(String(IDS[i]))) { order.push(String(IDS[i])); }
-            i++;
-         }
-         if(order.length == 0)
-         {
-            this.sel = "";
-            this.drawArrange();
-            return;
-         }
-         var at:int = order.indexOf(this.sel);
-         if(at < 0) { this.sel = param1 < 0 ? String(order[order.length - 1]) : String(order[0]); }
-         else
-         {
-            var n:int = at + param1;
-            if(n < 0) { n = order.length - 1; }
-            if(n >= order.length) { n = 0; }
-            this.sel = String(order[n]);
-         }
-         this.drawArrange();
-      }
-      
-      private function resetArrange():void
-      {
-         this.lay = {};
-         this.barDx = 0;
-         this.barDy = 0;
-         var r:Object = this.view();
-         var i:int = 0;
-         while(i < this.cards.length)
-         {
-            var id:String = String(this.cards[i].id);
-            if(id == "Cluster")
-            {
-               var card:Sprite = this.cards[i].card as Sprite;
-               card.x = r.x + this.margin;
-               card.y = r.y + 8;
-            }
-            else if(this.cards[i].homed == true)
-            {
-               var clip:DisplayObject = this.clipByName(id);
-               if(clip != null)
-               {
-                  clip.x = Number(this.cards[i].homeX);
-                  clip.y = Number(this.cards[i].homeY);
-                  this.strokeBehind(this.clipLive(clip) ? clip : null,id);
-               }
-            }
-            i++;
-         }
-         if(this.modOn) { this.seatModule(this.modNative); }
-         this.drawArrange();
-      }
-      
-      private function okArrange():void
-      {
-         var i:int = 0;
-         while(i < IDS.length)
-         {
-            var id:String = String(IDS[i]);
-            if(!this.panelMovable(id))
-            {
-               this.lay[id + "X"] = "-1";
-               this.lay[id + "Y"] = "-1";
-            }
-            var x:String = this.lay[id + "X"] != null ? String(this.lay[id + "X"]) : "-1";
-            var y:String = this.lay[id + "Y"] != null ? String(this.lay[id + "Y"]) : "-1";
-            this.note("ARRANGE " + id + "X=" + x);
-            this.note("ARRANGE " + id + "Y=" + y);
-            i++;
-         }
-         this.note("ARRANGE ArrangeBarX=" + int(this.barDx));
-         this.note("ARRANGE ArrangeBarY=" + int(this.barDy));
-         this.note("ARRANGE END");
-         this.pendingSave = true;
-         this.finishArrange(true);
-      }
-      
-      private function cancelArrange():void
-      {
-         if(this.openLay != null) { this.lay = this.openLay; }
-         this.barDx = this.openBarX;
-         this.barDy = this.openBarY;
-         var i:int = 0;
-         while(i < this.cards.length)
-         {
-            var card:Sprite = this.cards[i].card as Sprite;
-            card.x = this.snap[i].x;
-            card.y = this.snap[i].y;
-            var id:String = String(this.cards[i].id);
-            if(i < this.homes.length && this.homes[i].ok == true)
-            {
-               var clip:DisplayObject = this.clipByName(id);
-               if(clip != null)
-               {
-                  clip.x = Number(this.homes[i].x);
-                  clip.y = Number(this.homes[i].y);
-                  this.strokeBehind(this.clipLive(clip) ? clip : null,id);
-               }
-            }
-            i++;
-         }
-         if(this.modOn) { this.seatModule(this.modNative); }
-         this.finishArrange(false);
-      }
-      
-      private function finishArrange(param1:Boolean):void
-      {
-         var i:int = 0;
-         while(i < this.cards.length)
-         {
-            var clip:DisplayObject = this.cards[i].clip as DisplayObject;
-            if(clip != null && i < this.vis.length) { clip.visible = this.vis[i]; }
-            i++;
-         }
-         this.showStandIns(false);
-         this.arranging = false;
-         this.dragId = "";
-         this.barDrag = false;
-         if(this.arrLayer != null) { this.arrLayer.visible = false; }
-         this.note(param1 ? "ARRANGE saved" : "ARRANGE cancel");
-      }
-      
-      private function cancelTop():void
-      {
-         if(this.arranging) { this.cancelArrange(); }
-         else { this.closeSettings(); }
-      }
-      
-      private function showBanner(param1:String):void
-      {
-         if(this.banner == null)
-         {
-            this.banner = this.makeText(param1,80,80,760,28,this.bodyPx,0xF28A4F);
-            addChild(this.banner);
-         }
-         this.banner.text = param1;
-         this.banner.visible = true;
-      }
-      
-      private function accentColor():uint
-      {
-         if(this.accent == 13 && this.accentHex.length == 6) { return this.hexColor(this.accentHex); }
-         var n:int = this.accent;
-         if(n < 0 || n > 12) { n = 9; }
-         return uint(ACCENTS[n]);
-      }
-      
-      private function hexColor(param1:String):uint
-      {
-         var n:uint = 0;
-         var i:int = 0;
-         while(i < 6)
-         {
-            var c:Number = parseInt(param1.charAt(i),16);
-            if(isNaN(c)) { return 0xE8C547; }
-            n = (n << 4) + uint(c);
-            i++;
-         }
-         return n;
-      }
-      
-      private function cardBy(param1:String):Object
-      {
-         var i:int = 0;
-         while(i < this.cards.length)
-         {
-            if(this.cards[i].id == param1) { return this.cards[i]; }
-            i++;
-         }
-         return null;
-      }
-      
-      private function view():Object
+
+      // The visible part of the stage in stage units, from Scaleform (letterbox aware). The DLL
+      // maps window pixels into this rectangle.
+      private function stageView():Object
       {
          try
          {
-            var ext:Class = Class(getDefinitionByName("Extensions"));
+            var ext:Object = getDefinitionByName("scaleform.gfx.Extensions");
             var rect:Object = ext["visibleRect"];
             if(rect != null && rect.width > 100 && rect.height > 100)
             {
-               return {"x":rect.x,"y":rect.y,"width":rect.width,"height":rect.height};
+               return {"x":Number(rect.x),"y":Number(rect.y),"width":Number(rect.width),"height":Number(rect.height)};
             }
          }
          catch(err:Error)
@@ -1960,740 +980,501 @@ package
          var h:Number = stage != null ? stage.stageHeight : 1080;
          return {"x":0,"y":0,"width":w,"height":h};
       }
-      
-      private function clamp(param1:Number, param2:Number, param3:Number):Number
+
+      // The same rectangle in this sprite's units, which every panel position uses. Equal to
+      // stageView unless the vanilla menu moves or scales its root.
+      internal function viewRect():Object
       {
-         if(param3 < param2) { return param2; }
-         if(param1 < param2) { return param2; }
-         if(param1 > param3) { return param3; }
-         return param1;
-      }
-      
-      private function dressInteriors():void
-      {
-         this.revalidateFades();
-         var ids:Array = ["Power","Module","Browser","Credits","Stats"];
-         var n:int = 0;
-         while(n < ids.length)
+         var r:Object = this.stageView();
+         if(stage == null) { return r; }
+         try
          {
-            var id:String = String(ids[n]);
-            var clip:DisplayObject = this.clipByName(id);
-            if(this.clipLive(clip) && clip is DisplayObjectContainer && !(id == "Module" && this.modOn))
-            {
-               this.dressClip(id,clip as DisplayObjectContainer);
-            }
-            else
-            {
-               this.clearInterior(id,clip);
-            }
-            n++;
+            var a:Point = this.globalToLocal(new Point(Number(r.x),Number(r.y)));
+            var b:Point = this.globalToLocal(new Point(Number(r.x) + Number(r.width),Number(r.y) + Number(r.height)));
+            if(b.x - a.x > 100 && b.y - a.y > 100) { return {"x":a.x,"y":a.y,"width":b.x - a.x,"height":b.y - a.y}; }
          }
-         this.parkTitle(this.view());
-      }
-      
-      private function dressClip(param1:String, param2:DisplayObjectContainer):void
-      {
-         if(param1 != "Power") { this.paintPlate(param1,param2); }
-         this.fadeInside(param1,param2,param2,0);
-         this.recolorTree(param2,0);
-         this.parkHeading(param1,param2);
-      }
-      
-      private function clearInterior(param1:String, param2:DisplayObject):void
-      {
-         if(param2 != null) { this.restoreFades(param2); }
-         this.removeOurChild(param2,"HsbPlate");
-         this.removeHeading(param1);
-      }
-      
-      private function paintPlate(param1:String, param2:DisplayObject):void
-      {
-         if(param2 == null || param2.parent == null) { return; }
-         var parent:DisplayObjectContainer = param2.parent as DisplayObjectContainer;
-         var frame:Sprite = parent.getChildByName("HsbFrame" + param1) as Sprite;
-         if(frame == null) { return; }
-         var box:Rectangle = param2.getBounds(parent);
-         var g:* = frame.graphics;
-         g.clear();
-         g.beginFill(0x121610,0.94);
-         g.drawRoundRect(box.x - 8,box.y - 8,box.width + 16,box.height + 16,14,14);
-         g.endFill();
-         g.lineStyle(1.5,this.accentColor(),0.95);
-         g.drawRoundRect(box.x - 8,box.y - 8,box.width + 16,box.height + 16,14,14);
-         g.lineStyle();
-      }
-      
-      private function fadeInside(param1:String, param2:DisplayObjectContainer, param3:DisplayObjectContainer, param4:int):void
-      {
-         if(param3 == null || param4 > 3) { return; }
-         var i:int = 0;
-         while(i < param3.numChildren)
+         catch(err:Error)
          {
-            var child:DisplayObject = param3.getChildAt(i);
-            var cname:String = child.name == null ? "" : String(child.name);
-            if(this.isOurNode(cname) || this.isProtectedName(cname))
-            {
-               i++;
-               continue;
-            }
-            if(this.fadeEligible(param1,child,param2))
-            {
-               this.rememberFade(child,param1);
-            }
-            else if(child is DisplayObjectContainer)
-            {
-               this.fadeInside(param1,param2,child as DisplayObjectContainer,param4 + 1);
-            }
+         }
+         return r;
+      }
+
+      private function viewText():String
+      {
+         var r:Object = this.stageView();
+         return int(r.x) + "," + int(r.y) + "," + int(r.width) + "," + int(r.height);
+      }
+
+      // The gold mockups at 1920x1080: power 33,38; card 33,290; cluster 807,37; credits
+      // 1012,38; browser 1388,37 (501x846); hints right edge 1888 at y 893; stats 424,947.
+      // Edges follow the screen margin; Arrange anchors (L/R/C, T/B/C plus offset) win.
+      internal function place():void
+      {
+         if(this.kit == null) { return; }
+         var r:Object = this.viewRect();
+         var dm:Number = this.margin - 34;
+         var sc:Number = this.uiScale;
+         var left:Number = r.x + 33 + dm;
+         var top:Number = r.y + 37 + dm;
+         var right:Number = r.x + r.width - 31 - dm;
+         var bottom:Number = r.y + r.height - 37 - dm;
+         var boxes:Array = [this.power,this.card,this.flight,this.credits,this.cluster,this.browser,this.colors,this.hints,this.stats];
+         var i:int = 0;
+         while(i < boxes.length)
+         {
+            (boxes[i] as HsbBox).scaleX = sc;
+            (boxes[i] as HsbBox).scaleY = sc;
             i++;
          }
-      }
-      
-      private function fadeEligible(param1:String, param2:DisplayObject, param3:DisplayObject):Boolean
-      {
-         if(param2 == null) { return false; }
-         var cname:String = param2.name == null ? "" : String(param2.name);
-         if(this.nodeHasText(param2) || this.canHoldContent(param2)) { return false; }
-         if(param2 is DisplayObjectContainer && (param2 as DisplayObjectContainer).numChildren > 0) { return false; }
-         if(this.isOurNode(cname) || this.isProtectedName(cname)) { return false; }
-         if(this.usedAs(param3,param2,"mask",0) || this.usedAs(param3,param2,"hit",0)) { return false; }
-         if(this.isBackdropName(cname)) { return true; }
-         if(param1 == "Module" && this.isLogoName(cname)) { return true; }
-         return false;
-      }
-      
-      private function canHoldContent(param1:DisplayObject):Boolean
-      {
-         return param1 is DisplayObjectContainer && !(param1 is Shape);
-      }
-      
-      private function usedAs(param1:DisplayObject, param2:DisplayObject, param3:String, param4:int):Boolean
-      {
-         if(param1 == null || param2 == null || param4 > 8) { return false; }
-         if(param3 == "mask" && param1.mask == param2) { return true; }
-         if(param3 == "hit" && param1.hitArea == param2) { return true; }
-         if(param1 is DisplayObjectContainer)
+         this.power.x = left;
+         this.power.y = top + 1;
+         this.card.x = left;
+         var below:Number = this.power.visible ? this.power.y + this.power.boxH * sc + 12 : top + 1;
+         this.card.y = below;
+         this.flight.x = left;
+         this.flight.y = below;
+         this.browser.x = right - this.browser.boxW * sc;
+         this.browser.y = top;
+         if(this.browser.collapsed) { this.browser.x = r.x + r.width - 12 - this.browser.boxW * sc; }
+         this.colors.x = right - this.colors.boxW * sc;
+         this.colors.y = top;
+         var slot:Number = (this.kit.lrg ? 560 : 501) * sc;
+         this.credits.x = right - slot - 13 - this.credits.boxW * sc;
+         this.credits.y = top + 1;
+         if(this.collapsed["Credits"] == true) { this.credits.x = right - slot - 13 - (this.kit.lrg ? 400 : 363) * sc; }
+         this.cluster.x = this.credits.x - 5 - this.cluster.boxW * sc;
+         if(this.collapsed["Credits"] == true) { this.cluster.x = this.credits.x - 5 - this.cluster.boxW * sc; }
+         this.cluster.y = top;
+         this.stats.x = right + 1 - this.stats.boxW * sc;
+         this.stats.y = bottom - this.stats.boxH * sc;
+         if(this.collapsed["Stats"] == true) { this.stats.x = r.x + (r.width - this.stats.boxW * sc) / 2; this.stats.y = r.y + r.height - 28 - this.stats.boxH * sc; }
+         this.hints.x = right + 1 - this.hints.boxW * sc;
+         this.hints.y = (this.collapsed["Stats"] == true || !this.stats.visible ? bottom - this.hints.boxH * sc : this.stats.y - 11 - this.hints.boxH * sc);
+         if(this.collapsed["Hints"] == true) { this.hints.y = r.y + r.height - 28 - this.hints.boxH * sc; }
+         this.anchorAll(r);
+         if(this.notice.visible)
          {
-            var box:DisplayObjectContainer = param1 as DisplayObjectContainer;
-            var i:int = 0;
-            while(i < box.numChildren)
-            {
-               if(this.usedAs(box.getChildAt(i),param2,param3,param4 + 1)) { return true; }
-               i++;
-            }
+            this.notice.x = r.x + (r.width - this.notice.boxW) / 2;
+            this.notice.y = r.y + 14;
          }
-         return false;
+         this.placePops(r);
       }
-      
-      private function isOurNode(param1:String):Boolean
+
+      private function anchorAll(param1:Object):void
       {
-         return param1 != null && param1.length >= 3 && param1.charAt(0) == "H" && param1.charAt(1) == "s" && param1.charAt(2) == "b";
-      }
-      
-      private function isProtectedName(param1:String):Boolean
-      {
-         return this.foldHas(param1,"entry") || this.foldHas(param1,"categor") || this.foldHas(param1,"scroll") || this.foldHas(param1,"button") || this.foldHas(param1,"slider") || this.foldHas(param1,"pip") || this.foldHas(param1,"input") || this.foldHas(param1,"list") || this.foldHas(param1,"tab") || this.foldHas(param1,"select") || this.foldHas(param1,"alloc") || this.foldHas(param1,"meter") || this.foldHas(param1,"reactor") || this.foldHas(param1,"equip") || this.boundHas(param1,"mask") || this.boundHas(param1,"hitarea") || this.boundHas(param1,"hit") || this.boundHas(param1,"hotspot");
-      }
-      
-      private function boundHas(param1:String, param2:String):Boolean
-      {
-         if(param1 == null || param2 == null || param2.length == 0 || param1.length < param2.length) { return false; }
-         var needle:String = param2.toLowerCase();
+         var ids:Array = ["Power","Module","Credits","Browser","Stats","Hints","Cluster"];
          var i:int = 0;
-         while(i + needle.length <= param1.length)
+         while(i < ids.length)
          {
-            if(param1.substr(i,needle.length).toLowerCase() == needle)
+            var id:String = String(ids[i]);
+            var list:Array = this.boxesFor(id);
+            var lead:HsbBox = list[0] as HsbBox;
+            var rawX:String = this.lay[id + "X"] != null ? String(this.lay[id + "X"]) : "-1";
+            var rawY:String = this.lay[id + "Y"] != null ? String(this.lay[id + "Y"]) : "-1";
+            if(rawX != "-1" || rawY != "-1")
             {
-               var boundary:Boolean = i == 0;
-               if(!boundary)
+               var w:Number = lead.boxW * lead.scaleX;
+               var h:Number = lead.boxH * lead.scaleY;
+               var x:Number = this.resolve(rawX,lead.x,w,param1.x,param1.width,"L","R");
+               var y:Number = this.resolve(rawY,lead.y,h,param1.y,param1.height,"T","B");
+               x = clampNum(x,param1.x,param1.x + Math.max(0,param1.width - w),lead.x);
+               y = clampNum(y,param1.y,param1.y + Math.max(0,param1.height - h),lead.y);
+               var k:int = 0;
+               while(k < list.length)
                {
-                  var prev:int = param1.charCodeAt(i - 1);
-                  var cur:int = param1.charCodeAt(i);
-                  var prevLetter:Boolean = (prev >= 65 && prev <= 90) || (prev >= 97 && prev <= 122);
-                  var camel:Boolean = prev >= 97 && prev <= 122 && cur >= 65 && cur <= 90;
-                  boundary = !prevLetter || camel;
-               }
-               if(boundary) { return true; }
-            }
-            i++;
-         }
-         return false;
-      }
-      
-      private function isBackdropName(param1:String):Boolean
-      {
-         return this.foldHas(param1,"background") || this.foldHas(param1,"backdrop") || this.foldHas(param1,"border") || this.foldHas(param1,"plate") || this.foldHas(param1,"shadow") || this.foldHas(param1,"gradient");
-      }
-      
-      private function isLogoName(param1:String):Boolean
-      {
-         return this.foldHas(param1,"logo") || this.foldHas(param1,"brand") || this.foldHas(param1,"manufact") || this.foldHas(param1,"company") || this.foldHas(param1,"emblem") || this.foldHas(param1,"wordmark");
-      }
-      
-      private function foldHas(param1:String, param2:String):Boolean
-      {
-         if(param1 == null || param2 == null || param2.length == 0) { return false; }
-         return param1.toLowerCase().indexOf(param2.toLowerCase()) >= 0;
-      }
-      
-      private function nodeHasText(param1:DisplayObject):Boolean
-      {
-         if(param1 is TextField)
-         {
-            var text:String = (param1 as TextField).text;
-            return text != null && text.length > 0;
-         }
-         if(!(param1 is DisplayObjectContainer)) { return false; }
-         var box:DisplayObjectContainer = param1 as DisplayObjectContainer;
-         var i:int = 0;
-         while(i < box.numChildren)
-         {
-            if(this.nodeHasText(box.getChildAt(i))) { return true; }
-            i++;
-         }
-         return false;
-      }
-      
-      private function rememberFade(param1:DisplayObject, param2:String):void
-      {
-         var i:int = 0;
-         while(i < this.fades.length)
-         {
-            if(this.fades[i].target == param1) { return; }
-            i++;
-         }
-         this.fades.push({"target":param1,"alpha":param1.alpha,"mouse":param1.mouseEnabled,"panel":param2});
-         param1.alpha = 0;
-         param1.mouseEnabled = false;
-      }
-      
-      private function revalidateFades():void
-      {
-         var kept:Array = [];
-         var i:int = 0;
-         while(i < this.fades.length)
-         {
-            var item:Object = this.fades[i];
-            var target:DisplayObject = item.target as DisplayObject;
-            if(target != null && target.parent != null)
-            {
-               var root:DisplayObject = this.clipByName(String(item.panel));
-               if(root == null) { root = target.parent; }
-               if(this.fadeEligible(String(item.panel),target,root))
-               {
-                  kept.push(item);
-               }
-               else
-               {
-                  target.alpha = Number(item.alpha);
-                  target.mouseEnabled = item.mouse == true;
+                  (list[k] as HsbBox).x = x;
+                  (list[k] as HsbBox).y = y;
+                  k++;
                }
             }
             i++;
          }
-         this.fades = kept;
       }
-      
-      private function restoreFades(param1:DisplayObject):void
+
+      // Colours share the browser's slot; Flight Check shares the card's.
+      internal function boxesFor(param1:String):Array
       {
-         var kept:Array = [];
+         switch(param1)
+         {
+            case "Power": return [this.power];
+            case "Module": return [this.card,this.flight];
+            case "Credits": return [this.credits];
+            case "Browser": return [this.browser,this.colors];
+            case "Stats": return [this.stats];
+            case "Hints": return [this.hints];
+            case "Cluster": return [this.cluster];
+         }
+         return [];
+      }
+
+      private function resolve(param1:String, param2:Number, param3:Number, param4:Number, param5:Number, param6:String, param7:String):Number
+      {
+         if(param1 == "-1" || param1.length < 2) { return param2; }
+         var edge:String = param1.charAt(0);
+         var off:Number = Number(param1.substring(1));
+         if(isNaN(off)) { return param2; }
+         if(edge == param6) { return param4 + this.margin + off; }
+         if(edge == param7) { return param4 + param5 - this.margin - param3 - off; }
+         if(edge == "C") { return param4 + (param5 - param3) / 2 + off; }
+         return param2;
+      }
+
+      private function collapseButton(param1:HsbBox, param2:Number, param3:Number, param4:String, param5:String):void
+      {
+         var s:Number = this.kit.u(22);
+         this.kit.fill(param1.gfx,param2,param3,s,s,5,0x1A2128,1);
+         this.kit.outline(param1.gfx,param2,param3,s,s,5,HsbKit.EDGE_HI,1);
+         this.kit.icon(param1.gfx,param4,param2 + 3,param3 + 3,s - 6,HsbKit.LABEL,1);
+         param1.hit(param2 - 4,param3 - 4,s + 8,s + 8,param5);
+      }
+
+      private function paintPower():void
+      {
+         var b:HsbBox = this.power;
+         b.wipe();
+         b.visible = this.shown("Power");
+         if(!b.visible) { return; }
+         var k:HsbKit = this.kit;
+         var p:Object = this.dPower != null ? this.dPower : {};
+         var s:Object = this.dStats != null ? this.dStats : {};
+         var names:Array = ["iWeapon1","iWeapon2","iWeapon3","iEngine","iShield","iGravDrive"];
+         var assigned:int = 0;
          var i:int = 0;
-         while(i < this.fades.length)
+         while(i < names.length) { assigned += Math.max(0,int(p[names[i]])); i++; }
+         var total:int = int(s.iReactorPower);
+         if(total <= 0) { total = int(p.iReactor); }
+         var w:Number = k.lrg ? 390 : 350;
+         if(this.collapsed["Power"] == true)
          {
-            var item:Object = this.fades[i];
-            var target:DisplayObject = item.target as DisplayObject;
-            if(this.ownsNode(param1,target))
-            {
-               if(target != null)
-               {
-                  target.alpha = Number(item.alpha);
-                  target.mouseEnabled = item.mouse == true;
-               }
-            }
-            else
-            {
-               kept.push(item);
-            }
-            i++;
-         }
-         this.fades = kept;
-      }
-      
-      private function ownsNode(param1:DisplayObject, param2:DisplayObject):Boolean
-      {
-         if(param1 == null || param2 == null) { return false; }
-         var node:DisplayObject = param2;
-         var guard:int = 0;
-         while(node != null && guard < 10)
-         {
-            if(node == param1) { return true; }
-            node = node.parent;
-            guard++;
-         }
-         return false;
-      }
-      
-      private function removeOurChild(param1:DisplayObject, param2:String):void
-      {
-         if(!(param1 is DisplayObjectContainer)) { return; }
-         if(!this.isOurNode(param2)) { return; }
-         var box:DisplayObjectContainer = param1 as DisplayObjectContainer;
-         var child:DisplayObject = box.getChildByName(param2);
-         if(child != null) { box.removeChild(child); }
-      }
-      
-      private function removeHeading(param1:String):void
-      {
-         var node:DisplayObject = this.findDeep(this.host as DisplayObjectContainer,"HsbHead" + param1,0);
-         if(node != null && node.parent != null && this.isOurNode(node.name))
-         {
-            (node.parent as DisplayObjectContainer).removeChild(node);
-         }
-      }
-      
-      private function parkHeading(param1:String, param2:DisplayObject):void
-      {
-         if(param1 == "Module" && this.modOn) { return; }
-         if(param1 != "Power" && param1 != "Module" && param1 != "Browser")
-         {
-            this.removeHeading(param1);
+            var pillW:Number = k.u(196);
+            var pillH:Number = k.u(34);
+            k.card(b.graphics,0,0,pillW,pillH,10);
+            var pt:TextField = k.text(13,k.accent,true,2);
+            k.putCaps(pt,"$POWER","POWER");
+            k.fit(pt);
+            b.add(pt,12,(pillH - pt.height) / 2);
+            var pa:TextField = k.text(13,HsbKit.TEXT,true);
+            k.put(pa,assigned + " / " + total);
+            k.fit(pa);
+            b.add(pa,pt.x + pt.width + 8,(pillH - pa.height) / 2);
+            this.collapseButton(b,pillW - k.u(28),(pillH - k.u(22)) / 2,"chevD","power.open");
+            b.hit(0,0,pillW,pillH,"power.open");
+            b.boxW = pillW;
+            b.boxH = pillH;
             return;
          }
-         if(param2 == null || param2.parent == null) { return; }
-         var parent:DisplayObjectContainer = param2.parent as DisplayObjectContainer;
-         var headName:String = "HsbHead" + param1;
-         var label:String = param1 == "Power" ? "POWER" : (param1 == "Module" ? "SELECTED MODULE" : "PARTS BROWSER");
-         var px:int = this.lrg ? 16 : 13;
-         var head:TextField = parent.getChildByName(headName) as TextField;
-         if(head == null)
+         var h:Number = k.u(240);
+         k.card(b.graphics,0,0,w,h);
+         var title:TextField = k.text(14,k.accent,true,2);
+         k.putCaps(title,"$POWER","POWER");
+         k.fit(title);
+         b.add(title,20,14);
+         this.collapseButton(b,w - 20 - k.u(22),12,"chevUU","power.close");
+         var aside:TextField = k.text(14,HsbKit.MUTED,false,0,"right");
+         k.put(aside,assigned + " of " + total + " assigned");
+         aside.width = 200;
+         b.add(aside,w - 20 - k.u(22) - 8 - 200,14);
+         var labels:Array = ["W1","W2","W3","$ENG","$SHD","$GRV"];
+         var english:Array = ["W1","W2","W3","ENG","SHD","GRV"];
+         var mx:Number = 27;
+         var step:Number = (w - 54 - 34) / 5;
+         var meterH:Number = k.u(92);
+         var my:Number = 45;
+         i = 0;
+         while(i < names.length)
          {
-            head = this.makeText(label,0,0,360,px + 12,px,0xE8C547);
-            head.name = headName;
-            head.mouseEnabled = false;
-            parent.addChild(head);
-         }
-         var box:Rectangle = param2.getBounds(parent);
-         head.x = box.x;
-         head.y = box.y - (px + 8);
-         if(head.y < 2) { head.y = box.y + 4; }
-      }
-      
-      private function parkTitle(param1:Object):void
-      {
-         var live:Boolean = this.clipLive(this.clipByName("Browser"));
-         if(this.pill == null)
-         {
-            this.pill = new Sprite();
-            this.pill.name = "HsbTitle";
-            this.pill.mouseEnabled = false;
-            this.pill.mouseChildren = false;
-            var px0:int = this.lrg ? 20 : 16;
-            var label0:TextField = this.makeText("HORIZON SHIP BUILDER",18,5,390,px0 + 10,px0,0xE8C547);
-            label0.name = "HsbTitleText";
-            this.pill.addChild(label0);
-            addChild(this.pill);
-         }
-         this.pill.visible = live && !this.conflict;
-         if(!this.pill.visible) { return; }
-         var wide:Number = this.lrg ? 460 : 420;
-         var high:Number = this.lrg ? 40 : 34;
-         var g:* = this.pill.graphics;
-         g.clear();
-         g.lineStyle(1.5,0xE8C547,1);
-         g.beginFill(0x141810,0.94);
-         g.drawRoundRect(0,0,wide,high,16,16);
-         g.endFill();
-         this.pill.x = param1.x + Math.max(this.margin,param1.width * 0.34);
-         this.pill.y = param1.y + 6;
-      }
-      
-      private function recolorTree(param1:DisplayObjectContainer, param2:int):void
-      {
-         if(param1 == null || param2 > 8) { return; }
-         var i:int = 0;
-         while(i < param1.numChildren)
-         {
-            var child:DisplayObject = param1.getChildAt(i);
-            var cname:String = child.name == null ? "" : String(child.name);
-            if(this.isOurNode(cname))
+            var value:int = int(p[names[i]]);
+            var diff:int = int(p[names[i] + "Diff"]);
+            var x:Number = mx + i * step;
+            if(value > 0) { this.meter(b.gfx,x,my,34,meterH,12,value,diff); }
+            else
             {
-               i++;
-               continue;
+               k.outline(b.gfx,x,my,34,meterH,5,HsbKit.EDGE_HI,1);
+               k.hline(b.gfx,x + 12,my + meterH / 2,10,HsbKit.DIM,1);
             }
-            if(child is TextField)
-            {
-               this.recolorField(child as TextField);
-            }
-            else if(child is DisplayObjectContainer)
-            {
-               this.recolorTree(child as DisplayObjectContainer,param2 + 1);
-            }
+            var lab:TextField = k.text(13,value > 0 ? HsbKit.TEXT : HsbKit.MUTED,value > 0,1.5,"center");
+            if(i < 3) { k.put(lab,english[i]); }
+            else { k.putCaps(lab,String(labels[i]),String(english[i])); }
+            lab.width = 60;
+            b.add(lab,x + 17 - 30,my + meterH + 6);
             i++;
          }
-      }
-      
-      private function recolorField(param1:TextField):void
-      {
-         var rgb:int = param1.textColor;
-         var style:int = this.styleColor(rgb,param1.name == null ? "" : String(param1.name));
-         if(style == rgb) { return; }
-         var fmt:TextFormat = param1.defaultTextFormat;
-         if(fmt == null) { fmt = new TextFormat(); }
-         fmt.color = style;
-         param1.defaultTextFormat = fmt;
-         param1.textColor = style;
-         param1.setTextFormat(fmt);
-      }
-      
-      private function styleColor(param1:int, param2:String):int
-      {
-         if(this.luma(param1) < 90) { return param1; }
-         if(this.foldHas(param2,"header") || this.foldHas(param2,"title") || this.foldHas(param2,"categor") || this.foldHas(param2,"label") || this.foldHas(param2,"tab"))
+         var pipY:Number = my + meterH + 6 + k.u(28);
+         var pips:int = Math.min(38,Math.max(0,total));
+         var pipGap:Number = 2.4;
+         var pipW:Number = pips > 0 ? Math.min(7,(w - 40 - (pips - 1) * pipGap) / pips) : 7;
+         i = 0;
+         while(i < pips)
          {
-            return 0xE8C547;
+            k.fill(b.gfx,20 + i * (pipW + pipGap),pipY,pipW,7,1.5,i < assigned ? k.accent : k.accentDim(0.22),1);
+            i++;
          }
-         return 0xF4F0E4;
+         var rowY:Number = pipY + 18;
+         var cls:String = this.reactorClass(int(s.iReactorClass));
+         var chipW:Number = 0;
+         if(cls.length > 0) { chipW = k.keycap(b,20,rowY,cls,k.accent,k.u(24)) + 10; }
+         var rl:TextField = k.text(13,HsbKit.LABEL,false,1.5);
+         k.putCaps(rl,"$REACTOR","REACTOR");
+         k.fit(rl);
+         b.add(rl,20 + chipW,rowY + 2);
+         var rv:TextField = k.text(16,HsbKit.TEXT,true);
+         k.put(rv,HsbKit.num(s.iReactorPower));
+         k.fit(rv);
+         b.add(rv,rl.x + rl.width + 14,rowY);
+         var equip:Number = Number(s.iWeaponPower) + Number(s.iEnginePower) + Number(s.iShieldPower);
+         var ev:TextField = k.text(16,HsbKit.TEXT,true,0,"right");
+         k.put(ev,isNaN(equip) ? "" : HsbKit.num(equip));
+         ev.width = 60;
+         b.add(ev,w - 20 - 60,rowY);
+         var el:TextField = k.text(13,HsbKit.LABEL,false,1.5,"right");
+         k.putCaps(el,"$EQUIP POWER","EQUIP POWER");
+         el.width = 150;
+         b.add(el,w - 20 - 60 - 8 - 150,rowY + 2);
+         b.boxW = w;
+         b.boxH = h;
       }
-      
-      private function luma(param1:int):int
+
+      // The vanilla meter: value-diff bars lit, |diff| bars as the add or remove state, the rest
+      // empty, on a fixed 12-bar scale (the game does not expose a capacity).
+      private function meter(param1:Graphics, param2:Number, param3:Number, param4:Number, param5:Number, param6:int, param7:int, param8:int):void
       {
-         var r:int = (param1 >> 16) & 255;
-         var g:int = (param1 >> 8) & 255;
-         var b:int = param1 & 255;
-         return int((r * 3 + g * 6 + b) / 10);
+         var lit:int = param8 > 0 ? param7 - param8 : param7;
+         var extra:int = Math.abs(param8);
+         if(lit + extra > param6)
+         {
+            if(lit > param6) { lit = param6; }
+            extra = param6 - lit;
+         }
+         var gap:Number = 2.6;
+         var barH:Number = (param5 - (param6 - 1) * gap) / param6;
+         var n:int = 0;
+         while(n < param6)
+         {
+            var color:uint = this.kit.accentDim(0.22);
+            if(n < lit) { color = this.kit.accent; }
+            else if(n < lit + extra) { color = param8 < 0 ? HsbKit.RED : HsbKit.GREEN; }
+            var by:Number = param3 + param5 - (n + 1) * barH - n * gap;
+            this.kit.fill(param1,param2 + 3,by,param4 - 6,barH,1.5,color,1);
+            n++;
+         }
       }
-      
-      // The Selected Module card reads ModuleInfo only. The game card stays where the menu
-      // put it, at alpha 0, so the menu keeps filling, sizing, and showing it.
-      private function listenModule():void
+
+      private function reactorClass(param1:int):String
       {
-         try
-         {
-            BSUIDataManager.Subscribe("ModuleInfo",this.onModuleInfo);
-            this.note("MODCARD listen ok");
-         }
-         catch(err:Error)
-         {
-            this.note("MODCARD listen miss");
-         }
+         var letters:Array = ["A","B","C","M"];
+         if(param1 < 0 || param1 >= letters.length) { return ""; }
+         return String(letters[param1]);
       }
-      
-      private function onModuleInfo(param1:Object):void
+
+      // The Selected Module card, fed by ModuleInfo only. Numbers and translation follow the
+      // vanilla ModuleInfoCard rules (statText, diffText, rank substitution).
+      private function paintCard():void
       {
-         var data:Object = null;
-         try { data = param1.data; } catch(err:Error) { data = null; }
-         if(data == null)
+         var b:HsbBox = this.card;
+         b.wipe();
+         var data:Object = this.dModule;
+         b.visible = this.shown("Module") && data != null;
+         if(!b.visible) { return; }
+         var k:HsbKit = this.kit;
+         var w:Number = k.lrg ? 390 : 350;
+         var pad:Number = 20;
+         var g:Graphics = b.gfx;
+         if(this.collapsed["Module"] == true)
          {
-            try { data = param1.target.data; } catch(err2:Error) { data = null; }
+            var nm:TextField = k.text(14,HsbKit.TEXT,true);
+            k.put(nm,data.sModuleName);
+            k.fit(nm,k.u(300));
+            var pw:Number = nm.width + k.u(60);
+            var ph:Number = k.u(32);
+            k.card(g,0,0,pw,ph,9);
+            k.fill(g,12,(ph - k.u(16)) / 2,3,k.u(16),0,k.accent,1);
+            b.add(nm,22,(ph - nm.height) / 2);
+            this.collapseButton(b,pw - k.u(28),(ph - k.u(22)) / 2,"chevR","module.open");
+            b.hit(0,0,pw,ph,"module.open");
+            b.boxW = pw;
+            b.boxH = ph;
+            return;
          }
-         if(data == null) { return; }
-         this.modData = data;
-         this.modFailed = false;
-         var was:Boolean = this.modOn;
-         this.syncModule();
-         if(was && this.modOn && this.paintSafe()) { this.seatModule(this.modNative); }
-      }
-      
-      private function syncModule():void
-      {
-         var clip:DisplayObject = this.clipByName("Module");
-         if(this.modOn && clip != this.modNative) { this.dropModule(); }
-         var why:String = this.moduleGate(clip);
-         if(why == "on")
+         var inner:Number = w - pad * 2;
+         var head:TextField = k.text(14,k.accent,true,2);
+         k.putCaps(head,"$SELECTED MODULE","SELECTED MODULE");
+         k.fit(head);
+         b.add(head,pad,16);
+         this.collapseButton(b,w - pad - k.u(22),13,"dockL","module.close");
+         var y:Number = 16 + head.height + 6;
+         var name:TextField = k.text(18,HsbKit.TEXT,true);
+         name.multiline = true;
+         name.wordWrap = true;
+         name.width = inner - 12;
+         k.put(name,data.sModuleName);
+         name.height = name.textHeight + 6;
+         k.fill(g,pad,y + 4,3,k.u(20),0,k.accent,1);
+         b.add(name,pad + 11,y);
+         y += name.height + 2;
+         var bits:Array = [];
+         var maker:String = HsbBrowser.makerOf(String(data.sModuleName));
+         if(maker.length > 0) { bits.push(maker); }
+         var size:String = HsbBrowser.sizeOf(String(data.sModuleName));
+         if(size.length > 0) { bits.push(size); }
+         var vline:String = this.browser.variantLine();
+         if(vline.length > 0) { bits.push(vline); }
+         if(bits.length > 0)
          {
-            if(!this.modOn) { this.holdModule(clip); }
-            if(this.modOn) { this.seatModule(this.modNative); }
-            else { why = "paint"; }
+            var subT:TextField = k.text(13,HsbKit.MUTED);
+            k.put(subT,bits.join(" \u00B7 "));
+            k.fit(subT,inner);
+            b.add(subT,pad + 11,y);
+            y += subT.height + 4;
          }
-         else if(this.modOn) { this.dropModule(); }
-         var said:String = why == "on" ? why + this.modFacts : why;
-         if(said != this.modWhy)
+         y += 8;
+         k.hline(g,pad,y,inner);
+         y += 8;
+         var rows:Array = data.aStats as Array;
+         var count:int = rows == null ? 0 : Math.min(rows.length,10);
+         var pitch:Number = k.u(30);
+         var i:int = 0;
+         while(i < count)
          {
-            this.modWhy = said;
-            this.note("MODCARD " + said);
-         }
-         if(why == "on" && this.modValsKey != this.modValsSaid && this.modValsLeft > 0)
-         {
-            this.modValsSaid = this.modValsKey;
-            this.modValsLeft--;
-            var v:int = 0;
-            while(v < this.modVals.length)
+            var stat:Object = rows[i];
+            var lab:TextField = k.text(13,0xC9D0D4,false,1);
+            k.put(lab,stat.text);
+            if(lab.text.length > 0 && lab.text.charAt(0) != "$") { k.put(lab,lab.text.toUpperCase()); }
+            lab.width = inner - 120;
+            b.add(lab,pad,y + (pitch - lab.height) / 2);
+            var val:TextField = k.text(15,HsbKit.TEXT,true,0,"right");
+            k.put(val,statText(stat));
+            val.width = 80;
+            b.add(val,w - pad - 52 - 80,y + (pitch - val.height) / 2);
+            var chip:String = diffText(stat);
+            if(chip.length == 0) { k.hline(g,w - pad - 16,y + pitch / 2,10,HsbKit.DIM,1); }
+            else
             {
-               this.note("MODVALS " + this.modVals[v]);
-               v++;
+               var tag:TextField = k.text(12,Number(stat.fDiff) > 0 ? HsbKit.GREEN : HsbKit.RED,true);
+               k.put(tag,chip);
+               if(tag.textWidth + 14 > 44) { k.put(tag,shortChip(chip)); }
+               if(tag.textWidth + 14 > 44) { k.put(tag,chip.charAt(0)); }
+               k.fit(tag);
+               var cw:Number = Math.min(44,Math.max(k.u(26),tag.textWidth + 14));
+               var ch:Number = k.u(20);
+               k.fill(g,w - pad - cw,y + (pitch - ch) / 2,cw,ch,5,Number(stat.fDiff) > 0 ? HsbKit.GREEN_BG : HsbKit.RED_BG,1);
+               b.add(tag,w - pad - cw + (cw - tag.width) / 2,y + (pitch - tag.height) / 2);
+            }
+            y += pitch;
+            i++;
+         }
+         if(count > 0)
+         {
+            y += 10;
+            k.hline(g,pad,y,inner);
+         }
+         y += 16;
+         var desc:TextField = k.text(14,0xD6DBDF);
+         desc.multiline = true;
+         desc.wordWrap = true;
+         desc.width = inner;
+         k.put(desc,data.sDescription);
+         desc.height = desc.textHeight + 6;
+         b.add(desc,pad,y);
+         y += Math.max(desc.height,k.u(48)) + 12;
+         var skills:Array = data.aRequiredAttributes as Array;
+         var need:int = skills == null ? 0 : Math.min(skills.length,2);
+         if(need > 0)
+         {
+            k.hline(g,pad,y,inner);
+            y += 10;
+            var s:int = 0;
+            while(s < need)
+            {
+               var row:Object = skills[s];
+               var has:Boolean = Boolean(row.bHasSkill);
+               var sk:TextField = k.text(14,has ? 0xF4F0E4 : HsbKit.RED);
+               k.put(sk,row.sName);
+               sk.width = inner - 112;
+               b.add(sk,pad,y);
+               var rk:TextField = k.text(14,has ? HsbKit.LABEL : HsbKit.RED,false,0,"right");
+               k.put(rk,"$(Rank #)");
+               k.put(rk,GlobalFunc.DoSubstitutions(rk.text,[row.uRank]));
+               rk.width = 110;
+               b.add(rk,w - pad - 110,y);
+               y += pitch;
+               s++;
             }
          }
-      }
-      
-      // The first failing check names the state in the log.
-      private function moduleGate(param1:DisplayObject):String
-      {
-         if(this.face.length == 0) { return "face"; }
-         if(this.conflict) { return "conflict"; }
-         if(!this.mapped) { return "map"; }
-         if(param1 == null || param1.parent == null) { return "clip"; }
-         var data:Object = this.modData;
-         if(data == null || data.sModuleName == null || String(data.sModuleName).length == 0) { return "data"; }
-         if(this.modFailed) { return "paint"; }
-         if(!Boolean(data.bShowWidget) || !this.chainShown(param1)) { return "hidden"; }
-         if(this.hangarShown()) { return "hangar"; }
-         if(this.arranging && !this.modOn) { return "arrange"; }
-         return "on";
-      }
-      
-      private function chainShown(param1:DisplayObject):Boolean
-      {
-         var node:DisplayObject = param1;
-         var guard:int = 0;
-         while(node != null && guard < 12)
+         k.hline(g,pad,y,inner);
+         y += 16;
+         var half:Number = w / 2 + 14;
+         var vl:TextField = k.text(13,HsbKit.MUTED,false,1.5);
+         k.putCaps(vl,"$VALUE","VALUE");
+         k.fit(vl);
+         b.add(vl,pad,y);
+         var ml:TextField = k.text(13,HsbKit.MUTED,false,1.5);
+         k.putCaps(ml,"$MASS","MASS");
+         k.fit(ml);
+         b.add(ml,half,y);
+         y += vl.height + 2;
+         var vv:TextField = k.text(22,HsbKit.TEXT,true);
+         k.put(vv,HsbKit.num(data.iModuleCost));
+         k.fit(vv);
+         b.add(vv,pad,y);
+         var mv:TextField = k.text(22,HsbKit.TEXT,true);
+         k.put(mv,HsbKit.num(data.iModuleMass));
+         k.fit(mv);
+         b.add(mv,half,y);
+         var st:Object = this.dStats;
+         if(st != null && Boolean(st.bShowingPreview) && Number(st.iMassDiff) != 0)
          {
-            if(!node.visible) { return false; }
-            node = node.parent;
-            guard++;
+            var md:Number = Number(st.iMassDiff);
+            k.diffChip(b,half + mv.width + 6,y + (mv.height - k.u(20)) / 2,(md > 0 ? "+" : "-") + HsbKit.num(Math.abs(md)),md < 0);
          }
-         return param1.stage != null;
-      }
-      
-      private function hangarShown():Boolean
-      {
-         var hangar:DisplayObject = null;
-         try { hangar = this.host["HangarInfoPanel_mc"] as DisplayObject; } catch(err:Error) { hangar = null; }
-         return hangar != null && hangar.visible;
-      }
-      
-      // Our card is painted before the game card is touched, so a bad payload leaves it alone.
-      private function holdModule(param1:DisplayObject):void
-      {
-         if(!this.paintSafe()) { return; }
-         this.modNative = param1;
-         this.modAlpha = param1.alpha > 0 ? param1.alpha : 1;
-         param1.alpha = 0;
-         this.modOn = true;
-         this.removeFrame("HsbFrameModule");
-         this.removeHeading("Module");
-      }
-      
-      private function dropModule():void
-      {
-         if(this.modNative != null) { this.modNative.alpha = this.modAlpha; }
-         this.modNative = null;
-         this.modOn = false;
-         if(this.modCard != null) { this.modCard.visible = false; }
-      }
-      
-      // A throw keeps the game card up until the next payload.
-      private function paintSafe():Boolean
-      {
-         try
+         y += vv.height + 10;
+         var cost:Object = this.dCost;
+         if(cost != null && Number(cost.uTotalCredits) != 0)
          {
-            if(this.modCard == null) { this.buildModule(); }
-            this.paintModule();
-            return true;
+            var cl:TextField = k.text(13,HsbKit.MUTED);
+            k.put(cl,"Total change cost: " + (Boolean(cost.bBuying) ? "+" : "-") + HsbKit.num(cost.uTotalCredits));
+            k.fit(cl,inner);
+            b.add(cl,pad,y + 4);
+            y += cl.height + 6;
          }
-         catch(err:Error)
-         {
-         }
-         this.modFailed = true;
-         this.dropModule();
-         return false;
+         var h:Number = y + 14;
+         k.card(b.graphics,0,0,w,h);
+         b.boxW = w;
+         b.boxH = h;
       }
-      
-      // Right above the game card in its own parent, so menu popups still draw over it.
-      private function seatModule(param1:DisplayObject):void
-      {
-         if(this.modCard == null || param1 == null || param1 != this.modNative) { return; }
-         var parent:DisplayObjectContainer = param1.parent;
-         if(parent == null) { return; }
-         var at:int = parent.getChildIndex(param1);
-         if(this.modCard.parent != parent) { parent.addChildAt(this.modCard,at + 1); }
-         else
-         {
-            var mine:int = parent.getChildIndex(this.modCard);
-            if(mine != at + 1) { parent.setChildIndex(this.modCard,mine > at ? at + 1 : at); }
-         }
-         var box:Rectangle = param1.getBounds(parent);
-         var y:Number = this.arranging ? box.y : this.liftModule(parent,box.y,this.modHigh);
-         this.modCard.x = Math.round(box.x);
-         this.modCard.y = Math.round(y);
-         this.modCard.visible = true;
-         if(param1.alpha != 0) { param1.alpha = 0; }
-      }
-      
-      // Outside Arrange a card taller than the room under the game card is lifted to stay on
-      // screen. Arrange seats it exactly, so a drag and a saved spot use the game card's top.
-      private function liftModule(param1:DisplayObjectContainer, param2:Number, param3:Number):Number
-      {
-         var r:Object = this.modView;
-         if(r == null) { return param2; }
-         if(r != this.liftView || param1 != this.liftParent)
-         {
-            this.liftView = r;
-            this.liftParent = param1;
-            this.liftTop = param1.globalToLocal(this.localToGlobal(new Point(r.x,r.y))).y;
-            this.liftLow = param1.globalToLocal(this.localToGlobal(new Point(r.x,r.y + r.height))).y;
-         }
-         if(param2 + param3 <= this.liftLow) { return param2; }
-         return Math.max(this.liftTop,this.liftLow - param3);
-      }
-      
-      private function cardW():Number
-      {
-         return this.lrg ? 410 : 350;
-      }
-      
-      private function cardPad():Number
-      {
-         return this.lrg ? 20 : 18;
-      }
-      
-      private function buildModule():void
-      {
-         var head:int = this.lrg ? 16 : 13;
-         var body:int = this.lrg ? 16 : 14;
-         var big:int = this.lrg ? 30 : 26;
-         this.modCard = new Sprite();
-         this.modCard.name = "HsbModuleCard";
-         this.modCard.mouseEnabled = false;
-         this.modCard.mouseChildren = false;
-         this.modCard.visible = false;
-         this.modLines = new Shape();
-         this.modCard.addChild(this.modLines);
-         this.modHead = this.cardText(head,false);
-         this.spaceOut(this.modHead,2);
-         this.modName = this.cardText(this.lrg ? 24 : 21,true);
-         this.modDesc = this.cardText(body,true);
-         this.modValueL = this.cardText(head,false);
-         this.modMassL = this.cardText(head,false);
-         this.modValue = this.cardText(big,false);
-         this.modMass = this.cardText(big,false);
-      }
-      
-      private function cardText(param1:int, param2:Boolean):TextField
-      {
-         var field:TextField = this.makeText("",0,0,200,param1 + 10,param1,0xFFFFFF);
-         if(param2)
-         {
-            field.multiline = true;
-            field.wordWrap = true;
-         }
-         this.modCard.addChild(field);
-         return field;
-      }
-      
-      private function spaceOut(param1:TextField, param2:Number):void
-      {
-         var fmt:TextFormat = param1.defaultTextFormat;
-         fmt.letterSpacing = param2;
-         param1.defaultTextFormat = fmt;
-         param1.setTextFormat(fmt);
-      }
-      
-      private function alignRight(param1:TextField):void
-      {
-         var fmt:TextFormat = param1.defaultTextFormat;
-         fmt.align = "right";
-         param1.defaultTextFormat = fmt;
-         param1.setTextFormat(fmt);
-      }
-      
-      // A $ key is translated when the field takes it, as on the game card.
-      private function put(param1:TextField, param2:Object, param3:uint):void
-      {
-         var fmt:TextFormat = param1.defaultTextFormat;
-         fmt.color = param3;
-         param1.defaultTextFormat = fmt;
-         param1.text = param2 == null ? "" : String(param2);
-         param1.setTextFormat(fmt);
-      }
-      
-      // The game's own label key, upper-cased once translated. A kept key shows the English
-      // word and counts toward keys= in the log.
-      private function putKey(param1:TextField, param2:String, param3:String, param4:uint):int
-      {
-         this.put(param1,param2,param4);
-         if(param1.text.charAt(0) == "$")
-         {
-            this.put(param1,param3,param4);
-            return 1;
-         }
-         param1.text = param1.text.toUpperCase();
-         return 0;
-      }
-      
-      private function moduleRow(param1:int):Object
-      {
-         var body:int = this.lrg ? 16 : 14;
-         var small:int = this.lrg ? 16 : 13;
-         while(this.modRows.length <= param1)
-         {
-            var label:TextField = this.cardText(body,true);
-            var value:TextField = this.cardText(body,false);
-            this.alignRight(value);
-            var chip:Sprite = new Sprite();
-            chip.mouseEnabled = false;
-            chip.mouseChildren = false;
-            var tag:TextField = this.makeText("",0,0,96,small + 8,small,0xFFFFFF);
-            chip.addChild(tag);
-            this.modCard.addChild(chip);
-            this.modRows.push({"label":label,"value":value,"chip":chip,"tag":tag});
-         }
-         return this.modRows[param1];
-      }
-      
-      private function moduleSkill(param1:int):Object
-      {
-         var body:int = this.lrg ? 16 : 14;
-         while(this.modSkills.length <= param1)
-         {
-            var skill:TextField = this.cardText(body,false);
-            var rank:TextField = this.cardText(body,false);
-            this.alignRight(rank);
-            this.modSkills.push({"skill":skill,"rank":rank});
-         }
-         return this.modSkills[param1];
-      }
-      
-      // Unused rows sit at the card's corner, so they never widen its bounds.
-      private function park(param1:DisplayObject):void
-      {
-         param1.visible = false;
-         param1.x = 0;
-         param1.y = 0;
-      }
-      
-      // ModuleInfoCard.UpdateValues formats each stat this way.
-      private function statText(param1:Object):String
+
+      internal static function statText(param1:Object):String
       {
          if(String(param1.text) == "$CLASS") { return String.fromCharCode(param1.fValue); }
          if(param1.bPercentage) { return GlobalFunc.FormatNumberToString(Number(param1.fValue) * 100) + "%"; }
          return GlobalFunc.FormatNumberToString(Number(param1.fValue),2);
       }
-      
+
       // The game marks a change by frame only, so the chip is new text. A diff too small to
       // show at the value's places gets no chip.
-      private function diffText(param1:Object):String
+      internal static function diffText(param1:Object):String
       {
          var diff:Number = Number(param1.fDiff);
          if(!(diff > 0) && !(diff < 0)) { return ""; }
          var sign:String = diff > 0 ? "+" : "-";
          if(String(param1.text) == "$CLASS") { return sign; }
-         var size:String = param1.bPercentage ? this.chipNumber(Math.abs(diff) * 100,0) : this.chipNumber(Math.abs(diff),2);
+         var size:String = param1.bPercentage ? chipNumber(Math.abs(diff) * 100,0) : chipNumber(Math.abs(diff),2);
          if(size == "0") { return ""; }
          return sign + size + (param1.bPercentage ? "%" : "");
       }
-      
+
       // A chip too wide for its room drops its places, as a cut would. A whole part of 0 would
       // read as no change, so that chip keeps its sign alone.
-      private function shortChip(param1:String):String
+      internal static function shortChip(param1:String):String
       {
          var dot:int = param1.indexOf(".");
          if(dot < 0 || param1.indexOf("e") >= 0) { return param1.charAt(0); }
          var whole:String = param1.substring(0,dot);
          return whole.length == 2 && whole.charAt(1) == "0" ? param1.charAt(0) : whole;
       }
-      
+
       // FormatNumberToString cuts the text of toString, which turns float noise such as
       // 1.2e-7 into "1.2". toFixed never writes an exponent below 1e21.
-      private function chipNumber(param1:Number, param2:int):String
+      internal static function chipNumber(param1:Number, param2:int):String
       {
          var text:String = param1.toFixed(6);
          var dot:int = text.indexOf(".");
@@ -2706,289 +1487,925 @@ package
          }
          return text;
       }
-      
-      private function moduleNumber(param1:*):String
+
+      private function paintCluster():void
       {
-         if(param1 == null) { return ""; }
-         return GlobalFunc.FormatNumberToString(Number(param1));
+         var b:HsbBox = this.cluster;
+         b.wipe();
+         b.visible = this.vis["Cluster"] == true;
+         if(!b.visible) { return; }
+         var k:HsbKit = this.kit;
+         var h:Number = k.u(38);
+         var g:Graphics = b.gfx;
+         k.card(g,0,0,h,h,7);
+         k.icon(g,"gear",(h - k.u(18)) / 2,(h - k.u(18)) / 2,k.u(18),k.accent,1);
+         b.hit(0,0,h,h,"gear");
+         var bx:Number = h + 8;
+         var label:TextField = k.text(13,HsbKit.TEXT,true,1.5);
+         k.put(label,this.hideAll ? "SHOW ALL" : "HIDE ALL");
+         k.fit(label);
+         var capLabel:String = this.keyHide.length > 0 && this.keyHide != "0" ? this.keyHide : "";
+         var bw:Number = 12 + k.u(18) + 8 + label.width + (capLabel.length > 0 ? 10 + k.u(24) : 0) + 12;
+         k.card(g,bx,0,bw,h,7);
+         if(this.hideAll) { k.outline(g,bx,0,bw,h,7,k.accent,1); }
+         k.icon(g,this.hideAll ? "eye" : "eyeOff",bx + 12,(h - k.u(18)) / 2,k.u(18),k.accent,1);
+         b.add(label,bx + 12 + k.u(18) + 8,(h - label.height) / 2);
+         if(capLabel.length > 0) { k.keycap(b,bx + bw - 12 - k.u(24),(h - k.u(22)) / 2,capLabel,k.accent); }
+         b.hit(bx,0,bw,h,"hide");
+         b.boxW = bx + bw;
+         b.boxH = h;
       }
-      
-      private function rule(param1:*, param2:Number):void
+
+      private function paintCredits():void
       {
-         var inset:Number = this.lrg ? 18 : 16;
-         param1.beginFill(0x1D2328,1);
-         param1.drawRect(inset,param2,this.cardW() - inset * 2,1);
-         param1.endFill();
-      }
-      
-      private function paintModule():void
-      {
-         var data:Object = this.modData;
-         if(data == null || this.modCard == null) { return; }
-         var w:Number = this.cardW();
-         var pad:Number = this.cardPad();
-         var pitch:Number = this.lrg ? 34 : 30;
-         var barH:Number = this.lrg ? 28 : 24;
-         var big:Number = this.lrg ? 30 : 26;
-         var right:Number = w - pad - (this.lrg ? 80 : 67);
-         var valueW:Number = this.lrg ? 100 : 90;
-         var inner:Number = w - pad * 2;
-         var c:uint = this.accentColor();
-         this.modTint = c;
-         var ink:* = this.modLines.graphics;
-         ink.clear();
-         var kept:int = 0;
-         this.put(this.modHead,"SELECTED MODULE",c);
-         this.modHead.x = pad;
-         this.modHead.y = pad - 4;
-         this.modHead.width = inner;
-         var y:Number = this.modHead.y + this.modHead.height + 3;
-         this.put(this.modName,data.sModuleName,0xFFFFFF);
-         this.modName.x = pad + 13;
-         this.modName.y = y;
-         this.modName.width = inner - 13;
-         this.modName.height = this.modName.textHeight + 6;
-         ink.beginFill(c,1);
-         ink.drawRect(pad + 1,y + 3,3,barH);
-         ink.endFill();
-         y += Math.max(this.modName.height,barH + 6) + 10;
-         this.rule(ink,y);
-         y += 6;
-         var stats:Array = data.aStats as Array;
-         var count:int = stats == null ? 0 : Math.min(stats.length,10);
-         var vals:Array = [];
+         var b:HsbBox = this.credits;
+         b.wipe();
+         var d:Object = this.dCost;
+         b.visible = this.shown("Credits") && d != null;
+         if(!b.visible) { return; }
+         var k:HsbKit = this.kit;
+         var g:Graphics = b.gfx;
+         var total:String = HsbKit.num(d.uTotalCredits);
+         var refund:Boolean = Number(d.uTotalCredits) != 0 && !Boolean(d.bBuying);
+         if(this.collapsed["Credits"] == true)
+         {
+            var tl:TextField = k.text(13,k.accent,true,2);
+            k.putCaps(tl,"$TOTAL","TOTAL");
+            k.fit(tl);
+            var tv:TextField = k.text(15,refund ? HsbKit.GREEN : k.accent,true);
+            k.put(tv,total);
+            k.fit(tv);
+            var ph:Number = k.u(38);
+            var pw:Number = 14 + tl.width + 20 + tv.width + 12 + k.u(22) + 10;
+            k.card(g,0,0,pw,ph,8);
+            b.add(tl,14,(ph - tl.height) / 2);
+            b.add(tv,pw - 10 - k.u(22) - 12 - tv.width,(ph - tv.height) / 2);
+            this.collapseButton(b,pw - 10 - k.u(22),(ph - k.u(22)) / 2,"chevD","credits.open");
+            b.hit(0,0,pw,ph,"credits.open");
+            b.boxW = pw;
+            b.boxH = ph;
+            return;
+         }
+         var w:Number = k.lrg ? 400 : 363;
+         var pitch:Number = k.u(30);
+         var vendor:Boolean = d.uVendorCredits != null;
+         var rows:Array = [["$VENDOR CREDITS","VENDOR CREDITS",HsbKit.num(d.uVendorCredits)],["$YOUR CREDITS","YOUR CREDITS",HsbKit.num(d.uPlayerCredits)]];
+         var y:Number = 12;
          var i:int = 0;
-         while(i < count)
+         while(i < rows.length)
          {
-            var stat:Object = stats[i];
-            var row:Object = this.moduleRow(i);
-            var label:TextField = row.label as TextField;
-            var value:TextField = row.value as TextField;
-            var shown:String = this.statText(stat);
-            this.put(label,stat.text,0xC3D1D8);
-            if(label.text.charAt(0) == "$") { kept++; }
-            else { label.text = label.text.toUpperCase(); }
-            label.x = pad;
-            label.width = right - valueW - pad - 4;
-            label.height = label.textHeight + 6;
-            var rowH:Number = Math.max(pitch,label.height + 6);
-            label.y = y + (rowH - label.height) / 2;
-            label.visible = true;
-            this.put(value,shown,0xFFFFFF);
-            value.x = right - valueW;
-            value.width = valueW;
-            value.y = y + (rowH - value.height) / 2;
-            value.visible = true;
-            var chip:String = this.paintChip(row,stat,ink,y,rowH);
-            vals.push("s" + (i + 1) + "=" + String(stat.fValue) + "/" + String(stat.fDiff) + "/" + (stat.bPercentage ? 1 : 0) + ">" + shown + (chip.length > 0 ? "/" + chip : ""));
-            y += rowH;
-            i++;
-         }
-         while(i < this.modRows.length)
-         {
-            this.park(this.modRows[i].label as TextField);
-            this.park(this.modRows[i].value as TextField);
-            (this.modRows[i].chip as Sprite).graphics.clear();
-            this.park(this.modRows[i].chip as Sprite);
-            i++;
-         }
-         if(count > 0)
-         {
-            y += 10;
-            this.rule(ink,y);
-         }
-         y += 16;
-         this.put(this.modDesc,data.sDescription,0xCDDCE3);
-         this.modDesc.x = pad;
-         this.modDesc.y = y;
-         this.modDesc.width = inner;
-         this.modDesc.height = this.modDesc.textHeight + 6;
-         y += Math.max(this.modDesc.height,this.lrg ? 62 : 54) + 12;
-         this.rule(ink,y);
-         y += 14;
-         var skills:Array = data.aRequiredAttributes as Array;
-         var need:int = skills == null ? 0 : Math.min(skills.length,2);
-         var s:int = 0;
-         while(s < need)
-         {
-            if(this.paintSkill(this.moduleSkill(s),skills[s],y)) { kept++; }
+            if(i == 0 && !vendor) { i++; continue; }
+            var l:TextField = k.text(13,0xC5CCD1,false,1.5);
+            k.putCaps(l,String(rows[i][0]),String(rows[i][1]));
+            k.fit(l);
+            b.add(l,20,y + (pitch - l.height) / 2);
+            var v:TextField = k.text(15,HsbKit.TEXT,false,0,"right");
+            k.put(v,rows[i][2]);
+            v.width = 140;
+            b.add(v,w - 20 - 140,y + (pitch - v.height) / 2);
             y += pitch;
-            s++;
+            i++;
          }
-         while(s < this.modSkills.length)
-         {
-            this.park(this.modSkills[s].skill as TextField);
-            this.park(this.modSkills[s].rank as TextField);
-            s++;
-         }
-         if(need > 0)
-         {
-            y += 8;
-            this.rule(ink,y);
-            y += 14;
-         }
-         var half:Number = w / 2 + 14;
-         kept += this.putKey(this.modValueL,"$VALUE","VALUE",0xA4A994);
-         kept += this.putKey(this.modMassL,"$MASS","MASS",0xA4A994);
-         this.modValueL.x = pad;
-         this.modMassL.x = half;
-         this.modValueL.y = y;
-         this.modMassL.y = y;
-         this.modValueL.width = half - pad - 8;
-         this.modMassL.width = w - pad - half;
-         y += this.modValueL.height + 2;
-         this.put(this.modValue,this.moduleNumber(data.iModuleCost),0xFFFFFF);
-         this.put(this.modMass,this.moduleNumber(data.iModuleMass),0xFFFFFF);
-         this.modValue.x = pad;
-         this.modMass.x = half;
-         this.modValue.y = y;
-         this.modMass.y = y;
-         this.modValue.width = half - pad - 8;
-         this.modMass.width = w - pad - half;
-         y += big + 14 + pad;
-         var g:* = this.modCard.graphics;
-         g.clear();
-         g.beginFill(0x2A323A,1);
-         g.drawRoundRect(0,0,w,y,14,14);
-         g.endFill();
-         g.beginFill(0x0E141A,1);
-         g.drawRoundRect(1,1,w - 2,y - 2,12,12);
-         g.endFill();
-         this.modHigh = y;
-         this.modFacts = " rows=" + count + " skills=" + need + " keys=" + kept + " inb=" + (Boolean(data.bInBuilderMode) ? 1 : 0) + " w=" + w;
-         var head:String = "cost=" + String(data.iModuleCost) + ">" + this.modValue.text + " mass=" + String(data.iModuleMass) + ">" + this.modMass.text;
-         this.modVals = [head + (vals.length > 0 ? " " + vals.slice(0,5).join(" ") : "")];
-         if(vals.length > 5) { this.modVals.push(vals.slice(5).join(" ")); }
-         this.modValsKey = this.modVals.join(" ");
+         y += 2;
+         k.hline(g,20,y,w - 40);
+         y += 2;
+         var t1:TextField = k.text(13,k.accent,true,1.5);
+         k.putCaps(t1,"$TOTAL","TOTAL");
+         k.fit(t1);
+         b.add(t1,20,y + (pitch - t1.height) / 2);
+         var t2:TextField = k.text(15,refund ? HsbKit.GREEN : k.accent,true,0,"right");
+         k.put(t2,total);
+         t2.width = 140;
+         b.add(t2,w - 20 - 22 - 8 - 140,y + (pitch - t2.height) / 2);
+         this.collapseButton(b,w - 20 - k.u(22),y + (pitch - k.u(22)) / 2,"chevU","credits.close");
+         y += pitch + 8;
+         k.card(b.graphics,0,0,w,y);
+         b.boxW = w;
+         b.boxH = y;
       }
-      
-      // Higher is green and lower is red, as the game's HigherValue and LowerValue frames.
-      private function paintChip(param1:Object, param2:Object, param3:*, param4:Number, param5:Number):String
+
+      // Stats strip, as ShipStatsFooter: while previewing, the value is the current one and the
+      // chip the change; mass is inverted (more mass is red).
+      private function paintStats():void
       {
-         var w:Number = this.cardW();
-         var pad:Number = this.cardPad();
-         var chipH:Number = this.lrg ? 26 : 22;
-         var chip:Sprite = param1.chip as Sprite;
-         var tag:TextField = param1.tag as TextField;
-         var text:String = this.diffText(param2);
-         chip.graphics.clear();
-         if(text.length == 0)
+         var b:HsbBox = this.stats;
+         b.wipe();
+         var d:Object = this.dStats;
+         b.visible = this.shown("Stats") && d != null;
+         if(!b.visible) { return; }
+         var k:HsbKit = this.kit;
+         var g:Graphics = b.gfx;
+         var preview:Boolean = Boolean(d.bShowingPreview);
+         var defs:Array = [["$HULL","HULL","iHealth",false,""],["$SHIELD","SHIELD","iShield",false,""],["$CARGO","CARGO","iCargo",false,""],["$MAX CREW","MAX CREW","iCrew",false,""],["$JUMP RANGE","JUMP RANGE","iJumpRange",false," LY"],["$MOBILITY","MOBILITY","iMobility",false,""],["$TOP SPEED","TOP SPEED","iSpeed",false,""],["$MASS","MASS","iMass",true,""]];
+         if(this.collapsed["Stats"] == true)
          {
-            this.park(chip);
-            param3.beginFill(0x5E6359,1);
-            param3.drawRect(w - pad - 14,param4 + param5 / 2,12,1.5);
-            param3.endFill();
-            return "";
+            var picks:Array = [];
+            var j:int = 0;
+            while(j < defs.length && picks.length < 3)
+            {
+               if(preview && Number(d[defs[j][2] + "Diff"]) != 0) { picks.push(defs[j]); }
+               j++;
+            }
+            if(picks.length == 0) { picks = [defs[7],defs[0]]; }
+            var x0:Number = 16;
+            var ph:Number = k.u(34);
+            var parts:Array = [];
+            j = 0;
+            while(j < picks.length)
+            {
+               var cl:TextField = k.text(12,HsbKit.MUTED,false,1.5);
+               k.putCaps(cl,String(picks[j][0]),String(picks[j][1]));
+               k.fit(cl);
+               parts.push({"t":cl,"x":x0});
+               x0 += cl.width + 6;
+               var cv:TextField = k.text(15,HsbKit.TEXT,true);
+               var cdiff:Number = Number(d[picks[j][2] + "Diff"]);
+               var cval:Number = Number(d[picks[j][2]]);
+               k.put(cv,HsbKit.num(preview && cdiff != 0 ? cval - cdiff : cval) + String(picks[j][4]));
+               k.fit(cv);
+               parts.push({"t":cv,"x":x0});
+               x0 += cv.width + 6;
+               if(preview && cdiff != 0)
+               {
+                  var good:Boolean = picks[j][3] == true ? cdiff < 0 : cdiff > 0;
+                  parts.push({"chip":(cdiff > 0 ? "+" : "-") + HsbKit.num(Math.abs(cdiff)),"good":good,"x":x0});
+                  x0 += k.u(30) + 6;
+               }
+               if(j < picks.length - 1) { parts.push({"rule":true,"x":x0 + 6}); x0 += 18; }
+               j++;
+            }
+            var pw:Number = x0 + 10 + k.u(22) + 10;
+            k.card(g,0,0,pw,ph,9);
+            j = 0;
+            while(j < parts.length)
+            {
+               var row:Object = parts[j];
+               if(row.t != null) { b.add(row.t as TextField,row.x,(ph - (row.t as TextField).height) / 2); }
+               else if(row.chip != null) { k.diffChip(b,row.x,(ph - k.u(20)) / 2,String(row.chip),row.good == true); }
+               else if(row.rule == true) { k.vline(g,row.x,8,ph - 16,0x2A3238,1); }
+               j++;
+            }
+            this.collapseButton(b,pw - 10 - k.u(22),(ph - k.u(22)) / 2,"chevU","stats.open");
+            b.hit(0,0,pw,ph,"stats.open");
+            b.boxW = pw;
+            b.boxH = ph;
+            return;
          }
-         var up:Boolean = Number(param2.fDiff) > 0;
-         var room:Number = (this.lrg ? 80 : 67) - 8;
-         this.put(tag,text,up ? 0x69FEB3 : 0xFF6868);
-         if(tag.textWidth + 14 > room)
+         var r:Object = this.viewRect();
+         var w:Number = Math.min(1464,r.width - (this.margin + 391 + 31));
+         var h:Number = k.u(96);
+         k.card(g,0,0,w,h);
+         var cols:int = defs.length + 1;
+         var cw:Number = (w - 40) / cols;
+         var wl:TextField = k.text(12,HsbKit.MUTED,false,1.5,"center");
+         k.putCaps(wl,"$WEAPON GROUPS","WEAPON GROUPS");
+         wl.width = cw;
+         b.add(wl,20,16);
+         var groups:Array = d.aWeaponGroupNames as Array;
+         var dmg:Array = d.aWeaponGroupsDmg as Array;
+         var wtext:Array = [];
+         var gi:int = 0;
+         while(groups != null && gi < groups.length && gi < 3)
          {
-            text = this.shortChip(text);
-            this.put(tag,text,up ? 0x69FEB3 : 0xFF6868);
+            var gname:String = String(groups[gi]);
+            var gd:* = dmg != null && gi < dmg.length ? dmg[gi] : null;
+            wtext.push(gd != null && Number(gd) > 0 ? HsbKit.num(gd) : gname);
+            gi++;
          }
-         if(tag.textWidth + 14 > room)
+         var wv:TextField = k.text(13,HsbKit.LABEL,false,0,"center");
+         k.put(wv,wtext.length > 0 ? wtext.join(" \u00B7 ") : "\u2014");
+         wv.width = cw;
+         b.add(wv,20,16 + k.u(30));
+         var i:int = 0;
+         while(i < defs.length)
          {
-            text = text.charAt(0);
-            this.put(tag,text,up ? 0x69FEB3 : 0xFF6868);
+            var x:Number = 20 + (i + 1) * cw;
+            k.vline(g,x,14,h - 28,0x222A30,1);
+            var lab:TextField = k.text(12,HsbKit.MUTED,false,1.5,"center");
+            k.putCaps(lab,String(defs[i][0]),String(defs[i][1]));
+            lab.width = cw;
+            b.add(lab,x,16);
+            var diff:Number = Number(d[defs[i][2] + "Diff"]);
+            var value:Number = Number(d[defs[i][2]]);
+            var val:TextField = k.text(20,HsbKit.TEXT,true);
+            k.put(val,HsbKit.num(preview && diff != 0 ? value - diff : value) + String(defs[i][4]));
+            k.fit(val);
+            var chipW:Number = preview && diff != 0 ? k.u(30) + 6 : 0;
+            var vx:Number = x + (cw - val.width - chipW) / 2;
+            b.add(val,vx,16 + k.u(24));
+            if(chipW > 0)
+            {
+               var good2:Boolean = defs[i][3] == true ? diff < 0 : diff > 0;
+               k.diffChip(b,vx + val.width + 4,16 + k.u(24) + (val.height - k.u(20)) / 2,(diff > 0 ? "+" : "-") + HsbKit.num(Math.abs(diff)),good2);
+            }
+            i++;
          }
-         var chipW:Number = Math.min(Math.max(28,tag.textWidth + 14),room);
-         tag.width = Math.min(tag.textWidth + 6,chipW - 4);
-         tag.x = Math.max(2,(chipW - tag.textWidth) / 2 - 2);
-         tag.y = (chipH - tag.height) / 2;
-         chip.graphics.beginFill(up ? 0x1A302E : 0x301E24,1);
-         chip.graphics.drawRoundRect(0,0,chipW,chipH,8,8);
-         chip.graphics.endFill();
-         chip.x = w - pad - 2 - chipW;
-         chip.y = param4 + (param5 - chipH) / 2;
-         chip.visible = true;
-         return text;
+         this.collapseButton(b,w - 12 - k.u(22),10,"chevD","stats.close");
+         b.boxW = w;
+         b.boxH = h;
       }
-      
-      // ModuleAttributeIcon writes the rank with "$(Rank #)" and DoSubstitutions.
-      // Returns true when a field kept its $ key, so the log can say translation did not run.
-      private function paintSkill(param1:Object, param2:Object, param3:Number):Boolean
+
+      // The game's own hint list, with its live key names. A click sends the same event the
+      // vanilla button sends (ShipEditor_OnHintButtonActivated with the hint's event).
+      private function paintHints():void
       {
-         var w:Number = this.cardW();
-         var pad:Number = this.cardPad();
-         var pitch:Number = this.lrg ? 34 : 30;
-         var has:Boolean = Boolean(param2.bHasSkill);
-         var skill:TextField = param1.skill as TextField;
-         var rank:TextField = param1.rank as TextField;
-         this.put(skill,param2.sName,has ? 0xF4F0E4 : 0xFF6868);
-         this.put(rank,"$(Rank #)",has ? 0xA4A994 : 0xFF6868);
-         var keyed:Boolean = rank.text.charAt(0) == "$" || skill.text.charAt(0) == "$";
-         rank.text = GlobalFunc.DoSubstitutions(rank.text,[param2.uRank]);
-         skill.x = pad;
-         skill.width = w - pad * 2 - 112;
-         rank.x = w - pad - 110;
-         rank.width = 110;
-         skill.y = param3 + (pitch - skill.height) / 2;
-         rank.y = skill.y;
-         skill.visible = true;
-         rank.visible = true;
-         return keyed;
+         var b:HsbBox = this.hints;
+         b.wipe();
+         b.visible = this.shown("Hints");
+         if(!b.visible) { return; }
+         var k:HsbKit = this.kit;
+         var g:Graphics = b.gfx;
+         var h:Number = k.u(43);
+         if(this.collapsed["Hints"] == true)
+         {
+            var kl:TextField = k.text(13,HsbKit.TEXT,true,1.5);
+            k.put(kl,"KEYS");
+            k.fit(kl);
+            var pw:Number = 12 + k.u(22) + 10 + kl.width + 10 + k.u(22) + 10;
+            var ph:Number = k.u(34);
+            k.card(g,0,0,pw,ph,9);
+            k.keycap(b,12,(ph - k.u(22)) / 2,"?",HsbKit.LABEL);
+            b.add(kl,12 + k.u(22) + 10,(ph - kl.height) / 2);
+            this.collapseButton(b,pw - 10 - k.u(22),(ph - k.u(22)) / 2,"chevU","hints.open");
+            b.hit(0,0,pw,ph,"hints.open");
+            b.boxW = pw;
+            b.boxH = ph;
+            return;
+         }
+         var x:Number = 14;
+         var list:Array = this.dHelp != null ? this.dHelp : [];
+         var items:Array = [];
+         var i:int = 0;
+         while(i < list.length)
+         {
+            var hint:Object = list[i];
+            if(hint != null && hint.bDisplayed != false)
+            {
+               var cap:String = this.keyName(String(hint.sEvent));
+               var lab:TextField = k.text(13,HsbKit.TEXT,false,1.5);
+               k.put(lab,hint.sText);
+               if(lab.text.length > 0 && lab.text.charAt(0) != "$") { k.put(lab,lab.text.toUpperCase()); }
+               if(hint.sHoldText != null && String(hint.sHoldText).length > 0)
+               {
+                  var hold:TextField = k.text(13,HsbKit.TEXT);
+                  k.put(hold,hint.sHoldText);
+                  k.put(lab,lab.text + " / " + hold.text.toUpperCase());
+               }
+               k.fit(lab);
+               items.push({"cap":cap,"lab":lab,"event":String(hint.sEvent),"idx":i});
+            }
+            i++;
+         }
+         i = 0;
+         while(i < items.length)
+         {
+            var it:Object = items[i];
+            var start:Number = x;
+            if(String(it.cap).length > 0)
+            {
+               x += k.keycap(b,x,(h - k.u(22)) / 2,String(it.cap),HsbKit.LABEL) + 9;
+            }
+            b.add(it.lab as TextField,x,(h - (it.lab as TextField).height) / 2);
+            x += (it.lab as TextField).width + 18;
+            b.hit(start - 4,0,x - start - 10,h,"hint",it.event);
+            i++;
+         }
+         var w:Number = Math.max(k.u(200),x + k.u(22) + 6);
+         k.card(b.graphics,0,0,w,h,10);
+         this.collapseButton(b,w - 10 - k.u(22),(h - k.u(22)) / 2,"chevD","hints.close");
+         b.boxW = w;
+         b.boxH = h;
       }
-      
-      // Without a proven face this stays the earlier device-text path.
-      private function textFormat(param1:int, param2:uint):TextFormat
+
+      private function paintNotice():void
       {
-         var floor:int = this.lrg ? 16 : 13;
-         var fmt:TextFormat = new TextFormat();
-         if(this.face.length > 0) { fmt.font = this.face; }
-         fmt.size = param1 < floor ? floor : param1;
-         fmt.color = param2;
-         return fmt;
+         var b:HsbBox = this.notice;
+         if(this.stoodDown) { return; }
+         b.wipe();
+         b.visible = false;
       }
-      
-      private function makeText(param1:String, param2:Number, param3:Number, param4:Number, param5:Number, param6:int, param7:uint):TextField
+
+      // Mockup 10: the builder is off because another ship builder's DLL is loaded.
+      private function paintStepAside():void
       {
-         var box:TextField = new TextField();
-         var fmt:TextFormat = this.textFormat(param6,param7);
-         box.embedFonts = this.faceEmbed;
-         box.defaultTextFormat = fmt;
-         box.mouseEnabled = false;
-         box.selectable = false;
-         box.x = param2;
-         box.y = param3;
-         box.width = param4;
-         box.height = param5;
-         box.text = param1;
-         box.setTextFormat(fmt);
-         this.texts.push(box);
-         return box;
+         var b:HsbBox = this.notice;
+         b.wipe();
+         var k:HsbKit = this.kit;
+         var t:TextField = k.text(14,HsbKit.TEXT,true);
+         k.put(t,"Horizon Ship Builder is turned off because StarUI Ship Builder is installed. Nothing was changed.");
+         k.fit(t,900);
+         var w:Number = t.width + 64;
+         var h:Number = k.u(46);
+         k.card(b.graphics,0,0,w,h,10);
+         k.outline(b.graphics,0,0,w,h,10,HsbKit.ORANGE,1);
+         k.icon(b.graphics,"info",16,(h - 18) / 2,18,HsbKit.ORANGE,1);
+         b.add(t,44,(h - t.height) / 2);
+         b.boxW = w;
+         b.boxH = h;
+         var r:Object = this.viewRect();
+         b.x = r.x + (r.width - w) / 2;
+         b.y = r.y + 14;
       }
-      
-      private function makeButton(param1:String, param2:Number, param3:Number, param4:Number, param5:Number, param6:Boolean):Sprite
+
+      // Mockup 11: StarUI files are present but Horizon is running.
+      internal function bannerWanted():Boolean
       {
-         var button:Sprite = new Sprite();
-         var g:* = button.graphics;
-         g.lineStyle(1,param6 ? this.accentColor() : 0x5A6A76,1);
-         g.beginFill(param6 ? this.accentColor() : 0x26343F,param6 ? 0.95 : 0.9);
-         g.drawRoundRect(0,0,param4,param5,10,10);
-         g.endFill();
-         button.x = param2;
-         button.y = param3;
-         button.buttonMode = true;
-         var label:TextField = this.makeText(param1,8,6,param4 - 12,param5 - 4,this.bodyPx,param6 ? 0x1A1404 : 0xF4F0E4);
-         button.addChild(label);
-         return button;
+         return this.starFiles && this.showConflict && !this.bannerGone && !this.conflict;
       }
-      
+
+      internal function dismissBanner(param1:Boolean):void
+      {
+         this.bannerGone = true;
+         if(param1)
+         {
+            this.showConflict = false;
+            this.setSetting("Notices","ShowConflictNotice","0");
+            this.saveSettings();
+         }
+         this.browser.invalidate();
+      }
+
+      // ---- input ---------------------------------------------------------------------------
+
+      internal function capturing():Boolean
+      {
+         return this.pops.length > 0 || this.textOwner != null || (this.arrange != null && this.arrange.visible);
+      }
+
       private function pushState():void
       {
          var w:int = stage != null ? stage.stageWidth : 0;
          var h:int = stage != null ? stage.stageHeight : 0;
-         var capture:int = (this.arranging || this.setOpen) ? 1 : 0;
-         this.lines.push("STATE capture=" + capture + " arrange=" + (this.arranging ? 1 : 0) + " stage=" + w + "x" + h + " keys=" + (this.keysOn ? 1 : 0));
+         var arranging:Boolean = this.arrange != null && this.arrange.visible;
+         var line:String = "STATE capture=" + (this.capturing() ? 1 : 0) + " text=" + (this.textOwner != null ? 1 : 0) + " arrange=" + (arranging ? 1 : 0) + " stage=" + w + "x" + h + " view=" + this.viewText() + " keys=" + (this.keyArrange != "0" ? 1 : 0) + " hide=" + this.keyCode(this.keyHide) + " find=" + this.keyCode(this.keyFind);
+         this.lines.unshift(line);
+         var nextHot:String = this.hotText();
+         if(nextHot != this.hot)
+         {
+            this.hot = nextHot;
+            this.lines.splice(1,0,"HOT " + nextHot);
+         }
       }
-      
-      private function note(param1:String):void
+
+      // The rectangles the DLL swallows presses and wheel in: every visible Horizon box, or the
+      // whole screen while a popup, dialog, text field or Arrange is open.
+      private function hotText():String
+      {
+         if(this.conflict || this.kit == null) { return "none"; }
+         if(this.capturing()) { return "all"; }
+         var out:Array = [];
+         var boxes:Array = [this.power,this.card,this.flight,this.cluster,this.credits,this.browser,this.colors,this.hints,this.stats];
+         var i:int = 0;
+         while(i < boxes.length)
+         {
+            var b:HsbBox = boxes[i] as HsbBox;
+            if(b.visible && b.parent != null && b.boxW > 0 && b.boxH > 0)
+            {
+               var tl:Point = this.localToGlobal(new Point(b.x,b.y));
+               var br:Point = this.localToGlobal(new Point(b.x + b.boxW * b.scaleX,b.y + b.boxH * b.scaleY));
+               out.push(int(Math.floor(tl.x)) + "," + int(Math.floor(tl.y)) + "," + int(Math.ceil(br.x - tl.x)) + "," + int(Math.ceil(br.y - tl.y)));
+            }
+            i++;
+         }
+         return out.length > 0 ? out.join(";") : "none";
+      }
+
+      private function onToken(param1:String):void
+      {
+         if(param1.length < 3) { return; }
+         var bits:Array = param1.split(" ");
+         var kind:String = String(bits[0]);
+         if(kind == "M" && bits.length >= 4)
+         {
+            var mp:Point = this.globalToLocal(new Point(Number(bits[2]),Number(bits[3])));
+            this.onPointer(String(bits[1]),mp.x,mp.y,bits.length < 5 || String(bits[4]) == "1");
+            return;
+         }
+         if(kind == "W" && bits.length >= 4)
+         {
+            var wp:Point = this.globalToLocal(new Point(Number(bits[2]),Number(bits[3])));
+            this.onWheel(Number(bits[1]),wp.x,wp.y,bits.length < 5 || String(bits[4]) == "1");
+            return;
+         }
+         if(kind == "K") { this.onKey(param1.substring(2)); return; }
+         if(kind == "C" && bits.length >= 2) { this.onChar(int(bits[1])); return; }
+         if(kind == "LEAK") { this.leaks++; }
+      }
+
+      // Which box gets a point: popups first (topmost), then Arrange, then panels.
+      private function boxAt(param1:Number, param2:Number):HsbBox
+      {
+         var i:int = this.pops.length - 1;
+         if(i >= 0) { return this.pops[i] as HsbBox; }
+         var boxes:Array = [this.cluster,this.browser,this.colors,this.credits,this.power,this.card,this.flight,this.hints,this.stats];
+         var k:int = 0;
+         while(k < boxes.length)
+         {
+            var b:HsbBox = boxes[k] as HsbBox;
+            if(b.contains2(param1,param2)) { return b; }
+            k++;
+         }
+         return null;
+      }
+
+      private function onPointer(param1:String, param2:Number, param3:Number, param4:Boolean):void
+      {
+         this.pointerX = param2;
+         this.pointerY = param3;
+         if(this.arrange != null && this.arrange.visible)
+         {
+            this.arrange.pointer(param1,param2,param3);
+            return;
+         }
+         if(param1 == "M")
+         {
+            if(this.dragBox != null) { this.dragBox.onMove(param2,param3); return; }
+            var over:HsbBox = this.boxAt(param2,param3);
+            if(over != this.hoverBox)
+            {
+               if(this.hoverBox != null) { this.hoverBox.onHover(-1,-1); }
+               this.hoverBox = over;
+            }
+            if(over != null) { over.onHover(param2,param3); }
+            return;
+         }
+         if(param1 == "U")
+         {
+            if(this.dragBox != null)
+            {
+               var was:HsbBox = this.dragBox;
+               this.dragBox = null;
+               was.onRelease(param2,param3);
+            }
+            return;
+         }
+         if(param1 != "D" || !param4) { return; }
+         var top:HsbBox = this.topPop();
+         if(top != null && !top.contains2(param2,param3))
+         {
+            if(top.lightDismiss) { this.closePop(top,false); }
+            return;
+         }
+         var target:HsbBox = this.boxAt(param2,param3);
+         if(target == null) { return; }
+         var hit:Object = target.hitAt(param2,param3);
+         if(this.debugOn) { this.note("PRESS " + int(param2) + "," + int(param3) + " box=" + target.name + " hit=" + (hit != null ? String(hit.id) : "-") + " top=" + this.topName(param2,param3)); }
+         if(target.onPress(hit,param2,param3)) { this.dragBox = target; return; }
+         if(hit != null) { this.act(target,String(hit.id),hit.data); }
+      }
+
+      // Scaleform's own hit test at a point, for the debug log only (desktop verification of
+      // the p5 diagnosis: whether Scaleform even sees Horizon boxes as topmost).
+      private function topName(param1:Number, param2:Number):String
+      {
+         try
+         {
+            var ext:Object = getDefinitionByName("scaleform.gfx.Extensions");
+            var at:Point = this.localToGlobal(new Point(param1,param2));
+            var found:DisplayObject = ext["getTopMostEntity"](at.x,at.y,true) as DisplayObject;
+            if(found == null) { return "none"; }
+            var path:Array = [];
+            var node:DisplayObject = found;
+            while(node != null && path.length < 4) { path.unshift(node.name); node = node.parent; }
+            return path.join(">");
+         }
+         catch(err:Error)
+         {
+         }
+         return "na";
+      }
+
+      private function onWheel(param1:Number, param2:Number, param3:Number, param4:Boolean):void
+      {
+         if(!param4) { return; }
+         var target:HsbBox = this.boxAt(param2,param3);
+         if(target != null) { target.onWheel(param1,param2,param3); }
+      }
+
+      private function onKey(param1:String):void
+      {
+         if(this.capturing())
+         {
+            if(param1 == "cancel") { this.cancelTop("key"); return; }
+            if(param1 == "ok") { this.acceptTop("key"); return; }
+         }
+         if(this.arrange != null && this.arrange.visible)
+         {
+            this.arrange.key(param1);
+            return;
+         }
+         if(this.textOwner != null)
+         {
+            if(this.textOwner.onKey(param1)) { return; }
+         }
+         var top:HsbBox = this.topPop();
+         if(top != null)
+         {
+            top.onKey(param1);
+            return;
+         }
+         if(param1 == "open") { this.openArrange(); return; }
+         if(param1 == "hide") { this.toggleHide(); return; }
+         if(param1 == "find" && this.shown("Browser")) { this.browser.startFind(); return; }
+      }
+
+      private function onChar(param1:int):void
+      {
+         if(this.textOwner != null) { this.textOwner.onChar(param1); }
+      }
+
+      // Controller events while a Horizon popup is open.
+      private function padEvent(param1:String):void
+      {
+         if(this.arrange != null && this.arrange.visible)
+         {
+            var nudge:Object = {"Up":"up","Down":"down","Left":"left","Right":"right","LShoulder":"tabprev","RShoulder":"tab"};
+            if(nudge[param1] != null) { this.arrange.key(String(nudge[param1])); }
+            return;
+         }
+         var top:HsbBox = this.topPop();
+         if(top == null) { return; }
+         var map:Object = {"Up":"up","Down":"down","Left":"left","Right":"right","LShoulder":"tabprev","RShoulder":"tab","XButton":"x","YButton":"y"};
+         if(map[param1] != null) { top.onKey(String(map[param1])); }
+         else if(param1 != "Accept" && param1 != "Cancel" && param1 != "Escape" && param1 != "Enter" && this.debugOn) { this.note("PAD unhandled " + param1); }
+      }
+
+      internal function cancelTop(param1:String):void
+      {
+         if(this.frameN - this.lastCancel < DOUBLE_FRAMES) { return; }
+         this.lastCancel = this.frameN;
+         if(this.textOwner != null && this.textOwner.onKey("cancel")) { return; }
+         if(this.arrange != null && this.arrange.visible) { this.arrange.cancel(); return; }
+         var top:HsbBox = this.topPop();
+         if(top != null)
+         {
+            if(!top.onKey("cancel")) { this.closePop(top,false); }
+         }
+      }
+
+      internal function acceptTop(param1:String):void
+      {
+         if(this.frameN - this.lastOk < DOUBLE_FRAMES) { return; }
+         this.lastOk = this.frameN;
+         if(this.textOwner != null && this.textOwner.onKey("ok")) { return; }
+         if(this.arrange != null && this.arrange.visible) { this.arrange.ok(); return; }
+         var top:HsbBox = this.topPop();
+         if(top != null) { top.onKey("ok"); }
+      }
+
+      // Central actions for the simple panels; popups and the browser handle their own ids.
+      internal function act(param1:HsbBox, param2:String, param3:*):void
+      {
+         if(param1 != this.power && param1 != this.card && param1 != this.cluster && param1 != this.credits && param1 != this.hints && param1 != this.stats)
+         {
+            param1.onAct(param2,param3);
+            return;
+         }
+         switch(param2)
+         {
+            case "gear": this.openSettings(); break;
+            case "hide": this.toggleHide(); break;
+            case "hint": this.sendHint(String(param3)); break;
+            default:
+               var dot:int = param2.indexOf(".");
+               if(dot > 0)
+               {
+                  var id:String = param2.substring(0,dot);
+                  var ids:Object = {"power":"Power","module":"Module","credits":"Credits","stats":"Stats","hints":"Hints"};
+                  if(ids[id] != null) { this.setCollapsed(String(ids[id]),param2.substring(dot + 1) == "close"); }
+               }
+         }
+      }
+
+      internal function setCollapsed(param1:String, param2:Boolean):void
+      {
+         if(param2) { this.collapsed[param1] = true; }
+         else { delete this.collapsed[param1]; }
+         this.mark(param1);
+         if(param1 == "Credits") { this.mark("Cluster"); }
+         if(param1 == "Power") { this.mark("Module"); }
+         if(this.rememberLayout)
+         {
+            this.setSetting("Panels",param1,param2 ? "0" : "1");
+            this.saveSettings();
+         }
+      }
+
+      internal function toggleHide():void
+      {
+         this.hideAll = !this.hideAll;
+         this.markAll();
+         this.note("HIDEALL " + (this.hideAll ? 1 : 0));
+      }
+
+      internal function beginText(param1:HsbBox):void
+      {
+         this.textOwner = param1;
+      }
+
+      internal function endText(param1:HsbBox):void
+      {
+         if(this.textOwner == param1) { this.textOwner = null; }
+      }
+
+      internal function textActive(param1:HsbBox):Boolean
+      {
+         return this.textOwner == param1;
+      }
+
+      // ---- popups --------------------------------------------------------------------------
+
+      internal function topPop():HsbBox
+      {
+         return this.pops.length > 0 ? this.pops[this.pops.length - 1] as HsbBox : null;
+      }
+
+      internal function openPop(param1:HsbBox):void
+      {
+         var at:int = this.pops.indexOf(param1);
+         if(at >= 0) { this.pops.splice(at,1); }
+         this.pops.push(param1);
+         param1.scaleX = this.uiScale;
+         param1.scaleY = this.uiScale;
+         this.popLayer.addChild(param1);
+         param1.visible = true;
+         this.place();
+      }
+
+      internal function closePop(param1:HsbBox, param2:Boolean):void
+      {
+         var at:int = this.pops.indexOf(param1);
+         if(at < 0) { return; }
+         this.pops.splice(at,1);
+         if(this.textOwner == param1) { this.textOwner = null; }
+         param1.onClose(param2);
+         if(param1.parent != null) { param1.parent.removeChild(param1); }
+         this.kit.forget(param1);
+         this.place();
+      }
+
+      private function placePops(param1:Object):void
+      {
+         var i:int = 0;
+         while(i < this.pops.length)
+         {
+            var p:HsbBox = this.pops[i] as HsbBox;
+            var pw:Number = p.boxW * p.scaleX;
+            var ph:Number = p.boxH * p.scaleY;
+            if(p.anchorX < 0)
+            {
+               p.x = param1.x + (param1.width - pw) / 2;
+               p.y = param1.y + Math.max(14,(param1.height - ph) / 2);
+            }
+            else
+            {
+               p.x = clampNum(p.anchorX,param1.x + 8,param1.x + param1.width - pw - 8,p.anchorX);
+               p.y = clampNum(p.anchorY,param1.y + 8,param1.y + param1.height - ph - 8,p.anchorY);
+            }
+            i++;
+         }
+      }
+
+      internal function openSettings():void
+      {
+         if(this.colors.previewing) { return; }
+         var s:HsbSettings = new HsbSettings(this.kit,this);
+         s.anchorX = this.cluster.x - 107 * this.uiScale;
+         s.anchorY = this.cluster.y + (this.cluster.boxH + 11) * this.uiScale;
+         this.openPop(s);
+         s.paint();
+         this.place();
+         this.note("SETTINGS open");
+      }
+
+      internal function openArrange():void
+      {
+         if(this.conflict) { return; }
+         while(this.pops.length > 0) { this.closePop(this.topPop(),false); }
+         if(this.arrange == null)
+         {
+            this.arrange = new HsbArrange(this.kit,this);
+            addChild(this.arrange);
+         }
+         this.arrange.open();
+         this.note("ARRANGE open");
+      }
+
+      internal function arrangeBoxes():Array
+      {
+         var out:Array = [];
+         var labels:Object = {"Power":"POWER","Module":"SELECTED MODULE","Credits":"CREDITS","Browser":"PARTS BROWSER","Stats":"STATS","Hints":"HINTS","Cluster":"TOP CLUSTER"};
+         var i:int = 0;
+         while(i < PANELS.length)
+         {
+            var id:String = String(PANELS[i]);
+            var list:Array = this.boxesFor(id);
+            var lead:HsbBox = null;
+            var k:int = 0;
+            while(k < list.length)
+            {
+               if((list[k] as HsbBox).visible) { lead = list[k] as HsbBox; break; }
+               k++;
+            }
+            if(lead != null && lead.boxW > 0)
+            {
+               out.push({"id":id,"label":labels[id],"box":lead,"x":lead.x,"y":lead.y,"w":lead.boxW * lead.scaleX,"h":lead.boxH * lead.scaleY});
+            }
+            i++;
+         }
+         return out;
+      }
+
+      internal function moveBox(param1:String, param2:Number, param3:Number):void
+      {
+         var list:Array = this.boxesFor(param1);
+         var i:int = 0;
+         while(i < list.length)
+         {
+            (list[i] as HsbBox).x = param2;
+            (list[i] as HsbBox).y = param3;
+            i++;
+         }
+      }
+
+      internal function storeAnchor(param1:String, param2:Number, param3:Number, param4:Number, param5:Number):void
+      {
+         var r:Object = this.viewRect();
+         var midX:Number = param2 + param4 / 2;
+         var midY:Number = param3 + param5 / 2;
+         var cx:Number = r.x + r.width / 2;
+         var cy:Number = r.y + r.height / 2;
+         var ax:String = "C";
+         var dx:Number = Math.round(param2 - (cx - param4 / 2));
+         if(Math.abs(midX - cx) >= r.width / 6)
+         {
+            if(midX < cx) { ax = "L"; dx = Math.round(param2 - (r.x + this.margin)); }
+            else { ax = "R"; dx = Math.round(r.x + r.width - this.margin - param4 - param2); }
+         }
+         var ay:String = "C";
+         var dy:Number = Math.round(param3 - (cy - param5 / 2));
+         if(Math.abs(midY - cy) >= r.height / 6)
+         {
+            if(midY < cy) { ay = "T"; dy = Math.round(param3 - (r.y + this.margin)); }
+            else { ay = "B"; dy = Math.round(r.y + r.height - this.margin - param5 - param3); }
+         }
+         this.lay[param1 + "X"] = ax + String(int(dx));
+         this.lay[param1 + "Y"] = ay + String(int(dy));
+      }
+
+      internal function arrangeDone(param1:Boolean, param2:Object, param3:Number, param4:Number):void
+      {
+         if(param1)
+         {
+            var i:int = 0;
+            while(i < PANELS.length)
+            {
+               var id:String = String(PANELS[i]);
+               var x:String = this.lay[id + "X"] != null ? String(this.lay[id + "X"]) : "-1";
+               var y:String = this.lay[id + "Y"] != null ? String(this.lay[id + "Y"]) : "-1";
+               this.note("ARRANGE " + id + "X=" + x);
+               this.note("ARRANGE " + id + "Y=" + y);
+               i++;
+            }
+            this.barDx = param3;
+            this.barDy = param4;
+            this.note("ARRANGE ArrangeBarX=" + int(param3));
+            this.note("ARRANGE ArrangeBarY=" + int(param4));
+            this.note("ARRANGE END");
+         }
+         else
+         {
+            this.lay = param2;
+         }
+         this.place();
+         this.note(param1 ? "ARRANGE saved" : "ARRANGE cancel");
+      }
+
+      internal function resetLayout():void
+      {
+         this.lay = {};
+         this.place();
+      }
+
+      // Purpose: forget the saved Arrange layout in the user ini (Reset all settings).
+      // Inputs: none. Outputs: ARRANGE lines with -1 (default spot) and a zero bar offset.
+      // Dependencies: the DLL's ARRANGE merge (HorizonShipBuilder.user.ini [Layout]).
+      internal function clearLayoutSaved():void
+      {
+         var i:int = 0;
+         while(i < PANELS.length)
+         {
+            this.note("ARRANGE " + String(PANELS[i]) + "X=-1");
+            this.note("ARRANGE " + String(PANELS[i]) + "Y=-1");
+            i++;
+         }
+         this.barDx = 0;
+         this.barDy = 0;
+         this.note("ARRANGE ArrangeBarX=0");
+         this.note("ARRANGE ArrangeBarY=0");
+         this.note("ARRANGE END");
+      }
+
+      // ---- files ---------------------------------------------------------------------------
+
+      // Purpose: queue a request for the DLL's file job. The DLL accepts only the builder's own
+      //    folders (pills, packs, schemes, the pill profile) and sanitized file names.
+      // Inputs: kind (PILLS, SCHEMES, PROFILE), verb plus arguments, body text, reply callback
+      //    function(ok:Boolean, payload:String).
+      // Outputs: none now; the callback runs when files() receives the reply.
+      internal function fileOp(param1:String, param2:Array, param3:String, param4:Function):void
+      {
+         this.fileSeq++;
+         var id:String = "f" + this.fileSeq;
+         if(param4 != null) { this.fileWait[id] = param4; }
+         var parts:Array = [id,param1].concat(param2);
+         var clean:Array = [];
+         var i:int = 0;
+         while(i < parts.length)
+         {
+            clean.push(String(parts[i]).split("\t").join(" ").split("\n").join(" "));
+            i++;
+         }
+         this.fileOut.push(clean.join("\t") + "\t" + escapeText(param3));
+         if(this.fileOut.length > 32) { this.fileOut.shift(); }
+      }
+
+      internal static function escapeText(param1:String):String
+      {
+         if(param1 == null) { return ""; }
+         return param1.split("\\").join("\\\\").split("\r").join("").split("\n").join("\\n").split("\t").join("\\t");
+      }
+
+      internal static function unescapeText(param1:String):String
+      {
+         var out:String = "";
+         var i:int = 0;
+         while(i < param1.length)
+         {
+            var c:String = param1.charAt(i);
+            if(c == "\\" && i + 1 < param1.length)
+            {
+               var n:String = param1.charAt(i + 1);
+               out += n == "n" ? "\n" : (n == "t" ? "\t" : n);
+               i += 2;
+               continue;
+            }
+            out += c;
+            i++;
+         }
+         return out;
+      }
+
+      private function onProfile(param1:Boolean, param2:String):void
+      {
+         if(!param1 || param2.length == 0)
+         {
+            this.note("PILLS profile none");
+            return;
+         }
+         var count:int = this.pills.load(param2);
+         this.note("PILLS profile " + (count >= 0 ? "loaded n=" + count : "bad kept defaults"));
+         if(count < 0) { this.fileOp("PROFILE",["BAD"],"",null); }
+         this.browser.invalidate();
+      }
+
+      internal function savePills():void
+      {
+         this.fileOp("PROFILE",["WRITE"],this.pills.save(),function(param1:Boolean, param2:String):void
+         {
+            note("PILLS save " + (param1 ? "ok" : "failed"));
+         });
+      }
+
+      // ---- helpers -------------------------------------------------------------------------
+
+      internal static function clampInt(param1:int, param2:int, param3:int):int
+      {
+         return param1 < param2 ? param2 : (param1 > param3 ? param3 : param1);
+      }
+
+      internal static function clampNum(param1:Number, param2:Number, param3:Number, param4:Number):Number
+      {
+         if(isNaN(param1)) { return param4; }
+         if(param3 < param2) { return param2; }
+         return param1 < param2 ? param2 : (param1 > param3 ? param3 : param1);
+      }
+
+      internal function frame():int
+      {
+         return this.frameN;
+      }
+
+      internal function partCredits():Number
+      {
+         return this.dCost != null ? Number(this.dCost.uPlayerCredits) : NaN;
+      }
+
+      internal function note(param1:String):void
       {
          var clean:String = param1.split("\n").join(" ").split("\r").join(" ");
          this.lines.push(clean);
-         while(this.lines.length > 200) { this.lines.shift(); }
+         while(this.lines.length > LOG_CAP) { this.lines.shift(); }
       }
    }
 }
