@@ -710,7 +710,10 @@ package
       // Feeds the game's list in Horizon's order. The list's own visible flag is false for the
       // duration: vanilla's onListSelectionChanged returns early then, so the re-feed sends no
       // preview of its own. Never feeds an empty list (vanilla's handlers dereference the
-      // selected entry); input is paused instead while nothing matches.
+      // selected entry); input is paused instead while nothing matches. While the game hides
+      // the palette (PartEntries bShowWidget false) no preview is sent either: vanilla hides
+      // only the palette clip, so the list would still send one. previewId stays empty, and
+      // the next shown PartEntries previews as usual.
       private function refeed():void
       {
          var list:Object = this.nativeList();
@@ -747,7 +750,7 @@ package
             this.fedSig = this.sigOf(ids);
             this.selId = want;
             this.nativeSel = want;
-            if(want != this.previewId && was)
+            if(want != this.previewId && was && this.data != null && Boolean(this.data.bShowWidget))
             {
                this.previewId = want;
                this.palette().onListSelectionChanged();

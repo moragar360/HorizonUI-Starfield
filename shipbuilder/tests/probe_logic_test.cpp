@@ -1483,6 +1483,14 @@ static void CheckMovie(const fs::path& root)
 								     "items.push({\"label\":\"Manage pills\\u2026\",\"id\":\"manage\",\"accent\":true});"}),
 				"the More chip, the only way to Import, Export and Manage, is always in the pill row");
 		}
+		// Review B3 SHOULD-FIX 1: vanilla hides only the palette clip, so a re-feed while the game
+		// hides it must not call the list's selection handler, which would send a part preview.
+		Expect(InOrder(FunctionBody(browser, "refeed"), {"var was:Boolean = Boolean(list.visible);", "list.visible = false;", "list.InitializeEntries(entries);",
+				   "list.visible = was;", "if(want != this.previewId && was && this.data != null && Boolean(this.data.bShowWidget))",
+				   "this.previewId = want;", "this.palette().onListSelectionChanged();"}) &&
+				CountOf(browser, "onListSelectionChanged()") == 1 &&
+				InOrder(FunctionBody(browser, "onParts", "internal"), {"this.data = param1;", "if(!Boolean(param1.bShowWidget))", "this.previewId = \"\";", "return;"}),
+			"a re-feed while the game hides the palette sends no part preview");
 		// Review B4 NIT 4: a pack with many column sets keeps its list and switch inside the dialog.
 		{
 			const std::string importBox = ReadFile(as / "HsbPillImport.as");
