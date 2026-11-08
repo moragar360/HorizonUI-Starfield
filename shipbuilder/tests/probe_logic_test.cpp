@@ -965,6 +965,9 @@ static void CheckMovie(const fs::path& root)
 				!Has(dragRow, "k.accentDim(0.6)"),
 			"the dragged column row is a filled row with its accent stripe inside, without an outline");
 	}
+	Expect(InOrder(FunctionBody(browser, "applyColumnDefaults"), {"if(raw.length > 0)", "this.sortCol = HsbPillModel.columnId(raw);",
+				"else", "this.sortCol = \"\";", "this.sortDesc = false;"}),
+		"a tab with no saved sort, or Game order saved, shows the game's order rather than the last tab's sort");
 	Expect(Has(FunctionBody(hub, "shortChip", "internal static"), "if(dot < 0 || param1.indexOf(\"e\") >= 0) { return param1.charAt(0); }") &&
 		Has(FunctionBody(hub, "shortChip", "internal static"), "return whole.length == 2 && whole.charAt(1) == \"0\" ? param1.charAt(0) : whole;"),
 		"short chips follow the twin");

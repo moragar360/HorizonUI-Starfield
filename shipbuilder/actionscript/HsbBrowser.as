@@ -490,6 +490,8 @@ package
          this.invalidate();
       }
 
+      // Each tab keeps its own sort. "Game order" is saved as an empty value, the same as no
+      // saved sort, so both show the game's order rather than the last tab's sort.
       private function applyColumnDefaults():void
       {
          var raw:String = this.hsb.columnSets[this.tabId + "Sort"] != null ? String(this.hsb.columnSets[this.tabId + "Sort"]) : "";
@@ -497,6 +499,11 @@ package
          {
             this.sortDesc = raw.charAt(raw.length - 1) == "-";
             this.sortCol = HsbPillModel.columnId(raw);
+         }
+         else
+         {
+            this.sortCol = "";
+            this.sortDesc = false;
          }
       }
 
