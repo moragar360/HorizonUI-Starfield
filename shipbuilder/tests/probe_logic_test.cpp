@@ -738,11 +738,17 @@ static void CheckMovie(const fs::path& root)
 		"STATE carries every field the plugin reads");
 	{
 		// Horizon's hotkeys stand aside while the player types a ship name or Horizon is not drawn.
-		const std::string hk = FunctionBody(hub, "hotkeysAllowed");
 		Expect(Has(FunctionBody(hub, "pushState"), "var hotkeys:Boolean = this.hotkeysAllowed();") &&
-			Has(hk, "if(this.conflict || this.kit == null) { return false; }") &&
-			Has(hk, "if(this.nativeOn(\"ShipRename_mc\") || this.nativeOn(\"HangarInfoPanel_mc\")) { return false; }") &&
-			Has(hk, "if(field != null && field.type == TextFieldType.INPUT && !this.contains(field)) { return false; }"),
+			FunctionBody(hub, "hotkeysAllowed") == R"AS(private function hotkeysAllowed():Boolean
+      {
+         if(this.conflict || this.kit == null) { return false; }
+         if(this.nativeOn("ShipRename_mc") || this.nativeOn("HangarInfoPanel_mc")) { return false; }
+         var focus:InteractiveObject = stage != null ? stage.focus : null;
+         var field:TextField = focus as TextField;
+         if(field != null && field.type == TextFieldType.INPUT && !this.contains(field)) { return false; }
+         return true;
+      }
+)AS",
 			"hide, find and Arrange keys reach the game while a vanilla text field or the rename screen is up");
 		Expect(InOrder(FunctionBody(hub, "onKey"), {"if(!this.hotkeysAllowed()) { return; }", "if(param1 == \"open\")", "if(param1 == \"hide\")", "if(param1 == \"find\""}),
 			"a hotkey token that arrives late is ignored when hotkeys stand aside");
@@ -945,15 +951,28 @@ static void CheckMovie(const fs::path& root)
 			Has(profile, "this.lockPills(count == HsbPillModel.LOAD_NEWER ? \"newer\" : \"toolong\");") &&
 			InOrder(profile, {"else if(count == HsbPillModel.LOAD_BAD)", "this.pillsLock = \"\";", "this.fileOp(\"PROFILE\",[\"BAD\"],\"\",null);"}),
 			"only a missing or damaged profile may be replaced");
-		Expect(InOrder(save, {"if(this.pillsLock.length > 0 && this.pillsLock != \"full\")", "return;", "if(text.length > HsbJson.MAX_CHARS)",
-				   "this.lockPills(\"full\");", "return;", "this.fileOp(\"PROFILE\",[\"WRITE\"],text,"}), "the movie never writes a profile it could not read back");
+		Expect(InOrder(save, {"var retry:Boolean = this.pillsLock == \"full\" || this.pillsLock == \"unsavable\";", "if(this.pillsLock.length > 0 && !retry)",
+				   "return;", "if(text.length > HsbJson.MAX_CHARS)", "this.lockPills(\"full\");", "return;", "if(HsbJson.parse(text) == null)",
+				   "this.lockPills(\"unsavable\");", "return;", "if(retry) { this.lockPills(\"\"); }", "this.fileOp(\"PROFILE\",[\"WRITE\"],text,"}),
+			"the movie never writes a profile it could not read back");
+		Expect(Has(FunctionBody(hub, "pillsWarning", "internal"), "case \"unsavable\": return \"Pill changes are not saved: a pill holds data the file cannot keep\";"),
+			"a profile the reader would refuse is explained on screen");
+		const std::string clean = FunctionBody(model, "clean", "internal static");
+		Expect(InOrder(clean, {"var extra:* = param1[key];", "var plain:Boolean = extra == null || extra is String || extra is Number || extra is Boolean;",
+				   "if(plain && out[key] === undefined && "}),
+			"a pill keeps only plain unknown values, so a single-pill import cannot nest the profile past the reader's depth");
+		Expect(InOrder(FunctionBody(json, "parse", "internal static"), {"if(param1.length > 0 && param1.charCodeAt(0) == 0xFEFF) { param1 = param1.substring(1); }",
+				   "if(param1.length > MAX_CHARS) { return null; }"}),
+			"a file saved with a byte-order mark still reads");
 		Expect(Has(model, "if(param1.length > HsbJson.MAX_CHARS) { return LOAD_TOO_BIG; }"), "a profile too long to parse is reported as such");
 		Expect(Has(browser, "var pillsWarn:String = this.hsb.pillsWarning();"), "the browser says when pill changes are not saved");
+		// Scaleform may count a character outside the Basic Multilingual Plane as one character,
+		// and UTF-8 stores it in 4 bytes.
 		const std::string head = "internal static const MAX_CHARS:int = ";
 		const std::size_t at = json.find(head);
 		const long maxChars = at == std::string::npos ? -1 : std::strtol(json.c_str() + at + head.size(), nullptr, 10);
-		Expect(maxChars > 0 && static_cast<std::size_t>(maxChars) * 3 <= hsb::kMaxProfileBytes &&
-			static_cast<std::size_t>(maxChars) * 3 + 64 <= hsb::kMaxRequestBytes, "the movie's largest profile fits the plugin's read and request caps");
+		Expect(maxChars > 0 && static_cast<std::size_t>(maxChars) * 4 <= hsb::kMaxProfileBytes &&
+			static_cast<std::size_t>(maxChars) * 4 + 64 <= hsb::kMaxRequestBytes, "the movie's largest profile fits the plugin's read and request caps");
 	}
 
 	// Card numbers are cached only for the previewed part while the palette and card are shown.
@@ -1075,7 +1094,8 @@ static void CheckPlugin(const fs::path& root)
 	Expect(InOrder(runFile, {"if (!hsb::ParseFileRequest(line, r)) {", "const std::string id = hsb::RequestId(line);",
 			   "return id.empty() ? std::string() : hsb::FileReply(id, false, \"\");"}), "a request that does not parse is answered");
 	const std::string writeIni = CppBody(plugin, "void WriteIniNow(");
-	Expect(InOrder(writeIni, {"const bool readOk = exists && ReadCapped(g_iniPath, kUserIniCap, existing);", "if (!hsb::UserReadAllowsWrite(exists, readOk)) {",
+	Expect(InOrder(writeIni, {"const bool exists = FileExists(g_iniPath);", "const bool readOk = exists && ReadCapped(g_iniPath, kUserIniCap, existing);",
+			   "if (!hsb::UserReadAllowsWrite(exists, readOk)) {",
 			   "RequeueUpdates(updates);", "hsb::MergeSettings(existing, updates);", "if (!WriteReplace(g_iniPath, merged)) {", "RequeueUpdates(updates);"}),
 		"the user ini is merged only after a full read, and a skipped or failed save is retried");
 	Expect(Has(CppBody(plugin, "bool CoreIniMayRead("), "return hsb::HudIniMayRead(NarrowPath(path), NarrowPath(HudIniDir()));") &&
@@ -1084,6 +1104,11 @@ static void CheckPlugin(const fs::path& root)
 	Expect(Has(runFile, "MoveFileExW(") && !Has(plugin, std::string("Delete") + "File"), "a bad profile is renamed, never deleted");
 	Expect(Has(plugin, "Fact(\"files\""), "file jobs are logged");
 	const std::string apply = CppBody(plugin, "void BuildApply(");
+	Expect(Has(apply, "const std::wstring hudDir = HudIniDir();") && Has(apply, "FileExists(hudDir + L\"HorizonUI.user.ini\")") &&
+		Has(apply, "FileExists(hudDir + L\"HorizonUI.default.ini\")"), "the HUD ini files are looked up in the HUD's folder");
+	Expect(InOrder(CppBody(plugin, "void NoteMovieLine("), {"if (!set && (body == \"open\" || body == \"saved\" || body == \"cancel\")) {",
+			   "Fact(\"movie\", clean);", "return;", "++g_setRejected;"}),
+		"Arrange open, saved and cancel notes are logged, not counted as refused settings");
 	Expect(Has(apply, "const hsb::HudAccent hud = hsb::LayerHudAccent(coreUser, coreDefault);") &&
 		Has(apply, "const int coreAccent = coreFound ? hsb::ResolveAccent(hud.color, coreHex, false, 0, \"\") : -1;"),
 		"the HUD accent is layered as the HUD layers it");

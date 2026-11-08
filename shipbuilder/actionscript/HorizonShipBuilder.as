@@ -2518,16 +2518,20 @@ package
             case "newer": return "Pill changes are not saved: the pills file is from a newer version";
             case "toolong": return "Pill changes are not saved: the pills file is too long to read";
             case "full": return "Pill changes are not saved: too many pills and rules for one file";
+            case "unsavable": return "Pill changes are not saved: a pill holds data the file cannot keep";
          }
          return "";
       }
 
       // Purpose: write the pill profile. Inputs: the pill model. Outputs: one PROFILE WRITE, or
       //    none while saving is locked. Rule: the movie never writes what its own reader would
-      //    refuse (HsbJson.MAX_CHARS), so a saved profile always loads again.
+      //    refuse (longer than HsbJson.MAX_CHARS, or text HsbJson.parse rejects), so a saved
+      //    profile always loads again. "full" and "unsavable" clear on the next save that passes,
+      //    so removing the pills that caused them unlocks saving.
       internal function savePills():void
       {
-         if(this.pillsLock.length > 0 && this.pillsLock != "full")
+         var retry:Boolean = this.pillsLock == "full" || this.pillsLock == "unsavable";
+         if(this.pillsLock.length > 0 && !retry)
          {
             this.note("PILLS save refused " + this.pillsLock);
             return;
@@ -2539,7 +2543,13 @@ package
             this.note("PILLS save refused toolong");
             return;
          }
-         if(this.pillsLock == "full") { this.lockPills(""); }
+         if(HsbJson.parse(text) == null)
+         {
+            this.lockPills("unsavable");
+            this.note("PILLS save refused unreadable");
+            return;
+         }
+         if(retry) { this.lockPills(""); }
          this.fileOp("PROFILE",["WRITE"],text,function(param1:Boolean, param2:String):void
          {
             note("PILLS save " + (param1 ? "ok" : "failed"));

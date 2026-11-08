@@ -3,7 +3,8 @@ package
    // Purpose: read and write the small JSON files that pills, packs and the pill profile use.
    //    No vanilla movie calls the Flash JSON class, so its presence in the game's Scaleform is
    //    unproven; this reader needs nothing beyond String.
-   // Inputs: text up to MAX_CHARS; values made of Object, Array, String, Number, Boolean, null.
+   // Inputs: text up to MAX_CHARS, with or without a leading byte-order mark; values made of
+   //    Object, Array, String, Number, Boolean, null.
    // Outputs: parse returns the value, or null when the text is not valid JSON, nests deeper
    //    than MAX_DEPTH or is too long. stringify writes keys in a fixed order so files diff well.
    // Dependencies: none.
@@ -25,7 +26,11 @@ package
 
       internal static function parse(param1:String):*
       {
-         if(param1 == null || param1.length > MAX_CHARS) { return null; }
+         if(param1 == null) { return null; }
+         // Editors that save "UTF-8 with BOM" put U+FEFF first; RFC 8259 lets a reader skip it,
+         // and without this a hand-edited profile would be set aside as damaged.
+         if(param1.length > 0 && param1.charCodeAt(0) == 0xFEFF) { param1 = param1.substring(1); }
+         if(param1.length > MAX_CHARS) { return null; }
          var p:HsbJson = new HsbJson();
          p.src = param1;
          p.at = 0;

@@ -289,7 +289,10 @@ package
          return bits.join(" \u00B7 ");
       }
 
-      // Validates one pill object from any file. Returns a clean copy or null.
+      // Validates one pill object from any file. Returns a clean copy or null. Unknown keys are
+      // kept only when their value is plain (text, number, true/false or null): a single-pill
+      // file's pill sits two levels shallower than the profile stores it, so nested data could
+      // push the saved profile past HsbJson.MAX_DEPTH and make it unreadable.
       internal static function clean(param1:Object):Object
       {
          if(param1 == null || typeof param1 != "object") { return null; }
@@ -337,7 +340,9 @@ package
          var key:String;
          for(key in param1)
          {
-            if(out[key] === undefined && ["id","name","tabs","match","inRow","rules","columns"].indexOf(key) < 0) { out[key] = param1[key]; }
+            var extra:* = param1[key];
+            var plain:Boolean = extra == null || extra is String || extra is Number || extra is Boolean;
+            if(plain && out[key] === undefined && ["id","name","tabs","match","inRow","rules","columns"].indexOf(key) < 0) { out[key] = extra; }
          }
          return out;
       }
