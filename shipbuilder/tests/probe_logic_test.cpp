@@ -1567,6 +1567,10 @@ static void CheckDocs(const fs::path& repo, const fs::path& root)
 		"the readme lists the unknowns and stands alone");
 	for (const auto& event : VanillaEvents()) Expect(Has(readme, "`" + event + "`"), "the readme lists " + event);
 	Expect(!Has(readme, "Data folder as the mod root"), "the readme does not call Data the mod root");
+	Expect(Has(readme, "The rename never replaces an existing `ShipBuilderPills.bad.json`") && Has(readme, "is never replaced") &&
+		Has(readme, "flushed to disk") && Has(readme, "holds a NUL byte, or cannot be copied to `.bak`") &&
+		Has(readme, "`Move ShipBuilderPills.bad.json away, then reopen the builder`") && !Has(readme, "renamed to `ShipBuilderPills.bad.json`, so it is kept"),
+		"the readme says how a damaged profile is set aside and when a profile save is skipped");
 
 	Expect(Has(vortex, "Data/SFSE/Plugins/HorizonShipBuilder.dll") && Has(vortex, "Data/Interface/spaceshipeditormenu.swf") &&
 		Has(vortex, "Data/Interface/spaceshipeditormenu_lrg.swf") && Has(vortex, "HorizonShipBuilder.default.ini") && Has(vortex, "game root") &&
