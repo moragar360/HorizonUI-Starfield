@@ -202,7 +202,8 @@ expect(funcBody(as, "hz27OnExit").indexOf("this.hz43Reticle()") >= 0, "the hide 
 expect(funcBody(as, "hzLayClips").indexOf("hzWatchStyle == 1") >= 0, "styles 1 and 2 have an Arrange clip");
 expect(funcBody(as, "hzArrList").indexOf("hzWatchStyle == 1") >= 0, "styles 1 and 2 show a Watch handle");
 expect(as.indexOf("Horizon Digital and Analog can be moved") < 0, "the F11 note is not limited to Digital and Analog");
-expect(as.indexOf("Every watch face can be moved in Arrange Cards") >= 0, "the F11 note includes every watch face");
+expect(as.indexOf("Every watch face can be moved in Arrange Cards") < 0, "the old every-watch-face helper caption is gone");
+expect(as.indexOf('"note":"Original Vanilla Watch or Horizon Watch"') >= 0, "the F11 watch helper caption is Original Vanilla Watch or Horizon Watch");
 expect(funcBody(as, "hz43VanCapture").indexOf("HZ43_VAN_N") >= 0 && funcBody(as, "hz43VanCapture").indexOf("hzFindByName") >= 0, "Arrange finds named watch clips under the lower-left group");
 expect(funcBody(as, "hz43VanClip").indexOf("getChildByName") < 0, "Arrange does not look only at direct children");
 expect(funcBody(as, "hz43VanWrite").indexOf("hzBlg.x") < 0 && funcBody(as, "hz43VanWrite").indexOf("hzBlg.y") < 0, "Arrange does not drag the lower-left group");
@@ -269,7 +270,9 @@ expect(funcBody(as, "hz43VanPlace").indexOf("hz43VanFadeOk") >= 0 && funcBody(as
 expect(funcBody(as, "hz43Tint").indexOf("hz43TintUnnamed") >= 0 && funcBody(as, "hz43TintUnnamed").indexOf("hz43VanRingClip") >= 0, "style 2 tints unnamed watch chrome including the filled annulus");
 expect(funcBody(as, "hz43TintUnnamed").indexOf("hz43TintRgb") >= 0 && funcBody(as, "hz43TintUnnamed").indexOf("hz43TintClear") >= 0 && funcBody(as, "hz43TintUnnamed").indexOf("alphaMultiplier") < 0, "unnamed chrome tint uses TintRgb/TintClear and does not write alpha");
 expect(funcBody(as, "hz43VanDump").indexOf("hz43VanNamed") < 0, "dump lists every BottomLeftGroup child, not only VanNamed clips");
-expect(as.indexOf('HZ43_DIAG:String = "r14-annulus-obj-20261107"') >= 0, "next gfx can prove package r14-annulus-obj-20261107");
+expect(as.indexOf('HZ43_DIAG:String = "r15-vanilla-restore-20261108"') >= 0, "next gfx can prove package r15-vanilla-restore-20261108");
+expect(funcBody(as, "hz43VanBlgChrome").indexOf("hz43VanShowClip") >= 0 && funcBody(as, "hz43VanShowClip").indexOf("d.alpha") < 0, "vanilla chrome show restores named assembly vis without writing alpha");
+expect(funcBody(as, "hz43SyncHide").indexOf("hz43VanBlgChrome(false)") >= 0 && funcBody(as, "hzSetLive").indexOf("hz43VanShown = 0") >= 0, "later vanilla frames retry vis undo and a WatchStyle change recaptures ShowVanilla");
 expect(funcBody(as, "hz43VanDump").indexOf("WatchPointerOutline_mc") >= 0, "dump signature includes heading-outline vis so later Off frames are not collapsed into the first write");
 expect(funcBody(as, "hz43SyncHide").indexOf("hz43HideStyle") >= 0 && funcBody(as, "hz43SyncHide").indexOf("hzHideCache = null") >= 0, "WatchStyle change rebuilds hide cache, including Digital then Off");
 expect(onFrame.indexOf('else if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4) { names.push("WatchPointerOutline_mc"); }') >= 0, "custom hideTick owns the heading outline");
@@ -284,9 +287,10 @@ expect(onFrame.indexOf("this.hzFrameN++") >= 0 && onFrame.indexOf("this.hz43Fram
 expect(funcBody(as, "hz27OnExit").indexOf("hzFrameN") < 0 && funcBody(as, "hz27OnExit").indexOf("this.hz43VanLate()") >= 0, "exitFrame VanLate does not increment hzFrameN");
 const placeFade = funcBody(as, "hz43VanPlace");
 const markUndoAt = placeFade.indexOf("if(this.hz43MarkMoved) { this.hz43VanWrite(0,0,1); this.hz43MarkMoved = false; }");
-const chromeUndoAt = placeFade.indexOf("if(this.hz43HidN > 0) { this.hz43VanChrome(false); }");
+const chromeUndoAt = placeFade.indexOf("this.hz43VanChrome(false);");
 const fadeWaitAt = placeFade.indexOf("if(!drag && !this.hz43VanFadeOk())");
 const savedWriteAt = placeFade.indexOf("this.hz43VanWrite(hnd.x - this.hz43VanHX,hnd.y - this.hz43VanHY,sc)");
+expect(placeFade.indexOf("if(this.hz43HidN > 0)") < 0, "VanPlace does not wait for a hid list before chrome restore");
 expect(markUndoAt >= 0 && chromeUndoAt > markUndoAt && fadeWaitAt > chromeUndoAt && savedWriteAt > fadeWaitAt, "Digital then Vanilla MarkMoved undo runs before chrome restore, fade wait, and saved Arrange");
 expect(placeFade.indexOf("if(!drag && !this.hz43VanFadeOk())") >= 0 && placeFade.indexOf("if(drag) { this.hz43VanWmk = -1; }") >= 0, "Arrange drag bypasses FadeIn wait and busts the identical-write latch");
 expect(placeFade.indexOf(".alpha =") < 0 && funcBody(as, "hz43VanWrite").indexOf(".alpha =") < 0, "Fade timeout and Arrange write do not assign clip alpha");
@@ -817,7 +821,13 @@ function makeSyncHideHost(style) {
 		hzHideCache: ["stale"],
 		hz43VanShown: 0,
 		hz43VanTries: 0,
-		hz43ShowVanilla: function() { return false; }
+		showN: 0,
+		restoreN: 0,
+		chromeN: 0,
+		chromeHide: null,
+		hz43ShowVanilla: function() { this.showN++; return true; },
+		hz43VanRestoreHid: function() { this.restoreN++; },
+		hz43VanBlgChrome: function(hide) { this.chromeN++; this.chromeHide = hide; }
 	};
 	bindAsMethod(host, "hz43SyncHide", []);
 	return host;
@@ -831,6 +841,15 @@ expect(syncCustom.hzHideCache && syncCustom.hzHideCache[0] === "built", "product
 syncCustom.hzWatchStyle = 0;
 syncCustom.hz43SyncHide();
 expect(syncCustom.hzHideCache === null && syncCustom.hz43HideStyle === 0, "production SyncHide rebuilds hide cache on Digital then Off while hideWatch stays true");
+const syncVan = makeSyncHideHost(0);
+syncVan.hz43ShowVanilla = function() { this.showN++; return false; };
+syncVan.hz43SyncHide();
+syncVan.hzWatchStyle = 1;
+syncVan.hz43ShowVanilla = function() { this.showN++; return true; };
+syncVan.hz43SyncHide();
+expect(syncVan.showN === 1 && syncVan.hz43VanShown === 1 && syncVan.hzHideVanillaWatch === false, "production Off then Vanilla runs ShowVanilla once and drops hideWatch");
+syncVan.hz43SyncHide();
+expect(syncVan.showN === 1 && syncVan.restoreN === 1 && syncVan.chromeHide === false, "later vanilla frames retry hid restore and BlgChrome show without a second ShowVanilla dump");
 const markHost = { hz43VanMarkName: null };
 bindAsMethod(markHost, "hz43VanMarkName", ["name"]);
 expect(markHost.hz43VanMarkName("WatchIconsWidget_mc") === true && markHost.hz43VanMarkName("MissionIconsWidget_mc") === true && markHost.hz43VanMarkName("EnemyIconsWidget_mc") === true, "production keep-mark still names nearby mission and enemy widgets");
@@ -893,7 +912,9 @@ function makePlaceHost() {
 }
 const placeWait = makePlaceHost();
 placeWait.hzFrameN = 1;
+placeWait.hz43HidN = 0;
 placeWait.hz43VanPlace();
+expect(placeWait.chromeCalls >= 1, "production VanPlace restores chrome after capture even when hidN is 0");
 expect(placeWait.outlineClip.x === 0 && placeWait.capClip.x === 0 && placeWait.iconsClip.x === 111.35, "production VanPlace does not write sibling locals while FadeOk is false");
 expect(placeWait.dumps.indexOf("fade-wait") >= 0, "production VanPlace dumps fade-wait instead of write while not ready");
 expect(placeWait.outlineClip.alpha === 0 && placeWait.outlineClip.transform.colorTransform.alphaMultiplier === 0, "production VanPlace wait leaves chrome alpha and ctA at 0");
@@ -1068,6 +1089,10 @@ function makeAssemblyHost() {
 	bindAsMethod(host, "hz43VanGameVis", ["name"]);
 	bindAsMethod(host, "hz43VanEnvWant", ["name"]);
 	bindAsMethod(host, "hz43VanRestoreHid", []);
+	host.HZ43_VAN_MARK = ["WatchIconsWidget_mc", "MissionIconsWidget_mc", "EnemyIconsWidget_mc"];
+	bindAsMethod(host, "hz43VanHoldsMark", ["box"]);
+	bindAsMethod(host, "hz43VanShowClip", ["d"]);
+	bindAsMethod(host, "hz43VanBlgChrome", ["hide"]);
 	bindAsMethod(host, "hz43TintRgb", ["clip", "col", "amt"]);
 	bindAsMethod(host, "hz43TintClear", ["clip"]);
 	bindAsMethod(host, "hz43TintAt", ["i"]);
@@ -1126,6 +1151,50 @@ asmTint.hz43Tint();
 expect(asmTint.ringClip.transform.colorTransform.redMultiplier === 1 && asmTint.ringClip.transform.colorTransform.redOffset === 0, "leaving style 2 TintClear restores annulus RGB");
 expect(asmTint.ringClip.transform.colorTransform.alphaMultiplier === 0.25 && asmTint.ringClip.transform.colorTransform.alphaOffset === 7, "TintClear restore preserves annulus CT alpha");
 expect(asmTint.tempClip.transform.colorTransform.alphaMultiplier === 0.5 && asmTint.tempClip.transform.colorTransform.redMultiplier === 1, "TintClear does not touch unrelated Temperature");
+
+const firstVan = makeAssemblyHost();
+firstVan.hz43VanRingClip(firstVan.ringClip);
+firstVan.outlineClip.visible = false;
+firstVan.o2Clip.visible = false;
+firstVan.capClip.visible = false;
+firstVan.ringClip.visible = false;
+firstVan.detectClip.visible = true;
+firstVan.tickClip.visible = true;
+firstVan.tempClip.visible = false;
+firstVan.hz43HidN = 0;
+const o2A = firstVan.o2Clip.transform.colorTransform.alphaMultiplier;
+const ringA2 = firstVan.ringClip.transform.colorTransform.alphaMultiplier;
+firstVan.tempClip.alpha = 0;
+firstVan.hz43VanBlgChrome(false);
+expect(firstVan.outlineClip.visible === true && firstVan.o2Clip.visible === true && firstVan.capClip.visible === true && firstVan.ringClip.visible === true, "first Vanilla BlgChrome restores named chrome and unnamed annulus when the hid list is empty");
+expect(firstVan.o2Clip.transform.colorTransform.alphaMultiplier === o2A && firstVan.ringClip.transform.colorTransform.alphaMultiplier === ringA2, "first Vanilla BlgChrome restore does not write CT alpha");
+expect(firstVan.detectClip.visible === true && firstVan.tickClip.visible === true, "first Vanilla BlgChrome restore leaves detection and INFO ticks on native rules");
+expect(firstVan.tempClip.visible === true && firstVan.tempClip.alpha === 0, "named INFO vis undo does not write FadeInPlanetInfo alpha");
+firstVan.hz43VanBlgChrome(true);
+expect(firstVan.outlineClip.visible === false && firstVan.ringClip.visible === false && firstVan.detectClip.visible === true && firstVan.tickClip.visible === true, "Off BlgChrome hide still owns named chrome and the annulus, not detection or ticks");
+const hud2 = makeAssemblyHost();
+hud2.hz43VanRingClip(hud2.ringClip);
+hud2.outlineClip.visible = false;
+hud2.o2Clip.visible = false;
+hud2.capClip.visible = false;
+hud2.ringClip.visible = false;
+hud2.detectClip.visible = true;
+hud2.tickClip.visible = true;
+hud2.hz43HidN = 0;
+hud2.HZ43_VAN_N = VAN_N;
+hud2.HZ43_VAN_INFO = ["Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc"];
+hud2.HZ43_VAN_A = ["BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"];
+hud2.hz43VanTries = 0;
+hud2.hz43VanLogged = true;
+hud2.hzDebug = false;
+hud2.hz26Dbg = {};
+bindAsMethod(hud2, "hz43VanInfoName", ["name"]);
+bindAsMethod(hud2, "hz43ShowVanilla", []);
+const hud2RingA = hud2.ringClip.transform.colorTransform.alphaMultiplier;
+expect(hud2.hz43ShowVanilla() === true, "HUD recreate ShowVanilla succeeds with hidN 0");
+expect(hud2.outlineClip.visible === true && hud2.o2Clip.visible === true && hud2.capClip.visible === true && hud2.ringClip.visible === true, "HUD recreate ShowVanilla restores named chrome and annulus when RestoreHid has nothing to undo");
+expect(hud2.hz43HidN === 0 && hud2.ringClip.transform.colorTransform.alphaMultiplier === hud2RingA, "HUD recreate ShowVanilla leaves hidN empty and does not write annulus CT alpha");
+expect(hud2.detectClip.visible === true && hud2.tickClip.visible === true, "HUD recreate ShowVanilla leaves detection and INFO ticks on native rules");
 blg.kids = blgKids;
 
 function hidHas(hid, clip) {
@@ -1669,6 +1738,9 @@ expect(checks.indexOf("HZ43 dump") >= 0 && checks.indexOf("vis/alpha") >= 0, "CH
 expect(checks.indexOf("r12-pointer-mark-20261107") >= 0, "CHECKS records the pointer-mark diagnostic package token");
 expect(checks.indexOf("r13-annulus-hide-20261107") >= 0, "CHECKS records the annulus-hide diagnostic package token");
 expect(checks.indexOf("r14-annulus-obj-20261107") >= 0 && checks.indexOf("88.4") >= 0, "CHECKS records the cached-object diagnostic package token and scaled local");
+expect(checks.indexOf("r15-vanilla-restore-20261108") >= 0, "CHECKS records the vanilla-restore diagnostic package token");
+expect(checks.indexOf("91c6c8fde4092069cef16a64506c607a3af9b24e124e980877a0968899d3d12f") >= 0, "CHECKS records actual r13 SFSE SHA");
+expect(checks.indexOf("Do not map first vs second") >= 0 && checks.indexOf("55918") >= 0, "CHECKS does not map 18514/19545 as first vs second Vanilla and does not treat 55918 as Off proof");
 expect(checks.indexOf("WatchPointerOutline_mc") >= 0 && checks.indexOf("keep-mark") >= 0, "CHECKS records that heading outline left keep-mark");
 expect(checks.indexOf("does not write a stored FadeIn alpha") >= 0 && checks.indexOf("Digital then Vanilla") >= 0, "CHECKS records Digital then Vanilla restore without forcing INFO alpha");
 expect(checks.indexOf("write-marks") >= 0 && checks.indexOf("does not include why") >= 0, "CHECKS records dump signature omit why");
@@ -1702,6 +1774,17 @@ expect(holdPathLive(false, true) === 1, "restored ancestors keep the hold live")
 
 expect(ini.indexOf("WatchX=-1") >= 0 && ini.indexOf("WatchY=-1") >= 0, "default watch position is the lower-left home");
 expect(ini.indexOf("WatchScale=-1") >= 0, "watch size defaults to HudScale");
+expect(funcBody(as, "hz26IniLines").indexOf("WatchStyle=") >= 0 && funcBody(as, "hz34IniLines").indexOf("Scale=") >= 0 && as.indexOf('["Watch",false]') >= 0, "F11 save writes WatchStyle and every card Scale including WatchScale");
+expect(funcBody(as, "hzBuildIniText").indexOf("lk + \"X=\"") >= 0 && as.indexOf('HZ_LAY_KEYS:Array = [') >= 0 && as.indexOf('"Watch"]') >= 0, "F11 save writes WatchX/WatchY from the Arrange layout keys");
+expect(as.indexOf("WatchCompact") < 0, "there is no WatchCompact toggle");
+expect(as.indexOf("PersonalKey") < 0 && as.indexOf("function hzTakeSaveIni") >= 0, "HUD save hands full merged text to the DLL");
+const mainCpp = readText(path.join(root, "src", "main.cpp"));
+expect(mainCpp.indexOf("inline bool PersonalKey") >= 0 && mainCpp.indexOf("a_sec == \"hotkeys\"") >= 0 && mainCpp.indexOf("screenheight") >= 0, "preset Diff strips Hotkeys and ScreenHeight");
+const diffH = readText(path.join(root, "src", "hz_ini_diff.h"));
+expect(diffH.indexOf("keepUnknownKeys = false") >= 0, "preset files drop unknown keys of known sections");
+expect(preset.indexOf("[Hotkeys]") < 0 && preset.indexOf("ScreenHeight") < 0, "Moragar's Choice has no personal keys");
+expect(preset.indexOf("WatchScale") < 0, "Moragar's Choice leaves WatchScale at the default");
+expect(ini.indexOf("WatchScale=-1") >= 0 && ini.indexOf("WatchStyle=0") >= 0, "defaults keep WatchScale at HudScale and WatchStyle off");
 expect(as.indexOf('"Watch","Enemy"') < 0 && as.indexOf('"HudMessages","Watch"') >= 0, "Watch is an Arrange key");
 expect(as.indexOf('"WATCH"') >= 0, "Arrange names the watch");
 expect(as.indexOf('["Watch",false]') >= 0, "Watch has its own size entry");

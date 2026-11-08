@@ -1978,7 +1978,7 @@
                case "containerscale": if(!isNaN(nv)) { this.hzTgScale = this.hz34ScClamp(nv); this.hzTgScaleSet = true; this.hzT19Sig = ""; } break;
                case "crosshairstyle": if(!isNaN(nv)) { this.hzXhStyle = Math.max(0,Math.min(3,int(nv))); this.hzXhSig = ""; } break;
                case "crosshairrule": if(!isNaN(nv)) { this.hzCrossRule = Math.max(0,Math.min(2,int(nv))); } break;
-               case "watchstyle": if(!isNaN(nv)) { this.hzWatchStyle = Math.max(0,Math.min(4,int(nv))); this.hz43Force = true; this.hzHideCache = null; } break;
+               case "watchstyle": if(!isNaN(nv)) { this.hzWatchStyle = Math.max(0,Math.min(4,int(nv))); this.hz43Force = true; this.hzHideCache = null; this.hz43VanShown = 0; this.hz43VanTries = 0; } break;
                case "objectring": if(!isNaN(nv)) { this.hzObjRing = Math.max(0,Math.min(2,int(nv))); } break;
                case "screenheight": if(!isNaN(nv)) { this.hzScrH = nv >= 360 && nv <= 4320 ? int(nv) : 0; this.hzT19Sig = ""; } break;
                case "headerstyle": if(!isNaN(nv)) { this.hzHeaderStyle = Math.max(0,Math.min(1,int(nv))); this.hzApplyTypo(); } break;
@@ -5037,7 +5037,14 @@
          if(p.WatchStyle != undefined && !isNaN(Number(p.WatchStyle)))
          {
             var nws:int = Math.max(0,Math.min(4,int(p.WatchStyle)));
-            if(nws != this.hzWatchStyle) { this.hzWatchStyle = nws; this.hz43Force = true; this.hzHideCache = null; }
+            if(nws != this.hzWatchStyle)
+            {
+               this.hzWatchStyle = nws;
+               this.hz43Force = true;
+               this.hzHideCache = null;
+               this.hz43VanShown = 0;
+               this.hz43VanTries = 0;
+            }
          }
          if(p.ObjectRing != undefined && !isNaN(Number(p.ObjectRing))) { this.hzObjRing = Math.max(0,Math.min(2,int(p.ObjectRing))); }
          if(p.ContainerScale != undefined && !isNaN(Number(p.ContainerScale))) { this.hzTgScale = this.hz34ScClamp(p.ContainerScale); this.hzT19Sig = ""; }
@@ -14925,7 +14932,7 @@
             {"k":"VitalsLayout","l":"VITALS LAYOUT","t":"r","opts":["VERTICAL","HORIZONTAL"],"ids":[0,1],"sub":true,"note":"VERTICAL = health above O2.  HORIZONTAL = O2 beside health (one row).  ARRANGE CARDS: L"},
             {"k":"VitalsBars","l":"HEALTH AND O2 BARS","t":"r","opts":["FULL","COMPACT"],"ids":[0,1],"sub":true,"note":"COMPACT uses the same boost, health, and oxygen card as COMPACT MODE. FULL keeps the separate cards. If either is on, that merged card shows."},
             {"k":"ShowCharacter","l":"CHARACTER CARD (LV / XP / CREDITS / MASS)","t":"b"},this.hz34Sz("Character"),this.hz34Cmp("Character",cmn),
-            {"k":"WatchStyle","l":"WATCH","t":"r","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4],"note":"Every watch face can be moved in Arrange Cards. A saved spot stays put."},this.hz34Sz("Watch"),
+            {"k":"WatchStyle","l":"WATCH","t":"r","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4],"note":"Original Vanilla Watch or Horizon Watch"},this.hz34Sz("Watch"),
             {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","sub":true},
             {"k":"ShowPlanet","l":"PLANET CARD","t":"b"},this.hz34Sz("Planet"),this.hz34Cmp("Planet"),
             {"k":"PlanetDetails","l":"PLANET: GRAVITY / AIR LINE","t":"b"},
@@ -18624,7 +18631,7 @@
       private static const HZ43_VAN_MAX:int = 24;
       private static const HZ43_VAN_FACE:Number = 221;
       // Unique package token for the next diagnostic gfx. Autoname prefix is not watch ownership.
-      private static const HZ43_DIAG:String = "r14-annulus-obj-20261107";
+      private static const HZ43_DIAG:String = "r15-vanilla-restore-20261108";
 
       private function hz43VanInfoName(name:String) : Boolean
       {
@@ -18768,6 +18775,11 @@
          if(showVan && this.hz43VanShown == 0)
          {
             if(this.hz43ShowVanilla()) { this.hz43VanShown = 1; }
+         }
+         else if(showVan)
+         {
+            this.hz43VanRestoreHid();
+            this.hz43VanBlgChrome(false);
          }
       }
 
@@ -20069,9 +20081,27 @@
          this.hz43HidN = 0;
       }
 
+      // Undo our vis hide on one watch sibling. Never writes alpha. The four native vis
+      // clips use payload formulas, not a stored visible bit.
+      private function hz43VanShowClip(d:DisplayObject) : void
+      {
+         if(!d) { return; }
+         if(this.hz43VanGameVis(d.name))
+         {
+            if(this.hz43EnvGot != 0 || d.name == "locationNameBase_mc")
+            {
+               var want:Boolean = this.hz43VanEnvWant(d.name);
+               if(d.visible != want) { d.visible = want; }
+            }
+            return;
+         }
+         if(!d.visible) { d.visible = true; }
+      }
+
       // Direct BottomLeftGroup watch chrome, including the verified cap and filled annulus.
       // Autoname prefix is not enough. Alerts, detection, and INFO ticks stay on native rules.
-      // Show does not write alpha.
+      // Hide notes then vis-hides. Show restores named chrome, marks, cap, and annulus vis
+      // even when the hid list missed a clip. Show does not write alpha.
       private function hz43VanBlgChrome(hide:Boolean) : void
       {
          if(!this.hzBlg) { return; }
@@ -20082,15 +20112,18 @@
             var n:String = d ? d.name : "";
             var capArt:Boolean = this.hz43VanCapClip(d);
             var ringArt:Boolean = this.hz43VanRingClip(d);
-            var holds:Boolean = d is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(d));
-            if(!d || this.hz43VanSkip(n) || this.hz43VanMarkName(n) || (!this.hz43VanNamed(n) && !capArt && !ringArt) || holds) { }
+            var holds:Boolean = false;
+            if(d) { holds = this.hz43VanHoldsMark(d as DisplayObjectContainer); }
+            var mark:Boolean = this.hz43VanMarkName(n);
+            var named:Boolean = this.hz43VanNamed(n);
+            if(!d || this.hz43VanSkip(n)) { }
             else if(hide)
             {
-               this.hz43StHide(d);
+               if(!mark && !holds && (named || capArt || ringArt)) { this.hz43StHide(d); }
             }
-            else if(capArt || ringArt)
+            else if(mark || named || capArt || ringArt)
             {
-               if(!d.visible) { d.visible = true; }
+               this.hz43VanShowClip(d);
             }
             i++;
          }
@@ -20221,7 +20254,9 @@
          this.hz43VanCapture();
          if(this.hz43VanCap == 0) { return; }
          if(this.hz43MarkMoved) { this.hz43VanWrite(0,0,1); this.hz43MarkMoved = false; }
-         if(this.hz43HidN > 0) { this.hz43VanChrome(false); }
+         // Catch-up and HUD recreate: hidN can already be 0 while named chrome is still vis=false
+         // (r13 17280 / 53968). Always undo vis hide here. Never write alpha.
+         this.hz43VanChrome(false);
          hnd.visible = true;
          var sc:Number = this.hz43VanSc();
          var drag:Boolean = this.hzArrange && this.hzArrDrag == "Watch";
