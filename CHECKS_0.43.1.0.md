@@ -4,7 +4,7 @@ Unreleased first pass. No tag, no publish, no merge. Starfield was not launched.
 
 ## What was checked here
 
-- `message_log_test`, `preset_list_test`, `planet_alert_test.js`, `reaction_match_test.js`, `watch_crosshair_test.js`, and `quest_tracker_test.js` passed.
+- `message_log_test`, `preset_list_test`, `planet_alert_test.js`, `reaction_match_test.js`, `watch_crosshair_test.js`, and `quest_tracker_test.js` passed. Analog no longer draws the 6 o'clock PM/DAY sub-dial. ClockFormat applies to LOCAL, GAME, and PC; F11 STYLE live preview copies the planet card Local/Game text.
 - File version is 0.43.1.0 in `src/hz_version.h`, both `set_version` lines, `HZ_BUILD`, and the module build constants. The settings schema stays `0.42.0`.
 - `WatchStyle=0` and `CrosshairRule=0` are the defaults. Existing installs that omit the keys keep today's HUD and today's reticle.
 - The new watch block has no `getTimer` and no new glow. No new F key. Watch text is created at 13 px or larger, then held to a 13 px on-screen floor at the HUD scale.
@@ -68,7 +68,7 @@ While styles 1 to 4 are on, the watch frame does not build a clock object, a sig
 1. Update over 0.43.0.33 without touching `HorizonUI.user.ini`. The watch stays off and the reticle stays as it is.
 2. F11 > CARDS > WATCH. Step Off, Vanilla, Vanilla + Horizon, Horizon Digital, Horizon Analog. Save, reload, and confirm the ini key.
 3. Digital: O2 fills from 7 o'clock, CO2 from 5 o'clock. Compass diamond, both clocks (local at 16 px, PC at 13 px) in the center, planet and temperature. No day sub-dial on this face, no planet picture, and no rectangular card.
-4. Analog: flush rim arcs, the same top-arc compass as digital, hands on game time, day sub-dial at 6 with DAY inside the disc and no small sun/light card beside it, planet name and temperature below the compass letters.
+4. Analog: flush rim arcs, the same top-arc compass as digital, hands on game time, no 6 o'clock day sub-dial and no PM/DAY readout, planet name and temperature below the compass letters. F11 STYLE CLOCK 12H formats LOCAL/GAME as 12-hour (GAME in ship uses AM/PM, not 18:55 UT); 24H keeps GAME as HH:MM UT.
 5. With the character card in the lower-left, the watch sits above it and the card does not jump. Move the watch in Arrange, save, reload, and confirm `WatchX` / `WatchY` hold the spot and the watch no longer lifts for the card. Reset puts it back on the lower-left home, and the lift returns. Move a card, save, and confirm that card's saved spot is unchanged.
 6. Drop O2 or raise CO2. The orange LOW O2 or HIGH CO2 line appears. Restore them and it leaves.
 7. F11 > RULES > CROSSHAIR. Always matches today. Weapon drawn hides the aiming dot while the weapon is holstered, including in third person, and shows it when the weapon is out. Looking at something you can use still shows the center ring and the interact glyph, with the weapon holstered and with the rule Off. Iron sights still hide the reticle. Prompts, the target card, a hit marker, a kill X, the damage ring, and the stealth pill still appear. Crosshair Style still switches the interact glyph.

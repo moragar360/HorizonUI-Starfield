@@ -97,8 +97,8 @@ expect(block.indexOf("180,16,\"sb\"") >= 0 && block.indexOf("160,13,\"rg\"") >= 
 expect(block.indexOf("hz43LocL.y = -40") >= 0 && block.indexOf("hz43LocT.y = -22") >= 0, "the local label sits above the local time");
 expect(block.indexOf("hz43RealL.y = 2") >= 0 && block.indexOf("hz43RealT.y = 18") >= 0, "the PC label sits above the PC time");
 expect(block.indexOf("hz43Dial(g,0,-58,day)") < 0 && block.indexOf("hz43PmT.visible = false") >= 0 && block.indexOf("hz43DayT.visible = false") >= 0, "the digital face has no day dial");
-expect(block.indexOf("hz43Dial(g,0,64,day)") >= 0 && block.indexOf("hz43PmT.visible = true") >= 0, "the analog day dial stays at 6 o'clock");
-expect(funcBody(as, "hz43Dial").indexOf("hz43Sun") < 0 && funcBody(as, "hz43Dial").indexOf("hz43Band") >= 0 && as.indexOf('this.hz43DayT.text = "DAY"') >= 0, "analog keeps DAY and the day subdial and does not draw the sun marker");
+expect(block.indexOf("hz43Dial(g,0,64,day)") < 0 && block.indexOf("hz43PmT.visible = true") < 0, "analog has no PM/DAY readout or 6 o'clock day dial");
+expect(funcBody(as, "hz43Draw").indexOf("hz43Dial") < 0 && funcBody(as, "hz43Draw").indexOf("hz43Sun") < 0 && as.indexOf('this.hz43DayT.text = "DAY"') < 0, "analog draw does not call the day subdial or write DAY");
 expect(block.indexOf("Math.PI / 2 + Math.PI / 6") >= 0 && block.indexOf("Math.PI / 2 - Math.PI / 6") >= 0, "gauges start at 7 o'clock and 5 o'clock");
 expect(block.indexOf("0x6E7C86") >= 0, "unfilled gauge segments are gray");
 expect(block.indexOf("hz43Hand(g,ma,72,2.2,0xF2F7F9)") >= 0, "the minute hand is white");
@@ -107,6 +107,141 @@ const drawBody = funcBody(as, "hz43Draw");
 expect(drawBody.split("hz43Compass(g)").length - 1 === 2, "digital and analog both draw the compass");
 expect(drawBody.indexOf("hz43Diamond(g,0,-HZ43_R + 20,4)") < 0, "analog does not draw a second top mark");
 expect(drawBody.indexOf("hz43Cards[hi]).visible = false") < 0, "analog does not hide the compass letters");
+expect(drawBody.indexOf("hz43Ticks(g)") >= 0 && drawBody.indexOf("hz43Hands(g)") >= 0, "analog still draws ticks and hands");
+expect(drawBody.indexOf("hz43BodyT.y = -22") >= 0 && drawBody.indexOf("hz43TempT.y = -4") >= 0, "analog planet name and temperature stay below the compass");
+expect(drawBody.indexOf("hzFmtLocGame(this.hz43H,this.hz43M,this.hz43Ut != 0)") >= 0, "digital LOCAL/GAME uses ClockFormat for both sources");
+expect(funcBody(as, "hzPpLayout").indexOf("hzFmtLocGame(uh,um,true)") >= 0 && funcBody(as, "hzPpLayout").indexOf("hzFmtLocGame(H,M,false)") >= 0, "planet LOCAL and GAME values both go through ClockFormat");
+expect(funcBody(as, "hzPpLayout").indexOf('hzPad2(uh) + ":" + this.hzPad2(um) + " UT"') < 0, "planet GAME no longer hardcodes 24-hour UT");
+expect(funcBody(as, "hzSetLive").indexOf("p.ClockFormat") >= 0 && funcBody(as, "hzSetLive").indexOf("this.hzPpLayout()") >= 0, "F11 live ClockFormat rebuilds the planet Local/Game row");
+expect(funcBody(as, "hzSetPvDraw").indexOf("this.hzPpLocT") >= 0 && funcBody(as, "hzSetPvDraw").indexOf("c1.text = a0.text") >= 0, "F11 STYLE live preview copies the planet Local/Game text");
+expect(as.indexOf('case "clockformat":') >= 0 && as.indexOf("this.hzClockFmt = Math.max(0,Math.min(1,int(nv))); try { this.hzPpLayout(); }") >= 0, "ini reload applies ClockFormat then rebuilds Local/Game");
+expect(funcBody(as, "hzBuildIniText").indexOf("ClockFormat=") >= 0 && ini.indexOf("ClockFormat=0") >= 0, "save writes ClockFormat and the default is 12H");
+expect(as.indexOf('"ClockFormat":0') >= 0 && as.indexOf('HZ_CLOCK_NAMES:Array = ["12 H","24 H"]') >= 0, "F11 CLOCK FORMAT is 12H/24H with default 12H");
+expect(ini.indexOf("GAME UT is always 24-hour") < 0 && as.indexOf("GAME UT is always 24-hour") < 0, "ini and HUD no longer claim GAME is always 24-hour");
+expect(preset.indexOf("ClockFormat") < 0, "Moragar's Choice leaves ClockFormat at the 12H default");
+expect(checks.indexOf("no 6 o'clock day sub-dial") >= 0 && checks.indexOf("DAY inside") < 0, "CHECKS analog no longer keeps PM/DAY");
+expect(changelog.indexOf("no longer draws the 6 o'clock day sub-dial") >= 0 && changelog.indexOf("ClockFormat (12H / 24H) applies to LOCAL, GAME, and PC") >= 0, "CHANGELOG records analog PM/DAY removal and ClockFormat on GAME");
+
+function functionSource(src, name) {
+	const key = "function " + name + "(";
+	const i = src.indexOf(key);
+	expect(i >= 0, "source function " + name);
+	if (i < 0) return "";
+	let start = i;
+	const priv = src.lastIndexOf("private ", i);
+	if (priv >= 0 && i - priv < 24) start = priv;
+	const brace = src.indexOf("{", i);
+	let depth = 0;
+	for (let p = brace; p < src.length; p++) {
+		if (src[p] === "{") depth++;
+		else if (src[p] === "}") {
+			depth--;
+			if (depth === 0) return src.slice(start, p + 1);
+		}
+	}
+	return "";
+}
+function asFnToJs(text) {
+	let s = text;
+	s = s.replace(/(?:public|private) function (\w+)\(([^)]*)\)(?:\s*:\s*[\w.*]+)?/g, function (_, name, args) {
+		const jsArgs = args.split(",").map(function (a) {
+			a = a.trim();
+			if (!a) return "";
+			const parts = a.split("=");
+			const left = parts[0].trim().split(":")[0].trim();
+			return parts.length > 1 ? left + "=" + parts.slice(1).join("=") : left;
+		}).filter(Boolean);
+		return "function " + name + "(" + jsArgs.join(", ") + ")";
+	});
+	s = s.replace(/var (\w+):[\w.*]+/g, "var $1");
+	s = s.replace(/\bint\(/g, "(0|");
+	return s;
+}
+function installAsFn(host, src, name) {
+	const js = asFnToJs(functionSource(src, name));
+	const m = js.match(/function (\w+)\(([^)]*)\)\s*\{([\s\S]*)\}\s*$/);
+	if (!m) {
+		expect(false, "live ActionScript " + name + " converts");
+		return;
+	}
+	host[m[1]] = new Function(m[2], m[3]);
+}
+const clockHost = { hzClockFmt: 0 };
+installAsFn(clockHost, as, "hzPad2");
+installAsFn(clockHost, as, "hzFmtClock");
+installAsFn(clockHost, as, "hzFmtLocGame");
+expect(typeof clockHost.hzFmtLocGame === "function", "production hzFmtLocGame binds");
+
+function expectClock(fmt, h, m, game, want, msg) {
+	clockHost.hzClockFmt = fmt;
+	const got = clockHost.hzFmtLocGame(h, m, game);
+	expect(got === want, msg + " -> " + got);
+}
+
+expectClock(0, 0, 0, false, "12:00 AM", "LOCAL midnight 12H");
+expectClock(0, 0, 1, false, "12:01 AM", "LOCAL just after midnight 12H");
+expectClock(0, 11, 59, false, "11:59 AM", "LOCAL before noon 12H");
+expectClock(0, 12, 0, false, "12:00 PM", "LOCAL noon 12H");
+expectClock(0, 12, 1, false, "12:01 PM", "LOCAL just after noon 12H");
+expectClock(0, 18, 55, false, "6:55 PM", "LOCAL 18:55 as 12H");
+expectClock(0, 23, 59, false, "11:59 PM", "LOCAL before midnight 12H");
+expectClock(0, 0, 0, true, "12:00 AM", "GAME midnight 12H");
+expectClock(0, 12, 0, true, "12:00 PM", "GAME noon 12H");
+expectClock(0, 18, 55, true, "6:55 PM", "GAME 18:55 12H does not force 24h");
+expectClock(0, 5, 41, false, "5:41 AM", "LOCAL morning 12H");
+expectClock(1, 0, 0, false, "00:00", "LOCAL midnight 24H");
+expectClock(1, 12, 0, false, "12:00", "LOCAL noon 24H");
+expectClock(1, 18, 55, false, "18:55", "LOCAL 18:55 24H");
+expectClock(1, 0, 0, true, "00:00 UT", "GAME midnight 24H");
+expectClock(1, 12, 0, true, "12:00 UT", "GAME noon 24H");
+expectClock(1, 18, 55, true, "18:55 UT", "GAME 18:55 24H keeps UT");
+clockHost.hzClockFmt = 0;
+expect(clockHost.hzFmtClock(18, 55) === "6:55 PM", "PC/REAL 12H uses the same formatter");
+clockHost.hzClockFmt = 1;
+expect(clockHost.hzFmtClock(18, 55) === "18:55", "PC/REAL 24H uses the same formatter");
+
+function planetGameHM(ut) {
+	const uh = (0 | Math.floor(ut)) % 24;
+	const um = 0 | Math.floor((ut - Math.floor(ut)) * 60);
+	return { uh: uh, um: um };
+}
+function planetLocalHM(day) {
+	const hh = (day * 24) % 24;
+	const H = 0 | Math.floor(hh);
+	const M = 0 | Math.floor((hh - H) * 60);
+	return { H: H, M: M };
+}
+expect(funcBody(as, "hzPpLayout").indexOf("int(Math.floor(this.hzPpUT)) % 24") >= 0, "GAME hours come from fGalacticStandardTime");
+expect(funcBody(as, "hzPpLayout").indexOf("(this.hzPpDay * 24) % 24") >= 0, "LOCAL hours come from fLocalPlanetTime");
+const ship1855 = planetGameHM(18 + 55 / 60);
+expect(ship1855.uh === 18 && ship1855.um === 55, "IN SHIP 18:55 UT splits to 18:55");
+clockHost.hzClockFmt = 0;
+expect(clockHost.hzFmtLocGame(ship1855.uh, ship1855.um, true) === "6:55 PM", "F11 Local/Game IN SHIP 18:55 is 6:55 PM at 12H");
+clockHost.hzClockFmt = 1;
+expect(clockHost.hzFmtLocGame(ship1855.uh, ship1855.um, true) === "18:55 UT", "F11 Local/Game IN SHIP 18:55 stays 18:55 UT at 24H");
+const landed1855 = planetLocalHM((18 + 55 / 60) / 24);
+expect(landed1855.H === 18 && landed1855.M === 55, "LOCAL day fraction 18:55 splits to 18:55");
+clockHost.hzClockFmt = 0;
+expect(clockHost.hzFmtLocGame(landed1855.H, landed1855.M, false) === "6:55 PM", "F11 Local/Game landed 18:55 is 6:55 PM at 12H");
+clockHost.hzClockFmt = 1;
+expect(clockHost.hzFmtLocGame(landed1855.H, landed1855.M, false) === "18:55", "F11 Local/Game landed 18:55 is 18:55 at 24H");
+{
+	let fmt = 0;
+	let layouts = 0;
+	function liveClock(next) {
+		if (fmt != (next | 0)) {
+			fmt = Math.max(0, Math.min(1, next | 0));
+			layouts++;
+		}
+	}
+	liveClock(0);
+	expect(layouts === 0, "re-selecting 12H does not rebuild");
+	liveClock(1);
+	expect(fmt === 1 && layouts === 1, "live toggle 12H to 24H rebuilds Local/Game");
+	liveClock(0);
+	expect(fmt === 0 && layouts === 2, "live toggle 24H to 12H rebuilds Local/Game");
+}
+expect(funcBody(as, "hz43Frame").indexOf("hzClockFmt") >= 0 || as.indexOf("this.hzClockFmt != this.hz43LastClk") >= 0, "watch dirty includes ClockFormat so a live toggle redraws");
 
 // 3 o'clock is 0, and clockwise is an increasing angle. 7 o'clock is PI/2 + PI/6.
 // A full O2 sweep is half a turn and ends at 1 o'clock. A full CO2 sweep ends at 11 o'clock.
@@ -121,7 +256,7 @@ const co2Start = Math.PI / 2 - Math.PI / 6;
 expect(Math.abs(normAngle(o2Start + Math.PI) - (Math.PI * 5) / 3) < 1e-9, "full O2 ends at 1 o'clock");
 expect(Math.abs(normAngle(co2Start - Math.PI) - (Math.PI * 4) / 3) < 1e-9, "full CO2 ends at 11 o'clock");
 
-// Dawn is 0.25 and dusk is 0.75 of fLocalPlanetTime. The day arc runs the top half.
+// leftover hz43Dial angle math; analog draw no longer calls hz43Dial.
 function dialAngle(day) {
 	if (day >= 0.25 && day <= 0.75) return Math.PI + (day - 0.25) / 0.5 * Math.PI;
 	const night = day < 0.25 ? day + 0.25 : day - 0.75;

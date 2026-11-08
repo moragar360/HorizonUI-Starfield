@@ -1942,7 +1942,7 @@
                case "texttone": if(!isNaN(nv)) { this.hzTextTone = Math.max(0,Math.min(2,int(nv))); } break;
                case "fontface": if(!isNaN(nv)) { this.hzFontFace = Math.max(0,Math.min(3,int(nv))); } break;
                case "timedisplay": if(!isNaN(nv)) { this.hzTimeDisplay = Math.max(0,Math.min(3,int(nv))); } break;
-               case "clockformat": if(!isNaN(nv)) { this.hzClockFmt = Math.max(0,Math.min(1,int(nv))); } break;
+               case "clockformat": if(!isNaN(nv)) { this.hzClockFmt = Math.max(0,Math.min(1,int(nv))); try { this.hzPpLayout(); } catch(eClk:Error) { } } break;
                case "tempunit": if(!isNaN(nv)) { this.hzTempUnit = Math.max(0,Math.min(1,int(nv))); } break;
                case "afflictionlayout": if(!isNaN(nv)) { this.hzAfLayout = Math.max(0,Math.min(2,int(nv))); } break;
                case "planetdetails": this.hzPlanDetails = bv; break;
@@ -5149,7 +5149,7 @@
          a.push("FontFace=" + int(p.FontFace));
          a.push("; Planet card time: 0 off, 1 LOCAL planet time (GAME hh:mm UT where there is no local day), 2 PC/REAL clock, 3 both");
          a.push("TimeDisplay=" + int(p.TimeDisplay));
-         a.push("; Clock format for LOCAL and PC: 0 12-hour (AM/PM), 1 24-hour (GAME UT is always 24-hour, like the game)");
+         a.push("; Clock format for LOCAL, GAME, and PC: 0 12-hour (AM/PM), 1 24-hour");
          a.push("ClockFormat=" + int(p.ClockFormat));
          a.push("; Temperature units on the planet card and scanner: 0 Celsius, 1 Fahrenheit (default Celsius)");
          a.push("TempUnit=" + int(p.TempUnit != undefined ? p.TempUnit : this.hzTempUnit));
@@ -7918,22 +7918,22 @@
             var y:Number = Number(ys[ri]);
             if(loc && showUT)
             {
-               // game time as the game shows it: always 24-hour "HH:MM UT" (ClockFormat does not apply)
+               // GAME source (in ship / no local day). ClockFormat applies: 12H AM/PM, 24H "HH:MM UT".
                var uh:int = int(Math.floor(this.hzPpUT)) % 24;
                var um:int = int(Math.floor((this.hzPpUT - Math.floor(this.hzPpUT)) * 60));
-               tf.text = this.hzPad2(uh) + ":" + this.hzPad2(um) + " UT";
+               tf.text = this.hzFmtLocGame(uh,um,true);
             }
             else if(loc)
             {
                var hh:Number = (this.hzPpDay * 24) % 24;
                var H:int = int(Math.floor(hh));
                var M:int = int(Math.floor((hh - H) * 60));
-               tf.text = this.hzFmtClock(H,M);
+               tf.text = this.hzFmtLocGame(H,M,false);
             }
             else { tf.text = realStr; }
             this.hzTxtTop(tf,loc ? y : y + 1);
             this.hzTxtTop(lb,y + 4);
-            // v0.24 row = [glyph] LABEL value, e.g. "GAME 18:29 UT" / "LOCAL 6:42 PM" / "PC 8:28 PM", value flush right
+            // row = [glyph] LABEL value, e.g. "LOCAL/GAME 6:55 PM" / "LOCAL/GAME 18:55 UT" / "PC/REAL 5:41 PM"
             var tw:Number = this.hzTW(tf);
             tf.x = Math.round(r - tf.width + 2);
             var lw:Number = this.hzTW(lb);
@@ -8351,6 +8351,14 @@
          var h12:int = h % 12;
          if(h12 == 0) { h12 = 12; }
          return h12 + ":" + this.hzPad2(m) + " " + (h < 12 ? "AM" : "PM");
+      }
+
+      // LOCAL/GAME value on the planet card, F11 STYLE preview (copies those fields), and digital watch.
+      // game=true is the GAME UT source. 24H keeps "HH:MM UT"; 12H uses AM/PM and does not force 24-hour digits.
+      private function hzFmtLocGame(h:int, m:int, game:Boolean) : String
+      {
+         if(game && this.hzClockFmt == 1) { return this.hzPad2(h) + ":" + this.hzPad2(m) + " UT"; }
+         return this.hzFmtClock(h,m);
       }
 
       private function hzFmtInt(v:Number) : String
@@ -18468,11 +18476,9 @@
       // Home is the lower-left corner, inside the screen margin (the vanilla watch slot).
       // If a showing card overlaps that home (character, vitals, jetpack, or the compact stack),
       // the watch moves up and sits 8 px above that card. Cards stay where Arrange put them.
-      // Dawn and dusk are not a separate feed. The day sub-dial maps LocalEnvData_Frequent.fLocalPlanetTime
-      // with the same 0.25 / 0.75 split the planet disc already uses (sun while the fraction is in that range).
-      // If that fraction is missing, galactic standard time (fGalacticStandardTime) fills the clock and the marker.
-      // If both are missing, the hands sit at 12 and the sun marker is hidden.
-      // Analog seconds are not drawn: the game-time feed is hours and minutes.
+      // Analog no longer draws a 6 o'clock day sub-dial or the PM/DAY readout inside it.
+      // Hands use LocalEnvData_Frequent.fLocalPlanetTime, or galactic standard time when that fraction is missing.
+      // If both are missing, the hands sit at 12. Analog seconds are not drawn: the game-time feed is hours and minutes.
       private static const HZ43_O2:uint = 0x4DB6FF;
       private static const HZ43_CO2:uint = 0xE8C547;
       private static const HZ43_ATTN:uint = 0xF28A4F;
@@ -19219,15 +19225,14 @@
          g.endFill();
          var digital:Boolean = mode == 3;
          this.hz43LocT.visible = this.hz43LocL.visible = this.hz43RealT.visible = this.hz43RealL.visible = digital;
+         this.hz43PmT.visible = false;
+         this.hz43DayT.visible = false;
          this.hz43Gauge(g,this.hz26O2F,this.hz26Co2F,digital);
          this.hz43GaugeLabel(this.hz43O2L,this.hz43O2Start());
          this.hz43GaugeLabel(this.hz43CO2L,this.hz43CO2Start());
-         var day:Number = this.hzPpDay >= 0 ? this.hzPpDay : (this.hzPpUT >= 0 ? (this.hzPpUT % 24) / 24 : -1);
          if(digital)
          {
             this.hz43Compass(g);
-            this.hz43PmT.visible = false;
-            this.hz43DayT.visible = false;
             this.hz43LocL.y = -40;
             this.hz43LocT.y = -22;
             this.hz43RealL.y = 2;
@@ -19240,11 +19245,6 @@
             this.hz43Ticks(g);
             this.hz43Compass(g);
             this.hz43Hands(g);
-            this.hz43Dial(g,0,64,day);
-            this.hz43PmT.visible = true;
-            this.hz43DayT.visible = true;
-            this.hz43PmT.x = -18; this.hz43PmT.y = 52;
-            this.hz43DayT.x = -24; this.hz43DayT.y = 68;
             this.hz43BodyT.y = -22;
             this.hz43TempT.y = -4;
          }
@@ -19268,20 +19268,16 @@
          this.hz43CO2L.text = "CO2";
          if(this.hz43Ok != 0)
          {
-            var clock:String = this.hz43Ut != 0 ? (this.hzPad2(this.hz43H) + ":" + this.hzPad2(this.hz43M) + " UT") : this.hzFmtClock(this.hz43H,this.hz43M);
-            this.hz43LocT.text = clock;
-            this.hz43PmT.text = this.hz43H >= 12 ? "PM" : "AM";
+            this.hz43LocT.text = this.hzFmtLocGame(this.hz43H,this.hz43M,this.hz43Ut != 0);
          }
          else
          {
             this.hz43LocT.text = "--";
-            this.hz43PmT.text = "PM";
          }
          this.hz43RealT.text = this.hz43PcTxt;
          var body:String = this.hz43Body != null && this.hz43Body.length > 0 ? this.hz43Body : "--";
          this.hz43BodyT.text = body;
          this.hz43TempT.text = isNaN(this.hzEnvTempC) ? "--" : this.hzTempText(this.hzEnvTempC);
-         this.hz43DayT.text = "DAY";
       }
 
       // Heading ticks and letters stay on the top inner arc. The diamond is the fixed top mark.
