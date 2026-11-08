@@ -269,7 +269,8 @@ package
          }
       }
 
-      // Purpose: receive settings resolved by the DLL from the default and user ini files.
+      // Purpose: receive settings resolved by the DLL from the user ini. The HUD's two ini files
+      //    supply only whether the HUD is installed and its accent (core=, coreaccent=, corehex=).
       // Inputs: key=value lines (see BuildApply in probe.cpp). Unknown keys are kept as layout.
       // Outputs: redraws with the new settings. Dependencies: none.
       public function apply(param1:String):void

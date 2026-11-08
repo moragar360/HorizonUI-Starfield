@@ -12,6 +12,10 @@
 //    a BSJobs worker that flushes the log, writes files and keeps the hook installed.
 // Logging: counts, ids and tokens only. No key names, typed characters, file contents or
 //    pill names are logged.
+// Inputs: SFSE load, SpaceshipEditorMenu open and close events, the game window's messages,
+//    and what the movie hands over (log, STATE, HOT and SET lines; file requests).
+// Outputs: the movie calls listed at DriveMovie, the user ini, the builder's pill and scheme
+//    files, and the log. Dependencies: CommonLibSF (SFSE), Win32, and the hsb_*.h headers.
 // Author: Moragar. Last modified: 2026-11-07.
 
 #include "hsb_guard.h"
@@ -849,6 +853,13 @@ void QueueFileRequests(const std::string& blob)
 	if (refused > 0) Fact("files", "queue full refused=" + std::to_string(refused));
 }
 
+// Purpose: one poll of the builder movie. HsbAdvance runs it from the movie's AdvanceFrame,
+//    so every Scaleform call happens on the thread that advances the movie.
+// Inputs: none; reads the open SpaceshipEditorMenu. Outputs: until the movie answers, the
+//    hsbProbePing handshake (only a 0.2 movie gets fed input); then DriveMovie's calls, the
+//    movie's log lines (NoteMovieLine) and its file requests (QueueFileRequests).
+// Dependencies: RE::UI, DriveMovie, NoteMovieLine, QueueFileRequests. g_inShipPoll refuses
+//    re-entry.
 void PollShipOnAdvance()
 {
 	if (g_inShipPoll.exchange(true)) return;
@@ -990,6 +1001,12 @@ void MaybeHudOnThisAdvance(RE::Scaleform::GFx::ASMovieRootBase* self)
 	TryHudOnce(onShip ? "ship-advance" : "hud-advance");
 }
 
+// Purpose: the AdvanceFrame hook. Runs the game's original first, then, while the builder
+//    is open and this is its movie, polls it: every frame for a 0.2 movie, otherwise at the
+//    probe's poll interval. MaybeHudOnThisAdvance posts the debug HUD line ([Debug] Probe=1).
+// Inputs: the advancing movie root and the game's flag. Outputs: none.
+// Dependencies: g_origAdvance (InstallAdvanceHook), PollShipOnAdvance. A C++ exception from
+//    the poll is logged (F19) and dropped so the game's frame always completes.
 void HsbAdvance(RE::Scaleform::GFx::ASMovieRootBase* self, bool next)
 {
 	const auto orig = g_origAdvance.load();
@@ -1006,6 +1023,11 @@ void HsbAdvance(RE::Scaleform::GFx::ASMovieRootBase* self, bool next)
 	}
 }
 
+// Purpose: chain HsbAdvance into the movie root's AdvanceFrame (vtable slot 2), once.
+// Inputs: the builder movie's root. Outputs: g_shipRoot always; g_origAdvance and
+//    g_advanceHooked when the slot is written. A slot that already holds HsbAdvance counts as
+//    hooked. Dependencies: REL::WriteSafeData. Every movie root of that class shares the
+//    vtable, so HsbAdvance checks which root is advancing before it polls.
 void InstallAdvanceHook(RE::Scaleform::GFx::ASMovieRootBase* root)
 {
 	if (!root) return;
@@ -1031,6 +1053,11 @@ void InstallAdvanceHook(RE::Scaleform::GFx::ASMovieRootBase* root)
 class MenuSink : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
 {
 public:
+	// Purpose: track SpaceshipEditorMenu opening and closing. Inputs: the menu event.
+	// Outputs: on open, a fresh visit: input, file queues, handshake and poll state reset, and
+	//    the settings rebuilt on the next job tick (g_needApply). On close, the visit's input
+	//    counts are logged and the debug HUD line is armed. Other sinks always see the event.
+	// Dependencies: ResetInput, CountsNow, g_fileMu.
 	RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent& event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
 	{
 		if (event.menuName == hsb::kMenuName) {
@@ -1224,6 +1251,11 @@ std::string NarrowName(const wchar_t* name)
 	return out;
 }
 
+// Purpose: list the pill or scheme files the movie may read. Inputs: the kind (PILLS or
+//    SCHEMES). Outputs: one hsb::ListRow per file, user files before packs and Documents
+//    before the game's Data folder, at most kMaxListFiles. Names that are not plain ASCII or
+//    not safe, files over kMaxShareBytes and case-insensitive duplicates are skipped.
+// Dependencies: ShareDirs, hsb::SafeShareName.
 std::string ListShares(std::string_view kind)
 {
 	std::vector<std::string> rows;
@@ -1340,6 +1372,10 @@ std::string RunFileRequest(const std::string& line)
 	return hsb::FileReply(r.id, ok, payload);
 }
 
+// Purpose: run up to kFileJobsPerTick queued file requests on the job thread.
+// Inputs: g_fileReq (QueueFileRequests). Outputs: reply lines in g_fileRep, which DriveMovie
+//    hands to the movie through hsbFiles. Dependencies: RunFileRequest; g_fileMu guards both
+//    queues.
 void RunFileJobs()
 {
 	for (int i = 0; i < kFileJobsPerTick; ++i) {
@@ -1518,6 +1554,13 @@ void WriteIniNow()
 	Fact("ini", "user file merged n=" + std::to_string(updates.size()));
 }
 
+// Purpose: the permanent SFSE task, run on a BSJobs worker every tick. It flushes the log,
+//    rebuilds the settings when a visit starts, merges a pending ini save and runs file jobs.
+//    While the builder is open it keeps the window hook installed: a posted ping that never
+//    reaches the hook makes the window thread confirm or reinstall it. After close it removes
+//    the hook. Inputs: the flags the menu sink and the movie poll set. Outputs: none.
+// Dependencies: FlushLog, BuildApply, WriteIniNow, RunFileJobs, RunOnWindowThread. The tick
+//    makes no Scaleform call and opens no file itself (the logic test checks its body).
 // JOBTICK-BEGIN
 void JobTick()
 {

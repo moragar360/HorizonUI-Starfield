@@ -516,7 +516,8 @@ package
          return true;
       }
 
-      // The width HsbKit.segments draws for these labels, padding and letter spacing.
+      // The width iconButton draws for a label: inset, icon, gap, caps text at 1.5 letter
+      // spacing, inset. Used to right-align EXPORT and IMPORT before they are drawn.
       private function iconButtonWidth(param1:String):Number
       {
          var t:TextField = this.kit.text(13,0,true,1.5);
