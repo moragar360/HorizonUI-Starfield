@@ -8358,9 +8358,12 @@
          if(!tf) { return 0; }
          var o:Object = this.hzTxtObj(tf);
          var txt:String = tf.text;
-         // FontFace / TextScale / HeaderStyle can change tracking without o.ls changing. Include them so F11 apply misses.
+         var fn:String = "";
+         try { fn = this.hzFontName(o && o.face != null ? String(o.face) : null); } catch(eFn:Error) { fn = ""; }
+         // FontFace / TextScale / HeaderStyle / resolved face (late fontlibs) must miss. Include them so F11 apply misses.
          if(o && o.twTxt === txt && o.twFs == o.fs && o.twLsVal == o.ls && o.twLsMode == this.hzLsMode
-            && o.twFace == this.hzFontFace && o.twTs == this.hzTextScale && o.twHdr == this.hzHeaderStyle && !isNaN(Number(o.twW)))
+            && o.twFace == this.hzFontFace && o.twTs == this.hzTextScale && o.twHdr == this.hzHeaderStyle
+            && o.twFn === fn && !isNaN(Number(o.twW)))
          {
             if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.twHit++; }
             return Number(o.twW);
@@ -8398,6 +8401,7 @@
             o.twFace = this.hzFontFace;
             o.twTs = this.hzTextScale;
             o.twHdr = this.hzHeaderStyle;
+            o.twFn = fn;
          }
          return w;
       }
@@ -9858,11 +9862,20 @@
          g.beginFill(HZ_ACCENT,1); g.drawRect(-1,-1,2,2); g.endFill();
       }
 
+      private function hzT19ResetPay() : void
+      {
+         this.hzT19ActCached = "";
+         this.hzT19ItemsCached = "";
+         this.hzT19Sig = "";
+         this.hzT19BarSig = "";
+         this.hzT19HoldSig = "";
+      }
       private function hzT19Off() : void
       {
          if(this.hzTgHidden.length > 0) { this.hzTgRestore(); }
          if(this.hzTg19) { this.hzTg19.visible = false; }
          this.HorizonTarget_mc.visible = false;
+         this.hzT19ResetPay();
       }
 
       // quick fade of OUR tag when the crosshair leaves (vanilla stays hidden, so its roll-off never shows)
@@ -9875,7 +9888,7 @@
             this.hzT19A = 0;
             this.hzTg19.visible = false;
             this.HorizonTarget_mc.visible = false;
-            this.hzT19Sig = "";
+            this.hzT19ResetPay();
          }
          else { this.HorizonTarget_mc.alpha = this.hzT19A; }
       }
@@ -10264,7 +10277,7 @@
          }
       }
 
-      // our keycap action row from aButtons (sTextPressAndRelease / sTextHold / bVisible / bEnabled / iType).
+      // our keycap action row from aButtons (iType / bVisible / bEnabled / bPressAndRelease / bPressAndHold / labels).
       // g == null only measures. Returns the row width.
       private function hzT19Buttons(g:*, a:Object, aw:Object, x0:Number, y:Number, col:uint, maxW:Number = 0, lineFs:Number = 0) : Number
       {
@@ -10423,46 +10436,68 @@
          this.hzPerfResetN();
          return s;
       }
+      // Length-prefixed tokens so game names that contain | or : cannot collide. Exact char count, then payload.
+      private function hzT19Tok(v:*) : String
+      {
+         var t:String = (v == null || v === undefined) ? "" : String(v);
+         return String(t.length) + ":" + t;
+      }
+      private function hzT19B(v:Boolean) : String
+      {
+         return this.hzT19Tok(v ? "1" : "0");
+      }
       private function hzT19ItemPay(it:Object) : String
       {
-         if(!it) { return ""; }
-         var s:String = String(it.sName) + ":" + String(it.uCount) + ":" + String(it.uRarity) + ":" + String(it.uValue) + ":" + String(it.fWeight) + ":" + String(it.iFilterFlag);
+         if(!it) { return this.hzT19Tok(""); }
+         var s:String = this.hzT19Tok(it.sName) + this.hzT19Tok(it.uCount) + this.hzT19Tok(it.uRarity) + this.hzT19Tok(it.uValue) + this.hzT19Tok(it.fWeight) + this.hzT19Tok(it.uWeightPrecision) + this.hzT19Tok(it.iFilterFlag);
          var wi:Object = it.WeaponInfo;
-         if(wi) { s += ":W" + String(wi.fRateOfFire) + ":" + String(wi.fRange) + ":" + String(wi.fAccuracy); }
+         s += this.hzT19B(wi != null);
+         if(wi) { s += this.hzT19Tok(wi.fRateOfFire) + this.hzT19Tok(wi.fRange) + this.hzT19Tok(wi.fAccuracy); }
          var ai:Object = it.ArmorInfo;
-         if(ai) { s += ":A" + String(ai.fThermalResist) + ":" + String(ai.fAirborneResist) + ":" + String(ai.fCorrosiveResist) + ":" + String(ai.fRadiationResist); }
+         s += this.hzT19B(ai != null);
+         if(ai) { s += this.hzT19Tok(ai.fThermalResist) + this.hzT19Tok(ai.fAirborneResist) + this.hzT19Tok(ai.fCorrosiveResist) + this.hzT19Tok(ai.fRadiationResist); }
+         var dmg:Number = 0;
+         var nEs:int = 0;
          if(it.aElementalStats is Array)
          {
-            var dmg:Number = 0;
-            for each(var es:Object in it.aElementalStats) { if(es && !isNaN(Number(es.fValue))) { dmg += Number(es.fValue); } }
-            s += ":E" + String(dmg);
+            for each(var es:Object in it.aElementalStats)
+            {
+               if(es && !isNaN(Number(es.fValue))) { dmg += Number(es.fValue); nEs++; }
+            }
          }
+         s += this.hzT19Tok(nEs) + this.hzT19Tok(dmg);
          return s;
       }
       private function hzT19ActPay(a:Object) : String
       {
-         if(!a) { return "0"; }
-         var s:String = (a.bShowRolloverActivation ? "1" : "0") + "|" + int(a.uMode) + "|" + String(a.sHeaderText) + "|" + (a.bStealing ? "1" : "0") + "|" + (a.bContraband ? "1" : "0") + "|" + int(a.uRarity) + "|" + String(a.iSingleItemValue) + "|" + String(a.fSingleItemWeight);
-         s += "|I" + this.hzT19ItemPay(a.ItemData) + "|C" + this.hzT19ItemPay(a.CompareItemData);
+         if(!a) { return this.hzT19Tok("0"); }
+         var s:String = this.hzT19B(Boolean(a.bShowRolloverActivation)) + this.hzT19Tok(int(a.uMode)) + this.hzT19Tok(a.sHeaderText) + this.hzT19B(Boolean(a.bStealing)) + this.hzT19B(Boolean(a.bContraband)) + this.hzT19Tok(int(a.uRarity)) + this.hzT19Tok(a.iSingleItemValue) + this.hzT19Tok(a.fSingleItemWeight) + this.hzT19Tok(a.uWeightPrecision) + this.hzT19B(Boolean(a.bShouldCompareItems));
+         s += this.hzT19ItemPay(a.ItemData) + this.hzT19ItemPay(a.CompareItemData);
          var list:Array = (a.aButtons is Array) ? a.aButtons as Array : [];
+         s += this.hzT19Tok(list.length);
          var i:int = 0;
          while(i < list.length)
          {
             var b:Object = list[i];
-            if(b) { s += "|B" + int(b.iType) + ":" + (b.bVisible === false ? "0" : "1") + ":" + (b.bEnabled === false ? "0" : "1") + ":" + String(b.sTextPressAndRelease) + ":" + String(b.sTextHold); }
+            if(!b) { s += this.hzT19Tok(""); }
+            else
+            {
+               s += this.hzT19Tok(int(b.iType)) + this.hzT19B(!(b.bVisible === false)) + this.hzT19B(!(b.bEnabled === false)) + this.hzT19B(!(b.bPressAndRelease === false)) + this.hzT19B(!(b.bPressAndHold === false)) + this.hzT19Tok(b.sTextPressAndRelease) + this.hzT19Tok(b.sTextHold);
+            }
             i++;
          }
          return s;
       }
       private function hzT19ItemsPay(items:Array) : String
       {
-         if(!items) { return "0"; }
-         var s:String = String(items.length);
+         if(!items) { return this.hzT19Tok("0"); }
+         var s:String = this.hzT19Tok(items.length);
          var i:int = 0;
          while(i < items.length)
          {
             var e:Object = items[i];
-            if(e) { s += "|" + String(e.sName) + ":" + String(e.uCount) + ":" + String(e.uRarity) + ":" + String(e.uValue) + ":" + String(e.fWeight); }
+            if(!e) { s += this.hzT19Tok(""); }
+            else { s += this.hzT19Tok(e.sName) + this.hzT19Tok(e.uCount) + this.hzT19Tok(e.uRarity) + this.hzT19Tok(e.uValue) + this.hzT19Tok(e.fWeight) + this.hzT19B(Boolean(e.bStolen)) + this.hzT19B(Boolean(e.bContraband)); }
             i++;
          }
          return s;
@@ -10649,9 +10684,10 @@
          else { this.hzT19LastHp = -1; this.hzTgGhost = -1; }
          // the key text can change (rebinding / controller): include identity, not hold fill, in the signature
          var keys:String = "";
-         if(show) { var kk:int = 0; while(kk < 4) { keys += this.hzT19Key(aw,kk) + ":" + this.hzT19VanLbl(aw,kk,false) + ":" + this.hzT19VanLbl(aw,kk,true) + ","; kk++; } }
+         if(show) { var kk:int = 0; while(kk < 4) { keys += this.hzT19Tok(this.hzT19Key(aw,kk)) + this.hzT19Tok(this.hzT19VanLbl(aw,kk,false)) + this.hzT19Tok(this.hzT19VanLbl(aw,kk,true)); kk++; } }
          var stealSig:int = (show && a != null && Boolean(a.bStealing)) ? 1 : 0;
-         var sig:String = kind + "|" + m + "|" + sel + "|" + start + "|" + this.hzT19Ver + "|" + this.hzT19ActCached + "|" + this.hzT19ItemsCached + "|" + this.hzTgEnName + "|" + this.hzTgRank + "|" + (this.hzTgLeg ? 1 : 0) + "|" + this.hzTextScale + "|" + this.hzCardColor + "|" + this.hzContOpacity + "|" + HZ_ACCENT + "|" + this.hzTextTone + "|" + this.hzTgShowValue + "|" + this.hzFontFace + "|" + keys + "|" + show + "|" + this.hzTgScale + "|" + this.hz30Hover + "|" + this.hzScrH + "|" + this.hzNameHover + "|" + int(this.hzCardBgOpacity) + "|" + int(this.hzCardShadow) + "|" + (this.hzTextShadow ? 1 : 0) + "|" + this.hzHeaderStyle + "|" + stealSig;
+         var fontSig:String = this.hzT19Tok(this.hzFontName()) + this.hzT19Tok(this.hzFontName("rg")) + this.hzT19Tok(this.hzFontName("bd"));
+         var sig:String = this.hzT19Tok(kind) + this.hzT19Tok(m) + this.hzT19Tok(sel) + this.hzT19Tok(start) + this.hzT19Tok(this.hzT19Ver) + this.hzT19ActCached + this.hzT19ItemsCached + this.hzT19Tok(this.hzTgEnName) + this.hzT19Tok(this.hzTgRank) + this.hzT19B(this.hzTgLeg) + this.hzT19Tok(this.hzTextScale) + this.hzT19Tok(this.hzCardColor) + this.hzT19Tok(this.hzContOpacity) + this.hzT19Tok(HZ_ACCENT) + this.hzT19Tok(this.hzTextTone) + this.hzT19Tok(this.hzTgShowValue) + this.hzT19Tok(this.hzFontFace) + keys + this.hzT19B(show) + this.hzT19Tok(this.hzTgScale) + this.hzT19Tok(this.hz30Hover) + this.hzT19Tok(this.hzScrH) + this.hzT19Tok(this.hzNameHover) + this.hzT19Tok(int(this.hzCardBgOpacity)) + this.hzT19Tok(int(this.hzCardShadow)) + this.hzT19B(this.hzTextShadow) + this.hzT19Tok(this.hzHeaderStyle) + this.hzT19Tok(stealSig) + fontSig;
          if(sig != this.hzT19Sig)
          {
             this.hzT19Sig = sig;

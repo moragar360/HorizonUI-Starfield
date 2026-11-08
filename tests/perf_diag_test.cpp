@@ -66,7 +66,19 @@ int main()
 	Expect(n > 40 && n < hzperf::kDumpMax, "dump fits");
 	const std::string dump(line);
 	Expect(dump.find("clock=QPC") != std::string::npos, "native clock named");
-	Expect(dump.find("movieAdvance=") != std::string::npos && dump.find("maxUs=3") != std::string::npos, "advance bucket");
+	auto maxUsAt = [&](const std::string& a_dump, const char* a_bucket) -> unsigned long long {
+		const auto b = a_dump.find(std::string(a_bucket) + "={");
+		if (b == std::string::npos) return 0;
+		const auto brace = a_dump.find('}', b);
+		const auto m = a_dump.find("maxUs=", b);
+		if (m == std::string::npos || (brace != std::string::npos && m > brace)) return 0;
+		const auto start = m + 6;
+		const auto end = a_dump.find_first_not_of("0123456789", start);
+		if (end == start) return 0;
+		return std::stoull(a_dump.substr(start, end - start));
+	};
+	Expect(maxUsAt(dump, "movieAdvance") == 3000ull, "maxUs is 3000 us at 1 MHz (numeric, not maxUs=3 substring)");
+	Expect(dump.find("maxUs=3 cps=") == std::string::npos, "dump does not emit a maxUs=3 token for this sample");
 	Expect(dump.find("mode=3(C-full)") != std::string::npos, "mode name in dump");
 	hzperf::Reset(a);
 	Expect(a.b[hzperf::kMovieAdvance].calls.load() == 0, "reset clears");

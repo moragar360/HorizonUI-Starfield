@@ -78,4 +78,4 @@ While styles 1 to 4 are on, the watch frame does not build a clock object, a sig
 
 ## Performance investigation (this branch)
 
-Source review of hover/scanner/native loops at `b924a4c` plus off-by-default diagnostics and payload/hold/HP rebuild gates. Host tests include `perf_diag_test` and `hover_perf_test.js`. No DLL/SWF compile, no game launch, no install. User hover/scanner FPS reports are unverified. Related sustenance / ghost-watch / scanner-POI / loot-color notes are tracked only. In-game hover frametime remains NOTRUN.
+Source review of hover/scanner/native loops at `b924a4c`. Independent review of `b35bbf86` was HOLD5 (stale stolen/contraband/press/hold/compare). This candidate length-prefixes every drawn field; it is **not** independently PASSed. Host tests include `perf_diag_test` (numeric maxUs) and `hover_perf_test.js` (extracted functions, in-place mutation). No DLL/SWF compile. User FPS reports unverified. Rebuild cost is not a verified hitch cause. Frametime remains NOTRUN.
