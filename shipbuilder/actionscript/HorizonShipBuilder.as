@@ -32,7 +32,7 @@ package
    // Why the pointer comes from the DLL: in-game logs (p5) showed presses over the ship view go
    //    to the editor before Scaleform, so Scaleform CLICK never fired on Horizon controls. The
    //    DLL feeds every pointer event and swallows the ones over the rectangles we publish.
-   // Author: Moragar. Last modified: 2026-11-07.
+   // Author: Moragar. Last modified: 2026-11-08.
    public class HorizonShipBuilder extends Sprite
    {
       internal static const VERSION:String = "0.2.0.0";
@@ -272,7 +272,8 @@ package
       // Purpose: receive settings resolved by the DLL from the user ini. The HUD's two ini files
       //    supply only whether the HUD is installed and its accent (core=, coreaccent=, corehex=).
       // Inputs: key=value lines (see BuildApply in probe.cpp). Unknown keys are kept as layout.
-      // Outputs: redraws with the new settings. Dependencies: none.
+      // Outputs: redraws with the new settings. A line that fails is noted and skipped, so it
+      //    never stops the lines after it. Dependencies: none.
       public function apply(param1:String):void
       {
          if(param1 == null) { return; }
@@ -282,7 +283,11 @@ package
          {
             var line:String = String(rows[i]);
             var eq:int = line.indexOf("=");
-            if(eq > 0) { this.applyKey(line.substring(0,eq),line.substring(eq + 1)); }
+            if(eq > 0)
+            {
+               try { this.applyKey(line.substring(0,eq),line.substring(eq + 1)); }
+               catch(err:Error) { this.note("SETTINGS fault " + err.errorID); }
+            }
             i++;
          }
          if(this.accent < 0 || this.accent > 13) { this.accent = 9; }
@@ -559,7 +564,7 @@ package
             case "ArrangeBarY": this.barDy = Number(v); break;
             default:
                if(param1.indexOf("panel.") == 0) { this.startOpen[param1.substring(6)] = v != "0"; }
-               else if(param1.indexOf("col.") == 0) { this.columnSets[param1.substring(4)] = v; }
+               else if(param1.indexOf("col.") == 0) { if(HsbJson.safeKey(param1.substring(4))) { this.columnSets[param1.substring(4)] = v; } }
                else { this.lay[param1] = v; }
          }
       }
@@ -2488,7 +2493,8 @@ package
       //    stays locked ("loading") until this reply, so an early edit never replaces the file.
       // Rules: only "missing" (or an empty file) may start fresh and be saved over. A damaged
       //    profile is set aside by the DLL (PROFILE BAD); one that could not be read, is too long
-      //    to parse or comes from a newer version is left as it is and never saved over.
+      //    to parse, comes from a newer version or that the model failed to take in is left as
+      //    it is and never saved over.
       private function onProfile(param1:Boolean, param2:String):void
       {
          if(!param1)
@@ -2514,6 +2520,11 @@ package
             this.pillsLock = "";
             this.note("PILLS profile bad kept defaults");
             this.fileOp("PROFILE",["BAD"],"",null);
+         }
+         else if(count == HsbPillModel.LOAD_FAILED)
+         {
+            this.lockPills("unreadable");
+            this.note("PILLS profile load failed, saving off");
          }
          else
          {

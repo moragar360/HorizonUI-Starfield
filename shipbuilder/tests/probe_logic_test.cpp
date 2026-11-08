@@ -5,7 +5,7 @@
 // Inputs: the repo tree (HSB_REPO_ROOT, else this file's location).
 // Outputs: one FAIL line per broken check; exit code 0 only when every check passes.
 // Dependencies: shipbuilder/src headers; std::filesystem (this test only).
-// Author: Moragar. Last modified: 2026-11-07.
+// Author: Moragar. Last modified: 2026-11-08.
 
 #include "hsb_arrange.h"
 #include "hsb_card.h"
@@ -448,6 +448,9 @@ static void CheckSettings()
 		"Columns holds column lists and sorts");
 	Expect(!Accepts("Columns", "Habs", "Value,,Mass") && !Accepts("Columns", "Habs", "a,b,c,d,e,f,g,h,i") && !Accepts("Columns", "HabsSort", "Value--") &&
 		!Accepts("Columns", "Grav Drives", "Value") && !Accepts("Columns", std::string(37, 'a').c_str(), "Value"), "Columns refuses bad ids and keys");
+	Expect(!Accepts("Columns", "hasOwnProperty", "Value") && !Accepts("Columns", "toString", "Value") && !Accepts("Columns", "valueOf", "") &&
+			!Accepts("Columns", "constructor", "Value") && Accepts("Columns", "HasOwnProperty", "Value", "Value", 0) && Accepts("Columns", "Tostring", "", "", 1),
+		"Columns refuses the names AS3's Object defines, which the movie cannot use as keys");
 	Expect(Accepts("Debug", "Probe", "0", "0", 1) && Accepts("Debug", "Probe", "1", "1", 0) && !Accepts("Debug", "Other", "1"), "Debug holds Probe only");
 	Expect(Accepts("Arrange", "PowerX", "l10", "L10", 0) && Accepts("Arrange", "PowerY", "T-5", "T-5", 0) && Accepts("Arrange", "PowerX", "-1", "-1", 1) &&
 		Accepts("Arrange", "ArrangeBarX", "0", "0", 1) && Accepts("Arrange", "ArrangeBarY", "-12", "-12", 0), "Arrange holds anchors and the bar offset");
@@ -1002,8 +1005,39 @@ static void CheckMovie(const fs::path& root)
 		Expect(Has(hub, "internal var pillsLock:String = \"loading\";"), "pill saves wait for the profile reply");
 		Expect(Has(profile, "this.lockPills(param2 == \"missing\" ? \"\" : \"unreadable\");") &&
 			Has(profile, "this.lockPills(count == HsbPillModel.LOAD_NEWER ? \"newer\" : \"toolong\");") &&
-			InOrder(profile, {"else if(count == HsbPillModel.LOAD_BAD)", "this.pillsLock = \"\";", "this.fileOp(\"PROFILE\",[\"BAD\"],\"\",null);"}),
-			"only a missing or damaged profile may be replaced");
+			InOrder(profile, {"else if(count == HsbPillModel.LOAD_BAD)", "this.pillsLock = \"\";", "this.fileOp(\"PROFILE\",[\"BAD\"],\"\",null);",
+				"else if(count == HsbPillModel.LOAD_FAILED)", "this.lockPills(\"unreadable\");"}),
+			"only a missing or damaged profile may be replaced, and a profile the model fails to take in is left alone");
+		// Review A3: crafted JSON never throws. Object's own member names are never keys, and the
+		// parser, the model and the readers each end in a catch.
+		Expect(InOrder(json, {"private static const RESERVED:Array = [\"constructor\",\"hasOwnProperty\",\"isPrototypeOf\",\"propertyIsEnumerable\","
+				   "\"setPropertyIsEnumerable\",\"toLocaleString\",\"toString\",\"valueOf\"];"}) &&
+				Has(FunctionBody(json, "safeKey", "internal static"), "return RESERVED.indexOf(param1) < 0;"),
+			"the reserved names are Object's own members");
+		for (const char* name : {"constructor", "hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable", "setPropertyIsEnumerable", "toLocaleString", "toString",
+				 "valueOf"}) {
+			Expect(hsb::ObjectMemberName(name) && Has(json, std::string("\"") + name + "\""), std::string("the movie and the plugin both refuse ") + name);
+		}
+		Expect(InOrder(FunctionBody(json, "parse", "internal static"), {"try", "var p:HsbJson = new HsbJson();", "return out;", "catch(err:Error) { }", "return null;"}),
+			"parse returns null instead of throwing");
+		Expect(Has(FunctionBody(json, "object"), "if(this.bad || !safeKey(key)) { this.bad = true; return null; }"), "a JSON key naming an Object member makes the file invalid");
+		const std::string load = FunctionBody(model, "load", "internal");
+		Expect(InOrder(load, {"try", "var kept:Object = {};", "this.pills = next;", "this.keep = kept;", "return next.length;", "catch(err:Error) { }",
+				   "return LOAD_FAILED;"}) && CountOf(load, "this.pills = ") == 1 && CountOf(load, "this.keep") == 1,
+			"load takes a file in whole or not at all, and never throws");
+		Expect(InOrder(FunctionBody(model, "readShared", "internal static"), {"try { return readSharedText(param1); }", "catch(err:Error) { }", "return null;"}),
+			"readShared returns null instead of throwing");
+		Expect(Has(FunctionBody(model, "tabKey", "internal static"), "return out.length > 0 && HsbJson.safeKey(out) ? out : \"Tab\";") &&
+				InOrder(FunctionBody(model, "columnId", "internal static"), {"if(!HsbJson.safeKey(id)) { return \"\"; }", "spoken"}) &&
+				Has(FunctionBody(model, "clean", "internal static"), "var out:Object = {\"id\":HsbJson.safeKey(id) ? id : \"\",\"name\":name};"),
+			"tab keys, column ids and pill ids from files never name an Object member");
+		const std::string readOne = FunctionBody(ReadFile(as / "HsbPillImport.as"), "readOne");
+		Expect(InOrder(readOne, {"entry.loading = false;", "entry.bad = true;", "HsbPillModel.readShared(param4)", "entry.pills = data.pills;", "entry.bad = false;"}),
+			"an import entry is bad until its file is taken in");
+		Expect(InOrder(FunctionBody(hub, "apply", "public"), {"try { this.applyKey(line.substring(0,eq),line.substring(eq + 1)); }",
+				   "catch(err:Error) { this.note(\"SETTINGS fault \" + err.errorID); }"}) &&
+				Has(FunctionBody(hub, "applyKey"), "if(HsbJson.safeKey(param1.substring(4))) { this.columnSets[param1.substring(4)] = v; }"),
+			"a settings line that fails is skipped, and a column key never names an Object member");
 		Expect(InOrder(save, {"var retry:Boolean = this.pillsLock == \"full\" || this.pillsLock == \"unsavable\";", "if(this.pillsLock.length > 0 && !retry)",
 				   "return;", "if(text.length > HsbJson.MAX_CHARS)", "this.lockPills(\"full\");", "return;", "if(HsbJson.parse(text) == null)",
 				   "this.lockPills(\"unsavable\");", "return;", "if(retry) { this.lockPills(\"\"); }", "this.fileOp(\"PROFILE\",[\"WRITE\"],text,"}),

@@ -7,7 +7,7 @@
 // removed, so the user file only holds what the player changed. Unknown lines and comments
 // in the file are kept as they are.
 // Dependencies: hsb_arrange.h (Arrange values, hex, trim, fold). No game calls.
-// Author: Moragar. Last modified: 2026-11-07.
+// Author: Moragar. Last modified: 2026-11-08.
 
 #include "hsb_arrange.h"
 
@@ -105,6 +105,17 @@ inline bool CanonPanelId(std::string_view key, std::string& out)
 			out = std::string(name);
 			return true;
 		}
+	}
+	return false;
+}
+
+// The names AS3's Object defines. The movie keeps column sets in a plain Object, where these
+// cannot be keys; HsbJson.RESERVED is the same list.
+inline bool ObjectMemberName(std::string_view key)
+{
+	for (const char* name : { "constructor", "hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable", "setPropertyIsEnumerable", "toLocaleString",
+			 "toString", "valueOf" }) {
+		if (key == name) return true;
 	}
 	return false;
 }
@@ -237,7 +248,7 @@ inline bool CheckSetting(std::string_view sectionIn, std::string_view keyIn, std
 	}
 	if (EqualsFold(section, "Columns")) {
 		out.section = "Columns";
-		if (!AlnumSpan(key, kMaxColumnKey)) return false;
+		if (!AlnumSpan(key, kMaxColumnKey) || ObjectMemberName(key)) return false;
 		out.key = key;
 		if (value.empty()) {
 			out.isDefault = true;

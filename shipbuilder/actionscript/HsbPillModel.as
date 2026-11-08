@@ -6,10 +6,14 @@ package
    //    browser; the player's credits.
    // Outputs: pass or fail per part; the profile text to save; pill and pack JSON for export.
    // Dependencies: HsbJson. Limits from the spec: 20 pills, 8 rules, 4 columns, 24-character
-   //    names. Unknown keys in a pill are kept so a newer version's data survives a save.
+   //    names. Unknown keys in a pill are kept when their value is plain (see clean), so a newer
+   //    version that adds nested pill data must raise VERSION.
+   // Rules: a file is taken in whole or not at all. load and readShared never throw, and the
+   //    model changes only when load took in the whole file. Names from files that become keys
+   //    (tab keys, column ids, pill ids) never name a member of Object (HsbJson.safeKey).
    // Backend limits: "fitsReactor" and "onMyShip" have no game data, so those rules are always
    //    "not available"; value, class and card stats are known only for parts already previewed.
-   // Author: Moragar. Last modified: 2026-11-07.
+   // Author: Moragar. Last modified: 2026-11-08.
    public class HsbPillModel
    {
       internal static const MAX_PILLS:int = 20;
@@ -23,10 +27,12 @@ package
       internal static const FIELDS:Array = ["maker","size","class","value","stat","canAfford","fitsReactor","onMyShip"];
       internal static const NO_BACKEND:Array = ["fitsReactor","onMyShip"];
       // load() results below zero. Only LOAD_BAD is a damaged file the DLL may set aside as
-      // .bad.json; a file too long to parse or from a newer version is left alone, unsaved.
+      // .bad.json; a file too long to parse, from a newer version or that the model failed to
+      // take in (LOAD_FAILED, an unexpected error) is left alone, unsaved.
       internal static const LOAD_BAD:int = -1;
       internal static const LOAD_TOO_BIG:int = -2;
       internal static const LOAD_NEWER:int = -3;
+      internal static const LOAD_FAILED:int = -4;
       // Lowercase id -> words of the mixed-case spelling it arrived in (see columnId).
       private static var spoken:Object = {};
 
@@ -83,7 +89,8 @@ package
       }
 
       // Tab keys must be stable across languages where possible: the raw category string
-      // (usually a $ key) with everything but letters and digits removed.
+      // (usually a $ key) with everything but letters and digits removed. A key that would name
+      // a member of Object ("has_OwnProperty" in a pack) reads as "Tab", like an empty one.
       internal static function tabKey(param1:String):String
       {
          var out:String = "";
@@ -95,7 +102,7 @@ package
             if((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9")) { out += c; }
             i++;
          }
-         return out.length > 0 ? out : "Tab";
+         return out.length > 0 && HsbJson.safeKey(out) ? out : "Tab";
       }
 
       internal function forTab(param1:String):Array
@@ -292,14 +299,17 @@ package
       // Validates one pill object from any file. Returns a clean copy or null. Unknown keys are
       // kept only when their value is plain (text, number, true/false or null): a single-pill
       // file's pill sits two levels shallower than the profile stores it, so nested data could
-      // push the saved profile past HsbJson.MAX_DEPTH and make it unreadable.
+      // push the saved profile past HsbJson.MAX_DEPTH and make it unreadable. The id becomes a
+      // key of the on-list, so one that names a member of Object is dropped and load gives the
+      // pill a new one.
       internal static function clean(param1:Object):Object
       {
          if(param1 == null || typeof param1 != "object") { return null; }
          var name:String = param1.name is String ? trim(String(param1.name)) : "";
          if(name.length == 0) { return null; }
          if(name.length > MAX_NAME) { name = name.substring(0,MAX_NAME); }
-         var out:Object = {"id":param1.id is String ? String(param1.id).substring(0,32) : "","name":name};
+         var id:String = param1.id is String ? String(param1.id).substring(0,32) : "";
+         var out:Object = {"id":HsbJson.safeKey(id) ? id : "","name":name};
          var tabs:Array = [];
          if(param1.tabs is Array)
          {
@@ -332,7 +342,8 @@ package
             var c:int = 0;
             while(c < (param1.columns as Array).length && cols.length < MAX_COLUMNS)
             {
-               if(param1.columns[c] is String) { cols.push(columnId(String(param1.columns[c]))); }
+               var col:String = param1.columns[c] is String ? columnId(String(param1.columns[c])) : "";
+               if(col.length > 0) { cols.push(col); }
                c++;
             }
          }
@@ -364,7 +375,8 @@ package
                var i:int = 0;
                while(i < (param1.values as Array).length && values.length < 16)
                {
-                  values.push(String(param1.values[i]).substring(0,32));
+                  var v:* = param1.values[i];
+                  if(v is String || v is Number) { values.push(String(v).substring(0,32)); }
                   i++;
                }
             }
@@ -381,7 +393,8 @@ package
 
       // Column and stat ids are lowercase letters and digits: the browser keys learned stats in
       // lowercase, so "Mass" in an ini or a pack must name the same column as "mass". The case
-      // an id arrived in is kept as words for display until the game names that stat.
+      // an id arrived in is kept as words for display until the game names that stat. An id
+      // that names a member of Object ("constructor") is "", which callers skip.
       internal static function columnId(param1:String):String
       {
          var out:String = "";
@@ -393,6 +406,7 @@ package
             i++;
          }
          var id:String = out.toLowerCase();
+         if(!HsbJson.safeKey(id)) { return ""; }
          if(id != out && spoken[id] == null) { spoken[id] = words(out,false); }
          return id;
       }
@@ -427,34 +441,41 @@ package
          return param1.replace(/^\s+|\s+$/g,"");
       }
 
-      // Returns the number of pills loaded, or -1 when the file is not a valid profile.
+      // Returns the number of pills loaded, or a LOAD_ result below zero. The pills and the kept
+      // top-level keys change together, and only when the whole file was taken in.
       internal function load(param1:String):int
       {
          if(param1.length > HsbJson.MAX_CHARS) { return LOAD_TOO_BIG; }
-         var data:* = HsbJson.parse(param1);
-         if(data == null || typeof data != "object" || String(data.type) != PROFILE_TYPE) { return LOAD_BAD; }
-         if(Number(data.version) > VERSION) { return LOAD_NEWER; }
-         if(!(data.pills is Array)) { return LOAD_BAD; }
-         var next:Array = [];
-         var i:int = 0;
-         while(i < (data.pills as Array).length && next.length < MAX_PILLS)
+         try
          {
-            var p:Object = clean(data.pills[i]);
-            if(p != null)
+            var data:* = HsbJson.parse(param1);
+            if(data == null || typeof data != "object" || String(data.type) != PROFILE_TYPE) { return LOAD_BAD; }
+            if(Number(data.version) > VERSION) { return LOAD_NEWER; }
+            if(!(data.pills is Array)) { return LOAD_BAD; }
+            var next:Array = [];
+            var i:int = 0;
+            while(i < (data.pills as Array).length && next.length < MAX_PILLS)
             {
-               if(String(p.id).length == 0 || this.idIn(next,String(p.id))) { p.id = "p" + (next.length + 1) + "x" + i; }
-               next.push(p);
+               var p:Object = clean(data.pills[i]);
+               if(p != null)
+               {
+                  if(String(p.id).length == 0 || this.idIn(next,String(p.id))) { p.id = "p" + (next.length + 1) + "x" + i; }
+                  next.push(p);
+               }
+               i++;
             }
-            i++;
+            var kept:Object = {};
+            var key:String;
+            for(key in data)
+            {
+               if(key != "type" && key != "version" && key != "pills") { kept[key] = data[key]; }
+            }
+            this.pills = next;
+            this.keep = kept;
+            return next.length;
          }
-         this.pills = next;
-         this.keep = {};
-         var key:String;
-         for(key in data)
-         {
-            if(key != "type" && key != "version" && key != "pills") { this.keep[key] = data[key]; }
-         }
-         return next.length;
+         catch(err:Error) { }
+         return LOAD_FAILED;
       }
 
       private function idIn(param1:Array, param2:String):Boolean
@@ -488,8 +509,15 @@ package
       }
 
       // Reads a shared pill or pack file. Returns {kind, name, author, description, pills,
-      // columnSets} or null when the file cannot be used.
+      // columnSets} or null when the file cannot be used; it never throws.
       internal static function readShared(param1:String):Object
+      {
+         try { return readSharedText(param1); }
+         catch(err:Error) { }
+         return null;
+      }
+
+      private static function readSharedText(param1:String):Object
       {
          var data:* = HsbJson.parse(param1);
          if(data == null || typeof data != "object") { return null; }
@@ -523,7 +551,7 @@ package
                   var c:int = 0;
                   while(c < (data.columnSets[tab] as Array).length && cols.length < MAX_COLUMNS)
                   {
-                     var id:String = columnId(String(data.columnSets[tab][c]));
+                     var id:String = data.columnSets[tab][c] is String ? columnId(String(data.columnSets[tab][c])) : "";
                      if(id.length > 0) { cols.push(id); }
                      c++;
                   }

@@ -15,7 +15,7 @@ package
    //    (fileOp, savePills, setSetting, saveSettings, popups).
    // Limits: at most 40 files are read; a file the DLL refuses or that does not parse is listed
    //    as "Can't read · skipped". Names and text from shared files are shown, never logged.
-   // Author: Moragar. Last modified: 2026-11-07.
+   // Author: Moragar. Last modified: 2026-11-08.
    public class HsbPillImport extends HsbBox
    {
       private static const MAX_FILES:int = 40;
@@ -94,10 +94,12 @@ package
          this.hsb.fileOp("PILLS",["READ",param1,param2],"",function(param3:Boolean, param4:String):void
          {
             self.waiting--;
+            // Bad until the file is taken in, so nothing that fails on the way leaves an entry
+            // that is neither reading nor bad and has no pills to paint.
             entry.loading = false;
+            entry.bad = true;
             var data:Object = param3 ? HsbPillModel.readShared(param4) : null;
-            if(data == null) { entry.bad = true; }
-            else
+            if(data != null && data.pills is Array && (data.pills as Array).length > 0)
             {
                entry.kind = data.kind;
                entry.name = data.name;
@@ -105,6 +107,7 @@ package
                entry.description = data.description;
                entry.pills = data.pills;
                entry.columnSets = data.columnSets;
+               entry.bad = false;
             }
             if(self.chosen < 0 && !entry.bad) { self.choose(self.entries.indexOf(entry)); }
             if(self.waiting == 0) { self.hsb.note("IMPORT read bad=" + self.badCount()); }
@@ -300,13 +303,15 @@ package
          var sub:String;
          var ink:uint = HsbKit.TEXT;
          var subInk:uint = HsbKit.MUTED;
+         var list:Array = e.pills as Array;
+         var usable:Boolean = e.loading != true && e.bad != true && list != null && list.length > 0;
          if(e.loading == true)
          {
             title = String(e.file);
             sub = "Reading\u2026";
             k.icon(g,"dot",ix,param3 + 10,14,HsbKit.DIM,1);
          }
-         else if(e.bad == true)
+         else if(!usable)
          {
             title = String(e.file);
             sub = "Can't read \u00B7 skipped";
@@ -317,7 +322,6 @@ package
          else
          {
             title = String(e.name);
-            var list:Array = e.pills as Array;
             if(e.kind == "pack")
             {
                k.icon(g,"pack",ix - 2,param3 + 8,20,k.accent,1);
@@ -333,7 +337,7 @@ package
          }
          k.label(this,tx,param3 + 6,title,14,ink,sel,0,param4 - 48);
          k.label(this,tx,param3 + 6 + k.u(20),sub,13,subInk,false,0,param4 - 48);
-         if(e.loading != true && e.bad != true) { this.hit(param2,param3 + 2,param4,param5 - 4,"entry",param1); }
+         if(usable) { this.hit(param2,param3 + 2,param4,param5 - 4,"entry",param1); }
       }
 
       private function paintRight(param1:Number, param2:Number, param3:Number, param4:Number):void
@@ -343,7 +347,7 @@ package
          var e:Object = this.chosen >= 0 ? this.entries[this.chosen] : null;
          var y:Number = param2 + 4;
          var bottom:Number = param2 + param4;
-         if(e == null || e.bad == true || e.loading == true)
+         if(e == null || e.bad == true || e.loading == true || !(e.pills is Array))
          {
             k.label(this,param1,y + 4,this.entries.length > 0 ? "Pick a file on the left to preview it." : "Put pill or pack files in the folder above, then open this again.",13,HsbKit.MUTED,false,0,param3);
             return;

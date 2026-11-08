@@ -6,14 +6,19 @@ package
    // Inputs: text up to MAX_CHARS, with or without a leading byte-order mark; values made of
    //    Object, Array, String, Number, Boolean, null.
    // Outputs: parse returns the value, or null when the text is not valid JSON, nests deeper
-   //    than MAX_DEPTH or is too long. stringify writes keys in a fixed order so files diff well.
+   //    than MAX_DEPTH, is too long or uses a key safeKey refuses; it never throws.
+   //    stringify writes keys in a fixed order so files diff well.
    // Dependencies: none.
-   // Author: Moragar. Last modified: 2026-11-07.
+   // Author: Moragar. Last modified: 2026-11-08.
    public class HsbJson
    {
       internal static const MAX_CHARS:int = 65536;
       internal static const MAX_DEPTH:int = 16;
       private static const FIRST_KEYS:Array = ["type","version","id","name","author","description","tabs","match","inRow","rules","field","op","value","values","columns","pills","columnSets"];
+      // The names Object itself defines. As a key of a plain Object, the three AS3-namespace
+      // methods throw when stored (#1037), and data under toString or valueOf makes String(),
+      // Number() and == throw (#1006).
+      private static const RESERVED:Array = ["constructor","hasOwnProperty","isPrototypeOf","propertyIsEnumerable","setPropertyIsEnumerable","toLocaleString","toString","valueOf"];
 
       private var src:String;
       private var at:int;
@@ -31,14 +36,27 @@ package
          // and without this a hand-edited profile would be set aside as damaged.
          if(param1.length > 0 && param1.charCodeAt(0) == 0xFEFF) { param1 = param1.substring(1); }
          if(param1.length > MAX_CHARS) { return null; }
-         var p:HsbJson = new HsbJson();
-         p.src = param1;
-         p.at = 0;
-         p.bad = false;
-         var out:* = p.value(0);
-         p.space();
-         if(p.bad || p.at != p.src.length) { return null; }
-         return out;
+         try
+         {
+            var p:HsbJson = new HsbJson();
+            p.src = param1;
+            p.at = 0;
+            p.bad = false;
+            var out:* = p.value(0);
+            p.space();
+            if(p.bad || p.at != p.src.length) { return null; }
+            return out;
+         }
+         catch(err:Error) { }
+         return null;
+      }
+
+      // Purpose: whether a name from a file or the ini may become a key of a plain Object.
+      //    Every such name goes through here: JSON keys, tab keys, column ids, pill ids and
+      //    Columns settings. Inputs: the name. Outputs: false for a name Object defines.
+      internal static function safeKey(param1:String):Boolean
+      {
+         return RESERVED.indexOf(param1) < 0;
       }
 
       private function space():void
@@ -77,6 +95,7 @@ package
             this.space();
             if(this.src.charAt(this.at) != "\"") { this.bad = true; return null; }
             var key:String = this.string();
+            if(this.bad || !safeKey(key)) { this.bad = true; return null; }
             this.space();
             if(this.src.charAt(this.at) != ":") { this.bad = true; return null; }
             this.at++;
