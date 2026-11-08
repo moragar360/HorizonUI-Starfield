@@ -18,9 +18,10 @@ package
    // Backend limits shown in the panel: the game has no "apply to" choice (colours go to the
    //    parts selected before colour mode) and no "take from a part"; hex values are worked
    //    out from hue, saturation and brightness (marked with ~). Applying a scheme steps the
-   //    picker through its slots one frame at a time and waits for the game to confirm each
-   //    slot switch.
-   // Author: Moragar. Last modified: 2026-11-07.
+   //    picker through its slots one frame at a time, waits for the game to confirm each slot
+   //    switch, then returns to the slot and control the player had, also when the walk starts
+   //    while another is still running.
+   // Author: Moragar. Last modified: 2026-11-08.
    public class HsbColors extends HsbBox
    {
       private static const HUE:int = 0;
@@ -45,6 +46,10 @@ package
       private var steps:Array;
       private var waitTab:int = -1;
       private var waitUntil:int = 0;
+      // The slot and control the player had when the running walk began. While a walk runs, sel
+      // shows the slot the walk is on, so a walk started then must not take its way home from sel.
+      private var walkHome:int = 0;
+      private var walkCtl:int = HUE;
       private var openSlot:int = -1;
       private var naming:Boolean = false;
       private var nameText:String = "";
@@ -123,7 +128,8 @@ package
       private function discover():void
       {
          if(this.tabs.length == 0) { return; }
-         var home:int = this.sel != null ? int(this.sel.iSelectedTab) : 0;
+         if(!this.walking()) { this.walkHome = this.sel != null ? int(this.sel.iSelectedTab) : 0; }
+         var home:int = this.walkHome;
          this.steps = [];
          var i:int = 0;
          while(i < this.tabs.length)
@@ -133,6 +139,11 @@ package
          }
          if(this.steps.length > 0) { this.steps.push({"kind":"tab","v":home}); }
          if(!this.listed) { this.loadSchemes(); }
+      }
+
+      private function walking():Boolean
+      {
+         return this.steps.length > 0 || this.waitTab >= 0;
       }
 
       // One queued step per frame; a slot switch waits for the game's confirmation.
@@ -299,8 +310,13 @@ package
       // and control the player had.
       private function applySlots(param1:Array):void
       {
-         var home:int = this.sel != null ? int(this.sel.iSelectedTab) : 0;
-         var ctl:int = this.sel != null ? int(this.sel.iSelectedControl) : HUE;
+         if(!this.walking())
+         {
+            this.walkHome = this.sel != null ? int(this.sel.iSelectedTab) : 0;
+            this.walkCtl = this.sel != null ? int(this.sel.iSelectedControl) : HUE;
+         }
+         var home:int = this.walkHome;
+         var ctl:int = this.walkCtl;
          this.steps = [];
          var i:int = 0;
          while(i < param1.length && i < this.tabs.length)
@@ -769,6 +785,7 @@ package
       {
          if(param1 == null || String(param1.id) != "slider") { return false; }
          this.sliderKind = int(param1.data);
+         this.walkCtl = this.sliderKind;
          this.hsb.send("ShipEditor_OnColorPickerControlChanged",{"control":this.sliderKind});
          this.onMove(param2,param3);
          return true;
@@ -823,7 +840,12 @@ package
             case "slot":
                var at:int = int(param2);
                this.openSlot = this.openSlot == at ? -1 : at;
-               if(this.openSlot >= 0) { this.steps.push({"kind":"tab","v":at}); }
+               if(this.openSlot >= 0)
+               {
+                  if(!this.walking()) { this.walkCtl = this.sel != null ? int(this.sel.iSelectedControl) : HUE; }
+                  this.walkHome = at;
+                  this.steps.push({"kind":"tab","v":at});
+               }
                break;
             case "recent":
                this.hsb.send("ShipEditor_OnColorPickerControlChanged",{"control":RECENT});

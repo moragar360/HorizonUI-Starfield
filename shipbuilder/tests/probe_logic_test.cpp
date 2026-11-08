@@ -1048,6 +1048,16 @@ static void CheckMovie(const fs::path& root)
 
 	Expect(Has(colors, "if(!isNaN(hsbNow[0]) && !isNaN(hsbNow[1]) && !isNaN(hsbNow[2])) { this.slots[tab] = hsbNow; }") &&
 		Has(FunctionBody(colors, "clamp01", "private static"), "if(isNaN(param1)) { return 0; }"), "a slot colour is never NaN");
+	// While a scheme walk runs, sel is the slot the walk is on: a walk started then (another
+	// preview, or Export ending the preview) must still return to the player's slot and control.
+	Expect(Has(FunctionBody(colors, "walking"), "return this.steps.length > 0 || this.waitTab >= 0;") &&
+			InOrder(FunctionBody(colors, "applySlots"), {"if(!this.walking())", "this.walkHome = this.sel != null ? int(this.sel.iSelectedTab) : 0;",
+				"this.walkCtl = this.sel != null ? int(this.sel.iSelectedControl) : HUE;", "var home:int = this.walkHome;", "var ctl:int = this.walkCtl;",
+				"this.steps.push({\"kind\":\"tab\",\"v\":home});", "this.steps.push({\"kind\":\"ctl\",\"v\":ctl});"}) &&
+			InOrder(FunctionBody(colors, "discover"), {"if(!this.walking()) { this.walkHome =", "var home:int = this.walkHome;"}) &&
+			InOrder(FunctionBody(colors, "onAct", "override internal"), {"case \"slot\":", "this.walkHome = at;", "this.steps.push({\"kind\":\"tab\",\"v\":at});"}) &&
+			Has(FunctionBody(colors, "onPress", "override internal"), "this.walkCtl = this.sliderKind;"),
+		"a colour walk started while another runs returns to the player's slot and control, not the walk's");
 	Expect(Has(FunctionBody(ReadFile(as / "HsbDialog.as"), "safeFileName", "internal static"), "return device ? out + \"_\" : out;"),
 		"an exported name is never a Windows device name");
 	// Flight Check tabs click the game's own tab bar, which selects and reports the tab itself.
