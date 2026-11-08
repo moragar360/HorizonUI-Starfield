@@ -170,8 +170,14 @@ function gate() {
 }
 
 expect(ini.indexOf("PerfDiag=0") >= 0, "PerfDiag off by default");
+expect(ini.indexOf("PerfDump=0") >= 0, "PerfDump off by default");
+expect(ini.indexOf("PerfDumpWait=12") >= 0, "PerfDumpWait default 12");
 expect(ini.indexOf("Debug=0") >= 0, "Debug overlay still off");
 expect(as.indexOf("hzPerfDiag:Boolean = false") >= 0, "AS diag off by default");
+expect(as.indexOf("public function hzPerfReset") >= 0, "AS reset is a public dump-window entry");
+expect(as.indexOf("tickMaxHadContent") >= 0 && as.indexOf("tickMaxHadAct") >= 0 && as.indexOf("tickMaxHadItems") >= 0,
+	"worst-tick flags exist");
+expect(as.indexOf("c2=") >= 0 && as.indexOf("c5=") >= 0 && as.indexOf("c10=") >= 0, "content histogram tokens");
 expect(as.indexOf("NOT GAME DATA") >= 0 && as.indexOf("HZ PERF FIXTURE") >= 0, "Mode B fixture is labeled");
 expect(ini.indexOf("vanilla rollover can still show") >= 0, "Mode A vanilla-hover limit is documented");
 expect(ini.indexOf("Scanner still draws") >= 0, "Mode B scanner-draw limit is documented");
@@ -484,6 +490,79 @@ expect(tick.indexOf("hzPerfSkipHover") >= 0 && tick.indexOf("hz38Vanilla") > tic
 expect(perfH.indexOf("std::thr") < 0, "perf header starts no worker");
 expect(main.indexOf("QueryPerformanceCounter") >= 0, "native clock is QPC");
 expect(as.indexOf("clock=hz41Now_ms") >= 0, "AS dump names Date/hz41Now");
+expect(funcBody(as, "hzPerfSnapshot").indexOf("sName") < 0, "snapshot has no name field");
+
+function loadPerf() {
+	const names = ["hzPerfResetN", "hzPerfReset", "hzPerfBegin", "hzPerfEnd", "hzPerfSnapshot"];
+	const self = {
+		hzPerfOn: true,
+		hzPerfMode: 3,
+		hzPerfN: null,
+		hzPerfT0: null,
+		hzPerfTickHadContent: false,
+		hzPerfTickHadAct: false,
+		hzPerfTickHadItems: false,
+		now: 0,
+		hz41Now() { return self.now; }
+	};
+	for (const name of names) {
+		const body = funcBody(as, name);
+		if (!body) throw new Error("missing " + name);
+		const params = funcParams(as, name);
+		const inner = as3toJs(body).replace(/^\{\s*/, "").replace(/\s*\}$/, "");
+		self[name] = eval("(function(self){ return function(" + params.join(",") + "){ " + inner + " }; })")(self);
+	}
+	return self;
+}
+
+{
+	const p = loadPerf();
+	p.hzPerfResetN();
+	p.now = 1000;
+	p.hzPerfBegin("tick");
+	p.hzPerfBegin("content");
+	p.now = 1012;
+	p.hzPerfEnd("content");
+	p.now = 1014;
+	p.hzPerfEnd("tick");
+	expect(p.hzPerfN.content === 1 && p.hzPerfN.c2 === 1 && p.hzPerfN.c5 === 1 && p.hzPerfN.c10 === 1,
+		"12ms content counts c2/c5/c10");
+	expect(p.hzPerfN.tickMax === 14 && p.hzPerfN.tickMaxHadContent === 1 && p.hzPerfN.tickMaxHadAct === 0,
+		"worst tick latches content flag, not act");
+	p.now = 2000;
+	p.hzPerfBegin("tick");
+	p.hzPerfTickHadAct = true;
+	p.hzPerfTickHadItems = true;
+	p.now = 2020;
+	p.hzPerfEnd("tick");
+	expect(p.hzPerfN.tickMax === 20 && p.hzPerfN.tickMaxHadContent === 0 && p.hzPerfN.tickMaxHadAct === 1
+		&& p.hzPerfN.tickMaxHadItems === 1, "new tickMax latches act/items for that tick only");
+	p.now = 3000;
+	p.hzPerfBegin("content");
+	p.now = 3003;
+	p.hzPerfEnd("content");
+	expect(p.hzPerfN.c2 === 2 && p.hzPerfN.c5 === 1 && p.hzPerfN.c10 === 1, "3ms content counts c2 only");
+	const snap = p.hzPerfSnapshot();
+	expect(snap.indexOf("c2=2") >= 0 && snap.indexOf("c5=1") >= 0 && snap.indexOf("c10=1") >= 0, "snapshot emits c2/c5/c10");
+	expect(snap.indexOf("tickMaxHadContent=0") >= 0 && snap.indexOf("tickMaxHadAct=1") >= 0, "snapshot emits worst-tick flags");
+	expect(snap.indexOf("clock=hz41Now_ms") >= 0, "snapshot names Date clock");
+	expect(snap.indexOf("sName") < 0 && snap.indexOf("Crate") < 0 && snap.indexOf("sHeader") < 0, "snapshot has no names");
+	expect(p.hzPerfN.content === 0 && p.hzPerfN.c2 === 0, "snapshot resets counters");
+	p.hzPerfOn = true;
+	p.hzPerfReset();
+	p.now = 4000;
+	p.hzPerfBegin("content");
+	p.now = 4001;
+	p.hzPerfEnd("content");
+	expect(p.hzPerfN.content === 1 && p.hzPerfN.c2 === 0, "reset window starts clean");
+}
+
+{
+	const p = loadPerf();
+	p.hzPerfOn = false;
+	p.hzPerfReset();
+	expect(p.hzPerfN == null, "reset is a no-op when diag is off");
+}
 
 const watchBlockStart = as.indexOf("// =================== 0.43.1.0 watch + center-reticle rule ===================");
 const watchBlockEnd = as.indexOf("// =================== end Horizon UI (HUD module) ===================");

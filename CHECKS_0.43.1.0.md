@@ -4,7 +4,7 @@ Unreleased first pass. No tag, no publish, no merge. Starfield was not launched.
 
 ## What was checked here
 
-- `message_log_test`, `preset_list_test`, `planet_alert_test.js`, `reaction_match_test.js`, `watch_crosshair_test.js`, `quest_tracker_test.js`, `perf_diag_test`, and `hover_perf_test.js` passed. Analog no longer draws the 6 o'clock PM/DAY sub-dial. ClockFormat applies to LOCAL, GAME, and PC; F11 STYLE live preview copies the planet card Local/Game text. In-game hover frametime remains NOTRUN.
+- `message_log_test`, `preset_list_test`, `planet_alert_test.js`, `reaction_match_test.js`, `watch_crosshair_test.js`, `quest_tracker_test.js`, `perf_diag_test`, and `hover_perf_test.js` passed. Private delayed dump (`PerfDumpWait=12`) is default-off. Analog no longer draws the 6 o'clock PM/DAY sub-dial. ClockFormat applies to LOCAL, GAME, and PC; F11 STYLE live preview copies the planet card Local/Game text. In-game hover frametime remains NOTRUN.
 - File version is 0.43.1.0 in `src/hz_version.h`, both `set_version` lines, `HZ_BUILD`, and the module build constants. The settings schema stays `0.42.0`.
 - `WatchStyle=0` and `CrosshairRule=0` are the defaults. Existing installs that omit the keys keep today's HUD and today's reticle.
 - The new watch block has no `getTimer` and no new glow. No new F key. Watch text is created at 13 px or larger, then held to a 13 px on-screen floor at the HUD scale.

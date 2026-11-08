@@ -790,11 +790,11 @@ int main()
 		Expect(msgBody.find("CommsRxPoll(now);") != std::string::npos
 			&& msgBody.find("if (now - g_hudSince < 3000)") == std::string::npos,
 			"the reaction drain is not gated on HUD ready");
-		Expect(src.find("if (now - g_hudSince < 3000) return;") != std::string::npos,
+		Expect(src.find("if (now - g_hudSince < 3000)") != std::string::npos,
 			"the HUD poll still waits 3 s before F11-ready work");
 		{
 			const auto intro = src.find("REX::INFO(\"HUD intro start\")");
-			const auto wait3 = src.find("if (now - g_hudSince < 3000) return;");
+			const auto wait3 = src.find("if (now - g_hudSince < 3000)");
 			Expect(intro != std::string::npos && wait3 != std::string::npos && intro < wait3, "the intro fires before the 3 s HUD-ready wait");
 			Expect(src.find("REX::INFO(\"HUD intro done\")") != std::string::npos, "intro done is logged");
 			Expect(src.find("REX::INFO(\"HUD intro skipped\")") != std::string::npos, "intro skipped is logged");

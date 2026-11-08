@@ -53,14 +53,32 @@ int main()
 	Expect(!hzperf::SkipScannerDraw(hzperf::kModeF, 1) && hzperf::SkipScannerDraw(hzperf::kModeF, 0), "F follows PerfScan");
 	Expect(hzperf::SkipTargetTick(hzperf::kModeG) && hzperf::SkipHoverGfx(hzperf::kModeG), "G is background HUD");
 
+	Expect(hzperf::ParseWaitSec("") == 12 && hzperf::ParseWaitSec("12") == 12, "wait default 12");
+	Expect(hzperf::ParseWaitSec("1") == 1 && hzperf::ParseWaitSec("60") == 60, "wait 1 and 60");
+	Expect(hzperf::ClampWaitSec(0) == 1 && hzperf::ParseWaitSec("0") == 1, "wait 0 clamps to 1");
+	Expect(hzperf::ClampWaitSec(61) == 60 && hzperf::ParseWaitSec("61") == 60, "wait 61 clamps to 60");
+	Expect(hzperf::ParseWaitSec("no") == 12 && hzperf::ParseWaitSec("-3") == 12, "junk wait is default");
+	Expect(hzperf::WaitUsFromSec(12) == 12000000ull, "12s waitUs");
+	Expect(hzperf::HistBucketUs(0) == 1 && hzperf::HistBucketUs(999) == 1, "h1 <1ms");
+	Expect(hzperf::HistBucketUs(1000) == 2 && hzperf::HistBucketUs(1999) == 2, "h2 1-2ms");
+	Expect(hzperf::HistBucketUs(2000) == 5 && hzperf::HistBucketUs(4999) == 5, "h5 2-5ms");
+	Expect(hzperf::HistBucketUs(5000) == 10 && hzperf::HistBucketUs(10000) == 10, "h10 5-10ms");
+	Expect(hzperf::HistBucketUs(10001) == 11, "h10p >10ms");
+
 	hzperf::Agg a;
-	hzperf::Add(a.b[hzperf::kMovieAdvance], 1000);
-	hzperf::Add(a.b[hzperf::kMovieAdvance], 3000);
-	Expect(a.b[hzperf::kMovieAdvance].calls.load() == 2, "two samples");
-	Expect(a.b[hzperf::kMovieAdvance].maxv.load() == 3000, "max ticks");
+	hzperf::AddMovie(a, 500, 1'000'000);
+	hzperf::AddMovie(a, 1500, 1'000'000);
+	hzperf::AddMovie(a, 3000, 1'000'000);
+	hzperf::AddMovie(a, 7500, 1'000'000);
+	hzperf::AddMovie(a, 12000, 1'000'000);
+	Expect(a.b[hzperf::kMovieAdvance].calls.load() == 5, "five movie samples");
+	Expect(a.h1.load() == 1 && a.h2.load() == 1 && a.h5.load() == 1 && a.h10.load() == 1 && a.h10p.load() == 1,
+		"movieAdvance histogram buckets");
+	Expect(a.b[hzperf::kMovieAdvance].maxv.load() == 12000, "max ticks");
 	Expect(hzperf::Us(1000, 1'000'000) == 1000, "1 MHz: tick is 1 us");
 	a.windowStart.store(0);
-	a.frames.store(2);
+	a.frames.store(5);
+	a.waitUs.store(12000000);
 	char line[hzperf::kDumpMax];
 	const int n = hzperf::FormatNative(a, 1'000'000, 2'000'000, 1, 3, 1, line, hzperf::kDumpMax);
 	Expect(n > 40 && n < hzperf::kDumpMax, "dump fits");
@@ -77,11 +95,50 @@ int main()
 		if (end == start) return 0;
 		return std::stoull(a_dump.substr(start, end - start));
 	};
-	Expect(maxUsAt(dump, "movieAdvance") == 3000ull, "maxUs is 3000 us at 1 MHz (numeric, not maxUs=3 substring)");
+	Expect(maxUsAt(dump, "movieAdvance") == 12000ull, "maxUs is 12000 us at 1 MHz (numeric, not substring)");
 	Expect(dump.find("maxUs=3 cps=") == std::string::npos, "dump does not emit a maxUs=3 token for this sample");
 	Expect(dump.find("mode=3(C-full)") != std::string::npos, "mode name in dump");
+	Expect(dump.find("h1=1") != std::string::npos && dump.find("h2=1") != std::string::npos
+		&& dump.find("h5=1") != std::string::npos && dump.find("h10=1") != std::string::npos
+		&& dump.find("h10p=1") != std::string::npos, "histogram tokens on dump line");
+	Expect(dump.find("waitUs=12000000") != std::string::npos, "waitUs on dump line");
 	hzperf::Reset(a);
-	Expect(a.b[hzperf::kMovieAdvance].calls.load() == 0, "reset clears");
+	Expect(a.b[hzperf::kMovieAdvance].calls.load() == 0 && a.h10p.load() == 0, "reset clears");
+
+	{
+		hzperf::Agg lockA;
+		hzperf::BeginDump(lockA);
+		hzperf::AddMovie(lockA, 5000, 1'000'000);
+		Expect(lockA.b[hzperf::kMovieAdvance].calls.load() == 0 && lockA.h10.load() == 0,
+			"Format+Reset hold skips concurrent Add");
+		hzperf::EndDump(lockA);
+		hzperf::AddMovie(lockA, 5000, 1'000'000);
+		Expect(lockA.h10.load() == 1, "Add resumes after dump hold");
+		hzperf::NoteWindowStart(lockA, 42);
+		Expect(lockA.windowStart.load() == 42, "windowStart first-store is CAS");
+		hzperf::NoteWindowStart(lockA, 99);
+		Expect(lockA.windowStart.load() == 42, "second windowStart store does not win");
+	}
+
+	{
+		hzperf::DumpCtl c;
+		hzperf::ArmDump(c, 12);
+		Expect(c.req.load() == 1 && c.windowArmed.load() == 0, "arm sets req, not window");
+		Expect(hzperf::OnHudFirstReady(c, false, 1000) == hzperf::ReadyOp::None, "diag off does not reset");
+		Expect(hzperf::OnHudFirstReady(c, true, 1000) == hzperf::ReadyOp::ResetWindow, "first ready resets");
+		Expect(c.windowArmed.load() == 1 && c.dumpAtMs.load() == 13000, "dump-at is ready+12s");
+		Expect(c.skipPoll.load() == 1, "ready poll is excluded from the new window");
+		Expect(hzperf::OnHudFirstReady(c, true, 1000) == hzperf::ReadyOp::None, "no re-reset");
+		Expect(hzperf::OnHudSafePoll(c, true, true, 5000) == hzperf::DumpOp::Skip, "wait not elapsed");
+		Expect(hzperf::OnHudSafePoll(c, false, true, 20000) == hzperf::DumpOp::Skip, "no dump in pause");
+		Expect(c.req.load() == 1 && c.windowArmed.load() == 1, "pause does not drop request or latch");
+		Expect(hzperf::OnHudFirstReady(c, true, 21000) == hzperf::ReadyOp::None, "re-ready after pause does not re-reset");
+		Expect(hzperf::OnHudSafePoll(c, true, true, 21000) == hzperf::DumpOp::Fire, "next HudSafe after elapsed dumps");
+		hzperf::ConsumeDump(c);
+		Expect(c.req.load() == 0 && hzperf::TakeSkipPoll(c), "dump frame skipPoll");
+		Expect(!hzperf::TakeSkipPoll(c), "skipPoll is one-shot");
+		Expect(hzperf::OnHudSafePoll(c, true, true, 30000) == hzperf::DumpOp::Skip, "consumed dump does not fire again");
+	}
 
 	const auto perfH = Read("src/hz_perf.h");
 		Expect(perfH.find("std::thr") == std::string::npos && perfH.find("detach(") == std::string::npos
@@ -98,21 +155,37 @@ int main()
 	Expect(main.find("MsglogWriter") != std::string::npos && main.find("g_mlWThread") != std::string::npos,
 		"no new worker: message-log thread is the existing one");
 	Expect(main.find("HzPerfDumpOnce") != std::string::npos, "explicit dump helper");
+	Expect(main.find("HzPerfArmWindow") != std::string::npos, "first-ready window arm");
 	Expect(main.find("hzPerfSnapshot") != std::string::npos, "AS snapshot Invoke on dump only");
+	Expect(main.find("hzPerfReset") != std::string::npos, "AS reset Invoke at first ready");
+	Expect(main.find("get(\"perfdumpwait\"") != std::string::npos, "PerfDumpWait is a separate INI key");
 	{
 		const auto pollSf = main.find("void PollScaleform()");
+		const auto armFn = pollSf == std::string::npos ? std::string::npos : main.find("void HzPerfArmWindow()", pollSf);
 		const auto dumpFn = pollSf == std::string::npos ? std::string::npos : main.find("void HzPerfDumpOnce()", pollSf);
 		const auto pollMsg = main.find("void PollMessages()");
-		Expect(pollSf != std::string::npos && dumpFn != std::string::npos && pollMsg > dumpFn && dumpFn > pollSf,
-			"dump helper sits between PollScaleform and PollMessages");
+		Expect(pollSf != std::string::npos && armFn != std::string::npos && dumpFn != std::string::npos
+			&& pollMsg > dumpFn && dumpFn > armFn && armFn > pollSf,
+			"arm and dump helpers sit between PollScaleform and PollMessages");
 		const auto dumpCall = pollSf == std::string::npos ? std::string::npos : main.find("try { HzPerfDumpOnce(); } catch (...) {}", pollSf);
 		Expect(dumpCall != std::string::npos && dumpCall > pollSf && dumpCall < dumpFn && dumpCall < pollMsg,
 			"dump is invoked from PollScaleform, not PollMessages");
+		const auto earlyWait = main.find("if (now - g_hudSince < 3000)", pollSf);
+		Expect(earlyWait != std::string::npos && dumpCall > earlyWait && dumpCall < armFn,
+			"post-pause HudSafe poll can dump before a new 3s stable");
+		const auto coverRet = main.find("g_hudSince = 0;", pollSf);
+		const auto coverEnd = main.find("const bool hudSafe = HudSafe();", pollSf);
+		const auto coverBlk = (coverRet != std::string::npos && coverEnd > coverRet)
+			? main.substr(pollSf, coverEnd - pollSf) : std::string();
+		Expect(coverBlk.find("g_perfCtl") == std::string::npos && coverBlk.find("HzPerfDumpOnce") == std::string::npos,
+			"covering menu does not drop dump latch or dump");
+		Expect(main.find("HzPerfNote(hzperf::kInvoke") == std::string::npos, "dump frame does not note invoke into max");
 	}
 
 	const auto ini = Read("Interface/HorizonUI/HorizonUI.default.ini");
 	Expect(ini.find("PerfDiag=0") != std::string::npos && ini.find("PerfMode=0") != std::string::npos
-		&& ini.find("PerfDump=0") != std::string::npos && ini.find("PerfScan=1") != std::string::npos,
+		&& ini.find("PerfDump=0") != std::string::npos && ini.find("PerfDumpWait=12") != std::string::npos
+		&& ini.find("PerfScan=1") != std::string::npos,
 		"production defaults");
 	Expect(ini.find("NOT GAME DATA") != std::string::npos || ini.find("diagnostic fixture") != std::string::npos,
 		"Mode B is documented as diagnostic");
