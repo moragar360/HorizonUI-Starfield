@@ -9,13 +9,15 @@ package
    // Inputs: a title and item rows {label, id, data, on, dim, note, accent, right} from the
    //    owner; pointer and keys routed by HorizonShipBuilder.
    // Outputs: the chosen row through the owner's callback(id, data); the export writes one
-   //    pill file through the DLL's file job (PILLS WRITE user <file>).
+   //    new pill file through the DLL's file job (PILLS WRITE user <file>), never over one.
    // Dependencies: HsbBox, HsbKit, HsbPillModel (pill file text), HorizonShipBuilder (openPop,
-   //    closePop, fileOp).
-   // Author: Moragar. Last modified: 2026-11-07.
+   //    closePop, writeShare).
+   // Author: Moragar. Last modified: 2026-11-08.
    public class HsbDialog extends HsbBox
    {
       private static const PILL_FOLDER:String = "Data\\Interface\\HorizonUI\\shipbuilder\\pills\\user\\";
+      // The longest file name stem; the DLL refuses longer ones (kMaxFileStem).
+      internal static const MAX_STEM:int = 40;
 
       private var hsb:HorizonShipBuilder;
       private var kind:String;
@@ -53,14 +55,17 @@ package
       }
 
       // Purpose: write one pill to pills\user as a shareable file and show where it went.
-      // Inputs: kit, builder, pill. Outputs: an open note; one PILLS WRITE request.
-      // Dependencies: HsbPillModel.pillFile, HorizonShipBuilder.fileOp.
+      // Inputs: kit, builder, pill. Outputs: an open note; PILLS WRITE requests, one more for
+      //    each name already taken ("Name 2.json"...), so an earlier export is never replaced.
+      // Dependencies: HsbPillModel.pillFile, HorizonShipBuilder.writeShare.
       internal static function exportPill(param1:HsbKit, param2:HorizonShipBuilder, param3:Object):HsbDialog
       {
          var d:HsbDialog = new HsbDialog(param1,param2,"export","EXPORT PILL");
          d.subject = String(param3.name);
          d.state = "saving";
-         d.fileName = safeFileName(String(param3.name)) + ".json";
+         var stem:String = safeFileName(String(param3.name));
+         var text:String = HsbPillModel.pillFile(param3);
+         d.fileName = stem + ".json";
          d.lightDismiss = true;
          if(param2.browser != null)
          {
@@ -69,12 +74,13 @@ package
          }
          d.paint();
          param2.openPop(d);
-         param2.fileOp("PILLS",["WRITE","user",d.fileName],HsbPillModel.pillFile(param3),function(param4:Boolean, param5:String):void
+         param2.writeShare("PILLS",".json",1,function(param4:int):String { return HorizonShipBuilder.numberedName(stem,param4,MAX_STEM); },
+            function(param4:int):String { return text; },function(param4:Boolean, param5:String, param6:int):void
          {
-            d.state = param4 ? "ok" : "fail";
-            if(param4 && param5.length > 0) { d.fileName = param5; }
+            d.state = param4 ? "ok" : (param6 < 0 ? "taken" : "fail");
+            if(param4) { d.fileName = param5; }
             d.paint();
-            param2.note("PILLS export " + (param4 ? "ok" : "failed"));
+            param2.note("PILLS export " + (param4 ? "ok" + (param6 > 1 ? " numbered" : "") : (param6 < 0 ? "failed, every name taken" : "failed")));
          });
          return d;
       }
@@ -108,7 +114,7 @@ package
       {
          var out:String = "";
          var i:int = 0;
-         while(i < param1.length && out.length < 40)
+         while(i < param1.length && out.length < MAX_STEM)
          {
             var c:String = param1.charAt(i);
             var n:Number = param1.charCodeAt(i);
@@ -219,7 +225,8 @@ package
          k.icon(g,"diamond",pad,y + 3,14,k.accent,1);
          var name:TextField = k.label(this,pad + 20,y,this.subject,16,HsbKit.TEXT,true,0,w - pad * 2 - 20);
          y += name.height + 10;
-         k.label(this,pad,y,"Saved to",12,HsbKit.MUTED);
+         var failed:Boolean = this.state == "fail" || this.state == "taken";
+         k.label(this,pad,y,failed ? "Not saved to" : "Saved to",12,HsbKit.MUTED);
          y += k.u(20);
          var path:TextField = k.text(13,HsbKit.LABEL);
          path.multiline = true;
@@ -238,9 +245,9 @@ package
             ink = HsbKit.GREEN;
             back = HsbKit.GREEN_BG;
          }
-         else if(this.state == "fail")
+         else if(failed)
          {
-            msg = "Could not save the file";
+            msg = this.state == "taken" ? "Not saved: " + HorizonShipBuilder.SHARE_TRIES + " files already use this name" : "Could not save the file";
             ink = HsbKit.RED;
             back = HsbKit.RED_BG;
          }
@@ -251,7 +258,7 @@ package
          var chipW:Number = mt.width + (this.state == "saving" ? 20 : 40);
          k.fill(g,pad,y,chipW,chipH,7,back,1);
          if(this.state == "ok") { k.icon(g,"check",pad + 8,y + (chipH - 16) / 2,16,ink,1); }
-         else if(this.state == "fail") { k.icon(g,"xCircle",pad + 8,y + (chipH - 16) / 2,16,ink,1); }
+         else if(failed) { k.icon(g,"xCircle",pad + 8,y + (chipH - 16) / 2,16,ink,1); }
          this.add(mt,pad + (this.state == "saving" ? 10 : 30),y + (chipH - mt.height) / 2);
          y += chipH + 16;
          k.card(this.graphics,0,0,w,y,12);

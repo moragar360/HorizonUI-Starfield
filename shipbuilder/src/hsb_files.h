@@ -7,7 +7,8 @@
 // Rules: kinds PROFILE, PILLS, SCHEMES only; folders "packs" and "user" only; writes go to
 //    "user" only; names are letters, digits, space, dash and underscore with the kind's
 //    extension; sizes are capped. Nothing is ever deleted; a profile write keeps a .bak copy
-//    (see hsb_profile.h). No reply carries a NUL byte.
+//    (see hsb_profile.h); a shared file is never replaced: a WRITE to a name already taken
+//    fails with kShareExists. No reply carries a NUL byte.
 // Dependencies: hsb_guard.h (path folding); no game or Windows calls.
 // Author: Moragar. Last modified: 2026-11-08.
 
@@ -125,6 +126,10 @@ inline std::string RequestId(std::string_view line)
 inline constexpr std::string_view kReadMissing = "missing";
 inline constexpr std::string_view kReadUnreadable = "unreadable";
 inline constexpr std::string_view kReadDamaged = "damaged";
+
+// A failed PILLS or SCHEMES WRITE whose name a file or folder already holds; the movie tries
+// the next free name.
+inline constexpr std::string_view kShareExists = "exists";
 
 inline bool FolderOk(std::string_view folder)
 {

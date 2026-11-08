@@ -56,6 +56,8 @@ package
       // A cancel or accept can arrive both as a DLL key token and as the game's own event.
       private static const DOUBLE_FRAMES:int = 6;
       private static const FILE_QUEUE_MAX:int = 64;
+      // A shared file's name and up to eight numbered ones ("name 2" to "name 9"); see writeShare.
+      internal static const SHARE_TRIES:int = 9;
       // The stats and hints bars' heights before HsbKit.u, and the gap place() leaves between
       // them (mockup 1: 96, 43 and 11 px). HsbBrowser.fitHeight reads them to end the browser
       // 10 px above the hints, as the mockup does (883 and 893).
@@ -2476,6 +2478,42 @@ package
                catch(err:Error) { this.note("FILE reply failed " + err.errorID); }
             }
          }
+      }
+
+      // Purpose: write a shared pill or scheme file to its user folder without replacing one.
+      // Inputs: kind (PILLS or SCHEMES), extension, the first try (1 for the plain name), and
+      //    for try n stemFor(n) and textFor(n); done(ok, file, n): on ok the file written and
+      //    its try, on a failure n is -1 when every name was taken, else 0.
+      // Rule: the DLL refuses a name that a file or folder already holds ("exists"), and the
+      //    next try asks for "name 2", "name 3"... up to SHARE_TRIES, so a player's file is
+      //    never written over.
+      internal function writeShare(param1:String, param2:String, param3:int, param4:Function, param5:Function, param6:Function):void
+      {
+         var self:HorizonShipBuilder = this;
+         var n:int = param3;
+         var attempt:Function = function():void
+         {
+            var file:String = String(param4(n)) + param2;
+            self.fileOp(param1,["WRITE","user",file],String(param5(n)),function(param7:Boolean, param8:String):void
+            {
+               if(!param7 && param8 == "exists" && n < SHARE_TRIES)
+               {
+                  n++;
+                  attempt();
+                  return;
+               }
+               param6(param7,param7 && param8.length > 0 ? param8 : file,param7 ? n : (param8 == "exists" ? -1 : 0));
+            });
+         };
+         attempt();
+      }
+
+      // "name" for try 1, then "name 2", "name 3"..., cut to fit param3 characters.
+      internal static function numberedName(param1:String, param2:int, param3:int):String
+      {
+         if(param2 <= 1) { return param1.substring(0,param3); }
+         var tail:String = " " + param2;
+         return HsbPillModel.trim(param1.substring(0,param3 - tail.length)) + tail;
       }
 
       internal static function escapeText(param1:String):String

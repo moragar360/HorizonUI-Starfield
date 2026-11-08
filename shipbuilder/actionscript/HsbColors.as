@@ -13,8 +13,9 @@ package
    //    ShipEditor_OnColorPickerControlChanged {control}, ShipEditor_OnColorSliderMouseInput
    //    {sliderValue 0..1}, ShipEditor_OnRecentColorSwatchClicked {swatchIndex}; Accept goes
    //    through the game's hint (ShipEditor_OnHintButtonActivated). Scheme files are written to
-   //    Data\Interface\HorizonUI\shipbuilder\schemes\user\ by the DLL.
-   // Dependencies: HorizonShipBuilder (send, fileOp, keyName, hintEvent, text input), HsbKit.
+   //    Data\Interface\HorizonUI\shipbuilder\schemes\user\ by the DLL, each as a new file.
+   // Dependencies: HorizonShipBuilder (send, fileOp, writeShare, keyName, hintEvent, text
+   //    input), HsbKit.
    // Backend limits shown in the panel: the game has no "apply to" choice (colours go to the
    //    parts selected before colour mode) and no "take from a part"; hex values are worked
    //    out from hue, saturation and brightness (marked with ~). Applying a scheme steps the
@@ -30,6 +31,7 @@ package
       private static const RECENT:int = 3;
       private static const TAB_WAIT_FRAMES:int = 20;
       private static const SCHEME_FOLDER:String = "Data\\Interface\\HorizonUI\\shipbuilder\\schemes\\user\\";
+      private static const NAME_MAX:int = 32;
       private static const STARTERS:Array = [["Frontier blue",[0x2E5E8C,0xE4E8EC,0x2B3036]],["Militia red",[0xA8322D,0xD9D4CC,0x2B2B2E]],["Stealth black",[0x1E2124,0x3A3D33,0x7A7F85]],["Corporate white",[0xF0F2F4,0x9EA4AA,0xC9A43A]]];
 
       private var hsb:HorizonShipBuilder;
@@ -254,7 +256,7 @@ package
             {
                var key:String = HsbPillModel.trim(line.substring(0,eq)).toLowerCase();
                var val:String = HsbPillModel.trim(line.substring(eq + 1));
-               if(key == "name") { out.name = val.substring(0,32); }
+               if(key == "name") { out.name = val.substring(0,NAME_MAX); }
                else if(key == "author") { out.author = val.substring(0,32); }
                else if(key.indexOf("slot") == 0)
                {
@@ -370,38 +372,50 @@ package
 
       private function saveScheme(param1:String):void
       {
-         var name:String = HsbPillModel.trim(param1).substring(0,32);
+         var name:String = HsbPillModel.trim(param1).substring(0,NAME_MAX);
          if(name.length == 0) { return; }
-         var s:Object = {"name":name,"source":"user","author":"","file":HsbDialog.safeFileName(name) + ".ini","slots":this.currentSlots()};
+         var s:Object = {"name":name,"source":"user","author":"","file":"","slots":this.currentSlots()};
          this.writeScheme(s,true);
       }
 
+      // Purpose: write a scheme to schemes\user as a new file (HorizonShipBuilder.writeShare).
+      // Inputs: the scheme; whether the list keeps it as one of the player's own. Outputs: the
+      //    exported box (mockup 7) or a failure note.
+      // Rule: a scheme file is never replaced. A name already taken gets the next number, in
+      //    the file and the scheme alike (Name=Desert 2 in Desert 2.ini), and a scheme the list
+      //    keeps also skips the names already in the list.
       private function writeScheme(param1:Object, param2:Boolean):void
       {
          var self:HsbColors = this;
-         var file:String = String(param1.file).length > 0 && String(param1.source) == "user" ? String(param1.file) : HsbDialog.safeFileName(String(param1.name)) + ".ini";
-         this.hsb.fileOp("SCHEMES",["WRITE","user",file],schemeText(param1),function(param3:Boolean, param4:String):void
+         var base:String = String(param1.name);
+         var nameFor:Function = function(param3:int):String { return HorizonShipBuilder.numberedName(base,param3,NAME_MAX); };
+         var first:int = 1;
+         while(param2 && first < HorizonShipBuilder.SHARE_TRIES && this.schemeByName(nameFor(first)) >= 0) { first++; }
+         this.hsb.writeShare("SCHEMES",".ini",first,function(param3:int):String { return HsbDialog.safeFileName(nameFor(param3)); },
+            function(param3:int):String { return schemeText({"name":nameFor(param3),"author":param1.author,"slots":param1.slots}); },
+            function(param3:Boolean, param4:String, param5:int):void
          {
             if(!param3)
             {
-               self.note1 = "Could not save the scheme file";
+               self.note1 = param5 < 0 ? "Not saved: " + HorizonShipBuilder.SHARE_TRIES + " scheme files already use this name" : "Could not save the scheme file";
                self.hsb.mark("Colors");
-               self.hsb.note("SCHEMES write failed");
+               self.hsb.note("SCHEMES write failed" + (param5 < 0 ? ", every name taken" : ""));
                return;
             }
-            var written:String = param4.length > 0 ? param4 : file;
+            var written:String = nameFor(param5);
             if(param2)
             {
-               param1.file = written;
-               var at:int = self.schemeByName(String(param1.name));
+               param1.name = written;
+               param1.file = param4;
+               var at:int = self.schemeByName(written);
                if(at >= 0 && String(self.schemes[at].source) != "starter") { self.schemes[at] = param1; }
                else { self.schemes.push(param1); at = self.schemes.length - 1; }
                self.chosen = at;
             }
-            self.exported = {"name":String(param1.name),"file":written};
+            self.exported = {"name":written,"file":param4};
             self.note1 = "";
             self.hsb.mark("Colors");
-            self.hsb.note("SCHEMES write ok");
+            self.hsb.note("SCHEMES write ok" + (param5 > 1 ? " numbered" : ""));
          });
       }
 
@@ -874,11 +888,18 @@ package
                break;
             case "export":
                // Exporting writes the file only (mockup 7): a running preview ends first, so the
-               // ship goes back to its own colors and the result box is what shows.
+               // ship goes back to its own colors and the result box is what shows. A scheme of
+               // the player's own already is its file in schemes\user, which the box names.
                if(this.previewing) { this.cancelPreview(); }
                var s:Object = this.chosen >= 0 ? this.schemes[this.chosen] : null;
                if(s == null && this.allKnown()) { s = {"name":"My ship colors","source":"user","author":"","file":"","slots":this.currentSlots()}; }
-               if(s != null) { this.writeScheme(s,String(s.source) == "user"); }
+               if(s != null && String(s.source) == "user" && String(s.file).length > 0)
+               {
+                  this.exported = {"name":String(s.name),"file":String(s.file)};
+                  this.note1 = "";
+                  this.hsb.note("SCHEMES export own file");
+               }
+               else if(s != null) { this.writeScheme(s,String(s.source) == "user"); }
                break;
             case "import":
                this.loadSchemes();

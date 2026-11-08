@@ -1635,6 +1635,58 @@ static void CheckMovie(const fs::path& root)
 		"a colour walk started while another runs returns to the player's slot and control, not the walk's");
 	Expect(Has(FunctionBody(ReadFile(as / "HsbDialog.as"), "safeFileName", "internal static"), "return device ? out + \"_\" : out;"),
 		"an exported name is never a Windows device name");
+	// Review B3: an export or a saved scheme never replaces a player's file of the same name.
+	{
+		const std::string dialog = ReadFile(as / "HsbDialog.as");
+		std::size_t writes = 0;
+		std::size_t shareWrites = 0;
+		for (const auto& entry : fs::directory_iterator(as)) {
+			if (entry.path().extension() != ".as") continue;
+			const std::string text = ReadFile(entry.path());
+			writes += CountOf(text, "\"WRITE\"");
+			shareWrites += CountOf(text, "[\"WRITE\",\"user\",");
+		}
+		const std::string share = FunctionBody(hub, "writeShare", "internal");
+		Expect(writes == 2 && shareWrites == 1 &&
+				Has(share, "self.fileOp(param1,[\"WRITE\",\"user\",file],String(param5(n)),function(param7:Boolean, param8:String):void") &&
+				Has(FunctionBody(hub, "savePills", "internal"), "this.fileOp(\"PROFILE\",[\"WRITE\"],text,"),
+			"the movie writes in two places only: the pills profile, and new shared files through writeShare");
+		Expect(InOrder(share, {"var n:int = param3;", "var file:String = String(param4(n)) + param2;", "self.fileOp(param1,[\"WRITE\",\"user\",file],String(param5(n)),",
+					   "if(!param7 && param8 == \"exists\" && n < SHARE_TRIES)", "n++;", "attempt();", "return;",
+					   "param6(param7,param7 && param8.length > 0 ? param8 : file,param7 ? n : (param8 == \"exists\" ? -1 : 0));"}) &&
+				Has(hub, "internal static const SHARE_TRIES:int = 9;"),
+			"a shared file whose name is taken goes to the next free number, up to nine tries, and the caller learns the name written");
+		Expect(InOrder(FunctionBody(hub, "numberedName", "internal static"), {"if(param2 <= 1) { return param1.substring(0,param3); }",
+					   "var tail:String = \" \" + param2;", "return HsbPillModel.trim(param1.substring(0,param3 - tail.length)) + tail;"}),
+			"a numbered name keeps its number within the length cap");
+		const std::string exportPill = FunctionBody(dialog, "exportPill", "internal static");
+		Expect(InOrder(exportPill, {"var stem:String = safeFileName(String(param3.name));", "var text:String = HsbPillModel.pillFile(param3);",
+					   "param2.writeShare(\"PILLS\",\".json\",1,function(param4:int):String { return HorizonShipBuilder.numberedName(stem,param4,MAX_STEM); },",
+					   "function(param4:int):String { return text; }", "d.state = param4 ? \"ok\" : (param6 < 0 ? \"taken\" : \"fail\");",
+					   "if(param4) { d.fileName = param5; }"}) &&
+				!Has(exportPill, "fileOp(") && Has(dialog, "internal static const MAX_STEM:int = 40;") && hsb::kMaxFileStem == 40 &&
+				Has(FunctionBody(dialog, "safeFileName", "internal static"), "out.length < MAX_STEM") &&
+				InOrder(FunctionBody(dialog, "paintExport"), {"var failed:Boolean = this.state == \"fail\" || this.state == \"taken\";",
+							"k.label(this,pad,y,failed ? \"Not saved to\" : \"Saved to\",12,HsbKit.MUTED);",
+							"msg = this.state == \"taken\" ? \"Not saved: \" + HorizonShipBuilder.SHARE_TRIES + \" files already use this name\" : \"Could not save the file\";"}),
+			"a pill export never replaces an earlier file: it takes the next free name and shows it, or says every name is taken");
+		const std::string writeScheme = FunctionBody(colors, "writeScheme");
+		Expect(InOrder(writeScheme, {"var nameFor:Function = function(param3:int):String { return HorizonShipBuilder.numberedName(base,param3,NAME_MAX); };",
+					   "while(param2 && first < HorizonShipBuilder.SHARE_TRIES && this.schemeByName(nameFor(first)) >= 0) { first++; }",
+					   "this.hsb.writeShare(\"SCHEMES\",\".ini\",first,function(param3:int):String { return HsbDialog.safeFileName(nameFor(param3)); },",
+					   "return schemeText({\"name\":nameFor(param3),\"author\":param1.author,\"slots\":param1.slots});",
+					   "self.note1 = param5 < 0 ? \"Not saved: \" + HorizonShipBuilder.SHARE_TRIES + \" scheme files already use this name\" : \"Could not save the scheme file\";",
+					   "var written:String = nameFor(param5);", "if(param2)", "param1.name = written;", "param1.file = param4;",
+					   "self.exported = {\"name\":written,\"file\":param4};"}) &&
+				!Has(writeScheme, "fileOp(") && Has(colors, "private static const NAME_MAX:int = 32;") &&
+				Has(FunctionBody(colors, "parseScheme", "internal static"), "if(key == \"name\") { out.name = val.substring(0,NAME_MAX); }") &&
+				Has(FunctionBody(colors, "saveScheme"), "\"file\":\"\""),
+			"a saved or exported scheme never replaces a file: the file and the scheme take the next free name together");
+		Expect(InOrder(FunctionBody(colors, "onAct", "override internal"), {"case \"export\":",
+					   "if(s != null && String(s.source) == \"user\" && String(s.file).length > 0)",
+					   "this.exported = {\"name\":String(s.name),\"file\":String(s.file)};", "else if(s != null) { this.writeScheme(s,String(s.source) == \"user\"); }"}),
+			"exporting a scheme of the player's own names its file and writes nothing");
+	}
 	// Flight Check tabs click the game's own tab bar, which selects and reports the tab itself.
 	{
 		const std::string flight = ReadFile(as / "HsbFlight.as");
@@ -1772,10 +1824,12 @@ static void CheckPlugin(const fs::path& root)
 			Has(disk, "bool WriteReplace(ProfileFile file, std::string_view text) override { return w32::WriteReplace(PathOf(file), std::string(text)); }") &&
 			Has(disk, "void EnsureDir() override { EnsureDirsFor(PathOf(ProfileFile::kProfile)); }"),
 		"the profile disk reads with the cap it is given, writes the file it is given, and makes the profile's folder");
-	Expect(Has(disk, "if (MoveFileExW(PathOf(from).c_str(), PathOf(to).c_str(), MOVEFILE_WRITE_THROUGH)) return MoveResult::kOk;") &&
-			Has(disk, "return err == ERROR_ALREADY_EXISTS || err == ERROR_FILE_EXISTS ? MoveResult::kExists : MoveResult::kFailed;") &&
-			!Has(disk, "MOVEFILE_REPLACE_EXISTING") && CountOf(w32, "MOVEFILE_REPLACE_EXISTING") == 1 && !Has(plugin, "MOVEFILE_REPLACE_EXISTING") &&
-			!Has(plugin, "MoveFileExW("),
+	const std::string renameNew = CppBody(w32, "inline MoveResult RenameNew(");
+	Expect(Has(disk, "MoveResult MoveNoReplace(ProfileFile from, ProfileFile to) override { return RenameNew(PathOf(from), PathOf(to)); }") &&
+			InOrder(renameNew, {"if (MoveFileExW(from.c_str(), to.c_str(), MOVEFILE_WRITE_THROUGH)) return MoveResult::kOk;", "const DWORD err = GetLastError();",
+						   "return err == ERROR_ALREADY_EXISTS || err == ERROR_FILE_EXISTS ? MoveResult::kExists : MoveResult::kFailed;"}) &&
+			!Has(disk, "MOVEFILE_REPLACE_EXISTING") && !Has(renameNew, "MOVEFILE_REPLACE_EXISTING") && CountOf(w32, "MOVEFILE_REPLACE_EXISTING") == 1 &&
+			!Has(plugin, "MOVEFILE_REPLACE_EXISTING") && !Has(plugin, "MoveFileExW("),
 		"a set-aside never replaces an earlier bad copy");
 	Expect(InOrder(runFile, {"if (ok) payload = std::move(result.payload);", "else failReason = std::move(result.payload);"}) &&
 			Has(runFile, "if (!ok) payload = failReason;"),
@@ -1783,11 +1837,26 @@ static void CheckPlugin(const fs::path& root)
 	Expect(Has(runFile, "ok = ReadCapped(path, hsb::kMaxShareBytes, payload) && !hsb::HasNul(payload);") &&
 			Has(runFile, "if (dirs.empty() || body.size() > hsb::kMaxShareBytes) break;"),
 		"a share file with a NUL byte is refused, and share files are read and written within their cap");
+	Expect(InOrder(CppBody(w32, "inline bool WriteFlushed("), {std::string("_wf") + "open_s(&file, path.c_str(), L\"wb\")",
+				   "const bool wrote = fwrite(text.data(), 1, text.size(), file) == text.size();",
+				   "const bool flushed = wrote && fflush(file) == 0 && _commit(_fileno(file)) == 0;", "const bool closed = fclose(file) == 0;",
+				   "return flushed && closed;"}),
+		"a file is written whole and flushed to disk, or the write fails");
 	const std::string writeReplace = CppBody(w32, "inline bool WriteReplace(");
-	Expect(InOrder(writeReplace, {"const std::wstring temp = path + L\".tmp\";", std::string("_wf") + "open_s(&file, temp.c_str(), L\"wb\")",
-				   "const bool flushed = wrote && fflush(file) == 0 && _commit(_fileno(file)) == 0;", "if (!flushed || !closed) return false;",
+	Expect(InOrder(writeReplace, {"const std::wstring temp = path + L\".tmp\";", "if (!WriteFlushed(temp, text)) return false;",
 				   "MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)"}),
 		"a write goes to a .tmp twin, is flushed to disk, then renamed over the file");
+	// Review B3: an export or a saved scheme never replaces a player's file of the same name.
+	const std::string writeNew = CppBody(w32, "inline MoveResult WriteNew(");
+	Expect(InOrder(writeNew, {"if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) return MoveResult::kExists;",
+				   "const std::wstring temp = path + L\".tmp\";", "if (!WriteFlushed(temp, text)) return MoveResult::kFailed;", "return RenameNew(temp, path);"}) &&
+			!Has(writeNew, "MOVEFILE_REPLACE_EXISTING") && !Has(writeNew, "MoveFileExW("),
+		"a new file goes to a .tmp twin, flushed, and is renamed only to a name no file or folder holds");
+	Expect(InOrder(runFile, {"if (dirs.empty() || body.size() > hsb::kMaxShareBytes) break;", "EnsureDirsFor(path);",
+				   "const hsb::MoveResult wrote = WriteNew(path, body);", "ok = wrote == hsb::MoveResult::kOk;", "if (ok) payload = r.args[1];",
+				   "else if (wrote == hsb::MoveResult::kExists) failReason = std::string(hsb::kShareExists);"}) &&
+			!Has(runFile, "WriteReplace(") && Has(plugin, "using hsb::w32::WriteNew;") && hsb::kShareExists == "exists",
+		"a share write makes a new file and never replaces one; a name already taken fails with exists");
 	Expect(InOrder(CppBody(w32, "inline bool ReadCapped("), {"if (out.size() + n > cap) {", "fits = false;", "out.append(buf, n);",
 				   "const bool failed = ferror(file) != 0;", "fclose(file);", "if (!fits || failed) out.clear();", "return fits && !failed;"}),
 		"a read over its cap, or one that fails partway, never passes for the whole file");
@@ -1875,6 +1944,11 @@ static void CheckDocs(const fs::path& repo, const fs::path& root)
 			Has(readme, "`The pills file was empty, so the starter pills are shown`") && !Has(readme, "the second save replaces it") &&
 			!Has(readme, "A profile the movie cannot read, including one holding NUL bytes, is renamed"),
 		"the readme says which profiles are renamed, when the backup is kept, and how to restore it");
+	Expect(Has(readme, "exported pills and colour schemes. A file already there is never replaced.") &&
+			Has(readme, "gets the next free number, up to 9 (`Desert 2.ini`, holding `Name=Desert 2`)") &&
+			Has(readme, "never over any file for an export or a scheme") && Has(readme, "the second export is `<name> 2.json`, and the first file is unchanged") &&
+			!Has(readme, "renamed over the old one."),
+		"the readme says an export or a saved scheme never replaces a file, and the gates check it");
 
 	Expect(Has(vortex, "Data/SFSE/Plugins/HorizonShipBuilder.dll") && Has(vortex, "Data/Interface/spaceshipeditormenu.swf") &&
 		Has(vortex, "Data/Interface/spaceshipeditormenu_lrg.swf") && Has(vortex, "HorizonShipBuilder.default.ini") && Has(vortex, "game root") &&

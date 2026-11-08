@@ -2,7 +2,7 @@
 //    profile rules (hsb_profile.h), on a real disk: a temp folder shaped like the player's
 //    Documents shipbuilder folder. It covers what the logic test's fake disk cannot: the real
 //    rename that never replaces, sharing locks, read-only files, a folder where a file should
-//    be, and the names and caps the Win32 code passes on.
+//    be, the names and caps the Win32 code passes on, and shared files written only as new.
 // Inputs: none (the folder is made under GetTempPathW). Outputs: one FAIL line per broken
 //    check; exit code 0 only when every check passes.
 // How to run: xmake build profile_disk_test, then run it on Windows. Or build it with
@@ -38,6 +38,11 @@ static void Expect(bool ok, const std::string& text)
 static const char* const kJson = "ShipBuilderPills.json";
 static const char* const kBak = "ShipBuilderPills.bak";
 static const char* const kBad = "ShipBuilderPills.bad.json";
+static const char* const kShare = "pills\\user\\Rust bucket.json";
+static const char* const kShareTmp = "pills\\user\\Rust bucket.json.tmp";
+static const char* const kShareFolder = "pills\\user\\Night run.json";
+static const char* const kShareFrom = "pills\\user\\From.json";
+static const char* const kShareFree = "pills\\user\\Free.json";
 
 static std::wstring PathOf(const char* name)
 {
@@ -71,11 +76,25 @@ static void Put(const char* name, const std::string& text)
 // Test setup only: the plugin never deletes.
 static void Clear()
 {
-	for (const char* name : {kJson, kBak, kBad, "ShipBuilderPills.json.tmp", "ShipBuilderPills.bak.tmp"}) {
+	for (const char* name : {kJson, kBak, kBad, "ShipBuilderPills.json.tmp", "ShipBuilderPills.bak.tmp", kShare, kShareTmp, kShareFolder,
+			 "pills\\user\\Night run.json.tmp", kShareFrom, kShareFree, "pills\\user", "pills"}) {
 		SetFileAttributesW(PathOf(name).c_str(), FILE_ATTRIBUTE_NORMAL);
 		DeleteFileW(PathOf(name).c_str());
 		RemoveDirectoryW(PathOf(name).c_str());
 	}
+}
+
+// Test setup only: empties the test's folder and removes it, up to base. Run first as well,
+// as a run cut short leaves its folder, and process ids come round again.
+static void RemoveAll(const std::wstring& base)
+{
+	Clear();
+	for (std::wstring dir = g_folder; dir.size() > base.size();) {
+		dir.pop_back();
+		RemoveDirectoryW(dir.c_str());
+		dir.resize(dir.find_last_of(L'\\') + 1);
+	}
+	RemoveDirectoryW(base.c_str());
 }
 
 // Test setup only: another program holding the file open.
@@ -96,6 +115,7 @@ int main()
 	}
 	const std::wstring base = std::wstring(tmp) + L"hsb-profile-test-" + std::to_wstring(GetCurrentProcessId()) + L"\\";
 	g_folder = base + L"My Games\\Starfield\\Data\\Interface\\HorizonUI\\shipbuilder\\";
+	RemoveAll(base);
 	Win32ProfileDisk disk(g_folder);
 	hsb::ProfileState s;
 	const std::string good = "{\"type\":\"horizon.shipbuilder\",\"version\":2,\"pills\":[]}";
@@ -284,6 +304,37 @@ int main()
 	r = hsb::ProfileSetAside(disk, s);
 	Expect(!r.ok && s.held && Bytes(kJson) == damaged, "a folder named ShipBuilderPills.bad.json blocks the set-aside; the profile stays, and writes are held");
 
+	// Shared files (exports and schemes) are written new, never over a file or folder.
+	Clear();
+	hsb::w32::EnsureDirsFor(PathOf(kShare));
+	Expect(hsb::w32::WriteNew(PathOf(kShare), "first") == hsb::MoveResult::kOk && Bytes(kShare) == "first" && !Present(kShareTmp),
+		"WriteNew writes a free name whole, through a .tmp it renames");
+	Expect(hsb::w32::WriteNew(PathOf(kShare), "second") == hsb::MoveResult::kExists && Bytes(kShare) == "first" && !Present(kShareTmp),
+		"WriteNew to a name a file holds: exists, the file is unchanged and no .tmp is made");
+	Expect(hsb::w32::WriteNew(PathOf("pills\\user\\RUST BUCKET.json"), "second") == hsb::MoveResult::kExists && Bytes(kShare) == "first",
+		"a name that differs only in case is the same file, and is not replaced");
+	SetFileAttributesW(PathOf(kShare).c_str(), FILE_ATTRIBUTE_READONLY);
+	Expect(hsb::w32::WriteNew(PathOf(kShare), "second") == hsb::MoveResult::kExists && Bytes(kShare) == "first", "a read-only file is not replaced");
+	SetFileAttributesW(PathOf(kShare).c_str(), FILE_ATTRIBUTE_NORMAL);
+	{
+		HANDLE held = Hold(kShare, 0);
+		Expect(hsb::w32::WriteNew(PathOf(kShare), "second") == hsb::MoveResult::kExists, "a file another program holds open is not replaced");
+		CloseHandle(held);
+	}
+	Expect(Bytes(kShare) == "first", "and is unchanged once it is closed");
+	CreateDirectoryW(PathOf(kShareFolder).c_str(), nullptr);
+	Expect(hsb::w32::WriteNew(PathOf(kShareFolder), "x") == hsb::MoveResult::kExists && !Present("pills\\user\\Night run.json.tmp"),
+		"a folder holding the name is never written over");
+	// The rename itself, for a file that takes the name after WriteNew looked.
+	Put(kShareFrom, "late");
+	Expect(hsb::w32::RenameNew(PathOf(kShareFrom), PathOf(kShare)) == hsb::MoveResult::kExists && Bytes(kShare) == "first" &&
+			Bytes(kShareFrom) == "late",
+		"RenameNew onto a name a file holds: exists, and both files stay as they were");
+	Expect(hsb::w32::RenameNew(PathOf(kShareFrom), PathOf(kShareFree)) == hsb::MoveResult::kOk && Bytes(kShareFree) == "late" && !Present(kShareFrom),
+		"RenameNew onto a free name moves the file");
+	Expect(hsb::w32::WriteNew(PathOf("pills\\none\\Lost.json"), "x") == hsb::MoveResult::kFailed && !Present("pills\\none"),
+		"WriteNew into a folder that is not there fails and makes nothing");
+
 	// The gate: without a Documents folder nothing is opened.
 	Clear();
 	Win32ProfileDisk nowhere(L"");
@@ -295,13 +346,7 @@ int main()
 	r = hsb::ProfileSetAside(nowhere, t);
 	Expect(!r.ok && t.held, "no Documents folder: BAD is refused, and writes are held");
 
-	Clear();
-	for (std::wstring dir = g_folder; dir.size() > base.size();) {
-		dir.pop_back();
-		RemoveDirectoryW(dir.c_str());
-		dir.resize(dir.find_last_of(L'\\') + 1);
-	}
-	RemoveDirectoryW(base.c_str());
+	RemoveAll(base);
 	if (g_fails) {
 		std::cerr << g_fails << " of " << g_checks << " failed\n";
 		return 1;

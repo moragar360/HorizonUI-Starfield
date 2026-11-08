@@ -52,6 +52,7 @@ using hsb::w32::NarrowPath;
 using hsb::w32::ReadCapped;
 using hsb::w32::WidenAscii;
 using hsb::w32::Win32ProfileDisk;
+using hsb::w32::WriteNew;
 using hsb::w32::WriteReplace;
 
 std::mutex g_qMu;
@@ -1242,7 +1243,8 @@ hsb::ProfileState g_profileState;
 //    visit started without a loaded profile (that visit keeps the backup as it was); a
 //    damaged profile is renamed to ShipBuilderPills.bad.json, never over an earlier one, and
 //    when that fails, writes are refused for the rest of the visit. A share file with a NUL
-//    byte is refused, as no reply may carry one.
+//    byte is refused, as no reply may carry one. A share write makes a new file and never
+//    replaces one: a name already taken fails with "exists" (hsb::kShareExists).
 // Logging: kind, verb and result only.
 std::string RunFileRequest(const std::string& line)
 {
@@ -1296,8 +1298,10 @@ std::string RunFileRequest(const std::string& line)
 		const std::wstring path = dirs.front() + WidenAscii(r.args[1]);
 		if (!hsb::BuilderFileMayTouch(NarrowPath(path), true)) break;
 		EnsureDirsFor(path);
-		ok = WriteReplace(path, body);
+		const hsb::MoveResult wrote = WriteNew(path, body);
+		ok = wrote == hsb::MoveResult::kOk;
 		if (ok) payload = r.args[1];
+		else if (wrote == hsb::MoveResult::kExists) failReason = std::string(hsb::kShareExists);
 		break;
 	}
 	case hsb::FileVerb::kBad:

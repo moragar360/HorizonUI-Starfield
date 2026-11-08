@@ -4,8 +4,9 @@
 //    folder creation, and the pill profile's disk for hsb_profile.h's rules. In one header so
 //    the plugin and tests/profile_disk_test.cpp run the same code on a real disk.
 // Inputs: wide paths the caller built from its own folders. Outputs: file text and success
-//    flags. Rules: nothing is deleted; every profile file is gated by hsb::BuilderFileMayTouch
-//    before it is opened.
+//    flags. Rules: nothing is deleted; a new file (WriteNew) and a set-aside never replace
+//    what is already there; every profile file is gated by hsb::BuilderFileMayTouch before it
+//    is opened.
 // Dependencies: Win32 and the CRT (_wfopen_s, _commit); hsb_files.h; hsb_profile.h.
 // Author: Moragar. Last modified: 2026-11-08.
 
@@ -84,18 +85,44 @@ inline void EnsureDirsFor(const std::wstring& filePath)
 	CreateDirectoryW(dir.c_str(), nullptr);
 }
 
+// Writes text to path and flushes it to disk. False when any step fails.
+inline bool WriteFlushed(const std::wstring& path, const std::string& text)
+{
+	FILE* file = nullptr;
+	if (_wfopen_s(&file, path.c_str(), L"wb") != 0 || !file) return false;
+	const bool wrote = fwrite(text.data(), 1, text.size(), file) == text.size();
+	const bool flushed = wrote && fflush(file) == 0 && _commit(_fileno(file)) == 0;
+	const bool closed = fclose(file) == 0;
+	return flushed && closed;
+}
+
 // Writes a .tmp twin, flushes it to disk and renames it over the target, so a crash or power
 // loss mid-write never leaves a half or zero-filled file where the player's data was.
 inline bool WriteReplace(const std::wstring& path, const std::string& text)
 {
 	const std::wstring temp = path + L".tmp";
-	FILE* file = nullptr;
-	if (_wfopen_s(&file, temp.c_str(), L"wb") != 0 || !file) return false;
-	const bool wrote = fwrite(text.data(), 1, text.size(), file) == text.size();
-	const bool flushed = wrote && fflush(file) == 0 && _commit(_fileno(file)) == 0;
-	const bool closed = fclose(file) == 0;
-	if (!flushed || !closed) return false;
+	if (!WriteFlushed(temp, text)) return false;
 	return MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+}
+
+// Renames from to a name nothing holds: kExists when a file or folder already holds it, and
+// then both stay as they are.
+inline MoveResult RenameNew(const std::wstring& from, const std::wstring& to)
+{
+	if (MoveFileExW(from.c_str(), to.c_str(), MOVEFILE_WRITE_THROUGH)) return MoveResult::kOk;
+	const DWORD err = GetLastError();
+	return err == ERROR_ALREADY_EXISTS || err == ERROR_FILE_EXISTS ? MoveResult::kExists : MoveResult::kFailed;
+}
+
+// Writes a new file as WriteReplace does, but never over anything: kExists when something
+// holds path already, or takes it before the rename. A .tmp twin left by that race stays, as
+// nothing is deleted.
+inline MoveResult WriteNew(const std::wstring& path, const std::string& text)
+{
+	if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) return MoveResult::kExists;
+	const std::wstring temp = path + L".tmp";
+	if (!WriteFlushed(temp, text)) return MoveResult::kFailed;
+	return RenameNew(temp, path);
 }
 
 // A file, not a folder, is at path.
@@ -124,12 +151,7 @@ public:
 
 	bool WriteReplace(ProfileFile file, std::string_view text) override { return w32::WriteReplace(PathOf(file), std::string(text)); }
 
-	MoveResult MoveNoReplace(ProfileFile from, ProfileFile to) override
-	{
-		if (MoveFileExW(PathOf(from).c_str(), PathOf(to).c_str(), MOVEFILE_WRITE_THROUGH)) return MoveResult::kOk;
-		const DWORD err = GetLastError();
-		return err == ERROR_ALREADY_EXISTS || err == ERROR_FILE_EXISTS ? MoveResult::kExists : MoveResult::kFailed;
-	}
+	MoveResult MoveNoReplace(ProfileFile from, ProfileFile to) override { return RenameNew(PathOf(from), PathOf(to)); }
 
 	void EnsureDir() override { EnsureDirsFor(PathOf(ProfileFile::kProfile)); }
 
