@@ -73,7 +73,7 @@ package
       // Private font strip height: two probe rows, then one row of clone cells.
       private static const FONT_STRIP_H:Number = 58;
       // Private clone cells (FontStrip=1 only): each asks for the vanilla face a different way.
-      private static const CLONE_KINDS:Array = ["c1","c2","c3","c4","c5"];
+      private static const CLONE_KINDS:Array = ["c1","c2","c3","c4","c5","exo"];
       // Paints to wait for a parented custom field before the one-shot FONT field report stops.
       private static const FIELD_TRIES:int = 20;
       // A cancel or accept can arrive both as a DLL key token and as the game's own event.
@@ -480,6 +480,15 @@ package
             var savedDraw:String = err.errorID == 2077 ? "skip" : "na";
             this.note("FONT try=" + this.faceTries + " pick=" + saved + " bold=" + savedBold + " fallback=" + savedFallback + " list=- body=" + savedBody + " why=none head=" + savedHead + " headWhy=none draw=" + savedDraw);
          }
+         // proveFace stays as the list and glyph diagnostic. The labels use one mapped face.
+         try { this.kit.useFace(); }
+         catch(err:Error)
+         {
+            this.kit.face = HsbKit.FACE_FALLBACK;
+            this.kit.embed = true;
+            this.kit.faceFallback = true;
+            this.kit.faceNote = "FONT face err=" + this.errText(err) + " fallback=1";
+         }
          this.note("INIT face end");
          this.note("INIT build begin");
          var built:int = 0;
@@ -497,7 +506,6 @@ package
          this.note("BUILDER " + VERSION + " gold lrg=" + (this.kit.lrg ? 1 : 0) + " built=" + built);
          try
          {
-            this.noteFields();
             if(this.fontStripOn) { this.fontProbe(); }
          }
          catch(err:Error) { this.note("FONT err=probe " + this.errText(err)); }
@@ -515,6 +523,24 @@ package
                if(this.kit.face.length > 0) { this.kit.refreshFaces(); this.restyle(); }
             }
             catch(err:Error) { this.note("FONT err=" + this.errText(err)); }
+         }
+         if(this.kit.faceFallback && (this.frameN == 30 || this.frameN == 120))
+         {
+            try
+            {
+               if(this.kit.retryFace())
+               {
+                  this.kit.refreshFaces();
+                  this.restyle();
+                  var stripOn:Boolean = this.fontStripOn;
+                  if(stripOn) { this.note(this.kit.faceNote); }
+               }
+            }
+            catch(err2:Error)
+            {
+               var stripOn2:Boolean = this.fontStripOn;
+               if(stripOn2) { this.note("FONT face err=" + this.errText(err2)); }
+            }
          }
          if(this.frameN < 2) { return; }
          try { this.adapt(); }
@@ -975,6 +1001,9 @@ package
       private function fontProbe():void
       {
          if(!this.fontStripOn || this.fontStrip != null) { return; }
+         // The menu-open field lines (FONT field, FONT vanilla) log here, so only with FontStrip=1.
+         try { this.noteFields(); }
+         catch(err0:Error) { this.note("FONT err=fields " + this.errText(err0)); }
          var asks:Array = PROBE_FACES.concat(["NB Grotesk R Bold","Roboto Bold","Exo 2 Bold"]);
          var tags:Array = PROBE_TAGS.concat(["NBBold+","RobotoB+","Exo2B+"]);
          var cols:int = asks.length;
@@ -1045,10 +1074,12 @@ package
       // vanilla face a different way: c1 reads the font back after every setup step, c2
       // copies the vanilla field's format, c3 is the HUD's own field recipe, c4 is a new
       // instance of the vanilla label's authored class, and c5 is a field the document
-      // class makes. Each cell has its own catch; a failed cell logs and the next one runs.
+      // class makes, and exo asks for the label face (Exo 2 SemiBold). Each cell has its own
+      // catch; a failed cell logs and the next one runs.
       private function cloneProbe(param1:Sprite, param2:Number):void
       {
          if(!this.fontStripOn || param1 == null) { return; }
+         if(this.kit != null && this.kit.faceNote.length > 0) { this.note(this.kit.faceNote); }
          var label:TextField = this.pathField(["ModuleInfoCard_mc","ModuleLabel_mc","text_tf"]);
          var cw:Number = param2 / CLONE_KINDS.length;
          var i:int = 0;
@@ -1063,7 +1094,8 @@ package
                else if(kind == "c2") { tf = this.cloneC2(label); }
                else if(kind == "c3") { tf = this.cloneC3(); }
                else if(kind == "c4") { tf = this.cloneC4(label); }
-               else { tf = this.cloneC5(); }
+               else if(kind == "c5") { tf = this.cloneC5(); }
+               else { tf = this.cloneExo(); }
             }
             catch(err:Error)
             {
@@ -1154,6 +1186,22 @@ package
          f.align = "left";
          tf.defaultTextFormat = f;
          tf.text = "Ab12 c3";
+         tf.setTextFormat(f);
+         tf.textColor = 0xF2F4F5;
+         return tf;
+      }
+
+      // exo: the label face (HsbKit.FACE, Exo 2 SemiBold) in the HUD recipe, so the strip
+      // shows whether Exo 2 resolves here whatever the labels fell back to.
+      private function cloneExo():TextField
+      {
+         var tf:TextField = new TextField();
+         tf.embedFonts = true;
+         tf.selectable = false;
+         tf.mouseEnabled = false;
+         var f:TextFormat = new TextFormat(HsbKit.FACE,13,0xF2F4F5);
+         tf.defaultTextFormat = f;
+         tf.text = "Ab12 exo";
          tf.setTextFormat(f);
          tf.textColor = 0xF2F4F5;
          return tf;
@@ -1346,8 +1394,8 @@ package
          return s.length > 32 ? s.substring(0,32) : s;
       }
 
-      // One shot, after a paint: the first on-stage custom field of each kind, then the
-      // clone cells again a few frames later (FontStrip=1 only). After FIELD_TRIES paints
+      // One shot, FontStrip=1 only, after a paint: the first on-stage custom field of each
+      // kind, then the clone cells again. After FIELD_TRIES paints
       // without a parented field, it logs that once and stops looking.
       private function noteFieldsLate():void
       {
@@ -1946,7 +1994,7 @@ package
             catch(err:Error) { this.note("PAINT " + key + " fault " + err.errorID); }
          }
          this.dirty = {};
-         if(painted > 0 && !this.fieldsNoted) { this.noteFieldsLate(); }
+         if(painted > 0 && !this.fieldsNoted && this.fontStripOn) { this.noteFieldsLate(); }
       }
 
       private function shown(param1:String):Boolean

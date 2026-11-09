@@ -10,8 +10,8 @@ package
    import flash.text.TextField;
    import flash.text.TextFormat;
 
-   // Purpose: the builder's whole look in one place: colours measured from the approved gold
-   //    mockups, text on the proven game face, panel and control shapes, vector icons, and the
+   // Purpose: the builder's whole look in one place: colors measured from the approved gold
+   //    mockups, text on one embedded face (Exo 2 SemiBold, else the editor's own), panel and control shapes, vector icons, and the
    //    vanilla number format.
    // Inputs: the accent and card opacity from the user settings; the proven face names.
    // Outputs: TextFields and drawing into Graphics. It holds no game state.
@@ -45,6 +45,18 @@ package
       internal static const INK_COUNT:int = 8;
       // Room around a button label (11 each side).
       private static const BUTTON_PAD:Number = 22;
+      // The one face every Horizon label asks for: Exo 2 SemiBold, by the same mapped name the
+      // main HUD uses for its text. A mapped $ name is what renders here (FontStrip cells c1-c5).
+      internal static const FACE:String = "$Horizon_Font";
+      // Used when FACE does not read back in this movie (no Exo 2 library or map): the
+      // vanilla editor's own face, proven by the clone cells.
+      internal static const FACE_FALLBACK:String = "$NB_Grotesk_Semibold";
+      // A field whose face did not resolve reads back the player's default serif at exactly this
+      // many px per letter
+      // (every unresolved probe row in game: 54/9 through 84/14). Both real faces measure about
+      // 6.5-6.8 on "Ab12 exo" at 13 px, so a 0.05 band around 6 cannot catch them. A face that
+      // averages 5.95-6.05 px would be misread as unresolved; neither face here does.
+      private static const TOFU_PER:Number = 6;
 
       internal var accent:uint = 0xE8C547;
       internal var opacity:Number = 0.94;
@@ -57,6 +69,11 @@ package
       internal var embed:Boolean = false;
       // True after the first BitmapData.draw error 2077 in this open. No later draw is tried.
       internal var drawBlocked:Boolean = false;
+      // Set by useFace: true while the labels use FACE_FALLBACK. faceNote is its FONT face line,
+      // logged only with FontStrip=1. It names faces by index (0 FACE, 1 FACE_FALLBACK); read=
+      // and fbRead= are font readbacks, like the FONT clone and FONT field lines.
+      internal var faceFallback:Boolean = false;
+      internal var faceNote:String = "";
       private var fields:Array = [];
 
       public function HsbKit()
@@ -252,8 +269,10 @@ package
          var pick:String = head ? this.boldFace : this.face;
          var style:String = head ? this.boldStyle : this.faceStyle;
          if(pick.length > 0) { fmt.font = pick; }
-         fmt.bold = HsbKit.styleHas(style,"bold");
-         fmt.italic = HsbKit.styleHas(style,"italic");
+         // A flag is set only when the face's style has it. An explicit false is left unset:
+         // a mapped face asked with bold=false and italic=false reads back the default serif.
+         fmt.bold = HsbKit.styleHas(style,"bold") ? true : null;
+         fmt.italic = HsbKit.styleHas(style,"italic") ? true : null;
          fmt.size = this.size(param1);
          fmt.color = param2;
          fmt.letterSpacing = param4;
@@ -357,6 +376,63 @@ package
          return out;
       }
 
+      // Chooses the label face once per open, after proveFace: FACE when a test field asked for
+      // it reads it back with real letter widths, else FACE_FALLBACK. Every label then uses that
+      // one embedded face with no bold or italic flag (the clone-cell recipe that draws).
+      // The fallback is checked too, so a miss of both faces shows in the same line (fbOk=0).
+      internal function useFace():String
+      {
+         var want:Array = this.faceCheck(FACE);
+         var spare:Array = this.faceCheck(FACE_FALLBACK);
+         var ok:Boolean = want[2] == 1;
+         this.face = ok ? FACE : FACE_FALLBACK;
+         this.boldFace = "";
+         this.faceStyle = "";
+         this.boldStyle = "";
+         this.embed = true;
+         this.faceFallback = !ok;
+         this.faceNote = "FONT face want=0 read=" + want[0] + " per=" + want[1] + " ok=" + want[2] + " fbRead=" + spare[0] + " fbPer=" + spare[1] + " fbOk=" + spare[2] + " use=" + (ok ? 0 : 1) + " fallback=" + (ok ? 0 : 1);
+         return this.face;
+      }
+
+      // Tries FACE again while the labels use the fallback (the Exo 2 library may load late).
+      // One way only: fallback to FACE, never back. True when it switched; the caller then
+      // runs refreshFaces. The hub calls it at frames 30 and 120 only.
+      internal function retryFace():Boolean
+      {
+         if(!this.faceFallback) { return false; }
+         var want:Array = this.faceCheck(FACE);
+         if(want[2] != 1) { return false; }
+         this.face = FACE;
+         this.faceFallback = false;
+         this.faceNote = "FONT face want=0 read=" + want[0] + " per=" + want[1] + " ok=1 use=0 fallback=0 late=1";
+         return true;
+      }
+
+      // [readback name, px per letter, 1 when the face resolved]. The field is never shown.
+      // Same order as the clone cells: embedFonts, format, default format, text, set format.
+      internal function faceCheck(param1:String):Array
+      {
+         var shown:String = "-";
+         var per:Number = 0;
+         try
+         {
+            var tf:TextField = new TextField();
+            tf.embedFonts = true;
+            var fmt:TextFormat = new TextFormat(param1,13,TEXT);
+            tf.defaultTextFormat = fmt;
+            tf.text = "Ab12 exo";
+            tf.setTextFormat(fmt);
+            var got:TextFormat = tf.getTextFormat();
+            if(got != null && got.font != null && String(got.font).length > 0) { shown = String(got.font); }
+            per = tf.text.length > 0 ? tf.textWidth / tf.text.length : 0;
+         }
+         catch(err:Error) { shown = "x" + err.errorID; per = 0; }
+         if(shown.length > 32) { shown = shown.substring(0,32); }
+         var ok:Boolean = shown != "-" && shown != "Times New Roman" && shown.charAt(0) != "x" && per > 0 && Math.abs(per - TOFU_PER) >= 0.05;
+         return [shown,per.toFixed(2),ok ? 1 : 0];
+      }
+
       internal function refreshFaces():void
       {
          var kept:Array = [];
@@ -372,8 +448,8 @@ package
                var pick:String = head ? this.boldFace : this.face;
                var style:String = head ? this.boldStyle : this.faceStyle;
                fmt.font = pick.length > 0 ? pick : null;
-               fmt.bold = HsbKit.styleHas(style,"bold");
-               fmt.italic = HsbKit.styleHas(style,"italic");
+               fmt.bold = HsbKit.styleHas(style,"bold") ? true : null;
+               fmt.italic = HsbKit.styleHas(style,"italic") ? true : null;
                tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;
                tf.defaultTextFormat = fmt;
                tf.setTextFormat(fmt);

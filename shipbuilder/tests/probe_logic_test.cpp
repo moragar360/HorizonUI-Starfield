@@ -1099,6 +1099,9 @@ static bool UsesField(const std::string& line, const std::string& field)
 }
 
 // Lines that build log text may carry candidate tags and metrics, never a face name.
+// Exception: font readbacks (FONT clone, FONT field, FONT face read=/fbRead=) are built away
+// from the note line and log only with FontStrip=1 (pinned in CheckMovie); the FONT face line
+// names the asked faces by index only.
 static bool NotesHideFaces(const std::string& source)
 {
 	std::istringstream in(source);
@@ -1375,10 +1378,38 @@ static void CheckMovie(const fs::path& root)
 		Has(FunctionBody(hub, "proveFace"), "var head:Object = this.chooseBold(fonts,noneEmbed);") &&
 		Has(FunctionBody(kit, "text", "internal"), "tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;") &&
 		Has(FunctionBody(kit, "refreshFaces", "internal"), "tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;") &&
-		Has(FunctionBody(kit, "format", "internal"), "fmt.bold = HsbKit.styleHas(style,\"bold\");") &&
-		Has(FunctionBody(kit, "format", "internal"), "fmt.italic = HsbKit.styleHas(style,\"italic\");") &&
-		Has(FunctionBody(kit, "refreshFaces", "internal"), "fmt.bold = HsbKit.styleHas(style,\"bold\");") &&
-		Has(FunctionBody(kit, "refreshFaces", "internal"), "fmt.italic = HsbKit.styleHas(style,\"italic\");") &&
+		Has(FunctionBody(kit, "format", "internal"), "fmt.bold = HsbKit.styleHas(style,\"bold\") ? true : null;") &&
+		Has(FunctionBody(kit, "format", "internal"), "fmt.italic = HsbKit.styleHas(style,\"italic\") ? true : null;") &&
+		Has(FunctionBody(kit, "refreshFaces", "internal"), "fmt.bold = HsbKit.styleHas(style,\"bold\") ? true : null;") &&
+		Has(FunctionBody(kit, "refreshFaces", "internal"), "fmt.italic = HsbKit.styleHas(style,\"italic\") ? true : null;") &&
+		Has(kit, "internal static const FACE:String = \"$Horizon_Font\";") &&
+		Has(kit, "internal static const FACE_FALLBACK:String = \"$NB_Grotesk_Semibold\";") &&
+		InOrder(FunctionBody(kit, "faceCheck", "internal"), {"tf.embedFonts = true;", "var fmt:TextFormat = new TextFormat(param1,13,TEXT);", "tf.defaultTextFormat = fmt;", "tf.text = \"Ab12 exo\";", "tf.setTextFormat(fmt);"}) &&
+		Has(FunctionBody(kit, "faceCheck", "internal"), "shown != \"Times New Roman\"") &&
+		Has(FunctionBody(kit, "faceCheck", "internal"), "Math.abs(per - TOFU_PER) >= 0.05") &&
+		Has(FunctionBody(kit, "useFace", "internal"), "this.face = ok ? FACE : FACE_FALLBACK;") &&
+		Has(FunctionBody(kit, "useFace", "internal"), "this.boldFace = \"\";") &&
+		Has(FunctionBody(hub, "onStage"), "try { this.kit.useFace(); }") &&
+		Has(FunctionBody(hub, "cloneProbe"), "if(this.kit != null && this.kit.faceNote.length > 0) { this.note(this.kit.faceNote); }") &&
+		Has(FunctionBody(hub, "cloneExo"), "new TextFormat(HsbKit.FACE,13,0xF2F4F5)") &&
+		Has(kit, "private static const TOFU_PER:Number = 6;") &&
+		Has(FunctionBody(kit, "retryFace", "internal"), "if(!this.faceFallback) { return false; }") &&
+		Has(FunctionBody(kit, "retryFace", "internal"), "if(want[2] != 1) { return false; }") &&
+		Has(FunctionBody(kit, "retryFace", "internal"), "this.face = FACE;") && Has(FunctionBody(kit, "retryFace", "internal"), "this.faceFallback = false;") &&
+		!Has(FunctionBody(kit, "retryFace", "internal"), "FACE_FALLBACK") &&
+		Has(FunctionBody(kit, "useFace", "internal"), "var spare:Array = this.faceCheck(FACE_FALLBACK);") &&
+		Has(FunctionBody(kit, "useFace", "internal"), "\" fbOk=\" + spare[2]") &&
+		!Has(FunctionBody(kit, "useFace", "internal"), "\"FONT face want=\" + FACE") &&
+		Has(FunctionBody(hub, "onFrame"), "if(this.kit.faceFallback && (this.frameN == 30 || this.frameN == 120))") &&
+		CountOf(FunctionBody(hub, "onFrame"), "this.kit.retryFace()") == 1 &&
+		Has(FunctionBody(hub, "onFrame"), "if(stripOn) { this.note(this.kit.faceNote); }") &&
+		Has(FunctionBody(hub, "onFrame"), "if(stripOn2) { this.note(\"FONT face err=\" + this.errText(err2)); }") &&
+		CountOf(hub, "this.note(this.kit.faceNote);") == 2 && CountOf(hub, "{ this.note(this.kit.faceNote); }") == 2 &&
+		Has(FunctionBody(hub, "cloneProbe"), "if(!this.fontStripOn || param1 == null) { return; }") &&
+		Has(FunctionBody(hub, "onStage"), "this.kit.face = HsbKit.FACE_FALLBACK;") && Has(FunctionBody(hub, "onStage"), "this.kit.faceFallback = true;") &&
+		Has(hub, "CLONE_KINDS:Array = [\"c1\",\"c2\",\"c3\",\"c4\",\"c5\",\"exo\"];") &&
+		Has(FunctionBody(hub, "cloneProbe"), "else if(kind == \"c5\") { tf = this.cloneC5(); }") && Has(FunctionBody(hub, "cloneProbe"), "else { tf = this.cloneExo(); }") &&
+		!Has(FunctionBody(hub, "onStage"), "this.noteFields();") && Has(FunctionBody(hub, "fontProbe"), "try { this.noteFields(); }") && CountOf(hub, "this.noteFields();") == 1 &&
 		Has(FunctionBody(kit, "fieldReport", "internal"), "\"FONT field kind=\" + kind + \" font=\" + shown + \" embed=\"") &&
 		Has(FunctionBody(hub, "noteFields"), "this.note(\"FONT vanilla font=\" + shown + \" embed=\" + embedBit + \" w=\" + wide + \" n=\" + count);") &&
 		InOrder(FunctionBody(hub, "fontProbe"), {"tf.embedFonts = embedOn;", "fmt.size = 13;", "fmt.bold = wantBold;", "fmt.italic = wantBold;", "tf.defaultTextFormat = fmt;", "tf.text = \"Ab12 \" + String(tags[n]);"}) &&
@@ -1395,7 +1426,7 @@ static void CheckMovie(const fs::path& root)
 		Has(FunctionBody(hub, "cloneC4"), "this.stopClip(inst);") &&
 		Has(FunctionBody(hub, "stopClip"), "if(param1 is MovieClip) { MovieClip(param1).stop(); }") &&
 		Has(FunctionBody(hub, "cloneC5"), "kind=c5 skip reason=nomethod") &&
-		Has(FunctionBody(hub, "paintDirty"), "if(painted > 0 && !this.fieldsNoted) { this.noteFieldsLate(); }") &&
+		Has(FunctionBody(hub, "paintDirty"), "if(painted > 0 && !this.fieldsNoted && this.fontStripOn) { this.noteFieldsLate(); }") &&
 		Has(FunctionBody(hub, "noteFieldsLate"), "this.fieldsNoted = true;") &&
 		Has(FunctionBody(hub, "noteFieldsLate"), "if(!this.fontStripOn || this.cloneCells == null) { return; }") &&
 		Has(FunctionBody(hub, "onStage"), "if(this.fontStripOn) { this.fontProbe(); }") &&
@@ -1429,7 +1460,9 @@ static void CheckMovie(const fs::path& root)
 		NotesHideFaces("         this.note(\"FONT try=\" + this.faceTries);"), "the face scan catches a face name in a log line");
 	Expect(Has(kit, "var n:Number = this.lrg ? Math.round(param1 * 1.2) : param1;") && Has(kit, "var floor:Number = this.lrg ? 15 : 12;"),
 		"the movie's text sizes match the twin");
-	Expect(!Has(hub, "fonts_horizon") && !Has(kit, "Exo") && !Has(kit, "Roboto"), "the movie names no Horizon font");
+	// The labels ask for Exo 2 by the HUD's mapped name only; the movie loads no font file itself.
+	Expect(!Has(hub, "fonts_horizon") && !Has(kit, "fonts_horizon") && !Has(kit, "Roboto") && CountOf(kit, "\"$Horizon_") == 1,
+		"the movie asks for the HUD's Exo 2 by one mapped name and loads no font file");
 
 	// Number twins: the movie code that runs in game.
 	Expect(FunctionBody(hub, "statText", "internal static") == R"AS(internal static function statText(param1:Object):String
