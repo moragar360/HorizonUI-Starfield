@@ -1331,6 +1331,21 @@ static void CheckMovie(const fs::path& root)
 		Has(FunctionBody(hub, "proveFace"), "d1=\" + this.widthMark(devOk[0] == true)") &&
 		Has(FunctionBody(hub, "drawMark"), "return \"empty\";") && Has(FunctionBody(hub, "drawMark"), "return \"err\";"),
 		"the FONT line lists embedded names, hasGlyphs, the draw state, the width checks, and the pick");
+	Expect(Has(FunctionBody(hub, "onStage"), "this.note(\"INIT kit begin\");") && Has(FunctionBody(hub, "onStage"), "this.note(\"INIT kit end\");") &&
+		Has(FunctionBody(hub, "onStage"), "this.note(\"INIT face begin\");") && Has(FunctionBody(hub, "onStage"), "this.note(\"INIT face end\");") &&
+		Has(FunctionBody(hub, "onStage"), "this.note(\"INIT build begin\");") && Has(FunctionBody(hub, "onStage"), "this.note(\"INIT build end\");") &&
+		Has(FunctionBody(hub, "onStage"), "this.note(\"FONT err=\" + this.errText(err));") &&
+		Has(FunctionBody(hub, "proveFace"), "this.note(\"FONT phase=list begin\");") &&
+		Has(FunctionBody(hub, "proveFace"), "this.note(\"FONT phase=glyphs begin\");") &&
+		Has(FunctionBody(hub, "proveFace"), "this.note(\"FONT phase=width begin\");") &&
+		Has(FunctionBody(hub, "proveFace"), "this.note(\"FONT phase=draw begin\");") &&
+		Has(FunctionBody(hub, "proveFace"), "this.note(\"FONT phase=pick begin\");") &&
+		Has(FunctionBody(hub, "proveFace"), "this.note(\"FONT err=\" + fault);") &&
+		Has(FunctionBody(hub, "proveFaceWidth"), "embeds.push(true);") &&
+		!Has(FunctionBody(hub, "proveFaceWidth"), "nativeDraws") &&
+		!Has(FunctionBody(hub, "proveFaceWidth"), "enumerateFonts") &&
+		!Has(FunctionBody(hub, "proveFaceWidth"), "hasGlyphs"),
+		"a font-proof failure is logged and the builder still starts from the width check");
 	for (const auto& entry : fs::directory_iterator(as)) {
 		if (entry.path().extension() != ".as") continue;
 		Expect(NotesHideFaces(ReadFile(entry.path())), entry.path().filename().string() + ": log lines name faces by index only");

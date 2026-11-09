@@ -392,17 +392,50 @@ package
       private function onStage(param1:Event):void
       {
          removeEventListener(Event.ADDED_TO_STAGE,this.onStage);
+         this.note("INIT stage begin");
          var url:String = "";
          try { url = String(root.loaderInfo.url); } catch(err:Error) { url = ""; }
-         this.kit = new HsbKit();
-         this.kit.lrg = url.indexOf("_lrg") >= 0;
-         this.proveFace();
-         this.pills = new HsbPillModel();
-         this.build();
-         this.listen();
-         this.fileOp("PROFILE",["READ"],"",this.onProfile);
-         stage.addEventListener(Event.ENTER_FRAME,this.onFrame);
+         this.note("INIT kit begin");
+         try
+         {
+            this.kit = new HsbKit();
+            this.kit.lrg = url.indexOf("_lrg") >= 0;
+            this.note("INIT kit end");
+         }
+         catch(err:Error)
+         {
+            this.note("INIT err=kit " + this.errText(err));
+            this.note("BUILDER " + VERSION + " gold lrg=0");
+            return;
+         }
+         // The font proof is not allowed to stop the builder. A verify failure is thrown
+         // at this call, before proveFace's own catch can run, so the catch lives here.
+         this.note("INIT face begin");
+         try { this.proveFace(); }
+         catch(err:Error)
+         {
+            this.note("FONT err=" + this.errText(err));
+            if(this.faceTries < 1) { this.faceTries = 1; }
+            var saved:String = "0";
+            try { saved = this.proveFaceWidth(); }
+            catch(err2:Error) { this.note("FONT err=width " + this.errText(err2)); }
+            var savedBold:int = this.kit.boldFace.length > 0 ? 1 : 0;
+            this.note("FONT try=" + this.faceTries + " pick=" + saved + " bold=" + savedBold + " list=- e1=- e2=- e3=- n4=- draw=na d1=0 d2=0 d3=0");
+         }
+         this.note("INIT face end");
+         this.note("INIT build begin");
+         try
+         {
+            this.pills = new HsbPillModel();
+            this.build();
+            this.listen();
+            this.fileOp("PROFILE",["READ"],"",this.onProfile);
+            stage.addEventListener(Event.ENTER_FRAME,this.onFrame);
+            this.note("INIT build end");
+         }
+         catch(err:Error) { this.note("INIT err=build " + this.errText(err)); }
          this.note("BUILDER " + VERSION + " gold lrg=" + (this.kit.lrg ? 1 : 0));
+         this.note("INIT stage end");
       }
 
       private function onFrame(param1:Event):void
@@ -410,8 +443,12 @@ package
          this.frameN++;
          if(this.kit.face.length == 0 && this.faceTries < 3 && (this.frameN == 30 || this.frameN == 120))
          {
-            this.proveFace();
-            if(this.kit.face.length > 0) { this.kit.refreshFaces(); this.restyle(); }
+            try
+            {
+               this.proveFace();
+               if(this.kit.face.length > 0) { this.kit.refreshFaces(); this.restyle(); }
+            }
+            catch(err:Error) { this.note("FONT err=" + this.errText(err)); }
          }
          if(this.frameN < 2) { return; }
          try { this.adapt(); }
@@ -427,48 +464,198 @@ package
       // count, even when the field has ink. A zero-size field and a sample that throws
       // are not ink. Device text still needs W and i to measure apart from a name that
       // cannot exist, and that width result is what d1 to d3 log.
+      // Each new call is its own phase. A throw, including a verify failure entering
+      // the callee, is caught here. The face then comes from the width check that
+      // already ran in game, and the FONT line is still written.
       private function proveFace():void
       {
          this.faceTries++;
          this.kit.face = "";
          this.kit.boldFace = "";
          this.kit.embed = false;
-         var fonts:Array = this.embeddedFonts();
-         var list:String = this.embeddedList(fonts);
-         var noneDev:Array = this.measureFace(NO_FACE,false);
-         var ge:Array = [];
-         var devOk:Array = [];
-         var i:int = 0;
-         while(i < FACES.length)
-         {
-            ge.push(this.glyphsOf(String(FACES[i]),fonts));
-            devOk.push(this.faceProven(this.measureFace(String(FACES[i]),false),noneDev));
-            i++;
-         }
-         var label:TextField = this.pathField(["ModuleInfoCard_mc","ModuleLabel_mc","text_tf"]);
-         var labelFace:String = this.fieldFace(label);
-         var hasLabel:Boolean = labelFace.length > 0;
+         var fault:String = "";
+         var fonts:Array = [];
+         var list:String = "-";
+         var ge:Array = [-1,-1,-1];
+         var devOk:Array = [false,false,false];
+         var noneDev:Array = [0,0,0];
          var draw:int = -3;
-         if(label != null) { draw = this.kit.nativeDraws(label); }
-         var n4g:int = hasLabel ? this.glyphsOf(labelFace,fonts) : -1;
+         var n4g:int = -1;
+         var hasLabel:Boolean = false;
+         var pick:String = "0";
+         var label:TextField = null;
+         var labelFace:String = "";
+         this.note("FONT phase=list begin");
+         try
+         {
+            fonts = this.embeddedFonts();
+            list = this.embeddedList(fonts);
+            this.note("FONT phase=list end");
+         }
+         catch(err:Error) { fault = "list " + this.errText(err); }
+         if(fault.length == 0)
+         {
+            this.note("FONT phase=glyphs begin");
+            try
+            {
+               var i:int = 0;
+               while(i < FACES.length)
+               {
+                  ge[i] = this.glyphsOf(String(FACES[i]),fonts);
+                  i++;
+               }
+               this.note("FONT phase=glyphs end");
+            }
+            catch(err:Error) { fault = "glyphs " + this.errText(err); }
+         }
+         if(fault.length == 0)
+         {
+            this.note("FONT phase=width begin");
+            try
+            {
+               noneDev = this.measureFace(NO_FACE,false);
+               var j:int = 0;
+               while(j < FACES.length)
+               {
+                  devOk[j] = this.faceProven(this.measureFace(String(FACES[j]),false),noneDev);
+                  j++;
+               }
+               this.note("FONT phase=width end");
+            }
+            catch(err:Error) { fault = "width " + this.errText(err); }
+         }
+         if(fault.length == 0)
+         {
+            this.note("FONT phase=draw begin");
+            try
+            {
+               label = this.pathField(["ModuleInfoCard_mc","ModuleLabel_mc","text_tf"]);
+               labelFace = this.fieldFace(label);
+               hasLabel = labelFace.length > 0;
+               if(label != null) { draw = this.kit.nativeDraws(label); }
+               n4g = hasLabel ? this.glyphsOf(labelFace,fonts) : -1;
+               this.note("FONT phase=draw end");
+            }
+            catch(err:Error) { fault = "draw " + this.errText(err); }
+         }
+         if(fault.length == 0)
+         {
+            this.note("FONT phase=pick begin");
+            try
+            {
+               var names:Array = [];
+               var embeds:Array = [];
+               var glyphs:Array = [];
+               var tags:Array = [];
+               var n:int = 0;
+               while(n < FACES.length)
+               {
+                  names.push(String(FACES[n]));
+                  embeds.push(true);
+                  glyphs.push(ge[n]);
+                  tags.push("e" + (n + 1));
+                  n++;
+               }
+               if(hasLabel)
+               {
+                  names.push(labelFace);
+                  embeds.push(label.embedFonts);
+                  glyphs.push(n4g);
+                  tags.push("n4");
+               }
+               n = 0;
+               while(n < FACES.length)
+               {
+                  names.push(String(FACES[n]));
+                  embeds.push(false);
+                  glyphs.push(ge[n]);
+                  tags.push("d" + (n + 1));
+                  n++;
+               }
+               var k:int = 0;
+               var devAt:int = 0;
+               while(k < names.length)
+               {
+                  var embed:Boolean = embeds[k] == true;
+                  var tag:String = String(tags[k]);
+                  var g:int = int(glyphs[k]);
+                  var ok:Boolean = false;
+                  if(tag == "n4") { ok = g == 1 || (g < 0 && draw == 1); }
+                  else if(embed) { ok = g == 1; }
+                  else
+                  {
+                     ok = devOk[devAt] == true;
+                     devAt++;
+                  }
+                  if(ok && pick == "0")
+                  {
+                     pick = tag;
+                     this.kit.face = String(names[k]);
+                     // n4=1 is an embedded face that covered the probe, so new fields embed it.
+                     // An unlisted native face is kept as the field itself draws it.
+                     this.kit.embed = tag == "n4" ? g == 1 : embed;
+                  }
+                  k++;
+               }
+               // Bold uses the game bold face only when it can draw the same way as the body.
+               // An embedded bold face needs the probe glyphs. Device body text needs the width check.
+               if(this.kit.face.length > 0 && this.kit.face != String(FACES[1]))
+               {
+                  var boldName:String = String(FACES[1]);
+                  if(this.kit.embed)
+                  {
+                     if(this.glyphsOf(boldName,fonts) == 1) { this.kit.boldFace = boldName; }
+                  }
+                  else if(this.faceProven(this.measureFace(boldName,false),noneDev))
+                  {
+                     this.kit.boldFace = boldName;
+                  }
+               }
+               this.note("FONT phase=pick end");
+            }
+            catch(err:Error) { fault = "pick " + this.errText(err); }
+         }
+         if(fault.length > 0)
+         {
+            this.note("FONT err=" + fault);
+            try { pick = this.proveFaceWidth(); }
+            catch(err:Error) { this.note("FONT err=width " + this.errText(err)); pick = "0"; }
+         }
+         this.facePick = pick;
+         var boldOk:int = this.kit.boldFace.length > 0 ? 1 : 0;
+         var n4mark:String = hasLabel ? this.glyphMark(n4g) : "-";
+         var report:String = "e1=" + this.glyphMark(int(ge[0])) + " e2=" + this.glyphMark(int(ge[1])) + " e3=" + this.glyphMark(int(ge[2])) + " n4=" + n4mark + " draw=" + this.drawMark(draw) + " d1=" + this.widthMark(devOk[0] == true) + " d2=" + this.widthMark(devOk[1] == true) + " d3=" + this.widthMark(devOk[2] == true);
+         if(fault.length > 0) { report += " err=" + fault; }
+         this.note("FONT try=" + this.faceTries + " pick=" + pick + " bold=" + boldOk + " list=" + list + " " + report);
+      }
+
+      // The width check used before the glyph proof. Embedded names first, then the
+      // module-name field, then device names. The first pair whose W and i differ
+      // from a missing name wins. In the last in-game session that was e1.
+      private function proveFaceWidth():String
+      {
+         this.kit.face = "";
+         this.kit.boldFace = "";
+         this.kit.embed = false;
+         var none:Array = this.measureFace(NO_FACE,true);
+         var noneDev:Array = this.measureFace(NO_FACE,false);
          var names:Array = [];
          var embeds:Array = [];
-         var glyphs:Array = [];
          var tags:Array = [];
-         i = 0;
+         var i:int = 0;
          while(i < FACES.length)
          {
             names.push(String(FACES[i]));
             embeds.push(true);
-            glyphs.push(ge[i]);
             tags.push("e" + (i + 1));
             i++;
          }
-         if(hasLabel)
+         var label:TextField = this.pathField(["ModuleInfoCard_mc","ModuleLabel_mc","text_tf"]);
+         var labelFace:String = this.fieldFace(label);
+         if(labelFace.length > 0)
          {
             names.push(labelFace);
             embeds.push(label.embedFonts);
-            glyphs.push(n4g);
             tags.push("n4");
          }
          i = 0;
@@ -476,55 +663,41 @@ package
          {
             names.push(String(FACES[i]));
             embeds.push(false);
-            glyphs.push(ge[i]);
             tags.push("d" + (i + 1));
             i++;
          }
          var pick:String = "0";
          var k:int = 0;
-         var devAt:int = 0;
          while(k < names.length)
          {
             var embed:Boolean = embeds[k] == true;
-            var tag:String = String(tags[k]);
-            var g:int = int(glyphs[k]);
-            var ok:Boolean = false;
-            if(tag == "n4") { ok = g == 1 || (g < 0 && draw == 1); }
-            else if(embed) { ok = g == 1; }
-            else
+            var measured:Array = this.measureFace(String(names[k]),embed);
+            if(this.faceProven(measured,embed ? none : noneDev) && pick == "0")
             {
-               ok = devOk[devAt] == true;
-               devAt++;
-            }
-            if(ok && pick == "0")
-            {
-               pick = tag;
+               pick = String(tags[k]);
                this.kit.face = String(names[k]);
-               // n4=1 is an embedded face that covered the probe, so new fields embed it.
-               // An unlisted native face is kept as the field itself draws it.
-               this.kit.embed = tag == "n4" ? g == 1 : embed;
+               this.kit.embed = embed;
             }
             k++;
          }
-         // Bold uses the game bold face only when it can draw the same way as the body.
-         // An embedded bold face needs the probe glyphs. Device body text needs the width check.
          if(this.kit.face.length > 0 && this.kit.face != String(FACES[1]))
          {
-            var boldName:String = String(FACES[1]);
-            if(this.kit.embed)
-            {
-               if(this.glyphsOf(boldName,fonts) == 1) { this.kit.boldFace = boldName; }
-            }
-            else if(this.faceProven(this.measureFace(boldName,false),noneDev))
-            {
-               this.kit.boldFace = boldName;
-            }
+            var bold:Array = this.measureFace(String(FACES[1]),this.kit.embed);
+            if(this.faceProven(bold,this.kit.embed ? none : noneDev)) { this.kit.boldFace = String(FACES[1]); }
          }
          this.facePick = pick;
-         var boldOk:int = this.kit.boldFace.length > 0 ? 1 : 0;
-         var n4mark:String = hasLabel ? this.glyphMark(n4g) : "-";
-         var report:String = "e1=" + this.glyphMark(int(ge[0])) + " e2=" + this.glyphMark(int(ge[1])) + " e3=" + this.glyphMark(int(ge[2])) + " n4=" + n4mark + " draw=" + this.drawMark(draw) + " d1=" + this.widthMark(devOk[0] == true) + " d2=" + this.widthMark(devOk[1] == true) + " d3=" + this.widthMark(devOk[2] == true);
-         this.note("FONT try=" + this.faceTries + " pick=" + pick + " bold=" + boldOk + " list=" + list + " " + report);
+         return pick;
+      }
+
+      private function errText(param1:Error):String
+      {
+         var msg:String = param1 == null ? "unknown" : String(param1.errorID);
+         if(param1 != null && param1.message != null)
+         {
+            msg += " " + String(param1.message).split("\n").join(" ").split("\r").join(" ");
+         }
+         if(msg.length > 120) { msg = msg.substring(0,120); }
+         return msg;
       }
 
       private function embeddedFonts():Array
