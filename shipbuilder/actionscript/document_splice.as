@@ -85,6 +85,25 @@ package
       //       if(this.hsb != null) { this.hsb.files(param1); }
       //    }
       //
+      // 4b. Private font test only (clone cell c5). Add this method on SpaceshipEditorMenu.
+      //    It makes one TextField inside the document class, the way the HUD's own text
+      //    code does. Without it, c5 logs skip reason=nomethod and nothing else changes.
+      //    If the class does not already import them, add import flash.text.TextField;
+      //    and import flash.text.TextFormat; next to its other imports.
+      //    public function hsbNewText(param1:String, param2:Number, param3:uint, param4:String):TextField
+      //    {
+      //       var t:TextField = new TextField();
+      //       t.embedFonts = true;
+      //       t.selectable = false;
+      //       t.mouseEnabled = false;
+      //       var f:TextFormat = new TextFormat(param1,param2,param3);
+      //       t.defaultTextFormat = f;
+      //       t.text = param4;
+      //       t.setTextFormat(f);
+      //       t.textColor = param3;
+      //       return t;
+      //    }
+      //
       // 5. ProcessUserEvent returns Boolean. While a Horizon popup, dialog, text
       //    field, the category grid or Arrange is open, return true before the
       //    vanilla body so Esc does not open the exit confirm. Do not return early

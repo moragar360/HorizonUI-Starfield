@@ -1322,7 +1322,14 @@ static void CheckMovie(const fs::path& root)
 		Has(FunctionBody(hub, "chooseBold"), "this.styleIsBold(style)") &&
 		Has(FunctionBody(hub, "styleIsBold"), "param1.toLowerCase().indexOf(\"bold\") >= 0") &&
 		Has(FunctionBody(kit, "nativeDraws", "internal"), "return -1;") &&
-		Has(FunctionBody(kit, "nativeDraws", "internal"), "return -2;") &&
+		Has(FunctionBody(kit, "nativeDraws", "internal"), "if(this.drawBlocked) { return -4; }") &&
+		Has(FunctionBody(kit, "nativeDraws", "internal"), "result = this.drawFault(err);") &&
+		Has(FunctionBody(kit, "nativeDraws", "internal"), "this.dropPixels(pixels);") &&
+		!Has(FunctionBody(kit, "nativeDraws", "internal"), "catch(err:Error)") &&
+		Has(FunctionBody(kit, "drawFault", "internal"), "this.drawBlocked = true;") &&
+		Has(FunctionBody(kit, "drawFault", "internal"), "return -2;") &&
+		Has(FunctionBody(kit, "turnUp", "internal"), "if(this.drawBlocked)") &&
+		Has(FunctionBody(hub, "proveFace"), "if(err.errorID == 2077 && this.kit != null) { this.kit.drawBlocked = true; }") &&
 		!Has(FunctionBody(kit, "nativeDraws", "internal"), "return true;"),
 		"a listed face is ranked by hasGlyphs or width, and draw error 2077 does not count");
 	Expect(Has(FunctionBody(kit, "turnUp", "internal"), "if(this.embed)") && Has(FunctionBody(kit, "turnUp", "internal"), "param1.rotation = -90;") &&
@@ -1378,6 +1385,19 @@ static void CheckMovie(const fs::path& root)
 		Has(FunctionBody(hub, "fontProbe"), "this.note(\"FONT probe ask=\" + asked + \" embed=\" + bit + \" bold=\" + boldBit + \" italic=\" + boldBit + \" font=\" + shown + \" w=\" + int(tf.textWidth) + \" n=\" + tf.text.length);") &&
 		Has(FunctionBody(hub, "fontProbe"), "if(!this.fontStripOn || this.fontStrip != null) { return; }") &&
 		Has(FunctionBody(hub, "fontProbe"), "var span:Number = Number(r.width);") &&
+		Has(FunctionBody(hub, "fontProbe"), "try { this.cloneProbe(strip,span); }") &&
+		Has(FunctionBody(hub, "cloneProbe"), "if(!this.fontStripOn || param1 == null) { return; }") &&
+		Has(FunctionBody(hub, "noteClone"), "\"FONT clone kind=\" + param1 + \" stage=\" + onBit + \" font=\" + this.readFont(param2) + \" w=\" + int(w) + \" n=\" + n + \" per=\" + per") &&
+		Has(FunctionBody(hub, "noteClone"), "if(line.length > 440)") &&
+		Has(FunctionBody(hub, "cloneC4"), "kind=c4 skip reason=") &&
+		Has(FunctionBody(hub, "cloneC4"), "var found:TextField = this.labelIn(inst,\"ModuleLabel_mc\");") &&
+		Has(FunctionBody(hub, "cloneC4"), "\" pick=\" + pick + \" field=\" + where") &&
+		Has(FunctionBody(hub, "cloneC4"), "this.stopClip(inst);") &&
+		Has(FunctionBody(hub, "stopClip"), "if(param1 is MovieClip) { MovieClip(param1).stop(); }") &&
+		Has(FunctionBody(hub, "cloneC5"), "kind=c5 skip reason=nomethod") &&
+		Has(FunctionBody(hub, "paintDirty"), "if(painted > 0 && !this.fieldsNoted) { this.noteFieldsLate(); }") &&
+		Has(FunctionBody(hub, "noteFieldsLate"), "this.fieldsNoted = true;") &&
+		Has(FunctionBody(hub, "noteFieldsLate"), "if(!this.fontStripOn || this.cloneCells == null) { return; }") &&
 		Has(FunctionBody(hub, "onStage"), "if(this.fontStripOn) { this.fontProbe(); }") &&
 		Has(FunctionBody(hub, "onStage"), "var savedDraw:String = err.errorID == 2077 ? \"skip\" : \"na\";") &&
 		Has(FunctionBody(hub, "applyKey"), "case \"fontstrip\":") &&
@@ -1486,6 +1506,8 @@ static void CheckMovie(const fs::path& root)
 	for (const char* method : {"hsbProbePing", "hsbTakeLines", "hsbProbeStage", "hsbSetDebug", "hsbApply", "hsbFeed", "hsbSaved", "hsbTakeFiles", "hsbFiles"}) {
 		Expect(Has(splice, std::string("public function ") + method + "("), std::string("the splice adds ") + method);
 	}
+	Expect(Has(splice, "public function hsbNewText(param1:String, param2:Number, param3:uint, param4:String):TextField"),
+		"the splice notes the private c5 text factory");
 	Expect(Has(splice, "if(this.hsb != null && this.hsb.wantsEvent(param1, param2))") && Has(splice, "Do not return early") &&
 		Has(splice, "the category grid or Arrange is open"), "the splice consumes controller events only while Horizon captures");
 	Expect(Has(splice, "has no onAddedToStage") && Has(splice, "import HorizonShipBuilder;") && Has(splice, "Do not construct HorizonShipBuilderProbe here."),

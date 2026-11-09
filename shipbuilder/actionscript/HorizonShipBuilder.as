@@ -5,6 +5,7 @@ package
    import Shared.GlobalFunc;
    import flash.display.DisplayObject;
    import flash.display.DisplayObjectContainer;
+   import flash.display.MovieClip;
    import flash.display.InteractiveObject;
    import flash.display.Graphics;
    import flash.display.Sprite;
@@ -17,6 +18,7 @@ package
    import flash.text.TextFieldType;
    import flash.text.TextFormat;
    import flash.utils.getDefinitionByName;
+   import flash.utils.getQualifiedClassName;
 
    // Purpose: Horizon Ship Builder 0.2. Draws the whole builder interface from the approved gold
    //    mockups and drives the game's own builder underneath it. The vanilla panels stay alive at
@@ -68,8 +70,12 @@ package
          "Flight":["FlightCheck_mc"]
       };
       private static const LOG_CAP:int = 200;
-      // Button and symbol faces. A fallback pick must not land on one of these.
-      private static const FONT_STRIP_H:Number = 36;
+      // Private font strip height: two probe rows, then one row of clone cells.
+      private static const FONT_STRIP_H:Number = 58;
+      // Private clone cells (FontStrip=1 only): each asks for the vanilla face a different way.
+      private static const CLONE_KINDS:Array = ["c1","c2","c3","c4","c5"];
+      // Paints to wait for a parented custom field before the one-shot FONT field report stops.
+      private static const FIELD_TRIES:int = 20;
       // A cancel or accept can arrive both as a DLL key token and as the game's own event.
       private static const DOUBLE_FRAMES:int = 6;
       private static const FILE_QUEUE_MAX:int = 64;
@@ -191,6 +197,10 @@ package
       private var fontStripOn:Boolean = false;
       private var fontStrip:Sprite;
       private var fontStripH:Number = 0;
+      private var cloneCells:Array;
+      private var cloneNote:String = "";
+      private var fieldsNoted:Boolean = false;
+      private var fieldTries:int = 0;
       private var heldEvents:Object;
       private var lastCancel:int = -100;
       private var lastOk:int = -100;
@@ -215,6 +225,10 @@ package
          this.linesDropped = 0;
          this.fontStripOn = false;
          this.fontStripH = 0;
+         this.cloneCells = [];
+         this.cloneNote = "";
+         this.fieldsNoted = false;
+         this.fieldTries = 0;
          this.debugOn = false;
          this.startOpen = {"Power":true,"Module":true,"Credits":true,"Browser":true,"Stats":true,"Hints":true};
          this.columnSets = {};
@@ -611,6 +625,7 @@ package
          catch(err:Error)
          {
             draw = err.errorID == 2077 ? -4 : -2;
+            if(err.errorID == 2077 && this.kit != null) { this.kit.drawBlocked = true; }
             this.note("FONT err=draw " + this.errText(err));
             this.note("FONT phase=draw end");
          }
@@ -1021,7 +1036,348 @@ package
          this.fontStrip = strip;
          this.fontStripH = FONT_STRIP_H;
          this.addChild(strip);
+         try { this.cloneProbe(strip,span); }
+         catch(err:Error) { this.note("FONT clone err=" + this.errText(err)); }
          if(this.power != null) { this.place(); }
+      }
+
+      // Private clone cells, row 3 of the strip (FontStrip=1 only). Each cell asks for the
+      // vanilla face a different way: c1 reads the font back after every setup step, c2
+      // copies the vanilla field's format, c3 is the HUD's own field recipe, c4 is a new
+      // instance of the vanilla label's authored class, and c5 is a field the document
+      // class makes. Each cell has its own catch; a failed cell logs and the next one runs.
+      private function cloneProbe(param1:Sprite, param2:Number):void
+      {
+         if(!this.fontStripOn || param1 == null) { return; }
+         var label:TextField = this.pathField(["ModuleInfoCard_mc","ModuleLabel_mc","text_tf"]);
+         var cw:Number = param2 / CLONE_KINDS.length;
+         var i:int = 0;
+         while(i < CLONE_KINDS.length)
+         {
+            var kind:String = String(CLONE_KINDS[i]);
+            var tf:TextField = null;
+            this.cloneNote = "";
+            try
+            {
+               if(kind == "c1") { tf = this.cloneC1(param1); }
+               else if(kind == "c2") { tf = this.cloneC2(label); }
+               else if(kind == "c3") { tf = this.cloneC3(); }
+               else if(kind == "c4") { tf = this.cloneC4(label); }
+               else { tf = this.cloneC5(); }
+            }
+            catch(err:Error)
+            {
+               tf = null;
+               this.note("FONT clone kind=" + kind + " err=" + this.errText(err));
+            }
+            if(tf != null)
+            {
+               try
+               {
+                  tf.mouseEnabled = false;
+                  tf.selectable = false;
+                  tf.width = cw - 4;
+                  tf.height = 18;
+                  tf.x = i * cw + 2;
+                  tf.y = 38;
+                  if(tf.parent != param1) { param1.addChild(tf); }
+                  this.cloneCells.push({"kind":kind,"tf":tf,"note":this.cloneNote});
+                  this.noteClone(kind,tf,this.cloneNote);
+               }
+               catch(err2:Error) { this.note("FONT clone kind=" + kind + " err=" + this.errText(err2)); }
+            }
+            i++;
+         }
+      }
+
+      // c1: the probe recipe, with the font read back after each step.
+      private function cloneC1(param1:Sprite):TextField
+      {
+         var steps:Array = [];
+         var tf:TextField = new TextField();
+         steps.push("new:" + this.readFont(tf));
+         var fmt:TextFormat = new TextFormat();
+         fmt.font = String(FACES[0]);
+         fmt.size = 13;
+         fmt.color = 0xF2F4F5;
+         steps.push("format:" + this.fontTag(fmt));
+         try { tf.embedFonts = true; steps.push("embed:" + this.readFont(tf)); }
+         catch(err:Error) { steps.push("embed:x" + err.errorID); }
+         try { tf.defaultTextFormat = fmt; steps.push("default:" + this.readFont(tf)); }
+         catch(err2:Error) { steps.push("default:x" + err2.errorID); }
+         try { tf.setTextFormat(fmt); steps.push("set:" + this.readFont(tf)); }
+         catch(err3:Error) { steps.push("set:x" + err3.errorID); }
+         try { tf.text = "Ab12 c1"; steps.push("text:" + this.readFont(tf)); }
+         catch(err4:Error) { steps.push("text:x" + err4.errorID); }
+         try { param1.addChild(tf); steps.push("add:" + this.readFont(tf)); }
+         catch(err5:Error) { steps.push("add:x" + err5.errorID); }
+         this.cloneNote = "steps=" + steps.join("|");
+         return tf;
+      }
+
+      // c2: a new field that takes the vanilla module-name field's own format and embed flag.
+      private function cloneC2(param1:TextField):TextField
+      {
+         if(param1 == null) { this.note("FONT clone kind=c2 skip reason=nolabel"); return null; }
+         var src:String = "get";
+         var vfmt:TextFormat = null;
+         try { vfmt = param1.getTextFormat(); } catch(err:Error) { vfmt = null; }
+         if(vfmt == null || vfmt.font == null)
+         {
+            src = "default";
+            try { vfmt = param1.defaultTextFormat; } catch(err2:Error) { vfmt = null; }
+         }
+         if(vfmt == null) { this.note("FONT clone kind=c2 skip reason=noformat"); return null; }
+         vfmt.size = 13;
+         vfmt.color = 0xF2F4F5;
+         var tf:TextField = new TextField();
+         tf.embedFonts = param1.embedFonts;
+         try { tf.antiAliasType = param1.antiAliasType; } catch(err3:Error) { }
+         tf.defaultTextFormat = vfmt;
+         tf.text = "Ab12 c2";
+         tf.setTextFormat(vfmt);
+         this.cloneNote = "src=" + src + " ask=" + this.fontTag(vfmt);
+         return tf;
+      }
+
+      // c3: the HUD's own recipe, which draws text in HUDMenu (horizon_block hz42VehTf):
+      // embed, the TextFormat constructor, default format, text, set format, text color.
+      private function cloneC3():TextField
+      {
+         var tf:TextField = new TextField();
+         tf.embedFonts = true;
+         tf.selectable = false;
+         tf.mouseEnabled = false;
+         tf.autoSize = "left";
+         var f:TextFormat = new TextFormat(String(FACES[0]),13,0xF2F4F5);
+         f.letterSpacing = 0;
+         f.align = "left";
+         tf.defaultTextFormat = f;
+         tf.text = "Ab12 c3";
+         tf.setTextFormat(f);
+         tf.textColor = 0xF2F4F5;
+         return tf;
+      }
+
+      // c4: a new instance of the authored class around the vanilla label. Its TextField is
+      // bound to the movie's font by the authored symbol, not by name. Only size and color
+      // are set; the font is left alone. Up to two parents are tried. The instance's own
+      // ModuleLabel_mc.text_tf (or text_tf) is taken first; the child walk is the fallback.
+      // The line names the field taken. The rest of the instance is stopped and dropped.
+      private function cloneC4(param1:TextField):TextField
+      {
+         if(param1 == null) { this.note("FONT clone kind=c4 skip reason=nolabel"); return null; }
+         var reasons:Array = [];
+         var node:DisplayObjectContainer = param1.parent;
+         var hop:int = 0;
+         while(node != null && hop < 2)
+         {
+            var cname:String = "-";
+            try { cname = getQualifiedClassName(node); } catch(err:Error) { cname = "-"; }
+            if(cname == "-" || cname.indexOf("flash.") == 0)
+            {
+               reasons.push("generic:" + cname);
+            }
+            else
+            {
+               var cls:Class = null;
+               try { cls = getDefinitionByName(cname) as Class; } catch(err2:Error) { cls = null; }
+               if(cls == null) { reasons.push("nodef:" + cname); }
+               else
+               {
+                  var made:Object = null;
+                  var inst:DisplayObjectContainer = null;
+                  try { made = new cls(); }
+                  catch(err3:Error) { made = null; reasons.push("ctor:" + cname + ":" + err3.errorID); }
+                  if(made != null)
+                  {
+                     inst = made as DisplayObjectContainer;
+                     if(inst == null) { reasons.push("notcontainer:" + cname); }
+                  }
+                  var pick:String = "path";
+                  var found:TextField = this.labelIn(inst,"ModuleLabel_mc");
+                  if(found == null) { pick = "self"; found = this.labelIn(inst,""); }
+                  if(found == null) { pick = "walk"; found = this.firstText(inst,3); }
+                  if(found == null) { if(inst != null) { reasons.push("notext:" + cname); } }
+                  else
+                  {
+                     var where:String = this.nameTag(found.parent) + "." + this.nameTag(found);
+                     if(found.parent != null) { found.parent.removeChild(found); }
+                     this.stopClip(inst);
+                     inst = null;
+                     made = null;
+                     var fmt:TextFormat = new TextFormat();
+                     fmt.size = 13;
+                     fmt.color = 0xF2F4F5;
+                     found.text = "Ab12 c4";
+                     found.setTextFormat(fmt);
+                     var shown:String = cname.length > 80 ? cname.substring(0,80) : cname;
+                     this.cloneNote = "class=" + shown + " hop=" + hop + " pick=" + pick + " field=" + where;
+                     return found;
+                  }
+                  this.stopClip(inst);
+                  inst = null;
+                  made = null;
+               }
+            }
+            try { node = node.parent; } catch(err4:Error) { node = null; }
+            hop++;
+         }
+         var why:String = reasons.length > 0 ? reasons.join(",") : "noparent";
+         if(why.length > 300) { why = why.substring(0,300); }
+         this.note("FONT clone kind=c4 skip reason=" + why);
+         return null;
+      }
+
+      // c4 helper: param1[param2].text_tf, or param1.text_tf when param2 is "". Null when
+      // either step is missing or the lookup throws (sealed class).
+      private function labelIn(param1:DisplayObjectContainer, param2:String):TextField
+      {
+         if(param1 == null) { return null; }
+         var hit:TextField = null;
+         try
+         {
+            var holder:Object = param2.length > 0 ? param1[param2] : param1;
+            if(holder != null) { hit = holder["text_tf"] as TextField; }
+         }
+         catch(err:Error) { hit = null; }
+         return hit;
+      }
+
+      // c4 helper: an instance name for the log, capped at 40, "-" when unnamed.
+      private function nameTag(param1:DisplayObject):String
+      {
+         if(param1 == null) { return "-"; }
+         var s:String = "-";
+         try { if(param1.name != null && param1.name.length > 0) { s = param1.name; } }
+         catch(err:Error) { s = "-"; }
+         return s.length > 40 ? s.substring(0,40) : s;
+      }
+
+      // c4 helper: a discarded instance stops its timeline. Not every instance is a MovieClip.
+      private function stopClip(param1:DisplayObjectContainer):void
+      {
+         if(param1 == null) { return; }
+         try { if(param1 is MovieClip) { MovieClip(param1).stop(); } }
+         catch(err:Error) { }
+      }
+
+      // c5: the document class makes the field (splice step 4b, hsbNewText). A movie
+      // spliced without that method logs skip.
+      private function cloneC5():TextField
+      {
+         var maker:Function = null;
+         try { maker = this.host["hsbNewText"] as Function; } catch(err:Error) { maker = null; }
+         if(maker == null) { this.note("FONT clone kind=c5 skip reason=nomethod"); return null; }
+         var made:TextField = maker(String(FACES[0]),13,0xF2F4F5,"Ab12 c5") as TextField;
+         if(made == null) { this.note("FONT clone kind=c5 skip reason=notext"); return null; }
+         return made;
+      }
+
+      // First TextField in a container: its direct children first, then each child's
+      // subtree in index order (depth first), at most param2 levels down.
+      private function firstText(param1:DisplayObjectContainer, param2:int):TextField
+      {
+         if(param1 == null || param2 < 0) { return null; }
+         var i:int = 0;
+         var count:int = 0;
+         try { count = param1.numChildren; } catch(err:Error) { count = 0; }
+         while(i < count)
+         {
+            var ch:DisplayObject = null;
+            try { ch = param1.getChildAt(i); } catch(err2:Error) { ch = null; }
+            if(ch is TextField) { return ch as TextField; }
+            i++;
+         }
+         i = 0;
+         while(i < count)
+         {
+            var sub:DisplayObjectContainer = null;
+            try { sub = param1.getChildAt(i) as DisplayObjectContainer; } catch(err3:Error) { sub = null; }
+            var hit:TextField = this.firstText(sub,param2 - 1);
+            if(hit != null) { return hit; }
+            i++;
+         }
+         return null;
+      }
+
+      // One clone line. Tofu reads font=Times New Roman with per=6.00; a real face reads
+      // the asked name and a per near the vanilla field's 7.65.
+      private function noteClone(param1:String, param2:TextField, param3:String):void
+      {
+         if(param2 == null) { return; }
+         var w:Number = 0;
+         var n:int = 0;
+         var onBit:int = 0;
+         var embedBit:int = 0;
+         try
+         {
+            w = param2.textWidth;
+            n = param2.text != null ? param2.text.length : 0;
+            onBit = param2.stage != null ? 1 : 0;
+            embedBit = param2.embedFonts ? 1 : 0;
+         }
+         catch(err:Error) { w = 0; n = 0; }
+         var per:String = n > 0 ? (w / n).toFixed(2) : "-";
+         var line:String = "FONT clone kind=" + param1 + " stage=" + onBit + " font=" + this.readFont(param2) + " w=" + int(w) + " n=" + n + " per=" + per + " embed=" + embedBit;
+         if(param3 != null && param3.length > 0) { line += " " + param3; }
+         if(line.length > 440) { line = line.substring(0,440); }
+         this.note(line);
+      }
+
+      // The font a field reports: getTextFormat() once it has text, else defaultTextFormat.
+      private function readFont(param1:TextField):String
+      {
+         if(param1 == null) { return "null"; }
+         var f:TextFormat = null;
+         try
+         {
+            if(param1.text != null && param1.text.length > 0) { f = param1.getTextFormat(); }
+            else { f = param1.defaultTextFormat; }
+         }
+         catch(err:Error) { return "x" + err.errorID; }
+         return this.fontTag(f);
+      }
+
+      private function fontTag(param1:TextFormat):String
+      {
+         if(param1 == null || param1.font == null || String(param1.font).length == 0) { return "-"; }
+         var s:String = String(param1.font);
+         return s.length > 32 ? s.substring(0,32) : s;
+      }
+
+      // One shot, after a paint: the first on-stage custom field of each kind, then the
+      // clone cells again a few frames later (FontStrip=1 only). After FIELD_TRIES paints
+      // without a parented field, it logs that once and stops looking.
+      private function noteFieldsLate():void
+      {
+         this.fieldTries++;
+         var rows:Array = [];
+         try { rows = this.kit.fieldReport(); }
+         catch(err:Error)
+         {
+            this.fieldsNoted = true;
+            this.note("FONT field err=" + this.errText(err));
+            return;
+         }
+         if(rows.length == 0 && this.fieldTries < FIELD_TRIES) { return; }
+         this.fieldsNoted = true;
+         if(rows.length == 0) { this.note("FONT field none paints=" + this.fieldTries); }
+         var i:int = 0;
+         while(i < rows.length)
+         {
+            this.note(String(rows[i]) + " paints=" + this.fieldTries);
+            i++;
+         }
+         if(!this.fontStripOn || this.cloneCells == null) { return; }
+         i = 0;
+         while(i < this.cloneCells.length)
+         {
+            var cell:Object = this.cloneCells[i];
+            try { this.noteClone(String(cell.kind),cell.tf as TextField,"late=1"); }
+            catch(err2:Error) { this.note("FONT clone kind=" + String(cell.kind) + " err=" + this.errText(err2)); }
+            i++;
+         }
       }
 
       private function clearFontProbe():void
@@ -1029,6 +1385,7 @@ package
          if(this.fontStrip != null && this.fontStrip.parent != null) { this.fontStrip.parent.removeChild(this.fontStrip); }
          this.fontStrip = null;
          this.fontStripH = 0;
+         this.cloneCells = [];
          if(this.power != null) { this.place(); }
       }
 
@@ -1581,13 +1938,15 @@ package
       private function paintDirty():void
       {
          var key:String;
+         var painted:int = 0;
          for(key in this.dirty)
          {
             if(this.dirty[key] != true) { continue; }
-            try { this.paint(key); }
+            try { this.paint(key); painted++; }
             catch(err:Error) { this.note("PAINT " + key + " fault " + err.errorID); }
          }
          this.dirty = {};
+         if(painted > 0 && !this.fieldsNoted) { this.noteFieldsLate(); }
       }
 
       private function shown(param1:String):Boolean

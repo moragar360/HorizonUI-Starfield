@@ -55,6 +55,8 @@ package
       internal var faceStyle:String = "";
       internal var boldStyle:String = "";
       internal var embed:Boolean = false;
+      // True after the first BitmapData.draw error 2077 in this open. No later draw is tried.
+      internal var drawBlocked:Boolean = false;
       private var fields:Array = [];
 
       public function HsbKit()
@@ -124,6 +126,11 @@ package
             param1.rotation = -90;
             return param1;
          }
+         if(this.drawBlocked)
+         {
+            param1.rotation = 0;
+            return param1;
+         }
          var w:int = int(Math.ceil(param1.width));
          var h:int = int(Math.ceil(param1.height));
          if(w < 1) { w = 1; }
@@ -140,9 +147,10 @@ package
                return param1;
             }
          }
-         catch(err:Error)
+         catch(err:*)
          {
-            if(pixels != null) { pixels.dispose(); }
+            this.drawFault(err);
+            this.dropPixels(pixels);
             param1.rotation = 0;
             return param1;
          }
@@ -183,8 +191,12 @@ package
       // 0: the sample ran and the field has no such ink, or it has no text.
       // -1: the field has no positive size, so there is nothing to sample.
       // -2: the sample threw. An empty field and a thrown sample are not ink.
+      // -4: BitmapData.draw threw error 2077 now or earlier in this open (logged as skip).
+      // Nothing returns from inside the try or the catch, and dispose runs in its own
+      // catch, so a throw from draw or from dispose stays here.
       internal function nativeDraws(param1:TextField):int
       {
+         if(this.drawBlocked) { return -4; }
          if(param1 == null || param1.text == null || param1.text.length == 0) { return 0; }
          var srcW:Number = param1.width;
          var srcH:Number = param1.height;
@@ -194,22 +206,43 @@ package
          if(dw < 1) { dw = 1; }
          if(dh < 1) { dh = 1; }
          var pixels:BitmapData = null;
+         var result:int = -2;
          try
          {
             pixels = new BitmapData(dw,dh,true,0);
             var fit:Matrix = new Matrix();
             fit.scale(dw / srcW,dh / srcH);
             pixels.draw(param1,fit);
-            var ink:Boolean = this.inked(pixels,INK_COUNT,INK_ALPHA);
-            pixels.dispose();
-            return ink ? 1 : 0;
+            result = this.inked(pixels,INK_COUNT,INK_ALPHA) ? 1 : 0;
          }
-         catch(err:Error)
+         catch(err:*)
          {
-            if(pixels != null) { pixels.dispose(); }
-            return -2;
+            result = this.drawFault(err);
+         }
+         this.dropPixels(pixels);
+         return result;
+      }
+
+      // Error 2077 blocks every later draw in this open and reads as -4 (skip).
+      // Any other throw reads as -2.
+      internal function drawFault(param1:*):int
+      {
+         var id:int = 0;
+         try { if(param1 is Error) { id = Error(param1).errorID; } }
+         catch(err:*) { id = 0; }
+         if(id == 2077)
+         {
+            this.drawBlocked = true;
+            return -4;
          }
          return -2;
+      }
+
+      internal function dropPixels(param1:BitmapData):void
+      {
+         if(param1 == null) { return; }
+         try { param1.dispose(); }
+         catch(err:*) { }
       }
 
       internal function format(param1:Number, param2:uint, param3:Boolean, param4:Number, param5:String):TextFormat
