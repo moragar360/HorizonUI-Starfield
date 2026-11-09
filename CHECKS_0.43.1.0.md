@@ -4,7 +4,7 @@ Unreleased first pass. No tag, no publish, no merge. Starfield was not launched.
 
 ## What was checked here
 
-- `message_log_test`, `preset_list_test`, `planet_alert_test.js`, `reaction_match_test.js`, `watch_crosshair_test.js`, `quest_tracker_test.js`, `perf_diag_test`, and `hover_perf_test.js` passed. Private delayed dump (`PerfDumpWait=12`) is default-off. Analog no longer draws the 6 o'clock PM/DAY sub-dial. ClockFormat applies to LOCAL, GAME, and PC; F11 STYLE live preview copies the planet card Local/Game text. In-game hover frametime remains NOTRUN.
+- `message_log_test`, `preset_list_test`, `planet_alert_test.js`, `reaction_match_test.js`, `watch_crosshair_test.js`, `quest_tracker_test.js`, `perf_diag_test`, and `hover_perf_test.js` passed. Private dump window is `max(HUD-ready, intro resolved) + PerfSettleMs` then `PerfDumpWait=12`, default-off. Native `movieAdvance` is `ASMovieRootBase::AdvanceFrame(bool)` root-maintenance (`rootT`/`rootF`), not whole HUD / ENTER_FRAME. Perf helpers use `getTimer`; splash/alerts keep `hz41Now`. Analog no longer draws the 6 o'clock PM/DAY sub-dial. ClockFormat applies to LOCAL, GAME, and PC; F11 STYLE live preview copies the planet card Local/Game text. In-game hover frametime remains NOTRUN.
 - File version is 0.43.1.0 in `src/hz_version.h`, both `set_version` lines, `HZ_BUILD`, and the module build constants. The settings schema stays `0.42.0`.
 - `WatchStyle=0` and `CrosshairRule=0` are the defaults. Existing installs that omit the keys keep today's HUD and today's reticle.
 - The new watch block has no `getTimer` and no new glow. No new F key. Watch text is created at 13 px or larger, then held to a 13 px on-screen floor at the HUD scale.
@@ -78,4 +78,4 @@ While styles 1 to 4 are on, the watch frame does not build a clock object, a sig
 
 ## Performance investigation (this branch)
 
-Source review of hover/scanner/native loops at `b924a4c`. Independent review of `b35bbf86` was HOLD5 (stale stolen/contraband/press/hold/compare). This candidate length-prefixes every drawn field; it is **not** independently PASSed. Host tests include `perf_diag_test` (numeric maxUs) and `hover_perf_test.js` (extracted functions, in-place mutation). No DLL/SWF compile. User FPS reports unverified. Rebuild cost is not a verified hitch cause. Frametime remains NOTRUN.
+Source review of hover/scanner/native loops at `b924a4c`. Independent review of `b35bbf86` was HOLD5 (stale stolen/contraband/press/hold/compare). This candidate length-prefixes every drawn field and adds a private timing correction (`rootT`/`rootF`, `getTimer` helpers, intro+settle arm); it is **not** independently PASSed. Host tests include `perf_diag_test` (true/false hist, ArmAt, intro exits) and `hover_perf_test.js` (extracted `hzPerfNow`). No DLL/SWF compile. User FPS reports unverified. Rebuild cost is not a verified hitch cause. Frametime remains NOTRUN. `scope=asRootMaint` is not FPS.

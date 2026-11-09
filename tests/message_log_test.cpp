@@ -3401,7 +3401,12 @@ int main()
 			"type chips and All time are drawn");
 		Expect(as.find("Find...") != std::string::npos, "Find is a search box with a Find... placeholder");
 		Expect(as.find("Find…") == std::string::npos, "Find does not use a U+2026 ellipsis");
-		Expect(as.find("getTimer(") == std::string::npos, "HUD block has no getTimer(");
+		{
+			const auto nowFn = AsFnBody(as, "private function hzPerfNow", "private function hzPerfResetN");
+			Expect(nowFn.find("getTimer()") != std::string::npos && nowFn.find("new Date") == std::string::npos,
+				"hzPerfNow uses getTimer");
+			Expect(as.find("getTimer(") == as.rfind("getTimer("), "getTimer( appears only in hzPerfNow");
+		}
 		Expect(as.find("flash.utils") == std::string::npos, "HUD block has no flash.utils");
 		Expect(as.find("this.hz41Now()") != std::string::npos
 			&& as.find("((this.hz41Now() % 800) < 400)") != std::string::npos,

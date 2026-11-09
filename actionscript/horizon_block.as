@@ -10387,9 +10387,15 @@
          return rowW;
       }
 
-      // Purpose: off-by-default HUD timing and isolation gates. hz41Now is milliseconds only.
+      // Purpose: off-by-default HUD timing and isolation gates. Perf helpers use
+      // getTimer (still 1 ms). Splash/alerts/gameplay keep hz41Now (Date).
       // Inputs: [Debug] PerfDiag / PerfMode / PerfScan. Outputs: counters for hzPerfSnapshot.
-      // Author: Moragar. Last modified: 2026-11-08.
+      // Author: Moragar. Last modified: 2026-11-09.
+      private function hzPerfNow() : Number
+      {
+         if(this.hz41NowFn != null) { return Number(this.hz41NowFn()); }
+         return getTimer();
+      }
       private function hzPerfResetN() : void
       {
          this.hzPerfN = {"frames":0,"tick":0,"tickMs":0,"tickMax":0,"content":0,"contentMs":0,"contentMax":0,"c2":0,"c5":0,"c10":0,"act":0,"actCh":0,"items":0,"itemsCh":0,"twHit":0,"twMiss":0,"holdPaint":0,"barPaint":0,"fixture":0,"skipGfx":0,"tickMaxHadContent":0,"tickMaxHadAct":0,"tickMaxHadItems":0};
@@ -10425,7 +10431,7 @@
       {
          if(!this.hzPerfOn) { return; }
          if(!this.hzPerfT0) { this.hzPerfT0 = {}; }
-         this.hzPerfT0[n] = this.hz41Now();
+         this.hzPerfT0[n] = this.hzPerfNow();
          if(n == "tick")
          {
             this.hzPerfTickHadContent = false;
@@ -10436,7 +10442,7 @@
       private function hzPerfEnd(n:String) : void
       {
          if(!this.hzPerfOn || this.hzPerfN == null || this.hzPerfT0 == null) { return; }
-         var dt:int = int(this.hz41Now() - Number(this.hzPerfT0[n]));
+         var dt:int = int(this.hzPerfNow() - Number(this.hzPerfT0[n]));
          this.hzPerfN[n] = int(this.hzPerfN[n]) + 1;
          var msK:String = n + "Ms";
          var maxK:String = n + "Max";
@@ -10462,9 +10468,9 @@
       }
       public function hzPerfSnapshot() : String
       {
-         if(!this.hzPerfOn || this.hzPerfN == null) { return "as diag=0 clock=hz41Now_ms"; }
+         if(!this.hzPerfOn || this.hzPerfN == null) { return "as diag=0 clock=getTimer_ms"; }
          var n:Object = this.hzPerfN;
-         var s:String = "as diag=1 mode=" + this.hzPerfMode + " frames=" + n.frames + " tick=" + n.tick + " tickMs=" + n.tickMs + " tickMax=" + n.tickMax + " content=" + n.content + " contentMs=" + n.contentMs + " contentMax=" + n.contentMax + " c2=" + n.c2 + " c5=" + n.c5 + " c10=" + n.c10 + " act=" + n.act + " actCh=" + n.actCh + " items=" + n.items + " itemsCh=" + n.itemsCh + " twHit=" + n.twHit + " twMiss=" + n.twMiss + " hold=" + n.holdPaint + " bar=" + n.barPaint + " fixture=" + n.fixture + " skipGfx=" + n.skipGfx + " tickMaxHadContent=" + n.tickMaxHadContent + " tickMaxHadAct=" + n.tickMaxHadAct + " tickMaxHadItems=" + n.tickMaxHadItems + " clock=hz41Now_ms";
+         var s:String = "as diag=1 mode=" + this.hzPerfMode + " frames=" + n.frames + " tick=" + n.tick + " tickMs=" + n.tickMs + " tickMax=" + n.tickMax + " content=" + n.content + " contentMs=" + n.contentMs + " contentMax=" + n.contentMax + " c2=" + n.c2 + " c5=" + n.c5 + " c10=" + n.c10 + " act=" + n.act + " actCh=" + n.actCh + " items=" + n.items + " itemsCh=" + n.itemsCh + " twHit=" + n.twHit + " twMiss=" + n.twMiss + " hold=" + n.holdPaint + " bar=" + n.barPaint + " fixture=" + n.fixture + " skipGfx=" + n.skipGfx + " tickMaxHadContent=" + n.tickMaxHadContent + " tickMaxHadAct=" + n.tickMaxHadAct + " tickMaxHadItems=" + n.tickMaxHadItems + " clock=getTimer_ms";
          if(s.length > 1400) { s = s.substr(0,1400); }
          this.hzPerfResetN();
          return s;
@@ -17141,13 +17147,13 @@
       }
       // Grace and the 30 s cap.
       // Purpose: milliseconds for the 1.5 s grace and the 30 s cap.
-      // new Date() is the wall clock. A step backwards (since < 0, or elapsed < 0) ends the hide instead of holding it open.
-      // A VM-start clock is monotonic, but this block is injected as members of HUDMenu. That class
-      // does not import a timer helper, and an import is not legal inside the injected class body.
+      // new Date() is the wall clock. Splash/alerts/gameplay keep this clock; do not switch it to getTimer.
+      // Perf helpers use hzPerfNow / getTimer instead. A step backwards (since < 0, or elapsed < 0) ends the hide
+      // instead of holding it open. This block is injected as members of HUDMenu; an import is not legal here.
+      // Unqualified getTimer needs the host HUDMenu class to import the timer helper on the next gfx splice.
       // A qualified utils-package call compiles in ffdec and then throws ReferenceError #1065
       // (it looks up a global named flash).
-      // The exitFrame and scan-edge try/catch swallow that, so the landing alert would stay hidden for the session.
-      // Inputs: hz41NowFn when a test supplies a clock, otherwise the wall clock. Output: milliseconds. No logging.
+      // Inputs: hz41NowFn when a test supplies a clock, otherwise Date.getTime. Output: milliseconds. No logging.
       private function hz41Now() : Number
       {
          if(this.hz41NowFn != null) { return Number(this.hz41NowFn()); }

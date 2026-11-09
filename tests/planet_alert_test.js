@@ -203,7 +203,9 @@ pin("if(since < 0) { this.hz41LocClear(); return false; }", "a backwards clock e
 	expect(fn.indexOf("return new Date().getTime();") >= 0, "hz41Now returns new Date().getTime()");
 	expect(fn.indexOf("getTimer") < 0 && fn.indexOf("flash.utils") < 0, "hz41Now does not call getTimer");
 	expect(src.indexOf("import flash.utils.getTimer") < 0, "the injected HUD block does not carry a getTimer import");
-	expect(src.indexOf("getTimer(") < 0, "t40 GT1b HUD block has no getTimer(");
+	const perfNow = src.slice(src.indexOf("private function hzPerfNow"), src.indexOf("private function hzPerfResetN"));
+	expect(perfNow.indexOf("getTimer()") >= 0 && perfNow.indexOf("new Date") < 0, "hzPerfNow uses unqualified getTimer");
+	expect(src.indexOf("getTimer(") === src.lastIndexOf("getTimer("), "getTimer( appears only in hzPerfNow");
 	expect(src.indexOf("flash.utils") < 0, "t37 HUD block has no flash.utils");
 }
 pin("c.visible = false;", "hide is visible only");
@@ -1696,7 +1698,10 @@ expect(src.indexOf('"StartupIntro":1') >= 0, "the welcome splash defaults on in 
 expect(src.indexOf("public function hzSplashOnLoad()") >= 0, "the welcome splash is invoked by name");
 expect(src.indexOf("Loading default settings") >= 0, "the splash names default settings when no preset is set");
 expect(src.indexOf("var peak:Number = 0.88;") >= 0, "the splash does not hold full opacity");
-expect(src.indexOf("this.hz41Now()") >= 0 && src.indexOf("getTimer(") < 0, "the splash times itself from hz41Now");
+{
+	const splashTick = src.slice(src.indexOf("private function hzSplashTick"), src.indexOf("private function hzSplashBox"));
+	expect(splashTick.indexOf("this.hz41Now()") >= 0 && splashTick.indexOf("getTimer") < 0, "the splash times itself from hz41Now");
+}
 {
 	const start = src.slice(src.indexOf("private function hzSplashStart"), src.indexOf("private function hzSplashTick"));
 	const nameFn = src.slice(src.indexOf("private function hzSplashActiveName"), src.indexOf("private function hzSplashMeasure"));

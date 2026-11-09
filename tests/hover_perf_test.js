@@ -172,6 +172,7 @@ function gate() {
 expect(ini.indexOf("PerfDiag=0") >= 0, "PerfDiag off by default");
 expect(ini.indexOf("PerfDump=0") >= 0, "PerfDump off by default");
 expect(ini.indexOf("PerfDumpWait=12") >= 0, "PerfDumpWait default 12");
+expect(ini.indexOf("PerfSettleMs=2000") >= 0, "PerfSettleMs default 2000");
 expect(ini.indexOf("Debug=0") >= 0, "Debug overlay still off");
 expect(as.indexOf("hzPerfDiag:Boolean = false") >= 0, "AS diag off by default");
 expect(as.indexOf("public function hzPerfReset") >= 0, "AS reset is a public dump-window entry");
@@ -181,7 +182,9 @@ expect(as.indexOf("c2=") >= 0 && as.indexOf("c5=") >= 0 && as.indexOf("c10=") >=
 expect(as.indexOf("NOT GAME DATA") >= 0 && as.indexOf("HZ PERF FIXTURE") >= 0, "Mode B fixture is labeled");
 expect(ini.indexOf("vanilla rollover can still show") >= 0, "Mode A vanilla-hover limit is documented");
 expect(ini.indexOf("Scanner still draws") >= 0, "Mode B scanner-draw limit is documented");
-expect(ini.indexOf("can hitch") >= 0 && ini.indexOf("Date.getTime") >= 0, "dump hitch and Date clock are documented");
+expect(ini.indexOf("can hitch") >= 0 && ini.indexOf("getTimer") >= 0 && ini.indexOf("hz41Now") >= 0,
+	"dump hitch, getTimer helpers, and hz41Now splash clock are documented");
+expect(ini.indexOf("root maintenance") >= 0 && ini.indexOf("ENTER_FRAME") >= 0, "narrow AdvanceFrame scope is documented");
 
 const g = gate();
 const act = sampleAct();
@@ -489,11 +492,19 @@ expect(funcBody(scan, "hzsPerfSkipDraw").indexOf("hzsPerfMode == 2") < 0, "Mode 
 expect(tick.indexOf("hzPerfSkipHover") >= 0 && tick.indexOf("hz38Vanilla") > tick.indexOf("hzPerfSkipHover"), "Mode A returns before vanilla hide");
 expect(perfH.indexOf("std::thr") < 0, "perf header starts no worker");
 expect(main.indexOf("QueryPerformanceCounter") >= 0, "native clock is QPC");
-expect(as.indexOf("clock=hz41Now_ms") >= 0, "AS dump names Date/hz41Now");
+expect(as.indexOf("clock=getTimer_ms") >= 0, "AS dump names getTimer");
+expect(as.indexOf("clock=hz41Now_ms") < 0, "AS dump does not name Date/hz41Now");
+expect(funcBody(as, "hzPerfNow").indexOf("getTimer()") >= 0 && funcBody(as, "hzPerfNow").indexOf("new Date") < 0,
+	"hzPerfNow uses getTimer, not Date");
+expect(funcBody(as, "hzPerfNow").indexOf("hz41NowFn") >= 0, "injected test clock still wins in hzPerfNow");
+expect(funcBody(as, "hz41Now").indexOf("new Date().getTime()") >= 0, "gameplay clock stays Date");
+expect(funcBody(as, "hzPerfBegin").indexOf("hz41Now()") < 0 && funcBody(as, "hzPerfEnd").indexOf("hz41Now()") < 0,
+	"perf helpers do not call hz41Now");
+expect(as.indexOf("import flash.utils.getTimer") < 0, "injected HUD block has no getTimer import");
 expect(funcBody(as, "hzPerfSnapshot").indexOf("sName") < 0, "snapshot has no name field");
 
 function loadPerf() {
-	const names = ["hzPerfResetN", "hzPerfReset", "hzPerfBegin", "hzPerfEnd", "hzPerfSnapshot"];
+	const names = ["hzPerfNow", "hzPerfResetN", "hzPerfReset", "hzPerfBegin", "hzPerfEnd", "hzPerfSnapshot"];
 	const self = {
 		hzPerfOn: true,
 		hzPerfMode: 3,
@@ -503,13 +514,15 @@ function loadPerf() {
 		hzPerfTickHadAct: false,
 		hzPerfTickHadItems: false,
 		now: 0,
-		hz41Now() { return self.now; }
+		hz41NowFn: null,
+		getTimer() { return self.now; },
+		hz41Now() { throw new Error("hz41Now must not run in perf helpers"); }
 	};
 	for (const name of names) {
 		const body = funcBody(as, name);
 		if (!body) throw new Error("missing " + name);
 		const params = funcParams(as, name);
-		const inner = as3toJs(body).replace(/^\{\s*/, "").replace(/\s*\}$/, "");
+		const inner = as3toJs(body).replace(/^\{\s*/, "").replace(/\s*\}$/, "").replace(/\bgetTimer\(\)/g, "self.getTimer()");
 		self[name] = eval("(function(self){ return function(" + params.join(",") + "){ " + inner + " }; })")(self);
 	}
 	return self;
@@ -545,7 +558,7 @@ function loadPerf() {
 	const snap = p.hzPerfSnapshot();
 	expect(snap.indexOf("c2=2") >= 0 && snap.indexOf("c5=1") >= 0 && snap.indexOf("c10=1") >= 0, "snapshot emits c2/c5/c10");
 	expect(snap.indexOf("tickMaxHadContent=0") >= 0 && snap.indexOf("tickMaxHadAct=1") >= 0, "snapshot emits worst-tick flags");
-	expect(snap.indexOf("clock=hz41Now_ms") >= 0, "snapshot names Date clock");
+	expect(snap.indexOf("clock=getTimer_ms") >= 0, "snapshot names getTimer clock");
 	expect(snap.indexOf("sName") < 0 && snap.indexOf("Crate") < 0 && snap.indexOf("sHeader") < 0, "snapshot has no names");
 	expect(p.hzPerfN.content === 0 && p.hzPerfN.c2 === 0, "snapshot resets counters");
 	p.hzPerfOn = true;
@@ -555,6 +568,17 @@ function loadPerf() {
 	p.now = 4001;
 	p.hzPerfEnd("content");
 	expect(p.hzPerfN.content === 1 && p.hzPerfN.c2 === 0, "reset window starts clean");
+}
+
+{
+	const p = loadPerf();
+	p.hzPerfResetN();
+	p.hz41NowFn = function () { return 5000; };
+	p.getTimer = function () { throw new Error("injected clock must win"); };
+	expect(p.hzPerfNow() === 5000, "injected hz41NowFn wins over getTimer");
+	p.hz41NowFn = null;
+	p.getTimer = function () { return 7; };
+	expect(p.hzPerfNow() === 7, "production hzPerfNow uses getTimer");
 }
 
 {

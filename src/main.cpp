@@ -165,6 +165,9 @@ namespace HZ
 	std::atomic<bool>          g_splashLoadNoted{false};
 	std::atomic<int>           g_splashTries{0};
 	ULONGLONG                  g_splashWatchSince{0};
+	std::atomic<int>           g_introPending{0};
+	std::atomic<std::uint64_t> g_introResolvedMs{0};
+	std::atomic<int>           g_introKind{hzperf::kArmNoarm};
 	std::atomic<bool>          g_uiMainMenu{false};
 	std::atomic<std::uint32_t> g_advTids[8]{};
 	std::atomic<int>           g_advTidN{0};
@@ -857,9 +860,17 @@ namespace HZ
 		if (t1 < a_t0) return;
 		const auto dt = t1 - a_t0;
 		if (a_b == hzperf::kMovieAdvance)
-			hzperf::AddMovie(g_perfAgg, dt, HzQpcFreq());
+			hzperf::AddRoot(g_perfAgg, dt, HzQpcFreq(), false);
 		else
 			hzperf::AddBucket(g_perfAgg, a_b, dt);
+	}
+
+	void HzPerfNoteRoot(std::uint64_t a_t0, bool a_next)
+	{
+		if (!HzPerfOn()) return;
+		const auto t1 = HzQpc();
+		if (t1 < a_t0) return;
+		hzperf::AddRoot(g_perfAgg, t1 - a_t0, HzQpcFreq(), a_next);
 	}
 
 	void LoadIni(bool a_reloadMsglog = true)
@@ -871,6 +882,7 @@ namespace HZ
 		g_perfScan.store(1, std::memory_order_relaxed);
 		int dump = 0;
 		int waitSec = hzperf::kWaitDefault;
+		int settleMs = hzperf::kSettleDefault;
 		std::string text;
 		const auto  P = FilesP();
 		// v0.37: HorizonUI.default.ini with HorizonUI.user.ini laid over (legacy HorizonUI.ini only when there is no default)
@@ -892,6 +904,7 @@ namespace HZ
 			if (get("perfscan", v)) g_perfScan.store(hzperf::Parse01(v), std::memory_order_relaxed);
 			if (get("perfdump", v)) dump = hzperf::Parse01(v);
 			if (get("perfdumpwait", v)) waitSec = hzperf::ParseWaitSec(v);
+			if (get("perfsettlems", v)) settleMs = hzperf::ParseSettleMs(v);
 			if (get("settingskey", v) && !v.empty()) key = v;
 			if (hzlog::IniReloadAppliesMsglog(a_reloadMsglog))
 				MsglogLoadSettings(d);
@@ -903,9 +916,10 @@ namespace HZ
 		g_vk = static_cast<int>(MapVirtualKeyW(sc > 0x7F ? (0xE000 | (sc & 0x7F)) : sc, MAPVK_VSC_TO_VK_EX));
 		REX::INFO("SettingsKey={} scan=0x{:X} vk=0x{:X}", key, g_scan.load(), g_vk.load());
 		g_perfCtl.waitSec.store(hzperf::ClampWaitSec(waitSec), std::memory_order_relaxed);
+		g_perfCtl.settleMs.store(hzperf::ClampSettleMs(settleMs), std::memory_order_relaxed);
 		const int was = g_perfDumpWas.exchange(dump, std::memory_order_acq_rel);
 		if (hzperf::DumpEdge(was, dump) && HzPerfOn()) {
-			hzperf::ArmDump(g_perfCtl, waitSec);
+			hzperf::ArmDump(g_perfCtl, waitSec, settleMs);
 			g_perfDumpReq.store(true, std::memory_order_release);
 		}
 	}
@@ -4538,6 +4552,15 @@ namespace HZ
 					g_splashDefer.store(true, std::memory_order_relaxed);
 					g_splashTries.store(0, std::memory_order_relaxed);
 					g_fileStateWant.store(true, std::memory_order_relaxed);
+					g_introPending.store(1, std::memory_order_relaxed);
+					g_introResolvedMs.store(0, std::memory_order_relaxed);
+					g_introKind.store(0, std::memory_order_relaxed);
+					if (g_perfDumpReq.load(std::memory_order_acquire)) {
+						hzperf::UnarmWindow(g_perfCtl);
+						hzperf::BeginDump(g_perfAgg);
+						hzperf::Reset(g_perfAgg);
+						hzperf::EndDump(g_perfAgg);
+					}
 				}
 				if (saving && (st == St::kSaveCompleted || st == St::kBegin))
 					g_mlSaveReq.store(true);
@@ -4598,6 +4621,13 @@ namespace HZ
 	// The movie builds the splash on first use and returns start, skipped, later, or done.
 	// A failed invoke is ignored. This never pauses the game. Author: Moragar.
 	// Last modified: 2026-11-03.
+	void HzIntroResolved(ULONGLONG a_now, int a_kind)
+	{
+		g_introPending.store(0, std::memory_order_relaxed);
+		g_introResolvedMs.store(a_now, std::memory_order_relaxed);
+		g_introKind.store(a_kind, std::memory_order_relaxed);
+	}
+
 	void SplashPoll(ULONGLONG a_now)
 	{
 		if (g_splashArmed.load(std::memory_order_relaxed) || g_splashWatch.load(std::memory_order_relaxed))
@@ -4609,13 +4639,17 @@ namespace HZ
 			bool ok = false;
 			try { ok = HudInvoke("hzSplashOnLoad", &ret); } catch (...) { ok = false; }
 			if (!ok) {
-				if (g_splashTries.fetch_add(1, std::memory_order_relaxed) > 120)
+				if (g_splashTries.fetch_add(1, std::memory_order_relaxed) > 120) {
 					g_splashArmed.store(false, std::memory_order_relaxed);
+					HzIntroResolved(a_now, hzperf::kArmExhausted);
+				}
 			} else if (ret.IsString() && ret.GetString()) {
 				const std::string s = ret.GetString();
 				if (s == "later") {
-					if (g_splashTries.fetch_add(1, std::memory_order_relaxed) > 180)
+					if (g_splashTries.fetch_add(1, std::memory_order_relaxed) > 180) {
 						g_splashArmed.store(false, std::memory_order_relaxed);
+						HzIntroResolved(a_now, hzperf::kArmExhausted);
+					}
 				} else if (s == "start") {
 					g_splashArmed.store(false, std::memory_order_relaxed);
 					g_splashWatch.store(true, std::memory_order_relaxed);
@@ -4623,15 +4657,18 @@ namespace HZ
 					REX::INFO("HUD intro start");
 				} else {
 					g_splashArmed.store(false, std::memory_order_relaxed);
+					HzIntroResolved(a_now, hzperf::kArmSkip);
 					REX::INFO("HUD intro skipped");
 				}
 			} else {
 				g_splashArmed.store(false, std::memory_order_relaxed);
+				HzIntroResolved(a_now, hzperf::kArmExhausted);
 			}
 		}
 		if (!g_splashWatch.load(std::memory_order_relaxed)) return;
 		if (g_splashWatchSince != 0 && a_now > g_splashWatchSince && a_now - g_splashWatchSince > 8000) {
 			g_splashWatch.store(false, std::memory_order_relaxed);
+			HzIntroResolved(a_now, hzperf::kArmTimeout);
 			return;
 		}
 		GValue phase;
@@ -4639,10 +4676,12 @@ namespace HZ
 			if (HudInvoke("hzSplashPhase", &phase) && phase.IsString() && phase.GetString()
 				&& std::string(phase.GetString()) == "done") {
 				g_splashWatch.store(false, std::memory_order_relaxed);
+				HzIntroResolved(a_now, hzperf::kArmIntro);
 				REX::INFO("HUD intro done");
 			}
 		} catch (...) {
 			g_splashWatch.store(false, std::memory_order_relaxed);
+			HzIntroResolved(a_now, hzperf::kArmExhausted);
 		}
 	}
 
@@ -4771,11 +4810,13 @@ namespace HZ
 		if (!g_hudSince) g_hudSince = now;
 		try { SplashPoll(now); } catch (...) {}
 		if (now - g_hudSince < 3000) {
-			if (g_perfCtl.windowArmed.load(std::memory_order_relaxed)) {
+			if (g_perfDumpReq.load(std::memory_order_relaxed)) {
+				try { HzPerfArmWindow(); } catch (...) {}
 				try { HzPerfDumpOnce(); } catch (...) {}
 			}
 			return;
 		}
+		hzperf::NoteHudReady(g_perfCtl, now);
 		if (!g_hudReadyLogged.exchange(true)) {
 			REX::INFO("HUD ready (stable 3s)");
 			HudOwnerCheck();
@@ -4800,13 +4841,17 @@ namespace HZ
 		}
 	}
 
-	// Purpose: first HUD-ready (3s) starts the dump window. Resets native and AS
-	// counters once, latches dump-at = now + PerfDumpWait. No dump on this poll.
-	// PauseMenu later does not re-enter: windowArmed stays set. Author: Moragar.
-	// Last modified: 2026-11-08.
+	// Purpose: start the dump window at max(HUD-ready, intro resolved) + settle.
+	// Resets native and AS counters once. Capture length is PerfDumpWait seconds.
+	// PauseMenu does not re-enter. A later save-load UnarmWindow allows one re-arm
+	// before the dump. Author: Moragar. Last modified: 2026-11-09.
 	void HzPerfArmWindow()
 	{
-		if (hzperf::OnHudFirstReady(g_perfCtl, HzPerfOn(), GetTickCount64()) != hzperf::ReadyOp::ResetWindow)
+		const auto nowMs = GetTickCount64();
+		const auto introMs = g_introResolvedMs.load(std::memory_order_relaxed);
+		const bool pending = g_introPending.load(std::memory_order_relaxed) != 0;
+		const int kind = g_introKind.load(std::memory_order_relaxed);
+		if (hzperf::OnHudArmPoll(g_perfCtl, HzPerfOn(), nowMs, introMs, pending, kind) != hzperf::ReadyOp::ResetWindow)
 			return;
 		hzperf::BeginDump(g_perfAgg);
 		hzperf::Reset(g_perfAgg);
@@ -4814,16 +4859,18 @@ namespace HZ
 		g_perfAgg.windowStart.store(now, std::memory_order_relaxed);
 		g_perfAgg.waitUs.store(hzperf::WaitUsFromSec(g_perfCtl.waitSec.load(std::memory_order_relaxed)),
 			std::memory_order_relaxed);
+		g_perfAgg.settleMs.store(g_perfCtl.settleMs.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		g_perfAgg.armKind.store(g_perfCtl.armKind.load(std::memory_order_relaxed), std::memory_order_relaxed);
 		hzperf::EndDump(g_perfAgg);
 		try { HudInvoke("hzPerfReset"); } catch (...) {}
 	}
 
-	// Purpose: one explicit dump after first HUD-ready + PerfDumpWait.
+	// Purpose: one explicit dump after max(HUD-ready, intro) + settle + PerfDumpWait.
 	// Invokes hzPerfSnapshot at most once per PerfDump 0->1. PauseMenu does not
 	// drop the request. No dump while HudSafe is false. No new 3s wait after
-	// pause. Dump-frame pollHud is skipped (skipPoll). No per-frame log.
-	// Inputs: HUD AdvanceFrame. Outputs: one INFO line. Author: Moragar.
-	// Last modified: 2026-11-08.
+	// pause once readyMs is latched. Dump-frame pollHud is skipped (skipPoll).
+	// No per-frame log. Inputs: HUD AdvanceFrame. Outputs: one INFO line.
+	// Author: Moragar. Last modified: 2026-11-09.
 	void HzPerfDumpOnce()
 	{
 		if (!g_perfDumpReq.load(std::memory_order_acquire)) return;
@@ -4946,7 +4993,7 @@ namespace HZ
 		if (orig)
 			orig(a_this, a_next);
 		if (tAdv0) {
-			HzPerfNote(hzperf::kMovieAdvance, tAdv0);
+			HzPerfNoteRoot(tAdv0, a_next);
 			if (g_perfAgg.dumping.load(std::memory_order_acquire) == 0) {
 				g_perfAgg.frames.fetch_add(1, std::memory_order_relaxed);
 				hzperf::NoteWindowStart(g_perfAgg, tAdv0);
@@ -5036,11 +5083,12 @@ namespace HZ
 		}
 	}
 
-	// Purpose: patch AS3 MovieRoot::AdvanceFrame (vtable slot 2) once.
+	// Purpose: patch ASMovieRootBase::AdvanceFrame(bool) (vtable slot 2) once.
+	// That callee is root-maintenance, not Movie::Advance / timeline / ENTER_FRAME.
 	// CommonLibSF WriteSafeData. After the original advance, the stored
 	// HUD / HUDMessages root runs its own poll on this thread.
 	// Inputs: a live movie root. Outputs: hooked vtable slot.
-	// Author: Moragar. Last modified: 2026-10-28.
+	// Author: Moragar. Last modified: 2026-11-09.
 	void InstallAdvanceHook(RE::Scaleform::GFx::ASMovieRootBase* a_root)
 	{
 		if (!a_root) return;
@@ -5094,9 +5142,15 @@ namespace HZ
 		if (hzlog::ShouldClearReusedHudRoot(scope, root, isScope))
 			g_scopeRoot.compare_exchange_strong(scope, nullptr, std::memory_order_acq_rel);
 		if (!root) return;
-		if (isHud)
+		if (isHud) {
 			g_hudRoot.store(root, std::memory_order_release);
-		else if (isMsg)
+			if (g_perfDumpReq.load(std::memory_order_acquire)) {
+				hzperf::UnarmWindow(g_perfCtl);
+				hzperf::BeginDump(g_perfAgg);
+				hzperf::Reset(g_perfAgg);
+				hzperf::EndDump(g_perfAgg);
+			}
+		} else if (isMsg)
 			g_hudMsgRoot.store(root, std::memory_order_release);
 		else if (isScope)
 			g_scopeRoot.store(root, std::memory_order_release);
