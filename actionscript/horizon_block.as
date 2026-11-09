@@ -1147,7 +1147,7 @@
          this.HorizonCompass_mc.y = 28;
          addChild(this.HorizonCompass_mc);
          this.hzBuildCmp19();
-         BSUIDataManager.Subscribe("HudCompassData",this.hzOnCompass);
+         BSUIDataManager.Subscribe("HudCompassData",this.hzPbCompass);
       }
 
       private function hzOnCompass(e:FromClientDataEvent) : *
@@ -2099,17 +2099,17 @@
          this.hzBuildQuest();
          this.hzBuildTarget();
          this.hzFixFonts();
-         BSUIDataManager.Subscribe("HudJetpackData",this.hzOnJetpack);
-         BSUIDataManager.Subscribe("PlayerFrequentData",this.hzOnPlayerFrequent);
+         BSUIDataManager.Subscribe("HudJetpackData",this.hzPbJet);
+         BSUIDataManager.Subscribe("PlayerFrequentData",this.hzPbFreq);
          BSUIDataManager.Subscribe("PlayerData",this.hzOnPlayerData);
-         BSUIDataManager.Subscribe("HudCrosshairData",this.hzOnCrosshair);
+         BSUIDataManager.Subscribe("HudCrosshairData",this.hzPbXh);
          try { BSUIDataManager.Subscribe("HUDVehicleData",this.hz42VehOnData); } catch(e42vs:Error) { }
          try { BSUIDataManager.Subscribe("ControlMapData",this.hz42VehOnMap); } catch(e42vm:Error) { }
          try { this.hz26Build(); } catch(err26:Error) { }
          try { this.hz40Init(); } catch(err40:Error) { }
          this.hzLoadIni();
          this.hzBuildCompact();
-         addEventListener(Event.ENTER_FRAME,this.hzOnFrame);
+         addEventListener(Event.ENTER_FRAME,this.hzPbFrame);
          this.hzRefreshVisibility();
       }
 
@@ -2197,6 +2197,25 @@
       private var hzPerfTickHadContent:Boolean = false;
       private var hzPerfTickHadAct:Boolean = false;
       private var hzPerfTickHadItems:Boolean = false;
+      // Option B (private diagnostic build). Storage is created once when PerfDiag turns on (hzPbInit);
+      // probes only write numbers into it. Probes: 0 loop (hzOnFrame), 1 exit (hz27OnExit), 2 cmp, 3 freq,
+      // 4 jet, 5 xh, 6 act. Ring types: 1 T target change, 2 C compass push, 3 M memory drop, 4 Q quest sync.
+      private var hzPbN:Array = null;        // 7 probes x [n, sumMs, maxMs]
+      private var hzRgTy:Array = null;       // 256 slots: type
+      private var hzRgT0:Array = null;       // first event, getTimer ms
+      private var hzRgT1:Array = null;       // last event folded into the slot (C/Q runs)
+      private var hzRgV:Array = null;        // C: max callback ms, M: drop KB, else 0
+      private var hzRgC:Array = null;        // events folded into the slot
+      private var hzRgW:int = 0;             // slots written since the last reset
+      private var hzRgOpC:int = -1;          // open C run (write index) or -1
+      private var hzRgOpQ:int = -1;          // open Q run (write index) or -1
+      private var hzMemUnsup:Boolean = false;
+      private var hzMemN:int = 0;
+      private var hzMemLast:Number = 0;
+      private var hzMemMin:Number = 0;
+      private var hzMemMax:Number = 0;
+      private var hzMemDrops:int = 0;
+      private var hzMemDropKB:Number = 0;
       private var hzDbgCross:String = "";
       private var hzDbgWeap:String = "";
       private var hzDbgText:TextField = null;
@@ -7375,7 +7394,7 @@
          {
             addChild(p);
          }
-         try { BSUIDataManager.Subscribe("HUDRolloverActivationData",this.hzOnTgAct); } catch(e1:Error) { }
+         try { BSUIDataManager.Subscribe("HUDRolloverActivationData",this.hzPbAct); } catch(e1:Error) { }
          try { BSUIDataManager.Subscribe("HUDRolloverData",this.hzOnTgRoll); } catch(e2:Error) { }
          try { BSUIDataManager.Subscribe("HudEnemyData",this.hzOnTgEnemy); } catch(e3:Error) { }
          try { BSUIDataManager.Subscribe("HUDRolloverItemData",this.hzOnTgItems); } catch(e4:Error) { }
@@ -7392,6 +7411,7 @@
          {
             this.hzT19ActCached = pay;
             if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.actCh++; }
+            if(this.hzPerfOn) { this.hzRgPush(1,this.hzPerfNow(),0); }
          }
       }
 
@@ -8819,6 +8839,7 @@
       // title = quest name (hzSetQuestTitle), objective = active marker strText, distance = fDistanceToPlayer (HudCompassData)
       private function hzQSync() : void
       {
+         if(this.hzPerfOn) { this.hzRgPush(4,this.hzPerfNow(),0); }
          var name:String = this.hzQName != null ? this.hzQName : "";
          var obj:String = this.hzQObjStr != null ? this.hzQObjStr : "";
          var title:String = name.length > 0 ? name : (obj.length > 0 ? obj : "No active objective");
@@ -10410,6 +10431,7 @@
          this.hzPerfTickHadContent = false;
          this.hzPerfTickHadAct = false;
          this.hzPerfTickHadItems = false;
+         if(this.hzPbN != null) { this.hzPbClear(); }
       }
       public function hzPerfReset() : void
       {
@@ -10419,6 +10441,7 @@
       private function hzPerfApply() : void
       {
          this.hzPerfOn = this.hzPerfDiag === true;
+         if(this.hzPerfOn) { this.hzPbInit(); }
          if(this.hzPerfOn && this.hzPerfN == null) { this.hzPerfResetN(); }
          if(!this.hzPerfOn) { this.hzPerfDumpSeen = false; }
          if(this.hzPerfMode != 2 && this.hzT19Sig == "FIXTURE") { this.hzT19Sig = ""; }
@@ -10484,8 +10507,176 @@
          if(!this.hzPerfOn || this.hzPerfN == null) { return "as diag=0 clock=getTimer_ms"; }
          var n:Object = this.hzPerfN;
          var s:String = "as diag=1 mode=" + this.hzPerfMode + " frames=" + n.frames + " tick=" + n.tick + " tickMs=" + n.tickMs + " tickMax=" + n.tickMax + " content=" + n.content + " contentMs=" + n.contentMs + " contentMax=" + n.contentMax + " c2=" + n.c2 + " c5=" + n.c5 + " c10=" + n.c10 + " act=" + n.act + " actCh=" + n.actCh + " items=" + n.items + " itemsCh=" + n.itemsCh + " twHit=" + n.twHit + " twMiss=" + n.twMiss + " hold=" + n.holdPaint + " bar=" + n.barPaint + " fixture=" + n.fixture + " skipGfx=" + n.skipGfx + " tickMaxHadContent=" + n.tickMaxHadContent + " tickMaxHadAct=" + n.tickMaxHadAct + " tickMaxHadItems=" + n.tickMaxHadItems + " clock=getTimer_ms";
+         if(this.hzPbN != null)
+         {
+            var pbK:Array = ["loop","exit","cmp","freq","jet","xh","act"];
+            for(var pbI:int = 0; pbI < 7; pbI++) { s += " " + pbK[pbI] + "N=" + int(this.hzPbN[pbI * 3]) + " " + pbK[pbI] + "SumMs=" + int(this.hzPbN[pbI * 3 + 1]) + " " + pbK[pbI] + "Max=" + int(this.hzPbN[pbI * 3 + 2]); }
+            s += " memUnsupported=" + (this.hzMemUnsup ? 1 : 0) + " memN=" + this.hzMemN + " memMinKB=" + Math.round(this.hzMemMin / 1024) + " memMaxKB=" + Math.round(this.hzMemMax / 1024) + " memDrops=" + this.hzMemDrops + " memDropKB=" + Math.round(this.hzMemDropKB) + " ringW=" + this.hzRgW;
+         }
          if(s.length > 1400) { s = s.substr(0,1400); }
          this.hzPerfResetN();
+         return s;
+      }
+      // Purpose: Option B probes (private diagnostic build). PerfDiag=0: every wrapper is one boolean test,
+      // then the original handler with the same argument and return value. PerfDiag=1: getTimer around the
+      // handler, numbers written into arrays made once in hzPbInit (no allocation per call). The memory sample
+      // is a GC proxy: System.totalMemory needs the host HUDMenu import of System (flash.system package) under the
+      // same splice gate as getTimer. A missed import, a throw, or a 0 reading sets memUnsupported=1 for the
+      // session and the native process private-bytes sample stands in. Ring C/Q runs fold events closer than
+      // 50 ms into one slot (at most 1000 ms per slot) so 256 slots cover the PerfDumpWait window.
+      // Inputs: [Debug] PerfDiag. Outputs: hzPerfSnapshot fields and hzPerfRing. Author: Moragar.
+      // Last modified: 2026-11-09.
+      private function hzPbInit() : void
+      {
+         if(this.hzPbN != null) { return; }
+         var i:int = 0;
+         this.hzPbN = new Array(21);
+         for(i = 0; i < 21; i++) { this.hzPbN[i] = 0; }
+         this.hzRgTy = new Array(256);
+         this.hzRgT0 = new Array(256);
+         this.hzRgT1 = new Array(256);
+         this.hzRgV = new Array(256);
+         this.hzRgC = new Array(256);
+         for(i = 0; i < 256; i++) { this.hzRgTy[i] = 0; this.hzRgT0[i] = 0; this.hzRgT1[i] = 0; this.hzRgV[i] = 0; this.hzRgC[i] = 0; }
+      }
+      private function hzPbClear() : void
+      {
+         if(this.hzPbN == null) { return; }
+         for(var i:int = 0; i < 21; i++) { this.hzPbN[i] = 0; }
+         this.hzRgW = 0;
+         this.hzRgOpC = -1;
+         this.hzRgOpQ = -1;
+         this.hzMemN = 0;
+         this.hzMemLast = 0;
+         this.hzMemMin = 0;
+         this.hzMemMax = 0;
+         this.hzMemDrops = 0;
+         this.hzMemDropKB = 0;
+      }
+      private function hzPbEnd(i:int, t0:Number) : void
+      {
+         if(this.hzPbN == null) { return; }
+         var t1:Number = this.hzPerfNow();
+         var dt:int = int(t1 - t0);
+         if(dt < 0) { dt = 0; }
+         var k:int = i * 3;
+         this.hzPbN[k] = int(this.hzPbN[k]) + 1;
+         this.hzPbN[k + 1] = int(this.hzPbN[k + 1]) + dt;
+         if(dt > int(this.hzPbN[k + 2])) { this.hzPbN[k + 2] = dt; }
+         if(i == 2) { this.hzRgPush(2,t0,dt); }
+      }
+      private function hzRgPush(ty:int, t:Number, v:Number) : void
+      {
+         if(this.hzRgTy == null) { return; }
+         var op:int = ty == 2 ? this.hzRgOpC : (ty == 4 ? this.hzRgOpQ : -1);
+         if(op >= 0 && op > this.hzRgW - 256)
+         {
+            var j:int = op % 256;
+            if(t - Number(this.hzRgT1[j]) <= 50 && t - Number(this.hzRgT0[j]) <= 1000)
+            {
+               this.hzRgT1[j] = t;
+               this.hzRgC[j] = int(this.hzRgC[j]) + 1;
+               if(v > Number(this.hzRgV[j])) { this.hzRgV[j] = v; }
+               return;
+            }
+         }
+         var s:int = this.hzRgW % 256;
+         this.hzRgTy[s] = ty;
+         this.hzRgT0[s] = t;
+         this.hzRgT1[s] = t;
+         this.hzRgV[s] = v;
+         this.hzRgC[s] = 1;
+         if(ty == 2) { this.hzRgOpC = this.hzRgW; }
+         else if(ty == 4) { this.hzRgOpQ = this.hzRgW; }
+         else { this.hzRgOpC = -1; this.hzRgOpQ = -1; }
+         this.hzRgW++;
+      }
+      private function hzMemTick() : void
+      {
+         if(this.hzMemUnsup || this.hzPbN == null) { return; }
+         var m:Number = 0;
+         try { m = Number(System.totalMemory); } catch(eMs:Error) { m = -1; }
+         if(!(m > 0)) { this.hzMemUnsup = true; return; }
+         this.hzMemN++;
+         if(this.hzMemLast > 0 && m < this.hzMemLast - 262144)
+         {
+            var kb:Number = Math.round((this.hzMemLast - m) / 1024);
+            this.hzMemDrops++;
+            this.hzMemDropKB += kb;
+            this.hzRgPush(3,this.hzPerfNow(),kb);
+         }
+         if(this.hzMemMin <= 0 || m < this.hzMemMin) { this.hzMemMin = m; }
+         if(m > this.hzMemMax) { this.hzMemMax = m; }
+         this.hzMemLast = m;
+      }
+      private function hzPbFrame(e:Event) : void
+      {
+         if(!this.hzPerfOn) { this.hzOnFrame(e); return; }
+         var t0:Number = this.hzPerfNow();
+         this.hzOnFrame(e);
+         this.hzPbEnd(0,t0);
+         this.hzMemTick();
+      }
+      private function hzPbExit(e:Event) : void
+      {
+         if(!this.hzPerfOn) { this.hz27OnExit(e); return; }
+         var t0:Number = this.hzPerfNow();
+         this.hz27OnExit(e);
+         this.hzPbEnd(1,t0);
+      }
+      private function hzPbCompass(e:FromClientDataEvent) : *
+      {
+         if(!this.hzPerfOn) { return this.hzOnCompass(e); }
+         var t0:Number = this.hzPerfNow();
+         var r:* = this.hzOnCompass(e);
+         this.hzPbEnd(2,t0);
+         return r;
+      }
+      private function hzPbFreq(e:FromClientDataEvent) : *
+      {
+         if(!this.hzPerfOn) { return this.hzOnPlayerFrequent(e); }
+         var t0:Number = this.hzPerfNow();
+         var r:* = this.hzOnPlayerFrequent(e);
+         this.hzPbEnd(3,t0);
+         return r;
+      }
+      private function hzPbJet(e:FromClientDataEvent) : *
+      {
+         if(!this.hzPerfOn) { return this.hzOnJetpack(e); }
+         var t0:Number = this.hzPerfNow();
+         var r:* = this.hzOnJetpack(e);
+         this.hzPbEnd(4,t0);
+         return r;
+      }
+      private function hzPbXh(e:FromClientDataEvent) : *
+      {
+         if(!this.hzPerfOn) { return this.hzOnCrosshair(e); }
+         var t0:Number = this.hzPerfNow();
+         var r:* = this.hzOnCrosshair(e);
+         this.hzPbEnd(5,t0);
+         return r;
+      }
+      private function hzPbAct(e:FromClientDataEvent) : *
+      {
+         if(!this.hzPerfOn) { return this.hzOnTgAct(e); }
+         var t0:Number = this.hzPerfNow();
+         var r:* = this.hzOnTgAct(e);
+         this.hzPbEnd(6,t0);
+         return r;
+      }
+      // Dump-time only (native HzPerfDumpOnce, before hzPerfSnapshot, which resets the ring).
+      // Format: "ring now=<getTimer> n= lost= memUnsupported=|ty,t0,t1,v,c;..." oldest first.
+      public function hzPerfRing() : String
+      {
+         if(!this.hzPerfOn || this.hzRgTy == null) { return "ring diag=0"; }
+         var now:Number = this.hzPerfNow();
+         var n:int = this.hzRgW < 256 ? this.hzRgW : 256;
+         var s:String = "ring now=" + Math.round(now) + " n=" + n + " lost=" + (this.hzRgW - n) + " memUnsupported=" + (this.hzMemUnsup ? 1 : 0) + "|";
+         for(var i:int = this.hzRgW - n; i < this.hzRgW; i++)
+         {
+            var j:int = i % 256;
+            s += int(this.hzRgTy[j]) + "," + Math.round(Number(this.hzRgT0[j])) + "," + Math.round(Number(this.hzRgT1[j])) + "," + Math.round(Number(this.hzRgV[j])) + "," + int(this.hzRgC[j]) + ";";
+         }
          return s;
       }
       // Length-prefixed tokens so game names that contain | or : cannot collide. Exact char count, then payload.
@@ -13728,7 +13919,7 @@
       private function hz27Build() : void
       {
          try { BSUIDataManager.Subscribe("PersonalAlertsData",this.hz27OnPersAlerts); } catch(s1:Error) { }
-         try { addEventListener("exitFrame",this.hz27OnExit); this.hz27ExitOn = true; } catch(s2:Error) { }
+         try { addEventListener("exitFrame",this.hzPbExit); this.hz27ExitOn = true; } catch(s2:Error) { }
       }
 
       private function hz27Tick(now:Number) : void

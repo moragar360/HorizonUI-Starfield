@@ -9,12 +9,18 @@
 // splash/alerts/gameplay keep hz41Now (Date.getTime). This header never logs, never
 // opens a file, and never starts a background worker. Export is one bounded dump
 // string after intro-resolved + settle + PerfDumpWait. No generation-callback markers.
+// Option B (private diagnostic build): two fixed 256-slot rings, written only by the HUD
+// root hook thread with no allocation: rootT samples of 5 ms or more (QPC start, us), and
+// process private-bytes drops above 256 KB (QPC, KB). At dump time they are merged with the
+// AS event ring into "perf ring" lines. Everything stays behind PerfDiag.
 // Author: Moragar.
 // Last modified: 2026-11-09.
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -38,6 +44,12 @@ inline constexpr int kWaitMax = 60;
 inline constexpr int kSettleDefault = 2000;
 inline constexpr int kSettleMin = 0;
 inline constexpr int kSettleMax = 10000;
+inline constexpr int kRingSlots = 256;
+inline constexpr std::uint64_t kSpikeUs = 5000;
+inline constexpr std::uint64_t kMemDropBytes = 262144;
+inline constexpr int kRingAsMax = 16384;
+inline constexpr int kRingEvMax = kRingSlots * 3;
+inline constexpr int kRingLineMax = 192;
 
 enum Bucket : int {
 	kMovieAdvance = 0,
@@ -239,6 +251,38 @@ inline void HistReset(HistSt& a_h)
 	a_h.h10p.store(0, std::memory_order_relaxed);
 }
 
+// Fixed ring. One writer (the HUD root hook thread); read only inside BeginDump/EndDump.
+struct Ring {
+	std::atomic<std::uint32_t> w{0};
+	std::uint64_t q[kRingSlots]{};
+	std::uint32_t v[kRingSlots]{};
+};
+
+inline void RingReset(Ring& a_r)
+{
+	a_r.w.store(0, std::memory_order_relaxed);
+}
+
+inline void RingPush(Ring& a_r, std::uint64_t a_q, std::uint32_t a_v)
+{
+	const auto w = a_r.w.load(std::memory_order_relaxed);
+	const auto s = w % static_cast<std::uint32_t>(kRingSlots);
+	a_r.q[s] = a_q;
+	a_r.v[s] = a_v;
+	a_r.w.store(w + 1, std::memory_order_release);
+}
+
+inline std::uint32_t RingCount(const Ring& a_r)
+{
+	const auto w = a_r.w.load(std::memory_order_acquire);
+	return w < static_cast<std::uint32_t>(kRingSlots) ? w : static_cast<std::uint32_t>(kRingSlots);
+}
+
+inline std::uint32_t RingLost(const Ring& a_r)
+{
+	return a_r.w.load(std::memory_order_acquire) - RingCount(a_r);
+}
+
 struct Agg {
 	BucketSt b[kBucketCount];
 	BucketSt rootT{};
@@ -253,6 +297,13 @@ struct Agg {
 	std::atomic<int> armKind{0};
 	std::atomic<std::uint32_t> dumping{0};
 	std::atomic<std::uint32_t> inflight{0};
+	Ring spike{};
+	Ring pdrop{};
+	std::atomic<std::uint64_t> pmemN{0};
+	std::atomic<std::uint64_t> pmemLast{0};
+	std::atomic<std::uint64_t> pmemMin{0};
+	std::atomic<std::uint64_t> pmemMax{0};
+	std::atomic<std::uint64_t> pmemDrops{0};
 };
 
 inline void Reset(Agg& a_a)
@@ -269,6 +320,13 @@ inline void Reset(Agg& a_a)
 	a_a.waitUs.store(0, std::memory_order_relaxed);
 	a_a.settleMs.store(0, std::memory_order_relaxed);
 	a_a.armKind.store(0, std::memory_order_relaxed);
+	RingReset(a_a.spike);
+	RingReset(a_a.pdrop);
+	a_a.pmemN.store(0, std::memory_order_relaxed);
+	a_a.pmemLast.store(0, std::memory_order_relaxed);
+	a_a.pmemMin.store(0, std::memory_order_relaxed);
+	a_a.pmemMax.store(0, std::memory_order_relaxed);
+	a_a.pmemDrops.store(0, std::memory_order_relaxed);
 }
 
 inline void BeginDump(Agg& a_a)
@@ -353,6 +411,38 @@ inline void AddRoot(Agg& a_a, std::uint64_t a_dt, std::uint64_t a_freq, bool a_n
 		Add(a_a.rootF, a_dt);
 		HistInc(a_a.histF, us);
 	}
+	EndSample(a_a);
+}
+
+// Option B: rootT (a_next) samples of kSpikeUs or more go to the spike ring, stamped with
+// the hook's own QPC start tick. No allocation. Caller already checked PerfDiag.
+inline void NoteSpike(Agg& a_a, std::uint64_t a_t0, std::uint64_t a_dt, std::uint64_t a_freq, bool a_next)
+{
+	if (!a_next) return;
+	const auto us = Us(a_dt, a_freq);
+	if (us < kSpikeUs) return;
+	if (!TryBeginSample(a_a)) return;
+	RingPush(a_a.spike, a_t0, us > 0xFFFFFFFFull ? 0xFFFFFFFFu : static_cast<std::uint32_t>(us));
+	EndSample(a_a);
+}
+
+// Option B: process private bytes, one sample per rootT. A fall of more than kMemDropBytes
+// is a drop (GC proxy, process-wide). Stands in when AS System.totalMemory is unsupported.
+inline void NoteProcMem(Agg& a_a, std::uint64_t a_q, std::uint64_t a_bytes)
+{
+	if (!a_bytes) return;
+	if (!TryBeginSample(a_a)) return;
+	const auto last = a_a.pmemLast.load(std::memory_order_relaxed);
+	a_a.pmemN.fetch_add(1, std::memory_order_relaxed);
+	if (last && a_bytes + kMemDropBytes < last) {
+		a_a.pmemDrops.fetch_add(1, std::memory_order_relaxed);
+		const auto kb = (last - a_bytes) / 1024ull;
+		RingPush(a_a.pdrop, a_q, kb > 0xFFFFFFFFull ? 0xFFFFFFFFu : static_cast<std::uint32_t>(kb));
+	}
+	const auto mn = a_a.pmemMin.load(std::memory_order_relaxed);
+	if (!mn || a_bytes < mn) a_a.pmemMin.store(a_bytes, std::memory_order_relaxed);
+	if (a_bytes > a_a.pmemMax.load(std::memory_order_relaxed)) a_a.pmemMax.store(a_bytes, std::memory_order_relaxed);
+	a_a.pmemLast.store(a_bytes, std::memory_order_relaxed);
 	EndSample(a_a);
 }
 
@@ -591,6 +681,173 @@ inline int FormatNative(const Agg& a_a, std::uint64_t a_freq, std::uint64_t a_no
 	}
 	a_out[n] = 0;
 	return n;
+}
+
+// ---- Option B merged ring (dump time only; the caller holds BeginDump) ----
+
+struct RingEv {
+	double tMs = 0;       // ms since the dump window start, QPC clock
+	char src = 'N';       // 'N' native, 'A' ActionScript
+	char type = '?';      // R spike, P private-bytes drop, T target change, C compass, M AS memory drop, Q quest sync
+	double v = 0;
+	std::uint32_t n = 1;  // events folded into this slot (C/Q runs)
+	double spanMs = 0;
+};
+
+struct AsRingHead {
+	int ok = 0;
+	double now = 0;
+	int n = 0;
+	int lost = 0;
+	int memUnsupported = -1;
+};
+
+inline double QpcMs(std::uint64_t a_q, std::uint64_t a_freq)
+{
+	if (!a_freq) return 0;
+	return static_cast<double>(a_q) * 1000.0 / static_cast<double>(a_freq);
+}
+
+inline int CollectNative(const Agg& a_a, std::uint64_t a_freq, RingEv* a_out, int a_cap)
+{
+	if (!a_out || a_cap <= 0) return 0;
+	const double w0 = QpcMs(a_a.windowStart.load(std::memory_order_relaxed), a_freq);
+	int k = 0;
+	const Ring* rings[2] = { &a_a.spike, &a_a.pdrop };
+	const char types[2] = { 'R', 'P' };
+	for (int r = 0; r < 2; ++r) {
+		const auto w = rings[r]->w.load(std::memory_order_acquire);
+		const auto n = RingCount(*rings[r]);
+		for (auto i = w - n; i != w && k < a_cap; ++i) {
+			const auto s = i % static_cast<std::uint32_t>(kRingSlots);
+			RingEv e{};
+			e.src = 'N';
+			e.type = types[r];
+			e.tMs = QpcMs(rings[r]->q[s], a_freq) - w0;
+			e.v = static_cast<double>(rings[r]->v[s]);
+			a_out[k++] = e;
+		}
+	}
+	return k;
+}
+
+inline const char* SkipTo(const char* a_s, char a_c)
+{
+	while (*a_s && *a_s != a_c) ++a_s;
+	return a_s;
+}
+
+inline bool HeadNum(const std::string& a_s, const char* a_key, double& a_out)
+{
+	const auto p = a_s.find(a_key);
+	if (p == std::string::npos) return false;
+	a_out = std::strtod(a_s.c_str() + p + std::strlen(a_key), nullptr);
+	return true;
+}
+
+// AS format: "ring now=<ms> n=<n> lost=<n> memUnsupported=<0|1>|ty,t0,t1,v,c;..."
+// ty: 1=T 2=C 3=M 4=Q. a_offMs = qpcMs(at invoke) - now; a_w0Ms = qpcMs(window start).
+inline int ParseAsRing(const char* a_s, double a_offMs, double a_w0Ms, RingEv* a_out, int a_cap, AsRingHead& a_head)
+{
+	a_head = AsRingHead{};
+	if (!a_s || std::strncmp(a_s, "ring now=", 9) != 0) return 0;
+	const char* bar = SkipTo(a_s, '|');
+	if (*bar != '|') return 0;
+	const std::string head(a_s, static_cast<std::size_t>(bar - a_s));
+	double d = 0;
+	if (HeadNum(head, "now=", d)) a_head.now = d;
+	if (HeadNum(head, " n=", d)) a_head.n = static_cast<int>(d);
+	if (HeadNum(head, " lost=", d)) a_head.lost = static_cast<int>(d);
+	if (HeadNum(head, " memUnsupported=", d)) a_head.memUnsupported = static_cast<int>(d);
+	a_head.ok = 1;
+	int k = 0;
+	const char* p = bar + 1;
+	while (*p && k < a_cap) {
+		const char* end = SkipTo(p, ';');
+		if (*end != ';') break;  // truncated tail
+		double f[5] = { 0, 0, 0, 0, 0 };
+		int nf = 0;
+		const char* q = p;
+		while (q < end && nf < 5) {
+			char* e2 = nullptr;
+			const double x = std::strtod(q, &e2);
+			if (!e2 || e2 == q || e2 > end) break;
+			f[nf++] = x;
+			q = e2;
+			if (q < end && *q == ',') ++q;
+		}
+		p = end + 1;
+		if (nf != 5) continue;
+		RingEv e{};
+		e.src = 'A';
+		switch (static_cast<int>(f[0])) {
+		case 1: e.type = 'T'; break;
+		case 2: e.type = 'C'; break;
+		case 3: e.type = 'M'; break;
+		case 4: e.type = 'Q'; break;
+		default: continue;
+		}
+		e.tMs = f[1] + a_offMs - a_w0Ms;
+		e.spanMs = f[2] >= f[1] ? f[2] - f[1] : 0;
+		e.v = f[3];
+		e.n = f[4] > 0 ? static_cast<std::uint32_t>(f[4]) : 1;
+		a_out[k++] = e;
+	}
+	return k;
+}
+
+inline void SortRing(RingEv* a_ev, int a_n)
+{
+	if (!a_ev || a_n <= 1) return;
+	std::stable_sort(a_ev, a_ev + a_n, [](const RingEv& a, const RingEv& b) { return a.tMs < b.tMs; });
+}
+
+inline const char* RingUnit(char a_type)
+{
+	switch (a_type) {
+	case 'R': return "us";
+	case 'P':
+	case 'M': return "KB";
+	case 'C': return "ms";
+	default: return "";
+	}
+}
+
+inline int FormatRingEv(const RingEv& a_e, char* a_out, int a_cap)
+{
+	if (!a_out || a_cap < 8) return 0;
+	int n = 0;
+	if (a_e.type == 'C' || a_e.type == 'Q')
+		n = std::snprintf(a_out, static_cast<std::size_t>(a_cap), "perf ring t=%.1f src=%s type=%c v=%.0f%s n=%u span=%.0f",
+			a_e.tMs, a_e.src == 'A' ? "AS" : "N", a_e.type, a_e.v, RingUnit(a_e.type), a_e.n, a_e.spanMs);
+	else
+		n = std::snprintf(a_out, static_cast<std::size_t>(a_cap), "perf ring t=%.1f src=%s type=%c v=%.0f%s",
+			a_e.tMs, a_e.src == 'A' ? "AS" : "N", a_e.type, a_e.v, RingUnit(a_e.type));
+	if (n < 0) {
+		a_out[0] = 0;
+		return 0;
+	}
+	return n >= a_cap ? a_cap - 1 : n;
+}
+
+inline int FormatRingSum(const Agg& a_a, const AsRingHead& a_h, double a_offMs, int a_events, char* a_out, int a_cap)
+{
+	if (!a_out || a_cap < 8) return 0;
+	const int n = std::snprintf(a_out, static_cast<std::size_t>(a_cap),
+		"perf ring sum events=%d spikes=%u spikeLost=%u spikeMinUs=%llu pmemN=%llu pmemMinKB=%llu pmemMaxKB=%llu pmemDrops=%llu pdropLost=%u as=%s asN=%d asLost=%d memUnsupported=%d offMs=%.1f clock=QPC_ms_since_window",
+		a_events, RingCount(a_a.spike), RingLost(a_a.spike),
+		static_cast<unsigned long long>(kSpikeUs),
+		static_cast<unsigned long long>(a_a.pmemN.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(a_a.pmemMin.load(std::memory_order_relaxed) / 1024ull),
+		static_cast<unsigned long long>(a_a.pmemMax.load(std::memory_order_relaxed) / 1024ull),
+		static_cast<unsigned long long>(a_a.pmemDrops.load(std::memory_order_relaxed)),
+		RingLost(a_a.pdrop),
+		a_h.ok ? "ok" : "missing", a_h.n, a_h.lost, a_h.memUnsupported, a_offMs);
+	if (n < 0) {
+		a_out[0] = 0;
+		return 0;
+	}
+	return n >= a_cap ? a_cap - 1 : n;
 }
 
 inline bool FixtureLabelOk(const char* a_s)
