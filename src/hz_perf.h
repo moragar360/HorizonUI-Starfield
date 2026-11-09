@@ -9,8 +9,8 @@
 // splash/alerts/gameplay keep hz41Now (Date.getTime). This header never logs, never
 // opens a file, and never starts a background worker. Export is one bounded dump
 // string after intro-resolved + settle + PerfDumpWait. No generation-callback markers.
-// Option B (private diagnostic build): two fixed 256-slot rings, written only by the HUD
-// root hook thread with no allocation: rootT samples of 5 ms or more (QPC start, us), and
+// Option B (private diagnostic build): two fixed 256-slot rings, one writer at a time (the
+// HUD root hook; HUD advances are serialized), no allocation: rootT samples of 5 ms or more (QPC start, us), and
 // process private-bytes drops above 256 KB (QPC, KB). At dump time they are merged with the
 // AS event ring into "perf ring" lines. Everything stays behind PerfDiag.
 // Author: Moragar.
@@ -251,7 +251,8 @@ inline void HistReset(HistSt& a_h)
 	a_h.h10p.store(0, std::memory_order_relaxed);
 }
 
-// Fixed ring. One writer (the HUD root hook thread); read only inside BeginDump/EndDump.
+// Fixed ring. One writer at a time; HUD advances are serialized. Read only inside BeginDump/EndDump.
+// If two writers ever overlapped, the worst case is a lost or torn diagnostic slot (index is % 256).
 struct Ring {
 	std::atomic<std::uint32_t> w{0};
 	std::uint64_t q[kRingSlots]{};
@@ -700,6 +701,7 @@ struct AsRingHead {
 	int n = 0;
 	int lost = 0;
 	int memUnsupported = -1;
+	int timerUnsupported = -1;
 };
 
 inline double QpcMs(std::uint64_t a_q, std::uint64_t a_freq)
@@ -759,6 +761,7 @@ inline int ParseAsRing(const char* a_s, double a_offMs, double a_w0Ms, RingEv* a
 	if (HeadNum(head, " n=", d)) a_head.n = static_cast<int>(d);
 	if (HeadNum(head, " lost=", d)) a_head.lost = static_cast<int>(d);
 	if (HeadNum(head, " memUnsupported=", d)) a_head.memUnsupported = static_cast<int>(d);
+	if (HeadNum(head, " timerUnsupported=", d)) a_head.timerUnsupported = static_cast<int>(d);
 	a_head.ok = 1;
 	int k = 0;
 	const char* p = bar + 1;
@@ -834,7 +837,7 @@ inline int FormatRingSum(const Agg& a_a, const AsRingHead& a_h, double a_offMs, 
 {
 	if (!a_out || a_cap < 8) return 0;
 	const int n = std::snprintf(a_out, static_cast<std::size_t>(a_cap),
-		"perf ring sum events=%d spikes=%u spikeLost=%u spikeMinUs=%llu pmemN=%llu pmemMinKB=%llu pmemMaxKB=%llu pmemDrops=%llu pdropLost=%u as=%s asN=%d asLost=%d memUnsupported=%d offMs=%.1f clock=QPC_ms_since_window",
+		"perf ring sum events=%d spikes=%u spikeLost=%u spikeMinUs=%llu pmemN=%llu pmemMinKB=%llu pmemMaxKB=%llu pmemDrops=%llu pdropLost=%u as=%s asN=%d asLost=%d memUnsupported=%d timerUnsupported=%d offMs=%.1f clock=QPC_ms_since_window",
 		a_events, RingCount(a_a.spike), RingLost(a_a.spike),
 		static_cast<unsigned long long>(kSpikeUs),
 		static_cast<unsigned long long>(a_a.pmemN.load(std::memory_order_relaxed)),
@@ -842,7 +845,7 @@ inline int FormatRingSum(const Agg& a_a, const AsRingHead& a_h, double a_offMs, 
 		static_cast<unsigned long long>(a_a.pmemMax.load(std::memory_order_relaxed) / 1024ull),
 		static_cast<unsigned long long>(a_a.pmemDrops.load(std::memory_order_relaxed)),
 		RingLost(a_a.pdrop),
-		a_h.ok ? "ok" : "missing", a_h.n, a_h.lost, a_h.memUnsupported, a_offMs);
+		a_h.ok ? "ok" : "missing", a_h.n, a_h.lost, a_h.memUnsupported, a_h.timerUnsupported, a_offMs);
 	if (n < 0) {
 		a_out[0] = 0;
 		return 0;

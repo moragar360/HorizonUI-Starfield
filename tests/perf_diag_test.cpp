@@ -368,6 +368,15 @@ int main()
 		hzperf::FormatRingSum(a, h, off, n, sum, hzperf::kDumpMax);
 		Expect(std::string(sum).find("perf ring sum events=4 spikes=1 spikeLost=0") == 0
 			&& std::string(sum).find("memUnsupported=1") != std::string::npos, "ring summary fields");
+		Expect(std::string(sum).find("timerUnsupported=-1") != std::string::npos, "an old AS ring without the field reads -1");
+		{
+			hzperf::AsRingHead h2{};
+			hzperf::ParseAsRing("ring now=1 n=0 lost=0 memUnsupported=0 timerUnsupported=1|", 0, 0, ev, 4, h2);
+			char sum2[hzperf::kDumpMax];
+			hzperf::FormatRingSum(a, h2, 0, 0, sum2, hzperf::kDumpMax);
+			Expect(h2.ok == 1 && h2.timerUnsupported == 1 && std::string(sum2).find("timerUnsupported=1") != std::string::npos,
+				"S1: timerUnsupported reaches the ring summary");
+		}
 		Expect(hzperf::ParseAsRing("ring diag=0", 0, 0, ev, 4, h) == 0 && h.ok == 0, "diag-off AS ring is ignored");
 		Expect(hzperf::ParseAsRing(nullptr, 0, 0, ev, 4, h) == 0, "missing AS ring is safe");
 		hzperf::Reset(a);
