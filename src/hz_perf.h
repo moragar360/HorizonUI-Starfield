@@ -2,16 +2,15 @@
 
 // Purpose: off-by-default HUD performance aggregates for Horizon UI.
 // Native buckets use a caller-supplied high-resolution tick (QueryPerformanceCounter
-// in the DLL). HUD ActionScript uses hz41Now (Date.getTime), millisecond resolution;
-// that clock cannot measure sub-millisecond work. This header never logs, never opens a
-// file, and never starts a background worker. Export is an explicit dump string the DLL logs
-// once on a PerfDump 0->1 edge, after first HUD-ready + PerfDumpWait seconds.
-// Inputs: diagnostic INI flags, tick deltas, an optional ActionScript snapshot.
-// Outputs: average / max / calls / calls-per-second per native bucket, movieAdvance
-// histogram, mode gates, dump-window latch. Dependencies: none. Not CommonLib.
-// Not a logger. Not a worker.
+// in the DLL). The hooked call is ASMovieRootBase::AdvanceFrame(bool) — Scaleform
+// root-maintenance, not Movie::Advance, not timeline traversal, not ENTER_FRAME.
+// Public Scaleform 4.2 dispatches ENTER_FRAME before this callee; Starfield's binary
+// is not verified. HUD ActionScript perf helpers use getTimer (millisecond wall time);
+// splash/alerts/gameplay keep hz41Now (Date.getTime). This header never logs, never
+// opens a file, and never starts a background worker. Export is one bounded dump
+// string after intro-resolved + settle + PerfDumpWait. No generation-callback markers.
 // Author: Moragar.
-// Last modified: 2026-11-08.
+// Last modified: 2026-11-09.
 
 #include <atomic>
 #include <cstdint>
@@ -34,6 +33,9 @@ inline constexpr int kModeG = 7;
 inline constexpr int kWaitDefault = 12;
 inline constexpr int kWaitMin = 1;
 inline constexpr int kWaitMax = 60;
+inline constexpr int kSettleDefault = 2000;
+inline constexpr int kSettleMin = 0;
+inline constexpr int kSettleMax = 10000;
 
 enum Bucket : int {
 	kMovieAdvance = 0,
@@ -41,6 +43,16 @@ enum Bucket : int {
 	kPollMsg = 2,
 	kScanPush = 3,
 	kInvoke = 4
+};
+
+enum ArmKind : int {
+	kArmNone = 0,
+	kArmReady = 1,
+	kArmIntro = 2,
+	kArmSkip = 3,
+	kArmTimeout = 4,
+	kArmExhausted = 5,
+	kArmNoarm = 6
 };
 
 inline const char* BucketName(int a_i)
@@ -67,6 +79,19 @@ inline const char* ModeName(int a_mode)
 	case kModeF: return "F-scanner";
 	case kModeG: return "G-background";
 	default: return "off";
+	}
+}
+
+inline const char* ArmName(int a_k)
+{
+	switch (a_k) {
+	case kArmReady: return "ready";
+	case kArmIntro: return "intro";
+	case kArmSkip: return "skip";
+	case kArmTimeout: return "timeout";
+	case kArmExhausted: return "exhausted";
+	case kArmNoarm: return "noarm";
+	default: return "?";
 	}
 }
 
@@ -100,7 +125,6 @@ inline int ClampWaitSec(int a_n)
 	return a_n;
 }
 
-// PerfDumpWait. Digits only. Empty or junk -> 12. Then clamp 1-60.
 inline int ParseWaitSec(const std::string& a_v)
 {
 	if (a_v.empty()) return kWaitDefault;
@@ -118,19 +142,35 @@ inline std::uint64_t WaitUsFromSec(int a_sec)
 	return static_cast<std::uint64_t>(ClampWaitSec(a_sec)) * 1000000ull;
 }
 
-// PerfDiag=0 is production: no isolation, no dump, no extra Invokes.
+inline int ClampSettleMs(int a_n)
+{
+	if (a_n < kSettleMin) return kSettleMin;
+	if (a_n > kSettleMax) return kSettleMax;
+	return a_n;
+}
+
+inline int ParseSettleMs(const std::string& a_v)
+{
+	if (a_v.empty()) return kSettleDefault;
+	int n = 0;
+	for (unsigned char c : a_v) {
+		if (c < '0' || c > '9') return kSettleDefault;
+		n = n * 10 + (c - '0');
+		if (n > kSettleMax) return kSettleMax;
+	}
+	return ClampSettleMs(n);
+}
+
 inline bool DiagOn(int a_diag)
 {
 	return a_diag == 1;
 }
 
-// Mode A / G: keep native collection, skip hover/scanner GFx updates.
 inline bool SkipHoverGfx(int a_mode)
 {
 	return a_mode == kModeA || a_mode == kModeG;
 }
 
-// Mode B is a labeled diagnostic fixture. It is never live game / ship data.
 inline bool UseFixture(int a_mode)
 {
 	return a_mode == kModeB;
@@ -146,7 +186,6 @@ inline bool SkipTargetTick(int a_mode)
 	return a_mode == kModeG;
 }
 
-// Mode F uses PerfScan: 1 = scanner draw on, 0 = suppressed. A and G also skip.
 inline bool SkipScannerDraw(int a_mode, int a_scanEn)
 {
 	if (a_mode == kModeA || a_mode == kModeG) return true;
@@ -174,35 +213,60 @@ inline void Add(BucketSt& a_b, std::uint64_t a_dt)
 	}
 }
 
-struct Agg {
-	BucketSt b[kBucketCount];
-	std::atomic<std::uint64_t> frames{0};
-	std::atomic<std::uint64_t> windowStart{0};
+inline void BucketReset(BucketSt& a_b)
+{
+	a_b.calls.store(0, std::memory_order_relaxed);
+	a_b.total.store(0, std::memory_order_relaxed);
+	a_b.maxv.store(0, std::memory_order_relaxed);
+}
+
+struct HistSt {
 	std::atomic<std::uint64_t> h1{0};
 	std::atomic<std::uint64_t> h2{0};
 	std::atomic<std::uint64_t> h5{0};
 	std::atomic<std::uint64_t> h10{0};
 	std::atomic<std::uint64_t> h10p{0};
+};
+
+inline void HistReset(HistSt& a_h)
+{
+	a_h.h1.store(0, std::memory_order_relaxed);
+	a_h.h2.store(0, std::memory_order_relaxed);
+	a_h.h5.store(0, std::memory_order_relaxed);
+	a_h.h10.store(0, std::memory_order_relaxed);
+	a_h.h10p.store(0, std::memory_order_relaxed);
+}
+
+struct Agg {
+	BucketSt b[kBucketCount];
+	BucketSt rootT{};
+	BucketSt rootF{};
+	std::atomic<std::uint64_t> frames{0};
+	std::atomic<std::uint64_t> windowStart{0};
+	HistSt hist{};
+	HistSt histT{};
+	HistSt histF{};
 	std::atomic<std::uint64_t> waitUs{0};
+	std::atomic<int> settleMs{0};
+	std::atomic<int> armKind{0};
 	std::atomic<std::uint32_t> dumping{0};
 	std::atomic<std::uint32_t> inflight{0};
 };
 
 inline void Reset(Agg& a_a)
 {
-	for (int i = 0; i < kBucketCount; ++i) {
-		a_a.b[i].calls.store(0, std::memory_order_relaxed);
-		a_a.b[i].total.store(0, std::memory_order_relaxed);
-		a_a.b[i].maxv.store(0, std::memory_order_relaxed);
-	}
+	for (int i = 0; i < kBucketCount; ++i)
+		BucketReset(a_a.b[i]);
+	BucketReset(a_a.rootT);
+	BucketReset(a_a.rootF);
 	a_a.frames.store(0, std::memory_order_relaxed);
 	a_a.windowStart.store(0, std::memory_order_relaxed);
-	a_a.h1.store(0, std::memory_order_relaxed);
-	a_a.h2.store(0, std::memory_order_relaxed);
-	a_a.h5.store(0, std::memory_order_relaxed);
-	a_a.h10.store(0, std::memory_order_relaxed);
-	a_a.h10p.store(0, std::memory_order_relaxed);
+	HistReset(a_a.hist);
+	HistReset(a_a.histT);
+	HistReset(a_a.histF);
 	a_a.waitUs.store(0, std::memory_order_relaxed);
+	a_a.settleMs.store(0, std::memory_order_relaxed);
+	a_a.armKind.store(0, std::memory_order_relaxed);
 }
 
 inline void BeginDump(Agg& a_a)
@@ -245,7 +309,6 @@ inline double Cps(std::uint64_t a_calls, std::uint64_t a_elapsedTicks, std::uint
 	return (static_cast<double>(a_calls) * static_cast<double>(a_freq)) / static_cast<double>(a_elapsedTicks);
 }
 
-// movieAdvance us: h1 <1ms, h2 1-2, h5 2-5, h10 5-10, h10p >10.
 inline int HistBucketUs(std::uint64_t a_us)
 {
 	if (a_us < 1000) return 1;
@@ -255,14 +318,14 @@ inline int HistBucketUs(std::uint64_t a_us)
 	return 11;
 }
 
-inline void HistInc(Agg& a_a, std::uint64_t a_us)
+inline void HistInc(HistSt& a_h, std::uint64_t a_us)
 {
 	switch (HistBucketUs(a_us)) {
-	case 1: a_a.h1.fetch_add(1, std::memory_order_relaxed); break;
-	case 2: a_a.h2.fetch_add(1, std::memory_order_relaxed); break;
-	case 5: a_a.h5.fetch_add(1, std::memory_order_relaxed); break;
-	case 10: a_a.h10.fetch_add(1, std::memory_order_relaxed); break;
-	default: a_a.h10p.fetch_add(1, std::memory_order_relaxed); break;
+	case 1: a_h.h1.fetch_add(1, std::memory_order_relaxed); break;
+	case 2: a_h.h2.fetch_add(1, std::memory_order_relaxed); break;
+	case 5: a_h.h5.fetch_add(1, std::memory_order_relaxed); break;
+	case 10: a_h.h10.fetch_add(1, std::memory_order_relaxed); break;
+	default: a_h.h10p.fetch_add(1, std::memory_order_relaxed); break;
 	}
 }
 
@@ -274,12 +337,26 @@ inline void AddBucket(Agg& a_a, int a_bucket, std::uint64_t a_dt)
 	EndSample(a_a);
 }
 
-inline void AddMovie(Agg& a_a, std::uint64_t a_dt, std::uint64_t a_freq)
+// Combined movieAdvance stays as a compatibility total. Histogram splits by a_next.
+inline void AddRoot(Agg& a_a, std::uint64_t a_dt, std::uint64_t a_freq, bool a_next)
 {
 	if (!TryBeginSample(a_a)) return;
+	const auto us = Us(a_dt, a_freq);
 	Add(a_a.b[kMovieAdvance], a_dt);
-	HistInc(a_a, Us(a_dt, a_freq));
+	HistInc(a_a.hist, us);
+	if (a_next) {
+		Add(a_a.rootT, a_dt);
+		HistInc(a_a.histT, us);
+	} else {
+		Add(a_a.rootF, a_dt);
+		HistInc(a_a.histF, us);
+	}
 	EndSample(a_a);
+}
+
+inline void AddMovie(Agg& a_a, std::uint64_t a_dt, std::uint64_t a_freq)
+{
+	AddRoot(a_a, a_dt, a_freq, true);
 }
 
 inline void NoteWindowStart(Agg& a_a, std::uint64_t a_t)
@@ -293,42 +370,84 @@ inline bool DumpEdge(int a_prev, int a_now)
 	return a_prev == 0 && a_now == 1;
 }
 
-// Delayed dump latch. Pause/menus must not clear req or windowArmed.
 struct DumpCtl {
 	std::atomic<int> req{0};
 	std::atomic<int> windowArmed{0};
 	std::atomic<int> skipPoll{0};
 	std::atomic<int> waitSec{kWaitDefault};
+	std::atomic<int> settleMs{kSettleDefault};
+	std::atomic<int> armKind{0};
 	std::atomic<std::uint64_t> dumpAtMs{0};
+	std::atomic<std::uint64_t> readyMs{0};
 };
 
-inline void ArmDump(DumpCtl& a_c, int a_waitSec)
+inline void ArmDump(DumpCtl& a_c, int a_waitSec, int a_settleMs = kSettleDefault)
 {
 	a_c.waitSec.store(ClampWaitSec(a_waitSec), std::memory_order_relaxed);
+	a_c.settleMs.store(ClampSettleMs(a_settleMs), std::memory_order_relaxed);
 	a_c.windowArmed.store(0, std::memory_order_relaxed);
 	a_c.skipPoll.store(0, std::memory_order_relaxed);
 	a_c.dumpAtMs.store(0, std::memory_order_relaxed);
+	a_c.readyMs.store(0, std::memory_order_relaxed);
+	a_c.armKind.store(0, std::memory_order_relaxed);
 	a_c.req.store(1, std::memory_order_release);
+}
+
+inline void UnarmWindow(DumpCtl& a_c)
+{
+	a_c.windowArmed.store(0, std::memory_order_relaxed);
+	a_c.skipPoll.store(0, std::memory_order_relaxed);
+	a_c.dumpAtMs.store(0, std::memory_order_relaxed);
+	a_c.readyMs.store(0, std::memory_order_relaxed);
+	a_c.armKind.store(0, std::memory_order_relaxed);
+}
+
+inline void NoteHudReady(DumpCtl& a_c, std::uint64_t a_nowMs)
+{
+	std::uint64_t z = 0;
+	a_c.readyMs.compare_exchange_strong(z, a_nowMs, std::memory_order_relaxed, std::memory_order_relaxed);
+}
+
+inline std::uint64_t ArmAtMs(std::uint64_t a_readyMs, std::uint64_t a_introResolvedMs, bool a_introPending,
+	std::uint64_t a_nowMs, int a_settleMs)
+{
+	if (a_introPending || !a_readyMs) return 0;
+	const auto intro = a_introResolvedMs ? a_introResolvedMs : a_nowMs;
+	const auto base = a_readyMs > intro ? a_readyMs : intro;
+	return base + static_cast<std::uint64_t>(ClampSettleMs(a_settleMs));
+}
+
+inline int PickArmKind(std::uint64_t a_readyMs, std::uint64_t a_introResolvedMs, int a_introKind)
+{
+	if (!a_introResolvedMs) return kArmNoarm;
+	if (a_readyMs >= a_introResolvedMs) return kArmReady;
+	if (a_introKind >= kArmIntro && a_introKind <= kArmExhausted) return a_introKind;
+	return kArmIntro;
 }
 
 enum class ReadyOp : int { None = 0, ResetWindow = 1 };
 
-// First HUD-ready (3s stable) only. Later PauseMenu re-ready does not re-reset.
-inline ReadyOp OnHudFirstReady(DumpCtl& a_c, bool a_diagOn, std::uint64_t a_nowMs)
+inline ReadyOp OnHudArmPoll(DumpCtl& a_c, bool a_diagOn, std::uint64_t a_nowMs,
+	std::uint64_t a_introResolvedMs, bool a_introPending, int a_introKind)
 {
 	if (!a_diagOn || a_c.req.load(std::memory_order_acquire) == 0) return ReadyOp::None;
+	if (a_c.windowArmed.load(std::memory_order_acquire) != 0) return ReadyOp::None;
+	const auto ready = a_c.readyMs.load(std::memory_order_relaxed);
+	const auto at = ArmAtMs(ready, a_introResolvedMs, a_introPending, a_nowMs,
+		a_c.settleMs.load(std::memory_order_relaxed));
+	if (!at || a_nowMs < at) return ReadyOp::None;
 	int armed = 0;
 	if (!a_c.windowArmed.compare_exchange_strong(armed, 1, std::memory_order_acq_rel, std::memory_order_acquire))
 		return ReadyOp::None;
 	const auto wait = static_cast<std::uint64_t>(a_c.waitSec.load(std::memory_order_relaxed));
 	a_c.dumpAtMs.store(a_nowMs + wait * 1000ull, std::memory_order_relaxed);
+	a_c.armKind.store(PickArmKind(ready, a_introResolvedMs, a_introKind), std::memory_order_relaxed);
 	a_c.skipPoll.store(1, std::memory_order_release);
 	return ReadyOp::ResetWindow;
 }
 
 enum class DumpOp : int { Skip = 0, Fire = 1 };
 
-// HudSafe poll. Pause/menus: hudSafe false -> Skip, req and counters stay.
 inline DumpOp OnHudSafePoll(DumpCtl& a_c, bool a_hudSafe, bool a_diagOn, std::uint64_t a_nowMs)
 {
 	if (!a_diagOn || a_c.req.load(std::memory_order_acquire) == 0) return DumpOp::Skip;
@@ -349,8 +468,53 @@ inline bool TakeSkipPoll(DumpCtl& a_c)
 	return a_c.skipPoll.exchange(0, std::memory_order_acq_rel) != 0;
 }
 
-// Purpose: format one explicit dump line. Bounded to kDumpMax.
-// Clock is QPC ticks / freq. Calls-per-second uses the dump window.
+inline int AppendBucket(char* a_out, int a_n, int a_cap, const char* a_name, const BucketSt& a_b,
+	std::uint64_t a_elapsed, std::uint64_t a_freq)
+{
+	const auto calls = a_b.calls.load(std::memory_order_relaxed);
+	const auto total = a_b.total.load(std::memory_order_relaxed);
+	const auto maxv = a_b.maxv.load(std::memory_order_relaxed);
+	const auto avg = calls ? Us(total / calls, a_freq) : 0;
+	const int left = a_cap - a_n;
+	if (left < 48) return a_n;
+	const int add = std::snprintf(a_out + a_n, static_cast<std::size_t>(left),
+		" %s={n=%llu avgUs=%llu maxUs=%llu cps=%.1f}",
+		a_name,
+		static_cast<unsigned long long>(calls),
+		static_cast<unsigned long long>(avg),
+		static_cast<unsigned long long>(Us(maxv, a_freq)),
+		Cps(calls, a_elapsed, a_freq));
+	if (add < 0) return a_n;
+	if (add >= left) return a_cap - 1;
+	return a_n + add;
+}
+
+inline int AppendRoot(char* a_out, int a_n, int a_cap, const char* a_name, const BucketSt& a_b, const HistSt& a_h,
+	std::uint64_t a_elapsed, std::uint64_t a_freq)
+{
+	const auto calls = a_b.calls.load(std::memory_order_relaxed);
+	const auto total = a_b.total.load(std::memory_order_relaxed);
+	const auto maxv = a_b.maxv.load(std::memory_order_relaxed);
+	const auto avg = calls ? Us(total / calls, a_freq) : 0;
+	const int left = a_cap - a_n;
+	if (left < 64) return a_n;
+	const int add = std::snprintf(a_out + a_n, static_cast<std::size_t>(left),
+		" %s={n=%llu avgUs=%llu maxUs=%llu cps=%.1f h1=%llu h2=%llu h5=%llu h10=%llu h10p=%llu}",
+		a_name,
+		static_cast<unsigned long long>(calls),
+		static_cast<unsigned long long>(avg),
+		static_cast<unsigned long long>(Us(maxv, a_freq)),
+		Cps(calls, a_elapsed, a_freq),
+		static_cast<unsigned long long>(a_h.h1.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(a_h.h2.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(a_h.h5.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(a_h.h10.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(a_h.h10p.load(std::memory_order_relaxed)));
+	if (add < 0) return a_n;
+	if (add >= left) return a_cap - 1;
+	return a_n + add;
+}
+
 inline int FormatNative(const Agg& a_a, std::uint64_t a_freq, std::uint64_t a_now, int a_diag, int a_mode, int a_scanEn,
 	char* a_out, int a_cap)
 {
@@ -358,7 +522,7 @@ inline int FormatNative(const Agg& a_a, std::uint64_t a_freq, std::uint64_t a_no
 	const auto start = a_a.windowStart.load(std::memory_order_relaxed);
 	const auto elapsed = (start && a_now >= start) ? (a_now - start) : 0;
 	int n = std::snprintf(a_out, static_cast<std::size_t>(a_cap),
-		"perf native diag=%d mode=%d(%s) scan=%d freq=%llu winUs=%llu frames=%llu clock=QPC",
+		"perf native diag=%d mode=%d(%s) scan=%d freq=%llu winUs=%llu frames=%llu clock=QPC scope=asRootMaint",
 		a_diag, a_mode, ModeName(a_mode), a_scanEn,
 		static_cast<unsigned long long>(a_freq),
 		static_cast<unsigned long long>(Us(elapsed, a_freq)),
@@ -368,38 +532,23 @@ inline int FormatNative(const Agg& a_a, std::uint64_t a_freq, std::uint64_t a_no
 		return 0;
 	}
 	if (n >= a_cap) n = a_cap - 1;
-	for (int i = 0; i < kBucketCount; ++i) {
-		const auto calls = a_a.b[i].calls.load(std::memory_order_relaxed);
-		const auto total = a_a.b[i].total.load(std::memory_order_relaxed);
-		const auto maxv = a_a.b[i].maxv.load(std::memory_order_relaxed);
-		const auto avg = calls ? Us(total / calls, a_freq) : 0;
-		const int left = a_cap - n;
-		if (left < 48) break;
-		const int add = std::snprintf(a_out + n, static_cast<std::size_t>(left),
-			" %s={n=%llu avgUs=%llu maxUs=%llu cps=%.1f}",
-			BucketName(i),
-			static_cast<unsigned long long>(calls),
-			static_cast<unsigned long long>(avg),
-			static_cast<unsigned long long>(Us(maxv, a_freq)),
-			Cps(calls, elapsed, a_freq));
-		if (add < 0) break;
-		if (add >= left) {
-			n = a_cap - 1;
-			break;
-		}
-		n += add;
-	}
+	for (int i = 0; i < kBucketCount; ++i)
+		n = AppendBucket(a_out, n, a_cap, BucketName(i), a_a.b[i], elapsed, a_freq);
+	n = AppendRoot(a_out, n, a_cap, "rootT", a_a.rootT, a_a.histT, elapsed, a_freq);
+	n = AppendRoot(a_out, n, a_cap, "rootF", a_a.rootF, a_a.histF, elapsed, a_freq);
 	{
 		const int left = a_cap - n;
 		if (left >= 48) {
 			const int add = std::snprintf(a_out + n, static_cast<std::size_t>(left),
-				" h1=%llu h2=%llu h5=%llu h10=%llu h10p=%llu waitUs=%llu",
-				static_cast<unsigned long long>(a_a.h1.load(std::memory_order_relaxed)),
-				static_cast<unsigned long long>(a_a.h2.load(std::memory_order_relaxed)),
-				static_cast<unsigned long long>(a_a.h5.load(std::memory_order_relaxed)),
-				static_cast<unsigned long long>(a_a.h10.load(std::memory_order_relaxed)),
-				static_cast<unsigned long long>(a_a.h10p.load(std::memory_order_relaxed)),
-				static_cast<unsigned long long>(a_a.waitUs.load(std::memory_order_relaxed)));
+				" h1=%llu h2=%llu h5=%llu h10=%llu h10p=%llu waitUs=%llu settleMs=%d arm=%s",
+				static_cast<unsigned long long>(a_a.hist.h1.load(std::memory_order_relaxed)),
+				static_cast<unsigned long long>(a_a.hist.h2.load(std::memory_order_relaxed)),
+				static_cast<unsigned long long>(a_a.hist.h5.load(std::memory_order_relaxed)),
+				static_cast<unsigned long long>(a_a.hist.h10.load(std::memory_order_relaxed)),
+				static_cast<unsigned long long>(a_a.hist.h10p.load(std::memory_order_relaxed)),
+				static_cast<unsigned long long>(a_a.waitUs.load(std::memory_order_relaxed)),
+				a_a.settleMs.load(std::memory_order_relaxed),
+				ArmName(a_a.armKind.load(std::memory_order_relaxed)));
 			if (add > 0 && add < left) n += add;
 			else if (add >= left) n = a_cap - 1;
 		}
