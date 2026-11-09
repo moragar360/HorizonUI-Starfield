@@ -1,8 +1,9 @@
 #pragma once
 
 // Purpose: the rule the gold movie uses before Horizon text takes a game face.
-// A mapped name counts only after it measures like real letters. An embedded
-// face also has to be exported by this movie, or the glyphs draw as boxes.
+// An embedded face counts when Font.hasGlyphs covers the probe string.
+// A native face that is already drawing stays a candidate without that.
+// Device text still has to measure like real letters.
 // Author: Moragar. Last modified: 2026-11-08.
 
 namespace hsb {
@@ -18,9 +19,10 @@ struct FaceCandidate {
 	FaceMeasure measure;
 	bool embed = true;
 	bool present = true;
-	// True when this movie exports the face for a new TextField.
-	// An embedded candidate that is not exported is skipped even when its advances look real.
-	bool exported = false;
+	// Font.hasGlyphs covers the probe alphabet. A listed name with a short glyph set is false.
+	bool glyphs = false;
+	// The module-name field has visible ink. That face stays a candidate without glyphs.
+	bool draws = false;
 };
 
 inline constexpr float kFaceRatio = 1.6f;
@@ -38,15 +40,21 @@ inline bool FaceProven(const FaceMeasure& m, const FaceMeasure& missing)
 }
 
 // The movie's order: three mapped names as embedded text, the module-name field's face,
-// then the mapped names as device text. Embedded text that this movie does not export
-// is skipped. The first proven entry that is allowed to draw wins.
+// then the mapped names as device text. Embedded text needs hasGlyphs. A native face
+// that draws wins without it. Device text still needs the width rule. missingEmbed is
+// unused: width cannot tell a full face from missing-glyph boxes.
 inline int PickFace(const FaceCandidate* list, int count, const FaceMeasure& missingEmbed, const FaceMeasure& missingDevice)
 {
+	(void)missingEmbed;
 	if (!list) return -1;
 	for (int i = 0; i < count; ++i) {
 		if (!list[i].present) continue;
-		if (list[i].embed && !list[i].exported) continue;
-		if (FaceProven(list[i].measure, list[i].embed ? missingEmbed : missingDevice)) return i;
+		if (list[i].draws) return i;
+		if (list[i].embed) {
+			if (list[i].glyphs) return i;
+			continue;
+		}
+		if (FaceProven(list[i].measure, missingDevice)) return i;
 	}
 	return -1;
 }

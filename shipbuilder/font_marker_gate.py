@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""Fail when Horizon text embeds a face this movie does not prove it exports.
+"""Fail when HorizonShipBuilder.as is missing the font-proof marker strings.
 
-The stock spaceship editor bakes glyphs into timeline fields. It does not
-export the mapped $ faces. A new TextField with embedFonts set on one of
-those names draws missing-glyph boxes, while the timeline text still reads.
-HorizonShipBuilder.movieExports asks Font.enumerateFonts(false) before it
-accepts an embedded face. This gate fails if that check is missing.
+This checks source text only. It does not open a SWF, enumerate fonts, or
+call hasGlyphs. The markers are the pieces that keep an embedded face from
+being chosen by name alone: Font.hasGlyphs on GLYPH_PROBE, the
+enumerateFonts(false) list, and the native-field draw check.
 
 Usage:
-  python3 shipbuilder/font_export_gate.py
-  python3 shipbuilder/font_export_gate.py --script <file or ffdec export dir>
-  python3 shipbuilder/font_export_gate.py --dom <DOMDocument.xml>
+  python3 shipbuilder/font_marker_gate.py
+  python3 shipbuilder/font_marker_gate.py --script <file or ffdec export dir>
+  python3 shipbuilder/font_marker_gate.py --dom <DOMDocument.xml>
 """
 
 import argparse
@@ -18,10 +17,11 @@ import sys
 from pathlib import Path
 
 MARKERS = (
-    "function movieExports(",
+    "function glyphsOf(",
+    "hasGlyphs(GLYPH_PROBE)",
     "Font.enumerateFonts(false)",
-    "exported.push(this.movieExports(faceName))",
-    "var ok:Boolean = measured && allowed",
+    "nativeDraws(",
+    "list=",
 )
 FACES = ("$NB_Grotesk_Semibold", "$MAIN_Font_Bold", "$MAIN_Font")
 
@@ -41,11 +41,9 @@ def check_script(path: Path) -> None:
     missing = [mark for mark in MARKERS if mark not in text]
     if missing:
         joined = "; ".join(missing)
-        raise SystemExit(
-            f"{path} embeds mapped faces without the export check. Missing: {joined}"
-        )
+        raise SystemExit(f"{path} is missing font-proof markers. Missing: {joined}")
     if "enumerateFonts(true)" in text:
-        raise SystemExit(f"{path} asks for device fonts while proving an embedded face")
+        raise SystemExit(f"{path} asks for device fonts while reading the embedded list")
 
 
 def linkage_count(dom: str) -> int:
@@ -69,11 +67,11 @@ def main() -> int:
         dom = args.dom.read_text(encoding="utf-8")
         found = linkage_count(dom)
         print(f"mapped faces with linkageClassName in DOM: {found}")
-        if found == 0 and "function movieExports(" not in script.read_text(encoding="utf-8"):
+        if found == 0 and "hasGlyphs(GLYPH_PROBE)" not in script.read_text(encoding="utf-8"):
             raise SystemExit(
-                "stock movie does not export the mapped faces and the movie still embeds them"
+                "stock movie does not export the mapped faces and the movie still embeds them by name"
             )
-    print(f"font export gate passed ({script})")
+    print(f"font marker gate passed ({script})")
     return 0
 
 

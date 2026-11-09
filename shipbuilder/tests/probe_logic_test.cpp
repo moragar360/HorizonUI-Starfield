@@ -161,25 +161,23 @@ static void CheckFace()
 	Expect(!hsb::FaceProven({60, 40, 24}, boxes), "a narrow W is not proven");
 
 	hsb::FaceCandidate order[7] = {
-		{boxes, true, true, true},
-		{grotesk, true, true, true},
-		{{148, 40, 24}, true, true, true},
-		{{}, true, false, true},
-		{grotesk, false, true, false},
-		{grotesk, false, true, false},
-		{grotesk, false, true, false},
+		{boxes, true, true, true, false},
+		{grotesk, true, true, true, false},
+		{{148, 40, 24}, true, true, false, false},
+		{{}, true, false, false, false},
+		{grotesk, false, true, false, false},
+		{grotesk, false, true, false, false},
+		{grotesk, false, true, false, false},
 	};
-	Expect(hsb::PickFace(order, 7, boxes, boxes) == 1, "the first exported embedded face wins");
-	order[1].measure = boxes;
-	order[2].measure = boxes;
-	Expect(hsb::PickFace(order, 7, boxes, boxes) == 4, "device text is tried only after every embedded name fails");
-	order[3] = {{150, 41, 24}, true, true, true};
-	Expect(hsb::PickFace(order, 7, boxes, boxes) == 3, "the module-name face comes before device text when this movie exports it");
-	order[1].measure = grotesk;
-	order[1].exported = false;
-	order[2].exported = false;
-	order[3].exported = false;
-	Expect(hsb::PickFace(order, 7, boxes, boxes) == 4, "a measured face this movie does not export is not used as embedded text");
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 0, "hasGlyphs picks an embedded face even when W and i share an advance");
+	order[0].glyphs = false;
+	order[1].glyphs = false;
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 4, "device text is tried only after embedded faces lack the probe glyphs");
+	order[3] = {boxes, true, true, false, true};
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 3, "a native face that draws is kept when hasGlyphs fails");
+	order[3].draws = false;
+	order[3].present = true;
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 4, "a native face that does not draw is skipped");
 	for (auto& c : order) c.measure = boxes;
 	Expect(hsb::PickFace(order, 7, boxes, boxes) == -1, "no proof leaves the default text path");
 	Expect(hsb::PickFace(nullptr, 7, boxes, boxes) == -1, "no list is no proof");
@@ -1297,16 +1295,25 @@ static void CheckMovie(const fs::path& root)
 	Expect(Has(hub, "meter.text = \"WWWWWWWW\";") && Has(hub, "meter.text = \"iiiiiiii\";") && Has(hub, "if(wide < narrow * 1.6) { return false; }") &&
 		Has(hub, "Math.abs(wide - missWide) < 0.5"), "the movie's face rule matches the twin");
 	Expect(Has(hub, "this.pathField([\"ModuleInfoCard_mc\",\"ModuleLabel_mc\",\"text_tf\"])"), "the fallback face is the module name field");
-	Expect(Has(FunctionBody(hub, "movieExports"), "Font.enumerateFonts(false)") && !Has(FunctionBody(hub, "movieExports"), "enumerateFonts(true)") &&
-		Has(FunctionBody(hub, "proveFace"), "exported.push(this.movieExports(faceName));") &&
-		Has(FunctionBody(hub, "proveFace"), "var ok:Boolean = measured && allowed;") &&
-		Has(FunctionBody(hub, "proveFace"), "var boldAllowed:Boolean = !this.kit.embed || this.movieExports(boldName);"),
-		"an embedded face is used only when this movie exports it");
+	Expect(Has(FunctionBody(hub, "glyphsOf"), "font.hasGlyphs(GLYPH_PROBE)") && Has(FunctionBody(hub, "embeddedFonts"), "Font.enumerateFonts(false)") &&
+		!Has(FunctionBody(hub, "glyphsOf"), "enumerateFonts(true)") &&
+		Has(FunctionBody(hub, "proveFace"), "else if(embed) { ok = g == 1; }") &&
+		Has(FunctionBody(hub, "proveFace"), "if(drew) { ok = true; }") &&
+		Has(FunctionBody(hub, "proveFace"), "this.kit.nativeDraws(label)") &&
+		Has(FunctionBody(hub, "proveFace"), "if(this.glyphsOf(boldName,fonts) == 1) { this.kit.boldFace = boldName; }"),
+		"embedded faces need hasGlyphs, and a native face that draws stays a candidate");
 	Expect(Has(FunctionBody(kit, "turnUp", "internal"), "if(this.embed)") && Has(FunctionBody(kit, "turnUp", "internal"), "param1.rotation = -90;") &&
-		Has(FunctionBody(kit, "turnUp", "internal"), "new BitmapData(") && Has(browser, "k.turnUp(label)") && Has(browser, "k.turnUp(count)") &&
+		Has(FunctionBody(kit, "turnUp", "internal"), "new BitmapData(") && Has(FunctionBody(kit, "turnUp", "internal"), "this.inked(pixels,INK_COUNT,INK_ALPHA)") &&
+		Has(FunctionBody(kit, "turnUp", "internal"), "param1.rotation = 0;") &&
+		Has(FunctionBody(kit, "inked", "internal"), "param1.getPixel32(x,y)") &&
+		Has(browser, "k.turnUp(label)") && Has(browser, "k.turnUp(count)") &&
 		!Has(browser, "label.rotation") && !Has(browser, "count.rotation"),
-		"turned tabs use an embedded face, and rasterize when this movie does not export one");
-	Expect(Has(hub, "this.note(\"FONT try=\" + this.faceTries + \" pick=\" + pick + \" bold=\" + boldOk + \" \" + report);"), "the face proof is logged by index");
+		"a blank turned-tab picture falls back to an upright label");
+	Expect(Has(hub, "this.note(\"FONT try=\" + this.faceTries + \" pick=\" + pick + \" bold=\" + boldOk + \" list=\" + list + \" \" + report);") &&
+		Has(FunctionBody(hub, "proveFace"), "e1=\" + this.glyphMark(int(ge[0])) + \" e2=\"") &&
+		Has(FunctionBody(hub, "proveFace"), "n4=\" + n4mark + \" draw=\" + this.drawMark(draw)") &&
+		Has(FunctionBody(hub, "proveFace"), "d1=\" + this.glyphMark(int(ge[0])) + \" d2=\""),
+		"the FONT line lists embedded names, hasGlyphs, draw, and the pick");
 	for (const auto& entry : fs::directory_iterator(as)) {
 		if (entry.path().extension() != ".as") continue;
 		Expect(NotesHideFaces(ReadFile(entry.path())), entry.path().filename().string() + ": log lines name faces by index only");
@@ -1958,7 +1965,7 @@ static void CheckDocs(const fs::path& repo, const fs::path& root)
 			Has(readme, "`The pills file was empty, so the starter pills are shown`") && !Has(readme, "the second save replaces it") &&
 			!Has(readme, "A profile the movie cannot read, including one holding NUL bytes, is renamed"),
 		"the readme says which profiles are renamed, when the backup is kept, and how to restore it");
-	Expect(Has(readme, "exported pills and colour schemes. A file already there is never replaced.") &&
+	Expect(Has(readme, "exported pills and color schemes. A file already there is never replaced.") &&
 			Has(readme, "gets the next free number, up to 9 (`Desert 2.ini`, holding `Name=Desert 2`)") &&
 			Has(readme, "never over any file for an export or a scheme") && Has(readme, "the second export is `<name> 2.json`, and the first file is unchanged") &&
 			!Has(readme, "renamed over the old one."),
@@ -1969,8 +1976,13 @@ static void CheckDocs(const fs::path& repo, const fs::path& root)
 		Has(vortex, "fomod/info.xml") && Has(vortex, "fomod/ModuleConfig.xml") && Has(vortex, "<Author>Moragar</Author>") &&
 		Has(vortex, "game root") && !Has(vortex, "Data/Data"),
 		"the package is a FOMOD of the plugin, both movies and the default ini");
-	Expect(Has(readme, "fomod/info.xml") && Has(readme, "fomod/ModuleConfig.xml") && Has(readme, "font_export_gate.py") &&
-		Has(readme, "00 Ship Builder"), "the readme tells the Windows build to produce the FOMOD and to run the font gate");
+	Expect(Has(readme, "fomod/info.xml") && Has(readme, "fomod/ModuleConfig.xml") && Has(readme, "font_marker_gate.py") &&
+		!Has(readme, "font_export_gate.py") && Has(readme, "00 Ship Builder"),
+		"the readme tells the Windows build to produce the FOMOD and to run the font marker gate");
+	Expect(Has(vortex, "6A66089EE9410ECB126B4BEDE8BED81551E5661555AA1F50FA217C495404C2EC") &&
+		Has(vortex, "3457A49CF9B79A346C4B3FCFA7EF360B10CCC86D41899B6D8004DF12E90F2C67") &&
+		Has(vortex, "grep -a -q -F 'HorizonShipBuilder'"),
+		"the packager rejects a stock movie and a movie with no splice marker");
 
 	// Every key in the shipped defaults is whitelisted and is its own default.
 	std::string section;

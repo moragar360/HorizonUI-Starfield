@@ -39,9 +39,12 @@ package
       internal static const VERSION:String = "0.2.0.0";
       internal static const ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       internal static const PANELS:Array = ["Power","Module","Credits","Browser","Stats","Hints","Cluster"];
-      // Mapped names go through the game's font library. The log names a candidate by index only.
+      // Mapped names. The FONT line lists embedded fontName values and names the pick by index.
       private static const FACES:Array = ["$NB_Grotesk_Semibold","$MAIN_Font_Bold","$MAIN_Font"];
       private static const NO_FACE:String = "$Horizon_NoSuchFace_x";
+      // Letters and digits a label can use. A face that only baked the timeline's own
+      // words fails this, which a W-versus-i width check does not.
+      private static const GLYPH_PROBE:String = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
       // Vanilla clips each Horizon panel stands in for.
       private static const COVERS:Object = {
          "Power":["PowerAllocation_mc","ReactorStats_mc","EquipmentStat_mc"],
@@ -415,44 +418,55 @@ package
          catch(err:Error) { if(this.frameN % 120 == 0) { this.note("ADAPT fault " + err.errorID); } }
       }
 
-      // Candidates in order: mapped names as embedded text, the face of the game's module name
-      // field, then mapped names as device text. The stock editor bakes glyphs into timeline
-      // fields and does not export the mapped names, so a new field with embedFonts set draws
-      // boxes even when W and i measure apart. An embedded candidate counts only when this
-      // movie exports it. Box glyphs share one advance, so a face also has to measure apart
-      // from a name that cannot exist. A measured face this movie does not export is marked
-      // "!" in the log.
+      // Candidates in order: mapped names as embedded text, the module-name field's face,
+      // then mapped names as device text. An embedded name counts only when that face's
+      // Font.hasGlyphs covers GLYPH_PROBE. Listing the name is not enough: the movie may
+      // have baked only the letters its own labels use. The module-name face stays a
+      // candidate when that field has visible ink, even if hasGlyphs does not know it.
+      // Device text still needs W and i to measure apart from a name that cannot exist.
       private function proveFace():void
       {
          this.faceTries++;
          this.kit.face = "";
          this.kit.boldFace = "";
          this.kit.embed = false;
-         var none:Array = this.measureFace(NO_FACE,true);
+         var fonts:Array = this.embeddedFonts();
+         var list:String = this.embeddedList(fonts);
          var noneDev:Array = this.measureFace(NO_FACE,false);
-         var names:Array = [];
-         var embeds:Array = [];
-         var exported:Array = [];
-         var tags:Array = [];
+         var ge:Array = [];
          var i:int = 0;
          while(i < FACES.length)
          {
-            var faceName:String = String(FACES[i]);
-            names.push(faceName);
-            embeds.push(true);
-            exported.push(this.movieExports(faceName));
-            tags.push("e" + (i + 1));
+            ge.push(this.glyphsOf(String(FACES[i]),fonts));
             i++;
          }
          var label:TextField = this.pathField(["ModuleInfoCard_mc","ModuleLabel_mc","text_tf"]);
          var labelFace:String = this.fieldFace(label);
          var hasLabel:Boolean = labelFace.length > 0;
+         var draw:int = -1;
+         if(label != null) { draw = this.kit.nativeDraws(label) ? 1 : 0; }
+         var n4g:int = hasLabel ? this.glyphsOf(labelFace,fonts) : -1;
+         var names:Array = [];
+         var embeds:Array = [];
+         var glyphs:Array = [];
+         var drawn:Array = [];
+         var tags:Array = [];
+         i = 0;
+         while(i < FACES.length)
+         {
+            names.push(String(FACES[i]));
+            embeds.push(true);
+            glyphs.push(ge[i]);
+            drawn.push(false);
+            tags.push("e" + (i + 1));
+            i++;
+         }
          if(hasLabel)
          {
-            var nativeEmbed:Boolean = label.embedFonts;
             names.push(labelFace);
-            embeds.push(nativeEmbed);
-            exported.push(!nativeEmbed || this.movieExports(labelFace));
+            embeds.push(label.embedFonts);
+            glyphs.push(n4g);
+            drawn.push(draw == 1);
             tags.push("n4");
          }
          i = 0;
@@ -460,21 +474,22 @@ package
          {
             names.push(String(FACES[i]));
             embeds.push(false);
-            exported.push(true);
+            glyphs.push(ge[i]);
+            drawn.push(false);
             tags.push("d" + (i + 1));
             i++;
          }
          var pick:String = "0";
-         var report:String = "n=" + this.metric(none) + " nd=" + this.metric(noneDev) + (hasLabel ? "" : " n4=na");
          var k:int = 0;
          while(k < names.length)
          {
             var embed:Boolean = embeds[k] == true;
-            var allowed:Boolean = exported[k] == true;
-            var m:Array = this.measureFace(String(names[k]),embed);
-            var measured:Boolean = this.faceProven(m,embed ? none : noneDev);
-            var ok:Boolean = measured && allowed;
-            report += " " + String(tags[k]) + "=" + this.metric(m) + (ok ? "+" : (measured ? "!" : "-"));
+            var drew:Boolean = drawn[k] == true;
+            var g:int = int(glyphs[k]);
+            var ok:Boolean = false;
+            if(drew) { ok = true; }
+            else if(embed) { ok = g == 1; }
+            else { ok = this.faceProven(this.measureFace(String(names[k]),false),noneDev); }
             if(ok && pick == "0")
             {
                pick = String(tags[k]);
@@ -483,38 +498,92 @@ package
             }
             k++;
          }
-         // The bold face must render the same way (embedded or device) as the body face,
-         // and an embedded bold face must be exported too.
+         // Bold uses the game bold face only when it can draw the same way as the body.
+         // An embedded bold face needs the probe glyphs. A native face that merely draws
+         // keeps that face for bold text too.
          if(this.kit.face.length > 0 && this.kit.face != String(FACES[1]))
          {
             var boldName:String = String(FACES[1]);
-            var boldAllowed:Boolean = !this.kit.embed || this.movieExports(boldName);
-            var bold:Array = this.measureFace(boldName,this.kit.embed);
-            if(boldAllowed && this.faceProven(bold,this.kit.embed ? none : noneDev)) { this.kit.boldFace = boldName; }
+            if(this.kit.embed)
+            {
+               if(this.glyphsOf(boldName,fonts) == 1) { this.kit.boldFace = boldName; }
+            }
+            else if(this.faceProven(this.measureFace(boldName,false),noneDev))
+            {
+               this.kit.boldFace = boldName;
+            }
          }
          this.facePick = pick;
          var boldOk:int = this.kit.boldFace.length > 0 ? 1 : 0;
-         this.note("FONT try=" + this.faceTries + " pick=" + pick + " bold=" + boldOk + " " + report);
+         var n4mark:String = hasLabel ? this.glyphMark(n4g) : "-";
+         var report:String = "e1=" + this.glyphMark(int(ge[0])) + " e2=" + this.glyphMark(int(ge[1])) + " e3=" + this.glyphMark(int(ge[2])) + " n4=" + n4mark + " draw=" + this.drawMark(draw) + " d1=" + this.glyphMark(int(ge[0])) + " d2=" + this.glyphMark(int(ge[1])) + " d3=" + this.glyphMark(int(ge[2]));
+         this.note("FONT try=" + this.faceTries + " pick=" + pick + " bold=" + boldOk + " list=" + list + " " + report);
       }
 
-      // True when a new TextField in this movie can draw param1 with embedFonts set.
-      // Font.enumerateFonts(false) lists faces this SWF exports. The font library's mapped
-      // names are not in that list unless the movie imported them.
-      private function movieExports(param1:String):Boolean
+      private function embeddedFonts():Array
       {
-         if(param1 == null || param1.length == 0) { return false; }
          var list:Array = null;
          try { list = Font.enumerateFonts(false); }
          catch(err:Error) { list = null; }
-         if(list == null) { return false; }
+         if(list == null) { return []; }
+         return list;
+      }
+
+      // Comma-separated fontName values from enumerateFonts(false), or "-" when the
+      // movie embeds none. A comma inside a name becomes a space so the list stays one field.
+      private function embeddedList(param1:Array):String
+      {
+         var out:Array = [];
          var i:int = 0;
-         while(i < list.length)
+         while(i < param1.length)
          {
-            var font:Font = list[i] as Font;
-            if(font != null && font.fontName == param1) { return true; }
+            var font:Font = param1[i] as Font;
+            if(font != null && font.fontName != null && String(font.fontName).length > 0)
+            {
+               out.push(String(font.fontName).split(",").join(" "));
+            }
             i++;
          }
-         return false;
+         if(out.length == 0) { return "-"; }
+         var joined:String = out.join(",");
+         if(joined.length > 240) { joined = joined.substring(0,240); }
+         return joined;
+      }
+
+      // 1: this embedded face has every glyph in GLYPH_PROBE.
+      // 0: an embedded face has the name and lacks at least one of those glyphs.
+      // -1: enumerateFonts(false) has no face of that name.
+      private function glyphsOf(param1:String, param2:Array):int
+      {
+         if(param1 == null || param1.length == 0 || param2 == null) { return -1; }
+         var i:int = 0;
+         while(i < param2.length)
+         {
+            var font:Font = param2[i] as Font;
+            if(font != null && font.fontName == param1)
+            {
+               var ok:Boolean = false;
+               try { ok = font.hasGlyphs(GLYPH_PROBE); }
+               catch(err:Error) { ok = false; }
+               return ok ? 1 : 0;
+            }
+            i++;
+         }
+         return -1;
+      }
+
+      private function glyphMark(param1:int):String
+      {
+         if(param1 > 0) { return "1"; }
+         if(param1 == 0) { return "0"; }
+         return "-";
+      }
+
+      private function drawMark(param1:int):String
+      {
+         if(param1 > 0) { return "1"; }
+         if(param1 == 0) { return "0"; }
+         return "na";
       }
 
       private function measureFace(param1:String, param2:Boolean):Array
@@ -552,11 +621,6 @@ package
          var missNarrow:Number = Number(param2[1]);
          if(missWide > 0 && Math.abs(wide - missWide) < 0.5 && Math.abs(narrow - missNarrow) < 0.5) { return false; }
          return true;
-      }
-
-      private function metric(param1:Array):String
-      {
-         return int(Number(param1[0])) + "/" + int(Number(param1[1])) + "/" + int(Number(param1[2]));
       }
 
       private function pathField(param1:Array):TextField

@@ -6,6 +6,7 @@ package
    import flash.display.DisplayObject;
    import flash.display.Graphics;
    import flash.display.Sprite;
+   import flash.geom.Matrix;
    import flash.text.TextField;
    import flash.text.TextFormat;
 
@@ -39,6 +40,9 @@ package
       internal static const ORANGE:uint = 0xF28A4F;
       internal static const ORANGE_BG:uint = 0x2E1D12;
       internal static const INK_ON_ACCENT:uint = 0x15130A;
+      // A drawn glyph is ink. A blank picture (every sample under this alpha) is not.
+      internal static const INK_ALPHA:uint = 16;
+      internal static const INK_COUNT:int = 8;
       // Room around a button label (11 each side).
       private static const BUTTON_PAD:Number = 22;
 
@@ -101,8 +105,8 @@ package
 
       // Category tabs read upward. Scaleform turns a TextField only when its face is embedded
       // in this movie. The stock editor does not export the mapped faces, so those labels are
-      // drawn flat and the picture is turned. If the picture cannot be drawn, the field stays
-      // upright so the words are still readable.
+      // drawn flat and the picture is turned. A picture with no ink, or a draw that throws,
+      // leaves the field upright so the words are still readable.
       internal function turnUp(param1:TextField):DisplayObject
       {
          if(this.embed)
@@ -119,15 +123,81 @@ package
          {
             pixels = new BitmapData(w,h,true,0);
             pixels.draw(param1);
+            if(!this.inked(pixels,INK_COUNT,INK_ALPHA))
+            {
+               pixels.dispose();
+               param1.rotation = 0;
+               return param1;
+            }
          }
          catch(err:Error)
          {
+            if(pixels != null) { pixels.dispose(); }
             param1.rotation = 0;
             return param1;
          }
          var pic:Bitmap = new Bitmap(pixels,"auto",false);
          pic.rotation = -90;
          return pic;
+      }
+
+      // True when at least param2 samples have alpha above param3. A fully transparent
+      // picture fails. Scanning stops at the count.
+      internal function inked(param1:BitmapData, param2:int, param3:uint):Boolean
+      {
+         if(param1 == null || param2 < 1) { return false; }
+         var ink:int = 0;
+         var y:int = 0;
+         var h:int = param1.height;
+         var w:int = param1.width;
+         while(y < h)
+         {
+            var x:int = 0;
+            while(x < w)
+            {
+               var pix:uint = param1.getPixel32(x,y);
+               if((pix >>> 24) > param3)
+               {
+                  ink++;
+                  if(ink >= param2) { return true; }
+               }
+               x++;
+            }
+            y++;
+         }
+         return false;
+      }
+
+      // The module-name field is already on screen. Sample a scaled picture of it. Visible
+      // ink means that face draws in this movie, even when enumerateFonts does not list it.
+      // A sample that throws keeps the face: losing it was the miss this check exists to avoid.
+      internal function nativeDraws(param1:TextField):Boolean
+      {
+         if(param1 == null || param1.text == null || param1.text.length == 0) { return false; }
+         var srcW:Number = param1.width;
+         var srcH:Number = param1.height;
+         if(!(srcW > 0) || !(srcH > 0)) { return true; }
+         var dw:int = srcW > 80 ? 80 : int(Math.ceil(srcW));
+         var dh:int = srcH > 32 ? 32 : int(Math.ceil(srcH));
+         if(dw < 1) { dw = 1; }
+         if(dh < 1) { dh = 1; }
+         var pixels:BitmapData = null;
+         try
+         {
+            pixels = new BitmapData(dw,dh,true,0);
+            var fit:Matrix = new Matrix();
+            fit.scale(dw / srcW,dh / srcH);
+            pixels.draw(param1,fit);
+            var ink:Boolean = this.inked(pixels,INK_COUNT,INK_ALPHA);
+            pixels.dispose();
+            return ink;
+         }
+         catch(err:Error)
+         {
+            if(pixels != null) { pixels.dispose(); }
+            return true;
+         }
+         return true;
       }
 
       internal function format(param1:Number, param2:uint, param3:Boolean, param4:Number, param5:String):TextFormat
