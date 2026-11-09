@@ -173,6 +173,7 @@ package
       private var covered:Object;
       private var dirty:Object;
       private var hot:String = "";
+      private var stateNoted:Boolean = false;
       private var heldEvents:Object;
       private var lastCancel:int = -100;
       private var lastOk:int = -100;
@@ -229,11 +230,20 @@ package
       }
 
       // Purpose: hand queued lines to the DLL once per frame. The first line is always STATE;
-      //    HOT follows when the swallowed rectangles changed.
+      //    HOT follows when the swallowed rectangles changed. A throw while publishing that
+      //    state is logged once; the lines already queued still go out.
       // Inputs: none. Outputs: newline-joined lines. Dependencies: the DLL's AdvanceFrame poll.
       public function takeLines():String
       {
-         this.pushState();
+         try { this.pushState(); }
+         catch(err:Error)
+         {
+            if(!this.stateNoted)
+            {
+               this.stateNoted = true;
+               this.note("INIT err=state " + err.errorID);
+            }
+         }
          var text:String = this.lines.join("\n");
          this.lines = [];
          return text;
@@ -405,7 +415,7 @@ package
          catch(err:Error)
          {
             this.note("INIT err=kit " + this.errText(err));
-            this.note("BUILDER " + VERSION + " gold lrg=0");
+            this.note("BUILDER " + VERSION + " gold lrg=0 built=0");
             return;
          }
          // The font proof is not allowed to stop the builder. A verify failure is thrown
@@ -418,12 +428,21 @@ package
             if(this.faceTries < 1) { this.faceTries = 1; }
             var saved:String = "0";
             try { saved = this.proveFaceWidth(); }
-            catch(err2:Error) { this.note("FONT err=width " + this.errText(err2)); }
+            catch(err2:Error)
+            {
+               this.note("FONT err=width " + this.errText(err2));
+               saved = "0";
+               this.kit.face = "";
+               this.kit.boldFace = "";
+               this.kit.embed = false;
+            }
             var savedBold:int = this.kit.boldFace.length > 0 ? 1 : 0;
-            this.note("FONT try=" + this.faceTries + " pick=" + saved + " bold=" + savedBold + " list=- e1=- e2=- e3=- n4=- draw=na d1=0 d2=0 d3=0");
+            var savedFallback:int = saved != "0" ? 1 : 0;
+            this.note("FONT try=" + this.faceTries + " pick=" + saved + " bold=" + savedBold + " fallback=" + savedFallback + " list=- e1=- e2=- e3=- n4=- draw=na d1=0 d2=0 d3=0");
          }
          this.note("INIT face end");
          this.note("INIT build begin");
+         var built:int = 0;
          try
          {
             this.pills = new HsbPillModel();
@@ -432,9 +451,10 @@ package
             this.fileOp("PROFILE",["READ"],"",this.onProfile);
             stage.addEventListener(Event.ENTER_FRAME,this.onFrame);
             this.note("INIT build end");
+            built = 1;
          }
          catch(err:Error) { this.note("INIT err=build " + this.errText(err)); }
-         this.note("BUILDER " + VERSION + " gold lrg=" + (this.kit.lrg ? 1 : 0));
+         this.note("BUILDER " + VERSION + " gold lrg=" + (this.kit.lrg ? 1 : 0) + " built=" + built);
          this.note("INIT stage end");
       }
 
@@ -483,6 +503,7 @@ package
          var n4g:int = -1;
          var hasLabel:Boolean = false;
          var pick:String = "0";
+         var fallback:int = 0;
          var label:TextField = null;
          var labelFace:String = "";
          this.note("FONT phase=list begin");
@@ -619,14 +640,22 @@ package
          {
             this.note("FONT err=" + fault);
             try { pick = this.proveFaceWidth(); }
-            catch(err:Error) { this.note("FONT err=width " + this.errText(err)); pick = "0"; }
+            catch(err:Error)
+            {
+               this.note("FONT err=width " + this.errText(err));
+               pick = "0";
+               this.kit.face = "";
+               this.kit.boldFace = "";
+               this.kit.embed = false;
+            }
+            if(pick != "0") { fallback = 1; }
          }
          this.facePick = pick;
          var boldOk:int = this.kit.boldFace.length > 0 ? 1 : 0;
          var n4mark:String = hasLabel ? this.glyphMark(n4g) : "-";
          var report:String = "e1=" + this.glyphMark(int(ge[0])) + " e2=" + this.glyphMark(int(ge[1])) + " e3=" + this.glyphMark(int(ge[2])) + " n4=" + n4mark + " draw=" + this.drawMark(draw) + " d1=" + this.widthMark(devOk[0] == true) + " d2=" + this.widthMark(devOk[1] == true) + " d3=" + this.widthMark(devOk[2] == true);
          if(fault.length > 0) { report += " err=" + fault; }
-         this.note("FONT try=" + this.faceTries + " pick=" + pick + " bold=" + boldOk + " list=" + list + " " + report);
+         this.note("FONT try=" + this.faceTries + " pick=" + pick + " bold=" + boldOk + " fallback=" + fallback + " list=" + list + " " + report);
       }
 
       // The width check used before the glyph proof. Embedded names first, then the
@@ -2243,6 +2272,7 @@ package
          while(i < boxes.length)
          {
             var b:HsbBox = boxes[i] as HsbBox;
+            if(b == null) { i++; continue; }
             if(b.visible && b.parent != null && b.boxW > 0 && b.boxH > 0)
             {
                var tl:Point = this.localToGlobal(new Point(b.x,b.y));

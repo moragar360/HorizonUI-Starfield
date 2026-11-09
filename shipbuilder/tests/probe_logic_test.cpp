@@ -1325,7 +1325,7 @@ static void CheckMovie(const fs::path& root)
 		Has(browser, "k.turnUp(label)") && Has(browser, "k.turnUp(count)") &&
 		!Has(browser, "label.rotation") && !Has(browser, "count.rotation"),
 		"a blank turned-tab picture falls back to an upright label");
-	Expect(Has(hub, "this.note(\"FONT try=\" + this.faceTries + \" pick=\" + pick + \" bold=\" + boldOk + \" list=\" + list + \" \" + report);") &&
+	Expect(Has(hub, "this.note(\"FONT try=\" + this.faceTries + \" pick=\" + pick + \" bold=\" + boldOk + \" fallback=\" + fallback + \" list=\" + list + \" \" + report);") &&
 		Has(FunctionBody(hub, "proveFace"), "e1=\" + this.glyphMark(int(ge[0])) + \" e2=\"") &&
 		Has(FunctionBody(hub, "proveFace"), "n4=\" + n4mark + \" draw=\" + this.drawMark(draw)") &&
 		Has(FunctionBody(hub, "proveFace"), "d1=\" + this.widthMark(devOk[0] == true)") &&
@@ -1344,8 +1344,22 @@ static void CheckMovie(const fs::path& root)
 		Has(FunctionBody(hub, "proveFaceWidth"), "embeds.push(true);") &&
 		!Has(FunctionBody(hub, "proveFaceWidth"), "nativeDraws") &&
 		!Has(FunctionBody(hub, "proveFaceWidth"), "enumerateFonts") &&
-		!Has(FunctionBody(hub, "proveFaceWidth"), "hasGlyphs"),
+		!Has(FunctionBody(hub, "proveFaceWidth"), "hasGlyphs") &&
+		Has(FunctionBody(hub, "proveFace"), "if(pick != \"0\") { fallback = 1; }") &&
+		InOrder(FunctionBody(hub, "proveFace"), {"this.note(\"FONT err=width \" + this.errText(err));", "pick = \"0\";", "this.kit.face = \"\";", "this.kit.boldFace = \"\";", "this.kit.embed = false;"}) &&
+		InOrder(FunctionBody(hub, "onStage"), {"this.note(\"FONT err=width \" + this.errText(err2));", "saved = \"0\";", "this.kit.face = \"\";", "this.kit.boldFace = \"\";", "this.kit.embed = false;"}) &&
+		Has(FunctionBody(hub, "onStage"), "var savedFallback:int = saved != \"0\" ? 1 : 0;") &&
+		Has(FunctionBody(hub, "onStage"), "this.note(\"BUILDER \" + VERSION + \" gold lrg=0 built=0\");") &&
+		Has(FunctionBody(hub, "onStage"), "built = 1;") &&
+		Has(FunctionBody(hub, "onStage"), "\" built=\" + built"),
 		"a font-proof failure is logged and the builder still starts from the width check");
+	Expect(Has(FunctionBody(hub, "hotText"), "if(b == null) { i++; continue; }") &&
+		Has(FunctionBody(hub, "takeLines", "public"), "try { this.pushState(); }") &&
+		Has(FunctionBody(hub, "takeLines", "public"), "if(!this.stateNoted)") &&
+		Has(FunctionBody(hub, "takeLines", "public"), "this.note(\"INIT err=state \" + err.errorID);") &&
+		Has(FunctionBody(hub, "takeLines", "public"), "this.lines.join(\"\\n\")") &&
+		Has(hub, "private var stateNoted:Boolean = false;"),
+		"a missing panel or a failed state push still flushes the queued lines");
 	for (const auto& entry : fs::directory_iterator(as)) {
 		if (entry.path().extension() != ".as") continue;
 		Expect(NotesHideFaces(ReadFile(entry.path())), entry.path().filename().string() + ": log lines name faces by index only");
