@@ -1403,6 +1403,13 @@ void BuildApply()
 	const std::string hex = hsb::SettingOr(ini, "Style", "AccentHex", "");
 	const bool probe = hsb::SettingOr(ini, "Debug", "Probe", "0") == "1";
 	g_probeDebug.store(probe);
+	// FontStrip is off unless the player ini or the installed default ini says 1.
+	// The private test package writes FontStrip=1 into that installed default.
+	// A public package leaves FontStrip=0, so the strip stays off.
+	const std::wstring shippedPath = g_gameBuilder + L"HorizonShipBuilder.default.ini";
+	std::string shipped;
+	if (!g_gameBuilder.empty() && FileExists(shippedPath)) ReadCapped(shippedPath, kUserIniCap, shipped);
+	const std::string fontStrip = hsb::SettingOr(ini, "Debug", "FontStrip", hsb::SettingOr(shipped, "Debug", "FontStrip", "0"));
 	const bool conflict = GetModuleHandleA("StarUIShipBuilder.dll") != nullptr;
 	std::string blob;
 	blob += "accent=" + hsb::SettingOr(ini, "Style", "AccentColor", std::to_string(hsb::kAccentDefault)) + "\n";
@@ -1411,6 +1418,7 @@ void BuildApply()
 	blob += "coreaccent=" + std::to_string(coreAccent) + "\n";
 	blob += "corehex=" + (coreAccent == 13 && !coreHex.empty() ? coreHex : std::string("-")) + "\n";
 	blob += std::string("probe=") + (probe ? "1" : "0") + "\n";
+	blob += std::string("fontstrip=") + (fontStrip == "1" ? "1" : "0") + "\n";
 	blob += "margin=" + hsb::SettingOr(ini, "Layout", "ScreenMargin", std::to_string(hsb::kMarginDefault)) + "\n";
 	blob += std::string("conflict=") + (conflict ? "1" : "0") + "\n";
 	blob += std::string("starfiles=") + (!conflict && StarUiFilesPresent(root) ? "1" : "0") + "\n";

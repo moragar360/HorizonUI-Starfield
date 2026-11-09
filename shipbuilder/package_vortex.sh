@@ -117,6 +117,22 @@ cp "$dll" "$payload/SFSE/Plugins/HorizonShipBuilder.dll"
 cp "$normal" "$payload/Interface/spaceshipeditormenu.swf"
 cp "$large" "$payload/Interface/spaceshipeditormenu_lrg.swf"
 cp "$ini" "$payload/Interface/HorizonUI/shipbuilder/HorizonShipBuilder.default.ini"
+# Private test package: the installed default turns the font strip on.
+# The repo file stays FontStrip=0. A public package omits this rewrite.
+python3 - "$payload/Interface/HorizonUI/shipbuilder/HorizonShipBuilder.default.ini" << 'PY'
+import sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+old = "FontStrip=0"
+if old not in text:
+    sys.exit("private test ini is missing FontStrip=0")
+open(path, "w", encoding="utf-8", newline="\n").write(text.replace(old, "FontStrip=1", 1))
+PY
+staged_ini="$payload/Interface/HorizonUI/shipbuilder/HorizonShipBuilder.default.ini"
+if grep -F -q 'FontStrip=0' "$staged_ini" || ! grep -F -q 'FontStrip=1' "$staged_ini"; then
+	echo "private test package did not enable FontStrip" >&2
+	exit 1
+fi
 cp "$info" "$stage/fomod/info.xml"
 cp "$module" "$stage/fomod/ModuleConfig.xml"
 

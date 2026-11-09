@@ -51,6 +51,9 @@ package
       internal var lrg:Boolean = false;
       internal var face:String = "";
       internal var boldFace:String = "";
+      // fontStyle of the chosen faces. "boldItalic" sets both flags. A regular face sets neither.
+      internal var faceStyle:String = "";
+      internal var boldStyle:String = "";
       internal var embed:Boolean = false;
       private var fields:Array = [];
 
@@ -76,6 +79,13 @@ package
       internal function accentDim(param1:Number):uint
       {
          return mix(this.accent,FILL,param1);
+      }
+
+      // "bold" and "boldItalic" contain bold. "italic" and "boldItalic" contain italic.
+      internal static function styleHas(param1:String, param2:String):Boolean
+      {
+         if(param1 == null || param2 == null || param2.length == 0) { return false; }
+         return param1.toLowerCase().indexOf(param2) >= 0;
       }
 
       internal static function mix(param1:uint, param2:uint, param3:Number):uint
@@ -205,8 +215,12 @@ package
       internal function format(param1:Number, param2:uint, param3:Boolean, param4:Number, param5:String):TextFormat
       {
          var fmt:TextFormat = new TextFormat();
-         var pick:String = param3 && this.boldFace.length > 0 ? this.boldFace : this.face;
+         var head:Boolean = param3 && this.boldFace.length > 0;
+         var pick:String = head ? this.boldFace : this.face;
+         var style:String = head ? this.boldStyle : this.faceStyle;
          if(pick.length > 0) { fmt.font = pick; }
+         fmt.bold = HsbKit.styleHas(style,"bold");
+         fmt.italic = HsbKit.styleHas(style,"italic");
          fmt.size = this.size(param1);
          fmt.color = param2;
          fmt.letterSpacing = param4;
@@ -290,13 +304,20 @@ package
             {
                seen[kind] = true;
                var shown:String = "-";
+               var boldBit:int = 0;
+               var italicBit:int = 0;
                try
                {
                   var fmt:TextFormat = tf.getTextFormat();
-                  if(fmt != null && fmt.font != null && String(fmt.font).length > 0) { shown = String(fmt.font); }
+                  if(fmt != null)
+                  {
+                     if(fmt.font != null && String(fmt.font).length > 0) { shown = String(fmt.font); }
+                     boldBit = fmt.bold ? 1 : 0;
+                     italicBit = fmt.italic ? 1 : 0;
+                  }
                }
                catch(err:Error) { shown = "-"; }
-               out.push("FONT field kind=" + kind + " font=" + shown + " embed=" + (tf.embedFonts ? 1 : 0) + " w=" + int(tf.textWidth) + " n=" + tf.text.length);
+               out.push("FONT field kind=" + kind + " font=" + shown + " embed=" + (tf.embedFonts ? 1 : 0) + " bold=" + boldBit + " italic=" + italicBit + " w=" + int(tf.textWidth) + " n=" + tf.text.length);
             }
             i++;
          }
@@ -314,8 +335,12 @@ package
             if(tf != null && tf.parent != null)
             {
                var fmt:TextFormat = tf.defaultTextFormat;
-               var pick:String = row.bold == true && this.boldFace.length > 0 ? this.boldFace : this.face;
+               var head:Boolean = row.bold == true && this.boldFace.length > 0;
+               var pick:String = head ? this.boldFace : this.face;
+               var style:String = head ? this.boldStyle : this.faceStyle;
                fmt.font = pick.length > 0 ? pick : null;
+               fmt.bold = HsbKit.styleHas(style,"bold");
+               fmt.italic = HsbKit.styleHas(style,"italic");
                tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;
                tf.defaultTextFormat = fmt;
                tf.setTextFormat(fmt);

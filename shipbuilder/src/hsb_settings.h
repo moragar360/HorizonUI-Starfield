@@ -261,8 +261,9 @@ inline bool CheckSetting(std::string_view sectionIn, std::string_view keyIn, std
 	}
 	if (EqualsFold(section, "Debug")) {
 		out.section = "Debug";
-		if (!EqualsFold(key, "Probe") || !ParseFlag(value, out.value)) return false;
-		out.key = "Probe";
+		if (!EqualsFold(key, "Probe") && !EqualsFold(key, "FontStrip")) return false;
+		if (!ParseFlag(value, out.value)) return false;
+		out.key = EqualsFold(key, "Probe") ? "Probe" : "FontStrip";
 		out.isDefault = out.value == "0";
 		return true;
 	}

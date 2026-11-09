@@ -68,6 +68,8 @@ package
          "Flight":["FlightCheck_mc"]
       };
       private static const LOG_CAP:int = 200;
+      // Button and symbol faces. A fallback pick must not land on one of these.
+      private static const FONT_STRIP_H:Number = 36;
       // A cancel or accept can arrive both as a DLL key token and as the game's own event.
       private static const DOUBLE_FRAMES:int = 6;
       private static const FILE_QUEUE_MAX:int = 64;
@@ -185,6 +187,10 @@ package
       private var dirty:Object;
       private var hot:String = "";
       private var stateNoted:Boolean = false;
+      private var linesDropped:int = 0;
+      private var fontStripOn:Boolean = false;
+      private var fontStrip:Sprite;
+      private var fontStripH:Number = 0;
       private var heldEvents:Object;
       private var lastCancel:int = -100;
       private var lastOk:int = -100;
@@ -206,6 +212,9 @@ package
          this.frameN = 0;
          this.faceTries = 0;
          this.facePick = "0";
+         this.linesDropped = 0;
+         this.fontStripOn = false;
+         this.fontStripH = 0;
          this.debugOn = false;
          this.startOpen = {"Power":true,"Module":true,"Credits":true,"Browser":true,"Stats":true,"Hints":true};
          this.columnSets = {};
@@ -257,6 +266,7 @@ package
          }
          var text:String = this.lines.join("\n");
          this.lines = [];
+         this.linesDropped = 0;
          return text;
       }
 
@@ -445,11 +455,16 @@ package
                saved = "0";
                this.kit.face = "";
                this.kit.boldFace = "";
+               this.kit.faceStyle = "";
+               this.kit.boldStyle = "";
                this.kit.embed = false;
             }
             var savedBold:int = this.kit.boldFace.length > 0 ? 1 : 0;
             var savedFallback:int = saved != "0" ? 1 : 0;
-            this.note("FONT try=" + this.faceTries + " pick=" + saved + " bold=" + savedBold + " fallback=" + savedFallback + " list=- e1=- e2=- e3=- n4=- draw=na d1=0 d2=0 d3=0");
+            var savedBody:String = this.kit.face.length > 0 ? this.kit.face : "-";
+            var savedHead:String = this.kit.boldFace.length > 0 ? this.kit.boldFace : "-";
+            var savedDraw:String = err.errorID == 2077 ? "skip" : "na";
+            this.note("FONT try=" + this.faceTries + " pick=" + saved + " bold=" + savedBold + " fallback=" + savedFallback + " list=- body=" + savedBody + " why=none head=" + savedHead + " headWhy=none draw=" + savedDraw);
          }
          this.note("INIT face end");
          this.note("INIT build begin");
@@ -466,7 +481,11 @@ package
          }
          catch(err:Error) { this.note("INIT err=build " + this.errText(err)); }
          this.note("BUILDER " + VERSION + " gold lrg=" + (this.kit.lrg ? 1 : 0) + " built=" + built);
-         try { this.noteFields(); this.fontProbe(); }
+         try
+         {
+            this.noteFields();
+            if(this.fontStripOn) { this.fontProbe(); }
+         }
          catch(err:Error) { this.note("FONT err=probe " + this.errText(err)); }
          this.note("INIT stage end");
       }
@@ -501,6 +520,8 @@ package
          this.faceTries++;
          this.kit.face = "";
          this.kit.boldFace = "";
+         this.kit.faceStyle = "";
+         this.kit.boldStyle = "";
          this.kit.embed = false;
          var fault:String = "";
          var fonts:Array = [];
@@ -515,7 +536,8 @@ package
          try
          {
             fonts = this.embeddedFonts();
-            listed = this.noteFontList(fonts);
+            if(this.faceTries == 1) { listed = this.noteFontList(fonts); }
+            else { listed = this.countFonts(fonts); }
             this.note("FONT phase=list end");
          }
          catch(err:Error) { fault = "list " + this.errText(err); }
@@ -552,6 +574,8 @@ package
                   this.kit.boldFace = String(head.name);
                   headWhy = String(head.why);
                }
+               this.kit.faceStyle = this.kit.face.length > 0 ? this.styleOfListed(this.kit.face,fonts) : "";
+               this.kit.boldStyle = this.kit.boldFace.length > 0 ? this.styleOfListed(this.kit.boldFace,fonts) : "";
             }
             this.note("FONT phase=pick end");
          }
@@ -566,6 +590,8 @@ package
                pick = "0";
                this.kit.face = "";
                this.kit.boldFace = "";
+               this.kit.faceStyle = "";
+               this.kit.boldStyle = "";
                this.kit.embed = false;
             }
             if(pick != "0") { fallback = 1; }
@@ -604,6 +630,8 @@ package
       {
          this.kit.face = "";
          this.kit.boldFace = "";
+         this.kit.faceStyle = "";
+         this.kit.boldStyle = "";
          this.kit.embed = false;
          var none:Array = this.measureFace(NO_FACE,true);
          var noneDev:Array = this.measureFace(NO_FACE,false);
@@ -687,6 +715,7 @@ package
       {
          var n:int = 0;
          var i:int = 0;
+         var seen:Object = {};
          if(param1 == null) { this.note("FONT list[0]=-"); return 0; }
          while(i < param1.length)
          {
@@ -699,7 +728,9 @@ package
                try { name = this.fontNameOf(font); } catch(err:Error) { name = "err"; }
                try { kind = this.fontKind(font); } catch(err:Error) { kind = "err"; }
                try { style = this.fontStyleOf(font); } catch(err:Error) { style = "err"; }
-               var line:String = "FONT list[" + n + "]=" + name + " type=" + kind + " style=" + style;
+               var copy:int = seen[name] != null ? int(seen[name]) + 1 : 1;
+               seen[name] = copy;
+               var line:String = "FONT list[" + n + "]=" + name + " type=" + kind + " style=" + style + " copy=" + copy;
                if(line.length > 400) { line = line.substring(0,400); }
                this.note(line);
                n++;
@@ -773,10 +804,10 @@ package
          while(i < param2.length)
          {
             var font:Font = param2[i] as Font;
-            if(font != null)
+            if(this.keepFace(font,param2))
             {
                var listed:String = this.fontNameOf(font);
-               if(listed != "-" && this.glyphsOf(listed,param2) == 1) { return {name:listed,why:"glyphs"}; }
+               if(this.glyphsOf(listed,param2) == 1) { return {name:listed,why:"glyphs"}; }
             }
             i++;
          }
@@ -808,12 +839,12 @@ package
          while(i < param1.length)
          {
             var font:Font = param1[i] as Font;
-            if(font != null)
+            if(this.keepFace(font,param1))
             {
                var listed:String = this.fontNameOf(font);
                var style:String = "-";
                try { style = this.fontStyleOf(font); } catch(err:Error) { style = "-"; }
-               if(listed != "-" && this.styleIsBold(style) && this.glyphsOf(listed,param1) == 1) { return {name:listed,why:"glyphs"}; }
+               if(this.styleIsBold(style) && this.glyphsOf(listed,param1) == 1) { return {name:listed,why:"glyphs"}; }
             }
             i++;
          }
@@ -822,18 +853,66 @@ package
 
       private function styleOfListed(param1:String, param2:Array):String
       {
+         var font:Font = this.fontFor(param1,param2);
+         if(font == null) { return "-"; }
+         try { return this.fontStyleOf(font); }
+         catch(err:Error) { return "-"; }
+         return "-";
+      }
+
+      // The embedded copy of a repeated name. A device copy is used only when no
+      // embedded copy of that name is in the list.
+      private function fontFor(param1:String, param2:Array):Font
+      {
+         if(param1 == null || param1.length == 0 || param2 == null) { return null; }
+         var first:Font = null;
          var i:int = 0;
          while(i < param2.length)
          {
             var font:Font = param2[i] as Font;
             if(font != null && font.fontName == param1)
             {
-               try { return this.fontStyleOf(font); }
-               catch(err:Error) { return "-"; }
+               if(first == null) { first = font; }
+               var kind:String = "-";
+               try { kind = this.fontKind(font); } catch(err:Error) { kind = "-"; }
+               if(kind.toLowerCase() == "embedded") { return font; }
             }
             i++;
          }
-         return "-";
+         return first;
+      }
+
+      // Button glyphs and symbol faces. They are logged, and a fallback pick skips them.
+      private function faceBanned(param1:String):Boolean
+      {
+         if(param1 == null || param1.length == 0 || param1 == "-") { return true; }
+         if(param1.indexOf("Genesis Controller") == 0) { return true; }
+         if(param1 == "Consolas" || param1 == "Handwritten_Institute") { return true; }
+         if(param1.indexOf("Univers LT Std 93") == 0) { return true; }
+         return false;
+      }
+
+      // True for the copy a pick may use: not a button or symbol face, and the
+      // embedded copy when the same name is listed more than once.
+      private function keepFace(param1:Font, param2:Array):Boolean
+      {
+         if(param1 == null) { return false; }
+         var name:String = this.fontNameOf(param1);
+         if(this.faceBanned(name)) { return false; }
+         return this.fontFor(name,param2) == param1;
+      }
+
+      private function countFonts(param1:Array):int
+      {
+         if(param1 == null) { return 0; }
+         var n:int = 0;
+         var i:int = 0;
+         while(i < param1.length)
+         {
+            if(param1[i] is Font) { n++; }
+            i++;
+         }
+         return n;
       }
 
       private function styleIsBold(param1:String):Boolean
@@ -873,26 +952,34 @@ package
          this.note("FONT vanilla font=" + shown + " embed=" + embedBit + " w=" + wide + " n=" + count);
       }
 
-      // Private-test strip along the top of the builder. Each cell is a new TextField,
-      // embedFonts set, defaultTextFormat set before the text, and nothing else.
-      // Row 1 is embedFonts true. Row 2 is embedFonts false. One screenshot shows
-      // which combination draws letters.
+      // Private-test strip along the top of the visible area. Each cell is a new
+      // TextField: embedFonts, then defaultTextFormat, then the text. Row 1 is
+      // embedFonts true. Row 2 is embedFonts false. The last three columns repeat
+      // the bold faces with bold and italic set, which is how a boldItalic face matches.
+      // FontStrip=0 leaves this unbuilt. The private test package sets FontStrip=1.
       private function fontProbe():void
       {
+         if(!this.fontStripOn || this.fontStrip != null) { return; }
+         var asks:Array = PROBE_FACES.concat(["NB Grotesk R Bold","Roboto Bold","Exo 2 Bold"]);
+         var tags:Array = PROBE_TAGS.concat(["NBBold+","RobotoB+","Exo2B+"]);
+         var cols:int = asks.length;
+         if(cols < 1) { return; }
+         var r:Object = this.viewRect();
+         var span:Number = Number(r.width);
+         if(!(span > 0)) { span = 1920; }
+         var col:Number = span / cols;
          var strip:Sprite = new Sprite();
          strip.mouseEnabled = false;
          strip.mouseChildren = false;
-         var span:Number = 1920;
-         try { if(stage != null && stage.stageWidth > 0) { span = stage.stageWidth; } } catch(err:Error) { span = 1920; }
-         var cols:int = PROBE_FACES.length;
-         if(cols < 1) { return; }
-         var col:Number = span / cols;
          strip.graphics.beginFill(0x0B1016,0.92);
-         strip.graphics.drawRect(0,0,span,40);
+         strip.graphics.drawRect(0,0,span,FONT_STRIP_H);
          strip.graphics.endFill();
+         strip.x = Number(r.x);
+         strip.y = Number(r.y);
          var n:int = 0;
          while(n < cols)
          {
+            var wantBold:Boolean = n >= PROBE_FACES.length;
             var embedOn:Boolean = true;
             var pass:int = 0;
             while(pass < 2)
@@ -902,17 +989,19 @@ package
                tf.selectable = false;
                tf.embedFonts = embedOn;
                var fmt:TextFormat = new TextFormat();
-               fmt.font = String(PROBE_FACES[n]);
-               fmt.size = 12;
+               fmt.font = String(asks[n]);
+               fmt.size = 13;
+               fmt.bold = wantBold;
+               fmt.italic = wantBold;
                fmt.color = 0xF2F4F5;
                tf.defaultTextFormat = fmt;
-               tf.text = "Ab12 " + String(PROBE_TAGS[n]);
+               tf.text = "Ab12 " + String(tags[n]);
                tf.width = col - 2;
                tf.height = 16;
-               tf.x = n * col + 2;
+               tf.x = n * col + 1;
                tf.y = embedOn ? 2 : 20;
                strip.addChild(tf);
-               var asked:String = String(PROBE_FACES[n]);
+               var asked:String = String(asks[n]);
                if(asked.length == 0) { asked = "-"; }
                var shown:String = "-";
                try
@@ -922,13 +1011,25 @@ package
                }
                catch(err:Error) { shown = "-"; }
                var bit:int = embedOn ? 1 : 0;
-               this.note("FONT probe ask=" + asked + " embed=" + bit + " font=" + shown + " w=" + int(tf.textWidth) + " n=" + tf.text.length);
+               var boldBit:int = wantBold ? 1 : 0;
+               this.note("FONT probe ask=" + asked + " embed=" + bit + " bold=" + boldBit + " italic=" + boldBit + " font=" + shown + " w=" + int(tf.textWidth) + " n=" + tf.text.length);
                embedOn = false;
                pass++;
             }
             n++;
          }
+         this.fontStrip = strip;
+         this.fontStripH = FONT_STRIP_H;
          this.addChild(strip);
+         if(this.power != null) { this.place(); }
+      }
+
+      private function clearFontProbe():void
+      {
+         if(this.fontStrip != null && this.fontStrip.parent != null) { this.fontStrip.parent.removeChild(this.fontStrip); }
+         this.fontStrip = null;
+         this.fontStripH = 0;
+         if(this.power != null) { this.place(); }
       }
 
       // 1: this embedded face has every glyph in GLYPH_PROBE.
@@ -936,21 +1037,12 @@ package
       // -1: enumerateFonts(false) has no face of that name.
       private function glyphsOf(param1:String, param2:Array):int
       {
-         if(param1 == null || param1.length == 0 || param2 == null) { return -1; }
-         var i:int = 0;
-         while(i < param2.length)
-         {
-            var font:Font = param2[i] as Font;
-            if(font != null && font.fontName == param1)
-            {
-               var ok:Boolean = false;
-               try { ok = font.hasGlyphs(GLYPH_PROBE); }
-               catch(err:Error) { ok = false; }
-               return ok ? 1 : 0;
-            }
-            i++;
-         }
-         return -1;
+         var font:Font = this.fontFor(param1,param2);
+         if(font == null) { return -1; }
+         var ok:Boolean = false;
+         try { ok = font.hasGlyphs(GLYPH_PROBE); }
+         catch(err:Error) { ok = false; }
+         return ok ? 1 : 0;
       }
 
       private function glyphMark(param1:int):String
@@ -1057,6 +1149,11 @@ package
             case "coreaccent": this.coreAccent = int(v); break;
             case "corehex": this.coreHex = v == "-" ? "" : v; break;
             case "probe": if(v == "1") { this.setDebug(1); } break;
+            case "fontstrip":
+               this.fontStripOn = v == "1";
+               if(this.fontStripOn) { this.fontProbe(); }
+               else { this.clearFontProbe(); }
+               break;
             case "margin": this.margin = clampInt(int(v),0,200); break;
             case "conflict": if(v == "1") { this.conflict = true; } break;
             case "starfiles": this.starFiles = v == "1"; break;
@@ -1592,7 +1689,15 @@ package
          var dm:Number = this.margin - 34;
          var sc:Number = this.uiScale;
          var left:Number = r.x + 33 + dm;
-         var top:Number = r.y + 37 + dm;
+         var band:Number = 37 + dm;
+         if(band < 0) { band = 0; }
+         var extra:Number = this.fontStripH > band ? this.fontStripH - band + 4 : 0;
+         var top:Number = r.y + band + extra;
+         if(this.fontStrip != null)
+         {
+            this.fontStrip.x = r.x;
+            this.fontStrip.y = r.y;
+         }
          var right:Number = r.x + r.width - 31 - dm;
          var bottom:Number = r.y + r.height - 37 - dm;
          var boxes:Array = [this.power,this.card,this.flight,this.credits,this.cluster,this.browser,this.colors,this.hints,this.stats];
@@ -3241,8 +3346,23 @@ package
       internal function note(param1:String):void
       {
          var clean:String = param1.split("\n").join(" ").split("\r").join(" ");
+         if(this.lines.length > 0 && String(this.lines[0]).indexOf("FONT drop n=") == 0) { this.lines.shift(); }
          this.lines.push(clean);
-         while(this.lines.length > LOG_CAP) { this.lines.shift(); }
+         while(this.lines.length > LOG_CAP)
+         {
+            this.lines.shift();
+            this.linesDropped++;
+         }
+         if(this.linesDropped > 0)
+         {
+            this.lines.unshift("FONT drop n=" + this.linesDropped);
+            if(this.lines.length > LOG_CAP)
+            {
+               this.lines.splice(1,1);
+               this.linesDropped++;
+               this.lines[0] = "FONT drop n=" + this.linesDropped;
+            }
+         }
       }
    }
 }

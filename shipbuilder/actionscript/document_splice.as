@@ -115,10 +115,15 @@ package
       //    (NB Grotesk R Semibold, then NB Architekt, then NB Architekt Light), then
       //    Roboto Regular, then Exo 2 Regular. Bold prefers a listed face whose
       //    fontStyle contains "bold": NB Grotesk R Bold, then Roboto Bold, then
-      //    Exo 2 Bold. The first of those with hasGlyphs wins. A face that failed
-      //    hasGlyphs is not kept. A BitmapData.draw error 2077 is logged and does
-      //    not choose a face. A private-test strip along the top draws Ab12 once
-      //    per face with embedFonts true and false. After importScript, run
-      //    shipbuilder/font_marker_gate.py on the re-exported script.
+      //    Exo 2 Bold. The first of those with hasGlyphs wins. Heading, button and
+      //    active-tab fields set bold and italic from that face's fontStyle.
+      //    A face that failed hasGlyphs is not kept. A BitmapData.draw error 2077
+      //    is logged as draw=skip and does not choose a face. The font list is
+      //    logged on the first try only. A private-test strip along the top draws
+      //    Ab12 once per face with embedFonts true and false, plus the three bold
+      //    faces with bold and italic set. The strip is drawn only when FontStrip=1.
+      //    The repo default is 0. The private test package sets the installed
+      //    default to 1. After importScript, run shipbuilder/font_marker_gate.py
+      //    on the re-exported script.
    }
 }

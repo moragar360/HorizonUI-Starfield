@@ -468,7 +468,9 @@ static void CheckSettings()
 	Expect(!Accepts("Columns", "hasOwnProperty", "Value") && !Accepts("Columns", "toString", "Value") && !Accepts("Columns", "valueOf", "") &&
 			!Accepts("Columns", "constructor", "Value") && Accepts("Columns", "HasOwnProperty", "Value", "Value", 0) && Accepts("Columns", "Tostring", "", "", 1),
 		"Columns refuses the names AS3's Object defines, which the movie cannot use as keys");
-	Expect(Accepts("Debug", "Probe", "0", "0", 1) && Accepts("Debug", "Probe", "1", "1", 0) && !Accepts("Debug", "Other", "1"), "Debug holds Probe only");
+	Expect(Accepts("Debug", "Probe", "0", "0", 1) && Accepts("Debug", "Probe", "1", "1", 0) &&
+		Accepts("Debug", "FontStrip", "0", "0", 1) && Accepts("Debug", "FontStrip", "1", "1", 0) && !Accepts("Debug", "Other", "1"),
+		"Debug holds Probe and FontStrip");
 	Expect(Accepts("Arrange", "PowerX", "l10", "L10", 0) && Accepts("Arrange", "PowerY", "T-5", "T-5", 0) && Accepts("Arrange", "PowerX", "-1", "-1", 1) &&
 		Accepts("Arrange", "ArrangeBarX", "0", "0", 1) && Accepts("Arrange", "ArrangeBarY", "-12", "-12", 0), "Arrange holds anchors and the bar offset");
 	Expect(!Accepts("Arrange", "PowerX", "X10") && !Accepts("Arrange", "PowerY", "B4001") && !Accepts("Arrange", "ColorsX", "L0") && !Accepts("Foo", "Bar", "1"),
@@ -1332,7 +1334,13 @@ static void CheckMovie(const fs::path& root)
 		"a blank turned-tab picture falls back to an upright label");
 	Expect(Has(hub, "this.note(\"FONT try=\" + this.faceTries + \" pick=\" + pick + \" bold=\" + boldOk + \" fallback=\" + fallback + \" list=\" + list + \" body=\" + bodyName + \" why=\" + bodyWhy + \" head=\" + headName + \" headWhy=\" + headWhy + \" draw=\" + this.drawMark(draw));") &&
 		Has(FunctionBody(hub, "noteFontList"), "this.note(line);") &&
-		Has(FunctionBody(hub, "noteFontList"), "\"FONT list[\" + n + \"]=\" + name + \" type=\" + kind + \" style=\" + style") &&
+		Has(FunctionBody(hub, "noteFontList"), "\"FONT list[\" + n + \"]=\" + name + \" type=\" + kind + \" style=\" + style + \" copy=\" + copy") &&
+		Has(FunctionBody(hub, "proveFace"), "if(this.faceTries == 1) { listed = this.noteFontList(fonts); }") &&
+		Has(FunctionBody(hub, "fontFor"), "kind.toLowerCase() == \"embedded\"") &&
+		Has(FunctionBody(hub, "faceBanned"), "param1.indexOf(\"Genesis Controller\") == 0") &&
+		Has(FunctionBody(hub, "faceBanned"), "param1 == \"Consolas\" || param1 == \"Handwritten_Institute\"") &&
+		Has(FunctionBody(hub, "faceBanned"), "param1.indexOf(\"Univers LT Std 93\") == 0") &&
+		Has(FunctionBody(hub, "chooseListed"), "if(this.keepFace(font,param2))") &&
 		Has(FunctionBody(hub, "noteFontList"), "if(line.length > 400)") &&
 		Has(FunctionBody(hub, "drawMark"), "return \"empty\";") && Has(FunctionBody(hub, "drawMark"), "return \"err\";") &&
 		Has(FunctionBody(hub, "drawMark"), "return \"skip\";"),
@@ -1360,11 +1368,22 @@ static void CheckMovie(const fs::path& root)
 		Has(FunctionBody(hub, "proveFace"), "var head:Object = this.chooseBold(fonts,noneEmbed);") &&
 		Has(FunctionBody(kit, "text", "internal"), "tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;") &&
 		Has(FunctionBody(kit, "refreshFaces", "internal"), "tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;") &&
+		Has(FunctionBody(kit, "format", "internal"), "fmt.bold = HsbKit.styleHas(style,\"bold\");") &&
+		Has(FunctionBody(kit, "format", "internal"), "fmt.italic = HsbKit.styleHas(style,\"italic\");") &&
+		Has(FunctionBody(kit, "refreshFaces", "internal"), "fmt.bold = HsbKit.styleHas(style,\"bold\");") &&
+		Has(FunctionBody(kit, "refreshFaces", "internal"), "fmt.italic = HsbKit.styleHas(style,\"italic\");") &&
 		Has(FunctionBody(kit, "fieldReport", "internal"), "\"FONT field kind=\" + kind + \" font=\" + shown + \" embed=\"") &&
 		Has(FunctionBody(hub, "noteFields"), "this.note(\"FONT vanilla font=\" + shown + \" embed=\" + embedBit + \" w=\" + wide + \" n=\" + count);") &&
-		InOrder(FunctionBody(hub, "fontProbe"), {"tf.embedFonts = embedOn;", "tf.defaultTextFormat = fmt;", "tf.text = \"Ab12 \" + String(PROBE_TAGS[n]);"}) &&
-		Has(FunctionBody(hub, "fontProbe"), "this.note(\"FONT probe ask=\" + asked + \" embed=\" + bit + \" font=\" + shown + \" w=\" + int(tf.textWidth) + \" n=\" + tf.text.length);") &&
-		Has(FunctionBody(hub, "onStage"), "this.noteFields(); this.fontProbe();") &&
+		InOrder(FunctionBody(hub, "fontProbe"), {"tf.embedFonts = embedOn;", "fmt.size = 13;", "fmt.bold = wantBold;", "fmt.italic = wantBold;", "tf.defaultTextFormat = fmt;", "tf.text = \"Ab12 \" + String(tags[n]);"}) &&
+		Has(FunctionBody(hub, "fontProbe"), "this.note(\"FONT probe ask=\" + asked + \" embed=\" + bit + \" bold=\" + boldBit + \" italic=\" + boldBit + \" font=\" + shown + \" w=\" + int(tf.textWidth) + \" n=\" + tf.text.length);") &&
+		Has(FunctionBody(hub, "fontProbe"), "if(!this.fontStripOn || this.fontStrip != null) { return; }") &&
+		Has(FunctionBody(hub, "fontProbe"), "var span:Number = Number(r.width);") &&
+		Has(FunctionBody(hub, "onStage"), "if(this.fontStripOn) { this.fontProbe(); }") &&
+		Has(FunctionBody(hub, "onStage"), "var savedDraw:String = err.errorID == 2077 ? \"skip\" : \"na\";") &&
+		Has(FunctionBody(hub, "applyKey"), "case \"fontstrip\":") &&
+		Has(FunctionBody(hub, "note", "internal"), "this.lines.unshift(\"FONT drop n=\" + this.linesDropped);") &&
+		Has(FunctionBody(hub, "takeLines", "public"), "this.linesDropped = 0;") &&
+		Has(FunctionBody(hub, "place", "internal"), "var extra:Number = this.fontStripH > band ? this.fontStripH - band + 4 : 0;") &&
 		Has(FunctionBody(kit, "button", "internal"), "this.retag(t,\"button\");") &&
 		Has(browser, "k.retag(tab,\"tab\");") &&
 		Has(FunctionBody(hub, "proveFace"), "if(pick != \"0\") { fallback = 1; }") &&
@@ -1976,7 +1995,10 @@ static void CheckPlugin(const fs::path& root)
 	Expect(Has(apply, "const hsb::HudAccent hud = hsb::LayerHudAccent(coreUser, coreDefault);") &&
 		Has(apply, "const int coreAccent = coreFound ? hsb::ResolveAccent(hud.color, coreHex, false, 0, \"\") : -1;"),
 		"the HUD accent is layered as the HUD layers it");
-	for (const char* key : {"accent=", "hex=", "core=", "coreaccent=", "corehex=", "probe=", "margin=", "conflict=", "starfiles=", "keys=", "opacity=", "scale=",
+	Expect(Has(apply, "HorizonShipBuilder.default.ini") && Has(apply, "Debug\", \"FontStrip\", \"0\"") &&
+		Has(apply, "hsb::SettingOr(ini, \"Debug\", \"FontStrip\""),
+		"FontStrip comes from the player ini, then the installed default, then off");
+	for (const char* key : {"accent=", "hex=", "core=", "coreaccent=", "corehex=", "probe=", "fontstrip=", "margin=", "conflict=", "starfiles=", "keys=", "opacity=", "scale=",
 			 "density=", "bymaker=", "remember=", "notice=", "keyhide=", "keyfind=", "panel.", "col.", "ArrangeBarX=", "ArrangeBarY="}) {
 		Expect(Has(apply, std::string("\"") + key), std::string("the plugin applies ") + key);
 	}
@@ -2070,7 +2092,10 @@ static void CheckDocs(const fs::path& repo, const fs::path& root)
 		++keys;
 	}
 	Expect(keys >= 35, "the default ini lists every setting");
-	Expect(Has(defaults, "AccentColor=9") && Has(defaults, "Probe=0") && Has(defaults, "HideAll=H") && Has(defaults, "Find=/"), "default accent, probe and keys");
+	Expect(Has(defaults, "AccentColor=9") && Has(defaults, "Probe=0") && Has(defaults, "FontStrip=0") && Has(defaults, "HideAll=H") && Has(defaults, "Find=/"),
+		"default accent, probe, font strip and keys");
+	Expect(Has(vortex, "text.replace(old, \"FontStrip=1\", 1)") && Has(vortex, "A public package omits this rewrite"),
+		"the private test package turns FontStrip on, and the public package does not");
 }
 
 int main()
