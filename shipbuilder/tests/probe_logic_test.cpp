@@ -1309,15 +1309,16 @@ static void CheckMovie(const fs::path& root)
 	Expect(Has(hub, "this.pathField([\"ModuleInfoCard_mc\",\"ModuleLabel_mc\",\"text_tf\"])"), "the fallback face is the module name field");
 	Expect(Has(FunctionBody(hub, "glyphsOf"), "font.hasGlyphs(GLYPH_PROBE)") && Has(FunctionBody(hub, "embeddedFonts"), "Font.enumerateFonts(false)") &&
 		!Has(FunctionBody(hub, "glyphsOf"), "enumerateFonts(true)") &&
-		Has(FunctionBody(hub, "proveFace"), "else if(embed) { ok = g == 1; }") &&
-		Has(FunctionBody(hub, "proveFace"), "if(tag == \"n4\") { ok = g == 1 || (g < 0 && draw == 1); }") &&
 		!Has(FunctionBody(hub, "proveFace"), "if(drew)") &&
 		Has(FunctionBody(hub, "proveFace"), "this.kit.nativeDraws(label)") &&
-		Has(FunctionBody(hub, "proveFace"), "if(this.glyphsOf(boldName,fonts) == 1) { this.kit.boldFace = boldName; }") &&
+		Has(FunctionBody(hub, "proveFace"), "draw = err.errorID == 2077 ? -4 : -2;") &&
+		Has(FunctionBody(hub, "chooseListed"), "return {name:name,why:\"glyphs\"};") &&
+		Has(FunctionBody(hub, "chooseListed"), "return {name:name,why:\"width\"};") &&
+		Has(FunctionBody(hub, "chooseListed"), "return {name:first,why:\"listed\"};") &&
 		Has(FunctionBody(kit, "nativeDraws", "internal"), "return -1;") &&
 		Has(FunctionBody(kit, "nativeDraws", "internal"), "return -2;") &&
 		!Has(FunctionBody(kit, "nativeDraws", "internal"), "return true;"),
-		"embedded faces need hasGlyphs, and a partial native face is refused");
+		"a listed face is ranked by hasGlyphs or width, and draw error 2077 does not count");
 	Expect(Has(FunctionBody(kit, "turnUp", "internal"), "if(this.embed)") && Has(FunctionBody(kit, "turnUp", "internal"), "param1.rotation = -90;") &&
 		Has(FunctionBody(kit, "turnUp", "internal"), "new BitmapData(") && Has(FunctionBody(kit, "turnUp", "internal"), "this.inked(pixels,INK_COUNT,INK_ALPHA)") &&
 		Has(FunctionBody(kit, "turnUp", "internal"), "param1.rotation = 0;") &&
@@ -1325,12 +1326,13 @@ static void CheckMovie(const fs::path& root)
 		Has(browser, "k.turnUp(label)") && Has(browser, "k.turnUp(count)") &&
 		!Has(browser, "label.rotation") && !Has(browser, "count.rotation"),
 		"a blank turned-tab picture falls back to an upright label");
-	Expect(Has(hub, "this.note(\"FONT try=\" + this.faceTries + \" pick=\" + pick + \" bold=\" + boldOk + \" fallback=\" + fallback + \" list=\" + list + \" \" + report);") &&
-		Has(FunctionBody(hub, "proveFace"), "e1=\" + this.glyphMark(int(ge[0])) + \" e2=\"") &&
-		Has(FunctionBody(hub, "proveFace"), "n4=\" + n4mark + \" draw=\" + this.drawMark(draw)") &&
-		Has(FunctionBody(hub, "proveFace"), "d1=\" + this.widthMark(devOk[0] == true)") &&
-		Has(FunctionBody(hub, "drawMark"), "return \"empty\";") && Has(FunctionBody(hub, "drawMark"), "return \"err\";"),
-		"the FONT line lists embedded names, hasGlyphs, the draw state, the width checks, and the pick");
+	Expect(Has(hub, "this.note(\"FONT try=\" + this.faceTries + \" pick=\" + pick + \" bold=\" + boldOk + \" fallback=\" + fallback + \" list=\" + list + \" body=\" + bodyName + \" why=\" + bodyWhy + \" head=\" + headName + \" headWhy=\" + headWhy + \" draw=\" + this.drawMark(draw));") &&
+		Has(FunctionBody(hub, "noteFontList"), "this.note(line);") &&
+		Has(FunctionBody(hub, "noteFontList"), "\"FONT list[\" + n + \"]=\" + name + \" type=\" + kind + \" style=\" + style") &&
+		Has(FunctionBody(hub, "noteFontList"), "if(line.length > 400)") &&
+		Has(FunctionBody(hub, "drawMark"), "return \"empty\";") && Has(FunctionBody(hub, "drawMark"), "return \"err\";") &&
+		Has(FunctionBody(hub, "drawMark"), "return \"skip\";"),
+		"the FONT lines name every embedded face and the chosen body and bold");
 	Expect(Has(FunctionBody(hub, "onStage"), "this.note(\"INIT kit begin\");") && Has(FunctionBody(hub, "onStage"), "this.note(\"INIT kit end\");") &&
 		Has(FunctionBody(hub, "onStage"), "this.note(\"INIT face begin\");") && Has(FunctionBody(hub, "onStage"), "this.note(\"INIT face end\");") &&
 		Has(FunctionBody(hub, "onStage"), "this.note(\"INIT build begin\");") && Has(FunctionBody(hub, "onStage"), "this.note(\"INIT build end\");") &&
@@ -1342,9 +1344,17 @@ static void CheckMovie(const fs::path& root)
 		Has(FunctionBody(hub, "proveFace"), "this.note(\"FONT phase=pick begin\");") &&
 		Has(FunctionBody(hub, "proveFace"), "this.note(\"FONT err=\" + fault);") &&
 		Has(FunctionBody(hub, "proveFaceWidth"), "embeds.push(true);") &&
+		Has(FunctionBody(hub, "proveFaceWidth"), "if(candidate.charAt(0) == \"$\") { k++; continue; }") &&
+		Has(FunctionBody(hub, "proveFaceWidth"), "boldPick.charAt(0) != \"$\"") &&
 		!Has(FunctionBody(hub, "proveFaceWidth"), "nativeDraws") &&
 		!Has(FunctionBody(hub, "proveFaceWidth"), "enumerateFonts") &&
 		!Has(FunctionBody(hub, "proveFaceWidth"), "hasGlyphs") &&
+		Has(hub, "BODY_FACES:Array = [\"Roboto Regular\",\"NB Architekt\",\"Exo 2 Regular\"];") &&
+		Has(hub, "BOLD_FACES:Array = [\"Roboto Medium\",\"Exo 2 Bold\"];") &&
+		Has(FunctionBody(hub, "proveFace"), "if(fault.length > 0 && listed == 0)") &&
+		Has(FunctionBody(hub, "proveFace"), "this.kit.embed = true;") &&
+		Has(FunctionBody(kit, "text", "internal"), "tf.embedFonts = this.face.length > 0 || this.embed;") &&
+		Has(FunctionBody(kit, "refreshFaces", "internal"), "tf.embedFonts = this.face.length > 0 || this.embed;") &&
 		Has(FunctionBody(hub, "proveFace"), "if(pick != \"0\") { fallback = 1; }") &&
 		InOrder(FunctionBody(hub, "proveFace"), {"this.note(\"FONT err=width \" + this.errText(err));", "pick = \"0\";", "this.kit.face = \"\";", "this.kit.boldFace = \"\";", "this.kit.embed = false;"}) &&
 		InOrder(FunctionBody(hub, "onStage"), {"this.note(\"FONT err=width \" + this.errText(err2));", "saved = \"0\";", "this.kit.face = \"\";", "this.kit.boldFace = \"\";", "this.kit.embed = false;"}) &&

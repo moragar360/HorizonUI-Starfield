@@ -39,9 +39,13 @@ package
       internal static const VERSION:String = "0.2.0.0";
       internal static const ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       internal static const PANELS:Array = ["Power","Module","Credits","Browser","Stats","Hints","Cluster"];
-      // Mapped names. The FONT line lists embedded fontName values and names the pick by index.
+      // Mapped names. They are not embedded in this movie. A non-empty enumerateFonts
+      // list is never allowed to fall through to one of them.
       private static const FACES:Array = ["$NB_Grotesk_Semibold","$MAIN_Font_Bold","$MAIN_Font"];
       private static const NO_FACE:String = "$Horizon_NoSuchFace_x";
+      // Exact fontName values enumerateFonts(false) returned in game. Body first, then bold.
+      private static const BODY_FACES:Array = ["Roboto Regular","NB Architekt","Exo 2 Regular"];
+      private static const BOLD_FACES:Array = ["Roboto Medium","Exo 2 Bold"];
       // Letters and digits a label can use. A face that only baked the timeline's own
       // words fails this, which a W-versus-i width check does not.
       private static const GLYPH_PROBE:String = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -475,18 +479,13 @@ package
          catch(err:Error) { if(this.frameN % 120 == 0) { this.note("ADAPT fault " + err.errorID); } }
       }
 
-      // Candidates in order: mapped names as embedded text, the module-name field's face,
-      // then mapped names as device text. An embedded name counts only when that face's
-      // Font.hasGlyphs covers GLYPH_PROBE. Listing the name is not enough: the movie may
-      // have baked only the letters its own labels use. The module-name face counts when
-      // that probe passes, or when the name is not in the embedded list and a real ink
-      // sample of the field succeeds. A listed face that lacks a probe glyph does not
-      // count, even when the field has ink. A zero-size field and a sample that throws
-      // are not ink. Device text still needs W and i to measure apart from a name that
-      // cannot exist, and that width result is what d1 to d3 log.
-      // Each new call is its own phase. A throw, including a verify failure entering
-      // the callee, is caught here. The face then comes from the width check that
-      // already ran in game, and the FONT line is still written.
+      // The face is a fontName from enumerateFonts(false). Body prefers Roboto Regular,
+      // then NB Architekt, then Exo 2 Regular. Bold prefers Roboto Medium, then Exo 2 Bold.
+      // hasGlyphs and the width check only rank a name that is already in that list.
+      // A non-empty list never accepts a mapped $ name. BitmapData.draw throws 2077 in
+      // this player; that sample is logged and does not choose a face.
+      // Each phase is logged. A throw, including a verify failure entering the callee,
+      // is caught here. The builder still starts.
       private function proveFace():void
       {
          this.faceTries++;
@@ -495,151 +494,62 @@ package
          this.kit.embed = false;
          var fault:String = "";
          var fonts:Array = [];
-         var list:String = "-";
-         var ge:Array = [-1,-1,-1];
-         var devOk:Array = [false,false,false];
-         var noneDev:Array = [0,0,0];
+         var listed:int = 0;
+         var noneEmbed:Array = [0,0,0];
          var draw:int = -3;
-         var n4g:int = -1;
-         var hasLabel:Boolean = false;
          var pick:String = "0";
          var fallback:int = 0;
-         var label:TextField = null;
-         var labelFace:String = "";
+         var bodyWhy:String = "none";
+         var headWhy:String = "none";
          this.note("FONT phase=list begin");
          try
          {
             fonts = this.embeddedFonts();
-            list = this.embeddedList(fonts);
+            listed = this.noteFontList(fonts);
             this.note("FONT phase=list end");
          }
          catch(err:Error) { fault = "list " + this.errText(err); }
-         if(fault.length == 0)
+         this.note("FONT phase=glyphs begin");
+         try
          {
-            this.note("FONT phase=glyphs begin");
-            try
-            {
-               var i:int = 0;
-               while(i < FACES.length)
-               {
-                  ge[i] = this.glyphsOf(String(FACES[i]),fonts);
-                  i++;
-               }
-               this.note("FONT phase=glyphs end");
-            }
-            catch(err:Error) { fault = "glyphs " + this.errText(err); }
+            this.probeListedGlyphs(fonts);
+            this.note("FONT phase=glyphs end");
          }
-         if(fault.length == 0)
+         catch(err:Error) { this.note("FONT err=glyphs " + this.errText(err)); }
+         this.note("FONT phase=width begin");
+         try
          {
-            this.note("FONT phase=width begin");
-            try
-            {
-               noneDev = this.measureFace(NO_FACE,false);
-               var j:int = 0;
-               while(j < FACES.length)
-               {
-                  devOk[j] = this.faceProven(this.measureFace(String(FACES[j]),false),noneDev);
-                  j++;
-               }
-               this.note("FONT phase=width end");
-            }
-            catch(err:Error) { fault = "width " + this.errText(err); }
+            noneEmbed = this.measureFace(NO_FACE,true);
+            this.note("FONT phase=width end");
          }
-         if(fault.length == 0)
+         catch(err:Error) { this.note("FONT err=width " + this.errText(err)); noneEmbed = [0,0,0]; }
+         this.note("FONT phase=pick begin");
+         try
          {
-            this.note("FONT phase=draw begin");
-            try
+            if(listed > 0)
             {
-               label = this.pathField(["ModuleInfoCard_mc","ModuleLabel_mc","text_tf"]);
-               labelFace = this.fieldFace(label);
-               hasLabel = labelFace.length > 0;
-               if(label != null) { draw = this.kit.nativeDraws(label); }
-               n4g = hasLabel ? this.glyphsOf(labelFace,fonts) : -1;
-               this.note("FONT phase=draw end");
+               var body:Object = this.chooseListed(BODY_FACES,fonts,noneEmbed);
+               var head:Object = this.chooseListed(BOLD_FACES,fonts,noneEmbed);
+               if(String(body.name).length > 0)
+               {
+                  this.kit.face = String(body.name);
+                  this.kit.embed = true;
+                  pick = "list";
+                  bodyWhy = String(body.why);
+               }
+               if(String(head.name).length > 0)
+               {
+                  this.kit.boldFace = String(head.name);
+                  headWhy = String(head.why);
+               }
             }
-            catch(err:Error) { fault = "draw " + this.errText(err); }
+            this.note("FONT phase=pick end");
          }
-         if(fault.length == 0)
-         {
-            this.note("FONT phase=pick begin");
-            try
-            {
-               var names:Array = [];
-               var embeds:Array = [];
-               var glyphs:Array = [];
-               var tags:Array = [];
-               var n:int = 0;
-               while(n < FACES.length)
-               {
-                  names.push(String(FACES[n]));
-                  embeds.push(true);
-                  glyphs.push(ge[n]);
-                  tags.push("e" + (n + 1));
-                  n++;
-               }
-               if(hasLabel)
-               {
-                  names.push(labelFace);
-                  embeds.push(label.embedFonts);
-                  glyphs.push(n4g);
-                  tags.push("n4");
-               }
-               n = 0;
-               while(n < FACES.length)
-               {
-                  names.push(String(FACES[n]));
-                  embeds.push(false);
-                  glyphs.push(ge[n]);
-                  tags.push("d" + (n + 1));
-                  n++;
-               }
-               var k:int = 0;
-               var devAt:int = 0;
-               while(k < names.length)
-               {
-                  var embed:Boolean = embeds[k] == true;
-                  var tag:String = String(tags[k]);
-                  var g:int = int(glyphs[k]);
-                  var ok:Boolean = false;
-                  if(tag == "n4") { ok = g == 1 || (g < 0 && draw == 1); }
-                  else if(embed) { ok = g == 1; }
-                  else
-                  {
-                     ok = devOk[devAt] == true;
-                     devAt++;
-                  }
-                  if(ok && pick == "0")
-                  {
-                     pick = tag;
-                     this.kit.face = String(names[k]);
-                     // n4=1 is an embedded face that covered the probe, so new fields embed it.
-                     // An unlisted native face is kept as the field itself draws it.
-                     this.kit.embed = tag == "n4" ? g == 1 : embed;
-                  }
-                  k++;
-               }
-               // Bold uses the game bold face only when it can draw the same way as the body.
-               // An embedded bold face needs the probe glyphs. Device body text needs the width check.
-               if(this.kit.face.length > 0 && this.kit.face != String(FACES[1]))
-               {
-                  var boldName:String = String(FACES[1]);
-                  if(this.kit.embed)
-                  {
-                     if(this.glyphsOf(boldName,fonts) == 1) { this.kit.boldFace = boldName; }
-                  }
-                  else if(this.faceProven(this.measureFace(boldName,false),noneDev))
-                  {
-                     this.kit.boldFace = boldName;
-                  }
-               }
-               this.note("FONT phase=pick end");
-            }
-            catch(err:Error) { fault = "pick " + this.errText(err); }
-         }
-         if(fault.length > 0)
+         catch(err:Error) { fault = "pick " + this.errText(err); }
+         if(fault.length > 0 && listed == 0)
          {
             this.note("FONT err=" + fault);
-            try { pick = this.proveFaceWidth(); }
+            try { pick = this.proveFaceWidth(fonts); }
             catch(err:Error)
             {
                this.note("FONT err=width " + this.errText(err));
@@ -650,18 +560,37 @@ package
             }
             if(pick != "0") { fallback = 1; }
          }
+         else if(fault.length > 0)
+         {
+            this.note("FONT err=" + fault);
+         }
+         // The sample is diagnostic. Error 2077 leaves the listed face in place.
+         this.note("FONT phase=draw begin");
+         try
+         {
+            var label:TextField = this.pathField(["ModuleInfoCard_mc","ModuleLabel_mc","text_tf"]);
+            if(label != null) { draw = this.kit.nativeDraws(label); }
+            this.note("FONT phase=draw end");
+         }
+         catch(err:Error)
+         {
+            draw = err.errorID == 2077 ? -4 : -2;
+            this.note("FONT err=draw " + this.errText(err));
+            this.note("FONT phase=draw end");
+         }
          this.facePick = pick;
          var boldOk:int = this.kit.boldFace.length > 0 ? 1 : 0;
-         var n4mark:String = hasLabel ? this.glyphMark(n4g) : "-";
-         var report:String = "e1=" + this.glyphMark(int(ge[0])) + " e2=" + this.glyphMark(int(ge[1])) + " e3=" + this.glyphMark(int(ge[2])) + " n4=" + n4mark + " draw=" + this.drawMark(draw) + " d1=" + this.widthMark(devOk[0] == true) + " d2=" + this.widthMark(devOk[1] == true) + " d3=" + this.widthMark(devOk[2] == true);
-         if(fault.length > 0) { report += " err=" + fault; }
-         this.note("FONT try=" + this.faceTries + " pick=" + pick + " bold=" + boldOk + " fallback=" + fallback + " list=" + list + " " + report);
+         var bodyName:String = this.kit.face;
+         if(bodyName.length == 0) { bodyName = "-"; }
+         var headName:String = this.kit.boldFace;
+         if(headName.length == 0) { headName = "-"; }
+         var list:String = listed > 0 ? String(listed) : "-";
+         this.note("FONT try=" + this.faceTries + " pick=" + pick + " bold=" + boldOk + " fallback=" + fallback + " list=" + list + " body=" + bodyName + " why=" + bodyWhy + " head=" + headName + " headWhy=" + headWhy + " draw=" + this.drawMark(draw));
       }
 
-      // The width check used before the glyph proof. Embedded names first, then the
-      // module-name field, then device names. The first pair whose W and i differ
-      // from a missing name wins. In the last in-game session that was e1.
-      private function proveFaceWidth():String
+      // Used only when enumerateFonts returned nothing. A mapped $ name is never applied.
+      // When the passed list is non-empty, a name that is not on it is skipped.
+      private function proveFaceWidth(param1:Array = null):String
       {
          this.kit.face = "";
          this.kit.boldFace = "";
@@ -699,20 +628,24 @@ package
          var k:int = 0;
          while(k < names.length)
          {
+            var candidate:String = String(names[k]);
+            if(candidate.charAt(0) == "$") { k++; continue; }
+            if(param1 != null && param1.length > 0 && !this.listedName(candidate,param1)) { k++; continue; }
             var embed:Boolean = embeds[k] == true;
-            var measured:Array = this.measureFace(String(names[k]),embed);
+            var measured:Array = this.measureFace(candidate,embed);
             if(this.faceProven(measured,embed ? none : noneDev) && pick == "0")
             {
                pick = String(tags[k]);
-               this.kit.face = String(names[k]);
+               this.kit.face = candidate;
                this.kit.embed = embed;
             }
             k++;
          }
-         if(this.kit.face.length > 0 && this.kit.face != String(FACES[1]))
+         var boldPick:String = String(FACES[1]);
+         if(this.kit.face.length > 0 && boldPick.charAt(0) != "$" && boldPick != this.kit.face)
          {
-            var bold:Array = this.measureFace(String(FACES[1]),this.kit.embed);
-            if(this.faceProven(bold,this.kit.embed ? none : noneDev)) { this.kit.boldFace = String(FACES[1]); }
+            var bold:Array = this.measureFace(boldPick,this.kit.embed);
+            if(this.faceProven(bold,this.kit.embed ? none : noneDev)) { this.kit.boldFace = boldPick; }
          }
          this.facePick = pick;
          return pick;
@@ -738,25 +671,101 @@ package
          return list;
       }
 
-      // Comma-separated fontName values from enumerateFonts(false), or "-" when the
-      // movie embeds none. A comma inside a name becomes a space so the list stays one field.
-      private function embeddedList(param1:Array):String
+      // One line per embedded face, each under the probe cap. fontType and fontStyle
+      // are read in their own functions so a missing property cannot drop the name.
+      private function noteFontList(param1:Array):int
       {
-         var out:Array = [];
+         var n:int = 0;
          var i:int = 0;
+         if(param1 == null) { this.note("FONT list[0]=-"); return 0; }
          while(i < param1.length)
          {
             var font:Font = param1[i] as Font;
-            if(font != null && font.fontName != null && String(font.fontName).length > 0)
+            if(font != null)
             {
-               out.push(String(font.fontName).split(",").join(" "));
+               var name:String = "-";
+               var kind:String = "na";
+               var style:String = "na";
+               try { name = this.fontNameOf(font); } catch(err:Error) { name = "err"; }
+               try { kind = this.fontKind(font); } catch(err:Error) { kind = "err"; }
+               try { style = this.fontStyleOf(font); } catch(err:Error) { style = "err"; }
+               var line:String = "FONT list[" + n + "]=" + name + " type=" + kind + " style=" + style;
+               if(line.length > 400) { line = line.substring(0,400); }
+               this.note(line);
+               n++;
             }
             i++;
          }
-         if(out.length == 0) { return "-"; }
-         var joined:String = out.join(",");
-         if(joined.length > 240) { joined = joined.substring(0,240); }
-         return joined;
+         if(n == 0) { this.note("FONT list[0]=-"); }
+         return n;
+      }
+
+      private function fontNameOf(param1:Font):String
+      {
+         if(param1 == null || param1.fontName == null) { return "-"; }
+         var name:String = String(param1.fontName).split(",").join(" ").split("\n").join(" ").split("\r").join(" ");
+         if(name.length == 0) { return "-"; }
+         return name;
+      }
+
+      private function fontKind(param1:Font):String
+      {
+         if(param1 == null || param1.fontType == null || String(param1.fontType).length == 0) { return "-"; }
+         return String(param1.fontType);
+      }
+
+      private function fontStyleOf(param1:Font):String
+      {
+         if(param1 == null || param1.fontStyle == null || String(param1.fontStyle).length == 0) { return "-"; }
+         return String(param1.fontStyle);
+      }
+
+      private function listedName(param1:String, param2:Array):Boolean
+      {
+         if(param1 == null || param1.length == 0 || param2 == null) { return false; }
+         var i:int = 0;
+         while(i < param2.length)
+         {
+            var font:Font = param2[i] as Font;
+            if(font != null && font.fontName == param1) { return true; }
+            i++;
+         }
+         return false;
+      }
+
+      // Touch hasGlyphs on each preferred name that the list actually contains.
+      // A throw here is logged by the caller and does not discard the list.
+      private function probeListedGlyphs(param1:Array):void
+      {
+         var prefs:Array = BODY_FACES.concat(BOLD_FACES);
+         var i:int = 0;
+         while(i < prefs.length)
+         {
+            var name:String = String(prefs[i]);
+            if(this.listedName(name,param1)) { this.glyphsOf(name,param1); }
+            i++;
+         }
+      }
+
+      // First preference that is listed and passes hasGlyphs, else the first that
+      // passes the width check, else the first listed preference with no secondary pass.
+      private function chooseListed(param1:Array, param2:Array, param3:Array):Object
+      {
+         var first:String = "";
+         var i:int = 0;
+         while(i < param1.length)
+         {
+            var name:String = String(param1[i]);
+            if(this.listedName(name,param2))
+            {
+               if(first.length == 0) { first = name; }
+               if(this.glyphsOf(name,param2) == 1) { return {name:name,why:"glyphs"}; }
+               if(this.faceProven(this.measureFace(name,true),param3)) { return {name:name,why:"width"}; }
+            }
+            i++;
+         }
+         if(first.length > 0) { return {name:first,why:"listed"}; }
+         return {name:"",why:"none"};
       }
 
       // 1: this embedded face has every glyph in GLYPH_PROBE.
@@ -789,13 +798,15 @@ package
       }
 
       // 1 ink, 0 a finished sample with no ink, empty a field with no size,
-      // err a sample that threw, na the module-name field is missing.
+      // err a sample that threw, skip BitmapData.draw error 2077, na the field is missing.
+      // skip and err do not choose a face.
       private function drawMark(param1:int):String
       {
          if(param1 > 0) { return "1"; }
          if(param1 == 0) { return "0"; }
          if(param1 == -1) { return "empty"; }
          if(param1 == -2) { return "err"; }
+         if(param1 == -4) { return "skip"; }
          return "na";
       }
 

@@ -110,11 +110,11 @@ package
       //       // vanilla body stays here
       //    }
       //
-      // 7. Do not import fonts into either movie. HorizonShipBuilder accepts an
-      //    embedded face only when Font.hasGlyphs covers the probe alphabet. The
-      //    module-name face is kept when that probe passes, or when the name is not
-      //    in the embedded list and a real ink sample of the field succeeds. A listed
-      //    face that lacks a probe glyph is not kept. After importScript, run
+      // 7. Do not import fonts into either movie. HorizonShipBuilder takes a fontName
+      //    from enumerateFonts(false): Roboto Regular for body, then NB Architekt, then
+      //    Exo 2 Regular; Roboto Medium or Exo 2 Bold for headings. hasGlyphs and the
+      //    width check only rank a name that list already contains. A BitmapData.draw
+      //    error 2077 is logged and does not choose a face. After importScript, run
       //    shipbuilder/font_marker_gate.py on the re-exported script.
    }
 }

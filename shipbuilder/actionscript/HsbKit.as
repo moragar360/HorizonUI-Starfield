@@ -93,7 +93,7 @@ package
          var tf:TextField = new TextField();
          tf.mouseEnabled = false;
          tf.selectable = false;
-         tf.embedFonts = this.embed;
+         tf.embedFonts = this.face.length > 0 || this.embed;
          var fmt:TextFormat = this.format(param1,param2,param3,param4,param5);
          tf.defaultTextFormat = fmt;
          tf.width = 200;
@@ -273,7 +273,7 @@ package
                var fmt:TextFormat = tf.defaultTextFormat;
                var pick:String = row.bold == true && this.boldFace.length > 0 ? this.boldFace : this.face;
                fmt.font = pick.length > 0 ? pick : null;
-               tf.embedFonts = this.embed;
+               tf.embedFonts = this.face.length > 0 || this.embed;
                tf.defaultTextFormat = fmt;
                tf.setTextFormat(fmt);
                kept.push(row);
