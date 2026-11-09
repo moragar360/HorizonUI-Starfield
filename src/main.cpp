@@ -40,6 +40,7 @@
 #include <winver.h>
 #include <Xinput.h>
 #include <ShlObj.h>
+#include <psapi.h>
 #pragma comment(lib, "version.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")
@@ -865,12 +866,26 @@ namespace HZ
 			hzperf::AddBucket(g_perfAgg, a_b, dt);
 	}
 
+	// Option B: process private bytes once per rootT, after the timed region (GC proxy
+	// fallback when AS System.totalMemory is unsupported). PerfDiag only. No allocation.
+	// Author: Moragar. Last modified: 2026-11-09.
+	void HzPerfProcMem()
+	{
+		PROCESS_MEMORY_COUNTERS_EX pmc{};
+		pmc.cb = sizeof(pmc);
+		if (!::K32GetProcessMemoryInfo(::GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc), sizeof(pmc)))
+			return;
+		hzperf::NoteProcMem(g_perfAgg, HzQpc(), static_cast<std::uint64_t>(pmc.PrivateUsage));
+	}
+
 	void HzPerfNoteRoot(std::uint64_t a_t0, bool a_next)
 	{
 		if (!HzPerfOn()) return;
 		const auto t1 = HzQpc();
 		if (t1 < a_t0) return;
 		hzperf::AddRoot(g_perfAgg, t1 - a_t0, HzQpcFreq(), a_next);
+		hzperf::NoteSpike(g_perfAgg, a_t0, t1 - a_t0, HzQpcFreq(), a_next);
+		if (a_next) HzPerfProcMem();
 	}
 
 	void LoadIni(bool a_reloadMsglog = true)
@@ -4901,6 +4916,29 @@ namespace HZ
 			g_perfMode.load(std::memory_order_relaxed),
 			g_perfScan.load(std::memory_order_relaxed),
 			native, hzperf::kDumpMax);
+		// Option B: AS event ring first (hzPerfSnapshot resets it). The QPC tick right
+		// before this Invoke and the AS getTimer it returns give the shared clock offset.
+		std::string ring = "ring=missing";
+		const auto qRing = HzQpc();
+		try {
+			GValue rr;
+			if (HudInvoke("hzPerfRing", &rr) && rr.IsString() && rr.GetString())
+				ring = hzpreset::Utf8Prefix(rr.GetString(), hzperf::kRingAsMax);
+		} catch (...) {
+			ring = "ring=throw";
+		}
+		static hzperf::RingEv s_ringEv[hzperf::kRingEvMax];
+		hzperf::AsRingHead ringHead{};
+		const double w0Ms = hzperf::QpcMs(g_perfAgg.windowStart.load(std::memory_order_relaxed), freq);
+		const int natN = hzperf::CollectNative(g_perfAgg, freq, s_ringEv, hzperf::kRingEvMax);
+		const int asN = hzperf::ParseAsRing(ring.c_str(), 0, 0, s_ringEv + natN, hzperf::kRingEvMax - natN, ringHead);
+		const double offMs = ringHead.ok ? hzperf::QpcMs(qRing, freq) - ringHead.now : 0;
+		for (int i = natN; i < natN + asN; ++i)
+			s_ringEv[i].tMs += offMs - w0Ms;
+		const int ringN = natN + asN;
+		hzperf::SortRing(s_ringEv, ringN);
+		char ringSum[hzperf::kDumpMax];
+		hzperf::FormatRingSum(g_perfAgg, ringHead, offMs, ringN, ringSum, hzperf::kDumpMax);
 		std::string as = "as=missing";
 		try {
 			GValue r;
@@ -4912,6 +4950,12 @@ namespace HZ
 		hzperf::Reset(g_perfAgg);
 		hzperf::EndDump(g_perfAgg);
 		REX::INFO("perf dump {} {}", native, as);
+		REX::INFO("{}", ringSum);
+		char ringLine[hzperf::kRingLineMax];
+		for (int i = 0; i < ringN; ++i) {
+			if (hzperf::FormatRingEv(s_ringEv[i], ringLine, hzperf::kRingLineMax) > 0)
+				REX::INFO("{}", ringLine);
+		}
 	}
 
 	// Purpose: HUDMessagesMenu Invokes only. Runs from that movie's

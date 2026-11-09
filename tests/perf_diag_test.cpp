@@ -312,6 +312,75 @@ int main()
 	Expect(ini.find("NOT GAME DATA") != std::string::npos || ini.find("diagnostic fixture") != std::string::npos,
 		"Mode B is documented as diagnostic");
 
+	// ---- Option B: native spike / process-memory rings and the merged ring ----
+	{
+		static hzperf::Agg a{};
+		hzperf::Reset(a);
+		const std::uint64_t f = 1000000;  // 1 tick = 1 us
+		a.windowStart.store(1000000, std::memory_order_relaxed);
+		hzperf::NoteSpike(a, 1100000, 4999, f, true);
+		Expect(hzperf::RingCount(a.spike) == 0, "rootT under 5 ms is not a spike");
+		hzperf::NoteSpike(a, 1200000, 7000, f, false);
+		Expect(hzperf::RingCount(a.spike) == 0, "rootF is not in the spike ring");
+		hzperf::NoteSpike(a, 1300000, 5000, f, true);
+		Expect(hzperf::RingCount(a.spike) == 1 && a.spike.q[0] == 1300000 && a.spike.v[0] == 5000,
+			"rootT of 5 ms is stamped with the hook QPC start");
+		for (int i = 0; i < 300; ++i)
+			hzperf::NoteSpike(a, 1400000 + static_cast<std::uint64_t>(i), 6000, f, true);
+		Expect(hzperf::RingCount(a.spike) == 256 && hzperf::RingLost(a.spike) == 45, "spike ring keeps 256, counts lost");
+		hzperf::NoteProcMem(a, 1500000, 100ull << 20);
+		hzperf::NoteProcMem(a, 1500100, (100ull << 20) - 200 * 1024);
+		Expect(a.pmemDrops.load() == 0, "a 200 KB fall is not a drop");
+		hzperf::NoteProcMem(a, 1500200, (100ull << 20) - 2048 * 1024);
+		Expect(a.pmemDrops.load() == 1 && hzperf::RingCount(a.pdrop) == 1 && a.pdrop.v[0] == 1848,
+			"a fall over 256 KB is a drop in KB");
+		Expect(a.pmemMin.load() == (100ull << 20) - 2048 * 1024 && a.pmemMax.load() == (100ull << 20) && a.pmemN.load() == 3,
+			"process memory min/max/count");
+		a.dumping.store(1);
+		hzperf::NoteSpike(a, 1600000, 9000, f, true);
+		Expect(hzperf::RingLost(a.spike) == 45, "no ring write while dumping");
+		a.dumping.store(0);
+
+		static hzperf::RingEv ev[hzperf::kRingEvMax];
+		hzperf::Reset(a);
+		a.windowStart.store(1000000, std::memory_order_relaxed);
+		hzperf::NoteSpike(a, 1050000, 8000, f, true);  // 50 ms into the window
+		int n = hzperf::CollectNative(a, f, ev, hzperf::kRingEvMax);
+		Expect(n == 1 && ev[0].type == 'R' && ev[0].src == 'N' && ev[0].tMs > 49.9 && ev[0].tMs < 50.1, "native R at window ms");
+		hzperf::AsRingHead h{};
+		const char* asRing = "ring now=5000 n=3 lost=2 memUnsupported=1|2,4040,4090,3,6;1,4048,4048,0,1;3,4049,4049,700,1;4,999";
+		const int an = hzperf::ParseAsRing(asRing, 0, 0, ev + n, hzperf::kRingEvMax - n, h);
+		Expect(h.ok == 1 && h.now == 5000 && h.n == 3 && h.lost == 2 && h.memUnsupported == 1, "AS ring header");
+		Expect(an == 3, "AS ring parses whole slots and drops a truncated tail");
+		// QPC ms at invoke 1960 -> offset = 1960 - 5000; window start = 1000 ms.
+		const double off = hzperf::QpcMs(1960000, f) - h.now;
+		for (int i = n; i < n + an; ++i) ev[i].tMs += off - hzperf::QpcMs(1000000, f);
+		n += an;
+		hzperf::SortRing(ev, n);
+		Expect(ev[0].type == 'C' && ev[0].n == 6 && ev[0].spanMs == 50 && ev[0].tMs == 0, "C run starts at window ms 0");
+		Expect(ev[1].type == 'T' && ev[2].type == 'M' && ev[3].type == 'R', "merged events sort by shared clock");
+		char line[hzperf::kRingLineMax];
+		hzperf::FormatRingEv(ev[0], line, hzperf::kRingLineMax);
+		Expect(std::string(line) == "perf ring t=0.0 src=AS type=C v=3ms n=6 span=50", "C line format");
+		hzperf::FormatRingEv(ev[3], line, hzperf::kRingLineMax);
+		Expect(std::string(line) == "perf ring t=50.0 src=N type=R v=8000us", "R line format");
+		char sum[hzperf::kDumpMax];
+		hzperf::FormatRingSum(a, h, off, n, sum, hzperf::kDumpMax);
+		Expect(std::string(sum).find("perf ring sum events=4 spikes=1 spikeLost=0") == 0
+			&& std::string(sum).find("memUnsupported=1") != std::string::npos, "ring summary fields");
+		Expect(hzperf::ParseAsRing("ring diag=0", 0, 0, ev, 4, h) == 0 && h.ok == 0, "diag-off AS ring is ignored");
+		Expect(hzperf::ParseAsRing(nullptr, 0, 0, ev, 4, h) == 0, "missing AS ring is safe");
+		hzperf::Reset(a);
+		Expect(hzperf::RingCount(a.spike) == 0 && hzperf::RingCount(a.pdrop) == 0 && a.pmemN.load() == 0, "Reset clears rings");
+	}
+	{
+		const auto mainB = Read("src/main.cpp");
+		Expect(mainB.find("hzperf::NoteSpike(g_perfAgg, a_t0, t1 - a_t0, HzQpcFreq(), a_next);") != std::string::npos,
+			"spike ring is fed from the existing hook QPC");
+		Expect(mainB.find("HudInvoke(\"hzPerfRing\"") < mainB.find("HudInvoke(\"hzPerfSnapshot\""),
+			"AS ring is read before the snapshot resets it");
+	}
+
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";
 		return 1;
