@@ -111,10 +111,14 @@ package
       //    }
       //
       // 7. Do not import fonts into either movie. HorizonShipBuilder takes a fontName
-      //    from enumerateFonts(false): Roboto Regular for body, then NB Architekt, then
-      //    Exo 2 Regular; Roboto Medium or Exo 2 Bold for headings. hasGlyphs and the
-      //    width check only rank a name that list already contains. A BitmapData.draw
-      //    error 2077 is logged and does not choose a face. After importScript, run
+      //    from enumerateFonts(false). Body prefers a face this movie embeds
+      //    (NB Grotesk R Semibold, then NB Architekt, then NB Architekt Light), then
+      //    Roboto Regular, then Exo 2 Regular. Bold prefers a listed face whose
+      //    fontStyle contains "bold": NB Grotesk R Bold, then Roboto Bold, then
+      //    Exo 2 Bold. The first of those with hasGlyphs wins. A face that failed
+      //    hasGlyphs is not kept. A BitmapData.draw error 2077 is logged and does
+      //    not choose a face. A private-test strip along the top draws Ab12 once
+      //    per face with embedFonts true and false. After importScript, run
       //    shipbuilder/font_marker_gate.py on the re-exported script.
    }
 }

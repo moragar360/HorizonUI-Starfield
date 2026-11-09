@@ -16,7 +16,7 @@ package
    // Inputs: the accent and card opacity from the user settings; the proven face names.
    // Outputs: TextFields and drawing into Graphics. It holds no game state.
    // Dependencies: Shared.GlobalFunc (FormatNumberToString), already inside the vanilla movie.
-   // Author: Moragar. Last modified: 2026-11-08.
+   // Author: Moragar. Last modified: 2026-11-09.
    public class HsbKit
    {
       internal static const FILL:uint = 0x0B1016;
@@ -93,13 +93,13 @@ package
          var tf:TextField = new TextField();
          tf.mouseEnabled = false;
          tf.selectable = false;
-         tf.embedFonts = this.face.length > 0 || this.embed;
+         tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;
          var fmt:TextFormat = this.format(param1,param2,param3,param4,param5);
          tf.defaultTextFormat = fmt;
          tf.width = 200;
          tf.height = this.size(param1) + 8;
          tf.text = "";
-         this.fields.push({"tf":tf,"bold":param3});
+         this.fields.push({"tf":tf,"bold":param3,"kind":param3 ? "head" : "body"});
          return tf;
       }
 
@@ -260,6 +260,49 @@ package
          return param1.width;
       }
 
+      // The first on-stage field of each kind is logged after the first build.
+      internal function retag(param1:TextField, param2:String):void
+      {
+         var i:int = this.fields.length - 1;
+         while(i >= 0)
+         {
+            var row:Object = this.fields[i];
+            if(row.tf == param1)
+            {
+               row.kind = param2;
+               return;
+            }
+            i--;
+         }
+      }
+
+      internal function fieldReport():Array
+      {
+         var out:Array = [];
+         var seen:Object = {};
+         var i:int = 0;
+         while(i < this.fields.length)
+         {
+            var row:Object = this.fields[i];
+            var tf:TextField = row.tf as TextField;
+            var kind:String = row.kind != null ? String(row.kind) : "body";
+            if(tf != null && tf.parent != null && seen[kind] != true)
+            {
+               seen[kind] = true;
+               var shown:String = "-";
+               try
+               {
+                  var fmt:TextFormat = tf.getTextFormat();
+                  if(fmt != null && fmt.font != null && String(fmt.font).length > 0) { shown = String(fmt.font); }
+               }
+               catch(err:Error) { shown = "-"; }
+               out.push("FONT field kind=" + kind + " font=" + shown + " embed=" + (tf.embedFonts ? 1 : 0) + " w=" + int(tf.textWidth) + " n=" + tf.text.length);
+            }
+            i++;
+         }
+         return out;
+      }
+
       internal function refreshFaces():void
       {
          var kept:Array = [];
@@ -273,7 +316,7 @@ package
                var fmt:TextFormat = tf.defaultTextFormat;
                var pick:String = row.bold == true && this.boldFace.length > 0 ? this.boldFace : this.face;
                fmt.font = pick.length > 0 ? pick : null;
-               tf.embedFonts = this.face.length > 0 || this.embed;
+               tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;
                tf.defaultTextFormat = fmt;
                tf.setTextFormat(fmt);
                kept.push(row);
@@ -483,6 +526,7 @@ package
          else if(param5 == "orange") { ink = ORANGE; }
          else if(param5 == "dim") { ink = DIM; }
          var t:TextField = this.text(13,ink,true,1);
+         this.retag(t,"button");
          this.put(t,param4);
          this.fit(t);
          var w:Number = Math.max(param9,t.width + BUTTON_PAD);

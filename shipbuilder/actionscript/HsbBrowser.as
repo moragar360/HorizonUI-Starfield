@@ -19,7 +19,7 @@ package
    // Backend limits shown in the interface: maker and size come from part names; value, mass,
    //    class and card stats are known only after a part was previewed; categories are learned
    //    by stepping through them; "on ship" and "hidden by level" have no game data.
-   // Author: Moragar. Last modified: 2026-11-08.
+   // Author: Moragar. Last modified: 2026-11-09.
    public class HsbBrowser extends HsbBox
    {
       private static const KNOWN_MAKERS:Array = [["Nova Galactic","Nova Galactic"],["Taiyo Astroneering","Taiyo Astroneering"],["Taiyo","Taiyo Astroneering"],["Stroud-Eklund","Stroud-Eklund"],["Stroud","Stroud-Eklund"],["HopeTech","HopeTech"],["Deimos","Deimos"],["Amun Dunn","Amun Dunn"],["Slayton Aerospace","Slayton Aerospace"],["White Dwarf","White Dwarf"],["Protectorate Systems","Protectorate Systems"],["Light Scan","Light Scan"]];
@@ -1663,6 +1663,7 @@ package
             while(t < 3)
             {
                var tab:TextField = k.text(14,t == 1 ? k.accent : HsbKit.LABEL,t == 1,2);
+               k.retag(tab,"tab");
                k.put(tab,String(names[t]).toUpperCase());
                k.fit(tab,(param1 - param2 * 2 - capH * 2 - 40) / 3);
                this.add(tab,tx,y + (capH - tab.height) / 2);

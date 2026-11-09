@@ -1313,8 +1313,12 @@ static void CheckMovie(const fs::path& root)
 		Has(FunctionBody(hub, "proveFace"), "this.kit.nativeDraws(label)") &&
 		Has(FunctionBody(hub, "proveFace"), "draw = err.errorID == 2077 ? -4 : -2;") &&
 		Has(FunctionBody(hub, "chooseListed"), "return {name:name,why:\"glyphs\"};") &&
-		Has(FunctionBody(hub, "chooseListed"), "return {name:name,why:\"width\"};") &&
-		Has(FunctionBody(hub, "chooseListed"), "return {name:first,why:\"listed\"};") &&
+		Has(FunctionBody(hub, "chooseListed"), "return {name:listed,why:\"glyphs\"};") &&
+		Has(FunctionBody(hub, "chooseListed"), "return {name:wide,why:\"width\"};") &&
+		!Has(FunctionBody(hub, "chooseListed"), "why:\"listed\"") &&
+		Has(FunctionBody(hub, "chooseBold"), "this.styleIsBold(this.styleOfListed(name,param1))") &&
+		Has(FunctionBody(hub, "chooseBold"), "this.styleIsBold(style)") &&
+		Has(FunctionBody(hub, "styleIsBold"), "param1.toLowerCase().indexOf(\"bold\") >= 0") &&
 		Has(FunctionBody(kit, "nativeDraws", "internal"), "return -1;") &&
 		Has(FunctionBody(kit, "nativeDraws", "internal"), "return -2;") &&
 		!Has(FunctionBody(kit, "nativeDraws", "internal"), "return true;"),
@@ -1349,12 +1353,20 @@ static void CheckMovie(const fs::path& root)
 		!Has(FunctionBody(hub, "proveFaceWidth"), "nativeDraws") &&
 		!Has(FunctionBody(hub, "proveFaceWidth"), "enumerateFonts") &&
 		!Has(FunctionBody(hub, "proveFaceWidth"), "hasGlyphs") &&
-		Has(hub, "BODY_FACES:Array = [\"Roboto Regular\",\"NB Architekt\",\"Exo 2 Regular\"];") &&
-		Has(hub, "BOLD_FACES:Array = [\"Roboto Medium\",\"Exo 2 Bold\"];") &&
+		Has(hub, "BODY_FACES:Array = [\"NB Grotesk R Semibold\",\"NB Architekt\",\"NB Architekt Light\",\"Roboto Regular\",\"Exo 2 Regular\"];") &&
+		Has(hub, "BOLD_FACES:Array = [\"NB Grotesk R Bold\",\"Roboto Bold\",\"Exo 2 Bold\"];") &&
 		Has(FunctionBody(hub, "proveFace"), "if(fault.length > 0 && listed == 0)") &&
 		Has(FunctionBody(hub, "proveFace"), "this.kit.embed = true;") &&
-		Has(FunctionBody(kit, "text", "internal"), "tf.embedFonts = this.face.length > 0 || this.embed;") &&
-		Has(FunctionBody(kit, "refreshFaces", "internal"), "tf.embedFonts = this.face.length > 0 || this.embed;") &&
+		Has(FunctionBody(hub, "proveFace"), "var head:Object = this.chooseBold(fonts,noneEmbed);") &&
+		Has(FunctionBody(kit, "text", "internal"), "tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;") &&
+		Has(FunctionBody(kit, "refreshFaces", "internal"), "tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;") &&
+		Has(FunctionBody(kit, "fieldReport", "internal"), "\"FONT field kind=\" + kind + \" font=\" + shown + \" embed=\"") &&
+		Has(FunctionBody(hub, "noteFields"), "this.note(\"FONT vanilla font=\" + shown + \" embed=\" + embedBit + \" w=\" + wide + \" n=\" + count);") &&
+		InOrder(FunctionBody(hub, "fontProbe"), {"tf.embedFonts = embedOn;", "tf.defaultTextFormat = fmt;", "tf.text = \"Ab12 \" + String(PROBE_TAGS[n]);"}) &&
+		Has(FunctionBody(hub, "fontProbe"), "this.note(\"FONT probe ask=\" + asked + \" embed=\" + bit + \" font=\" + shown + \" w=\" + int(tf.textWidth) + \" n=\" + tf.text.length);") &&
+		Has(FunctionBody(hub, "onStage"), "this.noteFields(); this.fontProbe();") &&
+		Has(FunctionBody(kit, "button", "internal"), "this.retag(t,\"button\");") &&
+		Has(browser, "k.retag(tab,\"tab\");") &&
 		Has(FunctionBody(hub, "proveFace"), "if(pick != \"0\") { fallback = 1; }") &&
 		InOrder(FunctionBody(hub, "proveFace"), {"this.note(\"FONT err=width \" + this.errText(err));", "pick = \"0\";", "this.kit.face = \"\";", "this.kit.boldFace = \"\";", "this.kit.embed = false;"}) &&
 		InOrder(FunctionBody(hub, "onStage"), {"this.note(\"FONT err=width \" + this.errText(err2));", "saved = \"0\";", "this.kit.face = \"\";", "this.kit.boldFace = \"\";", "this.kit.embed = false;"}) &&

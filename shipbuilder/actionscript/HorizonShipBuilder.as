@@ -33,7 +33,7 @@ package
    // Why the pointer comes from the DLL: in-game logs (p5) showed presses over the ship view go
    //    to the editor before Scaleform, so Scaleform CLICK never fired on Horizon controls. The
    //    DLL feeds every pointer event and swallows the ones over the rectangles we publish.
-   // Author: Moragar. Last modified: 2026-11-08.
+   // Author: Moragar. Last modified: 2026-11-09.
    public class HorizonShipBuilder extends Sprite
    {
       internal static const VERSION:String = "0.2.0.0";
@@ -43,9 +43,16 @@ package
       // list is never allowed to fall through to one of them.
       private static const FACES:Array = ["$NB_Grotesk_Semibold","$MAIN_Font_Bold","$MAIN_Font"];
       private static const NO_FACE:String = "$Horizon_NoSuchFace_x";
-      // Exact fontName values enumerateFonts(false) returned in game. Body first, then bold.
-      private static const BODY_FACES:Array = ["Roboto Regular","NB Architekt","Exo 2 Regular"];
-      private static const BOLD_FACES:Array = ["Roboto Medium","Exo 2 Bold"];
+      // Body prefers faces this movie embeds (SpaceshipEditorMenu DOMFontItem font=),
+      // then faces other loaded movies listed. Bold prefers a listed face whose
+      // fontStyle contains "bold" (bold or boldItalic), in this order.
+      private static const BODY_FACES:Array = ["NB Grotesk R Semibold","NB Architekt","NB Architekt Light","Roboto Regular","Exo 2 Regular"];
+      private static const BOLD_FACES:Array = ["NB Grotesk R Bold","Roboto Bold","Exo 2 Bold"];
+      // Private-test strip. Names are fontName values from the in-game list, this
+      // movie's DOMFontItem font=, or fonts_en linkageClassName. Short tags are
+      // what the label draws; the log line carries the full name.
+      private static const PROBE_FACES:Array = ["Roboto Regular","NB Architekt","Exo 2 Regular","Arial","$NB_Grotesk_Semibold","$MAIN_Font","$MAIN_Font_Bold","$NB_Grotesk_Bold","NB Grotesk R Semibold","NB Architekt Light","NB Grotesk R Bold","ArialMT",""];
+      private static const PROBE_TAGS:Array = ["RobotoR","Architekt","Exo2R","Arial","$Semi","$Main","$MainB","$Bold","NBSemi","ArchLt","NBBold","ArialMT","empty"];
       // Letters and digits a label can use. A face that only baked the timeline's own
       // words fails this, which a W-versus-i width check does not.
       private static const GLYPH_PROBE:String = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -459,6 +466,8 @@ package
          }
          catch(err:Error) { this.note("INIT err=build " + this.errText(err)); }
          this.note("BUILDER " + VERSION + " gold lrg=" + (this.kit.lrg ? 1 : 0) + " built=" + built);
+         try { this.noteFields(); this.fontProbe(); }
+         catch(err:Error) { this.note("FONT err=probe " + this.errText(err)); }
          this.note("INIT stage end");
       }
 
@@ -479,13 +488,14 @@ package
          catch(err:Error) { if(this.frameN % 120 == 0) { this.note("ADAPT fault " + err.errorID); } }
       }
 
-      // The face is a fontName from enumerateFonts(false). Body prefers Roboto Regular,
-      // then NB Architekt, then Exo 2 Regular. Bold prefers Roboto Medium, then Exo 2 Bold.
-      // hasGlyphs and the width check only rank a name that is already in that list.
-      // A non-empty list never accepts a mapped $ name. BitmapData.draw throws 2077 in
-      // this player; that sample is logged and does not choose a face.
-      // Each phase is logged. A throw, including a verify failure entering the callee,
-      // is caught here. The builder still starts.
+      // The face is a fontName from enumerateFonts(false). Body takes the first
+      // preferred name whose hasGlyphs covers the probe, then the first enumerated
+      // face that does. Bold takes the first preferred face whose fontStyle contains
+      // "bold" and whose glyphs pass, then any listed bold-style face that does.
+      // A face that failed hasGlyphs is not kept. A non-empty list never accepts a
+      // mapped $ name. BitmapData.draw throws 2077 in this player; that sample is
+      // logged and does not choose a face. Each phase is logged. A throw, including
+      // a verify failure entering the callee, is caught here. The builder still starts.
       private function proveFace():void
       {
          this.faceTries++;
@@ -529,7 +539,7 @@ package
             if(listed > 0)
             {
                var body:Object = this.chooseListed(BODY_FACES,fonts,noneEmbed);
-               var head:Object = this.chooseListed(BOLD_FACES,fonts,noneEmbed);
+               var head:Object = this.chooseBold(fonts,noneEmbed);
                if(String(body.name).length > 0)
                {
                   this.kit.face = String(body.name);
@@ -747,25 +757,178 @@ package
          }
       }
 
-      // First preference that is listed and passes hasGlyphs, else the first that
-      // passes the width check, else the first listed preference with no secondary pass.
+      // First preference that is listed and passes hasGlyphs, else the first
+      // enumerated face that does. A face that failed hasGlyphs is not kept.
+      // Width is used only when no listed face has the probe glyphs.
       private function chooseListed(param1:Array, param2:Array, param3:Array):Object
       {
-         var first:String = "";
          var i:int = 0;
          while(i < param1.length)
          {
             var name:String = String(param1[i]);
-            if(this.listedName(name,param2))
+            if(this.listedName(name,param2) && this.glyphsOf(name,param2) == 1) { return {name:name,why:"glyphs"}; }
+            i++;
+         }
+         i = 0;
+         while(i < param2.length)
+         {
+            var font:Font = param2[i] as Font;
+            if(font != null)
             {
-               if(first.length == 0) { first = name; }
-               if(this.glyphsOf(name,param2) == 1) { return {name:name,why:"glyphs"}; }
-               if(this.faceProven(this.measureFace(name,true),param3)) { return {name:name,why:"width"}; }
+               var listed:String = this.fontNameOf(font);
+               if(listed != "-" && this.glyphsOf(listed,param2) == 1) { return {name:listed,why:"glyphs"}; }
             }
             i++;
          }
-         if(first.length > 0) { return {name:first,why:"listed"}; }
+         i = 0;
+         while(i < param1.length)
+         {
+            var wide:String = String(param1[i]);
+            if(this.listedName(wide,param2) && this.faceProven(this.measureFace(wide,true),param3)) { return {name:wide,why:"width"}; }
+            i++;
+         }
          return {name:"",why:"none"};
+      }
+
+      // Bold is a listed face whose fontStyle contains "bold" (bold or boldItalic)
+      // and whose glyphs pass. A style of regular, including Roboto Medium, is skipped.
+      private function chooseBold(param1:Array, param2:Array):Object
+      {
+         var i:int = 0;
+         while(i < BOLD_FACES.length)
+         {
+            var name:String = String(BOLD_FACES[i]);
+            if(this.listedName(name,param1) && this.glyphsOf(name,param1) == 1 && this.styleIsBold(this.styleOfListed(name,param1)))
+            {
+               return {name:name,why:"glyphs"};
+            }
+            i++;
+         }
+         i = 0;
+         while(i < param1.length)
+         {
+            var font:Font = param1[i] as Font;
+            if(font != null)
+            {
+               var listed:String = this.fontNameOf(font);
+               var style:String = "-";
+               try { style = this.fontStyleOf(font); } catch(err:Error) { style = "-"; }
+               if(listed != "-" && this.styleIsBold(style) && this.glyphsOf(listed,param1) == 1) { return {name:listed,why:"glyphs"}; }
+            }
+            i++;
+         }
+         return this.chooseListed(BOLD_FACES,param1,param2);
+      }
+
+      private function styleOfListed(param1:String, param2:Array):String
+      {
+         var i:int = 0;
+         while(i < param2.length)
+         {
+            var font:Font = param2[i] as Font;
+            if(font != null && font.fontName == param1)
+            {
+               try { return this.fontStyleOf(font); }
+               catch(err:Error) { return "-"; }
+            }
+            i++;
+         }
+         return "-";
+      }
+
+      private function styleIsBold(param1:String):Boolean
+      {
+         if(param1 == null) { return false; }
+         return param1.toLowerCase().indexOf("bold") >= 0;
+      }
+
+      // After the first build: one on-stage field of each kind, then the vanilla
+      // module name field the editor itself is already drawing.
+      private function noteFields():void
+      {
+         var rows:Array = this.kit.fieldReport();
+         var i:int = 0;
+         while(i < rows.length)
+         {
+            this.note(String(rows[i]));
+            i++;
+         }
+         var label:TextField = this.pathField(["ModuleInfoCard_mc","ModuleLabel_mc","text_tf"]);
+         var shown:String = "-";
+         var embedBit:int = 0;
+         var wide:int = 0;
+         var count:int = 0;
+         if(label != null)
+         {
+            embedBit = label.embedFonts ? 1 : 0;
+            wide = int(label.textWidth);
+            count = label.text.length;
+            try
+            {
+               var fmt:TextFormat = label.getTextFormat();
+               if(fmt != null && fmt.font != null && String(fmt.font).length > 0) { shown = String(fmt.font); }
+            }
+            catch(err:Error) { shown = "-"; }
+         }
+         this.note("FONT vanilla font=" + shown + " embed=" + embedBit + " w=" + wide + " n=" + count);
+      }
+
+      // Private-test strip along the top of the builder. Each cell is a new TextField,
+      // embedFonts set, defaultTextFormat set before the text, and nothing else.
+      // Row 1 is embedFonts true. Row 2 is embedFonts false. One screenshot shows
+      // which combination draws letters.
+      private function fontProbe():void
+      {
+         var strip:Sprite = new Sprite();
+         strip.mouseEnabled = false;
+         strip.mouseChildren = false;
+         var span:Number = 1920;
+         try { if(stage != null && stage.stageWidth > 0) { span = stage.stageWidth; } } catch(err:Error) { span = 1920; }
+         var cols:int = PROBE_FACES.length;
+         if(cols < 1) { return; }
+         var col:Number = span / cols;
+         strip.graphics.beginFill(0x0B1016,0.92);
+         strip.graphics.drawRect(0,0,span,40);
+         strip.graphics.endFill();
+         var n:int = 0;
+         while(n < cols)
+         {
+            var embedOn:Boolean = true;
+            var pass:int = 0;
+            while(pass < 2)
+            {
+               var tf:TextField = new TextField();
+               tf.mouseEnabled = false;
+               tf.selectable = false;
+               tf.embedFonts = embedOn;
+               var fmt:TextFormat = new TextFormat();
+               fmt.font = String(PROBE_FACES[n]);
+               fmt.size = 12;
+               fmt.color = 0xF2F4F5;
+               tf.defaultTextFormat = fmt;
+               tf.text = "Ab12 " + String(PROBE_TAGS[n]);
+               tf.width = col - 2;
+               tf.height = 16;
+               tf.x = n * col + 2;
+               tf.y = embedOn ? 2 : 20;
+               strip.addChild(tf);
+               var asked:String = String(PROBE_FACES[n]);
+               if(asked.length == 0) { asked = "-"; }
+               var shown:String = "-";
+               try
+               {
+                  var got:TextFormat = tf.getTextFormat();
+                  if(got != null && got.font != null && String(got.font).length > 0) { shown = String(got.font); }
+               }
+               catch(err:Error) { shown = "-"; }
+               var bit:int = embedOn ? 1 : 0;
+               this.note("FONT probe ask=" + asked + " embed=" + bit + " font=" + shown + " w=" + int(tf.textWidth) + " n=" + tf.text.length);
+               embedOn = false;
+               pass++;
+            }
+            n++;
+         }
+         this.addChild(strip);
       }
 
       // 1: this embedded face has every glyph in GLYPH_PROBE.
