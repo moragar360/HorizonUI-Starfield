@@ -421,9 +421,12 @@ package
       // Candidates in order: mapped names as embedded text, the module-name field's face,
       // then mapped names as device text. An embedded name counts only when that face's
       // Font.hasGlyphs covers GLYPH_PROBE. Listing the name is not enough: the movie may
-      // have baked only the letters its own labels use. The module-name face stays a
-      // candidate when that field has visible ink, even if hasGlyphs does not know it.
-      // Device text still needs W and i to measure apart from a name that cannot exist.
+      // have baked only the letters its own labels use. The module-name face counts when
+      // that probe passes, or when the name is not in the embedded list and a real ink
+      // sample of the field succeeds. A listed face that lacks a probe glyph does not
+      // count, even when the field has ink. A zero-size field and a sample that throws
+      // are not ink. Device text still needs W and i to measure apart from a name that
+      // cannot exist, and that width result is what d1 to d3 log.
       private function proveFace():void
       {
          this.faceTries++;
@@ -434,22 +437,23 @@ package
          var list:String = this.embeddedList(fonts);
          var noneDev:Array = this.measureFace(NO_FACE,false);
          var ge:Array = [];
+         var devOk:Array = [];
          var i:int = 0;
          while(i < FACES.length)
          {
             ge.push(this.glyphsOf(String(FACES[i]),fonts));
+            devOk.push(this.faceProven(this.measureFace(String(FACES[i]),false),noneDev));
             i++;
          }
          var label:TextField = this.pathField(["ModuleInfoCard_mc","ModuleLabel_mc","text_tf"]);
          var labelFace:String = this.fieldFace(label);
          var hasLabel:Boolean = labelFace.length > 0;
-         var draw:int = -1;
-         if(label != null) { draw = this.kit.nativeDraws(label) ? 1 : 0; }
+         var draw:int = -3;
+         if(label != null) { draw = this.kit.nativeDraws(label); }
          var n4g:int = hasLabel ? this.glyphsOf(labelFace,fonts) : -1;
          var names:Array = [];
          var embeds:Array = [];
          var glyphs:Array = [];
-         var drawn:Array = [];
          var tags:Array = [];
          i = 0;
          while(i < FACES.length)
@@ -457,7 +461,6 @@ package
             names.push(String(FACES[i]));
             embeds.push(true);
             glyphs.push(ge[i]);
-            drawn.push(false);
             tags.push("e" + (i + 1));
             i++;
          }
@@ -466,7 +469,6 @@ package
             names.push(labelFace);
             embeds.push(label.embedFonts);
             glyphs.push(n4g);
-            drawn.push(draw == 1);
             tags.push("n4");
          }
          i = 0;
@@ -475,32 +477,37 @@ package
             names.push(String(FACES[i]));
             embeds.push(false);
             glyphs.push(ge[i]);
-            drawn.push(false);
             tags.push("d" + (i + 1));
             i++;
          }
          var pick:String = "0";
          var k:int = 0;
+         var devAt:int = 0;
          while(k < names.length)
          {
             var embed:Boolean = embeds[k] == true;
-            var drew:Boolean = drawn[k] == true;
+            var tag:String = String(tags[k]);
             var g:int = int(glyphs[k]);
             var ok:Boolean = false;
-            if(drew) { ok = true; }
+            if(tag == "n4") { ok = g == 1 || (g < 0 && draw == 1); }
             else if(embed) { ok = g == 1; }
-            else { ok = this.faceProven(this.measureFace(String(names[k]),false),noneDev); }
+            else
+            {
+               ok = devOk[devAt] == true;
+               devAt++;
+            }
             if(ok && pick == "0")
             {
-               pick = String(tags[k]);
+               pick = tag;
                this.kit.face = String(names[k]);
-               this.kit.embed = embed;
+               // n4=1 is an embedded face that covered the probe, so new fields embed it.
+               // An unlisted native face is kept as the field itself draws it.
+               this.kit.embed = tag == "n4" ? g == 1 : embed;
             }
             k++;
          }
          // Bold uses the game bold face only when it can draw the same way as the body.
-         // An embedded bold face needs the probe glyphs. A native face that merely draws
-         // keeps that face for bold text too.
+         // An embedded bold face needs the probe glyphs. Device body text needs the width check.
          if(this.kit.face.length > 0 && this.kit.face != String(FACES[1]))
          {
             var boldName:String = String(FACES[1]);
@@ -516,7 +523,7 @@ package
          this.facePick = pick;
          var boldOk:int = this.kit.boldFace.length > 0 ? 1 : 0;
          var n4mark:String = hasLabel ? this.glyphMark(n4g) : "-";
-         var report:String = "e1=" + this.glyphMark(int(ge[0])) + " e2=" + this.glyphMark(int(ge[1])) + " e3=" + this.glyphMark(int(ge[2])) + " n4=" + n4mark + " draw=" + this.drawMark(draw) + " d1=" + this.glyphMark(int(ge[0])) + " d2=" + this.glyphMark(int(ge[1])) + " d3=" + this.glyphMark(int(ge[2]));
+         var report:String = "e1=" + this.glyphMark(int(ge[0])) + " e2=" + this.glyphMark(int(ge[1])) + " e3=" + this.glyphMark(int(ge[2])) + " n4=" + n4mark + " draw=" + this.drawMark(draw) + " d1=" + this.widthMark(devOk[0] == true) + " d2=" + this.widthMark(devOk[1] == true) + " d3=" + this.widthMark(devOk[2] == true);
          this.note("FONT try=" + this.faceTries + " pick=" + pick + " bold=" + boldOk + " list=" + list + " " + report);
       }
 
@@ -579,11 +586,20 @@ package
          return "-";
       }
 
+      // 1 ink, 0 a finished sample with no ink, empty a field with no size,
+      // err a sample that threw, na the module-name field is missing.
       private function drawMark(param1:int):String
       {
          if(param1 > 0) { return "1"; }
          if(param1 == 0) { return "0"; }
+         if(param1 == -1) { return "empty"; }
+         if(param1 == -2) { return "err"; }
          return "na";
+      }
+
+      private function widthMark(param1:Boolean):String
+      {
+         return param1 ? "1" : "0";
       }
 
       private function measureFace(param1:String, param2:Boolean):Array

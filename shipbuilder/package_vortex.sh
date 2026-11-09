@@ -8,7 +8,8 @@
 #   shipbuilder/package_vortex.sh <dll> <spaceshipeditormenu.swf> <spaceshipeditormenu_lrg.swf> <out.zip>
 #
 # The two movies must already be the spliced movies from the desktop builder.
-# This script refuses a stock hash and a movie with no HorizonShipBuilder marker.
+# This script refuses a stock hash. The splice marker is read from the inflated
+# movie, because a compressed SWF hides that text from a raw grep.
 # Run shipbuilder/font_marker_gate.py on each spliced movie before this script.
 
 set -eu
@@ -52,10 +53,36 @@ require_spliced() {
 		echo "$label matches the stock movie hash, not a spliced builder movie" >&2
 		exit 1
 	fi
-	if ! grep -a -q -F 'HorizonShipBuilder' "$file"; then
+	# CWS stores the ABC under zlib. Inflate that body, then search it.
+	# Bytes outside the zlib stream are dropped, so a marker pasted onto a
+	# compressed stock movie does not count. FWS is searched as stored.
+	plain=$(mktemp)
+	if ! python3 - "$file" "$plain" << 'PY'
+import sys, zlib
+src, dst = sys.argv[1], sys.argv[2]
+data = open(src, "rb").read()
+if len(data) >= 8 and data[:3] == b"CWS":
+    dec = zlib.decompressobj()
+    try:
+        body = dec.decompress(data[8:]) + dec.flush()
+    except zlib.error:
+        sys.exit(2)
+    data = data[:8] + body
+elif len(data) >= 3 and data[:3] == b"ZWS":
+    sys.exit(3)
+open(dst, "wb").write(data)
+PY
+	then
+		rm -f "$plain"
+		echo "$label could not be decompressed to check the splice marker" >&2
+		exit 1
+	fi
+	if ! grep -a -q -F 'HorizonShipBuilder' "$plain"; then
+		rm -f "$plain"
 		echo "$label has no HorizonShipBuilder splice marker" >&2
 		exit 1
 	fi
+	rm -f "$plain"
 }
 
 require_spliced "$normal" "$stock_normal" "spaceshipeditormenu.swf"

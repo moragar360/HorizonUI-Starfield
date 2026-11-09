@@ -161,23 +161,35 @@ static void CheckFace()
 	Expect(!hsb::FaceProven({60, 40, 24}, boxes), "a narrow W is not proven");
 
 	hsb::FaceCandidate order[7] = {
-		{boxes, true, true, true, false},
-		{grotesk, true, true, true, false},
-		{{148, 40, 24}, true, true, false, false},
-		{{}, true, false, false, false},
-		{grotesk, false, true, false, false},
-		{grotesk, false, true, false, false},
-		{grotesk, false, true, false, false},
+		{boxes, hsb::FaceKind::Embed, true, 1, 0},
+		{grotesk, hsb::FaceKind::Embed, true, 1, 0},
+		{{148, 40, 24}, hsb::FaceKind::Embed, true, 0, 0},
+		{{}, hsb::FaceKind::Native, false, 0, 0},
+		{grotesk, hsb::FaceKind::Device, true, 0, 0},
+		{grotesk, hsb::FaceKind::Device, true, 0, 0},
+		{grotesk, hsb::FaceKind::Device, true, 0, 0},
 	};
 	Expect(hsb::PickFace(order, 7, boxes, boxes) == 0, "hasGlyphs picks an embedded face even when W and i share an advance");
-	order[0].glyphs = false;
-	order[1].glyphs = false;
+	order[0].glyphs = 0;
+	order[1].glyphs = 0;
 	Expect(hsb::PickFace(order, 7, boxes, boxes) == 4, "device text is tried only after embedded faces lack the probe glyphs");
-	order[3] = {boxes, true, true, false, true};
-	Expect(hsb::PickFace(order, 7, boxes, boxes) == 3, "a native face that draws is kept when hasGlyphs fails");
-	order[3].draws = false;
-	order[3].present = true;
-	Expect(hsb::PickFace(order, 7, boxes, boxes) == 4, "a native face that does not draw is skipped");
+	order[3] = {boxes, hsb::FaceKind::Native, true, 0, 1};
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 4, "a native face with missing glyphs is refused even when it has ink");
+	order[3].glyphs = -1;
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 3, "an unlisted native face with real ink is kept");
+	order[3].draw = 0;
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 4, "an unlisted native face with no ink is skipped");
+	order[3].draw = -1;
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 4, "a zero-size native field is not ink");
+	order[3].draw = -2;
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 4, "a native sample that throws is not ink");
+	order[3].glyphs = 1;
+	order[3].draw = 0;
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 3, "a native face that covers the probe is kept without ink");
+	order[3].draw = -2;
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 3, "a native face that covers the probe is kept when the sample throws");
+	order[3].glyphs = 0;
+	order[3].draw = 1;
 	for (auto& c : order) c.measure = boxes;
 	Expect(hsb::PickFace(order, 7, boxes, boxes) == -1, "no proof leaves the default text path");
 	Expect(hsb::PickFace(nullptr, 7, boxes, boxes) == -1, "no list is no proof");
@@ -1298,10 +1310,14 @@ static void CheckMovie(const fs::path& root)
 	Expect(Has(FunctionBody(hub, "glyphsOf"), "font.hasGlyphs(GLYPH_PROBE)") && Has(FunctionBody(hub, "embeddedFonts"), "Font.enumerateFonts(false)") &&
 		!Has(FunctionBody(hub, "glyphsOf"), "enumerateFonts(true)") &&
 		Has(FunctionBody(hub, "proveFace"), "else if(embed) { ok = g == 1; }") &&
-		Has(FunctionBody(hub, "proveFace"), "if(drew) { ok = true; }") &&
+		Has(FunctionBody(hub, "proveFace"), "if(tag == \"n4\") { ok = g == 1 || (g < 0 && draw == 1); }") &&
+		!Has(FunctionBody(hub, "proveFace"), "if(drew)") &&
 		Has(FunctionBody(hub, "proveFace"), "this.kit.nativeDraws(label)") &&
-		Has(FunctionBody(hub, "proveFace"), "if(this.glyphsOf(boldName,fonts) == 1) { this.kit.boldFace = boldName; }"),
-		"embedded faces need hasGlyphs, and a native face that draws stays a candidate");
+		Has(FunctionBody(hub, "proveFace"), "if(this.glyphsOf(boldName,fonts) == 1) { this.kit.boldFace = boldName; }") &&
+		Has(FunctionBody(kit, "nativeDraws", "internal"), "return -1;") &&
+		Has(FunctionBody(kit, "nativeDraws", "internal"), "return -2;") &&
+		!Has(FunctionBody(kit, "nativeDraws", "internal"), "return true;"),
+		"embedded faces need hasGlyphs, and a partial native face is refused");
 	Expect(Has(FunctionBody(kit, "turnUp", "internal"), "if(this.embed)") && Has(FunctionBody(kit, "turnUp", "internal"), "param1.rotation = -90;") &&
 		Has(FunctionBody(kit, "turnUp", "internal"), "new BitmapData(") && Has(FunctionBody(kit, "turnUp", "internal"), "this.inked(pixels,INK_COUNT,INK_ALPHA)") &&
 		Has(FunctionBody(kit, "turnUp", "internal"), "param1.rotation = 0;") &&
@@ -1312,8 +1328,9 @@ static void CheckMovie(const fs::path& root)
 	Expect(Has(hub, "this.note(\"FONT try=\" + this.faceTries + \" pick=\" + pick + \" bold=\" + boldOk + \" list=\" + list + \" \" + report);") &&
 		Has(FunctionBody(hub, "proveFace"), "e1=\" + this.glyphMark(int(ge[0])) + \" e2=\"") &&
 		Has(FunctionBody(hub, "proveFace"), "n4=\" + n4mark + \" draw=\" + this.drawMark(draw)") &&
-		Has(FunctionBody(hub, "proveFace"), "d1=\" + this.glyphMark(int(ge[0])) + \" d2=\""),
-		"the FONT line lists embedded names, hasGlyphs, draw, and the pick");
+		Has(FunctionBody(hub, "proveFace"), "d1=\" + this.widthMark(devOk[0] == true)") &&
+		Has(FunctionBody(hub, "drawMark"), "return \"empty\";") && Has(FunctionBody(hub, "drawMark"), "return \"err\";"),
+		"the FONT line lists embedded names, hasGlyphs, the draw state, the width checks, and the pick");
 	for (const auto& entry : fs::directory_iterator(as)) {
 		if (entry.path().extension() != ".as") continue;
 		Expect(NotesHideFaces(ReadFile(entry.path())), entry.path().filename().string() + ": log lines name faces by index only");

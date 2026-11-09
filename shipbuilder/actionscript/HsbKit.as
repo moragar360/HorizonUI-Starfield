@@ -168,15 +168,17 @@ package
          return false;
       }
 
-      // The module-name field is already on screen. Sample a scaled picture of it. Visible
-      // ink means that face draws in this movie, even when enumerateFonts does not list it.
-      // A sample that throws keeps the face: losing it was the miss this check exists to avoid.
-      internal function nativeDraws(param1:TextField):Boolean
+      // The module-name field is already on screen. Sample a scaled picture of it.
+      // 1: at least INK_COUNT pixels have alpha above INK_ALPHA.
+      // 0: the sample ran and the field has no such ink, or it has no text.
+      // -1: the field has no positive size, so there is nothing to sample.
+      // -2: the sample threw. An empty field and a thrown sample are not ink.
+      internal function nativeDraws(param1:TextField):int
       {
-         if(param1 == null || param1.text == null || param1.text.length == 0) { return false; }
+         if(param1 == null || param1.text == null || param1.text.length == 0) { return 0; }
          var srcW:Number = param1.width;
          var srcH:Number = param1.height;
-         if(!(srcW > 0) || !(srcH > 0)) { return true; }
+         if(!(srcW > 0) || !(srcH > 0)) { return -1; }
          var dw:int = srcW > 80 ? 80 : int(Math.ceil(srcW));
          var dh:int = srcH > 32 ? 32 : int(Math.ceil(srcH));
          if(dw < 1) { dw = 1; }
@@ -190,14 +192,14 @@ package
             pixels.draw(param1,fit);
             var ink:Boolean = this.inked(pixels,INK_COUNT,INK_ALPHA);
             pixels.dispose();
-            return ink;
+            return ink ? 1 : 0;
          }
          catch(err:Error)
          {
             if(pixels != null) { pixels.dispose(); }
-            return true;
+            return -2;
          }
-         return true;
+         return -2;
       }
 
       internal function format(param1:Number, param2:uint, param3:Boolean, param4:Number, param5:String):TextFormat

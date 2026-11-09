@@ -111,8 +111,10 @@ package
       //    }
       //
       // 7. Do not import fonts into either movie. HorizonShipBuilder accepts an
-      //    embedded face only when Font.hasGlyphs covers the probe alphabet, and it
-      //    keeps the module-name face when that field draws. After importScript, run
+      //    embedded face only when Font.hasGlyphs covers the probe alphabet. The
+      //    module-name face is kept when that probe passes, or when the name is not
+      //    in the embedded list and a real ink sample of the field succeeds. A listed
+      //    face that lacks a probe glyph is not kept. After importScript, run
       //    shipbuilder/font_marker_gate.py on the re-exported script.
    }
 }

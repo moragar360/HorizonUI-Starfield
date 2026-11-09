@@ -2,7 +2,9 @@
 
 // Purpose: the rule the gold movie uses before Horizon text takes a game face.
 // An embedded face counts when Font.hasGlyphs covers the probe string.
-// A native face that is already drawing stays a candidate without that.
+// The module-name face counts when that probe passes, or when the name is not
+// in the embedded list and a real ink sample of the field succeeds.
+// A listed face that lacks a probe glyph does not count, ink or not.
 // Device text still has to measure like real letters.
 // Author: Moragar. Last modified: 2026-11-08.
 
@@ -15,14 +17,20 @@ struct FaceMeasure {
 	float tall = 0;
 };
 
+// Embed: a mapped name drawn with embedFonts. Native: the module-name field.
+// Device: a mapped name drawn through the font library.
+enum class FaceKind { Embed, Native, Device };
+
+// glyphs: 1 the probe alphabet is covered, 0 the name is listed and a glyph is missing,
+// -1 the name is not in enumerateFonts(false).
+// draw: 1 a sample found ink, 0 a sample found none, -1 the field has no size,
+// -2 the sample threw. Only 1 is a real ink result.
 struct FaceCandidate {
 	FaceMeasure measure;
-	bool embed = true;
+	FaceKind kind = FaceKind::Embed;
 	bool present = true;
-	// Font.hasGlyphs covers the probe alphabet. A listed name with a short glyph set is false.
-	bool glyphs = false;
-	// The module-name field has visible ink. That face stays a candidate without glyphs.
-	bool draws = false;
+	int glyphs = -1;
+	int draw = 0;
 };
 
 inline constexpr float kFaceRatio = 1.6f;
@@ -40,18 +48,24 @@ inline bool FaceProven(const FaceMeasure& m, const FaceMeasure& missing)
 }
 
 // The movie's order: three mapped names as embedded text, the module-name field's face,
-// then the mapped names as device text. Embedded text needs hasGlyphs. A native face
-// that draws wins without it. Device text still needs the width rule. missingEmbed is
-// unused: width cannot tell a full face from missing-glyph boxes.
+// then the mapped names as device text. Embedded text needs hasGlyphs. The native face
+// needs hasGlyphs, or an unknown name plus a real ink sample. A partial native face
+// (glyphs 0) is refused. Empty and error samples are not ink. Device text still needs
+// the width rule. missingEmbed is unused: width cannot tell a full face from boxes.
 inline int PickFace(const FaceCandidate* list, int count, const FaceMeasure& missingEmbed, const FaceMeasure& missingDevice)
 {
 	(void)missingEmbed;
 	if (!list) return -1;
 	for (int i = 0; i < count; ++i) {
 		if (!list[i].present) continue;
-		if (list[i].draws) return i;
-		if (list[i].embed) {
-			if (list[i].glyphs) return i;
+		const int g = list[i].glyphs;
+		if (list[i].kind == FaceKind::Embed) {
+			if (g == 1) return i;
+			continue;
+		}
+		if (list[i].kind == FaceKind::Native) {
+			if (g == 1) return i;
+			if (g < 0 && list[i].draw == 1) return i;
 			continue;
 		}
 		if (FaceProven(list[i].measure, missingDevice)) return i;
