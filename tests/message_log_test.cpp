@@ -3403,8 +3403,9 @@ int main()
 		Expect(as.find("Find…") == std::string::npos, "Find does not use a U+2026 ellipsis");
 		{
 			const auto nowFn = AsFnBody(as, "private function hzPerfNow", "private function hzPerfResetN");
-			Expect(nowFn.find("getTimer()") != std::string::npos && nowFn.find("new Date") == std::string::npos,
-				"hzPerfNow uses getTimer");
+			Expect(nowFn.find("getTimer()") != std::string::npos, "hzPerfNow uses getTimer");
+			Expect(nowFn.find("catch") != std::string::npos && nowFn.find("new Date().getTime()") != std::string::npos,
+				"hzPerfNow falls back if getTimer throws");
 			Expect(as.find("getTimer(") == as.rfind("getTimer("), "getTimer( appears only in hzPerfNow");
 		}
 		Expect(as.find("flash.utils") == std::string::npos, "HUD block has no flash.utils");

@@ -4759,6 +4759,8 @@ namespace HZ
 			const char* menu = g_coverName.load(std::memory_order_acquire);
 			if (g_hudSince)
 				REX::INFO("HUD not ready (loading/menu {})", menu ? menu : "?");
+			if (HzPerfOn())
+				hzperf::NoteCovered(g_perfCtl);
 			g_hudSince = 0;
 			g_hudReadyLogged.store(false);
 			g_hudSafeHint.store(false, std::memory_order_relaxed);
@@ -4794,6 +4796,8 @@ namespace HZ
 				REX::INFO("HUD not ready (loading/menu {})", menu);
 				ReleaseSettingsNative(menu);
 			}
+			if (HzPerfOn())
+				hzperf::NoteCovered(g_perfCtl);
 			g_hudSince = 0;
 			g_hudReadyLogged.store(false);
 			return;
@@ -4809,14 +4813,16 @@ namespace HZ
 		}
 		if (!g_hudSince) g_hudSince = now;
 		try { SplashPoll(now); } catch (...) {}
+		const bool skipPostCover = HzPerfOn() && hzperf::TakePostCover(g_perfCtl);
 		if (now - g_hudSince < 3000) {
-			if (g_perfDumpReq.load(std::memory_order_relaxed)) {
+			if (!skipPostCover && g_perfDumpReq.load(std::memory_order_relaxed)) {
 				try { HzPerfArmWindow(); } catch (...) {}
 				try { HzPerfDumpOnce(); } catch (...) {}
 			}
 			return;
 		}
-		hzperf::NoteHudReady(g_perfCtl, now);
+		if (HzPerfOn())
+			hzperf::NoteHudReady(g_perfCtl, now);
 		if (!g_hudReadyLogged.exchange(true)) {
 			REX::INFO("HUD ready (stable 3s)");
 			HudOwnerCheck();
@@ -4835,7 +4841,7 @@ namespace HZ
 		HWND wnd = GameWindow();
 		EnsureSubclass(wnd);
 		PollSettings(wnd, now);
-		if (g_perfDumpReq.load(std::memory_order_relaxed)) {
+		if (!skipPostCover && g_perfDumpReq.load(std::memory_order_relaxed)) {
 			try { HzPerfArmWindow(); } catch (...) {}
 			try { HzPerfDumpOnce(); } catch (...) {}
 		}
@@ -4852,6 +4858,8 @@ namespace HZ
 		const bool pending = g_introPending.load(std::memory_order_relaxed) != 0;
 		const int kind = g_introKind.load(std::memory_order_relaxed);
 		if (hzperf::OnHudArmPoll(g_perfCtl, HzPerfOn(), nowMs, introMs, pending, kind) != hzperf::ReadyOp::ResetWindow)
+			return;
+		if (!hzperf::EpochMatches(g_perfCtl))
 			return;
 		hzperf::BeginDump(g_perfAgg);
 		hzperf::Reset(g_perfAgg);
@@ -4877,7 +4885,12 @@ namespace HZ
 		if (!HzPerfOn()) return;
 		if (hzperf::OnHudSafePoll(g_perfCtl, true, true, GetTickCount64()) != hzperf::DumpOp::Fire)
 			return;
+		if (!hzperf::EpochMatches(g_perfCtl)) return;
 		if (!g_perfDumpReq.exchange(false, std::memory_order_acq_rel)) return;
+		if (!hzperf::EpochMatches(g_perfCtl)) {
+			g_perfDumpReq.store(true, std::memory_order_release);
+			return;
+		}
 		hzperf::ConsumeDump(g_perfCtl);
 		hzperf::BeginDump(g_perfAgg);
 		const auto freq = HzQpcFreq();
@@ -4892,7 +4905,7 @@ namespace HZ
 		try {
 			GValue r;
 			if (HudInvoke("hzPerfSnapshot", &r) && r.IsString() && r.GetString())
-				as = hzpreset::Utf8Prefix(r.GetString(), 1400);
+				as = hzpreset::Utf8Prefix(r.GetString(), hzperf::kDumpAsMax);
 		} catch (...) {
 			as = "as=throw";
 		}
@@ -4969,7 +4982,14 @@ namespace HZ
 			if (!menu || !menu->uiMovie || !menu->uiMovie->asMovieRoot) return;
 			auto* live = menu->uiMovie->asMovieRoot.get();
 			if (!hzlog::ShouldAdoptLiveRoot(a_this, stored, live)) return;
+			const bool fromNullHud = stored == nullptr && std::strcmp(a_name, "HUDMenu") == 0;
 			a_store.store(live, std::memory_order_release);
+			if (fromNullHud && g_perfDumpReq.load(std::memory_order_acquire)) {
+				hzperf::UnarmWindow(g_perfCtl);
+				hzperf::BeginDump(g_perfAgg);
+				hzperf::Reset(g_perfAgg);
+				hzperf::EndDump(g_perfAgg);
+			}
 			const auto last = g_adoptLogMs.load(std::memory_order_relaxed);
 			if (hzlog::UiTidSwitchLogDue(last, a_now, hzlog::kUiTidSkipLogMs)) {
 				REX::INFO("scaleform: adopted live {} root {} (was {})", a_name,

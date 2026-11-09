@@ -204,7 +204,8 @@ pin("if(since < 0) { this.hz41LocClear(); return false; }", "a backwards clock e
 	expect(fn.indexOf("getTimer") < 0 && fn.indexOf("flash.utils") < 0, "hz41Now does not call getTimer");
 	expect(src.indexOf("import flash.utils.getTimer") < 0, "the injected HUD block does not carry a getTimer import");
 	const perfNow = src.slice(src.indexOf("private function hzPerfNow"), src.indexOf("private function hzPerfResetN"));
-	expect(perfNow.indexOf("getTimer()") >= 0 && perfNow.indexOf("new Date") < 0, "hzPerfNow uses unqualified getTimer");
+	expect(perfNow.indexOf("getTimer()") >= 0, "hzPerfNow uses unqualified getTimer");
+	expect(perfNow.indexOf("catch") >= 0 && perfNow.indexOf("new Date().getTime()") >= 0, "hzPerfNow falls back if getTimer throws");
 	expect(src.indexOf("getTimer(") === src.lastIndexOf("getTimer("), "getTimer( appears only in hzPerfNow");
 	expect(src.indexOf("flash.utils") < 0, "t37 HUD block has no flash.utils");
 }

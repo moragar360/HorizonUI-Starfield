@@ -2615,9 +2615,9 @@
             if(fbad) { this.hzFontRetry++; if(this.hzFontName() + this.hzFontName("rg") + this.hzFontName("bd") != fbefore) { this.hzApplyTypo(); } else { try { this.hzAfRetryLayout(); } catch(errAf:Error) { } } }
             else { this.hzFontRetry = 6; }
          }
-         if(this.hzPerfOn) { this.hzPerfBegin("tick"); }
+         if(this.hzPerfOn) { try { this.hzPerfBegin("tick"); } catch(ePb:Error) { } }
          try { this.hzTgTick(); } catch(errTg:Error) { try { this.hzTgRestore(); this.HorizonTarget_mc.visible = false; } catch(errTg2:Error) { } }
-         if(this.hzPerfOn) { this.hzPerfEnd("tick"); if(this.hzPerfN) { this.hzPerfN.frames++; } }
+         if(this.hzPerfOn) { try { this.hzPerfEnd("tick"); if(this.hzPerfN) { this.hzPerfN.frames++; } } catch(ePe:Error) { } }
          try { this.hz43Reticle(); } catch(e43r:Error) { }
          try { this.hzXhTick(); } catch(errXh:Error) { try { this.hzXhRestore(); if(this.hzXh) { this.hzXh.visible = false; } } catch(errXh2:Error) { } }
          try { this.hz43Frame(); } catch(e43f:Error) { }
@@ -10389,12 +10389,20 @@
 
       // Purpose: off-by-default HUD timing and isolation gates. Perf helpers use
       // getTimer (still 1 ms). Splash/alerts/gameplay keep hz41Now (Date).
+      // Unqualified getTimer needs the host HUDMenu import (mandatory gfx splice gate).
+      // A missed import must not throw: try getTimer, then Date. Never use a qualified
+      // utils-package call here (runtime lookup of global flash, ReferenceError #1065).
       // Inputs: [Debug] PerfDiag / PerfMode / PerfScan. Outputs: counters for hzPerfSnapshot.
       // Author: Moragar. Last modified: 2026-11-09.
       private function hzPerfNow() : Number
       {
-         if(this.hz41NowFn != null) { return Number(this.hz41NowFn()); }
-         return getTimer();
+         if(this.hz41NowFn != null)
+         {
+            try { return Number(this.hz41NowFn()); } catch(eFn:Error) { }
+         }
+         try { return getTimer(); } catch(eGt:Error) { }
+         try { return new Date().getTime(); } catch(eDt:Error) { }
+         return 0;
       }
       private function hzPerfResetN() : void
       {
@@ -10430,19 +10438,24 @@
       private function hzPerfBegin(n:String) : void
       {
          if(!this.hzPerfOn) { return; }
-         if(!this.hzPerfT0) { this.hzPerfT0 = {}; }
-         this.hzPerfT0[n] = this.hzPerfNow();
-         if(n == "tick")
+         try
          {
-            this.hzPerfTickHadContent = false;
-            this.hzPerfTickHadAct = false;
-            this.hzPerfTickHadItems = false;
+            if(!this.hzPerfT0) { this.hzPerfT0 = {}; }
+            this.hzPerfT0[n] = this.hzPerfNow();
+            if(n == "tick")
+            {
+               this.hzPerfTickHadContent = false;
+               this.hzPerfTickHadAct = false;
+               this.hzPerfTickHadItems = false;
+            }
          }
+         catch(eB:Error) { }
       }
       private function hzPerfEnd(n:String) : void
       {
          if(!this.hzPerfOn || this.hzPerfN == null || this.hzPerfT0 == null) { return; }
-         var dt:int = int(this.hzPerfNow() - Number(this.hzPerfT0[n]));
+         var dt:int = 0;
+         try { dt = int(this.hzPerfNow() - Number(this.hzPerfT0[n])); } catch(eE:Error) { return; }
          this.hzPerfN[n] = int(this.hzPerfN[n]) + 1;
          var msK:String = n + "Ms";
          var maxK:String = n + "Max";
@@ -10736,7 +10749,7 @@
             var opSave:Number = this.hzCardOpacity;
             this.hzCardOpacity = this.hzContOpacity;
             this.hz38DrawOk = false;
-            if(this.hzPerfOn) { this.hzPerfBegin("content"); }
+            if(this.hzPerfOn) { try { this.hzPerfBegin("content"); } catch(ePbc:Error) { } }
             try { this.hzT19Content(kind,show ? a : null,aw,sel,start); this.hz38DrawOk = true; }
             catch(eOp:Error)
             {
@@ -10745,7 +10758,7 @@
                this.hz38DrawErr++;
                if(this.hz38DrawErr <= 30) { this.hzT19Sig = ""; }
             }
-            if(this.hzPerfOn) { this.hzPerfEnd("content"); }
+            if(this.hzPerfOn) { try { this.hzPerfEnd("content"); } catch(ePec:Error) { } }
             this.hzCardOpacity = opSave;
          }
          if(kind == "foe") { this.hzT19PaintFoeBars(); }
