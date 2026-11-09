@@ -127,7 +127,16 @@ ffdec -importScript shipbuilder\work\ba2\spaceshipeditormenu.swf shipbuilder\Int
 ffdec -importScript shipbuilder\work\ba2\spaceshipeditormenu_lrg.swf shipbuilder\Interface\spaceshipeditormenu_lrg.swf shipbuilder\work\lrg
 ```
 
-Those two outputs are the movies.
+Those two outputs are the movies. Before you package them, export each spliced movie's script and run the font gate. It fails if `HorizonShipBuilder` embeds a mapped face without checking that this movie exports it. That is the check for labels that draw as boxes while the stock timeline text still reads.
+
+```
+ffdec -export script shipbuilder\work\check-normal shipbuilder\Interface\spaceshipeditormenu.swf
+ffdec -export script shipbuilder\work\check-lrg shipbuilder\Interface\spaceshipeditormenu_lrg.swf
+python shipbuilder\font_export_gate.py --script shipbuilder\work\check-normal
+python shipbuilder\font_export_gate.py --script shipbuilder\work\check-lrg
+```
+
+The same command with no `--script` checks the source in this repo. Pass `--dom` with the stock movie's `DOMDocument.xml` when you have the decompile: the gate then also reports that the stock movie does not export the mapped faces. Do not add a font import to either movie to satisfy the gate.
 
 ## Install and restore
 
@@ -201,7 +210,7 @@ Use a throwaway save: every ship action here is the game's own action. Run each 
 2. Clicks over the ship still build. Outside the panels, click, drag and use the wheel on the ship: the camera, selection and placement work as with this mod removed.
 3. Keys. With nothing open, H folds every panel to its tab and the header button reads SHOW ALL (mock 12); H, or opening any tab, brings them all back. `/` opens Find in the browser. Type in Find: the letters go to the field and no builder hotkey fires. Esc closes the innermost thing first (Find, then a dialog, then Settings), one step per press, and never opens the exit prompt while Horizon has something open. Alt+Tab and Alt+F4 still work with a popup open.
 4. Controller. With the pad, open Settings from the gear: Up and Down move the focus ring, A activates, B closes. With nothing open, every pad button does what it does with this mod removed.
-5. Text. Faces: `FONT try=... pick=` names the face by index; `pick=0` means text uses the default face. The browser's category tabs are rotated text, which Scaleform draws only with an embedded face, so with `pick=d1` to `d3` (device text) the rotated labels may be missing. Report the `pick` value with a screenshot. Body text is 13 px on the normal movie and 16 px on the large movie, and captions are 12 px and 15 px; check for boxes in any language you use.
+5. Text. Faces: `FONT try=... pick=` names the face by index. `pick=0` means text uses the default face. `e1` to `e3` are the mapped names drawn as embedded text, and they count only when this movie exports that face (`Font.enumerateFonts(false)`). A `!` after a measure means the advances looked real and the movie does not export the face, so it was not used. On the stock editor that mark is expected on `e1` to `e3`, and the pick is `d1`, `d2` or `d3` (the same names through the font library). `n4` is the module-name field. Category tabs are turned. When the pick is a device face they are a picture of the label, so the words still read upward. If a tab is upright, the picture draw failed and the words are still the thing to read. Report the `pick` line with a screenshot of the power card, the module card, the parts list and Settings. Every custom label is a word. A box, dot or dash in place of a letter is a miss. Body text is 13 px on the normal movie and 16 px on the large movie, and captions are 12 px and 15 px. Check every language you use.
 6. Data. A hab, a weapon and a reactor or shield: the Selected Module card matches the game's card with this mod removed and every other mod, Creations included, left as it is. Power pips, credits, and the stats footer match the game's numbers.
 7. Categories. The browser's category tabs and the grid (mock 4) list the same categories, in the same order, as with this mod removed, including ones another mod adds. Opening the grid steps once around the categories to learn their names and counts (`CATEGORIES read total=`), and ends on the category it started from.
 8. Colours (mocks 6, 7). Select parts, enter colour mode, move a slot's sliders, pick a recent swatch, preview a scheme and accept or cancel. Export a scheme and find it in `schemes\user`. Save a scheme under the name of one already in `schemes\user`: a new `<name> 2.ini` appears, and the first file is unchanged. The applied colours match the game's own picker.
@@ -217,30 +226,34 @@ Bring back the log and a screenshot of each mock's screen on both movies.
 ## Unknowns
 
 - Whether swallowed window messages keep clicks from the 3D editor (gate 1).
-- Whether rotated category labels draw with the face the probe picks (gate 5).
+- Whether a device-face category tab stays sharp after it is drawn into a picture (gate 5). The words have to be there either way.
 - StarUI detection is by file name only. `StarUIShipBuilder.dll` loaded means Horizon stands down (mock 10). A file named `StarUI*` in `Data\SFSE\Plugins` or `Data\Interface`, or `StarUI*Ship*` in `Data`, shows the notice (mock 11). The StarUI Ship Builder 1.4 copy checked for this work is staged in Vortex, not deployed, and only its `Interface` movies were listed. So neither check is known to fire for it. Do not enable StarUI Ship Builder with this mod.
 - Colour slider steps are sent one per frame; whether the game applies each step before the next is untested.
-- How fonts draw other scripts' glyphs is untested. Every stock language config maps all three face candidates (`$NB_Grotesk_Semibold`, `$MAIN_Font_Bold`, `$MAIN_Font`).
+- How fonts draw other scripts' glyphs is untested. Every stock language config maps all three face candidates (`$NB_Grotesk_Semibold`, `$MAIN_Font_Bold`, `$MAIN_Font`). The stock editor does not export those faces for a new text field. Timeline labels keep the glyphs baked into the movie. Horizon text uses an embedded face only when the movie exports it, and otherwise uses the font library.
 
-## Vortex zip
+## Vortex FOMOD
 
-This package is Horizon Ship Builder alone. It is not the HUD installer and it has no component picker. Quit the game first. The two movies in the zip must be the spliced movies, not stock archive copies, so neither matches a stock SHA-256 value above. The default ini ships with the mod and documents every key. The plugin reads the player file under Documents when that file exists.
+This package is Horizon Ship Builder alone. It is a FOMOD installer, the same kind of installer as Horizon UI, and it has no component picker. It does not install any HUD files. Quit the game first. The two movies in the zip must be the spliced movies, not stock archive copies, so neither matches a stock SHA-256 value above. The default ini ships with the mod and documents every key. The plugin reads the player file under Documents when that file exists.
 
 StarUI Ship Builder ships its own `spaceshipeditormenu.swf`, `spaceshipeditormenu_lrg.swf`, and game card library. With both mods enabled, Vortex reports a file conflict, and either winner leaves a mix the checks above did not cover. Do not enable StarUI Ship Builder with this mod.
 
-From the repo root, after the desktop builder has produced the DLL and both movies:
+From the repo root, after the desktop builder has produced the DLL and both movies, and after `font_export_gate.py` has passed on both spliced movies:
 
 ```
 sh shipbuilder/package_vortex.sh build\windows\x64\releasedbg\HorizonShipBuilder.dll shipbuilder\Interface\spaceshipeditormenu.swf shipbuilder\Interface\spaceshipeditormenu_lrg.swf HorizonShipBuilder-0.2.0.0.zip
 ```
 
+The script writes `fomod/info.xml` and `fomod/ModuleConfig.xml` into the zip. The author in `fomod/info.xml` is Moragar. The version is the plugin version. The script refuses to write the zip if those two files are missing, if the author or version does not match, or if the staged tree is anything other than the four install files plus those two FOMOD files.
+
 The zip contains only:
 
 ```
-Data/SFSE/Plugins/HorizonShipBuilder.dll
-Data/Interface/spaceshipeditormenu.swf
-Data/Interface/spaceshipeditormenu_lrg.swf
-Data/Interface/HorizonUI/shipbuilder/HorizonShipBuilder.default.ini
+fomod/info.xml
+fomod/ModuleConfig.xml
+00 Ship Builder/SFSE/Plugins/HorizonShipBuilder.dll
+00 Ship Builder/Interface/spaceshipeditormenu.swf
+00 Ship Builder/Interface/spaceshipeditormenu_lrg.swf
+00 Ship Builder/Interface/HorizonUI/shipbuilder/HorizonShipBuilder.default.ini
 ```
 
-In Vortex, install that zip from file. The deployment root is the game root (.). The archive contains one Data folder, so the install yields Data/SFSE/Plugins and Data/Interface. It does not nest another Data folder. Do not merge this zip with the HUD package.
+`ModuleConfig.xml` installs the `00 Ship Builder` folder into the Data folder of the game root. That is the builder DLL, both editor movies, and the default ini. There is no HUD plugin and no HUD movie. In Vortex, install that zip from file. Do not merge this zip with the HUD package.

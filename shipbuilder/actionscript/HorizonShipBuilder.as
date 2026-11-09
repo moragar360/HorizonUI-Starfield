@@ -12,6 +12,7 @@ package
    import flash.events.EventDispatcher;
    import flash.events.MouseEvent;
    import flash.geom.Point;
+   import flash.text.Font;
    import flash.text.TextField;
    import flash.text.TextFieldType;
    import flash.text.TextFormat;
@@ -415,8 +416,12 @@ package
       }
 
       // Candidates in order: mapped names as embedded text, the face of the game's module name
-      // field, then mapped names as device text. Box glyphs share one advance, so a face counts
-      // only when W and i measure apart and the pair differs from a name that cannot exist.
+      // field, then mapped names as device text. The stock editor bakes glyphs into timeline
+      // fields and does not export the mapped names, so a new field with embedFonts set draws
+      // boxes even when W and i measure apart. An embedded candidate counts only when this
+      // movie exports it. Box glyphs share one advance, so a face also has to measure apart
+      // from a name that cannot exist. A measured face this movie does not export is marked
+      // "!" in the log.
       private function proveFace():void
       {
          this.faceTries++;
@@ -427,12 +432,15 @@ package
          var noneDev:Array = this.measureFace(NO_FACE,false);
          var names:Array = [];
          var embeds:Array = [];
+         var exported:Array = [];
          var tags:Array = [];
          var i:int = 0;
          while(i < FACES.length)
          {
-            names.push(String(FACES[i]));
+            var faceName:String = String(FACES[i]);
+            names.push(faceName);
             embeds.push(true);
+            exported.push(this.movieExports(faceName));
             tags.push("e" + (i + 1));
             i++;
          }
@@ -441,8 +449,10 @@ package
          var hasLabel:Boolean = labelFace.length > 0;
          if(hasLabel)
          {
+            var nativeEmbed:Boolean = label.embedFonts;
             names.push(labelFace);
-            embeds.push(label.embedFonts);
+            embeds.push(nativeEmbed);
+            exported.push(!nativeEmbed || this.movieExports(labelFace));
             tags.push("n4");
          }
          i = 0;
@@ -450,6 +460,7 @@ package
          {
             names.push(String(FACES[i]));
             embeds.push(false);
+            exported.push(true);
             tags.push("d" + (i + 1));
             i++;
          }
@@ -459,9 +470,11 @@ package
          while(k < names.length)
          {
             var embed:Boolean = embeds[k] == true;
+            var allowed:Boolean = exported[k] == true;
             var m:Array = this.measureFace(String(names[k]),embed);
-            var ok:Boolean = this.faceProven(m,embed ? none : noneDev);
-            report += " " + String(tags[k]) + "=" + this.metric(m) + (ok ? "+" : "-");
+            var measured:Boolean = this.faceProven(m,embed ? none : noneDev);
+            var ok:Boolean = measured && allowed;
+            report += " " + String(tags[k]) + "=" + this.metric(m) + (ok ? "+" : (measured ? "!" : "-"));
             if(ok && pick == "0")
             {
                pick = String(tags[k]);
@@ -470,15 +483,38 @@ package
             }
             k++;
          }
-         // The bold face must render the same way (embedded or device) as the body face.
+         // The bold face must render the same way (embedded or device) as the body face,
+         // and an embedded bold face must be exported too.
          if(this.kit.face.length > 0 && this.kit.face != String(FACES[1]))
          {
-            var bold:Array = this.measureFace(String(FACES[1]),this.kit.embed);
-            if(this.faceProven(bold,this.kit.embed ? none : noneDev)) { this.kit.boldFace = String(FACES[1]); }
+            var boldName:String = String(FACES[1]);
+            var boldAllowed:Boolean = !this.kit.embed || this.movieExports(boldName);
+            var bold:Array = this.measureFace(boldName,this.kit.embed);
+            if(boldAllowed && this.faceProven(bold,this.kit.embed ? none : noneDev)) { this.kit.boldFace = boldName; }
          }
          this.facePick = pick;
          var boldOk:int = this.kit.boldFace.length > 0 ? 1 : 0;
          this.note("FONT try=" + this.faceTries + " pick=" + pick + " bold=" + boldOk + " " + report);
+      }
+
+      // True when a new TextField in this movie can draw param1 with embedFonts set.
+      // Font.enumerateFonts(false) lists faces this SWF exports. The font library's mapped
+      // names are not in that list unless the movie imported them.
+      private function movieExports(param1:String):Boolean
+      {
+         if(param1 == null || param1.length == 0) { return false; }
+         var list:Array = null;
+         try { list = Font.enumerateFonts(false); }
+         catch(err:Error) { list = null; }
+         if(list == null) { return false; }
+         var i:int = 0;
+         while(i < list.length)
+         {
+            var font:Font = list[i] as Font;
+            if(font != null && font.fontName == param1) { return true; }
+            i++;
+         }
+         return false;
       }
 
       private function measureFace(param1:String, param2:Boolean):Array

@@ -1567,10 +1567,8 @@ package
          var lw:Number = label.width;
          var lh:Number = label.height;
          var ch:Number = count.height;
-         label.rotation = -90;
-         count.rotation = -90;
-         this.add(label,(tw - lh) / 2,th - 30);
-         this.add(count,(tw - ch) / 2,th - 30 - lw);
+         this.add(k.turnUp(label),(tw - lh) / 2,th - 30);
+         this.add(k.turnUp(count),(tw - ch) / 2,th - 30 - lw);
          if(this.hsb.pills.onFor(this.tabId).length > 0) { k.icon(this.gfx,"diamond",(tw - 10) / 2,th - 20,10,k.accent,1); }
          this.hit(0,0,tw,th,"expand");
          this.sized(tw,th);

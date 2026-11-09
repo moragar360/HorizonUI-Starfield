@@ -109,5 +109,10 @@ package
       //       }
       //       // vanilla body stays here
       //    }
+      //
+      // 7. Do not import fonts into either movie. The stock editor does not export the
+      //    mapped face names. HorizonShipBuilder uses embedFonts only for a face that
+      //    Font.enumerateFonts(false) lists. After importScript, run
+      //    shipbuilder/font_export_gate.py on the re-exported script.
    }
 }

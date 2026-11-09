@@ -1,6 +1,9 @@
 package
 {
    import Shared.GlobalFunc;
+   import flash.display.Bitmap;
+   import flash.display.BitmapData;
+   import flash.display.DisplayObject;
    import flash.display.Graphics;
    import flash.display.Sprite;
    import flash.text.TextField;
@@ -12,7 +15,7 @@ package
    // Inputs: the accent and card opacity from the user settings; the proven face names.
    // Outputs: TextFields and drawing into Graphics. It holds no game state.
    // Dependencies: Shared.GlobalFunc (FormatNumberToString), already inside the vanilla movie.
-   // Author: Moragar. Last modified: 2026-11-07.
+   // Author: Moragar. Last modified: 2026-11-08.
    public class HsbKit
    {
       internal static const FILL:uint = 0x0B1016;
@@ -94,6 +97,37 @@ package
          tf.text = "";
          this.fields.push({"tf":tf,"bold":param3});
          return tf;
+      }
+
+      // Category tabs read upward. Scaleform turns a TextField only when its face is embedded
+      // in this movie. The stock editor does not export the mapped faces, so those labels are
+      // drawn flat and the picture is turned. If the picture cannot be drawn, the field stays
+      // upright so the words are still readable.
+      internal function turnUp(param1:TextField):DisplayObject
+      {
+         if(this.embed)
+         {
+            param1.rotation = -90;
+            return param1;
+         }
+         var w:int = int(Math.ceil(param1.width));
+         var h:int = int(Math.ceil(param1.height));
+         if(w < 1) { w = 1; }
+         if(h < 1) { h = 1; }
+         var pixels:BitmapData = null;
+         try
+         {
+            pixels = new BitmapData(w,h,true,0);
+            pixels.draw(param1);
+         }
+         catch(err:Error)
+         {
+            param1.rotation = 0;
+            return param1;
+         }
+         var pic:Bitmap = new Bitmap(pixels,"auto",false);
+         pic.rotation = -90;
+         return pic;
       }
 
       internal function format(param1:Number, param2:uint, param3:Boolean, param4:Number, param5:String):TextFormat

@@ -249,10 +249,10 @@ package
             if(src != null && src.font != null && String(src.font).length > 0)
             {
                fmt.font = src.font;
-               this.useEmbed = sample.embedFonts;
+               this.useEmbed = sample.embedFonts && this.faceExported(String(src.font));
                var from:String = "field";
                if(sample.parent != null && sample.parent.name != null && String(sample.parent.name).length > 0) { from = String(sample.parent.name); }
-               this.note("FONT copied=1 fieldEmbed=" + (sample.embedFonts ? 1 : 0) + " from=" + from);
+               this.note("FONT copied=1 fieldEmbed=" + (sample.embedFonts ? 1 : 0) + " drawEmbed=" + (this.useEmbed ? 1 : 0) + " from=" + from);
                return fmt;
             }
          }
@@ -270,6 +270,25 @@ package
          }
          this.note("FONT copied=0 embedded=0");
          return fmt;
+      }
+
+      // A copied timeline face is embedded only when this movie exports it. Otherwise the
+      // probe draws it through the font library, the same rule as the gold panels.
+      private function faceExported(param1:String):Boolean
+      {
+         if(param1 == null || param1.length == 0) { return false; }
+         var list:Array = null;
+         try { list = Font.enumerateFonts(false); }
+         catch(err:Error) { list = null; }
+         if(list == null) { return false; }
+         var i:int = 0;
+         while(i < list.length)
+         {
+            var font:Font = list[i] as Font;
+            if(font != null && font.fontName == param1) { return true; }
+            i++;
+         }
+         return false;
       }
       
       private function findVanillaField():TextField

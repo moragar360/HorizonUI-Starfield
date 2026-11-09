@@ -1,5 +1,6 @@
 package
 {
+   import flash.display.Bitmap;
    import flash.display.DisplayObject;
    import flash.display.Graphics;
    import flash.display.Sprite;
@@ -11,7 +12,7 @@ package
    // Outputs: the topmost control under a point, as {id, data, x, y, w, h}; input hooks that
    //    subclasses override (press, move, release, hover, wheel, key, char, act, close).
    // Dependencies: HsbKit for the look. No Scaleform mouse listeners are used.
-   // Author: Moragar. Last modified: 2026-11-07.
+   // Author: Moragar. Last modified: 2026-11-08.
    public class HsbBox extends Sprite
    {
       internal var kit:HsbKit;
@@ -61,7 +62,17 @@ package
       internal function wipe():void
       {
          this.kit.forget(this);
-         while(this.numChildren > 0) { this.removeChildAt(0); }
+         while(this.numChildren > 0)
+         {
+            var child:DisplayObject = this.getChildAt(0);
+            this.removeChildAt(0);
+            var pic:Bitmap = child as Bitmap;
+            if(pic != null && pic.bitmapData != null)
+            {
+               pic.bitmapData.dispose();
+               pic.bitmapData = null;
+            }
+         }
          this.graphics.clear();
          this.hits = [];
          this.newInk();

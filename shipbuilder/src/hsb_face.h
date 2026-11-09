@@ -1,8 +1,9 @@
 #pragma once
 
 // Purpose: the rule the gold movie uses before Horizon text takes a game face.
-// A mapped name counts only after it measures like real letters.
-// Author: Moragar. Last modified: 2026-11-07.
+// A mapped name counts only after it measures like real letters. An embedded
+// face also has to be exported by this movie, or the glyphs draw as boxes.
+// Author: Moragar. Last modified: 2026-11-08.
 
 namespace hsb {
 
@@ -17,6 +18,9 @@ struct FaceCandidate {
 	FaceMeasure measure;
 	bool embed = true;
 	bool present = true;
+	// True when this movie exports the face for a new TextField.
+	// An embedded candidate that is not exported is skipped even when its advances look real.
+	bool exported = false;
 };
 
 inline constexpr float kFaceRatio = 1.6f;
@@ -34,12 +38,14 @@ inline bool FaceProven(const FaceMeasure& m, const FaceMeasure& missing)
 }
 
 // The movie's order: three mapped names as embedded text, the module-name field's face,
-// then the mapped names as device text. The first proven entry wins.
+// then the mapped names as device text. Embedded text that this movie does not export
+// is skipped. The first proven entry that is allowed to draw wins.
 inline int PickFace(const FaceCandidate* list, int count, const FaceMeasure& missingEmbed, const FaceMeasure& missingDevice)
 {
 	if (!list) return -1;
 	for (int i = 0; i < count; ++i) {
 		if (!list[i].present) continue;
+		if (list[i].embed && !list[i].exported) continue;
 		if (FaceProven(list[i].measure, list[i].embed ? missingEmbed : missingDevice)) return i;
 	}
 	return -1;

@@ -161,20 +161,25 @@ static void CheckFace()
 	Expect(!hsb::FaceProven({60, 40, 24}, boxes), "a narrow W is not proven");
 
 	hsb::FaceCandidate order[7] = {
-		{boxes, true, true},
-		{grotesk, true, true},
-		{{148, 40, 24}, true, true},
-		{{}, true, false},
-		{grotesk, false, true},
-		{grotesk, false, true},
-		{grotesk, false, true},
+		{boxes, true, true, true},
+		{grotesk, true, true, true},
+		{{148, 40, 24}, true, true, true},
+		{{}, true, false, true},
+		{grotesk, false, true, false},
+		{grotesk, false, true, false},
+		{grotesk, false, true, false},
 	};
-	Expect(hsb::PickFace(order, 7, boxes, boxes) == 1, "the first proven mapped name wins");
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 1, "the first exported embedded face wins");
 	order[1].measure = boxes;
 	order[2].measure = boxes;
 	Expect(hsb::PickFace(order, 7, boxes, boxes) == 4, "device text is tried only after every embedded name fails");
-	order[3] = {{150, 41, 24}, true, true};
-	Expect(hsb::PickFace(order, 7, boxes, boxes) == 3, "the module-name face comes before device text");
+	order[3] = {{150, 41, 24}, true, true, true};
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 3, "the module-name face comes before device text when this movie exports it");
+	order[1].measure = grotesk;
+	order[1].exported = false;
+	order[2].exported = false;
+	order[3].exported = false;
+	Expect(hsb::PickFace(order, 7, boxes, boxes) == 4, "a measured face this movie does not export is not used as embedded text");
 	for (auto& c : order) c.measure = boxes;
 	Expect(hsb::PickFace(order, 7, boxes, boxes) == -1, "no proof leaves the default text path");
 	Expect(hsb::PickFace(nullptr, 7, boxes, boxes) == -1, "no list is no proof");
@@ -1292,6 +1297,15 @@ static void CheckMovie(const fs::path& root)
 	Expect(Has(hub, "meter.text = \"WWWWWWWW\";") && Has(hub, "meter.text = \"iiiiiiii\";") && Has(hub, "if(wide < narrow * 1.6) { return false; }") &&
 		Has(hub, "Math.abs(wide - missWide) < 0.5"), "the movie's face rule matches the twin");
 	Expect(Has(hub, "this.pathField([\"ModuleInfoCard_mc\",\"ModuleLabel_mc\",\"text_tf\"])"), "the fallback face is the module name field");
+	Expect(Has(FunctionBody(hub, "movieExports"), "Font.enumerateFonts(false)") && !Has(FunctionBody(hub, "movieExports"), "enumerateFonts(true)") &&
+		Has(FunctionBody(hub, "proveFace"), "exported.push(this.movieExports(faceName));") &&
+		Has(FunctionBody(hub, "proveFace"), "var ok:Boolean = measured && allowed;") &&
+		Has(FunctionBody(hub, "proveFace"), "var boldAllowed:Boolean = !this.kit.embed || this.movieExports(boldName);"),
+		"an embedded face is used only when this movie exports it");
+	Expect(Has(FunctionBody(kit, "turnUp", "internal"), "if(this.embed)") && Has(FunctionBody(kit, "turnUp", "internal"), "param1.rotation = -90;") &&
+		Has(FunctionBody(kit, "turnUp", "internal"), "new BitmapData(") && Has(browser, "k.turnUp(label)") && Has(browser, "k.turnUp(count)") &&
+		!Has(browser, "label.rotation") && !Has(browser, "count.rotation"),
+		"turned tabs use an embedded face, and rasterize when this movie does not export one");
 	Expect(Has(hub, "this.note(\"FONT try=\" + this.faceTries + \" pick=\" + pick + \" bold=\" + boldOk + \" \" + report);"), "the face proof is logged by index");
 	for (const auto& entry : fs::directory_iterator(as)) {
 		if (entry.path().extension() != ".as") continue;
@@ -1950,9 +1964,13 @@ static void CheckDocs(const fs::path& repo, const fs::path& root)
 			!Has(readme, "renamed over the old one."),
 		"the readme says an export or a saved scheme never replaces a file, and the gates check it");
 
-	Expect(Has(vortex, "Data/SFSE/Plugins/HorizonShipBuilder.dll") && Has(vortex, "Data/Interface/spaceshipeditormenu.swf") &&
-		Has(vortex, "Data/Interface/spaceshipeditormenu_lrg.swf") && Has(vortex, "HorizonShipBuilder.default.ini") && Has(vortex, "game root") &&
-		!Has(vortex, "Data/Data"), "the package holds the plugin, both movies and the default ini at the game root");
+	Expect(Has(vortex, "00 Ship Builder/SFSE/Plugins/HorizonShipBuilder.dll") && Has(vortex, "00 Ship Builder/Interface/spaceshipeditormenu.swf") &&
+		Has(vortex, "00 Ship Builder/Interface/spaceshipeditormenu_lrg.swf") && Has(vortex, "HorizonShipBuilder.default.ini") &&
+		Has(vortex, "fomod/info.xml") && Has(vortex, "fomod/ModuleConfig.xml") && Has(vortex, "<Author>Moragar</Author>") &&
+		Has(vortex, "game root") && !Has(vortex, "Data/Data"),
+		"the package is a FOMOD of the plugin, both movies and the default ini");
+	Expect(Has(readme, "fomod/info.xml") && Has(readme, "fomod/ModuleConfig.xml") && Has(readme, "font_export_gate.py") &&
+		Has(readme, "00 Ship Builder"), "the readme tells the Windows build to produce the FOMOD and to run the font gate");
 
 	// Every key in the shipped defaults is whitelisted and is its own default.
 	std::string section;
