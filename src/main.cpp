@@ -4950,6 +4950,8 @@ namespace HZ
 		hzperf::Reset(g_perfAgg);
 		hzperf::EndDump(g_perfAgg);
 		REX::INFO("perf dump {} {}", native, as);
+		// Option B: up to 1 + 768 lines, written synchronously in this one dump frame, so the
+		// dump frame itself hitches. That is after the capture window and is not measured.
 		REX::INFO("{}", ringSum);
 		char ringLine[hzperf::kRingLineMax];
 		for (int i = 0; i < ringN; ++i) {
