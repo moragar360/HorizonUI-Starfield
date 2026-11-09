@@ -132,6 +132,7 @@ Plugin log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
    ```
 
 3. The plugin is written to `build\windows\x64\releasedbg\HorizonUI.dll`.
+4. HUD movies are not produced by xmake. Splice `actionscript/horizon_block.as` into HUDMenu (`hudmenu` and `hudmenu_lrg`) and follow the **Mandatory GFX splice gate** in `docs/research/0.43.1.0_perf_investigation.md`: add `import flash.utils.getTimer;` on the host class, then export FFDec P-code and confirm the import exists and `hzPerfNow` resolves `getTimer`. Do not package gfx that fail that gate.
 
 Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.43.0.33 loaded`.
 

@@ -494,13 +494,23 @@ expect(perfH.indexOf("std::thr") < 0, "perf header starts no worker");
 expect(main.indexOf("QueryPerformanceCounter") >= 0, "native clock is QPC");
 expect(as.indexOf("clock=getTimer_ms") >= 0, "AS dump names getTimer");
 expect(as.indexOf("clock=hz41Now_ms") < 0, "AS dump does not name Date/hz41Now");
-expect(funcBody(as, "hzPerfNow").indexOf("getTimer()") >= 0 && funcBody(as, "hzPerfNow").indexOf("new Date") < 0,
-	"hzPerfNow uses getTimer, not Date");
+expect(funcBody(as, "hzPerfNow").indexOf("getTimer()") >= 0, "hzPerfNow tries getTimer");
+expect(funcBody(as, "hzPerfNow").indexOf("try") >= 0 && funcBody(as, "hzPerfNow").indexOf("catch") >= 0,
+	"hzPerfNow catches a missing getTimer");
+expect(funcBody(as, "hzPerfNow").indexOf("new Date().getTime()") >= 0, "hzPerfNow falls back to Date if getTimer throws");
+expect(as.indexOf('if(this.hzPerfOn) { try { this.hzPerfBegin("tick"); } catch') >= 0, "hzOnFrame begin cannot throw out of the frame");
+expect(as.indexOf('try { this.hzPerfEnd("tick");') >= 0, "hzOnFrame end cannot throw out of the frame");
 expect(funcBody(as, "hzPerfNow").indexOf("hz41NowFn") >= 0, "injected test clock still wins in hzPerfNow");
 expect(funcBody(as, "hz41Now").indexOf("new Date().getTime()") >= 0, "gameplay clock stays Date");
 expect(funcBody(as, "hzPerfBegin").indexOf("hz41Now()") < 0 && funcBody(as, "hzPerfEnd").indexOf("hz41Now()") < 0,
 	"perf helpers do not call hz41Now");
 expect(as.indexOf("import flash.utils.getTimer") < 0, "injected HUD block has no getTimer import");
+{
+	const research = readText(path.join(root, "docs", "research", "0.43.1.0_perf_investigation.md"));
+	expect(research.indexOf("Mandatory GFX splice gate") >= 0, "research docs name the GFX splice gate");
+	expect(research.indexOf("import flash.utils.getTimer;") >= 0, "gate requires the host HUDMenu import");
+	expect(research.indexOf("export P-code") >= 0 && research.indexOf("hzPerfNow") >= 0, "gate requires FFDec P-code proof that hzPerfNow resolves getTimer");
+}
 expect(funcBody(as, "hzPerfSnapshot").indexOf("sName") < 0, "snapshot has no name field");
 
 function loadPerf() {
@@ -522,7 +532,9 @@ function loadPerf() {
 		const body = funcBody(as, name);
 		if (!body) throw new Error("missing " + name);
 		const params = funcParams(as, name);
-		const inner = as3toJs(body).replace(/^\{\s*/, "").replace(/\s*\}$/, "").replace(/\bgetTimer\(\)/g, "self.getTimer()");
+		const inner = as3toJs(body).replace(/^\{\s*/, "").replace(/\s*\}$/, "")
+			.replace(/catch\s*\(\s*(\w+)\s*:\s*[\w\.]+\)/g, "catch($1)")
+			.replace(/\bgetTimer\(\)/g, "self.getTimer()");
 		self[name] = eval("(function(self){ return function(" + params.join(",") + "){ " + inner + " }; })")(self);
 	}
 	return self;
@@ -579,6 +591,21 @@ function loadPerf() {
 	p.hz41NowFn = null;
 	p.getTimer = function () { return 7; };
 	expect(p.hzPerfNow() === 7, "production hzPerfNow uses getTimer");
+}
+
+{
+	const body = funcBody(as, "hzPerfNow");
+	const inner = as3toJs(body).replace(/^\{\s*/, "").replace(/\s*\}$/, "")
+		.replace(/catch\s*\(\s*(\w+)\s*:\s*[\w\.]+\)/g, "catch($1)");
+	expect(inner.indexOf("self.getTimer") < 0 && inner.indexOf("getTimer()") >= 0,
+		"unresolved-getTimer extract still calls getTimer()");
+	const self = { hz41NowFn: null };
+	const fn = eval("(function(self){ return function(){ " + inner + " }; })")(self);
+	let threw = false;
+	let v = null;
+	try { v = fn(); } catch (e) { threw = true; }
+	expect(!threw && typeof v === "number" && v >= 0, "hzPerfNow does not throw when getTimer is unresolved");
+	expect(typeof getTimer === "undefined", "getTimer is not provided in the unresolved test scope");
 }
 
 {

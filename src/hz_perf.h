@@ -22,6 +22,8 @@ namespace hzperf {
 
 inline constexpr int kBucketCount = 5;
 inline constexpr int kDumpMax = 1400;
+inline constexpr int kDumpAsMax = 1400;
+inline constexpr int kIntroPendingMaxMs = 15000;
 inline constexpr int kModeOff = 0;
 inline constexpr int kModeA = 1;
 inline constexpr int kModeB = 2;
@@ -377,6 +379,9 @@ struct DumpCtl {
 	std::atomic<int> waitSec{kWaitDefault};
 	std::atomic<int> settleMs{kSettleDefault};
 	std::atomic<int> armKind{0};
+	std::atomic<int> postCover{0};
+	std::atomic<std::uint32_t> epoch{0};
+	std::atomic<std::uint32_t> armEpoch{0};
 	std::atomic<std::uint64_t> dumpAtMs{0};
 	std::atomic<std::uint64_t> readyMs{0};
 };
@@ -385,21 +390,41 @@ inline void ArmDump(DumpCtl& a_c, int a_waitSec, int a_settleMs = kSettleDefault
 {
 	a_c.waitSec.store(ClampWaitSec(a_waitSec), std::memory_order_relaxed);
 	a_c.settleMs.store(ClampSettleMs(a_settleMs), std::memory_order_relaxed);
+	a_c.epoch.fetch_add(1, std::memory_order_acq_rel);
 	a_c.windowArmed.store(0, std::memory_order_relaxed);
 	a_c.skipPoll.store(0, std::memory_order_relaxed);
+	a_c.postCover.store(0, std::memory_order_relaxed);
 	a_c.dumpAtMs.store(0, std::memory_order_relaxed);
 	a_c.readyMs.store(0, std::memory_order_relaxed);
 	a_c.armKind.store(0, std::memory_order_relaxed);
+	a_c.armEpoch.store(0, std::memory_order_relaxed);
 	a_c.req.store(1, std::memory_order_release);
 }
 
 inline void UnarmWindow(DumpCtl& a_c)
 {
+	a_c.epoch.fetch_add(1, std::memory_order_acq_rel);
 	a_c.windowArmed.store(0, std::memory_order_relaxed);
 	a_c.skipPoll.store(0, std::memory_order_relaxed);
+	a_c.postCover.store(0, std::memory_order_relaxed);
 	a_c.dumpAtMs.store(0, std::memory_order_relaxed);
 	a_c.readyMs.store(0, std::memory_order_relaxed);
 	a_c.armKind.store(0, std::memory_order_relaxed);
+}
+
+inline bool EpochMatches(const DumpCtl& a_c)
+{
+	return a_c.epoch.load(std::memory_order_acquire) == a_c.armEpoch.load(std::memory_order_acquire);
+}
+
+inline void NoteCovered(DumpCtl& a_c)
+{
+	a_c.postCover.store(1, std::memory_order_release);
+}
+
+inline bool TakePostCover(DumpCtl& a_c)
+{
+	return a_c.postCover.exchange(0, std::memory_order_acq_rel) != 0;
 }
 
 inline void NoteHudReady(DumpCtl& a_c, std::uint64_t a_nowMs)
@@ -411,8 +436,12 @@ inline void NoteHudReady(DumpCtl& a_c, std::uint64_t a_nowMs)
 inline std::uint64_t ArmAtMs(std::uint64_t a_readyMs, std::uint64_t a_introResolvedMs, bool a_introPending,
 	std::uint64_t a_nowMs, int a_settleMs)
 {
-	if (a_introPending || !a_readyMs) return 0;
-	const auto intro = a_introResolvedMs ? a_introResolvedMs : a_nowMs;
+	if (!a_readyMs) return 0;
+	bool pending = a_introPending;
+	if (pending && a_nowMs >= a_readyMs + static_cast<std::uint64_t>(kIntroPendingMaxMs))
+		pending = false;
+	if (pending) return 0;
+	const auto intro = a_introResolvedMs ? a_introResolvedMs : a_readyMs;
 	const auto base = a_readyMs > intro ? a_readyMs : intro;
 	return base + static_cast<std::uint64_t>(ClampSettleMs(a_settleMs));
 }
@@ -436,9 +465,15 @@ inline ReadyOp OnHudArmPoll(DumpCtl& a_c, bool a_diagOn, std::uint64_t a_nowMs,
 	const auto at = ArmAtMs(ready, a_introResolvedMs, a_introPending, a_nowMs,
 		a_c.settleMs.load(std::memory_order_relaxed));
 	if (!at || a_nowMs < at) return ReadyOp::None;
+	const auto epoch = a_c.epoch.load(std::memory_order_acquire);
 	int armed = 0;
 	if (!a_c.windowArmed.compare_exchange_strong(armed, 1, std::memory_order_acq_rel, std::memory_order_acquire))
 		return ReadyOp::None;
+	if (a_c.epoch.load(std::memory_order_acquire) != epoch) {
+		a_c.windowArmed.store(0, std::memory_order_release);
+		return ReadyOp::None;
+	}
+	a_c.armEpoch.store(epoch, std::memory_order_release);
 	const auto wait = static_cast<std::uint64_t>(a_c.waitSec.load(std::memory_order_relaxed));
 	a_c.dumpAtMs.store(a_nowMs + wait * 1000ull, std::memory_order_relaxed);
 	a_c.armKind.store(PickArmKind(ready, a_introResolvedMs, a_introKind), std::memory_order_relaxed);
@@ -452,6 +487,7 @@ inline DumpOp OnHudSafePoll(DumpCtl& a_c, bool a_hudSafe, bool a_diagOn, std::ui
 {
 	if (!a_diagOn || a_c.req.load(std::memory_order_acquire) == 0) return DumpOp::Skip;
 	if (a_c.windowArmed.load(std::memory_order_acquire) == 0) return DumpOp::Skip;
+	if (!EpochMatches(a_c)) return DumpOp::Skip;
 	if (!a_hudSafe) return DumpOp::Skip;
 	if (a_nowMs < a_c.dumpAtMs.load(std::memory_order_relaxed)) return DumpOp::Skip;
 	return DumpOp::Fire;

@@ -64,6 +64,8 @@ int main()
 	Expect(hzperf::ClampSettleMs(10000) == 10000 && hzperf::ParseSettleMs("10000") == 10000, "settle 10000");
 	Expect(hzperf::ClampSettleMs(10001) == 10000 && hzperf::ParseSettleMs("10001") == 10000, "settle clamps to 10000");
 	Expect(hzperf::ParseSettleMs("no") == 2000, "junk settle is default");
+	Expect(hzperf::kIntroPendingMaxMs == 15000, "pending intro timeout is 15s after ready");
+	Expect(hzperf::kDumpAsMax == 1400 && hzperf::kDumpMax == 1400, "native and AS dump parts are 1400");
 	Expect(hzperf::HistBucketUs(0) == 1 && hzperf::HistBucketUs(999) == 1, "h1 <1ms");
 	Expect(hzperf::HistBucketUs(1000) == 2 && hzperf::HistBucketUs(1999) == 2, "h2 1-2ms");
 	Expect(hzperf::HistBucketUs(2000) == 5 && hzperf::HistBucketUs(4999) == 5, "h5 2-5ms");
@@ -151,7 +153,10 @@ int main()
 		Expect(hzperf::ArmAtMs(11000, 8000, false, 11000, 2000) == 13000, "intro before ready: ready+settle");
 		Expect(hzperf::ArmAtMs(11000, 14000, false, 14000, 2000) == 16000, "intro after ready: intro+settle");
 		Expect(hzperf::ArmAtMs(11000, 0, true, 11000, 2000) == 0, "pending intro does not arm");
-		Expect(hzperf::ArmAtMs(11000, 0, false, 11000, 2000) == 13000, "noarm uses now as intro");
+		Expect(hzperf::ArmAtMs(11000, 0, false, 11000, 2000) == 13000, "noarm uses ready+settle");
+		Expect(hzperf::ArmAtMs(11000, 0, false, 15000, 2000) == 13000, "noarm stays on HUD-ready, not now");
+		Expect(hzperf::ArmAtMs(11000, 0, true, 25000, 2000) == 0, "pending still blocked before intro timeout");
+		Expect(hzperf::ArmAtMs(11000, 0, true, 26000, 2000) == 13000, "pending intro timeout falls back to HUD-ready");
 		Expect(hzperf::ArmAtMs(11000, 8000, false, 11000, 0) == 11000, "settle 0");
 		Expect(hzperf::PickArmKind(11000, 8000, hzperf::kArmIntro) == hzperf::kArmReady, "ready after intro");
 		Expect(hzperf::PickArmKind(11000, 14000, hzperf::kArmSkip) == hzperf::kArmSkip, "intro-exit kind when intro later");
@@ -206,12 +211,39 @@ int main()
 	{
 		for (int kind : {hzperf::kArmIntro, hzperf::kArmSkip, hzperf::kArmTimeout, hzperf::kArmExhausted, hzperf::kArmNoarm}) {
 			hzperf::DumpCtl c;
-			hzperf::ArmDump(c, 12, 0);
+			hzperf::ArmDump(c, 12, 2000);
 			hzperf::NoteHudReady(c, 5000);
 			const std::uint64_t introMs = (kind == hzperf::kArmNoarm) ? 0 : 6000;
-			Expect(hzperf::OnHudArmPoll(c, true, 6000, introMs, false, kind) == hzperf::ReadyOp::ResetWindow,
-				"every intro exit can arm");
+			const std::uint64_t now = introMs ? 8000 : 7000;
+			Expect(hzperf::OnHudArmPoll(c, true, now, introMs, false, kind) == hzperf::ReadyOp::ResetWindow,
+				"every intro exit can arm at settle 2000");
 		}
+	}
+	{
+		hzperf::DumpCtl c;
+		hzperf::ArmDump(c, 12, 2000);
+		hzperf::NoteHudReady(c, 11000);
+		Expect(hzperf::OnHudArmPoll(c, true, 20000, 0, true, 0) == hzperf::ReadyOp::None,
+			"pending intro still blocks before 15s timeout");
+		Expect(hzperf::OnHudArmPoll(c, true, 26000, 0, true, 0) == hzperf::ReadyOp::ResetWindow,
+			"pending intro timeout arms from HUD-ready");
+		Expect(c.armKind.load() == hzperf::kArmNoarm, "timeout-pending arm is noarm");
+	}
+	{
+		hzperf::DumpCtl c;
+		hzperf::NoteCovered(c);
+		Expect(hzperf::TakePostCover(c) && !hzperf::TakePostCover(c), "post-cover skip is one frame");
+	}
+	{
+		hzperf::DumpCtl c;
+		hzperf::ArmDump(c, 12, 2000);
+		hzperf::NoteHudReady(c, 11000);
+		Expect(hzperf::OnHudArmPoll(c, true, 13000, 8000, false, hzperf::kArmIntro) == hzperf::ReadyOp::ResetWindow,
+			"arm records epoch");
+		Expect(hzperf::EpochMatches(c), "arm epoch matches");
+		c.epoch.fetch_add(1, std::memory_order_relaxed);
+		Expect(!hzperf::EpochMatches(c), "save-load epoch bump mismatches");
+		Expect(hzperf::OnHudSafePoll(c, true, true, 30000) == hzperf::DumpOp::Skip, "epoch mismatch does not dump");
 	}
 
 	const auto perfH = Read("src/hz_perf.h");
@@ -259,8 +291,16 @@ int main()
 		const auto coverEnd = main.find("const bool hudSafe = HudSafe();", pollSf);
 		const auto coverBlk = (coverRet != std::string::npos && coverEnd > coverRet)
 			? main.substr(pollSf, coverEnd - pollSf) : std::string();
-		Expect(coverBlk.find("g_perfCtl") == std::string::npos && coverBlk.find("HzPerfDumpOnce") == std::string::npos,
-			"covering menu does not drop dump latch or dump");
+		Expect(coverBlk.find("HzPerfDumpOnce") == std::string::npos && coverBlk.find("ConsumeDump") == std::string::npos,
+			"covering menu does not dump");
+		Expect(coverBlk.find("req.store") == std::string::npos, "covering menu does not drop dump request");
+		Expect(main.find("NoteCovered") != std::string::npos && main.find("TakePostCover") != std::string::npos,
+			"pause requires a post-cover frame before arm/dump");
+		Expect(main.find("if (HzPerfOn())") != std::string::npos
+			&& main.find("hzperf::NoteHudReady") != std::string::npos,
+			"HUD-ready CAS is gated on PerfDiag");
+		Expect(main.find("fromNullHud") != std::string::npos, "adopting a HUD root from null un-arms");
+		Expect(main.find("kDumpAsMax") != std::string::npos, "AS dump part uses kDumpAsMax");
 		Expect(main.find("HzPerfNote(hzperf::kInvoke") == std::string::npos, "dump frame does not note invoke into max");
 	}
 
