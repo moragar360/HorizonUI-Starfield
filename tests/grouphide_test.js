@@ -289,8 +289,64 @@ function kidsState(h) { return h.blg.kids.map((k) => k.name + ":" + k.visible + 
 	setStyle(h, 0); cond.visible = true; tick();
 	h.hzShowAfflictions = false; tick();
 	expect(bio2.visible === true && cond.visible === false, "OFF + AFFLICTIONS off: the bio alert comes back, BioCondition_mc stays with the watch hide (unchanged)");
-	expect(fnText(as, "hz41LocHide").body.indexOf("hzWatchStyle") < 0 && fnText(as, "hz41LocWant").body.indexOf("hzWatchStyle") < 0,
-		"scan-time LocationAlertText hide is not tied to the watch style (scanner feature; left as is, see CHANGES_watchlog_r2)");
+}
+{
+	// r3 (Director, 10:38): the scan-time LocationAlertText hide also shows in Original Vanilla Watch; game value kept; live both ways
+	const mkLoc = () => {
+		const blg = Clip("BottomLeftGroup_mc", true);
+		const loc = add(blg, Clip("LocationAlertText"));
+		const h = Object.assign({}, common, { hzBlg: blg, hz41LocBlg: null, hz41LocHid: false, hz41LocC: null, hz41LocV: true, hzFrameN: 1, scan: true,
+			hzWatchStyle: 0, hzHideVanillaWatch: true });
+		h.hz41LocWant = function() { return h.scan; };
+		h.hzFindByName = function() { return blg; };
+		bindAll(h, as, ["hz41LocHide"]);
+		h.blg = blg; h.loc = loc; return h;
+	};
+	const h = mkLoc();
+	h.hz41LocHide();
+	expect(h.loc.visible === false && h.hz41LocHid, "OFF, scanning: LocationAlertText hidden (unchanged)");
+	setStyle(h, 1); h.hz41LocHide();
+	expect(h.loc.visible === true && !h.hz41LocHid, "F11 -> VANILLA mid-scan: LocationAlertText back next tick with the game's value");
+	for (let f = 0; f < 10; f++) h.hz41LocHide();
+	expect(h.loc.visible === true, "VANILLA: stays shown during the scan");
+	setStyle(h, 0); h.hz41LocHide();
+	expect(h.loc.visible === false && h.hz41LocHid, "F11 -> OFF mid-scan: hidden again (live, both ways)");
+	setStyle(h, 0); h.scan = false; h.hz41LocHide(); h.scan = true;
+	h.loc.visible = false;   // the game's own value at the next session start (e.g. no alert on screen)
+	h.hz41LocHide(); setStyle(h, 2); h.hz41LocHide();
+	expect(h.loc.visible === false, "release in VANILLA+HORIZON restores the game's own value (false here), not a forced true");
+	const h2 = mkLoc(); h2.hzWatchStyle = 1; h2.hz41LocHide();
+	expect(h2.loc.visible === true && !h2.hz41LocHid, "WatchStyle 1 written before the style sync: never hidden");
+	const h3 = mkLoc(); h3.hzHideVanillaWatch = false; h3.hz41LocHide();
+	expect(h3.loc.visible === true, "HideVanillaWatch off: never hidden");
+	let calls = 0; const h4 = mkLoc(); setStyle(h4, 1); h4.hz41LocWant = function() { calls++; return true; }; bindAll(h4, as, ["hz41LocHide"]);
+	h4.hz41LocHide(); h4.hz41LocHide();
+	expect(calls === 2, "VANILLA: the scan session state machine (hz41LocWant) still runs every tick, so a switch back mid-scan is exact");
+}
+{
+	// VANILLA hides nothing in BottomLeftGroup_mc: every BLG child keeps the game's own visible / alpha through every BLG hide path
+	for (const st of [1, 2]) {
+		const h = gHost();
+		h.hzBlg = h.blg;
+		for (const n of ["BioCondition_mc", "BioAlertBG_mc", "BioConditionBase_mc", "EnvCondition_mc", "O2CO2_mc"]) add(h.blg, Clip(n));
+		const r = rng(77 + st);
+		for (const k of h.blg.kids) { k.visible = r() < 0.8; k.alpha = r() < 0.7 ? 1 : Math.round(r() * 100) / 100; }
+		h.blg.visible = true;
+		const snap = () => h.blg.visible + "#" + h.blg.alpha + "#" + h.blg.kids.map((k) => k.name + ":" + k.visible + ":" + k.alpha).join("|");
+		const before = snap();
+		Object.assign(h, { hz41LocBlg: null, hz41LocHid: false, hz41LocC: null, hz41LocV: true, hzFrameN: 1 });
+		h.hz41LocWant = function() { return true; };   // scanning
+		h.hzFindByName = function() { return h.blg; };
+		bindAll(h, as, ["hz41LocHide"]);
+		setStyle(h, st);
+		for (let f = 0; f < 50; f++) { h.hz44GrpTick(true); h.hz27BioHide(); h.hz31DetHide(); h.hz41LocHide(); h.hz44GrpTick(false); }
+		const of = fnText(as, "hzOnFrame").body;
+		const listJs = toJs(of.slice(of.indexOf("names = [];"), of.indexOf("this.hz44Skip = grp"))).replace("var grp = this.hz44Hid;", "var grp = false;");
+		const lst = Function("with(this){ var names; " + listJs + " return names; }").call({ hzWatchStyle: st, hzHideVanillaWatch: false, hzHideVanillaCompass: true, hzHideVanillaBoost: true, hzHideVanillaAmmo: true, hzHideVanillaHealth: true, hzHideCache: [], hz36HideStale: false });
+		const blgInList = lst.filter((n) => h.blg.kids.some((k) => k.name === n));
+		expect(snap() === before && blgInList.length === 0 && of.indexOf("if(this.hzHideVanillaWatch && !this.hz44Hid)") >= 0,
+			"WatchStyle " + st + ": 50 ticks of the group check, bio, ring and scan-location hides (scanning) and the rebuild list leave every BottomLeftGroup_mc child at the game's own visible / alpha; the per-piece BLG loop is off");
+	}
 }
 {
 	// wiring
