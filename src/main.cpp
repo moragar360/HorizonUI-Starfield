@@ -78,6 +78,7 @@
 #include "hz_msglog.h"
 #include "hz_ui_tid.h"
 #include "hz_perf.h"
+#include "hz_wl.h"
 #include "preset_dedupe.h"
 
 // v0.37: the settings-file code (HZF) replaces files through this (temp file + MoveFileExW)
@@ -126,6 +127,12 @@ namespace HZ
 	std::atomic<bool> g_perfDumpReq{false};
 	hzperf::DumpCtl   g_perfCtl{};
 	hzperf::Agg       g_perfAgg{};
+	// watchlog (private diag): [Debug] WatchLog=1, only with PerfDiag=1. Off by default; no default-INI key.
+	std::atomic<int>  g_wlOn{0};
+	std::atomic<bool> g_wlKeyReq{false};    // Scroll Lock edge from the job poll; taken on the HUD advance path
+	bool              g_wlWasDown = false;  // job poll only
+	hzwl::Fdh         g_wlFdh{};            // frame-delta histogram, HUD advance path only
+	hzwl::Fdh         g_ftDump{};           // PerfDiag dump window frametimes ("perf ft" line), same type, same path
 	std::atomic<std::uint64_t> g_qpcFreq{0};
 
 	// SFSE documents AddPermanentTask as "every frame on Main". Starfield
@@ -887,6 +894,14 @@ namespace HZ
 		hzperf::NoteSpike(g_perfAgg, a_t0, t1 - a_t0, HzQpcFreq(), a_next);
 		hzperf::NoteGap(g_perfAgg, a_t0, HzQpcFreq());
 		if (a_next) HzPerfProcMem();
+		hzwl::FdhAdd(g_ftDump, a_t0, HzQpcFreq());   // "perf ft": every HUD advance start, PerfDiag only
+		if (g_wlOn.load(std::memory_order_relaxed)) hzwl::FdhAdd(g_wlFdh, a_t0, HzQpcFreq());   // watchlog only
+	}
+
+	// watchlog gate: PerfDiag=1 and WatchLog=1. Author: Moragar. Last modified: 2026-11-10.
+	bool HzWlOn()
+	{
+		return HzPerfOn() && g_wlOn.load(std::memory_order_relaxed) != 0;
 	}
 
 	void LoadIni(bool a_reloadMsglog = true)
@@ -896,6 +911,7 @@ namespace HZ
 		g_perfDiag.store(0, std::memory_order_relaxed);
 		g_perfMode.store(0, std::memory_order_relaxed);
 		g_perfScan.store(1, std::memory_order_relaxed);
+		g_wlOn.store(0, std::memory_order_relaxed);
 		int dump = 0;
 		int waitSec = hzperf::kWaitDefault;
 		int settleMs = hzperf::kSettleDefault;
@@ -921,6 +937,7 @@ namespace HZ
 			if (get("perfdump", v)) dump = hzperf::Parse01(v);
 			if (get("perfdumpwait", v)) waitSec = hzperf::ParseWaitSec(v);
 			if (get("perfsettlems", v)) settleMs = hzperf::ParseSettleMs(v);
+			if (get("watchlog", v)) g_wlOn.store(hzperf::Parse01(v), std::memory_order_relaxed);
 			if (get("settingskey", v) && !v.empty()) key = v;
 			if (hzlog::IniReloadAppliesMsglog(a_reloadMsglog))
 				MsglogLoadSettings(d);
@@ -4562,6 +4579,8 @@ namespace HZ
 				const bool saving = op == Op::kAutosave || op == Op::kQuicksave || op == Op::kManualSave
 					|| op == Op::kExitSaveToMainMenu || op == Op::kExitSaveToDesktop;
 				const bool loading = op == Op::kLoad || op == Op::kQuickload || op == Op::kLoadMostRecent || op == Op::kLoadNamedFile;
+				if (loading && st == St::kBegin && HzWlOn())
+					REX::INFO("wl nat load begin op={}", static_cast<int>(op));
 				if (loading && st == St::kBegin) {
 					g_mlLoadReq.store(true);
 					g_splashArmed.store(true, std::memory_order_relaxed);
@@ -4725,6 +4744,12 @@ namespace HZ
 				g_settingsKeyReq.store(true, std::memory_order_release);
 			}
 		}
+		if (HzWlOn()) {   // watchlog: the mode hotkey (Scroll Lock), edge only. No Scaleform here.
+			HWND ww = GameWindow();
+			const bool wdown = ww && (GetAsyncKeyState(VK_SCROLL) & 0x8000) != 0;
+			if (wdown && !g_wlWasDown) g_wlKeyReq.store(true, std::memory_order_release);
+			g_wlWasDown = wdown;
+		}
 		BannerPollWork(now);
 		FilesPollWork();
 		MsglogPoll(now);
@@ -4734,6 +4759,101 @@ namespace HZ
 			g_mlLoadReq.store(true);
 		if (menu && !loading && g_mlHadSession.exchange(false))
 			g_mlQuitReq.store(true);
+	}
+
+	// ---- watchlog (private diag; PerfDiag=1 and WatchLog=1; off by default) ----
+	// Runs only on the HUD advance path (PollScaleform), the same place every other HUD Invoke runs. Every Invoke
+	// resolves the HUD movie again through HudInvoke (no GFx::Value or menuObj kept across frames). Disk: one INFO
+	// line per menu-context change, one batch of queued AS entries every 5 s (only when there are any), and one
+	// window line every 20 s or on the hotkey. Never per frame. Author: Moragar. Last modified: 2026-11-10.
+	std::uint32_t g_wlMask = 0;
+	bool          g_wlMaskInit = false;
+	bool          g_wlNatDirty = false;
+	ULONGLONG     g_wlWinAt = 0;
+	ULONGLONG     g_wlFlushAt = 0;
+	int           g_wlWinN = 0;
+
+	void WlCtxPoll()
+	{
+		if (!HzWlOn()) return;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		std::uint32_t m = 0;
+		for (int i = 0; i < hzwl::kMenuCount; ++i)
+			if (ui->IsMenuOpen(hzwl::kMenus[i])) m |= (1u << i);
+		if (g_wlMaskInit && m == g_wlMask) return;
+		char d[512];
+		hzwl::MaskDiff(g_wlMaskInit ? g_wlMask : 0u, m, d, static_cast<int>(sizeof(d)));
+		REX::INFO("wl nat ctx qpcMs={:.1f} mask=0x{:X} {}", hzperf::QpcMs(HzQpc(), HzQpcFreq()), m, d);
+		g_wlMask = m;
+		g_wlMaskInit = true;
+		g_wlNatDirty = true;
+	}
+
+	void WlFlush()
+	{
+		GValue r;
+		if (!(HudInvoke("hzWlFlush", &r) && r.IsString() && r.GetString())) return;
+		const std::string all = hzpreset::Utf8Prefix(r.GetString(), hzwl::kFlushMax);
+		std::size_t a = 0;
+		while (a < all.size()) {
+			std::size_t b = all.find('\n', a);
+			if (b == std::string::npos) b = all.size();
+			if (b > a) REX::INFO("{}", all.substr(a, b - a));
+			a = b + 1;
+		}
+	}
+
+	void WlWindow(const char* a_why)
+	{
+		WlFlush();
+		std::string as = "as=missing";
+		try {
+			GValue r;
+			if (HudInvoke("hzWlWin", &r) && r.IsString() && r.GetString())
+				as = hzpreset::Utf8Prefix(r.GetString(), hzwl::kLineMax * 4);
+		} catch (...) {
+			as = "as=throw";
+		}
+		char f[hzwl::kLineMax * 2];
+		hzwl::FdhFormat(g_wlFdh, f, static_cast<int>(sizeof(f)));
+		hzwl::FdhReset(g_wlFdh, true);
+		REX::INFO("wl win #{} why={} {} | {}", ++g_wlWinN, a_why, f, as);
+	}
+
+	void WlPoll(ULONGLONG a_now)
+	{
+		if (!HzWlOn()) return;
+		if (g_wlNatDirty) {
+			const std::string ms = std::to_string(g_wlMask);
+			GValue arg(ms.c_str());
+			if (HudInvoke("hzWlNatSet", nullptr, &arg, 1)) g_wlNatDirty = false;
+		}
+		if (!g_wlWinAt) {
+			g_wlWinAt = a_now;
+			g_wlFlushAt = a_now;
+			hzwl::FdhReset(g_wlFdh, true);
+			REX::INFO("wl start windowMs={} flushMs={} hotkey=ScrollLock", hzwl::kWindowMs, hzwl::kFlushMs);
+			return;
+		}
+		if (g_wlKeyReq.exchange(false, std::memory_order_acq_rel)) {
+			WlWindow("key");   // the window before the switch is all one mode
+			HudInvoke("hzWlKey");
+			WlFlush();
+			g_wlWinAt = a_now;
+			g_wlFlushAt = a_now;
+			return;
+		}
+		if (a_now - g_wlWinAt >= static_cast<ULONGLONG>(hzwl::kWindowMs)) {
+			WlWindow("t");
+			g_wlWinAt = a_now;
+			g_wlFlushAt = a_now;
+			return;
+		}
+		if (a_now - g_wlFlushAt >= static_cast<ULONGLONG>(hzwl::kFlushMs)) {
+			WlFlush();
+			g_wlFlushAt = a_now;
+		}
 	}
 
 	// Purpose: HUDMenu Invokes only. Runs from the stored HUDMenu
@@ -4750,6 +4870,7 @@ namespace HZ
 		g_hudPolls.fetch_add(1, std::memory_order_relaxed);
 		if (!g_uiPollLogged.exchange(true))
 			REX::INFO("thread: ui poll tid={}", tid);
+		if (HzWlOn()) { try { WlCtxPoll(); } catch (...) {} }   // watchlog: menu map read only, no Invoke
 		// A covering menu (the character screen is StatusMenu) can hide or
 		// pause this movie between frames. Read the menu map first and return
 		// before any Invoke. The non-HUD advance path does the same release.
@@ -4857,6 +4978,7 @@ namespace HZ
 		HWND wnd = GameWindow();
 		EnsureSubclass(wnd);
 		PollSettings(wnd, now);
+		if (HzWlOn()) { try { WlPoll(now); } catch (...) {} }
 		if (!skipPostCover && g_perfDumpReq.load(std::memory_order_relaxed)) {
 			try { HzPerfArmWindow(); } catch (...) {}
 			try { HzPerfDumpOnce(); } catch (...) {}
@@ -4879,6 +5001,7 @@ namespace HZ
 			return;
 		hzperf::BeginDump(g_perfAgg);
 		hzperf::Reset(g_perfAgg);
+		hzwl::FdhReset(g_ftDump, true);
 		const auto now = HzQpc();
 		g_perfAgg.windowStart.store(now, std::memory_order_relaxed);
 		g_perfAgg.waitUs.store(hzperf::WaitUsFromSec(g_perfCtl.waitSec.load(std::memory_order_relaxed)),
@@ -4919,6 +5042,7 @@ namespace HZ
 			native, hzperf::kDumpMax);
 		// Option B: AS event ring first (hzPerfSnapshot resets it). The QPC tick right
 		// before this Invoke and the AS getTimer it returns give the shared clock offset.
+		if (HzWlOn()) { try { WlFlush(); } catch (...) {} }   // watchlog entries first, so they precede the dump lines
 		std::string ring = "ring=missing";
 		bool ringCut = false;
 		const auto qRing = HzQpc();
@@ -4945,6 +5069,9 @@ namespace HZ
 		hzperf::SortRing(s_ringEv, ringN);
 		char ringSum[hzperf::kDumpMax];
 		hzperf::FormatRingSum(g_perfAgg, ringHead, offMs, ringN, ringSum, hzperf::kDumpMax);
+		char ftLine[hzwl::kLineMax * 2];   // frametime percentiles for the same window (hz_wl.h Fdh)
+		hzwl::FdhFormat(g_ftDump, ftLine, static_cast<int>(sizeof(ftLine)), "perf ft");
+		hzwl::FdhReset(g_ftDump, true);
 		// Option B parts: per-section AS timers, counters and a settings echo, on their own line
 		// (the snapshot is capped at 1400 chars). Read before hzPerfSnapshot, which resets them.
 		std::string parts = "parts=missing";
@@ -4973,6 +5100,7 @@ namespace HZ
 		// Option B: up to 1 + 2816 lines (3 x 256 native + 2048 AS), written synchronously in this one
 		// dump frame, so the dump frame itself hitches. That is after the capture window and is not measured.
 		REX::INFO("{}", ringSum);
+		REX::INFO("{}", ftLine);
 		char ringLine[hzperf::kRingLineMax];
 		for (int i = 0; i < ringN; ++i) {
 			if (hzperf::FormatRingEv(s_ringEv[i], ringLine, hzperf::kRingLineMax) > 0)

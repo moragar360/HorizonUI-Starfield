@@ -258,7 +258,8 @@ function psHud(on, slow) {
 		hz26ChSig: "", hzCardColor: 0, hzTextScale: 1, hzDebug: false, HorizonEnemy_mc: null, HorizonStealth_mc: null,
 		hzCmpLabels: [], hzCmpCenter: {}, HorizonQuest_mc: {}, hzCmpDeg: 0, hzCmpData: null,
 		hzQName: "Q", hzQObjStr: "", hzQDistStr: "", hzQ19T: null, hzCQ19T: null,
-		hzTexts: [], hzFades: [], hzCrossRule: 0, hzXhStyle: 1, hzTextShadow: false, hzCompact: false, hzNameHover: 0
+		hzTexts: [], hzFades: [], hzCrossRule: 0, hzXhStyle: 1, hzTextShadow: false, hzCompact: false, hzNameHover: 0,
+		hzWlOn: false, hzWlMode: 0   // watchlog off (the Proxy would turn a missing hz* name into a truthy function)
 	};
 	for (let i = 0; i < 8; i++) st.hzCmpLabels.push({ textWidth: 10 });
 	const self = new Proxy(st, {

@@ -1656,6 +1656,7 @@
          this.hzSetHdr(this.hzPlanTitle,(sys != null && sys != body) ? body + " / " + sys : body);
          this.hzPpBodyName = body;
          var inShip:Boolean = Boolean(d.bInSpaceship) && !d.bIsLanded;
+         if(this.hzWlOn) { this.hzWlScan = d.bIsScanning === true; }
          if(this.hzInShip != Boolean(d.bInSpaceship)) { this.hzInShip = Boolean(d.bInSpaceship); this.hzRefreshVisibility(); }
          if(inShip)
          {
@@ -1961,6 +1962,7 @@
                case "compact": this.hzCompact = bv; break;
                case "debug": this.hzDebug = bv; this.hzDbgShow(); this.hzDbgEnvSub(); break;
                case "perfdiag": this.hzPerfDiag = bv; this.hzPerfApply(); break;
+               case "watchlog": this.hzWatchLogIni = bv; this.hzPerfApply(); break;   // private diag, needs PerfDiag=1
                case "perfmode": if(!isNaN(nv)) { this.hzPerfMode = int(nv); if(this.hzPerfMode < 0 || this.hzPerfMode > 7) { this.hzPerfMode = 0; } this.hzPerfApply(); } break;
                case "perfdump": this.hzPerfDumpIni = bv; this.hzPerfApply(); break;
                case "perfscan": this.hzPerfScan = bv; this.hzPerfApply(); break;
@@ -2591,6 +2593,8 @@
       {
          var names:Array = [];
          var o:Object = null;
+         var wlOld:Array = null;   // watchlog only
+         var wlWhy:int = 0;
          this.hzFrameN++;
          try { this.hz42VehTick(); } catch(e42v:Error) { }   // 0.42.0.7: own try, first, so a throw later in this frame cannot skip the exit pill
          if(this.hzPerfOn) { this.hzPsMark(0); }
@@ -2602,10 +2606,12 @@
          if(this.hzPerfOn) { this.hzPsMark(3); }
          try { this.hz43SyncHide(); } catch(e43h:Error) { }
          if(this.hzPerfOn) { this.hzPsMark(4); }
-         if(this.hzHideCache == null || this.hzFrameN % 90 == 1 || this.hz36HideStale)
+         // watchlog test switch: mode 1 skips only the 90-frame re-walk (PerfDiag=1, WatchLog=1, Scroll Lock)
+         if(this.hzHideCache == null || (this.hzFrameN % 90 == 1 && !(this.hzWlOn && this.hzWlMode == 1)) || this.hz36HideStale)
          {
             this.hzHideTries++;
             if(this.hzPerfOn) { this.hzPcHideRb++; }
+            if(this.hzWlOn) { wlOld = this.hzHideCache; wlWhy = wlOld == null ? 0 : (this.hz36HideStale ? 2 : 1); this.hzWlRbNow = true; }
             this.hzHideCache = [];
             this.hz36HideStale = false;
             if(this.hzHideVanillaBoost) { names.push("JetpackMeterWrapper_mc","JetpackMeterAnim_mc"); }
@@ -2631,7 +2637,9 @@
             if(this.hzHideVanillaAmmo) { names.push("EquippedWeaponAmmo_mc","EquippedWeaponAmmoTotal_mc","VerticalDivider_mc","EquippedWeaponIconHolder_mc"); }
             if(this.hzHideVanillaHealth) { names.push("HealthBar_mc","HealthBarEmpty_mc","HealthBarGhost_mc","HealthBarDamage_mc","HealthBarIncrease_mc","Health_mc"); }
             this.hz36HideFindAll(this,names,this.hzHideCache);   // one tree walk for the whole list (same entries, same order)
+            if(this.hzWlOn) { try { this.hzWlRbDiff(wlOld,this.hzHideCache,wlWhy); } catch(eWr:Error) { } }
          }
+         else if(this.hzWlOn && this.hzWlMode == 1 && this.hzFrameN % 90 == 1) { this.hzWlSkip++; }
          if(this.hzPerfOn) { this.hzPsMark(5); }
          try { this.hz36HideTick(); } catch(e36a:Error) { }   // v0.36: hide first, so a throw below can't skip it
          if(this.hzPerfOn) { this.hzPsMark(6); }
@@ -7502,6 +7510,7 @@
             this.hzT19ActCached = pay;
             if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.actCh++; }
             if(this.hzPerfOn) { this.hzRgPush(1,this.hzPerfNow(),0); }
+            if(this.hzWlOn) { this.hzWlTgT = this.hzPerfNow(); this.hzWlTgN++; }
          }
       }
 
@@ -10762,6 +10771,7 @@
          if(this.hzPerfOn) { this.hzPbInit(); }
          if(this.hzPerfOn && this.hzPerfN == null) { this.hzPerfResetN(); }
          if(!this.hzPerfOn) { this.hzPerfDumpSeen = false; }
+         this.hzWlApply();
          if(this.hzPerfMode != 2 && this.hzT19Sig == "FIXTURE") { this.hzT19Sig = ""; }
       }
       private function hzPerfSkipLive() : Boolean
@@ -10898,6 +10908,7 @@
          this.hzPcHrWalk = 0;
          this.hzPcHrFb = 0;
          this.hzPcWcSkip = 0;
+         if(this.hzWlOn) { this.hzWlPs0 = null; this.hzWlPb0 = null; this.hzWlCostN = 0; this.hzWlCostSum = 0; this.hzWlCostMax = 0; }
       }
       private function hzPbEnd(i:int, t0:Number) : void
       {
@@ -10909,6 +10920,7 @@
          this.hzPbN[k] = int(this.hzPbN[k]) + 1;
          this.hzPbN[k + 1] = int(this.hzPbN[k + 1]) + dt;
          if(dt > int(this.hzPbN[k + 2])) { this.hzPbN[k + 2] = dt; }
+         if(this.hzWlOn && i < 2 && dt > int(this.hzWlPbMax[i])) { this.hzWlPbMax[i] = dt; }
          if(i == 2) { this.hzRgPush(2,t0,dt); }
          else if(i == 0 && dt >= 15) { this.hzRgPushS(t0,dt,47); }   // parts: slow loop total
          else if(i == 1 && dt >= 8) { this.hzRgPushS(t0,dt,48); }    // parts: slow exitFrame total
@@ -11001,6 +11013,7 @@
          this.hzPsN[j + 1] = int(this.hzPsN[j + 1]) + dt;
          if(dt > int(this.hzPsN[j + 2])) { this.hzPsN[j + 2] = dt; }
          if(dt >= 3) { this.hzRgPushS(t0,dt,k); }
+         if(this.hzWlOn) { this.hzWlPsAdd(k,dt); }
       }
       // Empty on purpose: the calibration part (id 25) is the cost of this call plus one mark.
       private function hzPsCal() : void
@@ -11040,6 +11053,7 @@
          this.hzPsStart(t0);
          this.hz27OnExit(e);
          this.hzPbEnd(1,t0);
+         if(this.hzWlOn) { try { this.hzWlTick(); } catch(eWx:Error) { } }   // watchlog, after the exit total
       }
       private function hzPbCompass(e:FromClientDataEvent) : *
       {
@@ -11171,8 +11185,487 @@
          s += " | hc holds=" + this.hzPcHoldN + " olHit=" + this.hzPcOlHit + " olMiss=" + this.hzPcOlMiss;
          s += " | co qsSkip=" + this.hzPcQsSkip + " qsRun=" + this.hzPcQsRun + " txHit=" + this.hzPcTxHit + " txMiss=" + this.hzPcTxMiss;
          s += " | hw walk=" + this.hzPcHrWalk + " fb=" + this.hzPcHrFb + " wcSkip=" + this.hzPcWcSkip;
+         if(this.hzWlOn) { s += " | wl n=" + this.hzWlCostN + " sumMs=" + Math.round(this.hzWlCostSum) + " maxMs=" + Math.round(this.hzWlCostMax) + " mode=" + this.hzWlModeName(); }
          return s;
       }
+
+      // ===================== watchlog (private diag) =====================
+      // Purpose: log, change-only, what the game and Horizon do to the vanilla HUD pieces Horizon hides, so the
+      // recurring hide-list rebuild (hideRebuild, 23-52 ms about every 3.1 s) can be judged and later removed.
+      // Gate: [Debug] PerfDiag=1 and WatchLog=1 (hzWlOn). Off by default; no default-INI key. When off, every hook
+      // below is one Boolean test that fails, and nothing here allocates or runs.
+      // Reads only refs Horizon already holds (the six vanilla root groups by one-level getChildByName on the HUD
+      // root, the hide-list entries the hide tick resolved this frame, BottomLeftGroup's direct children, and the
+      // target card). No tree search. Runs at EXIT_FRAME (after frame scripts and timeline construction, the state
+      // that renders), timed as its own cost (wl n,sum,max).
+      // BottomLeftGroup: every exit frame its direct children are compared by identity with last frame's list (one
+      // container, numChildren reads plus one === per child, no allocation unless something changed). Each added or
+      // removed child (named, unnamed "instanceN", or a Shape) is logged once with class, name, bounds in BLG space,
+      // visible, alpha, depth, BLG timeline frame and label, and the context bits. A BLG timeline label change is
+      // logged the frame it happens (one string compare per frame).
+      // Change-only means flag changes: v, on stage, alpha > 0, parent hidden, parent alpha > 0. Lines carry the exact
+      // alpha values, but a fade (alpha tween) does not log every step.
+      // Generic: hzWlSeen(obj, src, slot, t) watches any display object; hzWlPre(obj, op) logs the state right
+      // before a Horizon hide write. Identity: an id table (strong refs, at most HZWL_IDMAX live entries; entries
+      // whose stage is null are dropped first when it fills). Flash's Dictionary would need a host import.
+      // Output: bounded entry queue (HZWL_QMAX strings, overflow counted), drained by native hzWlFlush every 5 s and
+      // at the perf dump; one window line (hzWlWin) every 20 s and on each hotkey press.
+      // Test switch (diag only): hzWlKey toggles mode 0 (baseline) and 1 (periodic rebuild paused: the 90-frame
+      // re-walk is skipped; the null, stale and settings rebuilds and the per-frame hide tick are unchanged).
+      // Author: Moragar. Last modified: 2026-11-10.
+      private static const HZWL_GROUPS:Array = ["TopCenterGroup_mc","BottomLeftGroup_mc","RightMeters_mc","SocialCommandIcons_mc","FloatingQuestMarkerBase","CrewBuffWidget_mc"];
+      private static const HZWL_SRC:Array = ["g","h","b"];
+      private static const HZWL_OPS:Array = ["-","tick","stHideV","stHide"];
+      private static const HZWL_QMAX:int = 1024;
+      private static const HZWL_IDMAX:int = 256;
+      private static const HZWL_PARTS:Array = ["veh","h40","qmFont","cmpSig","syncHide","hideRebuild","hideTick1","force1","blgLoop","layout",
+            "typo","eq","misc","tick","reticle","xh","h43","bars","fades","vitals",
+            "h26","caretAf","pulse","tail","splash","cal","h26Van","h26Draw","h26Regen","h26Edge",
+            "h26Fx","h26Char","h26Vis","h27","xBio","xDet","xLoc","xQm","xReticle","xVanLate",
+            "c40","cLbl","cTicks","cMarks","cQuests","cVis","qSync"];
+      private var hzWatchLogIni:Boolean = false;
+      private var hzWlOn:Boolean = false;
+      private var hzWlMode:int = 0;
+      private var hzWlQ:Array = null;
+      private var hzWlQN:int = 0;
+      private var hzWlDrop:int = 0;
+      private var hzWlObj:Array = null;      // id table: objects
+      private var hzWlObjId:Array = null;    // id table: their ids
+      private var hzWlNext:int = 0;
+      private var hzWlIdFull:int = 0;
+      private var hzWlSt:Array = null;       // per id: last packed state seen at exit frame
+      private var hzWlPreSt:Array = null;    // per id: packed state at the last logged pre-hide
+      private var hzWlPreRep:Array = null;   // per id: pre-hides with an unchanged state (counted, not logged)
+      private var hzWlOpC:Array = null;      // per id: last Horizon hide op (HZWL_OPS index)
+      private var hzWlOpT:Array = null;      // per id: its getTimer ms
+      private var hzWlSlotObj:Array = null;  // src * 256 + slot -> object last seen there (skips the id lookup)
+      private var hzWlSlotId:Array = null;
+      private var hzWlChP:DisplayObjectContainer = null;   // parent-chain memo, one tick
+      private var hzWlChV:int = 0;
+      private var hzWlF:int = 0;
+      private var hzWlCtx:int = -1;
+      private var hzWlNat:int = 0;
+      private var hzWlNatSeen:int = -1;
+      private var hzWlScan:Boolean = false;
+      private var hzWlBlgN:int = -1;
+      private var hzWlBlgRef:DisplayObjectContainer = null;   // the BLG instance the list below belongs to
+      private var hzWlBlgPrev:Array = null;   // BLG direct children last exit frame, by index
+      private var hzWlBlgLbl:String = null;
+      private var hzWlTgT:Number = 0;
+      private var hzWlTgN:int = 0;
+      private var hzWlCardOn:Boolean = false;
+      private var hzWlCardT:Number = 0;
+      private var hzWlW0:Number = 0;
+      private var hzWlPs0:Array = null;
+      private var hzWlPb0:Array = null;
+      private var hzWlPsMax:Array = null;
+      private var hzWlPbMax:Array = null;
+      private var hzWlRbMs:Array = null;
+      private var hzWlW:Array = null;        // window counters, see hzWlWinReset
+      private var hzWlCostN:int = 0;
+      private var hzWlCostSum:Number = 0;
+      private var hzWlCostMax:Number = 0;
+
+      private function hzWlApply() : void
+      {
+         var on:Boolean = this.hzPerfOn && this.hzWatchLogIni;
+         if(on && this.hzWlQ == null)
+         {
+            this.hzWlQ = new Array(HZWL_QMAX);
+            this.hzWlObj = [];
+            this.hzWlObjId = [];
+            this.hzWlSt = [];
+            this.hzWlPreSt = [];
+            this.hzWlPreRep = [];
+            this.hzWlOpC = [];
+            this.hzWlOpT = [];
+            this.hzWlSlotObj = new Array(768);
+            this.hzWlSlotId = new Array(768);
+            this.hzWlPsMax = new Array(49);
+            this.hzWlPbMax = new Array(2);
+            this.hzWlRbMs = [];
+            this.hzWlW = new Array(16);
+            this.hzWlWinReset(this.hzPerfNow());
+         }
+         if(on != this.hzWlOn)
+         {
+            this.hzWlOn = on;
+            if(!on) { this.hzWlMode = 0; }   // the pause never outlives the diag gate
+            if(on) { this.hzWlPush("wl on t=" + Math.round(this.hzPerfNow()) + " f=" + this.hzFrameN + " mode=" + this.hzWlModeName()); }
+         }
+      }
+      private function hzWlModeName() : String
+      {
+         return this.hzWlMode == 1 ? "pause" : "base";
+      }
+      private function hzWlPush(s:String) : void
+      {
+         if(this.hzWlQ == null) { return; }
+         if(this.hzWlQN >= HZWL_QMAX) { this.hzWlDrop++; return; }
+         this.hzWlQ[this.hzWlQN] = s;
+         this.hzWlQN++;
+      }
+      // id of d. Ids are never reused. When the table is full, entries no longer on stage are dropped first.
+      private function hzWlIdOf(d:DisplayObject) : int
+      {
+         var i:int = this.hzWlObj.indexOf(d);
+         if(i >= 0) { return int(this.hzWlObjId[i]); }
+         if(this.hzWlObj.length >= HZWL_IDMAX)
+         {
+            var keepO:Array = [];
+            var keepI:Array = [];
+            for(var k:int = 0; k < this.hzWlObj.length; k++)
+            {
+               var o:DisplayObject = this.hzWlObj[k] as DisplayObject;
+               if(o != null && o.stage != null) { keepO.push(o); keepI.push(this.hzWlObjId[k]); }
+            }
+            this.hzWlObj = keepO;
+            this.hzWlObjId = keepI;
+            for(k = 0; k < 768; k++) { this.hzWlSlotObj[k] = null; }
+            if(this.hzWlObj.length >= HZWL_IDMAX) { this.hzWlIdFull++; return 0; }
+         }
+         this.hzWlNext++;
+         this.hzWlObj.push(d);
+         this.hzWlObjId.push(this.hzWlNext);
+         this.hzWlSt[this.hzWlNext] = -1;
+         return this.hzWlNext;
+      }
+      // visible and alpha of the parents up to the HUD root: bit 8 = some parent has visible false, low 8 bits =
+      // the smallest parent alpha in percent. One-entry memo per tick (siblings share it).
+      private function hzWlChain(p:DisplayObjectContainer) : int
+      {
+         if(p != null && p == this.hzWlChP) { return this.hzWlChV; }
+         var hid:int = 0;
+         var minA:int = 100;
+         var q:DisplayObjectContainer = p;
+         while(q != null && q != this)
+         {
+            if(!q.visible) { hid = 1; }
+            var a:int = int(Math.round(q.alpha * 100));
+            if(a < minA) { minA = a; }
+            q = q.parent;
+         }
+         if(minA < 0) { minA = 0; }
+         if(minA > 255) { minA = 255; }
+         this.hzWlChP = p;
+         this.hzWlChV = (hid << 8) | minA;
+         return this.hzWlChV;
+      }
+      // Change flags only (so alpha tweens do not flood): bit 0 visible, bit 1 on stage, bit 2 alpha > 0,
+      // bit 3 some parent visible false, bit 4 every parent alpha > 0 (hzWlChain).
+      private function hzWlPack(d:DisplayObject) : int
+      {
+         var ch:int = this.hzWlChain(d.parent);
+         return (d.visible ? 1 : 0) | (d.stage != null ? 2 : 0) | (d.alpha > 0 ? 4 : 0) | (((ch >> 8) & 1) << 3) | ((ch & 255) > 0 ? 16 : 0);
+      }
+      // Exact values for a line: alpha and parent min alpha in percent, parent hidden from the chain memo.
+      private function hzWlDesc(d:DisplayObject, id:int, st:int) : String
+      {
+         var ix:int = -1;
+         try { if(d.parent != null) { ix = d.parent.getChildIndex(d); } } catch(eIx:Error) { ix = -2; }
+         var op:int = id > 0 ? int(this.hzWlOpC[id]) : 0;
+         var opS:String = op > 0 ? HZWL_OPS[op] + "@" + Math.round(Number(this.hzWlOpT[id])) : "-";
+         var ch:int = this.hzWlChain(d.parent);
+         return " id=" + id + " n=" + d.name + " ix=" + ix + " v=" + (st & 1) + " on=" + ((st >> 1) & 1) + " a=" + Math.round(d.alpha * 100)
+            + " pv=" + (((ch >> 8) & 1) == 1 ? 0 : 1) + " pa=" + (ch & 255) + " ctx=" + this.hzWlCtx + " nat=" + this.hzWlNat + " last=" + opS;
+      }
+      // BLG child list changed (count or identity): log each added and removed child once, then keep the new list.
+      private function hzWlBlgDiff(b:DisplayObjectContainer, n:int, t:Number) : void
+      {
+         var cur:Array = new Array(n);
+         var k:int = 0;
+         for(k = 0; k < n; k++) { cur[k] = b.getChildAt(k); }
+         var prev:Array = this.hzWlBlgPrev != null ? this.hzWlBlgPrev : [];
+         var fr:String = this.hzWlBlgFrame(b);
+         var nAdd:int = 0;
+         var nRm:int = 0;
+         for(k = 0; k < n; k++)
+         {
+            var c:DisplayObject = cur[k] as DisplayObject;
+            if(c == null || prev.indexOf(c) >= 0) { continue; }
+            nAdd++;
+            var bs:String = "-";
+            try { var r:Rectangle = c.getBounds(b); bs = Math.round(r.x) + "," + Math.round(r.y) + "," + Math.round(r.width) + "," + Math.round(r.height); } catch(eBb:Error) { bs = "err"; }
+            var tf:String = "-";
+            try { var tfo:* = Object(c).totalFrames; if(tfo != undefined) { tf = String(tfo); } } catch(eTf:Error) { tf = "-"; }
+            var ch:int = this.hzWlChain(b);
+            this.hzWlPush("wl blg add t=" + Math.round(t) + " f=" + this.hzWlF + " id=" + this.hzWlIdOf(c) + " n=" + (c.name ? c.name : "none") + " cls=" + String(c)
+               + " ix=" + k + " b=" + bs + " v=" + (c.visible ? 1 : 0) + " a=" + Math.round(c.alpha * 100) + " tf=" + tf
+               + " pv=" + (((ch >> 8) & 1) == 1 ? 0 : 1) + " pa=" + (ch & 255) + fr + " ctx=" + this.hzWlCtx + " nat=" + this.hzWlNat);
+         }
+         for(k = 0; k < prev.length; k++)
+         {
+            var o:DisplayObject = prev[k] as DisplayObject;
+            if(o == null || cur.indexOf(o) >= 0) { continue; }
+            nRm++;
+            var oi:int = this.hzWlObj.indexOf(o);
+            this.hzWlPush("wl blg rm t=" + Math.round(t) + " f=" + this.hzWlF + " id=" + (oi >= 0 ? int(this.hzWlObjId[oi]) : 0) + " n=" + (o.name ? o.name : "none")
+               + " cls=" + String(o) + " wasIx=" + k + " v=" + (o.visible ? 1 : 0) + " a=" + Math.round(o.alpha * 100) + " parent=" + (o.parent == null ? "none" : (o.parent == b ? "blg" : o.parent.name)) + fr);
+         }
+         this.hzWlPush("wl blgN t=" + Math.round(t) + " f=" + this.hzWlF + " n=" + n + " was=" + this.hzWlBlgN + " add=" + nAdd + " rm=" + nRm + " moved=" + (nAdd == 0 && nRm == 0 ? 1 : 0) + fr);
+         this.hzWlBlgN = n;
+         this.hzWlBlgPrev = cur;
+      }
+      private function hzWlBlgFrame(b:DisplayObjectContainer) : String
+      {
+         var fr:String = " fr=-";
+         try { var bo:Object = Object(b); fr = " fr=" + bo.currentFrame + " lbl=" + (bo.currentLabel ? bo.currentLabel : "none"); } catch(eFr:Error) { fr = " fr=err"; }
+         return fr;
+      }
+      // Generic watch: logs d when it is new to this slot's id or its packed state changed since the last tick.
+      private function hzWlSeen(d:DisplayObject, src:int, slot:int, t:Number) : void
+      {
+         if(d == null || slot < 0 || slot > 255) { return; }
+         var key:int = src * 256 + slot;
+         var id:int = 0;
+         if(this.hzWlSlotObj[key] === d) { id = int(this.hzWlSlotId[key]); }
+         else { id = this.hzWlIdOf(d); this.hzWlSlotObj[key] = d; this.hzWlSlotId[key] = id; }
+         if(id <= 0) { return; }
+         var st:int = this.hzWlPack(d);
+         var was:int = int(this.hzWlSt[id]);
+         if(was == st) { return; }
+         this.hzWlSt[id] = st;
+         if(was == -1) { this.hzWlW[5]++; }
+         this.hzWlPush("wl o t=" + Math.round(t) + " f=" + this.hzWlF + " src=" + HZWL_SRC[src] + " sl=" + slot + " new=" + (was == -1 ? 1 : 0) + this.hzWlDesc(d,id,st));
+      }
+      // Called right before a Horizon hide write (only when that write will happen). Logs the state the write
+      // undoes, once per distinct state per object; repeats are counted. Records the op as the object's last op.
+      private function hzWlPre(d:DisplayObject, op:int) : void
+      {
+         try
+         {
+            var t:Number = this.hzPerfNow();
+            var id:int = this.hzWlIdOf(d);
+            if(id <= 0) { return; }
+            var st:int = this.hzWlPack(d);
+            this.hzWlW[3]++;
+            if(this.hzWlPreSt[id] === st) { this.hzWlPreRep[id] = int(this.hzWlPreRep[id]) + 1; this.hzWlW[4]++; }
+            else
+            {
+               this.hzWlPreSt[id] = st;
+               this.hzWlPush("wl pre t=" + Math.round(t) + " f=" + this.hzWlF + " op=" + HZWL_OPS[op] + this.hzWlDesc(d,id,st));
+            }
+            this.hzWlOpC[id] = op;
+            this.hzWlOpT[id] = t;
+         }
+         catch(eWp:Error) { this.hzWlW[9]++; }
+      }
+      // What the rebuild changed relative to the refs the per-frame hide tick already held. why 0 null, 1 the
+      // 90-frame period, 2 stale. Logs only when something differs; otherwise counts "same".
+      private function hzWlRbDiff(old:Array, cur:Array, why:int) : void
+      {
+         this.hzWlW[0]++;
+         if(old == null || cur == null) { this.hzWlPush("wl rb t=" + Math.round(this.hzPerfNow()) + " f=" + this.hzWlF + " why=null n=" + (cur ? cur.length : -1)); this.hzWlW[2]++; return; }
+         var used:Array = new Array(old.length);
+         var add:Array = [];
+         var chg:Array = [];
+         for each(var e:Object in cur)
+         {
+            if(e == null) { continue; }
+            var hit:int = -1;
+            for(var i:int = 0; i < old.length; i++)
+            {
+               if(!used[i] && old[i] != null && old[i].n == e.n) { hit = i; break; }
+            }
+            if(hit < 0) { add.push(e.n); continue; }
+            used[hit] = true;
+            if(old[hit].d !== e.d) { chg.push(e.n + ":" + this.hzWlIdOf(old[hit].d as DisplayObject) + ">" + this.hzWlIdOf(e.d as DisplayObject)); }
+         }
+         var lost:Array = [];
+         for(i = 0; i < old.length; i++) { if(!used[i] && old[i] != null) { lost.push(old[i].n); } }
+         if(add.length == 0 && chg.length == 0 && lost.length == 0) { this.hzWlW[1]++; return; }
+         this.hzWlW[2]++;
+         this.hzWlPush("wl rb t=" + Math.round(this.hzPerfNow()) + " f=" + this.hzWlF + " why=" + (why == 1 ? "p90" : "stale") + " n=" + cur.length
+            + " add=" + add.join(",") + " chg=" + chg.join(",") + " lost=" + lost.join(","));
+      }
+      private function hzWlCtxTick(t:Number) : void
+      {
+         var c:int = (this.hzWlScan ? 1 : 0) | (this.hzInShip ? 2 : 0) | (this.hzInCombat ? 4 : 0) | (this.hzWeaponOut() ? 8 : 0)
+            | (this.hzGroupVisible ? 16 : 0) | (this.hzUserHidden ? 32 : 0) | (this.hzSettingsOpen() ? 64 : 0) | (this.hzWlMode << 7);
+         if(c == this.hzWlCtx && this.hzWlNat == this.hzWlNatSeen) { return; }
+         this.hzWlCtx = c;
+         this.hzWlNatSeen = this.hzWlNat;
+         this.hzWlPush("wl ctx t=" + Math.round(t) + " f=" + this.hzWlF + " ctx=" + c + " scan=" + (c & 1) + " ship=" + ((c >> 1) & 1) + " combat=" + ((c >> 2) & 1)
+            + " drawn=" + ((c >> 3) & 1) + " modeBlg=" + ((c >> 4) & 1) + " userHidden=" + ((c >> 5) & 1) + " f11=" + ((c >> 6) & 1) + " mode=" + this.hzWlModeName() + " nat=" + this.hzWlNat);
+      }
+      // Hover card: appear = first exit frame with the card shown after a rollover target change (T); disappear =
+      // first exit frame with it gone. dt is from the latest T. Resolution: one HUD frame.
+      private function hzWlHover(t:Number) : void
+      {
+         var on:Boolean = false;
+         try { on = this.HorizonTarget_mc != null && this.HorizonTarget_mc.visible && this.HorizonTarget_mc.alpha > 0.01 && this.hzTg19 != null && this.hzTg19.visible; } catch(eHv:Error) { on = false; }
+         if(on == this.hzWlCardOn) { return; }
+         this.hzWlCardOn = on;
+         var dt:Number = this.hzWlTgT > this.hzWlCardT ? t - this.hzWlTgT : -1;
+         this.hzWlCardT = t;
+         if(dt >= 0 && on)
+         {
+            this.hzWlW[10]++;
+            this.hzWlW[11] += dt;
+            if(dt > this.hzWlW[12]) { this.hzWlW[12] = dt; }
+         }
+         else if(dt >= 0)
+         {
+            this.hzWlW[13]++;
+            this.hzWlW[14] += dt;
+            if(dt > this.hzWlDisMax) { this.hzWlDisMax = dt; }
+         }
+         else { this.hzWlW[6]++; }
+         this.hzWlPush("wl hov t=" + Math.round(t) + " f=" + this.hzWlF + " on=" + (on ? 1 : 0) + " dtMs=" + (dt >= 0 ? String(Math.round(dt)) : "noT") + " tN=" + this.hzWlTgN);
+      }
+      // EXIT_FRAME tick (called from hzPbExit after the exit total is booked, so exitTotal stays comparable).
+      private function hzWlTick() : void
+      {
+         var t0:Number = this.hzPerfNow();
+         this.hzWlF++;
+         this.hzWlChP = null;
+         try
+         {
+            this.hzWlCtxTick(t0);
+            for(var g:int = 0; g < HZWL_GROUPS.length; g++) { this.hzWlSeen(this.getChildByName(String(HZWL_GROUPS[g])),0,g,t0); }
+            if(this.hzHideCache != null)
+            {
+               var i:int = 0;
+               for each(var e:Object in this.hzHideCache)
+               {
+                  if(e != null) { this.hzWlSeen(e.d as DisplayObject,1,i,t0); }
+                  i++;
+               }
+            }
+            var b:DisplayObjectContainer = this.hzBlg;
+            if(b != null)
+            {
+               if(b !== this.hzWlBlgRef)
+               {
+                  this.hzWlBlgRef = b;
+                  this.hzWlBlgPrev = null;
+                  this.hzWlBlgLbl = null;
+                  this.hzWlPush("wl blg root t=" + Math.round(t0) + " f=" + this.hzWlF + " id=" + this.hzWlIdOf(b) + " n=" + b.name + " cls=" + String(b) + this.hzWlBlgFrame(b));
+               }
+               var n:int = b.numChildren;
+               var prev:Array = this.hzWlBlgPrev;
+               var same:Boolean = prev != null && prev.length == n;
+               for(var k:int = 0; k < n; k++)
+               {
+                  var c:DisplayObject = b.getChildAt(k);
+                  if(same && prev[k] !== c) { same = false; }
+                  this.hzWlSeen(c,2,k,t0);
+               }
+               if(!same) { this.hzWlBlgDiff(b,n,t0); }
+               var lbl:* = Object(b).currentLabel;
+               var ls:String = lbl != null ? String(lbl) : "none";
+               if(ls != this.hzWlBlgLbl)
+               {
+                  this.hzWlPush("wl lbl t=" + Math.round(t0) + " f=" + this.hzWlF + " lbl=" + ls + " was=" + this.hzWlBlgLbl + " fr=" + Object(b).currentFrame + " ctx=" + this.hzWlCtx + " nat=" + this.hzWlNat);
+                  this.hzWlBlgLbl = ls;
+               }
+            }
+            this.hzWlHover(t0);
+         }
+         catch(eWt:*) { this.hzWlW[9]++; }
+         var dt:Number = this.hzPerfNow() - t0;
+         if(dt < 0) { dt = 0; }
+         this.hzWlCostN++;
+         this.hzWlCostSum += dt;
+         if(dt > this.hzWlCostMax) { this.hzWlCostMax = dt; }
+         this.hzWlW[7]++;
+         this.hzWlW[8] += dt;
+         if(dt > this.hzWlW[15]) { this.hzWlW[15] = dt; }
+      }
+      // window counters: 0 rebuilds, 1 rebuilds that changed nothing, 2 rebuilds that changed something (or null),
+      // 3 pre-hides, 4 pre-hide repeats, 5 new ids, 6 hover edges with no T, 7 wl ticks, 8 wl ms, 9 errors,
+      // 10-12 hover appear n,sumMs,maxMs, 13-14 hover gone n,sumMs (its max is hzWlDisMax), 15 wl tick max ms
+      private function hzWlWinReset(t:Number) : void
+      {
+         var i:int = 0;
+         for(i = 0; i < 16; i++) { this.hzWlW[i] = 0; }
+         this.hzWlW0 = t;
+         this.hzWlRbMs.length = 0;
+         for(i = 0; i < 49; i++) { this.hzWlPsMax[i] = 0; }
+         this.hzWlPbMax[0] = 0;
+         this.hzWlPbMax[1] = 0;
+         this.hzWlPs0 = this.hzPsN != null ? this.hzPsN.slice() : null;
+         this.hzWlPb0 = this.hzPbN != null ? this.hzPbN.slice() : null;
+         this.hzWlSkip = 0;
+         this.hzWlDisMax = 0;
+      }
+      private var hzWlSkip:int = 0;
+      private var hzWlDisMax:Number = 0;
+      // Native, every 20 s and before each hotkey switch. One line; then the window restarts.
+      public function hzWlWin() : String
+      {
+         if(!this.hzWlOn || this.hzWlW == null) { return "wl diag=0"; }
+         var t:Number = this.hzPerfNow();
+         var w:Array = this.hzWlW;
+         var s:String = "aswin m=" + this.hzWlModeName() + " ms=" + Math.round(t - this.hzWlW0) + " f=" + this.hzWlF;
+         if(this.hzPbN != null)
+         {
+            var b0:Array = this.hzWlPb0;   // null after a perf reset (hzPbClear): the base is 0
+            s += " loop=" + (int(this.hzPbN[0]) - (b0 ? int(b0[0]) : 0)) + "," + (int(this.hzPbN[1]) - (b0 ? int(b0[1]) : 0)) + "," + int(this.hzWlPbMax[0]);
+            s += " exit=" + (int(this.hzPbN[3]) - (b0 ? int(b0[3]) : 0)) + "," + (int(this.hzPbN[4]) - (b0 ? int(b0[4]) : 0)) + "," + int(this.hzWlPbMax[1]);
+         }
+         s += " rb=" + int(w[0]) + " rbSame=" + int(w[1]) + " rbChg=" + int(w[2]) + " rbSkip=" + this.hzWlSkip + " rbMs=" + this.hzWlRbMs.join(",");
+         s += " pre=" + int(w[3]) + " preRep=" + int(w[4]) + " newIds=" + int(w[5]) + " ids=" + (this.hzWlObj ? this.hzWlObj.length : 0) + " idFull=" + this.hzWlIdFull;
+         var na:int = int(w[10]);
+         var nd:int = int(w[13]);
+         s += " hovAppear=" + na + "," + (na > 0 ? Math.round(Number(w[11]) / na) : 0) + "," + Math.round(Number(w[12]));
+         s += " hovGone=" + nd + "," + (nd > 0 ? Math.round(Number(w[14]) / nd) : 0) + "," + Math.round(this.hzWlDisMax) + " hovNoT=" + int(w[6]);
+         s += " wl=" + int(w[7]) + "," + Math.round(Number(w[8])) + "," + Math.round(Number(w[15])) + " q=" + this.hzWlQN + " drop=" + this.hzWlDrop + " err=" + int(w[9]);
+         if(this.hzPsN != null)
+         {
+            var p0:Array = this.hzWlPs0;   // null after a perf reset: the base is 0
+            var a:Array = [];
+            for(var i:int = 0; i < 47; i++)
+            {
+               var j:int = i * 5;
+               var dn:int = int(this.hzPsN[j]) - (p0 ? int(p0[j]) : 0);
+               if(dn <= 0) { continue; }
+               a.push(HZWL_PARTS[i] + "=" + dn + "," + (int(this.hzPsN[j + 1]) - (p0 ? int(p0[j + 1]) : 0)) + "," + int(this.hzWlPsMax[i]));
+            }
+            s += " parts=" + a.join(" ");
+         }
+         this.hzWlWinReset(t);
+         return s;
+      }
+      // Native, every 5 s (only does work when entries are queued) and at the perf dump.
+      public function hzWlFlush() : String
+      {
+         if(this.hzWlQ == null || this.hzWlQN == 0) { return ""; }
+         var head:String = "wl flush asNow=" + Math.round(this.hzPerfNow()) + " n=" + this.hzWlQN + " drop=" + this.hzWlDrop;
+         var a:Array = this.hzWlQ.slice(0,this.hzWlQN);
+         for(var i:int = 0; i < this.hzWlQN; i++) { this.hzWlQ[i] = null; }
+         this.hzWlQN = 0;
+         this.hzWlDrop = 0;
+         return head + "\n" + a.join("\n");
+      }
+      // Native, on the Scroll Lock edge (diag only). Toggles baseline and paused periodic rebuild, and logs it.
+      public function hzWlKey() : void
+      {
+         if(!this.hzWlOn) { return; }
+         this.hzWlMode = this.hzWlMode == 1 ? 0 : 1;
+         this.hzWlPush("wl mode t=" + Math.round(this.hzPerfNow()) + " f=" + this.hzWlF + " frameN=" + this.hzFrameN + " mode=" + this.hzWlModeName());
+      }
+      private var hzWlRbNow:Boolean = false;   // a rebuild ran this frame (books its ms into hzWlRbMs)
+      // Per-window part max, and each rebuild's own ms (hzPsAdd, diag on).
+      private function hzWlPsAdd(k:int, dt:int) : void
+      {
+         if(k < 0 || k >= 49) { return; }
+         if(dt > int(this.hzWlPsMax[k])) { this.hzWlPsMax[k] = dt; }
+         if(k == 5 && this.hzWlRbNow)
+         {
+            this.hzWlRbNow = false;
+            if(this.hzWlRbMs.length < 16) { this.hzWlRbMs.push(dt); }
+         }
+      }
+      // Native, when the open-menu mask changes (bit order: hz_wl.h kMenus).
+      public function hzWlNatSet(v:*) : void
+      {
+         if(!this.hzWlOn) { return; }
+         var n:Number = Number(v);
+         this.hzWlNat = isNaN(n) ? -1 : int(n);
+      }
+      // ===================== end watchlog =====================
+
       // Length-prefixed tokens so game names that contain | or : cannot collide. Exact char count, then payload.
       private function hzT19Tok(v:*) : String
       {
@@ -15667,9 +16160,13 @@
          }
          for each(var m:String in names)
          {
-            var d:DisplayObject = wd[wn.indexOf(m)] as DisplayObject;
-            if(d == null) { continue; }
-            out.push({"p":d.parent,"n":m,"d":d});
+            try
+            {
+               var d:DisplayObject = wd[wn.indexOf(m)] as DisplayObject;
+               if(d == null) { continue; }
+               out.push({"p":d.parent,"n":m,"d":d});
+            }
+            catch(eHp:Error) { }   // Bot 3 S2: an Error here is swallowed per name, as the old per-name loop did
          }
       }
       // Purpose: hzFindByName's walk (same child order, same Horizon-card pruning, same depth limit, same node count) for
@@ -15724,6 +16221,7 @@
             if(d == null) { continue; }
             if(d.stage == null) { this.hz36HideStale = true; }
             if(this.hz43VanWatchClip(d)) { this.hz43StHideV(d); continue; }   // verified just now: no second and third check
+            if(this.hzWlOn && (d.visible || d.alpha != 0)) { this.hzWlPre(d,1); }   // watchlog: the state this write undoes
             if(d.visible) { d.visible = false; }
             if(d.alpha != 0) { d.alpha = 0; }
          }
@@ -19851,6 +20349,7 @@
          if(!d || !this.hz43VanWatchClip(d)) { return; }
          this.hz43VanNoteAdd(d);   // d was verified on the line above (hz43VanNote would verify it again)
          if(this.hzPerfOn) { this.hzPcWcSkip++; }
+         if(this.hzWlOn && d.visible) { this.hzWlPre(d,3); }
          if(d.visible) { d.visible = false; }
       }
 
@@ -19866,6 +20365,7 @@
          if(!d) { return; }
          this.hz43VanNoteAdd(d);
          if(this.hzPerfOn) { this.hzPcWcSkip += 2; }
+         if(this.hzWlOn && d.visible) { this.hzWlPre(d,2); }
          if(d.visible) { d.visible = false; }
       }
 
