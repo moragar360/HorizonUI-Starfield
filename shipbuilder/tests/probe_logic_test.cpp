@@ -5,7 +5,7 @@
 // Inputs: the repo tree (HSB_REPO_ROOT, else this file's location).
 // Outputs: one FAIL line per broken check; exit code 0 only when every check passes.
 // Dependencies: shipbuilder/src headers; std::filesystem (this test only).
-// Author: Moragar. Last modified: 2026-11-08.
+// Author: Moragar. Last modified: 2026-11-10.
 
 #include "hsb_arrange.h"
 #include "hsb_card.h"
@@ -1200,24 +1200,27 @@ static void CheckMovie(const fs::path& root)
 		"the category grid captures input");
 	Expect(FunctionBody(hub, "wantsEvent", "public") == R"AS(public function wantsEvent(param1:String, param2:Boolean):Boolean
       {
-         var open:Boolean = this.capturing();
+         var capture:Boolean = this.capturing();
+         // Just after a text field ended, its Enter or Esc is still the field's (TEXT_GRACE).
+         var open:Boolean = capture || this.textGrace(param1);
          if(param2)
          {
             this.heldEvents[param1] = open ? this.frameN : -1;
-            if(open) { this.padEvent(param1); }
+            if(capture) { this.padEvent(param1); }
             return open;
          }
          var pressed:int = this.heldEvents[param1] != null ? int(this.heldEvents[param1]) : -1;
          delete this.heldEvents[param1];
          var held:Boolean = pressed >= 0;
-         if(!open || !held) { return held || open; }
+         if(!capture) { return held || open; }
+         if(!held) { return true; }
          // The same key press may also have arrived as a DLL key token (cancelTop/acceptTop
          // stamp the frame), so a release acts only when nothing acted since its press.
          if(param1 == "Escape" || param1 == "Cancel") { if(this.lastCancel < pressed) { this.cancelTop("pad"); } return true; }
          if(param1 == "Accept" || param1 == "Enter") { if(this.lastOk < pressed) { this.acceptTop("pad"); } return true; }
          return true;
       }
-)AS", "controller events are consumed only while Horizon captures, Accept and Cancel act once on release");
+)AS", "controller events are consumed only while Horizon captures (or in the text grace after a field ends), Accept and Cancel act once on release");
 	Expect(Has(FunctionBody(hub, "cancelTop", "internal"), "if(this.frameN - this.lastCancel < DOUBLE_FRAMES) { return; }") &&
 		Has(FunctionBody(hub, "acceptTop", "internal"), "if(this.frameN - this.lastOk < DOUBLE_FRAMES) { return; }"), "a cancel or accept acts once per press");
 	Expect(Has(FunctionBody(hub, "cancelTop", "internal"), "if(this.gridOpen()) { this.browser.closeGrid(); }"), "Esc closes the category grid");
@@ -2314,6 +2317,49 @@ static void CheckDocs(const fs::path& repo, const fs::path& root)
 		"the private test package turns FontStrip on, and the public package does not");
 }
 
+// v6a: Enter, Esc and the button beside Find end the field without reaching the vanilla menu;
+// an empty Find names its category.
+static void CheckV6Keys(const fs::path& root)
+{
+	const fs::path as = root / "actionscript";
+	const std::string hub = ReadFile(as / "HorizonShipBuilder.as");
+	const std::string browser = ReadFile(as / "HsbBrowser.as");
+	Expect(!hub.empty() && !browser.empty(), "v6a sources read");
+
+	// Bug 1: Enter or Esc that ends a text field never reaches the vanilla menu.
+	Expect(Has(hub, "internal static const TEXT_GRACE:int = 20;") &&
+			InOrder(FunctionBody(hub, "endText", "internal"), {"if(this.textOwner == param1)", "this.textOwner = null;", "this.lastTextEnd = this.frameN;"}),
+		"ending a text field stamps the frame");
+	const std::string grace = FunctionBody(hub, "textGrace", "internal");
+	Expect(Has(grace, "if(param1 != \"Accept\" && param1 != \"Enter\" && param1 != \"Cancel\" && param1 != \"Escape\") { return false; }") &&
+			Has(grace, "return this.frameN - this.lastTextEnd <= TEXT_GRACE;"),
+		"the text grace covers Accept, Enter, Cancel and Escape for TEXT_GRACE frames");
+	const std::string wants = FunctionBody(hub, "wantsEvent", "public");
+	Expect(InOrder(wants, {"var capture:Boolean = this.capturing();", "var open:Boolean = capture || this.textGrace(param1);", "if(param2)",
+				   "this.heldEvents[param1] = open ? this.frameN : -1;", "if(capture) { this.padEvent(param1); }", "return open;",
+				   "if(!capture) { return held || open; }", "if(!held) { return true; }"}),
+		"a press in the text grace is consumed (and so is its release), and only a capture acts on it");
+	Expect(InOrder(FunctionBody(browser, "stopFind"), {"this.findOn = false;", "this.hsb.endText(this);"}) &&
+			InOrder(FunctionBody(browser, "clearFind"), {"this.findText = \"\";", "if(this.findOn) { this.stopFind(); }", "this.afterFilter();"}) &&
+			InOrder(FunctionBody(browser, "endFind", "internal"), {"if(this.findOn) { this.stopFind(); }"}),
+		"every way out of Find goes through stopFind, which ends the text field (and starts the grace)");
+	const std::string strip = FunctionBody(browser, "paintStripTop");
+	Expect(Has(strip, "var applies:Boolean = this.findOn;") &&
+			Has(strip, "this.hit(param1 - param2 - cb - 4,y,cb + 8,k.u(32),applies ? \"findapply\" : \"collapse\");") &&
+			Has(strip, "k.icon(g,applies ? \"check\" : \"dockR\","),
+		"while typing in Find the button beside the field applies the text instead of folding the browser");
+	Expect(Has(FunctionBody(browser, "onAct", "override internal"), "case \"findapply\": this.endFind(); break;") &&
+			!Has(FunctionBody(browser, "endFind", "internal"), "setCollapsed"),
+		"the apply button keeps the filter and never folds the browser");
+
+	// Bug 4: a Find with no match names the category it looked in.
+	Expect(Has(FunctionBody(browser, "findMissText", "internal"), "return \"No matches for \\u201C\" + shown + \"\\u201D in \" + cat;") &&
+			InOrder(FunctionBody(browser, "paintList"), {"var findMiss:Boolean = this.rows.length > 0 && this.findText.length > 0;", "this.findMissText()",
+					   "Find looks in this category only \\u00B7 "}),
+		"an empty Find result says it looked in this category only and how to reach the others");
+
+}
+
 int main()
 {
 	CheckGuard();
@@ -2337,6 +2383,7 @@ int main()
 	CheckMovie(root);
 	CheckPlugin(root);
 	CheckDocs(repo, root);
+	CheckV6Keys(root);
 
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";

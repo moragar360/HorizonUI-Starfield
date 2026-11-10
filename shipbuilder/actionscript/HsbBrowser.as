@@ -19,7 +19,7 @@ package
    // Backend limits shown in the interface: maker and size come from part names; value, mass,
    //    class and card stats are known only after a part was previewed; categories are learned
    //    by stepping through them; "on ship" and "hidden by level" have no game data.
-   // Author: Moragar. Last modified: 2026-11-09.
+   // Author: Moragar. Last modified: 2026-11-10.
    public class HsbBrowser extends HsbBox
    {
       private static const KNOWN_MAKERS:Array = [["Nova Galactic","Nova Galactic"],["Taiyo Astroneering","Taiyo Astroneering"],["Taiyo","Taiyo Astroneering"],["Stroud-Eklund","Stroud-Eklund"],["Stroud","Stroud-Eklund"],["HopeTech","HopeTech"],["Deimos","Deimos"],["Amun Dunn","Amun Dunn"],["Slayton Aerospace","Slayton Aerospace"],["White Dwarf","White Dwarf"],["Protectorate Systems","Protectorate Systems"],["Light Scan","Light Scan"]];
@@ -1082,6 +1082,14 @@ package
 
       // ---- find ----------------------------------------------------------------------------
 
+      // The list's empty-state line when the Find text matches nothing in this category.
+      internal function findMissText():String
+      {
+         var shown:String = this.findText.length > 24 ? this.findText.substring(0,23) + "\u2026" : this.findText;
+         var cat:String = this.tabName.length > 0 ? this.tabName.toUpperCase() : "this category";
+         return "No matches for \u201C" + shown + "\u201D in " + cat;
+      }
+
       internal function startFind():void
       {
          if(this.readOnly) { return; }
@@ -1218,6 +1226,7 @@ package
             case "makermore": this.openMakers(); break;
             case "find": this.startFind(); break;
             case "findclear": this.clearFind(); break;
+            case "findapply": this.endFind(); break;
             case "pill":
                this.hsb.pills.toggle(String(param2));
                this.afterPills();
@@ -1763,10 +1772,14 @@ package
          var fw:Number = param1 - param2 - fx - collapseW - 6;
          this.findBox(fx,y,fw,k.u(32),this.tabName.length > 0 ? "Find " + this.tabName.toLowerCase() : "Find parts");
          var cb:Number = k.u(22);
-         k.fill(g,param1 - param2 - cb,y + (k.u(32) - cb) / 2,cb,cb,5,0x1A2128,1);
-         k.outline(g,param1 - param2 - cb,y + (k.u(32) - cb) / 2,cb,cb,5,HsbKit.EDGE_HI,1);
-         k.icon(g,"dockR",param1 - param2 - cb + 3,y + (k.u(32) - cb) / 2 + 3,cb - 6,HsbKit.LABEL,1);
-         this.hit(param1 - param2 - cb - 4,y,cb + 8,k.u(32),"collapse");
+         // While the player types in Find, the button beside the field applies the text (as
+         // ENTER does) instead of folding the browser away: players read it as the field's
+         // search button, and a press there closed the parts window.
+         var applies:Boolean = this.findOn;
+         k.fill(g,param1 - param2 - cb,y + (k.u(32) - cb) / 2,cb,cb,5,applies ? k.accent : 0x1A2128,1);
+         k.outline(g,param1 - param2 - cb,y + (k.u(32) - cb) / 2,cb,cb,5,applies ? k.accent : HsbKit.EDGE_HI,1);
+         k.icon(g,applies ? "check" : "dockR",param1 - param2 - cb + 3,y + (k.u(32) - cb) / 2 + 3,cb - 6,applies ? HsbKit.INK_ON_ACCENT : HsbKit.LABEL,1);
+         this.hit(param1 - param2 - cb - 4,y,cb + 8,k.u(32),applies ? "findapply" : "collapse");
          return y + k.u(32) + TITLE_ROW_GAP;
       }
 
@@ -2137,9 +2150,20 @@ package
          if(this.flat.length == 0)
          {
             var none:TextField = k.text(14,HsbKit.LABEL);
-            k.put(none,this.rows.length == 0 ? "No parts in this tab" : "No parts match \u00B7 CLEAR ALL shows every part");
+            var findMiss:Boolean = this.rows.length > 0 && this.findText.length > 0;
+            k.put(none,this.rows.length == 0 ? "No parts in this tab" : (findMiss ? this.findMissText() : "No parts match \u00B7 CLEAR ALL shows every part"));
             k.fit(none,param1 - param2 * 2);
             this.add(none,param2 + 14,y + 12);
+            if(findMiss)
+            {
+               // Find looks in the open category only (the game lists one category at a time).
+               var lb:String = this.hsb.keyName("PrevCategory");
+               var rb:String = this.hsb.keyName("NextCategory");
+               var how:TextField = k.text(13,HsbKit.MUTED);
+               k.put(how,"Find looks in this category only \u00B7 " + (lb.length > 0 ? lb : "LB") + " / " + (rb.length > 0 ? rb : "RB") + " for the others, or clear the text");
+               k.fit(how,param1 - param2 * 2);
+               this.add(how,param2 + 14,y + 12 + none.height + 4);
+            }
             return;
          }
          var x0:Number = param2;

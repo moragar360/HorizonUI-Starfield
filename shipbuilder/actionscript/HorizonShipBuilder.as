@@ -35,7 +35,7 @@ package
    // Why the pointer comes from the DLL: in-game logs (p5) showed presses over the ship view go
    //    to the editor before Scaleform, so Scaleform CLICK never fired on Horizon controls. The
    //    DLL feeds every pointer event and swallows the ones over the rectangles we publish.
-   // Author: Moragar. Last modified: 2026-11-09.
+   // Author: Moragar. Last modified: 2026-11-10.
    public class HorizonShipBuilder extends Sprite
    {
       internal static const VERSION:String = "0.2.0.0";
@@ -83,6 +83,11 @@ package
       private static const FIELD_TRIES:int = 20;
       // A cancel or accept can arrive both as a DLL key token and as the game's own event.
       private static const DOUBLE_FRAMES:int = 6;
+      // Frames after a Horizon text field lets go of the keyboard in which the game's own
+      // Accept, Enter, Cancel or Escape still belongs to that field: Enter or Esc arrives both
+      // as a DLL key token (which ends typing) and as the game's event, in either order, and the
+      // event must not reach the vanilla menu (it closes the parts palette).
+      internal static const TEXT_GRACE:int = 20;
       private static const FILE_QUEUE_MAX:int = 64;
       // A shared file's name and up to eight numbered ones ("name 2" to "name 9"); see writeShare.
       internal static const SHARE_TRIES:int = 9;
@@ -212,6 +217,7 @@ package
       private var heldEvents:Object;
       private var lastCancel:int = -100;
       private var lastOk:int = -100;
+      private var lastTextEnd:int = -100;
       private var dragBox:HsbBox;
       private var textOwner:HsbBox;
       private var pointerX:Number = -1;
@@ -415,17 +421,20 @@ package
       // Dependencies: the splice calls this before the vanilla chain.
       public function wantsEvent(param1:String, param2:Boolean):Boolean
       {
-         var open:Boolean = this.capturing();
+         var capture:Boolean = this.capturing();
+         // Just after a text field ended, its Enter or Esc is still the field's (TEXT_GRACE).
+         var open:Boolean = capture || this.textGrace(param1);
          if(param2)
          {
             this.heldEvents[param1] = open ? this.frameN : -1;
-            if(open) { this.padEvent(param1); }
+            if(capture) { this.padEvent(param1); }
             return open;
          }
          var pressed:int = this.heldEvents[param1] != null ? int(this.heldEvents[param1]) : -1;
          delete this.heldEvents[param1];
          var held:Boolean = pressed >= 0;
-         if(!open || !held) { return held || open; }
+         if(!capture) { return held || open; }
+         if(!held) { return true; }
          // The same key press may also have arrived as a DLL key token (cancelTop/acceptTop
          // stamp the frame), so a release acts only when nothing acted since its press.
          if(param1 == "Escape" || param1 == "Cancel") { if(this.lastCancel < pressed) { this.cancelTop("pad"); } return true; }
@@ -3323,7 +3332,19 @@ package
 
       internal function endText(param1:HsbBox):void
       {
-         if(this.textOwner == param1) { this.textOwner = null; }
+         if(this.textOwner == param1)
+         {
+            this.textOwner = null;
+            this.lastTextEnd = this.frameN;
+         }
+      }
+
+      // True for the game's Accept, Enter, Cancel or Escape within TEXT_GRACE frames after a
+      // Horizon text field ended: that key ended the field and must not also act in the menu.
+      internal function textGrace(param1:String):Boolean
+      {
+         if(param1 != "Accept" && param1 != "Enter" && param1 != "Cancel" && param1 != "Escape") { return false; }
+         return this.frameN - this.lastTextEnd <= TEXT_GRACE;
       }
 
       internal function textActive(param1:HsbBox):Boolean
