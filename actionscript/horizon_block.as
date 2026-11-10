@@ -15004,7 +15004,11 @@
       // not hidden Horizon (F11 hide-all), and a Horizon card that can actually be on screen covers each non-watch piece:
       //   BioAlertText: the AFFLICTIONS card (ShowAfflictions, not Compact, AfflictionsRule 0 or 6 = when afflicted);
       //   EnvAlertText (hazard): the PLANET pill's status line (ShowPlanet, HazardAlert, PlanetRule 0, pill built). The old
-      //     HAZARD ALERT outline is on the classic card hzPlanOld, which hzFrameApply always hides, so it is not counted;
+      //     HAZARD ALERT outline is on the classic card hzPlanOld, which hzFrameApply always hides, so it is not counted.
+      //     Where the pill line has no hazard word (IN SHIP / STATION / IN SPACE, hzPpKind; or the PlanetCompact strip
+      //     when it is too narrow), the AFFLICTIONS card shows the hazard as an env chip: hzOnEnv -> hzAfSetEnv ->
+      //     hzAfSync, which always merges hzAfEnv whatever the location kind or Compact (Bot 3 r3 N-1; tested). The gate
+      //     needs that card in full (not Compact), so a Horizon hazard status is on screen in every eligible config;
       //   EnemyDetectionAnim_mc: one of STEALTH METER / ENEMY BAR / EDGE PULSE, with its card built (as hz31DetHide).
       // The landing alert (LocationAlertText outside scans) and the positive environment alert have no Horizon version;
       // the user accepted hiding them for now (HZ44_ALLOW_UNREPLACED). Otherwise today's per-piece hide runs unchanged.
@@ -15024,6 +15028,8 @@
       // User decision 2026-11-10 10:11: "Hide them for now, and add Horizon versions of those alerts later." true: the
       // landing alert and the positive environment alert (no Horizon version yet) do not block the group hide.
       // false: the group hide never applies (those two can show at any time), and today's per-piece hide runs.
+      // Compile-time constant (not an INI key): changing it needs a rebuild of the HUD block (Bot 3 r3 N-2).
+      // At runtime, [Debug] BlgGroupHide=0 (hz44GrpIni) still turns the whole-group hide off without a rebuild.
       private static const HZ44_ALLOW_UNREPLACED:Boolean = true;
       private function hz44GrpWant() : Boolean
       {

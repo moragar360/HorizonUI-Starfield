@@ -642,5 +642,62 @@ if (base) {
 	} else console.log("skip right-side guard (git show 56d4098 not available)");
 }
 
+// ---- r4 N-1 (Bot 3 r3): the hazard has a Horizon status even where the pill line has no hazard word ----
+// The group hide counts the PLANET pill's status line for EnvAlertText. Off-surface (IN SHIP / STATION / IN SPACE) and in
+// a narrow PlanetCompact strip that line has no hazard word; the AFFLICTIONS card (required in full by the gate) shows it
+// as an env chip. Behavior: hzAfSetEnv -> hzAfSync puts an env chip on the card whatever the location kind or Compact.
+{
+	let bad = "";
+	for (const kind of ["surface", "ship", "station", "space"]) for (const compact of [false, true]) for (const pc of [false, true]) {
+		let laid = null;
+		const h = Object.assign({}, common, { hzPpKind: kind, hzCompact: compact, hzPlanetCompact: pc, hzAfEnv: [], hzAfPers: [], hzAfSeen: {}, hzAfSoak: 0, hzFrameN: 7, hzAfflCount: 0,
+			hz27PersSafe: () => [], hz26OwInAffl: () => false, hzRefreshVisibility: () => {}, hzAfLayoutChips: (a) => { laid = a; } });
+		bindAll(h, as, ["hzAfSetEnv", "hzAfSync", "hzPretty", "hzAfKind", "hzAfSortFn", "hzV19"]);
+		h.hzAfSetEnv([{ sEffectIcon: "HazardEffect_Radiation" }, { sEffectIcon: "HazardEffect_RestoreSoak" }], 0.4);
+		const env = (laid || []).filter((o) => o.env);
+		if (env.length !== 1 || h.hzAfflCount < 1) bad = kind + " compact=" + compact + " planetCompact=" + pc + " env=" + env.length;
+	}
+	expect(!bad, "N-1: an env hazard gives an env chip on the AFFLICTIONS card in every location kind (surface / ship / station / space), with or without Compact flags" + (bad ? " -- " + bad : ""));
+	const sync = fnText(as, "hzAfSync").body, setE = fnText(as, "hzAfSetEnv").body;
+	expect(!/hzPpKind|hzCompact|hzPlanetCompact/.test(sync + setE), "N-1: the env chip path does not read the location kind or any Compact flag");
+	expect(/this\.hzAfSetEnv\(a,soak\);\s*$/.test(fnText(as, "hzOnEnvEffects").body) && !/return/.test(fnText(as, "hzOnEnvEffects").body), "N-1: every environment-effects update (hzOnEnvEffects) ends in hzAfSetEnv, with no early return");
+}
+
+// ---- r4 N-3 (Bot 3 r3): the hold-path ancestor set is cleared at the end of each hz38HideVanilla call (N4 fix) ----
+// hzT19HoldBtns refills one shared array, so a set left over from an earlier call would answer for the old buttons when
+// that same array reaches hzT19OnHoldPathA outside hz38HideVanilla.
+{
+	const FN = ["hz38HideVanilla", "hzT19HidePromptTree", "hzT19OnHoldPath", "hzT19OnHoldPathA", "hzT19AncFill", "hzT19IsHoldBtn", "hzT19HideA", "hzT19HideBtnArt", "hzT19HoldMeterName"];
+	const fix = (js) => js.replace(/p != this\b/g, "p != this.__top");
+	const r = rng(4403); let bad = "", nullBad = 0;
+	for (let t = 0; t < 200 && !bad; t++) {
+		const seed = Math.floor(r() * 1e9);
+		const build = (rr) => { const top = Clip("top", true); top.__root = false; const all = [];
+			const grow = (p, d) => { const n = 1 + Math.floor(rr() * 4); for (let i = 0; i < n; i++) { const c = add(p, Clip(rr() < 0.15 ? "HoldMeter_mc" : "c" + d + i, d < 4 && rr() < 0.55)); all.push(c); if (c.kids) grow(c, d + 1); } };
+			grow(top, 0); return { top: top, all: all }; };
+		const shared = new Array(4);
+		const mk = () => { const h = Object.assign({}, common, { hzTgHidden: [], hzTgHidA: [], hzT19Anc: [], hzT19AncB: null, hzObjRing: 2, __top: null,
+			hzT19KeepHold: () => {}, hzT19HideReticle: () => {}, hzT19ShowReticle: () => {} }); bindAll(h, as, FN, fix); return h; };
+		const B = mk();
+		// call 1: the game's prompt with one set of hold buttons
+		const X = build(rng(seed)); const p1 = rng(seed + 1);
+		for (let k = 0; k < 4; k++) shared[k] = X.all[Math.floor(p1() * X.all.length)];
+		B.hzT19HoldBtns = () => shared;
+		B.hz38HideVanilla({ RolloverActivationHolder_mc: null }, X.top, "item");
+		if (B.hzT19AncB !== null) nullBad++;
+		// later, outside hz38HideVanilla: the same shared array now holds other buttons of another tree
+		const Y = build(rng(seed + 2)), Z = build(rng(seed + 2)); const p2 = rng(seed + 3);
+		const pick = []; for (let k = 0; k < 4; k++) pick.push(Math.floor(p2() * Y.all.length));
+		for (let k = 0; k < 4; k++) shared[k] = Y.all[pick[k]];
+		B.hzT19HidePromptTree(Y.top, shared);
+		const C = mk(); const fresh = pick.map((k) => Z.all[k]);
+		C.hzT19HidePromptTree(Z.top, fresh);
+		const sy = Y.all.map((c) => c.visible + ":" + c.alpha).join("|"), sz = Z.all.map((c) => c.visible + ":" + c.alpha).join("|");
+		if (sy !== sz) bad = "tree " + t;
+	}
+	expect(nullBad === 0, "N-3: hzT19AncB is null after every hz38HideVanilla call");
+	expect(!bad, "N-3: 200 random trees: a later prompt walk with the reused button array (outside hz38HideVanilla) makes the same writes as a fresh host, so no stale ancestor set is used" + (bad ? " -- " + bad : ""));
+}
+
 if (failed) { console.error(failed + " FAILED"); process.exit(1); }
 console.log("grouphide tests passed");
