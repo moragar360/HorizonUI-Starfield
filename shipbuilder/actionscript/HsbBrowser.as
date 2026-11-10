@@ -26,6 +26,8 @@ package
       private static const DWELL_FRAMES:int = 5;
       // Mockup 1: the controls sit 16 in from the card edge, the list rows only 10.
       private static const LIST_PAD:Number = 10;
+      // Space between the name area and the first column, and between two columns.
+      private static const COL_GAP:Number = 10;
       // Maker rows are taller than part rows in the compact list (41 against 37 in mockup 1).
       private static const GROUP_EXTRA:Number = 4;
       // Mockup 1 gaps under the tab row, the pager and the title row.
@@ -196,13 +198,17 @@ package
       //    with no match keeps a dash rather than another part's numbers.
       internal function learn(param1:Object):void
       {
-         if(param1 == null || !Boolean(param1.bShowWidget)) { return; }
-         if(this.data == null || !Boolean(this.data.bShowWidget)) { return; }
+         if(param1 == null) { return; }
+         // The maker comes from the card's logo, for any module the card describes (a preview
+         // or a module picked on the ship); the part list itself carries no maker.
+         var taught:Boolean = this.learnMaker(param1);
          var id:String = this.previewId.length > 0 ? this.previewId : this.nativeSel;
-         if(id.length == 0) { return; }
-         var r:Object = this.rowById(id);
-         if(r == null) { return; }
-         if(this.cleanText(param1.sModuleName).toLowerCase() != this.cleanText(r.name).toLowerCase()) { return; }
+         var r:Object = id.length > 0 ? this.rowById(id) : null;
+         if(!Boolean(param1.bShowWidget) || this.data == null || !Boolean(this.data.bShowWidget) || r == null || this.cleanText(param1.sModuleName).toLowerCase() != this.cleanText(r.name).toLowerCase())
+         {
+            if(taught) { this.rebuild(); this.invalidate(); }
+            return;
+         }
          var row:Object = this.seen[id];
          if(row == null) { row = {}; this.seen[id] = row; }
          row.stats = {};
@@ -231,6 +237,45 @@ package
          this.fill(r);
          this.rebuild();
          this.invalidate();
+      }
+
+      // Makers learned from card logos, by lower-case part name, for this session.
+      private var makerByName:Object = {};
+
+      // Logo ids are "ShipModuleManufacturer" + a maker key (the vanilla card's logo frames).
+      private static const LOGO_PREFIX:String = "ShipModuleManufacturer";
+      private static const LOGO_MAKERS:Object = {"AmunDunn":"Amun Dunn","Ballistic":"Ballistic Solutions","DeepCore":"Deep Core","Deimos":"Deimos","Dogstar":"Dogstar","Hopetech":"HopeTech","HorizonDefense":"Horizon Defense","LightScythe":"Light Scythe","Nautilus":"Nautilus","NovaGalactic":"Nova Galactic","Panoptes":"Panoptes","Protectorate":"Protectorate Systems","Reladyne":"Reladyne","Sextant":"Sextant","Shinigami":"Shinigami","Slayton":"Slayton Aerospace","StroudEklund":"Stroud-Eklund","Taiyo":"Taiyo Astroneering","Trident":"Trident","Xiang":"Xiang","Starborn":"Starborn"};
+
+      // Purpose: the maker's display name for a card logo id; "" when there is none.
+      // Inputs: sLogoID, for example "ShipModuleManufacturerDeimos". An unknown key is split
+      //    at its capitals ("NewMaker" reads "New Maker").
+      internal static function makerFromLogo(param1:*):String
+      {
+         var id:String = param1 == null ? "" : String(param1);
+         if(id.indexOf(LOGO_PREFIX) == 0) { id = id.substring(LOGO_PREFIX.length); }
+         if(id.length == 0 || id == "None" || id == "undefined" || id == "null") { return ""; }
+         if(LOGO_MAKERS[id] != null) { return String(LOGO_MAKERS[id]); }
+         return id.replace(/([a-z])([A-Z])/g,"$1 $2");
+      }
+
+      // Purpose: remember the maker a card names and put it on every row with that name.
+      // Outputs: true when a row's maker changed. Diagnostics only with probe=1.
+      private function learnMaker(param1:Object):Boolean
+      {
+         var maker:String = makerFromLogo(param1.sLogoID);
+         var key:String = this.cleanText(param1.sModuleName).toLowerCase();
+         if(this.hsb.debugging) { this.hsb.note("MAKER learn logo=" + String(param1.sLogoID) + " maker=" + (maker.length > 0 ? maker : "-") + " name=" + key); }
+         if(maker.length == 0 || key.length == 0 || this.makerByName[key] == maker) { return false; }
+         this.makerByName[key] = maker;
+         var changed:Boolean = false;
+         var i:int = 0;
+         while(i < this.rows.length)
+         {
+            var r:Object = this.rows[i];
+            if(String(r.name).toLowerCase() == key && String(r.maker) != maker) { r.maker = maker; changed = true; }
+            i++;
+         }
+         return changed;
       }
 
       private function fill(param1:Object):void
@@ -285,8 +330,8 @@ package
          return String(m[0]).split(" ").join("");
       }
 
-      // Known brands first; otherwise the first word, when two or more parts on this tab start
-      // with it. Everything else groups under "Other".
+      // A maker read from a card logo first; then known brands; otherwise the first word, when
+      // two or more parts on this tab start with it. Everything else groups under "Other".
       private function assignMakers():void
       {
          var counts:Object = {};
@@ -298,6 +343,8 @@ package
             i++;
          }
          var sized:int = 0;
+         var known:int = 0;
+         var named:int = 0;
          i = 0;
          while(i < this.rows.length)
          {
@@ -310,7 +357,10 @@ package
                var w:String = name.split(" ")[0];
                if(int(counts[w]) >= 2 && w.length > 1 && w.charAt(0) == w.charAt(0).toUpperCase() && sizeOf(w).length == 0) { maker = w; prefix = w; }
             }
-            r.maker = maker.length > 0 ? maker : "Other";
+            var learned:* = this.makerByName[name.toLowerCase()];
+            r.maker = learned != null ? String(learned) : (maker.length > 0 ? maker : "Other");
+            if(learned != null) { known++; }
+            else if(maker.length > 0) { named++; }
             r.prefix = prefix;
             r.size = sizeOf(name);
             if(String(r.size).length > 0) { sized++; }
@@ -318,6 +368,7 @@ package
             i++;
          }
          this.sizesOnTab = sized * 2 >= this.rows.length && this.rows.length > 0;
+         if(this.hsb.debugging) { this.hsb.note("MAKER tab=" + this.tabName + " rows=" + this.rows.length + " logo=" + known + " name=" + named + " other=" + (this.rows.length - known - named) + " makers=" + this.makerNames().join("|")); }
       }
 
       private var sizesOnTab:Boolean = false;
@@ -1034,6 +1085,14 @@ package
          this.invalidate();
       }
 
+      // The field's clear (x): empties the text and the filter and ends typing, as Esc does.
+      private function clearFind():void
+      {
+         this.findText = "";
+         if(this.findOn) { this.stopFind(); }
+         this.afterFilter();
+      }
+
       private function stopFind():void
       {
          this.findOn = false;
@@ -1058,9 +1117,7 @@ package
          }
          if(param1 == "cancel")
          {
-            this.findText = "";
-            this.stopFind();
-            this.afterFilter();
+            this.clearFind();
             return true;
          }
          if(param1 == "ok" || param1 == "tab") { this.stopFind(); return true; }
@@ -1155,6 +1212,7 @@ package
                break;
             case "makermore": this.openMakers(); break;
             case "find": this.startFind(); break;
+            case "findclear": this.clearFind(); break;
             case "pill":
                this.hsb.pills.toggle(String(param2));
                this.afterPills();
@@ -1484,10 +1542,12 @@ package
          if(this.grid) { y = this.paintGridTop(w,pad,y); }
          else
          {
-            // The notice yields while Find is typing so the field stays in view.
+            // The notice stands in for the category tabs only: the title and the Find field stay
+            // in the panel header under it (it used to cover them too). It still yields while Find
+            // is typing.
             var banner:Boolean = this.hsb.bannerWanted() && !this.findOn;
             if(banner) { y = this.paintBanner(w,pad,y,this.stripTopHeight()); }
-            else { y = this.paintStripTop(w,pad,y); }
+            y = this.paintStripTop(w,pad,y,banner);
             // Mockup 13: while Flight Check reads the list there are no pills, sort or columns.
             if(!this.readOnly) { y = this.paintStrip(w,pad,y); }
          }
@@ -1525,7 +1585,7 @@ package
          if(moved) { this.hsb.place(); }
       }
 
-      // Purpose: the browser's height, which the Colours card shares. Outputs: 846 (mockup 1) at
+      // Purpose: the browser's height, which the Colors card shares. Outputs: 846 (mockup 1) at
       //    most and 420 at least; in between the browser ends 10 px above the hints bar. The
       //    bars' heights come from the hub, so the large movie's taller bars, a wider screen
       //    margin and the UI scale keep that room.
@@ -1626,15 +1686,16 @@ package
          return param3 + t.height + 6;
       }
 
-      // Height paintStripTop() uses, so the conflict notice can stand in for those rows.
+      // Height of paintStripTop()'s tab and pager rows, which the conflict notice stands in for.
       private function stripTopHeight():Number
       {
          var k:HsbKit = this.kit;
-         return (this.upgrade ? 0 : k.u(24) + TAB_ROW_GAP + PAGER_GAP) + k.u(32) + TITLE_ROW_GAP;
+         return this.upgrade ? 0 : k.u(24) + TAB_ROW_GAP + PAGER_GAP;
       }
 
       // Mockup 1, top rows: LB, previous / current / next, RB; pager; title and find.
-      private function paintStripTop(param1:Number, param2:Number, param3:Number):Number
+      // param4: the conflict notice took the tab and pager rows, so only the title row is drawn.
+      private function paintStripTop(param1:Number, param2:Number, param3:Number, param4:Boolean = false):Number
       {
          var k:HsbKit = this.kit;
          var g:Graphics = this.gfx;
@@ -1645,7 +1706,7 @@ package
          // read-only list shows its categories without live keys or hits.
          var live:Boolean = !this.readOnly;
          var capInk:uint = live ? HsbKit.LABEL : HsbKit.DIM;
-         if(!this.upgrade)
+         if(!this.upgrade && !param4)
          {
             var lb:String = this.hsb.keyName("PrevCategory");
             var rb:String = this.hsb.keyName("NextCategory");
@@ -1779,8 +1840,9 @@ package
          var sw:Number = Math.min(sortT.width - 6,sortT.textWidth) + chrome;
          this.fieldBox(sx,y,sw,rh);
          this.add(sortT,sx + 9,y + (rh - sortT.height) / 2);
-         if(sorted) { k.icon(g,this.sortDesc ? "sortDown" : "sortUp",sx + 11 + Math.min(sortT.width - 6,sortT.textWidth),y + (rh - 14) / 2,14,k.accent,1); }
-         k.icon(g,"chevD",sx + sw - 21,y + (rh - 14) / 2,14,HsbKit.LABEL,1);
+         // Arrows meet the middle of the words beside them (k.iconY), not the field's middle.
+         if(sorted) { k.icon(g,this.sortDesc ? "sortDown" : "sortUp",sx + 11 + Math.min(sortT.width - 6,sortT.textWidth),k.iconY(sortT,14),14,k.accent,1); }
+         k.icon(g,"chevD",sx + sw - 21,k.iconY(sortT,14),14,HsbKit.LABEL,1);
          this.hit(sx,y,sw,rh,"sort");
          var cx:Number = sx + sw + 10;
          this.fieldBox(cx,y,cw,rh);
@@ -1812,11 +1874,24 @@ package
          k.icon(g,"search",param1 + 10,param2 + (param4 - 16) / 2,16,live ? HsbKit.LABEL : HsbKit.DIM,1);
          var t:TextField = k.text(14,this.findText.length > 0 ? HsbKit.TEXT : (live ? HsbKit.MUTED : HsbKit.DIM));
          k.put(t,this.findText.length > 0 ? this.findText + (this.findOn ? "|" : "") : (this.findOn ? "|" : param5));
-         k.fit(t,param3 - 80);
+         var hasText:Boolean = this.findText.length > 0 && live;
+         var clearS:Number = k.u(22);
+         k.fit(t,param3 - 80 - (hasText ? clearS + 6 : 0));
          this.add(t,param1 + 34,param2 + (param4 - t.height) / 2);
          var key:String = this.hsb.keyFind.length > 0 && this.hsb.keyFind != "0" ? this.hsb.keyFind : "";
-         if(key.length > 0 && live) { k.keycap(this,param1 + param3 - 10 - k.u(26),param2 + (param4 - k.u(22)) / 2,key,HsbKit.LABEL); }
+         var capX:Number = param1 + param3 - 10 - k.u(26);
+         if(key.length > 0 && live) { k.keycap(this,capX,param2 + (param4 - k.u(22)) / 2,key,HsbKit.LABEL); }
          if(live) { this.hit(param1,param2,param3,param4,"find"); }
+         // A clear (x) inside the field while it holds text; it empties the field like Esc.
+         if(hasText)
+         {
+            var clx:Number = (key.length > 0 ? capX - 6 : param1 + param3 - 8) - clearS;
+            var cly:Number = param2 + (param4 - clearS) / 2;
+            k.fill(g,clx,cly,clearS,clearS,clearS / 2,0x1A2128,1);
+            k.outline(g,clx,cly,clearS,clearS,clearS / 2,HsbKit.EDGE_HI,1);
+            k.icon(g,"x",clx + (clearS - 12) / 2,cly + (clearS - 12) / 2,12,HsbKit.TEXT,1);
+            this.hit(clx - 2,param2,clearS + 4,param4,"findclear");
+         }
       }
 
       private function clearButton(param1:Number, param2:Number):Number
@@ -1905,7 +1980,9 @@ package
          this.add(mt,x + 24,param3 + (ph - mt.height) / 2);
          this.hit(x,param3,mw,ph,"more");
          x += mw + gap;
-         k.dashed(g,x,param3,newW,ph,ph / 2,HsbKit.MUTED,1);
+         // A closed outline like "+ More" (the dashed edge read as a broken border); off pills
+         // keep their dashes, which mark them as off.
+         k.outline(g,x,param3,newW,ph,ph / 2,HsbKit.MUTED,1);
          k.icon(g,"plus",x + 8,param3 + (ph - 12) / 2,12,HsbKit.TEXT,1);
          var nt:TextField = k.text(13,HsbKit.TEXT);
          k.put(nt,"New pill");
@@ -1966,7 +2043,7 @@ package
          this.add(nt,param2 + 14,param3 + (hh - nt.height) / 2);
          if(byName)
          {
-            k.icon(g,this.sortDesc ? "sortDown" : "sortUp",nt.x + nt.width,param3 + (hh - 14) / 2,14,k.accent,1);
+            k.icon(g,this.sortDesc ? "sortDown" : "sortUp",nt.x + nt.textWidth + 4,k.iconY(nt,14),14,k.accent,1);
             k.fill(g,nt.x + 2,param3 + hh - 5,nt.textWidth,2,0,k.accent,1);
          }
          this.hit(param2,param3,nt.width + 30,hh,"head","name");
@@ -1980,15 +2057,14 @@ package
             var sorted:Boolean = this.sortCol == id;
             var t:TextField = k.text(13,sorted ? k.accent : HsbKit.LABEL,sorted,0,"right");
             k.put(t,this.columnLabel(id));
-            // A label may reach left to the label before it (the first one to "Name"), as
-            // "Crew stations" does in mockup 1; a right-aligned field ends its text 2 px in.
-            var prevEnd:Number = i == 0 ? nt.x + nt.width + (byName ? 26 : 12) : left + (this.sortCol == String(cols[i - 1]) ? 18 : 10);
-            k.fit(t,right - prevEnd + 6);
+            // A label stays inside its column box like the values under it.
+            var prevEnd:Number = i == 0 ? Math.max(left,nt.x + nt.width + (byName ? 26 : 12)) : left + (this.sortCol == String(cols[i - 1]) ? 18 : COL_GAP);
+            k.fit(t,Math.max(12,right - prevEnd + 2));
             this.add(t,right + 2 - t.width,param3 + (hh - t.height) / 2);
             if(sorted)
             {
                var tw:Number = Math.min(t.width - 6,t.textWidth);
-               k.icon(g,this.sortDesc ? "sortDown" : "sortUp",right + 2,param3 + (hh - 14) / 2,14,k.accent,1);
+               k.icon(g,this.sortDesc ? "sortDown" : "sortUp",right + 2,k.iconY(t,14),14,k.accent,1);
                k.fill(g,right - tw,param3 + hh - 5,tw,2,0,k.accent,1);
             }
             this.hit(left,param3,right - left + (i == cols.length - 1 ? k.u(26) : 0),hh,"head",id);
@@ -2081,14 +2157,14 @@ package
                lv++;
             }
             var cells:Array = this.paintCells(item,cols,param1,param2,y,rowH);
-            // Names run up to the first column's text, not to its box, as long names do in
-            // mockup 1 ("TAIYO ASTRONEERING" reaches into the Crew stations box).
-            var nameEnd:Number = (cells.length > 0 ? this.colX(param1,param2,0,cols.length) - (cells[0] as TextField).textWidth : x0 + wRow) - 14;
+            // Names end before the first column's box, so a long name is cut with an ellipsis
+            // instead of running into the values (it used to reach to the first value's text).
+            var nameEnd:Number = (cells.length > 0 ? this.colX(param1,param2,-1,cols.length) - COL_GAP : x0 + wRow - 14);
             if(item.type == "group" || item.type == "sub")
             {
                var isGroup:Boolean = item.type == "group";
                if(isGroup) { k.fill(g,x0,y,wRow,rowH,6,item.open ? HsbKit.ROW_OPEN : HsbKit.ROW,1); }
-               k.icon(g,item.open ? "chevD" : "chevR",x0 + 12 + indent,y + (rowH - 14) / 2,14,item.open && isGroup ? k.accent : HsbKit.TEXT,1);
+               var chevAt:Number = x0 + 12 + indent;
                var chipText:String = isGroup ? String((item.rows as Array).length) : (item.rows as Array).length + " variants";
                var chipT:TextField = k.text(12,0,true);
                k.put(chipT,chipText);
@@ -2097,6 +2173,7 @@ package
                k.put(gl,isGroup ? String(item.label).toUpperCase() : String(item.label));
                k.fit(gl,Math.max(k.u(40),nameEnd - (x0 + 32 + indent) - 6 - chipW));
                this.add(gl,x0 + 32 + indent,y + (rowH - gl.height) / 2);
+               k.icon(g,item.open ? "chevD" : "chevR",chevAt,k.iconY(gl,14),14,item.open && isGroup ? k.accent : HsbKit.TEXT,1);
                k.countChip(this,x0 + 32 + indent + gl.width + 4,y + (rowH - k.u(20)) / 2,chipText,isGroup && item.open);
                this.hit(x0,y,wRow,rowH,"group",item.key);
             }
@@ -2164,8 +2241,12 @@ package
                tf = k.text(13,0xB8BEC2,false,0,"right");
                k.put(tf,this.rangeText(param1.rows as Array,id));
             }
-            tf.width = 120;
-            this.add(tf,this.colX(param3,param4,c,param2.length) + 2 - tf.width,param5 + (param6 - tf.height) / 2);
+            // Each value stays inside its own column box: cut with an ellipsis to the box, then
+            // set against the box's right edge by its fitted width.
+            var boxR:Number = this.colX(param3,param4,c,param2.length);
+            var boxL:Number = this.colX(param3,param4,c - 1,param2.length) + (c == 0 ? 0 : COL_GAP);
+            k.fit(tf,Math.max(12,boxR - boxL + 2));
+            this.add(tf,boxR + 2 - tf.width,param5 + (param6 - tf.height) / 2);
             out.push(tf);
             c++;
          }

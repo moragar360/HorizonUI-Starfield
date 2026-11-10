@@ -4,7 +4,7 @@ package
    import flash.text.TextField;
 
    // Purpose: the Colors panel from gold mockups 6 and 7, in the browser's slot while the game's
-   //    colour mode is open: the current colour of each slot, a slider editor per slot, colour
+   //    color mode is open: the current color of each slot, a slider editor per slot, color
    //    schemes (starter, yours, imported) with preview, accept, cancel, save, import and export.
    // Inputs: ColorInitializationData (slot tabs), ColorSelectionData (selected slot, control
    //    and its hue, saturation and brightness), ColorSwatchesHue/Saturation/Brightness (the
@@ -16,8 +16,8 @@ package
    //    Data\Interface\HorizonUI\shipbuilder\schemes\user\ by the DLL, each as a new file.
    // Dependencies: HorizonShipBuilder (send, fileOp, writeShare, keyName, hintEvent, text
    //    input), HsbKit.
-   // Backend limits shown in the panel: the game has no "apply to" choice (colours go to the
-   //    parts selected before colour mode) and no "take from a part"; hex values are worked
+   // Backend limits shown in the panel: the game has no "apply to" choice (colors go to the
+   //    parts selected before color mode) and no "take from a part"; hex values are worked
    //    out from hue, saturation and brightness (marked with ~). Applying a scheme steps the
    //    picker through its slots one frame at a time, waits for the game to confirm each slot
    //    switch, then returns to the slot and control the player had, also when the walk starts
@@ -110,7 +110,7 @@ package
          this.sel = param1;
          var tab:int = int(param1.iSelectedTab);
          // ColorInitializationData.aSelection carries only the tab and control (vanilla reads
-         // nothing else), so a slot colour is kept only when all three values are numbers.
+         // nothing else), so a slot color is kept only when all three values are numbers.
          var hsbNow:Array = [Number(param1.fHue),Number(param1.fSaturation),Number(param1.fBrightness)];
          if(!isNaN(hsbNow[0]) && !isNaN(hsbNow[1]) && !isNaN(hsbNow[2])) { this.slots[tab] = hsbNow; }
          if(this.waitTab >= 0 && tab == this.waitTab) { this.waitTab = -1; }
@@ -126,7 +126,7 @@ package
          this.grads[param1] = param2;
       }
 
-      // Learn every slot's colour once: visit each slot, then return to the one in use.
+      // Learn every slot's color once: visit each slot, then return to the one in use.
       private function discover():void
       {
          if(this.tabs.length == 0) { return; }

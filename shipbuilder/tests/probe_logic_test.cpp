@@ -1245,7 +1245,7 @@ static void CheckMovie(const fs::path& root)
 	Expect(Has(FunctionBody(hub, "send", "internal"), "if(this.debugOn) { this.note(\"SEND \" + param1); }"), "sent events are logged only with Probe=1");
 
 	// Backend gaps are marked in the UI.
-	Expect(Has(colors, "\"Not in the game: colors go to the parts you selected before Colors\""), "the colour target gap is shown");
+	Expect(Has(colors, "\"Not in the game: colors go to the parts you selected before Colors\""), "the color target gap is shown");
 	Expect(Has(colors, "\"~#\" + HsbKit.hex6("), "a worked-out hex is marked with ~");
 	Expect(CountOf(editor, "\"note\":\"No game data\"") == 2, "pill rules without game data are marked");
 	Expect(Has(settings, "\"Open Flight Check on errors\",\"autoflight\",false,false,\"No game signal\""), "the Flight Check setting is marked");
@@ -1531,6 +1531,59 @@ static void CheckMovie(const fs::path& root)
 		Has(FunctionBody(kit, "traceLine", "internal"), "\" color=\" + HsbKit.colorOf(t) + \" ink=\" + HsbKit.hex6(t.textColor)") &&
 		Has(FunctionBody(kit, "traceLine", "internal"), "if(head.length + tail.length > 440)"),
 		"every label carries its intended color: text() records it, freshFormat keeps it, labelFormat sets fmt.color");
+	// v5 item 1: outlines are eight closed filled pieces (4 snapped bars, 4 quarter rings), as
+	// the HUD draws them, with the radius held to half the box: no stroke, no two-path fill.
+	{
+		const std::string outline = FunctionBody(kit, "outline", "internal");
+		const std::string quarter = FunctionBody(kit, "quarterRing");
+		Expect(InOrder(outline, {"var x:Number = Math.round(param2);", "var r:Number = Math.max(t,Math.min(param6,w / 2,h / 2));", "param1.lineStyle();",
+				   "param1.drawRect(x + r,y,w - 2 * r,t);", "param1.drawRect(x + r,y + h - t,w - 2 * r,t);", "param1.drawRect(x,y + r,t,h - 2 * r);",
+				   "param1.drawRect(x + w - t,y + r,t,h - 2 * r);", "this.quarterRing(param1,x + r,y + r,r,t,180,param7,a);", "this.quarterRing(param1,x + w - r,y + r,r,t,270,param7,a);",
+				   "this.quarterRing(param1,x + w - r,y + h - r,r,t,0,param7,a);", "this.quarterRing(param1,x + r,y + h - r,r,t,90,param7,a);"}) &&
+				CountOf(outline, "param1.beginFill(") == 4 && CountOf(outline, "param1.endFill();") == 4 &&
+				!Has(outline, "drawRoundRect") && !Has(outline, "lineStyle(param9") &&
+				InOrder(quarter, {"param1.beginFill(param7,param8);", "param1.moveTo(", "i = n;", "param1.lineTo(param2 + Math.cos(param6 * Math.PI / 180) * param4,", "param1.endFill();"}) &&
+				Has(FunctionBody(kit, "card", "internal"), "this.outline(param1,param2,param3,param4,param5,param6,EDGE,Math.min(1,this.opacity + 0.04),1);") &&
+				Has(FunctionBody(browser, "paintPills"), "k.outline(g,x,param3,newW,ph,ph / 2,HsbKit.MUTED,1);") && !Has(browser, "k.dashed(g,x,param3,newW"),
+			"every outline is a closed ring and the New pill has a solid edge");
+	}
+	// v5 item 2: makers come from the card logo (sLogoID) of any described module, are kept by
+	// part name for the session and win over the name guess; the MAKER lines need probe=1.
+	Expect(Has(browser, "\"Deimos\":\"Deimos\"") && Has(browser, "private static const LOGO_PREFIX:String = \"ShipModuleManufacturer\";") &&
+			Has(FunctionBody(browser, "learnMaker"), "var maker:String = makerFromLogo(param1.sLogoID);") &&
+			Has(FunctionBody(browser, "assignMakers"), "r.maker = learned != null ? String(learned) : (maker.length > 0 ? maker : \"Other\");") &&
+			CountOf(browser, "this.hsb.note(\"MAKER ") == 2 && CountOf(browser, "if(this.hsb.debugging) { this.hsb.note(\"MAKER ") == 2 &&
+			Has(hub, "internal function get debugging():Boolean { return this.debugOn; }"),
+		"makers are read from card logos and the maker diagnostics stay behind probe=1");
+	// v5 item 3: values, labels and names each stay inside their own column box.
+	Expect(Has(FunctionBody(browser, "paintCells"), "k.fit(tf,Math.max(12,boxR - boxL + 2));") &&
+			Has(FunctionBody(browser, "paintCells"), "this.add(tf,boxR + 2 - tf.width,param5 + (param6 - tf.height) / 2);") &&
+			!Has(FunctionBody(browser, "paintCells"), "tf.width = 120;") &&
+			Has(FunctionBody(browser, "paintList"), "this.colX(param1,param2,-1,cols.length) - COL_GAP") &&
+			!Has(FunctionBody(browser, "paintList"), "(cells[0] as TextField).textWidth") &&
+			Has(FunctionBody(browser, "paintHeader"), "k.fit(t,Math.max(12,right - prevEnd + 2));"),
+		"list columns never overlap: each value and header is cut to its box, names end before the first box");
+	// v5 items 4 and 5: the stepper row splits at the value's middle and the arrows sit on the
+	// words' middle.
+	Expect(Has(FunctionBody(settings, "valueRow"), "var mid:Number = textLeft + vt.textWidth / 2;") &&
+			!Has(FunctionBody(settings, "valueRow"), "param2 - 70") &&
+			Has(FunctionBody(settings, "valueRow"), "var ay:Number = k.iconY(vt,arrow);") &&
+			Has(FunctionBody(kit, "iconY", "internal"), "param1.getLineMetrics(0)") &&
+			CountOf(browser, "k.iconY(") == 5,
+		"both stepper arrows have their own half of the row and line up with the text");
+	// v5 item 6: the sample strip is never built, even with FontStrip=1.
+	Expect(Has(hub, "private static const FONT_STRIP_BUILT:Boolean = false;") && CountOf(hub, "FONT_STRIP_BUILT") == 2 &&
+			InOrder(FunctionBody(hub, "fontProbe"), {"try { this.noteFields(); }", "if(!FONT_STRIP_BUILT) { return; }", "var asks:Array"}),
+		"the font sample strip is off for good");
+	// v5 item 8: the conflict notice leaves the title and Find row in place; the field has a
+	// clear (x) that empties it like Esc.
+	Expect(InOrder(FunctionBody(browser, "paint", "internal"), {"if(banner) { y = this.paintBanner(w,pad,y,this.stripTopHeight()); }", "y = this.paintStripTop(w,pad,y,banner);"}) &&
+			Has(FunctionBody(browser, "paintStripTop"), "if(!this.upgrade && !param4)") &&
+			InOrder(FunctionBody(browser, "findBox"), {"this.hit(param1,param2,param3,param4,\"find\");", "this.hit(clx - 2,param2,clearS + 4,param4,\"findclear\");"}) &&
+			Has(FunctionBody(browser, "onAct", "override internal"), "case \"findclear\": this.clearFind(); break;") &&
+			Has(FunctionBody(browser, "onKey", "override internal"), "this.clearFind();") &&
+			InOrder(FunctionBody(browser, "clearFind"), {"this.findText = \"\";", "if(this.findOn) { this.stopFind(); }", "this.afterFilter();"}),
+		"Find stays in the panel header under the notice and clears with Esc or its (x)");
 	Expect(Has(FunctionBody(hub, "hotText"), "if(b == null) { i++; continue; }") &&
 		Has(FunctionBody(hub, "takeLines", "public"), "try { this.pushState(); }") &&
 		Has(FunctionBody(hub, "takeLines", "public"), "if(!this.stateNoted)") &&
@@ -1574,7 +1627,7 @@ static void CheckMovie(const fs::path& root)
 			InOrder(FunctionBody(browser, "setSort"), {"this.sortCol = param1;", "this.hsb.setSetting(\"Columns\",this.tabId + \"Sort\",", "this.hsb.saveSettings();", "this.afterFilter();"}),
 		"sorting by name orders the rows by name, and every sort choice is saved so the next PartEntries keeps it");
 	Expect(Has(colors, "var below:Boolean = gap.x + gap.width > w - pad;") && Has(colors, "if(below) { gap.x = bx; gap.y = y + k.u(26) + 4; }"),
-		"the Colours gap marker moves under its button rather than cross the card's edge");
+		"the Colors gap marker moves under its button rather than cross the card's edge");
 	// The plugin refuses a profile write it cannot back up; the player must see that, and the
 	// next change must still be allowed to save.
 	Expect(InOrder(FunctionBody(hub, "savePills", "internal"), {"note(\"PILLS save \" + (param1 ? \"ok\" : \"failed\")",
@@ -1586,7 +1639,7 @@ static void CheckMovie(const fs::path& root)
 				return write != std::string::npos && !Has(body.substr(write), "lockPills(");
 			}(),
 		"a failed pill save is shown on screen and clears on the next save that succeeds");
-	// The browser (and the Colours card, which shares its height) ends 10 px above the hints bar
+	// The browser (and the Colors card, which shares its height) ends 10 px above the hints bar
 	// on both movies: the large movie's bars are taller than the normal movie's.
 	const std::string fit = FunctionBody(browser, "fitHeight", "internal");
 	Expect(Has(fit, "var bars:Number = this.kit.u(HorizonShipBuilder.STATS_HEIGHT) + this.kit.u(HorizonShipBuilder.HINTS_HEIGHT);") &&
@@ -1855,8 +1908,10 @@ static void CheckMovie(const fs::path& root)
 	// Card numbers are cached only for the previewed part while the palette and card are shown.
 	{
 		const std::string learn = FunctionBody(browser, "learn", "internal");
-		Expect(InOrder(learn, {"if(param1 == null || !Boolean(param1.bShowWidget)) { return; }", "if(this.data == null || !Boolean(this.data.bShowWidget)) { return; }",
-				   "if(this.cleanText(param1.sModuleName).toLowerCase() != this.cleanText(r.name).toLowerCase()) { return; }", "row.stats = {};"}),
+		// v5: the maker is read from every card first; the numbers keep the same guard.
+		Expect(InOrder(learn, {"if(param1 == null) { return; }", "var taught:Boolean = this.learnMaker(param1);",
+				   "if(!Boolean(param1.bShowWidget) || this.data == null || !Boolean(this.data.bShowWidget) || r == null || this.cleanText(param1.sModuleName).toLowerCase() != this.cleanText(r.name).toLowerCase())",
+				   "if(taught) { this.rebuild(); this.invalidate(); }", "return;", "row.stats = {};"}),
 			"ModuleInfo for another module never lands on the previewed row");
 		Expect(InOrder(FunctionBody(browser, "onParts", "internal"), {"if(!Boolean(param1.bShowWidget))", "this.previewId = \"\";", "this.nativeSel = \"\";"}),
 			"a closed palette forgets its preview");
@@ -1871,7 +1926,7 @@ static void CheckMovie(const fs::path& root)
 	}
 
 	Expect(Has(colors, "if(!isNaN(hsbNow[0]) && !isNaN(hsbNow[1]) && !isNaN(hsbNow[2])) { this.slots[tab] = hsbNow; }") &&
-		Has(FunctionBody(colors, "clamp01", "private static"), "if(isNaN(param1)) { return 0; }"), "a slot colour is never NaN");
+		Has(FunctionBody(colors, "clamp01", "private static"), "if(isNaN(param1)) { return 0; }"), "a slot color is never NaN");
 	// While a scheme walk runs, sel is the slot the walk is on: a walk started then (another
 	// preview, or Export ending the preview) must still return to the player's slot and control.
 	Expect(Has(FunctionBody(colors, "walking"), "return this.steps.length > 0 || this.waitTab >= 0;") &&
@@ -1881,7 +1936,7 @@ static void CheckMovie(const fs::path& root)
 			InOrder(FunctionBody(colors, "discover"), {"if(!this.walking()) { this.walkHome =", "var home:int = this.walkHome;"}) &&
 			InOrder(FunctionBody(colors, "onAct", "override internal"), {"case \"slot\":", "this.walkHome = at;", "this.steps.push({\"kind\":\"tab\",\"v\":at});"}) &&
 			Has(FunctionBody(colors, "onPress", "override internal"), "this.walkCtl = this.sliderKind;"),
-		"a colour walk started while another runs returns to the player's slot and control, not the walk's");
+		"a color walk started while another runs returns to the player's slot and control, not the walk's");
 	Expect(Has(FunctionBody(ReadFile(as / "HsbDialog.as"), "safeFileName", "internal static"), "return device ? out + \"_\" : out;"),
 		"an exported name is never a Windows device name");
 	// Review B3: an export or a saved scheme never replaces a player's file of the same name.

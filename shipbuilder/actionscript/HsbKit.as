@@ -9,6 +9,7 @@ package
    import flash.geom.Matrix;
    import flash.text.TextField;
    import flash.text.TextFormat;
+   import flash.text.TextLineMetrics;
    import flash.utils.Dictionary;
 
    // Purpose: the builder's whole look in one place: colors measured from the approved gold
@@ -405,6 +406,24 @@ package
 
       // Width fits the text so the next item can sit after it. A text wider than the room ends
       // in an ellipsis (the longest start that fits) instead of being cut through a letter.
+      // Purpose: the y an icon of size param2 takes so its middle meets the middle of the
+      //    capitals and digits in param1 (a field's own middle sits lower, over the descender
+      //    room), so arrows line up with the words beside them.
+      // Inputs: a placed TextField, the icon size. Outputs: the icon's top y.
+      internal function iconY(param1:TextField, param2:Number):Number
+      {
+         var size:Number = Number(param1.defaultTextFormat.size);
+         if(!(size > 0)) { size = 14; }
+         var asc:Number = size * 0.95;
+         try
+         {
+            var m:TextLineMetrics = param1.getLineMetrics(0);
+            if(m != null && m.ascent > 0) { asc = m.ascent; }
+         }
+         catch(e:Error) { }
+         return Math.round(param1.y + 2 + asc - size * 0.36 - param2 / 2);
+      }
+
       internal function fit(param1:TextField, param2:Number = 0):Number
       {
          param1.width = Math.max(4,param1.textWidth + 6);
@@ -575,13 +594,13 @@ package
       // Glass card: graphite fill at the card opacity and a 1 px edge, radius 14 as drawn.
       internal function card(param1:Graphics, param2:Number, param3:Number, param4:Number, param5:Number, param6:Number = 14):void
       {
+         // The body, then the edge as a closed 1 px ring on top (it was a larger rect showing
+         // around the body, which let the edge thin out or vanish at the corners).
          param1.lineStyle();
-         param1.beginFill(EDGE,Math.min(1,this.opacity + 0.04));
+         param1.beginFill(FILL,this.opacity);
          param1.drawRoundRect(param2,param3,param4,param5,param6 * 2,param6 * 2);
          param1.endFill();
-         param1.beginFill(FILL,this.opacity);
-         param1.drawRoundRect(param2 + 1,param3 + 1,param4 - 2,param5 - 2,param6 * 2 - 2,param6 * 2 - 2);
-         param1.endFill();
+         this.outline(param1,param2,param3,param4,param5,param6,EDGE,Math.min(1,this.opacity + 0.04),1);
       }
 
       internal function fill(param1:Graphics, param2:Number, param3:Number, param4:Number, param5:Number, param6:Number, param7:uint, param8:Number = 1):void
@@ -593,11 +612,64 @@ package
          param1.endFill();
       }
 
+      // Purpose: a closed rounded outline of param9 thickness, drawn as eight separate filled
+      //    pieces (4 pixel-snapped bars + 4 quarter rings), no strokes and no even-odd fill. A
+      //    stroked drawRoundRect sat on half pixels, asked for corners larger than the box (radius
+      //    h/2 on a box h - 1 tall) and lost its right edge in Scaleform (its path starts and ends
+      //    there), which left gaps on the builder's buttons. This is the ring the Horizon HUD
+      //    settled on (hz34Ring / hz36RingG); a two-path ring in one fill leaks a wedge there.
+      // Inputs: graphics, x, y, w, h, corner radius, color, alpha, thickness.
       internal function outline(param1:Graphics, param2:Number, param3:Number, param4:Number, param5:Number, param6:Number, param7:uint, param8:Number = 1, param9:Number = 1):void
       {
-         param1.lineStyle(param9,param7,param8,true);
-         param1.drawRoundRect(param2 + 0.5,param3 + 0.5,param4 - 1,param5 - 1,param6 * 2,param6 * 2);
+         var t:Number = param9 > 0 ? param9 : 1;
+         var x:Number = Math.round(param2);
+         var y:Number = Math.round(param3);
+         var w:Number = Math.round(param2 + param4) - x;
+         var h:Number = Math.round(param3 + param5) - y;
+         if(param8 <= 0 || w <= t * 2 || h <= t * 2) { return; }
+         var r:Number = Math.max(t,Math.min(param6,w / 2,h / 2));
+         var a:Number = Math.min(1,param8);
          param1.lineStyle();
+         if(w - 2 * r > 0)
+         {
+            param1.beginFill(param7,a); param1.drawRect(x + r,y,w - 2 * r,t); param1.endFill();
+            param1.beginFill(param7,a); param1.drawRect(x + r,y + h - t,w - 2 * r,t); param1.endFill();
+         }
+         if(h - 2 * r > 0)
+         {
+            param1.beginFill(param7,a); param1.drawRect(x,y + r,t,h - 2 * r); param1.endFill();
+            param1.beginFill(param7,a); param1.drawRect(x + w - t,y + r,t,h - 2 * r); param1.endFill();
+         }
+         this.quarterRing(param1,x + r,y + r,r,t,180,param7,a);
+         this.quarterRing(param1,x + w - r,y + r,r,t,270,param7,a);
+         this.quarterRing(param1,x + w - r,y + h - r,r,t,0,param7,a);
+         this.quarterRing(param1,x + r,y + h - r,r,t,90,param7,a);
+      }
+
+      // One corner of outline(): the outer arc out, the inner arc back, one closed fill.
+      private function quarterRing(param1:Graphics, param2:Number, param3:Number, param4:Number, param5:Number, param6:Number, param7:uint, param8:Number):void
+      {
+         var n:int = 8;
+         var ri:Number = Math.max(0,param4 - param5);
+         var i:int = 0;
+         var ang:Number = 0;
+         param1.beginFill(param7,param8);
+         while(i <= n)
+         {
+            ang = (param6 + 90 * i / n) * Math.PI / 180;
+            if(i == 0) { param1.moveTo(param2 + Math.cos(ang) * param4,param3 + Math.sin(ang) * param4); }
+            else { param1.lineTo(param2 + Math.cos(ang) * param4,param3 + Math.sin(ang) * param4); }
+            i++;
+         }
+         i = n;
+         while(i >= 0)
+         {
+            ang = (param6 + 90 * i / n) * Math.PI / 180;
+            param1.lineTo(param2 + Math.cos(ang) * ri,param3 + Math.sin(ang) * ri);
+            i--;
+         }
+         param1.lineTo(param2 + Math.cos(param6 * Math.PI / 180) * param4,param3 + Math.sin(param6 * Math.PI / 180) * param4);
+         param1.endFill();
       }
 
       // Dashed rounded outline, used by pills that are off and by "+ New pill". Corners are

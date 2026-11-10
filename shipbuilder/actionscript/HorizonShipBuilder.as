@@ -72,6 +72,8 @@ package
       private static const LOG_CAP:int = 200;
       // Private font strip height: two probe rows, then one row of clone cells.
       private static const FONT_STRIP_H:Number = 58;
+      // Off for good: no build draws the sample strip (see fontProbe).
+      private static const FONT_STRIP_BUILT:Boolean = false;
       // Private clone cells (FontStrip=1 only): each asks for the vanilla face a different way.
       private static const CLONE_KINDS:Array = ["c1","c2","c3","c3n","c3g","c4","c5","exo","lbl"];
 
@@ -105,6 +107,9 @@ package
       private var faceTries:int;
       private var facePick:String;
       private var debugOn:Boolean;
+
+      // probe=1 diagnostics, for the other parts of the builder.
+      internal function get debugging():Boolean { return this.debugOn; }
 
       internal var accent:int = 9;
       internal var accentHex:String = "";
@@ -1007,6 +1012,10 @@ package
          // The menu-open field lines (FONT field, FONT vanilla) log here, so only with FontStrip=1.
          try { this.noteFields(); }
          catch(err0:Error) { this.note("FONT err=fields " + this.errText(err0)); }
+         // The black strip of sample cells is never built now, even with FontStrip=1 (which the
+         // private test package writes): the face question it answered is settled. FontStrip=1
+         // still logs the field lines above; the cell and step lines need the strip and stay off.
+         if(!FONT_STRIP_BUILT) { return; }
          var asks:Array = PROBE_FACES.concat(["NB Grotesk R Bold","Roboto Bold","Exo 2 Bold"]);
          var tags:Array = PROBE_TAGS.concat(["NBBold+","RobotoB+","Exo2B+"]);
          var cols:int = asks.length;
@@ -1655,7 +1664,7 @@ package
 
       // Purpose: the accent in use. Follow uses the HUD's own index and hex (read by the DLL from
       //    the HUD ini) when the HUD is installed; otherwise the builder's own choice.
-      // Inputs: none. Outputs: an RGB colour. Dependencies: ACCENTS (the HUD's palette order).
+      // Inputs: none. Outputs: an RGB color. Dependencies: ACCENTS (the HUD's palette order).
       internal function accentColor():uint
       {
          var i:int = this.accent;
@@ -1674,7 +1683,7 @@ package
          return uint(ACCENTS[i]);
       }
 
-      // Re-applies colours, opacity and scale everywhere after a settings change.
+      // Re-applies colors, opacity and scale everywhere after a settings change.
       internal function restyle():void
       {
          if(this.kit == null) { return; }
@@ -1827,7 +1836,7 @@ package
       }
 
       // Purpose: find the event of a hint the game shows right now (for buttons that must do
-      //    exactly what a game hint does, such as accepting colours).
+      //    exactly what a game hint does, such as accepting colors).
       // Inputs: candidate event names in order of preference. Outputs: the first displayed
       //    hint's event that matches, or "" when the game shows none of them.
       // Dependencies: ShipBuilderHelpList (dHelp).
@@ -2251,7 +2260,7 @@ package
          }
       }
 
-      // Colours share the browser's slot; Flight Check shares the card's.
+      // Colors share the browser's slot; Flight Check shares the card's.
       internal function boxesFor(param1:String):Array
       {
          switch(param1)

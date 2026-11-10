@@ -311,7 +311,11 @@ package
          return param3 + h;
       }
 
-      // Values show plain, as drawn; arrows appear on the hovered or focused row.
+      // Values show plain, as drawn; arrows appear on the hovered or focused row. The value sits
+      // between its two arrows, which are centered on the value's text; the row splits at the
+      // middle of the value, so the left arrow (and the label) step down and the right arrow
+      // steps up. The split used to sit 70 px from the right edge, which put the left arrow
+      // inside the "more" area, so both arrows stepped up.
       private function valueRow(param1:Number, param2:Number, param3:Number, param4:String, param5:String, param6:String, param7:Number, param8:Number):Number
       {
          var k:HsbKit = this.kit;
@@ -323,15 +327,23 @@ package
          var live:Boolean = this.hoverRow == param6 || (focused != null && String(focused.data) == param6);
          var vt:TextField = k.text(14,HsbKit.TEXT,false,0,"right");
          k.put(vt,param5);
-         vt.width = 120;
-         var vx:Number = param2 - (live ? 18 : 0) - 120;
-         this.add(vt,vx,param3);
+         k.fit(vt,120);
+         var arrow:Number = 14;
+         var gap:Number = 6;
+         var rightArrowX:Number = param2 - arrow;
+         var valueRight:Number = rightArrowX - gap;
+         var vx:Number = valueRight + 2 - vt.width;
+         var vy:Number = param3 + (h - vt.height) / 2;
+         this.add(vt,vx,vy);
+         var textLeft:Number = valueRight - vt.textWidth;
+         var leftArrowX:Number = textLeft - gap - arrow;
+         var ay:Number = k.iconY(vt,arrow);
          if(live)
          {
-            k.icon(g,"chevL",vx + 120 - vt.textWidth - 22,param3 + (h - 14) / 2,14,k.accent,1);
-            k.icon(g,"chevR",param2 - 14,param3 + (h - 14) / 2,14,k.accent,1);
+            k.icon(g,"chevL",leftArrowX,ay,arrow,k.accent,1);
+            k.icon(g,"chevR",rightArrowX,ay,arrow,k.accent,1);
          }
-         var mid:Number = param2 - 70;
+         var mid:Number = textLeft + vt.textWidth / 2;
          this.hit(param1 - 4,param3,mid - param1 + 4,h,"less",param6);
          this.hit(mid,param3,param2 - mid + 4,h,"more",param6);
          return param3 + h;
