@@ -478,7 +478,7 @@ function psDrive(h) {
 		/^var p26:Number = this\.hzPerfOn \? this\.hzPsT : 0;$/,
 		/^var tQs:Number = 0;$/,
 		/^if\(this\.hzPerfOn\) \{ tQs = this\.hzPerfNow\(\); this\.hzRgPush\(4,tQs,0\); \}$/,
-		/^if\(this\.hzPerfOn\) \{ this\.hzPc(HideRb|Find|Fmt|StHide|QsSkip|QsRun)\+\+; \}$/,
+		/^if\(this\.hzPerfOn\) \{ this\.hzPc(HideRb|Find|Fmt|StHide|QsSkip|QsRun|WcSkip)\+\+; \}$/,
 		/^if\(this\.hzPerfOn\) \{ this\.hzPcBlgCh \+= bi; \}$/
 	];
 	let lines = 0;
@@ -491,7 +491,7 @@ function psDrive(h) {
 			if (!allowed.some((r) => r.test(l))) { bad++; console.error("  unexpected parts line in " + name + ": " + l); }
 		}
 	}
-	expect(lines === 58 && bad === 0, "parts source lines are single PerfDiag tests only (" + lines + " lines)");
+	expect(lines === 59 && bad === 0, "parts source lines are single PerfDiag tests only (" + lines + " lines)");
 	for (const pair of [["hzFindByName", "hzPcFind"], ["hzApplyFmt", "hzPcFmt"], ["hz43StHide", "hzPcStHide"]]) {
 		const b = funcBody(as, pair[0]);
 		expect(b.split("this." + pair[1] + "++").length === 2, pair[0] + ": one counter, behind PerfDiag");
