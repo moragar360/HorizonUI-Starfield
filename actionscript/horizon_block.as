@@ -18812,7 +18812,10 @@
       }
       private function hz41LocHide() : void
       {
-         var want:Boolean = this.hz41LocWant();   // r3: hide session (r6: always while scanning, not gated on ScanShowPlanet)
+         // v0.44 r3: the session state always advances (hz41LocWant), but in WatchStyle 1/2 (HideVanillaWatch off) the vanilla
+         // LocationAlertText is not hidden: in Original Vanilla Watch mode the bottom-left group shows what vanilla shows.
+         // A release gives back hz41LocV (the game's own value, captured once per session). Live on F11 both ways.
+         var want:Boolean = this.hz41LocWant() && this.hzHideVanillaWatch && this.hzWatchStyle != 1 && this.hzWatchStyle != 2;   // r3: hide session (r6: always while scanning, not gated on ScanShowPlanet)
          if(!want && !this.hz41LocHid) { return; }
          if(this.hz41LocBlg == null && this.hzBlg != null) { this.hz41LocBlg = this.hzBlg; }
          if(this.hz41LocBlg == null && want && this.hzFrameN % 10 == 1) { this.hz41LocBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0); }
