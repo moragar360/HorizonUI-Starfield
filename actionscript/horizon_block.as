@@ -1268,6 +1268,9 @@
          BSUIDataManager.Subscribe("QuestData",this.hzOnQuestData);
          BSUIDataManager.Subscribe("QuestUpdateData",this.hzOnQuestUpdate);
          BSUIDataManager.Subscribe("PlayerInventoryData",this.hzOnInventory);
+         // alpha option A-N2: the game's HUD opacity value from the very first dispatch (hzBuildEnv runs inside hzBuild, before HUDMenu's own
+         // subscriptions, so it only records the value; the re-hide after the game's write is hz44OnOpacity, added later)
+         if(HZ44_BY_ALPHA) { try { BSUIDataManager.Subscribe("HUDOpacityData",this.hz44OnOpacityEarly); } catch(e44o:Error) { } }
       }
 
       // ---- Quest Tracker card: built from the HUD's mission markers (HudCompassData.aMissionMarkers) ----
@@ -15031,6 +15034,22 @@
       // Compile-time constant (not an INI key): changing it needs a rebuild of the HUD block (Bot 3 r3 N-2).
       // At runtime, [Debug] BlgGroupHide=0 (hz44GrpIni) still turns the whole-group hide off without a rebuild.
       private static const HZ44_ALLOW_UNREPLACED:Boolean = true;
+      // Option (a), R1 (BLG_ALPHA_OPTION.md): true hides the group with alpha = 0 instead of visible = false. The group stays
+      // visible, so with the HUD's noInvisibleAdvance it still advances and runs its frame scripts: the vanilla alert queue
+      // (BottomLeftGroup.as AnimationFinished / PlayNextInQueue) and its sounds keep working. Nothing in it is seen (children
+      // inherit the group's alpha). The game writes the group's alpha only in HUDOpacityData (HUDMenu_1.as:219, every HUD
+      // child set to fHUDOpacity); hz44OnOpacity runs right after that write (subscribed after the game's listener) and
+      // keeps the value for the release. visible is never written in this mode, so the game's HUD-hidden states stay its own.
+      // While hidden the group's mouseEnabled / mouseChildren are false (an alpha-0 clip still takes hit tests) and come
+      // back as they were on release (A-N1). A second, early listener (hzBuildEnv from hzBuild, before the game's) keeps the game's
+      // opacity value from the first dispatch on, so a hide before the first frame tick still releases to the latest
+      // value (A-N2). Cost trade: BLG_ALPHA_OPTION_r2.md.
+      // false: the 56d4098 / r2 visible = false hide.
+      private static const HZ44_BY_ALPHA:Boolean = true;
+      private var hz44GameA:Number = 1;     // alpha mode: the game's alpha for the group (HUDOpacityData), restored on release
+      private var hz44OpSub:Boolean = false; // alpha mode: HUDOpacityData listener added (first frame tick, after the game's)
+      private var hz44GameME:Boolean = true; // alpha mode: the group's own mouseEnabled before the hide, given back on release
+      private var hz44GameMC:Boolean = true; // alpha mode: the group's own mouseChildren before the hide, given back on release
       private function hz44GrpWant() : Boolean
       {
          return HZ44_ALLOW_UNREPLACED && this.hz44GrpIni && this.hzWatchStyle == 0 && this.hzHideVanillaWatch && !this.hzUserHidden
@@ -15040,6 +15059,13 @@
       }
       private function hz44GrpTick(frame:Boolean) : void
       {
+         if(HZ44_BY_ALPHA && frame && !this.hz44OpSub)
+         {
+            // first frame tick: the game's own HUDOpacityData listener (added in onAddedToStage) is already in place, so
+            // this one runs after it in every dispatch (Subscribe = addEventListener on the provider, in order)
+            this.hz44OpSub = true;
+            try { BSUIDataManager.Subscribe("HUDOpacityData",this.hz44OnOpacity); } catch(eOp:Error) { }
+         }
          var want:Boolean = this.hz44GrpWant();
          if(!want && !this.hz44Hid && this.hzBlg != null) { return; }
          var b:DisplayObject = this.hz44Ref;
@@ -15048,7 +15074,10 @@
             var nb:DisplayObject = this.getChildByName("BottomLeftGroup_mc");
             if(nb !== b)
             {
-               if(b != null && this.hz44Hid && b.parent == null) { b.visible = this.hzGroupVisible; }   // a detached old group gets vanilla's value back
+               if(b != null && this.hz44Hid && b.parent == null)   // a detached old group gets vanilla's value back
+               {
+                  if(HZ44_BY_ALPHA) { b.alpha = this.hz44GameA; this.hz44MouseBack(b); } else { b.visible = this.hzGroupVisible; }
+               }
                this.hz44Ref = b = nb;
                this.hz44Hid = false;
             }
@@ -15057,7 +15086,17 @@
          if(this.hzBlg == null) { this.hzBlg = b as DisplayObjectContainer; }   // Bot 3 S1: the per-piece hides and the watchlog need it while grouped
          if(want)
          {
-            if(b.visible) { b.visible = false; }
+            if(HZ44_BY_ALPHA)
+            {
+               if(!this.hz44Hid)
+               {
+                  this.hz44GameA = b.alpha;   // the game's value right before the hide
+                  // A-N1: an alpha-0 clip still takes hit tests; no mouse input reaches the hidden group
+                  try { var mo:Object = b; this.hz44GameME = Boolean(mo.mouseEnabled); this.hz44GameMC = Boolean(mo.mouseChildren); mo.mouseEnabled = false; mo.mouseChildren = false; } catch(eM:Error) { }
+               }
+               if(b.alpha != 0) { b.alpha = 0; }
+            }
+            else if(b.visible) { b.visible = false; }
             if(!this.hz44Hid)
             {
                this.hz44Hid = true;
@@ -15070,9 +15109,29 @@
          if(!this.hz44Hid || !frame) { return; }   // releases wait for the frame tick (see above)
          this.hz44Hid = false;
          this.hz44N++;
-         if(b.visible != this.hzGroupVisible) { b.visible = this.hzGroupVisible; }   // vanilla's own value, not a forced true
+         if(HZ44_BY_ALPHA) { if(b.alpha != this.hz44GameA) { b.alpha = this.hz44GameA; } this.hz44MouseBack(b); }   // the game's alpha (HUD opacity), not a forced 1
+         else if(b.visible != this.hzGroupVisible) { b.visible = this.hzGroupVisible; }   // vanilla's own value, not a forced true
          this.hzHideCache = null;   // the per-piece list comes back this frame
          if(this.hzWlOn) { this.hzWlPush("wl grp t=" + Math.round(this.hzPerfNow()) + " on=0 gv=" + (this.hzGroupVisible ? 1 : 0)); }
+      }
+      // alpha mode, A-N1: the group's own mouse flags back (the game never writes them; captured at the hide)
+      private function hz44MouseBack(b:DisplayObject) : void
+      {
+         try { var mo:Object = b; if(mo.mouseEnabled != this.hz44GameME) { mo.mouseEnabled = this.hz44GameME; } if(mo.mouseChildren != this.hz44GameMC) { mo.mouseChildren = this.hz44GameMC; } } catch(eM:Error) { }
+      }
+      // alpha mode, A-N2: subscribed in hzBuildEnv (from hzBuild), before the game's own listener, so it sees every dispatch from the first
+      // one. It only keeps the value (the game writes the alpha after it); while hidden that is the value for the release.
+      private function hz44OnOpacityEarly(e:FromClientDataEvent) : *
+      {
+         try { var o:Number = Number(e.data.fHUDOpacity); if(!isNaN(o) && this.hz44Hid) { this.hz44GameA = o; } } catch(eO:Error) { }
+      }
+      // alpha mode: the game just set every HUD child's alpha to fHUDOpacity (HUDMenu_1.as:219). Keep it for the release
+      // and re-hide in the same dispatch, before anything renders.
+      private function hz44OnOpacity(e:FromClientDataEvent) : *
+      {
+         if(!this.hz44Hid) { return; }
+         try { var o:Number = Number(e.data.fHUDOpacity); if(!isNaN(o)) { this.hz44GameA = o; } } catch(eO:Error) { }
+         try { this.hz44GrpTick(false); } catch(eG:Error) { }
       }
       // ===================== end v0.44 whole-group hide =====================
 

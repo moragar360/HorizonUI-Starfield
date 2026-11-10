@@ -92,7 +92,7 @@ function gHost() {
 		hud: hud, blg: blg, hz44GrpIni: true, hz44Hid: false, hz44Ref: null, hz44Skip: null, hz44N: 0, hzWlOn: false,
 		hzWatchStyle: 0, hzHideVanillaWatch: true, hzUserHidden: false, hzShowAfflictions: true, hzShowPlanet: true, hzHazardAlert: true,
 		hzStealthOn: true, hzEnemyBarOn: true, hzEdgePulse: true, hzGroupVisible: true, hzHideCache: [], now: 0,
-		HZ44_ALLOW_UNREPLACED: true, HorizonAffl_mc: {}, hzCompact: false, hzRuleAffl: 6, hzRulePlanet: 0, hzPlanPill: {},
+		HZ44_ALLOW_UNREPLACED: true, HZ44_BY_ALPHA: false, hz44GameA: 1, hz44OpSub: false, hz44GameME: true, hz44GameMC: true, HorizonAffl_mc: {}, hzCompact: false, hzRuleAffl: 6, hzRulePlanet: 0, hzPlanPill: {},
 		HorizonStealth_mc: {}, HorizonEnemy_mc: {}, HorizonEdge_mc: {}, hzBlg: null,
 		HZ27_BIO_NAMES: ["BioAlertText", "BioCondition_mc", "BioAlertBG_mc"], hz27BioMine: [null, null, null], hz27BioHid: false, hz31DetHid: false, hz31DetC: null, hz31DetA: 1
 	});
@@ -359,7 +359,114 @@ function kidsState(h) { return h.blg.kids.map((k) => k.name + ":" + k.visible + 
 	expect(/case "blggrouphide": this\.hz44GrpIni = bv; break;/.test(as) && /private var hz44GrpIni:Boolean = true;/.test(as), "INI: BlgGroupHide, on unless set to 0 (rollback)");
 	const dflt = fs.readFileSync(path.join(root, "Interface", "HorizonUI", "HorizonUI.default.ini"), "utf8");
 	expect(!/blggrouphide/i.test(dflt), "production default INI unchanged (no new key)");
-	expect(fnText(as, "hz44GrpTick").body.indexOf(".alpha") < 0, "the group hide never writes alpha");
+	expect(/private static const HZ44_BY_ALPHA:Boolean = true;/.test(as), "option (a): the alpha hide is on in this build (HZ44_BY_ALPHA true)");
+}
+
+// ---- 1b. option (a): hide by alpha = 0 (R1: the vanilla alert queue keeps running) ----
+{
+	const subs = [];
+	const aHost = () => { const h = gHost(); h.HZ44_BY_ALPHA = true; h.BSUIDataManager = { Subscribe: (n, f) => subs.push(n) }; bindAll(h, as, ["hz44OnOpacity", "hz44MouseBack"]); return h; };
+	const h = aHost();
+	h.blg.alpha = 0.8;   // the game's HUD opacity (HUDOpacityData)
+	const kids0 = kidsState(h);
+	h.hz44GrpTick(true);
+	expect(h.blg.alpha === 0 && h.blg.visible === true && h.hz44Hid && h.hz44GameA === 0.8 && kidsState(h) === kids0,
+		"alpha mode: the group is hidden with alpha 0, stays visible (it still advances and runs its frame scripts), children untouched, the game's alpha kept");
+	expect(subs.join() === "HUDOpacityData" && h.hz44OpSub, "alpha mode: HUDOpacityData listener added once, in the first frame tick");
+	for (let f = 0; f < 5; f++) h.hz44GrpTick(true);
+	expect(subs.length === 1, "alpha mode: subscribed only once");
+	// the game's opacity write (HUDMenu_1.as:219) while hidden, then our listener in the same dispatch
+	h.blg.alpha = 0.6; h.hz44OnOpacity({ data: { fHUDOpacity: 0.6 } });
+	expect(h.blg.alpha === 0 && h.hz44GameA === 0.6, "game opacity write while hidden: re-hidden in the same dispatch, new game value kept for the release");
+	// HudModeData hides the group (menu): visible is the game's own; alpha mode never writes visible
+	hudMode(h, false);
+	expect(h.blg.visible === false && h.blg.alpha === 0, "game HUD-hidden state (visible false) is left to the game");
+	hudMode(h, true);
+	expect(h.blg.visible === true && h.blg.alpha === 0, "game shows the group again: still hidden by alpha");
+	// F11 -> VANILLA: release restores the game's alpha (0.6), not 1
+	setStyle(h, 1); h.hz44GrpTick(false);
+	expect(h.blg.alpha === 0 && h.hz44Hid, "release waits for the frame tick (per-piece list in the same frame)");
+	h.hz44GrpTick(true);
+	expect(h.blg.alpha === 0.6 && !h.hz44Hid && h.blg.visible === true, "F11 -> VANILLA: the group comes back at the game's own alpha (0.6, not a forced 1)");
+	h.hz44OnOpacity({ data: { fHUDOpacity: 0.9 } });
+	expect(h.hz44GameA === 0.6, "not hidden: the listener does nothing");
+	setStyle(h, 0); h.blg.alpha = 0.9; h.hz44GrpTick(true);
+	expect(h.blg.alpha === 0 && h.hz44GameA === 0.9, "F11 -> OFF: hidden again, the current game alpha captured (live, both ways)");
+	// release while the game has the HUD hidden: visible stays false, alpha back to the game's
+	hudMode(h, false); setStyle(h, 2); h.hz44GrpTick(true);
+	expect(h.blg.visible === false && h.blg.alpha === 0.9, "release in a game HUD-hidden state: visible stays the game's false, alpha the game's 0.9");
+	// detached group (HUD rebuild): the old one gets the game's alpha back, the new one is hidden
+	const h2 = aHost(); h2.blg.alpha = 0.7; h2.hz44GrpTick(true);
+	const old = h2.blg; remove(old); const nb = add(h2.hud, Clip("BottomLeftGroup_mc", true)); h2.blg = nb; nb.alpha = 0.7;
+	h2.hz44GrpTick(true);
+	expect(old.alpha === 0.7 && nb.alpha === 0 && h2.hz44Ref === nb, "alpha mode, group replaced: the old one restored to the game's alpha, the new one hidden");
+	// random sequence: at render the group alpha is 0 exactly when wanted, else the game's last value; visible is always the game's
+	const r = rng(4410); const h3 = aHost(); let game = 1, bad = "";
+	for (let f = 0; f < 4000 && !bad; f++) {
+		const q = r();
+		if (q < 0.05) setStyle(h3, Math.floor(r() * 5));
+		else if (q < 0.08) h3.hzShowAfflictions = r() < 0.5;
+		else if (q < 0.11) hudMode(h3, r() < 0.7);
+		else if (q < 0.14) { game = Math.round(r() * 10) / 10; h3.blg.alpha = game; h3.hz44OnOpacity({ data: { fHUDOpacity: game } }); }
+		h3.hz44GrpTick(true); h3.hz44GrpTick(false);
+		const want = h3.hz44GrpWant();
+		if (h3.blg.alpha !== (want ? 0 : game) || h3.blg.visible !== h3.hzGroupVisible) bad = "frame " + f;
+	}
+	expect(!bad, "alpha mode, 4000 random frames (F11, cards, game HUD modes, game opacity writes): alpha 0 exactly when wanted, else the game's value; visible always the game's" + (bad ? " -- " + bad : ""));
+	expect(fnText(as, "hz44OnOpacity").body.indexOf(".visible") < 0 && /if\(HZ44_BY_ALPHA\) \{ if\(b\.alpha != this\.hz44GameA\)/.test(as), "alpha mode never writes visible on the group");
+	// R1 reasoning pin: the vanilla queue's frame scripts are on the group's own timeline (vanilla class), and the HUD skips advancing invisible clips
+	const hm = fs.readFileSync(path.join(root, "actionscript", "HUDMenu_1.as"), "utf8");
+	expect(/Extensions\.noInvisibleAdvance = true;/.test(hm) && /_loc3_\.alpha = param1\.data\.fHUDOpacity;/.test(hm), "host: noInvisibleAdvance is on (why visible=false holds the queue) and HUDOpacityData is the game's only alpha write on HUD children");
+}
+
+// ---- 1c. alpha option r2: A-N1 mouse off while hidden, A-N2 early opacity listener ----
+{
+	const subs = [];
+	const aHost = () => { const h = gHost(); h.HZ44_BY_ALPHA = true; h.BSUIDataManager = { Subscribe: (n, f) => subs.push(n) }; bindAll(h, as, ["hz44OnOpacity", "hz44OnOpacityEarly", "hz44MouseBack"]); h.blg.mouseEnabled = true; h.blg.mouseChildren = false; return h; };
+	// A-N1
+	const h = aHost(); h.blg.alpha = 0.8;
+	h.hz44GrpTick(true);
+	expect(h.blg.mouseEnabled === false && h.blg.mouseChildren === false && h.hz44GameME === true && h.hz44GameMC === false, "A-N1: while hidden the group takes no mouse input; the game's own flags are kept (true / false)");
+	const kidsM = kidsState(h);
+	setStyle(h, 1); h.hz44GrpTick(true);
+	expect(h.blg.mouseEnabled === true && h.blg.mouseChildren === false && h.blg.alpha === 0.8 && kidsState(h) === kidsM, "A-N1: release gives back the game's own mouse flags (true / false, not forced), alpha 0.8, children untouched");
+	setStyle(h, 0); h.hz44GrpTick(true); setStyle(h, 2); h.hz44GrpTick(true);
+	expect(h.blg.mouseEnabled === true && h.blg.mouseChildren === false, "A-N1: F11 both ways again: same flags back");
+	const h2 = aHost(); h2.hz44GrpTick(true); const old = h2.blg; remove(old);
+	const nb = add(h2.hud, Clip("BottomLeftGroup_mc", true)); nb.mouseEnabled = true; nb.mouseChildren = true; h2.blg = nb; h2.hz44GrpTick(true);
+	expect(old.mouseEnabled === true && old.mouseChildren === false && nb.mouseEnabled === false && nb.mouseChildren === false, "A-N1: group replaced while hidden: the old one gets its flags back, the new one is mouse-off");
+	const hv = gHost(); hv.blg.mouseEnabled = true; hv.blg.mouseChildren = true; hv.hz44GrpTick(true); setStyle(hv, 1); hv.hz44GrpTick(true);
+	expect(hv.blg.mouseEnabled === true && hv.blg.mouseChildren === true && hv.blg.visible === true, "A-N1: the visible=false path (HZ44_BY_ALPHA false) does not touch the mouse flags");
+	// A-N2: a hide from the HudModeData hook before the first frame tick, then an opacity change in that window
+	subs.length = 0;
+	const h3 = aHost(); h3.blg.alpha = 1;
+	h3.hz44GrpTick(false);   // HudModeData hook: hidden, no frame tick yet, so no late listener
+	expect(h3.hz44Hid && h3.blg.alpha === 0 && subs.length === 0, "A-N2 setup: hidden from the HudModeData hook before any frame tick (late listener not added yet)");
+	h3.hz44OnOpacityEarly({ data: { fHUDOpacity: 0.6 } }); h3.blg.alpha = 0.6;   // early listener, then the game's write
+	expect(h3.hz44GameA === 0.6, "A-N2: the early listener keeps the game's new opacity while hidden");
+	h3.hz44GrpTick(false);   // exit-frame re-hide
+	expect(h3.blg.alpha === 0, "A-N2: the exit-frame tick re-hides after the game's write");
+	setStyle(h3, 1); h3.hz44GrpTick(true);
+	expect(h3.blg.alpha === 0.6, "A-N2: release gives the latest game value (0.6), not the value from before the window (1)");
+	const h4 = aHost(); h4.hz44GameA = 0.5; h4.hz44OnOpacityEarly({ data: { fHUDOpacity: 0.3 } });
+	expect(h4.hz44GameA === 0.5, "A-N2: not hidden: the early listener writes nothing (the hide captures b.alpha)");
+	const hb = fnText(as, "hzBuildEnv").body;
+	expect(/if\(HZ44_BY_ALPHA\) \{ try \{ BSUIDataManager\.Subscribe\("HUDOpacityData",this\.hz44OnOpacityEarly\); \}/.test(hb), "A-N2: the early listener is subscribed in hzBuildEnv, called from hzBuild (before HUDMenu's own subscriptions), only in alpha mode");
+	const ee = fnText(as, "hz44OnOpacityEarly").body;
+	expect(ee.indexOf(".alpha") < 0 && ee.indexOf("hz44GrpTick") < 0, "A-N2: the early listener writes no alpha (the game writes after it); the re-hide stays with the late listener and the exit-frame tick");
+	// random sequence with both listeners and the mouse flags
+	const r = rng(4420); const h5 = aHost(); let game = 1, bad = "";
+	for (let f = 0; f < 4000 && !bad; f++) {
+		const q = r();
+		if (q < 0.05) setStyle(h5, Math.floor(r() * 5));
+		else if (q < 0.08) h5.hzShowAfflictions = r() < 0.5;
+		else if (q < 0.11) hudMode(h5, r() < 0.7);
+		else if (q < 0.14) { game = Math.round(r() * 10) / 10; h5.hz44OnOpacityEarly({ data: { fHUDOpacity: game } }); h5.blg.alpha = game; if (h5.hz44OpSub) h5.hz44OnOpacity({ data: { fHUDOpacity: game } }); }
+		h5.hz44GrpTick(true); h5.hz44GrpTick(false);
+		const want = h5.hz44GrpWant();
+		if (h5.blg.alpha !== (want ? 0 : game) || h5.blg.visible !== h5.hzGroupVisible || h5.blg.mouseEnabled !== !want || h5.blg.mouseChildren !== false) bad = "frame " + f;
+	}
+	expect(!bad, "alpha r2, 4000 random frames: alpha 0 and mouse off exactly when wanted, else the game's alpha and flags; visible always the game's" + (bad ? " -- " + bad : ""));
 }
 
 // ---- 2. rebuild list and walk ----
