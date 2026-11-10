@@ -9,6 +9,7 @@ package
    import flash.geom.Matrix;
    import flash.text.TextField;
    import flash.text.TextFormat;
+   import flash.utils.Dictionary;
 
    // Purpose: the builder's whole look in one place: colors measured from the approved gold
    //    mockups, text on one embedded face (Exo 2 SemiBold, else the editor's own), panel and control shapes, vector icons, and the
@@ -75,6 +76,9 @@ package
       internal var faceFallback:Boolean = false;
       internal var faceNote:String = "";
       private var fields:Array = [];
+      // Each label's intended color (text()'s color, or put()'s override), keyed by field with
+      // weak keys. freshFormat reads it first, so a label never depends on the getter for color.
+      private var inks:Dictionary = new Dictionary(true);
       // One real label's setup, read back after each step (FontStrip=1 only: armTrace is called
       // from the strip). Off, it costs one null test per call.
       private var traceArmed:Boolean = false;
@@ -131,6 +135,7 @@ package
          tf.selectable = false;
          tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;
          this.step(tf,"embed");
+         this.inks[tf] = param2;
          var fmt:TextFormat = this.format(param1,param2,param3,param4,param5);
          tf.defaultTextFormat = fmt;
          this.step(tf,"default");
@@ -286,6 +291,9 @@ package
       internal function labelFormat(param1:String, param2:Number, param3:uint, param4:Number, param5:String):TextFormat
       {
          var fmt:TextFormat = new TextFormat(param1 != null && param1.length > 0 ? param1 : null,param2,param3);
+         // Color as a property, as the white strip cells set it (c1, c2, c4) and as 1fc690c did:
+         // the label path passed it only through the constructor, and the labels drew black.
+         fmt.color = param3;
          fmt.letterSpacing = param4;
          fmt.align = param5;
          return fmt;
@@ -306,7 +314,7 @@ package
             if(old != null)
             {
                if(old.size != null) { size = Number(old.size); }
-               if(old.color != null) { color = uint(old.color); }
+               if(old.color != null && this.inks[param1] == undefined) { color = uint(old.color); }
                if(old.letterSpacing != null) { spacing = Number(old.letterSpacing); }
                if(old.align != null && String(old.align).length > 0) { align = String(old.align); }
             }
@@ -314,7 +322,8 @@ package
          catch(err:Error) { size = 0; }
          if(isNaN(size) || size <= 0) { size = this.size(13); }
          if(isNaN(spacing)) { spacing = 0; }
-         if(param2 >= 0) { color = uint(param2); }
+         if(this.inks[param1] != undefined) { color = uint(this.inks[param1]); }
+         if(param2 >= 0) { color = uint(param2); this.inks[param1] = color; }
          return this.labelFormat(this.face,size,color,spacing,align);
       }
 
@@ -357,6 +366,18 @@ package
          return s.length > 32 ? s.substring(0,32) : s;
       }
 
+      // The color a field's format reports, as six hex digits ("-" when unset).
+      internal static function colorOf(param1:TextField):String
+      {
+         try
+         {
+            var f:TextFormat = param1.text != null && param1.text.length > 0 ? param1.getTextFormat() : param1.defaultTextFormat;
+            if(f != null && f.color != null) { return HsbKit.hex6(uint(f.color)); }
+         }
+         catch(err:Error) { return "x" + err.errorID; }
+         return "-";
+      }
+
       // "" until armTrace; then the traced label's steps and its state now, capped at 440.
       internal function traceLine():String
       {
@@ -365,7 +386,11 @@ package
          var t:TextField = this.traceTf;
          var n:int = t.text != null ? t.text.length : 0;
          var per:String = n > 0 ? (t.textWidth / n).toFixed(2) : "-";
-         var line:String = "FONT label steps=" + this.traceSteps.join("|") + " now=" + HsbKit.fontOf(t) + " w=" + int(t.textWidth) + " n=" + n + " per=" + per + " embed=" + (t.embedFonts ? 1 : 0) + " stage=" + (t.stage != null ? 1 : 0);
+         var tail:String = " now=" + HsbKit.fontOf(t) + " w=" + int(t.textWidth) + " n=" + n + " per=" + per + " embed=" + (t.embedFonts ? 1 : 0) + " stage=" + (t.stage != null ? 1 : 0) + " color=" + HsbKit.colorOf(t) + " ink=" + HsbKit.hex6(t.textColor) + " want=" + (this.inks[t] != undefined ? HsbKit.hex6(uint(this.inks[t])) : "-");
+         var head:String = "FONT label steps=" + this.traceSteps.join("|");
+         // The steps give way first, so the state and the colors always fit the 440 cap.
+         if(head.length + tail.length > 440) { head = head.substring(0,Math.max(17,440 - tail.length)); }
+         var line:String = head + tail;
          return line.length > 440 ? line.substring(0,440) : line;
       }
 

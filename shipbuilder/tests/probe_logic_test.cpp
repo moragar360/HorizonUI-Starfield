@@ -96,6 +96,17 @@ static bool NoFlagWrites(const std::string& body)
 	return true;
 }
 
+// True when a label body never forces a black or empty color onto a format (v4: the labels
+// drew black when the color reached the format only through the constructor).
+static bool NoBlackInk(const std::string& body)
+{
+	for(const char* bad : {"color = 0;", "color = 0x0;", "color = 0x000000", "color = null", "color:uint = 0;", "color:uint = 0x000000;", "[\"color\"]", "['color']", "delete this.inks"})
+	{
+		if(body.find(bad) != std::string::npos) { return false; }
+	}
+	return true;
+}
+
 static bool InOrder(const std::string& text, const std::vector<std::string>& parts)
 {
 	std::size_t at = 0;
@@ -1500,6 +1511,26 @@ static void CheckMovie(const fs::path& root)
 		!Has(FunctionBody(hub, "noteFieldsLate"), "rows.length == 0") &&
 		Has(FunctionBody(kit, "fieldReport", "internal"), "out.push(\"FONT field kind=\" + kind + \" font=\""),
 		"the one-shot field report ignores the strip's lbl cell and waits for real panel fields");
+	// v4: every label carries its intended color as a format property. text() records the
+	// caller's color per field; freshFormat (put, refreshFaces) takes that record first, then
+	// put()'s override, and only then the getter's value; labelFormat sets fmt.color after the
+	// constructor, the way the white strip cells (c1, c2, c4) and 1fc690c set it.
+	Expect(Has(kit, "import flash.utils.Dictionary;") && Has(kit, "private var inks:Dictionary = new Dictionary(true);") &&
+		InOrder(FunctionBody(kit, "labelFormat", "internal"), {"var fmt:TextFormat = new TextFormat(", "fmt.color = param3;", "fmt.letterSpacing = param4;", "return fmt;"}) &&
+		InOrder(FunctionBody(kit, "text", "internal"), {"this.inks[tf] = param2;", "var fmt:TextFormat = this.format(param1,param2,param3,param4,param5);", "tf.defaultTextFormat = fmt;"}) &&
+		InOrder(FunctionBody(kit, "freshFormat", "internal"), {"var color:uint = TEXT;", "if(old.color != null && this.inks[param1] == undefined) { color = uint(old.color); }",
+			"if(this.inks[param1] != undefined) { color = uint(this.inks[param1]); }", "if(param2 >= 0) { color = uint(param2); this.inks[param1] = color; }",
+			"return this.labelFormat(this.face,size,color,spacing,align);"}) &&
+		Has(FunctionBody(kit, "put", "internal"), "var fmt:TextFormat = this.freshFormat(param1,param3);") &&
+		Has(FunctionBody(kit, "refreshFaces", "internal"), "var fmt:TextFormat = this.freshFormat(tf,-1);") &&
+		CountOf(kit, "this.labelFormat(") == 2 && CountOf(kit, "this.inks[") == 7 &&
+		NoBlackInk(FunctionBody(kit, "labelFormat", "internal")) && NoBlackInk(FunctionBody(kit, "freshFormat", "internal")) &&
+		NoBlackInk(FunctionBody(kit, "format", "internal")) && NoBlackInk(FunctionBody(kit, "text", "internal")) &&
+		NoBlackInk(FunctionBody(kit, "put", "internal")) && NoBlackInk(FunctionBody(kit, "refreshFaces", "internal")) &&
+		NoBlackInk(FunctionBody(kit, "fit", "internal")) && NoBlackInk(FunctionBody(kit, "putCaps", "internal")) &&
+		Has(FunctionBody(kit, "traceLine", "internal"), "\" color=\" + HsbKit.colorOf(t) + \" ink=\" + HsbKit.hex6(t.textColor)") &&
+		Has(FunctionBody(kit, "traceLine", "internal"), "if(head.length + tail.length > 440)"),
+		"every label carries its intended color: text() records it, freshFormat keeps it, labelFormat sets fmt.color");
 	Expect(Has(FunctionBody(hub, "hotText"), "if(b == null) { i++; continue; }") &&
 		Has(FunctionBody(hub, "takeLines", "public"), "try { this.pushState(); }") &&
 		Has(FunctionBody(hub, "takeLines", "public"), "if(!this.stateNoted)") &&
