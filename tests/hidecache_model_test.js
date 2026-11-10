@@ -300,7 +300,7 @@ function pathOf(c, top) { const p = []; while (c && c !== top) { p.unshift(c.par
 
 // ---- hosts ----
 const FUNCS = ["hzFindByName", "hz43VanSkip", "hz43VanMarkName", "hz43VanInstName", "hz43VanCapClip", "hz43VanRingProof", "hz43VanRingClip",
-	"hz43VanNamed", "hz43VanRootOf", "hz43VanWatchClip", "hz43StHide", "hz43VanNote", "hz43VanRestoreHid", "hz43VanShowClip", "hz43VanGameVis",
+	"hz43VanNamed", "hz43VanRootOf", "hz43VanWatchClip", "hz43StHide", "hz43VanNote", "hz43VanNoteAdd", "hz43VanRestoreHid", "hz43VanShowClip", "hz43VanGameVis",
 	"hz43VanEnvWant", "hz43VanInfoName", "hz43VanHoldsMark", "hz43VanBlgChrome", "hz43VanChrome", "hz43SyncHide", "hz43ShowVanilla"];
 const NEW_ONLY = ["hz43VanOutline", "hz43OlBegin", "hz43OlEnd", "hz43IsMark", "hz43FindMark"];
 const CHANGED = ["hz43VanCapClip", "hz43VanRingProof", "hz43VanHoldsMark", "hz43VanBlgChrome", "hz43VanChrome"];

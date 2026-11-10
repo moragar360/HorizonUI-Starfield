@@ -2245,6 +2245,9 @@
       private var hzPcQsRun:int = 0;         // hzQSync calls that ran the full pass
       private var hzPcTxHit:int = 0;         // hzTxtObj answers from the index (found or not registered)
       private var hzPcTxMiss:int = 0;        // hzTxtObj answers that fell back to the scan
+      private var hzPcHrWalk:int = 0;        // hide-list rebuilds done with one tree walk (hz36HideFindAll)
+      private var hzPcHrFb:int = 0;          // hide-list rebuilds that fell back to the per-name searches after a throw
+      private var hzPcWcSkip:int = 0;        // hz43VanWatchClip repeat checks skipped (hz43StHide, hz43StHideV)
       private var hzDbgCross:String = "";
       private var hzDbgWeap:String = "";
       private var hzDbgText:TextField = null;
@@ -2627,10 +2630,7 @@
             else if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4) { names.push("WatchPointerOutline_mc"); }
             if(this.hzHideVanillaAmmo) { names.push("EquippedWeaponAmmo_mc","EquippedWeaponAmmoTotal_mc","VerticalDivider_mc","EquippedWeaponIconHolder_mc"); }
             if(this.hzHideVanillaHealth) { names.push("HealthBar_mc","HealthBarEmpty_mc","HealthBarGhost_mc","HealthBarDamage_mc","HealthBarIncrease_mc","Health_mc"); }
-            for each(var n:String in names)
-            {
-               try { this.hz36HideFind(this,n,this.hzHideCache); } catch(e36f:Error) { }   // v0.36: parent + name kept
-            }
+            this.hz36HideFindAll(this,names,this.hzHideCache);   // one tree walk for the whole list (same entries, same order)
          }
          if(this.hzPerfOn) { this.hzPsMark(5); }
          try { this.hz36HideTick(); } catch(e36a:Error) { }   // v0.36: hide first, so a throw below can't skip it
@@ -7030,9 +7030,11 @@
 
       // Purpose: the registry entry of a Horizon text field. hzTexts is append-only and every entry is made with its own
       // new TextField, never reassigned, so hzTextTf (entry i's tf, filled lazily) gives the same first match as the
-      // scan with one native indexOf instead of an AS loop over ~200 entries. The hit is checked against hzTexts[i].tf
-      // on every use; anything else falls back to the original scan. Inputs: tf. Outputs: the entry or null.
-      // Author: Moragar. Last modified: 2026-11-09.
+      // scan with one native indexOf instead of an AS loop over ~200 entries. A hit is checked against hzTexts[i].tf on
+      // every use and a stale or null slot falls back to the original scan. A miss (tf not in the index) returns null
+      // without the scan: that answer relies on the same two invariants (append-only, no tf reassignment), which the
+      // source tests pin; code that reassigns an entry's tf or removes entries must drop hzTextTf first.
+      // Inputs: tf. Outputs: the entry or null. Author: Moragar. Last modified: 2026-11-10.
       private function hzTxtObj(tf:TextField) : Object
       {
          var n:int = this.hzTexts.length;
@@ -9179,11 +9181,20 @@
          var n:int = Math.min(3,this.hz27QSubs.length);
          var y0:Number = sub.length > 0 ? 60 : 38;
          var i:int = 0;
-         while(i < n)
+         // The full pass runs these tops inside hz27QLayout under try/catch(Error): an Error here is swallowed the same
+         // way, and the memo is dropped so the next call runs the full pass.
+         try
          {
-            this.hzTxtTop(this.hz27QLD[i],y0 + i * 22);
-            this.hzTxtTop(this.hz27QL[i],y0 + i * 22);
-            i++;
+            while(i < n)
+            {
+               this.hzTxtTop(this.hz27QLD[i],y0 + i * 22);
+               this.hzTxtTop(this.hz27QL[i],y0 + i * 22);
+               i++;
+            }
+         }
+         catch(eQt:Error)
+         {
+            this.hzQsOk = false;
          }
       }
 
@@ -10884,6 +10895,9 @@
          this.hzPcQsRun = 0;
          this.hzPcTxHit = 0;
          this.hzPcTxMiss = 0;
+         this.hzPcHrWalk = 0;
+         this.hzPcHrFb = 0;
+         this.hzPcWcSkip = 0;
       }
       private function hzPbEnd(i:int, t0:Number) : void
       {
@@ -11156,6 +11170,7 @@
          s += " | WatchStyle=" + this.hzWatchStyle + " CrosshairRule=" + this.hzCrossRule + " CrosshairStyle=" + this.hzXhStyle + " TextShadow=" + (this.hzTextShadow ? 1 : 0) + " Compact=" + (this.hzCompact ? 1 : 0) + " NameHover=" + this.hzNameHover + " FontFace=" + this.hzFontFace + " TextScale=" + this.hzTextScale + " HideVanillaWatch=" + (this.hzHideVanillaWatch ? 1 : 0) + " HideVanillaCompass=" + (this.hzHideVanillaCompass ? 1 : 0) + " timerUnsupported=" + (this.hzPerfClockFb ? 1 : 0);
          s += " | hc holds=" + this.hzPcHoldN + " olHit=" + this.hzPcOlHit + " olMiss=" + this.hzPcOlMiss;
          s += " | co qsSkip=" + this.hzPcQsSkip + " qsRun=" + this.hzPcQsRun + " txHit=" + this.hzPcTxHit + " txMiss=" + this.hzPcTxMiss;
+         s += " | hw walk=" + this.hzPcHrWalk + " fb=" + this.hzPcHrFb + " wcSkip=" + this.hzPcWcSkip;
          return s;
       }
       // Length-prefixed tokens so game names that contain | or : cannot collide. Exact char count, then payload.
@@ -15615,6 +15630,80 @@
          if(d == null) { return; }
          out.push({"p":d.parent,"n":n,"d":d});
       }
+      // Purpose: the hide-list rebuild with one tree walk instead of one hzFindByName per name. hzFindByName returns the
+      // first match of a pre-order walk whose order and pruning (the Horizon cards, depth 8) do not depend on the name, so
+      // one walk of the same order that keeps the first node per wanted name gives every name the clip its own search
+      // returns. The walk only reads the display list (numChildren, getChildAt, name), so nothing changes between the names.
+      // Entries are pushed in the order of names (duplicates included, a name not found pushes nothing), as the per-name
+      // loop did. On any throw the per-name loop runs instead, unchanged (same state, so the same result and catch rules).
+      // Inputs: c (the root searched), names. Outputs: out. Author: Moragar. Last modified: 2026-11-10.
+      private function hz36HideFindAll(c:DisplayObjectContainer, names:Array, out:Array) : void
+      {
+         var wn:Array = null;
+         var wd:Array = null;
+         try
+         {
+            wn = [];
+            for each(var w:String in names)
+            {
+               if(wn.indexOf(w) < 0) { wn.push(w); }
+            }
+            wd = new Array(wn.length);
+            if(wn.length > 0) { this.hz36Walk(c,0,wn,wd,wn.length); }
+            if(this.hzPerfOn) { this.hzPcHrWalk++; }
+         }
+         catch(eHw:*)
+         {
+            wn = null;
+         }
+         if(wn == null)
+         {
+            if(this.hzPerfOn) { this.hzPcHrFb++; }
+            for each(var n:String in names)
+            {
+               try { this.hz36HideFind(c,n,out); } catch(e36f:Error) { }   // v0.36: parent + name kept
+            }
+            return;
+         }
+         for each(var m:String in names)
+         {
+            var d:DisplayObject = wd[wn.indexOf(m)] as DisplayObject;
+            if(d == null) { continue; }
+            out.push({"p":d.parent,"n":m,"d":d});
+         }
+      }
+      // Purpose: hzFindByName's walk (same child order, same Horizon-card pruning, same depth limit, same node count) for
+      // several names at once. wd[k] gets the first node named wn[k]. A matched node is still descended into, because
+      // the other names' searches descend into it. Stops once every name has a node. Inputs: c, depth, wn, wd, left
+      // (names still unmatched). Outputs: wd; returns the names still unmatched. Author: Moragar. Last modified: 2026-11-10.
+      private function hz36Walk(c:DisplayObjectContainer, depth:int, wn:Array, wd:Array, left:int) : int
+      {
+         var i:int = 0;
+         var ch:DisplayObject = null;
+         if(this.hzPerfOn) { this.hzPcFind++; }
+         if(depth > 8) { return left; }
+         while(i < c.numChildren)
+         {
+            ch = c.getChildAt(i);
+            if(ch)
+            {
+               var k:int = wn.indexOf(ch.name);
+               if(k >= 0 && wd[k] == null)
+               {
+                  wd[k] = ch;
+                  left--;
+                  if(left <= 0) { return 0; }
+               }
+               if(ch is DisplayObjectContainer && ch != this.HorizonCard_mc && ch != this.HorizonVitals_mc && ch != this.HorizonEnv_mc && ch != this.HorizonCompass_mc && ch != this.HorizonAffl_mc && ch != this.HorizonAmmo_mc && ch != this.HorizonQuest_mc && ch != this.HorizonCompact_mc && ch != this.HorizonCompactQuest_mc && ch != this.HorizonSettings_mc)
+               {
+                  left = this.hz36Walk(DisplayObjectContainer(ch),depth + 1,wn,wd,left);
+                  if(left <= 0) { return 0; }
+               }
+            }
+            i++;
+         }
+         return left;
+      }
       private function hz36HideTick() : void
       {
          if(this.hzHideCache == null) { return; }
@@ -15634,7 +15723,7 @@
             catch(errP:Error) { }
             if(d == null) { continue; }
             if(d.stage == null) { this.hz36HideStale = true; }
-            if(this.hz43VanWatchClip(d)) { this.hz43StHide(d); continue; }
+            if(this.hz43VanWatchClip(d)) { this.hz43StHideV(d); continue; }   // verified just now: no second and third check
             if(d.visible) { d.visible = false; }
             if(d.alpha != 0) { d.alpha = 0; }
          }
@@ -19760,7 +19849,23 @@
       {
          if(this.hzPerfOn) { this.hzPcStHide++; }
          if(!d || !this.hz43VanWatchClip(d)) { return; }
-         this.hz43VanNote(d);
+         this.hz43VanNoteAdd(d);   // d was verified on the line above (hz43VanNote would verify it again)
+         if(this.hzPerfOn) { this.hzPcWcSkip++; }
+         if(d.visible) { d.visible = false; }
+      }
+
+      // Purpose: hz43StHide for a clip the caller verified with hz43VanWatchClip right before the call, with no write in
+      // between. hz43VanWatchClip gives the same answer when called again on the same state: its only writes are the
+      // ring memo (set to the clip it proves, or dropped when stale; a second call then answers from that memo the same
+      // way) and the in-pass outline memo (same search result), so the two checks it would repeat (here and in
+      // hz43VanNote) are skipped. Same counter, same note, same visible write. Inputs: d. Outputs: visible=false.
+      // Author: Moragar. Last modified: 2026-11-10.
+      private function hz43StHideV(d:DisplayObject) : void
+      {
+         if(this.hzPerfOn) { this.hzPcStHide++; }
+         if(!d) { return; }
+         this.hz43VanNoteAdd(d);
+         if(this.hzPerfOn) { this.hzPcWcSkip += 2; }
          if(d.visible) { d.visible = false; }
       }
 
@@ -21174,6 +21279,13 @@
       private function hz43VanNote(d:DisplayObject) : void
       {
          if(!d || !this.hz43VanWatchClip(d)) { return; }
+         this.hz43VanNoteAdd(d);
+      }
+
+      // Purpose: the body of hz43VanNote after its check, for callers that verified d with hz43VanWatchClip just before.
+      // Inputs: d (non-null, verified). Outputs: d in hz43HidA once. Author: Moragar. Last modified: 2026-11-10.
+      private function hz43VanNoteAdd(d:DisplayObject) : void
+      {
          if(this.hz43HidA == null) { this.hz43HidA = new Array(HZ43_HID_MAX); }
          var i:int = 0;
          while(i < this.hz43HidN)

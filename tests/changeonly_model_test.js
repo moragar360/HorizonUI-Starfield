@@ -660,6 +660,89 @@ console.log("    events: " + Object.keys(tally).sort().map((k) => k + "=" + tall
 	expect(h.hzPcQsSkip === sk && h.hzQsOk === true, "the next call runs the full pass and records again");
 }
 
+// S2 (Bot 3 review of 80327fe): on a skip frame the sub-line tops are replayed under the same catch(Error) the full pass
+// has around hz27QLayout. An Error is swallowed as before and drops the memo; any other value propagates as before.
+{
+	const mk = (kind) => {
+		const env = { cardScale: 1, fontsReady: false };
+		const h = makeQHost(kind, env);
+		filler(h, 5, "pre"); buildCard(h);
+		const pool = newPool();
+		h.hzQName = NAMES[1]; h.hzQObjStr = OBJS[1]; h.hzQDistStr = "50 M";
+		setSubs(h, pool, 3, [{ t: STEPS[0], d: "10 M", opt: false }, { t: STEPS[3], d: "", opt: true }, { t: STEPS[4], d: "2 M", opt: false }]);
+		h.hzQSync(); h.hzQSync();
+		return h;
+	};
+	for (const tv of [new RangeError("top"), "top string"]) {
+		const ho = mk("old"), hn = mk("new");
+		const sk0 = hn.hzPcQsSkip, run0 = hn.hzPcQsRun;
+		const real = {};
+		for (const [k, h] of [["o", ho], ["n", hn]]) {
+			real[k] = h.hzTxtTop;
+			const bad = h.hz27QL[1];
+			const r0 = h.hzTxtTop;
+			h.hzTxtTop = function(tf, top) { if (tf === bad) throw tv; return r0(tf, top); };
+		}
+		let eo = "none", en = "none";
+		try { ho.hzQSync(); } catch (e) { eo = e; }
+		try { hn.hzQSync(); } catch (e) { en = e; }
+		ho.hzTxtTop = real.o; hn.hzTxtTop = real.n;
+		const label = "S2: " + (tv instanceof Error ? "an Error" : "a non-Error value") + " from a sub-line top on a skip frame";
+		// the skip counter moves after the replay returns, so a propagated throw leaves it as it was; no full pass either way
+		expect(hn.hzPcQsRun === run0 && hn.hzPcQsSkip === sk0 + (tv instanceof Error ? 1 : 0), label + " happens on the skip path (replay, no full pass)");
+		if (tv instanceof Error) {
+			expect(eo === "none" && en === "none", label + " is swallowed, as the full pass swallows it");
+			expect(hn.hzQsOk === false, label + " drops the memo");
+		} else {
+			expect(eo === tv && en === tv, label + " propagates unchanged, as from the full pass");
+		}
+		expect(qSnap(ho) === qSnap(hn), label + ": same card as the 8e5e702 pass" + (qSnap(ho) === qSnap(hn) ? "" : " -- " + firstDiff(qSnap(ho), qSnap(hn))));
+		const run1 = hn.hzPcQsRun;
+		ho.hzQSync(); hn.hzQSync();
+		if (tv instanceof Error) expect(hn.hzPcQsRun === run1 + 1, label + ": the next call runs the full pass");
+		expect(qSnap(ho) === qSnap(hn), label + ": same card on the next call");
+	}
+}
+
+// S3 (Bot 3): the field-identity and registry-entry checks are each redundant with the other plus the read-back, so
+// dropping one alone is an equivalent mutant. Dropping both must be caught: a field replaced by a twin that shows the same
+// text, visible and x, has the same fs / ls / face / epoch, but still carries a leftover text run. The full pass rewrites
+// its text (which resets the run to the default format); a skip would not.
+function s3Same(src) {
+	const env = { cardScale: 1, fontsReady: false };
+	const ho = makeQHost("old", env);
+	const hn = makeQHost("new", env);
+	if (src) for (const f of QFUNCS.concat(QNEW_ONLY)) bind(hn, src, f);
+	const pools = [newPool(), newPool()];
+	[ho, hn].forEach((h, i) => {
+		filler(h, 5, "pre"); buildCard(h);
+		h.hzQName = NAMES[1]; h.hzQObjStr = OBJS[1]; h.hzQDistStr = "50 M";
+		setSubs(h, pools[i], 1, [{ t: STEPS[0], d: "10 M", opt: false }]);
+		h.hzQSync(); h.hzQSync();
+	});
+	for (const h of [ho, hn]) {
+		const was = h.hzQ19O;
+		const o1 = h.hzTxtObj(was);
+		const t2 = h.hzT(SPRITE, "", 74, 37, h.HZ_Q19_W - 74 - 14, 13, "rg", "mut", 0, "left", 0xffffff);
+		const o2 = h.hzTxtObj(t2);
+		t2.text = was.text; t2.visible = was.visible; t2.x = was.x; t2.y = was.y;
+		o2.fmtN = o1.fmtN;
+		t2.setTextFormat(new TextFormat("$Leftover_Run", 30, 0x123456));
+		h.hzQ19O = t2;
+	}
+	const sk = hn.hzPcQsSkip;
+	ho.hzQSync(); hn.hzQSync();
+	return { same: qSnap(ho) === qSnap(hn), skipped: hn.hzPcQsSkip === sk + 1 };
+}
+{
+	const prod = s3Same(null);
+	expect(prod.same && !prod.skipped, "S3: a replaced twin field runs the full pass (same card as the 8e5e702 pass)");
+	const noBoth = mutant("               if(tf !== this.hzQsR[b]) { return false; }\n", "").replace("                  if(o !== this.hzQsR[b + 1]) { return false; }\n", "");
+	expect(noBoth !== as && noBoth.indexOf("if(o !== this.hzQsR[b + 1])") < 0, "S3: mutant drops both identity checks");
+	const m = s3Same(noBoth);
+	expect(!m.same && m.skipped, "S3: mutant without the field and the registry-entry identity checks is killed (it skips and keeps the leftover run)");
+}
+
 // ---- 2. hzTxtObj: indexed lookup vs the 8e5e702 scan ----
 {
 	const r = rng(7);
@@ -740,7 +823,7 @@ function buildBlg(seed) {
 	return makeDoc(top);
 }
 const CFUNCS = ["hzFindByName", "hz43VanSkip", "hz43VanMarkName", "hz43VanInstName", "hz43VanCapClip", "hz43VanRingProof", "hz43VanRingClip",
-	"hz43VanNamed", "hz43VanRootOf", "hz43VanWatchClip", "hz43StHide", "hz43VanNote", "hz43VanRestoreHid", "hz43VanShowClip", "hz43VanGameVis",
+	"hz43VanNamed", "hz43VanRootOf", "hz43VanWatchClip", "hz43StHide", "hz43VanNote", "hz43VanNoteAdd", "hz43VanRestoreHid", "hz43VanShowClip", "hz43VanGameVis",
 	"hz43VanEnvWant", "hz43VanInfoName", "hz43VanHoldsMark", "hz43VanBlgChrome", "hz43VanChrome", "hz43VanOutline", "hz43OlBegin", "hz43OlEnd",
 	"hz43IsMark", "hz43FindMark"];
 const CCHANGED = ["hz43VanBlgChrome", "hz43VanChrome"];

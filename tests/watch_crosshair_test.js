@@ -1240,6 +1240,7 @@ function makeAssemblyHost() {
 	bindAsMethod(host, "hz43VanMarkName", ["name"]);
 	bindAsMethod(host, "hz43VanWrite", ["dx", "dy", "sc", "marks"]);
 	bindAsMethod(host, "hz43VanNote", ["d"]);
+	bindAsMethod(host, "hz43VanNoteAdd", ["d"]);
 	bindAsMethod(host, "hz43StHide", ["d"]);
 	bindAsMethod(host, "hz43VanGameVis", ["name"]);
 	bindAsMethod(host, "hz43VanEnvWant", ["name"]);
