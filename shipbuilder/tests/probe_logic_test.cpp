@@ -85,6 +85,17 @@ static std::string CppBody(const std::string& source, const std::string& head)
 	return source.substr(at, end == std::string::npos ? std::string::npos : end + 3 - at);
 }
 
+// True when a body writes no bold or italic flag in any form (dot or bracket), which the
+// label recipe must never do (a flag on a mapped face reads back as the fallback font).
+static bool NoFlagWrites(const std::string& body)
+{
+	for(const char* bad : {".bold =", ".bold=", ".italic =", ".italic=", "[\"bold\"]", "[\"italic\"]", "['bold']", "['italic']"})
+	{
+		if(body.find(bad) != std::string::npos) { return false; }
+	}
+	return true;
+}
+
 static bool InOrder(const std::string& text, const std::vector<std::string>& parts)
 {
 	std::size_t at = 0;
@@ -1378,10 +1389,6 @@ static void CheckMovie(const fs::path& root)
 		Has(FunctionBody(hub, "proveFace"), "var head:Object = this.chooseBold(fonts,noneEmbed);") &&
 		Has(FunctionBody(kit, "text", "internal"), "tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;") &&
 		Has(FunctionBody(kit, "refreshFaces", "internal"), "tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;") &&
-		Has(FunctionBody(kit, "format", "internal"), "fmt.bold = HsbKit.styleHas(style,\"bold\") ? true : null;") &&
-		Has(FunctionBody(kit, "format", "internal"), "fmt.italic = HsbKit.styleHas(style,\"italic\") ? true : null;") &&
-		Has(FunctionBody(kit, "refreshFaces", "internal"), "fmt.bold = HsbKit.styleHas(style,\"bold\") ? true : null;") &&
-		Has(FunctionBody(kit, "refreshFaces", "internal"), "fmt.italic = HsbKit.styleHas(style,\"italic\") ? true : null;") &&
 		Has(kit, "internal static const FACE:String = \"$Horizon_Font\";") &&
 		Has(kit, "internal static const FACE_FALLBACK:String = \"$NB_Grotesk_Semibold\";") &&
 		InOrder(FunctionBody(kit, "faceCheck", "internal"), {"tf.embedFonts = true;", "var fmt:TextFormat = new TextFormat(param1,13,TEXT);", "tf.defaultTextFormat = fmt;", "tf.text = \"Ab12 exo\";", "tf.setTextFormat(fmt);"}) &&
@@ -1407,8 +1414,6 @@ static void CheckMovie(const fs::path& root)
 		CountOf(hub, "this.note(this.kit.faceNote);") == 2 && CountOf(hub, "{ this.note(this.kit.faceNote); }") == 2 &&
 		Has(FunctionBody(hub, "cloneProbe"), "if(!this.fontStripOn || param1 == null) { return; }") &&
 		Has(FunctionBody(hub, "onStage"), "this.kit.face = HsbKit.FACE_FALLBACK;") && Has(FunctionBody(hub, "onStage"), "this.kit.faceFallback = true;") &&
-		Has(hub, "CLONE_KINDS:Array = [\"c1\",\"c2\",\"c3\",\"c4\",\"c5\",\"exo\"];") &&
-		Has(FunctionBody(hub, "cloneProbe"), "else if(kind == \"c5\") { tf = this.cloneC5(); }") && Has(FunctionBody(hub, "cloneProbe"), "else { tf = this.cloneExo(); }") &&
 		!Has(FunctionBody(hub, "onStage"), "this.noteFields();") && Has(FunctionBody(hub, "fontProbe"), "try { this.noteFields(); }") && CountOf(hub, "this.noteFields();") == 1 &&
 		Has(FunctionBody(kit, "fieldReport", "internal"), "\"FONT field kind=\" + kind + \" font=\" + shown + \" embed=\"") &&
 		Has(FunctionBody(hub, "noteFields"), "this.note(\"FONT vanilla font=\" + shown + \" embed=\" + embedBit + \" w=\" + wide + \" n=\" + count);") &&
@@ -1445,6 +1450,56 @@ static void CheckMovie(const fs::path& root)
 		Has(FunctionBody(hub, "onStage"), "built = 1;") &&
 		Has(FunctionBody(hub, "onStage"), "\" built=\" + built"),
 		"a font-proof failure is logged and the builder still starts from the width check");
+	// The label path builds its format the way the drawing cells do (c3, exo): one
+	// new TextFormat(face,size,color), spacing and alignment, never bold or italic, and no
+	// field's own defaultTextFormat copy is ever re-applied (put, refreshFaces or anywhere in the kit).
+	Expect(Has(FunctionBody(kit, "labelFormat", "internal"), "var fmt:TextFormat = new TextFormat(param1 != null && param1.length > 0 ? param1 : null,param2,param3);") &&
+		Has(FunctionBody(kit, "format", "internal"), "return this.labelFormat(pick,this.size(param1),param2,param4,param5);") &&
+		Has(FunctionBody(kit, "freshFormat", "internal"), "return this.labelFormat(this.face,size,color,spacing,align);") &&
+		InOrder(FunctionBody(kit, "text", "internal"), {"tf.embedFonts = this.face.length > 0", "var fmt:TextFormat = this.format(param1,param2,param3,param4,param5);", "tf.defaultTextFormat = fmt;", "tf.text = \"\";"}) &&
+		InOrder(FunctionBody(kit, "put", "internal"), {"var fmt:TextFormat = this.freshFormat(param1,param3);", "param1.defaultTextFormat = fmt;", "param1.text = ", "param1.setTextFormat(fmt);"}) &&
+		!Has(FunctionBody(kit, "put", "internal"), "= param1.defaultTextFormat;") &&
+		CountOf(FunctionBody(kit, "put", "internal"), "setTextFormat(") == 1 && CountOf(FunctionBody(kit, "put", "internal"), "defaultTextFormat = ") == 1 &&
+		Has(FunctionBody(kit, "refreshFaces", "internal"), "var fmt:TextFormat = this.freshFormat(tf,-1);") &&
+		!Has(FunctionBody(kit, "format", "internal"), ".bold =") && !Has(FunctionBody(kit, "format", "internal"), ".italic =") &&
+		!Has(FunctionBody(kit, "labelFormat", "internal"), ".bold =") && !Has(FunctionBody(kit, "labelFormat", "internal"), ".italic =") &&
+		!Has(FunctionBody(kit, "freshFormat", "internal"), ".bold =") && !Has(FunctionBody(kit, "freshFormat", "internal"), ".italic =") &&
+		!Has(FunctionBody(kit, "put", "internal"), ".bold =") && !Has(FunctionBody(kit, "refreshFaces", "internal"), ".bold =") &&
+		!Has(FunctionBody(kit, "refreshFaces", "internal"), ".italic =") && !Has(FunctionBody(kit, "text", "internal"), ".bold =") &&
+		NoFlagWrites(FunctionBody(kit, "format", "internal")) && NoFlagWrites(FunctionBody(kit, "labelFormat", "internal")) &&
+		NoFlagWrites(FunctionBody(kit, "freshFormat", "internal")) && NoFlagWrites(FunctionBody(kit, "put", "internal")) &&
+		NoFlagWrites(FunctionBody(kit, "refreshFaces", "internal")) && NoFlagWrites(FunctionBody(kit, "text", "internal")) &&
+		NoFlagWrites(FunctionBody(kit, "fit", "internal")) && NoFlagWrites(FunctionBody(kit, "putCaps", "internal")) &&
+		InOrder(FunctionBody(kit, "refreshFaces", "internal"), {"var fmt:TextFormat = this.freshFormat(tf,-1);", "tf.embedFonts = ", "tf.defaultTextFormat = fmt;", "tf.setTextFormat(fmt);"}) &&
+		!Has(FunctionBody(kit, "refreshFaces", "internal"), "defaultTextFormat)") && !Has(FunctionBody(kit, "refreshFaces", "internal"), "= tf.defaultTextFormat;") &&
+		CountOf(kit, "setTextFormat(") == CountOf(kit, "setTextFormat(fmt);") && CountOf(kit, ".defaultTextFormat)") == 0 &&
+		CountOf(kit, "= tf.defaultTextFormat;") == 0 && CountOf(kit, "= param1.defaultTextFormat;") == 1 &&
+		Has(FunctionBody(kit, "freshFormat", "internal"), "var old:TextFormat = param1.defaultTextFormat;"),
+		"labels use the drawing-cell recipe: one new TextFormat(face,size,color), no bold/italic writes, no getter copy re-applied");
+	// FontStrip=1 diagnostics: the lbl cell (the real kit path), the c3n/c3g A/B cells and the
+	// one-label step trace, all behind the strip gate.
+	Expect(Has(FunctionBody(kit, "text", "internal"), "if(this.traceArmed) { this.traceArmed = false; this.traceTf = tf; }") &&
+		Has(FunctionBody(kit, "step", "private"), "if(this.traceTf == null || param1 != this.traceTf") &&
+		CountOf(hub, "this.kit.armTrace();") == 1 && Has(FunctionBody(hub, "fontProbe"), "if(this.kit != null) { this.kit.armTrace(); }") &&
+		CountOf(hub, "this.kit.traceLine()") == 1 &&
+		InOrder(FunctionBody(hub, "noteFieldsLate"), {"if(!this.fontStripOn || this.cloneCells == null) { return; }", "var traced:String = this.kit.traceLine();", "if(traced.length > 0) { this.note(traced); }"}) &&
+		InOrder(FunctionBody(hub, "cloneLabel"), {"var tf:TextField = this.kit.text(13,HsbKit.TEXT);", "this.kit.retag(tf,\"lbl\");", "this.kit.put(tf,\"Ab12 lbl\");"}) &&
+		Has(hub, "CLONE_KINDS:Array = [\"c1\",\"c2\",\"c3\",\"c3n\",\"c3g\",\"c4\",\"c5\",\"exo\",\"lbl\"];") &&
+		Has(FunctionBody(hub, "cloneProbe"), "else if(kind == \"c5\") { tf = this.cloneC5(); }") && Has(FunctionBody(hub, "cloneProbe"), "else if(kind == \"exo\") { tf = this.cloneExo(); }") && Has(FunctionBody(hub, "cloneProbe"), "else { tf = this.cloneLabel(); }") &&
+		InOrder(FunctionBody(hub, "cloneC3n"), {"var f:TextFormat = new TextFormat(String(FACES[0]),13,0xF2F4F5);", "f.bold = null;", "f.italic = null;", "tf.defaultTextFormat = f;", "tf.text = \"Ab12 c3n\";", "tf.setTextFormat(f);"}) &&
+		InOrder(FunctionBody(hub, "cloneC3g"), {"tf.embedFonts = true;", "var f:TextFormat = new TextFormat(String(FACES[0]),13,0xF2F4F5);", "tf.defaultTextFormat = f;", "tf.text = \"Ab12 c3g\";", "tf.setTextFormat(f);", "var copy:TextFormat = tf.defaultTextFormat;", "tf.setTextFormat(copy);"}) &&
+		NoFlagWrites(FunctionBody(hub, "cloneC3g")) && !Has(FunctionBody(hub, "cloneC3n"), "copy") &&
+		Has(FunctionBody(hub, "cloneProbe"), "else if(kind == \"c3n\") { tf = this.cloneC3n(); }") && Has(FunctionBody(hub, "cloneProbe"), "else if(kind == \"c3g\") { tf = this.cloneC3g(); }") &&
+		CountOf(hub, "this.cloneC3n()") == 1 && CountOf(hub, "this.cloneC3g()") == 1 && CountOf(hub, "this.cloneLabel()") == 1,
+		"the lbl, c3n and c3g strip cells and the label step trace exist only behind FontStrip=1");
+	// SF-1: the strip's lbl cell is a kit field too, but it never counts as a panel field, so the
+	// one-shot field report (kind=head/body and the trace) waits until the real panels are on stage.
+	Expect(Has(hub, "private static const STRIP_FIELD_ROW:String = \"FONT field kind=lbl \";") &&
+		Has(FunctionBody(hub, "noteFieldsLate"), "if(String(rows[r]).indexOf(STRIP_FIELD_ROW) != 0) { panels++; }") &&
+		InOrder(FunctionBody(hub, "noteFieldsLate"), {"var panels:int = 0;", "if(panels == 0 && this.fieldTries < FIELD_TRIES) { return; }", "this.fieldsNoted = true;", "if(panels == 0) { this.note(\"FONT field none paints=\" + this.fieldTries); }"}) &&
+		!Has(FunctionBody(hub, "noteFieldsLate"), "rows.length == 0") &&
+		Has(FunctionBody(kit, "fieldReport", "internal"), "out.push(\"FONT field kind=\" + kind + \" font=\""),
+		"the one-shot field report ignores the strip's lbl cell and waits for real panel fields");
 	Expect(Has(FunctionBody(hub, "hotText"), "if(b == null) { i++; continue; }") &&
 		Has(FunctionBody(hub, "takeLines", "public"), "try { this.pushState(); }") &&
 		Has(FunctionBody(hub, "takeLines", "public"), "if(!this.stateNoted)") &&

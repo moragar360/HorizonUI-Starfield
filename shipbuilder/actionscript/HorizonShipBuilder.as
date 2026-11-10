@@ -73,7 +73,10 @@ package
       // Private font strip height: two probe rows, then one row of clone cells.
       private static const FONT_STRIP_H:Number = 58;
       // Private clone cells (FontStrip=1 only): each asks for the vanilla face a different way.
-      private static const CLONE_KINDS:Array = ["c1","c2","c3","c4","c5","exo"];
+      private static const CLONE_KINDS:Array = ["c1","c2","c3","c3n","c3g","c4","c5","exo","lbl"];
+
+      // The field-report row of the strip's lbl cell (FontStrip=1); not a panel field.
+      private static const STRIP_FIELD_ROW:String = "FONT field kind=lbl ";
       // Paints to wait for a parented custom field before the one-shot FONT field report stops.
       private static const FIELD_TRIES:int = 20;
       // A cancel or accept can arrive both as a DLL key token and as the game's own event.
@@ -1067,6 +1070,8 @@ package
          this.addChild(strip);
          try { this.cloneProbe(strip,span); }
          catch(err:Error) { this.note("FONT clone err=" + this.errText(err)); }
+         // The next panel label the kit makes is traced; its line logs after the next paint.
+         if(this.kit != null) { this.kit.armTrace(); }
          if(this.power != null) { this.place(); }
       }
 
@@ -1093,9 +1098,12 @@ package
                if(kind == "c1") { tf = this.cloneC1(param1); }
                else if(kind == "c2") { tf = this.cloneC2(label); }
                else if(kind == "c3") { tf = this.cloneC3(); }
+               else if(kind == "c3n") { tf = this.cloneC3n(); }
+               else if(kind == "c3g") { tf = this.cloneC3g(); }
                else if(kind == "c4") { tf = this.cloneC4(label); }
                else if(kind == "c5") { tf = this.cloneC5(); }
-               else { tf = this.cloneExo(); }
+               else if(kind == "exo") { tf = this.cloneExo(); }
+               else { tf = this.cloneLabel(); }
             }
             catch(err:Error)
             {
@@ -1191,6 +1199,48 @@ package
          return tf;
       }
 
+      // c3n (FontStrip=1 A/B cell): c3 with bold and italic set to null, the 1fc690c label
+      // recipe's flags. Draws -> null flags are harmless; tofu -> null acts like false.
+      private function cloneC3n():TextField
+      {
+         var tf:TextField = new TextField();
+         tf.embedFonts = true;
+         tf.selectable = false;
+         tf.mouseEnabled = false;
+         tf.autoSize = "left";
+         var f:TextFormat = new TextFormat(String(FACES[0]),13,0xF2F4F5);
+         f.letterSpacing = 0;
+         f.align = "left";
+         f.bold = null;
+         f.italic = null;
+         tf.defaultTextFormat = f;
+         tf.text = "Ab12 c3n";
+         tf.setTextFormat(f);
+         tf.textColor = 0xF2F4F5;
+         return tf;
+      }
+
+      // c3g (FontStrip=1 A/B cell): c3, then the field's own defaultTextFormat copy re-applied,
+      // the 1fc690c put() step. Draws -> the getter copy is harmless; tofu -> it breaks the face.
+      private function cloneC3g():TextField
+      {
+         var tf:TextField = new TextField();
+         tf.embedFonts = true;
+         tf.selectable = false;
+         tf.mouseEnabled = false;
+         tf.autoSize = "left";
+         var f:TextFormat = new TextFormat(String(FACES[0]),13,0xF2F4F5);
+         f.letterSpacing = 0;
+         f.align = "left";
+         tf.defaultTextFormat = f;
+         tf.text = "Ab12 c3g";
+         tf.setTextFormat(f);
+         var copy:TextFormat = tf.defaultTextFormat;
+         tf.setTextFormat(copy);
+         tf.textColor = 0xF2F4F5;
+         return tf;
+      }
+
       // exo: the label face (HsbKit.FACE, Exo 2 SemiBold) in the HUD recipe, so the strip
       // shows whether Exo 2 resolves here whatever the labels fell back to.
       private function cloneExo():TextField
@@ -1204,6 +1254,16 @@ package
          tf.text = "Ab12 exo";
          tf.setTextFormat(f);
          tf.textColor = 0xF2F4F5;
+         return tf;
+      }
+
+      // lbl: a real label, made and filled by the same kit calls every panel uses (text, put),
+      // so the strip shows the label path itself next to the cells.
+      private function cloneLabel():TextField
+      {
+         var tf:TextField = this.kit.text(13,HsbKit.TEXT);
+         this.kit.retag(tf,"lbl");
+         this.kit.put(tf,"Ab12 lbl");
          return tf;
       }
 
@@ -1408,9 +1468,18 @@ package
             this.note("FONT field err=" + this.errText(err));
             return;
          }
-         if(rows.length == 0 && this.fieldTries < FIELD_TRIES) { return; }
+         // The strip's own lbl cell is a kit field too; it never counts as a panel field, so
+         // the one-shot report waits until the real panels (head/body) are on stage.
+         var panels:int = 0;
+         var r:int = 0;
+         while(r < rows.length)
+         {
+            if(String(rows[r]).indexOf(STRIP_FIELD_ROW) != 0) { panels++; }
+            r++;
+         }
+         if(panels == 0 && this.fieldTries < FIELD_TRIES) { return; }
          this.fieldsNoted = true;
-         if(rows.length == 0) { this.note("FONT field none paints=" + this.fieldTries); }
+         if(panels == 0) { this.note("FONT field none paints=" + this.fieldTries); }
          var i:int = 0;
          while(i < rows.length)
          {
@@ -1418,6 +1487,8 @@ package
             i++;
          }
          if(!this.fontStripOn || this.cloneCells == null) { return; }
+         var traced:String = this.kit.traceLine();
+         if(traced.length > 0) { this.note(traced); }
          i = 0;
          while(i < this.cloneCells.length)
          {

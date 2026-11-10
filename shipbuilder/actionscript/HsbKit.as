@@ -75,6 +75,11 @@ package
       internal var faceFallback:Boolean = false;
       internal var faceNote:String = "";
       private var fields:Array = [];
+      // One real label's setup, read back after each step (FontStrip=1 only: armTrace is called
+      // from the strip). Off, it costs one null test per call.
+      private var traceArmed:Boolean = false;
+      private var traceTf:TextField = null;
+      private var traceSteps:Array = null;
 
       public function HsbKit()
       {
@@ -120,14 +125,19 @@ package
       internal function text(param1:Number, param2:uint, param3:Boolean = false, param4:Number = 0, param5:String = "left"):TextField
       {
          var tf:TextField = new TextField();
+         if(this.traceArmed) { this.traceArmed = false; this.traceTf = tf; }
+         this.step(tf,"new");
          tf.mouseEnabled = false;
          tf.selectable = false;
          tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;
+         this.step(tf,"embed");
          var fmt:TextFormat = this.format(param1,param2,param3,param4,param5);
          tf.defaultTextFormat = fmt;
+         this.step(tf,"default");
          tf.width = 200;
          tf.height = this.size(param1) + 8;
          tf.text = "";
+         this.step(tf,"text0");
          this.fields.push({"tf":tf,"bold":param3,"kind":param3 ? "head" : "body"});
          return tf;
       }
@@ -264,33 +274,99 @@ package
 
       internal function format(param1:Number, param2:uint, param3:Boolean, param4:Number, param5:String):TextFormat
       {
-         var fmt:TextFormat = new TextFormat();
          var head:Boolean = param3 && this.boldFace.length > 0;
          var pick:String = head ? this.boldFace : this.face;
-         var style:String = head ? this.boldStyle : this.faceStyle;
-         if(pick.length > 0) { fmt.font = pick; }
-         // A flag is set only when the face's style has it. An explicit false is left unset:
-         // a mapped face asked with bold=false and italic=false reads back the default serif.
-         fmt.bold = HsbKit.styleHas(style,"bold") ? true : null;
-         fmt.italic = HsbKit.styleHas(style,"italic") ? true : null;
-         fmt.size = this.size(param1);
-         fmt.color = param2;
+         return this.labelFormat(pick,this.size(param1),param2,param4,param5);
+      }
+
+      // Every label format is built here, the clone-cell way (c3 and the exo cell, which draw):
+      // new TextFormat(face,size,color), then spacing and alignment. Bold and italic are never
+      // assigned, not even false or null: the strip rows that set them read back the default
+      // serif, and the cells that leave them alone draw.
+      internal function labelFormat(param1:String, param2:Number, param3:uint, param4:Number, param5:String):TextFormat
+      {
+         var fmt:TextFormat = new TextFormat(param1 != null && param1.length > 0 ? param1 : null,param2,param3);
          fmt.letterSpacing = param4;
          fmt.align = param5;
          return fmt;
       }
 
-      // A $ key is translated when the field takes it, as on the game's own fields.
+      // A fresh label format with a field's size, color, spacing and alignment. The field's
+      // defaultTextFormat is read only for those four values and never re-applied, because the
+      // getter's copy carries every property set, bold and italic included.
+      internal function freshFormat(param1:TextField, param2:int):TextFormat
+      {
+         var size:Number = 0;
+         var color:uint = TEXT;
+         var spacing:Number = 0;
+         var align:String = "left";
+         try
+         {
+            var old:TextFormat = param1.defaultTextFormat;
+            if(old != null)
+            {
+               if(old.size != null) { size = Number(old.size); }
+               if(old.color != null) { color = uint(old.color); }
+               if(old.letterSpacing != null) { spacing = Number(old.letterSpacing); }
+               if(old.align != null && String(old.align).length > 0) { align = String(old.align); }
+            }
+         }
+         catch(err:Error) { size = 0; }
+         if(isNaN(size) || size <= 0) { size = this.size(13); }
+         if(isNaN(spacing)) { spacing = 0; }
+         if(param2 >= 0) { color = uint(param2); }
+         return this.labelFormat(this.face,size,color,spacing,align);
+      }
+
+      // A $ key is translated when the field takes it, as on the game's own fields. Same order
+      // as the clone cells: default format, text, set format.
       internal function put(param1:TextField, param2:*, param3:int = -1):void
       {
-         var fmt:TextFormat = param1.defaultTextFormat;
-         if(param3 >= 0)
-         {
-            fmt.color = uint(param3);
-            param1.defaultTextFormat = fmt;
-         }
+         var fmt:TextFormat = this.freshFormat(param1,param3);
+         param1.defaultTextFormat = fmt;
          param1.text = param2 == null ? "" : String(param2);
+         this.step(param1,"put");
          param1.setTextFormat(fmt);
+         this.step(param1,"set");
+      }
+
+      // The trace hooks (FontStrip=1 only). armTrace marks the next label text() makes.
+      internal function armTrace():void
+      {
+         this.traceArmed = true;
+         this.traceTf = null;
+         this.traceSteps = [];
+      }
+
+      private function step(param1:TextField, param2:String):void
+      {
+         if(this.traceTf == null || param1 != this.traceTf || this.traceSteps == null || this.traceSteps.length >= 16) { return; }
+         this.traceSteps.push(param2 + ":" + HsbKit.fontOf(param1));
+      }
+
+      // The font a field reports: getTextFormat() once it has text, else defaultTextFormat.
+      internal static function fontOf(param1:TextField):String
+      {
+         var s:String = "-";
+         try
+         {
+            var f:TextFormat = param1.text != null && param1.text.length > 0 ? param1.getTextFormat() : param1.defaultTextFormat;
+            if(f != null && f.font != null && String(f.font).length > 0) { s = String(f.font); }
+         }
+         catch(err:Error) { s = "x" + err.errorID; }
+         return s.length > 32 ? s.substring(0,32) : s;
+      }
+
+      // "" until armTrace; then the traced label's steps and its state now, capped at 440.
+      internal function traceLine():String
+      {
+         if(this.traceSteps == null) { return ""; }
+         if(this.traceTf == null) { return "FONT label steps=none"; }
+         var t:TextField = this.traceTf;
+         var n:int = t.text != null ? t.text.length : 0;
+         var per:String = n > 0 ? (t.textWidth / n).toFixed(2) : "-";
+         var line:String = "FONT label steps=" + this.traceSteps.join("|") + " now=" + HsbKit.fontOf(t) + " w=" + int(t.textWidth) + " n=" + n + " per=" + per + " embed=" + (t.embedFonts ? 1 : 0) + " stage=" + (t.stage != null ? 1 : 0);
+         return line.length > 440 ? line.substring(0,440) : line;
       }
 
       // The translated game label in capitals. A key the translator kept falls back to the
@@ -322,6 +398,7 @@ package
             }
             param1.text = full.substring(0,lo) + "\u2026";
             param1.width = param2;
+            this.step(param1,"fit");
          }
          return param1.width;
       }
@@ -443,16 +520,11 @@ package
             var tf:TextField = row.tf as TextField;
             if(tf != null && tf.parent != null)
             {
-               var fmt:TextFormat = tf.defaultTextFormat;
-               var head:Boolean = row.bold == true && this.boldFace.length > 0;
-               var pick:String = head ? this.boldFace : this.face;
-               var style:String = head ? this.boldStyle : this.faceStyle;
-               fmt.font = pick.length > 0 ? pick : null;
-               fmt.bold = HsbKit.styleHas(style,"bold") ? true : null;
-               fmt.italic = HsbKit.styleHas(style,"italic") ? true : null;
+               var fmt:TextFormat = this.freshFormat(tf,-1);
                tf.embedFonts = this.face.length > 0 || this.boldFace.length > 0 || this.embed;
                tf.defaultTextFormat = fmt;
                tf.setTextFormat(fmt);
+               this.step(tf,"refresh");
                kept.push(row);
             }
             i++;
