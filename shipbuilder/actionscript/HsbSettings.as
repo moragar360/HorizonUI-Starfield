@@ -5,7 +5,8 @@ package
 
    // Purpose: the Settings panel from gold mockup 9: accent, follow the HUD accent, custom hex,
    //    card opacity, screen margin, UI scale, density, group by maker, remember layout, Arrange,
-   //    which panels open expanded, keys, the conflict notice and About.
+   //    which panels open expanded, keys, the conflict notice and About; laid out like the
+   //    Horizon HUD's F11 settings window: header, tabs (DISPLAY, LAYOUT, LIST, GENERAL).
    // Inputs: the builder's current settings; pointer, wheel, keys and typed characters.
    // Outputs: every change applies at once and queues a SET line; Done or closing writes them
    //    (SET END, merged by the DLL into HorizonShipBuilder.user.ini). Undo puts back the
@@ -14,7 +15,7 @@ package
    //    place, setCollapsed, openArrange, keyClash, popups, text input), HsbDialog, HsbKit.
    // Backend limits shown here: "Open Flight Check on errors" has no game signal until Flight
    //    Check runs, so it is shown switched off and cannot be turned on.
-   // Author: Moragar. Last modified: 2026-11-07.
+   // Author: Moragar. Last modified: 2026-11-09.
    public class HsbSettings extends HsbBox
    {
       private static const PANEL_ROWS:Array = [["Power","Power"],["Module","Selected module"],["Credits","Credits"],["Browser","Browser"],["Stats","Stats"],["Hints","Hints"]];
@@ -24,6 +25,8 @@ package
       private static const SCALE_MIN:Number = 0.8;
       private static const SCALE_MAX:Number = 1.3;
       private static const STEP:Number = 0.05;
+      // F11-style tabs; each section keeps its rows, settings and keys (see paint()).
+      internal static const TABS:Array = ["DISPLAY","LAYOUT","LIST","GENERAL"];
       private static const BINDABLE:String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/\\.,-=[]'`";
 
       private var hsb:HorizonShipBuilder;
@@ -37,6 +40,7 @@ package
       private var trackX:Number = 0;
       private var trackW:Number = 0;
       private var dragging:Boolean = false;
+      private var tab:int = 0;
 
       public function HsbSettings(param1:HsbKit, param2:HorizonShipBuilder)
       {
@@ -82,76 +86,101 @@ package
          var rowX:Number = 28;
          var right:Number = w - 26;
          var pitch:Number = k.u(21);
-         k.icon(g,"gear",14,13,k.u(20),k.accent,1);
-         k.label(this,40 + (k.u(20) - 20),12,"SETTINGS",17,k.accent,true,2);
+         // F11 header: HORIZON UI in bold white, the window name muted and spaced, ESC at the
+         // right; then the tab row with a 2.5 px accent underline under the open tab.
+         var title:TextField = k.text(18,HsbKit.TEXT,true,3);
+         k.put(title,"HORIZON UI");
+         k.fit(title);
+         this.add(title,x0 + 4,14);
+         var sub:TextField = k.text(13,HsbKit.MUTED,true,2.4);
+         k.put(sub,"SHIP BUILDER SETTINGS");
+         k.fit(sub);
+         this.add(sub,title.x + title.width + 8,title.y + title.height - sub.height - 1);
          var esc:TextField = k.text(13,k.accent,true,0,"right");
          k.put(esc,"ESC");
          esc.width = 50;
-         this.add(esc,w - 18 - 50,15);
+         this.add(esc,w - 18 - 50,17);
          this.hit(w - 18 - 50,8,58,k.u(30),"done");
-         var headH:Number = k.u(44);
-         k.hline(g,12,headH,w - 24,HsbKit.EDGE,1);
+         var headH:Number = this.tabsTop();
+         this.paintTabs(x0 + 4,headH,w);
          var footH:Number = k.u(58) + (this.saveNote.length > 0 ? k.u(22) : 0);
-         var bodyTop:Number = headH + 6;
+         var bodyTop:Number = this.bodyTop();
          var y:Number = bodyTop - this.scroll;
          var limit:Number = maxH - footH;
          // Rows are drawn top to bottom; anything scrolled above bodyTop or below limit is
          // skipped, so the body scrolls with the wheel when the panel is taller than the view.
-         y = this.head(x0,y,"APPEARANCE",bodyTop,limit);
-         y = this.text1(rowX,y,"Accent",HsbKit.TEXT,bodyTop,limit);
-         y = this.swatches(rowX,y,bodyTop,limit);
-         y = this.toggleRow(rowX,right,y,"Follow Horizon HUD accent","follow",h.follow && h.coreFound,h.coreFound,h.coreFound ? "" : "HUD not found",bodyTop,limit);
-         y = this.hexRow(rowX,right,y,bodyTop,limit);
-         y = this.sliderRow(rowX,right,y,bodyTop,limit);
-         y = this.head(x0,y,"LAYOUT",bodyTop,limit);
-         y = this.valueRow(rowX,right,y,"Screen margin",String(h.margin),"margin",bodyTop,limit);
-         y = this.valueRow(rowX,right,y,"UI scale",h.uiScale.toFixed(2).replace(/0$/,""),"scale",bodyTop,limit);
-         y = this.valueRow(rowX,right,y,"Density",h.density == "detailed" ? "Detailed" : "Compact","density",bodyTop,limit);
-         y = this.toggleRow(rowX,right,y,"Group by maker","bymaker",h.byMaker,true,"",bodyTop,limit);
-         y = this.toggleRow(rowX,right,y,"Remember my layout","remember",h.rememberLayout,true,"",bodyTop,limit);
-         if(this.inside(y + 2,k.u(30),bodyTop,limit))
+         // Tabs: DISPLAY = Appearance; LAYOUT = Layout (margin, scale, remember, arrange) and
+         // Panels; LIST = Density, Group by maker and Columns; GENERAL = Keys, Notices, About.
+         // Every row, its setting key and its behavior are unchanged; only where it shows.
+         if(this.tab == 0)
          {
-            var bw:Number = right - rowX + 4;
-            k.fill(g,rowX,y + 2,bw,k.u(28),k.u(14),0x14191E,1);
-            k.outline(g,rowX,y + 2,bw,k.u(28),k.u(14),k.accent,1);
-            var at:TextField = k.text(14,HsbKit.TEXT,true,0.5,"center");
-            k.put(at,"Arrange panels");
-            at.width = bw;
-            this.add(at,rowX,y + 2 + (k.u(28) - at.textHeight - 6) / 2);
-            this.hit(rowX,y + 2,bw,k.u(28),"arrange");
+            y = this.head(x0,y,"APPEARANCE",bodyTop,limit);
+            y = this.text1(rowX,y,"Accent",HsbKit.TEXT,bodyTop,limit);
+            y = this.swatches(rowX,y,bodyTop,limit);
+            y = this.toggleRow(rowX,right,y,"Follow Horizon HUD accent","follow",h.follow && h.coreFound,h.coreFound,h.coreFound ? "" : "HUD not found",bodyTop,limit);
+            y = this.hexRow(rowX,right,y,bodyTop,limit);
+            y = this.sliderRow(rowX,right,y,bodyTop,limit);
          }
-         y += k.u(36);
-         y = this.head(x0,y,"PANELS",bodyTop,limit);
-         var i:int = 0;
-         while(i < PANEL_ROWS.length)
+         else if(this.tab == 1)
          {
-            var pid:String = String(PANEL_ROWS[i][0]);
-            y = this.toggleRow(rowX,right,y,String(PANEL_ROWS[i][1]),"panel:" + pid,h.collapsed[pid] != true,true,"",bodyTop,limit);
-            i++;
+            y = this.head(x0,y,"LAYOUT",bodyTop,limit);
+            y = this.valueRow(rowX,right,y,"Screen margin",String(h.margin),"margin",bodyTop,limit);
+            y = this.valueRow(rowX,right,y,"UI scale",h.uiScale.toFixed(2).replace(/0$/,""),"scale",bodyTop,limit);
+            y = this.toggleRow(rowX,right,y,"Remember my layout","remember",h.rememberLayout,true,"",bodyTop,limit);
+            if(this.inside(y + 2,k.u(30),bodyTop,limit))
+            {
+               var bw:Number = right - rowX + 4;
+               k.fill(g,rowX,y + 2,bw,k.u(28),k.u(14),0x14191E,1);
+               k.outline(g,rowX,y + 2,bw,k.u(28),k.u(14),k.accent,1);
+               var at:TextField = k.text(14,HsbKit.TEXT,true,0.5,"center");
+               k.put(at,"Arrange panels");
+               at.width = bw;
+               this.add(at,rowX,y + 2 + (k.u(28) - at.textHeight - 6) / 2);
+               this.hit(rowX,y + 2,bw,k.u(28),"arrange");
+            }
+            y += k.u(36);
+            y = this.head(x0,y,"PANELS",bodyTop,limit);
+            var i:int = 0;
+            while(i < PANEL_ROWS.length)
+            {
+               var pid:String = String(PANEL_ROWS[i][0]);
+               y = this.toggleRow(rowX,right,y,String(PANEL_ROWS[i][1]),"panel:" + pid,h.collapsed[pid] != true,true,"",bodyTop,limit);
+               i++;
+            }
+            y = this.toggleRow(rowX,right,y,"Open Flight Check on errors","autoflight",false,false,"No game signal",bodyTop,limit);
          }
-         y = this.toggleRow(rowX,right,y,"Open Flight Check on errors","autoflight",false,false,"No game signal",bodyTop,limit);
-         y = this.head(x0,y,"COLUMNS",bodyTop,limit);
-         y = this.text1(rowX,y,"Per-tab sets are edited in the builder.",HsbKit.LABEL,bodyTop,limit);
-         var b:HsbBrowser = h.browser;
-         if(b != null && b.tabLabel().length > 0)
+         else if(this.tab == 2)
          {
-            var names:Array = [];
-            var cols:Array = b.columns();
-            var c:int = 0;
-            while(c < cols.length) { names.push(b.columnLabel(String(cols[c]))); c++; }
-            y = this.text1(rowX,y,b.tabLabel() + ": " + names.join(", "),HsbKit.TEXT,bodyTop,limit);
+            y = this.head(x0,y,"LIST",bodyTop,limit);
+            y = this.valueRow(rowX,right,y,"Density",h.density == "detailed" ? "Detailed" : "Compact","density",bodyTop,limit);
+            y = this.toggleRow(rowX,right,y,"Group by maker","bymaker",h.byMaker,true,"",bodyTop,limit);
+            y = this.head(x0,y,"COLUMNS",bodyTop,limit);
+            y = this.text1(rowX,y,"Per-tab sets are edited in the builder.",HsbKit.LABEL,bodyTop,limit);
+            var b:HsbBrowser = h.browser;
+            if(b != null && b.tabLabel().length > 0)
+            {
+               var names:Array = [];
+               var cols:Array = b.columns();
+               var c:int = 0;
+               while(c < cols.length) { names.push(b.columnLabel(String(cols[c]))); c++; }
+               y = this.text1(rowX,y,b.tabLabel() + ": " + names.join(", "),HsbKit.TEXT,bodyTop,limit);
+            }
          }
-         y = this.head(x0,y,"KEYS",bodyTop,limit);
-         y = this.keyRow(rowX,right,y,"Hide all","keyhide",h.keyHide,bodyTop,limit);
-         y = this.keyRow(rowX,right,y,"Find","keyfind",h.keyFind,bodyTop,limit);
-         y = this.head(x0,y,"NOTICES",bodyTop,limit);
-         y = this.toggleRow(rowX,right,y,"Warn if another ship builder mod is found","notice",h.showConflict,true,"",bodyTop,limit);
-         y = this.head(x0,y,"ABOUT",bodyTop,limit);
-         y = this.text1(rowX,y,"Horizon Ship Builder \u00B7 " + HorizonShipBuilder.VERSION,HsbKit.TEXT,bodyTop,limit);
-         y = this.text1(rowX,y,"Makers and sizes: read from part names \u00B7 Core: " + (h.coreFound ? "found" : "not found"),HsbKit.MUTED,bodyTop,limit);
+         else
+         {
+            y = this.head(x0,y,"KEYS",bodyTop,limit);
+            y = this.keyRow(rowX,right,y,"Hide all","keyhide",h.keyHide,bodyTop,limit);
+            y = this.keyRow(rowX,right,y,"Find","keyfind",h.keyFind,bodyTop,limit);
+            y = this.head(x0,y,"NOTICES",bodyTop,limit);
+            y = this.toggleRow(rowX,right,y,"Warn if another ship builder mod is found","notice",h.showConflict,true,"",bodyTop,limit);
+            y = this.head(x0,y,"ABOUT",bodyTop,limit);
+            y = this.text1(rowX,y,"Horizon Ship Builder \u00B7 " + HorizonShipBuilder.VERSION,HsbKit.TEXT,bodyTop,limit);
+            y = this.text1(rowX,y,"Makers: part cards, then part names \u00B7 Sizes: part names \u00B7 Core: " + (h.coreFound ? "found" : "not found"),HsbKit.MUTED,bodyTop,limit);
+         }
          this.fullH = y + this.scroll - bodyTop + 10;
          var bodyRoom:Number = limit - bodyTop;
-         var panelH:Number = Math.min(maxH,bodyTop + Math.max(this.fullH,k.u(120)) + footH);
+         // One height for every tab (the tallest, LAYOUT), so switching tabs does not resize it.
+         var panelH:Number = Math.min(maxH,bodyTop + Math.max(this.fullH,k.u(330)) + footH);
          if(this.fullH <= bodyRoom) { this.scroll = 0; }
          else
          {
@@ -177,10 +206,50 @@ package
          this.add(undo,x0 + k.u(172),fy + (btnH - undo.height) / 2);
          this.hit(x0 + k.u(166),fy,undo.width + 12,btnH,"undo");
          k.button(this,w - 18 - k.u(90),fy,"DONE","accent","done",null,btnH,k.u(90));
-         k.card(this.graphics,0,0,w,panelH,14);
+         k.card(this.graphics,0,0,w,panelH,18);
          this.boxW = w;
          this.boxH = panelH;
          this.drawFocus();
+      }
+
+      private function tabsTop():Number { return this.kit.u(46); }
+
+      private function bodyTop():Number { return this.tabsTop() + this.kit.u(34) + 6; }
+
+      // The F11 tab row: muted spaced caps, the open tab in white over a 2.5 px accent bar,
+      // a thin rule under the row. LB / RB (and the pad shoulders) switch tabs too.
+      private function paintTabs(param1:Number, param2:Number, param3:Number):void
+      {
+         var k:HsbKit = this.kit;
+         var g:Graphics = this.gfx;
+         var tx:Number = param1;
+         var i:int = 0;
+         while(i < TABS.length)
+         {
+            var sel:Boolean = i == this.tab;
+            var t:TextField = k.text(13,sel ? HsbKit.TEXT : HsbKit.MUTED,true,2);
+            k.put(t,String(TABS[i]));
+            k.fit(t);
+            this.add(t,tx - 2,param2 + 4);
+            var tw:Number = Math.round(t.textWidth - 2);
+            if(sel) { k.fill(g,tx,t.y + t.height + 2,tw,2.5,1,k.accent,1); }
+            this.hit(tx - 6,param2,tw + 12,k.u(30),"settab",i);
+            tx += tw + 26;
+            i++;
+         }
+         k.hline(g,12,param2 + k.u(34),param3 - 24,HsbKit.EDGE,1);
+      }
+
+      private function showTab(param1:int):void
+      {
+         var n:int = TABS.length;
+         var next:int = ((param1 % n) + n) % n;
+         if(next == this.tab) { return; }
+         this.tab = next;
+         this.scroll = 0;
+         this.hoverRow = "";
+         this.focusAt = -1;
+         this.paint();
       }
 
       private function inside(param1:Number, param2:Number, param3:Number, param4:Number):Boolean
@@ -677,6 +746,11 @@ package
             this.hsb.closePop(this,true);
             return true;
          }
+         if(param1 == "tab" || param1 == "tabprev")
+         {
+            this.showTab(this.tab + (param1 == "tab" ? 1 : -1));
+            return true;
+         }
          if(param1 == "up" || param1 == "down")
          {
             this.moveFocus(param1 == "down" ? 1 : -1);
@@ -691,7 +765,7 @@ package
       {
          var r:Object = this.focusedHit();
          if(r == null) { return; }
-         var top:Number = this.kit.u(44) + 6;
+         var top:Number = this.bodyTop();
          var bottom:Number = this.boxH - this.kit.u(58);
          if(Number(r.y) < top) { this.scroll = Math.max(0,this.scroll - (top - Number(r.y)) - 8); }
          else if(Number(r.y) + Number(r.h) > bottom) { this.scroll += Number(r.y) + Number(r.h) - bottom + 8; }
@@ -726,6 +800,7 @@ package
                h.openArrange();
                return;
             case "undo": this.undo(); break;
+            case "settab": this.showTab(int(param2)); break;
             case "reset":
                var self:HsbSettings = this;
                HsbDialog.confirm(this.kit,h,"Reset all settings?","",["Accent, layout, panels, keys and column sets go back to the defaults.","Your pills are kept."],"Reset",function(param1:Boolean):void

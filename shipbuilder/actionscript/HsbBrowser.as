@@ -149,7 +149,10 @@ package
          if(!this.upgrade)
          {
             this.catIndex = int(param1.iCategoryIndex);
-            this.learnCat(this.catIndex,this.tabName,built.length,raw);
+            var lockedHere:int = 0;
+            var q:int = 0;
+            while(q < built.length) { if(Boolean(built[q].disabled)) { lockedHere++; } q++; }
+            this.learnCat(this.catIndex,this.tabName,built.length,raw,lockedHere);
             this.learnCat(this.catIndex - 1,this.cleanText(param1.sPrevCategoryName),-1,String(param1.sPrevCategoryName));
             this.learnCat(this.catIndex + 1,this.cleanText(param1.sNextCategoryName),-1,String(param1.sNextCategoryName));
          }
@@ -176,17 +179,19 @@ package
          return t.text;
       }
 
-      private function learnCat(param1:int, param2:String, param3:int, param4:String):void
+      // param5: how many of the category's parts the game sends as unavailable (-1 unknown).
+      private function learnCat(param1:int, param2:String, param3:int, param4:String, param5:int = -1):void
       {
          if(param2 == null || param2.length == 0) { return; }
          var idx:int = param1;
          if(this.catTotal > 0) { idx = (idx % this.catTotal + this.catTotal) % this.catTotal; }
          if(idx < 0) { return; }
          var have:Object = this.cats[idx];
-         if(have == null) { have = {"name":param2,"count":-1,"raw":param4}; this.cats[idx] = have; }
+         if(have == null) { have = {"name":param2,"count":-1,"raw":param4,"locked":-1}; this.cats[idx] = have; }
          have.name = param2;
          have.raw = param4;
          if(param3 >= 0) { have.count = param3; }
+         if(param5 >= 0) { have.locked = param5; }
       }
 
       // ModuleInfo describes the part the game previews; cache its numbers for columns and pills.
@@ -2368,7 +2373,19 @@ package
             k.put(n,int(cat.count) >= 0 ? String(cat.count) : "\u00B7");
             k.fit(n);
             var nw:Number = Math.max(k.u(28),n.textWidth + 14);
-            var cw:Number = 38 + t.textWidth + 10 + nw + 6;
+            // Locked parts (sent by the game as unavailable): a lock and "+N" after the count, as
+            // in the categories mockup; known once the category has been read.
+            var lockN:int = cat.locked != null ? int(cat.locked) : -1;
+            var lt:TextField = null;
+            var lockW:Number = 0;
+            if(lockN > 0)
+            {
+               lt = k.text(13,HsbKit.LABEL,true);
+               k.put(lt,"+" + lockN);
+               k.fit(lt);
+               lockW = 6 + 14 + 2 + lt.textWidth + 4;
+            }
+            var cw:Number = 38 + t.textWidth + 10 + nw + lockW + 6;
             if(x + cw > param1 - param2) { x = param2; y += chipH + 11; }
             var active:Boolean = int(keys[i]) == this.catIndex;
             var empty:Boolean = int(cat.count) == 0;
@@ -2384,6 +2401,14 @@ package
             k.fill(g,nx,y + (chipH - k.u(18)) / 2,nw,k.u(18),5,active ? HsbKit.INK_ON_ACCENT : 0x262D33,active ? 0.85 : 1);
             k.put(n,n.text,active ? HsbKit.TEXT : HsbKit.LABEL);
             this.add(n,nx + (nw - n.width) / 2,y + (chipH - n.height) / 2);
+            if(lt != null)
+            {
+               var lx:Number = nx + nw + 6;
+               var lockInk:uint = active ? HsbKit.INK_ON_ACCENT : HsbKit.LABEL;
+               k.put(lt,lt.text,lockInk);
+               this.add(lt,lx + 14 + 2 - 2,y + (chipH - lt.height) / 2);
+               k.icon(g,"lock",lx,k.iconY(lt,14),14,lockInk,1);
+            }
             if(!empty) { this.hit(x,y,cw,chipH,"cat",int(keys[i])); }
             x += cw + 8;
             i++;

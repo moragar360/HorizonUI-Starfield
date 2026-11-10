@@ -73,10 +73,11 @@ inline int PickFace(const FaceCandidate* list, int count, const FaceMeasure& mis
 	return -1;
 }
 
-// HsbKit.size: text grows 20% in the large-font movie (Math.round), and captions are the floor.
+// HsbKit.size: text grows 20% in the large-font movie (Math.round), and nothing draws under
+// 13 px (15 in the large movie).
 inline int TextFloorPx(bool large)
 {
-	return large ? 15 : 12;
+	return large ? 15 : 13;
 }
 
 inline int TextPx(int px, bool large)

@@ -217,8 +217,8 @@ static void CheckFace()
 	Expect(hsb::PickFace(nullptr, 7, boxes, boxes) == -1, "no list is no proof");
 
 	Expect(hsb::TextPx(13, false) == 13 && hsb::TextPx(13, true) == 16, "body text is 13 px, 16 px in the large movie");
-	Expect(hsb::TextPx(12, false) == 12 && hsb::TextPx(12, true) == 15, "captions are 12 px, 15 px in the large movie");
-	Expect(hsb::TextPx(10, false) == 12 && hsb::TextPx(10, true) == 15, "nothing drops below the caption floor");
+	Expect(hsb::TextPx(12, false) == 13 && hsb::TextPx(12, true) == 15, "captions asked at 12 px draw at 13 px, 15 px in the large movie");
+	Expect(hsb::TextPx(10, false) == 13 && hsb::TextPx(10, true) == 15, "nothing drops below 13 px");
 	Expect(hsb::TextPx(14, true) == 17 && hsb::TextPx(21, false) == 21, "larger text scales by 1.2 with Math.round");
 }
 
@@ -1543,7 +1543,7 @@ static void CheckMovie(const fs::path& root)
 				CountOf(outline, "param1.beginFill(") == 4 && CountOf(outline, "param1.endFill();") == 4 &&
 				!Has(outline, "drawRoundRect") && !Has(outline, "lineStyle(param9") &&
 				InOrder(quarter, {"param1.beginFill(param7,param8);", "param1.moveTo(", "i = n;", "param1.lineTo(param2 + Math.cos(param6 * Math.PI / 180) * param4,", "param1.endFill();"}) &&
-				Has(FunctionBody(kit, "card", "internal"), "this.outline(param1,param2,param3,param4,param5,param6,EDGE,Math.min(1,this.opacity + 0.04),1);") &&
+				Has(FunctionBody(kit, "card", "internal"), "this.outline(param1,param2,param3,param4,param5,param6,0xFFFFFF,CARD_EDGE_ALPHA,1);") &&
 				Has(FunctionBody(browser, "paintPills"), "k.outline(g,x,param3,newW,ph,ph / 2,HsbKit.MUTED,1);") && !Has(browser, "k.dashed(g,x,param3,newW"),
 			"every outline is a closed ring and the New pill has a solid edge");
 	}
@@ -1569,7 +1569,7 @@ static void CheckMovie(const fs::path& root)
 			!Has(FunctionBody(settings, "valueRow"), "param2 - 70") &&
 			Has(FunctionBody(settings, "valueRow"), "var ay:Number = k.iconY(vt,arrow);") &&
 			Has(FunctionBody(kit, "iconY", "internal"), "param1.getLineMetrics(0)") &&
-			CountOf(browser, "k.iconY(") == 5,
+			CountOf(browser, "k.iconY(") == 6,
 		"both stepper arrows have their own half of the row and line up with the text");
 	// v5 item 6: the sample strip is never built, even with FontStrip=1.
 	Expect(Has(hub, "private static const FONT_STRIP_BUILT:Boolean = false;") && CountOf(hub, "FONT_STRIP_BUILT") == 2 &&
@@ -1584,6 +1584,26 @@ static void CheckMovie(const fs::path& root)
 			Has(FunctionBody(browser, "onKey", "override internal"), "this.clearFind();") &&
 			InOrder(FunctionBody(browser, "clearFind"), {"this.findText = \"\";", "if(this.findOn) { this.stopFind(); }", "this.afterFilter();"}),
 		"Find stays in the panel header under the notice and clears with Esc or its (x)");
+	// v5b item 7: the settings window has F11 tabs; every row keeps its setting (the key list
+	// is diffed against the previous build by checks/settings_keys_diff.py).
+	Expect(Has(settings, "internal static const TABS:Array = [\"DISPLAY\",\"LAYOUT\",\"LIST\",\"GENERAL\"];") &&
+			InOrder(FunctionBody(settings, "paint", "internal"), {"this.paintTabs(x0 + 4,headH,w);", "if(this.tab == 0)", "\"APPEARANCE\"", "else if(this.tab == 1)", "\"LAYOUT\"", "\"PANELS\"",
+				"else if(this.tab == 2)", "\"LIST\"", "\"density\"", "\"bymaker\"", "\"COLUMNS\"", "\"KEYS\"", "\"NOTICES\"", "\"ABOUT\""}) &&
+			Has(FunctionBody(settings, "paintTabs"), "if(sel) { k.fill(g,tx,t.y + t.height + 2,tw,2.5,1,k.accent,1); }") &&
+			Has(FunctionBody(settings, "onKey", "override internal"), "this.showTab(this.tab + (param1 == \"tab\" ? 1 : -1));") &&
+			Has(FunctionBody(settings, "onAct", "override internal"), "case \"settab\": this.showTab(int(param2)); break;") &&
+			Has(FunctionBody(settings, "keepFocusVisible"), "var top:Number = this.bodyTop();"),
+		"settings show F11 tabs that LB / RB and a click switch");
+	// v5b item 9: a category chip shows its locked parts (lock and +N) once it was read.
+	Expect(Has(browser, "this.learnCat(this.catIndex,this.tabName,built.length,raw,lockedHere);") &&
+			Has(FunctionBody(browser, "learnCat"), "if(param5 >= 0) { have.locked = param5; }") &&
+			Has(FunctionBody(browser, "paintGridTop"), "k.icon(g,\"lock\",lx,k.iconY(lt,14),14,lockInk,1);"),
+		"category chips show their locked parts");
+	// v5b item 11: every card has a stacked soft shadow under a translucent body; no glow.
+	Expect(InOrder(FunctionBody(kit, "card", "internal"), {"while(i < SHADOW_STEPS)", "param1.beginFill(0x000000,SHADOW_ALPHA);", "param1.beginFill(FILL,this.opacity * BODY_ALPHA);",
+				"this.outline(param1,param2,param3,param4,param5,param6,0xFFFFFF,CARD_EDGE_ALPHA,1);"}) &&
+			Has(kit, "private static const SHADOW_ALPHA:Number = 0.07;") && !Has(kit, std::string("Glow") + "Filter") && !Has(hub, std::string("Glow") + "Filter") && !Has(browser, std::string("Glow") + "Filter"),
+		"cards have a soft bottom shadow and no glow");
 	Expect(Has(FunctionBody(hub, "hotText"), "if(b == null) { i++; continue; }") &&
 		Has(FunctionBody(hub, "takeLines", "public"), "try { this.pushState(); }") &&
 		Has(FunctionBody(hub, "takeLines", "public"), "if(!this.stateNoted)") &&
@@ -1597,7 +1617,7 @@ static void CheckMovie(const fs::path& root)
 	}
 	Expect(!NotesHideFaces("         this.note(\"FONT face=\" + this.kit.face);") && !NotesHideFaces("         this.note(\"FONT list=\" + FACES.join(\",\"));") &&
 		NotesHideFaces("         this.note(\"FONT try=\" + this.faceTries);"), "the face scan catches a face name in a log line");
-	Expect(Has(kit, "var n:Number = this.lrg ? Math.round(param1 * 1.2) : param1;") && Has(kit, "var floor:Number = this.lrg ? 15 : 12;"),
+	Expect(Has(kit, "var n:Number = this.lrg ? Math.round(param1 * 1.2) : param1;") && Has(kit, "var floor:Number = this.lrg ? 15 : 13;"),
 		"the movie's text sizes match the twin");
 	// The labels ask for Exo 2 by the HUD's mapped name only; the movie loads no font file itself.
 	Expect(!Has(hub, "fonts_horizon") && !Has(kit, "fonts_horizon") && !Has(kit, "Roboto") && CountOf(kit, "\"$Horizon_") == 1,

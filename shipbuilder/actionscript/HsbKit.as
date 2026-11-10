@@ -95,7 +95,8 @@ package
       internal function size(param1:Number):int
       {
          var n:Number = this.lrg ? Math.round(param1 * 1.2) : param1;
-         var floor:Number = this.lrg ? 15 : 12;
+         // Nothing draws under 13 px (15 in the large movie).
+         var floor:Number = this.lrg ? 15 : 13;
          return int(n < floor ? floor : n);
       }
 
@@ -591,16 +592,34 @@ package
          this.fields = kept;
       }
 
+      // Card look: the body a touch translucent at full Card opacity, a 10% white edge (the
+      // HUD's), and the stacked bottom shadow.
+      private static const BODY_ALPHA:Number = 0.92;
+      private static const CARD_EDGE_ALPHA:Number = 0.1;
+      private static const SHADOW_STEPS:int = 5;
+      private static const SHADOW_ALPHA:Number = 0.07;
+
       // Glass card: graphite fill at the card opacity and a 1 px edge, radius 14 as drawn.
       internal function card(param1:Graphics, param2:Number, param3:Number, param4:Number, param5:Number, param6:Number = 14):void
       {
-         // The body, then the edge as a closed 1 px ring on top (it was a larger rect showing
-         // around the body, which let the edge thin out or vanish at the corners).
+         // A soft drop shadow first, weighted to the bottom: five stacked black fills, each a
+         // little lower and wider, as the Horizon HUD's F11 window draws its own (no filter and
+         // no glow). Then the translucent body, then the edge as a closed 1 px ring on top (it
+         // was a larger rect showing around the body, which let the edge thin out at corners).
          param1.lineStyle();
-         param1.beginFill(FILL,this.opacity);
+         var i:int = 0;
+         while(i < SHADOW_STEPS)
+         {
+            var sr:Number = param6 + i;
+            param1.beginFill(0x000000,SHADOW_ALPHA);
+            param1.drawRoundRect(param2 - i * 0.8,param3 + 2 + i * 1.6,param4 + i * 1.6,param5 + i * 0.6,sr * 2,sr * 2);
+            param1.endFill();
+            i++;
+         }
+         param1.beginFill(FILL,this.opacity * BODY_ALPHA);
          param1.drawRoundRect(param2,param3,param4,param5,param6 * 2,param6 * 2);
          param1.endFill();
-         this.outline(param1,param2,param3,param4,param5,param6,EDGE,Math.min(1,this.opacity + 0.04),1);
+         this.outline(param1,param2,param3,param4,param5,param6,0xFFFFFF,CARD_EDGE_ALPHA,1);
       }
 
       internal function fill(param1:Graphics, param2:Number, param3:Number, param4:Number, param5:Number, param6:Number, param7:uint, param8:Number = 1):void
