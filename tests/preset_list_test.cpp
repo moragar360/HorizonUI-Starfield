@@ -22,6 +22,7 @@ namespace HZF {
 inline const char* kVersion = "0.42.0";
 }
 #include "hz_ini_diff.h"
+#include "hz_preset_apply.h"   // r7 (S-4): the real PresetToUser
 
 namespace {
 
@@ -1093,17 +1094,32 @@ int main()
 		Expect(saved2.find("WatchLog=1") != std::string::npos, "r6: a second save keeps it too");
 		Expect(HZF::Diff(full, def, "[Cards]\r\nNoSuchKey=1\r\n", so).find("NoSuchKey") == std::string::npos, "r6: an unknown key of another known section is still dropped");
 		Expect(HZF::Diff(full, def, "", so).find("WatchLog") == std::string::npos, "r6: WatchLog is never added when the player did not write it");
-		// preset apply (PresetToUser): the preset's [Debug] is skipped, the player's own [Debug] stays, WatchLog included
-		HZF::DiffOpt po;
-		po.keepUnknownKeys = false;
-		po.keepUnknownSections = false;
-		const std::string p = HZF::StripSection("[Preset]\r\nName=X\r\n\r\n[Scanner]\r\nScanUnits=1\r\n", "debug") + "\r\n" + HZF::OnlySection(user, "debug");
-		const auto applied = HZF::Diff(p, def, HZF::OnlySection(user, "debug"), po);
+		// preset apply: r7 (S-4) calls the real HZF::PresetToUser (hz_preset_apply.h, used by main.cpp). The preset's [Debug]
+		// is skipped, the player's own [Debug] stays, WatchLog included.
+		const std::string preset = "[Preset]\r\nName=X\r\n\r\n[Scanner]\r\nScanUnits=1\r\n\r\n[Debug]\r\nWatchLog=0\r\nPerfDiag=0\r\n";
+		const auto applied = HZF::PresetToUser(preset, def, user);
 		Expect(applied.find("WatchLog=1") != std::string::npos && applied.find("PerfDiag=1") != std::string::npos, "r6: applying a preset keeps the player's WatchLog=1");
+		Expect(applied.find("WatchLog=0") == std::string::npos && applied.find("PerfDiag=0") == std::string::npos && applied.find("[Preset]") == std::string::npos, "r7 S-4: the preset's own [Debug] and [Preset] never reach user.ini");
+		Expect(applied.find("ScanUnits=1") != std::string::npos, "r7 S-4: the preset's settings are applied");
+		Expect(readKey(HZF::Overlay(def, applied), "watchlog") == "1", "r7 S-4: LoadIni reads WatchLog=1 after a preset apply");
+		const auto fresh = HZF::PresetToUser(preset, def);
+		Expect(fresh.find("WatchLog") == std::string::npos, "r7 S-4: a preset applied with no old user.ini adds no WatchLog (diagnostics stay off)");
+		const auto keepHk = HZF::PresetToUser(preset, def, "[Hotkeys]\r\nSettingsKey=F10\r\n");
+		Expect(keepHk.find("SettingsKey=F10") != std::string::npos, "r7 S-4: the player's personal keys ([Hotkeys]) stay, as before the move");
 		Expect(HZF::OnlySection(user, "debug").find("[Debug]") == 0 && HZF::OnlySection(user, "cards").empty(), "r6: OnlySection returns one section, or nothing");
 		std::ifstream mc("src/main.cpp");
 		std::string m((std::istreambuf_iterator<char>(mc)), std::istreambuf_iterator<char>());
-		Expect(m.find("return Diff(p, a_defs, OnlySection(a_oldUser, \"debug\"), o);") != std::string::npos, "r6: main.cpp PresetToUser passes the old [Debug] to Diff");
+		std::ifstream ph("src/hz_preset_apply.h");
+		std::string pa((std::istreambuf_iterator<char>(ph)), std::istreambuf_iterator<char>());
+		Expect(pa.find("return Diff(p, a_defs, OnlySection(a_oldUser, \"debug\"), o);") != std::string::npos, "r6: PresetToUser passes the old [Debug] to Diff (r7: in hz_preset_apply.h)");
+		Expect(m.find("inline std::string PresetToUser(") == std::string::npos && m.find("\n#include \"hz_preset_apply.h\"") != std::string::npos
+			&& m.find("PresetToUser(pr, defs)") != std::string::npos && m.find("PresetToUser(text, defs, old)") != std::string::npos, "r7 S-4: main.cpp includes hz_preset_apply.h and calls that one PresetToUser (no second copy)");
+		{
+			const auto inc = m.find("\n#include \"hz_preset_apply.h\"");
+			const auto lastNs = m.rfind("namespace HZ", inc);
+			const auto lastClose = m.rfind("\n}", inc);
+			Expect(inc != std::string::npos && lastClose > lastNs && m.find("\n#include \"hz_ini_diff.h\"") < inc, "r7 S-4: hz_preset_apply.h is included at file scope, after hz_ini_diff.h");
+		}
 		Expect(m.find("Diff(a_full, Defaults(a_p), user, o)") != std::string::npos, "r6: main.cpp SaveFromHud passes the old user.ini to Diff");
 		Expect(m.find("if (get(\"watchlog\", v)) g_wlOn.store(hzperf::Parse01(v), std::memory_order_relaxed);") != std::string::npos
 			&& m.find("REX::INFO(\"watchlog: {} ([Debug] WatchLog={}, needs PerfDiag=1)\"") != std::string::npos, "r6: LoadIni reads [Debug] WatchLog and logs its state once per read when PerfDiag=1");
