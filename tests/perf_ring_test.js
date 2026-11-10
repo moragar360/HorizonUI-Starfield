@@ -77,7 +77,7 @@ function load(sys) {
 		hzPerfOn: true, hzPbN: null, hzRgTy: null, hzRgT0: null, hzRgT1: null, hzRgV: null, hzRgC: null,
 		hzRgW: 0, hzRgOpC: -1, hzRgOpQ: -1, hzMemUnsup: false, hzMemN: 0, hzMemLast: 0, hzMemMin: 0, hzMemMax: 0,
 		hzMemDrops: 0, hzMemDropKB: 0, hzPerfClockFb: false, now: 1000, calls: [],
-		hzPsN: null, hzPsT: 0, hzPsF0: 0, hzPsA0: 0, hzPcFind: 0, hzPcHideRb: 0, hzPcBlgCh: 0, hzPcStHide: 0, hzPcFmt: 0,
+		hzPsN: null, hzPsS: null, hzPsT: 0, hzPsF0: 0, hzPsA0: 0, hzPcFind: 0, hzPcHideRb: 0, hzPcBlgCh: 0, hzPcStHide: 0, hzPcFmt: 0,
 		hzPerfMode: 0, hzTexts: [1, 2, 3], hzFades: [1], hzHideCache: null, hzBlg: null, hzWatchStyle: 3, hzCrossRule: 1,
 		hzXhStyle: 2, hzTextShadow: true, hzCompact: false, hzNameHover: 0, hzFontFace: 1, hzTextScale: 1.1,
 		hzHideVanillaWatch: true, hzHideVanillaCompass: false,
@@ -131,6 +131,7 @@ for (const name of NAMES.filter((n) => n.indexOf("hzPb") === 0 && n !== "hzPbIni
 	p.hzPbInit();
 	expect(p.hzPbN.length === 33 && p.hzRgTy.length === 2048 && p.hzRgC.length === 2048, "storage preallocated once (11 probes, 2048 ring slots)");
 	expect(p.hzPsN.length === 245 && p.hzPsN.every((v) => v === 0), "parts storage preallocated once (49 ids x 5)");
+	expect(p.hzPsS.length === 49 && p.hzPsS.every((v) => v === 0), "S cap counters preallocated once (49 ids)");
 	const keep = p.hzRgTy;
 	p.hzPbInit();
 	expect(p.hzRgTy === keep, "init is idempotent (no second allocation)");
@@ -175,12 +176,14 @@ for (const name of NAMES.filter((n) => n.indexOf("hzPb") === 0 && n !== "hzPbIni
 	expect(slots.length === 2048 && slots[0] === "1," + (q.now - 2047 * 100) + "," + (q.now - 2047 * 100) + ",0,1", "oldest kept slot first");
 	const tyRef = q.hzRgTy;
 	q.hzPbClear();
-	q.hzPsN[7] = 5; q.hzPcFind = 9; q.hzPcFmt = 4; q.hzPcBlgCh = 3; q.hzPcStHide = 2; q.hzPcHideRb = 1; q.hzPsT = 77;
+	q.hzPsN[7] = 5; q.hzPsS[3] = 40; q.hzPcFind = 9; q.hzPcFmt = 4; q.hzPcBlgCh = 3; q.hzPcStHide = 2; q.hzPcHideRb = 1; q.hzPsT = 77;
 	const psRef = q.hzPsN;
+	const ssRef = q.hzPsS;
 	q.hzPbClear();
 	expect(q.hzRgW === 0 && q.hzPbN.every((v) => v === 0) && q.hzMemDrops === 0 && q.hzRgTy === tyRef, "clear resets without reallocating");
 	expect(q.hzPsN === psRef && q.hzPsN.every((v) => v === 0) && q.hzPcFind === 0 && q.hzPcFmt === 0 && q.hzPcBlgCh === 0
 		&& q.hzPcStHide === 0 && q.hzPcHideRb === 0 && q.hzPsT === 0, "clear resets parts and counters without reallocating");
+	expect(q.hzPsS === ssRef && q.hzPsS.every((v) => v === 0), "clear resets the S cap counters without reallocating");
 	q.hzPerfOn = false;
 	expect(q.hzPerfRing() === "ring diag=0", "ring is empty when PerfDiag is off");
 }
@@ -246,7 +249,7 @@ function psHud(on, slow) {
 	const st = {
 		hzPerfOn: on, hzPerfMode: 0, hzPerfClockFb: false, hzPbN: null, hzRgTy: null, hzRgT0: null, hzRgT1: null, hzRgV: null, hzRgC: null,
 		hzRgW: 0, hzRgOpC: -1, hzRgOpQ: -1, hzMemUnsup: false, hzMemN: 0, hzMemLast: 0, hzMemMin: 0, hzMemMax: 0, hzMemDrops: 0, hzMemDropKB: 0,
-		hzPsN: null, hzPsT: 0, hzPsF0: 0, hzPsA0: 0, hzPcFind: 0, hzPcHideRb: 0, hzPcBlgCh: 0, hzPcStHide: 0, hzPcFmt: 0, hzPerfN: null,
+		hzPsN: null, hzPsS: null, hzPsT: 0, hzPsF0: 0, hzPsA0: 0, hzPcFind: 0, hzPcHideRb: 0, hzPcBlgCh: 0, hzPcStHide: 0, hzPcFmt: 0, hzPerfN: null,
 		hzFrameN: 0, hzHideCache: null, hz36HideStale: false, hzHideTries: 0, hzHideVanillaBoost: true, hzHideVanillaCompass: true,
 		hzWatchStyle: 0, hzHideVanillaWatch: true, hzHideVanillaAmmo: true, hzHideVanillaHealth: true,
 		hzBlg: { numChildren: 3, getChildAt(i) { return kids[i]; } }, hzLaidOut: false, hzLayEver: true, hz30ModT0: 0, hzFontFace: 0,
@@ -379,11 +382,49 @@ function psDrive(h) {
 {
 	const p = load({ totalMemory: 1 << 24 });
 	p.hzPbInit();
-	for (let i = 0; i < 2100; i++) p.hzRgPushS(10 + i, 3, i % 47);
+	for (let i = 0; i < 2100; i++) {
+		if (i % 41 === 0) p.hzRgPushS(10 + i, 3, i % 47);
+		else p.hzRgPush(1, 10 + i, 0);
+	}
 	const s = p.hzPerfRing();
-	expect(s.indexOf(" n=2048 lost=52 ") > 0, "S ring overflow keeps 2048 and counts 52 lost");
+	expect(s.indexOf(" n=2048 lost=52 ") > 0, "ring overflow with S events keeps 2048 and counts 52 lost");
 	const sl = s.split("|")[1].split(";").filter(Boolean);
-	expect(sl.length === 2048 && sl[0] === "5,62,62,3," + (52 % 47) && sl[2047] === "5,2109,2109,3," + (2099 % 47), "S slots are ty,t0,t1,v,id oldest first");
+	expect(sl.length === 2048 && sl[0] === "1,62,62,0,1" && sl[2039] === "5,2101,2101,3," + (2091 % 47) && sl[2047] === "1,2109,2109,0,1",
+		"S slots are ty,t0,t1,v,id in time order with the other events");
+	// The joined string equals the old per-slot concatenation.
+	let old = s.split("|")[0] + "|";
+	for (let i = p.hzRgW - 2048; i < p.hzRgW; i++) {
+		const j = i % 2048;
+		old += Math.trunc(p.hzRgTy[j]) + "," + Math.round(p.hzRgT0[j]) + "," + Math.round(p.hzRgT1[j]) + "," + Math.round(p.hzRgV[j]) + "," + Math.trunc(p.hzRgC[j]) + ";";
+	}
+	expect(s === old, "Array join gives the same ring string as per-slot concatenation");
+	expect(funcBody(as, "hzPerfRing").indexOf("a.join(\"\")") > 0 && funcBody(as, "hzPerfRing").indexOf("s +=") < 0, "S2: ring string is joined once, no growing +=");
+}
+
+// S1: S events are capped at 32 per id per window; the parts line keeps the full count and the dropped count.
+{
+	const p = load({ totalMemory: 1 << 24 });
+	p.hzPbInit();
+	for (let i = 0; i < 40; i++) p.hzRgPushS(100 + i, 5, 0);
+	expect(p.hzRgW === 32 && p.hzPsS[0] === 40, "S cap: 40 slow samples of one id write 32 slots and count 40");
+	p.hzRgPushS(200, 5, 34);
+	expect(p.hzRgW === 33 && p.hzRgC[32] === 34, "S cap is per id: another id still gets a slot");
+	p.now = 1000;
+	for (let i = 0; i < 35; i++) p.hzPbEnd(0, 980);
+	expect(p.hzRgW === 65 && p.hzPsS[47] === 35, "S cap applies to loopTotal too");
+	const s = p.hzPerfParts();
+	expect(s.indexOf(" veh=0,0,0,0,0,40,8 ") > 0 && s.indexOf(" xBio=0,0,0,0,0,1,0 ") > 0, "parts line: slow and sDrop columns");
+	expect(s.indexOf(" | sCap=32 loopTotal=35,3 exitTotal=0,0 | find=") > 0, "parts line: the two totals' slow and sDrop");
+	const ring = p.hzPerfRing().split("|")[1].split(";").filter(Boolean);
+	expect(ring[0] === "5,100,100,5,0", "S id 0 (veh) is written with id 0");
+	p.hzPbClear();
+	p.hzRgPushS(300, 5, 0);
+	expect(p.hzRgW === 1 && p.hzPsS[0] === 1, "the cap restarts each window (hzPbClear)");
+	// Worst case: 49 ids at 2048 x 32 capped slots cannot exceed the ring; the cap bounds S at 49 x 32 = 1568 slots.
+	const q = load({ totalMemory: 1 << 24 });
+	q.hzPbInit();
+	for (let r = 0; r < 100; r++) for (let id = 0; id < 49; id++) q.hzRgPushS(r, 3, id);
+	expect(q.hzRgW === 49 * 32, "S flood from every id stops at 1568 slots, under 2048");
 }
 
 // hzPerfParts: one line, ids match the native names, counters, lists and the settings echo.
@@ -396,16 +437,36 @@ function psDrive(h) {
 	p.hzPsN[0] = 3; p.hzPsN[1] = 4; p.hzPsN[2] = 2; p.hzPsN[3] = 1; p.hzPsN[4] = 5;
 	p.hzPcFind = 11; p.hzPcBlgCh = 22; p.hzPcFmt = 33;
 	const s = p.hzPerfParts();
-	expect(s.indexOf("parts diag=1 mode=0 loopN=0 exitN=0 cmpN=0 cols=n,sumMs,maxMs,finds,fmts veh=3,4,2,1,5 h40=0,0,0,0,0") === 0, "parts line head and first ids");
+	expect(s.indexOf("parts diag=1 mode=0 loopN=0 exitN=0 cmpN=0 cols=n,sumMs,maxMs,finds,fmts,slow,sDrop veh=3,4,2,1,5,0,0 h40=0,0,0,0,0,0,0") === 0, "parts line head and first ids");
 	expect(s.indexOf(" | find=11 hideRb=0 blgCh=22 stHide=0 fmtCalls=33 | texts=3 fades=1 hideCache=-1 blgN=-1 | ") > 0, "parts counters and list sizes");
 	expect(s.indexOf("WatchStyle=3 CrosshairRule=1 CrosshairStyle=2 TextShadow=1 Compact=0 NameHover=0 FontFace=1 TextScale=1.1 HideVanillaWatch=1 HideVanillaCompass=0 timerUnsupported=0") > 0,
 		"parts settings echo");
-	expect(s.length < 4096, "parts line fits kPartsMax (" + s.length + " chars)");
-	const asNames = (s.match(/ (\w+)=\d+,\d+,\d+,\d+,\d+/g) || []).map((x) => x.trim().split("=")[0]);
+	const kPartsMax = Number((perfH.match(/kPartsMax = (\d+);/) || [0, 0])[1]);
+	expect(kPartsMax === 8192 && s.length < kPartsMax, "parts line fits kPartsMax (" + s.length + " chars)");
+	const asNames = (s.match(/ (\w+)=\d+,\d+,\d+,\d+,\d+,\d+,\d+/g) || []).map((x) => x.trim().split("=")[0]);
 	const m = perfH.match(/static const char\* const k\[kPartCount\] = \{([\s\S]*?)\};/);
 	const nat = m ? m[1].match(/"(\w+)"/g).map((x) => x.replace(/"/g, "")) : [];
 	expect(asNames.length === 47 && nat.length === 49 && asNames.every((n, i) => n === nat[i]) && nat[47] === "loopTotal" && nat[48] === "exitTotal",
 		"AS part ids match hzperf::PartName (47 parts + 2 totals)");
+	// S2 worst case: every column and counter at int max, long settings.
+	for (let i = 0; i < 245; i++) p.hzPsN[i] = 2147483647;
+	for (let i = 0; i < 49; i++) p.hzPsS[i] = 2147483647;
+	p.hzPbN[0] = p.hzPbN[3] = p.hzPbN[6] = 2147483647;
+	p.hzPcFind = p.hzPcHideRb = p.hzPcBlgCh = p.hzPcStHide = p.hzPcFmt = 2147483647;
+	p.hzPerfMode = 7; p.hzTexts = new Array(99999); p.hzFades = new Array(99999); p.hzHideCache = new Array(99999); p.hzBlg = { numChildren: 99999 };
+	p.hzWatchStyle = 2147483647; p.hzCrossRule = 2147483647; p.hzXhStyle = 2147483647; p.hzNameHover = 2147483647; p.hzFontFace = 2147483647;
+	p.hzTextScale = 1.2345678901234567; p.hzPerfClockFb = true;
+	const w = p.hzPerfParts();
+	expect(w.length < kPartsMax * 0.75, "S2: worst-case parts line is " + w.length + " chars, well under kPartsMax " + kPartsMax);
+	const kRingAsMax = Number((perfH.match(/kRingAsMax = (\d+);/) || [0, 0])[1]);
+	const r = load({ totalMemory: 1 << 24 });
+	r.hzPbInit();
+	r.now = 999999999;
+	for (let i = 0; i < 2048; i++) { r.hzRgTy[i] = 2; r.hzRgT0[i] = 999999999; r.hzRgT1[i] = 999999999; r.hzRgV[i] = 9999999; r.hzRgC[i] = 99; }
+	r.hzRgW = 2147483647 - (2147483647 % 2048);
+	r.hzMemUnsup = true; r.hzPerfClockFb = true;
+	const rw = r.hzPerfRing();
+	expect(kRingAsMax === 98304 && rw.length < kRingAsMax * 0.8, "S2: worst-case ring string is " + rw.length + " chars, well under kRingAsMax " + kRingAsMax);
 }
 
 // PerfDiag=0 identity, by source: every parts line is one PerfDiag test (or a plain local) and nothing else.

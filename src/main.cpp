@@ -885,7 +885,7 @@ namespace HZ
 		if (t1 < a_t0) return;
 		hzperf::AddRoot(g_perfAgg, t1 - a_t0, HzQpcFreq(), a_next);
 		hzperf::NoteSpike(g_perfAgg, a_t0, t1 - a_t0, HzQpcFreq(), a_next);
-		hzperf::NoteGap(g_perfAgg, a_t0, HzQpcFreq(), a_next);
+		hzperf::NoteGap(g_perfAgg, a_t0, HzQpcFreq());
 		if (a_next) HzPerfProcMem();
 	}
 
@@ -4920,11 +4920,15 @@ namespace HZ
 		// Option B: AS event ring first (hzPerfSnapshot resets it). The QPC tick right
 		// before this Invoke and the AS getTimer it returns give the shared clock offset.
 		std::string ring = "ring=missing";
+		bool ringCut = false;
 		const auto qRing = HzQpc();
 		try {
 			GValue rr;
-			if (HudInvoke("hzPerfRing", &rr) && rr.IsString() && rr.GetString())
-				ring = hzpreset::Utf8Prefix(rr.GetString(), hzperf::kRingAsMax);
+			if (HudInvoke("hzPerfRing", &rr) && rr.IsString() && rr.GetString()) {
+				const char* rs = rr.GetString();
+				ringCut = std::strlen(rs) > static_cast<std::size_t>(hzperf::kRingAsMax);
+				ring = hzpreset::Utf8Prefix(rs, hzperf::kRingAsMax);
+			}
 		} catch (...) {
 			ring = "ring=throw";
 		}
@@ -4933,6 +4937,7 @@ namespace HZ
 		const double w0Ms = hzperf::QpcMs(g_perfAgg.windowStart.load(std::memory_order_relaxed), freq);
 		const int natN = hzperf::CollectNative(g_perfAgg, freq, s_ringEv, hzperf::kRingEvMax);
 		const int asN = hzperf::ParseAsRing(ring.c_str(), 0, 0, s_ringEv + natN, hzperf::kRingEvMax - natN, ringHead);
+		if (ringCut && ringHead.ok) ringHead.trunc = 1;
 		const double offMs = ringHead.ok ? hzperf::QpcMs(qRing, freq) - ringHead.now : 0;
 		for (int i = natN; i < natN + asN; ++i)
 			s_ringEv[i].tMs += offMs - w0Ms;
@@ -4945,8 +4950,11 @@ namespace HZ
 		std::string parts = "parts=missing";
 		try {
 			GValue pr;
-			if (HudInvoke("hzPerfParts", &pr) && pr.IsString() && pr.GetString())
-				parts = hzpreset::Utf8Prefix(pr.GetString(), hzperf::kPartsMax);
+			if (HudInvoke("hzPerfParts", &pr) && pr.IsString() && pr.GetString()) {
+				const char* ps = pr.GetString();
+				parts = hzpreset::Utf8Prefix(ps, hzperf::kPartsMax);
+				if (std::strlen(ps) > static_cast<std::size_t>(hzperf::kPartsMax)) parts += " partsTrunc=1";
+			}
 		} catch (...) {
 			parts = "parts=throw";
 		}

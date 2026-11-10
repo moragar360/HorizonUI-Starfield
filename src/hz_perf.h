@@ -11,8 +11,10 @@
 // string after intro-resolved + settle + PerfDumpWait. No generation-callback markers.
 // Option B (private diagnostic build): three fixed 256-slot rings, one writer at a time (the
 // HUD root hook; HUD advances are serialized), no allocation: rootT samples of 5 ms or more (QPC start, us),
-// process private-bytes drops above 256 KB (QPC, KB), and HUD advance gaps of 40 ms or more (start to
-// start of two a_next calls, stamped with the earlier start, us). The gap ring needs no ActionScript, so
+// process private-bytes drops above 256 KB (QPC, KB), and HUD advance gaps of 50 ms or more (start to
+// start of two consecutive HUD AdvanceFrame calls, a_next or not, stamped with the earlier start, us). The
+// HUD advances once per game frame (movieAdvance cps = frame rate in runs 1-3), so a gap is a long game
+// frame; a_next alone ticks at the 30 fps SWF rate and would flag normal frames. The gap ring needs no ActionScript, so
 // it also works on a vanilla HUD. At dump time they are merged with the 2048-slot AS event ring into
 // "perf ring" lines. Everything stays behind PerfDiag.
 // Author: Moragar.
@@ -49,12 +51,12 @@ inline constexpr int kSettleMax = 10000;
 inline constexpr int kRingSlots = 256;
 inline constexpr std::uint64_t kSpikeUs = 5000;
 inline constexpr std::uint64_t kMemDropBytes = 262144;
-inline constexpr std::uint64_t kGapUs = 40000;
+inline constexpr std::uint64_t kGapUs = 50000;
 inline constexpr int kAsRingSlots = 2048;
-inline constexpr int kRingAsMax = 65536;
+inline constexpr int kRingAsMax = 98304;  // 2048 slots x 35 chars (9-digit times) + head, with room
 inline constexpr int kRingEvMax = kRingSlots * 3 + kAsRingSlots;
 inline constexpr int kRingLineMax = 192;
-inline constexpr int kPartsMax = 4096;
+inline constexpr int kPartsMax = 8192;   // 47 parts x 7 ten-digit columns + counters and settings, with room
 inline constexpr int kPartCount = 49;
 
 enum Bucket : int {
@@ -441,13 +443,13 @@ inline void NoteSpike(Agg& a_a, std::uint64_t a_t0, std::uint64_t a_dt, std::uin
 	EndSample(a_a);
 }
 
-// Option B parts: start-to-start gap between two HUD advances (a_next only). A gap of kGapUs
-// or more goes to the gap ring, stamped with the earlier start, v = gap us. The first advance
-// after Reset only sets the start. Native only, so it works when the HUD ActionScript is
-// vanilla. No allocation. Caller already checked PerfDiag.
-inline void NoteGap(Agg& a_a, std::uint64_t a_t0, std::uint64_t a_freq, bool a_next)
+// Option B parts: start-to-start gap between two consecutive HUD advances, every AdvanceFrame call
+// (a_next true or false), so the cadence is the game frame. A gap of kGapUs (50 ms) or more goes to the
+// gap ring, stamped with the earlier start, v = gap us. A steady 40-66 fps sequence stays under it; a
+// stall of 50 ms or more is one G. The first advance after Reset only sets the start. Native only, so
+// it works when the HUD ActionScript is vanilla. No allocation. Caller already checked PerfDiag.
+inline void NoteGap(Agg& a_a, std::uint64_t a_t0, std::uint64_t a_freq)
 {
-	if (!a_next) return;
 	if (!TryBeginSample(a_a)) return;
 	const auto last = a_a.gapLast.load(std::memory_order_relaxed);
 	a_a.gapLast.store(a_t0, std::memory_order_relaxed);
@@ -737,6 +739,7 @@ struct AsRingHead {
 	int lost = 0;
 	int memUnsupported = -1;
 	int timerUnsupported = -1;
+	int trunc = 0;  // 1: the AS ring string was cut (no closing ';' or over kRingAsMax)
 };
 
 inline double QpcMs(std::uint64_t a_q, std::uint64_t a_freq)
@@ -818,7 +821,10 @@ inline int ParseAsRing(const char* a_s, double a_offMs, double a_w0Ms, RingEv* a
 	const char* p = bar + 1;
 	while (*p && k < a_cap) {
 		const char* end = SkipTo(p, ';');
-		if (*end != ';') break;  // truncated tail
+		if (*end != ';') {  // truncated tail
+			if (*p) a_head.trunc = 1;
+			break;
+		}
 		double f[5] = { 0, 0, 0, 0, 0 };
 		int nf = 0;
 		const char* q = p;
@@ -845,7 +851,10 @@ inline int ParseAsRing(const char* a_s, double a_offMs, double a_w0Ms, RingEv* a
 		e.tMs = f[1] + a_offMs - a_w0Ms;
 		e.spanMs = f[2] >= f[1] ? f[2] - f[1] : 0;
 		e.v = f[3];
-		e.n = f[4] > 0 ? static_cast<std::uint32_t>(f[4]) : 1;
+		if (e.type == 'S')  // raw part id: 0 (veh) is a real id
+			e.n = f[4] >= 0 && f[4] < kPartCount ? static_cast<std::uint32_t>(f[4]) : static_cast<std::uint32_t>(kPartCount);
+		else
+			e.n = f[4] > 0 ? static_cast<std::uint32_t>(f[4]) : 1;
 		a_out[k++] = e;
 	}
 	return k;
@@ -894,7 +903,7 @@ inline int FormatRingSum(const Agg& a_a, const AsRingHead& a_h, double a_offMs, 
 {
 	if (!a_out || a_cap < 8) return 0;
 	const int n = std::snprintf(a_out, static_cast<std::size_t>(a_cap),
-		"perf ring sum events=%d spikes=%u spikeLost=%u spikeMinUs=%llu gaps=%u gapLost=%u gapMinUs=%llu gapN=%llu gapMaxUs=%llu pmemN=%llu pmemMinKB=%llu pmemMaxKB=%llu pmemDrops=%llu pdropLost=%u as=%s asN=%d asLost=%d memUnsupported=%d timerUnsupported=%d offMs=%.1f clock=QPC_ms_since_window",
+		"perf ring sum events=%d spikes=%u spikeLost=%u spikeMinUs=%llu gaps=%u gapLost=%u gapMinUs=%llu gapN=%llu gapMaxUs=%llu pmemN=%llu pmemMinKB=%llu pmemMaxKB=%llu pmemDrops=%llu pdropLost=%u as=%s asN=%d asLost=%d asTrunc=%d memUnsupported=%d timerUnsupported=%d offMs=%.1f clock=QPC_ms_since_window",
 		a_events, RingCount(a_a.spike), RingLost(a_a.spike),
 		static_cast<unsigned long long>(kSpikeUs),
 		RingCount(a_a.gap), RingLost(a_a.gap),
@@ -906,7 +915,7 @@ inline int FormatRingSum(const Agg& a_a, const AsRingHead& a_h, double a_offMs, 
 		static_cast<unsigned long long>(a_a.pmemMax.load(std::memory_order_relaxed) / 1024ull),
 		static_cast<unsigned long long>(a_a.pmemDrops.load(std::memory_order_relaxed)),
 		RingLost(a_a.pdrop),
-		a_h.ok ? "ok" : "missing", a_h.n, a_h.lost, a_h.memUnsupported, a_h.timerUnsupported, a_offMs);
+		a_h.ok ? "ok" : "missing", a_h.n, a_h.lost, a_h.trunc, a_h.memUnsupported, a_h.timerUnsupported, a_offMs);
 	if (n < 0) {
 		a_out[0] = 0;
 		return 0;
