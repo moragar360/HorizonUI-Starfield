@@ -104,7 +104,7 @@ function makeHost(opts) {
 		HZWL_QMAX: constNum("HZWL_QMAX"), HZWL_IDMAX: constNum("HZWL_IDMAX"),
 		hzWlOn: false, hzWlMode: 0, hzWlQ: null, hzWlQN: 0, hzWlDrop: 0, hzWlObj: null, hzWlObjId: null, hzWlNext: 0, hzWlIdFull: 0,
 		hzWlSt: null, hzWlPreSt: null, hzWlPreRep: null, hzWlOpC: null, hzWlOpT: null, hzWlSlotObj: null, hzWlSlotId: null,
-		hzWlChP: null, hzWlChV: 0, hzWlF: 0, hzWlCtx: -1, hzWlNat: 0, hzWlNatSeen: -1, hzWlScan: false, hzWlBlgN: -1, hzWlBlgRef: null, hzWlBlgPrev: null, hzWlBlgLbl: null,
+		hzWlChP: null, hzWlChV: 0, hzWlF: 0, hzWlCtx: -1, hzWlNat: 0, hzWlNatSeen: -1, hz44Hid: false, hz44N: 0, hzPcSigB: 0, hzWlScan: false, hzWlBlgN: -1, hzWlBlgRef: null, hzWlBlgPrev: null, hzWlBlgLbl: null,
 		hzWlTgT: 0, hzWlTgN: 0, hzWlCardOn: false, hzWlCardT: 0, hzWlW0: 0, hzWlPs0: null, hzWlPb0: null, hzWlPsMax: null, hzWlPbMax: null,
 		hzWlRbMs: null, hzWlW: null, hzWlCostN: 0, hzWlCostSum: 0, hzWlCostMax: 0, hzWlSkip: 0, hzWlDisMax: 0, hzWlRbNow: false,
 		hud: hud
@@ -333,7 +333,7 @@ if (base) {
 	expect(L.length === 3 && /on=1 dtMs=66 /.test(L[0]) && /on=0 dtMs=50 /.test(L[1]) && /on=1 dtMs=noT /.test(L[2]), "hover: appear 66 ms and gone 50 ms after the T event; an edge with no new T is noT");
 	h.hzPsN[25] = 3; h.hzPsN[26] = 7; h.hzWlPsMax[5] = 7; h.hzPbN[0] = 10; h.hzPbN[1] = 40;
 	const w = h.hzWlWin();
-	expect(/^aswin m=base ms=\d+ f=\d+ loop=10,40,0 exit=0,0,0 rb=3 rbSame=1 rbChg=2 rbSkip=0 rbMs= pre=0 preRep=0 newIds=\d+ ids=\d+ idFull=0 hovAppear=1,66,66 hovGone=1,50,50 hovNoT=1 wl=0,0,0 q=0 drop=0 err=0 parts=hideRebuild=3,7,7$/.test(w), "window line: every field, deltas since the window start (" + w + ")");
+	expect(/^aswin m=base ms=\d+ f=\d+ loop=10,40,0 exit=0,0,0 rb=3 rbSame=1 rbChg=2 rbSkip=0 rbMs= pre=0 preRep=0 newIds=\d+ ids=\d+ idFull=0 hovAppear=1,66,66 hovGone=1,50,50 hovNoT=1 wl=0,0,0 q=0 drop=0 err=0 grp=0,0 sigB=0 parts=hideRebuild=3,7,7$/.test(w), "window line: every field, deltas since the window start (" + w + ")");
 	expect(h.hzWlW.every((v) => v === 0) && h.hzWlPs0[25] === 3, "window: counters restart and the parts base moves");
 	h.hzWlKey();
 	expect(h.hzWlMode === 1 && /^wl mode t=\d+ f=\d+ frameN=\d+ mode=pause$/.test(log(h)[0]), "hotkey: logged with the new mode");

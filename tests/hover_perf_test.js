@@ -481,7 +481,7 @@ expect(tick.indexOf("hzTgGhost * 200") < 0, "ghost fill is not in the content si
 expect(tick.indexOf("hf * 8") < 0 && tick.indexOf("int(hf*") < 0, "hold fraction is not in the content signature");
 expect(tick.indexOf("hzT19Tok(this.hzTextScale)") >= 0 && tick.indexOf("hzT19Tok(this.hzHeaderStyle)") >= 0, "F11 TextScale/HeaderStyle still bust content sig");
 expect(tick.indexOf("hzFontName()") >= 0 && tick.indexOf('hzFontName("rg")') >= 0, "resolved font names sit in the content sig");
-expect(tick.indexOf("hzT19Tok(this.hzT19Key") >= 0, "live key identity is length-prefixed");
+expect(tick.indexOf("rw0[rn++] = this.hzT19Key(aw,kk)") >= 0 && tick.indexOf("keys += this.hzT19Tok(rw0[kk])") >= 0, "live key identity is length-prefixed (H5: raw key value kept, tokenized when the signature is built)");
 expect(tick.indexOf("kind == \"\"") >= 0 || tick.indexOf('kind == ""') >= 0, "empty kind still fades on target loss");
 expect(funcBody(as, "hzT19Off").indexOf("hzT19ResetPay") >= 0, "target off clears fingerprints");
 expect(funcBody(as, "hzTW").indexOf("twFn") >= 0 && funcBody(as, "hzTW").indexOf("hzFontName") >= 0, "width cache misses on resolved font");

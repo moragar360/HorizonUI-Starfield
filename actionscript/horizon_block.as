@@ -194,6 +194,7 @@
       private var hzTgDirty:Boolean = true;
       private var hzTgLastMode:int = -2;
       private var hzTgHidden:Array = [];
+      private var hzTgHidA:Array = [];   // H1: hzTgHidden[i].d for alpha entries, null for visible entries (same length, same order)
       private var hzTgTextH:Number = 40;
       private var hzTgW:Number = 0;
       private var hzTgH:Number = 0;
@@ -1963,6 +1964,7 @@
                case "debug": this.hzDebug = bv; this.hzDbgShow(); this.hzDbgEnvSub(); break;
                case "perfdiag": this.hzPerfDiag = bv; this.hzPerfApply(); break;
                case "watchlog": this.hzWatchLogIni = bv; this.hzPerfApply(); break;   // private diag, needs PerfDiag=1
+               case "blggrouphide": this.hz44GrpIni = bv; break;   // rollback: BlgGroupHide=0 keeps the per-piece watch hide
                case "perfmode": if(!isNaN(nv)) { this.hzPerfMode = int(nv); if(this.hzPerfMode < 0 || this.hzPerfMode > 7) { this.hzPerfMode = 0; } this.hzPerfApply(); } break;
                case "perfdump": this.hzPerfDumpIni = bv; this.hzPerfApply(); break;
                case "perfscan": this.hzPerfScan = bv; this.hzPerfApply(); break;
@@ -2117,6 +2119,7 @@
          try { BSUIDataManager.Subscribe("HUDVehicleData",this.hz42VehOnData); } catch(e42vs:Error) { }
          try { BSUIDataManager.Subscribe("ControlMapData",this.hz42VehOnMap); } catch(e42vm:Error) { }
          try { this.hz26Build(); } catch(err26:Error) { }
+         if(!this.hz44EnSub) { try { BSUIDataManager.Subscribe("HudEnemyData",this.hzPbEnemy); } catch(e44s:Error) { } }   // fallback: the target card's own subscription
          try { this.hz40Init(); } catch(err40:Error) { }
          this.hzLoadIni();
          this.hzBuildCompact();
@@ -2506,6 +2509,7 @@
       }
       public function hzRefreshVisibility() : void
       {
+         try { this.hz44GrpTick(false); } catch(e44r:Error) { }   // right after the game's HudModeData BLG write: re-hide in the same handler
          try { this.hzCmpApplyCompact(); } catch(errCc:Error) { }
          try { if(this.hzPlanPill && this.hzPpC != (this.hz34C("Planet") ? 1 : 0)) { this.hzPpLayout(); } } catch(errPc:Error) { }
          try { if(this.hzEq19 && this.hz34C("Equipment") != this.hzE19Cm) { this.hzE19Sync(); } } catch(errEc:Error) { }
@@ -2591,7 +2595,7 @@
       // Screen-only hide of vanilla clips Horizon replaces. Never removeChild; files untouched.
       private function hzOnFrame(e:Event) : void
       {
-         var names:Array = [];
+         var names:Array = null;   // allocated only on a hide-list rebuild
          var o:Object = null;
          var wlOld:Array = null;   // watchlog only
          var wlWhy:int = 0;
@@ -2605,6 +2609,7 @@
          try { this.hz35CmpTick(); } catch(e35c:Error) { }   // v0.35: global Compact follow
          if(this.hzPerfOn) { this.hzPsMark(3); }
          try { this.hz43SyncHide(); } catch(e43h:Error) { }
+         try { this.hz44GrpTick(true); } catch(e44g:Error) { }   // whole-group BLG hide: after the style sync, before the hide list
          if(this.hzPerfOn) { this.hzPsMark(4); }
          // watchlog test switch: mode 1 skips only the 90-frame re-walk (PerfDiag=1, WatchLog=1, Scroll Lock)
          if(this.hzHideCache == null || (this.hzFrameN % 90 == 1 && !(this.hzWlOn && this.hzWlMode == 1)) || this.hz36HideStale)
@@ -2614,8 +2619,10 @@
             if(this.hzWlOn) { wlOld = this.hzHideCache; wlWhy = wlOld == null ? 0 : (this.hz36HideStale ? 2 : 1); this.hzWlRbNow = true; }
             this.hzHideCache = [];
             this.hz36HideStale = false;
+            names = [];
+            var grp:Boolean = this.hz44Hid;   // BLG hidden as a whole: its children need no per-piece entries
             if(this.hzHideVanillaBoost) { names.push("JetpackMeterWrapper_mc","JetpackMeterAnim_mc"); }
-            if(this.hzHideVanillaCompass)
+            if(this.hzHideVanillaCompass && !grp)
             {
                // Styles 1 and 2 leave the native watch. Custom 3/4 hide chrome and keep mission/enemy markers.
                if(this.hzWatchStyle == 0)
@@ -2630,13 +2637,15 @@
                   names.push("Temperature_mc","Oxygen_mc","Grav_mc","OffPlanet_mc");
                }
             }
-            if(this.hzHideVanillaWatch) { names.push("O2CO2_mc","O2CO2thin_mc","WatchOutline_mc","BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"); }
+            if(this.hzHideVanillaWatch && !grp) { names.push("O2CO2_mc","O2CO2thin_mc","WatchOutline_mc","BioCondition_mc","BioConditionBase_mc","EnvCondition_mc","EnvConditionBase_mc","BioAlertBG_mc"); }
             // Style 0 hides the inner radar and nearby markers. Custom also hides the heading outline; 3/4 keep the marker widgets.
-            if(this.hzWatchStyle == 0) { names.push("WatchIconsWidget_mc","WatchPointerOutline_mc"); }
+            if(grp) { }
+            else if(this.hzWatchStyle == 0) { names.push("WatchIconsWidget_mc","WatchPointerOutline_mc"); }
             else if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4) { names.push("WatchPointerOutline_mc"); }
             if(this.hzHideVanillaAmmo) { names.push("EquippedWeaponAmmo_mc","EquippedWeaponAmmoTotal_mc","VerticalDivider_mc","EquippedWeaponIconHolder_mc"); }
             if(this.hzHideVanillaHealth) { names.push("HealthBar_mc","HealthBarEmpty_mc","HealthBarGhost_mc","HealthBarDamage_mc","HealthBarIncrease_mc","Health_mc"); }
-            this.hz36HideFindAll(this,names,this.hzHideCache);   // one tree walk for the whole list (same entries, same order)
+            this.hz44Skip = grp ? this.hz44Ref : null;   // grp: the walk does not descend into the hidden BLG (no listed name lives there)
+            try { this.hz36HideFindAll(this,names,this.hzHideCache); } finally { this.hz44Skip = null; }   // one tree walk for the whole list
             if(this.hzWlOn) { try { this.hzWlRbDiff(wlOld,this.hzHideCache,wlWhy); } catch(eWr:Error) { } }
          }
          else if(this.hzWlOn && this.hzWlMode == 1 && this.hzFrameN % 90 == 1) { this.hzWlSkip++; }
@@ -2645,7 +2654,7 @@
          if(this.hzPerfOn) { this.hzPsMark(6); }
          if(this.hz40Hide) { try { this.hz40ForceHide(); } catch(e40a:Error) { } }
          if(this.hzPerfOn) { this.hzPsMark(7); }
-         if(this.hzHideVanillaWatch)
+         if(this.hzHideVanillaWatch && !this.hz44Hid)   // the whole-group hide covers every BLG child
          {
             if(this.hzBlg == null && this.hzFrameN % 30 == 1)
             {
@@ -7494,7 +7503,7 @@
          }
          try { BSUIDataManager.Subscribe("HUDRolloverActivationData",this.hzPbAct); } catch(e1:Error) { }
          try { BSUIDataManager.Subscribe("HUDRolloverData",this.hzPbRoll); } catch(e2:Error) { }
-         try { BSUIDataManager.Subscribe("HudEnemyData",this.hzPbEnemy); } catch(e3:Error) { }
+         // HudEnemyData: subscribed once, in hz26Build (hzPbEnemyBoth), see hz44EnSub
          try { BSUIDataManager.Subscribe("HUDRolloverItemData",this.hzPbItems); } catch(e4:Error) { }
       }
 
@@ -7590,6 +7599,7 @@
             catch(err:Error) { }
          }
          this.hzTgHidden = [];
+         this.hzTgHidA.length = 0;
       }
 
       private function hzTgHide(d:DisplayObject) : void
@@ -7597,6 +7607,7 @@
          if(!d) { return; }
          for each(var o:Object in this.hzTgHidden) { if(o.d == d) { if(d.visible) { d.visible = false; } return; } }
          this.hzTgHidden.push({"d":d,"v":d.visible});
+         if(this.hzTgHidA.length == this.hzTgHidden.length - 1) { this.hzTgHidA.push(null); }   // H1: not an alpha entry
          d.visible = false;
       }
 
@@ -9939,6 +9950,9 @@
          this.hzE19Draw();
       }
 
+      private var hzE19Glow:GlowFilter = null;   // ammo-low pulse filter, reused
+      private var hzE19GlowA:Array = null;       // [glow] + the text shadow filters for key hzE19GlowK
+      private var hzE19GlowK:int = -1;           // 0 no shadow, 1 dark shadow, 2 light shadow (hz35Shadow's three results)
       private function hzE19Tick() : void
       {
          if(!this.hzEq19 || !this.hzEq19.visible) { return; }
@@ -9947,9 +9961,16 @@
          if(this.hzEqLow && this.hzE19Cnt)
          {
             var a:Number = 0.35 + 0.45 * (0.5 + 0.5 * Math.sin(this.hzEqPulse));
-            this.hzE19Cnt.filters = [new GlowFilter(this.hzIconCol(HZ_AMB),a,10,10,1.6,1)].concat(this.hzTyFilters());
+            // one GlowFilter and one array, reused: same parameters each frame as the old new-GlowFilter + concat
+            // (the filters setter copies, so changing the reused filter later does not touch what is applied)
+            var sk:int = !this.hzTextShadow ? 0 : (this.hzDarkText() ? 2 : 1);
+            if(this.hzE19Glow == null) { this.hzE19Glow = new GlowFilter(0,0,10,10,1.6,1); }
+            if(this.hzE19GlowA == null || sk != this.hzE19GlowK) { this.hzE19GlowA = [this.hzE19Glow].concat(this.hzTyFilters()); this.hzE19GlowK = sk; }
+            this.hzE19Glow.color = this.hzIconCol(HZ_AMB);
+            this.hzE19Glow.alpha = a;
+            this.hzE19Cnt.filters = this.hzE19GlowA;
          }
-         else if(this.hzE19Cnt && this.hzE19Cnt.filters.length > this.hzTyFilters().length)
+         else if(this.hzE19Cnt && this.hzE19Cnt.filters.length > (this.hzTextShadow ? 1 : 0))   // hzTyFilters().length, without building it
          {
             this.hzE19Cnt.filters = this.hzTyFilters();
          }
@@ -10059,8 +10080,17 @@
       private function hzT19HideA(d:DisplayObject) : void
       {
          if(!d) { return; }
-         for each(var o:Object in this.hzTgHidden) { if(o.d == d && o.a != undefined) { if(d.alpha != 0) { d.alpha = 0; } return; } }
+         var ix:Array = this.hzTgHidA;
+         if(ix.length == this.hzTgHidden.length)   // H1: native indexOf over the alpha entries' objects (same first match)
+         {
+            if(ix.indexOf(d) >= 0) { if(d.alpha != 0) { d.alpha = 0; } return; }
+         }
+         else
+         {
+            for each(var o:Object in this.hzTgHidden) { if(o.d == d && o.a != undefined) { if(d.alpha != 0) { d.alpha = 0; } return; } }
+         }
          this.hzTgHidden.push({"d":d,"v":d.visible,"a":d.alpha});
+         if(ix.length == this.hzTgHidden.length - 1) { ix.push(d); }
          d.alpha = 0;
       }
 
@@ -10107,6 +10137,7 @@
             {
                try { DisplayObject(o.d).alpha = Number(o.a); } catch(e3:Error) { }
                this.hzTgHidden.splice(k,1);
+               if(this.hzTgHidA.length == this.hzTgHidden.length + 1) { this.hzTgHidA.splice(k,1); }
             }
             k--;
          }
@@ -10395,6 +10426,31 @@
          return false;
       }
 
+      // H2: every parent of the 4 hold buttons up to the HUD root (what hzT19OnHoldPath walks for each node), for one
+      // hz38HideVanilla call. The hide walk only writes alpha and visible, so no parent changes inside the call.
+      private var hzT19Anc:Array = [];
+      private var hzT19AncB:Array = null;
+      private function hzT19AncFill(buttons:Array) : void
+      {
+         this.hzT19Anc.length = 0;
+         this.hzT19AncB = buttons;
+         var i:int = 0;
+         while(buttons && i < buttons.length)
+         {
+            var b:DisplayObject = buttons[i] as DisplayObject;
+            var p:DisplayObjectContainer = b ? b.parent : null;
+            while(p != null && p != this) { this.hzT19Anc.push(p); p = p.parent; }
+            i++;
+         }
+      }
+      // same answer as hzT19OnHoldPath(d, buttons) inside the hz38HideVanilla call that filled hzT19Anc
+      private function hzT19OnHoldPathA(d:DisplayObject, buttons:Array) : Boolean
+      {
+         if(buttons !== this.hzT19AncB) { return this.hzT19OnHoldPath(d,buttons); }
+         if(!d || !buttons) { return false; }
+         if(this.hzT19IsHoldBtn(d,buttons)) { return true; }
+         return this.hzT19Anc.indexOf(d) >= 0;
+      }
       private function hzT19OnHoldPath(d:DisplayObject, buttons:Array) : Boolean
       {
          if(!d || !buttons) { return false; }
@@ -10441,7 +10497,7 @@
             {
                this.hzT19HideBtnArt(ch as DisplayObjectContainer);
             }
-            else if(ch && this.hzT19OnHoldPath(ch,buttons) && ch is DisplayObjectContainer)
+            else if(ch && this.hzT19OnHoldPathA(ch,buttons) && ch is DisplayObjectContainer)
             {
                this.hzT19HidePromptTree(DisplayObjectContainer(ch),buttons);
             }
@@ -11112,6 +11168,18 @@
          this.hzPbEnd(8,t0);
          return r;
       }
+      // One HudEnemyData listener for both handlers, in their old listener order (target card, then hz26). The two old
+      // subscriptions were adjacent in the provider's listener list (no HudEnemyData subscribe runs between
+      // hzBuildTarget and hz26Build), so every other listener sees the same order. Each half has its own try, so a
+      // throw in the first still runs the second; the first error is rethrown after both.
+      private var hz44EnSub:Boolean = false;
+      private function hzPbEnemyBoth(e:FromClientDataEvent) : *
+      {
+         var err:* = null;
+         try { this.hzPbEnemy(e); } catch(x1:*) { err = x1; }
+         try { this.hzPbEn26(e); } catch(x2:*) { if(err == null) { err = x2; } }
+         if(err != null) { throw err; }
+      }
       private function hzPbEn26(e:FromClientDataEvent) : *
       {
          if(!this.hzPerfOn) { return this.hz26OnEnemy(e); }
@@ -11611,6 +11679,7 @@
          s += " hovAppear=" + na + "," + (na > 0 ? Math.round(Number(w[11]) / na) : 0) + "," + Math.round(Number(w[12]));
          s += " hovGone=" + nd + "," + (nd > 0 ? Math.round(Number(w[14]) / nd) : 0) + "," + Math.round(this.hzWlDisMax) + " hovNoT=" + int(w[6]);
          s += " wl=" + int(w[7]) + "," + Math.round(Number(w[8])) + "," + Math.round(Number(w[15])) + " q=" + this.hzWlQN + " drop=" + this.hzWlDrop + " err=" + int(w[9]);
+         s += " grp=" + (this.hz44Hid ? 1 : 0) + "," + this.hz44N + " sigB=" + this.hzPcSigB;
          if(this.hzPsN != null)
          {
             var p0:Array = this.hzWlPs0;   // null after a perf reset: the base is 0
@@ -11667,6 +11736,36 @@
       // ===================== end watchlog =====================
 
       // Length-prefixed tokens so game names that contain | or : cannot collide. Exact char count, then payload.
+      // H5 signature inputs (hzT19Tick): 12 key values, 3 font names, 30 more inputs
+      private static const HZ_T19_RAWN:int = 45;
+      private var hzT19Raw:Array = null;       // this frame's inputs
+      private var hzT19RawP:Array = null;      // inputs of the last built signature
+      private var hzT19RawPN:int = -1;
+      private var hzT19SigMine:String = null;  // the last signature built (hzT19Sig equals it unless reset elsewhere)
+      private var hzPcSigB:int = 0;            // diag: signature strings built
+      // true when any input differs from the last built signature's inputs. An object or NaN always counts as
+      // different (its String() could change, or it never equals itself), so this can only add builds, never skip one.
+      private function hzT19RawDiff(r:Array, n:int) : Boolean
+      {
+         var p:Array = this.hzT19RawP;
+         if(p == null || n != this.hzT19RawPN) { return true; }
+         var i:int = 0;
+         while(i < n)
+         {
+            var v:* = r[i];
+            if(v !== p[i]) { return true; }
+            if(v != null && typeof v == "object") { return true; }
+            i++;
+         }
+         return false;
+      }
+      private function hzT19RawKeep(r:Array, n:int) : void
+      {
+         if(this.hzT19RawP == null) { this.hzT19RawP = new Array(HZ_T19_RAWN); }
+         var i:int = 0;
+         while(i < n) { this.hzT19RawP[i] = r[i]; i++; }
+         this.hzT19RawPN = n;
+      }
       private function hzT19Tok(v:*) : String
       {
          var t:String = (v == null || v === undefined) ? "" : String(v);
@@ -11913,14 +12012,34 @@
          }
          else { this.hzT19LastHp = -1; this.hzTgGhost = -1; }
          // the key text can change (rebinding / controller): include identity, not hold fill, in the signature
-         var keys:String = "";
-         if(show) { var kk:int = 0; while(kk < 4) { keys += this.hzT19Tok(this.hzT19Key(aw,kk)) + this.hzT19Tok(this.hzT19VanLbl(aw,kk,false)) + this.hzT19Tok(this.hzT19VanLbl(aw,kk,true)); kk++; } }
+         // H5: the inputs are read every frame as before (same calls, same order); the ~40-token string is built only when
+         // one of them differs from the inputs of the last built signature, or hzT19Sig was reset elsewhere ("" / FIXTURE).
+         var rw0:Array = this.hzT19Raw;
+         if(rw0 == null) { rw0 = this.hzT19Raw = new Array(HZ_T19_RAWN); }
+         var rn:int = 0;
+         if(show) { var kk:int = 0; while(kk < 4) { rw0[rn++] = this.hzT19Key(aw,kk); rw0[rn++] = this.hzT19VanLbl(aw,kk,false); rw0[rn++] = this.hzT19VanLbl(aw,kk,true); kk++; } }
+         else { while(rn < 12) { rw0[rn++] = null; } }
          var stealSig:int = (show && a != null && Boolean(a.bStealing)) ? 1 : 0;
-         var fontSig:String = this.hzT19Tok(this.hzFontName()) + this.hzT19Tok(this.hzFontName("rg")) + this.hzT19Tok(this.hzFontName("bd"));
-         var sig:String = this.hzT19Tok(kind) + this.hzT19Tok(m) + this.hzT19Tok(sel) + this.hzT19Tok(start) + this.hzT19Tok(this.hzT19Ver) + this.hzT19ActCached + this.hzT19ItemsCached + this.hzT19Tok(this.hzTgEnName) + this.hzT19Tok(this.hzTgRank) + this.hzT19B(this.hzTgLeg) + this.hzT19Tok(this.hzTextScale) + this.hzT19Tok(this.hzCardColor) + this.hzT19Tok(this.hzContOpacity) + this.hzT19Tok(HZ_ACCENT) + this.hzT19Tok(this.hzTextTone) + this.hzT19Tok(this.hzTgShowValue) + this.hzT19Tok(this.hzFontFace) + keys + this.hzT19B(show) + this.hzT19Tok(this.hzTgScale) + this.hzT19Tok(this.hz30Hover) + this.hzT19Tok(this.hzScrH) + this.hzT19Tok(this.hzNameHover) + this.hzT19Tok(int(this.hzCardBgOpacity)) + this.hzT19Tok(int(this.hzCardShadow)) + this.hzT19B(this.hzTextShadow) + this.hzT19Tok(this.hzHeaderStyle) + this.hzT19Tok(stealSig) + fontSig;
+         rw0[rn++] = this.hzFontName(); rw0[rn++] = this.hzFontName("rg"); rw0[rn++] = this.hzFontName("bd");
+         rw0[rn++] = kind; rw0[rn++] = m; rw0[rn++] = sel; rw0[rn++] = start; rw0[rn++] = this.hzT19Ver; rw0[rn++] = this.hzT19ActCached; rw0[rn++] = this.hzT19ItemsCached;
+         rw0[rn++] = this.hzTgEnName; rw0[rn++] = this.hzTgRank; rw0[rn++] = this.hzTgLeg; rw0[rn++] = this.hzTextScale; rw0[rn++] = this.hzCardColor; rw0[rn++] = this.hzContOpacity;
+         rw0[rn++] = HZ_ACCENT; rw0[rn++] = this.hzTextTone; rw0[rn++] = this.hzTgShowValue; rw0[rn++] = this.hzFontFace; rw0[rn++] = show; rw0[rn++] = this.hzTgScale; rw0[rn++] = this.hz30Hover;
+         rw0[rn++] = this.hzScrH; rw0[rn++] = this.hzNameHover; rw0[rn++] = int(this.hzCardBgOpacity); rw0[rn++] = int(this.hzCardShadow); rw0[rn++] = this.hzTextShadow; rw0[rn++] = this.hzHeaderStyle; rw0[rn++] = stealSig;
+         var sig:String = this.hzT19Sig;
+         if(this.hzT19Sig !== this.hzT19SigMine || this.hzT19RawDiff(rw0,rn))
+         {
+            var keys:String = "";
+            if(show) { kk = 0; while(kk < 12) { keys += this.hzT19Tok(rw0[kk]); kk++; } }
+            var fontSig:String = this.hzT19Tok(rw0[12]) + this.hzT19Tok(rw0[13]) + this.hzT19Tok(rw0[14]);
+            sig = this.hzT19Tok(kind) + this.hzT19Tok(m) + this.hzT19Tok(sel) + this.hzT19Tok(start) + this.hzT19Tok(this.hzT19Ver) + this.hzT19ActCached + this.hzT19ItemsCached + this.hzT19Tok(this.hzTgEnName) + this.hzT19Tok(this.hzTgRank) + this.hzT19B(this.hzTgLeg) + this.hzT19Tok(this.hzTextScale) + this.hzT19Tok(this.hzCardColor) + this.hzT19Tok(this.hzContOpacity) + this.hzT19Tok(HZ_ACCENT) + this.hzT19Tok(this.hzTextTone) + this.hzT19Tok(this.hzTgShowValue) + this.hzT19Tok(this.hzFontFace) + keys + this.hzT19B(show) + this.hzT19Tok(this.hzTgScale) + this.hzT19Tok(this.hz30Hover) + this.hzT19Tok(this.hzScrH) + this.hzT19Tok(this.hzNameHover) + this.hzT19Tok(int(this.hzCardBgOpacity)) + this.hzT19Tok(int(this.hzCardShadow)) + this.hzT19B(this.hzTextShadow) + this.hzT19Tok(this.hzHeaderStyle) + this.hzT19Tok(stealSig) + fontSig;
+            this.hzT19SigMine = sig;
+            this.hzT19RawKeep(rw0,rn);
+            if(this.hzPerfOn) { this.hzPcSigB++; }
+         }
          if(sig != this.hzT19Sig)
          {
             this.hzT19Sig = sig;
+            this.hzT19SigMine = sig;
             this.hzT19BarSig = "";
             this.hzT19HoldSig = "";
             // ContainerOpacity drives the panel alpha of the crosshair cards only (HUD cards keep CardOpacity)
@@ -12679,7 +12798,7 @@
          try { BSUIDataManager.Subscribe("HUDDirectionalHitData",this.hz26OnDirHit); } catch(s8:Error) { }
          try { BSUIDataManager.Subscribe("PlayerHealthBoostData",this.hz26OnBoost); } catch(s9:Error) { }
          try { BSUIDataManager.Subscribe("HUDStarbornPowersData",this.hz26OnPowers); } catch(s10:Error) { }
-         try { BSUIDataManager.Subscribe("HudEnemyData",this.hzPbEn26); } catch(s11:Error) { }
+         try { BSUIDataManager.Subscribe("HudEnemyData",this.hzPbEnemyBoth); this.hz44EnSub = true; } catch(s11:Error) { }
          try { this.hz27Build(); } catch(s12:Error) { }
          this.hz26Built = true;
          this.hzApplyScale();
@@ -14863,16 +14982,81 @@
          return this.hzAfPers;
       }
 
+      // ===================== v0.44 whole-group BottomLeftGroup hide =====================
+      // Purpose: hide the vanilla BottomLeftGroup_mc as ONE object (visible = false) when Horizon replaces everything in it,
+      // instead of hiding its children one by one every frame. Hidden this way the group does not render and, with the
+      // HUD's noInvisibleAdvance, its timeline does not advance, so the scan-start FadeInPlanetInfo shapes (the unnamed
+      // ring and planet-info art) are never created or drawn.
+      // When (hz44GrpWant): BlgGroupHide is not 0, WatchStyle 0 (OFF; it also sets the vanilla watch hide), the player has
+      // not hidden Horizon (F11 hide-all), and every non-watch piece has a Horizon version that is on: AFFLICTIONS card
+      // (BioAlertText), PLANET card + HAZARD ALERT (EnvAlertText, LocationAlertText), and one of STEALTH METER / ENEMY BAR /
+      // EDGE PULSE (EnemyDetectionAnim_mc). Otherwise today's per-piece hide runs unchanged.
+      // Vanilla WatchStyle 1/2 (and so the vanilla watch hide off): the group gets vanilla's own visible back
+      // (hzGroupVisible, captured right after the game's HudModeData write), never a forced true; alpha is never written.
+      // Live: checked every frame (cheap Booleans) and right after each HudModeData write, so F11 changes apply on the
+      // next frame both ways. A release (back to per-piece) happens only in the frame tick, before the hide list is
+      // rebuilt and applied in the same frame, so no piece shows for a frame that is hidden today.
+      // Cost: a few Boolean reads and one visible read per frame; the group ref is re-found (one getChildByName on the
+      // HUD root) only when it is null or detached.
+      // Author: Moragar. Last modified: 2026-11-10.
+      private var hz44GrpIni:Boolean = true;          // [Debug] BlgGroupHide (rollback: 0)
+      private var hz44Hid:Boolean = false;            // the group is hidden by this path
+      private var hz44Ref:DisplayObject = null;       // BottomLeftGroup_mc
+      private var hz44Skip:DisplayObject = null;      // hz36Walk skips this container during a rebuild
+      private var hz44N:int = 0;                      // diag: hide / release count
+      private function hz44GrpWant() : Boolean
+      {
+         return this.hz44GrpIni && this.hzWatchStyle == 0 && this.hzHideVanillaWatch && !this.hzUserHidden
+            && this.hzShowAfflictions && this.hzShowPlanet && this.hzHazardAlert && (this.hzStealthOn || this.hzEnemyBarOn || this.hzEdgePulse);
+      }
+      private function hz44GrpTick(frame:Boolean) : void
+      {
+         var want:Boolean = this.hz44GrpWant();
+         if(!want && !this.hz44Hid) { return; }
+         if(!want && !frame) { return; }   // releases wait for the frame tick (see above)
+         var b:DisplayObject = this.hz44Ref;
+         if(b == null || b.parent == null)
+         {
+            var nb:DisplayObject = this.getChildByName("BottomLeftGroup_mc");
+            if(nb !== b)
+            {
+               if(b != null && this.hz44Hid && b.parent == null) { b.visible = this.hzGroupVisible; }   // a detached old group gets vanilla's value back
+               this.hz44Ref = b = nb;
+               this.hz44Hid = false;
+            }
+            if(b == null) { return; }
+         }
+         if(want)
+         {
+            if(b.visible) { b.visible = false; }
+            if(!this.hz44Hid)
+            {
+               this.hz44Hid = true;
+               this.hz44N++;
+               this.hzHideCache = null;   // rebuilt this frame without the BLG names
+               if(this.hzWlOn) { this.hzWlPush("wl grp t=" + Math.round(this.hzPerfNow()) + " on=1 gv=" + (this.hzGroupVisible ? 1 : 0) + " frame=" + (frame ? 1 : 0)); }
+            }
+            return;
+         }
+         this.hz44Hid = false;
+         this.hz44N++;
+         if(b.visible != this.hzGroupVisible) { b.visible = this.hzGroupVisible; }   // vanilla's own value, not a forced true
+         this.hzHideCache = null;   // the per-piece list comes back this frame
+         if(this.hzWlOn) { this.hzWlPush("wl grp t=" + Math.round(this.hzPerfNow()) + " on=0 gv=" + (this.hzGroupVisible ? 1 : 0)); }
+      }
+      // ===================== end v0.44 whole-group hide =====================
+
       // vanilla left-side affliction popup (BottomLeftGroup BioAlertText / BioCondition_mc / BioAlertBG_mc):
       // hidden while the Afflictions card is on, including when styles 1 and 2 show the game's watch. Never removed.
       // r4: by visible, never alpha (the BottomLeftGroup timeline animates their alpha). The game never writes their visible, so
       // the restore is visible = true. BioCondition_mc / BioAlertBG_mc stay hidden while the watch hide still owns them.
+      private static const HZ27_BIO_NAMES:Array = ["BioAlertText","BioCondition_mc","BioAlertBG_mc"];
       private function hz27BioHide() : void
       {
          if(!this.hzBlg) { return; }
          var want:Boolean = this.hzShowAfflictions && !this.hzUserHidden;
          if(!want && !this.hz27BioHid) { return; }
-         for each(var n:String in ["BioAlertText","BioCondition_mc","BioAlertBG_mc"])
+         for each(var n:String in HZ27_BIO_NAMES)   // static list (was a new literal array every frame)
          {
             var c:DisplayObject = this.hzBlg.getChildByName(n);
             if(!c) { continue; }
@@ -14896,13 +15080,15 @@
          var want:Boolean = cues && !this.hzUserHidden;
          if(!want && !this.hz31DetHid) { return; }
          var c:DisplayObject = this.hzBlg.getChildByName("EnemyDetectionAnim_mc");
-         if(c) { c.alpha = want ? 0 : 1; }
+         var ta:Number = want ? 0 : 1;
+         if(c && c.alpha != ta) { c.alpha = ta; }   // change check: 0 and 1 read back exactly, so the skipped write is a no-op
          this.hz31DetHid = want;
       }
 
       // after the timeline built this frame's children (alerts re-create instances on keyframes)
       private function hz27OnExit(e:Event) : void
       {
+         try { this.hz44GrpTick(false); } catch(err44:Error) { }   // after the timeline and the HUD's own motion: the hide holds at render
          try { this.hz27BioHide(); } catch(err:Error) { }
          if(this.hzPerfOn) { this.hzPsMark(34); }
          try { this.hz31DetHide(); } catch(err31d:Error) { }
@@ -16191,7 +16377,7 @@
                   left--;
                   if(left <= 0) { return 0; }
                }
-               if(ch is DisplayObjectContainer && ch != this.HorizonCard_mc && ch != this.HorizonVitals_mc && ch != this.HorizonEnv_mc && ch != this.HorizonCompass_mc && ch != this.HorizonAffl_mc && ch != this.HorizonAmmo_mc && ch != this.HorizonQuest_mc && ch != this.HorizonCompact_mc && ch != this.HorizonCompactQuest_mc && ch != this.HorizonSettings_mc)
+               if(ch is DisplayObjectContainer && ch !== this.hz44Skip && ch != this.HorizonCard_mc && ch != this.HorizonVitals_mc && ch != this.HorizonEnv_mc && ch != this.HorizonCompass_mc && ch != this.HorizonAffl_mc && ch != this.HorizonAmmo_mc && ch != this.HorizonQuest_mc && ch != this.HorizonCompact_mc && ch != this.HorizonCompactQuest_mc && ch != this.HorizonSettings_mc)
                {
                   left = this.hz36Walk(DisplayObjectContainer(ch),depth + 1,wn,wd,left);
                   if(left <= 0) { return 0; }
@@ -17897,6 +18083,7 @@
       private function hz38HideVanilla(rw:Object, aw:Object, kind:String) : void
       {
          var buttons:Array = this.hzT19HoldBtns(aw);
+         this.hzT19AncFill(buttons);   // H2: hzT19OnHoldPath's parent chains, collected once for this call
          try
          {
             var ad:DisplayObjectContainer = aw as DisplayObjectContainer;
@@ -17909,7 +18096,7 @@
             var hdc:DisplayObjectContainer = hd as DisplayObjectContainer;
             if(hd && hd != (aw as DisplayObject))
             {
-               if(hdc && this.hzT19OnHoldPath(hd,buttons)) { this.hzT19HidePromptTree(hdc,buttons); }
+               if(hdc && this.hzT19OnHoldPathA(hd,buttons)) { this.hzT19HidePromptTree(hdc,buttons); }
                else { this.hzT19HideA(hd); }
             }
          }

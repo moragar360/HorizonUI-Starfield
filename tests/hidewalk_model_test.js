@@ -375,9 +375,9 @@ function walkKilled(src) {
 }
 const WMUT = [
 	["no depth limit", "         if(this.hzPerfOn) { this.hzPcFind++; }\n         if(depth > 8) { return left; }\n         while(i < c.numChildren)", "         if(this.hzPerfOn) { this.hzPcFind++; }\n         while(i < c.numChildren)"],
-	["no Horizon-card pruning", "if(ch is DisplayObjectContainer && ch != this.HorizonCard_mc && ch != this.HorizonVitals_mc && ch != this.HorizonEnv_mc && ch != this.HorizonCompass_mc && ch != this.HorizonAffl_mc && ch != this.HorizonAmmo_mc && ch != this.HorizonQuest_mc && ch != this.HorizonCompact_mc && ch != this.HorizonCompactQuest_mc && ch != this.HorizonSettings_mc)\n               {\n                  left = this.hz36Walk(", "if(ch is DisplayObjectContainer)\n               {\n                  left = this.hz36Walk("],
+	["no Horizon-card pruning", "if(ch is DisplayObjectContainer && ch !== this.hz44Skip && ch != this.HorizonCard_mc && ch != this.HorizonVitals_mc && ch != this.HorizonEnv_mc && ch != this.HorizonCompass_mc && ch != this.HorizonAffl_mc && ch != this.HorizonAmmo_mc && ch != this.HorizonQuest_mc && ch != this.HorizonCompact_mc && ch != this.HorizonCompactQuest_mc && ch != this.HorizonSettings_mc)\n               {\n                  left = this.hz36Walk(", "if(ch is DisplayObjectContainer)\n               {\n                  left = this.hz36Walk("],
 	["a later match overwrites the first", "if(k >= 0 && wd[k] == null)", "if(k >= 0)"],
-	["a matched node is not descended into", "               if(ch is DisplayObjectContainer && ch != this.HorizonCard_mc", "               else if(ch is DisplayObjectContainer && ch != this.HorizonCard_mc"],
+	["a matched node is not descended into", "               if(ch is DisplayObjectContainer && ch !== this.hz44Skip && ch != this.HorizonCard_mc", "               else if(ch is DisplayObjectContainer && ch !== this.hz44Skip && ch != this.HorizonCard_mc"],
 	["entries in first-found order, not names order (no duplicates)", "         for each(var m:String in names)\n         {\n            try\n            {\n               var d:DisplayObject = wd[wn.indexOf(m)] as DisplayObject;", "         for each(var m:String in wn)\n         {\n            try\n            {\n               var d:DisplayObject = wd[wn.indexOf(m)] as DisplayObject;"]
 ];
 for (const m of WMUT) {
@@ -636,7 +636,9 @@ expect(/catch\(eHw:\*\)\s*\{\s*wn = null;\s*\}/.test(body("hz36HideFindAll")) &&
 	// hz36Walk keeps hzFindByName's order, pruning and depth rule: the pruning condition is the same text
 	const fb = body("hzFindByName"), wb = body("hz36Walk");
 	const cond = (b) => { const m = b.match(/if\((ch is DisplayObjectContainer[^\n]*)\)\s*\n/); return m ? m[1] : null; };
-	expect(cond(fb) !== null && cond(fb) === cond(wb), "hz36Walk: same descent condition as hzFindByName (Horizon cards pruned)");
+	// v0.44: plus "ch !== this.hz44Skip", which is null except during a rebuild while the whole BLG is hidden (grouphide_test.js)
+	expect(cond(fb) !== null && cond(wb) !== null && cond(fb) === cond(wb).replace(" && ch !== this.hz44Skip", "") && cond(wb).indexOf(" && ch !== this.hz44Skip") >= 0,
+		"hz36Walk: same descent condition as hzFindByName (Horizon cards pruned), plus only the group-hide skip");
 	expect(fb.indexOf("if(depth > 8) { return null; }") >= 0 && wb.indexOf("if(depth > 8) { return left; }") >= 0, "hz36Walk: same depth limit as hzFindByName");
 	expect(wb.indexOf("if(this.hzPerfOn) { this.hzPcFind++; }") < wb.indexOf("if(depth > 8)"), "hz36Walk: counts a node exactly where hzFindByName does");
 }
