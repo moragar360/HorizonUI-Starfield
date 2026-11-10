@@ -2236,6 +2236,9 @@
       private var hzPcBlgCh:int = 0;         // BottomLeftGroup children visited in hzOnFrame
       private var hzPcStHide:int = 0;        // hz43StHide calls
       private var hzPcFmt:int = 0;           // hzApplyFmt calls (typography re-applies)
+      private var hzPcHoldN:int = 0;         // hz43VanHoldsMark subtree walks (one walk per call, all mark names)
+      private var hzPcOlHit:int = 0;         // WatchOutline_mc lookups served by the per-pass memo
+      private var hzPcOlMiss:int = 0;        // WatchOutline_mc lookups that searched the tree inside a pass
       private var hzDbgCross:String = "";
       private var hzDbgWeap:String = "";
       private var hzDbgText:TextField = null;
@@ -10623,6 +10626,9 @@
          this.hzPcBlgCh = 0;
          this.hzPcStHide = 0;
          this.hzPcFmt = 0;
+         this.hzPcHoldN = 0;
+         this.hzPcOlHit = 0;
+         this.hzPcOlMiss = 0;
       }
       private function hzPbEnd(i:int, t0:Number) : void
       {
@@ -10893,6 +10899,7 @@
          try { nBlg = this.hzBlg != null ? this.hzBlg.numChildren : -1; } catch(eL4:Error) { }
          s += " | texts=" + nTexts + " fades=" + nFades + " hideCache=" + nHide + " blgN=" + nBlg;
          s += " | WatchStyle=" + this.hzWatchStyle + " CrosshairRule=" + this.hzCrossRule + " CrosshairStyle=" + this.hzXhStyle + " TextShadow=" + (this.hzTextShadow ? 1 : 0) + " Compact=" + (this.hzCompact ? 1 : 0) + " NameHover=" + this.hzNameHover + " FontFace=" + this.hzFontFace + " TextScale=" + this.hzTextScale + " HideVanillaWatch=" + (this.hzHideVanillaWatch ? 1 : 0) + " HideVanillaCompass=" + (this.hzHideVanillaCompass ? 1 : 0) + " timerUnsupported=" + (this.hzPerfClockFb ? 1 : 0);
+         s += " | hc holds=" + this.hzPcHoldN + " olHit=" + this.hzPcOlHit + " olMiss=" + this.hzPcOlMiss;
          return s;
       }
       // Length-prefixed tokens so game names that contain | or : cannot collide. Exact char count, then payload.
@@ -19296,6 +19303,12 @@
       private var hz43VanHH:Number = 180;
       private var hz43VanCap:int = 0;
       private var hz43VanRing:DisplayObject = null;
+      // Per-pass WatchOutline_mc memo. Valid only while a chrome pass runs (hz43OlDepth > 0) on the same hzBlg.
+      // Cleared when the outermost pass ends (also on a throw), so no display-object ref outlives its pass.
+      private var hz43OlDepth:int = 0;
+      private var hz43OlHave:Boolean = false;
+      private var hz43OlRef:DisplayObject = null;
+      private var hz43OlBlg:DisplayObjectContainer = null;
       private var hz43VanFadeN:int = 0;
       private var hz43VanFadeAt:int = -1;
       private var hz43VanNeed:int = 1;
@@ -20397,6 +20410,89 @@
          return name.indexOf("instance") == 0;
       }
 
+      // Purpose: the WatchOutline_mc lookup used by the cap and annulus checks. Outside a chrome pass it is the plain
+      // tree search, as before. Inside a pass (hz43OlBegin/hz43OlEnd) the first search result is reused for the rest
+      // of that pass: a pass only writes visible, so the display list and the first-match result cannot change
+      // within it. Inputs: hzBlg. Outputs: the same DisplayObject (or null) hzFindByName returns. Author: Moragar.
+      // Last modified: 2026-11-09.
+      private function hz43VanOutline() : DisplayObject
+      {
+         if(this.hz43OlDepth > 0 && this.hz43OlHave && this.hz43OlBlg == this.hzBlg)
+         {
+            if(this.hzPerfOn) { this.hzPcOlHit++; }
+            return this.hz43OlRef;
+         }
+         var o:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         if(this.hz43OlDepth > 0)
+         {
+            this.hz43OlRef = o;
+            this.hz43OlBlg = this.hzBlg;
+            this.hz43OlHave = true;
+            if(this.hzPerfOn) { this.hzPcOlMiss++; }
+         }
+         return o;
+      }
+
+      // Opens a chrome pass. The outermost open starts with an empty memo; nested opens share it.
+      private function hz43OlBegin() : void
+      {
+         if(this.hz43OlDepth <= 0)
+         {
+            this.hz43OlDepth = 0;
+            this.hz43OlHave = false;
+            this.hz43OlRef = null;
+            this.hz43OlBlg = null;
+         }
+         this.hz43OlDepth++;
+      }
+
+      // Closes a chrome pass. The outermost close drops the memo and its ref.
+      private function hz43OlEnd() : void
+      {
+         this.hz43OlDepth--;
+         if(this.hz43OlDepth <= 0)
+         {
+            this.hz43OlDepth = 0;
+            this.hz43OlHave = false;
+            this.hz43OlRef = null;
+            this.hz43OlBlg = null;
+         }
+      }
+
+      private function hz43IsMark(name:String) : Boolean
+      {
+         var i:int = 0;
+         while(i < HZ43_VAN_MARK.length)
+         {
+            if(name == String(HZ43_VAN_MARK[i])) { return true; }
+            i++;
+         }
+         return false;
+      }
+
+      // Purpose: one subtree walk that answers "does any HZ43_VAN_MARK name occur under c". Same traversal as
+      // hzFindByName (child order, depth limit 8, Horizon panels skipped, a name match is not entered), so it is
+      // true exactly when one of the per-name searches would return a clip. Counts nodes like hzFindByName.
+      // Inputs: c, depth. Outputs: Boolean. Author: Moragar. Last modified: 2026-11-09.
+      private function hz43FindMark(c:DisplayObjectContainer, depth:int) : Boolean
+      {
+         var i:int = 0;
+         var ch:DisplayObject = null;
+         if(this.hzPerfOn) { this.hzPcFind++; }
+         if(depth > 8) { return false; }
+         while(i < c.numChildren)
+         {
+            ch = c.getChildAt(i);
+            if(ch && this.hz43IsMark(ch.name)) { return true; }
+            if(ch is DisplayObjectContainer && ch != this.HorizonCard_mc && ch != this.HorizonVitals_mc && ch != this.HorizonEnv_mc && ch != this.HorizonCompass_mc && ch != this.HorizonAffl_mc && ch != this.HorizonAmmo_mc && ch != this.HorizonQuest_mc && ch != this.HorizonCompact_mc && ch != this.HorizonCompactQuest_mc && ch != this.HorizonSettings_mc)
+            {
+               if(this.hz43FindMark(DisplayObjectContainer(ch),depth + 1)) { return true; }
+            }
+            i++;
+         }
+         return false;
+      }
+
       // Native cap: unnamed filled disc beside WatchOutline_mc at (0, -0.25). Pose is outline-relative.
       // Autoname prefix is a type check, not ownership. Collapsed INFO ticks fail scale. The filled
       // annulus at the face center is a different unnamed sibling (hz43VanRingClip), not this cap.
@@ -20407,7 +20503,7 @@
          if(!this.hz43VanInstName(d.name)) { return false; }
          if(d.scaleX < 0.5 && d.scaleX > -0.5) { return false; }
          if(d.scaleY < 0.5 && d.scaleY > -0.5) { return false; }
-         var outline:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         var outline:DisplayObject = this.hz43VanOutline();
          if(outline && outline.parent == this.hzBlg)
          {
             var dx:Number = d.x - outline.x;
@@ -20430,7 +20526,7 @@
          if(!this.hz43VanInstName(d.name)) { return false; }
          if(d.scaleX < 0.5 && d.scaleX > -0.5) { return false; }
          if(d.scaleY < 0.5 && d.scaleY > -0.5) { return false; }
-         var outline:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         var outline:DisplayObject = this.hz43VanOutline();
          var ox:Number = 0;
          var oy:Number = 0;
          if(outline && outline.parent == this.hzBlg)
@@ -20809,17 +20905,14 @@
          this.hz43VanDump(marks ? "write-marks" : "write");
       }
 
+      // True when box is, or holds, a live marker widget. One walk for all three names (was one walk per name);
+      // same answer, see hz43FindMark.
       private function hz43VanHoldsMark(box:DisplayObjectContainer) : Boolean
       {
          if(!box) { return false; }
-         var i:int = 0;
-         while(i < HZ43_VAN_MARK.length)
-         {
-            if(box.name == String(HZ43_VAN_MARK[i])) { return true; }
-            if(this.hzFindByName(box,String(HZ43_VAN_MARK[i]),0) != null) { return true; }
-            i++;
-         }
-         return false;
+         if(this.hz43IsMark(box.name)) { return true; }
+         if(this.hzPerfOn) { this.hzPcHoldN++; }
+         return this.hz43FindMark(box,0);
       }
 
       private function hz43VanNote(d:DisplayObject) : void
@@ -20888,100 +20981,120 @@
       // Autoname prefix is not enough. Alerts, detection, and INFO ticks stay on native rules.
       // Hide notes then vis-hides. Show restores named chrome, marks, cap, and annulus vis
       // even when the hid list missed a clip. Show does not write alpha.
+      // The marker-holder walk only matters to the hide branch, so it runs there, last, as before (show ignored it).
+      // One WatchOutline_mc search per pass (hz43VanOutline memo). Same clips, same writes, same order.
       private function hz43VanBlgChrome(hide:Boolean) : void
       {
          if(!this.hzBlg) { return; }
-         var i:int = 0;
-         while(i < this.hzBlg.numChildren)
+         this.hz43OlBegin();
+         try
          {
-            var d:DisplayObject = this.hzBlg.getChildAt(i);
-            var n:String = d ? d.name : "";
-            var capArt:Boolean = this.hz43VanCapClip(d);
-            var ringArt:Boolean = this.hz43VanRingClip(d);
-            var holds:Boolean = false;
-            if(d) { holds = this.hz43VanHoldsMark(d as DisplayObjectContainer); }
-            var mark:Boolean = this.hz43VanMarkName(n);
-            var named:Boolean = this.hz43VanNamed(n);
-            if(!d || this.hz43VanSkip(n)) { }
-            else if(hide)
+            var i:int = 0;
+            while(i < this.hzBlg.numChildren)
             {
-               if(!mark && !holds && (named || capArt || ringArt)) { this.hz43StHide(d); }
+               var d:DisplayObject = this.hzBlg.getChildAt(i);
+               var n:String = d ? d.name : "";
+               var capArt:Boolean = this.hz43VanCapClip(d);
+               var ringArt:Boolean = this.hz43VanRingClip(d);
+               var mark:Boolean = this.hz43VanMarkName(n);
+               var named:Boolean = this.hz43VanNamed(n);
+               if(!d || this.hz43VanSkip(n)) { }
+               else if(hide)
+               {
+                  if(!mark && (named || capArt || ringArt) && !this.hz43VanHoldsMark(d as DisplayObjectContainer)) { this.hz43StHide(d); }
+               }
+               else if(mark || named || capArt || ringArt)
+               {
+                  this.hz43VanShowClip(d);
+               }
+               i++;
             }
-            else if(mark || named || capArt || ringArt)
-            {
-               this.hz43VanShowClip(d);
-            }
-            i++;
          }
+         catch(eOl:Error)
+         {
+            this.hz43OlEnd();
+            throw eOl;
+         }
+         this.hz43OlEnd();
       }
 
       // Styles 3 and 4 hide the vanilla bezel and labels. The live marker clips stay visible.
       private function hz43VanChrome(hide:Boolean) : void
       {
          if(!hide) { this.hz43VanRestoreHid(); this.hz43VanBlgChrome(false); return; }
-         var i:int = 0;
-         while(i < HZ43_VAN_N.length)
+         this.hz43OlBegin();
+         try
          {
-            var name:String = String(HZ43_VAN_N[i]);
-            var mark:Boolean = this.hz43VanMarkName(name);
-            var clip:DisplayObject = this.hzFindByName(this.hzBlg,name,0);
-            if(clip)
+            var i:int = 0;
+            while(i < HZ43_VAN_N.length)
             {
-               var box:DisplayObjectContainer = clip as DisplayObjectContainer;
-               var keep:Boolean = mark || (box != null && this.hz43VanHoldsMark(box));
-               if(hide && mark)
+               var name:String = String(HZ43_VAN_N[i]);
+               var mark:Boolean = this.hz43VanMarkName(name);
+               var clip:DisplayObject = this.hzFindByName(this.hzBlg,name,0);
+               if(clip)
                {
-                  if(!clip.visible) { clip.visible = true; }
-                  var up:DisplayObjectContainer = clip.parent;
-                  while(up != null && up != this)
+                  var box:DisplayObjectContainer = clip as DisplayObjectContainer;
+                  var keep:Boolean = mark || (box != null && this.hz43VanHoldsMark(box));
+                  if(hide && mark)
                   {
-                     if(!up.visible) { up.visible = true; }
-                     if(up == this.hzBlg) { break; }
-                     up = up.parent;
-                  }
-                  var sib:DisplayObjectContainer = clip.parent;
-                  if(sib != null && sib != this.hzBlg && sib != this)
-                  {
-                     var si:int = 0;
-                     while(si < sib.numChildren)
+                     if(!clip.visible) { clip.visible = true; }
+                     var up:DisplayObjectContainer = clip.parent;
+                     while(up != null && up != this)
                      {
-                        var sc:DisplayObject = sib.getChildAt(si);
-                        var scMark:Boolean = sc && (this.hz43VanMarkName(sc.name) || (sc is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(sc))));
-                        if(sc && !scMark)
+                        if(!up.visible) { up.visible = true; }
+                        if(up == this.hzBlg) { break; }
+                        up = up.parent;
+                     }
+                     var sib:DisplayObjectContainer = clip.parent;
+                     if(sib != null && sib != this.hzBlg && sib != this)
+                     {
+                        var si:int = 0;
+                        while(si < sib.numChildren)
                         {
-                           this.hz43StHide(sc);
+                           var sc:DisplayObject = sib.getChildAt(si);
+                           var scMark:Boolean = sc && (this.hz43VanMarkName(sc.name) || (sc is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(sc))));
+                           if(sc && !scMark)
+                           {
+                              this.hz43StHide(sc);
+                           }
+                           si++;
                         }
-                        si++;
                      }
                   }
-               }
-               else if(hide && box != null && keep && !mark)
-               {
-                  if(!clip.visible) { clip.visible = true; }
-                  var ci:int = 0;
-                  while(ci < box.numChildren)
+                  else if(hide && box != null && keep && !mark)
                   {
-                     var ch:DisplayObject = box.getChildAt(ci);
-                     var chMark:Boolean = ch && (this.hz43VanMarkName(ch.name) || (ch is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(ch))));
-                     if(ch && !chMark)
+                     if(!clip.visible) { clip.visible = true; }
+                     var ci:int = 0;
+                     while(ci < box.numChildren)
                      {
-                        this.hz43StHide(ch);
+                        var ch:DisplayObject = box.getChildAt(ci);
+                        var chMark:Boolean = ch && (this.hz43VanMarkName(ch.name) || (ch is DisplayObjectContainer && this.hz43VanHoldsMark(DisplayObjectContainer(ch))));
+                        if(ch && !chMark)
+                        {
+                           this.hz43StHide(ch);
+                        }
+                        else if(ch)
+                        {
+                           if(!ch.visible) { ch.visible = true; }
+                        }
+                        ci++;
                      }
-                     else if(ch)
-                     {
-                        if(!ch.visible) { ch.visible = true; }
-                     }
-                     ci++;
+                  }
+                  else if(hide && !keep)
+                  {
+                     this.hz43StHide(clip);
                   }
                }
-               else if(hide && !keep)
-               {
-                  this.hz43StHide(clip);
-               }
+               i++;
             }
-            i++;
+            this.hz43VanBlgChrome(hide);
          }
-         this.hz43VanBlgChrome(hide);
+         catch(eOc:Error)
+         {
+            this.hz43OlEnd();
+            throw eOc;
+         }
+         this.hz43OlEnd();
       }
 
       private function hz43VanResolve(sc:Number) : void
