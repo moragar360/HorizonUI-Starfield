@@ -392,7 +392,7 @@ expect(funcBody(as, "hz43VanRingProof").indexOf('"instance') < 0 && funcBody(as,
 expect(funcBody(as, "hz43VanCapClip").indexOf("hz43VanD") < 0, "cap identity is not a gathered-unit shortcut");
 expect(funcBody(as, "hz43VanCapture").indexOf("originX") >= 0 && funcBody(as, "hz43VanWrite").indexOf("(hx - ox) * useSc") >= 0, "whole Arrange scales sibling locals from the outline origin");
 expect(funcBody(as, "hz43VanBlgChrome").indexOf("hz43VanCapClip") >= 0 && funcBody(as, "hz43VanBlgChrome").indexOf("hz43VanInstName") < 0, "chrome hide and restore use verified cap identity");
-expect(funcBody(as, "hz43VanCapClip").indexOf("WatchOutline_mc") >= 0, "cap identity is outline-relative native pose");
+expect(funcBody(as, "hz43VanCapClip").indexOf("this.hz43VanOutline()") >= 0 && funcBody(as, "hz43VanOutline").indexOf('this.hzFindByName(this.hzBlg,"WatchOutline_mc",0)') >= 0, "cap identity is outline-relative native pose");
 expect(funcBody(as, "hz43VanCapClip").indexOf("scaleY") >= 0, "collapsed INFO ticks are not the cap");
 expect(funcBody(as, "hz43VanCapClip").indexOf('"instance66"') < 0, "cap identity is not hardcoded instance66");
 expect(funcBody(as, "hz43VanDump").indexOf("ctA=") >= 0 && funcBody(as, "hz43VanDump").indexOf("ctO=") >= 0 && funcBody(as, "hz43VanDump").indexOf("HZ43_DIAG") >= 0, "dump records ColorTransform alphaMultiplier and alphaOffset and the diagnostic package token");
@@ -717,10 +717,25 @@ function asInner(name) {
 	return body.replace(/^\{\s*/, "").replace(/\s*\}$/, "")
 		.replace(/var\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[A-Za-z0-9_.]+/g, "var $1")
 		.replace(/catch\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[A-Za-z0-9_.]+\s*\)/g, "catch($1)")
-		.replace(/\s+as\s+[A-Za-z_][A-Za-z0-9_.]*/g, "");
+		.replace(/\s+as\s+[A-Za-z_][A-Za-z0-9_.]*/g, "")
+		.replace(/(\w+) is DisplayObjectContainer\b/g, "($1 && $1.numChildren !== undefined)")
+		.replace(/\bDisplayObjectContainer\(/g, "(");
 }
 function bindAsMethod(host, name, args) {
 	host[name] = Function.apply(null, args.concat(["with(this){\n" + asInner(name) + "\n}"])).bind(host);
+}
+// hidecache: the per-pass WatchOutline_mc memo and the one-walk marker check, as in the AS (fields start empty).
+function bindHidecache(host) {
+	host.hz43OlDepth = 0;
+	host.hz43OlHave = false;
+	host.hz43OlRef = null;
+	host.hz43OlBlg = null;
+	host.hzPerfOn = false;
+	bindAsMethod(host, "hz43VanOutline", []);
+	bindAsMethod(host, "hz43OlBegin", []);
+	bindAsMethod(host, "hz43OlEnd", []);
+	bindAsMethod(host, "hz43IsMark", ["name"]);
+	bindAsMethod(host, "hz43FindMark", ["c", "depth"]);
 }
 function makeProductionHost(kids) {
 	blg.kids = kids;
@@ -760,6 +775,7 @@ function makeProductionHost(kids) {
 	bindAsMethod(host, "hz43VanNamed", ["name"]);
 	bindAsMethod(host, "hz43VanHasAncestorUnit", ["d"]);
 	bindAsMethod(host, "hz43VanAdd", ["root"]);
+	bindHidecache(host);
 	bindAsMethod(host, "hz43VanCapClip", ["d"]);
 	bindAsMethod(host, "hz43VanRingProof", ["d"]);
 	bindAsMethod(host, "hz43VanRingClip", ["d"]);
@@ -903,6 +919,7 @@ function makeFadeHost() {
 	};
 	bindAsMethod(host, "hz43VanSkip", ["name"]);
 	bindAsMethod(host, "hz43VanInstName", ["name"]);
+	bindHidecache(host);
 	bindAsMethod(host, "hz43VanCapClip", ["d"]);
 	bindAsMethod(host, "hz43VanClip", ["i"]);
 	bindAsMethod(host, "hz43VanFadeSeen", ["d"]);
