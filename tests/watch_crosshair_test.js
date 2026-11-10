@@ -716,6 +716,9 @@ function asInner(name) {
 	const body = funcBody(as, name);
 	return body.replace(/^\{\s*/, "").replace(/\s*\}$/, "")
 		.replace(/var\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[A-Za-z0-9_.]+/g, "var $1")
+		// AS3 catch types: catch(e:Error) lets a non-Error value pass, catch(e:*) takes any value. Keep that in JS.
+		.replace(/catch\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*Error\s*\)\s*\{/g, "catch($1) { if (!($1 instanceof Error)) throw $1;")
+		.replace(/catch\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*\*\s*\)/g, "catch($1)")
 		.replace(/catch\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[A-Za-z0-9_.]+\s*\)/g, "catch($1)")
 		.replace(/\s+as\s+[A-Za-z_][A-Za-z0-9_.]*/g, "")
 		.replace(/(\w+) is DisplayObjectContainer\b/g, "($1 && $1.numChildren !== undefined)")

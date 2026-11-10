@@ -15,6 +15,7 @@
       public var HorizonVitals_mc:Sprite = null;
       private var hzFont:String = null;
       private var hzTexts:Array = [];
+      private var hzTextTf:Array = [];   // hzTexts[i].tf for hzTxtObj (hzTexts is append-only)
       private var hzJetPct:TextField = null;
       private var hzJetBar:Sprite = null;
       private var hzJetCharge:Number = 1;
@@ -865,6 +866,7 @@
       private function hzApplyFmt(o:Object) : void
       {
          if(this.hzPerfOn) { this.hzPcFmt++; }
+         o.fmtN = int(o.fmtN) + 1;   // format epoch of this field: hzQSync redoes when any of its fields was re-formatted
          if(o.tone != undefined && o.tone !== null) { this.hzApplyFmt19(o); return; }
          var role:String = o.role;
          var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
@@ -2239,6 +2241,10 @@
       private var hzPcHoldN:int = 0;         // hz43VanHoldsMark subtree walks (one walk per call, all mark names)
       private var hzPcOlHit:int = 0;         // WatchOutline_mc lookups served by the per-pass memo
       private var hzPcOlMiss:int = 0;        // WatchOutline_mc lookups that searched the tree inside a pass
+      private var hzPcQsSkip:int = 0;        // hzQSync calls that matched the signature (writes skipped, tops replayed)
+      private var hzPcQsRun:int = 0;         // hzQSync calls that ran the full pass
+      private var hzPcTxHit:int = 0;         // hzTxtObj answers from the index (found or not registered)
+      private var hzPcTxMiss:int = 0;        // hzTxtObj answers that fell back to the scan
       private var hzDbgCross:String = "";
       private var hzDbgWeap:String = "";
       private var hzDbgText:TextField = null;
@@ -7022,8 +7028,37 @@
          }
       }
 
+      // Purpose: the registry entry of a Horizon text field. hzTexts is append-only and every entry is made with its own
+      // new TextField, never reassigned, so hzTextTf (entry i's tf, filled lazily) gives the same first match as the
+      // scan with one native indexOf instead of an AS loop over ~200 entries. The hit is checked against hzTexts[i].tf
+      // on every use; anything else falls back to the original scan. Inputs: tf. Outputs: the entry or null.
+      // Author: Moragar. Last modified: 2026-11-09.
       private function hzTxtObj(tf:TextField) : Object
       {
+         var n:int = this.hzTexts.length;
+         if(this.hzTextTf == null) { this.hzTextTf = []; }
+         while(this.hzTextTf.length < n)
+         {
+            var k:int = this.hzTextTf.length;
+            var e:Object = this.hzTexts[k];
+            this.hzTextTf[k] = e != null ? e.tf : null;
+         }
+         var i:int = this.hzTextTf.indexOf(tf);
+         if(i >= 0 && i < n)
+         {
+            var m:Object = this.hzTexts[i];
+            if(m != null && m.tf == tf)
+            {
+               if(this.hzPerfOn) { this.hzPcTxHit++; }
+               return m;
+            }
+         }
+         else if(i < 0 && tf != null)
+         {
+            if(this.hzPerfOn) { this.hzPcTxHit++; }
+            return null;
+         }
+         if(this.hzPerfOn) { this.hzPcTxMiss++; }
          for each(var o:Object in this.hzTexts) { if(o.tf == tf) { return o; } }
          return null;
       }
@@ -8890,10 +8925,23 @@
       }
 
       // title = quest name (hzSetQuestTitle), objective = active marker strText, distance = fDistanceToPlayer (HudCompassData)
+      // Change-only: when every input of the card (texts, sub-lines, field identities, formats, typography settings) and
+      // every field state it wrote are unchanged since the last full pass, the pass would write the same values again, so
+      // only the hzTxtTop calls are replayed (their size rules read more settings than the signature holds). Any
+      // difference, a throw, or a hz27QLayout error runs the full pass, unchanged. See hzQsSame / hzQsKeep.
       private function hzQSync() : void
       {
          var tQs:Number = 0;
          if(this.hzPerfOn) { tQs = this.hzPerfNow(); this.hzRgPush(4,tQs,0); }
+         if(this.hzQsSame())
+         {
+            this.hzQsTops();
+            if(this.hzPerfOn) { this.hzPcQsSkip++; }
+            if(this.hzPerfOn) { this.hzPsSpan(46,tQs,false); }
+            return;
+         }
+         this.hzQsOk = false;
+         var qlErr:Boolean = false;
          var name:String = this.hzQName != null ? this.hzQName : "";
          var obj:String = this.hzQObjStr != null ? this.hzQObjStr : "";
          var title:String = name.length > 0 ? name : (obj.length > 0 ? obj : "No active objective");
@@ -8917,7 +8965,7 @@
                this.hzTxtTop(this.hzQ19T,28);
                this.hzTxtTop(this.hzQ19D,29);
             }
-            try { this.hz27QLayout(sub.length > 0); } catch(errQL:Error) { }
+            try { this.hz27QLayout(sub.length > 0); } catch(errQL:Error) { qlErr = true; }
          }
          if(this.hzCQ19T)
          {
@@ -8933,7 +8981,210 @@
                this.hzFitText(this.hzCQ19O,"·  " + sub,right - ox);
             }
          }
+         if(!qlErr) { this.hzQsKeep(); }
+         if(this.hzPerfOn) { this.hzPcQsRun++; }
          if(this.hzPerfOn) { this.hzPsSpan(46,tQs,false); }
+      }
+
+      // ---- hzQSync change-only signature ----
+      // Fields, in this order: Q19T Q19D Q19O CQ19T CQ19D CQ19O, hz27QL[0..2], hz27QLD[0..2]. Per field HZ_QS_W slots:
+      // field, registry entry, format epoch, fs, ls, face, text, visible, x (all read back after the pass).
+      // Field refs are compared with the live members on every call, so a rebuilt card or a new movie never matches.
+      // Font resolution: hzTW keys its width on hzFontName(face). That name depends on hzFont, FontFace, the font module
+      // flag and hzFontOkMap. A full pass resolves (and so probes) every name its measured fields need, an entry is never
+      // rewritten once set, and the late-font retry that deletes failed entries re-formats every text (format epoch) when
+      // a resolution changes. So hzFont + FontFace + the module flag + the epoch cover it without a probe here (a probe has
+      // side effects, e.g. hzAfRemeasure, that the full pass would not have had at this point).
+      private static const HZ_QS_N:int = 12;
+      private static const HZ_QS_W:int = 9;
+      private var hzQsOk:Boolean = false;
+      private var hzQsR:Array = null;
+      private var hzQsName:String = null;
+      private var hzQsObj:String = null;
+      private var hzQsDist:String = null;
+      private var hzQsSubN:int = -1;
+      private var hzQsSubD:Array = null;
+      private var hzQsSubT:Array = null;
+      private var hzQsSubO:Array = null;
+      private var hzQsHdr:int = -1;
+      private var hzQsTs:Number = NaN;
+      private var hzQsFace:int = -1;
+      private var hzQsFont:String = null;
+      private var hzQsFMod:* = null;
+      private var hzQsLs:int = -2;
+      private var hzQsQL:Array = null;
+      private var hzQsQLD:Array = null;
+      private var hzQsQLN:int = -1;
+      private var hzQsH:Number = NaN;
+      private var hzQsMc:Object = null;
+
+      // Purpose: field j of the card (see the order above). Inputs: j. Outputs: the TextField or null. Author: Moragar.
+      // Last modified: 2026-11-09.
+      private function hzQsField(j:int) : TextField
+      {
+         switch(j)
+         {
+            case 0: return this.hzQ19T;
+            case 1: return this.hzQ19D;
+            case 2: return this.hzQ19O;
+            case 3: return this.hzCQ19T;
+            case 4: return this.hzCQ19D;
+            case 5: return this.hzCQ19O;
+         }
+         var a:Array = j < 9 ? this.hz27QL : this.hz27QLD;
+         var k:int = j < 9 ? j - 6 : j - 9;
+         if(a == null || k >= a.length) { return null; }
+         return a[k] as TextField;
+      }
+
+      // Purpose: true only when the full hzQSync pass would write exactly what the fields already show. Compares every
+      // input the pass reads (quest strings, the first three sub-lines by value, field and array identities, each
+      // field's registry entry, format epoch, fs, ls and face, HeaderStyle, TextScale, FontFace, the game font, the font
+      // module flag, the letter-spacing mode, the card height and HorizonQuest_mc) and every field state it writes
+      // (text, visible, x). Calls no probe. Any throw is a mismatch. Inputs: live members. Outputs: Boolean. Author: Moragar. Last modified: 2026-11-09.
+      private function hzQsSame() : Boolean
+      {
+         if(!this.hzQsOk || this.hzQsR == null) { return false; }
+         try
+         {
+            if(this.hzQName !== this.hzQsName || this.hzQObjStr !== this.hzQsObj || this.hzQDistStr !== this.hzQsDist) { return false; }
+            if(this.hzHeaderStyle != this.hzQsHdr || this.hzTextScale !== this.hzQsTs || this.hzFontFace != this.hzQsFace || this.hzLsMode != this.hzQsLs) { return false; }
+            if(this.hzFont !== this.hzQsFont || this.hz30Mod["font"] !== this.hzQsFMod) { return false; }
+            if(this.hz27QL !== this.hzQsQL || this.hz27QLD !== this.hzQsQLD || this.hz27QL.length != this.hzQsQLN) { return false; }
+            if(this.hz27QH !== this.hzQsH || this.HorizonQuest_mc !== this.hzQsMc) { return false; }
+            var subs:Array = this.hz27QSubs;
+            if(subs == null || subs.length != this.hzQsSubN) { return false; }
+            var i:int = 0;
+            while(i < 3 && i < subs.length)
+            {
+               var s:Object = subs[i];
+               if(s == null) { return false; }
+               if(String(s.d) !== this.hzQsSubD[i] || String(s.t) !== this.hzQsSubT[i] || Boolean(s.opt) !== this.hzQsSubO[i]) { return false; }
+               i++;
+            }
+            var j:int = 0;
+            while(j < HZ_QS_N)
+            {
+               var b:int = j * HZ_QS_W;
+               var tf:TextField = this.hzQsField(j);
+               if(tf !== this.hzQsR[b]) { return false; }
+               if(tf != null)
+               {
+                  var o:Object = this.hzTxtObj(tf);
+                  if(o !== this.hzQsR[b + 1]) { return false; }
+                  if(o != null)
+                  {
+                     if(int(o.fmtN) !== this.hzQsR[b + 2] || o.fs !== this.hzQsR[b + 3] || o.ls !== this.hzQsR[b + 4] || o.face !== this.hzQsR[b + 5]) { return false; }
+                  }
+                  if(tf.text !== this.hzQsR[b + 6] || tf.visible !== this.hzQsR[b + 7] || tf.x !== this.hzQsR[b + 8]) { return false; }
+               }
+               j++;
+            }
+         }
+         catch(eQs:*)
+         {
+            return false;
+         }
+         return true;
+      }
+
+      // Purpose: record the signature after a full hzQSync pass (see hzQsSame). Reads back what the fields show.
+      // A throw leaves the memo off, so the next call runs the full pass. Inputs: live members. Outputs: hzQs*.
+      // Author: Moragar. Last modified: 2026-11-09.
+      private function hzQsKeep() : void
+      {
+         this.hzQsOk = false;
+         try
+         {
+            if(this.hzQsR == null)
+            {
+               this.hzQsR = new Array(HZ_QS_N * HZ_QS_W);
+               this.hzQsSubD = new Array(3);
+               this.hzQsSubT = new Array(3);
+               this.hzQsSubO = new Array(3);
+            }
+            this.hzQsName = this.hzQName;
+            this.hzQsObj = this.hzQObjStr;
+            this.hzQsDist = this.hzQDistStr;
+            this.hzQsHdr = this.hzHeaderStyle;
+            this.hzQsTs = this.hzTextScale;
+            this.hzQsFace = this.hzFontFace;
+            this.hzQsFont = this.hzFont;
+            this.hzQsFMod = this.hz30Mod["font"];
+            this.hzQsLs = this.hzLsMode;
+            this.hzQsQL = this.hz27QL;
+            this.hzQsQLD = this.hz27QLD;
+            this.hzQsQLN = this.hz27QL != null ? this.hz27QL.length : -1;
+            this.hzQsH = this.hz27QH;
+            this.hzQsMc = this.HorizonQuest_mc;
+            var subs:Array = this.hz27QSubs;
+            if(subs == null) { return; }
+            this.hzQsSubN = subs.length;
+            var i:int = 0;
+            while(i < 3)
+            {
+               var s:Object = i < subs.length ? subs[i] : null;
+               if(i < subs.length && s == null) { return; }
+               this.hzQsSubD[i] = s != null ? String(s.d) : null;
+               this.hzQsSubT[i] = s != null ? String(s.t) : null;
+               this.hzQsSubO[i] = s != null ? Boolean(s.opt) : null;
+               i++;
+            }
+            var j:int = 0;
+            while(j < HZ_QS_N)
+            {
+               var b:int = j * HZ_QS_W;
+               var tf:TextField = this.hzQsField(j);
+               var o:Object = tf != null ? this.hzTxtObj(tf) : null;
+               this.hzQsR[b] = tf;
+               this.hzQsR[b + 1] = o;
+               this.hzQsR[b + 2] = o != null ? int(o.fmtN) : null;
+               this.hzQsR[b + 3] = o != null ? o.fs : null;
+               this.hzQsR[b + 4] = o != null ? o.ls : null;
+               this.hzQsR[b + 5] = o != null ? o.face : null;
+               this.hzQsR[b + 6] = tf != null ? tf.text : null;
+               this.hzQsR[b + 7] = tf != null ? tf.visible : null;
+               this.hzQsR[b + 8] = tf != null ? tf.x : null;
+               j++;
+            }
+            this.hzQsOk = true;
+         }
+         catch(eQk:*)
+         {
+            this.hzQsOk = false;
+         }
+      }
+
+      // Purpose: the hzTxtTop calls of a full hzQSync pass, same fields, tops and order (hzQSync, then hz27QLayout).
+      // Only called when hzQsSame is true, so the inputs that pick the tops are the recorded ones.
+      // Inputs: live members. Outputs: tf.y and the entries' y0 / su, as the full pass. Author: Moragar.
+      // Last modified: 2026-11-09.
+      private function hzQsTops() : void
+      {
+         if(!this.hzQ19T) { return; }
+         var name:String = this.hzQName != null ? this.hzQName : "";
+         var obj:String = this.hzQObjStr != null ? this.hzQObjStr : "";
+         var sub:String = name.length > 0 ? obj : "";
+         if(sub.length > 0 || this.hz27QSubs.length > 0)
+         {
+            this.hzTxtTop(this.hzQ19T,10);
+            this.hzTxtTop(this.hzQ19D,11);
+         }
+         else
+         {
+            this.hzTxtTop(this.hzQ19T,28);
+            this.hzTxtTop(this.hzQ19D,29);
+         }
+         if(this.hz27QL.length < 3) { return; }
+         var n:int = Math.min(3,this.hz27QSubs.length);
+         var y0:Number = sub.length > 0 ? 60 : 38;
+         var i:int = 0;
+         while(i < n)
+         {
+            this.hzTxtTop(this.hz27QLD[i],y0 + i * 22);
+            this.hzTxtTop(this.hz27QL[i],y0 + i * 22);
+            i++;
+         }
       }
 
       // ---- JETPACK (330x72): round tile + glyph | JETPACK / BOOST nn% | 10-segment bar ----
@@ -10629,6 +10880,10 @@
          this.hzPcHoldN = 0;
          this.hzPcOlHit = 0;
          this.hzPcOlMiss = 0;
+         this.hzPcQsSkip = 0;
+         this.hzPcQsRun = 0;
+         this.hzPcTxHit = 0;
+         this.hzPcTxMiss = 0;
       }
       private function hzPbEnd(i:int, t0:Number) : void
       {
@@ -10900,6 +11155,7 @@
          s += " | texts=" + nTexts + " fades=" + nFades + " hideCache=" + nHide + " blgN=" + nBlg;
          s += " | WatchStyle=" + this.hzWatchStyle + " CrosshairRule=" + this.hzCrossRule + " CrosshairStyle=" + this.hzXhStyle + " TextShadow=" + (this.hzTextShadow ? 1 : 0) + " Compact=" + (this.hzCompact ? 1 : 0) + " NameHover=" + this.hzNameHover + " FontFace=" + this.hzFontFace + " TextScale=" + this.hzTextScale + " HideVanillaWatch=" + (this.hzHideVanillaWatch ? 1 : 0) + " HideVanillaCompass=" + (this.hzHideVanillaCompass ? 1 : 0) + " timerUnsupported=" + (this.hzPerfClockFb ? 1 : 0);
          s += " | hc holds=" + this.hzPcHoldN + " olHit=" + this.hzPcOlHit + " olMiss=" + this.hzPcOlMiss;
+         s += " | co qsSkip=" + this.hzPcQsSkip + " qsRun=" + this.hzPcQsRun + " txHit=" + this.hzPcTxHit + " txMiss=" + this.hzPcTxMiss;
          return s;
       }
       // Length-prefixed tokens so game names that contain | or : cannot collide. Exact char count, then payload.
@@ -21010,7 +21266,7 @@
                i++;
             }
          }
-         catch(eOl:Error)
+         catch(eOl:*)
          {
             this.hz43OlEnd();
             throw eOl;
@@ -21089,7 +21345,7 @@
             }
             this.hz43VanBlgChrome(hide);
          }
-         catch(eOc:Error)
+         catch(eOc:*)
          {
             this.hz43OlEnd();
             throw eOc;
