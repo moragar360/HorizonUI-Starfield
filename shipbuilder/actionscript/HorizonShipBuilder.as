@@ -438,8 +438,11 @@ package
          if(!held) { return true; }
          // The same key press may also have arrived as a DLL key token (cancelTop/acceptTop
          // stamp the frame), so a release acts only when nothing acted since its press.
-         if(param1 == "Escape" || param1 == "Cancel") { if(this.lastCancel < pressed) { this.cancelTop("pad"); } return true; }
-         if(param1 == "Accept" || param1 == "Enter") { if(this.lastOk < pressed) { this.acceptTop("pad"); } return true; }
+         // A press in the text grace belongs to the field that just ended (inside a popup the
+         // capture stays on), so it must not also cancel or accept the popup and drop a draft.
+         var late:Boolean = pressed - this.lastTextEnd <= TEXT_GRACE;
+         if(param1 == "Escape" || param1 == "Cancel") { if(this.lastCancel < pressed && !late) { this.cancelTop("pad"); } return true; }
+         if(param1 == "Accept" || param1 == "Enter") { if(this.lastOk < pressed && !late) { this.acceptTop("pad"); } return true; }
          return true;
       }
 
@@ -3186,7 +3189,12 @@ package
          if(this.capturing())
          {
             if(param1 == "cancel") { this.cancelTop("key"); return; }
-            if(param1 == "ok") { this.acceptTop("key"); return; }
+            if(param1 == "ok")
+            {
+               this.acceptTop("key");
+               this.syncLog("enter");
+               return;
+            }
          }
          if(this.arrange != null && this.arrange.visible)
          {
@@ -3867,6 +3875,14 @@ package
       internal function partCredits():Number
       {
          return this.dCost != null ? Number(this.dCost.uPlayerCredits) : NaN;
+      }
+
+      // Purpose: ask the plugin to write the probe log to disk at once (it does when it reads
+      //    this frame's lines) instead of on its next tick. Used only at Enter and pill-name
+      //    commits, so a crash right after leaves those lines on disk.
+      internal function syncLog(param1:String):void
+      {
+         this.note("SYNC " + param1);
       }
 
       internal function note(param1:String):void

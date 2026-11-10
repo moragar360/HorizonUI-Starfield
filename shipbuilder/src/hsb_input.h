@@ -142,6 +142,32 @@ inline int StateInt(std::string_view line, std::string_view key, int fallback)
 
 // Purpose: read "STATE capture=0 text=0 arrange=0 stage=WxH view=x,y,w,h keys=1 hide=72 find=47".
 // Outputs: the state; a missing or bad field keeps the previous value.
+// Purpose: whether the plugin writes its log to disk right before it hands this feed to the
+//    movie (and again once the movie's lines for the frame are in): an Enter ("K ok"), or,
+//    while a Horizon text field is active, a Tab or a press that can commit the field.
+//    Typed characters and every other token never flush, so the cost stays at those events.
+inline bool FeedWantsSync(std::string_view feed, bool textActive)
+{
+	std::size_t at = 0;
+	while (at < feed.size()) {
+		const auto next = feed.find('\n', at);
+		const std::string_view line = feed.substr(at, next == std::string_view::npos ? std::string_view::npos : next - at);
+		at = next == std::string_view::npos ? feed.size() : next + 1;
+		if (line == "K ok") return true;
+		if (textActive && (line == "K tab" || line.rfind("M D ", 0) == 0)) return true;
+	}
+	return false;
+}
+
+// Purpose: a movie line "SYNC <tag>" asks for the log on disk now. Outputs: true and the tag
+//    (at most 24 characters) for such a line.
+inline bool SyncLine(std::string_view line, std::string& tag)
+{
+	if (line.rfind("SYNC ", 0) != 0) return false;
+	tag = std::string(line.substr(5, 24));
+	return true;
+}
+
 inline InputState ParseState(std::string_view line, InputState prev)
 {
 	InputState s = prev;

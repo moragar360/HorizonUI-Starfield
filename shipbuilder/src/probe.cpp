@@ -37,6 +37,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <deque>
+#include <exception>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -79,6 +80,10 @@ std::atomic<bool> g_inShipPoll{ false };
 // One native file write at a time (NativeWrite), and one job tick at a time.
 std::atomic<bool> g_inNativeWrite{ false };
 std::atomic<bool> g_inJobTick{ false };
+// Set when a frame's feed or the movie asked for a synchronous log write (FeedWantsSync,
+// SYNC lines); PollShipOnAdvance writes the log once that frame's lines are in.
+std::atomic<bool> g_syncAfter{ false };
+std::mutex g_flushMu;
 std::atomic<bool> g_mapped{ false };
 std::atomic<bool> g_probeDebug{ false };
 std::atomic<int> g_movieGen{ 0 };
@@ -179,14 +184,31 @@ void WriteBatch(const std::deque<std::string>& batch)
 	fclose(file);
 }
 
-void FlushLog()
+// Purpose: append every queued line to the probe log now. Callers: the job tick, NativeWrite
+//    and the movie thread's sync points (Enter, a pill-name commit). Never throws: a failure
+//    keeps the lines that were not written out of the log rather than ending the game.
+//    g_flushMu keeps two callers' batches in order.
+void FlushLog() noexcept
 {
-	std::deque<std::string> batch;
-	{
-		std::lock_guard lock(g_qMu);
-		batch.swap(g_queue);
+	try {
+		std::lock_guard flush(g_flushMu);
+		std::deque<std::string> batch;
+		{
+			std::lock_guard lock(g_qMu);
+			batch.swap(g_queue);
+		}
+		WriteBatch(batch);
+	} catch (...) {
 	}
-	WriteBatch(batch);
+}
+
+// Purpose: log a caught native fault without letting the logging itself throw.
+void NoteFault(const char* where, const char* what) noexcept
+{
+	try {
+		Fact("fault", std::string(where) + " " + (what ? std::string(what).substr(0, 120) : std::string("unknown")));
+	} catch (...) {
+	}
 }
 
 void PrepareLog()
@@ -697,6 +719,12 @@ void QueueSetting(const hsb::Setting& s)
 // Dependencies: hsb_input.h (STATE, HOT), hsb_settings.h (SET, ARRANGE whitelist).
 void NoteMovieLine(const std::string& raw, const std::string& clean)
 {
+	std::string syncTag;
+	if (hsb::SyncLine(clean, syncTag)) {
+		Fact("sync", syncTag);
+		g_syncAfter.store(true);
+		return;
+	}
 	if (raw.rfind("STATE ", 0) == 0) {
 		std::lock_guard lock(g_inMu);
 		g_in = hsb::ParseState(raw, g_in);
@@ -825,7 +853,17 @@ void DriveMovie(RE::IMenu* menu)
 		arg = 1.0;
 		menu->menuObj.Invoke("hsbSetDebug", nullptr, &arg, 1);
 	}
-	InvokeText(menu, "hsbFeed", 2u, TakeFeed());
+	const std::string feed = TakeFeed();
+	bool textActive = false;
+	{
+		std::lock_guard lock(g_inMu);
+		textActive = g_in.text;
+	}
+	if (hsb::FeedWantsSync(feed, textActive)) {
+		FlushLog();
+		g_syncAfter.store(true);
+	}
+	InvokeText(menu, "hsbFeed", 2u, feed);
 	const int saved = g_saveResult.exchange(-1);
 	if (saved >= 0) {
 		RE::Scaleform::GFx::Value arg;
@@ -926,6 +964,9 @@ void PollShipOnAdvance()
 			if (!clean.empty()) NoteMovieLine(raw, clean);
 		}
 	}
+	// A sync point this frame: the lines the movie wrote for it reach the disk now, not on the
+	// next job tick.
+	if (g_syncAfter.exchange(false)) FlushLog();
 	if (g_movieGen.load() != kMovieGen) return;
 	RE::Scaleform::GFx::Value files;
 	if (menu->menuObj.Invoke("hsbTakeFiles", &files)) {
@@ -1249,6 +1290,18 @@ hsb::ProfileState g_profileState;
 //    byte is refused, as no reply may carry one. A share write makes a new file and never
 //    replaces one: a name already taken fails with "exists" (hsb::kShareExists).
 // Logging: kind, verb and result only.
+// Purpose: the reply for a request whose run threw: a failure the movie reads as "not saved",
+//    or nothing when the request has no id. Never throws.
+std::string FaultReply(const std::string& line) noexcept
+{
+	try {
+		const std::string id = hsb::RequestId(line);
+		return id.empty() ? std::string() : hsb::FileReply(id, false, "fault");
+	} catch (...) {
+		return std::string();
+	}
+}
+
 // Purpose: hold the single native-write slot for one ini merge or file write, with the log
 //    flushed before the write and again after its outcome line, so a crash inside a write
 //    leaves every line up to it on disk. Inputs: what the write is (for the refusal note) and
@@ -1263,7 +1316,9 @@ public:
 		if (ok_) FlushLog();
 		else Fact("write", std::string("reentry refused ") + what);
 	}
-	~NativeWrite()
+	// FlushLog never throws, so the slot is always released here, also while a throw from
+	// the write unwinds through this object.
+	~NativeWrite() noexcept
 	{
 		if (!active_ || !ok_) return;
 		FlushLog();
@@ -1280,81 +1335,88 @@ private:
 
 std::string RunFileRequest(const std::string& line)
 {
-	hsb::FileRequest r;
-	if (!hsb::ParseFileRequest(line, r)) {
-		Fact("files", "request unreadable");
-		const std::string id = hsb::RequestId(line);
-		return id.empty() ? std::string() : hsb::FileReply(id, false, "");
-	}
-	const hsb::FileVerb verb = hsb::CheckRequest(r);
-	const bool writes = verb == hsb::FileVerb::kProfileWrite || verb == hsb::FileVerb::kProfileBad || verb == hsb::FileVerb::kWrite;
-	NativeWrite guard("file", writes);
-	if (!guard.ok()) return hsb::FileReply(r.id, false, "busy");
-	bool ok = false;
-	std::string payload;
-	std::string failReason;
-	Win32ProfileDisk disk(g_docsBuilder);
-	switch (verb) {
-	case hsb::FileVerb::kProfileRead: {
-		hsb::ProfileResult result = hsb::ProfileRead(disk, g_profileState);
-		ok = result.ok;
-		if (ok) payload = std::move(result.payload);
-		else failReason = std::move(result.payload);
-		break;
-	}
-	case hsb::FileVerb::kProfileWrite: {
-		const std::string body = hsb::UnescapeText(r.body);
-		if (!hsb::BodyPrintable(body)) {
-			failReason = "unprintable";
+	try {
+		hsb::FileRequest r;
+		if (!hsb::ParseFileRequest(line, r)) {
+			Fact("files", "request unreadable");
+			const std::string id = hsb::RequestId(line);
+			return id.empty() ? std::string() : hsb::FileReply(id, false, "");
+		}
+		const hsb::FileVerb verb = hsb::CheckRequest(r);
+		const bool writes = verb == hsb::FileVerb::kProfileWrite || verb == hsb::FileVerb::kProfileBad || verb == hsb::FileVerb::kWrite;
+		NativeWrite guard("file", writes);
+		if (!guard.ok()) return hsb::FileReply(r.id, false, "busy");
+		bool ok = false;
+		std::string payload;
+		std::string failReason;
+		Win32ProfileDisk disk(g_docsBuilder);
+		switch (verb) {
+		case hsb::FileVerb::kProfileRead: {
+			hsb::ProfileResult result = hsb::ProfileRead(disk, g_profileState);
+			ok = result.ok;
+			if (ok) payload = std::move(result.payload);
+			else failReason = std::move(result.payload);
 			break;
 		}
-		hsb::ProfileResult result = hsb::ProfileWrite(disk, g_profileState, body);
-		ok = result.ok;
-		failReason = std::move(result.payload);
-		break;
-	}
-	case hsb::FileVerb::kProfileBad: {
-		hsb::ProfileResult result = hsb::ProfileSetAside(disk, g_profileState);
-		ok = result.ok;
-		failReason = std::move(result.payload);
-		break;
-	}
-	case hsb::FileVerb::kList:
-		payload = ListShares(r.kind);
-		ok = true;
-		break;
-	case hsb::FileVerb::kRead:
-		for (const auto& dir : ShareDirs(r.kind, r.args[0])) {
-			const std::wstring path = dir + WidenAscii(r.args[1]);
-			if (!hsb::BuilderFileMayTouch(NarrowPath(path), false) || !FileExists(path)) continue;
-			ok = ReadCapped(path, hsb::kMaxShareBytes, payload) && !hsb::HasNul(payload);
+		case hsb::FileVerb::kProfileWrite: {
+			const std::string body = hsb::UnescapeText(r.body);
+			if (!hsb::BodyPrintable(body)) {
+				failReason = "unprintable";
+				break;
+			}
+			hsb::ProfileResult result = hsb::ProfileWrite(disk, g_profileState, body);
+			ok = result.ok;
+			failReason = std::move(result.payload);
 			break;
 		}
-		break;
-	case hsb::FileVerb::kWrite: {
-		const std::string body = hsb::UnescapeText(r.body);
-		const auto dirs = ShareDirs(r.kind, "user");
-		if (dirs.empty() || body.size() > hsb::kMaxShareBytes) break;
-		if (!hsb::BodyPrintable(body)) {
-			failReason = "unprintable";
+		case hsb::FileVerb::kProfileBad: {
+			hsb::ProfileResult result = hsb::ProfileSetAside(disk, g_profileState);
+			ok = result.ok;
+			failReason = std::move(result.payload);
 			break;
 		}
-		const std::wstring path = dirs.front() + WidenAscii(r.args[1]);
-		if (!hsb::BuilderFileMayTouch(NarrowPath(path), true)) break;
-		EnsureDirsFor(path);
-		const hsb::MoveResult wrote = WriteNew(path, body);
-		ok = wrote == hsb::MoveResult::kOk;
-		if (ok) payload = r.args[1];
-		else if (wrote == hsb::MoveResult::kExists) failReason = std::string(hsb::kShareExists);
-		break;
+		case hsb::FileVerb::kList:
+			payload = ListShares(r.kind);
+			ok = true;
+			break;
+		case hsb::FileVerb::kRead:
+			for (const auto& dir : ShareDirs(r.kind, r.args[0])) {
+				const std::wstring path = dir + WidenAscii(r.args[1]);
+				if (!hsb::BuilderFileMayTouch(NarrowPath(path), false) || !FileExists(path)) continue;
+				ok = ReadCapped(path, hsb::kMaxShareBytes, payload) && !hsb::HasNul(payload);
+				break;
+			}
+			break;
+		case hsb::FileVerb::kWrite: {
+			const std::string body = hsb::UnescapeText(r.body);
+			const auto dirs = ShareDirs(r.kind, "user");
+			if (dirs.empty() || body.size() > hsb::kMaxShareBytes) break;
+			if (!hsb::BodyPrintable(body)) {
+				failReason = "unprintable";
+				break;
+			}
+			const std::wstring path = dirs.front() + WidenAscii(r.args[1]);
+			if (!hsb::BuilderFileMayTouch(NarrowPath(path), true)) break;
+			EnsureDirsFor(path);
+			const hsb::MoveResult wrote = WriteNew(path, body);
+			ok = wrote == hsb::MoveResult::kOk;
+			if (ok) payload = r.args[1];
+			else if (wrote == hsb::MoveResult::kExists) failReason = std::string(hsb::kShareExists);
+			break;
+		}
+		case hsb::FileVerb::kBad:
+			break;
+		}
+		if (!ok) payload = failReason;
+		Fact("files", r.kind.substr(0, 8) + " " + r.verb.substr(0, 8) + (verb == hsb::FileVerb::kBad ? " refused" : (ok ? " ok" : " failed")) +
+			(failReason.empty() ? std::string() : " " + failReason));
+		return hsb::FileReply(r.id, ok, payload);
+	} catch (const std::exception& err) {
+		NoteFault("files", err.what());
+	} catch (...) {
+		NoteFault("files", nullptr);
 	}
-	case hsb::FileVerb::kBad:
-		break;
-	}
-	if (!ok) payload = failReason;
-	Fact("files", r.kind.substr(0, 8) + " " + r.verb.substr(0, 8) + (verb == hsb::FileVerb::kBad ? " refused" : (ok ? " ok" : " failed")) +
-		(failReason.empty() ? std::string() : " " + failReason));
-	return hsb::FileReply(r.id, ok, payload);
+	return FaultReply(line);
 }
 
 // Purpose: run up to kFileJobsPerTick queued file requests on the job thread.
@@ -1500,6 +1562,16 @@ void RequeueUpdates(const std::vector<hsb::Setting>& failed)
 	hsb::RequeueSettings(g_updates, failed);
 }
 
+// Purpose: after a throw in WriteIniNow, requeue its batch and report "not saved". Never throws.
+void IniFaultCleanup(std::vector<hsb::Setting>& updates) noexcept
+{
+	try {
+		if (!updates.empty()) RequeueUpdates(updates);
+	} catch (...) {
+	}
+	g_saveResult.store(0);
+}
+
 // Purpose: merge the queued settings into HorizonShipBuilder.user.ini (on the job thread,
 //    after the movie's SET END). Inputs: g_updates and the file on disk. Outputs: the merged
 //    file, g_saveResult (1 saved, 0 not saved) for the movie, and one log fact.
@@ -1509,48 +1581,57 @@ void RequeueUpdates(const std::vector<hsb::Setting>& failed)
 //    NativeWrite (one write at a time; a refused merge waits for the next tick).
 void WriteIniNow()
 {
-	NativeWrite guard("ini", true);
-	if (!guard.ok()) {
-		g_writeIni.store(true);
-		return;
-	}
-	if (g_iniPath.empty()) BuildApply();
-	if (!hsb::IniMayWrite(NarrowPath(g_iniPath))) {
-		g_saveResult.store(0);
-		return;
-	}
+	// Declared outside the try, so a throw after the swap puts the batch back in the queue.
 	std::vector<hsb::Setting> updates;
-	unsigned rejected = 0;
-	{
-		std::lock_guard lock(g_iniMu);
-		updates.swap(g_updates);
-		rejected = g_setRejected;
-		g_setRejected = 0;
-	}
-	if (rejected > 0) Fact("ini", "settings refused n=" + std::to_string(rejected));
-	if (updates.empty()) {
+	try {
+		NativeWrite guard("ini", true);
+		if (!guard.ok()) {
+			g_writeIni.store(true);
+			return;
+		}
+		if (g_iniPath.empty()) BuildApply();
+		if (!hsb::IniMayWrite(NarrowPath(g_iniPath))) {
+			g_saveResult.store(0);
+			return;
+		}
+		unsigned rejected = 0;
+		{
+			std::lock_guard lock(g_iniMu);
+			updates.swap(g_updates);
+			rejected = g_setRejected;
+			g_setRejected = 0;
+		}
+		if (rejected > 0) Fact("ini", "settings refused n=" + std::to_string(rejected));
+		if (updates.empty()) {
+			g_saveResult.store(1);
+			return;
+		}
+		EnsureDirsFor(g_iniPath);
+		std::string existing;
+		const bool exists = FileExists(g_iniPath);
+		const bool readOk = exists && ReadCapped(g_iniPath, kUserIniCap, existing);
+		if (!hsb::UserReadAllowsWrite(exists, readOk)) {
+			RequeueUpdates(updates);
+			g_saveResult.store(0);
+			Fact("ini", "user file unreadable; write skipped n=" + std::to_string(updates.size()));
+			return;
+		}
+		const std::string merged = hsb::MergeSettings(existing, updates);
+		if (!WriteReplace(g_iniPath, merged)) {
+			RequeueUpdates(updates);
+			g_saveResult.store(0);
+			Fact("ini", "user file write failed n=" + std::to_string(updates.size()));
+			return;
+		}
 		g_saveResult.store(1);
-		return;
+		Fact("ini", "user file merged n=" + std::to_string(updates.size()));
+	} catch (const std::exception& err) {
+		NoteFault("ini", err.what());
+		IniFaultCleanup(updates);
+	} catch (...) {
+		NoteFault("ini", nullptr);
+		IniFaultCleanup(updates);
 	}
-	EnsureDirsFor(g_iniPath);
-	std::string existing;
-	const bool exists = FileExists(g_iniPath);
-	const bool readOk = exists && ReadCapped(g_iniPath, kUserIniCap, existing);
-	if (!hsb::UserReadAllowsWrite(exists, readOk)) {
-		RequeueUpdates(updates);
-		g_saveResult.store(0);
-		Fact("ini", "user file unreadable; write skipped n=" + std::to_string(updates.size()));
-		return;
-	}
-	const std::string merged = hsb::MergeSettings(existing, updates);
-	if (!WriteReplace(g_iniPath, merged)) {
-		RequeueUpdates(updates);
-		g_saveResult.store(0);
-		Fact("ini", "user file write failed n=" + std::to_string(updates.size()));
-		return;
-	}
-	g_saveResult.store(1);
-	Fact("ini", "user file merged n=" + std::to_string(updates.size()));
 }
 
 // Purpose: the permanent SFSE task, run on a BSJobs worker every tick. It flushes the log,
@@ -1569,34 +1650,42 @@ void JobTick()
 	{
 		~Leave() { g_inJobTick.store(false); }
 	} leave;
-	FlushLog();
-	if (g_needApply.exchange(false)) BuildApply();
-	if (g_writeIni.exchange(false)) WriteIniNow();
-	RunFileJobs();
-	HWND hwnd = g_hooked.load() ? g_hwnd.load() : nullptr;
-	if (!hwnd) hwnd = GameWindow();
-	const auto now = GetTickCount64();
-	static std::uint64_t lastHook = 0;
-	if (g_wantHook.load()) {
-		if (!g_hooked.load()) {
-			if (hsb::ProbePollDue(now, lastHook)) {
+	// A throw must not leave the SFSE task (that ends the game); it is logged and the next tick
+	// runs as usual.
+	try {
+		FlushLog();
+		if (g_needApply.exchange(false)) BuildApply();
+		if (g_writeIni.exchange(false)) WriteIniNow();
+		RunFileJobs();
+		HWND hwnd = g_hooked.load() ? g_hwnd.load() : nullptr;
+		if (!hwnd) hwnd = GameWindow();
+		const auto now = GetTickCount64();
+		static std::uint64_t lastHook = 0;
+		if (g_wantHook.load()) {
+			if (!g_hooked.load()) {
+				if (hsb::ProbePollDue(now, lastHook)) {
+					lastHook = now;
+					RunOnWindowThread(hwnd, kWinInstall);
+				}
+			} else if (hsb::ProbePollDue(now, lastHook)) {
 				lastHook = now;
-				RunOnWindowThread(hwnd, kWinInstall);
+				const auto posted = g_pingPosted.load();
+				if (posted != 0) {
+					const bool reached = g_pingSeen.load() == posted;
+					g_pingPosted.store(0);
+					if (hsb::HookWasRipped(true, reached))
+						RunOnWindowThread(hwnd, kWinConfirm);
+				}
+				if (g_hooked.load() && g_pingPosted.load() == 0)
+					PostProbePing(hwnd);
 			}
-		} else if (hsb::ProbePollDue(now, lastHook)) {
-			lastHook = now;
-			const auto posted = g_pingPosted.load();
-			if (posted != 0) {
-				const bool reached = g_pingSeen.load() == posted;
-				g_pingPosted.store(0);
-				if (hsb::HookWasRipped(true, reached))
-					RunOnWindowThread(hwnd, kWinConfirm);
-			}
-			if (g_hooked.load() && g_pingPosted.load() == 0)
-				PostProbePing(hwnd);
+		} else if (g_hooked.load() && !g_removeSettled.load()) {
+			RunOnWindowThread(hwnd, kWinRemove);
 		}
-	} else if (g_hooked.load() && !g_removeSettled.load()) {
-		RunOnWindowThread(hwnd, kWinRemove);
+	} catch (const std::exception& err) {
+		NoteFault("tick", err.what());
+	} catch (...) {
+		NoteFault("tick", nullptr);
 	}
 }
 // JOBTICK-END

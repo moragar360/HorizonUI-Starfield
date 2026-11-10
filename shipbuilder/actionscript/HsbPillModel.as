@@ -440,8 +440,9 @@ package
       internal static const NAME_REFUSED:String = "\"\\|;=[]#";
 
       // Purpose: whether a typed character may go into a pill or scheme name.
-      // Refused: control characters, DEL, the C1 block, lone surrogate halves, U+FFFE and
-      //    U+FFFF, and NAME_REFUSED. A space is allowed while typing (safeName folds runs).
+      // Refused: control characters, DEL, the C1 block, every UTF-16 surrogate (so an emoji or
+      //    other character outside the BMP is dropped, also from an older saved name), U+FFFE
+      //    and U+FFFF, and NAME_REFUSED. A space is allowed while typing (safeName folds runs).
       internal static function nameChar(param1:int):Boolean
       {
          if(param1 < 32 || param1 == 127 || (param1 >= 0x80 && param1 < 0xA0)) { return false; }
@@ -451,7 +452,8 @@ package
       }
 
       // Purpose: the name as it is stored: every character nameChar refuses is dropped (with
-      //    param3 false, only the unprintable ones, so names in older saves keep their marks),
+      //    param3 false, only the unprintable ones and surrogates, so names in older saves keep
+      //    their punctuation),
       //    runs of spaces become one, the ends are trimmed and the length is capped at param2.
       internal static function safeName(param1:String, param2:int, param3:Boolean = true):String
       {

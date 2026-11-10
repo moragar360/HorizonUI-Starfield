@@ -203,6 +203,9 @@ package
          this.nameMode = "save";
          this.exported = null;
          this.slots = {};
+         // A slider value held for the next tick must not reach the next Colors visit.
+         this.pendingValue = -1;
+         this.sliderKind = -1;
          if(this.hsb.textActive(this)) { this.hsb.endText(this); }
       }
 
@@ -414,6 +417,12 @@ package
          var name:String = HsbPillModel.safeName(param1,NAME_MAX);
          if(name.length == 0) { return; }
          var s:Object = this.chosen >= 0 ? this.schemes[this.chosen] : null;
+         // The current colors are read again at confirm, so they must still all be known.
+         if(s == null && !this.allKnown())
+         {
+            this.note1 = "Reading the current colors \u00B7 try again in a moment";
+            return;
+         }
          if(s != null && String(s.source) == "user" && String(s.file).length > 0 && String(s.name) == name)
          {
             this.exported = {"name":String(s.name),"file":String(s.file)};

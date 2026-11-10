@@ -333,6 +333,11 @@ package
          if(this.editing == "name")
          {
             this.draft.name = param1 ? HsbPillModel.safeName(this.editText,HsbPillModel.MAX_NAME) : this.nameBefore;
+            if(param1)
+            {
+               this.hsb.note("PILLS name commit len=" + String(this.draft.name).length);
+               this.hsb.syncLog("pill name");
+            }
          }
          else if(param1)
          {
@@ -586,6 +591,7 @@ package
          this.hsb.savePills();
          this.browser.afterPills();
          this.hsb.note("PILLS edit saved n=" + model.pills.length);
+         this.hsb.syncLog("pill save");
          this.hsb.closePop(this,true);
       }
 

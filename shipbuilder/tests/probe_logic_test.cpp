@@ -1216,8 +1216,11 @@ static void CheckMovie(const fs::path& root)
          if(!held) { return true; }
          // The same key press may also have arrived as a DLL key token (cancelTop/acceptTop
          // stamp the frame), so a release acts only when nothing acted since its press.
-         if(param1 == "Escape" || param1 == "Cancel") { if(this.lastCancel < pressed) { this.cancelTop("pad"); } return true; }
-         if(param1 == "Accept" || param1 == "Enter") { if(this.lastOk < pressed) { this.acceptTop("pad"); } return true; }
+         // A press in the text grace belongs to the field that just ended (inside a popup the
+         // capture stays on), so it must not also cancel or accept the popup and drop a draft.
+         var late:Boolean = pressed - this.lastTextEnd <= TEXT_GRACE;
+         if(param1 == "Escape" || param1 == "Cancel") { if(this.lastCancel < pressed && !late) { this.cancelTop("pad"); } return true; }
+         if(param1 == "Accept" || param1 == "Enter") { if(this.lastOk < pressed && !late) { this.acceptTop("pad"); } return true; }
          return true;
       }
 )AS", "controller events are consumed only while Horizon captures (or in the text grace after a field ends), Accept and Cancel act once on release");
@@ -2477,6 +2480,67 @@ static void CheckV6Pins(const fs::path& root)
 		"an unknown logo key still reads as a maker name, split at its capitals");
 }
 
+// v6f: the late Esc in a popup, native catch-alls, the held slider value, the export recheck
+// and the synchronous log writes at Enter and pill-name commits.
+static void CheckV6f(const fs::path& root)
+{
+	const fs::path as = root / "actionscript";
+	const std::string hub = ReadFile(as / "HorizonShipBuilder.as");
+	const std::string colors = ReadFile(as / "HsbColors.as");
+	const std::string editor = ReadFile(as / "HsbPillEditor.as");
+	const std::string plugin = ReadFile(root / "src" / "probe.cpp");
+	Expect(!hub.empty() && !colors.empty() && !editor.empty() && !plugin.empty(), "v6f sources read");
+
+	// S1
+	const std::string wants = FunctionBody(hub, "wantsEvent", "public");
+	Expect(InOrder(wants, {"if(!held) { return true; }", "var late:Boolean = pressed - this.lastTextEnd <= TEXT_GRACE;",
+				   "if(this.lastCancel < pressed && !late) { this.cancelTop(\"pad\"); }", "if(this.lastOk < pressed && !late) { this.acceptTop(\"pad\"); }"}),
+		"a release whose press came in the text grace never cancels or accepts the popup that holds the field");
+	// S3 and N4
+	Expect(Has(FunctionBody(colors, "closed"), "this.pendingValue = -1;"), "closing Colors drops a slider value held for the next tick");
+	Expect(InOrder(FunctionBody(colors, "exportAs"), {"if(s == null && !this.allKnown())", "return;", "this.writeScheme("}),
+		"an export of the current colors checks again at confirm that every slot is known");
+	// Synchronous log writes.
+	Expect(Has(FunctionBody(hub, "syncLog", "internal"), "this.note(\"SYNC \" + param1);") &&
+			InOrder(FunctionBody(hub, "onKey"), {"if(this.capturing())", "this.acceptTop(\"key\");", "this.syncLog(\"enter\");"}) &&
+			InOrder(FunctionBody(editor, "stopEditing"), {"this.hsb.note(\"PILLS name commit len=\"", "this.hsb.syncLog(\"pill name\");"}) &&
+			InOrder(FunctionBody(editor, "save"), {"this.hsb.note(\"PILLS edit saved n=\"", "this.hsb.syncLog(\"pill save\");", "this.hsb.closePop(this,true);"}),
+		"Enter and the pill-name commits ask for the log on disk at once");
+	Expect(hsb::FeedWantsSync("K ok\n", false) && hsb::FeedWantsSync("C 97\nK ok\n", true) && !hsb::FeedWantsSync("C 97\nC 98\n", true) &&
+			!hsb::FeedWantsSync("K bksp\n", true) && hsb::FeedWantsSync("K tab\n", true) && !hsb::FeedWantsSync("K tab\n", false) &&
+			hsb::FeedWantsSync("M D 10 20 1\n", true) && !hsb::FeedWantsSync("M D 10 20 1\n", false) && !hsb::FeedWantsSync("M U 10 20 1\n", true) &&
+			!hsb::FeedWantsSync("", true),
+		"only Enter, or Tab and a press while a field is active, write the log before the feed; typed characters never do");
+	std::string tag;
+	Expect(hsb::SyncLine("SYNC pill name", tag) && tag == "pill name" && !hsb::SyncLine("PILLS edit saved n=1", tag) &&
+			hsb::SyncLine("SYNC " + std::string(40, 'x'), tag) && tag.size() == 24,
+		"a SYNC line carries a short tag");
+	const std::string drive = CppBody(plugin, "void DriveMovie(");
+	Expect(InOrder(drive, {"const std::string feed = TakeFeed();", "textActive = g_in.text;", "if (hsb::FeedWantsSync(feed, textActive)) {", "FlushLog();",
+				   "g_syncAfter.store(true);", "InvokeText(menu, \"hsbFeed\", 2u, feed);"}),
+		"the log reaches the disk before an Enter or a commit press goes to the movie");
+	Expect(InOrder(CppBody(plugin, "void NoteMovieLine("), {"if (hsb::SyncLine(clean, syncTag)) {", "Fact(\"sync\", syncTag);", "g_syncAfter.store(true);", "return;",
+				   "if (raw.rfind(\"STATE \", 0) == 0) {"}) &&
+			InOrder(CppBody(plugin, "void PollShipOnAdvance("), {"NoteMovieLine(raw, clean);", "if (g_syncAfter.exchange(false)) FlushLog();", "hsbTakeFiles"}),
+		"after a sync point the frame's movie lines reach the disk on the movie thread");
+	// S2
+	const std::string flush = CppBody(plugin, "void FlushLog() noexcept");
+	Expect(InOrder(flush, {"try {", "std::lock_guard flush(g_flushMu);", "batch.swap(g_queue);", "WriteBatch(batch);", "} catch (...) {"}),
+		"writing the log never throws, and two writers keep their order");
+	Expect(Has(plugin, "~NativeWrite() noexcept") && Has(plugin, "void NoteFault(const char* where, const char* what) noexcept") &&
+			Has(plugin, "std::string FaultReply(const std::string& line) noexcept") && Has(plugin, "void IniFaultCleanup(std::vector<hsb::Setting>& updates) noexcept"),
+		"the write slot's release and the fault paths cannot throw");
+	Expect(InOrder(CppBody(plugin, "void JobTick("), {"} leave;", "try {", "FlushLog();", "RunFileJobs();", "} catch (const std::exception& err) {",
+				   "NoteFault(\"tick\", err.what());", "} catch (...) {", "NoteFault(\"tick\", nullptr);"}),
+		"a throw in the job tick is logged and never leaves the SFSE task");
+	Expect(InOrder(CppBody(plugin, "std::string RunFileRequest("), {"try {", "NativeWrite guard(\"file\", writes);", "return hsb::FileReply(r.id, ok, payload);",
+				   "} catch (const std::exception& err) {", "NoteFault(\"files\", err.what());", "} catch (...) {", "return FaultReply(line);"}),
+		"a throw in a file request releases the write slot and replies as a failure");
+	Expect(InOrder(CppBody(plugin, "void WriteIniNow("), {"std::vector<hsb::Setting> updates;", "try {", "NativeWrite guard(\"ini\", true);", "updates.swap(g_updates);",
+				   "} catch (const std::exception& err) {", "IniFaultCleanup(updates);", "} catch (...) {", "IniFaultCleanup(updates);"}),
+		"a throw in an ini merge releases the write slot, requeues the batch and reports not saved");
+}
+
 int main()
 {
 	CheckGuard();
@@ -2504,6 +2568,7 @@ int main()
 	CheckV6Names(root);
 	CheckV6Colors(root);
 	CheckV6Pins(root);
+	CheckV6f(root);
 
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";
