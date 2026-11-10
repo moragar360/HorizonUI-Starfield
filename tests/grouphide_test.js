@@ -551,22 +551,26 @@ if (base) {
 	if (b56) {
 		const names = (src) => { const out = []; const re = /(?:private|public) function (\w+)\(/g; let m; while ((m = re.exec(src))) out.push(m[1]); return out; };
 		const RIGHT = /RightMeters|BottomRightGroup|EquippedWeapon|HealthBar|"Health_mc"|VerticalDivider_mc|Jetpack|EnemyHealthHolder_mc|StealthMeter_mc|hzHideVanillaAmmo|hzHideVanillaHealth|hzHideVanillaBoost/;
-		const all56 = names(b56), allNow = names(as);
+		// the scope check compares 56d4098 with the r2 code commit 32af5f3, so a later stack (E1) on top does not count as r2
+		let r2src = as;
+		try { r2src = cp.execFileSync("git", ["show", "32af5f3:actionscript/horizon_block.as"], { cwd: root, encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "ignore"] }).replace(/\r\n/g, "\n"); } catch (e) { r2src = as; }
+		const all56 = names(b56), allNow = names(r2src);
 		const changed = [], rightFns = [];
 		let rightSame = true;
 		for (const n of all56) {
 			let x, y;
-			try { x = fnText(b56, n).body; y = fnText(as, n).body; } catch (e) { changed.push(n + "(missing)"); continue; }
+			let z;
+			try { x = fnText(b56, n).body; y = fnText(r2src, n).body; z = fnText(as, n).body; } catch (e) { changed.push(n + "(missing)"); continue; }
 			if (x !== y) changed.push(n);
-			if (RIGHT.test(x)) { rightFns.push(n); if (x !== y) rightSame = false; }
+			if (RIGHT.test(x)) { rightFns.push(n); if (x !== y || x !== z) rightSame = false; }
 		}
 		const added = allNow.filter((n) => all56.indexOf(n) < 0);
 		const allowed = ["hz44GrpWant", "hz44GrpTick", "hz27BioHide", "hz31DetHide", "hzWlFlush", "hz38HideVanilla"];
 		expect(rightSame && rightFns.length >= 5 && rightFns.indexOf("hzOnFrame") >= 0,
-			"right side: all " + rightFns.length + " functions that touch the weapon / ammo / health / jetpack / RightMeters hides are byte-identical to 56d4098");
+			"right side: all " + rightFns.length + " functions that touch the weapon / ammo / health / jetpack / RightMeters hides are byte-identical to 56d4098 (in 32af5f3 and in this tree)");
 		expect(changed.every((n) => allowed.indexOf(n) >= 0) && added.length === 0,
 			"r2 changes only the BottomLeftGroup functions (and the watchlog flush / H2 clear): " + changed.join(", ") + (added.length ? " added: " + added.join(",") : ""));
-		expect(changed.filter((n) => n !== "hzWlFlush" && n !== "hz38HideVanilla").every((n) => !RIGHT.test(fnText(as, n).body.replace(/^\s*\/\/.*$/gm, ""))),
+		expect(changed.filter((n) => n !== "hzWlFlush" && n !== "hz38HideVanilla").every((n) => !RIGHT.test(fnText(r2src, n).body.replace(/^\s*\/\/.*$/gm, ""))),
 			"none of the changed BottomLeftGroup functions reads or writes a right-side piece");
 		// behavior: the rebuild list's right-side names in VANILLA (1, 2) and the other styles, 56d4098 vs now
 		const listOf = (src, st, flags) => {
