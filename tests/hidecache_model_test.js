@@ -191,6 +191,9 @@ function toJs(body) {
 		.replace(/(\w+) is DisplayObjectContainer\b/g, "__isDoc($1)")
 		.replace(/\bDisplayObjectContainer\(/g, "(")
 		.replace(/var\s+([A-Za-z_]\w*)\s*:\s*[\w.*]+/g, "var $1")
+		// AS3 catch types: catch(e:Error) lets a non-Error value pass, catch(e:*) takes any value. Keep that in JS.
+		.replace(/catch\s*\(\s*([A-Za-z_]\w*)\s*:\s*Error\s*\)\s*\{/g, "catch($1) { if (!($1 instanceof Error)) throw $1;")
+		.replace(/catch\s*\(\s*([A-Za-z_]\w*)\s*:\s*\*\s*\)/g, "catch($1)")
 		.replace(/catch\s*\(\s*([A-Za-z_]\w*)\s*:\s*[\w.]+\s*\)/g, "catch($1)")
 		.replace(/\s+as\s+[A-Za-z_][\w.]*/g, "");
 }
