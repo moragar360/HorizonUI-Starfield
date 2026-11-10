@@ -388,43 +388,76 @@ int main()
 		hzperf::Reset(a);
 		const std::uint64_t f = 1000000;  // 1 tick = 1 us
 		a.windowStart.store(1000000, std::memory_order_relaxed);
-		hzperf::NoteGap(a, 1000000, f, true);
+		Expect(hzperf::kGapUs == 50000, "G threshold is 50 ms over every HUD advance");
+		hzperf::NoteGap(a, 1000000, f);
 		Expect(hzperf::RingCount(a.gap) == 0 && a.gapN.load() == 0 && a.gapLast.load() == 1000000, "first advance after Reset only sets the start");
-		hzperf::NoteGap(a, 1039999, f, true);
-		Expect(hzperf::RingCount(a.gap) == 0 && a.gapN.load() == 1 && a.gapMaxUs.load() == 39999, "a 39.999 ms gap is not a G event");
-		hzperf::NoteGap(a, 1060000, f, false);
-		Expect(a.gapLast.load() == 1039999 && a.gapN.load() == 1, "rootF (a_next false) is ignored");
-		hzperf::NoteGap(a, 1080000 - 1, f, true);
-		Expect(hzperf::RingCount(a.gap) == 1 && a.gap.q[0] == 1039999 && a.gap.v[0] == 40000,
-			"a 40 ms gap is a G event stamped with the earlier start");
-		hzperf::NoteGap(a, 1080000 - 1, f, true);
-		Expect(hzperf::RingCount(a.gap) == 1 && a.gapN.load() == 2, "a zero gap is not a sample");
+		hzperf::NoteGap(a, 1049999, f);
+		Expect(hzperf::RingCount(a.gap) == 0 && a.gapN.load() == 1 && a.gapMaxUs.load() == 49999, "a 49.999 ms gap is not a G event");
+		hzperf::NoteGap(a, 1060000, f);
+		Expect(a.gapLast.load() == 1060000 && a.gapN.load() == 2, "every advance counts (no a_next filter)");
+		hzperf::NoteGap(a, 1110000, f);
+		Expect(hzperf::RingCount(a.gap) == 1 && a.gap.q[0] == 1060000 && a.gap.v[0] == 50000,
+			"a 50 ms gap is a G event stamped with the earlier start");
+		hzperf::NoteGap(a, 1110000, f);
+		Expect(hzperf::RingCount(a.gap) == 1 && a.gapN.load() == 3, "a zero gap is not a sample");
 		a.dumping.store(1);
-		hzperf::NoteGap(a, 1200000, f, true);
-		Expect(hzperf::RingCount(a.gap) == 1 && a.gapLast.load() == 1079999, "no gap write while dumping");
+		hzperf::NoteGap(a, 1200000, f);
+		Expect(hzperf::RingCount(a.gap) == 1 && a.gapLast.load() == 1110000, "no gap write while dumping");
 		a.dumping.store(0);
 		std::uint64_t t = 1300000;
-		hzperf::NoteGap(a, t, f, true);
+		hzperf::NoteGap(a, t, f);
 		for (int i = 0; i < 300; ++i) {
-			t += 50000;
-			hzperf::NoteGap(a, t, f, true);
+			t += 60000;
+			hzperf::NoteGap(a, t, f);
 		}
-		// 1 earlier G + the 220 ms gap back from the dump test + 300 x 50 ms = 302 events.
+		// 1 earlier G + the 190 ms gap back from the dump test + 300 x 60 ms = 302 events.
 		Expect(hzperf::RingCount(a.gap) == 256 && hzperf::RingLost(a.gap) == 46, "gap ring keeps 256, counts lost");
+		// M2: steady 40-66 fps with +-20% frame jitter for 20 s, no hitch: 0 G. Then real stalls are G.
+		{
+			const int fpsList[] = { 40, 47, 55, 60, 66 };
+			std::uint32_t lcg = 12345u;
+			for (int fps : fpsList) {
+				hzperf::Reset(a);
+				std::uint64_t tt = 5000000;
+				const double base = 1000000.0 / fps;
+				int adv = 0;
+				for (double el = 0; el < 20000000.0; ++adv) {
+					hzperf::NoteGap(a, tt, f);
+					lcg = lcg * 1664525u + 1013904223u;
+					const double jit = 0.8 + 0.4 * static_cast<double>(lcg >> 8) / 16777216.0;
+					const auto dt = static_cast<std::uint64_t>(base * jit);
+					tt += dt;
+					el += static_cast<double>(dt);
+				}
+				Expect(hzperf::RingCount(a.gap) == 0 && hzperf::RingLost(a.gap) == 0 && a.gapN.load() + 1 == static_cast<std::uint64_t>(adv),
+					"steady 40-66 fps with jitter and no hitch: 0 G events, every advance sampled");
+				Expect(a.gapMaxUs.load() < 31000, "steady 40-66 fps: worst frame stays under 31 ms");
+				const std::uint64_t tLast = a.gapLast.load();
+				hzperf::NoteGap(a, tLast + 80000, f);  // an 80 ms stall after the last advance
+				hzperf::NoteGap(a, tLast + 80000 + static_cast<std::uint64_t>(base), f);
+				Expect(hzperf::RingCount(a.gap) == 1 && a.gap.v[0] == 80000, "an 80 ms stall in a steady run is exactly one G event");
+			}
+			// The old a_next-only cadence: 30 fps SWF frames landing on 47 fps game frames are 21 or 42 ms apart.
+			// Over every advance at 47 fps none of those is a gap.
+			hzperf::Reset(a);
+			std::uint64_t tt = 5000000;
+			for (int i = 0; i < 940; ++i) { hzperf::NoteGap(a, tt, f); tt += 21277; }
+			Expect(hzperf::RingCount(a.gap) == 0, "47 fps over every advance: 0 G (a 30 Hz a_next subsample would see 42 ms steps)");
+		}
 
 		static hzperf::RingEv ev[hzperf::kRingEvMax];
-		Expect(hzperf::kRingEvMax == 256 * 3 + 2048 && hzperf::kAsRingSlots == 2048 && hzperf::kRingAsMax >= 2048 * 32,
+		Expect(hzperf::kRingEvMax == 256 * 3 + 2048 && hzperf::kAsRingSlots == 2048 && hzperf::kRingAsMax >= 2048 * 40,
 			"merged ring holds 3 native rings and 2048 AS slots");
 		hzperf::Reset(a);
 		Expect(hzperf::RingCount(a.gap) == 0 && a.gapLast.load() == 0 && a.gapN.load() == 0 && a.gapMaxUs.load() == 0, "Reset clears the gap ring");
 		a.windowStart.store(1000000, std::memory_order_relaxed);
-		hzperf::NoteGap(a, 1010000, f, true);
-		hzperf::NoteGap(a, 1055000, f, true);  // 45 ms gap stamped at window ms 10
+		hzperf::NoteGap(a, 1010000, f);
+		hzperf::NoteGap(a, 1065000, f);  // 55 ms gap stamped at window ms 10
 		int n = hzperf::CollectNative(a, f, ev, hzperf::kRingEvMax);
-		Expect(n == 1 && ev[0].type == 'G' && ev[0].src == 'N' && ev[0].v == 45000 && ev[0].tMs > 9.9 && ev[0].tMs < 10.1, "native G at window ms");
+		Expect(n == 1 && ev[0].type == 'G' && ev[0].src == 'N' && ev[0].v == 55000 && ev[0].tMs > 9.9 && ev[0].tMs < 10.1, "native G at window ms");
 		char line[hzperf::kRingLineMax];
 		hzperf::FormatRingEv(ev[0], line, hzperf::kRingLineMax);
-		Expect(std::string(line) == "perf ring t=10.0 src=N type=G v=45000us", "G line format");
+		Expect(std::string(line) == "perf ring t=10.0 src=N type=G v=55000us", "G line format");
 		hzperf::AsRingHead h{};
 		const int an = hzperf::ParseAsRing("ring now=100 n=2 lost=0 memUnsupported=0 timerUnsupported=0|5,40,40,4,20;5,41,41,15,47;5,42,42,9,99;",
 			0, 0, ev + n, hzperf::kRingEvMax - n, h);
@@ -435,11 +468,55 @@ int main()
 		Expect(std::string(line) == "perf ring t=41.0 src=AS type=S v=15ms part=loopTotal", "S total line format");
 		hzperf::FormatRingEv(ev[3], line, hzperf::kRingLineMax);
 		Expect(std::string(line) == "perf ring t=42.0 src=AS type=S v=9ms part=?", "unknown part id prints ?");
+		// M1: S id 0 is veh, not h40; every id maps to its own name.
+		{
+			hzperf::AsRingHead h0{};
+			static hzperf::RingEv e0[hzperf::kPartCount + 2];
+			std::string r0 = "ring now=900 n=51 lost=0 memUnsupported=0 timerUnsupported=0|";
+			for (int id = 0; id < hzperf::kPartCount; ++id)
+				r0 += "5," + std::to_string(900 + id) + "," + std::to_string(900 + id) + ",4," + std::to_string(id) + ";";
+			r0 += "5,999,999,4,-1;1,1000,1000,0,0;";
+			const int n0 = hzperf::ParseAsRing(r0.c_str(), 0, 0, e0, hzperf::kPartCount + 2, h0);
+			Expect(n0 == hzperf::kPartCount + 2 && h0.trunc == 0, "S id sweep parses");
+			hzperf::FormatRingEv(e0[0], line, hzperf::kRingLineMax);
+			Expect(std::string(line) == "perf ring t=900.0 src=AS type=S v=4ms part=veh", "M1: S part 0 prints veh");
+			bool allIds = true;
+			for (int id = 0; id < hzperf::kPartCount; ++id) {
+				hzperf::FormatRingEv(e0[id], line, hzperf::kRingLineMax);
+				const std::string want = std::string("part=") + hzperf::PartName(id);
+				if (e0[id].n != static_cast<std::uint32_t>(id) || std::string(line).size() < want.size()
+					|| std::string(line).compare(std::string(line).size() - want.size(), want.size(), want) != 0)
+					allIds = false;
+			}
+			Expect(allIds, "M1: every S id 0-48 keeps its raw id and prints its own name (no off-by-one)");
+			hzperf::FormatRingEv(e0[hzperf::kPartCount], line, hzperf::kRingLineMax);
+			Expect(std::string(line).find("part=?") != std::string::npos, "a negative S id prints ?");
+			Expect(e0[hzperf::kPartCount + 1].type == 'T' && e0[hzperf::kPartCount + 1].n == 1, "non-S slots keep n >= 1 (T with c=0 is n=1)");
+			Expect(std::string(hzperf::PartName(1)) == "h40" && std::string(hzperf::PartName(47)) == "loopTotal" && std::string(hzperf::PartName(49)) == "?",
+				"part name edges");
+		}
+		// S2: worst-case AS ring (2048 slots, 9-digit times, 7-digit v, 2-digit ids) fits kRingAsMax; a cut ring says so.
+		{
+			std::string big = "ring now=999999999 n=2048 lost=99999 memUnsupported=0 timerUnsupported=0|";
+			for (int i = 0; i < hzperf::kAsRingSlots; ++i)
+				big += "2,999999999,999999999,9999999,99;";
+			Expect(big.size() < static_cast<std::size_t>(hzperf::kRingAsMax), "S2: worst-case ring string fits kRingAsMax");
+			static hzperf::RingEv eb[hzperf::kRingEvMax];
+			hzperf::AsRingHead hb{};
+			Expect(hzperf::ParseAsRing(big.c_str(), 0, 0, eb, hzperf::kRingEvMax, hb) == 2048 && hb.trunc == 0, "S2: worst-case ring parses all 2048 slots");
+			const std::string cut = big.substr(0, big.size() - 5);
+			hzperf::AsRingHead hc{};
+			Expect(hzperf::ParseAsRing(cut.c_str(), 0, 0, eb, hzperf::kRingEvMax, hc) == 2047 && hc.trunc == 1, "S2: a cut ring is flagged trunc=1");
+			char sb[hzperf::kDumpMax];
+			hzperf::FormatRingSum(a, hc, 0, 0, sb, hzperf::kDumpMax);
+			Expect(std::string(sb).find(" asTrunc=1 ") != std::string::npos, "S2: ring sum reports asTrunc");
+		}
 		Expect(std::string(hzperf::PartName(0)) == "veh" && std::string(hzperf::PartName(25)) == "cal" && std::string(hzperf::PartName(46)) == "qSync"
 			&& std::string(hzperf::PartName(48)) == "exitTotal" && std::string(hzperf::PartName(-1)) == "?", "part names");
 		char sum[hzperf::kDumpMax];
 		hzperf::FormatRingSum(a, h, 0, n + an, sum, hzperf::kDumpMax);
-		Expect(std::string(sum).find(" gaps=1 gapLost=0 gapMinUs=40000 gapN=1 gapMaxUs=45000 ") != std::string::npos, "ring summary gap fields");
+		Expect(std::string(sum).find(" gaps=1 gapLost=0 gapMinUs=50000 gapN=1 gapMaxUs=55000 ") != std::string::npos, "ring summary gap fields");
+		Expect(std::string(sum).find(" asTrunc=0 ") != std::string::npos, "ring summary asTrunc=0");
 		Expect(std::string(sum).size() < static_cast<std::size_t>(hzperf::kDumpMax) - 1, "ring summary fits");
 		// Vanilla leg: no AS ring at all; the gap ring still reports.
 		hzperf::AsRingHead hv{};
@@ -450,8 +527,10 @@ int main()
 	}
 	{
 		const auto mainB = Read("src/main.cpp");
-		Expect(mainB.find("hzperf::NoteGap(g_perfAgg, a_t0, HzQpcFreq(), a_next);") != std::string::npos,
-			"gap ring is fed from the existing hook QPC start");
+		Expect(mainB.find("hzperf::NoteGap(g_perfAgg, a_t0, HzQpcFreq());") != std::string::npos,
+			"gap ring is fed from the existing hook QPC start on every HUD advance");
+		Expect(mainB.find("if (ringCut && ringHead.ok) ringHead.trunc = 1;") != std::string::npos
+			&& mainB.find("parts += \" partsTrunc=1\";") != std::string::npos, "dump flags a cut ring or parts line");
 		Expect(mainB.find("HudInvoke(\"hzPerfRing\"") < mainB.find("HudInvoke(\"hzPerfParts\"")
 			&& mainB.find("HudInvoke(\"hzPerfParts\"") < mainB.find("HudInvoke(\"hzPerfSnapshot\""),
 			"parts are read after the ring and before the snapshot");

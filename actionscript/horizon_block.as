@@ -2227,6 +2227,7 @@
       private var hzMemDropKB:Number = 0;
       // Option B parts: section timers (ids in hzPerfParts and hzperf::PartName), counters for hzPerfParts.
       private var hzPsN:Array = null;        // 49 ids x [n, sumMs, maxMs, finds, fmts]
+      private var hzPsS:Array = null;        // 49 ids: samples of 3 ms or more (S events are capped at 32 per id per window)
       private var hzPsT:Number = 0;          // running section clock (getTimer ms) for chained marks
       private var hzPsF0:int = 0;            // hzPcFind at the last chained mark
       private var hzPsA0:int = 0;            // hzPcFmt at the last chained mark
@@ -10596,6 +10597,8 @@
          for(i = 0; i < 2048; i++) { this.hzRgTy[i] = 0; this.hzRgT0[i] = 0; this.hzRgT1[i] = 0; this.hzRgV[i] = 0; this.hzRgC[i] = 0; }
          this.hzPsN = new Array(245);
          for(i = 0; i < 245; i++) { this.hzPsN[i] = 0; }
+         this.hzPsS = new Array(49);
+         for(i = 0; i < 49; i++) { this.hzPsS[i] = 0; }
       }
       private function hzPbClear() : void
       {
@@ -10611,6 +10614,7 @@
          this.hzMemDrops = 0;
          this.hzMemDropKB = 0;
          if(this.hzPsN != null) { for(i = 0; i < 245; i++) { this.hzPsN[i] = 0; } }
+         if(this.hzPsS != null) { for(i = 0; i < 49; i++) { this.hzPsS[i] = 0; } }
          this.hzPsT = 0;
          this.hzPsF0 = 0;
          this.hzPsA0 = 0;
@@ -10661,9 +10665,14 @@
          this.hzRgW++;
       }
       // Option B parts: S event (type 5), one slot each, never folded. It does not close open C/Q runs.
+      // Only the first 32 per id per window get a slot, so one slow part cannot flood the 2048-slot ring;
+      // hzPsS keeps the full count for the parts line (slow and sDrop columns).
       private function hzRgPushS(t:Number, v:int, id:int) : void
       {
-         if(this.hzRgTy == null) { return; }
+         if(this.hzRgTy == null || this.hzPsS == null) { return; }
+         var c:int = int(this.hzPsS[id]) + 1;
+         this.hzPsS[id] = c;
+         if(c > 32) { return; }
          var s:int = this.hzRgW % 2048;
          this.hzRgTy[s] = 5;
          this.hzRgT0[s] = t;
@@ -10831,23 +10840,28 @@
          return r;
       }
       // Dump-time only (native HzPerfDumpOnce, before hzPerfSnapshot, which resets the ring).
-      // Format: "ring now=<getTimer> n= lost= memUnsupported=|ty,t0,t1,v,c;..." oldest first.
+      // Format: "ring now=<getTimer> n= lost= memUnsupported=|ty,t0,t1,v,c;..." oldest first. Built as one Array
+      // and joined once, so the dump frame does not copy the growing string per slot.
       public function hzPerfRing() : String
       {
          if(!this.hzPerfOn || this.hzRgTy == null) { return "ring diag=0"; }
          var now:Number = this.hzPerfNow();
          var n:int = this.hzRgW < 2048 ? this.hzRgW : 2048;
-         var s:String = "ring now=" + Math.round(now) + " n=" + n + " lost=" + (this.hzRgW - n) + " memUnsupported=" + (this.hzMemUnsup ? 1 : 0) + " timerUnsupported=" + (this.hzPerfClockFb ? 1 : 0) + "|";
+         var a:Array = new Array(n + 1);
+         a[0] = "ring now=" + Math.round(now) + " n=" + n + " lost=" + (this.hzRgW - n) + " memUnsupported=" + (this.hzMemUnsup ? 1 : 0) + " timerUnsupported=" + (this.hzPerfClockFb ? 1 : 0) + "|";
+         var o:int = 1;
          for(var i:int = this.hzRgW - n; i < this.hzRgW; i++)
          {
             var j:int = i % 2048;
-            s += int(this.hzRgTy[j]) + "," + Math.round(Number(this.hzRgT0[j])) + "," + Math.round(Number(this.hzRgT1[j])) + "," + Math.round(Number(this.hzRgV[j])) + "," + int(this.hzRgC[j]) + ";";
+            a[o] = int(this.hzRgTy[j]) + "," + Math.round(Number(this.hzRgT0[j])) + "," + Math.round(Number(this.hzRgT1[j])) + "," + Math.round(Number(this.hzRgV[j])) + "," + int(this.hzRgC[j]) + ";";
+            o++;
          }
-         return s;
+         return a.join("");
       }
       // Option B parts. Dump-time only (native HzPerfDumpOnce, after hzPerfRing and before hzPerfSnapshot, which
-      // resets these). One "perf parts" line: per id n,sumMs,maxMs,finds,fmts; counters; list sizes; a settings echo.
-      // Ids match hzperf::PartName. Author: Moragar. Last modified: 2026-11-09.
+      // resets these). One "perf parts" line: per id n,sumMs,maxMs,finds,fmts,slow,sDrop (slow = samples of 3 ms or
+      // more, sDrop = those past the 32 S-event cap); the two totals' slow,sDrop; counters; list sizes; a settings
+      // echo. Built as one Array and joined once. Ids match hzperf::PartName. Author: Moragar. Last modified: 2026-11-09.
       public function hzPerfParts() : String
       {
          if(!this.hzPerfOn || this.hzPsN == null || this.hzPbN == null) { return "parts diag=0"; }
@@ -10856,12 +10870,18 @@
             "h26","caretAf","pulse","tail","splash","cal","h26Van","h26Draw","h26Regen","h26Edge",
             "h26Fx","h26Char","h26Vis","h27","xBio","xDet","xLoc","xQm","xReticle","xVanLate",
             "c40","cLbl","cTicks","cMarks","cQuests","cVis","qSync"];
-         var s:String = "parts diag=1 mode=" + this.hzPerfMode + " loopN=" + int(this.hzPbN[0]) + " exitN=" + int(this.hzPbN[3]) + " cmpN=" + int(this.hzPbN[6]) + " cols=n,sumMs,maxMs,finds,fmts";
+         var a:Array = new Array(k.length + 2);
+         a[0] = "parts diag=1 mode=" + this.hzPerfMode + " loopN=" + int(this.hzPbN[0]) + " exitN=" + int(this.hzPbN[3]) + " cmpN=" + int(this.hzPbN[6]) + " cols=n,sumMs,maxMs,finds,fmts,slow,sDrop";
          for(var i:int = 0; i < k.length; i++)
          {
             var j:int = i * 5;
-            s += " " + k[i] + "=" + int(this.hzPsN[j]) + "," + int(this.hzPsN[j + 1]) + "," + int(this.hzPsN[j + 2]) + "," + int(this.hzPsN[j + 3]) + "," + int(this.hzPsN[j + 4]);
+            var sl:int = this.hzPsS != null ? int(this.hzPsS[i]) : 0;
+            a[i + 1] = " " + k[i] + "=" + int(this.hzPsN[j]) + "," + int(this.hzPsN[j + 1]) + "," + int(this.hzPsN[j + 2]) + "," + int(this.hzPsN[j + 3]) + "," + int(this.hzPsN[j + 4]) + "," + sl + "," + (sl > 32 ? sl - 32 : 0);
          }
+         var sLp:int = this.hzPsS != null ? int(this.hzPsS[47]) : 0;
+         var sEx:int = this.hzPsS != null ? int(this.hzPsS[48]) : 0;
+         a[k.length + 1] = " | sCap=32 loopTotal=" + sLp + "," + (sLp > 32 ? sLp - 32 : 0) + " exitTotal=" + sEx + "," + (sEx > 32 ? sEx - 32 : 0);
+         var s:String = a.join("");
          s += " | find=" + this.hzPcFind + " hideRb=" + this.hzPcHideRb + " blgCh=" + this.hzPcBlgCh + " stHide=" + this.hzPcStHide + " fmtCalls=" + this.hzPcFmt;
          var nTexts:int = -1;
          var nFades:int = -1;
