@@ -1692,6 +1692,7 @@
          if(pk != this.hzPpKind) { this.hzPpKind = pk; this.hzPpDrawIcon(); }
          this.hzPpSync();
          this.hz43VanEnvCache(d);
+         try { this.hz43FollowApply(); } catch(e43f:Error) { }   // r6: the game (re)fills LocationAlertText here
       }
 
       private function hzOnEnvEffects(e:FromClientDataEvent) : *
@@ -18535,6 +18536,7 @@
          this.hz40Scan = on;
          this.hz40Apply();
          try { this.hz41LocHide(); } catch(e41e:Error) { }   // v0.42.0 r3: re-assert on every scan edge
+         try { this.hz43FollowApply(); } catch(e43f:Error) { }   // r6: FadeInPlanetInfo plays on the scan edge; keep it on the moved watch
       }
       private function hz40Want() : Boolean
       {
@@ -20490,6 +20492,19 @@
       private var hz43EnvCruise:Boolean = false;
       private var hz43EnvLang:String = "";
       private var hz43MarkMoved:Boolean = false;
+      // v0.44 r6 (watch ghost): on-dial overlays the game draws over the vanilla watch follow its Arrange move / scale.
+      // LocationAlertText is the FadeInPlanetInfo face (body name + "PLANET") the game plays when the scanner opens.
+      // hz43VanSkip keeps every *Alert* clip out of the units, so before r6 it played at its native spot (the ghost).
+      private static const HZ43_VAN_FOLLOW:Array = ["LocationAlertText"];
+      private var hz43FoD:Array = [];
+      private var hz43FoHX:Array = [];
+      private var hz43FoHY:Array = [];
+      private var hz43FoSX:Array = [];
+      private var hz43FoSY:Array = [];
+      private var hz43FoDx:Number = 0;
+      private var hz43FoDy:Number = 0;
+      private var hz43FoSc:Number = 1;
+      private var hz43FoMoved:Boolean = false;   // true while a follower sits off its native place
       private var hz43DumpSig:String = "";
       private var hz43HideStyle:int = -1;
       private var hz43Kid:Array = null;
@@ -22061,12 +22076,65 @@
          else
          {
             this.hz43VanWrote = sc != 1 || dx != 0 || dy != 0;
+            this.hz43FoDx = dx;
+            this.hz43FoDy = dy;
+            this.hz43FoSc = sc;
+            this.hz43FollowApply();   // r6: the on-dial overlays move with the assembly (write(0,0,1) puts them home)
          }
          this.hz43VanWdx = dx;
          this.hz43VanWdy = dy;
          this.hz43VanWsc = sc;
          this.hz43VanWmk = mk;
          this.hz43VanDump(marks ? "write-marks" : "write");
+      }
+
+      // v0.44 r6 (watch ghost): place each HZ43_VAN_FOLLOW clip with the last non-marker Arrange write, from the
+      // WatchOutline origin and units of the captured assembly (the same formula as hz43VanWrite). A new instance is
+      // captured at its own (native) place first, so a HUD rebuild never inherits an old offset. One getChildByName
+      // per name, no tree search. Callers are events only: the assembly write, the scan open / close edge
+      // (hz40SetScan) and LocalEnvironmentData (hzOnLocalEnv, where the game starts FadeInPlanetInfo). Never per frame.
+      private function hz43FollowApply() : void
+      {
+         if(!this.hzBlg || this.hz43VanCap == 0 || this.hz43VanN <= 0) { return; }
+         var ox:Number = Number(this.hz43VanOX[0]);
+         var oy:Number = Number(this.hz43VanOY[0]);
+         var ux:Number = Number(this.hz43VanUXA[0]);
+         var uy:Number = Number(this.hz43VanUYA[0]);
+         if(isNaN(ox)) { ox = 0; }
+         if(isNaN(oy)) { oy = 0; }
+         if(!(ux > 0.01 || ux < -0.01)) { ux = 1; }
+         if(!(uy > 0.01 || uy < -0.01)) { uy = 1; }
+         var sc:Number = this.hz43FoSc > 0.05 ? this.hz43FoSc : 1;
+         var ident:Boolean = this.hz43FoDx == 0 && this.hz43FoDy == 0 && sc == 1;
+         if(ident && !this.hz43FoMoved) { return; }   // never moved: the game's own placement is left alone
+         var i:int = 0;
+         while(i < HZ43_VAN_FOLLOW.length)
+         {
+            var d:DisplayObject = this.hzBlg.getChildByName(String(HZ43_VAN_FOLLOW[i]));
+            if(d)
+            {
+               if(this.hz43FoD[i] !== d)
+               {
+                  this.hz43FoD[i] = d;
+                  this.hz43FoHX[i] = d.x;
+                  this.hz43FoHY[i] = d.y;
+                  this.hz43FoSX[i] = d.scaleX;
+                  this.hz43FoSY[i] = d.scaleY;
+               }
+               var hx:Number = Number(this.hz43FoHX[i]);
+               var hy:Number = Number(this.hz43FoHY[i]);
+               var nx:Number = ox + (hx - ox) * sc + this.hz43FoDx / ux;
+               var ny:Number = oy + (hy - oy) * sc + this.hz43FoDy / uy;
+               var nsx:Number = Number(this.hz43FoSX[i]) * sc;
+               var nsy:Number = Number(this.hz43FoSY[i]) * sc;
+               if(d.x != nx) { d.x = nx; }
+               if(d.y != ny) { d.y = ny; }
+               if(d.scaleX != nsx) { d.scaleX = nsx; }
+               if(d.scaleY != nsy) { d.scaleY = nsy; }
+            }
+            i++;
+         }
+         this.hz43FoMoved = !ident;
       }
 
       // True when box is, or holds, a live marker widget. One walk for all three names (was one walk per name);

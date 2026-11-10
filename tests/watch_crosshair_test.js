@@ -893,7 +893,8 @@ function makeFadeHost() {
 	const fadeBlg = {
 		name: "BottomLeftGroup_mc",
 		kids: kids,
-		getChildAt: function(i) { return this.kids[i]; }
+		getChildAt: function(i) { return this.kids[i]; },
+		getChildByName: function(n) { for (let i = 0; i < this.kids.length; i++) if (this.kids[i] && this.kids[i].name === n) return this.kids[i]; return null; }
 	};
 	if (!Object.prototype.hasOwnProperty.call(fadeBlg, "numChildren")) {
 		Object.defineProperty(fadeBlg, "numChildren", { get: function() { return this.kids.length; } });
@@ -1060,6 +1061,11 @@ function makePlaceHost() {
 	host.hz43VanSY = [1, 1, 1, 1];
 	bindAsMethod(host, "hz43VanMarkName", ["name"]);
 	bindAsMethod(host, "hz43VanHasAncestorUnit", ["d"]);
+	host.HZ43_VAN_FOLLOW = ["LocationAlertText"];
+	host.hz43FoD = []; host.hz43FoHX = []; host.hz43FoHY = []; host.hz43FoSX = []; host.hz43FoSY = [];
+	host.hz43FoDx = 0; host.hz43FoDy = 0; host.hz43FoSc = 1; host.hz43FoMoved = false;
+	host.isNaN = isNaN;
+	bindAsMethod(host, "hz43FollowApply", []);
 	bindAsMethod(host, "hz43VanWrite", ["dx", "dy", "sc", "marks"]);
 	bindAsMethod(host, "hz43VanPlace", []);
 	bindAsMethod(host, "hz43TintRgb", ["clip", "col", "amt"]);
@@ -1139,6 +1145,43 @@ writeScale.hz43VanWrite(-40, 20, 0.8, false);
 expect(Math.abs(writeScale.outlineClip.x - -40) < 1e-9 && Math.abs(writeScale.o2Clip.x - (21.7 * 0.8 - 40)) < 1e-9, "production VanWrite scale 0.8 moves locals from the outline origin");
 expect(Math.abs(writeScale.capClip.y - (-0.25 * 0.8 + 20)) < 1e-9 && Math.abs(writeScale.iconsClip.x - (111.35 * 0.8 - 40)) < 1e-9, "production VanWrite scale 0.8 keeps cap and markers in the assembly");
 expect(writeScale.outlineClip.scaleX === 0.8 && writeScale.capClip.alpha === 0, "production VanWrite scale 0.8 writes clip scale and does not assign alpha");
+
+// ---- r6 item 1: the watch ghost. LocationAlertText (FadeInPlanetInfo: body name + "PLANET", native 110.75, 96.75 on the
+// dial) is skipped as a unit (name has "Alert"), so the Arrange write left it at the native spot. It now follows the write.
+{
+	const loc = makeFadeClip("LocationAlertText", 110.75, 96.75, 1);
+	const mk = () => { const h = makePlaceHost(); const c = Object.assign({}, loc, { transform: loc.transform }); c.parent = h.hzBlg; h.hzBlg.kids.push(c); h.locClip = c; return h; };
+	const skip = { hz43VanSkip: null }; bindAsMethod(skip, "hz43VanSkip", ["name"]);
+	expect(skip.hz43VanSkip("LocationAlertText") === true, "ghost cause: hz43VanSkip drops LocationAlertText from the Arrange units");
+	const g = mk();
+	g.hz43VanWrite(-64.3, 34.85, 1);
+	expect(Math.abs(g.locClip.x - (110.75 - 64.3)) < 1e-9 && Math.abs(g.locClip.y - (96.75 + 34.85)) < 1e-9, "ghost fix: LocationAlertText moves by the same dx/dy as the watch (no copy left at the native spot)");
+	expect(g.outlineClip.x === -64.3 && g.hz43FoMoved === true, "ghost fix: the assembly write itself is unchanged");
+	const s = mk();
+	s.hz43VanWrite(-40, 20, 0.8, false);
+	expect(Math.abs(s.locClip.x - (110.75 * 0.8 - 40)) < 1e-9 && Math.abs(s.locClip.y - (96.75 * 0.8 + 20)) < 1e-9 && Math.abs(s.locClip.scaleX - 0.8) < 1e-9, "ghost fix: scale 0.8 scales the overlay from the outline origin like the units");
+	s.hz43VanWrite(0, 0, 1);
+	expect(s.locClip.x === 110.75 && s.locClip.y === 96.75 && s.locClip.scaleX === 1 && s.hz43FoMoved === false, "ghost fix: write(0,0,1) (style change / reset) puts the overlay back at its native place");
+	const m = mk();
+	m.hz43VanWrite(-10, 5, 0.8, true);
+	expect(m.locClip.x === 110.75 && m.locClip.y === 96.75, "ghost fix: a marker-only write (Horizon faces) leaves the overlay alone");
+	const r = mk();
+	r.hz43VanWrite(-64.3, 34.85, 1);
+	const fresh = Object.assign({}, loc, { x: 110.75, y: 96.75, transform: loc.transform });
+	r.hzBlg.kids[r.hzBlg.kids.indexOf(r.locClip)] = fresh;
+	r.hz43FollowApply();
+	expect(Math.abs(fresh.x - (110.75 - 64.3)) < 1e-9 && r.hz43FoHX[0] === 110.75, "ghost fix: a new instance (HUD rebuild) is captured at its native place, then moved");
+	const n = mk();
+	n.locClip.x = 7; n.hz43FollowApply();
+	expect(n.locClip.x === 7 && n.hz43FoD.length === 0, "ghost fix: never moved = the game's own placement is not touched or captured");
+	const fb = funcBody(as, "hz43FollowApply");
+	expect(fb.indexOf("hzFindByName") < 0 && fb.indexOf("getChildAt") < 0 && (fb.match(/getChildByName/g) || []).length === 1, "ghost fix: one direct getChildByName per follower, no tree search");
+	const callers = as.split("\n").filter((l) => /this\.hz43FollowApply\(\)/.test(l));
+	expect(callers.length === 3 && funcBody(as, "hz40SetScan").indexOf("this.hz43FollowApply()") >= 0 && funcBody(as, "hzOnLocalEnv").indexOf("this.hz43FollowApply()") >= 0 && funcBody(as, "hz43VanWrite").indexOf("this.hz43FollowApply()") >= 0,
+		"ghost fix: event-driven only (assembly write, scan edge, LocalEnvironmentData); " + callers.length + " call sites");
+	expect(funcBody(as, "hzOnFrame").indexOf("hz43FollowApply") < 0 && funcBody(as, "hz27OnExit").indexOf("hz43FollowApply") < 0, "ghost fix: no per-frame call");
+	expect(fb.indexOf(".alpha") < 0 && fb.indexOf(".visible") < 0, "ghost fix: position / scale only; visibility rules (hz41LocHide) unchanged");
+}
 
 function makeCtClip(name, x, y, opts) {
 	opts = opts || {};
@@ -1236,6 +1279,7 @@ function makeAssemblyHost() {
 	host.int = function(n) { return n | 0; };
 	host.uint = function(n) { return n >>> 0; };
 	host.hz43VanDump = function() {};
+	host.hz43FollowApply = function() {};   // r6 followers: covered by the ghost tests above
 	bindAsMethod(host, "hz43VanClip", ["i"]);
 	bindAsMethod(host, "hz43VanMarkName", ["name"]);
 	bindAsMethod(host, "hz43VanWrite", ["dx", "dy", "sc", "marks"]);
