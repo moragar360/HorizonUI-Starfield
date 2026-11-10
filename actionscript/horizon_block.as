@@ -864,6 +864,7 @@
 
       private function hzApplyFmt(o:Object) : void
       {
+         if(this.hzPerfOn) { this.hzPcFmt++; }
          if(o.tone != undefined && o.tone !== null) { this.hzApplyFmt19(o); return; }
          var role:String = o.role;
          var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
@@ -1153,6 +1154,7 @@
       private function hzOnCompass(e:FromClientDataEvent) : *
       {
          try { this.hz40OnCmp(e.data); } catch(err40c:Error) { }   // v0.40: before the heading check (the flag comes without one)
+         if(this.hzPerfOn) { this.hzPsMark(40); }
          var r:Number = Number(e.data.fDirection);
          if(isNaN(r)) { return; }
          this.hzFixFonts();
@@ -1175,13 +1177,18 @@
          while(ds.length < 3) { ds = "0" + ds; }
          this.hzCmpCenter.text = HZ_CARD[idx] + " · " + ds + "°";
          this.hzCmpDeg = deg;
+         if(this.hzPerfOn) { this.hzPsMark(41); }
          this.hzCmpTick19();
+         if(this.hzPerfOn) { this.hzPsMark(42); }
          this.hzCmpData = e.data;
          this.hzDrawCompassMarkers();
+         if(this.hzPerfOn) { this.hzPsMark(43); }
          if(this.HorizonQuest_mc)
          {
             this.hzUpdateQuests(e.data.aMissionMarkers as Array);
+            if(this.hzPerfOn) { this.hzPsMark(44); }
             this.hzRefreshVisibility();
+            if(this.hzPerfOn) { this.hzPsMark(45); }
          }
       }
 
@@ -2200,10 +2207,10 @@
       // Option B (private diagnostic build). Storage is created once when PerfDiag turns on (hzPbInit);
       // probes only write numbers into it. Probes: 0 loop (hzOnFrame), 1 exit (hz27OnExit), 2 cmp, 3 freq,
       // 4 jet, 5 xh, 6 act, 7 items (hzOnTgItems), 8 enemy (hzOnTgEnemy), 9 en26 (hz26OnEnemy), 10 roll (hzOnTgRoll).
-      // Ring types: 1 T target change, 2 C compass push, 3 M memory drop, 4 Q quest sync.
+      // Ring types: 1 T target change, 2 C compass push, 3 M memory drop, 4 Q quest sync, 5 S slow part (c = part id).
       private var hzPbN:Array = null;        // 11 probes x [n, sumMs, maxMs]
       private var hzPerfClockFb:Boolean = false;   // sticky: host getTimer import missing (timings invalid)
-      private var hzRgTy:Array = null;       // 256 slots: type
+      private var hzRgTy:Array = null;       // 2048 slots: type
       private var hzRgT0:Array = null;       // first event, getTimer ms
       private var hzRgT1:Array = null;       // last event folded into the slot (C/Q runs)
       private var hzRgV:Array = null;        // C: max callback ms, M: drop KB, else 0
@@ -2218,6 +2225,16 @@
       private var hzMemMax:Number = 0;
       private var hzMemDrops:int = 0;
       private var hzMemDropKB:Number = 0;
+      // Option B parts: section timers (ids in hzPerfParts and hzperf::PartName), counters for hzPerfParts.
+      private var hzPsN:Array = null;        // 49 ids x [n, sumMs, maxMs, finds, fmts]
+      private var hzPsT:Number = 0;          // running section clock (getTimer ms) for chained marks
+      private var hzPsF0:int = 0;            // hzPcFind at the last chained mark
+      private var hzPsA0:int = 0;            // hzPcFmt at the last chained mark
+      private var hzPcFind:int = 0;          // hzFindByName calls (display-tree nodes searched)
+      private var hzPcHideRb:int = 0;        // hide-list rebuilds in hzOnFrame
+      private var hzPcBlgCh:int = 0;         // BottomLeftGroup children visited in hzOnFrame
+      private var hzPcStHide:int = 0;        // hz43StHide calls
+      private var hzPcFmt:int = 0;           // hzApplyFmt calls (typography re-applies)
       private var hzDbgCross:String = "";
       private var hzDbgWeap:String = "";
       private var hzDbgText:TextField = null;
@@ -2540,6 +2557,7 @@
          var i:int = 0;
          var ch:DisplayObject = null;
          var r:DisplayObject = null;
+         if(this.hzPerfOn) { this.hzPcFind++; }
          if(depth > 8) { return null; }
          while(i < c.numChildren)
          {
@@ -2562,13 +2580,19 @@
          var o:Object = null;
          this.hzFrameN++;
          try { this.hz42VehTick(); } catch(e42v:Error) { }   // 0.42.0.7: own try, first, so a throw later in this frame cannot skip the exit pill
+         if(this.hzPerfOn) { this.hzPsMark(0); }
          try { this.hz40Frame(); } catch(e40f:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(1); }
          try { this.hz42QmFont(); } catch(e42q:Error) { }   // v0.40.2: in-world quest-marker labels in the Horizon face
+         if(this.hzPerfOn) { this.hzPsMark(2); }
          try { this.hz35CmpTick(); } catch(e35c:Error) { }   // v0.35: global Compact follow
+         if(this.hzPerfOn) { this.hzPsMark(3); }
          try { this.hz43SyncHide(); } catch(e43h:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(4); }
          if(this.hzHideCache == null || this.hzFrameN % 90 == 1 || this.hz36HideStale)
          {
             this.hzHideTries++;
+            if(this.hzPerfOn) { this.hzPcHideRb++; }
             this.hzHideCache = [];
             this.hz36HideStale = false;
             if(this.hzHideVanillaBoost) { names.push("JetpackMeterWrapper_mc","JetpackMeterAnim_mc"); }
@@ -2598,8 +2622,11 @@
                try { this.hz36HideFind(this,n,this.hzHideCache); } catch(e36f:Error) { }   // v0.36: parent + name kept
             }
          }
+         if(this.hzPerfOn) { this.hzPsMark(5); }
          try { this.hz36HideTick(); } catch(e36a:Error) { }   // v0.36: hide first, so a throw below can't skip it
+         if(this.hzPerfOn) { this.hzPsMark(6); }
          if(this.hz40Hide) { try { this.hz40ForceHide(); } catch(e40a:Error) { } }
+         if(this.hzPerfOn) { this.hzPsMark(7); }
          if(this.hzHideVanillaWatch)
          {
             if(this.hzBlg == null && this.hzFrameN % 30 == 1)
@@ -2619,12 +2646,17 @@
                   }
                   bi++;
                }
+               if(this.hzPerfOn) { this.hzPcBlgCh += bi; }
             }
          }
+         if(this.hzPerfOn) { this.hzPsMark(8); }
          // v0.26: after the first good layout a pending relayout runs on the very next frame (was: every 15th frame, cards hidden meanwhile)
          if(!this.hzLaidOut && (this.hzLayEver || this.hzFrameN % 15 == 2)) { this.hzLaidOut = this.hzLayout(); if(this.hzLaidOut) { this.hzLayEver = true; } }
+         if(this.hzPerfOn) { this.hzPsMark(9); }
          if(this.hzFrameN % 15 == 7) { try { this.hzTypoGuard(); } catch(e36g:Error) { } }
+         if(this.hzPerfOn) { this.hzPsMark(10); }
          try { this.hzEqTick(); } catch(e36e:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(11); }
          if(this.hz30ModT0 > 0) { try { this.hz30ModTick(); } catch(errMt:Error) { this.hz30ModT0 = 0; } }
          if(this.hzFrameN % 30 == 11) { try { this.hzPpClock(); } catch(errClk:Error) { } }
          if(this.hzFontFace >= 1 && this.hzFontFace <= 3 && this.hzFontRetry < 6 && this.hzFrameN % 300 == 150 && (this.hzFontFace == 3 || this.hz30Mod["font"] === 1))
@@ -2636,18 +2668,29 @@
             if(fbad) { this.hzFontRetry++; if(this.hzFontName() + this.hzFontName("rg") + this.hzFontName("bd") != fbefore) { this.hzApplyTypo(); } else { try { this.hzAfRetryLayout(); } catch(errAf:Error) { } } }
             else { this.hzFontRetry = 6; }
          }
+         if(this.hzPerfOn) { this.hzPsMark(12); }
          if(this.hzPerfOn) { try { this.hzPerfBegin("tick"); } catch(ePb:Error) { } }
          try { this.hzTgTick(); } catch(errTg:Error) { try { this.hzTgRestore(); this.HorizonTarget_mc.visible = false; } catch(errTg2:Error) { } }
          if(this.hzPerfOn) { try { this.hzPerfEnd("tick"); if(this.hzPerfN) { this.hzPerfN.frames++; } } catch(ePe:Error) { } }
+         if(this.hzPerfOn) { this.hzPsMark(13); }
          try { this.hz43Reticle(); } catch(e43r:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(14); }
          try { this.hzXhTick(); } catch(errXh:Error) { try { this.hzXhRestore(); if(this.hzXh) { this.hzXh.visible = false; } } catch(errXh2:Error) { } }
+         if(this.hzPerfOn) { this.hzPsMark(15); }
          try { this.hz43Frame(); } catch(e43f:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(16); }
          try { this.hzTickBars(); } catch(e36b:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(17); }
          try { this.hzTickFades(); } catch(e36d:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(18); }
          try { this.hzTickVitals(); } catch(e36v:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(19); }
+         var p26:Number = this.hzPerfOn ? this.hzPsT : 0;
          try { this.hz26Tick(); } catch(err26:Error) { }
+         if(this.hzPerfOn) { this.hzPsSpan(20,p26,true); }
          try { this.hzMsglogCaretTick(); } catch(eMlC:Error) { }
          try { this.hzAfLoadWatch(); } catch(errAfW:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(21); }
          if(this.hzPlanAlertOn)
          {
             this.hzPlanPulse += 0.07;
@@ -2661,9 +2704,13 @@
             this.hzPulseT += 0.08;
             this.hzDrawVitBg(0.5 + 0.5 * Math.sin(this.hzPulseT));
          }
+         if(this.hzPerfOn) { this.hzPsMark(22); }
          try { this.hz36HideTick(); } catch(e36z:Error) { }   // v0.36: and again after everything else this frame
          if(this.hz40Hide) { try { this.hz40ForceHide(); } catch(e40z:Error) { } }
+         if(this.hzPerfOn) { this.hzPsMark(23); }
          if(!this.hzSplashDead) { try { this.hzSplashTick(); } catch(eSp:Error) { this.hzSplashDead = true; this.hzSplashOn = false; try { if(this.hzSplash != null) { this.hzSplash.visible = false; } } catch(eSp2:Error) { } } }
+         if(this.hzPerfOn) { this.hzPsMark(24); }
+         if(this.hzPerfOn) { this.hzPsCal(); this.hzPsMark(25); }   // Option B parts: empty calibration probe
       }
 
       // 0.42.0.7: vehicle exit pill, part of the main HUD (not its own movie). Same keycap and pill language as the
@@ -8841,7 +8888,8 @@
       // title = quest name (hzSetQuestTitle), objective = active marker strText, distance = fDistanceToPlayer (HudCompassData)
       private function hzQSync() : void
       {
-         if(this.hzPerfOn) { this.hzRgPush(4,this.hzPerfNow(),0); }
+         var tQs:Number = 0;
+         if(this.hzPerfOn) { tQs = this.hzPerfNow(); this.hzRgPush(4,tQs,0); }
          var name:String = this.hzQName != null ? this.hzQName : "";
          var obj:String = this.hzQObjStr != null ? this.hzQObjStr : "";
          var title:String = name.length > 0 ? name : (obj.length > 0 ? obj : "No active objective");
@@ -8881,6 +8929,7 @@
                this.hzFitText(this.hzCQ19O,"·  " + sub,right - ox);
             }
          }
+         if(this.hzPerfOn) { this.hzPsSpan(46,tQs,false); }
       }
 
       // ---- JETPACK (330x72): round tile + glyph | JETPACK / BOOST nn% | 10-segment bar ----
@@ -10527,7 +10576,7 @@
       // is a GC proxy: System.totalMemory needs the host HUDMenu import of System (flash.system package) under the
       // same splice gate as getTimer. A missed import, a throw, or a 0 reading sets memUnsupported=1 for the
       // session and the native process private-bytes sample stands in. Ring C/Q runs fold events closer than
-      // 50 ms into one slot (at most 1000 ms per slot) so 256 slots cover the PerfDumpWait window. A T or M
+      // 50 ms into one slot (at most 1000 ms per slot); the ring has 2048 slots (parts build). A T or M
       // event closes open C/Q runs. C v is the max callback ms at 1 ms resolution: 0 means under 1 ms.
       // A missing host getTimer import sets hzPerfClockFb once (timerUnsupported=1); after that hzPerfNow
       // returns 0 with no try or Date, so the timings are invalid but nothing throws or allocates.
@@ -10539,12 +10588,14 @@
          var i:int = 0;
          this.hzPbN = new Array(33);
          for(i = 0; i < 33; i++) { this.hzPbN[i] = 0; }
-         this.hzRgTy = new Array(256);
-         this.hzRgT0 = new Array(256);
-         this.hzRgT1 = new Array(256);
-         this.hzRgV = new Array(256);
-         this.hzRgC = new Array(256);
-         for(i = 0; i < 256; i++) { this.hzRgTy[i] = 0; this.hzRgT0[i] = 0; this.hzRgT1[i] = 0; this.hzRgV[i] = 0; this.hzRgC[i] = 0; }
+         this.hzRgTy = new Array(2048);
+         this.hzRgT0 = new Array(2048);
+         this.hzRgT1 = new Array(2048);
+         this.hzRgV = new Array(2048);
+         this.hzRgC = new Array(2048);
+         for(i = 0; i < 2048; i++) { this.hzRgTy[i] = 0; this.hzRgT0[i] = 0; this.hzRgT1[i] = 0; this.hzRgV[i] = 0; this.hzRgC[i] = 0; }
+         this.hzPsN = new Array(245);
+         for(i = 0; i < 245; i++) { this.hzPsN[i] = 0; }
       }
       private function hzPbClear() : void
       {
@@ -10559,6 +10610,15 @@
          this.hzMemMax = 0;
          this.hzMemDrops = 0;
          this.hzMemDropKB = 0;
+         if(this.hzPsN != null) { for(i = 0; i < 245; i++) { this.hzPsN[i] = 0; } }
+         this.hzPsT = 0;
+         this.hzPsF0 = 0;
+         this.hzPsA0 = 0;
+         this.hzPcFind = 0;
+         this.hzPcHideRb = 0;
+         this.hzPcBlgCh = 0;
+         this.hzPcStHide = 0;
+         this.hzPcFmt = 0;
       }
       private function hzPbEnd(i:int, t0:Number) : void
       {
@@ -10571,14 +10631,16 @@
          this.hzPbN[k + 1] = int(this.hzPbN[k + 1]) + dt;
          if(dt > int(this.hzPbN[k + 2])) { this.hzPbN[k + 2] = dt; }
          if(i == 2) { this.hzRgPush(2,t0,dt); }
+         else if(i == 0 && dt >= 15) { this.hzRgPushS(t0,dt,47); }   // parts: slow loop total
+         else if(i == 1 && dt >= 8) { this.hzRgPushS(t0,dt,48); }    // parts: slow exitFrame total
       }
       private function hzRgPush(ty:int, t:Number, v:Number) : void
       {
          if(this.hzRgTy == null) { return; }
          var op:int = ty == 2 ? this.hzRgOpC : (ty == 4 ? this.hzRgOpQ : -1);
-         if(op >= 0 && op > this.hzRgW - 256)
+         if(op >= 0 && op > this.hzRgW - 2048)
          {
-            var j:int = op % 256;
+            var j:int = op % 2048;
             if(t - Number(this.hzRgT1[j]) <= 50 && t - Number(this.hzRgT0[j]) <= 1000)
             {
                this.hzRgT1[j] = t;
@@ -10587,7 +10649,7 @@
                return;
             }
          }
-         var s:int = this.hzRgW % 256;
+         var s:int = this.hzRgW % 2048;
          this.hzRgTy[s] = ty;
          this.hzRgT0[s] = t;
          this.hzRgT1[s] = t;
@@ -10597,6 +10659,68 @@
          else if(ty == 4) { this.hzRgOpQ = this.hzRgW; }
          else { this.hzRgOpC = -1; this.hzRgOpQ = -1; }
          this.hzRgW++;
+      }
+      // Option B parts: S event (type 5), one slot each, never folded. It does not close open C/Q runs.
+      private function hzRgPushS(t:Number, v:int, id:int) : void
+      {
+         if(this.hzRgTy == null) { return; }
+         var s:int = this.hzRgW % 2048;
+         this.hzRgTy[s] = 5;
+         this.hzRgT0[s] = t;
+         this.hzRgT1[s] = t;
+         this.hzRgV[s] = v;
+         this.hzRgC[s] = id;
+         this.hzRgW++;
+      }
+      // Option B parts: chained section marks. hzPsStart (in the frame, exit and compass wrappers) sets the
+      // running clock; each hzPsMark(k) books now - hzPsT to id k and moves hzPsT to now, so the sections of
+      // one callback add up to its total and 1 ms rounding does not build up. Finds and fmts are the
+      // hzFindByName and hzApplyFmt calls since the previous chained mark. hzPsSpan times a nested block from
+      // its own start (chain=true also moves the running clock). A part of 3 ms or more adds an S event.
+      // Callers test hzPerfOn first. Numbers only, no allocation.
+      private function hzPsStart(t0:Number) : void
+      {
+         this.hzPsT = t0;
+         this.hzPsF0 = this.hzPcFind;
+         this.hzPsA0 = this.hzPcFmt;
+      }
+      private function hzPsMark(k:int) : void
+      {
+         if(this.hzPsN == null) { return; }
+         var t:Number = this.hzPerfNow();
+         this.hzPsAdd(k,this.hzPsT,t);
+         var j:int = k * 5;
+         this.hzPsN[j + 3] = int(this.hzPsN[j + 3]) + (this.hzPcFind - this.hzPsF0);
+         this.hzPsN[j + 4] = int(this.hzPsN[j + 4]) + (this.hzPcFmt - this.hzPsA0);
+         this.hzPsT = t;
+         this.hzPsF0 = this.hzPcFind;
+         this.hzPsA0 = this.hzPcFmt;
+      }
+      private function hzPsSpan(k:int, t0:Number, chain:Boolean) : void
+      {
+         if(this.hzPsN == null) { return; }
+         var t:Number = this.hzPerfNow();
+         this.hzPsAdd(k,t0,t);
+         if(chain)
+         {
+            this.hzPsT = t;
+            this.hzPsF0 = this.hzPcFind;
+            this.hzPsA0 = this.hzPcFmt;
+         }
+      }
+      private function hzPsAdd(k:int, t0:Number, t1:Number) : void
+      {
+         var dt:int = int(t1 - t0);
+         if(dt < 0) { dt = 0; }
+         var j:int = k * 5;
+         this.hzPsN[j] = int(this.hzPsN[j]) + 1;
+         this.hzPsN[j + 1] = int(this.hzPsN[j + 1]) + dt;
+         if(dt > int(this.hzPsN[j + 2])) { this.hzPsN[j + 2] = dt; }
+         if(dt >= 3) { this.hzRgPushS(t0,dt,k); }
+      }
+      // Empty on purpose: the calibration part (id 25) is the cost of this call plus one mark.
+      private function hzPsCal() : void
+      {
       }
       private function hzMemTick() : void
       {
@@ -10620,6 +10744,7 @@
       {
          if(!this.hzPerfOn) { this.hzOnFrame(e); return; }
          var t0:Number = this.hzPerfNow();
+         this.hzPsStart(t0);
          this.hzOnFrame(e);
          this.hzPbEnd(0,t0);
          this.hzMemTick();
@@ -10628,6 +10753,7 @@
       {
          if(!this.hzPerfOn) { this.hz27OnExit(e); return; }
          var t0:Number = this.hzPerfNow();
+         this.hzPsStart(t0);
          this.hz27OnExit(e);
          this.hzPbEnd(1,t0);
       }
@@ -10635,6 +10761,7 @@
       {
          if(!this.hzPerfOn) { return this.hzOnCompass(e); }
          var t0:Number = this.hzPerfNow();
+         this.hzPsStart(t0);
          var r:* = this.hzOnCompass(e);
          this.hzPbEnd(2,t0);
          return r;
@@ -10709,13 +10836,43 @@
       {
          if(!this.hzPerfOn || this.hzRgTy == null) { return "ring diag=0"; }
          var now:Number = this.hzPerfNow();
-         var n:int = this.hzRgW < 256 ? this.hzRgW : 256;
+         var n:int = this.hzRgW < 2048 ? this.hzRgW : 2048;
          var s:String = "ring now=" + Math.round(now) + " n=" + n + " lost=" + (this.hzRgW - n) + " memUnsupported=" + (this.hzMemUnsup ? 1 : 0) + " timerUnsupported=" + (this.hzPerfClockFb ? 1 : 0) + "|";
          for(var i:int = this.hzRgW - n; i < this.hzRgW; i++)
          {
-            var j:int = i % 256;
+            var j:int = i % 2048;
             s += int(this.hzRgTy[j]) + "," + Math.round(Number(this.hzRgT0[j])) + "," + Math.round(Number(this.hzRgT1[j])) + "," + Math.round(Number(this.hzRgV[j])) + "," + int(this.hzRgC[j]) + ";";
          }
+         return s;
+      }
+      // Option B parts. Dump-time only (native HzPerfDumpOnce, after hzPerfRing and before hzPerfSnapshot, which
+      // resets these). One "perf parts" line: per id n,sumMs,maxMs,finds,fmts; counters; list sizes; a settings echo.
+      // Ids match hzperf::PartName. Author: Moragar. Last modified: 2026-11-09.
+      public function hzPerfParts() : String
+      {
+         if(!this.hzPerfOn || this.hzPsN == null || this.hzPbN == null) { return "parts diag=0"; }
+         var k:Array = ["veh","h40","qmFont","cmpSig","syncHide","hideRebuild","hideTick1","force1","blgLoop","layout",
+            "typo","eq","misc","tick","reticle","xh","h43","bars","fades","vitals",
+            "h26","caretAf","pulse","tail","splash","cal","h26Van","h26Draw","h26Regen","h26Edge",
+            "h26Fx","h26Char","h26Vis","h27","xBio","xDet","xLoc","xQm","xReticle","xVanLate",
+            "c40","cLbl","cTicks","cMarks","cQuests","cVis","qSync"];
+         var s:String = "parts diag=1 mode=" + this.hzPerfMode + " loopN=" + int(this.hzPbN[0]) + " exitN=" + int(this.hzPbN[3]) + " cmpN=" + int(this.hzPbN[6]) + " cols=n,sumMs,maxMs,finds,fmts";
+         for(var i:int = 0; i < k.length; i++)
+         {
+            var j:int = i * 5;
+            s += " " + k[i] + "=" + int(this.hzPsN[j]) + "," + int(this.hzPsN[j + 1]) + "," + int(this.hzPsN[j + 2]) + "," + int(this.hzPsN[j + 3]) + "," + int(this.hzPsN[j + 4]);
+         }
+         s += " | find=" + this.hzPcFind + " hideRb=" + this.hzPcHideRb + " blgCh=" + this.hzPcBlgCh + " stHide=" + this.hzPcStHide + " fmtCalls=" + this.hzPcFmt;
+         var nTexts:int = -1;
+         var nFades:int = -1;
+         var nHide:int = -1;
+         var nBlg:int = -1;
+         try { nTexts = this.hzTexts != null ? this.hzTexts.length : -1; } catch(eL1:Error) { }
+         try { nFades = this.hzFades != null ? this.hzFades.length : -1; } catch(eL2:Error) { }
+         try { nHide = this.hzHideCache != null ? this.hzHideCache.length : -1; } catch(eL3:Error) { }
+         try { nBlg = this.hzBlg != null ? this.hzBlg.numChildren : -1; } catch(eL4:Error) { }
+         s += " | texts=" + nTexts + " fades=" + nFades + " hideCache=" + nHide + " blgN=" + nBlg;
+         s += " | WatchStyle=" + this.hzWatchStyle + " CrosshairRule=" + this.hzCrossRule + " CrosshairStyle=" + this.hzXhStyle + " TextShadow=" + (this.hzTextShadow ? 1 : 0) + " Compact=" + (this.hzCompact ? 1 : 0) + " NameHover=" + this.hzNameHover + " FontFace=" + this.hzFontFace + " TextScale=" + this.hzTextScale + " HideVanillaWatch=" + (this.hzHideVanillaWatch ? 1 : 0) + " HideVanillaCompass=" + (this.hzHideVanillaCompass ? 1 : 0) + " timerUnsupported=" + (this.hzPerfClockFb ? 1 : 0);
          return s;
       }
       // Length-prefixed tokens so game names that contain | or : cannot collide. Exact char count, then payload.
@@ -13123,6 +13280,7 @@
          var sd:Object = this.hz26St;
          this.hz26StOn = sd != null && sd.bSneaking === true && sd.bShowMeter === true;
          try { this.hz26Vanilla(); } catch(e0:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(26); }
          // enemy: shown while targeted (+0.4 s hold)
          this.hz26EnOn = this.hz26En != null && now - this.hz26EnT < 400;
          if(!this.hz26EnOn && now - this.hz26EnT > 1500) { this.hz26En = null; }
@@ -13131,9 +13289,13 @@
          // first frame a card turns on: draw before it shows
          try { if(this.HorizonEnemy_mc && this.hz26EnOn && !this.HorizonEnemy_mc.visible) { this.hz26EnDraw(); } } catch(e3:Error) { }
          try { if(this.HorizonStealth_mc && this.hz26StOn && !this.HorizonStealth_mc.visible) { this.hz26StDraw(now); } } catch(e4:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(27); }
          try { this.hz26TickRegen(now); } catch(e5:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(28); }
          try { this.hz26TickEdge(now,base); } catch(e6:Error) { if(this.HorizonEdge_mc) { this.HorizonEdge_mc.visible = false; } }
+         if(this.hzPerfOn) { this.hzPsMark(29); }
          try { this.hz26TickFx(now,base); } catch(e7:Error) { if(this.HorizonFx_mc) { this.HorizonFx_mc.visible = false; } }
+         if(this.hzPerfOn) { this.hzPsMark(30); }
          // XP ghost on the character bar fades after the toast
          if(this.hz26XpGA > 0)
          {
@@ -13142,8 +13304,11 @@
          }
          var sig:String = this.hz34C("Character") + "|" + this.hzArrange + "|" + this.hzCardColor + "|" + HZ_ACCENT + "|" + this.hzTextScale;
          if(sig != this.hz26ChSig) { this.hz26ChSig = sig; try { this.hz26CharSync(); this.hz26XpSync(); } catch(e9:Error) { } }
+         if(this.hzPerfOn) { this.hzPsMark(31); }
          if(!this.hzArrange) { try { this.hz26Vis(base); } catch(e10:Error) { } }
+         if(this.hzPerfOn) { this.hzPsMark(32); }
          try { this.hz27Tick(now); } catch(e11:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(33); }
          if(this.hzDebug && this.hzFrameN % 30 == 17) { this.hzDbgShow(); }
       }
 
@@ -13948,11 +14113,17 @@
       private function hz27OnExit(e:Event) : void
       {
          try { this.hz27BioHide(); } catch(err:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(34); }
          try { this.hz31DetHide(); } catch(err31d:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(35); }
          try { this.hz41LocHide(); } catch(err41l:Error) { }   // r3
+         if(this.hzPerfOn) { this.hzPsMark(36); }
          try { this.hz41QmHide(); } catch(err41q:Error) { }    // r3
+         if(this.hzPerfOn) { this.hzPsMark(37); }
          try { this.hz43Reticle(); } catch(err43x:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(38); }
          try { this.hz43VanLate(); } catch(err43v:Error) { }
+         if(this.hzPerfOn) { this.hzPsMark(39); }
       }
 
       private function hz27Build() : void
@@ -19298,6 +19469,7 @@
       // Outputs: visible=false. Never writes alpha (native FadeIn / thin-bar CXFORM).
       private function hz43StHide(d:DisplayObject) : void
       {
+         if(this.hzPerfOn) { this.hzPcStHide++; }
          if(!d || !this.hz43VanWatchClip(d)) { return; }
          this.hz43VanNote(d);
          if(d.visible) { d.visible = false; }
