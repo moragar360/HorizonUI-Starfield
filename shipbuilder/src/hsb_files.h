@@ -33,6 +33,17 @@ inline bool HasNul(std::string_view text)
 	return text.find('\0') != std::string_view::npos;
 }
 
+// Purpose: a file body the builder may write: no NUL and no control byte other than tab,
+//    carriage return and line feed (a typed name never brings one; the movie drops them).
+inline bool BodyPrintable(std::string_view text)
+{
+	for (const char c : text) {
+		const auto u = static_cast<unsigned char>(c);
+		if (u == 0x7F || (u < 0x20 && u != '\t' && u != '\r' && u != '\n')) return false;
+	}
+	return true;
+}
+
 inline std::string EscapeText(std::string_view text)
 {
 	std::string out;

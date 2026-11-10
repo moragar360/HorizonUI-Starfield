@@ -22,7 +22,7 @@ package
    //    picker through its slots one frame at a time, waits for the game to confirm each slot
    //    switch, then returns to the slot and control the player had, also when the walk starts
    //    while another is still running.
-   // Author: Moragar. Last modified: 2026-11-08.
+   // Author: Moragar. Last modified: 2026-11-10.
    public class HsbColors extends HsbBox
    {
       private static const HUE:int = 0;
@@ -256,7 +256,7 @@ package
             {
                var key:String = HsbPillModel.trim(line.substring(0,eq)).toLowerCase();
                var val:String = HsbPillModel.trim(line.substring(eq + 1));
-               if(key == "name") { out.name = val.substring(0,NAME_MAX); }
+               if(key == "name") { out.name = HsbPillModel.safeName(val,NAME_MAX,false); }
                else if(key == "author") { out.author = val.substring(0,32); }
                else if(key.indexOf("slot") == 0)
                {
@@ -278,13 +278,15 @@ package
 
       internal static function schemeText(param1:Object):String
       {
-         var out:String = "[Scheme]\nName=" + String(param1.name) + "\n";
-         if(String(param1.author).length > 0) { out += "Author=" + String(param1.author) + "\n"; }
+         // The name and author pass safeName, so neither can end the line or start a key.
+         var out:String = "[Scheme]\nName=" + HsbPillModel.safeName(String(param1.name),NAME_MAX) + "\n";
+         var author:String = param1.author != null ? HsbPillModel.safeName(String(param1.author),32) : "";
+         if(author.length > 0) { out += "Author=" + author + "\n"; }
          var slots:Array = param1.slots as Array;
          var i:int = 0;
          while(i < slots.length)
          {
-            if(slots[i] != null) { out += "Slot" + (i + 1) + "=" + Number(slots[i][0]).toFixed(4) + "," + Number(slots[i][1]).toFixed(4) + "," + Number(slots[i][2]).toFixed(4) + "\n"; }
+            if(slots[i] != null) { out += "Slot" + (i + 1) + "=" + clamp01(Number(slots[i][0])).toFixed(4) + "," + clamp01(Number(slots[i][1])).toFixed(4) + "," + clamp01(Number(slots[i][2])).toFixed(4) + "\n"; }
             i++;
          }
          return out;
@@ -372,7 +374,7 @@ package
 
       private function saveScheme(param1:String):void
       {
-         var name:String = HsbPillModel.trim(param1).substring(0,NAME_MAX);
+         var name:String = HsbPillModel.safeName(param1,NAME_MAX);
          if(name.length == 0) { return; }
          var s:Object = {"name":name,"source":"user","author":"","file":"","slots":this.currentSlots()};
          this.writeScheme(s,true);
@@ -832,7 +834,14 @@ package
 
       override internal function onChar(param1:int):void
       {
-         if(!this.naming || param1 < 32 || param1 == 127 || this.nameText.length >= 32) { return; }
+         try { this.typeChar(param1); }
+         catch(err:*) { this.hsb.note("COLORS type fault " + HorizonShipBuilder.faultId(err)); }
+      }
+
+      private function typeChar(param1:int):void
+      {
+         if(!this.naming || param1 < 32 || param1 == 127 || this.nameText.length >= NAME_MAX) { return; }
+         if(param1 != 32 && !HsbPillModel.nameChar(param1)) { return; }
          this.nameText += String.fromCharCode(param1);
          this.paint();
       }

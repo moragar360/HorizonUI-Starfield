@@ -18,7 +18,7 @@ package
    // Inputs: the accent and card opacity from the user settings; the proven face names.
    // Outputs: TextFields and drawing into Graphics. It holds no game state.
    // Dependencies: Shared.GlobalFunc (FormatNumberToString), already inside the vanilla movie.
-   // Author: Moragar. Last modified: 2026-11-09.
+   // Author: Moragar. Last modified: 2026-11-10.
    public class HsbKit
    {
       internal static const FILL:uint = 0x0B1016;
@@ -624,6 +624,7 @@ package
 
       internal function fill(param1:Graphics, param2:Number, param3:Number, param4:Number, param5:Number, param6:Number, param7:uint, param8:Number = 1):void
       {
+         if(!(param4 > 0) || !(param5 > 0) || isNaN(param2) || isNaN(param3)) { return; }
          param1.lineStyle();
          param1.beginFill(param7,param8);
          if(param6 > 0) { param1.drawRoundRect(param2,param3,param4,param5,param6 * 2,param6 * 2); }
@@ -645,7 +646,8 @@ package
          var y:Number = Math.round(param3);
          var w:Number = Math.round(param2 + param4) - x;
          var h:Number = Math.round(param3 + param5) - y;
-         if(param8 <= 0 || w <= t * 2 || h <= t * 2) { return; }
+         // Written so a NaN size or position draws nothing (NaN fails every comparison).
+         if(!(param8 > 0) || !(w > t * 2) || !(h > t * 2) || isNaN(x) || isNaN(y)) { return; }
          var r:Number = Math.max(t,Math.min(param6,w / 2,h / 2));
          var a:Number = Math.min(1,param8);
          param1.lineStyle();

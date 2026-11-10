@@ -76,6 +76,9 @@ std::atomic<bool> g_resetForms{ false };
 std::atomic<bool> g_pingDone{ false };
 std::atomic<int> g_pingTries{ 0 };
 std::atomic<bool> g_inShipPoll{ false };
+// One native file write at a time (NativeWrite), and one job tick at a time.
+std::atomic<bool> g_inNativeWrite{ false };
+std::atomic<bool> g_inJobTick{ false };
 std::atomic<bool> g_mapped{ false };
 std::atomic<bool> g_probeDebug{ false };
 std::atomic<int> g_movieGen{ 0 };
@@ -1246,6 +1249,35 @@ hsb::ProfileState g_profileState;
 //    byte is refused, as no reply may carry one. A share write makes a new file and never
 //    replaces one: a name already taken fails with "exists" (hsb::kShareExists).
 // Logging: kind, verb and result only.
+// Purpose: hold the single native-write slot for one ini merge or file write, with the log
+//    flushed before the write and again after its outcome line, so a crash inside a write
+//    leaves every line up to it on disk. Inputs: what the write is (for the refusal note) and
+//    whether this call writes at all. Outputs: ok() false when another write holds the slot.
+class NativeWrite
+{
+public:
+	NativeWrite(const char* what, bool active) :
+		active_(active), ok_(!active || !g_inNativeWrite.exchange(true))
+	{
+		if (!active_) return;
+		if (ok_) FlushLog();
+		else Fact("write", std::string("reentry refused ") + what);
+	}
+	~NativeWrite()
+	{
+		if (!active_ || !ok_) return;
+		FlushLog();
+		g_inNativeWrite.store(false);
+	}
+	NativeWrite(const NativeWrite&) = delete;
+	NativeWrite& operator=(const NativeWrite&) = delete;
+	bool ok() const { return ok_; }
+
+private:
+	bool active_;
+	bool ok_;
+};
+
 std::string RunFileRequest(const std::string& line)
 {
 	hsb::FileRequest r;
@@ -1255,6 +1287,9 @@ std::string RunFileRequest(const std::string& line)
 		return id.empty() ? std::string() : hsb::FileReply(id, false, "");
 	}
 	const hsb::FileVerb verb = hsb::CheckRequest(r);
+	const bool writes = verb == hsb::FileVerb::kProfileWrite || verb == hsb::FileVerb::kProfileBad || verb == hsb::FileVerb::kWrite;
+	NativeWrite guard("file", writes);
+	if (!guard.ok()) return hsb::FileReply(r.id, false, "busy");
 	bool ok = false;
 	std::string payload;
 	std::string failReason;
@@ -1268,7 +1303,12 @@ std::string RunFileRequest(const std::string& line)
 		break;
 	}
 	case hsb::FileVerb::kProfileWrite: {
-		hsb::ProfileResult result = hsb::ProfileWrite(disk, g_profileState, hsb::UnescapeText(r.body));
+		const std::string body = hsb::UnescapeText(r.body);
+		if (!hsb::BodyPrintable(body)) {
+			failReason = "unprintable";
+			break;
+		}
+		hsb::ProfileResult result = hsb::ProfileWrite(disk, g_profileState, body);
 		ok = result.ok;
 		failReason = std::move(result.payload);
 		break;
@@ -1295,6 +1335,10 @@ std::string RunFileRequest(const std::string& line)
 		const std::string body = hsb::UnescapeText(r.body);
 		const auto dirs = ShareDirs(r.kind, "user");
 		if (dirs.empty() || body.size() > hsb::kMaxShareBytes) break;
+		if (!hsb::BodyPrintable(body)) {
+			failReason = "unprintable";
+			break;
+		}
 		const std::wstring path = dirs.front() + WidenAscii(r.args[1]);
 		if (!hsb::BuilderFileMayTouch(NarrowPath(path), true)) break;
 		EnsureDirsFor(path);
@@ -1461,9 +1505,15 @@ void RequeueUpdates(const std::vector<hsb::Setting>& failed)
 //    file, g_saveResult (1 saved, 0 not saved) for the movie, and one log fact.
 // Rules: an existing file that cannot be read in full is never merged as if it were empty
 //    (hsb::UserReadAllowsWrite); a skipped or failed write puts the batch back in the queue.
-// Dependencies: hsb_settings.h (whitelist, merge, requeue), ReadCapped, WriteReplace.
+// Dependencies: hsb_settings.h (whitelist, merge, requeue), ReadCapped, WriteReplace,
+//    NativeWrite (one write at a time; a refused merge waits for the next tick).
 void WriteIniNow()
 {
+	NativeWrite guard("ini", true);
+	if (!guard.ok()) {
+		g_writeIni.store(true);
+		return;
+	}
 	if (g_iniPath.empty()) BuildApply();
 	if (!hsb::IniMayWrite(NarrowPath(g_iniPath))) {
 		g_saveResult.store(0);
@@ -1509,10 +1559,16 @@ void WriteIniNow()
 //    reaches the hook makes the window thread confirm or reinstall it. After close it removes
 //    the hook. Inputs: the flags the menu sink and the movie poll set. Outputs: none.
 // Dependencies: FlushLog, BuildApply, WriteIniNow, RunFileJobs, RunOnWindowThread. The tick
-//    makes no Scaleform call and opens no file itself (the logic test checks its body).
+//    makes no Scaleform call and opens no file itself (the logic test checks its body), and
+//    a tick that starts while another still runs returns at once.
 // JOBTICK-BEGIN
 void JobTick()
 {
+	if (g_inJobTick.exchange(true)) return;
+	struct Leave
+	{
+		~Leave() { g_inJobTick.store(false); }
+	} leave;
 	FlushLog();
 	if (g_needApply.exchange(false)) BuildApply();
 	if (g_writeIni.exchange(false)) WriteIniNow();

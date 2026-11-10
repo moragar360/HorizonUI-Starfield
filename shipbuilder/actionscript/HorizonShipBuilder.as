@@ -398,8 +398,9 @@ package
          var i:int = 0;
          while(i < rows.length)
          {
+            // catch(err:*): a throw that is not an Error must not end the frame's feed either.
             try { this.onToken(String(rows[i])); }
-            catch(err:Error) { this.note("FEED fault " + err.errorID + " at " + String(rows[i]).substr(0,2)); }
+            catch(err:*) { this.note("FEED fault " + faultId(err) + " at " + String(rows[i]).substr(0,2)); }
             i++;
          }
       }
@@ -3622,6 +3623,14 @@ package
          return HsbPillModel.trim(param1.substring(0,param3 - tail.length)) + tail;
       }
 
+      // The errorID of a caught throw, or -1 when the throw is not an Error.
+      internal static function faultId(param1:*):int
+      {
+         try { if(param1 is Error) { return Error(param1).errorID; } }
+         catch(err:*) { }
+         return -1;
+      }
+
       internal static function escapeText(param1:String):String
       {
          if(param1 == null) { return ""; }
@@ -3801,7 +3810,15 @@ package
             this.note("PILLS save refused " + this.pillsLock);
             return;
          }
-         var text:String = this.pills.save();
+         var text:String = null;
+         try { text = this.pills.save(); }
+         catch(err:*) { text = null; this.note("PILLS save fault " + faultId(err)); }
+         if(text == null)
+         {
+            this.lockPills("unsavable");
+            this.note("PILLS save refused unreadable");
+            return;
+         }
          if(text.length > HsbJson.MAX_CHARS)
          {
             this.lockPills("full");

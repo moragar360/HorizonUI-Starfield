@@ -2006,7 +2006,7 @@ static void CheckMovie(const fs::path& root)
 					   "var written:String = nameFor(param5);", "if(param2)", "param1.name = written;", "param1.file = param4;",
 					   "self.exported = {\"name\":written,\"file\":param4};"}) &&
 				!Has(writeScheme, "fileOp(") && Has(colors, "private static const NAME_MAX:int = 32;") &&
-				Has(FunctionBody(colors, "parseScheme", "internal static"), "if(key == \"name\") { out.name = val.substring(0,NAME_MAX); }") &&
+				Has(FunctionBody(colors, "parseScheme", "internal static"), "if(key == \"name\") { out.name = HsbPillModel.safeName(val,NAME_MAX,false); }") &&
 				Has(FunctionBody(colors, "saveScheme"), "\"file\":\"\""),
 			"a saved or exported scheme never replaces a file: the file and the scheme take the next free name together");
 		Expect(InOrder(FunctionBody(colors, "onAct", "override internal"), {"case \"export\":",
@@ -2136,7 +2136,7 @@ static void CheckPlugin(const fs::path& root)
 			Has(disk, "bool MayTouch(ProfileFile file, bool write) override { return BuilderFileMayTouch(NarrowPath(PathOf(file)), write); }"),
 		"every builder file goes through BuilderFileMayTouch");
 	Expect(Has(runFile, "Win32ProfileDisk disk(g_docsBuilder);") && Has(runFile, "hsb::ProfileResult result = hsb::ProfileRead(disk, g_profileState);") &&
-			Has(runFile, "hsb::ProfileResult result = hsb::ProfileWrite(disk, g_profileState, hsb::UnescapeText(r.body));") &&
+			Has(runFile, "hsb::ProfileResult result = hsb::ProfileWrite(disk, g_profileState, body);") &&
 			Has(runFile, "hsb::ProfileResult result = hsb::ProfileSetAside(disk, g_profileState);") && !Has(plugin, "CopyFileW(") && !Has(w32, "CopyFileW("),
 		"the profile's read, write and set-aside follow hsb_profile.h in the Documents shipbuilder folder");
 	Expect(Has(plugin, "// Job thread only.\nhsb::ProfileState g_profileState;\n") && CountOf(plugin, "g_profileState") == CountOf(runFile, "g_profileState") + 1,
@@ -2360,6 +2360,66 @@ static void CheckV6Keys(const fs::path& root)
 
 }
 
+// v6b: typed names are cleaned and capped, typing faults are caught, native writes are single
+// and logged on both sides.
+static void CheckV6Names(const fs::path& root)
+{
+	const fs::path as = root / "actionscript";
+	const std::string hub = ReadFile(as / "HorizonShipBuilder.as");
+	const std::string colors = ReadFile(as / "HsbColors.as");
+	const std::string editor = ReadFile(as / "HsbPillEditor.as");
+	const std::string model = ReadFile(as / "HsbPillModel.as");
+	const std::string kit = ReadFile(as / "HsbKit.as");
+	const std::string plugin = ReadFile(root / "src" / "probe.cpp");
+	Expect(!hub.empty() && !colors.empty() && !editor.empty() && !model.empty() && !kit.empty() && !plugin.empty(), "v6b sources read");
+	const std::string nameChar = FunctionBody(model, "nameChar", "internal static");
+	Expect(Has(model, "internal static const NAME_REFUSED:String = \"\\\"\\\\|;=[]#\";") &&
+			Has(nameChar, "if(param1 < 32 || param1 == 127 || (param1 >= 0x80 && param1 < 0xA0)) { return false; }") &&
+			Has(nameChar, "if(param1 >= 0xD800 && param1 <= 0xDFFF) { return false; }") && Has(nameChar, "if(param1 >= 0xFFFE) { return false; }") &&
+			Has(nameChar, "return NAME_REFUSED.indexOf(String.fromCharCode(param1)) < 0;"),
+		"a typed name refuses control characters, surrogate halves and the line-breaking marks");
+	const std::string safe = FunctionBody(model, "safeName", "internal static");
+	Expect(Has(safe, "while(i < param1.length && out.length < param2)") && Has(safe, "return out.substring(0,param2);") &&
+			Has(safe, "var keep:Boolean = param3 ? nameChar(code) :"),
+		"safeName caps the length and drops what nameChar refuses");
+	Expect(Has(FunctionBody(editor, "typeChar"), "if(param1 != 32 && !HsbPillModel.nameChar(param1)) { return; }") &&
+			Has(FunctionBody(colors, "typeChar"), "if(param1 != 32 && !HsbPillModel.nameChar(param1)) { return; }") &&
+			Has(FunctionBody(editor, "stopEditing"), "HsbPillModel.safeName(this.editText,HsbPillModel.MAX_NAME)") &&
+			Has(FunctionBody(editor, "save"), "var name:String = HsbPillModel.safeName(String(this.draft.name),HsbPillModel.MAX_NAME);") &&
+			Has(FunctionBody(colors, "saveScheme"), "var name:String = HsbPillModel.safeName(param1,NAME_MAX);") &&
+			Has(FunctionBody(colors, "schemeText", "internal static"), "\"[Scheme]\\nName=\" + HsbPillModel.safeName(String(param1.name),NAME_MAX)") &&
+			Has(FunctionBody(model, "clean", "internal static"), "safeName(String(param1.name),MAX_NAME,false)"),
+		"pill and scheme names are cleaned when typed, when kept and when written");
+	Expect(Has(FunctionBody(editor, "onChar", "override internal"), "catch(err:*) { this.hsb.note(\"PILLS type fault \" + HorizonShipBuilder.faultId(err)); }") &&
+			Has(FunctionBody(colors, "onChar", "override internal"), "catch(err:*) { this.hsb.note(\"COLORS type fault \" + HorizonShipBuilder.faultId(err)); }") &&
+			Has(FunctionBody(hub, "feed", "public"), "catch(err:*) { this.note(\"FEED fault \" + faultId(err)") &&
+			InOrder(FunctionBody(hub, "savePills", "internal"), {"try { text = this.pills.save(); }", "catch(err:*)", "if(text == null)", "this.lockPills(\"unsavable\");"}),
+		"a throw of any kind while typing or saving pills is caught and logged");
+	Expect(Has(FunctionBody(kit, "outline", "internal"), "if(!(param8 > 0) || !(w > t * 2) || !(h > t * 2) || isNaN(x) || isNaN(y)) { return; }") &&
+			Has(FunctionBody(kit, "fill", "internal"), "if(!(param4 > 0) || !(param5 > 0) || isNaN(param2) || isNaN(param3)) { return; }"),
+		"a NaN size or position draws nothing");
+	Expect(hsb::BodyPrintable("[Scheme]\nName=Desert 2\r\nSlot1=0.1,0.2,0.3\t\n") && !hsb::BodyPrintable(std::string("a\0b", 3)) &&
+			!hsb::BodyPrintable("a\x01" "b") && !hsb::BodyPrintable("a\x7f") && hsb::BodyPrintable("caf\xc3\xa9"),
+		"a written body keeps tab, CR, LF and UTF-8 and refuses NUL, other control bytes and DEL");
+	const std::string runFile = CppBody(plugin, "std::string RunFileRequest(");
+	Expect(InOrder(runFile, {"const bool writes = verb == hsb::FileVerb::kProfileWrite || verb == hsb::FileVerb::kProfileBad || verb == hsb::FileVerb::kWrite;",
+				   "NativeWrite guard(\"file\", writes);", "if (!guard.ok()) return hsb::FileReply(r.id, false, \"busy\");"}) &&
+			CountOf(runFile, "if (!hsb::BodyPrintable(body)) {") == 2,
+		"every file write holds the write slot and refuses an unprintable body");
+	const std::string ini = CppBody(plugin, "void WriteIniNow(");
+	Expect(InOrder(ini, {"NativeWrite guard(\"ini\", true);", "if (!guard.ok()) {", "g_writeIni.store(true);", "return;", "if (g_iniPath.empty()) BuildApply();"}),
+		"an ini merge holds the write slot, and a refused merge waits for the next tick");
+	const auto nwA = plugin.find("class NativeWrite");
+	const auto nwB = nwA == std::string::npos ? std::string::npos : plugin.find("\n};\n", nwA);
+	const std::string nw = nwB == std::string::npos ? std::string() : plugin.substr(nwA, nwB - nwA);
+	Expect(InOrder(nw, {"ok_(!active || !g_inNativeWrite.exchange(true))", "if (ok_) FlushLog();", "else Fact(\"write\", std::string(\"reentry refused \") + what);",
+				   "~NativeWrite()", "if (!active_ || !ok_) return;", "FlushLog();", "g_inNativeWrite.store(false);"}),
+		"a native write flushes the log before it starts and after its outcome line, one write at a time");
+	Expect(InOrder(CppBody(plugin, "void JobTick("), {"if (g_inJobTick.exchange(true)) return;", "~Leave() { g_inJobTick.store(false); }", "FlushLog();"}),
+		"a job tick never runs inside another");
+
+}
+
 int main()
 {
 	CheckGuard();
@@ -2384,6 +2444,7 @@ int main()
 	CheckPlugin(root);
 	CheckDocs(repo, root);
 	CheckV6Keys(root);
+	CheckV6Names(root);
 
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";

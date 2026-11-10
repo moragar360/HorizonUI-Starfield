@@ -14,7 +14,7 @@ package
    //    confirm), HorizonShipBuilder (popups, text input, savePills).
    // Backend limits shown in the editor: "Fits reactor" and "On my ship" have no game data, so
    //    they are listed but cannot be picked; a rule already holding one says it is skipped.
-   // Author: Moragar. Last modified: 2026-11-07.
+   // Author: Moragar. Last modified: 2026-11-10.
    public class HsbPillEditor extends HsbBox
    {
       private static const CLASSES:Array = ["A","B","C","M"];
@@ -332,7 +332,7 @@ package
          if(this.editing.length == 0) { return; }
          if(this.editing == "name")
          {
-            this.draft.name = param1 ? HsbPillModel.trim(this.editText) : this.nameBefore;
+            this.draft.name = param1 ? HsbPillModel.safeName(this.editText,HsbPillModel.MAX_NAME) : this.nameBefore;
          }
          else if(param1)
          {
@@ -345,13 +345,22 @@ package
          this.hsb.endText(this);
       }
 
+      // A throw while typing is logged and leaves the editor open (the hub's feed also
+      // catches, but this note names the place).
       override internal function onChar(param1:int):void
+      {
+         try { this.typeChar(param1); }
+         catch(err:*) { this.hsb.note("PILLS type fault " + HorizonShipBuilder.faultId(err)); }
+      }
+
+      private function typeChar(param1:int):void
       {
          if(this.editing.length == 0 || param1 < 32 || param1 == 127) { return; }
          var c:String = String.fromCharCode(param1);
          if(this.editing == "name")
          {
             if(this.editText.length >= HsbPillModel.MAX_NAME) { return; }
+            if(param1 != 32 && !HsbPillModel.nameChar(param1)) { return; }
             this.editText += c;
          }
          else
@@ -546,7 +555,7 @@ package
       {
          this.stopEditing(true);
          var model:HsbPillModel = this.hsb.pills;
-         var name:String = HsbPillModel.trim(String(this.draft.name));
+         var name:String = HsbPillModel.safeName(String(this.draft.name),HsbPillModel.MAX_NAME);
          var same:Object = model.byName(name);
          if(name.length == 0) { this.problem = "Give the pill a name"; }
          else if(same != null && (this.orig == null || String(same.id) != String(this.orig.id))) { this.problem = "Another pill already has this name"; }

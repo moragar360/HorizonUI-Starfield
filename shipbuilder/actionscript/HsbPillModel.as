@@ -13,7 +13,7 @@ package
    //    (tab keys, column ids, pill ids) never name a member of Object (HsbJson.safeKey).
    // Backend limits: "fitsReactor" and "onMyShip" have no game data, so those rules are always
    //    "not available"; value, class and card stats are known only for parts already previewed.
-   // Author: Moragar. Last modified: 2026-11-08.
+   // Author: Moragar. Last modified: 2026-11-10.
    public class HsbPillModel
    {
       internal static const MAX_PILLS:int = 20;
@@ -305,9 +305,8 @@ package
       internal static function clean(param1:Object):Object
       {
          if(param1 == null || typeof param1 != "object") { return null; }
-         var name:String = param1.name is String ? trim(String(param1.name)) : "";
+         var name:String = param1.name is String ? safeName(String(param1.name),MAX_NAME,false) : "";
          if(name.length == 0) { return null; }
-         if(name.length > MAX_NAME) { name = name.substring(0,MAX_NAME); }
          var id:String = param1.id is String ? String(param1.id).substring(0,32) : "";
          var out:Object = {"id":HsbJson.safeKey(id) ? id : "","name":name};
          var tabs:Array = [];
@@ -434,6 +433,44 @@ package
       internal static function spokenName(param1:String):String
       {
          return spoken[param1] != null ? String(spoken[param1]) : param1;
+      }
+
+      // Characters a typed pill or scheme name never keeps: they would break a scheme file's
+      // Name= line or a profile line, or they read as nothing on screen.
+      internal static const NAME_REFUSED:String = "\"\\|;=[]#";
+
+      // Purpose: whether a typed character may go into a pill or scheme name.
+      // Refused: control characters, DEL, the C1 block, lone surrogate halves, U+FFFE and
+      //    U+FFFF, and NAME_REFUSED. A space is allowed while typing (safeName folds runs).
+      internal static function nameChar(param1:int):Boolean
+      {
+         if(param1 < 32 || param1 == 127 || (param1 >= 0x80 && param1 < 0xA0)) { return false; }
+         if(param1 >= 0xD800 && param1 <= 0xDFFF) { return false; }
+         if(param1 >= 0xFFFE) { return false; }
+         return NAME_REFUSED.indexOf(String.fromCharCode(param1)) < 0;
+      }
+
+      // Purpose: the name as it is stored: every character nameChar refuses is dropped (with
+      //    param3 false, only the unprintable ones, so names in older saves keep their marks),
+      //    runs of spaces become one, the ends are trimmed and the length is capped at param2.
+      internal static function safeName(param1:String, param2:int, param3:Boolean = true):String
+      {
+         if(param1 == null) { return ""; }
+         var out:String = "";
+         var space:Boolean = false;
+         var i:int = 0;
+         while(i < param1.length && out.length < param2)
+         {
+            var code:int = param1.charCodeAt(i);
+            i++;
+            if(code == 32 || code == 9 || code == 0xA0) { space = true; continue; }
+            var keep:Boolean = param3 ? nameChar(code) : (code >= 32 && code != 127 && !(code >= 0x80 && code < 0xA0) && !(code >= 0xD800 && code <= 0xDFFF) && code < 0xFFFE);
+            if(!keep) { continue; }
+            if(space && out.length > 0 && out.length < param2 - 1) { out += " "; }
+            space = false;
+            out += String.fromCharCode(code);
+         }
+         return out.substring(0,param2);
       }
 
       internal static function trim(param1:String):String
