@@ -2463,9 +2463,12 @@ static void CheckV6Pins(const fs::path& root)
 	Expect(!browser.empty() && !settings.empty(), "v6d sources read");
 	Expect(Has(FunctionBody(browser, "paintList"), "(findMiss ? this.findMissText() : \"No parts match"),
 		"a Find with no match shows the line that names its category");
-	Expect(InOrder(FunctionBody(settings, "onKey", "override internal"), {"if(this.editing.length > 0)", "return true;\n         }",
-				   "this.showTab(this.tab + (param1 == \"tab\" ? 1 : -1));"}),
-		"Settings: a key edit or hex entry takes Tab before the tabs switch");
+	const std::string settingsKey = FunctionBody(settings, "onKey", "override internal");
+	const auto editAt = settingsKey.find("if(this.editing.length > 0)");
+	const auto tabAt = settingsKey.find("showTab(");
+	Expect(editAt != std::string::npos && tabAt != std::string::npos && editAt < tabAt &&
+			InOrder(settingsKey, {"if(this.editing.length > 0)", "return true;\n         }", "this.showTab(this.tab + (param1 == \"tab\" ? 1 : -1));"}),
+		"Settings: a key edit or hex entry takes Tab before the tabs switch (no tab switch comes first)");
 	Expect(InOrder(FunctionBody(settings, "showTab"), {"if(next == this.tab) { return; }", "this.tab = next;", "this.scroll = 0;", "this.focusAt = -1;", "this.paint();"}),
 		"Settings: a tab switch starts at the top with no focused control");
 	Expect(CountOf(browser, "if(lockN > 0)") == 1 && Has(browser, "var lockN:int = cat.locked != null ? int(cat.locked) : -1;"),
