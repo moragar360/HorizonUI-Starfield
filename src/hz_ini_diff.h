@@ -305,6 +305,22 @@ namespace HZF {
 		}
 
 		inline bool IsModuleSec(const std::string& a_n) { return a_n == "scanner" || a_n == "comms"; }
+		// v0.44 r6: [Debug] holds diagnostic switches that have no default-INI key on purpose ([Debug] WatchLog, BlgGroupHide).
+		// A key the player wrote there stays on F11 save (like the module sections); before r6 every save dropped it.
+		inline bool KeepsOwnKeys(const std::string& a_n) { return IsModuleSec(a_n) || a_n == "debug"; }
+		// v0.44 r6: one section of a text (header and lines), or "" when it has none. Preset apply passes the old
+		// user.ini's [Debug] to Diff with it, so the player's own diagnostic keys survive a preset too.
+		inline std::string OnlySection(const std::string& a_text, const std::string& a_sec)
+		{
+			std::vector<std::string> out;
+			bool on = false;
+			for (const auto& ln : SplitLines(a_text)) {
+				std::string h;
+				if (HeaderOf(ln, h)) on = Alias(h) == a_sec;
+				if (on) out.push_back(ln);
+			}
+			return out.empty() ? std::string() : Join(out);
+		}
 		// v0.41.0 r2: keys a newer version replaced. Never written again by Diff (F11 save, presets, migration), so an old
 		// line cannot outlive the keys that replaced it. [Scanner] ScanShowVitals (0.40.3) = ScanShowVitalsHealth / O2 / Boost.
 		inline bool RetiredKey(const std::string& a_sec, const std::string& a_kl) { return a_sec == "scanner" && a_kl == "scanshowvitals"; }
@@ -350,7 +366,7 @@ namespace HZF {
 				const bool inU = inUser(a_sec, a_kl);
 				if (dk != ds->kv.end()) {
 					if (!SameValue(a_p.second, dk->second.second) || inU) put(a_sec, dk->second.first, a_p.second, a_kl);
-				} else if (a_opt.keepUnknownKeys || (IsModuleSec(a_sec) && inU)) {
+				} else if (a_opt.keepUnknownKeys || (KeepsOwnKeys(a_sec) && inU)) {   // r6: + [Debug]
 					put(a_sec, a_p.first, a_p.second, a_kl);
 				}
 			};
