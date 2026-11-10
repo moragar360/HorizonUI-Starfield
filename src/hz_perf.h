@@ -9,10 +9,12 @@
 // splash/alerts/gameplay keep hz41Now (Date.getTime). This header never logs, never
 // opens a file, and never starts a background worker. Export is one bounded dump
 // string after intro-resolved + settle + PerfDumpWait. No generation-callback markers.
-// Option B (private diagnostic build): two fixed 256-slot rings, one writer at a time (the
-// HUD root hook; HUD advances are serialized), no allocation: rootT samples of 5 ms or more (QPC start, us), and
-// process private-bytes drops above 256 KB (QPC, KB). At dump time they are merged with the
-// AS event ring into "perf ring" lines. Everything stays behind PerfDiag.
+// Option B (private diagnostic build): three fixed 256-slot rings, one writer at a time (the
+// HUD root hook; HUD advances are serialized), no allocation: rootT samples of 5 ms or more (QPC start, us),
+// process private-bytes drops above 256 KB (QPC, KB), and HUD advance gaps of 40 ms or more (start to
+// start of two a_next calls, stamped with the earlier start, us). The gap ring needs no ActionScript, so
+// it also works on a vanilla HUD. At dump time they are merged with the 2048-slot AS event ring into
+// "perf ring" lines. Everything stays behind PerfDiag.
 // Author: Moragar.
 // Last modified: 2026-11-09.
 
@@ -47,9 +49,13 @@ inline constexpr int kSettleMax = 10000;
 inline constexpr int kRingSlots = 256;
 inline constexpr std::uint64_t kSpikeUs = 5000;
 inline constexpr std::uint64_t kMemDropBytes = 262144;
-inline constexpr int kRingAsMax = 16384;
-inline constexpr int kRingEvMax = kRingSlots * 3;
+inline constexpr std::uint64_t kGapUs = 40000;
+inline constexpr int kAsRingSlots = 2048;
+inline constexpr int kRingAsMax = 65536;
+inline constexpr int kRingEvMax = kRingSlots * 3 + kAsRingSlots;
 inline constexpr int kRingLineMax = 192;
+inline constexpr int kPartsMax = 4096;
+inline constexpr int kPartCount = 49;
 
 enum Bucket : int {
 	kMovieAdvance = 0,
@@ -300,6 +306,10 @@ struct Agg {
 	std::atomic<std::uint32_t> inflight{0};
 	Ring spike{};
 	Ring pdrop{};
+	Ring gap{};
+	std::atomic<std::uint64_t> gapLast{0};
+	std::atomic<std::uint64_t> gapN{0};
+	std::atomic<std::uint64_t> gapMaxUs{0};
 	std::atomic<std::uint64_t> pmemN{0};
 	std::atomic<std::uint64_t> pmemLast{0};
 	std::atomic<std::uint64_t> pmemMin{0};
@@ -323,6 +333,10 @@ inline void Reset(Agg& a_a)
 	a_a.armKind.store(0, std::memory_order_relaxed);
 	RingReset(a_a.spike);
 	RingReset(a_a.pdrop);
+	RingReset(a_a.gap);
+	a_a.gapLast.store(0, std::memory_order_relaxed);
+	a_a.gapN.store(0, std::memory_order_relaxed);
+	a_a.gapMaxUs.store(0, std::memory_order_relaxed);
 	a_a.pmemN.store(0, std::memory_order_relaxed);
 	a_a.pmemLast.store(0, std::memory_order_relaxed);
 	a_a.pmemMin.store(0, std::memory_order_relaxed);
@@ -424,6 +438,26 @@ inline void NoteSpike(Agg& a_a, std::uint64_t a_t0, std::uint64_t a_dt, std::uin
 	if (us < kSpikeUs) return;
 	if (!TryBeginSample(a_a)) return;
 	RingPush(a_a.spike, a_t0, us > 0xFFFFFFFFull ? 0xFFFFFFFFu : static_cast<std::uint32_t>(us));
+	EndSample(a_a);
+}
+
+// Option B parts: start-to-start gap between two HUD advances (a_next only). A gap of kGapUs
+// or more goes to the gap ring, stamped with the earlier start, v = gap us. The first advance
+// after Reset only sets the start. Native only, so it works when the HUD ActionScript is
+// vanilla. No allocation. Caller already checked PerfDiag.
+inline void NoteGap(Agg& a_a, std::uint64_t a_t0, std::uint64_t a_freq, bool a_next)
+{
+	if (!a_next) return;
+	if (!TryBeginSample(a_a)) return;
+	const auto last = a_a.gapLast.load(std::memory_order_relaxed);
+	a_a.gapLast.store(a_t0, std::memory_order_relaxed);
+	if (last && a_t0 > last) {
+		const auto us = Us(a_t0 - last, a_freq);
+		a_a.gapN.fetch_add(1, std::memory_order_relaxed);
+		if (us > a_a.gapMaxUs.load(std::memory_order_relaxed)) a_a.gapMaxUs.store(us, std::memory_order_relaxed);
+		if (us >= kGapUs)
+			RingPush(a_a.gap, last, us > 0xFFFFFFFFull ? 0xFFFFFFFFu : static_cast<std::uint32_t>(us));
+	}
 	EndSample(a_a);
 }
 
@@ -689,7 +723,8 @@ inline int FormatNative(const Agg& a_a, std::uint64_t a_freq, std::uint64_t a_no
 struct RingEv {
 	double tMs = 0;       // ms since the dump window start, QPC clock
 	char src = 'N';       // 'N' native, 'A' ActionScript
-	char type = '?';      // R spike, P private-bytes drop, T target change, C compass, M AS memory drop, Q quest sync
+	char type = '?';      // R spike, P private-bytes drop, G HUD advance gap, T target change, C compass,
+	                      // M AS memory drop, Q quest sync, S slow AS part (n = part id)
 	double v = 0;
 	std::uint32_t n = 1;  // events folded into this slot (C/Q runs)
 	double spanMs = 0;
@@ -715,9 +750,9 @@ inline int CollectNative(const Agg& a_a, std::uint64_t a_freq, RingEv* a_out, in
 	if (!a_out || a_cap <= 0) return 0;
 	const double w0 = QpcMs(a_a.windowStart.load(std::memory_order_relaxed), a_freq);
 	int k = 0;
-	const Ring* rings[2] = { &a_a.spike, &a_a.pdrop };
-	const char types[2] = { 'R', 'P' };
-	for (int r = 0; r < 2; ++r) {
+	const Ring* rings[3] = { &a_a.spike, &a_a.pdrop, &a_a.gap };
+	const char types[3] = { 'R', 'P', 'G' };
+	for (int r = 0; r < 3; ++r) {
 		const auto w = rings[r]->w.load(std::memory_order_acquire);
 		const auto n = RingCount(*rings[r]);
 		for (auto i = w - n; i != w && k < a_cap; ++i) {
@@ -747,8 +782,24 @@ inline bool HeadNum(const std::string& a_s, const char* a_key, double& a_out)
 	return true;
 }
 
+// Option B parts: AS part ids, in the same order as hzPerfParts in horizon_block.as. 0-25 hzOnFrame
+// sections (25 = empty calibration probe), 26-33 hz26Tick parts, 34-39 exitFrame parts, 40-45 compass
+// parts, 46 hzQSync, 47 loop total, 48 exit total (S events only).
+inline const char* PartName(int a_id)
+{
+	static const char* const k[kPartCount] = {
+		"veh", "h40", "qmFont", "cmpSig", "syncHide", "hideRebuild", "hideTick1", "force1", "blgLoop", "layout",
+		"typo", "eq", "misc", "tick", "reticle", "xh", "h43", "bars", "fades", "vitals",
+		"h26", "caretAf", "pulse", "tail", "splash", "cal", "h26Van", "h26Draw", "h26Regen", "h26Edge",
+		"h26Fx", "h26Char", "h26Vis", "h27", "xBio", "xDet", "xLoc", "xQm", "xReticle", "xVanLate",
+		"c40", "cLbl", "cTicks", "cMarks", "cQuests", "cVis", "qSync", "loopTotal", "exitTotal"
+	};
+	if (a_id < 0 || a_id >= kPartCount) return "?";
+	return k[a_id];
+}
+
 // AS format: "ring now=<ms> n=<n> lost=<n> memUnsupported=<0|1>|ty,t0,t1,v,c;..."
-// ty: 1=T 2=C 3=M 4=Q. a_offMs = qpcMs(at invoke) - now; a_w0Ms = qpcMs(window start).
+// ty: 1=T 2=C 3=M 4=Q 5=S (c = part id). a_offMs = qpcMs(at invoke) - now; a_w0Ms = qpcMs(window start).
 inline int ParseAsRing(const char* a_s, double a_offMs, double a_w0Ms, RingEv* a_out, int a_cap, AsRingHead& a_head)
 {
 	a_head = AsRingHead{};
@@ -788,6 +839,7 @@ inline int ParseAsRing(const char* a_s, double a_offMs, double a_w0Ms, RingEv* a
 		case 2: e.type = 'C'; break;
 		case 3: e.type = 'M'; break;
 		case 4: e.type = 'Q'; break;
+		case 5: e.type = 'S'; break;
 		default: continue;
 		}
 		e.tMs = f[1] + a_offMs - a_w0Ms;
@@ -808,10 +860,12 @@ inline void SortRing(RingEv* a_ev, int a_n)
 inline const char* RingUnit(char a_type)
 {
 	switch (a_type) {
-	case 'R': return "us";
+	case 'R':
+	case 'G': return "us";
 	case 'P':
 	case 'M': return "KB";
-	case 'C': return "ms";
+	case 'C':
+	case 'S': return "ms";
 	default: return "";
 	}
 }
@@ -823,6 +877,9 @@ inline int FormatRingEv(const RingEv& a_e, char* a_out, int a_cap)
 	if (a_e.type == 'C' || a_e.type == 'Q')
 		n = std::snprintf(a_out, static_cast<std::size_t>(a_cap), "perf ring t=%.1f src=%s type=%c v=%.0f%s n=%u span=%.0f",
 			a_e.tMs, a_e.src == 'A' ? "AS" : "N", a_e.type, a_e.v, RingUnit(a_e.type), a_e.n, a_e.spanMs);
+	else if (a_e.type == 'S')
+		n = std::snprintf(a_out, static_cast<std::size_t>(a_cap), "perf ring t=%.1f src=AS type=S v=%.0fms part=%s",
+			a_e.tMs, a_e.v, PartName(static_cast<int>(a_e.n)));
 	else
 		n = std::snprintf(a_out, static_cast<std::size_t>(a_cap), "perf ring t=%.1f src=%s type=%c v=%.0f%s",
 			a_e.tMs, a_e.src == 'A' ? "AS" : "N", a_e.type, a_e.v, RingUnit(a_e.type));
@@ -837,9 +894,13 @@ inline int FormatRingSum(const Agg& a_a, const AsRingHead& a_h, double a_offMs, 
 {
 	if (!a_out || a_cap < 8) return 0;
 	const int n = std::snprintf(a_out, static_cast<std::size_t>(a_cap),
-		"perf ring sum events=%d spikes=%u spikeLost=%u spikeMinUs=%llu pmemN=%llu pmemMinKB=%llu pmemMaxKB=%llu pmemDrops=%llu pdropLost=%u as=%s asN=%d asLost=%d memUnsupported=%d timerUnsupported=%d offMs=%.1f clock=QPC_ms_since_window",
+		"perf ring sum events=%d spikes=%u spikeLost=%u spikeMinUs=%llu gaps=%u gapLost=%u gapMinUs=%llu gapN=%llu gapMaxUs=%llu pmemN=%llu pmemMinKB=%llu pmemMaxKB=%llu pmemDrops=%llu pdropLost=%u as=%s asN=%d asLost=%d memUnsupported=%d timerUnsupported=%d offMs=%.1f clock=QPC_ms_since_window",
 		a_events, RingCount(a_a.spike), RingLost(a_a.spike),
 		static_cast<unsigned long long>(kSpikeUs),
+		RingCount(a_a.gap), RingLost(a_a.gap),
+		static_cast<unsigned long long>(kGapUs),
+		static_cast<unsigned long long>(a_a.gapN.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(a_a.gapMaxUs.load(std::memory_order_relaxed)),
 		static_cast<unsigned long long>(a_a.pmemN.load(std::memory_order_relaxed)),
 		static_cast<unsigned long long>(a_a.pmemMin.load(std::memory_order_relaxed) / 1024ull),
 		static_cast<unsigned long long>(a_a.pmemMax.load(std::memory_order_relaxed) / 1024ull),

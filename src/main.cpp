@@ -885,6 +885,7 @@ namespace HZ
 		if (t1 < a_t0) return;
 		hzperf::AddRoot(g_perfAgg, t1 - a_t0, HzQpcFreq(), a_next);
 		hzperf::NoteSpike(g_perfAgg, a_t0, t1 - a_t0, HzQpcFreq(), a_next);
+		hzperf::NoteGap(g_perfAgg, a_t0, HzQpcFreq(), a_next);
 		if (a_next) HzPerfProcMem();
 	}
 
@@ -4939,6 +4940,16 @@ namespace HZ
 		hzperf::SortRing(s_ringEv, ringN);
 		char ringSum[hzperf::kDumpMax];
 		hzperf::FormatRingSum(g_perfAgg, ringHead, offMs, ringN, ringSum, hzperf::kDumpMax);
+		// Option B parts: per-section AS timers, counters and a settings echo, on their own line
+		// (the snapshot is capped at 1400 chars). Read before hzPerfSnapshot, which resets them.
+		std::string parts = "parts=missing";
+		try {
+			GValue pr;
+			if (HudInvoke("hzPerfParts", &pr) && pr.IsString() && pr.GetString())
+				parts = hzpreset::Utf8Prefix(pr.GetString(), hzperf::kPartsMax);
+		} catch (...) {
+			parts = "parts=throw";
+		}
 		std::string as = "as=missing";
 		try {
 			GValue r;
@@ -4950,8 +4961,9 @@ namespace HZ
 		hzperf::Reset(g_perfAgg);
 		hzperf::EndDump(g_perfAgg);
 		REX::INFO("perf dump {} {}", native, as);
-		// Option B: up to 1 + 768 lines, written synchronously in this one dump frame, so the
-		// dump frame itself hitches. That is after the capture window and is not measured.
+		REX::INFO("perf parts {}", parts);
+		// Option B: up to 1 + 2816 lines (3 x 256 native + 2048 AS), written synchronously in this one
+		// dump frame, so the dump frame itself hitches. That is after the capture window and is not measured.
 		REX::INFO("{}", ringSum);
 		char ringLine[hzperf::kRingLineMax];
 		for (int i = 0; i < ringN; ++i) {
