@@ -379,7 +379,7 @@ namespace HZF
 			DiffOpt o;
 			o.keepUnknownKeys = false;
 			o.keepUnknownSections = false;
-			return Diff(p, a_defs, "", o);
+			return Diff(p, a_defs, OnlySection(a_oldUser, "debug"), o);   // r6: the player's own [Debug] keys (WatchLog) stay
 		}
 		// what a saved preset holds: like PresetToUser but [Debug] is kept
 		inline std::string PresetDiff(const std::string& a_full, const std::string& a_defs)
@@ -938,6 +938,9 @@ namespace HZ
 			if (get("perfdumpwait", v)) waitSec = hzperf::ParseWaitSec(v);
 			if (get("perfsettlems", v)) settleMs = hzperf::ParseSettleMs(v);
 			if (get("watchlog", v)) g_wlOn.store(hzperf::Parse01(v), std::memory_order_relaxed);
+			// r6: one line per settings read, only with PerfDiag=1, so a missing WatchLog is visible in the log
+			if (HzPerfOn())
+				REX::INFO("watchlog: {} ([Debug] WatchLog={}, needs PerfDiag=1)", g_wlOn.load(std::memory_order_relaxed) ? "on" : "off", g_wlOn.load(std::memory_order_relaxed));
 			if (get("settingskey", v) && !v.empty()) key = v;
 			if (hzlog::IniReloadAppliesMsglog(a_reloadMsglog))
 				MsglogLoadSettings(d);

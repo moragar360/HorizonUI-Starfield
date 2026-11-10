@@ -1066,6 +1066,49 @@ int main()
 		Expect(s2 && s2->kv.count("hidewatchwhilescanning") && s2->kv["hidewatchwhilescanning"].second == "1", "r6: the merged text the HUD reads has HideWatchWhileScanning=1");
 	}
 
+	// r6 item 4: the watch logger wrote nothing. [Debug] WatchLog has no default-INI key on purpose, and the F11 save
+	// (SaveFromHud: Diff with keepUnknownKeys=false) dropped every [Debug] key that is not in default.ini, so the first
+	// save after WatchLog=1 was typed in removed it and LoadIni read WatchLog=0. This block fails on 442931a.
+	{
+		std::ifstream in("Interface/HorizonUI/HorizonUI.default.ini");
+		std::string def((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		Expect(def.find("WatchLog") == std::string::npos, "r6: default.ini still has no WatchLog key (private diag)");
+		// the tester's [Debug] block (ba84a797 INI, CRLF, WatchLog=1 last)
+		const std::string user = "[Cards Extra]\r\nWatchStyle=0\r\n\r\n[Debug]\r\nDebug=0\r\nPerfDiag=1\r\nPerfMode=0\r\nPerfDump=1\r\nPerfScan=1\r\nPerfDumpWait=20\r\nPerfSettleMs=2000\r\nWatchLog=1\r\n";
+		auto readKey = [](const std::string& a_merged, const char* a_k) {   // LoadIni's reader: any section, last one wins
+			HZF::Doc d = HZF::Parse(a_merged);
+			std::string v;
+			for (auto& sec : d.secs)
+				if (auto it = sec.kv.find(a_k); it != sec.kv.end()) v = it->second.second;
+			return v;
+		};
+		Expect(readKey(HZF::Overlay(def, user), "watchlog") == "1" && readKey(HZF::Overlay(def, user), "perfdiag") == "1", "r6: LoadIni reads WatchLog=1 and PerfDiag=1 from that user.ini");
+		// F11 save: the HUD's full text does not carry WatchLog (it is not a setting)
+		const std::string full = HZF::Overlay(def, "[Debug]\r\nPerfDiag=1\r\nPerfDump=1\r\nPerfDumpWait=20\r\n");
+		HZF::DiffOpt so;   // SaveFromHud's options
+		const auto saved = HZF::Diff(full, def, user, so);
+		Expect(saved.find("WatchLog=1") != std::string::npos, "r6: F11 save keeps the player's [Debug] WatchLog=1 (dropped before r6)");
+		Expect(readKey(HZF::Overlay(def, saved), "watchlog") == "1", "r6: after the save LoadIni still reads WatchLog=1");
+		const auto saved2 = HZF::Diff(HZF::Overlay(def, saved), def, saved, so);
+		Expect(saved2.find("WatchLog=1") != std::string::npos, "r6: a second save keeps it too");
+		Expect(HZF::Diff(full, def, "[Cards]\r\nNoSuchKey=1\r\n", so).find("NoSuchKey") == std::string::npos, "r6: an unknown key of another known section is still dropped");
+		Expect(HZF::Diff(full, def, "", so).find("WatchLog") == std::string::npos, "r6: WatchLog is never added when the player did not write it");
+		// preset apply (PresetToUser): the preset's [Debug] is skipped, the player's own [Debug] stays, WatchLog included
+		HZF::DiffOpt po;
+		po.keepUnknownKeys = false;
+		po.keepUnknownSections = false;
+		const std::string p = HZF::StripSection("[Preset]\r\nName=X\r\n\r\n[Scanner]\r\nScanUnits=1\r\n", "debug") + "\r\n" + HZF::OnlySection(user, "debug");
+		const auto applied = HZF::Diff(p, def, HZF::OnlySection(user, "debug"), po);
+		Expect(applied.find("WatchLog=1") != std::string::npos && applied.find("PerfDiag=1") != std::string::npos, "r6: applying a preset keeps the player's WatchLog=1");
+		Expect(HZF::OnlySection(user, "debug").find("[Debug]") == 0 && HZF::OnlySection(user, "cards").empty(), "r6: OnlySection returns one section, or nothing");
+		std::ifstream mc("src/main.cpp");
+		std::string m((std::istreambuf_iterator<char>(mc)), std::istreambuf_iterator<char>());
+		Expect(m.find("return Diff(p, a_defs, OnlySection(a_oldUser, \"debug\"), o);") != std::string::npos, "r6: main.cpp PresetToUser passes the old [Debug] to Diff");
+		Expect(m.find("Diff(a_full, Defaults(a_p), user, o)") != std::string::npos, "r6: main.cpp SaveFromHud passes the old user.ini to Diff");
+		Expect(m.find("if (get(\"watchlog\", v)) g_wlOn.store(hzperf::Parse01(v), std::memory_order_relaxed);") != std::string::npos
+			&& m.find("REX::INFO(\"watchlog: {} ([Debug] WatchLog={}, needs PerfDiag=1)\"") != std::string::npos, "r6: LoadIni reads [Debug] WatchLog and logs its state once per read when PerfDiag=1");
+	}
+
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";
 		return 1;
