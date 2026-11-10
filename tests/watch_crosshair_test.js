@@ -1183,6 +1183,61 @@ expect(writeScale.outlineClip.scaleX === 0.8 && writeScale.capClip.alpha === 0, 
 	expect(fb.indexOf(".alpha") < 0 && fb.indexOf(".visible") < 0, "ghost fix: position / scale only; visibility rules (hz41LocHide) unchanged");
 }
 
+// ---- r6 item 2: [Scanner] HideWatchWhileScanning (default 0, F11 > SCANNER, live on the scan edge) ----
+{
+	const keysSrc = (as.match(/private static const HZ40_SCAN_KEYS:Array = (\[.*\]);/) || [])[1];
+	const KEYS = JSON.parse(keysSrc);
+	const cmSrc = (as.match(/private static const HZ40_SCAN_CM:Object = (\{.*\});/) || [])[1];
+	const CM = JSON.parse(cmSrc);
+	const kd = KEYS.find((d) => d[0] === "HideWatchWhileScanning");
+	expect(kd && kd[1] === "b" && kd[2] === 0 && kd[3] === 0 && kd[4] === 1, "HideWatchWhileScanning: [Scanner] bool, default 0 (like the other *WhileScanning keys)");
+	const ki = KEYS.indexOf(kd);
+	expect(KEYS[ki - 1][0] === "ScanVitalsLayout" && KEYS[ki + 1][0] === "HideQuestPopupsWhileScanning", "HideWatchWhileScanning: listed after the main-HUD keys, before the popup keys");
+	expect(Array.isArray(CM.HideWatchWhileScanning) && CM.HideWatchWhileScanning.join(" ").indexOf("0 = shown (default)") >= 0, "HideWatchWhileScanning: the user.ini writer has its comment");
+	const iniHw = ini.indexOf("\nHideWatchWhileScanning=0\n"), iniSec = ini.indexOf("\n[Scanner]\n"), iniNext = ini.indexOf("\n[", iniSec + 2);
+	expect(iniHw > iniSec && iniHw < iniNext, "HideWatchWhileScanning=0 is in default.ini under [Scanner]");
+	expect(CM.HideWatchWhileScanning.every((l) => ini.indexOf("; " + l + "\n") >= 0), "default.ini comment equals the writer's comment");
+	expect(ini.indexOf("ScanVitalsLayout=0\n; 1 = Horizon's watch") >= 0 && ini.indexOf("HideWatchWhileScanning=0\n; ---- scanner popups") >= 0, "default.ini order matches HZ40_SCAN_KEYS");
+	expect(funcBody(as, "hz40ScanIniLines").indexOf("for each(var d:Array in HZ40_SCAN_KEYS)") >= 0 && funcBody(as, "hz40ParseIni").indexOf("this.hz40Def(k)") >= 0 && funcBody(as, "hz40Reset").indexOf("HZ40_SCAN_KEYS") >= 0,
+		"HideWatchWhileScanning is saved, loaded and reset by the generic [Scanner] key list (user.ini, presets, RESET ALL)");
+	// F11 row
+	const tr = { hz40Scan: false, hz40Val: function(k) { return this.v[k] !== undefined ? this.v[k] : 1; }, hz41B: null, v: {} };
+	bindAsMethod(tr, "hz41B", ["v"]);
+	bindAsMethod(tr, "hz41TopRows", []);
+	let rows = tr.hz41TopRows();
+	const hr = rows[rows.length - 1];
+	expect(hr.k === "HideWatchWhileScanning" && hr.t === "b" && hr.l === "HIDE WATCH WHILE SCANNING" && !hr.dis && !hr.sub, "F11 SCANNER: HIDE WATCH WHILE SCANNING row (own switch)");
+	tr.v.HideMainHudWhileScanning = 0;
+	rows = tr.hz41TopRows();
+	expect(!rows[rows.length - 1].dis && rows[2].dis === true, "F11 SCANNER: the row stays live when HIDE HORIZON HUD WHILE SCANNING is off (the kept-vitals rows lock as before)");
+	// behavior
+	const mkS = (style, on) => {
+		const mark = { name: "WatchIconsWidget_mc", visible: true }, outl = { name: "WatchOutline_mc", visible: true }, hidMark = { name: "MissionIconsWidget_mc", visible: false };
+		const h = { hz40Scan: false, hzWatchStyle: style, hz43ScanHid: false, hz43ScanMk: [], hz43Watch: { visible: true }, hz43VanN: 3, units: [mark, outl, hidMark],
+			cfg: { HideWatchWhileScanning: on }, hz40Cfg: function() { return this.cfg; }, hz43VanClip: function(i) { return this.units[i]; }, mark: mark, outl: outl, hidMark: hidMark };
+		bindAsMethod(h, "hz41B", ["v"]); bindAsMethod(h, "hz43VanMarkName", ["name"]); bindAsMethod(h, "hz43ScanWant", []); bindAsMethod(h, "hz43ScanHideSync", []);
+		return h;
+	};
+	const off = mkS(3, 0); off.hz40Scan = true; off.hz43ScanHideSync();
+	expect(!off.hz43ScanHid && off.hz43Watch.visible && off.mark.visible, "HideWatchWhileScanning=0 (default): scanning changes nothing");
+	const on = mkS(4, 1); on.hz40Scan = true; on.hz43ScanHideSync();
+	expect(on.hz43ScanHid && !on.hz43Watch.visible && !on.mark.visible && on.outl.visible && on.hz43ScanMk.length === 1, "scan open: the Horizon face and its live marker widget hide (nothing else)");
+	on.hz43ScanHideSync();
+	expect(on.hz43ScanMk.length === 1, "a repeated edge is a no-op");
+	on.hz40Scan = false; on.hz43ScanHideSync();
+	expect(!on.hz43ScanHid && on.mark.visible && !on.hidMark.visible && on.hz43ScanMk.length === 0, "scan close: only the markers it hid come back (the face redraws in hz43Frame)");
+	const van = mkS(1, 1); van.hz40Scan = true; van.hz43ScanHideSync();
+	expect(!van.hz43ScanHid && van.mark.visible, "vanilla styles 1 / 2 are not changed");
+	const nf = { hz43ScanHid: true, hzWatchStyle: 3, synced: 0, hz43ScanHideSync: function() { this.synced++; }, hzUserHidden: false, hz43VanPlace: function() { throw new Error("no"); } };
+	bindAsMethod(nf, "hz43Frame", []);
+	nf.hz43Frame();
+	expect(nf.synced === 0, "hz43Frame while hidden: one bool read and return (no per-frame work)");
+	const sites = as.split("\n").filter((l) => /this\.hz43ScanHideSync\(\)/.test(l)).length;
+	expect(funcBody(as, "hz40SetScan").indexOf("this.hz43ScanHideSync()") >= 0 && funcBody(as, "hz40Clear").indexOf("this.hz43ScanHideSync()") >= 0 && funcBody(as, "hz40SetLive").indexOf("this.hz43ScanHideSync()") >= 0 && funcBody(as, "hz40ParseIni").indexOf("this.hz43ScanHideSync()") >= 0 && sites === 5,
+		"live on events only: scan edge, safety-net clear, F11 apply, INI load (+ the style-left guard in hz43Frame); " + sites + " call sites");
+	expect(funcBody(as, "hzOnFrame").indexOf("HideWatchWhileScanning") < 0 && funcBody(as, "hzOnFrame").indexOf("hz43Scan") < 0, "no new work in hzOnFrame");
+}
+
 function makeCtClip(name, x, y, opts) {
 	opts = opts || {};
 	return {

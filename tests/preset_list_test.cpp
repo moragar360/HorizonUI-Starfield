@@ -1034,6 +1034,38 @@ int main()
 		Expect(plugin.find("v.PluginVersion({ ${COMMONLIB_PLUGIN_VERSION_MAJOR}, ${COMMONLIB_PLUGIN_VERSION_MINOR}, ${COMMONLIB_PLUGIN_VERSION_PATCH}, ${HZ_FILE_VERSION_BUILD} });") != std::string::npos, "SFSE plugin version uses the file-version build");
 	}
 
+	// r6 item 2: [Scanner] HideWatchWhileScanning (default 0) goes through the C++ preset / user.ini path like the other
+	// scanner keys: a known default.ini key, so Diff keeps it when it differs and drops it when it is the default.
+	{
+		std::ifstream in("Interface/HorizonUI/HorizonUI.default.ini");
+		std::string def((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		const auto sc = def.find("[Scanner]");
+		const auto hw = def.find("\r\nHideWatchWhileScanning=0\r\n");
+		const auto nx = def.find("\r\n[", sc + 1);
+		Expect(sc != std::string::npos && hw != std::string::npos && hw > sc && hw < nx, "r6: default.ini has HideWatchWhileScanning=0 under [Scanner]");
+		const std::string on = "[Scanner]\r\nHideWatchWhileScanning=1\r\n";
+		const std::string full = HZF::Overlay(def, on);
+		HZF::DiffOpt o;   // SaveFromHud's options
+		const auto saved = HZF::Diff(full, def, "", o);
+		Expect(saved.find("[Scanner]") != std::string::npos && saved.find("HideWatchWhileScanning=1") != std::string::npos, "r6: F11 save writes HideWatchWhileScanning=1 to user.ini");
+		const auto savedOff = HZF::Diff(def, def, "", o);
+		Expect(savedOff.find("HideWatchWhileScanning") == std::string::npos, "r6: the default (0) is not written");
+		// main.cpp PresetDiff / PresetToUser: Diff of the text without [Preset], unknown keys and sections dropped
+		HZF::DiffOpt po;
+		po.keepUnknownKeys = false;
+		po.keepUnknownSections = false;
+		const auto body = HZF::Diff(HZF::StripSection(full, "preset"), def, "", po);
+		Expect(body.find("HideWatchWhileScanning=1") != std::string::npos, "r6: a saved preset holds HideWatchWhileScanning=1");
+		const std::string preset = "[Preset]\r\nName=Watch\r\nAuthor=Player\r\nVersion=0.42.0\r\n\r\n" + on;
+		const auto applied = HZF::Diff(HZF::StripSection(preset, "preset"), def, "", po);
+		Expect(applied.find("HideWatchWhileScanning=1") != std::string::npos, "r6: applying that preset sets HideWatchWhileScanning=1");
+		const auto back = HZF::Diff(HZF::StripSection("[Preset]\r\nName=Plain\r\n\r\n[Scanner]\r\nScanUnits=1\r\n", "preset"), def, "", po);
+		Expect(back.find("HideWatchWhileScanning") == std::string::npos, "r6: a preset without the key puts it back to the default (rule 2)");
+		HZF::Doc d = HZF::Parse(HZF::Overlay(def, applied));
+		auto s2 = d.Find("scanner");
+		Expect(s2 && s2->kv.count("hidewatchwhilescanning") && s2->kv["hidewatchwhilescanning"].second == "1", "r6: the merged text the HUD reads has HideWatchWhileScanning=1");
+	}
+
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";
 		return 1;
