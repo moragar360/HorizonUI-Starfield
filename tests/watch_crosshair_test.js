@@ -1291,7 +1291,7 @@ expect(writeScale.outlineClip.scaleX === 0.8 && writeScale.capClip.alpha === 0, 
 	const iniHw = ini.indexOf("\nHideWatchWhileScanning=0\n"), iniSec = ini.indexOf("\n[Scanner]\n"), iniNext = ini.indexOf("\n[", iniSec + 2);
 	expect(iniHw > iniSec && iniHw < iniNext, "HideWatchWhileScanning=0 is in default.ini under [Scanner]");
 	expect(CM.HideWatchWhileScanning.every((l) => ini.indexOf("; " + l + "\n") >= 0), "default.ini comment equals the writer's comment");
-	expect(ini.indexOf("ScanVitalsLayout=0\n; 1 = Horizon's watch") >= 0 && ini.indexOf("HideWatchWhileScanning=0\n; ---- scanner popups") >= 0, "default.ini order matches HZ40_SCAN_KEYS");
+	expect(ini.indexOf("ScanVitalsLayout=0\n; 1 = the watch hides") >= 0 && ini.indexOf("HideWatchWhileScanning=0\n; ---- scanner popups") >= 0, "default.ini order matches HZ40_SCAN_KEYS");
 	expect(funcBody(as, "hz40ScanIniLines").indexOf("for each(var d:Array in HZ40_SCAN_KEYS)") >= 0 && funcBody(as, "hz40ParseIni").indexOf("this.hz40Def(k)") >= 0 && funcBody(as, "hz40Reset").indexOf("HZ40_SCAN_KEYS") >= 0,
 		"HideWatchWhileScanning is saved, loaded and reset by the generic [Scanner] key list (user.ini, presets, RESET ALL)");
 	// F11 row
@@ -1300,36 +1300,96 @@ expect(writeScale.outlineClip.scaleX === 0.8 && writeScale.capClip.alpha === 0, 
 	bindAsMethod(tr, "hz41TopRows", []);
 	let rows = tr.hz41TopRows();
 	const hr = rows[rows.length - 1];
-	expect(hr.k === "HideWatchWhileScanning" && hr.t === "b" && hr.l === "HIDE WATCH WHILE SCANNING" && !hr.dis && !hr.sub, "F11 SCANNER: HIDE WATCH WHILE SCANNING row (own switch)");
+	expect(hr.k === "HideWatchWhileScanning" && hr.t === "b" && hr.l === "HIDE WATCH WHILE SCANNING" && !hr.dis && !hr.sub && /VANILLA/.test(hr.note) && /HORIZON/.test(hr.note) && /alerts stay/.test(hr.note), "F11 SCANNER: HIDE WATCH WHILE SCANNING row (own switch; r7 note: every watch style, alerts stay)");
 	tr.v.HideMainHudWhileScanning = 0;
 	rows = tr.hz41TopRows();
 	expect(!rows[rows.length - 1].dis && rows[2].dis === true, "F11 SCANNER: the row stays live when HIDE HORIZON HUD WHILE SCANNING is off (the kept-vitals rows lock as before)");
-	// behavior
-	const mkS = (style, on) => {
+	// behavior (r7: every watch style; S-5 module / latch / ARRANGE checks)
+	const mkS = (style, on, src) => {
 		const mark = { name: "WatchIconsWidget_mc", visible: true }, outl = { name: "WatchOutline_mc", visible: true }, hidMark = { name: "MissionIconsWidget_mc", visible: false };
-		const h = { hz40Scan: false, hzWatchStyle: style, hz43ScanHid: false, hz43ScanMk: [], hz43Watch: { visible: true }, hz43VanN: 3, units: [mark, outl, hidMark],
-			cfg: { HideWatchWhileScanning: on }, hz40Cfg: function() { return this.cfg; }, hz43VanClip: function(i) { return this.units[i]; }, mark: mark, outl: outl, hidMark: hidMark };
-		bindAsMethod(h, "hz41B", ["v"]); bindAsMethod(h, "hz43VanMarkName", ["name"]); bindAsMethod(h, "hz43ScanWant", []); bindAsMethod(h, "hz43ScanHideSync", []);
+		const cap = { name: "instance66", visible: true }, temp = { name: "Temperature_mc", visible: true };
+		// alerts the user wants in vanilla mode; real captures never hold them (hz43VanSkip), they are listed here as a mis-capture guard
+		const bio = { name: "BioAlertText", visible: true }, loc = { name: "LocationAlertText", visible: true }, ring = { name: "EnemyDetectionAnim_mc", visible: true }, env = { name: "EnvAlertText", visible: true };
+		const h = { hz40Scan: false, hz40Latch: false, hz30Mod: { scanner: 1 }, hzArrange: false, hzWatchStyle: style, hz43ScanHid: false, hz43ScanMk: [], hz43ScanSt: 0, hz43Watch: { visible: true },
+			units: [mark, outl, hidMark, cap, temp, bio, loc, ring, env], HZ43_VAN_FOLLOW: ["LocationAlertText"], int: function(n) { return n | 0; }, shown: [],
+			cfg: { HideWatchWhileScanning: on }, hz40Cfg: function() { return this.cfg; }, hz43VanClip: function(i) { return this.units[i]; },
+			hz43VanShowClip: function(d) { this.shown.push(d.name); if (!d.visible) d.visible = true; },
+			mark: mark, outl: outl, hidMark: hidMark, cap: cap, temp: temp, bio: bio, loc: loc, ring: ring, env: env };
+		h.hz43VanN = h.units.length; h.hz43VanGot = h.units.map(() => 1);
+		bindAsMethod(h, "hz41B", ["v"]); bindAsMethod(h, "hz43VanMarkName", ["name"]); bindAsMethod(h, "hz41ScanHideOn", []); bindAsMethod(h, "hz43VanSkip", ["name"]);
+		bindAsMethod(h, "hz43ScanWant", []);
+		const bindSrc = (name, args) => { h[name] = Function.apply(null, args.concat(["with(this){\n" + asInnerOf(src || as, name) + "\n}"])).bind(h); };
+		bindSrc("hz43ScanPiece", ["d"]); bindSrc("hz43ScanHideSync", []);
 		return h;
 	};
+	const alertsUp = (h) => h.bio.visible && h.loc.visible && h.ring.visible && h.env.visible;
 	const off = mkS(3, 0); off.hz40Scan = true; off.hz43ScanHideSync();
 	expect(!off.hz43ScanHid && off.hz43Watch.visible && off.mark.visible, "HideWatchWhileScanning=0 (default): scanning changes nothing");
+	const offV = mkS(1, 0); offV.hz40Scan = true; offV.hz43ScanHideSync();
+	expect(!offV.hz43ScanHid && offV.outl.visible && offV.mark.visible && offV.cap.visible, "HideWatchWhileScanning=0 (default): vanilla style unchanged while scanning");
 	const on = mkS(4, 1); on.hz40Scan = true; on.hz43ScanHideSync();
-	expect(on.hz43ScanHid && !on.hz43Watch.visible && !on.mark.visible && on.outl.visible && on.hz43ScanMk.length === 1, "scan open: the Horizon face and its live marker widget hide (nothing else)");
+	expect(on.hz43ScanHid && !on.hz43Watch.visible && !on.mark.visible && on.outl.visible && on.cap.visible && on.hz43ScanMk.length === 1 && alertsUp(on), "Horizon 3 / 4, scan open: the face and its live marker widget hide (nothing else, alerts stay)");
 	on.hz43ScanHideSync();
 	expect(on.hz43ScanMk.length === 1, "a repeated edge is a no-op");
 	on.hz40Scan = false; on.hz43ScanHideSync();
-	expect(!on.hz43ScanHid && on.mark.visible && !on.hidMark.visible && on.hz43ScanMk.length === 0, "scan close: only the markers it hid come back (the face redraws in hz43Frame)");
-	const van = mkS(1, 1); van.hz40Scan = true; van.hz43ScanHideSync();
-	expect(!van.hz43ScanHid && van.mark.visible, "vanilla styles 1 / 2 are not changed");
-	const nf = { hz43ScanHid: true, hzWatchStyle: 3, synced: 0, hz43ScanHideSync: function() { this.synced++; }, hzUserHidden: false, hz43VanPlace: function() { throw new Error("no"); } };
+	expect(!on.hz43ScanHid && on.mark.visible && !on.hidMark.visible && on.hz43ScanMk.length === 0, "Horizon, scan close: only the markers it hid come back (the face redraws in hz43Frame)");
+	for (const st of [1, 2]) {
+		const van = mkS(st, 1); van.hz40Scan = true; van.hz43ScanHideSync();
+		expect(van.hz43ScanHid && !van.outl.visible && !van.mark.visible && !van.cap.visible && !van.temp.visible && van.hz43ScanSt === st, "r7 vanilla style " + st + ", scan open: the captured watch pieces hide (outline, marker widget, cap, readouts)");
+		expect(alertsUp(van), "r7 vanilla style " + st + ": BioAlertText, LocationAlertText, EnvAlertText and the enemy ring stay shown");
+		expect(van.hz43Watch.visible === true, "r7 vanilla style " + st + ": the (unused) Horizon face is not touched");
+		expect(van.hz43ScanMk.length === 4 && van.hz43ScanMk.indexOf(van.hidMark) < 0, "r7 vanilla style " + st + ": only visible pieces are recorded (a game-hidden piece stays the game's)");
+		van.hz40Scan = false; van.hz43ScanHideSync();
+		expect(!van.hz43ScanHid && van.outl.visible && van.mark.visible && van.cap.visible && van.temp.visible && !van.hidMark.visible && van.shown.length === 4, "r7 vanilla style " + st + ", scan close: the pieces come back through hz43VanShowClip (the game's own formulas), the game-hidden one stays hidden");
+	}
+	// live F11 toggles (F11 apply calls the sync), both directions, both families
+	for (const st of [1, 3]) {
+		const lv = mkS(st, 0); lv.hz40Scan = true; lv.hz43ScanHideSync();
+		lv.cfg.HideWatchWhileScanning = 1; lv.hz43ScanHideSync();
+		expect(lv.hz43ScanHid && !lv.mark.visible, "r7 style " + st + ": F11 switch on while scanning hides at once");
+		lv.cfg.HideWatchWhileScanning = 0; lv.hz43ScanHideSync();
+		expect(!lv.hz43ScanHid && lv.mark.visible && lv.outl.visible && alertsUp(lv), "r7 style " + st + ": F11 switch off while scanning shows at once");
+	}
+	// style change while hidden (INI reload): give back, then hide the new style's pieces
+	const sw = mkS(3, 1); sw.hz40Scan = true; sw.hz43ScanHideSync();
+	sw.hzWatchStyle = 1; sw.hz43ScanHideSync();
+	expect(sw.hz43ScanHid && sw.hz43ScanSt === 1 && !sw.outl.visible && !sw.mark.visible && alertsUp(sw), "r7 style 3 -> 1 while scanning: the vanilla pieces hide instead");
+	sw.hzWatchStyle = 0; sw.hz43ScanHideSync();
+	expect(!sw.hz43ScanHid && sw.outl.visible && sw.mark.visible, "r7 style -> 0 (OFF) while scanning: everything this switch hid comes back");
+	// S-5: Scanner module, scan latch, ARRANGE
+	const s5 = (f) => { const h = mkS(1, 1); h.hz40Scan = true; f(h); h.hz43ScanHideSync(); return h; };
+	expect(!s5((h) => { h.hz30Mod = {}; }).hz43ScanHid, "r7 S-5: no Scanner module = no hide (a stale HideWatchWhileScanning=1 does nothing)");
+	expect(!s5((h) => { h.hz40Latch = true; }).hz43ScanHid, "r7 S-5: a latched scan (safety net) = no hide");
+	expect(!s5((h) => { h.hzArrange = true; }).hz43ScanHid, "r7 S-5: ARRANGE = no hide");
+	expect(funcBody(as, "hz43ScanWant").indexOf("this.hz41ScanHideOn()") >= 0, "r7 S-5: hz43ScanWant uses hz41ScanHideOn (same checks as the other scan hides)");
+	expect(funcBody(as, "hzArrEnter").indexOf("this.hz43ScanHideSync()") >= 0 && funcBody(as, "hzArrExit").indexOf("this.hz43ScanHideSync()") >= 0, "r7 S-5: ARRANGE enter / exit are sync edges");
+	// mutant: a piece check that lets the alerts through (hz43ScanPiece -> true) hides BioAlertText / LocationAlertText; the checks above catch it
+	const pieceBody = funcBody(as, "hz43ScanPiece");
+	const mutSrc2 = as.replace(pieceBody, "{\n         return d != null;\n      }");
+	const mu2 = mkS(1, 1, mutSrc2); mu2.hz40Scan = true; mu2.hz43ScanHideSync();
+	expect(mutSrc2 !== as && !alertsUp(mu2) && !mu2.bio.visible && !mu2.loc.visible, "r7 mutant (piece check removed): BioAlertText and LocationAlertText would hide, so the alert checks above FAIL on it");
+	// per frame while hidden: the restorers of the same style skip their writes (one compare), no new work in hzOnFrame
+	const nf = { hz43ScanHid: true, hz43ScanSt: 3, hzWatchStyle: 3, synced: 0, hz43ScanHideSync: function() { this.synced++; }, hzUserHidden: false, hz43VanPlace: function() { throw new Error("no"); } };
 	bindAsMethod(nf, "hz43Frame", []);
 	nf.hz43Frame();
-	expect(nf.synced === 0, "hz43Frame while hidden: one bool read and return (no per-frame work)");
+	expect(nf.synced === 0, "hz43Frame while hidden: one compare and return (no per-frame work)");
+	const nl = { hz43ScanHid: true, hz43ScanSt: 1, hzWatchStyle: 1, hz43VanPlace: function() { throw new Error("no"); }, hz43VanHorizon: function() { throw new Error("no"); } };
+	bindAsMethod(nl, "hz43VanLate", []);
+	let lateRan = false; try { nl.hz43VanLate(); } catch (e) { lateRan = true; }
+	expect(!lateRan, "r7: hz43VanLate (exitFrame) skips the vanilla re-show / Horizon marker re-show while hidden");
+	const ns = { hz43ScanHid: true, hz43ScanSt: 2, hzWatchStyle: 2, hz43HideStyle: 2, hzHideVanillaWatch: false, hz43VanShown: 1, hzHideCache: [1],
+		hz43ShowVanilla: function() { throw new Error("no"); }, hz43VanRestoreHid: function() { throw new Error("no"); }, hz43VanBlgChrome: function() { throw new Error("no"); } };
+	bindAsMethod(ns, "hz43SyncHide", []);
+	let reShown = false; try { ns.hz43SyncHide(); } catch (e) { reShown = true; }
+	expect(!reShown && ns.hzHideCache[0] === 1, "r7: hz43SyncHide (per frame) does not re-show the vanilla watch while hidden");
+	ns.hz43ScanHid = false; let threw = false; try { ns.hz43SyncHide(); } catch (e) { threw = true; }
+	expect(threw, "r7: hz43SyncHide re-shows as before once released");
 	const sites = as.split("\n").filter((l) => /this\.hz43ScanHideSync\(\)/.test(l)).length;
-	expect(funcBody(as, "hz40SetScan").indexOf("this.hz43ScanHideSync()") >= 0 && funcBody(as, "hz40Clear").indexOf("this.hz43ScanHideSync()") >= 0 && funcBody(as, "hz40SetLive").indexOf("this.hz43ScanHideSync()") >= 0 && funcBody(as, "hz40ParseIni").indexOf("this.hz43ScanHideSync()") >= 0 && sites === 5,
-		"live on events only: scan edge, safety-net clear, F11 apply, INI load (+ the style-left guard in hz43Frame); " + sites + " call sites");
+	expect(funcBody(as, "hz40SetScan").indexOf("this.hz43ScanHideSync()") >= 0 && funcBody(as, "hz40Clear").indexOf("this.hz43ScanHideSync()") >= 0 && funcBody(as, "hz40SetLive").indexOf("this.hz43ScanHideSync()") >= 0 && funcBody(as, "hz40ParseIni").indexOf("this.hz43ScanHideSync()") >= 0 && sites === 7,
+		"live on events only: scan edge, safety-net clear, F11 apply, INI load, ARRANGE enter / exit (+ the style-change guard in hz43Frame); " + sites + " call sites");
 	expect(funcBody(as, "hzOnFrame").indexOf("HideWatchWhileScanning") < 0 && funcBody(as, "hzOnFrame").indexOf("hz43Scan") < 0, "no new work in hzOnFrame");
+	const sb = funcBody(as, "hz43ScanHideSync");
+	expect(sb.indexOf("hzFindByName") < 0 && sb.indexOf("getChildAt") < 0 && sb.indexOf("getChildByName") < 0 && sb.indexOf(".alpha") < 0 && sb.indexOf("hzBlg.visible") < 0, "r7: no search, no alpha, never the group (per-piece visible only)");
 }
 
 function makeCtClip(name, x, y, opts) {

@@ -6677,6 +6677,7 @@
          this.hz42VLOrig = this.hz42VL;   // v0.42.0: CANCEL restores the vitals layout
          this.hz42ScOrig = {"x":this.hz42ScX,"y":this.hz42ScY,"s":this.hz42ScS};   // v0.42.0 r2: CANCEL restores the scope chip
          this.hzArrange = true;
+         try { this.hz43ScanHideSync(); } catch(e43s:Error) { }   // r7 (S-5): ARRANGE ends HideWatchWhileScanning (event edge)
          this.hzArrDrag = null;
          this.hzArrTbDrag = false;
          this.hzArrSel = null;
@@ -6711,6 +6712,7 @@
       {
          if(!this.hzArrange) { return; }
          this.hzArrange = false;
+         try { this.hz43ScanHideSync(); } catch(e43s:Error) { }   // r7 (S-5): back from ARRANGE (event edge)
          if(this.hz41SA) { this.hz41SAEnd(save); }   // v0.41.0: keep or restore the pending [Scanner] positions
          this.hzArrDrag = null;
          this.hzArrTbDrag = false;
@@ -18263,7 +18265,7 @@
       // hides its own cards while the Horizon scanner is open. Types: b 0/1, i int, f float, z size, o -1 or a number,
       // p position (-1, L/R/C+n, T/B/C+n), s hex.
       private static const HZ40_SCAN_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideWatchWhileScanning","b",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];
-      private static const HZ40_SCAN_CM:Object = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"],"HideWatchWhileScanning":["1 = Horizon's watch (WatchStyle 3 / 4: the face and its marker icons) hides while the hand scanner is open; 0 = shown (default)","The vanilla watch styles (1 / 2) are not changed."]};
+      private static const HZ40_SCAN_CM:Object = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"],"HideWatchWhileScanning":["1 = the watch hides while the hand scanner is open, in every WatchStyle that shows one (1 / 2 vanilla: the watch pieces;","3 / 4 Horizon: the face and its marker icons); the planet / bio alerts and the enemy ring still show. 0 = shown (default)"]};
       private static const HZ40_POPUP:Array = ["HideQuestPopupsWhileScanning","DimTraitPopupDuringBioscan","TraitPopupDim"];
       private static const HZ40_OPA_V:Array = [-1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6];
       private static const HZ40_OPA_N:Array = ["FOLLOW HUD","0.20","0.30","0.40","0.50","0.60","0.70","0.80","0.90","1.00","1.10","1.20","1.30","1.40","1.50","1.60"];
@@ -18950,7 +18952,7 @@
             rows[2].note = "Only used while HIDE HORIZON HUD WHILE SCANNING is on (the HUD stays whole otherwise)";
          }
          // r6: its own switch (not under the HUD hide): Horizon's watch only, while the scanner is open
-         rows.push({"k":"HideWatchWhileScanning","l":"HIDE WATCH WHILE SCANNING","t":"b","note":"Horizon DIGITAL / ANALOG watch and its marker icons; the vanilla watch styles are not changed"});
+         rows.push({"k":"HideWatchWhileScanning","l":"HIDE WATCH WHILE SCANNING","t":"b","note":"Any watch style (VANILLA, VANILLA + HORIZON, HORIZON DIGITAL / ANALOG); alerts stay"});
          return rows;
       }
 
@@ -20514,10 +20516,12 @@
       private var hz43FoSc:Number = 1;
       private var hz43FoMoved:Boolean = false;   // true while a follower sits off its native place
       private var hz43FoLsn:DisplayObjectContainer = null;   // r7 (S-1): the BottomLeftGroup_mc that has hz43FoOnAdd
-      // r6: [Scanner] HideWatchWhileScanning. hz43ScanHid = the Horizon face is hidden for the scan; hz43ScanMk = the marker
-      // widgets this switch hid (only those are shown again).
+      // r6: [Scanner] HideWatchWhileScanning. hz43ScanHid = the watch is hidden for the scan; hz43ScanMk = the pieces this
+      // switch hid (only those are shown again). r7: every watch style (1 / 2 vanilla, 3 / 4 Horizon); hz43ScanSt = the
+      // WatchStyle the hide was made for (a style change while hidden gives the pieces back and hides the new style's).
       private var hz43ScanHid:Boolean = false;
       private var hz43ScanMk:Array = [];
+      private var hz43ScanSt:int = 0;
       private var hz43DumpSig:String = "";
       private var hz43HideStyle:int = -1;
       private var hz43Kid:Array = null;
@@ -20773,6 +20777,7 @@
             this.hzHideCache = null;
             if(showVan) { this.hz43VanShown = 0; this.hz43VanTries = 0; }
          }
+         if(this.hz43ScanHid && this.hz43ScanSt == this.hzWatchStyle) { return; }   // r7: HideWatchWhileScanning holds the vanilla watch
          if(showVan && this.hz43VanShown == 0)
          {
             if(this.hz43ShowVanilla()) { this.hz43VanShown = 1; }
@@ -22110,43 +22115,65 @@
          this.hz43VanDump(marks ? "write-marks" : "write");
       }
 
-      // r6: [Scanner] HideWatchWhileScanning (default 0). True while the hand scanner is open, the switch is on and a Horizon
-      // face (WatchStyle 3 / 4) is in use. The vanilla styles (1 / 2) are the game's own watch and are not changed.
+      // r6: [Scanner] HideWatchWhileScanning (default 0). True while the hand scanner is open and the switch is on, with a
+      // watch shown: r7 (user 2026-11-10 14:00) every watch style, 1 / 2 (vanilla) and 3 / 4 (Horizon). WatchStyle 0 (OFF)
+      // has no watch to hide. r7 (S-5): the same Scanner-module, scan-latch and ARRANGE checks as the other scan hides
+      // (hz41ScanHideOn), so a stale key without the Scanner module does nothing.
       private function hz43ScanWant() : Boolean
       {
-         return this.hz40Scan && (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && this.hz41B(this.hz40Cfg().HideWatchWhileScanning);
+         return this.hz41ScanHideOn() && this.hzWatchStyle >= 1 && this.hzWatchStyle <= 4 && this.hz41B(this.hz40Cfg().HideWatchWhileScanning);
+      }
+      // r7: a captured watch unit this switch may hide in the vanilla styles. The units are what the watch capture /
+      // ARRANGE moves; the alerts the user wants in vanilla mode (BioAlertText, EnvAlertText, LocationAlertText, the
+      // enemy ring EnemyDetectionAnim_mc, Bio* / Env*) are never units (hz43VanSkip), and this check keeps them out anyway.
+      private function hz43ScanPiece(d:DisplayObject) : Boolean
+      {
+         if(!d) { return false; }
+         var n:String = d.name;
+         return !this.hz43VanSkip(n) && HZ43_VAN_FOLLOW.indexOf(n) < 0;
       }
       // Purpose: apply HideWatchWhileScanning on its edges only (scan open / close in hz40SetScan, the hz40Clear safety nets,
-      // INI load and F11 apply at the end of hz40ParseIni / hz40SetLive). Hides the Horizon face and the live marker widgets
-      // that ride on it (the per-piece hide keeps them for faces 3 / 4); on release shows only the markers it hid, and
-      // hz43Frame draws the face again as before. No polling, no search: the units are the captured list.
+      // INI load and F11 apply at the end of hz40ParseIni / hz40SetLive, r7: ARRANGE enter / exit). Horizon faces 3 / 4: hides
+      // the face and the live marker widgets that ride on it. r7 vanilla 1 / 2: hides the visible captured watch units
+      // (per-piece visible, never the group, never an alert). On release shows only the pieces it hid (vanilla pieces through
+      // hz43VanShowClip, the game's own formulas for the four payload clips); hz43Frame draws the Horizon face again.
+      // While hidden, the per-frame restorers of the same style (hz43Frame, hz43VanLate, hz43SyncHide) skip their writes.
+      // No polling, no search: the units are the captured list.
       // Inputs: none. Outputs: visible writes on the edge. Author: Moragar. Last modified: 2026-11-10.
       private function hz43ScanHideSync() : void
       {
          var want:Boolean = this.hz43ScanWant();
-         if(want == this.hz43ScanHid) { return; }
-         this.hz43ScanHid = want;
+         if(want == this.hz43ScanHid && (!want || this.hz43ScanSt == this.hzWatchStyle)) { return; }
          var d:DisplayObject;
-         if(want)
+         if(this.hz43ScanHid)
          {
-            if(this.hz43Watch && this.hz43Watch.visible) { this.hz43Watch.visible = false; }
-            var i:int = 0;
-            while(i < this.hz43VanN)
+            var van:Boolean = this.hz43ScanSt == 1 || this.hz43ScanSt == 2;
+            var k:int = 0;
+            while(k < this.hz43ScanMk.length)
             {
-               d = this.hz43VanClip(i);
-               if(d && d.visible && this.hz43VanMarkName(d.name)) { d.visible = false; this.hz43ScanMk.push(d); }
-               i++;
+               d = this.hz43ScanMk[k] as DisplayObject;
+               if(d && !d.visible)
+               {
+                  if(van) { this.hz43VanShowClip(d); }
+                  else { d.visible = true; }
+               }
+               k++;
             }
-            return;
+            this.hz43ScanMk = [];
+            this.hz43ScanHid = false;
          }
-         var k:int = 0;
-         while(k < this.hz43ScanMk.length)
+         if(!want) { return; }
+         this.hz43ScanHid = true;
+         this.hz43ScanSt = this.hzWatchStyle;
+         var horizon:Boolean = this.hzWatchStyle == 3 || this.hzWatchStyle == 4;
+         if(horizon && this.hz43Watch && this.hz43Watch.visible) { this.hz43Watch.visible = false; }
+         var i:int = 0;
+         while(i < this.hz43VanN)
          {
-            d = this.hz43ScanMk[k] as DisplayObject;
-            if(d && !d.visible) { d.visible = true; }
-            k++;
+            d = int(this.hz43VanGot[i]) != 0 ? this.hz43VanClip(i) : null;
+            if(d && d.visible && (horizon ? this.hz43VanMarkName(d.name) : this.hz43ScanPiece(d))) { d.visible = false; this.hz43ScanMk.push(d); }
+            i++;
          }
-         this.hz43ScanMk = [];
       }
 
       // v0.44 r6 (watch ghost): place each HZ43_VAN_FOLLOW clip with the last non-marker Arrange write, from the
@@ -22608,6 +22635,7 @@
 
       private function hz43VanLate() : void
       {
+         if(this.hz43ScanHid && this.hz43ScanSt == this.hzWatchStyle) { return; }   // r7: HideWatchWhileScanning holds (one compare)
          if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4) { this.hz43VanHorizon(); }
          else { this.hz43VanPlace(); }
       }
@@ -22784,8 +22812,8 @@
       {
          if(this.hz43ScanHid)   // r6 HideWatchWhileScanning: set and cleared by hz43ScanHideSync on events; one bool read otherwise
          {
-            if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4) { return; }
-            this.hz43ScanHideSync();   // the style left 3 / 4 while hidden (INI reload): give the pieces back once
+            if(this.hz43ScanSt == this.hzWatchStyle) { return; }
+            this.hz43ScanHideSync();   // r7: the style changed while hidden (INI reload): give the pieces back, then hide the current style's once
          }
          var show:Boolean = (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && !this.hzUserHidden;
          if(!show) { this.hz43VanPlace(); }
