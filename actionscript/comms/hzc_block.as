@@ -1108,6 +1108,10 @@
       private var hzcRx:Array = [];          // {it, st, n, k, c, w, h, sig, key, t0, vis, tx, linked, src, paired, blamed, rebound, reboundAt}
       private var hzcRxGone:Array = [];      // {key, t0} linked binding cards that ended before their DLL note arrived
       private var hzcRxWait:Array = [];      // {it, f} text not ready yet
+      // r6: identical messages while one is on screen are one card with an xN count (hzcRxSame). e.cnt = the count,
+      // e.pend = game lines of the merged pushes not seen yet, e.dups = those lines once seen (covered, kept in the list).
+      private var hzcRxPendN:int = 0;        // sum of e.pend; hzcRxLink looks for a merged line only while this is above 0
+      private var hzcRxDupN:int = 0;         // sum of e.dups lengths; hzcRxLink skips a held line only while this is above 0
       private var hzcRxLayer:Sprite = null;
       private var hzcMsgHomeLogged:Boolean = false;
       private var hzcRxOff:Boolean = false;  // after three message misses: lines stay the game's until the cooldown or a settings reload
@@ -1667,6 +1671,7 @@
          {
             var old:Object = this.hzcRx.shift();
             this.hzcRxShow(old);
+            this.hzcRxEnd(old);
             this.hzcRxDrop(old);
          }
          return "queued";
@@ -1744,11 +1749,23 @@
                var rage:int = now - int(eR.reboundAt);
                if(rage >= 0 && rage < HZC_RX_PAIR) { eR.rebound = false; return "queued"; }
             }
+            // r6: the same message while its card is still up: one card, xN, its time starts again (no new card)
+            var same:Object = this.hzcRxSame(String(kind),String(sub),String(name),String(value),key);
+            if(same != null)
+            {
+               same.cnt = int(same.cnt) > 1 ? int(same.cnt) + 1 : 2;
+               same.pend = int(same.pend) + 1;
+               this.hzcRxPendN++;
+               same.vis = 0;
+               same.sig = "";
+               return "merged x" + int(same.cnt);
+            }
             this.hzcRx.push({"it":null,"st":1,"n":String(name),"k":k,"c":null,"w":0,"h":0,"sig":"","key":key,"t0":now,"vis":0,"tx":String(raw),"linked":false,"src":"d","paired":false,"blamed":false,"kind":String(kind),"sub":String(sub),"value":String(value),"covered":false,"rebound":false,"reboundAt":0});
             if(this.hzcRx.length > 8)
             {
                var old:Object = this.hzcRx.shift();
                this.hzcRxShow(old);
+               this.hzcRxEnd(old);
                this.hzcRxDrop(old);
             }
             return "queued";
@@ -1862,6 +1879,7 @@
             var it:* = arr[i];
             i++;
             if(it == null || this.hzcRxFind(it) != null) { continue; }
+            if(this.hzcRxDupN > 0 && this.hzcRxDupOf(it) != null) { continue; }   // r6: a held line of a merged card
             var tx:String = this.hzcRxItemTx(it);
             var n:int = this.hzcRxWaits(it);
             if(tx.length == 0 && n < 3) { continue; }
@@ -1873,6 +1891,7 @@
                before.it = it;
                before.linked = true;
             }
+            else if(this.hzcRxPendN > 0) { this.hzcRxTakeDup(it,tx); }   // r6: the line of a merged push
          }
       }
       private function hzcRxSlot(m:*) : Boolean
@@ -1891,7 +1910,7 @@
       // Only a line this movie covered comes back. Every other HUD line keeps the game's fade.
       private function hzcRxUnhide() : void
       {
-         for each(var e:Object in this.hzcRx) { this.hzcRxShow(e); }
+         for each(var e:Object in this.hzcRx) { this.hzcRxShow(e); this.hzcRxEnd(e); }
       }
       // One miss is recoverable: the next message draws again. The caller turns the card off after three.
       private function hzcRxHit(err:Error) : void
@@ -1904,6 +1923,65 @@
       private function hzcRxAdded(ev:Event) : void
       {
          if(ev == null) { return; }
+      }
+      // r6: the live card of this exact message (same text key, kind, subtype, name and value), or null.
+      private function hzcRxSame(kind:String, sub:String, name:String, value:String, key:String) : Object
+      {
+         for each(var e:Object in this.hzcRx)
+         {
+            if(e == null || e.st != 1 || e.key != key) { continue; }
+            if(String(e.kind) != kind || String(e.sub) != sub || String(e.n) != name || String(e.value) != value) { continue; }
+            return e;
+         }
+         return null;
+      }
+      // r6: the merged card that holds this game line, or null.
+      private function hzcRxDupOf(it:*) : Object
+      {
+         for each(var e:Object in this.hzcRx)
+         {
+            if(e == null || e.dups == null) { continue; }
+            var held:Array = e.dups;
+            if(held.indexOf(it) >= 0) { return e; }
+         }
+         return null;
+      }
+      // r6: a new game line of a merged push. The card keeps its own line; this one is covered and held, so the
+      // column shows one card. When the card's line leaves, hzcRxClaim moves the card to a held line (its time goes on).
+      private function hzcRxTakeDup(it:*, tx:String) : void
+      {
+         var key:String = this.hzcRxKey(tx);
+         if(key == null) { return; }
+         for each(var e:Object in this.hzcRx)
+         {
+            if(e == null || e.st != 1 || int(e.pend) <= 0 || !this.hzcRxKeyMatch(e.key,key)) { continue; }
+            e.pend = int(e.pend) - 1;
+            this.hzcRxPendN = Math.max(0,this.hzcRxPendN - 1);
+            if(e.dups == null) { e.dups = []; }
+            var held:Array = e.dups;
+            held.push(it);
+            this.hzcRxDupN++;
+            try
+            {
+               var im:* = it.Internal_mc;
+               if(im != null && im.Text_tf != null) { im.Text_tf.visible = false; }
+               if(im != null && im.Background_mc != null) { im.Background_mc.visible = false; }
+            }
+            catch(eC:Error) { }
+            return;
+         }
+      }
+      // r6: a card ended (its line left, its time ran out, overflow, cards off). Its held lines get their children back.
+      private function hzcRxEnd(e:Object) : void
+      {
+         if(e == null) { return; }
+         if(int(e.pend) > 0) { this.hzcRxPendN = Math.max(0,this.hzcRxPendN - int(e.pend)); }
+         e.pend = 0;
+         var d:Array = e.dups;
+         e.dups = null;
+         if(d == null) { return; }
+         this.hzcRxDupN = Math.max(0,this.hzcRxDupN - d.length);
+         for each(var it:Object in d) { if(it != null && it !== e.it) { this.hzcRxReveal(it); } }
       }
       private function hzcRxShow(e:Object) : void
       {
@@ -1926,9 +2004,11 @@
       // everything back to the game's lines (ReactionCard=0, an error)
       private function hzcRxAll() : void
       {
-         for each(var e:Object in this.hzcRx) { this.hzcRxShow(e); this.hzcRxDrop(e); if(e != null) { e.st = 0; } }
+         for each(var e:Object in this.hzcRx) { this.hzcRxShow(e); this.hzcRxEnd(e); this.hzcRxDrop(e); if(e != null) { e.st = 0; } }
          this.hzcRx = [];
          this.hzcRxGone = [];
+         this.hzcRxPendN = 0;
+         this.hzcRxDupN = 0;
       }
       private function hzcRxApply() : void
       {
@@ -1994,18 +2074,20 @@
                   {
                      this.hzcRxReveal(e0.it);
                      e0.covered = false;
+                     var held:Array = e0.dups;
+                     if(held != null && held.indexOf(nxt) >= 0) { held.splice(held.indexOf(nxt),1); this.hzcRxDupN = Math.max(0,this.hzcRxDupN - 1); }
                      e0.it = nxt;
                      e0.linked = true;
                      e0.rebound = true;
                      e0.reboundAt = now;
                   }
-                  else { this.hzcRxShow(e0); this.hzcRxRemember(e0); this.hzcRxDrop(e0); continue; }
+                  else { this.hzcRxShow(e0); this.hzcRxRemember(e0); this.hzcRxEnd(e0); this.hzcRxDrop(e0); continue; }
                }
             }
             else
             {
                if(slot) { e0.vis = int(e0.vis) + dt; }
-               if(int(e0.vis) >= HZC_RX_VIS) { this.hzcRxShow(e0); this.hzcRxDrop(e0); continue; }
+               if(int(e0.vis) >= HZC_RX_VIS) { this.hzcRxShow(e0); this.hzcRxEnd(e0); this.hzcRxDrop(e0); continue; }
             }
             keep.push(e0);
          }
@@ -2371,6 +2453,7 @@
          var subFs:Number = Math.max(13,Math.round(13 * z));
          var chipFs:Number = Math.max(13,Math.round(13 * z));
          var title:String = String(hit.title);
+         if(int(e.cnt) > 1) { title = title + "  x" + int(e.cnt); }   // r6: merged identical messages
          value = String(hit.value);
          var phrase:String = "";
          if(kind == "unavailable" || kind == "credits" || kind == "crime") { phrase = raw; }
@@ -2507,7 +2590,7 @@
          this.hzcSet(nm,String(e.n).toUpperCase(),"nm",fs,this.hzcSpeakerCol(),Math.round(fs * 0.1 * 10) / 10,"left");
          var lb:TextField = this.hzcField(true);
          if(lb == null) { return; }
-         this.hzcSet(lb,String(HZC_RX_LBL[e.k]),"nm",fs,col,Math.round(fs * 0.12 * 10) / 10,"left");
+         this.hzcSet(lb,String(HZC_RX_LBL[e.k]) + (int(e.cnt) > 1 ? "  x" + int(e.cnt) : ""),"nm",fs,col,Math.round(fs * 0.12 * 10) / 10,"left");   // r6: xN
          var nx:Number = Math.round((14 + 30 + 12) * z);
          var nw:Number = Math.ceil(nm.textWidth);
          if(isNaN(nw) || nw < 0) { nw = 0; }
