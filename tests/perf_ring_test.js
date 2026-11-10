@@ -259,7 +259,7 @@ function psHud(on, slow) {
 		hzCmpLabels: [], hzCmpCenter: {}, HorizonQuest_mc: {}, hzCmpDeg: 0, hzCmpData: null,
 		hzQName: "Q", hzQObjStr: "", hzQDistStr: "", hzQ19T: null, hzCQ19T: null,
 		hzTexts: [], hzFades: [], hzCrossRule: 0, hzXhStyle: 1, hzTextShadow: false, hzCompact: false, hzNameHover: 0,
-		hzWlOn: false, hzWlMode: 0   // watchlog off (the Proxy would turn a missing hz* name into a truthy function)
+		hzWlOn: false, hzWlMode: 0, hz44GrpIni: false, hz44Hid: false, hz44Ref: null, hz44Skip: null, hz44N: 0,   // group hide off here (its own suite: grouphide_test.js); watchlog off (the Proxy would turn a missing hz* name into a truthy function)
 	};
 	for (let i = 0; i < 8; i++) st.hzCmpLabels.push({ textWidth: 10 });
 	const self = new Proxy(st, {
@@ -509,8 +509,8 @@ expect(as.indexOf('addEventListener(Event.ENTER_FRAME,this.hzPbFrame)') >= 0 && 
 expect(as.indexOf('"HudCompassData",this.hzPbCompass') >= 0 && as.indexOf('"PlayerFrequentData",this.hzPbFreq') >= 0
 	&& as.indexOf('"HudJetpackData",this.hzPbJet') >= 0 && as.indexOf('"HudCrosshairData",this.hzPbXh') >= 0
 	&& as.indexOf('"HUDRolloverActivationData",this.hzPbAct') >= 0, "callbacks go through the probes");
-expect(as.indexOf('"HUDRolloverData",this.hzPbRoll') >= 0 && as.indexOf('"HudEnemyData",this.hzPbEnemy') >= 0
-	&& as.indexOf('"HUDRolloverItemData",this.hzPbItems') >= 0 && as.indexOf('"HudEnemyData",this.hzPbEn26') >= 0,
+expect(as.indexOf('"HUDRolloverData",this.hzPbRoll') >= 0 && as.indexOf('"HudEnemyData",this.hzPbEnemyBoth') >= 0
+	&& as.indexOf('"HUDRolloverItemData",this.hzPbItems') >= 0 && /hzPbEnemyBoth\(e:FromClientDataEvent\)[\s\S]{0,120}this\.hzPbEnemy\(e\)[\s\S]{0,80}this\.hzPbEn26\(e\)/.test(as),
 	"S2: rollover, enemy, items and hz26 enemy go through the probes");
 for (const w of WRAPS) {
 	const re = new RegExp("Subscribe\\([^)]*this\\." + w[1] + "\\)|addEventListener\\([^)]*this\\." + w[1] + "\\)");
