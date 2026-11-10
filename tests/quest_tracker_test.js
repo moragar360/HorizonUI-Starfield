@@ -388,10 +388,10 @@ expect(log.indexOf("steps come only from the selected quest") >= 0, "the changel
 
 const bio = funcBody(as, "hz27BioHide");
 expect(bio.indexOf("this.hzShowAfflictions && !this.hzUserHidden") >= 0, "the bio popup follows the afflictions card");
-expect(bio.indexOf("hzHideVanillaWatch &&") < 0, "the bio popup does not follow the watch style");
+expect(bio.indexOf("this.hzHideVanillaWatch && this.hzWatchStyle != 1 && this.hzWatchStyle != 2") >= 0, "the bio popup shows in Original Vanilla Watch mode (user 2026-11-10 10:11; was: does not follow the watch style)");
 const det = funcBody(as, "hz31DetHide");
 expect(det.indexOf("this.hzStealthOn || this.hzEnemyBarOn || this.hzEdgePulse") >= 0, "the detection ring follows the combat cues");
-expect(det.indexOf("hzHideVanillaWatch") < 0, "the detection ring does not follow the watch style");
+expect(det.indexOf("this.hzHideVanillaWatch && this.hzWatchStyle != 1 && this.hzWatchStyle != 2") >= 0, "the detection ring shows in Original Vanilla Watch mode (user 2026-11-10 10:11; was: does not follow the watch style)");
 
 if (failed) {
 	console.error(failed + " failed");
