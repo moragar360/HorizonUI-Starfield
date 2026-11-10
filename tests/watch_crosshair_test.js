@@ -2188,7 +2188,8 @@ expect(funcBody(as, "hzBuildIniText").indexOf("lk + \"X=\"") >= 0 && as.indexOf(
 expect(as.indexOf("WatchCompact") < 0, "there is no WatchCompact toggle");
 expect(as.indexOf("PersonalKey") < 0 && as.indexOf("function hzTakeSaveIni") >= 0, "HUD save hands full merged text to the DLL");
 const mainCpp = readText(path.join(root, "src", "main.cpp"));
-expect(mainCpp.indexOf("inline bool PersonalKey") >= 0 && mainCpp.indexOf("a_sec == \"hotkeys\"") >= 0 && mainCpp.indexOf("screenheight") >= 0, "preset Diff strips Hotkeys and ScreenHeight");
+const presetApplyH = readText(path.join(root, "src", "hz_preset_apply.h"));   // r7 (S-4): PresetToUser and its helpers moved here
+expect(presetApplyH.indexOf("inline bool PersonalKey") >= 0 && presetApplyH.indexOf("a_sec == \"hotkeys\"") >= 0 && presetApplyH.indexOf("screenheight") >= 0 && mainCpp.indexOf("#include \"hz_preset_apply.h\"") >= 0, "preset Diff strips Hotkeys and ScreenHeight");
 const diffH = readText(path.join(root, "src", "hz_ini_diff.h"));
 expect(diffH.indexOf("keepUnknownKeys = false") >= 0, "preset files drop unknown keys of known sections");
 expect(preset.indexOf("[Hotkeys]") < 0 && preset.indexOf("ScreenHeight") < 0, "Moragar's Choice has no personal keys");
