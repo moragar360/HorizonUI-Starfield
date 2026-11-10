@@ -2453,6 +2453,27 @@ static void CheckV6Colors(const fs::path& root)
 		"a draw sample that throws something other than 2077 logs its id");
 }
 
+// v6d: pins for paths that mutants showed unguarded (the v5 review's SF-T list and the v6 Find
+// empty-state line).
+static void CheckV6Pins(const fs::path& root)
+{
+	const fs::path as = root / "actionscript";
+	const std::string browser = ReadFile(as / "HsbBrowser.as");
+	const std::string settings = ReadFile(as / "HsbSettings.as");
+	Expect(!browser.empty() && !settings.empty(), "v6d sources read");
+	Expect(Has(FunctionBody(browser, "paintList"), "(findMiss ? this.findMissText() : \"No parts match"),
+		"a Find with no match shows the line that names its category");
+	Expect(InOrder(FunctionBody(settings, "onKey", "override internal"), {"if(this.editing.length > 0)", "return true;\n         }",
+				   "this.showTab(this.tab + (param1 == \"tab\" ? 1 : -1));"}),
+		"Settings: a key edit or hex entry takes Tab before the tabs switch");
+	Expect(InOrder(FunctionBody(settings, "showTab"), {"if(next == this.tab) { return; }", "this.tab = next;", "this.scroll = 0;", "this.focusAt = -1;", "this.paint();"}),
+		"Settings: a tab switch starts at the top with no focused control");
+	Expect(CountOf(browser, "if(lockN > 0)") == 1 && Has(browser, "var lockN:int = cat.locked != null ? int(cat.locked) : -1;"),
+		"the category grid shows +N locked only for a known, positive count");
+	Expect(Has(FunctionBody(browser, "makerFromLogo", "internal static"), "return id.replace(/([a-z])([A-Z])/g,\"$1 $2\");"),
+		"an unknown logo key still reads as a maker name, split at its capitals");
+}
+
 int main()
 {
 	CheckGuard();
@@ -2479,6 +2500,7 @@ int main()
 	CheckV6Keys(root);
 	CheckV6Names(root);
 	CheckV6Colors(root);
+	CheckV6Pins(root);
 
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";
