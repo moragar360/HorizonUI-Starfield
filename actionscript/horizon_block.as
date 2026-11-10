@@ -11697,13 +11697,26 @@
          return s;
       }
       // Native, every 5 s (only does work when entries are queued) and at the perf dump.
+      private static const HZ_WL_FLUSH_CH:int = 20000;   // 20000 x 3 bytes + header < 65536
       public function hzWlFlush() : String
       {
          if(this.hzWlQ == null || this.hzWlQN == 0) { return ""; }
-         var head:String = "wl flush asNow=" + Math.round(this.hzPerfNow()) + " n=" + this.hzWlQN + " drop=" + this.hzWlDrop;
-         var a:Array = this.hzWlQ.slice(0,this.hzWlQN);
-         for(var i:int = 0; i < this.hzWlQN; i++) { this.hzWlQ[i] = null; }
-         this.hzWlQN = 0;
+         // Bot 3 N2: native keeps at most kFlushMax (65536) UTF-8 bytes. Send at most HZ_WL_FLUSH_CH UTF-16 units
+         // (3 bytes each at worst, plus the header) and keep the rest queued for the next flush, so nothing is cut.
+         var k:int = 0;
+         var len:int = 0;
+         while(k < this.hzWlQN)
+         {
+            var ln:int = String(this.hzWlQ[k]).length + 1;
+            if(k > 0 && len + ln > HZ_WL_FLUSH_CH) { break; }
+            len += ln;
+            k++;
+         }
+         var rest:int = this.hzWlQN - k;
+         var head:String = "wl flush asNow=" + Math.round(this.hzPerfNow()) + " n=" + k + " drop=" + this.hzWlDrop + (rest > 0 ? " left=" + rest : "");
+         var a:Array = this.hzWlQ.slice(0,k);
+         for(var i:int = 0; i < this.hzWlQN; i++) { this.hzWlQ[i] = i + k < this.hzWlQN ? this.hzWlQ[i + k] : null; }
+         this.hzWlQN = rest;
          this.hzWlDrop = 0;
          return head + "\n" + a.join("\n");
       }
@@ -14983,14 +14996,18 @@
       }
 
       // ===================== v0.44 whole-group BottomLeftGroup hide =====================
-      // Purpose: hide the vanilla BottomLeftGroup_mc as ONE object (visible = false) when Horizon replaces everything in it,
-      // instead of hiding its children one by one every frame. Hidden this way the group does not render and, with the
-      // HUD's noInvisibleAdvance, its timeline does not advance, so the scan-start FadeInPlanetInfo shapes (the unnamed
-      // ring and planet-info art) are never created or drawn.
+      // Purpose: hide the vanilla BottomLeftGroup_mc as ONE object (visible = false) when Horizon replaces what it shows,
+      // instead of hiding its children one by one every frame. Hidden this way nothing in the group is drawn, so the
+      // scan-start FadeInPlanetInfo shapes (the unnamed ring and planet-info art) are never drawn. The game can still move
+      // the hidden timeline with gotoAndPlay; with the HUD's noInvisibleAdvance it does not play on by itself.
       // When (hz44GrpWant): BlgGroupHide is not 0, WatchStyle 0 (OFF; it also sets the vanilla watch hide), the player has
-      // not hidden Horizon (F11 hide-all), and every non-watch piece has a Horizon version that is on: AFFLICTIONS card
-      // (BioAlertText), PLANET card + HAZARD ALERT (EnvAlertText, LocationAlertText), and one of STEALTH METER / ENEMY BAR /
-      // EDGE PULSE (EnemyDetectionAnim_mc). Otherwise today's per-piece hide runs unchanged.
+      // not hidden Horizon (F11 hide-all), and a Horizon card that can actually be on screen covers each non-watch piece:
+      //   BioAlertText: the AFFLICTIONS card (ShowAfflictions, not Compact, AfflictionsRule 0 or 6 = when afflicted);
+      //   EnvAlertText (hazard): the PLANET pill's status line (ShowPlanet, HazardAlert, PlanetRule 0, pill built). The old
+      //     HAZARD ALERT outline is on the classic card hzPlanOld, which hzFrameApply always hides, so it is not counted;
+      //   EnemyDetectionAnim_mc: one of STEALTH METER / ENEMY BAR / EDGE PULSE, with its card built (as hz31DetHide).
+      // The landing alert (LocationAlertText outside scans) and the positive environment alert have no Horizon version;
+      // the user accepted hiding them for now (HZ44_ALLOW_UNREPLACED). Otherwise today's per-piece hide runs unchanged.
       // Vanilla WatchStyle 1/2 (and so the vanilla watch hide off): the group gets vanilla's own visible back
       // (hzGroupVisible, captured right after the game's HudModeData write), never a forced true; alpha is never written.
       // Live: checked every frame (cheap Booleans) and right after each HudModeData write, so F11 changes apply on the
@@ -15004,16 +15021,21 @@
       private var hz44Ref:DisplayObject = null;       // BottomLeftGroup_mc
       private var hz44Skip:DisplayObject = null;      // hz36Walk skips this container during a rebuild
       private var hz44N:int = 0;                      // diag: hide / release count
+      // User decision 2026-11-10 10:11: "Hide them for now, and add Horizon versions of those alerts later." true: the
+      // landing alert and the positive environment alert (no Horizon version yet) do not block the group hide.
+      // false: the group hide never applies (those two can show at any time), and today's per-piece hide runs.
+      private static const HZ44_ALLOW_UNREPLACED:Boolean = true;
       private function hz44GrpWant() : Boolean
       {
-         return this.hz44GrpIni && this.hzWatchStyle == 0 && this.hzHideVanillaWatch && !this.hzUserHidden
-            && this.hzShowAfflictions && this.hzShowPlanet && this.hzHazardAlert && (this.hzStealthOn || this.hzEnemyBarOn || this.hzEdgePulse);
+         return HZ44_ALLOW_UNREPLACED && this.hz44GrpIni && this.hzWatchStyle == 0 && this.hzHideVanillaWatch && !this.hzUserHidden
+            && this.hzShowAfflictions && this.HorizonAffl_mc != null && !this.hzCompact && (this.hzRuleAffl == 0 || this.hzRuleAffl == 6)
+            && this.hzShowPlanet && this.hzHazardAlert && this.hzRulePlanet == 0 && this.hzPillOn()
+            && ((this.hzStealthOn && this.HorizonStealth_mc != null) || (this.hzEnemyBarOn && this.HorizonEnemy_mc != null) || (this.hzEdgePulse && this.HorizonEdge_mc != null));
       }
       private function hz44GrpTick(frame:Boolean) : void
       {
          var want:Boolean = this.hz44GrpWant();
-         if(!want && !this.hz44Hid) { return; }
-         if(!want && !frame) { return; }   // releases wait for the frame tick (see above)
+         if(!want && !this.hz44Hid && this.hzBlg != null) { return; }
          var b:DisplayObject = this.hz44Ref;
          if(b == null || b.parent == null)
          {
@@ -15026,6 +15048,7 @@
             }
             if(b == null) { return; }
          }
+         if(this.hzBlg == null) { this.hzBlg = b as DisplayObjectContainer; }   // Bot 3 S1: the per-piece hides and the watchlog need it while grouped
          if(want)
          {
             if(b.visible) { b.visible = false; }
@@ -15038,6 +15061,7 @@
             }
             return;
          }
+         if(!this.hz44Hid || !frame) { return; }   // releases wait for the frame tick (see above)
          this.hz44Hid = false;
          this.hz44N++;
          if(b.visible != this.hzGroupVisible) { b.visible = this.hzGroupVisible; }   // vanilla's own value, not a forced true
@@ -15047,42 +15071,65 @@
       // ===================== end v0.44 whole-group hide =====================
 
       // vanilla left-side affliction popup (BottomLeftGroup BioAlertText / BioCondition_mc / BioAlertBG_mc):
-      // hidden while the Afflictions card is on, including when styles 1 and 2 show the game's watch. Never removed.
-      // r4: by visible, never alpha (the BottomLeftGroup timeline animates their alpha). The game never writes their visible, so
-      // the restore is visible = true. BioCondition_mc / BioAlertBG_mc stay hidden while the watch hide still owns them.
+      // hidden while the Afflictions card is on. v0.44 r2 (user 2026-11-10 10:11, "In Original Vanilla Watch mode, show
+      // the vanilla bio alert and enemy ring too."): not in WatchStyle 1/2 (HideVanillaWatch off); live on F11.
+      // r4: by visible, never alpha (the BottomLeftGroup timeline animates their alpha). The game never writes their
+      // visible (BottomLeftGroup.as), so a restore sets back true only on the instance this hide set to false (it was true
+      // then); a new instance from the timeline keeps the game's own value. BioCondition_mc / BioAlertBG_mc stay hidden
+      // while the watch hide still owns them.
       private static const HZ27_BIO_NAMES:Array = ["BioAlertText","BioCondition_mc","BioAlertBG_mc"];
+      private var hz27BioMine:Array = [null,null,null];   // per HZ27_BIO_NAMES: the instance this hide set to false
       private function hz27BioHide() : void
       {
          if(!this.hzBlg) { return; }
-         var want:Boolean = this.hzShowAfflictions && !this.hzUserHidden;
+         var want:Boolean = this.hzShowAfflictions && !this.hzUserHidden && this.hzHideVanillaWatch && this.hzWatchStyle != 1 && this.hzWatchStyle != 2;
          if(!want && !this.hz27BioHid) { return; }
+         var i:int = 0;
          for each(var n:String in HZ27_BIO_NAMES)   // static list (was a new literal array every frame)
          {
-            var c:DisplayObject = this.hzBlg.getChildByName(n);
-            if(!c) { continue; }
-            if(want) { if(c.visible) { c.visible = false; } }
-            else if(n == "BioAlertText" || !this.hzHideVanillaWatch) { c.visible = true; }
+            if(want)
+            {
+               var c:DisplayObject = this.hzBlg.getChildByName(n);
+               if(c && c.visible) { c.visible = false; this.hz27BioMine[i] = c; }
+            }
+            else
+            {
+               var m:DisplayObject = this.hz27BioMine[i] as DisplayObject;
+               if(m && !m.visible && (n == "BioAlertText" || !this.hzHideVanillaWatch)) { m.visible = true; }   // the value it had before this hide
+               this.hz27BioMine[i] = null;
+            }
+            i++;
          }
          this.hz27BioHid = want;
       }
 
       // v0.31: the red ring on the left is BottomLeftGroup.EnemyDetectionAnim_mc (vanilla plays "Open" while in combat
       // and detected, so it shows up together with low health). The stealth pill, enemy bar, and edge pulse cover it.
-      // That hide does not follow WatchStyle. Hidden by alpha only (vanilla drives it with gotoAndPlay / gotoAndStop
-      // and never sets alpha), re-applied every frame and after the timeline (exitFrame), never removed. Restored
-      // when those cues are off, or when the player hides this HUD.
+      // v0.44 r2 (user 2026-11-10 10:11): not hidden in WatchStyle 1/2 (HideVanillaWatch off); live on F11.
+      // Hidden by alpha only (vanilla drives it with gotoAndPlay / gotoAndStop and never sets alpha), re-applied every
+      // frame and after the timeline (exitFrame). Restored when those cues are off, in the vanilla watch styles, or when the
+      // player hides this HUD: the instance this hide zeroed gets back the alpha it had before (the game's own value).
       private var hz31DetHid:Boolean = false;
+      private var hz31DetC:DisplayObject = null;   // the ring instance this hide zeroed
+      private var hz31DetA:Number = 1;             // its alpha before the hide
 
       private function hz31DetHide() : void
       {
          if(!this.hzBlg) { return; }
          var cues:Boolean = this.hzStealthOn || this.hzEnemyBarOn || this.hzEdgePulse;
-         var want:Boolean = cues && !this.hzUserHidden;
+         var want:Boolean = cues && !this.hzUserHidden && this.hzHideVanillaWatch && this.hzWatchStyle != 1 && this.hzWatchStyle != 2;
          if(!want && !this.hz31DetHid) { return; }
-         var c:DisplayObject = this.hzBlg.getChildByName("EnemyDetectionAnim_mc");
-         var ta:Number = want ? 0 : 1;
-         if(c && c.alpha != ta) { c.alpha = ta; }   // change check: 0 and 1 read back exactly, so the skipped write is a no-op
-         this.hz31DetHid = want;
+         if(want)
+         {
+            var c:DisplayObject = this.hzBlg.getChildByName("EnemyDetectionAnim_mc");
+            if(c && c !== this.hz31DetC) { this.hz31DetC = c; this.hz31DetA = c.alpha; }   // a new instance: keep its own alpha for the restore
+            if(c && c.alpha != 0) { c.alpha = 0; }   // change check: 0 reads back exactly, so the skipped write is a no-op
+            this.hz31DetHid = true;
+            return;
+         }
+         if(this.hz31DetC && this.hz31DetC.alpha != this.hz31DetA) { this.hz31DetC.alpha = this.hz31DetA; }
+         this.hz31DetC = null;
+         this.hz31DetHid = false;
       }
 
       // after the timeline built this frame's children (alerts re-create instances on keyframes)
@@ -18101,6 +18148,7 @@
             }
          }
          catch(eH:Error) { }
+         this.hzT19AncB = null;   // Bot 3 N4: the ancestor set is valid only inside this call (hzT19HoldBtns reuses its array)
          this.hzT19KeepHold(aw);
          // ObjectRing: 0 always hidden, 1 shown for container lists only, 2 as the game draws it
          if(this.hzObjRing == 0 || (this.hzObjRing == 1 && kind != "list")) { this.hzT19HideReticle(rw); }

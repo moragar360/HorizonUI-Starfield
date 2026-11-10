@@ -101,7 +101,7 @@ function makeHost(opts) {
 		hzInShip: false, hzInCombat: false, hzGroupVisible: true, hzUserHidden: false, drawn: false, f11: false,
 		HorizonTarget_mc: null, hzTg19: null,
 		HZWL_GROUPS: constArr("HZWL_GROUPS"), HZWL_SRC: constArr("HZWL_SRC"), HZWL_OPS: constArr("HZWL_OPS"), HZWL_PARTS: constArr("HZWL_PARTS"),
-		HZWL_QMAX: constNum("HZWL_QMAX"), HZWL_IDMAX: constNum("HZWL_IDMAX"),
+		HZWL_QMAX: constNum("HZWL_QMAX"), HZWL_IDMAX: constNum("HZWL_IDMAX"), HZ_WL_FLUSH_CH: constNum("HZ_WL_FLUSH_CH"),
 		hzWlOn: false, hzWlMode: 0, hzWlQ: null, hzWlQN: 0, hzWlDrop: 0, hzWlObj: null, hzWlObjId: null, hzWlNext: 0, hzWlIdFull: 0,
 		hzWlSt: null, hzWlPreSt: null, hzWlPreRep: null, hzWlOpC: null, hzWlOpT: null, hzWlSlotObj: null, hzWlSlotId: null,
 		hzWlChP: null, hzWlChV: 0, hzWlF: 0, hzWlCtx: -1, hzWlNat: 0, hzWlNatSeen: -1, hz44Hid: false, hz44N: 0, hzPcSigB: 0, hzWlScan: false, hzWlBlgN: -1, hzWlBlgRef: null, hzWlBlgPrev: null, hzWlBlgLbl: null,
@@ -321,6 +321,23 @@ if (base) {
 	expect(h.hzWlQN === h.HZWL_QMAX && h.hzWlDrop === 5, "queue: bounded at " + h.HZWL_QMAX + ", overflow counted");
 	const fl = h.hzWlFlush();
 	expect(/^wl flush asNow=\d+ n=1024 drop=5\n/.test(fl) && h.hzWlQN === 0 && h.hzWlDrop === 0 && h.hzWlFlush() === "", "flush: one head line, then the entries; empty after");
+	// Bot 3 N2: a queue bigger than one native flush (kFlushMax 65536 UTF-8 bytes) is sent in parts, nothing cut or lost
+	{
+		const big = "y".repeat(240);
+		for (let i = 0; i < h.HZWL_QMAX; i++) h.hzWlPush(i + ":" + big);
+		const parts = [];
+		let guard = 0, s;
+		while ((s = h.hzWlFlush()) !== "" && guard++ < 50) parts.push(s);
+		const got = [].concat(...parts.map((x) => x.split("\n").slice(1)));
+		const okIdx = got.length === h.HZWL_QMAX && got.every((l, i) => l.indexOf(i + ":") === 0);
+		const maxBytes = Math.max(...parts.map((x) => Buffer.byteLength(x, "utf8")));
+		expect(parts.length > 1 && okIdx && maxBytes < 65536 && /^wl flush asNow=\d+ n=\d+ drop=0 left=\d+\n/.test(parts[0]) && !/ left=/.test(parts[parts.length - 1].split("\n")[0]),
+			"flush cap (N2): 1024 lines of ~245 chars go out in " + parts.length + " flushes, every one under 65536 bytes, in order, none lost; head says left=");
+		const one = "\u20ac".repeat(h.HZ_WL_FLUSH_CH);   // 3 UTF-8 bytes per unit, worst case
+		h.hzWlPush(one); h.hzWlPush("tail");
+		const f1 = h.hzWlFlush(), f2 = h.hzWlFlush();
+		expect(Buffer.byteLength(f1, "utf8") < 65536 && /n=1 drop=0 left=1/.test(f1) && /n=1 drop=0\ntail$/.test(f2), "flush cap: a worst-case 3-byte line still fits, and the next line waits for the next flush");
+	}
 	// hover timing
 	h.HorizonTarget_mc = { visible: false, alpha: 1 }; h.hzTg19 = { visible: true };
 	h.now = 5000; h.hzWlTgT = 5000; h.hzWlTgN = 1;

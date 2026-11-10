@@ -91,11 +91,14 @@ function gHost() {
 	const h = Object.assign({}, common, {
 		hud: hud, blg: blg, hz44GrpIni: true, hz44Hid: false, hz44Ref: null, hz44Skip: null, hz44N: 0, hzWlOn: false,
 		hzWatchStyle: 0, hzHideVanillaWatch: true, hzUserHidden: false, hzShowAfflictions: true, hzShowPlanet: true, hzHazardAlert: true,
-		hzStealthOn: true, hzEnemyBarOn: true, hzEdgePulse: true, hzGroupVisible: true, hzHideCache: [], now: 0
+		hzStealthOn: true, hzEnemyBarOn: true, hzEdgePulse: true, hzGroupVisible: true, hzHideCache: [], now: 0,
+		HZ44_ALLOW_UNREPLACED: true, HorizonAffl_mc: {}, hzCompact: false, hzRuleAffl: 6, hzRulePlanet: 0, hzPlanPill: {},
+		HorizonStealth_mc: {}, HorizonEnemy_mc: {}, HorizonEdge_mc: {}, hzBlg: null,
+		HZ27_BIO_NAMES: ["BioAlertText", "BioCondition_mc", "BioAlertBG_mc"], hz27BioMine: [null, null, null], hz27BioHid: false, hz31DetHid: false, hz31DetC: null, hz31DetA: 1
 	});
 	h.getChildByName = function(n) { return hud.getChildByName(n); };
 	h.hzPerfNow = function() { return h.now; };
-	return bindAll(h, as, ["hz44GrpWant", "hz44GrpTick"]);
+	return bindAll(h, as, ["hz44GrpWant", "hz44GrpTick", "hzPillOn", "hz27BioHide", "hz31DetHide"]);
 }
 // what hz43SyncHide does with a WatchStyle change (vanilla styles 1 / 2 turn the vanilla watch hide off)
 function setStyle(h, st) { h.hzWatchStyle = st; h.hzHideVanillaWatch = !(st === 1 || st === 2); }
@@ -143,12 +146,14 @@ function kidsState(h) { return h.blg.kids.map((k) => k.name + ":" + k.visible + 
 	for (const [k, v, label] of gates) {
 		const h = gHost();
 		h[k] = v;
+		h.hz44GrpTick(true);
 		const g0 = h.hud.gets;
-		h.hz44GrpTick(true); h.hz44GrpTick(false);
-		expect(h.blg.visible === true && !h.hz44Hid && h.hud.gets === g0, "not eligible: " + label + " -> per-piece path, group untouched, zero lookups");
+		for (let f = 0; f < 50; f++) { h.hz44GrpTick(true); h.hz44GrpTick(false); }
+		expect(h.blg.visible === true && !h.hz44Hid && g0 === 1 && h.hud.gets === g0 && h.hzBlg === h.blg, "not eligible: " + label + " -> per-piece path, group untouched; one lookup fills hzBlg (S1), then none");
 	}
 	const h = gHost();
 	h.hzStealthOn = h.hzEnemyBarOn = h.hzEdgePulse = false;
+	h.hz44GrpTick(true);
 	h.hz44GrpTick(true);
 	expect(h.blg.visible === true && !h.hz44Hid, "not eligible: STEALTH, ENEMY BAR and EDGE PULSE all off (vanilla enemy ring)");
 	h.hzEdgePulse = true; h.hz44GrpTick(true);
@@ -186,6 +191,106 @@ function kidsState(h) { return h.blg.kids.map((k) => k.name + ":" + k.visible + 
 		if (h.blg.visible !== exp) bad = "frame " + f;
 	}
 	expect(!bad, "4000 random frames (F11 style, cards, hide-all, game HUD modes): at render the group is hidden exactly when wanted, else vanilla's value" + (bad ? " -- " + bad : ""));
+}
+{
+	// MF1 gating matrix (r2): every term against an independent reference rule, over all combinations of the card terms
+	const ref = (c) => c.allow && c.ini && c.style === 0 && !c.hidden
+		&& c.affl && c.afflCard && !c.compact && (c.rAffl === 0 || c.rAffl === 6)
+		&& c.planet && c.haz && c.rPlanet === 0 && c.pill
+		&& ((c.st && c.stCard) || (c.en && c.enCard) || (c.ep && c.epCard));
+	const r = rng(441);
+	let n = 0, bad = "", eligible = 0;
+	const seen = {};
+	for (let t = 0; t < 6000 && !bad; t++) {
+		const b = () => r() < 0.85;
+		const c = { allow: r() < 0.9, ini: b(), style: [0, 0, 0, 1, 2, 3, 4][Math.floor(r() * 7)], hidden: r() < 0.1, affl: b(), afflCard: b(), compact: r() < 0.2,
+			rAffl: [0, 6, 6, 1, 2, 3, 4, 5][Math.floor(r() * 8)], planet: b(), haz: b(), rPlanet: [0, 0, 0, 1, 2, 3, 4, 5, 6][Math.floor(r() * 9)], pill: b(),
+			st: r() < 0.5, stCard: b(), en: r() < 0.5, enCard: b(), ep: r() < 0.5, epCard: b() };
+		const h = gHost();
+		h.HZ44_ALLOW_UNREPLACED = c.allow; h.hz44GrpIni = c.ini; setStyle(h, c.style); h.hzUserHidden = c.hidden;
+		h.hzShowAfflictions = c.affl; h.HorizonAffl_mc = c.afflCard ? {} : null; h.hzCompact = c.compact; h.hzRuleAffl = c.rAffl;
+		h.hzShowPlanet = c.planet; h.hzHazardAlert = c.haz; h.hzRulePlanet = c.rPlanet; h.hzPlanPill = c.pill ? {} : null;
+		h.hzStealthOn = c.st; h.HorizonStealth_mc = c.stCard ? {} : null; h.hzEnemyBarOn = c.en; h.HorizonEnemy_mc = c.enCard ? {} : null; h.hzEdgePulse = c.ep; h.HorizonEdge_mc = c.epCard ? {} : null;
+		h.hz44GrpTick(true); h.hz44GrpTick(false);
+		const w = ref(c);
+		if (h.hz44GrpWant() !== w || h.blg.visible !== !w) bad = JSON.stringify(c);
+		if (w) eligible++;
+		n++;
+	}
+	expect(!bad && eligible > 50 && n - eligible > 50, "MF1 matrix: 6000 random configs, the group is hidden exactly when the reference rule says so (" + eligible + " eligible)" + (bad ? " -- " + bad : ""));
+	const one = (label, set, want) => { const h = gHost(); set(h); h.hz44GrpTick(true); expect(h.hz44Hid === want && h.blg.visible === !want, (want ? "eligible: " : "not eligible: ") + label); };
+	for (const rp of [1, 2, 3, 4, 5, 6]) one("PlanetRule " + rp + " (the planet card is not always on screen)", (h) => { h.hzRulePlanet = rp; }, false);
+	one("no planet pill (the classic card hzPlanOld, which holds the HAZARD ALERT outline, is always hidden by hzFrameApply)", (h) => { h.hzPlanPill = null; }, false);
+	one("Compact on (the AFFLICTIONS card shows only in the full layout)", (h) => { h.hzCompact = true; }, false);
+	for (const ra of [1, 2, 3, 4, 5]) one("AfflictionsRule " + ra + " (the card can be off while an affliction arrives)", (h) => { h.hzRuleAffl = ra; }, false);
+	one("AfflictionsRule 0 (always)", (h) => { h.hzRuleAffl = 0; }, true);
+	one("AfflictionsRule 6 (when afflicted, the default)", (h) => { h.hzRuleAffl = 6; }, true);
+	one("only EDGE PULSE on, its clip not built", (h) => { h.hzStealthOn = h.hzEnemyBarOn = false; h.HorizonEdge_mc = null; }, false);
+	one("only ENEMY BAR on, built", (h) => { h.hzStealthOn = h.hzEdgePulse = false; }, true);
+	one("HZ44_ALLOW_UNREPLACED false (the safe answer: never group-hide while the landing / positive env alerts have no Horizon version)", (h) => { h.HZ44_ALLOW_UNREPLACED = false; }, false);
+	expect(/private static const HZ44_ALLOW_UNREPLACED:Boolean = true;/.test(as), "flag default: true (user 2026-11-10 10:11: hide them for now)");
+	// HideVanillaWatch off / WatchStyle 1 or 2 releases the group (Director's open question), and so does a style write before the sync
+	for (const st of [1, 2]) {
+		const h = gHost(); h.hz44GrpTick(true);
+		h.hzWatchStyle = st; h.hz44GrpTick(true);
+		expect(h.blg.visible === true && !h.hz44Hid, "WatchStyle " + st + " written by F11 (before hz43SyncHide runs): the group is released next frame tick");
+		const h2 = gHost(); h2.hz44GrpTick(true);
+		h2.hzHideVanillaWatch = false; h2.hz44GrpTick(true);
+		expect(h2.blg.visible === true && !h2.hz44Hid, "HideVanillaWatch off on its own: the group is released");
+	}
+}
+{
+	// Bot 3 S1: grouped from frame 1, then AFFLICTIONS off: the per-piece hides have hzBlg in that same frame
+	const h = gHost();
+	h.blg.getChildByName("EnemyDetectionAnim_mc").alpha = 1;
+	h.hz44GrpTick(true);
+	expect(h.hz44Hid && h.hzBlg === h.blg, "S1: grouped from the first frame, hzBlg is set by the group check (same root child hzFindByName finds)");
+	h.hzShowAfflictions = false;
+	h.hz44GrpTick(true);   // release (frame tick)
+	const of = fnText(as, "hzOnFrame").body;
+	const loopRuns = of.indexOf("if(this.hzHideVanillaWatch && !this.hz44Hid)") >= 0 && h.hzHideVanillaWatch && !h.hz44Hid && h.hzBlg != null;
+	h.hz27BioHide(); h.hz31DetHide();   // exit frame of the same frame
+	expect(!h.hz44Hid && h.blg.visible === true && loopRuns && h.blg.getChildByName("EnemyDetectionAnim_mc").alpha === 0,
+		"S1: release frame: the BLG child loop has its ref, and the enemy ring is hidden in the same frame (no 30-frame wait)");
+}
+{
+	// user 10:11: Original Vanilla Watch (and HideVanillaWatch off) shows the vanilla bio alert and enemy ring; live both ways
+	const h = gHost();
+	h.hzBlg = h.blg;
+	const bio = h.blg.getChildByName("BioAlertText");
+	const bg = add(h.blg, Clip("BioAlertBG_mc")), cond = add(h.blg, Clip("BioCondition_mc"));
+	const det = h.blg.getChildByName("EnemyDetectionAnim_mc");
+	bg.visible = false;          // the game's own value (not ours)
+	det.alpha = 0.8;             // the game's own value
+	const tick = () => { h.hz27BioHide(); h.hz31DetHide(); };
+	setStyle(h, 0); tick();
+	expect(bio.visible === false && cond.visible === false && det.alpha === 0, "OFF: bio alert and enemy ring hidden (unchanged)");
+	setStyle(h, 1); tick();
+	expect(bio.visible === true && cond.visible === true && bg.visible === false && det.alpha === 0.8,
+		"F11 -> VANILLA: next tick the bio alert, its icon and the enemy ring are back with the game's own values (a piece the game had hidden stays hidden, alpha 0.8 not forced 1)");
+	for (let f = 0; f < 20; f++) tick();
+	expect(bio.visible === true && det.alpha === 0.8, "VANILLA: stays shown (no per-frame re-hide)");
+	setStyle(h, 0); tick();
+	expect(bio.visible === false && det.alpha === 0, "F11 -> OFF again: hidden again next tick (live, both ways)");
+	h.hzWatchStyle = 2; tick();   // F11 wrote the style; hz43SyncHide has not run yet
+	expect(bio.visible === true && det.alpha === 0.8, "VANILLA+HORIZON written before the style sync: shown the same tick");
+	setStyle(h, 0); tick();
+	h.hzHideVanillaWatch = false; tick();
+	expect(bio.visible === true && det.alpha === 0.8, "HideVanillaWatch off: shown");
+	// a timeline-replaced instance while hidden keeps the game's own value on release
+	setStyle(h, 0); tick();
+	remove(bio); const bio2 = add(h.blg, Clip("BioAlertText")); bio2.visible = true;
+	remove(det); const det2 = add(h.blg, Clip("EnemyDetectionAnim_mc")); det2.alpha = 0.5;
+	tick();
+	expect(bio2.visible === false && det2.alpha === 0, "a new instance from the timeline is hidden too");
+	setStyle(h, 1); tick();
+	expect(bio2.visible === true && det2.alpha === 0.5, "release: the new instances get their own values back");
+	// AFFLICTIONS off in OFF mode: today's rule (only BioAlertText comes back; the watch hide owns the others)
+	setStyle(h, 0); cond.visible = true; tick();
+	h.hzShowAfflictions = false; tick();
+	expect(bio2.visible === true && cond.visible === false, "OFF + AFFLICTIONS off: the bio alert comes back, BioCondition_mc stays with the watch hide (unchanged)");
+	expect(fnText(as, "hz41LocHide").body.indexOf("hzWatchStyle") < 0 && fnText(as, "hz41LocWant").body.indexOf("hzWatchStyle") < 0,
+		"scan-time LocationAlertText hide is not tied to the watch style (scanner feature; left as is, see CHANGES_watchlog_r2)");
 }
 {
 	// wiring
@@ -396,7 +501,8 @@ if (base) {
 	// det: same alpha at render, writes only on change
 	const mk = (src) => { const blg = Clip("BLG", true); const c = add(blg, Clip("EnemyDetectionAnim_mc")); let w = 0; let a = 1;
 		Object.defineProperty(c, "alpha", { get: () => a, set: (v) => { w++; a = v; } });
-		const h = Object.assign({}, common, { hzBlg: blg, hzStealthOn: true, hzEnemyBarOn: false, hzEdgePulse: false, hzUserHidden: false, hz31DetHid: false });
+		const h = Object.assign({}, common, { hzBlg: blg, hzStealthOn: true, hzEnemyBarOn: false, hzEdgePulse: false, hzUserHidden: false, hz31DetHid: false,
+			hzHideVanillaWatch: true, hzWatchStyle: 0, hz31DetC: null, hz31DetA: 1 });
 		bindAll(h, src, ["hz31DetHide"]); h.c = c; h.w = () => w; return h; };
 	if (base) {
 		const A = mk(base), B = mk(as); const r = rng(2); let bad = "";
@@ -404,11 +510,11 @@ if (base) {
 			const q = r();
 			if (q < 0.05) A.hzStealthOn = B.hzStealthOn = !A.hzStealthOn;
 			if (q > 0.97) A.hzUserHidden = B.hzUserHidden = !A.hzUserHidden;
-			if (q > 0.5 && q < 0.53) { A.c.alpha = B.c.alpha = r(); }   // the timeline moved it
+			if (q > 0.5 && q < 0.53 && A.hz31DetHid) { A.c.alpha = B.c.alpha = r(); }   // a write while hidden (vanilla itself never writes this alpha)
 			A.hz31DetHide(); B.hz31DetHide();
 			if (A.c.alpha !== B.c.alpha) bad = "frame " + f;
 		}
-		expect(!bad, "det ring: same alpha as 2511842 after every exit-frame call (2000 frames incl. timeline writes)");
+		expect(!bad, "det ring (WatchStyle 0): same alpha as 2511842 after every exit-frame call (2000 frames incl. writes while hidden)");
 		expect(B.w() < A.w(), "det ring: alpha writes " + A.w() + " -> " + B.w() + " (writes only when the value differs; the rest were timeline moves or toggles)");
 	}
 }
