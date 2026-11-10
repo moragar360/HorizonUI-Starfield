@@ -289,6 +289,76 @@ console.log("    walk: " + lists + " lists, " + entries + " entries; nodes searc
 	expect(errN > 0 && valN > 0 && fb > 0, "walk throws covered: Error " + errN + ", other values " + valN + ", fallbacks taken " + fb);
 }
 
+// Bot 3 S1: one-off throws (__throwOnce: getChildAt throws once at one slot, then works). The 80327fe per-name loop lost
+// the one name whose search hit the throw (Error) or stopped the whole rebuild (non-Error). The walk uses up the throw,
+// then the per-name fallback runs clean, so the new list holds every old entry (same name, same clip) and never fewer;
+// a non-Error no longer escapes. This is the only behavior difference, and only on a throw path.
+{
+	let runs = 0, more = 0, same = 0, oldThrew = 0, newThrew = 0, bad = "";
+	for (let seed = 1; seed <= 200 && !bad; seed++) {
+		for (const kind of ["error", "value"]) {
+			const mk = () => {
+				const t = randTree(900 + seed);
+				const all = [];
+				(function walk(c) { if (c && c.kids) { if (c.kids.length) all.push(c); c.kids.forEach(walk); } })(t.top);
+				const at = all[Math.floor(t.r() * all.length)];
+				at.__throwOnce = { at: Math.floor(t.r() * at.kids.length), v: kind === "error" ? new RangeError("once") : "once" };
+				return t;
+			};
+			const to = mk(), tn = mk();
+			const ho = makeWHost("old", to.top, to.cards), hn = makeWHost("new", tn.top, tn.cards);
+			const names = HIDE_NAMES.concat(randNames(randTree(900 + seed).r));
+			const a = [], b = [];
+			try { ho.rebuild(names, a); } catch (e) { oldThrew++; }
+			try { hn.rebuild(names, b); } catch (e) { newThrew++; bad = "seed " + seed + " " + kind + ": the new code threw"; }
+			runs++;
+			// the two trees are built from the same seed, so compare by tree path (clip key order is the same)
+			const key = (e) => { const p = []; let d = e.d; while (d && d.parent) { p.push(d.parent.kids.indexOf(d)); d = d.parent; } return e.n + "@" + p.join("/"); };
+			const kb = b.map(key);
+			for (const e of a) { if (kb.indexOf(key(e)) < 0) { bad = bad || ("seed " + seed + " " + kind + ": an old entry is missing (" + key(e) + ")"); } }
+			if (b.length > a.length) more++; else if (b.length === a.length) same++;
+		}
+	}
+	expect(!bad, "S1 one-off throws: the new list holds every 80327fe entry, never fewer, and never throws (" + runs + " runs)" + (bad ? " -- " + bad : ""));
+	expect(more > 0 && oldThrew > 0 && newThrew === 0, "S1 one-off throws covered: new list longer in " + more + " runs, equal in " + same + ", 80327fe threw in " + oldThrew + ", new code threw in " + newThrew);
+}
+
+// Bot 3 S2: an Error from the parent read in the push loop is swallowed per name (as the 80327fe per-name try did),
+// so the other entries are kept, in order, and nothing escapes. A mutant without the per-entry try lets it escape.
+{
+	const s2 = (src) => {
+		let bad = "", hits = 0;
+		for (let seed = 1; seed <= 40 && !bad; seed++) {
+			const t = randTree(1300 + seed);
+			const found = [];
+			(function walk(c, depth) { if (!c || !c.kids || depth > 8) return; for (const k of c.kids) { if (k && HIDE_NAMES.indexOf(k.name) >= 0) found.push(k); if (k) walk(k, depth + 1); } })(t.top, 0);
+			if (!found.length) continue;
+			const victim = found[Math.floor(t.r() * found.length)];
+			const realParent = victim.parent;
+			let armed = false;
+			Object.defineProperty(victim, "parent", { get() { if (armed) throw new RangeError("parent read"); return realParent; }, set(v) { }, configurable: true });
+			const ho = makeWHost("old", t.top, t.cards), hn = makeWHost("new", t.top, t.cards, src);
+			const a = [], b = [];
+			let eo = null, en = null;
+			armed = true;
+			try { ho.rebuild(HIDE_NAMES, a); } catch (e) { eo = e; }
+			try { hn.rebuild(HIDE_NAMES, b); } catch (e) { en = e; }
+			armed = false;
+			hits++;
+			if (en) { bad = "seed " + seed + ": the Error escaped"; break; }
+			if (eo) { bad = "seed " + seed + ": 80327fe threw (harness)"; break; }
+			const d = sameEntries(a, b);
+			if (d) bad = "seed " + seed + ": " + d;
+		}
+		return { bad: bad, hits: hits };
+	};
+	const r = s2(null);
+	expect(!r.bad && r.hits > 10, "S2: an Error from the parent read drops only that name, same entries as 80327fe, no escape (" + r.hits + " trees)" + (r.bad ? " -- " + r.bad : ""));
+	const m = s2(mutant("            try\n            {\n               var d:DisplayObject = wd[wn.indexOf(m)] as DisplayObject;\n               if(d == null) { continue; }\n               out.push({\"p\":d.parent,\"n\":m,\"d\":d});\n            }\n            catch(eHp:Error) { }",
+		"            {\n               var d:DisplayObject = wd[wn.indexOf(m)] as DisplayObject;\n               if(d == null) { continue; }\n               out.push({\"p\":d.parent,\"n\":m,\"d\":d});\n            }"));
+	expect(!!m.bad, "S2 mutant killed: the push loop without the per-entry try");
+}
+
 // Mutants of the walk must be killed by the same comparison.
 function walkKilled(src) {
 	for (let seed = 1; seed <= 40; seed++) {
@@ -308,7 +378,7 @@ const WMUT = [
 	["no Horizon-card pruning", "if(ch is DisplayObjectContainer && ch != this.HorizonCard_mc && ch != this.HorizonVitals_mc && ch != this.HorizonEnv_mc && ch != this.HorizonCompass_mc && ch != this.HorizonAffl_mc && ch != this.HorizonAmmo_mc && ch != this.HorizonQuest_mc && ch != this.HorizonCompact_mc && ch != this.HorizonCompactQuest_mc && ch != this.HorizonSettings_mc)\n               {\n                  left = this.hz36Walk(", "if(ch is DisplayObjectContainer)\n               {\n                  left = this.hz36Walk("],
 	["a later match overwrites the first", "if(k >= 0 && wd[k] == null)", "if(k >= 0)"],
 	["a matched node is not descended into", "               if(ch is DisplayObjectContainer && ch != this.HorizonCard_mc", "               else if(ch is DisplayObjectContainer && ch != this.HorizonCard_mc"],
-	["entries in first-found order, not names order (no duplicates)", "         for each(var m:String in names)\n         {\n            var d:DisplayObject = wd[wn.indexOf(m)] as DisplayObject;", "         for each(var m:String in wn)\n         {\n            var d:DisplayObject = wd[wn.indexOf(m)] as DisplayObject;"]
+	["entries in first-found order, not names order (no duplicates)", "         for each(var m:String in names)\n         {\n            try\n            {\n               var d:DisplayObject = wd[wn.indexOf(m)] as DisplayObject;", "         for each(var m:String in wn)\n         {\n            try\n            {\n               var d:DisplayObject = wd[wn.indexOf(m)] as DisplayObject;"]
 ];
 for (const m of WMUT) {
 	const src = mutant(m[1], m[2]);
@@ -548,7 +618,7 @@ function tickKilled(src) {
 }
 const TMUT = [
 	["hz43StHideV without the note", "         if(!d) { return; }\n         this.hz43VanNoteAdd(d);\n         if(this.hzPerfOn) { this.hzPcWcSkip += 2; }", "         if(!d) { return; }\n         if(this.hzPerfOn) { this.hzPcWcSkip += 2; }"],
-	["hz43StHideV without the visible write", "         if(this.hzPerfOn) { this.hzPcWcSkip += 2; }\n         if(d.visible) { d.visible = false; }", "         if(this.hzPerfOn) { this.hzPcWcSkip += 2; }"],
+	["hz43StHideV without the visible write", "         if(this.hzWlOn && d.visible) { this.hzWlPre(d,2); }\n         if(d.visible) { d.visible = false; }", "         if(this.hzWlOn && d.visible) { this.hzWlPre(d,2); }"],
 	["hz36HideTick without its own check", "if(this.hz43VanWatchClip(d)) { this.hz43StHideV(d); continue; }", "if(true) { this.hz43StHideV(d); continue; }"],
 	["hz43StHide without its own check", "         if(!d || !this.hz43VanWatchClip(d)) { return; }\n         this.hz43VanNoteAdd(d);", "         if(!d) { return; }\n         this.hz43VanNoteAdd(d);"],
 	["hz43VanNoteAdd without the duplicate check", "            if(this.hz43HidA[i] == d) { return; }\n", ""]
