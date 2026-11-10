@@ -542,5 +542,45 @@ if (base) {
 	expect(seq.join(",") === "tg:1,26:1,tg:2,26:2,tg:3,26:3,tg:4,26:4" && threw === 1, "enemy: every update reaches both handlers, target card first; a throw in the first still runs the second and is rethrown");
 }
 
+// ---- 7. right-side guard (user, via Bot 3: "ok to calrify though not the stuff on the right side with the weapon") ----
+// The VANILLA rule is limited to BottomLeftGroup_mc's children. The right-side weapon / ammo / health / jetpack hiding must be
+// exactly as in 56d4098, in every watch style.
+{
+	let b56 = null;
+	try { b56 = cp.execFileSync("git", ["show", "56d4098:actionscript/horizon_block.as"], { cwd: root, encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "ignore"] }).replace(/\r\n/g, "\n"); } catch (e) { b56 = null; }
+	if (b56) {
+		const names = (src) => { const out = []; const re = /(?:private|public) function (\w+)\(/g; let m; while ((m = re.exec(src))) out.push(m[1]); return out; };
+		const RIGHT = /RightMeters|BottomRightGroup|EquippedWeapon|HealthBar|"Health_mc"|VerticalDivider_mc|Jetpack|EnemyHealthHolder_mc|StealthMeter_mc|hzHideVanillaAmmo|hzHideVanillaHealth|hzHideVanillaBoost/;
+		const all56 = names(b56), allNow = names(as);
+		const changed = [], rightFns = [];
+		let rightSame = true;
+		for (const n of all56) {
+			let x, y;
+			try { x = fnText(b56, n).body; y = fnText(as, n).body; } catch (e) { changed.push(n + "(missing)"); continue; }
+			if (x !== y) changed.push(n);
+			if (RIGHT.test(x)) { rightFns.push(n); if (x !== y) rightSame = false; }
+		}
+		const added = allNow.filter((n) => all56.indexOf(n) < 0);
+		const allowed = ["hz44GrpWant", "hz44GrpTick", "hz27BioHide", "hz31DetHide", "hzWlFlush", "hz38HideVanilla"];
+		expect(rightSame && rightFns.length >= 5 && rightFns.indexOf("hzOnFrame") >= 0,
+			"right side: all " + rightFns.length + " functions that touch the weapon / ammo / health / jetpack / RightMeters hides are byte-identical to 56d4098");
+		expect(changed.every((n) => allowed.indexOf(n) >= 0) && added.length === 0,
+			"r2 changes only the BottomLeftGroup functions (and the watchlog flush / H2 clear): " + changed.join(", ") + (added.length ? " added: " + added.join(",") : ""));
+		expect(changed.filter((n) => n !== "hzWlFlush" && n !== "hz38HideVanilla").every((n) => !RIGHT.test(fnText(as, n).body.replace(/^\s*\/\/.*$/gm, ""))),
+			"none of the changed BottomLeftGroup functions reads or writes a right-side piece");
+		// behavior: the rebuild list's right-side names in VANILLA (1, 2) and the other styles, 56d4098 vs now
+		const listOf = (src, st, flags) => {
+			const of = fnText(src, "hzOnFrame").body;
+			const i0 = of.indexOf("names = [];"), i1 = of.indexOf("this.hz44Skip = grp");
+			const js = toJs(of.slice(i0, i1)).replace("var grp = this.hz44Hid;", "var grp = false;");
+			const h = { hzWatchStyle: st, hzHideVanillaWatch: !(st === 1 || st === 2), hzHideVanillaCompass: true, hzHideVanillaBoost: !!(flags & 1), hzHideVanillaAmmo: !!(flags & 2), hzHideVanillaHealth: !!(flags & 4), hzHideCache: [], hz36HideStale: false };
+			return Function("with(this){ var names; " + js + " return names; }").call(h);
+		};
+		let same = true;
+		for (const st of [1, 2, 0, 3, 4]) for (let f = 0; f < 8; f++) if (JSON.stringify(listOf(b56, st, f)) !== JSON.stringify(listOf(as, st, f))) same = false;
+		expect(same, "right side, behavior: the hide list for VANILLA and every other style, 8 ammo / health / boost combinations each, equals 56d4098's");
+	} else console.log("skip right-side guard (git show 56d4098 not available)");
+}
+
 if (failed) { console.error(failed + " FAILED"); process.exit(1); }
 console.log("grouphide tests passed");
