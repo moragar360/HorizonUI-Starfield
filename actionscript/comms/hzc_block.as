@@ -1983,6 +1983,28 @@
          this.hzcRxDupN = Math.max(0,this.hzcRxDupN - d.length);
          for each(var it:Object in d) { if(it != null && it !== e.it) { this.hzcRxReveal(it); } }
       }
+      // r7 (S-3): a held line the game no longer shows (gone from ShownMessageArray, or moved off Messages_mc) leaves e.dups
+      // and gets its text and background back, so a clip the game reuses for another message is never skipped by
+      // hzcRxDupOf or left covered. Called from hzcRxStep only while lines are held (hzcRxDupN > 0); O(held lines).
+      private function hzcRxPrune(e:Object, arr:*, m:*) : void
+      {
+         var held:Array = e.dups;
+         if(held == null || arr == null) { return; }
+         var j:int = held.length - 1;
+         while(j >= 0)
+         {
+            var h:* = held[j];
+            var keep:Boolean = false;
+            try { keep = h != null && arr.indexOf(h) >= 0 && h.parent === m; } catch(eP:Error) { keep = false; }
+            if(!keep)
+            {
+               held.splice(j,1);
+               this.hzcRxDupN = Math.max(0,this.hzcRxDupN - 1);
+               if(h != null && h !== e.it) { this.hzcRxReveal(h); }
+            }
+            j--;
+         }
+      }
       private function hzcRxShow(e:Object) : void
       {
          try
@@ -2062,6 +2084,7 @@
          for each(var e0:Object in this.hzcRx)
          {
             if(e0 == null || e0.st != 1) { continue; }
+            if(this.hzcRxDupN > 0 && e0.dups != null) { this.hzcRxPrune(e0,arr,m); }   // r7 (S-3): only while lines are held
             if(e0.linked == true)
             {
                var inList:Boolean = false;
