@@ -713,7 +713,11 @@ function isArrangeClip(d, outline) {
 	return !!(d && (WATCH_NAMES[d.name] || vanCapClip(d, outline) || vanRingClip(d, outline)));
 }
 function asInner(name) {
-	const body = funcBody(as, name);
+	return asInnerOf(as, name);
+}
+// r7: the same conversion from any source text (in-test mutants bind a changed copy of one function).
+function asInnerOf(src, name) {
+	const body = funcBody(src, name);
 	return body.replace(/^\{\s*/, "").replace(/\s*\}$/, "")
 		.replace(/var\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[A-Za-z0-9_.]+/g, "var $1")
 		// AS3 catch types: catch(e:Error) lets a non-Error value pass, catch(e:*) takes any value. Keep that in JS.
@@ -1164,7 +1168,8 @@ expect(writeScale.outlineClip.scaleX === 0.8 && writeScale.capClip.alpha === 0, 
 	expect(s.locClip.x === 110.75 && s.locClip.y === 96.75 && s.locClip.scaleX === 1 && s.hz43FoMoved === false, "ghost fix: write(0,0,1) (style change / reset) puts the overlay back at its native place");
 	const m = mk();
 	m.hz43VanWrite(-10, 5, 0.8, true);
-	expect(m.locClip.x === 110.75 && m.locClip.y === 96.75, "ghost fix: a marker-only write (Horizon faces) leaves the overlay alone");
+	// r7 (MF-1): the marker-only write (Horizon faces 3 / 4) now moves it too, with the markers' offset at scale 1.
+	expect(Math.abs(m.locClip.x - (110.75 - 10)) < 1e-9 && Math.abs(m.locClip.y - (96.75 + 5)) < 1e-9 && m.locClip.scaleX === 1, "ghost fix r7: a marker-only write (Horizon faces) moves the overlay with the markers' offset, scale 1");
 	const r = mk();
 	r.hz43VanWrite(-64.3, 34.85, 1);
 	const fresh = Object.assign({}, loc, { x: 110.75, y: 96.75, transform: loc.transform });
@@ -1177,10 +1182,99 @@ expect(writeScale.outlineClip.scaleX === 0.8 && writeScale.capClip.alpha === 0, 
 	const fb = funcBody(as, "hz43FollowApply");
 	expect(fb.indexOf("hzFindByName") < 0 && fb.indexOf("getChildAt") < 0 && (fb.match(/getChildByName/g) || []).length === 1, "ghost fix: one direct getChildByName per follower, no tree search");
 	const callers = as.split("\n").filter((l) => /this\.hz43FollowApply\(\)/.test(l));
-	expect(callers.length === 3 && funcBody(as, "hz40SetScan").indexOf("this.hz43FollowApply()") >= 0 && funcBody(as, "hzOnLocalEnv").indexOf("this.hz43FollowApply()") >= 0 && funcBody(as, "hz43VanWrite").indexOf("this.hz43FollowApply()") >= 0,
-		"ghost fix: event-driven only (assembly write, scan edge, LocalEnvironmentData); " + callers.length + " call sites");
+	expect(callers.length === 5 && funcBody(as, "hz40SetScan").indexOf("this.hz43FollowApply()") >= 0 && funcBody(as, "hzOnLocalEnv").indexOf("this.hz43FollowApply()") >= 0 && (funcBody(as, "hz43VanWrite").match(/this\.hz43FollowApply\(\)/g) || []).length === 2 && funcBody(as, "hz43FoOnAdd").indexOf("this.hz43FollowApply()") >= 0,
+		"ghost fix: event-driven only (assembly write, marker write, scan edge, LocalEnvironmentData, ADDED); " + callers.length + " call sites");
 	expect(funcBody(as, "hzOnFrame").indexOf("hz43FollowApply") < 0 && funcBody(as, "hz27OnExit").indexOf("hz43FollowApply") < 0, "ghost fix: no per-frame call");
 	expect(fb.indexOf(".alpha") < 0 && fb.indexOf(".visible") < 0, "ghost fix: position / scale only; visibility rules (hz41LocHide) unchanged");
+}
+
+// ---- r7 MF-1: Horizon faces (WatchStyle 3 / 4). The tester's ghost was the landing alert (LocalEnvironmentData,
+// FadeInPlanetInfo) with a moved Horizon face: hz43VanHorizon writes the markers only (marks=true), so the r6 follower
+// never ran there. LocationAlertText now follows the face with the markers' offset (scale 1). S-1: a new instance is
+// placed on its ADDED event (before the frame renders). Event-driven, never hidden.
+{
+	const loc = makeFadeClip("LocationAlertText", 110.75, 96.75, 1);
+	const mk = (src) => {
+		const h = makePlaceHost();
+		h.hzWatchStyle = 3;
+		const c = Object.assign({}, loc, { transform: loc.transform, visible: true }); c.parent = h.hzBlg; h.hzBlg.kids.push(c); h.locClip = c;
+		h.hz43FoLsn = null;
+		h.Event = { ADDED: "added" };
+		h.hzBlg.listeners = [];
+		h.hzBlg.addEventListener = function(t, f, cap, pri, weak) { this.listeners.push({ t: t, f: f, weak: weak }); };
+		h.hzBlg.removeEventListener = function(t, f) { this.listeners = this.listeners.filter((l) => !(l.t === t && l.f === f)); };
+		if (src) h.hz43VanWrite = Function.apply(null, ["dx", "dy", "sc", "marks", "with(this){\n" + asInnerOf(src, "hz43VanWrite") + "\n}"]).bind(h);
+		bindAsMethod(h, "hz43FoOnAdd", ["e"]);
+		const inner = h.hz43FollowApply;
+		h.followN = 0;
+		h.hz43FollowApply = function() { h.followN++; return inner(); };
+		return h;
+	};
+	const near = (a, b) => Math.abs(a - b) < 1e-9;
+	const fireAdd = (hh, ev) => { const l = hh.hzBlg.listeners[0]; if (l) l.f(ev); };
+	// 1. the landing ghost: a moved Horizon face, then LocalEnvironmentData
+	const h = mk();
+	h.hz43VanWrite(-30, 12, 1, true);
+	const moved = near(h.locClip.x, 110.75 - 30) && near(h.locClip.y, 96.75 + 12) && h.locClip.scaleX === 1;
+	expect(moved, "r7 MF-1: Horizon face moved: LocationAlertText follows with the markers' offset (no ghost at the native spot)");
+	expect(near(h.locClip.x - 110.75, h.iconsClip.x - 111.35) && near(h.locClip.y - 96.75, h.iconsClip.y - 111.45), "r7 MF-1: same dx / dy as the live marker widgets");
+	expect(h.outlineClip.x === 0 && h.capClip.x === 0 && h.o2Clip.x === 21.7, "r7 MF-1: native chrome (outline, cap, O2) still not moved in the Horizon faces");
+	expect(h.locClip.visible === true && h.locClip.alpha === 1, "r7 MF-1: never hidden (visible and alpha untouched)");
+	h.hz43FollowApply();   // LocalEnvironmentData / scan edge re-apply
+	expect(near(h.locClip.x, 110.75 - 30), "r7 MF-1: an event re-apply keeps it on the face");
+	// 2. change-only: the marker write already returns early on an unchanged offset; the follower adds nothing per frame
+	const n0 = h.followN;
+	h.hz43VanWrite(-30, 12, 1, true);
+	h.hz43VanWrite(-30, 12, 1, true);
+	expect(h.followN === n0, "r7 MF-1: an unchanged marker offset does not re-run the follower (per-frame callers stay free)");
+	h.hz43VanWrite(-50, 20, 1, true);
+	expect(h.followN === n0 + 1 && near(h.locClip.x, 110.75 - 50) && near(h.locClip.y, 96.75 + 20), "r7 MF-1: a new face position re-places it once");
+	// 3. face back on the native spot, then style change away from 3 / 4
+	h.hz43VanWrite(0, 0, 1, true);
+	expect(h.locClip.x === 110.75 && h.locClip.y === 96.75 && h.hz43FoMoved === false, "r7 MF-1: marker offset 0 puts it back at its native place");
+	const o = mk();
+	o.hz43VanWrite(-30, 12, 1, true);
+	o.hzWatchStyle = 0;
+	o.hz43VanPlace();
+	expect(o.locClip.x === 110.75 && o.locClip.y === 96.75 && o.iconsClip.x === 111.35, "r7 MF-1: leaving the Horizon faces (style 0) puts markers and LocationAlertText home");
+	const v = mk();
+	v.hz43VanWrite(-30, 12, 1, true);
+	v.hz43VanWrite(0, 0, 1);   // hz43VanHorizon / hz43VanPlace undo before a vanilla write
+	v.hz43VanWrite(-64.3, 34.85, 0.8);
+	expect(near(v.locClip.x, 110.75 * 0.8 - 64.3) && near(v.locClip.scaleX, 0.8), "r7 MF-1: vanilla styles keep the r6 assembly follow (scale and offset)");
+	// 4. S-1: one weak ADDED listener on BottomLeftGroup_mc once the watch moved; a new instance is placed on ADDED
+	expect(h.hzBlg.listeners.length === 1 && h.hzBlg.listeners[0].t === "added" && h.hzBlg.listeners[0].weak === true && h.hz43FoLsn === h.hzBlg, "r7 S-1: one weak ADDED listener on BottomLeftGroup_mc after the first move");
+	const fresh = Object.assign({}, loc, { x: 110.75, y: 96.75, transform: loc.transform, visible: true, parent: h.hzBlg });
+	h.hzBlg.kids[h.hzBlg.kids.indexOf(h.locClip)] = fresh;
+	fireAdd(h, { target: fresh });
+	expect(near(fresh.x, 110.75 - 50) === false && fresh.x === 110.75 && fresh.y === 96.75, "r7 S-1: (offset 0 here) the new instance stays native");
+	h.hz43VanWrite(-50, 20, 1, true);
+	const fresh2 = Object.assign({}, loc, { x: 110.75, y: 96.75, transform: loc.transform, visible: true, parent: h.hzBlg });
+	h.hzBlg.kids[h.hzBlg.kids.indexOf(fresh)] = fresh2;
+	const n1 = h.followN;
+	fireAdd(h, { target: fresh2 });
+	expect(h.followN === n1 + 1 && near(fresh2.x, 110.75 - 50) && near(fresh2.y, 96.75 + 20) && h.hz43FoHX[0] === 110.75, "r7 S-1: a new LocationAlertText instance is captured native and placed on its ADDED event (no frame at the native spot)");
+	expect(h.hzBlg.listeners.length === 1, "r7 S-1: later writes do not add a second listener");
+	const n2 = h.followN;
+	fireAdd(h, { target: { name: "Temperature_mc", parent: h.hzBlg } });
+	fireAdd(h, { target: { name: "LocationAlertText", parent: { name: "nested" } } });
+	fireAdd(h, null);
+	expect(h.followN === n2, "r7 S-1: other clips, nested clips and empty events do nothing");
+	const never = mk();
+	never.hz43FollowApply();
+	expect(never.hzBlg.listeners.length === 0, "r7 S-1: no listener while the watch was never moved");
+	const lb = funcBody(as, "hz43FoOnAdd");
+	expect(lb.indexOf("getChildByName") < 0 && lb.indexOf("hzFindByName") < 0 && lb.indexOf(".visible") < 0 && lb.indexOf(".alpha") < 0, "r7 S-1: the ADDED handler does no lookup and no visibility write");
+	expect(["hzOnFrame", "hz27OnExit", "hz43Frame", "hz43VanHorizon"].every((f) => funcBody(as, f).indexOf("hz43FoOnAdd") < 0 && funcBody(as, f).indexOf("Event.ADDED") < 0), "r7 S-1: nothing per frame (listener added only in hz43FollowApply)");
+	expect((as.match(/addEventListener\(Event\.ADDED,this\.hz43FoOnAdd,false,0,true\)/g) || []).length === 1, "r7 S-1: the listener is weak and added in one place");
+	expect(funcBody(as, "hz43VanHorizon").indexOf("this.hz43VanWrite(cx - rx,cy - ry,1,true)") >= 0, "r7 MF-1: the follower offset is the markers' offset (cx - rx, cy - ry, scale 1)");
+	// 5. mutant: the r6 marker write (no follow) leaves the landing alert at the native spot, and the check above fails
+	const mutSrc = as.replace(/\n\s*\/\/ r7 \(MF-1\): Horizon faces 3 \/ 4\.[\s\S]*?this\.hz43FollowApply\(\);\n\s*\}/, "");
+	expect(mutSrc !== as && (funcBody(mutSrc, "hz43VanWrite").match(/hz43FollowApply/g) || []).length === 1, "r7 MF-1 mutant: built (marker branch follow removed)");
+	const mu = mk(mutSrc);
+	mu.hz43VanWrite(-30, 12, 1, true);
+	const mutMoved = near(mu.locClip.x, 110.75 - 30) && near(mu.locClip.y, 96.75 + 12);
+	expect(!mutMoved && mu.locClip.x === 110.75 && mu.iconsClip.x === 111.35 - 30, "r7 MF-1 mutant: without the fix the alert stays at the native spot while the markers move (the move check above would FAIL)");
 }
 
 // ---- r6 item 2: [Scanner] HideWatchWhileScanning (default 0, F11 > SCANNER, live on the scan edge) ----

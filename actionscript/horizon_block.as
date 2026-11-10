@@ -20499,8 +20499,10 @@
       private var hz43EnvLang:String = "";
       private var hz43MarkMoved:Boolean = false;
       // v0.44 r6 (watch ghost): on-dial overlays the game draws over the vanilla watch follow its Arrange move / scale.
-      // LocationAlertText is the FadeInPlanetInfo face (body name + "PLANET") the game plays when the scanner opens.
-      // hz43VanSkip keeps every *Alert* clip out of the units, so before r6 it played at its native spot (the ghost).
+      // LocationAlertText is the FadeInPlanetInfo face (body name + "PLANET") the game plays on landing / arrival
+      // (LocalEnvironmentData) and on the scan edge. hz43VanSkip keeps every *Alert* clip out of the units, so before r6
+      // it played at its native spot (the ghost). r7 (MF-1): in the Horizon faces (WatchStyle 3 / 4) it follows the face
+      // with the same offset the live markers get (hz43VanHorizon's marker write, scale 1); never hidden.
       private static const HZ43_VAN_FOLLOW:Array = ["LocationAlertText"];
       private var hz43FoD:Array = [];
       private var hz43FoHX:Array = [];
@@ -20511,6 +20513,7 @@
       private var hz43FoDy:Number = 0;
       private var hz43FoSc:Number = 1;
       private var hz43FoMoved:Boolean = false;   // true while a follower sits off its native place
+      private var hz43FoLsn:DisplayObjectContainer = null;   // r7 (S-1): the BottomLeftGroup_mc that has hz43FoOnAdd
       // r6: [Scanner] HideWatchWhileScanning. hz43ScanHid = the Horizon face is hidden for the scan; hz43ScanMk = the marker
       // widgets this switch hid (only those are shown again).
       private var hz43ScanHid:Boolean = false;
@@ -22082,6 +22085,15 @@
          if(marks)
          {
             if(dx != 0 || dy != 0) { this.hz43MarkMoved = true; }
+            // r7 (MF-1): Horizon faces 3 / 4. LocationAlertText follows the face with the markers' offset (scale 1,
+            // like the markers). Only when the offset changed: this write already runs only on a change.
+            if(this.hz43FoDx != dx || this.hz43FoDy != dy || this.hz43FoSc != 1)
+            {
+               this.hz43FoDx = dx;
+               this.hz43FoDy = dy;
+               this.hz43FoSc = 1;
+               this.hz43FollowApply();
+            }
          }
          else
          {
@@ -22140,8 +22152,9 @@
       // v0.44 r6 (watch ghost): place each HZ43_VAN_FOLLOW clip with the last non-marker Arrange write, from the
       // WatchOutline origin and units of the captured assembly (the same formula as hz43VanWrite). A new instance is
       // captured at its own (native) place first, so a HUD rebuild never inherits an old offset. One getChildByName
-      // per name, no tree search. Callers are events only: the assembly write, the scan open / close edge
-      // (hz40SetScan) and LocalEnvironmentData (hzOnLocalEnv, where the game starts FadeInPlanetInfo). Never per frame.
+      // per name, no tree search. Callers are events only: the assembly write (vanilla 1 / 2) and the marker write
+      // (Horizon 3 / 4, r7), the scan open / close edge (hz40SetScan), LocalEnvironmentData (hzOnLocalEnv, where the
+      // game starts FadeInPlanetInfo) and r7 (S-1) the ADDED event of a new follower instance (hz43FoOnAdd). Never per frame.
       private function hz43FollowApply() : void
       {
          if(!this.hzBlg || this.hz43VanCap == 0 || this.hz43VanN <= 0) { return; }
@@ -22156,6 +22169,16 @@
          var sc:Number = this.hz43FoSc > 0.05 ? this.hz43FoSc : 1;
          var ident:Boolean = this.hz43FoDx == 0 && this.hz43FoDy == 0 && sc == 1;
          if(ident && !this.hz43FoMoved) { return; }   // never moved: the game's own placement is left alone
+         if(this.hz43FoLsn !== this.hzBlg)   // r7 (S-1): once per BottomLeftGroup_mc instance
+         {
+            try
+            {
+               if(this.hz43FoLsn) { this.hz43FoLsn.removeEventListener(Event.ADDED,this.hz43FoOnAdd); }
+               this.hzBlg.addEventListener(Event.ADDED,this.hz43FoOnAdd,false,0,true);
+               this.hz43FoLsn = this.hzBlg;
+            }
+            catch(eL:Error) { }
+         }
          var i:int = 0;
          while(i < HZ43_VAN_FOLLOW.length)
          {
@@ -22184,6 +22207,16 @@
             i++;
          }
          this.hz43FoMoved = !ident;
+      }
+
+      // r7 (S-1): the timeline adds a new LocationAlertText instance (a keyframe after LocalEnvironmentData). ADDED fires
+      // before that frame renders, so the new instance is placed before it is ever drawn at the native spot. Event only:
+      // one parent and name check per added clip under BottomLeftGroup_mc; the listener exists only once the watch moved.
+      private function hz43FoOnAdd(e:Event) : void
+      {
+         var t:Object = e != null ? e.target : null;
+         if(!t || !this.hzBlg || t.parent !== this.hzBlg || HZ43_VAN_FOLLOW.indexOf(t.name) < 0) { return; }
+         try { this.hz43FollowApply(); } catch(eF:Error) { }
       }
 
       // True when box is, or holds, a live marker widget. One walk for all three names (was one walk per name);
