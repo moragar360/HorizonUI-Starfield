@@ -17,8 +17,10 @@ package
    // Dependencies: HorizonShipBuilder (send, fileOp, writeShare, keyName, hintEvent, text
    //    input), HsbKit.
    // Backend limits shown in the panel: the game has no "apply to" choice (colors go to the
-   //    parts selected before color mode) and no "take from a part"; hex values are worked
-   //    out from hue, saturation and brightness (marked with ~). Applying a scheme steps the
+   //    parts selected before color mode, which the row states) and no way to read a part that
+   //    is not selected, so TAKE FROM PART copies the colors of the parts selected now and
+   //    APPLY TAKEN previews them later; hex values are worked out from hue, saturation and
+   //    brightness (marked with ~). Applying a scheme steps the
    //    picker through its slots one frame at a time, waits for the game to confirm each slot
    //    switch, then returns to the slot and control the player had, also when the walk starts
    //    while another is still running.
@@ -54,6 +56,12 @@ package
       private var walkCtl:int = HUE;
       private var openSlot:int = -1;
       private var naming:Boolean = false;
+      // What the name field is for: "save" (SAVE AS SCHEME) or "export" (EXPORT, named copy).
+      private var nameMode:String = "save";
+      // The colors TAKE FROM PART copied: kept across Colors visits in this builder session, so
+      // they can be applied to other parts (APPLY TAKEN). Null until something was taken.
+      private var taken:Array = null;
+      private var takenNote:String = "";
       private var nameText:String = "";
       private var listed:Boolean = false;
       private var note1:String = "";
@@ -102,7 +110,9 @@ package
          }
          var start:Object = param1.aSelection;
          if(start != null) { this.onSelection(start); }
-         if(Boolean(param1.bVisible) || this.tabs.length > 0) { this.discover(); }
+         // The slot walk only while the game's color picker is up: tab switches sent while it
+         // is hidden are never confirmed (one "slot wait timeout" per slot at every open).
+         if(Boolean(param1.bVisible) && this.visible) { this.discover(); }
       }
 
       internal function onSelection(param1:Object):void
@@ -153,7 +163,9 @@ package
       {
          var on:Boolean = this.visible;
          if(!on && this.wasOn) { this.closed(); }
+         if(on && !this.wasOn) { this.discover(); }
          this.wasOn = on;
+         if(!on) { return; }
          if(this.pendingValue >= 0)
          {
             this.hsb.send("ShipEditor_OnColorSliderMouseInput",{"sliderValue":this.pendingValue});
@@ -188,6 +200,7 @@ package
          this.waitTab = -1;
          this.openSlot = -1;
          this.naming = false;
+         this.nameMode = "save";
          this.exported = null;
          this.slots = {};
          if(this.hsb.textActive(this)) { this.hsb.endText(this); }
@@ -347,12 +360,69 @@ package
       {
          var s:Object = this.schemes[param1];
          if(s == null) { return; }
+         this.chosen = param1;
+         this.previewSlots(s.slots as Array);
+         this.hsb.note("COLORS preview scheme=" + param1);
+      }
+
+      // Start (or move) a preview to these slot colors; ACCEPT keeps them, CANCEL goes back.
+      private function previewSlots(param1:Array):void
+      {
          if(!this.previewing) { this.before = {"slots":this.currentSlots()}; }
          this.previewing = true;
-         this.chosen = param1;
          this.exported = null;
-         this.applySlots(s.slots as Array);
-         this.hsb.note("COLORS preview scheme=" + param1);
+         this.applySlots(param1);
+      }
+
+      // TAKE FROM PART: the slots Colors read from the parts selected now (the game shows the
+      // selected part's colors), kept for APPLY TAKEN on other parts.
+      private function takeColors():void
+      {
+         if(!this.allKnown()) { return; }
+         this.taken = this.currentSlots();
+         this.takenNote = "Colors taken \u00B7 select other parts, open Colors, then APPLY TAKEN";
+         this.hsb.note("COLORS taken n=" + this.taken.length);
+      }
+
+      private function applyTaken():void
+      {
+         if(this.taken == null || !this.allKnown()) { return; }
+         this.chosen = -1;
+         this.takenNote = "";
+         this.previewSlots(this.taken);
+         this.hsb.note("COLORS apply taken");
+      }
+
+      // EXPORT asks for the file's name first; the field starts with the chosen scheme's name.
+      private function startExport():void
+      {
+         if(this.previewing) { this.cancelPreview(); }
+         var s:Object = this.chosen >= 0 ? this.schemes[this.chosen] : null;
+         if(s == null && !this.allKnown()) { this.note1 = "Reading the current colors \u00B7 try again in a moment"; return; }
+         this.naming = true;
+         this.nameMode = "export";
+         this.nameText = s != null ? HsbPillModel.safeName(String(s.name),NAME_MAX) : "My ship colors";
+         this.exported = null;
+         this.note1 = "";
+         this.hsb.beginText(this);
+      }
+
+      // Write the export under the typed name. The player's own scheme under its own name is
+      // already its file in schemes\user, which the result box names.
+      private function exportAs(param1:String):void
+      {
+         var name:String = HsbPillModel.safeName(param1,NAME_MAX);
+         if(name.length == 0) { return; }
+         var s:Object = this.chosen >= 0 ? this.schemes[this.chosen] : null;
+         if(s != null && String(s.source) == "user" && String(s.file).length > 0 && String(s.name) == name)
+         {
+            this.exported = {"name":String(s.name),"file":String(s.file)};
+            this.note1 = "";
+            this.hsb.note("SCHEMES export own file");
+            return;
+         }
+         var slots:Array = s != null ? s.slots as Array : this.currentSlots();
+         this.writeScheme({"name":name,"source":"user","author":s != null ? s.author : "","file":"","slots":slots},false);
       }
 
       private function cancelPreview():void
@@ -453,19 +523,19 @@ package
             this.add(part,w - pad - part.width,y + 4);
          }
          y += k.u(42);
-         var applyL:TextField = k.label(this,pad,y + 4,"APPLY TO",13,k.accent,true,2);
-         // The segments must clear the label (mockup 6); the short set is for long translations
-         // and the large movie.
-         var room:Number = w - pad * 2 - applyL.width - 12;
-         var labels:Array = ["SELECTED PART","ALL OF TYPE","WHOLE SHIP"];
-         var segPad:Number = 20;
-         var segSpace:Number = 1.2;
-         if(this.kit.segmentsWidth(labels) > room) { segPad = 16; segSpace = 0.6; }
-         if(this.kit.segmentsWidth(labels,segPad,segSpace) > room) { labels = ["PART","TYPE","SHIP"]; segPad = 20; segSpace = 1.2; }
-         var segW:Number = this.kit.segmentsWidth(labels,segPad,segSpace);
-         k.segments(this,w - pad - segW,y,labels,-1,"applyto",k.u(26),false,segPad,segSpace);
+         // The game has no target choice (no event picks part, type or ship), so this row
+         // states the target instead of offering buttons that cannot act.
+         var applyL:TextField = k.label(this,pad,y + 4,"APPLIES TO",13,k.accent,true,2);
+         var chip:TextField = k.text(13,HsbKit.TEXT,true,1.2);
+         k.put(chip,"THE PARTS YOU SELECTED");
+         k.fit(chip,w - pad * 2 - applyL.width - 40);
+         var chipW:Number = chip.width + 28;
+         var chipH:Number = k.u(26);
+         k.fill(g,w - pad - chipW,y,chipW,chipH,chipH / 2,0x14191E,1);
+         k.outline(g,w - pad - chipW,y,chipW,chipH,chipH / 2,HsbKit.EDGE_HI,1);
+         this.add(chip,w - pad - chipW + 14,y + (chipH - chip.height) / 2);
          y += k.u(30);
-         k.label(this,pad,y,"Not in the game: colors go to the parts you selected before Colors",12,HsbKit.ORANGE,false,0,w - pad * 2);
+         k.label(this,pad,y,"Not in the game: colors go to the parts you selected before Colors",13,HsbKit.ORANGE,false,0,w - pad * 2);
          y += k.u(24);
          k.label(this,pad,y,"CURRENT COLORS",13,k.accent,true,2);
          var hint:TextField = k.text(13,HsbKit.LABEL,false,0,"right");
@@ -480,11 +550,13 @@ package
          {
             var fw:Number = w - pad * 2 - k.u(170);
             var fh:Number = k.u(28);
+            k.label(this,pad,y,this.nameMode == "export" ? "EXPORT AS" : "SAVE AS",13,k.accent,true,2);
+            y += k.u(22);
             k.fill(g,pad,y,fw,fh,6,HsbKit.FIELD,1);
             k.outline(g,pad,y,fw,fh,6,k.accent,1);
             k.label(this,pad + 10,y + (fh - k.u(22)) / 2,this.nameText.length > 0 ? this.nameText + "|" : "|",14,HsbKit.TEXT,false,0,fw - 20);
             var nx:Number = pad + fw + 8;
-            nx += k.button(this,nx,y,"SAVE","accent","namesave",null,fh) + 6;
+            nx += k.button(this,nx,y,this.nameMode == "export" ? "EXPORT" : "SAVE","accent","namesave",null,fh) + 6;
             k.button(this,nx,y,"CANCEL","outline","namecancel",null,fh);
             y += fh + 14;
          }
@@ -493,12 +565,25 @@ package
             var bx:Number = pad;
             var known:Boolean = this.allKnown();
             bx += this.iconButton(bx,y,"save","SAVE AS SCHEME",known ? "save" : "") + 10;
-            var tw:Number = this.iconButton(bx,y,"dropper","TAKE FROM A PART","");
-            var gap:TextField = k.label(this,bx + tw + 8,y + 6,"No game data",12,HsbKit.ORANGE);
-            var below:Boolean = gap.x + gap.width > w - pad;
-            // The gap marker goes under its button when it would cross the card's edge.
-            if(below) { gap.x = bx; gap.y = y + k.u(26) + 4; }
-            y += k.u(26) + 16 + (below ? gap.height + 2 : 0);
+            // TAKE FROM PART copies the colors of the parts selected now (the game shows the
+            // selected part's colors); APPLY TAKEN previews them on the parts selected later.
+            var tw:Number = this.iconButton(bx,y,"dropper","TAKE FROM PART",known ? "take" : "");
+            if(this.taken != null)
+            {
+               var aw:Number = this.iconButtonWidth("APPLY TAKEN");
+               var ax:Number = bx + tw + 10;
+               var wrap:Boolean = ax + aw > w - pad;
+               if(wrap) { ax = pad; y += k.u(26) + 8; }
+               this.iconButton(ax,y,"check","APPLY TAKEN",known ? "applytaken" : "");
+            }
+            y += k.u(26) + 10;
+            var takeHelp:String = this.takenNote.length > 0 ? this.takenNote : (known ? "" : "Reading the current colors\u2026");
+            if(takeHelp.length > 0)
+            {
+               k.label(this,pad,y,takeHelp,13,HsbKit.LABEL,false,0,w - pad * 2);
+               y += k.u(20);
+            }
+            y += 6;
          }
          k.hline(g,pad,y,w - pad * 2,HsbKit.EDGE,1);
          y += 14;
@@ -736,11 +821,12 @@ package
          var k:HsbKit = this.kit;
          var g:Graphics = this.gfx;
          var pad:Number = 16;
-         if(this.previewing && this.chosen >= 0)
+         if(this.previewing)
          {
+            var what:String = this.chosen >= 0 && this.schemes[this.chosen] != null ? String(this.schemes[this.chosen].name) : "Taken colors";
             k.fill(g,param1,param2,param3,param4,10,0x14181C,1);
             k.outline(g,param1,param2,param3,param4,10,k.accentDim(0.55),1);
-            k.label(this,param1 + pad,param2 + 14,String(this.schemes[this.chosen].name) + " on the selected parts",15,HsbKit.TEXT,true,0,param3 - pad * 2);
+            k.label(this,param1 + pad,param2 + 14,what + " on the selected parts",15,HsbKit.TEXT,true,0,param3 - pad * 2);
             k.label(this,param1 + pad,param2 + 14 + k.u(24),"Nothing changes until you accept.",13,HsbKit.LABEL);
             k.label(this,param1 + pad,param2 + 14 + k.u(42),"Other parts keep their colors.",13,HsbKit.LABEL);
             var bh:Number = k.u(30);
@@ -882,33 +968,31 @@ package
             case "pvcancel": this.cancelPreview(); break;
             case "save":
                this.naming = true;
+               this.nameMode = "save";
                this.nameText = "";
                this.hsb.beginText(this);
                break;
             case "namesave":
                var name:String = this.nameText;
+               var forExport:Boolean = this.nameMode == "export";
                this.naming = false;
+               this.nameMode = "save";
                this.hsb.endText(this);
-               this.saveScheme(name);
+               if(forExport) { this.exportAs(name); }
+               else { this.saveScheme(name); }
                break;
+            case "take": this.takeColors(); break;
+            case "applytaken": this.applyTaken(); break;
             case "namecancel":
                this.naming = false;
+               this.nameMode = "save";
                this.hsb.endText(this);
                break;
             case "export":
                // Exporting writes the file only (mockup 7): a running preview ends first, so the
-               // ship goes back to its own colors and the result box is what shows. A scheme of
-               // the player's own already is its file in schemes\user, which the box names.
-               if(this.previewing) { this.cancelPreview(); }
-               var s:Object = this.chosen >= 0 ? this.schemes[this.chosen] : null;
-               if(s == null && this.allKnown()) { s = {"name":"My ship colors","source":"user","author":"","file":"","slots":this.currentSlots()}; }
-               if(s != null && String(s.source) == "user" && String(s.file).length > 0)
-               {
-                  this.exported = {"name":String(s.name),"file":String(s.file)};
-                  this.note1 = "";
-                  this.hsb.note("SCHEMES export own file");
-               }
-               else if(s != null) { this.writeScheme(s,String(s.source) == "user"); }
+               // ship goes back to its own colors and the result box is what shows. The name
+               // field opens first (startExport), and SAVE there writes the file (exportAs).
+               this.startExport();
                break;
             case "import":
                this.loadSchemes();

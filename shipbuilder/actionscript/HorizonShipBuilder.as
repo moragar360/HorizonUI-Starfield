@@ -664,6 +664,7 @@ package
          {
             var label:TextField = this.pathField(["ModuleInfoCard_mc","ModuleLabel_mc","text_tf"]);
             if(label != null) { draw = this.kit.nativeDraws(label); }
+            if(draw == -2) { this.note("FONT draw fault id=" + this.kit.drawErr); }
             this.note("FONT phase=draw end");
          }
          catch(err:Error)

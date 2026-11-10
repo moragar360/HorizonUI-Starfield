@@ -258,12 +258,16 @@ package
       }
 
       // Error 2077 blocks every later draw in this open and reads as -4 (skip).
-      // Any other throw reads as -2.
+      // Any other throw reads as -2. drawErr keeps the id of the last throw for the FONT
+      // line (FONT draw fault id=), so the next log names what the sample hit.
+      internal var drawErr:int = 0;
+
       internal function drawFault(param1:*):int
       {
          var id:int = 0;
          try { if(param1 is Error) { id = Error(param1).errorID; } }
          catch(err:*) { id = 0; }
+         this.drawErr = id;
          if(id == 2077)
          {
             this.drawBlocked = true;

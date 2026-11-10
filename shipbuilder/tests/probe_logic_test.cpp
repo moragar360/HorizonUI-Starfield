@@ -1649,8 +1649,8 @@ static void CheckMovie(const fs::path& root)
 			Has(FunctionBody(browser, "openSort"), "self.setSort(String(param2),false);") && !Has(FunctionBody(browser, "openSort"), "self.sortCol =") &&
 			InOrder(FunctionBody(browser, "setSort"), {"this.sortCol = param1;", "this.hsb.setSetting(\"Columns\",this.tabId + \"Sort\",", "this.hsb.saveSettings();", "this.afterFilter();"}),
 		"sorting by name orders the rows by name, and every sort choice is saved so the next PartEntries keeps it");
-	Expect(Has(colors, "var below:Boolean = gap.x + gap.width > w - pad;") && Has(colors, "if(below) { gap.x = bx; gap.y = y + k.u(26) + 4; }"),
-		"the Colors gap marker moves under its button rather than cross the card's edge");
+	Expect(Has(colors, "var wrap:Boolean = ax + aw > w - pad;") && Has(colors, "if(wrap) { ax = pad; y += k.u(26) + 8; }"),
+		"the Colors APPLY TAKEN button moves to the next row rather than cross the card's edge");
 	// The plugin refuses a profile write it cannot back up; the player must see that, and the
 	// next change must still be allowed to save.
 	Expect(InOrder(FunctionBody(hub, "savePills", "internal"), {"note(\"PILLS save \" + (param1 ? \"ok\" : \"failed\")",
@@ -2009,10 +2009,13 @@ static void CheckMovie(const fs::path& root)
 				Has(FunctionBody(colors, "parseScheme", "internal static"), "if(key == \"name\") { out.name = HsbPillModel.safeName(val,NAME_MAX,false); }") &&
 				Has(FunctionBody(colors, "saveScheme"), "\"file\":\"\""),
 			"a saved or exported scheme never replaces a file: the file and the scheme take the next free name together");
-		Expect(InOrder(FunctionBody(colors, "onAct", "override internal"), {"case \"export\":",
-					   "if(s != null && String(s.source) == \"user\" && String(s.file).length > 0)",
-					   "this.exported = {\"name\":String(s.name),\"file\":String(s.file)};", "else if(s != null) { this.writeScheme(s,String(s.source) == \"user\"); }"}),
-			"exporting a scheme of the player's own names its file and writes nothing");
+		Expect(InOrder(FunctionBody(colors, "onAct", "override internal"), {"case \"export\":", "this.startExport();"}) &&
+				InOrder(FunctionBody(colors, "startExport"), {"this.naming = true;", "this.nameMode = \"export\";", "this.hsb.beginText(this);"}) &&
+				InOrder(FunctionBody(colors, "exportAs"), {"var name:String = HsbPillModel.safeName(param1,NAME_MAX);",
+					   "if(s != null && String(s.source) == \"user\" && String(s.file).length > 0 && String(s.name) == name)",
+					   "this.exported = {\"name\":String(s.name),\"file\":String(s.file)};", "return;",
+					   "this.writeScheme({\"name\":name,\"source\":\"user\",\"author\":s != null ? s.author : \"\",\"file\":\"\",\"slots\":slots},false);"}),
+			"exporting asks for a name first; the player's own scheme under its own name names its file and writes nothing");
 	}
 	// Flight Check tabs click the game's own tab bar, which selects and reports the tab itself.
 	{
@@ -2420,6 +2423,36 @@ static void CheckV6Names(const fs::path& root)
 
 }
 
+// v6c: the Colors panel.
+static void CheckV6Colors(const fs::path& root)
+{
+	const fs::path as = root / "actionscript";
+	const std::string hub = ReadFile(as / "HorizonShipBuilder.as");
+	const std::string colors = ReadFile(as / "HsbColors.as");
+	const std::string kit = ReadFile(as / "HsbKit.as");
+	Expect(!hub.empty() && !colors.empty() && !kit.empty(), "v6c sources read");
+	Expect(Has(FunctionBody(colors, "onInit", "internal"), "if(Boolean(param1.bVisible) && this.visible) { this.discover(); }") &&
+			InOrder(FunctionBody(colors, "tick", "internal"), {"if(!on && this.wasOn) { this.closed(); }", "if(on && !this.wasOn) { this.discover(); }",
+					   "this.wasOn = on;", "if(!on) { return; }", "COLORS slot wait timeout"}),
+		"the slot walk runs only while the color picker is up, so a hidden picker never times out");
+	Expect(!Has(colors, "\"applyto\"") && Has(colors, "\"THE PARTS YOU SELECTED\"") && Has(colors, "\"APPLIES TO\""),
+		"the Apply to row states the target instead of offering buttons the game cannot act on");
+	Expect(Has(colors, "this.iconButton(bx,y,\"dropper\",\"TAKE FROM PART\",known ? \"take\" : \"\");") &&
+			Has(FunctionBody(colors, "onAct", "override internal"), "case \"take\": this.takeColors(); break;") &&
+			Has(FunctionBody(colors, "onAct", "override internal"), "case \"applytaken\": this.applyTaken(); break;") &&
+			Has(FunctionBody(colors, "takeColors"), "this.taken = this.currentSlots();") &&
+			Has(FunctionBody(colors, "applyTaken"), "this.previewSlots(this.taken);") &&
+			!Has(FunctionBody(colors, "closed"), "this.taken"),
+		"TAKE FROM PART is live once the colors are read and keeps them for APPLY TAKEN on other parts");
+	Expect(InOrder(FunctionBody(colors, "onAct", "override internal"), {"case \"namesave\":", "var forExport:Boolean = this.nameMode == \"export\";",
+				   "if(forExport) { this.exportAs(name); }", "else { this.saveScheme(name); }"}) &&
+			Has(FunctionBody(colors, "paintBox"), "if(this.previewing)\n         {"),
+		"the name field's SAVE writes the export under the typed name, and a taken-colors preview shows its box");
+	Expect(Has(FunctionBody(kit, "drawFault", "internal"), "this.drawErr = id;") &&
+			Has(FunctionBody(hub, "proveFace"), "if(draw == -2) { this.note(\"FONT draw fault id=\" + this.kit.drawErr); }"),
+		"a draw sample that throws something other than 2077 logs its id");
+}
+
 int main()
 {
 	CheckGuard();
@@ -2445,6 +2478,7 @@ int main()
 	CheckDocs(repo, root);
 	CheckV6Keys(root);
 	CheckV6Names(root);
+	CheckV6Colors(root);
 
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";
