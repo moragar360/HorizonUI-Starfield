@@ -232,6 +232,12 @@ package
       private var lastPressAt:int = -100;
       private var scrim:Sprite;
       private var scrimKey:String = "";
+      // What the cover sheet was last drawn for: recomputed only when it opens or closes, the
+      // stage size changes or the UI scale changes, never every frame.
+      private var scrimOn:Boolean = false;
+      private var scrimW:int = -1;
+      private var scrimH:int = -1;
+      private var scrimScale:Number = -1;
       private var dragBox:HsbBox;
       private var textOwner:HsbBox;
       private var pointerX:Number = -1;
@@ -3090,13 +3096,19 @@ package
          var on:Boolean = this.pops.length > 0 || this.textOwner != null;
          var w:int = stage != null ? stage.stageWidth : 0;
          var h:int = stage != null ? stage.stageHeight : 0;
+         var live:Boolean = on && w > 0 && h > 0;
+         // The per-frame test reads plain numbers only; the mapped corners are computed when the
+         // sheet opens, the stage size changes or the UI scale changes (Settings while a popup is open).
+         if(live == this.scrimOn && (!live || (w == this.scrimW && h == this.scrimH && this.uiScale == this.scrimScale))) { return; }
+         this.scrimOn = live;
+         this.scrimW = w;
+         this.scrimH = h;
+         this.scrimScale = this.uiScale;
          var key:String = "";
          var a:Point = null;
          var b:Point = null;
-         if(on && w > 0 && h > 0)
+         if(live)
          {
-            // The key follows the layer's own transform too, so a UI scale change while a popup
-            // is open (Settings) redraws the sheet over the whole stage.
             a = this.popLayer.globalToLocal(new Point(0,0));
             b = this.popLayer.globalToLocal(new Point(w,h));
             key = w + "x" + h + "@" + Math.round(a.x) + "," + Math.round(a.y) + "," + Math.round(b.x) + "," + Math.round(b.y);

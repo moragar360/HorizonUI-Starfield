@@ -2757,7 +2757,7 @@ static void CheckV7f(const fs::path& root)
 	Expect(InOrder(scrim, {"a = this.popLayer.globalToLocal(new Point(0,0));", "b = this.popLayer.globalToLocal(new Point(w,h));",
 				   "key = w + \"x\" + h + \"@\" + Math.round(a.x) + \",\" + Math.round(a.y) + \",\" + Math.round(b.x) + \",\" + Math.round(b.y);", "if(key == this.scrimKey) { return; }",
 				   "g.drawRect(a.x,a.y,b.x - a.x,b.y - a.y);"}),
-		"S-8: the cover sheet is redrawn when the layer's scale or place changes");
+		"S-8: the cover sheet is redrawn over the mapped stage when the UI scale or stage size changes");
 	const std::string learn = FunctionBody(browser, "learnMaker");
 	Expect(InOrder(learn, {"var had:* = this.makerByName[key];", "if(had != null || this.nameClash[key] == true)", "this.nameClash[key] = true;", "delete this.makerByName[key];",
 				   "rc.maker = String(rc.guess);", "return changed;", "this.makerByName[key] = maker;"}),
@@ -2773,6 +2773,64 @@ static void CheckV7f(const fs::path& root)
 			Has(FunctionBody(editor, "paint", "internal"), "shownN < 0 ? \" \\u00B7 not used on this tab\""),
 		"S-7: the shown count follows the draft's tabs, and says when the pill is not used here");
 	Expect(Has(browser, "internal static const CAT_TEAL:uint = 0x4FD1BE;"), "the teal accent stays");
+
+	// v7g MF-2, Bot 3's stale.cpp: Esc passes in visit 1 (no field) and closes the builder; the
+	// subclass is gone before its release. At the next open nothing is down, and Esc pressed
+	// while typing in Find must be kept from the game.
+	{
+		std::array<hsb::RawHeld, 256> keys{};
+		bool down[256] = {};
+		const unsigned esc = 0x1B;
+		hsb::InputState idle;
+		const bool e1 = hsb::RawKeyEdge(false, keys[esc], hsb::KeyPress(esc, 0, false, false, false, false, idle).eat);
+		Expect(!e1 && keys[esc] == hsb::RawHeld::passed, "MF-2 setup: visit 1's Esc goes to the game");
+		hsb::RawLedgerOpen(keys.data(), keys.size(), down);
+		Expect(keys[esc] == hsb::RawHeld::none, "MF-2: the open forgets a key left passed by the last visit once it is up");
+		hsb::InputState typing;
+		typing.text = true;
+		const bool e2 = hsb::RawKeyEdge(false, keys[esc], keys[esc] == hsb::RawHeld::none && hsb::KeyPress(esc, 0, false, false, false, false, typing).eat);
+		Expect(e2 && hsb::RawKeyEdge(true, keys[esc], false), "MF-2: Esc while typing in the next visit is kept from the game, and so is its release");
+	}
+	{
+		// The same staleness through the focus path: lost focus, then back with nothing down.
+		std::array<hsb::RawHeld, 256> keys{};
+		bool down[256] = {};
+		keys['W'] = hsb::RawHeld::passed;
+		keys['Q'] = hsb::RawHeld::eaten;
+		hsb::RawLedgerFocusLost(keys.data(), keys.size());
+		down['E'] = true;
+		keys['T'] = hsb::RawHeld::passed;                         // a stale entry the focus loss did not see
+		hsb::RawLedgerOpen(keys.data(), keys.size(), down);
+		bool clean = true;
+		for (unsigned vk = 0; vk < 256; ++vk) clean = clean && keys[vk] == (vk == 'E' ? hsb::RawHeld::passed : hsb::RawHeld::none);
+		Expect(clean, "MF-2: a refresh with the down keys rebuilds every entry from them (open and focus regain)");
+		keys['Q'] = hsb::RawHeld::eaten;
+		keys['W'] = hsb::RawHeld::passed;
+		hsb::RawLedgerOpen(keys.data(), keys.size(), nullptr);
+		Expect(keys['Q'] == hsb::RawHeld::none && keys['W'] == hsb::RawHeld::passed && keys['E'] == hsb::RawHeld::passed,
+			"without the down keys (a press while closed) only eaten entries are forgotten");
+	}
+	{
+		// S-12: the refresh asks about every key a raw record can carry, 1 to 254.
+		bool asked[256] = {};
+		unsigned calls = 0;
+		bool down[256] = {};
+		hsb::RawPollDown(down, [&](unsigned vk) { if (vk < 256) asked[vk] = true; ++calls; return vk == 1 || vk == 0x1B || vk == 254; });
+		bool all = true;
+		for (unsigned vk = 1; vk <= 254; ++vk) all = all && asked[vk];
+		Expect(all && calls == 254 && !asked[0] && !asked[255] && down[1] && down[0x1B] && down[254] && !down['A'],
+			"S-12: the down-key poll covers vk 1 to 254 and copies each answer");
+		Expect(Has(CppBody(plugin, "void RawLedgerRefresh("), "hsb::RawPollDown(down, [](unsigned vk) { return (GetAsyncKeyState(static_cast<int>(vk)) & 0x8000) != 0; });"),
+			"the plugin's refresh uses that poll");
+	}
+	{
+		// S-11: the cover sheet's per-frame test reads plain numbers; corners only on a change.
+		const std::string sheet = FunctionBody(hub, "updateScrim");
+		Expect(InOrder(sheet, {"var live:Boolean = on && w > 0 && h > 0;",
+					   "if(live == this.scrimOn && (!live || (w == this.scrimW && h == this.scrimH && this.uiScale == this.scrimScale))) { return; }",
+					   "this.scrimScale = this.uiScale;", "a = this.popLayer.globalToLocal(new Point(0,0));"}),
+			"S-11: the cover sheet is recomputed only when it opens, the stage resizes or the UI scale changes");
+	}
 }
 
 static void CheckV7Categories(const fs::path& root)

@@ -348,17 +348,34 @@ inline void RawKeySeen(bool release, RawHeld& held)
 }
 
 // Purpose: the raw key ledger at a menu open (and when the game window gets focus back).
-// Inputs: the ledger (n keys) and which keys are down now (down may be null). Rules: only
-//    keys we ate are forgotten; a key the game saw go down stays the game's until its
-//    release, so its auto-repeats and release keep reaching the game. A key that is down but
-//    unknown (its press came before the window was watched) is the game's too. So a release
-//    is never eaten for a key whose press reached the game.
+// Inputs: the ledger (n keys) and which keys are down now (down may be null).
+// Rules with down (the open and the focus refresh): the ledger is rebuilt from the keys that
+//    are down now. A key down now is the game's (passed), so its auto-repeats and release keep
+//    reaching the game; every other key starts fresh (none). The subclass is removed after a
+//    close, so a release that came later (often the Esc or Tab that closed the builder) was
+//    never seen; an entry kept from the last visit would let that key reach the game while a
+//    field is typing (v7g MF-2).
+// Rules without down (a press while closed, still hooked): only keys we ate are forgotten.
+// Either way a release is never eaten for a key whose press reached the game.
 inline void RawLedgerOpen(RawHeld* keys, std::size_t n, const bool* down)
 {
 	for (std::size_t vk = 0; vk < n; ++vk) {
-		if (keys[vk] == RawHeld::eaten) keys[vk] = RawHeld::none;
-		if (down != nullptr && down[vk] && keys[vk] == RawHeld::none) keys[vk] = RawHeld::passed;
+		if (down != nullptr) keys[vk] = down[vk] ? RawHeld::passed : RawHeld::none;
+		else if (keys[vk] == RawHeld::eaten) keys[vk] = RawHeld::none;
 	}
+}
+
+// The keys the open refresh asks about: every virtual key a raw keyboard record can carry
+// (1 to 254; 0 and 255 are never used).
+inline constexpr unsigned kRawPollFirst = 1;
+inline constexpr unsigned kRawPollLast = 254;
+
+// Purpose: fill down[] for the open refresh. Inputs: isDown(vk), true when the key is down now
+//    (GetAsyncKeyState in the plugin; a fake in the tests). Outputs: down[1..254].
+template <class IsDown>
+inline void RawPollDown(bool (&down)[256], IsDown isDown)
+{
+	for (unsigned vk = kRawPollFirst; vk <= kRawPollLast; ++vk) down[vk] = isDown(vk);
 }
 
 // Focus loss: breaks can go to another window, so every entry is cleared. No release is left

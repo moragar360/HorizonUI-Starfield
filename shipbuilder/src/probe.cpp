@@ -382,11 +382,12 @@ void FeedTypedChars(unsigned vk, LPARAM lp, const hsb::InputState& in)
 }
 
 // Purpose: the raw key ledger at an open or when focus returns (hsb_input.h RawLedgerOpen):
-//    keys we ate are forgotten, keys down now stay the game's. Window thread only.
+//    the ledger is rebuilt from the keys down now (they stay the game's); every other entry,
+//    including one left from the last visit, is cleared. Window thread only.
 void RawLedgerRefresh()
 {
 	bool down[256] = {};
-	for (unsigned vk = 1; vk < 255; ++vk) down[vk] = (GetAsyncKeyState(static_cast<int>(vk)) & 0x8000) != 0;
+	hsb::RawPollDown(down, [](unsigned vk) { return (GetAsyncKeyState(static_cast<int>(vk)) & 0x8000) != 0; });
 	hsb::RawLedgerOpen(g_rawKeys.data(), g_rawKeys.size(), down);
 	g_rawButtons = 0;
 }
