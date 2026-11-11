@@ -1697,6 +1697,7 @@
 
       private function hzOnEnvEffects(e:FromClientDataEvent) : *
       {
+         if(this.hzEnvP0Ini) { try { this.hzEnvP0Fx(e.data); } catch(eP0:Error) { } }   // private diag (env alert Phase 0); off = this one test
          this.hzFixFonts();
          var a:Array = e.data.aEnvironmentEffects as Array;
          var txt:String = this.hzJoinEffects(a);
@@ -1730,6 +1731,166 @@
          this.hzPpSync();
          this.hzAfSetEnv(a,soak);
       }
+
+      // ===================== env alert Phase 0 probe (private diag, default off) =====================
+      // Purpose: settle three facts for the planned hazard status chip: which way EnvironmentEffectsData.fSoakDamagePct
+      // runs (1 = protection used up, or 1 = full protection), whether HazardEffect_RestoreSoak stays listed while suit
+      // protection refills or shows once, and what EnvironmentAlertsData sends (bIsPositive, texts, timing).
+      // Gate: [Debug] EnvAlertLog=1 (hzEnvP0ParseIni). No default-INI key, not on F11, not in presets (like [Debug] WatchLog). The lines go to
+      // HorizonUI.log through the watchlog queue, so [Debug] PerfDiag=1 and WatchLog=1 are needed as well; without them
+      // every callback below returns at its first test. EnvAlertLog=0 (default): one Boolean test in hzOnEnvEffects, and
+      // the EnvironmentAlertsData listener is never added.
+      // Event-driven only: runs inside the two data callbacks. No frame work, no timers, no display-list access.
+      // Volume: an "fx" line only when the effect list, the flags or the alert / pulse times change, when the soak value
+      // moves by 0.02 or more, or when it reaches exactly 0 or 1. Dispatches that log nothing are counted (skip=), so
+      // the dispatch rate can be read from the log. Every alert dispatch is logged (alerts are rare).
+      // Line format (all lines start with ENVP0): see README_p0.md in the env alert research notes.
+      // Author: Moragar. Last modified: 2026-11-11.
+      private var hzEnvP0Ini:Boolean = false;     // [Debug] EnvAlertLog
+      private var hzEnvP0Subbed:Boolean = false;  // EnvironmentAlertsData listener added (once, on the first EnvAlertLog=1)
+      private var hzEnvP0Sig:String = null;       // last logged effect list + flags
+      private var hzEnvP0Soak:Number = NaN;       // last logged soak value
+      private var hzEnvP0Skip:int = 0;            // effects dispatches since the last fx line that logged nothing
+      private var hzEnvP0Seq:int = 0;             // line counter
+      private var hzEnvP0KeysFx:int = 0;         // field names of EnvironmentEffectsData logged: 1 = top only (list empty), 2 = with one effect
+      private var hzEnvP0KeysAl:int = 0;         // field names of EnvironmentAlertsData logged: 1 = top only (list empty), 2 = with one alert
+      private var hzEnvP0LastT:Number = 0;        // time of the last fx line
+
+      // [Debug] EnvAlertLog, read on INI load and on every F11 Apply / Restore / Undo reload (never per frame). The key is
+      // section-aware and the last line wins (the merged text is default.ini then user.ini). No key in the text: one
+      // indexOf, then off.
+      private function hzEnvP0ParseIni(txt:String) : void
+      {
+         if(txt.toLowerCase().indexOf("envalertlog") < 0) { this.hzEnvP0Ini = false; return; }
+         var on:Boolean = false;
+         var sec:String = "";
+         for each(var ln:String in txt.split("\r").join("").split("\n"))
+         {
+            var h:String = this.hz30Hdr(ln);
+            if(h != null) { sec = h; continue; }
+            if(sec != "debug") { continue; }
+            var t:String = ln;
+            var sc:int = t.indexOf(";");
+            if(sc >= 0) { t = t.substr(0,sc); }
+            var eq:int = t.indexOf("=");
+            if(eq <= 0) { continue; }
+            if(t.substr(0,eq).replace(/\s/g,"").toLowerCase() != "envalertlog") { continue; }
+            var v:String = t.substr(eq + 1).replace(/^\s+|\s+$/g,"").toLowerCase();
+            on = v == "1" || v == "true";
+         }
+         this.hzEnvP0Ini = on;
+         this.hzEnvP0Sub();
+      }
+
+      private function hzEnvP0Sub() : void
+      {
+         if(!this.hzEnvP0Ini || this.hzEnvP0Subbed) { return; }
+         this.hzEnvP0Subbed = true;
+         try { BSUIDataManager.Subscribe("EnvironmentAlertsData",this.hzEnvP0OnAlerts); } catch(eS:Error) { }
+      }
+
+      private function hzEnvP0Ready() : Boolean
+      {
+         return this.hzEnvP0Ini && this.hzWlOn && this.hzWlQ != null;
+      }
+
+      private function hzEnvP0Out(s:String) : void
+      {
+         if(this.hzWlOn) { this.hzWlPush(s); }   // watchlog queue (bounded, flushed to HorizonUI.log every 5 s)
+      }
+
+      private function hzEnvP0Q(v:*) : String
+      {
+         if(v === undefined) { return "undef"; }
+         if(v === null) { return "null"; }
+         var t:String = String(v).split("\r").join(" ").split("\n").join(" ");
+         if(t.length > 160) { t = t.substr(0,160) + "~"; }
+         return "\"" + t + "\"";
+      }
+
+      private function hzEnvP0Head(kind:String) : String
+      {
+         if(this.hzEnvP0Seq == 0) { this.hzEnvP0Out("ENVP0 start p0r1 key=EnvAlertLog f=" + this.hzFrameN); }
+         this.hzEnvP0Seq++;
+         return "ENVP0 " + kind + " #" + this.hzEnvP0Seq + " t=" + Math.round(this.hzPerfNow()) + " f=" + this.hzFrameN + " loc=" + this.hzPpKind + " body=" + this.hzEnvP0Q(this.hzPpBodyName);
+      }
+
+      private function hzEnvP0Fx(d:Object) : void
+      {
+         if(!this.hzEnvP0Ready() || d == null) { return; }
+         var a:Array = d.aEnvironmentEffects as Array;
+         var kl:int = a != null && a.length > 0 ? 2 : 1;
+         if(kl > this.hzEnvP0KeysFx)
+         {
+            this.hzEnvP0KeysFx = kl;
+            this.hzEnvP0Out("ENVP0 keys fx top={" + this.hzKeys(d) + "} item={" + (a != null && a.length > 0 ? this.hzKeys(a[0]) : "-") + "}");
+         }
+         var icons:Array = [];
+         var items:Array = [];
+         var restore:int = 0;
+         if(a != null)
+         {
+            for each(var ef:Object in a)
+            {
+               var ic:String = ef != null && ef.sEffectIcon != null ? String(ef.sEffectIcon) : "?";
+               icons.push(ic);
+               if(ic == "HazardEffect_RestoreSoak") { restore = 1; }
+               var it:String = ic;
+               if(ef != null)
+               {
+                  if(ef.bIsPositive !== undefined) { it += ":pos=" + String(ef.bIsPositive); }
+                  if(ef.fSoakDamagePct !== undefined) { it += ":soak=" + String(ef.fSoakDamagePct); }
+                  if(ef.uiHandle !== undefined) { it += ":h=" + String(ef.uiHandle); }
+               }
+               items.push(it);
+            }
+         }
+         var soak:Number = Number(d.fSoakDamagePct);
+         var last:Number = this.hzEnvP0Soak;
+         var sig:String = (a == null ? "noarray" : icons.join(",")) + "|" + String(d.bShouldPlayAlertAtFullSoak) + "|" + String(d.uAlertTimeMS) + "|" + String(d.uEnvIconPulseMinMS) + "|" + String(d.uEnvIconPulseMaxMS);
+         var moved:Boolean = isNaN(soak) != isNaN(last) || (!isNaN(soak) && (Math.abs(soak - last) >= 0.02 || ((soak == 0 || soak == 1) && soak != last)));
+         if(sig == this.hzEnvP0Sig && !moved) { this.hzEnvP0Skip++; return; }
+         var now:Number = Math.round(this.hzPerfNow());
+         var ln:String = this.hzEnvP0Head("fx") + " soak=" + (isNaN(soak) ? "NaN" : soak.toFixed(4)) + " raw=" + this.hzEnvP0Q(d.fSoakDamagePct)
+            + " full=" + String(d.bShouldPlayAlertAtFullSoak) + " restore=" + restore + " n=" + icons.length + " icons=[" + items.join(",") + "]"
+            + " alertMs=" + String(d.uAlertTimeMS) + " pulseMs=" + String(d.uEnvIconPulseMinMS) + "-" + String(d.uEnvIconPulseMaxMS)
+            + " skip=" + this.hzEnvP0Skip + " dt=" + (this.hzEnvP0LastT > 0 ? String(now - this.hzEnvP0LastT) : "-") + (sig != this.hzEnvP0Sig ? " why=list" : " why=soak");
+         this.hzEnvP0Out(ln);
+         this.hzEnvP0Sig = sig;
+         this.hzEnvP0Soak = soak;
+         this.hzEnvP0Skip = 0;
+         this.hzEnvP0LastT = now;
+      }
+
+      private function hzEnvP0OnAlerts(e:FromClientDataEvent) : *
+      {
+         if(!this.hzEnvP0Ready() || e == null || e.data == null) { return; }
+         try
+         {
+            var d:Object = e.data;
+            var a:Array = d.aEnvironmentAlerts as Array;
+            var kl:int = a != null && a.length > 0 ? 2 : 1;
+            if(kl > this.hzEnvP0KeysAl)
+            {
+               this.hzEnvP0KeysAl = kl;
+               this.hzEnvP0Out("ENVP0 keys al top={" + this.hzKeys(d) + "} item={" + (a != null && a.length > 0 ? this.hzKeys(a[0]) : "-") + "}");
+            }
+            this.hzEnvP0Out(this.hzEnvP0Head("al") + " n=" + (a == null ? "noarray" : String(a.length)) + " lastSoak=" + (isNaN(this.hzEnvP0Soak) ? "NaN" : this.hzEnvP0Soak.toFixed(4)) + " sinceFx=" + (this.hzEnvP0LastT > 0 ? String(Math.round(this.hzPerfNow()) - this.hzEnvP0LastT) : "-"));
+            if(a == null) { return; }
+            var i:int = 0;
+            while(i < a.length && i < 8)
+            {
+               var o:Object = a[i];
+               if(o != null)
+               {
+                  this.hzEnvP0Out("ENVP0 al.item i=" + i + " pos=" + String(o.bIsPositive) + " icon=" + this.hzEnvP0Q(o.sEffectIcon) + " text=" + this.hzEnvP0Q(o.sAlertText) + " sub=" + this.hzEnvP0Q(o.sAlertSubText));
+               }
+               i++;
+            }
+         }
+         catch(eA:Error) { }
+      }
+      // ===================== end env alert Phase 0 probe =====================
 
       private function hzOnPersonalEffects(e:FromClientDataEvent) : *
       {
@@ -17737,6 +17898,7 @@
       private function hz37OnApplyTxt(txt:String) : void
       {
          if(txt != null) { this.hz37Txt = txt; try { this.hzOnIni(null); } catch(errA:Error) { } }
+         if(txt != null) { try { this.hzEnvP0ParseIni(txt); } catch(errP0:Error) { } }   // private diag (env alert Phase 0): [Debug] EnvAlertLog
          if(this.hz37Refresh)
          {
             this.hz37Refresh = false;
