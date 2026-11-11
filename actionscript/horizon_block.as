@@ -22511,6 +22511,7 @@
       {
          if(this.hz48InSub) { return; }   // r9b (N-3): Subscribe's own first call while re-ordering (this dispatch already ran)
          if(this.hz48EnvG == null || this.hz48EnvG.parent == null) { try { this.hz48EnvGroup(); } catch(eG:Error) { } }
+         if(this.hz48LOn) { try { this.hz48LocFrame(); } catch(eLf:Error) { } }   // r9b MF-1 (a): a new location name length while moved
          try { this.hz45EnvHide(); } catch(eH:Error) { }
          try { this.hz46HoldW3(); } catch(eW3:Error) { }   // r9: the HideWatchWhileScanning hold (1 / 2) re-hides what the game re-showed
          if(this.hz47On) { try { this.hz47Sync(true); } catch(e47e:Error) { } }   // r9b: re-hide if anything showed them again
@@ -22816,8 +22817,13 @@
       // the G-1 units (HZ48_UNITS: unrotated, captured with the watch) use their captured scale, like the text holders.
       // A piece with no child to move (a raw shape: no keys, so its r8 instance move is safe) or more children than the
       // limit keeps the r8 / r6 instance move. HZ48_UNITS: Bot 3's G-1 pieces, plus WatchOutline_mc (alpha keyed, same
-      // freeze) and O2CO2thin_mc. DayCycleBase_mc, OffPlanet_mc (keyed scale 0.43 / 0.5) and locationNameBase_mc (its
-      // child's rotation is keyed per frame) are not: no fixed child offset can follow them (see CHANGES_fixes_r9b.md).
+      // freeze) and O2CO2thin_mc. locationNameBase_mc (HZ48_LOC) is a two-level case: its child locationName_mc has a
+      // rotation key per frame (the game picks the frame from the name length, UpdateLocationName -> gotoAndStop, inside
+      // its LocalEnvironmentData handler), so neither may be written; the 21 char clips inside it move instead, by the
+      // inverse of (base scale x locationName_mc's current matrix), and are placed again from the late listener when the
+      // base's frame changed (same dispatch, before render). DayCycleBase_mc and OffPlanet_mc (their own scale is keyed
+      // 1 -> 0.43 / 0.5 by the group timeline, not by an event) are not: no fixed child offset can follow them (see
+      // CHANGES_fixes_r9b.md); they keep the r9 instance move.
       // HZ48_ART is the one-line switch for the ticks and the art: 0 animate (default), 1 hide while moved, 2 leave
       // unmoved at home (shown at the native spot). HZ48_UNITS empty = the r9 instance move for every unit.
       // Events only: hz45Put / hz46TickPut (ADDED, change sweeps) and hz43VanWrite (changed writes). Records are made
@@ -22825,6 +22831,8 @@
       private static const HZ48_ART:int = 0;
       private static const HZ48_UNITS:Array = ["WatchPointerOutline_mc","O2CO2_mc","Temperature_mc","Oxygen_mc","Grav_mc","WatchOutline_mc","O2CO2thin_mc"];
       private static const HZ48_AK:int = 2;    // art: at most two children (Symbols 1266 / 1285 / 1292 / 1286 / 1287: one; 1328: two)
+      private static const HZ48_LOC:String = "locationNameBase_mc";
+      private static const HZ48_LK:int = 24;   // locationName_mc: char0 .. char20
       private static const HZ48_UK:int = 4;    // units: at most four (O2CO2_mc: four; O2CO2thin / WatchPointerOutline / Temperature / Oxygen / Grav: two; WatchOutline: one)
       private var hz48AN:Array = [];   // per hz45 record: child count (0 = the instance itself moves)
       private var hz48AI:Array = [];   // per hz45 record, 4 slots: the inverse 2x2 (x: [0] [1], y: [2] [3])
@@ -22849,6 +22857,24 @@
       private var hz48UWX:Array = [];
       private var hz48UWY:Array = [];
       private var hz48UWF:Array = [];
+      private var hz48LB:DisplayObject = null;     // locationNameBase_mc the char records belong to
+      private var hz48LNm:DisplayObject = null;    // its locationName_mc
+      private var hz48LN:int = 0;
+      private var hz48LD:Array = [];
+      private var hz48LX:Array = [];
+      private var hz48LY:Array = [];
+      private var hz48LSX:Array = [];
+      private var hz48LSY:Array = [];
+      private var hz48LWX:Array = [];
+      private var hz48LWY:Array = [];
+      private var hz48LWF:Array = [];
+      private var hz48LM:Array = [1,0,0,1];        // the inverse of locationName_mc's matrix at the last placement
+      private var hz48LOn:Boolean = false;         // the chars are off their native place
+      private var hz48LF:int = -1;                 // the base's frame at the last placement
+      private var hz48LI:int = 0;                  // and that placement's unit slot / place / scale
+      private var hz48LPx:Number = 0;
+      private var hz48LPy:Number = 0;
+      private var hz48LSc:Number = 1;
       private var hz48EnvG:DisplayObject = null;   // N-3: the group instance the late listener was ordered after
       private var hz48InSub:Boolean = false;
       // the inverse of d's 2x2 matrix into inv[b .. b + 3]; false when it cannot be read or is singular
@@ -22971,7 +22997,8 @@
             this.hz48UO[i] = d;
             var n:int = 0;
             var c:DisplayObjectContainer = d as DisplayObjectContainer;
-            if(HZ48_UNITS.indexOf(d.name) >= 0 && c && c.numChildren > 0 && c.numChildren <= HZ48_UK)
+            if(d.name == HZ48_LOC) { try { if(this.hz48LocRec(d)) { n = -1; } } catch(eLr:Error) { } }   // -1: the two-level record (hz48L*)
+            else if(HZ48_UNITS.indexOf(d.name) >= 0 && c && c.numChildren > 0 && c.numChildren <= HZ48_UK)
             {
                while(n < c.numChildren)
                {
@@ -22988,11 +23015,12 @@
             }
             this.hz48UN[i] = n;
          }
-         return int(this.hz48UN[i]) > 0;
+         return int(this.hz48UN[i]) != 0;
       }
       // the unit's children go where they would be if the unit stood at (px, py) with its captured scale times sc
       private function hz48UnitPut(i:int, d:DisplayObject, px:Number, py:Number, sc:Number) : void
       {
+         if(int(this.hz48UN[i]) < 0) { this.hz48LocPut(i,px,py,sc); return; }
          var c:DisplayObjectContainer = d as DisplayObjectContainer;
          if(!c) { return; }
          var osx:Number = Number(this.hz43VanSX[i]);
@@ -23010,6 +23038,71 @@
             if(ch && ch.parent === c) { this.hz48KPut(ch,t,this.hz48UX,this.hz48UY,this.hz48USX,this.hz48USY,this.hz48UWX,this.hz48UWY,this.hz48UWF,ux,uy,sc); }
             j++;
          }
+      }
+      // locationNameBase_mc: record locationName_mc's char clips (one direct lookup, once per new base instance)
+      private function hz48LocRec(d:DisplayObject) : Boolean
+      {
+         var b:DisplayObjectContainer = d as DisplayObjectContainer;
+         if(!b) { return false; }
+         var nm:DisplayObjectContainer = b.getChildByName("locationName_mc") as DisplayObjectContainer;
+         if(!nm || nm.numChildren <= 0 || nm.numChildren > HZ48_LK) { return false; }
+         this.hz48LB = d;
+         this.hz48LNm = nm;
+         this.hz48LN = nm.numChildren;
+         this.hz48LOn = false;
+         this.hz48LF = -1;
+         var j:int = 0;
+         while(j < this.hz48LN)
+         {
+            var ch:DisplayObject = nm.getChildAt(j);
+            this.hz48LD[j] = ch;
+            this.hz48LX[j] = ch.x;
+            this.hz48LY[j] = ch.y;
+            this.hz48LSX[j] = ch.scaleX;
+            this.hz48LSY[j] = ch.scaleY;
+            this.hz48LWF[j] = 0;
+            j++;
+         }
+         return true;
+      }
+      // the chars go where they would be if the base stood at (px, py) with its captured scale times sc:
+      //   char' = sc * char + Mn^-1 * ((px - Tb) / sb + (sc - 1) * Tn)   (Tb / sb: the base's native place / scale;
+      //   Tn / Mn: locationName_mc's place / matrix now, both timeline-owned and never written)
+      private function hz48LocPut(i:int, px:Number, py:Number, sc:Number) : void
+      {
+         var nm:DisplayObjectContainer = this.hz48LNm as DisplayObjectContainer;
+         if(!nm || !this.hz48LB || nm.parent !== this.hz48LB) { return; }
+         var bo:Object = this.hz48LB;
+         this.hz48LI = i;
+         this.hz48LPx = px;
+         this.hz48LPy = py;
+         this.hz48LSc = sc;
+         this.hz48LF = int(bo.currentFrame);
+         if(!this.hz48Inv(nm,this.hz48LM,0)) { return; }
+         var osx:Number = Number(this.hz43VanSX[i]);
+         var osy:Number = Number(this.hz43VanSY[i]);
+         if(!(osx > 0.01 || osx < -0.01)) { osx = 1; }
+         if(!(osy > 0.01 || osy < -0.01)) { osy = 1; }
+         var wx:Number = (px - Number(this.hz43VanX[i])) / osx + (sc - 1) * nm.x;
+         var wy:Number = (py - Number(this.hz43VanY[i])) / osy + (sc - 1) * nm.y;
+         var ux:Number = Number(this.hz48LM[0]) * wx + Number(this.hz48LM[1]) * wy;
+         var uy:Number = Number(this.hz48LM[2]) * wx + Number(this.hz48LM[3]) * wy;
+         this.hz48LOn = ux != 0 || uy != 0 || sc != 1;
+         var j:int = 0;
+         while(j < this.hz48LN)
+         {
+            var ch:DisplayObject = this.hz48LD[j] as DisplayObject;
+            if(ch && ch.parent === nm) { this.hz48KPut(ch,j,this.hz48LX,this.hz48LY,this.hz48LSX,this.hz48LSY,this.hz48LWX,this.hz48LWY,this.hz48LWF,ux,uy,sc); }
+            j++;
+         }
+      }
+      // late LocalEnvironmentData, only while the chars are moved: the game's UpdateLocationName may have picked another
+      // frame (another locationName_mc rotation) in this dispatch; then the chars are placed again. One compare otherwise.
+      private function hz48LocFrame() : void
+      {
+         var bo:Object = this.hz48LB;
+         if(!bo || int(bo.currentFrame) == this.hz48LF) { return; }
+         this.hz48LocPut(this.hz48LI,this.hz48LPx,this.hz48LPy,this.hz48LSc);
       }
       // N-3 (Bot 3): a new BottomLeftGroup instance subscribes LocalEnvironmentData in its onAddedToStage, after this
       // late listener, so its handler would run last and show the globe again in the hold. When the late listener sees

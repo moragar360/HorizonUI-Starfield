@@ -730,7 +730,7 @@ function asInnerOf(src, name) {
 }
 // r9: a static const of the AS (Array as JSON, Boolean / Number literal), so the hosts use the shipped lists.
 function asConst(name) {
-	const m = new RegExp("static const " + name + ":(Array|Boolean|int|Number) = ([^;]+);").exec(as);
+	const m = new RegExp("static const " + name + ":(Array|Boolean|int|Number|String) = ([^;]+);").exec(as);
 	if (!m) throw new Error("no const " + name);
 	return JSON.parse(m[2]);
 }
@@ -1133,6 +1133,12 @@ function bindHz48(host) {
 	["hz48AN", "hz48AI", "hz48AD", "hz48AX", "hz48AY", "hz48ASX", "hz48ASY", "hz48AWX", "hz48AWY", "hz48AWF", "hz48WX", "hz48WY", "hz48WS",
 		"hz48UO", "hz48UN", "hz48UD", "hz48UX", "hz48UY", "hz48USX", "hz48USY", "hz48UWX", "hz48UWY", "hz48UWF"].forEach((f) => { host[f] = []; });
 	host.hz48EnvG = null; host.hz48InSub = false; host.NaN = NaN;
+	host.HZ48_LOC = asConst("HZ48_LOC"); host.HZ48_LK = asConst("HZ48_LK");
+	["hz48LD", "hz48LX", "hz48LY", "hz48LSX", "hz48LSY", "hz48LWX", "hz48LWY", "hz48LWF"].forEach((f) => { host[f] = []; });
+	host.hz48LB = null; host.hz48LNm = null; host.hz48LN = 0; host.hz48LM = [1, 0, 0, 1]; host.hz48LOn = false; host.hz48LF = -1; host.hz48LI = 0; host.hz48LPx = 0; host.hz48LPy = 0; host.hz48LSc = 1;
+	bindAsMethod(host, "hz48LocRec", ["d"]);
+	bindAsMethod(host, "hz48LocPut", ["i", "px", "py", "sc"]);
+	bindAsMethod(host, "hz48LocFrame", []);
 	bindAsMethod(host, "hz48Inv", ["d", "inv", "b"]);
 	bindAsMethod(host, "hz48ArtRec", ["k", "d"]);
 	bindAsMethod(host, "hz48ArtPut", ["k", "d", "nx", "ny", "fs"]);
@@ -3025,6 +3031,51 @@ expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's 
 	const mu = mk(1); mu.HZ48_UNITS = []; const o2m = cont("O2CO2_mc", 21.7, 89.85, I, [["O2Txt_mc", 3, 4]]); o2m.parent = mu.hzBlg; mu.hz43VanD[1] = o2m; mu.hz43VanWrite(-40, 20, 0.8);
 	expect(o2m.x !== 21.7, "r9b mutant (no unit children): O2CO2_mc is script-moved (its fades freeze), so the G-1 check above FAILS on it");
 
+	// 2b. locationNameBase_mc: its child locationName_mc is rotated per frame (the game's gotoAndStop by name length), so
+	// neither is written; the char clips move by the inverse of (base scale x locationName_mc matrix), again on a frame change
+	const ROT7 = { a: 0.5225372314453125, b: -0.8525848388671875, c: 0.8525848388671875, d: 0.5225372314453125 };
+	const ROT15 = { a: 0.923858642578125, b: -0.3826446533203125, c: 0.3826446533203125, d: 0.923858642578125 };
+	const mkLoc = (src) => {
+		const h = mk(1);
+		if (src) ["hz48LocFrame", "hz48LocPut"].forEach((f) => bindAsMethodSrc(h, src, f, f === "hz48LocPut" ? ["i", "px", "py", "sc"] : []));
+		const chars = []; for (let j = 0; j < 21; j++) chars.push(["char" + j, j * 7 - 70, -60 + (j % 3)]);
+		const nm = cont("locationName_mc", -0.95, -28.1, Object.assign({}, ROT7), chars);
+		const base = cont("locationNameBase_mc", 110.15, 110.5, I, []);
+		base.kids = [nm]; nm.parent = base; base.currentFrame = 8;
+		base.getChildByName = function(n) { return n === "locationName_mc" ? nm : null; };
+		add(h, base);
+		h.hz43VanN = 5; h.hz43VanGot.push(1); h.hz43VanD.push(base); h.hz43VanNm.push("locationNameBase_mc"); h.hz43VanUXA.push(1); h.hz43VanUYA.push(1);
+		h.hz43VanX.push(110.15); h.hz43VanY.push(110.5); h.hz43VanOX.push(0); h.hz43VanOY.push(0); h.hz43VanSX.push(1); h.hz43VanSY.push(1);
+		h.qLb = base; h.qLn = nm;
+		return h;
+	};
+	// char j in the group: Tb + Mb (Tn + Mn c), Mb = identity here
+	const cg = (h, j) => { const n = h.qLn, m = n.transform.matrix, c = n.kids[j]; return [h.qLb.x + n.x + m.a * c.x + m.c * c.y, h.qLb.y + n.y + m.b * c.x + m.d * c.y]; };
+	const cw = (h, c0, sc, dx, dy) => { const n = h.qLn, m = n.transform.matrix; return [110.15 * sc + dx + sc * (n.x + m.a * c0[0] + m.c * c0[1]), 110.5 * sc + dy + sc * (n.y + m.b * c0[0] + m.d * c0[1])]; };
+	const locOk = (h, sc, dx, dy) => { for (let j = 0; j < 21; j++) { const g = cg(h, j), w = cw(h, [j * 7 - 70, -60 + (j % 3)], sc, dx, dy); if (Math.abs(g[0] - w[0]) > 1e-9 || Math.abs(g[1] - w[1]) > 1e-9) return false; } return true; };
+	const L = mkLoc();
+	L.hz43VanWrite(-40, 20, 0.8);
+	expect(L.qLb.x === 110.15 && L.qLb.y === 110.5 && L.qLb.scaleX === 1 && L.qLn.x === -0.95 && L.qLn.y === -28.1 && L.qLn.scaleX === 1 && L.hz48LOn && L.hz48LF === 8,
+		"r9b MF-1 (a): locationNameBase_mc and locationName_mc are never written (the base's fades and the name's per-frame rotation keep playing)");
+	expect(locOk(L, 0.8, -40, 20) && near(L.qLn.kids[5].scaleX, 0.8), "r9b MF-1 (a): all 21 char clips land where the moved / scaled base would put them (rotated name, frame 8)");
+	L.qLn.transform.matrix = Object.assign({}, ROT15); L.qLn.x = -0.95; L.qLn.y = -28.15; L.qLb.currentFrame = 16;   // the game's gotoAndStop(16): a longer name
+	L.hz48LocFrame();
+	expect(locOk(L, 0.8, -40, 20) && L.hz48LF === 16, "r9b MF-1 (a): a new name length (frame 16, another rotation) re-places the chars from the late listener");
+	const lf = L.qLn.kids[3].x; L.hz48LocFrame();
+	expect(L.qLn.kids[3].x === lf, "r9b: same frame = nothing re-placed (one compare)");
+	L.hz43VanWrite(0, 0, 1);
+	expect(L.qLn.kids[0].x === -70 && L.qLn.kids[20].y === -60 + 2 && L.qLn.kids[7].scaleX === 1 && !L.hz48LOn, "r9b: home again = chars native, the late re-place is off");
+	const mLf = as.replace("if(!bo || int(bo.currentFrame) == this.hz48LF) { return; }", "if(!bo || true) { return; }");
+	expect(mLf !== as, "r9b mutant (no frame re-place): built");
+	const Lm = mkLoc(mLf); Lm.hz43VanWrite(-40, 20, 0.8); Lm.qLn.transform.matrix = Object.assign({}, ROT15); Lm.qLb.currentFrame = 16; Lm.hz48LocFrame();
+	expect(!locOk(Lm, 0.8, -40, 20), "r9b mutant (no frame re-place): the chars keep the old rotation's offset, so the frame-change check above FAILS on it");
+	const mLs = as.replace("         var wx:Number = (px - Number(this.hz43VanX[i])) / osx + (sc - 1) * nm.x;", "         var wx:Number = (px - Number(this.hz43VanX[i])) / osx;");
+	expect(mLs !== as, "r9b mutant (name place not scaled): built");
+	const Ls = mkLoc(mLs); Ls.hz43VanWrite(-40, 20, 0.8);
+	expect(!locOk(Ls, 0.8, -40, 20), "r9b mutant (name place not scaled): the chars are off by (sc - 1) x the name's place, so the 21-char check above FAILS on it");
+	expect(funcBody(as, "hz45OnEnvLate").indexOf("if(this.hz48LOn) { try { this.hz48LocFrame(); }") >= 0 && (as.match(/this\.hz48LocFrame\(/g) || []).length === 1 && (as.match(/this\.hz48LocPut\(/g) || []).length === 2,
+		"r9b: the re-place runs from the late listener only, and only while the chars are moved");
+
 	// 3. N-2: a field that re-centers itself (autoSize) keeps the game's drift; home does not write the old y back
 	const holder = (nm, x, y, kids) => { const c = cont(nm, x, y, I, kids); return c; };
 	const n2 = mk(1); const bio = holder("BioAlertText", 110.85, 86.35, [["Alert_tf", -72.2, -20.85]]); add(n2, bio);
@@ -3116,13 +3167,13 @@ expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's 
 	// static: event-only, no allocation, never alpha
 	const perFrame = ["hzOnFrame", "hz27OnExit", "hz43Frame", "hz43VanHorizon", "hz43VanPlace", "hz43VanLate", "hz43SyncHide", "hz44GrpTick", "hz27BioHide", "hz40Frame"];
 	expect(perFrame.every((fn) => funcBody(as, fn).indexOf("hz48") < 0), "r9b: no hz48 call in any per-frame function body");
-	const hz48Fns = ["hz48Inv", "hz48ArtRec", "hz48ArtPut", "hz48Move", "hz48KPut", "hz48UnitKids", "hz48UnitPut", "hz48EnvGroup"];
+	const hz48Fns = ["hz48Inv", "hz48ArtRec", "hz48ArtPut", "hz48Move", "hz48KPut", "hz48UnitKids", "hz48UnitPut", "hz48EnvGroup", "hz48LocRec", "hz48LocPut", "hz48LocFrame"];
 	const codeOnly = (t) => t.split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n");
 	expect(hz48Fns.every((fn) => { const b = codeOnly(funcBody(as, fn)); return b.indexOf(".alpha") < 0 && b.indexOf("new ") < 0 && b.indexOf("push(") < 0 && b.indexOf("hzFindByName") < 0; }), "r9b: the hz48 helpers never write alpha, allocate, push or search");
 	expect((codeOnly(as).match(/transform\.matrix\b/g) || []).length === 1 && funcBody(as, "hz48Inv").indexOf("d.transform.matrix") >= 0, "r9b: the one matrix read is in hz48Inv (once per new art record)");
 	expect((as.match(/this\.hz48ArtRec\(/g) || []).length === 1 && funcBody(as, "hz45Put").indexOf("this.hz48ArtRec(k,d)") >= 0 && (as.match(/this\.hz48UnitKids\(/g) || []).length === 1 && funcBody(as, "hz43VanWrite").indexOf("this.hz48UnitKids(i,d)") >= 0 && (as.match(/this\.hz48EnvGroup\(/g) || []).length === 1,
 		"r9b: one caller each (hz45Put's first sight, hz43VanWrite's changed write, the late listener)");
-	expect((as.match(/this\.hz48ArtPut\(/g) || []).length === 2 && (as.match(/this\.hz48KPut\(/g) || []).length === 3, "r9b: child writes only from hz45Put / hz46TickPut (art) and the three put helpers");
+	expect((as.match(/this\.hz48ArtPut\(/g) || []).length === 2 && (as.match(/this\.hz48KPut\(/g) || []).length === 4, "r9b: child writes only from hz45Put / hz46TickPut (art) and the four put helpers (holder, art, unit, location chars)");
 }
 
 if (failed) {
