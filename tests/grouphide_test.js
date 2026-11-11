@@ -372,9 +372,11 @@ function kidsState(h) { return h.blg.kids.map((k) => k.name + ":" + k.visible + 
 	h.hz44GrpTick(true);
 	expect(h.blg.alpha === 0 && h.blg.visible === true && h.hz44Hid && h.hz44GameA === 0.8 && kidsState(h) === kids0,
 		"alpha mode: the group is hidden with alpha 0, stays visible (it still advances and runs its frame scripts), children untouched, the game's alpha kept");
-	expect(subs.join() === "HUDOpacityData" && h.hz44OpSub, "alpha mode: HUDOpacityData listener added once, in the first frame tick");
+	// r8: the same first frame tick also adds the late LocalEnvironmentData listener (hz45OnEnvLate), once
+	expect(subs.filter((n) => n === "HUDOpacityData").length === 1 && h.hz44OpSub, "alpha mode: HUDOpacityData listener added once, in the first frame tick");
+	expect(subs.join() === "HUDOpacityData,LocalEnvironmentData", "r8: the first frame tick adds exactly the HUDOpacityData and the late LocalEnvironmentData listeners");
 	for (let f = 0; f < 5; f++) h.hz44GrpTick(true);
-	expect(subs.length === 1, "alpha mode: subscribed only once");
+	expect(subs.length === 2, "alpha mode: subscribed only once (each)");
 	// the game's opacity write (HUDMenu_1.as:219) while hidden, then our listener in the same dispatch
 	h.blg.alpha = 0.6; h.hz44OnOpacity({ data: { fHUDOpacity: 0.6 } });
 	expect(h.blg.alpha === 0 && h.hz44GameA === 0.6, "game opacity write while hidden: re-hidden in the same dispatch, new game value kept for the release");
