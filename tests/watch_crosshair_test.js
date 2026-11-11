@@ -2385,6 +2385,29 @@ expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's 
 	expect(/^\{\s*if\(!this\.hzWlOn/.test(wl) && funcBody(as, "hz45OnEnvLate").indexOf("if(this.hzWlOn)") >= 0 && funcBody(as, "hz40SetScan").indexOf("if(this.hzWlOn) { try { this.hz45WlBlg(") >= 0, "r8 diag: the BottomLeftGroup child dump runs only with the watchlog on (PerfDiag=1, WatchLog=1)");
 }
 
+// ---- r8 (2/2): hz43VanCapture must not re-read native places while the markers are moved (Horizon faces 3 / 4). The scan
+// edge adds planet-info art (child count changes); the old early return only covered hz43VanWrote.
+{
+	const mkCap = (src) => {
+		const h = { hzBlg: { numChildren: 31 }, hz43VanP: {}, hz43VanCap: 1, hz43VanWrote: false, hz43MarkMoved: true, hz43VanNeed: 0, hz43VanKids: 27, hz43VanN: 4, finds: 0,
+			HZ43_VAN_N: ["WatchOutline_mc"], hzFindByName: function() { this.finds++; return null; }, hz43VanGather: function() {}, hz43VanAdd: function() {}, hz43VanRootOf: function(d) { return d; } };
+		// the gate only: the body up to its first statement after the early returns (the rest needs real display objects)
+		const inner = asInnerOf(src || as, "hz43VanCapture");
+		const gate = inner.slice(0, inner.indexOf("this.hz43VanN = 0;"));
+		h.hz43VanCapture = Function.apply(null, ["with(this){\n" + gate + "\nthis.finds++; this.hz43VanN = 0;\n}"]).bind(h);
+		return h;
+	};
+	const c = mkCap();
+	c.hz43VanCapture();
+	expect(c.finds === 0 && c.hz43VanN === 4, "r8: moved markers + a new child (scan art): no recapture, the recorded native places stay");
+	const c2 = mkCap(); c2.hz43MarkMoved = false; c2.hz43VanCapture();
+	expect(c2.finds > 0, "r8: markers home + a child-count change: the capture still re-runs (HUD changes are still picked up)");
+	const mutCap = as.replace("if(this.hz43VanWrote || this.hz43MarkMoved) { return; }", "if(this.hz43VanWrote) { return; }");
+	expect(mutCap !== as, "r8 mutant (r7 early return): built");
+	const cm = mkCap(mutCap); cm.hz43VanCapture();
+	expect(cm.finds > 0 && cm.hz43VanN === 0, "r8 mutant (r7 early return): the moved markers are re-captured as native, so the first check above FAILS on it");
+}
+
 if (failed) {
 	console.error(failed + " failed");
 	process.exit(1);
