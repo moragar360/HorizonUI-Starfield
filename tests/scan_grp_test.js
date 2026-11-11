@@ -5,9 +5,11 @@
 //     edge's own handler, without asking for a per-piece list rebuild (no tree walk);
 //  2. while scanning, the frame ticks, HudModeData and HUDOpacityData keep it hidden; nothing under the group is written;
 //  3. the close edge releases only on the next frame tick, with the game's alpha and mouse flags back, and no rebuild;
-//  4. the gates: HZ49_SCAN_GRP modes, moved / home, HideWatchWhileScanning with and without the Scanner module, style 0,
+//  4. the gates: HZ49_SCAN_GRP modes (shipped 2 since r9d2: HideWatchWhileScanning only), moved / home, HideWatchWhileScanning with and without the Scanner module, style 0,
 //     ARRANGE, latch, BlgGroupHide=0, hide-all, the enemy-cue rule;
 //  5. a group re-created while hidden (menu teardown / recreate), the style-0 path unchanged, and the wiring is edge-only.
+// r9d2 (user picks, 2026-11-11 10:08 AM): "Moved watch: hide only when Hide Watch While Scanning is on" and "Home watch,
+// option off: keep showing the vanilla watch during scans" -> the hiding cases below run with HideWatchWhileScanning=1 (HW).
 // Author: Moragar. Last modified: 2026-11-11.
 "use strict";
 
@@ -84,7 +86,7 @@ function host(o) {
 	const blg = add(hud, Clip("BottomLeftGroup_mc", true));
 	for (const n of BLG_KIDS) add(blg, Clip(n));
 	blg.alpha = 0.85;   // the game's HUD opacity
-	const cfg = { HideWatchWhileScanning: 0 };
+	const cfg = { HideWatchWhileScanning: (o && o.HW) ? 1 : 0 };
 	const h = Object.assign({
 		isNaN: isNaN, Math: Math, Number: Number, Boolean: Boolean, String: String, Error: Error, int: (n) => Math.trunc(Number(n) || 0),
 		hud: hud, blg: blg, cfg: cfg,
@@ -114,17 +116,17 @@ function open(h) { h.hz40Scan = true; h.hz49Sync(); }     // what hz40SetScan's 
 function close(h) { h.hz40Scan = false; h.hz49Sync(); }
 function frame(h, n) { for (let i = 0; i < (n || 1); i++) { h.hz44GrpTick(true); h.hz44GrpTick(false); } }
 
-expect(asConst("HZ49_SCAN_GRP") === 1 && asConst("HZ49_NEED_ENEMY") === true, "shipped switch: HZ49_SCAN_GRP = 1 (moved, or home with HideWatchWhileScanning=1), enemy-cue rule on");
+expect(asConst("HZ49_SCAN_GRP") === 2 && asConst("HZ49_NEED_ENEMY") === true, "shipped switch: HZ49_SCAN_GRP = 2 (HideWatchWhileScanning=1 only, home or moved; r9d2), enemy-cue rule on");
 
-// ---- 1-3: style 1, watch moved, HideWatchWhileScanning off ----
+// ---- 1-3: style 1, watch moved, HideWatchWhileScanning on ----
 {
-	const h = host({ hz43FoMoved: true, hz43VanWrote: true });
+	const h = host({ hz43FoMoved: true, hz43VanWrote: true, HW: 1 });
 	h.blg.kids[3].visible = false;   // a piece the game / r9b state hid (e.g. W3 OffPlanet), must stay as it is
 	const before = kids(h);
 	frame(h, 3);
 	expect(h.blg.alpha === 0.85 && !h.hz44Hid && h.nWant === 0, "no scan: style 1 moved, frame ticks leave the group alone and never evaluate hz49Want");
 	open(h);
-	expect(h.hz49Grp && h.hz44Hid && h.hz49Held && h.blg.alpha === 0 && h.blg.mouseEnabled === false && h.blg.mouseChildren === false, "open edge (moved, HideWatch off): the group is hidden at once by the hz44 path (alpha 0, mouse off)");
+	expect(h.hz49Grp && h.hz44Hid && h.hz49Held && h.blg.alpha === 0 && h.blg.mouseEnabled === false && h.blg.mouseChildren === false, "open edge (moved, HideWatch on): the group is hidden at once by the hz44 path (alpha 0, mouse off)");
 	expect(h.hzHideCache === SENT, "open edge: the per-piece hide list is kept (no rebuild, no tree walk)");
 	expect(h.n45 === 1, "open edge: the hz44 hide edge's own hz45Sync runs once");
 	expect(kids(h) === before, "open edge: nothing under the group is written (r9b children, icon state, inverse-matrix pieces untouched)");
@@ -152,44 +154,54 @@ expect(asConst("HZ49_SCAN_GRP") === 1 && asConst("HZ49_NEED_ENEMY") === true, "s
 }
 // ---- 3b: the every-90-frames list rebuild runs while the scan hide holds (it drops the BLG names under any group hide) ----
 {
-	const h = host({ hz43FoMoved: true, hzWatchStyle: 3, hzHideVanillaWatch: true });
+	const h = host({ hz43FoMoved: true, hzWatchStyle: 3, hzHideVanillaWatch: true, HW: 1 });
 	open(h);
 	expect(h.hzHideCache === SENT && h.hz49Tries === 7, "style 3 moved: hidden, the list kept, the rebuild count recorded");
 	const rebuilt = ["list-without-BLG"]; h.hzHideCache = rebuilt; h.hzHideTries++;   // the periodic rebuild under the hide
 	close(h); frame(h, 1);
 	expect(!h.hz44Hid && !h.hz49Held && h.hzHideCache === null, "release after a rebuild under the hide: the list is rebuilt once in the release frame (no BLG piece flashes)");
-	const h2 = host({ hz43FoMoved: true, hzWatchStyle: 3, hzHideVanillaWatch: true });
+	const h2 = host({ hz43FoMoved: true, hzWatchStyle: 3, hzHideVanillaWatch: true, HW: 1 });
 	open(h2); frame(h2, 10); close(h2); frame(h2, 1);
 	expect(h2.hzHideCache === SENT, "release with no rebuild under the hide: the list is kept (no walk)");
 }
 // ---- 4: gates ----
 function hidesOn(o, setup) { const h = host(o); if (setup) setup(h); open(h); return h.hz44Hid && h.blg.alpha === 0; }
-expect(!hidesOn({}), "mode 1: style 1 at home, HideWatchWhileScanning off: not hidden (the watch shows while scanning, as before)");
-expect(hidesOn({}, (h) => { h.cfg.HideWatchWhileScanning = 1; }), "mode 1: at home with HideWatchWhileScanning=1 (Scanner module): hidden");
-expect(!hidesOn({ hz30Mod: { scanner: 0 } }, (h) => { h.cfg.HideWatchWhileScanning = 1; }), "mode 1: HideWatchWhileScanning=1 without the Scanner module does nothing (r7 S-5)");
-expect(hidesOn({ hz43FoMoved: true, hz30Mod: { scanner: 0 } }), "mode 1: moved watch, no Scanner module: hidden (the artifact case)");
-expect(hidesOn({ hz43VanWrote: true }) && hidesOn({ hz43FoMoved: true, hzWatchStyle: 3 }) && hidesOn({ hz43FoMoved: true, hzWatchStyle: 4 }) && hidesOn({ hz43VanWrote: true, hzWatchStyle: 2 }), "mode 1: moved in styles 1 / 2 / 3 / 4: hidden");
-expect(!hidesOn({ hz43FoMoved: true, hzWatchStyle: 0 }), "style 0: the scan hide never applies (style 0 has its own hz44 hide)");
-expect(!hidesOn({ hz43FoMoved: true, hzArrange: true }) && !hidesOn({ hz43FoMoved: true, hz40Latch: true }), "ARRANGE or a latched scan: not hidden");
-expect(!hidesOn({ hz43FoMoved: true, hz44GrpIni: false }) && !hidesOn({ hz43FoMoved: true, hzUserHidden: true }), "BlgGroupHide=0 or the player's hide-all: not hidden");
-expect(!hidesOn({ hz43FoMoved: true, hzStealthOn: false, hzEnemyBarOn: false, hzEdgePulse: false }), "no Horizon enemy cue: not hidden (the vanilla enemy ring stays, as in the style-0 rule)");
-expect(hidesOn({ hz43FoMoved: true, hzStealthOn: false, hzEnemyBarOn: false }), "one enemy cue (edge pulse) is enough");
-expect(!hidesOn({ hz43FoMoved: true, HZ49_SCAN_GRP: 0 }), "HZ49_SCAN_GRP = 0: off (r9c behavior)");
-expect(!hidesOn({ hz43FoMoved: true, HZ49_SCAN_GRP: 2 }) && hidesOn({ HZ49_SCAN_GRP: 2 }, (h) => { h.cfg.HideWatchWhileScanning = 1; }), "HZ49_SCAN_GRP = 2: only with HideWatchWhileScanning=1");
+// shipped mode 2 (r9d2): HideWatchWhileScanning alone decides, at home or moved
+expect(!hidesOn({}), "mode 2: style 1 at home, HideWatchWhileScanning off: not hidden (the vanilla watch shows while scanning)");
+expect(!hidesOn({ hz43FoMoved: true }) && !hidesOn({ hz43VanWrote: true }), "mode 2: style 1 moved, HideWatchWhileScanning off: not hidden (the watch shows while scanning)");
+expect(!hidesOn({ hz43VanWrote: true, hzWatchStyle: 2 }) && !hidesOn({ hz43FoMoved: true, hzWatchStyle: 3 }) && !hidesOn({ hz43FoMoved: true, hzWatchStyle: 4 }), "mode 2: moved in styles 2 / 3 / 4, HideWatchWhileScanning off: not hidden");
+expect(hidesOn({ HW: 1 }) && hidesOn({ HW: 1, hzWatchStyle: 2 }), "mode 2: at home with HideWatchWhileScanning=1 (Scanner module): hidden");
+expect(hidesOn({ hz43FoMoved: true, HW: 1 }) && hidesOn({ hz43VanWrote: true, HW: 1 }), "mode 2: moved with HideWatchWhileScanning=1: hidden");
+expect(hidesOn({ hz43VanWrote: true, hzWatchStyle: 2, HW: 1 }) && hidesOn({ hz43FoMoved: true, hzWatchStyle: 3, HW: 1 }) && hidesOn({ hz43FoMoved: true, hzWatchStyle: 4, HW: 1 }), "mode 2: moved in styles 2 / 3 / 4 with HideWatchWhileScanning=1: hidden");
+expect(!hidesOn({ HW: 1, hz30Mod: { scanner: 0 } }) && !hidesOn({ hz43FoMoved: true, HW: 1, hz30Mod: { scanner: 0 } }), "mode 2: HideWatchWhileScanning=1 without the Scanner module does nothing, home or moved (r7 S-5)");
+{
+	const h = host({ hz43FoMoved: true });
+	open(h); frame(h, 30);
+	expect(!h.hz49Grp && !h.hz44Hid && h.blg.alpha === 0.85 && h.hz49N === 0, "mode 2: moved, option off: a whole scan leaves the group as the game has it (no scan-hide edge)");
+	close(h); frame(h, 1);
+	expect(!h.hz44Hid && h.blg.alpha === 0.85 && h.hz49N === 0 && h.hzHideCache === SENT, "mode 2: moved, option off: the close edge does nothing either");
+}
+expect(!hidesOn({ hz43FoMoved: true, hzWatchStyle: 0, HW: 1 }), "style 0: the scan hide never applies (style 0 has its own hz44 hide)");
+expect(!hidesOn({ hz43FoMoved: true, hzArrange: true, HW: 1 }) && !hidesOn({ hz43FoMoved: true, hz40Latch: true, HW: 1 }), "ARRANGE or a latched scan: not hidden");
+expect(!hidesOn({ hz43FoMoved: true, hz44GrpIni: false, HW: 1 }) && !hidesOn({ hz43FoMoved: true, hzUserHidden: true, HW: 1 }), "BlgGroupHide=0 or the player's hide-all: not hidden");
+expect(!hidesOn({ hz43FoMoved: true, hzStealthOn: false, hzEnemyBarOn: false, hzEdgePulse: false, HW: 1 }), "no Horizon enemy cue: not hidden (the vanilla enemy ring stays, as in the style-0 rule)");
+expect(hidesOn({ hz43FoMoved: true, hzStealthOn: false, hzEnemyBarOn: false, HW: 1 }), "one enemy cue (edge pulse) is enough");
+expect(!hidesOn({ hz43FoMoved: true, HZ49_SCAN_GRP: 0, HW: 1 }), "HZ49_SCAN_GRP = 0: off (r9c behavior)");
+expect(hidesOn({ hz43FoMoved: true, HZ49_SCAN_GRP: 1 }) && hidesOn({ hz43FoMoved: true, HZ49_SCAN_GRP: 1, hz30Mod: { scanner: 0 } }) && !hidesOn({ HZ49_SCAN_GRP: 1 }) && hidesOn({ HZ49_SCAN_GRP: 1, HW: 1 }), "HZ49_SCAN_GRP = 1 (r9d): moved (any option), or home with HideWatchWhileScanning=1");
 expect(hidesOn({ HZ49_SCAN_GRP: 3 }), "HZ49_SCAN_GRP = 3: every scan with a watch on");
 {
-	const h = host({ hz43FoMoved: true }); open(h);
+	const h = host({ hz43FoMoved: true, HW: 1 }); open(h);
 	h.hzArrange = true; h.hz49Sync(); frame(h, 1);
 	expect(!h.hz44Hid && h.blg.alpha === 0.85, "ARRANGE entered during a scan (its edge runs hz43ScanHideSync): released on the next frame tick");
 }
 {
-	const h = host({ hz43FoMoved: true }); open(h);
+	const h = host({ hz43FoMoved: true, HW: 1 }); open(h);
 	h.hz40Latch = true; h.hz49Sync(); frame(h, 1);
 	expect(!h.hz44Hid && h.blg.alpha === 0.85, "hz40Clear safety net (latch): released on the next frame tick");
 }
 // ---- 5: group re-created while hidden (menu teardown / recreate) ----
 {
-	const h = host({ hz43FoMoved: true }); open(h);
+	const h = host({ hz43FoMoved: true, HW: 1 }); open(h);
 	const old = h.blg; remove(old);
 	const nb = add(h.hud, Clip("BottomLeftGroup_mc", true)); nb.alpha = 0.85; h.blg = nb;
 	frame(h, 1);
@@ -198,7 +210,7 @@ expect(hidesOn({ HZ49_SCAN_GRP: 3 }), "HZ49_SCAN_GRP = 3: every scan with a watc
 	expect(nb.alpha === 0.85 && !h.hz44Hid && !h.hz49Held && h.hzHideCache === SENT, "then closed: the new group released, no rebuild");
 }
 {
-	const h = host({ hz43FoMoved: true }); open(h);
+	const h = host({ hz43FoMoved: true, HW: 1 }); open(h);
 	const old = h.blg; remove(old); h.hz40Scan = false; h.hz49Grp = false;   // scan ended by the load gap (hz40Frame -> hz40Clear)
 	const nb = add(h.hud, Clip("BottomLeftGroup_mc", true)); h.blg = nb;
 	h.hz49Sync(); frame(h, 1);
