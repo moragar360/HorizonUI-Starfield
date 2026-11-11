@@ -15287,7 +15287,8 @@
       private var hz44GameMC:Boolean = true; // alpha mode: the group's own mouseChildren before the hide, given back on release
       private function hz44GrpWant() : Boolean
       {
-         return HZ44_ALLOW_UNREPLACED && this.hz44GrpIni && this.hzWatchStyle == 0 && this.hzHideVanillaWatch && !this.hzUserHidden
+         // r9d: hz49Grp is set and cleared only on the scanner open / close edges (hz49Sync); here it is one field read
+         return this.hz49Grp || HZ44_ALLOW_UNREPLACED && this.hz44GrpIni && this.hzWatchStyle == 0 && this.hzHideVanillaWatch && !this.hzUserHidden
             && this.hzShowAfflictions && this.HorizonAffl_mc != null && !this.hzCompact && (this.hzRuleAffl == 0 || this.hzRuleAffl == 6)
             && this.hzShowPlanet && this.hzHazardAlert && this.hzRulePlanet == 0 && this.hzPillOn()
             && ((this.hzStealthOn && this.HorizonStealth_mc != null) || (this.hzEnemyBarOn && this.HorizonEnemy_mc != null) || (this.hzEdgePulse && this.HorizonEdge_mc != null));
@@ -15321,6 +15322,7 @@
                }
                this.hz44Ref = b = nb;
                this.hz44Hid = false;
+               this.hz49Held = false;   // r9d: a re-hide of the new group records its own reason
             }
             if(b == null) { return; }
          }
@@ -15343,8 +15345,9 @@
                this.hz44Hid = true;
                this.hz44N++;
                this.hz45SM = -1; try { this.hz45Sync(); } catch(e45g:Error) { }   // r9: hide edge only (drops the ADDED listener)
-               this.hzHideCache = null;   // rebuilt this frame without the BLG names
-               if(this.hzWlOn) { this.hzWlPush("wl grp t=" + Math.round(this.hzPerfNow()) + " on=1 gv=" + (this.hzGroupVisible ? 1 : 0) + " frame=" + (frame ? 1 : 0)); }
+               if(this.hz49Grp) { this.hz49Held = true; this.hz49Tries = this.hzHideTries; }   // r9d scan hide: the per-piece list is kept, so no rebuild / walk
+               else { this.hzHideCache = null; }   // rebuilt this frame without the BLG names
+               if(this.hzWlOn) { this.hzWlPush("wl grp t=" + Math.round(this.hzPerfNow()) + " on=1 gv=" + (this.hzGroupVisible ? 1 : 0) + " frame=" + (frame ? 1 : 0) + " scan=" + (this.hz49Held ? 1 : 0)); }
             }
             return;
          }
@@ -15354,7 +15357,8 @@
          this.hz45SM = -1; try { this.hz45Sync(); } catch(e45r:Error) { }   // r9: release edge only (listener back, one sweep)
          if(HZ44_BY_ALPHA) { if(b.alpha != this.hz44GameA) { b.alpha = this.hz44GameA; } this.hz44MouseBack(b); }   // the game's alpha (HUD opacity), not a forced 1
          else if(b.visible != this.hzGroupVisible) { b.visible = this.hzGroupVisible; }   // vanilla's own value, not a forced true
-         this.hzHideCache = null;   // the per-piece list comes back this frame
+         if(this.hz49Held && this.hzHideTries == this.hz49Tries) { this.hz49Held = false; }   // r9d scan hide: the list is the one from before the hide (no rebuild / walk)
+         else { this.hz49Held = false; this.hzHideCache = null; }   // the per-piece list comes back this frame (r9d: also after a periodic rebuild made under the scan hide)
          if(this.hzWlOn) { this.hzWlPush("wl grp t=" + Math.round(this.hzPerfNow()) + " on=0 gv=" + (this.hzGroupVisible ? 1 : 0)); }
       }
       // alpha mode, A-N1: the group's own mouse flags back (the game never writes them; captured at the hide)
@@ -15377,6 +15381,59 @@
          try { this.hz44GrpTick(false); } catch(eG:Error) { }
       }
       // ===================== end v0.44 whole-group hide =====================
+
+      // ===================== v0.44 r9d: whole-group hide while the scanner is open (watch on) =====================
+      // User (r9c old-PC test, 2026-11-11 9:32 AM): "you got the watch hidden when we turn it off.. do the same actions",
+      // then "yes" (9:33 AM). With the watch on and moved, the scanner still showed watch art with HideWatchWhileScanning on
+      // or off; with the watch off (WatchStyle 0) nothing showed, because hz44 hides BottomLeftGroup_mc as ONE object.
+      // Purpose: while the hand scanner is open, give WatchStyle 1-4 the same whole-group hide as WatchStyle 0: the very
+      // same hz44GrpTick path (alpha 0, mouse flags off, the HudModeData / HUDOpacityData re-hides, the frame-tick release
+      // with the game's alpha and mouse flags back). hz49Grp is the only new input to it, read in hz44GrpWant.
+      // When (HZ49_SCAN_GRP, the one-line switch): 0 = off (r9c: per-piece only); 1 (shipped) = the watch is moved (any
+      // HideWatchWhileScanning), or at home with HideWatchWhileScanning=1; 2 = only with HideWatchWhileScanning=1;
+      // 3 = every scan with a watch on. Always also: scanner open and not latched, not in ARRANGE, BlgGroupHide not 0, the
+      // player has not hidden Horizon, and (HZ49_NEED_ENEMY) a Horizon enemy cue stands in for the vanilla enemy ring
+      // EnemyDetectionAnim_mc, as in the WatchStyle 0 hide. HideWatchWhileScanning counts only with the Scanner module,
+      // as in hz43ScanWant (r7 S-5).
+      // Restore: nothing under the group is written. The per-piece state (the r9b moved-watch children, the inverse-matrix
+      // pieces, the hz47 icon hide, the HideWatchWhileScanning hold) keeps running under the hidden group on its own edges,
+      // and the close edge's existing syncs (hz43FollowApply, hz43ScanHideSync, hz45Sync) run before the frame-tick release,
+      // so the group comes back exactly as r9c would have shown it. The scan hide itself never asks for a per-piece list
+      // rebuild (hz49Held). Only if the existing every-90-frames rebuild ran while it held (that rebuild drops the BLG names
+      // under any group hide) does the release ask for one rebuild, as the WatchStyle 0 release always does. The hide-list
+      // function itself is unchanged (a right-side function).
+      // Events only: hz49Sync runs from hz43ScanHideSync, which runs on the scanner open / close edge (hz40SetScan, after its
+      // edge gate), the hz40Clear safety nets, INI load, F11 apply and ARRANGE enter / exit. Nothing per frame but the one
+      // Boolean read in hz44GrpWant; no search, no timer, no allocation.
+      // Author: Moragar. Last modified: 2026-11-11.
+      private static const HZ49_SCAN_GRP:int = 1;
+      private static const HZ49_NEED_ENEMY:Boolean = true;
+      private var hz49Grp:Boolean = false;    // the scan hide is wanted (set / cleared on the edges only)
+      private var hz49Held:Boolean = false;   // the current group hide was made by the scan hide (no list rebuild on its edges)
+      private var hz49N:int = 0;              // diag: scan hide edges
+      private var hz49Tries:int = 0;          // hzHideTries at the scan hide edge: a periodic list rebuild under the hide (it drops the BLG names) makes the release rebuild once
+      private function hz49Want() : Boolean
+      {
+         if(HZ49_SCAN_GRP == 0 || !this.hz40Scan || this.hz40Latch || this.hzArrange) { return false; }
+         if(this.hzWatchStyle < 1 || this.hzWatchStyle > 4 || !this.hz44GrpIni || this.hzUserHidden) { return false; }
+         if(HZ49_NEED_ENEMY && !((this.hzStealthOn && this.HorizonStealth_mc != null) || (this.hzEnemyBarOn && this.HorizonEnemy_mc != null) || (this.hzEdgePulse && this.HorizonEdge_mc != null))) { return false; }
+         if(HZ49_SCAN_GRP == 3) { return true; }
+         var hw:Boolean = this.hz30Mod["scanner"] === 1 && this.hz41B(this.hz40Cfg().HideWatchWhileScanning);
+         if(HZ49_SCAN_GRP == 2) { return hw; }
+         return hw || this.hz43FoMoved || this.hz43VanWrote;
+      }
+      // Purpose: apply the scan hide on its edges. A hide applies at once (in the edge's own handler, before render); a
+      // release is left to the next hz44GrpTick(true) frame tick, after the close edge's own syncs.
+      private function hz49Sync() : void
+      {
+         var w:Boolean = this.hz49Want();
+         if(w == this.hz49Grp) { return; }
+         this.hz49Grp = w;
+         this.hz49N++;
+         if(w) { try { this.hz44GrpTick(false); } catch(e44:Error) { } }
+         if(this.hzWlOn) { this.hzWlPush("wl sgrp t=" + Math.round(this.hzPerfNow()) + " on=" + (w ? 1 : 0) + " style=" + this.hzWatchStyle + " moved=" + (this.hz43FoMoved || this.hz43VanWrote ? 1 : 0) + " grp=" + (this.hz44Hid ? 1 : 0)); }
+      }
+      // ===================== end r9d =====================
 
       // vanilla left-side affliction popup (BottomLeftGroup BioAlertText / BioCondition_mc / BioAlertBG_mc):
       // hidden while the Afflictions card is on. v0.44 r2 (user 2026-11-10 10:11, "In Original Vanilla Watch mode, show
@@ -22406,6 +22463,7 @@
       // Inputs: none. Outputs: visible writes on the edge. Author: Moragar. Last modified: 2026-11-10.
       private function hz43ScanHideSync() : void
       {
+         try { this.hz49Sync(); } catch(e49:Error) { }   // r9d: the whole-group scan hide, on the same edges
          var want:Boolean = this.hz43ScanWant();
          if(want == this.hz43ScanHid && (!want || this.hz43ScanSt == this.hzWatchStyle)) { return; }
          var d:DisplayObject;
