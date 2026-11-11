@@ -7,7 +7,9 @@
 //  3. the close edge releases only on the next frame tick, with the game's alpha and mouse flags back, and no rebuild;
 //  4. the gates: HZ49_SCAN_GRP modes (shipped 2 since r9d2: HideWatchWhileScanning only), moved / home, HideWatchWhileScanning with and without the Scanner module, style 0,
 //     ARRANGE, latch, BlgGroupHide=0, hide-all, the enemy-cue rule;
-//  5. a group re-created while hidden (menu teardown / recreate), the style-0 path unchanged, and the wiring is edge-only.
+//  5. a group re-created while hidden (menu teardown / recreate), the style-0 path unchanged, and the wiring is edge-only;
+//  6. r9e (Bot 3 N-1 / N-2): an INI reload while scanning ends in the right hide state (the production hzOnIni, its final
+//     hz49Sync after the keys are read), hide-all (the production hzToggleAll) re-syncs, and both are no-ops when unchanged.
 // r9d2 (user picks, 2026-11-11 10:08 AM): "Moved watch: hide only when Hide Watch While Scanning is on" and "Home watch,
 // option off: keep showing the vanilla watch during scans" -> the hiding cases below run with HideWatchWhileScanning=1 (HW).
 // Author: Moragar. Last modified: 2026-11-11.
@@ -229,6 +231,75 @@ expect(hidesOn({ HZ49_SCAN_GRP: 3 }), "HZ49_SCAN_GRP = 3: every scan with a watc
 	expect(!h.hz44Hid && h.hzHideCache === null, "style 0 -> 1: the release asks for the rebuild as before");
 }
 
+// ---- 6: r9e N-1, an INI reload while scanning (the production hzOnIni) ----
+// hz40ParseIni (stubbed) runs the existing early hz43ScanHideSync -> hz49Sync with the OLD values, as in production; the
+// keys are then read by hzOnIni's own loop / hz26Ini (both production), and the final hz49Sync must settle the state.
+function iniHost(o) {
+	const h = host(o);
+	const NOOP = function() { };
+	h.hz31OldFirst = (l) => l;
+	h.hz31ParseIni = NOOP;
+	h.hz40ParseIni = function() { h.early++; h.hz49Sync(); };
+	h.early = 0; h.nRefresh = 0;
+	h.hzRefreshVisibility = function() { h.nRefresh++; h.hz44GrpTick(false); };
+	h.hzRulesV2 = true; h.hzTgScaleSet = true; h.hzEqKind = "";
+	const fns = ["hzOnIni", "hz26Ini", "hzToggleAll"];
+	const wrap = new Proxy(h, { get(t, k) { return k in t ? t[k] : (typeof k === "string" && /^hz/.test(k) ? NOOP : undefined); }, has(t, k) { return k in t; } });
+	for (const n of fns) {
+		const f = fnText(as, n);
+		const body = toJs(f.body).replace(/for each\(var (\w+)(?::\w+)? in /g, "for (var $1 of ");
+		h[n] = Function.apply(null, argNames(f.sig).concat(["with(this){\n" + body + "\n}"])).bind(wrap);
+	}
+	h.reload = function(text) { h.hz37Txt = text; h.hzOnIni(null); };
+	return h;
+}
+{
+	const h = iniHost({ hz43FoMoved: true, HW: 1 }); open(h);
+	expect(h.hz44Hid && h.blg.alpha === 0, "N-1 setup: scanning, option on, moved: hidden");
+	h.reload("[Watch]\nEnemyBar=0\nStealthMeter=0\nEdgePulse=0\n");
+	expect(!h.hzEnemyBarOn && !h.hzStealthOn && !h.hzEdgePulse && h.early === 1, "N-1: the reload read the three enemy-cue keys (after the early sync)");
+	expect(!h.hz49Grp && h.hz49N === 2, "N-1: reload turns every Horizon enemy cue off mid-scan: the final hz49Sync clears the scan hide (the early one saw the old keys)");
+	frame(h, 1);
+	expect(!h.hz44Hid && h.blg.alpha === 0.85 && h.hzHideCache === SENT, "N-1: released on the next frame tick with the game's alpha, no list rebuild (the r9c per-piece fallback keeps the alerts and ring)");
+}
+{
+	const h = iniHost({ hz43FoMoved: true, HW: 1, hzWatchStyle: 0 }); open(h);
+	expect(!h.hz49Grp && !h.hz44Hid, "N-1 setup: scanning in style 0 (its own hide off here): no scan hide");
+	h.reload("WatchStyle=1\n");
+	expect(h.hzWatchStyle === 1 && h.hz49Grp && h.hz44Hid && h.blg.alpha === 0 && h.hz49Held, "N-1: reload to style 1 mid-scan with the option on: hidden at once by the final hz49Sync (the early one saw style 0)");
+}
+{
+	const h = iniHost({ hz43FoMoved: true, HW: 1 }); open(h);
+	h.reload("BlgGroupHide=0\n");
+	expect(!h.hz44GrpIni && !h.hz49Grp, "N-1: reload with BlgGroupHide=0 mid-scan: the scan hide ends");
+	frame(h, 1);
+	expect(!h.hz44Hid && h.blg.alpha === 0.85, "N-1: BlgGroupHide=0: released on the next frame tick");
+}
+{
+	const h = iniHost({ hz43FoMoved: true, HW: 1 }); open(h);
+	const n0 = h.hz49N, n45 = h.n45, w0 = h.nWant;
+	h.reload("EnemyBar=1\nShowCompass=1\n");
+	expect(h.hz49Grp && h.hz44Hid && h.blg.alpha === 0 && h.hz49N === n0 && h.n45 === n45 && h.hzHideCache === SENT && h.nWant === w0 + 2, "N-1: a reload that changes nothing: hz49Sync is a no-op (one compare each, no edge, no hz45Sync, no list rebuild)");
+	const h2 = iniHost({ hz43FoMoved: true, HW: 1 });
+	h2.reload("EnemyBar=1\n");
+	expect(!h2.hz49Grp && !h2.hz44Hid && h2.hz49N === 0 && h2.blg.alpha === 0.85, "N-1: a reload with the scanner closed: nothing hides");
+}
+// ---- 6b: r9e N-2, hide-all mid-scan (the production hzToggleAll) ----
+{
+	const h = iniHost({ hz43FoMoved: true, HW: 1 }); open(h);
+	h.hzToggleAll();
+	expect(h.hzUserHidden && !h.hz49Grp && h.nRefresh === 1, "N-2: hide-all on mid-scan: hzToggleAll re-syncs (the scan hide clears)");
+	frame(h, 1);
+	expect(!h.hz44Hid && h.blg.alpha === 0.85 && h.hzHideCache === SENT, "N-2: released on the next frame tick, no list rebuild (vanilla group back, as with hide-all outside a scan)");
+	h.hzToggleAll();
+	expect(!h.hzUserHidden && h.hz49Grp && h.hz44Hid && h.blg.alpha === 0, "N-2: hide-all off mid-scan: hidden again at once");
+	close(h); frame(h, 1);
+	expect(!h.hz44Hid && h.blg.alpha === 0.85, "N-2: then the scanner closes: released as usual");
+	const n0 = h.hz49N;
+	h.hzToggleAll(); h.hzToggleAll(); frame(h, 2);
+	expect(h.hz49N === n0 && !h.hz44Hid && h.blg.alpha === 0.85, "N-2: hide-all on / off with the scanner closed: hz49Sync is a no-op");
+}
+
 // ---- static: wiring, edge-only, no per-frame / search / timer / allocation ----
 const grpWant = codeOnly(fnText(as, "hz44GrpWant").body);
 expect(/return this\.hz49Grp \|\| HZ44_ALLOW_UNREPLACED && this\.hz44GrpIni && this\.hzWatchStyle == 0/.test(grpWant), "hz44GrpWant: the only per-frame change is one field read (hz49Grp) in front of the r9c chain");
@@ -239,7 +310,12 @@ expect((as.match(/var grp:Boolean = this\.hz44Hid;   \/\/ BLG hidden as a whole/
 const shs = codeOnly(fnText(as, "hz43ScanHideSync").body);
 expect(shs.indexOf("this.hz49Sync()") >= 0 && shs.indexOf("this.hz49Sync()") < shs.indexOf("return;"), "hz43ScanHideSync calls hz49Sync before its own early return");
 let callers = []; for (const m of as.matchAll(/this\.hz49Sync\(\)/g)) callers.push(m.index);
-expect(callers.length === 1, "hz49Sync has exactly one call site (hz43ScanHideSync)");
+const at = (i) => { const pre = as.slice(0, i); const m = [...pre.matchAll(/(?:private|public) function (\w+)\(/g)]; return m.length ? m[m.length - 1][1] : ""; };
+expect(callers.length === 3 && callers.map(at).sort().join(",") === "hz43ScanHideSync,hzOnIni,hzToggleAll", "hz49Sync has exactly three call sites: hz43ScanHideSync, hzOnIni (r9e N-1), hzToggleAll (r9e N-2)");
+const onIni = codeOnly(fnText(as, "hzOnIni").body).trim();
+expect(/try \{ this\.hz49Sync\(\); \} catch\(\w+:Error\) \{ \}$/.test(onIni) && onIni.lastIndexOf("this.hz49Sync()") > onIni.indexOf('case "blggrouphide"') && onIni.lastIndexOf("this.hz49Sync()") > onIni.indexOf('case "watchstyle"') && onIni.lastIndexOf("this.hz49Sync()") > onIni.indexOf("this.hz26Ini(") && onIni.lastIndexOf("this.hz49Sync()") > onIni.indexOf("this.hz40ParseIni("), "hzOnIni: hz49Sync is its last statement, after BlgGroupHide / WatchStyle / the enemy-cue keys (hz26Ini) and hz40ParseIni");
+const tog = codeOnly(fnText(as, "hzToggleAll").body);
+expect(tog.indexOf("this.hz49Sync()") > tog.indexOf("this.hzUserHidden = !this.hzUserHidden") && tog.indexOf("this.hz49Sync()") < tog.indexOf("this.hzRefreshVisibility()") && !/for\s*\(|while|new |getChild/.test(tog), "hzToggleAll: hz49Sync after the flip, before the refresh; no loop, search or allocation");
 const setScan = codeOnly(fnText(as, "hz40SetScan").body);
 expect(setScan.indexOf("if(!edge) { return; }") >= 0 && setScan.indexOf("hz43ScanHideSync") > setScan.indexOf("if(!edge) { return; }"), "hz40SetScan reaches it only after its edge gate");
 expect(codeOnly(fnText(as, "hz40Clear").body).indexOf("this.hz43ScanHideSync()") >= 0, "hz40Clear (the safety nets) reaches it too");
