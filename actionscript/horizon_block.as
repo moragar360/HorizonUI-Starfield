@@ -15110,6 +15110,7 @@
             {
                this.hz44Hid = true;
                this.hz44N++;
+               this.hz45SM = -1; try { this.hz45Sync(); } catch(e45g:Error) { }   // r9: hide edge only (drops the ADDED listener)
                this.hzHideCache = null;   // rebuilt this frame without the BLG names
                if(this.hzWlOn) { this.hzWlPush("wl grp t=" + Math.round(this.hzPerfNow()) + " on=1 gv=" + (this.hzGroupVisible ? 1 : 0) + " frame=" + (frame ? 1 : 0)); }
             }
@@ -15118,6 +15119,7 @@
          if(!this.hz44Hid || !frame) { return; }   // releases wait for the frame tick (see above)
          this.hz44Hid = false;
          this.hz44N++;
+         this.hz45SM = -1; try { this.hz45Sync(); } catch(e45r:Error) { }   // r9: release edge only (listener back, one sweep)
          if(HZ44_BY_ALPHA) { if(b.alpha != this.hz44GameA) { b.alpha = this.hz44GameA; } this.hz44MouseBack(b); }   // the game's alpha (HUD opacity), not a forced 1
          else if(b.visible != this.hzGroupVisible) { b.visible = this.hzGroupVisible; }   // vanilla's own value, not a forced true
          this.hzHideCache = null;   // the per-piece list comes back this frame
@@ -18542,10 +18544,12 @@
       }
       private function hz40SetScan(on:Boolean) : void
       {
-         if(!on) { this.hz40Latch = false; }
+         var edge:Boolean = on != this.hz40Scan;   // r9 (zero stutter): hz40OnCmp calls this on every dispatch (the r8 log: 333
+         if(!on) { this.hz40Latch = false; }        // "wl blg why=scan" dumps, two or three per frame, for a few real edges)
          this.hz40Scan = on;
          this.hz40Apply();
          try { this.hz41LocHide(); } catch(e41e:Error) { }   // v0.42.0 r3: re-assert on every scan edge
+         if(!edge) { return; }   // r9: the r6 / r8 watch syncs below run once per real open / close edge, not per dispatch
          try { this.hz43FollowApply(); } catch(e43f:Error) { }   // r6: FadeInPlanetInfo plays on the scan edge; keep it on the moved watch
          try { this.hz43ScanHideSync(); } catch(e43s:Error) { }   // r6: [Scanner] HideWatchWhileScanning, on the open / close edge only
          try { this.hz45Sync(); } catch(e45s:Error) { }   // r8: the planet-info art the game adds right after this edge
@@ -22237,6 +22241,7 @@
                   this.hz43FoHY[i] = d.y;
                   this.hz43FoSX[i] = d.scaleX;
                   this.hz43FoSY[i] = d.scaleY;
+                  this.hz46KidRec(i,d);   // r9 (MF-1): a text holder's own fields are recorded with the instance
                }
                var hx:Number = Number(this.hz43FoHX[i]);
                var hy:Number = Number(this.hz43FoHY[i]);
@@ -22245,10 +22250,14 @@
                var ny:Number = txtHome ? hy : oy + (hy - oy) * fs + this.hz43FoDy / uy;
                var nsx:Number = Number(this.hz43FoSX[i]) * fs;
                var nsy:Number = Number(this.hz43FoSY[i]) * fs;
-               if(d.x != nx) { d.x = nx; }
-               if(d.y != ny) { d.y = ny; }
-               if(d.scaleX != nsx) { d.scaleX = nsx; }
-               if(d.scaleY != nsy) { d.scaleY = nsy; }
+               if(int(this.hz46KN[i]) > 0) { this.hz46KidPut(i,d,nx,ny,fs); }   // r9 (MF-1): the instance itself is never moved
+               else
+               {
+                  if(d.x != nx) { d.x = nx; }
+                  if(d.y != ny) { d.y = ny; }
+                  if(d.scaleX != nsx) { d.scaleX = nsx; }
+                  if(d.scaleY != nsy) { d.scaleY = nsy; }
+               }
             }
             i++;
          }
@@ -22339,13 +22348,21 @@
          var k:int = this.hz45D.indexOf(d);
          if(k < 0 && mode != 0)
          {
+            // r9 root cause (the r8 log: band instance1653 at 14.3,-250.3 = 3 x the 4.8,-83.4 move): a keyframe that swaps
+            // the art at one depth without a new matrix keeps the old (placed) matrix, so the new instance must not be
+            // recorded where it stands. hz46Inherit finds the record it was placed from (event time, no allocation).
+            var j:int = mode == 2 ? this.hz46Inherit(d) : -1;
+            var rx:Number = j >= 0 ? Number(this.hz45HX[j]) : d.x;
+            var ry:Number = j >= 0 ? Number(this.hz45HY[j]) : d.y;
+            var rsx:Number = j >= 0 ? Number(this.hz45SX[j]) : d.scaleX;
+            var rsy:Number = j >= 0 ? Number(this.hz45SY[j]) : d.scaleY;
             if(this.hz45D.length >= 24) { this.hz45Prune(); }
             k = this.hz45D.length;
             this.hz45D.push(d);
-            this.hz45HX.push(d.x);
-            this.hz45HY.push(d.y);
-            this.hz45SX.push(d.scaleX);
-            this.hz45SY.push(d.scaleY);
+            this.hz45HX.push(rx);
+            this.hz45HY.push(ry);
+            this.hz45SX.push(rsx);
+            this.hz45SY.push(rsy);
          }
          if(k >= 0 && this.hz46Tick(Number(this.hz45HX[k]),Number(this.hz45HY[k])))
          {
@@ -22414,7 +22431,7 @@
       {
          if(!this.hzBlg) { return; }
          var mode:int = this.hz45Mode();
-         var want:Boolean = mode != 0 || this.hz43FoMoved;
+         var want:Boolean = (mode != 0 && !this.hz44Hid) || this.hz43FoMoved;   // r9: no listener under the whole-group hide
          try
          {
             if(want && this.hz43FoLsn !== this.hzBlg)
@@ -22458,6 +22475,7 @@
       private function hz45OnEnvLate(e:FromClientDataEvent) : *
       {
          try { this.hz45EnvHide(); } catch(eH:Error) { }
+         try { this.hz46HoldW3(); } catch(eW3:Error) { }   // r9: the HideWatchWhileScanning hold (1 / 2) re-hides what the game re-showed
          try { this.hz45Sync(); } catch(eS:Error) { }
          if(this.hzWlOn) { try { this.hz45WlBlg("env"); } catch(eW:Error) { } }
       }
@@ -22510,7 +22528,7 @@
       // the only code that treats them apart; nothing else changes. Ticks are moved by position only, never scaled: their
       // matrix is rotated (a ~0, b 0.22, c -1, d 0) and the session log read them as scaleX 0.00008, scaleY 0.
       // Author: Moragar. Last modified: 2026-11-10.
-      private static const HZ46_TICK_MOVE:Boolean = true;
+      private static const HZ46_TICK_MOVE:Boolean = false;   // r9 verdict: false (see hz46 notes)
       private function hz46Tick(hx:Number, hy:Number) : Boolean
       {
          if(hy < 139.65 || hy > 143.65) { return false; }
@@ -22565,6 +22583,132 @@
          {
             var d:DisplayObject = this.hzBlg.getChildByName(String(HZ46_TXT[i]));
             if(d && d.visible)
+            {
+               d.visible = false;
+               if(this.hz43ScanMk.indexOf(d) < 0) { this.hz43ScanMk.push(d); }
+            }
+            i++;
+         }
+      }
+      // ---- v0.44 r9 (2/2): r8 gaming-PC log / screenshots ----
+      // MF-1 verdict (HorizonUI_r8.log 1583-1586, style 1, watch moved by 4.8,-83.4, FadeInPlanetInfo@195): every
+      // script-moved timeline instance kept the alpha it had when it was first moved. The INFO ticks (instance23 / 24,
+      // keyed a100 191-228) read a0, LocationAlertText (keyed a100 195-228) a0, the disc instance1650 (a83) a0, the bar
+      // instance1643 (a100 s80) a0 s74, while the unmoved BioConditionBase_mc / EnvConditionBase_mc follow their keys.
+      // So: the ticks are hidden while moved (HZ46_TICK_MOVE false), and a follower that is a plain text holder (one or
+      // two children, Symbols 1255 / 1269 / 1278: single-frame TextFields) moves its fields, never itself, so its
+      // timeline fade keeps playing. Anything else falls back to the r6 instance move. Event time only (the follower
+      // callers); kid records are made once per new follower instance. Author: Moragar. Last modified: 2026-11-10.
+      private static const HZ46_KMAX:int = 2;
+      private var hz46KN:Array = [];    // per follower: recorded child count (0 = the instance itself moves)
+      private var hz46KD:Array = [];    // slot i * HZ46_KMAX + c: the child, and its native place / scale
+      private var hz46KX:Array = [];
+      private var hz46KY:Array = [];
+      private var hz46KSX:Array = [];
+      private var hz46KSY:Array = [];
+      private function hz46KidRec(i:int, d:DisplayObject) : void
+      {
+         var n:int = 0;
+         var c:DisplayObjectContainer = d as DisplayObjectContainer;
+         if(c && c.numChildren > 0 && c.numChildren <= HZ46_KMAX)
+         {
+            while(n < c.numChildren)
+            {
+               var k:DisplayObject = c.getChildAt(n);
+               var t:int = i * HZ46_KMAX + n;
+               this.hz46KD[t] = k;
+               this.hz46KX[t] = k.x;
+               this.hz46KY[t] = k.y;
+               this.hz46KSX[t] = k.scaleX;
+               this.hz46KSY[t] = k.scaleY;
+               n++;
+            }
+         }
+         this.hz46KN[i] = n;
+      }
+      // the fields go where they would be if the holder stood at (nx, ny) with its scale times fs; the holder stays native
+      private function hz46KidPut(i:int, d:DisplayObject, nx:Number, ny:Number, fs:Number) : void
+      {
+         var c:DisplayObjectContainer = d as DisplayObjectContainer;
+         if(!c) { return; }
+         var hx:Number = Number(this.hz43FoHX[i]);
+         var hy:Number = Number(this.hz43FoHY[i]);
+         var osx:Number = Number(this.hz43FoSX[i]);
+         var osy:Number = Number(this.hz43FoSY[i]);
+         if(!(osx > 0.01 || osx < -0.01)) { osx = 1; }
+         if(!(osy > 0.01 || osy < -0.01)) { osy = 1; }
+         var n:int = int(this.hz46KN[i]);
+         var j:int = 0;
+         while(j < n)
+         {
+            var t:int = i * HZ46_KMAX + j;
+            var k:DisplayObject = this.hz46KD[t] as DisplayObject;
+            if(k && k.parent === c)
+            {
+               var kx:Number = Number(this.hz46KX[t]) * fs + (nx - hx) / osx;
+               var ky:Number = Number(this.hz46KY[t]) * fs + (ny - hy) / osy;
+               var ksx:Number = Number(this.hz46KSX[t]) * fs;
+               var ksy:Number = Number(this.hz46KSY[t]) * fs;
+               if(k.x != kx) { k.x = kx; }
+               if(k.y != ky) { k.y = ky; }
+               if(k.scaleX != ksx) { k.scaleX = ksx; }
+               if(k.scaleY != ksy) { k.scaleY = ksy; }
+            }
+            j++;
+         }
+      }
+      // Root cause of the left-over arc (shot1, top-left; log 1585 instance1653 at 14.3,-250.3 = 3 x the move): the
+      // FadeInPlanetInfo band is a raw shape the timeline swaps at one depth (layer 29); a swap without a new matrix keeps
+      // the placed matrix, r8 recorded that as "native" and placed it again (2x, then 3x). Moved toward the center the
+      // 3x copy lands off screen, which is why it showed only with the watch near the bottom-left. Here: a new art
+      // instance standing exactly where a recorded one is placed (same position and scale) takes that record's native.
+      // Event time only (hz45Put's first sight of an instance); a loop over at most 24 records, no allocation.
+      private function hz46Inherit(d:DisplayObject) : int
+      {
+         if(this.hz43VanN <= 0) { return -1; }
+         var ox:Number = Number(this.hz43VanOX[0]);
+         var oy:Number = Number(this.hz43VanOY[0]);
+         var ux:Number = Number(this.hz43VanUXA[0]);
+         var uy:Number = Number(this.hz43VanUYA[0]);
+         if(isNaN(ox)) { ox = 0; }
+         if(isNaN(oy)) { oy = 0; }
+         if(!(ux > 0.01 || ux < -0.01)) { ux = 1; }
+         if(!(uy > 0.01 || uy < -0.01)) { uy = 1; }
+         var sc:Number = this.hz43FoSc > 0.05 ? this.hz43FoSc : 1;
+         if(sc == 1 && this.hz43FoDx == 0 && this.hz43FoDy == 0) { return -1; }   // placed = native: nothing to undo
+         var k:int = this.hz45D.length - 1;
+         while(k >= 0)
+         {
+            var hx:Number = Number(this.hz45HX[k]);
+            var hy:Number = Number(this.hz45HY[k]);
+            if(!this.hz46Tick(hx,hy))
+            {
+               var px:Number = ox + (hx - ox) * sc + this.hz43FoDx / ux;
+               var py:Number = oy + (hy - oy) * sc + this.hz43FoDy / uy;
+               var dx:Number = d.x - px;
+               var dy:Number = d.y - py;
+               var ds:Number = d.scaleX - Number(this.hz45SX[k]) * sc;
+               if(dx < 0.05 && dx > -0.05 && dy < 0.05 && dy > -0.05 && ds < 0.005 && ds > -0.005) { return k; }
+            }
+            k--;
+         }
+         return -1;
+      }
+      // Root cause of the globe in the HideWatchWhileScanning hold (shot2): the hold hides the captured units on the scan
+      // edge, then the game's LocalEnvironmentData handler (BottomLeftGroup, "DayCycleBase_mc.visible = !inShip" on every
+      // dispatch, also on the bIsScanning edge) shows DayCycleBase_mc again; hz45EnvHide skips 1 / 2. Here, from the late
+      // listener (same dispatch, before render): styles 1 / 2 in the hold hide the four W3 pieces again and record them,
+      // so the scan close gives them back through hz43VanShowClip (the game's own formulas). Four direct lookups per
+      // LocalEnvironmentData dispatch, only while the hold is on.
+      private function hz46HoldW3() : void
+      {
+         if(!this.hz43ScanHid || !this.hzBlg) { return; }
+         if(this.hz43ScanSt != 1 && this.hz43ScanSt != 2) { return; }
+         var i:int = 0;
+         while(i < HZ45_W3.length)
+         {
+            var d:DisplayObject = this.hzBlg.getChildByName(String(HZ45_W3[i]));
+            if(d && d.visible && this.hz43ScanPiece(d))
             {
                d.visible = false;
                if(this.hz43ScanMk.indexOf(d) < 0) { this.hz43ScanMk.push(d); }
