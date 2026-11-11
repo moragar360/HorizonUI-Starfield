@@ -112,11 +112,17 @@ package
          while(i < this.pills.length)
          {
             var p:Object = this.pills[i];
-            var tabs:Array = p.tabs as Array;
-            if(tabs == null || tabs.indexOf("*") >= 0 || tabs.indexOf(param1) >= 0) { out.push(p); }
+            if(onTab(p,param1)) { out.push(p); }
             i++;
          }
          return out;
+      }
+
+      // True when a pill (or an editor draft) applies on this tab: all tabs, or this one.
+      internal static function onTab(param1:Object, param2:String):Boolean
+      {
+         var tabs:Array = param1 != null ? param1.tabs as Array : null;
+         return tabs == null || tabs.indexOf("*") >= 0 || tabs.indexOf(param2) >= 0;
       }
 
       internal function byId(param1:String):Object

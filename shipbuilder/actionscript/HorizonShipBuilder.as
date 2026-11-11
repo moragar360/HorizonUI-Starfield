@@ -3090,15 +3090,23 @@ package
          var on:Boolean = this.pops.length > 0 || this.textOwner != null;
          var w:int = stage != null ? stage.stageWidth : 0;
          var h:int = stage != null ? stage.stageHeight : 0;
-         var key:String = on && w > 0 && h > 0 ? w + "x" + h : "";
+         var key:String = "";
+         var a:Point = null;
+         var b:Point = null;
+         if(on && w > 0 && h > 0)
+         {
+            // The key follows the layer's own transform too, so a UI scale change while a popup
+            // is open (Settings) redraws the sheet over the whole stage.
+            a = this.popLayer.globalToLocal(new Point(0,0));
+            b = this.popLayer.globalToLocal(new Point(w,h));
+            key = w + "x" + h + "@" + Math.round(a.x) + "," + Math.round(a.y) + "," + Math.round(b.x) + "," + Math.round(b.y);
+         }
          if(key == this.scrimKey) { return; }
          this.scrimKey = key;
          var g:Graphics = this.scrim.graphics;
          g.clear();
          if(key.length > 0)
          {
-            var a:Point = this.popLayer.globalToLocal(new Point(0,0));
-            var b:Point = this.popLayer.globalToLocal(new Point(w,h));
             g.beginFill(0x000000,SCRIM_ALPHA);
             g.drawRect(a.x,a.y,b.x - a.x,b.y - a.y);
             g.endFill();
@@ -3120,8 +3128,10 @@ package
       {
          var since:int = this.frameN - this.lastTextEnd;
          var typing:Boolean = this.textOwner != null;
-         if(!this.debugOn && !typing && since > PALETTE_WATCH) { return; }
-         this.note("FIND palette closed by game text=" + (typing ? this.textOwner.name : "-") + " sinceText=" + since + " key=" + this.lastKey + " sinceKey=" + (this.frameN - this.lastKeyAt) + " sincePress=" + (this.frameN - this.lastPressAt) + " pops=" + this.pops.length);
+         // Probe=1 only (diagnostics stay off by default); recent=1 marks a close while a field
+         // was typing or within PALETTE_WATCH frames of one ending.
+         if(!this.debugOn) { return; }
+         this.note("FIND palette closed by game text=" + (typing ? this.textOwner.name : "-") + " sinceText=" + since + " recent=" + (typing || since <= PALETTE_WATCH ? 1 : 0) + " key=" + this.lastKey + " sinceKey=" + (this.frameN - this.lastKeyAt) + " sincePress=" + (this.frameN - this.lastPressAt) + " pops=" + this.pops.length);
          this.syncLog("palette");
       }
 

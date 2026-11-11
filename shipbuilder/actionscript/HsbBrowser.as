@@ -267,6 +267,8 @@ package
 
       // Makers learned from card logos, by lower-case part name, for this session.
       private var makerByName:Object = {};
+      // Cleaned names whose cards named two makers: the name no longer decides a maker.
+      private var nameClash:Object = {};
 
       // Logo ids are "ShipModuleManufacturer" + a maker key (the vanilla card's logo frames).
       private static const LOGO_PREFIX:String = "ShipModuleManufacturer";
@@ -287,8 +289,9 @@ package
       // Purpose: remember the maker a card names and put it on the rows it describes.
       // Rules: a card for the previewed row (same cleaned name, or a variant that extends it)
       //    teaches that part by id, which no other part shares. A card for a module picked on
-      //    the ship teaches its cleaned name, and only rows with exactly that name follow it,
-      //    so two makers' parts that share a name no longer overwrite each other.
+      //    the ship teaches its cleaned name, and only rows with exactly that name and no maker
+      //    learned by id follow it. When cards name two makers for one cleaned name, the name
+      //    stops deciding (nameClash): those rows keep their own guess until each is previewed.
       // Outputs: true when a row's maker changed. Diagnostics only with probe=1.
       private function learnMaker(param1:Object):Boolean
       {
@@ -305,7 +308,22 @@ package
             this.makerById[id] = maker;
             if(String(r0.maker) != maker) { r0.maker = maker; changed = true; }
          }
-         if(this.makerByName[key] == maker) { return changed; }
+         var had:* = this.makerByName[key];
+         if(had == maker) { return changed; }
+         if(had != null || this.nameClash[key] == true)
+         {
+            this.nameClash[key] = true;
+            delete this.makerByName[key];
+            var j:int = 0;
+            while(j < this.rows.length)
+            {
+               var rc:Object = this.rows[j];
+               if(String(rc.key) == key && this.makerById[String(rc.id)] == null && rc.guess != null && String(rc.maker) != String(rc.guess)) { rc.maker = String(rc.guess); changed = true; }
+               j++;
+            }
+            if(this.hsb.debugging) { this.hsb.note("MAKER name clash name=" + key); }
+            return changed;
+         }
          this.makerByName[key] = maker;
          var i:int = 0;
          while(i < this.rows.length)
@@ -421,8 +439,10 @@ package
          return String(m[0]).split(" ").join("");
       }
 
-      // A maker read from a card logo first; then known brands; otherwise the first word, when
-      // two or more parts on this tab start with it. Everything else groups under "Other".
+      // Maker order: the card's logo learned for this part (by id), then for its exact cleaned
+      // name (while no two makers share it); the category's bracketed maker ("Bays [DerreTech]",
+      // the Ship Builder Categories naming); a known brand prefix; the first word when two or
+      // more parts on this tab start with it and it is not a kind of part. Else "Other".
       private function assignMakers():void
       {
          var counts:Object = {};
@@ -442,12 +462,10 @@ package
             var r:Object = this.rows[i];
             var name:String = String(r.name);
             var clean:String = this.cleanText(name);
-            var maker:String = makerOf(clean);
+            var maker:String = this.tabMaker.length > 0 ? this.tabMaker : makerOf(clean);
             var prefix:String = makerPrefix(clean);
-            // Order: the card's logo for this part, then for its name; the category's bracketed
-            // maker; a known brand prefix; a repeated first word that is not a kind of part or
-            // a word of the category name; otherwise "Other".
-            if(maker.length == 0 && this.tabMaker.length > 0) { maker = this.tabMaker; }
+            // The bracketed category maker came first above (the category says so outright),
+            // then a known brand prefix; next a repeated first word that is not a kind of part.
             if(maker.length == 0)
             {
                var w:String = clean.split(" ")[0];
@@ -455,7 +473,8 @@ package
             }
             var learned:* = this.makerById[String(r.id)];
             if(learned == null) { learned = this.makerByName[String(r.key)]; }
-            r.maker = learned != null ? String(learned) : (maker.length > 0 ? maker : "Other");
+            r.guess = maker.length > 0 ? maker : "Other";
+            r.maker = learned != null ? String(learned) : String(r.guess);
             if(learned != null) { known++; }
             else if(maker.length > 0) { named++; }
             r.prefix = prefix;
@@ -1653,8 +1672,11 @@ package
       //    text and the grid's maker chip, so a pill that matches parts alone can still leave
       //    the list empty; the editor says so instead of promising parts the list won't show.
       // Inputs: the draft and the id it replaces ("" for a new pill, which the save turns on).
+      // Parts the list would show with this draft and the other filters; -1 when the draft's
+      // tabs leave this tab out, so it would not filter here at all.
       internal function countShown(param1:Object, param2:String):int
       {
+         if(!HsbPillModel.onTab(param1,this.tabId)) { return -1; }
          var c:Object = this.ctx();
          var on:Array = this.hsb.pills.onFor(this.tabId);
          var n:int = 0;
@@ -2666,10 +2688,12 @@ package
                if(have != null)
                {
                   if(int(cat.count) > 0) { have.count = Math.max(0,int(have.count)) + int(cat.count); }
+                  // The tile opens the group's first category that has parts, never an empty one.
+                  if(int(cat.count) > 0 && int(have.pickN) <= 0) { have.index = int(keys[i]); have.pickN = int(cat.count); }
                   i++;
                   continue;
                }
-               have = {"name":base,"index":int(keys[i]),"count":int(cat.count),"locked":cat.locked,"active":base.toLowerCase() == hereBase};
+               have = {"name":base,"index":int(keys[i]),"pickN":int(cat.count),"count":int(cat.count),"locked":cat.locked,"active":base.toLowerCase() == hereBase};
                byBase[bk] = have;
                out.push(have);
             }

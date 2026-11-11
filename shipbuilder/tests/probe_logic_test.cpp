@@ -17,6 +17,7 @@
 #include "hsb_settings.h"
 #include "hsb_version.h"
 
+#include <array>
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
@@ -1558,8 +1559,8 @@ static void CheckMovie(const fs::path& root)
 	// part name for the session and win over the name guess; the MAKER lines need probe=1.
 	Expect(Has(browser, "\"Deimos\":\"Deimos\"") && Has(browser, "private static const LOGO_PREFIX:String = \"ShipModuleManufacturer\";") &&
 			Has(FunctionBody(browser, "learnMaker"), "var maker:String = makerFromLogo(param1.sLogoID);") &&
-			Has(FunctionBody(browser, "assignMakers"), "r.maker = learned != null ? String(learned) : (maker.length > 0 ? maker : \"Other\");") &&
-			CountOf(browser, "this.hsb.note(\"MAKER ") == 2 && CountOf(browser, "if(this.hsb.debugging) { this.hsb.note(\"MAKER ") == 2 &&
+			Has(FunctionBody(browser, "assignMakers"), "r.maker = learned != null ? String(learned) : String(r.guess);") &&
+			CountOf(browser, "this.hsb.note(\"MAKER ") == 3 && CountOf(browser, "if(this.hsb.debugging) { this.hsb.note(\"MAKER ") == 3 &&
 			Has(hub, "internal function get debugging():Boolean { return this.debugOn; }"),
 		"makers are read from card logos and the maker diagnostics stay behind probe=1");
 	// v5 item 3: values, labels and names each stay inside their own column box.
@@ -2597,8 +2598,8 @@ static void CheckV7Input(const fs::path& root)
 	Expect(InOrder(handle, {"case WM_INPUT: {", "g_cRaw.fetch_add(1);", "const bool eat = RawInputEaten(hwnd, lp, in, hot);", "if (eat) g_cRawEaten.fetch_add(1);", "return eat;"}),
 		"WM_INPUT is no longer passed on unread");
 	Expect(Has(CppBody(plugin, "LRESULT CALLBACK ProbeWnd("), "if (HandleBuilderInput(hwnd, msg, wp, lp)) return msg == WM_INPUT ? DefWindowProcW(hwnd, msg, wp, lp) : 0;") &&
-			InOrder(CppBody(plugin, "LRESULT CALLBACK ProbeWnd("), {"g_eatChar = false;", "g_rawKeys.fill(hsb::RawHeld::none);", "g_rawButtons = 0;"}) &&
-			InOrder(CppBody(plugin, "void ResetInput("), {"g_cRawEaten.store(0);", "g_rawKeys.fill(hsb::RawHeld::none);", "g_rawButtons = 0;"}),
+			InOrder(CppBody(plugin, "LRESULT CALLBACK ProbeWnd("), {"g_eatChar = false;", "hsb::RawLedgerOpen(g_rawKeys.data(), g_rawKeys.size(), nullptr);", "g_rawButtons = 0;"}) &&
+			InOrder(CppBody(plugin, "void ResetInput("), {"g_cRawEaten.store(0);", "g_rawResetGen.fetch_add(1);"}),
 		"a kept raw record is still freed by DefWindowProc, and the raw ledgers reset with the menu");
 
 	const std::string scrim = FunctionBody(hub, "updateScrim");
@@ -2611,7 +2612,7 @@ static void CheckV7Input(const fs::path& root)
 			Has(FunctionBody(hub, "holdsPointer", "internal"), "return this.pops.length > 0 || (this.textOwner != null && this.textOwner != this.browser) || (this.arrange != null && this.arrange.visible);"),
 		"a hover dwell never picks a part under a popup or a name field");
 	Expect(InOrder(FunctionBody(hub, "adapt"), {"if(this.vis.Browser == true && want.Browser != true) { this.notePaletteLost(); }", "for(key in want)"}) &&
-			InOrder(FunctionBody(hub, "notePaletteLost"), {"if(!this.debugOn && !typing && since > PALETTE_WATCH) { return; }", "this.note(\"FIND palette closed by game text=\"", "this.syncLog(\"palette\");"}) &&
+			InOrder(FunctionBody(hub, "notePaletteLost"), {"if(!this.debugOn) { return; }", "this.note(\"FIND palette closed by game text=\"", "this.syncLog(\"palette\");"}) &&
 			Has(FunctionBody(hub, "wantsEvent", "public"), "if(this.debugOn) { this.note(\"INPUT ev=\"") &&
 			Has(FunctionBody(browser, "endFind", "internal"), "if(this.findOn && this.hsb.debugging) { this.hsb.note(\"FIND end why=\" + param1); }"),
 		"the next test logs why a palette closed and how Find ended");
@@ -2668,9 +2669,9 @@ static void CheckV7Makers(const fs::path& root)
 	Expect(InOrder(FunctionBody(browser, "sameOrVariant", "internal static"), {"if(param1 == param2) { return true; }", "return b.indexOf(a) == 0 && b.charAt(a.length) == \" \";"}),
 		"a variant name that extends the row name still names the row");
 	const std::string assign = FunctionBody(browser, "assignMakers");
-	Expect(InOrder(assign, {"var clean:String = this.cleanText(name);", "var maker:String = makerOf(clean);", "if(maker.length == 0 && this.tabMaker.length > 0) { maker = this.tabMaker; }",
+	Expect(InOrder(assign, {"var clean:String = this.cleanText(name);", "var maker:String = this.tabMaker.length > 0 ? this.tabMaker : makerOf(clean);",
 				   "&& !this.kindWord(w)) { maker = w; prefix = w; }", "var learned:* = this.makerById[String(r.id)];", "if(learned == null) { learned = this.makerByName[String(r.key)]; }",
-				   "r.maker = learned != null ? String(learned) : (maker.length > 0 ? maker : \"Other\");"}) &&
+				   "r.guess = maker.length > 0 ? maker : \"Other\";", "r.maker = learned != null ? String(learned) : String(r.guess);"}) &&
 			Has(assign, "var first:String = this.cleanText(String(this.rows[i].name)).split(\" \")[0];") && Has(assign, "r.size = sizeOf(clean);"),
 		"makers: logo by id, logo by name, bracketed category, brand prefix, then a first word that is not a kind of part");
 	Expect(InOrder(FunctionBody(browser, "makerFromCategory", "internal static"), {"var open:int = s.lastIndexOf(\"[\");", "if(open < 0 || close < open + 2 || close != s.length - 1) { return \"\"; }"}) &&
@@ -2685,6 +2686,95 @@ static void CheckV7Makers(const fs::path& root)
 // v7 item 3: the stats bar's titles and values are larger and both centered.
 // v7e: the category carousel (slim tiles, icon left of the label), "Category X of N", page
 // dots, and the ALL CATEGORIES overlay whose small tiles all fit without scrolling.
+// v7f (review of 0ee028b): a key held through the menu open keeps its release (MF-1); the
+// raw ledger resets on the window thread (S-2) and on focus loss (S-3); the palette line is
+// Probe-only (S-1); maker order and name clashes (S-4, S-5); grouped tiles (S-6); the draft's
+// tabs (S-7); the cover sheet after a rescale (S-8).
+static void CheckV7f(const fs::path& root)
+{
+	const fs::path as = root / "actionscript";
+	const std::string hub = ReadFile(as / "HorizonShipBuilder.as");
+	const std::string browser = ReadFile(as / "HsbBrowser.as");
+	const std::string editor = ReadFile(as / "HsbPillEditor.as");
+	const std::string model = ReadFile(as / "HsbPillModel.as");
+	const std::string plugin = ReadFile(root / "src" / "probe.cpp");
+	Expect(!hub.empty() && !browser.empty() && !editor.empty() && !model.empty() && !plugin.empty(), "v7f sources read");
+
+	// Bot 3's repro: W goes down before the open (or before the handshake), a field holds the
+	// keyboard at the first record Horizon judges, then W auto-repeats and is released.
+	hsb::InputState text;
+	text.text = true;
+	text.capture = true;
+	{
+		std::array<hsb::RawHeld, 256> keys{};
+		hsb::RawKeySeen(false, keys['W']);                       // the game saw the press (menu closed or no handshake yet)
+		hsb::RawLedgerOpen(keys.data(), keys.size(), nullptr);   // the open reset
+		const bool pressEats = keys['W'] == hsb::RawHeld::none && hsb::KeyPress('W', 'W', false, false, false, false, text).eat;
+		const bool repeat = hsb::RawKeyEdge(false, keys['W'], pressEats);
+		const bool release = hsb::RawKeyEdge(true, keys['W'], false);
+		Expect(hsb::KeyPress('W', 'W', false, false, false, false, text).eat && !pressEats && !repeat && !release && keys['W'] == hsb::RawHeld::none,
+			"MF-1: a key held through the open keeps its auto-repeat and its release going to the game");
+	}
+	{
+		std::array<hsb::RawHeld, 256> keys{};
+		bool down[256] = {};
+		down['W'] = true;                                        // pressed before the window was watched at all
+		hsb::RawLedgerOpen(keys.data(), keys.size(), down);
+		const bool repeat = hsb::RawKeyEdge(false, keys['W'], keys['W'] == hsb::RawHeld::none);
+		Expect(!repeat && !hsb::RawKeyEdge(true, keys['W'], false), "MF-1: a key already down at the open is the game's, though no record of it was seen");
+	}
+	{
+		std::array<hsb::RawHeld, 256> keys{};
+		keys['Q'] = hsb::RawHeld::eaten;
+		keys['E'] = hsb::RawHeld::passed;
+		hsb::RawLedgerOpen(keys.data(), keys.size(), nullptr);
+		Expect(keys['Q'] == hsb::RawHeld::none && keys['E'] == hsb::RawHeld::passed, "the open forgets only keys Horizon ate");
+		hsb::RawKeySeen(true, keys['E']);
+		Expect(keys['E'] == hsb::RawHeld::none, "a release while Horizon handles no input clears the key");
+		keys['Q'] = hsb::RawHeld::eaten;
+		keys['E'] = hsb::RawHeld::passed;
+		hsb::RawLedgerFocusLost(keys.data(), keys.size());
+		Expect(keys['Q'] == hsb::RawHeld::none && keys['E'] == hsb::RawHeld::none && !hsb::RawKeyEdge(true, keys['Q'], false),
+			"S-3: focus loss clears the ledger and leaves no release waiting to be eaten");
+		Expect(hsb::RawKeyEdge(false, keys['Q'], true) && keys['Q'] == hsb::RawHeld::eaten, "a fresh press during the visit is still kept from the game");
+	}
+	const std::string wnd = CppBody(plugin, "LRESULT CALLBACK ProbeWnd(");
+	Expect(InOrder(wnd, {"const unsigned rawGen = g_rawResetGen.load();", "if (rawGen != g_rawSeenGen) {", "RawLedgerRefresh();",
+				   "if ((msg == WM_ACTIVATEAPP && wp == FALSE) || msg == WM_KILLFOCUS || (msg == WM_ACTIVATE && LOWORD(wp) == WA_INACTIVE)) {",
+				   "hsb::RawLedgerFocusLost(g_rawKeys.data(), g_rawKeys.size());", "} else if ((msg == WM_ACTIVATEAPP && wp != FALSE) || msg == WM_SETFOCUS) {", "RawLedgerRefresh();",
+				   "if (g_menuOpen.load() && g_movieGen.load() == kMovieGen) {", "} else if (msg == WM_INPUT) {", "RawKeyOutside(lp);"}) &&
+			!Has(wnd, "g_rawKeys.fill("),
+		"the window thread applies the open reset, clears on focus loss, and keeps the ledger before the handshake");
+	Expect(InOrder(CppBody(plugin, "void RawKeyOutside("), {"RID_HEADER", "if (head.dwType != RIM_TYPEKEYBOARD) return;", "RID_INPUT",
+				   "hsb::RawKeySeen((raw.data.keyboard.Flags & RI_KEY_BREAK) != 0, g_rawKeys[vk]);"}) &&
+			InOrder(CppBody(plugin, "void RawLedgerRefresh("), {"GetAsyncKeyState", "hsb::RawLedgerOpen(g_rawKeys.data(), g_rawKeys.size(), down);", "g_rawButtons = 0;"}) &&
+			!Has(CppBody(plugin, "void ResetInput("), "g_rawKeys") && !Has(CppBody(plugin, "void ResetInput("), "g_rawButtons"),
+		"S-2: only the window thread writes the raw ledgers; outside Horizon's input only keyboard records are read");
+
+	Expect(InOrder(FunctionBody(hub, "notePaletteLost"), {"if(!this.debugOn) { return; }", " recent=\" + (typing || since <= PALETTE_WATCH ? 1 : 0)"}),
+		"S-1: the palette line is written only with Probe=1");
+	const std::string scrim = FunctionBody(hub, "updateScrim");
+	Expect(InOrder(scrim, {"a = this.popLayer.globalToLocal(new Point(0,0));", "b = this.popLayer.globalToLocal(new Point(w,h));",
+				   "key = w + \"x\" + h + \"@\" + Math.round(a.x) + \",\" + Math.round(a.y) + \",\" + Math.round(b.x) + \",\" + Math.round(b.y);", "if(key == this.scrimKey) { return; }",
+				   "g.drawRect(a.x,a.y,b.x - a.x,b.y - a.y);"}),
+		"S-8: the cover sheet is redrawn when the layer's scale or place changes");
+	const std::string learn = FunctionBody(browser, "learnMaker");
+	Expect(InOrder(learn, {"var had:* = this.makerByName[key];", "if(had != null || this.nameClash[key] == true)", "this.nameClash[key] = true;", "delete this.makerByName[key];",
+				   "rc.maker = String(rc.guess);", "return changed;", "this.makerByName[key] = maker;"}),
+		"S-5: when two makers share a cleaned name, the name stops deciding and those rows keep their own guess");
+	Expect(Has(browser, "// Maker order: the card's logo learned for this part (by id), then for its exact cleaned") && !Has(FunctionBody(browser, "assignMakers"), "if(maker.length == 0 && this.tabMaker.length > 0)"),
+		"S-4: the bracketed category maker wins over a brand prefix, as the comment says");
+	Expect(InOrder(FunctionBody(browser, "gridTiles", "internal"), {"if(int(cat.count) > 0 && int(have.pickN) <= 0) { have.index = int(keys[i]); have.pickN = int(cat.count); }",
+				   "\"pickN\":int(cat.count)"}),
+		"S-6: a grouped tile opens its first category with parts");
+	Expect(InOrder(FunctionBody(browser, "countShown", "internal"), {"if(!HsbPillModel.onTab(param1,this.tabId)) { return -1; }", "var on:Array = this.hsb.pills.onFor(this.tabId);"}) &&
+			Has(FunctionBody(model, "onTab", "internal static"), "return tabs == null || tabs.indexOf(\"*\") >= 0 || tabs.indexOf(param2) >= 0;") &&
+			Has(FunctionBody(model, "forTab", "internal"), "if(onTab(p,param1)) { out.push(p); }") &&
+			Has(FunctionBody(editor, "paint", "internal"), "shownN < 0 ? \" \\u00B7 not used on this tab\""),
+		"S-7: the shown count follows the draft's tabs, and says when the pill is not used here");
+	Expect(Has(browser, "internal static const CAT_TEAL:uint = 0x4FD1BE;"), "the teal accent stays");
+}
+
 static void CheckV7Categories(const fs::path& root)
 {
 	const std::string browser = ReadFile(root / "actionscript" / "HsbBrowser.as");
@@ -2778,6 +2868,7 @@ int main()
 	CheckV7Makers(root);
 	CheckV7Stats(root);
 	CheckV7Categories(root);
+	CheckV7f(root);
 
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";

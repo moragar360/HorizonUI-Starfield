@@ -10,6 +10,7 @@
 // Dependencies: none (no game or Windows calls), so the logic test can run them.
 // Author: Moragar. Last modified: 2026-11-07.
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -335,6 +336,37 @@ inline bool RawKeyEdge(bool release, RawHeld& held, bool pressEats)
 	}
 	if (held == RawHeld::none) held = pressEats ? RawHeld::eaten : RawHeld::passed;
 	return held == RawHeld::eaten;
+}
+
+// v7f: the ledger also runs while Horizon handles no input (the menu closed, or open before
+// the movie's handshake), so a key that went down then is known to be the game's. There every
+// make marks the key passed (the game saw it go down) and every break clears it. Nothing is
+// eaten there.
+inline void RawKeySeen(bool release, RawHeld& held)
+{
+	held = release ? RawHeld::none : RawHeld::passed;
+}
+
+// Purpose: the raw key ledger at a menu open (and when the game window gets focus back).
+// Inputs: the ledger (n keys) and which keys are down now (down may be null). Rules: only
+//    keys we ate are forgotten; a key the game saw go down stays the game's until its
+//    release, so its auto-repeats and release keep reaching the game. A key that is down but
+//    unknown (its press came before the window was watched) is the game's too. So a release
+//    is never eaten for a key whose press reached the game.
+inline void RawLedgerOpen(RawHeld* keys, std::size_t n, const bool* down)
+{
+	for (std::size_t vk = 0; vk < n; ++vk) {
+		if (keys[vk] == RawHeld::eaten) keys[vk] = RawHeld::none;
+		if (down != nullptr && down[vk] && keys[vk] == RawHeld::none) keys[vk] = RawHeld::passed;
+	}
+}
+
+// Focus loss: breaks can go to another window, so every entry is cleared. No release is left
+// waiting to be eaten, and a stale entry cannot decide a later press (RawLedgerOpen marks the
+// keys still down when focus comes back).
+inline void RawLedgerFocusLost(RawHeld* keys, std::size_t n)
+{
+	for (std::size_t vk = 0; vk < n; ++vk) keys[vk] = RawHeld::none;
 }
 
 // Shift, Ctrl, Alt (either side) and Caps Lock reach the game raw, as their messages do (an

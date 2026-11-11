@@ -162,7 +162,8 @@ package
             var n:int = this.browser.countMatches(this.draft);
             var shownN:int = this.browser.countShown(this.draft,this.orig != null ? String(this.orig.id) : "");
             var mt:TextField = k.text(13,HsbKit.GREEN,true);
-            k.put(mt,"Matches " + n + (n == 1 ? " part" : " parts") + (shownN != n ? " \u00B7 " + shownN + " with your other filters" : ""));
+            var shownT:String = shownN < 0 ? " \u00B7 not used on this tab" : (shownN != n ? " \u00B7 " + shownN + " with your other filters" : "");
+            k.put(mt,"Matches " + n + (n == 1 ? " part" : " parts") + shownT);
             k.fit(mt,w - pad * 2 - k.u(300));
             k.fill(g,pad,y,mt.width + 34,bh,bh / 2,HsbKit.GREEN_BG,1);
             k.outline(g,pad,y,mt.width + 34,bh,bh / 2,HsbKit.mix(HsbKit.GREEN,HsbKit.FILL,0.5),1);

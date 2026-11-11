@@ -121,9 +121,12 @@ std::atomic<unsigned> g_cRawEaten{ 0 };
 // Window thread only.
 hsb::PressLedger g_keysEaten;
 hsb::PressLedger g_buttonsEaten;
-// Raw input ledgers, window thread only: each raw key and button follows its press.
+// Raw input ledgers, window thread only: each raw key and button follows its press. Other
+// threads ask for the open reset through g_rawResetGen; the window thread applies it.
 std::array<hsb::RawHeld, 256> g_rawKeys{};
 unsigned g_rawButtons = 0;
+unsigned g_rawSeenGen = 0;
+std::atomic<unsigned> g_rawResetGen{ 0 };
 int g_wheelRest = 0;
 bool g_eatChar = false;
 
@@ -332,8 +335,8 @@ void ResetInput()
 	g_cDropped.store(0);
 	g_cRaw.store(0);
 	g_cRawEaten.store(0);
-	g_rawKeys.fill(hsb::RawHeld::none);
-	g_rawButtons = 0;
+	// The raw ledgers belong to the window thread: it applies this reset on its next message.
+	g_rawResetGen.fetch_add(1);
 }
 
 std::string CountsNow()
@@ -376,6 +379,32 @@ void FeedTypedChars(unsigned vk, LPARAM lp, const hsb::InputState& in)
 		Feed("C " + std::to_string(code), false);
 		g_cChars.fetch_add(1);
 	}
+}
+
+// Purpose: the raw key ledger at an open or when focus returns (hsb_input.h RawLedgerOpen):
+//    keys we ate are forgotten, keys down now stay the game's. Window thread only.
+void RawLedgerRefresh()
+{
+	bool down[256] = {};
+	for (unsigned vk = 1; vk < 255; ++vk) down[vk] = (GetAsyncKeyState(static_cast<int>(vk)) & 0x8000) != 0;
+	hsb::RawLedgerOpen(g_rawKeys.data(), g_rawKeys.size(), down);
+	g_rawButtons = 0;
+}
+
+// Purpose: keep the raw key ledger while Horizon handles no input (hsb_input.h RawKeySeen).
+//    Mouse and HID records are skipped after the header read, so this stays cheap.
+void RawKeyOutside(LPARAM lp)
+{
+	RAWINPUTHEADER head{};
+	UINT size = sizeof(head);
+	if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lp), RID_HEADER, &head, &size, sizeof(RAWINPUTHEADER)) == static_cast<UINT>(-1)) return;
+	if (head.dwType != RIM_TYPEKEYBOARD) return;
+	RAWINPUT raw{};
+	size = sizeof(raw);
+	if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lp), RID_INPUT, &raw, &size, sizeof(RAWINPUTHEADER)) == static_cast<UINT>(-1)) return;
+	const unsigned vk = static_cast<unsigned>(raw.data.keyboard.VKey);
+	if (vk == 0 || vk >= 0xFF) return;
+	hsb::RawKeySeen((raw.data.keyboard.Flags & RI_KEY_BREAK) != 0, g_rawKeys[vk]);
 }
 
 // Purpose: the raw input rules (hsb_input.h RawKeyEdge, RawMouseEdge) for one WM_INPUT.
@@ -532,14 +561,30 @@ LRESULT CALLBACK ProbeWnd(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 		g_pingHits.fetch_add(1);
 		g_pingSeen.store(static_cast<std::uint32_t>(wp));
 	}
+	const unsigned rawGen = g_rawResetGen.load();
+	if (rawGen != g_rawSeenGen) {
+		g_rawSeenGen = rawGen;
+		RawLedgerRefresh();
+	}
+	// Focus loss: no raw release is left to eat and no stale entry decides a later press.
+	if ((msg == WM_ACTIVATEAPP && wp == FALSE) || msg == WM_KILLFOCUS || (msg == WM_ACTIVATE && LOWORD(wp) == WA_INACTIVE)) {
+		hsb::RawLedgerFocusLost(g_rawKeys.data(), g_rawKeys.size());
+		g_rawButtons = 0;
+	} else if ((msg == WM_ACTIVATEAPP && wp != FALSE) || msg == WM_SETFOCUS) {
+		RawLedgerRefresh();
+	}
 	if (g_menuOpen.load() && g_movieGen.load() == kMovieGen) {
 		// A raw record kept from the game still goes to DefWindowProc, which frees it.
 		if (HandleBuilderInput(hwnd, msg, wp, lp)) return msg == WM_INPUT ? DefWindowProcW(hwnd, msg, wp, lp) : 0;
+	} else if (msg == WM_INPUT) {
+		// Before the handshake and while closed the game gets every record; the ledger notes
+		// which keys it saw go down (MF-1: a key held through the open must keep its release).
+		RawKeyOutside(lp);
 	} else if (msg == WM_KEYDOWN || msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MBUTTONDOWN) {
 		g_keysEaten.Clear();
 		g_buttonsEaten.Clear();
 		g_eatChar = false;
-		g_rawKeys.fill(hsb::RawHeld::none);
+		hsb::RawLedgerOpen(g_rawKeys.data(), g_rawKeys.size(), nullptr);
 		g_rawButtons = 0;
 	}
 	if (!chain) return DefWindowProcW(hwnd, msg, wp, lp);
