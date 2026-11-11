@@ -330,5 +330,20 @@ for (const fn of ["hzOnFrame", "hz27OnExit", "hz43Frame", "hz43VanHorizon", "hz4
 	let b = ""; try { b = codeOnly(fnText(as, fn).body); } catch (e) { b = ""; }
 	expect(b !== "" && !/hz49Sync|hz49Want/.test(b), "per-frame function " + fn + " holds no hz49Sync / hz49Want call");
 }
+// ---- r9g2 (Bot 3 N-3 / D6): the hz49Sync no-op path does no work (no group-hide tick, no counter, no log) ----
+{
+	for (const o of [{ hz43FoMoved: true, HW: 1 }, {}, { hzWatchStyle: 3, hzHideVanillaWatch: true, HW: 1 }]) {
+		const h = host(o);
+		const tick = h.hz44GrpTick; let nTick = 0;
+		h.hz44GrpTick = function(f) { nTick++; return tick(f); };
+		h.hz49Sync();                                   // not scanning: no change
+		open(h); const t1 = nTick, n1 = h.hz49N, a1 = h.blg.alpha;
+		for (let i = 0; i < 25; i++) h.hz49Sync();      // scanning, state unchanged (INI apply / hide-all / edge repeats)
+		expect(nTick === t1 && h.hz49N === n1 && h.blg.alpha === a1, "r9g2 D6 (" + JSON.stringify(o) + "): 25 hz49Sync calls with no change make no hz44GrpTick call and no counter step");
+		close(h); frame(h, 1); const t2 = nTick, n2 = h.hz49N;
+		for (let i = 0; i < 25; i++) h.hz49Sync();
+		expect(nTick === t2 && h.hz49N === n2, "r9g2 D6 (" + JSON.stringify(o) + "): after the close, 25 unchanged syncs make no hz44GrpTick call");
+	}
+}
 console.log((failed ? "FAILED " : "all ok ") + "scan_grp_test: " + passed + " ok, " + failed + " FAIL");
 process.exit(failed ? 1 : 0);

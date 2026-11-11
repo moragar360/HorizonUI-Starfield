@@ -78,7 +78,7 @@ function piece(name, x, y, m, kids) {
 	return c;
 }
 function blg() {
-	const b = { name: "BottomLeftGroup_mc", kids: [], gets: 0, at: 0, added: [], fin: [] };
+	const b = { name: "BottomLeftGroup_mc", kids: [], gets: 0, at: 0, added: [], fin: [], currentFrame: 1, currentLabel: "FadeIn" };   // r9g2: the frame / label gates read these
 	Object.defineProperty(b, "numChildren", { get: function() { return this.kids.length; } });
 	b.getChildAt = function(i) { this.at++; return this.kids[i]; };
 	b.getChildByName = function(n) { this.gets++; return this.kids.find((k) => k.name === n) || null; };
@@ -95,12 +95,13 @@ function host(style) {
 		hz47D: [null, null, null, null, null], hz47On: false, hz47B: null, hz27BioMine: null, hz43ScanMk: [], hzWlOn: false,
 		Event: { ADDED: "added" }, int: (n) => n | 0, isNaN: isNaN, NaN: NaN,
 		HZ43_VAN_FOLLOW: constOf("HZ43_VAN_FOLLOW"), HZ46_TXT: constOf("HZ46_TXT"), HZ47_NAMES: constOf("HZ47_NAMES"), HZ48_ART: constOf("HZ48_ART"),
-		HZ48_AK: constOf("HZ48_AK"), HZ50_FIN: (as.match(/private static const HZ50_FIN:String = "([^"]+)";/) || [])[1],
+		HZ48_AK: constOf("HZ48_AK"), HZ50_FIN: (as.match(/private static const HZ50_FIN:String = "([^"]+)";/) || [])[1], HZ50_LBL: (as.match(/private static const HZ50_LBL:String = "([^"]+)";/) || [])[1],
 		hz43FollowApply: function() {}, puts: 0
 	};
 	["hz48AN", "hz48AI", "hz48AD", "hz48AX", "hz48AY", "hz48ASX", "hz48ASY", "hz48AWX", "hz48AWY", "hz48AWF", "hz48WX", "hz48WY", "hz48WS"].forEach((f) => { h[f] = []; });
 	bindAll(h);
 	const p = h.hz45Put; h.hz45Put = function(d, m) { h.puts++; return p(d, m); };
+	h.sweeps = 0; const sw0 = h.hz50Sweep; if (sw0) h.hz50Sweep = function() { h.sweeps++; return sw0(); };
 	return h;
 }
 function move(h, dx, dy, sc) { h.hz43FoDx = dx; h.hz43FoDy = dy; h.hz43FoSc = sc; h.hz43FoMoved = !(dx === 0 && dy === 0 && sc === 1); h.hz45Sync(); }
@@ -112,23 +113,27 @@ const gx = (c, k) => c.x + c.mm.a * c.kids[k].x + c.mm.c * c.kids[k].y;
 const gy = (c, k) => c.y + c.mm.b * c.kids[k].x + c.mm.d * c.kids[k].y;
 
 // ---- 1. the ghost ----
-function ghost(style, withAdd, withFin, env) {
+// Frames below are AS3 currentFrame values (1-based): XFL index + 1. FadeInPlanetInfo: label at index 182 (frame 183),
+// Symbol 1287 at index 186 (frame 187), Symbol 1292 at index 190 (frame 191), stop + AnimationFinished at index 227 (frame 228).
+function atF(h, f, lbl) { h.hzBlg.currentFrame = f; if (lbl) h.hzBlg.currentLabel = lbl; }
+function ghost(style, withAdd, withFin, env, f1292) {
 	const h = host(style);
 	const ring = put(h.hzBlg, piece("instance1285", 111, 110.6, null, [[0, 0]]));
 	move(h, -40, 20, 1);
 	const at = h.hzBlg.kids.length;
-	const p1287 = put(h.hzBlg, piece("instance1287", 0, 0, null, [[5, 5]]));   // frame 186: MovieClip art, ADDED fires
+	atF(h, 187, "FadeInPlanetInfo");
+	const p1287 = put(h.hzBlg, piece("instance1287", 0, 0, null, [[5, 5]]));   // index 186: MovieClip art, ADDED fires
 	added(h, p1287);
 	const s = {};
 	s[187] = put(h.hzBlg, piece("instance1501", p1287.x, p1287.y), at);        // 187: a raw shape swapped in, no ADDED, matrix kept
 	if (env) h.hz45Sync();                                                      // a LocalEnvironmentData dispatch (rare while scanning)
 	s[188] = put(h.hzBlg, piece("instance1502", s[187].x, s[187].y), at);
 	s[189] = put(h.hzBlg, piece("instance1503", s[188].x, s[188].y), at);
-	if (withAdd) { const p1292 = put(h.hzBlg, piece("instance1504", 110.2, 50.15, null, [[0, 0]])); added(h, p1292); }   // 190: Symbol 1292 (layer 36)
+	if (withAdd) { atF(h, f1292 || 191); const p1292 = put(h.hzBlg, piece("instance1504", 110.2, 50.15, null, [[0, 0]])); added(h, p1292); }   // index 190: Symbol 1292 (layer 36)
 	s[190] = put(h.hzBlg, piece("instance1505", s[189].x, s[189].y), at);
 	s[191] = put(h.hzBlg, piece("instance1506", s[190].x, s[190].y), at);
 	s[192] = put(h.hzBlg, piece("instance1507", s[191].x, s[191].y), at);      // held 192 - 231: what shows for the whole scan
-	if (withFin) finished(h);                                                   // 227: stop(); dispatchEvent(ANIMATION_FINISHED)
+	if (withFin) { atF(h, 228); finished(h); }                                   // index 227: stop(); dispatchEvent(ANIMATION_FINISHED)
 	return { h: h, s: s, ring: ring };
 }
 for (const st of [1, 2]) {
@@ -144,7 +149,9 @@ for (const st of [1, 2]) {
 	const o = ghost(st, false, false);
 	expect(o.s[192].x === 0 && o.s[192].y === 0, "r9g ghost (style " + st + "): the model reproduces the bug when no edge runs after the swap (band left at home)");
 	const e = ghost(st, false, false, true);
-	expect(near(e.s[192].x, -40) && near(e.s[192].y, 20), "r9g ghost (style " + st + "): a LocalEnvironmentData sync after the swap still sweeps once (the ADDED sweep does not use up the count change)");
+	expect(near(e.s[192].x, -40) && near(e.s[192].y, 20), "r9g ghost (style " + st + "): a LocalEnvironmentData sync after the swap still sweeps once (the ungated adds do not use up the count change)");
+	const pre = ghost(st, true, false, false, 190);
+	expect(near(pre.s[192].x, -40) && pre.h.sweeps === 1, "r9g2 ghost (style " + st + "): the gate also takes 190 (GFx reporting the frame before the advance), still one sweep");
 }
 {
 	const g = ghost(1, true, true);
@@ -159,11 +166,70 @@ for (const st of [1, 2]) {
 	expect(z.puts === p0 && z.hzBlg.at === a0, "r9g: an ADDED at home (mode 0) does no put and no sweep");
 	const q = ghost(1, true, true); q.h.hz45Sync(); const pq = q.h.puts; const aq = q.h.hzBlg.at;
 	for (let i = 0; i < 20; i++) q.h.hz45Sync();
-	expect(q.h.puts === pq && q.h.hzBlg.at === aq, "r9g zero stutter: after the one follow-up sweep, 20 repeat syncs with no change do no sweep");
+	expect(q.h.puts === pq && q.h.hzBlg.at === aq, "r9g zero stutter: 20 repeat syncs with no change do no sweep");
 	const s0 = host(0); s0.hz45Sync(); const sr = put(s0.hzBlg, piece("instance1601", 0, 0)); s0.hz43FoOnAdd({ target: sr });
 	expect(sr.visible === false, "r9g style 0: art is still hidden on its ADDED (mode 1 sweep)");
 	const t3 = host(3); t3.hz45Sync(); const tr = put(t3.hzBlg, piece("instance1602", 0, 0)); t3.hz43FoOnAdd({ target: tr });
 	expect(tr.visible === false, "r9g style 3: art hidden as before");
+}
+
+// ---- 1b. r9g2 (Bot 3 MF-1): sweeps per env alert, per scan and per bootup ----
+function envAlert(h, lbl0, base) {   // FadeInEnvAlert (label index 20) or FadeInEnvAlert_Positive (74), then its fade out
+	const mk = (n) => put(h.hzBlg, piece("instance" + (++uid + 3000), 110, 110, null, [[0, 0]]));
+	const adds = [[base + 23, 4], [base + 24, 2], [base + 25, 1]];
+	atF(h, base + 21, lbl0);
+	for (const [f, n] of adds) { atF(h, f); for (let i = 0; i < n; i++) added(h, mk()); }
+	atF(h, base + 57); finished(h);                                  // stop at index 56 (+54)
+	atF(h, base + 58, lbl0.replace("FadeIn", "FadeOut"));
+	atF(h, base + 63); added(h, mk()); added(h, mk());                // Symbol 1282 x 2 at index 62 (+54)
+	atF(h, base + 74); finished(h);                                  // stop at index 73 (+54)
+}
+for (const [st, mv] of [[1, true], [2, true], [3, false], [0, false]]) {
+	const h = host(st); put(h.hzBlg, piece("instance1285", 111, 110.6, null, [[0, 0]]));
+	if (mv) move(h, -40, 20, 1); else h.hz45Sync();
+	const a0 = h.hzBlg.at, s0 = h.sweeps;
+	envAlert(h, "FadeInEnvAlert", 0);
+	envAlert(h, "FadeInEnvAlert_Positive", 54);
+	expect(h.hzBlg.at === a0 && h.sweeps === s0, "r9g2 (style " + st + (mv ? " moved" : " home") + "): two env alerts (16 art adds, 4 AnimationFinished) do no getChildAt on the group and no sweep (was about 11 passes each)");
+}
+function scan(h) {
+	const mk = () => put(h.hzBlg, piece("instance" + (++uid + 3000), 110, 110, null, [[0, 0]]));
+	atF(h, 183, "FadeInPlanetInfo");
+	atF(h, 186); added(h, mk()); added(h, mk());   // index 185: layers 28 / 29
+	atF(h, 187); added(h, mk()); added(h, mk());   // index 186: layers 26 / 29
+	atF(h, 191); added(h, mk());                   // index 190: layer 36
+	atF(h, 228); finished(h);                      // index 227
+	atF(h, 229, "FadeOutPlanetInfo"); atF(h, 246); finished(h);   // close: index 245
+}
+function bootup(h) {
+	const mk = () => put(h.hzBlg, piece("instance" + (++uid + 3000), 110, 110, null, [[0, 0]]));
+	atF(h, 247, "bootup"); added(h, mk()); atF(h, 249); added(h, mk()); atF(h, 256); added(h, mk()); atF(h, 308, "README"); finished(h);
+	atF(h, 309, "PlanetInfoBootup");
+	atF(h, 310); added(h, mk()); added(h, mk()); atF(h, 311); added(h, mk()); added(h, mk());
+	atF(h, 315); added(h, mk()); atF(h, 318); added(h, mk()); atF(h, 370); finished(h);
+}
+for (const [st, mv] of [[1, true], [2, true], [3, false]]) {
+	const h = host(st); put(h.hzBlg, piece("instance1285", 111, 110.6, null, [[0, 0]]));
+	if (mv) move(h, -40, 20, 1); else h.hz45Sync();
+	const s0 = h.sweeps; scan(h); const sScan = h.sweeps - s0;
+	const aS = h.hzBlg.at; h.hz45Sync(); h.hz45Sync();
+	expect(h.hzBlg.at === aS, "r9g2 (style " + st + "): after a scan, unchanged LocalEnvironmentData / ARRANGE syncs do no getChildAt (no follow-up sweep is left open)");
+	const s1 = h.sweeps; bootup(h); const sBoot = h.sweeps - s1;
+	console.log("info sweeps (style " + st + "): scan=" + sScan + " bootup=" + sBoot + " env alert=0");
+	expect(sScan === 2 && sBoot === 1, "r9g2 (style " + st + "): one scan = 2 sweeps (the frame-191 add and the frame-228 hold), one PlanetInfoBootup = 1 (frame 315)");
+}
+{
+	const h = host(1); move(h, -40, 20, 1); atF(h, 191, "FadeInPlanetInfo");
+	const s0 = h.sweeps; atF(h, 191, "FadeInEnvAlert"); finished(h);
+	expect(h.sweeps === s0, "r9g2: an AnimationFinished outside FadeInPlanetInfo (here a queued alert already started) does not sweep");
+}
+
+{   // r9g2 (Bot 3 G7): the mode test in hz50OnFin. The listener only exists while hz45Sync wants it, so this is the gap
+	// between a state flip (watch home, scan hide off) and the hz45Sync that removes it: a fin there must not sweep.
+	const h = host(1); put(h.hzBlg, piece("instance1285", 111, 110.6, null, [[0, 0]])); move(h, -40, 20, 1);
+	h.hz43FoMoved = false; h.hz43ScanHid = false;   // mode 0 now, listener still on until the next hz45Sync
+	atF(h, 228, "FadeInPlanetInfo"); const a0 = h.hzBlg.at, s0 = h.sweeps; finished(h);
+	expect(h.hzBlg.at === a0 && h.sweeps === s0, "r9g2: a FadeInPlanetInfo AnimationFinished in mode 0 (before the sync that drops the listener) does not sweep");
 }
 
 // ---- 2. (a) the condition icon rows ----
@@ -212,13 +278,16 @@ for (const L of LINES) for (const [dx, dy, sc] of [[-40, 20, 1], [150, -60, 0.8]
 }
 
 // ---- 4. static ----
-expect(/this\.hz45Sync\(\);\s*this\.hz45SN = -2;/.test(codeOnly(fnText(as, "hz50Sweep").body)), "r9g: the sweep leaves the count key open for one more sync");
+expect(codeOnly(fnText(as, "hz50Sweep").body).indexOf("hz45SN") < 0, "r9g2: the gated sweep no longer reopens the count key (no follow-up sweep)");
+const addB = codeOnly(fnText(as, "hz43FoOnAdd").body);
+expect(/var bf:int = bm \? int\(bm\.currentFrame\) : 0;\s*if\(bf == 191 \|\| bf == 315 \|\| bf == 190 \|\| bf == 314\) \{ this\.hz50Sweep\(\); \}/.test(addB), "r9g2: the ADDED sweep is gated to the layer-36 add frames (191 / 315, or 190 / 314)");
+expect(/if\(!bm \|\| bm\.currentLabel != HZ50_LBL\) \{ return; \}/.test(codeOnly(fnText(as, "hz50OnFin").body)) && /HZ50_LBL:String = "FadeInPlanetInfo"/.test(as), "r9g2: the AnimationFinished sweep only in FadeInPlanetInfo (by the game's label)");
 const sw = codeOnly(fnText(as, "hz50Sweep").body) + codeOnly(fnText(as, "hz50OnFin").body) + codeOnly(fnText(as, "hz50Line").body);
 expect(!/getChildByName|getChildAt|numChildren|Timer|setTimeout|setInterval|ENTER_FRAME|enterFrame|new |\[\]|\{\}|while|for\s*\(|\.alpha|\.visible/.test(sw), "r9g: hz50Sweep / hz50OnFin / hz50Line hold no search, timer, loop, allocation, alpha or visible write");
 const calls = [...as.matchAll(/this\.hz50Sweep\(\)/g)].map((m) => { const pre = as.slice(0, m.index); const f = [...pre.matchAll(/(?:private|public) function (\w+)\(/g)]; return f[f.length - 1][1]; }).sort().join();
 expect(calls === "hz43FoOnAdd,hz50OnFin", "r9g: hz50Sweep is called from the ADDED handler and the AnimationFinished handler only");
 const add = codeOnly(fnText(as, "hz43FoOnAdd").body);
-expect(/if\(m != 0 && this\.hz45Art\(t\)\)\s*\{\s*this\.hz45Put\(t,m\);\s*this\.hz50Sweep\(\);/.test(add.replace(/ as DisplayObject/g, "")), "r9g: the ADDED sweep runs only for art in a non-native mode, after its own put");
+expect(/if\(m != 0 && this\.hz45Art\(t\)\)\s*\{\s*this\.hz45Put\(t,m\);\s*var bm:MovieClip = this\.hzBlg;/.test(add.replace(/ as \w+/g, "")), "r9g: the ADDED sweep runs only for art in a non-native mode, after its own put (r9g2: then the frame gate)");
 const sync = codeOnly(fnText(as, "hz45Sync").body);
 expect((sync.match(/addEventListener\(HZ50_FIN,this\.hz50OnFin,false,-1,true\)/g) || []).length === 1 && (sync.match(/removeEventListener\(HZ50_FIN,this\.hz50OnFin\)/g) || []).length === 2, "r9g: hz45Sync adds the AnimationFinished listener where it adds ADDED, and removes it at both ADDED removes");
 expect(/HZ50_FIN:String = "AnimationFinished"/.test(as), "r9g: the event name is the group's ANIMATION_FINISHED value");
