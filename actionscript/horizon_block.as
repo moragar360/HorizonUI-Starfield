@@ -1744,11 +1744,21 @@
       // Volume: an "fx" line only when the effect list, the flags or the alert / pulse times change, when the soak value
       // moves by 0.02 or more, or when it reaches exactly 0 or 1. Dispatches that log nothing are counted (skip=), so
       // the dispatch rate can be read from the log. Every alert dispatch is logged (alerts are rare).
+      // r2: the change test reads only the cached scalars, the effect count and the icon names (no allocation); the line,
+      // its arrays and the new cache are built only when something changed. Turning the key off and on again starts a new
+      // run (counters and caches reset, a new start line). User presets never get the key (hzEnvP0NoKey in hz37FullText).
       // Line format (all lines start with ENVP0): see README_p0.md in the env alert research notes.
-      // Author: Moragar. Last modified: 2026-11-11.
+      // Author: Moragar. Last modified: 2026-11-11 (r2).
       private var hzEnvP0Ini:Boolean = false;     // [Debug] EnvAlertLog
       private var hzEnvP0Subbed:Boolean = false;  // EnvironmentAlertsData listener added (once, on the first EnvAlertLog=1)
-      private var hzEnvP0Sig:String = null;       // last logged effect list + flags
+      private var hzEnvP0Have:Boolean = false;    // a first fx line was written since the last (re)enable
+      private var hzEnvP0N:int = -2;              // last logged effect count (-1 = no array)
+      private var hzEnvP0Icons:Array = null;      // last logged sEffectIcon values, in order (rebuilt only on a logged line)
+      private var hzEnvP0Full:* = null;           // last logged bShouldPlayAlertAtFullSoak
+      private var hzEnvP0AlertMs:* = null;        // last logged uAlertTimeMS
+      private var hzEnvP0PMin:* = null;           // last logged uEnvIconPulseMinMS
+      private var hzEnvP0PMax:* = null;           // last logged uEnvIconPulseMaxMS
+      private var hzEnvP0Runs:int = 0;            // times the key went from off to on this session
       private var hzEnvP0Soak:Number = NaN;       // last logged soak value
       private var hzEnvP0Skip:int = 0;            // effects dispatches since the last fx line that logged nothing
       private var hzEnvP0Seq:int = 0;             // line counter
@@ -1778,8 +1788,51 @@
             var v:String = t.substr(eq + 1).replace(/^\s+|\s+$/g,"").toLowerCase();
             on = v == "1" || v == "true";
          }
+         if(on && !this.hzEnvP0Ini)
+         {
+            // r2 (N-4): a new run each time the key goes from off to on (INI load or F11 reload), so the start line, the
+            // counters and the change caches never carry over from an earlier run
+            this.hzEnvP0Runs++;
+            this.hzEnvP0Seq = 0;
+            this.hzEnvP0Skip = 0;
+            this.hzEnvP0LastT = 0;
+            this.hzEnvP0KeysFx = 0;
+            this.hzEnvP0KeysAl = 0;
+            this.hzEnvP0Have = false;
+            this.hzEnvP0N = -2;
+            this.hzEnvP0Icons = null;
+            this.hzEnvP0Soak = NaN;
+            this.hzEnvP0Full = null;
+            this.hzEnvP0AlertMs = null;
+            this.hzEnvP0PMin = null;
+            this.hzEnvP0PMax = null;
+         }
          this.hzEnvP0Ini = on;
          this.hzEnvP0Sub();
+      }
+
+      // r2 (N-3): a user "save as preset" text never carries [Debug] EnvAlertLog. Only that key's lines inside [Debug] are
+      // dropped; every other line, and the line breaks, stay as they were. No key in the text: one indexOf, same string.
+      private function hzEnvP0NoKey(txt:String) : String
+      {
+         if(txt == null || txt.toLowerCase().indexOf("envalertlog") < 0) { return txt; }
+         var out:Array = [];
+         var sec:String = "";
+         for each(var ln:String in txt.split("\n"))
+         {
+            var h:String = this.hz30Hdr(ln);
+            if(h != null) { sec = h; }
+            else if(sec == "debug")
+            {
+               var t:String = ln;
+               var sc:int = t.indexOf(";");
+               if(sc >= 0) { t = t.substr(0,sc); }
+               var eq:int = t.indexOf("=");
+               if(eq > 0 && t.substr(0,eq).replace(/\s/g,"").toLowerCase() == "envalertlog") { continue; }
+            }
+            out.push(ln);
+         }
+         return out.join("\n");
       }
 
       private function hzEnvP0Sub() : void
@@ -1810,7 +1863,7 @@
 
       private function hzEnvP0Head(kind:String) : String
       {
-         if(this.hzEnvP0Seq == 0) { this.hzEnvP0Out("ENVP0 start p0r1 key=EnvAlertLog f=" + this.hzFrameN); }
+         if(this.hzEnvP0Seq == 0) { this.hzEnvP0Out("ENVP0 start p0r2 run=" + this.hzEnvP0Runs + " key=EnvAlertLog f=" + this.hzFrameN); }
          this.hzEnvP0Seq++;
          return "ENVP0 " + kind + " #" + this.hzEnvP0Seq + " t=" + Math.round(this.hzPerfNow()) + " f=" + this.hzFrameN + " loc=" + this.hzPpKind + " body=" + this.hzEnvP0Q(this.hzPpBodyName);
       }
@@ -1818,45 +1871,63 @@
       private function hzEnvP0Fx(d:Object) : void
       {
          if(!this.hzEnvP0Ready() || d == null) { return; }
+         // r2 (S-1): the change test first, from cached scalars only (no array, string or object is built here)
          var a:Array = d.aEnvironmentEffects as Array;
-         var kl:int = a != null && a.length > 0 ? 2 : 1;
+         var n:int = a == null ? -1 : a.length;
+         var soak:Number = Number(d.fSoakDamagePct);
+         var last:Number = this.hzEnvP0Soak;
+         var moved:Boolean = isNaN(soak) != isNaN(last) || (!isNaN(soak) && (Math.abs(soak - last) >= 0.02 || ((soak == 0 || soak == 1) && soak != last)));
+         var listCh:Boolean = !this.hzEnvP0Have || n != this.hzEnvP0N || d.bShouldPlayAlertAtFullSoak !== this.hzEnvP0Full || d.uAlertTimeMS !== this.hzEnvP0AlertMs
+            || d.uEnvIconPulseMinMS !== this.hzEnvP0PMin || d.uEnvIconPulseMaxMS !== this.hzEnvP0PMax;
+         var j:int = 0;
+         while(!listCh && j < n)
+         {
+            var ej:Object = a[j];
+            if((ej == null ? null : ej.sEffectIcon) !== this.hzEnvP0Icons[j]) { listCh = true; }
+            j++;
+         }
+         if(!listCh && !moved) { this.hzEnvP0Skip++; return; }
+         // something changed: build the line and the new cache
+         var kl:int = n > 0 ? 2 : 1;
          if(kl > this.hzEnvP0KeysFx)
          {
             this.hzEnvP0KeysFx = kl;
-            this.hzEnvP0Out("ENVP0 keys fx top={" + this.hzKeys(d) + "} item={" + (a != null && a.length > 0 ? this.hzKeys(a[0]) : "-") + "}");
+            this.hzEnvP0Out("ENVP0 keys fx top={" + this.hzKeys(d) + "} item={" + (n > 0 ? this.hzKeys(a[0]) : "-") + "}");
          }
-         var icons:Array = [];
+         var raw:Array = [];
          var items:Array = [];
          var restore:int = 0;
-         if(a != null)
+         var i:int = 0;
+         while(i < n)
          {
-            for each(var ef:Object in a)
+            var ef:Object = a[i];
+            var rv:* = ef == null ? null : ef.sEffectIcon;
+            raw.push(rv);
+            var ic:String = rv != null ? String(rv) : "?";
+            if(ic == "HazardEffect_RestoreSoak") { restore = 1; }
+            var it:String = ic;
+            if(ef != null)
             {
-               var ic:String = ef != null && ef.sEffectIcon != null ? String(ef.sEffectIcon) : "?";
-               icons.push(ic);
-               if(ic == "HazardEffect_RestoreSoak") { restore = 1; }
-               var it:String = ic;
-               if(ef != null)
-               {
-                  if(ef.bIsPositive !== undefined) { it += ":pos=" + String(ef.bIsPositive); }
-                  if(ef.fSoakDamagePct !== undefined) { it += ":soak=" + String(ef.fSoakDamagePct); }
-                  if(ef.uiHandle !== undefined) { it += ":h=" + String(ef.uiHandle); }
-               }
-               items.push(it);
+               if(ef.bIsPositive !== undefined) { it += ":pos=" + String(ef.bIsPositive); }
+               if(ef.fSoakDamagePct !== undefined) { it += ":soak=" + String(ef.fSoakDamagePct); }
+               if(ef.uiHandle !== undefined) { it += ":h=" + String(ef.uiHandle); }
             }
+            items.push(it);
+            i++;
          }
-         var soak:Number = Number(d.fSoakDamagePct);
-         var last:Number = this.hzEnvP0Soak;
-         var sig:String = (a == null ? "noarray" : icons.join(",")) + "|" + String(d.bShouldPlayAlertAtFullSoak) + "|" + String(d.uAlertTimeMS) + "|" + String(d.uEnvIconPulseMinMS) + "|" + String(d.uEnvIconPulseMaxMS);
-         var moved:Boolean = isNaN(soak) != isNaN(last) || (!isNaN(soak) && (Math.abs(soak - last) >= 0.02 || ((soak == 0 || soak == 1) && soak != last)));
-         if(sig == this.hzEnvP0Sig && !moved) { this.hzEnvP0Skip++; return; }
          var now:Number = Math.round(this.hzPerfNow());
          var ln:String = this.hzEnvP0Head("fx") + " soak=" + (isNaN(soak) ? "NaN" : soak.toFixed(4)) + " raw=" + this.hzEnvP0Q(d.fSoakDamagePct)
-            + " full=" + String(d.bShouldPlayAlertAtFullSoak) + " restore=" + restore + " n=" + icons.length + " icons=[" + items.join(",") + "]"
+            + " full=" + String(d.bShouldPlayAlertAtFullSoak) + " restore=" + restore + " n=" + (n < 0 ? "noarray" : String(n)) + " icons=[" + items.join(",") + "]"
             + " alertMs=" + String(d.uAlertTimeMS) + " pulseMs=" + String(d.uEnvIconPulseMinMS) + "-" + String(d.uEnvIconPulseMaxMS)
-            + " skip=" + this.hzEnvP0Skip + " dt=" + (this.hzEnvP0LastT > 0 ? String(now - this.hzEnvP0LastT) : "-") + (sig != this.hzEnvP0Sig ? " why=list" : " why=soak");
+            + " skip=" + this.hzEnvP0Skip + " dt=" + (this.hzEnvP0LastT > 0 ? String(now - this.hzEnvP0LastT) : "-") + (listCh ? " why=list" : " why=soak");
          this.hzEnvP0Out(ln);
-         this.hzEnvP0Sig = sig;
+         this.hzEnvP0Have = true;
+         this.hzEnvP0N = n;
+         this.hzEnvP0Icons = raw;
+         this.hzEnvP0Full = d.bShouldPlayAlertAtFullSoak;
+         this.hzEnvP0AlertMs = d.uAlertTimeMS;
+         this.hzEnvP0PMin = d.uEnvIconPulseMinMS;
+         this.hzEnvP0PMax = d.uEnvIconPulseMaxMS;
          this.hzEnvP0Soak = soak;
          this.hzEnvP0Skip = 0;
          this.hzEnvP0LastT = now;
@@ -18070,7 +18141,7 @@
       private function hz37FullText() : String
       {
          var p:Object = this.hzSetPend != null ? this.hzSetPend : this.hzSetCurrent();
-         return this.hz30Merge(this.hz30IniRaw,this.hzBuildIniText(p));
+         return this.hzEnvP0NoKey(this.hz30Merge(this.hz30IniRaw,this.hzBuildIniText(p)));   // r2: user presets never carry the env alert probe key
       }
       private function hz37Send(a:String, k:String) : void
       {

@@ -6,9 +6,9 @@
 //     EnvironmentAlertsData listener is added from there, once, and only when the key is on;
 //  3. both log paths return at their first test unless EnvAlertLog, PerfDiag and WatchLog are all on;
 //  4. event-driven only: no frame listener, timer or display-list walk in the probe;
-//  5. taking out the probe section and its two hook lines gives the a360b89 source byte for byte (skipped when git
-//     or the commit is not there).
-// Author: Moragar. Last modified: 2026-11-11.
+//  5. taking out the probe section and its two hook lines, and unwrapping the user-preset text (r2), gives the a360b89
+//     source byte for byte (skipped when git or the commit is not there).
+// Author: Moragar. Last modified: 2026-11-11 (r2).
 "use strict";
 
 const fs = require("fs");
@@ -89,8 +89,11 @@ for (const bad of ["enterFrame", "ENTER_FRAME", "setInterval", "setTimeout", "Ti
 }
 
 // 5. off path equals the base
+// r2: the fourth hunk wraps the user-preset text in hzEnvP0NoKey (N-3); tests/env_p0b_test.js covers it
+const PRESET_NEW = "         return this.hzEnvP0NoKey(this.hz30Merge(this.hz30IniRaw,this.hzBuildIniText(p)));   // r2: user presets never carry the env alert probe key\n";
+const PRESET_OLD = "         return this.hz30Merge(this.hz30IniRaw,this.hzBuildIniText(p));\n";
 if (base == null) console.log("skip base equality (git or a360b89 not available)");
-else expect(as.replace(sec, "").replace(HOOK, "").replace(CASE, "") === base, "probe removed = a360b89 source (three hunks only)");
+else expect(count(as, PRESET_NEW) === 1 && as.replace(sec, "").replace(HOOK, "").replace(CASE, "").replace(PRESET_NEW, PRESET_OLD) === base, "probe removed = a360b89 source (four hunks only)");
 
 if (failed) { console.error(failed + " failed"); process.exit(1); }
 console.log("all passed");
