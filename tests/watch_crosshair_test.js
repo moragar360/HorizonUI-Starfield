@@ -1073,7 +1073,24 @@ function makePlaceHost() {
 	bindAsMethod(host, "hz43VanWrite", ["dx", "dy", "sc", "marks"]);
 	bindAsMethod(host, "hz43VanPlace", []);
 	bindAsMethod(host, "hz43TintRgb", ["clip", "col", "amt"]);
+	bindHz45(host);
 	return host;
+}
+// r8: the planet-info art path (hz45*) and the listener sync, as in the AS (fields start empty).
+function bindHz45(host) {
+	host.hz45D = []; host.hz45HX = []; host.hz45HY = []; host.hz45SX = []; host.hz45SY = [];
+	host.hz45SM = -1; host.hz45SDx = 0; host.hz45SDy = 0; host.hz45SSc = 1; host.hz45SB = null; host.hz45SN = -1;
+	host.hz43ScanHid = false;
+	host.hzWlOn = false;
+	if (!host.Event) host.Event = { ADDED: "added" };
+	if (host.hz43FoLsn === undefined) host.hz43FoLsn = null;
+	if (!host.isNaN) host.isNaN = isNaN;
+	if (!host.int) host.int = function(n) { return n | 0; };
+	bindAsMethod(host, "hz45Art", ["d"]);
+	bindAsMethod(host, "hz45Mode", []);
+	bindAsMethod(host, "hz45Put", ["d", "mode"]);
+	bindAsMethod(host, "hz45Prune", []);
+	bindAsMethod(host, "hz45Sync", []);
 }
 const placeWait = makePlaceHost();
 placeWait.hzFrameN = 1;
@@ -2203,6 +2220,170 @@ expect(placeBody.indexOf('hzLayHas("Watch")') >= 0, "a saved watch position is d
 expect(as.indexOf("function hz43ApplyHome") >= 0 && as.indexOf("function hz43ApplySaved") >= 0, "home and saved placement are separate");
 expect(preset.indexOf("WatchStyle=0") >= 0 && preset.indexOf("CrosshairRule=0") >= 0, "Moragar's Choice sets both rules to the default");
 expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's Choice does not move the watch");
+
+// ---- r8: the scan-state watch pieces (user r7 test, 2026-11-10 18:49). The game's LocalEnvironmentData handler plays
+// FadeInPlanetInfo on the scan edge; that span adds UNNAMED art directly under BottomLeftGroup_mc, centered on the native
+// watch (ring r ~96 at 111,110.6; disc r ~18 at 110.2,50.15; a white band shape; a bar; the two INFO ticks live all the
+// time). Not a captured unit (ARRANGE left it at the native spot in 1 / 2) and not a hz43VanWatchClip (hz43StHide refused
+// it in 0 / 3 / 4). r8 hides it in 0 / 3 / 4 and the 1 / 2 HideWatchWhileScanning hold, places it with the assembly in
+// 1 / 2 when moved, on ADDED and on mode / offset changes. Also: the late LocalEnvironmentData re-hide of the W3 pieces
+// (the DayCycleBase_mc globe), Bot 3 r7 S-1 (listener removed at home) and mutant E (old group's listener on rebuild).
+{
+	const near = (a, b) => Math.abs(a - b) < 1e-9;
+	const art = (nm, x, y) => ({ name: nm, x: x, y: y, scaleX: 1, scaleY: 1, visible: true, alpha: 0.8 });
+	const listen = (blg) => {
+		blg.listeners = [];
+		blg.addEventListener = function(t, f, cap, pri, weak) { this.listeners.push({ t: t, f: f, weak: weak }); };
+		blg.removeEventListener = function(t, f) { this.listeners = this.listeners.filter((l) => !(l.t === t && l.f === f)); };
+		return blg;
+	};
+	const mk = (src, fn) => {
+		const h = makePlaceHost();
+		listen(h.hzBlg);
+		h.hzWatchStyle = 0;
+		h.ring = art("instance1285", 111, 110.6);
+		h.disc = art("instance1292", 110.2, 50.15);
+		h.band = art("instance301", 0, 0);
+		h.tick = art("instance298", 87.2, 141.65);
+		h.named = ["BioAlertText", "EnvAlertText", "EnemyDetectionAnim_mc", "LocationAlertText", "BioConditionBase_mc"].map((n) => art(n, 110.5, 96.75));
+		[h.ring, h.disc, h.band, h.tick].concat(h.named).forEach((c) => { c.parent = h.hzBlg; h.hzBlg.kids.push(c); });
+		h.locClip = h.named[3];
+		if (src) {
+			(fn || ["hz45Sync"]).forEach((f) => {
+				const args = { hz45Sync: [], hz45Art: ["d"], hz45Put: ["d", "mode"], hz45Mode: [], hz45EnvHide: [] }[f];
+				h[f] = Function.apply(null, args.concat(["with(this){\n" + asInnerOf(src, f) + "\n}"])).bind(h);
+			});
+		}
+		bindAsMethod(h, "hz43FoOnAdd", ["e"]);
+		return h;
+	};
+	const fireAdd = (hh, ev) => { hh.hzBlg.listeners.slice().forEach((l) => l.f(ev)); };
+	const artOk = (h, vis) => [h.ring, h.disc, h.band, h.tick].every((c) => c.visible === vis);
+	const namedUntouched = (h) => h.named.every((c) => c.visible === true && c.alpha === 0.8);
+
+	// 1. style 0 (OFF): the scan art is hidden, named alerts untouched, the cap unit untouched
+	const z = mk();
+	z.hz45Sync();
+	expect(artOk(z, false), "r8 style 0: the planet-info art (ring, disc, band, INFO tick) is hidden on the sync event");
+	expect(namedUntouched(z) && z.capClip.visible !== false, "r8 style 0: BioAlertText, EnvAlertText, the enemy ring, LocationAlertText, Bio* and the cap unit are not touched by this path");
+	expect(z.hzBlg.listeners.length === 1 && z.hzBlg.listeners[0].weak === true && z.hz43FoLsn === z.hzBlg, "r8 style 0: one weak ADDED listener (art can be added at any scan edge)");
+	const zNew = art("instance1293", 111, 110.6); zNew.parent = z.hzBlg; z.hzBlg.kids.push(zNew);
+	fireAdd(z, { target: zNew });
+	expect(zNew.visible === false, "r8 style 0: a new art instance (FadeInPlanetInfo keyframe) is hidden on its ADDED event, before its first frame");
+	const zNested = art("instance5", 1, 1); zNested.parent = { name: "inner" };
+	fireAdd(z, { target: zNested });
+	fireAdd(z, { target: { name: "BioAlertText", parent: z.hzBlg, visible: true } });
+	fireAdd(z, null);
+	expect(zNested.visible === true, "r8: nested children, named clips and empty events are left alone");
+	z.hz45Sync();   // settles the child count after the added instances above
+	let putN = 0; const putIn = z.hz45Put; z.hz45Put = function(d, m) { putN++; return putIn(d, m); };
+	z.hz45Sync();
+	expect(putN === 0 && z.hzBlg.listeners.length === 1, "r8: a repeat sync with no change does not sweep or add a listener");
+	// Scaleform may not dispatch ADDED for timeline children: a changed child count sweeps on the next sync (late LocalEnvironmentData)
+	const zQuiet = art("instance1294", 111, 110.6); zQuiet.parent = z.hzBlg; z.hzBlg.kids.push(zQuiet);
+	z.hz45Sync();
+	expect(zQuiet.visible === false && putN > 0, "r8 style 0: art added without an ADDED event is hidden on the next sync (child count changed)");
+	// styles 3 / 4: same hide (no vanilla watch)
+	const h3 = mk(); h3.hzWatchStyle = 3; h3.hz45Sync();
+	expect(artOk(h3, false) && namedUntouched(h3), "r8 style 3: the art is hidden too (Horizon face, no vanilla watch)");
+
+	// 2. style 1 moved: the art follows the assembly (scale too), the alerts stay shown
+	const v = mk(); v.hzWatchStyle = 1;
+	v.hz45Sync();
+	expect(artOk(v, true) && v.ring.x === 111 && v.hzBlg.listeners.length === 0, "r8 style 1 at home: art shown at its native place, no listener");
+	v.hz43VanWrite(-64.3, 34.85, 1);
+	expect(near(v.ring.x, 111 - 64.3) && near(v.ring.y, 110.6 + 34.85) && near(v.disc.x, 110.2 - 64.3) && near(v.tick.y, 141.65 + 34.85), "r8 style 1 moved: ring, disc and INFO tick move with the watch (no native-spot ghost)");
+	expect(artOk(v, true) && namedUntouched(v), "r8 style 1 moved: art and alerts stay shown (vanilla mode shows what vanilla shows)");
+	expect(v.hzBlg.listeners.length === 1, "r8 style 1 moved: the ADDED listener is attached");
+	const vNew = art("instance1300", 111, 110.6); vNew.parent = v.hzBlg; v.hzBlg.kids.push(vNew);
+	fireAdd(v, { target: vNew });
+	expect(near(vNew.x, 111 - 64.3) && near(vNew.y, 110.6 + 34.85) && vNew.visible === true && v.hz45HX[v.hz45D.indexOf(vNew)] === 111, "r8 style 1 moved: a new art instance is recorded native and placed on its ADDED event");
+	v.hz43VanWrite(-40, 20, 0.8);
+	expect(near(v.ring.x, 111 * 0.8 - 40) && near(v.ring.scaleX, 0.8) && near(vNew.x, 111 * 0.8 - 40), "r8 style 1: a new offset / scale re-places every art piece from its native place");
+	// Bot 3 r7 S-1: home again -> art native, listener removed
+	v.hz43VanWrite(0, 0, 1);
+	expect(v.ring.x === 111 && v.ring.y === 110.6 && v.ring.scaleX === 1 && vNew.x === 111, "r8 style 1: write(0,0,1) puts the art back at its native place");
+	expect(v.hzBlg.listeners.length === 0 && v.hz43FoLsn === null, "Bot 3 r7 S-1: the watch back home in 1 / 2 removes the ADDED listener");
+
+	// 3. HideWatchWhileScanning hold in 1 / 2: art hidden with the watch, shown and placed on release
+	const s = mk(); s.hzWatchStyle = 2;
+	s.hz43VanWrite(-30, 10, 1);
+	s.hz43ScanHid = true; s.hz45Sync();
+	expect(artOk(s, false) && namedUntouched(s), "r8 style 2 + HideWatchWhileScanning: the art hides with the watch; alerts stay");
+	s.hz43ScanHid = false; s.hz45Sync();
+	expect(artOk(s, true) && near(s.ring.x, 111 - 30), "r8 style 2: on release the art is back, on the moved watch");
+
+	// 4. style edge 0 -> 1: the art comes back (only this path hides it)
+	const e = mk(); e.hz45Sync();
+	e.hzWatchStyle = 1; e.hz45Sync();
+	expect(artOk(e, true), "r8: style 0 -> 1 shows the art again");
+
+	// 5. mutant E (Bot 3 r7): HUD rebuild = a new BottomLeftGroup_mc. The old group's listener must go.
+	const rebuild = (h) => {
+		h.hzWatchStyle = 1;
+		h.hz43VanWrite(-20, 5, 1);
+		const oldB = h.hzBlg;
+		const nb = listen({ name: "BottomLeftGroup_mc", kids: [], getChildAt: function(i) { return this.kids[i]; }, getChildByName: function() { return null; } });
+		Object.defineProperty(nb, "numChildren", { get: function() { return this.kids.length; } });
+		h.hzBlg = nb;
+		h.hz43FollowApply();
+		return { oldB: oldB, nb: nb };
+	};
+	const rb = rebuild(mk());
+	expect(rb.oldB.listeners.length === 0 && rb.nb.listeners.length === 1, "r8 (Bot 3 mutant E): on a HUD rebuild the old group's ADDED listener is removed and the new group gets one");
+	const syncSrc = funcBody(as, "hz45Sync");
+	const mutE = as.replace("if(this.hz43FoLsn) { this.hz43FoLsn.removeEventListener(Event.ADDED,this.hz43FoOnAdd); }", "");
+	expect(mutE !== as, "r8 mutant E: built (old-group removeEventListener dropped)");
+	const rbm = rebuild(mk(mutE, ["hz45Sync"]));
+	expect(rbm.oldB.listeners.length === 1 && rbm.nb.listeners.length === 1, "r8 mutant E: without the remove the old group keeps its listener, so the rebuild check above FAILS on it (mutant killed)");
+	// mutant: art never recognized -> the style 0 ghost stays
+	const mutArt = as.replace("if(n != null && n.length > 0 && n.indexOf(\"instance\") != 0) { return false; }", "return false;");
+	expect(mutArt !== as, "r8 mutant (art check off): built");
+	const ma = mk(mutArt, ["hz45Art"]); ma.hz45Sync();
+	expect(artOk(ma, true), "r8 mutant (art check off): the ring / disc / band stay on screen in style 0, so the hide check above FAILS on it");
+	// mutant: no mode-2 placement -> the 1 / 2 ghost stays at the native spot
+	const mutPut = as.replace("nx = ox + (hx - ox) * sc + this.hz43FoDx / ux;", "nx = hx;");
+	expect(mutPut !== as, "r8 mutant (no follow): built");
+	const mp = mk(mutPut, ["hz45Put"]); mp.hzWatchStyle = 1; mp.hz43VanWrite(-64.3, 34.85, 1);
+	expect(mp.ring.x === 111, "r8 mutant (no follow): the ring stays at the native spot with the watch moved, so the follow check above FAILS on it");
+
+	// 6. the late LocalEnvironmentData re-hide (W3: DayCycleBase_mc globe, OffPlanet_mc, Autopilot_mc, locationNameBase_mc)
+	const mkEnv = (src) => {
+		const h = mk(src, src ? ["hz45EnvHide"] : undefined);
+		h.HZ45_W3 = ["DayCycleBase_mc", "OffPlanet_mc", "Autopilot_mc", "locationNameBase_mc"];
+		h.globe = art("DayCycleBase_mc", 110.5, 110.5); h.globe.parent = h.hzBlg; h.hzBlg.kids.push(h.globe);
+		h.loc = art("locationNameBase_mc", 110.15, 139.75); h.loc.parent = h.hzBlg; h.hzBlg.kids.push(h.loc);
+		h.hzHideVanillaCompass = true;
+		h.stHid = [];
+		h.hz43StHide = function(d) { this.stHid.push(d.name); d.visible = false; };
+		if (!src) bindAsMethod(h, "hz45EnvHide", []);
+		return h;
+	};
+	const g0 = mkEnv(); g0.hz45EnvHide();
+	expect(g0.globe.visible === false && g0.loc.visible === false && g0.stHid.join() === "DayCycleBase_mc,locationNameBase_mc", "r8 style 0: the globe (DayCycleBase_mc) and the location name the game re-showed in LocalEnvironmentData are hidden again in the same dispatch (through hz43StHide, so the vanilla restore notes them)");
+	const g1 = mkEnv(); g1.hzWatchStyle = 1; g1.hz45EnvHide();
+	expect(g1.globe.visible === true && g1.stHid.length === 0, "r8 style 1: the vanilla globe is never hidden by this path");
+	const gc = mkEnv(); gc.hzHideVanillaCompass = false; gc.hz45EnvHide();
+	expect(gc.globe.visible === true, "r8: HideVanillaCompass off: not hidden (same switch as the hide list)");
+	const mutEnv = as.replace("if(st == 1 || st == 2 || !this.hzHideVanillaCompass || !this.hzBlg) { return; }", "if(!this.hzBlg) { return; }");
+	expect(mutEnv !== as, "r8 mutant (style check off): built");
+	const gm = mkEnv(mutEnv); gm.hzWatchStyle = 1; gm.hz45EnvHide();
+	expect(gm.globe.visible === false, "r8 mutant (style check off): the vanilla globe would vanish in style 1, so the style 1 check above FAILS on it");
+
+	// 7. event-only: wiring and no per-frame work
+	const tick = funcBody(as, "hz44GrpTick");
+	expect(/if\(frame && !this\.hz45EnvSub\)\s*\{[\s\S]*?this\.hz45EnvSub = true;[\s\S]*?BSUIDataManager\.Subscribe\("LocalEnvironmentData",this\.hz45OnEnvLate\)/.test(tick), "r8: the late LocalEnvironmentData listener is subscribed once, on the first frame tick (after the group's own onAddedToStage listener)");
+	expect((as.match(/this\.hz45OnEnvLate\b/g) || []).length === 1, "r8: subscribed in one place");
+	expect(["hzOnFrame", "hz27OnExit", "hz43Frame", "hz43VanHorizon", "hz43VanPlace", "hz43VanLate"].every((f) => funcBody(as, f).indexOf("hz45") < 0), "r8: no hz45 call in any per-frame function body");
+	const sh = funcBody(as, "hz43SyncHide");
+	expect(/if\(hide != this\.hzHideVanillaWatch\)\s*\{[^}]*\}[^}]*try \{ this\.hz45Sync\(\); \}/.test(sh) && (sh.match(/hz45Sync/g) || []).length === 1, "r8: hz43SyncHide syncs the art only inside its style-change edge");
+	expect(funcBody(as, "hz40SetScan").indexOf("this.hz45Sync()") >= 0 && (funcBody(as, "hz43ScanHideSync").match(/this\.hz45Sync\(\)/g) || []).length === 2 && funcBody(as, "hz43FollowApply").indexOf("this.hz45Sync()") >= 0,
+		"r8: synced on the scan edge, the HideWatchWhileScanning edges and the ARRANGE write (via hz43FollowApply)");
+	expect(syncSrc.indexOf("getChildByName") < 0 && syncSrc.indexOf("hzFindByName") < 0 && funcBody(as, "hz45Put").indexOf(".alpha") < 0 && syncSrc.indexOf(".alpha") < 0, "r8: one pass over direct children, no search, never alpha");
+	expect((as.match(/addEventListener\(Event\.ADDED,this\.hz43FoOnAdd,false,0,true\)/g) || []).length === 1 && syncSrc.indexOf("addEventListener(Event.ADDED,this.hz43FoOnAdd,false,0,true)") >= 0, "r8: the weak ADDED listener is still added in one place (hz45Sync)");
+	const wl = funcBody(as, "hz45WlBlg");
+	expect(/^\{\s*if\(!this\.hzWlOn/.test(wl) && funcBody(as, "hz45OnEnvLate").indexOf("if(this.hzWlOn)") >= 0 && funcBody(as, "hz40SetScan").indexOf("if(this.hzWlOn) { try { this.hz45WlBlg(") >= 0, "r8 diag: the BottomLeftGroup child dump runs only with the watchlog on (PerfDiag=1, WatchLog=1)");
+}
 
 if (failed) {
 	console.error(failed + " failed");

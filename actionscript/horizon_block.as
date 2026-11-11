@@ -15069,6 +15069,12 @@
             this.hz44OpSub = true;
             try { BSUIDataManager.Subscribe("HUDOpacityData",this.hz44OnOpacity); } catch(eOp:Error) { }
          }
+         if(frame && !this.hz45EnvSub)
+         {
+            // r8: same rule for LocalEnvironmentData: BottomLeftGroup subscribed in its onAddedToStage, so this runs after it
+            this.hz45EnvSub = true;
+            try { BSUIDataManager.Subscribe("LocalEnvironmentData",this.hz45OnEnvLate); } catch(eEv:Error) { }
+         }
          var want:Boolean = this.hz44GrpWant();
          if(!want && !this.hz44Hid && this.hzBlg != null) { return; }
          var b:DisplayObject = this.hz44Ref;
@@ -18542,6 +18548,8 @@
          try { this.hz41LocHide(); } catch(e41e:Error) { }   // v0.42.0 r3: re-assert on every scan edge
          try { this.hz43FollowApply(); } catch(e43f:Error) { }   // r6: FadeInPlanetInfo plays on the scan edge; keep it on the moved watch
          try { this.hz43ScanHideSync(); } catch(e43s:Error) { }   // r6: [Scanner] HideWatchWhileScanning, on the open / close edge only
+         try { this.hz45Sync(); } catch(e45s:Error) { }   // r8: the planet-info art the game adds right after this edge
+         if(this.hzWlOn) { try { this.hz45WlBlg(on ? "scan1" : "scan0"); } catch(e45w:Error) { } }
       }
       private function hz40Want() : Boolean
       {
@@ -20776,6 +20784,7 @@
             this.hzHideVanillaWatch = hide;
             this.hzHideCache = null;
             if(showVan) { this.hz43VanShown = 0; this.hz43VanTries = 0; }
+            try { this.hz45Sync(); } catch(e45c:Error) { }   // r8: on the style edge only (art hidden / shown)
          }
          if(this.hz43ScanHid && this.hz43ScanSt == this.hzWatchStyle) { return; }   // r7: HideWatchWhileScanning holds the vanilla watch
          if(showVan && this.hz43VanShown == 0)
@@ -22162,7 +22171,11 @@
             this.hz43ScanMk = [];
             this.hz43ScanHid = false;
          }
-         if(!want) { return; }
+         if(!want)
+         {
+            try { this.hz45Sync(); } catch(e45a:Error) { }   // r8: art back with the pieces
+            return;
+         }
          this.hz43ScanHid = true;
          this.hz43ScanSt = this.hzWatchStyle;
          var horizon:Boolean = this.hzWatchStyle == 3 || this.hzWatchStyle == 4;
@@ -22174,6 +22187,7 @@
             if(d && d.visible && (horizon ? this.hz43VanMarkName(d.name) : this.hz43ScanPiece(d))) { d.visible = false; this.hz43ScanMk.push(d); }
             i++;
          }
+         try { this.hz45Sync(); } catch(e45b:Error) { }   // r8: the planet-info art is hidden with the watch
       }
 
       // v0.44 r6 (watch ghost): place each HZ43_VAN_FOLLOW clip with the last non-marker Arrange write, from the
@@ -22196,16 +22210,6 @@
          var sc:Number = this.hz43FoSc > 0.05 ? this.hz43FoSc : 1;
          var ident:Boolean = this.hz43FoDx == 0 && this.hz43FoDy == 0 && sc == 1;
          if(ident && !this.hz43FoMoved) { return; }   // never moved: the game's own placement is left alone
-         if(this.hz43FoLsn !== this.hzBlg)   // r7 (S-1): once per BottomLeftGroup_mc instance
-         {
-            try
-            {
-               if(this.hz43FoLsn) { this.hz43FoLsn.removeEventListener(Event.ADDED,this.hz43FoOnAdd); }
-               this.hzBlg.addEventListener(Event.ADDED,this.hz43FoOnAdd,false,0,true);
-               this.hz43FoLsn = this.hzBlg;
-            }
-            catch(eL:Error) { }
-         }
          var i:int = 0;
          while(i < HZ43_VAN_FOLLOW.length)
          {
@@ -22234,16 +22238,245 @@
             i++;
          }
          this.hz43FoMoved = !ident;
+         try { this.hz45Sync(); } catch(e45:Error) { }   // r8: the ADDED listener (attach / move / remove) and the planet-info art
       }
 
       // r7 (S-1): the timeline adds a new LocationAlertText instance (a keyframe after LocalEnvironmentData). ADDED fires
       // before that frame renders, so the new instance is placed before it is ever drawn at the native spot. Event only:
       // one parent and name check per added clip under BottomLeftGroup_mc; the listener exists only once the watch moved.
+      // r8: the same event also catches the unnamed planet-info art (hz45Art): hidden or placed before its first frame renders.
       private function hz43FoOnAdd(e:Event) : void
       {
          var t:Object = e != null ? e.target : null;
-         if(!t || !this.hzBlg || t.parent !== this.hzBlg || HZ43_VAN_FOLLOW.indexOf(t.name) < 0) { return; }
-         try { this.hz43FollowApply(); } catch(eF:Error) { }
+         if(!t || !this.hzBlg || t.parent !== this.hzBlg) { return; }
+         if(HZ43_VAN_FOLLOW.indexOf(t.name) >= 0)
+         {
+            try { this.hz43FollowApply(); } catch(eF:Error) { }
+            return;
+         }
+         try
+         {
+            var m:int = this.hz45Mode();
+            if(m != 0 && this.hz45Art(t as DisplayObject)) { this.hz45Put(t as DisplayObject,m); }
+         }
+         catch(eA:Error) { }
+      }
+
+      // ---- v0.44 r8: the planet-info art (scan open, landing, bootup, alerts) ----
+      // On the scan edge (bIsScanning) and on leaving the ship the game's LocalEnvironmentData handler plays FadeInPlanetInfo
+      // (BottomLeftGroup.as, PlayAnimation -> gotoAndPlay). That span adds unnamed art directly under BottomLeftGroup_mc,
+      // centered on the native watch (BLG timeline layers 26 / 28 / 29 / 36): a 2 px ring (r about 96 px, alpha 0.8 through
+      // the 228 hold), a white disc (r about 18 px) near the top, a white band (a raw shape) and a bar under the face. The
+      // bootup and alert spans add more of the same, and two INFO ticks (layers 30 / 31) stay on the timeline all the time
+      // (alpha 0 outside planet info). None of it is named, so it is not a captured unit (ARRANGE never moved it: styles 1 / 2
+      // showed it at the native spot with the watch moved), and hz43StHide refuses it (not a hz43VanWatchClip, so the per-piece
+      // hide in styles 0 / 3 / 4 left it on screen whenever the whole-group hide was not holding).
+      // r8: "art" is an unnamed direct child of the group that is not a captured unit. Mode 1 (styles 0 / 3 / 4, and the
+      // HideWatchWhileScanning hold in 1 / 2): hidden. Mode 2 (styles 1 / 2 with the watch moved): placed with the assembly
+      // (the r6 follower formula, scale included, from its native place recorded when first seen). Mode 0: shown, native.
+      // Events only: the ADDED event of a new instance (hz43FoOnAdd), and one pass over the group's direct children when the
+      // mode, the offset or the group instance changes (hz45Sync: ARRANGE writes, scan edges, style changes, the late
+      // LocalEnvironmentData listener). No search, nothing per frame. Named pieces (BioAlertText, EnvAlertText, the enemy ring
+      // EnemyDetectionAnim_mc, LocationAlertText, Bio* / Env*) keep their own rules.
+      // Author: Moragar. Last modified: 2026-11-10.
+      private var hz45D:Array = [];        // art seen while placed (mode 2), with its native place
+      private var hz45HX:Array = [];
+      private var hz45HY:Array = [];
+      private var hz45SX:Array = [];
+      private var hz45SY:Array = [];
+      private var hz45SM:int = -1;         // last swept mode / offset / group (a sweep runs only on a change)
+      private var hz45SDx:Number = 0;
+      private var hz45SDy:Number = 0;
+      private var hz45SSc:Number = 1;
+      private var hz45SB:Object = null;
+      private var hz45SN:int = -1;         // the group's child count at that sweep (mode 1 / 2): new timeline art changes it
+      private var hz45EnvSub:Boolean = false;
+      private var hz45WlLbl:String = "";
+      private static const HZ45_W3:Array = ["DayCycleBase_mc","OffPlanet_mc","Autopilot_mc","locationNameBase_mc"];
+      private function hz45Art(d:DisplayObject) : Boolean
+      {
+         if(!d || !this.hzBlg || d.parent !== this.hzBlg) { return false; }
+         var n:String = d.name;
+         if(n != null && n.length > 0 && n.indexOf("instance") != 0) { return false; }
+         var i:int = 0;
+         while(i < this.hz43VanN)
+         {
+            if(int(this.hz43VanGot[i]) != 0 && this.hz43VanD[i] === d) { return false; }   // the cap disc / annulus move as units
+            i++;
+         }
+         return true;
+      }
+      private function hz45Mode() : int
+      {
+         var st:int = this.hzWatchStyle;
+         if(st != 1 && st != 2) { return 1; }
+         if(this.hz43ScanHid) { return 1; }
+         return this.hz43FoMoved ? 2 : 0;
+      }
+      private function hz45Put(d:DisplayObject, mode:int) : void
+      {
+         if(mode == 1)
+         {
+            if(d.visible) { d.visible = false; }
+            return;
+         }
+         if(!d.visible) { d.visible = true; }   // only this path hides art (the timeline has no visible keys)
+         var k:int = this.hz45D.indexOf(d);
+         if(k < 0)
+         {
+            if(mode == 0) { return; }   // never placed: the game's own place
+            if(this.hz45D.length >= 24) { this.hz45Prune(); }
+            k = this.hz45D.length;
+            this.hz45D.push(d);
+            this.hz45HX.push(d.x);
+            this.hz45HY.push(d.y);
+            this.hz45SX.push(d.scaleX);
+            this.hz45SY.push(d.scaleY);
+         }
+         var hx:Number = Number(this.hz45HX[k]);
+         var hy:Number = Number(this.hz45HY[k]);
+         var nx:Number = hx;
+         var ny:Number = hy;
+         var nsx:Number = Number(this.hz45SX[k]);
+         var nsy:Number = Number(this.hz45SY[k]);
+         if(mode == 2 && this.hz43VanN > 0)
+         {
+            var ox:Number = Number(this.hz43VanOX[0]);
+            var oy:Number = Number(this.hz43VanOY[0]);
+            var ux:Number = Number(this.hz43VanUXA[0]);
+            var uy:Number = Number(this.hz43VanUYA[0]);
+            if(isNaN(ox)) { ox = 0; }
+            if(isNaN(oy)) { oy = 0; }
+            if(!(ux > 0.01 || ux < -0.01)) { ux = 1; }
+            if(!(uy > 0.01 || uy < -0.01)) { uy = 1; }
+            var sc:Number = this.hz43FoSc > 0.05 ? this.hz43FoSc : 1;
+            nx = ox + (hx - ox) * sc + this.hz43FoDx / ux;
+            ny = oy + (hy - oy) * sc + this.hz43FoDy / uy;
+            nsx = nsx * sc;
+            nsy = nsy * sc;
+         }
+         if(d.x != nx) { d.x = nx; }
+         if(d.y != ny) { d.y = ny; }
+         if(d.scaleX != nsx) { d.scaleX = nsx; }
+         if(d.scaleY != nsy) { d.scaleY = nsy; }
+      }
+      // drops records of art the timeline removed (event time only)
+      private function hz45Prune() : void
+      {
+         var j:int = 0;
+         var i:int = 0;
+         while(i < this.hz45D.length)
+         {
+            var d:DisplayObject = this.hz45D[i] as DisplayObject;
+            if(d && this.hzBlg && d.parent === this.hzBlg)
+            {
+               this.hz45D[j] = d;
+               this.hz45HX[j] = this.hz45HX[i];
+               this.hz45HY[j] = this.hz45HY[i];
+               this.hz45SX[j] = this.hz45SX[i];
+               this.hz45SY[j] = this.hz45SY[i];
+               j++;
+            }
+            i++;
+         }
+         this.hz45D.length = j;
+         this.hz45HX.length = j;
+         this.hz45HY.length = j;
+         this.hz45SX.length = j;
+         this.hz45SY.length = j;
+      }
+      // Purpose: keep the ADDED listener and the art in step with the mode. The listener (weak, one per group instance) is
+      // wanted while art must be hidden or placed, or while a follower is off its native place; otherwise it is removed
+      // (r8, Bot 3 r7 S-1: the watch back home in 1 / 2 leaves no listener). A new group instance (HUD rebuild) moves it:
+      // the old group's listener is removed first. Inputs: none. Outputs: listener add / remove, one sweep on a change.
+      private function hz45Sync() : void
+      {
+         if(!this.hzBlg) { return; }
+         var mode:int = this.hz45Mode();
+         var want:Boolean = mode != 0 || this.hz43FoMoved;
+         try
+         {
+            if(want && this.hz43FoLsn !== this.hzBlg)
+            {
+               if(this.hz43FoLsn) { this.hz43FoLsn.removeEventListener(Event.ADDED,this.hz43FoOnAdd); }
+               this.hzBlg.addEventListener(Event.ADDED,this.hz43FoOnAdd,false,0,true);
+               this.hz43FoLsn = this.hzBlg;
+            }
+            else if(!want && this.hz43FoLsn)
+            {
+               this.hz43FoLsn.removeEventListener(Event.ADDED,this.hz43FoOnAdd);
+               this.hz43FoLsn = null;
+            }
+         }
+         catch(eL:Error) { }
+         var dx:Number = mode == 2 ? this.hz43FoDx : 0;
+         var dy:Number = mode == 2 ? this.hz43FoDy : 0;
+         var sc:Number = mode == 2 ? this.hz43FoSc : 1;
+         var kn:int = mode != 0 ? this.hzBlg.numChildren : -1;   // r8: a sweep also when art arrived without an ADDED event
+         if(mode == this.hz45SM && dx == this.hz45SDx && dy == this.hz45SDy && sc == this.hz45SSc && this.hz45SB === this.hzBlg && kn == this.hz45SN) { return; }
+         this.hz45SM = mode;
+         this.hz45SN = kn;
+         this.hz45SDx = dx;
+         this.hz45SDy = dy;
+         this.hz45SSc = sc;
+         this.hz45SB = this.hzBlg;
+         var i:int = 0;
+         while(i < this.hzBlg.numChildren)
+         {
+            var d:DisplayObject = this.hzBlg.getChildAt(i);
+            if(this.hz45Art(d)) { this.hz45Put(d,mode); }
+            i++;
+         }
+         this.hz45Prune();
+      }
+      // Purpose: LocalEnvironmentData, after the game's own handler (subscribed on the first frame tick, as hz44OnOpacity).
+      // The game's handler writes DayCycleBase_mc / OffPlanet_mc / Autopilot_mc visible (W3) and starts FadeInPlanetInfo on
+      // the scan edge, after this frame's hide pass. Styles 0 / 3 / 4 (vanilla compass hide on): those named pieces are hidden
+      // again here, in the same dispatch, so the globe (DayCycleBase_mc) is never drawn. Then hz45Sync. Event only.
+      private function hz45OnEnvLate(e:FromClientDataEvent) : *
+      {
+         try { this.hz45EnvHide(); } catch(eH:Error) { }
+         try { this.hz45Sync(); } catch(eS:Error) { }
+         if(this.hzWlOn) { try { this.hz45WlBlg("env"); } catch(eW:Error) { } }
+      }
+      private function hz45EnvHide() : void
+      {
+         var st:int = this.hzWatchStyle;
+         if(st == 1 || st == 2 || !this.hzHideVanillaCompass || !this.hzBlg) { return; }
+         var i:int = 0;
+         while(i < HZ45_W3.length)
+         {
+            var d:DisplayObject = this.hzBlg.getChildByName(String(HZ45_W3[i]));
+            if(d && d.visible) { this.hz43StHide(d); }
+            i++;
+         }
+      }
+      // Diagnostic only ([Debug] PerfDiag=1 and WatchLog=1): the group's label / frame, its alpha / visible, and every direct
+      // child (name, visible, alpha, x, y, scale), on the scan edges and when the group's label changes after a
+      // LocalEnvironmentData dispatch. Lines "wl blg" / "wl blgc" in the HorizonUI log.
+      private function hz45WlBlg(why:String) : void
+      {
+         if(!this.hzWlOn || !this.hzBlg) { return; }
+         var lb:String = "";
+         try { var bo:Object = this.hzBlg; lb = String(bo.currentLabel) + "@" + String(bo.currentFrame); } catch(eB:Error) { lb = "?"; }
+         if(why == "env" && lb == this.hz45WlLbl) { return; }
+         this.hz45WlLbl = lb;
+         if(this.hzWlOn) { this.hzWlPush("wl blg t=" + Math.round(this.hzPerfNow()) + " why=" + why + " lbl=" + lb + " style=" + this.hzWatchStyle + " grp=" + (this.hz44Hid ? 1 : 0) + " ga=" + this.hzBlg.alpha + " gv=" + (this.hzBlg.visible ? 1 : 0) + " scan=" + (this.hz40Scan ? 1 : 0) + " moved=" + (this.hz43FoMoved ? 1 : 0) + " mode=" + this.hz45Mode() + " n=" + this.hzBlg.numChildren); }
+         var line:String = "";
+         var c:int = 0;
+         var i:int = 0;
+         while(i < this.hzBlg.numChildren)
+         {
+            var d:DisplayObject = this.hzBlg.getChildAt(i);
+            if(d)
+            {
+               line += (c > 0 ? ";" : "") + i + ":" + (d.name != null && d.name.length > 0 ? d.name : "-") + ",v" + (d.visible ? 1 : 0) + ",a" + Math.round(d.alpha * 100) + "," + Math.round(d.x * 10) / 10 + "," + Math.round(d.y * 10) / 10 + ",s" + Math.round(d.scaleX * 100) + (this.hz45Art(d) ? ",art" : "");
+               c++;
+               if(c >= 8) { if(this.hzWlOn) { this.hzWlPush("wl blgc " + line); } line = ""; c = 0; }
+            }
+            i++;
+         }
+         if(c > 0 && this.hzWlOn) { this.hzWlPush("wl blgc " + line); }
       }
 
       // True when box is, or holds, a live marker widget. One walk for all three names (was one walk per name);
