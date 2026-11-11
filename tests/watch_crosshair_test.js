@@ -1372,7 +1372,7 @@ expect(writeScale.outlineClip.scaleX === 0.8 && writeScale.capClip.alpha === 0, 
 	bindAsMethod(tr, "hz41TopRows", []);
 	let rows = tr.hz41TopRows();
 	const hr = rows[rows.length - 1];
-	expect(hr.k === "HideWatchWhileScanning" && hr.t === "b" && hr.l === "HIDE WATCH WHILE SCANNING" && !hr.dis && !hr.sub && /VANILLA/.test(hr.note) && /HORIZON/.test(hr.note) && /alerts stay/.test(hr.note), "F11 SCANNER: HIDE WATCH WHILE SCANNING row (own switch; r7 note: every watch style, alerts stay)");
+	expect(hr.k === "HideWatchWhileScanning" && hr.t === "b" && hr.l === "HIDE WATCH WHILE SCANNING" && !hr.dis && !hr.sub && /Any watch style/.test(hr.note) && /ENEMY HEALTH BAR, STEALTH METER or EDGE PULSE on, the whole watch corner hides, alerts and enemy ring too; else alerts stay/.test(hr.note), "F11 SCANNER: HIDE WATCH WHILE SCANNING row (own switch; r9e note: every watch style; with a Horizon enemy cue the whole corner hides, alerts and ring too; else alerts stay)");
 	tr.v.HideMainHudWhileScanning = 0;
 	rows = tr.hz41TopRows();
 	expect(!rows[rows.length - 1].dis && rows[2].dis === true, "F11 SCANNER: the row stays live when HIDE HORIZON HUD WHILE SCANNING is off (the kept-vitals rows lock as before)");
