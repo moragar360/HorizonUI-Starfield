@@ -8,8 +8,9 @@
 //  4. the gates: HZ49_SCAN_GRP modes (shipped 2 since r9d2: HideWatchWhileScanning only), moved / home, HideWatchWhileScanning with and without the Scanner module, style 0,
 //     ARRANGE, latch, BlgGroupHide=0, hide-all, the enemy-cue rule;
 //  5. a group re-created while hidden (menu teardown / recreate), the style-0 path unchanged, and the wiring is edge-only;
-//  6. r9e (Bot 3 N-1 / N-2): an INI reload while scanning ends in the right hide state (the production hzOnIni, its final
-//     hz49Sync after the keys are read), hide-all (the production hzToggleAll) re-syncs, and both are no-ops when unchanged.
+//  6. r9e (Bot 3 N-1 / N-2): an INI reload while scanning ends in the right hide state (the production hz37OnApplyTxt and
+//     hzOnIni: hz49Sync once hzOnIni has read the keys), hide-all (the production hzToggleAll) re-syncs, and both are
+//     no-ops when unchanged; hzOnIni itself stays byte-identical to r9d2 (a grouphide right-side function).
 // r9d2 (user picks, 2026-11-11 10:08 AM): "Moved watch: hide only when Hide Watch While Scanning is on" and "Home watch,
 // option off: keep showing the vanilla watch during scans" -> the hiding cases below run with HideWatchWhileScanning=1 (HW).
 // Author: Moragar. Last modified: 2026-11-11.
@@ -231,9 +232,10 @@ expect(hidesOn({ HZ49_SCAN_GRP: 3 }), "HZ49_SCAN_GRP = 3: every scan with a watc
 	expect(!h.hz44Hid && h.hzHideCache === null, "style 0 -> 1: the release asks for the rebuild as before");
 }
 
-// ---- 6: r9e N-1, an INI reload while scanning (the production hzOnIni) ----
+// ---- 6: r9e N-1, an INI reload while scanning (the production hz37OnApplyTxt -> hzOnIni) ----
 // hz40ParseIni (stubbed) runs the existing early hz43ScanHideSync -> hz49Sync with the OLD values, as in production; the
-// keys are then read by hzOnIni's own loop / hz26Ini (both production), and the final hz49Sync must settle the state.
+// keys are then read by hzOnIni's own loop / hz26Ini (both production), and hz37OnApplyTxt's hz49Sync after it must
+// settle the state.
 function iniHost(o) {
 	const h = host(o);
 	const NOOP = function() { };
@@ -243,14 +245,14 @@ function iniHost(o) {
 	h.early = 0; h.nRefresh = 0;
 	h.hzRefreshVisibility = function() { h.nRefresh++; h.hz44GrpTick(false); };
 	h.hzRulesV2 = true; h.hzTgScaleSet = true; h.hzEqKind = "";
-	const fns = ["hzOnIni", "hz26Ini", "hzToggleAll"];
+	const fns = ["hz37OnApplyTxt", "hzOnIni", "hz26Ini", "hzToggleAll"];
 	const wrap = new Proxy(h, { get(t, k) { return k in t ? t[k] : (typeof k === "string" && /^hz/.test(k) ? NOOP : undefined); }, has(t, k) { return k in t; } });
 	for (const n of fns) {
 		const f = fnText(as, n);
 		const body = toJs(f.body).replace(/for each\(var (\w+)(?::\w+)? in /g, "for (var $1 of ");
 		h[n] = Function.apply(null, argNames(f.sig).concat(["with(this){\n" + body + "\n}"])).bind(wrap);
 	}
-	h.reload = function(text) { h.hz37Txt = text; h.hzOnIni(null); };
+	h.reload = function(text) { h.hz37OnApplyTxt(text); };
 	return h;
 }
 {
@@ -311,9 +313,10 @@ const shs = codeOnly(fnText(as, "hz43ScanHideSync").body);
 expect(shs.indexOf("this.hz49Sync()") >= 0 && shs.indexOf("this.hz49Sync()") < shs.indexOf("return;"), "hz43ScanHideSync calls hz49Sync before its own early return");
 let callers = []; for (const m of as.matchAll(/this\.hz49Sync\(\)/g)) callers.push(m.index);
 const at = (i) => { const pre = as.slice(0, i); const m = [...pre.matchAll(/(?:private|public) function (\w+)\(/g)]; return m.length ? m[m.length - 1][1] : ""; };
-expect(callers.length === 3 && callers.map(at).sort().join(",") === "hz43ScanHideSync,hzOnIni,hzToggleAll", "hz49Sync has exactly three call sites: hz43ScanHideSync, hzOnIni (r9e N-1), hzToggleAll (r9e N-2)");
-const onIni = codeOnly(fnText(as, "hzOnIni").body).trim();
-expect(/try \{ this\.hz49Sync\(\); \} catch\(\w+:Error\) \{ \}$/.test(onIni) && onIni.lastIndexOf("this.hz49Sync()") > onIni.indexOf('case "blggrouphide"') && onIni.lastIndexOf("this.hz49Sync()") > onIni.indexOf('case "watchstyle"') && onIni.lastIndexOf("this.hz49Sync()") > onIni.indexOf("this.hz26Ini(") && onIni.lastIndexOf("this.hz49Sync()") > onIni.indexOf("this.hz40ParseIni("), "hzOnIni: hz49Sync is its last statement, after BlgGroupHide / WatchStyle / the enemy-cue keys (hz26Ini) and hz40ParseIni");
+expect(callers.length === 3 && callers.map(at).sort().join(",") === "hz37OnApplyTxt,hz43ScanHideSync,hzToggleAll", "hz49Sync has exactly three call sites: hz43ScanHideSync, hz37OnApplyTxt (r9e N-1), hzToggleAll (r9e N-2)");
+const apply = codeOnly(fnText(as, "hz37OnApplyTxt").body);
+expect(apply.indexOf("this.hz49Sync()") > apply.indexOf("this.hzOnIni(null)") && apply.indexOf("this.hzOnIni(null)") > 0, "hz37OnApplyTxt: hz49Sync right after hzOnIni has read BlgGroupHide / WatchStyle / the enemy-cue keys");
+expect(codeOnly(fnText(as, "hzOnIni").body).indexOf("hz49") < 0, "hzOnIni (a grouphide right-side function) holds no hz49 call");
 const tog = codeOnly(fnText(as, "hzToggleAll").body);
 expect(tog.indexOf("this.hz49Sync()") > tog.indexOf("this.hzUserHidden = !this.hzUserHidden") && tog.indexOf("this.hz49Sync()") < tog.indexOf("this.hzRefreshVisibility()") && !/for\s*\(|while|new |getChild/.test(tog), "hzToggleAll: hz49Sync after the flip, before the refresh; no loop, search or allocation");
 const setScan = codeOnly(fnText(as, "hz40SetScan").body);

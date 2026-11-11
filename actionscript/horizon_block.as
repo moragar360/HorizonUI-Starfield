@@ -2265,7 +2265,6 @@
          this.hzApplyScale();   // v0.34: per-card sizes
          this.hzLaidOut = false;
          this.hzRefreshVisibility();
-         try { this.hz49Sync(); } catch(e49i:Error) { }   // r9e (N-1): the scan group hide, after BlgGroupHide / WatchStyle / the enemy-cue keys above (INI event; a no-op when unchanged)
       }
 
       // Accent change after build: recolor the accent-colored header texts/bars on next updates.
@@ -15410,7 +15409,8 @@
       // function itself is unchanged (a right-side function).
       // Events only: hz49Sync runs from hz43ScanHideSync, which runs on the scanner open / close edge (hz40SetScan, after its
       // edge gate), the hz40Clear safety nets, INI load, F11 apply and ARRANGE enter / exit; r9e (Bot 3 N-1 / N-2): also
-      // once at the end of hzOnIni (after the keys it reads) and in hzToggleAll (hide-all). Nothing per frame but the one
+      // once right after hzOnIni returns (hz37OnApplyTxt, so every key it reads is in; hzOnIni itself is a grouphide
+      // right-side function and stays byte-identical) and in hzToggleAll (hide-all). Nothing per frame but the one
       // Boolean read in hz44GrpWant; no search, no timer, no allocation.
       // Author: Moragar. Last modified: 2026-11-11.
       private static const HZ49_SCAN_GRP:int = 2;   // r9d2: HideWatchWhileScanning only (user 10:08 AM)
@@ -18033,6 +18033,7 @@
       private function hz37OnApplyTxt(txt:String) : void
       {
          if(txt != null) { this.hz37Txt = txt; try { this.hzOnIni(null); } catch(errA:Error) { } }
+         if(txt != null) { try { this.hz49Sync(); } catch(e49i:Error) { } }   // r9e (N-1): the scan group hide, once hzOnIni has read BlgGroupHide / WatchStyle / the enemy-cue keys (INI event; a no-op when unchanged)
          if(txt != null) { try { this.hzEnvP0ParseIni(txt); } catch(errP0:Error) { } }   // private diag (env alert Phase 0): [Debug] EnvAlertLog
          if(this.hz37Refresh)
          {
