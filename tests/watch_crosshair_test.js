@@ -1122,9 +1122,14 @@ function bindHz45(host) {
 	bindAsMethod(host, "hz46HoldW3", []);
 	// r9b: the alert icons / flash on a moved vanilla watch
 	host.HZ47_NAMES = asConst("HZ47_NAMES");
-	host.hz47D = [null, null, null]; host.hz47On = false; host.hz47B = null;
+	host.hz47D = [null, null, null, null, null]; host.hz47On = false; host.hz47B = null;
 	if (!host.hz27BioMine) host.hz27BioMine = [null, null, null];
 	bindAsMethod(host, "hz47Sync", ["force"]);
+	// r9g: the ghost sweep, the AnimationFinished backstop and the settled red-line records
+	host.HZ50_FIN = (as.match(/private static const HZ50_FIN:String = "([^"]+)";/) || [])[1];
+	bindAsMethod(host, "hz50Sweep", []);
+	bindAsMethod(host, "hz50OnFin", ["e"]);
+	bindAsMethod(host, "hz50Line", ["k", "d"]);
 	bindHz48(host);
 }
 function bindHz48(host) {
@@ -1273,8 +1278,8 @@ expect(writeScale.outlineClip.scaleX === 0.8 && writeScale.capClip.alpha === 0, 
 		h.hz43FoLsn = null;
 		h.Event = { ADDED: "added" };
 		h.hzBlg.listeners = [];
-		h.hzBlg.addEventListener = function(t, f, cap, pri, weak) { this.listeners.push({ t: t, f: f, weak: weak }); };
-		h.hzBlg.removeEventListener = function(t, f) { this.listeners = this.listeners.filter((l) => !(l.t === t && l.f === f)); };
+		h.hzBlg.addEventListener = function(t, f, cap, pri, weak) { (t === "added" ? this.listeners : (this.finL = this.finL || [])).push({ t: t, f: f, weak: weak }); };
+		h.hzBlg.removeEventListener = function(t, f) { this.listeners = this.listeners.filter((l) => !(l.t === t && l.f === f)); this.finL = (this.finL || []).filter((l) => !(l.t === t && l.f === f)); };
 		if (src) h.hz43VanWrite = Function.apply(null, ["dx", "dy", "sc", "marks", "with(this){\n" + asInnerOf(src, "hz43VanWrite") + "\n}"]).bind(h);
 		bindAsMethod(h, "hz43FoOnAdd", ["e"]);
 		const inner = h.hz43FollowApply;
@@ -2297,8 +2302,8 @@ expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's 
 	const art = (nm, x, y) => ({ name: nm, x: x, y: y, scaleX: 1, scaleY: 1, visible: true, alpha: 0.8 });
 	const listen = (blg) => {
 		blg.listeners = [];
-		blg.addEventListener = function(t, f, cap, pri, weak) { this.listeners.push({ t: t, f: f, weak: weak }); };
-		blg.removeEventListener = function(t, f) { this.listeners = this.listeners.filter((l) => !(l.t === t && l.f === f)); };
+		blg.addEventListener = function(t, f, cap, pri, weak) { (t === "added" ? this.listeners : (this.finL = this.finL || [])).push({ t: t, f: f, weak: weak }); };
+		blg.removeEventListener = function(t, f) { this.listeners = this.listeners.filter((l) => !(l.t === t && l.f === f)); this.finL = (this.finL || []).filter((l) => !(l.t === t && l.f === f)); };
 		return blg;
 	};
 	const mk = (src, fn) => {
@@ -2324,6 +2329,8 @@ expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's 
 	const fireAdd = (hh, ev) => { hh.hzBlg.listeners.slice().forEach((l) => l.f(ev)); };
 	const artOk = (h, vis) => [h.ring, h.disc, h.band, h.tick].every((c) => c.visible === vis);
 	const namedUntouched = (h) => h.named.every((c) => c.visible === true && c.alpha === 0.8);
+	// r9g (a): on a moved vanilla watch hz47 hides BioConditionBase_mc (visible only, alpha kept); the rest stay untouched
+	const namedMovedOk = (h) => h.named.every((c) => (c.name === "BioConditionBase_mc" ? c.visible === false : c.visible === true) && c.alpha === 0.8);
 
 	// 1. style 0 (OFF): the scan art is hidden, named alerts untouched, the cap unit untouched
 	const z = mk();
@@ -2357,7 +2364,7 @@ expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's 
 	expect(artOk(v, true) && v.ring.x === 111 && v.hzBlg.listeners.length === 0, "r8 style 1 at home: art shown at its native place, no listener");
 	v.hz43VanWrite(-64.3, 34.85, 1);
 	expect(near(v.ring.x, 111 - 64.3) && near(v.ring.y, 110.6 + 34.85) && near(v.disc.x, 110.2 - 64.3) && v.tick.visible === true && near(v.tick.y, 141.65 + 34.85), "r8 style 1 moved: ring and disc move with the watch; r9b MF-1 (a): the INFO tick follows too (a childless test tick: position only; in game its child moves)");
-	expect([v.ring, v.disc, v.band].every((c) => c.visible === true) && namedUntouched(v), "r8 style 1 moved: art and alerts stay shown (vanilla mode shows what vanilla shows; r9: not the tick, see above)");
+	expect([v.ring, v.disc, v.band].every((c) => c.visible === true) && namedMovedOk(v), "r8 style 1 moved: art and alerts stay shown (vanilla mode shows what vanilla shows; r9: not the tick, see above; r9g (a): the condition icon row hides)");
 	expect(v.hzBlg.listeners.length === 1, "r8 style 1 moved: the ADDED listener is attached");
 	const vNew = art("instance1300", 111, 110.6); vNew.parent = v.hzBlg; v.hzBlg.kids.push(vNew);
 	fireAdd(v, { target: vNew });
@@ -2373,7 +2380,7 @@ expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's 
 	const s = mk(); s.hzWatchStyle = 2;
 	s.hz43VanWrite(-30, 10, 1);
 	s.hz43ScanHid = true; s.hz45Sync();
-	expect(artOk(s, false) && s.named.filter((c) => s.HZ46_TXT.indexOf(c.name) < 0).every((c) => c.visible === true && c.alpha === 0.8), "r8 style 2 + HideWatchWhileScanning: the art hides with the watch; the enemy ring, LocationAlertText and Bio* stay");
+	expect(artOk(s, false) && s.named.filter((c) => s.HZ46_TXT.indexOf(c.name) < 0).every((c) => (c.name === "BioConditionBase_mc" ? c.visible === false : c.visible === true) && c.alpha === 0.8), "r8 style 2 + HideWatchWhileScanning: the art hides with the watch; the enemy ring, LocationAlertText and Bio* stay (r9g (a): the moved watch's condition icon row is hz47's, hidden)");
 	expect(s.named[0].visible === false && s.named[1].visible === false && s.named[0].alpha === 0.8 && s.hz43ScanMk.length === 2, "r9 (S-2): the sweep also hides BioAlertText / EnvAlertText (visible only, recorded for the scan close)");
 	s.hz43ScanHid = false; s.hz45Sync();
 	expect([s.ring, s.disc, s.band].every((c) => c.visible === true) && s.tick.visible === true && near(s.ring.x, 111 - 30), "r8 style 2: on release the art is back, on the moved watch (r9b MF-1 (a): the INFO tick too)");
@@ -2482,8 +2489,8 @@ expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's 
 	const clip = (nm, x, y) => ({ name: nm, x: x, y: y, scaleX: 1, scaleY: 1, visible: true, alpha: 0.5 });
 	const listen = (blg) => {
 		blg.listeners = [];
-		blg.addEventListener = function(t, f, cap, pri, weak) { this.listeners.push({ t: t, f: f, weak: weak }); };
-		blg.removeEventListener = function(t, f) { this.listeners = this.listeners.filter((l) => !(l.t === t && l.f === f)); };
+		blg.addEventListener = function(t, f, cap, pri, weak) { (t === "added" ? this.listeners : (this.finL = this.finL || [])).push({ t: t, f: f, weak: weak }); };
+		blg.removeEventListener = function(t, f) { this.listeners = this.listeners.filter((l) => !(l.t === t && l.f === f)); this.finL = (this.finL || []).filter((l) => !(l.t === t && l.f === f)); };
 		return blg;
 	};
 	const mk = (style, src, fns) => {
@@ -2671,8 +2678,8 @@ expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's 
 	};
 	const listen = (blg) => {
 		blg.listeners = [];
-		blg.addEventListener = function(t, f, cap, pri, weak) { this.listeners.push({ t: t, f: f, weak: weak }); };
-		blg.removeEventListener = function(t, f) { this.listeners = this.listeners.filter((l) => !(l.t === t && l.f === f)); };
+		blg.addEventListener = function(t, f, cap, pri, weak) { (t === "added" ? this.listeners : (this.finL = this.finL || [])).push({ t: t, f: f, weak: weak }); };
+		blg.removeEventListener = function(t, f) { this.listeners = this.listeners.filter((l) => !(l.t === t && l.f === f)); this.finL = (this.finL || []).filter((l) => !(l.t === t && l.f === f)); };
 		return blg;
 	};
 	const mk = (style, src, fns) => {
@@ -2820,8 +2827,8 @@ expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's 
 	const clip = (nm, x, y) => ({ name: nm, x: x, y: y, scaleX: 1, scaleY: 1, visible: true, alpha: 0.5 });
 	const listen = (blg) => {
 		blg.listeners = [];
-		blg.addEventListener = function(t, f, cap, pri, weak) { this.listeners.push({ t: t, f: f, weak: weak }); };
-		blg.removeEventListener = function(t, f) { this.listeners = this.listeners.filter((l) => !(l.t === t && l.f === f)); };
+		blg.addEventListener = function(t, f, cap, pri, weak) { (t === "added" ? this.listeners : (this.finL = this.finL || [])).push({ t: t, f: f, weak: weak }); };
+		blg.removeEventListener = function(t, f) { this.listeners = this.listeners.filter((l) => !(l.t === t && l.f === f)); this.finL = (this.finL || []).filter((l) => !(l.t === t && l.f === f)); };
 		blg.getChildByName = function(n) { return this.kids.find((c) => c.name === n) || null; };
 		return blg;
 	};
@@ -2842,12 +2849,12 @@ expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's 
 	const allVis = (h, v) => h.ic.every((c) => c.visible === v);
 	const alphaKept = (h) => h.ic.every((c) => c.alpha === 0.5);
 
-	expect(asConst("HZ47_NAMES").join() === "BioCondition_mc,EnvCondition_mc,BioAlertBG_mc", "r9b: the three alert pieces (icons and the bio flash)");
+	expect(asConst("HZ47_NAMES").join() === "BioCondition_mc,EnvCondition_mc,BioAlertBG_mc,BioConditionBase_mc,EnvConditionBase_mc", "r9b: the three alert pieces (icons and the bio flash); r9g (a): plus the two condition icon rows");
 	// 1. styles 1 / 2: moved = hidden (visible only), home = shown
 	for (const st of [1, 2]) {
 		const v = mk(st);
 		v.hz43VanWrite(-40, 20, 0.8);
-		expect(allVis(v, false) && alphaKept(v) && v.hz47On && v.hz47D.every((d, i) => d === v.ic[i]), "r9b (style " + st + "): moved off home = the three pieces hidden by visible, alpha untouched, recorded");
+		expect(allVis(v, false) && alphaKept(v) && v.hz47On && v.hz47D.slice(0, 3).every((d, i) => d === v.ic[i]), "r9b (style " + st + "): moved off home = the three pieces hidden by visible, alpha untouched, recorded");
 		v.hz43VanWrite(-10, 5, 1);
 		expect(allVis(v, false), "r9b (style " + st + "): another Arrange move keeps them hidden");
 		v.hz43VanWrite(0, 0, 1);
@@ -2947,8 +2954,8 @@ expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's 
 	};
 	const listen = (blg) => {
 		blg.listeners = [];
-		blg.addEventListener = function(t, f) { this.listeners.push({ t: t, f: f }); };
-		blg.removeEventListener = function(t, f) { this.listeners = this.listeners.filter((l) => !(l.t === t && l.f === f)); };
+		blg.addEventListener = function(t, f) { (t === "added" ? this.listeners : (this.finL = this.finL || [])).push({ t: t, f: f }); };
+		blg.removeEventListener = function(t, f) { this.listeners = this.listeners.filter((l) => !(l.t === t && l.f === f)); this.finL = (this.finL || []).filter((l) => !(l.t === t && l.f === f)); };
 		return blg;
 	};
 	const ARGS = { hz45Put: ["d", "mode"], hz46TickPut: ["d", "k", "mode"], hz46Inherit: ["d"], hz48ArtPut: ["k", "d", "nx", "ny", "fs"], hz48KPut: ["ch", "t", "kx", "ky", "ksx", "ksy", "wx", "wy", "wf", "ux", "uy", "fs"], hz43VanWrite: ["dx", "dy", "sc", "marks"], hz48UnitKids: ["i", "d"], hz45Sync: [] };
@@ -3172,7 +3179,7 @@ expect(preset.indexOf("WatchX") < 0 && preset.indexOf("WatchY") < 0, "Moragar's 
 	const hz48Fns = ["hz48Inv", "hz48ArtRec", "hz48ArtPut", "hz48Move", "hz48KPut", "hz48UnitKids", "hz48UnitPut", "hz48EnvGroup", "hz48LocRec", "hz48LocPut", "hz48LocFrame"];
 	const codeOnly = (t) => t.split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n");
 	expect(hz48Fns.every((fn) => { const b = codeOnly(funcBody(as, fn)); return b.indexOf(".alpha") < 0 && b.indexOf("new ") < 0 && b.indexOf("push(") < 0 && b.indexOf("hzFindByName") < 0; }), "r9b: the hz48 helpers never write alpha, allocate, push or search");
-	expect((codeOnly(as).match(/transform\.matrix\b/g) || []).length === 1 && funcBody(as, "hz48Inv").indexOf("d.transform.matrix") >= 0, "r9b: the one matrix read is in hz48Inv (once per new art record)");
+	expect((codeOnly(as).match(/transform\.matrix\b/g) || []).length === 2 && funcBody(as, "hz48Inv").indexOf("d.transform.matrix") >= 0 && funcBody(as, "hz50Line").indexOf("d.transform.matrix") >= 0, "r9b: the matrix reads are in hz48Inv and (r9g) hz50Line, both once per new art record");
 	expect((as.match(/this\.hz48ArtRec\(/g) || []).length === 1 && funcBody(as, "hz45Put").indexOf("this.hz48ArtRec(k,d)") >= 0 && (as.match(/this\.hz48UnitKids\(/g) || []).length === 1 && funcBody(as, "hz43VanWrite").indexOf("this.hz48UnitKids(i,d)") >= 0 && (as.match(/this\.hz48EnvGroup\(/g) || []).length === 1,
 		"r9b: one caller each (hz45Put's first sight, hz43VanWrite's changed write, the late listener)");
 	expect((as.match(/this\.hz48ArtPut\(/g) || []).length === 2 && (as.match(/this\.hz48KPut\(/g) || []).length === 4, "r9b: child writes only from hz45Put / hz46TickPut (art) and the four put helpers (holder, art, unit, location chars)");

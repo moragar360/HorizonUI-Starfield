@@ -22594,7 +22594,11 @@
          try
          {
             var m:int = this.hz45Mode();
-            if(m != 0 && this.hz45Art(t as DisplayObject)) { this.hz45Put(t as DisplayObject,m); }
+            if(m != 0 && this.hz45Art(t as DisplayObject))
+            {
+               this.hz45Put(t as DisplayObject,m);
+               this.hz50Sweep();   // r9g: a raw-shape swap at the same depth gets no ADDED and no count change (see hz50Sweep)
+            }
          }
          catch(eA:Error) { }
       }
@@ -22771,12 +22775,15 @@
             if(want && this.hz43FoLsn !== this.hzBlg)
             {
                if(this.hz43FoLsn) { this.hz43FoLsn.removeEventListener(Event.ADDED,this.hz43FoOnAdd); }
+               if(this.hz43FoLsn) { this.hz43FoLsn.removeEventListener(HZ50_FIN,this.hz50OnFin); }   // r9g
                this.hzBlg.addEventListener(Event.ADDED,this.hz43FoOnAdd,false,0,true);
+               this.hzBlg.addEventListener(HZ50_FIN,this.hz50OnFin,false,-1,true);   // r9g: after the game's own handler
                this.hz43FoLsn = this.hzBlg;
             }
             else if(!want && this.hz43FoLsn)
             {
                this.hz43FoLsn.removeEventListener(Event.ADDED,this.hz43FoOnAdd);
+               this.hz43FoLsn.removeEventListener(HZ50_FIN,this.hz50OnFin);   // r9g
                this.hz43FoLsn = null;
             }
          }
@@ -23059,8 +23066,14 @@
       // late LocalEnvironmentData), a new instance's ADDED event and the late listener (force). An unchanged state returns
       // after two compares. Three direct getChildByName lookups on a change, no search, no allocation.
       // Author: Moragar. Last modified: 2026-11-10.
-      private static const HZ47_NAMES:Array = ["BioCondition_mc","EnvCondition_mc","BioAlertBG_mc"];
-      private var hz47D:Array = [null,null,null];   // per HZ47_NAMES: the instance this hide set to false
+      // r9g (a) (user, 11:29 AM: "the afflictions or hazards on the watch dont move with the watch also"): the two
+      // condition icon rows, BioConditionBase_mc (PersonalEffectsWidget) and EnvConditionBase_mc (EnvironmentEffectsWidget,
+      // up to four hazard icons, BottomLeftGroup.as 361 / 397 UpdateEffects), were not in this list, so on a moved watch
+      // they stayed at home. hz43VanSkip keeps every Bio* / Env* piece out of the follow path, so nothing moved them and
+      // nothing hid them. The game never writes their visible flag (only UpdateEffects / gotoAndStop on their own
+      // children and PulseHolder_mc.alpha), so the same visible-only hide and record apply. Same edges, two more lookups.
+      private static const HZ47_NAMES:Array = ["BioCondition_mc","EnvCondition_mc","BioAlertBG_mc","BioConditionBase_mc","EnvConditionBase_mc"];
+      private var hz47D:Array = [null,null,null,null,null];   // per HZ47_NAMES: the instance this hide set to false
       private var hz47On:Boolean = false;
       private var hz47B:Object = null;              // the group the records belong to
       private function hz47Sync(force:Boolean) : void
@@ -23212,8 +23225,75 @@
                this.hz48AWF[t] = 0;
                n++;
             }
+            this.hz50Line(k,d);   // r9g (c): a keyed line takes its settled place and matrix
          }
          this.hz48AN[k] = n;
+      }
+      // ---- v0.44 r9g: the scan ghost, and the alert lines off the moved watch ----
+      // Ghost (user, 11:24 AM: HideWatchWhileScanning=0, watch on and moved, scanner open: "its got the ghost image"):
+      // the light disc with a dark hole near its top and a dark band under it, left at the native home behind the BIOSCAN
+      // panel, is the FadeInPlanetInfo band (BLG Symbol 1332 layer 29: Symbol 1286 at 185, Symbol 1287 at 186, then a raw
+      // DOMShape keyframe on every frame 187 - 191 and one held 192 - 231, white, alpha 0.8; frames 232 - 235 fade out).
+      // FadeInPlanetInfo stops at 227 (script layer: stop(); dispatchEvent(ANIMATION_FINISHED)), so the 192 shape is what
+      // shows for the whole scan. A shape replacing the piece at the same depth is a new Shape that gets no ADDED event
+      // here (only MovieClip art does: hz43FoOnAdd placed 1286 / 1287, the ring and the bar), and it does not change
+      // numChildren, so hz45Sync's change key (mode, offset, group, count) skips the sweep on the LocalEnvironmentData
+      // dispatches too. 1287 is child-moved (its instance is never written, r9b MF-1), so the 187 shape keeps 1287's
+      // native matrix and every later shape keeps that: the band stays home. (r8 placed it because r8 wrote 1287 itself.)
+      // Fix (moved, not hidden): every art ADDED in mode 1 / 2 also sweeps BLG's direct children once (hz50Sweep). The
+      // band's frames carry MovieClip adds at 185 / 186 (layers 28 / 26 / 29) and 190 (layer 36, Symbol 1292), so the
+      // shape standing at 190 is placed; a replacing shape keeps the written matrix (r8 log 1583 - 1665: 2x / 3x), so
+      // 191 and 192 stand placed and hz46Inherit gives them the right native at the next sweep. Backstop: the group's
+      // own AnimationFinished event (frame 227, and the end of every other span) sweeps once more. Left: frames 187 - 189
+      // (three frames, alpha rising) can still draw at home. Same for PlanetInfoBootup (309 / 310 / 314).
+      // Cost: one direct-children pass (no tree walk, no allocation) per art ADDED in mode 1 / 2 (five per FadeInPlanetInfo)
+      // and one per finished animation; the listener lives exactly as long as the ADDED one (hz45Sync).
+      private static const HZ50_FIN:String = "AnimationFinished";   // BottomLeftGroup.ANIMATION_FINISHED
+      private function hz50Sweep() : void
+      {
+         this.hz45SM = -1;
+         this.hz45Sync();
+         this.hz45SN = -2;   // the next sync (LocalEnvironmentData, ARRANGE) still sweeps once, as the count change did before r9g
+      }
+      private function hz50OnFin(e:Event) : void
+      {
+         if(e == null || !this.hzBlg || e.target !== this.hzBlg) { return; }
+         try { if(this.hz45Mode() != 0) { this.hz50Sweep(); } } catch(eF:Error) { }
+      }
+      // (c) (user, 11:32 AM: the two red lines of an env alert run from the moved watch's edge out to the right): the
+      // lines are Symbol 1266 (one red shape, 174.4 x 1.5 px) on layers 13 / 14, keyed per frame 23 - 30 (a 0.64 -> 1,
+      // ty 43 -> 82.5 / 172.9 -> 137.9), held to 56, out 57 - 61 (also 77 - 115 for the positive alert). r9b moves the
+      // child by the inverse of the matrix read when the record is made, at the ADDED on frame 23 (a = 0.64). In the hold
+      // (a = 1) the child's x offset is then 1 / 0.64 = 1.56 x the move: the lines sit right of the watch. The bar under
+      // the face (layer 28, Symbol 1266, a 0.744 -> 0.802, frames 185 - 191 / 309 - 315) has the same error (8 %).
+      // Fix: these three records take the place and matrix they hold for the visible part of the span (the hold), so the
+      // hold and the fade-out are exact; during the 7 fade-in frames the line slides in by (1 - a) of the move.
+      // Matched by the matrix only (b = c = 0, tx, ty, a and the sign of d; Symbol 1332 has no other unnamed piece in these
+      // windows; the INFO ticks share the symbol but sit at tx 87.2 / 139.45). One matrix read per new art record.
+      private function hz50Line(k:int, d:DisplayObject) : void
+      {
+         var m:Object = null;
+         try { m = d.transform.matrix; } catch(eM:Error) { return; }
+         if(!m || Number(m.b) != 0 || Number(m.c) != 0) { return; }
+         var a:Number = Number(m.a);
+         var dd:Number = Number(m.d);
+         var tx:Number = Number(m.tx);
+         var ty:Number = Number(m.ty);
+         var sx:Number = 0;
+         var sy:Number = 0;
+         var sa:Number = 1;
+         var sd:Number = 1;
+         if(dd > 0.999 && dd < 1.001 && a >= 0.74 && a <= 0.81 && ty >= 169 && ty <= 174.2 && tx >= 109.8 && tx <= 111.85) { sx = 110.85; sy = 169.15; sa = 0.802276611328125; }   // the bar
+         else if(a >= 0.63 && a <= 1.001 && tx >= 109.9 && tx <= 110.05 && dd < -0.999 && dd > -1.001 && ty >= 42 && ty <= 88) { sx = 109.95; sy = 82.5; sd = -1; }   // the upper alert line
+         else if(a >= 0.63 && a <= 1.001 && tx >= 109.9 && tx <= 110.05 && dd > 0.999 && dd < 1.001 && ty >= 132 && ty <= 173) { sx = 109.95; sy = 137.9; }   // the lower alert line
+         else { return; }
+         this.hz45HX[k] = sx;
+         this.hz45HY[k] = sy;
+         var b:int = k * 4;
+         this.hz48AI[b] = 1 / sa;
+         this.hz48AI[b + 1] = 0;
+         this.hz48AI[b + 2] = 0;
+         this.hz48AI[b + 3] = 1 / sd;
       }
       // the art's children go where they would be if the instance stood at (nx, ny) with its matrix times fs
       private function hz48ArtPut(k:int, d:DisplayObject, nx:Number, ny:Number, fs:Number) : void
