@@ -18573,6 +18573,8 @@
       {
          if(latch) { this.hz40Latch = true; }
          try { this.hz43ScanHideSync(); } catch(e43s:Error) { }   // r6: the safety nets end the scan without hz40SetScan
+         try { this.hz43FollowApply(); } catch(e43f:Error) { }   // r9b (N-1): and the close edge's other two syncs, once (a later
+         try { this.hz45Sync(); } catch(e45s:Error) { }         // on=false dispatch is no edge any more, so hz40SetScan skips them)
          if(!this.hz40Hide) { return; }
          this.hz40Hide = false;
          this.hzRefreshVisibility();
@@ -22099,12 +22101,18 @@
                   var ox:Number = Number(this.hz43VanOX[i]);
                   var oy:Number = Number(this.hz43VanOY[i]);
                   var useSc:Number = marks ? 1 : sc;
-                  d.x = ox + (hx - ox) * useSc + dx / ux;
-                  d.y = oy + (hy - oy) * useSc + dy / uy;
-                  if(!marks)
+                  var px:Number = ox + (hx - ox) * useSc + dx / ux;
+                  var py:Number = oy + (hy - oy) * useSc + dy / uy;
+                  if(!marks && this.hz48UnitKids(i,d)) { this.hz48UnitPut(i,d,px,py,sc); }   // r9b MF-1 (a): the unit stays native
+                  else
                   {
-                     d.scaleX = Number(this.hz43VanSX[i]) * sc;
-                     d.scaleY = Number(this.hz43VanSY[i]) * sc;
+                     d.x = px;
+                     d.y = py;
+                     if(!marks)
+                     {
+                        d.scaleX = Number(this.hz43VanSX[i]) * sc;
+                        d.scaleY = Number(this.hz43VanSY[i]) * sc;
+                     }
                   }
                }
             }
@@ -22351,27 +22359,37 @@
             return;
          }
          var k:int = this.hz45D.indexOf(d);
-         if(k < 0 && mode != 0)
+         if(k < 0)
          {
             // r9 root cause (the r8 log: band instance1653 at 14.3,-250.3 = 3 x the 4.8,-83.4 move): a keyframe that swaps
             // the art at one depth without a new matrix keeps the old (placed) matrix, so the new instance must not be
             // recorded where it stands. hz46Inherit finds the record it was placed from (event time, no allocation).
-            var j:int = mode == 2 ? this.hz46Inherit(d) : -1;
-            var rx:Number = j >= 0 ? Number(this.hz45HX[j]) : d.x;
-            var ry:Number = j >= 0 ? Number(this.hz45HY[j]) : d.y;
-            var rsx:Number = j >= 0 ? Number(this.hz45SX[j]) : d.scaleX;
-            var rsy:Number = j >= 0 ? Number(this.hz45SY[j]) : d.scaleY;
-            if(this.hz45D.length >= 24) { this.hz45Prune(); }
-            k = this.hz45D.length;
-            this.hz45D.push(d);
-            this.hz45HX.push(rx);
-            this.hz45HY.push(ry);
-            this.hz45SX.push(rsx);
-            this.hz45SY.push(rsy);
+            // r9b (N-7): also in mode 0 (a drag back home can land before the old instance was re-placed).
+            var j:int = this.hz46Inherit(d);
+            if(mode != 0 || j >= 0)
+            {
+               var rx:Number = j >= 0 ? Number(this.hz45HX[j]) : d.x;
+               var ry:Number = j >= 0 ? Number(this.hz45HY[j]) : d.y;
+               var rsx:Number = j >= 0 ? Number(this.hz45SX[j]) : d.scaleX;
+               var rsy:Number = j >= 0 ? Number(this.hz45SY[j]) : d.scaleY;
+               if(this.hz45D.length >= 24) { this.hz45Prune(); }
+               k = this.hz45D.length;
+               this.hz45D.push(d);
+               this.hz45HX.push(rx);
+               this.hz45HY.push(ry);
+               this.hz45SX.push(rsx);
+               this.hz45SY.push(rsy);
+               this.hz48ArtRec(k,d);   // r9b MF-1 (a): its child, the inverse of its matrix, and "never placed" (N-7)
+            }
          }
          if(k >= 0 && this.hz46Tick(Number(this.hz45HX[k]),Number(this.hz45HY[k])))
          {
             this.hz46TickPut(d,k,mode);   // r9: the always-present INFO ticks have their own path (MF-1 switch)
+            return;
+         }
+         if(k >= 0 && mode == 2 && HZ48_ART == 1)   // r9b MF-1 switch, option "hide while moved"
+         {
+            if(d.visible) { d.visible = false; }
             return;
          }
          if(!d.visible) { d.visible = true; }   // only this path hides art (the timeline has no visible keys)
@@ -22382,7 +22400,8 @@
          var ny:Number = hy;
          var nsx:Number = Number(this.hz45SX[k]);
          var nsy:Number = Number(this.hz45SY[k]);
-         if(mode == 2 && this.hz43VanN > 0)
+         var fs:Number = 1;
+         if(mode == 2 && HZ48_ART == 0 && this.hz43VanN > 0)
          {
             var ox:Number = Number(this.hz43VanOX[0]);
             var oy:Number = Number(this.hz43VanOY[0]);
@@ -22397,11 +22416,16 @@
             ny = oy + (hy - oy) * sc + this.hz43FoDy / uy;
             nsx = nsx * sc;
             nsy = nsy * sc;
+            fs = sc;
          }
+         if(int(this.hz48AN[k]) > 0) { this.hz48ArtPut(k,d,nx,ny,fs); return; }   // r9b MF-1 (a): the instance is never written
          if(d.x != nx) { d.x = nx; }
          if(d.y != ny) { d.y = ny; }
          if(d.scaleX != nsx) { d.scaleX = nsx; }
          if(d.scaleY != nsy) { d.scaleY = nsy; }
+         this.hz48WX[k] = d.x;   // r9b (N-7): what this instance now stands at (read back: GFx keeps twips)
+         this.hz48WY[k] = d.y;
+         this.hz48WS[k] = d.scaleX;
       }
       // drops records of art the timeline removed (event time only)
       private function hz45Prune() : void
@@ -22418,6 +22442,7 @@
                this.hz45HY[j] = this.hz45HY[i];
                this.hz45SX[j] = this.hz45SX[i];
                this.hz45SY[j] = this.hz45SY[i];
+               if(j != i) { this.hz48Move(i,j); }   // r9b: the child records, the inverse and the last placed values
                j++;
             }
             i++;
@@ -22427,6 +22452,10 @@
          this.hz45HY.length = j;
          this.hz45SX.length = j;
          this.hz45SY.length = j;
+         this.hz48AN.length = j;
+         this.hz48WX.length = j;
+         this.hz48WY.length = j;
+         this.hz48WS.length = j;
       }
       // Purpose: keep the ADDED listener and the art in step with the mode. The listener (weak, one per group instance) is
       // wanted while art must be hidden or placed, or while a follower is off its native place; otherwise it is removed
@@ -22480,6 +22509,8 @@
       // again here, in the same dispatch, so the globe (DayCycleBase_mc) is never drawn. Then hz45Sync. Event only.
       private function hz45OnEnvLate(e:FromClientDataEvent) : *
       {
+         if(this.hz48InSub) { return; }   // r9b (N-3): Subscribe's own first call while re-ordering (this dispatch already ran)
+         if(this.hz48EnvG == null || this.hz48EnvG.parent == null) { try { this.hz48EnvGroup(); } catch(eG:Error) { } }
          try { this.hz45EnvHide(); } catch(eH:Error) { }
          try { this.hz46HoldW3(); } catch(eW3:Error) { }   // r9: the HideWatchWhileScanning hold (1 / 2) re-hides what the game re-showed
          if(this.hz47On) { try { this.hz47Sync(true); } catch(e47e:Error) { } }   // r9b: re-hide if anything showed them again
@@ -22530,20 +22561,20 @@
       // MF-1 switch (Bot 3 r8): the two INFO ticks (BLG layers 30 / 31, Symbol 1266 at 87.2 / 139.45, 141.65) are the only
       // art that lives on the BottomLeftGroup timeline the whole time (frames 0-369, alpha keyed 191-232 / 315-356); all
       // other art is added and removed by its span. If a script move freezes their timeline alpha in GFx (the user's
-      // PerfDiag=1 / WatchLog=1 log: "wl blgc" entries tagged ",tick"), set HZ46_TICK_MOVE to false: with the watch moved
-      // (styles 1 / 2) the ticks are then hidden instead of moved (never a native-spot ghost). hz46Tick / hz46TickPut are
-      // the only code that treats them apart; nothing else changes. Ticks are moved by position only, never scaled: their
-      // matrix is rotated (a ~0, b 0.22, c -1, d 0) and the session log read them as scaleX 0.00008, scaleY 0.
-      // Author: Moragar. Last modified: 2026-11-10.
-      private static const HZ46_TICK_MOVE:Boolean = false;   // r9 verdict: false (see hz46 notes)
+      // PerfDiag=1 / WatchLog=1 log: "wl blgc" entries tagged ",tick"), they are not moved themselves. hz46Tick /
+      // hz46TickPut are the only code that treats them apart. r9b: the switch is HZ48_ART (see the r9b MF-1 (a) notes):
+      // 0 (default) moves the tick's inner shape by the inverse of the tick's rotated matrix (a ~0, b 0.22, c -1, d 0; the
+      // session log read it as scaleX 0.00008, scaleY 0), so the tick instance keeps its fade; 1 hides them while the watch
+      // is moved; 2 leaves them unmoved at the native spot. Author: Moragar. Last modified: 2026-11-11.
       private function hz46Tick(hx:Number, hy:Number) : Boolean
       {
          if(hy < 139.65 || hy > 143.65) { return false; }
          return (hx > 85.2 && hx < 89.2) || (hx > 137.45 && hx < 141.45);
       }
+      // r9b: the switch is HZ48_ART (0 animate = default, 1 hide while moved, 2 leave unmoved at home), shared with the art.
       private function hz46TickPut(d:DisplayObject, k:int, mode:int) : void
       {
-         if(mode == 2 && !HZ46_TICK_MOVE)
+         if(mode == 2 && HZ48_ART == 1)
          {
             if(d.visible) { d.visible = false; }
             return;
@@ -22553,7 +22584,8 @@
          var hy:Number = Number(this.hz45HY[k]);
          var nx:Number = hx;
          var ny:Number = hy;
-         if(mode == 2 && this.hz43VanN > 0)
+         var fs:Number = 1;
+         if(mode == 2 && HZ48_ART == 0 && this.hz43VanN > 0)
          {
             var ox:Number = Number(this.hz43VanOX[0]);
             var oy:Number = Number(this.hz43VanOY[0]);
@@ -22566,8 +22598,10 @@
             var sc:Number = this.hz43FoSc > 0.05 ? this.hz43FoSc : 1;
             nx = ox + (hx - ox) * sc + this.hz43FoDx / ux;
             ny = oy + (hy - oy) * sc + this.hz43FoDy / uy;
+            fs = sc;
          }
-         if(d.x != nx) { d.x = nx; }
+         if(int(this.hz48AN[k]) > 0) { this.hz48ArtPut(k,d,nx,ny,fs); return; }   // r9b MF-1 (a): the tick instance keeps its fade
+         if(d.x != nx) { d.x = nx; }   // no child to move: position only (rotated matrix, never scaled)
          if(d.y != ny) { d.y = ny; }
       }
       // diagnostic tag only: a recorded tick, or an unrecorded one still at its native place
@@ -22602,7 +22636,7 @@
       // script-moved timeline instance kept the alpha it had when it was first moved. The INFO ticks (instance23 / 24,
       // keyed a100 191-228) read a0, LocationAlertText (keyed a100 195-228) a0, the disc instance1650 (a83) a0, the bar
       // instance1643 (a100 s80) a0 s74, while the unmoved BioConditionBase_mc / EnvConditionBase_mc follow their keys.
-      // So: the ticks are hidden while moved (HZ46_TICK_MOVE false), and a follower that is a plain text holder (one or
+      // So: the ticks are not script-moved (r9b: HZ48_ART), and a follower that is a plain text holder (one or
       // two children, Symbols 1255 / 1269 / 1278: single-frame TextFields) moves its fields, never itself, so its
       // timeline fade keeps playing. Anything else falls back to the r6 instance move. Event time only (the follower
       // callers); kid records are made once per new follower instance. Author: Moragar. Last modified: 2026-11-10.
@@ -22613,6 +22647,9 @@
       private var hz46KY:Array = [];
       private var hz46KSX:Array = [];
       private var hz46KSY:Array = [];
+      private var hz46KWX:Array = [];   // r9b (N-2): per field, the x / y / scale factor this code last wrote
+      private var hz46KWY:Array = [];
+      private var hz46KWF:Array = [];
       private function hz46KidRec(i:int, d:DisplayObject) : void
       {
          var n:int = 0;
@@ -22628,6 +22665,7 @@
                this.hz46KY[t] = k.y;
                this.hz46KSX[t] = k.scaleX;
                this.hz46KSY[t] = k.scaleY;
+               this.hz46KWF[t] = 0;   // r9b (N-2): nothing written yet
                n++;
             }
          }
@@ -22652,14 +22690,7 @@
             var k:DisplayObject = this.hz46KD[t] as DisplayObject;
             if(k && k.parent === c)
             {
-               var kx:Number = Number(this.hz46KX[t]) * fs + (nx - hx) / osx;
-               var ky:Number = Number(this.hz46KY[t]) * fs + (ny - hy) / osy;
-               var ksx:Number = Number(this.hz46KSX[t]) * fs;
-               var ksy:Number = Number(this.hz46KSY[t]) * fs;
-               if(k.x != kx) { k.x = kx; }
-               if(k.y != ky) { k.y = ky; }
-               if(k.scaleX != ksx) { k.scaleX = ksx; }
-               if(k.scaleY != ksy) { k.scaleY = ksy; }
+               this.hz48KPut(k,t,this.hz46KX,this.hz46KY,this.hz46KSX,this.hz46KSY,this.hz46KWX,this.hz46KWY,this.hz46KWF,(nx - hx) / osx,(ny - hy) / osy,fs);
             }
             j++;
          }
@@ -22670,31 +22701,20 @@
       // 3x copy lands off screen, which is why it showed only with the watch near the bottom-left. Here: a new art
       // instance standing exactly where a recorded one is placed (same position and scale) takes that record's native.
       // Event time only (hz45Put's first sight of an instance); a loop over at most 24 records, no allocation.
+      // r9b (N-7, Bot 3): the match is against what each record's instance was last written to (hz48WX / WY / WS), not
+      // the current offset: an ARRANGE drag can change the offset before the old instance is placed again, and the swap
+      // then still finds its record. A record whose instance was never written (NaN; also every child-moved one) is skipped.
       private function hz46Inherit(d:DisplayObject) : int
       {
-         if(this.hz43VanN <= 0) { return -1; }
-         var ox:Number = Number(this.hz43VanOX[0]);
-         var oy:Number = Number(this.hz43VanOY[0]);
-         var ux:Number = Number(this.hz43VanUXA[0]);
-         var uy:Number = Number(this.hz43VanUYA[0]);
-         if(isNaN(ox)) { ox = 0; }
-         if(isNaN(oy)) { oy = 0; }
-         if(!(ux > 0.01 || ux < -0.01)) { ux = 1; }
-         if(!(uy > 0.01 || uy < -0.01)) { uy = 1; }
-         var sc:Number = this.hz43FoSc > 0.05 ? this.hz43FoSc : 1;
-         if(sc == 1 && this.hz43FoDx == 0 && this.hz43FoDy == 0) { return -1; }   // placed = native: nothing to undo
          var k:int = this.hz45D.length - 1;
          while(k >= 0)
          {
-            var hx:Number = Number(this.hz45HX[k]);
-            var hy:Number = Number(this.hz45HY[k]);
-            if(!this.hz46Tick(hx,hy))
+            var wx:Number = Number(this.hz48WX[k]);
+            if(!isNaN(wx) && !this.hz46Tick(Number(this.hz45HX[k]),Number(this.hz45HY[k])))
             {
-               var px:Number = ox + (hx - ox) * sc + this.hz43FoDx / ux;
-               var py:Number = oy + (hy - oy) * sc + this.hz43FoDy / uy;
-               var dx:Number = d.x - px;
-               var dy:Number = d.y - py;
-               var ds:Number = d.scaleX - Number(this.hz45SX[k]) * sc;
+               var dx:Number = d.x - wx;
+               var dy:Number = d.y - Number(this.hz48WY[k]);
+               var ds:Number = d.scaleX - Number(this.hz48WS[k]);
                if(dx < 0.05 && dx > -0.05 && dy < 0.05 && dy > -0.05 && ds < 0.005 && ds > -0.005) { return k; }
             }
             k--;
@@ -22783,6 +22803,234 @@
             }
             i++;
          }
+      }
+
+      // ---- v0.44 r9b MF-1 (a) (user, 2026-11-11 00:09: "Have Bot 2 try to make the INFO ticks and planet-info animation
+      // move and play properly on the moved watch.") ----
+      // GFx stops applying a timeline instance's matrix and color keys once script writes its x / y / scale (MF-1, r8 log
+      // 1583-1586). So on a moved vanilla watch (styles 1 / 2) the timeline-owned instance is never written: its child is
+      // moved instead, by the inverse of the instance's own 2x2 matrix, so the child lands exactly where the r6 / r8
+      // formula would have put the instance, and the instance's alpha / scale / position keys keep playing on top.
+      //   child' = M^-1 * (N - T) + fs * child      (T: the instance's native place, N: its placed place, fs: watch scale)
+      // Art (hz45 records; the ticks, ring, disc, bar, band symbols) uses the matrix read once when the record is made;
+      // the G-1 units (HZ48_UNITS: unrotated, captured with the watch) use their captured scale, like the text holders.
+      // A piece with no child to move (a raw shape: no keys, so its r8 instance move is safe) or more children than the
+      // limit keeps the r8 / r6 instance move. HZ48_UNITS: Bot 3's G-1 pieces, plus WatchOutline_mc (alpha keyed, same
+      // freeze) and O2CO2thin_mc. DayCycleBase_mc, OffPlanet_mc (keyed scale 0.43 / 0.5) and locationNameBase_mc (its
+      // child's rotation is keyed per frame) are not: no fixed child offset can follow them (see CHANGES_fixes_r9b.md).
+      // HZ48_ART is the one-line switch for the ticks and the art: 0 animate (default), 1 hide while moved, 2 leave
+      // unmoved at home (shown at the native spot). HZ48_UNITS empty = the r9 instance move for every unit.
+      // Events only: hz45Put / hz46TickPut (ADDED, change sweeps) and hz43VanWrite (changed writes). Records are made
+      // once per new instance; one transform.matrix read per new art instance. Author: Moragar. Last modified: 2026-11-11.
+      private static const HZ48_ART:int = 0;
+      private static const HZ48_UNITS:Array = ["WatchPointerOutline_mc","O2CO2_mc","Temperature_mc","Oxygen_mc","Grav_mc","WatchOutline_mc","O2CO2thin_mc"];
+      private static const HZ48_AK:int = 2;    // art: at most two children (Symbols 1266 / 1285 / 1292 / 1286 / 1287: one; 1328: two)
+      private static const HZ48_UK:int = 4;    // units: at most four (O2CO2_mc: four; O2CO2thin / WatchPointerOutline / Temperature / Oxygen / Grav: two; WatchOutline: one)
+      private var hz48AN:Array = [];   // per hz45 record: child count (0 = the instance itself moves)
+      private var hz48AI:Array = [];   // per hz45 record, 4 slots: the inverse 2x2 (x: [0] [1], y: [2] [3])
+      private var hz48AD:Array = [];   // slot k * HZ48_AK + c: the child, native place / scale, last write (N-2)
+      private var hz48AX:Array = [];
+      private var hz48AY:Array = [];
+      private var hz48ASX:Array = [];
+      private var hz48ASY:Array = [];
+      private var hz48AWX:Array = [];
+      private var hz48AWY:Array = [];
+      private var hz48AWF:Array = [];
+      private var hz48WX:Array = [];   // per hz45 record (N-7): what its instance was last written to (NaN = never)
+      private var hz48WY:Array = [];
+      private var hz48WS:Array = [];
+      private var hz48UO:Array = [];   // per unit slot: the instance the child record belongs to
+      private var hz48UN:Array = [];   // per unit slot: child count (0 = the unit itself moves)
+      private var hz48UD:Array = [];   // slot i * HZ48_UK + c
+      private var hz48UX:Array = [];
+      private var hz48UY:Array = [];
+      private var hz48USX:Array = [];
+      private var hz48USY:Array = [];
+      private var hz48UWX:Array = [];
+      private var hz48UWY:Array = [];
+      private var hz48UWF:Array = [];
+      private var hz48EnvG:DisplayObject = null;   // N-3: the group instance the late listener was ordered after
+      private var hz48InSub:Boolean = false;
+      // the inverse of d's 2x2 matrix into inv[b .. b + 3]; false when it cannot be read or is singular
+      private function hz48Inv(d:DisplayObject, inv:Array, b:int) : Boolean
+      {
+         var m:Object = null;
+         try { m = d.transform.matrix; } catch(eM:Error) { return false; }
+         if(!m) { return false; }
+         var det:Number = Number(m.a) * Number(m.d) - Number(m.b) * Number(m.c);
+         if(!(det > 0.000001 || det < -0.000001)) { return false; }
+         inv[b] = Number(m.d) / det;
+         inv[b + 1] = -Number(m.c) / det;
+         inv[b + 2] = -Number(m.b) / det;
+         inv[b + 3] = Number(m.a) / det;
+         return true;
+      }
+      // a new art record k: its children (if it has one or two and an invertible matrix) and "never written" (N-7)
+      private function hz48ArtRec(k:int, d:DisplayObject) : void
+      {
+         this.hz48WX[k] = NaN;
+         this.hz48WY[k] = NaN;
+         this.hz48WS[k] = NaN;
+         var n:int = 0;
+         var c:DisplayObjectContainer = d as DisplayObjectContainer;
+         if(c && c.numChildren > 0 && c.numChildren <= HZ48_AK && this.hz48Inv(d,this.hz48AI,k * 4))
+         {
+            while(n < c.numChildren)
+            {
+               var ch:DisplayObject = c.getChildAt(n);
+               var t:int = k * HZ48_AK + n;
+               this.hz48AD[t] = ch;
+               this.hz48AX[t] = ch.x;
+               this.hz48AY[t] = ch.y;
+               this.hz48ASX[t] = ch.scaleX;
+               this.hz48ASY[t] = ch.scaleY;
+               this.hz48AWF[t] = 0;
+               n++;
+            }
+         }
+         this.hz48AN[k] = n;
+      }
+      // the art's children go where they would be if the instance stood at (nx, ny) with its matrix times fs
+      private function hz48ArtPut(k:int, d:DisplayObject, nx:Number, ny:Number, fs:Number) : void
+      {
+         var c:DisplayObjectContainer = d as DisplayObjectContainer;
+         if(!c) { return; }
+         var vx:Number = nx - Number(this.hz45HX[k]);
+         var vy:Number = ny - Number(this.hz45HY[k]);
+         var b:int = k * 4;
+         var ux:Number = Number(this.hz48AI[b]) * vx + Number(this.hz48AI[b + 1]) * vy;
+         var uy:Number = Number(this.hz48AI[b + 2]) * vx + Number(this.hz48AI[b + 3]) * vy;
+         var n:int = int(this.hz48AN[k]);
+         var j:int = 0;
+         while(j < n)
+         {
+            var t:int = k * HZ48_AK + j;
+            var ch:DisplayObject = this.hz48AD[t] as DisplayObject;
+            if(ch && ch.parent === c) { this.hz48KPut(ch,t,this.hz48AX,this.hz48AY,this.hz48ASX,this.hz48ASY,this.hz48AWX,this.hz48AWY,this.hz48AWF,ux,uy,fs); }
+            j++;
+         }
+      }
+      // hz45Prune moved record i to j: its r9b fields follow
+      private function hz48Move(i:int, j:int) : void
+      {
+         this.hz48AN[j] = this.hz48AN[i];
+         this.hz48WX[j] = this.hz48WX[i];
+         this.hz48WY[j] = this.hz48WY[i];
+         this.hz48WS[j] = this.hz48WS[i];
+         var q:int = 0;
+         while(q < 4) { this.hz48AI[j * 4 + q] = this.hz48AI[i * 4 + q]; q++; }
+         q = 0;
+         while(q < HZ48_AK)
+         {
+            var a:int = i * HZ48_AK + q;
+            var t:int = j * HZ48_AK + q;
+            this.hz48AD[t] = this.hz48AD[a];
+            this.hz48AX[t] = this.hz48AX[a];
+            this.hz48AY[t] = this.hz48AY[a];
+            this.hz48ASX[t] = this.hz48ASX[a];
+            this.hz48ASY[t] = this.hz48ASY[a];
+            this.hz48AWX[t] = this.hz48AWX[a];
+            this.hz48AWY[t] = this.hz48AWY[a];
+            this.hz48AWF[t] = this.hz48AWF[a];
+            this.hz48AD[a] = null;
+            q++;
+         }
+      }
+      // One child: its native place times fs plus (ux, uy), in its parent's space. N-2 (Bot 3): a TextField with autoSize
+      // (BioAlertText.Alert_tf, VAUTOSIZE_CENTER) re-centers itself when the game sets its text, so the place it stands at
+      // can differ from what this code last wrote; that drift is the game's and is taken into the native first, so the
+      // next write (or the home write) keeps it. Read back after the write (GFx keeps twips). No allocation.
+      private function hz48KPut(ch:DisplayObject, t:int, kx:Array, ky:Array, ksx:Array, ksy:Array, wx:Array, wy:Array, wf:Array, ux:Number, uy:Number, fs:Number) : void
+      {
+         var f0:Number = Number(wf[t]);
+         if(f0 > 0.01)
+         {
+            var lx:Number = Number(wx[t]);
+            var ly:Number = Number(wy[t]);
+            if(ch.x != lx) { kx[t] = Number(kx[t]) + (ch.x - lx) / f0; }
+            if(ch.y != ly) { ky[t] = Number(ky[t]) + (ch.y - ly) / f0; }
+         }
+         var nx:Number = Number(kx[t]) * fs + ux;
+         var ny:Number = Number(ky[t]) * fs + uy;
+         var nsx:Number = Number(ksx[t]) * fs;
+         var nsy:Number = Number(ksy[t]) * fs;
+         if(ch.x != nx) { ch.x = nx; }
+         if(ch.y != ny) { ch.y = ny; }
+         if(ch.scaleX != nsx) { ch.scaleX = nsx; }
+         if(ch.scaleY != nsy) { ch.scaleY = nsy; }
+         wx[t] = ch.x;
+         wy[t] = ch.y;
+         wf[t] = fs;
+      }
+      // G-1 unit slot i: true when it moves its children. The record is made on the first write for a new instance (the
+      // capture never runs while the watch is moved, so the children are still native then).
+      private function hz48UnitKids(i:int, d:DisplayObject) : Boolean
+      {
+         if(this.hz48UO[i] !== d)
+         {
+            this.hz48UO[i] = d;
+            var n:int = 0;
+            var c:DisplayObjectContainer = d as DisplayObjectContainer;
+            if(HZ48_UNITS.indexOf(d.name) >= 0 && c && c.numChildren > 0 && c.numChildren <= HZ48_UK)
+            {
+               while(n < c.numChildren)
+               {
+                  var ch:DisplayObject = c.getChildAt(n);
+                  var t:int = i * HZ48_UK + n;
+                  this.hz48UD[t] = ch;
+                  this.hz48UX[t] = ch.x;
+                  this.hz48UY[t] = ch.y;
+                  this.hz48USX[t] = ch.scaleX;
+                  this.hz48USY[t] = ch.scaleY;
+                  this.hz48UWF[t] = 0;
+                  n++;
+               }
+            }
+            this.hz48UN[i] = n;
+         }
+         return int(this.hz48UN[i]) > 0;
+      }
+      // the unit's children go where they would be if the unit stood at (px, py) with its captured scale times sc
+      private function hz48UnitPut(i:int, d:DisplayObject, px:Number, py:Number, sc:Number) : void
+      {
+         var c:DisplayObjectContainer = d as DisplayObjectContainer;
+         if(!c) { return; }
+         var osx:Number = Number(this.hz43VanSX[i]);
+         var osy:Number = Number(this.hz43VanSY[i]);
+         if(!(osx > 0.01 || osx < -0.01)) { osx = 1; }
+         if(!(osy > 0.01 || osy < -0.01)) { osy = 1; }
+         var ux:Number = (px - Number(this.hz43VanX[i])) / osx;
+         var uy:Number = (py - Number(this.hz43VanY[i])) / osy;
+         var n:int = int(this.hz48UN[i]);
+         var j:int = 0;
+         while(j < n)
+         {
+            var t:int = i * HZ48_UK + j;
+            var ch:DisplayObject = this.hz48UD[t] as DisplayObject;
+            if(ch && ch.parent === c) { this.hz48KPut(ch,t,this.hz48UX,this.hz48UY,this.hz48USX,this.hz48USY,this.hz48UWX,this.hz48UWY,this.hz48UWF,ux,uy,sc); }
+            j++;
+         }
+      }
+      // N-3 (Bot 3): a new BottomLeftGroup instance subscribes LocalEnvironmentData in its onAddedToStage, after this
+      // late listener, so its handler would run last and show the globe again in the hold. When the late listener sees
+      // that the group it was ordered after is gone, it looks the group up once and, for a new instance, unsubscribes and
+      // subscribes again (one-shot), so it runs after the new group's handler from the next dispatch on. Two compares per
+      // dispatch otherwise; nothing per frame.
+      private function hz48EnvGroup() : void
+      {
+         var nb:DisplayObject = this.getChildByName("BottomLeftGroup_mc");
+         if(nb == null) { return; }   // between the old group leaving and the new one arriving: look again next dispatch
+         var old:DisplayObject = this.hz48EnvG;
+         this.hz48EnvG = nb;
+         if(old == null || nb === old) { return; }
+         this.hz48InSub = true;
+         try
+         {
+            BSUIDataManager.Unsubscribe("LocalEnvironmentData",this.hz45OnEnvLate);
+            BSUIDataManager.Subscribe("LocalEnvironmentData",this.hz45OnEnvLate);
+         }
+         catch(eR:Error) { }
+         this.hz48InSub = false;
       }
 
       // True when box is, or holds, a live marker widget. One walk for all three names (was one walk per name);
