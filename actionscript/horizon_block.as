@@ -20513,7 +20513,14 @@
       // (LocalEnvironmentData) and on the scan edge. hz43VanSkip keeps every *Alert* clip out of the units, so before r6
       // it played at its native spot (the ghost). r7 (MF-1): in the Horizon faces (WatchStyle 3 / 4) it follows the face
       // with the same offset the live markers get (hz43VanHorizon's marker write, scale 1); never hidden.
-      private static const HZ43_VAN_FOLLOW:Array = ["LocationAlertText"];
+      // r9 (user S-1, 2026-11-10): the vanilla env / bio alert text (HZ46_TXT) follows the moved vanilla watch too, in
+      // WatchStyle 1 / 2 only (the same follow as the ring / bars, hz45Put); in 0 / 3 / 4 it stays at its native place.
+      // A watch reset (write(0,0,1)) puts it home. These three are always-present timeline instances (BLG layers 8 / 11 /
+      // 35, frames 0-369, alpha keyed per frame): to stop one of them moving, remove its name here (the only switch).
+      private static const HZ43_VAN_FOLLOW:Array = ["LocationAlertText","EnvAlertText","BioAlertText"];
+      // r9: the vanilla alert text. S-1: follows only in the vanilla styles (hz43FollowApply). S-2: hidden with the watch
+      // while HideWatchWhileScanning holds (hz46TxtScanHide). LocationAlertText (the scan / landing name) is not in it.
+      private static const HZ46_TXT:Array = ["EnvAlertText","BioAlertText"];
       private var hz43FoD:Array = [];
       private var hz43FoHX:Array = [];
       private var hz43FoHY:Array = [];
@@ -22190,6 +22197,7 @@
             if(d && d.visible && (horizon ? this.hz43VanMarkName(d.name) : this.hz43ScanPiece(d))) { d.visible = false; this.hz43ScanMk.push(d); }
             i++;
          }
+         try { this.hz46TxtScanHide(); } catch(e46t:Error) { }   // r9 (S-2): the env / bio alert text hides with the watch
          try { this.hz45Sync(); } catch(e45b:Error) { }   // r8: the planet-info art is hidden with the watch
       }
 
@@ -22213,10 +22221,13 @@
          var sc:Number = this.hz43FoSc > 0.05 ? this.hz43FoSc : 1;
          var ident:Boolean = this.hz43FoDx == 0 && this.hz43FoDy == 0 && sc == 1;
          if(ident && !this.hz43FoMoved) { return; }   // never moved: the game's own placement is left alone
+         var van:Boolean = this.hzWatchStyle == 1 || this.hzWatchStyle == 2;
          var i:int = 0;
          while(i < HZ43_VAN_FOLLOW.length)
          {
-            var d:DisplayObject = this.hzBlg.getChildByName(String(HZ43_VAN_FOLLOW[i]));
+            var nm:String = String(HZ43_VAN_FOLLOW[i]);
+            var txtHome:Boolean = !van && HZ46_TXT.indexOf(nm) >= 0;   // r9 (S-1): the alert text follows in 1 / 2 only
+            var d:DisplayObject = this.hzBlg.getChildByName(nm);
             if(d)
             {
                if(this.hz43FoD[i] !== d)
@@ -22229,10 +22240,11 @@
                }
                var hx:Number = Number(this.hz43FoHX[i]);
                var hy:Number = Number(this.hz43FoHY[i]);
-               var nx:Number = ox + (hx - ox) * sc + this.hz43FoDx / ux;
-               var ny:Number = oy + (hy - oy) * sc + this.hz43FoDy / uy;
-               var nsx:Number = Number(this.hz43FoSX[i]) * sc;
-               var nsy:Number = Number(this.hz43FoSY[i]) * sc;
+               var fs:Number = txtHome ? 1 : sc;
+               var nx:Number = txtHome ? hx : ox + (hx - ox) * fs + this.hz43FoDx / ux;
+               var ny:Number = txtHome ? hy : oy + (hy - oy) * fs + this.hz43FoDy / uy;
+               var nsx:Number = Number(this.hz43FoSX[i]) * fs;
+               var nsy:Number = Number(this.hz43FoSY[i]) * fs;
                if(d.x != nx) { d.x = nx; }
                if(d.y != ny) { d.y = ny; }
                if(d.scaleX != nsx) { d.scaleX = nsx; }
@@ -22255,6 +22267,7 @@
          if(HZ43_VAN_FOLLOW.indexOf(t.name) >= 0)
          {
             try { this.hz43FollowApply(); } catch(eF:Error) { }
+            if(this.hz43ScanHid && HZ46_TXT.indexOf(t.name) >= 0) { try { this.hz46TxtScanHide(); } catch(eT:Error) { } }   // r9 (S-2)
             return;
          }
          try
@@ -22323,11 +22336,9 @@
             if(d.visible) { d.visible = false; }
             return;
          }
-         if(!d.visible) { d.visible = true; }   // only this path hides art (the timeline has no visible keys)
          var k:int = this.hz45D.indexOf(d);
-         if(k < 0)
+         if(k < 0 && mode != 0)
          {
-            if(mode == 0) { return; }   // never placed: the game's own place
             if(this.hz45D.length >= 24) { this.hz45Prune(); }
             k = this.hz45D.length;
             this.hz45D.push(d);
@@ -22336,6 +22347,13 @@
             this.hz45SX.push(d.scaleX);
             this.hz45SY.push(d.scaleY);
          }
+         if(k >= 0 && this.hz46Tick(Number(this.hz45HX[k]),Number(this.hz45HY[k])))
+         {
+            this.hz46TickPut(d,k,mode);   // r9: the always-present INFO ticks have their own path (MF-1 switch)
+            return;
+         }
+         if(!d.visible) { d.visible = true; }   // only this path hides art (the timeline has no visible keys)
+         if(k < 0) { return; }   // mode 0, never placed: the game's own place
          var hx:Number = Number(this.hz45HX[k]);
          var hy:Number = Number(this.hz45HY[k]);
          var nx:Number = hx;
@@ -22423,6 +22441,7 @@
          this.hz45SDy = dy;
          this.hz45SSc = sc;
          this.hz45SB = this.hzBlg;
+         if(mode == 1 && this.hz43ScanHid) { try { this.hz46TxtScanHide(); } catch(eT:Error) { } }   // r9 (S-2): a new text instance without ADDED
          var i:int = 0;
          while(i < this.hzBlg.numChildren)
          {
@@ -22473,13 +22492,85 @@
             var d:DisplayObject = this.hzBlg.getChildAt(i);
             if(d)
             {
-               line += (c > 0 ? ";" : "") + i + ":" + (d.name != null && d.name.length > 0 ? d.name : "-") + ",v" + (d.visible ? 1 : 0) + ",a" + Math.round(d.alpha * 100) + "," + Math.round(d.x * 10) / 10 + "," + Math.round(d.y * 10) / 10 + ",s" + Math.round(d.scaleX * 100) + (this.hz45Art(d) ? ",art" : "");
+               line += (c > 0 ? ";" : "") + i + ":" + (d.name != null && d.name.length > 0 ? d.name : "-") + ",v" + (d.visible ? 1 : 0) + ",a" + Math.round(d.alpha * 100) + "," + Math.round(d.x * 10) / 10 + "," + Math.round(d.y * 10) / 10 + ",s" + Math.round(d.scaleX * 100) + (this.hz45Art(d) ? ",art" : "") + (this.hz46WlTick(d) ? ",tick" : "");
                c++;
                if(c >= 8) { if(this.hzWlOn) { this.hzWlPush("wl blgc " + line); } line = ""; c = 0; }
             }
             i++;
          }
          if(c > 0 && this.hzWlOn) { this.hzWlPush("wl blgc " + line); }
+      }
+
+      // ---- v0.44 r9 ----
+      // MF-1 switch (Bot 3 r8): the two INFO ticks (BLG layers 30 / 31, Symbol 1266 at 87.2 / 139.45, 141.65) are the only
+      // art that lives on the BottomLeftGroup timeline the whole time (frames 0-369, alpha keyed 191-232 / 315-356); all
+      // other art is added and removed by its span. If a script move freezes their timeline alpha in GFx (the user's
+      // PerfDiag=1 / WatchLog=1 log: "wl blgc" entries tagged ",tick"), set HZ46_TICK_MOVE to false: with the watch moved
+      // (styles 1 / 2) the ticks are then hidden instead of moved (never a native-spot ghost). hz46Tick / hz46TickPut are
+      // the only code that treats them apart; nothing else changes. Ticks are moved by position only, never scaled: their
+      // matrix is rotated (a ~0, b 0.22, c -1, d 0) and the session log read them as scaleX 0.00008, scaleY 0.
+      // Author: Moragar. Last modified: 2026-11-10.
+      private static const HZ46_TICK_MOVE:Boolean = true;
+      private function hz46Tick(hx:Number, hy:Number) : Boolean
+      {
+         if(hy < 139.65 || hy > 143.65) { return false; }
+         return (hx > 85.2 && hx < 89.2) || (hx > 137.45 && hx < 141.45);
+      }
+      private function hz46TickPut(d:DisplayObject, k:int, mode:int) : void
+      {
+         if(mode == 2 && !HZ46_TICK_MOVE)
+         {
+            if(d.visible) { d.visible = false; }
+            return;
+         }
+         if(!d.visible) { d.visible = true; }
+         var hx:Number = Number(this.hz45HX[k]);
+         var hy:Number = Number(this.hz45HY[k]);
+         var nx:Number = hx;
+         var ny:Number = hy;
+         if(mode == 2 && this.hz43VanN > 0)
+         {
+            var ox:Number = Number(this.hz43VanOX[0]);
+            var oy:Number = Number(this.hz43VanOY[0]);
+            var ux:Number = Number(this.hz43VanUXA[0]);
+            var uy:Number = Number(this.hz43VanUYA[0]);
+            if(isNaN(ox)) { ox = 0; }
+            if(isNaN(oy)) { oy = 0; }
+            if(!(ux > 0.01 || ux < -0.01)) { ux = 1; }
+            if(!(uy > 0.01 || uy < -0.01)) { uy = 1; }
+            var sc:Number = this.hz43FoSc > 0.05 ? this.hz43FoSc : 1;
+            nx = ox + (hx - ox) * sc + this.hz43FoDx / ux;
+            ny = oy + (hy - oy) * sc + this.hz43FoDy / uy;
+         }
+         if(d.x != nx) { d.x = nx; }
+         if(d.y != ny) { d.y = ny; }
+      }
+      // diagnostic tag only: a recorded tick, or an unrecorded one still at its native place
+      private function hz46WlTick(d:DisplayObject) : Boolean
+      {
+         if(!this.hz45Art(d)) { return false; }
+         var k:int = this.hz45D.indexOf(d);
+         return k >= 0 ? this.hz46Tick(Number(this.hz45HX[k]),Number(this.hz45HY[k])) : this.hz46Tick(d.x,d.y);
+      }
+      // Purpose: r9 (user S-2): while HideWatchWhileScanning holds (hz43ScanHid, styles 1-4), the vanilla env / bio alert
+      // text hides with the watch, like the planet-info art. Recorded in hz43ScanMk, so the scan close (hz43ScanHideSync)
+      // gives back only what this hid; a text the game or hz27BioHide already hid stays theirs. visible only, never alpha.
+      // Events only: the hide edge, a new instance's ADDED event (hz43FoOnAdd) and the change sweep (hz45Sync). Two direct
+      // getChildByName lookups, no search. Inputs: none. Outputs: visible writes. Author: Moragar. Last modified: 2026-11-10.
+      private function hz46TxtScanHide() : void
+      {
+         if(!this.hz43ScanHid || !this.hzBlg) { return; }
+         var i:int = 0;
+         while(i < HZ46_TXT.length)
+         {
+            var d:DisplayObject = this.hzBlg.getChildByName(String(HZ46_TXT[i]));
+            if(d && d.visible)
+            {
+               d.visible = false;
+               if(this.hz43ScanMk.indexOf(d) < 0) { this.hz43ScanMk.push(d); }
+            }
+            i++;
+         }
       }
 
       // True when box is, or holds, a live marker widget. One walk for all three names (was one walk per name);
