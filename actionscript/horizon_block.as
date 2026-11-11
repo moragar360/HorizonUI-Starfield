@@ -22597,7 +22597,9 @@
             if(m != 0 && this.hz45Art(t as DisplayObject))
             {
                this.hz45Put(t as DisplayObject,m);
-               this.hz50Sweep();   // r9g: a raw-shape swap at the same depth gets no ADDED and no count change (see hz50Sweep)
+               var bm:MovieClip = this.hzBlg as MovieClip;   // r9g2 (Bot 3 MF-1): only the band's add frame sweeps (see hz50Sweep)
+               var bf:int = bm ? int(bm.currentFrame) : 0;
+               if(bf == 191 || bf == 315 || bf == 190 || bf == 314) { this.hz50Sweep(); }
             }
          }
          catch(eA:Error) { }
@@ -23246,18 +23248,31 @@
       // 191 and 192 stand placed and hz46Inherit gives them the right native at the next sweep. Backstop: the group's
       // own AnimationFinished event (frame 227, and the end of every other span) sweeps once more. Left: frames 187 - 189
       // (three frames, alpha rising) can still draw at home. Same for PlanetInfoBootup (309 / 310 / 314).
-      // Cost: one direct-children pass (no tree walk, no allocation) per art ADDED in mode 1 / 2 (five per FadeInPlanetInfo)
-      // and one per finished animation; the listener lives exactly as long as the ADDED one (hz45Sync).
+      // r9g2 (Bot 3 MF-1: r9g swept on every art ADDED, about 11 passes per env alert with no raw shape to catch):
+      // the two triggers are gated to the band's spans. ADDED: only the add of layer 36 (Symbol 1292), XFL index 190 in
+      // FadeInPlanetInfo and 314 in PlanetInfoBootup. AS3 currentFrame is 1-based, so it reads 191 / 315; 190 / 314 are
+      // also accepted in case GFx reports the frame before the advance (no art is added at index 189 / 313 or 191 / 315,
+      // so either reading gives exactly one sweep). Every other art add (185 / 186 / 309 / 310, all env / bio alert adds)
+      // only places itself (hz45Put). AnimationFinished: only when the group still stands in FadeInPlanetInfo (its stop at
+      // frame 228 holds the band for the whole scan). By label, not frame number: the label is the game's own constant
+      // (FADE_IN_PLANET_INFO_ANIMATION), so this backstop still works if a game update shifts the frames and the ADDED
+      // frame gate stops matching. The other planet-info ends (246, 308, 370) come after the band's last shape (235 / 359).
+      // If the game's own handler (it runs first) jumps to a queued animation, the label differs and the band is gone.
+      // Cost: per scan one sweep at 191 and one at 228; per PlanetInfoBootup one; per env / bio alert none. No count key
+      // reopen any more: in FadeInPlanetInfo 191 is the span's last MovieClip add; later adds (PlanetInfoBootup 317 / 356)
+      // place themselves (hz45Put) and change the count, so the next sync still sweeps once on its own.
       private static const HZ50_FIN:String = "AnimationFinished";   // BottomLeftGroup.ANIMATION_FINISHED
+      private static const HZ50_LBL:String = "FadeInPlanetInfo";    // BottomLeftGroup.FADE_IN_PLANET_INFO_ANIMATION
       private function hz50Sweep() : void
       {
          this.hz45SM = -1;
          this.hz45Sync();
-         this.hz45SN = -2;   // the next sync (LocalEnvironmentData, ARRANGE) still sweeps once, as the count change did before r9g
       }
       private function hz50OnFin(e:Event) : void
       {
          if(e == null || !this.hzBlg || e.target !== this.hzBlg) { return; }
+         var bm:MovieClip = this.hzBlg as MovieClip;
+         if(!bm || bm.currentLabel != HZ50_LBL) { return; }
          try { if(this.hz45Mode() != 0) { this.hz50Sweep(); } } catch(eF:Error) { }
       }
       // (c) (user, 11:32 AM: the two red lines of an env alert run from the moved watch's edge out to the right): the
