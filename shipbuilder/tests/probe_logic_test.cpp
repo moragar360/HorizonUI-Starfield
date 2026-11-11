@@ -2649,6 +2649,39 @@ static void CheckV7Pills(const fs::path& root)
 		"with Probe=1 an empty list logs which pill or filter emptied it");
 }
 
+// v7 item 5: makers. Rows match cards on the cleaned name, a card for the previewed part
+// teaches that part by id, a bracketed category maker counts, and kind words never pass for
+// makers.
+static void CheckV7Makers(const fs::path& root)
+{
+	const std::string browser = ReadFile(root / "actionscript" / "HsbBrowser.as");
+	Expect(!browser.empty(), "v7 maker source read");
+	Expect(Has(FunctionBody(browser, "onParts", "internal"), "\"key\":this.cleanText(name).toLowerCase()") &&
+			InOrder(FunctionBody(browser, "onParts", "internal"), {"this.rows = built;", "this.tabMaker = makerFromCategory(this.tabName);", "this.assignMakers();"}),
+		"every row carries its cleaned name, the key cards are matched on");
+	const std::string learn = FunctionBody(browser, "learnMaker");
+	Expect(InOrder(learn, {"var key:String = this.cleanText(param1.sModuleName).toLowerCase();",
+				   "sameOrVariant(String(r0.key),key) && (String(r0.key) == key || this.rowByKey(key) == null);", "this.makerById[id] = maker;",
+				   "this.makerByName[key] = maker;", "if(String(r.key) == key && this.makerById[String(r.id)] == null && String(r.maker) != maker)"}) &&
+			!Has(learn, "String(r.name).toLowerCase() == key"),
+		"a card teaches the previewed part by id and other rows only by exact cleaned name");
+	Expect(InOrder(FunctionBody(browser, "sameOrVariant", "internal static"), {"if(param1 == param2) { return true; }", "return b.indexOf(a) == 0 && b.charAt(a.length) == \" \";"}),
+		"a variant name that extends the row name still names the row");
+	const std::string assign = FunctionBody(browser, "assignMakers");
+	Expect(InOrder(assign, {"var clean:String = this.cleanText(name);", "var maker:String = makerOf(clean);", "if(maker.length == 0 && this.tabMaker.length > 0) { maker = this.tabMaker; }",
+				   "&& !this.kindWord(w)) { maker = w; prefix = w; }", "var learned:* = this.makerById[String(r.id)];", "if(learned == null) { learned = this.makerByName[String(r.key)]; }",
+				   "r.maker = learned != null ? String(learned) : (maker.length > 0 ? maker : \"Other\");"}) &&
+			Has(assign, "var first:String = this.cleanText(String(this.rows[i].name)).split(\" \")[0];") && Has(assign, "r.size = sizeOf(clean);"),
+		"makers: logo by id, logo by name, bracketed category, brand prefix, then a first word that is not a kind of part");
+	Expect(InOrder(FunctionBody(browser, "makerFromCategory", "internal static"), {"var open:int = s.lastIndexOf(\"[\");", "if(open < 0 || close < open + 2 || close != s.length - 1) { return \"\"; }"}) &&
+			InOrder(FunctionBody(browser, "baseCategory", "internal static"), {"var p:int = s.indexOf(\" (\");", "var q:int = s.indexOf(\" [\");", "return s.substring(0,cut);"}),
+		"\"Bays [DerreTech]\" names DerreTech, and \"Weapons (Laser) [VTI]\" belongs to Weapons");
+	Expect(Has(FunctionBody(browser, "kindWord"), "if(NOT_MAKERS.indexOf(w) >= 0) { return true; }") && Has(browser, "\"cargo\",") && Has(browser, "\"landing\",") &&
+			Has(FunctionBody(browser, "kindWord"), "return words.indexOf(w) >= 0 || words.indexOf(w + \"s\") >= 0;"),
+		"\"Cargo Hold\" and \"Landing Gear\" never make Cargo or Landing a maker");
+	Expect(Has(FunctionBody(browser, "makerFromLogo", "internal static"), "id == \"Empty\""), "the card's empty logo frame names no maker");
+}
+
 int main()
 {
 	CheckGuard();
@@ -2679,6 +2712,7 @@ int main()
 	CheckV6f(root);
 	CheckV7Input(root);
 	CheckV7Pills(root);
+	CheckV7Makers(root);
 
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";

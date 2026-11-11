@@ -140,11 +140,14 @@ package
             if(e != null && e.uFormID != null)
             {
                var name:String = String(e.text);
-               built.push({"id":String(e.uFormID),"name":name,"raw":e,"stat1":Number(e.iStat1),"variants":int(e.iVariants),"disabled":Boolean(e.bDisabled),"order":i});
+               // The card names a part as displayed text (cleanText of sModuleName); the list's raw
+               // text can be a $ key or carry markup, so makers match on the cleaned name.
+               built.push({"id":String(e.uFormID),"name":name,"key":this.cleanText(name).toLowerCase(),"raw":e,"stat1":Number(e.iStat1),"variants":int(e.iVariants),"disabled":Boolean(e.bDisabled),"order":i});
             }
             i++;
          }
          this.rows = built;
+         this.tabMaker = makerFromCategory(this.tabName);
          this.assignMakers();
          if(!this.upgrade)
          {
@@ -258,30 +261,95 @@ package
       {
          var id:String = param1 == null ? "" : String(param1);
          if(id.indexOf(LOGO_PREFIX) == 0) { id = id.substring(LOGO_PREFIX.length); }
-         if(id.length == 0 || id == "None" || id == "undefined" || id == "null") { return ""; }
+         if(id.length == 0 || id == "None" || id == "Empty" || id == "undefined" || id == "null") { return ""; }
          if(LOGO_MAKERS[id] != null) { return String(LOGO_MAKERS[id]); }
          return id.replace(/([a-z])([A-Z])/g,"$1 $2");
       }
 
-      // Purpose: remember the maker a card names and put it on every row with that name.
+      // Purpose: remember the maker a card names and put it on the rows it describes.
+      // Rules: a card for the previewed row (same cleaned name, or a variant that extends it)
+      //    teaches that part by id, which no other part shares. A card for a module picked on
+      //    the ship teaches its cleaned name, and only rows with exactly that name follow it,
+      //    so two makers' parts that share a name no longer overwrite each other.
       // Outputs: true when a row's maker changed. Diagnostics only with probe=1.
       private function learnMaker(param1:Object):Boolean
       {
          var maker:String = makerFromLogo(param1.sLogoID);
          var key:String = this.cleanText(param1.sModuleName).toLowerCase();
-         if(this.hsb.debugging) { this.hsb.note("MAKER learn logo=" + String(param1.sLogoID) + " maker=" + (maker.length > 0 ? maker : "-") + " name=" + key); }
-         if(maker.length == 0 || key.length == 0 || this.makerByName[key] == maker) { return false; }
-         this.makerByName[key] = maker;
+         var id:String = this.previewId.length > 0 ? this.previewId : this.nativeSel;
+         var r0:Object = id.length > 0 ? this.rowById(id) : null;
+         var mine:Boolean = r0 != null && Boolean(param1.bShowWidget) && this.data != null && Boolean(this.data.bShowWidget) && sameOrVariant(String(r0.key),key) && (String(r0.key) == key || this.rowByKey(key) == null);
+         if(this.hsb.debugging) { this.hsb.note("MAKER learn logo=" + String(param1.sLogoID) + " maker=" + (maker.length > 0 ? maker : "-") + " name=" + key + " row=" + (mine ? id : "-")); }
+         if(maker.length == 0 || key.length == 0) { return false; }
          var changed:Boolean = false;
+         if(mine && this.makerById[id] != maker)
+         {
+            this.makerById[id] = maker;
+            if(String(r0.maker) != maker) { r0.maker = maker; changed = true; }
+         }
+         if(this.makerByName[key] == maker) { return changed; }
+         this.makerByName[key] = maker;
          var i:int = 0;
          while(i < this.rows.length)
          {
             var r:Object = this.rows[i];
-            if(String(r.name).toLowerCase() == key && String(r.maker) != maker) { r.maker = maker; changed = true; }
+            if(String(r.key) == key && this.makerById[String(r.id)] == null && String(r.maker) != maker) { r.maker = maker; changed = true; }
             i++;
          }
          return changed;
       }
+
+      // A row whose cleaned name is exactly this one: a late card for another listed part.
+      private function rowByKey(param1:String):Object
+      {
+         var i:int = 0;
+         while(i < this.rows.length)
+         {
+            if(String(this.rows[i].key) == param1) { return this.rows[i]; }
+            i++;
+         }
+         return null;
+      }
+
+      // A card name equal to the row's, or the row's name plus a variant suffix (and back).
+      internal static function sameOrVariant(param1:String, param2:String):Boolean
+      {
+         if(param1.length == 0 || param2.length == 0) { return false; }
+         if(param1 == param2) { return true; }
+         var a:String = param1.length < param2.length ? param1 : param2;
+         var b:String = param1.length < param2.length ? param2 : param1;
+         return b.indexOf(a) == 0 && b.charAt(a.length) == " ";
+      }
+
+      // Categories that carry a maker in brackets, "Bays [DerreTech]", name it for every part
+      // in them (the naming used by the community category resource for modded makers).
+      internal static function makerFromCategory(param1:String):String
+      {
+         var s:String = param1 == null ? "" : param1;
+         var open:int = s.lastIndexOf("[");
+         var close:int = s.lastIndexOf("]");
+         if(open < 0 || close < open + 2 || close != s.length - 1) { return ""; }
+         var m:String = s.substring(open + 1,close);
+         return m.replace(/^\s+|\s+$/g,"");
+      }
+
+      // The base category of a name: "Weapons (Laser) [VTI]" is "Weapons".
+      internal static function baseCategory(param1:String):String
+      {
+         var s:String = param1 == null ? "" : param1;
+         var cut:int = s.length;
+         var p:int = s.indexOf(" (");
+         if(p > 0 && p < cut) { cut = p; }
+         var q:int = s.indexOf(" [");
+         if(q > 0 && q < cut) { cut = q; }
+         return s.substring(0,cut);
+      }
+
+      // First words that name the kind of part, never its maker ("Cargo Hold", "Landing Gear").
+      private static const NOT_MAKERS:Array = ["bay","bays","cargo","cockpit","cockpits","docker","dockers","engine","engines","equipment","fuel","gear","grav","hab","habs","landing","reactor","reactors","shield","shields","structural","structure","tank","weapon","weapons","class","small","medium","large","all","the","a"];
+
+      private var tabMaker:String = "";
+      private var makerById:Object = {};
 
       private function fill(param1:Object):void
       {
@@ -343,7 +411,7 @@ package
          var i:int = 0;
          while(i < this.rows.length)
          {
-            var first:String = String(this.rows[i].name).split(" ")[0];
+            var first:String = this.cleanText(String(this.rows[i].name)).split(" ")[0];
             counts[first] = int(counts[first]) + 1;
             i++;
          }
@@ -355,25 +423,41 @@ package
          {
             var r:Object = this.rows[i];
             var name:String = String(r.name);
-            var maker:String = makerOf(name);
-            var prefix:String = makerPrefix(name);
+            var clean:String = this.cleanText(name);
+            var maker:String = makerOf(clean);
+            var prefix:String = makerPrefix(clean);
+            // Order: the card's logo for this part, then for its name; the category's bracketed
+            // maker; a known brand prefix; a repeated first word that is not a kind of part or
+            // a word of the category name; otherwise "Other".
+            if(maker.length == 0 && this.tabMaker.length > 0) { maker = this.tabMaker; }
             if(maker.length == 0)
             {
-               var w:String = name.split(" ")[0];
-               if(int(counts[w]) >= 2 && w.length > 1 && w.charAt(0) == w.charAt(0).toUpperCase() && sizeOf(w).length == 0) { maker = w; prefix = w; }
+               var w:String = clean.split(" ")[0];
+               if(int(counts[w]) >= 2 && w.length > 1 && w.charAt(0) == w.charAt(0).toUpperCase() && sizeOf(w).length == 0 && !this.kindWord(w)) { maker = w; prefix = w; }
             }
-            var learned:* = this.makerByName[name.toLowerCase()];
+            var learned:* = this.makerById[String(r.id)];
+            if(learned == null) { learned = this.makerByName[String(r.key)]; }
             r.maker = learned != null ? String(learned) : (maker.length > 0 ? maker : "Other");
             if(learned != null) { known++; }
             else if(maker.length > 0) { named++; }
             r.prefix = prefix;
-            r.size = sizeOf(name);
+            r.size = sizeOf(clean);
             if(String(r.size).length > 0) { sized++; }
             this.fill(r);
             i++;
          }
          this.sizesOnTab = sized * 2 >= this.rows.length && this.rows.length > 0;
-         if(this.hsb.debugging) { this.hsb.note("MAKER tab=" + this.tabName + " rows=" + this.rows.length + " logo=" + known + " name=" + named + " other=" + (this.rows.length - known - named) + " makers=" + this.makerNames().join("|")); }
+         var icon:String = this.rows.length > 0 && this.rows[0].raw != null ? String(this.rows[0].raw.iconImage) : "-";
+         if(this.hsb.debugging) { this.hsb.note("MAKER tab=" + this.tabName + " rows=" + this.rows.length + " logo=" + known + " name=" + named + " other=" + (this.rows.length - known - named) + " cat=" + (this.tabMaker.length > 0 ? this.tabMaker : "-") + " icon=" + icon.substr(0,60) + " makers=" + this.makerNames().join("|")); }
+      }
+
+      // A first word that names the kind of part or a word of this category's name.
+      private function kindWord(param1:String):Boolean
+      {
+         var w:String = param1.toLowerCase();
+         if(NOT_MAKERS.indexOf(w) >= 0) { return true; }
+         var words:Array = baseCategory(this.tabName).toLowerCase().split(" ");
+         return words.indexOf(w) >= 0 || words.indexOf(w + "s") >= 0;
       }
 
       private var sizesOnTab:Boolean = false;
