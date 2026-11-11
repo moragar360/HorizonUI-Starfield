@@ -222,6 +222,9 @@ package
          {
             var id:String = field.substring(5);
             have = param2.stats != null ? param2.stats[id] : null;
+            // The tab's list stat is known for every row (iStat1), previewed or not, so a rule on
+            // it checks the whole tab instead of leaving it "not checked yet".
+            if(have == null && param3.statId != null && id == String(param3.statId) && !isNaN(Number(param2.stat1))) { have = Number(param2.stat1); }
             if(have == null && param3.statIds != null && param3.statIds.indexOf(id) < 0) { return "skip"; }
          }
          if(have == null) { return "unknown"; }

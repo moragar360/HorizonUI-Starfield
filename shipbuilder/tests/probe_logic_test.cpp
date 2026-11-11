@@ -1799,18 +1799,21 @@ static void CheckMovie(const fs::path& root)
 		Expect(InOrder(browser, {"var pillsWarn:String = this.hsb.pillsWarning();", "var warnLines:Array = pillsWarn.split(\"\\n\");",
 				   "y = this.paintNoteLine(w,pad,y,String(warnLines[wl]),HsbKit.ORANGE);"}),
 			"each warning line gets its own row");
-		// Review B4 SHOULD-FIX 2: Import, Export and Manage open only from the More menu, so its
-		// chip is drawn even when every pill of the tab is in the row.
+		// v7 item 6: Import, Export and Manage moved from the More menu to the pills gear, which
+		// is always in the row; More shows only while pills are left out of it.
 		{
 			const std::string pillRow = FunctionBody(browser, "paintPills");
-			Expect(InOrder(pillRow, {"var moreW:Number = this.pillWidth(last ? \"More\" : (more + row.length - i) + \" More\",PILL_BUTTON);",
-					   "if(x + pw + gap + moreW + gap + newW > limit)", "var moreText:String = more > 0 ? more + \" More\" : \"More\";",
-					   "this.hit(x,param3,mw,ph,\"more\");", "this.hit(x,param3,newW,ph,\"newpill\");"}) &&
-					CountOf(pillRow, "\"more\")") == 1 && !Has(pillRow, "if(more > 0)") &&
-					InOrder(FunctionBody(browser, "openMore"), {"items.push({\"label\":\"Import pills\\u2026\",\"id\":\"import\",\"accent\":true});",
-								     "items.push({\"label\":\"Export / Share\\u2026\",\"id\":\"export\",\"accent\":true});",
-								     "items.push({\"label\":\"Manage pills\\u2026\",\"id\":\"manage\",\"accent\":true});"}),
-				"the More chip, the only way to Import, Export and Manage, is always in the pill row");
+			Expect(InOrder(pillRow, {"var gearW:Number = ph;", "var moreW:Number = last ? 0 : this.pillWidth((more + row.length - i) + \" More\",PILL_BUTTON) + gap;",
+					   "if(x + pw + gap + moreW + newW + gap + gearW > limit)", "if(more > 0)", "this.hit(x,param3,mw,ph,\"more\");",
+					   "this.hit(x,param3,newW,ph,\"newpill\");", "k.icon(g,\"gear\",", "this.hit(x,param3,gearW,ph,\"pillgear\");"}) &&
+					CountOf(pillRow, "\"more\")") == 1 && CountOf(pillRow, "\"pillgear\")") == 1 &&
+					!Has(FunctionBody(browser, "openMore"), "Import pills") && !Has(FunctionBody(browser, "openMore"), "Manage pills") &&
+					InOrder(FunctionBody(browser, "openPillTools"), {"items.push({\"label\":\"Import pills\\u2026\",\"id\":\"import\"});",
+								     "items.push({\"label\":\"Export / Share\\u2026\",\"id\":\"export\"});",
+								     "items.push({\"label\":\"Manage pills\\u2026\",\"id\":\"manage\"});", "HsbPillImport.openFor(self.kit,self.hsb,self);",
+								     "self.openManage(param1 == \"export\");", "this.popBelow(menu,\"pillgear\");"}) &&
+					Has(FunctionBody(browser, "onAct", "override internal"), "case \"pillgear\": this.openPillTools(); break;"),
+				"the pills gear holds Import, Export and Manage, and More lists only pills that did not fit");
 		}
 		// Review B3 SHOULD-FIX 1: vanilla hides only the palette clip, so a re-feed while the game
 		// hides it must not call the list's selection handler, which would send a part preview.
@@ -2614,6 +2617,38 @@ static void CheckV7Input(const fs::path& root)
 		"the next test logs why a palette closed and how Find ended");
 }
 
+// v7 item 4: an "All tabs" pill. The editor's count now says what the list will show with the
+// other pills, Find and the maker chip, and a rule on the tab's list stat checks every row.
+static void CheckV7Pills(const fs::path& root)
+{
+	const fs::path as = root / "actionscript";
+	const std::string browser = ReadFile(as / "HsbBrowser.as");
+	const std::string editor = ReadFile(as / "HsbPillEditor.as");
+	const std::string model = ReadFile(as / "HsbPillModel.as");
+	Expect(!browser.empty() && !editor.empty() && !model.empty(), "v7 pill sources read");
+	const std::string shown = FunctionBody(browser, "countShown", "internal");
+	Expect(InOrder(shown, {"var on:Array = this.hsb.pills.onFor(this.tabId);", "HsbPillModel.test(param1,row,c) != 0 && this.otherFilters(row);",
+				   "if(String(on[p].id) != param2 && HsbPillModel.test(on[p],row,c) == 0) { ok = false; }", "if(ok) { n++; }"}),
+		"the shown count applies every other pill on in this tab, the draft replacing its original");
+	const std::string other = FunctionBody(browser, "otherFilters");
+	const std::string passes = FunctionBody(browser, "passes");
+	Expect(Has(other, "if(String(param1.name).toLowerCase().indexOf(needle) < 0 && String(param1.maker).toLowerCase().indexOf(needle) < 0) { return false; }") &&
+			Has(passes, "if(String(param1.name).toLowerCase().indexOf(needle) < 0 && String(param1.maker).toLowerCase().indexOf(needle) < 0) { return false; }") &&
+			Has(other, "if(this.grid && this.makerChip.length > 0 && String(param1.maker) != this.makerChip) { return false; }") &&
+			Has(passes, "if(this.grid && this.makerChip.length > 0 && String(param1.maker) != this.makerChip) { return false; }"),
+		"the editor's count uses the list's own Find and maker-chip tests");
+	Expect(Has(FunctionBody(browser, "countMatches", "internal"), "if(t != 0) { n++; }"), "a pill whose rules all skip here matches every part, as the list shows");
+	Expect(InOrder(FunctionBody(editor, "paint", "internal"), {"var shownN:int = this.browser.countShown(this.draft,this.orig != null ? String(this.orig.id) : \"\");",
+				   "(shownN != n ? \" \\u00B7 \" + shownN + \" with your other filters\" : \"\")"}),
+		"the editor says when the other filters leave fewer parts than the pill matches");
+	Expect(Has(FunctionBody(browser, "ctx"), "\"statId\":this.statId") &&
+			Has(FunctionBody(model, "ruleState", "internal static"), "if(have == null && param3.statId != null && id == String(param3.statId) && !isNaN(Number(param2.stat1))) { have = Number(param2.stat1); }"),
+		"a rule on the tab's list stat reads the list value every row carries");
+	Expect(InOrder(FunctionBody(browser, "rebuild"), {"if(shown.length == 0 && this.rows.length > 0 && this.hsb.debugging) { this.notePillsEmpty(c); }", "shown.sort("}) &&
+			Has(FunctionBody(browser, "notePillsEmpty"), "this.hsb.note(\"PILLS empty tab=\""),
+		"with Probe=1 an empty list logs which pill or filter emptied it");
+}
+
 int main()
 {
 	CheckGuard();
@@ -2643,6 +2678,7 @@ int main()
 	CheckV6Pins(root);
 	CheckV6f(root);
 	CheckV7Input(root);
+	CheckV7Pills(root);
 
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";

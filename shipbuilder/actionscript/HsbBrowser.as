@@ -567,7 +567,7 @@ package
 
       private function ctx():Object
       {
-         return {"credits":this.hsb.partCredits(),"sizes":this.sizesOnTab,"statIds":this.availableColumns()};
+         return {"credits":this.hsb.partCredits(),"sizes":this.sizesOnTab,"statIds":this.availableColumns(),"statId":this.statId};
       }
 
       private function passes(param1:Object, param2:Object):Boolean
@@ -590,6 +590,24 @@ package
          if(this.grid && this.makerChip.length > 0 && String(param1.maker) != this.makerChip) { return false; }
          if(unknown) { this.unchecked++; }
          return true;
+      }
+
+      // Probe=1: which filter emptied the list (pill ids and how many rows each keeps alone).
+      private function notePillsEmpty(param1:Object):void
+      {
+         var on:Array = this.hsb.pills.onFor(this.tabId);
+         var bits:Array = [];
+         var i:int = 0;
+         while(i < on.length)
+         {
+            var keep:int = 0;
+            var r:int = 0;
+            while(r < this.rows.length) { if(HsbPillModel.test(on[i],this.rows[r],param1) != 0) { keep++; } r++; }
+            var tabs:Array = on[i].tabs as Array;
+            bits.push(String(on[i].id) + (tabs != null && tabs.indexOf("*") >= 0 ? "*" : "") + "=" + keep);
+            i++;
+         }
+         this.hsb.note("PILLS empty tab=" + this.tabId + " rows=" + this.rows.length + " on=" + bits.join(",") + " find=" + this.findText.length + " chip=" + (this.grid && this.makerChip.length > 0 ? 1 : 0));
       }
 
       private function compare(param1:Object, param2:Object):int
@@ -625,6 +643,7 @@ package
             if(this.passes(this.rows[i],c)) { shown.push(this.rows[i]); }
             i++;
          }
+         if(shown.length == 0 && this.rows.length > 0 && this.hsb.debugging) { this.notePillsEmpty(c); }
          var self:HsbBrowser = this;
          shown.sort(function(a:Object, b:Object):int { return self.compare(a,b); });
          this.shownRows = shown;
@@ -1241,6 +1260,7 @@ package
                this.afterPills();
                break;
             case "more": this.openMore(); break;
+            case "pillgear": this.openPillTools(); break;
             case "newpill": this.openEditor(null); break;
             case "clear":
                this.hsb.pills.clearTab(this.tabId);
@@ -1398,17 +1418,30 @@ package
             }
             i++;
          }
-         items.push({"label":"Import pills\u2026","id":"import","accent":true});
-         items.push({"label":"Export / Share\u2026","id":"export","accent":true});
-         items.push({"label":"Manage pills\u2026","id":"manage","accent":true});
          var self:HsbBrowser = this;
          var menu:HsbDialog = HsbDialog.menu(this.kit,this.hsb,"MORE",items,function(param1:String, param2:*):void
          {
             if(param1 == "pill") { self.hsb.pills.toggle(String(param2)); self.afterPills(); }
-            else if(param1 == "import") { HsbPillImport.openFor(self.kit,self.hsb,self); }
-            else if(param1 == "export" || param1 == "manage") { self.openManage(param1 == "export"); }
          });
          this.popBelow(menu,"more");
+      }
+
+      // Purpose: the pills gear: Import, Export / Share and Manage in one menu, so the More
+      //    chip only lists pills that did not fit the row. Dependencies: HsbPillImport,
+      //    openManage (which anchors under the same gear).
+      private function openPillTools():void
+      {
+         var items:Array = [];
+         items.push({"label":"Import pills\u2026","id":"import"});
+         items.push({"label":"Export / Share\u2026","id":"export"});
+         items.push({"label":"Manage pills\u2026","id":"manage"});
+         var self:HsbBrowser = this;
+         var menu:HsbDialog = HsbDialog.menu(this.kit,this.hsb,"PILLS",items,function(param1:String, param2:*):void
+         {
+            if(param1 == "import") { HsbPillImport.openFor(self.kit,self.hsb,self); }
+            else if(param1 == "export" || param1 == "manage") { self.openManage(param1 == "export"); }
+         });
+         this.popBelow(menu,"pillgear");
       }
 
       internal function openManage(param1:Boolean):void
@@ -1429,7 +1462,7 @@ package
             if(param2 == "export") { HsbDialog.exportPill(self.kit,self.hsb,p); }
             else { self.openEditor(p); }
          });
-         this.popBelow(menu,"more");
+         this.popBelow(menu,"pillgear");
       }
 
       internal function openEditor(param1:Object):void
@@ -1473,7 +1506,8 @@ package
          this.hsb.openPop(param1);
       }
 
-      // Counts for the editor's "Matches N parts" line.
+      // Counts for the editor's "Matches N parts" line. A pill whose every rule is skipped on
+      // this tab (-1) filters nothing in the list, so it matches every part here too.
       internal function countMatches(param1:Object):int
       {
          var c:Object = this.ctx();
@@ -1482,10 +1516,49 @@ package
          while(i < this.rows.length)
          {
             var t:int = HsbPillModel.test(param1,this.rows[i],c);
-            if(t == 1 || t == 2) { n++; }
+            if(t != 0) { n++; }
             i++;
          }
          return n;
+      }
+
+      // Purpose: how many parts the list will show with this pill on. The list keeps a part
+      //    only when it passes every pill on in this tab (an "All tabs" pill included), Find's
+      //    text and the grid's maker chip, so a pill that matches parts alone can still leave
+      //    the list empty; the editor says so instead of promising parts the list won't show.
+      // Inputs: the draft and the id it replaces ("" for a new pill, which the save turns on).
+      internal function countShown(param1:Object, param2:String):int
+      {
+         var c:Object = this.ctx();
+         var on:Array = this.hsb.pills.onFor(this.tabId);
+         var n:int = 0;
+         var i:int = 0;
+         while(i < this.rows.length)
+         {
+            var row:Object = this.rows[i];
+            var ok:Boolean = HsbPillModel.test(param1,row,c) != 0 && this.otherFilters(row);
+            var p:int = 0;
+            while(ok && p < on.length)
+            {
+               if(String(on[p].id) != param2 && HsbPillModel.test(on[p],row,c) == 0) { ok = false; }
+               p++;
+            }
+            if(ok) { n++; }
+            i++;
+         }
+         return n;
+      }
+
+      // Find's text and the grid's maker chip, as passes applies them.
+      private function otherFilters(param1:Object):Boolean
+      {
+         if(this.findText.length > 0)
+         {
+            var needle:String = this.findText.toLowerCase();
+            if(String(param1.name).toLowerCase().indexOf(needle) < 0 && String(param1.maker).toLowerCase().indexOf(needle) < 0) { return false; }
+         }
+         if(this.grid && this.makerChip.length > 0 && String(param1.maker) != this.makerChip) { return false; }
+         return true;
       }
 
       internal function makerNames():Array
@@ -1959,6 +2032,8 @@ package
          var limit:Number = param1 - param2;
          var gap:Number = 7;
          var newW:Number = this.pillWidth("New pill",PILL_BUTTON);
+         // The pills gear (Import, Export / Share, Manage) is a round button after New pill.
+         var gearW:Number = ph;
          this.overflow = [];
          i = 0;
          while(i < row.length)
@@ -1967,8 +2042,9 @@ package
             var on:Boolean = this.hsb.pills.isOn(String(p.id));
             var pw:Number = this.pillWidth(String(p.name),on ? PILL_ON : PILL_OFF);
             var last:Boolean = i == row.length - 1 && more == 0;
-            var moreW:Number = this.pillWidth(last ? "More" : (more + row.length - i) + " More",PILL_BUTTON);
-            if(x + pw + gap + moreW + gap + newW > limit)
+            // The More chip shows only while pills are left out of the row.
+            var moreW:Number = last ? 0 : this.pillWidth((more + row.length - i) + " More",PILL_BUTTON) + gap;
+            if(x + pw + gap + moreW + newW + gap + gearW > limit)
             {
                var r:int = i;
                while(r < row.length) { this.overflow.push(String(row[r].id)); r++; }
@@ -1996,17 +2072,20 @@ package
             x += pw + gap;
             i++;
          }
-         var moreText:String = more > 0 ? more + " More" : "More";
-         var mw:Number = this.pillWidth(moreText,PILL_BUTTON);
-         k.fill(g,x,param3,mw,ph,ph / 2,0x1A2128,1);
-         k.outline(g,x,param3,mw,ph,ph / 2,HsbKit.EDGE_HI,1);
-         k.icon(g,"plus",x + 8,param3 + (ph - 12) / 2,12,HsbKit.TEXT,1);
-         var mt:TextField = k.text(13,HsbKit.TEXT);
-         k.put(mt,moreText);
-         k.fit(mt);
-         this.add(mt,x + 24,param3 + (ph - mt.height) / 2);
-         this.hit(x,param3,mw,ph,"more");
-         x += mw + gap;
+         if(more > 0)
+         {
+            var moreText:String = more + " More";
+            var mw:Number = this.pillWidth(moreText,PILL_BUTTON);
+            k.fill(g,x,param3,mw,ph,ph / 2,0x1A2128,1);
+            k.outline(g,x,param3,mw,ph,ph / 2,HsbKit.EDGE_HI,1);
+            k.icon(g,"plus",x + 8,param3 + (ph - 12) / 2,12,HsbKit.TEXT,1);
+            var mt:TextField = k.text(13,HsbKit.TEXT);
+            k.put(mt,moreText);
+            k.fit(mt);
+            this.add(mt,x + 24,param3 + (ph - mt.height) / 2);
+            this.hit(x,param3,mw,ph,"more");
+            x += mw + gap;
+         }
          // A closed outline like "+ More" (the dashed edge read as a broken border); off pills
          // keep their dashes, which mark them as off.
          k.outline(g,x,param3,newW,ph,ph / 2,HsbKit.MUTED,1);
@@ -2016,6 +2095,11 @@ package
          k.fit(nt);
          this.add(nt,x + 24,param3 + (ph - nt.height) / 2);
          this.hit(x,param3,newW,ph,"newpill");
+         x += newW + gap;
+         k.fill(g,x,param3,gearW,ph,ph / 2,0x1A2128,1);
+         k.outline(g,x,param3,gearW,ph,ph / 2,HsbKit.EDGE_HI,1);
+         k.icon(g,"gear",x + (gearW - 14) / 2,param3 + (ph - 14) / 2,14,HsbKit.TEXT,1);
+         this.hit(x,param3,gearW,ph,"pillgear");
          return param3 + ph + 10;
       }
 
