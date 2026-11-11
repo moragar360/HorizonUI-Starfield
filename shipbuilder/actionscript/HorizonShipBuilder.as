@@ -88,6 +88,10 @@ package
       // as a DLL key token (which ends typing) and as the game's event, in either order, and the
       // event must not reach the vanilla menu (it closes the parts palette).
       internal static const TEXT_GRACE:int = 20;
+      // How long after a text field ends a palette the game closes is still logged (frames).
+      internal static const PALETTE_WATCH:int = 60;
+      // The sheet behind popups and text fields: clear to the eye, still a hit for the engine.
+      internal static const SCRIM_ALPHA:Number = 0.01;
       private static const FILE_QUEUE_MAX:int = 64;
       // A shared file's name and up to eight numbered ones ("name 2" to "name 9"); see writeShare.
       internal static const SHARE_TRIES:int = 9;
@@ -218,6 +222,11 @@ package
       private var lastCancel:int = -100;
       private var lastOk:int = -100;
       private var lastTextEnd:int = -100;
+      private var lastKey:String = "-";
+      private var lastKeyAt:int = -100;
+      private var lastPressAt:int = -100;
+      private var scrim:Sprite;
+      private var scrimKey:String = "";
       private var dragBox:HsbBox;
       private var textOwner:HsbBox;
       private var pointerX:Number = -1;
@@ -423,6 +432,7 @@ package
       public function wantsEvent(param1:String, param2:Boolean):Boolean
       {
          var capture:Boolean = this.capturing();
+         if(this.debugOn) { this.note("INPUT ev=" + param1 + " down=" + (param2 ? 1 : 0) + " cap=" + (capture ? 1 : 0) + " text=" + (this.textOwner != null ? 1 : 0) + " sinceText=" + (this.frameN - this.lastTextEnd)); }
          // Just after a text field ended, its Enter or Esc is still the field's (TEXT_GRACE).
          var open:Boolean = capture || this.textGrace(param1);
          if(param2)
@@ -1755,6 +1765,12 @@ package
          this.popLayer.mouseEnabled = false;
          this.popLayer.mouseChildren = true;
          addChild(this.popLayer);
+         this.scrim = new Sprite();
+         this.scrim.name = "HsbScrim";
+         this.scrim.mouseEnabled = true;
+         this.scrim.mouseChildren = false;
+         this.scrim.visible = false;
+         this.popLayer.addChild(this.scrim);
          this.restyle();
       }
 
@@ -1989,6 +2005,7 @@ package
          want.Colors = colorOn && !hangar;
          want.Flight = flightOn && !hangar;
          var changed:Boolean = false;
+         if(this.vis.Browser == true && want.Browser != true) { this.notePaletteLost(); }
          var key:String;
          for(key in want)
          {
@@ -2119,7 +2136,7 @@ package
                this.browser.collapsed = this.folded("Browser");
                // A folded or hidden browser cannot keep Find: it would hold every press and key
                // with no field on screen.
-               if(!this.browser.visible || this.browser.collapsed) { this.browser.endFind(); }
+               if(!this.browser.visible || this.browser.collapsed) { this.browser.endFind("hidden"); }
                this.browser.invalidate();
                break;
             case "Colors":
@@ -3024,12 +3041,58 @@ package
          return this.browser != null && this.browser.gridOpen && this.shown("Browser") && !this.folded("Browser");
       }
 
+      // Purpose: while a popup or text field holds every press, a clear sheet over the whole
+      //    stage answers the engine's under-the-pointer test, so the 3D scene behind it gets no
+      //    hover highlight and no part pick. Popups draw above it; input still comes from the
+      //    DLL feed. Inputs: none. Outputs: none. Dependencies: pushState (every frame).
+      private function updateScrim():void
+      {
+         if(this.scrim == null) { return; }
+         var on:Boolean = this.pops.length > 0 || this.textOwner != null;
+         var w:int = stage != null ? stage.stageWidth : 0;
+         var h:int = stage != null ? stage.stageHeight : 0;
+         var key:String = on && w > 0 && h > 0 ? w + "x" + h : "";
+         if(key == this.scrimKey) { return; }
+         this.scrimKey = key;
+         var g:Graphics = this.scrim.graphics;
+         g.clear();
+         if(key.length > 0)
+         {
+            var a:Point = this.popLayer.globalToLocal(new Point(0,0));
+            var b:Point = this.popLayer.globalToLocal(new Point(w,h));
+            g.beginFill(0x000000,SCRIM_ALPHA);
+            g.drawRect(a.x,a.y,b.x - a.x,b.y - a.y);
+            g.endFill();
+         }
+         this.scrim.visible = key.length > 0;
+         if(this.debugOn) { this.note("SCRIM " + (key.length > 0 ? 1 : 0)); }
+      }
+
+      // True while something other than Find holds the pointer: the browser must not pick or
+      //    preview parts from a hover then.
+      internal function holdsPointer():Boolean
+      {
+         return this.pops.length > 0 || (this.textOwner != null && this.textOwner != this.browser) || (this.arrange != null && this.arrange.visible);
+      }
+
+      // Purpose: evidence for a palette the game closed while, or just after, a field was in
+      //    use. Logged always in that window (rare), and on every close with Probe=1.
+      private function notePaletteLost():void
+      {
+         var since:int = this.frameN - this.lastTextEnd;
+         var typing:Boolean = this.textOwner != null;
+         if(!this.debugOn && !typing && since > PALETTE_WATCH) { return; }
+         this.note("FIND palette closed by game text=" + (typing ? this.textOwner.name : "-") + " sinceText=" + since + " key=" + this.lastKey + " sinceKey=" + (this.frameN - this.lastKeyAt) + " sincePress=" + (this.frameN - this.lastPressAt) + " pops=" + this.pops.length);
+         this.syncLog("palette");
+      }
+
       private function pushState():void
       {
          var w:int = stage != null ? stage.stageWidth : 0;
          var h:int = stage != null ? stage.stageHeight : 0;
          var arranging:Boolean = this.arrange != null && this.arrange.visible;
          var hotkeys:Boolean = this.hotkeysAllowed();
+         this.updateScrim();
          var line:String = "STATE capture=" + (this.capturing() ? 1 : 0) + " text=" + (this.textOwner != null ? 1 : 0) + " arrange=" + (arranging ? 1 : 0) + " stage=" + w + "x" + h + " view=" + this.viewText() + " keys=" + (hotkeys && this.keyArrange != "0" ? 1 : 0) + " hide=" + (hotkeys ? this.keyCode(this.keyHide) : 0) + " find=" + (hotkeys ? this.keyCode(this.keyFind) : 0);
          this.lines.unshift(line);
          var nextHot:String = this.hotText();
@@ -3134,6 +3197,7 @@ package
             return;
          }
          if(param1 != "D" || !param4) { return; }
+         this.lastPressAt = this.frameN;
          var top:HsbBox = this.topPop();
          if(top != null && !top.contains2(param2,param3))
          {
@@ -3147,7 +3211,7 @@ package
          }
          // A press outside the browser ends Find like a click away from a text field; a Horizon
          // control under the press still acts on it.
-         if(top == null && this.textOwner == this.browser && !this.browser.contains2(param2,param3)) { this.browser.endFind(); }
+         if(top == null && this.textOwner == this.browser && !this.browser.contains2(param2,param3)) { this.browser.endFind("press outside"); }
          var target:HsbBox = this.boxAt(param2,param3);
          if(target == null) { return; }
          var hit:Object = target.hitAt(param2,param3);
@@ -3186,6 +3250,8 @@ package
 
       private function onKey(param1:String):void
       {
+         this.lastKey = param1;
+         this.lastKeyAt = this.frameN;
          if(this.capturing())
          {
             if(param1 == "cancel") { this.cancelTop("key"); return; }
@@ -3373,7 +3439,9 @@ package
       {
          // Find keeps its text but stops typing, so ESC closes the popup instead of clearing
          // the search, and a popup with its own field gets the keyboard cleanly.
-         if(this.browser != null) { this.browser.endFind(); }
+         if(this.browser != null) { this.browser.endFind("popup"); }
+         // The box under the pointer stops its hover: a dwell must not pick a part under a popup.
+         if(this.hoverBox != null) { this.hoverBox.onHover(-1,-1); this.hoverBox = null; }
          var at:int = this.pops.indexOf(param1);
          if(at >= 0) { this.pops.splice(at,1); }
          this.pops.push(param1);

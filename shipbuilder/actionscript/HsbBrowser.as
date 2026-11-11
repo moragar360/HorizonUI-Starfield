@@ -908,7 +908,9 @@ package
                if(now.length > 0 && now != this.fedSig) { this.refeed(); }
             }
          }
-         if(this.hoverId.length > 0 && this.hsb.frame() - this.hoverAt == DWELL_FRAMES && this.hoverId != this.selId) { this.selectPart(this.hoverId); }
+         // Under a popup, a name field or Arrange a hover never picks a part (only Find leaves
+         // the list live).
+         if(this.hoverId.length > 0 && this.hsb.frame() - this.hoverAt == DWELL_FRAMES && this.hoverId != this.selId && !this.hsb.holdsPointer()) { this.selectPart(this.hoverId); }
          if(this.dirty) { this.paint(); }
       }
 
@@ -1116,8 +1118,9 @@ package
       // Ends typing and keeps the text as a filter, as ENTER does. Find holds the keyboard and,
       // through capture, every press on screen, so the hub ends it whenever the field leaves the
       // screen, a popup opens or the player presses outside the browser.
-      internal function endFind():void
+      internal function endFind(param1:String = ""):void
       {
+         if(this.findOn && this.hsb.debugging) { this.hsb.note("FIND end why=" + param1); }
          if(this.findOn) { this.stopFind(); }
       }
 
@@ -1130,10 +1133,16 @@ package
          }
          if(param1 == "cancel")
          {
+            if(this.hsb.debugging) { this.hsb.note("FIND end why=key cancel"); }
             this.clearFind();
             return true;
          }
-         if(param1 == "ok" || param1 == "tab") { this.stopFind(); return true; }
+         if(param1 == "ok" || param1 == "tab")
+         {
+            if(this.hsb.debugging) { this.hsb.note("FIND end why=key " + param1); }
+            this.stopFind();
+            return true;
+         }
          if(param1 == "bksp" && this.findText.length > 0)
          {
             this.findText = this.findText.substring(0,this.findText.length - 1);
@@ -1226,7 +1235,7 @@ package
             case "makermore": this.openMakers(); break;
             case "find": this.startFind(); break;
             case "findclear": this.clearFind(); break;
-            case "findapply": this.endFind(); break;
+            case "findapply": this.endFind("apply"); break;
             case "pill":
                this.hsb.pills.toggle(String(param2));
                this.afterPills();
@@ -1286,7 +1295,7 @@ package
          this.readOnly = param1;
          if(param1)
          {
-            this.endFind();
+            this.endFind("read only");
             this.closeGrid();
          }
          else

@@ -423,7 +423,7 @@ static void CheckInput()
 	Expect(hsb::WheelSteps(-120, rest) == 0 && rest == -60, "a reversed wheel keeps its remainder");
 
 	hsb::InputCounts counts{1, 2, 3, 4, 5, 6, 7};
-	Expect(hsb::CountsLine(counts) == "presses=1 eaten=2 wheel=3 keys=4 chars=5 dropped=6 raw=7", "the close line is counts only");
+	Expect(hsb::CountsLine(counts) == "presses=1 eaten=2 wheel=3 keys=4 chars=5 dropped=6 raw=7 rawEaten=0", "the close line is counts only");
 
 	hsb::PressLedger ledger;
 	ledger.Set(hsb::kVkEscKey, true);
@@ -1201,6 +1201,7 @@ static void CheckMovie(const fs::path& root)
 	Expect(FunctionBody(hub, "wantsEvent", "public") == R"AS(public function wantsEvent(param1:String, param2:Boolean):Boolean
       {
          var capture:Boolean = this.capturing();
+         if(this.debugOn) { this.note("INPUT ev=" + param1 + " down=" + (param2 ? 1 : 0) + " cap=" + (capture ? 1 : 0) + " text=" + (this.textOwner != null ? 1 : 0) + " sinceText=" + (this.frameN - this.lastTextEnd)); }
          // Just after a text field ended, its Enter or Esc is still the field's (TEXT_GRACE).
          var open:Boolean = capture || this.textGrace(param1);
          if(param2)
@@ -1230,10 +1231,10 @@ static void CheckMovie(const fs::path& root)
 	// Find makes the movie capture every press and key, so it may never outlive its field on
 	// screen: folding or hiding the browser, opening a popup or pressing elsewhere ends it.
 	Expect(Has(FunctionBody(browser, "endFind", "internal"), "if(this.findOn) { this.stopFind(); }") &&
-			Has(FunctionBody(hub, "paint"), "if(!this.browser.visible || this.browser.collapsed) { this.browser.endFind(); }") &&
-			InOrder(FunctionBody(hub, "openPop", "internal"), {"if(this.browser != null) { this.browser.endFind(); }", "this.pops.push(param1);"}) &&
+			Has(FunctionBody(hub, "paint"), "if(!this.browser.visible || this.browser.collapsed) { this.browser.endFind(\"hidden\"); }") &&
+			InOrder(FunctionBody(hub, "openPop", "internal"), {"if(this.browser != null) { this.browser.endFind(\"popup\"); }", "this.pops.push(param1);"}) &&
 			InOrder(FunctionBody(hub, "onPointer"), {"this.browser.closeGrid();",
-				"if(top == null && this.textOwner == this.browser && !this.browser.contains2(param2,param3)) { this.browser.endFind(); }",
+				"if(top == null && this.textOwner == this.browser && !this.browser.contains2(param2,param3)) { this.browser.endFind(\"press outside\"); }",
 				"var target:HsbBox = this.boxAt(param2,param3);"}),
 		"Find ends when the browser folds or hides, a popup opens or a press lands outside the browser");
 
@@ -2034,7 +2035,7 @@ static void CheckMovie(const fs::path& root)
 			Has(FunctionBody(flight, "selectedTab"), "var n:int = int(bar.selectedIndex);"), "the highlighted tab is the game's selected tab");
 		const std::string readOnly = FunctionBody(browser, "setReadOnly", "internal");
 		Expect(Has(hub, "this.browser.setReadOnly(flightOn);") && !Has(hub, "this.browser.readOnly =") &&
-				InOrder(readOnly, {"if(this.readOnly == param1) { return; }", "this.endFind();", "this.closeGrid();", "this.invalidate();"}),
+				InOrder(readOnly, {"if(this.readOnly == param1) { return; }", "this.endFind(\"read only\");", "this.closeGrid();", "this.invalidate();"}),
 			"opening or closing Flight Check repaints the list in its read-only view");
 		// Leaving Flight Check, the game refills its hidden list in game order (PartEntries, then the
 		// palette's Update) while Horizon's list is still read-only; without a fresh feed a hover or
@@ -2087,7 +2088,7 @@ static void CheckPlugin(const fs::path& root)
 	const std::string input = CppBody(plugin, "bool HandleBuilderInput(");
 	const std::string typed = CppBody(plugin, "void FeedTypedChars(");
 	Expect(!wnd.empty() && !input.empty() && !typed.empty(), "the window procedure and input path are present");
-	Expect(Has(wnd, "if (g_menuOpen.load() && g_movieGen.load() == kMovieGen) {\n\t\tif (HandleBuilderInput(hwnd, msg, wp, lp)) return 0;"),
+	Expect(Has(wnd, "if (g_menuOpen.load() && g_movieGen.load() == kMovieGen) {\n\t\t// A raw record kept from the game still goes to DefWindowProc, which frees it.\n\t\tif (HandleBuilderInput(hwnd, msg, wp, lp)) return msg == WM_INPUT ? DefWindowProcW(hwnd, msg, wp, lp) : 0;"),
 		"input is handled only while a 0.2 builder is open");
 	for (const std::string* body : {&wnd, &input, &typed}) {
 		Expect(!Has(*body, "Fact(") && !Has(*body, "_wfopen") && !Has(*body, "Invoke") && !Has(*body, "SetWindowLongPtr"),
@@ -2101,7 +2102,7 @@ static void CheckPlugin(const fs::path& root)
 		Has(input, "g_eatChar = eat;"), "keys follow KeyPress, and a character goes with its key");
 	Expect(InOrder(input, {"if (!repeat) g_keysEaten.Set(vk, call.eat);", "const bool eat = call.eat || (repeat && g_keysEaten.Held(vk));", "return eat;"}),
 		"the repeats of a key Horizon took stay Horizon's until its release");
-	Expect(Has(input, "case WM_INPUT:\n\t\tg_cRaw.fetch_add(1);\n\t\treturn false;"), "raw input is counted and passed on");
+	Expect(Has(input, "case WM_INPUT: {\n\t\tg_cRaw.fetch_add(1);\n\t\tconst bool eat = RawInputEaten(hwnd, lp, in, hot);"), "raw input is counted and follows the raw rules");
 	Expect(Has(input, "case WM_MOUSEMOVE:") && Has(input, "if (hsb::MoveEdge().feed) Feed(\"M M \"") && Has(input, "return false;\n\t}\n\tcase WM_LBUTTONDOWN:"),
 		"moves are fed and never swallowed");
 	Expect(Has(plugin, "// Window thread only.\nhsb::PressLedger g_keysEaten;\nhsb::PressLedger g_buttonsEaten;\n") &&
@@ -2354,7 +2355,7 @@ static void CheckV6Keys(const fs::path& root)
 			Has(strip, "this.hit(param1 - param2 - cb - 4,y,cb + 8,k.u(32),applies ? \"findapply\" : \"collapse\");") &&
 			Has(strip, "k.icon(g,applies ? \"check\" : \"dockR\","),
 		"while typing in Find the button beside the field applies the text instead of folding the browser");
-	Expect(Has(FunctionBody(browser, "onAct", "override internal"), "case \"findapply\": this.endFind(); break;") &&
+	Expect(Has(FunctionBody(browser, "onAct", "override internal"), "case \"findapply\": this.endFind(\"apply\"); break;") &&
 			!Has(FunctionBody(browser, "endFind", "internal"), "setCollapsed"),
 		"the apply button keeps the filter and never folds the browser");
 
@@ -2541,6 +2542,78 @@ static void CheckV6f(const fs::path& root)
 		"a throw in an ini merge releases the write slot, requeues the batch and reports not saved");
 }
 
+// v7 item 1 and 2: the game reads keys and buttons from raw input, so raw records follow the
+// same rules as the messages the hook swallows; a sheet behind popups and fields keeps the
+// 3D scene from hover and picks; a hover under a popup never picks a part.
+static void CheckV7Input(const fs::path& root)
+{
+	const fs::path as = root / "actionscript";
+	const std::string hub = ReadFile(as / "HorizonShipBuilder.as");
+	const std::string browser = ReadFile(as / "HsbBrowser.as");
+	const std::string plugin = ReadFile(root / "src" / "probe.cpp");
+	Expect(!hub.empty() && !browser.empty() && !plugin.empty(), "v7 input sources read");
+
+	hsb::RawHeld k = hsb::RawHeld::none;
+	Expect(hsb::RawKeyEdge(false, k, true) && k == hsb::RawHeld::eaten && hsb::RawKeyEdge(false, k, false) && hsb::RawKeyEdge(true, k, false) &&
+			k == hsb::RawHeld::none,
+		"a raw key the movie took keeps its repeats and its release from the game, even after capture ends");
+	Expect(!hsb::RawKeyEdge(false, k, false) && k == hsb::RawHeld::passed && !hsb::RawKeyEdge(false, k, true) && !hsb::RawKeyEdge(true, k, true) &&
+			k == hsb::RawHeld::none,
+		"a raw key the game saw go down keeps going to the game when capture starts mid-press");
+	Expect(hsb::RawKeyPasses(0x10) && hsb::RawKeyPasses(0x11) && hsb::RawKeyPasses(0x12) && hsb::RawKeyPasses(0xA4) && hsb::RawKeyPasses(0x14) &&
+			!hsb::RawKeyPasses(0x0D) && !hsb::RawKeyPasses(0x1B) && !hsb::RawKeyPasses('A'),
+		"modifiers reach the game raw; Enter, Esc and letters follow the key rules");
+	hsb::InputState text;
+	text.text = true;
+	text.capture = true;
+	Expect(hsb::KeyPress(0x0D, 0, false, false, false, false, text).eat && hsb::KeyPress('Q', 'Q', false, false, false, false, text).eat &&
+			!hsb::KeyPress(0x5B, 0, false, false, false, false, text).eat,
+		"while a field is active every raw key but the system keys is kept from the game");
+	hsb::RawMouseCall m = hsb::RawMouseEdge(0x0001, true, true, 0);
+	Expect(m.eat && m.held == 1u, "a raw press while a popup or field holds the pointer is kept from the game");
+	m = hsb::RawMouseEdge(0x0002, false, false, m.held);
+	Expect(m.eat && m.held == 0u, "its release follows it after capture ends");
+	m = hsb::RawMouseEdge(0x0001, false, true, 0);
+	Expect(!m.eat && m.held == 0u, "outside capture raw presses still reach the game");
+	m = hsb::RawMouseEdge(0x0002, true, true, 0);
+	Expect(!m.eat, "a release whose press the game saw goes to the game");
+	m = hsb::RawMouseEdge(0x0004 | 0x0002, true, true, 0);
+	Expect(!m.eat && m.held == 0u, "a record that mixes kept and passed edges goes to the game whole");
+	Expect(hsb::RawMouseEdge(0x0400, true, true, 0).eat && !hsb::RawMouseEdge(0x0400, true, false, 0).eat && !hsb::RawMouseEdge(0x0400, false, true, 0).eat,
+		"a raw wheel step is kept only while Horizon holds the pointer in its area");
+	Expect(hsb::CountsLine(hsb::InputCounts{}) == "presses=0 eaten=0 wheel=0 keys=0 chars=0 dropped=0 raw=0 rawEaten=0", "the close line counts kept raw records");
+
+	const std::string raw = CppBody(plugin, "bool RawInputEaten(");
+	Expect(InOrder(raw, {"GetRawInputData(reinterpret_cast<HRAWINPUT>(lp), RID_INPUT, &raw, &size, sizeof(RAWINPUTHEADER))", "if (raw.header.dwType == RIM_TYPEKEYBOARD) {",
+				   "const bool release = (raw.data.keyboard.Flags & RI_KEY_BREAK) != 0;", "!hsb::RawKeyPasses(vk)",
+				   "eats = hsb::KeyPress(vk, KeyChar(vk), ctrl, alt, shift, false, in).eat;", "return hsb::RawKeyEdge(release, g_rawKeys[vk], eats);",
+				   "if (raw.header.dwType == RIM_TYPEMOUSE) {", "const bool modal = in.capture || in.text || in.arrange;",
+				   "hsb::RawMouseEdge(flags, modal, hsb::HotContains(hot, sx, sy), g_rawButtons);", "g_rawButtons = call.held;", "return call.eat;"}),
+		"raw keyboard and mouse records go through the raw rules");
+	const std::string handle = CppBody(plugin, "bool HandleBuilderInput(");
+	Expect(InOrder(handle, {"case WM_INPUT: {", "g_cRaw.fetch_add(1);", "const bool eat = RawInputEaten(hwnd, lp, in, hot);", "if (eat) g_cRawEaten.fetch_add(1);", "return eat;"}),
+		"WM_INPUT is no longer passed on unread");
+	Expect(Has(CppBody(plugin, "LRESULT CALLBACK ProbeWnd("), "if (HandleBuilderInput(hwnd, msg, wp, lp)) return msg == WM_INPUT ? DefWindowProcW(hwnd, msg, wp, lp) : 0;") &&
+			InOrder(CppBody(plugin, "LRESULT CALLBACK ProbeWnd("), {"g_eatChar = false;", "g_rawKeys.fill(hsb::RawHeld::none);", "g_rawButtons = 0;"}) &&
+			InOrder(CppBody(plugin, "void ResetInput("), {"g_cRawEaten.store(0);", "g_rawKeys.fill(hsb::RawHeld::none);", "g_rawButtons = 0;"}),
+		"a kept raw record is still freed by DefWindowProc, and the raw ledgers reset with the menu");
+
+	const std::string scrim = FunctionBody(hub, "updateScrim");
+	Expect(InOrder(scrim, {"var on:Boolean = this.pops.length > 0 || this.textOwner != null;", "g.beginFill(0x000000,SCRIM_ALPHA);", "this.scrim.visible = key.length > 0;"}) &&
+			Has(hub, "internal static const SCRIM_ALPHA:Number = 0.01;") && InOrder(FunctionBody(hub, "pushState"), {"this.updateScrim();", "var line:String = \"STATE capture=\""}) &&
+			InOrder(FunctionBody(hub, "build"), {"addChild(this.popLayer);", "this.scrim.mouseEnabled = true;", "this.popLayer.addChild(this.scrim);"}),
+		"a clear sheet under the popups covers the stage while a popup or field is open");
+	Expect(InOrder(FunctionBody(hub, "openPop", "internal"), {"this.browser.endFind(\"popup\");", "if(this.hoverBox != null) { this.hoverBox.onHover(-1,-1); this.hoverBox = null; }", "this.pops.push(param1);"}) &&
+			Has(FunctionBody(browser, "tick", "internal"), "this.hoverId != this.selId && !this.hsb.holdsPointer()) { this.selectPart(this.hoverId); }") &&
+			Has(FunctionBody(hub, "holdsPointer", "internal"), "return this.pops.length > 0 || (this.textOwner != null && this.textOwner != this.browser) || (this.arrange != null && this.arrange.visible);"),
+		"a hover dwell never picks a part under a popup or a name field");
+	Expect(InOrder(FunctionBody(hub, "adapt"), {"if(this.vis.Browser == true && want.Browser != true) { this.notePaletteLost(); }", "for(key in want)"}) &&
+			InOrder(FunctionBody(hub, "notePaletteLost"), {"if(!this.debugOn && !typing && since > PALETTE_WATCH) { return; }", "this.note(\"FIND palette closed by game text=\"", "this.syncLog(\"palette\");"}) &&
+			Has(FunctionBody(hub, "wantsEvent", "public"), "if(this.debugOn) { this.note(\"INPUT ev=\"") &&
+			Has(FunctionBody(browser, "endFind", "internal"), "if(this.findOn && this.hsb.debugging) { this.hsb.note(\"FIND end why=\" + param1); }"),
+		"the next test logs why a palette closed and how Find ended");
+}
+
 int main()
 {
 	CheckGuard();
@@ -2569,6 +2642,7 @@ int main()
 	CheckV6Colors(root);
 	CheckV6Pins(root);
 	CheckV6f(root);
+	CheckV7Input(root);
 
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";

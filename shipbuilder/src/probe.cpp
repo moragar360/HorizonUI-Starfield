@@ -33,6 +33,7 @@
 #include <objbase.h>
 #include <shlobj.h>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
@@ -115,10 +116,14 @@ std::atomic<unsigned> g_cKeys{ 0 };
 std::atomic<unsigned> g_cChars{ 0 };
 std::atomic<unsigned> g_cDropped{ 0 };
 std::atomic<unsigned> g_cRaw{ 0 };
+std::atomic<unsigned> g_cRawEaten{ 0 };
 
 // Window thread only.
 hsb::PressLedger g_keysEaten;
 hsb::PressLedger g_buttonsEaten;
+// Raw input ledgers, window thread only: each raw key and button follows its press.
+std::array<hsb::RawHeld, 256> g_rawKeys{};
+unsigned g_rawButtons = 0;
 int g_wheelRest = 0;
 bool g_eatChar = false;
 
@@ -326,6 +331,9 @@ void ResetInput()
 	g_cChars.store(0);
 	g_cDropped.store(0);
 	g_cRaw.store(0);
+	g_cRawEaten.store(0);
+	g_rawKeys.fill(hsb::RawHeld::none);
+	g_rawButtons = 0;
 }
 
 std::string CountsNow()
@@ -338,6 +346,7 @@ std::string CountsNow()
 	c.chars = g_cChars.load();
 	c.dropped = g_cDropped.load();
 	c.raw = g_cRaw.load();
+	c.rawEaten = g_cRawEaten.load();
 	return hsb::CountsLine(c);
 }
 
@@ -369,6 +378,43 @@ void FeedTypedChars(unsigned vk, LPARAM lp, const hsb::InputState& in)
 	}
 }
 
+// Purpose: the raw input rules (hsb_input.h RawKeyEdge, RawMouseEdge) for one WM_INPUT.
+// Inputs: the message's lParam, the movie's last STATE and HOT. Outputs: true when the game
+//    must not see the record. Reading a record does not use it up: a record we pass is read
+//    again by the game. HID and unreadable records always pass.
+bool RawInputEaten(HWND hwnd, LPARAM lp, const hsb::InputState& in, const hsb::HotArea& hot)
+{
+	RAWINPUT raw{};
+	UINT size = sizeof(raw);
+	if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lp), RID_INPUT, &raw, &size, sizeof(RAWINPUTHEADER)) == static_cast<UINT>(-1)) return false;
+	if (raw.header.dwType == RIM_TYPEKEYBOARD) {
+		const unsigned vk = static_cast<unsigned>(raw.data.keyboard.VKey);
+		if (vk == 0 || vk >= 0xFF) return false;
+		const bool release = (raw.data.keyboard.Flags & RI_KEY_BREAK) != 0;
+		bool eats = false;
+		if (!release && g_rawKeys[vk] == hsb::RawHeld::none && !hsb::RawKeyPasses(vk)) {
+			const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+			const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+			const bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
+			eats = hsb::KeyPress(vk, KeyChar(vk), ctrl, alt, shift, false, in).eat;
+		}
+		return hsb::RawKeyEdge(release, g_rawKeys[vk], eats);
+	}
+	if (raw.header.dwType == RIM_TYPEMOUSE) {
+		const unsigned flags = static_cast<unsigned>(raw.data.mouse.usButtonFlags);
+		if (flags == 0) return false;
+		POINT pt{};
+		int sx = -1;
+		int sy = -1;
+		if (GetCursorPos(&pt) && ScreenToClient(hwnd, &pt)) ToStage(hwnd, pt.x, pt.y, in, sx, sy);
+		const bool modal = in.capture || in.text || in.arrange;
+		const hsb::RawMouseCall call = hsb::RawMouseEdge(flags, modal, hsb::HotContains(hot, sx, sy), g_rawButtons);
+		g_rawButtons = call.held;
+		return call.eat;
+	}
+	return false;
+}
+
 // Purpose: apply the 0.2 input rules (hsb_input.h) to one window message.
 // Inputs: the message, the movie's last STATE and HOT. Outputs: true when the game must not
 //    see the message. Dependencies: Feed (tokens for the movie), the press ledgers.
@@ -382,9 +428,12 @@ bool HandleBuilderInput(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 		hot = g_hot;
 	}
 	switch (msg) {
-	case WM_INPUT:
+	case WM_INPUT: {
 		g_cRaw.fetch_add(1);
-		return false;
+		const bool eat = RawInputEaten(hwnd, lp, in, hot);
+		if (eat) g_cRawEaten.fetch_add(1);
+		return eat;
+	}
 	case WM_MOUSEMOVE: {
 		int sx = 0;
 		int sy = 0;
@@ -484,11 +533,14 @@ LRESULT CALLBACK ProbeWnd(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 		g_pingSeen.store(static_cast<std::uint32_t>(wp));
 	}
 	if (g_menuOpen.load() && g_movieGen.load() == kMovieGen) {
-		if (HandleBuilderInput(hwnd, msg, wp, lp)) return 0;
+		// A raw record kept from the game still goes to DefWindowProc, which frees it.
+		if (HandleBuilderInput(hwnd, msg, wp, lp)) return msg == WM_INPUT ? DefWindowProcW(hwnd, msg, wp, lp) : 0;
 	} else if (msg == WM_KEYDOWN || msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MBUTTONDOWN) {
 		g_keysEaten.Clear();
 		g_buttonsEaten.Clear();
 		g_eatChar = false;
+		g_rawKeys.fill(hsb::RawHeld::none);
+		g_rawButtons = 0;
 	}
 	if (!chain) return DefWindowProcW(hwnd, msg, wp, lp);
 	return CallWindowProcW(chain, hwnd, msg, wp, lp);

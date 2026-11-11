@@ -315,6 +315,80 @@ inline KeyCall KeyPress(unsigned vk, int ch, bool ctrl, bool alt, bool shift, bo
 	return call;
 }
 
+// Raw input (WM_INPUT). The game reads its keys and mouse buttons from raw input, not from
+// the WM_KEYDOWN and WM_LBUTTONDOWN messages the hook swallows (the close line's raw count is
+// in the thousands), so a swallowed key could still reach the editor: Enter in Find could
+// place the highlighted part and close the palette, and letters typed in a name field could
+// act as the editor's own keys. Raw records get the same rules as the messages.
+enum class RawHeld : unsigned char { none, eaten, passed };
+
+// Purpose: one raw key record. Inputs: whether it is the release, the key's ledger entry and
+//    whether KeyPress would swallow the press now. Rules: the press decides for the whole
+//    press: its auto-repeats and its release follow it, so the game sees both halves or
+//    neither, even when capture starts or ends while the key is down.
+inline bool RawKeyEdge(bool release, RawHeld& held, bool pressEats)
+{
+	if (release) {
+		const bool eat = held == RawHeld::eaten;
+		held = RawHeld::none;
+		return eat;
+	}
+	if (held == RawHeld::none) held = pressEats ? RawHeld::eaten : RawHeld::passed;
+	return held == RawHeld::eaten;
+}
+
+// Shift, Ctrl, Alt (either side) and Caps Lock reach the game raw, as their messages do (an
+// Alt press arrives as WM_SYSKEYDOWN, which KeyPress passes), so the game's modifier state
+// never sticks.
+inline bool RawKeyPasses(unsigned vk)
+{
+	return (vk >= 0x10 && vk <= 0x12) || vk == 0x14 || (vk >= 0xA0 && vk <= 0xA5);
+}
+
+inline constexpr unsigned kRawWheelFlags = 0x0400u | 0x0800u;
+
+struct RawMouseCall {
+	bool eat = false;
+	unsigned held = 0;
+};
+
+// Purpose: one raw mouse record with button or wheel flags.
+// Inputs: the record's button flags (two bits per button: press, then release, for five
+//    buttons; then the wheels), whether a popup, text field or Arrange holds every press,
+//    whether the pointer is in the swallow area, and the buttons whose raw press was eaten
+//    (bit per button). Rules: while Horizon holds every press, a press or wheel step in the
+//    area is kept from the game; a release follows its press. A record that mixes kept and
+//    passed edges goes to the game whole, and its presses count as the game's.
+inline RawMouseCall RawMouseEdge(unsigned flags, bool modal, bool inside, unsigned held)
+{
+	RawMouseCall call;
+	call.held = held;
+	bool keep = false;
+	bool pass = false;
+	unsigned downs = 0;
+	for (unsigned b = 0; b < 5; ++b) {
+		const unsigned bit = 1u << b;
+		if ((flags & (1u << (2 * b))) != 0) {
+			downs |= bit;
+			if (modal && inside) keep = true;
+			else pass = true;
+		}
+		if ((flags & (2u << (2 * b))) != 0) {
+			if ((held & bit) != 0) keep = true;
+			else pass = true;
+			call.held &= ~bit;
+		}
+	}
+	if ((flags & kRawWheelFlags) != 0) {
+		if (modal && inside) keep = true;
+		else pass = true;
+	}
+	call.eat = keep && !pass;
+	if (call.eat) call.held |= downs;
+	else call.held &= ~downs;
+	return call;
+}
+
 // A typed character goes to the movie's text field: printable only, never logged.
 inline bool CharForText(unsigned code, const InputState& s)
 {
@@ -332,13 +406,14 @@ struct InputCounts {
 	unsigned chars = 0;
 	unsigned dropped = 0;
 	unsigned raw = 0;
+	unsigned rawEaten = 0;
 };
 
 inline std::string CountsLine(const InputCounts& c)
 {
 	return "presses=" + std::to_string(c.presses) + " eaten=" + std::to_string(c.eaten) + " wheel=" + std::to_string(c.wheels) +
 		" keys=" + std::to_string(c.keys) + " chars=" + std::to_string(c.chars) + " dropped=" + std::to_string(c.dropped) +
-		" raw=" + std::to_string(c.raw);
+		" raw=" + std::to_string(c.raw) + " rawEaten=" + std::to_string(c.rawEaten);
 }
 
 // Wheel deltas arrive in 120ths. Fine-grained wheels and touchpads send less, so the rest
