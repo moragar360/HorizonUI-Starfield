@@ -99,6 +99,11 @@ package
       // them (mockup 1: 96, 43 and 11 px). HsbBrowser.fitHeight reads them to end the browser
       // 10 px above the hints, as the mockup does (883 and 893).
       internal static const STATS_HEIGHT:Number = 96;
+      // The stats bar's titles and values (v7: larger, both centered in each column). The
+      // value steps down to fit a narrow column, never below STAT_VALUE_MIN.
+      internal static const STAT_TITLE_SIZE:int = 14;
+      internal static const STAT_VALUE_SIZE:int = 24;
+      internal static const STAT_VALUE_MIN:int = 16;
       internal static const HINTS_HEIGHT:Number = 43;
       internal static const BAR_GAP:Number = 11;
       // Panels with a collapsed tab. Hide all folds these to their tabs (mockup 12); Colors and
@@ -2817,7 +2822,7 @@ package
             j = 0;
             while(j < picks.length)
             {
-               var cl:TextField = k.text(12,HsbKit.MUTED,false,1.5);
+               var cl:TextField = k.text(13,HsbKit.MUTED,false,1.5);
                k.putCaps(cl,String(picks[j][0]),String(picks[j][1]));
                k.fit(cl);
                parts.push({"t":cl,"x":x0});
@@ -2861,10 +2866,7 @@ package
          k.card(g,0,0,w,h);
          var cols:int = defs.length + 1;
          var cw:Number = (w - 40) / cols;
-         var wl:TextField = k.text(12,HsbKit.MUTED,false,1.5,"center");
-         k.putCaps(wl,"$WEAPON GROUPS","WEAPON GROUPS");
-         wl.width = cw;
-         b.add(wl,20,16);
+         var wl:TextField = this.statTitle("$WEAPON GROUPS","WEAPON GROUPS",cw);
          var groups:Array = d.aWeaponGroupNames as Array;
          var dmg:Array = d.aWeaponGroupsDmg as Array;
          var wtext:Array = [];
@@ -2876,37 +2878,74 @@ package
             wtext.push(gd != null && Number(gd) > 0 ? HsbKit.num(gd) : gname);
             gi++;
          }
-         var wv:TextField = k.text(13,HsbKit.LABEL,false,0,"center");
+         var wv:TextField = k.text(15,HsbKit.LABEL,true);
          k.put(wv,wtext.length > 0 ? wtext.join(" \u00B7 ") : "\u2014");
-         wv.width = cw;
-         b.add(wv,20,16 + k.u(30));
+         k.fit(wv,cw - 8);
+         // Title and value sit as one block in the middle of the bar, each centered in its column.
+         var vh:Number = this.statValueHeight();
+         var top:Number = Math.round((h - (wl.height + 2 + vh)) / 2);
+         var valY:Number = top + wl.height + 2;
+         b.add(wl,20 + (cw - wl.width) / 2,top);
+         b.add(wv,20 + (cw - wv.width) / 2,valY + (vh - wv.height) / 2);
          var i:int = 0;
          while(i < defs.length)
          {
             var x:Number = 20 + (i + 1) * cw;
             k.vline(g,x,14,h - 28,0x222A30,1);
-            var lab:TextField = k.text(12,HsbKit.MUTED,false,1.5,"center");
-            k.putCaps(lab,String(defs[i][0]),String(defs[i][1]));
-            lab.width = cw;
-            b.add(lab,x,16);
+            var lab:TextField = this.statTitle(String(defs[i][0]),String(defs[i][1]),cw);
+            b.add(lab,x + (cw - lab.width) / 2,top);
             var diff:Number = Number(d[defs[i][2] + "Diff"]);
             var value:Number = Number(d[defs[i][2]]);
-            var val:TextField = k.text(20,HsbKit.TEXT,true);
-            k.put(val,HsbKit.num(preview && diff != 0 ? value - diff : value) + String(defs[i][4]));
-            k.fit(val);
             var chipW:Number = preview && diff != 0 ? k.u(30) + 6 : 0;
+            var val:TextField = this.statValue(HsbKit.num(preview && diff != 0 ? value - diff : value) + String(defs[i][4]),cw - 8 - chipW);
             var vx:Number = x + (cw - val.width - chipW) / 2;
-            b.add(val,vx,16 + k.u(24));
+            b.add(val,vx,valY + (vh - val.height) / 2);
             if(chipW > 0)
             {
                var good2:Boolean = defs[i][3] == true ? diff < 0 : diff > 0;
-               k.diffChip(b,vx + val.width + 4,16 + k.u(24) + (val.height - k.u(20)) / 2,(diff > 0 ? "+" : "-") + HsbKit.num(Math.abs(diff)),good2);
+               k.diffChip(b,vx + val.width + 4,valY + (vh - k.u(20)) / 2,(diff > 0 ? "+" : "-") + HsbKit.num(Math.abs(diff)),good2);
             }
             i++;
          }
          this.collapseButton(b,w - 12 - k.u(22),10,"chevD","stats.close");
          b.boxW = w;
          b.boxH = h;
+      }
+
+      // A stats title, caps, centered by its measured width; cut with an ellipsis if the
+      // column is narrower than the word.
+      private function statTitle(param1:String, param2:String, param3:Number):TextField
+      {
+         var t:TextField = this.kit.text(STAT_TITLE_SIZE,HsbKit.MUTED,false,1.5);
+         this.kit.putCaps(t,param1,param2);
+         this.kit.fit(t,param3 - 6);
+         return t;
+      }
+
+      // A stats value at STAT_VALUE_SIZE, stepped down by 2 until it fits param2.
+      private function statValue(param1:String, param2:Number):TextField
+      {
+         var size:int = STAT_VALUE_SIZE;
+         var t:TextField = this.kit.text(size,HsbKit.TEXT,true);
+         this.kit.put(t,param1);
+         this.kit.fit(t);
+         while(size > STAT_VALUE_MIN && t.width > param2)
+         {
+            size -= 2;
+            t = this.kit.text(size,HsbKit.TEXT,true);
+            this.kit.put(t,param1);
+            this.kit.fit(t);
+         }
+         return t;
+      }
+
+      // The height a full-size value takes, so every column's values share one middle line.
+      private function statValueHeight():Number
+      {
+         var t:TextField = this.kit.text(STAT_VALUE_SIZE,HsbKit.TEXT,true);
+         this.kit.put(t,"0");
+         this.kit.fit(t);
+         return t.height;
       }
 
       // The game's own hint list, with its live key names. A click sends the same event the

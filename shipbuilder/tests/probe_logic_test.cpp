@@ -2682,6 +2682,26 @@ static void CheckV7Makers(const fs::path& root)
 	Expect(Has(FunctionBody(browser, "makerFromLogo", "internal static"), "id == \"Empty\""), "the card's empty logo frame names no maker");
 }
 
+// v7 item 3: the stats bar's titles and values are larger and both centered.
+static void CheckV7Stats(const fs::path& root)
+{
+	const std::string hub = ReadFile(root / "actionscript" / "HorizonShipBuilder.as");
+	Expect(!hub.empty(), "v7 stats source read");
+	Expect(Has(hub, "internal static const STAT_TITLE_SIZE:int = 14;") && Has(hub, "internal static const STAT_VALUE_SIZE:int = 24;") &&
+			Has(hub, "internal static const STAT_VALUE_MIN:int = 16;") && Has(hub, "internal static const STATS_HEIGHT:Number = 96;"),
+		"stats titles 14 px and values 24 px (never below 16) in the same 96 px bar");
+	const std::string stats = FunctionBody(hub, "paintStats");
+	Expect(InOrder(stats, {"var wl:TextField = this.statTitle(\"$WEAPON GROUPS\",\"WEAPON GROUPS\",cw);", "var vh:Number = this.statValueHeight();",
+				   "var top:Number = Math.round((h - (wl.height + 2 + vh)) / 2);", "b.add(wl,20 + (cw - wl.width) / 2,top);",
+				   "var lab:TextField = this.statTitle(String(defs[i][0]),String(defs[i][1]),cw);", "b.add(lab,x + (cw - lab.width) / 2,top);",
+				   "var val:TextField = this.statValue(", "var vx:Number = x + (cw - val.width - chipW) / 2;", "b.add(val,vx,valY + (vh - val.height) / 2);"}) &&
+			!Has(stats, "k.text(12,"),
+		"each title and value is centered in its column, as one block in the middle of the bar, with no 12 px text");
+	Expect(InOrder(FunctionBody(hub, "statValue"), {"var size:int = STAT_VALUE_SIZE;", "while(size > STAT_VALUE_MIN && t.width > param2)", "size -= 2;"}) &&
+			Has(FunctionBody(hub, "statTitle"), "this.kit.fit(t,param3 - 6);"),
+		"a value too wide for a narrow column steps down, and a long title ends in an ellipsis");
+}
+
 int main()
 {
 	CheckGuard();
@@ -2713,6 +2733,7 @@ int main()
 	CheckV7Input(root);
 	CheckV7Pills(root);
 	CheckV7Makers(root);
+	CheckV7Stats(root);
 
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";
