@@ -22279,6 +22279,11 @@
             if(this.hz43ScanHid && HZ46_TXT.indexOf(t.name) >= 0) { try { this.hz46TxtScanHide(); } catch(eT:Error) { } }   // r9 (S-2)
             return;
          }
+         if(this.hz47On && HZ47_NAMES.indexOf(t.name) >= 0)   // r9b: a new alert icon / flash instance while they are hidden
+         {
+            try { this.hz47Sync(true); } catch(e47a:Error) { }
+            return;
+         }
          try
          {
             var m:int = this.hz45Mode();
@@ -22430,6 +22435,7 @@
       private function hz45Sync() : void
       {
          if(!this.hzBlg) { return; }
+         try { this.hz47Sync(false); } catch(e47:Error) { }   // r9b: the alert icons / flash on a moved vanilla watch
          var mode:int = this.hz45Mode();
          var want:Boolean = (mode != 0 && !this.hz44Hid) || this.hz43FoMoved;   // r9: no listener under the whole-group hide
          try
@@ -22476,6 +22482,7 @@
       {
          try { this.hz45EnvHide(); } catch(eH:Error) { }
          try { this.hz46HoldW3(); } catch(eW3:Error) { }   // r9: the HideWatchWhileScanning hold (1 / 2) re-hides what the game re-showed
+         if(this.hz47On) { try { this.hz47Sync(true); } catch(e47e:Error) { } }   // r9b: re-hide if anything showed them again
          try { this.hz45Sync(); } catch(eS:Error) { }
          if(this.hzWlOn) { try { this.hz45WlBlg("env"); } catch(eW:Error) { } }
       }
@@ -22712,6 +22719,67 @@
             {
                d.visible = false;
                if(this.hz43ScanMk.indexOf(d) < 0) { this.hz43ScanMk.push(d); }
+            }
+            i++;
+         }
+      }
+      // ---- v0.44 r9b (user decision 2026-11-10 23:54): the alert icons and the bio flash on a moved vanilla watch ----
+      // BioCondition_mc, EnvCondition_mc and BioAlertBG_mc are multi-frame alert pieces with timeline alpha keys (BLG
+      // layers 7 / 10 / 9), so they cannot follow the watch (a script move freezes their fade, MF-1). In WatchStyle 1 / 2,
+      // while the vanilla watch is off its home place (hz43FoMoved), they are hidden instead, by visible only (never alpha:
+      // the timeline owns it, and writing it back would itself freeze the fade). Recorded the way the HideWatchWhileScanning
+      // hold records: only an instance this hide set from visible to hidden (so its prior value was true); the restore
+      // sets visible back only on those, and only if still hidden. A piece already hidden by someone else stays theirs,
+      // except one hz27BioHide hid (styles 0 / 3 / 4): that one is taken over (its record cleared there), so hz27's own
+      // release cannot show it on the moved watch. Restored when the watch goes home, the style leaves 1 / 2, or the HUD
+      // is rebuilt (the old group's records are given back, the new group is applied). While the hold is on, a watch that
+      // goes home keeps them hidden until the scan closes (the hold's release calls hz45Sync); the scan close itself never
+      // shows them (they are not in hz43ScanMk: hz43ScanPiece refuses Bio* / Env*).
+      // Events only: hz45Sync (Arrange via hz43FollowApply, scan / hold edges, style edge, HUD rebuild, group hide edges,
+      // late LocalEnvironmentData), a new instance's ADDED event and the late listener (force). An unchanged state returns
+      // after two compares. Three direct getChildByName lookups on a change, no search, no allocation.
+      // Author: Moragar. Last modified: 2026-11-10.
+      private static const HZ47_NAMES:Array = ["BioCondition_mc","EnvCondition_mc","BioAlertBG_mc"];
+      private var hz47D:Array = [null,null,null];   // per HZ47_NAMES: the instance this hide set to false
+      private var hz47On:Boolean = false;
+      private var hz47B:Object = null;              // the group the records belong to
+      private function hz47Sync(force:Boolean) : void
+      {
+         var van:Boolean = this.hzWatchStyle == 1 || this.hzWatchStyle == 2;
+         var want:Boolean = this.hzBlg != null && van && (this.hz43FoMoved || (this.hz43ScanHid && this.hz47On));
+         if(want == this.hz47On && this.hz47B === this.hzBlg && !force) { return; }
+         var i:int = 0;
+         var d:DisplayObject;
+         if(this.hz47On && (!want || this.hz47B !== this.hzBlg))
+         {
+            while(i < HZ47_NAMES.length)
+            {
+               d = this.hz47D[i] as DisplayObject;
+               if(d && !d.visible) { d.visible = true; }   // its value before this hide
+               this.hz47D[i] = null;
+               i++;
+            }
+            this.hz47On = false;
+         }
+         this.hz47B = this.hzBlg;
+         if(!want) { return; }
+         this.hz47On = true;
+         i = 0;
+         while(i < HZ47_NAMES.length)
+         {
+            d = this.hzBlg.getChildByName(String(HZ47_NAMES[i]));
+            if(d)
+            {
+               if(d.visible)
+               {
+                  d.visible = false;
+                  this.hz47D[i] = d;
+               }
+               else if(d !== this.hz47D[i] && this.hz27BioMine)
+               {
+                  var k:int = this.hz27BioMine.indexOf(d);
+                  if(k >= 0) { this.hz27BioMine[k] = null; this.hz47D[i] = d; }   // hz27's hide handed over (it was visible)
+               }
             }
             i++;
          }
