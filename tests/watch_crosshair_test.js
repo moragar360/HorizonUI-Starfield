@@ -1363,6 +1363,8 @@ expect(writeScale.outlineClip.scaleX === 0.8 && writeScale.capClip.alpha === 0, 
 	const iniHw = ini.indexOf("\nHideWatchWhileScanning=0\n"), iniSec = ini.indexOf("\n[Scanner]\n"), iniNext = ini.indexOf("\n[", iniSec + 2);
 	expect(iniHw > iniSec && iniHw < iniNext, "HideWatchWhileScanning=0 is in default.ini under [Scanner]");
 	expect(CM.HideWatchWhileScanning.every((l) => ini.indexOf("; " + l + "\n") >= 0), "default.ini comment equals the writer's comment");
+	const hwText = CM.HideWatchWhileScanning.join(" ");
+	expect(/With all three off, only the watch pieces and the env \/ bio alert text hide \(/.test(hwText) && /\); the alert icons and the enemy ring still show\. 0 = shown \(default\)$/.test(hwText) && !/the alerts and enemy ring still show/.test(hwText), "r9f: HideWatchWhileScanning comment: with no Horizon enemy cue the env / bio alert text hides too (hz46TxtScanHide); only the alert icons and the enemy ring still show");
 	expect(ini.indexOf("ScanVitalsLayout=0\n; 1 = the watch hides") >= 0 && ini.indexOf("HideWatchWhileScanning=0\n; ---- scanner popups") >= 0, "default.ini order matches HZ40_SCAN_KEYS");
 	expect(funcBody(as, "hz40ScanIniLines").indexOf("for each(var d:Array in HZ40_SCAN_KEYS)") >= 0 && funcBody(as, "hz40ParseIni").indexOf("this.hz40Def(k)") >= 0 && funcBody(as, "hz40Reset").indexOf("HZ40_SCAN_KEYS") >= 0,
 		"HideWatchWhileScanning is saved, loaded and reset by the generic [Scanner] key list (user.ini, presets, RESET ALL)");
@@ -1372,7 +1374,7 @@ expect(writeScale.outlineClip.scaleX === 0.8 && writeScale.capClip.alpha === 0, 
 	bindAsMethod(tr, "hz41TopRows", []);
 	let rows = tr.hz41TopRows();
 	const hr = rows[rows.length - 1];
-	expect(hr.k === "HideWatchWhileScanning" && hr.t === "b" && hr.l === "HIDE WATCH WHILE SCANNING" && !hr.dis && !hr.sub && /Any watch style/.test(hr.note) && /ENEMY HEALTH BAR, STEALTH METER or EDGE PULSE on, the whole watch corner hides, alerts and enemy ring too; else alerts stay/.test(hr.note), "F11 SCANNER: HIDE WATCH WHILE SCANNING row (own switch; r9e note: every watch style; with a Horizon enemy cue the whole corner hides, alerts and ring too; else alerts stay)");
+	expect(hr.k === "HideWatchWhileScanning" && hr.t === "b" && hr.l === "HIDE WATCH WHILE SCANNING" && !hr.dis && !hr.sub && /Any watch style/.test(hr.note) && /ENEMY HEALTH BAR, STEALTH METER or EDGE PULSE on, the whole watch corner hides, alerts and enemy ring too; else the alert icons and enemy ring stay"?$/.test(hr.note) && !/else alerts stay/.test(hr.note), "F11 SCANNER: HIDE WATCH WHILE SCANNING row (own switch; r9f note: every watch style; with a Horizon enemy cue the whole corner hides, alerts and ring too; else the alert icons and enemy ring stay, the alert text hides with the watch)");
 	tr.v.HideMainHudWhileScanning = 0;
 	rows = tr.hz41TopRows();
 	expect(!rows[rows.length - 1].dis && rows[2].dis === true, "F11 SCANNER: the row stays live when HIDE HORIZON HUD WHILE SCANNING is off (the kept-vitals rows lock as before)");
