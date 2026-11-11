@@ -15389,9 +15389,13 @@
       // Purpose: while the hand scanner is open, give WatchStyle 1-4 the same whole-group hide as WatchStyle 0: the very
       // same hz44GrpTick path (alpha 0, mouse flags off, the HudModeData / HUDOpacityData re-hides, the frame-tick release
       // with the game's alpha and mouse flags back). hz49Grp is the only new input to it, read in hz44GrpWant.
-      // When (HZ49_SCAN_GRP, the one-line switch): 0 = off (r9c: per-piece only); 1 (shipped) = the watch is moved (any
-      // HideWatchWhileScanning), or at home with HideWatchWhileScanning=1; 2 = only with HideWatchWhileScanning=1;
-      // 3 = every scan with a watch on. Always also: scanner open and not latched, not in ARRANGE, BlgGroupHide not 0, the
+      // When (HZ49_SCAN_GRP, the one-line switch): 0 = off (r9c: per-piece only); 1 = the watch is moved (any
+      // HideWatchWhileScanning), or at home with HideWatchWhileScanning=1; 2 (shipped, r9d2) = only with
+      // HideWatchWhileScanning=1, at home or moved; 3 = every scan with a watch on.
+      // r9d2 user picks (2026-11-11 10:08 AM): "Moved watch: hide only when Hide Watch While Scanning is on" and
+      // "Home watch, option off: keep showing the vanilla watch during scans". The vanilla enemy ring and alerts go with
+      // the group during such a scan while a Horizon enemy cue is on (covered by the user's approval of the whole
+      // BottomLeftGroup hide). Always also: scanner open and not latched, not in ARRANGE, BlgGroupHide not 0, the
       // player has not hidden Horizon, and (HZ49_NEED_ENEMY) a Horizon enemy cue stands in for the vanilla enemy ring
       // EnemyDetectionAnim_mc, as in the WatchStyle 0 hide. HideWatchWhileScanning counts only with the Scanner module,
       // as in hz43ScanWant (r7 S-5).
@@ -15406,7 +15410,7 @@
       // edge gate), the hz40Clear safety nets, INI load, F11 apply and ARRANGE enter / exit. Nothing per frame but the one
       // Boolean read in hz44GrpWant; no search, no timer, no allocation.
       // Author: Moragar. Last modified: 2026-11-11.
-      private static const HZ49_SCAN_GRP:int = 1;
+      private static const HZ49_SCAN_GRP:int = 2;   // r9d2: HideWatchWhileScanning only (user 10:08 AM)
       private static const HZ49_NEED_ENEMY:Boolean = true;
       private var hz49Grp:Boolean = false;    // the scan hide is wanted (set / cleared on the edges only)
       private var hz49Held:Boolean = false;   // the current group hide was made by the scan hide (no list rebuild on its edges)
