@@ -21866,7 +21866,10 @@
          if(!this.hzBlg || this.hz43VanP == null) { return; }
          if(this.hz43VanCap != 0)
          {
-            if(this.hz43VanWrote) { return; }
+            // r8: also while the markers are moved (Horizon faces 3 / 4). The scan edge adds planet-info art, so the child
+            // count changes; a recapture then read the moved marker places as their native places (the next face move
+            // added its offset twice, and a later write(0,0,1) left them off the vanilla dial).
+            if(this.hz43VanWrote || this.hz43MarkMoved) { return; }
             if(this.hz43VanNeed == 0 && this.hzBlg.numChildren == this.hz43VanKids) { return; }
          }
          this.hz43VanN = 0;
