@@ -30,10 +30,28 @@ package
       private static const COL_GAP:Number = 10;
       // Maker rows are taller than part rows in the compact list (41 against 37 in mockup 1).
       private static const GROUP_EXTRA:Number = 4;
-      // Mockup 1 gaps under the tab row, the pager and the title row.
-      private static const TAB_ROW_GAP:Number = 16;
-      private static const PAGER_GAP:Number = 20;
+      // Gap under the title row (mockup 1).
       private static const TITLE_ROW_GAP:Number = 14;
+      // v7 category carousel (the approved slim design): three tiles half the mockup's height,
+      // icon left of the label, then the row with Q / T, the page dots, "Category X of N" and
+      // the grid button.
+      internal static const TILE_H:Number = 30;
+      internal static const TILE_GAP:Number = 8;
+      internal static const CAROUSEL_GAP:Number = 6;
+      internal static const NAV_H:Number = 20;
+      internal static const NAV_GAP:Number = 8;
+      internal static const MAX_DOTS:int = 20;
+      // The design's teal for the active category (a fill at low alpha and a fine edge).
+      internal static const CAT_TEAL:uint = 0x4FD1BE;
+      internal static const TEAL_FILL_ALPHA:Number = 0.14;
+      // ALL CATEGORIES overlay: four small tiles to a row. Above GRID_MAX categories (added
+      // by mods) one tile stands for each base category; at most GRID_TILES_MAX tiles.
+      internal static const GRID_HEAD_H:Number = 26;
+      internal static const GRID_TILE_H:Number = 48;
+      internal static const GRID_GAP:Number = 6;
+      internal static const GRID_COLS:int = 4;
+      internal static const GRID_MAX:int = 16;
+      internal static const GRID_TILES_MAX:int = 24;
       private static const PILL_ON:int = 0;
       private static const PILL_OFF:int = 1;
       private static const PILL_BUTTON:int = 2;
@@ -1265,17 +1283,39 @@ package
 
       private function gridKey(param1:String):Boolean
       {
-         var keys:Array = this.catKeys();
+         var keys:Array = this.gridIndexes();
          if(keys.length == 0) { return false; }
-         if(this.gridFocus < 0) { this.gridFocus = keys.indexOf(this.catIndex); }
-         if(param1 == "left" || param1 == "up") { this.gridFocus = Math.max(0,this.gridFocus - 1); this.invalidate(); return true; }
-         if(param1 == "right" || param1 == "down") { this.gridFocus = Math.min(keys.length - 1,this.gridFocus + 1); this.invalidate(); return true; }
+         if(this.gridFocus < 0) { this.gridFocus = Math.max(0,this.gridActive()); }
+         var step:int = 0;
+         if(param1 == "left" || param1 == "tabprev") { step = -1; }
+         else if(param1 == "right" || param1 == "tab") { step = 1; }
+         else if(param1 == "up") { step = -GRID_COLS; }
+         else if(param1 == "down") { step = GRID_COLS; }
+         if(step != 0)
+         {
+            this.gridFocus = HorizonShipBuilder.clampInt(this.gridFocus + step,0,keys.length - 1);
+            this.invalidate();
+            return true;
+         }
          if(param1 == "ok" && this.gridFocus >= 0)
          {
             if(this.discover == null) { this.pick(int(keys[this.gridFocus])); }
             return true;
          }
          return false;
+      }
+
+      // The tile of the open category, -1 when the ring has not shown it yet.
+      private function gridActive():int
+      {
+         var tiles:Array = this.gridTiles();
+         var i:int = 0;
+         while(i < tiles.length)
+         {
+            if(tiles[i].active == true) { return i; }
+            i++;
+         }
+         return -1;
       }
 
       private function afterFilter():void
@@ -1383,7 +1423,9 @@ package
          this.goCategory(param1);
          this.grid = false;
          this.gridFocus = -1;
-         this.invalidate();
+         this.makerChip = "";
+         // Back to the parts list in its own grouping (the overlay showed no rows).
+         this.afterFilter();
       }
 
       // Purpose: switch the list to Flight Check's read-only view (mockup 13) or back.
@@ -1743,11 +1785,13 @@ package
          var footH:Number = k.u(30);
          this.listTop = y;
          this.listH = h - y - footH - 8;
-         if(this.grid || this.readOnly) { this.paintSimpleList(w,LIST_PAD,y); }
-         else { this.paintList(w,LIST_PAD,y); }
+         // The ALL CATEGORIES overlay stands in for the list until a tile is picked.
+         if(!this.grid && this.readOnly) { this.paintSimpleList(w,LIST_PAD,y); }
+         else if(!this.grid) { this.paintList(w,LIST_PAD,y); }
          var foot:TextField = k.text(13,HsbKit.MUTED);
          var footText:String = "Group rows show ranges \u00B7 open one for single values";
-         if(this.unchecked > 0 && !this.readOnly) { footText = this.unchecked + " parts not checked yet \u00B7 preview a part to check it"; }
+         if(this.grid) { footText = "The parts list returns when you pick a category"; }
+         else if(this.unchecked > 0 && !this.readOnly) { footText = this.unchecked + " parts not checked yet \u00B7 preview a part to check it"; }
          else if(this.grid || this.readOnly || !this.hsb.byMaker) { footText = this.shownCount() + " of " + this.rows.length + " shown" + (this.flat.length > this.perPage() ? " \u00B7 scroll for more" : ""); }
          k.put(foot,footText);
          k.fit(foot,w - pad * 2);
@@ -1870,7 +1914,71 @@ package
       private function stripTopHeight():Number
       {
          var k:HsbKit = this.kit;
-         return this.upgrade ? 0 : k.u(24) + TAB_ROW_GAP + PAGER_GAP;
+         return this.upgrade ? 0 : k.u(TILE_H) + CAROUSEL_GAP + k.u(NAV_H) + NAV_GAP;
+      }
+
+      // "Category X of N" (N once the ring was read; mods can add categories), else "Category X".
+      internal function catLabel():String
+      {
+         var at:int = this.catIndex + 1;
+         if(this.catTotal > 0) { return "Category " + Math.min(at,this.catTotal) + " of " + this.catTotal; }
+         return at > 0 ? "Category " + at : "Category";
+      }
+
+      // Page dots between param1 and param2, centered on param3: one per category (or MAX_DOTS
+      // standing for them all), the current one a wide teal bar.
+      private function paintDots(param1:Number, param2:Number, param3:Number):void
+      {
+         var k:HsbKit = this.kit;
+         var g:Graphics = this.gfx;
+         var total:int = this.catTotal > 0 ? this.catTotal : 14;
+         var n:int = Math.min(total,MAX_DOTS);
+         var at:int = this.catIndex < 0 ? -1 : Math.min(n - 1,int(Math.floor(this.catIndex * n / total)));
+         var dot:Number = 5;
+         var wide:Number = 16;
+         var gap:Number = 4;
+         var room:Number = param2 - param1;
+         var need:Number = (n - 1) * (dot + gap) + wide;
+         if(need > room && n > 1) { gap = Math.max(1,(room - wide - (n - 1) * dot) / (n - 1)); need = (n - 1) * (dot + gap) + wide; }
+         var x:Number = param1 + Math.max(0,(room - need) / 2);
+         var i:int = 0;
+         while(i < n)
+         {
+            var w:Number = i == at ? wide : dot;
+            k.fill(g,x,param3 - dot / 2,w,dot,dot / 2,i == at ? CAT_TEAL : 0x3A4248,1);
+            x += w + gap;
+            i++;
+         }
+      }
+
+      // One category tile: icon left of the label in one row, centered; the current category
+      // has the design's subtle teal fill and edge. An empty name draws a dash and no hit.
+      private function catTile(param1:Number, param2:Number, param3:Number, param4:Number, param5:String, param6:Boolean, param7:Boolean, param8:String, param9:*):void
+      {
+         var k:HsbKit = this.kit;
+         var g:Graphics = this.gfx;
+         var empty:Boolean = param5 == null || param5.length == 0;
+         if(param6)
+         {
+            k.fill(g,param1,param2,param3,param4,8,CAT_TEAL,TEAL_FILL_ALPHA);
+            k.outline(g,param1,param2,param3,param4,8,CAT_TEAL,0.8);
+         }
+         else
+         {
+            k.fill(g,param1,param2,param3,param4,8,0x1A2128,1);
+            k.outline(g,param1,param2,param3,param4,8,HsbKit.EDGE_HI,1);
+         }
+         var ink:uint = param6 ? HsbKit.TEXT : (empty ? HsbKit.DIM : HsbKit.LABEL);
+         var iconS:Number = 16;
+         var tab:TextField = k.text(13,ink,param6,1);
+         k.retag(tab,"tab");
+         k.put(tab,empty ? "\u2014" : param5.toUpperCase());
+         k.fit(tab,param3 - iconS - 22);
+         var gw:Number = (empty ? 0 : iconS + 6) + tab.width;
+         var gx:Number = param1 + (param3 - gw) / 2;
+         if(!empty) { k.icon(g,this.catIcon(param5),gx,param2 + (param4 - iconS) / 2,iconS,param6 ? CAT_TEAL : ink,1); }
+         this.add(tab,gx + (empty ? 0 : iconS + 6),param2 + (param4 - tab.height) / 2);
+         if(param7 && !empty) { this.hit(param1,param2,param3,param4,param8,param9); }
       }
 
       // Mockup 1, top rows: LB, previous / current / next, RB; pager; title and find.
@@ -1881,7 +1989,6 @@ package
          var g:Graphics = this.gfx;
          var y:Number = param3;
          var d:Object = this.data != null ? this.data : {};
-         var capH:Number = k.u(24);
          // Flight Check takes the category keys while it is open (they switch its tabs), so the
          // read-only list shows its categories without live keys or hits.
          var live:Boolean = !this.readOnly;
@@ -1890,43 +1997,44 @@ package
          {
             var lb:String = this.hsb.keyName("PrevCategory");
             var rb:String = this.hsb.keyName("NextCategory");
-            k.keycap(this,param2,y,lb.length > 0 ? lb : "LB",capInk,capH);
-            var rbw:Number = Math.max(capH,k.u(28));
-            k.keycap(this,param1 - param2 - rbw,y,rb.length > 0 ? rb : "RB",capInk,capH);
-            if(live)
-            {
-               this.hit(param2 - 4,y - 4,capH + 12,capH + 8,"tab",-1);
-               this.hit(param1 - param2 - rbw - 4,y - 4,rbw + 8,capH + 8,"tab",1);
-            }
+            // Carousel: previous, current and next category; a press on a side tile steps there.
             var names:Array = [this.cleanText(d.sPrevCategoryName),this.tabName,this.cleanText(d.sNextCategoryName)];
-            var tx:Number = param2 + capH + 18;
+            var tileH:Number = k.u(TILE_H);
+            var tileW:Number = (param1 - param2 * 2 - TILE_GAP * 2) / 3;
             var t:int = 0;
             while(t < 3)
             {
-               var tab:TextField = k.text(14,t == 1 ? k.accent : HsbKit.LABEL,t == 1,2);
-               k.retag(tab,"tab");
-               k.put(tab,String(names[t]).toUpperCase());
-               k.fit(tab,(param1 - param2 * 2 - capH * 2 - 40) / 3);
-               this.add(tab,tx,y + (capH - tab.height) / 2);
-               // The underline spans the letters only: the field has a 2 px gutter and the last
-               // letter carries its spacing.
-               if(t == 1) { k.fill(g,tx + 2,y + capH + 1,Math.min(tab.width - 4,tab.textWidth - 2),2,0,k.accent,1); }
-               if(live) { this.hit(tx - 4,y - 4,tab.width + 8,capH + 8,"tab",t - 1); }
-               tx += tab.width + 18;
+               this.catTile(param2 + t * (tileW + TILE_GAP),y,tileW,tileH,String(names[t]),t == 1,live && t != 1,"tab",t - 1);
                t++;
             }
-            y += capH + TAB_ROW_GAP;
-            var segs:int = this.catTotal > 0 ? this.catTotal : 14;
-            var segGap:Number = 6;
-            var segW:Number = (param1 - param2 * 2 - (segs - 1) * segGap) / segs;
-            var s:int = 0;
-            while(s < segs)
-            {
-               var active:Boolean = s == Math.min(segs - 1,this.catIndex);
-               k.fill(g,param2 + s * (segW + segGap),y,segW,3,1.5,active ? k.accent : 0x343B41,1);
-               s++;
-            }
-            y += PAGER_GAP;
+            y += tileH + CAROUSEL_GAP;
+            var navH:Number = k.u(NAV_H);
+            var qT:TextField = k.text(13,capInk,true);
+            k.put(qT,lb.length > 0 ? lb : "LB");
+            k.fit(qT);
+            k.icon(g,"chevL",param2,y + (navH - 12) / 2,12,capInk,1);
+            this.add(qT,param2 + 14,y + (navH - qT.height) / 2);
+            if(live) { this.hit(param2 - 4,y - 2,14 + qT.width + 8,navH + 4,"tab",-1); }
+            var gb:Number = navH;
+            var gx:Number = param1 - param2 - gb;
+            k.fill(g,gx,y,gb,gb,5,0x1A2128,1);
+            k.outline(g,gx,y,gb,gb,5,HsbKit.EDGE_HI,1);
+            k.icon(g,"grid4",gx + 3,y + 3,gb - 6,capInk,1);
+            if(live) { this.hit(gx - 3,y - 2,gb + 6,navH + 4,"grid"); }
+            var tT:TextField = k.text(13,capInk,true);
+            k.put(tT,rb.length > 0 ? rb : "RB");
+            k.fit(tT);
+            var tx:Number = gx - 10 - 14 - tT.width;
+            this.add(tT,tx,y + (navH - tT.height) / 2);
+            k.icon(g,"chevR",tx + tT.width,y + (navH - 12) / 2,12,capInk,1);
+            if(live) { this.hit(tx - 4,y - 2,tT.width + 14 + 8,navH + 4,"tab",1); }
+            var cl:TextField = k.text(13,HsbKit.MUTED);
+            k.put(cl,this.catLabel());
+            k.fit(cl);
+            var clx:Number = tx - 12 - cl.width;
+            this.add(cl,clx,y + (navH - cl.height) / 2);
+            this.paintDots(param2 + 14 + qT.width + 12,clx - 12,y + navH / 2);
+            y += navH + NAV_GAP;
          }
          var title:TextField = k.text(20,HsbKit.TEXT,true,3);
          k.put(title,this.tabName.toUpperCase());
@@ -2533,156 +2641,133 @@ package
          return out;
       }
 
+      // Purpose: the tiles of the ALL CATEGORIES overlay, in ring order.
+      // Rules: one tile per category the ring has shown; with more than GRID_MAX (categories
+      //    added by mods, named "Base (Type)" or "Base [Maker]") one tile per base category,
+      //    which opens the first of them. At most GRID_TILES_MAX, so the overlay never scrolls.
+      // Outputs: [{name, index, count, locked, active}].
+      internal function gridTiles():Array
+      {
+         var keys:Array = this.catKeys();
+         var out:Array = [];
+         var group:Boolean = keys.length > GRID_MAX;
+         var byBase:Object = {};
+         var hereBase:String = baseCategory(this.tabName).toLowerCase();
+         var i:int = 0;
+         while(i < keys.length && out.length < GRID_TILES_MAX)
+         {
+            var cat:Object = this.cats[keys[i]];
+            var name:String = String(cat.name);
+            if(group)
+            {
+               var base:String = baseCategory(name);
+               var bk:String = "b:" + base.toLowerCase();
+               var have:Object = byBase[bk];
+               if(have != null)
+               {
+                  if(int(cat.count) > 0) { have.count = Math.max(0,int(have.count)) + int(cat.count); }
+                  i++;
+                  continue;
+               }
+               have = {"name":base,"index":int(keys[i]),"count":int(cat.count),"locked":cat.locked,"active":base.toLowerCase() == hereBase};
+               byBase[bk] = have;
+               out.push(have);
+            }
+            else { out.push({"name":name,"index":int(keys[i]),"count":int(cat.count),"locked":cat.locked,"active":int(keys[i]) == this.catIndex}); }
+            i++;
+         }
+         return out;
+      }
+
+      // The ring index each tile opens, for keyboard and controller focus.
+      private function gridIndexes():Array
+      {
+         var tiles:Array = this.gridTiles();
+         var out:Array = [];
+         var i:int = 0;
+         while(i < tiles.length) { out.push(int(tiles[i].index)); i++; }
+         return out;
+      }
+
+      // Purpose: the ALL CATEGORIES overlay inside the browser (v7, the approved slim design):
+      //    a header with the count and the grid button, then small icon tiles, four to a row,
+      //    all on screen at once. A tile opens its category and returns to the parts list.
       private function paintGridTop(param1:Number, param2:Number, param3:Number):Number
       {
          var k:HsbKit = this.kit;
          var g:Graphics = this.gfx;
          var y:Number = param3;
-         var capH:Number = k.u(24);
-         var lb:String = this.hsb.keyName("PrevCategory");
-         var rb:String = this.hsb.keyName("NextCategory");
-         k.keycap(this,param2,y,lb.length > 0 ? lb : "LB",HsbKit.LABEL,capH);
-         var rbw:Number = Math.max(capH,k.u(28));
-         k.keycap(this,param1 - param2 - rbw,y,rb.length > 0 ? rb : "RB",HsbKit.LABEL,capH);
-         this.hit(param2 - 4,y - 4,capH + 12,capH + 8,"tab",-1);
-         this.hit(param1 - param2 - rbw - 4,y - 4,rbw + 8,capH + 8,"tab",1);
-         var title:TextField = k.text(14,k.accent,true,2);
-         k.put(title,"CATEGORIES");
+         var headH:Number = k.u(GRID_HEAD_H);
+         var title:TextField = k.text(14,HsbKit.TEXT,true,1.5);
+         k.put(title,"ALL CATEGORIES");
          k.fit(title);
-         this.add(title,param2 + capH + 18,y + (capH - title.height) / 2);
-         this.hit(param2 + capH + 14,y - 4,title.width + 8,capH + 8,"grid");
-         var keys:Array = this.catKeys();
-         var count:TextField = k.text(14,HsbKit.LABEL);
-         k.put(count,this.discover != null ? "reading tabs\u2026 " + keys.length : String(this.catTotal > 0 ? this.catTotal : keys.length));
+         this.add(title,param2,y + (headH - title.height) / 2);
+         var gb:Number = k.u(NAV_H);
+         var gx:Number = param1 - param2 - gb;
+         var gy:Number = y + (headH - gb) / 2;
+         k.fill(g,gx,gy,gb,gb,5,CAT_TEAL,TEAL_FILL_ALPHA);
+         k.outline(g,gx,gy,gb,gb,5,CAT_TEAL,0.8);
+         k.icon(g,"grid4",gx + 3,gy + 3,gb - 6,CAT_TEAL,1);
+         this.hit(gx - 3,y,gb + 6,headH,"grid");
+         var tiles:Array = this.gridTiles();
+         var count:TextField = k.text(13,HsbKit.MUTED);
+         k.put(count,this.discover != null ? "reading categories\u2026 " + tiles.length : (this.catTotal > 0 ? this.catTotal : tiles.length) + " categories");
          k.fit(count);
-         this.add(count,param2 + capH + 18 + title.width + 8,y + (capH - count.height) / 2);
-         y += capH + 26;
-         this.findBox(param2,y,param1 - param2 * 2,k.u(32),"Find parts");
-         y += k.u(32) + 18;
-         var x:Number = param2;
-         // Mockup 4 chip: 30 high, icon, name, count; three to a row at the normal size.
-         var chipH:Number = k.u(31);
+         this.add(count,gx - 10 - count.width,y + (headH - count.height) / 2);
+         y += headH + 10;
+         var tileH:Number = k.u(GRID_TILE_H);
+         var tileW:Number = (param1 - param2 * 2 - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS;
          var i:int = 0;
-         while(i < keys.length)
+         while(i < tiles.length)
          {
-            var cat:Object = this.cats[keys[i]];
-            var name:String = String(cat.name).toUpperCase();
-            var t:TextField = k.text(13,HsbKit.TEXT,true,1);
-            k.put(t,name);
-            k.fit(t);
-            var n:TextField = k.text(12,HsbKit.LABEL,true);
-            k.put(n,int(cat.count) >= 0 ? String(cat.count) : "\u00B7");
-            k.fit(n);
-            var nw:Number = Math.max(k.u(28),n.textWidth + 14);
-            // Locked parts (sent by the game as unavailable): a lock and "+N" after the count, as
-            // in the categories mockup; known once the category has been read.
-            var lockN:int = cat.locked != null ? int(cat.locked) : -1;
-            var lt:TextField = null;
-            var lockW:Number = 0;
-            if(lockN > 0)
-            {
-               lt = k.text(13,HsbKit.LABEL,true);
-               k.put(lt,"+" + lockN);
-               k.fit(lt);
-               lockW = 6 + 14 + 2 + lt.textWidth + 4;
-            }
-            var cw:Number = 38 + t.textWidth + 10 + nw + lockW + 6;
-            if(x + cw > param1 - param2) { x = param2; y += chipH + 11; }
-            var active:Boolean = int(keys[i]) == this.catIndex;
+            var cat:Object = tiles[i];
+            var tx:Number = param2 + (i % GRID_COLS) * (tileW + GRID_GAP);
+            var ty:Number = y + int(i / GRID_COLS) * (tileH + GRID_GAP);
+            var active:Boolean = cat.active == true;
             var empty:Boolean = int(cat.count) == 0;
             var focus:Boolean = i == this.gridFocus;
-            if(active) { k.fill(g,x,y,cw,chipH,chipH / 2,k.accent,1); }
-            else { k.fill(g,x,y,cw,chipH,chipH / 2,0x161C22,empty ? 0.6 : 1); k.outline(g,x,y,cw,chipH,chipH / 2,focus ? HsbKit.TEXT : HsbKit.EDGE_HI,1,focus ? 2 : 1); }
-            var ink:uint = active ? HsbKit.INK_ON_ACCENT : (empty ? HsbKit.DIM : HsbKit.TEXT);
-            k.icon(g,this.catIcon(String(cat.name)),x + 10,y + (chipH - 18) / 2,18,ink,1);
-            k.put(t,name,ink);
-            this.add(t,x + 36,y + (chipH - t.height) / 2);
-            var nx:Number = x + 38 + t.textWidth + 10;
-            // On the accent chip the count sits on a dark chip in light ink, as in mockup 4.
-            k.fill(g,nx,y + (chipH - k.u(18)) / 2,nw,k.u(18),5,active ? HsbKit.INK_ON_ACCENT : 0x262D33,active ? 0.85 : 1);
-            k.put(n,n.text,active ? HsbKit.TEXT : HsbKit.LABEL);
-            this.add(n,nx + (nw - n.width) / 2,y + (chipH - n.height) / 2);
-            if(lt != null)
+            if(active)
             {
-               var lx:Number = nx + nw + 6;
-               var lockInk:uint = active ? HsbKit.INK_ON_ACCENT : HsbKit.LABEL;
-               k.put(lt,lt.text,lockInk);
-               this.add(lt,lx + 14 + 2 - 2,y + (chipH - lt.height) / 2);
+               k.fill(g,tx,ty,tileW,tileH,8,CAT_TEAL,TEAL_FILL_ALPHA);
+               k.outline(g,tx,ty,tileW,tileH,8,CAT_TEAL,0.8);
+            }
+            else
+            {
+               k.fill(g,tx,ty,tileW,tileH,8,0x1A2128,empty ? 0.6 : 1);
+               k.outline(g,tx,ty,tileW,tileH,8,focus ? HsbKit.TEXT : HsbKit.EDGE_HI,1,focus ? 2 : 1);
+            }
+            var ink:uint = active ? HsbKit.TEXT : (empty ? HsbKit.DIM : HsbKit.LABEL);
+            var iconS:Number = 18;
+            k.icon(g,this.catIcon(String(cat.name)),tx + (tileW - iconS) / 2,ty + 5,iconS,active ? CAT_TEAL : ink,1);
+            var t:TextField = k.text(13,ink,active,0.5);
+            k.put(t,String(cat.name));
+            k.fit(t,tileW - 8);
+            this.add(t,tx + (tileW - t.width) / 2,ty + tileH - t.height - 2);
+            // Parts the game sends as unavailable: a lock and "+N" in the tile's corner.
+            var lockN:int = cat.locked != null ? int(cat.locked) : -1;
+            if(lockN > 0)
+            {
+               var lt:TextField = k.text(13,HsbKit.LABEL,true);
+               k.put(lt,"+" + lockN);
+               k.fit(lt);
+               var lockInk:uint = active ? HsbKit.TEXT : HsbKit.LABEL;
+               var lx:Number = tx + tileW - 4 - lt.width - 12;
+               this.add(lt,lx + 12,ty + 2);
                k.icon(g,"lock",lx,k.iconY(lt,14),14,lockInk,1);
             }
-            if(!empty) { this.hit(x,y,cw,chipH,"cat",int(keys[i])); }
-            x += cw + 8;
+            if(!empty) { this.hit(tx,ty,tileW,tileH,"cat",int(cat.index)); }
             i++;
          }
-         y += chipH + 19;
-         k.hline(g,param2,y,param1 - param2 * 2);
-         y += 10;
-         var ml:TextField = k.text(13,HsbKit.LABEL,false,1.5);
-         k.put(ml,"MAKER");
-         k.fit(ml);
-         this.add(ml,param2,y + (k.u(28) - ml.height) / 2);
-         var mx:Number = param2 + ml.width + 12;
-         var makers:Array = ["All"].concat(this.makerNames());
-         var right:Number = param1 - param2;
-         var moreW:Number = k.u(48);
-         this.makerRest = [];
-         var m:int = 0;
-         while(m < makers.length)
-         {
-            var mname:String = String(makers[m]);
-            var cnt:int = mname == "All" ? this.rows.length : this.countMaker(mname);
-            var mt:TextField = k.text(13,HsbKit.TEXT);
-            k.put(mt,mname);
-            k.fit(mt);
-            var mn:TextField = k.text(12,HsbKit.LABEL,true);
-            k.put(mn,String(cnt));
-            k.fit(mn);
-            var mw:Number = 12 + mt.width + 6 + Math.max(k.u(22),mn.width + 10) + 8;
-            // Makers that do not fit go behind a "+N" chip, which lists them in a menu.
-            var last:Boolean = m == makers.length - 1;
-            if(m > 0 && mx + mw + (last ? 0 : 8 + moreW) > right)
-            {
-               this.makerRest = makers.slice(m);
-               break;
-            }
-            var picked:Boolean = (this.makerChip == "" && mname == "All") || this.makerChip == mname;
-            k.fill(g,mx,y,mw,k.u(28),k.u(14),0x161C22,1);
-            k.outline(g,mx,y,mw,k.u(28),k.u(14),picked ? k.accent : HsbKit.EDGE_HI,1);
-            this.add(mt,mx + 12,y + (k.u(28) - mt.height) / 2);
-            k.countChip(this,mx + 12 + mt.width + 6,y + (k.u(28) - k.u(20)) / 2,String(cnt),picked);
-            this.hit(mx,y,mw,k.u(28),"maker",mname == "All" ? "" : mname);
-            mx += mw + 8;
-            m++;
-         }
-         if(this.makerRest.length > 0)
-         {
-            var hidden:Boolean = this.makerRest.indexOf(this.makerChip) >= 0;
-            var rt:TextField = k.text(13,HsbKit.TEXT,true);
-            k.put(rt,"+" + this.makerRest.length);
-            k.fit(rt);
-            var rw:Number = Math.max(moreW,rt.width + 20);
-            k.fill(g,mx,y,rw,k.u(28),k.u(14),0x161C22,1);
-            k.outline(g,mx,y,rw,k.u(28),k.u(14),hidden ? k.accent : HsbKit.EDGE_HI,1);
-            this.add(rt,mx + (rw - rt.width) / 2,y + (k.u(28) - rt.height) / 2);
-            this.hit(mx,y,rw,k.u(28),"makermore");
-         }
-         y += k.u(28) + 10;
-         var av:TextField = k.text(14,HsbKit.TEXT,true);
-         k.put(av,this.tabName.toUpperCase() + " \u00B7 " + this.availableCount() + " available");
-         k.fit(av);
-         this.add(av,param2,y);
-         // Mockup 4 also counts parts "hidden by level or location" with a Settings hint. The game
-         // sends only the parts it offers here, so the hidden count has no data; parts it sends
-         // flagged as unavailable stay in the list, dimmed, and are counted as locked instead.
-         var locked:int = this.rows.length - this.availableCount();
-         if(locked > 0)
-         {
-            var lk:TextField = k.text(13,k.accent);
-            k.put(lk,locked + " locked \u00B7 dimmed in the list");
-            k.fit(lk,param1 - param2 * 2 - av.width - 12);
-            this.add(lk,param2 + av.width + 10,y + (av.height - lk.height) / 2);
-         }
-         y += av.height + 12;
+         var rows:int = int(Math.ceil(tiles.length / GRID_COLS));
+         y += rows > 0 ? rows * tileH + (rows - 1) * GRID_GAP : 0;
+         y += 12;
+         var hint:TextField = k.text(13,HsbKit.MUTED);
+         var lb:String = this.hsb.keyName("PrevCategory");
+         var rb:String = this.hsb.keyName("NextCategory");
+         k.put(hint,"Pick a category \u00B7 " + (lb.length > 0 ? lb : "LB") + " / " + (rb.length > 0 ? rb : "RB") + " step \u00B7 Esc returns to the parts");
+         k.fit(hint,param1 - param2 * 2);
+         this.add(hint,param2,y);
+         y += hint.height + 8;
          return y;
       }
 

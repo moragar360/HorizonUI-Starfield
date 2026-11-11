@@ -2683,6 +2683,49 @@ static void CheckV7Makers(const fs::path& root)
 }
 
 // v7 item 3: the stats bar's titles and values are larger and both centered.
+// v7e: the category carousel (slim tiles, icon left of the label), "Category X of N", page
+// dots, and the ALL CATEGORIES overlay whose small tiles all fit without scrolling.
+static void CheckV7Categories(const fs::path& root)
+{
+	const std::string browser = ReadFile(root / "actionscript" / "HsbBrowser.as");
+	const std::string kit = ReadFile(root / "actionscript" / "HsbKit.as");
+	Expect(!browser.empty() && !kit.empty(), "v7 category sources read");
+	Expect(Has(browser, "internal static const TILE_H:Number = 30;") && Has(browser, "internal static const CAT_TEAL:uint = 0x4FD1BE;") &&
+			Has(browser, "internal static const GRID_TILE_H:Number = 48;") && Has(browser, "internal static const GRID_COLS:int = 4;") &&
+			Has(browser, "return this.upgrade ? 0 : k.u(TILE_H) + CAROUSEL_GAP + k.u(NAV_H) + NAV_GAP;"),
+		"slim 30 px carousel tiles, teal accent, 48 px overlay tiles four to a row");
+	const std::string tile = FunctionBody(browser, "catTile");
+	Expect(InOrder(tile, {"if(param6)", "k.fill(g,param1,param2,param3,param4,8,CAT_TEAL,TEAL_FILL_ALPHA);", "var tab:TextField = k.text(13,ink,param6,1);",
+				   "k.icon(g,this.catIcon(param5),gx,param2 + (param4 - iconS) / 2,iconS", "this.add(tab,gx + (empty ? 0 : iconS + 6),param2 + (param4 - tab.height) / 2);"}),
+		"a carousel tile puts the icon left of the label in one row; the current one is teal");
+	const std::string top = FunctionBody(browser, "paintStripTop");
+	Expect(InOrder(top, {"this.catTile(param2 + t * (tileW + TILE_GAP),y,tileW,tileH,String(names[t]),t == 1,live && t != 1,\"tab\",t - 1);",
+				   "this.hit(param2 - 4,y - 2,14 + qT.width + 8,navH + 4,\"tab\",-1);", "k.icon(g,\"grid4\",gx + 3,y + 3,gb - 6,capInk,1);",
+				   "this.hit(gx - 3,y - 2,gb + 6,navH + 4,\"grid\");", "this.hit(tx - 4,y - 2,tT.width + 14 + 8,navH + 4,\"tab\",1);",
+				   "k.put(cl,this.catLabel());", "this.paintDots("}),
+		"carousel side tiles and the Q/T keys step categories; a grid button; Category X of N and dots");
+	Expect(Has(FunctionBody(browser, "catLabel", "internal"), "return \"Category \" + Math.min(at,this.catTotal) + \" of \" + this.catTotal;"),
+		"the label reads Category X of N once the ring was read");
+	const std::string grid = FunctionBody(browser, "paintGridTop");
+	Expect(InOrder(grid, {"k.put(title,\"ALL CATEGORIES\");", "this.hit(gx - 3,y,gb + 6,headH,\"grid\");", "var tiles:Array = this.gridTiles();",
+				   "var tileW:Number = (param1 - param2 * 2 - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS;", "k.fill(g,tx,ty,tileW,tileH,8,CAT_TEAL,TEAL_FILL_ALPHA);",
+				   "var t:TextField = k.text(13,ink,active,0.5);", "if(!empty) { this.hit(tx,ty,tileW,tileH,\"cat\",int(cat.index)); }"}) &&
+			!Has(grid, "this.findBox") && !Has(grid, "\"maker\""),
+		"the overlay is a header and small tiles only; a tile opens its category");
+	Expect(InOrder(FunctionBody(browser, "gridTiles", "internal"), {"var group:Boolean = keys.length > GRID_MAX;", "while(i < keys.length && out.length < GRID_TILES_MAX)", "var base:String = baseCategory(name);"}),
+		"over GRID_MAX categories the overlay groups by base category and never grows past GRID_TILES_MAX");
+	const std::string paint = FunctionBody(browser, "paint", "internal");
+	Expect(Has(paint, "if(!this.grid && this.readOnly) { this.paintSimpleList(w,LIST_PAD,y); }") && Has(paint, "else if(!this.grid) { this.paintList(w,LIST_PAD,y); }"),
+		"the overlay stands in for the parts list");
+	Expect(InOrder(FunctionBody(browser, "pick"), {"this.grid = false;", "this.afterFilter();"}),
+		"picking a tile closes the overlay and rebuilds the parts list");
+	const std::string keys = FunctionBody(browser, "gridKey");
+	Expect(Has(keys, "if(param1 == \"left\" || param1 == \"tabprev\") { step = -1; }") && Has(keys, "else if(param1 == \"up\") { step = -GRID_COLS; }"),
+		"overlay focus moves with arrows and Q/T, up and down by a row");
+	Expect(Has(FunctionBody(kit, "icon", "internal"), "case \"grid4\":"), "the grid button has its own four-square icon");
+	Expect(Has(browser, "? \"Find \" + this.tabName.toLowerCase() : \"Find parts\""), "the search placeholder follows the category");
+}
+
 static void CheckV7Stats(const fs::path& root)
 {
 	const std::string hub = ReadFile(root / "actionscript" / "HorizonShipBuilder.as");
@@ -2734,6 +2777,7 @@ int main()
 	CheckV7Pills(root);
 	CheckV7Makers(root);
 	CheckV7Stats(root);
+	CheckV7Categories(root);
 
 	if (g_fails) {
 		std::cerr << g_fails << " failed\n";

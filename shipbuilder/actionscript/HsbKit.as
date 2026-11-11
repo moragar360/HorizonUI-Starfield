@@ -1315,6 +1315,13 @@ package
                param1.drawRect(param3 + s * 0.18,param4 + s * 0.56,s * 0.26,s * 0.26);
                param1.drawRect(param3 + s * 0.56,param4 + s * 0.56,s * 0.26,s * 0.26);
                break;
+            case "grid4":
+               // Four rounded squares: the ALL CATEGORIES button.
+               param1.drawRoundRect(param3 + s * 0.12,param4 + s * 0.12,s * 0.3,s * 0.3,3,3);
+               param1.drawRoundRect(param3 + s * 0.58,param4 + s * 0.12,s * 0.3,s * 0.3,3,3);
+               param1.drawRoundRect(param3 + s * 0.12,param4 + s * 0.58,s * 0.3,s * 0.3,3,3);
+               param1.drawRoundRect(param3 + s * 0.58,param4 + s * 0.58,s * 0.3,s * 0.3,3,3);
+               break;
             default:
                this.categoryIcon(param1,param2,param3,param4,s,param6,param7);
          }
