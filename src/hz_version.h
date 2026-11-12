@@ -7,7 +7,8 @@
 // Product version matches the file version (0.43.2.0). The settings-schema string
 // in the plugin (HZF::kVersion, "0.42.0") is a different value: preset age and the
 // update backup compare against that, not against this file version.
-// 0.43.2.0-alpha is unreleased. It adds the lower-left watch and the center-reticle rule.
+// 0.43.2.0-alpha is unreleased. It adds Hide watch while scanning and the moved-watch fixes.
+// 0.43.1.0-alpha added the lower-left watch and the center-reticle rule.
 // The default name hover changed to Compact (one line). Full is in F11, CARDS.
 // VitalsBars compact uses the COMPACT MODE card (boost, health, and oxygen). Full stays the default.
 // ARRANGE lists that merged card whenever COMPACT MODE or VitalsBars compact is on.

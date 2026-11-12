@@ -1882,6 +1882,36 @@ function hz43Row(vitOn, jetOn) {
 expect(src.indexOf("hzMsglogWrap(note,noteW,160)") >= 0, "the history confirm wraps its warning");
 expect(src.indexOf("if(rows[ni].note) { rows[ni].n13 = true; }") >= 0, "CARDS tab notes use the 13 px note row");
 
+// Version stamp pins: each movie version constant and both xmake set_version calls carry the file version.
+{
+	const hdr = readText(path.join(__dirname, "..", "src", "hz_version.h"));
+	const vm = /#define HZ_FILE_VERSION_STR "([0-9.]+)"/.exec(hdr);
+	const ver = vm ? vm[1] : "";
+	expect(ver !== "", "hz_version.h has HZ_FILE_VERSION_STR");
+	const stamps = [
+		["actionscript/horizon_block.as", "HZ_BUILD"],
+		["actionscript/scanner/hzs_block.as", "HZS_VERSION"],
+		["actionscript/imp/simp_monoclemenu/MonocleMenu.as", "HZS_VERSION"],
+		["actionscript/imp/simp_monoclemenu_lrg/MonocleMenu.as", "HZS_VERSION"],
+		["actionscript/scope/hzp_main.as", "HZP_VERSION"],
+		["actionscript/scope/imp/pimp_scopemenu/ScopeMenu.as", "HZP_VERSION"],
+		["actionscript/scope/imp/pimp_scopemenu_lrg/ScopeMenu.as", "HZP_VERSION"],
+		["actionscript/scope/hzp_main.as", "HZP_BUILD"],
+		["actionscript/scope/imp/pimp_scopemenu/ScopeMenu.as", "HZP_BUILD"],
+		["actionscript/scope/imp/pimp_scopemenu_lrg/ScopeMenu.as", "HZP_BUILD"],
+		["actionscript/comms/hzc_block.as", "HZC_BUILD"],
+		["actionscript/imp/imp/scripts/HUDMessagesMenu.as", "HZC_BUILD"],
+		["actionscript/imp/imp-Lrg/scripts/HUDMessagesMenu.as", "HZC_BUILD"]
+	];
+	for (let i = 0; i < stamps.length; i++) {
+		const body = readText(path.join(__dirname, "..", stamps[i][0]));
+		expect(body.indexOf("private static const " + stamps[i][1] + ':String = "' + ver + '";') >= 0, stamps[i][0] + " " + stamps[i][1] + " is the file version " + ver);
+	}
+	const lua = readText(path.join(__dirname, "..", "xmake.lua"));
+	expect(lua.split('set_version("').length - 1 === 2, "xmake.lua has exactly two set_version calls");
+	expect(lua.split('set_version("' + ver + '")').length - 1 === 2, "both xmake set_version calls are the file version " + ver);
+}
+
 if (failed) {
 	console.error(failed + " failed");
 	process.exit(1);

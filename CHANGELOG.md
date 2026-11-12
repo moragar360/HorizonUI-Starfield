@@ -6,16 +6,40 @@ Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never publish
 
 ## [0.43.2.0-alpha] - unreleased
 
-Not published. No tag. The settings schema stays 0.42.0, so an existing `HorizonUI.user.ini` carries over. `WatchStyle` and `CrosshairRule` stay at their defaults until you change them.
+Not published yet. The settings schema stays 0.42.0, so an existing `HorizonUI.user.ini` carries over. `HideWatchWhileScanning` stays at its default until you change it.
+
+### Added
+- **Hide watch while scanning** in F11 > SCANNER. `HideWatchWhileScanning` under `[Scanner]`: 0 shown (default), 1 the watch hides while the hand scanner is open, in every WatchStyle that shows one, and comes back when the scanner closes. With ENEMY HEALTH BAR, STEALTH METER or EDGE PULSE on, the whole bottom-left watch corner hides, planet and bio alerts and the game's enemy ring too. With all three off, only the watch pieces and the environment and bio alert text hide; the alert icons and the enemy ring still show. It needs the Scanner module.
+
+### Changed
+- **SFSE plugin** file and product version are 0.43.2.0.
+- **Hover cards (source, unproven in-game):** an unchanged activation or item payload no longer forces a full card rebuild. Fingerprints are length-prefixed and include every field the card draws (list stolen/contraband, press/hold flags, compare gate, weight precision, resolved font). Foe HP/ghost and hold meters update on retained sprites. `hzTW` reuses a field's last width while text, size, tracking, and resolved face stay the same. Fade, fonts, colors, and live F11 apply are unchanged. Frametime is **NOTRUN**. Source rebuild cost is not a verified hitch cause.
+- **HUD performance diagnostics** are off by default (`[Debug] PerfDiag=0`). `PerfMode` A–G, `PerfDump` 0→1 (one log line after intro-resolved + `PerfSettleMs` + `PerfDumpWait` seconds), and `PerfScan` isolate native vs GFx vs scanner. Native `movieAdvance` is `ASMovieRootBase::AdvanceFrame(bool)` root-maintenance only, split `rootT`/`rootF`; it is not whole-HUD or ENTER_FRAME. Perf helpers use `getTimer` (still 1 ms); splash/alerts keep `hz41Now` (Date). No per-frame log, no new thread. Mode A can leave the vanilla rollover visible; Mode B still draws the scanner. A dump Invoke can hitch and is not FPS proof.
+- **Vanilla and Vanilla + Horizon watch** show the game's bio alert, enemy detection ring, and scan-time planet name again, the same as the game's own watch.
+- **Watch Off:** when Horizon cards replace the whole lower-left corner (the AFFLICTIONS card, the planet card or pill, and an enemy cue), the game's lower-left group is made fully transparent instead of hidden, so the game's warning sounds still play. In that setup the game's landing alert and positive environment alert do not show; there is no Horizon version of them yet.
+- **Moved vanilla watch (Arrange, Vanilla and Vanilla + Horizon):** the planet name, the environment alert text, and the bio alert text follow the watch and keep their fades. The INFO ticks, the planet-info ring, disc, band and bar, and the location name play their animations on the moved watch instead of at the lower-left home. The environment alert lines and the planet-info bar settle where the watch is and no longer drift to the right.
+- **Moved vanilla watch:** the hazard icon rows, the alert icons, and the bio flash hide while the watch is away from its home spot. They come back when the watch returns home or you switch to another watch style.
+- **Moved Horizon Digital and Analog:** the planet name shown on landing follows the face instead of playing at the lower-left home.
+- **Comms:** identical HUD messages that arrive while one is still up show as one card with an xN count, instead of a stack of the same card.
+
+### Fixed
+- **Watch ghost:** landing or scanning with a moved watch no longer leaves a second planet name, ring, disc, or band at the lower-left home spot, and the planet-info art no longer drifts further each time the game swaps it.
+- **Watch Off, Horizon Digital, and Horizon Analog:** the game's globe, off-planet, autopilot, and location name pieces no longer come back after a location update. With Hide watch while scanning on, the globe stays hidden for the whole scan in the vanilla styles too.
+- **Horizon Digital and Analog:** after a scan with a moved face, the nearby, mission, and enemy markers stay on the face instead of jumping by a second offset.
+- **Settings:** a `[Debug]` key you add yourself, such as `WatchLog`, is no longer dropped by an F11 save or a preset apply.
+
+## [0.43.1.0-alpha] - 2026-11-07
+
+Released as v0.43.1.0-alpha.
+
+The settings schema stays 0.42.0, so an existing `HorizonUI.user.ini` carries over. `WatchStyle` and `CrosshairRule` stay at their defaults until you change them.
 
 ### Added
 - **Watch** in F11 > CARDS. Helper caption is `Original Vanilla Watch or Horizon Watch`. `WatchStyle` under `[Cards Extra]`: 0 off (default), 1 the game's watch, 2 the game's watch tinted with your card color and accent, 3 Horizon digital, 4 Horizon analog. Off matches the previous HUD. Every watch face is an Arrange card. Styles 1 and 2 move the game's watch clips only, and leave the rest of the lower-left group where it is. `WatchX` and `WatchY` save the spot (`-1` is the lower-left home). `WatchScale` is the size (`-1` is HudScale). While the Horizon watch is still at the home, a showing card in that corner lifts it 8 px. A saved spot stays put. `hudmenu` and `hudmenu_lrg` share the watch, so both use the same spot. F11 save writes those watch keys in the full merged text; the DLL keeps only diffs. Absent `WatchScale` is HudScale. Preset files drop Hotkeys and ScreenHeight. Moragar's Choice leaves the watch off at the default spot.
 - **Crosshair visibility** in F11 > RULES. `CrosshairRule` under `[Rules]`: 0 always (default), 1 only with a weapon drawn, 2 off. This hides the aiming dot or reticle only. The center interact ring and its glyph stay. A restore puts back only a hide this rule made, and it leaves an iron-sights hide alone. `CrosshairStyle` is unchanged.
 
 ### Changed
-- **SFSE plugin** file and product version are 0.43.2.0. This build is not a release download yet.
-- **Hover cards (source, unproven in-game):** an unchanged activation or item payload no longer forces a full card rebuild. Fingerprints are length-prefixed and include every field the card draws (list stolen/contraband, press/hold flags, compare gate, weight precision, resolved font). Foe HP/ghost and hold meters update on retained sprites. `hzTW` reuses a field's last width while text, size, tracking, and resolved face stay the same. Fade, fonts, colors, and live F11 apply are unchanged. Frametime is **NOTRUN**. Source rebuild cost is not a verified hitch cause.
-- **HUD performance diagnostics** are off by default (`[Debug] PerfDiag=0`). `PerfMode` A–G, `PerfDump` 0→1 (one log line after intro-resolved + `PerfSettleMs` + `PerfDumpWait` seconds), and `PerfScan` isolate native vs GFx vs scanner. Native `movieAdvance` is `ASMovieRootBase::AdvanceFrame(bool)` root-maintenance only, split `rootT`/`rootF`; it is not whole-HUD or ENTER_FRAME. Perf helpers use `getTimer` (still 1 ms); splash/alerts keep `hz41Now` (Date). No per-frame log, no new thread. Mode A can leave the vanilla rollover visible; Mode B still draws the scanner. A dump Invoke can hitch and is not FPS proof.
+- **SFSE plugin** file and product version are 0.43.1.0.
 - **Watch styles 1 and 2** show the game's watch again, as one assembly. Arrange moves that whole watch together, including the top bar, the ring, the face, the heading chevron, and the in-face markers. The character card, alerts, detection, and autopilot stay put. Style 2 still tints that watch and does not add a second planet name.
 - **Horizon Digital and Analog** match the round faces: O2 runs clockwise from 7 o'clock, CO2 counter-clockwise from 5 o'clock, and empty segments are gray. Analog no longer draws the 6 o'clock day sub-dial or the PM/DAY readout. Digital has no day dial, and its times sit in the center of the face (local at 16 px, PC at 13 px). Both faces draw the same top-arc compass, with heading ticks and N / NE / E letters. The analog planet name sits below those letters. The local and PC labels sit above their times. Analog hands are white, with a gold hub. The live nearby, mission, and enemy markers stay on these faces. The vanilla bezel and heading outline stay hidden. ClockFormat (12H / 24H) applies to LOCAL, GAME, and PC on the planet card, the F11 STYLE live preview, and the digital watch. GAME 24H still appends UT.
 - **Crosshair Off, and Weapon drawn while holstered,** keep the aiming dot hidden when the game shows it again on a target, an NPC, or while you walk. The interact ring and glyph stay while you are looking at something you can use. After you look away, the leftover center circle hides too.
@@ -214,6 +238,7 @@ Alpha pre-release. This entry covers everything since 0.42.0.13-alpha. The setti
 - **SFSE plugin** (`HorizonUI.dll`): F11 window input, mouse wheel, settings files and presets.
 - **Requirements:** SFSE and Address Library for SFSE Plugins, both required.
 
+[0.43.1.0-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.1.0-alpha
 [0.43.0.32-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.0.32-alpha
 [0.43.0.31-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.0.31-alpha
 [0.42.0.13-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.42.0.13-alpha
