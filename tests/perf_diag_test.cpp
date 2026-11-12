@@ -34,7 +34,7 @@ std::string Read(const char* a_path)
 
 int main()
 {
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.1.0", "file version stays 0.43.1.0");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.2.0", "file version stays 0.43.2.0");
 	Expect(HZ_COMMS_MSG_LOG == 0 && HZ_HUD_MSG_CAPTURE == 0, "verbose traces stay off");
 
 	Expect(hzperf::ParseMode("0") == 0 && hzperf::ParseMode("7") == 7, "mode 0-7 parse");
