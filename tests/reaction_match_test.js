@@ -52,7 +52,7 @@ const DIR = numArray("HZC_RX_DIR");
 const NOT = stringArray("HZC_RX_NOT");
 const TITLE = stringArray("HZC_RX_TITLE");
 
-expect(src.indexOf('private static const HZC_BUILD:String = "0.43.1.0";') >= 0, "comms build id is 0.43.1.0");
+expect(src.indexOf('private static const HZC_BUILD:String = "0.43.2.0";') >= 0, "comms build id is 0.43.2.0");
 expect(src.indexOf('HudMessagesX') >= 0 && src.indexOf("function hzcMsgLayout") >= 0, "HUD Messages box reads a saved layout");
 expect(src.indexOf("x = Math.max(vr.x,Math.min(vr.right - w,x));") >= 0, "HUD Messages box is clamped on screen");
 expect(src.indexOf("y = Math.max(vr.y,Math.min(vr.bottom - h,y));") >= 0, "HUD Messages box is clamped vertically");
@@ -395,7 +395,7 @@ expect(src.indexOf('if(age >= 0 && age < HZC_RX_PAIR) { e0.paired = true; e0.src
 expect(src.indexOf('try { return this.hzcRxOffer(text == null ? "" : String(text),true); }') >= 0, "the DLL path offers through the same queue");
 expect(src.indexOf("if(e0.linked == true)") >= 0, "a linked card follows its line");
 expect(src.indexOf("var nxt:* = this.hzcRxClaim(arr,e0.key);") >= 0, "a later clip with the same text can keep the card");
-expect(src.indexOf("else { this.hzcRxShow(e0); this.hzcRxRemember(e0); this.hzcRxDrop(e0); continue; }") >= 0, "a linked card ends when its line leaves");
+expect(src.indexOf("else { this.hzcRxShow(e0); this.hzcRxRemember(e0); this.hzcRxEnd(e0); this.hzcRxDrop(e0); continue; }") >= 0, "a linked card ends when its line leaves (r6: hzcRxEnd gives its held lines back)");
 expect(src.indexOf("e0.it = null") < 0, "a finished line does not fall back to a standalone card");
 expect(src.indexOf("if(e.linked == true) { this.hzcRxShow(e); return; }") >= 0, "a linked card that cannot sit restores only a covered line");
 expect(src.indexOf("private function hzcRxRearm() : void") >= 0, "a settings reload rearms the card");
@@ -677,7 +677,8 @@ function movieFns(text) {
 }
 function fadeProblems(text) {
 	const problems = [];
-	const allow = { hzcRxFind: 1, hzcRxItemTx: 1, hzcRxWaits: 1, hzcRxWaitClear: 1, hzcRxOpen: 1 };
+	// r6: hzcRxDupOf / hzcRxTakeDup touch only a line of a merged card (a pending xN push of the same text); tested below
+	const allow = { hzcRxFind: 1, hzcRxItemTx: 1, hzcRxWaits: 1, hzcRxWaitClear: 1, hzcRxOpen: 1, hzcRxDupOf: 1, hzcRxTakeDup: 1 };
 	const fns = movieFns(stripMovieComments(text));
 	for (let fi = 0; fi < fns.length; fi++) {
 		const raw = fns[fi];
@@ -789,7 +790,7 @@ function cardPush(q, raw, now, dropped) {
 	const again = [];
 	expect(cardPush(again, "Sam Coe liked that.", 0) === "queued", "the first identical push queues");
 	expect(cardPush(again, "Sam Coe liked that.", 1000) === "queued", "the second identical push queues");
-	expect(again.length === 2, "two identical DLL cards within 3 s both stay");
+	expect(again.length === 2, "queue model: two pushes are two entries (r6: the live hzcCardPush merges identical ones while the card is up, see the r6 block)");
 	const full = [];
 	const dropped = [];
 	for (let i = 0; i < 8; i++) cardPush(full, "line " + i, i, dropped);
@@ -1891,6 +1892,8 @@ function makeHzcHost(now) {
 		HZC_RX_PAIR: 3000,
 		HZC_RX_VIS: 4000,
 		hzcRx: [],
+		hzcRxPendN: 0,
+		hzcRxDupN: 0,
 		hzcRxOff: false,
 		hzcIniState: 1,
 		hzcCfg: { ReactionCard: 1 },
@@ -1932,6 +1935,11 @@ function makeHzcHost(now) {
 	installAsFn(host, fnBody("private function hzcRxOne", "private function hzcRxWhyText"));
 	installAsFn(host, fnBody("private function hzcRxReveal", "private function hzcRxCover"));
 	installAsFn(host, fnBody("private function hzcRxClaim", "private function hzcRxLink"));
+	installAsFn(host, fnBody("private function hzcRxSame", "private function hzcRxDupOf"));
+	installAsFn(host, fnBody("private function hzcRxDupOf", "private function hzcRxTakeDup"));
+	installAsFn(host, fnBody("private function hzcRxTakeDup", "private function hzcRxEnd"));
+	installAsFn(host, fnBody("private function hzcRxEnd", "private function hzcRxPrune"));
+	installAsFn(host, fnBody("private function hzcRxPrune", "private function hzcRxShow"));   // r7 S-3
 	installAsFn(host, fnBody("public function hzcCardPush", "public function hzcRxWhy"));
 	installAsFn(host, fnBody("private function hzcRxStep", "private function hzcRxStack"));
 	return host;
@@ -1950,7 +1958,8 @@ function makeHzcHost(now) {
 	expect(oldClip.Internal_mc.Text_tf.visible === true && take.covered === false, "rebind uncovers the old clip");
 	const before = host.hzcRx.length;
 	expect(host.hzcCardPush("crime", "takeback", "", "CAUGHT", line) === "queued" && host.hzcRx.length === before && take.rebound === false, "a rebound push merges once and clears the flag");
-	expect(host.hzcCardPush("crime", "takeback", "", "CAUGHT", line) === "queued" && host.hzcRx.length === before + 1, "a third identical take-back still gets its own card");
+	// r6 (tester: "Missing required ammo." stacked 7 cards): the same message while its card is up is one card with xN
+	expect(host.hzcCardPush("crime", "takeback", "", "CAUGHT", line) === "merged x2" && host.hzcRx.length === before && take.cnt === 2, "r6: a third identical take-back while the card is up merges into it (x2), no new card");
 
 	const pendingHost = makeHzcHost(1000);
 	const pm = pendingHost.Messages_mc;
@@ -1971,8 +1980,8 @@ function makeHzcHost(now) {
 	const mergeCard = { st: 1, linked: true, it: nextClip, key: noMergeHost.hzcRxKey(line), rebound: true, reboundAt: 900, n: "", k: -1, kind: "crime", sub: "takeback", value: "CAUGHT", tx: line };
 	noMergeHost.hzcRx = [mergeCard];
 	const noMergeLen = noMergeHost.hzcRx.length;
-	noMergeHost.hzcCardPush("crime", "takeback", "", "CAUGHT", line);
-	expect(noMergeHost.hzcRx.length === noMergeLen + 1, "removing the merge adds a second card");
+	const noMergeRet = noMergeHost.hzcCardPush("crime", "takeback", "", "CAUGHT", line);
+	expect(noMergeRet === "merged x2" && mergeCard.cnt === 2 && noMergeHost.hzcRx.length === noMergeLen, "removing the one-shot merge counts the rebound line's own push as a repeat (r6: x2 instead of a second card)");
 
 	const claimSrc = fnBody("private function hzcRxClaim", "private function hzcRxLink");
 	const guard = "if(this.hzcRxOpenKey(key) != null) { return null; }";
@@ -2001,6 +2010,114 @@ function makeHzcHost(now) {
 		"stem match requires an ellipsis and at least 19 characters");
 	const coverSrc = fnBody("private function hzcRxClaim", "private function hzcRxLink");
 	expect(coverSrc.indexOf("this.hzcRxKeyMatch(this.hzcRxKey(tx),key)") >= 0, "claim uses prefix match so a cut card covers the game's line");
+}
+
+// ---- r6 item 3: identical HUD messages while one is on screen: one card, xN, time starts again ----
+{
+	const ammo = "Missing required ammo.";
+	const h = makeHzcHost(1000);
+	installAsFn(h, fnBody("private function hzcRxWaits", "private function hzcRxWaitClear"));
+	installAsFn(h, fnBody("private function hzcRxWaitClear", "private function hzcRxClaim"));
+	installAsFn(h, fnBody("private function hzcRxOpen(tx", "private function hzcRxRearm"));
+	installAsFn(h, fnBody("private function hzcRxLink", "private function hzcRxSlot"));
+	const m = h.Messages_mc;
+	expect(h.hzcCardPush("game", "", "", "", ammo) === "queued" && h.hzcRx.length === 1, "r6: the first ammo message queues one card");
+	const card = h.hzcRx[0];
+	const l1 = hzcClip(ammo, m, "a1");
+	m.ShownMessageArray = [l1];
+	h.hzcRxLink(m.ShownMessageArray);
+	expect(card.it === l1, "r6: the card links to the first line");
+	let st = "";
+	for (let i = 2; i <= 7; i++) st = h.hzcCardPush("game", "", "", "", ammo);
+	expect(st === "merged x7" && h.hzcRx.length === 1 && card.cnt === 7 && card.pend === 6 && h.hzcRxPendN === 6 && card.sig === "", "r6: six more identical pushes (the tester's 7) are one card, x7, redrawn once");
+	const lines = [l1];
+	for (let i = 2; i <= 7; i++) lines.push(hzcClip(ammo, m, "a" + i));
+	m.ShownMessageArray = lines.slice();
+	h.hzcRxLink(m.ShownMessageArray);
+	expect(card.it === l1 && card.dups.length === 6 && h.hzcRxDupN === 6 && h.hzcRxPendN === 0 && card.pend === 0, "r6: the six new game lines are held by the one card");
+	expect(lines.slice(1).every((l) => l.Internal_mc.Text_tf.visible === false && l.Internal_mc.Background_mc.visible === false), "r6: held lines are covered (text and background only)");
+	expect(h.hzcRxWait.length === 0, "r6: held lines are skipped by the link pass");
+	h.hzcRxLink(m.ShownMessageArray);
+	expect(card.dups.length === 6 && h.hzcRxWait.length === 0, "r6: a second link pass changes nothing");
+	expect(h.hzcCardPush("game", "", "", "", "You need a key.") === "queued" && h.hzcRx.length === 2, "r6: a different message keeps its own card");
+	expect(h.hzcCardPush("game", "", "SPACESUIT", "", ammo) === "queued" && h.hzcRx.length === 3, "r6: same text with another name/kind is not merged");
+	h.hzcRx = [card];
+	// the card's own line leaves: it moves to a held line (time goes on), the left line gets its children back
+	m.ShownMessageArray = lines.slice(1);
+	l1.parent = null;
+	h.hzcRxStep();
+	expect(card.it === lines[1] && h.hzcRx.length === 1 && card.dups.length === 5 && h.hzcRxDupN === 5, "r6: when its line leaves the card keeps going on the next held line (timer refreshed)");
+	// every line leaves: the card ends and the held ones are given back
+	for (const l of lines) l.parent = null;
+	m.ShownMessageArray = [];
+	h.hzcRxStep();
+	expect(h.hzcRx.length === 0 && h.hzcRxDupN === 0 && lines.slice(2).every((l) => l.Internal_mc.Text_tf.visible === true && l.Internal_mc.Background_mc.visible === true), "r6: the card ends with its last line and every held line gets its children back");
+	// an unlinked card: a repeat starts its 4 s again
+	const u = makeHzcHost(1000);
+	u.hzcCardPush("game", "", "", "", ammo);
+	u.hzcRx[0].vis = 3500;
+	u.hzcCardPush("game", "", "", "", ammo);
+	expect(u.hzcRx[0].vis === 0 && u.hzcRx[0].cnt === 2, "r6: a repeat restarts an unlinked card's shown time");
+	// a repeat after the card ended is a new card
+	const e2 = makeHzcHost(1000);
+	e2.hzcCardPush("game", "", "", "", ammo);
+	e2.hzcRx = [];
+	expect(e2.hzcCardPush("game", "", "", "", ammo) === "queued" && e2.hzcRx.length === 1 && e2.hzcRx[0].cnt === undefined, "r6: after the card is gone the same message is a new card (x1)");
+	// source pins: event-driven, the count is drawn, no new per-frame loop when nothing is merged
+	const link = fnBody("private function hzcRxLink", "private function hzcRxSlot");
+	expect(link.indexOf("if(this.hzcRxDupN > 0 && this.hzcRxDupOf(it) != null) { continue; }") >= 0 && link.indexOf("else if(this.hzcRxPendN > 0) { this.hzcRxTakeDup(it,tx); }") >= 0, "r6: the link pass reads two counters; the merge helpers run only while a merge is pending or held");
+	expect(fnBody("private function hzcCardDraw", "private function hzcRxDraw").indexOf('title = title + "  x" + int(e.cnt);') >= 0 && src.indexOf('String(HZC_RX_LBL[e.k]) + (int(e.cnt) > 1 ? "  x" + int(e.cnt) : "")') >= 0, "r6: both card kinds draw the xN count");
+	const take = fnBody("private function hzcRxTakeDup", "private function hzcRxEnd");
+	expect(take.indexOf(".alpha") < 0 && take.indexOf("int(e.pend) <= 0") >= 0, "r6: a held line is touched only for a card with a pending merge, never its alpha");
+	expect(src.indexOf("HZC_RX_DUP") < 0 && fnBody("public function hzcCardPush", "public function hzcRxWhy").indexOf("getTimer() - ") < 0, "r6: the merge is while the card is up, not a time window");
+}
+
+// ---- r7 S-3: held lines that left ShownMessageArray are pruned in the step (no stale entry, a reused clip is free) ----
+{
+	const ammo = "Missing required ammo.";
+	const h = makeHzcHost(1000);
+	installAsFn(h, fnBody("private function hzcRxWaits", "private function hzcRxWaitClear"));
+	installAsFn(h, fnBody("private function hzcRxWaitClear", "private function hzcRxClaim"));
+	installAsFn(h, fnBody("private function hzcRxOpen(tx", "private function hzcRxRearm"));
+	installAsFn(h, fnBody("private function hzcRxLink", "private function hzcRxSlot"));
+	const m = h.Messages_mc;
+	h.hzcCardPush("game", "", "", "", ammo);
+	const card = h.hzcRx[0];
+	const l1 = hzcClip(ammo, m, "p1");
+	m.ShownMessageArray = [l1];
+	h.hzcRxLink(m.ShownMessageArray);
+	for (let i = 2; i <= 4; i++) h.hzcCardPush("game", "", "", "", ammo);
+	const lines = [l1, hzcClip(ammo, m, "p2"), hzcClip(ammo, m, "p3"), hzcClip(ammo, m, "p4")];
+	m.ShownMessageArray = lines.slice();
+	h.hzcRxLink(m.ShownMessageArray);
+	expect(card.dups.length === 3 && h.hzcRxDupN === 3 && card.cnt === 4, "r7 S-3: setup, one x4 card holding three lines");
+	// two held lines leave the list while the card's own line stays
+	m.ShownMessageArray = [l1, lines[3]];
+	lines[1].parent = null;
+	h.hzcRxStep();
+	expect(card.it === l1 && card.dups.length === 1 && card.dups[0] === lines[3] && h.hzcRxDupN === 1, "r7 S-3: held lines gone from ShownMessageArray leave e.dups and hzcRxDupN");
+	expect(lines[1].Internal_mc.Text_tf.visible === true && lines[2].Internal_mc.Background_mc.visible === true && lines[3].Internal_mc.Text_tf.visible === false, "r7 S-3: a pruned line gets its text and background back; a still-held line stays covered");
+	// the game reuses a pruned clip for another message: it is not skipped as held, it links to that message's card
+	h.hzcCardPush("game", "", "", "", "You need a key.");
+	const keyCard = h.hzcRx[h.hzcRx.length - 1];
+	lines[2].Internal_mc.Text_tf.text = "You need a key.";
+	m.ShownMessageArray = [l1, lines[3], lines[2]];
+	h.hzcRxLink(m.ShownMessageArray);
+	expect(h.hzcRxDupOf(lines[2]) === null && keyCard.it === lines[2], "r7 S-3: a reused clip is free again (links to its new message's card)");
+	// a held line moved off Messages_mc while still listed is pruned too
+	lines[3].parent = { name: "elsewhere" };
+	h.hzcRxStep();
+	expect(card.dups.length === 0 && h.hzcRxDupN === 0, "r7 S-3: a held line that is no longer a child of Messages_mc is pruned");
+	// nothing held: the step does not call the prune
+	let pruneN = 0;
+	const inner = h.hzcRxPrune;
+	h.hzcRxPrune = function(e, a, mm) { pruneN++; return inner.call(this, e, a, mm); };
+	h.hzcRxStep();
+	expect(pruneN === 0, "r7 S-3: no prune call while nothing is held (no new per-frame cost)");
+	const step = fnBody("private function hzcRxStep", "private function hzcRxStack");
+	expect(step.indexOf("if(this.hzcRxDupN > 0 && e0.dups != null) { this.hzcRxPrune(e0,arr,m); }") >= 0, "r7 S-3: the step prunes only while lines are held");
+	const prune = fnBody("private function hzcRxPrune", "private function hzcRxShow");
+	expect(prune.indexOf(".alpha") < 0 && prune.indexOf("removeChild") < 0 && prune.indexOf("hzcRxReveal(h)") >= 0, "r7 S-3: prune reveals, never alpha, never removes a clip");
 }
 
 if (failed) {

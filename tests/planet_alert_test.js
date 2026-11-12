@@ -36,7 +36,7 @@ function pin(snippet, msg) {
 }
 
 pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.43.1.0";', "HUD build id is 0.43.1.0");
+pin('private static const HZ_BUILD:String = "0.43.2.0";', "HUD build id is 0.43.2.0");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin("tf.text = this.hzFmtLocGame(uh,um,true);", "GAME Local/Game value honors ClockFormat");
 pin("tf.text = this.hzFmtLocGame(H,M,false);", "LOCAL Local/Game value honors ClockFormat");
@@ -203,7 +203,10 @@ pin("if(since < 0) { this.hz41LocClear(); return false; }", "a backwards clock e
 	expect(fn.indexOf("return new Date().getTime();") >= 0, "hz41Now returns new Date().getTime()");
 	expect(fn.indexOf("getTimer") < 0 && fn.indexOf("flash.utils") < 0, "hz41Now does not call getTimer");
 	expect(src.indexOf("import flash.utils.getTimer") < 0, "the injected HUD block does not carry a getTimer import");
-	expect(src.indexOf("getTimer(") < 0, "t40 GT1b HUD block has no getTimer(");
+	const perfNow = src.slice(src.indexOf("private function hzPerfNow"), src.indexOf("private function hzPerfResetN"));
+	expect(perfNow.indexOf("getTimer()") >= 0, "hzPerfNow uses unqualified getTimer");
+	expect(perfNow.indexOf("catch") >= 0 && perfNow.indexOf("new Date().getTime()") >= 0, "hzPerfNow falls back if getTimer throws");
+	expect(src.indexOf("getTimer(") === src.lastIndexOf("getTimer("), "getTimer( appears only in hzPerfNow");
 	expect(src.indexOf("flash.utils") < 0, "t37 HUD block has no flash.utils");
 }
 pin("c.visible = false;", "hide is visible only");
@@ -590,7 +593,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect((!hasCrlf && !loneCr && loneLf) || (hasCrlf && !loneLf && !loneCr), rel + " stays LF or a CRLF checkout");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.1.0";') >= 0, rel + " build is 0.43.1.0");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.2.0";') >= 0, rel + " build is 0.43.2.0");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -1696,7 +1699,10 @@ expect(src.indexOf('"StartupIntro":1') >= 0, "the welcome splash defaults on in 
 expect(src.indexOf("public function hzSplashOnLoad()") >= 0, "the welcome splash is invoked by name");
 expect(src.indexOf("Loading default settings") >= 0, "the splash names default settings when no preset is set");
 expect(src.indexOf("var peak:Number = 0.88;") >= 0, "the splash does not hold full opacity");
-expect(src.indexOf("this.hz41Now()") >= 0 && src.indexOf("getTimer(") < 0, "the splash times itself from hz41Now");
+{
+	const splashTick = src.slice(src.indexOf("private function hzSplashTick"), src.indexOf("private function hzSplashBox"));
+	expect(splashTick.indexOf("this.hz41Now()") >= 0 && splashTick.indexOf("getTimer") < 0, "the splash times itself from hz41Now");
+}
 {
 	const start = src.slice(src.indexOf("private function hzSplashStart"), src.indexOf("private function hzSplashTick"));
 	const nameFn = src.slice(src.indexOf("private function hzSplashActiveName"), src.indexOf("private function hzSplashMeasure"));
@@ -1875,6 +1881,36 @@ function hz43Row(vitOn, jetOn) {
 }
 expect(src.indexOf("hzMsglogWrap(note,noteW,160)") >= 0, "the history confirm wraps its warning");
 expect(src.indexOf("if(rows[ni].note) { rows[ni].n13 = true; }") >= 0, "CARDS tab notes use the 13 px note row");
+
+// Version stamp pins: each movie version constant and both xmake set_version calls carry the file version.
+{
+	const hdr = readText(path.join(__dirname, "..", "src", "hz_version.h"));
+	const vm = /#define HZ_FILE_VERSION_STR "([0-9.]+)"/.exec(hdr);
+	const ver = vm ? vm[1] : "";
+	expect(ver !== "", "hz_version.h has HZ_FILE_VERSION_STR");
+	const stamps = [
+		["actionscript/horizon_block.as", "HZ_BUILD"],
+		["actionscript/scanner/hzs_block.as", "HZS_VERSION"],
+		["actionscript/imp/simp_monoclemenu/MonocleMenu.as", "HZS_VERSION"],
+		["actionscript/imp/simp_monoclemenu_lrg/MonocleMenu.as", "HZS_VERSION"],
+		["actionscript/scope/hzp_main.as", "HZP_VERSION"],
+		["actionscript/scope/imp/pimp_scopemenu/ScopeMenu.as", "HZP_VERSION"],
+		["actionscript/scope/imp/pimp_scopemenu_lrg/ScopeMenu.as", "HZP_VERSION"],
+		["actionscript/scope/hzp_main.as", "HZP_BUILD"],
+		["actionscript/scope/imp/pimp_scopemenu/ScopeMenu.as", "HZP_BUILD"],
+		["actionscript/scope/imp/pimp_scopemenu_lrg/ScopeMenu.as", "HZP_BUILD"],
+		["actionscript/comms/hzc_block.as", "HZC_BUILD"],
+		["actionscript/imp/imp/scripts/HUDMessagesMenu.as", "HZC_BUILD"],
+		["actionscript/imp/imp-Lrg/scripts/HUDMessagesMenu.as", "HZC_BUILD"]
+	];
+	for (let i = 0; i < stamps.length; i++) {
+		const body = readText(path.join(__dirname, "..", stamps[i][0]));
+		expect(body.indexOf("private static const " + stamps[i][1] + ':String = "' + ver + '";') >= 0, stamps[i][0] + " " + stamps[i][1] + " is the file version " + ver);
+	}
+	const lua = readText(path.join(__dirname, "..", "xmake.lua"));
+	expect(lua.split('set_version("').length - 1 === 2, "xmake.lua has exactly two set_version calls");
+	expect(lua.split('set_version("' + ver + '")').length - 1 === 2, "both xmake set_version calls are the file version " + ver);
+}
 
 if (failed) {
 	console.error(failed + " failed");

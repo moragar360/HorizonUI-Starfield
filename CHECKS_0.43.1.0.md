@@ -4,7 +4,8 @@ Unreleased first pass. No tag, no publish, no merge. Starfield was not launched.
 
 ## What was checked here
 
-- `message_log_test`, `preset_list_test`, `planet_alert_test.js`, `reaction_match_test.js`, `watch_crosshair_test.js`, and `quest_tracker_test.js` passed. Analog no longer draws the 6 o'clock PM/DAY sub-dial. ClockFormat applies to LOCAL, GAME, and PC; F11 STYLE live preview copies the planet card Local/Game text.
+- Host suites run in this Cloud VM: `g++` `perf_diag_test`, `preset_list_test`, `message_log_test`; `node` `hover_perf_test.js`, `planet_alert_test.js`, `reaction_match_test.js`, `watch_crosshair_test.js`, `quest_tracker_test.js`. No DLL/SWF/gfx compile. No Starfield launch. In-game hover frametime remains NOTRUN.
+- Private dump window is `max(HUD-ready, intro resolved) + PerfSettleMs` then `PerfDumpWait=12`, default-off. Never-armed intro uses HUD-ready (fixed). Native `movieAdvance` is `ASMovieRootBase::AdvanceFrame(bool)` root-maintenance (`rootT`/`rootF`), not whole HUD / ENTER_FRAME. Perf helpers try `getTimer` and cannot throw out of `hzOnFrame`; splash/alerts keep `hz41Now`. Analog no longer draws the 6 o'clock PM/DAY sub-dial. ClockFormat applies to LOCAL, GAME, and PC; F11 STYLE live preview copies the planet card Local/Game text.
 - File version is 0.43.1.0 in `src/hz_version.h`, both `set_version` lines, `HZ_BUILD`, and the module build constants. The settings schema stays `0.42.0`.
 - `WatchStyle=0` and `CrosshairRule=0` are the defaults. Existing installs that omit the keys keep today's HUD and today's reticle.
 - The new watch block has no `getTimer` and no new glow. No new F key. Watch text is created at 13 px or larger, then held to a 13 px on-screen floor at the HUD scale.
@@ -75,3 +76,7 @@ While styles 1 to 4 are on, the watch frame does not build a clock object, a sig
 8. Watch Off: the character card stays. No inner radar, nearby markers, heading chevron, top cap, or leftover filled gray annulus.
 9. Vanilla and Vanilla + Horizon: the complete game watch, including the thick white top cap and outer ring, on first load and after Digital then Vanilla. Native temperature / gravity / oxygen / off-planet follow the game, not a Horizon keep-hide. Day cycle, off-planet, autopilot, and location name return to the last visibility the game had, including after Off with no new native event. Switch styles in F11, including Digital and Analog, and return: FadeIn alpha is not forced, INFO is not reconstructed, and independently hidden health / ammo / boost stay hidden. Arrange moves that whole assembly. Digital and Analog keep nearby, mission, and enemy markers on the Horizon face and do not show a second vanilla cap.
 10. Outpost beacon: Hold R to Delete is not gray when enabled, and holding R runs the game's delete. No second vanilla prompt bar on the Horizon card.
+
+## Performance investigation (this branch)
+
+Source review of hover/scanner/native loops at `b924a4c`. Independent review of `b35bbf86` was HOLD5. Independent review of `cfd64cd` was HOLD (S1 getTimer import, H1 noarm sliding arm). This candidate length-prefixes every drawn field and adds a private timing correction plus the S1/H1 safety fixes; it is **not** independently PASSed. Host tests named under What was checked here are the suites that actually ran. No DLL/SWF compile. Next gfx must pass the Mandatory GFX splice gate. User FPS reports unverified. Frametime remains NOTRUN. `scope=asRootMaint` is not FPS.

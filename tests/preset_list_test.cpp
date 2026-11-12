@@ -22,6 +22,7 @@ namespace HZF {
 inline const char* kVersion = "0.42.0";
 }
 #include "hz_ini_diff.h"
+#include "hz_preset_apply.h"   // r7 (S-4): the real PresetToUser
 
 namespace {
 
@@ -59,8 +60,8 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.1.0", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 1 && HZ_FILE_VERSION_BUILD == 0, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.2.0", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 2 && HZ_FILE_VERSION_BUILD == 0, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "verbose reaction trace is off for this release");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "unfiltered HUD capture is off for this release");
 	Expect(HzFileVersionOk("0.43.1.0"), "4-part version ok");
@@ -790,11 +791,11 @@ int main()
 		Expect(msgBody.find("CommsRxPoll(now);") != std::string::npos
 			&& msgBody.find("if (now - g_hudSince < 3000)") == std::string::npos,
 			"the reaction drain is not gated on HUD ready");
-		Expect(src.find("if (now - g_hudSince < 3000) return;") != std::string::npos,
+		Expect(src.find("if (now - g_hudSince < 3000)") != std::string::npos,
 			"the HUD poll still waits 3 s before F11-ready work");
 		{
 			const auto intro = src.find("REX::INFO(\"HUD intro start\")");
-			const auto wait3 = src.find("if (now - g_hudSince < 3000) return;");
+			const auto wait3 = src.find("if (now - g_hudSince < 3000)");
 			Expect(intro != std::string::npos && wait3 != std::string::npos && intro < wait3, "the intro fires before the 3 s HUD-ready wait");
 			Expect(src.find("REX::INFO(\"HUD intro done\")") != std::string::npos, "intro done is logged");
 			Expect(src.find("REX::INFO(\"HUD intro skipped\")") != std::string::npos, "intro skipped is logged");
@@ -828,7 +829,7 @@ int main()
 		Expect(ini.find("\r\n") != std::string::npos, "Moragar's Choice stays CRLF");
 		Expect(ini.find("Name=Moragar's Choice") != std::string::npos, "preset name");
 		Expect(ini.find("Author=Moragar") != std::string::npos, "preset author");
-		Expect(ini.find("Version=0.43.1.0") != std::string::npos, "preset Version is the file version");
+		Expect(ini.find("Version=0.43.2.0") != std::string::npos, "preset Version is the file version");
 		Expect(ini.find("Description=The author's own settings, matching the Nexus screenshots.") != std::string::npos, "preset description");
 		Expect(ini.find("NameHover=0") != std::string::npos, "Moragar's Choice sets NameHover");
 		Expect(ini.find("VitalsBars=0") != std::string::npos, "Moragar's Choice sets VitalsBars");
@@ -878,7 +879,7 @@ int main()
 		Expect(static_cast<bool>(in), "default.ini opens");
 		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 		Expect(ini.find("\r\n") != std::string::npos, "default.ini stays CRLF");
-		Expect(ini.find("HorizonUI.default.ini (v0.43.1.0)") != std::string::npos,
+		Expect(ini.find("HorizonUI.default.ini (v0.43.2.0)") != std::string::npos,
 			"default.ini header is the file version");
 		const auto cards = ini.find("[Cards]");
 		const auto compass = ini.find("[Compass]");
@@ -1026,12 +1027,102 @@ int main()
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(lua.find("set_version(\"0.43.1.0\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.43.2.0\")") != std::string::npos, "xmake version is the 4-part file version");
 		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
 		std::ifstream cpp("res/horizonui-plugin.cpp.in");
 		Expect(static_cast<bool>(cpp), "plugin version template opens");
 		std::string plugin((std::istreambuf_iterator<char>(cpp)), std::istreambuf_iterator<char>());
 		Expect(plugin.find("v.PluginVersion({ ${COMMONLIB_PLUGIN_VERSION_MAJOR}, ${COMMONLIB_PLUGIN_VERSION_MINOR}, ${COMMONLIB_PLUGIN_VERSION_PATCH}, ${HZ_FILE_VERSION_BUILD} });") != std::string::npos, "SFSE plugin version uses the file-version build");
+	}
+
+	// r6 item 2: [Scanner] HideWatchWhileScanning (default 0) goes through the C++ preset / user.ini path like the other
+	// scanner keys: a known default.ini key, so Diff keeps it when it differs and drops it when it is the default.
+	{
+		std::ifstream in("Interface/HorizonUI/HorizonUI.default.ini");
+		std::string def((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		const auto sc = def.find("[Scanner]");
+		const auto hw = def.find("\r\nHideWatchWhileScanning=0\r\n");
+		const auto nx = def.find("\r\n[", sc + 1);
+		Expect(sc != std::string::npos && hw != std::string::npos && hw > sc && hw < nx, "r6: default.ini has HideWatchWhileScanning=0 under [Scanner]");
+		const std::string on = "[Scanner]\r\nHideWatchWhileScanning=1\r\n";
+		const std::string full = HZF::Overlay(def, on);
+		HZF::DiffOpt o;   // SaveFromHud's options
+		const auto saved = HZF::Diff(full, def, "", o);
+		Expect(saved.find("[Scanner]") != std::string::npos && saved.find("HideWatchWhileScanning=1") != std::string::npos, "r6: F11 save writes HideWatchWhileScanning=1 to user.ini");
+		const auto savedOff = HZF::Diff(def, def, "", o);
+		Expect(savedOff.find("HideWatchWhileScanning") == std::string::npos, "r6: the default (0) is not written");
+		// main.cpp PresetDiff / PresetToUser: Diff of the text without [Preset], unknown keys and sections dropped
+		HZF::DiffOpt po;
+		po.keepUnknownKeys = false;
+		po.keepUnknownSections = false;
+		const auto body = HZF::Diff(HZF::StripSection(full, "preset"), def, "", po);
+		Expect(body.find("HideWatchWhileScanning=1") != std::string::npos, "r6: a saved preset holds HideWatchWhileScanning=1");
+		const std::string preset = "[Preset]\r\nName=Watch\r\nAuthor=Player\r\nVersion=0.42.0\r\n\r\n" + on;
+		const auto applied = HZF::Diff(HZF::StripSection(preset, "preset"), def, "", po);
+		Expect(applied.find("HideWatchWhileScanning=1") != std::string::npos, "r6: applying that preset sets HideWatchWhileScanning=1");
+		const auto back = HZF::Diff(HZF::StripSection("[Preset]\r\nName=Plain\r\n\r\n[Scanner]\r\nScanUnits=1\r\n", "preset"), def, "", po);
+		Expect(back.find("HideWatchWhileScanning") == std::string::npos, "r6: a preset without the key puts it back to the default (rule 2)");
+		HZF::Doc d = HZF::Parse(HZF::Overlay(def, applied));
+		auto s2 = d.Find("scanner");
+		Expect(s2 && s2->kv.count("hidewatchwhilescanning") && s2->kv["hidewatchwhilescanning"].second == "1", "r6: the merged text the HUD reads has HideWatchWhileScanning=1");
+	}
+
+	// r6 item 4: the watch logger wrote nothing. [Debug] WatchLog has no default-INI key on purpose, and the F11 save
+	// (SaveFromHud: Diff with keepUnknownKeys=false) dropped every [Debug] key that is not in default.ini, so the first
+	// save after WatchLog=1 was typed in removed it and LoadIni read WatchLog=0. This block fails on 442931a.
+	{
+		std::ifstream in("Interface/HorizonUI/HorizonUI.default.ini");
+		std::string def((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		Expect(def.find("WatchLog") == std::string::npos, "r6: default.ini still has no WatchLog key (private diag)");
+		// the tester's [Debug] block (ba84a797 INI, CRLF, WatchLog=1 last)
+		const std::string user = "[Cards Extra]\r\nWatchStyle=0\r\n\r\n[Debug]\r\nDebug=0\r\nPerfDiag=1\r\nPerfMode=0\r\nPerfDump=1\r\nPerfScan=1\r\nPerfDumpWait=20\r\nPerfSettleMs=2000\r\nWatchLog=1\r\n";
+		auto readKey = [](const std::string& a_merged, const char* a_k) {   // LoadIni's reader: any section, last one wins
+			HZF::Doc d = HZF::Parse(a_merged);
+			std::string v;
+			for (auto& sec : d.secs)
+				if (auto it = sec.kv.find(a_k); it != sec.kv.end()) v = it->second.second;
+			return v;
+		};
+		Expect(readKey(HZF::Overlay(def, user), "watchlog") == "1" && readKey(HZF::Overlay(def, user), "perfdiag") == "1", "r6: LoadIni reads WatchLog=1 and PerfDiag=1 from that user.ini");
+		// F11 save: the HUD's full text does not carry WatchLog (it is not a setting)
+		const std::string full = HZF::Overlay(def, "[Debug]\r\nPerfDiag=1\r\nPerfDump=1\r\nPerfDumpWait=20\r\n");
+		HZF::DiffOpt so;   // SaveFromHud's options
+		const auto saved = HZF::Diff(full, def, user, so);
+		Expect(saved.find("WatchLog=1") != std::string::npos, "r6: F11 save keeps the player's [Debug] WatchLog=1 (dropped before r6)");
+		Expect(readKey(HZF::Overlay(def, saved), "watchlog") == "1", "r6: after the save LoadIni still reads WatchLog=1");
+		const auto saved2 = HZF::Diff(HZF::Overlay(def, saved), def, saved, so);
+		Expect(saved2.find("WatchLog=1") != std::string::npos, "r6: a second save keeps it too");
+		Expect(HZF::Diff(full, def, "[Cards]\r\nNoSuchKey=1\r\n", so).find("NoSuchKey") == std::string::npos, "r6: an unknown key of another known section is still dropped");
+		Expect(HZF::Diff(full, def, "", so).find("WatchLog") == std::string::npos, "r6: WatchLog is never added when the player did not write it");
+		// preset apply: r7 (S-4) calls the real HZF::PresetToUser (hz_preset_apply.h, used by main.cpp). The preset's [Debug]
+		// is skipped, the player's own [Debug] stays, WatchLog included.
+		const std::string preset = "[Preset]\r\nName=X\r\n\r\n[Scanner]\r\nScanUnits=1\r\n\r\n[Debug]\r\nWatchLog=0\r\nPerfDiag=0\r\n";
+		const auto applied = HZF::PresetToUser(preset, def, user);
+		Expect(applied.find("WatchLog=1") != std::string::npos && applied.find("PerfDiag=1") != std::string::npos, "r6: applying a preset keeps the player's WatchLog=1");
+		Expect(applied.find("WatchLog=0") == std::string::npos && applied.find("PerfDiag=0") == std::string::npos && applied.find("[Preset]") == std::string::npos, "r7 S-4: the preset's own [Debug] and [Preset] never reach user.ini");
+		Expect(applied.find("ScanUnits=1") != std::string::npos, "r7 S-4: the preset's settings are applied");
+		Expect(readKey(HZF::Overlay(def, applied), "watchlog") == "1", "r7 S-4: LoadIni reads WatchLog=1 after a preset apply");
+		const auto fresh = HZF::PresetToUser(preset, def);
+		Expect(fresh.find("WatchLog") == std::string::npos, "r7 S-4: a preset applied with no old user.ini adds no WatchLog (diagnostics stay off)");
+		const auto keepHk = HZF::PresetToUser(preset, def, "[Hotkeys]\r\nSettingsKey=F10\r\n");
+		Expect(keepHk.find("SettingsKey=F10") != std::string::npos, "r7 S-4: the player's personal keys ([Hotkeys]) stay, as before the move");
+		Expect(HZF::OnlySection(user, "debug").find("[Debug]") == 0 && HZF::OnlySection(user, "cards").empty(), "r6: OnlySection returns one section, or nothing");
+		std::ifstream mc("src/main.cpp");
+		std::string m((std::istreambuf_iterator<char>(mc)), std::istreambuf_iterator<char>());
+		std::ifstream ph("src/hz_preset_apply.h");
+		std::string pa((std::istreambuf_iterator<char>(ph)), std::istreambuf_iterator<char>());
+		Expect(pa.find("return Diff(p, a_defs, OnlySection(a_oldUser, \"debug\"), o);") != std::string::npos, "r6: PresetToUser passes the old [Debug] to Diff (r7: in hz_preset_apply.h)");
+		Expect(m.find("inline std::string PresetToUser(") == std::string::npos && m.find("\n#include \"hz_preset_apply.h\"") != std::string::npos
+			&& m.find("PresetToUser(pr, defs)") != std::string::npos && m.find("PresetToUser(text, defs, old)") != std::string::npos, "r7 S-4: main.cpp includes hz_preset_apply.h and calls that one PresetToUser (no second copy)");
+		{
+			const auto inc = m.find("\n#include \"hz_preset_apply.h\"");
+			const auto lastNs = m.rfind("namespace HZ", inc);
+			const auto lastClose = m.rfind("\n}", inc);
+			Expect(inc != std::string::npos && lastClose > lastNs && m.find("\n#include \"hz_ini_diff.h\"") < inc, "r7 S-4: hz_preset_apply.h is included at file scope, after hz_ini_diff.h");
+		}
+		Expect(m.find("Diff(a_full, Defaults(a_p), user, o)") != std::string::npos, "r6: main.cpp SaveFromHud passes the old user.ini to Diff");
+		Expect(m.find("if (get(\"watchlog\", v)) g_wlOn.store(hzperf::Parse01(v), std::memory_order_relaxed);") != std::string::npos
+			&& m.find("REX::INFO(\"watchlog: {} ([Debug] WatchLog={}, needs PerfDiag=1)\"") != std::string::npos, "r6: LoadIni reads [Debug] WatchLog and logs its state once per read when PerfDiag=1");
 	}
 
 	if (g_fails) {

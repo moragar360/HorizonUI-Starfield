@@ -7,7 +7,7 @@
       // Horizon draws its own panels from the same data providers. Settings: [Scanner] of HorizonUI.default.ini with
       // HorizonUI.user.ini laid over (the shared reader, prefix hzs37); read when the scanner opens and polled every
       // 2 s while it is open, so an F11 save (HzRev) applies without reopening.
-      private static const HZS_VERSION:String = "0.43.1.0";   // 0.43.1.0: the scanner movie's build version (= the DLL file version); bump here only
+      private static const HZS_VERSION:String = "0.43.2.0";   // 0.43.2.0: the scanner movie's build version (= the DLL file version); bump here only
       private static const HZS_LRG:Boolean = __HZS_LRG__;
       private static const HZS_SCALE:Number = HZS_LRG ? 1.07 : 1;
       // design tokens 0.3.1 (exotic purple added in v0.40)
@@ -51,6 +51,9 @@
       private static const HZS_MAX_INI:int = 65536;    // a settings file larger than 64 KB is ignored (defaults instead)
       private var hzsC:Object = null;       // [Scanner] values
       private var hzsS:Object = null;       // the [Style] / [Debug] values the scanner follows
+      private var hzsPerfDiag:Boolean = false;
+      private var hzsPerfMode:int = 0;
+      private var hzsPerfScan:Boolean = true;
       private var hzsTxt:String = null;     // last applied settings text
       private var hzsReading:Boolean = false;
       private var hzsReady:Boolean = false;
@@ -243,6 +246,9 @@
       {
          var c:Object = this.hzsDefaults();
          var st:Object = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ClockFormat":0,"TempUnit":0};
+         this.hzsPerfDiag = false;
+         this.hzsPerfMode = 0;
+         this.hzsPerfScan = true;
          if(txt != null)
          {
             var sec:String = "";
@@ -273,6 +279,12 @@
                   else if(k == "headerstyle" && !isNaN(nv)) { st.HeaderStyle = Math.max(0,Math.min(1,int(nv))); }
                   else if(k == "clockformat" && !isNaN(nv)) { st.ClockFormat = Math.max(0,Math.min(1,int(nv))); }
                   else if(k == "tempunit" && !isNaN(nv)) { st.TempUnit = Math.max(0,Math.min(1,int(nv))); }
+               }
+               else if(sec == "debug")
+               {
+                  if(k == "perfdiag") { this.hzsPerfDiag = (nv >= 0.5 || v.toLowerCase() == "true"); }
+                  else if(k == "perfmode" && !isNaN(nv)) { this.hzsPerfMode = int(nv); if(this.hzsPerfMode < 0 || this.hzsPerfMode > 7) { this.hzsPerfMode = 0; } }
+                  else if(k == "perfscan") { this.hzsPerfScan = !(nv < 0.5 || v.toLowerCase() == "false"); }
                }
             }
          }
@@ -313,6 +325,13 @@
          catch(e:Error) { }
          this.hzsReady = true;
       }
+      private function hzsPerfSkipDraw() : Boolean
+      {
+         if(!this.hzsPerfDiag) { return false; }
+         if(this.hzsPerfMode == 1 || this.hzsPerfMode == 7) { return true; }
+         if(this.hzsPerfMode == 6 && this.hzsPerfScan == false) { return true; }
+         return false;
+      }
 
       // ---------------------------------------------------------------- frame tick
       private function hzsTick(e:Event) : void
@@ -334,6 +353,7 @@
          if(!this.hzsReady) { return; }
          try { this.hzsUpdVr(); } catch(e1:Error) { }
          if(this.hzsVr == null) { return; }
+         if(this.hzsPerfSkipDraw()) { return; }
          if(this.hzsDirty || this.hzsFrame % 6 == 0)
          {
             this.hzsDirty = false;
