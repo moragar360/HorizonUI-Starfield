@@ -763,8 +763,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.1.0", "file version is 0.43.1.0");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 1 && HZ_FILE_VERSION_BUILD == 0, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.2.0", "file version is 0.43.2.0");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 2 && HZ_FILE_VERSION_BUILD == 0, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -3521,7 +3521,7 @@ int main()
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.1.0\"") != std::string::npos, "HUD movie build id is 0.43.1.0");
+		Expect(as.find("HZ_BUILD:String = \"0.43.2.0\"") != std::string::npos, "HUD movie build id is 0.43.2.0");
 		{
 			const auto confirm = AsFnBody(as, "private function hzMsglogDrawConfirm", "private function hzMsglogTypeOn");
 			Expect(confirm.find("hzMsglogWrap") != std::string::npos, "the clear confirm wraps its warning");

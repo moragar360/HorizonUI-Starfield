@@ -4,7 +4,7 @@ All notable changes to Horizon UI are listed here, newest first. The format foll
 
 Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never published; 0.41.0 replaced 0.40.3, and its entry includes the changes prepared for 0.40.3.
 
-## [0.43.1.0-alpha] - unreleased
+## [0.43.2.0-alpha] - unreleased
 
 Not published. No tag. The settings schema stays 0.42.0, so an existing `HorizonUI.user.ini` carries over. `WatchStyle` and `CrosshairRule` stay at their defaults until you change them.
 
@@ -13,7 +13,7 @@ Not published. No tag. The settings schema stays 0.42.0, so an existing `Horizon
 - **Crosshair visibility** in F11 > RULES. `CrosshairRule` under `[Rules]`: 0 always (default), 1 only with a weapon drawn, 2 off. This hides the aiming dot or reticle only. The center interact ring and its glyph stay. A restore puts back only a hide this rule made, and it leaves an iron-sights hide alone. `CrosshairStyle` is unchanged.
 
 ### Changed
-- **SFSE plugin** file and product version are 0.43.1.0. This build is not a release download yet.
+- **SFSE plugin** file and product version are 0.43.2.0. This build is not a release download yet.
 - **Hover cards (source, unproven in-game):** an unchanged activation or item payload no longer forces a full card rebuild. Fingerprints are length-prefixed and include every field the card draws (list stolen/contraband, press/hold flags, compare gate, weight precision, resolved font). Foe HP/ghost and hold meters update on retained sprites. `hzTW` reuses a field's last width while text, size, tracking, and resolved face stay the same. Fade, fonts, colors, and live F11 apply are unchanged. Frametime is **NOTRUN**. Source rebuild cost is not a verified hitch cause.
 - **HUD performance diagnostics** are off by default (`[Debug] PerfDiag=0`). `PerfMode` A–G, `PerfDump` 0→1 (one log line after intro-resolved + `PerfSettleMs` + `PerfDumpWait` seconds), and `PerfScan` isolate native vs GFx vs scanner. Native `movieAdvance` is `ASMovieRootBase::AdvanceFrame(bool)` root-maintenance only, split `rootT`/`rootF`; it is not whole-HUD or ENTER_FRAME. Perf helpers use `getTimer` (still 1 ms); splash/alerts keep `hz41Now` (Date). No per-frame log, no new thread. Mode A can leave the vanilla rollover visible; Mode B still draws the scanner. A dump Invoke can hitch and is not FPS proof.
 - **Watch styles 1 and 2** show the game's watch again, as one assembly. Arrange moves that whole watch together, including the top bar, the ring, the face, the heading chevron, and the in-face markers. The character card, alerts, detection, and autopilot stay put. Style 2 still tints that watch and does not add a second planet name.

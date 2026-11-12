@@ -14,7 +14,7 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 - **Customizable:** more than 100 settings, Arrange Cards and Arrange Scanner to move anything (the scope's hold-breath chip included), a vertical or horizontal Vitals card, colors, fonts, sizes, and presets you can save and switch.
 - **Modular:** a core HUD plus optional **Horizon Font**, **Comms** (subtitles, dialogue and companion reactions), the **Message Log** (a searchable history of your HUD messages), the optional **Scanner**, Horizon's own hand scanner screen, and the optional **Scope** module, a Horizon hold-breath chip for weapon scopes. Core is always installed; the modules are optional parts of the same FOMOD installer and need Core.
 
-## New in 0.43.1.0 (alpha, unreleased)
+## New in 0.43.2.0 (alpha, unreleased)
 
 This build is not published and has no release tag. Install steps below still describe the published 0.43.0.33 download.
 
