@@ -86,7 +86,7 @@ function makeHost(opt) {
 		hzHsOn: true, hzShowPlanet: true, hzUserHidden: false, hzPpH: 84, hzPpW: 330, hzMargin: 40, hzFades: [], hz43EnvLang: "en",
 		hz43ScanHid: false, hz43ScanMk: [], hzEnvP0Ini: false, hzLay: {}, hzHeaderStyle: 0, hzBlg: null, log,
 		hzHsChip: null, hzHsTf: null, hzHsSubbed: false, hzHsSeq: 0, hzHsCat: 0, hzHsCatSeq: 0, hzHsWord: "HAZARD", hzHsAlSeq: 0,
-		hzHsAlPos: false, hzHsAlTxt: "", hzHsSt: -1, hzHsSrc: -1, hzHsSrcTxt: null, hzHsW: -1, hzHsUp: false, hzHsVanD: null, hzHsCardOn: true, hzFadeCards: true,
+		hzHsAlPos: false, hzHsAlTxt: "", hzHsSt: -1, hzHsSrc: -1, hzHsSrcTxt: null, hzHsW: -1, hzHsUp: false, hzHsVanD: null, hzHsCardOn: true, hzFadeCards: true, hzWatchStyle: 0,
 		hzT(p, txt) { const t = { text: txt, width: 0, x: 0, y: 0 }; p.addChild(t); return t; },
 		hzTxtObj() { return {}; }, hzApplyFmt() {}, hzUC(s) { return s.toUpperCase(); },
 		hzFitText(tf, full) { log.push("text:" + full); tf.text = full; }, hzTW(tf) { return tf.text.length * 8; },
@@ -215,11 +215,50 @@ const chipText = (h) => h.hzHsTf.text;
 		expect(ok2, name + ": stays back (no re-hide while the chip is not shown, no repeated writes)");
 		expect(ok3, name + ": back on screen = hidden again (no duplicate)");
 	}
+	// watch styles: the chip shows in every style; the chip-driven hide of the vanilla text is style 0 only
 	for (const ws of [0, 1, 2, 3, 4]) {
-		const h = setup({ hzWatchStyle: ws }); onScreen(h); const a = !h.t.visible; h.hzShow(h.HorizonEnv_mc, false);
-		expect(a && h.t.visible, "watch style " + ws + ": same rule (on screen hides, card off gives it back)");
+		const h = setup({ hzWatchStyle: ws });
+		const n0 = h.log.length;
+		onScreen(h); h.hzHsLayout(); h.hzShow(h.HorizonEnv_mc, false); h.hzShow(h.HorizonEnv_mc, true); alert(h, false, "Extreme Heat");
+		const chip = h.hzHsChip.visible;
+		if (ws === 0) {
+			expect(chip && !h.t.visible && h.hzHsVanD === h.t, "watch style 0: chip shown, vanilla text hidden while it is");
+		} else {
+			const touched = h.log.slice(n0).filter((l) => /EnvAlertText/.test(l));
+			expect(chip && h.t.visible && h.hzHsVanD === null && touched.length === 0, "watch style " + ws + ": chip shown, the vanilla text is never touched (left to the style's own rules)");
+		}
 	}
-	expect(fnText(as, "hzHsVan").body.indexOf("hzWatchStyle") < 0, "the rule does not depend on the watch style");
+	for (const ws of [1, 2, 3, 4]) {
+		const h = setup({ hzWatchStyle: 0 }); onScreen(h);
+		const a = !h.t.visible;
+		h.hzWatchStyle = ws; h.hzHsLayout();   // F11 / INI style change: the layout pass
+		const b = h.t.visible && h.hzHsVanD === null && h.hzHsChip.visible;
+		h.hzWatchStyle = 0; h.hzHsLayout();
+		expect(a && b && !h.t.visible, "style 0 -> " + ws + " gives the vanilla text back on the layout pass; back to 0 hides it again");
+	}
+	{
+		const h = setup({ hzWatchStyle: 0 }); onScreen(h); h.hz43ScanHid = true; h.hzWatchStyle = 2; h.hzHsLayout();
+		expect(!h.t.visible && h.hz43ScanMk.indexOf(h.t) >= 0, "style change mid-scan: the scan close gives the vanilla text back");
+	}
+	expect(/var want:Boolean = this\.hzWatchStyle == 0 && /.test(fnText(as, "hzHsVan").body), "the vanilla text hide checks watch style 0 first");
+	expect(/this\.hzHsVan\(\);\s*$/.test(fnText(as, "hzHsLayout").body) && fnText(as, "hz26LayoutAfter").body.indexOf("this.hzHsLayout()") >= 0, "every layout pass (F11 apply / INI reload) re-checks it");
+	// alert lists with more than one entry: the last one is the latest
+	{
+		const h = setup();
+		fx(h, ["HazardEffect_Thermal"], "THERMAL");
+		h.hzHsOnAlerts({ data: { aEnvironmentAlerts: [{ bIsPositive: false, sAlertText: "Extreme Heat" }, { bIsPositive: true, sAlertText: "Suit Protection Restoring" }] } });
+		expect(fill(h) === "379b2c" && chipText(h) === "SUIT PROTECTION RESTORING", "two alerts in one update: the last (positive) one sets green");
+		h.hzHsOnAlerts({ data: { aEnvironmentAlerts: [{ bIsPositive: true, sAlertText: "A" }, { bIsPositive: true, sAlertText: "B" }, { bIsPositive: false, sAlertText: "Corrosive" }] } });
+		expect(fill(h) === "c33b29" && chipText(h) === "CORROSIVE", "three alerts: the last (negative) one sets red with its text");
+		const n = h.log.length;
+		h.hzHsOnAlerts({ data: { aEnvironmentAlerts: [] } }); h.hzHsOnAlerts({ data: {} }); h.hzHsOnAlerts(null);
+		expect(h.log.length === n, "an empty / missing alert list changes nothing");
+	}
+	// ShowPlanet=0 from the start
+	{
+		const h = setup({ hzShowPlanet: false }); onScreen(h);
+		expect(!h.hzHsChip.visible && h.t.visible, "ShowPlanet=0 from the start: no chip, vanilla text untouched");
+	}
 	{
 		const h = setup({ hzHsCardOn: false }); onScreen(h);
 		expect(h.t.visible && !h.hzHsChip.visible, "card not shown yet (before the first refresh): the vanilla text is never hidden");
@@ -252,7 +291,7 @@ const chipText = (h) => h.hzHsTf.text;
 		expect(hs.indexOf("if(c == this.HorizonEnv_mc) { try { this.hzHsCard(on); } catch(eHsC:Error) { } }") > 0 && count(as, "this.hzHsCard(") === 1, "the card edge comes only from hzShow");
 		expect(fnText(as, "hzOnFrame").body.indexOf("hzShow(") < 0 && fnText(as, "hzTickFades").body.indexOf("hzShow(") < 0, "hzShow is not called from the frame tick");
 		expect(/^\s*if\(on == this\.hzHsCardOn\) \{ return; \}/.test(fnText(as, "hzHsCard").body), "hzHsCard returns on an unchanged target");
-		expect(/var want:Boolean = this\.hzHsSt > 0 && this\.hzHsChip != null && this\.hzHsChip\.visible && this\.hzHsWant\(\) && !this\.hzUserHidden;/.test(fnText(as, "hzHsVan").body), "hidden only while the chip is drawn and wanted");
+		expect(/var want:Boolean = this\.hzWatchStyle == 0 && this\.hzHsSt > 0 && this\.hzHsChip != null && this\.hzHsChip\.visible && this\.hzHsWant\(\) && !this\.hzUserHidden;/.test(fnText(as, "hzHsVan").body), "hidden only while the chip is drawn and wanted");
 	}
 }
 // layout flip + Character offset

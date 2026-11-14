@@ -1747,7 +1747,9 @@
       //     color (else a Horizon word: "<WORD> HAZARD" / "SUIT PROTECTION RESTORING"; always the word for ja / zhhans).
       // Sound: none here. The vanilla watch keeps its own alert sound (BottomLeftGroup PlayAlertSound, still running
       // under the alpha group hide); the chip only draws.
-      // Vanilla text: only while the chip is on screen (drawn, and its planet card wanted on screen: HazardStatus on,
+      // Vanilla text: watch style 0 (OFF) only. In styles 1 / 2 (the vanilla watch is shown) the vanilla text is never hidden
+      // here, and in styles 3 / 4 it is left to those styles' own bottom-left rules (no new hide). A style change gives
+      // back what this hid on the next layout pass (hzHsLayout). In style 0, only while the chip is on screen (drawn, and its planet card wanted on screen: HazardStatus on,
       // ShowPlanet, the card's show rule, hide-all, the scanner hide, the game's HUD group), the vanilla EnvAlertText
       // holder is hidden (visible only). The moment the chip is not shown for any reason it is given back (only what this
       // hid). Edge-only: the chip state change (hzHsSync), the card's show target (hzShow -> hzHsCard), alerts and layout.
@@ -1936,7 +1938,7 @@
       // is not. Edges only (chip state, card target, alerts, layout, hide-all); one getChildByName on the known group, no search.
       private function hzHsVan() : void
       {
-         var want:Boolean = this.hzHsSt > 0 && this.hzHsChip != null && this.hzHsChip.visible && this.hzHsWant() && !this.hzUserHidden;
+         var want:Boolean = this.hzWatchStyle == 0 && this.hzHsSt > 0 && this.hzHsChip != null && this.hzHsChip.visible && this.hzHsWant() && !this.hzUserHidden;   // style 0 only
          if(!want)
          {
             if(this.hzHsVanD == null) { return; }
