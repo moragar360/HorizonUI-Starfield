@@ -2479,8 +2479,8 @@
             try { this.hz31PpFit(left,cx,sP,sCm); } catch(err31:Error) { }
             this.hzPlace(this.HorizonEnv_mc,left,top);
             this.hzPlace(this.HorizonCompass_mc,cx - this.hzCmpW19 * sCm / 2,tl.y + this.hz27CmpTop());
-            this.hzPlace(this.HorizonQuest_mc,right - HZ_Q19_W * sQ,top);
-            this.hzPlace(this.HorizonCompactQuest_mc,right - HZ_CQ19_W * sQ,top);
+            this.hzPlace(this.HorizonQuest_mc,right - this.hzQW * sQ,top);   // 0.43.3.0: QuestsWidth
+            this.hzPlace(this.HorizonCompactQuest_mc,right - this.hzCQW() * sQ,top);
             try { this.hz42VitApply(); } catch(err42:Error) { }   // v0.42.0: VitalsLayout (card size 330 x 124 or 668 x 58)
             var vy:Number = bottom - this.hz42VH() * sV;
             this.hzPlace(this.HorizonVitals_mc,left,vy);
@@ -6109,7 +6109,7 @@
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -9571,6 +9571,171 @@
       private var hzQName:String = "";
       private var hzQObjStr:String = "";
       private var hzQDistStr:String = "";
+      // ---- 0.43.3.0 quest log: width, max height, text wrap (mockup /workspace/mockups/questlog) ----
+      // [Cards] QuestsWidth (380 - 660, default 380 = today's card), QuestsMaxHeight (100 - 300, default 160),
+      // QuestsWrap (1 = the title and the objective wrap onto new lines at the same font size instead of ending in an
+      // ellipsis; only a text still too long at the max height ends in "..." on its last line. 0 = today's one-line card).
+      // The compact form uses the same width (at least today's 420) and puts the objective under the name.
+      // Edge-only: a wrap is measured only when the text, the width, the line cap or the field's format epoch (font,
+      // size, style, scale) changed (hzQWrapTo keeps the result on the field's registry entry); hzQSync itself still runs
+      // its change-only memo first (hzQsSame), so a steady frame does nothing new.
+      private static const HZ_QW_MIN:Number = 380;
+      private static const HZ_QW_MAX:Number = 660;
+      private static const HZ_QH_MIN:Number = 100;
+      private static const HZ_QH_MAX:Number = 300;
+      private var hzQW:Number = 380;              // [Cards] QuestsWidth
+      private var hzQMaxH:Number = 160;           // [Cards] QuestsMaxHeight
+      private var hzQWrap:Boolean = true;         // [Cards] QuestsWrap
+      private var hzQPW:Number = 380;             // drawn standard card width
+      private var hzQDW:Number = 380;             // the width the standard distance column was placed for
+      private var hzCQDW:Number = 420;            // the width the compact distance column was placed for
+      private var hzCQH:Number = 36;              // drawn compact card height
+      private var hzCQPW:Number = 420;            // drawn compact card width
+      private var hzCQOMv:Boolean = false;        // the compact objective sits under the name (wrap layout)
+      private var hzQTopT:Number = 10;            // wrap layout tops of the last full pass (hzQsTops replays them)
+      private var hzQTopO:Number = 37;
+      private var hzQObjB:Number = 54;
+      private var hzQSubY0:Number = 60;
+      private var hzQSubN:int = 0;
+      private var hzCQTopO:Number = 26;
+
+      private function hzCQW() : Number
+      {
+         return Math.max(HZ_CQ19_W,this.hzQW);
+      }
+      private function hzQWClamp(v:*) : Number
+      {
+         var n:Number = Number(v);
+         if(v === null || v === undefined || String(v) == "" || isNaN(n)) { return HZ_QW_MIN; }
+         return Math.round(Math.max(HZ_QW_MIN,Math.min(HZ_QW_MAX,n)));
+      }
+      private function hzQHClamp(v:*) : Number
+      {
+         var n:Number = Number(v);
+         if(v === null || v === undefined || String(v) == "" || isNaN(n)) { return 160; }
+         return Math.round(Math.max(HZ_QH_MIN,Math.min(HZ_QH_MAX,n)));
+      }
+
+      // Purpose: put full into tf on at most maxN lines at the field's own font size: wrapped at width w (maxN > 1), or
+      // one line fitted with an ellipsis (maxN 1, hzFitText). Text still too long for maxN lines ends in "..." on the
+      // last line only. Memo on the field's registry entry: the same text, width, cap and format epoch return the kept
+      // line count with no measure and no write. Inputs: field, text, width, cap. Outputs: the line count.
+      // Author: Moragar. Last modified: 2026-11-14.
+      private function hzQWrapTo(tf:TextField, full:String, w:Number, maxN:int) : int
+      {
+         var o:Object = this.hzTxtObj(tf);
+         var fm:int = o != null ? int(o.fmtN) : -1;
+         if(o != null && o.qwF === full && o.qwW === w && o.qwN === maxN && o.qwM === fm && tf.text === o.qwT) { return int(o.qwL); }
+         var multi:Boolean = maxN > 1;
+         if(tf.wordWrap != multi) { tf.wordWrap = multi; tf.multiline = multi; }
+         if(tf.width != w) { tf.width = w; }
+         var n:int = 1;
+         if(!multi) { this.hzFitText(tf,full,w); }
+         else
+         {
+            tf.text = full;
+            n = tf.numLines;
+            if(n > maxN)
+            {
+               var lo:int = 1;
+               var hi:int = full.length;
+               while(lo < hi)
+               {
+                  var mid:int = (lo + hi + 1) >> 1;
+                  tf.text = full.substr(0,mid) + "...";
+                  if(tf.numLines <= maxN) { lo = mid; } else { hi = mid - 1; }
+               }
+               tf.text = full.substr(0,lo).replace(/\s+$/,"") + "...";
+               n = maxN;
+            }
+            if(n < 1) { n = 1; }
+         }
+         if(o != null && int(o.lines) != n && (n > 1 || int(o.lines) > 1)) { o.lines = n; this.hzApplyFmt(o); fm = int(o.fmtN); }
+         if(o != null) { o.qwF = full; o.qwW = w; o.qwN = maxN; o.qwM = fm; o.qwL = n; o.qwT = tf.text; }
+         return n;
+      }
+
+      // Purpose: a field back to one line (QuestsWrap 0 after 1); a no-op when it already is one at width w.
+      // Only a field hzQWrapTo wrote (its memo is set) is touched, once; the memo is dropped.
+      private function hzQOneLine(tf:TextField, w:Number) : void
+      {
+         var o:Object = this.hzTxtObj(tf);
+         if(o == null || o.qwF === undefined) { return; }
+         o.qwF = undefined;
+         if(tf.wordWrap) { tf.wordWrap = false; tf.multiline = false; }
+         if(int(o.lines) > 1) { o.lines = 1; this.hzApplyFmt(o); }
+         if(tf.width != w) { tf.width = w; }
+      }
+
+      // Purpose: the standard card, wrap on. Title on up to 2 lines (a fixed distance column, so a distance change never
+      // re-wraps it), the objective under it on as many lines as QuestsMaxHeight allows (at most 6), the sub-steps under
+      // that while they fit. Records the tops for hzQsTops and the sub-step start / count for hz27QLayout.
+      private function hzQWrapStd(title:String, sub:String) : void
+      {
+         var W:Number = this.hzQW;
+         var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
+         var pT:Number = Math.round(15 * ts) + 5;
+         var pO:Number = Math.round(13 * ts) + 4;
+         var hasSub:Boolean = sub.length > 0;
+         var tl:int = this.hzQWrapTo(this.hzQ19T,this.hzUC(title),W - 74 - 14 - 84,2);
+         var two:Boolean = hasSub || this.hz27QSubs.length > 0;
+         var tt:Number = two ? 10 : Math.max(10,Math.round((78 - tl * pT) / 2) - 1);
+         this.hzQTopT = tt;
+         this.hzTxtTop(this.hzQ19T,tt);
+         this.hzTxtTop(this.hzQ19D,tt + 1);
+         var ot:Number = tt + tl * pT + 7;
+         this.hzQTopO = ot;
+         var ol:int = 0;
+         this.hzQ19O.visible = hasSub;
+         if(hasSub)
+         {
+            var cap:int = Math.max(1,Math.floor((this.hzQMaxH - 8 - ot) / pO));
+            ol = this.hzQWrapTo(this.hzQ19O,sub,W - 74 - 14,Math.min(6,cap));
+            this.hzTxtTop(this.hzQ19O,ot);
+         }
+         var ob:Number = hasSub ? ot + ol * pO : tt + tl * pT;
+         this.hzQObjB = ob;
+         this.hzQSubY0 = hasSub ? ob + 6 : ob + 8;
+         var n:int = Math.min(3,this.hz27QSubs.length);
+         while(n > 0 && this.hzQSubY0 + n * 22 + 8 > this.hzQMaxH) { n--; }
+         this.hzQSubN = n;
+      }
+
+      // Purpose: the compact card, wrap on (mockup: name on the first row, the objective wraps under it, same 12 px
+      // type, 520 x 66 for two lines). Height follows the lines, capped at QuestsMaxHeight; a size change asks for a layout.
+      private function hzQWrapCmp(title:String, sub:String) : void
+      {
+         var cw:Number = this.hzCQW();
+         var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
+         var pO:Number = Math.round(12 * ts) + 4;
+         this.hzQWrapTo(this.hzCQ19T,this.hzUC(title),cw - 32 - 14 - 80,1);
+         var hasSub:Boolean = sub.length > 0;
+         this.hzCQ19O.visible = hasSub;
+         var ch:Number = 36;
+         if(hasSub)
+         {
+            var ot:Number = 9 + Math.round(12 * ts) + 5;
+            if(this.hzCQ19O.x != 32) { this.hzCQ19O.x = 32; }
+            var cap:int = Math.max(1,Math.floor((this.hzQMaxH - 8 - ot) / pO));
+            var ol:int = this.hzQWrapTo(this.hzCQ19O,sub,cw - 32 - 14,Math.min(6,cap));
+            this.hzTxtTop(this.hzCQ19O,ot);
+            this.hzCQTopO = ot;
+            this.hzCQOMv = true;
+            ch = Math.min(Math.max(36,ot + ol * pO + 8),Math.max(36,this.hzQMaxH));
+         }
+         this.hzCQSize(cw,ch);
+      }
+
+      // the compact card's declared size and panel follow (cw, ch); an edge only
+      private function hzCQSize(cw:Number, ch:Number) : void
+      {
+         if(ch == this.hzCQH && cw == this.hzCQPW) { return; }
+         this.hzCQH = ch;
+         this.hzCQPW = cw;
+         if(this.HorizonCompactQuest_mc) { this.hzSetSz(this.HorizonCompactQuest_mc,cw,ch); }
+         this.hzLaidOut = false;
+         this.hzQDraw19();
+      }
 
       private function hzBuildQuest19() : void
       {
@@ -9609,7 +9774,7 @@
          {
             var g:* = this.hzQ19Body.graphics;
             g.clear();
-            this.hzPanel(g,HZ_Q19_W,this.hz27QH,18);
+            this.hzPanel(g,this.hzQPW,this.hz27QH,18);
             this.hzTileDisc(g,38,39,24,HZ_ACCENT,0.35);
             this.hzGlyph(g,"diamond",38,39,this.hzIconCol(HZ_ACCENT),0);
          }
@@ -9617,7 +9782,7 @@
          {
             var c:* = this.hzCQ19Body.graphics;
             c.clear();
-            this.hzPanel(c,HZ_CQ19_W,36,14);
+            this.hzPanel(c,this.hzCQPW,this.hzCQH,14);
             var ac:uint = this.hzIconCol(HZ_ACCENT);
             c.beginFill(ac,1); c.moveTo(20,12); c.lineTo(26,18); c.lineTo(20,24); c.lineTo(14,18); c.lineTo(20,12); c.endFill();
          }
@@ -9651,19 +9816,27 @@
          {
             this.hzQ19D.text = dist;
             this.hzQ19D.visible = dist.length > 0;
-            var tw:Number = HZ_Q19_W - 74 - 14 - (dist.length > 0 ? this.hzTW(this.hzQ19D) + 12 : 0);
-            this.hzFitText(this.hzQ19T,this.hzUC(title),tw);
-            this.hzQ19O.visible = sub.length > 0;
-            if(sub.length > 0 || this.hz27QSubs.length > 0)
-            {
-               this.hzFitText(this.hzQ19O,sub,HZ_Q19_W - 74 - 14);
-               this.hzTxtTop(this.hzQ19T,10);
-               this.hzTxtTop(this.hzQ19D,11);
-            }
+            if(this.hzQW != this.hzQDW) { this.hzQDW = this.hzQW; this.hzQ19D.x = this.hzQW - 14 - 84; }   // 0.43.3.0: the distance column follows QuestsWidth (edge)
+            if(this.hzQWrap) { this.hzQWrapStd(title,sub); }
             else
             {
-               this.hzTxtTop(this.hzQ19T,28);
-               this.hzTxtTop(this.hzQ19D,29);
+               var dW:Number = this.hzQW - HZ_Q19_W;
+               this.hzQOneLine(this.hzQ19T,HZ_Q19_W - 74 - 14 - 84 + dW);
+               this.hzQOneLine(this.hzQ19O,HZ_Q19_W - 74 - 14 + dW);
+               var tw:Number = this.hzQW - 74 - 14 - (dist.length > 0 ? this.hzTW(this.hzQ19D) + 12 : 0);
+               this.hzFitText(this.hzQ19T,this.hzUC(title),tw);
+               this.hzQ19O.visible = sub.length > 0;
+               if(sub.length > 0 || this.hz27QSubs.length > 0)
+               {
+                  this.hzFitText(this.hzQ19O,sub,this.hzQW - 74 - 14);
+                  this.hzTxtTop(this.hzQ19T,10);
+                  this.hzTxtTop(this.hzQ19D,11);
+               }
+               else
+               {
+                  this.hzTxtTop(this.hzQ19T,28);
+                  this.hzTxtTop(this.hzQ19D,29);
+               }
             }
             try { this.hz27QLayout(sub.length > 0); } catch(errQL:Error) { qlErr = true; }
          }
@@ -9671,14 +9844,24 @@
          {
             this.hzCQ19D.text = dist;
             this.hzCQ19D.visible = dist.length > 0;
-            var right:Number = HZ_CQ19_W - 14 - (dist.length > 0 ? this.hzTW(this.hzCQ19D) + 12 : 0);
-            this.hzFitText(this.hzCQ19T,this.hzUC(title),Math.min(200,right - 32));
-            var ox:Number = 32 + this.hzTW(this.hzCQ19T) + 6;
-            this.hzCQ19O.visible = sub.length > 0 && right - ox > 40;
-            if(this.hzCQ19O.visible)
+            if(this.hzCQW() != this.hzCQDW) { this.hzCQDW = this.hzCQW(); this.hzCQ19D.x = this.hzCQDW - 14 - 80; }   // 0.43.3.0 (edge)
+            if(this.hzQWrap) { this.hzQWrapCmp(title,sub); }
+            else
             {
-               this.hzCQ19O.x = ox;
-               this.hzFitText(this.hzCQ19O,"·  " + sub,right - ox);
+               var cw:Number = this.hzCQW();
+               this.hzQOneLine(this.hzCQ19T,200);
+               this.hzQOneLine(this.hzCQ19O,200);
+               if(this.hzCQOMv) { this.hzCQOMv = false; this.hzTxtTop(this.hzCQ19O,9); }
+               this.hzCQSize(cw,36);
+               var right:Number = cw - 14 - (dist.length > 0 ? this.hzTW(this.hzCQ19D) + 12 : 0);
+               this.hzFitText(this.hzCQ19T,this.hzUC(title),Math.min(200,right - 32));
+               var ox:Number = 32 + this.hzTW(this.hzCQ19T) + 6;
+               this.hzCQ19O.visible = sub.length > 0 && right - ox > 40;
+               if(this.hzCQ19O.visible)
+               {
+                  this.hzCQ19O.x = ox;
+                  this.hzFitText(this.hzCQ19O,"·  " + sub,right - ox);
+               }
             }
          }
          if(!qlErr) { this.hzQsKeep(); }
@@ -9717,6 +9900,9 @@
       private var hzQsQLN:int = -1;
       private var hzQsH:Number = NaN;
       private var hzQsMc:Object = null;
+      private var hzQsW:Number = NaN;      // 0.43.3.0: QuestsWidth / QuestsMaxHeight / QuestsWrap of the last full pass
+      private var hzQsMh:Number = NaN;
+      private var hzQsWr:* = null;
 
       // Purpose: field j of the card (see the order above). Inputs: j. Outputs: the TextField or null. Author: Moragar.
       // Last modified: 2026-11-09.
@@ -9752,6 +9938,7 @@
             if(this.hzFont !== this.hzQsFont || this.hz30Mod["font"] !== this.hzQsFMod) { return false; }
             if(this.hz27QL !== this.hzQsQL || this.hz27QLD !== this.hzQsQLD || this.hz27QL.length != this.hzQsQLN) { return false; }
             if(this.hz27QH !== this.hzQsH || this.HorizonQuest_mc !== this.hzQsMc) { return false; }
+            if(this.hzQW !== this.hzQsW || this.hzQMaxH !== this.hzQsMh || this.hzQWrap !== this.hzQsWr) { return false; }   // 0.43.3.0
             var subs:Array = this.hz27QSubs;
             if(subs == null || subs.length != this.hzQsSubN) { return false; }
             var i:int = 0;
@@ -9817,6 +10004,9 @@
             this.hzQsQLN = this.hz27QL != null ? this.hz27QL.length : -1;
             this.hzQsH = this.hz27QH;
             this.hzQsMc = this.HorizonQuest_mc;
+            this.hzQsW = this.hzQW;   // 0.43.3.0
+            this.hzQsMh = this.hzQMaxH;
+            this.hzQsWr = this.hzQWrap;
             var subs:Array = this.hz27QSubs;
             if(subs == null) { return; }
             this.hzQsSubN = subs.length;
@@ -9865,7 +10055,15 @@
          var name:String = this.hzQName != null ? this.hzQName : "";
          var obj:String = this.hzQObjStr != null ? this.hzQObjStr : "";
          var sub:String = name.length > 0 ? obj : "";
-         if(sub.length > 0 || this.hz27QSubs.length > 0)
+         if(this.hzQWrap)
+         {
+            // 0.43.3.0: the wrap layout's tops, as recorded by the full pass (same inputs, so the same tops)
+            this.hzTxtTop(this.hzQ19T,this.hzQTopT);
+            this.hzTxtTop(this.hzQ19D,this.hzQTopT + 1);
+            if(sub.length > 0) { this.hzTxtTop(this.hzQ19O,this.hzQTopO); }
+            if(this.hzCQ19O && this.hzCQOMv && sub.length > 0) { this.hzTxtTop(this.hzCQ19O,this.hzCQTopO); }
+         }
+         else if(sub.length > 0 || this.hz27QSubs.length > 0)
          {
             this.hzTxtTop(this.hzQ19T,10);
             this.hzTxtTop(this.hzQ19D,11);
@@ -9876,8 +10074,8 @@
             this.hzTxtTop(this.hzQ19D,29);
          }
          if(this.hz27QL.length < 3) { return; }
-         var n:int = Math.min(3,this.hz27QSubs.length);
-         var y0:Number = sub.length > 0 ? 60 : 38;
+         var n:int = this.hzQWrap ? this.hzQSubN : Math.min(3,this.hz27QSubs.length);
+         var y0:Number = this.hzQWrap ? this.hzQSubY0 : (sub.length > 0 ? 60 : 38);
          var i:int = 0;
          // The full pass runs these tops inside hz27QLayout under try/catch(Error): an Error here is swallowed the same
          // way, and the memo is dropped so the next call runs the full pass.
@@ -15562,8 +15760,15 @@
       private function hz27QLayout(hasSub:Boolean) : void
       {
          if(!this.hzQ19T || this.hz27QL.length < 3) { return; }
-         var n:int = Math.min(3,this.hz27QSubs.length);
-         var y0:Number = hasSub ? 60 : 38;
+         var wr:Boolean = this.hzQWrap;   // 0.43.3.0: the wrap layout gives the start and how many fit (hzQWrapStd)
+         var W:Number = this.hzQW;
+         var n:int = wr ? this.hzQSubN : Math.min(3,this.hz27QSubs.length);
+         var y0:Number = wr ? this.hzQSubY0 : (hasSub ? 60 : 38);
+         if(W != this.hzQPW)   // the width edge: the sub-step columns follow QuestsWidth
+         {
+            var wi:int = 0;
+            while(wi < 3) { TextField(this.hz27QLD[wi]).x = W - 14 - 80; TextField(this.hz27QL[wi]).width = W - 74 - 14; wi++; }
+         }
          var i:int = 0;
          while(i < 3)
          {
@@ -15579,17 +15784,19 @@
                td.text = d;
                td.visible = d.length > 0;
                this.hzTxtTop(td,y0 + i * 22);
-               var lw:Number = HZ_Q19_W - 74 - 14 - (d.length > 0 ? this.hzTW(td) + 10 : 0);
+               var lw:Number = W - 74 - 14 - (d.length > 0 ? this.hzTW(td) + 10 : 0);
                this.hzFitText(tf,(s.opt ? "+ OPTIONAL  " : "+  ") + String(s.t),lw);
                this.hzTxtTop(tf,y0 + i * 22);
             }
             i++;
          }
-         var h:Number = n > 0 ? Math.max(78,y0 + n * 22 + 8) : 78;
-         if(h != this.hz27QH)
+         var h:Number = n > 0 ? Math.max(78,y0 + n * 22 + 8) : (wr ? Math.max(78,this.hzQObjB + 12) : 78);
+         if(wr) { h = Math.min(h,Math.max(78,this.hzQMaxH)); }
+         if(h != this.hz27QH || W != this.hzQPW)
          {
             this.hz27QH = h;
-            this.hzSetSz(this.HorizonQuest_mc,HZ_Q19_W,h);
+            this.hzQPW = W;
+            this.hzSetSz(this.HorizonQuest_mc,W,h);
             this.hzLaidOut = false;
             this.hzQDraw19();
          }
@@ -17529,6 +17736,9 @@
          if(k == "vitalsbars") { this.hzVitalsBars = (!isNaN(nv) && int(nv) == 1) ? 1 : 0; this.hzLaidOut = false; try { this.hz42BarsApply(); } catch(eVb:Error) { } try { this.hzRefreshVisibility(); } catch(eVr:Error) { } return true; }
          if(k == "startupintro") { this.hzSplashWelcome = !isNaN(nv) && nv >= 0.5; return true; }
          if(k == "modulenotecompact") { this.hz34NoteCmp = !isNaN(nv) && nv >= 0.5; return true; }
+         if(k == "questswidth") { this.hzQW = this.hzQWClamp(nv); this.hzLaidOut = false; return true; }   // 0.43.3.0
+         if(k == "questsmaxheight") { this.hzQMaxH = this.hzQHClamp(nv); this.hzLaidOut = false; return true; }
+         if(k == "questswrap") { this.hzQWrap = isNaN(nv) || nv >= 0.5; this.hzLaidOut = false; return true; }
          for each(var c:Array in HZ34_CARDS)
          {
             var n:String = String(c[0]).toLowerCase();
@@ -17545,6 +17755,9 @@
             if(c[1]) { o[c[0] + "Compact"] = this.hz34CmClamp(this.hz34Cm[c[0]]); }
          }
          o.ModuleNoteCompact = this.hz34NoteCmp ? 1 : 0;
+         o.QuestsWidth = this.hzQW;   // 0.43.3.0
+         o.QuestsMaxHeight = this.hzQMaxH;
+         o.QuestsWrap = this.hzQWrap ? 1 : 0;
          o.VitalsLayout = this.hz42VL;   // v0.42.0
          o.NameHover = this.hzNameHover == 1 ? 1 : 0;
          o.VitalsBars = this.hzVitalsBars == 1 ? 1 : 0;
@@ -17588,6 +17801,12 @@
             if(vb != this.hzVitalsBars) { this.hzVitalsBars = vb; try { this.hz42BarsApply(); } catch(eVb:Error) { } try { this.hzRefreshVisibility(); } catch(eVr:Error) { } this.hzLaidOut = false; }
          }
          if(p.StartupIntro !== undefined) { this.hzSplashWelcome = Number(p.StartupIntro) >= 0.5 || p.StartupIntro === true; }
+         // 0.43.3.0 quest log: a changed value redraws the card once (its memo sees the new value) and re-lays out
+         var qd:Boolean = false;
+         if(p.QuestsWidth !== undefined) { var qw:Number = this.hzQWClamp(p.QuestsWidth); if(qw != this.hzQW) { this.hzQW = qw; qd = true; } }
+         if(p.QuestsMaxHeight !== undefined) { var qh:Number = this.hzQHClamp(p.QuestsMaxHeight); if(qh != this.hzQMaxH) { this.hzQMaxH = qh; qd = true; } }
+         if(p.QuestsWrap !== undefined) { var qr:Boolean = Number(p.QuestsWrap) >= 0.5 || p.QuestsWrap === true; if(qr != this.hzQWrap) { this.hzQWrap = qr; qd = true; } }
+         if(qd) { try { this.hzQDraw19(); } catch(eQd:Error) { } this.hzLaidOut = false; }
          if(cd) { this.hz26ChSig = ""; this.hzLaidOut = false; }
          if(sd) { this.hzApplyScale(); }
       }
@@ -17605,6 +17824,11 @@
          a.push("VitalsBars=" + (int(p.VitalsBars) == 1 ? "1" : "0"));
          a.push("; v0.34 card compact form: -1 = GLOBAL ([Style] Compact), 0 off, 1 on. Jetpack / vitals / afflictions follow the global Compact");
          for each(var d:Array in HZ34_CARDS) { if(d[1]) { a.push(d[0] + "Compact=" + String(this.hz34CmClamp(p[d[0] + "Compact"]))); } }
+         a.push("; v0.43.3 quest tracker: QuestsWidth 380 - 660 (380 = the classic width), QuestsMaxHeight 100 - 300 (the card never grows past it),");
+         a.push(";   QuestsWrap 1 = long text starts a new line at the same font size (only text still too long at the max height ends in ...), 0 = one line");
+         a.push("QuestsWidth=" + String(this.hzQWClamp(p.QuestsWidth)));
+         a.push("QuestsMaxHeight=" + String(this.hzQHClamp(p.QuestsMaxHeight)));
+         a.push("QuestsWrap=" + (p.QuestsWrap === undefined || Number(p.QuestsWrap) >= 0.5 || p.QuestsWrap === true ? "1" : "0"));
       }
       private function hz34ScStr(v:*) : String
       {
@@ -17642,7 +17866,10 @@
             {"k":"ShowAfflictions","l":"AFFLICTIONS CARD","t":"b"},this.hz34Sz("Afflictions"),
             {"k":"ShowAmmo","l":"EQUIPMENT CARD","t":"b"},this.hz34Sz("Equipment"),this.hz34Cmp("Equipment"),
             {"k":"EquipmentExtras","l":"EQUIPMENT: GRENADES + STARBORN POWER","t":"b"},
-            {"k":"ShowQuests","l":"QUEST TRACKER","t":"b"},this.hz34Sz("Quests"),this.hz34Cmp("Quests"),
+            {"k":"ShowQuests","l":"QUEST TRACKER","t":"b"},this.hz34Sz("Quests"),this.hz34Cmp("Quests","STANDARD is the full card. COMPACT shows the quest name and the current objective only"),
+            {"k":"QuestsWidth","l":"WIDTH","t":"n","mn":380,"mx":660,"st":20,"sub":true,"note":"Font size is unchanged. Narrower widths wrap the objective onto more lines."},
+            {"k":"QuestsMaxHeight","l":"MAX HEIGHT","t":"n","mn":100,"mx":240,"st":10,"sub":true,"note":"Caps how tall the card can grow. Extra lines are not added past this height."},
+            {"k":"QuestsWrap","l":"TEXT WRAP","t":"b","sub":true,"note":"When on, text starts a new line instead of ending in an ellipsis."},
             {"k":"ShowCompass","l":"COMPASS","t":"b"},this.hz34Sz("Compass"),this.hz34Cmp("Compass","The enemy health bar follows the compass form"),
             {"k":"VehicleExitPill","l":"VEHICLE EXIT PILL","t":"b","note":"Hold-to-exit prompt while you are in a vehicle. Off = the game's prompt."},
             {"k":"EnemyBar","l":"ENEMY HEALTH BAR (TOP CENTER)","t":"b"},this.hz34Sz("Enemy"),

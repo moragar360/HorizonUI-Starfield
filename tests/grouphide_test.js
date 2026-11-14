@@ -739,7 +739,8 @@ if (base) {
 			}
 			// 0.43.3.0 hazard card: the card joins the card tables (scale list, ARRANGE lists, F11 CARDS rows, the visibility
 			// refresh). Once its own additions are taken out, every right-side line must still be byte-identical.
-			if (["hzApplyScale", "hzRefreshVisibility", "hzLayClips", "hzArrList", "hz34CardRows"].indexOf(n) >= 0 && z !== x) {
+			// 0.43.3.0 quest log: QuestsWidth in the default spot (hzLayout), the F11 rows and the [Cards] writer lines.
+			if (["hzApplyScale", "hzRefreshVisibility", "hzLayClips", "hzArrList", "hz34CardRows", "hzLayout", "hz34IniLines"].indexOf(n) >= 0 && z !== x) {
 				const hz = (src) => src.replace(',[this.HorizonHazard_mc,"Hazard"]', "").split("\n").filter((l) => RIGHT.test(l)).join("\n");
 				z = hz(z) === hz(x) ? x : z;
 			}

@@ -316,7 +316,7 @@ Object.defineProperty(TextField.prototype, "length", { get: function() { return 
 // ---- hosts ----
 const QFUNCS = ["hzTxtObj", "hzFitText", "hzTW", "hzUC", "hzTxtTop", "hz27QLayout", "hzFontName", "hzApplyFmt", "hzApplyFmt19", "hzTextSz19",
 	"hzVitTextSz", "hzChipSz", "hzChipSzOn", "hzHdrCase", "hzHdr19", "hzSetSz", "hzT", "hz27QBuild", "hzQSync"];
-const QNEW_ONLY = ["hzQsSame", "hzQsKeep", "hzQsTops", "hzQsField"];
+const QNEW_ONLY = ["hzQsSame", "hzQsKeep", "hzQsTops", "hzQsField", "hzQOneLine", "hzQWrapTo", "hzQWrapStd", "hzQWrapCmp", "hzCQW", "hzCQSize"];
 const QCHANGED = ["hzTxtObj", "hzApplyFmt", "hzQSync"];
 
 function makeQHost(kind, env) {
@@ -334,6 +334,10 @@ function makeQHost(kind, env) {
 		hzQ19T: null, hzQ19D: null, hzQ19O: null, hzCQ19T: null, hzCQ19D: null, hzCQ19O: null, HorizonQuest_mc: { _mc: 1 },
 		hzQsOk: false, hzQsR: null, hzQsName: null, hzQsObj: null, hzQsDist: null, hzQsSubN: -1, hzQsSubD: null, hzQsSubT: null, hzQsSubO: null,
 		hzQsHdr: -1, hzQsTs: NaN, hzQsFace: -1, hzQsFont: null, hzQsFMod: null, hzQsLs: -2, hzQsQL: null, hzQsQLD: null, hzQsQLN: -1, hzQsH: NaN, hzQsMc: null,
+		// 0.43.3.0 quest log: the old-vs-new equivalence below runs with QuestsWrap 0 at the classic width 380 (today's
+		// one-line card); the wrap layout is covered by tests/quest_wrap_test.js
+		hzQW: 380, hzQMaxH: 160, hzQWrap: false, hzQPW: 380, hzQDW: 380, hzCQDW: 420, hzCQH: 36, hzCQPW: 420, hzCQOMv: false, hzQsW: NaN, hzQsMh: NaN, hzQsWr: null,
+		hzQTopT: 10, hzQTopO: 37, hzQObjB: 54, hzQSubY0: 60, hzQSubN: 0, hzCQTopO: 26,
 		qDraw: 0, probes: [],
 		hzPerfNow: function() { return 0; }, hzRgPush: function() {}, hzPsSpan: function() {},
 		hzDarkText: function() { return h.hzDark; }, hzTextAccent: function() { return 0x7fd0ff; }, hzIconCol: function(c) { return c >>> 0; },
