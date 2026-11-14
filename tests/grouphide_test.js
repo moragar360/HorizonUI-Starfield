@@ -715,6 +715,7 @@ if (base) {
 	try { b56 = cp.execFileSync("git", ["show", "56d4098:actionscript/horizon_block.as"], { cwd: root, encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "ignore"] }).replace(/\r\n/g, "\n"); } catch (e) { b56 = null; }
 	if (b56) {
 		const names = (src) => { const out = []; const re = /(?:private|public) function (\w+)\(/g; let m; while ((m = re.exec(src))) out.push(m[1]); return out; };
+		const HS_ROW = '{"k":"HazardStatus","l":"HAZARD STATUS","t":"b","note":"Red / green chip under the planet card while a hazard hurts you or suit protection restores"},';
 		const RIGHT = /RightMeters|BottomRightGroup|EquippedWeapon|HealthBar|"Health_mc"|VerticalDivider_mc|Jetpack|EnemyHealthHolder_mc|StealthMeter_mc|hzHideVanillaAmmo|hzHideVanillaHealth|hzHideVanillaBoost/;
 		// the scope check compares 56d4098 with the r2 code commit 32af5f3, so a later stack (E1) on top does not count as r2
 		let r2src = as;
@@ -727,6 +728,9 @@ if (base) {
 			let z;
 			try { x = fnText(b56, n).body; y = fnText(r2src, n).body; z = fnText(as, n).body; } catch (e) { changed.push(n + "(missing)"); continue; }
 			if (x !== y) changed.push(n);
+			// Hazard Status: hzSetRows is the F11 rows table (its "Jetpack" is a setting label, no hide code); this tree
+			// may differ from 56d4098 there only by the one HAZARD STATUS row
+			if (n === "hzSetRows") { z = z.replace(HS_ROW, ""); }
 			if (RIGHT.test(x)) { rightFns.push(n); if (x !== y || x !== z) rightSame = false; }
 		}
 		const added = allNow.filter((n) => all56.indexOf(n) < 0);
