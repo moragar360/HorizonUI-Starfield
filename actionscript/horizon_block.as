@@ -11856,14 +11856,27 @@
       }
 
       // button label: aButtons text, or the translated vanilla label when the text is a $ key; never shows a "$" string
+      // 0.43.3.1: inner line breaks become one space (the game puts the lock level after a break, e.g. "Unlock" + the
+      // level; the keycap label is one line, so the part after the break was never seen on the full or compact card)
       private function hzT19Label(aw:Object, t:int, hold:Boolean, raw:*) : String
       {
          var s:String = this.hzT19Trim(raw);
          if(s.length == 0) { return ""; }
-         if(s.indexOf("$") < 0) { return s; }
+         if(s.indexOf("$") < 0) { return this.hzT19OneLine(s); }
          var v:String = this.hzT19Trim(this.hzT19VanLbl(aw,t,hold));
-         if(v.length > 0 && v.indexOf("$") < 0) { return v; }
-         return this.hzT19Trim(this.hzT19Xl(s));
+         if(v.length > 0 && v.indexOf("$") < 0) { return this.hzT19OneLine(v); }
+         return this.hzT19OneLine(this.hzT19Trim(this.hzT19Xl(s)));
+      }
+
+      // 0.43.3.1: "\r\n", "\r" and "\n" (with the spaces around them, and runs of breaks) -> one space; the ends trimmed.
+      // A label with no break is returned as it is (one indexOf each). Runs only where hzT19Label runs (edges / row draws).
+      private function hzT19OneLine(s:String) : String
+      {
+         if(s == null || (s.indexOf("\n") < 0 && s.indexOf("\r") < 0)) { return s; }
+         var r:String = s.replace(/[ \t]*[\r\n]+[ \t]*/g," ");
+         while(r.length > 0 && r.charAt(0) == " ") { r = r.substr(1); }
+         while(r.length > 0 && r.charAt(r.length - 1) == " ") { r = r.substr(0,r.length - 1); }
+         return r;
       }
 
       private function hzT19Trim(s:*) : String
