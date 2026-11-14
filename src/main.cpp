@@ -1433,6 +1433,9 @@ namespace HZ
 	std::atomic<bool> g_fileActReady{false};
 	std::atomic<bool> g_fileReplyReady{false};
 	std::atomic<bool> g_fileSaveReady{false};
+	// arch-fixes Fix 2: bumped by the job thread after it wrote HorizonUI.user.ini; read on the UI thread only
+	// (IniSavedPushMsg, from the HUD messages movie's own AdvanceFrame). A counter, no Scaleform value.
+	std::atomic<std::uint32_t> g_iniSavedRev{0};
 	std::atomic<bool> g_fileMsglogReady{false};
 
 	std::string Today()
@@ -1490,7 +1493,10 @@ namespace HZ
 			}
 			if (r.ok) REX::INFO("files: {} -> {}", kind, r.msg);
 			else REX::WARN("files: {} FAILED: {}", kind, r.msg);
-			if (r.ok && (kind == "apply" || kind == "restore" || kind == "undo")) LoadIni();
+			if (r.ok && (kind == "apply" || kind == "restore" || kind == "undo")) {
+				LoadIni();
+				g_iniSavedRev.fetch_add(1, std::memory_order_acq_rel);   // arch-fixes Fix 2
+			}
 			const std::string reply = kind + "|" + (r.ok ? "1" : "0") + "|" + HZF::CleanField(r.msg, 200);
 			{
 				std::lock_guard lk(g_fileMu);
@@ -1513,6 +1519,7 @@ namespace HZ
 			if (r.ok) {
 				REX::INFO("{}", r.msg);
 				LoadIni(false);
+				g_iniSavedRev.fetch_add(1, std::memory_order_acq_rel);   // arch-fixes Fix 2
 			} else {
 				REX::WARN("save FAILED: {}", r.msg);
 			}
@@ -1535,9 +1542,10 @@ namespace HZ
 					std::string next;
 					if (!HZF::MergeMessageLogUser(exists, readOk, user, mlIni, next)) {
 						REX::WARN("message log save skipped (could not read HorizonUI.user.ini)");
-					} else if (HZF::WriteAtomic(P.user, next))
+					} else if (HZF::WriteAtomic(P.user, next)) {
 						REX::INFO("message log settings saved");
-					else
+						g_iniSavedRev.fetch_add(1, std::memory_order_acq_rel);   // arch-fixes Fix 2
+					} else
 						REX::WARN("message log save FAILED");
 				}
 			} catch (...) {
@@ -1775,6 +1783,32 @@ namespace HZ
 		g_pushOpenMsg = open;
 	}
 
+	// arch-fixes Fix 2. Purpose: tell the Comms movie that HorizonUI.user.ini changed, so it re-reads on a real save
+	// instead of every 5 s. UI thread only: called from BannerPoll inside the HUD messages movie's own AdvanceFrame.
+	// The menu is looked up on each call (MenuLive); no menuObj or GFx::Value is kept. Only two plain numbers are kept:
+	// the last revision sent and the address of the movie root it was sent to (an identity, never dereferenced), so a
+	// new HUDMessagesMenu gets one announce call. Steady state: one atomic load and two compares, no Scaleform call.
+	// An older Comms movie without hzcIniSaved is skipped (it keeps its own 5 s timer).
+	std::uint32_t g_iniSavedSent = 0;
+	const void*   g_iniSavedRoot = nullptr;
+	void IniSavedPushMsg(RE::UI* a_ui)
+	{
+		const auto rev = g_iniSavedRev.load(std::memory_order_acquire);
+		const void* root = hzlog::g_advancingRoot;
+		if (rev == g_iniSavedSent && root == g_iniSavedRoot) return;
+		if (!a_ui || !root) return;
+		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu" })
+			if (a_ui->IsMenuOpen(m)) return;
+		auto msg = MenuLive(a_ui, "HUDMessagesMenu", "hzcIniSaved");
+		if (!msg) return;
+		if (msg->menuObj.HasMember("hzcIniSaved")) {
+			GValue arg(static_cast<double>(rev));
+			msg->menuObj.Invoke("hzcIniSaved", nullptr, &arg, 1);
+		}
+		g_iniSavedSent = rev;
+		g_iniSavedRoot = root;
+	}
+
 	// Purpose: job-thread marker check. No Scaleform. Author: Moragar.
 	// Last modified: 2026-10-28.
 	void BannerPollWork(ULONGLONG a_now)
@@ -1792,6 +1826,7 @@ namespace HZ
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) return;
 		ScanPushMsg(ui, a_now);
+		IniSavedPushMsg(ui);   // arch-fixes Fix 2: settings-saved signal (edge only)
 		bool scan = g_banScanMod.load() == 1 && ui->IsMenuOpen("MonocleMenu");
 		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu" })
 			if (ui->IsMenuOpen(m)) scan = false;

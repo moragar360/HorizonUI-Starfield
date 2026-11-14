@@ -60,6 +60,8 @@
       private var hzcRev:String = null;
       private var hzcReading:Boolean = false;
       private var hzcPoll:Timer = null;
+      private var hzcIniPush:Boolean = false;   // arch-fixes Fix 2: the DLL announced its settings-saved push (hzcIniSaved)
+      private var hzcReloadAgain:Boolean = false;   // arch-fixes Fix 2: a save landed while a read was in flight
       private var hzcLayer:Sprite = null;
       private var hzcSub:Sprite = null;
       private var hzcSubName:TextField = null;
@@ -142,6 +144,7 @@
       private function hzcOnIniTxt(txt:String) : void
       {
          this.hzcReading = false;
+         if(this.hzcReloadAgain) { this.hzcReloadAgain = false; this.hzcReload(); return; }   // arch-fixes Fix 2: that text may predate the save
          if(txt == null)
          {
             if(this.hzcIniState == 0) { this.hzcIniState = 2; this.hzcApply(); }
@@ -208,7 +211,8 @@
       }
       private function hzcApply() : void
       {
-         var on:Boolean = int(this.hzcCfg.Subtitles) == 1 || int(this.hzcCfg.MissionToast) == 1;
+         // arch-fixes Fix 2: the 5 s re-read runs only with a DLL that never announced hzcIniSaved (an older DLL)
+         var on:Boolean = (int(this.hzcCfg.Subtitles) == 1 || int(this.hzcCfg.MissionToast) == 1) && !this.hzcIniPush;
          if(on && this.hzcPoll == null)
          {
             this.hzcPoll = new Timer(5000);
@@ -226,6 +230,20 @@
          try { this.hzcMsgLayout(); } catch(eMsg:Error) { }
       }
       private function hzcOnPoll(e:TimerEvent) : void { this.hzcReload(); }
+      // arch-fixes Fix 2: the DLL calls this from this movie's own AdvanceFrame (UI thread) once when it first sees this
+      // movie (announce) and once after each write of HorizonUI.user.ini (F11 save, preset apply / restore / undo,
+      // message log settings). It replaces the 5 s timer: stop it, then re-read once. Nothing may escape into the Invoke.
+      public function hzcIniSaved(rev:*) : void
+      {
+         try
+         {
+            this.hzcIniPush = true;
+            if(this.hzcPoll != null) { this.hzcPoll.stop(); this.hzcPoll.removeEventListener(TimerEvent.TIMER,this.hzcOnPoll); this.hzcPoll = null; }
+            if(this.hzcReading) { this.hzcReloadAgain = true; }
+            else { this.hzcReload(); }
+         }
+         catch(e:Error) { }
+      }
 
       // ---------- probes (relative to Data/Interface) ----------
       private function hzcProbeFile(id:String, path:String) : void

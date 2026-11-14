@@ -1297,8 +1297,9 @@ package
       // The game's clips stay on stage and keep working: they are only made transparent (alpha 0, never removed), the
       // game's button bar keeps handling every key, and every dispatch / user event / close path is the game's own code.
       // Horizon draws its own panels from the same data providers. Settings: [Scanner] of HorizonUI.default.ini with
-      // HorizonUI.user.ini laid over (the shared reader, prefix hzs37); read when the scanner opens and polled every
-      // 2 s while it is open, so an F11 save (HzRev) applies without reopening.
+      // HorizonUI.user.ini laid over (the shared reader, prefix hzs37); read when the scanner movie starts and when the
+      // scanner opens (hzsOnOpened). arch-fixes Fix 2: no 2 s re-read while it is open: F11 opens from the main HUD only
+      // (never while scanning), so a save always lands before the next open, which re-reads.
       private static const HZS_VERSION:String = "0.43.2.0";   // 0.43.2.0: the scanner movie's build version (= the DLL file version); bump here only
       private static const HZS_LRG:Boolean = true;
       private static const HZS_SCALE:Number = HZS_LRG ? 1.07 : 1;
@@ -1343,6 +1344,9 @@ package
       private static const HZS_MAX_INI:int = 65536;    // a settings file larger than 64 KB is ignored (defaults instead)
       private var hzsC:Object = null;       // [Scanner] values
       private var hzsS:Object = null;       // the [Style] / [Debug] values the scanner follows
+      private var hzsPerfDiag:Boolean = false;
+      private var hzsPerfMode:int = 0;
+      private var hzsPerfScan:Boolean = true;
       private var hzsTxt:String = null;     // last applied settings text
       private var hzsReading:Boolean = false;
       private var hzsReady:Boolean = false;
@@ -1353,7 +1357,12 @@ package
       private var hzsSig:Object = {};       // last drawn signature by panel
       private var hzsDirty:Boolean = true;
       private var hzsVr:Rectangle = null;   // visible rect in layer units
-      private var hzsVrSig:String = "";
+      private var hzsVrRev:int = 0;          // arch-fixes Fix 2: bumped when the visible rect changed (was a per-frame string)
+      private var hzsVrIn:Array = null;       // the last visibleRect read (left, top, right, bottom), numbers only
+      private var hzsVrL:Number = NaN;
+      private var hzsVrT:Number = NaN;
+      private var hzsVrR:Number = NaN;
+      private var hzsVrB:Number = NaN;
       private var hzsMD:Object = null;      // MonocleMenuData
       private var hzsFD:Object = null;      // MonocleMenuFreqData
       private var hzsPD:Object = null;      // MonoclePickRefData as the provider holds it right now (r5: the world tag's live-pick check)
@@ -1378,7 +1387,7 @@ package
       private var hzsFrame:int = 0;
       private var hzsFrameT:int = 0;
       private var hzsAlpha:Number = 0;
-      private var hzsCfgSig:String = "";
+      private var hzsCfgRev:int = 0;          // arch-fixes Fix 2: bumped when the settings text changed (was the serialized config)
       private var hzsTk:Number = 1;         // 0.42.0.4: scale of the panel being drawn (HZS_SCALE x hzsF); hzsFs keeps text >= 13 px after it
 
       // ---------------------------------------------------------------- start
@@ -1535,6 +1544,9 @@ package
       {
          var c:Object = this.hzsDefaults();
          var st:Object = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ClockFormat":0,"TempUnit":0};
+         this.hzsPerfDiag = false;
+         this.hzsPerfMode = 0;
+         this.hzsPerfScan = true;
          if(txt != null)
          {
             var sec:String = "";
@@ -1565,6 +1577,12 @@ package
                   else if(k == "headerstyle" && !isNaN(nv)) { st.HeaderStyle = Math.max(0,Math.min(1,int(nv))); }
                   else if(k == "clockformat" && !isNaN(nv)) { st.ClockFormat = Math.max(0,Math.min(1,int(nv))); }
                   else if(k == "tempunit" && !isNaN(nv)) { st.TempUnit = Math.max(0,Math.min(1,int(nv))); }
+               }
+               else if(sec == "debug")
+               {
+                  if(k == "perfdiag") { this.hzsPerfDiag = (nv >= 0.5 || v.toLowerCase() == "true"); }
+                  else if(k == "perfmode" && !isNaN(nv)) { this.hzsPerfMode = int(nv); if(this.hzsPerfMode < 0 || this.hzsPerfMode > 7) { this.hzsPerfMode = 0; } }
+                  else if(k == "perfscan") { this.hzsPerfScan = !(nv < 0.5 || v.toLowerCase() == "false"); }
                }
             }
          }
@@ -1597,13 +1615,20 @@ package
             {
                this.hzsTxt = txt;
                this.hzsParse(txt);
-               this.hzsCfgSig = this.hzsSer(this.hzsC) + "|" + this.hzsSer(this.hzsS);
+               this.hzsCfgRev++;   // arch-fixes Fix 2: one int instead of serializing (and sorting) the whole config
                this.hzsSig = {};
                this.hzsDirty = true;
             }
          }
          catch(e:Error) { }
          this.hzsReady = true;
+      }
+      private function hzsPerfSkipDraw() : Boolean
+      {
+         if(!this.hzsPerfDiag) { return false; }
+         if(this.hzsPerfMode == 1 || this.hzsPerfMode == 7) { return true; }
+         if(this.hzsPerfMode == 6 && this.hzsPerfScan == false) { return true; }
+         return false;
       }
 
       // ---------------------------------------------------------------- frame tick
@@ -1615,7 +1640,6 @@ package
          try { this.hzsHideVanilla(); } catch(e0:Error) { }
          try { var ra:Boolean = this.ResourceArc_mc != null && this.ResourceArc_mc.visible; if(ra && !this.hzs41RA) { this.hzs41PT = now; } this.hzs41RA = ra; } catch(e41:Error) { }   // v0.41.0 (SF-10)
          if(!this.hzsReady && now - this.hzsT0 > 300) { this.hzsReady = true; }   // no settings yet after 300 ms: defaults
-         if(this.hzsReady && now - this.hzsPollT > 2000) { this.hzsRead(); }      // HzRev / any F11 save while open
          if(this.hzsL == null) { return; }
          // fade with the game's own open / close (the close animation ends in the game's CloseMenu call)
          var want:Number = this.isMenuClosing ? 0 : (this.hzsReady ? 1 : 0);
@@ -1626,6 +1650,7 @@ package
          if(!this.hzsReady) { return; }
          try { this.hzsUpdVr(); } catch(e1:Error) { }
          if(this.hzsVr == null) { return; }
+         if(this.hzsPerfSkipDraw()) { return; }
          if(this.hzsDirty || this.hzsFrame % 6 == 0)
          {
             this.hzsDirty = false;
@@ -1661,24 +1686,33 @@ package
          }
       }
       // visible rect (the player's screen) in layer units
+      // arch-fixes Fix 2: the conversion (two Points, a string) runs only when the visible rect read changed; a steady
+      // frame compares four numbers. Same rounded-change rule as before for the redraw.
       private function hzsUpdVr() : void
       {
          var vr:Rectangle = Extensions.visibleRect;
-         var tl:Point;
-         var br:Point;
-         if(vr != null && vr.width >= 100)
-         {
-            tl = this.hzsL.globalToLocal(new Point(vr.left,vr.top));
-            br = this.hzsL.globalToLocal(new Point(vr.right,vr.bottom));
-         }
-         else
-         {
-            tl = this.hzsL.globalToLocal(new Point(0,0));
-            br = this.hzsL.globalToLocal(new Point(1920,1080));
-         }
+         var ok:Boolean = vr != null && vr.width >= 100;
+         var l:Number = ok ? vr.left : 0;
+         var t:Number = ok ? vr.top : 0;
+         var r:Number = ok ? vr.right : 1920;
+         var b:Number = ok ? vr.bottom : 1080;
+         var vi:Array = this.hzsVrIn;
+         if(vi != null && this.hzsVr != null && vi[0] == l && vi[1] == t && vi[2] == r && vi[3] == b) { return; }
+         var tl:Point = this.hzsL.globalToLocal(new Point(l,t));
+         var br:Point = this.hzsL.globalToLocal(new Point(r,b));
          if(isNaN(tl.x) || br.x - tl.x < 100) { return; }
-         var sig:String = Math.round(tl.x) + "," + Math.round(tl.y) + "," + Math.round(br.x) + "," + Math.round(br.y);
-         if(sig != this.hzsVrSig) { this.hzsVrSig = sig; this.hzsVr = new Rectangle(tl.x,tl.y,br.x - tl.x,br.y - tl.y); this.hzsSig = {}; this.hzsDirty = true; }
+         if(vi == null) { vi = this.hzsVrIn = [0,0,0,0]; }
+         vi[0] = l; vi[1] = t; vi[2] = r; vi[3] = b;
+         var rl:Number = Math.round(tl.x);
+         var rt:Number = Math.round(tl.y);
+         var rr:Number = Math.round(br.x);
+         var rb:Number = Math.round(br.y);
+         if(rl != this.hzsVrL || rt != this.hzsVrT || rr != this.hzsVrR || rb != this.hzsVrB)
+         {
+            this.hzsVrL = rl; this.hzsVrT = rt; this.hzsVrR = rr; this.hzsVrB = rb;
+            this.hzsVrRev++;
+            this.hzsVr = new Rectangle(tl.x,tl.y,br.x - tl.x,br.y - tl.y); this.hzsSig = {}; this.hzsDirty = true;
+         }
       }
 
       // ---------------------------------------------------------------- look
@@ -2067,7 +2101,9 @@ package
       {
          if(o == null) { return "~"; }
          if(o is Array) { var a:Array = []; for each(var x:* in o) { a.push(this.hzsSer(x)); } return "[" + a.join(",") + "]"; }
-         if(typeof o == "object") { var b:Array = []; for(var k:String in o) { b.push(k + ":" + this.hzsSer(o[k])); } b.sort(); return "{" + b.join(",") + "}"; }
+         // arch-fixes Fix 2: no sort. The models are built by the same code in the same order every call, so the key order
+         // repeats; a different order could only cost one extra redraw, never a missed one (keys and values are all in).
+         if(typeof o == "object") { var b:Array = []; for(var k:String in o) { b.push(k + ":" + this.hzsSer(o[k])); } return "{" + b.join(",") + "}"; }
          return String(o);
       }
       private function hzsPick(d:Object, keys:Array) : String
@@ -2869,7 +2905,7 @@ package
             else if(n == "Hints") { m = this.hzsMHints(); }
          }
          catch(e0:Error) { m = null; }
-         var sig:String = this.hzsSer(m) + "|" + this.hzsCfgSig;
+         var sig:String = this.hzsSer(m) + "|" + this.hzsCfgRev;
          if(sig == this.hzsSig[n]) { return; }
          this.hzsSig[n] = sig;
          this.hzsClr(p);
@@ -3337,7 +3373,7 @@ package
          if(p == null || hp == null) { return; }
          var on:Boolean = this.hzsOn("ScanShowCompass") && this.hzsGot.cmp == 1 && !isNaN(this.hzsHead);
          var head:Number = on ? Math.round(this.hzsHead * 2) / 2 : -1;
-         var sig:String = head + "|" + this.hzsCfgSig + "|" + this.hzsVrSig + "|" + this.hzsCmpMarks();
+         var sig:String = head + "|" + this.hzsCfgRev + "|" + this.hzsVrRev + "|" + this.hzsCmpMarks();
          if(!force && sig == this.hzsCmpSig) { return; }
          this.hzsCmpSig = sig;
          this.hzsClr(p);
@@ -3460,7 +3496,7 @@ package
          catch(e0:Error) { rng = ""; }
          var tag:Object = null;
          try { tag = this.hzsMTag(); } catch(e1:Error) { tag = null; }
-         var sig:String = rng + "|" + this.hzsSer(tag) + "|" + this.hzsCfgSig + "|" + this.hzsVrSig;
+         var sig:String = rng + "|" + this.hzsSer(tag) + "|" + this.hzsCfgRev + "|" + this.hzsVrRev;
          if(sig == this.hzsRetSig) { return; }
          this.hzsRetSig = sig;
          var acc:uint = this.hzsAccent();
@@ -3583,7 +3619,7 @@ package
                list.push([Math.round(pp.x),Math.round(pp.y),o.bIsDiscovered === true ? 1 : 0,this.hzsDist(Number(o.uRangeM)),o.bIsDiscovered === true ? this.hzsMarkName(o) : "",this.hzsMarkIcon(o),this.hzs41Own(o)]);
             }
          }
-         var sig:String = this.hzsSer(list) + "|" + this.hzsCfgSig;
+         var sig:String = this.hzsSer(list) + "|" + this.hzsCfgRev;
          if(sig == this.hzsMarkSig) { return; }
          this.hzsMarkSig = sig;
          this.hzsClr(p);
