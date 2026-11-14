@@ -126,7 +126,7 @@ for (const [b, t] of cases) { clips = [b, b, b, b]; if (H.hzT19Key(null, t) !== 
 expect(diff === 0, "unknown / empty glyph, no ConsoleButton_tf, keyboard and a missing clip keep the old key exactly (" + cases.length + " cases)");
 
 // 4. joins
-expect(H.hzT19PadKey("A/D") === "A/Y" && H.hzT19PadKey("G + L") === "LB+RB" && H.hzT19PadKey("A/Z") === "" && H.hzT19PadKey("A/D/C") === "" && H.hzT19PadKey(undefined) === "", "two-glyph joins map both glyphs; longer or unknown joins are unknown");
+expect(H.hzT19PadKey("A/D") === "A/Y" && H.hzT19PadKey("G + L") === "LB+RB" && H.hzT19PadKey("A/Z") === "" && H.hzT19PadKey("A/D/C") === "" && H.hzT19PadKey("A-D") === "" && H.hzT19PadKey(undefined) === "", "two-glyph joins map both glyphs; longer or unknown joins are unknown");
 
 // 5. static
 const pk = fnText(as, "hzT19PadKey").body.replace(/\/\/[^\n]*/g, "");

@@ -3709,6 +3709,7 @@
          {
             if(e == null || e.data == null || e.data.uiController == undefined) { return; }
             this.hzVehPad = uint(e.data.uiController) > 0 ? 1 : 0;
+            this.hzT19EdgeN = 3;   // 0.43.3.1: a rebind (ControlMapData) re-reads the prompt keycaps (event-driven)
          }
          catch(err:Error) { }
       }
