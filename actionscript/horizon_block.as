@@ -1862,6 +1862,7 @@
          {
             for each(var o:Object in a)
             {
+               if(!o || this.hzAfIsPos(String(o.sEffectIcon))) { continue; }   // Afflictions P0: buffs are not afflictions
                var p:String = this.hzPretty(o.sEffectIcon);
                if(p && out.indexOf(p) < 0) { out.push(p); }
             }
@@ -9567,6 +9568,12 @@
                g.lineStyle();
                g.beginFill(col,1); g.drawCircle(cx + 7,cy - 8,1.6); g.drawCircle(cx + 10,cy + 4,1.6); g.drawCircle(cx + 4,cy + 9,1.6); g.endFill();
                break;
+            case "buff":   // Afflictions P0: a plain plus (the affliction glyph without its slash)
+               g.beginFill(col,1);
+               g.drawRoundRect(cx - 2,cy - 10,4,20,4,4);
+               g.drawRoundRect(cx - 10,cy - 2,20,4,4,4);
+               g.endFill();
+               break;
             case "injury":
                g.beginFill(col,1);
                g.drawRoundRect(cx - 2,cy - 10,4,20,4,4);
@@ -10559,6 +10566,9 @@
          this.hzAfSync();
       }
 
+      // Afflictions P0: one chip per exact effect icon (suffix included), so a buff and its matching debuff never merge.
+      // An icon ending in _Positive is a buff: it keeps its own chip, styled as a buff (green, "Buff"), sorts after every
+      // affliction and hazard, and does not count as afflicted for AfflictionsRule 6. Everything else stays an affliction.
       private function hzAfSetPers(a:Array) : void
       {
          var out:Array = [];
@@ -10568,14 +10578,21 @@
             for each(var o:Object in a)
             {
                if(!o || o.sEffectIcon == null) { continue; }
-               var sys:String = this.hzPretty(String(o.sEffectIcon));
-               if(sys.length == 0 || keys.indexOf(sys) >= 0) { continue; }
-               keys.push(sys);
-               out.push({"key":"p:" + sys,"name":"Affliction","sub":sys,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});
+               var icon:String = String(o.sEffectIcon);
+               var sys:String = this.hzPretty(icon);
+               if(sys.length == 0 || keys.indexOf(icon) >= 0) { continue; }
+               keys.push(icon);
+               var pos:Boolean = this.hzAfIsPos(icon);
+               out.push({"key":"p:" + icon,"name":pos ? "Buff" : "Affliction","sub":sys,"kind":pos ? "buff" : "injury","env":false,"pos":pos,"icon":icon,"cat":icon.replace(new RegExp("_(Negative|Positive)$"),"")});
             }
          }
          this.hzAfPers = out;
          this.hzAfSync();
+      }
+      // Afflictions P0: polarity from the icon's own suffix (the only polarity the PersonalEffectsData entries carry).
+      private function hzAfIsPos(icon:String) : Boolean
+      {
+         return icon != null && icon.length > 9 && icon.substr(icon.length - 9) == "_Positive";
       }
 
       private function hzAfSortFn(a:Object, b:Object) : int
@@ -10590,19 +10607,23 @@
          var all:Array = [];
          var live:Object = {};
          var crit:Boolean = this.hzAfSoak >= 0.66;
+         var nAff:int = 0;   // Afflictions P0: buffs are listed but are not afflictions
          var hz27src:Array = this.hzAfEnv.concat(this.hz27PersSafe());
          for each(var o:Object in hz27src)
          {
             live[o.key] = true;
             if(this.hzAfSeen[o.key] == undefined) { this.hzAfSeen[o.key] = this.hzFrameN; }
             o.seen = int(this.hzAfSeen[o.key]);
-            o.sev = o.env ? (crit ? 2 : 1) : 3;
+            o.sev = o.env ? (crit ? 2 : 1) : (o.pos === true ? 0 : 3);
+            if(o.pos !== true) { nAff++; }
             all.push(o);
          }
-         try { if(this.hz26OwInAffl()) { live["w:ow"] = true; all.push({"key":"w:ow","name":"Overweight","kind":"weight","env":false,"ow":true,"sev":2,"seen":0}); } } catch(errOw:Error) { }
+         try { if(this.hz26OwInAffl()) { nAff++; live["w:ow"] = true; all.push({"key":"w:ow","name":"Overweight","kind":"weight","env":false,"ow":true,"sev":2,"seen":0}); } } catch(errOw:Error) { }
          for(var k:String in this.hzAfSeen) { if(!live[k]) { delete this.hzAfSeen[k]; } }
          all.sort(this.hzAfSortFn);
-         this.hzAfflCount = this.hzV19() ? all.length : (this.hzAfPers.length > 0 ? 1 : 0);
+         var persAff:Boolean = false;
+         for each(var pa:Object in this.hzAfPers) { if(pa.pos !== true) { persAff = true; break; } }
+         this.hzAfflCount = this.hzV19() ? nAff : (persAff ? 1 : 0);
          this.hzAfLayoutChips(all);
          this.hzRefreshVisibility();
       }
@@ -10704,7 +10725,7 @@
             else
             {
                var a:Object = all[i];
-               var col:uint = a.ow ? HZ_AMB : (a.env ? (this.hzAfSoak >= 0.66 ? HZ_RED : HZ_AMB) : HZ_RED);
+               var col:uint = a.ow ? HZ_AMB : (a.env ? (this.hzAfSoak >= 0.66 ? HZ_RED : HZ_AMB) : (a.pos === true ? HZ_GREEN : HZ_RED));
                var ic:uint = this.hzIconCol(col);
                var hasSub:Boolean = a.sub != undefined && a.sub != null && String(a.sub).length > 0;
                var two:Boolean = a.env || a.ow || hasSub;
@@ -10721,7 +10742,7 @@
                   // v0.31: final format first (font, TextScale, tint, header case), then measure, cap + ellipsis, and size
                   // the field and the chip from that measurement in this same call (no one-frame overflow)
                   lb.text = this.hzUC(String(a.name));
-                  this.hzTxtTint(lb,(two && !hasSub) ? null : HZ_RED);
+                  this.hzTxtTint(lb,(two && !hasSub) ? null : (a.pos === true ? HZ_GREEN : HZ_RED));
                   this.hzTxtTint(sb,a.ow ? HZ_AMB : null);
                   sb.text = two ? (a.ow ? this.hz26OwText() : (a.env ? "Exposure " + Math.round(this.hzAfSoak * 100) + "%" : String(a.sub))) : "";
                   tw31 = this.hz31AfFit(lb,sb,two);
@@ -16195,7 +16216,7 @@
                var cat:String = icon.replace(rs,"");
                if(rp.test(icon))
                {
-                  // a positive alert for a body system (treated / cured): drop that system's alerts
+                  // a positive alert for a body system (treated / cured): drop that system's alerts. It is never kept itself.
                   var kept:Array = [];
                   for each(var x1:Object in this.hz27Alerts) { if(String(x1.cat) != cat) { kept.push(x1); } }
                   this.hz27Alerts = kept;
@@ -16205,9 +16226,10 @@
                var found:Boolean = false;
                for each(var x2:Object in this.hz27Alerts)
                {
-                  if(String(x2.cat) == cat && String(x2.txt) == txt) { x2.t = now; x2.sub = sub; found = true; }
+                  // Afflictions P0: the exact icon (suffix included), not the stripped category
+                  if(String(x2.icon) == icon && String(x2.txt) == txt) { x2.t = now; x2.sub = sub; found = true; }
                }
-               if(!found) { this.hz27Alerts.push({"cat":cat,"icon":icon,"txt":txt,"sub":sub,"t":now}); }
+               if(!found) { this.hz27Alerts.push({"cat":cat,"icon":icon,"txt":txt,"sub":sub,"t":now,"listed":false}); }
             }
             while(this.hz27Alerts.length > 6) { this.hz27Alerts.shift(); }
             if(this.hzAfNew) { this.hzAfSync(); }
@@ -16215,17 +16237,22 @@
          catch(err:Error) { }
       }
 
-      // alert entries replace the plain effect chip of the same body system; an alert stays while that system is
-      // listed in PersonalEffectsData, otherwise 90 s
+      // alert entries replace the plain effect chip of the same exact effect icon.
+      // Afflictions P0: an alert stays while its own effect (exact icon, suffix included) is listed in PersonalEffectsData.
+      // Once that effect has been listed, the first update without it (it ended, or changed to another stage or to the
+      // matching buff) drops the alert at once. An alert whose effect was never listed keeps the 90 s expiry. A buff or
+      // another stage of the same need never keeps a debuff alert alive.
       private function hz27PersMerge(pers:Array) : Array
       {
          var now:Number = this.hz26Now();
-         var cats:Array = [];
-         for each(var p:Object in pers) { cats.push(String(p.cat)); }
+         var icons:Array = [];
+         for each(var p:Object in pers) { icons.push(String(p.icon)); }
          var keep:Array = [];
          for each(var a:Object in this.hz27Alerts)
          {
-            if(cats.indexOf(String(a.cat)) < 0 && now - Number(a.t) > 90000) { continue; }
+            if(icons.indexOf(String(a.icon)) >= 0) { a.listed = true; keep.push(a); continue; }
+            if(a.listed === true) { continue; }
+            if(now - Number(a.t) > 90000) { continue; }
             keep.push(a);
          }
          this.hz27Alerts = keep;
@@ -16238,10 +16265,10 @@
             var sb:String = String(b.sub).length > 0 ? String(b.sub) : sys;
             if(sb.toLowerCase() == nm.toLowerCase()) { sb = (sys.length > 0 && sys.toLowerCase() != nm.toLowerCase()) ? sys : ""; }
             if(nm.length == 0) { continue; }
-            out.push({"key":"a:" + String(b.cat) + ":" + nm,"name":nm,"sub":sb.length > 0 ? sb : null,"kind":"injury","env":false,"cat":String(b.cat)});
-            used.push(String(b.cat));
+            out.push({"key":"a:" + String(b.icon) + ":" + nm,"name":nm,"sub":sb.length > 0 ? sb : null,"kind":"injury","env":false,"icon":String(b.icon),"cat":String(b.cat)});
+            used.push(String(b.icon));
          }
-         for each(var q:Object in pers) { if(used.indexOf(String(q.cat)) < 0) { out.push(q); } }
+         for each(var q:Object in pers) { if(used.indexOf(String(q.icon)) < 0) { out.push(q); } }
          if(this.hzDebug)
          {
             var names:Array = [];

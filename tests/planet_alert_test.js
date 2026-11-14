@@ -826,7 +826,7 @@ pin("p >= 97 && p <= 122 && c >= 65 && c <= 90", "the camel split is a lowercase
 expect(src.indexOf('"$1 $2"') < 0, "the HUD does not pass $1 $2 to replace");
 pin('var sb:String = String(b.sub).length > 0 ? String(b.sub) : sys;', "a game subtitle is kept, and an empty one falls back to the body system");
 pin('var nm:String = String(b.txt).length > 0 ? String(b.txt) : "Affliction";', "an alert without a name uses Affliction");
-pin('out.push({"key":"p:" + sys,"name":"Affliction","sub":sys,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});', "a plain effect chip is Affliction plus the body system");
+pin('out.push({"key":"p:" + icon,"name":pos ? "Buff" : "Affliction","sub":sys,"kind":pos ? "buff" : "injury","env":false,"pos":pos,"icon":icon,"cat":icon.replace(new RegExp("_(Negative|Positive)$"),"")});', "a plain effect chip is Affliction plus the body system (a _Positive buff is Buff; Afflictions P0)");
 pin('{"name":"Affliction","kind":"injury","env":false}', "the F11 preview uses Affliction as the fallback title");
 pin('var lab:TextField = this.hzT(p,i == 0 ? "HEALTH" : "OXYGEN",50,y + 9,150,13,"sb","acc",2);', "the Vitals labels are SemiBold 13 / acc / 2");
 	pin('this.hzHdr19(lab);', "the Vitals labels still go through hzHdr19");
