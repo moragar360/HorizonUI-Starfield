@@ -3281,7 +3281,7 @@
          {
             var rbRetry:Boolean = this.hzHideCache != null && !this.hz36HideStale && rbKids == this.hzHideKids;   // only the missing-name retry fired
             this.hzHideKids = rbKids;
-            this.hz43ChrForce |= 3;
+            this.hz43ChrForce |= 11;   // perf round 2: + bit 8, the styles 1/2 show sweep
             this.hzHideTries++;
             if(this.hzPerfOn) { this.hzPcHideRb++; }
             if(this.hzWlOn) { wlOld = this.hzHideCache; wlWhy = wlOld == null ? 0 : (this.hz36HideStale ? 2 : 1); this.hzWlRbNow = true; }
@@ -19537,7 +19537,7 @@
          this.hz40Apply();
          try { this.hz41LocHide(); } catch(e41e:Error) { }   // v0.42.0 r3: re-assert on every scan edge
          if(!edge) { return; }   // r9: the r6 / r8 watch syncs below run once per real open / close edge, not per dispatch
-         this.hz43ChrForce |= 7;   // arch-fixes Fix 1: a scan edge re-runs the chrome passes once
+         this.hz43ChrForce |= 15;   // arch-fixes Fix 1: a scan edge re-runs the chrome passes once (perf round 2: + the 1/2 show sweep)
          try { this.hz43FollowApply(); } catch(e43f:Error) { }   // r6: FadeInPlanetInfo plays on the scan edge; keep it on the moved watch
          try { this.hz43ScanHideSync(); } catch(e43s:Error) { }   // r6: [Scanner] HideWatchWhileScanning, on the open / close edge only
          try { this.hz45Sync(); } catch(e45s:Error) { }   // r8: the planet-info art the game adds right after this edge
@@ -21506,7 +21506,7 @@
       // down, a noted container's child count change, a hide-list rebuild, scan edge, recapture). Refs are dropped at
       // every full pass, so nothing survives a menu teardown (a torn-down ref has stage == null and forces a pass; since N-1
       // that pass parks it, see hz43ChrPrune).
-      private var hz43ChrForce:int = 7;   // bit 1 = pass A, bit 2 = pass B, bit 4 = ring outline re-resolve
+      private var hz43ChrForce:int = 15;   // bit 1 = pass A, bit 2 = pass B, bit 4 = ring outline re-resolve, bit 8 = styles 1/2 show sweep (perf round 2)
       private var hz43ChrKidsA:int = -2;
       private var hz43ChrStA:int = -1;
       private var hz43ChrW:Array = null;   // pass A: watch children it saw hidden by the game (not noted in hz43HidA)
@@ -21539,6 +21539,18 @@
       private var hzHideMiss:Boolean = false;   // the last rebuild did not find every listed name
       private var hzHideMissN:int = 0;          // perf round 2: fewest retries any still-missing name has had (the retry runs while < 6)
       private var hzHideMissC:Object = null;    // perf round 2: retries per missing name since the last real rebuild edge
+      // perf round 2 Fix 4: styles 1/2 show sweep record and the once-per-frame place inputs
+      private var hz43ShowL:Array = null;       // pieces the last show pass handled (BLG children)
+      private var hz43ShowNm:Array = null;      // their names when a payload clip (hz43VanGameVis), else null
+      private var hz43ShowLN:int = 0;
+      private var hz43ShowBlg:DisplayObjectContainer = null;
+      private var hz43ShowKids:int = -2;
+      private var hz43ShowSt:int = -1;
+      private var hz43VpF:int = -1;             // hzFrameN of the last vanilla place
+      private var hz43VpVr:int = -1;
+      private var hz43VpSaved:Boolean = false;
+      private var hz43VpSc:Number = NaN;
+      private var hz43VpKids:int = -2;          // BLG child count at the last vanilla place
       private var hz43EnvGot:int = 0;
       private var hz43EnvLocal:Boolean = false;
       private var hz43EnvCruise:Boolean = false;
@@ -21836,8 +21848,7 @@
          }
          else if(showVan)
          {
-            this.hz43VanRestoreHid();
-            this.hz43VanBlgChrome(false);
+            this.hz43ShowSweep();   // perf round 2: on an edge or a stale noted piece only (was every frame)
          }
       }
 
@@ -22968,7 +22979,7 @@
             if(this.hz43VanNeed == 0 && this.hzBlg.numChildren == this.hz43VanKids) { return; }
          }
          this.hz43VanN = 0;
-         this.hz43ChrForce |= 7;   // arch-fixes Fix 1: recapture
+         this.hz43ChrForce |= 15;   // arch-fixes Fix 1: recapture (perf round 2: + the 1/2 show sweep)
          var k:int = 0;
          while(k < HZ43_VAN_N.length)
          {
@@ -22995,7 +23006,7 @@
          var i:int = 0;
          var count:int = this.hz43VanN;
          this.hz43VanN = 0;
-         this.hz43ChrForce |= 7;   // arch-fixes Fix 1: recapture
+         this.hz43ChrForce |= 15;   // arch-fixes Fix 1: recapture (perf round 2: + the 1/2 show sweep)
          while(i < count)
          {
             var d:DisplayObject = this.hz43VanD[i] as DisplayObject;
@@ -23260,7 +23271,7 @@
          try { this.hz49Sync(); } catch(e49:Error) { }   // r9d: the whole-group scan hide, on the same edges
          var want:Boolean = this.hz43ScanWant();
          if(want == this.hz43ScanHid && (!want || this.hz43ScanSt == this.hzWatchStyle)) { return; }
-         this.hz43ChrForce |= 7;   // arch-fixes Fix 1: the scan hide changes watch visibility
+         this.hz43ChrForce |= 15;   // arch-fixes Fix 1: the scan hide changes watch visibility (perf round 2: + the 1/2 show sweep)
          var d:DisplayObject;
          if(this.hz43ScanHid)
          {
@@ -24598,6 +24609,7 @@
       private function hz43VanBlgChrome(hide:Boolean) : void
       {
          if(!this.hzBlg) { return; }
+         if(!hide) { this.hz43ShowLN = 0; }   // perf round 2: the show pass records the pieces it owns (hz43ShowStale)
          this.hz43OlBegin();
          try
          {
@@ -24618,6 +24630,7 @@
                else if(mark || named || capArt || ringArt)
                {
                   this.hz43VanShowClip(d);
+                  this.hz43ShowAdd(d,n);
                }
                i++;
             }
@@ -24633,7 +24646,7 @@
       // Styles 3 and 4 hide the vanilla bezel and labels. The live marker clips stay visible.
       private function hz43VanChrome(hide:Boolean) : void
       {
-         if(!hide) { this.hz43VanRestoreHid(); this.hz43VanBlgChrome(false); return; }
+         if(!hide) { this.hz43ShowSweep(); return; }   // perf round 2: the show sweep on an edge or a stale noted piece only
          this.hz43OlBegin();
          try
          {
@@ -24761,6 +24774,12 @@
             if(this.hz43VanHnd) { this.hz43VanHnd.visible = false; }
             return;
          }
+         // perf round 2: what hz43VanLate compares to skip a second place in the same frame
+         this.hz43VpF = this.hzFrameN;
+         this.hz43VpVr = this.hz43VrTick;
+         this.hz43VpSaved = this.hzLayHas("Watch");
+         this.hz43VpSc = this.hz43VanSc();
+         this.hz43VpKids = this.hzBlg != null ? this.hzBlg.numChildren : -1;   // review N-3: a timeline swap before exitFrame places again
          if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
          if(!this.hzBlg) { return; }
          var hnd:Sprite = this.hz43VanEnsure();
@@ -24942,7 +24961,81 @@
       {
          if(this.hz43ScanHid && this.hz43ScanSt == this.hzWatchStyle) { return; }   // r7: HideWatchWhileScanning holds (one compare)
          if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4) { this.hz43VanHorizon(); }
+         else if((this.hzWatchStyle == 1 || this.hzWatchStyle == 2) && this.hz43VanSame())
+         {
+            // perf round 2: styles 1/2 already placed the watch this frame with the same scale / layout / drag inputs
+            // (2-3 exitFrames per enterFrame); only the cheap noted-piece check (and the sweep if one is stale) runs
+            this.hz43ShowSweep();
+         }
          else { this.hz43VanPlace(); }
+      }
+
+      // perf round 2 Fix 4. Purpose: true when hz43VanPlace already ran this hzFrameN with the same inputs (scale,
+      // saved layout, the hz43VrTick resolve counter) and no Arrange drag of the watch is live. Reads only.
+      private function hz43VanSame() : Boolean
+      {
+         if(this.hz43VpF != this.hzFrameN) { return false; }
+         if(this.hzArrange && this.hzArrDrag == "Watch") { return false; }
+         if((this.hzBlg != null ? this.hzBlg.numChildren : -1) != this.hz43VpKids) { return false; }   // review N-3: one int
+         return this.hz43VrTick == this.hz43VpVr && this.hzLayHas("Watch") == this.hz43VpSaved && this.hz43VanSc() == this.hz43VpSc;
+      }
+
+      // perf round 2 Fix 4. Purpose: the styles 1/2 show sweep (hz43VanRestoreHid + hz43VanBlgChrome(false), the same
+      // two calls as before) only when hz43ShowNeed says so. Outputs: the same visible writes as the old every-call
+      // sweep, on the frames where one of them would change something. Author: Moragar. Last modified: 2026-11-14.
+      private function hz43ShowSweep() : void
+      {
+         if(!this.hz43ShowNeed()) { return; }
+         this.hz43ChrForce |= 8;   // held until the sweep finishes: a throw mid-pass (partial record) sweeps again next call
+         this.hz43VanRestoreHid();
+         this.hz43VanBlgChrome(false);
+         this.hz43ShowBlg = this.hzBlg;
+         this.hz43ShowKids = this.hzBlg != null ? this.hzBlg.numChildren : -1;
+         this.hz43ShowSt = this.hzWatchStyle;
+         this.hz43ChrForce &= ~8;
+      }
+
+      // perf round 2 Fix 4. Purpose: does the show sweep have work? Fix 1's edges (force bit 8: hide-list rebuild,
+      // recapture, scan edge; style change; BLG ref or child count change), anything noted to restore, a full record,
+      // or a recorded piece that is stale. Edge checks and one walk of the recorded list; no search.
+      private function hz43ShowNeed() : Boolean
+      {
+         if(this.hz43HidN > 0 || this.hz43HidPN > 0 || (this.hz43ChrForce & 8) != 0) { return true; }
+         if(this.hzBlg != this.hz43ShowBlg || this.hzWatchStyle != this.hz43ShowSt) { return true; }
+         if(this.hzBlg != null && this.hzBlg.numChildren != this.hz43ShowKids) { return true; }
+         if(this.hz43ShowLN >= HZ43_HID_MAX) { return true; }   // record full: the old every-call sweep
+         return this.hz43ShowStale();
+      }
+
+      // perf round 2 Fix 4. Purpose: the risk cover. Reads the pieces the last show pass handled (no search): true when
+      // one is torn down, or its visible bit differs from what hz43VanShowClip would write (a plain piece hidden; one of
+      // the four payload clips off its LocalEnvironmentData formula). Same rule as hz43VanShowClip, no write.
+      private function hz43ShowStale() : Boolean
+      {
+         var i:int = 0;
+         while(i < this.hz43ShowLN)
+         {
+            var d:DisplayObject = this.hz43ShowL[i] as DisplayObject;
+            if(d == null || d.stage == null) { return true; }
+            var nm:String = this.hz43ShowNm[i];
+            if(nm != null)   // a payload clip (hz43VanGameVis)
+            {
+               if((this.hz43EnvGot != 0 || nm == "locationNameBase_mc") && d.visible != this.hz43VanEnvWant(nm)) { return true; }
+            }
+            else if(!d.visible) { return true; }
+            i++;
+         }
+         return false;
+      }
+
+      // perf round 2 Fix 4. Purpose: record one piece the show pass handled; payload clips keep their name for the formula.
+      private function hz43ShowAdd(d:DisplayObject, n:String) : void
+      {
+         if(this.hz43ShowL == null) { this.hz43ShowL = new Array(HZ43_HID_MAX); this.hz43ShowNm = new Array(HZ43_HID_MAX); }
+         if(this.hz43ShowLN >= HZ43_HID_MAX) { return; }
+         this.hz43ShowL[this.hz43ShowLN] = d;
+         this.hz43ShowNm[this.hz43ShowLN] = this.hz43VanGameVis(n) ? n : null;
+         this.hz43ShowLN++;
       }
 
       private function hz43Place() : void

@@ -829,7 +829,7 @@ function buildBlg(seed) {
 const CFUNCS = ["hzFindByName", "hz43VanSkip", "hz43VanMarkName", "hz43VanInstName", "hz43VanCapClip", "hz43VanRingProof", "hz43VanRingClip",
 	"hz43VanNamed", "hz43VanRootOf", "hz43VanWatchClip", "hz43StHide", "hz43VanNote", "hz43VanNoteAdd", "hz43VanRestoreHid", "hz43VanShowClip", "hz43VanGameVis",
 	"hz43VanEnvWant", "hz43VanInfoName", "hz43VanHoldsMark", "hz43VanBlgChrome", "hz43VanChrome", "hz43ChrKeep", "hz43ChrBoxAdd", "hz43VanOutline", "hz43OlBegin", "hz43OlEnd",
-	"hz43IsMark", "hz43FindMark"];
+	"hz43IsMark", "hz43FindMark", "hz43ShowSweep", "hz43ShowNeed", "hz43ShowStale", "hz43ShowAdd"];   // perf round 2 Fix 4: the show sweep gate
 const CCHANGED = ["hz43VanBlgChrome", "hz43VanChrome"];
 function constArr(name) {
 	const m = as.match(new RegExp("static const " + name + ":Array = (\\[[^\\]]*\\]);"));
