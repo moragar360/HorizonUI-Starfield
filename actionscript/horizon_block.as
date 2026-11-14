@@ -2213,16 +2213,49 @@
       // arch-fixes Fix 3: combat has two providers, PlayerData and HUDStealthData (the one the game's own stealth meter
       // reads, already subscribed in hz26Build). Each one counts only on its own edge, so the latest change from either
       // decides and a provider repeating an old value never undoes the other one's newer edge.
+      // arch-fixes N-3: a stealth-sourced "in combat" can't stick when the stealth feed goes quiet. Two edges clear it,
+      // both inside callbacks that already fire (no timer, no frame work, no allocation):
+      //  * the stealth meter's own sneak-exit edge (bSneaking true -> false): the stealth source drops out and combat
+      //    falls back to PlayerData's last value (that one update's combat flag is not used);
+      //  * PlayerData reporting "not in combat" on HZ_COMBAT_QUIET updates in a row with no stealth update in between.
       private function hzOnPlayerData(e:FromClientDataEvent) : *
       {
          var v:Boolean = e.data.bIsInCombat === true;
-         if(v == this.hzCombatPd) { return; }
+         var was:Boolean = this.hzCombatPd;
          this.hzCombatPd = v;
+         if(!v && this.hzCombatSt)
+         {
+            this.hzCombatQuiet++;
+            if(this.hzCombatQuiet >= HZ_COMBAT_QUIET)   // stealth said combat, then stopped updating: PlayerData decides
+            {
+               this.hzCombatSt = false;   // hzCombatQuiet restarts at the next stealth update
+               if(this.hz36SetCombat(false)) { this.hzRefreshVisibility(); }
+               return;
+            }
+         }
+         if(v == was) { return; }
          if(this.hz36SetCombat(v)) { this.hzRefreshVisibility(); }
       }
       private function hzOnStealthCombat(d:Object) : void
       {
-         if(d == null || d.bIsInCombat === undefined) { return; }
+         if(d == null) { return; }
+         this.hzCombatQuiet = 0;   // the stealth feed is alive
+         if(d.bSneaking !== undefined)
+         {
+            var sn:Boolean = d.bSneaking === true;
+            var exitEdge:Boolean = this.hzCombatSn && !sn;
+            this.hzCombatSn = sn;
+            if(exitEdge)
+            {
+               if(this.hzCombatSt)
+               {
+                  this.hzCombatSt = false;
+                  if(this.hz36SetCombat(this.hzCombatPd)) { this.hzRefreshVisibility(); }
+               }
+               return;
+            }
+         }
+         if(d.bIsInCombat === undefined) { return; }
          var v:Boolean = d.bIsInCombat === true;
          if(v == this.hzCombatSt) { return; }
          this.hzCombatSt = v;
@@ -2658,6 +2691,9 @@
       private var hzWpnRet:Boolean = false;     // arch-fixes Fix 3: the last crosshair type was a weapon reticle (see hzWpnReticle)
       private var hzCombatPd:Boolean = false;   // arch-fixes Fix 3: last PlayerData.bIsInCombat
       private var hzCombatSt:Boolean = false;   // arch-fixes Fix 3: last HUDStealthData.bIsInCombat
+      private var hzCombatSn:Boolean = false;   // arch-fixes N-3: last HUDStealthData.bSneaking (for the sneak-exit edge)
+      private var hzCombatQuiet:int = 0;        // arch-fixes N-3: PlayerData "not in combat" updates since the last stealth update
+      private static const HZ_COMBAT_QUIET:int = 2;
       public function hzSetWeaponDrawn(drawn:Boolean) : void
       {
          var changed:Boolean = !this.hzPlugActive || this.hzPlugDrawn != drawn;
@@ -3164,6 +3200,7 @@
             }
             if(this.hzBlg && this.hz43ChrNeedA())   // arch-fixes Fix 1: full child pass on an edge only
             {
+               this.hz43ChrPrune();   // arch-fixes N-1
                var bi:int = 0;
                this.hz43ChrWN = 0;
                while(bi < this.hzBlg.numChildren)
@@ -16985,7 +17022,8 @@
       private var hz36HideStale:Boolean = false;
       private var hz36CmpTries:int = 0;
       private var hz36CmpLast:String = "";
-      // PlayerData.bIsInCombat (the source the game's own detection meter uses); true when the state changed
+      // Sets the combat flag from either provider (PlayerData.bIsInCombat or HUDStealthData.bIsInCombat, the feed the
+      // game's own stealth meter reads; see hzOnPlayerData). Returns true when the state changed.
       private function hz36SetCombat(v:Boolean) : Boolean
       {
          var was:Boolean = this.hzInCombat;
@@ -21089,10 +21127,15 @@
       private var hz43VanUnitLog:Boolean = false;
       private var hz43HidA:Array = null;
       private var hz43HidN:int = 0;
+      // arch-fixes N-1: noted refs found torn down at a full pass. Out of the per-frame stale scan, still restored by
+      // hz43VanRestoreHid (so a clip the timeline puts back is never left hidden in styles 1/2).
+      private var hz43HidP:Array = null;
+      private var hz43HidPN:int = 0;
       // arch-fixes Fix 1: edge-gated chrome passes. A = the hzOnFrame BLG child pass, B = the styles 3/4 hz43VanChrome pass.
       // Each full pass runs only on an edge (style change, BLG child count change, a hidden ref shown again or torn
       // down, a noted container's child count change, a hide-list rebuild, scan edge, recapture). Refs are dropped at
-      // every full pass, so nothing survives a menu teardown (a torn-down ref has stage == null and forces a pass).
+      // every full pass, so nothing survives a menu teardown (a torn-down ref has stage == null and forces a pass; since N-1
+      // that pass parks it, see hz43ChrPrune).
       private var hz43ChrForce:int = 7;   // bit 1 = pass A, bit 2 = pass B, bit 4 = ring outline re-resolve
       private var hz43ChrKidsA:int = -2;
       private var hz43ChrStA:int = -1;
@@ -23924,6 +23967,54 @@
          this.hz43HidN++;
       }
 
+      // arch-fixes N-1. Purpose: at the start of a full chrome pass (an edge), move noted refs that are torn down
+      // (stage == null) from hz43HidA to the parked list hz43HidP, so one teardown mid-session does not keep
+      // hz43ChrStale true and the full passes running every frame. Skipped while the BLG itself is off stage (then every
+      // ref reads stage == null and nothing is known). A full parked list keeps the ref in hz43HidA (the old cost, never
+      // a lost restore). Bounded by HZ43_HID_MAX; allocates the parked array once.
+      private function hz43ChrPrune() : void
+      {
+         if(this.hz43HidN == 0 || this.hzBlg == null || this.hzBlg.stage == null) { return; }
+         var n:int = 0;
+         var i:int = 0;
+         while(i < this.hz43HidN)
+         {
+            var d:DisplayObject = this.hz43HidA[i] as DisplayObject;
+            var keep:Boolean = d != null;
+            if(keep && d.stage == null)
+            {
+               var j:int = 0;
+               var dup:Boolean = false;
+               while(j < this.hz43HidPN && !dup)
+               {
+                  dup = this.hz43HidP[j] == d;
+                  j++;
+               }
+               if(dup) { keep = false; }
+               else if(this.hz43HidPN < HZ43_HID_MAX)
+               {
+                  if(this.hz43HidP == null) { this.hz43HidP = new Array(HZ43_HID_MAX); }
+                  this.hz43HidP[this.hz43HidPN] = d;
+                  this.hz43HidPN++;
+                  keep = false;
+               }
+            }
+            if(keep)
+            {
+               this.hz43HidA[n] = d;
+               n++;
+            }
+            i++;
+         }
+         i = n;
+         while(i < this.hz43HidN)
+         {
+            this.hz43HidA[i] = null;
+            i++;
+         }
+         this.hz43HidN = n;
+      }
+
       // arch-fixes Fix 1. Purpose: true when one of the n refs in a needs the full chrome pass again: it is visible
       // (shown again by the timeline) or torn down (stage == null). Reads refs Horizon stored at its last full pass.
       private function hz43ChrStale(a:Array, n:int) : Boolean
@@ -24039,28 +24130,36 @@
       // Temp/Oxygen/Grav undo our vis hide only; native FadeInPlanetInfo owns their alpha.
       private function hz43VanRestoreHid() : void
       {
-         var i:int = 0;
-         while(i < this.hz43HidN)
+         var pass:int = 0;
+         while(pass < 2)   // arch-fixes N-1: pass 0 = parked (torn-down) refs, pass 1 = hz43HidA; same undo for both
          {
-            var d:DisplayObject = this.hz43HidA[i] as DisplayObject;
-            if(d && this.hz43VanWatchClip(d))
+            var a:Array = pass == 0 ? this.hz43HidP : this.hz43HidA;
+            var n:int = pass == 0 ? this.hz43HidPN : this.hz43HidN;
+            var i:int = 0;
+            while(i < n)
             {
-               if(this.hz43VanGameVis(d.name))
+               var d:DisplayObject = a[i] as DisplayObject;
+               if(d && this.hz43VanWatchClip(d))
                {
-                  if(this.hz43EnvGot != 0 || d.name == "locationNameBase_mc")
+                  if(this.hz43VanGameVis(d.name))
                   {
-                     var want:Boolean = this.hz43VanEnvWant(d.name);
-                     if(d.visible != want) { d.visible = want; }
+                     if(this.hz43EnvGot != 0 || d.name == "locationNameBase_mc")
+                     {
+                        var want:Boolean = this.hz43VanEnvWant(d.name);
+                        if(d.visible != want) { d.visible = want; }
+                     }
+                  }
+                  else if(!d.visible)
+                  {
+                     d.visible = true;
                   }
                }
-               else if(!d.visible)
-               {
-                  d.visible = true;
-               }
+               a[i] = null;
+               i++;
             }
-            this.hz43HidA[i] = null;
-            i++;
+            pass++;
          }
+         this.hz43HidPN = 0;
          this.hz43HidN = 0;
          this.hz43ChrForce |= 7;   // arch-fixes Fix 1: the noted set changed
       }
@@ -24408,6 +24507,7 @@
          }
          if(this.hz43ChrNeedB())   // arch-fixes Fix 1: the by-name chrome pass runs on an edge only
          {
+            this.hz43ChrPrune();   // arch-fixes N-1
             this.hz43ChrShowN = 0;
             this.hz43ChrBoxN = 0;
             this.hz43ChrRec = true;

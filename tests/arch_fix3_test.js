@@ -47,7 +47,7 @@ function argNames(sig) {
 	if (!m || !m[1].trim()) return [];
 	return m[1].split(",").map((a) => a.trim().split(":")[0].trim().split("=")[0].trim());
 }
-const G = { HZ_HCT_INTERACT: 7, HZ_HCT_COMMAND: 8, Number: Number, Boolean: Boolean };
+const G = { HZ_HCT_INTERACT: 7, HZ_HCT_COMMAND: 8, HZ_COMBAT_QUIET: Number((as.match(/HZ_COMBAT_QUIET:int = (\d+)/) || [])[1]), Number: Number, Boolean: Boolean };
 function bind(h, names) {
 	const wrap = new Proxy(h, { get(t, k) { if (k in t) return t[k]; if (k in G) return G[k]; return undefined; }, has(t, k) { return typeof k === "string" && (k in t || k in G); } });
 	for (const n of names) {
