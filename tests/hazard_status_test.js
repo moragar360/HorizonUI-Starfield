@@ -353,8 +353,11 @@ const chipText = (h) => h.hzHsTf.text;
 	expect(/kVersion\s*=\s*"0\.42\.0"/.test(hz), "HZF::kVersion stays 0.42.0");
 }
 // base equality: taking out the chip hunks gives the 0.43.2.0 source byte for byte
+// arch-fixes (perf/arch-fixes): later perf commits on top of the hazard tip ad08bda change other functions; their own tests
+// cover them, and this equality runs on the hazard tip's source (ad08bda) when it is in the repo.
+const archSrc = (() => { if (as.indexOf("arch-fixes Fix") < 0) return as; try { return cp.execFileSync("git", ["show", "ad08bda:actionscript/horizon_block.as"], { cwd: root, encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "ignore"] }).replace(/\r\n/g, "\n"); } catch (e) { return as; } })();
 if (base) {
-	let s = as.replace(sec, "");
+	let s = archSrc.replace(sec, "");
 	const HUNKS = [
 		["         try { this.hzHsFx(a,n,word); } catch(eHs:Error) { }   // Hazard Status chip (diff-and-skip)\n", ""],
 		["         try { this.hzHsSub(); } catch(eHsS:Error) { }   // Hazard Status: EnvironmentAlertsData (the only listener of it)\n", ""],

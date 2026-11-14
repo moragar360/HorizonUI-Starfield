@@ -3075,9 +3075,15 @@
          try { this.hz43SyncHide(); } catch(e43h:Error) { }
          try { this.hz44GrpTick(true); } catch(e44g:Error) { }   // whole-group BLG hide: after the style sync, before the hide list
          if(this.hzPerfOn) { this.hzPsMark(4); }
-         // watchlog test switch: mode 1 skips only the 90-frame re-walk (PerfDiag=1, WatchLog=1, Scroll Lock)
-         if(this.hzHideCache == null || (this.hzFrameN % 90 == 1 && !(this.hzWlOn && this.hzWlMode == 1)) || this.hz36HideStale)
+         // arch-fixes Fix 1: the re-walk runs on an edge only: no cache, a stale ref, a BLG child count change, or (only while
+         // a listed name is still missing) the old 90-frame retry. Steady state: one int compare.
+         // watchlog test switch: mode 1 skips only the edge re-walk (PerfDiag=1, WatchLog=1, Scroll Lock)
+         var rbKids:int = this.hzBlg != null ? this.hzBlg.numChildren : -1;
+         var rbEdge:Boolean = rbKids != this.hzHideKids || (this.hzHideMiss && this.hzFrameN % 90 == 1);
+         if(this.hzHideCache == null || (rbEdge && !(this.hzWlOn && this.hzWlMode == 1)) || this.hz36HideStale)
          {
+            this.hzHideKids = rbKids;
+            this.hz43ChrForce |= 3;
             this.hzHideTries++;
             if(this.hzPerfOn) { this.hzPcHideRb++; }
             if(this.hzWlOn) { wlOld = this.hzHideCache; wlWhy = wlOld == null ? 0 : (this.hz36HideStale ? 2 : 1); this.hzWlRbNow = true; }
@@ -3110,9 +3116,10 @@
             if(this.hzHideVanillaHealth) { names.push("HealthBar_mc","HealthBarEmpty_mc","HealthBarGhost_mc","HealthBarDamage_mc","HealthBarIncrease_mc","Health_mc"); }
             this.hz44Skip = grp ? this.hz44Ref : null;   // grp: the walk does not descend into the hidden BLG (no listed name lives there)
             try { this.hz36HideFindAll(this,names,this.hzHideCache); } finally { this.hz44Skip = null; }   // one tree walk for the whole list
+            this.hzHideMiss = this.hzHideMissing(names,this.hzHideCache);
             if(this.hzWlOn) { try { this.hzWlRbDiff(wlOld,this.hzHideCache,wlWhy); } catch(eWr:Error) { } }
          }
-         else if(this.hzWlOn && this.hzWlMode == 1 && this.hzFrameN % 90 == 1) { this.hzWlSkip++; }
+         else if(this.hzWlOn && this.hzWlMode == 1 && rbEdge) { this.hzWlSkip++; this.hzHideKids = rbKids; }
          if(this.hzPerfOn) { this.hzPsMark(5); }
          try { this.hz36HideTick(); } catch(e36a:Error) { }   // v0.36: hide first, so a throw below can't skip it
          if(this.hzPerfOn) { this.hzPsMark(6); }
@@ -3124,19 +3131,24 @@
             {
                this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer;
             }
-            if(this.hzBlg)
+            if(this.hzBlg && this.hz43ChrNeedA())   // arch-fixes Fix 1: full child pass on an edge only
             {
                var bi:int = 0;
+               this.hz43ChrWN = 0;
                while(bi < this.hzBlg.numChildren)
                {
                   var bc:DisplayObject = this.hzBlg.getChildAt(bi);
                   var keepMark:Boolean = (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && bc && this.hz43VanMarkName(bc.name);
-                  if(bc && bc.visible && !keepMark && bc.name != "EnemyDetectionAnim_mc" && bc.name != "EnvAlertText" && bc.name != "BioAlertText" && bc.name != "LocationAlertText" && !(bc.name != null && (bc.name.indexOf("Bio") == 0 || bc.name.indexOf("Env") == 0)))
+                  if(bc && !keepMark && bc.name != "EnemyDetectionAnim_mc" && bc.name != "EnvAlertText" && bc.name != "BioAlertText" && bc.name != "LocationAlertText" && !(bc.name != null && (bc.name.indexOf("Bio") == 0 || bc.name.indexOf("Env") == 0)))
                   {
-                     this.hz43StHide(bc);
+                     if(bc.visible) { this.hz43StHide(bc); }
+                     else if(this.hz43VanWatchClip(bc)) { this.hz43ChrWAdd(bc); }   // game-hidden now: watched, so a later show is an edge
                   }
                   bi++;
                }
+               this.hz43ChrKidsA = this.hzBlg.numChildren;
+               this.hz43ChrStA = this.hzWatchStyle;
+               this.hz43ChrForce &= ~1;
                if(this.hzPerfOn) { this.hzPcBlgCh += bi; }
             }
          }
@@ -19085,6 +19097,7 @@
          this.hz40Apply();
          try { this.hz41LocHide(); } catch(e41e:Error) { }   // v0.42.0 r3: re-assert on every scan edge
          if(!edge) { return; }   // r9: the r6 / r8 watch syncs below run once per real open / close edge, not per dispatch
+         this.hz43ChrForce |= 7;   // arch-fixes Fix 1: a scan edge re-runs the chrome passes once
          try { this.hz43FollowApply(); } catch(e43f:Error) { }   // r6: FadeInPlanetInfo plays on the scan edge; keep it on the moved watch
          try { this.hz43ScanHideSync(); } catch(e43s:Error) { }   // r6: [Scanner] HideWatchWhileScanning, on the open / close edge only
          try { this.hz45Sync(); } catch(e45s:Error) { }   // r8: the planet-info art the game adds right after this edge
@@ -21044,6 +21057,41 @@
       private var hz43VanUnitLog:Boolean = false;
       private var hz43HidA:Array = null;
       private var hz43HidN:int = 0;
+      // arch-fixes Fix 1: edge-gated chrome passes. A = the hzOnFrame BLG child pass, B = the styles 3/4 hz43VanChrome pass.
+      // Each full pass runs only on an edge (style change, BLG child count change, a hidden ref shown again or torn
+      // down, a noted container's child count change, a hide-list rebuild, scan edge, recapture). Refs are dropped at
+      // every full pass, so nothing survives a menu teardown (a torn-down ref has stage == null and forces a pass).
+      private var hz43ChrForce:int = 7;   // bit 1 = pass A, bit 2 = pass B, bit 4 = ring outline re-resolve
+      private var hz43ChrKidsA:int = -2;
+      private var hz43ChrStA:int = -1;
+      private var hz43ChrW:Array = null;   // pass A: watch children it saw hidden by the game (not noted in hz43HidA)
+      private var hz43ChrWN:int = 0;
+      private var hz43ChrKidsB:int = -2;
+      private var hz43ChrStB:int = -1;
+      private var hz43ChrRec:Boolean = false;
+      private var hz43ChrShow:Array = null;   // pass B: kept markers and their holders it set visible
+      private var hz43ChrShowN:int = 0;
+      private var hz43ChrBox:Array = null;    // pass B: containers it walked, with their child counts
+      private var hz43ChrBoxK:Array = null;
+      private var hz43ChrBoxN:int = 0;
+      private var hz43RmD:DisplayObject = null;   // ring-center outline ref (resolved on an edge only)
+      private var hz43RmKids:int = -2;
+      private var hz43RmOk:Boolean = false;
+      private var hz43RmX:Number = NaN;
+      private var hz43RmY:Number = NaN;
+      private var hz43RmPx:Number = NaN;
+      private var hz43RmPy:Number = NaN;
+      private var hz43RmPs:Number = NaN;
+      private var hz43RmBx:Number = NaN;
+      private var hz43RmBy:Number = NaN;
+      private var hz43RmBs:Number = NaN;
+      private var hz43RmP:Point = null;
+      private var hz43CmpS:Sprite = null;   // compass layer of the custom face (redrawn alone on a heading change)
+      private var hz43TopS:Sprite = null;   // hands + attention mark layer (above the compass, as before)
+      private var hz43CsO:Array = null;     // declared-size entry per Home-avoid card (hzSz object), looked up on an edge
+      private var hz43CsL:int = -1;
+      private var hzHideKids:int = -2;      // BLG child count at the last hide-list rebuild
+      private var hzHideMiss:Boolean = false;   // the last rebuild did not find every listed name
       private var hz43EnvGot:int = 0;
       private var hz43EnvLocal:Boolean = false;
       private var hz43EnvCruise:Boolean = false;
@@ -21773,10 +21821,15 @@
          return "";
       }
 
+      // arch-fixes Fix 1: the compass lives on its own layer (hz43DrawCmp redraws it alone on a heading change), the hands
+      // and the attention mark on a layer above it, so the stacking order is the one the single-canvas draw had.
       private function hz43Draw(mode:int) : void
       {
+         this.hz43FaceLayers();
          var g:* = this.hz43Face.graphics;
          g.clear();
+         var tg:* = this.hz43TopS.graphics;
+         tg.clear();
          g.beginFill(0x0A1218,0.62);
          g.drawCircle(0,0,HZ43_R - 1);
          g.endFill();
@@ -21787,9 +21840,9 @@
          this.hz43Gauge(g,this.hz26O2F,this.hz26Co2F,digital);
          this.hz43GaugeLabel(this.hz43O2L,this.hz43O2Start());
          this.hz43GaugeLabel(this.hz43CO2L,this.hz43CO2Start());
+         this.hz43DrawCmp();
          if(digital)
          {
-            this.hz43Compass(g);
             this.hz43LocL.y = -40;
             this.hz43LocT.y = -22;
             this.hz43RealL.y = 2;
@@ -21800,41 +21853,62 @@
          else
          {
             this.hz43Ticks(g);
-            this.hz43Compass(g);
-            this.hz43Hands(g);
+            this.hz43Hands(tg);
             this.hz43BodyT.y = -22;
             this.hz43TempT.y = -4;
          }
          var attn:String = this.hz43AttWord();
          this.hz43AttT.visible = attn.length > 0;
-         this.hz43AttT.text = attn;
+         this.hz43SetTx(this.hz43AttT,attn);
          if(attn.length > 0)
          {
             this.hz43AttT.y = digital ? 102 : 24;
             this.hzTxtTint(this.hz43AttT,HZ43_ATTN);
             var ay:Number = this.hz43AttT.y + 4;
-            g.beginFill(HZ43_ATTN,1);
-            g.moveTo(-78,ay);
-            g.lineTo(-72,ay + 6);
-            g.lineTo(-84,ay + 6);
-            g.endFill();
+            tg.beginFill(HZ43_ATTN,1);
+            tg.moveTo(-78,ay);
+            tg.lineTo(-72,ay + 6);
+            tg.lineTo(-84,ay + 6);
+            tg.endFill();
          }
-         this.hz43LocL.text = "LOCAL/GAME";
-         this.hz43RealL.text = "PC/REAL";
-         this.hz43O2L.text = "O2";
-         this.hz43CO2L.text = "CO2";
-         if(this.hz43Ok != 0)
-         {
-            this.hz43LocT.text = this.hzFmtLocGame(this.hz43H,this.hz43M,this.hz43Ut != 0);
-         }
-         else
-         {
-            this.hz43LocT.text = "--";
-         }
-         this.hz43RealT.text = this.hz43PcTxt;
+         this.hz43SetTx(this.hz43LocL,"LOCAL/GAME");
+         this.hz43SetTx(this.hz43RealL,"PC/REAL");
+         this.hz43SetTx(this.hz43O2L,"O2");
+         this.hz43SetTx(this.hz43CO2L,"CO2");
+         this.hz43SetTx(this.hz43LocT,this.hz43Ok != 0 ? this.hzFmtLocGame(this.hz43H,this.hz43M,this.hz43Ut != 0) : "--");
+         this.hz43SetTx(this.hz43RealT,this.hz43PcTxt);
          var body:String = this.hz43Body != null && this.hz43Body.length > 0 ? this.hz43Body : "--";
-         this.hz43BodyT.text = body;
-         this.hz43TempT.text = isNaN(this.hzEnvTempC) ? "--" : this.hzTempText(this.hzEnvTempC);
+         this.hz43SetTx(this.hz43BodyT,body);
+         this.hz43SetTx(this.hz43TempT,isNaN(this.hzEnvTempC) ? "--" : this.hzTempText(this.hzEnvTempC));
+      }
+
+      // arch-fixes Fix 1. Purpose: set a face text only when it changed (a TextField write re-lays the field out).
+      private function hz43SetTx(t:TextField, v:String) : void
+      {
+         if(t.text != v) { t.text = v; }
+      }
+
+      // arch-fixes Fix 1. Purpose: create the compass and hands layers once, at the bottom of the face (under its texts).
+      private function hz43FaceLayers() : void
+      {
+         if(this.hz43CmpS != null && this.hz43CmpS.parent == this.hz43Face) { return; }
+         this.hz43CmpS = new Sprite();
+         this.hz43CmpS.mouseEnabled = false;
+         this.hz43CmpS.mouseChildren = false;
+         this.hz43TopS = new Sprite();
+         this.hz43TopS.mouseEnabled = false;
+         this.hz43TopS.mouseChildren = false;
+         this.hz43Face.addChildAt(this.hz43CmpS,0);
+         this.hz43Face.addChildAt(this.hz43TopS,1);
+      }
+
+      // arch-fixes Fix 1. Purpose: redraw only the compass layer (heading change). Called from hz43Frame on that edge.
+      private function hz43DrawCmp() : void
+      {
+         this.hz43FaceLayers();
+         var cg:* = this.hz43CmpS.graphics;
+         cg.clear();
+         this.hz43Compass(cg);
       }
 
       // Heading ticks and letters stay on the top inner arc. The diamond is the fixed top mark.
@@ -21843,7 +21917,7 @@
          this.hz43Diamond(g,0,-HZ43_R + 26,4);
          var base:int = int(Math.round(this.hzCmpDeg / 15)) * 15;
          var k:int = -4;
-         var shown:Array = [];
+         var shown:int = 0;   // arch-fixes Fix 1: bit per card letter, no Array per draw
          while(k <= 4)
          {
             var hd:int = base + k * 15;
@@ -21862,7 +21936,7 @@
             if(hd % 45 == 0 && Math.abs(rel) >= 8 && ly < -HZ43_R + 96)
             {
                var idx:int = (int(Math.round(((hd % 360) + 360) % 360 / 45)) ) % 8;
-               shown.push(idx);
+               shown |= 1 << idx;
                if(this.hz43Cards && this.hz43Cards[idx])
                {
                   var lt:TextField = this.hz43Cards[idx] as TextField;
@@ -21879,7 +21953,7 @@
             var hi:int = 0;
             while(hi < this.hz43Cards.length)
             {
-               if(shown.indexOf(hi) < 0) { TextField(this.hz43Cards[hi]).visible = false; }
+               if((shown & (1 << hi)) == 0) { TextField(this.hz43Cards[hi]).visible = false; }
                hi++;
             }
          }
@@ -21963,8 +22037,12 @@
          var vis:int = (c && c.visible && c.alpha > 0.2) ? 1 : 0;
          var x:Number = c ? c.x : 0;
          var y:Number = c ? c.y : 0;
-         var w:Number = vis != 0 ? c.width : 0;
-         var h:Number = vis != 0 ? c.height : 0;
+         // arch-fixes Fix 1: the size key is the card's declared size (hzSetSz, set by its own layout) times its scale,
+         // a few number reads; the display-list bounds are read only when that key moved. A card with no declared size
+         // keeps the old bounds read.
+         var so:Object = vis != 0 ? this.hz43CardSzO(i,c) : null;
+         var w:Number = vis == 0 ? 0 : (so != null ? Number(so.w) * c.scaleX : c.width);
+         var h:Number = vis == 0 ? 0 : (so != null ? Number(so.h) * c.scaleY : c.height);
          var ch:Boolean = vis != int(this.hz43Cv[i]) || x != Number(this.hz43Cx[i]) || y != Number(this.hz43Cy[i]) || w != Number(this.hz43Cw[i]) || h != Number(this.hz43Chh[i]);
          this.hz43Cv[i] = vis;
          this.hz43Cx[i] = x;
@@ -21972,6 +22050,28 @@
          this.hz43Cw[i] = w;
          this.hz43Chh[i] = h;
          return ch;
+      }
+
+      // arch-fixes Fix 1. Purpose: the hzSz entry of Home-avoid card i (looked up again only when hzSz grew). Entries are
+      // updated in place by hzSetSz, so the stored object stays current.
+      private function hz43CardSzO(i:int, c:Sprite) : Object
+      {
+         if(this.hz43CsO == null || this.hz43CsL != this.hzSz.length)
+         {
+            this.hz43CsO = [null,null,null,null];
+            this.hz43CsL = this.hzSz.length;
+            for each(var o:Object in this.hzSz)
+            {
+               var k:int = 0;
+               while(k < 4)
+               {
+                  if(o.c == this.hz43CardAt(k)) { this.hz43CsO[k] = o; }
+                  k++;
+               }
+            }
+         }
+         var e:Object = this.hz43CsO[i];
+         return (e != null && e.c == c) ? e : null;
       }
 
       private function hz43Locals() : Boolean
@@ -22421,6 +22521,7 @@
             if(this.hz43VanNeed == 0 && this.hzBlg.numChildren == this.hz43VanKids) { return; }
          }
          this.hz43VanN = 0;
+         this.hz43ChrForce |= 7;   // arch-fixes Fix 1: recapture
          var k:int = 0;
          while(k < HZ43_VAN_N.length)
          {
@@ -22447,6 +22548,7 @@
          var i:int = 0;
          var count:int = this.hz43VanN;
          this.hz43VanN = 0;
+         this.hz43ChrForce |= 7;   // arch-fixes Fix 1: recapture
          while(i < count)
          {
             var d:DisplayObject = this.hz43VanD[i] as DisplayObject;
@@ -22615,7 +22717,7 @@
          var dsc:Number = sc - this.hz43VanWsc;
          if(this.hz43VanWmk == mk && ddx < 0.05 && ddx > -0.05 && ddy < 0.05 && ddy > -0.05 && dsc < 0.001 && dsc > -0.001)
          {
-            if((marks && this.hz43MarkMoved) || (!marks && (this.hz43VanWrote || (dx == 0 && dy == 0 && sc == 1)))) { return; }
+            if((marks && (this.hz43MarkMoved || (dx == 0 && dy == 0))) || (!marks && (this.hz43VanWrote || (dx == 0 && dy == 0 && sc == 1)))) { return; }   // arch-fixes Fix 1: an unchanged 0 offset is not rewritten
          }
          var i:int = 0;
          while(i < this.hz43VanN)
@@ -22711,6 +22813,7 @@
          try { this.hz49Sync(); } catch(e49:Error) { }   // r9d: the whole-group scan hide, on the same edges
          var want:Boolean = this.hz43ScanWant();
          if(want == this.hz43ScanHid && (!want || this.hz43ScanSt == this.hzWatchStyle)) { return; }
+         this.hz43ChrForce |= 7;   // arch-fixes Fix 1: the scan hide changes watch visibility
          var d:DisplayObject;
          if(this.hz43ScanHid)
          {
@@ -23789,6 +23892,116 @@
          this.hz43HidN++;
       }
 
+      // arch-fixes Fix 1. Purpose: true when one of the n refs in a needs the full chrome pass again: it is visible
+      // (shown again by the timeline) or torn down (stage == null). Reads refs Horizon stored at its last full pass.
+      private function hz43ChrStale(a:Array, n:int) : Boolean
+      {
+         var i:int = 0;
+         while(i < n)
+         {
+            var d:DisplayObject = a[i] as DisplayObject;
+            if(d != null && (d.visible || d.stage == null)) { return true; }
+            i++;
+         }
+         return false;
+      }
+
+      // arch-fixes Fix 1. Purpose: does the hzOnFrame BLG child pass need to run this frame? Edge checks only.
+      private function hz43ChrNeedA() : Boolean
+      {
+         if((this.hz43ChrForce & 1) != 0 || this.hzBlg.numChildren != this.hz43ChrKidsA || this.hzWatchStyle != this.hz43ChrStA) { return true; }
+         if(this.hz43HidN >= HZ43_HID_MAX || this.hz43ChrWN >= HZ43_HID_MAX) { return true; }   // list full: old every-frame pass
+         return this.hz43ChrStale(this.hz43HidA,this.hz43HidN) || this.hz43ChrStale(this.hz43ChrW,this.hz43ChrWN);
+      }
+
+      // arch-fixes Fix 1. Purpose: does the styles 3/4 chrome pass need to run? On a steady frame it re-asserts the kept
+      // markers it recorded (the old pass did the same write every frame) and reads the recorded containers' counts.
+      private function hz43ChrNeedB() : Boolean
+      {
+         if((this.hz43ChrForce & 2) != 0 || this.hzBlg.numChildren != this.hz43ChrKidsB || this.hzWatchStyle != this.hz43ChrStB) { return true; }
+         if(this.hz43HidN >= HZ43_HID_MAX || this.hz43ChrShowN >= HZ43_HID_MAX || this.hz43ChrBoxN >= HZ43_HID_MAX) { return true; }
+         if(this.hz43ChrStale(this.hz43HidA,this.hz43HidN)) { return true; }
+         var i:int = 0;
+         while(i < this.hz43ChrBoxN)
+         {
+            var c:DisplayObjectContainer = this.hz43ChrBox[i] as DisplayObjectContainer;
+            if(c == null || c.stage == null || c.numChildren != int(this.hz43ChrBoxK[i])) { return true; }
+            i++;
+         }
+         i = 0;
+         while(i < this.hz43ChrShowN)
+         {
+            var d:DisplayObject = this.hz43ChrShow[i] as DisplayObject;
+            if(d == null || d.stage == null) { return true; }
+            if(!d.visible) { d.visible = true; }
+            i++;
+         }
+         return false;
+      }
+
+      // arch-fixes Fix 1. Purpose: the keep write of hz43VanChrome (same write as before), recorded while a full pass runs.
+      private function hz43ChrKeep(d:DisplayObject) : void
+      {
+         if(!d.visible) { d.visible = true; }
+         if(!this.hz43ChrRec) { return; }
+         if(this.hz43ChrShow == null) { this.hz43ChrShow = new Array(HZ43_HID_MAX); }
+         var i:int = 0;
+         while(i < this.hz43ChrShowN)
+         {
+            if(this.hz43ChrShow[i] == d) { return; }
+            i++;
+         }
+         if(this.hz43ChrShowN >= HZ43_HID_MAX) { return; }
+         this.hz43ChrShow[this.hz43ChrShowN] = d;
+         this.hz43ChrShowN++;
+      }
+
+      // arch-fixes Fix 1. Purpose: remember a container hz43VanChrome walked and its child count (full pass only).
+      private function hz43ChrBoxAdd(c:DisplayObjectContainer) : void
+      {
+         if(!this.hz43ChrRec || c == null) { return; }
+         if(this.hz43ChrBox == null) { this.hz43ChrBox = new Array(HZ43_HID_MAX); this.hz43ChrBoxK = new Array(HZ43_HID_MAX); }
+         var i:int = 0;
+         while(i < this.hz43ChrBoxN)
+         {
+            if(this.hz43ChrBox[i] == c) { return; }
+            i++;
+         }
+         if(this.hz43ChrBoxN >= HZ43_HID_MAX) { return; }
+         this.hz43ChrBox[this.hz43ChrBoxN] = c;
+         this.hz43ChrBoxK[this.hz43ChrBoxN] = c.numChildren;
+         this.hz43ChrBoxN++;
+      }
+
+      // arch-fixes Fix 1. Purpose: remember a game-hidden watch child seen by the full pass A, so its later show is an edge.
+      private function hz43ChrWAdd(d:DisplayObject) : void
+      {
+         if(this.hz43ChrW == null) { this.hz43ChrW = new Array(HZ43_HID_MAX); }
+         if(this.hz43ChrWN >= HZ43_HID_MAX) { return; }
+         this.hz43ChrW[this.hz43ChrWN] = d;
+         this.hz43ChrWN++;
+      }
+
+      // arch-fixes Fix 1. Purpose: true when a listed hide name was not found by the last re-walk (rebuild only).
+      private function hzHideMissing(names:Array, cache:Array) : Boolean
+      {
+         var i:int = 0;
+         while(i < names.length)
+         {
+            var hit:Boolean = false;
+            var j:int = 0;
+            while(j < cache.length && !hit)
+            {
+               var o:Object = cache[j];
+               if(o != null && o.n == names[i]) { hit = true; }
+               j++;
+            }
+            if(!hit) { return true; }
+            i++;
+         }
+         return false;
+      }
+
       // Release Horizon visible-hides of watch siblings. Never writes alpha.
       // Day/OffPlanet/Autopilot/locationName use payload formulas, not sampled clip.visible.
       // Temp/Oxygen/Grav undo our vis hide only; native FadeInPlanetInfo owns their alpha.
@@ -23817,6 +24030,7 @@
             i++;
          }
          this.hz43HidN = 0;
+         this.hz43ChrForce |= 7;   // arch-fixes Fix 1: the noted set changed
       }
 
       // Undo our vis hide on one watch sibling. Never writes alpha. The four native vis
@@ -23896,17 +24110,18 @@
                   var keep:Boolean = mark || (box != null && this.hz43VanHoldsMark(box));
                   if(hide && mark)
                   {
-                     if(!clip.visible) { clip.visible = true; }
+                     this.hz43ChrKeep(clip);
                      var up:DisplayObjectContainer = clip.parent;
                      while(up != null && up != this)
                      {
-                        if(!up.visible) { up.visible = true; }
+                        this.hz43ChrKeep(up);
                         if(up == this.hzBlg) { break; }
                         up = up.parent;
                      }
                      var sib:DisplayObjectContainer = clip.parent;
                      if(sib != null && sib != this.hzBlg && sib != this)
                      {
+                        this.hz43ChrBoxAdd(sib);
                         var si:int = 0;
                         while(si < sib.numChildren)
                         {
@@ -23922,7 +24137,8 @@
                   }
                   else if(hide && box != null && keep && !mark)
                   {
-                     if(!clip.visible) { clip.visible = true; }
+                     this.hz43ChrKeep(clip);
+                     this.hz43ChrBoxAdd(box);
                      var ci:int = 0;
                      while(ci < box.numChildren)
                      {
@@ -23934,7 +24150,7 @@
                         }
                         else if(ch)
                         {
-                           if(!ch.visible) { ch.visible = true; }
+                           this.hz43ChrKeep(ch);
                         }
                         ci++;
                      }
@@ -24038,20 +24254,49 @@
       }
 
       // Native ring center in HUDMenu space from outline local, not getBounds of hidden clips.
+      // arch-fixes Fix 1: the outline ref is resolved on an edge only (first call, torn down / reparented, BLG child count
+      // change, chrome edge) and the center is recomputed only when the outline, its parent or the BLG moved or scaled.
+      // Steady state: number compares, no search, no Point allocation. Returns a Point owned by this class.
       private function hz43VanRingMid() : Point
       {
          if(!this.hzBlg || this.hz43VanP == null) { return null; }
-         var d:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         var d:DisplayObject = this.hz43RmD;
+         var kids:int = this.hzBlg.numChildren;
+         if((d != null && (d.stage == null || d.parent == null)) || (d == null && kids != this.hz43RmKids) || (this.hz43ChrForce & 4) != 0)
+         {
+            d = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+            this.hz43RmD = d;
+            this.hz43RmKids = kids;
+            this.hz43RmOk = false;
+            this.hz43ChrForce &= ~4;
+         }
          if(!d || !d.parent) { return null; }
+         var par:DisplayObjectContainer = d.parent;
+         var b:DisplayObjectContainer = this.hzBlg;
+         if(this.hz43RmOk && d.x == this.hz43RmX && d.y == this.hz43RmY && par.x == this.hz43RmPx && par.y == this.hz43RmPy && par.scaleX == this.hz43RmPs && b.x == this.hz43RmBx && b.y == this.hz43RmBy && b.scaleX == this.hz43RmBs) { return this.hz43RmP; }
          this.hz43VanP.x = d.x + HZ43_VAN_FACE / 2;
          this.hz43VanP.y = d.y + HZ43_VAN_FACE / 2;
-         var g:Point = d.parent.localToGlobal(this.hz43VanP);
-         return this.globalToLocal(g);
+         var g:Point = par.localToGlobal(this.hz43VanP);
+         var l:Point = this.globalToLocal(g);
+         if(this.hz43RmP == null) { this.hz43RmP = new Point(); }
+         this.hz43RmP.x = l.x;
+         this.hz43RmP.y = l.y;
+         this.hz43RmX = d.x;
+         this.hz43RmY = d.y;
+         this.hz43RmPx = par.x;
+         this.hz43RmPy = par.y;
+         this.hz43RmPs = par.scaleX;
+         this.hz43RmBx = b.x;
+         this.hz43RmBy = b.y;
+         this.hz43RmBs = b.scaleX;
+         this.hz43RmOk = true;
+         return this.hz43RmP;
       }
 
       // vis/alpha/CT/x/y for every BottomLeftGroup child. Observer only: does not hide, move, or restore.
       private function hz43VanDump(why:String) : void
       {
+         if(!this.hzWlOn) { return; }   // arch-fixes Fix 1: diagnostics default-off (WatchLog only); no signature string otherwise
          var ov:String = "";
          var od:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
          if(od) { ov = String(od.visible) + "," + od.x + "," + od.y + "," + od.alpha; }
@@ -24129,7 +24374,16 @@
             this.hz43VanWrite(0,0,1);
             this.hz43VanWrote = false;
          }
-         this.hz43VanChrome(true);
+         if(this.hz43ChrNeedB())   // arch-fixes Fix 1: the by-name chrome pass runs on an edge only
+         {
+            this.hz43ChrShowN = 0;
+            this.hz43ChrBoxN = 0;
+            this.hz43ChrRec = true;
+            try { this.hz43VanChrome(true); } finally { this.hz43ChrRec = false; }
+            this.hz43ChrKidsB = this.hzBlg.numChildren;
+            this.hz43ChrStB = this.hzWatchStyle;
+            this.hz43ChrForce = (this.hz43ChrForce & ~2) | 4;   // a full pass also re-resolves the ring outline once
+         }
          var sc:Number = this.hz43Watch.scaleX;
          if(!(sc > 0.05)) { sc = 1; }
          var cx:Number = this.hz43Watch.x + HZ43_R * sc;
@@ -24282,7 +24536,9 @@
          this.hz43TintOn = true;
       }
 
-      private function hz43Dirty() : Boolean
+      // arch-fixes Fix 1: 0 = nothing changed, 1 = only the heading changed (compass layer), 2 = full face redraw.
+      // The 1/1000-day stamp no longer forces a redraw: nothing on the face draws it (DayT stays hidden).
+      private function hz43Dirty() : int
       {
          this.hz43Read();
          this.hz43PcSample();
@@ -24294,8 +24550,14 @@
          var acc:uint = uint(this.HZ_ACCENT);
          var att:int = this.hz43AttCode();
          var body:String = this.hzPpBodyName;
-         var ch:Boolean = this.hz43Force || this.hzWatchStyle != this.hz43LastMode || this.hz43H != this.hz43LastH || this.hz43M != this.hz43LastM || this.hz43Ut != this.hz43LastUt || this.hz43Ok != this.hz43LastOk || this.hz43DayB != this.hz43LastDay || head != this.hz43LastHead || o2 != this.hz43LastO2 || co2 != this.hz43LastCo2 || this.hz43PcH != this.hz43LastPcH || this.hz43PcM != this.hz43LastPcM || tp != this.hz43LastTemp || this.hzTempUnit != this.hz43LastUnit || this.hzClockFmt != this.hz43LastClk || acc != this.hz43LastAcc || att != this.hz43LastAtt || body != this.hz43LastBody;
-         if(!ch) { return false; }
+         var ch:Boolean = this.hz43Force || this.hzWatchStyle != this.hz43LastMode || this.hz43H != this.hz43LastH || this.hz43M != this.hz43LastM || this.hz43Ut != this.hz43LastUt || this.hz43Ok != this.hz43LastOk || o2 != this.hz43LastO2 || co2 != this.hz43LastCo2 || this.hz43PcH != this.hz43LastPcH || this.hz43PcM != this.hz43LastPcM || tp != this.hz43LastTemp || this.hzTempUnit != this.hz43LastUnit || this.hzClockFmt != this.hz43LastClk || acc != this.hz43LastAcc || att != this.hz43LastAtt || body != this.hz43LastBody;
+         var hch:Boolean = head != this.hz43LastHead;
+         if(!ch)
+         {
+            if(!hch) { return 0; }
+            this.hz43LastHead = head;
+            return 1;
+         }
          this.hz43Force = false;
          this.hz43LastMode = this.hzWatchStyle;
          this.hz43LastH = this.hz43H;
@@ -24316,7 +24578,7 @@
          this.hz43Att = att;
          this.hz43Body = body;
          this.hz43LastBody = body;
-         return true;
+         return 2;
       }
 
       private function hz43Frame() : void
@@ -24338,7 +24600,9 @@
          this.hz43Build();
          this.hz43Place();
          this.hz43VanHorizon();
-         if(this.hz43Dirty()) { this.hz43Draw(this.hzWatchStyle); }
+         var dk:int = this.hz43Dirty();
+         if(dk == 2) { this.hz43Draw(this.hzWatchStyle); }
+         else if(dk == 1) { this.hz43DrawCmp(); }
          this.hz43Watch.visible = true;
       }
       // =================== end Horizon UI (HUD module) ===================

@@ -229,8 +229,9 @@ for (const name of NAMES.filter((n) => n.indexOf("hzPb") === 0 && n !== "hzPbIni
 const PS_PROBE_FNS = new Set(["hzPerfNow", "hzPsStart", "hzPsMark", "hzPsSpan", "hzPsAdd", "hzPsCal", "hzRgPush", "hzRgPushS",
 	"hzPbEnd", "hzMemTick", "hzPerfBegin", "hzPerfEnd"]);
 const PS_REAL = ["hzOnFrame", "hz26Tick", "hz27OnExit", "hzOnCompass", "hzQSync", "hzPbFrame", "hzPbExit", "hzPbCompass", "hzPbEnd",
-	"hzRgPush", "hzRgPushS", "hzPsStart", "hzPsMark", "hzPsSpan", "hzPsAdd", "hzPsCal", "hzPbInit", "hzMemTick", "hzPerfRing", "hzPerfParts"];
-const PS_CONST = { HZ_W: 1920, HZ_CMP_W: 520, HZ_CARD: ["N", "NE", "E", "SE", "S", "SW", "W", "NW"], HZ_Q19_W: 400, HZ_CQ19_W: 300, HZ_ACCENT: 0xffffff };
+	"hzRgPush", "hzRgPushS", "hzPsStart", "hzPsMark", "hzPsSpan", "hzPsAdd", "hzPsCal", "hzPbInit", "hzMemTick", "hzPerfRing", "hzPerfParts",
+	"hz43ChrNeedA", "hz43ChrStale"];   // arch-fixes Fix 1: the edge gate of the BLG child pass runs for real
+const PS_CONST = { HZ43_HID_MAX: 40, HZ_W: 1920, HZ_CMP_W: 520, HZ_CARD: ["N", "NE", "E", "SE", "S", "SW", "W", "NW"], HZ_Q19_W: 400, HZ_CQ19_W: 300, HZ_ACCENT: 0xffffff };
 
 function asToJs2(body) {
 	let s = as3toJs(body);
@@ -259,7 +260,8 @@ function psHud(on, slow) {
 		hzCmpLabels: [], hzCmpCenter: {}, HorizonQuest_mc: {}, hzCmpDeg: 0, hzCmpData: null,
 		hzQName: "Q", hzQObjStr: "", hzQDistStr: "", hzQ19T: null, hzCQ19T: null,
 		hzTexts: [], hzFades: [], hzCrossRule: 0, hzXhStyle: 1, hzTextShadow: false, hzCompact: false, hzNameHover: 0,
-		hzWlOn: false, hzWlMode: 0, hz44GrpIni: false, hz44Hid: false, hz44Ref: null, hz44Skip: null, hz44N: 0,   // group hide off here (its own suite: grouphide_test.js); watchlog off (the Proxy would turn a missing hz* name into a truthy function)
+		hzWlOn: false, hzWlMode: 0, hz44GrpIni: false, hz44Hid: false, hz44Ref: null, hz44Skip: null, hz44N: 0,
+		hz43ChrForce: 7, hz43ChrKidsA: -2, hz43ChrStA: -1, hz43HidA: null, hz43HidN: 0, hz43ChrW: null, hz43ChrWN: 0, hzHideKids: -2, hzHideMiss: false,   // group hide off here (its own suite: grouphide_test.js); watchlog off (the Proxy would turn a missing hz* name into a truthy function)
 	};
 	for (let i = 0; i < 8; i++) st.hzCmpLabels.push({ textWidth: 10 });
 	const self = new Proxy(st, {
@@ -278,8 +280,8 @@ function psHud(on, slow) {
 		if (!body) throw new Error("missing " + name);
 		const inner = asToJs2(body).replace(/^\{\s*/, "").replace(/\s*\}$/, "");
 		const params = funcParams(as, name).join(",");
-		const real = eval("(function(self, System, HZ_W, HZ_CMP_W, HZ_CARD, HZ_Q19_W, HZ_CQ19_W, HZ_ACCENT){ return function(" + params + "){ " + inner + "\n}; })")(
-			self, sys, PS_CONST.HZ_W, PS_CONST.HZ_CMP_W, PS_CONST.HZ_CARD, PS_CONST.HZ_Q19_W, PS_CONST.HZ_CQ19_W, PS_CONST.HZ_ACCENT);
+		const real = eval("(function(self, System, HZ43_HID_MAX, HZ_W, HZ_CMP_W, HZ_CARD, HZ_Q19_W, HZ_CQ19_W, HZ_ACCENT){ return function(" + params + "){ " + inner + "\n}; })")(
+			self, sys, PS_CONST.HZ43_HID_MAX, PS_CONST.HZ_W, PS_CONST.HZ_CMP_W, PS_CONST.HZ_CARD, PS_CONST.HZ_Q19_W, PS_CONST.HZ_CQ19_W, PS_CONST.HZ_ACCENT);
 		st[name] = function () {
 			trace.push(name);
 			if (name === "hzPsMark") marks.push(arguments[0]);
@@ -333,7 +335,8 @@ function psDrive(h) {
 	for (let k = 40; k <= 45; k++) cmpSum += ps[k * 5 + 1];
 	expect(cmpSum === on.st.hzPbN[7], "parts on: compass parts add up to the compass total");
 	expect(ps[46 * 5] === 1 && ps[25 * 5] === 16 && ps[25 * 5 + 1] === 0, "parts on: qSync span and one calibration sample per frame");
-	expect(on.st.hzPcHideRb === 1 && on.st.hzPcBlgCh === 48, "parts on: hide rebuild and BottomLeftGroup child counters");
+	// arch-fixes Fix 1: the BLG child pass runs on its first frame (edge) only, so 16 frames walk 3 children once (was 48)
+	expect(on.st.hzPcHideRb === 1 && on.st.hzPcBlgCh === 3, "parts on: hide rebuild and BottomLeftGroup child counters (one edge pass, not 16)");
 	expect(ps[16 * 5] === 16 && ps[16 * 5 + 1] === 64 && ps[16 * 5 + 2] === 4, "parts on: h43 n, sumMs, maxMs");
 	const ring = on.st.hzPerfRing();
 	const sl = ring.split("|")[1].split(";").filter(Boolean);

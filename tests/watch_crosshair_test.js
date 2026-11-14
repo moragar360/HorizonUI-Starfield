@@ -104,10 +104,11 @@ expect(block.indexOf("0x6E7C86") >= 0, "unfilled gauge segments are gray");
 expect(block.indexOf("hz43Hand(g,ma,72,2.2,0xF2F7F9)") >= 0, "the minute hand is white");
 expect(block.indexOf("ly < -HZ43_R + 96") >= 0, "compass letters stay on the top arc");
 const drawBody = funcBody(as, "hz43Draw");
-expect(drawBody.split("hz43Compass(g)").length - 1 === 2, "digital and analog both draw the compass");
+// arch-fixes Fix 1: the compass is its own layer; hz43Draw draws it once for both modes, a heading change redraws only it
+expect(drawBody.split("this.hz43DrawCmp();").length - 1 === 1 && funcBody(as, "hz43DrawCmp").indexOf("this.hz43Compass(cg)") >= 0, "digital and analog both draw the compass");
 expect(drawBody.indexOf("hz43Diamond(g,0,-HZ43_R + 20,4)") < 0, "analog does not draw a second top mark");
 expect(drawBody.indexOf("hz43Cards[hi]).visible = false") < 0, "analog does not hide the compass letters");
-expect(drawBody.indexOf("hz43Ticks(g)") >= 0 && drawBody.indexOf("hz43Hands(g)") >= 0, "analog still draws ticks and hands");
+expect(drawBody.indexOf("hz43Ticks(g)") >= 0 && drawBody.indexOf("hz43Hands(tg)") >= 0, "analog still draws ticks and hands");
 expect(drawBody.indexOf("hz43BodyT.y = -22") >= 0 && drawBody.indexOf("hz43TempT.y = -4") >= 0, "analog planet name and temperature stay below the compass");
 expect(drawBody.indexOf("hzFmtLocGame(this.hz43H,this.hz43M,this.hz43Ut != 0)") >= 0, "digital LOCAL/GAME uses ClockFormat for both sources");
 expect(funcBody(as, "hzPpLayout").indexOf("hzFmtLocGame(uh,um,true)") >= 0 && funcBody(as, "hzPpLayout").indexOf("hzFmtLocGame(H,M,false)") >= 0, "planet LOCAL and GAME values both go through ClockFormat");
@@ -482,7 +483,7 @@ expect(onFrame.indexOf('names.push("WatchOutline_mc","DayCycleBase_mc","location
 expect(as.indexOf('HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc"]') >= 0, "style 2 tints the original watch face only");
 expect(as.indexOf('HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc"') < 0, "style 2 does not tint extra native readouts");
 expect(funcBody(as, "hz43Frame").indexOf("hz43Watch.visible = false") >= 0, "vanilla hides the Horizon-drawn watch");
-expect(drawBody.indexOf("hz43TempT.text") >= 0 && drawBody.indexOf("hz43BodyT.text") >= 0, "digital and analog still draw planet and temperature");
+expect(drawBody.indexOf("hz43SetTx(this.hz43TempT,") >= 0 && drawBody.indexOf("hz43SetTx(this.hz43BodyT,") >= 0, "digital and analog still draw planet and temperature");
 expect(funcBody(as, "hz43VanChrome").indexOf("hz43VanBlgChrome(hide)") >= 0, "Horizon faces hide unnamed cap art with the vanilla bezel");
 expect(funcBody(as, "hz43VanInstName").indexOf("name.length == 0") >= 0 && funcBody(as, "hz43VanCapClip").indexOf("hz43VanInstName") >= 0, "empty PlaceObject names can still be the cap after pose check");
 expect(funcBody(as, "hz43VanSkip").indexOf("name.length == 0) { return true; }") < 0, "unnamed chrome is not skipped from the watch assembly");
