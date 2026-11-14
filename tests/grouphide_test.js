@@ -793,7 +793,8 @@ if (base) {
 // hzT19HoldBtns refills one shared array, so a set left over from an earlier call would answer for the old buttons when
 // that same array reaches hzT19OnHoldPathA outside hz38HideVanilla.
 {
-	const FN = ["hz38HideVanilla", "hzT19HidePromptTree", "hzT19OnHoldPath", "hzT19OnHoldPathA", "hzT19AncFill", "hzT19IsHoldBtn", "hzT19HideA", "hzT19HideBtnArt", "hzT19HoldMeterName"];
+	const FN = ["hz38HideVanilla", "hzT19HidePromptTree", "hzT19OnHoldPath", "hzT19OnHoldPathA", "hzT19AncFill", "hzT19IsHoldBtn", "hzT19HideA", "hzT19HideBtnArt", "hzT19HoldMeterName",
+		"hzT19HcOk", "hzT19HcApply", "hzT19HcBox"];   // perf round 2 Fix 5: the hide-walk record (each call here is a hover edge)
 	const fix = (js) => js.replace(/p != this\b/g, "p != this.__top");
 	const r = rng(4403); let bad = "", nullBad = 0;
 	for (let t = 0; t < 200 && !bad; t++) {
@@ -803,7 +804,8 @@ if (base) {
 			grow(top, 0); return { top: top, all: all }; };
 		const shared = new Array(4);
 		const mk = () => { const h = Object.assign({}, common, { hzTgHidden: [], hzTgHidA: [], hzT19Anc: [], hzT19AncB: null, hzObjRing: 2, __top: null,
-			hzT19KeepHold: () => {}, hzT19HideReticle: () => {}, hzT19ShowReticle: () => {} }); bindAll(h, as, FN, fix); return h; };
+			hzT19KeepHold: () => {}, hzT19HideReticle: () => {}, hzT19ShowReticle: () => {},
+			hzT19HcDue: true, hzT19HcRec: false, hzT19HcValid: false, hzT19HcD: [], hzT19HcP: [], hzT19HcDN: 0, hzT19HcB: [], hzT19HcBK: [], hzT19HcBP: [], hzT19HcBN: 0, hzT19HcBtn: null }); bindAll(h, as, FN, fix); return h; };
 		const B = mk();
 		// call 1: the game's prompt with one set of hold buttons
 		const X = build(rng(seed)); const p1 = rng(seed + 1);

@@ -7560,16 +7560,30 @@
          return r;
       }
 
+      // perf round 2 Fix 5: the converted rect is kept while the visible rect, this movie's x / y / scale / rotation and the
+      // stage are unchanged (callers only read it); the fallback rect is one shared object too
       private function hzVis() : Rectangle
       {
          var vr:Rectangle = Extensions.visibleRect;
          if(vr != null && vr.width >= 100 && stage != null)
          {
+            var k:Array = this.hzVisK;
+            if(this.hzVisR != null && k != null && k[0] == vr.x && k[1] == vr.y && k[2] == vr.width && k[3] == vr.height && k[4] == this.x && k[5] == this.y && k[6] == this.scaleX && k[7] == this.scaleY && k[8] == this.rotation && k[9] === stage)
+            {
+               return this.hzVisR;
+            }
             var tl:Point = globalToLocal(new Point(vr.left,vr.top));
             var br:Point = globalToLocal(new Point(vr.right,vr.bottom));
-            if(!isNaN(tl.x) && br.x - tl.x >= 100) { return new Rectangle(tl.x,tl.y,br.x - tl.x,br.y - tl.y); }
+            if(!isNaN(tl.x) && br.x - tl.x >= 100)
+            {
+               this.hzVisR = new Rectangle(tl.x,tl.y,br.x - tl.x,br.y - tl.y);
+               this.hzVisK = [vr.x,vr.y,vr.width,vr.height,this.x,this.y,this.scaleX,this.scaleY,this.rotation,stage];
+               return this.hzVisR;
+            }
          }
-         return new Rectangle(0,0,1920,1080);
+         this.hzVisR = null;
+         if(this.hzVisF == null) { this.hzVisF = new Rectangle(0,0,1920,1080); }
+         return this.hzVisF;
       }
 
       private function hzArrEnter() : void
@@ -8426,6 +8440,7 @@
          if(pay != this.hzT19ActCached)
          {
             this.hzT19ActCached = pay;
+            this.hzT19EdgeN = 3;   // perf round 2 Fix 5: new prompt data re-reads the labels and re-runs the hide walk
             if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.actCh++; }
             if(this.hzPerfOn) { this.hzRgPush(1,this.hzPerfNow(),0); }
             if(this.hzWlOn) { this.hzWlTgT = this.hzPerfNow(); this.hzWlTgN++; }
@@ -11111,6 +11126,39 @@
       private var hzT19Cmp:Array = [];
       private var hzT19Btn:Array = [];
       private var hzT19HoldB:Array = null;
+      // perf round 2 Fix 5: hover card edges. hzT19Bc = the 4 button clips (read once per tick), hzT19Lbl* = the 12 key /
+      // label reads, hzT19Hc* = the vanilla prompt pieces the last hide walk handled (re-hidden without a walk while
+      // every recorded parent and child count still holds)
+      private var hzT19Bc:Array = null;
+      private var hzT19BcAw:Object = null;
+      private var hzT19BcF:int = -1;
+      private var hzT19EdAw:Object = null;
+      private var hzT19EdShow:Boolean = false;
+      private var hzT19EdM:int = -2;
+      private var hzT19EdPad:int = -2;
+      private var hzT19EdF:int = -10;
+      private var hzT19EdDecF:int = -10;
+      private var hzT19EdgeN:int = 3;
+      private var hzT19LblDue:Boolean = true;
+      private var hzT19LblC:Array = null;
+      private var hzT19HcDue:Boolean = true;
+      private var hzT19HcRec:Boolean = false;
+      private var hzT19HcValid:Boolean = false;
+      private var hzT19HcAw:Object = null;
+      private var hzT19HcHd:Object = null;
+      private var hzT19HcArr:Array = null;
+      private var hzT19HcLen:int = -1;
+      private var hzT19HcBtn:Array = null;
+      private var hzT19HcD:Array = [];
+      private var hzT19HcP:Array = [];
+      private var hzT19HcDN:int = 0;
+      private var hzT19HcB:Array = [];
+      private var hzT19HcBK:Array = [];
+      private var hzT19HcBP:Array = [];
+      private var hzT19HcBN:int = 0;
+      private var hzVisR:Rectangle = null;
+      private var hzVisF:Rectangle = null;
+      private var hzVisK:Array = null;
       private var hzT19Sig:String = "";
       private var hzT19Ver:int = 0;
       private var hzTgItems:Array = null;
@@ -11195,6 +11243,7 @@
       private function hzT19HideA(d:DisplayObject) : void
       {
          if(!d) { return; }
+         if(this.hzT19HcRec) { this.hzT19HcD[this.hzT19HcDN] = d; this.hzT19HcP[this.hzT19HcDN] = d.parent; this.hzT19HcDN++; }   // perf round 2 Fix 5
          var ix:Array = this.hzTgHidA;
          if(ix.length == this.hzTgHidden.length)   // H1: native indexOf over the alpha entries' objects (same first match)
          {
@@ -11592,6 +11641,7 @@
       private function hzT19HideBtnArt(box:DisplayObjectContainer) : void
       {
          if(!box) { return; }
+         if(this.hzT19HcRec) { this.hzT19HcBox(box); }   // perf round 2 Fix 5
          var i:int = 0;
          while(i < box.numChildren)
          {
@@ -11608,6 +11658,7 @@
       private function hzT19HidePromptTree(box:DisplayObjectContainer, buttons:Array) : void
       {
          if(!box) { return; }
+         if(this.hzT19HcRec) { this.hzT19HcBox(box); }   // perf round 2 Fix 5
          var i:int = 0;
          while(i < box.numChildren)
          {
@@ -11669,7 +11720,69 @@
       }
 
       // vanilla button clip for an aButtons iType (HUDRolloverActivationWidget: A/X top bar, Y/B bottom bar)
+      // perf round 2 Fix 5: the 4 clips hzT19BtnSync read for this aw in this frame; otherwise the plain read
       private function hzT19BtnClip(aw:Object, t:int) : Object
+      {
+         if(aw === this.hzT19BcAw && this.hzT19BcF == this.hzFrameN && this.hzT19Bc != null && t >= 0 && t < 4) { return this.hzT19Bc[t]; }
+         return this.hzT19BtnRaw(aw,t);
+      }
+
+      // perf round 2 Fix 5. Purpose: read the 4 button clips once per tick (the same property path as hzT19BtnRaw, so the
+      // cache is exactly what every hzT19BtnClip call of this tick would read). Outputs: true when one of them, or aw,
+      // changed since the last tick (a rebuild edge). Author: Moragar. Last modified: 2026-11-14.
+      private function hzT19BtnSync(aw:Object) : Boolean
+      {
+         var c:Array = this.hzT19Bc;
+         if(c == null) { c = this.hzT19Bc = [null,null,null,null]; }
+         var ch:Boolean = aw !== this.hzT19BcAw;
+         var t:int = 0;
+         while(t < 4)
+         {
+            var b:Object = this.hzT19BtnRaw(aw,t);
+            if(b !== c[t]) { c[t] = b; ch = true; }
+            t++;
+         }
+         this.hzT19BcAw = aw;
+         this.hzT19BcF = this.hzFrameN;
+         return ch;
+      }
+
+      // perf round 2 Fix 5. Purpose: the label / hide edges of one tick. An edge is a button clip or aw change, a show or
+      // uMode change, a controller type change (hzVehPad), a skipped tick, or new prompt data (hzOnTgAct sets
+      // hzT19EdgeN). The labels are re-read and the hide walk re-run on the edge frame and the 2 frames after it (the
+      // game fills the label text a frame or two after the data). Author: Moragar. Last modified: 2026-11-14.
+      private function hzT19Edge(aw:Object, show:Boolean, m:int, rb:Boolean) : void
+      {
+         var f:int = this.hzFrameN;
+         if(rb || aw !== this.hzT19EdAw || show != this.hzT19EdShow || m != this.hzT19EdM || this.hzVehPad != this.hzT19EdPad || f - this.hzT19EdF > 1 || f < this.hzT19EdF)
+         {
+            this.hzT19EdgeN = 3;
+         }
+         this.hzT19EdAw = aw;
+         this.hzT19EdShow = show;
+         this.hzT19EdM = m;
+         this.hzT19EdPad = this.hzVehPad;
+         this.hzT19EdF = f;
+         this.hzT19LblDue = this.hzT19EdgeN > 0;
+         this.hzT19HcDue = this.hzT19LblDue;
+         if(this.hzT19EdgeN > 0 && f != this.hzT19EdDecF) { this.hzT19EdgeN--; this.hzT19EdDecF = f; }
+      }
+
+      private function hzT19LblKeep(rw0:Array) : void
+      {
+         if(this.hzT19LblC == null) { this.hzT19LblC = new Array(12); }
+         var i:int = 0;
+         while(i < 12) { this.hzT19LblC[i] = rw0[i]; i++; }
+      }
+
+      private function hzT19LblUse(rw0:Array) : int
+      {
+         var i:int = 0;
+         while(i < 12) { rw0[i] = this.hzT19LblC[i]; i++; }
+         return 12;
+      }
+
+      private function hzT19BtnRaw(aw:Object, t:int) : Object
       {
          try
          {
@@ -13072,6 +13185,8 @@
          var a:Object = this.hzTgAct;
          var show:Boolean = a != null && Boolean(a.bShowRolloverActivation) && aw != null && rw != null && Boolean(rw.visible);
          var m:int = show ? int(a.uMode) : -1;
+         var rb:Boolean = aw != null && this.hzT19BtnSync(aw);   // perf round 2 Fix 5: the 4 button clips, once per tick
+         this.hzT19Edge(aw,show,m,rb);
          var base:Boolean = this.hzShowTarget && this.hzGroupVisible && !this.hzUserHidden && !this.hzArrange;
          // hostile = the crosshair target is in HudEnemyData.EnemiesA with fHealth and bOnScreen (same rule as v0.20),
          // except while the crosshair is HCT_COMMAND (giving an order is never a hostile tag)
@@ -13149,7 +13264,14 @@
          var rw0:Array = this.hzT19Raw;
          if(rw0 == null) { rw0 = this.hzT19Raw = new Array(HZ_T19_RAWN); }
          var rn:int = 0;
-         if(show) { var kk:int = 0; while(kk < 4) { rw0[rn++] = this.hzT19Key(aw,kk); rw0[rn++] = this.hzT19VanLbl(aw,kk,false); rw0[rn++] = this.hzT19VanLbl(aw,kk,true); kk++; } }
+         // perf round 2 Fix 5: the 12 key / label reads run on a hover edge (and the 2 frames after it) only; between
+         // edges the last reads are reused
+         var kk:int = 0;
+         if(show)
+         {
+            if(this.hzT19LblDue || this.hzT19LblC == null) { while(kk < 4) { rw0[rn++] = this.hzT19Key(aw,kk); rw0[rn++] = this.hzT19VanLbl(aw,kk,false); rw0[rn++] = this.hzT19VanLbl(aw,kk,true); kk++; } this.hzT19LblKeep(rw0); }
+            else { rn = this.hzT19LblUse(rw0); }
+         }
          else { while(rn < 12) { rw0[rn++] = null; } }
          var stealSig:int = (show && a != null && Boolean(a.bStealing)) ? 1 : 0;
          rw0[rn++] = this.hzFontName(); rw0[rn++] = this.hzFontName("rg"); rw0[rn++] = this.hzFontName("bd");
@@ -19429,31 +19551,105 @@
       // Hide sibling prompt art instead, then keep the hold button and its parents live.
       private function hz38HideVanilla(rw:Object, aw:Object, kind:String) : void
       {
-         var buttons:Array = this.hzT19HoldBtns(aw);
-         this.hzT19AncFill(buttons);   // H2: hzT19OnHoldPath's parent chains, collected once for this call
-         try
+         // perf round 2 Fix 5: the walk runs on a hover edge, or when the pieces it hid last time no longer hold (a parent
+         // or child count changed, aw / holder / button clips swapped, hzTgHidden restored or grown); otherwise only the
+         // recorded pieces get alpha 0 again (the same write hzT19HideA makes for a piece it already holds)
+         var hd0:DisplayObject = null;
+         try { hd0 = rw.RolloverActivationHolder_mc as DisplayObject; } catch(eH0:Error) { hd0 = null; }
+         if(this.hzT19HcOk(aw,hd0)) { this.hzT19HcApply(); }
+         else
          {
-            var ad:DisplayObjectContainer = aw as DisplayObjectContainer;
-            if(ad) { this.hzT19HidePromptTree(ad,buttons); }
-         }
-         catch(eA:Error) { }
-         try
-         {
-            var hd:DisplayObject = rw.RolloverActivationHolder_mc as DisplayObject;
-            var hdc:DisplayObjectContainer = hd as DisplayObjectContainer;
-            if(hd && hd != (aw as DisplayObject))
+            var walkOk:Boolean = true;
+            this.hzT19HcRec = true;
+            this.hzT19HcDN = 0;
+            this.hzT19HcBN = 0;
+            this.hzT19HcValid = false;
+            var buttons:Array = this.hzT19HoldBtns(aw);
+            this.hzT19AncFill(buttons);   // H2: hzT19OnHoldPath's parent chains, collected once for this call
+            try
             {
-               if(hdc && this.hzT19OnHoldPathA(hd,buttons)) { this.hzT19HidePromptTree(hdc,buttons); }
-               else { this.hzT19HideA(hd); }
+               var ad:DisplayObjectContainer = aw as DisplayObjectContainer;
+               if(ad) { this.hzT19HidePromptTree(ad,buttons); }
             }
+            catch(eA:Error) { walkOk = false; }
+            try
+            {
+               var hd:DisplayObject = rw.RolloverActivationHolder_mc as DisplayObject;
+               var hdc:DisplayObjectContainer = hd as DisplayObjectContainer;
+               if(hd && hd != (aw as DisplayObject))
+               {
+                  if(hdc && this.hzT19OnHoldPathA(hd,buttons)) { this.hzT19HidePromptTree(hdc,buttons); }
+                  else { this.hzT19HideA(hd); }
+               }
+            }
+            catch(eH:Error) { walkOk = false; }
+            this.hzT19AncB = null;   // Bot 3 N4: the ancestor set is valid only inside this call (hzT19HoldBtns reuses its array)
+            this.hzT19HcRec = false;
+            this.hzT19HcAw = aw;
+            this.hzT19HcHd = hd0;
+            if(this.hzT19HcBtn == null) { this.hzT19HcBtn = new Array(4); }
+            var bi:int = 0;
+            while(bi < 4) { this.hzT19HcBtn[bi] = buttons[bi]; bi++; }
+            this.hzT19HcValid = walkOk;
          }
-         catch(eH:Error) { }
-         this.hzT19AncB = null;   // Bot 3 N4: the ancestor set is valid only inside this call (hzT19HoldBtns reuses its array)
          this.hzT19KeepHold(aw);
          // ObjectRing: 0 always hidden, 1 shown for container lists only, 2 as the game draws it
          if(this.hzObjRing == 0 || (this.hzObjRing == 1 && kind != "list")) { this.hzT19HideReticle(rw); }
          else { this.hzT19ShowReticle(rw); }
+         this.hzT19HcArr = this.hzTgHidden;
+         this.hzT19HcLen = this.hzTgHidden.length;
       }
+
+      // perf round 2 Fix 5. Purpose: the recorded hide walk still holds (the cover for a swapped or re-parented piece):
+      // no edge, same aw / holder / button clips, hzTgHidden not restored or grown, every hidden piece under its recorded
+      // parent, every walked container under its recorded parent with its recorded child count. Reads only; no search.
+      private function hzT19HcOk(aw:Object, hd:Object) : Boolean
+      {
+         if(this.hzT19HcDue || !this.hzT19HcValid || this.hzT19HcRec) { return false; }
+         if(aw !== this.hzT19HcAw || hd !== this.hzT19HcHd) { return false; }
+         if(this.hzTgHidden !== this.hzT19HcArr || this.hzTgHidden.length != this.hzT19HcLen) { return false; }
+         try
+         {
+            var i:int = 0;
+            while(i < 4) { if(this.hzT19BtnClip(aw,i) !== this.hzT19HcBtn[i]) { return false; } i++; }
+            i = 0;
+            while(i < this.hzT19HcDN)
+            {
+               var d:DisplayObject = this.hzT19HcD[i];
+               if(d == null || d.parent !== this.hzT19HcP[i]) { return false; }
+               i++;
+            }
+            i = 0;
+            while(i < this.hzT19HcBN)
+            {
+               var b:DisplayObjectContainer = this.hzT19HcB[i];
+               if(b == null || b.numChildren != this.hzT19HcBK[i] || b.parent !== this.hzT19HcBP[i]) { return false; }
+               i++;
+            }
+         }
+         catch(e:Error) { return false; }
+         return true;
+      }
+
+      private function hzT19HcApply() : void
+      {
+         var i:int = 0;
+         while(i < this.hzT19HcDN)
+         {
+            var d:DisplayObject = this.hzT19HcD[i];
+            if(d.alpha != 0) { d.alpha = 0; }
+            i++;
+         }
+      }
+
+      private function hzT19HcBox(box:DisplayObjectContainer) : void
+      {
+         this.hzT19HcB[this.hzT19HcBN] = box;
+         this.hzT19HcBK[this.hzT19HcBN] = box.numChildren;
+         this.hzT19HcBP[this.hzT19HcBN] = box.parent;
+         this.hzT19HcBN++;
+      }
+
       // what to do with the vanilla widget this frame (pure; tested): "hide" or "show"
       //   mine   = Horizon owns target prompts (ShowTarget on, not hidden by the user, not a scanner mode, widget found)
       //   prompt = the game shows an activate prompt right now
