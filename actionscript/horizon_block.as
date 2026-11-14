@@ -11123,6 +11123,10 @@
          this.hzT19Sig = "";
          this.hzT19BarSig = "";
          this.hzT19HoldSig = "";
+         // 0.43.3.0 fix: the card went away (fade-out end / off): drop the foe bar too, so the next card (a looted
+         // corpse, a prompt) never starts with the last target's red bar
+         this.hzT19BarOn = false;
+         if(this.hzT19BarG && this.hzT19BarG.visible) { this.hzT19BarG.graphics.clear(); this.hzT19BarG.visible = false; }
       }
       private function hzT19Off() : void
       {
@@ -13188,7 +13192,12 @@
          if(this.hzT19Kov) { this.hzT19Kov.graphics.clear(); }
          var g:* = this.hzT19G.graphics;
          g.clear();
-         this.hzT19BarOn = false;
+         // 0.43.3.0 fix: the foe health bar is its own sprite (hzT19BarG, above the panel). This used to set
+         // hzT19BarOn = false WITHOUT clearing that sprite, and the caller's "else if(this.hzT19BarOn)" clear after the
+         // redraw then saw false, so a killed enemy that turned into a container (foe -> list) kept the red bar across
+         // the top of the loot card until a reload. Clear it here, on this content-change edge (hzT19BarSig was reset to
+         // "" by the caller, so the paint clears and hides); a foe card sets the bar on again below and repaints it.
+         if(this.hzT19BarOn || (this.hzT19BarG && this.hzT19BarG.visible)) { this.hzT19BarOn = false; this.hzT19PaintFoeBars(); }
          var dk:Boolean = this.hzDarkText();
          var steal:Boolean = a != null && Boolean(a.bStealing);
          var red:Boolean = kind == "foe" || steal;
