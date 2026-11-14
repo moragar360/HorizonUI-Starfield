@@ -4,9 +4,25 @@ All notable changes to Horizon UI are listed here, newest first. The format foll
 
 Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never published; 0.41.0 replaced 0.40.3, and its entry includes the changes prepared for 0.40.3.
 
-## [0.43.2.0-alpha] - unreleased
+## [0.43.3.0-alpha] - unreleased
 
-Not published yet. The settings schema stays 0.42.0, so an existing `HorizonUI.user.ini` carries over. `HideWatchWhileScanning` stays at its default until you change it.
+Not published yet. The settings schema stays 0.42.0, so an existing `HorizonUI.user.ini` carries over; the new settings start at their defaults, and with them the quest tracker keeps today's width.
+
+### Added
+- **Hazard Status card:** the hazard chip under the planet card is now its own card. Move it in ARRANGE CARDS (HAZARD STATUS), and turn it on or off, size it and pick its compact form in F11 > CARDS > HAZARD STATUS CARD. It follows the card style (font, text tone, accent, card color, opacity, shadow, header case). Red while a hazard hurts you, green while suit protection restores. Default spot: under the planet card. New keys: `HazardScale` and `HazardCompact` under `[Cards]`, `HazardX` and `HazardY` under `[Layout]`. `HazardStatus` stays under `[Effects]`.
+- **Quest tracker text wrap:** long quest names and objectives wrap onto new lines at the same font size instead of ending in "...". Only text still too long at the max height ends in "..." on its last line. F11 > CARDS > QUEST TRACKER: WIDTH (`QuestsWidth`, 380 - 660, default 380), MAX HEIGHT (`QuestsMaxHeight`, 100 - 300, default 160) and TEXT WRAP (`QuestsWrap`, default on). The compact form shows the quest name with the objective wrapping under it. `QuestsWrap=0` keeps the one-line card.
+
+### Changed
+- **SFSE plugin** file and product version are 0.43.3.0.
+- **Equipment card:** a long weapon name wraps onto a second line at the same font size, and the card grows to fit. Before, the full name showed only for a few seconds after a weapon swap. The compact form stays one line.
+
+### Fixed
+- **Hazard Status** now turns green while suit protection restores. Before, it went from red straight to hidden.
+- **Loot card after a kill:** looting a killed enemy no longer shows its red health bar across the top of the container card until a save reload.
+
+## [0.43.2.0-alpha] - 2026-11-11
+
+Released as v0.43.2.0-alpha. The settings schema stays 0.42.0, so an existing `HorizonUI.user.ini` carries over. `HideWatchWhileScanning` stays at its default until you change it.
 
 ### Added
 - **Hide watch while scanning** in F11 > SCANNER. `HideWatchWhileScanning` under `[Scanner]`: 0 shown (default), 1 the watch hides while the hand scanner is open, in every WatchStyle that shows one, and comes back when the scanner closes. With ENEMY HEALTH BAR, STEALTH METER or EDGE PULSE on, the whole bottom-left watch corner hides, planet and bio alerts and the game's enemy ring too. With all three off, only the watch pieces and the environment and bio alert text hide; the alert icons and the enemy ring still show. It needs the Scanner module.
@@ -238,6 +254,7 @@ Alpha pre-release. This entry covers everything since 0.42.0.13-alpha. The setti
 - **SFSE plugin** (`HorizonUI.dll`): F11 window input, mouse wheel, settings files and presets.
 - **Requirements:** SFSE and Address Library for SFSE Plugins, both required.
 
+[0.43.2.0-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.2.0-alpha
 [0.43.1.0-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.1.0-alpha
 [0.43.0.32-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.0.32-alpha
 [0.43.0.31-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.0.31-alpha
