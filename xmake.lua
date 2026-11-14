@@ -1,3 +1,18 @@
+-- No build-machine paths in HorizonUI.dll (arch-fixes, 4th commit). Set before the includes so CommonLibSF and
+-- commonlib-shared, whose headers and sources put __FILE__ paths into the DLL, get the same flags.
+--  * PDB: the debug directory names only "HorizonUI.pdb" (MSVC link and lld-link both read %_PDB%).
+--  * __FILE__ / source_location: the project folder prefix is cut (MSVC cl /d1trimfile, clang-cl -ffile-prefix-map),
+--    so a header path reads "\lib\commonlibsf\include\SFSE/Interfaces.h", not "C:\<home>\...\lib\...". No trailing
+--    backslash on the prefix: a quoted argument ending in a backslash would swallow its closing quote.
+-- Building from a neutral folder (for example C:\b\HorizonUI) is the fallback for a toolchain that ignores these flags.
+-- Check: node tests/dll_paths_check.js <path to HorizonUI.dll> (ASCII and UTF-16LE).
+if is_plat("windows") then
+    add_cxflags("/d1trimfile:$(projectdir)", {tools = "cl", force = true})
+    add_cxflags("/clang:-ffile-prefix-map=$(projectdir)=.", {tools = "clang_cl", force = true})
+    add_ldflags("/PDBALTPATH:%_PDB%", {force = true})
+    add_shflags("/PDBALTPATH:%_PDB%", {force = true})
+end
+
 -- include subprojects
 includes("lib/commonlibsf")
 
