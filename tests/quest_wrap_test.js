@@ -3,7 +3,7 @@
 // model with word wrap, and checks the source: QuestsWidth / QuestsMaxHeight / QuestsWrap plumbing, wrapping at the
 // same font size, the max-height cap (ellipsis on the last line only), the compact form under the name, and that a
 // wrap is measured only on a text / width / cap / format change (a distance tick or a steady frame measures nothing).
-// Author: Moragar. Last modified: 2026-11-14.
+// Author: Moragar. Last modified: 2026-11-14 (r2: INI clamp tests).
 "use strict";
 
 const fs = require("fs");
@@ -107,7 +107,7 @@ expect(/private var hzQW:Number = 380;/.test(as) && /private var hzQMaxH:Number 
 expect(/"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,/.test(as), "HZ_SET_DEF: the three keys");
 expect(/\nQuestsWidth=380\nQuestsMaxHeight=160\nQuestsWrap=1\n/.test(ini), "default.ini: QuestsWidth=380, QuestsMaxHeight=160, QuestsWrap=1");
 const rows = fnText(as, "hz34CardRows").body;
-expect(/\{"k":"QuestsWidth","l":"WIDTH","t":"n","mn":380,"mx":660,"st":20,"sub":true/.test(rows) && /\{"k":"QuestsMaxHeight","l":"MAX HEIGHT","t":"n","mn":100,"mx":240,"st":10,"sub":true/.test(rows) && /\{"k":"QuestsWrap","l":"TEXT WRAP","t":"b","sub":true/.test(rows), "F11 CARDS > QUEST TRACKER: WIDTH 380 - 660, MAX HEIGHT, TEXT WRAP (mockup)");
+expect(/\{"k":"QuestsWidth","l":"WIDTH","t":"n","mn":380,"mx":660,"st":20,"sub":true/.test(rows) && /\{"k":"QuestsMaxHeight","l":"MAX HEIGHT","t":"n","mn":100,"mx":300,"st":10,"sub":true/.test(rows) && /\{"k":"QuestsWrap","l":"TEXT WRAP","t":"b","sub":true/.test(rows), "F11 CARDS > QUEST TRACKER: WIDTH 380 - 660, MAX HEIGHT 100 - 300, TEXT WRAP (mockup)");
 expect(rows.indexOf('this.hz34Cmp("Quests"') < rows.indexOf('"QuestsWidth"'), "the rows sit under the quest tracker's STYLE (compact form) row");
 expect(/"questswidth"/.test(fnText(as, "hz34Ini").body) && /"questsmaxheight"/.test(fnText(as, "hz34Ini").body) && /"questswrap"/.test(fnText(as, "hz34Ini").body), "INI parser reads the keys");
 expect(/o\.QuestsWidth = this\.hzQW;/.test(fnText(as, "hz34SetCur").body) && /QuestsWrap=/.test(fnText(as, "hz34IniLines").body), "F11 current values and the writer");
@@ -119,6 +119,35 @@ expect(fnText(as, "hzQSync").body.indexOf("this.hzQsSame()") < fnText(as, "hzQSy
 	const h = makeHost();
 	expect(h.hzQWClamp(100) === 380 && h.hzQWClamp(999) === 660 && h.hzQWClamp(521.4) === 521 && h.hzQWClamp("") === 380, "QuestsWidth clamps to 380 - 660");
 	expect(h.hzQHClamp(10) === 100 && h.hzQHClamp(999) === 300 && h.hzQHClamp(undefined) === 160, "QuestsMaxHeight clamps to 100 - 300 (empty = 160)");
+}
+
+// ---- INI / F11 / writer clamps (0.43.3.0 r2, review N-2) ----
+{
+	const h = makeHost({ HZ34_CARDS: [], hzLaidOut: true });
+	bind(h, "hz34Ini");
+	const ini = (k, v) => { h.hzLaidOut = true; const r = h.hz34Ini(k, v); return r === true && h.hzLaidOut === false; };
+	expect(ini("questsmaxheight", 50) && h.hzQMaxH === 100, "INI QuestsMaxHeight=50 clamps to 100");
+	expect(ini("questsmaxheight", 999) && h.hzQMaxH === 300, "INI QuestsMaxHeight=999 clamps to 300");
+	expect(ini("questsmaxheight", 250) && h.hzQMaxH === 250, "INI QuestsMaxHeight=250 is kept (inside 100 - 300)");
+	expect(ini("questsmaxheight", 187.6) && h.hzQMaxH === 188, "INI QuestsMaxHeight=187.6 rounds to 188");
+	expect(ini("questsmaxheight", NaN) && h.hzQMaxH === 160, "INI QuestsMaxHeight empty / not a number = 160");
+	expect(ini("questswidth", 100) && h.hzQW === 380, "INI QuestsWidth=100 clamps to 380");
+	expect(ini("questswidth", 9999) && h.hzQW === 660, "INI QuestsWidth=9999 clamps to 660");
+	expect(ini("questswidth", 521.4) && h.hzQW === 521, "INI QuestsWidth=521.4 rounds to 521");
+	expect(ini("questswidth", NaN) && h.hzQW === 380, "INI QuestsWidth not a number = 380");
+	expect(ini("questswrap", 0) && h.hzQWrap === false && ini("questswrap", 1) && h.hzQWrap === true && ini("questswrap", NaN) && h.hzQWrap === true, "INI QuestsWrap 0 / 1 / empty");
+	// F11 live and the save writer use the same clamps
+	const live = fnText(as, "hz34SetLive").body.split("\n").filter((l) => /p\.Quests(Width|MaxHeight) !== undefined/.test(l)).join("\n");
+	const runLive = Function.apply(null, ["p", "with(this){ var qd = false;\n" + toJs(live) + "\n return qd; }"]).bind(h);
+	h.hzQW = 380; h.hzQMaxH = 160;
+	expect(runLive({ QuestsWidth: 5000, QuestsMaxHeight: 5000 }) === true && h.hzQW === 660 && h.hzQMaxH === 300, "F11 live: out-of-range values clamp (660 / 300)");
+	expect(runLive({ QuestsWidth: 660, QuestsMaxHeight: 300 }) === false, "F11 live: the same values again = no redraw");
+	const wr = fnText(as, "hz34IniLines").body.split("\n").filter((l) => /a\.push\("Quests(Width|MaxHeight)=/.test(l)).join("\n");
+	const runWr = Function.apply(null, ["p", "with(this){ var a = [];\n" + toJs(wr) + "\n return a.join(','); }"]).bind(h);
+	expect(runWr({ QuestsWidth: 10, QuestsMaxHeight: 9000 }) === "QuestsWidth=380,QuestsMaxHeight=300", "save writer: clamped values are written");
+	const rowsN = fnText(as, "hz34CardRows").body;
+	const mxOf = (k) => { const m = rowsN.match(new RegExp('\\{"k":"' + k + '"[^}]*"mn":(\\d+),"mx":(\\d+)')); return m ? [Number(m[1]), Number(m[2])] : null; };
+	expect(String(mxOf("QuestsMaxHeight")) === String([constOf("HZ_QH_MIN"), constOf("HZ_QH_MAX")]) && String(mxOf("QuestsWidth")) === String([constOf("HZ_QW_MIN"), constOf("HZ_QW_MAX")]), "F11 slider ranges match the INI clamps (100 - 300, 380 - 660)");
 }
 
 // ---- standard card ----

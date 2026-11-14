@@ -9571,7 +9571,7 @@
       private var hzQName:String = "";
       private var hzQObjStr:String = "";
       private var hzQDistStr:String = "";
-      // ---- 0.43.3.0 quest log: width, max height, text wrap (mockup /workspace/mockups/questlog) ----
+      // ---- 0.43.3.0 quest log: width, max height, text wrap (questlog mockup) ----
       // [Cards] QuestsWidth (380 - 660, default 380 = today's card), QuestsMaxHeight (100 - 300, default 160),
       // QuestsWrap (1 = the title and the objective wrap onto new lines at the same font size instead of ending in an
       // ellipsis; only a text still too long at the max height ends in "..." on its last line. 0 = today's one-line card).
@@ -17874,7 +17874,7 @@
             {"k":"EquipmentExtras","l":"EQUIPMENT: GRENADES + STARBORN POWER","t":"b"},
             {"k":"ShowQuests","l":"QUEST TRACKER","t":"b"},this.hz34Sz("Quests"),this.hz34Cmp("Quests","STANDARD is the full card. COMPACT shows the quest name and the current objective only"),
             {"k":"QuestsWidth","l":"WIDTH","t":"n","mn":380,"mx":660,"st":20,"sub":true,"note":"Font size is unchanged. Narrower widths wrap the objective onto more lines."},
-            {"k":"QuestsMaxHeight","l":"MAX HEIGHT","t":"n","mn":100,"mx":240,"st":10,"sub":true,"note":"Caps how tall the card can grow. Extra lines are not added past this height."},
+            {"k":"QuestsMaxHeight","l":"MAX HEIGHT","t":"n","mn":100,"mx":300,"st":10,"sub":true,"note":"Caps how tall the card can grow. Extra lines are not added past this height."},
             {"k":"QuestsWrap","l":"TEXT WRAP","t":"b","sub":true,"note":"When on, text starts a new line instead of ending in an ellipsis."},
             {"k":"ShowCompass","l":"COMPASS","t":"b"},this.hz34Sz("Compass"),this.hz34Cmp("Compass","The enemy health bar follows the compass form"),
             {"k":"VehicleExitPill","l":"VEHICLE EXIT PILL","t":"b","note":"Hold-to-exit prompt while you are in a vehicle. Off = the game's prompt."},
