@@ -3273,9 +3273,13 @@
          // a listed name is still missing) the old 90-frame retry. Steady state: one int compare.
          // watchlog test switch: mode 1 skips only the edge re-walk (PerfDiag=1, WatchLog=1, Scroll Lock)
          var rbKids:int = this.hzBlg != null ? this.hzBlg.numChildren : -1;
-         var rbEdge:Boolean = rbKids != this.hzHideKids || (this.hzHideMiss && this.hzFrameN % 90 == 1);
+         // perf round 2: the missing-name retry stops once every missing name has had 6 retry walks, 90 frames apart (a listed
+         // name that never exists, e.g. the boost meter anim clip, kept a full tree walk every 90 frames all session). The
+         // count is per name (hzHideMissCount); any real edge starts every count again.
+         var rbEdge:Boolean = rbKids != this.hzHideKids || (this.hzHideMiss && this.hzHideMissN < 6 && this.hzFrameN % 90 == 1);
          if(this.hzHideCache == null || (rbEdge && !(this.hzWlOn && this.hzWlMode == 1)) || this.hz36HideStale)
          {
+            var rbRetry:Boolean = this.hzHideCache != null && !this.hz36HideStale && rbKids == this.hzHideKids;   // only the missing-name retry fired
             this.hzHideKids = rbKids;
             this.hz43ChrForce |= 3;
             this.hzHideTries++;
@@ -3311,6 +3315,7 @@
             this.hz44Skip = grp ? this.hz44Ref : null;   // grp: the walk does not descend into the hidden BLG (no listed name lives there)
             try { this.hz36HideFindAll(this,names,this.hzHideCache); } finally { this.hz44Skip = null; }   // one tree walk for the whole list
             this.hzHideMiss = this.hzHideMissing(names,this.hzHideCache);
+            this.hzHideMissN = this.hzHideMiss ? this.hzHideMissCount(names,this.hzHideCache,rbRetry) : this.hzHideMissReset();
             if(this.hzWlOn) { try { this.hzWlRbDiff(wlOld,this.hzHideCache,wlWhy); } catch(eWr:Error) { } }
          }
          else if(this.hzWlOn && this.hzWlMode == 1 && rbEdge) { this.hzWlSkip++; this.hzHideKids = rbKids; }
@@ -21532,6 +21537,8 @@
       private var hz43CsL:int = -1;
       private var hzHideKids:int = -2;      // BLG child count at the last hide-list rebuild
       private var hzHideMiss:Boolean = false;   // the last rebuild did not find every listed name
+      private var hzHideMissN:int = 0;          // perf round 2: fewest retries any still-missing name has had (the retry runs while < 6)
+      private var hzHideMissC:Object = null;    // perf round 2: retries per missing name since the last real rebuild edge
       private var hz43EnvGot:int = 0;
       private var hz43EnvLocal:Boolean = false;
       private var hz43EnvCruise:Boolean = false;
@@ -24471,6 +24478,42 @@
       }
 
       // arch-fixes Fix 1. Purpose: true when a listed hide name was not found by the last re-walk (rebuild only).
+      // perf round 2 Fix 3: the missing-name retry cap is per name. Runs only right after a hide-list walk (no search of
+      // its own). A real edge (retry false) starts every count again; a retry walk adds one to each name it still
+      // misses; a found name drops its count. Returns the fewest retries any missing name has had.
+      private function hzHideMissCount(names:Array, cache:Array, retry:Boolean) : int
+      {
+         if(!retry || this.hzHideMissC == null) { this.hzHideMissC = {}; }
+         var low:int = int.MAX_VALUE;
+         var i:int = 0;
+         while(i < names.length)
+         {
+            var nm:String = String(names[i]);
+            var hit:Boolean = false;
+            var j:int = 0;
+            while(j < cache.length && !hit)
+            {
+               var o:Object = cache[j];
+               if(o != null && o.n == nm) { hit = true; }
+               j++;
+            }
+            if(hit) { if(this.hzHideMissC.hasOwnProperty(nm)) { delete this.hzHideMissC[nm]; } }
+            else
+            {
+               var c:int = retry && this.hzHideMissC.hasOwnProperty(nm) ? int(this.hzHideMissC[nm]) + 1 : (retry ? 1 : 0);
+               this.hzHideMissC[nm] = c;
+               if(c < low) { low = c; }
+            }
+            i++;
+         }
+         return low == int.MAX_VALUE ? 0 : low;
+      }
+      private function hzHideMissReset() : int
+      {
+         this.hzHideMissC = null;
+         return 0;
+      }
+
       private function hzHideMissing(names:Array, cache:Array) : Boolean
       {
          var i:int = 0;

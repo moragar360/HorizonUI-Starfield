@@ -270,7 +270,8 @@ if (baseAs) {
 // ---- 8. static: no periodic re-walk, no new timer / listener / per-frame search ----
 {
 	const of = codeOnly(fnText(as, "hzOnFrame").body);
-	expect(/var rbEdge:Boolean = rbKids != this\.hzHideKids \|\| \(this\.hzHideMiss && this\.hzFrameN % 90 == 1\);/.test(of), "re-walk edge: BLG child count change, or the old retry only while a listed name is missing");
+	// perf round 2 Fix 3: the missing-name retry is also capped (6 in a row); perf_r2_fix3_test.js checks the cap by behavior
+	expect(/var rbEdge:Boolean = rbKids != this\.hzHideKids \|\| \(this\.hzHideMiss && this\.hzHideMissN < 6 && this\.hzFrameN % 90 == 1\);/.test(of), "re-walk edge: BLG child count change, or the old retry only while a listed name is missing (capped)");
 	expect((of.match(/% 90/g) || []).length === 1, "hzOnFrame has no other 90-frame term");
 	expect(/if\(this\.hzBlg && this\.hz43ChrNeedA\(\)\)/.test(of), "the BLG child pass runs behind its edge gate");
 	const vh = codeOnly(fnText(as, "hz43VanHorizon").body);
