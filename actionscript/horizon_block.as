@@ -1163,36 +1163,171 @@
          this.hzFixFonts();
          var deg:Number = (r * 180 / Math.PI) % 360;
          if(deg < 0) { deg += 360; }
-         var i:int = 0;
-         var ppd:Number = (HZ_CMP_W - 40) / 180;
-         while(i < HZ_CARD.length)
+         // perf round 2 Fix 1: the strip (ticks, labels, heading texts) redraws only when the heading moved by the
+         // threshold (hzCmpTickDue: 0.25 deg, at most half a pixel), or the compact form, the main color or the strip width
+         // changed. Markers, quests and visibility have their own change gates below.
+         var due:Boolean = this.hzCmpTickDue(deg);
+         if(due)
          {
-            var t:TextField = this.hzCmpLabels[i];
-            var d:Number = i * 45 - deg;
-            while(d > 180) { d -= 360; }
-            while(d < -180) { d += 360; }
-            t.visible = Math.abs(d) <= 90 && Math.abs(d) > 14;
-            t.x = HZ_CMP_W / 2 + d * ppd - t.textWidth / 2 - 2;
-            i++;
+            var i:int = 0;
+            var ppd:Number = (HZ_CMP_W - 40) / 180;
+            while(i < HZ_CARD.length)
+            {
+               var t:TextField = this.hzCmpLabels[i];
+               var d:Number = i * 45 - deg;
+               while(d > 180) { d -= 360; }
+               while(d < -180) { d += 360; }
+               t.visible = Math.abs(d) <= 90 && Math.abs(d) > 14;
+               t.x = HZ_CMP_W / 2 + d * ppd - t.textWidth / 2 - 2;
+               i++;
+            }
+            var hi:int = int(Math.round(deg)) % 360;
+            if(hi != this.hzCmpCtrI)   // the card point follows the whole degree, so the text changes only with it
+            {
+               this.hzCmpCtrI = hi;
+               var idx:int = int(Math.round(deg / 45)) % 8;
+               var ds:String = String(hi);
+               while(ds.length < 3) { ds = "0" + ds; }
+               this.hzCmpCenter.text = HZ_CARD[idx] + " · " + ds + "°";
+            }
          }
-         var idx:int = int(Math.round(deg / 45)) % 8;
-         var ds:String = String(int(Math.round(deg)) % 360);
-         while(ds.length < 3) { ds = "0" + ds; }
-         this.hzCmpCenter.text = HZ_CARD[idx] + " · " + ds + "°";
          this.hzCmpDeg = deg;
          if(this.hzPerfOn) { this.hzPsMark(41); }
-         this.hzCmpTick19();
+         if(due) { this.hzCmpTick19(); this.hzCmpTickKeep(deg); }
          if(this.hzPerfOn) { this.hzPsMark(42); }
          this.hzCmpData = e.data;
          this.hzDrawCompassMarkers();
          if(this.hzPerfOn) { this.hzPsMark(43); }
          if(this.HorizonQuest_mc)
          {
-            this.hzUpdateQuests(e.data.aMissionMarkers as Array);
+            this.hzCmpQuests(e.data.aMissionMarkers as Array);
             if(this.hzPerfOn) { this.hzPsMark(44); }
-            this.hzRefreshVisibility();
+            if(this.hzCmpVisDue()) { this.hzRefreshVisibility(); }
             if(this.hzPerfOn) { this.hzPsMark(45); }
          }
+      }
+
+      // ---- perf round 2 Fix 1: compass change gates (no timer, no frame handler; they replace work the dispatch did) ----
+      private var hzCmpTkDeg:Number = NaN;   // heading the strip was last drawn at (NaN = redraw on the next dispatch)
+      private var hzCmpTkC:int = -2;
+      private var hzCmpTkCol:Number = -1;
+      private var hzCmpTkW:Number = -1;
+      private var hzCmpCtrI:int = -1;        // whole degree in the legacy center text
+      private var hzCmpHdI:int = -1;         // whole degree in the v0.19 heading texts
+      private var hzCmpHdC:int = -2;
+      // true when the strip must redraw: the heading moved by 0.25 deg (or half a pixel on a wide strip, whichever is
+      // smaller), or the compact form, the main color or the strip width changed since the last draw
+      private function hzCmpTickDue(deg:Number) : Boolean
+      {
+         if(isNaN(this.hzCmpTkDeg) || this.hzCmpC != this.hzCmpTkC || this.hzCmpW19 != this.hzCmpTkW) { return true; }
+         if(this.hzMainCol() != this.hzCmpTkCol) { return true; }
+         var ppd:Number = Math.max((this.hzCmpW19 - 40) / 180,(HZ_CMP_W - 40) / 180);
+         var thr:Number = ppd > 0 ? Math.min(0.25,0.5 / ppd) : 0.25;
+         var dd:Number = deg - this.hzCmpTkDeg;
+         while(dd > 180) { dd -= 360; }
+         while(dd < -180) { dd += 360; }
+         return !(Math.abs(dd) < thr);
+      }
+      private function hzCmpTickKeep(deg:Number) : void
+      {
+         this.hzCmpTkDeg = deg;
+         this.hzCmpTkC = this.hzCmpC;
+         this.hzCmpTkCol = this.hzMainCol();
+         this.hzCmpTkW = this.hzCmpW19;
+      }
+
+      // Quests from the compass: hz27QFill / hz27QRefresh run only when a quest marker (text, icon type, distance in
+      // half-meter steps) or the selected quest's step list changed; every other dispatch runs hzQSync alone (its own
+      // change gate and hzTxtTop replay), so the quest card's wrap, width and style edges behave as before.
+      private var hzCmpQOk:Boolean = false;
+      private var hzCmpQS:Array = [];        // quest markers of the last pass: text, icon type, distance key per marker
+      private var hzCmpQSN:int = -1;
+      private var hzCmpQO:Array = [];        // copy of hz27QObjs at the last pass
+      private var hzCmpQOR:Array = null;     // hz27QObjs identity at the last pass
+      private var hzCmpQNull:Boolean = false;
+      private function hzCmpQuests(mm:Array) : void
+      {
+         var src:Array = mm ? mm : this.hz27QMarks;
+         if(this.hzCmpQSame(src))
+         {
+            if(mm) { this.hz27QMarks = mm; }
+            this.hzQSync();
+            return;
+         }
+         this.hzCmpQOk = false;
+         this.hzUpdateQuests(mm);
+         this.hzCmpQKeep(src);
+      }
+      private function hzCmpQDist(o:Object) : Number
+      {
+         var m:Number = Number(o.fDistanceToPlayer);
+         if(isNaN(m)) { return -1; }
+         if(m <= 0) { return -2; }   // hzFmtDist shows nothing at 0 or below
+         return Math.floor(m * 2);   // half-meter steps: every rounding edge of hzFmtDist (m, 0.1 km) is a step edge
+      }
+      private function hzCmpQSame(src:Array) : Boolean
+      {
+         if(!this.hzCmpQOk || (src == null) != this.hzCmpQNull) { return false; }
+         var ob:Array = this.hz27QObjs;
+         if(ob !== this.hzCmpQOR || ob == null || ob.length != this.hzCmpQO.length) { return false; }
+         var j:int = 0;
+         while(j < ob.length) { if(ob[j] !== this.hzCmpQO[j]) { return false; } j++; }
+         if(src == null) { return true; }
+         var q:Array = this.hzCmpQS;
+         var n:int = 0;
+         var i:int = 0;
+         while(i < src.length)
+         {
+            var o:Object = src[i];
+            i++;
+            if(!o) { continue; }
+            var ty:uint = uint(o.uiMarkerIconType);
+            if(!this.hzIsQuestType(ty)) { continue; }
+            var tx:String = o.strText ? String(o.strText) : "";
+            if(n + 3 > q.length || q[n] !== tx || q[n + 1] !== ty || q[n + 2] !== this.hzCmpQDist(o)) { return false; }
+            n += 3;
+         }
+         return n == this.hzCmpQSN;
+      }
+      private function hzCmpQKeep(src:Array) : void
+      {
+         var ob:Array = this.hz27QObjs;
+         this.hzCmpQOR = ob;
+         this.hzCmpQO.length = 0;
+         var j:int = 0;
+         while(ob != null && j < ob.length) { this.hzCmpQO.push(ob[j]); j++; }
+         this.hzCmpQNull = src == null;
+         var q:Array = this.hzCmpQS;
+         q.length = 0;
+         var i:int = 0;
+         while(src != null && i < src.length)
+         {
+            var o:Object = src[i];
+            i++;
+            if(!o) { continue; }
+            var ty:uint = uint(o.uiMarkerIconType);
+            if(!this.hzIsQuestType(ty)) { continue; }
+            q.push(o.strText ? String(o.strText) : "",ty,this.hzCmpQDist(o));
+         }
+         this.hzCmpQSN = q.length;
+         this.hzCmpQOk = ob != null;
+      }
+
+      // The compass re-runs hzRefreshVisibility only when the quest card's state changed (an objective appeared or
+      // went, the step count changed, a quest card was built). Every other rule input has its own refreshing setter.
+      private var hzCmpVisOk:Boolean = false;
+      private var hzCmpVisK:int = 0;
+      private var hzCmpVisQ:Object = null;
+      private var hzCmpVisCQ:Object = null;
+      private function hzCmpVisDue() : Boolean
+      {
+         var k:int = (this.hzQHasAny ? 1 : 0) | ((this.hz27QSubs != null ? this.hz27QSubs.length + 1 : 0) << 1);
+         if(this.hzCmpVisOk && k == this.hzCmpVisK && this.HorizonQuest_mc === this.hzCmpVisQ && this.HorizonCompactQuest_mc === this.hzCmpVisCQ) { return false; }
+         this.hzCmpVisOk = true;
+         this.hzCmpVisK = k;
+         this.hzCmpVisQ = this.HorizonQuest_mc;
+         this.hzCmpVisCQ = this.HorizonCompactQuest_mc;
+         return true;
       }
 
       // ---- Planet card: body, temp/grav/air, hazards (EnvironmentEffectsData) ----
@@ -1320,19 +1455,38 @@
       // Compass markers from HudCompassData: aMissionMarkers (quests), aMarkers (followers, ship, locations,
       // outposts, custom marker...), aEnemyMarkers, plus any other array of objects with fHeading (future-proof).
       // De-duplicated by uiHandle; filtered per type by the COMPASS settings tab.
+      private static const HZ_CMP_LISTS:Array = ["aMissionMarkers","aMarkers","aEnemyMarkers"];
+      // perf round 2 Fix 1: the marker pass records what it would draw (kind, icon type, x and alpha in fine steps, edge
+      // pin) into reused arrays in the same loop, and clears and redraws both marker layers only when that record or the
+      // marker style (form, width, row, colors) differs from the last draw. Debug=1 redraws every dispatch as before.
+      private var hzCmpLs:Array = [];
+      private var hzCmpLn:Array = [];
+      private var hzCmpSeenH:Array = [];    // de-dup keys of this pass (handle * 2 + follower), no strings
+      private var hzCmpQ:Array = [];        // record of the last draw: kind, type, round(x * 2), round(alpha * 20), pin
+      private var hzCmpQN:Array = [];       // record of this pass (swapped with hzCmpQ on a redraw)
+      private var hzCmpPx:Array = [];       // exact x of this pass
+      private var hzCmpPa:Array = [];       // exact alpha of this pass
+      private var hzCmpMkOk:Boolean = false;
+      private var hzCmpKV:Boolean = false;
+      private var hzCmpKW:Number = NaN;
+      private var hzCmpKY:Number = NaN;
+      private var hzCmpKM:Number = -1;
+      private var hzCmpKF:Number = -1;
+      private var hzCmpKA:Number = -1;
+      private var hzCmpKB:Number = -1;
+      private var hzCmpKR:Number = -1;
       private function hzDrawCompassMarkers() : void
       {
          if(!this.hzCmpMarks || !this.hzCmpData) { return; }
          var v19:Boolean = this.hzV19() && this.hzCmpMarks19 != null;
-         this.hzCmpMarks.graphics.clear();
-         if(this.hzCmpMarks19) { this.hzCmpMarks19.graphics.clear(); }
-         var g:* = v19 ? this.hzCmpMarks19.graphics : this.hzCmpMarks.graphics;
          var cmw:Number = v19 ? this.hzCmpW19 : HZ_CMP_W;
          var ppd:Number = (cmw - 40) / 180;
-         var lists:Array = [];
-         var lnames:Array = [];
+         var lists:Array = this.hzCmpLs;
+         var lnames:Array = this.hzCmpLn;
+         lists.length = 0;
+         lnames.length = 0;
          var dk:String = null;
-         for each(dk in ["aMissionMarkers","aMarkers","aEnemyMarkers"])
+         for each(dk in HZ_CMP_LISTS)
          {
             if(this.hzCmpData[dk] is Array) { lists.push(this.hzCmpData[dk]); lnames.push(dk); }
          }
@@ -1345,15 +1499,24 @@
                lists.push(av); lnames.push(dk);
             }
          }
-         var seen:Object = {};
-         var dbg:Object = {};
-         var dlines:Array = [];
+         var dbgOn:Boolean = this.hzDebug;
+         var seen:Array = this.hzCmpSeenH;
+         seen.length = 0;
+         var dbg:Object = dbgOn ? {} : null;
+         var dlines:Array = dbgOn ? [] : null;
+         var q:Array = this.hzCmpQN;
+         var px:Array = this.hzCmpPx;
+         var pa:Array = this.hzCmpPa;
+         q.length = 0;
+         px.length = 0;
+         pa.length = 0;
          this.hzCmpDbgClear();
          var li:int = 0;
          while(li < lists.length)
          {
             var arr:Array = lists[li] as Array;
-            var enemyList:Boolean = String(lnames[li]).toLowerCase().indexOf("enemy") >= 0;
+            var lnm:String = String(lnames[li]);
+            var enemyList:Boolean = lnm == "aEnemyMarkers" ? true : ((lnm == "aMissionMarkers" || lnm == "aMarkers") ? false : lnm.toLowerCase().indexOf("enemy") >= 0);
             for each(var o:Object in arr)
             {
                if(!o || o.fHeading == undefined) { continue; }
@@ -1363,21 +1526,24 @@
                // icon type only (the compass map type is not the scripts' MARKER_* table: the player ship arrives as 83).
                var isFolMark:Boolean = mt == MapMarkerUtils.MIT_MARKER_COMPANION;
                var isShip:Boolean = !isFolMark && (mt == MapMarkerUtils.MIT_MARKER_SHIP_PARKED || mt == MapMarkerUtils.MIT_MARKER_VEHICLE);
-               dbg[lnames[li] + ":" + mt] = int(dbg[lnames[li] + ":" + mt]) + 1;
-               if(this.hzDebug && dlines.length < 14)
+               if(dbgOn)
                {
-                  var rel:Number = Number(o.fHeading) * 180 / Math.PI - this.hzCmpDeg;
-                  while(rel > 180) { rel -= 360; }
-                  while(rel < -180) { rel += 360; }
-                  dlines.push(String(lnames[li]) + " type=" + mt + " map=" + mmt + " head=" + Math.round(Number(o.fHeading) * 180 / Math.PI) + " rel=" + Math.round(rel) + " a=" + (o.fDistanceAlpha != undefined ? Math.round(Number(o.fDistanceAlpha) * 100) / 100 : "-") + " near=" + o.bIsNear + (isFolMark ? " FOL" : (isShip ? " SHIP" : "")));
+                  dbg[lnames[li] + ":" + mt] = int(dbg[lnames[li] + ":" + mt]) + 1;
+                  if(dlines.length < 14)
+                  {
+                     var rel:Number = Number(o.fHeading) * 180 / Math.PI - this.hzCmpDeg;
+                     while(rel > 180) { rel -= 360; }
+                     while(rel < -180) { rel += 360; }
+                     dlines.push(String(lnames[li]) + " type=" + mt + " map=" + mmt + " head=" + Math.round(Number(o.fHeading) * 180 / Math.PI) + " rel=" + Math.round(rel) + " a=" + (o.fDistanceAlpha != undefined ? Math.round(Number(o.fDistanceAlpha) * 100) / 100 : "-") + " near=" + o.bIsNear + (isFolMark ? " FOL" : (isShip ? " SHIP" : "")));
+                  }
                }
                if(!this.hzShowCompassMarkers) { continue; }
                if(o.uiHandle != undefined && uint(o.uiHandle) != 0)
                {
                   // v0.30: a companion that is also a quest target keeps its own follower marker (own de-dup key)
-                  var sk:String = (isFolMark ? "f" : "m") + String(o.uiHandle);
-                  if(seen[sk]) { continue; }
-                  seen[sk] = true;
+                  var sk:Number = uint(o.uiHandle) * 2 + (isFolMark ? 1 : 0);
+                  if(seen.indexOf(sk) >= 0) { continue; }
+                  seen.push(sk);
                }
                var md:Number = Number(o.fHeading) * 180 / Math.PI - this.hzCmpDeg;
                while(md > 180) { md -= 360; }
@@ -1392,55 +1558,28 @@
                }
                var mx:Number = cmw / 2 + md * ppd;
                var fa:Number = (o.fDistanceAlpha != undefined && o.fDistanceAlpha !== null) ? Math.max(0.35,Math.min(1,Number(o.fDistanceAlpha))) : 1;
-               if(this.hzDebug) { this.hzCmpDbgLabel(mx,String(mt) + (mmt >= 0 ? "/" + mmt : "")); }
-               if(this.hzIsQuestType(mt) && !isFolMark)
-               {
-                  if(v19) { this.hzCmpMark19(g,"quest",mx,fa); continue; }
-                  g.beginFill(0xF2D35F,fa);
-                  g.moveTo(mx,-2); g.lineTo(mx + 5,3); g.lineTo(mx,8); g.lineTo(mx - 5,3); g.lineTo(mx,-2);
-                  g.endFill();
-               }
+               if(dbgOn) { this.hzCmpDbgLabel(mx,String(mt) + (mmt >= 0 ? "/" + mmt : "")); }
+               var kd:int = 0;
+               if(this.hzIsQuestType(mt) && !isFolMark) { kd = 1; }
                else if(isFolMark)
                {
                   if(!this.hzCmpFollowers) { continue; }
-                  if(v19)
-                  {
-                     try { this.hzCmpMark19(g,"follower",mx,edgeF != 0 ? Math.max(0.55,fa * 0.8) : fa); if(edgeF != 0) { this.hz30FolEdge(g,mx,edgeF); } } catch(errF:Error) { }
-                     continue;
-                  }
-                  g.lineStyle(1,0x0B1620,0.8);
-                  g.beginFill(this.hz27FolCol(),fa);
-                  g.drawCircle(mx,22,3);
-                  g.endFill();
-                  g.beginFill(this.hz27FolCol(),fa);
-                  g.moveTo(mx - 5,33); g.curveTo(mx,24,mx + 5,33); g.lineTo(mx - 5,33);
-                  g.endFill();
-                  g.lineStyle();
+                  kd = 2;
                }
                else if(isShip)
                {
                   if(!this.hzCmpShip) { continue; }
-                  if(v19) { this.hzCmpMark19(g,"ship",mx,fa); continue; }
-                  g.beginFill(0x8FD3F2,fa);
-                  g.moveTo(mx,23); g.lineTo(mx + 6,33); g.lineTo(mx,30); g.lineTo(mx - 6,33); g.lineTo(mx,23);
-                  g.endFill();
+                  kd = 3;
                }
                else if(enemyList || mt == MapMarkerUtils.MIT_MARKER_ENEMY || mt == MapMarkerUtils.MIT_MARKER_ENEMY_TARGETED)
                {
                   if(!this.hzCmpEnemies) { continue; }
-                  if(v19) { this.hzCmpMark19(g,mt == MapMarkerUtils.MIT_MARKER_ENEMY_TARGETED ? "enemyT" : "enemy",mx,fa); continue; }
-                  g.beginFill(HZ_RED,0.95 * fa);
-                  g.drawCircle(mx,29,mt == MapMarkerUtils.MIT_MARKER_ENEMY_TARGETED ? 3.5 : 2.5);
-                  g.endFill();
+                  kd = 4;
                }
                else if(mt == MapMarkerUtils.MIT_MARKER_PLAYERSET || mt == MapMarkerUtils.MIT_MARKER_POSITION)
                {
                   if(!this.hzCmpPlayerMark) { continue; }
-                  if(v19) { this.hzCmpMark19(g,"player",mx,fa); continue; }
-                  g.beginFill(0xF2F4F6,fa);
-                  g.drawRect(mx - 1,22,2,11);
-                  g.moveTo(mx + 1,22); g.lineTo(mx + 7,25); g.lineTo(mx + 1,28); g.lineTo(mx + 1,22);
-                  g.endFill();
+                  kd = 5;
                }
                else if(mt == MapMarkerUtils.MIT_MARKER_HAZARD)
                {
@@ -1450,21 +1589,109 @@
                {
                   // locations, POIs, outposts, recon, anything unknown
                   if(!this.hzCmpLocations) { continue; }
-                  if(v19) { this.hzCmpMark19(g,mt == MapMarkerUtils.MIT_MARKER_OUTPOST ? "outpost" : "loc",mx,fa); continue; }
-                  g.lineStyle(1.2,0xD8E4EA,0.85 * fa);
-                  if(mt == MapMarkerUtils.MIT_MARKER_OUTPOST) { g.drawRect(mx - 3,25,6,6); }
-                  else { g.moveTo(mx,24); g.lineTo(mx + 4,28); g.lineTo(mx,32); g.lineTo(mx - 4,28); g.lineTo(mx,24); }
-                  g.lineStyle();
+                  kd = 6;
                }
+               q.push(kd,mt,Math.round(mx * 2),Math.round(fa * 20),edgeF);
+               px.push(mx);
+               pa.push(fa);
             }
             li++;
          }
-         if(this.hzDebug)
+         if(dbgOn)
          {
             var ds:Array = [];
             for(var dkey:String in dbg) { ds.push(dkey + "x" + dbg[dkey]); }
             this.hzDbgCmp = ds.join("  ") + "\n" + dlines.join("\n");
             if(this.hzFrameN % 10 == 0) { this.hzDbgShow(); }
+         }
+         // marker style: everything the glyphs read besides the record
+         var kM:Number = this.hzMainCol();
+         var kF:Number = this.hz27FolCol();
+         var kA:Number = this.hzIconCol(HZ_ACCENT);
+         var kB:Number = this.hzIconCol(HZ_BLUE);
+         var kR:Number = this.hzIconCol(HZ_RED);
+         var same:Boolean = !dbgOn && this.hzCmpMkOk && v19 == this.hzCmpKV && cmw == this.hzCmpKW && this.hzCmpMY == this.hzCmpKY
+            && kM == this.hzCmpKM && kF == this.hzCmpKF && kA == this.hzCmpKA && kB == this.hzCmpKB && kR == this.hzCmpKR;
+         var last:Array = this.hzCmpQ;
+         if(same && q.length == last.length)
+         {
+            var qi:int = 0;
+            while(qi < q.length) { if(q[qi] !== last[qi]) { same = false; break; } qi++; }
+            if(same) { return; }
+         }
+         this.hzCmpQ = q;
+         this.hzCmpQN = last;
+         this.hzCmpKV = v19; this.hzCmpKW = cmw; this.hzCmpKY = this.hzCmpMY;
+         this.hzCmpKM = kM; this.hzCmpKF = kF; this.hzCmpKA = kA; this.hzCmpKB = kB; this.hzCmpKR = kR;
+         this.hzCmpMkOk = false;   // a throw while drawing leaves this false, so the next dispatch redraws (as before)
+         this.hzCmpMarks.graphics.clear();
+         if(this.hzCmpMarks19) { this.hzCmpMarks19.graphics.clear(); }
+         var g:* = v19 ? this.hzCmpMarks19.graphics : this.hzCmpMarks.graphics;
+         var pi:int = 0;
+         while(pi < px.length)
+         {
+            this.hzCmpMarkPaint(g,v19,int(q[pi * 5]),uint(q[pi * 5 + 1]),Number(px[pi]),Number(pa[pi]),int(q[pi * 5 + 4]));
+            pi++;
+         }
+         this.hzCmpMkOk = true;
+      }
+
+      // one recorded marker, drawn exactly as the pre-round-2 loop drew it (kind: 1 quest, 2 follower, 3 ship, 4 enemy,
+      // 5 player mark, 6 location / outpost / anything else)
+      private function hzCmpMarkPaint(g:*, v19:Boolean, kd:int, mt:uint, mx:Number, fa:Number, edgeF:int) : void
+      {
+         if(kd == 1)
+         {
+            if(v19) { this.hzCmpMark19(g,"quest",mx,fa); return; }
+            g.beginFill(0xF2D35F,fa);
+            g.moveTo(mx,-2); g.lineTo(mx + 5,3); g.lineTo(mx,8); g.lineTo(mx - 5,3); g.lineTo(mx,-2);
+            g.endFill();
+         }
+         else if(kd == 2)
+         {
+            if(v19)
+            {
+               try { this.hzCmpMark19(g,"follower",mx,edgeF != 0 ? Math.max(0.55,fa * 0.8) : fa); if(edgeF != 0) { this.hz30FolEdge(g,mx,edgeF); } } catch(errF:Error) { }
+               return;
+            }
+            g.lineStyle(1,0x0B1620,0.8);
+            g.beginFill(this.hz27FolCol(),fa);
+            g.drawCircle(mx,22,3);
+            g.endFill();
+            g.beginFill(this.hz27FolCol(),fa);
+            g.moveTo(mx - 5,33); g.curveTo(mx,24,mx + 5,33); g.lineTo(mx - 5,33);
+            g.endFill();
+            g.lineStyle();
+         }
+         else if(kd == 3)
+         {
+            if(v19) { this.hzCmpMark19(g,"ship",mx,fa); return; }
+            g.beginFill(0x8FD3F2,fa);
+            g.moveTo(mx,23); g.lineTo(mx + 6,33); g.lineTo(mx,30); g.lineTo(mx - 6,33); g.lineTo(mx,23);
+            g.endFill();
+         }
+         else if(kd == 4)
+         {
+            if(v19) { this.hzCmpMark19(g,mt == MapMarkerUtils.MIT_MARKER_ENEMY_TARGETED ? "enemyT" : "enemy",mx,fa); return; }
+            g.beginFill(HZ_RED,0.95 * fa);
+            g.drawCircle(mx,29,mt == MapMarkerUtils.MIT_MARKER_ENEMY_TARGETED ? 3.5 : 2.5);
+            g.endFill();
+         }
+         else if(kd == 5)
+         {
+            if(v19) { this.hzCmpMark19(g,"player",mx,fa); return; }
+            g.beginFill(0xF2F4F6,fa);
+            g.drawRect(mx - 1,22,2,11);
+            g.moveTo(mx + 1,22); g.lineTo(mx + 7,25); g.lineTo(mx + 1,28); g.lineTo(mx + 1,22);
+            g.endFill();
+         }
+         else if(kd == 6)
+         {
+            if(v19) { this.hzCmpMark19(g,mt == MapMarkerUtils.MIT_MARKER_OUTPOST ? "outpost" : "loc",mx,fa); return; }
+            g.lineStyle(1.2,0xD8E4EA,0.85 * fa);
+            if(mt == MapMarkerUtils.MIT_MARKER_OUTPOST) { g.drawRect(mx - 3,25,6,6); }
+            else { g.moveTo(mx,24); g.lineTo(mx + 4,28); g.lineTo(mx,32); g.lineTo(mx - 4,28); g.lineTo(mx,24); }
+            g.lineStyle();
          }
       }
 
@@ -9443,6 +9670,9 @@
          var pg:* = this.hzCmpPill19.graphics;
          pg.clear();
          this.hzPanel(pg,72,26,13,-1,ac);
+         this.hzCmpHdI = -1;          // perf round 2 Fix 1: a style apply rewrites the heading texts and
+         this.hzCmpTkDeg = NaN;       // redraws the strip and the markers on the next dispatch
+         this.hzCmpMkOk = false;
          this.hzCmpTick19();
       }
 
@@ -9493,8 +9723,15 @@
             t.alpha = Math.pow(Math.max(0,1 - Math.abs(lx - cx) / (cx - 16)),0.6);
             i++;
          }
-         if(this.hzCmpHead19) { this.hzCmpHead19.text = String(int(Math.round(deg)) % 360) + "°"; }
-         if(this.hzCmpHeadIn && cmp) { this.hzCmpHeadIn.text = String(int(Math.round(deg)) % 360) + "°"; }
+         var hdi:int = int(Math.round(deg)) % 360;
+         if(hdi != this.hzCmpHdI || this.hzCmpC != this.hzCmpHdC)   // perf round 2 Fix 1: texts change with the whole degree only
+         {
+            this.hzCmpHdI = hdi;
+            this.hzCmpHdC = this.hzCmpC;
+            var hs:String = String(hdi) + "°";
+            if(this.hzCmpHead19) { this.hzCmpHead19.text = hs; }
+            if(this.hzCmpHeadIn && cmp) { this.hzCmpHeadIn.text = hs; }
+         }
       }
 
       // one marker on the v0.19 strip at y = 47 (original glyphs)
