@@ -924,7 +924,7 @@ int main()
 				++nLay;
 				q = e + 1;
 			}
-			Expect(nLay == 18, "every arrangeable card has Layout X/Y in the defaults");
+			Expect(nLay == 19, "every arrangeable card has Layout X/Y in the defaults");
 		}
 		{
 			const std::string full =
