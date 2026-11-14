@@ -571,7 +571,7 @@ package
       private static const HZC_RED:uint = 0xFF5B5B;
       private static const HZC_TST_HEAD:Array = ["MISSION UPDATED","NEW MISSION","OBJECTIVE COMPLETE","MISSION COMPLETE","MISSION FAILED"];
       private static const HZC_TST_PRIO:Array = [1,3,2,4,5];   // merging two updates of one quest keeps the stronger state
-      private var hzcCfg:Object = {"ReactionCard":1,"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"ShowSpeaker":1,"SpeakerColor":-1,"SpeakerHex":"","SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4,"XpToast":0,"FontFace":1,"AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"SubtitleX":"-1","SubtitleY":"-1","SpeakerX":"-1","SpeakerY":"-1","SubTextColor":-1,"SubTextHex":"","SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"HudScale":1,"MissionToastX":"-1","MissionToastY":"-1","HudMessagesX":"-1","HudMessagesY":"-1","HzRev":0};
+      private var hzcCfg:Object = {"ReactionCard":1,"GameCardTitle":0,"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"ShowSpeaker":1,"SpeakerColor":-1,"SpeakerHex":"","SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4,"XpToast":0,"FontFace":1,"AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"SubtitleX":"-1","SubtitleY":"-1","SpeakerX":"-1","SpeakerY":"-1","SubTextColor":-1,"SubTextHex":"","SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"HudScale":1,"MissionToastX":"-1","MissionToastY":"-1","HudMessagesX":"-1","HudMessagesY":"-1","HzRev":0};
       private var hzcIniState:int = 0;       // 0 loading, 1 read, 2 missing / unreadable (defaults)
       private var hzcSubBg:Shape = null;     // card art: a fresh Shape per draw (no stale path can survive)
       private var hzcSpkBg:Shape = null;
@@ -2868,7 +2868,17 @@ package
          if(name == null) { name = ""; }
          if(value == null) { value = ""; }
          if(String(kind).length == 0) { return null; }
-         return {"kind":String(kind),"sub":String(sub),"title":this.hzcCardTitle(kind,sub,name),"tone":this.hzcCardTone(kind,sub),"value":String(value)};
+         return {"kind":String(kind),"sub":String(sub),"title":this.hzcCardTitle(kind,sub,name),"tone":this.hzcCardTone(kind,sub),"value":(kind == "game" && value == "GAME") ? this.hzcGameTitle() : String(value)};
+      }
+      // [Comms] GameCardTitle: the word the DLL's generic game notice (kind "game", name / value "GAME", hz_msg_match.h
+      // GameNotice) shows as its title and chip: 0 INFO (default), 1 DATA, 2 MISC, 3 GAME (the old word). Read once per
+      // card draw (hzcCardDraw -> hzcCardMatch); ARTIFACT titles and the Message Log are unchanged. No text matching.
+      private static const HZC_GAME_TITLES:Array = ["INFO","DATA","MISC","GAME"];
+      private function hzcGameTitle() : String
+      {
+         var i:int = this.hzcCfg != null ? int(this.hzcCfg.GameCardTitle) : 0;
+         if(i < 0 || i >= HZC_GAME_TITLES.length) { i = 0; }
+         return String(HZC_GAME_TITLES[i]);
       }
       // -1 means the F11 accent. Tone is the icon and the chip. The left bar stays the accent.
       private function hzcCardTone(kind:String, sub:String) : int
@@ -2930,6 +2940,7 @@ package
             if(sub == "bounty-add") { return "BOUNTY"; }
             return "CRIME";
          }
+         if(kind == "game" && n == "GAME") { return this.hzcGameTitle(); }   // [Comms] GameCardTitle
          if(n.length > 0) { return n.toUpperCase(); }
          if(kind == "medical") { return "AFFLICTION"; }
          if(kind == "crew") { return "CREW"; }

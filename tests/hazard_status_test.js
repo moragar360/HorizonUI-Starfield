@@ -223,7 +223,7 @@ const chipText = (h) => h.hzHsTf.text;
 		expect(JSON.parse(/HZ_SET_DEF:Object = (\{[^;]*\});/.exec(as)[1]).HazardStatus === 1, "HZ_SET_DEF HazardStatus = 1");
 	}
 	if (baseIni) {
-		const a = iniKeys(ini), b = iniKeys(baseIni);
+		const a = iniKeys(ini).filter((k) => k !== "GameCardTitle"), b = iniKeys(baseIni);   // GameCardTitle: the separate add-on (tests/game_title_test.js)
 		expect(JSON.stringify(a.filter((k) => b.indexOf(k) < 0)) === '["HazardStatus"]' && a.length === b.length + 1, "default INI: only HazardStatus added");
 	}
 	expect(/\[Effects\][^\[]*\nEdgePulse=1\n; Hazard status chip[^\n]*\nHazardStatus=1\n/.test(ini), "default INI [Effects] HazardStatus=1 after EdgePulse");
@@ -259,6 +259,13 @@ if (base) {
 		["         if(p.HazardStatus != undefined && this.hzHsOn != Boolean(p.HazardStatus)) { this.hzHsOn = Boolean(p.HazardStatus); this.hzLaidOut = false; }\n", ""],
 		['         a.push("; Hazard status chip under the planet card: red while a hazard hurts you, green while suit protection restores");\n         a.push("HazardStatus=" + this.hzB(p.HazardStatus));\n', ""],
 	];
+	// the separate info message title add-on (tests/game_title_test.js), when it is in this tree
+	const ADDON = [
+		['["ReactionCard","b",1,0,1,"comms"],["GameCardTitle","i",0,0,3,"comms"],', '["ReactionCard","b",1,0,1,"comms"],'],
+		['"ReactionCard":1,"GameCardTitle":0,', '"ReactionCard":1,'],
+	];
+	for (const [a, b] of ADDON) s = s.replace(a, b);
+	s = s.replace(/\n[ ]+"GameCardTitle":"[^\n]*",(?=\n)/g, "").replace(/\n[ ]+\{"k":"GameCardTitle"[^\n]*\},(?=\n)/, "");
 	let ok = true;
 	for (const [a, b] of HUNKS) { if (count(s, a) !== 1) { ok = false; console.error("hunk count " + count(s, a) + ": " + a.slice(0, 60)); } s = s.replace(a, b); }
 	expect(ok && s === base, "chip hunks removed = the 0.43.2.0 source (cda2af5) byte for byte");

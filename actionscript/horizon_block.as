@@ -16000,7 +16000,7 @@
          ["SubTextColor","i",-1,-1,13,"comms"],["SubTextHex","s","",0,0,"comms"],["SubCard","b",1,0,1,"comms"],["SubOffsetX","i",0,-600,600,"comms"],
          ["ShowSpeaker","b",1,0,1,"comms"],["SpeakerColor","i",-1,-1,13,"comms"],["SpeakerHex","s","",0,0,"comms"],["SpeakerCard","b",1,0,1,"comms"],
          ["KeepInDialogue","b",1,0,1,"comms"],["FixedInDialogue","b",1,0,1,"comms"],["SubMaxLines","i",3,2,5,"comms"],["SubFont","i",-1,-1,3,"comms"],
-         ["MissionToast","b",1,0,1,"comms"],["MissionToastTime","i",5,2,15,"comms"],["MissionToastMax","i",3,1,5,"comms"],["MissionToastSound","b",1,0,1,"comms"],["MissionToastScale","z",-1,0.6,1.6,"comms"],["ReactionCard","b",1,0,1,"comms"],
+         ["MissionToast","b",1,0,1,"comms"],["MissionToastTime","i",5,2,15,"comms"],["MissionToastMax","i",3,1,5,"comms"],["MissionToastSound","b",1,0,1,"comms"],["MissionToastScale","z",-1,0.6,1.6,"comms"],["ReactionCard","b",1,0,1,"comms"],["GameCardTitle","i",0,0,3,"comms"],
          ["Dialogue","b",1,0,1,"comms"],["DlgAutoPause","b",1,0,1,"comms"],["DlgLayout","i",0,0,2,"comms"],["DlgVisible","i",0,0,12,"comms"],
          ["DlgMoreHint","b",1,0,1,"comms"],["DlgTextSize","f",1,0.8,1.6,"comms"],["DlgFont","i",-1,-1,3,"comms"],["DlgBgOpacity","f",0.85,0,1,"comms"],
          ["DlgCard","b",1,0,1,"comms"],["DlgOffsetX","i",0,-600,600,"comms"],
@@ -16010,7 +16010,7 @@
          ["DlgPersuadeStyle","i",0,0,2,"comms"],["DlgPersuadeColor","i",2,0,12,"comms"],["DlgPersuasionMeter","b",1,0,1,"comms"],["DlgMarkers","b",0,0,1,"comms"],["DlgInputDelay","i",150,0,1000,"comms"],
          ["DlgRolloverSound","i",0,0,1,"comms"],["DlgAnim","i",1,0,2,"comms"],
          ["DlgButtonBar","i",0,0,2,"comms"],["DlgQuickPickHint","b",1,0,1,"comms"],["DlgSelectHint","b",1,0,1,"comms"]];
-      private static const HZ31_DEF:Object = {"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"TxtColIdx":0,"SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"ReactionCard":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"ShowSpeaker":1,"SpkColIdx":0,"SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgTxtIdx":0,"DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4};
+      private static const HZ31_DEF:Object = {"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"TxtColIdx":0,"SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"ReactionCard":1,"GameCardTitle":0,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"ShowSpeaker":1,"SpkColIdx":0,"SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgTxtIdx":0,"DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4};
       // URLLoader probes, relative to Data/Interface (same base as HorizonUI/HorizonUI.ini). Foreign mods are only reported.
       private static const HZ31_PROBE:Object = {"es":"Enhanced Subtitles - My Edits.ini","edi":"Enhanced Dialogue Interface - My Edits.ini","edi2":"Enhanced Dialogue Interface.ini"};   // v0.38: no file probes for other HUD mods (an ini left behind is not an active HUD)
       private static const HZ31_FONT_OPTS:Array = ["GLOBAL","EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"];
@@ -16215,6 +16215,7 @@
             "DlgAnim":"0 off, 1 fast, 2 vanilla-like",
             "MissionToastScale":"toast size: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = its own size (TextScale applies on top)",
             "DlgButtonBar":"dialogue key bar: 0 Horizon (under the card), 1 the game's bar, 2 hidden (keys still work)",
+            "GameCardTitle":"title of the info message cards (the game's other notices): 0 INFO (default), 1 DATA, 2 MISC, 3 GAME (as before). ARTIFACT cards keep their title",
             "DlgQuickPickHint":"1 = '1 - 9 QUICK PICK' hint on the Horizon bar (keyboard, with DlgNumberKeys=1)",
             "DlgSelectHint":"1 = SELECT key on the Horizon bar (keyboard)"};
          a.push("[Comms]");
@@ -16315,6 +16316,7 @@
                {"k":"MissionToastScale","l":"TOAST SIZE","t":"z","note":"GLOBAL = HUD SCALE (STYLE). Also in CARDS"},
                {"k":"MissionToastSound","l":"GAME QUEST SOUND","t":"b","dis":true,"dv":true,"note":"The sound comes from the game's banner and always plays for now"},
                {"k":"ReactionCard","l":"COMPANION REACTION CARD","t":"b","h":"COMPANION REACTIONS","note":"Restyles the 'liked that' line. English game text only for now; other lines stay the game's"},
+               {"k":"GameCardTitle","l":"INFO MESSAGE TITLE","t":"r","opts":["INFO","DATA","MISC","GAME"],"ids":[0,1,2,3],"note":"Title of the cards for the game's other notices. Applies from the next message"},
                {"k":"_hz40goscan","l":"SCANNER POPUPS: NOW IN THE SCANNER TAB","t":"x","btn":"OPEN","h":"SCANNER POPUPS"}];
          }
          else
@@ -17153,6 +17155,7 @@
          "DlgInputDelay":"After the option list opens, input is ignored for this long so a held key doesn't pick an option by accident. The game's own delay is 1000 ms; lower is faster.",
          "DlgHoverScroll":"With the mouse resting on the top or bottom visible option for a quarter second, the list scrolls one option. Only matters when VISIBLE OPTIONS limits the list.",
          "DlgButtonBar":"HORIZON: a restyled key strip under the options card. GAME BAR: the game's own button bar. HIDDEN: no bar at all - the keys still work.",
+         "GameCardTitle":"The title on the Horizon card for the game's other notices (the ones that are not crime, credits, crew or afflictions). INFO is the default; GAME is the old title. ARTIFACT cards keep theirs.",
          "DlgVisible":"How many options the card shows at once. ALL sizes the card to every option. A number limits it; the rest scroll with the selection, the wheel or hover.",
          "DlgMoreHint":"With VISIBLE OPTIONS limited, a small 'N MORE' line shows how many more options there are.",
          "DlgNumberKeys":"Keys 1 - 9 pick the option with that number. Numbers follow the shown options (HIDDEN already-said options are skipped).",
