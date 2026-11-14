@@ -11875,17 +11875,49 @@
          return t;
       }
 
-      // key label for aButtons[].iType (0 A, 1 X, 2 Y, 3 B): the game's own PC key text (PCButton_mc.ButtonInstance_mc.PCButton_tf)
+      // 0.43.3.1: controller glyph font character (vanilla GlobalFunc.NameToTextMap value) -> the keycap text. Xbox names;
+      // a PlayStation glyph gets the Xbox letter of the same spot (Cross A, Circle B, Square X, Triangle Y), like the
+      // fixed letters before. A character not listed here falls back to the fixed letter of the slot.
+      private static const HZ_T19_PADK:Object = {
+         "A":"A","B":"B","C":"X","D":"Y","E":"VIEW","O":"MENU","G":"LB","L":"RB","I":"LT","N":"RT","Y":"LT","X":"RT",
+         "F":"LS","H":"LS","K":"RS","M":"RS","1":"LB+RB","J":"LT+RT",
+         "a":"A","d":"B","c":"X","b":"Y","z":"VIEW","p":"MENU","g":"LB","m":"RB","j":"LT","o":"RT","y":"LT","x":"RT",
+         "i":"LS","f":"LS","n":"RS","l":"RS","h":"LB+RB","k":"LT+RT",
+         "T":"LEFT","U":"RIGHT","V":"DOWN","W":"UP","t":"LEFT","u":"RIGHT","v":"DOWN","w":"UP","q":"D-PAD","r":"D-PAD","s":"D-PAD"
+      };
+
+      // key label for aButtons[].iType (0 A, 1 X, 2 Y, 3 B): the game's own PC key text (PCButton_mc.ButtonInstance_mc.PCButton_tf).
+      // 0.43.3.1: on a controller the bound button from the game's own glyph text (ConsoleButton_mc.ButtonInstance_mc.
+      // ConsoleButton_tf; vanilla MinimalButton.UpdateButtonText fills it from the control map, so a remap such as
+      // Activate on Y shows Y). Only read where this was read before (label edges and row draws), never per frame.
       private function hzT19Key(aw:Object, t:int) : String
       {
          var btn:Object = this.hzT19BtnClip(aw,t);
          var k:String = "";
          var pad:Boolean = false;
+         var gl:String = "";
          try { var pc:Object = btn.PCButton_mc.ButtonInstance_mc; if(pc && pc.visible) { k = this.hzT19Trim(pc.PCButton_tf.text); } } catch(e2:Error) { }
-         try { var cb:Object = btn.ConsoleButton_mc.ButtonInstance_mc; if(cb && cb.visible) { pad = true; } } catch(e3:Error) { }
+         try { var cb:Object = btn.ConsoleButton_mc.ButtonInstance_mc; if(cb && cb.visible) { pad = true; try { gl = this.hzT19PadKey(cb.ConsoleButton_tf.text); } catch(e4:Error) { gl = ""; } } } catch(e3:Error) { }
+         if(pad && gl.length > 0) { return gl; }
          if(k.length == 0 || pad) { k = t >= 0 && t < 4 ? ["A","X","Y","B"][t] : "?"; }
          if(k.length > 8) { k = k.substr(0,8); }
          return k.toUpperCase();
+      }
+
+      // 0.43.3.1: the controller glyph text -> keycap text ("" = unknown, the caller keeps the fixed letter). One glyph, or
+      // the game's "/" and " + " joins of two glyphs; anything else is unknown.
+      private function hzT19PadKey(raw:*) : String
+      {
+         if(raw == undefined || raw === null) { return ""; }
+         var s:String = String(raw);
+         var n:int = s.length;
+         if(n == 1) { var k1:* = HZ_T19_PADK[s]; return k1 != undefined ? String(k1) : ""; }
+         var sep:String = n == 3 && s.charAt(1) == "/" ? "/" : (n == 5 && s.substr(1,3) == " + " ? "+" : "");
+         if(sep.length == 0) { return ""; }
+         var ka:* = HZ_T19_PADK[s.charAt(0)];
+         var kb:* = HZ_T19_PADK[s.charAt(n - 1)];
+         if(ka == undefined || kb == undefined) { return ""; }
+         return String(ka) + sep + String(kb);
       }
 
       // Keycap box for the hover TAKE row: at least 24, and tall enough for the floored E / HOLD type.
