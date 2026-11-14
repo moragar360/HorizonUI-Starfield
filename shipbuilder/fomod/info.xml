@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fomod>
+  <Name>Horizon Ship Builder</Name>
+  <Author>Moragar</Author>
+  <Version>0.2.0.0</Version>
+  <Website>https://github.com/moragar360/HorizonUI-Starfield</Website>
+  <Description>Replaces the ship builder panels. Installs the builder plugin, both editor movies, and the default settings file. It does not install any HUD files.</Description>
+</fomod>
