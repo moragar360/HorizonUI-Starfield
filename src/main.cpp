@@ -79,6 +79,7 @@
 #include "hz_ui_tid.h"
 #include "hz_perf.h"
 #include "hz_wl.h"
+#include "hz_menu_bits.h"   // perf round 2: event-kept open-menu set (pure helpers, tests/menu_bits_test.cpp)
 #include "preset_dedupe.h"
 
 // v0.37: the settings-file code (HZF) replaces files through this (temp file + MoveFileExW)
@@ -1001,12 +1002,6 @@ namespace HZ
 
 	// v0.42.0 r3: menus that block F11 but leave the HUD up underneath (no 3 s "HUD ready" restart after them)
 	constexpr const char* kLightMenus422[] = { "ScopeMenu" };
-	bool LightMenuOpen(RE::UI* a_ui)
-	{
-		for (auto m : kLightMenus422)
-			if (a_ui->IsMenuOpen(m)) return true;
-		return false;
-	}
 
 	// Purpose: menu-map lookup only. Safe off the UI thread. Does not
 	// touch menuObj / uiMovie. Inputs: UI and the light-menu flag.
@@ -1023,15 +1018,147 @@ namespace HZ
 		"SecurityMenu", "ChargenMenu", "PhotoGalleryMenu", "Workshop_BlueprintMenu"
 	};
 
+	// perf round 2 Fix 2: one bit per watched menu (src/hz_menu_bits.h). Bit 0 HUDMenu, then kHudBlockMenus, then
+	// kDenyMenus42, in list order, so the lowest set bit is the menu the old loops named first.
+	constexpr std::size_t kMenuBlock0 = 1;
+	constexpr std::size_t kMenuBlockN = sizeof(kHudBlockMenus) / sizeof(kHudBlockMenus[0]);
+	constexpr std::size_t kMenuDeny0 = kMenuBlock0 + kMenuBlockN;
+	constexpr std::size_t kMenuDenyN = sizeof(kDenyMenus42) / sizeof(kDenyMenus42[0]);
+	constexpr std::size_t kMenuN = kMenuDeny0 + kMenuDenyN;
+	static_assert(kMenuN <= 64, "the open-menu set is one 64-bit word");
+
+	struct HzMenuTable
+	{
+		RE::BSFixedString name[kMenuN];
+		const char*       raw[kMenuN];
+		std::uint64_t     lightBits;   // deny entries that are light menus (kLightMenus422: ScopeMenu)
+	};
+
+	// Purpose: the watched menu names as pool strings, built once on first use (in game, after the string pool
+	// is up) instead of a temporary BSFixedString per IsMenuOpen call. Never destroyed, so no pool release runs at
+	// process exit. Thread-safe first use (function-local static). Author: Moragar. Last modified: 2026-11-14.
+	const HzMenuTable& HzMenus()
+	{
+		static const HzMenuTable* const s_table = [] {
+			auto* t = new HzMenuTable{};
+			t->raw[0] = "HUDMenu";
+			for (std::size_t i = 0; i < kMenuBlockN; ++i)
+				t->raw[kMenuBlock0 + i] = kHudBlockMenus[i];
+			for (std::size_t i = 0; i < kMenuDenyN; ++i) {
+				t->raw[kMenuDeny0 + i] = kDenyMenus42[i];
+				for (auto l : kLightMenus422)
+					if (std::strcmp(kDenyMenus42[i], l) == 0)
+						t->lightBits |= std::uint64_t{ 1 } << (kMenuDeny0 + i);
+			}
+			for (std::size_t i = 0; i < kMenuN; ++i)
+				t->name[i] = t->raw[i];
+			return t;
+		}();
+		return *s_table;
+	}
+
+	// Purpose: full menu-map scan of every watched name (cached strings). Menu-map only, safe off the UI thread.
+	// Inputs: UI. Outputs: the open-menu bits.
+	std::uint64_t HzMenuScan(RE::UI* a_ui)
+	{
+		const auto& t = HzMenus();
+		std::uint64_t bits = 0;
+		for (std::size_t i = 0; i < kMenuN; ++i)
+			if (a_ui->IsMenuOpen(t.name[i])) bits |= std::uint64_t{ 1 } << i;
+		return bits;
+	}
+
+	std::atomic<int>           g_menuSink{0};          // 0 pending, 1 registered, -1 failed: every check scans, as before
+	std::atomic<std::uint64_t> g_menuBits{0};          // open watched menus (event-kept, scan-checked)
+	std::atomic<std::uint32_t> g_menuGen{0};           // bumped by every watched open / close event (before its writes)
+	std::atomic<std::uint32_t> g_menuDone{0};          // bumped by every watched open / close event (after its writes)
+	std::atomic<std::uint32_t> g_menuHudGen{0};        // bumped by every HUDMenu open / close event (before g_menuGen)
+	std::atomic<ULONGLONG>     g_menuScanAt{0};        // last stored scan (0 = not seeded yet)
+	std::atomic<bool>          g_menuDirty{false};     // a close event asked for a rescan on the next check
+	std::atomic<std::uint64_t> g_menuPend{0};          // blocker opens from events that IsMenuOpen does not show yet
+	std::atomic<ULONGLONG>     g_menuPendAt{0};        // time of the last open event
+	std::atomic<int>           g_menuHudWant{hzmenu::kHudWatchNone};   // a HUDMenu event: rescan every check until it shows
+	std::atomic<bool>          g_menuScanBusy{false};  // one thread stores a scan at a time
+	std::atomic<bool>          g_menuMissLogged{false};
+
+	// The shared state hzmenu::Check / hzmenu::EventStep run on (all sequentially consistent: the reader's
+	// "read the counter again after the store" needs the sink's counter-first order to be seen in order).
+	struct HzMenuShared
+	{
+		RE::UI* ui = nullptr;
+		std::uint64_t At() { return g_menuScanAt.load(); }
+		void SetAt(std::uint64_t v) { g_menuScanAt.store(v); }
+		int HudWant() { return g_menuHudWant.load(); }
+		void SetHudWant(int v) { g_menuHudWant.store(v); }
+		void HudWantSwap(int a_from, int a_to) { g_menuHudWant.compare_exchange_strong(a_from, a_to); }
+		bool Dirty() { return g_menuDirty.load(); }
+		void SetDirty(bool v) { g_menuDirty.store(v); }
+		std::uint64_t Bits() { return g_menuBits.load(); }
+		std::uint64_t BitsSwap(std::uint64_t v) { return g_menuBits.exchange(v); }
+		void BitsOr(std::uint64_t v) { g_menuBits.fetch_or(v); }
+		void BitsAnd(std::uint64_t v) { g_menuBits.fetch_and(v); }
+		std::uint32_t Gen() { return g_menuGen.load(); }
+		void GenInc() { g_menuGen.fetch_add(1); }
+		std::uint32_t Done() { return g_menuDone.load(); }
+		void DoneInc() { g_menuDone.fetch_add(1); }
+		std::uint32_t HudGen() { return g_menuHudGen.load(); }
+		void HudGenInc() { g_menuHudGen.fetch_add(1); }
+		std::uint64_t Pend() { return g_menuPend.load(); }
+		void PendSwap(std::uint64_t a_from, std::uint64_t a_to) { g_menuPend.compare_exchange_strong(a_from, a_to); }
+		void PendOr(std::uint64_t v) { g_menuPend.fetch_or(v); }
+		void PendAnd(std::uint64_t v) { g_menuPend.fetch_and(v); }
+		std::uint64_t PendAt() { return g_menuPendAt.load(); }
+		void SetPendAt(std::uint64_t v) { g_menuPendAt.store(v); }
+		bool BusyTake() { return g_menuScanBusy.exchange(true); }
+		void BusyDrop() { g_menuScanBusy.store(false); }
+		std::uint64_t Scan() { return HzMenuScan(ui); }
+	};
+
+	// Purpose: the open-menu bits for HudMenusClear / HudBlockingMenu. With the sink: the event-kept set, scanned
+	// again when a close asked for it, on every check while a HUDMenu event waits for the scan to agree, or when
+	// it is older than hzlog::kHudSafeCacheMs (the HudSafe 150 ms cadence; seeded by the first scan). Blocker bits
+	// err toward covered, bit 0 (HUDMenu) toward closed (hz_menu_bits.h). Without the sink: a full scan per
+	// check, as before. Menu-map only, safe off the UI thread (movies advance on several threads).
+	// Inputs: UI. Outputs: bits. Author: Moragar. Last modified: 2026-11-14.
+	std::uint64_t HzMenuBits(RE::UI* a_ui)
+	{
+		if (g_menuSink.load(std::memory_order_acquire) != 1)
+			return HzMenuScan(a_ui);
+		HzMenuShared sh{ a_ui };
+		const auto r = hzmenu::Check(sh, GetTickCount64(), hzlog::kHudSafeCacheMs);
+		if (r.unseen != 0 && (HzWlOn() || HzPerfOn()) && !g_menuMissLogged.exchange(true, std::memory_order_relaxed))
+			REX::INFO("menu set: the {} ms scan found an open menu without its open event (logged once)", hzlog::kHudSafeCacheMs);
+		return r.bits;
+	}
+
+	// Purpose: keep g_menuBits from MenuOpenCloseEvent (hzmenu::EventStep). A blocker open sets its bit (held
+	// until a scan confirms it, at most hzmenu::kPendHoldMs); a blocker close drops the hold and asks for a
+	// rescan. A HUDMenu close clears bit 0 at once; a HUDMenu open or close asks for a rescan on every check until
+	// the scan agrees. No Scaleform, no settings. Inputs: the event. Outputs: kContinue. Author: Moragar.
+	// Last modified: 2026-11-14.
+	class MenuOpenCloseSink final : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
+	{
+	public:
+		RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent& a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
+		{
+			try {
+				const auto& t = HzMenus();
+				for (std::size_t i = 0; i < kMenuN; ++i) {
+					if (!(a_event.menuName == t.name[i])) continue;
+					HzMenuShared sh{};
+					hzmenu::Event(sh, static_cast<int>(i), a_event.opening, GetTickCount64());
+					break;
+				}
+			} catch (...) {
+			}
+			return RE::BSEventNotifyControl::kContinue;
+		}
+	};
+
 	bool HudMenusClear(RE::UI* a_ui, bool a_light = true)
 	{
 		if (!a_ui) return false;
-		if (!a_ui->IsMenuOpen("HUDMenu")) return false;
-		for (auto m : kHudBlockMenus)
-			if (a_ui->IsMenuOpen(m)) return false;
-		for (auto m : kDenyMenus42)   // v0.42.0
-			if ((a_light || !LightMenuOpen(a_ui) || std::strcmp(m, "ScopeMenu") != 0) && a_ui->IsMenuOpen(m)) return false;
-		return true;
+		return hzmenu::Clear(HzMenuBits(a_ui), a_light, HzMenus().lightBits);   // perf round 2: no per-entry ScopeMenu lookup
 	}
 
 	// Purpose: name the menu that keeps the HUD from being ready.
@@ -1039,12 +1166,9 @@ namespace HZ
 	const char* HudBlockingMenu(RE::UI* a_ui)
 	{
 		if (!a_ui) return "?";
-		if (!a_ui->IsMenuOpen("HUDMenu")) return "HUDMenu";
-		for (auto m : kHudBlockMenus)
-			if (a_ui->IsMenuOpen(m)) return m;
-		for (auto m : kDenyMenus42)
-			if (a_ui->IsMenuOpen(m)) return m;
-		return "menu";
+		const int i = hzmenu::FirstBlocking(HzMenuBits(a_ui));
+		if (i < 0 || static_cast<std::size_t>(i) >= kMenuN) return "menu";
+		return HzMenus().raw[i];
 	}
 
 	// Purpose: HUD is up and the movie document is live. UI thread only
@@ -2214,6 +2338,64 @@ namespace HZ
 		} catch (...) {
 			g_hudMsgSink = -1;
 			REX::WARN("ShowHUDMessageEvent sink failed: unknown error");
+		}
+	}
+
+	static void HzMenuSinkRegisterCall(RE::UI* a_ui, RE::BSTEventSink<RE::MenuOpenCloseEvent>* a_sink)
+	{
+		if (a_ui && a_sink) a_ui->RegisterSink<RE::MenuOpenCloseEvent>(a_sink);
+	}
+#if defined(_MSC_VER)
+	// Same SEH shape as HzHudMsgRegisterSEH: the call goes through a function pointer (MSVC C2712).
+	static int HzMenuSinkRegisterSEH(RE::UI* a_ui, RE::BSTEventSink<RE::MenuOpenCloseEvent>* a_sink) noexcept
+	{
+		if (!a_ui || !a_sink) return 0;
+		using Fn = void (*)(RE::UI*, RE::BSTEventSink<RE::MenuOpenCloseEvent>*);
+		Fn fn = &HzMenuSinkRegisterCall;
+		__try {
+			fn(a_ui, a_sink);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+#else
+	static int HzMenuSinkRegisterSEH(RE::UI* a_ui, RE::BSTEventSink<RE::MenuOpenCloseEvent>* a_sink) noexcept
+	{
+		if (!a_ui || !a_sink) return 0;
+		try { HzMenuSinkRegisterCall(a_ui, a_sink); return 1; } catch (...) { return 0; }
+	}
+#endif
+
+	// Purpose: perf round 2 Fix 2. Register the MenuOpenCloseEvent sink on RE::UI (its own event source; the
+	// RegisterSink address id is the one the ShowHUDMessageEvent sink already uses). On any failure the menu
+	// check keeps its full scan per call, as before. Inputs: none. Outputs: one log line. Author: Moragar.
+	// Last modified: 2026-11-14.
+	void RegisterMenuOpenCloseSink()
+	{
+		if (g_menuSink.load(std::memory_order_acquire) != 0) return;
+		try {
+			auto ui = RE::UI::GetSingleton();
+			if (!ui) {
+				g_menuSink.store(-1, std::memory_order_release);
+				REX::WARN("MenuOpenCloseEvent sink not registered: UI is null (menu check scans every call)");
+				return;
+			}
+			static MenuOpenCloseSink sink;
+			if (!HzMenuSinkRegisterSEH(ui, &sink)) {
+				g_menuSink.store(-1, std::memory_order_release);
+				REX::WARN("MenuOpenCloseEvent sink not registered: RegisterSink faulted (menu check scans every call)");
+				return;
+			}
+			g_menuScanAt.store(0, std::memory_order_release);   // the first check seeds the set with a full scan
+			g_menuSink.store(1, std::memory_order_release);
+			REX::INFO("MenuOpenCloseEvent sink registered (menu check)");
+		} catch (const std::exception& ex) {
+			g_menuSink.store(-1, std::memory_order_release);
+			REX::WARN("MenuOpenCloseEvent sink failed: {}", ex.what());
+		} catch (...) {
+			g_menuSink.store(-1, std::memory_order_release);
+			REX::WARN("MenuOpenCloseEvent sink failed: unknown error");
 		}
 	}
 
@@ -5365,6 +5547,7 @@ namespace HZ
 			// SEH does not catch that lookup. A null source or a caught fault is logged, and the game continues.
 			RegisterShowHUDMessageSink();
 			RegisterSaveLoadSink();
+			RegisterMenuOpenCloseSink();   // perf round 2: event-kept open-menu set for the HUD menu check
 			LoadIni();
 			if (auto task = SFSE::GetTaskInterface()) {
 				task->AddPermanentTask([]() { try { Poll(); } catch (...) {} });
