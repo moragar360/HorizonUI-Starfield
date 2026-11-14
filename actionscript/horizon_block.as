@@ -243,8 +243,8 @@
       public var hzCmpPlayerMark:Boolean = true;
       private var hzDbgCmp:String = "";
       // layout edit (ARRANGE CARDS)
-      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages","Watch"];
-      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES","WATCH"];
+      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages","Watch","Hazard"];
+      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES","WATCH","HAZARD STATUS"];
       public var hzLay:Object = {};
       private var hzLayOrig:Object = null;
       private var hzArrange:Boolean = false;
@@ -549,7 +549,7 @@
       private function hzApplyScale() : void
       {
          // v0.34: each card has its own factor ([Cards] <Card>Scale, -1 = HudScale)
-         var m:Array = [[this.HorizonCard_mc,"Jetpack"],[this.HorizonVitals_mc,"Vitals"],[this.HorizonEnv_mc,"Planet"],[this.HorizonAffl_mc,"Afflictions"],[this.HorizonAmmo_mc,"Equipment"],[this.HorizonQuest_mc,"Quests"],[this.HorizonCompass_mc,"Compass"],[this.HorizonCompact_mc,"Compact"],[this.HorizonCompactQuest_mc,"Quests"],[this.HorizonChar_mc,"Character"],[this.HorizonEnemy_mc,"Enemy"],[this.HorizonStealth_mc,"Stealth"],[this.HorizonXp_mc,"XpToast"],[this.hz43Watch,"Watch"]];
+         var m:Array = [[this.HorizonCard_mc,"Jetpack"],[this.HorizonVitals_mc,"Vitals"],[this.HorizonEnv_mc,"Planet"],[this.HorizonAffl_mc,"Afflictions"],[this.HorizonAmmo_mc,"Equipment"],[this.HorizonQuest_mc,"Quests"],[this.HorizonCompass_mc,"Compass"],[this.HorizonCompact_mc,"Compact"],[this.HorizonCompactQuest_mc,"Quests"],[this.HorizonChar_mc,"Character"],[this.HorizonEnemy_mc,"Enemy"],[this.HorizonStealth_mc,"Stealth"],[this.HorizonXp_mc,"XpToast"],[this.hz43Watch,"Watch"],[this.HorizonHazard_mc,"Hazard"]];
          for each(var e:Array in m)
          {
             var c:Sprite = e[0] as Sprite;
@@ -1229,7 +1229,7 @@
          this.hzPlanAlert = new Sprite();
          this.hzPlanOld.addChild(this.hzPlanAlert);
          this.hzBuildPlanPill();
-         try { this.hzHsBuild(); } catch(eHsB:Error) { }   // Hazard Status chip (a child of the planet card)
+         try { this.hzHsBuild(); } catch(eHsB:Error) { }   // Hazard Status card (its own card since 0.43.3.0)
          this.HorizonEnv_mc.scaleX = this.HorizonEnv_mc.scaleY = HZ_SCALE;
          this.HorizonEnv_mc.x = 80;
          this.HorizonEnv_mc.y = 746 - 128 * HZ_SCALE;
@@ -1731,39 +1731,54 @@
          else if(soak >= 1) { this.hzPpStatus = "DANGER"; this.hzPpStatusCol = 2; }
          else { this.hzPpStatus = word; this.hzPpStatusCol = 1; }
          this.hzPpSync();
-         try { this.hzHsFx(a,n,word); } catch(eHs:Error) { }   // Hazard Status chip (diff-and-skip)
+         try { this.hzHsFx(a,n,word); } catch(eHs:Error) { }   // Hazard Status card (diff-and-skip)
          this.hzAfSetEnv(a,soak);
       }
 
-      // ===================== Hazard Status chip (0.43.2.0 test) =====================
-      // Purpose: a small chip under the PLANET card (a child of HorizonEnv_mc, so it follows ARRANGE, size and dimming)
-      // with the two colors of the vanilla watch: red while a hazard hurts you, green while suit protection restores.
+      // ===================== Hazard Status card (0.43.3.0; was the hs1 chip under the planet card) =====================
+      // Purpose: the hazard status as its own Horizon card (HorizonHazard_mc, ARRANGE key "Hazard"), with the two colors
+      // of the vanilla watch: red while a hazard hurts you, green while suit protection restores. Own show toggle
+      // ([Effects] HazardStatus), own size and compact form ([Cards] HazardScale / HazardCompact), own spot
+      // ([Layout] HazardX / HazardY; -1 = under the planet card, where the chip sat). It follows the chosen style: the
+      // panel is hzPanel (CardColor, CardOpacity, CardShadow), the texts are hzT texts (FontFace, TextTone, TextScale,
+      // TextShadow), the label uses the accent tone and hzUC (HeaderStyle); the state color is the strip, the dot and the
+      // edge. Standard: a label line + the status line (46 units). Compact: one line (28 units, like the old chip).
       // State (event-driven only, nothing per frame):
       //   EnvironmentEffectsData (hzOnEnvEffects -> hzHsFx): any listed effect that is not HazardEffect_RestoreSoak = a
-      //     hazard (red); only HazardEffect_RestoreSoak listed = restoring (green); nothing listed = hidden. Green ends
-      //     when the game drops RestoreSoak from the list (no timer).
+      //     hazard (red); only HazardEffect_RestoreSoak listed = restoring (green); nothing listed = no hazard.
       //   EnvironmentAlertsData (hzHsOnAlerts, the only listener of that data): the latest alert's bIsPositive sets the
-      //     color when it is newer than the last effects change, and its sAlertText is the chip text when it matches the
+      //     color when it is newer than the last effects change, and its sAlertText is the card text when it matches the
       //     color (else a Horizon word: "<WORD> HAZARD" / "SUIT PROTECTION RESTORING"; always the word for ja / zhhans).
+      //   0.43.3.0 bug (b) (user: "red, then just disappears"): hs1 showed green only while the effects list still held
+      //     an effect (hzHsSync: hzHsCat != 0). When the hazard ends the game drops the hazard effect, and the positive
+      //     alert ("Suit Protection Reg.", bIsPositive) arrives with no effect listed (or before that update, which then
+      //     wins as the newer event), so green could never show. Now a positive alert arms a green hold (hzHsGrn) that
+      //     shows green with no effect listed. It ends on vanilla edges only, no timer: the BottomLeftGroup's own
+      //     AnimationFinished at the end of FadeOutEnvAlert_Positive (BottomLeftGroup.as frame128: the vanilla green
+      //     message is gone), a newer negative alert, or a new hazard effect. The end of FadeInEnvAlert_Positive (frame111)
+      //     re-arms it, so a positive alert the game queued behind another alert is green while it is on the watch.
+      //     The listener runs at priority 1, before the game's own handler moves the queue on (and the label with it).
       // Sound: none here. The vanilla watch keeps its own alert sound (BottomLeftGroup PlayAlertSound, still running
-      // under the alpha group hide); the chip only draws.
-      // Vanilla text: watch style 0 (OFF) only. In styles 1 / 2 (the vanilla watch is shown) the vanilla text is never hidden
-      // here, and in styles 3 / 4 it is left to those styles' own bottom-left rules (no new hide). A style change gives
-      // back what this hid on the next layout pass (hzHsLayout). In style 0, only while the chip is on screen (drawn, and its planet card wanted on screen: HazardStatus on,
-      // ShowPlanet, the card's show rule, hide-all, the scanner hide, the game's HUD group), the vanilla EnvAlertText
-      // holder is hidden (visible only). The moment the chip is not shown for any reason it is given back (only what this
-      // hid). Edge-only: the chip state change (hzHsSync), the card's show target (hzShow -> hzHsCard), alerts and layout.
-      // With HazardStatus=0 nothing here touches any vanilla clip.
-      // Diff-and-skip: hzHsSync compares ints and string refs and returns before any display write or allocation.
-      // Setting: [Effects] HazardStatus (default 1), F11 EFFECTS > WARNINGS > HAZARD STATUS.
-      // Author: Moragar. Last modified: 2026-11-13.
+      // under the alpha group hide); the card only draws, so the sound plays once.
+      // Vanilla text: watch style 0 (OFF) only, only while the card is shown, the vanilla EnvAlertText holder is hidden
+      // (visible only) and given back the moment it is not (only what this hid). Styles 1 - 4: never touched here.
+      // Edge-only: the state change (hzHsSync), the card's show target (hzRefreshVisibility -> hzHsCard), alerts, the
+      // BottomLeftGroup animation ends (a few per alert), style apply (hzV19Redraw -> hzHsRestyle) and layout.
+      // Diff-and-skip: hzHsSync compares ints, Booleans and string refs and returns before any display write.
+      // Author: Moragar. Last modified: 2026-11-14.
       public var hzHsOn:Boolean = true;               // [Effects] HazardStatus
-      private static const HZ_HS_H:Number = 28;       // chip height (card units)
-      private static const HZ_HS_GAP:Number = 6;      // gap to the card
+      public var HorizonHazard_mc:Sprite = null;      // the card (ARRANGE key "Hazard")
+      private static const HZ_HS_H:Number = 28;       // compact height (card units)
+      private static const HZ_HS_HS:Number = 46;      // standard height
+      private static const HZ_HS_GAP:Number = 6;      // gap to the planet card
       private static const HZ_HS_RED:uint = 0xC33B29; // the vanilla watch hazard red
       private static const HZ_HS_GRN:uint = 0x379B2C; // the vanilla watch restore green
-      private var hzHsChip:Sprite = null;
-      private var hzHsTf:TextField = null;
+      private static const HZ_HS_FIN:String = "AnimationFinished";            // BottomLeftGroup.ANIMATION_FINISHED
+      private static const HZ_HS_LIN:String = "FadeInEnvAlert_Positive";      // the vanilla green message: in
+      private static const HZ_HS_LOUT:String = "FadeOutEnvAlert_Positive";    // and out (its end = green over)
+      private var hzHsG:Sprite = null;                // panel, strip, dot
+      private var hzHsTf:TextField = null;            // status line
+      private var hzHsLb:TextField = null;            // label line (standard form)
       private var hzHsSubbed:Boolean = false;         // EnvironmentAlertsData listener added (once)
       private var hzHsSeq:int = 0;                    // event order counter
       private var hzHsCat:int = 0;                    // effects: 0 none, 1 restoring only, 2 hazard
@@ -1772,13 +1787,17 @@
       private var hzHsAlSeq:int = 0;                  // latest alert (0 = none yet)
       private var hzHsAlPos:Boolean = false;
       private var hzHsAlTxt:String = "";
+      private var hzHsGrn:Boolean = false;            // bug (b): green hold from a positive alert (vanilla edges end it)
+      private var hzHsBlgL:DisplayObject = null;      // the BottomLeftGroup that has hzHsOnFin
       private var hzHsSt:int = -1;                    // drawn: 0 hidden, 1 red, 2 green (-1 = never drawn)
-      private var hzHsSrc:int = -1;                   // drawn text source: 1 alert text, 2 hazard word, 3 restore word
+      private var hzHsSrc:int = -1;                   // drawn text source: 1 alert text, 2 hazard word, 3 restore word, 4 ARRANGE preview
       private var hzHsSrcTxt:String = null;           // drawn: the alert text ref (src 1) or the word (src 2)
-      private var hzHsW:Number = -1;                  // drawn card width
-      private var hzHsUp:Boolean = false;             // layout: the chip sits above the card (bottom edge)
+      private var hzHsW:Number = -1;                  // drawn max width
+      private var hzHsCm:int = -1;                    // drawn form: 0 standard, 1 compact
+      private var hzHsH:Number = HZ_HS_HS;            // drawn height
+      private var hzHsShown:Boolean = false;          // the show target last given to hzShow
       private var hzHsVanD:DisplayObject = null;      // the EnvAlertText instance this hid
-      private var hzHsCardOn:Boolean = false;         // the planet card's show target (hzShow), false until the first refresh
+      private var hzHsCardOn:Boolean = false;         // the card's show base (hzRefreshVisibility), false until the first refresh
 
       private function hzHsSub() : void
       {
@@ -1789,17 +1808,26 @@
 
       private function hzHsBuild() : void
       {
-         if(this.hzHsChip || !this.HorizonEnv_mc) { return; }
-         this.hzHsChip = new Sprite();
-         this.hzHsChip.name = "hzHsChip";
-         this.hzHsChip.mouseEnabled = false;
-         this.hzHsChip.mouseChildren = false;
-         this.hzHsChip.visible = false;
-         this.HorizonEnv_mc.addChild(this.hzHsChip);
-         this.hzHsTf = this.hzT(this.hzHsChip,"",12,5,200,15,"sb","",1,"left",0xFFFFFF);
-         var o:Object = this.hzTxtObj(this.hzHsTf);
-         if(o) { o.tint = 0xFFFFFF; o.abs = true; this.hzApplyFmt(o); }
-         this.hzHsPos();
+         if(this.HorizonHazard_mc) { return; }
+         var c:Sprite = new Sprite();
+         c.name = "HorizonHazard_mc";
+         c.mouseEnabled = false;
+         c.mouseChildren = false;
+         c.visible = false;
+         this.HorizonHazard_mc = c;
+         this.hzHsG = new Sprite();
+         c.addChild(this.hzHsG);
+         this.hzHsLb = this.hzT(c,"",22,7,200,10,"sb","acc",1.6);
+         this.hzHsTf = this.hzT(c,"",22,22,200,13,"sb","main",1);
+         addChild(c);
+         c.scaleX = c.scaleY = this.hz34S("Hazard");
+         this.hzSetSz(c,200,HZ_HS_HS);
+      }
+
+      // the form in use: 1 compact, 0 standard
+      private function hzHsCmp() : int
+      {
+         return this.hz34C("Hazard") ? 1 : 0;
       }
 
       // EnvironmentEffectsData (from hzOnEnvEffects, after its own body): the effects category
@@ -1811,7 +1839,12 @@
             for each(var ef:Object in a) { if(ef && ef.sEffectIcon == "HazardEffect_RestoreSoak") { rs = true; break; } }
          }
          var cat:int = n > 0 ? 2 : (rs ? 1 : 0);
-         if(cat != this.hzHsCat) { this.hzHsCat = cat; this.hzHsCatSeq = ++this.hzHsSeq; }
+         if(cat != this.hzHsCat)
+         {
+            this.hzHsCat = cat;
+            this.hzHsCatSeq = ++this.hzHsSeq;
+            if(cat == 2) { this.hzHsGrn = false; }   // a new hazard ends a green hold
+         }
          this.hzHsWord = word;
          this.hzHsSync();
       }
@@ -1828,44 +1861,96 @@
          this.hzHsAlPos = al.bIsPositive === true;
          this.hzHsAlTxt = al.sAlertText != null ? String(al.sAlertText) : "";
          this.hzHsAlSeq = ++this.hzHsSeq;
+         this.hzHsGrn = this.hzHsAlPos;   // bug (b): a positive alert arms green, a negative one ends it
+         if(this.hzHsGrn) { this.hzHsBlgSub(); }
          this.hzHsVan();
+         this.hzHsSync();
+      }
+
+      // bug (b): listen once to the BottomLeftGroup's own AnimationFinished (its frame scripts dispatch it at the end of
+      // each span). One getChildByName on the HUD root, only on a positive alert, and only when the group changed.
+      private function hzHsBlgSub() : void
+      {
+         var b:DisplayObject = null;
+         try { b = this.getChildByName("BottomLeftGroup_mc"); } catch(eB:Error) { b = null; }
+         if(b == null || b === this.hzHsBlgL) { return; }
+         if(this.hzHsBlgL != null) { try { this.hzHsBlgL.removeEventListener(HZ_HS_FIN,this.hzHsOnFin); } catch(eR:Error) { } }
+         this.hzHsBlgL = b;
+         try { b.addEventListener(HZ_HS_FIN,this.hzHsOnFin,false,1,true); } catch(eA:Error) { this.hzHsBlgL = null; }
+      }
+
+      // bug (b): the vanilla green message ended (FadeOutEnvAlert_Positive done) -> green over; a queued positive
+      // message finished fading in -> green again. Read before the game's handler (priority 1) moves on the queue.
+      private function hzHsOnFin(e:Event) : void
+      {
+         if(e == null || e.target !== this.hzHsBlgL) { return; }
+         var bm:MovieClip = this.hzHsBlgL as MovieClip;
+         if(bm == null) { return; }
+         var lb:String = bm.currentLabel;
+         var g:Boolean = this.hzHsGrn;
+         if(lb == HZ_HS_LOUT) { g = false; }
+         else if(lb == HZ_HS_LIN && this.hzHsCat != 2) { g = true; }
+         else { return; }
+         if(g == this.hzHsGrn) { return; }
+         this.hzHsGrn = g;
          this.hzHsSync();
       }
 
       private function hzHsWant() : Boolean
       {
-         return this.hzHsOn && this.hzHsCardOn && this.hzShowPlanet && this.hzPlanPill != null && this.hzPlanPill.visible && this.hzHsChip != null;
+         return this.hzHsOn && this.hzHsCardOn && this.HorizonHazard_mc != null;
       }
 
       // diff-and-skip: decide the state and the text source, return before any display write when unchanged
       private function hzHsSync() : void
       {
          var st:int = 0;
-         if(this.hzHsWant() && this.hzHsCat != 0)
-         {
-            var alNew:Boolean = this.hzHsAlSeq > this.hzHsCatSeq;
-            st = alNew ? (this.hzHsAlPos ? 2 : 1) : (this.hzHsCat == 2 ? 1 : 2);
-         }
          var src:int = 0;
          var stx:String = null;
-         if(st != 0)
+         if(this.hzArrange)
+         {
+            if(this.hzHsOn && this.HorizonHazard_mc != null) { st = 1; src = 4; }   // ARRANGE preview
+         }
+         else if(this.hzHsWant())
+         {
+            if(this.hzHsCat != 0)
+            {
+               var alNew:Boolean = this.hzHsAlSeq > this.hzHsCatSeq;
+               st = alNew ? (this.hzHsAlPos ? 2 : 1) : (this.hzHsCat == 2 ? 1 : 2);
+            }
+            else if(this.hzHsGrn) { st = 2; }   // bug (b): restoring after the hazard effect left the list
+         }
+         if(st != 0 && src == 0)
          {
             var cjk:Boolean = this.hz43EnvLang == "ja" || this.hz43EnvLang == "zhhans";
             if(!cjk && this.hzHsAlSeq > 0 && this.hzHsAlPos == (st == 2) && this.hzHsAlTxt.length > 0) { src = 1; stx = this.hzHsAlTxt; }
             else if(st == 1) { src = 2; stx = this.hzHsWord; }
             else { src = 3; }
          }
-         var w:Number = this.hzPpW;
-         if(st == this.hzHsSt && src == this.hzHsSrc && stx == this.hzHsSrcTxt && (st == 0 || w == this.hzHsW)) { return; }
+         var w:Number = this.hzHsMaxW();
+         var cm:int = this.hzHsCmp();
+         if(st == this.hzHsSt && src == this.hzHsSrc && stx == this.hzHsSrcTxt && (st == 0 || (w == this.hzHsW && cm == this.hzHsCm))) { return; }
          this.hzHsSt = st;
          this.hzHsSrc = src;
          this.hzHsSrcTxt = stx;
          this.hzHsW = w;
          this.hzHsDraw();
-         this.hzHsVan();   // the vanilla text follows the chip on this edge
+         var on:Boolean = st != 0;
+         if(on != this.hzHsShown || this.hzArrange)
+         {
+            this.hzHsShown = on;
+            if(this.HorizonHazard_mc) { this.hzShow(this.HorizonHazard_mc,on); }
+         }
+         this.hzHsVan();   // the vanilla text follows the card on this edge
       }
 
-      // the planet card's show target changed (hzShow, from hzRefreshVisibility / ARRANGE): an edge, never per frame
+      // widest the card may get: the planet card's width when it is a pill (the old chip rule), else 300 units
+      private function hzHsMaxW() : Number
+      {
+         return this.hzPpW > 60 ? this.hzPpW : 300;
+      }
+
+      // the card's show base changed (hzRefreshVisibility): an edge, never per frame
       private function hzHsCard(on:Boolean) : void
       {
          if(on == this.hzHsCardOn) { return; }
@@ -1874,71 +1959,111 @@
          this.hzHsVan();
       }
 
+      // style apply (hzV19Redraw: font, tone, colors, opacity, shadow, header case, text size): redraw once
+      private function hzHsRestyle() : void
+      {
+         this.hzHsSt = -1;
+         this.hzHsSync();
+      }
+
       private function hzHsDraw() : void
       {
-         if(!this.hzHsChip) { return; }
-         var g:* = this.hzHsChip.graphics;
+         if(!this.HorizonHazard_mc || !this.hzHsG) { return; }
+         var g:* = this.hzHsG.graphics;
          g.clear();
-         if(this.hzHsSt == 0) { this.hzHsChip.visible = false; return; }
+         if(this.hzHsSt == 0) { return; }   // the fade (hzShow) takes the card away; nothing to draw
          var txt:String;
          if(this.hzHsSrc == 1) { txt = this.hzHsAlTxt; }
          else if(this.hzHsSrc == 2) { txt = this.hzHsWord == "HAZARD" ? "HAZARD" : this.hzHsWord + " HAZARD"; }
+         else if(this.hzHsSrc == 4) { txt = "RADIATION HAZARD"; }
          else { txt = "SUIT PROTECTION RESTORING"; }
          txt = this.hzUC(txt);
-         var maxW:Number = this.hzHsW > 60 ? this.hzHsW : 240;
+         var cm:int = this.hzHsCmp();
+         var h:Number = cm == 1 ? HZ_HS_H : HZ_HS_HS;
+         var maxW:Number = this.hzHsW > 60 ? this.hzHsW : 300;
+         var tx:Number = 22;
+         var room:Number = maxW - tx - 14;
+         var col:uint = this.hzIconCol(this.hzHsSt == 1 ? HZ_HS_RED : HZ_HS_GRN);
+         var lw:Number = 0;
+         if(this.hzHsLb)
+         {
+            this.hzHsLb.visible = cm == 0;
+            if(cm == 0)
+            {
+               this.hzHsLb.width = room;
+               this.hzFitText(this.hzHsLb,this.hzUC(this.hzHsSt == 1 ? "HAZARD STATUS" : "SUIT PROTECTION"),room);
+               this.hzTxtTop(this.hzHsLb,7);
+               lw = this.hzTW(this.hzHsLb);
+            }
+         }
+         var tw:Number = 120;
          if(this.hzHsTf)
          {
-            this.hzHsTf.width = maxW - 24;
-            this.hzFitText(this.hzHsTf,txt,maxW - 24);
+            this.hzHsTf.width = room;
+            this.hzFitText(this.hzHsTf,txt,room);
+            this.hzTxtTop(this.hzHsTf,cm == 1 ? 6 : 22);
+            tw = this.hzTW(this.hzHsTf);
          }
-         var w:Number = Math.min(maxW,Math.round((this.hzHsTf ? this.hzTW(this.hzHsTf) : 120) + 28));
-         g.beginFill(this.hzHsSt == 1 ? HZ_HS_RED : HZ_HS_GRN,0.92);
-         g.drawRoundRect(0,0,w,HZ_HS_H,HZ_HS_H,HZ_HS_H);
-         g.endFill();
-         this.hzHsChip.visible = true;
+         var w:Number = Math.min(maxW,Math.max(cm == 1 ? 120 : 160,Math.round(Math.max(tw,lw) + tx + 16)));
+         this.hzPanel(g,w,h,cm == 1 ? h / 2 : 12,-1,int(col));
+         g.beginFill(col,1); g.drawRoundRect(cm == 1 ? 6 : 0,cm == 1 ? 7 : 10,4,h - (cm == 1 ? 14 : 20),4,4); g.endFill();
+         g.beginFill(col,1); g.drawCircle(cm == 1 ? 15 : 13,h / 2,3); g.endFill();
+         if(cm != this.hzHsCm || h != this.hzHsH)
+         {
+            var moved:Boolean = this.hzHsCm >= 0 && h != this.hzHsH;
+            this.hzHsCm = cm;
+            this.hzHsH = h;
+            if(moved) { this.hzLaidOut = false; }   // the default spot (and the Character card under it) follows the height
+         }
+         this.hzSetSz(this.HorizonHazard_mc,w,h);
       }
 
-      // chip y: under the card, or above it when the layout found the bottom edge (hzHsLayout)
-      private function hzHsPos() : void
-      {
-         if(!this.hzHsChip) { return; }
-         var y:Number = this.hzHsUp ? -(HZ_HS_GAP + HZ_HS_H) : this.hzPpH + HZ_HS_GAP;
-         if(this.hzHsChip.y != y) { this.hzHsChip.y = y; }
-         if(this.hzHsChip.x != 0) { this.hzHsChip.x = 0; }
-         if(this.hzPpW != this.hzHsW && this.hzHsSt > 0) { this.hzHsSync(); }
-      }
-
-      // layout time (hz26LayoutAfter, the end of hzLayout after the user layout): flip above the card when the chip
-      // would pass the bottom margin line (the same visible rect and Margin as hzLayout), then on / off and the vanilla text
+      // layout time (hz26LayoutAfter, the end of hzLayout after the user layout): the default spot follows the planet
+      // card (under it, or above it when it would pass the bottom margin line), as the chip did; a placed card keeps
+      // its ARRANGE spot. Then on / off and the vanilla text.
       private function hzHsLayout() : void
       {
-         if(this.hzHsChip && this.HorizonEnv_mc)
+         var c:Sprite = this.HorizonHazard_mc;
+         var env:Sprite = this.HorizonEnv_mc;
+         if(c && env && !this.hzLayHas("Hazard"))
          {
-            var vr:Rectangle = Extensions.visibleRect;
-            if(vr != null && vr.height > 100)
+            var sH:Number = this.hz34S("Hazard");
+            var hh:Number = (this.hzHsCmp() == 1 ? HZ_HS_H : HZ_HS_HS) * sH;
+            var y0:Number = env.y;
+            for each(var e:Object in this.hzFades) { if(e.c == env) { y0 = Number(e.base); } }
+            var y:Number = y0;
+            if(this.hzShowPlanet)
             {
-               var br:Point = globalToLocal(new Point(vr.right,vr.bottom));
-               var y0:Number = this.HorizonEnv_mc.y;
-               for each(var e:Object in this.hzFades) { if(e.c == this.HorizonEnv_mc) { y0 = Number(e.base); } }
-               this.hzHsUp = !isNaN(br.y) && y0 + (this.hzPpH + HZ_HS_GAP + HZ_HS_H) * this.HorizonEnv_mc.scaleY > br.y - this.hzMargin + 0.5;
+               var eh:Number = (this.hzPillOn() ? this.hzPpH : 128) * env.scaleY;
+               y = y0 + eh + HZ_HS_GAP * sH;
+               var vr:Rectangle = Extensions.visibleRect;
+               if(vr != null && vr.height > 100)
+               {
+                  var br:Point = globalToLocal(new Point(vr.right,vr.bottom));
+                  if(!isNaN(br.y) && y + hh > br.y - this.hzMargin + 0.5) { y = y0 - HZ_HS_GAP * sH - hh; }
+               }
             }
-            this.hzHsPos();
+            this.hzPlace(c,env.x,y);
          }
          this.hzHsSync();
          this.hzHsVan();
       }
 
-      // the Character card's default spot (under the planet card) makes room for the chip while it is on
+      // the Character card's default spot (under the planet card) makes room for the card while it sits at its default
+      // spot; in planet-card units (the caller multiplies by the planet card's factor)
       private function hzHsReserve() : Number
       {
-         return this.hzHsOn && this.hzShowPlanet && this.hzPlanPill != null && !this.hzLayHas("Planet") ? HZ_HS_GAP + HZ_HS_H : 0;
+         if(!this.hzHsOn || !this.hzShowPlanet || this.HorizonHazard_mc == null || this.hzLayHas("Planet") || this.hzLayHas("Hazard")) { return 0; }
+         var sP:Number = this.hz34S("Planet");
+         var hh:Number = this.hzHsCmp() == 1 ? HZ_HS_H : HZ_HS_HS;
+         return (HZ_HS_GAP + hh) * this.hz34S("Hazard") / (sP > 0 ? sP : 1);
       }
 
-      // the vanilla EnvAlertText: hidden only while the chip is on screen; given back (only what this hid) as soon as it
-      // is not. Edges only (chip state, card target, alerts, layout, hide-all); one getChildByName on the known group, no search.
+      // the vanilla EnvAlertText: hidden only while the card is shown; given back (only what this hid) as soon as it
+      // is not. Edges only (state, card base, alerts, layout, hide-all); one getChildByName on the known group, no search.
       private function hzHsVan() : void
       {
-         var want:Boolean = this.hzWatchStyle == 0 && this.hzHsSt > 0 && this.hzHsChip != null && this.hzHsChip.visible && this.hzHsWant() && !this.hzUserHidden;   // style 0 only
+         var want:Boolean = this.hzWatchStyle == 0 && this.hzHsSt > 0 && this.hzHsShown && !this.hzArrange && this.hzHsWant() && !this.hzUserHidden;   // style 0 only
          if(!want)
          {
             if(this.hzHsVanD == null) { return; }
@@ -1955,7 +2080,7 @@
          var d:DisplayObject = this.hzBlg.getChildByName("EnvAlertText");
          if(d != null && d.visible) { d.visible = false; this.hzHsVanD = d; }
       }
-      // ===================== end Hazard Status chip =====================
+      // ===================== end Hazard Status card =====================
 
       // ===================== env alert Phase 0 probe (private diag, default off) =====================
       // Purpose: settle three facts for the planned hazard status chip: which way EnvironmentEffectsData.fSoakDamagePct
@@ -3045,6 +3170,9 @@
          try { if(this.hzEq19 && this.hz34C("Equipment") != this.hzE19Cm) { this.hzE19Sync(); } } catch(errEc:Error) { }
          var base:Boolean = this.hzGroupVisible && !this.hzUserHidden;
          var cardBase:Boolean = base && !this.hz40Hide;   // v0.40: the cards only; combat feedback keeps base
+         // 0.43.3.0: the Hazard Status card's base (an edge: hzHsCard / hzHsSync return at once when nothing changed); the
+         // show target is given again like every card, so a scanner force-hide (hz40ForceHide) is restored here too
+         try { this.hzHsCard(cardBase); this.hzHsSync(); if(this.HorizonHazard_mc && !this.hzArrange) { this.hzShow(this.HorizonHazard_mc,this.hzHsShown); } } catch(eHsR:Error) { }
          var full:Boolean = !this.hzCompact && cardBase;
          var vitBase:Boolean = base && !this.hz40Hide;   // v0.41.0: the HUD vitals cards hide too; hz41V draws the kept vitals
          // VitalsBars compact reuses the COMPACT MODE strips. If either is on, that one card shows and the full cards stay hidden.
@@ -3082,7 +3210,6 @@
          }
          e.t = on ? 1 : 0;
          if(!this.hzFadeCards) { e.s = e.t; }
-         if(c == this.HorizonEnv_mc) { try { this.hzHsCard(on); } catch(eHsC:Error) { } }   // Hazard Status: the card's show edge
       }
 
       private function hzTickFades() : void
@@ -3805,7 +3932,7 @@
          }
          if(tab == 3)
          {
-            return [{"k":"StartupIntro","l":"WELCOME INTRO","t":"b","h":"WELCOME","n13":true,"note":"Plays HORIZON UI on save load"},{"k":"SmoothBars","l":"SMOOTH BARS","t":"b","h":"CARDS"},{"k":"FadeCards","l":"FADE CARDS","t":"b"},{"k":"CombatDim","l":"DIM OUT OF COMBAT","t":"b"},{"k":"DimOpacity","l":"DIM OPACITY","t":"n","mn":0.2,"mx":1,"st":0.05},{"k":"HazardAlert","l":"HAZARD ALERT","t":"b"},{"k":"AutoCenterVitals","l":"CENTER VITALS WHEN EQUIPMENT HIDDEN","t":"b","note":"Ignored once the vitals card is moved in ARRANGE CARDS"},{"k":"TargetAnchor","l":"TARGET: ANCHOR","t":"r","opts":HZ_TGANCHOR_NAMES,"h":"TARGET"},{"k":"TargetShowValue","l":"TARGET: ITEM VALUE / WEIGHT","t":"b"},{"k":"EdgePulse","l":"LOW HEALTH / O2 SCREEN-EDGE PULSE","t":"b","h":"WARNINGS"},{"k":"HazardStatus","l":"HAZARD STATUS","t":"b","note":"Red / green chip under the planet card while a hazard hurts you or suit protection restores"},{"k":"XpToast","l":"XP GAIN TOAST","t":"b","note":"With the Comms module the game's own +XP popup is hidden while this is on"},{"k":"RegenSliver","l":"HEALING REGEN SLIVER","t":"b"},{"k":"HitMarkers","l":"HIT MARKER + KILL X","t":"b","h":"COMBAT FEEDBACK"},{"k":"DamageNumbers","l":"FLOATING DAMAGE NUMBERS","t":"b"},{"k":"DirectionRing","l":"DAMAGE DIRECTION RING","t":"b"}];
+            return [{"k":"StartupIntro","l":"WELCOME INTRO","t":"b","h":"WELCOME","n13":true,"note":"Plays HORIZON UI on save load"},{"k":"SmoothBars","l":"SMOOTH BARS","t":"b","h":"CARDS"},{"k":"FadeCards","l":"FADE CARDS","t":"b"},{"k":"CombatDim","l":"DIM OUT OF COMBAT","t":"b"},{"k":"DimOpacity","l":"DIM OPACITY","t":"n","mn":0.2,"mx":1,"st":0.05},{"k":"HazardAlert","l":"HAZARD ALERT","t":"b"},{"k":"AutoCenterVitals","l":"CENTER VITALS WHEN EQUIPMENT HIDDEN","t":"b","note":"Ignored once the vitals card is moved in ARRANGE CARDS"},{"k":"TargetAnchor","l":"TARGET: ANCHOR","t":"r","opts":HZ_TGANCHOR_NAMES,"h":"TARGET"},{"k":"TargetShowValue","l":"TARGET: ITEM VALUE / WEIGHT","t":"b"},{"k":"EdgePulse","l":"LOW HEALTH / O2 SCREEN-EDGE PULSE","t":"b","h":"WARNINGS"},{"k":"XpToast","l":"XP GAIN TOAST","t":"b","note":"With the Comms module the game's own +XP popup is hidden while this is on"},{"k":"RegenSliver","l":"HEALING REGEN SLIVER","t":"b"},{"k":"HitMarkers","l":"HIT MARKER + KILL X","t":"b","h":"COMBAT FEEDBACK"},{"k":"DamageNumbers","l":"FLOATING DAMAGE NUMBERS","t":"b"},{"k":"DirectionRing","l":"DAMAGE DIRECTION RING","t":"b"}];
          }
          if(tab == 4)
          {
@@ -5982,7 +6109,7 @@
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -7082,6 +7209,7 @@
             case "Enemy": return [this.HorizonEnemy_mc].filter(this.hzNotNull);
             case "Stealth": return [this.HorizonStealth_mc].filter(this.hzNotNull);
             case "XpToast": return [this.HorizonXp_mc].filter(this.hzNotNull);
+            case "Hazard": return [this.HorizonHazard_mc].filter(this.hzNotNull);
             case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": return this.hz31PxOn(k) ? [this.hz31Px(k)] : [];
             case "Watch":
                if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4)
@@ -7156,6 +7284,7 @@
                case "Enemy": ok = this.hzEnemyBarOn; break;
                case "Stealth": ok = this.hzStealthOn; break;
                case "XpToast": ok = this.hzXpToastOn; break;
+               case "Hazard": ok = this.hzHsOn; break;
                case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": ok = this.hz31PxOn(k); break;   // v0.31 / v0.32: Comms proxies
                case "Watch": ok = this.hzWatchStyle == 1 || this.hzWatchStyle == 2 || this.hzWatchStyle == 3 || this.hzWatchStyle == 4; break;
             }
@@ -7175,10 +7304,11 @@
       {
          var on:Array = [];
          if(!this.hz41SA) { for each(var e:Object in this.hzArrList()) { on.push(e.c); } }   // v0.41.0: ARRANGE SCANNER hides the HUD cards
-         for each(var c:Sprite in [this.HorizonCard_mc,this.HorizonVitals_mc,this.HorizonEnv_mc,this.HorizonAffl_mc,this.HorizonAmmo_mc,this.HorizonQuest_mc,this.HorizonCompactQuest_mc,this.HorizonCompass_mc,this.HorizonCompact_mc,this.HorizonChar_mc,this.HorizonEnemy_mc,this.HorizonStealth_mc,this.HorizonXp_mc])
+         for each(var c:Sprite in [this.HorizonCard_mc,this.HorizonVitals_mc,this.HorizonEnv_mc,this.HorizonAffl_mc,this.HorizonAmmo_mc,this.HorizonQuest_mc,this.HorizonCompactQuest_mc,this.HorizonCompass_mc,this.HorizonCompact_mc,this.HorizonChar_mc,this.HorizonEnemy_mc,this.HorizonStealth_mc,this.HorizonXp_mc,this.HorizonHazard_mc])
          {
             if(c) { this.hzShow(c,on.indexOf(c) >= 0); }
          }
+         try { this.hzHsSync(); } catch(errHsA:Error) { }   // 0.43.3.0: the Hazard Status card shows its preview in ARRANGE
          try { this.hz26CharSync(); this.hz26XpSync(); this.hzE19Sync(); } catch(err26:Error) { }
          try { if(on.indexOf(this.HorizonCompact_mc) >= 0) { this.hz43Reflow(true,true); } } catch(eArr:Error) { }
       }
@@ -8007,6 +8137,7 @@
          try { this.hzE19Sync(); } catch(e5:Error) { }
          try { this.hzDrawCompassMarkers(); } catch(e6:Error) { }
          try { this.hz26Redraw(); } catch(e7:Error) { }
+         try { this.hzHsRestyle(); } catch(e8:Error) { }   // 0.43.3.0: the Hazard Status card follows the style
          this.hzT19Sig = "";
       }
 
@@ -8734,7 +8865,7 @@
          if(this.hzPpH != ph) { this.hzPpH = ph; this.hzLaidOut = false; }
          this.hzSetSz(this.HorizonEnv_mc,W,ph);
          this.hzPpDraw();
-         try { this.hzHsPos(); } catch(eHsP:Error) { }   // Hazard Status chip under / above the card
+         try { this.hzHsSync(); } catch(eHsP:Error) { }   // Hazard Status card: its max width follows the planet card (diff-and-skip)
       }
 
       // ---- VITALS (330x58 each, gap 8): bare icon | LABEL ...... value  + 8px bar with recent-damage ghost ----
@@ -14823,7 +14954,7 @@
          var sEn:Number = this.hz34S("Enemy");
          var sCm:Number = this.hz34S("Compass");
          var sSt:Number = this.hz34S("Stealth");
-         if(this.HorizonChar_mc) { this.hzPlace(this.HorizonChar_mc,left,top + (eh + 10 + this.hzHsReserve()) * s); }   // Hazard Status: room for the chip
+         if(this.HorizonChar_mc) { this.hzPlace(this.HorizonChar_mc,left,top + (eh + 10 + this.hzHsReserve()) * s); }   // Hazard Status: room for the card at its default spot
          if(this.HorizonEnemy_mc) { this.hzPlace(this.HorizonEnemy_mc,cx - HZ_EN_W * sEn / 2,cmpY + (this.hz34C("Compass") ? 60 : 104) * sCm); }
          if(this.HorizonStealth_mc)
          {
@@ -14835,7 +14966,7 @@
       // after the user layout: the XP toast sits beside the character card's XP row unless it was placed itself
       private function hz26LayoutAfter(s:Number) : void
       {
-         try { this.hzHsLayout(); } catch(errHs:Error) { }   // Hazard Status: flip at the bottom edge, on / off, the vanilla EnvAlertText
+         try { this.hzHsLayout(); } catch(errHs:Error) { }   // Hazard Status card: default spot under the planet card (flip at the bottom edge), on / off, the vanilla EnvAlertText
          if(!this.HorizonXp_mc || !this.HorizonChar_mc || this.hzLayHas("XpToast")) { return; }
          var cy:Number = this.HorizonChar_mc.y;
          for each(var e:Object in this.hzFades) { if(e.c == this.HorizonChar_mc) { cy = Number(e.base); } }
@@ -14923,7 +15054,7 @@
          a.push("[Effects]");
          a.push("; Screen-edge tint pulsing ~1 Hz: red below 15% health, amber below 15% oxygen (center untouched)");
          a.push("EdgePulse=" + this.hzB(p.EdgePulse));
-         a.push("; Hazard status chip under the planet card: red while a hazard hurts you, green while suit protection restores");
+         a.push("; Hazard status card (default spot under the planet card): red while a hazard hurts you, green while suit protection restores");
          a.push("HazardStatus=" + this.hzB(p.HazardStatus));
          a.push("; +N XP toast beside the character card for ~2 s (gains close together are summed)");
          a.push("XpToast=" + this.hzB(p.XpToast));
@@ -17356,7 +17487,7 @@
       // have a compact form. Jetpack, vitals and afflictions turn into the shared compact strips card, so they follow the
       // global Compact only. Hover / container cards keep [Style] HoverScale / ContainerScale (same meaning as before;
       // -1 now = GLOBAL). Edge-anchored ARRANGE positions use the real on-screen card size, so they stay put at any size.
-      private static const HZ34_CARDS:Array = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false],["Watch",false]];
+      private static const HZ34_CARDS:Array = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false],["Watch",false],["Hazard",true]];
       private static const HZ34_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face: run-time name only, never shown
       private var hz34Sc:Object = {};
       private var hz34Cm:Object = {};
@@ -17507,6 +17638,7 @@
             {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","sub":true},
             {"k":"ShowPlanet","l":"PLANET CARD","t":"b"},this.hz34Sz("Planet"),this.hz34Cmp("Planet"),
             {"k":"PlanetDetails","l":"PLANET: GRAVITY / AIR LINE","t":"b"},
+            {"k":"HazardStatus","l":"HAZARD STATUS CARD","t":"b","note":"Red while a hazard hurts you, green while suit protection restores. Default spot: under the planet card"},this.hz34Sz("Hazard"),this.hz34Cmp("Hazard"),
             {"k":"ShowAfflictions","l":"AFFLICTIONS CARD","t":"b"},this.hz34Sz("Afflictions"),
             {"k":"ShowAmmo","l":"EQUIPMENT CARD","t":"b"},this.hz34Sz("Equipment"),this.hz34Cmp("Equipment"),
             {"k":"EquipmentExtras","l":"EQUIPMENT: GRENADES + STARBORN POWER","t":"b"},
@@ -18896,7 +19028,7 @@
       private static const HZ40_OPA_N:Array = ["FOLLOW HUD","0.20","0.30","0.40","0.50","0.60","0.70","0.80","0.90","1.00","1.10","1.20","1.30","1.40","1.50","1.60"];
       private static const HZ40_MAR_V:Array = [-1,20,30,40,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200];
       private static const HZ40_MAR_N:Array = ["FOLLOW HUD","20","30","40","50","60","70","80","90","100","110","120","130","140","150","160","170","180","190","200"];
-      private static const HZ40_CARDS:Array = ["HorizonCard_mc","HorizonVitals_mc","HorizonEnv_mc","HorizonAffl_mc","HorizonQuest_mc","HorizonCompactQuest_mc","HorizonAmmo_mc","HorizonCompact_mc","HorizonCompass_mc","HorizonChar_mc","HorizonXp_mc"];
+      private static const HZ40_CARDS:Array = ["HorizonCard_mc","HorizonVitals_mc","HorizonEnv_mc","HorizonAffl_mc","HorizonQuest_mc","HorizonCompactQuest_mc","HorizonAmmo_mc","HorizonCompact_mc","HorizonCompass_mc","HorizonChar_mc","HorizonXp_mc","HorizonHazard_mc"];
       private var hz40C:Object = null;          // current [Scanner] values
       private var hz40Scan:Boolean = false;     // the hand scanner is open (HudCompassData.bIsHandscannerOpen / FireForget)
       private var hz40Hide:Boolean = false;     // the Horizon cards are hidden for the scanner right now

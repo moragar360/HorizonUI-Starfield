@@ -1,3 +1,5 @@
+// RETIRED in 0.43.3.0 (not run by the suite): the hs1 chip became the Hazard Status card; see tests/hazard_card_test.js.
+// Kept for history. It checks the hs1 chip source only (run it on a 0.43.2.0 tree).
 // Hazard Status chip tests. Run: node tests/hazard_status_test.js
 // Runs the production AS functions (types stripped) on a small host and checks the source:
 //  red / green / hidden states, diff-and-skip (no display write on an unchanged update), on / off, the vanilla

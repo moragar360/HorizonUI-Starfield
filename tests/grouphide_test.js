@@ -737,6 +737,12 @@ if (base) {
 				const rl = (src) => src.split("\n").filter((l) => RIGHT.test(l)).join("\n");
 				z = rl(z) === rl(x) ? x : z;
 			}
+			// 0.43.3.0 hazard card: the card joins the card tables (scale list, ARRANGE lists, F11 CARDS rows, the visibility
+			// refresh). Once its own additions are taken out, every right-side line must still be byte-identical.
+			if (["hzApplyScale", "hzRefreshVisibility", "hzLayClips", "hzArrList", "hz34CardRows"].indexOf(n) >= 0 && z !== x) {
+				const hz = (src) => src.replace(',[this.HorizonHazard_mc,"Hazard"]', "").split("\n").filter((l) => RIGHT.test(l)).join("\n");
+				z = hz(z) === hz(x) ? x : z;
+			}
 			if (RIGHT.test(x)) { rightFns.push(n); if (x !== y || x !== z) rightSame = false; }
 		}
 		const added = allNow.filter((n) => all56.indexOf(n) < 0);
