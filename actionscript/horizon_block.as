@@ -1959,7 +1959,7 @@
          else if(soak >= 1) { this.hzPpStatus = "DANGER"; this.hzPpStatusCol = 2; }
          else { this.hzPpStatus = word; this.hzPpStatusCol = 1; }
          this.hzPpSync();
-         try { this.hzHsFx(a,n,word); } catch(eHs:Error) { }   // Hazard Status card (diff-and-skip)
+         try { this.hzHsFx(a,n,word,soak); } catch(eHs:Error) { }   // Hazard Status card (diff-and-skip)
          this.hzAfSetEnv(a,soak);
       }
 
@@ -2016,6 +2016,12 @@
       private var hzHsAlPos:Boolean = false;
       private var hzHsAlTxt:String = "";
       private var hzHsGrn:Boolean = false;            // bug (b): green hold from a positive alert (vanilla edges end it)
+      private static const HZ_HS_SKEPS:Number = 0.0001;   // 0.43.3.1: soak steps smaller than this are no change
+      private static const HZ_HS_SKRUN:int = 2;           // 0.43.3.1: updates in one direction before the color switches
+      private var hzHsSkB:Number = NaN;               // 0.43.3.1: soak when the hazard appeared (the baseline)
+      private var hzHsSkL:Number = NaN;               // 0.43.3.1: soak at the last effects update
+      private var hzHsSkRun:int = 0;                  // 0.43.3.1: updates in a row voting for the other color
+      private var hzHsSkGrn:Boolean = false;          // 0.43.3.1: soak moving back toward the baseline (green), else red
       private var hzHsBlgL:DisplayObject = null;      // the BottomLeftGroup that has hzHsOnFin
       private var hzHsSt:int = -1;                    // drawn: 0 hidden, 1 red, 2 green (-1 = never drawn)
       private var hzHsSrc:int = -1;                   // drawn text source: 1 alert text, 2 hazard word, 3 restore word, 4 ARRANGE preview
@@ -2059,7 +2065,11 @@
       }
 
       // EnvironmentEffectsData (from hzOnEnvEffects, after its own body): the effects category
-      private function hzHsFx(a:Array, n:int, word:String) : void
+      // 0.43.3.1 (built blind, the sign of fSoakDamagePct is not verified): while a hazard is listed, the card is green
+      // when the soak moves back toward the value it had when the hazard appeared, red when it moves away. A step that
+      // is no change, the first sample or a NaN votes red (ambiguous = red). The color switches only after
+      // HZ_HS_SKRUN updates in a row vote for the other color, so one sample never toggles it. No timer, no allocation.
+      private function hzHsFx(a:Array, n:int, word:String, soak:Number) : void
       {
          var rs:Boolean = false;
          if(n == 0 && a != null)
@@ -2072,6 +2082,33 @@
             this.hzHsCat = cat;
             this.hzHsCatSeq = ++this.hzHsSeq;
             if(cat == 2) { this.hzHsGrn = false; }   // a new hazard ends a green hold
+            this.hzHsSkB = cat == 2 ? soak : NaN;     // 0.43.3.1: the baseline is the soak when the hazard appears
+            this.hzHsSkL = this.hzHsSkB;
+            this.hzHsSkRun = 0;
+            this.hzHsSkGrn = false;
+         }
+         else if(cat == 2)
+         {
+            // 0.43.3.1: one soak sample. Toward the baseline votes green; away, no change or unknown votes red. A switch
+            // counts as a new effects event (hzHsCatSeq), so the newest event (alert or soak) sets the color.
+            var sb:Number = this.hzHsSkB;
+            var sl:Number = this.hzHsSkL;
+            this.hzHsSkL = soak;
+            var sg:Boolean = false;
+            if(!isNaN(soak) && !isNaN(sb) && !isNaN(sl))
+            {
+               var d0:Number = sl > sb ? sl - sb : sb - sl;
+               var d1:Number = soak > sb ? soak - sb : sb - soak;
+               sg = d1 < d0 - HZ_HS_SKEPS;
+            }
+            if(isNaN(sb)) { this.hzHsSkB = soak; }   // no baseline yet (NaN when the hazard appeared): the first number
+            if(sg == this.hzHsSkGrn) { this.hzHsSkRun = 0; }
+            else if(++this.hzHsSkRun >= HZ_HS_SKRUN)
+            {
+               this.hzHsSkRun = 0;
+               this.hzHsSkGrn = sg;
+               this.hzHsCatSeq = ++this.hzHsSeq;
+            }
          }
          this.hzHsWord = word;
          this.hzHsSync();
@@ -2144,7 +2181,7 @@
             if(this.hzHsCat != 0)
             {
                var alNew:Boolean = this.hzHsAlSeq > this.hzHsCatSeq;
-               st = alNew ? (this.hzHsAlPos ? 2 : 1) : (this.hzHsCat == 2 ? 1 : 2);
+               st = alNew ? (this.hzHsAlPos ? 2 : 1) : (this.hzHsCat == 2 ? (this.hzHsSkGrn ? 2 : 1) : 2);   // 0.43.3.1: soak direction
             }
             else if(this.hzHsGrn) { st = 2; }   // bug (b): restoring after the hazard effect left the list
          }
