@@ -1747,8 +1747,11 @@
       //     color (else a Horizon word: "<WORD> HAZARD" / "SUIT PROTECTION RESTORING"; always the word for ja / zhhans).
       // Sound: none here. The vanilla watch keeps its own alert sound (BottomLeftGroup PlayAlertSound, still running
       // under the alpha group hide); the chip only draws.
-      // Vanilla text: while the chip can show, the vanilla EnvAlertText holder is hidden (visible only) on events
-      // (hzHsVan); off gives back only what this hid. With HazardStatus=0 nothing here touches any vanilla clip.
+      // Vanilla text: only while the chip is on screen (drawn, and its planet card wanted on screen: HazardStatus on,
+      // ShowPlanet, the card's show rule, hide-all, the scanner hide, the game's HUD group), the vanilla EnvAlertText
+      // holder is hidden (visible only). The moment the chip is not shown for any reason it is given back (only what this
+      // hid). Edge-only: the chip state change (hzHsSync), the card's show target (hzShow -> hzHsCard), alerts and layout.
+      // With HazardStatus=0 nothing here touches any vanilla clip.
       // Diff-and-skip: hzHsSync compares ints and string refs and returns before any display write or allocation.
       // Setting: [Effects] HazardStatus (default 1), F11 EFFECTS > WARNINGS > HAZARD STATUS.
       // Author: Moragar. Last modified: 2026-11-13.
@@ -1773,6 +1776,7 @@
       private var hzHsW:Number = -1;                  // drawn card width
       private var hzHsUp:Boolean = false;             // layout: the chip sits above the card (bottom edge)
       private var hzHsVanD:DisplayObject = null;      // the EnvAlertText instance this hid
+      private var hzHsCardOn:Boolean = false;         // the planet card's show target (hzShow), false until the first refresh
 
       private function hzHsSub() : void
       {
@@ -1828,7 +1832,7 @@
 
       private function hzHsWant() : Boolean
       {
-         return this.hzHsOn && this.hzShowPlanet && this.hzPlanPill != null && this.hzPlanPill.visible && this.hzHsChip != null;
+         return this.hzHsOn && this.hzHsCardOn && this.hzShowPlanet && this.hzPlanPill != null && this.hzPlanPill.visible && this.hzHsChip != null;
       }
 
       // diff-and-skip: decide the state and the text source, return before any display write when unchanged
@@ -1856,6 +1860,16 @@
          this.hzHsSrcTxt = stx;
          this.hzHsW = w;
          this.hzHsDraw();
+         this.hzHsVan();   // the vanilla text follows the chip on this edge
+      }
+
+      // the planet card's show target changed (hzShow, from hzRefreshVisibility / ARRANGE): an edge, never per frame
+      private function hzHsCard(on:Boolean) : void
+      {
+         if(on == this.hzHsCardOn) { return; }
+         this.hzHsCardOn = on;
+         this.hzHsSync();
+         this.hzHsVan();
       }
 
       private function hzHsDraw() : void
@@ -1918,11 +1932,11 @@
          return this.hzHsOn && this.hzShowPlanet && this.hzPlanPill != null && !this.hzLayHas("Planet") ? HZ_HS_GAP + HZ_HS_H : 0;
       }
 
-      // the vanilla EnvAlertText: hidden while the chip can show; given back (only what this hid) when it cannot.
-      // Events only (alerts, hzRefreshVisibility); one getChildByName on the known group, no search.
+      // the vanilla EnvAlertText: hidden only while the chip is on screen; given back (only what this hid) as soon as it
+      // is not. Edges only (chip state, card target, alerts, layout, hide-all); one getChildByName on the known group, no search.
       private function hzHsVan() : void
       {
-         var want:Boolean = this.hzHsWant() && !this.hzUserHidden;
+         var want:Boolean = this.hzHsSt > 0 && this.hzHsChip != null && this.hzHsChip.visible && this.hzHsWant() && !this.hzUserHidden;
          if(!want)
          {
             if(this.hzHsVanD == null) { return; }
@@ -2999,6 +3013,7 @@
          }
          e.t = on ? 1 : 0;
          if(!this.hzFadeCards) { e.s = e.t; }
+         if(c == this.HorizonEnv_mc) { try { this.hzHsCard(on); } catch(eHsC:Error) { } }   // Hazard Status: the card's show edge
       }
 
       private function hzTickFades() : void

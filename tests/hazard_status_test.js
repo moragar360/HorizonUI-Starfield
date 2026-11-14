@@ -60,7 +60,7 @@ expect(CONST.HZ_HS_RED === 0xC33B29 && CONST.HZ_HS_GRN === 0x379B2C, "the two co
 expect(!/0xF2A93B|HZ_AMB|HZ_YELLOW|\bWARN\b|"SAFE"|DANGER/.test(sec), "no amber / yellow, no WARN / SAFE / DANGER in the chip");
 
 // ---- host ----
-const FNS = ["hzHsSub", "hzHsBuild", "hzHsFx", "hzHsOnAlerts", "hzHsWant", "hzHsSync", "hzHsDraw", "hzHsPos", "hzHsLayout", "hzHsReserve", "hzHsVan", "hz26LayoutDefaults", "hz26LayoutAfter"];
+const FNS = ["hzHsSub", "hzHsBuild", "hzHsFx", "hzHsOnAlerts", "hzHsWant", "hzHsSync", "hzHsDraw", "hzHsPos", "hzHsLayout", "hzHsReserve", "hzHsVan", "hzHsCard", "hzShow", "hz26LayoutDefaults", "hz26LayoutAfter"];
 let SUBS = [];
 global.BSUIDataManager = { Subscribe(n, cb) { SUBS.push(n); } };
 global.Point = function (x, y) { this.x = x; this.y = y; };
@@ -86,7 +86,7 @@ function makeHost(opt) {
 		hzHsOn: true, hzShowPlanet: true, hzUserHidden: false, hzPpH: 84, hzPpW: 330, hzMargin: 40, hzFades: [], hz43EnvLang: "en",
 		hz43ScanHid: false, hz43ScanMk: [], hzEnvP0Ini: false, hzLay: {}, hzHeaderStyle: 0, hzBlg: null, log,
 		hzHsChip: null, hzHsTf: null, hzHsSubbed: false, hzHsSeq: 0, hzHsCat: 0, hzHsCatSeq: 0, hzHsWord: "HAZARD", hzHsAlSeq: 0,
-		hzHsAlPos: false, hzHsAlTxt: "", hzHsSt: -1, hzHsSrc: -1, hzHsSrcTxt: null, hzHsW: -1, hzHsUp: false, hzHsVanD: null,
+		hzHsAlPos: false, hzHsAlTxt: "", hzHsSt: -1, hzHsSrc: -1, hzHsSrcTxt: null, hzHsW: -1, hzHsUp: false, hzHsVanD: null, hzHsCardOn: true, hzFadeCards: true,
 		hzT(p, txt) { const t = { text: txt, width: 0, x: 0, y: 0 }; p.addChild(t); return t; },
 		hzTxtObj() { return {}; }, hzApplyFmt() {}, hzUC(s) { return s.toUpperCase(); },
 		hzFitText(tf, full) { log.push("text:" + full); tf.text = full; }, hzTW(tf) { return tf.text.length * 8; },
@@ -182,6 +182,79 @@ const chipText = (h) => h.hzHsTf.text;
 	SUBS = []; p.hzHsSub(); p.hzHsSub();
 	expect(SUBS.length === 1 && SUBS[0] === "EnvironmentAlertsData", "one EnvironmentAlertsData subscription");
 }
+// the vanilla text is never lost: every way the chip is not on screen gives it back, on the edge (follow-up b)
+{
+	const setup = (opt) => {
+		const h = makeHost(opt); h.hzHsBuild();
+		h.hzBlg = clip("BottomLeftGroup_mc", h.log); const t = clip("EnvAlertText", h.log); h.hzBlg.addChild(t);
+		h.t = t; return h;
+	};
+	const onScreen = (h) => { fx(h, ["HazardEffect_Thermal"], "THERMAL"); alert(h, false, "Extreme Heat"); };
+	const writes = (h, from) => h.log.slice(from).filter((l) => /^EnvAlertText\.visible=/.test(l));
+	const CASES = [
+		["HazardStatus off (F11 / INI, layout pass)", (h) => { h.hzHsOn = false; h.hzHsLayout(); }, (h) => { h.hzHsOn = true; h.hzHsLayout(); }],
+		["planet card hidden by its show rule (hzShow target 0)", (h) => { h.hzShow(h.HorizonEnv_mc, false); }, (h) => { h.hzShow(h.HorizonEnv_mc, true); }],
+		["ShowPlanet off", (h) => { h.hzShowPlanet = false; h.hzShow(h.HorizonEnv_mc, false); }, (h) => { h.hzShowPlanet = true; h.hzShow(h.HorizonEnv_mc, true); }],
+		["F11 hide-all", (h) => { h.hzUserHidden = true; h.hzHsVan(); h.hzShow(h.HorizonEnv_mc, false); }, (h) => { h.hzUserHidden = false; h.hzShow(h.HorizonEnv_mc, true); }],
+		["the game hides the HUD group / the scanner hides the cards (card target 0)", (h) => { h.hzShow(h.HorizonEnv_mc, false); }, (h) => { h.hzShow(h.HorizonEnv_mc, true); }],
+		["no hazard listed any more (left the planet / the hazard)", (h) => { fx(h, []); }, (h) => { fx(h, ["HazardEffect_Thermal"], "THERMAL"); }],
+		["green ends (RestoreSoak dropped)", (h) => { alert(h, true, "Restoring"); fx(h, ["HazardEffect_RestoreSoak"]); fx(h, []); }, (h) => { fx(h, ["HazardEffect_Thermal"], "THERMAL"); alert(h, false, "Heat"); }, (h) => { fx(h, []); }],
+		["the planet pill hidden (frame form)", (h) => { h.hzPlanPill._v = false; h.hzHsLayout(); }, (h) => { h.hzPlanPill._v = true; h.hzHsLayout(); }],
+	];
+	for (const [name, hide, back, again] of CASES) {
+		const h = setup(); onScreen(h);
+		const ok0 = h.hzHsChip.visible && !h.t.visible;
+		hide(h);
+		const ok1 = !h.hzHsChip.visible && h.t.visible && h.hzHsVanD === null;
+		const n = h.log.length;
+		(again || hide)(h); h.hzHsLayout(); alert(h, false, "Extreme Heat"); h.hzHsVan();
+		const ok2 = writes(h, n).length === 0 && h.t.visible;
+		back(h);
+		const ok3 = h.hzHsChip.visible && !h.t.visible;
+		expect(ok0 && ok1, name + ": the vanilla text comes back on the edge");
+		expect(ok2, name + ": stays back (no re-hide while the chip is not shown, no repeated writes)");
+		expect(ok3, name + ": back on screen = hidden again (no duplicate)");
+	}
+	for (const ws of [0, 1, 2, 3, 4]) {
+		const h = setup({ hzWatchStyle: ws }); onScreen(h); const a = !h.t.visible; h.hzShow(h.HorizonEnv_mc, false);
+		expect(a && h.t.visible, "watch style " + ws + ": same rule (on screen hides, card off gives it back)");
+	}
+	expect(fnText(as, "hzHsVan").body.indexOf("hzWatchStyle") < 0, "the rule does not depend on the watch style");
+	{
+		const h = setup({ hzHsCardOn: false }); onScreen(h);
+		expect(h.t.visible && !h.hzHsChip.visible, "card not shown yet (before the first refresh): the vanilla text is never hidden");
+		h.hzShow(h.HorizonEnv_mc, true);
+		expect(h.hzHsChip.visible && !h.t.visible, "first refresh shows the card: chip on, vanilla text hidden");
+	}
+	{
+		const h = setup(); alert(h, false, "Extreme Heat");
+		expect(h.t.visible && !h.hzHsChip.visible, "an alert before the effects list: chip not shown, so the vanilla text stays");
+		fx(h, ["HazardEffect_Thermal"], "THERMAL");
+		expect(h.hzHsChip.visible && !h.t.visible, "the effects edge shows the chip and hides the vanilla text");
+	}
+	{
+		const h = setup(); h.hzBlg = null; onScreen(h);
+		expect(h.hzHsChip.visible && h.t.visible, "group not found yet: nothing hidden");
+	}
+	{
+		const h = setup(); onScreen(h); const n0 = h.log.length;
+		for (let i = 0; i < 5; i++) { h.hzShow(h.HorizonEnv_mc, false); h.hzShow(h.HorizonEnv_mc, true); }
+		const w = writes(h, n0);
+		expect(w.length === 10 && w.every((l, i) => l === "EnvAlertText.visible=" + (i % 2 === 0)), "5 off / on cycles: exactly one write per edge");
+		const n1 = h.log.length;
+		for (let i = 0; i < 20; i++) h.hzShow(h.HorizonEnv_mc, true);
+		expect(h.log.length === n1, "repeated equal card targets: no display write");
+		h.hzShow(h.HorizonEnv_mc, false); h.hz43ScanHid = true; h.hzShow(h.HorizonEnv_mc, true); h.hzShow(h.HorizonEnv_mc, false);
+		expect(h.t.visible === false && h.hz43ScanMk.indexOf(h.t) >= 0, "card off mid-scan: the scan close gives the text back");
+	}
+	{
+		const hs = fnText(as, "hzShow").body;
+		expect(hs.indexOf("if(c == this.HorizonEnv_mc) { try { this.hzHsCard(on); } catch(eHsC:Error) { } }") > 0 && count(as, "this.hzHsCard(") === 1, "the card edge comes only from hzShow");
+		expect(fnText(as, "hzOnFrame").body.indexOf("hzShow(") < 0 && fnText(as, "hzTickFades").body.indexOf("hzShow(") < 0, "hzShow is not called from the frame tick");
+		expect(/^\s*if\(on == this\.hzHsCardOn\) \{ return; \}/.test(fnText(as, "hzHsCard").body), "hzHsCard returns on an unchanged target");
+		expect(/var want:Boolean = this\.hzHsSt > 0 && this\.hzHsChip != null && this\.hzHsChip\.visible && this\.hzHsWant\(\) && !this\.hzUserHidden;/.test(fnText(as, "hzHsVan").body), "hidden only while the chip is drawn and wanted");
+	}
+}
 // layout flip + Character offset
 {
 	const h = makeHost(); h.hzHsBuild();
@@ -249,6 +322,7 @@ if (base) {
 		["         try { this.hzHsBuild(); } catch(eHsB:Error) { }   // Hazard Status chip (a child of the planet card)\n", ""],
 		["         try { this.hzHsPos(); } catch(eHsP:Error) { }   // Hazard Status chip under / above the card\n", ""],
 		["         try { this.hzHsLayout(); } catch(errHs:Error) { }   // Hazard Status: flip at the bottom edge, on / off, the vanilla EnvAlertText\n", ""],
+		["         if(c == this.HorizonEnv_mc) { try { this.hzHsCard(on); } catch(eHsC:Error) { } }   // Hazard Status: the card's show edge\n", ""],
 		["         try { this.hzHsVan(); } catch(eHsU:Error) { }   // Hazard Status: hide-all gives the vanilla EnvAlertText back\n", ""],
 		["         this.hzHsSub();   // the one EnvironmentAlertsData listener (Hazard Status); it forwards to hzEnvP0OnAlerts\n", "         try { BSUIDataManager.Subscribe(\"EnvironmentAlertsData\",this.hzEnvP0OnAlerts); } catch(eS:Error) { }\n"],
 		["(eh + 10 + this.hzHsReserve()) * s); }   // Hazard Status: room for the chip", "(eh + 10) * s); }"],
