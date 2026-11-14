@@ -79,6 +79,6 @@ const blk = xm.slice(0, inc);
 expect(inc > 0 && blk.indexOf('add_cxflags("/d1trimfile:$(projectdir)", {tools = "cl", force = true})') >= 0, "xmake.lua: MSVC trims the project folder from __FILE__, before CommonLibSF is included");
 expect(blk.indexOf('add_cxflags("/clang:-ffile-prefix-map=$(projectdir)=.", {tools = "clang_cl", force = true})') >= 0, "xmake.lua: clang-cl maps the project folder away");
 expect(blk.indexOf('add_shflags("/PDBALTPATH:%_PDB%", {force = true})') >= 0 && blk.indexOf('add_ldflags("/PDBALTPATH:%_PDB%", {force = true})') >= 0, "xmake.lua: the DLL names only its PDB file");
-expect(/set_version\("0\.43\.3\.0"\)/.test(xm), "xmake.lua: file version unchanged");
+expect(/set_version\("0\.43\.3\.1"\)/.test(xm), "xmake.lua: file version unchanged");
 if (failed) { console.error(failed + " failed"); process.exit(1); }
 console.log("dll paths check self-test: " + passed + " ok, all passed");

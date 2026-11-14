@@ -4,20 +4,24 @@ All notable changes to Horizon UI are listed here, newest first. The format foll
 
 Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never published; 0.41.0 replaced 0.40.3, and its entry includes the changes prepared for 0.40.3.
 
-## [0.43.3.0-alpha] - unreleased
+## [0.43.3.1-alpha] - unreleased
 
-Not published yet. The settings schema stays 0.42.0, so an existing `HorizonUI.user.ini` carries over; the new settings start at their defaults, and with them the quest tracker keeps today's width.
+Not published yet; it includes the unpublished 0.43.3.0 work. The settings schema stays 0.42.0, so an existing `HorizonUI.user.ini` carries over; the new settings start at their defaults, and with them the quest tracker keeps today's width and the scanner keeps the game's own highlight area.
 
 ### Added
 - **Hazard Status card:** the hazard chip under the planet card is now its own card. Move it in ARRANGE CARDS (HAZARD STATUS), and turn it on or off, size it and pick its compact form in F11 > CARDS > HAZARD STATUS CARD. It follows the card style (font, text tone, accent, card color, opacity, shadow, header case). Red while a hazard hurts you, green while suit protection restores. Default spot: under the planet card. New keys: `HazardScale` and `HazardCompact` under `[Cards]`, `HazardX` and `HazardY` under `[Layout]`. `HazardStatus` stays under `[Effects]`.
 - **Quest tracker text wrap:** long quest names and objectives wrap onto new lines at the same font size instead of ending in "...". Only text still too long at the max height ends in "..." on its last line. F11 > CARDS > QUEST TRACKER: WIDTH (`QuestsWidth`, 380 - 660, default 380), MAX HEIGHT (`QuestsMaxHeight`, 100 - 300, default 160) and TEXT WRAP (`QuestsWrap`, default on). The compact form shows the quest name with the objective wrapping under it. `QuestsWrap=0` keeps the one-line card.
 
+- **Scanner highlight area:** F11 > SCANNER > HIGHLIGHT AREA picks the hand scanner's highlight cone: HORIZON DOT (smaller than the game), VANILLA (default, the game's own values, nothing is changed) or FULL SCREEN. New key `ScanHighlightArea` under `[Scanner]` (0, 1 default, 2). It needs the 0.43.3.1 SFSE plugin and applies the next time you open the scanner.
+
 ### Changed
-- **SFSE plugin** file and product version are 0.43.3.0.
+- **SFSE plugin** file and product version are 0.43.3.1.
+- **Prompt keycaps on a controller** show the button you bound (for example Y when Activate and Jump are swapped), with 3 or 4 options too. Stick clicks show as LS / RS; the PlayStation touchpad shows the default letter.
 - **Equipment card:** a long weapon name wraps onto a second line at the same font size, and the card grows to fit. Before, the full name showed only for a few seconds after a weapon swap. The compact form stays one line.
 
 ### Fixed
-- **Hazard Status** now turns green while suit protection restores. Before, it went from red straight to hidden.
+- **Hazard Status** now turns green while suit protection restores. Before, it went from red straight to hidden. While a hazard is still listed, it is green while the soak goes back down and red while it builds; it never flickers on a single update.
+- **Locked containers:** the prompt label keeps the text after a line break, so the lock level shows on the full and compact container cards.
 - **Loot card after a kill:** looting a killed enemy no longer shows its red health bar across the top of the container card until a save reload.
 
 ## [0.43.2.0-alpha] - 2026-11-11

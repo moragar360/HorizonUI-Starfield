@@ -14,14 +14,16 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 - **Customizable:** more than 100 settings, Arrange Cards and Arrange Scanner to move anything (the scope's hold-breath chip included), a vertical or horizontal Vitals card, colors, fonts, sizes, and presets you can save and switch.
 - **Modular:** a core HUD plus optional **Horizon Font**, **Comms** (subtitles, dialogue and companion reactions), the **Message Log** (a searchable history of your HUD messages), the optional **Scanner**, Horizon's own hand scanner screen, and the optional **Scope** module, a Horizon hold-breath chip for weapon scopes. Core is always installed; the modules are optional parts of the same FOMOD installer and need Core.
 
-## New in 0.43.3.0 (alpha, unreleased)
+## New in 0.43.3.1 (alpha, unreleased)
 
 This build is not published and has no release tag. Install steps below still describe the published 0.43.2.0 download.
 
 - **Hazard Status card:** the hazard chip is now its own card. Move it in ARRANGE CARDS and set it up in F11 > CARDS. It follows your card style, shows red while a hazard hurts you and green while suit protection restores.
 - **Quest tracker:** long quest names and objectives wrap at the same font size instead of being cut off. F11 > CARDS > QUEST TRACKER adds WIDTH, MAX HEIGHT and TEXT WRAP.
 - **Equipment card:** long weapon names wrap onto a second line, and the card grows to fit.
-- **Fixed:** looting a killed enemy no longer shows its red health bar on the loot card.
+- **Scanner highlight area** (F11 > SCANNER > HIGHLIGHT AREA): Horizon dot, Vanilla (default) or Full screen.
+- **Controller:** prompt keycaps show the button you bound.
+- **Fixed:** looting a killed enemy no longer shows its red health bar on the loot card, and locked containers show their lock level.
 - The full list is in [CHANGELOG.md](CHANGELOG.md).
 
 ## New in 0.43.2.0 (alpha)
