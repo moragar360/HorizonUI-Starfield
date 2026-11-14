@@ -2204,14 +2204,29 @@
          var ct:Number = Number(e.data.uType);
          if(ct != this.hzCrossType) { this.hzT19Ver++; }
          this.hzCrossType = ct;
+         this.hzWpnRet = this.hzWpnReticle(ct,this.hzWpnRet);   // arch-fixes Fix 3
          this.hzDbgCross = this.hzDump(e.data);
          this.hzDbgShow();
          this.hzRefreshVisibility();
       }
 
+      // arch-fixes Fix 3: combat has two providers, PlayerData and HUDStealthData (the one the game's own stealth meter
+      // reads, already subscribed in hz26Build). Each one counts only on its own edge, so the latest change from either
+      // decides and a provider repeating an old value never undoes the other one's newer edge.
       private function hzOnPlayerData(e:FromClientDataEvent) : *
       {
-         if(this.hz36SetCombat(e.data.bIsInCombat === true)) { this.hzRefreshVisibility(); }
+         var v:Boolean = e.data.bIsInCombat === true;
+         if(v == this.hzCombatPd) { return; }
+         this.hzCombatPd = v;
+         if(this.hz36SetCombat(v)) { this.hzRefreshVisibility(); }
+      }
+      private function hzOnStealthCombat(d:Object) : void
+      {
+         if(d == null || d.bIsInCombat === undefined) { return; }
+         var v:Boolean = d.bIsInCombat === true;
+         if(v == this.hzCombatSt) { return; }
+         this.hzCombatSt = v;
+         if(this.hz36SetCombat(v)) { this.hzRefreshVisibility(); }
       }
 
       // Compact mode: one slim line per reading (icon, value, bar).
@@ -2640,6 +2655,9 @@
 
       private var hzPlugActive:Boolean = false;
       private var hzPlugDrawn:Boolean = false;
+      private var hzWpnRet:Boolean = false;     // arch-fixes Fix 3: the last crosshair type was a weapon reticle (see hzWpnReticle)
+      private var hzCombatPd:Boolean = false;   // arch-fixes Fix 3: last PlayerData.bIsInCombat
+      private var hzCombatSt:Boolean = false;   // arch-fixes Fix 3: last HUDStealthData.bIsInCombat
       public function hzSetWeaponDrawn(drawn:Boolean) : void
       {
          var changed:Boolean = !this.hzPlugActive || this.hzPlugDrawn != drawn;
@@ -2894,9 +2912,22 @@
          }
       }
 
+      // arch-fixes Fix 3: hzSetWeaponDrawn (a drawn / holstered feed) decides when anything calls it. Without one, a gun
+      // counts as out only while the game shows a weapon reticle for it: the crosshair is on, the ammo counter is on and
+      // the last reticle type was a weapon one. Unknown (before the first crosshair update), unarmed, tool and none are
+      // not out; interact / command (looking at a door, an item, a crew order) keep the last decision, so the card does
+      // not flicker while aiming past objects.
       private function hzWeaponOut() : Boolean
       {
-         return this.hzPlugActive ? this.hzPlugDrawn : (this.hzAmmoDrawn && this.hzCrossOn && this.hzCrossType != 2);
+         return this.hzPlugActive ? this.hzPlugDrawn : (this.hzAmmoDrawn && this.hzCrossOn && this.hzWpnRet);
+      }
+      // HCT (HudCrosshairData.uType): 0 pistol, 1 cutter, 2 unarmed, 3 shotgun, 4 rifle, 5 laser, 6 tool, 7 interact,
+      // 8 command, 9 none. Edge only: called from hzOnCrosshair.
+      private function hzWpnReticle(ct:Number, was:Boolean) : Boolean
+      {
+         if(ct == 0 || ct == 1 || ct == 3 || ct == 4 || ct == 5) { return true; }
+         if(ct == HZ_HCT_INTERACT || ct == HZ_HCT_COMMAND) { return was; }
+         return false;
       }
 
       private function hzRuleFix(key:String, v:int) : int
@@ -13490,6 +13521,7 @@
       private function hz26OnStealth(e:FromClientDataEvent) : *
       {
          try { this.hz26St = e.data; this.hz26Log("HUDStealthData",e.data); } catch(err:Error) { this.hz26St = null; }
+         try { this.hzOnStealthCombat(e.data); } catch(errC:Error) { }   // arch-fixes Fix 3: the fast combat provider
       }
 
       private function hz26OnBoost(e:FromClientDataEvent) : *
