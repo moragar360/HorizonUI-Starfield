@@ -10748,14 +10748,12 @@
          this.hzE19Cm = cm;
          var W:Number = cm ? 300 : HZ_E19_W;
          var full:String = this.hzEqFullName.length > 0 ? this.hzUC(this.hzEqFullName) : "--";
-         var expand:Boolean = (this.hzArrange || this.hzFrameN < this.hzEqExpandUntil) && !cm;
-         var no:Object = this.hzTxtObj(this.hzE19Name);
-         var lines:int = 1;
-         this.hzE19Name.wordWrap = expand;
-         this.hzE19Name.multiline = expand;
-         if(expand) { this.hzE19Name.text = full; lines = this.hzE19Name.numLines > 1 ? 2 : 1; }
-         if(no && int(no.lines) != lines) { no.lines = lines; this.hzApplyFmt(no); }
-         if(!expand) { this.hzFitText(this.hzE19Name,full,cm ? W - 126 - 14 : W - HZ_E19_TX - 14); }
+         // 0.43.3.0: the standard card always lets a long weapon name wrap to a 2nd line at the same font size (was: only
+         // ~3 s after a swap and in ARRANGE); the card grows by one line. hzQWrapTo keeps the result on the field's
+         // registry entry, so the name is measured again only when the name, the width (compact form) or the field's
+         // format epoch (font, text scale, style) changes; an ammo update reuses it. Compact stays one line with "...".
+         var expand:Boolean = !cm;
+         var lines:int = this.hzQWrapTo(this.hzE19Name,full,cm ? W - 126 - 14 : W - HZ_E19_TX - 14,expand ? 2 : 1);
          this.hzE19Exp = expand;
          var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
          var dy:Number = lines > 1 ? Math.round(15 * ts) + 5 : 0;
@@ -10832,8 +10830,7 @@
       private function hzE19Tick() : void
       {
          if(!this.hzEq19 || !this.hzEq19.visible) { return; }
-         var want:Boolean = (this.hzArrange || this.hzFrameN < this.hzEqExpandUntil) && !this.hz34C("Equipment");
-         if(want != this.hzE19Exp || this.hz34C("Equipment") != this.hzE19Cm) { this.hzE19Sync(); }
+         if(this.hz34C("Equipment") != this.hzE19Cm) { this.hzE19Sync(); }   // 0.43.3.0: no timed expand any more (the name always wraps)
          if(this.hzEqLow && this.hzE19Cnt)
          {
             var a:Number = 0.35 + 0.45 * (0.5 + 0.5 * Math.sin(this.hzEqPulse));
