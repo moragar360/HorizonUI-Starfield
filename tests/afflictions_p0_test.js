@@ -2,7 +2,7 @@
 // Run: node tests/afflictions_p0_test.js
 // The production AS bodies (hzAfSetPers, hzAfIsPos, hzAfSync, hzJoinEffects, hz27OnPersAlerts, hz27PersMerge) run
 // here as JavaScript. The same scenarios also run on the 591d340 bodies (git show), which must show each old bug.
-// Author: Moragar. Last modified: 2026-11-14.
+// Author: Moragar. Last modified: 2026-11-14 (scope pins follow the hazard card commit).
 "use strict";
 
 const fs = require("fs");
@@ -252,14 +252,34 @@ if (base) {
 }
 
 // ---- scope: edge-only, Hazard Status interface untouched ----
+// The hazard card has its own commit on the combined branch (0.43.3.1 soak green: hzHsFx / hzHsSync and the hzHsFx call
+// line in hzOnEnvEffects), so the reference for these lines is that commit when HEAD contains it (found by the field it
+// added, so a rebase or cherry-pick still finds it), else BASE. Each afflictions commit is also checked against its own
+// parent: the affliction work never changes these lines. The old-bug checks above still run on BASE.
+const SCOPE_FNS = ["hzOnEnvEffects", "hzAfSetEnv", "hzHsSync", "hzHsCat", "hz27Tick"];
+const hs = (src) => src.split("\n").filter((l) => /hzHs|green hold/i.test(l)).join("\n");
+const gitOut = (args) => { try { return cp.execFileSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { return null; } };
+const asAt = (rev) => { const t = gitOut(["show", rev + ":actionscript/horizon_block.as"]); return t == null ? null : t.replace(/\r\n/g, "\n"); };
+const scopeSame = (x, y) => SCOPE_FNS.every((n) => { const a = fnText(x, n), b = fnText(y, n); return (!a && !b) || (a && b && a.body === b.body); }) && hs(x) === hs(y);
 if (base) {
-	for (const n of ["hzOnEnvEffects", "hzAfSetEnv", "hzHsSync", "hzHsCat", "hz27Tick"]) {
-		const a = fnText(as, n), b = fnText(base, n);
-		if (!a && !b) continue;
-		expect(a && b && a.body === b.body, "scope: " + n + " is unchanged from " + BASE);
+	const hzRev = (gitOut(["log", "-1", "--format=%H", "-S", "hzHsSkGrn", "HEAD", "--", "actionscript/horizon_block.as"]) || "").trim();
+	const refName = hzRev ? "the hazard card commit " + hzRev.slice(0, 7) : BASE;
+	const ref = hzRev ? asAt(hzRev) : base;
+	expect(ref != null, "scope: the reference " + refName + " is readable through git show");
+	if (ref != null) {
+		for (const n of SCOPE_FNS) {
+			const a = fnText(as, n), b = fnText(ref, n);
+			if (!a && !b) continue;
+			expect(a && b && a.body === b.body, "scope: " + n + " is unchanged from " + refName);
+		}
+		expect(hs(as) === hs(ref), "scope: every Hazard Status line (hzHs*, green hold) is unchanged from " + refName);
 	}
-	const hs = (src) => src.split("\n").filter((l) => /hzHs|green hold/i.test(l)).join("\n");
-	expect(hs(as) === hs(base), "scope: every Hazard Status line (hzHs*, green hold) is unchanged from " + BASE);
+	const affl = (gitOut(["log", "--format=%H", "-i", "--grep=afflictions", BASE + "..HEAD", "--", "actionscript/horizon_block.as"]) || "").split("\n").filter(Boolean);
+	expect(affl.length > 0, "scope: the afflictions commits since " + BASE + " are found (" + affl.length + ")");
+	for (const c of affl) {
+		const x = asAt(c), y = asAt(c + "^");
+		expect(x != null && y != null && scopeSame(x, y), "scope: afflictions commit " + c.slice(0, 7) + " leaves hzOnEnvEffects, hzAfSetEnv, hzHsSync, hz27Tick and every hzHs* line as its parent had them");
+	}
 	const added = as.length - base.length;
 	const addedText = (() => { const A = as.split("\n"), B = new Set(base.split("\n")); return A.filter((l) => !B.has(l)).join("\n"); })();
 	expect(!/addEventListener|enterFrame|ENTER_FRAME|new Timer|setInterval|setTimeout|getChildByName|getChildAt/.test(addedText), "scope: no new listeners, timers, frame handlers or tree lookups in the added lines (" + added + " chars)");
