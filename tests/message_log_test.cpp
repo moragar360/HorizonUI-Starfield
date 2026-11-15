@@ -4011,7 +4011,7 @@ int main()
 		const auto keep = MakeCharacter(0x11, "Old");
 		Expect(keep.key == "00000011" && keep.keySource == "playerId", "rename keeps the player-id key");
 		Expect(PersistAllowed(keep), "a real player id may persist");
-		const auto wide = MakeCharacter(0x1E82D83B2ull, "Robert");
+		const auto wide = MakeCharacter(0x1E82D83B2ull, "Test Pilot");
 		ExpectEq(wide.key, "00000001E82D83B2", "player id over 32 bits uses 16 hex digits");
 		Expect(PersistAllowed(wide), "a 16-hex player id may persist");
 		std::uint64_t last = 0;
