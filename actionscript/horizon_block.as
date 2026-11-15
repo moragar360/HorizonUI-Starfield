@@ -243,8 +243,8 @@
       public var hzCmpPlayerMark:Boolean = true;
       private var hzDbgCmp:String = "";
       // layout edit (ARRANGE CARDS)
-      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages","Watch","Hazard"];
-      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES","WATCH","HAZARD STATUS"];
+      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages","Watch","Hazard","Buffs"];
+      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES","WATCH","HAZARD STATUS","ACTIVE BUFFS"];
       public var hzLay:Object = {};
       private var hzLayOrig:Object = null;
       private var hzArrange:Boolean = false;
@@ -549,7 +549,7 @@
       private function hzApplyScale() : void
       {
          // v0.34: each card has its own factor ([Cards] <Card>Scale, -1 = HudScale)
-         var m:Array = [[this.HorizonCard_mc,"Jetpack"],[this.HorizonVitals_mc,"Vitals"],[this.HorizonEnv_mc,"Planet"],[this.HorizonAffl_mc,"Afflictions"],[this.HorizonAmmo_mc,"Equipment"],[this.HorizonQuest_mc,"Quests"],[this.HorizonCompass_mc,"Compass"],[this.HorizonCompact_mc,"Compact"],[this.HorizonCompactQuest_mc,"Quests"],[this.HorizonChar_mc,"Character"],[this.HorizonEnemy_mc,"Enemy"],[this.HorizonStealth_mc,"Stealth"],[this.HorizonXp_mc,"XpToast"],[this.hz43Watch,"Watch"],[this.HorizonHazard_mc,"Hazard"]];
+         var m:Array = [[this.HorizonCard_mc,"Jetpack"],[this.HorizonVitals_mc,"Vitals"],[this.HorizonEnv_mc,"Planet"],[this.HorizonAffl_mc,"Afflictions"],[this.HorizonBuffs_mc,"Buffs"],[this.HorizonAmmo_mc,"Equipment"],[this.HorizonQuest_mc,"Quests"],[this.HorizonCompass_mc,"Compass"],[this.HorizonCompact_mc,"Compact"],[this.HorizonCompactQuest_mc,"Quests"],[this.HorizonChar_mc,"Character"],[this.HorizonEnemy_mc,"Enemy"],[this.HorizonStealth_mc,"Stealth"],[this.HorizonXp_mc,"XpToast"],[this.hz43Watch,"Watch"],[this.HorizonHazard_mc,"Hazard"]];
          for each(var e:Array in m)
          {
             var c:Sprite = e[0] as Sprite;
@@ -2434,6 +2434,7 @@
          this.hzAbSubT = this.hzT(c,"",14,0,180,13,"sb","col",2,"left",HZ_RED);
          this.hzAbMore = this.hzT(c,"",40,0,HZ_AB_W - 54,13,"sb","mut",0.5);
          addChild(c);
+         if(this.hz34Cm["Buffs"] === undefined) { this.hz34Cm["Buffs"] = 0; }   // no [Cards] BuffsCompact yet: EXPANDED (the card's default), not GLOBAL
          c.scaleX = c.scaleY = this.hz34S("Buffs");
          this.hzSetSz(c,HZ_AB_W,60);
          this.hzAbSub();
@@ -2668,7 +2669,7 @@
          var on:Boolean = false;
          var pk:Object = null;
          var st:int = 0;   // 0 rows, 1 empty, 2 no data yet / unknown
-         if(this.hzArrange ? this.hzAbOn : this.hzAbWant())
+         if(this.hzArrange ? (this.hzAbOn && !this.hz41SA) : this.hzAbWant())   // ARRANGE SCANNER hides the HUD cards
          {
             pk = this.hzAbPick();
             var n:int = (pk.rows as Array).length;
@@ -3990,6 +3991,8 @@
          // 0.43.3.0: the Hazard Status card's base (an edge: hzHsCard / hzHsSync return at once when nothing changed); the
          // show target is given again like every card, so a scanner force-hide (hz40ForceHide) is restored here too
          try { this.hzHsCard(cardBase); this.hzHsSync(); if(this.HorizonHazard_mc && !this.hzArrange) { this.hzShow(this.HorizonHazard_mc,this.hzHsShown); } } catch(eHsR:Error) { }
+         // 0.43.3.1: the Active Buffs card the same way (its base: the cards' base and [Rules] BuffsRule; diff-and-skip)
+         try { this.hzAbCard(cardBase && this.hzRuleOk(this.hzRuleBuffs)); this.hzAbSync(); if(this.HorizonBuffs_mc && !this.hzArrange) { this.hzShow(this.HorizonBuffs_mc,this.hzAbShown); } } catch(eAbR:Error) { }
          var full:Boolean = !this.hzCompact && cardBase;
          var vitBase:Boolean = base && !this.hz40Hide;   // v0.41.0: the HUD vitals cards hide too; hz41V draws the kept vitals
          // VitalsBars compact reuses the COMPACT MODE strips. If either is on, that one card shows and the full cards stay hidden.
@@ -8033,6 +8036,7 @@
             case "Stealth": return [this.HorizonStealth_mc].filter(this.hzNotNull);
             case "XpToast": return [this.HorizonXp_mc].filter(this.hzNotNull);
             case "Hazard": return [this.HorizonHazard_mc].filter(this.hzNotNull);
+            case "Buffs": return [this.HorizonBuffs_mc].filter(this.hzNotNull);
             case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": return this.hz31PxOn(k) ? [this.hz31Px(k)] : [];
             case "Watch":
                if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4)
@@ -8108,6 +8112,7 @@
                case "Stealth": ok = this.hzStealthOn; break;
                case "XpToast": ok = this.hzXpToastOn; break;
                case "Hazard": ok = this.hzHsOn; break;
+               case "Buffs": ok = this.hzAbOn; break;
                case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": ok = this.hz31PxOn(k); break;   // v0.31 / v0.32: Comms proxies
                case "Watch": ok = this.hzWatchStyle == 1 || this.hzWatchStyle == 2 || this.hzWatchStyle == 3 || this.hzWatchStyle == 4; break;
             }
@@ -8127,11 +8132,12 @@
       {
          var on:Array = [];
          if(!this.hz41SA) { for each(var e:Object in this.hzArrList()) { on.push(e.c); } }   // v0.41.0: ARRANGE SCANNER hides the HUD cards
-         for each(var c:Sprite in [this.HorizonCard_mc,this.HorizonVitals_mc,this.HorizonEnv_mc,this.HorizonAffl_mc,this.HorizonAmmo_mc,this.HorizonQuest_mc,this.HorizonCompactQuest_mc,this.HorizonCompass_mc,this.HorizonCompact_mc,this.HorizonChar_mc,this.HorizonEnemy_mc,this.HorizonStealth_mc,this.HorizonXp_mc,this.HorizonHazard_mc])
+         for each(var c:Sprite in [this.HorizonCard_mc,this.HorizonVitals_mc,this.HorizonEnv_mc,this.HorizonAffl_mc,this.HorizonBuffs_mc,this.HorizonAmmo_mc,this.HorizonQuest_mc,this.HorizonCompactQuest_mc,this.HorizonCompass_mc,this.HorizonCompact_mc,this.HorizonChar_mc,this.HorizonEnemy_mc,this.HorizonStealth_mc,this.HorizonXp_mc,this.HorizonHazard_mc])
          {
             if(c) { this.hzShow(c,on.indexOf(c) >= 0); }
          }
          try { this.hzHsSync(); } catch(errHsA:Error) { }   // 0.43.3.0: the Hazard Status card shows its preview in ARRANGE
+         try { this.hzAbSync(); } catch(errAbA:Error) { }   // 0.43.3.1: the Active Buffs card shows its last data (or its empty line) in ARRANGE
          try { this.hz26CharSync(); this.hz26XpSync(); this.hzE19Sync(); } catch(err26:Error) { }
          try { if(on.indexOf(this.HorizonCompact_mc) >= 0) { this.hz43Reflow(true,true); } } catch(eArr:Error) { }
       }
@@ -16193,6 +16199,7 @@
       // after the user layout: the XP toast sits beside the character card's XP row unless it was placed itself
       private function hz26LayoutAfter(s:Number) : void
       {
+         try { this.hzAbLayout(); } catch(errAb:Error) { }   // Active Buffs card: default spot just above the Afflictions card
          try { this.hzHsLayout(); } catch(errHs:Error) { }   // Hazard Status card: default spot under the planet card (flip at the bottom edge), on / off, the vanilla EnvAlertText
          if(!this.HorizonXp_mc || !this.HorizonChar_mc || this.hzLayHas("XpToast")) { return; }
          var cy:Number = this.HorizonChar_mc.y;
@@ -18729,7 +18736,7 @@
       // have a compact form. Jetpack, vitals and afflictions turn into the shared compact strips card, so they follow the
       // global Compact only. Hover / container cards keep [Style] HoverScale / ContainerScale (same meaning as before;
       // -1 now = GLOBAL). Edge-anchored ARRANGE positions use the real on-screen card size, so they stay put at any size.
-      private static const HZ34_CARDS:Array = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false],["Watch",false],["Hazard",true]];
+      private static const HZ34_CARDS:Array = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Buffs",true],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false],["Watch",false],["Hazard",true]];
       private static const HZ34_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face: run-time name only, never shown
       private var hz34Sc:Object = {};
       private var hz34Cm:Object = {};
@@ -20364,7 +20371,7 @@
       private static const HZ40_OPA_N:Array = ["FOLLOW HUD","0.20","0.30","0.40","0.50","0.60","0.70","0.80","0.90","1.00","1.10","1.20","1.30","1.40","1.50","1.60"];
       private static const HZ40_MAR_V:Array = [-1,20,30,40,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200];
       private static const HZ40_MAR_N:Array = ["FOLLOW HUD","20","30","40","50","60","70","80","90","100","110","120","130","140","150","160","170","180","190","200"];
-      private static const HZ40_CARDS:Array = ["HorizonCard_mc","HorizonVitals_mc","HorizonEnv_mc","HorizonAffl_mc","HorizonQuest_mc","HorizonCompactQuest_mc","HorizonAmmo_mc","HorizonCompact_mc","HorizonCompass_mc","HorizonChar_mc","HorizonXp_mc","HorizonHazard_mc"];
+      private static const HZ40_CARDS:Array = ["HorizonCard_mc","HorizonVitals_mc","HorizonEnv_mc","HorizonAffl_mc","HorizonBuffs_mc","HorizonQuest_mc","HorizonCompactQuest_mc","HorizonAmmo_mc","HorizonCompact_mc","HorizonCompass_mc","HorizonChar_mc","HorizonXp_mc","HorizonHazard_mc"];
       private var hz40C:Object = null;          // current [Scanner] values
       private var hz40Scan:Boolean = false;     // the hand scanner is open (HudCompassData.bIsHandscannerOpen / FireForget)
       private var hz40Hide:Boolean = false;     // the Horizon cards are hidden for the scanner right now
