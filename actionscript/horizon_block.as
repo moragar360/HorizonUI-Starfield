@@ -1855,14 +1855,16 @@
          return o;
       }
 
-      private function hzJoinEffects(a:Array) : String
+      // Afflictions P0: pers = true only for the personal effects list (buffs are not afflictions there). The
+      // environment call (hzOnEnvEffects) passes one argument and keeps the old behavior exactly.
+      private function hzJoinEffects(a:Array, pers:Boolean = false) : String
       {
          var out:Array = [];
          if(a)
          {
             for each(var o:Object in a)
             {
-               if(!o || this.hzAfIsPos(String(o.sEffectIcon))) { continue; }   // Afflictions P0: buffs are not afflictions
+               if(pers && (!o || this.hzAfIsPos(String(o.sEffectIcon)))) { continue; }
                var p:String = this.hzPretty(o.sEffectIcon);
                if(p && out.indexOf(p) < 0) { out.push(p); }
             }
@@ -2582,7 +2584,7 @@
       {
          this.hzFixFonts();
          try { this.hz26Log("PersonalEffectsData",e.data); } catch(errL:Error) { }
-         var t:String = this.hzJoinEffects(e.data.aPersonalEffects as Array);
+         var t:String = this.hzJoinEffects(e.data.aPersonalEffects as Array,true);
          this.hzEnvAff.text = t;
          this.hzAfSetPers(e.data.aPersonalEffects as Array);
       }
@@ -10637,6 +10639,7 @@
       {
          if(a.sev != b.sev) { return a.sev > b.sev ? -1 : 1; }
          if(a.seen != b.seen) { return a.seen > b.seen ? -1 : 1; }
+         if(a.key != b.key) { return a.key < b.key ? -1 : 1; }   // Afflictions P0: ties keep one order between updates
          return 0;
       }
 

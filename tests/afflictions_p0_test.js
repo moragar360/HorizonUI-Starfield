@@ -88,8 +88,8 @@ const SKIN = "PersonalEffect_Skin_Negative";
 	expect(h.laid[0].icon === SKIN && h.laid[1].icon === F_POS, "(a) the affliction sorts before the buff (buffs go to +N MORE first)");
 	const neg = h.laid.find((o) => o.icon === SKIN);
 	expect(neg.name === "Affliction" && neg.kind === "injury" && neg.pos === false, "(a) a _Negative effect is still a red Affliction chip");
-	expect(h.hzJoinEffects([{ sEffectIcon: F_POS }, { sEffectIcon: SKIN }]) === "Skin", "(a) the classic card text lists afflictions only");
-	expect(h.hzJoinEffects([{ sEffectIcon: F_POS }]) === "None", "(a) classic card text with only a buff reads None");
+	expect(h.hzJoinEffects([{ sEffectIcon: F_POS }, { sEffectIcon: SKIN }], true) === "Skin", "(a) the classic card text lists afflictions only");
+	expect(h.hzJoinEffects([{ sEffectIcon: F_POS }], true) === "None", "(a) classic card text with only a buff reads None");
 	h.hzV19 = () => false; h.effects([W_POS]);
 	expect(h.hzAfflCount === 0, "(a) classic card: a buff alone does not count");
 	h.effects([W_NEG]);
@@ -199,6 +199,44 @@ function alertNames(h) { return h.hz27Alerts.map((a) => a.txt).join("|"); }
 	const h = host(as); h.hz26OwInAffl = () => true;
 	h.effects([F_POS]);
 	expect(h.hzAfflCount === 1, "(a) Overweight on the card counts as afflicted; the buff does not");
+}
+
+// ---- N-1: the buff filter is for the personal list only; the environment text is the old behavior exactly ----
+{
+	const h = host(as);
+	expect(h.hzJoinEffects([{ sEffectIcon: "HazardEffect_Thermal_Positive" }]) === "Thermal", "N-1: env text: HazardEffect_Thermal_Positive alone still reads Thermal (not None)");
+	expect(h.hzJoinEffects([{ sEffectIcon: "HazardEffect_Thermal_Positive" }, { sEffectIcon: "HazardEffect_Radiation" }]) === "Thermal, Radiation", "N-1: env text: a _Positive env icon is still listed next to another hazard");
+	const pb = fnText(as, "hzOnPersonalEffects").body, eb = fnText(as, "hzOnEnvEffects").body;
+	expect(/this\.hzJoinEffects\(e\.data\.aPersonalEffects as Array,true\)/.test(pb), "N-1: the personal effects call asks for the buff filter");
+	expect(/this\.hzJoinEffects\(a\)/.test(eb) && !/hzJoinEffects\([^)]*,/.test(eb), "N-1: the environment call passes one argument (filter off)");
+	if (base) {
+		const o = host(base);
+		const pool = ["HazardEffect_Thermal_Positive", "HazardEffect_Thermal_Negative", "HazardEffect_Radiation", "HazardEffect_Airborne", "HazardEffect_Corrosive_Negative", "HazardEffect_RestoreSoak", "HazardEffect_Cold_Positive", "PersonalEffect_Food_Positive", "Hazard_Toxic_Positive", "", "X_Positive"];
+		let s0 = 7, bad = "", n = 0;
+		const r = () => { s0 = (s0 * 1664525 + 1013904223) >>> 0; return s0 / 4294967296; };
+		for (let t = 0; t < 3000 && !bad; t++) {
+			const len = Math.floor(r() * 6); const a = [];
+			for (let k = 0; k < len; k++) a.push({ sEffectIcon: pool[Math.floor(r() * pool.length)] });
+			const x = h.hzJoinEffects(a), y = o.hzJoinEffects(a); n++;
+			if (x !== y) bad = JSON.stringify(a) + " new=" + x + " old=" + y;
+		}
+		expect(!bad, "N-1: env text equals the 591d340 helper on " + n + " random env lists with _Positive icons" + (bad ? " -- " + bad : ""));
+		let nb = 0, ob = 0;
+		try { h.hzJoinEffects([null]); } catch (e) { nb = 1; }
+		try { o.hzJoinEffects([null]); } catch (e) { ob = 1; }
+		expect(nb === ob, "N-1: env text handles a null entry the same way as 591d340");
+		expect(h.hzJoinEffects(null) === o.hzJoinEffects(null) && h.hzJoinEffects([]) === o.hzJoinEffects([]), "N-1: empty and missing env lists read the same as 591d340");
+	}
+}
+
+// ---- N-5: tied chips keep one order between updates ----
+{
+	const h = host(as);
+	const mk = () => [{ key: "p:B", sev: 0, seen: 5 }, { key: "p:A", sev: 0, seen: 5 }, { key: "p:C", sev: 0, seen: 5 }, { key: "a:X:Hungry", sev: 3, seen: 5 }, { key: "e:Thermal", sev: 1, seen: 5 }];
+	const perms = [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [2, 0, 4, 1, 3], [1, 4, 0, 3, 2], [3, 2, 1, 4, 0]];
+	const orders = new Set(perms.map((p) => { const b = mk(); return p.map((i) => b[i]).sort(h.hzAfSortFn).map((o) => o.key).join(","); }));
+	expect(orders.size === 1 && [...orders][0] === "a:X:Hungry,e:Thermal,p:A,p:B,p:C", "N-5: tied chips sort by key, the same for every input order (" + [...orders].join(" / ") + ")");
+	expect(h.hzAfSortFn({ key: "k", sev: 1, seen: 1 }, { key: "k", sev: 1, seen: 1 }) === 0, "N-5: the same key compares equal");
 }
 
 // ---- the same scenarios on the old bodies show each bug (the tests can tell old from new) ----
