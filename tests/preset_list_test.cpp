@@ -947,6 +947,25 @@ int main()
 			std::cout << "ok  TempUnit=1 survives Diff\n";
 			std::cout << "ok  ReactionCard=0 survives Diff\n";
 		}
+		{
+			// 0.43.3.1 Active Buffs: a dragged spot and the card settings survive the save (Diff) and a preset apply
+			// (PresetToUser); a preset that does not list them puts them back to their defaults.
+			const std::string save =
+				"[Layout]\r\nBuffsX=L120\r\nBuffsY=B-300\r\n"
+				"[Cards]\r\nBuffsCompact=1\r\nBuffsScale=1.2\r\n"
+				"[ActiveBuffs]\r\nBuffsMax=9\r\nBuffsShow=1\r\nBuffsRule=2\r\nActiveBuffs=1\r\n";
+			HZF::DiffOpt o;
+			o.keepUnknownKeys = false;
+			const auto saved = HZF::Diff(save, ini, "", o);
+			Expect(saved.find("BuffsX=L120") != std::string::npos && saved.find("BuffsY=B-300") != std::string::npos, "Active Buffs: the dragged spot survives the save");
+			Expect(saved.find("BuffsCompact=1") != std::string::npos && saved.find("BuffsScale=1.2") != std::string::npos, "Active Buffs: size / form survive the save");
+			Expect(saved.find("BuffsMax=9") != std::string::npos && saved.find("BuffsShow=1") != std::string::npos && saved.find("BuffsRule=2") != std::string::npos, "Active Buffs: [ActiveBuffs] values survive the save");
+			Expect(saved.find("ActiveBuffs=1") == std::string::npos, "Active Buffs: a value equal to the default is not written");
+			const auto applied = HZF::PresetToUser("[Preset]\r\nName=Test\r\n" + save, ini, "[Layout]\r\nBuffsX=R-50\r\n");
+			Expect(applied.find("BuffsX=L120") != std::string::npos && applied.find("BuffsY=B-300") != std::string::npos && applied.find("BuffsMax=9") != std::string::npos, "Active Buffs: a preset with the card's spot and values applies them");
+			const auto other = HZF::PresetToUser("[Preset]\r\nName=Other\r\n[Style]\r\nTempUnit=1\r\n", ini, saved);
+			Expect(other.find("BuffsX=") == std::string::npos && other.find("BuffsMax=") == std::string::npos && other.find("TempUnit=1") != std::string::npos, "Active Buffs: a preset without the keys puts the default spot and values back");
+		}
 	}
 
 	{
