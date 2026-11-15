@@ -731,6 +731,8 @@ if (base) {
 			// Hazard Status: hzSetRows is the F11 rows table (its "Jetpack" is a setting label, no hide code); this tree
 			// may differ from 56d4098 there only by the one HAZARD STATUS row
 			if (n === "hzSetRows") { z = z.replace(HS_ROW, ""); }
+			// 0.43.3.1 Active Buffs: its one [Rules] row (BuffsRule) joins the same table
+			if (n === "hzSetRows") { z = z.replace('{"k":"BuffsRule","l":"ACTIVE BUFFS","t":"q","ids":[0,1,2]},', ""); }
 			// arch-fixes Fix 1: hzOnFrame's hide-list re-walk is edge-triggered now; every right-side line in it (the names
 			// and the hide flags) must still be byte-identical, and the rebuild list itself is checked by behavior below
 			if (n === "hzOnFrame" && z !== x && z.indexOf("arch-fixes Fix 1") >= 0) {

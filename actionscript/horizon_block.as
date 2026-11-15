@@ -549,7 +549,8 @@
       private function hzApplyScale() : void
       {
          // v0.34: each card has its own factor ([Cards] <Card>Scale, -1 = HudScale)
-         var m:Array = [[this.HorizonCard_mc,"Jetpack"],[this.HorizonVitals_mc,"Vitals"],[this.HorizonEnv_mc,"Planet"],[this.HorizonAffl_mc,"Afflictions"],[this.HorizonBuffs_mc,"Buffs"],[this.HorizonAmmo_mc,"Equipment"],[this.HorizonQuest_mc,"Quests"],[this.HorizonCompass_mc,"Compass"],[this.HorizonCompact_mc,"Compact"],[this.HorizonCompactQuest_mc,"Quests"],[this.HorizonChar_mc,"Character"],[this.HorizonEnemy_mc,"Enemy"],[this.HorizonStealth_mc,"Stealth"],[this.HorizonXp_mc,"XpToast"],[this.hz43Watch,"Watch"],[this.HorizonHazard_mc,"Hazard"]];
+         var m:Array = [[this.HorizonCard_mc,"Jetpack"],[this.HorizonVitals_mc,"Vitals"],[this.HorizonEnv_mc,"Planet"],[this.HorizonAffl_mc,"Afflictions"],[this.HorizonAmmo_mc,"Equipment"],[this.HorizonQuest_mc,"Quests"],[this.HorizonCompass_mc,"Compass"],[this.HorizonCompact_mc,"Compact"],[this.HorizonCompactQuest_mc,"Quests"],[this.HorizonChar_mc,"Character"],[this.HorizonEnemy_mc,"Enemy"],[this.HorizonStealth_mc,"Stealth"],[this.HorizonXp_mc,"XpToast"],[this.hz43Watch,"Watch"],[this.HorizonHazard_mc,"Hazard"]];
+         m.push([this.HorizonBuffs_mc,"Buffs"]);   // 0.43.3.1: the Active Buffs card
          for each(var e:Array in m)
          {
             var c:Sprite = e[0] as Sprite;
@@ -2355,7 +2356,7 @@
       // from the Afflictions card. Settings ([ActiveBuffs]): ActiveBuffs (on / off), BuffsShow (0 buffs only, 1 buffs +
       // debuffs in their own red section), BuffsMax (1 - 12 rows, the rest is one "+N more" line), BuffsTimers,
       // BuffsPermanent (permanent entries, shown as PERM), BuffsHideEmpty. Size / style: [Cards] BuffsScale /
-      // BuffsCompact (0 expanded, 1 compact). When it shows: [Rules] BuffsRule. Spot: [Layout] BuffsX / BuffsY (-1 = just
+      // BuffsCompact (0 expanded, 1 compact). When it shows: BuffsRule (F11 RULES). Spot: [Layout] BuffsX / BuffsY (-1 = just
       // above the Afflictions card).
       // Data (field names as the vanilla Status menu reads them): aEffectGroups[] (bHasAfflictions, sEffectIcon,
       // aEffects[]); aEffects[] (sName, bHideName, bIsBuff, bPermanent, fTimeRemaining). Groups with bHasAfflictions are
@@ -2376,7 +2377,7 @@
       // Author: Moragar. Last modified: 2026-11-14.
       public var hzAbOn:Boolean = true;               // [ActiveBuffs] ActiveBuffs
       public var HorizonBuffs_mc:Sprite = null;       // the card (ARRANGE key "Buffs")
-      public var hzRuleBuffs:int = 0;                 // [Rules] BuffsRule
+      public var hzRuleBuffs:int = 0;                 // [ActiveBuffs] BuffsRule (F11 RULES)
       private var hzAbMode:int = 0;                   // BuffsShow: 0 buffs only, 1 buffs + debuffs
       private var hzAbMax:int = 6;                    // BuffsMax 1 - 12
       private var hzAbTimers:Boolean = true;          // BuffsTimers
@@ -2838,7 +2839,7 @@
          this.hzPlace(c,af.x,y0 - 10 * sB - h);
       }
 
-      // ---- settings ([ActiveBuffs], [Rules] BuffsRule; size / form are the generic [Cards] BuffsScale / BuffsCompact) ----
+      // ---- settings ([ActiveBuffs], BuffsRule included; size / form are the generic [Cards] BuffsScale / BuffsCompact) ----
       private function hzAbIni(k:String, bv:Boolean, nv:Number) : Boolean
       {
          switch(k)
@@ -2849,11 +2850,17 @@
             case "buffstimers": this.hzAbTimers = bv; break;
             case "buffspermanent": this.hzAbPerm = bv; break;
             case "buffshideempty": this.hzAbHideEmpty = bv; break;
-            case "buffsrule": this.hzRuleBuffs = this.hzRuleFix("BuffsRule",int(nv)); break;
+            case "buffsrule": if(!isNaN(nv)) { this.hzRuleBuffs = this.hzAbRuleFix(int(nv)); } break;
             default: return false;
          }
          this.hzAbSig = null;
          return true;
+      }
+
+      // [Rules]-style values for this card: 0 always, 1 combat only, 2 hide in ship (anything else = 0)
+      private function hzAbRuleFix(v:int) : int
+      {
+         return (v == 1 || v == 2) ? v : 0;
       }
 
       private function hzAbSetCur(o:Object) : void
@@ -2876,7 +2883,7 @@
          if(p.BuffsTimers != undefined) { this.hzAbTimers = Boolean(p.BuffsTimers); }
          if(p.BuffsPermanent != undefined) { this.hzAbPerm = Boolean(p.BuffsPermanent); }
          if(p.BuffsHideEmpty != undefined) { this.hzAbHideEmpty = Boolean(p.BuffsHideEmpty); }
-         if(p.BuffsRule != undefined && !isNaN(Number(p.BuffsRule))) { this.hzRuleBuffs = this.hzRuleFix("BuffsRule",int(p.BuffsRule)); }
+         if(p.BuffsRule != undefined && !isNaN(Number(p.BuffsRule))) { this.hzRuleBuffs = this.hzAbRuleFix(int(p.BuffsRule)); }
          this.hzAbSig = null;
          this.hzAbSync();
       }
@@ -2884,7 +2891,7 @@
       private function hzAbIniLines(a:Array, p:Object) : void
       {
          a.push("[ActiveBuffs]");
-         a.push("; Active Buffs card: effects from the game's Status feed. 1 = on (default), 0 = off. Size / style: [Cards] BuffsScale / BuffsCompact. When it shows: [Rules] BuffsRule");
+         a.push("; Active Buffs card: effects from the game's Status feed. 1 = on (default), 0 = off. Size / style: [Cards] BuffsScale / BuffsCompact. When it shows: BuffsRule below (F11 RULES)");
          a.push("ActiveBuffs=" + this.hzB(p.ActiveBuffs !== undefined ? p.ActiveBuffs : this.hzAbOn));
          a.push("; 0 = buffs only (default), 1 = buffs + debuffs (debuffs in their own red section)");
          a.push("BuffsShow=" + String(int(p.BuffsShow !== undefined ? p.BuffsShow : this.hzAbMode) == 1 ? 1 : 0));
@@ -2896,6 +2903,8 @@
          a.push("BuffsPermanent=" + this.hzB(p.BuffsPermanent !== undefined ? p.BuffsPermanent : this.hzAbPerm));
          a.push("; 1 = the card hides while it has nothing to list (default)");
          a.push("BuffsHideEmpty=" + this.hzB(p.BuffsHideEmpty !== undefined ? p.BuffsHideEmpty : this.hzAbHideEmpty));
+         a.push("; When the card shows (F11 RULES): 0 always (default), 1 combat only, 2 hide in ship");
+         a.push("BuffsRule=" + String(this.hzAbRuleFix(int(p.BuffsRule !== undefined ? p.BuffsRule : this.hzRuleBuffs))));
          a.push("");
       }
       // ===================== end Active Buffs card =====================
@@ -3991,7 +4000,7 @@
          // 0.43.3.0: the Hazard Status card's base (an edge: hzHsCard / hzHsSync return at once when nothing changed); the
          // show target is given again like every card, so a scanner force-hide (hz40ForceHide) is restored here too
          try { this.hzHsCard(cardBase); this.hzHsSync(); if(this.HorizonHazard_mc && !this.hzArrange) { this.hzShow(this.HorizonHazard_mc,this.hzHsShown); } } catch(eHsR:Error) { }
-         // 0.43.3.1: the Active Buffs card the same way (its base: the cards' base and [Rules] BuffsRule; diff-and-skip)
+         // 0.43.3.1: the Active Buffs card the same way (its base: the cards' base and BuffsRule; diff-and-skip)
          try { this.hzAbCard(cardBase && this.hzRuleOk(this.hzRuleBuffs)); this.hzAbSync(); if(this.HorizonBuffs_mc && !this.hzArrange) { this.hzShow(this.HorizonBuffs_mc,this.hzAbShown); } } catch(eAbR:Error) { }
          var full:Boolean = !this.hzCompact && cardBase;
          var vitBase:Boolean = base && !this.hz40Hide;   // v0.41.0: the HUD vitals cards hide too; hz41V draws the kept vitals
@@ -4762,7 +4771,7 @@
          }
          if(tab == 4)
          {
-            return [{"k":"JetpackRule","l":"JETPACK","t":"q","ids":[0,4,1,2],"h":"WHEN EACH CARD SHOWS"},{"k":"VitalsRule","l":"VITALS","t":"q","ids":[0,5,1,2]},{"k":"PlanetRule","l":"PLANET","t":"q","ids":[0,1,2]},{"k":"AfflictionsRule","l":"AFFLICTIONS","t":"q","ids":[0,6,1,2]},{"k":"AmmoRule","l":"EQUIPMENT","t":"q","ids":[0,3,1,2]},{"k":"QuestsRule","l":"QUEST TRACKER","t":"q","ids":[0,1,2]},{"k":"CompassRule","l":"COMPASS","t":"q","ids":[0,1,2]},{"k":"CharacterRule","l":"CHARACTER CARD","t":"q","ids":[0,7,8,9,1,2],"note":"XP / level / credits / skill point: shows for 8 s, then fades (CharacterShowSeconds in the ini)"},{"k":"CrosshairRule","l":"CROSSHAIR","t":"r","opts":["ALWAYS","WEAPON DRAWN","OFF"],"ids":[0,1,2],"h":"CENTER RETICLE","note":"The center reticle only. Prompts, target cards, hit markers, the kill X, the damage ring, and the stealth pill stay."}];
+            return [{"k":"JetpackRule","l":"JETPACK","t":"q","ids":[0,4,1,2],"h":"WHEN EACH CARD SHOWS"},{"k":"VitalsRule","l":"VITALS","t":"q","ids":[0,5,1,2]},{"k":"PlanetRule","l":"PLANET","t":"q","ids":[0,1,2]},{"k":"AfflictionsRule","l":"AFFLICTIONS","t":"q","ids":[0,6,1,2]},{"k":"AmmoRule","l":"EQUIPMENT","t":"q","ids":[0,3,1,2]},{"k":"QuestsRule","l":"QUEST TRACKER","t":"q","ids":[0,1,2]},{"k":"CompassRule","l":"COMPASS","t":"q","ids":[0,1,2]},{"k":"CharacterRule","l":"CHARACTER CARD","t":"q","ids":[0,7,8,9,1,2],"note":"XP / level / credits / skill point: shows for 8 s, then fades (CharacterShowSeconds in the ini)"},{"k":"BuffsRule","l":"ACTIVE BUFFS","t":"q","ids":[0,1,2]},{"k":"CrosshairRule","l":"CROSSHAIR","t":"r","opts":["ALWAYS","WEAPON DRAWN","OFF"],"ids":[0,1,2],"h":"CENTER RETICLE","note":"The center reticle only. Prompts, target cards, hit markers, the kill X, the damage ring, and the stealth pill stay."}];
          }
          if(tab == 5)
          {
@@ -6935,7 +6944,7 @@
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0,"ActiveBuffs":1,"BuffsShow":0,"BuffsMax":6,"BuffsTimers":1,"BuffsPermanent":0,"BuffsHideEmpty":1,"BuffsRule":0,"BuffsScale":-1,"BuffsCompact":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -16219,6 +16228,7 @@
       // ---------- ini / settings ----------
       private function hz26Ini(k:String, bv:Boolean, nv:Number) : Boolean
       {
+         if(this.hzAbIni(k,bv,nv)) { return true; }   // 0.43.3.1: [ActiveBuffs]
          switch(k)
          {
             case "showcharacter": this.hzShowChar = bv; break;
@@ -16239,6 +16249,7 @@
 
       private function hz26SetCur(o:Object) : void
       {
+         try { this.hzAbSetCur(o); } catch(errAbC:Error) { }   // 0.43.3.1: Active Buffs
          o.ShowCharacter = this.hzShowChar;
          o.EdgePulse = this.hzEdgePulse;
          o.HazardStatus = this.hzHsOn;
@@ -16255,6 +16266,7 @@
 
       private function hz26SetLive(p:Object) : void
       {
+         try { this.hzAbSetLive(p); } catch(errAbS:Error) { }   // 0.43.3.1: Active Buffs
          if(p.ShowCharacter != undefined) { this.hzShowChar = Boolean(p.ShowCharacter); }
          if(p.EdgePulse != undefined) { this.hzEdgePulse = Boolean(p.EdgePulse); }
          if(p.HazardStatus != undefined && this.hzHsOn != Boolean(p.HazardStatus)) { this.hzHsOn = Boolean(p.HazardStatus); this.hzLaidOut = false; }
@@ -16301,6 +16313,7 @@
          a.push("; Green healing sliver ahead of the health bar while health regenerates");
          a.push("RegenSliver=" + this.hzB(p.RegenSliver));
          a.push("");
+         this.hzAbIniLines(a,p);   // 0.43.3.1: [ActiveBuffs], right after [Effects]
       }
 
       // vitals warning state per row (0 health, 1 oxygen) -> stripe redraw only when it changes band
@@ -18917,6 +18930,13 @@
             {"k":"EnemyBar","l":"ENEMY HEALTH BAR (TOP CENTER)","t":"b"},this.hz34Sz("Enemy"),
             {"k":"StealthMeter","l":"STEALTH METER (ABOVE CROSSHAIR)","t":"b"},this.hz34Sz("Stealth"),
             {"k":"CompactScale","l":"COMPACT STRIPS: SIZE","t":"z","note":"The jetpack / vitals / afflictions strips of COMPACT MODE"},
+            {"k":"ActiveBuffs","l":"ACTIVE BUFFS","t":"b","h":"ACTIVE BUFFS","note":"Your active effects from the game's Status list. Default spot: just above the Afflictions card"},this.hz34Sz("Buffs"),
+            {"k":"BuffsShow","l":"SHOW","t":"r","opts":["BUFFS ONLY","BUFFS + DEBUFFS"],"ids":[0,1],"sub":true,"note":"Buffs + debuffs puts debuffs in a separate red-tinted section."},
+            {"k":"BuffsCompact","l":"STYLE","t":"r","opts":["EXPANDED","COMPACT","GLOBAL"],"ids":[0,1,-1],"sub":true,"note":"Expanded adds a remaining-time bar. Compact is one line per effect. GLOBAL follows COMPACT MODE."},
+            {"k":"BuffsMax","l":"MAX ENTRIES","t":"n","mn":1,"mx":12,"st":1,"sub":true,"note":"Extra effects collapse into a \"+N more\" line."},
+            {"k":"BuffsTimers","l":"SHOW TIMERS","t":"b","sub":true},
+            {"k":"BuffsPermanent","l":"SHOW PERMANENT EFFECTS","t":"b","sub":true,"note":"Off by default. Permanent entries show PERM and have no countdown."},
+            {"k":"BuffsHideEmpty","l":"HIDE WHEN EMPTY","t":"b","sub":true},
             {"k":"ShowTarget","l":"TARGET CARD (ACTIVATE PROMPT)","t":"b","h":"HOVER + CONTAINER"},
             {"k":"NameHover","l":"NAME HOVER","t":"r","opts":["COMPACT","FULL"],"ids":[0,1],"sub":true,"note":"COMPACT is one line: icon, name, key. FULL is the taller card."},
             {"k":"HoverScale","l":"HOVER CARDS: SIZE","t":"z","sub":true,"note":"Activate prompts, loose item / take card, compare and enemy tags"},
