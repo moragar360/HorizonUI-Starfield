@@ -24,20 +24,15 @@ const root = path.join(__dirname, "..");
 const asPath = process.env.HZ_AS || path.join(root, "actionscript", "horizon_block.as");
 const BASE = process.env.HZ_BASE || "ff4c33f";
 const as = fs.readFileSync(asPath, "utf8").replace(/\r\n/g, "\n");
-let baseAs = null;
-try { baseAs = cp.execFileSync("git", ["show", BASE + ":actionscript/horizon_block.as"], { cwd: root, encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "ignore"] }).replace(/\r\n/g, "\n"); } catch (e) { baseAs = null; }
+const gitBase = require("./lib/git_base.js");
+const baseRes = gitBase.readBase(root, BASE);   // S-1b: SKIP only without a repository or in a shallow clone
+let baseAs = baseRes.src;
 
 let failed = 0, passed = 0;
 function expect(cond, msg) {
 	if (cond) { passed++; console.log("ok  " + msg); return; }
 	failed++;
 	console.error("FAIL " + msg);
-}
-// S-1: git-based checks (old bodies from git show) print SKIP and pass when git history or the base revision is not
-// readable (no .git, a shallow clone). HZ_REQUIRE_GIT=1 makes that a FAIL.
-function gitMissing(what) {
-	if (process.env.HZ_REQUIRE_GIT === "1") { expect(false, what + " (HZ_REQUIRE_GIT=1)"); return; }
-	console.log("SKIP " + what + ": git history not available, the old-vs-new checks are skipped (HZ_REQUIRE_GIT=1 makes this a FAIL)");
 }
 function fnText(src, name) {
 	const i = src.indexOf("private function " + name + "(");
@@ -177,7 +172,7 @@ function at(W, p) { let c = W.top; for (const i of p) c = c.kids[i]; return c; }
 
 // ---- 2. hide: same writes as the old walk ----
 const KEEP = /^(RolloverActivation_mc|RolloverActivationHolder_mc|ButtonBars_mc|TopButtonBar_mc|BottomButtonBar_mc|Button[12]_mc)$/;   // the widget skeleton stays (swaps of the buttons are their own case)
-if (!baseAs) gitMissing("git show " + BASE + " (the old bodies) is readable");
+if (!baseAs) gitBase.report(baseRes, BASE, "old-vs-new hide walk checks", expect);
 else {
 	let walksOld = 0, walksNew = 0, frames = 0, worst = "";
 	for (let seed = 1; seed <= 30 && !worst; seed++) {

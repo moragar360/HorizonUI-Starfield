@@ -23,20 +23,15 @@ const cp = require("child_process");
 const root = path.join(__dirname, "..");
 const asPath = process.env.HZ_AS || path.join(root, "actionscript", "horizon_block.as");
 const as = fs.readFileSync(asPath, "utf8").replace(/\r\n/g, "\n");
-let baseAs = null;
-try { baseAs = cp.execFileSync("git", ["show", "ff4c33f:actionscript/horizon_block.as"], { cwd: root, encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "ignore"] }).replace(/\r\n/g, "\n"); } catch (e) { baseAs = null; }
+const gitBase = require("./lib/git_base.js");
+const baseRes = gitBase.readBase(root, "ff4c33f");   // S-1b: SKIP only without a repository or in a shallow clone
+let baseAs = baseRes.src;
 
 let failed = 0, passed = 0;
 function expect(cond, msg) {
 	if (cond) { passed++; console.log("ok  " + msg); return; }
 	failed++;
 	console.error("FAIL " + msg);
-}
-// S-1: git-based checks (old bodies from git show) print SKIP and pass when git history or the base revision is not
-// readable (no .git, a shallow clone). HZ_REQUIRE_GIT=1 makes that a FAIL.
-function gitMissing(what) {
-	if (process.env.HZ_REQUIRE_GIT === "1") { expect(false, what + " (HZ_REQUIRE_GIT=1)"); return; }
-	console.log("SKIP " + what + ": git history not available, the old-vs-new checks are skipped (HZ_REQUIRE_GIT=1 makes this a FAIL)");
 }
 function fnText(src, name) {
 	const i = src.indexOf("private function " + name + "(");
@@ -133,7 +128,7 @@ function near(a, b) {
 }
 
 // ---- 1. markers ----
-if (!baseAs) { gitMissing("base ff4c33f available (git show)"); }
+if (!baseAs) { gitBase.report(baseRes, "ff4c33f", "old-vs-new marker checks", expect); }
 else {
 	let totalOld = 0, totalNew = 0, badMsg = "", dbgOk = true, throwOk = true, frames = 0, throwSeen = 0;
 	for (let seed = 1; seed <= 8 && !badMsg; seed++) {
