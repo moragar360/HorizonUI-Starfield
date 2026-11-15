@@ -2364,14 +2364,16 @@
       // not empty) and a known polarity (bIsBuff, else the group's bIsPositiveEffect); anything else is not shown. A
       // missing or non-numeric fTimeRemaining shows no time (unknown stays unknown); nothing is ever made up.
       // Countdown (no new timer, no new frame work): the remaining time of the last payload counts down on Horizon's
-      // existing ~1 s real-clock slot (hzPpClock, the 30-frame hzOnFrame slot that the planet card's PC clock
-      // already uses). That slot runs only while the HUD movie advances, and a gap over HZ_AB_GAP (a pause, a covering
+      // existing real-clock slot (hzPpClock, the 30-frame hzOnFrame slot that the planet card's PC clock already
+      // uses: every 30 frames, about 0.5 s at 60 fps; the count uses the real time between calls, not the call rate). That slot runs only while the HUD movie advances, and a gap over HZ_AB_GAP (a pause, a covering
       // menu, a load) is not counted. A row's text changes only when its shown second changes. A new payload resets
       // every row to the game's value. If the game does not push while the Status menu is closed, the card keeps the
-      // last values and counts them down this way; a row that reaches 0 stays at 0:00 (amber) until the next payload.
+      // last values and counts them down this way; a row that reaches 0 shows 0:00 (amber) and leaves the list after it
+      // has sat at 0 for HZ_AB_DROP of that clock (about 5 s; hzAbDrop), unless the next payload comes first. A payload
+      // that still lists the effect brings it back (the game's list is the truth).
       // The bar is remaining time against the longest remaining time seen for that entry ("since seen"; reset when the
       // entry leaves the list or its time jumps up).
-      // Edge-only: the payload, the ~1 s slot (returns at once when no shown row has a timer), the show base
+      // Edge-only: the payload, the 30-frame slot (returns at once when no shown row has a timer), the show base
       // (hzRefreshVisibility), style apply, settings, layout and a load. Diff-and-skip: a structure signature decides a
       // full redraw; otherwise only changed time texts and the bars are touched.
       // Author: Moragar. Last modified: 2026-11-14.
@@ -2389,6 +2391,7 @@
       private static const HZ_AB_EFFECTS:int = 24;    // walk bound: effects per group
       private static const HZ_AB_GAP:Number = 4000;   // a slot gap longer than this (ms) is a pause / menu / load: not counted
       private static const HZ_AB_LOW:Number = 60;     // under a minute left: amber
+      private static const HZ_AB_DROP:Number = 5000;  // a timed row that has sat at 0 this long (ms, local clock) leaves the list
       private var hzAbG:Sprite = null;                // panel, icons, debuff band
       private var hzAbBarG:Sprite = null;             // the remaining-time bars (redrawn when a shown second changes)
       private var hzAbHd:TextField = null;            // title
@@ -2401,7 +2404,7 @@
       private var hzAbFeed:int = 0;                   // 0 no payload yet, 1 payload with aEffectGroups, 2 payload without it (unknown)
       private var hzAbList:Array = [];                // entries of the last payload (see hzAbParse)
       private var hzAbSeen:Object = {};               // key -> longest remaining time seen ("since seen")
-      private var hzAbClk:Number = 0;                 // local count clock (ms), advanced only by the ~1 s slot
+      private var hzAbClk:Number = 0;                 // local count clock (ms), advanced only by the 30-frame slot
       private var hzAbWall:Number = -1;               // wall time of the last slot call (-1 = none yet)
       private var hzAbCardOn:Boolean = false;         // show base from hzRefreshVisibility (rule included)
       private var hzAbShown:Boolean = false;          // the show target last given to hzShow
@@ -2585,8 +2588,8 @@
          return {"rows":shown,"total":all.length,"more":all.length - shown.length};
       }
 
-      // the ~1 s slot (hzPpClock): advance the local clock; only shown rows with a timer are touched, and only when
-      // their shown second changed
+      // the 30-frame slot (hzPpClock, about 0.5 s at 60 fps): advance the local clock, drop rows that sat at 0 for
+      // HZ_AB_DROP; only shown rows with a timer are touched, and only when their shown second changed
       private function hzAbTick() : void
       {
          var timed:Boolean = false;
@@ -2599,8 +2602,34 @@
             if(dt > 0 && dt <= HZ_AB_GAP) { this.hzAbClk += dt; }
          }
          this.hzAbWall = now;
+         if(this.hzAbDrop()) { return; }   // a row left: hzAbSync already redrew
          if(!this.hzAbShown || !this.hzAbTimers) { return; }
          this.hzAbTimes(false);
+      }
+
+      // timed entries that have sat at 0 for HZ_AB_DROP (local clock) leave the list. Compacted in place: nothing is
+      // allocated unless an entry leaves; then one structure redraw, like a payload. Permanent and unknown-time entries
+      // never leave here (only a payload or a load changes them).
+      private function hzAbDrop() : Boolean
+      {
+         var n:int = this.hzAbList.length;
+         var i:int = 0;
+         var j:int = 0;
+         while(i < n)
+         {
+            var e:Object = this.hzAbList[i];
+            if(e == null || e.p || isNaN(e.r) || this.hzAbClk - Number(e.at) < e.r * 1000 + HZ_AB_DROP)
+            {
+               if(j != i) { this.hzAbList[j] = e; }
+               j++;
+            }
+            i++;
+         }
+         if(j == n) { return false; }
+         this.hzAbList.length = j;
+         this.hzAbSig = null;
+         this.hzAbSync();
+         return true;
       }
 
       // time texts and bars of the drawn rows; force = after a full draw
@@ -9412,7 +9441,7 @@
       // real-world clock refresh, ~1 s (called from the frame loop)
       private function hzPpClock() : void
       {
-         try { this.hzAbTick(); } catch(eAbT:Error) { }   // Active Buffs countdown: this existing ~1 s slot, no timer of its own
+         try { this.hzAbTick(); } catch(eAbT:Error) { }   // Active Buffs countdown: this existing 30-frame slot, no timer of its own
          if(!this.hzPlanPill || !this.hzPlanPill.visible || this.hzTimeDisplay < 2) { return; }
          var m:int = -2;
          try { var dt:Date = new Date(); m = dt.getHours() * 60 + dt.getMinutes(); } catch(err:Error) { m = -2; }

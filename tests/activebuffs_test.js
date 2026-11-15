@@ -1,7 +1,7 @@
 // Active Buffs card tests (0.43.3.1). Run: node tests/activebuffs_test.js
 // Runs the production AS functions (types stripped) on a small host and checks the source:
 //  the Status feed parse, buffs / debuffs, permanent entries, max entries, expanded / compact, the countdown on the
-//  existing ~1 s slot (text changes only when the shown second changes), the degrade path (no aEffectGroups, a feed
+//  existing 30-frame slot (text changes only when the shown second changes), rows dropped after about 5 s at 0:00, the degrade path (no aEffectGroups, a feed
 //  that stops pushing), hide when empty, INI defaults and back-compat, ARRANGE (keys, lists, save / load of an
 //  edge-anchored spot), the rule, the shared card style (same panel path as a reference card), and no timer / frame /
 //  tree-search code in the card.
@@ -34,7 +34,7 @@ function fnText(src, name) {
 	throw new Error("unbalanced " + name);
 }
 const count = (s, sub) => s.split(sub).length - 1;
-const STATIC = ["HZ_AB_W", "HZ_AB_ROWS", "HZ_AB_GROUPS", "HZ_AB_EFFECTS", "HZ_AB_GAP", "HZ_AB_LOW", "HZ_RED", "HZ_AMB", "HZ_ACCENT", "HZ_LAY_KEYS"];
+const STATIC = ["HZ_AB_W", "HZ_AB_ROWS", "HZ_AB_GROUPS", "HZ_AB_EFFECTS", "HZ_AB_GAP", "HZ_AB_LOW", "HZ_AB_DROP", "HZ_RED", "HZ_AMB", "HZ_ACCENT", "HZ_LAY_KEYS"];
 function jsBody(src) {
 	let b = src
 		.replace(/for each\(var (\w+):[\w*]+ in /g, "for (let $1 of ")
@@ -74,7 +74,7 @@ const sec = as.slice(i0, i1 + B1.length);
 const code = sec.replace(/\/\/.*$/gm, "");
 const CONST = {};
 { const re = /private static const (HZ_AB_\w+):\w+ = ([^;]+);/g; let m; while ((m = re.exec(sec))) CONST[m[1]] = Number(m[2]); }
-expect(CONST.HZ_AB_ROWS === 12 && CONST.HZ_AB_GAP === 4000 && CONST.HZ_AB_LOW === 60 && CONST.HZ_AB_W === 300, "constants: 12 rows max, 4 s gap, amber under 60 s, 300 wide");
+expect(CONST.HZ_AB_ROWS === 12 && CONST.HZ_AB_GAP === 4000 && CONST.HZ_AB_LOW === 60 && CONST.HZ_AB_W === 300 && CONST.HZ_AB_DROP === 5000, "constants: 12 rows max, 4 s gap, amber under 60 s, 300 wide, drop 5 s after 0:00");
 
 // ---- source rules: edge-only ----
 expect(!/new Timer|\bTimer\(|setTimeout|setInterval|ENTER_FRAME|enterFrame|getTimer|hzFindByName|getChildByName|getChildAt|hzFrameN/.test(code), "no timer / frame / tree search code in the card");
@@ -82,7 +82,7 @@ expect(count(code, "addEventListener(") === 0, "no listener in the card");
 expect(count(code, "Subscribe(") === 1 && /BSUIDataManager\.Subscribe\("PlayerStatusData",this\.hzAbOnStatus\)/.test(code), "one data subscription: PlayerStatusData");
 expect(!/PlaySound|PlayMenuSound|\.play\(/.test(code), "no sound code");
 const ppc = fnText(as, "hzPpClock").body;
-expect(/^\s*try \{ this\.hzAbTick\(\); \} catch/.test(ppc), "countdown: hzAbTick runs first in the existing ~1 s slot hzPpClock (own try)");
+expect(/^\s*try \{ this\.hzAbTick\(\); \} catch/.test(ppc), "countdown: hzAbTick runs first in the existing 30-frame slot hzPpClock (own try)");
 expect(/if\(this\.hzFrameN % 30 == 11\) \{ try \{ this\.hzPpClock\(\); \}/.test(fnText(as, "hzOnFrame").body), "the slot is the existing 30-frame hzOnFrame call (unchanged)");
 expect(count(as, "this.hzAbTick()") === 1, "hzAbTick has exactly one caller");
 expect(/hz34Cm\["Buffs"\] === undefined\) \{ this\.hz34Cm\["Buffs"\] = 0; \}/.test(fnText(as, "hzAbBuild").body), "form defaults to EXPANDED when no BuffsCompact was read");
@@ -112,7 +112,7 @@ function host(over) {
 	for (const k of Object.keys(CONST)) h[k] = CONST[k];
 	h.HZ_RED = 0xFF5B5B; h.HZ_AMB = 0xF2A93B;
 	h.HZ_LAY_KEYS = JSON.parse("[" + /HZ_LAY_KEYS:Array = \[([^\]]*)\]/.exec(as)[1] + "]");
-	for (const n of ["hzAbSub", "hzAbBuild", "hzAbPool", "hzAbCmp", "hzAbOnStatus", "hzAbParse", "hzAbSeenUpd", "hzAbRem", "hzAbSec", "hzAbFmt", "hzAbPick", "hzAbTick", "hzAbTimes", "hzAbTimeCol", "hzAbBars", "hzAbWant", "hzAbSync", "hzAbDraw", "hzAbCard", "hzAbRestyle", "hzAbOnLoad", "hzAbIni", "hzAbRuleFix", "hzAbSetCur", "hzAbSetLive", "hzAbIniLines",
+	for (const n of ["hzAbSub", "hzAbBuild", "hzAbPool", "hzAbCmp", "hzAbOnStatus", "hzAbParse", "hzAbSeenUpd", "hzAbRem", "hzAbSec", "hzAbFmt", "hzAbPick", "hzAbTick", "hzAbDrop", "hzAbTimes", "hzAbTimeCol", "hzAbBars", "hzAbWant", "hzAbSync", "hzAbDraw", "hzAbCard", "hzAbRestyle", "hzAbOnLoad", "hzAbLayout", "hzAbIni", "hzAbRuleFix", "hzAbSetCur", "hzAbSetLive", "hzAbIniLines",
 		"hz34C", "hzPanel", "hzPanelA", "hzCardShA", "hzPanelFill", "hzOpExtra", "hzCardFill", "hzLight", "hzLum", "hzMix", "hzIconCol", "hzDarkText", "hzTileDisc", "hzIniLayoutKey", "hz30IniPos", "hz30PosStr"]) h[n] = toJs(n);
 	const draw = h.hzAbDraw; h.hzAbDraw = function (...a) { this.draws++; return draw.apply(this, a); };
 	Object.assign(h, over || {});
@@ -202,8 +202,9 @@ function show(h) { h.hzAbCard(true); h.hzAbSync(); return h; }
 	expect(tf.text === "0:59" && tf.sets === sets + 1 && tf.tint === 0xF2A93B, "under 60 s the time turns amber");
 	h.now += 60000; h.hzAbTick();
 	expect(tf.text === "0:59", "a slot gap over 4 s (pause, menu, load) is not counted");
-	for (let i = 0; i < 70; i++) { h.now += 1000; h.hzAbTick(); }
-	expect(tf.text === "0:00", "a row that runs out stays at 0:00 until the next payload (no made-up removal)");
+	// clock 2 s here; XP (61.4 s) reaches 0 at clock 61.4 s
+	for (let i = 0; i < 61; i++) { h.now += 1000; h.hzAbTick(); }
+	expect(tf.text === "0:00" && h.hzAbList.length === 1, "a row that runs out shows 0:00 and stays listed for now");
 	sets = tf.sets; h.now += 1000; h.hzAbTick();
 	expect(tf.sets === sets, "at 0:00 later slots change nothing");
 	feed(h, [grp("A", [ef("XP", { fTimeRemaining: 7300 })])]);
@@ -229,6 +230,80 @@ function show(h) { h.hzAbCard(true); h.hzAbSync(); return h; }
 	expect(h6.hzAbSeen["A|T|1#1"] === 100, "the bar keeps the longest time seen for the entry (since seen)");
 	feed(h6, [grp("A", [ef("T", { fTimeRemaining: 90 })])]);
 	expect(h6.hzAbSeen["A|T|1#1"] === 90, "a jump up (refresh) restarts since seen");
+}
+// ---- 6b. D-1: a timed row leaves about 5 s after it reaches 0:00 (the existing slot only) ----
+{
+	const tick = (h, ms, step) => { for (let t = 0; t < ms; t += step) { h.now += step; h.hzAbTick(); } };
+	const h = show(host());
+	feed(h, [grp("A", [ef("XP", { fTimeRemaining: 10 })])]);
+	h.hzAbTick(); tick(h, 10000, 500);
+	expect(h.hzAbTm[0].text === "0:00" && h.hzAbList.length === 1 && h.hzAbShown, "at 0 s left the row shows 0:00 and is still listed");
+	const d0 = h.draws;
+	tick(h, 4500, 500);
+	expect(h.hzAbList.length === 1 && h.hzAbShown && h.draws === d0, "4.5 s at 0:00: still listed, no redraw");
+	tick(h, 1000, 500);
+	expect(h.hzAbList.length === 0 && h.hzAbShown === false && h.draws === d0, "5 s at 0:00: the row leaves and the empty card hides (HIDE WHEN EMPTY)");
+	feed(h, [grp("A", [ef("XP", { fTimeRemaining: 10 })])]);
+	expect(h.hzAbList.length === 1 && h.hzAbShown && h.hzAbTm[0].text === "0:10", "a payload that still lists the effect brings it back (the game's list is the truth)");
+	// only expired timed rows leave; the others keep their order; permanent and unknown rows never leave here
+	const m = show(host({ hzAbPerm: true, hzAbHideEmpty: false }));
+	feed(m, [grp("A", [ef("Short", { fTimeRemaining: 2 }), ef("Perm", { bPermanent: true }), ef("Unk", { fTimeRemaining: undefined }), ef("Long", { fTimeRemaining: 300 })])]);
+	m.hzAbTick(); const dm = m.draws; tick(m, 7000, 500);
+	expect(m.hzAbList.map((e) => e.n).join(",") === "Perm,Unk,Long" && m.draws === dm + 1, "Short left after 2 s + 5 s with one redraw; Perm, Unk and Long stay in feed order");
+	expect(m.hzAbNm[0].text === "Perm" && m.hzAbTm[0].text === "PERM" && m.hzAbTm[1].text === "" && m.hzAbTm[2].text === "4:53", "the redraw shows the remaining rows with their times");
+	tick(m, 3600000, 1000);
+	expect(m.hzAbList.map((e) => e.n).join(",") === "Perm,Unk" && m.hzAbMore.visible === false, "Long leaves later; permanent and unknown-time rows stay until a payload or a load");
+	// a pause / menu gap is not time at 0:00
+	const g = show(host());
+	feed(g, [grp("A", [ef("T", { fTimeRemaining: 1 })])]); g.hzAbTick(); tick(g, 2000, 500);
+	g.now += 60000; g.hzAbTick(); tick(g, 3500, 500);
+	expect(g.hzAbList.length === 1, "a slot gap over 4 s (pause, menu) does not count as time at 0:00");
+	tick(g, 1000, 500);
+	expect(g.hzAbList.length === 0, "real slot time at 0:00 does");
+	// a hidden card and SHOW TIMERS off still drop expired rows (the list stays true for the next show)
+	const hd = host(); feed(hd, [grp("A", [ef("T", { fTimeRemaining: 1 })])]); hd.hzAbTick(); tick(hd, 6500, 500);
+	expect(hd.hzAbList.length === 0, "hidden card: the expired row still leaves the list");
+	const to = show(host({ hzAbTimers: false })); feed(to, [grp("A", [ef("T", { fTimeRemaining: 1 }), ef("U", { fTimeRemaining: 900 })])]); to.hzAbTick(); tick(to, 6500, 500);
+	expect(to.hzAbList.map((e) => e.n).join(",") === "U", "SHOW TIMERS off: the expired row still leaves");
+	// a debuff in BUFFS ONLY (not drawn) also leaves, so "+N more" and the count stay true
+	const dbf = show(host({ hzAbMode: 0, hzAbHideEmpty: false })); feed(dbf, [grp("A", [ef("D", { bIsBuff: false, fTimeRemaining: 1 }), ef("B", { fTimeRemaining: 900 })])]); dbf.hzAbTick(); tick(dbf, 6500, 500);
+	expect(dbf.hzAbList.map((e) => e.n).join(",") === "B", "a row that is not drawn leaves the list too");
+	// source: no new timer, no allocation on the slot path unless a row leaves
+	const tk = fnText(as, "hzAbTick").body.replace(/\/\/.*$/gm, ""), dr = fnText(as, "hzAbDrop").body.replace(/\/\/.*$/gm, "");
+	const pre = dr.slice(0, dr.indexOf("if(j == n) { return false; }"));
+	expect(dr.indexOf("if(j == n) { return false; }") > 0 && !/new |\[\]|\{\}|\.push\(|\.splice\(|\.slice\(|\.concat\(|"/.test(pre) && !/new |\[\]|\{\}|\.push\(|\.splice\(|\.slice\(|\.concat\(|"/.test(tk), "the slot path allocates nothing unless a row leaves (in-place compaction, no splice / slice / push)");
+	expect(/this\.hzAbWall = now;\s*if\(this\.hzAbDrop\(\)\) \{ return; \}/.test(tk) && count(as, "this.hzAbDrop()") === 1, "the drop runs only inside hzAbTick, right after the clock moves");
+}
+// ---- 6c. test gaps from the review's surviving mutants ----
+{
+	const tick = (h, ms, step) => { for (let t = 0; t < ms; t += step) { h.now += step; h.hzAbTick(); } };
+	const a = show(host()); feed(a, [grp("A", [ef("T", { fTimeRemaining: 60 })])]);
+	expect(a.hzAbTm[0].text === "1:00" && a.hzAbTm[0].tint === 0x3FD0E0, "exactly 60 s left is not amber yet (amber is under 60 s)");
+	a.hzAbTick(); tick(a, 1000, 500);
+	expect(a.hzAbTm[0].text === "0:59" && a.hzAbTm[0].tint === 0xF2A93B, "59 s left is amber");
+	const d = show(host({ hzAbMode: 1 })); feed(d, [grp("A", [ef("B", { fTimeRemaining: 30 }), ef("D", { bIsBuff: false, fTimeRemaining: 30 })])]);
+	expect(d.hzAbTm[0].tint === 0xF2A93B && d.hzAbTm[1].tint === 0xFF5B5B, "a debuff's time is red (a buff under a minute is amber)");
+	const u = show(host()); feed(u, [grp("A", [ef("T", { fTimeRemaining: 30 })])]);
+	feed(u, [grp("A", [ef("T", { fTimeRemaining: undefined })])]);
+	expect(u.hzAbTm[0].text === "", "a row whose time becomes unknown is redrawn without a time (unknown stays unknown)");
+	const t = show(host({ hzAbTimers: false })); feed(t, [grp("A", [ef("T", { fTimeRemaining: 30 })])]); t.hzAbTick();
+	const tn = t.tints, gc = t.hzAbBarG.graphics.calls.length; t.hzAbBarG.graphics.calls.push(["mark"]);
+	tick(t, 3000, 500);
+	expect(t.tints === tn && t.hzAbBarG.graphics.calls[gc][0] === "mark", "SHOW TIMERS off: the slot touches no text color and no bar");
+	const l = show(host()); feed(l, [grp("A", [ef("T", { fTimeRemaining: 100 })])]);
+	l.hzAbTick(); expect(Object.keys(l.hzAbSeen).length === 1 && l.hzAbWall >= 0, "since seen holds the entry; the slot took the wall time");
+	l.hzAbOnLoad();
+	expect(Object.keys(l.hzAbSeen).length === 0 && l.hzAbWall === -1, "a load also clears since seen and the wall time");
+	const af = { x: 40, y: 900 }, placed = [];
+	const ly = host({ HorizonAffl_mc: af, hzFades: [], hzPlace(c, x, y) { placed.push([x, y]); } });
+	ly.hzAbH = 80; ly.hzAbLayout();
+	expect(placed.length === 1 && placed[0][0] === 40 && placed[0][1] === 900 - 10 - 80, "default spot: 10 px above the Afflictions card, left edges aligned");
+	const fd = host({ HorizonAffl_mc: af, hzFades: [{ c: af, base: 700 }], hzPlace(c, x, y) { placed.push([x, y]); } });
+	fd.hzAbH = 0; fd.hzAbLayout();
+	expect(placed[1][1] === 700 - 10 - 60, "while the Afflictions card fades it uses its base spot; no drawn height yet = 60");
+	const cg = host(); let syncs = 0; const sy = cg.hzAbSync; cg.hzAbSync = function () { syncs++; return sy.apply(this, arguments); };
+	cg.hzAbCard(true); cg.hzAbCard(true); cg.hzAbCard(true);
+	expect(syncs === 1, "the show base is edge-gated: the same value again does no work");
 }
 // ---- 7. degrade ----
 {
