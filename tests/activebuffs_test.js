@@ -102,7 +102,7 @@ function host(over) {
 		hz26Now() { this.nowCalls++; return this.now; },
 		hzShow(c, on) { this.shows.push(on); c.visible = on; },
 		hzT(p, txt) { const t = mkTf(); t._t = txt; this.hzTexts.push({ tf: t }); return t; },
-		hzFitText(tf, t) { tf.text = t; }, hzUC(s) { return s; }, hzTxtTop(tf, y) { tf.y = y; }, hzTxtTint(tf, c) { tf.tint = c; },
+		hzFitText(tf, t) { tf.text = t; }, hzUC(s) { return s; }, hzTxtTop(tf, y) { tf.y = y; }, hzTxtTint(tf, c) { tf.tint = c; this.tints = (this.tints || 0) + 1; },
 		hzSetSz(c, w, h2) { c.w = w; c.h = h2; }, hzLayHas(k) { return !!this.hzLay[k]; },
 		hz34S() { return 1; }, hz34CmClamp(v) { const n = Math.round(Number(v)); return n === 0 || n === 1 ? n : -1; },
 		hzCardPal() { return [0x0B1218, 0x16181C, 0x0B1630, 0x0A2226, 0x1E1328, 0x2A1014, 0x3A4652, 0xD5DBE0, 0xF2F4F6]; },
@@ -192,9 +192,10 @@ function show(h) { h.hzAbCard(true); h.hzAbSync(); return h; }
 	const tf = h.hzAbTm[0];
 	expect(tf.text === "1:01", "the first draw shows the payload's time (rounded like the Status menu): " + tf.text);
 	h.hzAbTick(); expect(h.hzAbClk === 0, "the first slot call only takes the wall time");
-	let sets = tf.sets;
+	let sets = tf.sets, tints = h.tints, bars = h.hzAbBarG.graphics.calls.length;
+	h.hzAbBarG.graphics.calls.push(["mark"]);
 	h.now += 300; h.hzAbTick();
-	expect(tf.sets === sets && tf.text === "1:01", "0.3 s later the shown second is the same: the text is not touched");
+	expect(tf.sets === sets && tf.text === "1:01" && h.tints === tints && h.hzAbBarG.graphics.calls[bars][0] === "mark", "0.3 s later the shown second is the same: text, color and bar are not touched");
 	h.now += 700; h.hzAbTick();
 	expect(tf.text === "1:00" && tf.sets === sets + 1, "1 s later the second changed: one text update (1:00)");
 	sets = tf.sets; h.now += 1000; h.hzAbTick();
@@ -207,6 +208,8 @@ function show(h) { h.hzAbCard(true); h.hzAbSync(); return h; }
 	expect(tf.sets === sets, "at 0:00 later slots change nothing");
 	feed(h, [grp("A", [ef("XP", { fTimeRemaining: 7300 })])]);
 	expect(tf.text === "2:01:40", "a new payload resets the row to the game's value (h:mm:ss over an hour)");
+	const hr = show(host()); feed(hr, [grp("A", [ef("R", { fTimeRemaining: 61.6 })])]);
+	expect(hr.hzAbTm[0].text === "1:02", "the shown second is rounded like the Status menu (61.6 s -> 1:02)");
 	const h2 = show(host());
 	feed(h2, [grp("A", [ef("P", { bPermanent: true })])]);
 	const nc = h2.nowCalls; h2.hzAbTick(); h2.hzAbTick();
