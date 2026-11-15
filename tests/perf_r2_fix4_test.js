@@ -33,6 +33,12 @@ function expect(cond, msg) {
 	failed++;
 	console.error("FAIL " + msg);
 }
+// S-1: git-based checks (old bodies from git show) print SKIP and pass when git history or the base revision is not
+// readable (no .git, a shallow clone). HZ_REQUIRE_GIT=1 makes that a FAIL.
+function gitMissing(what) {
+	if (process.env.HZ_REQUIRE_GIT === "1") { expect(false, what + " (HZ_REQUIRE_GIT=1)"); return; }
+	console.log("SKIP " + what + ": git history not available, the old-vs-new checks are skipped (HZ_REQUIRE_GIT=1 makes this a FAIL)");
+}
 function fnText(src, name) {
 	const i = src.indexOf("private function " + name + "(");
 	if (i < 0) throw new Error("missing function " + name);
@@ -175,7 +181,7 @@ function frameCalls(h, kind, exits) {
 
 // ---- 1. random frames: same visible state after every call, far fewer passes ----
 if (!baseAs) {
-	expect(false, "git show ff4c33f:actionscript/horizon_block.as (the old bodies) is readable");
+	gitMissing("git show ff4c33f:actionscript/horizon_block.as (the old bodies) is readable");
 } else {
 	let oldPasses = 0, newPasses = 0, calls = 0, throwsSeen = 0;
 	for (let seed = 1; seed <= 8; seed++) {
