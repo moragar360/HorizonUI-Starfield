@@ -23,7 +23,7 @@ This build is not published and has no release tag. Install steps below still de
 - **Equipment card:** long weapon names wrap onto a second line, and the card grows to fit.
 - **Scanner highlight area** (F11 > SCANNER > HIGHLIGHT AREA): Horizon dot, Vanilla (default) or Full screen. It needs the 0.43.3.1 SFSE plugin; not tested in game yet.
 - **Controller:** prompt keycaps show the button you bound.
-- **Afflictions card:** buffs show as their own green Buff chips, a buff and its debuff no longer merge, and a needs alert clears once its effect ends.
+- **Afflictions card:** buffs show as their own green Buff chips, a buff and its debuff no longer merge, and a needs alert clears once its effect ends. Not tested in game yet.
 - **Fixed:** looting a killed enemy no longer shows its red health bar on the loot card. Locked containers should show their lock level (not tested in game yet).
 - The full list is in [CHANGELOG.md](CHANGELOG.md).
 
