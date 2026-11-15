@@ -18,12 +18,13 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 
 This build is not published and has no release tag. Install steps below still describe the published 0.43.2.0 download.
 
-- **Hazard Status card:** the hazard chip is now its own card. Move it in ARRANGE CARDS and set it up in F11 > CARDS. It follows your card style, shows red while a hazard hurts you and green while suit protection restores.
+- **Hazard Status card:** the hazard chip is now its own card. Move it in ARRANGE CARDS and set it up in F11 > CARDS. It follows your card style, shows red while a hazard hurts you and green while suit protection restores (the green while a hazard is still listed is not tested in game yet).
 - **Quest tracker:** long quest names and objectives wrap at the same font size instead of being cut off. F11 > CARDS > QUEST TRACKER adds WIDTH, MAX HEIGHT and TEXT WRAP.
 - **Equipment card:** long weapon names wrap onto a second line, and the card grows to fit.
-- **Scanner highlight area** (F11 > SCANNER > HIGHLIGHT AREA): Horizon dot, Vanilla (default) or Full screen.
+- **Scanner highlight area** (F11 > SCANNER > HIGHLIGHT AREA): Horizon dot, Vanilla (default) or Full screen. It needs the 0.43.3.1 SFSE plugin; not tested in game yet.
 - **Controller:** prompt keycaps show the button you bound.
-- **Fixed:** looting a killed enemy no longer shows its red health bar on the loot card, and locked containers show their lock level.
+- **Afflictions card:** buffs show as their own green Buff chips, a buff and its debuff no longer merge, and a needs alert clears once its effect ends.
+- **Fixed:** looting a killed enemy no longer shows its red health bar on the loot card. Locked containers should show their lock level (not tested in game yet).
 - The full list is in [CHANGELOG.md](CHANGELOG.md).
 
 ## New in 0.43.2.0 (alpha)

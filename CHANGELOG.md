@@ -11,8 +11,7 @@ Not published yet; it includes the unpublished 0.43.3.0 work. The settings schem
 ### Added
 - **Hazard Status card:** the hazard chip under the planet card is now its own card. Move it in ARRANGE CARDS (HAZARD STATUS), and turn it on or off, size it and pick its compact form in F11 > CARDS > HAZARD STATUS CARD. It follows the card style (font, text tone, accent, card color, opacity, shadow, header case). Red while a hazard hurts you, green while suit protection restores. Default spot: under the planet card. New keys: `HazardScale` and `HazardCompact` under `[Cards]`, `HazardX` and `HazardY` under `[Layout]`. `HazardStatus` stays under `[Effects]`.
 - **Quest tracker text wrap:** long quest names and objectives wrap onto new lines at the same font size instead of ending in "...". Only text still too long at the max height ends in "..." on its last line. F11 > CARDS > QUEST TRACKER: WIDTH (`QuestsWidth`, 380 - 660, default 380), MAX HEIGHT (`QuestsMaxHeight`, 100 - 300, default 160) and TEXT WRAP (`QuestsWrap`, default on). The compact form shows the quest name with the objective wrapping under it. `QuestsWrap=0` keeps the one-line card.
-
-- **Scanner highlight area:** F11 > SCANNER > HIGHLIGHT AREA picks the hand scanner's highlight cone: HORIZON DOT (smaller than the game), VANILLA (default, the game's own values, nothing is changed) or FULL SCREEN. New key `ScanHighlightArea` under `[Scanner]` (0, 1 default, 2). It needs the 0.43.3.1 SFSE plugin and applies the next time you open the scanner.
+- **Scanner highlight area:** F11 > SCANNER > HIGHLIGHT AREA picks the hand scanner's highlight cone: HORIZON DOT (smaller than the game), VANILLA (default, the game's own values, nothing is changed) or FULL SCREEN. New key `ScanHighlightArea` under `[Scanner]` (0, 1 default, 2). It needs the 0.43.3.1 SFSE plugin (with the 0.43.3.0 plugin the row is saved but does nothing) and applies the next time you open the scanner. *(Not tested in game yet.)*
 
 ### Changed
 - **SFSE plugin** file and product version are 0.43.3.1.
@@ -20,8 +19,9 @@ Not published yet; it includes the unpublished 0.43.3.0 work. The settings schem
 - **Equipment card:** a long weapon name wraps onto a second line at the same font size, and the card grows to fit. Before, the full name showed only for a few seconds after a weapon swap. The compact form stays one line.
 
 ### Fixed
-- **Hazard Status** now turns green while suit protection restores. Before, it went from red straight to hidden. While a hazard is still listed, it is green while the soak goes back down and red while it builds; it never flickers on a single update.
-- **Locked containers:** the prompt label keeps the text after a line break, so the lock level shows on the full and compact container cards.
+- **Afflictions card:** buffs (effects ending in `_Positive`, such as Fed and Hydrated) are their own green Buff chip with a plus glyph instead of a red Affliction; they sort after afflictions and hazards, do not count as afflicted (AfflictionsRule 6) and are left out of the classic card text (personal effects only; the environment hazard text is unchanged). Chips and alerts match the exact effect, suffix included, so a buff and its debuff no longer merge. An alert stays while its own effect is listed and drops on the first effect update without it (a needs mod's Hungry alert no longer stays forever after eating); an alert whose effect was never listed keeps the 90 s expiry. Chips that tie sort by key, so their order no longer swaps between updates.
+- **Hazard Status** now turns green while suit protection restores. Before, it went from red straight to hidden. While a hazard is still listed, it is green while the soak goes back down and red while it builds; it never flickers on a single update. The soak-direction green is not tested in game yet.
+- **Locked containers:** the prompt label keeps the text after a line break, so the lock level shows on the full and compact container cards. *(Not tested in game yet.)*
 - **Loot card after a kill:** looting a killed enemy no longer shows its red health bar across the top of the container card until a save reload.
 
 ## [0.43.2.0-alpha] - 2026-11-11
