@@ -177,7 +177,7 @@ int main()
 	bool allNames = true;
 	for (const char* n : names) allNames = allNames && Has(hdr, std::string("\"fHighlightScannableOutlineThickness") + n + ":Monocle\"");
 	Expect(allNames && kN == 10, "the ten [Monocle] outline settings, by their game names");
-	Expect(Has(as, "[\"ScanHighlightArea\",\"i\",1,0,2],[\"ScanOutlineThickness\",\"i\",0,0,2],"), "HZ40_SCAN_KEYS: ScanOutlineThickness, int 0 - 2, default 0 (Vanilla)");
+	Expect(Has(as, "[\"ScanHighlightArea\",\"i\",1,0,3],[\"ScanOutlineThickness\",\"i\",0,0,2],"), "HZ40_SCAN_KEYS: ScanOutlineThickness, int 0 - 2, default 0 (Vanilla)");
 	Expect(Has(as, "{\"k\":\"ScanOutlineThickness\",\"l\":\"OUTLINE THICKNESS\",\"t\":\"r\",\"opts\":[\"VANILLA\",\"THICK\",\"THICKER\"],\"ids\":[0,1,2],\"note\":\""), "F11 SCANNER row shows labels, not numbers");
 	const auto iniKey = ini.find("\r\nScanOutlineThickness=0\r\n");
 	Expect(iniKey != std::string::npos && ini.find("\r\nScanHighlightArea=1\r\n") < iniKey && iniKey < ini.find("HideMainHudWhileScanning=1"), "default.ini: ScanOutlineThickness=0 under [Scanner], in the HZ40_SCAN_KEYS order");

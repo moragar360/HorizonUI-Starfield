@@ -2492,6 +2492,7 @@
             return;
          }
          this.hzAbFeed = 1;
+         if(this.hzDebug) { this.hz26Log("PlayerStatusData",{"groups":(d.aEffectGroups as Array).length,"rows":r.length}); }   // Debug=1 only: proves the feed reaches the HUD
          this.hzAbSeenUpd(r);
          this.hzAbList = r;
          this.hzAbSig = null;
@@ -2517,16 +2518,35 @@
             if(es == null) { continue; }
             var gp:* = g.bIsPositiveEffect;
             var gk:String = g.sEffectIcon != null ? String(g.sEffectIcon) : "";
+            var gn:String = g.sName != null ? String(g.sName) : "";
+            var gh:int = g.bHasBuffs === true ? (g.bHasDebuffs === true ? -1 : 1) : (g.bHasDebuffs === true ? 0 : -1);   // the header's Buff / Debuff look
+            var gt:Number = NaN;
+            if(g.bShowTimer === true && g.fTimeRemaining != null && !(g.fTimeRemaining is Boolean))
+            {
+               gt = Number(g.fTimeRemaining);
+               if(isNaN(gt) || gt < 0 || gt == Infinity) { gt = NaN; }
+            }
+            var gf:Boolean = false;   // this group already has its folded row
             var ei:int = 0;
             while(ei < es.length && ei < HZ_AB_EFFECTS)
             {
                var ef:Object = es[ei];
                ei++;
-               if(ef == null || ef.bHideName === true) { continue; }
-               var nm:String = ef.sName != null ? String(ef.sName) : "";
-               if(nm.length == 0) { continue; }
-               var b:int = ef.bIsBuff === true ? 1 : (ef.bIsBuff === false ? 0 : (gp === true ? 1 : (gp === false ? 0 : -1)));
+               if(ef == null) { continue; }
+               var nm:String = ef.bHideName !== true && ef.sName != null ? String(ef.sName) : "";
+               var fold:Boolean = false;
+               if(nm.length == 0)
+               {
+                  // the Status menu also lists a hidden-name entry that has a description (food and aid effects come
+                  // this way): one row per group, named like the group header (else the description)
+                  if(gf || ef.sDescription == null || String(ef.sDescription).length == 0) { continue; }
+                  nm = gn.length > 0 ? gn : String(ef.sDescription).replace(/%/g,"");
+                  if(nm.length == 0) { continue; }
+                  fold = true;
+               }
+               var b:int = ef.bIsBuff === true ? 1 : (ef.bIsBuff === false ? 0 : (gp === true ? 1 : (gp === false ? 0 : gh)));
                if(b < 0) { continue; }   // polarity unknown: not shown
+               if(fold) { gf = true; }
                var pm:Boolean = ef.bPermanent === true;
                var rv:Number = NaN;
                if(!pm && ef.fTimeRemaining != null && !(ef.fTimeRemaining is Boolean))
@@ -2534,6 +2554,7 @@
                   rv = Number(ef.fTimeRemaining);
                   if(isNaN(rv) || rv < 0 || rv == Infinity) { rv = NaN; }
                }
+               if(!pm && isNaN(rv) && fold) { rv = gt; }   // a folded row may carry its time on the group header only
                var k:String = gk + "|" + nm + "|" + b;
                var dup:int = 1;
                while(keys[k + "#" + dup] === true) { dup++; }
@@ -14222,6 +14243,9 @@
       // Verbs are measured in full and never shortened. The name keeps up to 220 px, plus 8 px when it fits that cap.
       // The pill grows with the line up to 640 px. Past that, only the name gives up space. A verb row wider than
       // that still draws whole, so the pill may pass 640. Name, key letter, and verb share one size and one cap-center.
+      // 0.43.3.2: a name that would be cut wraps to a second line at the same size (never smaller) and the pill grows by
+      // one line; past two lines the second ends in "...". Runs only from hzT19Content, i.e. on a content-signature
+      // change (a new name, keys or style), never per frame.
       private function hzT19PromptPill(g:*, a:Object, aw:Object, o:Object, nmTf:TextField, hdrTxt:String, hasBtn:Boolean, bw:Number) : Object
       {
          var lineFs:Number = 14;
@@ -14267,22 +14291,69 @@
             W = nameX + nameRoom + gapUse + fitBw + padR;
          }
          if(W < 196) { W = 196; }
-         this.hzPanel(g,W,H,Math.round(H / 2));
-         this.hzT19Tile(g,padL + rad,Math.round(H / 2),HZ_ACCENT,rad);
+         var H1:Number = H;
+         var lineAdv:Number = 0;
          nmTf.visible = shown.length > 0;
          nmTf.x = nameX;
          nmTf.width = Math.round(nameRoom);
-         this.hzApplyFmt(o);
-         if(nmTf.visible) { this.hzFitText(nmTf,shown,nameRoom); }
+         if(nmTf.visible && measured > nameRoom - 4)
+         {
+            // would be cut: wrap at the same size (hzApplyFmt sizes the field for o.lines)
+            o.lines = 2;
+            nmTf.wordWrap = true;
+            nmTf.multiline = true;
+            this.hzApplyFmt(o);
+            this.hzT19Wrap2(nmTf,shown);
+            if(nmTf.numLines >= 2)
+            {
+               lineAdv = this.hzT19LineAdv(nmTf,lineFs);
+               H = H1 + lineAdv;
+            }
+            else { o.lines = 1; nmTf.wordWrap = false; nmTf.multiline = false; this.hzApplyFmt(o); this.hzFitText(nmTf,shown,nameRoom); }
+         }
+         else
+         {
+            this.hzApplyFmt(o);
+            if(nmTf.visible) { this.hzFitText(nmTf,shown,nameRoom); }
+         }
+         this.hzPanel(g,W,H,Math.round(H1 / 2));
+         this.hzT19Tile(g,padL + rad,Math.round(H / 2),HZ_ACCENT,rad);
          var u:Number = this.hzT19U();
          var yBtn:Number = this.hzSnapU((H - cap) / 2,u);
          var cy:Number = yBtn + cap / 2;
-         this.hzTxtTopU(nmTf,this.hzCapTop(nmTf,cy),u);
+         this.hzTxtTopU(nmTf,this.hzCapTop(nmTf,cy) - lineAdv / 2,u);
          if(fitBw > 0)
          {
             this.hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,0,lineFs);
          }
          return {"W":W,"H":H};
+      }
+
+      // 0.43.3.2: the pill name in at most two wrapped lines (the field already wraps at its width); a longer name keeps
+      // whole words on line one and ends line two in "...". Content edge only (hzT19PromptPill).
+      private function hzT19Wrap2(tf:TextField, full:String) : void
+      {
+         tf.text = full;
+         if(tf.numLines <= 2 || full.length < 2) { return; }
+         var lo:int = 1;
+         var hi:int = full.length;
+         while(lo < hi)
+         {
+            var mid:int = (lo + hi + 1) >> 1;
+            tf.text = full.substr(0,mid) + "...";
+            if(tf.numLines <= 2) { lo = mid; } else { hi = mid - 1; }
+         }
+         tf.text = full.substr(0,lo).replace(/\s+$/,"") + "...";
+      }
+
+      // one line advance of a wrapped field (its own metrics; the size-based guess if Scaleform gives none)
+      private function hzT19LineAdv(tf:TextField, fs:Number) : Number
+      {
+         var adv:Number = NaN;
+         try { var lm:* = tf.getLineMetrics(0); adv = Number(lm.ascent) + Number(lm.descent) + Number(lm.leading); } catch(eLm:Error) { adv = NaN; }
+         var guess:Number = Math.round(fs * Math.max(0.8,Math.min(1.3,this.hzTextScale)) * 1.25);
+         if(isNaN(adv) || adv <= 0 || adv > guess * 2) { adv = guess; }
+         return Math.round(adv);
       }
 
       private function hzT19Content(kind:String, a:Object, aw:Object, sel:int, start:int) : void
@@ -14311,7 +14382,8 @@
          for each(var bo:Object in this.hzT19Btn) { bo.kp.visible = false; bo.lp.visible = false; bo.hh.visible = false; bo.kh.visible = false; bo.lh.visible = false; }
          var nmTf:TextField = this.hzT19Name;
          var o:Object = this.hzTxtObj(nmTf);
-         if(o != null) { o.chipCard = null; o.chipMin = 0; o.tone = "main"; }
+         if(o != null) { o.chipCard = null; o.chipMin = 0; o.tone = "main"; o.lines = 1; }
+         if(nmTf.wordWrap) { nmTf.wordWrap = false; nmTf.multiline = false; }   // 0.43.3.2: only a wrapped pill name sets these
          var hdrTxt:String = a && a.sHeaderText != null ? this.hzT19Xl(String(a.sHeaderText)) : "";
          var rar:int = a && a.uRarity != undefined ? int(a.uRarity) : 0;
          var bw:Number = a ? this.hzT19Buttons(null,a,aw,0,0,acol) : 0;
@@ -14806,7 +14878,7 @@
       private function hz26DbgText() : String
       {
          var out:String = "";
-         for each(var k:String in ["PersonalEffectsData","PersonalAlertsData","aPersonalAlerts[0]","Afflictions","QuestObjectives","PlayerData","PlayerInventoryData","XPData","XPData[0]","HUDStealthData","HudHitKillIndicatorData","KillDataA[0]","HUDDirectionalHitData","aDirectionalHitIndicators[0]","PlayerHealthBoostData","HUDStarbornPowersData","PowerIcon","Enemy","EnemyModifiers"])
+         for each(var k:String in ["PersonalEffectsData","PersonalAlertsData","aPersonalAlerts[0]","Afflictions","QuestObjectives","PlayerData","PlayerInventoryData","XPData","XPData[0]","HUDStealthData","HudHitKillIndicatorData","KillDataA[0]","HUDDirectionalHitData","aDirectionalHitIndicators[0]","PlayerHealthBoostData","HUDStarbornPowersData","PowerIcon","Enemy","EnemyModifiers","PlayerStatusData"])
          {
             if(this.hz26Dbg[k] != undefined) { out += k + ": " + String(this.hz26Dbg[k]) + "\n"; }
          }
@@ -18967,29 +19039,27 @@
       {
          var szn:String = "GLOBAL = HUD SCALE (STYLE). CUSTOM = this card's own size: HUD SCALE no longer applies to it";
          var cmn:String = "GLOBAL = COMPACT MODE (top right). ON / OFF = this card only";
+         // 0.43.3.2: one section per card (the header is drawn above the row it sits on, so it is never a selectable row);
+         // a card's SIZE and extras are indented under its main toggle. Same rows, keys, labels, notes and defaults.
          var rows:Array = [{"k":"Compact","l":"COMPACT MODE (STRIPS)","t":"b","pill":true},
-            {"k":"ShowJetpack","l":"JETPACK CARD","t":"b","h":"CARDS"},this.hz34Sz("Jetpack",szn),
-            {"k":"ShowVitals","l":"VITALS CARD","t":"b"},this.hz34Sz("Vitals"),
+            {"k":"CompactScale","l":"COMPACT STRIPS: SIZE","t":"z","h":"GENERAL","note":"The jetpack / vitals / afflictions strips of COMPACT MODE"},
+            {"k":"ShowVitals","l":"VITALS CARD","t":"b","h":"VITALS"},this.hz34Sz("Vitals"),
             {"k":"VitalsLayout","l":"VITALS LAYOUT","t":"r","opts":["VERTICAL","HORIZONTAL"],"ids":[0,1],"sub":true,"note":"VERTICAL = health above O2.  HORIZONTAL = O2 beside health (one row).  ARRANGE CARDS: L"},
             {"k":"VitalsBars","l":"HEALTH AND O2 BARS","t":"r","opts":["FULL","COMPACT"],"ids":[0,1],"sub":true,"note":"COMPACT uses the same boost, health, and oxygen card as COMPACT MODE. FULL keeps the separate cards. If either is on, that merged card shows."},
-            {"k":"ShowCharacter","l":"CHARACTER CARD (LV / XP / CREDITS / MASS)","t":"b"},this.hz34Sz("Character"),this.hz34Cmp("Character",cmn),
-            {"k":"WatchStyle","l":"WATCH","t":"r","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4],"note":"Original Vanilla Watch or Horizon Watch"},this.hz34Sz("Watch"),
-            {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","sub":true},
-            {"k":"ShowPlanet","l":"PLANET CARD","t":"b"},this.hz34Sz("Planet"),this.hz34Cmp("Planet"),
-            {"k":"PlanetDetails","l":"PLANET: GRAVITY / AIR LINE","t":"b"},
-            {"k":"HazardStatus","l":"HAZARD STATUS CARD","t":"b","note":"Red while a hazard hurts you, green while suit protection restores. Default spot: under the planet card"},this.hz34Sz("Hazard"),this.hz34Cmp("Hazard"),
-            {"k":"ShowAfflictions","l":"AFFLICTIONS CARD","t":"b"},this.hz34Sz("Afflictions"),
-            {"k":"ShowAmmo","l":"EQUIPMENT CARD","t":"b"},this.hz34Sz("Equipment"),this.hz34Cmp("Equipment"),
-            {"k":"EquipmentExtras","l":"EQUIPMENT: GRENADES + STARBORN POWER","t":"b"},
-            {"k":"ShowQuests","l":"QUEST TRACKER","t":"b"},this.hz34Sz("Quests"),this.hz34Cmp("Quests","STANDARD is the full card. COMPACT shows the quest name and the current objective only"),
+            {"k":"ShowJetpack","l":"JETPACK CARD","t":"b","h":"JETPACK"},this.hz34Sz("Jetpack",szn),
+            {"k":"ShowAmmo","l":"EQUIPMENT CARD","t":"b","h":"EQUIPMENT"},this.hz34Sz("Equipment"),this.hz34Cmp("Equipment"),
+            {"k":"EquipmentExtras","l":"EQUIPMENT: GRENADES + STARBORN POWER","t":"b","sub":true},
+            {"k":"ShowCompass","l":"COMPASS","t":"b","h":"COMPASS"},this.hz34Sz("Compass"),this.hz34Cmp("Compass","The enemy health bar follows the compass form"),
+            {"k":"ShowQuests","l":"QUEST TRACKER","t":"b","h":"QUEST TRACKER"},this.hz34Sz("Quests"),this.hz34Cmp("Quests","STANDARD is the full card. COMPACT shows the quest name and the current objective only"),
             {"k":"QuestsWidth","l":"WIDTH","t":"n","mn":380,"mx":660,"st":20,"sub":true,"note":"Font size is unchanged. Narrower widths wrap the objective onto more lines."},
             {"k":"QuestsMaxHeight","l":"MAX HEIGHT","t":"n","mn":100,"mx":300,"st":10,"sub":true,"note":"Caps how tall the card can grow. Extra lines are not added past this height."},
             {"k":"QuestsWrap","l":"TEXT WRAP","t":"b","sub":true,"note":"When on, text starts a new line instead of ending in an ellipsis."},
-            {"k":"ShowCompass","l":"COMPASS","t":"b"},this.hz34Sz("Compass"),this.hz34Cmp("Compass","The enemy health bar follows the compass form"),
-            {"k":"VehicleExitPill","l":"VEHICLE EXIT PILL","t":"b","note":"Hold-to-exit prompt while you are in a vehicle. Off = the game's prompt."},
-            {"k":"EnemyBar","l":"ENEMY HEALTH BAR (TOP CENTER)","t":"b"},this.hz34Sz("Enemy"),
-            {"k":"StealthMeter","l":"STEALTH METER (ABOVE CROSSHAIR)","t":"b"},this.hz34Sz("Stealth"),
-            {"k":"CompactScale","l":"COMPACT STRIPS: SIZE","t":"z","note":"The jetpack / vitals / afflictions strips of COMPACT MODE"},
+            {"k":"ShowPlanet","l":"PLANET CARD","t":"b","h":"PLANET"},this.hz34Sz("Planet"),this.hz34Cmp("Planet"),
+            {"k":"PlanetDetails","l":"PLANET: GRAVITY / AIR LINE","t":"b","sub":true},
+            {"k":"HazardStatus","l":"HAZARD STATUS CARD","t":"b","h":"HAZARD STATUS","note":"Red while a hazard hurts you, green while suit protection restores. Default spot: under the planet card"},this.hz34Sz("Hazard"),this.hz34Cmp("Hazard"),
+            {"k":"ShowCharacter","l":"CHARACTER CARD (LV / XP / CREDITS / MASS)","t":"b","h":"CHARACTER"},this.hz34Sz("Character"),this.hz34Cmp("Character",cmn),
+            {"k":"WatchStyle","l":"WATCH","t":"r","h":"WATCH","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4],"note":"Original Vanilla Watch or Horizon Watch"},this.hz34Sz("Watch"),
+            {"k":"ShowAfflictions","l":"AFFLICTIONS CARD","t":"b","h":"AFFLICTIONS"},this.hz34Sz("Afflictions"),
             {"k":"ActiveBuffs","l":"ACTIVE BUFFS","t":"b","h":"ACTIVE BUFFS","note":"Your active effects from the game's Status list. Default spot: just above the Afflictions card"},this.hz34Sz("Buffs"),
             {"k":"BuffsShow","l":"SHOW","t":"r","opts":["BUFFS ONLY","BUFFS + DEBUFFS"],"ids":[0,1],"sub":true,"note":"Buffs + debuffs puts debuffs in a separate red-tinted section."},
             {"k":"BuffsCompact","l":"STYLE","t":"r","opts":["EXPANDED","COMPACT","GLOBAL"],"ids":[0,1,-1],"sub":true,"note":"Expanded adds a remaining-time bar. Compact is one line per effect. GLOBAL follows COMPACT MODE."},
@@ -18997,12 +19067,16 @@
             {"k":"BuffsTimers","l":"SHOW TIMERS","t":"b","sub":true},
             {"k":"BuffsPermanent","l":"SHOW PERMANENT EFFECTS","t":"b","sub":true,"note":"Off by default. Permanent entries show PERM and have no countdown."},
             {"k":"BuffsHideEmpty","l":"HIDE WHEN EMPTY","t":"b","sub":true},
+            {"k":"EnemyBar","l":"ENEMY HEALTH BAR (TOP CENTER)","t":"b","h":"ENEMY HEALTH"},this.hz34Sz("Enemy"),
+            {"k":"StealthMeter","l":"STEALTH METER (ABOVE CROSSHAIR)","t":"b","h":"STEALTH"},this.hz34Sz("Stealth"),
+            {"k":"VehicleExitPill","l":"VEHICLE EXIT PILL","t":"b","h":"VEHICLE","note":"Hold-to-exit prompt while you are in a vehicle. Off = the game's prompt."},
             {"k":"ShowTarget","l":"TARGET CARD (ACTIVATE PROMPT)","t":"b","h":"HOVER + CONTAINER"},
             {"k":"NameHover","l":"NAME HOVER","t":"r","opts":["COMPACT","FULL"],"ids":[0,1],"sub":true,"note":"COMPACT is one line: icon, name, key. FULL is the taller card."},
             {"k":"HoverScale","l":"HOVER CARDS: SIZE","t":"z","sub":true,"note":"Activate prompts, loose item / take card, compare and enemy tags"},
-            {"k":"ContainerScale","l":"CONTAINER WINDOW: SIZE","t":"z","sub":true,"note":"The full container item list"}];
+            {"k":"ContainerScale","l":"CONTAINER WINDOW: SIZE","t":"z","sub":true,"note":"The full container item list"},
+            {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","h":"NOTIFICATIONS"}];
          var on:Boolean = this.hz30Mod["comms"] === 1;
-         var mt:Object = {"k":"MissionToast","l":"MISSION TOAST","t":"b","h":"COMMS"};
+         var mt:Object = {"k":"MissionToast","l":"MISSION TOAST","t":"b"};   // 0.43.3.2: under NOTIFICATIONS, right after XP TOAST: SIZE
          var ms:Object = {"k":"MissionToastScale","l":"SIZE","t":"z","sub":true};
          if(on) { ms.note = "Same switch as COMMS > MISSION TOAST. Move it in ARRANGE CARDS"; }
          else
@@ -20444,8 +20518,8 @@
       // The scanner movie (monoclemenu.swf / _lrg) reads the same [Scanner] keys itself; this movie writes them (F11) and
       // hides its own cards while the Horizon scanner is open. Types: b 0/1, i int, f float, z size, o -1 or a number,
       // p position (-1, L/R/C+n, T/B/C+n), s hex.
-      private static const HZ40_SCAN_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanHideBioscanDone","b",0,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["ScanHighlightArea","i",1,0,2],["ScanOutlineThickness","i",0,0,2],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideWatchWhileScanning","b",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];
-      private static const HZ40_SCAN_CM:Object = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanHideBioscanDone":["1 = no bioscan card once the planet is fully scanned (every fauna, flora, resource and trait found). Default 0"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"ScanHighlightArea":["Highlight area of the hand scanner (the game's own pick-up cone and outline radius, set by the DLL): 0 = Horizon dot (smaller than the game),","1 = Vanilla (default: the game's own values, nothing is changed), 2 = Full screen. Applies the next time you open the scanner"],"ScanOutlineThickness":["Outline thickness of the hand scanner highlight (the game's own [Monocle] outline settings, set by the DLL): 0 = Vanilla","(default: the game's own values, nothing is changed), 1 = Thick (1.5x), 2 = Thicker (2x). Applies the next time you open the scanner"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"],"HideWatchWhileScanning":["1 = the watch hides while the hand scanner is open, in every WatchStyle that shows one. With EnemyBar, StealthMeter or","EdgePulse on, the whole bottom-left watch corner hides, planet / bio alerts and the vanilla enemy ring too. With all","three off, only the watch pieces and the env / bio alert text hide (1 / 2 vanilla: the watch; 3 / 4 Horizon: the face","and its marker icons); the alert icons and the enemy ring still show. 0 = shown (default)"]};
+      private static const HZ40_SCAN_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanHideBioscanDone","b",0,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["ScanHighlightArea","i",1,0,3],["ScanOutlineThickness","i",0,0,2],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideWatchWhileScanning","b",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];
+      private static const HZ40_SCAN_CM:Object = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanHideBioscanDone":["1 = no bioscan card once the planet is fully scanned (every fauna, flora, resource and trait found). Default 0"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"ScanHighlightArea":["Highlight area of the hand scanner (the game's own pick-up cone and outline radius, set by the DLL): 0 = Horizon dot (smaller than the game),","1 = Vanilla (default: the game's own values, nothing is changed), 2 = Full screen (wide screens too), 3 = Max. Applies the next time you open the scanner"],"ScanOutlineThickness":["Outline thickness of the hand scanner highlight (the game's own [Monocle] outline settings, set by the DLL): 0 = Vanilla","(default: the game's own values, nothing is changed), 1 = Thick (1.5x), 2 = Thicker (2x). Applies the next time you open the scanner"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"],"HideWatchWhileScanning":["1 = the watch hides while the hand scanner is open, in every WatchStyle that shows one. With EnemyBar, StealthMeter or","EdgePulse on, the whole bottom-left watch corner hides, planet / bio alerts and the vanilla enemy ring too. With all","three off, only the watch pieces and the env / bio alert text hide (1 / 2 vanilla: the watch; 3 / 4 Horizon: the face","and its marker icons); the alert icons and the enemy ring still show. 0 = shown (default)"]};
       private static const HZ40_POPUP:Array = ["HideQuestPopupsWhileScanning","DimTraitPopupDuringBioscan","TraitPopupDim"];
       private static const HZ40_OPA_V:Array = [-1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6];
       private static const HZ40_OPA_N:Array = ["FOLLOW HUD","0.20","0.30","0.40","0.50","0.60","0.70","0.80","0.90","1.00","1.10","1.20","1.30","1.40","1.50","1.60"];
@@ -20673,7 +20747,7 @@
             {"k":"ScanLeftToFind","l":"\"LEFT TO FIND\" COUNTS","t":"b","note":"Planet totals under the bioscan rows"},
             {"k":"ScanMinRarity","l":"RESOURCES SHOWN","t":"r","opts":["ALL","UNCOMMON+","RARE+","EXOTIC+","UNIQUE"],"ids":[0,1,2,3,4]},
             {"k":"ScanNearestUnscanned","l":"HIGHLIGHT NEAREST UNDISCOVERED","t":"b","note":"Signals list only"},
-            {"k":"ScanHighlightArea","l":"HIGHLIGHT AREA","t":"r","opts":["HORIZON DOT","VANILLA","FULL SCREEN"],"ids":[0,1,2],"note":"How much of the screen the scanner picks up and outlines (minerals, flora, fauna, items). HORIZON DOT: smaller. VANILLA: the game's own. FULL SCREEN: all of a 16:9 screen. Applies the next time you open the scanner"},
+            {"k":"ScanHighlightArea","l":"HIGHLIGHT AREA","t":"r","opts":["HORIZON DOT","VANILLA","FULL SCREEN","MAX"],"ids":[0,1,2,3],"note":"How much of the screen the scanner picks up and outlines (minerals, flora, fauna, items). HORIZON DOT: smaller. VANILLA: the game's own. FULL SCREEN: the whole screen, wide screens and a high FOV too. MAX: the widest, past every screen edge. Applies the next time you open the scanner"},
             {"k":"ScanOutlineThickness","l":"OUTLINE THICKNESS","t":"r","opts":["VANILLA","THICK","THICKER"],"ids":[0,1,2],"note":"How thick the scanner outlines highlighted minerals, flora, fauna and items. VANILLA: the game's own (your ini tweaks stay). THICK: 1.5x. THICKER: 2x. Applies the next time you open the scanner"},
             {"k":"ScanOpacity","l":"OPACITY","t":"l","vals":HZ40_OPA_V,"names":HZ40_OPA_N,"h":"LOOK","note":"FOLLOW HUD = CARD OPACITY (STYLE)"},
             {"k":"ScanAccIdx","l":"ACCENT","t":"a","pal":this.hz40AccPal(),"names":this.hz40AccNames(),"note":"Custom: ScanAccent=13 + ScanAccentHex=#RRGGBB in the ini"},

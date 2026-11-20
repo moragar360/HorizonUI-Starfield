@@ -2788,7 +2788,8 @@ namespace HZ
 #endif
 
 	// ---- 0.43.3.1: [Scanner] ScanHighlightArea (src/hz_scan_hl.h) ----
-	// Purpose: write the two game INI settings that size the hand scanner highlight, only when the wanted position
+	// Purpose: write the game INI settings that size the hand scanner highlight (cone, outline radius and, since
+	// 0.43.3.2, the outline fade fResourceDecalRenderRadiusFalloffPct for Full screen / Max), only when the wanted position
 	// changed: at load (the first HUD messages poll after kPostDataLoad read the ini) and after a settings save / apply
 	// (LoadIni runs again on the job thread and stores a new g_scanHlWant). UI thread only: called from BannerPoll on
 	// the HUDMessagesMenu advance (100 ms gate). Steady state: one atomic load and one int compare. No Scaleform, no
@@ -2796,7 +2797,7 @@ namespace HZ
 	// would end the process inside REL); the lookups are null-checked and run under SEH. The setting lookup walks the
 	// game's INI list once per change. Vanilla at start writes nothing. The game's own values are read once, right
 	// before the first write, and written back on a later Vanilla. A missing id or setting is logged once and the
-	// change is dropped (no retry until the position changes again). Author: Moragar. Last modified: 2026-11-14.
+	// change is dropped (no retry until the position changes again). Author: Moragar. Last modified: 2026-11-18.
 	int             g_scanHlApplied = hzscanhl::kVanilla;   // UI thread only
 	hzscanhl::Orig  g_scanHlOrig;                           // UI thread only
 	bool            g_scanHlMissLogged = false;             // UI thread only
@@ -2806,13 +2807,17 @@ namespace HZ
 		int   capture;      // 1 = read the game's values before writing
 		int   writeDot;     // 1 = write dot (a restore writes back only what was found at capture)
 		int   writeDecal;
+		int   writeFall;    // 0.43.3.2: the outline fade (Full / Max; a captured value given back otherwise)
 		float dot;
 		float decal;
+		float fall;
 		int   ok;           // out: 1 ran, -1 no collection
 		int   dotFound;     // out: the setting exists as a float
 		int   decalFound;
+		int   fallFound;
 		float dotWas;       // out: the value before the write (capture only)
 		float decalWas;
+		float fallWas;
 	};
 
 	static RE::Setting* HzScanHlFind(RE::INISettingCollection* a_col, const char* a_key)
@@ -2831,14 +2836,18 @@ namespace HZ
 		if (!col) return;
 		auto* sd = HzScanHlFind(col, hzscanhl::kKeyDot);
 		auto* sr = HzScanHlFind(col, hzscanhl::kKeyDecal);
+		auto* sf = HzScanHlFind(col, hzscanhl::kKeyFall);
 		a_io->dotFound = sd ? 1 : 0;
 		a_io->decalFound = sr ? 1 : 0;
+		a_io->fallFound = sf ? 1 : 0;
 		if (a_io->capture) {
 			if (sd) a_io->dotWas = sd->GetFloat();
 			if (sr) a_io->decalWas = sr->GetFloat();
+			if (sf) a_io->fallWas = sf->GetFloat();
 		}
 		if (sd && a_io->writeDot) sd->SetFloat(a_io->dot);
 		if (sr && a_io->writeDecal) sr->SetFloat(a_io->decal);
+		if (sf && a_io->writeFall) sf->SetFloat(a_io->fall);
 		a_io->ok = 1;
 	}
 
@@ -2882,8 +2891,10 @@ namespace HZ
 		io.capture = g_scanHlOrig.have ? 0 : 1;
 		io.writeDot = restore ? (g_scanHlOrig.dotOk ? 1 : 0) : 1;
 		io.writeDecal = restore ? (g_scanHlOrig.decalOk ? 1 : 0) : 1;
+		io.writeFall = plan.wFall ? 1 : 0;   // a restore / Horizon dot sets wFall only for a captured fade
 		io.dot = plan.dot;
 		io.decal = plan.decal;
+		io.fall = plan.fall;
 		const int ran = HzScanHlSEH(&io);
 		if (!ran || io.ok != 1 || (!io.dotFound && !io.decalFound)) {
 			if (!g_scanHlMissLogged) { REX::WARN("scanner highlight: game settings not found ({} / {}), left to the game", hzscanhl::kKeyDot, hzscanhl::kKeyDecal); g_scanHlMissLogged = true; }
@@ -2893,14 +2904,21 @@ namespace HZ
 			g_scanHlOrig.have = true;
 			g_scanHlOrig.dotOk = io.dotFound != 0;
 			g_scanHlOrig.decalOk = io.decalFound != 0;
+			g_scanHlOrig.fallOk = io.fallFound != 0;
 			g_scanHlOrig.dot = io.dotWas;
 			g_scanHlOrig.decal = io.decalWas;
+			g_scanHlOrig.fall = io.fallWas;
 		}
 		if ((!io.dotFound || !io.decalFound) && !g_scanHlMissLogged) {
 			REX::WARN("scanner highlight: {} not found, only the other setting is set", io.dotFound ? hzscanhl::kKeyDecal : hzscanhl::kKeyDot);
 			g_scanHlMissLogged = true;
 		}
-		REX::INFO("scanner highlight: {} ({} / {})", hzscanhl::Name(want), plan.dot, plan.decal);
+		if (!io.fallFound && plan.wFall && !g_scanHlMissLogged) {
+			REX::WARN("scanner highlight: {} not found, the outline fade is left to the game", hzscanhl::kKeyFall);
+			g_scanHlMissLogged = true;
+		}
+		if (plan.wFall) REX::INFO("scanner highlight: {} ({} / {} / fade {})", hzscanhl::Name(want), plan.dot, plan.decal, plan.fall);
+		else REX::INFO("scanner highlight: {} ({} / {})", hzscanhl::Name(want), plan.dot, plan.decal);
 	}
 
 	// ---- 0.43.3.2: [Scanner] ScanOutlineThickness (src/hz_scan_ol.h) ----

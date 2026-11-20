@@ -5,7 +5,7 @@
 //  that stops pushing), hide when empty, INI defaults and back-compat, ARRANGE (keys, lists, save / load of an
 //  edge-anchored spot), the rule, the shared card style (same panel path as a reference card), and no timer / frame /
 //  tree-search code in the card.
-// Author: Moragar. Last modified: 2026-11-14.
+// Author: Moragar. Last modified: 2026-11-18.
 "use strict";
 
 const fs = require("fs");
@@ -147,6 +147,28 @@ function show(h) { h.hzAbCard(true); h.hzAbSync(); return h; }
 	expect(r[6].k !== r[7].k && /#2$/.test(r[7].k), "duplicate entries get distinct keys");
 	const big = []; for (let i = 0; i < 40; i++) big.push(grp("G" + i, Array.from({ length: 40 }, (_, j) => ef("E" + j))));
 	expect(h.hzAbParse({ aEffectGroups: big }, 0).length === 16 * 24, "the walk is bounded: 16 groups x 24 effects");
+}
+// ---- 1b. hidden-name entries with a description (food / aid), as the Status menu lists them (0.43.3.2) ----
+{
+	const h = host();
+	const hd = (d, o) => ef("Raw", Object.assign({ bHideName: true, sDescription: d, bIsBuff: undefined, fTimeRemaining: undefined }, o || {}));
+	const r = h.hzAbParse({ aEffectGroups: [
+		grp("Food", [hd("+10 Carry Weight"), hd("%Health regen")], { sName: "Stew", bIsPositiveEffect: true, bShowTimer: true, fTimeRemaining: 600 }),
+		grp("Aid", [hd("+5% Damage", { fTimeRemaining: 90 })], { sName: "", bHasBuffs: true }),
+		grp("Mix", [hd("Odd")], { sName: "Mixed", bHasBuffs: true, bHasDebuffs: true }),
+		grp("Bad", [hd("-5 Health")], { sName: "Rot", bHasDebuffs: true }),
+		grp("NoDesc", [hd("")], { sName: "Empty", bIsPositiveEffect: true }),
+		grp("NoTimer", [hd("x")], { sName: "Tea", bIsPositiveEffect: true, bShowTimer: false, fTimeRemaining: 50 }),
+	] }, 0);
+	const names = r.map((e) => e.n).join(",");
+	expect(names === "Stew,+5 Damage,Rot,Tea", "hidden-name entries with a description become one row per group, named like the group (else the description): " + names);
+	expect(r[0].b === true && r[0].r === 600 && r[0].k === "Food|Stew|1#1", "the folded row takes the group's polarity and its header timer");
+	expect(r[1].b === true && r[1].r === 90, "no group name: the description (without %) names the row; bHasBuffs decides polarity; the entry time wins");
+	expect(r[2].b === false, "bHasDebuffs alone: a debuff");
+	expect(isNaN(r[3].r), "no header timer shown: the time stays unknown");
+	const h2 = show(host());
+	feed(h2, [grp("Food", [hd("+10 Carry Weight")], { sName: "Stew", bIsPositiveEffect: true, bShowTimer: true, fTimeRemaining: 600 })]);
+	expect(h2.HorizonBuffs_mc.visible && h2.hzAbNm[0].text === "Stew", "a food buff alone shows the card (default settings)");
 }
 // ---- 2-4. buff / debuff filter, permanent, max entries ----
 {

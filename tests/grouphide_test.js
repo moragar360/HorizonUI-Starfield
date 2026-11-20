@@ -735,6 +735,8 @@ if (base) {
 			if (n === "hzSetRows") { z = z.replace('{"k":"BuffsRule","l":"ACTIVE BUFFS","t":"q","ids":[0,1,2]},', ""); }
 			// 0.43.3.2 item 5: the note under the EQUIPMENT rule row (text only, no hide code)
 			if (n === "hzSetRows") { z = z.replace(',"note":"Crosshair off? Set this to ALWAYS or COMBAT ONLY."', ""); }
+			// 0.43.3.2 F11 CARDS sections: the jetpack row's header reads JETPACK instead of CARDS (menu text only)
+			if (n === "hz34CardRows") { z = z.replace('{"k":"ShowJetpack","l":"JETPACK CARD","t":"b","h":"JETPACK"}', '{"k":"ShowJetpack","l":"JETPACK CARD","t":"b","h":"CARDS"}'); }
 			// arch-fixes Fix 1: hzOnFrame's hide-list re-walk is edge-triggered now; every right-side line in it (the names
 			// and the hide flags) must still be byte-identical, and the rebuild list itself is checked by behavior below
 			if (n === "hzOnFrame" && z !== x && z.indexOf("arch-fixes Fix 1") >= 0) {

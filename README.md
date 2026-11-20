@@ -31,7 +31,7 @@ This build is not published and has no release tag. Install steps below still de
 - **Hazard Status card:** the hazard chip is now its own card. Move it in ARRANGE CARDS and set it up in F11 > CARDS. It follows your card style, shows red while a hazard hurts you and green while suit protection restores (the green while a hazard is still listed is not tested in game yet).
 - **Quest tracker:** long quest names and objectives wrap at the same font size instead of being cut off. F11 > CARDS > QUEST TRACKER adds WIDTH, MAX HEIGHT and TEXT WRAP.
 - **Equipment card:** long weapon names wrap onto a second line, and the card grows to fit.
-- **Scanner highlight area** (F11 > SCANNER > HIGHLIGHT AREA): Horizon dot, Vanilla (default) or Full screen. It needs the 0.43.3.1 SFSE plugin; not tested in game yet.
+- **Scanner highlight area** (F11 > SCANNER > HIGHLIGHT AREA): Horizon dot, Vanilla (default), Full screen or Max. It needs the 0.43.3.1 SFSE plugin; not tested in game yet.
 - **Controller:** prompt keycaps show the button you bound.
 - **Active Buffs card:** a new card lists your active buffs (and, if you choose, debuffs) with their remaining time. Move it in ARRANGE CARDS and set it up in F11 > CARDS > ACTIVE BUFFS. It follows your card style. Not tested in game yet.
 - **Afflictions card:** buffs show as their own green Buff chips, a buff and its debuff no longer merge, and a needs alert clears once its effect ends. Not tested in game yet.

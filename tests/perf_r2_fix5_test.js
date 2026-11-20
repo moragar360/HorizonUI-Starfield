@@ -379,7 +379,9 @@ if (baseAs) {
 	const tick = codeOnly(fnText(as, "hzT19Tick").body);
 	expect(tick.indexOf("rw0[rn++] = this.hzT19Key(aw,kk); rw0[rn++] = this.hzT19VanLbl(aw,kk,false); rw0[rn++] = this.hzT19VanLbl(aw,kk,true);") >= 0 && (tick.match(/this\.hzT19BtnSync\(/g) || []).length === 1, "the tick reads the buttons once (hzT19BtnSync) and keeps the label reads in the same order");
 	if (baseAs) {
-		expect(fnText(as, "hzT19Content").body === fnText(baseAs, "hzT19Content").body && fnText(as, "hzT19ResetPay").body === fnText(baseAs, "hzT19ResetPay").body, "the loot card red bar code (hzT19Content, hzT19ResetPay) is unchanged from " + BASE);
+		// 0.43.3.2: the only allowed change is the pill-name wrap reset (two exact lines, no red bar code)
+		const wrapReset = (b) => b.replace('o.tone = "main"; o.lines = 1; }', 'o.tone = "main"; }').replace("\n         if(nmTf.wordWrap) { nmTf.wordWrap = false; nmTf.multiline = false; }   // 0.43.3.2: only a wrapped pill name sets these", "");
+		expect(wrapReset(fnText(as, "hzT19Content").body) === fnText(baseAs, "hzT19Content").body && fnText(as, "hzT19ResetPay").body === fnText(baseAs, "hzT19ResetPay").body, "the loot card red bar code (hzT19Content, hzT19ResetPay) is unchanged from " + BASE);
 		expect(fnText(as, "hzT19PaintHold").body === fnText(baseAs, "hzT19PaintHold").body && fnText(as, "hzT19PaintFoeBars").body === fnText(baseAs, "hzT19PaintFoeBars").body, "the hold fill and foe bars are unchanged");
 	}
 }
