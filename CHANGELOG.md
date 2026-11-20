@@ -4,6 +4,24 @@ All notable changes to Horizon UI are listed here, newest first. The format foll
 
 Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never published; 0.41.0 replaced 0.40.3, and its entry includes the changes prepared for 0.40.3.
 
+## [0.43.3.2-alpha] - unreleased (test build)
+
+Test-only build on top of 0.43.3.1; not published. The settings schema stays 0.42.0 and the SFSE plugin stays 0.43.3.1 unless a line below says otherwise.
+
+### Fixed
+- **Hazard Status:** when the hazard (or the suit-protection restore) leaves the game's effect list, the card turns green for about 4 seconds and then hides, instead of going from red straight to hidden. A hazard that comes back turns it red at once. No extra sound.
+- **Locked containers:** long prompt labels such as "STEAL FROM [MASTER]" are no longer cut off at the edge of the label, on the full and compact cards, for every locked container (owned or not). The font size is unchanged; the card grows to fit.
+- **Ship HUD mode:** the HORIZON DIGITAL / HORIZON ANALOG watch now hides in ship HUD mode (and any HUD mode where the game hides its own bottom-left watch) and comes back when you leave it. It follows the game's existing HUD mode signal; nothing new runs per frame.
+
+### Changed
+- **HORIZON DIGITAL / HORIZON ANALOG watch (performance):** the watch face no longer re-writes its size and visibility every frame; it writes them only when they change (F11 size, style switch). The clock already redrew only on a minute change. The look is unchanged. *(Frame time not measured in game.)*
+- **Scanner (performance):** marker names and bioscan types are translated once per scanner open instead of creating a text field for every discovered marker every frame; the compass check runs once per frame (it ran twice on full-redraw frames); the compass marker list is rebuilt only when new compass data arrives (it was rebuilt every frame). What the scanner shows is unchanged. *(Frame time not measured in game.)*
+- **Equipment rule, crosshair off:** F11 > RULES > EQUIPMENT has a note under the rule, 'Crosshair off? Set this to ALWAYS or COMBAT ONLY.' With the game's crosshair turned off, WEAPON DRAWN ONLY cannot see a drawn weapon, so the card stays hidden.
+- **Scanner highlight area:** the F11 > SCANNER > HIGHLIGHT AREA note now says what it changes (how much of the screen the scanner picks up and outlines) and what each position does. Behavior and the DLL are unchanged.
+
+### Added
+- **Scanner:** F11 > SCANNER > BIOSCAN > HIDE WHEN FULLY SCANNED ([Scanner] ScanHideBioscanDone, off by default). On: no Bioscan card once every fauna, flora, resource and trait of the planet is found (after the scan-complete flash). Checked when the card is drawn; nothing new per frame.
+
 ## [0.43.3.1-alpha] - unreleased
 
 Not published yet; it includes the unpublished 0.43.3.0 work. The settings schema stays 0.42.0, so an existing `HorizonUI.user.ini` carries over; the new settings start at their defaults, and with them the quest tracker keeps today's width and the scanner keeps the game's own highlight area.

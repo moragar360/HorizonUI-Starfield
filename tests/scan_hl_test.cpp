@@ -127,6 +127,8 @@ int main()
 	Expect(Has(FnBody(cpp, "void LoadIni(bool a_reloadMsglog = true)"), "if (get(\"scanhighlightarea\", v)) scanHl = hzscanhl::Parse(v);") && Has(FnBody(cpp, "void LoadIni(bool a_reloadMsglog = true)"), "g_scanHlWant.store(scanHl"), "LoadIni (load and every save / apply) stores the wanted position");
 	Expect(Has(as, "[\"ScanNearestUnscanned\",\"b\",1,0,1],[\"ScanHighlightArea\",\"i\",1,0,2],[\"HideMainHudWhileScanning\""), "HZ40_SCAN_KEYS: ScanHighlightArea, int 0 - 2, default 1, saved / loaded / reset by the generic [Scanner] list");
 	Expect(Has(as, "{\"k\":\"ScanHighlightArea\",\"l\":\"HIGHLIGHT AREA\",\"t\":\"r\",\"opts\":[\"HORIZON DOT\",\"VANILLA\",\"FULL SCREEN\"],\"ids\":[0,1,2]"), "F11 SCANNER row shows labels, not numbers");
+	// 0.43.3.2: the row note says what the setting changes (the pick-up area and the outlines), not only "cone"
+	Expect(Has(as, "\"ids\":[0,1,2],\"note\":\"How much of the screen the scanner picks up and outlines (minerals, flora, fauna, items). HORIZON DOT: smaller. VANILLA: the game's own. FULL SCREEN: all of a 16:9 screen. Applies the next time you open the scanner\"}"), "F11 HIGHLIGHT AREA note: what it changes, the three positions, when it applies");
 	const auto iniKey = ini.find("\r\nScanHighlightArea=1\r\n");
 	Expect(iniKey != std::string::npos && ini.find("ScanNearestUnscanned=1\r\n") < iniKey && iniKey < ini.find("HideMainHudWhileScanning=1"), "default.ini: ScanHighlightArea=1 under [Scanner], in the HZ40_SCAN_KEYS order");
 	const std::string c1 = "Highlight area of the hand scanner (the game's own pick-up cone and outline radius, set by the DLL): 0 = Horizon dot (smaller than the game),";

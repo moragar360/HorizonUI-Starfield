@@ -165,6 +165,16 @@ expect(!NOPE.test(tick.replace(/\{ return; \}/g, "")), "hzHsHoldTick: no timer, 
 const clkLines = fnText(AS0, "hzPpClock").body.split("\n").filter((l) => /hzHsHold/.test(l));
 expect(clkLines.length === 1 && /if\(this\.hzHsHoldT >= 0\) \{ try \{ this\.hzHsHoldTick\(\); \}/.test(clkLines[0]), "hzPpClock (the existing 30-frame slot) calls the tick only while a hold runs");
 expect(/if\(this\.hzFrameN % 30 == 11\) \{ try \{ this\.hzPpClock\(\); \}/.test(AS0), "hzPpClock is still the existing every-30-frames slot");
+{
+	// the hold end must sit above hzPpClock's planet-clock early return (else it stops while the planet pill is hidden)
+	const pl = fnText(AS0, "hzPpClock").body.split("\n");
+	const iHold = pl.findIndex((l) => /hzHsHoldTick\(\)/.test(l));
+	const iRet = pl.findIndex((l) => /\breturn\b/.test(l));
+	expect(iHold >= 0 && iRet > iHold, "hzPpClock: the hold end runs before the planet-clock early return (line " + iHold + " < " + iRet + ")");
+	const moved = (() => { const b = pl.slice(); const [x] = b.splice(iHold, 1); b.splice(iRet, 0, x); return b; })();
+	const iH2 = moved.findIndex((l) => /hzHsHoldTick\(\)/.test(l)), iR2 = moved.findIndex((l) => /\breturn\b/.test(l));
+	expect(!(iH2 >= 0 && iR2 > iH2), "mutant: the hold end moved below the early return is caught by that pin");
+}
 const callers = AS0.split("\n").filter((l) => /hzHsHoldTick\(\)/.test(l) && !/function hzHsHoldTick/.test(l));
 expect(callers.length === 1, "hzHsHoldTick has exactly one caller");
 const fxb = fnText(AS0, "hzHsFx").body;

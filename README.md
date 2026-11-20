@@ -14,6 +14,16 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 - **Customizable:** more than 100 settings, Arrange Cards and Arrange Scanner to move anything (the scope's hold-breath chip included), a vertical or horizontal Vitals card, colors, fonts, sizes, and presets you can save and switch.
 - **Modular:** a core HUD plus optional **Horizon Font**, **Comms** (subtitles, dialogue and companion reactions), the **Message Log** (a searchable history of your HUD messages), the optional **Scanner**, Horizon's own hand scanner screen, and the optional **Scope** module, a Horizon hold-breath chip for weapon scopes. Core is always installed; the modules are optional parts of the same FOMOD installer and need Core.
 
+## New in 0.43.3.2 (alpha, test build)
+
+Test build on top of 0.43.3.1; not published. The full list is in [CHANGELOG.md](CHANGELOG.md).
+
+- **Hazard Status:** turns green for about 4 seconds after you leave a hazard, then hides.
+- **Locked containers:** the full prompt with the lock level (for example "STEAL FROM [MASTER]") shows instead of being cut off.
+- **Horizon watch:** HORIZON DIGITAL / HORIZON ANALOG no longer re-write the face every frame, and the face hides in ship HUD mode.
+- **Scanner:** marker names and the compass list are cached (same output, less work per frame). New option F11 > SCANNER > BIOSCAN > HIDE WHEN FULLY SCANNED (off by default).
+- **F11 notes:** EQUIPMENT rule: "Crosshair off? Set this to ALWAYS or COMBAT ONLY." HIGHLIGHT AREA now says what it changes.
+
 ## New in 0.43.3.1 (alpha, unreleased)
 
 This build is not published and has no release tag. Install steps below still describe the published 0.43.2.0 download.
