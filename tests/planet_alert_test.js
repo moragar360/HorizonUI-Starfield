@@ -1880,7 +1880,8 @@ function hz43Row(vitOn, jetOn) {
 	expect(again.jet === 90 && again.o2 === 30, "showing boost again restores the full card");
 }
 expect(src.indexOf("hzMsglogWrap(note,noteW,160)") >= 0, "the history confirm wraps its warning");
-expect(src.indexOf("if(rows[ni].note) { rows[ni].n13 = true; }") >= 0, "CARDS tab notes use the 13 px note row");
+// 0.43.3.2 batch e: CARDS help text moved into the (i) popups; a disabled row's reason still uses the 13 px note row
+expect(src.indexOf("if(rows[ni].dis) { rows[ni].n13 = true; }") >= 0, "CARDS tab notes (a disabled row's reason) use the 13 px note row");
 
 // Version stamp pins: each movie version constant and both xmake set_version calls carry the file version.
 {

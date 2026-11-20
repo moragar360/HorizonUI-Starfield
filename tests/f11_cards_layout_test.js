@@ -8,8 +8,10 @@
 //     XP TOAST: SIZE in NOTIFICATIONS next to MISSION TOAST;
 //  4. headers are never rows: every row has a key and a control, a header rides on the row below it, and the list
 //     geometry (selection follow / scroll) counts its 24 px, so keyboard / gamepad lands on real rows;
-//  5. SCOPE rows only with the Scope module; MISSION TOAST + SIZE locked (grayed, off, GLOBAL) without Comms.
-// Author: Moragar. Last modified: 2026-11-18.
+//  5. SCOPE rows only with the Scope module; MISSION TOAST + SIZE locked (grayed, off, GLOBAL) without Comms;
+//  6. batch e: the help text under the rows moved into each row's (i) popup (r.inote, shown first by hz35InfoOf), so
+//     the list is just rows; a disabled row keeps its reason under it (it has no (i)).
+// Author: Moragar. Last modified: 2026-11-18 (batch e).
 "use strict";
 
 const fs = require("fs");
@@ -56,7 +58,7 @@ function rowsOf(src, mods) {
 	return h.hz34CardRows();
 }
 const list = (rows) => rows.filter((r) => !r.pill);
-const strip = (r) => { const o = Object.assign({}, r); delete o.h; delete o.sub; return JSON.stringify(o); };
+const strip = (r) => { const o = Object.assign({}, r); delete o.h; delete o.sub; delete o.n13; if (o.inote !== undefined) { o.note = o.inote; delete o.inote; } return JSON.stringify(o); };
 
 const ORDER = ["GENERAL", "VITALS", "JETPACK", "EQUIPMENT", "COMPASS", "QUEST TRACKER", "PLANET", "HAZARD STATUS", "CHARACTER", "WATCH", "AFFLICTIONS", "ACTIVE BUFFS", "ENEMY HEALTH", "STEALTH", "VEHICLE", "HOVER + CONTAINER", "NOTIFICATIONS"];
 const KEYS = ["Compact", "CompactScale", "ShowVitals", "VitalsScale", "VitalsLayout", "VitalsBars", "ShowJetpack", "JetpackScale", "ShowAmmo", "EquipmentScale", "EquipmentCompact", "EquipmentExtras",
@@ -85,7 +87,9 @@ if (baseAs) {
 		expect(same, "vs " + BASE + " (" + JSON.stringify(mods) + "): the same " + b.length + " rows with the same key, label, control, options, range, note and lock (only the order, headers and indent change)");
 	}
 	const defLine = (src, re) => (src.match(re) || [""])[0];
-	expect(defLine(as, /private static const HZ_SET_DEF:Object = .*/) === defLine(baseAs, /private static const HZ_SET_DEF:Object = .*/) && defLine(as, /private static const HZ31_DEF:Object = .*/) === defLine(baseAs, /private static const HZ31_DEF:Object = .*/), "defaults tables (HZ_SET_DEF, HZ31_DEF) unchanged");
+	// 0.43.3.2 batch e: the only HZ_SET_DEF change since the base is the two vehicle exit pill offsets (0 / 0 = the game's spot)
+	const defNow = defLine(as, /private static const HZ_SET_DEF:Object = .*/).replace('"VehicleExitX":0,"VehicleExitY":0,', "");
+	expect(defNow === defLine(baseAs, /private static const HZ_SET_DEF:Object = .*/) && defLine(as, /private static const HZ31_DEF:Object = .*/) === defLine(baseAs, /private static const HZ31_DEF:Object = .*/), "defaults tables (HZ_SET_DEF, HZ31_DEF) unchanged (HZ_SET_DEF only adds VehicleExitX / VehicleExitY = 0)");
 	expect(fnText(as, "hz34IniLines").body === fnText(baseAs, "hz34IniLines").body && fnText(as, "hz34Ini").body === fnText(baseAs, "hz34Ini").body && fnText(as, "hz34SetCur").body === fnText(baseAs, "hz34SetCur").body, "the [Cards] reader, writer and current values unchanged (saved settings and presets behave as before)");
 } else {
 	gitBase.report(baseRes, BASE, "old-vs-new row and default checks", expect);
@@ -125,6 +129,36 @@ expect(/\(r\.h \? 24 : 0\) \+ 32/.test(rh), "row geometry counts a header's 24 p
 	}
 	expect(ok, "down through all " + (withScope.length - 1) + " list rows: the selected row (with its header) is always fully in view");
 }
+// ---- 6. help text in the (i) popup (batch e) ----
+{
+	const shown = [], moved = [];
+	for (const mods of [{}, comms, all]) for (const r of rowsOf(as, mods)) {
+		if (r.note && !r.dis) shown.push(r.k);
+		if (r.inote) moved.push(r.k);
+		if (r.dis && r.note && !r.n13) shown.push(r.k + "(dis without n13)");
+	}
+	expect(shown.length === 0, "no enabled CARDS row draws help text under it" + (shown.length ? ": " + shown.join(",") : ""));
+	const m = rowsOf(as, all);
+	const byK = {}; m.forEach((r) => { byK[r.k] = r; });
+	expect(byK.VitalsLayout.inote && byK.QuestsWrap.inote && byK.ActiveBuffs.inote && byK.VehicleExitPill.inote && byK.ScopeHoldBreathChip.inote && byK.CompactScale.inote, "the help text rides on the row as inote (VITALS LAYOUT, TEXT WRAP, ACTIVE BUFFS, VEHICLE EXIT PILL, SCOPE, COMPACT STRIPS: SIZE ...)");
+	const off = rowsOf(as, {});
+	const mts = off.filter((r) => r.k === "MissionToastScale")[0];
+	expect(mts.dis && mts.note && mts.n13 && !mts.inote, "a disabled row (MISSION TOAST SIZE without Comms) keeps its reason under it");
+	const infoRe = /private static const HZ35_INFO:Object = (\{[\s\S]*?\});\n/;
+	const INFO = Function("return " + infoRe.exec(as)[1])();
+	const h = { HZ35_INFO: INFO };
+	const mk = (n) => { const f = fnText(as, n); return new Function(f.params.split(":")[0], f.body.replace(/var (\w+):[\w*]+/g, "let $1").replace(/([^.\w"])HZ35_INFO\b/g, "$1this.HZ35_INFO")); };
+	h.hz35InfoBase = mk("hz35InfoBase"); h.hz35InfoOf = mk("hz35InfoOf");
+	const veh = h.hz35InfoOf(byK.VehicleExitPill);
+	expect(veh.indexOf(byK.VehicleExitPill.inote) === 0 && veh.indexOf(INFO.VehicleExitPill) > 0, "the popup leads with the moved text, then the longer info");
+	const qw = h.hz35InfoOf(byK.QuestsWidth);
+	expect(typeof qw === "string" && qw.indexOf("Font size is unchanged") === 0, "a row without its own info still gets an (i) with its moved text");
+	let missing = [];
+	for (const r of m) if (!r.pill && !r.dis && r.inote && !h.hz35InfoOf(r)) missing.push(r.k);
+	expect(missing.length === 0, "every moved text has a popup");
+	expect(h.hz35InfoOf({ k: "ShowVitals", t: "b" }) === h.hz35InfoBase({ k: "ShowVitals", t: "b" }) && h.hz35InfoOf({ k: "x", pill: true }) === null, "other tabs' rows (no inote) get the same popup as before");
+	expect(/if\(rows\[ni\]\.dis\) \{ rows\[ni\]\.n13 = true; \}/.test(fnText(as, "hz34CardRows").body), "only the CARDS rows change (hz34CardRows)");
+}
 // ---- 5. Scope and Comms ----
 const noScope = rowsOf(as, comms);
 expect(!noScope.some((r) => /^Scope|_hz42scrst/.test(r.k)) && rowsOf(as, all).filter((r) => /^Scope|_hz42scrst/.test(r.k)).length === 3, "SCOPE rows only with the Scope module (omitted, not disabled)");
@@ -132,7 +166,7 @@ const noComms = rowsOf(as, {});
 const mt = noComms.find((r) => r.k === "MissionToast"), ms = noComms.find((r) => r.k === "MissionToastScale");
 expect(mt.dis === true && mt.dv === false && ms.dis === true && ms.dv === -1 && ms.note === "Comms module not installed. Install it from the Horizon UI installer.", "without Comms: MISSION TOAST and SIZE locked (off, GLOBAL) with the install note");
 const mt2 = now.find((r) => r.k === "MissionToast"), ms2 = now.find((r) => r.k === "MissionToastScale");
-expect(!mt2.dis && !ms2.dis && ms2.note === "Same switch as COMMS > MISSION TOAST. Move it in ARRANGE CARDS", "with Comms: unlocked, same note as before");
+expect(!mt2.dis && !ms2.dis && ms2.inote === "Same switch as COMMS > MISSION TOAST. Move it in ARRANGE CARDS" && ms2.note === undefined, "with Comms: unlocked, same text as before (now in its (i) popup)");
 expect(!/addEventListener|ENTER_FRAME|setInterval|setTimeout|new Timer/.test(fnText(as, "hz34CardRows").body), "menu rows only: no timer or listener");
 
 console.log("f11_cards_layout_test " + (failed ? "FAILED" : "passed") + " (" + passed + " ok, " + failed + " FAIL)");

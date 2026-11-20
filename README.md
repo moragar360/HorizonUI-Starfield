@@ -23,6 +23,11 @@ Test build on top of 0.43.3.1; not published. The full list is in [CHANGELOG.md]
 - **Horizon watch:** HORIZON DIGITAL / HORIZON ANALOG no longer re-write the face every frame, and the face hides in ship HUD mode.
 - **Scanner:** marker names and the compass list are cached (same output, less work per frame). New option F11 > SCANNER > BIOSCAN > HIDE WHEN FULLY SCANNED (off by default).
 - **F11 notes:** EQUIPMENT rule: "Crosshair off? Set this to ALWAYS or COMBAT ONLY." HIGHLIGHT AREA now says what it changes.
+- **Scanner highlight area:** FULL SCREEN is wider and a new MAX position was added. **Scanner outline thickness:** F11 > SCANNER > OUTLINE THICKNESS (VANILLA by default, THICK, THICKER). Both need an SFSE plugin built from this source (its version number stays 0.43.3.1); not tested in game yet.
+- **Active Buffs:** also reads the HUD's own effects list, so food and drink buffs can show (one row per buff icon, no timer). Not confirmed in game yet; Debug=1 shows each step.
+- **Name hover pill:** a long name wraps onto up to three lines at the same font size instead of being cut off.
+- **Vehicle exit pill:** move it in ARRANGE CARDS; the spot is saved with your settings and presets (default: the game's spot).
+- **F11 > CARDS:** one section per card, and the help text moved into each row's (i) popup.
 
 ## New in 0.43.3.1 (alpha, unreleased)
 
@@ -31,7 +36,7 @@ This build is not published and has no release tag. Install steps below still de
 - **Hazard Status card:** the hazard chip is now its own card. Move it in ARRANGE CARDS and set it up in F11 > CARDS. It follows your card style, shows red while a hazard hurts you and green while suit protection restores (the green while a hazard is still listed is not tested in game yet).
 - **Quest tracker:** long quest names and objectives wrap at the same font size instead of being cut off. F11 > CARDS > QUEST TRACKER adds WIDTH, MAX HEIGHT and TEXT WRAP.
 - **Equipment card:** long weapon names wrap onto a second line, and the card grows to fit.
-- **Scanner highlight area** (F11 > SCANNER > HIGHLIGHT AREA): Horizon dot, Vanilla (default), Full screen or Max. It needs the 0.43.3.1 SFSE plugin; not tested in game yet.
+- **Scanner highlight area** (F11 > SCANNER > HIGHLIGHT AREA): Horizon dot, Vanilla (default) or Full screen. It needs the 0.43.3.1 SFSE plugin; not tested in game yet.
 - **Controller:** prompt keycaps show the button you bound.
 - **Active Buffs card:** a new card lists your active buffs (and, if you choose, debuffs) with their remaining time. Move it in ARRANGE CARDS and set it up in F11 > CARDS > ACTIVE BUFFS. It follows your card style. Not tested in game yet.
 - **Afflictions card:** buffs show as their own green Buff chips, a buff and its debuff no longer merge, and a needs alert clears once its effect ends. Not tested in game yet.

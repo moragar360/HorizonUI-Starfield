@@ -2431,12 +2431,23 @@
       private var hzAbRowsD:Array = [];               // drawn rows: {e, sec, y, buff}
       private var hzAbH:Number = 0;                   // drawn height
       private var hzAbCm:int = -1;                    // drawn form: 0 expanded, 1 compact
+      // 0.43.3.2 batch e: second source. PersonalEffectsData reaches the HUD (the Afflictions card runs on it) and lists
+      // positive sustenance (food / drink) icons; PlayerStatusData has no proven push to the HUD movie.
+      private var hzAbSrc:int = 0;                    // source of hzAbList: 0 none, 1 PlayerStatusData, 2 PersonalEffectsData
+      private var hzAbPeKeys:Object = {};             // keys of the last PersonalEffectsData buff rows
+      private var hzAbPeSig:String = null;            // their signature (null = none seen since build / load)
+      private var hzAbSubOk:int = 0;                  // Debug: 1 Subscribe returned, -1 threw
+      private var hzAbStN:int = 0;                    // Debug: PlayerStatusData callbacks so far
+      private var hzAbStG:int = -1;                   // Debug: groups in the last one (-1 = no aEffectGroups)
+      private var hzAbStR:int = 0;                    // Debug: rows parsed from the last one
+      private var hzAbPeN:int = 0;                    // Debug: PersonalEffectsData callbacks so far
+      private var hzAbPeR:int = 0;                    // Debug: buff rows in the last one
 
       private function hzAbSub() : void
       {
          if(this.hzAbSubbed || !this.hzAbOn) { return; }
          this.hzAbSubbed = true;
-         try { BSUIDataManager.Subscribe("PlayerStatusData",this.hzAbOnStatus); } catch(eS:Error) { }
+         try { BSUIDataManager.Subscribe("PlayerStatusData",this.hzAbOnStatus); this.hzAbSubOk = 1; } catch(eS:Error) { this.hzAbSubOk = -1; }
       }
 
       private function hzAbBuild() : void
@@ -2485,6 +2496,9 @@
       {
          var d:Object = e != null ? e.data : null;
          var r:Array = this.hzAbParse(d,this.hzAbClk);
+         this.hzAbStN++;
+         this.hzAbStG = r == null ? -1 : (d.aEffectGroups as Array).length;
+         this.hzAbStR = r == null ? 0 : r.length;
          if(r == null)
          {
             if(this.hzAbFeed != 1) { this.hzAbFeed = 2; }   // no aEffectGroups: unknown; a list already shown stays
@@ -2492,11 +2506,84 @@
             return;
          }
          this.hzAbFeed = 1;
-         if(this.hzDebug) { this.hz26Log("PlayerStatusData",{"groups":(d.aEffectGroups as Array).length,"rows":r.length}); }   // Debug=1 only: proves the feed reaches the HUD
+         this.hzAbSrc = 1;
          this.hzAbSeenUpd(r);
          this.hzAbList = r;
          this.hzAbSig = null;
          this.hzAbSync();
+      }
+
+      // 0.43.3.2 batch e: PersonalEffectsData (hzOnPersonalEffects, on each push of the HUD's own effects list). Its
+      // positive icons become buff rows (no name or time in that feed: the row is named from the icon, no countdown, and
+      // leaves when the icon leaves). Used while no Status list is in use, or when a new buff icon appears after one
+      // (the Status list can be stale while the Status menu is closed). An unchanged icon set does nothing.
+      private function hzAbOnPers(a:Array) : void
+      {
+         if(!this.hzAbOn || !this.HorizonBuffs_mc) { return; }
+         var r:Array = this.hzAbPersParse(a,this.hzAbClk);
+         this.hzAbPeN++;
+         this.hzAbPeR = r.length;
+         var sig:String = "";
+         var keys:Object = {};
+         var grew:Boolean = false;
+         for each(var e:Object in r)
+         {
+            sig += e.k + ";";
+            keys[e.k] = true;
+            if(this.hzAbPeKeys[e.k] !== true) { grew = true; }
+         }
+         if(sig === this.hzAbPeSig) { this.hzAbDbg(); return; }
+         this.hzAbPeSig = sig;
+         this.hzAbPeKeys = keys;
+         if(this.hzAbSrc == 1 && !grew) { this.hzAbDbg(); return; }   // a Status list in use keeps its timed rows
+         this.hzAbSrc = r.length > 0 || this.hzAbSrc == 2 ? 2 : this.hzAbSrc;
+         if(this.hzAbSrc != 2) { this.hzAbDbg(); return; }
+         this.hzAbList = r;
+         this.hzAbSig = null;
+         this.hzAbSync();
+      }
+
+      // the positive entries of aPersonalEffects -> buff rows (key pe|icon, one per icon, feed order)
+      private function hzAbPersParse(a:Array, at:Number) : Array
+      {
+         var out:Array = [];
+         if(a == null) { return out; }
+         var i:int = 0;
+         while(i < a.length && i < HZ_AB_EFFECTS)
+         {
+            var o:Object = a[i];
+            i++;
+            if(o == null || o.sEffectIcon == null) { continue; }
+            var icon:String = String(o.sEffectIcon);
+            if(!/_Positive(_\d+)?$/.test(icon)) { continue; }
+            var k:String = "pe|" + icon;
+            var dup:Boolean = false;
+            for each(var x:Object in out) { if(x.k == k) { dup = true; break; } }
+            if(dup) { continue; }
+            var nm:String = this.hzAbPersName(icon);
+            if(nm.length == 0) { continue; }
+            out.push({"k":k,"n":nm,"b":true,"p":false,"r":NaN,"at":at});
+         }
+         return out;
+      }
+
+      // icon -> a short name: "Sustenance_Food_Positive_2" -> "Food", "PersonalEffect_Food_Positive" -> "Food"
+      private function hzAbPersName(icon:String) : String
+      {
+         var s:String = icon.replace(/_(Positive|Negative)(_\d+)?$/,"");
+         s = this.hzPretty(s);
+         s = s.replace(/^Sustenance\s+/,"");
+         return s;
+      }
+
+      // Debug=1 only: one overlay line with every stage of the card (subscribe, both feeds, the list, the gates, the show)
+      private function hzAbDbg() : void
+      {
+         if(!this.hzDebug) { return; }
+         var c:Sprite = this.HorizonBuffs_mc;
+         this.hz26Log("ActiveBuffs",{"on":this.hzAbOn,"sub":this.hzAbSubOk,"stCb":this.hzAbStN,"stGroups":this.hzAbStG,"stRows":this.hzAbStR,"feed":this.hzAbFeed,
+            "peCb":this.hzAbPeN,"peRows":this.hzAbPeR,"src":this.hzAbSrc,"list":this.hzAbList.length,"cardOn":this.hzAbCardOn,"rule":this.hzRuleBuffs,"hideEmpty":this.hzAbHideEmpty,
+            "mode":this.hzAbMode,"perm":this.hzAbPerm,"shown":this.hzAbShown,"vis":c != null && c.visible,"a":c != null ? Math.round(c.alpha * 100) / 100 : -1,"x":c != null ? Math.round(c.x) : -1,"y":c != null ? Math.round(c.y) : -1});
       }
 
       // payload -> entries {k key, n name, b buff, p permanent, r remaining s (NaN = unknown), at clock ms}, feed order.
@@ -2762,6 +2849,7 @@
             this.hzAbShown = on;
             this.hzShow(this.HorizonBuffs_mc,on);
          }
+         if(this.hzDebug) { this.hzAbDbg(); }
       }
 
       private function hzAbDraw(pk:Object, st:int, cm:int) : void
@@ -2890,6 +2978,9 @@
          this.hzAbList = [];
          this.hzAbSeen = {};
          this.hzAbFeed = 0;
+         this.hzAbSrc = 0;
+         this.hzAbPeKeys = {};
+         this.hzAbPeSig = null;
          this.hzAbWall = -1;
          this.hzAbSig = null;
          this.hzAbSync();
@@ -3216,6 +3307,7 @@
          var t:String = this.hzJoinEffects(e.data.aPersonalEffects as Array,true);
          this.hzEnvAff.text = t;
          this.hzAfSetPers(e.data.aPersonalEffects as Array);
+         try { this.hzAbOnPers(e.data.aPersonalEffects as Array); } catch(eAbP:Error) { }   // 0.43.3.2: Active Buffs second source
       }
 
       private function hzOnCrosshair(e:FromClientDataEvent) : *
@@ -4330,6 +4422,17 @@
       private var hzVehW:Number = 0;
       private var hzVehH:Number = 42;
       private var hzVehFail:int = 0;
+      // 0.43.3.2 batch e: ARRANGE CARDS can move the pill. VehicleExitX / VehicleExitY ([Cards Extra]) = offset of the pill
+      // center from the game's prompt center in HUD units (X + = right, Y + = up; 0 / 0 = the game's spot, as before).
+      private static const HZ_VEH_KEY:String = "VehicleExit";   // ARRANGE list key (not a [Layout] card: offsets, like the scope chip)
+      private var hzVehX:Number = 0;
+      private var hzVehY:Number = 0;
+      private var hzVehOrig:Object = null;   // ARRANGE: the offsets to give back on CANCEL
+      private var hzVehHX:Number = NaN;      // last measured center of the game's prompt (set where the pill is placed)
+      private var hzVehHY:Number = NaN;
+      private var hzVehArr:Boolean = false;  // the pill is the ARRANGE proxy right now
+      private var hzVehKs:String = "";       // last key text / face drawn in a vehicle (the proxy shows the same key)
+      private var hzVehKf:String = "";
       private function hz42VehOnData(e:FromClientDataEvent) : void
       {
          try
@@ -4720,12 +4823,15 @@
             catch(err2:Error) { r = null; }
          }
          if(r == null || isNaN(r.x) || isNaN(r.y)) { return false; }
-         this.hzVehPx.x = Math.round(r.x + r.width / 2 - this.hzVehW / 2);
-         this.hzVehPx.y = Math.round(r.y + r.height / 2 - this.hzVehH / 2);
+         this.hzVehHX = r.x + r.width / 2;
+         this.hzVehHY = r.y + r.height / 2;
+         this.hzVehPx.x = Math.round(this.hzVehHX + this.hzVehX - this.hzVehW / 2);
+         this.hzVehPx.y = Math.round(this.hzVehHY - this.hzVehY - this.hzVehH / 2);
          return true;
       }
       private function hz42VehTick() : void
       {
+         if(this.hzVehArr) { return; }   // 0.43.3.2: ARRANGE owns the pill (hzVehArrSync); one Boolean test per frame
          var b:* = this.hz42VehBtn();
          if(!this.hzVehOn || b == null)
          {
@@ -4760,6 +4866,7 @@
          var key:Array = this.hz42VehKey(b);
          var ks:String = key != null && key[0] != null ? String(key[0]) : "";
          var kf:String = key != null && key[1] != null ? String(key[1]) : "";
+         if(ks.length > 0) { this.hzVehKs = ks; this.hzVehKf = kf; }
          var sig:String = (done ? "1" : "0") + "|" + String(int(Math.round(prog * 100))) + "|" + ks + "|" + kf + "|" + String(int(HZ_ACCENT)) + "|" + String(this.hzTextScale) + "|" + String(this.hzFontFace) + "|" + String(this.hzHeaderStyle) + "|" + String(this.hzCardOpacity);
          if(this.hzVehPx == null)
          {
@@ -4798,6 +4905,94 @@
          this.hzVehPx.visible = true;
          this.hz42VehFront();
          this.hz42VehHideVan(b,true);
+      }
+      // ---- 0.43.3.2 batch e: vehicle exit pill in ARRANGE CARDS (edges only: ARRANGE open / draw / drag / close) ----
+      private function hzVehCX(v:*) : Number { var n:Number = Number(v); if(isNaN(n)) { return 0; } return Math.round(Math.max(-1000,Math.min(1000,n))); }
+      private function hzVehCY(v:*) : Number { var n:Number = Number(v); if(isNaN(n)) { return 0; } return Math.round(Math.max(-600,Math.min(600,n))); }
+      // the game's prompt center: the last one measured in a vehicle this session, else measured now (the button is in the
+      // HUD out of a vehicle too), else the lower right of the visible area (inference: the prompt sits in RightMeters)
+      private function hzVehHome() : Point
+      {
+         if(!isNaN(this.hzVehHX) && !isNaN(this.hzVehHY)) { return new Point(this.hzVehHX,this.hzVehHY); }
+         var b:* = this.hz42VehBtn();
+         if(b != null)
+         {
+            var r:Rectangle = null;
+            try { r = b.getBounds(this); } catch(err:Error) { r = null; }
+            if(r != null && !isNaN(r.x) && !isNaN(r.y) && r.width >= 1 && r.height >= 1 && r.width <= 800 && r.height <= 400) { return new Point(r.x + r.width / 2,r.y + r.height / 2); }
+         }
+         var vr:Rectangle = this.hzVis();
+         return new Point(vr.right - 220,vr.bottom - 150);
+      }
+      // ARRANGE open / draw / close: the pill is drawn idle (the last key seen, else E) at its spot, or handed back
+      private function hzVehArrSync() : void
+      {
+         var on:Boolean = this.hzArrange && !this.hz41SA && this.hzVehOn;
+         if(!on)
+         {
+            if(this.hzVehArr)
+            {
+               this.hzVehArr = false;
+               this.hzVehSig = "";   // the vehicle tick redraws and places it again
+               if(this.hzVehPx != null) { this.hzVehPx.visible = false; }
+            }
+            return;
+         }
+         if(this.hzVehPx == null)
+         {
+            this.hzVehPx = new Sprite();
+            this.hzVehPx.mouseEnabled = false;
+            this.hzVehPx.mouseChildren = false;
+            this.hzVehPx.name = "hzVehExit";
+         }
+         if(!this.hzVehArr)
+         {
+            this.hzVehArr = true;
+            this.hz42VehDraw(this.hzVehKs.length > 0 ? this.hzVehKs : "E",this.hzVehKf,0,false);
+            this.hzVehSig = "";
+         }
+         var hp:Point = this.hzVehHome();
+         this.hzVehPx.x = Math.round(hp.x + this.hzVehX - this.hzVehW / 2);
+         this.hzVehPx.y = Math.round(hp.y - this.hzVehY - this.hzVehH / 2);
+         this.hzVehPx.visible = true;
+         if(this.hzVehPx.parent != this) { addChild(this.hzVehPx); }
+         if(this.hzArr_mc != null && this.hzArr_mc.parent == this) { addChild(this.hzArr_mc); }
+      }
+      // one value set (ARRANGE drag / nudge / reset / cancel): the live value and the pending F11 value
+      private function hzVehPut(x:*, y:*) : void
+      {
+         this.hzVehX = this.hzVehCX(x);
+         this.hzVehY = this.hzVehCY(y);
+         if(this.hzSetPend != null) { this.hzSetPend.VehicleExitX = this.hzVehX; this.hzSetPend.VehicleExitY = this.hzVehY; }
+         this.hzVehArrSync();
+      }
+      // ARRANGE drag / nudge: the pill center -> offsets from the game's prompt center
+      private function hzVehFromPx(c:Sprite) : void
+      {
+         var hp:Point = this.hzVehHome();
+         this.hzVehPut(c.x + this.hzVehW / 2 - hp.x,hp.y - (c.y + this.hzVehH / 2));
+      }
+      private function hzVehIni(k:String, nv:Number) : Boolean
+      {
+         if(k == "vehicleexitx") { this.hzVehX = this.hzVehCX(nv); return true; }
+         if(k == "vehicleexity") { this.hzVehY = this.hzVehCY(nv); return true; }
+         return false;
+      }
+      private function hzVehSetCur(o:Object) : void
+      {
+         o.VehicleExitX = this.hzVehX;
+         o.VehicleExitY = this.hzVehY;
+      }
+      private function hzVehSetLive(p:Object) : void
+      {
+         if(p.VehicleExitX !== undefined) { this.hzVehX = this.hzVehCX(p.VehicleExitX); }
+         if(p.VehicleExitY !== undefined) { this.hzVehY = this.hzVehCY(p.VehicleExitY); }
+      }
+      private function hzVehIniLines(a:Array, p:Object) : void
+      {
+         a.push("; Vehicle exit pill spot (ARRANGE CARDS): offset from the game's prompt in HUD units (X + = right, Y + = up); 0 / 0 = the game's spot");
+         a.push("VehicleExitX=" + String(this.hzVehCX(p.VehicleExitX !== undefined ? p.VehicleExitX : this.hzVehX)));
+         a.push("VehicleExitY=" + String(this.hzVehCY(p.VehicleExitY !== undefined ? p.VehicleExitY : this.hzVehY)));
       }
       // =================== Horizon settings window (keyboard + mouse) ===================
       public var HorizonSettings_mc:Sprite = null;
@@ -7016,7 +7211,7 @@
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0,"ActiveBuffs":1,"BuffsShow":0,"BuffsMax":6,"BuffsTimers":1,"BuffsPermanent":0,"BuffsHideEmpty":1,"BuffsRule":0,"BuffsScale":-1,"BuffsCompact":0};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0,"ActiveBuffs":1,"BuffsShow":0,"BuffsMax":6,"BuffsTimers":1,"BuffsPermanent":0,"BuffsHideEmpty":1,"BuffsRule":0,"BuffsScale":-1,"BuffsCompact":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -8206,6 +8401,7 @@
             i++;
          }
          try { if(this.hz42ScAvail() && this.hz42ScPx != null) { r.push({"k":HZ42_SC_KEY,"n":"SCOPE: HOLD BREATH","c":this.hz42ScPx}); } } catch(err42a:Error) { }   // v0.42.0 r2
+         try { if(this.hzVehArr && this.hzVehPx != null) { r.push({"k":HZ_VEH_KEY,"n":"VEHICLE EXIT PILL","c":this.hzVehPx}); } } catch(errVhA:Error) { }   // 0.43.3.2
          return r;
       }
 
@@ -8270,6 +8466,7 @@
          this.hzLayOrig = this.hzLayCopy(this.hzLay);
          this.hz42VLOrig = this.hz42VL;   // v0.42.0: CANCEL restores the vitals layout
          this.hz42ScOrig = {"x":this.hz42ScX,"y":this.hz42ScY,"s":this.hz42ScS};   // v0.42.0 r2: CANCEL restores the scope chip
+         this.hzVehOrig = {"x":this.hzVehX,"y":this.hzVehY};   // 0.43.3.2: CANCEL restores the vehicle exit pill
          this.hzArrange = true;
          try { this.hz43ScanHideSync(); } catch(e43s:Error) { }   // r7 (S-5): ARRANGE ends HideWatchWhileScanning (event edge)
          this.hzArrDrag = null;
@@ -8293,6 +8490,7 @@
             g.endFill();
          }
          try { this.hz42ScSync(); } catch(err42e:Error) { }   // v0.42.0 r2: the scope proxy (under the ARRANGE layer)
+         try { this.hzVehArrSync(); } catch(errVhE:Error) { }   // 0.43.3.2: the vehicle exit pill (under the ARRANGE layer)
          addChild(this.hzArr_mc); // topmost
          this.hzEqLayout();
          this.hzArr_mc.visible = true;
@@ -8315,6 +8513,7 @@
          {
             this.hzLayOrig = null;
             this.hz42ScOrig = null;
+            this.hzVehOrig = null;
             this.hzLaidOut = this.hzLayout();
             try { this.hz31PxSync(); } catch(err31f:Error) { }
             if(this.hzSetIsOpen) { this.hzSetApply(); }
@@ -8326,6 +8525,8 @@
             this.hzLayOrig = null;
             if(this.hz42ScOrig != null) { this.hz42ScPut(this.hz42ScOrig.x,this.hz42ScOrig.y,this.hz42ScOrig.s); }   // v0.42.0 r2: CANCEL
             this.hz42ScOrig = null;
+            if(this.hzVehOrig != null) { this.hzVehPut(this.hzVehOrig.x,this.hzVehOrig.y); }   // 0.43.3.2: CANCEL
+            this.hzVehOrig = null;
             if(this.hz42VLOrig >= 0 && this.hz42VLOrig != this.hz42VL) { this.hz42VL = this.hz42VLOrig; if(this.hzSetPend != null) { this.hzSetPend.VitalsLayout = this.hz42VL; } try { this.hz42VitApply(); } catch(err42x:Error) { } }   // v0.42.0
             this.hzLaidOut = this.hzLayout();
             try { this.hz31PxSync(); } catch(err31e:Error) { }
@@ -8338,6 +8539,7 @@
          }
          this.hzRefreshVisibility();
          try { this.hz42ScSync(); } catch(err42p:Error) { }   // v0.42.0 r2: the scope proxy only shows in ARRANGE
+         try { this.hzVehArrSync(); } catch(errVhX:Error) { }   // 0.43.3.2: hand the pill back to the vehicle tick
          try { this.hz40Apply(); } catch(err42h:Error) { }   // v0.42.0 r2: re-apply the scan hide (ARRANGE closed while the scanner opened)
       }
 
@@ -8346,7 +8548,8 @@
          if(this.hz41SA) { this.hz41SAReset(); return; }
          this.hzLay = {};
          this.hzVitOff = 0;
-         if(this.hz30Mod["scope"] === 1) { try { this.hz42ScPut(0,0,1); } catch(err42z:Error) { } }   // v0.42.0 r2: the scope chip back to the game's spot and size (r3: only with the Scope module)
+         if(this.hz30Mod["scope"] === 1) { try { this.hz42ScPut(0,0,1); } catch(err42z:Error) { } }
+         try { this.hzVehPut(0,0); } catch(errVhZ:Error) { }   // 0.43.3.2: the vehicle exit pill back to the game's spot   // v0.42.0 r2: the scope chip back to the game's spot and size (r3: only with the Scope module)
          this.hzLaidOut = this.hzLayout();
          this.hzArrDraw();
       }
@@ -8355,6 +8558,7 @@
       {
          if(this.hz41SA) { this.hz41SAStore(k,c); return; }
          if(k == "ScopeChip") { try { this.hz42ScFromPx(c); } catch(err42f:Error) { } return; }   // v0.42.0 r2: offsets, not a card anchor
+         if(k == HZ_VEH_KEY) { try { this.hzVehFromPx(c); } catch(errVhF:Error) { } return; }   // 0.43.3.2: offsets from the game's prompt
          var vr:Rectangle = this.hzVis();
          var o:Object = {"x":Math.max(0,Math.min(1,(c.x - vr.x) / vr.width)),"y":Math.max(0,Math.min(1,(this.hzFadeBase(c) - vr.y) / vr.height)),"hx":true,"hy":true};
          // v0.30: store edge-anchored offsets (the 0-1 fractions stay only as a fallback)
@@ -8412,6 +8616,7 @@
          this.hzArrHits = [];
          try { this.hz31PxSync(); } catch(err31s:Error) { }
          try { this.hz42ScSync(); } catch(err42s:Error) { }   // v0.42.0 r2: the scope proxy at its stored spot / size
+         try { this.hzVehArrSync(); } catch(errVhD:Error) { }   // 0.43.3.2: the vehicle exit pill at its stored spot
          for each(var e:Object in this.hzArrList())
          {
             var c:Sprite = e.c;
@@ -14243,9 +14448,9 @@
       // Verbs are measured in full and never shortened. The name keeps up to 220 px, plus 8 px when it fits that cap.
       // The pill grows with the line up to 640 px. Past that, only the name gives up space. A verb row wider than
       // that still draws whole, so the pill may pass 640. Name, key letter, and verb share one size and one cap-center.
-      // 0.43.3.2: a name that would be cut wraps to a second line at the same size (never smaller) and the pill grows by
-      // one line; past two lines the second ends in "...". Runs only from hzT19Content, i.e. on a content-signature
-      // change (a new name, keys or style), never per frame.
+      // 0.43.3.2: a name that would be cut wraps at the same size (never smaller), up to three lines, and the pill grows
+      // by one line advance per extra line, only as many as the name needs; past three lines the third ends in "...".
+      // Runs only from hzT19Content, i.e. on a content-signature change (a new name, keys or style), never per frame.
       private function hzT19PromptPill(g:*, a:Object, aw:Object, o:Object, nmTf:TextField, hdrTxt:String, hasBtn:Boolean, bw:Number) : Object
       {
          var lineFs:Number = 14;
@@ -14299,15 +14504,17 @@
          if(nmTf.visible && measured > nameRoom - 4)
          {
             // would be cut: wrap at the same size (hzApplyFmt sizes the field for o.lines)
-            o.lines = 2;
+            o.lines = HZ_T19_NMLINES;
             nmTf.wordWrap = true;
             nmTf.multiline = true;
             this.hzApplyFmt(o);
-            this.hzT19Wrap2(nmTf,shown);
-            if(nmTf.numLines >= 2)
+            this.hzT19WrapN(nmTf,shown,HZ_T19_NMLINES);
+            var nl:int = Math.min(HZ_T19_NMLINES,nmTf.numLines);
+            if(nl >= 2)
             {
                lineAdv = this.hzT19LineAdv(nmTf,lineFs);
-               H = H1 + lineAdv;
+               H = H1 + lineAdv * (nl - 1);
+               lineAdv = lineAdv * (nl - 1);   // from here: the whole extra height (the name block is centered on it)
             }
             else { o.lines = 1; nmTf.wordWrap = false; nmTf.multiline = false; this.hzApplyFmt(o); this.hzFitText(nmTf,shown,nameRoom); }
          }
@@ -14329,19 +14536,20 @@
          return {"W":W,"H":H};
       }
 
-      // 0.43.3.2: the pill name in at most two wrapped lines (the field already wraps at its width); a longer name keeps
-      // whole words on line one and ends line two in "...". Content edge only (hzT19PromptPill).
-      private function hzT19Wrap2(tf:TextField, full:String) : void
+      // 0.43.3.2: the pill name in at most mx wrapped lines (the field already wraps at its width); a longer name keeps
+      // whole words on the first lines and ends the last one in "...". Content edge only (hzT19PromptPill).
+      private static const HZ_T19_NMLINES:int = 3;
+      private function hzT19WrapN(tf:TextField, full:String, mx:int) : void
       {
          tf.text = full;
-         if(tf.numLines <= 2 || full.length < 2) { return; }
+         if(tf.numLines <= mx || full.length < 2) { return; }
          var lo:int = 1;
          var hi:int = full.length;
          while(lo < hi)
          {
             var mid:int = (lo + hi + 1) >> 1;
             tf.text = full.substr(0,mid) + "...";
-            if(tf.numLines <= 2) { lo = mid; } else { hi = mid - 1; }
+            if(tf.numLines <= mx) { lo = mid; } else { hi = mid - 1; }
          }
          tf.text = full.substr(0,lo).replace(/\s+$/,"") + "...";
       }
@@ -14878,7 +15086,7 @@
       private function hz26DbgText() : String
       {
          var out:String = "";
-         for each(var k:String in ["PersonalEffectsData","PersonalAlertsData","aPersonalAlerts[0]","Afflictions","QuestObjectives","PlayerData","PlayerInventoryData","XPData","XPData[0]","HUDStealthData","HudHitKillIndicatorData","KillDataA[0]","HUDDirectionalHitData","aDirectionalHitIndicators[0]","PlayerHealthBoostData","HUDStarbornPowersData","PowerIcon","Enemy","EnemyModifiers","PlayerStatusData"])
+         for each(var k:String in ["PersonalEffectsData","PersonalAlertsData","aPersonalAlerts[0]","Afflictions","QuestObjectives","PlayerData","PlayerInventoryData","XPData","XPData[0]","HUDStealthData","HudHitKillIndicatorData","KillDataA[0]","HUDDirectionalHitData","aDirectionalHitIndicators[0]","PlayerHealthBoostData","HUDStarbornPowersData","PowerIcon","Enemy","EnemyModifiers","ActiveBuffs"])
          {
             if(this.hz26Dbg[k] != undefined) { out += k + ": " + String(this.hz26Dbg[k]) + "\n"; }
          }
@@ -16361,6 +16569,7 @@
       private function hz26Ini(k:String, bv:Boolean, nv:Number) : Boolean
       {
          if(this.hzAbIni(k,bv,nv)) { return true; }   // 0.43.3.1: [ActiveBuffs]
+         if(this.hzVehIni(k,nv)) { return true; }      // 0.43.3.2: vehicle exit pill spot
          switch(k)
          {
             case "showcharacter": this.hzShowChar = bv; break;
@@ -16382,6 +16591,7 @@
       private function hz26SetCur(o:Object) : void
       {
          try { this.hzAbSetCur(o); } catch(errAbC:Error) { }   // 0.43.3.1: Active Buffs
+         try { this.hzVehSetCur(o); } catch(errVhC:Error) { }  // 0.43.3.2: vehicle exit pill spot
          o.ShowCharacter = this.hzShowChar;
          o.EdgePulse = this.hzEdgePulse;
          o.HazardStatus = this.hzHsOn;
@@ -16399,6 +16609,7 @@
       private function hz26SetLive(p:Object) : void
       {
          try { this.hzAbSetLive(p); } catch(errAbS:Error) { }   // 0.43.3.1: Active Buffs
+         try { this.hzVehSetLive(p); } catch(errVhS:Error) { }  // 0.43.3.2: vehicle exit pill spot
          if(p.ShowCharacter != undefined) { this.hzShowChar = Boolean(p.ShowCharacter); }
          if(p.EdgePulse != undefined) { this.hzEdgePulse = Boolean(p.EdgePulse); }
          if(p.HazardStatus != undefined && this.hzHsOn != Boolean(p.HazardStatus)) { this.hzHsOn = Boolean(p.HazardStatus); this.hzLaidOut = false; }
@@ -16428,6 +16639,7 @@
          a.push("StealthMeter=" + this.hzB(p.StealthMeter));
          a.push("; Equipment card: grenade count + selected Starborn power (icon, meter). Hides the vanilla grenade / power readout.");
          a.push("EquipmentExtras=" + this.hzB(p.EquipmentExtras));
+         this.hzVehIniLines(a,p);   // 0.43.3.2
          a.push("");
          a.push("[Effects]");
          a.push("; Screen-edge tint pulsing ~1 Hz: red below 15% health, amber below 15% oxygen (center untouched)");
@@ -18817,9 +19029,19 @@
          "_size":"GLOBAL: this card uses HUD SCALE (STYLE tab). CUSTOM: it has its own size and HUD SCALE no longer changes it. Click the GLOBAL / CUSTOM chip or drag the slider to switch.",
          "_compact":"GLOBAL: this card takes its compact form whenever COMPACT MODE (top right) is on. ON / OFF: always compact / always full for this card only, whatever COMPACT MODE says.",
          "_rule":"When this card shows. ALWAYS, or only in the situation named (in combat, weapon drawn, not full ...). The card's own switch in CARDS still has to be on."};
+      // 0.43.3.2 batch e: a row's moved help text (r.inote, F11 CARDS) leads the popup, then the longer info if there is one
       private function hz35InfoOf(r:Object) : String
       {
          if(r == null || r.pill) { return null; }
+         var base:String = this.hz35InfoBase(r);
+         if(r.inote == undefined || r.inote === null) { return base; }
+         var n:String = String(r.inote);
+         if(base == null || base.length == 0) { return n; }
+         if(base.indexOf(n) >= 0) { return base; }
+         return n + "\n\n" + base;
+      }
+      private function hz35InfoBase(r:Object) : String
+      {
          if(r.info != undefined && r.info !== null) { return String(r.info); }
          var k:String = String(r.k);
          if(HZ35_INFO[k] != undefined) { return String(HZ35_INFO[k]); }
@@ -19087,10 +19309,16 @@
          }
          rows.push(mt); rows.push(ms);
          try { this.hz42ScRows(rows); } catch(err42r:Error) { }   // v0.42.0 r2: SCOPE rows (only with the Scope module)
+         // 0.43.3.2 batch e: the help text moves into the row's (i) popup (hz35InfoOf: r.inote first), so the list is just
+         // rows. A disabled row keeps its note under it: the note says why it is off, and a disabled row has no (i).
          var ni:int = 0;
          while(ni < rows.length)
          {
-            if(rows[ni].note) { rows[ni].n13 = true; }
+            if(rows[ni].note)
+            {
+               if(rows[ni].dis) { rows[ni].n13 = true; }
+               else { rows[ni].inote = String(rows[ni].note); delete rows[ni].note; }
+            }
             ni++;
          }
          return rows;

@@ -1,14 +1,15 @@
-// Compact name hover pill: a long name wraps to a second line (0.43.3.2). Run: node tests/pill_wrap_test.js
-// Runs the production hzT19PromptPill / hzT19Wrap2 / hzT19LineAdv (types stripped) on a small host with a fake
+// Compact name hover pill: a long name wraps to a second and third line (0.43.3.2). Run: node tests/pill_wrap_test.js
+// Runs the production hzT19PromptPill / hzT19WrapN / hzT19LineAdv (types stripped) on a small host with a fake
 // TextField (8 px per character, greedy word wrap) and checks:
 //  1. a name that fits stays one line, the pill keeps its height, no wrap state is set;
 //  2. a name that would be cut wraps to two lines at the same font size (never smaller), whole, with no "...";
 //     the pill grows by exactly one line and keeps the one-line corner radius;
-//  3. a name too long for two lines ends line two in "..." (never a third line);
+//  3. a name too long for two lines takes a third (batch e) and the pill grows by one more line; a name too long for
+//     three lines ends line three in "..." (never a fourth line);
 //  4. the layout runs only on the content edge: hzT19PromptPill is called only from hzT19Content, which is called
 //     only behind the content-signature change; no timer, listener, frame term or tree search in the new code;
 //     hzT19Content clears the wrap state for every other card kind.
-// Author: Moragar. Last modified: 2026-11-18.
+// Author: Moragar. Last modified: 2026-11-18 (batch e).
 "use strict";
 
 const fs = require("fs");
@@ -68,7 +69,7 @@ function mkTf() {
 }
 function host() {
 	const h = {
-		HZ_ACCENT: 0x3FD0E0, HZ_RED: 0xFF5B5B, hzTextScale: 1, panels: [], fmts: 0,
+		HZ_ACCENT: 0x3FD0E0, HZ_RED: 0xFF5B5B, HZ_T19_NMLINES: Number((/HZ_T19_NMLINES:int = (\d+);/.exec(as) || [])[1]), hzTextScale: 1, panels: [], fmts: 0,
 		hzT19PillCap() { return 22; },
 		hzApplyFmt(o) { this.fmts++; o.tf.height = (o.fs + 4) * (o.lines > 1 ? o.lines : 1) + 6; },
 		hzUC(s) { return s; },
@@ -79,7 +80,7 @@ function host() {
 		hzCapTop(tf, cy) { return cy - 7; },
 		hzTxtTopU(tf, top) { tf.y = top; },
 	};
-	for (const n of ["hzT19PromptPill", "hzT19Wrap2", "hzT19LineAdv", "hzFitText"]) h[n] = toJs(n);
+	for (const n of ["hzT19PromptPill", "hzT19WrapN", "hzT19LineAdv", "hzFitText"]) h[n] = toJs(n);
 	return h;
 }
 function pill(name) {
@@ -98,22 +99,28 @@ expect(H1 === 52 && s.panel.H === 52 && s.panel.r === 26, "one-line pill height 
 // ---- 2. long name wraps whole at the same size ----
 const longName = "HUNTING STONEWALL TAILWHIP ALPHA";   // 32 chars = 256 px, past the 220 px name cap
 const L = pill(longName);
-expect(L.tf.wordWrap && L.tf.multiline && L.tf.numLines === 2 && L.o.lines === 2, "a name that would be cut wraps to two lines");
+expect(L.tf.wordWrap && L.tf.multiline && L.tf.numLines === 2 && L.o.lines === 3, "a name that would be cut wraps to two lines (the field allows three)");
 expect(L.tf.text === longName && L.tf.text.indexOf("...") < 0, "the wrapped name is whole (no ...)");
 expect(L.o.fs === 14 && L.o.size === 14, "same font size as one line (never shrunk)");
 expect(L.r.H === H1 + 19 && L.panel.H === H1 + 19, "the pill grows by exactly one line (" + L.r.H + " = " + H1 + " + 19)");
 expect(L.panel.r === 26, "the corner radius stays the one-line radius");
 expect(L.r.W === s.r.W || L.r.W > s.r.W, "the width rule is unchanged (name room capped as before)");
-// ---- 3. too long for two lines ----
-const huge = "VERY LONG NAME OF A CONTAINER THAT GOES ON AND ON AND ON AND ON PAST TWO LINES";
+// ---- 3. three lines, then ... ----
+const three = "HUNTING STONEWALKER STALKER ALPHA MALE OF THE NORTHERN RIDGE";   // like the in-game case: line two was cut with ...
+const T = pill(three);
+expect(T.tf.numLines === 3 && T.tf.text === three, "a name too long for two lines is whole on three lines (" + T.tf.text + ")");
+expect(T.r.H === H1 + 38 && T.panel.H === H1 + 38 && T.panel.r === 26, "the pill grows by exactly two lines, only because the name needs them");
+expect(T.o.fs === 14, "same font size on three lines");
+const huge = "VERY LONG NAME OF A CONTAINER THAT GOES ON AND ON AND ON AND ON AND ON AND ON PAST THREE LINES OF TEXT";
 const X = pill(huge);
-expect(X.tf.numLines === 2 && /\.\.\.$/.test(X.tf.text) && X.tf.text.length < huge.length, "past two lines: line two ends in ... (" + X.tf.text + ")");
-expect(X.r.H === H1 + 19, "still exactly one extra line");
+expect(X.tf.numLines === 3 && /\.\.\.$/.test(X.tf.text) && X.tf.text.length < huge.length, "past three lines: line three ends in ... (" + X.tf.text + ")");
+expect(X.r.H === H1 + 38, "never more than two extra lines");
+expect(/private static const HZ_T19_NMLINES:int = 3;/.test(as), "the line cap is 3");
 // ---- 4. edge only ----
-const pillSrc = codeOnly(fnText(as, "hzT19PromptPill").body) + codeOnly(fnText(as, "hzT19Wrap2").body) + codeOnly(fnText(as, "hzT19LineAdv").body);
+const pillSrc = codeOnly(fnText(as, "hzT19PromptPill").body) + codeOnly(fnText(as, "hzT19WrapN").body) + codeOnly(fnText(as, "hzT19LineAdv").body);
 expect(!/addEventListener|ENTER_FRAME|enterFrame|setInterval|setTimeout|new Timer|getTimer|hzFrameN|% \d|hzFindByName|getChildByName|getChildAt/.test(pillSrc), "no timer, listener, frame term or tree search in the pill layout");
 expect(count(as, "this.hzT19PromptPill(") === 1 && fnText(as, "hzT19Content").body.indexOf("this.hzT19PromptPill(") >= 0, "the pill is laid out only from hzT19Content");
-expect(count(as, "this.hzT19Wrap2(") === 1 && count(as, "this.hzT19LineAdv(") === 1, "the wrap helpers are called only from the pill");
+expect(count(as, "this.hzT19WrapN(") === 1 && count(as, "this.hzT19LineAdv(") === 1, "the wrap helpers are called only from the pill");
 const tick = fnText(as, "hzT19Tick").body;
 const ci = tick.indexOf("this.hzT19Content(");
 expect(count(as, "this.hzT19Content(") === 1 && ci > 0 && tick.lastIndexOf("if(sig != this.hzT19Sig)", ci) > 0, "hzT19Content runs only behind the content-signature change (an edge, not per frame)");

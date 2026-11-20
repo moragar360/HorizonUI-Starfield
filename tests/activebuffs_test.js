@@ -95,6 +95,8 @@ function host(over) {
 		hzAbOn: true, HorizonBuffs_mc: null, hzRuleBuffs: 0, hzAbMode: 0, hzAbMax: 6, hzAbTimers: true, hzAbPerm: false, hzAbHideEmpty: true,
 		hzAbG: null, hzAbBarG: null, hzAbHd: null, hzAbCt: null, hzAbSubT: null, hzAbMore: null, hzAbNm: [], hzAbTm: [], hzAbSubbed: false,
 		hzAbFeed: 0, hzAbList: [], hzAbSeen: {}, hzAbClk: 0, hzAbWall: -1, hzAbCardOn: false, hzAbShown: false, hzAbSig: null, hzAbRowsD: [], hzAbH: 0, hzAbCm: -1,
+		hzAbSrc: 0, hzAbPeKeys: {}, hzAbPeSig: null, hzAbSubOk: 0, hzAbStN: 0, hzAbStG: -1, hzAbStR: 0, hzAbPeN: 0, hzAbPeR: 0, hzDebug: false, dbg: [],
+		hz26Log(k, o) { this.dbg.push([k, o]); },
 		hzArrange: false, hz41SA: false, hzLaidOut: true, hzLay: {}, hz34Cm: {}, hz34Sc: {}, hzCompact: false, hzTexts: [],
 		hzCardOpacity: 1, hzCardBgOpacity: 92, hzCardShadow: 12, hzCardColor: 0, hzTextTone: 0, HZ_ACCENT: 0x3FD0E0,
 		now: 1000000, nowCalls: 0, shows: [], draws: 0, kids: [],
@@ -112,7 +114,7 @@ function host(over) {
 	for (const k of Object.keys(CONST)) h[k] = CONST[k];
 	h.HZ_RED = 0xFF5B5B; h.HZ_AMB = 0xF2A93B;
 	h.HZ_LAY_KEYS = JSON.parse("[" + /HZ_LAY_KEYS:Array = \[([^\]]*)\]/.exec(as)[1] + "]");
-	for (const n of ["hzAbSub", "hzAbBuild", "hzAbPool", "hzAbCmp", "hzAbOnStatus", "hzAbParse", "hzAbSeenUpd", "hzAbRem", "hzAbSec", "hzAbFmt", "hzAbPick", "hzAbTick", "hzAbDrop", "hzAbTimes", "hzAbTimeCol", "hzAbBars", "hzAbWant", "hzAbSync", "hzAbDraw", "hzAbCard", "hzAbRestyle", "hzAbOnLoad", "hzAbLayout", "hzAbIni", "hzAbRuleFix", "hzAbSetCur", "hzAbSetLive", "hzAbIniLines",
+	for (const n of ["hzAbSub", "hzAbBuild", "hzAbPool", "hzAbCmp", "hzAbOnStatus", "hzAbParse", "hzAbSeenUpd", "hzAbRem", "hzAbSec", "hzAbFmt", "hzAbPick", "hzAbTick", "hzAbDrop", "hzAbTimes", "hzAbTimeCol", "hzAbBars", "hzAbWant", "hzAbSync", "hzAbDraw", "hzAbCard", "hzAbRestyle", "hzAbOnLoad", "hzAbLayout", "hzAbIni", "hzAbRuleFix", "hzAbOnPers", "hzAbPersParse", "hzAbPersName", "hzAbDbg", "hzPretty", "hzSplitCamel", "hzAbSetCur", "hzAbSetLive", "hzAbIniLines",
 		"hz34C", "hzPanel", "hzPanelA", "hzCardShA", "hzPanelFill", "hzOpExtra", "hzCardFill", "hzLight", "hzLum", "hzMix", "hzIconCol", "hzDarkText", "hzTileDisc", "hzIniLayoutKey", "hz30IniPos", "hz30PosStr"]) h[n] = toJs(n);
 	const draw = h.hzAbDraw; h.hzAbDraw = function (...a) { this.draws++; return draw.apply(this, a); };
 	Object.assign(h, over || {});
@@ -169,6 +171,42 @@ function show(h) { h.hzAbCard(true); h.hzAbSync(); return h; }
 	const h2 = show(host());
 	feed(h2, [grp("Food", [hd("+10 Carry Weight")], { sName: "Stew", bIsPositiveEffect: true, bShowTimer: true, fTimeRemaining: 600 })]);
 	expect(h2.HorizonBuffs_mc.visible && h2.hzAbNm[0].text === "Stew", "a food buff alone shows the card (default settings)");
+}
+// ---- 1c. PersonalEffectsData source (0.43.3.2 batch e) ----
+{
+	const pe = (icons) => icons.map((i) => ({ sEffectIcon: i }));
+	const h = show(host());
+	expect(/try \{ this\.hzAbOnPers\(e\.data\.aPersonalEffects as Array\); \} catch/.test(fnText(as, "hzOnPersonalEffects").body), "hzOnPersonalEffects (the HUD's own effects feed, the Afflictions card's source) feeds the card");
+	h.hzAbOnPers(pe(["Sustenance_Food_Positive_2", "PersonalEffect_Burn_Negative", "Sustenance_Drink_Positive_1", "Sustenance_Food_Positive_2", "HazardEffect_Thermal"]));
+	expect(h.hzAbSrc === 2 && h.hzAbList.map((e) => e.n).join(",") === "Food,Drink", "positive icons only, one row per icon, named from the icon: " + h.hzAbList.map((e) => e.n).join(","));
+	expect(h.HorizonBuffs_mc.visible && h.hzAbNm[0].text === "Food" && h.hzAbList.every((e) => e.b && !e.p && isNaN(e.r)), "a food buff alone shows the card with default settings (buffs only, permanent off, hide when empty); no timer");
+	expect(h.hzAbPersName("PersonalEffect_Food_Positive") === "Food" && h.hzAbPersName("PersonalEffect_WellRested_Positive") === "Well Rested", "names: prefix and polarity stripped, camel case split");
+	const d0 = h.draws; h.hzAbOnPers(pe(["Sustenance_Food_Positive_2", "Sustenance_Drink_Positive_1", "PersonalEffect_Cut_Negative"]));
+	expect(h.draws === d0, "an unchanged buff icon set (an affliction changed) does not redraw");
+	h.hzAbOnPers(pe([]));
+	expect(h.hzAbList.length === 0 && !h.HorizonBuffs_mc.visible, "the icons leave: the rows leave and the empty card hides");
+	// a Status list in use keeps its timed rows until a new buff icon appears
+	const h2 = show(host());
+	feed(h2, [grp("Food", [ef("Fed", { fTimeRemaining: 300 })])]);
+	expect(h2.hzAbSrc === 1, "a Status payload makes PlayerStatusData the source");
+	h2.hzAbOnPers(pe(["PersonalEffect_Food_Positive"]));
+	expect(h2.hzAbSrc === 2 && h2.hzAbList[0].n === "Food", "a new buff icon after it switches to the HUD feed (the Status list may be stale while that menu is closed)");
+	feed(h2, [grp("Food", [ef("Fed", { fTimeRemaining: 280 })])]);
+	h2.hzAbOnPers(pe(["PersonalEffect_Food_Positive"]));
+	expect(h2.hzAbSrc === 1 && h2.hzAbList[0].n === "Fed", "a later Status payload wins again; the same icon set does not switch back");
+	h2.hzAbOnLoad();
+	expect(h2.hzAbSrc === 0 && h2.hzAbPeSig === null && h2.hzAbList.length === 0, "a load clears both sources");
+	const h3 = show(host({ hzAbOn: false }));
+	h3.hzAbOnPers(pe(["PersonalEffect_Food_Positive"]));
+	expect(h3.hzAbPeN === 0 && h3.hzAbList.length === 0, "card off: the feed is ignored");
+	// Debug overlay line
+	const h4 = show(host({ hzDebug: true }));
+	h4.hzAbOnPers(pe(["PersonalEffect_Food_Positive"]));
+	const last = h4.dbg.filter((x) => x[0] === "ActiveBuffs").pop();
+	expect(last && last[1].peCb === 1 && last[1].peRows === 1 && last[1].src === 2 && last[1].list === 1 && last[1].shown === true && "stCb" in last[1] && "cardOn" in last[1], "Debug=1: one ActiveBuffs overlay entry with every stage");
+	const h5 = show(host()); h5.hzAbOnPers(pe(["PersonalEffect_Food_Positive"])); feed(h5, []);
+	expect(h5.dbg.length === 0, "Debug off: no overlay writes");
+	expect(/"EnemyModifiers","ActiveBuffs"\]/.test(fnText(as, "hz26DbgText").body), "the overlay lists the ActiveBuffs entry");
 }
 // ---- 2-4. buff / debuff filter, permanent, max entries ----
 {
