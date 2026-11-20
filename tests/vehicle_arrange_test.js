@@ -110,7 +110,7 @@ const sprite = () => new global.Sprite();
 	expect(a.length === 3 && a[1] === "VehicleExitX=7" && a[2] === "VehicleExitY=8" && a[0].charAt(0) === ";", "writer lines");
 	const sd = JSON.parse(/HZ_SET_DEF:Object = (\{[^;]*\});/.exec(as)[1]);
 	expect(sd.VehicleExitX === 0 && sd.VehicleExitY === 0 && sd.VehicleExitPill === 1, "HZ_SET_DEF: 0 / 0 (DEFAULTS = the game's spot)");
-	expect(/\nEquipmentExtras=1\n; Vehicle exit pill spot[^\n]*\nVehicleExitX=0\nVehicleExitY=0\n\n\[Effects\]/.test(ini), "default.ini [Cards Extra]: VehicleExitX=0 / VehicleExitY=0, where the writer puts them");
+	expect(/\nEquipmentExtras=1\n; Vehicle exit pill spot[^\n]*\nVehicleExitX=0\nVehicleExitY=0\n; Quick menu[^\n]*\nQuickMenuHorizon=1\n\n\[Effects\]/.test(ini), "default.ini [Cards Extra]: VehicleExitX=0 / VehicleExitY=0, where the writer puts them");
 	expect(/this\.hzVehIni\(k,nv\)/.test(fnText(as, "hz26Ini").body) && /this\.hzVehSetCur\(o\)/.test(fnText(as, "hz26SetCur").body) && /this\.hzVehSetLive\(p\)/.test(fnText(as, "hz26SetLive").body) && /a\.push\("EquipmentExtras=[^\n]*\n\s*this\.hzVehIniLines\(a,p\);/.test(fnText(as, "hz26IniLines").body), "reader, current, live and writer are hooked into the [Cards Extra] chain");
 }
 // ---- 4. ARRANGE ----

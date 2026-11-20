@@ -4994,6 +4994,28 @@
          a.push("VehicleExitX=" + String(this.hzVehCX(p.VehicleExitX !== undefined ? p.VehicleExitX : this.hzVehX)));
          a.push("VehicleExitY=" + String(this.hzVehCY(p.VehicleExitY !== undefined ? p.VehicleExitY : this.hzVehY)));
       }
+      // 0.43.3.0 batch f: [Cards Extra] QuickMenuHorizon (F11 > CARDS > QUICK MENU > HORIZON STYLE, default 1). The HUD only
+      // stores and writes it; the quick menu movie (favoritesmenu.swf, actionscript/favorites/hzq_main.as) reads it on open.
+      // 0 = the game's own quick menu look.
+      private var hzQmOn:Boolean = true;
+      private function hzQmIni(k:String, bv:Boolean) : Boolean
+      {
+         if(k == "quickmenuhorizon") { this.hzQmOn = bv; return true; }
+         return false;
+      }
+      private function hzQmSetCur(o:Object) : void
+      {
+         o.QuickMenuHorizon = this.hzQmOn;
+      }
+      private function hzQmSetLive(p:Object) : void
+      {
+         if(p.QuickMenuHorizon !== undefined) { this.hzQmOn = p.QuickMenuHorizon === true || Number(p.QuickMenuHorizon) >= 0.5; }
+      }
+      private function hzQmIniLines(a:Array, p:Object) : void
+      {
+         a.push("; Quick menu (the game's favorites cross): 1 = Horizon cards in your card style, 0 = the game's own look. Read when the menu opens.");
+         a.push("QuickMenuHorizon=" + this.hzB(p.QuickMenuHorizon !== undefined ? p.QuickMenuHorizon : this.hzQmOn));
+      }
       // =================== Horizon settings window (keyboard + mouse) ===================
       public var HorizonSettings_mc:Sprite = null;
       public var hzSettingsKeyName:String = "F11";
@@ -7204,14 +7226,14 @@
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
       private static const HZ_VERSION:String = "0.42.0";
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.3.1";
+      private static const HZ_BUILD:String = "0.43.3.0";   // 0.43.3.0: versions aligned (user request, 2026-11-18)
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0,"ActiveBuffs":1,"BuffsShow":0,"BuffsMax":6,"BuffsTimers":1,"BuffsPermanent":0,"BuffsHideEmpty":1,"BuffsRule":0,"BuffsScale":-1,"BuffsCompact":0};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0,"ActiveBuffs":1,"BuffsShow":0,"BuffsMax":6,"BuffsTimers":1,"BuffsPermanent":0,"BuffsHideEmpty":1,"BuffsRule":0,"BuffsScale":-1,"BuffsCompact":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -16570,6 +16592,7 @@
       {
          if(this.hzAbIni(k,bv,nv)) { return true; }   // 0.43.3.1: [ActiveBuffs]
          if(this.hzVehIni(k,nv)) { return true; }      // 0.43.3.2: vehicle exit pill spot
+         if(this.hzQmIni(k,bv)) { return true; }       // 0.43.3.0 batch f: quick menu style
          switch(k)
          {
             case "showcharacter": this.hzShowChar = bv; break;
@@ -16592,6 +16615,7 @@
       {
          try { this.hzAbSetCur(o); } catch(errAbC:Error) { }   // 0.43.3.1: Active Buffs
          try { this.hzVehSetCur(o); } catch(errVhC:Error) { }  // 0.43.3.2: vehicle exit pill spot
+         try { this.hzQmSetCur(o); } catch(errQmC:Error) { }   // 0.43.3.0 batch f: quick menu style
          o.ShowCharacter = this.hzShowChar;
          o.EdgePulse = this.hzEdgePulse;
          o.HazardStatus = this.hzHsOn;
@@ -16610,6 +16634,7 @@
       {
          try { this.hzAbSetLive(p); } catch(errAbS:Error) { }   // 0.43.3.1: Active Buffs
          try { this.hzVehSetLive(p); } catch(errVhS:Error) { }  // 0.43.3.2: vehicle exit pill spot
+         try { this.hzQmSetLive(p); } catch(errQmS:Error) { }   // 0.43.3.0 batch f: quick menu style
          if(p.ShowCharacter != undefined) { this.hzShowChar = Boolean(p.ShowCharacter); }
          if(p.EdgePulse != undefined) { this.hzEdgePulse = Boolean(p.EdgePulse); }
          if(p.HazardStatus != undefined && this.hzHsOn != Boolean(p.HazardStatus)) { this.hzHsOn = Boolean(p.HazardStatus); this.hzLaidOut = false; }
@@ -16640,6 +16665,7 @@
          a.push("; Equipment card: grenade count + selected Starborn power (icon, meter). Hides the vanilla grenade / power readout.");
          a.push("EquipmentExtras=" + this.hzB(p.EquipmentExtras));
          this.hzVehIniLines(a,p);   // 0.43.3.2
+         this.hzQmIniLines(a,p);    // 0.43.3.0 batch f
          a.push("");
          a.push("[Effects]");
          a.push("; Screen-edge tint pulsing ~1 Hz: red below 15% health, amber below 15% oxygen (center untouched)");
@@ -19023,6 +19049,7 @@
          "ShowFollowers":"Markers for your follower and companions on the Horizon compass.",
          "CompassMarkers":"Master switch for every Horizon compass marker below. Quest objectives always show while it is on.",
          "ShowTarget":"Horizon's own card for the game's activate prompt (take, talk, open) and the item / container hover cards. Off = the game's prompt.",
+         "QuickMenuHorizon":"The quick menu (the favorites cross you open with your quick-menu key) draws each slot as a Horizon card in your card style: accent, card color, opacity, font and text size. Each slot shows the key you bound to it, and the info card shows the item name, ammo, damage and slot key that the game sends. Mouse, controller and assigning a slot work as in the game. Read when the menu opens. Off = the game's own look.",
          "VehicleExitPill":"While you are in a vehicle, the hold-to-exit prompt is a Horizon pill: the key the game shows, then EXIT. A fill sweeps across while you hold, and the pill turns green with a check when the hold completes. The game's button stays at alpha 0, so the hold still finishes. Off shows the game's prompt.",
          "PlanetDetails":"Adds a gravity / air line to the planet card.",
          "TempUnit":"Planet card and scanner temperature units. The game value is Celsius. Fahrenheit is C times 9/5 plus 32, rounded. Default Celsius.",
@@ -19296,6 +19323,7 @@
             {"k":"NameHover","l":"NAME HOVER","t":"r","opts":["COMPACT","FULL"],"ids":[0,1],"sub":true,"note":"COMPACT is one line: icon, name, key. FULL is the taller card."},
             {"k":"HoverScale","l":"HOVER CARDS: SIZE","t":"z","sub":true,"note":"Activate prompts, loose item / take card, compare and enemy tags"},
             {"k":"ContainerScale","l":"CONTAINER WINDOW: SIZE","t":"z","sub":true,"note":"The full container item list"},
+            {"k":"QuickMenuHorizon","l":"HORIZON STYLE","t":"b","h":"QUICK MENU","note":"The game's quick menu (favorites cross) as Horizon cards. Off = the game's look."},
             {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","h":"NOTIFICATIONS"}];
          var on:Boolean = this.hz30Mod["comms"] === 1;
          var mt:Object = {"k":"MissionToast","l":"MISSION TOAST","t":"b"};   // 0.43.3.2: under NOTIFICATIONS, right after XP TOAST: SIZE

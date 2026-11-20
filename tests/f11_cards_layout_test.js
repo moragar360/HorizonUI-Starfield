@@ -60,13 +60,13 @@ function rowsOf(src, mods) {
 const list = (rows) => rows.filter((r) => !r.pill);
 const strip = (r) => { const o = Object.assign({}, r); delete o.h; delete o.sub; delete o.n13; if (o.inote !== undefined) { o.note = o.inote; delete o.inote; } return JSON.stringify(o); };
 
-const ORDER = ["GENERAL", "VITALS", "JETPACK", "EQUIPMENT", "COMPASS", "QUEST TRACKER", "PLANET", "HAZARD STATUS", "CHARACTER", "WATCH", "AFFLICTIONS", "ACTIVE BUFFS", "ENEMY HEALTH", "STEALTH", "VEHICLE", "HOVER + CONTAINER", "NOTIFICATIONS"];
+const ORDER = ["GENERAL", "VITALS", "JETPACK", "EQUIPMENT", "COMPASS", "QUEST TRACKER", "PLANET", "HAZARD STATUS", "CHARACTER", "WATCH", "AFFLICTIONS", "ACTIVE BUFFS", "ENEMY HEALTH", "STEALTH", "VEHICLE", "HOVER + CONTAINER", "QUICK MENU", "NOTIFICATIONS"];   // 0.43.3.0 batch f: QUICK MENU
 const KEYS = ["Compact", "CompactScale", "ShowVitals", "VitalsScale", "VitalsLayout", "VitalsBars", "ShowJetpack", "JetpackScale", "ShowAmmo", "EquipmentScale", "EquipmentCompact", "EquipmentExtras",
 	"ShowCompass", "CompassScale", "CompassCompact", "ShowQuests", "QuestsScale", "QuestsCompact", "QuestsWidth", "QuestsMaxHeight", "QuestsWrap", "ShowPlanet", "PlanetScale", "PlanetCompact", "PlanetDetails",
 	"HazardStatus", "HazardScale", "HazardCompact", "ShowCharacter", "CharacterScale", "CharacterCompact", "WatchStyle", "WatchScale", "ShowAfflictions", "AfflictionsScale",
 	"ActiveBuffs", "BuffsScale", "BuffsShow", "BuffsCompact", "BuffsMax", "BuffsTimers", "BuffsPermanent", "BuffsHideEmpty", "EnemyBar", "EnemyScale", "StealthMeter", "StealthScale", "VehicleExitPill",
-	"ShowTarget", "NameHover", "HoverScale", "ContainerScale", "XpToastScale", "MissionToast", "MissionToastScale"];
-const MAIN = ["CompactScale", "ShowVitals", "ShowJetpack", "ShowAmmo", "ShowCompass", "ShowQuests", "ShowPlanet", "HazardStatus", "ShowCharacter", "WatchStyle", "ShowAfflictions", "ActiveBuffs", "EnemyBar", "StealthMeter", "VehicleExitPill", "ShowTarget", "XpToastScale", "MissionToast", "ScopeHoldBreathChip"];
+	"ShowTarget", "NameHover", "HoverScale", "ContainerScale", "QuickMenuHorizon", "XpToastScale", "MissionToast", "MissionToastScale"];
+const MAIN = ["CompactScale", "ShowVitals", "ShowJetpack", "ShowAmmo", "ShowCompass", "ShowQuests", "ShowPlanet", "HazardStatus", "ShowCharacter", "WatchStyle", "ShowAfflictions", "ActiveBuffs", "EnemyBar", "StealthMeter", "VehicleExitPill", "ShowTarget", "QuickMenuHorizon", "XpToastScale", "MissionToast", "ScopeHoldBreathChip"];
 
 const comms = { comms: 1 };
 const all = { comms: 1, scope: 1 };
@@ -80,7 +80,8 @@ expect(JSON.stringify(now.map((r) => r.k)) === JSON.stringify(KEYS), "the row ke
 expect(now[0].k === "Compact" && now[0].pill === true && now.filter((r) => r.pill).length === 1, "COMPACT MODE stays the header pill");
 if (baseAs) {
 	for (const mods of [{}, comms, all]) {
-		const b = rowsOf(baseAs, mods), n = rowsOf(as, mods);
+		// 0.43.3.0 batch f: QUICK MENU > HORIZON STYLE is the one new row; every other row is compared
+		const b = rowsOf(baseAs, mods), n = rowsOf(as, mods).filter((r) => r.k !== "QuickMenuHorizon");
 		const bm = {}; b.forEach((r) => { bm[r.k] = strip(r); });
 		const nm = {}; n.forEach((r) => { nm[r.k] = strip(r); });
 		const same = b.length === n.length && Object.keys(bm).length === Object.keys(nm).length && Object.keys(bm).every((k) => bm[k] === nm[k]);
@@ -88,8 +89,8 @@ if (baseAs) {
 	}
 	const defLine = (src, re) => (src.match(re) || [""])[0];
 	// 0.43.3.2 batch e: the only HZ_SET_DEF change since the base is the two vehicle exit pill offsets (0 / 0 = the game's spot)
-	const defNow = defLine(as, /private static const HZ_SET_DEF:Object = .*/).replace('"VehicleExitX":0,"VehicleExitY":0,', "");
-	expect(defNow === defLine(baseAs, /private static const HZ_SET_DEF:Object = .*/) && defLine(as, /private static const HZ31_DEF:Object = .*/) === defLine(baseAs, /private static const HZ31_DEF:Object = .*/), "defaults tables (HZ_SET_DEF, HZ31_DEF) unchanged (HZ_SET_DEF only adds VehicleExitX / VehicleExitY = 0)");
+	const defNow = defLine(as, /private static const HZ_SET_DEF:Object = .*/).replace('"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,', "");
+	expect(defNow === defLine(baseAs, /private static const HZ_SET_DEF:Object = .*/) && defLine(as, /private static const HZ31_DEF:Object = .*/) === defLine(baseAs, /private static const HZ31_DEF:Object = .*/), "defaults tables (HZ_SET_DEF, HZ31_DEF) unchanged (HZ_SET_DEF only adds VehicleExitX / VehicleExitY = 0 and QuickMenuHorizon = 1)");
 	expect(fnText(as, "hz34IniLines").body === fnText(baseAs, "hz34IniLines").body && fnText(as, "hz34Ini").body === fnText(baseAs, "hz34Ini").body && fnText(as, "hz34SetCur").body === fnText(baseAs, "hz34SetCur").body, "the [Cards] reader, writer and current values unchanged (saved settings and presets behave as before)");
 } else {
 	gitBase.report(baseRes, BASE, "old-vs-new row and default checks", expect);

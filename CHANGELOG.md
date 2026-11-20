@@ -4,9 +4,12 @@ All notable changes to Horizon UI are listed here, newest first. The format foll
 
 Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never published; 0.41.0 replaced 0.40.3, and its entry includes the changes prepared for 0.40.3.
 
-## [0.43.3.2-alpha] - unreleased (test build)
+## [0.43.3.0-alpha] - unreleased (test build)
 
-Test-only build on top of 0.43.3.1; not published. The settings schema stays 0.42.0 and the SFSE plugin stays 0.43.3.1 unless a line below says otherwise.
+Not published. Version note (2026-11-18): this test work was labeled 0.43.3.2 (TESTONLY) and builds on the unpublished entry below that was labeled 0.43.3.1. At the user's request every version label now reads 0.43.3.0: the F11 header, the SFSE plugin file and product version (0.43.3.0, the fourth part is 0), the movie build stamps, the FOMOD, `HorizonUI.default.ini` and Moragar's Choice. 0.43.3.0 is lower than the earlier test labels. The settings schema stays 0.42.0 (HZF::kVersion), so an existing `HorizonUI.user.ini` and saved presets carry over.
+
+### Added
+- **Quick menu (Core):** the game's quick menu (the favorites cross) draws each of the 12 slots as a Horizon card in your card style (accent, card color, opacity, shadow, text tone, font, text size, header case; read when the menu opens). Each slot shows the key you bound to it (keyboard and mouse; a controller shows no key text, like the game), a QUICK MENU header shows your bound close key, and the selected slot gets the F11 selected look. The info card shows only what the game sends: the item name (and count), AMMO (name and count), DAMAGE (physical / EM / energy values) and SLOT (the selected slot's key, keyboard and mouse). The game sends no magazine / reserve split, so there is none. The game's icons, mouse, controller, assigning a slot and the close animation are the game's own code. Off switch: F11 > CARDS > QUICK MENU > HORIZON STYLE (`QuickMenuHorizon` under `[Cards Extra]`, default 1). Ships `favoritesmenu.swf` and `favoritesmenu_lrg.swf` in Core; another mod that replaces the same movie conflicts with it. *(Not tested in game yet.)*
 
 ### Fixed
 - **Hazard Status:** when the hazard (or the suit-protection restore) leaves the game's effect list, the card turns green for about 4 seconds and then hides, instead of going from red straight to hidden. A hazard that comes back turns it red at once. No extra sound.
@@ -31,7 +34,7 @@ Test-only build on top of 0.43.3.1; not published. The settings schema stays 0.4
 - **Scanner outline thickness:** F11 > SCANNER > OUTLINE THICKNESS ([Scanner] ScanOutlineThickness): VANILLA (default, nothing is changed, your own ini tweaks stay), THICK (1.5x) or THICKER (2x) for the outlines around highlighted minerals, flora, fauna and items. Set by the SFSE plugin (the ten game [Monocle] outline settings), so it needs a new plugin build; applied at load and after each F11 save, nothing per frame. *(Not tested in game yet.)*
 - Vehicle exit pill: ARRANGE CARDS can move it (VEHICLE EXIT PILL entry: drag, arrows, RESET, CANCEL). The spot is saved as [Cards Extra] VehicleExitX / VehicleExitY (offset from the game's prompt; 0 / 0 = the game's spot, the default) in settings and presets. Out of a vehicle the editor uses the last spot seen in a vehicle this session, else the game's button bounds.
 
-## [0.43.3.1-alpha] - unreleased
+## [0.43.3.1-alpha] - unreleased (test label; ships as part of 0.43.3.0)
 
 Not published yet; it includes the unpublished 0.43.3.0 work. The settings schema stays 0.42.0, so an existing `HorizonUI.user.ini` carries over; the new settings start at their defaults, and with them the quest tracker keeps today's width and the scanner keeps the game's own highlight area.
 
@@ -42,7 +45,7 @@ Not published yet; it includes the unpublished 0.43.3.0 work. The settings schem
 - **Scanner highlight area:** F11 > SCANNER > HIGHLIGHT AREA picks the hand scanner's highlight cone: HORIZON DOT (smaller than the game), VANILLA (default, the game's own values, nothing is changed) or FULL SCREEN. New key `ScanHighlightArea` under `[Scanner]` (0, 1 default, 2). It needs the 0.43.3.1 SFSE plugin (with the 0.43.3.0 plugin the row is saved but does nothing) and applies the next time you open the scanner. *(Not tested in game yet.)*
 
 ### Changed
-- **SFSE plugin** file and product version are 0.43.3.1.
+- **SFSE plugin** file and product version are 0.43.3.1 (0.43.3.0 since the version alignment above).
 - **Prompt keycaps on a controller** show the button you bound (for example Y when Activate and Jump are swapped), with 3 or 4 options too. Stick-click keycaps show as LS / RS; the PlayStation touchpad shows the default letter.
 - **Equipment card:** a long weapon name wraps onto a second line at the same font size, and the card grows to fit. Before, the full name showed only for a few seconds after a weapon swap. The compact form stays one line.
 

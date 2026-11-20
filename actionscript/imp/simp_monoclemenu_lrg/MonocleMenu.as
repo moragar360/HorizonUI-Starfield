@@ -1300,7 +1300,7 @@ package
       // HorizonUI.user.ini laid over (the shared reader, prefix hzs37); read when the scanner movie starts and when the
       // scanner opens (hzsOnOpened). arch-fixes Fix 2: no 2 s re-read while it is open: F11 opens from the main HUD only
       // (never while scanning), so a save always lands before the next open, which re-reads.
-      private static const HZS_VERSION:String = "0.43.3.1";   // 0.43.3.0: the scanner movie's build version (= the DLL file version); bump here only
+      private static const HZS_VERSION:String = "0.43.3.0";   // 0.43.3.0: the scanner movie's build version (= the DLL file version); bump here only
       private static const HZS_LRG:Boolean = true;
       private static const HZS_SCALE:Number = HZS_LRG ? 1.07 : 1;
       // design tokens 0.3.1 (exotic purple added in v0.40)

@@ -4,10 +4,13 @@
 // res/HorizonUI.rc.in includes this header, and the plugin logs and sends the same
 // string (or the version resource that this header produced). Do not copy the
 // numbers into the resource script or into a log line.
-// Product version matches the file version (0.43.3.1). The settings-schema string
+// Product version matches the file version (0.43.3.0). The settings-schema string
 // in the plugin (HZF::kVersion, "0.42.0") is a different value: preset age and the
 // update backup compare against that, not against this file version.
-// 0.43.3.1-alpha is unreleased. It adds the scanner highlight area setting (ScanHighlightArea),
+// 2026-11-18: every version label was aligned to 0.43.3.0 at the user's request (file and product version,
+// movie build stamps, F11 header, FOMOD, docs). That is lower than the earlier internal test labels
+// 0.43.3.1 / 0.43.3.2; the history below keeps those labels.
+// 0.43.3.1-alpha (internal label) is unreleased. It adds the scanner highlight area setting (ScanHighlightArea),
 // the hazard card soak-direction green, remapped controller keycaps and the lock level on prompt labels,
 // on top of the unreleased 0.43.3.0 work: the Hazard Status card, quest log text wrap (QuestsWidth,
 // QuestsMaxHeight, QuestsWrap), two-line weapon names, and the loot-card red bar fix.
@@ -32,8 +35,8 @@
 #define HZ_FILE_VERSION_MAJOR 0
 #define HZ_FILE_VERSION_MINOR 43
 #define HZ_FILE_VERSION_PATCH 3
-#define HZ_FILE_VERSION_BUILD 1
-#define HZ_FILE_VERSION_STR "0.43.3.1"
+#define HZ_FILE_VERSION_BUILD 0
+#define HZ_FILE_VERSION_STR "0.43.3.0"
 
 // 0.43.2.0: 0 is the release state. 1 writes the verbose HUD-message trace (the
 // "hud message:" line and the Comms movie queue as "comms msg:" lines). The card
