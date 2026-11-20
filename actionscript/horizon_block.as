@@ -2456,7 +2456,9 @@
       // dropped; every other line, and the line breaks, stay as they were. No key in the text: one indexOf, same string.
       private function hzEnvP0NoKey(txt:String) : String
       {
-         if(txt == null || txt.toLowerCase().indexOf("envalertlog") < 0) { return txt; }
+         if(txt == null) { return txt; }
+         var lc0:String = txt.toLowerCase();
+         if(lc0.indexOf("envalertlog") < 0 && lc0.indexOf("hoverdiag") < 0) { return txt; }   // 0.43.4: HoverDiag too
          var out:Array = [];
          var sec:String = "";
          for each(var ln:String in txt.split("\n"))
@@ -2469,7 +2471,8 @@
                var sc:int = t.indexOf(";");
                if(sc >= 0) { t = t.substr(0,sc); }
                var eq:int = t.indexOf("=");
-               if(eq > 0 && t.substr(0,eq).replace(/\s/g,"").toLowerCase() == "envalertlog") { continue; }
+               var dk0:String = eq > 0 ? t.substr(0,eq).replace(/\s/g,"").toLowerCase() : "";
+               if(dk0 == "envalertlog" || dk0 == "hoverdiag") { continue; }
             }
             out.push(ln);
          }
@@ -12000,7 +12003,7 @@
          this.hzT19EdPad = this.hzVehPad;
          this.hzT19EdF = f;
          this.hzT19LblDue = this.hzT19EdgeN > 0;
-         this.hzT19HcDue = this.hzT19LblDue;
+         this.hzT19HcDue = this.hzT19EdgeN > this.hzT19WalkSkip;   // 0 = the edge frame and the 2 after it (HoverDiag 16: edge frame only)
          if(this.hzT19EdgeN > 0 && f != this.hzT19EdDecF) { this.hzT19EdgeN--; this.hzT19EdDecF = f; }
       }
 
@@ -12408,6 +12411,7 @@
          if(!this.hzPerfOn) { this.hzPerfDumpSeen = false; }
          this.hzWlApply();
          if(this.hzPerfMode != 2 && this.hzT19Sig == "FIXTURE") { this.hzT19Sig = ""; }
+         this.hzT19SkipSet();
       }
       private function hzPerfSkipLive() : Boolean
       {
@@ -13520,7 +13524,7 @@
          if(this.hzPerfOn && this.hzPerfMode == 2) { this.hzT19Fixture(); return; }
          if(this.hzTgOld) { this.hzTgOld.visible = false; }
          if(!this.hzTg19) { this.hzT19Off(); return; }
-         if(this.hzPerfSkipHover())
+         if(this.hzT19SkipC)   // 0.43.4: cached PerfMode 1 / 7 or [Debug] HoverDiag bit 1 (hzT19SkipSet), no call per frame
          {
             if(this.HorizonTarget_mc && this.HorizonTarget_mc.visible) { this.hzT19Off(); }
             if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.skipGfx++; }
@@ -13648,7 +13652,12 @@
             this.hzCardOpacity = this.hzContOpacity;
             this.hz38DrawOk = false;
             if(this.hzPerfOn) { try { this.hzPerfBegin("content"); } catch(ePbc:Error) { } }
-            try { this.hzT19Content(kind,show ? a : null,aw,sel,start); this.hz38DrawOk = true; }
+            try
+            {
+               if(this.hzHvdOn) { this.hzHvdContent(kind,show ? a : null,aw,sel,start); }   // [Debug] HoverDiag (off by default)
+               else { this.hzT19Content(kind,show ? a : null,aw,sel,start); }
+               this.hz38DrawOk = true;
+            }
             catch(eOp:Error)
             {
                // v0.38: v0.37 swallowed this with the signature already stored, so the card never redrew and the prompt
@@ -13954,7 +13963,74 @@
          return Math.round(adv);
       }
 
-      private function hzT19Content(kind:String, a:Object, aw:Object, sel:int, start:int) : void
+      // 0.43.4 private hover-card stutter diagnostics: [Debug] HoverDiag = sum of bits. Off (0, or no key) by default; not
+      // in the shipped default.ini, the installer or the README, and stripped from saved presets (hzEnvP0NoKey).
+      //   1  bypass the Horizon hover card (the game's own prompt shows; same path as PerfMode 1)
+      //   2  force the FULL card        4  force the COMPACT pill (2 wins when both are set)
+      //   8  compact pill: skip the full-size measure pass (the pill measures its own row)
+      //  16  run the vanilla prompt hide walk on the edge frame only (not the 2 frames after it)
+      //  32  time (hzPerfNow, edge frames only) a: the content draw with its keycap layout passes, b: each hide walk frame;
+      //      lines "HVD a ..." / "HVD b ..." go to the watchlog queue ([Debug] PerfDiag=1 and WatchLog=1, HorizonUI.log)
+      // Read on INI load and every F11 reload, section-aware, last line wins; no key: one indexOf, then off. When off the
+      // hover card costs one cached Boolean read on the content edge and one on the hide walk edge, no extra calls.
+      private var hzHvd:int = 0;
+      private var hzHvdOn:Boolean = false;      // any bit: the content edge goes through hzHvdContent
+      private var hzHvdT:Boolean = false;       // bit 32: edge timing
+      private var hzT19SkipC:Boolean = false;   // cached hzPerfSkipHover() || HoverDiag bit 1 (read per frame in hzT19Tick)
+      private var hzT19WalkSkip:int = 0;        // 0: walk on the edge frame and the 2 after it; 2: edge frame only
+      private function hzHvdParseIni(txt:String) : void
+      {
+         var v:int = 0;
+         if(txt.toLowerCase().indexOf("hoverdiag") >= 0)
+         {
+            var sec:String = "";
+            for each(var ln:String in txt.split("\r").join("").split("\n"))
+            {
+               var h:String = this.hz30Hdr(ln);
+               if(h != null) { sec = h; continue; }
+               if(sec != "debug") { continue; }
+               var t:String = ln;
+               var sc:int = t.indexOf(";");
+               if(sc >= 0) { t = t.substr(0,sc); }
+               var eq:int = t.indexOf("=");
+               if(eq <= 0) { continue; }
+               if(t.substr(0,eq).replace(/\s/g,"").toLowerCase() != "hoverdiag") { continue; }
+               var n:Number = Number(t.substr(eq + 1).replace(/^\s+|\s+$/g,""));
+               v = isNaN(n) || n < 0 || n > 63 ? 0 : int(n);
+            }
+         }
+         this.hzHvdSet(v);
+      }
+      private function hzHvdSet(v:int) : void
+      {
+         if(v == this.hzHvd) { return; }
+         this.hzHvd = v;
+         this.hzHvdOn = v != 0;
+         this.hzHvdT = (v & 32) != 0;
+         this.hzT19WalkSkip = (v & 16) != 0 ? 2 : 0;
+         this.hzT19Sig = "";   // redraw the hover card with the new bits
+         this.hzT19SkipSet();
+      }
+      private function hzT19SkipSet() : void
+      {
+         this.hzT19SkipC = this.hzPerfSkipHover() || (this.hzHvd & 1) != 0;
+      }
+      // the content edge with HoverDiag on (never called when off)
+      private function hzHvdContent(kind:String, a:Object, aw:Object, sel:int, start:int) : void
+      {
+         var t0:Number = this.hzHvdT ? this.hzPerfNow() : -1;
+         this.hzT19Content(kind,a,aw,sel,start,this.hzHvd);
+         if(t0 >= 0) { this.hzHvdLog("a",kind,t0); }
+      }
+      private function hzHvdLog(part:String, kind:String, t0:Number) : void
+      {
+         var nh:int = (this.hzHvd & 2) != 0 ? 1 : ((this.hzHvd & 4) != 0 ? 0 : this.hzNameHover);
+         if(this.hzWlOn) { this.hzWlPush("HVD " + part + " t=" + Math.round(t0) + " f=" + this.hzFrameN + " ms=" + Math.round(this.hzPerfNow() - t0) + " kind=" + kind + " size=" + (nh == 1 ? "FULL" : "COMPACT") + " bits=" + this.hzHvd + (part == "b" ? " edgeN=" + this.hzT19EdgeN : "")); }
+      }
+
+      // hv: the [Debug] HoverDiag bits from hzHvdContent (0 = off, the normal draw): 2 FULL, 4 COMPACT, 8 no full-size
+      // measure pass before the compact pill (the pill measures its own row)
+      private function hzT19Content(kind:String, a:Object, aw:Object, sel:int, start:int, hv:int = 0) : void
       {
          if(this.hzT19Kov) { this.hzT19Kov.graphics.clear(); }
          var g:* = this.hzT19G.graphics;
@@ -13984,10 +14060,11 @@
          if(nmTf.wordWrap) { nmTf.wordWrap = false; nmTf.multiline = false; }   // 0.43.3.2: only a wrapped pill name sets these
          var hdrTxt:String = a && a.sHeaderText != null ? this.hzT19Xl(String(a.sHeaderText)) : "";
          var rar:int = a && a.uRarity != undefined ? int(a.uRarity) : 0;
-         var bw:Number = a ? this.hzT19Buttons(null,a,aw,0,0,acol,0,0,true) : 0;
+         var nh:int = hv == 0 ? this.hzNameHover : ((hv & 2) != 0 ? 1 : ((hv & 4) != 0 ? 0 : this.hzNameHover));
+         var bw:Number = a ? (hv != 0 && (hv & 8) != 0 && kind == "prompt" && nh != 1 ? 1 : this.hzT19Buttons(null,a,aw,0,0,acol,0,0,true)) : 0;
          var rowsH:Number = bw > 0 ? this.hzT19RowsH : 0;   // 0.43.4: all keycap rows (one per long label)
          var hasBtn:Boolean = bw > 0;
-         if(kind == "prompt" && this.hzNameHover != 1)
+         if(kind == "prompt" && nh != 1)
          {
             var pill:Object = this.hzT19PromptPill(g,a,aw,o,nmTf,hdrTxt,hasBtn,bw);
             W = Number(pill.W);
@@ -19522,6 +19599,7 @@
          if(txt != null) { this.hz37Txt = txt; try { this.hzOnIni(null); } catch(errA:Error) { } }
          if(txt != null) { try { this.hz49Sync(); } catch(e49i:Error) { } }   // r9e (N-1): the scan group hide, once hzOnIni has read BlgGroupHide / WatchStyle / the enemy-cue keys (INI event; a no-op when unchanged)
          if(txt != null) { try { this.hzEnvP0ParseIni(txt); } catch(errP0:Error) { } }   // private diag (env alert Phase 0): [Debug] EnvAlertLog
+         if(txt != null) { try { this.hzHvdParseIni(txt); } catch(errHvd:Error) { } }   // 0.43.4 private diag: [Debug] HoverDiag
          if(this.hz37Refresh)
          {
             this.hz37Refresh = false;
@@ -19998,6 +20076,7 @@
          if(this.hzT19HcOk(aw,hd0)) { this.hzT19HcApply(); }
          else
          {
+            var hvT:Number = this.hzHvdT ? this.hzPerfNow() : -1;   // [Debug] HoverDiag 32 only (off: one cached Boolean read)
             var walkOk:Boolean = true;
             this.hzT19HcRec = true;
             this.hzT19HcDN = 0;
@@ -20030,6 +20109,7 @@
             var bi:int = 0;
             while(bi < 4) { this.hzT19HcBtn[bi] = buttons[bi]; bi++; }
             this.hzT19HcValid = walkOk;
+            if(hvT >= 0) { this.hzHvdLog("b",kind,hvT); }
          }
          this.hzT19KeepHold(aw);
          // ObjectRing: 0 always hidden, 1 shown for container lists only, 2 as the game draws it

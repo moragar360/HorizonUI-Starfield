@@ -489,7 +489,7 @@ expect(funcBody(as, "hzOnTgAct").indexOf("hzT19Ver++") < 0 && funcBody(as, "hzOn
 expect(as.indexOf("if(!this.hzFadeCards)") >= 0 && tick.indexOf("hzFadeCards") < 0, "FadeCards still does not gate hover");
 expect(scan.indexOf("hzsPerfSkipDraw") >= 0 && scan.indexOf("hzsFrame % 6") >= 0, "scanner skip + 6-frame walk stay");
 expect(funcBody(scan, "hzsPerfSkipDraw").indexOf("hzsPerfMode == 2") < 0, "Mode B does not skip scanner draw");
-expect(tick.indexOf("hzPerfSkipHover") >= 0 && tick.indexOf("hz38Vanilla") > tick.indexOf("hzPerfSkipHover"), "Mode A returns before vanilla hide");
+expect(tick.indexOf("hzT19SkipC") >= 0 && tick.indexOf("hz38Vanilla") > tick.indexOf("hzT19SkipC") && funcBody(as, "hzT19SkipSet").indexOf("hzPerfSkipHover()") >= 0, "Mode A returns before vanilla hide (0.43.4: through the cached hzT19SkipC)");
 expect(perfH.indexOf("std::thr") < 0, "perf header starts no worker");
 expect(main.indexOf("QueryPerformanceCounter") >= 0, "native clock is QPC");
 expect(as.indexOf("clock=getTimer_ms") >= 0, "AS dump names getTimer");
