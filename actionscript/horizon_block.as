@@ -2027,6 +2027,8 @@
       private var hzHsSkRun:int = 0;                  // 0.43.3.1: updates in a row voting for the other color
       private var hzHsSkGrn:Boolean = false;          // 0.43.3.1: soak moving back toward the baseline (green), else red
       private var hzHsBlgL:DisplayObject = null;      // the BottomLeftGroup that has hzHsOnFin
+      private static const HZ_HS_HOLD_MS:Number = 4000;   // 0.43.3.2: green hold after the hazard (or restore) left the list
+      private var hzHsHoldT:Number = -1;              // 0.43.3.2: green hold end (hz26Now ms), -1 = no hold
       private var hzHsSt:int = -1;                    // drawn: 0 hidden, 1 red, 2 green (-1 = never drawn)
       private var hzHsSrc:int = -1;                   // drawn text source: 1 alert text, 2 hazard word, 3 restore word, 4 ARRANGE preview
       private var hzHsSrcTxt:String = null;           // drawn: the alert text ref (src 1) or the word (src 2)
@@ -2086,6 +2088,11 @@
             this.hzHsCat = cat;
             this.hzHsCatSeq = ++this.hzHsSeq;
             if(cat == 2) { this.hzHsGrn = false; }   // a new hazard ends a green hold
+            // 0.43.3.2: leaving the list (2 -> 0 or 1 -> 0) arms a short green hold instead of hiding at once; a hazard
+            // that is listed again ends it (red). One Date read on this edge only; hzHsHoldTick (the existing 30-frame
+            // hzPpClock slot) ends it. cat 1 (restoring listed) is green already and needs no hold.
+            if(cat == 0) { this.hzHsHoldT = this.hz26Now() + HZ_HS_HOLD_MS; }
+            else if(cat == 2) { this.hzHsHoldT = -1; }
             this.hzHsSkB = cat == 2 ? soak : NaN;     // 0.43.3.1: the baseline is the soak when the hazard appears
             this.hzHsSkL = this.hzHsSkB;
             this.hzHsSkRun = 0;
@@ -2131,6 +2138,7 @@
          this.hzHsAlTxt = al.sAlertText != null ? String(al.sAlertText) : "";
          this.hzHsAlSeq = ++this.hzHsSeq;
          this.hzHsGrn = this.hzHsAlPos;   // bug (b): a positive alert arms green, a negative one ends it
+         if(!this.hzHsAlPos) { this.hzHsHoldT = -1; }   // 0.43.3.2: a negative alert also ends the green hold
          if(this.hzHsGrn) { this.hzHsBlgSub(); }
          this.hzHsVan();
          this.hzHsSync();
@@ -2187,7 +2195,7 @@
                var alNew:Boolean = this.hzHsAlSeq > this.hzHsCatSeq;
                st = alNew ? (this.hzHsAlPos ? 2 : 1) : (this.hzHsCat == 2 ? (this.hzHsSkGrn ? 2 : 1) : 2);   // 0.43.3.1: soak direction
             }
-            else if(this.hzHsGrn) { st = 2; }   // bug (b): restoring after the hazard effect left the list
+            else if(this.hzHsGrn || this.hzHsHoldT >= 0) { st = 2; }   // bug (b) / 0.43.3.2: green after the hazard left the list
          }
          if(st != 0 && src == 0)
          {
@@ -2211,6 +2219,17 @@
             if(this.HorizonHazard_mc) { this.hzShow(this.HorizonHazard_mc,on); }
          }
          this.hzHsVan();   // the vanilla text follows the card on this edge
+      }
+
+      // 0.43.3.2: end of the green hold. Called from the existing 30-frame hzPpClock slot (about 0.5 s); with no hold it
+      // is one compare. At the end: one hzHsSync (diff-and-skip), which hides the card unless a positive alert hold or a
+      // listed effect still wants it. Draws nothing itself and plays no sound.
+      private function hzHsHoldTick() : void
+      {
+         if(this.hzHsHoldT < 0) { return; }
+         if(this.hz26Now() < this.hzHsHoldT) { return; }
+         this.hzHsHoldT = -1;
+         this.hzHsSync();
       }
 
       // widest the card may get: the planet card's width when it is a pill (the old chip rule), else 300 units
@@ -9442,6 +9461,7 @@
       private function hzPpClock() : void
       {
          try { this.hzAbTick(); } catch(eAbT:Error) { }   // Active Buffs countdown: this existing 30-frame slot, no timer of its own
+         if(this.hzHsHoldT >= 0) { try { this.hzHsHoldTick(); } catch(eHsT:Error) { } }   // 0.43.3.2: hazard green hold end
          if(!this.hzPlanPill || !this.hzPlanPill.visible || this.hzTimeDisplay < 2) { return; }
          var m:int = -2;
          try { var dt:Date = new Date(); m = dt.getHours() * 60 + dt.getMinutes(); } catch(err:Error) { m = -2; }
@@ -12579,6 +12599,12 @@
          return this.hzSnapU(Math.max(24,Math.max(keySz,holdSz) + 10),u);
       }
 
+      // 0.43.3.2: width of the keycap row's label fields (lp / lh) on every row draw or measure. They were built 160
+      // wide and never widened, so a long label (for example "STEAL FROM [MASTER]" after hzT19OneLine joined the lock
+      // level) was cut at the field edge with no "..." on the full card and the compact pill alike. The cards already
+      // size themselves from the measured row; the fit (with "...") still runs where a row has a limit.
+      private static const HZ_T19_LBLW:Number = 480;
+
       // Compact pill only. The cap hugs the shared line size. The full card keeps hzT19CapH.
       private function hzT19PillCap(lineFs:Number) : Number
       {
@@ -12702,6 +12728,7 @@
                   slot.holdC = kc;
                   slot.holdT = t;
                }
+               if(lt.width != HZ_T19_LBLW) { lt.width = HZ_T19_LBLW; }   // 0.43.3.2: never cut at the old 160 field edge
                lt.text = isHold ? hold.toUpperCase() : press.toUpperCase();
                lt.visible = g != null;
                lt.x = this.hzSnapU(x,u); this.hzTxtTopU(lt,this.hzCapTop(lt,kcy),u);

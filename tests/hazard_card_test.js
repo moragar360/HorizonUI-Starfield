@@ -84,7 +84,7 @@ expect(!/hzHsCard/.test(fnText(as, "hzShow").body), "hzShow no longer ties the c
 expect(/hzHsSync\(\)/.test(fnText(as, "hzPpLayout").body) && !/hzHsPos/.test(as), "a planet card width change re-checks the card (diff-and-skip)");
 
 // ---- host ----
-const FNS = ["hzHsSub", "hzHsBuild", "hzHsCmp", "hzHsFx", "hzHsOnAlerts", "hzHsBlgSub", "hzHsOnFin", "hzHsWant", "hzHsSync", "hzHsMaxW", "hzHsCard", "hzHsRestyle", "hzHsDraw", "hzHsLayout", "hzHsReserve", "hzHsVan", "hz26LayoutDefaults"];
+const FNS = ["hzHsSub", "hzHsBuild", "hzHsCmp", "hzHsFx", "hzHsOnAlerts", "hzHsBlgSub", "hzHsOnFin", "hzHsWant", "hzHsSync", "hzHsMaxW", "hzHsCard", "hzHsRestyle", "hzHsDraw", "hzHsLayout", "hzHsReserve", "hzHsVan", "hz26LayoutDefaults", "hzHsHoldTick"];
 let SUBS = [];
 global.BSUIDataManager = { Subscribe(n, cb) { SUBS.push(n); } };
 global.Point = function (x, y) { this.x = x; this.y = y; };
@@ -114,6 +114,7 @@ function makeHost(opt) {
 		hz43ScanHid: false, hz43ScanMk: [], hzEnvP0Ini: false, hzLay: {}, hzBlg: null, log, kids: [], cmp: false, sc: { Hazard: 1, Planet: 1 },
 		HorizonHazard_mc: null, hzHsG: null, hzHsTf: null, hzHsLb: null, hzHsSubbed: false, hzHsSeq: 0, hzHsCat: 0, hzHsCatSeq: 0, hzHsWord: "HAZARD", hzHsAlSeq: 0,
 		hzHsAlPos: false, hzHsAlTxt: "", hzHsGrn: false, hzHsBlgL: null, hzHsSt: -1, hzHsSrc: -1, hzHsSrcTxt: null, hzHsW: -1, hzHsCm: -1, hzHsH: 46, hzHsShown: false,
+		hzHsHoldT: -1, now: 1000, hz26Now() { return this.now; },
 		hzHsVanD: null, hzHsCardOn: true, hzWatchStyle: 0, hzLaidOut: true, shows: [], sz: null,
 		hzT(p, txt, x, y, w, fs, face, tone) { const t = { text: txt, width: w, x, y, tone, _v: true }; Object.defineProperty(t, "visible", { get() { return this._v; }, set(v) { this._v = v; } }); p.addChild(t); return t; },
 		hzUC(s) { return s.toUpperCase(); },
@@ -178,7 +179,9 @@ const fin = (h, b, label, target) => { b.currentLabel = label; for (const l of b
 	fx(h, ["HazardEffect_Thermal"], "THERMAL"); alert(h, false, "Extreme Heat");
 	expect(shown(h) && col(h) === "c33b29", "b: red while the hazard is listed");
 	fx(h, []);
-	expect(!shown(h) && h.shows[h.shows.length - 1] === false, "b: hazard gone, no positive alert yet: hidden");
+	expect(shown(h) && col(h) === "379b2c" && text(h) === "SUIT PROTECTION RESTORING", "0.43.3.2: hazard gone, no positive alert yet: green hold (was hidden)");
+	h.now += h.HZ_HS_HOLD_MS; h.hzHsHoldTick();
+	expect(!shown(h) && h.shows[h.shows.length - 1] === false, "0.43.3.2: the green hold ended, no positive alert: hidden");
 	alert(h, true, "Suit Protection Reg.");
 	expect(shown(h) && col(h) === "379b2c" && text(h) === "SUIT PROTECTION REG.", "b (root cause): a positive alert with no effect listed shows green (hs1 stayed hidden: hzHsCat == 0)");
 	expect(b.L.length === 1 && b.L[0].pri === 1 && b.L[0].weak === true && b.L[0].cap === false, "b: the AnimationFinished listener is on the BottomLeftGroup, priority 1, weak");
@@ -203,7 +206,9 @@ const fin = (h, b, label, target) => { b.currentLabel = label; for (const l of b
 	fx(g, []);
 	expect(shown(g) && col(g) === "379b2c", "b (root cause): the later effects update with nothing listed keeps green (hs1 hid it at once)");
 	fin(g, gb, "FadeOutEnvAlert_Positive");
-	expect(!shown(g), "b: green ends with the vanilla green message");
+	expect(shown(g) && col(g) === "379b2c", "0.43.3.2: the vanilla green message ended inside the hold: still green");
+	g.now += g.HZ_HS_HOLD_MS; g.hzHsHoldTick();
+	expect(!shown(g), "b: green ends once both the vanilla green message and the hold are over");
 	// a new hazard ends the hold
 	const k = makeHost(); k.hzHsBuild(); mkBlg(k);
 	alert(k, true, "Suit Protection Reg.");
@@ -211,7 +216,9 @@ const fin = (h, b, label, target) => { b.currentLabel = label; for (const l of b
 	fx(k, ["HazardEffect_Corrosive"], "CORROSIVE");
 	expect(col(k) === "c33b29" && !k.hzHsGrn, "b: a new hazard effect turns it red and ends the hold");
 	fx(k, []);
-	expect(!shown(k), "b: that hazard gone with no new positive alert: hidden (no stale green)");
+	expect(shown(k) && col(k) === "379b2c" && !k.hzHsGrn, "0.43.3.2: that hazard gone: the short green hold only (the alert hold stays ended)");
+	k.now += k.HZ_HS_HOLD_MS; k.hzHsHoldTick();
+	expect(!shown(k), "b: after the hold: hidden (no stale green)");
 	// a negative alert ends the hold; a queued positive message re-arms on its fade-in end
 	const q = makeHost(); q.hzHsBuild(); const qb = mkBlg(q);
 	alert(q, true, "Suit Protection Reg.");

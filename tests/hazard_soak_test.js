@@ -49,7 +49,8 @@ const FIELDS = {};
 function makeHost() {
 	const h = Object.assign({
 		hzHsOn: true, hzHsCardOn: true, hzArrange: false, hz43EnvLang: "en", HorizonHazard_mc: {},
-		hzHsSeq: 0, hzHsCat: 0, hzHsCatSeq: 0, hzHsWord: "HAZARD", hzHsAlSeq: 0, hzHsAlPos: false, hzHsAlTxt: "", hzHsGrn: false,
+		hzHsSeq: 0, hzHsCat: 0, hzHsCatSeq: 0, hzHsWord: "HAZARD", hzHsAlSeq: 0, hzHsAlPos: false, hzHsAlTxt: "", hzHsGrn: false, hzHsHoldT: -1, now: 1000,
+		hz26Now() { return this.now; },
 		hzHsSt: -1, hzHsSrc: -1, hzHsSrcTxt: null, hzHsW: -1, hzHsCm: -1, hzHsShown: false, draws: 0, sts: [],
 		hzHsWant() { return this.hzHsOn && this.hzHsCardOn && this.HorizonHazard_mc != null; },
 		hzHsMaxW() { return 300; }, hzHsCmp() { return 0; },
@@ -57,6 +58,7 @@ function makeHost() {
 	}, CONST, FIELDS);
 	h.hzHsFx = toJs("hzHsFx").bind(h);
 	h.hzHsSync = toJs("hzHsSync").bind(h);
+	h.hzHsHoldTick = toJs("hzHsHoldTick").bind(h);
 	return h;
 }
 const HZ = [{ sEffectIcon: "HazardEffect_Radiation" }];
@@ -126,7 +128,9 @@ expect(Number.isNaN(FIELDS.hzHsSkB) && Number.isNaN(FIELDS.hzHsSkL) && FIELDS.hz
 	run(h, [0.5, 0.8, 0.7, 0.6]);
 	expect(h.hzHsSt === GRN, "(setup) green");
 	none(h);
-	expect(h.hzHsSt === 0, "the hazard left the list: hidden (no green hold without a positive alert)");
+	expect(h.hzHsSt === GRN, "0.43.3.2: the hazard left the list: green hold (was hidden at once)");
+	h.now += h.HZ_HS_HOLD_MS; h.hzHsHoldTick();
+	expect(h.hzHsSt === 0, "0.43.3.2: the hold ended on the existing clock slot: hidden");
 	fx(h, 0.2);
 	expect(h.hzHsSt === RED && h.hzHsSkB === 0.2 && h.hzHsSkRun === 0 && h.hzHsSkGrn === false, "the hazard appears again: red, new baseline, counters reset");
 	expect(run(h, [0.1, 0.0]).every((v) => v === RED), "away from the new baseline: red");

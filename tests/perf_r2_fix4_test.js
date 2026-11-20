@@ -19,7 +19,6 @@
 
 const fs = require("fs");
 const path = require("path");
-const cp = require("child_process");
 
 const root = path.join(__dirname, "..");
 const asPath = process.env.HZ_AS || path.join(root, "actionscript", "horizon_block.as");

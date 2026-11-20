@@ -254,8 +254,8 @@ if (base) {
 
 // ---- scope: edge-only, Hazard Status interface untouched ----
 // The hazard card has its own commit on the combined branch (0.43.3.1 soak green: hzHsFx / hzHsSync and the hzHsFx call
-// line in hzOnEnvEffects), so the reference for these lines is that commit when HEAD contains it (found by the field it
-// added, so a rebase or cherry-pick still finds it), else BASE. Each afflictions commit is also checked against its own
+// line in hzOnEnvEffects; 0.43.3.2 green hold: hzHsHoldT), so the reference for these lines is the newest of those
+// commits that HEAD contains (found by the field each added, so a rebase or cherry-pick still finds it), else BASE. Each afflictions commit is also checked against its own
 // parent: the affliction work never changes these lines. The old-bug checks above still run on BASE.
 const SCOPE_FNS = ["hzOnEnvEffects", "hzAfSetEnv", "hzHsSync", "hzHsCat", "hz27Tick"];
 const hs = (src) => src.split("\n").filter((l) => /hzHs|green hold/i.test(l)).join("\n");
@@ -263,7 +263,8 @@ const gitOut = (args) => { try { return cp.execFileSync("git", args, { cwd: root
 const asAt = (rev) => { const t = gitOut(["show", rev + ":actionscript/horizon_block.as"]); return t == null ? null : t.replace(/\r\n/g, "\n"); };
 const scopeSame = (x, y) => SCOPE_FNS.every((n) => { const a = fnText(x, n), b = fnText(y, n); return (!a && !b) || (a && b && a.body === b.body); }) && hs(x) === hs(y);
 if (base) {
-	const hzRev = (gitOut(["log", "-1", "--format=%H", "-S", "hzHsSkGrn", "HEAD", "--", "actionscript/horizon_block.as"]) || "").trim();
+	const hzRevOf = (field) => (gitOut(["log", "-1", "--format=%H", "-S", field, "HEAD", "--", "actionscript/horizon_block.as"]) || "").trim();
+	const hzRev = hzRevOf("hzHsHoldT") || hzRevOf("hzHsSkGrn");
 	const refName = hzRev ? "the hazard card commit " + hzRev.slice(0, 7) : BASE;
 	const ref = hzRev ? asAt(hzRev) : base;
 	expect(ref != null, "scope: the reference " + refName + " is readable through git show");
