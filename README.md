@@ -18,7 +18,7 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 
 Not published. Version note: the earlier test builds of this work were labeled 0.43.3.1 and 0.43.3.2 (TESTONLY). Every version label (F11 header, plugin file version, FOMOD, docs) now reads 0.43.3.0, which is lower than those test labels. The settings schema (HZF::kVersion) is 0.43.3.0 too (it was 0.42.0); your `HorizonUI.user.ini` and saved presets carry over, and the first start backs up `HorizonUI.user.ini` to `HorizonUI.user.bak.ini` once. The full list is in [CHANGELOG.md](CHANGELOG.md).
 
-- **Quick menu (Core):** the favorites cross is drawn as Horizon cards in your card style, with your bound keys and an item info card. F11 > CARDS > QUICK MENU > HORIZON STYLE turns it off. Not tested in game yet.
+- **Quick menu (Core):** the favorites cross is drawn as Horizon cards in your card style, with your bound keys and an item info card. F11 > CARDS > QUICK MENU > HORIZON STYLE turns it off. Play-tested in the 20261119c test build (keyboard keys, same-size slot boxes, weapon icons inside their boxes, controller Cancel hint).
 - **Hazard Status:** turns green for about 4 seconds after you leave a hazard, then hides.
 - **Locked containers:** the full prompt with the lock level (for example "STEAL FROM [MASTER]") shows instead of being cut off.
 - **Horizon watch:** HORIZON DIGITAL / HORIZON ANALOG no longer re-write the face every frame, and the face hides in ship HUD mode.
@@ -27,7 +27,8 @@ Not published. Version note: the earlier test builds of this work were labeled 0
 - **Scanner highlight area:** FULL SCREEN is wider and a new MAX position was added. **Scanner outline thickness:** F11 > SCANNER > OUTLINE THICKNESS (VANILLA by default, THICK, THICKER). Both need an SFSE plugin built from this source (file version 0.43.3.0); not tested in game yet.
 - **Name hover pill:** a long name wraps onto up to three lines at the same font size instead of being cut off.
 - **Active Buffs card removed:** the card from the earlier test builds is gone from F11, ARRANGE CARDS and the HUD. Settings left over from a test build are ignored. The Afflictions and Hazard Status cards are unchanged.
-- **Vehicle exit pill:** move it in ARRANGE CARDS; the spot is saved with your settings and presets (default: the game's spot).
+- **Vehicle exit pill:** move it in ARRANGE CARDS; the spot is saved with your settings and presets (default: bottom right, where the game shows its exit prompt). It no longer jumps to the bottom left after you arrange it.
+- **Performance:** the scanner no longer re-reads settings while it is open, a leftover HUD hide-list retry stops after 6 tries, and the compass, vanilla watch pieces, hover prompt and the plugin's menu checks update only when something changes. Details in [CHANGELOG.md](CHANGELOG.md).
 - **F11 > CARDS:** one section per card, and the help text moved into each row's (i) popup.
 
 ## Earlier in 0.43.3.0 (first test label 0.43.3.1, unreleased)

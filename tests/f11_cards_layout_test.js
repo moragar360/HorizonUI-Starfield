@@ -2,7 +2,7 @@
 // Runs the production hz34CardRows / hz34Sz / hz34Cmp / hz42ScRows (types stripped) on a small host and checks:
 //  1. the section headers and their order (GENERAL ... NOTIFICATIONS, SCOPE only with the module);
 //  2. the row set: every key, label, type, options, ids, range and note is the same as before the reorder
-//     (compared with 7ae6add through git; a source zip without git checks the pinned key list only), and the
+//     (compared with 0c56d1f, the recovered 7ae6add, through git; a source zip without git checks the pinned key list only), and the
 //     defaults tables (HZ_SET_DEF, HZ31_DEF, the [Cards] writer) are unchanged;
 //  3. a card's SIZE and extras are indented (sub) under its main toggle; COMPACT STRIPS: SIZE is in GENERAL and
 //     XP TOAST: SIZE in NOTIFICATIONS next to MISSION TOAST;
@@ -13,7 +13,7 @@
 //     the list is just rows; a disabled row keeps its reason under it (it has no (i));
 //  7. batch j: the ACTIVE BUFFS section and its rows are gone (the base compare leaves them out of the old list,
 //     and HZ_SET_DEF drops exactly the Active Buffs defaults).
-// Author: Moragar. Last modified: 2026-11-19 (batch j).
+// Author: Moragar. Last modified: 2026-11-19 (batch k).
 "use strict";
 
 const fs = require("fs");
@@ -22,7 +22,7 @@ const gitBase = require("./lib/git_base.js");
 
 const root = path.join(__dirname, "..");
 const as = fs.readFileSync(path.join(root, "actionscript", "horizon_block.as"), "utf8").replace(/\r\n/g, "\n");
-const BASE = process.env.HZ_BASE || "7ae6add";
+const BASE = process.env.HZ_BASE || "0c56d1f8fd98929c86a7ca3b53dcbb2e247ddf31";   // batch k: the recovered 7ae6add (tree 28c1c49f)
 const baseRes = gitBase.readBase(root, BASE);
 const baseAs = baseRes.src;
 

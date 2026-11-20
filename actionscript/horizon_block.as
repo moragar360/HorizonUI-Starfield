@@ -3724,13 +3724,24 @@
       private var hzVehH:Number = 42;
       private var hzVehFail:int = 0;
       // 0.43.3.2 batch e: ARRANGE CARDS can move the pill. VehicleExitX / VehicleExitY ([Cards Extra]) = offset of the pill
-      // center from the game's prompt center in HUD units (X + = right, Y + = up; 0 / 0 = the game's spot, as before).
+      // center from its home in HUD units (X + = right, Y + = up; 0 / 0 = the home, the default).
+      // 0.43.3.2 batch k: the home is a fixed bottom-right spot computed only from the visible area (hzVis): HZ_VEH_HR from
+      // its right edge and HZ_VEH_HB from its bottom edge, the center of the pill where in-game screenshots show the game's
+      // exit prompt and the 0 / 0 pill (about 1490 - 1530, 1004 on a 1920 x 1080 view). Nothing is measured from the
+      // game's button any more: GetUpButton_mc sits in the 3D RightMeters_mc, and its bounds (hidden, on the Off frame, or
+      // through the 3D matrix) could come back near x = 0 and pull the pill to the bottom left. So the pill is at the same
+      // spot in ARRANGE on foot and in a vehicle, and it is placed only on edges, never measured per frame.
       private static const HZ_VEH_KEY:String = "VehicleExit";   // ARRANGE list key (not a [Layout] card: offsets, like the scope chip)
+      private static const HZ_VEH_HR:Number = 420;   // home center: this far left of the visible right edge
+      private static const HZ_VEH_HB:Number = 76;    // and this far up from the visible bottom edge
       private var hzVehX:Number = 0;
       private var hzVehY:Number = 0;
       private var hzVehOrig:Object = null;   // ARRANGE: the offsets to give back on CANCEL
-      private var hzVehHX:Number = NaN;      // last measured center of the game's prompt (set where the pill is placed)
-      private var hzVehHY:Number = NaN;
+      private var hzVehPlX:Number = NaN;     // what the pill was last placed for (offsets, size, visible area)
+      private var hzVehPlY:Number = NaN;
+      private var hzVehPlW:Number = NaN;
+      private var hzVehPlH:Number = NaN;
+      private var hzVehPlR:Rectangle = null;
       private var hzVehArr:Boolean = false;  // the pill is the ARRANGE proxy right now
       private var hzVehKs:String = "";       // last key text / face drawn in a vehicle (the proxy shows the same key)
       private var hzVehKf:String = "";
@@ -4108,27 +4119,33 @@
             i++;
          }
       }
-      private function hz42VehPlace(b:*) : Boolean
+      // batch k: the pill's top-left for the current offsets and size, kept inside the visible area. ARRANGE and the vehicle
+      // tick both place it through here, so both use the same spot. Reads only hzVis() and the pill's own numbers.
+      private function hzVehSpot() : Point
       {
-         var r:Rectangle = null;
-         try { r = b.getBounds(this); } catch(err:Error) { r = null; }
-         var bad:Boolean = r == null || isNaN(r.x) || isNaN(r.y) || isNaN(r.width) || isNaN(r.height) || r.width < 1 || r.height < 1 || r.width > 800 || r.height > 400;
-         if(bad)
-         {
-            r = null;
-            try
-            {
-               var lp:Point = this.globalToLocal(b.localToGlobal(new Point(b.width > 1 ? b.width / 2 : 0,b.height > 1 ? b.height / 2 : 0)));
-               if(lp != null && !isNaN(lp.x) && !isNaN(lp.y)) { r = new Rectangle(lp.x,lp.y,2,2); }
-            }
-            catch(err2:Error) { r = null; }
-         }
-         if(r == null || isNaN(r.x) || isNaN(r.y)) { return false; }
-         this.hzVehHX = r.x + r.width / 2;
-         this.hzVehHY = r.y + r.height / 2;
-         this.hzVehPx.x = Math.round(this.hzVehHX + this.hzVehX - this.hzVehW / 2);
-         this.hzVehPx.y = Math.round(this.hzVehHY - this.hzVehY - this.hzVehH / 2);
-         return true;
+         var vr:Rectangle = this.hzVis();
+         var hp:Point = this.hzVehHome();
+         var w:Number = this.hzVehW > 0 ? this.hzVehW : 0;
+         var h:Number = this.hzVehH > 0 ? this.hzVehH : 0;
+         var x:Number = hp.x + this.hzVehX - Math.round(w / 2);
+         var y:Number = hp.y - this.hzVehY - Math.round(h / 2);
+         if(x > vr.right - w) { x = vr.right - w; }
+         if(x < vr.left) { x = vr.left; }
+         if(y > vr.bottom - h) { y = vr.bottom - h; }
+         if(y < vr.top) { y = vr.top; }
+         return new Point(Math.round(x),Math.round(y));
+      }
+      // batch k: place the pill (callers: the vehicle tick on an edge, hzVehArrSync) and remember what it was placed for
+      private function hzVehPlace() : void
+      {
+         var sp:Point = this.hzVehSpot();
+         this.hzVehPx.x = sp.x;
+         this.hzVehPx.y = sp.y;
+         this.hzVehPlX = this.hzVehX;
+         this.hzVehPlY = this.hzVehY;
+         this.hzVehPlW = this.hzVehW;
+         this.hzVehPlH = this.hzVehH;
+         this.hzVehPlR = this.hzVisR;
       }
       private function hz42VehTick() : void
       {
@@ -4197,12 +4214,15 @@
                return;
             }
          }
-         if(this.hzVehW < 1 || !this.hz42VehPlace(b))
+         if(this.hzVehW < 1)
          {
             this.hzVehPx.visible = false;
             this.hz42VehHideVan(b,false);
             return;
          }
+         // batch k: placed only on an edge (shown again, redrawn to a new size, moved in F11 / ARRANGE, a new visible area);
+         // number and reference compares only, no measuring
+         if(!this.hzVehPx.visible || this.hzVehPlR !== this.hzVisR || this.hzVehPlX != this.hzVehX || this.hzVehPlY != this.hzVehY || this.hzVehPlW != this.hzVehW || this.hzVehPlH != this.hzVehH) { this.hzVehPlace(); }
          this.hzVehPx.visible = true;
          this.hz42VehFront();
          this.hz42VehHideVan(b,true);
@@ -4210,20 +4230,12 @@
       // ---- 0.43.3.2 batch e: vehicle exit pill in ARRANGE CARDS (edges only: ARRANGE open / draw / drag / close) ----
       private function hzVehCX(v:*) : Number { var n:Number = Number(v); if(isNaN(n)) { return 0; } return Math.round(Math.max(-1000,Math.min(1000,n))); }
       private function hzVehCY(v:*) : Number { var n:Number = Number(v); if(isNaN(n)) { return 0; } return Math.round(Math.max(-600,Math.min(600,n))); }
-      // the game's prompt center: the last one measured in a vehicle this session, else measured now (the button is in the
-      // HUD out of a vehicle too), else the lower right of the visible area (inference: the prompt sits in RightMeters)
+      // batch k: the pill's home center, a fixed bottom-right spot of the visible area (see HZ_VEH_HR / HZ_VEH_HB). The same
+      // in ARRANGE on foot and in a vehicle; never measured from the game's button.
       private function hzVehHome() : Point
       {
-         if(!isNaN(this.hzVehHX) && !isNaN(this.hzVehHY)) { return new Point(this.hzVehHX,this.hzVehHY); }
-         var b:* = this.hz42VehBtn();
-         if(b != null)
-         {
-            var r:Rectangle = null;
-            try { r = b.getBounds(this); } catch(err:Error) { r = null; }
-            if(r != null && !isNaN(r.x) && !isNaN(r.y) && r.width >= 1 && r.height >= 1 && r.width <= 800 && r.height <= 400) { return new Point(r.x + r.width / 2,r.y + r.height / 2); }
-         }
          var vr:Rectangle = this.hzVis();
-         return new Point(vr.right - 220,vr.bottom - 150);
+         return new Point(Math.round(vr.right - HZ_VEH_HR),Math.round(vr.bottom - HZ_VEH_HB));   // whole units: drag -> offsets -> spot is exact
       }
       // ARRANGE open / draw / close: the pill is drawn idle (the last key seen, else E) at its spot, or handed back
       private function hzVehArrSync() : void
@@ -4252,9 +4264,7 @@
             this.hz42VehDraw(this.hzVehKs.length > 0 ? this.hzVehKs : "E",this.hzVehKf,0,false);
             this.hzVehSig = "";
          }
-         var hp:Point = this.hzVehHome();
-         this.hzVehPx.x = Math.round(hp.x + this.hzVehX - this.hzVehW / 2);
-         this.hzVehPx.y = Math.round(hp.y - this.hzVehY - this.hzVehH / 2);
+         this.hzVehPlace();   // batch k: the same spot as in a vehicle
          this.hzVehPx.visible = true;
          if(this.hzVehPx.parent != this) { addChild(this.hzVehPx); }
          if(this.hzArr_mc != null && this.hzArr_mc.parent == this) { addChild(this.hzArr_mc); }
@@ -4267,11 +4277,11 @@
          if(this.hzSetPend != null) { this.hzSetPend.VehicleExitX = this.hzVehX; this.hzSetPend.VehicleExitY = this.hzVehY; }
          this.hzVehArrSync();
       }
-      // ARRANGE drag / nudge: the pill center -> offsets from the game's prompt center
+      // ARRANGE drag / nudge: the pill center -> offsets from the home
       private function hzVehFromPx(c:Sprite) : void
       {
          var hp:Point = this.hzVehHome();
-         this.hzVehPut(c.x + this.hzVehW / 2 - hp.x,hp.y - (c.y + this.hzVehH / 2));
+         this.hzVehPut(c.x + Math.round(this.hzVehW / 2) - hp.x,hp.y - (c.y + Math.round(this.hzVehH / 2)));
       }
       private function hzVehIni(k:String, nv:Number) : Boolean
       {
@@ -4291,7 +4301,7 @@
       }
       private function hzVehIniLines(a:Array, p:Object) : void
       {
-         a.push("; Vehicle exit pill spot (ARRANGE CARDS): offset from the game's prompt in HUD units (X + = right, Y + = up); 0 / 0 = the game's spot");
+         a.push("; Vehicle exit pill spot (ARRANGE CARDS): offset from the default bottom-right spot in HUD units (X + = right, Y + = up); 0 / 0 = the default spot");
          a.push("VehicleExitX=" + String(this.hzVehCX(p.VehicleExitX !== undefined ? p.VehicleExitX : this.hzVehX)));
          a.push("VehicleExitY=" + String(this.hzVehCY(p.VehicleExitY !== undefined ? p.VehicleExitY : this.hzVehY)));
       }
@@ -7869,7 +7879,7 @@
          this.hzLay = {};
          this.hzVitOff = 0;
          if(this.hz30Mod["scope"] === 1) { try { this.hz42ScPut(0,0,1); } catch(err42z:Error) { } }
-         try { this.hzVehPut(0,0); } catch(errVhZ:Error) { }   // 0.43.3.2: the vehicle exit pill back to the game's spot   // v0.42.0 r2: the scope chip back to the game's spot and size (r3: only with the Scope module)
+         try { this.hzVehPut(0,0); } catch(errVhZ:Error) { }   // 0.43.3.2: the vehicle exit pill back to its default bottom-right spot   // v0.42.0 r2: the scope chip back to the game's spot and size (r3: only with the Scope module)
          this.hzLaidOut = this.hzLayout();
          this.hzArrDraw();
       }
@@ -7878,7 +7888,7 @@
       {
          if(this.hz41SA) { this.hz41SAStore(k,c); return; }
          if(k == "ScopeChip") { try { this.hz42ScFromPx(c); } catch(err42f:Error) { } return; }   // v0.42.0 r2: offsets, not a card anchor
-         if(k == HZ_VEH_KEY) { try { this.hzVehFromPx(c); } catch(errVhF:Error) { } return; }   // 0.43.3.2: offsets from the game's prompt
+         if(k == HZ_VEH_KEY) { try { this.hzVehFromPx(c); } catch(errVhF:Error) { } return; }   // 0.43.3.2: offsets from the pill's home (batch k)
          var vr:Rectangle = this.hzVis();
          var o:Object = {"x":Math.max(0,Math.min(1,(c.x - vr.x) / vr.width)),"y":Math.max(0,Math.min(1,(this.hzFadeBase(c) - vr.y) / vr.height)),"hx":true,"hy":true};
          // v0.30: store edge-anchored offsets (the 0-1 fractions stay only as a fallback)

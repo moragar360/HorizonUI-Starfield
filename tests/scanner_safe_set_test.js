@@ -1,5 +1,5 @@
 // 0.43.3.2 item 2 tests: the scanner safe set from the Codex scanner review (S1, S2, S3). Output must stay identical.
-// Run: node tests/scanner_safe_set_test.js   (HZS_OLD=<file> compares with another hzs_block.as instead of git show 329dbd4)
+// Run: node tests/scanner_safe_set_test.js   (HZS_OLD=<file> compares with another hzs_block.as instead of git show a23b7c4, the recovered 329dbd4)
 //  S1: hzsTr is memoized per "$KEY" and hzsMarkName per category, so a discovered marker no longer makes a TextField per
 //      frame; the names are the same strings as before for every state / type / category / text case.
 //  S2: hzsTick runs the compass check once per frame (hzsDrawAll already ran it on its frames).
@@ -7,7 +7,7 @@
 //      string is the same as before after any sequence of compass events and settings changes.
 // Runs the production functions (types stripped) next to the 0.43.3.1 bodies taken from the same file's history.
 // Also checks the two MonocleMenu.as movie sources carry the same block (HZS_LRG false / true).
-// Author: Moragar. Last modified: 2026-11-18.
+// Author: Moragar. Last modified: 2026-11-19 (batch k).
 "use strict";
 
 const fs = require("fs");
@@ -72,7 +72,7 @@ function makeHost(src) {
 	for (const n of FNS) { try { h[n] = toJs(src, n).bind(h); } catch (e) { if (n !== "hzsOnCmp") throw e; } }
 	return h;
 }
-const BASE = "329dbd4";   // the 0.43.3.2 TESTONLY head before this batch (0.43.3.1 scanner bodies)
+const BASE = "a23b7c4aa7ef195506ad4945e3825620d20d4220";   // the 0.43.3.2 TESTONLY head before this batch (0.43.3.1 scanner bodies): the recovered 329dbd4 (tree e5232d87), batch k
 const OLD = (() => {
 	if (process.env.HZS_OLD) return fs.readFileSync(process.env.HZS_OLD, "utf8").replace(/\r\n/g, "\n");
 	const r = gitBase.readBase(root, BASE, "actionscript/scanner/hzs_block.as");
