@@ -2789,6 +2789,8 @@
             try { this.hz26LayoutDefaults(left,top,cx,tl.y + this.hz27CmpTop(),sP); } catch(err26:Error) { }
          }
          try { this.hz31PxDefaults(tl,br); } catch(err31x:Error) { }
+         this.hzLayTL = tl;   // 0.43.4: hzLayNow re-resolves one card in this same rect on its size-change edge
+         this.hzLayBR = br;
          // user layout (ARRANGE CARDS): normalized top-left in the visible rect, clamped on screen
          var vw:Number = br.x - tl.x;
          var vh:Number = br.y - tl.y;
@@ -9414,8 +9416,60 @@
       private function hzSetSz(c:Sprite, w:Number, h:Number) : void
       {
          if(!c) { return; }
-         for each(var o:Object in this.hzSz) { if(o.c == c) { o.w = w; o.h = h; return; } }
+         for each(var o:Object in this.hzSz)
+         {
+            if(o.c == c)
+            {
+               if(Number(o.w) == w && Number(o.h) == h) { return; }
+               o.w = w;
+               o.h = h;
+               this.hzLayNow(c);   // 0.43.4: a size change moves a placed card on this same edge
+               return;
+            }
+         }
          this.hzSz.push({"c":c,"w":w,"h":h});
+         this.hzLayNow(c);
+      }
+
+      // 0.43.4: first-appearance spot of an ARRANGE CARDS card. hzLayout places a card from its last known size; a card
+      // that has not drawn yet (or that changed size since) used the fallback size, so an R / B / C anchored card came up
+      // a few units off its saved spot the first time and only landed on it at a later relayout (the XP toast and the
+      // enemy card never asked for one). Now the size-change edge (hzSetSz, after the content and size are final)
+      // re-resolves that one card with the same rule hzLayout uses, so it lands on the saved spot on its first frame.
+      // Edge only (a size change); no polling, no bounds read; the visible rect is the one hzLayout last used.
+      private var hzLayTL:Point = null;
+      private var hzLayBR:Point = null;
+      private function hzLayNow(c:Sprite) : void
+      {
+         if(this.hzLayTL == null) { return; }   // before the first good hzLayout: that layout places it
+         var lk:String = this.hzLayKeyOf(c);
+         if(lk == null || lk == this.hzArrDrag) { return; }
+         var lo:Object = this.hzLay[lk];
+         if(!lo) { return; }
+         var s:Number = HZ_SCALE * this.hzHudScale;
+         var cw:Number = this.hzCW(c) > 1 ? this.hzCW(c) : HZ_W * s;
+         var ch:Number = this.hzCH(c) > 1 ? this.hzCH(c) : 60 * s;
+         var p:Point = this.hz30Resolve(lk,lo,cw,ch,this.hzLayTL,this.hzLayBR);
+         this.hzPlace(c,p.x,p.y);
+      }
+      // the ARRANGE CARDS key of a card that hzLayout places from its own size (the Comms stand-ins and the watch have
+      // their own placement)
+      private function hzLayKeyOf(c:Sprite) : String
+      {
+         if(c == this.HorizonCard_mc) { return "Jetpack"; }
+         if(c == this.HorizonVitals_mc) { return "Vitals"; }
+         if(c == this.HorizonEnv_mc) { return "Planet"; }
+         if(c == this.HorizonAffl_mc) { return "Afflictions"; }
+         if(c == this.HorizonAmmo_mc) { return "Ammo"; }
+         if(c == this.HorizonQuest_mc || c == this.HorizonCompactQuest_mc) { return "Quests"; }
+         if(c == this.HorizonCompass_mc) { return "Compass"; }
+         if(c == this.HorizonCompact_mc) { return "Compact"; }
+         if(c == this.HorizonChar_mc) { return "Character"; }
+         if(c == this.HorizonEnemy_mc) { return "Enemy"; }
+         if(c == this.HorizonStealth_mc) { return "Stealth"; }
+         if(c == this.HorizonXp_mc) { return "XpToast"; }
+         if(c == this.HorizonHazard_mc) { return "Hazard"; }
+         return null;
       }
 
       // on-screen size of a card (known v0.19 sizes; hidden classic children are not counted)

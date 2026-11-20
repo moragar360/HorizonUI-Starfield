@@ -315,7 +315,7 @@ Object.defineProperty(TextField.prototype, "length", { get: function() { return 
 
 // ---- hosts ----
 const QFUNCS = ["hzTxtObj", "hzFitText", "hzTW", "hzUC", "hzTxtTop", "hz27QLayout", "hzFontName", "hzApplyFmt", "hzApplyFmt19", "hzTextSz19",
-	"hzVitTextSz", "hzChipSz", "hzChipSzOn", "hzHdrCase", "hzHdr19", "hzSetSz", "hzT", "hz27QBuild", "hzQSync"];
+	"hzVitTextSz", "hzChipSz", "hzChipSzOn", "hzHdrCase", "hzHdr19", "hzSetSz", "hzLayNow", "hzT", "hz27QBuild", "hzQSync"];   // 0.43.4: hzSetSz calls hzLayNow on a size change
 const QNEW_ONLY = ["hzQsSame", "hzQsKeep", "hzQsTops", "hzQsField", "hzQOneLine", "hzQWrapTo", "hzQWrapStd", "hzQWrapCmp", "hzCQW", "hzCQSize"];
 const QCHANGED = ["hzTxtObj", "hzApplyFmt", "hzQSync"];
 

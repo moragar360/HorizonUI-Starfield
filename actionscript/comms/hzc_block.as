@@ -2199,13 +2199,23 @@
          if(isNaN(s) || s <= 0) { s = 1; }
          return Math.max(13 / 14,Math.min(1.3,s));   // 13 px text at least; at most 1.3 so it stays near the game's line height
       }
+      // 0.43.4: a card with no game line to follow. With a saved [Layout] HudMessagesX/Y it starts on the stable home
+      // spot (the layer offset from hzcMsgLayout then puts it exactly on the saved ARRANGE CARDS spot, right edges
+      // together), not on the live bounds of the game's message column, which differ from that home and shift as lines
+      // come and fade (the first card used to land a few units off and later ones closer). No bounds read then.
+      private function hzcMsgArranged() : Boolean
+      {
+         var xs:String = String(this.hzcCfg.HudMessagesX);
+         var ys:String = String(this.hzcCfg.HudMessagesY);
+         return !((xs == "-1" || xs == "undefined" || xs == "null") && (ys == "-1" || ys == "undefined" || ys == "null"));
+      }
       private function hzcRxAnchor(e:Object, m:*) : void
       {
          if(e == null || e.c == null) { return; }
          var x:Number = 40;
          var y:Number = 80;
          var r:Rectangle = null;
-         if(m != null) { try { r = m.getBounds(this); } catch(e0:Error) { r = null; } }
+         if(m != null && !this.hzcMsgArranged()) { try { r = m.getBounds(this); } catch(e0:Error) { r = null; } }
          if(r != null && !isNaN(r.x) && !isNaN(r.y) && !isNaN(r.width) && r.width > 2 && r.height > 2)
          {
             x = r.x + r.width - Number(e.w);
