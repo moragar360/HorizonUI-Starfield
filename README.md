@@ -25,8 +25,8 @@ Not published. Version note: the earlier test builds of this work were labeled 0
 - **Scanner:** marker names and the compass list are cached (same output, less work per frame). New option F11 > SCANNER > BIOSCAN > HIDE WHEN FULLY SCANNED (off by default).
 - **F11 notes:** EQUIPMENT rule: "Crosshair off? Set this to ALWAYS or COMBAT ONLY." HIGHLIGHT AREA now says what it changes.
 - **Scanner highlight area:** FULL SCREEN is wider and a new MAX position was added. **Scanner outline thickness:** F11 > SCANNER > OUTLINE THICKNESS (VANILLA by default, THICK, THICKER). Both need an SFSE plugin built from this source (file version 0.43.3.0); not tested in game yet.
-- **Active Buffs:** also reads the HUD's own effects list, so food and drink buffs can show (one row per buff icon, no timer). Not confirmed in game yet; Debug=1 shows each step.
 - **Name hover pill:** a long name wraps onto up to three lines at the same font size instead of being cut off.
+- **Active Buffs card removed:** the card from the earlier test builds is gone from F11, ARRANGE CARDS and the HUD. Settings left over from a test build are ignored. The Afflictions and Hazard Status cards are unchanged.
 - **Vehicle exit pill:** move it in ARRANGE CARDS; the spot is saved with your settings and presets (default: the game's spot).
 - **F11 > CARDS:** one section per card, and the help text moved into each row's (i) popup.
 
@@ -39,7 +39,6 @@ This work was first labeled 0.43.3.1; it is part of 0.43.3.0, is not published a
 - **Equipment card:** long weapon names wrap onto a second line, and the card grows to fit.
 - **Scanner highlight area** (F11 > SCANNER > HIGHLIGHT AREA): Horizon dot, Vanilla (default) or Full screen. It needs an SFSE plugin built from this source (0.43.3.0); not tested in game yet.
 - **Controller:** prompt keycaps show the button you bound.
-- **Active Buffs card:** a new card lists your active buffs (and, if you choose, debuffs) with their remaining time. Move it in ARRANGE CARDS and set it up in F11 > CARDS > ACTIVE BUFFS. It follows your card style. Not tested in game yet.
 - **Afflictions card:** buffs show as their own green Buff chips, a buff and its debuff no longer merge, and a needs alert clears once its effect ends. Not tested in game yet.
 - **Fixed:** looting a killed enemy no longer shows its red health bar on the loot card. Locked containers should show their lock level (not tested in game yet).
 - The full list is in [CHANGELOG.md](CHANGELOG.md).

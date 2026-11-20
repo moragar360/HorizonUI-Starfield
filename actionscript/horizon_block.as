@@ -243,8 +243,8 @@
       public var hzCmpPlayerMark:Boolean = true;
       private var hzDbgCmp:String = "";
       // layout edit (ARRANGE CARDS)
-      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages","Watch","Hazard","Buffs"];
-      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES","WATCH","HAZARD STATUS","ACTIVE BUFFS"];
+      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages","Watch","Hazard"];
+      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES","WATCH","HAZARD STATUS"];
       public var hzLay:Object = {};
       private var hzLayOrig:Object = null;
       private var hzArrange:Boolean = false;
@@ -550,7 +550,6 @@
       {
          // v0.34: each card has its own factor ([Cards] <Card>Scale, -1 = HudScale)
          var m:Array = [[this.HorizonCard_mc,"Jetpack"],[this.HorizonVitals_mc,"Vitals"],[this.HorizonEnv_mc,"Planet"],[this.HorizonAffl_mc,"Afflictions"],[this.HorizonAmmo_mc,"Equipment"],[this.HorizonQuest_mc,"Quests"],[this.HorizonCompass_mc,"Compass"],[this.HorizonCompact_mc,"Compact"],[this.HorizonCompactQuest_mc,"Quests"],[this.HorizonChar_mc,"Character"],[this.HorizonEnemy_mc,"Enemy"],[this.HorizonStealth_mc,"Stealth"],[this.HorizonXp_mc,"XpToast"],[this.hz43Watch,"Watch"],[this.HorizonHazard_mc,"Hazard"]];
-         m.push([this.HorizonBuffs_mc,"Buffs"]);   // 0.43.3.1: the Active Buffs card
          for each(var e:Array in m)
          {
             var c:Sprite = e[0] as Sprite;
@@ -1366,7 +1365,6 @@
          this.hzPlanOld.addChild(this.hzPlanAlert);
          this.hzBuildPlanPill();
          try { this.hzHsBuild(); } catch(eHsB:Error) { }   // Hazard Status card (its own card since 0.43.3.0)
-         try { this.hzAbBuild(); } catch(eAbB:Error) { }   // Active Buffs card (0.43.3.1)
          this.HorizonEnv_mc.scaleX = this.HorizonEnv_mc.scaleY = HZ_SCALE;
          this.HorizonEnv_mc.x = 80;
          this.HorizonEnv_mc.y = 746 - 128 * HZ_SCALE;
@@ -2369,705 +2367,11 @@
          if(d != null && d.visible) { d.visible = false; this.hzHsVanD = d; }
       }
       // ===================== end Hazard Status card =====================
-      // ===================== Active Buffs card (0.43.3.1) =====================
-      // Purpose: the player's active effects from the game's own Status feed (PlayerStatusData, the data the vanilla
-      // Status menu lists under EFFECTS) as their own Horizon card (HorizonBuffs_mc, ARRANGE key "Buffs"), separate
-      // from the Afflictions card. Settings ([ActiveBuffs]): ActiveBuffs (on / off), BuffsShow (0 buffs only, 1 buffs +
-      // debuffs in their own red section), BuffsMax (1 - 12 rows, the rest is one "+N more" line), BuffsTimers,
-      // BuffsPermanent (permanent entries, shown as PERM), BuffsHideEmpty. Size / style: [Cards] BuffsScale /
-      // BuffsCompact (0 expanded, 1 compact). When it shows: BuffsRule (F11 RULES). Spot: [Layout] BuffsX / BuffsY (-1 = just
-      // above the Afflictions card).
-      // Data (field names as the vanilla Status menu reads them): aEffectGroups[] (bHasAfflictions, sEffectIcon,
-      // aEffects[]); aEffects[] (sName, bHideName, bIsBuff, bPermanent, fTimeRemaining). Groups with bHasAfflictions are
-      // the Afflictions card's and are skipped here. An entry is listed only with a visible name (not bHideName, sName
-      // not empty) and a known polarity (bIsBuff, else the group's bIsPositiveEffect); anything else is not shown. A
-      // missing or non-numeric fTimeRemaining shows no time (unknown stays unknown); nothing is ever made up.
-      // Countdown (no new timer, no new frame work): the remaining time of the last payload counts down on Horizon's
-      // existing real-clock slot (hzPpClock, the 30-frame hzOnFrame slot that the planet card's PC clock already
-      // uses: every 30 frames, about 0.5 s at 60 fps; the count uses the real time between calls, not the call rate). That slot runs only while the HUD movie advances, and a gap over HZ_AB_GAP (a pause, a covering
-      // menu, a load) is not counted. A row's text changes only when its shown second changes. A new payload resets
-      // every row to the game's value. If the game does not push while the Status menu is closed, the card keeps the
-      // last values and counts them down this way; a row that reaches 0 shows 0:00 (amber) and leaves the list after it
-      // has sat at 0 for HZ_AB_DROP of that clock (about 5 s; hzAbDrop), unless the next payload comes first. A payload
-      // that still lists the effect brings it back (the game's list is the truth).
-      // The bar is remaining time against the longest remaining time seen for that entry ("since seen"; reset when the
-      // entry leaves the list or its time jumps up).
-      // Edge-only: the payload, the 30-frame slot (returns at once when no shown row has a timer), the show base
-      // (hzRefreshVisibility), style apply, settings, layout and a load. Diff-and-skip: a structure signature decides a
-      // full redraw; otherwise only changed time texts and the bars are touched.
-      // Author: Moragar. Last modified: 2026-11-14.
-      public var hzAbOn:Boolean = true;               // [ActiveBuffs] ActiveBuffs
-      public var HorizonBuffs_mc:Sprite = null;       // the card (ARRANGE key "Buffs")
-      public var hzRuleBuffs:int = 0;                 // [ActiveBuffs] BuffsRule (F11 RULES)
-      private var hzAbMode:int = 0;                   // BuffsShow: 0 buffs only, 1 buffs + debuffs
-      private var hzAbMax:int = 6;                    // BuffsMax 1 - 12
-      private var hzAbTimers:Boolean = true;          // BuffsTimers
-      private var hzAbPerm:Boolean = false;           // BuffsPermanent
-      private var hzAbHideEmpty:Boolean = true;       // BuffsHideEmpty
-      private static const HZ_AB_W:Number = 300;      // card width (card units)
-      private static const HZ_AB_ROWS:int = 12;       // most rows ever drawn (BuffsMax upper bound)
-      private static const HZ_AB_GROUPS:int = 16;     // walk bound: groups per payload
-      private static const HZ_AB_EFFECTS:int = 24;    // walk bound: effects per group
-      private static const HZ_AB_GAP:Number = 4000;   // a slot gap longer than this (ms) is a pause / menu / load: not counted
-      private static const HZ_AB_LOW:Number = 60;     // under a minute left: amber
-      private static const HZ_AB_DROP:Number = 5000;  // a timed row that has sat at 0 this long (ms, local clock) leaves the list
-      private var hzAbG:Sprite = null;                // panel, icons, debuff band
-      private var hzAbBarG:Sprite = null;             // the remaining-time bars (redrawn when a shown second changes)
-      private var hzAbHd:TextField = null;            // title
-      private var hzAbCt:TextField = null;            // count
-      private var hzAbSubT:TextField = null;          // DEBUFFS section label
-      private var hzAbMore:TextField = null;          // "+N more" / empty / no data line
-      private var hzAbNm:Array = [];                  // row name texts (pool, built once up to HZ_AB_ROWS)
-      private var hzAbTm:Array = [];                  // row time texts
-      private var hzAbSubbed:Boolean = false;         // PlayerStatusData listener added (once)
-      private var hzAbFeed:int = 0;                   // 0 no payload yet, 1 payload with aEffectGroups, 2 payload without it (unknown)
-      private var hzAbList:Array = [];                // entries of the last payload (see hzAbParse)
-      private var hzAbSeen:Object = {};               // key -> longest remaining time seen ("since seen")
-      private var hzAbClk:Number = 0;                 // local count clock (ms), advanced only by the 30-frame slot
-      private var hzAbWall:Number = -1;               // wall time of the last slot call (-1 = none yet)
-      private var hzAbCardOn:Boolean = false;         // show base from hzRefreshVisibility (rule included)
-      private var hzAbShown:Boolean = false;          // the show target last given to hzShow
-      private var hzAbSig:String = null;              // drawn structure (null = redraw)
-      private var hzAbRowsD:Array = [];               // drawn rows: {e, sec, y, buff}
-      private var hzAbH:Number = 0;                   // drawn height
-      private var hzAbCm:int = -1;                    // drawn form: 0 expanded, 1 compact
-      // 0.43.3.2 batch e: second source. PersonalEffectsData reaches the HUD (the Afflictions card runs on it) and lists
-      // positive sustenance (food / drink) icons; PlayerStatusData has no proven push to the HUD movie.
-      private var hzAbSrc:int = 0;                    // source of hzAbList: 0 none, 1 PlayerStatusData, 2 PersonalEffectsData
-      private var hzAbPeKeys:Object = {};             // keys of the last PersonalEffectsData buff rows
-      private var hzAbPeSig:String = null;            // their signature (null = none seen since build / load)
-      private var hzAbSubOk:int = 0;                  // Debug: 1 Subscribe returned, -1 threw
-      private var hzAbStN:int = 0;                    // Debug: PlayerStatusData callbacks so far
-      private var hzAbStG:int = -1;                   // Debug: groups in the last one (-1 = no aEffectGroups)
-      private var hzAbStR:int = 0;                    // Debug: rows parsed from the last one
-      private var hzAbPeN:int = 0;                    // Debug: PersonalEffectsData callbacks so far
-      private var hzAbPeR:int = 0;                    // Debug: buff rows in the last one
-
-      private function hzAbSub() : void
-      {
-         if(this.hzAbSubbed || !this.hzAbOn) { return; }
-         this.hzAbSubbed = true;
-         try { BSUIDataManager.Subscribe("PlayerStatusData",this.hzAbOnStatus); this.hzAbSubOk = 1; } catch(eS:Error) { this.hzAbSubOk = -1; }
-      }
-
-      private function hzAbBuild() : void
-      {
-         if(this.HorizonBuffs_mc) { return; }
-         var c:Sprite = new Sprite();
-         c.name = "HorizonBuffs_mc";
-         c.mouseEnabled = false;
-         c.mouseChildren = false;
-         c.visible = false;
-         this.HorizonBuffs_mc = c;
-         this.hzAbG = new Sprite();
-         c.addChild(this.hzAbG);
-         this.hzAbBarG = new Sprite();
-         c.addChild(this.hzAbBarG);
-         this.hzAbHd = this.hzT(c,"",14,8,180,13,"sb","acc",2);
-         this.hzAbCt = this.hzT(c,"",HZ_AB_W - 14 - 60,8,60,13,"sb","mut",1,"right");
-         this.hzAbSubT = this.hzT(c,"",14,0,180,13,"sb","col",2,"left",HZ_RED);
-         this.hzAbMore = this.hzT(c,"",40,0,HZ_AB_W - 54,13,"sb","mut",0.5);
-         addChild(c);
-         if(this.hz34Cm["Buffs"] === undefined) { this.hz34Cm["Buffs"] = 0; }   // no [Cards] BuffsCompact yet: EXPANDED (the card's default), not GLOBAL
-         c.scaleX = c.scaleY = this.hz34S("Buffs");
-         this.hzSetSz(c,HZ_AB_W,60);
-         this.hzAbSub();
-      }
-
-      // the row text pool: built once, up to HZ_AB_ROWS (never per update)
-      private function hzAbPool(n:int) : void
-      {
-         if(!this.HorizonBuffs_mc) { return; }
-         while(this.hzAbNm.length < n && this.hzAbNm.length < HZ_AB_ROWS)
-         {
-            this.hzAbNm.push(this.hzT(this.HorizonBuffs_mc,"",48,0,160,13,"sb","main",0.4));
-            this.hzAbTm.push(this.hzT(this.HorizonBuffs_mc,"",HZ_AB_W - 14 - 80,0,80,13,"sb","acc",0.4,"right"));
-         }
-      }
-
-      // the form in use: 1 compact, 0 expanded
-      private function hzAbCmp() : int
-      {
-         return this.hz34C("Buffs") ? 1 : 0;
-      }
-
-      // PlayerStatusData (the vanilla Status menu's own feed)
-      private function hzAbOnStatus(e:FromClientDataEvent) : *
-      {
-         var d:Object = e != null ? e.data : null;
-         var r:Array = this.hzAbParse(d,this.hzAbClk);
-         this.hzAbStN++;
-         this.hzAbStG = r == null ? -1 : (d.aEffectGroups as Array).length;
-         this.hzAbStR = r == null ? 0 : r.length;
-         if(r == null)
-         {
-            if(this.hzAbFeed != 1) { this.hzAbFeed = 2; }   // no aEffectGroups: unknown; a list already shown stays
-            this.hzAbSync();
-            return;
-         }
-         this.hzAbFeed = 1;
-         this.hzAbSrc = 1;
-         this.hzAbSeenUpd(r);
-         this.hzAbList = r;
-         this.hzAbSig = null;
-         this.hzAbSync();
-      }
-
-      // 0.43.3.2 batch e: PersonalEffectsData (hzOnPersonalEffects, on each push of the HUD's own effects list). Its
-      // positive icons become buff rows (no name or time in that feed: the row is named from the icon, no countdown, and
-      // leaves when the icon leaves). Used while no Status list is in use, or when a new buff icon appears after one
-      // (the Status list can be stale while the Status menu is closed). An unchanged icon set does nothing.
-      private function hzAbOnPers(a:Array) : void
-      {
-         if(!this.hzAbOn || !this.HorizonBuffs_mc) { return; }
-         var r:Array = this.hzAbPersParse(a,this.hzAbClk);
-         this.hzAbPeN++;
-         this.hzAbPeR = r.length;
-         var sig:String = "";
-         var keys:Object = {};
-         var grew:Boolean = false;
-         for each(var e:Object in r)
-         {
-            sig += e.k + ";";
-            keys[e.k] = true;
-            if(this.hzAbPeKeys[e.k] !== true) { grew = true; }
-         }
-         if(sig === this.hzAbPeSig) { this.hzAbDbg(); return; }
-         this.hzAbPeSig = sig;
-         this.hzAbPeKeys = keys;
-         if(this.hzAbSrc == 1 && !grew) { this.hzAbDbg(); return; }   // a Status list in use keeps its timed rows
-         this.hzAbSrc = r.length > 0 || this.hzAbSrc == 2 ? 2 : this.hzAbSrc;
-         if(this.hzAbSrc != 2) { this.hzAbDbg(); return; }
-         this.hzAbList = r;
-         this.hzAbSig = null;
-         this.hzAbSync();
-      }
-
-      // the positive entries of aPersonalEffects -> buff rows (key pe|icon, one per icon, feed order)
-      private function hzAbPersParse(a:Array, at:Number) : Array
-      {
-         var out:Array = [];
-         if(a == null) { return out; }
-         var i:int = 0;
-         while(i < a.length && i < HZ_AB_EFFECTS)
-         {
-            var o:Object = a[i];
-            i++;
-            if(o == null || o.sEffectIcon == null) { continue; }
-            var icon:String = String(o.sEffectIcon);
-            if(!/_Positive(_\d+)?$/.test(icon)) { continue; }
-            var k:String = "pe|" + icon;
-            var dup:Boolean = false;
-            for each(var x:Object in out) { if(x.k == k) { dup = true; break; } }
-            if(dup) { continue; }
-            var nm:String = this.hzAbPersName(icon);
-            if(nm.length == 0) { continue; }
-            out.push({"k":k,"n":nm,"b":true,"p":false,"r":NaN,"at":at});
-         }
-         return out;
-      }
-
-      // icon -> a short name: "Sustenance_Food_Positive_2" -> "Food", "PersonalEffect_Food_Positive" -> "Food"
-      private function hzAbPersName(icon:String) : String
-      {
-         var s:String = icon.replace(/_(Positive|Negative)(_\d+)?$/,"");
-         s = this.hzPretty(s);
-         s = s.replace(/^Sustenance\s+/,"");
-         return s;
-      }
-
-      // Debug=1 only: one overlay line with every stage of the card (subscribe, both feeds, the list, the gates, the show)
-      private function hzAbDbg() : void
-      {
-         if(!this.hzDebug) { return; }
-         var c:Sprite = this.HorizonBuffs_mc;
-         this.hz26Log("ActiveBuffs",{"on":this.hzAbOn,"sub":this.hzAbSubOk,"stCb":this.hzAbStN,"stGroups":this.hzAbStG,"stRows":this.hzAbStR,"feed":this.hzAbFeed,
-            "peCb":this.hzAbPeN,"peRows":this.hzAbPeR,"src":this.hzAbSrc,"list":this.hzAbList.length,"cardOn":this.hzAbCardOn,"rule":this.hzRuleBuffs,"hideEmpty":this.hzAbHideEmpty,
-            "mode":this.hzAbMode,"perm":this.hzAbPerm,"shown":this.hzAbShown,"vis":c != null && c.visible,"a":c != null ? Math.round(c.alpha * 100) / 100 : -1,"x":c != null ? Math.round(c.x) : -1,"y":c != null ? Math.round(c.y) : -1});
-      }
-
-      // payload -> entries {k key, n name, b buff, p permanent, r remaining s (NaN = unknown), at clock ms}, feed order.
-      // null when the payload has no aEffectGroups array (unknown, not "no effects").
-      private function hzAbParse(d:Object, at:Number) : Array
-      {
-         if(d == null) { return null; }
-         var gs:Array = d.aEffectGroups as Array;
-         if(gs == null) { return null; }
-         var out:Array = [];
-         var keys:Object = {};
-         var gi:int = 0;
-         while(gi < gs.length && gi < HZ_AB_GROUPS)
-         {
-            var g:Object = gs[gi];
-            gi++;
-            if(g == null || g.bHasAfflictions === true) { continue; }
-            var es:Array = g.aEffects as Array;
-            if(es == null) { continue; }
-            var gp:* = g.bIsPositiveEffect;
-            var gk:String = g.sEffectIcon != null ? String(g.sEffectIcon) : "";
-            var gn:String = g.sName != null ? String(g.sName) : "";
-            var gh:int = g.bHasBuffs === true ? (g.bHasDebuffs === true ? -1 : 1) : (g.bHasDebuffs === true ? 0 : -1);   // the header's Buff / Debuff look
-            var gt:Number = NaN;
-            if(g.bShowTimer === true && g.fTimeRemaining != null && !(g.fTimeRemaining is Boolean))
-            {
-               gt = Number(g.fTimeRemaining);
-               if(isNaN(gt) || gt < 0 || gt == Infinity) { gt = NaN; }
-            }
-            var gf:Boolean = false;   // this group already has its folded row
-            var ei:int = 0;
-            while(ei < es.length && ei < HZ_AB_EFFECTS)
-            {
-               var ef:Object = es[ei];
-               ei++;
-               if(ef == null) { continue; }
-               var nm:String = ef.bHideName !== true && ef.sName != null ? String(ef.sName) : "";
-               var fold:Boolean = false;
-               if(nm.length == 0)
-               {
-                  // the Status menu also lists a hidden-name entry that has a description (food and aid effects come
-                  // this way): one row per group, named like the group header (else the description)
-                  if(gf || ef.sDescription == null || String(ef.sDescription).length == 0) { continue; }
-                  nm = gn.length > 0 ? gn : String(ef.sDescription).replace(/%/g,"");
-                  if(nm.length == 0) { continue; }
-                  fold = true;
-               }
-               var b:int = ef.bIsBuff === true ? 1 : (ef.bIsBuff === false ? 0 : (gp === true ? 1 : (gp === false ? 0 : gh)));
-               if(b < 0) { continue; }   // polarity unknown: not shown
-               if(fold) { gf = true; }
-               var pm:Boolean = ef.bPermanent === true;
-               var rv:Number = NaN;
-               if(!pm && ef.fTimeRemaining != null && !(ef.fTimeRemaining is Boolean))
-               {
-                  rv = Number(ef.fTimeRemaining);
-                  if(isNaN(rv) || rv < 0 || rv == Infinity) { rv = NaN; }
-               }
-               if(!pm && isNaN(rv) && fold) { rv = gt; }   // a folded row may carry its time on the group header only
-               var k:String = gk + "|" + nm + "|" + b;
-               var dup:int = 1;
-               while(keys[k + "#" + dup] === true) { dup++; }
-               k = k + "#" + dup;
-               keys[k] = true;
-               out.push({"k":k,"n":nm,"b":b == 1,"p":pm,"r":rv,"at":at});
-            }
-         }
-         return out;
-      }
-
-      // "since seen": the longest remaining time seen per entry; dropped when the entry leaves, restarted on a refresh
-      private function hzAbSeenUpd(r:Array) : void
-      {
-         var old:Object = this.hzAbSeen;
-         var prev:Object = {};
-         for each(var o:Object in this.hzAbList) { if(o != null) { prev[o.k] = this.hzAbRem(o); } }
-         var nw:Object = {};
-         for each(var e:Object in r)
-         {
-            if(isNaN(e.r)) { continue; }
-            var s:Number = old[e.k] != undefined ? Number(old[e.k]) : NaN;
-            var pv:Number = prev[e.k] != undefined ? Number(prev[e.k]) : NaN;
-            if(isNaN(s) || (!isNaN(pv) && e.r > pv + 1.5)) { s = e.r; }   // new, or the time jumped up (a refresh)
-            nw[e.k] = Math.max(s,e.r);
-         }
-         this.hzAbSeen = nw;
-      }
-
-      // remaining seconds now (NaN = unknown); counted on the local clock from the payload value, never below 0
-      private function hzAbRem(e:Object) : Number
-      {
-         if(e == null || e.p || isNaN(e.r)) { return NaN; }
-         var v:Number = e.r - (this.hzAbClk - Number(e.at)) / 1000;
-         return v > 0 ? v : 0;
-      }
-
-      // the shown second (the Status menu rounds, GlobalFunc.FormatTimeString)
-      private function hzAbSec(e:Object) : int
-      {
-         var v:Number = this.hzAbRem(e);
-         return isNaN(v) ? -1 : int(Math.round(v));
-      }
-
-      // h:mm:ss over an hour, else m:ss
-      private function hzAbFmt(sec:int) : String
-      {
-         if(sec < 0) { return ""; }
-         var h:int = int(sec / 3600);
-         var m:int = int((sec % 3600) / 60);
-         var s:int = sec % 60;
-         var ss:String = s < 10 ? "0" + s : String(s);
-         if(h > 0) { return h + ":" + (m < 10 ? "0" + m : String(m)) + ":" + ss; }
-         return m + ":" + ss;
-      }
-
-      // the rows the settings let through: buffs first (feed order), then debuffs in BUFFS + DEBUFFS
-      private function hzAbPick() : Object
-      {
-         var bs:Array = [];
-         var ds:Array = [];
-         for each(var e:Object in this.hzAbList)
-         {
-            if(e == null || (e.p && !this.hzAbPerm)) { continue; }
-            if(e.b) { bs.push(e); }
-            else if(this.hzAbMode == 1) { ds.push(e); }
-         }
-         var all:Array = bs.concat(ds);
-         var mx:int = Math.max(1,Math.min(HZ_AB_ROWS,this.hzAbMax));
-         var shown:Array = all.length > mx ? all.slice(0,mx) : all;
-         return {"rows":shown,"total":all.length,"more":all.length - shown.length};
-      }
-
-      // the 30-frame slot (hzPpClock, about 0.5 s at 60 fps): advance the local clock, drop rows that sat at 0 for
-      // HZ_AB_DROP; only shown rows with a timer are touched, and only when their shown second changed
-      private function hzAbTick() : void
-      {
-         var timed:Boolean = false;
-         for each(var e:Object in this.hzAbList) { if(e != null && !e.p && !isNaN(e.r)) { timed = true; break; } }
-         if(!timed) { this.hzAbWall = -1; return; }
-         var now:Number = this.hz26Now();
-         if(this.hzAbWall >= 0)
-         {
-            var dt:Number = now - this.hzAbWall;
-            if(dt > 0 && dt <= HZ_AB_GAP) { this.hzAbClk += dt; }
-         }
-         this.hzAbWall = now;
-         if(this.hzAbDrop()) { return; }   // a row left: hzAbSync already redrew
-         if(!this.hzAbShown || !this.hzAbTimers) { return; }
-         this.hzAbTimes(false);
-      }
-
-      // timed entries that have sat at 0 for HZ_AB_DROP (local clock) leave the list. Compacted in place: nothing is
-      // allocated unless an entry leaves; then one structure redraw, like a payload. Permanent and unknown-time entries
-      // never leave here (only a payload or a load changes them).
-      private function hzAbDrop() : Boolean
-      {
-         var n:int = this.hzAbList.length;
-         var i:int = 0;
-         var j:int = 0;
-         while(i < n)
-         {
-            var e:Object = this.hzAbList[i];
-            if(e == null || e.p || isNaN(e.r) || this.hzAbClk - Number(e.at) < e.r * 1000 + HZ_AB_DROP)
-            {
-               if(j != i) { this.hzAbList[j] = e; }
-               j++;
-            }
-            i++;
-         }
-         if(j == n) { return false; }
-         this.hzAbList.length = j;
-         this.hzAbSig = null;
-         this.hzAbSync();
-         return true;
-      }
-
-      // time texts and bars of the drawn rows; force = after a full draw
-      private function hzAbTimes(force:Boolean) : void
-      {
-         var chg:Boolean = force;
-         var i:int = 0;
-         while(i < this.hzAbRowsD.length)
-         {
-            var d:Object = this.hzAbRowsD[i];
-            var e:Object = d.e;
-            var sec:int = this.hzAbSec(e);
-            if(force || sec != int(d.sec))
-            {
-               d.sec = sec;
-               chg = true;
-               var tf:TextField = this.hzAbTm[i] as TextField;
-               if(tf)
-               {
-                  var t:String = e.p ? "PERM" : (this.hzAbTimers ? this.hzAbFmt(sec) : "");
-                  if(tf.text != t) { tf.text = t; }
-                  this.hzTxtTint(tf,this.hzAbTimeCol(e,sec));
-               }
-            }
-            i++;
-         }
-         if(chg) { this.hzAbBars(); }
-      }
-
-      private function hzAbTimeCol(e:Object, sec:int) : uint
-      {
-         if(!e.b) { return HZ_RED; }
-         if(!e.p && sec >= 0 && sec < HZ_AB_LOW) { return HZ_AMB; }
-         return HZ_ACCENT;
-      }
-
-      // bars (expanded, timers on, a known time and a "since seen" value)
-      private function hzAbBars() : void
-      {
-         if(!this.hzAbBarG) { return; }
-         var g:* = this.hzAbBarG.graphics;
-         g.clear();
-         if(this.hzAbCm != 0 || !this.hzAbTimers) { return; }
-         var bw:Number = HZ_AB_W - 48 - 14;
-         for each(var d:Object in this.hzAbRowsD)
-         {
-            var e:Object = d.e;
-            if(e.p || int(d.sec) < 0) { continue; }
-            var sn:Number = this.hzAbSeen[e.k] != undefined ? Number(this.hzAbSeen[e.k]) : NaN;
-            if(isNaN(sn) || sn <= 0) { continue; }
-            var f:Number = Math.max(0,Math.min(1,this.hzAbRem(e) / sn));
-            var y:Number = Number(d.y) + 30;
-            g.beginFill(this.hzDarkText() ? 0x000000 : 0xFFFFFF,0.12); g.drawRoundRect(48,y,bw,4,4,4); g.endFill();
-            if(f > 0) { g.beginFill(this.hzIconCol(this.hzAbTimeCol(e,int(d.sec))),1); g.drawRoundRect(48,y,Math.max(4,Math.round(bw * f)),4,4,4); g.endFill(); }
-         }
-      }
-
-      private function hzAbWant() : Boolean
-      {
-         return this.hzAbOn && this.hzAbCardOn && this.HorizonBuffs_mc != null;
-      }
-
-      // diff-and-skip: the structure signature decides a full draw; the show target follows on its own edge
-      private function hzAbSync() : void
-      {
-         if(!this.HorizonBuffs_mc) { return; }
-         var on:Boolean = false;
-         var pk:Object = null;
-         var st:int = 0;   // 0 rows, 1 empty, 2 no data yet / unknown
-         if(this.hzArrange ? (this.hzAbOn && !this.hz41SA) : this.hzAbWant())   // ARRANGE SCANNER hides the HUD cards
-         {
-            pk = this.hzAbPick();
-            var n:int = (pk.rows as Array).length;
-            st = n > 0 ? 0 : (this.hzAbFeed == 1 ? 1 : 2);
-            on = n > 0 || this.hzArrange || !this.hzAbHideEmpty;
-         }
-         if(on)
-         {
-            var cm:int = this.hzAbCmp();
-            var sig:String = cm + "|" + this.hzAbMode + "|" + (this.hzAbTimers ? 1 : 0) + "|" + st + "|" + int(pk.total) + "|" + int(pk.more);
-            for each(var e:Object in pk.rows) { sig += "|" + e.k + (e.p ? "P" : "") + (isNaN(e.r) ? "U" : ""); }
-            if(sig != this.hzAbSig || cm != this.hzAbCm)
-            {
-               this.hzAbSig = sig;
-               this.hzAbDraw(pk,st,cm);
-            }
-         }
-         if(on != this.hzAbShown || this.hzArrange)
-         {
-            this.hzAbShown = on;
-            this.hzShow(this.HorizonBuffs_mc,on);
-         }
-         if(this.hzDebug) { this.hzAbDbg(); }
-      }
-
-      private function hzAbDraw(pk:Object, st:int, cm:int) : void
-      {
-         var g:* = this.hzAbG.graphics;
-         g.clear();
-         var rows:Array = pk.rows as Array;
-         this.hzAbPool(rows.length);
-         var hdr:Number = cm == 1 ? 26 : 30;
-         var rowH:Number = cm == 1 ? 28 : 44;
-         var top:Number = cm == 1 ? 8 : 10;
-         var nb:int = 0;
-         for each(var e0:Object in rows) { if(e0.b) { nb++; } }
-         var nd:int = rows.length - nb;
-         var sub:Number = (this.hzAbMode == 1 && nd > 0) ? 24 : 0;
-         var lines:int = rows.length + ((int(pk.more) > 0 || st != 0) ? 1 : 0);
-         var h:Number = top + hdr + lines * rowH + sub + (cm == 1 ? 8 : 12);
-         this.hzPanel(g,HZ_AB_W,h,cm == 1 ? 14 : 16);
-         var title:String = this.hzAbMode == 1 ? "ACTIVE EFFECTS" : "ACTIVE BUFFS";
-         this.hzFitText(this.hzAbHd,this.hzUC(title),HZ_AB_W - 28 - 60);
-         this.hzTxtTop(this.hzAbHd,top);
-         this.hzAbCt.text = st == 2 ? "" : String(int(pk.total));
-         this.hzTxtTop(this.hzAbCt,top);
-         var y:Number = top + hdr;
-         this.hzAbRowsD = [];
-         var i:int = 0;
-         var subDone:Boolean = false;
-         this.hzAbSubT.visible = false;
-         while(i < HZ_AB_ROWS)
-         {
-            var nt:TextField = i < this.hzAbNm.length ? this.hzAbNm[i] as TextField : null;
-            var tt:TextField = i < this.hzAbTm.length ? this.hzAbTm[i] as TextField : null;
-            if(i >= rows.length)
-            {
-               if(nt) { nt.visible = false; }
-               if(tt) { tt.visible = false; }
-               i++;
-               continue;
-            }
-            var e:Object = rows[i];
-            if(!e.b && !subDone && sub > 0)
-            {
-               subDone = true;
-               // red-tinted debuff section under the buffs
-               g.beginFill(HZ_RED,0.08); g.drawRoundRect(3,y + 2,HZ_AB_W - 6,h - y - 5,24,24); g.endFill();
-               g.beginFill(HZ_RED,0.28); g.drawRect(14,y + 2,HZ_AB_W - 28,1); g.endFill();
-               this.hzAbSubT.text = this.hzUC("DEBUFFS");
-               this.hzTxtTop(this.hzAbSubT,y + 6);
-               this.hzAbSubT.visible = true;
-               y += sub;
-            }
-            var col:uint = e.b ? HZ_ACCENT : HZ_RED;
-            var ic:uint = this.hzIconCol(col);
-            var cy:Number = y + (cm == 1 ? 14 : 20);
-            var r:Number = cm == 1 ? 11 : 15;
-            var cx:Number = cm == 1 ? 22 : 26;
-            this.hzTileDisc(g,cx,cy,r,int(col),0.5);
-            // polarity glyph (no game art): a chevron up for a buff, down for a debuff, a bar for a permanent entry
-            if(e.p) { g.beginFill(ic,1); g.drawRect(cx - 4,cy - 1,8,2); g.endFill(); }
-            else
-            {
-               var dy:Number = e.b ? -1 : 1;
-               g.beginFill(ic,1);
-               g.moveTo(cx - 5,cy + 3 * dy); g.lineTo(cx,cy - 3 * dy); g.lineTo(cx + 5,cy + 3 * dy);
-               g.lineTo(cx + 3,cy + 3 * dy); g.lineTo(cx,cy - 0.5 * dy); g.lineTo(cx - 3,cy + 3 * dy);
-               g.endFill();
-            }
-            var tx:Number = cm == 1 ? 40 : 48;
-            if(tt)
-            {
-               tt.visible = true;
-               this.hzTxtTop(tt,y + 6);
-            }
-            var tw:Number = 64;
-            if(nt)
-            {
-               nt.visible = true;
-               nt.x = tx;
-               nt.width = HZ_AB_W - tx - 14 - tw - 8;
-               this.hzFitText(nt,e.n,HZ_AB_W - tx - 14 - tw - 8);
-               this.hzTxtTint(nt,e.b ? null : HZ_RED);
-               this.hzTxtTop(nt,y + 6);
-            }
-            this.hzAbRowsD.push({"e":e,"sec":-2,"y":y,"buff":e.b});
-            y += rowH;
-            i++;
-         }
-         var ml:String = "";
-         if(int(pk.more) > 0) { ml = "+" + int(pk.more) + " more"; }
-         else if(st == 1) { ml = this.hzAbMode == 1 ? "No active effects" : "No active buffs"; }
-         else if(st == 2) { ml = "No status data yet"; }
-         this.hzAbMore.visible = ml.length > 0;
-         if(ml.length > 0)
-         {
-            this.hzAbMore.x = rows.length > 0 ? (cm == 1 ? 40 : 48) : 14;
-            this.hzAbMore.text = ml;
-            this.hzTxtTop(this.hzAbMore,y + 6);
-         }
-         var moved:Boolean = this.hzAbCm >= 0 && h != this.hzAbH;
-         this.hzAbCm = cm;
-         this.hzAbH = h;
-         this.hzSetSz(this.HorizonBuffs_mc,HZ_AB_W,h);
-         this.hzAbTimes(true);
-         if(moved && !this.hzLayHas("Buffs")) { this.hzLaidOut = false; }   // the default spot is bottom-anchored
-      }
-
-      // the card's show base changed (hzRefreshVisibility, rule included): an edge, never per frame
-      private function hzAbCard(on:Boolean) : void
-      {
-         if(on == this.hzAbCardOn) { return; }
-         this.hzAbCardOn = on;
-         this.hzAbSync();
-      }
-
-      // style apply (hzV19Redraw): redraw once
-      private function hzAbRestyle() : void
-      {
-         this.hzAbSig = null;
-         this.hzAbCm = -1;
-         this.hzAbSync();
-      }
-
-      // a load: no data of the old character carries over; the next payload fills the card again
-      private function hzAbOnLoad() : void
-      {
-         this.hzAbList = [];
-         this.hzAbSeen = {};
-         this.hzAbFeed = 0;
-         this.hzAbSrc = 0;
-         this.hzAbPeKeys = {};
-         this.hzAbPeSig = null;
-         this.hzAbWall = -1;
-         this.hzAbSig = null;
-         this.hzAbSync();
-      }
-
-      // layout time (hz26LayoutAfter): the default spot sits just above the Afflictions card, bottom-anchored
-      private function hzAbLayout() : void
-      {
-         var c:Sprite = this.HorizonBuffs_mc;
-         var af:Sprite = this.HorizonAffl_mc;
-         if(!c || !af || this.hzLayHas("Buffs")) { return; }
-         var sB:Number = this.hz34S("Buffs");
-         var y0:Number = af.y;
-         for each(var e:Object in this.hzFades) { if(e.c == af) { y0 = Number(e.base); } }
-         var h:Number = (this.hzAbH > 0 ? this.hzAbH : 60) * sB;
-         this.hzPlace(c,af.x,y0 - 10 * sB - h);
-      }
-
-      // ---- settings ([ActiveBuffs], BuffsRule included; size / form are the generic [Cards] BuffsScale / BuffsCompact) ----
-      private function hzAbIni(k:String, bv:Boolean, nv:Number) : Boolean
-      {
-         switch(k)
-         {
-            case "activebuffs": this.hzAbOn = bv; if(bv) { this.hzAbSub(); } break;
-            case "buffsshow": if(!isNaN(nv)) { this.hzAbMode = int(nv) == 1 ? 1 : 0; } break;
-            case "buffsmax": if(!isNaN(nv)) { this.hzAbMax = Math.max(1,Math.min(HZ_AB_ROWS,int(Math.round(nv)))); } break;
-            case "buffstimers": this.hzAbTimers = bv; break;
-            case "buffspermanent": this.hzAbPerm = bv; break;
-            case "buffshideempty": this.hzAbHideEmpty = bv; break;
-            case "buffsrule": if(!isNaN(nv)) { this.hzRuleBuffs = this.hzAbRuleFix(int(nv)); } break;
-            default: return false;
-         }
-         this.hzAbSig = null;
-         return true;
-      }
-
-      // [Rules]-style values for this card: 0 always, 1 combat only, 2 hide in ship (anything else = 0)
-      private function hzAbRuleFix(v:int) : int
-      {
-         return (v == 1 || v == 2) ? v : 0;
-      }
-
-      private function hzAbSetCur(o:Object) : void
-      {
-         o.ActiveBuffs = this.hzAbOn;
-         o.BuffsShow = this.hzAbMode;
-         o.BuffsMax = this.hzAbMax;
-         o.BuffsTimers = this.hzAbTimers;
-         o.BuffsPermanent = this.hzAbPerm;
-         o.BuffsHideEmpty = this.hzAbHideEmpty;
-         o.BuffsRule = this.hzRuleBuffs;
-      }
-
-      private function hzAbSetLive(p:Object) : void
-      {
-         if(p == null) { return; }
-         if(p.ActiveBuffs != undefined) { this.hzAbOn = Boolean(p.ActiveBuffs); if(this.hzAbOn) { this.hzAbSub(); } }
-         if(p.BuffsShow != undefined && !isNaN(Number(p.BuffsShow))) { this.hzAbMode = int(p.BuffsShow) == 1 ? 1 : 0; }
-         if(p.BuffsMax != undefined && !isNaN(Number(p.BuffsMax))) { this.hzAbMax = Math.max(1,Math.min(HZ_AB_ROWS,int(Math.round(Number(p.BuffsMax))))); }
-         if(p.BuffsTimers != undefined) { this.hzAbTimers = Boolean(p.BuffsTimers); }
-         if(p.BuffsPermanent != undefined) { this.hzAbPerm = Boolean(p.BuffsPermanent); }
-         if(p.BuffsHideEmpty != undefined) { this.hzAbHideEmpty = Boolean(p.BuffsHideEmpty); }
-         if(p.BuffsRule != undefined && !isNaN(Number(p.BuffsRule))) { this.hzRuleBuffs = this.hzAbRuleFix(int(p.BuffsRule)); }
-         this.hzAbSig = null;
-         this.hzAbSync();
-      }
-
-      private function hzAbIniLines(a:Array, p:Object) : void
-      {
-         a.push("[ActiveBuffs]");
-         a.push("; Active Buffs card: effects from the game's Status feed. 1 = on (default), 0 = off. Size / style: [Cards] BuffsScale / BuffsCompact. When it shows: BuffsRule below (F11 RULES)");
-         a.push("ActiveBuffs=" + this.hzB(p.ActiveBuffs !== undefined ? p.ActiveBuffs : this.hzAbOn));
-         a.push("; 0 = buffs only (default), 1 = buffs + debuffs (debuffs in their own red section)");
-         a.push("BuffsShow=" + String(int(p.BuffsShow !== undefined ? p.BuffsShow : this.hzAbMode) == 1 ? 1 : 0));
-         a.push("; Most rows on the card, 1 - 12 (default 6). The rest collapse into one +N more line");
-         a.push("BuffsMax=" + String(Math.max(1,Math.min(HZ_AB_ROWS,int(Math.round(Number(p.BuffsMax !== undefined ? p.BuffsMax : this.hzAbMax)))))));
-         a.push("; 1 = remaining time on each row (default)");
-         a.push("BuffsTimers=" + this.hzB(p.BuffsTimers !== undefined ? p.BuffsTimers : this.hzAbTimers));
-         a.push("; 1 = also list permanent effects (shown as PERM, no countdown). Default 0");
-         a.push("BuffsPermanent=" + this.hzB(p.BuffsPermanent !== undefined ? p.BuffsPermanent : this.hzAbPerm));
-         a.push("; 1 = the card hides while it has nothing to list (default)");
-         a.push("BuffsHideEmpty=" + this.hzB(p.BuffsHideEmpty !== undefined ? p.BuffsHideEmpty : this.hzAbHideEmpty));
-         a.push("; When the card shows (F11 RULES): 0 always (default), 1 combat only, 2 hide in ship");
-         a.push("BuffsRule=" + String(this.hzAbRuleFix(int(p.BuffsRule !== undefined ? p.BuffsRule : this.hzRuleBuffs))));
-         a.push("");
-      }
-      // ===================== end Active Buffs card =====================
+      // 0.43.3.0 (batch j): the Active Buffs card of the 0.43.3.1 / 0.43.3.2 test builds is removed: F11 (CARDS, RULES),
+      // ARRANGE, the HUD card, its PlayerStatusData subscription, its second read of the PersonalEffectsData feed (the
+      // Afflictions card keeps that feed) and its countdown. Leftover [ActiveBuffs], [Cards] BuffsScale / BuffsCompact,
+      // [Rules] BuffsRule and [Layout] BuffsX / BuffsY keys in a user.ini or preset match no setting (hzOnIni, hz34Ini,
+      // hz26Ini and hzIniLayoutKey fall through), so they are ignored, and F11 never writes them again.
 
       // ===================== env alert Phase 0 probe (private diag, default off) =====================
       // Purpose: settle three facts for the planned hazard status chip: which way EnvironmentEffectsData.fSoakDamagePct
@@ -3307,7 +2611,6 @@
          var t:String = this.hzJoinEffects(e.data.aPersonalEffects as Array,true);
          this.hzEnvAff.text = t;
          this.hzAfSetPers(e.data.aPersonalEffects as Array);
-         try { this.hzAbOnPers(e.data.aPersonalEffects as Array); } catch(eAbP:Error) { }   // 0.43.3.2: Active Buffs second source
       }
 
       private function hzOnCrosshair(e:FromClientDataEvent) : *
@@ -4164,8 +3467,6 @@
          // 0.43.3.0: the Hazard Status card's base (an edge: hzHsCard / hzHsSync return at once when nothing changed); the
          // show target is given again like every card, so a scanner force-hide (hz40ForceHide) is restored here too
          try { this.hzHsCard(cardBase); this.hzHsSync(); if(this.HorizonHazard_mc && !this.hzArrange) { this.hzShow(this.HorizonHazard_mc,this.hzHsShown); } } catch(eHsR:Error) { }
-         // 0.43.3.1: the Active Buffs card the same way (its base: the cards' base and BuffsRule; diff-and-skip)
-         try { this.hzAbCard(cardBase && this.hzRuleOk(this.hzRuleBuffs)); this.hzAbSync(); if(this.HorizonBuffs_mc && !this.hzArrange) { this.hzShow(this.HorizonBuffs_mc,this.hzAbShown); } } catch(eAbR:Error) { }
          var full:Boolean = !this.hzCompact && cardBase;
          var vitBase:Boolean = base && !this.hz40Hide;   // v0.41.0: the HUD vitals cards hide too; hz41V draws the kept vitals
          // VitalsBars compact reuses the COMPACT MODE strips. If either is on, that one card shows and the full cards stay hidden.
@@ -5060,7 +4361,7 @@
          }
          if(tab == 4)
          {
-            return [{"k":"JetpackRule","l":"JETPACK","t":"q","ids":[0,4,1,2],"h":"WHEN EACH CARD SHOWS"},{"k":"VitalsRule","l":"VITALS","t":"q","ids":[0,5,1,2]},{"k":"PlanetRule","l":"PLANET","t":"q","ids":[0,1,2]},{"k":"AfflictionsRule","l":"AFFLICTIONS","t":"q","ids":[0,6,1,2]},{"k":"AmmoRule","l":"EQUIPMENT","t":"q","ids":[0,3,1,2],"note":"Crosshair off? Set this to ALWAYS or COMBAT ONLY."},{"k":"QuestsRule","l":"QUEST TRACKER","t":"q","ids":[0,1,2]},{"k":"CompassRule","l":"COMPASS","t":"q","ids":[0,1,2]},{"k":"CharacterRule","l":"CHARACTER CARD","t":"q","ids":[0,7,8,9,1,2],"note":"XP / level / credits / skill point: shows for 8 s, then fades (CharacterShowSeconds in the ini)"},{"k":"BuffsRule","l":"ACTIVE BUFFS","t":"q","ids":[0,1,2]},{"k":"CrosshairRule","l":"CROSSHAIR","t":"r","opts":["ALWAYS","WEAPON DRAWN","OFF"],"ids":[0,1,2],"h":"CENTER RETICLE","note":"The center reticle only. Prompts, target cards, hit markers, the kill X, the damage ring, and the stealth pill stay."}];
+            return [{"k":"JetpackRule","l":"JETPACK","t":"q","ids":[0,4,1,2],"h":"WHEN EACH CARD SHOWS"},{"k":"VitalsRule","l":"VITALS","t":"q","ids":[0,5,1,2]},{"k":"PlanetRule","l":"PLANET","t":"q","ids":[0,1,2]},{"k":"AfflictionsRule","l":"AFFLICTIONS","t":"q","ids":[0,6,1,2]},{"k":"AmmoRule","l":"EQUIPMENT","t":"q","ids":[0,3,1,2],"note":"Crosshair off? Set this to ALWAYS or COMBAT ONLY."},{"k":"QuestsRule","l":"QUEST TRACKER","t":"q","ids":[0,1,2]},{"k":"CompassRule","l":"COMPASS","t":"q","ids":[0,1,2]},{"k":"CharacterRule","l":"CHARACTER CARD","t":"q","ids":[0,7,8,9,1,2],"note":"XP / level / credits / skill point: shows for 8 s, then fades (CharacterShowSeconds in the ini)"},{"k":"CrosshairRule","l":"CROSSHAIR","t":"r","opts":["ALWAYS","WEAPON DRAWN","OFF"],"ids":[0,1,2],"h":"CENTER RETICLE","note":"The center reticle only. Prompts, target cards, hit markers, the kill X, the damage ring, and the stealth pill stay."}];
          }
          if(tab == 5)
          {
@@ -7233,7 +6534,7 @@
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0,"ActiveBuffs":1,"BuffsShow":0,"BuffsMax":6,"BuffsTimers":1,"BuffsPermanent":0,"BuffsHideEmpty":1,"BuffsRule":0,"BuffsScale":-1,"BuffsCompact":0};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -8334,7 +7635,6 @@
             case "Stealth": return [this.HorizonStealth_mc].filter(this.hzNotNull);
             case "XpToast": return [this.HorizonXp_mc].filter(this.hzNotNull);
             case "Hazard": return [this.HorizonHazard_mc].filter(this.hzNotNull);
-            case "Buffs": return [this.HorizonBuffs_mc].filter(this.hzNotNull);
             case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": return this.hz31PxOn(k) ? [this.hz31Px(k)] : [];
             case "Watch":
                if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4)
@@ -8410,7 +7710,6 @@
                case "Stealth": ok = this.hzStealthOn; break;
                case "XpToast": ok = this.hzXpToastOn; break;
                case "Hazard": ok = this.hzHsOn; break;
-               case "Buffs": ok = this.hzAbOn; break;
                case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": ok = this.hz31PxOn(k); break;   // v0.31 / v0.32: Comms proxies
                case "Watch": ok = this.hzWatchStyle == 1 || this.hzWatchStyle == 2 || this.hzWatchStyle == 3 || this.hzWatchStyle == 4; break;
             }
@@ -8431,12 +7730,11 @@
       {
          var on:Array = [];
          if(!this.hz41SA) { for each(var e:Object in this.hzArrList()) { on.push(e.c); } }   // v0.41.0: ARRANGE SCANNER hides the HUD cards
-         for each(var c:Sprite in [this.HorizonCard_mc,this.HorizonVitals_mc,this.HorizonEnv_mc,this.HorizonAffl_mc,this.HorizonBuffs_mc,this.HorizonAmmo_mc,this.HorizonQuest_mc,this.HorizonCompactQuest_mc,this.HorizonCompass_mc,this.HorizonCompact_mc,this.HorizonChar_mc,this.HorizonEnemy_mc,this.HorizonStealth_mc,this.HorizonXp_mc,this.HorizonHazard_mc])
+         for each(var c:Sprite in [this.HorizonCard_mc,this.HorizonVitals_mc,this.HorizonEnv_mc,this.HorizonAffl_mc,this.HorizonAmmo_mc,this.HorizonQuest_mc,this.HorizonCompactQuest_mc,this.HorizonCompass_mc,this.HorizonCompact_mc,this.HorizonChar_mc,this.HorizonEnemy_mc,this.HorizonStealth_mc,this.HorizonXp_mc,this.HorizonHazard_mc])
          {
             if(c) { this.hzShow(c,on.indexOf(c) >= 0); }
          }
          try { this.hzHsSync(); } catch(errHsA:Error) { }   // 0.43.3.0: the Hazard Status card shows its preview in ARRANGE
-         try { this.hzAbSync(); } catch(errAbA:Error) { }   // 0.43.3.1: the Active Buffs card shows its last data (or its empty line) in ARRANGE
          try { this.hz26CharSync(); this.hz26XpSync(); this.hzE19Sync(); } catch(err26:Error) { }
          try { if(on.indexOf(this.HorizonCompact_mc) >= 0) { this.hz43Reflow(true,true); } } catch(eArr:Error) { }
       }
@@ -9289,7 +8587,6 @@
          try { this.hzDrawCompassMarkers(); } catch(e6:Error) { }
          try { this.hz26Redraw(); } catch(e7:Error) { }
          try { this.hzHsRestyle(); } catch(e8:Error) { }   // 0.43.3.0: the Hazard Status card follows the style
-         try { this.hzAbRestyle(); } catch(e9:Error) { }   // 0.43.3.1: the Active Buffs card follows the style
          this.hzT19Sig = "";
       }
 
@@ -9708,11 +9005,10 @@
          return int(Math.floor(hh)) * 60 + int(Math.floor((hh - Math.floor(hh)) * 60));
       }
 
-      // the existing 30-frame slot (hzOnFrame calls it every 30th frame; about 0.5 s at 60 fps): Active Buffs countdown,
-      // the Hazard Status hold end, then the real-world clock refresh. Nothing in it may move below the planet-clock return.
+      // the existing 30-frame slot (hzOnFrame calls it every 30th frame; about 0.5 s at 60 fps): the Hazard Status hold
+      // end, then the real-world clock refresh. Nothing in it may move below the planet-clock return.
       private function hzPpClock() : void
       {
-         try { this.hzAbTick(); } catch(eAbT:Error) { }   // Active Buffs countdown: this existing 30-frame slot, no timer of its own
          if(this.hzHsHoldT >= 0) { try { this.hzHsHoldTick(); } catch(eHsT:Error) { } }   // 0.43.3.2: hazard green hold end
          if(!this.hzPlanPill || !this.hzPlanPill.visible || this.hzTimeDisplay < 2) { return; }
          var m:int = -2;
@@ -15108,7 +14404,7 @@
       private function hz26DbgText() : String
       {
          var out:String = "";
-         for each(var k:String in ["PersonalEffectsData","PersonalAlertsData","aPersonalAlerts[0]","Afflictions","QuestObjectives","PlayerData","PlayerInventoryData","XPData","XPData[0]","HUDStealthData","HudHitKillIndicatorData","KillDataA[0]","HUDDirectionalHitData","aDirectionalHitIndicators[0]","PlayerHealthBoostData","HUDStarbornPowersData","PowerIcon","Enemy","EnemyModifiers","ActiveBuffs"])
+         for each(var k:String in ["PersonalEffectsData","PersonalAlertsData","aPersonalAlerts[0]","Afflictions","QuestObjectives","PlayerData","PlayerInventoryData","XPData","XPData[0]","HUDStealthData","HudHitKillIndicatorData","KillDataA[0]","HUDDirectionalHitData","aDirectionalHitIndicators[0]","PlayerHealthBoostData","HUDStarbornPowersData","PowerIcon","Enemy","EnemyModifiers"])
          {
             if(this.hz26Dbg[k] != undefined) { out += k + ": " + String(this.hz26Dbg[k]) + "\n"; }
          }
@@ -16570,7 +15866,6 @@
       // after the user layout: the XP toast sits beside the character card's XP row unless it was placed itself
       private function hz26LayoutAfter(s:Number) : void
       {
-         try { this.hzAbLayout(); } catch(errAb:Error) { }   // Active Buffs card: default spot just above the Afflictions card
          try { this.hzHsLayout(); } catch(errHs:Error) { }   // Hazard Status card: default spot under the planet card (flip at the bottom edge), on / off, the vanilla EnvAlertText
          if(!this.HorizonXp_mc || !this.HorizonChar_mc || this.hzLayHas("XpToast")) { return; }
          var cy:Number = this.HorizonChar_mc.y;
@@ -16590,7 +15885,6 @@
       // ---------- ini / settings ----------
       private function hz26Ini(k:String, bv:Boolean, nv:Number) : Boolean
       {
-         if(this.hzAbIni(k,bv,nv)) { return true; }   // 0.43.3.1: [ActiveBuffs]
          if(this.hzVehIni(k,nv)) { return true; }      // 0.43.3.2: vehicle exit pill spot
          if(this.hzQmIni(k,bv)) { return true; }       // 0.43.3.0 batch f: quick menu style
          switch(k)
@@ -16613,7 +15907,6 @@
 
       private function hz26SetCur(o:Object) : void
       {
-         try { this.hzAbSetCur(o); } catch(errAbC:Error) { }   // 0.43.3.1: Active Buffs
          try { this.hzVehSetCur(o); } catch(errVhC:Error) { }  // 0.43.3.2: vehicle exit pill spot
          try { this.hzQmSetCur(o); } catch(errQmC:Error) { }   // 0.43.3.0 batch f: quick menu style
          o.ShowCharacter = this.hzShowChar;
@@ -16632,7 +15925,6 @@
 
       private function hz26SetLive(p:Object) : void
       {
-         try { this.hzAbSetLive(p); } catch(errAbS:Error) { }   // 0.43.3.1: Active Buffs
          try { this.hzVehSetLive(p); } catch(errVhS:Error) { }  // 0.43.3.2: vehicle exit pill spot
          try { this.hzQmSetLive(p); } catch(errQmS:Error) { }   // 0.43.3.0 batch f: quick menu style
          if(p.ShowCharacter != undefined) { this.hzShowChar = Boolean(p.ShowCharacter); }
@@ -16683,7 +15975,6 @@
          a.push("; Green healing sliver ahead of the health bar while health regenerates");
          a.push("RegenSliver=" + this.hzB(p.RegenSliver));
          a.push("");
-         this.hzAbIniLines(a,p);   // 0.43.3.1: [ActiveBuffs], right after [Effects]
       }
 
       // vitals warning state per row (0 health, 1 oxygen) -> stripe redraw only when it changes band
@@ -19130,7 +18421,7 @@
       // have a compact form. Jetpack, vitals and afflictions turn into the shared compact strips card, so they follow the
       // global Compact only. Hover / container cards keep [Style] HoverScale / ContainerScale (same meaning as before;
       // -1 now = GLOBAL). Edge-anchored ARRANGE positions use the real on-screen card size, so they stay put at any size.
-      private static const HZ34_CARDS:Array = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Buffs",true],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false],["Watch",false],["Hazard",true]];
+      private static const HZ34_CARDS:Array = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false],["Watch",false],["Hazard",true]];
       private static const HZ34_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face: run-time name only, never shown
       private var hz34Sc:Object = {};
       private var hz34Cm:Object = {};
@@ -19309,13 +18600,6 @@
             {"k":"ShowCharacter","l":"CHARACTER CARD (LV / XP / CREDITS / MASS)","t":"b","h":"CHARACTER"},this.hz34Sz("Character"),this.hz34Cmp("Character",cmn),
             {"k":"WatchStyle","l":"WATCH","t":"r","h":"WATCH","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4],"note":"Original Vanilla Watch or Horizon Watch"},this.hz34Sz("Watch"),
             {"k":"ShowAfflictions","l":"AFFLICTIONS CARD","t":"b","h":"AFFLICTIONS"},this.hz34Sz("Afflictions"),
-            {"k":"ActiveBuffs","l":"ACTIVE BUFFS","t":"b","h":"ACTIVE BUFFS","note":"Your active effects from the game's Status list. Default spot: just above the Afflictions card"},this.hz34Sz("Buffs"),
-            {"k":"BuffsShow","l":"SHOW","t":"r","opts":["BUFFS ONLY","BUFFS + DEBUFFS"],"ids":[0,1],"sub":true,"note":"Buffs + debuffs puts debuffs in a separate red-tinted section."},
-            {"k":"BuffsCompact","l":"STYLE","t":"r","opts":["EXPANDED","COMPACT","GLOBAL"],"ids":[0,1,-1],"sub":true,"note":"Expanded adds a remaining-time bar. Compact is one line per effect. GLOBAL follows COMPACT MODE."},
-            {"k":"BuffsMax","l":"MAX ENTRIES","t":"n","mn":1,"mx":12,"st":1,"sub":true,"note":"Extra effects collapse into a \"+N more\" line."},
-            {"k":"BuffsTimers","l":"SHOW TIMERS","t":"b","sub":true},
-            {"k":"BuffsPermanent","l":"SHOW PERMANENT EFFECTS","t":"b","sub":true,"note":"Off by default. Permanent entries show PERM and have no countdown."},
-            {"k":"BuffsHideEmpty","l":"HIDE WHEN EMPTY","t":"b","sub":true},
             {"k":"EnemyBar","l":"ENEMY HEALTH BAR (TOP CENTER)","t":"b","h":"ENEMY HEALTH"},this.hz34Sz("Enemy"),
             {"k":"StealthMeter","l":"STEALTH METER (ABOVE CROSSHAIR)","t":"b","h":"STEALTH"},this.hz34Sz("Stealth"),
             {"k":"VehicleExitPill","l":"VEHICLE EXIT PILL","t":"b","h":"VEHICLE","note":"Hold-to-exit prompt while you are in a vehicle. Off = the game's prompt."},
@@ -20781,7 +20065,7 @@
       private static const HZ40_OPA_N:Array = ["FOLLOW HUD","0.20","0.30","0.40","0.50","0.60","0.70","0.80","0.90","1.00","1.10","1.20","1.30","1.40","1.50","1.60"];
       private static const HZ40_MAR_V:Array = [-1,20,30,40,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200];
       private static const HZ40_MAR_N:Array = ["FOLLOW HUD","20","30","40","50","60","70","80","90","100","110","120","130","140","150","160","170","180","190","200"];
-      private static const HZ40_CARDS:Array = ["HorizonCard_mc","HorizonVitals_mc","HorizonEnv_mc","HorizonAffl_mc","HorizonBuffs_mc","HorizonQuest_mc","HorizonCompactQuest_mc","HorizonAmmo_mc","HorizonCompact_mc","HorizonCompass_mc","HorizonChar_mc","HorizonXp_mc","HorizonHazard_mc"];
+      private static const HZ40_CARDS:Array = ["HorizonCard_mc","HorizonVitals_mc","HorizonEnv_mc","HorizonAffl_mc","HorizonQuest_mc","HorizonCompactQuest_mc","HorizonAmmo_mc","HorizonCompact_mc","HorizonCompass_mc","HorizonChar_mc","HorizonXp_mc","HorizonHazard_mc"];
       private var hz40C:Object = null;          // current [Scanner] values
       private var hz40Scan:Boolean = false;     // the hand scanner is open (HudCompassData.bIsHandscannerOpen / FireForget)
       private var hz40Hide:Boolean = false;     // the Horizon cards are hidden for the scanner right now
@@ -21035,7 +20319,6 @@
          try
          {
             if(this.hz40HasFF(ev.data,"LoadingMenu_Opened") || this.hz40HasFF(ev.data,"LoadingMenu_Closed")) { this.hzAfOnLoad(); }
-            if(this.hz40HasFF(ev.data,"LoadingMenu_Opened") || this.hz40HasFF(ev.data,"LoadingMenu_Closed")) { try { this.hzAbOnLoad(); } catch(eAbL:Error) { } }
             if(this.hz41DllFresh()) { return; }   // v0.41.0: the DLL push is the scan state
             if(this.hz40HasFF(ev.data,"MonocleMenu_Opened")) { this.hz40SetScan(true); }
             else if(this.hz40HasFF(ev.data,"MonocleMenu_Closed")) { this.hz40SetScan(false); }

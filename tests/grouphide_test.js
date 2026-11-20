@@ -731,7 +731,8 @@ if (base) {
 			// Hazard Status: hzSetRows is the F11 rows table (its "Jetpack" is a setting label, no hide code); this tree
 			// may differ from 56d4098 there only by the one HAZARD STATUS row
 			if (n === "hzSetRows") { z = z.replace(HS_ROW, ""); }
-			// 0.43.3.1 Active Buffs: its one [Rules] row (BuffsRule) joins the same table
+			// 0.43.3.1 Active Buffs: its one [Rules] row (BuffsRule) joined the same table; the card is removed in 0.43.3.0
+			// batch j, so on this tree the replace finds nothing (kept for the trees in between)
 			if (n === "hzSetRows") { z = z.replace('{"k":"BuffsRule","l":"ACTIVE BUFFS","t":"q","ids":[0,1,2]},', ""); }
 			// 0.43.3.2 item 5: the note under the EQUIPMENT rule row (text only, no hide code)
 			if (n === "hzSetRows") { z = z.replace(',"note":"Crosshair off? Set this to ALWAYS or COMBAT ONLY."', ""); }

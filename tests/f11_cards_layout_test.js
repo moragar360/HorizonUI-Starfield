@@ -10,8 +10,10 @@
 //     geometry (selection follow / scroll) counts its 24 px, so keyboard / gamepad lands on real rows;
 //  5. SCOPE rows only with the Scope module; MISSION TOAST + SIZE locked (grayed, off, GLOBAL) without Comms;
 //  6. batch e: the help text under the rows moved into each row's (i) popup (r.inote, shown first by hz35InfoOf), so
-//     the list is just rows; a disabled row keeps its reason under it (it has no (i)).
-// Author: Moragar. Last modified: 2026-11-18 (batch e).
+//     the list is just rows; a disabled row keeps its reason under it (it has no (i));
+//  7. batch j: the ACTIVE BUFFS section and its rows are gone (the base compare leaves them out of the old list,
+//     and HZ_SET_DEF drops exactly the Active Buffs defaults).
+// Author: Moragar. Last modified: 2026-11-19 (batch j).
 "use strict";
 
 const fs = require("fs");
@@ -58,16 +60,20 @@ function rowsOf(src, mods) {
 	return h.hz34CardRows();
 }
 const list = (rows) => rows.filter((r) => !r.pill);
+const defLine2 = (src) => (src.match(/private static const HZ_SET_DEF:Object = .*/) || [""])[0];
 const strip = (r) => { const o = Object.assign({}, r); delete o.h; delete o.sub; delete o.n13; if (o.inote !== undefined) { o.note = o.inote; delete o.inote; } return JSON.stringify(o); };
 
-const ORDER = ["GENERAL", "VITALS", "JETPACK", "EQUIPMENT", "COMPASS", "QUEST TRACKER", "PLANET", "HAZARD STATUS", "CHARACTER", "WATCH", "AFFLICTIONS", "ACTIVE BUFFS", "ENEMY HEALTH", "STEALTH", "VEHICLE", "HOVER + CONTAINER", "QUICK MENU", "NOTIFICATIONS"];   // 0.43.3.0 batch f: QUICK MENU
+const ORDER = ["GENERAL", "VITALS", "JETPACK", "EQUIPMENT", "COMPASS", "QUEST TRACKER", "PLANET", "HAZARD STATUS", "CHARACTER", "WATCH", "AFFLICTIONS", "ENEMY HEALTH", "STEALTH", "VEHICLE", "HOVER + CONTAINER", "QUICK MENU", "NOTIFICATIONS"];   // 0.43.3.0 batch f: QUICK MENU
 const KEYS = ["Compact", "CompactScale", "ShowVitals", "VitalsScale", "VitalsLayout", "VitalsBars", "ShowJetpack", "JetpackScale", "ShowAmmo", "EquipmentScale", "EquipmentCompact", "EquipmentExtras",
 	"ShowCompass", "CompassScale", "CompassCompact", "ShowQuests", "QuestsScale", "QuestsCompact", "QuestsWidth", "QuestsMaxHeight", "QuestsWrap", "ShowPlanet", "PlanetScale", "PlanetCompact", "PlanetDetails",
 	"HazardStatus", "HazardScale", "HazardCompact", "ShowCharacter", "CharacterScale", "CharacterCompact", "WatchStyle", "WatchScale", "ShowAfflictions", "AfflictionsScale",
-	"ActiveBuffs", "BuffsScale", "BuffsShow", "BuffsCompact", "BuffsMax", "BuffsTimers", "BuffsPermanent", "BuffsHideEmpty", "EnemyBar", "EnemyScale", "StealthMeter", "StealthScale", "VehicleExitPill",
+	"EnemyBar", "EnemyScale", "StealthMeter", "StealthScale", "VehicleExitPill",
 	"ShowTarget", "NameHover", "HoverScale", "ContainerScale", "QuickMenuHorizon", "XpToastScale", "MissionToast", "MissionToastScale"];
-const MAIN = ["CompactScale", "ShowVitals", "ShowJetpack", "ShowAmmo", "ShowCompass", "ShowQuests", "ShowPlanet", "HazardStatus", "ShowCharacter", "WatchStyle", "ShowAfflictions", "ActiveBuffs", "EnemyBar", "StealthMeter", "VehicleExitPill", "ShowTarget", "QuickMenuHorizon", "XpToastScale", "MissionToast", "ScopeHoldBreathChip"];
+const MAIN = ["CompactScale", "ShowVitals", "ShowJetpack", "ShowAmmo", "ShowCompass", "ShowQuests", "ShowPlanet", "HazardStatus", "ShowCharacter", "WatchStyle", "ShowAfflictions", "EnemyBar", "StealthMeter", "VehicleExitPill", "ShowTarget", "QuickMenuHorizon", "XpToastScale", "MissionToast", "ScopeHoldBreathChip"];
 
+// 0.43.3.0 batch j: the Active Buffs rows of the base (0.43.3.1 / 0.43.3.2 test builds) that were removed
+const GONE = ["ActiveBuffs", "BuffsScale", "BuffsShow", "BuffsCompact", "BuffsMax", "BuffsTimers", "BuffsPermanent", "BuffsHideEmpty"];
+const GONE_DEF = ',"ActiveBuffs":1,"BuffsShow":0,"BuffsMax":6,"BuffsTimers":1,"BuffsPermanent":0,"BuffsHideEmpty":1,"BuffsRule":0,"BuffsScale":-1,"BuffsCompact":0';
 const comms = { comms: 1 };
 const all = { comms: 1, scope: 1 };
 const now = rowsOf(as, comms);
@@ -81,7 +87,8 @@ expect(now[0].k === "Compact" && now[0].pill === true && now.filter((r) => r.pil
 if (baseAs) {
 	for (const mods of [{}, comms, all]) {
 		// 0.43.3.0 batch f: QUICK MENU > HORIZON STYLE is the one new row; every other row is compared
-		const b = rowsOf(baseAs, mods), n = rowsOf(as, mods).filter((r) => r.k !== "QuickMenuHorizon");
+		// 0.43.3.0 batch j: the base's Active Buffs rows are left out (they were removed); every other row still matches
+		const b = rowsOf(baseAs, mods).filter((r) => GONE.indexOf(r.k) < 0), n = rowsOf(as, mods).filter((r) => r.k !== "QuickMenuHorizon");
 		const bm = {}; b.forEach((r) => { bm[r.k] = strip(r); });
 		const nm = {}; n.forEach((r) => { nm[r.k] = strip(r); });
 		const same = b.length === n.length && Object.keys(bm).length === Object.keys(nm).length && Object.keys(bm).every((k) => bm[k] === nm[k]);
@@ -90,10 +97,20 @@ if (baseAs) {
 	const defLine = (src, re) => (src.match(re) || [""])[0];
 	// 0.43.3.2 batch e: the only HZ_SET_DEF change since the base is the two vehicle exit pill offsets (0 / 0 = the game's spot)
 	const defNow = defLine(as, /private static const HZ_SET_DEF:Object = .*/).replace('"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,', "");
-	expect(defNow === defLine(baseAs, /private static const HZ_SET_DEF:Object = .*/) && defLine(as, /private static const HZ31_DEF:Object = .*/) === defLine(baseAs, /private static const HZ31_DEF:Object = .*/), "defaults tables (HZ_SET_DEF, HZ31_DEF) unchanged (HZ_SET_DEF only adds VehicleExitX / VehicleExitY = 0 and QuickMenuHorizon = 1)");
+	const defBase = defLine(baseAs, /private static const HZ_SET_DEF:Object = .*/).replace(GONE_DEF, "");
+	expect(defNow === defBase && defLine(as, /private static const HZ31_DEF:Object = .*/) === defLine(baseAs, /private static const HZ31_DEF:Object = .*/), "defaults tables (HZ_SET_DEF, HZ31_DEF) unchanged (HZ_SET_DEF only adds VehicleExitX / VehicleExitY = 0 and QuickMenuHorizon = 1, and drops the Active Buffs defaults)");
 	expect(fnText(as, "hz34IniLines").body === fnText(baseAs, "hz34IniLines").body && fnText(as, "hz34Ini").body === fnText(baseAs, "hz34Ini").body && fnText(as, "hz34SetCur").body === fnText(baseAs, "hz34SetCur").body, "the [Cards] reader, writer and current values unchanged (saved settings and presets behave as before)");
 } else {
 	gitBase.report(baseRes, BASE, "old-vs-new row and default checks", expect);
+}
+// ---- 7. batch j: Active Buffs is gone from F11 > CARDS (with and without the modules) ----
+{
+	let hit = [];
+	for (const mods of [{}, comms, all]) for (const r of rowsOf(as, mods)) {
+		if (/Buffs/.test(String(r.k)) || /BUFFS/.test(String(r.h || "") + String(r.l || ""))) hit.push(r.k);
+	}
+	expect(hit.length === 0, "batch j: no ACTIVE BUFFS section or Buffs row in F11 > CARDS" + (hit.length ? ": " + hit.join(",") : ""));
+	expect(defLine2(as).indexOf("Buffs") < 0 && defLine2(as).indexOf("HazardStatus") > 0, "batch j: HZ_SET_DEF has no Active Buffs default and keeps HazardStatus");
 }
 // ---- 3. indent and moves ----
 let cur = null, bad = [];
@@ -141,7 +158,7 @@ expect(/\(r\.h \? 24 : 0\) \+ 32/.test(rh), "row geometry counts a header's 24 p
 	expect(shown.length === 0, "no enabled CARDS row draws help text under it" + (shown.length ? ": " + shown.join(",") : ""));
 	const m = rowsOf(as, all);
 	const byK = {}; m.forEach((r) => { byK[r.k] = r; });
-	expect(byK.VitalsLayout.inote && byK.QuestsWrap.inote && byK.ActiveBuffs.inote && byK.VehicleExitPill.inote && byK.ScopeHoldBreathChip.inote && byK.CompactScale.inote, "the help text rides on the row as inote (VITALS LAYOUT, TEXT WRAP, ACTIVE BUFFS, VEHICLE EXIT PILL, SCOPE, COMPACT STRIPS: SIZE ...)");
+	expect(byK.VitalsLayout.inote && byK.QuestsWrap.inote && byK.VehicleExitPill.inote && byK.ScopeHoldBreathChip.inote && byK.CompactScale.inote, "the help text rides on the row as inote (VITALS LAYOUT, TEXT WRAP, VEHICLE EXIT PILL, SCOPE, COMPACT STRIPS: SIZE ...)");
 	const off = rowsOf(as, {});
 	const mts = off.filter((r) => r.k === "MissionToastScale")[0];
 	expect(mts.dis && mts.note && mts.n13 && !mts.inote, "a disabled row (MISSION TOAST SIZE without Comms) keeps its reason under it");
