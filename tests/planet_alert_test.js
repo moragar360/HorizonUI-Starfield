@@ -1600,7 +1600,7 @@ expect("VASCO\r\n".replace(/\r\n/g, "\n").indexOf("VASCO\n") === 0, "a CRLF sour
 	expect(pill.indexOf("var pillMax:Number = 640;") >= 0, "the pill grows only up to 640 px for the name");
 	expect(pill.indexOf("var lineFs:Number = 14;") >= 0, "the pill name, key, and verb share one size");
 	expect(pill.indexOf("hzCapTop(nmTf,cy)") >= 0, "the pill name uses the keycap center");
-	expect(pill.indexOf("hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,0,lineFs)") >= 0, "verbs are measured in full");
+	expect(pill.indexOf("hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,0,lineFs,true)") >= 0, "verbs are measured in full (0.43.4: own row for a long label)");
 	expect(pill.indexOf("nameX + nameRoom + gap") >= 0, "buttons start after the name");
 	expect(pill.indexOf("btnMax") < 0, "the pill does not give the verb row a width limit");
 	expect(pill.indexOf('o.tone = "acc"') >= 0, "the compact pill name uses the text accent");
@@ -1620,7 +1620,7 @@ expect("VASCO\r\n".replace(/\r\n/g, "\n").indexOf("VASCO\n") === 0, "a CRLF sour
 	expect(stealOff.tone === "acc" && stealOff.tint === null, "a normal prompt draws the name in the accent");
 	expect(pillNameColor(true).tint === "HZ_RED" && pillNameColor(false).tint === null && pillNameColor(true).tint === "HZ_RED", "steal and normal each set their own color");
 	expect(pill.indexOf("var lineFs:Number = 14;") >= 0, "the pill name stays 14 px");
-	expect(pill.indexOf("hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,0,lineFs)") >= 0, "verbs and key chips draw in full");
+	expect(pill.indexOf("hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,0,lineFs,true)") >= 0, "verbs and key chips draw in full (0.43.4: own row for a long label)");
 	const fullPrompt = src.slice(src.indexOf('else if(kind == "prompt")'), src.indexOf('else if(kind == "foe")'));
 	expect(fullPrompt.indexOf("this.hzTxtTint(nmTf,null)") >= 0, "the full name card keeps its body color");
 	expect(fullPrompt.indexOf('o.tone = "acc"') < 0, "the full name card does not take the pill accent");

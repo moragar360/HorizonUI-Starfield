@@ -129,7 +129,7 @@ expect(behave(AS0, true).length === 0, "all label width checks pass on the produ
 const body = fnText(AS0, "hzT19Buttons").body;
 expect((body.match(/HZ_T19_LBLW/g) || []).length === 2 && /if\(lt\.width != HZ_T19_LBLW\) \{ lt\.width = HZ_T19_LBLW; \}/.test(body), "hzT19Buttons sets the label field width only when it differs (row draws / measures only)");
 expect(/private static const HZ_T19_LBLW:Number = (\d+);/.test(AS0) && Number(/HZ_T19_LBLW:Number = (\d+)/.exec(AS0)[1]) >= 400, "HZ_T19_LBLW is wide enough for a long verb plus a lock level");
-expect((AS0.match(/HZ_T19_LBLW/g) || []).length === 3, "HZ_T19_LBLW is used nowhere else");
+expect((AS0.match(/HZ_T19_LBLW/g) || []).length === 5 && (fnText(AS0, "hzT19LblLong").body.match(/HZ_T19_LBLW/g) || []).length === 2, "HZ_T19_LBLW is used nowhere else (0.43.4: hzT19LblLong measures in the same width)");
 expect(!/addEventListener|Timer|ENTER_FRAME|getTimer|hzFindByName/.test(body), "hzT19Buttons: no listener, timer or search");
 expect(/this\.hzT\(p,"",0,0,160,13,"sb","main",1\.6\)/.test(AS0), "the fields are still built as before (the width is set on the row draw)");
 

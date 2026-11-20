@@ -12204,10 +12204,18 @@
 
       // our keycap action row from aButtons (iType / bVisible / bEnabled / bPressAndRelease / bPressAndHold / labels).
       // g == null only measures. Returns the row width.
-      private function hzT19Buttons(g:*, a:Object, aw:Object, x0:Number, y:Number, col:uint, maxW:Number = 0, lineFs:Number = 0) : Number
+      // 0.43.4: ownRow = a long label (the steal / lock-difficulty line, hzT19LblLong) gets a row of its own, and the
+      // next button starts a new row below it, so that label can never run into a keycap. Same font size; the card
+      // grows by one row (hzT19RowsN / hzT19RowsH, set by every call). A long label also reserves HZ_T19_SLACK of its
+      // width after it, so a label painted a little wider than measured stays inside the card.
+      private function hzT19Buttons(g:*, a:Object, aw:Object, x0:Number, y:Number, col:uint, maxW:Number = 0, lineFs:Number = 0, ownRow:Boolean = false) : Number
       {
          var x:Number = x0;
          var used:int = 0;
+         var rowsN:int = 1;
+         var rowMax:Number = 0;
+         var prevLong:Boolean = false;
+         var khRow:Number = lineFs > 0 ? this.hzT19PillCap(lineFs) : this.hzT19CapH();
          if(g != null)
          {
             for each(var clr:Object in this.hzT19Btn) { clr.holdOn = false; }
@@ -12225,6 +12233,20 @@
             var press:String = b.bPressAndRelease === false ? "" : this.hzT19Label(aw,t,false,b.sTextPressAndRelease);
             var hold:String = b.bPressAndHold === false ? "" : this.hzT19Label(aw,t,true,b.sTextHold);
             if(press.length == 0 && hold.length == 0) { continue; }
+            var lng:Boolean = false;
+            if(ownRow)
+            {
+               this.hzT19RowFace(this.hzT19Btn[used],lineFs);
+               lng = this.hzT19LblLong(this.hzT19Btn[used],press,hold);
+               if(x > x0 && (lng || prevLong))
+               {
+                  if(x - x0 > rowMax) { rowMax = x - x0; }
+                  x = x0;
+                  y += khRow + HZ_T19_ROWGAP;
+                  rowsN++;
+               }
+               prevLong = lng;
+            }
             var gapX:Number = x > x0 ? 16 : 0;
             if(limit > 0 && x + gapX + 26 + 7 + 16 > limit) { break; }
             var on:Boolean = b.bEnabled !== false;
@@ -12252,7 +12274,17 @@
                var koTk:Object = this.hzTxtObj(kt); if(koTk && koTk.chipMin) { this.hzApplyFmt(koTk); }
                if(isHold)
                {
-                  if(pairs.length > 1) { x += 14; }
+                  if(lng && pairs.length > 1)
+                  {
+                     // 0.43.4: a long press label: its hold half starts its own row too
+                     if(x - x0 > rowMax) { rowMax = x - x0; }
+                     x = x0;
+                     y += khRow + HZ_T19_ROWGAP;
+                     rowsN++;
+                     ky = this.hzSnapU(y,u);
+                     kcy = ky + kh / 2;
+                  }
+                  else if(pairs.length > 1) { x += 14; }
                   var ht:TextField = TextField(slot.hh);
                   var hoTk:Object = this.hzTxtObj(ht); if(hoTk && hoTk.chipMin) { this.hzApplyFmt(hoTk); }
                   var holdW:Number = this.hzTW(ht) + 6;
@@ -12302,12 +12334,39 @@
                   break;
                }
                x += piece;
+               if(lng) { x += Math.ceil(piece * HZ_T19_SLACK); }
             }
             if(stopRow) { break; }
          }
-         var rowW:Number = x - x0;
+         var rowW:Number = Math.max(rowMax,x - x0);
          if(maxW > 0 && rowW > maxW) { rowW = maxW; }
+         this.hzT19RowsN = rowsN;
+         this.hzT19RowsH = rowsN * khRow + (rowsN - 1) * HZ_T19_ROWGAP;
          return rowW;
+      }
+
+      // 0.43.4: a label that needs its own keycap row: one with the lock level or owner joined in brackets (the steal /
+      // lock-difficulty line), or one wider than HZ_T19_LONGW. Measures in the slot's own label fields at their row
+      // size (hzT19RowFace already ran). Content edge only, like hzT19Buttons.
+      private static const HZ_T19_LONGW:Number = 200;
+      private static const HZ_T19_ROWGAP:Number = 6;
+      private static const HZ_T19_SLACK:Number = 0.15;
+      private var hzT19RowsN:int = 1;
+      private var hzT19RowsH:Number = 0;
+      private function hzT19LblLong(slot:Object, press:String, hold:String) : Boolean
+      {
+         var two:Array = [[slot.lp,press],[slot.lh,hold]];
+         for each(var pr:Array in two)
+         {
+            var s:String = String(pr[1]);
+            if(s.length == 0) { continue; }
+            if(s.indexOf("[") >= 0) { return true; }
+            var lt:TextField = TextField(pr[0]);
+            if(lt.width != HZ_T19_LBLW) { lt.width = HZ_T19_LBLW; }
+            lt.text = s.toUpperCase();
+            if(this.hzTW(lt) > HZ_T19_LONGW) { return true; }
+         }
+         return false;
       }
 
       // Purpose: off-by-default HUD timing and isolation gates. Perf helpers use
@@ -13811,7 +13870,8 @@
          var nameX:Number = padL + rad * 2 + 12;
          var pillMax:Number = 640;
          var fullBw:Number = 0;
-         if(hasBtn) { fullBw = this.hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,0,lineFs); }
+         var pRowsH:Number = cap;
+         if(hasBtn) { fullBw = this.hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,0,lineFs,true); pRowsH = this.hzT19RowsH; }
          var gapUse:Number = fullBw > 0 ? gap : 0;
          var nameRoom:Number = nameWant;
          var fitBw:Number = fullBw;
@@ -13851,15 +13911,17 @@
             this.hzApplyFmt(o);
             if(nmTf.visible) { this.hzFitText(nmTf,shown,nameRoom); }
          }
+         // 0.43.4: more than one keycap row (a long steal / lock line on its own row): the pill grows to fit them all
+         if(pRowsH > cap) { H = Math.max(H,pRowsH + (H1 - cap)); }
          this.hzPanel(g,W,H,Math.round(H1 / 2));
          this.hzT19Tile(g,padL + rad,Math.round(H / 2),HZ_ACCENT,rad);
          var u:Number = this.hzT19U();
-         var yBtn:Number = this.hzSnapU((H - cap) / 2,u);
-         var cy:Number = yBtn + cap / 2;
+         var yBtn:Number = this.hzSnapU((H - pRowsH) / 2,u);
+         var cy:Number = pRowsH > cap ? H / 2 : yBtn + cap / 2;
          this.hzTxtTopU(nmTf,this.hzCapTop(nmTf,cy) - lineAdv / 2,u);
          if(fitBw > 0)
          {
-            this.hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,0,lineFs);
+            this.hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,0,lineFs,true);
          }
          return {"W":W,"H":H};
       }
@@ -13922,7 +13984,8 @@
          if(nmTf.wordWrap) { nmTf.wordWrap = false; nmTf.multiline = false; }   // 0.43.3.2: only a wrapped pill name sets these
          var hdrTxt:String = a && a.sHeaderText != null ? this.hzT19Xl(String(a.sHeaderText)) : "";
          var rar:int = a && a.uRarity != undefined ? int(a.uRarity) : 0;
-         var bw:Number = a ? this.hzT19Buttons(null,a,aw,0,0,acol) : 0;
+         var bw:Number = a ? this.hzT19Buttons(null,a,aw,0,0,acol,0,0,true) : 0;
+         var rowsH:Number = bw > 0 ? this.hzT19RowsH : 0;   // 0.43.4: all keycap rows (one per long label)
          var hasBtn:Boolean = bw > 0;
          if(kind == "prompt" && this.hzNameHover != 1)
          {
@@ -13946,7 +14009,7 @@
             var cw:Number = W - 2 * PX;
             var L38:Object = this.hz38PromptY();
             var dvY:Number = Number(L38.dv);
-            H = hasBtn ? dvY + 8 + this.hzT19CapH() + 18 : dvY + 6;
+            H = hasBtn ? dvY + 8 + rowsH + 18 : dvY + 6;
             this.hzPanel(g,W,H,18,-1,-1);
             g.beginFill(this.hzIconCol(HZ_ACCENT),1); g.drawRoundRect(0,16,4,H - 32,4,4); g.endFill();
             this.hzT19Tile(g,Math.round(W / 2),Number(L38.icy),HZ_ACCENT);
@@ -13960,7 +14023,7 @@
                g.lineStyle(1,dk ? 0x000000 : 0xFFFFFF,dk ? 0.18 : 0.13,true,"none");
                g.moveTo(PX,dvY + 0.5); g.lineTo(W - PX,dvY + 0.5);
                g.lineStyle();
-               this.hzT19Buttons(g,a,aw,Math.round((W - fbw) / 2),dvY + 8,HZ_ACCENT);
+               this.hzT19Buttons(g,a,aw,Math.round((W - fbw) / 2),dvY + 8,HZ_ACCENT,0,0,true);
             }
          }
          else if(kind == "foe")
@@ -13976,7 +14039,7 @@
             this.hzFitText(nmTf,this.hzUC(en),W - 40);
             this.hzTxtTop(nmTf,11);
             var by:Number = stars > 0 ? 48 : 40;
-            H = by + 7 + 15 + (hasBtn ? this.hzT19CapH() + 10 : 0);
+            H = by + 7 + 15 + (hasBtn ? rowsH + 10 : 0);
             this.hzPanel(g,W,H,18,tint,edge);
             i = 0;
             while(i < stars) { this.hzT19Star(g,W / 2 + (i - (stars - 1) / 2) * 15,36,this.hzIconCol(0xF2C14E)); i++; }
@@ -13986,7 +14049,7 @@
             if(hasBtn)
             {
                this.hzT19Line(g,by + 16,W,true);
-               this.hzT19Buttons(g,a,aw,Math.round((W - bw) / 2),by + 24,HZ_RED);
+               this.hzT19Buttons(g,a,aw,Math.round((W - bw) / 2),by + 24,HZ_RED,0,0,true);
             }
          }
          else if(kind == "item" || kind == "cmp")
@@ -14019,7 +14082,7 @@
             var rows:Array = kind == "cmp" ? this.hzT19CmpRows(it,cmp) : [];
             var rowsY:Number = head + 9;
             var bodyEnd:Number = kind == "cmp" ? rowsY + rows.length * 24 : head;
-            H = hasBtn ? bodyEnd + 12 + this.hzT19CapH() + 14 : bodyEnd + (kind == "cmp" ? 6 : 0);
+            H = hasBtn ? bodyEnd + 12 + rowsH + 14 : bodyEnd + (kind == "cmp" ? 6 : 0);
             this.hzPanel(g,W,H,18,tint,edge);
             // v0.25: left accent stripe like the equipment card (red while stealing; rarity stays on its chip)
             this.hzAccStripe(g,H,steal ? HZ_RED : HZ_ACCENT);
@@ -14082,7 +14145,7 @@
             if(hasBtn)
             {
                this.hzT19Line(g,bodyEnd + 2,W,steal);
-               this.hzT19Buttons(g,a,aw,18,bodyEnd + 12,acol);
+               this.hzT19Buttons(g,a,aw,18,bodyEnd + 12,acol,0,0,true);
             }
          }
          else if(kind == "list")
@@ -14121,7 +14184,7 @@
                if(se.fWeight != undefined && !isNaN(sw) && sw > 0) { fmeta.push(sw.toFixed(1) + " KG"); }
             }
             // v0.25: value / weight line, then a thin divider, then the keycap row a little lower (whole units)
-            H = hasBtn ? fy + 42 + this.hzT19CapH() + 14 : fy + 30;
+            H = hasBtn ? fy + 42 + rowsH + 14 : fy + 30;
             this.hzPanel(g,W,H,18,tint,edge);
             this.hzAccStripe(g,H,steal ? HZ_RED : HZ_ACCENT);
             if(steal)
@@ -14215,7 +14278,7 @@
             if(hasBtn)
             {
                this.hzT19Line(g,fy + 32,W,steal);
-               this.hzT19Buttons(g,a,aw,14,fy + 42,acol);
+               this.hzT19Buttons(g,a,aw,14,fy + 42,acol,0,0,true);
             }
          }
          // every tag text field on the device-pixel grid too (no half-pixel glyph origins at 1.5x)

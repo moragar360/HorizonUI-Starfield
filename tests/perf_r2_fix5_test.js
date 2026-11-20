@@ -381,7 +381,15 @@ if (baseAs) {
 	if (baseAs) {
 		// 0.43.3.2: the only allowed change is the pill-name wrap reset (two exact lines, no red bar code)
 		const wrapReset = (b) => b.replace('o.tone = "main"; o.lines = 1; }', 'o.tone = "main"; }').replace("\n         if(nmTf.wordWrap) { nmTf.wordWrap = false; nmTf.multiline = false; }   // 0.43.3.2: only a wrapped pill name sets these", "");
-		expect(wrapReset(fnText(as, "hzT19Content").body) === fnText(baseAs, "hzT19Content").body && fnText(as, "hzT19ResetPay").body === fnText(baseAs, "hzT19ResetPay").body, "the loot card red bar code (hzT19Content, hzT19ResetPay) is unchanged from " + BASE);
+		// 0.43.4 item 2: the keycap rows (ownRow, hzT19RowsH) are the only other change; undone here line by line
+		const rows043 = [
+			["this.hzT19Buttons(null,a,aw,0,0,acol,0,0,true) : 0;\n         var rowsH:Number = bw > 0 ? this.hzT19RowsH : 0;   // 0.43.4: all keycap rows (one per long label)", "this.hzT19Buttons(null,a,aw,0,0,acol) : 0;"],
+			["dvY + 8 + rowsH + 18", "dvY + 8 + this.hzT19CapH() + 18"], ["(hasBtn ? rowsH + 10 : 0)", "(hasBtn ? this.hzT19CapH() + 10 : 0)"],
+			["bodyEnd + 12 + rowsH + 14", "bodyEnd + 12 + this.hzT19CapH() + 14"], ["fy + 42 + rowsH + 14", "fy + 42 + this.hzT19CapH() + 14"],
+			["dvY + 8,HZ_ACCENT,0,0,true)", "dvY + 8,HZ_ACCENT)"], ["by + 24,HZ_RED,0,0,true)", "by + 24,HZ_RED)"], ["bodyEnd + 12,acol,0,0,true)", "bodyEnd + 12,acol)"], ["fy + 42,acol,0,0,true)", "fy + 42,acol)"],
+		];
+		const undo043 = (b) => rows043.reduce((t, r) => t.split(r[0]).join(r[1]), b);
+		expect(undo043(wrapReset(fnText(as, "hzT19Content").body)) === fnText(baseAs, "hzT19Content").body && fnText(as, "hzT19ResetPay").body === fnText(baseAs, "hzT19ResetPay").body, "the loot card red bar code (hzT19Content, hzT19ResetPay) is unchanged from " + BASE);
 		expect(fnText(as, "hzT19PaintHold").body === fnText(baseAs, "hzT19PaintHold").body && fnText(as, "hzT19PaintFoeBars").body === fnText(baseAs, "hzT19PaintFoeBars").body, "the hold fill and foe bars are unchanged");
 	}
 }
