@@ -104,10 +104,11 @@ expect(block.indexOf("0x6E7C86") >= 0, "unfilled gauge segments are gray");
 expect(block.indexOf("hz43Hand(g,ma,72,2.2,0xF2F7F9)") >= 0, "the minute hand is white");
 expect(block.indexOf("ly < -HZ43_R + 96") >= 0, "compass letters stay on the top arc");
 const drawBody = funcBody(as, "hz43Draw");
-expect(drawBody.split("hz43Compass(g)").length - 1 === 2, "digital and analog both draw the compass");
+// arch-fixes Fix 1: the compass is its own layer; hz43Draw draws it once for both modes, a heading change redraws only it
+expect(drawBody.split("this.hz43DrawCmp();").length - 1 === 1 && funcBody(as, "hz43DrawCmp").indexOf("this.hz43Compass(cg)") >= 0, "digital and analog both draw the compass");
 expect(drawBody.indexOf("hz43Diamond(g,0,-HZ43_R + 20,4)") < 0, "analog does not draw a second top mark");
 expect(drawBody.indexOf("hz43Cards[hi]).visible = false") < 0, "analog does not hide the compass letters");
-expect(drawBody.indexOf("hz43Ticks(g)") >= 0 && drawBody.indexOf("hz43Hands(g)") >= 0, "analog still draws ticks and hands");
+expect(drawBody.indexOf("hz43Ticks(g)") >= 0 && drawBody.indexOf("hz43Hands(tg)") >= 0, "analog still draws ticks and hands");
 expect(drawBody.indexOf("hz43BodyT.y = -22") >= 0 && drawBody.indexOf("hz43TempT.y = -4") >= 0, "analog planet name and temperature stay below the compass");
 expect(drawBody.indexOf("hzFmtLocGame(this.hz43H,this.hz43M,this.hz43Ut != 0)") >= 0, "digital LOCAL/GAME uses ClockFormat for both sources");
 expect(funcBody(as, "hzPpLayout").indexOf("hzFmtLocGame(uh,um,true)") >= 0 && funcBody(as, "hzPpLayout").indexOf("hzFmtLocGame(H,M,false)") >= 0, "planet LOCAL and GAME values both go through ClockFormat");
@@ -407,7 +408,8 @@ expect(funcBody(as, "hz43TintUnnamed").indexOf("hz43TintRgb") >= 0 && funcBody(a
 expect(funcBody(as, "hz43VanDump").indexOf("hz43VanNamed") < 0, "dump lists every BottomLeftGroup child, not only VanNamed clips");
 expect(as.indexOf('HZ43_DIAG:String = "r15-vanilla-restore-20261108"') >= 0, "next gfx can prove package r15-vanilla-restore-20261108");
 expect(funcBody(as, "hz43VanBlgChrome").indexOf("hz43VanShowClip") >= 0 && funcBody(as, "hz43VanShowClip").indexOf("d.alpha") < 0, "vanilla chrome show restores named assembly vis without writing alpha");
-expect(funcBody(as, "hz43SyncHide").indexOf("hz43VanBlgChrome(false)") >= 0 && funcBody(as, "hzSetLive").indexOf("hz43VanShown = 0") >= 0, "later vanilla frames retry vis undo and a WatchStyle change recaptures ShowVanilla");
+// perf round 2 Fix 4: the per-frame vis undo goes through hz43ShowSweep (RestoreHid + BlgChrome(false) on an edge or a stale piece)
+expect(funcBody(as, "hz43SyncHide").indexOf("this.hz43ShowSweep()") >= 0 && funcBody(as, "hz43ShowSweep").indexOf("hz43VanBlgChrome(false)") >= 0 && funcBody(as, "hzSetLive").indexOf("hz43VanShown = 0") >= 0, "later vanilla frames retry vis undo and a WatchStyle change recaptures ShowVanilla");
 expect(funcBody(as, "hz43VanDump").indexOf("WatchPointerOutline_mc") >= 0, "dump signature includes heading-outline vis so later Off frames are not collapsed into the first write");
 expect(funcBody(as, "hz43SyncHide").indexOf("hz43HideStyle") >= 0 && funcBody(as, "hz43SyncHide").indexOf("hzHideCache = null") >= 0, "WatchStyle change rebuilds hide cache, including Digital then Off");
 expect(onFrame.indexOf('else if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4) { names.push("WatchPointerOutline_mc"); }') >= 0, "custom hideTick owns the heading outline");
@@ -482,7 +484,7 @@ expect(onFrame.indexOf('names.push("WatchOutline_mc","DayCycleBase_mc","location
 expect(as.indexOf('HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc"]') >= 0, "style 2 tints the original watch face only");
 expect(as.indexOf('HZ43_TINT_N:Array = ["WatchOutline_mc","WatchPointerOutline_mc","O2CO2_mc","O2CO2thin_mc","DayCycleBase_mc","locationNameBase_mc","Temperature_mc"') < 0, "style 2 does not tint extra native readouts");
 expect(funcBody(as, "hz43Frame").indexOf("hz43Watch.visible = false") >= 0, "vanilla hides the Horizon-drawn watch");
-expect(drawBody.indexOf("hz43TempT.text") >= 0 && drawBody.indexOf("hz43BodyT.text") >= 0, "digital and analog still draw planet and temperature");
+expect(drawBody.indexOf("hz43SetTx(this.hz43TempT,") >= 0 && drawBody.indexOf("hz43SetTx(this.hz43BodyT,") >= 0, "digital and analog still draw planet and temperature");
 expect(funcBody(as, "hz43VanChrome").indexOf("hz43VanBlgChrome(hide)") >= 0, "Horizon faces hide unnamed cap art with the vanilla bezel");
 expect(funcBody(as, "hz43VanInstName").indexOf("name.length == 0") >= 0 && funcBody(as, "hz43VanCapClip").indexOf("hz43VanInstName") >= 0, "empty PlaceObject names can still be the cap after pose check");
 expect(funcBody(as, "hz43VanSkip").indexOf("name.length == 0) { return true; }") < 0, "unnamed chrome is not skipped from the watch assembly");
@@ -736,6 +738,19 @@ function asConst(name) {
 }
 function bindAsMethod(host, name, args) {
 	host[name] = Function.apply(null, args.concat(["with(this){\n" + asInner(name) + "\n}"])).bind(host);
+}
+// perf round 2 Fix 4: the styles 1/2 show sweep gate (hz43SyncHide / hz43VanChrome(false) call hz43ShowSweep), as in the AS
+function bindShow(host) {
+	if (host.HZ43_HID_MAX === undefined) host.HZ43_HID_MAX = 40;
+	if (host.hz43ShowLN === undefined) { host.hz43ShowL = null; host.hz43ShowNm = null; host.hz43ShowLN = 0; host.hz43ShowBlg = null; host.hz43ShowKids = -2; host.hz43ShowSt = -1; }
+	if (host.hz43ChrForce === undefined) host.hz43ChrForce = 15;
+	if (host.hz43HidPN === undefined) host.hz43HidPN = 0;
+	if (host.hz43HidN === undefined) host.hz43HidN = 0;
+	if (host.hzBlg === undefined) host.hzBlg = null;
+	bindAsMethod(host, "hz43ShowSweep", []);
+	bindAsMethod(host, "hz43ShowNeed", []);
+	bindAsMethod(host, "hz43ShowStale", []);
+	bindAsMethod(host, "hz43ShowAdd", ["d", "n"]);
 }
 // r9b: the same from a mutant source
 function bindAsMethodSrc(host, src, name, args) {
@@ -1000,6 +1015,7 @@ function makeSyncHideHost(style) {
 		hz43VanBlgChrome: function(hide) { this.chromeN++; this.chromeHide = hide; }
 	};
 	bindAsMethod(host, "hz43SyncHide", []);
+	bindShow(host);
 	return host;
 }
 const syncCustom = makeSyncHideHost(3);
@@ -1465,6 +1481,7 @@ expect(writeScale.outlineClip.scaleX === 0.8 && writeScale.capClip.alpha === 0, 
 	const ns = { hz43ScanHid: true, hz43ScanSt: 2, hzWatchStyle: 2, hz43HideStyle: 2, hzHideVanillaWatch: false, hz43VanShown: 1, hzHideCache: [1],
 		hz43ShowVanilla: function() { throw new Error("no"); }, hz43VanRestoreHid: function() { throw new Error("no"); }, hz43VanBlgChrome: function() { throw new Error("no"); } };
 	bindAsMethod(ns, "hz43SyncHide", []);
+	bindShow(ns);
 	let reShown = false; try { ns.hz43SyncHide(); } catch (e) { reShown = true; }
 	expect(!reShown && ns.hzHideCache[0] === 1, "r7: hz43SyncHide (per frame) does not re-show the vanilla watch while hidden");
 	ns.hz43ScanHid = false; let threw = false; try { ns.hz43SyncHide(); } catch (e) { threw = true; }
@@ -1588,6 +1605,7 @@ function makeAssemblyHost() {
 	bindAsMethod(host, "hz43VanHoldsMark", ["box"]);
 	bindAsMethod(host, "hz43VanShowClip", ["d"]);
 	bindAsMethod(host, "hz43VanBlgChrome", ["hide"]);
+	bindShow(host);   // perf round 2 Fix 4: the show pass records its pieces (hz43ShowAdd)
 	bindAsMethod(host, "hz43TintRgb", ["clip", "col", "amt"]);
 	bindAsMethod(host, "hz43TintClear", ["clip"]);
 	bindAsMethod(host, "hz43TintAt", ["i"]);

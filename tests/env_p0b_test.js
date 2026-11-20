@@ -45,7 +45,7 @@ function toJs(name) {
 		.replace(/catch\((\w+):\w+\)/g, "catch($1)");
 	return new Function(...params, body);
 }
-const FNS = ["hzEnvP0ParseIni", "hzEnvP0Sub", "hzEnvP0Ready", "hzEnvP0Out", "hzEnvP0Q", "hzEnvP0Head", "hzEnvP0Fx", "hzEnvP0OnAlerts", "hzEnvP0NoKey"];
+const FNS = ["hzEnvP0ParseIni", "hzEnvP0Sub", "hzEnvP0Ready", "hzEnvP0Out", "hzEnvP0Q", "hzEnvP0Head", "hzEnvP0Fx", "hzEnvP0OnAlerts", "hzEnvP0NoKey", "hzHsSub"];   // Hazard Status: hzEnvP0Sub uses the shared listener
 const hdr = (ln) => { const t = ln.replace(/^[\s\uFEFF]+|\s+$/g, ""); if (t.length < 3 || t.charAt(0) !== "[") return null; const e = t.indexOf("]"); if (e < 2) return null; return t.substring(1, e).trim().toLowerCase(); };
 function makeHost() {
 	const h = {

@@ -35,8 +35,8 @@ function pin(snippet, msg) {
 	expect(src.indexOf(snippet) >= 0, msg || snippet);
 }
 
-pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
-pin('private static const HZ_BUILD:String = "0.43.2.0";', "HUD build id is 0.43.2.0");
+pin('private static const HZ_VERSION:String = "0.43.3.0";', "schema version is 0.43.3.0 (= HZF::kVersion)");
+pin('private static const HZ_BUILD:String = "0.43.3.0";', "HUD build id is 0.43.3.0 (versions aligned)");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin("tf.text = this.hzFmtLocGame(uh,um,true);", "GAME Local/Game value honors ClockFormat");
 pin("tf.text = this.hzFmtLocGame(H,M,false);", "LOCAL Local/Game value honors ClockFormat");
@@ -593,7 +593,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect((!hasCrlf && !loneCr && loneLf) || (hasCrlf && !loneLf && !loneCr), rel + " stays LF or a CRLF checkout");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.2.0";') >= 0, rel + " build is 0.43.2.0");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.3.0";') >= 0, rel + " build is 0.43.3.0");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -826,7 +826,7 @@ pin("p >= 97 && p <= 122 && c >= 65 && c <= 90", "the camel split is a lowercase
 expect(src.indexOf('"$1 $2"') < 0, "the HUD does not pass $1 $2 to replace");
 pin('var sb:String = String(b.sub).length > 0 ? String(b.sub) : sys;', "a game subtitle is kept, and an empty one falls back to the body system");
 pin('var nm:String = String(b.txt).length > 0 ? String(b.txt) : "Affliction";', "an alert without a name uses Affliction");
-pin('out.push({"key":"p:" + sys,"name":"Affliction","sub":sys,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});', "a plain effect chip is Affliction plus the body system");
+pin('out.push({"key":"p:" + icon,"name":pos ? "Buff" : "Affliction","sub":sys,"kind":pos ? "buff" : "injury","env":false,"pos":pos,"icon":icon,"cat":icon.replace(new RegExp("_(Negative|Positive)$"),"")});', "a plain effect chip is Affliction plus the body system (a _Positive buff is Buff; Afflictions P0)");
 pin('{"name":"Affliction","kind":"injury","env":false}', "the F11 preview uses Affliction as the fallback title");
 pin('var lab:TextField = this.hzT(p,i == 0 ? "HEALTH" : "OXYGEN",50,y + 9,150,13,"sb","acc",2);', "the Vitals labels are SemiBold 13 / acc / 2");
 	pin('this.hzHdr19(lab);', "the Vitals labels still go through hzHdr19");
@@ -1880,7 +1880,8 @@ function hz43Row(vitOn, jetOn) {
 	expect(again.jet === 90 && again.o2 === 30, "showing boost again restores the full card");
 }
 expect(src.indexOf("hzMsglogWrap(note,noteW,160)") >= 0, "the history confirm wraps its warning");
-expect(src.indexOf("if(rows[ni].note) { rows[ni].n13 = true; }") >= 0, "CARDS tab notes use the 13 px note row");
+// 0.43.3.2 batch e: CARDS help text moved into the (i) popups; a disabled row's reason still uses the 13 px note row
+expect(src.indexOf("if(rows[ni].dis) { rows[ni].n13 = true; }") >= 0, "CARDS tab notes (a disabled row's reason) use the 13 px note row");
 
 // Version stamp pins: each movie version constant and both xmake set_version calls carry the file version.
 {

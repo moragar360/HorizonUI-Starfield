@@ -79,6 +79,9 @@
 #include "hz_ui_tid.h"
 #include "hz_perf.h"
 #include "hz_wl.h"
+#include "hz_menu_bits.h"   // perf round 2: event-kept open-menu set (pure helpers, tests/menu_bits_test.cpp)
+#include "hz_scan_hl.h"     // 0.43.3.1: [Scanner] ScanHighlightArea (pure helpers, tests/scan_hl_test.cpp)
+#include "hz_scan_ol.h"     // 0.43.3.2: [Scanner] ScanOutlineThickness (pure helpers, tests/scan_ol_test.cpp)
 #include "preset_dedupe.h"
 
 // v0.37: the settings-file code (HZF) replaces files through this (temp file + MoveFileExW)
@@ -207,7 +210,7 @@ namespace HZ
 // HZF lives at file scope (not inside namespace HZ). hz_ini_diff.h is self-contained.
 namespace HZF
 {
-	inline const char* kVersion = "0.42.0";
+	inline const char* kVersion = "0.43.3.0";   // settings schema; 0.42.0 until 2026-11-19 (user request): the first start of this DLL backs up user.ini once
 }
 
 #include "hz_ini_diff.h"
@@ -845,9 +848,17 @@ namespace HZ
 		return HzPerfOn() && g_wlOn.load(std::memory_order_relaxed) != 0;
 	}
 
+	// 0.43.3.1: [Scanner] ScanHighlightArea as last read by LoadIni (load thread at kPostDataLoad, job thread after a
+	// save / apply). Read on the UI thread by ScanHlApply. One int, no Scaleform value.
+	std::atomic<int> g_scanHlWant{hzscanhl::kVanilla};
+	// 0.43.3.2: [Scanner] ScanOutlineThickness, the same way (LoadIni stores, ScanOlApply reads on the UI thread)
+	std::atomic<int> g_scanOlWant{hzscanol::kVanilla};
+
 	void LoadIni(bool a_reloadMsglog = true)
 	{
 		std::string key = "F11";
+		int scanHl = hzscanhl::kVanilla;
+		int scanOl = hzscanol::kVanilla;
 		g_iniDebug = false;
 		g_perfDiag.store(0, std::memory_order_relaxed);
 		g_perfMode.store(0, std::memory_order_relaxed);
@@ -883,10 +894,14 @@ namespace HZ
 			if (HzPerfOn())
 				REX::INFO("watchlog: {} ([Debug] WatchLog={}, needs PerfDiag=1)", g_wlOn.load(std::memory_order_relaxed) ? "on" : "off", g_wlOn.load(std::memory_order_relaxed));
 			if (get("settingskey", v) && !v.empty()) key = v;
+			if (get("scanhighlightarea", v)) scanHl = hzscanhl::Parse(v);
+			if (get("scanoutlinethickness", v)) scanOl = hzscanol::Parse(v);
 			if (hzlog::IniReloadAppliesMsglog(a_reloadMsglog))
 				MsglogLoadSettings(d);
 		}
 		MsglogEnsureInit();
+		g_scanHlWant.store(scanHl, std::memory_order_release);   // applied on the UI thread (ScanHlApply), on a change only
+		g_scanOlWant.store(scanOl, std::memory_order_release);   // applied on the UI thread (ScanOlApply), on a change only
 		auto sc = KeyNameToScan(key);
 		if (!sc) { REX::WARN("unknown SettingsKey '{}', using F11", key); sc = 0x57; key = "F11"; }
 		g_scan = sc;
@@ -1001,12 +1016,6 @@ namespace HZ
 
 	// v0.42.0 r3: menus that block F11 but leave the HUD up underneath (no 3 s "HUD ready" restart after them)
 	constexpr const char* kLightMenus422[] = { "ScopeMenu" };
-	bool LightMenuOpen(RE::UI* a_ui)
-	{
-		for (auto m : kLightMenus422)
-			if (a_ui->IsMenuOpen(m)) return true;
-		return false;
-	}
 
 	// Purpose: menu-map lookup only. Safe off the UI thread. Does not
 	// touch menuObj / uiMovie. Inputs: UI and the light-menu flag.
@@ -1023,15 +1032,147 @@ namespace HZ
 		"SecurityMenu", "ChargenMenu", "PhotoGalleryMenu", "Workshop_BlueprintMenu"
 	};
 
+	// perf round 2 Fix 2: one bit per watched menu (src/hz_menu_bits.h). Bit 0 HUDMenu, then kHudBlockMenus, then
+	// kDenyMenus42, in list order, so the lowest set bit is the menu the old loops named first.
+	constexpr std::size_t kMenuBlock0 = 1;
+	constexpr std::size_t kMenuBlockN = sizeof(kHudBlockMenus) / sizeof(kHudBlockMenus[0]);
+	constexpr std::size_t kMenuDeny0 = kMenuBlock0 + kMenuBlockN;
+	constexpr std::size_t kMenuDenyN = sizeof(kDenyMenus42) / sizeof(kDenyMenus42[0]);
+	constexpr std::size_t kMenuN = kMenuDeny0 + kMenuDenyN;
+	static_assert(kMenuN <= 64, "the open-menu set is one 64-bit word");
+
+	struct HzMenuTable
+	{
+		RE::BSFixedString name[kMenuN];
+		const char*       raw[kMenuN];
+		std::uint64_t     lightBits;   // deny entries that are light menus (kLightMenus422: ScopeMenu)
+	};
+
+	// Purpose: the watched menu names as pool strings, built once on first use (in game, after the string pool
+	// is up) instead of a temporary BSFixedString per IsMenuOpen call. Never destroyed, so no pool release runs at
+	// process exit. Thread-safe first use (function-local static). Author: Moragar. Last modified: 2026-11-14.
+	const HzMenuTable& HzMenus()
+	{
+		static const HzMenuTable* const s_table = [] {
+			auto* t = new HzMenuTable{};
+			t->raw[0] = "HUDMenu";
+			for (std::size_t i = 0; i < kMenuBlockN; ++i)
+				t->raw[kMenuBlock0 + i] = kHudBlockMenus[i];
+			for (std::size_t i = 0; i < kMenuDenyN; ++i) {
+				t->raw[kMenuDeny0 + i] = kDenyMenus42[i];
+				for (auto l : kLightMenus422)
+					if (std::strcmp(kDenyMenus42[i], l) == 0)
+						t->lightBits |= std::uint64_t{ 1 } << (kMenuDeny0 + i);
+			}
+			for (std::size_t i = 0; i < kMenuN; ++i)
+				t->name[i] = t->raw[i];
+			return t;
+		}();
+		return *s_table;
+	}
+
+	// Purpose: full menu-map scan of every watched name (cached strings). Menu-map only, safe off the UI thread.
+	// Inputs: UI. Outputs: the open-menu bits.
+	std::uint64_t HzMenuScan(RE::UI* a_ui)
+	{
+		const auto& t = HzMenus();
+		std::uint64_t bits = 0;
+		for (std::size_t i = 0; i < kMenuN; ++i)
+			if (a_ui->IsMenuOpen(t.name[i])) bits |= std::uint64_t{ 1 } << i;
+		return bits;
+	}
+
+	std::atomic<int>           g_menuSink{0};          // 0 pending, 1 registered, -1 failed: every check scans, as before
+	std::atomic<std::uint64_t> g_menuBits{0};          // open watched menus (event-kept, scan-checked)
+	std::atomic<std::uint32_t> g_menuGen{0};           // bumped by every watched open / close event (before its writes)
+	std::atomic<std::uint32_t> g_menuDone{0};          // bumped by every watched open / close event (after its writes)
+	std::atomic<std::uint32_t> g_menuHudGen{0};        // bumped by every HUDMenu open / close event (before g_menuGen)
+	std::atomic<ULONGLONG>     g_menuScanAt{0};        // last stored scan (0 = not seeded yet)
+	std::atomic<bool>          g_menuDirty{false};     // a close event asked for a rescan on the next check
+	std::atomic<std::uint64_t> g_menuPend{0};          // blocker opens from events that IsMenuOpen does not show yet
+	std::atomic<ULONGLONG>     g_menuPendAt{0};        // time of the last open event
+	std::atomic<int>           g_menuHudWant{hzmenu::kHudWatchNone};   // a HUDMenu event: rescan every check until it shows
+	std::atomic<bool>          g_menuScanBusy{false};  // one thread stores a scan at a time
+	std::atomic<bool>          g_menuMissLogged{false};
+
+	// The shared state hzmenu::Check / hzmenu::EventStep run on (all sequentially consistent: the reader's
+	// "read the counter again after the store" needs the sink's counter-first order to be seen in order).
+	struct HzMenuShared
+	{
+		RE::UI* ui = nullptr;
+		std::uint64_t At() { return g_menuScanAt.load(); }
+		void SetAt(std::uint64_t v) { g_menuScanAt.store(v); }
+		int HudWant() { return g_menuHudWant.load(); }
+		void SetHudWant(int v) { g_menuHudWant.store(v); }
+		void HudWantSwap(int a_from, int a_to) { g_menuHudWant.compare_exchange_strong(a_from, a_to); }
+		bool Dirty() { return g_menuDirty.load(); }
+		void SetDirty(bool v) { g_menuDirty.store(v); }
+		std::uint64_t Bits() { return g_menuBits.load(); }
+		std::uint64_t BitsSwap(std::uint64_t v) { return g_menuBits.exchange(v); }
+		void BitsOr(std::uint64_t v) { g_menuBits.fetch_or(v); }
+		void BitsAnd(std::uint64_t v) { g_menuBits.fetch_and(v); }
+		std::uint32_t Gen() { return g_menuGen.load(); }
+		void GenInc() { g_menuGen.fetch_add(1); }
+		std::uint32_t Done() { return g_menuDone.load(); }
+		void DoneInc() { g_menuDone.fetch_add(1); }
+		std::uint32_t HudGen() { return g_menuHudGen.load(); }
+		void HudGenInc() { g_menuHudGen.fetch_add(1); }
+		std::uint64_t Pend() { return g_menuPend.load(); }
+		void PendSwap(std::uint64_t a_from, std::uint64_t a_to) { g_menuPend.compare_exchange_strong(a_from, a_to); }
+		void PendOr(std::uint64_t v) { g_menuPend.fetch_or(v); }
+		void PendAnd(std::uint64_t v) { g_menuPend.fetch_and(v); }
+		std::uint64_t PendAt() { return g_menuPendAt.load(); }
+		void SetPendAt(std::uint64_t v) { g_menuPendAt.store(v); }
+		bool BusyTake() { return g_menuScanBusy.exchange(true); }
+		void BusyDrop() { g_menuScanBusy.store(false); }
+		std::uint64_t Scan() { return HzMenuScan(ui); }
+	};
+
+	// Purpose: the open-menu bits for HudMenusClear / HudBlockingMenu. With the sink: the event-kept set, scanned
+	// again when a close asked for it, on every check while a HUDMenu event waits for the scan to agree, or when
+	// it is older than hzlog::kHudSafeCacheMs (the HudSafe 150 ms cadence; seeded by the first scan). Blocker bits
+	// err toward covered, bit 0 (HUDMenu) toward closed (hz_menu_bits.h). Without the sink: a full scan per
+	// check, as before. Menu-map only, safe off the UI thread (movies advance on several threads).
+	// Inputs: UI. Outputs: bits. Author: Moragar. Last modified: 2026-11-14.
+	std::uint64_t HzMenuBits(RE::UI* a_ui)
+	{
+		if (g_menuSink.load(std::memory_order_acquire) != 1)
+			return HzMenuScan(a_ui);
+		HzMenuShared sh{ a_ui };
+		const auto r = hzmenu::Check(sh, GetTickCount64(), hzlog::kHudSafeCacheMs);
+		if (r.unseen != 0 && (HzWlOn() || HzPerfOn()) && !g_menuMissLogged.exchange(true, std::memory_order_relaxed))
+			REX::INFO("menu set: the {} ms scan found an open menu without its open event (logged once)", hzlog::kHudSafeCacheMs);
+		return r.bits;
+	}
+
+	// Purpose: keep g_menuBits from MenuOpenCloseEvent (hzmenu::EventStep). A blocker open sets its bit (held
+	// until a scan confirms it, at most hzmenu::kPendHoldMs); a blocker close drops the hold and asks for a
+	// rescan. A HUDMenu close clears bit 0 at once; a HUDMenu open or close asks for a rescan on every check until
+	// the scan agrees. No Scaleform, no settings. Inputs: the event. Outputs: kContinue. Author: Moragar.
+	// Last modified: 2026-11-14.
+	class MenuOpenCloseSink final : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
+	{
+	public:
+		RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent& a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
+		{
+			try {
+				const auto& t = HzMenus();
+				for (std::size_t i = 0; i < kMenuN; ++i) {
+					if (!(a_event.menuName == t.name[i])) continue;
+					HzMenuShared sh{};
+					hzmenu::Event(sh, static_cast<int>(i), a_event.opening, GetTickCount64());
+					break;
+				}
+			} catch (...) {
+			}
+			return RE::BSEventNotifyControl::kContinue;
+		}
+	};
+
 	bool HudMenusClear(RE::UI* a_ui, bool a_light = true)
 	{
 		if (!a_ui) return false;
-		if (!a_ui->IsMenuOpen("HUDMenu")) return false;
-		for (auto m : kHudBlockMenus)
-			if (a_ui->IsMenuOpen(m)) return false;
-		for (auto m : kDenyMenus42)   // v0.42.0
-			if ((a_light || !LightMenuOpen(a_ui) || std::strcmp(m, "ScopeMenu") != 0) && a_ui->IsMenuOpen(m)) return false;
-		return true;
+		return hzmenu::Clear(HzMenuBits(a_ui), a_light, HzMenus().lightBits);   // perf round 2: no per-entry ScopeMenu lookup
 	}
 
 	// Purpose: name the menu that keeps the HUD from being ready.
@@ -1039,12 +1180,9 @@ namespace HZ
 	const char* HudBlockingMenu(RE::UI* a_ui)
 	{
 		if (!a_ui) return "?";
-		if (!a_ui->IsMenuOpen("HUDMenu")) return "HUDMenu";
-		for (auto m : kHudBlockMenus)
-			if (a_ui->IsMenuOpen(m)) return m;
-		for (auto m : kDenyMenus42)
-			if (a_ui->IsMenuOpen(m)) return m;
-		return "menu";
+		const int i = hzmenu::FirstBlocking(HzMenuBits(a_ui));
+		if (i < 0 || static_cast<std::size_t>(i) >= kMenuN) return "menu";
+		return HzMenus().raw[i];
 	}
 
 	// Purpose: HUD is up and the movie document is live. UI thread only
@@ -1433,6 +1571,9 @@ namespace HZ
 	std::atomic<bool> g_fileActReady{false};
 	std::atomic<bool> g_fileReplyReady{false};
 	std::atomic<bool> g_fileSaveReady{false};
+	// arch-fixes Fix 2: bumped by the job thread after it wrote HorizonUI.user.ini; read on the UI thread only
+	// (IniSavedPushMsg, from the HUD messages movie's own AdvanceFrame). A counter, no Scaleform value.
+	std::atomic<std::uint32_t> g_iniSavedRev{0};
 	std::atomic<bool> g_fileMsglogReady{false};
 
 	std::string Today()
@@ -1490,7 +1631,10 @@ namespace HZ
 			}
 			if (r.ok) REX::INFO("files: {} -> {}", kind, r.msg);
 			else REX::WARN("files: {} FAILED: {}", kind, r.msg);
-			if (r.ok && (kind == "apply" || kind == "restore" || kind == "undo")) LoadIni();
+			if (r.ok && (kind == "apply" || kind == "restore" || kind == "undo")) {
+				LoadIni();
+				g_iniSavedRev.fetch_add(1, std::memory_order_acq_rel);   // arch-fixes Fix 2
+			}
 			const std::string reply = kind + "|" + (r.ok ? "1" : "0") + "|" + HZF::CleanField(r.msg, 200);
 			{
 				std::lock_guard lk(g_fileMu);
@@ -1513,6 +1657,7 @@ namespace HZ
 			if (r.ok) {
 				REX::INFO("{}", r.msg);
 				LoadIni(false);
+				g_iniSavedRev.fetch_add(1, std::memory_order_acq_rel);   // arch-fixes Fix 2
 			} else {
 				REX::WARN("save FAILED: {}", r.msg);
 			}
@@ -1535,9 +1680,10 @@ namespace HZ
 					std::string next;
 					if (!HZF::MergeMessageLogUser(exists, readOk, user, mlIni, next)) {
 						REX::WARN("message log save skipped (could not read HorizonUI.user.ini)");
-					} else if (HZF::WriteAtomic(P.user, next))
+					} else if (HZF::WriteAtomic(P.user, next)) {
 						REX::INFO("message log settings saved");
-					else
+						g_iniSavedRev.fetch_add(1, std::memory_order_acq_rel);   // arch-fixes Fix 2
+					} else
 						REX::WARN("message log save FAILED");
 				}
 			} catch (...) {
@@ -1775,6 +1921,32 @@ namespace HZ
 		g_pushOpenMsg = open;
 	}
 
+	// arch-fixes Fix 2. Purpose: tell the Comms movie that HorizonUI.user.ini changed, so it re-reads on a real save
+	// instead of every 5 s. UI thread only: called from BannerPoll inside the HUD messages movie's own AdvanceFrame.
+	// The menu is looked up on each call (MenuLive); no menuObj or GFx::Value is kept. Only two plain numbers are kept:
+	// the last revision sent and the address of the movie root it was sent to (an identity, never dereferenced), so a
+	// new HUDMessagesMenu gets one announce call. Steady state: one atomic load and two compares, no Scaleform call.
+	// An older Comms movie without hzcIniSaved is skipped (it keeps its own 5 s timer).
+	std::uint32_t g_iniSavedSent = 0;
+	const void*   g_iniSavedRoot = nullptr;
+	void IniSavedPushMsg(RE::UI* a_ui)
+	{
+		const auto rev = g_iniSavedRev.load(std::memory_order_acquire);
+		const void* root = hzlog::g_advancingRoot;
+		if (rev == g_iniSavedSent && root == g_iniSavedRoot) return;
+		if (!a_ui || !root) return;
+		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu" })
+			if (a_ui->IsMenuOpen(m)) return;
+		auto msg = MenuLive(a_ui, "HUDMessagesMenu", "hzcIniSaved");
+		if (!msg) return;
+		if (msg->menuObj.HasMember("hzcIniSaved")) {
+			GValue arg(static_cast<double>(rev));
+			msg->menuObj.Invoke("hzcIniSaved", nullptr, &arg, 1);
+		}
+		g_iniSavedSent = rev;
+		g_iniSavedRoot = root;
+	}
+
 	// Purpose: job-thread marker check. No Scaleform. Author: Moragar.
 	// Last modified: 2026-10-28.
 	void BannerPollWork(ULONGLONG a_now)
@@ -1785,6 +1957,9 @@ namespace HZ
 		g_banMarkT = a_now;
 	}
 
+	void ScanHlApply();   // 0.43.3.1, defined after HzAddrSlot
+	void ScanOlApply();   // 0.43.3.2, defined after ScanHlApply
+
 	void BannerPoll(ULONGLONG a_now)
 	{
 		if (a_now < g_banNext) return;
@@ -1792,6 +1967,9 @@ namespace HZ
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) return;
 		ScanPushMsg(ui, a_now);
+		IniSavedPushMsg(ui);   // arch-fixes Fix 2: settings-saved signal (edge only)
+		ScanHlApply();         // 0.43.3.1: scanner highlight area (one atomic load and a compare unless it changed)
+		ScanOlApply();         // 0.43.3.2: scanner outline thickness (the same: one atomic load and a compare)
 		bool scan = g_banScanMod.load() == 1 && ui->IsMenuOpen("MonocleMenu");
 		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu" })
 			if (ui->IsMenuOpen(m)) scan = false;
@@ -2182,6 +2360,64 @@ namespace HZ
 		}
 	}
 
+	static void HzMenuSinkRegisterCall(RE::UI* a_ui, RE::BSTEventSink<RE::MenuOpenCloseEvent>* a_sink)
+	{
+		if (a_ui && a_sink) a_ui->RegisterSink<RE::MenuOpenCloseEvent>(a_sink);
+	}
+#if defined(_MSC_VER)
+	// Same SEH shape as HzHudMsgRegisterSEH: the call goes through a function pointer (MSVC C2712).
+	static int HzMenuSinkRegisterSEH(RE::UI* a_ui, RE::BSTEventSink<RE::MenuOpenCloseEvent>* a_sink) noexcept
+	{
+		if (!a_ui || !a_sink) return 0;
+		using Fn = void (*)(RE::UI*, RE::BSTEventSink<RE::MenuOpenCloseEvent>*);
+		Fn fn = &HzMenuSinkRegisterCall;
+		__try {
+			fn(a_ui, a_sink);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+#else
+	static int HzMenuSinkRegisterSEH(RE::UI* a_ui, RE::BSTEventSink<RE::MenuOpenCloseEvent>* a_sink) noexcept
+	{
+		if (!a_ui || !a_sink) return 0;
+		try { HzMenuSinkRegisterCall(a_ui, a_sink); return 1; } catch (...) { return 0; }
+	}
+#endif
+
+	// Purpose: perf round 2 Fix 2. Register the MenuOpenCloseEvent sink on RE::UI (its own event source; the
+	// RegisterSink address id is the one the ShowHUDMessageEvent sink already uses). On any failure the menu
+	// check keeps its full scan per call, as before. Inputs: none. Outputs: one log line. Author: Moragar.
+	// Last modified: 2026-11-14.
+	void RegisterMenuOpenCloseSink()
+	{
+		if (g_menuSink.load(std::memory_order_acquire) != 0) return;
+		try {
+			auto ui = RE::UI::GetSingleton();
+			if (!ui) {
+				g_menuSink.store(-1, std::memory_order_release);
+				REX::WARN("MenuOpenCloseEvent sink not registered: UI is null (menu check scans every call)");
+				return;
+			}
+			static MenuOpenCloseSink sink;
+			if (!HzMenuSinkRegisterSEH(ui, &sink)) {
+				g_menuSink.store(-1, std::memory_order_release);
+				REX::WARN("MenuOpenCloseEvent sink not registered: RegisterSink faulted (menu check scans every call)");
+				return;
+			}
+			g_menuScanAt.store(0, std::memory_order_release);   // the first check seeds the set with a full scan
+			g_menuSink.store(1, std::memory_order_release);
+			REX::INFO("MenuOpenCloseEvent sink registered (menu check)");
+		} catch (const std::exception& ex) {
+			g_menuSink.store(-1, std::memory_order_release);
+			REX::WARN("MenuOpenCloseEvent sink failed: {}", ex.what());
+		} catch (...) {
+			g_menuSink.store(-1, std::memory_order_release);
+			REX::WARN("MenuOpenCloseEvent sink failed: unknown error");
+		}
+	}
+
 	// The sink thread only pushes. The timestamp is the enqueue time. Poll drops a note older than kRxMaxAge.
 	constexpr std::size_t kRxQueueMax = 8;
 	constexpr ULONGLONG kRxMaxAge = 3000;
@@ -2550,6 +2786,246 @@ namespace HZ
 		try { HzFormFillCall(a_out); return 1; } catch (...) { return 0; }
 	}
 #endif
+
+	// ---- 0.43.3.1: [Scanner] ScanHighlightArea (src/hz_scan_hl.h) ----
+	// Purpose: write the game INI settings that size the hand scanner highlight (cone, outline radius and, since
+	// 0.43.3.2, the outline fade fResourceDecalRenderRadiusFalloffPct for Full screen / Max), only when the wanted position
+	// changed: at load (the first HUD messages poll after kPostDataLoad read the ini) and after a settings save / apply
+	// (LoadIni runs again on the job thread and stores a new g_scanHlWant). UI thread only: called from BannerPoll on
+	// the HUDMessagesMenu advance (100 ms gate). Steady state: one atomic load and one int compare. No Scaleform, no
+	// GFx value, no file. The INISettingCollection singleton id is checked in the versionlib table first (a missing id
+	// would end the process inside REL); the lookups are null-checked and run under SEH. The setting lookup walks the
+	// game's INI list once per change. Vanilla at start writes nothing. The game's own values are read once, right
+	// before the first write, and written back on a later Vanilla. A missing id or setting is logged once and the
+	// change is dropped (no retry until the position changes again). Author: Moragar. Last modified: 2026-11-18.
+	int             g_scanHlApplied = hzscanhl::kVanilla;   // UI thread only
+	hzscanhl::Orig  g_scanHlOrig;                           // UI thread only
+	bool            g_scanHlMissLogged = false;             // UI thread only
+
+	struct HzScanHlRaw
+	{
+		int   capture;      // 1 = read the game's values before writing
+		int   writeDot;     // 1 = write dot (a restore writes back only what was found at capture)
+		int   writeDecal;
+		int   writeFall;    // 0.43.3.2: the outline fade (Full / Max; a captured value given back otherwise)
+		float dot;
+		float decal;
+		float fall;
+		int   ok;           // out: 1 ran, -1 no collection
+		int   dotFound;     // out: the setting exists as a float
+		int   decalFound;
+		int   fallFound;
+		float dotWas;       // out: the value before the write (capture only)
+		float decalWas;
+		float fallWas;
+	};
+
+	static RE::Setting* HzScanHlFind(RE::INISettingCollection* a_col, const char* a_key)
+	{
+		if (!a_col || !a_key) return nullptr;
+		auto* s = a_col->GetSetting(a_key);
+		if (!s || !s->Is<float>()) return nullptr;
+		return s;
+	}
+
+	static void HzScanHlCall(HzScanHlRaw* a_io)
+	{
+		if (!a_io) return;
+		a_io->ok = -1;
+		auto* col = RE::INISettingCollection::GetSingleton();
+		if (!col) return;
+		auto* sd = HzScanHlFind(col, hzscanhl::kKeyDot);
+		auto* sr = HzScanHlFind(col, hzscanhl::kKeyDecal);
+		auto* sf = HzScanHlFind(col, hzscanhl::kKeyFall);
+		a_io->dotFound = sd ? 1 : 0;
+		a_io->decalFound = sr ? 1 : 0;
+		a_io->fallFound = sf ? 1 : 0;
+		if (a_io->capture) {
+			if (sd) a_io->dotWas = sd->GetFloat();
+			if (sr) a_io->decalWas = sr->GetFloat();
+			if (sf) a_io->fallWas = sf->GetFloat();
+		}
+		if (sd && a_io->writeDot) sd->SetFloat(a_io->dot);
+		if (sr && a_io->writeDecal) sr->SetFloat(a_io->decal);
+		if (sf && a_io->writeFall) sf->SetFloat(a_io->fall);
+		a_io->ok = 1;
+	}
+
+#if defined(_MSC_VER)
+	static int HzScanHlSEH(HzScanHlRaw* a_io) noexcept
+	{
+		if (!a_io) return 0;
+		using Fn = void (*)(HzScanHlRaw*);
+		Fn fn = &HzScanHlCall;
+		__try {
+			fn(a_io);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+#else
+	static int HzScanHlSEH(HzScanHlRaw* a_io) noexcept
+	{
+		if (!a_io) return 0;
+		try { HzScanHlCall(a_io); return 1; } catch (...) { return 0; }
+	}
+#endif
+
+	void ScanHlApply()
+	{
+		const int want = g_scanHlWant.load(std::memory_order_acquire);
+		if (want == g_scanHlApplied) return;
+		const auto plan = hzscanhl::Next(want, g_scanHlApplied, g_scanHlOrig);
+		if (plan.act == hzscanhl::Act::None) { g_scanHlApplied = want; return; }
+		const auto id = RE::ID::INISettingCollection::Singleton.id();
+		const int slot = id != 0 ? HzAddrSlot(id) : -1;
+		if (hzaddr::AddrSlotRetry(slot)) return;   // versionlib not read yet (job thread): the next poll tries again
+		g_scanHlApplied = want;                    // one attempt per change: a miss is not retried every poll
+		if (hzaddr::AddrSlotMiss(slot)) {
+			if (!g_scanHlMissLogged) { REX::WARN("scanner highlight: INISettingCollection id {} missing, left to the game", id); g_scanHlMissLogged = true; }
+			return;
+		}
+		const bool restore = plan.act == hzscanhl::Act::Restore;
+		HzScanHlRaw io{};
+		io.capture = g_scanHlOrig.have ? 0 : 1;
+		io.writeDot = restore ? (g_scanHlOrig.dotOk ? 1 : 0) : 1;
+		io.writeDecal = restore ? (g_scanHlOrig.decalOk ? 1 : 0) : 1;
+		io.writeFall = plan.wFall ? 1 : 0;   // a restore / Horizon dot sets wFall only for a captured fade
+		io.dot = plan.dot;
+		io.decal = plan.decal;
+		io.fall = plan.fall;
+		const int ran = HzScanHlSEH(&io);
+		if (!ran || io.ok != 1 || (!io.dotFound && !io.decalFound)) {
+			if (!g_scanHlMissLogged) { REX::WARN("scanner highlight: game settings not found ({} / {}), left to the game", hzscanhl::kKeyDot, hzscanhl::kKeyDecal); g_scanHlMissLogged = true; }
+			return;
+		}
+		if (io.capture) {
+			g_scanHlOrig.have = true;
+			g_scanHlOrig.dotOk = io.dotFound != 0;
+			g_scanHlOrig.decalOk = io.decalFound != 0;
+			g_scanHlOrig.fallOk = io.fallFound != 0;
+			g_scanHlOrig.dot = io.dotWas;
+			g_scanHlOrig.decal = io.decalWas;
+			g_scanHlOrig.fall = io.fallWas;
+		}
+		if ((!io.dotFound || !io.decalFound) && !g_scanHlMissLogged) {
+			REX::WARN("scanner highlight: {} not found, only the other setting is set", io.dotFound ? hzscanhl::kKeyDecal : hzscanhl::kKeyDot);
+			g_scanHlMissLogged = true;
+		}
+		if (!io.fallFound && plan.wFall && !g_scanHlMissLogged) {
+			REX::WARN("scanner highlight: {} not found, the outline fade is left to the game", hzscanhl::kKeyFall);
+			g_scanHlMissLogged = true;
+		}
+		if (plan.wFall) REX::INFO("scanner highlight: {} ({} / {} / fade {})", hzscanhl::Name(want), plan.dot, plan.decal, plan.fall);
+		else REX::INFO("scanner highlight: {} ({} / {})", hzscanhl::Name(want), plan.dot, plan.decal);
+	}
+
+	// ---- 0.43.3.2: [Scanner] ScanOutlineThickness (src/hz_scan_ol.h) ----
+	// Purpose: write the ten [Monocle] fHighlightScannableOutlineThickness* game settings, only when the wanted position
+	// changed: at load and after a settings save / apply (LoadIni stores g_scanOlWant), exactly like ScanHlApply. UI
+	// thread only: called from BannerPoll right after ScanHlApply (100 ms gate). Steady state: one atomic load and one
+	// int compare. No Scaleform, no GFx value, no file. Same id check (INISettingCollection singleton) and SEH; each
+	// lookup is null and type (float) checked; a setting that is not found is neither read nor written. The game's own
+	// values are read once, right before the first write; Thick / Thicker scale those; Vanilla writes them back. The
+	// log line says how many of the ten were found (a missing one shows up there). Author: Moragar. Last modified: 2026-11-18.
+	int             g_scanOlApplied = hzscanol::kVanilla;   // UI thread only
+	hzscanol::Orig  g_scanOlOrig;                           // UI thread only
+	bool            g_scanOlMissLogged = false;             // UI thread only
+
+	struct HzScanOlRaw
+	{
+		int   capture;              // 1 = read the game's values before writing
+		int   write[hzscanol::kN];  // 1 = write val[i] (only for a setting found)
+		float val[hzscanol::kN];
+		int   ok;                   // out: 1 ran, -1 no collection
+		int   found[hzscanol::kN];  // out: the setting exists as a float
+		float was[hzscanol::kN];    // out: the value before the write (capture only)
+	};
+
+	static void HzScanOlCall(HzScanOlRaw* a_io)
+	{
+		if (!a_io) return;
+		a_io->ok = -1;
+		auto* col = RE::INISettingCollection::GetSingleton();
+		if (!col) return;
+		for (int i = 0; i < hzscanol::kN; ++i) {
+			auto* s = HzScanHlFind(col, hzscanol::kKeys[i]);
+			a_io->found[i] = s ? 1 : 0;
+			if (!s) continue;
+			if (a_io->capture) a_io->was[i] = s->GetFloat();
+			if (a_io->write[i]) s->SetFloat(a_io->val[i]);
+		}
+		a_io->ok = 1;
+	}
+
+#if defined(_MSC_VER)
+	static int HzScanOlSEH(HzScanOlRaw* a_io) noexcept
+	{
+		if (!a_io) return 0;
+		using Fn = void (*)(HzScanOlRaw*);
+		Fn fn = &HzScanOlCall;
+		__try {
+			fn(a_io);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+#else
+	static int HzScanOlSEH(HzScanOlRaw* a_io) noexcept
+	{
+		if (!a_io) return 0;
+		try { HzScanOlCall(a_io); return 1; } catch (...) { return 0; }
+	}
+#endif
+
+	void ScanOlApply()
+	{
+		const int want = g_scanOlWant.load(std::memory_order_acquire);
+		if (want == g_scanOlApplied) return;
+		const auto act = hzscanol::Next(want, g_scanOlApplied, g_scanOlOrig);
+		if (act == hzscanol::Act::None) { g_scanOlApplied = want; return; }
+		const auto id = RE::ID::INISettingCollection::Singleton.id();
+		const int slot = id != 0 ? HzAddrSlot(id) : -1;
+		if (hzaddr::AddrSlotRetry(slot)) return;   // versionlib not read yet (job thread): the next poll tries again
+		g_scanOlApplied = want;                    // one attempt per change: a miss is not retried every poll
+		if (hzaddr::AddrSlotMiss(slot)) {
+			if (!g_scanOlMissLogged) { REX::WARN("scanner outline: INISettingCollection id {} missing, left to the game", id); g_scanOlMissLogged = true; }
+			return;
+		}
+		const bool restore = act == hzscanol::Act::Restore;
+		HzScanOlRaw io{};
+		io.capture = g_scanOlOrig.have ? 0 : 1;
+		if (io.capture) {
+			// the values to write come from the captured originals: capture first (no write), then write below
+			const int ran0 = HzScanOlSEH(&io);
+			if (!ran0 || io.ok != 1) {
+				if (!g_scanOlMissLogged) { REX::WARN("scanner outline: game settings not read, left to the game"); g_scanOlMissLogged = true; }
+				return;
+			}
+			g_scanOlOrig.have = true;
+			for (int i = 0; i < hzscanol::kN; ++i) { g_scanOlOrig.ok[i] = io.found[i] != 0; g_scanOlOrig.v[i] = io.was[i]; }
+			io = HzScanOlRaw{};
+		}
+		int nFound = 0;
+		for (int i = 0; i < hzscanol::kN; ++i) {
+			if (!g_scanOlOrig.ok[i]) continue;
+			++nFound;
+			io.write[i] = 1;
+			io.val[i] = restore ? g_scanOlOrig.v[i] : hzscanol::Value(want, g_scanOlOrig.v[i]);
+		}
+		if (nFound == 0) {
+			if (!g_scanOlMissLogged) { REX::WARN("scanner outline: none of the {} [Monocle] outline settings found, left to the game", hzscanol::kN); g_scanOlMissLogged = true; }
+			return;
+		}
+		const int ran = HzScanOlSEH(&io);
+		if (!ran || io.ok != 1) {
+			if (!g_scanOlMissLogged) { REX::WARN("scanner outline: write failed, left to the game"); g_scanOlMissLogged = true; }
+			return;
+		}
+		REX::INFO("scanner outline: {} (x{}, {} of {} settings found)", hzscanol::Name(want), restore ? 1.0f : hzscanol::Mul(want), nFound, hzscanol::kN);
+	}
 
 	// Purpose: location, player name, currentPlayerID, and Calendar. ID-gated
 	// (63412 / 883588 / 937673 / PlayerCharacter singleton) then the same
@@ -5330,6 +5806,7 @@ namespace HZ
 			// SEH does not catch that lookup. A null source or a caught fault is logged, and the game continues.
 			RegisterShowHUDMessageSink();
 			RegisterSaveLoadSink();
+			RegisterMenuOpenCloseSink();   // perf round 2: event-kept open-menu set for the HUD menu check
 			LoadIni();
 			if (auto task = SFSE::GetTaskInterface()) {
 				task->AddPermanentTask([]() { try { Poll(); } catch (...) {} });

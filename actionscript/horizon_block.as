@@ -243,8 +243,8 @@
       public var hzCmpPlayerMark:Boolean = true;
       private var hzDbgCmp:String = "";
       // layout edit (ARRANGE CARDS)
-      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages","Watch"];
-      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES","WATCH"];
+      private static const HZ_LAY_KEYS:Array = ["Jetpack","Vitals","Planet","Afflictions","Ammo","Quests","Compass","Compact","Character","Enemy","Stealth","XpToast","Subtitle","Speaker","Dialogue","MissionToast","HudMessages","Watch","Hazard"];
+      private static const HZ_LAY_NAMES:Array = ["JETPACK","VITALS","PLANET","AFFLICTIONS","EQUIPMENT","QUEST TRACKER","COMPASS","COMPACT STRIPS","CHARACTER","ENEMY HEALTH","STEALTH METER","XP TOAST","SUBTITLES","SPEAKER CARD","DIALOGUE","MISSION TOAST","HUD MESSAGES","WATCH","HAZARD STATUS"];
       public var hzLay:Object = {};
       private var hzLayOrig:Object = null;
       private var hzArrange:Boolean = false;
@@ -549,7 +549,7 @@
       private function hzApplyScale() : void
       {
          // v0.34: each card has its own factor ([Cards] <Card>Scale, -1 = HudScale)
-         var m:Array = [[this.HorizonCard_mc,"Jetpack"],[this.HorizonVitals_mc,"Vitals"],[this.HorizonEnv_mc,"Planet"],[this.HorizonAffl_mc,"Afflictions"],[this.HorizonAmmo_mc,"Equipment"],[this.HorizonQuest_mc,"Quests"],[this.HorizonCompass_mc,"Compass"],[this.HorizonCompact_mc,"Compact"],[this.HorizonCompactQuest_mc,"Quests"],[this.HorizonChar_mc,"Character"],[this.HorizonEnemy_mc,"Enemy"],[this.HorizonStealth_mc,"Stealth"],[this.HorizonXp_mc,"XpToast"],[this.hz43Watch,"Watch"]];
+         var m:Array = [[this.HorizonCard_mc,"Jetpack"],[this.HorizonVitals_mc,"Vitals"],[this.HorizonEnv_mc,"Planet"],[this.HorizonAffl_mc,"Afflictions"],[this.HorizonAmmo_mc,"Equipment"],[this.HorizonQuest_mc,"Quests"],[this.HorizonCompass_mc,"Compass"],[this.HorizonCompact_mc,"Compact"],[this.HorizonCompactQuest_mc,"Quests"],[this.HorizonChar_mc,"Character"],[this.HorizonEnemy_mc,"Enemy"],[this.HorizonStealth_mc,"Stealth"],[this.HorizonXp_mc,"XpToast"],[this.hz43Watch,"Watch"],[this.HorizonHazard_mc,"Hazard"]];
          for each(var e:Array in m)
          {
             var c:Sprite = e[0] as Sprite;
@@ -1163,36 +1163,171 @@
          this.hzFixFonts();
          var deg:Number = (r * 180 / Math.PI) % 360;
          if(deg < 0) { deg += 360; }
-         var i:int = 0;
-         var ppd:Number = (HZ_CMP_W - 40) / 180;
-         while(i < HZ_CARD.length)
+         // perf round 2 Fix 1: the strip (ticks, labels, heading texts) redraws only when the heading moved by the
+         // threshold (hzCmpTickDue: 0.25 deg, at most half a pixel), or the compact form, the main color or the strip width
+         // changed. Markers, quests and visibility have their own change gates below.
+         var due:Boolean = this.hzCmpTickDue(deg);
+         if(due)
          {
-            var t:TextField = this.hzCmpLabels[i];
-            var d:Number = i * 45 - deg;
-            while(d > 180) { d -= 360; }
-            while(d < -180) { d += 360; }
-            t.visible = Math.abs(d) <= 90 && Math.abs(d) > 14;
-            t.x = HZ_CMP_W / 2 + d * ppd - t.textWidth / 2 - 2;
-            i++;
+            var i:int = 0;
+            var ppd:Number = (HZ_CMP_W - 40) / 180;
+            while(i < HZ_CARD.length)
+            {
+               var t:TextField = this.hzCmpLabels[i];
+               var d:Number = i * 45 - deg;
+               while(d > 180) { d -= 360; }
+               while(d < -180) { d += 360; }
+               t.visible = Math.abs(d) <= 90 && Math.abs(d) > 14;
+               t.x = HZ_CMP_W / 2 + d * ppd - t.textWidth / 2 - 2;
+               i++;
+            }
+            var hi:int = int(Math.round(deg)) % 360;
+            if(hi != this.hzCmpCtrI)   // the card point follows the whole degree, so the text changes only with it
+            {
+               this.hzCmpCtrI = hi;
+               var idx:int = int(Math.round(deg / 45)) % 8;
+               var ds:String = String(hi);
+               while(ds.length < 3) { ds = "0" + ds; }
+               this.hzCmpCenter.text = HZ_CARD[idx] + " · " + ds + "°";
+            }
          }
-         var idx:int = int(Math.round(deg / 45)) % 8;
-         var ds:String = String(int(Math.round(deg)) % 360);
-         while(ds.length < 3) { ds = "0" + ds; }
-         this.hzCmpCenter.text = HZ_CARD[idx] + " · " + ds + "°";
          this.hzCmpDeg = deg;
          if(this.hzPerfOn) { this.hzPsMark(41); }
-         this.hzCmpTick19();
+         if(due) { this.hzCmpTick19(); this.hzCmpTickKeep(deg); }
          if(this.hzPerfOn) { this.hzPsMark(42); }
          this.hzCmpData = e.data;
          this.hzDrawCompassMarkers();
          if(this.hzPerfOn) { this.hzPsMark(43); }
          if(this.HorizonQuest_mc)
          {
-            this.hzUpdateQuests(e.data.aMissionMarkers as Array);
+            this.hzCmpQuests(e.data.aMissionMarkers as Array);
             if(this.hzPerfOn) { this.hzPsMark(44); }
-            this.hzRefreshVisibility();
+            if(this.hzCmpVisDue()) { this.hzRefreshVisibility(); }
             if(this.hzPerfOn) { this.hzPsMark(45); }
          }
+      }
+
+      // ---- perf round 2 Fix 1: compass change gates (no timer, no frame handler; they replace work the dispatch did) ----
+      private var hzCmpTkDeg:Number = NaN;   // heading the strip was last drawn at (NaN = redraw on the next dispatch)
+      private var hzCmpTkC:int = -2;
+      private var hzCmpTkCol:Number = -1;
+      private var hzCmpTkW:Number = -1;
+      private var hzCmpCtrI:int = -1;        // whole degree in the legacy center text
+      private var hzCmpHdI:int = -1;         // whole degree in the v0.19 heading texts
+      private var hzCmpHdC:int = -2;
+      // true when the strip must redraw: the heading moved by 0.25 deg (or half a pixel on a wide strip, whichever is
+      // smaller), or the compact form, the main color or the strip width changed since the last draw
+      private function hzCmpTickDue(deg:Number) : Boolean
+      {
+         if(isNaN(this.hzCmpTkDeg) || this.hzCmpC != this.hzCmpTkC || this.hzCmpW19 != this.hzCmpTkW) { return true; }
+         if(this.hzMainCol() != this.hzCmpTkCol) { return true; }
+         var ppd:Number = Math.max((this.hzCmpW19 - 40) / 180,(HZ_CMP_W - 40) / 180);
+         var thr:Number = ppd > 0 ? Math.min(0.25,0.5 / ppd) : 0.25;
+         var dd:Number = deg - this.hzCmpTkDeg;
+         while(dd > 180) { dd -= 360; }
+         while(dd < -180) { dd += 360; }
+         return !(Math.abs(dd) < thr);
+      }
+      private function hzCmpTickKeep(deg:Number) : void
+      {
+         this.hzCmpTkDeg = deg;
+         this.hzCmpTkC = this.hzCmpC;
+         this.hzCmpTkCol = this.hzMainCol();
+         this.hzCmpTkW = this.hzCmpW19;
+      }
+
+      // Quests from the compass: hz27QFill / hz27QRefresh run only when a quest marker (text, icon type, distance in
+      // half-meter steps) or the selected quest's step list changed; every other dispatch runs hzQSync alone (its own
+      // change gate and hzTxtTop replay), so the quest card's wrap, width and style edges behave as before.
+      private var hzCmpQOk:Boolean = false;
+      private var hzCmpQS:Array = [];        // quest markers of the last pass: text, icon type, distance key per marker
+      private var hzCmpQSN:int = -1;
+      private var hzCmpQO:Array = [];        // copy of hz27QObjs at the last pass
+      private var hzCmpQOR:Array = null;     // hz27QObjs identity at the last pass
+      private var hzCmpQNull:Boolean = false;
+      private function hzCmpQuests(mm:Array) : void
+      {
+         var src:Array = mm ? mm : this.hz27QMarks;
+         if(this.hzCmpQSame(src))
+         {
+            if(mm) { this.hz27QMarks = mm; }
+            this.hzQSync();
+            return;
+         }
+         this.hzCmpQOk = false;
+         this.hzUpdateQuests(mm);
+         this.hzCmpQKeep(src);
+      }
+      private function hzCmpQDist(o:Object) : Number
+      {
+         var m:Number = Number(o.fDistanceToPlayer);
+         if(isNaN(m)) { return -1; }
+         if(m <= 0) { return -2; }   // hzFmtDist shows nothing at 0 or below
+         return Math.floor(m * 2);   // half-meter steps: every rounding edge of hzFmtDist (m, 0.1 km) is a step edge
+      }
+      private function hzCmpQSame(src:Array) : Boolean
+      {
+         if(!this.hzCmpQOk || (src == null) != this.hzCmpQNull) { return false; }
+         var ob:Array = this.hz27QObjs;
+         if(ob !== this.hzCmpQOR || ob == null || ob.length != this.hzCmpQO.length) { return false; }
+         var j:int = 0;
+         while(j < ob.length) { if(ob[j] !== this.hzCmpQO[j]) { return false; } j++; }
+         if(src == null) { return true; }
+         var q:Array = this.hzCmpQS;
+         var n:int = 0;
+         var i:int = 0;
+         while(i < src.length)
+         {
+            var o:Object = src[i];
+            i++;
+            if(!o) { continue; }
+            var ty:uint = uint(o.uiMarkerIconType);
+            if(!this.hzIsQuestType(ty)) { continue; }
+            var tx:String = o.strText ? String(o.strText) : "";
+            if(n + 3 > q.length || q[n] !== tx || q[n + 1] !== ty || q[n + 2] !== this.hzCmpQDist(o)) { return false; }
+            n += 3;
+         }
+         return n == this.hzCmpQSN;
+      }
+      private function hzCmpQKeep(src:Array) : void
+      {
+         var ob:Array = this.hz27QObjs;
+         this.hzCmpQOR = ob;
+         this.hzCmpQO.length = 0;
+         var j:int = 0;
+         while(ob != null && j < ob.length) { this.hzCmpQO.push(ob[j]); j++; }
+         this.hzCmpQNull = src == null;
+         var q:Array = this.hzCmpQS;
+         q.length = 0;
+         var i:int = 0;
+         while(src != null && i < src.length)
+         {
+            var o:Object = src[i];
+            i++;
+            if(!o) { continue; }
+            var ty:uint = uint(o.uiMarkerIconType);
+            if(!this.hzIsQuestType(ty)) { continue; }
+            q.push(o.strText ? String(o.strText) : "",ty,this.hzCmpQDist(o));
+         }
+         this.hzCmpQSN = q.length;
+         this.hzCmpQOk = ob != null;
+      }
+
+      // The compass re-runs hzRefreshVisibility only when the quest card's state changed (an objective appeared or
+      // went, the step count changed, a quest card was built). Every other rule input has its own refreshing setter.
+      private var hzCmpVisOk:Boolean = false;
+      private var hzCmpVisK:int = 0;
+      private var hzCmpVisQ:Object = null;
+      private var hzCmpVisCQ:Object = null;
+      private function hzCmpVisDue() : Boolean
+      {
+         var k:int = (this.hzQHasAny ? 1 : 0) | ((this.hz27QSubs != null ? this.hz27QSubs.length + 1 : 0) << 1);
+         if(this.hzCmpVisOk && k == this.hzCmpVisK && this.HorizonQuest_mc === this.hzCmpVisQ && this.HorizonCompactQuest_mc === this.hzCmpVisCQ) { return false; }
+         this.hzCmpVisOk = true;
+         this.hzCmpVisK = k;
+         this.hzCmpVisQ = this.HorizonQuest_mc;
+         this.hzCmpVisCQ = this.HorizonCompactQuest_mc;
+         return true;
       }
 
       // ---- Planet card: body, temp/grav/air, hazards (EnvironmentEffectsData) ----
@@ -1229,6 +1364,7 @@
          this.hzPlanAlert = new Sprite();
          this.hzPlanOld.addChild(this.hzPlanAlert);
          this.hzBuildPlanPill();
+         try { this.hzHsBuild(); } catch(eHsB:Error) { }   // Hazard Status card (its own card since 0.43.3.0)
          this.HorizonEnv_mc.scaleX = this.HorizonEnv_mc.scaleY = HZ_SCALE;
          this.HorizonEnv_mc.x = 80;
          this.HorizonEnv_mc.y = 746 - 128 * HZ_SCALE;
@@ -1263,6 +1399,7 @@
          addChild(this.HorizonAmmo_mc);
          BSUIDataManager.Subscribe("LocalEnvironmentData",this.hzOnLocalEnv);
          BSUIDataManager.Subscribe("EnvironmentEffectsData",this.hzOnEnvEffects);
+         try { this.hzHsSub(); } catch(eHsS:Error) { }   // Hazard Status: EnvironmentAlertsData (the only listener of it)
          BSUIDataManager.Subscribe("PersonalEffectsData",this.hzOnPersonalEffects);
          BSUIDataManager.Subscribe("WeaponData",this.hzOnWeapon);
          BSUIDataManager.Subscribe("QuestData",this.hzOnQuestData);
@@ -1318,19 +1455,38 @@
       // Compass markers from HudCompassData: aMissionMarkers (quests), aMarkers (followers, ship, locations,
       // outposts, custom marker...), aEnemyMarkers, plus any other array of objects with fHeading (future-proof).
       // De-duplicated by uiHandle; filtered per type by the COMPASS settings tab.
+      private static const HZ_CMP_LISTS:Array = ["aMissionMarkers","aMarkers","aEnemyMarkers"];
+      // perf round 2 Fix 1: the marker pass records what it would draw (kind, icon type, x and alpha in fine steps, edge
+      // pin) into reused arrays in the same loop, and clears and redraws both marker layers only when that record or the
+      // marker style (form, width, row, colors) differs from the last draw. Debug=1 redraws every dispatch as before.
+      private var hzCmpLs:Array = [];
+      private var hzCmpLn:Array = [];
+      private var hzCmpSeenH:Array = [];    // de-dup keys of this pass (handle * 2 + follower), no strings
+      private var hzCmpQ:Array = [];        // record of the last draw: kind, type, round(x * 2), round(alpha * 20), pin
+      private var hzCmpQN:Array = [];       // record of this pass (swapped with hzCmpQ on a redraw)
+      private var hzCmpPx:Array = [];       // exact x of this pass
+      private var hzCmpPa:Array = [];       // exact alpha of this pass
+      private var hzCmpMkOk:Boolean = false;
+      private var hzCmpKV:Boolean = false;
+      private var hzCmpKW:Number = NaN;
+      private var hzCmpKY:Number = NaN;
+      private var hzCmpKM:Number = -1;
+      private var hzCmpKF:Number = -1;
+      private var hzCmpKA:Number = -1;
+      private var hzCmpKB:Number = -1;
+      private var hzCmpKR:Number = -1;
       private function hzDrawCompassMarkers() : void
       {
          if(!this.hzCmpMarks || !this.hzCmpData) { return; }
          var v19:Boolean = this.hzV19() && this.hzCmpMarks19 != null;
-         this.hzCmpMarks.graphics.clear();
-         if(this.hzCmpMarks19) { this.hzCmpMarks19.graphics.clear(); }
-         var g:* = v19 ? this.hzCmpMarks19.graphics : this.hzCmpMarks.graphics;
          var cmw:Number = v19 ? this.hzCmpW19 : HZ_CMP_W;
          var ppd:Number = (cmw - 40) / 180;
-         var lists:Array = [];
-         var lnames:Array = [];
+         var lists:Array = this.hzCmpLs;
+         var lnames:Array = this.hzCmpLn;
+         lists.length = 0;
+         lnames.length = 0;
          var dk:String = null;
-         for each(dk in ["aMissionMarkers","aMarkers","aEnemyMarkers"])
+         for each(dk in HZ_CMP_LISTS)
          {
             if(this.hzCmpData[dk] is Array) { lists.push(this.hzCmpData[dk]); lnames.push(dk); }
          }
@@ -1343,15 +1499,24 @@
                lists.push(av); lnames.push(dk);
             }
          }
-         var seen:Object = {};
-         var dbg:Object = {};
-         var dlines:Array = [];
+         var dbgOn:Boolean = this.hzDebug;
+         var seen:Array = this.hzCmpSeenH;
+         seen.length = 0;
+         var dbg:Object = dbgOn ? {} : null;
+         var dlines:Array = dbgOn ? [] : null;
+         var q:Array = this.hzCmpQN;
+         var px:Array = this.hzCmpPx;
+         var pa:Array = this.hzCmpPa;
+         q.length = 0;
+         px.length = 0;
+         pa.length = 0;
          this.hzCmpDbgClear();
          var li:int = 0;
          while(li < lists.length)
          {
             var arr:Array = lists[li] as Array;
-            var enemyList:Boolean = String(lnames[li]).toLowerCase().indexOf("enemy") >= 0;
+            var lnm:String = String(lnames[li]);
+            var enemyList:Boolean = lnm == "aEnemyMarkers" ? true : ((lnm == "aMissionMarkers" || lnm == "aMarkers") ? false : lnm.toLowerCase().indexOf("enemy") >= 0);
             for each(var o:Object in arr)
             {
                if(!o || o.fHeading == undefined) { continue; }
@@ -1361,21 +1526,24 @@
                // icon type only (the compass map type is not the scripts' MARKER_* table: the player ship arrives as 83).
                var isFolMark:Boolean = mt == MapMarkerUtils.MIT_MARKER_COMPANION;
                var isShip:Boolean = !isFolMark && (mt == MapMarkerUtils.MIT_MARKER_SHIP_PARKED || mt == MapMarkerUtils.MIT_MARKER_VEHICLE);
-               dbg[lnames[li] + ":" + mt] = int(dbg[lnames[li] + ":" + mt]) + 1;
-               if(this.hzDebug && dlines.length < 14)
+               if(dbgOn)
                {
-                  var rel:Number = Number(o.fHeading) * 180 / Math.PI - this.hzCmpDeg;
-                  while(rel > 180) { rel -= 360; }
-                  while(rel < -180) { rel += 360; }
-                  dlines.push(String(lnames[li]) + " type=" + mt + " map=" + mmt + " head=" + Math.round(Number(o.fHeading) * 180 / Math.PI) + " rel=" + Math.round(rel) + " a=" + (o.fDistanceAlpha != undefined ? Math.round(Number(o.fDistanceAlpha) * 100) / 100 : "-") + " near=" + o.bIsNear + (isFolMark ? " FOL" : (isShip ? " SHIP" : "")));
+                  dbg[lnames[li] + ":" + mt] = int(dbg[lnames[li] + ":" + mt]) + 1;
+                  if(dlines.length < 14)
+                  {
+                     var rel:Number = Number(o.fHeading) * 180 / Math.PI - this.hzCmpDeg;
+                     while(rel > 180) { rel -= 360; }
+                     while(rel < -180) { rel += 360; }
+                     dlines.push(String(lnames[li]) + " type=" + mt + " map=" + mmt + " head=" + Math.round(Number(o.fHeading) * 180 / Math.PI) + " rel=" + Math.round(rel) + " a=" + (o.fDistanceAlpha != undefined ? Math.round(Number(o.fDistanceAlpha) * 100) / 100 : "-") + " near=" + o.bIsNear + (isFolMark ? " FOL" : (isShip ? " SHIP" : "")));
+                  }
                }
                if(!this.hzShowCompassMarkers) { continue; }
                if(o.uiHandle != undefined && uint(o.uiHandle) != 0)
                {
                   // v0.30: a companion that is also a quest target keeps its own follower marker (own de-dup key)
-                  var sk:String = (isFolMark ? "f" : "m") + String(o.uiHandle);
-                  if(seen[sk]) { continue; }
-                  seen[sk] = true;
+                  var sk:Number = uint(o.uiHandle) * 2 + (isFolMark ? 1 : 0);
+                  if(seen.indexOf(sk) >= 0) { continue; }
+                  seen.push(sk);
                }
                var md:Number = Number(o.fHeading) * 180 / Math.PI - this.hzCmpDeg;
                while(md > 180) { md -= 360; }
@@ -1390,55 +1558,28 @@
                }
                var mx:Number = cmw / 2 + md * ppd;
                var fa:Number = (o.fDistanceAlpha != undefined && o.fDistanceAlpha !== null) ? Math.max(0.35,Math.min(1,Number(o.fDistanceAlpha))) : 1;
-               if(this.hzDebug) { this.hzCmpDbgLabel(mx,String(mt) + (mmt >= 0 ? "/" + mmt : "")); }
-               if(this.hzIsQuestType(mt) && !isFolMark)
-               {
-                  if(v19) { this.hzCmpMark19(g,"quest",mx,fa); continue; }
-                  g.beginFill(0xF2D35F,fa);
-                  g.moveTo(mx,-2); g.lineTo(mx + 5,3); g.lineTo(mx,8); g.lineTo(mx - 5,3); g.lineTo(mx,-2);
-                  g.endFill();
-               }
+               if(dbgOn) { this.hzCmpDbgLabel(mx,String(mt) + (mmt >= 0 ? "/" + mmt : "")); }
+               var kd:int = 0;
+               if(this.hzIsQuestType(mt) && !isFolMark) { kd = 1; }
                else if(isFolMark)
                {
                   if(!this.hzCmpFollowers) { continue; }
-                  if(v19)
-                  {
-                     try { this.hzCmpMark19(g,"follower",mx,edgeF != 0 ? Math.max(0.55,fa * 0.8) : fa); if(edgeF != 0) { this.hz30FolEdge(g,mx,edgeF); } } catch(errF:Error) { }
-                     continue;
-                  }
-                  g.lineStyle(1,0x0B1620,0.8);
-                  g.beginFill(this.hz27FolCol(),fa);
-                  g.drawCircle(mx,22,3);
-                  g.endFill();
-                  g.beginFill(this.hz27FolCol(),fa);
-                  g.moveTo(mx - 5,33); g.curveTo(mx,24,mx + 5,33); g.lineTo(mx - 5,33);
-                  g.endFill();
-                  g.lineStyle();
+                  kd = 2;
                }
                else if(isShip)
                {
                   if(!this.hzCmpShip) { continue; }
-                  if(v19) { this.hzCmpMark19(g,"ship",mx,fa); continue; }
-                  g.beginFill(0x8FD3F2,fa);
-                  g.moveTo(mx,23); g.lineTo(mx + 6,33); g.lineTo(mx,30); g.lineTo(mx - 6,33); g.lineTo(mx,23);
-                  g.endFill();
+                  kd = 3;
                }
                else if(enemyList || mt == MapMarkerUtils.MIT_MARKER_ENEMY || mt == MapMarkerUtils.MIT_MARKER_ENEMY_TARGETED)
                {
                   if(!this.hzCmpEnemies) { continue; }
-                  if(v19) { this.hzCmpMark19(g,mt == MapMarkerUtils.MIT_MARKER_ENEMY_TARGETED ? "enemyT" : "enemy",mx,fa); continue; }
-                  g.beginFill(HZ_RED,0.95 * fa);
-                  g.drawCircle(mx,29,mt == MapMarkerUtils.MIT_MARKER_ENEMY_TARGETED ? 3.5 : 2.5);
-                  g.endFill();
+                  kd = 4;
                }
                else if(mt == MapMarkerUtils.MIT_MARKER_PLAYERSET || mt == MapMarkerUtils.MIT_MARKER_POSITION)
                {
                   if(!this.hzCmpPlayerMark) { continue; }
-                  if(v19) { this.hzCmpMark19(g,"player",mx,fa); continue; }
-                  g.beginFill(0xF2F4F6,fa);
-                  g.drawRect(mx - 1,22,2,11);
-                  g.moveTo(mx + 1,22); g.lineTo(mx + 7,25); g.lineTo(mx + 1,28); g.lineTo(mx + 1,22);
-                  g.endFill();
+                  kd = 5;
                }
                else if(mt == MapMarkerUtils.MIT_MARKER_HAZARD)
                {
@@ -1448,21 +1589,109 @@
                {
                   // locations, POIs, outposts, recon, anything unknown
                   if(!this.hzCmpLocations) { continue; }
-                  if(v19) { this.hzCmpMark19(g,mt == MapMarkerUtils.MIT_MARKER_OUTPOST ? "outpost" : "loc",mx,fa); continue; }
-                  g.lineStyle(1.2,0xD8E4EA,0.85 * fa);
-                  if(mt == MapMarkerUtils.MIT_MARKER_OUTPOST) { g.drawRect(mx - 3,25,6,6); }
-                  else { g.moveTo(mx,24); g.lineTo(mx + 4,28); g.lineTo(mx,32); g.lineTo(mx - 4,28); g.lineTo(mx,24); }
-                  g.lineStyle();
+                  kd = 6;
                }
+               q.push(kd,mt,Math.round(mx * 2),Math.round(fa * 20),edgeF);
+               px.push(mx);
+               pa.push(fa);
             }
             li++;
          }
-         if(this.hzDebug)
+         if(dbgOn)
          {
             var ds:Array = [];
             for(var dkey:String in dbg) { ds.push(dkey + "x" + dbg[dkey]); }
             this.hzDbgCmp = ds.join("  ") + "\n" + dlines.join("\n");
             if(this.hzFrameN % 10 == 0) { this.hzDbgShow(); }
+         }
+         // marker style: everything the glyphs read besides the record
+         var kM:Number = this.hzMainCol();
+         var kF:Number = this.hz27FolCol();
+         var kA:Number = this.hzIconCol(HZ_ACCENT);
+         var kB:Number = this.hzIconCol(HZ_BLUE);
+         var kR:Number = this.hzIconCol(HZ_RED);
+         var same:Boolean = !dbgOn && this.hzCmpMkOk && v19 == this.hzCmpKV && cmw == this.hzCmpKW && this.hzCmpMY == this.hzCmpKY
+            && kM == this.hzCmpKM && kF == this.hzCmpKF && kA == this.hzCmpKA && kB == this.hzCmpKB && kR == this.hzCmpKR;
+         var last:Array = this.hzCmpQ;
+         if(same && q.length == last.length)
+         {
+            var qi:int = 0;
+            while(qi < q.length) { if(q[qi] !== last[qi]) { same = false; break; } qi++; }
+            if(same) { return; }
+         }
+         this.hzCmpQ = q;
+         this.hzCmpQN = last;
+         this.hzCmpKV = v19; this.hzCmpKW = cmw; this.hzCmpKY = this.hzCmpMY;
+         this.hzCmpKM = kM; this.hzCmpKF = kF; this.hzCmpKA = kA; this.hzCmpKB = kB; this.hzCmpKR = kR;
+         this.hzCmpMkOk = false;   // a throw while drawing leaves this false, so the next dispatch redraws (as before)
+         this.hzCmpMarks.graphics.clear();
+         if(this.hzCmpMarks19) { this.hzCmpMarks19.graphics.clear(); }
+         var g:* = v19 ? this.hzCmpMarks19.graphics : this.hzCmpMarks.graphics;
+         var pi:int = 0;
+         while(pi < px.length)
+         {
+            this.hzCmpMarkPaint(g,v19,int(q[pi * 5]),uint(q[pi * 5 + 1]),Number(px[pi]),Number(pa[pi]),int(q[pi * 5 + 4]));
+            pi++;
+         }
+         this.hzCmpMkOk = true;
+      }
+
+      // one recorded marker, drawn exactly as the pre-round-2 loop drew it (kind: 1 quest, 2 follower, 3 ship, 4 enemy,
+      // 5 player mark, 6 location / outpost / anything else)
+      private function hzCmpMarkPaint(g:*, v19:Boolean, kd:int, mt:uint, mx:Number, fa:Number, edgeF:int) : void
+      {
+         if(kd == 1)
+         {
+            if(v19) { this.hzCmpMark19(g,"quest",mx,fa); return; }
+            g.beginFill(0xF2D35F,fa);
+            g.moveTo(mx,-2); g.lineTo(mx + 5,3); g.lineTo(mx,8); g.lineTo(mx - 5,3); g.lineTo(mx,-2);
+            g.endFill();
+         }
+         else if(kd == 2)
+         {
+            if(v19)
+            {
+               try { this.hzCmpMark19(g,"follower",mx,edgeF != 0 ? Math.max(0.55,fa * 0.8) : fa); if(edgeF != 0) { this.hz30FolEdge(g,mx,edgeF); } } catch(errF:Error) { }
+               return;
+            }
+            g.lineStyle(1,0x0B1620,0.8);
+            g.beginFill(this.hz27FolCol(),fa);
+            g.drawCircle(mx,22,3);
+            g.endFill();
+            g.beginFill(this.hz27FolCol(),fa);
+            g.moveTo(mx - 5,33); g.curveTo(mx,24,mx + 5,33); g.lineTo(mx - 5,33);
+            g.endFill();
+            g.lineStyle();
+         }
+         else if(kd == 3)
+         {
+            if(v19) { this.hzCmpMark19(g,"ship",mx,fa); return; }
+            g.beginFill(0x8FD3F2,fa);
+            g.moveTo(mx,23); g.lineTo(mx + 6,33); g.lineTo(mx,30); g.lineTo(mx - 6,33); g.lineTo(mx,23);
+            g.endFill();
+         }
+         else if(kd == 4)
+         {
+            if(v19) { this.hzCmpMark19(g,mt == MapMarkerUtils.MIT_MARKER_ENEMY_TARGETED ? "enemyT" : "enemy",mx,fa); return; }
+            g.beginFill(HZ_RED,0.95 * fa);
+            g.drawCircle(mx,29,mt == MapMarkerUtils.MIT_MARKER_ENEMY_TARGETED ? 3.5 : 2.5);
+            g.endFill();
+         }
+         else if(kd == 5)
+         {
+            if(v19) { this.hzCmpMark19(g,"player",mx,fa); return; }
+            g.beginFill(0xF2F4F6,fa);
+            g.drawRect(mx - 1,22,2,11);
+            g.moveTo(mx + 1,22); g.lineTo(mx + 7,25); g.lineTo(mx + 1,28); g.lineTo(mx + 1,22);
+            g.endFill();
+         }
+         else if(kd == 6)
+         {
+            if(v19) { this.hzCmpMark19(g,mt == MapMarkerUtils.MIT_MARKER_OUTPOST ? "outpost" : "loc",mx,fa); return; }
+            g.lineStyle(1.2,0xD8E4EA,0.85 * fa);
+            if(mt == MapMarkerUtils.MIT_MARKER_OUTPOST) { g.drawRect(mx - 3,25,6,6); }
+            else { g.moveTo(mx,24); g.lineTo(mx + 4,28); g.lineTo(mx,32); g.lineTo(mx - 4,28); g.lineTo(mx,24); }
+            g.lineStyle();
          }
       }
 
@@ -1626,13 +1855,16 @@
          return o;
       }
 
-      private function hzJoinEffects(a:Array) : String
+      // Afflictions P0: pers = true only for the personal effects list (buffs are not afflictions there). The
+      // environment call (hzOnEnvEffects) passes one argument and keeps the old behavior exactly.
+      private function hzJoinEffects(a:Array, pers:Boolean = false) : String
       {
          var out:Array = [];
          if(a)
          {
             for each(var o:Object in a)
             {
+               if(pers && (!o || this.hzAfIsPos(String(o.sEffectIcon)))) { continue; }
                var p:String = this.hzPretty(o.sEffectIcon);
                if(p && out.indexOf(p) < 0) { out.push(p); }
             }
@@ -1729,8 +1961,417 @@
          else if(soak >= 1) { this.hzPpStatus = "DANGER"; this.hzPpStatusCol = 2; }
          else { this.hzPpStatus = word; this.hzPpStatusCol = 1; }
          this.hzPpSync();
+         try { this.hzHsFx(a,n,word,soak); } catch(eHs:Error) { }   // Hazard Status card (diff-and-skip)
          this.hzAfSetEnv(a,soak);
       }
+
+      // ===================== Hazard Status card (0.43.3.0; was the hs1 chip under the planet card) =====================
+      // Purpose: the hazard status as its own Horizon card (HorizonHazard_mc, ARRANGE key "Hazard"), with the two colors
+      // of the vanilla watch: red while a hazard hurts you, green while suit protection restores. Own show toggle
+      // ([Effects] HazardStatus), own size and compact form ([Cards] HazardScale / HazardCompact), own spot
+      // ([Layout] HazardX / HazardY; -1 = under the planet card, where the chip sat). It follows the chosen style: the
+      // panel is hzPanel (CardColor, CardOpacity, CardShadow), the texts are hzT texts (FontFace, TextTone, TextScale,
+      // TextShadow), the label uses the accent tone and hzUC (HeaderStyle); the state color is the strip, the dot and the
+      // edge. Standard: a label line + the status line (46 units). Compact: one line (28 units, like the old chip).
+      // State (event-driven only, nothing per frame):
+      //   EnvironmentEffectsData (hzOnEnvEffects -> hzHsFx): any listed effect that is not HazardEffect_RestoreSoak = a
+      //     hazard (red); only HazardEffect_RestoreSoak listed = restoring (green); nothing listed = no hazard.
+      //   EnvironmentAlertsData (hzHsOnAlerts, the only listener of that data): the latest alert's bIsPositive sets the
+      //     color when it is newer than the last effects change, and its sAlertText is the card text when it matches the
+      //     color (else a Horizon word: "<WORD> HAZARD" / "SUIT PROTECTION RESTORING"; always the word for ja / zhhans).
+      //   0.43.3.0 bug (b) (user: "red, then just disappears"): hs1 showed green only while the effects list still held
+      //     an effect (hzHsSync: hzHsCat != 0). When the hazard ends the game drops the hazard effect, and the positive
+      //     alert ("Suit Protection Reg.", bIsPositive) arrives with no effect listed (or before that update, which then
+      //     wins as the newer event), so green could never show. Now a positive alert arms a green hold (hzHsGrn) that
+      //     shows green with no effect listed. It ends on vanilla edges only, no timer: the BottomLeftGroup's own
+      //     AnimationFinished at the end of FadeOutEnvAlert_Positive (BottomLeftGroup.as frame128: the vanilla green
+      //     message is gone), a newer negative alert, or a new hazard effect. The end of FadeInEnvAlert_Positive (frame111)
+      //     re-arms it, so a positive alert the game queued behind another alert is green while it is on the watch.
+      //     The listener runs at priority 1, before the game's own handler moves the queue on (and the label with it).
+      // Sound: none here. The vanilla watch keeps its own alert sound (BottomLeftGroup PlayAlertSound, still running
+      // under the alpha group hide); the card only draws, so the sound plays once.
+      // Vanilla text: watch style 0 (OFF) only, only while the card is shown, the vanilla EnvAlertText holder is hidden
+      // (visible only) and given back the moment it is not (only what this hid). Styles 1 - 4: never touched here.
+      // Edge-only: the state change (hzHsSync), the card's show target (hzRefreshVisibility -> hzHsCard), alerts, the
+      // BottomLeftGroup animation ends (a few per alert), style apply (hzV19Redraw -> hzHsRestyle) and layout.
+      // Diff-and-skip: hzHsSync compares ints, Booleans and string refs and returns before any display write.
+      // Author: Moragar. Last modified: 2026-11-14.
+      public var hzHsOn:Boolean = true;               // [Effects] HazardStatus
+      public var HorizonHazard_mc:Sprite = null;      // the card (ARRANGE key "Hazard")
+      private static const HZ_HS_H:Number = 28;       // compact height (card units)
+      private static const HZ_HS_HS:Number = 46;      // standard height
+      private static const HZ_HS_GAP:Number = 6;      // gap to the planet card
+      private static const HZ_HS_RED:uint = 0xC33B29; // the vanilla watch hazard red
+      private static const HZ_HS_GRN:uint = 0x379B2C; // the vanilla watch restore green
+      private static const HZ_HS_FIN:String = "AnimationFinished";            // BottomLeftGroup.ANIMATION_FINISHED
+      private static const HZ_HS_LIN:String = "FadeInEnvAlert_Positive";      // the vanilla green message: in
+      private static const HZ_HS_LOUT:String = "FadeOutEnvAlert_Positive";    // and out (its end = green over)
+      private var hzHsG:Sprite = null;                // panel, strip, dot
+      private var hzHsTf:TextField = null;            // status line
+      private var hzHsLb:TextField = null;            // label line (standard form)
+      private var hzHsSubbed:Boolean = false;         // EnvironmentAlertsData listener added (once)
+      private var hzHsSeq:int = 0;                    // event order counter
+      private var hzHsCat:int = 0;                    // effects: 0 none, 1 restoring only, 2 hazard
+      private var hzHsCatSeq:int = 0;
+      private var hzHsWord:String = "HAZARD";         // effects: first hazard word (constant literals)
+      private var hzHsAlSeq:int = 0;                  // latest alert (0 = none yet)
+      private var hzHsAlPos:Boolean = false;
+      private var hzHsAlTxt:String = "";
+      private var hzHsGrn:Boolean = false;            // bug (b): green hold from a positive alert (vanilla edges end it)
+      private static const HZ_HS_SKEPS:Number = 0.0001;   // 0.43.3.1: soak steps smaller than this are no change
+      private static const HZ_HS_SKRUN:int = 2;           // 0.43.3.1: updates in one direction before the color switches
+      private var hzHsSkB:Number = NaN;               // 0.43.3.1: soak when the hazard appeared (the baseline)
+      private var hzHsSkL:Number = NaN;               // 0.43.3.1: soak at the last effects update
+      private var hzHsSkRun:int = 0;                  // 0.43.3.1: updates in a row voting for the other color
+      private var hzHsSkGrn:Boolean = false;          // 0.43.3.1: soak moving back toward the baseline (green), else red
+      private var hzHsBlgL:DisplayObject = null;      // the BottomLeftGroup that has hzHsOnFin
+      private static const HZ_HS_HOLD_MS:Number = 4000;   // 0.43.3.2: green hold after the hazard (or restore) left the list
+      private var hzHsHoldT:Number = -1;              // 0.43.3.2: green hold end (hz26Now ms), -1 = no hold
+      private var hzHsSt:int = -1;                    // drawn: 0 hidden, 1 red, 2 green (-1 = never drawn)
+      private var hzHsSrc:int = -1;                   // drawn text source: 1 alert text, 2 hazard word, 3 restore word, 4 ARRANGE preview
+      private var hzHsSrcTxt:String = null;           // drawn: the alert text ref (src 1) or the word (src 2)
+      private var hzHsW:Number = -1;                  // drawn max width
+      private var hzHsCm:int = -1;                    // drawn form: 0 standard, 1 compact
+      private var hzHsH:Number = HZ_HS_HS;            // drawn height
+      private var hzHsShown:Boolean = false;          // the show target last given to hzShow
+      private var hzHsVanD:DisplayObject = null;      // the EnvAlertText instance this hid
+      private var hzHsCardOn:Boolean = false;         // the card's show base (hzRefreshVisibility), false until the first refresh
+
+      private function hzHsSub() : void
+      {
+         if(this.hzHsSubbed) { return; }
+         this.hzHsSubbed = true;
+         try { BSUIDataManager.Subscribe("EnvironmentAlertsData",this.hzHsOnAlerts); } catch(eS:Error) { }
+      }
+
+      private function hzHsBuild() : void
+      {
+         if(this.HorizonHazard_mc) { return; }
+         var c:Sprite = new Sprite();
+         c.name = "HorizonHazard_mc";
+         c.mouseEnabled = false;
+         c.mouseChildren = false;
+         c.visible = false;
+         this.HorizonHazard_mc = c;
+         this.hzHsG = new Sprite();
+         c.addChild(this.hzHsG);
+         this.hzHsLb = this.hzT(c,"",22,7,200,10,"sb","acc",1.6);
+         this.hzHsTf = this.hzT(c,"",22,22,200,13,"sb","main",1);
+         addChild(c);
+         c.scaleX = c.scaleY = this.hz34S("Hazard");
+         this.hzSetSz(c,200,HZ_HS_HS);
+      }
+
+      // the form in use: 1 compact, 0 standard
+      private function hzHsCmp() : int
+      {
+         return this.hz34C("Hazard") ? 1 : 0;
+      }
+
+      // EnvironmentEffectsData (from hzOnEnvEffects, after its own body): the effects category
+      // 0.43.3.1 (built blind, the sign of fSoakDamagePct is not verified): while a hazard is listed, the card is green
+      // when the soak moves back toward the value it had when the hazard appeared, red when it moves away. A step that
+      // is no change, the first sample or a NaN votes red (ambiguous = red). The color switches only after
+      // HZ_HS_SKRUN updates in a row vote for the other color, so one sample never toggles it. No timer, no allocation.
+      private function hzHsFx(a:Array, n:int, word:String, soak:Number) : void
+      {
+         var rs:Boolean = false;
+         if(n == 0 && a != null)
+         {
+            for each(var ef:Object in a) { if(ef && ef.sEffectIcon == "HazardEffect_RestoreSoak") { rs = true; break; } }
+         }
+         var cat:int = n > 0 ? 2 : (rs ? 1 : 0);
+         if(cat != this.hzHsCat)
+         {
+            this.hzHsCat = cat;
+            this.hzHsCatSeq = ++this.hzHsSeq;
+            if(cat == 2) { this.hzHsGrn = false; }   // a new hazard ends a green hold
+            // 0.43.3.2: leaving the list (2 -> 0 or 1 -> 0) arms a short green hold instead of hiding at once; a hazard
+            // that is listed again ends it (red). One Date read on this edge only; hzHsHoldTick (the existing 30-frame
+            // hzPpClock slot) ends it. cat 1 (restoring listed) is green already and needs no hold.
+            if(cat == 0) { this.hzHsHoldT = this.hz26Now() + HZ_HS_HOLD_MS; }
+            else if(cat == 2) { this.hzHsHoldT = -1; }
+            this.hzHsSkB = cat == 2 ? soak : NaN;     // 0.43.3.1: the baseline is the soak when the hazard appears
+            this.hzHsSkL = this.hzHsSkB;
+            this.hzHsSkRun = 0;
+            this.hzHsSkGrn = false;
+         }
+         else if(cat == 2)
+         {
+            // 0.43.3.1: one soak sample. Toward the baseline votes green; away, no change or unknown votes red. A switch
+            // counts as a new effects event (hzHsCatSeq), so the newest event (alert or soak) sets the color.
+            var sb:Number = this.hzHsSkB;
+            var sl:Number = this.hzHsSkL;
+            this.hzHsSkL = soak;
+            var sg:Boolean = false;
+            if(!isNaN(soak) && !isNaN(sb) && !isNaN(sl))
+            {
+               var d0:Number = sl > sb ? sl - sb : sb - sl;
+               var d1:Number = soak > sb ? soak - sb : sb - soak;
+               sg = d1 < d0 - HZ_HS_SKEPS;
+            }
+            if(isNaN(sb)) { this.hzHsSkB = soak; }   // no baseline yet (NaN when the hazard appeared): the first number
+            if(sg == this.hzHsSkGrn) { this.hzHsSkRun = 0; }
+            else if(++this.hzHsSkRun >= HZ_HS_SKRUN)
+            {
+               this.hzHsSkRun = 0;
+               this.hzHsSkGrn = sg;
+               this.hzHsCatSeq = ++this.hzHsSeq;
+            }
+         }
+         this.hzHsWord = word;
+         this.hzHsSync();
+      }
+
+      // EnvironmentAlertsData: the latest alert (the vanilla watch plays its own sound for it)
+      private function hzHsOnAlerts(e:FromClientDataEvent) : *
+      {
+         if(this.hzEnvP0Ini) { try { this.hzEnvP0OnAlerts(e); } catch(eP0:Error) { } }   // private diag (env alert Phase 0)
+         var d:Object = e != null ? e.data : null;
+         var arr:Array = d != null ? d.aEnvironmentAlerts as Array : null;
+         if(arr == null || arr.length == 0) { return; }
+         var al:Object = arr[arr.length - 1];
+         if(al == null) { return; }
+         this.hzHsAlPos = al.bIsPositive === true;
+         this.hzHsAlTxt = al.sAlertText != null ? String(al.sAlertText) : "";
+         this.hzHsAlSeq = ++this.hzHsSeq;
+         this.hzHsGrn = this.hzHsAlPos;   // bug (b): a positive alert arms green, a negative one ends it
+         if(!this.hzHsAlPos) { this.hzHsHoldT = -1; }   // 0.43.3.2: a negative alert also ends the green hold
+         if(this.hzHsGrn) { this.hzHsBlgSub(); }
+         this.hzHsVan();
+         this.hzHsSync();
+      }
+
+      // bug (b): listen once to the BottomLeftGroup's own AnimationFinished (its frame scripts dispatch it at the end of
+      // each span). One getChildByName on the HUD root, only on a positive alert, and only when the group changed.
+      private function hzHsBlgSub() : void
+      {
+         var b:DisplayObject = null;
+         try { b = this.getChildByName("BottomLeftGroup_mc"); } catch(eB:Error) { b = null; }
+         if(b == null || b === this.hzHsBlgL) { return; }
+         if(this.hzHsBlgL != null) { try { this.hzHsBlgL.removeEventListener(HZ_HS_FIN,this.hzHsOnFin); } catch(eR:Error) { } }
+         this.hzHsBlgL = b;
+         try { b.addEventListener(HZ_HS_FIN,this.hzHsOnFin,false,1,true); } catch(eA:Error) { this.hzHsBlgL = null; }
+      }
+
+      // bug (b): the vanilla green message ended (FadeOutEnvAlert_Positive done) -> green over; a queued positive
+      // message finished fading in -> green again. Read before the game's handler (priority 1) moves on the queue.
+      private function hzHsOnFin(e:Event) : void
+      {
+         if(e == null || e.target !== this.hzHsBlgL) { return; }
+         var bm:MovieClip = this.hzHsBlgL as MovieClip;
+         if(bm == null) { return; }
+         var lb:String = bm.currentLabel;
+         var g:Boolean = this.hzHsGrn;
+         if(lb == HZ_HS_LOUT) { g = false; }
+         else if(lb == HZ_HS_LIN && this.hzHsCat != 2) { g = true; }
+         else { return; }
+         if(g == this.hzHsGrn) { return; }
+         this.hzHsGrn = g;
+         this.hzHsSync();
+      }
+
+      private function hzHsWant() : Boolean
+      {
+         return this.hzHsOn && this.hzHsCardOn && this.HorizonHazard_mc != null;
+      }
+
+      // diff-and-skip: decide the state and the text source, return before any display write when unchanged
+      private function hzHsSync() : void
+      {
+         var st:int = 0;
+         var src:int = 0;
+         var stx:String = null;
+         if(this.hzArrange)
+         {
+            if(this.hzHsOn && this.HorizonHazard_mc != null) { st = 1; src = 4; }   // ARRANGE preview
+         }
+         else if(this.hzHsWant())
+         {
+            if(this.hzHsCat != 0)
+            {
+               var alNew:Boolean = this.hzHsAlSeq > this.hzHsCatSeq;
+               st = alNew ? (this.hzHsAlPos ? 2 : 1) : (this.hzHsCat == 2 ? (this.hzHsSkGrn ? 2 : 1) : 2);   // 0.43.3.1: soak direction
+            }
+            else if(this.hzHsGrn || this.hzHsHoldT >= 0) { st = 2; }   // bug (b) / 0.43.3.2: green after the hazard left the list
+         }
+         if(st != 0 && src == 0)
+         {
+            var cjk:Boolean = this.hz43EnvLang == "ja" || this.hz43EnvLang == "zhhans";
+            if(!cjk && this.hzHsAlSeq > 0 && this.hzHsAlPos == (st == 2) && this.hzHsAlTxt.length > 0) { src = 1; stx = this.hzHsAlTxt; }
+            else if(st == 1) { src = 2; stx = this.hzHsWord; }
+            else { src = 3; }
+         }
+         var w:Number = this.hzHsMaxW();
+         var cm:int = this.hzHsCmp();
+         if(st == this.hzHsSt && src == this.hzHsSrc && stx == this.hzHsSrcTxt && (st == 0 || (w == this.hzHsW && cm == this.hzHsCm))) { return; }
+         this.hzHsSt = st;
+         this.hzHsSrc = src;
+         this.hzHsSrcTxt = stx;
+         this.hzHsW = w;
+         this.hzHsDraw();
+         var on:Boolean = st != 0;
+         if(on != this.hzHsShown || this.hzArrange)
+         {
+            this.hzHsShown = on;
+            if(this.HorizonHazard_mc) { this.hzShow(this.HorizonHazard_mc,on); }
+         }
+         this.hzHsVan();   // the vanilla text follows the card on this edge
+      }
+
+      // 0.43.3.2: end of the green hold. Called from the existing 30-frame hzPpClock slot (about 0.5 s); with no hold it
+      // is one compare. At the end: one hzHsSync (diff-and-skip), which hides the card unless a positive alert hold or a
+      // listed effect still wants it. Draws nothing itself and plays no sound.
+      private function hzHsHoldTick() : void
+      {
+         if(this.hzHsHoldT < 0) { return; }
+         if(this.hz26Now() < this.hzHsHoldT) { return; }
+         this.hzHsHoldT = -1;
+         this.hzHsSync();
+      }
+
+      // widest the card may get: the planet card's width when it is a pill (the old chip rule), else 300 units
+      private function hzHsMaxW() : Number
+      {
+         return this.hzPpW > 60 ? this.hzPpW : 300;
+      }
+
+      // the card's show base changed (hzRefreshVisibility): an edge, never per frame
+      private function hzHsCard(on:Boolean) : void
+      {
+         if(on == this.hzHsCardOn) { return; }
+         this.hzHsCardOn = on;
+         this.hzHsSync();
+         this.hzHsVan();
+      }
+
+      // style apply (hzV19Redraw: font, tone, colors, opacity, shadow, header case, text size): redraw once
+      private function hzHsRestyle() : void
+      {
+         this.hzHsSt = -1;
+         this.hzHsSync();
+      }
+
+      private function hzHsDraw() : void
+      {
+         if(!this.HorizonHazard_mc || !this.hzHsG) { return; }
+         var g:* = this.hzHsG.graphics;
+         g.clear();
+         if(this.hzHsSt == 0) { return; }   // the fade (hzShow) takes the card away; nothing to draw
+         var txt:String;
+         if(this.hzHsSrc == 1) { txt = this.hzHsAlTxt; }
+         else if(this.hzHsSrc == 2) { txt = this.hzHsWord == "HAZARD" ? "HAZARD" : this.hzHsWord + " HAZARD"; }
+         else if(this.hzHsSrc == 4) { txt = "RADIATION HAZARD"; }
+         else { txt = "SUIT PROTECTION RESTORING"; }
+         txt = this.hzUC(txt);
+         var cm:int = this.hzHsCmp();
+         var h:Number = cm == 1 ? HZ_HS_H : HZ_HS_HS;
+         var maxW:Number = this.hzHsW > 60 ? this.hzHsW : 300;
+         var tx:Number = 22;
+         var room:Number = maxW - tx - 14;
+         var col:uint = this.hzIconCol(this.hzHsSt == 1 ? HZ_HS_RED : HZ_HS_GRN);
+         var lw:Number = 0;
+         if(this.hzHsLb)
+         {
+            this.hzHsLb.visible = cm == 0;
+            if(cm == 0)
+            {
+               this.hzHsLb.width = room;
+               this.hzFitText(this.hzHsLb,this.hzUC(this.hzHsSt == 1 ? "HAZARD STATUS" : "SUIT PROTECTION"),room);
+               this.hzTxtTop(this.hzHsLb,7);
+               lw = this.hzTW(this.hzHsLb);
+            }
+         }
+         var tw:Number = 120;
+         if(this.hzHsTf)
+         {
+            this.hzHsTf.width = room;
+            this.hzFitText(this.hzHsTf,txt,room);
+            this.hzTxtTop(this.hzHsTf,cm == 1 ? 6 : 22);
+            tw = this.hzTW(this.hzHsTf);
+         }
+         var w:Number = Math.min(maxW,Math.max(cm == 1 ? 120 : 160,Math.round(Math.max(tw,lw) + tx + 16)));
+         this.hzPanel(g,w,h,cm == 1 ? h / 2 : 12,-1,int(col));
+         g.beginFill(col,1); g.drawRoundRect(cm == 1 ? 6 : 0,cm == 1 ? 7 : 10,4,h - (cm == 1 ? 14 : 20),4,4); g.endFill();
+         g.beginFill(col,1); g.drawCircle(cm == 1 ? 15 : 13,h / 2,3); g.endFill();
+         if(cm != this.hzHsCm || h != this.hzHsH)
+         {
+            var moved:Boolean = this.hzHsCm >= 0 && h != this.hzHsH;
+            this.hzHsCm = cm;
+            this.hzHsH = h;
+            if(moved) { this.hzLaidOut = false; }   // the default spot (and the Character card under it) follows the height
+         }
+         this.hzSetSz(this.HorizonHazard_mc,w,h);
+      }
+
+      // layout time (hz26LayoutAfter, the end of hzLayout after the user layout): the default spot follows the planet
+      // card (under it, or above it when it would pass the bottom margin line), as the chip did; a placed card keeps
+      // its ARRANGE spot. Then on / off and the vanilla text.
+      private function hzHsLayout() : void
+      {
+         var c:Sprite = this.HorizonHazard_mc;
+         var env:Sprite = this.HorizonEnv_mc;
+         if(c && env && !this.hzLayHas("Hazard"))
+         {
+            var sH:Number = this.hz34S("Hazard");
+            var hh:Number = (this.hzHsCmp() == 1 ? HZ_HS_H : HZ_HS_HS) * sH;
+            var y0:Number = env.y;
+            for each(var e:Object in this.hzFades) { if(e.c == env) { y0 = Number(e.base); } }
+            var y:Number = y0;
+            if(this.hzShowPlanet)
+            {
+               var eh:Number = (this.hzPillOn() ? this.hzPpH : 128) * env.scaleY;
+               y = y0 + eh + HZ_HS_GAP * sH;
+               var vr:Rectangle = Extensions.visibleRect;
+               if(vr != null && vr.height > 100)
+               {
+                  var br:Point = globalToLocal(new Point(vr.right,vr.bottom));
+                  if(!isNaN(br.y) && y + hh > br.y - this.hzMargin + 0.5) { y = y0 - HZ_HS_GAP * sH - hh; }
+               }
+            }
+            this.hzPlace(c,env.x,y);
+         }
+         this.hzHsSync();
+         this.hzHsVan();
+      }
+
+      // the Character card's default spot (under the planet card) makes room for the card while it sits at its default
+      // spot; in planet-card units (the caller multiplies by the planet card's factor)
+      private function hzHsReserve() : Number
+      {
+         if(!this.hzHsOn || !this.hzShowPlanet || this.HorizonHazard_mc == null || this.hzLayHas("Planet") || this.hzLayHas("Hazard")) { return 0; }
+         var sP:Number = this.hz34S("Planet");
+         var hh:Number = this.hzHsCmp() == 1 ? HZ_HS_H : HZ_HS_HS;
+         return (HZ_HS_GAP + hh) * this.hz34S("Hazard") / (sP > 0 ? sP : 1);
+      }
+
+      // the vanilla EnvAlertText: hidden only while the card is shown; given back (only what this hid) as soon as it
+      // is not. Edges only (state, card base, alerts, layout, hide-all); one getChildByName on the known group, no search.
+      private function hzHsVan() : void
+      {
+         var want:Boolean = this.hzWatchStyle == 0 && this.hzHsSt > 0 && this.hzHsShown && !this.hzArrange && this.hzHsWant() && !this.hzUserHidden;   // style 0 only
+         if(!want)
+         {
+            if(this.hzHsVanD == null) { return; }
+            var r:DisplayObject = this.hzHsVanD;
+            this.hzHsVanD = null;
+            if(!r.visible)
+            {
+               if(this.hz43ScanHid) { if(this.hz43ScanMk.indexOf(r) < 0) { this.hz43ScanMk.push(r); } }   // the scan close gives it back
+               else { r.visible = true; }
+            }
+            return;
+         }
+         if(this.hzBlg == null) { return; }
+         var d:DisplayObject = this.hzBlg.getChildByName("EnvAlertText");
+         if(d != null && d.visible) { d.visible = false; this.hzHsVanD = d; }
+      }
+      // ===================== end Hazard Status card =====================
+      // 0.43.3.0 (batch j): the Active Buffs card of the 0.43.3.1 / 0.43.3.2 test builds is removed: F11 (CARDS, RULES),
+      // ARRANGE, the HUD card, its PlayerStatusData subscription, its second read of the PersonalEffectsData feed (the
+      // Afflictions card keeps that feed) and its countdown. Leftover [ActiveBuffs], [Cards] BuffsScale / BuffsCompact,
+      // [Rules] BuffsRule and [Layout] BuffsX / BuffsY keys in a user.ini or preset match no setting (hzOnIni, hz34Ini,
+      // hz26Ini and hzIniLayoutKey fall through), so they are ignored, and F11 never writes them again.
 
       // ===================== env alert Phase 0 probe (private diag, default off) =====================
       // Purpose: settle three facts for the planned hazard status chip: which way EnvironmentEffectsData.fSoakDamagePct
@@ -1839,7 +2480,7 @@
       {
          if(!this.hzEnvP0Ini || this.hzEnvP0Subbed) { return; }
          this.hzEnvP0Subbed = true;
-         try { BSUIDataManager.Subscribe("EnvironmentAlertsData",this.hzEnvP0OnAlerts); } catch(eS:Error) { }
+         this.hzHsSub();   // the one EnvironmentAlertsData listener (Hazard Status); it forwards to hzEnvP0OnAlerts
       }
 
       private function hzEnvP0Ready() : Boolean
@@ -1967,7 +2608,7 @@
       {
          this.hzFixFonts();
          try { this.hz26Log("PersonalEffectsData",e.data); } catch(errL:Error) { }
-         var t:String = this.hzJoinEffects(e.data.aPersonalEffects as Array);
+         var t:String = this.hzJoinEffects(e.data.aPersonalEffects as Array,true);
          this.hzEnvAff.text = t;
          this.hzAfSetPers(e.data.aPersonalEffects as Array);
       }
@@ -1979,14 +2620,62 @@
          var ct:Number = Number(e.data.uType);
          if(ct != this.hzCrossType) { this.hzT19Ver++; }
          this.hzCrossType = ct;
+         this.hzWpnRet = this.hzWpnReticle(ct,this.hzWpnRet);   // arch-fixes Fix 3
          this.hzDbgCross = this.hzDump(e.data);
          this.hzDbgShow();
          this.hzRefreshVisibility();
       }
 
+      // arch-fixes Fix 3: combat has two providers, PlayerData and HUDStealthData (the one the game's own stealth meter
+      // reads, already subscribed in hz26Build). Each one counts only on its own edge, so the latest change from either
+      // decides and a provider repeating an old value never undoes the other one's newer edge.
+      // arch-fixes N-3: a stealth-sourced "in combat" can't stick when the stealth feed goes quiet. Two edges clear it,
+      // both inside callbacks that already fire (no timer, no frame work, no allocation):
+      //  * the stealth meter's own sneak-exit edge (bSneaking true -> false): the stealth source drops out and combat
+      //    falls back to PlayerData's last value (that one update's combat flag is not used);
+      //  * PlayerData reporting "not in combat" on HZ_COMBAT_QUIET updates in a row with no stealth update in between.
       private function hzOnPlayerData(e:FromClientDataEvent) : *
       {
-         if(this.hz36SetCombat(e.data.bIsInCombat === true)) { this.hzRefreshVisibility(); }
+         var v:Boolean = e.data.bIsInCombat === true;
+         var was:Boolean = this.hzCombatPd;
+         this.hzCombatPd = v;
+         if(!v && this.hzCombatSt)
+         {
+            this.hzCombatQuiet++;
+            if(this.hzCombatQuiet >= HZ_COMBAT_QUIET)   // stealth said combat, then stopped updating: PlayerData decides
+            {
+               this.hzCombatSt = false;   // hzCombatQuiet restarts at the next stealth update
+               if(this.hz36SetCombat(false)) { this.hzRefreshVisibility(); }
+               return;
+            }
+         }
+         if(v == was) { return; }
+         if(this.hz36SetCombat(v)) { this.hzRefreshVisibility(); }
+      }
+      private function hzOnStealthCombat(d:Object) : void
+      {
+         if(d == null) { return; }
+         this.hzCombatQuiet = 0;   // the stealth feed is alive
+         if(d.bSneaking !== undefined)
+         {
+            var sn:Boolean = d.bSneaking === true;
+            var exitEdge:Boolean = this.hzCombatSn && !sn;
+            this.hzCombatSn = sn;
+            if(exitEdge)
+            {
+               if(this.hzCombatSt)
+               {
+                  this.hzCombatSt = false;
+                  if(this.hz36SetCombat(this.hzCombatPd)) { this.hzRefreshVisibility(); }
+               }
+               return;
+            }
+         }
+         if(d.bIsInCombat === undefined) { return; }
+         var v:Boolean = d.bIsInCombat === true;
+         if(v == this.hzCombatSt) { return; }
+         this.hzCombatSt = v;
+         if(this.hz36SetCombat(v)) { this.hzRefreshVisibility(); }
       }
 
       // Compact mode: one slim line per reading (icon, value, bar).
@@ -2081,8 +2770,8 @@
             try { this.hz31PpFit(left,cx,sP,sCm); } catch(err31:Error) { }
             this.hzPlace(this.HorizonEnv_mc,left,top);
             this.hzPlace(this.HorizonCompass_mc,cx - this.hzCmpW19 * sCm / 2,tl.y + this.hz27CmpTop());
-            this.hzPlace(this.HorizonQuest_mc,right - HZ_Q19_W * sQ,top);
-            this.hzPlace(this.HorizonCompactQuest_mc,right - HZ_CQ19_W * sQ,top);
+            this.hzPlace(this.HorizonQuest_mc,right - this.hzQW * sQ,top);   // 0.43.3.0: QuestsWidth
+            this.hzPlace(this.HorizonCompactQuest_mc,right - this.hzCQW() * sQ,top);
             try { this.hz42VitApply(); } catch(err42:Error) { }   // v0.42.0: VitalsLayout (card size 330 x 124 or 668 x 58)
             var vy:Number = bottom - this.hz42VH() * sV;
             this.hzPlace(this.HorizonVitals_mc,left,vy);
@@ -2415,6 +3104,12 @@
 
       private var hzPlugActive:Boolean = false;
       private var hzPlugDrawn:Boolean = false;
+      private var hzWpnRet:Boolean = false;     // arch-fixes Fix 3: the last crosshair type was a weapon reticle (see hzWpnReticle)
+      private var hzCombatPd:Boolean = false;   // arch-fixes Fix 3: last PlayerData.bIsInCombat
+      private var hzCombatSt:Boolean = false;   // arch-fixes Fix 3: last HUDStealthData.bIsInCombat
+      private var hzCombatSn:Boolean = false;   // arch-fixes N-3: last HUDStealthData.bSneaking (for the sneak-exit edge)
+      private var hzCombatQuiet:int = 0;        // arch-fixes N-3: PlayerData "not in combat" updates since the last stealth update
+      private static const HZ_COMBAT_QUIET:int = 2;
       public function hzSetWeaponDrawn(drawn:Boolean) : void
       {
          var changed:Boolean = !this.hzPlugActive || this.hzPlugDrawn != drawn;
@@ -2669,9 +3364,25 @@
          }
       }
 
+      // 0.43.3.2: the game's crosshair setting reaches the HUD only as HudCrosshairData.bEnabled (the vanilla Crosshair.as
+      // has no other off switch; inferred, not seen in a log), so with it off WEAPON DRAWN ONLY never shows the Equipment
+      // card; the F11 Equipment rule row says so. Not loosened: whether the reticle type still updates then is unknown.
+      // arch-fixes Fix 3: hzSetWeaponDrawn (a drawn / holstered feed) decides when anything calls it. Without one, a gun
+      // counts as out only while the game shows a weapon reticle for it: the crosshair is on, the ammo counter is on and
+      // the last reticle type was a weapon one. Unknown (before the first crosshair update), unarmed, tool and none are
+      // not out; interact / command (looking at a door, an item, a crew order) keep the last decision, so the card does
+      // not flicker while aiming past objects.
       private function hzWeaponOut() : Boolean
       {
-         return this.hzPlugActive ? this.hzPlugDrawn : (this.hzAmmoDrawn && this.hzCrossOn && this.hzCrossType != 2);
+         return this.hzPlugActive ? this.hzPlugDrawn : (this.hzAmmoDrawn && this.hzCrossOn && this.hzWpnRet);
+      }
+      // HCT (HudCrosshairData.uType): 0 pistol, 1 cutter, 2 unarmed, 3 shotgun, 4 rifle, 5 laser, 6 tool, 7 interact,
+      // 8 command, 9 none. Edge only: called from hzOnCrosshair.
+      private function hzWpnReticle(ct:Number, was:Boolean) : Boolean
+      {
+         if(ct == 0 || ct == 1 || ct == 3 || ct == 4 || ct == 5) { return true; }
+         if(ct == HZ_HCT_INTERACT || ct == HZ_HCT_COMMAND) { return was; }
+         return false;
       }
 
       private function hzRuleFix(key:String, v:int) : int
@@ -2737,6 +3448,7 @@
       public function hzToggleAll() : void
       {
          this.hzUserHidden = !this.hzUserHidden;
+         try { this.hzHsVan(); } catch(eHsU:Error) { }   // Hazard Status: hide-all gives the vanilla EnvAlertText back
          if(this.HorizonCompass_mc)
          {
             this.HorizonCompass_mc.visible = !this.hzUserHidden && this.hzShowCompass;
@@ -2752,6 +3464,9 @@
          try { if(this.hzEq19 && this.hz34C("Equipment") != this.hzE19Cm) { this.hzE19Sync(); } } catch(errEc:Error) { }
          var base:Boolean = this.hzGroupVisible && !this.hzUserHidden;
          var cardBase:Boolean = base && !this.hz40Hide;   // v0.40: the cards only; combat feedback keeps base
+         // 0.43.3.0: the Hazard Status card's base (an edge: hzHsCard / hzHsSync return at once when nothing changed); the
+         // show target is given again like every card, so a scanner force-hide (hz40ForceHide) is restored here too
+         try { this.hzHsCard(cardBase); this.hzHsSync(); if(this.HorizonHazard_mc && !this.hzArrange) { this.hzShow(this.HorizonHazard_mc,this.hzHsShown); } } catch(eHsR:Error) { }
          var full:Boolean = !this.hzCompact && cardBase;
          var vitBase:Boolean = base && !this.hz40Hide;   // v0.41.0: the HUD vitals cards hide too; hz41V draws the kept vitals
          // VitalsBars compact reuses the COMPACT MODE strips. If either is on, that one card shows and the full cards stay hidden.
@@ -2848,9 +3563,19 @@
          try { this.hz43SyncHide(); } catch(e43h:Error) { }
          try { this.hz44GrpTick(true); } catch(e44g:Error) { }   // whole-group BLG hide: after the style sync, before the hide list
          if(this.hzPerfOn) { this.hzPsMark(4); }
-         // watchlog test switch: mode 1 skips only the 90-frame re-walk (PerfDiag=1, WatchLog=1, Scroll Lock)
-         if(this.hzHideCache == null || (this.hzFrameN % 90 == 1 && !(this.hzWlOn && this.hzWlMode == 1)) || this.hz36HideStale)
+         // arch-fixes Fix 1: the re-walk runs on an edge only: no cache, a stale ref, a BLG child count change, or (only while
+         // a listed name is still missing) the old 90-frame retry. Steady state: one int compare.
+         // watchlog test switch: mode 1 skips only the edge re-walk (PerfDiag=1, WatchLog=1, Scroll Lock)
+         var rbKids:int = this.hzBlg != null ? this.hzBlg.numChildren : -1;
+         // perf round 2: the missing-name retry stops once every missing name has had 6 retry walks, 90 frames apart (a listed
+         // name that never exists, e.g. the boost meter anim clip, kept a full tree walk every 90 frames all session). The
+         // count is per name (hzHideMissCount); any real edge starts every count again.
+         var rbEdge:Boolean = rbKids != this.hzHideKids || (this.hzHideMiss && this.hzHideMissN < 6 && this.hzFrameN % 90 == 1);
+         if(this.hzHideCache == null || (rbEdge && !(this.hzWlOn && this.hzWlMode == 1)) || this.hz36HideStale)
          {
+            var rbRetry:Boolean = this.hzHideCache != null && !this.hz36HideStale && rbKids == this.hzHideKids;   // only the missing-name retry fired
+            this.hzHideKids = rbKids;
+            this.hz43ChrForce |= 11;   // perf round 2: + bit 8, the styles 1/2 show sweep
             this.hzHideTries++;
             if(this.hzPerfOn) { this.hzPcHideRb++; }
             if(this.hzWlOn) { wlOld = this.hzHideCache; wlWhy = wlOld == null ? 0 : (this.hz36HideStale ? 2 : 1); this.hzWlRbNow = true; }
@@ -2883,9 +3608,11 @@
             if(this.hzHideVanillaHealth) { names.push("HealthBar_mc","HealthBarEmpty_mc","HealthBarGhost_mc","HealthBarDamage_mc","HealthBarIncrease_mc","Health_mc"); }
             this.hz44Skip = grp ? this.hz44Ref : null;   // grp: the walk does not descend into the hidden BLG (no listed name lives there)
             try { this.hz36HideFindAll(this,names,this.hzHideCache); } finally { this.hz44Skip = null; }   // one tree walk for the whole list
+            this.hzHideMiss = this.hzHideMissing(names,this.hzHideCache);
+            this.hzHideMissN = this.hzHideMiss ? this.hzHideMissCount(names,this.hzHideCache,rbRetry) : this.hzHideMissReset();
             if(this.hzWlOn) { try { this.hzWlRbDiff(wlOld,this.hzHideCache,wlWhy); } catch(eWr:Error) { } }
          }
-         else if(this.hzWlOn && this.hzWlMode == 1 && this.hzFrameN % 90 == 1) { this.hzWlSkip++; }
+         else if(this.hzWlOn && this.hzWlMode == 1 && rbEdge) { this.hzWlSkip++; this.hzHideKids = rbKids; }
          if(this.hzPerfOn) { this.hzPsMark(5); }
          try { this.hz36HideTick(); } catch(e36a:Error) { }   // v0.36: hide first, so a throw below can't skip it
          if(this.hzPerfOn) { this.hzPsMark(6); }
@@ -2897,19 +3624,25 @@
             {
                this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer;
             }
-            if(this.hzBlg)
+            if(this.hzBlg && this.hz43ChrNeedA())   // arch-fixes Fix 1: full child pass on an edge only
             {
+               this.hz43ChrPrune();   // arch-fixes N-1
                var bi:int = 0;
+               this.hz43ChrWN = 0;
                while(bi < this.hzBlg.numChildren)
                {
                   var bc:DisplayObject = this.hzBlg.getChildAt(bi);
                   var keepMark:Boolean = (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && bc && this.hz43VanMarkName(bc.name);
-                  if(bc && bc.visible && !keepMark && bc.name != "EnemyDetectionAnim_mc" && bc.name != "EnvAlertText" && bc.name != "BioAlertText" && bc.name != "LocationAlertText" && !(bc.name != null && (bc.name.indexOf("Bio") == 0 || bc.name.indexOf("Env") == 0)))
+                  if(bc && !keepMark && bc.name != "EnemyDetectionAnim_mc" && bc.name != "EnvAlertText" && bc.name != "BioAlertText" && bc.name != "LocationAlertText" && !(bc.name != null && (bc.name.indexOf("Bio") == 0 || bc.name.indexOf("Env") == 0)))
                   {
-                     this.hz43StHide(bc);
+                     if(bc.visible) { this.hz43StHide(bc); }
+                     else if(this.hz43VanWatchClip(bc)) { this.hz43ChrWAdd(bc); }   // game-hidden now: watched, so a later show is an edge
                   }
                   bi++;
                }
+               this.hz43ChrKidsA = this.hzBlg.numChildren;
+               this.hz43ChrStA = this.hzWatchStyle;
+               this.hz43ChrForce &= ~1;
                if(this.hzPerfOn) { this.hzPcBlgCh += bi; }
             }
          }
@@ -2990,6 +3723,28 @@
       private var hzVehW:Number = 0;
       private var hzVehH:Number = 42;
       private var hzVehFail:int = 0;
+      // 0.43.3.2 batch e: ARRANGE CARDS can move the pill. VehicleExitX / VehicleExitY ([Cards Extra]) = offset of the pill
+      // center from its home in HUD units (X + = right, Y + = up; 0 / 0 = the home, the default).
+      // 0.43.3.2 batch k: the home is a fixed bottom-right spot computed only from the visible area (hzVis): HZ_VEH_HR from
+      // its right edge and HZ_VEH_HB from its bottom edge, the center of the pill where in-game screenshots show the game's
+      // exit prompt and the 0 / 0 pill (about 1490 - 1530, 1004 on a 1920 x 1080 view). Nothing is measured from the
+      // game's button any more: GetUpButton_mc sits in the 3D RightMeters_mc, and its bounds (hidden, on the Off frame, or
+      // through the 3D matrix) could come back near x = 0 and pull the pill to the bottom left. So the pill is at the same
+      // spot in ARRANGE on foot and in a vehicle, and it is placed only on edges, never measured per frame.
+      private static const HZ_VEH_KEY:String = "VehicleExit";   // ARRANGE list key (not a [Layout] card: offsets, like the scope chip)
+      private static const HZ_VEH_HR:Number = 420;   // home center: this far left of the visible right edge
+      private static const HZ_VEH_HB:Number = 76;    // and this far up from the visible bottom edge
+      private var hzVehX:Number = 0;
+      private var hzVehY:Number = 0;
+      private var hzVehOrig:Object = null;   // ARRANGE: the offsets to give back on CANCEL
+      private var hzVehPlX:Number = NaN;     // what the pill was last placed for (offsets, size, visible area)
+      private var hzVehPlY:Number = NaN;
+      private var hzVehPlW:Number = NaN;
+      private var hzVehPlH:Number = NaN;
+      private var hzVehPlR:Rectangle = null;
+      private var hzVehArr:Boolean = false;  // the pill is the ARRANGE proxy right now
+      private var hzVehKs:String = "";       // last key text / face drawn in a vehicle (the proxy shows the same key)
+      private var hzVehKf:String = "";
       private function hz42VehOnData(e:FromClientDataEvent) : void
       {
          try
@@ -3005,6 +3760,7 @@
          {
             if(e == null || e.data == null || e.data.uiController == undefined) { return; }
             this.hzVehPad = uint(e.data.uiController) > 0 ? 1 : 0;
+            this.hzT19EdgeN = 3;   // 0.43.3.1: a rebind (ControlMapData) re-reads the prompt keycaps (event-driven)
          }
          catch(err:Error) { }
       }
@@ -3363,28 +4119,37 @@
             i++;
          }
       }
-      private function hz42VehPlace(b:*) : Boolean
+      // batch k: the pill's top-left for the current offsets and size, kept inside the visible area. ARRANGE and the vehicle
+      // tick both place it through here, so both use the same spot. Reads only hzVis() and the pill's own numbers.
+      private function hzVehSpot() : Point
       {
-         var r:Rectangle = null;
-         try { r = b.getBounds(this); } catch(err:Error) { r = null; }
-         var bad:Boolean = r == null || isNaN(r.x) || isNaN(r.y) || isNaN(r.width) || isNaN(r.height) || r.width < 1 || r.height < 1 || r.width > 800 || r.height > 400;
-         if(bad)
-         {
-            r = null;
-            try
-            {
-               var lp:Point = this.globalToLocal(b.localToGlobal(new Point(b.width > 1 ? b.width / 2 : 0,b.height > 1 ? b.height / 2 : 0)));
-               if(lp != null && !isNaN(lp.x) && !isNaN(lp.y)) { r = new Rectangle(lp.x,lp.y,2,2); }
-            }
-            catch(err2:Error) { r = null; }
-         }
-         if(r == null || isNaN(r.x) || isNaN(r.y)) { return false; }
-         this.hzVehPx.x = Math.round(r.x + r.width / 2 - this.hzVehW / 2);
-         this.hzVehPx.y = Math.round(r.y + r.height / 2 - this.hzVehH / 2);
-         return true;
+         var vr:Rectangle = this.hzVis();
+         var hp:Point = this.hzVehHome();
+         var w:Number = this.hzVehW > 0 ? this.hzVehW : 0;
+         var h:Number = this.hzVehH > 0 ? this.hzVehH : 0;
+         var x:Number = hp.x + this.hzVehX - Math.round(w / 2);
+         var y:Number = hp.y - this.hzVehY - Math.round(h / 2);
+         if(x > vr.right - w) { x = vr.right - w; }
+         if(x < vr.left) { x = vr.left; }
+         if(y > vr.bottom - h) { y = vr.bottom - h; }
+         if(y < vr.top) { y = vr.top; }
+         return new Point(Math.round(x),Math.round(y));
+      }
+      // batch k: place the pill (callers: the vehicle tick on an edge, hzVehArrSync) and remember what it was placed for
+      private function hzVehPlace() : void
+      {
+         var sp:Point = this.hzVehSpot();
+         this.hzVehPx.x = sp.x;
+         this.hzVehPx.y = sp.y;
+         this.hzVehPlX = this.hzVehX;
+         this.hzVehPlY = this.hzVehY;
+         this.hzVehPlW = this.hzVehW;
+         this.hzVehPlH = this.hzVehH;
+         this.hzVehPlR = this.hzVisR;
       }
       private function hz42VehTick() : void
       {
+         if(this.hzVehArr) { return; }   // 0.43.3.2: ARRANGE owns the pill (hzVehArrSync); one Boolean test per frame
          var b:* = this.hz42VehBtn();
          if(!this.hzVehOn || b == null)
          {
@@ -3419,6 +4184,7 @@
          var key:Array = this.hz42VehKey(b);
          var ks:String = key != null && key[0] != null ? String(key[0]) : "";
          var kf:String = key != null && key[1] != null ? String(key[1]) : "";
+         if(ks.length > 0) { this.hzVehKs = ks; this.hzVehKf = kf; }
          var sig:String = (done ? "1" : "0") + "|" + String(int(Math.round(prog * 100))) + "|" + ks + "|" + kf + "|" + String(int(HZ_ACCENT)) + "|" + String(this.hzTextScale) + "|" + String(this.hzFontFace) + "|" + String(this.hzHeaderStyle) + "|" + String(this.hzCardOpacity);
          if(this.hzVehPx == null)
          {
@@ -3448,15 +4214,118 @@
                return;
             }
          }
-         if(this.hzVehW < 1 || !this.hz42VehPlace(b))
+         if(this.hzVehW < 1)
          {
             this.hzVehPx.visible = false;
             this.hz42VehHideVan(b,false);
             return;
          }
+         // batch k: placed only on an edge (shown again, redrawn to a new size, moved in F11 / ARRANGE, a new visible area);
+         // number and reference compares only, no measuring
+         if(!this.hzVehPx.visible || this.hzVehPlR !== this.hzVisR || this.hzVehPlX != this.hzVehX || this.hzVehPlY != this.hzVehY || this.hzVehPlW != this.hzVehW || this.hzVehPlH != this.hzVehH) { this.hzVehPlace(); }
          this.hzVehPx.visible = true;
          this.hz42VehFront();
          this.hz42VehHideVan(b,true);
+      }
+      // ---- 0.43.3.2 batch e: vehicle exit pill in ARRANGE CARDS (edges only: ARRANGE open / draw / drag / close) ----
+      private function hzVehCX(v:*) : Number { var n:Number = Number(v); if(isNaN(n)) { return 0; } return Math.round(Math.max(-1000,Math.min(1000,n))); }
+      private function hzVehCY(v:*) : Number { var n:Number = Number(v); if(isNaN(n)) { return 0; } return Math.round(Math.max(-600,Math.min(600,n))); }
+      // batch k: the pill's home center, a fixed bottom-right spot of the visible area (see HZ_VEH_HR / HZ_VEH_HB). The same
+      // in ARRANGE on foot and in a vehicle; never measured from the game's button.
+      private function hzVehHome() : Point
+      {
+         var vr:Rectangle = this.hzVis();
+         return new Point(Math.round(vr.right - HZ_VEH_HR),Math.round(vr.bottom - HZ_VEH_HB));   // whole units: drag -> offsets -> spot is exact
+      }
+      // ARRANGE open / draw / close: the pill is drawn idle (the last key seen, else E) at its spot, or handed back
+      private function hzVehArrSync() : void
+      {
+         var on:Boolean = this.hzArrange && !this.hz41SA && this.hzVehOn;
+         if(!on)
+         {
+            if(this.hzVehArr)
+            {
+               this.hzVehArr = false;
+               this.hzVehSig = "";   // the vehicle tick redraws and places it again
+               if(this.hzVehPx != null) { this.hzVehPx.visible = false; }
+            }
+            return;
+         }
+         if(this.hzVehPx == null)
+         {
+            this.hzVehPx = new Sprite();
+            this.hzVehPx.mouseEnabled = false;
+            this.hzVehPx.mouseChildren = false;
+            this.hzVehPx.name = "hzVehExit";
+         }
+         if(!this.hzVehArr)
+         {
+            this.hzVehArr = true;
+            this.hz42VehDraw(this.hzVehKs.length > 0 ? this.hzVehKs : "E",this.hzVehKf,0,false);
+            this.hzVehSig = "";
+         }
+         this.hzVehPlace();   // batch k: the same spot as in a vehicle
+         this.hzVehPx.visible = true;
+         if(this.hzVehPx.parent != this) { addChild(this.hzVehPx); }
+         if(this.hzArr_mc != null && this.hzArr_mc.parent == this) { addChild(this.hzArr_mc); }
+      }
+      // one value set (ARRANGE drag / nudge / reset / cancel): the live value and the pending F11 value
+      private function hzVehPut(x:*, y:*) : void
+      {
+         this.hzVehX = this.hzVehCX(x);
+         this.hzVehY = this.hzVehCY(y);
+         if(this.hzSetPend != null) { this.hzSetPend.VehicleExitX = this.hzVehX; this.hzSetPend.VehicleExitY = this.hzVehY; }
+         this.hzVehArrSync();
+      }
+      // ARRANGE drag / nudge: the pill center -> offsets from the home
+      private function hzVehFromPx(c:Sprite) : void
+      {
+         var hp:Point = this.hzVehHome();
+         this.hzVehPut(c.x + Math.round(this.hzVehW / 2) - hp.x,hp.y - (c.y + Math.round(this.hzVehH / 2)));
+      }
+      private function hzVehIni(k:String, nv:Number) : Boolean
+      {
+         if(k == "vehicleexitx") { this.hzVehX = this.hzVehCX(nv); return true; }
+         if(k == "vehicleexity") { this.hzVehY = this.hzVehCY(nv); return true; }
+         return false;
+      }
+      private function hzVehSetCur(o:Object) : void
+      {
+         o.VehicleExitX = this.hzVehX;
+         o.VehicleExitY = this.hzVehY;
+      }
+      private function hzVehSetLive(p:Object) : void
+      {
+         if(p.VehicleExitX !== undefined) { this.hzVehX = this.hzVehCX(p.VehicleExitX); }
+         if(p.VehicleExitY !== undefined) { this.hzVehY = this.hzVehCY(p.VehicleExitY); }
+      }
+      private function hzVehIniLines(a:Array, p:Object) : void
+      {
+         a.push("; Vehicle exit pill spot (ARRANGE CARDS): offset from the default bottom-right spot in HUD units (X + = right, Y + = up); 0 / 0 = the default spot");
+         a.push("VehicleExitX=" + String(this.hzVehCX(p.VehicleExitX !== undefined ? p.VehicleExitX : this.hzVehX)));
+         a.push("VehicleExitY=" + String(this.hzVehCY(p.VehicleExitY !== undefined ? p.VehicleExitY : this.hzVehY)));
+      }
+      // 0.43.3.0 batch f: [Cards Extra] QuickMenuHorizon (F11 > CARDS > QUICK MENU > HORIZON STYLE, default 1). The HUD only
+      // stores and writes it; the quick menu movie (favoritesmenu.swf, actionscript/favorites/hzq_main.as) reads it on open.
+      // 0 = the game's own quick menu look.
+      private var hzQmOn:Boolean = true;
+      private function hzQmIni(k:String, bv:Boolean) : Boolean
+      {
+         if(k == "quickmenuhorizon") { this.hzQmOn = bv; return true; }
+         return false;
+      }
+      private function hzQmSetCur(o:Object) : void
+      {
+         o.QuickMenuHorizon = this.hzQmOn;
+      }
+      private function hzQmSetLive(p:Object) : void
+      {
+         if(p.QuickMenuHorizon !== undefined) { this.hzQmOn = p.QuickMenuHorizon === true || Number(p.QuickMenuHorizon) >= 0.5; }
+      }
+      private function hzQmIniLines(a:Array, p:Object) : void
+      {
+         a.push("; Quick menu (the game's favorites cross): 1 = Horizon cards in your card style, 0 = the game's own look. Read when the menu opens.");
+         a.push("QuickMenuHorizon=" + this.hzB(p.QuickMenuHorizon !== undefined ? p.QuickMenuHorizon : this.hzQmOn));
       }
       // =================== Horizon settings window (keyboard + mouse) ===================
       public var HorizonSettings_mc:Sprite = null;
@@ -3502,7 +4371,7 @@
          }
          if(tab == 4)
          {
-            return [{"k":"JetpackRule","l":"JETPACK","t":"q","ids":[0,4,1,2],"h":"WHEN EACH CARD SHOWS"},{"k":"VitalsRule","l":"VITALS","t":"q","ids":[0,5,1,2]},{"k":"PlanetRule","l":"PLANET","t":"q","ids":[0,1,2]},{"k":"AfflictionsRule","l":"AFFLICTIONS","t":"q","ids":[0,6,1,2]},{"k":"AmmoRule","l":"EQUIPMENT","t":"q","ids":[0,3,1,2]},{"k":"QuestsRule","l":"QUEST TRACKER","t":"q","ids":[0,1,2]},{"k":"CompassRule","l":"COMPASS","t":"q","ids":[0,1,2]},{"k":"CharacterRule","l":"CHARACTER CARD","t":"q","ids":[0,7,8,9,1,2],"note":"XP / level / credits / skill point: shows for 8 s, then fades (CharacterShowSeconds in the ini)"},{"k":"CrosshairRule","l":"CROSSHAIR","t":"r","opts":["ALWAYS","WEAPON DRAWN","OFF"],"ids":[0,1,2],"h":"CENTER RETICLE","note":"The center reticle only. Prompts, target cards, hit markers, the kill X, the damage ring, and the stealth pill stay."}];
+            return [{"k":"JetpackRule","l":"JETPACK","t":"q","ids":[0,4,1,2],"h":"WHEN EACH CARD SHOWS"},{"k":"VitalsRule","l":"VITALS","t":"q","ids":[0,5,1,2]},{"k":"PlanetRule","l":"PLANET","t":"q","ids":[0,1,2]},{"k":"AfflictionsRule","l":"AFFLICTIONS","t":"q","ids":[0,6,1,2]},{"k":"AmmoRule","l":"EQUIPMENT","t":"q","ids":[0,3,1,2],"note":"Crosshair off? Set this to ALWAYS or COMBAT ONLY."},{"k":"QuestsRule","l":"QUEST TRACKER","t":"q","ids":[0,1,2]},{"k":"CompassRule","l":"COMPASS","t":"q","ids":[0,1,2]},{"k":"CharacterRule","l":"CHARACTER CARD","t":"q","ids":[0,7,8,9,1,2],"note":"XP / level / credits / skill point: shows for 8 s, then fades (CharacterShowSeconds in the ini)"},{"k":"CrosshairRule","l":"CROSSHAIR","t":"r","opts":["ALWAYS","WEAPON DRAWN","OFF"],"ids":[0,1,2],"h":"CENTER RETICLE","note":"The center reticle only. Prompts, target cards, hit markers, the kill X, the damage ring, and the stealth pill stay."}];
          }
          if(tab == 5)
          {
@@ -5666,16 +6535,16 @@
       }
 
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
-      private static const HZ_VERSION:String = "0.42.0";
+      private static const HZ_VERSION:String = "0.43.3.0";   // settings schema = HZF::kVersion (0.42.0 until 2026-11-19)
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.2.0";
+      private static const HZ_BUILD:String = "0.43.3.0";   // 0.43.3.0: versions aligned (user request, 2026-11-18)
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -6775,6 +7644,7 @@
             case "Enemy": return [this.HorizonEnemy_mc].filter(this.hzNotNull);
             case "Stealth": return [this.HorizonStealth_mc].filter(this.hzNotNull);
             case "XpToast": return [this.HorizonXp_mc].filter(this.hzNotNull);
+            case "Hazard": return [this.HorizonHazard_mc].filter(this.hzNotNull);
             case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": return this.hz31PxOn(k) ? [this.hz31Px(k)] : [];
             case "Watch":
                if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4)
@@ -6849,6 +7719,7 @@
                case "Enemy": ok = this.hzEnemyBarOn; break;
                case "Stealth": ok = this.hzStealthOn; break;
                case "XpToast": ok = this.hzXpToastOn; break;
+               case "Hazard": ok = this.hzHsOn; break;
                case "Subtitle": case "Speaker": case "Dialogue": case "MissionToast": case "HudMessages": ok = this.hz31PxOn(k); break;   // v0.31 / v0.32: Comms proxies
                case "Watch": ok = this.hzWatchStyle == 1 || this.hzWatchStyle == 2 || this.hzWatchStyle == 3 || this.hzWatchStyle == 4; break;
             }
@@ -6861,6 +7732,7 @@
             i++;
          }
          try { if(this.hz42ScAvail() && this.hz42ScPx != null) { r.push({"k":HZ42_SC_KEY,"n":"SCOPE: HOLD BREATH","c":this.hz42ScPx}); } } catch(err42a:Error) { }   // v0.42.0 r2
+         try { if(this.hzVehArr && this.hzVehPx != null) { r.push({"k":HZ_VEH_KEY,"n":"VEHICLE EXIT PILL","c":this.hzVehPx}); } } catch(errVhA:Error) { }   // 0.43.3.2
          return r;
       }
 
@@ -6868,10 +7740,11 @@
       {
          var on:Array = [];
          if(!this.hz41SA) { for each(var e:Object in this.hzArrList()) { on.push(e.c); } }   // v0.41.0: ARRANGE SCANNER hides the HUD cards
-         for each(var c:Sprite in [this.HorizonCard_mc,this.HorizonVitals_mc,this.HorizonEnv_mc,this.HorizonAffl_mc,this.HorizonAmmo_mc,this.HorizonQuest_mc,this.HorizonCompactQuest_mc,this.HorizonCompass_mc,this.HorizonCompact_mc,this.HorizonChar_mc,this.HorizonEnemy_mc,this.HorizonStealth_mc,this.HorizonXp_mc])
+         for each(var c:Sprite in [this.HorizonCard_mc,this.HorizonVitals_mc,this.HorizonEnv_mc,this.HorizonAffl_mc,this.HorizonAmmo_mc,this.HorizonQuest_mc,this.HorizonCompactQuest_mc,this.HorizonCompass_mc,this.HorizonCompact_mc,this.HorizonChar_mc,this.HorizonEnemy_mc,this.HorizonStealth_mc,this.HorizonXp_mc,this.HorizonHazard_mc])
          {
             if(c) { this.hzShow(c,on.indexOf(c) >= 0); }
          }
+         try { this.hzHsSync(); } catch(errHsA:Error) { }   // 0.43.3.0: the Hazard Status card shows its preview in ARRANGE
          try { this.hz26CharSync(); this.hz26XpSync(); this.hzE19Sync(); } catch(err26:Error) { }
          try { if(on.indexOf(this.HorizonCompact_mc) >= 0) { this.hz43Reflow(true,true); } } catch(eArr:Error) { }
       }
@@ -6891,16 +7764,30 @@
          return r;
       }
 
+      // perf round 2 Fix 5: the converted rect is kept while the visible rect, this movie's x / y / scale / rotation and the
+      // stage are unchanged (callers only read it); the fallback rect is one shared object too
       private function hzVis() : Rectangle
       {
          var vr:Rectangle = Extensions.visibleRect;
          if(vr != null && vr.width >= 100 && stage != null)
          {
+            var k:Array = this.hzVisK;
+            if(this.hzVisR != null && k != null && k[0] == vr.x && k[1] == vr.y && k[2] == vr.width && k[3] == vr.height && k[4] == this.x && k[5] == this.y && k[6] == this.scaleX && k[7] == this.scaleY && k[8] == this.rotation && k[9] === stage)
+            {
+               return this.hzVisR;
+            }
             var tl:Point = globalToLocal(new Point(vr.left,vr.top));
             var br:Point = globalToLocal(new Point(vr.right,vr.bottom));
-            if(!isNaN(tl.x) && br.x - tl.x >= 100) { return new Rectangle(tl.x,tl.y,br.x - tl.x,br.y - tl.y); }
+            if(!isNaN(tl.x) && br.x - tl.x >= 100)
+            {
+               this.hzVisR = new Rectangle(tl.x,tl.y,br.x - tl.x,br.y - tl.y);
+               this.hzVisK = [vr.x,vr.y,vr.width,vr.height,this.x,this.y,this.scaleX,this.scaleY,this.rotation,stage];
+               return this.hzVisR;
+            }
          }
-         return new Rectangle(0,0,1920,1080);
+         this.hzVisR = null;
+         if(this.hzVisF == null) { this.hzVisF = new Rectangle(0,0,1920,1080); }
+         return this.hzVisF;
       }
 
       private function hzArrEnter() : void
@@ -6909,6 +7796,7 @@
          this.hzLayOrig = this.hzLayCopy(this.hzLay);
          this.hz42VLOrig = this.hz42VL;   // v0.42.0: CANCEL restores the vitals layout
          this.hz42ScOrig = {"x":this.hz42ScX,"y":this.hz42ScY,"s":this.hz42ScS};   // v0.42.0 r2: CANCEL restores the scope chip
+         this.hzVehOrig = {"x":this.hzVehX,"y":this.hzVehY};   // 0.43.3.2: CANCEL restores the vehicle exit pill
          this.hzArrange = true;
          try { this.hz43ScanHideSync(); } catch(e43s:Error) { }   // r7 (S-5): ARRANGE ends HideWatchWhileScanning (event edge)
          this.hzArrDrag = null;
@@ -6932,6 +7820,7 @@
             g.endFill();
          }
          try { this.hz42ScSync(); } catch(err42e:Error) { }   // v0.42.0 r2: the scope proxy (under the ARRANGE layer)
+         try { this.hzVehArrSync(); } catch(errVhE:Error) { }   // 0.43.3.2: the vehicle exit pill (under the ARRANGE layer)
          addChild(this.hzArr_mc); // topmost
          this.hzEqLayout();
          this.hzArr_mc.visible = true;
@@ -6954,6 +7843,7 @@
          {
             this.hzLayOrig = null;
             this.hz42ScOrig = null;
+            this.hzVehOrig = null;
             this.hzLaidOut = this.hzLayout();
             try { this.hz31PxSync(); } catch(err31f:Error) { }
             if(this.hzSetIsOpen) { this.hzSetApply(); }
@@ -6965,6 +7855,8 @@
             this.hzLayOrig = null;
             if(this.hz42ScOrig != null) { this.hz42ScPut(this.hz42ScOrig.x,this.hz42ScOrig.y,this.hz42ScOrig.s); }   // v0.42.0 r2: CANCEL
             this.hz42ScOrig = null;
+            if(this.hzVehOrig != null) { this.hzVehPut(this.hzVehOrig.x,this.hzVehOrig.y); }   // 0.43.3.2: CANCEL
+            this.hzVehOrig = null;
             if(this.hz42VLOrig >= 0 && this.hz42VLOrig != this.hz42VL) { this.hz42VL = this.hz42VLOrig; if(this.hzSetPend != null) { this.hzSetPend.VitalsLayout = this.hz42VL; } try { this.hz42VitApply(); } catch(err42x:Error) { } }   // v0.42.0
             this.hzLaidOut = this.hzLayout();
             try { this.hz31PxSync(); } catch(err31e:Error) { }
@@ -6977,6 +7869,7 @@
          }
          this.hzRefreshVisibility();
          try { this.hz42ScSync(); } catch(err42p:Error) { }   // v0.42.0 r2: the scope proxy only shows in ARRANGE
+         try { this.hzVehArrSync(); } catch(errVhX:Error) { }   // 0.43.3.2: hand the pill back to the vehicle tick
          try { this.hz40Apply(); } catch(err42h:Error) { }   // v0.42.0 r2: re-apply the scan hide (ARRANGE closed while the scanner opened)
       }
 
@@ -6985,7 +7878,8 @@
          if(this.hz41SA) { this.hz41SAReset(); return; }
          this.hzLay = {};
          this.hzVitOff = 0;
-         if(this.hz30Mod["scope"] === 1) { try { this.hz42ScPut(0,0,1); } catch(err42z:Error) { } }   // v0.42.0 r2: the scope chip back to the game's spot and size (r3: only with the Scope module)
+         if(this.hz30Mod["scope"] === 1) { try { this.hz42ScPut(0,0,1); } catch(err42z:Error) { } }
+         try { this.hzVehPut(0,0); } catch(errVhZ:Error) { }   // 0.43.3.2: the vehicle exit pill back to its default bottom-right spot   // v0.42.0 r2: the scope chip back to the game's spot and size (r3: only with the Scope module)
          this.hzLaidOut = this.hzLayout();
          this.hzArrDraw();
       }
@@ -6994,6 +7888,7 @@
       {
          if(this.hz41SA) { this.hz41SAStore(k,c); return; }
          if(k == "ScopeChip") { try { this.hz42ScFromPx(c); } catch(err42f:Error) { } return; }   // v0.42.0 r2: offsets, not a card anchor
+         if(k == HZ_VEH_KEY) { try { this.hzVehFromPx(c); } catch(errVhF:Error) { } return; }   // 0.43.3.2: offsets from the pill's home (batch k)
          var vr:Rectangle = this.hzVis();
          var o:Object = {"x":Math.max(0,Math.min(1,(c.x - vr.x) / vr.width)),"y":Math.max(0,Math.min(1,(this.hzFadeBase(c) - vr.y) / vr.height)),"hx":true,"hy":true};
          // v0.30: store edge-anchored offsets (the 0-1 fractions stay only as a fallback)
@@ -7051,6 +7946,7 @@
          this.hzArrHits = [];
          try { this.hz31PxSync(); } catch(err31s:Error) { }
          try { this.hz42ScSync(); } catch(err42s:Error) { }   // v0.42.0 r2: the scope proxy at its stored spot / size
+         try { this.hzVehArrSync(); } catch(errVhD:Error) { }   // 0.43.3.2: the vehicle exit pill at its stored spot
          for each(var e:Object in this.hzArrList())
          {
             var c:Sprite = e.c;
@@ -7700,6 +8596,7 @@
          try { this.hzE19Sync(); } catch(e5:Error) { }
          try { this.hzDrawCompassMarkers(); } catch(e6:Error) { }
          try { this.hz26Redraw(); } catch(e7:Error) { }
+         try { this.hzHsRestyle(); } catch(e8:Error) { }   // 0.43.3.0: the Hazard Status card follows the style
          this.hzT19Sig = "";
       }
 
@@ -7756,6 +8653,7 @@
          if(pay != this.hzT19ActCached)
          {
             this.hzT19ActCached = pay;
+            this.hzT19EdgeN = 3;   // perf round 2 Fix 5: new prompt data re-reads the labels and re-runs the hide walk
             if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.actCh++; }
             if(this.hzPerfOn) { this.hzRgPush(1,this.hzPerfNow(),0); }
             if(this.hzWlOn) { this.hzWlTgT = this.hzPerfNow(); this.hzWlTgN++; }
@@ -8117,9 +9015,11 @@
          return int(Math.floor(hh)) * 60 + int(Math.floor((hh - Math.floor(hh)) * 60));
       }
 
-      // real-world clock refresh, ~1 s (called from the frame loop)
+      // the existing 30-frame slot (hzOnFrame calls it every 30th frame; about 0.5 s at 60 fps): the Hazard Status hold
+      // end, then the real-world clock refresh. Nothing in it may move below the planet-clock return.
       private function hzPpClock() : void
       {
+         if(this.hzHsHoldT >= 0) { try { this.hzHsHoldTick(); } catch(eHsT:Error) { } }   // 0.43.3.2: hazard green hold end
          if(!this.hzPlanPill || !this.hzPlanPill.visible || this.hzTimeDisplay < 2) { return; }
          var m:int = -2;
          try { var dt:Date = new Date(); m = dt.getHours() * 60 + dt.getMinutes(); } catch(err:Error) { m = -2; }
@@ -8427,6 +9327,7 @@
          if(this.hzPpH != ph) { this.hzPpH = ph; this.hzLaidOut = false; }
          this.hzSetSz(this.HorizonEnv_mc,W,ph);
          this.hzPpDraw();
+         try { this.hzHsSync(); } catch(eHsP:Error) { }   // Hazard Status card: its max width follows the planet card (diff-and-skip)
       }
 
       // ---- VITALS (330x58 each, gap 8): bare icon | LABEL ...... value  + 8px bar with recent-damage ghost ----
@@ -8881,6 +9782,12 @@
                g.lineStyle();
                g.beginFill(col,1); g.drawCircle(cx + 7,cy - 8,1.6); g.drawCircle(cx + 10,cy + 4,1.6); g.drawCircle(cx + 4,cy + 9,1.6); g.endFill();
                break;
+            case "buff":   // Afflictions P0: a plain plus (the affliction glyph without its slash)
+               g.beginFill(col,1);
+               g.drawRoundRect(cx - 2,cy - 10,4,20,4,4);
+               g.drawRoundRect(cx - 10,cy - 2,20,4,4,4);
+               g.endFill();
+               break;
             case "injury":
                g.beginFill(col,1);
                g.drawRoundRect(cx - 2,cy - 10,4,20,4,4);
@@ -8999,6 +9906,9 @@
          var pg:* = this.hzCmpPill19.graphics;
          pg.clear();
          this.hzPanel(pg,72,26,13,-1,ac);
+         this.hzCmpHdI = -1;          // perf round 2 Fix 1: a style apply rewrites the heading texts and
+         this.hzCmpTkDeg = NaN;       // redraws the strip and the markers on the next dispatch
+         this.hzCmpMkOk = false;
          this.hzCmpTick19();
       }
 
@@ -9049,8 +9959,15 @@
             t.alpha = Math.pow(Math.max(0,1 - Math.abs(lx - cx) / (cx - 16)),0.6);
             i++;
          }
-         if(this.hzCmpHead19) { this.hzCmpHead19.text = String(int(Math.round(deg)) % 360) + "°"; }
-         if(this.hzCmpHeadIn && cmp) { this.hzCmpHeadIn.text = String(int(Math.round(deg)) % 360) + "°"; }
+         var hdi:int = int(Math.round(deg)) % 360;
+         if(hdi != this.hzCmpHdI || this.hzCmpC != this.hzCmpHdC)   // perf round 2 Fix 1: texts change with the whole degree only
+         {
+            this.hzCmpHdI = hdi;
+            this.hzCmpHdC = this.hzCmpC;
+            var hs:String = String(hdi) + "°";
+            if(this.hzCmpHead19) { this.hzCmpHead19.text = hs; }
+            if(this.hzCmpHeadIn && cmp) { this.hzCmpHeadIn.text = hs; }
+         }
       }
 
       // one marker on the v0.19 strip at y = 47 (original glyphs)
@@ -9132,6 +10049,171 @@
       private var hzQName:String = "";
       private var hzQObjStr:String = "";
       private var hzQDistStr:String = "";
+      // ---- 0.43.3.0 quest log: width, max height, text wrap (questlog mockup) ----
+      // [Cards] QuestsWidth (380 - 660, default 380 = today's card), QuestsMaxHeight (100 - 300, default 160),
+      // QuestsWrap (1 = the title and the objective wrap onto new lines at the same font size instead of ending in an
+      // ellipsis; only a text still too long at the max height ends in "..." on its last line. 0 = today's one-line card).
+      // The compact form uses the same width (at least today's 420) and puts the objective under the name.
+      // Edge-only: a wrap is measured only when the text, the width, the line cap or the field's format epoch (font,
+      // size, style, scale) changed (hzQWrapTo keeps the result on the field's registry entry); hzQSync itself still runs
+      // its change-only memo first (hzQsSame), so a steady frame does nothing new.
+      private static const HZ_QW_MIN:Number = 380;
+      private static const HZ_QW_MAX:Number = 660;
+      private static const HZ_QH_MIN:Number = 100;
+      private static const HZ_QH_MAX:Number = 300;
+      private var hzQW:Number = 380;              // [Cards] QuestsWidth
+      private var hzQMaxH:Number = 160;           // [Cards] QuestsMaxHeight
+      private var hzQWrap:Boolean = true;         // [Cards] QuestsWrap
+      private var hzQPW:Number = 380;             // drawn standard card width
+      private var hzQDW:Number = 380;             // the width the standard distance column was placed for
+      private var hzCQDW:Number = 420;            // the width the compact distance column was placed for
+      private var hzCQH:Number = 36;              // drawn compact card height
+      private var hzCQPW:Number = 420;            // drawn compact card width
+      private var hzCQOMv:Boolean = false;        // the compact objective sits under the name (wrap layout)
+      private var hzQTopT:Number = 10;            // wrap layout tops of the last full pass (hzQsTops replays them)
+      private var hzQTopO:Number = 37;
+      private var hzQObjB:Number = 54;
+      private var hzQSubY0:Number = 60;
+      private var hzQSubN:int = 0;
+      private var hzCQTopO:Number = 26;
+
+      private function hzCQW() : Number
+      {
+         return Math.max(HZ_CQ19_W,this.hzQW);
+      }
+      private function hzQWClamp(v:*) : Number
+      {
+         var n:Number = Number(v);
+         if(v === null || v === undefined || String(v) == "" || isNaN(n)) { return HZ_QW_MIN; }
+         return Math.round(Math.max(HZ_QW_MIN,Math.min(HZ_QW_MAX,n)));
+      }
+      private function hzQHClamp(v:*) : Number
+      {
+         var n:Number = Number(v);
+         if(v === null || v === undefined || String(v) == "" || isNaN(n)) { return 160; }
+         return Math.round(Math.max(HZ_QH_MIN,Math.min(HZ_QH_MAX,n)));
+      }
+
+      // Purpose: put full into tf on at most maxN lines at the field's own font size: wrapped at width w (maxN > 1), or
+      // one line fitted with an ellipsis (maxN 1, hzFitText). Text still too long for maxN lines ends in "..." on the
+      // last line only. Memo on the field's registry entry: the same text, width, cap and format epoch return the kept
+      // line count with no measure and no write. Inputs: field, text, width, cap. Outputs: the line count.
+      // Author: Moragar. Last modified: 2026-11-14.
+      private function hzQWrapTo(tf:TextField, full:String, w:Number, maxN:int) : int
+      {
+         var o:Object = this.hzTxtObj(tf);
+         var fm:int = o != null ? int(o.fmtN) : -1;
+         if(o != null && o.qwF === full && o.qwW === w && o.qwN === maxN && o.qwM === fm && tf.text === o.qwT) { return int(o.qwL); }
+         var multi:Boolean = maxN > 1;
+         if(tf.wordWrap != multi) { tf.wordWrap = multi; tf.multiline = multi; }
+         if(tf.width != w) { tf.width = w; }
+         var n:int = 1;
+         if(!multi) { this.hzFitText(tf,full,w); }
+         else
+         {
+            tf.text = full;
+            n = tf.numLines;
+            if(n > maxN)
+            {
+               var lo:int = 1;
+               var hi:int = full.length;
+               while(lo < hi)
+               {
+                  var mid:int = (lo + hi + 1) >> 1;
+                  tf.text = full.substr(0,mid) + "...";
+                  if(tf.numLines <= maxN) { lo = mid; } else { hi = mid - 1; }
+               }
+               tf.text = full.substr(0,lo).replace(/\s+$/,"") + "...";
+               n = maxN;
+            }
+            if(n < 1) { n = 1; }
+         }
+         if(o != null && int(o.lines) != n && (n > 1 || int(o.lines) > 1)) { o.lines = n; this.hzApplyFmt(o); fm = int(o.fmtN); }
+         if(o != null) { o.qwF = full; o.qwW = w; o.qwN = maxN; o.qwM = fm; o.qwL = n; o.qwT = tf.text; }
+         return n;
+      }
+
+      // Purpose: a field back to one line (QuestsWrap 0 after 1); a no-op when it already is one at width w.
+      // Only a field hzQWrapTo wrote (its memo is set) is touched, once; the memo is dropped.
+      private function hzQOneLine(tf:TextField, w:Number) : void
+      {
+         var o:Object = this.hzTxtObj(tf);
+         if(o == null || o.qwF === undefined) { return; }
+         o.qwF = undefined;
+         if(tf.wordWrap) { tf.wordWrap = false; tf.multiline = false; }
+         if(int(o.lines) > 1) { o.lines = 1; this.hzApplyFmt(o); }
+         if(tf.width != w) { tf.width = w; }
+      }
+
+      // Purpose: the standard card, wrap on. Title on up to 2 lines (a fixed distance column, so a distance change never
+      // re-wraps it), the objective under it on as many lines as QuestsMaxHeight allows (at most 6), the sub-steps under
+      // that while they fit. Records the tops for hzQsTops and the sub-step start / count for hz27QLayout.
+      private function hzQWrapStd(title:String, sub:String) : void
+      {
+         var W:Number = this.hzQW;
+         var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
+         var pT:Number = Math.round(15 * ts) + 5;
+         var pO:Number = Math.round(13 * ts) + 4;
+         var hasSub:Boolean = sub.length > 0;
+         var tl:int = this.hzQWrapTo(this.hzQ19T,this.hzUC(title),W - 74 - 14 - 84,2);
+         var two:Boolean = hasSub || this.hz27QSubs.length > 0;
+         var tt:Number = two ? 10 : Math.max(10,Math.round((78 - tl * pT) / 2) - 1);
+         this.hzQTopT = tt;
+         this.hzTxtTop(this.hzQ19T,tt);
+         this.hzTxtTop(this.hzQ19D,tt + 1);
+         var ot:Number = tt + tl * pT + 7;
+         this.hzQTopO = ot;
+         var ol:int = 0;
+         this.hzQ19O.visible = hasSub;
+         if(hasSub)
+         {
+            var cap:int = Math.max(1,Math.floor((this.hzQMaxH - 8 - ot) / pO));
+            ol = this.hzQWrapTo(this.hzQ19O,sub,W - 74 - 14,Math.min(6,cap));
+            this.hzTxtTop(this.hzQ19O,ot);
+         }
+         var ob:Number = hasSub ? ot + ol * pO : tt + tl * pT;
+         this.hzQObjB = ob;
+         this.hzQSubY0 = hasSub ? ob + 6 : ob + 8;
+         var n:int = Math.min(3,this.hz27QSubs.length);
+         while(n > 0 && this.hzQSubY0 + n * 22 + 8 > this.hzQMaxH) { n--; }
+         this.hzQSubN = n;
+      }
+
+      // Purpose: the compact card, wrap on (mockup: name on the first row, the objective wraps under it, same 12 px
+      // type, 520 x 66 for two lines). Height follows the lines, capped at QuestsMaxHeight; a size change asks for a layout.
+      private function hzQWrapCmp(title:String, sub:String) : void
+      {
+         var cw:Number = this.hzCQW();
+         var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
+         var pO:Number = Math.round(12 * ts) + 4;
+         this.hzQWrapTo(this.hzCQ19T,this.hzUC(title),cw - 32 - 14 - 80,1);
+         var hasSub:Boolean = sub.length > 0;
+         this.hzCQ19O.visible = hasSub;
+         var ch:Number = 36;
+         if(hasSub)
+         {
+            var ot:Number = 9 + Math.round(12 * ts) + 5;
+            if(this.hzCQ19O.x != 32) { this.hzCQ19O.x = 32; }
+            var cap:int = Math.max(1,Math.floor((this.hzQMaxH - 8 - ot) / pO));
+            var ol:int = this.hzQWrapTo(this.hzCQ19O,sub,cw - 32 - 14,Math.min(6,cap));
+            this.hzTxtTop(this.hzCQ19O,ot);
+            this.hzCQTopO = ot;
+            this.hzCQOMv = true;
+            ch = Math.min(Math.max(36,ot + ol * pO + 8),Math.max(36,this.hzQMaxH));
+         }
+         this.hzCQSize(cw,ch);
+      }
+
+      // the compact card's declared size and panel follow (cw, ch); an edge only
+      private function hzCQSize(cw:Number, ch:Number) : void
+      {
+         if(ch == this.hzCQH && cw == this.hzCQPW) { return; }
+         this.hzCQH = ch;
+         this.hzCQPW = cw;
+         if(this.HorizonCompactQuest_mc) { this.hzSetSz(this.HorizonCompactQuest_mc,cw,ch); }
+         this.hzLaidOut = false;
+         this.hzQDraw19();
+      }
 
       private function hzBuildQuest19() : void
       {
@@ -9170,7 +10252,7 @@
          {
             var g:* = this.hzQ19Body.graphics;
             g.clear();
-            this.hzPanel(g,HZ_Q19_W,this.hz27QH,18);
+            this.hzPanel(g,this.hzQPW,this.hz27QH,18);
             this.hzTileDisc(g,38,39,24,HZ_ACCENT,0.35);
             this.hzGlyph(g,"diamond",38,39,this.hzIconCol(HZ_ACCENT),0);
          }
@@ -9178,7 +10260,7 @@
          {
             var c:* = this.hzCQ19Body.graphics;
             c.clear();
-            this.hzPanel(c,HZ_CQ19_W,36,14);
+            this.hzPanel(c,this.hzCQPW,this.hzCQH,14);
             var ac:uint = this.hzIconCol(HZ_ACCENT);
             c.beginFill(ac,1); c.moveTo(20,12); c.lineTo(26,18); c.lineTo(20,24); c.lineTo(14,18); c.lineTo(20,12); c.endFill();
          }
@@ -9212,19 +10294,27 @@
          {
             this.hzQ19D.text = dist;
             this.hzQ19D.visible = dist.length > 0;
-            var tw:Number = HZ_Q19_W - 74 - 14 - (dist.length > 0 ? this.hzTW(this.hzQ19D) + 12 : 0);
-            this.hzFitText(this.hzQ19T,this.hzUC(title),tw);
-            this.hzQ19O.visible = sub.length > 0;
-            if(sub.length > 0 || this.hz27QSubs.length > 0)
-            {
-               this.hzFitText(this.hzQ19O,sub,HZ_Q19_W - 74 - 14);
-               this.hzTxtTop(this.hzQ19T,10);
-               this.hzTxtTop(this.hzQ19D,11);
-            }
+            if(this.hzQW != this.hzQDW) { this.hzQDW = this.hzQW; this.hzQ19D.x = this.hzQW - 14 - 84; }   // 0.43.3.0: the distance column follows QuestsWidth (edge)
+            if(this.hzQWrap) { this.hzQWrapStd(title,sub); }
             else
             {
-               this.hzTxtTop(this.hzQ19T,28);
-               this.hzTxtTop(this.hzQ19D,29);
+               var dW:Number = this.hzQW - HZ_Q19_W;
+               this.hzQOneLine(this.hzQ19T,HZ_Q19_W - 74 - 14 - 84 + dW);
+               this.hzQOneLine(this.hzQ19O,HZ_Q19_W - 74 - 14 + dW);
+               var tw:Number = this.hzQW - 74 - 14 - (dist.length > 0 ? this.hzTW(this.hzQ19D) + 12 : 0);
+               this.hzFitText(this.hzQ19T,this.hzUC(title),tw);
+               this.hzQ19O.visible = sub.length > 0;
+               if(sub.length > 0 || this.hz27QSubs.length > 0)
+               {
+                  this.hzFitText(this.hzQ19O,sub,this.hzQW - 74 - 14);
+                  this.hzTxtTop(this.hzQ19T,10);
+                  this.hzTxtTop(this.hzQ19D,11);
+               }
+               else
+               {
+                  this.hzTxtTop(this.hzQ19T,28);
+                  this.hzTxtTop(this.hzQ19D,29);
+               }
             }
             try { this.hz27QLayout(sub.length > 0); } catch(errQL:Error) { qlErr = true; }
          }
@@ -9232,14 +10322,24 @@
          {
             this.hzCQ19D.text = dist;
             this.hzCQ19D.visible = dist.length > 0;
-            var right:Number = HZ_CQ19_W - 14 - (dist.length > 0 ? this.hzTW(this.hzCQ19D) + 12 : 0);
-            this.hzFitText(this.hzCQ19T,this.hzUC(title),Math.min(200,right - 32));
-            var ox:Number = 32 + this.hzTW(this.hzCQ19T) + 6;
-            this.hzCQ19O.visible = sub.length > 0 && right - ox > 40;
-            if(this.hzCQ19O.visible)
+            if(this.hzCQW() != this.hzCQDW) { this.hzCQDW = this.hzCQW(); this.hzCQ19D.x = this.hzCQDW - 14 - 80; }   // 0.43.3.0 (edge)
+            if(this.hzQWrap) { this.hzQWrapCmp(title,sub); }
+            else
             {
-               this.hzCQ19O.x = ox;
-               this.hzFitText(this.hzCQ19O,"·  " + sub,right - ox);
+               var cw:Number = this.hzCQW();
+               this.hzQOneLine(this.hzCQ19T,200);
+               this.hzQOneLine(this.hzCQ19O,200);
+               if(this.hzCQOMv) { this.hzCQOMv = false; this.hzTxtTop(this.hzCQ19O,9); }
+               this.hzCQSize(cw,36);
+               var right:Number = cw - 14 - (dist.length > 0 ? this.hzTW(this.hzCQ19D) + 12 : 0);
+               this.hzFitText(this.hzCQ19T,this.hzUC(title),Math.min(200,right - 32));
+               var ox:Number = 32 + this.hzTW(this.hzCQ19T) + 6;
+               this.hzCQ19O.visible = sub.length > 0 && right - ox > 40;
+               if(this.hzCQ19O.visible)
+               {
+                  this.hzCQ19O.x = ox;
+                  this.hzFitText(this.hzCQ19O,"·  " + sub,right - ox);
+               }
             }
          }
          if(!qlErr) { this.hzQsKeep(); }
@@ -9278,6 +10378,9 @@
       private var hzQsQLN:int = -1;
       private var hzQsH:Number = NaN;
       private var hzQsMc:Object = null;
+      private var hzQsW:Number = NaN;      // 0.43.3.0: QuestsWidth / QuestsMaxHeight / QuestsWrap of the last full pass
+      private var hzQsMh:Number = NaN;
+      private var hzQsWr:* = null;
 
       // Purpose: field j of the card (see the order above). Inputs: j. Outputs: the TextField or null. Author: Moragar.
       // Last modified: 2026-11-09.
@@ -9313,6 +10416,7 @@
             if(this.hzFont !== this.hzQsFont || this.hz30Mod["font"] !== this.hzQsFMod) { return false; }
             if(this.hz27QL !== this.hzQsQL || this.hz27QLD !== this.hzQsQLD || this.hz27QL.length != this.hzQsQLN) { return false; }
             if(this.hz27QH !== this.hzQsH || this.HorizonQuest_mc !== this.hzQsMc) { return false; }
+            if(this.hzQW !== this.hzQsW || this.hzQMaxH !== this.hzQsMh || this.hzQWrap !== this.hzQsWr) { return false; }   // 0.43.3.0
             var subs:Array = this.hz27QSubs;
             if(subs == null || subs.length != this.hzQsSubN) { return false; }
             var i:int = 0;
@@ -9378,6 +10482,9 @@
             this.hzQsQLN = this.hz27QL != null ? this.hz27QL.length : -1;
             this.hzQsH = this.hz27QH;
             this.hzQsMc = this.HorizonQuest_mc;
+            this.hzQsW = this.hzQW;   // 0.43.3.0
+            this.hzQsMh = this.hzQMaxH;
+            this.hzQsWr = this.hzQWrap;
             var subs:Array = this.hz27QSubs;
             if(subs == null) { return; }
             this.hzQsSubN = subs.length;
@@ -9426,7 +10533,15 @@
          var name:String = this.hzQName != null ? this.hzQName : "";
          var obj:String = this.hzQObjStr != null ? this.hzQObjStr : "";
          var sub:String = name.length > 0 ? obj : "";
-         if(sub.length > 0 || this.hz27QSubs.length > 0)
+         if(this.hzQWrap)
+         {
+            // 0.43.3.0: the wrap layout's tops, as recorded by the full pass (same inputs, so the same tops)
+            this.hzTxtTop(this.hzQ19T,this.hzQTopT);
+            this.hzTxtTop(this.hzQ19D,this.hzQTopT + 1);
+            if(sub.length > 0) { this.hzTxtTop(this.hzQ19O,this.hzQTopO); }
+            if(this.hzCQ19O && this.hzCQOMv && sub.length > 0) { this.hzTxtTop(this.hzCQ19O,this.hzCQTopO); }
+         }
+         else if(sub.length > 0 || this.hz27QSubs.length > 0)
          {
             this.hzTxtTop(this.hzQ19T,10);
             this.hzTxtTop(this.hzQ19D,11);
@@ -9437,8 +10552,8 @@
             this.hzTxtTop(this.hzQ19D,29);
          }
          if(this.hz27QL.length < 3) { return; }
-         var n:int = Math.min(3,this.hz27QSubs.length);
-         var y0:Number = sub.length > 0 ? 60 : 38;
+         var n:int = this.hzQWrap ? this.hzQSubN : Math.min(3,this.hz27QSubs.length);
+         var y0:Number = this.hzQWrap ? this.hzQSubY0 : (sub.length > 0 ? 60 : 38);
          var i:int = 0;
          // The full pass runs these tops inside hz27QLayout under try/catch(Error): an Error here is swallowed the same
          // way, and the memo is dropped so the next call runs the full pass.
@@ -9665,6 +10780,9 @@
          this.hzAfSync();
       }
 
+      // Afflictions P0: one chip per exact effect icon (suffix included), so a buff and its matching debuff never merge.
+      // An icon ending in _Positive is a buff: it keeps its own chip, styled as a buff (green, "Buff"), sorts after every
+      // affliction and hazard, and does not count as afflicted for AfflictionsRule 6. Everything else stays an affliction.
       private function hzAfSetPers(a:Array) : void
       {
          var out:Array = [];
@@ -9674,20 +10792,28 @@
             for each(var o:Object in a)
             {
                if(!o || o.sEffectIcon == null) { continue; }
-               var sys:String = this.hzPretty(String(o.sEffectIcon));
-               if(sys.length == 0 || keys.indexOf(sys) >= 0) { continue; }
-               keys.push(sys);
-               out.push({"key":"p:" + sys,"name":"Affliction","sub":sys,"kind":"injury","env":false,"cat":String(o.sEffectIcon).replace(new RegExp("_(Negative|Positive)$"),"")});
+               var icon:String = String(o.sEffectIcon);
+               var sys:String = this.hzPretty(icon);
+               if(sys.length == 0 || keys.indexOf(icon) >= 0) { continue; }
+               keys.push(icon);
+               var pos:Boolean = this.hzAfIsPos(icon);
+               out.push({"key":"p:" + icon,"name":pos ? "Buff" : "Affliction","sub":sys,"kind":pos ? "buff" : "injury","env":false,"pos":pos,"icon":icon,"cat":icon.replace(new RegExp("_(Negative|Positive)$"),"")});
             }
          }
          this.hzAfPers = out;
          this.hzAfSync();
+      }
+      // Afflictions P0: polarity from the icon's own suffix (the only polarity the PersonalEffectsData entries carry).
+      private function hzAfIsPos(icon:String) : Boolean
+      {
+         return icon != null && icon.length > 9 && icon.substr(icon.length - 9) == "_Positive";
       }
 
       private function hzAfSortFn(a:Object, b:Object) : int
       {
          if(a.sev != b.sev) { return a.sev > b.sev ? -1 : 1; }
          if(a.seen != b.seen) { return a.seen > b.seen ? -1 : 1; }
+         if(a.key != b.key) { return a.key < b.key ? -1 : 1; }   // Afflictions P0: ties keep one order between updates
          return 0;
       }
 
@@ -9696,19 +10822,23 @@
          var all:Array = [];
          var live:Object = {};
          var crit:Boolean = this.hzAfSoak >= 0.66;
+         var nAff:int = 0;   // Afflictions P0: buffs are listed but are not afflictions
          var hz27src:Array = this.hzAfEnv.concat(this.hz27PersSafe());
          for each(var o:Object in hz27src)
          {
             live[o.key] = true;
             if(this.hzAfSeen[o.key] == undefined) { this.hzAfSeen[o.key] = this.hzFrameN; }
             o.seen = int(this.hzAfSeen[o.key]);
-            o.sev = o.env ? (crit ? 2 : 1) : 3;
+            o.sev = o.env ? (crit ? 2 : 1) : (o.pos === true ? 0 : 3);
+            if(o.pos !== true) { nAff++; }
             all.push(o);
          }
-         try { if(this.hz26OwInAffl()) { live["w:ow"] = true; all.push({"key":"w:ow","name":"Overweight","kind":"weight","env":false,"ow":true,"sev":2,"seen":0}); } } catch(errOw:Error) { }
+         try { if(this.hz26OwInAffl()) { nAff++; live["w:ow"] = true; all.push({"key":"w:ow","name":"Overweight","kind":"weight","env":false,"ow":true,"sev":2,"seen":0}); } } catch(errOw:Error) { }
          for(var k:String in this.hzAfSeen) { if(!live[k]) { delete this.hzAfSeen[k]; } }
          all.sort(this.hzAfSortFn);
-         this.hzAfflCount = this.hzV19() ? all.length : (this.hzAfPers.length > 0 ? 1 : 0);
+         var persAff:Boolean = false;
+         for each(var pa:Object in this.hzAfPers) { if(pa.pos !== true) { persAff = true; break; } }
+         this.hzAfflCount = this.hzV19() ? nAff : (persAff ? 1 : 0);
          this.hzAfLayoutChips(all);
          this.hzRefreshVisibility();
       }
@@ -9810,7 +10940,7 @@
             else
             {
                var a:Object = all[i];
-               var col:uint = a.ow ? HZ_AMB : (a.env ? (this.hzAfSoak >= 0.66 ? HZ_RED : HZ_AMB) : HZ_RED);
+               var col:uint = a.ow ? HZ_AMB : (a.env ? (this.hzAfSoak >= 0.66 ? HZ_RED : HZ_AMB) : (a.pos === true ? HZ_GREEN : HZ_RED));
                var ic:uint = this.hzIconCol(col);
                var hasSub:Boolean = a.sub != undefined && a.sub != null && String(a.sub).length > 0;
                var two:Boolean = a.env || a.ow || hasSub;
@@ -9827,7 +10957,7 @@
                   // v0.31: final format first (font, TextScale, tint, header case), then measure, cap + ellipsis, and size
                   // the field and the chip from that measurement in this same call (no one-frame overflow)
                   lb.text = this.hzUC(String(a.name));
-                  this.hzTxtTint(lb,(two && !hasSub) ? null : HZ_RED);
+                  this.hzTxtTint(lb,(two && !hasSub) ? null : (a.pos === true ? HZ_GREEN : HZ_RED));
                   this.hzTxtTint(sb,a.ow ? HZ_AMB : null);
                   sb.text = two ? (a.ow ? this.hz26OwText() : (a.env ? "Exposure " + Math.round(this.hzAfSoak * 100) + "%" : String(a.sub))) : "";
                   tw31 = this.hz31AfFit(lb,sb,two);
@@ -10111,14 +11241,12 @@
          this.hzE19Cm = cm;
          var W:Number = cm ? 300 : HZ_E19_W;
          var full:String = this.hzEqFullName.length > 0 ? this.hzUC(this.hzEqFullName) : "--";
-         var expand:Boolean = (this.hzArrange || this.hzFrameN < this.hzEqExpandUntil) && !cm;
-         var no:Object = this.hzTxtObj(this.hzE19Name);
-         var lines:int = 1;
-         this.hzE19Name.wordWrap = expand;
-         this.hzE19Name.multiline = expand;
-         if(expand) { this.hzE19Name.text = full; lines = this.hzE19Name.numLines > 1 ? 2 : 1; }
-         if(no && int(no.lines) != lines) { no.lines = lines; this.hzApplyFmt(no); }
-         if(!expand) { this.hzFitText(this.hzE19Name,full,cm ? W - 126 - 14 : W - HZ_E19_TX - 14); }
+         // 0.43.3.0: the standard card always lets a long weapon name wrap to a 2nd line at the same font size (was: only
+         // ~3 s after a swap and in ARRANGE); the card grows by one line. hzQWrapTo keeps the result on the field's
+         // registry entry, so the name is measured again only when the name, the width (compact form) or the field's
+         // format epoch (font, text scale, style) changes; an ammo update reuses it. Compact stays one line with "...".
+         var expand:Boolean = !cm;
+         var lines:int = this.hzQWrapTo(this.hzE19Name,full,cm ? W - 126 - 14 : W - HZ_E19_TX - 14,expand ? 2 : 1);
          this.hzE19Exp = expand;
          var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
          var dy:Number = lines > 1 ? Math.round(15 * ts) + 5 : 0;
@@ -10195,8 +11323,7 @@
       private function hzE19Tick() : void
       {
          if(!this.hzEq19 || !this.hzEq19.visible) { return; }
-         var want:Boolean = (this.hzArrange || this.hzFrameN < this.hzEqExpandUntil) && !this.hz34C("Equipment");
-         if(want != this.hzE19Exp || this.hz34C("Equipment") != this.hzE19Cm) { this.hzE19Sync(); }
+         if(this.hz34C("Equipment") != this.hzE19Cm) { this.hzE19Sync(); }   // 0.43.3.0: no timed expand any more (the name always wraps)
          if(this.hzEqLow && this.hzE19Cnt)
          {
             var a:Number = 0.35 + 0.45 * (0.5 + 0.5 * Math.sin(this.hzEqPulse));
@@ -10235,6 +11362,39 @@
       private var hzT19Cmp:Array = [];
       private var hzT19Btn:Array = [];
       private var hzT19HoldB:Array = null;
+      // perf round 2 Fix 5: hover card edges. hzT19Bc = the 4 button clips (read once per tick), hzT19Lbl* = the 12 key /
+      // label reads, hzT19Hc* = the vanilla prompt pieces the last hide walk handled (re-hidden without a walk while
+      // every recorded parent and child count still holds)
+      private var hzT19Bc:Array = null;
+      private var hzT19BcAw:Object = null;
+      private var hzT19BcF:int = -1;
+      private var hzT19EdAw:Object = null;
+      private var hzT19EdShow:Boolean = false;
+      private var hzT19EdM:int = -2;
+      private var hzT19EdPad:int = -2;
+      private var hzT19EdF:int = -10;
+      private var hzT19EdDecF:int = -10;
+      private var hzT19EdgeN:int = 3;
+      private var hzT19LblDue:Boolean = true;
+      private var hzT19LblC:Array = null;
+      private var hzT19HcDue:Boolean = true;
+      private var hzT19HcRec:Boolean = false;
+      private var hzT19HcValid:Boolean = false;
+      private var hzT19HcAw:Object = null;
+      private var hzT19HcHd:Object = null;
+      private var hzT19HcArr:Array = null;
+      private var hzT19HcLen:int = -1;
+      private var hzT19HcBtn:Array = null;
+      private var hzT19HcD:Array = [];
+      private var hzT19HcP:Array = [];
+      private var hzT19HcDN:int = 0;
+      private var hzT19HcB:Array = [];
+      private var hzT19HcBK:Array = [];
+      private var hzT19HcBP:Array = [];
+      private var hzT19HcBN:int = 0;
+      private var hzVisR:Rectangle = null;
+      private var hzVisF:Rectangle = null;
+      private var hzVisK:Array = null;
       private var hzT19Sig:String = "";
       private var hzT19Ver:int = 0;
       private var hzTgItems:Array = null;
@@ -10319,6 +11479,7 @@
       private function hzT19HideA(d:DisplayObject) : void
       {
          if(!d) { return; }
+         if(this.hzT19HcRec) { this.hzT19HcD[this.hzT19HcDN] = d; this.hzT19HcP[this.hzT19HcDN] = d.parent; this.hzT19HcDN++; }   // perf round 2 Fix 5
          var ix:Array = this.hzTgHidA;
          if(ix.length == this.hzTgHidden.length)   // H1: native indexOf over the alpha entries' objects (same first match)
          {
@@ -10489,6 +11650,10 @@
          this.hzT19Sig = "";
          this.hzT19BarSig = "";
          this.hzT19HoldSig = "";
+         // 0.43.3.0 fix: the card went away (fade-out end / off): drop the foe bar too, so the next card (a looted
+         // corpse, a prompt) never starts with the last target's red bar
+         this.hzT19BarOn = false;
+         if(this.hzT19BarG && this.hzT19BarG.visible) { this.hzT19BarG.graphics.clear(); this.hzT19BarG.visible = false; }
       }
       private function hzT19Off() : void
       {
@@ -10712,6 +11877,7 @@
       private function hzT19HideBtnArt(box:DisplayObjectContainer) : void
       {
          if(!box) { return; }
+         if(this.hzT19HcRec) { this.hzT19HcBox(box); }   // perf round 2 Fix 5
          var i:int = 0;
          while(i < box.numChildren)
          {
@@ -10728,6 +11894,7 @@
       private function hzT19HidePromptTree(box:DisplayObjectContainer, buttons:Array) : void
       {
          if(!box) { return; }
+         if(this.hzT19HcRec) { this.hzT19HcBox(box); }   // perf round 2 Fix 5
          var i:int = 0;
          while(i < box.numChildren)
          {
@@ -10789,7 +11956,69 @@
       }
 
       // vanilla button clip for an aButtons iType (HUDRolloverActivationWidget: A/X top bar, Y/B bottom bar)
+      // perf round 2 Fix 5: the 4 clips hzT19BtnSync read for this aw in this frame; otherwise the plain read
       private function hzT19BtnClip(aw:Object, t:int) : Object
+      {
+         if(aw === this.hzT19BcAw && this.hzT19BcF == this.hzFrameN && this.hzT19Bc != null && t >= 0 && t < 4) { return this.hzT19Bc[t]; }
+         return this.hzT19BtnRaw(aw,t);
+      }
+
+      // perf round 2 Fix 5. Purpose: read the 4 button clips once per tick (the same property path as hzT19BtnRaw, so the
+      // cache is exactly what every hzT19BtnClip call of this tick would read). Outputs: true when one of them, or aw,
+      // changed since the last tick (a rebuild edge). Author: Moragar. Last modified: 2026-11-14.
+      private function hzT19BtnSync(aw:Object) : Boolean
+      {
+         var c:Array = this.hzT19Bc;
+         if(c == null) { c = this.hzT19Bc = [null,null,null,null]; }
+         var ch:Boolean = aw !== this.hzT19BcAw;
+         var t:int = 0;
+         while(t < 4)
+         {
+            var b:Object = this.hzT19BtnRaw(aw,t);
+            if(b !== c[t]) { c[t] = b; ch = true; }
+            t++;
+         }
+         this.hzT19BcAw = aw;
+         this.hzT19BcF = this.hzFrameN;
+         return ch;
+      }
+
+      // perf round 2 Fix 5. Purpose: the label / hide edges of one tick. An edge is a button clip or aw change, a show or
+      // uMode change, a controller type change (hzVehPad), a skipped tick, or new prompt data (hzOnTgAct sets
+      // hzT19EdgeN). The labels are re-read and the hide walk re-run on the edge frame and the 2 frames after it (the
+      // game fills the label text a frame or two after the data). Author: Moragar. Last modified: 2026-11-14.
+      private function hzT19Edge(aw:Object, show:Boolean, m:int, rb:Boolean) : void
+      {
+         var f:int = this.hzFrameN;
+         if(rb || aw !== this.hzT19EdAw || show != this.hzT19EdShow || m != this.hzT19EdM || this.hzVehPad != this.hzT19EdPad || f - this.hzT19EdF > 1 || f < this.hzT19EdF)
+         {
+            this.hzT19EdgeN = 3;
+         }
+         this.hzT19EdAw = aw;
+         this.hzT19EdShow = show;
+         this.hzT19EdM = m;
+         this.hzT19EdPad = this.hzVehPad;
+         this.hzT19EdF = f;
+         this.hzT19LblDue = this.hzT19EdgeN > 0;
+         this.hzT19HcDue = this.hzT19LblDue;
+         if(this.hzT19EdgeN > 0 && f != this.hzT19EdDecF) { this.hzT19EdgeN--; this.hzT19EdDecF = f; }
+      }
+
+      private function hzT19LblKeep(rw0:Array) : void
+      {
+         if(this.hzT19LblC == null) { this.hzT19LblC = new Array(12); }
+         var i:int = 0;
+         while(i < 12) { this.hzT19LblC[i] = rw0[i]; i++; }
+      }
+
+      private function hzT19LblUse(rw0:Array) : int
+      {
+         var i:int = 0;
+         while(i < 12) { rw0[i] = this.hzT19LblC[i]; i++; }
+         return 12;
+      }
+
+      private function hzT19BtnRaw(aw:Object, t:int) : Object
       {
          try
          {
@@ -10842,14 +12071,27 @@
       }
 
       // button label: aButtons text, or the translated vanilla label when the text is a $ key; never shows a "$" string
+      // 0.43.3.1: inner line breaks become one space (the game puts the lock level after a break, e.g. "Unlock" + the
+      // level; the keycap label is one line, so the part after the break was never seen on the full or compact card)
       private function hzT19Label(aw:Object, t:int, hold:Boolean, raw:*) : String
       {
          var s:String = this.hzT19Trim(raw);
          if(s.length == 0) { return ""; }
-         if(s.indexOf("$") < 0) { return s; }
+         if(s.indexOf("$") < 0) { return this.hzT19OneLine(s); }
          var v:String = this.hzT19Trim(this.hzT19VanLbl(aw,t,hold));
-         if(v.length > 0 && v.indexOf("$") < 0) { return v; }
-         return this.hzT19Trim(this.hzT19Xl(s));
+         if(v.length > 0 && v.indexOf("$") < 0) { return this.hzT19OneLine(v); }
+         return this.hzT19OneLine(this.hzT19Trim(this.hzT19Xl(s)));
+      }
+
+      // 0.43.3.1: "\r\n", "\r" and "\n" (with the spaces around them, and runs of breaks) -> one space; the ends trimmed.
+      // A label with no break is returned as it is (one indexOf each). Runs only where hzT19Label runs (edges / row draws).
+      private function hzT19OneLine(s:String) : String
+      {
+         if(s == null || (s.indexOf("\n") < 0 && s.indexOf("\r") < 0)) { return s; }
+         var r:String = s.replace(/[ \t]*[\r\n]+[ \t]*/g," ");
+         while(r.length > 0 && r.charAt(0) == " ") { r = r.substr(1); }
+         while(r.length > 0 && r.charAt(r.length - 1) == " ") { r = r.substr(0,r.length - 1); }
+         return r;
       }
 
       private function hzT19Trim(s:*) : String
@@ -10861,17 +12103,49 @@
          return t;
       }
 
-      // key label for aButtons[].iType (0 A, 1 X, 2 Y, 3 B): the game's own PC key text (PCButton_mc.ButtonInstance_mc.PCButton_tf)
+      // 0.43.3.1: controller glyph font character (vanilla GlobalFunc.NameToTextMap value) -> the keycap text. Xbox names;
+      // a PlayStation glyph gets the Xbox letter of the same spot (Cross A, Circle B, Square X, Triangle Y), like the
+      // fixed letters before. A character not listed here falls back to the fixed letter of the slot.
+      private static const HZ_T19_PADK:Object = {
+         "A":"A","B":"B","C":"X","D":"Y","E":"VIEW","O":"MENU","G":"LB","L":"RB","I":"LT","N":"RT","Y":"LT","X":"RT",
+         "F":"LS","H":"LS","K":"RS","M":"RS","1":"LB+RB","J":"LT+RT",
+         "a":"A","d":"B","c":"X","b":"Y","z":"VIEW","p":"MENU","g":"LB","m":"RB","j":"LT","o":"RT","y":"LT","x":"RT",
+         "i":"LS","f":"LS","n":"RS","l":"RS","h":"LB+RB","k":"LT+RT",
+         "T":"LEFT","U":"RIGHT","V":"DOWN","W":"UP","t":"LEFT","u":"RIGHT","v":"DOWN","w":"UP","q":"D-PAD","r":"D-PAD","s":"D-PAD"
+      };
+
+      // key label for aButtons[].iType (0 A, 1 X, 2 Y, 3 B): the game's own PC key text (PCButton_mc.ButtonInstance_mc.PCButton_tf).
+      // 0.43.3.1: on a controller the bound button from the game's own glyph text (ConsoleButton_mc.ButtonInstance_mc.
+      // ConsoleButton_tf; vanilla MinimalButton.UpdateButtonText fills it from the control map, so a remap such as
+      // Activate on Y shows Y). Only read where this was read before (label edges and row draws), never per frame.
       private function hzT19Key(aw:Object, t:int) : String
       {
          var btn:Object = this.hzT19BtnClip(aw,t);
          var k:String = "";
          var pad:Boolean = false;
+         var gl:String = "";
          try { var pc:Object = btn.PCButton_mc.ButtonInstance_mc; if(pc && pc.visible) { k = this.hzT19Trim(pc.PCButton_tf.text); } } catch(e2:Error) { }
-         try { var cb:Object = btn.ConsoleButton_mc.ButtonInstance_mc; if(cb && cb.visible) { pad = true; } } catch(e3:Error) { }
+         try { var cb:Object = btn.ConsoleButton_mc.ButtonInstance_mc; if(cb && cb.visible) { pad = true; try { gl = this.hzT19PadKey(cb.ConsoleButton_tf.text); } catch(e4:Error) { gl = ""; } } } catch(e3:Error) { }
+         if(pad && gl.length > 0) { return gl; }
          if(k.length == 0 || pad) { k = t >= 0 && t < 4 ? ["A","X","Y","B"][t] : "?"; }
          if(k.length > 8) { k = k.substr(0,8); }
          return k.toUpperCase();
+      }
+
+      // 0.43.3.1: the controller glyph text -> keycap text ("" = unknown, the caller keeps the fixed letter). One glyph, or
+      // the game's "/" and " + " joins of two glyphs; anything else is unknown.
+      private function hzT19PadKey(raw:*) : String
+      {
+         if(raw == undefined || raw === null) { return ""; }
+         var s:String = String(raw);
+         var n:int = s.length;
+         if(n == 1) { var k1:* = HZ_T19_PADK[s]; return k1 != undefined ? String(k1) : ""; }
+         var sep:String = n == 3 && s.charAt(1) == "/" ? "/" : (n == 5 && s.substr(1,3) == " + " ? "+" : "");
+         if(sep.length == 0) { return ""; }
+         var ka:* = HZ_T19_PADK[s.charAt(0)];
+         var kb:* = HZ_T19_PADK[s.charAt(n - 1)];
+         if(ka == undefined || kb == undefined) { return ""; }
+         return String(ka) + sep + String(kb);
       }
 
       // Keycap box for the hover TAKE row: at least 24, and tall enough for the floored E / HOLD type.
@@ -10882,6 +12156,12 @@
          var holdSz:int = this.hzChipSzOn(11,"Hover",13);
          return this.hzSnapU(Math.max(24,Math.max(keySz,holdSz) + 10),u);
       }
+
+      // 0.43.3.2: width of the keycap row's label fields (lp / lh) on every row draw or measure. They were built 160
+      // wide and never widened, so a long label (for example "STEAL FROM [MASTER]" after hzT19OneLine joined the lock
+      // level) was cut at the field edge with no "..." on the full card and the compact pill alike. The cards already
+      // size themselves from the measured row; the fit (with "...") still runs where a row has a limit.
+      private static const HZ_T19_LBLW:Number = 480;
 
       // Compact pill only. The cap hugs the shared line size. The full card keeps hzT19CapH.
       private function hzT19PillCap(lineFs:Number) : Number
@@ -11006,6 +12286,7 @@
                   slot.holdC = kc;
                   slot.holdT = t;
                }
+               if(lt.width != HZ_T19_LBLW) { lt.width = HZ_T19_LBLW; }   // 0.43.3.2: never cut at the old 160 field edge
                lt.text = isHold ? hold.toUpperCase() : press.toUpperCase();
                lt.visible = g != null;
                lt.x = this.hzSnapU(x,u); this.hzTxtTopU(lt,this.hzCapTop(lt,kcy),u);
@@ -12192,6 +13473,8 @@
          var a:Object = this.hzTgAct;
          var show:Boolean = a != null && Boolean(a.bShowRolloverActivation) && aw != null && rw != null && Boolean(rw.visible);
          var m:int = show ? int(a.uMode) : -1;
+         var rb:Boolean = aw != null && this.hzT19BtnSync(aw);   // perf round 2 Fix 5: the 4 button clips, once per tick
+         this.hzT19Edge(aw,show,m,rb);
          var base:Boolean = this.hzShowTarget && this.hzGroupVisible && !this.hzUserHidden && !this.hzArrange;
          // hostile = the crosshair target is in HudEnemyData.EnemiesA with fHealth and bOnScreen (same rule as v0.20),
          // except while the crosshair is HCT_COMMAND (giving an order is never a hostile tag)
@@ -12269,7 +13552,14 @@
          var rw0:Array = this.hzT19Raw;
          if(rw0 == null) { rw0 = this.hzT19Raw = new Array(HZ_T19_RAWN); }
          var rn:int = 0;
-         if(show) { var kk:int = 0; while(kk < 4) { rw0[rn++] = this.hzT19Key(aw,kk); rw0[rn++] = this.hzT19VanLbl(aw,kk,false); rw0[rn++] = this.hzT19VanLbl(aw,kk,true); kk++; } }
+         // perf round 2 Fix 5: the 12 key / label reads run on a hover edge (and the 2 frames after it) only; between
+         // edges the last reads are reused
+         var kk:int = 0;
+         if(show)
+         {
+            if(this.hzT19LblDue || this.hzT19LblC == null) { while(kk < 4) { rw0[rn++] = this.hzT19Key(aw,kk); rw0[rn++] = this.hzT19VanLbl(aw,kk,false); rw0[rn++] = this.hzT19VanLbl(aw,kk,true); kk++; } this.hzT19LblKeep(rw0); }
+            else { rn = this.hzT19LblUse(rw0); }
+         }
          else { while(rn < 12) { rw0[rn++] = null; } }
          var stealSig:int = (show && a != null && Boolean(a.bStealing)) ? 1 : 0;
          rw0[rn++] = this.hzFontName(); rw0[rn++] = this.hzFontName("rg"); rw0[rn++] = this.hzFontName("bd");
@@ -12486,6 +13776,9 @@
       // Verbs are measured in full and never shortened. The name keeps up to 220 px, plus 8 px when it fits that cap.
       // The pill grows with the line up to 640 px. Past that, only the name gives up space. A verb row wider than
       // that still draws whole, so the pill may pass 640. Name, key letter, and verb share one size and one cap-center.
+      // 0.43.3.2: a name that would be cut wraps at the same size (never smaller), up to three lines, and the pill grows
+      // by one line advance per extra line, only as many as the name needs; past three lines the third ends in "...".
+      // Runs only from hzT19Content, i.e. on a content-signature change (a new name, keys or style), never per frame.
       private function hzT19PromptPill(g:*, a:Object, aw:Object, o:Object, nmTf:TextField, hdrTxt:String, hasBtn:Boolean, bw:Number) : Object
       {
          var lineFs:Number = 14;
@@ -12531,17 +13824,39 @@
             W = nameX + nameRoom + gapUse + fitBw + padR;
          }
          if(W < 196) { W = 196; }
-         this.hzPanel(g,W,H,Math.round(H / 2));
-         this.hzT19Tile(g,padL + rad,Math.round(H / 2),HZ_ACCENT,rad);
+         var H1:Number = H;
+         var lineAdv:Number = 0;
          nmTf.visible = shown.length > 0;
          nmTf.x = nameX;
          nmTf.width = Math.round(nameRoom);
-         this.hzApplyFmt(o);
-         if(nmTf.visible) { this.hzFitText(nmTf,shown,nameRoom); }
+         if(nmTf.visible && measured > nameRoom - 4)
+         {
+            // would be cut: wrap at the same size (hzApplyFmt sizes the field for o.lines)
+            o.lines = HZ_T19_NMLINES;
+            nmTf.wordWrap = true;
+            nmTf.multiline = true;
+            this.hzApplyFmt(o);
+            this.hzT19WrapN(nmTf,shown,HZ_T19_NMLINES);
+            var nl:int = Math.min(HZ_T19_NMLINES,nmTf.numLines);
+            if(nl >= 2)
+            {
+               lineAdv = this.hzT19LineAdv(nmTf,lineFs);
+               H = H1 + lineAdv * (nl - 1);
+               lineAdv = lineAdv * (nl - 1);   // from here: the whole extra height (the name block is centered on it)
+            }
+            else { o.lines = 1; nmTf.wordWrap = false; nmTf.multiline = false; this.hzApplyFmt(o); this.hzFitText(nmTf,shown,nameRoom); }
+         }
+         else
+         {
+            this.hzApplyFmt(o);
+            if(nmTf.visible) { this.hzFitText(nmTf,shown,nameRoom); }
+         }
+         this.hzPanel(g,W,H,Math.round(H1 / 2));
+         this.hzT19Tile(g,padL + rad,Math.round(H / 2),HZ_ACCENT,rad);
          var u:Number = this.hzT19U();
          var yBtn:Number = this.hzSnapU((H - cap) / 2,u);
          var cy:Number = yBtn + cap / 2;
-         this.hzTxtTopU(nmTf,this.hzCapTop(nmTf,cy),u);
+         this.hzTxtTopU(nmTf,this.hzCapTop(nmTf,cy) - lineAdv / 2,u);
          if(fitBw > 0)
          {
             this.hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,0,lineFs);
@@ -12549,12 +13864,45 @@
          return {"W":W,"H":H};
       }
 
+      // 0.43.3.2: the pill name in at most mx wrapped lines (the field already wraps at its width); a longer name keeps
+      // whole words on the first lines and ends the last one in "...". Content edge only (hzT19PromptPill).
+      private static const HZ_T19_NMLINES:int = 3;
+      private function hzT19WrapN(tf:TextField, full:String, mx:int) : void
+      {
+         tf.text = full;
+         if(tf.numLines <= mx || full.length < 2) { return; }
+         var lo:int = 1;
+         var hi:int = full.length;
+         while(lo < hi)
+         {
+            var mid:int = (lo + hi + 1) >> 1;
+            tf.text = full.substr(0,mid) + "...";
+            if(tf.numLines <= mx) { lo = mid; } else { hi = mid - 1; }
+         }
+         tf.text = full.substr(0,lo).replace(/\s+$/,"") + "...";
+      }
+
+      // one line advance of a wrapped field (its own metrics; the size-based guess if Scaleform gives none)
+      private function hzT19LineAdv(tf:TextField, fs:Number) : Number
+      {
+         var adv:Number = NaN;
+         try { var lm:* = tf.getLineMetrics(0); adv = Number(lm.ascent) + Number(lm.descent) + Number(lm.leading); } catch(eLm:Error) { adv = NaN; }
+         var guess:Number = Math.round(fs * Math.max(0.8,Math.min(1.3,this.hzTextScale)) * 1.25);
+         if(isNaN(adv) || adv <= 0 || adv > guess * 2) { adv = guess; }
+         return Math.round(adv);
+      }
+
       private function hzT19Content(kind:String, a:Object, aw:Object, sel:int, start:int) : void
       {
          if(this.hzT19Kov) { this.hzT19Kov.graphics.clear(); }
          var g:* = this.hzT19G.graphics;
          g.clear();
-         this.hzT19BarOn = false;
+         // 0.43.3.0 fix: the foe health bar is its own sprite (hzT19BarG, above the panel). This used to set
+         // hzT19BarOn = false WITHOUT clearing that sprite, and the caller's "else if(this.hzT19BarOn)" clear after the
+         // redraw then saw false, so a killed enemy that turned into a container (foe -> list) kept the red bar across
+         // the top of the loot card until a reload. Clear it here, on this content-change edge (hzT19BarSig was reset to
+         // "" by the caller, so the paint clears and hides); a foe card sets the bar on again below and repaints it.
+         if(this.hzT19BarOn || (this.hzT19BarG && this.hzT19BarG.visible)) { this.hzT19BarOn = false; this.hzT19PaintFoeBars(); }
          var dk:Boolean = this.hzDarkText();
          var steal:Boolean = a != null && Boolean(a.bStealing);
          var red:Boolean = kind == "foe" || steal;
@@ -12570,7 +13918,8 @@
          for each(var bo:Object in this.hzT19Btn) { bo.kp.visible = false; bo.lp.visible = false; bo.hh.visible = false; bo.kh.visible = false; bo.lh.visible = false; }
          var nmTf:TextField = this.hzT19Name;
          var o:Object = this.hzTxtObj(nmTf);
-         if(o != null) { o.chipCard = null; o.chipMin = 0; o.tone = "main"; }
+         if(o != null) { o.chipCard = null; o.chipMin = 0; o.tone = "main"; o.lines = 1; }
+         if(nmTf.wordWrap) { nmTf.wordWrap = false; nmTf.multiline = false; }   // 0.43.3.2: only a wrapped pill name sets these
          var hdrTxt:String = a && a.sHeaderText != null ? this.hzT19Xl(String(a.sHeaderText)) : "";
          var rar:int = a && a.uRarity != undefined ? int(a.uRarity) : 0;
          var bw:Number = a ? this.hzT19Buttons(null,a,aw,0,0,acol) : 0;
@@ -13250,6 +14599,7 @@
       private function hz26OnStealth(e:FromClientDataEvent) : *
       {
          try { this.hz26St = e.data; this.hz26Log("HUDStealthData",e.data); } catch(err:Error) { this.hz26St = null; }
+         try { this.hzOnStealthCombat(e.data); } catch(errC:Error) { }   // arch-fixes Fix 3: the fast combat provider
       }
 
       private function hz26OnBoost(e:FromClientDataEvent) : *
@@ -14514,7 +15864,7 @@
          var sEn:Number = this.hz34S("Enemy");
          var sCm:Number = this.hz34S("Compass");
          var sSt:Number = this.hz34S("Stealth");
-         if(this.HorizonChar_mc) { this.hzPlace(this.HorizonChar_mc,left,top + (eh + 10) * s); }
+         if(this.HorizonChar_mc) { this.hzPlace(this.HorizonChar_mc,left,top + (eh + 10 + this.hzHsReserve()) * s); }   // Hazard Status: room for the card at its default spot
          if(this.HorizonEnemy_mc) { this.hzPlace(this.HorizonEnemy_mc,cx - HZ_EN_W * sEn / 2,cmpY + (this.hz34C("Compass") ? 60 : 104) * sCm); }
          if(this.HorizonStealth_mc)
          {
@@ -14526,6 +15876,7 @@
       // after the user layout: the XP toast sits beside the character card's XP row unless it was placed itself
       private function hz26LayoutAfter(s:Number) : void
       {
+         try { this.hzHsLayout(); } catch(errHs:Error) { }   // Hazard Status card: default spot under the planet card (flip at the bottom edge), on / off, the vanilla EnvAlertText
          if(!this.HorizonXp_mc || !this.HorizonChar_mc || this.hzLayHas("XpToast")) { return; }
          var cy:Number = this.HorizonChar_mc.y;
          for each(var e:Object in this.hzFades) { if(e.c == this.HorizonChar_mc) { cy = Number(e.base); } }
@@ -14544,10 +15895,13 @@
       // ---------- ini / settings ----------
       private function hz26Ini(k:String, bv:Boolean, nv:Number) : Boolean
       {
+         if(this.hzVehIni(k,nv)) { return true; }      // 0.43.3.2: vehicle exit pill spot
+         if(this.hzQmIni(k,bv)) { return true; }       // 0.43.3.0 batch f: quick menu style
          switch(k)
          {
             case "showcharacter": this.hzShowChar = bv; break;
             case "edgepulse": this.hzEdgePulse = bv; break;
+            case "hazardstatus": this.hzHsOn = bv; this.hzLaidOut = false; break;
             case "xptoast": this.hzXpToastOn = bv; break;
             case "enemybar": this.hzEnemyBarOn = bv; break;
             case "stealthmeter": this.hzStealthOn = bv; break;
@@ -14563,8 +15917,11 @@
 
       private function hz26SetCur(o:Object) : void
       {
+         try { this.hzVehSetCur(o); } catch(errVhC:Error) { }  // 0.43.3.2: vehicle exit pill spot
+         try { this.hzQmSetCur(o); } catch(errQmC:Error) { }   // 0.43.3.0 batch f: quick menu style
          o.ShowCharacter = this.hzShowChar;
          o.EdgePulse = this.hzEdgePulse;
+         o.HazardStatus = this.hzHsOn;
          o.XpToast = this.hzXpToastOn;
          o.EnemyBar = this.hzEnemyBarOn;
          o.StealthMeter = this.hzStealthOn;
@@ -14578,8 +15935,11 @@
 
       private function hz26SetLive(p:Object) : void
       {
+         try { this.hzVehSetLive(p); } catch(errVhS:Error) { }  // 0.43.3.2: vehicle exit pill spot
+         try { this.hzQmSetLive(p); } catch(errQmS:Error) { }   // 0.43.3.0 batch f: quick menu style
          if(p.ShowCharacter != undefined) { this.hzShowChar = Boolean(p.ShowCharacter); }
          if(p.EdgePulse != undefined) { this.hzEdgePulse = Boolean(p.EdgePulse); }
+         if(p.HazardStatus != undefined && this.hzHsOn != Boolean(p.HazardStatus)) { this.hzHsOn = Boolean(p.HazardStatus); this.hzLaidOut = false; }
          if(p.XpToast != undefined) { this.hzXpToastOn = Boolean(p.XpToast); }
          if(p.EnemyBar != undefined) { this.hzEnemyBarOn = Boolean(p.EnemyBar); }
          if(p.StealthMeter != undefined) { this.hzStealthOn = Boolean(p.StealthMeter); }
@@ -14606,10 +15966,14 @@
          a.push("StealthMeter=" + this.hzB(p.StealthMeter));
          a.push("; Equipment card: grenade count + selected Starborn power (icon, meter). Hides the vanilla grenade / power readout.");
          a.push("EquipmentExtras=" + this.hzB(p.EquipmentExtras));
+         this.hzVehIniLines(a,p);   // 0.43.3.2
+         this.hzQmIniLines(a,p);    // 0.43.3.0 batch f
          a.push("");
          a.push("[Effects]");
          a.push("; Screen-edge tint pulsing ~1 Hz: red below 15% health, amber below 15% oxygen (center untouched)");
          a.push("EdgePulse=" + this.hzB(p.EdgePulse));
+         a.push("; Hazard status card (default spot under the planet card): red while a hazard hurts you, green while suit protection restores");
+         a.push("HazardStatus=" + this.hzB(p.HazardStatus));
          a.push("; +N XP toast beside the character card for ~2 s (gains close together are summed)");
          a.push("XpToast=" + this.hzB(p.XpToast));
          a.push("; Hit marker + kill X at the crosshair (hides the vanilla markers)");
@@ -15116,8 +16480,15 @@
       private function hz27QLayout(hasSub:Boolean) : void
       {
          if(!this.hzQ19T || this.hz27QL.length < 3) { return; }
-         var n:int = Math.min(3,this.hz27QSubs.length);
-         var y0:Number = hasSub ? 60 : 38;
+         var wr:Boolean = this.hzQWrap;   // 0.43.3.0: the wrap layout gives the start and how many fit (hzQWrapStd)
+         var W:Number = this.hzQW;
+         var n:int = wr ? this.hzQSubN : Math.min(3,this.hz27QSubs.length);
+         var y0:Number = wr ? this.hzQSubY0 : (hasSub ? 60 : 38);
+         if(W != this.hzQPW)   // the width edge: the sub-step columns follow QuestsWidth
+         {
+            var wi:int = 0;
+            while(wi < 3) { TextField(this.hz27QLD[wi]).x = W - 14 - 80; TextField(this.hz27QL[wi]).width = W - 74 - 14; wi++; }
+         }
          var i:int = 0;
          while(i < 3)
          {
@@ -15133,17 +16504,19 @@
                td.text = d;
                td.visible = d.length > 0;
                this.hzTxtTop(td,y0 + i * 22);
-               var lw:Number = HZ_Q19_W - 74 - 14 - (d.length > 0 ? this.hzTW(td) + 10 : 0);
+               var lw:Number = W - 74 - 14 - (d.length > 0 ? this.hzTW(td) + 10 : 0);
                this.hzFitText(tf,(s.opt ? "+ OPTIONAL  " : "+  ") + String(s.t),lw);
                this.hzTxtTop(tf,y0 + i * 22);
             }
             i++;
          }
-         var h:Number = n > 0 ? Math.max(78,y0 + n * 22 + 8) : 78;
-         if(h != this.hz27QH)
+         var h:Number = n > 0 ? Math.max(78,y0 + n * 22 + 8) : (wr ? Math.max(78,this.hzQObjB + 12) : 78);
+         if(wr) { h = Math.min(h,Math.max(78,this.hzQMaxH)); }
+         if(h != this.hz27QH || W != this.hzQPW)
          {
             this.hz27QH = h;
-            this.hzSetSz(this.HorizonQuest_mc,HZ_Q19_W,h);
+            this.hzQPW = W;
+            this.hzSetSz(this.HorizonQuest_mc,W,h);
             this.hzLaidOut = false;
             this.hzQDraw19();
          }
@@ -15172,7 +16545,7 @@
                var cat:String = icon.replace(rs,"");
                if(rp.test(icon))
                {
-                  // a positive alert for a body system (treated / cured): drop that system's alerts
+                  // a positive alert for a body system (treated / cured): drop that system's alerts. It is never kept itself.
                   var kept:Array = [];
                   for each(var x1:Object in this.hz27Alerts) { if(String(x1.cat) != cat) { kept.push(x1); } }
                   this.hz27Alerts = kept;
@@ -15182,9 +16555,10 @@
                var found:Boolean = false;
                for each(var x2:Object in this.hz27Alerts)
                {
-                  if(String(x2.cat) == cat && String(x2.txt) == txt) { x2.t = now; x2.sub = sub; found = true; }
+                  // Afflictions P0: the exact icon (suffix included), not the stripped category
+                  if(String(x2.icon) == icon && String(x2.txt) == txt) { x2.t = now; x2.sub = sub; found = true; }
                }
-               if(!found) { this.hz27Alerts.push({"cat":cat,"icon":icon,"txt":txt,"sub":sub,"t":now}); }
+               if(!found) { this.hz27Alerts.push({"cat":cat,"icon":icon,"txt":txt,"sub":sub,"t":now,"listed":false}); }
             }
             while(this.hz27Alerts.length > 6) { this.hz27Alerts.shift(); }
             if(this.hzAfNew) { this.hzAfSync(); }
@@ -15192,17 +16566,22 @@
          catch(err:Error) { }
       }
 
-      // alert entries replace the plain effect chip of the same body system; an alert stays while that system is
-      // listed in PersonalEffectsData, otherwise 90 s
+      // alert entries replace the plain effect chip of the same exact effect icon.
+      // Afflictions P0: an alert stays while its own effect (exact icon, suffix included) is listed in PersonalEffectsData.
+      // Once that effect has been listed, the first update without it (it ended, or changed to another stage or to the
+      // matching buff) drops the alert at once. An alert whose effect was never listed keeps the 90 s expiry. A buff or
+      // another stage of the same need never keeps a debuff alert alive.
       private function hz27PersMerge(pers:Array) : Array
       {
          var now:Number = this.hz26Now();
-         var cats:Array = [];
-         for each(var p:Object in pers) { cats.push(String(p.cat)); }
+         var icons:Array = [];
+         for each(var p:Object in pers) { icons.push(String(p.icon)); }
          var keep:Array = [];
          for each(var a:Object in this.hz27Alerts)
          {
-            if(cats.indexOf(String(a.cat)) < 0 && now - Number(a.t) > 90000) { continue; }
+            if(icons.indexOf(String(a.icon)) >= 0) { a.listed = true; keep.push(a); continue; }
+            if(a.listed === true) { continue; }
+            if(now - Number(a.t) > 90000) { continue; }
             keep.push(a);
          }
          this.hz27Alerts = keep;
@@ -15215,10 +16594,10 @@
             var sb:String = String(b.sub).length > 0 ? String(b.sub) : sys;
             if(sb.toLowerCase() == nm.toLowerCase()) { sb = (sys.length > 0 && sys.toLowerCase() != nm.toLowerCase()) ? sys : ""; }
             if(nm.length == 0) { continue; }
-            out.push({"key":"a:" + String(b.cat) + ":" + nm,"name":nm,"sub":sb.length > 0 ? sb : null,"kind":"injury","env":false,"cat":String(b.cat)});
-            used.push(String(b.cat));
+            out.push({"key":"a:" + String(b.icon) + ":" + nm,"name":nm,"sub":sb.length > 0 ? sb : null,"kind":"injury","env":false,"icon":String(b.icon),"cat":String(b.cat)});
+            used.push(String(b.icon));
          }
-         for each(var q:Object in pers) { if(used.indexOf(String(q.cat)) < 0) { out.push(q); } }
+         for each(var q:Object in pers) { if(used.indexOf(String(q.icon)) < 0) { out.push(q); } }
          if(this.hzDebug)
          {
             var names:Array = [];
@@ -15783,7 +17162,7 @@
          ["SubTextColor","i",-1,-1,13,"comms"],["SubTextHex","s","",0,0,"comms"],["SubCard","b",1,0,1,"comms"],["SubOffsetX","i",0,-600,600,"comms"],
          ["ShowSpeaker","b",1,0,1,"comms"],["SpeakerColor","i",-1,-1,13,"comms"],["SpeakerHex","s","",0,0,"comms"],["SpeakerCard","b",1,0,1,"comms"],
          ["KeepInDialogue","b",1,0,1,"comms"],["FixedInDialogue","b",1,0,1,"comms"],["SubMaxLines","i",3,2,5,"comms"],["SubFont","i",-1,-1,3,"comms"],
-         ["MissionToast","b",1,0,1,"comms"],["MissionToastTime","i",5,2,15,"comms"],["MissionToastMax","i",3,1,5,"comms"],["MissionToastSound","b",1,0,1,"comms"],["MissionToastScale","z",-1,0.6,1.6,"comms"],["ReactionCard","b",1,0,1,"comms"],
+         ["MissionToast","b",1,0,1,"comms"],["MissionToastTime","i",5,2,15,"comms"],["MissionToastMax","i",3,1,5,"comms"],["MissionToastSound","b",1,0,1,"comms"],["MissionToastScale","z",-1,0.6,1.6,"comms"],["ReactionCard","b",1,0,1,"comms"],["GameCardTitle","i",0,0,3,"comms"],
          ["Dialogue","b",1,0,1,"comms"],["DlgAutoPause","b",1,0,1,"comms"],["DlgLayout","i",0,0,2,"comms"],["DlgVisible","i",0,0,12,"comms"],
          ["DlgMoreHint","b",1,0,1,"comms"],["DlgTextSize","f",1,0.8,1.6,"comms"],["DlgFont","i",-1,-1,3,"comms"],["DlgBgOpacity","f",0.85,0,1,"comms"],
          ["DlgCard","b",1,0,1,"comms"],["DlgOffsetX","i",0,-600,600,"comms"],
@@ -15793,7 +17172,7 @@
          ["DlgPersuadeStyle","i",0,0,2,"comms"],["DlgPersuadeColor","i",2,0,12,"comms"],["DlgPersuasionMeter","b",1,0,1,"comms"],["DlgMarkers","b",0,0,1,"comms"],["DlgInputDelay","i",150,0,1000,"comms"],
          ["DlgRolloverSound","i",0,0,1,"comms"],["DlgAnim","i",1,0,2,"comms"],
          ["DlgButtonBar","i",0,0,2,"comms"],["DlgQuickPickHint","b",1,0,1,"comms"],["DlgSelectHint","b",1,0,1,"comms"]];
-      private static const HZ31_DEF:Object = {"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"TxtColIdx":0,"SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"ReactionCard":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"ShowSpeaker":1,"SpkColIdx":0,"SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgTxtIdx":0,"DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4};
+      private static const HZ31_DEF:Object = {"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"TxtColIdx":0,"SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"ReactionCard":1,"GameCardTitle":0,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"ShowSpeaker":1,"SpkColIdx":0,"SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgTxtIdx":0,"DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4};
       // URLLoader probes, relative to Data/Interface (same base as HorizonUI/HorizonUI.ini). Foreign mods are only reported.
       private static const HZ31_PROBE:Object = {"es":"Enhanced Subtitles - My Edits.ini","edi":"Enhanced Dialogue Interface - My Edits.ini","edi2":"Enhanced Dialogue Interface.ini"};   // v0.38: no file probes for other HUD mods (an ini left behind is not an active HUD)
       private static const HZ31_FONT_OPTS:Array = ["GLOBAL","EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"];
@@ -15998,6 +17377,7 @@
             "DlgAnim":"0 off, 1 fast, 2 vanilla-like",
             "MissionToastScale":"toast size: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = its own size (TextScale applies on top)",
             "DlgButtonBar":"dialogue key bar: 0 Horizon (under the card), 1 the game's bar, 2 hidden (keys still work)",
+            "GameCardTitle":"title of the info message cards (the game's other notices): 0 INFO (default), 1 DATA, 2 MISC, 3 GAME (as before). ARTIFACT cards keep their title",
             "DlgQuickPickHint":"1 = '1 - 9 QUICK PICK' hint on the Horizon bar (keyboard, with DlgNumberKeys=1)",
             "DlgSelectHint":"1 = SELECT key on the Horizon bar (keyboard)"};
          a.push("[Comms]");
@@ -16098,6 +17478,7 @@
                {"k":"MissionToastScale","l":"TOAST SIZE","t":"z","note":"GLOBAL = HUD SCALE (STYLE). Also in CARDS"},
                {"k":"MissionToastSound","l":"GAME QUEST SOUND","t":"b","dis":true,"dv":true,"note":"The sound comes from the game's banner and always plays for now"},
                {"k":"ReactionCard","l":"COMPANION REACTION CARD","t":"b","h":"COMPANION REACTIONS","note":"Restyles the 'liked that' line. English game text only for now; other lines stay the game's"},
+               {"k":"GameCardTitle","l":"INFO MESSAGE TITLE","t":"r","opts":["INFO","DATA","MISC","GAME"],"ids":[0,1,2,3],"note":"Title of the cards for the game's other notices. Applies from the next message"},
                {"k":"_hz40goscan","l":"SCANNER POPUPS: NOW IN THE SCANNER TAB","t":"x","btn":"OPEN","h":"SCANNER POPUPS"}];
          }
          else
@@ -16705,7 +18086,8 @@
       private var hz36HideStale:Boolean = false;
       private var hz36CmpTries:int = 0;
       private var hz36CmpLast:String = "";
-      // PlayerData.bIsInCombat (the source the game's own detection meter uses); true when the state changed
+      // Sets the combat flag from either provider (PlayerData.bIsInCombat or HUDStealthData.bIsInCombat, the feed the
+      // game's own stealth meter reads; see hzOnPlayerData). Returns true when the state changed.
       private function hz36SetCombat(v:Boolean) : Boolean
       {
          var was:Boolean = this.hzInCombat;
@@ -16936,6 +18318,7 @@
          "DlgInputDelay":"After the option list opens, input is ignored for this long so a held key doesn't pick an option by accident. The game's own delay is 1000 ms; lower is faster.",
          "DlgHoverScroll":"With the mouse resting on the top or bottom visible option for a quarter second, the list scrolls one option. Only matters when VISIBLE OPTIONS limits the list.",
          "DlgButtonBar":"HORIZON: a restyled key strip under the options card. GAME BAR: the game's own button bar. HIDDEN: no bar at all - the keys still work.",
+         "GameCardTitle":"The title on the Horizon card for the game's other notices (the ones that are not crime, credits, crew or afflictions). INFO is the default; GAME is the old title. ARTIFACT cards keep theirs.",
          "DlgVisible":"How many options the card shows at once. ALL sizes the card to every option. A number limits it; the rest scroll with the selection, the wheel or hover.",
          "DlgMoreHint":"With VISIBLE OPTIONS limited, a small 'N MORE' line shows how many more options there are.",
          "DlgNumberKeys":"Keys 1 - 9 pick the option with that number. Numbers follow the shown options (HIDDEN already-said options are skipped).",
@@ -16967,15 +18350,26 @@
          "ShowFollowers":"Markers for your follower and companions on the Horizon compass.",
          "CompassMarkers":"Master switch for every Horizon compass marker below. Quest objectives always show while it is on.",
          "ShowTarget":"Horizon's own card for the game's activate prompt (take, talk, open) and the item / container hover cards. Off = the game's prompt.",
+         "QuickMenuHorizon":"The quick menu (the favorites cross you open with your quick-menu key) draws each slot as a Horizon card in your card style: accent, card color, opacity, font and text size. Each slot shows the key you bound to it, and the info card shows the item name, ammo, damage and slot key that the game sends. Mouse, controller and assigning a slot work as in the game. Read when the menu opens. Off = the game's own look.",
          "VehicleExitPill":"While you are in a vehicle, the hold-to-exit prompt is a Horizon pill: the key the game shows, then EXIT. A fill sweeps across while you hold, and the pill turns green with a check when the hold completes. The game's button stays at alpha 0, so the hold still finishes. Off shows the game's prompt.",
          "PlanetDetails":"Adds a gravity / air line to the planet card.",
          "TempUnit":"Planet card and scanner temperature units. The game value is Celsius. Fahrenheit is C times 9/5 plus 32, rounded. Default Celsius.",
          "_size":"GLOBAL: this card uses HUD SCALE (STYLE tab). CUSTOM: it has its own size and HUD SCALE no longer changes it. Click the GLOBAL / CUSTOM chip or drag the slider to switch.",
          "_compact":"GLOBAL: this card takes its compact form whenever COMPACT MODE (top right) is on. ON / OFF: always compact / always full for this card only, whatever COMPACT MODE says.",
          "_rule":"When this card shows. ALWAYS, or only in the situation named (in combat, weapon drawn, not full ...). The card's own switch in CARDS still has to be on."};
+      // 0.43.3.2 batch e: a row's moved help text (r.inote, F11 CARDS) leads the popup, then the longer info if there is one
       private function hz35InfoOf(r:Object) : String
       {
          if(r == null || r.pill) { return null; }
+         var base:String = this.hz35InfoBase(r);
+         if(r.inote == undefined || r.inote === null) { return base; }
+         var n:String = String(r.inote);
+         if(base == null || base.length == 0) { return n; }
+         if(base.indexOf(n) >= 0) { return base; }
+         return n + "\n\n" + base;
+      }
+      private function hz35InfoBase(r:Object) : String
+      {
          if(r.info != undefined && r.info !== null) { return String(r.info); }
          var k:String = String(r.k);
          if(HZ35_INFO[k] != undefined) { return String(HZ35_INFO[k]); }
@@ -17037,7 +18431,7 @@
       // have a compact form. Jetpack, vitals and afflictions turn into the shared compact strips card, so they follow the
       // global Compact only. Hover / container cards keep [Style] HoverScale / ContainerScale (same meaning as before;
       // -1 now = GLOBAL). Edge-anchored ARRANGE positions use the real on-screen card size, so they stay put at any size.
-      private static const HZ34_CARDS:Array = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false],["Watch",false]];
+      private static const HZ34_CARDS:Array = [["Jetpack",false],["Vitals",false],["Character",true],["XpToast",false],["Planet",true],["Afflictions",false],["Equipment",true],["Quests",true],["Compass",true],["Enemy",false],["Stealth",false],["Compact",false],["Watch",false],["Hazard",true]];
       private static const HZ34_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face: run-time name only, never shown
       private var hz34Sc:Object = {};
       private var hz34Cm:Object = {};
@@ -17079,6 +18473,9 @@
          if(k == "vitalsbars") { this.hzVitalsBars = (!isNaN(nv) && int(nv) == 1) ? 1 : 0; this.hzLaidOut = false; try { this.hz42BarsApply(); } catch(eVb:Error) { } try { this.hzRefreshVisibility(); } catch(eVr:Error) { } return true; }
          if(k == "startupintro") { this.hzSplashWelcome = !isNaN(nv) && nv >= 0.5; return true; }
          if(k == "modulenotecompact") { this.hz34NoteCmp = !isNaN(nv) && nv >= 0.5; return true; }
+         if(k == "questswidth") { this.hzQW = this.hzQWClamp(nv); this.hzLaidOut = false; return true; }   // 0.43.3.0
+         if(k == "questsmaxheight") { this.hzQMaxH = this.hzQHClamp(nv); this.hzLaidOut = false; return true; }
+         if(k == "questswrap") { this.hzQWrap = isNaN(nv) || nv >= 0.5; this.hzLaidOut = false; return true; }
          for each(var c:Array in HZ34_CARDS)
          {
             var n:String = String(c[0]).toLowerCase();
@@ -17095,6 +18492,9 @@
             if(c[1]) { o[c[0] + "Compact"] = this.hz34CmClamp(this.hz34Cm[c[0]]); }
          }
          o.ModuleNoteCompact = this.hz34NoteCmp ? 1 : 0;
+         o.QuestsWidth = this.hzQW;   // 0.43.3.0
+         o.QuestsMaxHeight = this.hzQMaxH;
+         o.QuestsWrap = this.hzQWrap ? 1 : 0;
          o.VitalsLayout = this.hz42VL;   // v0.42.0
          o.NameHover = this.hzNameHover == 1 ? 1 : 0;
          o.VitalsBars = this.hzVitalsBars == 1 ? 1 : 0;
@@ -17138,6 +18538,12 @@
             if(vb != this.hzVitalsBars) { this.hzVitalsBars = vb; try { this.hz42BarsApply(); } catch(eVb:Error) { } try { this.hzRefreshVisibility(); } catch(eVr:Error) { } this.hzLaidOut = false; }
          }
          if(p.StartupIntro !== undefined) { this.hzSplashWelcome = Number(p.StartupIntro) >= 0.5 || p.StartupIntro === true; }
+         // 0.43.3.0 quest log: a changed value redraws the card once (its memo sees the new value) and re-lays out
+         var qd:Boolean = false;
+         if(p.QuestsWidth !== undefined) { var qw:Number = this.hzQWClamp(p.QuestsWidth); if(qw != this.hzQW) { this.hzQW = qw; qd = true; } }
+         if(p.QuestsMaxHeight !== undefined) { var qh:Number = this.hzQHClamp(p.QuestsMaxHeight); if(qh != this.hzQMaxH) { this.hzQMaxH = qh; qd = true; } }
+         if(p.QuestsWrap !== undefined) { var qr:Boolean = Number(p.QuestsWrap) >= 0.5 || p.QuestsWrap === true; if(qr != this.hzQWrap) { this.hzQWrap = qr; qd = true; } }
+         if(qd) { try { this.hzQDraw19(); } catch(eQd:Error) { } this.hzLaidOut = false; }
          if(cd) { this.hz26ChSig = ""; this.hzLaidOut = false; }
          if(sd) { this.hzApplyScale(); }
       }
@@ -17155,6 +18561,11 @@
          a.push("VitalsBars=" + (int(p.VitalsBars) == 1 ? "1" : "0"));
          a.push("; v0.34 card compact form: -1 = GLOBAL ([Style] Compact), 0 off, 1 on. Jetpack / vitals / afflictions follow the global Compact");
          for each(var d:Array in HZ34_CARDS) { if(d[1]) { a.push(d[0] + "Compact=" + String(this.hz34CmClamp(p[d[0] + "Compact"]))); } }
+         a.push("; v0.43.3 quest tracker: QuestsWidth 380 - 660 (380 = the classic width), QuestsMaxHeight 100 - 300 (the card never grows past it),");
+         a.push(";   QuestsWrap 1 = long text starts a new line at the same font size (only text still too long at the max height ends in ...), 0 = one line");
+         a.push("QuestsWidth=" + String(this.hzQWClamp(p.QuestsWidth)));
+         a.push("QuestsMaxHeight=" + String(this.hzQHClamp(p.QuestsMaxHeight)));
+         a.push("QuestsWrap=" + (p.QuestsWrap === undefined || Number(p.QuestsWrap) >= 0.5 || p.QuestsWrap === true ? "1" : "0"));
       }
       private function hz34ScStr(v:*) : String
       {
@@ -17178,31 +18589,38 @@
       {
          var szn:String = "GLOBAL = HUD SCALE (STYLE). CUSTOM = this card's own size: HUD SCALE no longer applies to it";
          var cmn:String = "GLOBAL = COMPACT MODE (top right). ON / OFF = this card only";
+         // 0.43.3.2: one section per card (the header is drawn above the row it sits on, so it is never a selectable row);
+         // a card's SIZE and extras are indented under its main toggle. Same rows, keys, labels, notes and defaults.
          var rows:Array = [{"k":"Compact","l":"COMPACT MODE (STRIPS)","t":"b","pill":true},
-            {"k":"ShowJetpack","l":"JETPACK CARD","t":"b","h":"CARDS"},this.hz34Sz("Jetpack",szn),
-            {"k":"ShowVitals","l":"VITALS CARD","t":"b"},this.hz34Sz("Vitals"),
+            {"k":"CompactScale","l":"COMPACT STRIPS: SIZE","t":"z","h":"GENERAL","note":"The jetpack / vitals / afflictions strips of COMPACT MODE"},
+            {"k":"ShowVitals","l":"VITALS CARD","t":"b","h":"VITALS"},this.hz34Sz("Vitals"),
             {"k":"VitalsLayout","l":"VITALS LAYOUT","t":"r","opts":["VERTICAL","HORIZONTAL"],"ids":[0,1],"sub":true,"note":"VERTICAL = health above O2.  HORIZONTAL = O2 beside health (one row).  ARRANGE CARDS: L"},
             {"k":"VitalsBars","l":"HEALTH AND O2 BARS","t":"r","opts":["FULL","COMPACT"],"ids":[0,1],"sub":true,"note":"COMPACT uses the same boost, health, and oxygen card as COMPACT MODE. FULL keeps the separate cards. If either is on, that merged card shows."},
-            {"k":"ShowCharacter","l":"CHARACTER CARD (LV / XP / CREDITS / MASS)","t":"b"},this.hz34Sz("Character"),this.hz34Cmp("Character",cmn),
-            {"k":"WatchStyle","l":"WATCH","t":"r","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4],"note":"Original Vanilla Watch or Horizon Watch"},this.hz34Sz("Watch"),
-            {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","sub":true},
-            {"k":"ShowPlanet","l":"PLANET CARD","t":"b"},this.hz34Sz("Planet"),this.hz34Cmp("Planet"),
-            {"k":"PlanetDetails","l":"PLANET: GRAVITY / AIR LINE","t":"b"},
-            {"k":"ShowAfflictions","l":"AFFLICTIONS CARD","t":"b"},this.hz34Sz("Afflictions"),
-            {"k":"ShowAmmo","l":"EQUIPMENT CARD","t":"b"},this.hz34Sz("Equipment"),this.hz34Cmp("Equipment"),
-            {"k":"EquipmentExtras","l":"EQUIPMENT: GRENADES + STARBORN POWER","t":"b"},
-            {"k":"ShowQuests","l":"QUEST TRACKER","t":"b"},this.hz34Sz("Quests"),this.hz34Cmp("Quests"),
-            {"k":"ShowCompass","l":"COMPASS","t":"b"},this.hz34Sz("Compass"),this.hz34Cmp("Compass","The enemy health bar follows the compass form"),
-            {"k":"VehicleExitPill","l":"VEHICLE EXIT PILL","t":"b","note":"Hold-to-exit prompt while you are in a vehicle. Off = the game's prompt."},
-            {"k":"EnemyBar","l":"ENEMY HEALTH BAR (TOP CENTER)","t":"b"},this.hz34Sz("Enemy"),
-            {"k":"StealthMeter","l":"STEALTH METER (ABOVE CROSSHAIR)","t":"b"},this.hz34Sz("Stealth"),
-            {"k":"CompactScale","l":"COMPACT STRIPS: SIZE","t":"z","note":"The jetpack / vitals / afflictions strips of COMPACT MODE"},
+            {"k":"ShowJetpack","l":"JETPACK CARD","t":"b","h":"JETPACK"},this.hz34Sz("Jetpack",szn),
+            {"k":"ShowAmmo","l":"EQUIPMENT CARD","t":"b","h":"EQUIPMENT"},this.hz34Sz("Equipment"),this.hz34Cmp("Equipment"),
+            {"k":"EquipmentExtras","l":"EQUIPMENT: GRENADES + STARBORN POWER","t":"b","sub":true},
+            {"k":"ShowCompass","l":"COMPASS","t":"b","h":"COMPASS"},this.hz34Sz("Compass"),this.hz34Cmp("Compass","The enemy health bar follows the compass form"),
+            {"k":"ShowQuests","l":"QUEST TRACKER","t":"b","h":"QUEST TRACKER"},this.hz34Sz("Quests"),this.hz34Cmp("Quests","STANDARD is the full card. COMPACT shows the quest name and the current objective only"),
+            {"k":"QuestsWidth","l":"WIDTH","t":"n","mn":380,"mx":660,"st":20,"sub":true,"note":"Font size is unchanged. Narrower widths wrap the objective onto more lines."},
+            {"k":"QuestsMaxHeight","l":"MAX HEIGHT","t":"n","mn":100,"mx":300,"st":10,"sub":true,"note":"Caps how tall the card can grow. Extra lines are not added past this height."},
+            {"k":"QuestsWrap","l":"TEXT WRAP","t":"b","sub":true,"note":"When on, text starts a new line instead of ending in an ellipsis."},
+            {"k":"ShowPlanet","l":"PLANET CARD","t":"b","h":"PLANET"},this.hz34Sz("Planet"),this.hz34Cmp("Planet"),
+            {"k":"PlanetDetails","l":"PLANET: GRAVITY / AIR LINE","t":"b","sub":true},
+            {"k":"HazardStatus","l":"HAZARD STATUS CARD","t":"b","h":"HAZARD STATUS","note":"Red while a hazard hurts you, green while suit protection restores. Default spot: under the planet card"},this.hz34Sz("Hazard"),this.hz34Cmp("Hazard"),
+            {"k":"ShowCharacter","l":"CHARACTER CARD (LV / XP / CREDITS / MASS)","t":"b","h":"CHARACTER"},this.hz34Sz("Character"),this.hz34Cmp("Character",cmn),
+            {"k":"WatchStyle","l":"WATCH","t":"r","h":"WATCH","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4],"note":"Original Vanilla Watch or Horizon Watch"},this.hz34Sz("Watch"),
+            {"k":"ShowAfflictions","l":"AFFLICTIONS CARD","t":"b","h":"AFFLICTIONS"},this.hz34Sz("Afflictions"),
+            {"k":"EnemyBar","l":"ENEMY HEALTH BAR (TOP CENTER)","t":"b","h":"ENEMY HEALTH"},this.hz34Sz("Enemy"),
+            {"k":"StealthMeter","l":"STEALTH METER (ABOVE CROSSHAIR)","t":"b","h":"STEALTH"},this.hz34Sz("Stealth"),
+            {"k":"VehicleExitPill","l":"VEHICLE EXIT PILL","t":"b","h":"VEHICLE","note":"Hold-to-exit prompt while you are in a vehicle. Off = the game's prompt."},
             {"k":"ShowTarget","l":"TARGET CARD (ACTIVATE PROMPT)","t":"b","h":"HOVER + CONTAINER"},
             {"k":"NameHover","l":"NAME HOVER","t":"r","opts":["COMPACT","FULL"],"ids":[0,1],"sub":true,"note":"COMPACT is one line: icon, name, key. FULL is the taller card."},
             {"k":"HoverScale","l":"HOVER CARDS: SIZE","t":"z","sub":true,"note":"Activate prompts, loose item / take card, compare and enemy tags"},
-            {"k":"ContainerScale","l":"CONTAINER WINDOW: SIZE","t":"z","sub":true,"note":"The full container item list"}];
+            {"k":"ContainerScale","l":"CONTAINER WINDOW: SIZE","t":"z","sub":true,"note":"The full container item list"},
+            {"k":"QuickMenuHorizon","l":"HORIZON STYLE","t":"b","h":"QUICK MENU","note":"The game's quick menu (favorites cross) as Horizon cards. Off = the game's look."},
+            {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","h":"NOTIFICATIONS"}];
          var on:Boolean = this.hz30Mod["comms"] === 1;
-         var mt:Object = {"k":"MissionToast","l":"MISSION TOAST","t":"b","h":"COMMS"};
+         var mt:Object = {"k":"MissionToast","l":"MISSION TOAST","t":"b"};   // 0.43.3.2: under NOTIFICATIONS, right after XP TOAST: SIZE
          var ms:Object = {"k":"MissionToastScale","l":"SIZE","t":"z","sub":true};
          if(on) { ms.note = "Same switch as COMMS > MISSION TOAST. Move it in ARRANGE CARDS"; }
          else
@@ -17213,10 +18631,16 @@
          }
          rows.push(mt); rows.push(ms);
          try { this.hz42ScRows(rows); } catch(err42r:Error) { }   // v0.42.0 r2: SCOPE rows (only with the Scope module)
+         // 0.43.3.2 batch e: the help text moves into the row's (i) popup (hz35InfoOf: r.inote first), so the list is just
+         // rows. A disabled row keeps its note under it: the note says why it is off, and a disabled row has no (i).
          var ni:int = 0;
          while(ni < rows.length)
          {
-            if(rows[ni].note) { rows[ni].n13 = true; }
+            if(rows[ni].note)
+            {
+               if(rows[ni].dis) { rows[ni].n13 = true; }
+               else { rows[ni].inote = String(rows[ni].note); delete rows[ni].note; }
+            }
             ni++;
          }
          return rows;
@@ -17738,7 +19162,7 @@
 
       // =================== v0.37 shared settings reader (hz37) ===================
       // ONE helper, spliced into every movie that reads the settings (hudmenu + hudmenu_lrg as hz37, hudmessagesmenu
-      // x2 as hzc37, dialoguemenu x2 as hzd37; generated from /workspace/v037/work/hzini_shared.as, so the copies are
+      // x2 as hzc37, dialoguemenu x2 as hzd37; generated from hzini_shared.as, so the copies are
       // identical apart from the prefix). It reads HorizonUI.default.ini, HorizonUI.user.ini, HorizonUI.state.ini and the
       // legacy HorizonUI.ini (paths relative to Data/Interface) one after the other and hands every waiting callback the
       // merged text: the defaults with user.ini laid over (hz37Compose; mirrors HZF::Compose in HorizonUI.dll). A missing
@@ -18503,31 +19927,105 @@
       // Hide sibling prompt art instead, then keep the hold button and its parents live.
       private function hz38HideVanilla(rw:Object, aw:Object, kind:String) : void
       {
-         var buttons:Array = this.hzT19HoldBtns(aw);
-         this.hzT19AncFill(buttons);   // H2: hzT19OnHoldPath's parent chains, collected once for this call
-         try
+         // perf round 2 Fix 5: the walk runs on a hover edge, or when the pieces it hid last time no longer hold (a parent
+         // or child count changed, aw / holder / button clips swapped, hzTgHidden restored or grown); otherwise only the
+         // recorded pieces get alpha 0 again (the same write hzT19HideA makes for a piece it already holds)
+         var hd0:DisplayObject = null;
+         try { hd0 = rw.RolloverActivationHolder_mc as DisplayObject; } catch(eH0:Error) { hd0 = null; }
+         if(this.hzT19HcOk(aw,hd0)) { this.hzT19HcApply(); }
+         else
          {
-            var ad:DisplayObjectContainer = aw as DisplayObjectContainer;
-            if(ad) { this.hzT19HidePromptTree(ad,buttons); }
-         }
-         catch(eA:Error) { }
-         try
-         {
-            var hd:DisplayObject = rw.RolloverActivationHolder_mc as DisplayObject;
-            var hdc:DisplayObjectContainer = hd as DisplayObjectContainer;
-            if(hd && hd != (aw as DisplayObject))
+            var walkOk:Boolean = true;
+            this.hzT19HcRec = true;
+            this.hzT19HcDN = 0;
+            this.hzT19HcBN = 0;
+            this.hzT19HcValid = false;
+            var buttons:Array = this.hzT19HoldBtns(aw);
+            this.hzT19AncFill(buttons);   // H2: hzT19OnHoldPath's parent chains, collected once for this call
+            try
             {
-               if(hdc && this.hzT19OnHoldPathA(hd,buttons)) { this.hzT19HidePromptTree(hdc,buttons); }
-               else { this.hzT19HideA(hd); }
+               var ad:DisplayObjectContainer = aw as DisplayObjectContainer;
+               if(ad) { this.hzT19HidePromptTree(ad,buttons); }
             }
+            catch(eA:Error) { walkOk = false; }
+            try
+            {
+               var hd:DisplayObject = rw.RolloverActivationHolder_mc as DisplayObject;
+               var hdc:DisplayObjectContainer = hd as DisplayObjectContainer;
+               if(hd && hd != (aw as DisplayObject))
+               {
+                  if(hdc && this.hzT19OnHoldPathA(hd,buttons)) { this.hzT19HidePromptTree(hdc,buttons); }
+                  else { this.hzT19HideA(hd); }
+               }
+            }
+            catch(eH:Error) { walkOk = false; }
+            this.hzT19AncB = null;   // Bot 3 N4: the ancestor set is valid only inside this call (hzT19HoldBtns reuses its array)
+            this.hzT19HcRec = false;
+            this.hzT19HcAw = aw;
+            this.hzT19HcHd = hd0;
+            if(this.hzT19HcBtn == null) { this.hzT19HcBtn = new Array(4); }
+            var bi:int = 0;
+            while(bi < 4) { this.hzT19HcBtn[bi] = buttons[bi]; bi++; }
+            this.hzT19HcValid = walkOk;
          }
-         catch(eH:Error) { }
-         this.hzT19AncB = null;   // Bot 3 N4: the ancestor set is valid only inside this call (hzT19HoldBtns reuses its array)
          this.hzT19KeepHold(aw);
          // ObjectRing: 0 always hidden, 1 shown for container lists only, 2 as the game draws it
          if(this.hzObjRing == 0 || (this.hzObjRing == 1 && kind != "list")) { this.hzT19HideReticle(rw); }
          else { this.hzT19ShowReticle(rw); }
+         this.hzT19HcArr = this.hzTgHidden;
+         this.hzT19HcLen = this.hzTgHidden.length;
       }
+
+      // perf round 2 Fix 5. Purpose: the recorded hide walk still holds (the cover for a swapped or re-parented piece):
+      // no edge, same aw / holder / button clips, hzTgHidden not restored or grown, every hidden piece under its recorded
+      // parent, every walked container under its recorded parent with its recorded child count. Reads only; no search.
+      private function hzT19HcOk(aw:Object, hd:Object) : Boolean
+      {
+         if(this.hzT19HcDue || !this.hzT19HcValid || this.hzT19HcRec) { return false; }
+         if(aw !== this.hzT19HcAw || hd !== this.hzT19HcHd) { return false; }
+         if(this.hzTgHidden !== this.hzT19HcArr || this.hzTgHidden.length != this.hzT19HcLen) { return false; }
+         try
+         {
+            var i:int = 0;
+            while(i < 4) { if(this.hzT19BtnClip(aw,i) !== this.hzT19HcBtn[i]) { return false; } i++; }
+            i = 0;
+            while(i < this.hzT19HcDN)
+            {
+               var d:DisplayObject = this.hzT19HcD[i];
+               if(d == null || d.parent !== this.hzT19HcP[i]) { return false; }
+               i++;
+            }
+            i = 0;
+            while(i < this.hzT19HcBN)
+            {
+               var b:DisplayObjectContainer = this.hzT19HcB[i];
+               if(b == null || b.numChildren != this.hzT19HcBK[i] || b.parent !== this.hzT19HcBP[i]) { return false; }
+               i++;
+            }
+         }
+         catch(e:Error) { return false; }
+         return true;
+      }
+
+      private function hzT19HcApply() : void
+      {
+         var i:int = 0;
+         while(i < this.hzT19HcDN)
+         {
+            var d:DisplayObject = this.hzT19HcD[i];
+            if(d.alpha != 0) { d.alpha = 0; }
+            i++;
+         }
+      }
+
+      private function hzT19HcBox(box:DisplayObjectContainer) : void
+      {
+         this.hzT19HcB[this.hzT19HcBN] = box;
+         this.hzT19HcBK[this.hzT19HcBN] = box.numChildren;
+         this.hzT19HcBP[this.hzT19HcBN] = box.parent;
+         this.hzT19HcBN++;
+      }
+
       // what to do with the vanilla widget this frame (pure; tested): "hide" or "show"
       //   mine   = Horizon owns target prompts (ShowTarget on, not hidden by the user, not a scanner mode, widget found)
       //   prompt = the game shows an activate prompt right now
@@ -18570,14 +20068,14 @@
       // The scanner movie (monoclemenu.swf / _lrg) reads the same [Scanner] keys itself; this movie writes them (F11) and
       // hides its own cards while the Horizon scanner is open. Types: b 0/1, i int, f float, z size, o -1 or a number,
       // p position (-1, L/R/C+n, T/B/C+n), s hex.
-      private static const HZ40_SCAN_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideWatchWhileScanning","b",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];
-      private static const HZ40_SCAN_CM:Object = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"],"HideWatchWhileScanning":["1 = the watch hides while the hand scanner is open, in every WatchStyle that shows one. With EnemyBar, StealthMeter or","EdgePulse on, the whole bottom-left watch corner hides, planet / bio alerts and the vanilla enemy ring too. With all","three off, only the watch pieces and the env / bio alert text hide (1 / 2 vanilla: the watch; 3 / 4 Horizon: the face","and its marker icons); the alert icons and the enemy ring still show. 0 = shown (default)"]};
+      private static const HZ40_SCAN_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanHideBioscanDone","b",0,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["ScanHighlightArea","i",1,0,3],["ScanOutlineThickness","i",0,0,2],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideWatchWhileScanning","b",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];
+      private static const HZ40_SCAN_CM:Object = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanHideBioscanDone":["1 = no bioscan card once the planet is fully scanned (every fauna, flora, resource and trait found). Default 0"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"ScanHighlightArea":["Highlight area of the hand scanner (the game's own pick-up cone and outline radius, set by the DLL): 0 = Horizon dot (smaller than the game),","1 = Vanilla (default: the game's own values, nothing is changed), 2 = Full screen (wide screens too), 3 = Max. Applies the next time you open the scanner"],"ScanOutlineThickness":["Outline thickness of the hand scanner highlight (the game's own [Monocle] outline settings, set by the DLL): 0 = Vanilla","(default: the game's own values, nothing is changed), 1 = Thick (1.5x), 2 = Thicker (2x). Applies the next time you open the scanner"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"],"HideWatchWhileScanning":["1 = the watch hides while the hand scanner is open, in every WatchStyle that shows one. With EnemyBar, StealthMeter or","EdgePulse on, the whole bottom-left watch corner hides, planet / bio alerts and the vanilla enemy ring too. With all","three off, only the watch pieces and the env / bio alert text hide (1 / 2 vanilla: the watch; 3 / 4 Horizon: the face","and its marker icons); the alert icons and the enemy ring still show. 0 = shown (default)"]};
       private static const HZ40_POPUP:Array = ["HideQuestPopupsWhileScanning","DimTraitPopupDuringBioscan","TraitPopupDim"];
       private static const HZ40_OPA_V:Array = [-1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6];
       private static const HZ40_OPA_N:Array = ["FOLLOW HUD","0.20","0.30","0.40","0.50","0.60","0.70","0.80","0.90","1.00","1.10","1.20","1.30","1.40","1.50","1.60"];
       private static const HZ40_MAR_V:Array = [-1,20,30,40,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200];
       private static const HZ40_MAR_N:Array = ["FOLLOW HUD","20","30","40","50","60","70","80","90","100","110","120","130","140","150","160","170","180","190","200"];
-      private static const HZ40_CARDS:Array = ["HorizonCard_mc","HorizonVitals_mc","HorizonEnv_mc","HorizonAffl_mc","HorizonQuest_mc","HorizonCompactQuest_mc","HorizonAmmo_mc","HorizonCompact_mc","HorizonCompass_mc","HorizonChar_mc","HorizonXp_mc"];
+      private static const HZ40_CARDS:Array = ["HorizonCard_mc","HorizonVitals_mc","HorizonEnv_mc","HorizonAffl_mc","HorizonQuest_mc","HorizonCompactQuest_mc","HorizonAmmo_mc","HorizonCompact_mc","HorizonCompass_mc","HorizonChar_mc","HorizonXp_mc","HorizonHazard_mc"];
       private var hz40C:Object = null;          // current [Scanner] values
       private var hz40Scan:Boolean = false;     // the hand scanner is open (HudCompassData.bIsHandscannerOpen / FireForget)
       private var hz40Hide:Boolean = false;     // the Horizon cards are hidden for the scanner right now
@@ -18783,6 +20281,7 @@
             {"k":"ScanShowPlanet","l":"PLANET CARD","t":"b","h":"PANELS","note":"Applies the next time you open the scanner"},this.hz34Sz("ScanPlanet",szn),this.hz34Cmp("ScanPlanet",cmn),
             {"k":"ScanShowBodyType","l":"BODY TYPE AFTER SYSTEM NAME","t":"b","sub":true},
             {"k":"ScanShowBioscan","l":"BIOSCAN","t":"b"},this.hz34Sz("ScanBioscan"),this.hz34Cmp("ScanBioscan"),
+            {"k":"ScanHideBioscanDone","l":"HIDE WHEN FULLY SCANNED","t":"b","sub":true,"note":"Off by default. No bioscan card once every fauna, flora, resource and trait of the planet is found"},
             {"k":"ScanShowSignals","l":"SIGNALS","t":"b"},this.hz34Sz("ScanSignals"),this.hz34Cmp("ScanSignals"),
             {"k":"ScanMaxSignals","l":"MAX SIGNALS LISTED","t":"n","mn":1,"mx":8,"st":1,"sub":true,"note":"The quest objective row is always kept"},
             {"k":"ScanShowShip","l":"YOUR SHIP ROW","t":"b","sub":true,"note":"Also the YOUR VEHICLE row. Off: your own ship and vehicle are left out of Signals"},
@@ -18798,6 +20297,8 @@
             {"k":"ScanLeftToFind","l":"\"LEFT TO FIND\" COUNTS","t":"b","note":"Planet totals under the bioscan rows"},
             {"k":"ScanMinRarity","l":"RESOURCES SHOWN","t":"r","opts":["ALL","UNCOMMON+","RARE+","EXOTIC+","UNIQUE"],"ids":[0,1,2,3,4]},
             {"k":"ScanNearestUnscanned","l":"HIGHLIGHT NEAREST UNDISCOVERED","t":"b","note":"Signals list only"},
+            {"k":"ScanHighlightArea","l":"HIGHLIGHT AREA","t":"r","opts":["HORIZON DOT","VANILLA","FULL SCREEN","MAX"],"ids":[0,1,2,3],"note":"How much of the screen the scanner picks up and outlines (minerals, flora, fauna, items). HORIZON DOT: smaller. VANILLA: the game's own. FULL SCREEN: the whole screen, wide screens and a high FOV too. MAX: the widest, past every screen edge. Applies the next time you open the scanner"},
+            {"k":"ScanOutlineThickness","l":"OUTLINE THICKNESS","t":"r","opts":["VANILLA","THICK","THICKER"],"ids":[0,1,2],"note":"How thick the scanner outlines highlighted minerals, flora, fauna and items. VANILLA: the game's own (your ini tweaks stay). THICK: 1.5x. THICKER: 2x. Applies the next time you open the scanner"},
             {"k":"ScanOpacity","l":"OPACITY","t":"l","vals":HZ40_OPA_V,"names":HZ40_OPA_N,"h":"LOOK","note":"FOLLOW HUD = CARD OPACITY (STYLE)"},
             {"k":"ScanAccIdx","l":"ACCENT","t":"a","pal":this.hz40AccPal(),"names":this.hz40AccNames(),"note":"Custom: ScanAccent=13 + ScanAccentHex=#RRGGBB in the ini"},
             {"k":"ScanTextCase","l":"TEXT CASE","t":"r","opts":["FOLLOW HUD","CAPS","TITLE"],"ids":[-1,0,1],"note":"Game names are never re-cased to Title"},
@@ -18848,6 +20349,7 @@
          this.hz40Apply();
          try { this.hz41LocHide(); } catch(e41e:Error) { }   // v0.42.0 r3: re-assert on every scan edge
          if(!edge) { return; }   // r9: the r6 / r8 watch syncs below run once per real open / close edge, not per dispatch
+         this.hz43ChrForce |= 15;   // arch-fixes Fix 1: a scan edge re-runs the chrome passes once (perf round 2: + the 1/2 show sweep)
          try { this.hz43FollowApply(); } catch(e43f:Error) { }   // r6: FadeInPlanetInfo plays on the scan edge; keep it on the moved watch
          try { this.hz43ScanHideSync(); } catch(e43s:Error) { }   // r6: [Scanner] HideWatchWhileScanning, on the open / close edge only
          try { this.hz45Sync(); } catch(e45s:Error) { }   // r8: the planet-info art the game adds right after this edge
@@ -20807,6 +22309,60 @@
       private var hz43VanUnitLog:Boolean = false;
       private var hz43HidA:Array = null;
       private var hz43HidN:int = 0;
+      // arch-fixes N-1: noted refs found torn down at a full pass. Out of the per-frame stale scan, still restored by
+      // hz43VanRestoreHid (so a clip the timeline puts back is never left hidden in styles 1/2).
+      private var hz43HidP:Array = null;
+      private var hz43HidPN:int = 0;
+      // arch-fixes Fix 1: edge-gated chrome passes. A = the hzOnFrame BLG child pass, B = the styles 3/4 hz43VanChrome pass.
+      // Each full pass runs only on an edge (style change, BLG child count change, a hidden ref shown again or torn
+      // down, a noted container's child count change, a hide-list rebuild, scan edge, recapture). Refs are dropped at
+      // every full pass, so nothing survives a menu teardown (a torn-down ref has stage == null and forces a pass; since N-1
+      // that pass parks it, see hz43ChrPrune).
+      private var hz43ChrForce:int = 15;   // bit 1 = pass A, bit 2 = pass B, bit 4 = ring outline re-resolve, bit 8 = styles 1/2 show sweep (perf round 2)
+      private var hz43ChrKidsA:int = -2;
+      private var hz43ChrStA:int = -1;
+      private var hz43ChrW:Array = null;   // pass A: watch children it saw hidden by the game (not noted in hz43HidA)
+      private var hz43ChrWN:int = 0;
+      private var hz43ChrKidsB:int = -2;
+      private var hz43ChrStB:int = -1;
+      private var hz43ChrRec:Boolean = false;
+      private var hz43ChrShow:Array = null;   // pass B: kept markers and their holders it set visible
+      private var hz43ChrShowN:int = 0;
+      private var hz43ChrBox:Array = null;    // pass B: containers it walked, with their child counts
+      private var hz43ChrBoxK:Array = null;
+      private var hz43ChrBoxN:int = 0;
+      private var hz43RmD:DisplayObject = null;   // ring-center outline ref (resolved on an edge only)
+      private var hz43RmKids:int = -2;
+      private var hz43RmOk:Boolean = false;
+      private var hz43RmX:Number = NaN;
+      private var hz43RmY:Number = NaN;
+      private var hz43RmPx:Number = NaN;
+      private var hz43RmPy:Number = NaN;
+      private var hz43RmPs:Number = NaN;
+      private var hz43RmBx:Number = NaN;
+      private var hz43RmBy:Number = NaN;
+      private var hz43RmBs:Number = NaN;
+      private var hz43RmP:Point = null;
+      private var hz43CmpS:Sprite = null;   // compass layer of the custom face (redrawn alone on a heading change)
+      private var hz43TopS:Sprite = null;   // hands + attention mark layer (above the compass, as before)
+      private var hz43CsO:Array = null;     // declared-size entry per Home-avoid card (hzSz object), looked up on an edge
+      private var hz43CsL:int = -1;
+      private var hzHideKids:int = -2;      // BLG child count at the last hide-list rebuild
+      private var hzHideMiss:Boolean = false;   // the last rebuild did not find every listed name
+      private var hzHideMissN:int = 0;          // perf round 2: fewest retries any still-missing name has had (the retry runs while < 6)
+      private var hzHideMissC:Object = null;    // perf round 2: retries per missing name since the last real rebuild edge
+      // perf round 2 Fix 4: styles 1/2 show sweep record and the once-per-frame place inputs
+      private var hz43ShowL:Array = null;       // pieces the last show pass handled (BLG children)
+      private var hz43ShowNm:Array = null;      // their names when a payload clip (hz43VanGameVis), else null
+      private var hz43ShowLN:int = 0;
+      private var hz43ShowBlg:DisplayObjectContainer = null;
+      private var hz43ShowKids:int = -2;
+      private var hz43ShowSt:int = -1;
+      private var hz43VpF:int = -1;             // hzFrameN of the last vanilla place
+      private var hz43VpVr:int = -1;
+      private var hz43VpSaved:Boolean = false;
+      private var hz43VpSc:Number = NaN;
+      private var hz43VpKids:int = -2;          // BLG child count at the last vanilla place
       private var hz43EnvGot:int = 0;
       private var hz43EnvLocal:Boolean = false;
       private var hz43EnvCruise:Boolean = false;
@@ -20897,6 +22453,9 @@
       private var hz43Pm:Number = NaN;
       private var hz43Ps:Number = NaN;
       private var hz43WasSaved:Boolean = false;
+      private var hz43PlSc:Number = NaN;     // 0.43.3.2: the watch scale hz43Place last wrote (NaN = never)
+      private var hz43PlRbX:Number = NaN;    // 0.43.3.2: scaleX / scaleY read back after that write
+      private var hz43PlRbY:Number = NaN;
       private var hz43Ax:int = -1;
       private var hz43Ay:int = -1;
       private var hz43Dx:Number = NaN;
@@ -21104,8 +22663,7 @@
          }
          else if(showVan)
          {
-            this.hz43VanRestoreHid();
-            this.hz43VanBlgChrome(false);
+            this.hz43ShowSweep();   // perf round 2: on an edge or a stale noted piece only (was every frame)
          }
       }
 
@@ -21536,10 +23094,15 @@
          return "";
       }
 
+      // arch-fixes Fix 1: the compass lives on its own layer (hz43DrawCmp redraws it alone on a heading change), the hands
+      // and the attention mark on a layer above it, so the stacking order is the one the single-canvas draw had.
       private function hz43Draw(mode:int) : void
       {
+         this.hz43FaceLayers();
          var g:* = this.hz43Face.graphics;
          g.clear();
+         var tg:* = this.hz43TopS.graphics;
+         tg.clear();
          g.beginFill(0x0A1218,0.62);
          g.drawCircle(0,0,HZ43_R - 1);
          g.endFill();
@@ -21550,9 +23113,9 @@
          this.hz43Gauge(g,this.hz26O2F,this.hz26Co2F,digital);
          this.hz43GaugeLabel(this.hz43O2L,this.hz43O2Start());
          this.hz43GaugeLabel(this.hz43CO2L,this.hz43CO2Start());
+         this.hz43DrawCmp();
          if(digital)
          {
-            this.hz43Compass(g);
             this.hz43LocL.y = -40;
             this.hz43LocT.y = -22;
             this.hz43RealL.y = 2;
@@ -21563,41 +23126,62 @@
          else
          {
             this.hz43Ticks(g);
-            this.hz43Compass(g);
-            this.hz43Hands(g);
+            this.hz43Hands(tg);
             this.hz43BodyT.y = -22;
             this.hz43TempT.y = -4;
          }
          var attn:String = this.hz43AttWord();
          this.hz43AttT.visible = attn.length > 0;
-         this.hz43AttT.text = attn;
+         this.hz43SetTx(this.hz43AttT,attn);
          if(attn.length > 0)
          {
             this.hz43AttT.y = digital ? 102 : 24;
             this.hzTxtTint(this.hz43AttT,HZ43_ATTN);
             var ay:Number = this.hz43AttT.y + 4;
-            g.beginFill(HZ43_ATTN,1);
-            g.moveTo(-78,ay);
-            g.lineTo(-72,ay + 6);
-            g.lineTo(-84,ay + 6);
-            g.endFill();
+            tg.beginFill(HZ43_ATTN,1);
+            tg.moveTo(-78,ay);
+            tg.lineTo(-72,ay + 6);
+            tg.lineTo(-84,ay + 6);
+            tg.endFill();
          }
-         this.hz43LocL.text = "LOCAL/GAME";
-         this.hz43RealL.text = "PC/REAL";
-         this.hz43O2L.text = "O2";
-         this.hz43CO2L.text = "CO2";
-         if(this.hz43Ok != 0)
-         {
-            this.hz43LocT.text = this.hzFmtLocGame(this.hz43H,this.hz43M,this.hz43Ut != 0);
-         }
-         else
-         {
-            this.hz43LocT.text = "--";
-         }
-         this.hz43RealT.text = this.hz43PcTxt;
+         this.hz43SetTx(this.hz43LocL,"LOCAL/GAME");
+         this.hz43SetTx(this.hz43RealL,"PC/REAL");
+         this.hz43SetTx(this.hz43O2L,"O2");
+         this.hz43SetTx(this.hz43CO2L,"CO2");
+         this.hz43SetTx(this.hz43LocT,this.hz43Ok != 0 ? this.hzFmtLocGame(this.hz43H,this.hz43M,this.hz43Ut != 0) : "--");
+         this.hz43SetTx(this.hz43RealT,this.hz43PcTxt);
          var body:String = this.hz43Body != null && this.hz43Body.length > 0 ? this.hz43Body : "--";
-         this.hz43BodyT.text = body;
-         this.hz43TempT.text = isNaN(this.hzEnvTempC) ? "--" : this.hzTempText(this.hzEnvTempC);
+         this.hz43SetTx(this.hz43BodyT,body);
+         this.hz43SetTx(this.hz43TempT,isNaN(this.hzEnvTempC) ? "--" : this.hzTempText(this.hzEnvTempC));
+      }
+
+      // arch-fixes Fix 1. Purpose: set a face text only when it changed (a TextField write re-lays the field out).
+      private function hz43SetTx(t:TextField, v:String) : void
+      {
+         if(t.text != v) { t.text = v; }
+      }
+
+      // arch-fixes Fix 1. Purpose: create the compass and hands layers once, at the bottom of the face (under its texts).
+      private function hz43FaceLayers() : void
+      {
+         if(this.hz43CmpS != null && this.hz43CmpS.parent == this.hz43Face) { return; }
+         this.hz43CmpS = new Sprite();
+         this.hz43CmpS.mouseEnabled = false;
+         this.hz43CmpS.mouseChildren = false;
+         this.hz43TopS = new Sprite();
+         this.hz43TopS.mouseEnabled = false;
+         this.hz43TopS.mouseChildren = false;
+         this.hz43Face.addChildAt(this.hz43CmpS,0);
+         this.hz43Face.addChildAt(this.hz43TopS,1);
+      }
+
+      // arch-fixes Fix 1. Purpose: redraw only the compass layer (heading change). Called from hz43Frame on that edge.
+      private function hz43DrawCmp() : void
+      {
+         this.hz43FaceLayers();
+         var cg:* = this.hz43CmpS.graphics;
+         cg.clear();
+         this.hz43Compass(cg);
       }
 
       // Heading ticks and letters stay on the top inner arc. The diamond is the fixed top mark.
@@ -21606,7 +23190,7 @@
          this.hz43Diamond(g,0,-HZ43_R + 26,4);
          var base:int = int(Math.round(this.hzCmpDeg / 15)) * 15;
          var k:int = -4;
-         var shown:Array = [];
+         var shown:int = 0;   // arch-fixes Fix 1: bit per card letter, no Array per draw
          while(k <= 4)
          {
             var hd:int = base + k * 15;
@@ -21625,7 +23209,7 @@
             if(hd % 45 == 0 && Math.abs(rel) >= 8 && ly < -HZ43_R + 96)
             {
                var idx:int = (int(Math.round(((hd % 360) + 360) % 360 / 45)) ) % 8;
-               shown.push(idx);
+               shown |= 1 << idx;
                if(this.hz43Cards && this.hz43Cards[idx])
                {
                   var lt:TextField = this.hz43Cards[idx] as TextField;
@@ -21642,7 +23226,7 @@
             var hi:int = 0;
             while(hi < this.hz43Cards.length)
             {
-               if(shown.indexOf(hi) < 0) { TextField(this.hz43Cards[hi]).visible = false; }
+               if((shown & (1 << hi)) == 0) { TextField(this.hz43Cards[hi]).visible = false; }
                hi++;
             }
          }
@@ -21726,8 +23310,12 @@
          var vis:int = (c && c.visible && c.alpha > 0.2) ? 1 : 0;
          var x:Number = c ? c.x : 0;
          var y:Number = c ? c.y : 0;
-         var w:Number = vis != 0 ? c.width : 0;
-         var h:Number = vis != 0 ? c.height : 0;
+         // arch-fixes Fix 1: the size key is the card's declared size (hzSetSz, set by its own layout) times its scale,
+         // a few number reads; the display-list bounds are read only when that key moved. A card with no declared size
+         // keeps the old bounds read.
+         var so:Object = vis != 0 ? this.hz43CardSzO(i,c) : null;
+         var w:Number = vis == 0 ? 0 : (so != null ? Number(so.w) * c.scaleX : c.width);
+         var h:Number = vis == 0 ? 0 : (so != null ? Number(so.h) * c.scaleY : c.height);
          var ch:Boolean = vis != int(this.hz43Cv[i]) || x != Number(this.hz43Cx[i]) || y != Number(this.hz43Cy[i]) || w != Number(this.hz43Cw[i]) || h != Number(this.hz43Chh[i]);
          this.hz43Cv[i] = vis;
          this.hz43Cx[i] = x;
@@ -21735,6 +23323,28 @@
          this.hz43Cw[i] = w;
          this.hz43Chh[i] = h;
          return ch;
+      }
+
+      // arch-fixes Fix 1. Purpose: the hzSz entry of Home-avoid card i (looked up again only when hzSz grew). Entries are
+      // updated in place by hzSetSz, so the stored object stays current.
+      private function hz43CardSzO(i:int, c:Sprite) : Object
+      {
+         if(this.hz43CsO == null || this.hz43CsL != this.hzSz.length)
+         {
+            this.hz43CsO = [null,null,null,null];
+            this.hz43CsL = this.hzSz.length;
+            for each(var o:Object in this.hzSz)
+            {
+               var k:int = 0;
+               while(k < 4)
+               {
+                  if(o.c == this.hz43CardAt(k)) { this.hz43CsO[k] = o; }
+                  k++;
+               }
+            }
+         }
+         var e:Object = this.hz43CsO[i];
+         return (e != null && e.c == c) ? e : null;
       }
 
       private function hz43Locals() : Boolean
@@ -22184,6 +23794,7 @@
             if(this.hz43VanNeed == 0 && this.hzBlg.numChildren == this.hz43VanKids) { return; }
          }
          this.hz43VanN = 0;
+         this.hz43ChrForce |= 15;   // arch-fixes Fix 1: recapture (perf round 2: + the 1/2 show sweep)
          var k:int = 0;
          while(k < HZ43_VAN_N.length)
          {
@@ -22210,6 +23821,7 @@
          var i:int = 0;
          var count:int = this.hz43VanN;
          this.hz43VanN = 0;
+         this.hz43ChrForce |= 15;   // arch-fixes Fix 1: recapture (perf round 2: + the 1/2 show sweep)
          while(i < count)
          {
             var d:DisplayObject = this.hz43VanD[i] as DisplayObject;
@@ -22378,7 +23990,7 @@
          var dsc:Number = sc - this.hz43VanWsc;
          if(this.hz43VanWmk == mk && ddx < 0.05 && ddx > -0.05 && ddy < 0.05 && ddy > -0.05 && dsc < 0.001 && dsc > -0.001)
          {
-            if((marks && this.hz43MarkMoved) || (!marks && (this.hz43VanWrote || (dx == 0 && dy == 0 && sc == 1)))) { return; }
+            if((marks && (this.hz43MarkMoved || (dx == 0 && dy == 0))) || (!marks && (this.hz43VanWrote || (dx == 0 && dy == 0 && sc == 1)))) { return; }   // arch-fixes Fix 1: an unchanged 0 offset is not rewritten
          }
          var i:int = 0;
          while(i < this.hz43VanN)
@@ -22474,6 +24086,7 @@
          try { this.hz49Sync(); } catch(e49:Error) { }   // r9d: the whole-group scan hide, on the same edges
          var want:Boolean = this.hz43ScanWant();
          if(want == this.hz43ScanHid && (!want || this.hz43ScanSt == this.hzWatchStyle)) { return; }
+         this.hz43ChrForce |= 15;   // arch-fixes Fix 1: the scan hide changes watch visibility (perf round 2: + the 1/2 show sweep)
          var d:DisplayObject;
          if(this.hz43ScanHid)
          {
@@ -23552,34 +25165,237 @@
          this.hz43HidN++;
       }
 
+      // arch-fixes N-1. Purpose: at the start of a full chrome pass (an edge), move noted refs that are torn down
+      // (stage == null) from hz43HidA to the parked list hz43HidP, so one teardown mid-session does not keep
+      // hz43ChrStale true and the full passes running every frame. Skipped while the BLG itself is off stage (then every
+      // ref reads stage == null and nothing is known). A full parked list keeps the ref in hz43HidA (the old cost, never
+      // a lost restore). Bounded by HZ43_HID_MAX; allocates the parked array once.
+      private function hz43ChrPrune() : void
+      {
+         if(this.hz43HidN == 0 || this.hzBlg == null || this.hzBlg.stage == null) { return; }
+         var n:int = 0;
+         var i:int = 0;
+         while(i < this.hz43HidN)
+         {
+            var d:DisplayObject = this.hz43HidA[i] as DisplayObject;
+            var keep:Boolean = d != null;
+            if(keep && d.stage == null)
+            {
+               var j:int = 0;
+               var dup:Boolean = false;
+               while(j < this.hz43HidPN && !dup)
+               {
+                  dup = this.hz43HidP[j] == d;
+                  j++;
+               }
+               if(dup) { keep = false; }
+               else if(this.hz43HidPN < HZ43_HID_MAX)
+               {
+                  if(this.hz43HidP == null) { this.hz43HidP = new Array(HZ43_HID_MAX); }
+                  this.hz43HidP[this.hz43HidPN] = d;
+                  this.hz43HidPN++;
+                  keep = false;
+               }
+            }
+            if(keep)
+            {
+               this.hz43HidA[n] = d;
+               n++;
+            }
+            i++;
+         }
+         i = n;
+         while(i < this.hz43HidN)
+         {
+            this.hz43HidA[i] = null;
+            i++;
+         }
+         this.hz43HidN = n;
+      }
+
+      // arch-fixes Fix 1. Purpose: true when one of the n refs in a needs the full chrome pass again: it is visible
+      // (shown again by the timeline) or torn down (stage == null). Reads refs Horizon stored at its last full pass.
+      private function hz43ChrStale(a:Array, n:int) : Boolean
+      {
+         var i:int = 0;
+         while(i < n)
+         {
+            var d:DisplayObject = a[i] as DisplayObject;
+            if(d != null && (d.visible || d.stage == null)) { return true; }
+            i++;
+         }
+         return false;
+      }
+
+      // arch-fixes Fix 1. Purpose: does the hzOnFrame BLG child pass need to run this frame? Edge checks only.
+      private function hz43ChrNeedA() : Boolean
+      {
+         if((this.hz43ChrForce & 1) != 0 || this.hzBlg.numChildren != this.hz43ChrKidsA || this.hzWatchStyle != this.hz43ChrStA) { return true; }
+         if(this.hz43HidN >= HZ43_HID_MAX || this.hz43ChrWN >= HZ43_HID_MAX) { return true; }   // list full: old every-frame pass
+         return this.hz43ChrStale(this.hz43HidA,this.hz43HidN) || this.hz43ChrStale(this.hz43ChrW,this.hz43ChrWN);
+      }
+
+      // arch-fixes Fix 1. Purpose: does the styles 3/4 chrome pass need to run? On a steady frame it re-asserts the kept
+      // markers it recorded (the old pass did the same write every frame) and reads the recorded containers' counts.
+      private function hz43ChrNeedB() : Boolean
+      {
+         if((this.hz43ChrForce & 2) != 0 || this.hzBlg.numChildren != this.hz43ChrKidsB || this.hzWatchStyle != this.hz43ChrStB) { return true; }
+         if(this.hz43HidN >= HZ43_HID_MAX || this.hz43ChrShowN >= HZ43_HID_MAX || this.hz43ChrBoxN >= HZ43_HID_MAX) { return true; }
+         if(this.hz43ChrStale(this.hz43HidA,this.hz43HidN)) { return true; }
+         var i:int = 0;
+         while(i < this.hz43ChrBoxN)
+         {
+            var c:DisplayObjectContainer = this.hz43ChrBox[i] as DisplayObjectContainer;
+            if(c == null || c.stage == null || c.numChildren != int(this.hz43ChrBoxK[i])) { return true; }
+            i++;
+         }
+         i = 0;
+         while(i < this.hz43ChrShowN)
+         {
+            var d:DisplayObject = this.hz43ChrShow[i] as DisplayObject;
+            if(d == null || d.stage == null) { return true; }
+            if(!d.visible) { d.visible = true; }
+            i++;
+         }
+         return false;
+      }
+
+      // arch-fixes Fix 1. Purpose: the keep write of hz43VanChrome (same write as before), recorded while a full pass runs.
+      private function hz43ChrKeep(d:DisplayObject) : void
+      {
+         if(!d.visible) { d.visible = true; }
+         if(!this.hz43ChrRec) { return; }
+         if(this.hz43ChrShow == null) { this.hz43ChrShow = new Array(HZ43_HID_MAX); }
+         var i:int = 0;
+         while(i < this.hz43ChrShowN)
+         {
+            if(this.hz43ChrShow[i] == d) { return; }
+            i++;
+         }
+         if(this.hz43ChrShowN >= HZ43_HID_MAX) { return; }
+         this.hz43ChrShow[this.hz43ChrShowN] = d;
+         this.hz43ChrShowN++;
+      }
+
+      // arch-fixes Fix 1. Purpose: remember a container hz43VanChrome walked and its child count (full pass only).
+      private function hz43ChrBoxAdd(c:DisplayObjectContainer) : void
+      {
+         if(!this.hz43ChrRec || c == null) { return; }
+         if(this.hz43ChrBox == null) { this.hz43ChrBox = new Array(HZ43_HID_MAX); this.hz43ChrBoxK = new Array(HZ43_HID_MAX); }
+         var i:int = 0;
+         while(i < this.hz43ChrBoxN)
+         {
+            if(this.hz43ChrBox[i] == c) { return; }
+            i++;
+         }
+         if(this.hz43ChrBoxN >= HZ43_HID_MAX) { return; }
+         this.hz43ChrBox[this.hz43ChrBoxN] = c;
+         this.hz43ChrBoxK[this.hz43ChrBoxN] = c.numChildren;
+         this.hz43ChrBoxN++;
+      }
+
+      // arch-fixes Fix 1. Purpose: remember a game-hidden watch child seen by the full pass A, so its later show is an edge.
+      private function hz43ChrWAdd(d:DisplayObject) : void
+      {
+         if(this.hz43ChrW == null) { this.hz43ChrW = new Array(HZ43_HID_MAX); }
+         if(this.hz43ChrWN >= HZ43_HID_MAX) { return; }
+         this.hz43ChrW[this.hz43ChrWN] = d;
+         this.hz43ChrWN++;
+      }
+
+      // arch-fixes Fix 1. Purpose: true when a listed hide name was not found by the last re-walk (rebuild only).
+      // perf round 2 Fix 3: the missing-name retry cap is per name. Runs only right after a hide-list walk (no search of
+      // its own). A real edge (retry false) starts every count again; a retry walk adds one to each name it still
+      // misses; a found name drops its count. Returns the fewest retries any missing name has had.
+      private function hzHideMissCount(names:Array, cache:Array, retry:Boolean) : int
+      {
+         if(!retry || this.hzHideMissC == null) { this.hzHideMissC = {}; }
+         var low:int = int.MAX_VALUE;
+         var i:int = 0;
+         while(i < names.length)
+         {
+            var nm:String = String(names[i]);
+            var hit:Boolean = false;
+            var j:int = 0;
+            while(j < cache.length && !hit)
+            {
+               var o:Object = cache[j];
+               if(o != null && o.n == nm) { hit = true; }
+               j++;
+            }
+            if(hit) { if(this.hzHideMissC.hasOwnProperty(nm)) { delete this.hzHideMissC[nm]; } }
+            else
+            {
+               var c:int = retry && this.hzHideMissC.hasOwnProperty(nm) ? int(this.hzHideMissC[nm]) + 1 : (retry ? 1 : 0);
+               this.hzHideMissC[nm] = c;
+               if(c < low) { low = c; }
+            }
+            i++;
+         }
+         return low == int.MAX_VALUE ? 0 : low;
+      }
+      private function hzHideMissReset() : int
+      {
+         this.hzHideMissC = null;
+         return 0;
+      }
+
+      private function hzHideMissing(names:Array, cache:Array) : Boolean
+      {
+         var i:int = 0;
+         while(i < names.length)
+         {
+            var hit:Boolean = false;
+            var j:int = 0;
+            while(j < cache.length && !hit)
+            {
+               var o:Object = cache[j];
+               if(o != null && o.n == names[i]) { hit = true; }
+               j++;
+            }
+            if(!hit) { return true; }
+            i++;
+         }
+         return false;
+      }
+
       // Release Horizon visible-hides of watch siblings. Never writes alpha.
       // Day/OffPlanet/Autopilot/locationName use payload formulas, not sampled clip.visible.
       // Temp/Oxygen/Grav undo our vis hide only; native FadeInPlanetInfo owns their alpha.
       private function hz43VanRestoreHid() : void
       {
-         var i:int = 0;
-         while(i < this.hz43HidN)
+         var pass:int = 0;
+         while(pass < 2)   // arch-fixes N-1: pass 0 = parked (torn-down) refs, pass 1 = hz43HidA; same undo for both
          {
-            var d:DisplayObject = this.hz43HidA[i] as DisplayObject;
-            if(d && this.hz43VanWatchClip(d))
+            var a:Array = pass == 0 ? this.hz43HidP : this.hz43HidA;
+            var n:int = pass == 0 ? this.hz43HidPN : this.hz43HidN;
+            var i:int = 0;
+            while(i < n)
             {
-               if(this.hz43VanGameVis(d.name))
+               var d:DisplayObject = a[i] as DisplayObject;
+               if(d && this.hz43VanWatchClip(d))
                {
-                  if(this.hz43EnvGot != 0 || d.name == "locationNameBase_mc")
+                  if(this.hz43VanGameVis(d.name))
                   {
-                     var want:Boolean = this.hz43VanEnvWant(d.name);
-                     if(d.visible != want) { d.visible = want; }
+                     if(this.hz43EnvGot != 0 || d.name == "locationNameBase_mc")
+                     {
+                        var want:Boolean = this.hz43VanEnvWant(d.name);
+                        if(d.visible != want) { d.visible = want; }
+                     }
+                  }
+                  else if(!d.visible)
+                  {
+                     d.visible = true;
                   }
                }
-               else if(!d.visible)
-               {
-                  d.visible = true;
-               }
+               a[i] = null;
+               i++;
             }
-            this.hz43HidA[i] = null;
-            i++;
+            pass++;
          }
+         this.hz43HidPN = 0;
          this.hz43HidN = 0;
+         this.hz43ChrForce |= 7;   // arch-fixes Fix 1: the noted set changed
       }
 
       // Undo our vis hide on one watch sibling. Never writes alpha. The four native vis
@@ -23608,6 +25424,7 @@
       private function hz43VanBlgChrome(hide:Boolean) : void
       {
          if(!this.hzBlg) { return; }
+         if(!hide) { this.hz43ShowLN = 0; }   // perf round 2: the show pass records the pieces it owns (hz43ShowStale)
          this.hz43OlBegin();
          try
          {
@@ -23628,6 +25445,7 @@
                else if(mark || named || capArt || ringArt)
                {
                   this.hz43VanShowClip(d);
+                  this.hz43ShowAdd(d,n);
                }
                i++;
             }
@@ -23643,7 +25461,7 @@
       // Styles 3 and 4 hide the vanilla bezel and labels. The live marker clips stay visible.
       private function hz43VanChrome(hide:Boolean) : void
       {
-         if(!hide) { this.hz43VanRestoreHid(); this.hz43VanBlgChrome(false); return; }
+         if(!hide) { this.hz43ShowSweep(); return; }   // perf round 2: the show sweep on an edge or a stale noted piece only
          this.hz43OlBegin();
          try
          {
@@ -23659,17 +25477,18 @@
                   var keep:Boolean = mark || (box != null && this.hz43VanHoldsMark(box));
                   if(hide && mark)
                   {
-                     if(!clip.visible) { clip.visible = true; }
+                     this.hz43ChrKeep(clip);
                      var up:DisplayObjectContainer = clip.parent;
                      while(up != null && up != this)
                      {
-                        if(!up.visible) { up.visible = true; }
+                        this.hz43ChrKeep(up);
                         if(up == this.hzBlg) { break; }
                         up = up.parent;
                      }
                      var sib:DisplayObjectContainer = clip.parent;
                      if(sib != null && sib != this.hzBlg && sib != this)
                      {
+                        this.hz43ChrBoxAdd(sib);
                         var si:int = 0;
                         while(si < sib.numChildren)
                         {
@@ -23685,7 +25504,8 @@
                   }
                   else if(hide && box != null && keep && !mark)
                   {
-                     if(!clip.visible) { clip.visible = true; }
+                     this.hz43ChrKeep(clip);
+                     this.hz43ChrBoxAdd(box);
                      var ci:int = 0;
                      while(ci < box.numChildren)
                      {
@@ -23697,7 +25517,7 @@
                         }
                         else if(ch)
                         {
-                           if(!ch.visible) { ch.visible = true; }
+                           this.hz43ChrKeep(ch);
                         }
                         ci++;
                      }
@@ -23769,6 +25589,12 @@
             if(this.hz43VanHnd) { this.hz43VanHnd.visible = false; }
             return;
          }
+         // perf round 2: what hz43VanLate compares to skip a second place in the same frame
+         this.hz43VpF = this.hzFrameN;
+         this.hz43VpVr = this.hz43VrTick;
+         this.hz43VpSaved = this.hzLayHas("Watch");
+         this.hz43VpSc = this.hz43VanSc();
+         this.hz43VpKids = this.hzBlg != null ? this.hzBlg.numChildren : -1;   // review N-3: a timeline swap before exitFrame places again
          if(this.hzBlg == null) { this.hzBlg = this.hzFindByName(this,"BottomLeftGroup_mc",0) as DisplayObjectContainer; }
          if(!this.hzBlg) { return; }
          var hnd:Sprite = this.hz43VanEnsure();
@@ -23801,20 +25627,49 @@
       }
 
       // Native ring center in HUDMenu space from outline local, not getBounds of hidden clips.
+      // arch-fixes Fix 1: the outline ref is resolved on an edge only (first call, torn down / reparented, BLG child count
+      // change, chrome edge) and the center is recomputed only when the outline, its parent or the BLG moved or scaled.
+      // Steady state: number compares, no search, no Point allocation. Returns a Point owned by this class.
       private function hz43VanRingMid() : Point
       {
          if(!this.hzBlg || this.hz43VanP == null) { return null; }
-         var d:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+         var d:DisplayObject = this.hz43RmD;
+         var kids:int = this.hzBlg.numChildren;
+         if((d != null && (d.stage == null || d.parent == null)) || (d == null && kids != this.hz43RmKids) || (this.hz43ChrForce & 4) != 0)
+         {
+            d = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
+            this.hz43RmD = d;
+            this.hz43RmKids = kids;
+            this.hz43RmOk = false;
+            this.hz43ChrForce &= ~4;
+         }
          if(!d || !d.parent) { return null; }
+         var par:DisplayObjectContainer = d.parent;
+         var b:DisplayObjectContainer = this.hzBlg;
+         if(this.hz43RmOk && d.x == this.hz43RmX && d.y == this.hz43RmY && par.x == this.hz43RmPx && par.y == this.hz43RmPy && par.scaleX == this.hz43RmPs && b.x == this.hz43RmBx && b.y == this.hz43RmBy && b.scaleX == this.hz43RmBs) { return this.hz43RmP; }
          this.hz43VanP.x = d.x + HZ43_VAN_FACE / 2;
          this.hz43VanP.y = d.y + HZ43_VAN_FACE / 2;
-         var g:Point = d.parent.localToGlobal(this.hz43VanP);
-         return this.globalToLocal(g);
+         var g:Point = par.localToGlobal(this.hz43VanP);
+         var l:Point = this.globalToLocal(g);
+         if(this.hz43RmP == null) { this.hz43RmP = new Point(); }
+         this.hz43RmP.x = l.x;
+         this.hz43RmP.y = l.y;
+         this.hz43RmX = d.x;
+         this.hz43RmY = d.y;
+         this.hz43RmPx = par.x;
+         this.hz43RmPy = par.y;
+         this.hz43RmPs = par.scaleX;
+         this.hz43RmBx = b.x;
+         this.hz43RmBy = b.y;
+         this.hz43RmBs = b.scaleX;
+         this.hz43RmOk = true;
+         return this.hz43RmP;
       }
 
       // vis/alpha/CT/x/y for every BottomLeftGroup child. Observer only: does not hide, move, or restore.
       private function hz43VanDump(why:String) : void
       {
+         if(!this.hzWlOn) { return; }   // arch-fixes Fix 1: diagnostics default-off (WatchLog only); no signature string otherwise
          var ov:String = "";
          var od:DisplayObject = this.hzFindByName(this.hzBlg,"WatchOutline_mc",0);
          if(od) { ov = String(od.visible) + "," + od.x + "," + od.y + "," + od.alpha; }
@@ -23892,7 +25747,17 @@
             this.hz43VanWrite(0,0,1);
             this.hz43VanWrote = false;
          }
-         this.hz43VanChrome(true);
+         if(this.hz43ChrNeedB())   // arch-fixes Fix 1: the by-name chrome pass runs on an edge only
+         {
+            this.hz43ChrPrune();   // arch-fixes N-1
+            this.hz43ChrShowN = 0;
+            this.hz43ChrBoxN = 0;
+            this.hz43ChrRec = true;
+            try { this.hz43VanChrome(true); } finally { this.hz43ChrRec = false; }
+            this.hz43ChrKidsB = this.hzBlg.numChildren;
+            this.hz43ChrStB = this.hzWatchStyle;
+            this.hz43ChrForce = (this.hz43ChrForce & ~2) | 4;   // a full pass also re-resolves the ring outline once
+         }
          var sc:Number = this.hz43Watch.scaleX;
          if(!(sc > 0.05)) { sc = 1; }
          var cx:Number = this.hz43Watch.x + HZ43_R * sc;
@@ -23910,8 +25775,87 @@
       private function hz43VanLate() : void
       {
          if(this.hz43ScanHid && this.hz43ScanSt == this.hzWatchStyle) { return; }   // r7: HideWatchWhileScanning holds (one compare)
-         if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4) { this.hz43VanHorizon(); }
+         if(this.hzWatchStyle == 3 || this.hzWatchStyle == 4)
+         {
+            // 0.43.3.2: not while the game hides its bottom-left group (ship HUD mode): hz43Frame's hz43VanPlace has put
+            // the markers home then, and moving them again here every exit frame would undo that every frame
+            if(this.hzGroupVisible || this.hzArrange) { this.hz43VanHorizon(); }
+         }
+         else if((this.hzWatchStyle == 1 || this.hzWatchStyle == 2) && this.hz43VanSame())
+         {
+            // perf round 2: styles 1/2 already placed the watch this frame with the same scale / layout / drag inputs
+            // (2-3 exitFrames per enterFrame); only the cheap noted-piece check (and the sweep if one is stale) runs
+            this.hz43ShowSweep();
+         }
          else { this.hz43VanPlace(); }
+      }
+
+      // perf round 2 Fix 4. Purpose: true when hz43VanPlace already ran this hzFrameN with the same inputs (scale,
+      // saved layout, the hz43VrTick resolve counter) and no Arrange drag of the watch is live. Reads only.
+      private function hz43VanSame() : Boolean
+      {
+         if(this.hz43VpF != this.hzFrameN) { return false; }
+         if(this.hzArrange && this.hzArrDrag == "Watch") { return false; }
+         if((this.hzBlg != null ? this.hzBlg.numChildren : -1) != this.hz43VpKids) { return false; }   // review N-3: one int
+         return this.hz43VrTick == this.hz43VpVr && this.hzLayHas("Watch") == this.hz43VpSaved && this.hz43VanSc() == this.hz43VpSc;
+      }
+
+      // perf round 2 Fix 4. Purpose: the styles 1/2 show sweep (hz43VanRestoreHid + hz43VanBlgChrome(false), the same
+      // two calls as before) only when hz43ShowNeed says so. Outputs: the same visible writes as the old every-call
+      // sweep, on the frames where one of them would change something. Author: Moragar. Last modified: 2026-11-14.
+      private function hz43ShowSweep() : void
+      {
+         if(!this.hz43ShowNeed()) { return; }
+         this.hz43ChrForce |= 8;   // held until the sweep finishes: a throw mid-pass (partial record) sweeps again next call
+         this.hz43VanRestoreHid();
+         this.hz43VanBlgChrome(false);
+         this.hz43ShowBlg = this.hzBlg;
+         this.hz43ShowKids = this.hzBlg != null ? this.hzBlg.numChildren : -1;
+         this.hz43ShowSt = this.hzWatchStyle;
+         this.hz43ChrForce &= ~8;
+      }
+
+      // perf round 2 Fix 4. Purpose: does the show sweep have work? Fix 1's edges (force bit 8: hide-list rebuild,
+      // recapture, scan edge; style change; BLG ref or child count change), anything noted to restore, a full record,
+      // or a recorded piece that is stale. Edge checks and one walk of the recorded list; no search.
+      private function hz43ShowNeed() : Boolean
+      {
+         if(this.hz43HidN > 0 || this.hz43HidPN > 0 || (this.hz43ChrForce & 8) != 0) { return true; }
+         if(this.hzBlg != this.hz43ShowBlg || this.hzWatchStyle != this.hz43ShowSt) { return true; }
+         if(this.hzBlg != null && this.hzBlg.numChildren != this.hz43ShowKids) { return true; }
+         if(this.hz43ShowLN >= HZ43_HID_MAX) { return true; }   // record full: the old every-call sweep
+         return this.hz43ShowStale();
+      }
+
+      // perf round 2 Fix 4. Purpose: the risk cover. Reads the pieces the last show pass handled (no search): true when
+      // one is torn down, or its visible bit differs from what hz43VanShowClip would write (a plain piece hidden; one of
+      // the four payload clips off its LocalEnvironmentData formula). Same rule as hz43VanShowClip, no write.
+      private function hz43ShowStale() : Boolean
+      {
+         var i:int = 0;
+         while(i < this.hz43ShowLN)
+         {
+            var d:DisplayObject = this.hz43ShowL[i] as DisplayObject;
+            if(d == null || d.stage == null) { return true; }
+            var nm:String = this.hz43ShowNm[i];
+            if(nm != null)   // a payload clip (hz43VanGameVis)
+            {
+               if((this.hz43EnvGot != 0 || nm == "locationNameBase_mc") && d.visible != this.hz43VanEnvWant(nm)) { return true; }
+            }
+            else if(!d.visible) { return true; }
+            i++;
+         }
+         return false;
+      }
+
+      // perf round 2 Fix 4. Purpose: record one piece the show pass handled; payload clips keep their name for the formula.
+      private function hz43ShowAdd(d:DisplayObject, n:String) : void
+      {
+         if(this.hz43ShowL == null) { this.hz43ShowL = new Array(HZ43_HID_MAX); this.hz43ShowNm = new Array(HZ43_HID_MAX); }
+         if(this.hz43ShowLN >= HZ43_HID_MAX) { return; }
+         this.hz43ShowL[this.hz43ShowLN] = d;
+         this.hz43ShowNm[this.hz43ShowLN] = this.hz43VanGameVis(n) ? n : null;
+         this.hz43ShowLN++;
       }
 
       private function hz43Place() : void
@@ -23919,7 +25863,16 @@
          if(!this.hz43Watch || !this.hz43Locals()) { return; }
          var sc:Number = this.hz34S("Watch");
          if(!(sc > 0.05)) { sc = 1; }
-         this.hz43Watch.scaleX = this.hz43Watch.scaleY = sc;
+         // 0.43.3.2: the scale is written only when it changed (or something else changed it since the last write).
+         // It was written every frame; a transform write marks the face (and its shadowed texts) changed for the renderer.
+         var w43:Sprite = this.hz43Watch;
+         if(sc != this.hz43PlSc || w43.scaleX != this.hz43PlRbX || w43.scaleY != this.hz43PlRbY)
+         {
+            w43.scaleX = w43.scaleY = sc;
+            this.hz43PlSc = sc;
+            this.hz43PlRbX = w43.scaleX;   // read back once: Scaleform may store the scale with less precision
+            this.hz43PlRbY = w43.scaleY;
+         }
          var saved:Boolean = this.hzLayHas("Watch");
          if(saved != this.hz43WasSaved)
          {
@@ -24045,7 +25998,9 @@
          this.hz43TintOn = true;
       }
 
-      private function hz43Dirty() : Boolean
+      // arch-fixes Fix 1: 0 = nothing changed, 1 = only the heading changed (compass layer), 2 = full face redraw.
+      // The 1/1000-day stamp no longer forces a redraw: nothing on the face draws it (DayT stays hidden).
+      private function hz43Dirty() : int
       {
          this.hz43Read();
          this.hz43PcSample();
@@ -24057,8 +26012,14 @@
          var acc:uint = uint(this.HZ_ACCENT);
          var att:int = this.hz43AttCode();
          var body:String = this.hzPpBodyName;
-         var ch:Boolean = this.hz43Force || this.hzWatchStyle != this.hz43LastMode || this.hz43H != this.hz43LastH || this.hz43M != this.hz43LastM || this.hz43Ut != this.hz43LastUt || this.hz43Ok != this.hz43LastOk || this.hz43DayB != this.hz43LastDay || head != this.hz43LastHead || o2 != this.hz43LastO2 || co2 != this.hz43LastCo2 || this.hz43PcH != this.hz43LastPcH || this.hz43PcM != this.hz43LastPcM || tp != this.hz43LastTemp || this.hzTempUnit != this.hz43LastUnit || this.hzClockFmt != this.hz43LastClk || acc != this.hz43LastAcc || att != this.hz43LastAtt || body != this.hz43LastBody;
-         if(!ch) { return false; }
+         var ch:Boolean = this.hz43Force || this.hzWatchStyle != this.hz43LastMode || this.hz43H != this.hz43LastH || this.hz43M != this.hz43LastM || this.hz43Ut != this.hz43LastUt || this.hz43Ok != this.hz43LastOk || o2 != this.hz43LastO2 || co2 != this.hz43LastCo2 || this.hz43PcH != this.hz43LastPcH || this.hz43PcM != this.hz43LastPcM || tp != this.hz43LastTemp || this.hzTempUnit != this.hz43LastUnit || this.hzClockFmt != this.hz43LastClk || acc != this.hz43LastAcc || att != this.hz43LastAtt || body != this.hz43LastBody;
+         var hch:Boolean = head != this.hz43LastHead;
+         if(!ch)
+         {
+            if(!hch) { return 0; }
+            this.hz43LastHead = head;
+            return 1;
+         }
          this.hz43Force = false;
          this.hz43LastMode = this.hzWatchStyle;
          this.hz43LastH = this.hz43H;
@@ -24079,7 +26040,15 @@
          this.hz43Att = att;
          this.hz43Body = body;
          this.hz43LastBody = body;
-         return true;
+         return 2;
+      }
+
+      // 0.43.3.2: the HORIZON DIGITAL / ANALOG face shows only while the game shows its own bottom-left group
+      // (hzGroupVisible, set by the HudModeData edge: ship HUD mode and other HUD modes that hide the vanilla watch hide
+      // this face too, and it comes back when the game shows the group again). ARRANGE keeps it for placing.
+      private function hz43Want() : Boolean
+      {
+         return (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && !this.hzUserHidden && (this.hzGroupVisible || this.hzArrange);
       }
 
       private function hz43Frame() : void
@@ -24089,19 +26058,21 @@
             if(this.hz43ScanSt == this.hzWatchStyle) { return; }
             this.hz43ScanHideSync();   // r7: the style changed while hidden (INI reload): give the pieces back, then hide the current style's once
          }
-         var show:Boolean = (this.hzWatchStyle == 3 || this.hzWatchStyle == 4) && !this.hzUserHidden;
+         var show:Boolean = this.hz43Want();
          if(!show) { this.hz43VanPlace(); }
          if(this.hzWatchStyle == 2) { this.hz43Tint(); }
          else if(this.hz43TintOn) { this.hz43Tint(); }
          if(!show)
          {
-            if(this.hz43Watch) { this.hz43Watch.visible = false; }
+            if(this.hz43Watch && this.hz43Watch.visible) { this.hz43Watch.visible = false; }
             return;
          }
          this.hz43Build();
          this.hz43Place();
          this.hz43VanHorizon();
-         if(this.hz43Dirty()) { this.hz43Draw(this.hzWatchStyle); }
-         this.hz43Watch.visible = true;
+         var dk:int = this.hz43Dirty();
+         if(dk == 2) { this.hz43Draw(this.hzWatchStyle); }
+         else if(dk == 1) { this.hz43DrawCmp(); }
+         if(!this.hz43Watch.visible) { this.hz43Watch.visible = true; }   // 0.43.3.2: was written every frame
       }
       // =================== end Horizon UI (HUD module) ===================

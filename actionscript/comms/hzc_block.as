@@ -45,7 +45,7 @@
       private static const HZC_RED:uint = 0xFF5B5B;
       private static const HZC_TST_HEAD:Array = ["MISSION UPDATED","NEW MISSION","OBJECTIVE COMPLETE","MISSION COMPLETE","MISSION FAILED"];
       private static const HZC_TST_PRIO:Array = [1,3,2,4,5];   // merging two updates of one quest keeps the stronger state
-      private var hzcCfg:Object = {"ReactionCard":1,"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"ShowSpeaker":1,"SpeakerColor":-1,"SpeakerHex":"","SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4,"XpToast":0,"FontFace":1,"AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"SubtitleX":"-1","SubtitleY":"-1","SpeakerX":"-1","SpeakerY":"-1","SubTextColor":-1,"SubTextHex":"","SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"HudScale":1,"MissionToastX":"-1","MissionToastY":"-1","HudMessagesX":"-1","HudMessagesY":"-1","HzRev":0};
+      private var hzcCfg:Object = {"ReactionCard":1,"GameCardTitle":0,"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"ShowSpeaker":1,"SpeakerColor":-1,"SpeakerHex":"","SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4,"XpToast":0,"FontFace":1,"AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"SubtitleX":"-1","SubtitleY":"-1","SpeakerX":"-1","SpeakerY":"-1","SubTextColor":-1,"SubTextHex":"","SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"HudScale":1,"MissionToastX":"-1","MissionToastY":"-1","HudMessagesX":"-1","HudMessagesY":"-1","HzRev":0};
       private var hzcIniState:int = 0;       // 0 loading, 1 read, 2 missing / unreadable (defaults)
       private var hzcSubBg:Shape = null;     // card art: a fresh Shape per draw (no stale path can survive)
       private var hzcSpkBg:Shape = null;
@@ -60,6 +60,8 @@
       private var hzcRev:String = null;
       private var hzcReading:Boolean = false;
       private var hzcPoll:Timer = null;
+      private var hzcIniPush:Boolean = false;   // arch-fixes Fix 2: the DLL announced its settings-saved push (hzcIniSaved)
+      private var hzcReloadAgain:Boolean = false;   // arch-fixes Fix 2: a save landed while a read was in flight
       private var hzcLayer:Sprite = null;
       private var hzcSub:Sprite = null;
       private var hzcSubName:TextField = null;
@@ -142,6 +144,7 @@
       private function hzcOnIniTxt(txt:String) : void
       {
          this.hzcReading = false;
+         if(this.hzcReloadAgain) { this.hzcReloadAgain = false; this.hzcReload(); return; }   // arch-fixes Fix 2: that text may predate the save
          if(txt == null)
          {
             if(this.hzcIniState == 0) { this.hzcIniState = 2; this.hzcApply(); }
@@ -208,7 +211,8 @@
       }
       private function hzcApply() : void
       {
-         var on:Boolean = int(this.hzcCfg.Subtitles) == 1 || int(this.hzcCfg.MissionToast) == 1;
+         // arch-fixes Fix 2: the 5 s re-read runs only with a DLL that never announced hzcIniSaved (an older DLL)
+         var on:Boolean = (int(this.hzcCfg.Subtitles) == 1 || int(this.hzcCfg.MissionToast) == 1) && !this.hzcIniPush;
          if(on && this.hzcPoll == null)
          {
             this.hzcPoll = new Timer(5000);
@@ -226,6 +230,20 @@
          try { this.hzcMsgLayout(); } catch(eMsg:Error) { }
       }
       private function hzcOnPoll(e:TimerEvent) : void { this.hzcReload(); }
+      // arch-fixes Fix 2: the DLL calls this from this movie's own AdvanceFrame (UI thread) once when it first sees this
+      // movie (announce) and once after each write of HorizonUI.user.ini (F11 save, preset apply / restore / undo,
+      // message log settings). It replaces the 5 s timer: stop it, then re-read once. Nothing may escape into the Invoke.
+      public function hzcIniSaved(rev:*) : void
+      {
+         try
+         {
+            this.hzcIniPush = true;
+            if(this.hzcPoll != null) { this.hzcPoll.stop(); this.hzcPoll.removeEventListener(TimerEvent.TIMER,this.hzcOnPoll); this.hzcPoll = null; }
+            if(this.hzcReading) { this.hzcReloadAgain = true; }
+            else { this.hzcReload(); }
+         }
+         catch(e:Error) { }
+      }
 
       // ---------- probes (relative to Data/Interface) ----------
       private function hzcProbeFile(id:String, path:String) : void
@@ -1341,7 +1359,7 @@
       // ---------- 0.42.0.6: message log. HZC_MSG_LOG is the switch (false on this release). ----------
       // The DLL still writes the one-line status. Debug=0 in the ini also stops the queue.
       private static const HZC_MSG_LOG:Boolean = false;
-      private static const HZC_BUILD:String = "0.43.2.0";
+      private static const HZC_BUILD:String = "0.43.3.0";
       private var hzcRxDbgOn:Boolean = false;   // 0.42.0.14: off for release. hzcRxDbgIni still follows Debug=0.
       private var hzcRxDbgQ:Array = [];
       private var hzcRxDbgSeen:Array = [];   // {it, f}
@@ -2342,7 +2360,17 @@
          if(name == null) { name = ""; }
          if(value == null) { value = ""; }
          if(String(kind).length == 0) { return null; }
-         return {"kind":String(kind),"sub":String(sub),"title":this.hzcCardTitle(kind,sub,name),"tone":this.hzcCardTone(kind,sub),"value":String(value)};
+         return {"kind":String(kind),"sub":String(sub),"title":this.hzcCardTitle(kind,sub,name),"tone":this.hzcCardTone(kind,sub),"value":(kind == "game" && value == "GAME") ? this.hzcGameTitle() : String(value)};
+      }
+      // [Comms] GameCardTitle: the word the DLL's generic game notice (kind "game", name / value "GAME", hz_msg_match.h
+      // GameNotice) shows as its title and chip: 0 INFO (default), 1 DATA, 2 MISC, 3 GAME (the old word). Read once per
+      // card draw (hzcCardDraw -> hzcCardMatch); ARTIFACT titles and the Message Log are unchanged. No text matching.
+      private static const HZC_GAME_TITLES:Array = ["INFO","DATA","MISC","GAME"];
+      private function hzcGameTitle() : String
+      {
+         var i:int = this.hzcCfg != null ? int(this.hzcCfg.GameCardTitle) : 0;
+         if(i < 0 || i >= HZC_GAME_TITLES.length) { i = 0; }
+         return String(HZC_GAME_TITLES[i]);
       }
       // -1 means the F11 accent. Tone is the icon and the chip. The left bar stays the accent.
       private function hzcCardTone(kind:String, sub:String) : int
@@ -2404,6 +2432,7 @@
             if(sub == "bounty-add") { return "BOUNTY"; }
             return "CRIME";
          }
+         if(kind == "game" && n == "GAME") { return this.hzcGameTitle(); }   // [Comms] GameCardTitle
          if(n.length > 0) { return n.toUpperCase(); }
          if(kind == "medical") { return "AFFLICTION"; }
          if(kind == "crew") { return "CREW"; }
@@ -2670,7 +2699,7 @@
       }
       // =================== v0.37 shared settings reader (hzc37) ===================
       // ONE helper, spliced into every movie that reads the settings (hudmenu + hudmenu_lrg as hz37, hudmessagesmenu
-      // x2 as hzc37, dialoguemenu x2 as hzd37; generated from /workspace/v037/work/hzini_shared.as, so the copies are
+      // x2 as hzc37, dialoguemenu x2 as hzd37; generated from hzini_shared.as, so the copies are
       // identical apart from the prefix). It reads HorizonUI.default.ini, HorizonUI.user.ini, HorizonUI.state.ini and the
       // legacy HorizonUI.ini (paths relative to Data/Interface) one after the other and hands every waiting callback the
       // merged text: the defaults with user.ini laid over (hzc37Compose; mirrors HZF::Compose in HorizonUI.dll). A missing

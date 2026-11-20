@@ -19,7 +19,7 @@
 #include <vector>
 
 namespace HZF {
-inline const char* kVersion = "0.42.0";
+inline const char* kVersion = "0.43.3.0";
 }
 #include "hz_ini_diff.h"
 #include "hz_preset_apply.h"   // r7 (S-4): the real PresetToUser
@@ -60,8 +60,8 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.2.0", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 2 && HZ_FILE_VERSION_BUILD == 0, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.3.0", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 3 && HZ_FILE_VERSION_BUILD == 0, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "verbose reaction trace is off for this release");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "unfiltered HUD capture is off for this release");
 	Expect(HzFileVersionOk("0.43.1.0"), "4-part version ok");
@@ -640,7 +640,7 @@ int main()
 		Expect(load != std::string::npos, "plugin load function is present");
 		Expect(src.find("REX::INFO(\"HorizonUI {} loaded\", HZ::DllFileVersion());", load) != std::string::npos, "load line prints DllFileVersion");
 		Expect(src.find("HorizonUI 0.42.0 loaded") == std::string::npos, "load line is not a typed schema version");
-		Expect(src.find("inline const char* kVersion = \"0.42.0\"") != std::string::npos, "settings schema stays 0.42.0");
+		Expect(src.find("inline const char* kVersion = \"0.43.3.0\"") != std::string::npos, "settings schema is 0.43.3.0");
 		Expect(src.find("\n#include \"hz_ini_diff.h\"") != std::string::npos, "F11 save uses the shared Diff header");
 		{
 			const auto inc = src.find("\n#include \"hz_ini_diff.h\"");
@@ -829,7 +829,7 @@ int main()
 		Expect(ini.find("\r\n") != std::string::npos, "Moragar's Choice stays CRLF");
 		Expect(ini.find("Name=Moragar's Choice") != std::string::npos, "preset name");
 		Expect(ini.find("Author=Moragar") != std::string::npos, "preset author");
-		Expect(ini.find("Version=0.43.2.0") != std::string::npos, "preset Version is the file version");
+		Expect(ini.find("Version=0.43.3.0") != std::string::npos, "preset Version is the file version");
 		Expect(ini.find("Description=The author's own settings, matching the Nexus screenshots.") != std::string::npos, "preset description");
 		Expect(ini.find("NameHover=0") != std::string::npos, "Moragar's Choice sets NameHover");
 		Expect(ini.find("VitalsBars=0") != std::string::npos, "Moragar's Choice sets VitalsBars");
@@ -879,7 +879,7 @@ int main()
 		Expect(static_cast<bool>(in), "default.ini opens");
 		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 		Expect(ini.find("\r\n") != std::string::npos, "default.ini stays CRLF");
-		Expect(ini.find("HorizonUI.default.ini (v0.43.2.0)") != std::string::npos,
+		Expect(ini.find("HorizonUI.default.ini (v0.43.3.0)") != std::string::npos,
 			"default.ini header is the file version");
 		const auto cards = ini.find("[Cards]");
 		const auto compass = ini.find("[Compass]");
@@ -924,7 +924,7 @@ int main()
 				++nLay;
 				q = e + 1;
 			}
-			Expect(nLay == 18, "every arrangeable card has Layout X/Y in the defaults");
+			Expect(nLay == 19, "every arrangeable card has Layout X/Y in the defaults (19: Active Buffs removed in 0.43.3.0 batch j)");
 		}
 		{
 			const std::string full =
@@ -946,6 +946,45 @@ int main()
 			std::cout << "ok  HudMessagesZ is dropped\n";
 			std::cout << "ok  TempUnit=1 survives Diff\n";
 			std::cout << "ok  ReactionCard=0 survives Diff\n";
+		}
+		{
+			// 0.43.3.0 batch j: the Active Buffs card is removed. Leftover keys from the 0.43.3.1 / 0.43.3.2 test builds in an
+			// existing user.ini or preset must be harmless on every C++ path, against the real default.ini:
+			//  load (Overlay: defaults + user.ini, the text the HUD reads), F11 save (Diff with SaveFromHud's options),
+			//  preset apply (PresetToUser) and a second save (no churn). No throw, nothing else changes.
+			const std::string leftUser =
+				"[Style]\r\nTempUnit=1\r\n"
+				"[Cards]\r\nBuffsCompact=1\r\nBuffsScale=1.2\r\nHazardScale=1.2\r\n"
+				"[Layout]\r\nBuffsX=L120\r\nBuffsY=B-300\r\nHazardX=L40\r\n"
+				"[Rules]\r\nBuffsRule=2\r\n"
+				"[ActiveBuffs]\r\n; Active Buffs card\r\nActiveBuffs=0\r\nBuffsMax=9\r\nBuffsShow=1\r\nBuffsRule=2\r\n";
+			Expect(ini.find("Buffs") == std::string::npos && ini.find("[ActiveBuffs]") == std::string::npos, "leftovers: default.ini has no Active Buffs key or section");
+			// load: the merged text keeps every real value; the leftovers ride along as keys no HUD setting reads
+			const auto merged = HZF::Overlay(ini, leftUser);
+			Expect(merged.find("TempUnit=1") != std::string::npos && merged.find("HazardScale=1.2") != std::string::npos && merged.find("HazardX=L40") != std::string::npos, "leftovers: load keeps TempUnit / HazardScale / HazardX");
+			Expect(merged.find("ShowAfflictions=1") != std::string::npos && merged.find("HazardStatus=1") != std::string::npos, "leftovers: load keeps the Afflictions / Hazard defaults");
+			Expect(merged.size() > ini.size(), "leftovers: load does not lose default.ini text");
+			// F11 save: the HUD's full text has no Buffs key (its writer no longer writes one); user.ini still has them
+			const std::string full = "[Style]\r\nTempUnit=1\r\n[Cards]\r\nHazardScale=1.2\r\n[Layout]\r\nHazardX=L40\r\n";
+			HZF::DiffOpt o;   // SaveFromHud: the defaults (keepUnknownKeys false, keepUnknownSections true)
+			const auto saved = HZF::Diff(full, ini, leftUser, o);
+			Expect(saved.find("BuffsX=") == std::string::npos && saved.find("BuffsY=") == std::string::npos, "leftovers: save drops [Layout] BuffsX / BuffsY (unknown key of a known section)");
+			Expect(saved.find("BuffsCompact=") == std::string::npos && saved.find("BuffsScale=") == std::string::npos, "leftovers: save drops [Cards] BuffsCompact / BuffsScale");
+			const auto abAt = saved.find("[ActiveBuffs]");
+			const auto ruleAt = saved.find("BuffsRule=");
+			Expect(ruleAt != std::string::npos && abAt != std::string::npos && ruleAt > abAt && saved.find("BuffsRule=", ruleAt + 1) == std::string::npos, "leftovers: save drops [Rules] BuffsRule (the one left is inside the inert [ActiveBuffs] copy)");
+			Expect(abAt != std::string::npos && saved.find("BuffsMax=9", abAt) != std::string::npos && saved.find("ActiveBuffs=0", abAt) != std::string::npos, "leftovers: an [ActiveBuffs] section is kept verbatim as an unknown section (inert: the HUD reads none of its keys)");
+			Expect(saved.find("TempUnit=1") != std::string::npos && saved.find("HazardScale=1.2") != std::string::npos && saved.find("HazardX=L40") != std::string::npos, "leftovers: save keeps TempUnit / HazardScale / HazardX");
+			// a second save of the result changes nothing (no churn, so nothing for an update backup to differ on)
+			const auto saved2 = HZF::Diff(full, ini, saved, o);
+			Expect(saved2 == saved, "leftovers: a second save is byte-identical");
+			// preset apply: a preset holding the leftovers, over a user.ini holding them
+			const auto applied = HZF::PresetToUser("[Preset]\r\nName=Old\r\n" + leftUser, ini, leftUser);
+			Expect(applied.find("Buffs") == std::string::npos && applied.find("[ActiveBuffs]") == std::string::npos, "leftovers: a preset apply writes no Active Buffs key or section");
+			Expect(applied.find("TempUnit=1") != std::string::npos && applied.find("HazardScale=1.2") != std::string::npos && applied.find("HazardX=L40") != std::string::npos, "leftovers: a preset apply keeps the preset's real values");
+			const auto other = HZF::PresetToUser("[Preset]\r\nName=Other\r\n[Style]\r\nTempUnit=1\r\n", ini, saved);
+			Expect(other.find("Buffs") == std::string::npos && other.find("TempUnit=1") != std::string::npos, "leftovers: a preset without them over a user.ini with them leaves no Active Buffs key");
+			std::cout << "ok  leftover Active Buffs keys: load, save, second save and preset apply checked\n";
 		}
 	}
 
@@ -1027,7 +1066,7 @@ int main()
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(lua.find("set_version(\"0.43.2.0\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.43.3.0\")") != std::string::npos, "xmake version is the 4-part file version");
 		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
 		std::ifstream cpp("res/horizonui-plugin.cpp.in");
 		Expect(static_cast<bool>(cpp), "plugin version template opens");

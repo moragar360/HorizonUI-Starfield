@@ -14,6 +14,36 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 - **Customizable:** more than 100 settings, Arrange Cards and Arrange Scanner to move anything (the scope's hold-breath chip included), a vertical or horizontal Vitals card, colors, fonts, sizes, and presets you can save and switch.
 - **Modular:** a core HUD plus optional **Horizon Font**, **Comms** (subtitles, dialogue and companion reactions), the **Message Log** (a searchable history of your HUD messages), the optional **Scanner**, Horizon's own hand scanner screen, and the optional **Scope** module, a Horizon hold-breath chip for weapon scopes. Core is always installed; the modules are optional parts of the same FOMOD installer and need Core.
 
+## New in 0.43.3.0 (alpha)
+
+Released as v0.43.3.0-alpha. The settings schema (HZF::kVersion) is 0.43.3.0 (it was 0.42.0); your `HorizonUI.user.ini` and saved presets carry over, and the first start backs up `HorizonUI.user.ini` to `HorizonUI.user.bak.ini` once. The full list is in [CHANGELOG.md](CHANGELOG.md).
+
+- **Quick menu (Core):** the favorites cross is drawn as Horizon cards in your card style, with your bound keys and an item info card. F11 > CARDS > QUICK MENU > HORIZON STYLE turns it off. Play-tested in the 20261119c test build (keyboard keys, same-size slot boxes, weapon icons inside their boxes, controller Cancel hint).
+- **Hazard Status:** turns green for about 4 seconds after you leave a hazard, then hides.
+- **Locked containers:** the full prompt with the lock level (for example "STEAL FROM [MASTER]") shows instead of being cut off.
+- **Horizon watch:** HORIZON DIGITAL / HORIZON ANALOG no longer re-write the face every frame, and the face hides in ship HUD mode.
+- **Scanner:** marker names and the compass list are cached (same output, less work per frame). New option F11 > SCANNER > BIOSCAN > HIDE WHEN FULLY SCANNED (off by default).
+- **F11 notes:** EQUIPMENT rule: "Crosshair off? Set this to ALWAYS or COMBAT ONLY." HIGHLIGHT AREA now says what it changes.
+- **Scanner highlight area:** FULL SCREEN is wider and a new MAX position was added. **Scanner outline thickness:** F11 > SCANNER > OUTLINE THICKNESS (VANILLA by default, THICK, THICKER). Both need an SFSE plugin built from this source (file version 0.43.3.0); not tested in game yet.
+- **Name hover pill:** a long name wraps onto up to three lines at the same font size instead of being cut off.
+- **Active Buffs card removed:** the card from the earlier test builds is gone from F11, ARRANGE CARDS and the HUD. Settings left over from a test build are ignored. The Afflictions and Hazard Status cards are unchanged.
+- **Vehicle exit pill:** move it in ARRANGE CARDS; the spot is saved with your settings and presets (default: bottom right, where the game shows its exit prompt). It no longer jumps to the bottom left after you arrange it.
+- **Performance:** the scanner no longer re-reads settings while it is open, a leftover HUD hide-list retry stops after 6 tries, and the compass, vanilla watch pieces, hover prompt and the plugin's menu checks update only when something changes. Details in [CHANGELOG.md](CHANGELOG.md).
+- **F11 > CARDS:** one section per card, and the help text moved into each row's (i) popup.
+
+## Earlier in 0.43.3.0
+
+This work was first labeled 0.43.3.1; it is part of 0.43.3.0.
+
+- **Hazard Status card:** the hazard chip is now its own card. Move it in ARRANGE CARDS and set it up in F11 > CARDS. It follows your card style, shows red while a hazard hurts you and green while suit protection restores (the green while a hazard is still listed is not tested in game yet).
+- **Quest tracker:** long quest names and objectives wrap at the same font size instead of being cut off. F11 > CARDS > QUEST TRACKER adds WIDTH, MAX HEIGHT and TEXT WRAP.
+- **Equipment card:** long weapon names wrap onto a second line, and the card grows to fit.
+- **Scanner highlight area** (F11 > SCANNER > HIGHLIGHT AREA): Horizon dot, Vanilla (default) or Full screen. It needs an SFSE plugin built from this source (0.43.3.0); not tested in game yet.
+- **Controller:** prompt keycaps show the button you bound.
+- **Afflictions card:** buffs show as their own green Buff chips, a buff and its debuff no longer merge, and a needs alert clears once its effect ends. Not tested in game yet.
+- **Fixed:** looting a killed enemy no longer shows its red health bar on the loot card. Locked containers should show their lock level (not tested in game yet).
+- The full list is in [CHANGELOG.md](CHANGELOG.md).
+
 ## New in 0.43.2.0 (alpha)
 
 - **Hide watch while scanning** (F11 > SCANNER): Off (default) or On. On hides the watch while the hand scanner is open, in every watch style, and brings it back when the scanner closes. It needs the Scanner module.
@@ -81,7 +111,7 @@ The Message Log is a history of the messages Horizon shows on your HUD, so you c
 - **Starfield** (PC). Tested on game version 1.16.244.
 - **[Starfield Script Extender (SFSE)](https://sfse.silverlock.org/)** for that game version. SFSE isn't included, so install it separately and launch with `sfse_loader.exe`.
 - **[Address Library for SFSE Plugins](https://www.nexusmods.com/starfield/mods/3256)** for that game version (required). It isn't included; `HorizonUI.dll` needs it to load.
-- **Horizon UI Core**, always required. The FOMOD (`HorizonUI-0.43.2.0-FOMOD.zip`) installs it automatically; Comms, the Message Log, the Scanner and Scope are optional modules inside it, not separate mods. They all need Core's `HorizonUI.dll`, settings files, F11 menu and HUD.
+- **Horizon UI Core**, always required. The FOMOD (`HorizonUI-0.43.3.0-FOMOD.zip`) installs it automatically; Comms, the Message Log, the Scanner and Scope are optional modules inside it, not separate mods. They all need Core's `HorizonUI.dll`, settings files, F11 menu and HUD.
 - **Loose files enabled** in `Documents\My Games\Starfield\StarfieldCustom.ini` (create it if missing):
 
   ```ini
@@ -93,13 +123,13 @@ The Message Log is a history of the messages Horizon shows on your HUD, so you c
   Without this, Starfield ignores loose interface files and you'll see the vanilla HUD.
 
 ## Install
-Download the one **FOMOD installer**, `HorizonUI-0.43.2.0-FOMOD.zip`, from [Releases](https://github.com/moragar360/HorizonUI-Starfield/releases), and install it with Vortex or Mod Organizer 2. **Core** (the HUD, the settings files, the F11 menu and `HorizonUI.dll`) is always required and installs automatically. The installer then walks you through Font, Settings Preset and the optional modules: Comms (subtitles and dialogue), Scanner, Scope and Message Log. Those modules are part of the same download, not separate mods, and they need Core.
+Download the one **FOMOD installer**, `HorizonUI-0.43.3.0-FOMOD.zip`, from [Releases](https://github.com/moragar360/HorizonUI-Starfield/releases), and install it with Vortex or Mod Organizer 2. **Core** (the HUD, the settings files, the F11 menu and `HorizonUI.dll`) is always required and installs automatically. The installer then walks you through Font, Settings Preset and the optional modules: Comms (subtitles and dialogue), Scanner, Scope and Message Log. Those modules are part of the same download, not separate mods, and they need Core.
 
 **Scope:** the Scope module changes the scope view and is ticked by default. If you use another scope mod, untick Scope.
 
 **Comms:** Comms replaces subtitle mods (such as Enhanced Subtitles) and dialogue menu mods (such as Enhanced Dialogue Interface). Uninstall yours first. **StarUI HUD** replaces the same HUD file as Horizon UI, so uninstall it too.
 
-**Updating from 0.42.x:** install 0.43.2.0 over your existing Horizon UI. Your `HorizonUI.user.ini` and saved presets are kept, and the new settings start at their defaults. The name hover is now Compact by default; to get the taller card back, choose **FULL** under NAME HOVER in F11 > CARDS. In Vortex, an update reuses your earlier installer choices; to change them, right-click the mod and choose Reinstall.
+**Updating from 0.42.x:** install 0.43.3.0 over your existing Horizon UI. Your `HorizonUI.user.ini` and saved presets are kept, and the new settings start at their defaults. The name hover is now Compact by default; to get the taller card back, choose **FULL** under NAME HOVER in F11 > CARDS. In Vortex, an update reuses your earlier installer choices; to change them, right-click the mod and choose Reinstall.
 
 For a manual install, extract the zip and copy the contents of its `00 Core` folder into `Data\`, then the folders of any parts you want (`01 Horizon Font`, `02 Preset - Moragars Choice`, `10 Comms`, `11 Comms Dialogue`, `20 Scanner`, `30 Scope`, `40 Notifications` for the Message Log). Skip the `fomod` folder, and don't create `HorizonUI.user.ini` yourself; F11 makes it.
 
@@ -139,7 +169,7 @@ Plugin log file: `Documents\My Games\Starfield\SFSE\Logs\HorizonUI.log`
 3. The plugin is written to `build\windows\x64\releasedbg\HorizonUI.dll`.
 4. HUD movies are not produced by xmake. Splice `actionscript/horizon_block.as` into HUDMenu (`hudmenu` and `hudmenu_lrg`) and follow the **Mandatory GFX splice gate** in `docs/research/0.43.1.0_perf_investigation.md`: add `import flash.utils.getTimer;` on the host class, then export FFDec P-code and confirm the import exists and `hzPerfNow` resolves `getTimer`. Do not package gfx that fail that gate.
 
-Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.43.2.0 loaded`.
+Copy it to `Data\SFSE\Plugins\` and check the log for `HorizonUI 0.43.3.0 loaded`.
 
 ### Debug traces (developers)
 Release builds keep the extra debug traces off: `HZ_HUD_MSG_CAPTURE` is `0`, `HZ_COMMS_MSG_LOG` is `0`, `HZC_MSG_LOG` is `false` and `hzcRxDbgOn` defaults to `false`. The one-line `comms reaction:` status and the one-time `comms reaction selftest:` lines stay on. To turn the traces back on for an in-game check:
@@ -150,7 +180,7 @@ Release builds keep the extra debug traces off: `HZ_HUD_MSG_CAPTURE` is `0`, `HZ
 4. In that same file, change the `hzcRxDbgOn` default from `false` to `true`.
 5. Update the test pins that expect the traces to be off: `tests/reaction_match_test.js` (`HZC_MSG_LOG` is `false`) and `tests/preset_list_test.cpp` (`HZ_COMMS_MSG_LOG == 0` and `HZ_HUD_MSG_CAPTURE == 0`).
 
-`Debug=0` in the ini only stops the movie queue. It doesn't turn off the one-line status. The settings schema stays `0.42.0`.
+`Debug=0` in the ini only stops the movie queue. It doesn't turn off the one-line status. These steps don't change the settings schema (`0.43.3.0`).
 
 ## Repository layout
 ```

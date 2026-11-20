@@ -6,9 +6,11 @@
 //     EnvironmentAlertsData listener is added from there, once, and only when the key is on;
 //  3. both log paths return at their first test unless EnvAlertLog, PerfDiag and WatchLog are all on;
 //  4. event-driven only: no frame listener, timer or display-list walk in the probe;
-//  5. taking out the probe section and its two hook lines, and unwrapping the user-preset text (r2), gives the a360b89
-//     source byte for byte (skipped when git or the commit is not there).
-// Author: Moragar. Last modified: 2026-11-11 (r2).
+//  5. the probe's four hunks are each there once. The old a360b89 byte equality is retired: it has failed since the
+//     0.43.2.0 release (later releases changed the file); tests/hazard_status_test.js checks the 0.43.2.0 base instead.
+// Hazard Status: the EnvironmentAlertsData listener is now the shared hzHsSub (one Subscribe for the chip and the probe);
+// hzEnvP0Sub calls it, and hzHsOnAlerts forwards to hzEnvP0OnAlerts while EnvAlertLog is on.
+// Author: Moragar. Last modified: 2026-11-13 (Hazard Status).
 "use strict";
 
 const fs = require("fs");
@@ -62,7 +64,9 @@ expect(count(as, "hzEnvP0Fx(") === 2, "hzEnvP0Fx is called only from the hook");
 // 2. listener
 expect(count(as, "\"EnvironmentAlertsData\"") === 1, "EnvironmentAlertsData is subscribed in one place");
 const sub = fnBody("hzEnvP0Sub");
-expect(/^\s*if\(!this\.hzEnvP0Ini \|\| this\.hzEnvP0Subbed\) \{ return; \}/.test(sub) && sub.indexOf("\"EnvironmentAlertsData\"") > 0, "hzEnvP0Sub adds the listener once, only with the key on");
+expect(/^\s*if\(!this\.hzEnvP0Ini \|\| this\.hzEnvP0Subbed\) \{ return; \}/.test(sub) && sub.indexOf("this.hzHsSub();") > 0 && sub.indexOf("Subscribe(") < 0, "hzEnvP0Sub asks for the shared listener once, only with the key on");
+expect(/^\s*if\(this\.hzHsSubbed\) \{ return; \}\s*this\.hzHsSubbed = true;\s*try \{ BSUIDataManager\.Subscribe\("EnvironmentAlertsData",this\.hzHsOnAlerts\); \}/.test(fnBody("hzHsSub")), "the shared listener (hzHsSub) is added once");
+expect(/^\s*if\(this\.hzEnvP0Ini\) \{ try \{ this\.hzEnvP0OnAlerts\(e\); \} catch\(eP0:Error\) \{ \} \}/.test(fnBody("hzHsOnAlerts")) && count(as, "this.hzEnvP0OnAlerts") === 1, "the shared listener forwards to the probe first, only with the key on");
 expect(count(as, "this.hzEnvP0Sub()") === 1 && fnBody("hzEnvP0ParseIni").indexOf("this.hzEnvP0Sub()") > 0, "hzEnvP0Sub is called only from hzEnvP0ParseIni");
 // run the production parser (types stripped) on sample INI texts
 {
@@ -92,8 +96,8 @@ for (const bad of ["enterFrame", "ENTER_FRAME", "setInterval", "setTimeout", "Ti
 // r2: the fourth hunk wraps the user-preset text in hzEnvP0NoKey (N-3); tests/env_p0b_test.js covers it
 const PRESET_NEW = "         return this.hzEnvP0NoKey(this.hz30Merge(this.hz30IniRaw,this.hzBuildIniText(p)));   // r2: user presets never carry the env alert probe key\n";
 const PRESET_OLD = "         return this.hz30Merge(this.hz30IniRaw,this.hzBuildIniText(p));\n";
-if (base == null) console.log("skip base equality (git or a360b89 not available)");
-else expect(count(as, PRESET_NEW) === 1 && as.replace(sec, "").replace(HOOK, "").replace(CASE, "").replace(PRESET_NEW, PRESET_OLD) === base, "probe removed = a360b89 source (four hunks only)");
+void base; void PRESET_OLD;   // retired a360b89 byte equality (see the header)
+expect(count(as, PRESET_NEW) === 1 && count(as, HOOK) === 1 && count(as, CASE) === 1 && count(as, B0) === 1, "the probe's four hunks are each there once");
 
 if (failed) { console.error(failed + " failed"); process.exit(1); }
 console.log("all passed");

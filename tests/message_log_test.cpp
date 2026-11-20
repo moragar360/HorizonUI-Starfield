@@ -12,7 +12,7 @@
 #include "hz_version.h"
 
 namespace HZF {
-inline const char* kVersion = "0.42.0";
+inline const char* kVersion = "0.43.3.0";
 }
 #include "hz_ini_diff.h"
 
@@ -63,6 +63,89 @@ void ExpectEqI(int a_got, int a_want, const char* a_what)
 	std::cerr << "FAIL: " << a_what << "\n  got:  " << a_got << "\n  want: " << a_want << "\n";
 	++g_fails;
 }
+
+// HZ_FNBODY_BEGIN (batch k): source helpers for the Poll() check. For batch k this block was also compiled on its own
+// (zig c++) and run against the real src/main.cpp, with an illegal call planted inside Poll() as a negative case.
+// true when a_s[a_i] starts a string / char literal or a comment; a_end gets the index just past it
+bool HzSkipLexeme(const std::string& a_s, std::size_t a_i, std::size_t& a_end)
+{
+	const std::size_t n = a_s.size();
+	const char c = a_s[a_i];
+	auto ident = [&](std::size_t k) { const unsigned char u = static_cast<unsigned char>(a_s[k]); return std::isalnum(u) || a_s[k] == '_'; };
+	if (c == '/' && a_i + 1 < n && a_s[a_i + 1] == '/') {
+		const auto e = a_s.find('\n', a_i);
+		a_end = e == std::string::npos ? n : e;
+		return true;
+	}
+	if (c == '/' && a_i + 1 < n && a_s[a_i + 1] == '*') {
+		const auto e = a_s.find("*/", a_i + 2);
+		a_end = e == std::string::npos ? n : e + 2;
+		return true;
+	}
+	if (c == '"' && a_i > 0 && a_s[a_i - 1] == 'R') {   // raw string R"delim( ... )delim"
+		const auto open = a_s.find('(', a_i);
+		if (open != std::string::npos) {
+			const std::string close = ")" + a_s.substr(a_i + 1, open - a_i - 1) + "\"";
+			const auto e = a_s.find(close, open + 1);
+			a_end = e == std::string::npos ? n : e + close.size();
+			return true;
+		}
+	}
+	if (c == '\'' && a_i > 0 && ident(a_i - 1)) {
+		// a ' right after an identifier character is a digit separator (1'000), unless that identifier is a
+		// character prefix (L'x', u'x', U'x', u8'x')
+		std::size_t b = a_i;
+		while (b > 0 && ident(b - 1)) --b;
+		const std::string pre = a_s.substr(b, a_i - b);
+		if (pre != "L" && pre != "u" && pre != "U" && pre != "u8") return false;
+	}
+	if (c == '"' || c == '\'') {
+		std::size_t k = a_i + 1;
+		while (k < n && a_s[k] != c && a_s[k] != '\n') {   // an unterminated literal ends at the line
+			k += (a_s[k] == '\\' && k + 1 < n) ? 2 : 1;
+		}
+		a_end = (k < n && a_s[k] == c) ? k + 1 : k;
+		return true;
+	}
+	return false;
+}
+// the body of the function whose header starts at a_at: its first '{' through the matching '}', literals and
+// comments skipped while counting. Empty when there is no balanced body.
+std::string HzFnBody(const std::string& a_src, std::size_t a_at)
+{
+	if (a_at == std::string::npos || a_at >= a_src.size()) return std::string();
+	std::size_t i = a_at, open = std::string::npos;
+	int depth = 0;
+	while (i < a_src.size()) {
+		std::size_t e = 0;
+		if (HzSkipLexeme(a_src, i, e)) { i = e; continue; }
+		if (a_src[i] == ';' && open == std::string::npos) return std::string();   // a declaration, not a definition
+		if (a_src[i] == '{') { if (open == std::string::npos) open = i; ++depth; }
+		else if (a_src[i] == '}' && open != std::string::npos) {
+			if (--depth == 0) return a_src.substr(open, i - open + 1);
+		}
+		++i;
+	}
+	return std::string();
+}
+// the same text with every comment blanked (one space each); string and char literals are kept
+std::string HzCodeOnly(const std::string& a_s)
+{
+	std::string out;
+	std::size_t i = 0;
+	while (i < a_s.size()) {
+		std::size_t e = 0;
+		if (HzSkipLexeme(a_s, i, e)) {
+			const bool comment = a_s[i] == '/';
+			out += comment ? std::string(" ") : a_s.substr(i, e - i);
+			i = e;
+			continue;
+		}
+		out += a_s[i++];
+	}
+	return out;
+}
+// HZ_FNBODY_END
 
 hzlog::Capture Cap(hzlog::Kind a_k, const char* a_text, std::uint64_t a_now, double a_gt = 10.0, const char* a_loc = "Akila City")
 {
@@ -763,8 +846,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.2.0", "file version is 0.43.2.0");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 2 && HZ_FILE_VERSION_BUILD == 0, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.3.0", "file version is 0.43.3.0");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 3 && HZ_FILE_VERSION_BUILD == 0, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -3043,12 +3126,19 @@ int main()
 			&& main.find("MsglogTakeMovieAllowed") != std::string::npos,
 			"hzcTakeLog is gated and rate-limited");
 		{
+			// batch k: only the real Poll() body (brace-matched, comments blanked), not the whole span up to PollScaleform:
+			// the watchlog comment and the HUD-advance-only Wl* helpers after Poll() are not part of it.
+			// tools/callgraph_scaleform.py (run below) stays the reachability check.
 			const auto poll = main.find("void Poll()");
 			const auto next = main.find("void PollScaleform()", poll);
-			const auto body = poll != std::string::npos && next > poll ? main.substr(poll, next - poll) : std::string();
+			const auto raw = HzFnBody(main, poll);
+			const auto body = HzCodeOnly(raw);
+			Expect(!raw.empty() && next != std::string::npos && poll + raw.size() < next && raw.find("void ") == std::string::npos,
+				"job-thread Poll body found on its own (brace-matched, ends before the next function)");
 			Expect(body.find("GetMenu") == std::string::npos && body.find("menuObj") == std::string::npos
 				&& body.find("HudInvoke") == std::string::npos && body.find("HudSafe") == std::string::npos
-				&& body.find("MsglogTakeMovie") == std::string::npos && body.find("BannerPoll(") == std::string::npos,
+				&& body.find("MsglogTakeMovie") == std::string::npos && body.find("BannerPoll(") == std::string::npos
+				&& body.find("Invoke") == std::string::npos && body.find("GFx") == std::string::npos,
 				"job-thread Poll never touches Scaleform");
 			Expect(body.find("BannerPollWork") != std::string::npos && body.find("FilesPollWork") != std::string::npos
 				&& body.find("MsglogPoll") != std::string::npos,
@@ -3521,7 +3611,7 @@ int main()
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.2.0\"") != std::string::npos, "HUD movie build id is 0.43.2.0");
+		Expect(as.find("HZ_BUILD:String = \"0.43.3.0\"") != std::string::npos, "HUD movie build id is 0.43.3.0");
 		{
 			const auto confirm = AsFnBody(as, "private function hzMsglogDrawConfirm", "private function hzMsglogTypeOn");
 			Expect(confirm.find("hzMsglogWrap") != std::string::npos, "the clear confirm wraps its warning");
@@ -4011,7 +4101,7 @@ int main()
 		const auto keep = MakeCharacter(0x11, "Old");
 		Expect(keep.key == "00000011" && keep.keySource == "playerId", "rename keeps the player-id key");
 		Expect(PersistAllowed(keep), "a real player id may persist");
-		const auto wide = MakeCharacter(0x1E82D83B2ull, "Robert");
+		const auto wide = MakeCharacter(0x1E82D83B2ull, "Test Pilot");
 		ExpectEq(wide.key, "00000001E82D83B2", "player id over 32 bits uses 16 hex digits");
 		Expect(PersistAllowed(wide), "a 16-hex player id may persist");
 		std::uint64_t last = 0;

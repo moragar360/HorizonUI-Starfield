@@ -5,9 +5,10 @@
       // The game's clips stay on stage and keep working: they are only made transparent (alpha 0, never removed), the
       // game's button bar keeps handling every key, and every dispatch / user event / close path is the game's own code.
       // Horizon draws its own panels from the same data providers. Settings: [Scanner] of HorizonUI.default.ini with
-      // HorizonUI.user.ini laid over (the shared reader, prefix hzs37); read when the scanner opens and polled every
-      // 2 s while it is open, so an F11 save (HzRev) applies without reopening.
-      private static const HZS_VERSION:String = "0.43.2.0";   // 0.43.2.0: the scanner movie's build version (= the DLL file version); bump here only
+      // HorizonUI.user.ini laid over (the shared reader, prefix hzs37); read when the scanner movie starts and when the
+      // scanner opens (hzsOnOpened). arch-fixes Fix 2: no 2 s re-read while it is open: F11 opens from the main HUD only
+      // (never while scanning), so a save always lands before the next open, which re-reads.
+      private static const HZS_VERSION:String = "0.43.3.0";   // 0.43.3.0: the scanner movie's build version (= the DLL file version); bump here only
       private static const HZS_LRG:Boolean = __HZS_LRG__;
       private static const HZS_SCALE:Number = HZS_LRG ? 1.07 : 1;
       // design tokens 0.3.1 (exotic purple added in v0.40)
@@ -47,7 +48,7 @@
       private static const HZS_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face: run-time name only, never shown
       // [Scanner] keys: name, type (b 0/1, i int, f float, z size -1 or 0.60-1.60, p position -1 / L|R|C n / T|B|C n,
       // o optional -1 or min-max, s text), default, min, max. Same table and order as HorizonUI.default.ini.
-      private static const HZS_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];   // v0.41.0: = scanner_keys40 (the HUD has the same table)
+      private static const HZS_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanHideBioscanDone","b",0,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];   // v0.41.0: = scanner_keys40 (the HUD has the same table)
       private static const HZS_MAX_INI:int = 65536;    // a settings file larger than 64 KB is ignored (defaults instead)
       private var hzsC:Object = null;       // [Scanner] values
       private var hzsS:Object = null;       // the [Style] / [Debug] values the scanner follows
@@ -64,7 +65,12 @@
       private var hzsSig:Object = {};       // last drawn signature by panel
       private var hzsDirty:Boolean = true;
       private var hzsVr:Rectangle = null;   // visible rect in layer units
-      private var hzsVrSig:String = "";
+      private var hzsVrRev:int = 0;          // arch-fixes Fix 2: bumped when the visible rect changed (was a per-frame string)
+      private var hzsVrIn:Array = null;       // the last visibleRect read (left, top, right, bottom), numbers only
+      private var hzsVrL:Number = NaN;
+      private var hzsVrT:Number = NaN;
+      private var hzsVrR:Number = NaN;
+      private var hzsVrB:Number = NaN;
       private var hzsMD:Object = null;      // MonocleMenuData
       private var hzsFD:Object = null;      // MonocleMenuFreqData
       private var hzsPD:Object = null;      // MonoclePickRefData as the provider holds it right now (r5: the world tag's live-pick check)
@@ -89,7 +95,17 @@
       private var hzsFrame:int = 0;
       private var hzsFrameT:int = 0;
       private var hzsAlpha:Number = 0;
-      private var hzsCfgSig:String = "";
+      private var hzsCfgRev:int = 0;          // arch-fixes Fix 2: bumped when the settings text changed (was the serialized config)
+      private var hzsCmpRev:int = 0;          // 0.43.3.2: bumped on every compass data event (hzsOnCmp)
+      private var hzsTrC:Object = {};         // 0.43.3.2: "$KEY" -> translated text (one TextField per key per scanner open)
+      private var hzsMNC:Object = {};         // 0.43.3.2: marker category -> hzsMarkName result (valid for hzsMNRev / hzsMNTi)
+      private var hzsMNUnk:String = null;     // 0.43.3.2: the UNKNOWN SIGNAL / VEHICLE names, same validity
+      private var hzsMNVeh:String = null;
+      private var hzsMNRev:int = -1;
+      private var hzsMNTi:Boolean = false;
+      private var hzsCmkS:String = null;      // 0.43.3.2: hzsCmpMarks result for hzsCmkR (compass rev) / hzsCmkC (settings rev)
+      private var hzsCmkR:int = -1;
+      private var hzsCmkC:int = -1;
       private var hzsTk:Number = 1;         // 0.42.0.4: scale of the panel being drawn (HZS_SCALE x hzsF); hzsFs keeps text >= 13 px after it
 
       // ---------------------------------------------------------------- start
@@ -176,6 +192,7 @@
          {
             this.hzsCmp = e.data;
             this.hzsGot.cmp = 1;
+            this.hzsCmpRev++;   // 0.43.3.2: the compass list caches (hzs41CmpAll, hzsCmpMarks) follow this event
             var r:Number = Number(e.data.fDirection);
             if(!isNaN(r)) { var d:Number = (r * 180 / Math.PI) % 360; if(d < 0) { d += 360; } this.hzsHead = d; }
          }
@@ -317,7 +334,7 @@
             {
                this.hzsTxt = txt;
                this.hzsParse(txt);
-               this.hzsCfgSig = this.hzsSer(this.hzsC) + "|" + this.hzsSer(this.hzsS);
+               this.hzsCfgRev++;   // arch-fixes Fix 2: one int instead of serializing (and sorting) the whole config
                this.hzsSig = {};
                this.hzsDirty = true;
             }
@@ -342,7 +359,6 @@
          try { this.hzsHideVanilla(); } catch(e0:Error) { }
          try { var ra:Boolean = this.ResourceArc_mc != null && this.ResourceArc_mc.visible; if(ra && !this.hzs41RA) { this.hzs41PT = now; } this.hzs41RA = ra; } catch(e41:Error) { }   // v0.41.0 (SF-10)
          if(!this.hzsReady && now - this.hzsT0 > 300) { this.hzsReady = true; }   // no settings yet after 300 ms: defaults
-         if(this.hzsReady && now - this.hzsPollT > 2000) { this.hzsRead(); }      // HzRev / any F11 save while open
          if(this.hzsL == null) { return; }
          // fade with the game's own open / close (the close animation ends in the game's CloseMenu call)
          var want:Number = this.isMenuClosing ? 0 : (this.hzsReady ? 1 : 0);
@@ -354,12 +370,13 @@
          try { this.hzsUpdVr(); } catch(e1:Error) { }
          if(this.hzsVr == null) { return; }
          if(this.hzsPerfSkipDraw()) { return; }
+         var all:Boolean = false;   // 0.43.3.2: hzsDrawAll already ran the compass check this frame
          if(this.hzsDirty || this.hzsFrame % 6 == 0)
          {
             this.hzsDirty = false;
-            try { this.hzsDrawAll(); } catch(e2:Error) { }
+            try { this.hzsDrawAll(); all = true; } catch(e2:Error) { }   // a throw keeps the old second check
          }
-         try { this.hzsDrawCompassIfMoved(); } catch(e3:Error) { }
+         if(!all) { try { this.hzsDrawCompassIfMoved(); } catch(e3:Error) { } }
          try { this.hzsDrawMarks(); } catch(e4:Error) { }
          try { this.hzsDrawRet(); } catch(e5:Error) { }
          if(now - this.hzsFlashT < 2100) { try { this.hzsDrawPanel("Bioscan"); this.hzsPlace(); } catch(e6:Error) { } }
@@ -389,24 +406,33 @@
          }
       }
       // visible rect (the player's screen) in layer units
+      // arch-fixes Fix 2: the conversion (two Points, a string) runs only when the visible rect read changed; a steady
+      // frame compares four numbers. Same rounded-change rule as before for the redraw.
       private function hzsUpdVr() : void
       {
          var vr:Rectangle = Extensions.visibleRect;
-         var tl:Point;
-         var br:Point;
-         if(vr != null && vr.width >= 100)
-         {
-            tl = this.hzsL.globalToLocal(new Point(vr.left,vr.top));
-            br = this.hzsL.globalToLocal(new Point(vr.right,vr.bottom));
-         }
-         else
-         {
-            tl = this.hzsL.globalToLocal(new Point(0,0));
-            br = this.hzsL.globalToLocal(new Point(1920,1080));
-         }
+         var ok:Boolean = vr != null && vr.width >= 100;
+         var l:Number = ok ? vr.left : 0;
+         var t:Number = ok ? vr.top : 0;
+         var r:Number = ok ? vr.right : 1920;
+         var b:Number = ok ? vr.bottom : 1080;
+         var vi:Array = this.hzsVrIn;
+         if(vi != null && this.hzsVr != null && vi[0] == l && vi[1] == t && vi[2] == r && vi[3] == b) { return; }
+         var tl:Point = this.hzsL.globalToLocal(new Point(l,t));
+         var br:Point = this.hzsL.globalToLocal(new Point(r,b));
          if(isNaN(tl.x) || br.x - tl.x < 100) { return; }
-         var sig:String = Math.round(tl.x) + "," + Math.round(tl.y) + "," + Math.round(br.x) + "," + Math.round(br.y);
-         if(sig != this.hzsVrSig) { this.hzsVrSig = sig; this.hzsVr = new Rectangle(tl.x,tl.y,br.x - tl.x,br.y - tl.y); this.hzsSig = {}; this.hzsDirty = true; }
+         if(vi == null) { vi = this.hzsVrIn = [0,0,0,0]; }
+         vi[0] = l; vi[1] = t; vi[2] = r; vi[3] = b;
+         var rl:Number = Math.round(tl.x);
+         var rt:Number = Math.round(tl.y);
+         var rr:Number = Math.round(br.x);
+         var rb:Number = Math.round(br.y);
+         if(rl != this.hzsVrL || rt != this.hzsVrT || rr != this.hzsVrR || rb != this.hzsVrB)
+         {
+            this.hzsVrL = rl; this.hzsVrT = rt; this.hzsVrR = rr; this.hzsVrB = rb;
+            this.hzsVrRev++;
+            this.hzsVr = new Rectangle(tl.x,tl.y,br.x - tl.x,br.y - tl.y); this.hzsSig = {}; this.hzsDirty = true;
+         }
       }
 
       // ---------------------------------------------------------------- look
@@ -488,10 +514,14 @@
          return this.hzsTitle() ? s : s.toUpperCase();
       }
       // a "$KEY" string through the game's translation table (a TextField resolves it), "" stays ""
+      // 0.43.3.2: memoized per key for this scanner open (the game's language does not change while it is open), so a
+      // marker name or bioscan type no longer makes a new TextField every frame. A failed lookup is not cached.
       private function hzsTr(s:String) : String
       {
          if(s == null || s.length == 0) { return ""; }
-         try { var t:TextField = new TextField(); GlobalFunc.SetText(t,s); return t.text; } catch(e:Error) { }
+         var memo:Boolean = s.charCodeAt(0) == 36;   // only "$KEY" strings (never a name such as "constructor" on the Object)
+         if(memo) { var c:* = this.hzsTrC[s]; if(c !== undefined) { return String(c); } }
+         try { var t:TextField = new TextField(); GlobalFunc.SetText(t,s); var r:String = t.text; if(memo) { this.hzsTrC[s] = r; } return r; } catch(e:Error) { }
          return s;
       }
       private function hzsFontBegin() : void
@@ -795,7 +825,9 @@
       {
          if(o == null) { return "~"; }
          if(o is Array) { var a:Array = []; for each(var x:* in o) { a.push(this.hzsSer(x)); } return "[" + a.join(",") + "]"; }
-         if(typeof o == "object") { var b:Array = []; for(var k:String in o) { b.push(k + ":" + this.hzsSer(o[k])); } b.sort(); return "{" + b.join(",") + "}"; }
+         // arch-fixes Fix 2: no sort. The models are built by the same code in the same order every call, so the key order
+         // repeats; a different order could only cost one extra redraw, never a missed one (keys and values are all in).
+         if(typeof o == "object") { var b:Array = []; for(var k:String in o) { b.push(k + ":" + this.hzsSer(o[k])); } return "{" + b.join(",") + "}"; }
          return String(o);
       }
       private function hzsPick(d:Object, keys:Array) : String
@@ -930,6 +962,10 @@
          var fl:Number = 0;
          var dt:int = getTimer() - this.hzsFlashT;
          if(dt >= 0 && dt < 2000 && this.hzsOn("ScanCompleteFlash")) { fl = Math.round((1 - dt / 2000) * 10) / 10; }
+         // 0.43.3.2 ScanHideBioscanDone (default off): no card once the planet is fully scanned, that is every row of the
+         // card found (fauna, flora, resources, traits) and the game's biome flags agree. Checked here, at panel draw
+         // (hzsDrawPanel diffs the result), so it costs nothing per frame; the scan-complete flash still plays first.
+         if(fl <= 0 && tot >= mx && this.hzsOn("ScanHideBioscanDone") && (md.bBiomeFloraComplete === true || int(md.uFloraMax) <= 0) && (md.bBiomeFaunaComplete === true || int(md.uFaunaMax) <= 0)) { return null; }
          return {"cmp":this.hzsCmpOn("Bioscan"),"rows":rows,"tot":tot,"mx":mx,"left":left,"lt":this.hzsOn("ScanLeftToFind"),
             "allFF":(int(md.uFaunaMax) - int(md.uFaunaCurrent)) <= 0 && (int(md.uFloraMax) - int(md.uFloraCurrent)) <= 0,
             "bfl":md.bBiomeFloraComplete === true,"bfa":md.bBiomeFaunaComplete === true,"hasFl":int(md.uFloraMax) > 0,"hasFa":int(md.uFaunaMax) > 0,"fl":fl,
@@ -975,16 +1011,43 @@
          catch(e:Error) { }
          return "hex";
       }
+      // 0.43.3.2: the result depends only on the state, the type, the category and the text case, so it is cached per
+      // category (and the two fixed names) until the settings or the text case change. Same strings as before.
       private function hzsMarkName(o:Object) : String
       {
+         var ti:Boolean = this.hzsTitle();
+         if(this.hzsMNRev != this.hzsCfgRev || this.hzsMNTi != ti)
+         {
+            this.hzsMNC = {};
+            this.hzsMNUnk = null;
+            this.hzsMNVeh = null;
+            this.hzsMNRev = this.hzsCfgRev;
+            this.hzsMNTi = ti;
+         }
+         var cat:uint = 0;
          try
          {
-            if(uint(o.uLocationMarkerState) == MapMarkerUtils.LMS_UNKNOWN) { return this.hzsCs("UNKNOWN SIGNAL"); }
-            if(o.uType != undefined && o.uType !== null && uint(o.uType) == MapMarkerUtils.MARKER_VEHICLE) { return this.hzsCs("VEHICLE"); }   // r3: the game has no generic vehicle name
-            var s:String = this.hzsTr(MapMarkerUtils.GetGenericTypeLocString(uint(o.uCategory)));
-            if(s != null && s.length > 0 && s.charAt(0) != "$") { return this.hzsGs(s); }
+            if(uint(o.uLocationMarkerState) == MapMarkerUtils.LMS_UNKNOWN)
+            {
+               if(this.hzsMNUnk == null) { this.hzsMNUnk = this.hzsCs("UNKNOWN SIGNAL"); }
+               return this.hzsMNUnk;
+            }
+            if(o.uType != undefined && o.uType !== null && uint(o.uType) == MapMarkerUtils.MARKER_VEHICLE)   // r3: the game has no generic vehicle name
+            {
+               if(this.hzsMNVeh == null) { this.hzsMNVeh = this.hzsCs("VEHICLE"); }
+               return this.hzsMNVeh;
+            }
+            cat = uint(o.uCategory);
+            var hit:* = this.hzsMNC[cat];
+            if(hit !== undefined) { return String(hit); }
+            var key:String = MapMarkerUtils.GetGenericTypeLocString(cat);
+            var s:String = this.hzsTr(key);
+            if(s != null && s.length > 0 && s.charAt(0) != "$") { var r:String = this.hzsGs(s); this.hzsMNC[cat] = r; return r; }
+            // no usable name: cached only when the lookup itself is settled (no key, or the key was translated); a failed
+            // translation is tried again next time, as before
+            if(key == null || key.length == 0 || (key.charCodeAt(0) == 36 && this.hzsTrC[key] !== undefined)) { var sg:String = this.hzsCs("SIGNAL"); this.hzsMNC[cat] = sg; return sg; }
          }
-         catch(e:Error) { }
+         catch(e:Error) { }   // a throw is not cached (as before: the SIGNAL fallback)
          return this.hzsCs("SIGNAL");
       }
       private function hzsMarkers() : Array
@@ -1066,9 +1129,10 @@
       private var hzs41CmpC:Array = null;
       private function hzs41CmpAll() : Array
       {
-         if(this.hzs41CmpC != null && this.hzs41CmpF == this.hzsFrame && this.hzs41CmpS === this.hzsCmp) { return this.hzs41CmpC; }
+         // 0.43.3.2: keyed by the compass event rev (was the frame), so a steady compass list is not rebuilt every frame
+         if(this.hzs41CmpC != null && this.hzs41CmpF == this.hzsCmpRev && this.hzs41CmpS === this.hzsCmp) { return this.hzs41CmpC; }
          this.hzs41CmpC = this.hzs41CmpBuild();
-         this.hzs41CmpF = this.hzsFrame;
+         this.hzs41CmpF = this.hzsCmpRev;
          this.hzs41CmpS = this.hzsCmp;
          return this.hzs41CmpC;
       }
@@ -1597,7 +1661,7 @@
             else if(n == "Hints") { m = this.hzsMHints(); }
          }
          catch(e0:Error) { m = null; }
-         var sig:String = this.hzsSer(m) + "|" + this.hzsCfgSig;
+         var sig:String = this.hzsSer(m) + "|" + this.hzsCfgRev;
          if(sig == this.hzsSig[n]) { return; }
          this.hzsSig[n] = sig;
          this.hzsClr(p);
@@ -2065,7 +2129,7 @@
          if(p == null || hp == null) { return; }
          var on:Boolean = this.hzsOn("ScanShowCompass") && this.hzsGot.cmp == 1 && !isNaN(this.hzsHead);
          var head:Number = on ? Math.round(this.hzsHead * 2) / 2 : -1;
-         var sig:String = head + "|" + this.hzsCfgSig + "|" + this.hzsVrSig + "|" + this.hzsCmpMarks();
+         var sig:String = head + "|" + this.hzsCfgRev + "|" + this.hzsVrRev + "|" + this.hzsCmpMarks();
          if(!force && sig == this.hzsCmpSig) { return; }
          this.hzsCmpSig = sig;
          this.hzsClr(p);
@@ -2163,11 +2227,16 @@
          catch(e:Error) { }
          return out;
       }
+      // 0.43.3.2: cached until the next compass event or settings change (it reads only hzsCmp and ScanShowShip)
       private function hzsCmpMarks() : String
       {
+         if(this.hzsCmkS != null && this.hzsCmkR == this.hzsCmpRev && this.hzsCmkC == this.hzsCfgRev) { return this.hzsCmkS; }
          var a:Array = [];
          for each(var m:Array in this.hzsCmpMarkList()) { a.push(Math.round(Number(m[0])) + m[1]); }
-         return a.join(",");
+         this.hzsCmkS = a.join(",");
+         this.hzsCmkR = this.hzsCmpRev;
+         this.hzsCmkC = this.hzsCfgRev;
+         return this.hzsCmkS;
       }
 
       // ---------------------------------------------------------------- reticle, frame, range, world tag
@@ -2188,7 +2257,7 @@
          catch(e0:Error) { rng = ""; }
          var tag:Object = null;
          try { tag = this.hzsMTag(); } catch(e1:Error) { tag = null; }
-         var sig:String = rng + "|" + this.hzsSer(tag) + "|" + this.hzsCfgSig + "|" + this.hzsVrSig;
+         var sig:String = rng + "|" + this.hzsSer(tag) + "|" + this.hzsCfgRev + "|" + this.hzsVrRev;
          if(sig == this.hzsRetSig) { return; }
          this.hzsRetSig = sig;
          var acc:uint = this.hzsAccent();
@@ -2311,7 +2380,7 @@
                list.push([Math.round(pp.x),Math.round(pp.y),o.bIsDiscovered === true ? 1 : 0,this.hzsDist(Number(o.uRangeM)),o.bIsDiscovered === true ? this.hzsMarkName(o) : "",this.hzsMarkIcon(o),this.hzs41Own(o)]);
             }
          }
-         var sig:String = this.hzsSer(list) + "|" + this.hzsCfgSig;
+         var sig:String = this.hzsSer(list) + "|" + this.hzsCfgRev;
          if(sig == this.hzsMarkSig) { return; }
          this.hzsMarkSig = sig;
          this.hzsClr(p);
@@ -2455,7 +2524,7 @@
 
       // =================== v0.37 shared settings reader (hzs37) ===================
       // ONE helper, spliced into every movie that reads the settings (hudmenu + hudmenu_lrg as hz37, hudmessagesmenu
-      // x2 as hzc37, dialoguemenu x2 as hzd37; generated from /workspace/v037/work/hzini_shared.as, so the copies are
+      // x2 as hzc37, dialoguemenu x2 as hzd37; generated from hzini_shared.as, so the copies are
       // identical apart from the prefix). It reads HorizonUI.default.ini, HorizonUI.user.ini, HorizonUI.state.ini and the
       // legacy HorizonUI.ini (paths relative to Data/Interface) one after the other and hands every waiting callback the
       // merged text: the defaults with user.ini laid over (hzs37Compose; mirrors HZF::Compose in HorizonUI.dll). A missing

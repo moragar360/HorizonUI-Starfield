@@ -1,12 +1,27 @@
+-- No build-machine paths in HorizonUI.dll (arch-fixes, 4th commit). Set before the includes so CommonLibSF and
+-- commonlib-shared, whose headers and sources put __FILE__ paths into the DLL, get the same flags.
+--  * PDB: the debug directory names only "HorizonUI.pdb" (MSVC link and lld-link both read %_PDB%).
+--  * __FILE__ / source_location: the project folder prefix is cut (MSVC cl /d1trimfile, clang-cl -ffile-prefix-map),
+--    so a header path reads "\lib\commonlibsf\include\SFSE/Interfaces.h", not "C:\<home>\...\lib\...". No trailing
+--    backslash on the prefix: a quoted argument ending in a backslash would swallow its closing quote.
+-- Building from a neutral folder (for example C:\b\HorizonUI) is the fallback for a toolchain that ignores these flags.
+-- Check: node tests/dll_paths_check.js <path to HorizonUI.dll> (ASCII and UTF-16LE).
+if is_plat("windows") then
+    add_cxflags("/d1trimfile:$(projectdir)", {tools = "cl", force = true})
+    add_cxflags("/clang:-ffile-prefix-map=$(projectdir)=.", {tools = "clang_cl", force = true})
+    add_ldflags("/PDBALTPATH:%_PDB%", {force = true})
+    add_shflags("/PDBALTPATH:%_PDB%", {force = true})
+end
+
 -- include subprojects
 includes("lib/commonlibsf")
 
 -- set project constants
 set_project("HorizonUI")
--- File version, four parts. The settings schema stays "0.42.0" (HZF::kVersion, HZ_VERSION).
+-- File version, four parts. The settings schema (HZF::kVersion, HZ_VERSION) is a separate string, "0.43.3.0" since 2026-11-19.
 -- CommonLibSF's SFSE::Init line reads this version. The pinned template writes the fourth
 -- PluginVersion component as a literal 0, so res/horizonui-plugin.cpp.in uses HZ_FILE_VERSION_BUILD.
-set_version("0.43.2.0")
+set_version("0.43.3.0")
 set_license("GPL-3.0")
 set_languages("c++23")
 set_warnings("allextra")
@@ -17,7 +32,7 @@ add_rules("plugin.vsxmake.autoupdate")
 
 -- define targets
 target("HorizonUI")
-    set_version("0.43.2.0")
+    set_version("0.43.3.0")
     add_rules("commonlibsf.plugin", {
         name = "HorizonUI",
         author = "Moragar",
@@ -35,7 +50,7 @@ target("HorizonUI")
     add_syslinks("version", "shell32", "ole32")
 
     -- xmake's semver parser rejects a 4-part numeric version. set_version is still the file version
-    -- (0.43.2.0). major.minor.patch stay the first three parts, and the fourth is the build number.
+    -- (0.43.3.0). major.minor.patch stay the first three parts, and the fourth is the build number.
     on_load(function (target)
         local semver = import("core.base.semver")
         if semver._hz4 then return end

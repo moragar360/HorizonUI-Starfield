@@ -154,9 +154,10 @@ function flushLines(h) { const s = h.hzWlFlush(); return s ? s.split("\n").slice
 		expect(lines.length >= 1 && lines.every((l) => /if\(this\.hzWlOn( |\))/.test(l)), "hot path " + f + ": " + lines.length + " watchlog line(s), each starts with if(this.hzWlOn");
 	}
 	const of = fnText(as, "hzOnFrame").body;
-	expect(of.indexOf("if(this.hzHideCache == null || (this.hzFrameN % 90 == 1 && !(this.hzWlOn && this.hzWlMode == 1)) || this.hz36HideStale)") >= 0,
-		"pause: only the 90-frame term is gated; hzWlOn is read only on those frames (&& short-circuit)");
-	expect(of.indexOf("else if(this.hzWlOn && this.hzWlMode == 1 && this.hzFrameN % 90 == 1) { this.hzWlSkip++; }") >= 0, "pause: skipped re-walks are counted, behind hzWlOn");
+	// arch-fixes Fix 1: the periodic term is now the re-walk edge (rbEdge); the pause still gates only that term
+	expect(of.indexOf("if(this.hzHideCache == null || (rbEdge && !(this.hzWlOn && this.hzWlMode == 1)) || this.hz36HideStale)") >= 0,
+		"pause: only the re-walk edge term is gated; hzWlOn is read only on edge frames (&& short-circuit)");
+	expect(of.indexOf("else if(this.hzWlOn && this.hzWlMode == 1 && rbEdge) { this.hzWlSkip++; this.hzHideKids = rbKids; }") >= 0, "pause: skipped re-walks are counted, behind hzWlOn");
 	expect(/hzWlOn = on;[\s\S]*if\(!on\) \{ this\.hzWlMode = 0; \}/.test(fnText(as, "hzWlApply").body), "pause: the mode resets when the gate closes");
 	expect(fnText(as, "hzPbExit").body.indexOf("this.hzPbEnd(1,t0);\n         if(this.hzWlOn)") >= 0, "cost: the exit tick runs after the exit total is booked (exitTotal stays comparable)");
 }

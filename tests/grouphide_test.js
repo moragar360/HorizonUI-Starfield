@@ -715,6 +715,7 @@ if (base) {
 	try { b56 = cp.execFileSync("git", ["show", "56d4098:actionscript/horizon_block.as"], { cwd: root, encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "ignore"] }).replace(/\r\n/g, "\n"); } catch (e) { b56 = null; }
 	if (b56) {
 		const names = (src) => { const out = []; const re = /(?:private|public) function (\w+)\(/g; let m; while ((m = re.exec(src))) out.push(m[1]); return out; };
+		const HS_ROW = '{"k":"HazardStatus","l":"HAZARD STATUS","t":"b","note":"Red / green chip under the planet card while a hazard hurts you or suit protection restores"},';
 		const RIGHT = /RightMeters|BottomRightGroup|EquippedWeapon|HealthBar|"Health_mc"|VerticalDivider_mc|Jetpack|EnemyHealthHolder_mc|StealthMeter_mc|hzHideVanillaAmmo|hzHideVanillaHealth|hzHideVanillaBoost/;
 		// the scope check compares 56d4098 with the r2 code commit 32af5f3, so a later stack (E1) on top does not count as r2
 		let r2src = as;
@@ -727,6 +728,29 @@ if (base) {
 			let z;
 			try { x = fnText(b56, n).body; y = fnText(r2src, n).body; z = fnText(as, n).body; } catch (e) { changed.push(n + "(missing)"); continue; }
 			if (x !== y) changed.push(n);
+			// Hazard Status: hzSetRows is the F11 rows table (its "Jetpack" is a setting label, no hide code); this tree
+			// may differ from 56d4098 there only by the one HAZARD STATUS row
+			if (n === "hzSetRows") { z = z.replace(HS_ROW, ""); }
+			// 0.43.3.1 Active Buffs: its one [Rules] row (BuffsRule) joined the same table; the card is removed in 0.43.3.0
+			// batch j, so on this tree the replace finds nothing (kept for the trees in between)
+			if (n === "hzSetRows") { z = z.replace('{"k":"BuffsRule","l":"ACTIVE BUFFS","t":"q","ids":[0,1,2]},', ""); }
+			// 0.43.3.2 item 5: the note under the EQUIPMENT rule row (text only, no hide code)
+			if (n === "hzSetRows") { z = z.replace(',"note":"Crosshair off? Set this to ALWAYS or COMBAT ONLY."', ""); }
+			// 0.43.3.2 F11 CARDS sections: the jetpack row's header reads JETPACK instead of CARDS (menu text only)
+			if (n === "hz34CardRows") { z = z.replace('{"k":"ShowJetpack","l":"JETPACK CARD","t":"b","h":"JETPACK"}', '{"k":"ShowJetpack","l":"JETPACK CARD","t":"b","h":"CARDS"}'); }
+			// arch-fixes Fix 1: hzOnFrame's hide-list re-walk is edge-triggered now; every right-side line in it (the names
+			// and the hide flags) must still be byte-identical, and the rebuild list itself is checked by behavior below
+			if (n === "hzOnFrame" && z !== x && z.indexOf("arch-fixes Fix 1") >= 0) {
+				const rl = (src) => src.split("\n").filter((l) => RIGHT.test(l)).join("\n");
+				z = rl(z) === rl(x) ? x : z;
+			}
+			// 0.43.3.0 hazard card: the card joins the card tables (scale list, ARRANGE lists, F11 CARDS rows, the visibility
+			// refresh). Once its own additions are taken out, every right-side line must still be byte-identical.
+			// 0.43.3.0 quest log: QuestsWidth in the default spot (hzLayout), the F11 rows and the [Cards] writer lines.
+			if (["hzApplyScale", "hzRefreshVisibility", "hzLayClips", "hzArrList", "hz34CardRows", "hzLayout", "hz34IniLines"].indexOf(n) >= 0 && z !== x) {
+				const hz = (src) => src.replace(',[this.HorizonHazard_mc,"Hazard"]', "").split("\n").filter((l) => RIGHT.test(l)).join("\n");
+				z = hz(z) === hz(x) ? x : z;
+			}
 			if (RIGHT.test(x)) { rightFns.push(n); if (x !== y || x !== z) rightSame = false; }
 		}
 		const added = allNow.filter((n) => all56.indexOf(n) < 0);
@@ -776,7 +800,8 @@ if (base) {
 // hzT19HoldBtns refills one shared array, so a set left over from an earlier call would answer for the old buttons when
 // that same array reaches hzT19OnHoldPathA outside hz38HideVanilla.
 {
-	const FN = ["hz38HideVanilla", "hzT19HidePromptTree", "hzT19OnHoldPath", "hzT19OnHoldPathA", "hzT19AncFill", "hzT19IsHoldBtn", "hzT19HideA", "hzT19HideBtnArt", "hzT19HoldMeterName"];
+	const FN = ["hz38HideVanilla", "hzT19HidePromptTree", "hzT19OnHoldPath", "hzT19OnHoldPathA", "hzT19AncFill", "hzT19IsHoldBtn", "hzT19HideA", "hzT19HideBtnArt", "hzT19HoldMeterName",
+		"hzT19HcOk", "hzT19HcApply", "hzT19HcBox"];   // perf round 2 Fix 5: the hide-walk record (each call here is a hover edge)
 	const fix = (js) => js.replace(/p != this\b/g, "p != this.__top");
 	const r = rng(4403); let bad = "", nullBad = 0;
 	for (let t = 0; t < 200 && !bad; t++) {
@@ -786,7 +811,8 @@ if (base) {
 			grow(top, 0); return { top: top, all: all }; };
 		const shared = new Array(4);
 		const mk = () => { const h = Object.assign({}, common, { hzTgHidden: [], hzTgHidA: [], hzT19Anc: [], hzT19AncB: null, hzObjRing: 2, __top: null,
-			hzT19KeepHold: () => {}, hzT19HideReticle: () => {}, hzT19ShowReticle: () => {} }); bindAll(h, as, FN, fix); return h; };
+			hzT19KeepHold: () => {}, hzT19HideReticle: () => {}, hzT19ShowReticle: () => {},
+			hzT19HcDue: true, hzT19HcRec: false, hzT19HcValid: false, hzT19HcD: [], hzT19HcP: [], hzT19HcDN: 0, hzT19HcB: [], hzT19HcBK: [], hzT19HcBP: [], hzT19HcBN: 0, hzT19HcBtn: null }); bindAll(h, as, FN, fix); return h; };
 		const B = mk();
 		// call 1: the game's prompt with one set of hold buttons
 		const X = build(rng(seed)); const p1 = rng(seed + 1);
