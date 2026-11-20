@@ -21,6 +21,7 @@ Test-only build on top of 0.43.3.1; not published. The settings schema stays 0.4
 
 ### Added
 - **Scanner:** F11 > SCANNER > BIOSCAN > HIDE WHEN FULLY SCANNED ([Scanner] ScanHideBioscanDone, off by default). On: no Bioscan card once every fauna, flora, resource and trait of the planet is found (after the scan-complete flash). Checked when the card is drawn; nothing new per frame.
+- **Scanner outline thickness:** F11 > SCANNER > OUTLINE THICKNESS ([Scanner] ScanOutlineThickness): VANILLA (default, nothing is changed, your own ini tweaks stay), THICK (1.5x) or THICKER (2x) for the outlines around highlighted minerals, flora, fauna and items. Set by the SFSE plugin (the ten game [Monocle] outline settings), so it needs a new plugin build; applied at load and after each F11 save, nothing per frame. *(Not tested in game yet.)*
 
 ## [0.43.3.1-alpha] - unreleased
 

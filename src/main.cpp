@@ -81,6 +81,7 @@
 #include "hz_wl.h"
 #include "hz_menu_bits.h"   // perf round 2: event-kept open-menu set (pure helpers, tests/menu_bits_test.cpp)
 #include "hz_scan_hl.h"     // 0.43.3.1: [Scanner] ScanHighlightArea (pure helpers, tests/scan_hl_test.cpp)
+#include "hz_scan_ol.h"     // 0.43.3.2: [Scanner] ScanOutlineThickness (pure helpers, tests/scan_ol_test.cpp)
 #include "preset_dedupe.h"
 
 // v0.37: the settings-file code (HZF) replaces files through this (temp file + MoveFileExW)
@@ -850,11 +851,14 @@ namespace HZ
 	// 0.43.3.1: [Scanner] ScanHighlightArea as last read by LoadIni (load thread at kPostDataLoad, job thread after a
 	// save / apply). Read on the UI thread by ScanHlApply. One int, no Scaleform value.
 	std::atomic<int> g_scanHlWant{hzscanhl::kVanilla};
+	// 0.43.3.2: [Scanner] ScanOutlineThickness, the same way (LoadIni stores, ScanOlApply reads on the UI thread)
+	std::atomic<int> g_scanOlWant{hzscanol::kVanilla};
 
 	void LoadIni(bool a_reloadMsglog = true)
 	{
 		std::string key = "F11";
 		int scanHl = hzscanhl::kVanilla;
+		int scanOl = hzscanol::kVanilla;
 		g_iniDebug = false;
 		g_perfDiag.store(0, std::memory_order_relaxed);
 		g_perfMode.store(0, std::memory_order_relaxed);
@@ -891,11 +895,13 @@ namespace HZ
 				REX::INFO("watchlog: {} ([Debug] WatchLog={}, needs PerfDiag=1)", g_wlOn.load(std::memory_order_relaxed) ? "on" : "off", g_wlOn.load(std::memory_order_relaxed));
 			if (get("settingskey", v) && !v.empty()) key = v;
 			if (get("scanhighlightarea", v)) scanHl = hzscanhl::Parse(v);
+			if (get("scanoutlinethickness", v)) scanOl = hzscanol::Parse(v);
 			if (hzlog::IniReloadAppliesMsglog(a_reloadMsglog))
 				MsglogLoadSettings(d);
 		}
 		MsglogEnsureInit();
 		g_scanHlWant.store(scanHl, std::memory_order_release);   // applied on the UI thread (ScanHlApply), on a change only
+		g_scanOlWant.store(scanOl, std::memory_order_release);   // applied on the UI thread (ScanOlApply), on a change only
 		auto sc = KeyNameToScan(key);
 		if (!sc) { REX::WARN("unknown SettingsKey '{}', using F11", key); sc = 0x57; key = "F11"; }
 		g_scan = sc;
@@ -1952,6 +1958,7 @@ namespace HZ
 	}
 
 	void ScanHlApply();   // 0.43.3.1, defined after HzAddrSlot
+	void ScanOlApply();   // 0.43.3.2, defined after ScanHlApply
 
 	void BannerPoll(ULONGLONG a_now)
 	{
@@ -1962,6 +1969,7 @@ namespace HZ
 		ScanPushMsg(ui, a_now);
 		IniSavedPushMsg(ui);   // arch-fixes Fix 2: settings-saved signal (edge only)
 		ScanHlApply();         // 0.43.3.1: scanner highlight area (one atomic load and a compare unless it changed)
+		ScanOlApply();         // 0.43.3.2: scanner outline thickness (the same: one atomic load and a compare)
 		bool scan = g_banScanMod.load() == 1 && ui->IsMenuOpen("MonocleMenu");
 		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu" })
 			if (ui->IsMenuOpen(m)) scan = false;
@@ -2893,6 +2901,112 @@ namespace HZ
 			g_scanHlMissLogged = true;
 		}
 		REX::INFO("scanner highlight: {} ({} / {})", hzscanhl::Name(want), plan.dot, plan.decal);
+	}
+
+	// ---- 0.43.3.2: [Scanner] ScanOutlineThickness (src/hz_scan_ol.h) ----
+	// Purpose: write the ten [Monocle] fHighlightScannableOutlineThickness* game settings, only when the wanted position
+	// changed: at load and after a settings save / apply (LoadIni stores g_scanOlWant), exactly like ScanHlApply. UI
+	// thread only: called from BannerPoll right after ScanHlApply (100 ms gate). Steady state: one atomic load and one
+	// int compare. No Scaleform, no GFx value, no file. Same id check (INISettingCollection singleton) and SEH; each
+	// lookup is null and type (float) checked; a setting that is not found is neither read nor written. The game's own
+	// values are read once, right before the first write; Thick / Thicker scale those; Vanilla writes them back. The
+	// log line says how many of the ten were found (a missing one shows up there). Author: Moragar. Last modified: 2026-11-18.
+	int             g_scanOlApplied = hzscanol::kVanilla;   // UI thread only
+	hzscanol::Orig  g_scanOlOrig;                           // UI thread only
+	bool            g_scanOlMissLogged = false;             // UI thread only
+
+	struct HzScanOlRaw
+	{
+		int   capture;              // 1 = read the game's values before writing
+		int   write[hzscanol::kN];  // 1 = write val[i] (only for a setting found)
+		float val[hzscanol::kN];
+		int   ok;                   // out: 1 ran, -1 no collection
+		int   found[hzscanol::kN];  // out: the setting exists as a float
+		float was[hzscanol::kN];    // out: the value before the write (capture only)
+	};
+
+	static void HzScanOlCall(HzScanOlRaw* a_io)
+	{
+		if (!a_io) return;
+		a_io->ok = -1;
+		auto* col = RE::INISettingCollection::GetSingleton();
+		if (!col) return;
+		for (int i = 0; i < hzscanol::kN; ++i) {
+			auto* s = HzScanHlFind(col, hzscanol::kKeys[i]);
+			a_io->found[i] = s ? 1 : 0;
+			if (!s) continue;
+			if (a_io->capture) a_io->was[i] = s->GetFloat();
+			if (a_io->write[i]) s->SetFloat(a_io->val[i]);
+		}
+		a_io->ok = 1;
+	}
+
+#if defined(_MSC_VER)
+	static int HzScanOlSEH(HzScanOlRaw* a_io) noexcept
+	{
+		if (!a_io) return 0;
+		using Fn = void (*)(HzScanOlRaw*);
+		Fn fn = &HzScanOlCall;
+		__try {
+			fn(a_io);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+#else
+	static int HzScanOlSEH(HzScanOlRaw* a_io) noexcept
+	{
+		if (!a_io) return 0;
+		try { HzScanOlCall(a_io); return 1; } catch (...) { return 0; }
+	}
+#endif
+
+	void ScanOlApply()
+	{
+		const int want = g_scanOlWant.load(std::memory_order_acquire);
+		if (want == g_scanOlApplied) return;
+		const auto act = hzscanol::Next(want, g_scanOlApplied, g_scanOlOrig);
+		if (act == hzscanol::Act::None) { g_scanOlApplied = want; return; }
+		const auto id = RE::ID::INISettingCollection::Singleton.id();
+		const int slot = id != 0 ? HzAddrSlot(id) : -1;
+		if (hzaddr::AddrSlotRetry(slot)) return;   // versionlib not read yet (job thread): the next poll tries again
+		g_scanOlApplied = want;                    // one attempt per change: a miss is not retried every poll
+		if (hzaddr::AddrSlotMiss(slot)) {
+			if (!g_scanOlMissLogged) { REX::WARN("scanner outline: INISettingCollection id {} missing, left to the game", id); g_scanOlMissLogged = true; }
+			return;
+		}
+		const bool restore = act == hzscanol::Act::Restore;
+		HzScanOlRaw io{};
+		io.capture = g_scanOlOrig.have ? 0 : 1;
+		if (io.capture) {
+			// the values to write come from the captured originals: capture first (no write), then write below
+			const int ran0 = HzScanOlSEH(&io);
+			if (!ran0 || io.ok != 1) {
+				if (!g_scanOlMissLogged) { REX::WARN("scanner outline: game settings not read, left to the game"); g_scanOlMissLogged = true; }
+				return;
+			}
+			g_scanOlOrig.have = true;
+			for (int i = 0; i < hzscanol::kN; ++i) { g_scanOlOrig.ok[i] = io.found[i] != 0; g_scanOlOrig.v[i] = io.was[i]; }
+			io = HzScanOlRaw{};
+		}
+		int nFound = 0;
+		for (int i = 0; i < hzscanol::kN; ++i) {
+			if (!g_scanOlOrig.ok[i]) continue;
+			++nFound;
+			io.write[i] = 1;
+			io.val[i] = restore ? g_scanOlOrig.v[i] : hzscanol::Value(want, g_scanOlOrig.v[i]);
+		}
+		if (nFound == 0) {
+			if (!g_scanOlMissLogged) { REX::WARN("scanner outline: none of the {} [Monocle] outline settings found, left to the game", hzscanol::kN); g_scanOlMissLogged = true; }
+			return;
+		}
+		const int ran = HzScanOlSEH(&io);
+		if (!ran || io.ok != 1) {
+			if (!g_scanOlMissLogged) { REX::WARN("scanner outline: write failed, left to the game"); g_scanOlMissLogged = true; }
+			return;
+		}
+		REX::INFO("scanner outline: {} (x{}, {} of {} settings found)", hzscanol::Name(want), restore ? 1.0f : hzscanol::Mul(want), nFound, hzscanol::kN);
 	}
 
 	// Purpose: location, player name, currentPlayerID, and Calendar. ID-gated
