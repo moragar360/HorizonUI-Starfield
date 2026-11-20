@@ -18,7 +18,7 @@ includes("lib/commonlibsf")
 
 -- set project constants
 set_project("HorizonUI")
--- File version, four parts. The settings schema stays "0.42.0" (HZF::kVersion, HZ_VERSION).
+-- File version, four parts. The settings schema (HZF::kVersion, HZ_VERSION) is a separate string, "0.43.3.0" since 2026-11-19.
 -- CommonLibSF's SFSE::Init line reads this version. The pinned template writes the fourth
 -- PluginVersion component as a literal 0, so res/horizonui-plugin.cpp.in uses HZ_FILE_VERSION_BUILD.
 set_version("0.43.3.0")

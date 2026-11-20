@@ -5,7 +5,7 @@
 // string (or the version resource that this header produced). Do not copy the
 // numbers into the resource script or into a log line.
 // Product version matches the file version (0.43.3.0). The settings-schema string
-// in the plugin (HZF::kVersion, "0.42.0") is a different value: preset age and the
+// in the plugin (HZF::kVersion, "0.43.3.0" since 2026-11-19, was "0.42.0") is a separate value: preset age and the
 // update backup compare against that, not against this file version.
 // 2026-11-18: every version label was aligned to 0.43.3.0 at the user's request (file and product version,
 // movie build stamps, F11 header, FOMOD, docs). That is lower than the earlier internal test labels

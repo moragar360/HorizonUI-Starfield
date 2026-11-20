@@ -16,7 +16,7 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 
 ## New in 0.43.3.0 (alpha, test build)
 
-Not published. Version note: the earlier test builds of this work were labeled 0.43.3.1 and 0.43.3.2 (TESTONLY). Every version label (F11 header, plugin file version, FOMOD, docs) now reads 0.43.3.0, which is lower than those test labels. The settings schema stays 0.42.0. The full list is in [CHANGELOG.md](CHANGELOG.md).
+Not published. Version note: the earlier test builds of this work were labeled 0.43.3.1 and 0.43.3.2 (TESTONLY). Every version label (F11 header, plugin file version, FOMOD, docs) now reads 0.43.3.0, which is lower than those test labels. The settings schema (HZF::kVersion) is 0.43.3.0 too (it was 0.42.0); your `HorizonUI.user.ini` and saved presets carry over, and the first start backs up `HorizonUI.user.ini` to `HorizonUI.user.bak.ini` once. The full list is in [CHANGELOG.md](CHANGELOG.md).
 
 - **Quick menu (Core):** the favorites cross is drawn as Horizon cards in your card style, with your bound keys and an item info card. F11 > CARDS > QUICK MENU > HORIZON STYLE turns it off. Not tested in game yet.
 - **Hazard Status:** turns green for about 4 seconds after you leave a hazard, then hides.
@@ -180,7 +180,7 @@ Release builds keep the extra debug traces off: `HZ_HUD_MSG_CAPTURE` is `0`, `HZ
 4. In that same file, change the `hzcRxDbgOn` default from `false` to `true`.
 5. Update the test pins that expect the traces to be off: `tests/reaction_match_test.js` (`HZC_MSG_LOG` is `false`) and `tests/preset_list_test.cpp` (`HZ_COMMS_MSG_LOG == 0` and `HZ_HUD_MSG_CAPTURE == 0`).
 
-`Debug=0` in the ini only stops the movie queue. It doesn't turn off the one-line status. The settings schema stays `0.42.0`.
+`Debug=0` in the ini only stops the movie queue. It doesn't turn off the one-line status. These steps don't change the settings schema (`0.43.3.0`).
 
 ## Repository layout
 ```

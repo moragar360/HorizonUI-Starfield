@@ -210,7 +210,7 @@ namespace HZ
 // HZF lives at file scope (not inside namespace HZ). hz_ini_diff.h is self-contained.
 namespace HZF
 {
-	inline const char* kVersion = "0.42.0";
+	inline const char* kVersion = "0.43.3.0";   // settings schema; 0.42.0 until 2026-11-19 (user request): the first start of this DLL backs up user.ini once
 }
 
 #include "hz_ini_diff.h"

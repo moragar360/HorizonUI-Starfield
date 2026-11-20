@@ -19,7 +19,7 @@
 #include <vector>
 
 namespace HZF {
-inline const char* kVersion = "0.42.0";
+inline const char* kVersion = "0.43.3.0";
 }
 #include "hz_ini_diff.h"
 #include "hz_preset_apply.h"   // r7 (S-4): the real PresetToUser
@@ -640,7 +640,7 @@ int main()
 		Expect(load != std::string::npos, "plugin load function is present");
 		Expect(src.find("REX::INFO(\"HorizonUI {} loaded\", HZ::DllFileVersion());", load) != std::string::npos, "load line prints DllFileVersion");
 		Expect(src.find("HorizonUI 0.42.0 loaded") == std::string::npos, "load line is not a typed schema version");
-		Expect(src.find("inline const char* kVersion = \"0.42.0\"") != std::string::npos, "settings schema stays 0.42.0");
+		Expect(src.find("inline const char* kVersion = \"0.43.3.0\"") != std::string::npos, "settings schema is 0.43.3.0");
 		Expect(src.find("\n#include \"hz_ini_diff.h\"") != std::string::npos, "F11 save uses the shared Diff header");
 		{
 			const auto inc = src.find("\n#include \"hz_ini_diff.h\"");

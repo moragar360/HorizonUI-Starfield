@@ -35,7 +35,7 @@ function pin(snippet, msg) {
 	expect(src.indexOf(snippet) >= 0, msg || snippet);
 }
 
-pin('private static const HZ_VERSION:String = "0.42.0";', "schema version stays 0.42.0");
+pin('private static const HZ_VERSION:String = "0.43.3.0";', "schema version is 0.43.3.0 (= HZF::kVersion)");
 pin('private static const HZ_BUILD:String = "0.43.3.0";', "HUD build id is 0.43.3.0 (versions aligned)");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin("tf.text = this.hzFmtLocGame(uh,um,true);", "GAME Local/Game value honors ClockFormat");

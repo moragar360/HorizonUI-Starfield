@@ -12,7 +12,7 @@
 #include "hz_version.h"
 
 namespace HZF {
-inline const char* kVersion = "0.42.0";
+inline const char* kVersion = "0.43.3.0";
 }
 #include "hz_ini_diff.h"
 
@@ -764,7 +764,7 @@ int main()
 	using namespace hzlog;
 
 	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.3.0", "file version is 0.43.3.0");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 3 && HZ_FILE_VERSION_BUILD == 1, "file version numbers");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 3 && HZ_FILE_VERSION_BUILD == 0, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
