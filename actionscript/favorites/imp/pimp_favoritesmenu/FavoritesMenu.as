@@ -365,14 +365,18 @@ package
          this.OverEntry = false;
       }
       
-      // =================== Horizon UI quick menu (0.43.3.0, batch f): Horizon cards on the game's quick menu ===================
+      // =================== Horizon UI quick menu (0.43.3.0, batches f and i): Horizon cards on the game's quick menu ===================
       // Spliced into the vanilla FavoritesMenu class (favoritesmenu.swf / favoritesmenu_lrg.swf, game 1.16.244) by
       // tools/apply_fav_hooks.py. Every vanilla line stays: input, selection, assign mode, the close animation and the
       // game's own icons and data are the game's code. This block only draws on top and hides vanilla art:
-      //  - one card per slot (hzqCard), a child of the slot clip at index 0, so the vanilla Open / Close fades move it too;
+      //  - one card per slot (hzqCard), a child of the slot clip at index 0, so the vanilla Open / Close fades move it too.
+      //    Every slot gets the same box (HZQ_BOX x HZQ_BOX, batch i), centered on the slot's hit area (Catcher_mc);
+      //  - the game's icon (Icon_mc) is fitted into that box (hzqFit): reset to the game's own transform, then scaled by
+      //    min(1, room / size) with its aspect kept, centered, below the key badge. Never compounds, never enlarges;
       //  - the slot's key badge = the key the player bound to "Quickkey<n>" (ControlMapData vMappedEvents), keyboard and
       //    mouse only, the same rule as the vanilla Quickkey_tf. No key is hardcoded and nothing keys off Q;
-      //  - a header pill above the top slot: QUICK MENU and the bound "Cancel" key (keyboard and mouse only);
+      //  - a header pill above the top slot: QUICK MENU and the bound "Cancel" key: keyboard and mouse = the key text;
+      //    controller = the mapped Cancel button (hzqPadKey: a glyph, or the HUD's keycap text, or nothing; never a $ name);
       //  - an info card in ItemInfo_mc built only from the fields the game sends (FavoritesData aFavoriteItems):
       //    sName (+ " (n)" from uCount), AMMO = sAmmoName + uAmmoCount, DAMAGE = aElementalStats (type + floor(fValue)),
       //    SLOT = the selected slot's bound key. There is no magazine / reserve split in the data, so none is shown.
@@ -384,17 +388,30 @@ package
       //   hzqOpen        menu added to stage (onAddedToStage), once per open: starts the ini read
       //   hzqOnIni       the ini read finished (URLLoader COMPLETE / IO_ERROR): builds once, then one full redraw
       //   hzqFontOkEv    font.marker found (URLLoader COMPLETE), once: one full redraw with the Horizon face
-      //   hzqData        FavoritesData (end of onDataUpdate): slot cards
-      //   hzqSel         selection change (end of onSelectionChange): slot cards + info card
-      //   hzqInfoSet     assign mode start (assignedItem setter): info card
-      //   OnControlMapChanged  ControlMapData (device or binding change): key table, key badges, header
+      //   hzqData        FavoritesData (end of onDataUpdate, after the game's LoadIcon calls): slot cards + icon fit,
+      //                  and hands each Icon_mc the per-slot load handler (hzqIcHook)
+      //   hzqIc0..11     an icon finished loading (or failed, or was already loaded): the game's own handler, then that
+      //                  slot's icon fit (hzqIcDone). The game's ImageFixture onLoadAttemptComplete edge
+      //   hzqSel         selection change (end of onSelectionChange): slot cards + icon fit + info card
+      //   hzqAssign      assign mode start (assignedItem setter): info card + icon fit
+      //   OnControlMapChanged  ControlMapData (device or binding change): key table, key badges, header, icon fit
+      //   OnPlatformChanged    PlatformData (platform change): header (controller close hint)
       // Every Horizon display object has mouseEnabled = mouseChildren = false; the slots keep their own hit areas
       // (Catcher_mc), so mouse hover and click are the game's. Any error turns the Horizon look off for this open and
       // puts the vanilla look back (hzqFail).
       private static const HZQ_LRG:Boolean = false;
       private static const HZQ_ACCENTS:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       private static const HZQ_CARDCOLS:Array = [0x0B1218,0x16181C,0x0B1630,0x0A2226,0x1E1328,0x2A1014,0x3A4652,0xD5DBE0,0xF2F4F6,0xCCDFEE,0xF0E0C2,0xD2ECDF];
-      private static const HZQ_INNER:Array = [2,3,8,9];   // FS_LEFT_1, FS_RIGHT_1, FS_UP_1, FS_DOWN_1: the slots next to the center disc
+      // One box for all 12 slots (batch i). Measured in both vanilla movies (same numbers at both scales, slot space = menu
+      // space): every Catcher_mc is 64 along its arm and 75 across; catcher centers along the arms are 87.95 .. 89.05
+      // (inner), 160.65 .. 161.8 (middle) and 235.75 .. 236.8 (outer), so neighbor centers are at least 72.6 apart; the
+      // center disc (CenterClip_mc "Quick" backdrop hole) has radius 54. 58 x 58 leaves at least 14.6 between neighbors
+      // and 4.95 to the disc, and fits the 64-wide catcher (3 each side) on both arms.
+      private static const HZQ_BOX:Number = 58;
+      private static const HZQ_ICPAD:Number = 4;          // icon padding inside the box
+      private static const HZQ_GLYPH:String = "$Controller_Buttons";   // the game's controller glyph face (fontconfig map)
+      // controller glyph character (GlobalFunc.NameToTextMap value) -> keycap text: the HUD's table (horizon_block.as HZ_T19_PADK)
+      private static const HZQ_PADK:Object = {"A":"A","B":"B","C":"X","D":"Y","E":"VIEW","O":"MENU","G":"LB","L":"RB","I":"LT","N":"RT","Y":"LT","X":"RT","F":"LS","H":"LS","K":"RS","M":"RS","1":"LB+RB","J":"LT+RT","a":"A","d":"B","c":"X","b":"Y","z":"VIEW","p":"MENU","g":"LB","m":"RB","j":"LT","o":"RT","y":"LT","x":"RT","i":"LS","f":"LS","n":"RS","l":"RS","h":"LB+RB","k":"LT+RT","T":"LEFT","U":"RIGHT","V":"DOWN","W":"UP","t":"LEFT","u":"RIGHT","v":"DOWN","w":"UP","q":"D-PAD","r":"D-PAD","s":"D-PAD"};
       private static const HZQ_INF_W:Number = 380;
       private var hzqOn:Boolean = false;        // Horizon look active for this open (switch on, ini read, no error)
       private var hzqOpened:Boolean = false;
@@ -405,7 +422,11 @@ package
       private var hzqFontOk:Object = {};
       private var hzqKeys:Object = {};          // user event name -> bound button name (ControlMapData)
       private var hzqKb:Boolean = true;         // keyboard and mouse in use (uiController == 0)
-      private var hzqCards:Array = null;        // per slot {s:Sprite, k:TextField, r:Rectangle}
+      private var hzqCards:Array = null;        // per slot {s:Sprite, k:TextField, r:Rectangle, ib:{sx,sy,x,y} the game's icon transform, kb:badge bottom below the box top, 0 = no badge}
+      private var hzqIcCb:Array = null;         // per slot icon-load handler (hzqIc0 .. hzqIc11)
+      private var hzqCtU:ColorTransform = null; // the game's icon tint on an unselected slot (captured before the first Horizon touch)
+      private var hzqCtS:ColorTransform = null; // the game's icon tint on the selected slot
+      private var hzqGlyph:Object = {};         // controller glyph probe per character: 1 drawn by HZQ_GLYPH, 0 not
       private var hzqHdr:Sprite = null;
       private var hzqHdrT:TextField = null;
       private var hzqHdrK:TextField = null;
@@ -417,7 +438,7 @@ package
       private var hzqInfSel:Boolean = false;    // hzqInfObj is the selected slot (SLOT row allowed)
       private var hzqCtA:ColorTransform = null; // reused: accent tint for symbol icons
       private var hzqCtM:ColorTransform = null; // reused: main text tint for symbol icons
-      private var hzqCtN:ColorTransform = null; // reused: identity (images, and the restore)
+      private var hzqCtN:ColorTransform = null; // reused: identity (images)
 
       private function hzqOpen() : void
       {
@@ -793,7 +814,6 @@ package
          this.hzqCtM = new ColorTransform();
          this.hzqCtN = new ColorTransform();
          var cards:Array = [];
-         var cb:Rectangle = null;
          var i:int = 0;
          while(i < 12)
          {
@@ -801,23 +821,34 @@ package
             var r:Rectangle = null;
             if(e != null)
             {
+               // the same box on every slot, centered on the slot's hit area
                var c:* = e["Catcher_mc"];
-               r = c != null ? c.getBounds(e) : e.getBounds(e);
-               r = new Rectangle(r.x + 3,r.y + 3,Math.max(8,r.width - 6),Math.max(8,r.height - 6));
-               if(HZQ_INNER.indexOf(i) >= 0 && this.CenterClip_mc != null)
+               var cr:Rectangle = c != null ? c.getBounds(e) : e.getBounds(e);
+               r = new Rectangle(cr.x + cr.width / 2 - HZQ_BOX / 2,cr.y + cr.height / 2 - HZQ_BOX / 2,HZQ_BOX,HZQ_BOX);
+               // the game's icon transform and tint, before Horizon first touches Icon_mc (fit base and restore)
+               var ic:* = e["Icon_mc"];
+               var ib:Object = null;
+               if(ic != null)
                {
-                  cb = this.CenterClip_mc.getBounds(e);
-                  this.hzqTrim(r,cb,i);
+                  ib = {"sx":ic.scaleX,"sy":ic.scaleY,"x":ic.x,"y":ic.y};
+                  var ct0:ColorTransform = ic.transform.colorTransform;
+                  if(i == int(this.selectedIndex)) { if(this.hzqCtS == null) { this.hzqCtS = ct0; } }
+                  else if(this.hzqCtU == null) { this.hzqCtU = ct0; }
                }
                var s:Sprite = this.hzqSprite(e,0);
                s.name = "hzqCard";
                var k:TextField = this.hzqTf(s);
-               cards.push({"s":s,"k":k,"r":r});
+               cards.push({"s":s,"k":k,"r":r,"ib":ib,"kb":0});
             }
             else { cards.push(null); }
             i++;
          }
          this.hzqCards = cards;
+         // the game's two icon tints as authored in both movies (Unselected / Selected frame: add 183 / 54, multiply 0),
+         // used only when a slot in that state was not seen above
+         if(this.hzqCtU == null) { this.hzqCtU = new ColorTransform(0,0,0,1,183,183,183,0); }
+         if(this.hzqCtS == null) { this.hzqCtS = new ColorTransform(0,0,0,1,54,54,54,0); }
+         this.hzqIcCb = [this.hzqIc0,this.hzqIc1,this.hzqIc2,this.hzqIc3,this.hzqIc4,this.hzqIc5,this.hzqIc6,this.hzqIc7,this.hzqIc8,this.hzqIc9,this.hzqIc10,this.hzqIc11];
          // header pill: a child of the top slot (FS_UP_3), so it fades with the slots
          if(this.Entry_6 != null && cards[6] != null)
          {
@@ -840,17 +871,6 @@ package
             while(j < 7) { this.hzqInfT.push(this.hzqTf(this.hzqInf)); j++; }
          }
       }
-      // inner slots: keep the card off the center disc (only when that leaves at least 60 % of the slot)
-      private function hzqTrim(r:Rectangle, cb:Rectangle, i:int) : void
-      {
-         var g:Number = 4;
-         var w0:Number = r.width;
-         var h0:Number = r.height;
-         if(i == 2 && r.right > cb.left - g) { var w2:Number = cb.left - g - r.x; if(w2 >= w0 * 0.6) { r.width = w2; } }
-         else if(i == 3 && r.left < cb.right + g) { var w3:Number = r.right - (cb.right + g); if(w3 >= w0 * 0.6) { r.x = cb.right + g; r.width = w3; } }
-         else if(i == 8 && r.bottom > cb.top - g) { var h8:Number = cb.top - g - r.y; if(h8 >= h0 * 0.6) { r.height = h8; } }
-         else if(i == 9 && r.top < cb.bottom + g) { var h9:Number = r.bottom - (cb.bottom + g); if(h9 >= h0 * 0.6) { r.y = cb.bottom + g; r.height = h9; } }
-      }
       // ---------- draw ----------
       private function hzqRedraw() : void
       {
@@ -868,11 +888,16 @@ package
          this.hzqCtA.redMultiplier = ((a >> 16) & 0xFF) / 255; this.hzqCtA.greenMultiplier = ((a >> 8) & 0xFF) / 255; this.hzqCtA.blueMultiplier = (a & 0xFF) / 255;
          this.hzqCtM.redMultiplier = ((m >> 16) & 0xFF) / 255; this.hzqCtM.greenMultiplier = ((m >> 8) & 0xFF) / 255; this.hzqCtM.blueMultiplier = (m & 0xFF) / 255;
       }
-      private function hzqKey(ev:String) : String
+      // the bound button name of a user event (ControlMapData strButtonName), trimmed; "" when unbound
+      private function hzqRaw(ev:String) : String
       {
          var k:* = this.hzqKeys[ev];
          if(k == null) { return ""; }
-         var t:String = String(k).replace(/^\s+|\s+$/g,"");
+         return String(k).replace(/^\s+|\s+$/g,"");
+      }
+      private function hzqKey(ev:String) : String
+      {
+         var t:String = this.hzqRaw(ev);
          if(t.length == 0 || t == "?" || t.charAt(0) == "$" || t == "null" || t == "undefined") { return ""; }
          return t.length > 10 ? t.substr(0,10).toUpperCase() : t.toUpperCase();
       }
@@ -928,15 +953,116 @@ package
             k.x = r.x + 5 + (kw - k.width) / 2;
             k.y = r.y + 5 + (kh - k.height) / 2;
             k.visible = true;
+            c.kb = 5 + kh;
          }
-         else { k.visible = false; }
+         else { k.visible = false; c.kb = 0; }
          // the game's icon: symbols take the accent when selected, the main text color otherwise; pictures stay as they are
          var ic:* = e["Icon_mc"];
          if(ic != null)
          {
             var sym:Boolean = !empty && it.iconImage != null && it.iconImage.iFixtureType == ImageFixture.FT_SYMBOL;
             ic.transform.colorTransform = sym ? (sel ? this.hzqCtA : this.hzqCtM) : this.hzqCtN;
+            this.hzqIcHook(i,ic);
+            this.hzqFit(i);
          }
+      }
+      // ---------- the game's icon in the box (batch i) ----------
+      // Icon_mc's load edge -> this slot's handler. Set after the game's LoadIcon (which sets the entry's own handler);
+      // hzqIcDone calls that handler first, so the game's icon behavior stays.
+      private function hzqIcHook(i:int, ic:*) : void
+      {
+         if(this.hzqIcCb != null && i < this.hzqIcCb.length) { ic.onLoadAttemptComplete = this.hzqIcCb[i]; }
+      }
+      private function hzqIc0() : void { this.hzqIcDone(0); }
+      private function hzqIc1() : void { this.hzqIcDone(1); }
+      private function hzqIc2() : void { this.hzqIcDone(2); }
+      private function hzqIc3() : void { this.hzqIcDone(3); }
+      private function hzqIc4() : void { this.hzqIcDone(4); }
+      private function hzqIc5() : void { this.hzqIcDone(5); }
+      private function hzqIc6() : void { this.hzqIcDone(6); }
+      private function hzqIc7() : void { this.hzqIcDone(7); }
+      private function hzqIc8() : void { this.hzqIcDone(8); }
+      private function hzqIc9() : void { this.hzqIcDone(9); }
+      private function hzqIc10() : void { this.hzqIcDone(10); }
+      private function hzqIc11() : void { this.hzqIcDone(11); }
+      private function hzqIcDone(i:int) : void
+      {
+         var fe:FavoritesEntry = this.hzqSlot(i) as FavoritesEntry;
+         if(fe == null) { return; }
+         try { fe.onIconLoadAttemptComplete(); } catch(e0:Error) { }
+         if(!this.hzqOn) { return; }
+         try { this.hzqFit(i); } catch(e1:Error) { this.hzqFail(); }
+      }
+      // Fit: back to the game's transform first (so it never compounds across redraws, selection, assign or a new icon in
+      // the same slot), measure the loaded picture / symbol, then scale by min(1, room w / w, room h / h) (aspect kept,
+      // never larger than the game's) and center it in the box below the key badge. Nothing loaded or a zero size: the
+      // game's transform stays.
+      private function hzqFit(i:int) : void
+      {
+         var c:Object = this.hzqCards != null ? this.hzqCards[i] : null;
+         var e:MovieClip = this.hzqSlot(i);
+         if(c == null || e == null || c.ib == null) { return; }
+         var ic:* = e["Icon_mc"];
+         if(ic == null) { return; }
+         var b:Object = c.ib;
+         ic.scaleX = b.sx;
+         ic.scaleY = b.sy;
+         ic.x = b.x;
+         ic.y = b.y;
+         if(!ic.visible) { return; }
+         var nb:Rectangle = this.hzqIcB(ic,e);
+         if(nb == null || !(nb.width > 0.5) || !(nb.height > 0.5)) { return; }
+         var r:Rectangle = c.r;
+         var top:Number = r.y + HZQ_ICPAD;
+         if(Number(c.kb) > 0) { top = Math.max(top,r.y + Number(c.kb) + 2); }
+         var aw:Number = r.width - HZQ_ICPAD * 2;
+         var ah:Number = r.y + r.height - HZQ_ICPAD - top;
+         if(aw < 4 || ah < 4) { return; }
+         var k:Number = Math.min(1,Math.min(aw / nb.width,ah / nb.height));
+         ic.scaleX = b.sx * k;
+         ic.scaleY = b.sy * k;
+         ic.x = r.x + r.width / 2 - (nb.x + nb.width / 2 - b.x) * k;
+         ic.y = top + ah / 2 - (nb.y + nb.height / 2 - b.y) * k;
+      }
+      // the loaded picture and symbol only (ImageFixture imageInstance / symbolInstance while on the display list), in slot
+      // space; not BoundClip_mc, the game's fixed 60 x 60 sizer that is always there. null = nothing loaded.
+      private function hzqIcB(ic:*, e:MovieClip) : Rectangle
+      {
+         var u:Rectangle = null;
+         var a:* = null;
+         try { a = ic.imageInstance; } catch(e1:Error) { a = null; }
+         if(a != null && a.parent != null && a.visible) { u = a.getBounds(e); }
+         var m:* = null;
+         try { m = ic.symbolInstance; } catch(e2:Error) { m = null; }
+         if(m != null && m.parent != null && m.visible)
+         {
+            var mb:Rectangle = m.getBounds(e);
+            u = u == null ? mb : u.union(mb);
+         }
+         return u;
+      }
+      private function hzqFitAll() : void
+      {
+         var i:int = 0;
+         while(i < 12) { this.hzqFit(i); i++; }
+      }
+      // the game's icon back: its own transform (captured in hzqBuild) and the game's tint for the slot's state
+      private function hzqIcRestore(i:int) : void
+      {
+         var c:Object = this.hzqCards != null ? this.hzqCards[i] : null;
+         var e:MovieClip = this.hzqSlot(i);
+         if(c == null || e == null) { return; }
+         var ic:* = e["Icon_mc"];
+         if(ic == null) { return; }
+         if(c.ib != null)
+         {
+            ic.scaleX = c.ib.sx;
+            ic.scaleY = c.ib.sy;
+            ic.x = c.ib.x;
+            ic.y = c.ib.y;
+         }
+         var ct:ColorTransform = i == int(this.selectedIndex) ? this.hzqCtS : this.hzqCtU;
+         if(ct != null) { ic.transform.colorTransform = ct; }
       }
       private function hzqHeader() : void
       {
@@ -945,7 +1071,10 @@ package
          var g:* = this.hzqHdr.graphics;
          g.clear();
          this.hzqSet(this.hzqHdrT,this.hzqUC("Quick Menu"),12,this.hzqTextAccent(),"bd",0.14,true);
-         var kt:String = this.hzqKb ? this.hzqKey("Cancel") : "";
+         var kt:String = "";
+         var kf:String = "";
+         if(this.hzqKb) { kt = this.hzqKey("Cancel"); }
+         else { var pk:Array = this.hzqPadKey("Cancel"); kt = String(pk[0]); kf = String(pk[1]); }
          var pad:Number = 14;
          var h:Number = Math.max(30,Math.ceil(this.hzqHdrT.textHeight) + 14);
          var w:Number = pad + this.hzqHdrT.width + pad;
@@ -954,6 +1083,12 @@ package
          if(kt.length > 0)
          {
             this.hzqSet(this.hzqHdrK,kt,11,this.hzqMutCol(),"sb",0.04,false);
+            if(kf.length > 0)
+            {
+               var gf:TextFormat = new TextFormat(kf,this.hzqFs(14),this.hzqMutCol());
+               this.hzqHdrK.defaultTextFormat = gf;
+               this.hzqHdrK.setTextFormat(gf);
+            }
             kw = Math.max(16,Math.ceil(this.hzqHdrK.textWidth * 1.08) + 8);
             kh = Math.max(16,Math.ceil(this.hzqHdrK.textHeight) + 3);
             w += kw + 10;
@@ -969,10 +1104,46 @@ package
          {
             var kx:Number = x0 + w - pad - kw;
             var ky:Number = y0 + (h - kh) / 2;
-            this.hzqKeycap(g,kx,ky,kw,kh,this.hzqDimCol());
+            if(kf.length == 0) { this.hzqKeycap(g,kx,ky,kw,kh,this.hzqDimCol()); }
             this.hzqHdrK.x = kx + (kw - this.hzqHdrK.width) / 2;
             this.hzqHdrK.y = ky + (kh - this.hzqHdrK.height) / 2;
          }
+      }
+      // Controller close hint: the button mapped to "Cancel" (ControlMapData strButtonName, a vanilla button name such as
+      // Xenon_B or PSN_B) -> the game's glyph character (GlobalFunc.NameToTextMap, the table the vanilla button hints use).
+      // Drawn as that glyph in HZQ_GLYPH when this movie can draw it (hzqGlyphOk), else as the HUD's keycap text for the
+      // glyph (HZQ_PADK). A name or glyph not in those tables: ["",""] = no badge. Never the raw name, never a "$" token.
+      private function hzqPadKey(ev:String) : Array
+      {
+         var raw:String = this.hzqRaw(ev);
+         if(raw.length == 0 || raw.charAt(0) == "$" || !GlobalFunc.NameToTextMap.hasOwnProperty(raw)) { return ["",""]; }
+         var gs:String = String(GlobalFunc.NameToTextMap[raw]);
+         if(gs.length == 0 || gs.charAt(0) == "$") { return ["",""]; }
+         if(this.hzqGlyphOk(gs)) { return [gs,HZQ_GLYPH]; }
+         if(HZQ_PADK.hasOwnProperty(gs)) { return [String(HZQ_PADK[gs]),""]; }
+         return ["",""];
+      }
+      // one character drawn by HZQ_GLYPH (not the fallback face): the hzqProbe rule, once per character
+      private function hzqGlyphOk(ch:String) : Boolean
+      {
+         if(ch == null || ch.length != 1) { return false; }
+         if(this.hzqGlyph[ch] != undefined) { return this.hzqGlyph[ch] == 1; }
+         var ok:Boolean = false;
+         try
+         {
+            var t:TextField = new TextField();
+            t.embedFonts = true;
+            var tf:TextFormat = new TextFormat(HZQ_GLYPH,20,0xFFFFFF);
+            t.defaultTextFormat = tf; t.text = ch; t.setTextFormat(tf);
+            var x:TextField = new TextField();
+            x.embedFonts = true;
+            var xf:TextFormat = new TextFormat("$Horizon_NoSuchFace_x",20,0xFFFFFF);
+            x.defaultTextFormat = xf; x.text = ch; x.setTextFormat(xf);
+            ok = t.textWidth > 2 && Math.abs(x.textWidth - t.textWidth) >= 0.01;
+         }
+         catch(err:Error) { ok = false; }
+         this.hzqGlyph[ch] = ok ? 1 : 0;
+         return ok;
       }
       private function hzqInfoSet(o:Object, isSel:Boolean) : void
       {
@@ -1095,12 +1266,17 @@ package
       {
          this.hzqInfObj = this.selectedEntry;
          this.hzqInfSel = true;
-         if(!this.hzqOn) { return; }
+         if(!this.hzqOn)
+         {
+            // after an error: the game's icon tint follows the selection again (hzqRestore set it once)
+            if(this.hzqCards != null) { try { var j:int = 0; while(j < 12) { this.hzqIcRestore(j); j++; } } catch(e0:Error) { } }
+            return;
+         }
          try { var i:int = 0; while(i < 12) { this.hzqCard(i); i++; } this.hzqInfo(); } catch(e:Error) { this.hzqFail(); }
       }
       private function hzqAssign() : void
       {
-         try { this.hzqInfoSet(this.AssignedItem,false); } catch(e:Error) { this.hzqFail(); }
+         try { this.hzqInfoSet(this.AssignedItem,false); if(this.hzqOn) { this.hzqFitAll(); } } catch(e:Error) { this.hzqFail(); }
       }
       override protected function OnControlMapChanged(param1:Object) : void
       {
@@ -1108,6 +1284,12 @@ package
          try { this.hzqCtl(param1); } catch(e:Error) { this.hzqFail(); }
       }
       // ControlMapData: the bound key names (one pass over vMappedEvents per change) and the device
+      // PlatformData (BSDisplayObject.OnPlatformChanged(param1:Object), uPlatform): the controller close hint again
+      override protected function OnPlatformChanged(param1:Object) : void
+      {
+         super.OnPlatformChanged(param1);
+         try { if(this.hzqOn) { this.hzqHeader(); } } catch(e:Error) { this.hzqFail(); }
+      }
       private function hzqCtl(d:Object) : void
       {
          if(d == null) { return; }
@@ -1135,7 +1317,7 @@ package
             var c:Object = this.hzqCards[i];
             if(e != null) { try { this.hzqHideArt(e,false); } catch(e1:Error) { } }
             if(c != null) { c.s.visible = false; }
-            if(e != null && this.hzqCtN != null) { try { if(e["Icon_mc"] != null) { e["Icon_mc"].transform.colorTransform = this.hzqCtN; } } catch(e2:Error) { } }
+            if(e != null) { try { this.hzqIcRestore(i); } catch(e2:Error) { } }
             i++;
          }
          if(this.hzqHdr != null) { this.hzqHdr.visible = false; }
