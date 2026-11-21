@@ -8,7 +8,7 @@
 // hz30Inset / hz27Clamp / hzCW / hzCH / hzPlace (types stripped) for all 13 cards and every anchor.
 // Comms (hzc_block.as): a HUD message card with no game line to follow (hzcRxAnchor) started on the live bounds of the
 // game's message column; with a saved HudMessagesX/Y it now starts on the stable home, so the layer offset puts it on
-// the saved spot, with no bounds read. Author: Moragar. Last modified: 2026-11-20.
+// the saved spot, with no bounds read. 0.43.4 l2: the card keeps the saved box's anchored edge. Author: Moragar. Last modified: 2026-11-20.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -115,7 +115,8 @@ for (const [ax, ay] of [["R", "B"], ["C", "C"], ["R", "T"], ["L", "B"], ["L", "T
 function commsHost(cfg, bounds) {
 	const h = { hzcCfg: Object.assign({ TextScale: 1, HudScale: 1, Margin: 40 }, cfg), hzcRxLayer: { x: 0, y: 0 }, hzcRxDbgOn: false, hzcMsgHomeLogged: true, HZC_LRG: false, bounds: 0 };
 	h.hzcVis = () => new Rectangle(0, 0, 2560, 1440);
-	for (const n of ["hzcMsgArranged", "hzcRxAnchor", "hzcMsgLayout", "hzcMsgHome", "hzcAnchor", "hzcCardZ"]) { const f = toJs(COMMS, n); if (f) h[n] = f.bind(h); }
+	h.hzcRx = []; h.hzcMsgBox = null; h.hzcRxDirty = false;
+	for (const n of ["hzcMsgArranged", "hzcRxAnchor", "hzcMsgLayout", "hzcMsgHome", "hzcAnchor", "hzcCardZ", "hzcRxArrPlace"]) { const f = toJs(COMMS, n); if (f) h[n] = f.bind(h); }
 	const m = { getBounds() { h.bounds++; return bounds; } };
 	return { h, m };
 }
@@ -127,13 +128,19 @@ function commsHost(cfg, bounds) {
 	for (const [xs, ys] of [["R60", "T20"], ["L300", "B200"], ["C0", "C0"], ["R0", "-1"]]) {
 		const { h, m } = commsHost({ HudMessagesX: xs, HudMessagesY: ys }, colB);
 		h.hzcMsgLayout();
-		const e = { c: { x: 0, y: 0, visible: false, alpha: 0 }, w: 300, h: 50 };
+		const e = { st: 1, c: { x: 0, y: 0, visible: false, alpha: 0 }, w: 300, h: 50 };
+		h.hzcRx = [e];
 		h.hzcRxAnchor(e, m);
+		if (h.hzcRxArrPlace && h.hzcRxDirty) h.hzcRxArrPlace();   // 0.43.4 l2: the saved-spot pass on the show edge
 		const gx = h.hzcRxLayer.x + e.c.x, gy = h.hzcRxLayer.y + e.c.y;
 		const sx = xs === "-1" ? home.x : h.hzcAnchor(xs, "x", W, vr.x, vr.right);
 		const sy = ys === "-1" ? home.y : h.hzcAnchor(ys, "y", 56, vr.y, vr.bottom);
-		const want = [Math.round(sx + W - e.w), Math.round(sy)];
-		expect(gx === want[0] && gy === want[1] && e.c.visible, "HUD message " + xs + "/" + ys + ": first card at " + [gx, gy] + " = saved spot (right edges together) " + want);
+		// 0.43.4 l2: the card holds the saved box's anchored edge (unsaved axis: right / top)
+		const ax = xs === "-1" ? "R" : xs[0], ay = ys === "-1" ? "T" : ys[0];
+		const wx = ax === "L" ? sx : ax === "C" ? sx + (W - e.w) / 2 : sx + W - e.w;
+		const wy = ay === "T" ? sy : ay === "C" ? sy + (56 - e.h) / 2 : sy + 56 - e.h;
+		const want = [Math.round(wx), Math.round(wy)];
+		expect(gx === want[0] && gy === want[1] && e.c.visible, "HUD message " + xs + "/" + ys + ": first card at " + [gx, gy] + " = saved spot (anchored edges together) " + want);
 		expect(h.bounds === 0, "HUD message " + xs + "/" + ys + ": no bounds read of the game's message column");
 	}
 	const { h, m } = commsHost({ HudMessagesX: "-1", HudMessagesY: "-1" }, colB);

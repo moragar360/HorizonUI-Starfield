@@ -74,8 +74,8 @@ expect(hzTempText(Number.NaN, 0) === "--", "a NaN temperature shows --");
 }
 pin('"HudMessages"', "HUD Messages is an arrangeable layout key");
 pin("private function hzArrFs(want:int)", "HUD Messages ghost type size is corrected once");
-pin('this.hzSText(p,"HUD MESSAGES",16 * hz,12 * hz,sz.x - 32 * hz,this.hzArrFs(15),acc,"left","hdr");', "HUD MESSAGES header uses hzArrFs");
-pin('this.hzSText(p,"Companion, crew, crime, credits, afflictions",16 * hz,34 * hz,sz.x - 32 * hz,this.hzArrFs(13),0xF2F7F9,"left");', "HUD MESSAGES body uses hzArrFs");
+pin('this.hzSText(p,"HUD MESSAGES",14 * hz,7 * hz,sz.x - 28 * hz,this.hzArrFs(15),acc,"left","hdr");', "HUD MESSAGES header uses hzArrFs");
+pin('this.hzSText(p,"Cards keep this box\'s anchored edge",14 * hz,29 * hz,sz.x - 28 * hz,this.hzArrFs(13),0xF2F7F9,"left");', "HUD MESSAGES body uses hzArrFs");
 expect(src.indexOf('Math.round(13 * hz)') < 0, "HUD MESSAGES body is not scaled twice");
 function hzArrFs(want, textScale) {
 	let ts = textScale;

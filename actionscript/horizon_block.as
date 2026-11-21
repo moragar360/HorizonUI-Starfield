@@ -561,6 +561,7 @@
          try { this.hz26StDraw(this.hz26Now()); } catch(errSt13:Error) { }
          try { this.hzAfRetryLayout(); } catch(errAfS:Error) { }
          this.hzLaidOut = this.hzLayout();
+         if(this.hzArrange) { try { this.hz31PxSync(); } catch(err31z:Error) { } }   // 0.43.4: the HUD MESSAGES box follows HudScale
       }
 
       // Affliction + chip-family 13 px floor. Re-run after HudScale / per-card scale so F11
@@ -17783,7 +17784,7 @@
          }
          if(k == "Speaker" || k == "SpeakerD") { return new Point(Math.round(400 * ts),Math.round(86 * ts)); }
          if(k == "MissionToast") { var mf:Number = ts * this.hz34ToastF(); return new Point(Math.round(460 * mf),Math.round(88 * mf)); }
-         if(k == "HudMessages") { return new Point(Math.round(360 * ts),Math.round(80 * ts)); }
+         if(k == "HudMessages") { var mz:Number = this.hz31MsgZ(); return new Point(Math.max(280,Math.round(360 * mz)),Math.round(56 * mz)); }
          var ds:Number = this.hz33DlgScale();
          var dz:Number = Number(c.DlgTextSize) * ts * ds;
          var cmp:Boolean = int(c.DlgLayout) == 1;
@@ -17792,6 +17793,20 @@
          var n:int = this.hz31PxRows();
          var dh:Number = hd + n * (rowH + 4 * ds) + 14 * ds + (int(c.DlgMoreHint) == 1 && int(c.DlgVisible) > 0 ? 24 * ds : 0) + (int(c.DlgNumberKeys) == 1 && int(c.DlgQuickPickHint) == 1 && int(c.DlgButtonBar) != 0 ? 40 * ds : 0);
          return new Point(Math.round(620 * ds),Math.round(dh));
+      }
+      // 0.43.4: the HUD MESSAGES box is the Comms box (hzcMsgLayout / hzcCardZ): 360x56 x TextScale x HudScale,
+      // x1.25 in the large movie, clamped 0.75..2.2. The large HUD movie is the one with HZ_SCALE above 1.
+      private function hz31MsgZ() : Number
+      {
+         var ts:Number = this.hzTextScale;
+         if(isNaN(ts) || ts <= 0) { ts = 1; }
+         var hs:Number = this.hzHudScale;
+         if(isNaN(hs) || hs <= 0) { hs = 1; }
+         var z:Number = ts * hs;
+         if(HZ_SCALE > 1) { z = z * 1.25; }
+         if(z < 0.75) { z = 0.75; }
+         if(z > 2.2) { z = 2.2; }
+         return z;
       }
       // v0.34 mission toast size factor (MissionToastScale, -1 = HudScale); the toast multiplies TextScale on top
       private function hz34ToastF() : Number
@@ -17944,10 +17959,9 @@
          }
          else if(k == "HudMessages")
          {
-            var hz:Number = this.hzTextScale;
-            this.hzSText(p,"HUD MESSAGES",16 * hz,12 * hz,sz.x - 32 * hz,this.hzArrFs(15),acc,"left","hdr");
-            this.hzSText(p,"Companion, crew, crime, credits, afflictions",16 * hz,34 * hz,sz.x - 32 * hz,this.hzArrFs(13),0xF2F7F9,"left");
-            this.hzSText(p,"Default spot matches the current message column",16 * hz,52 * hz,sz.x - 32 * hz,this.hzArrFs(13),0x96A6AE,"left");
+            var hz:Number = sz.y / 56;   // 0.43.4: the real Comms box, two lines
+            this.hzSText(p,"HUD MESSAGES",14 * hz,7 * hz,sz.x - 28 * hz,this.hzArrFs(15),acc,"left","hdr");
+            this.hzSText(p,"Cards keep this box's anchored edge",14 * hz,29 * hz,sz.x - 28 * hz,this.hzArrFs(13),0xF2F7F9,"left");
          }
          else if(k == "MissionToast")
          {
