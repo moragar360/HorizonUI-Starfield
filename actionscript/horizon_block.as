@@ -9596,7 +9596,7 @@
          if(o.y0 != undefined && o.y0 != null) { tf.y = Math.round((Number(o.y0) - (sz - fs) / 2) / su) * su; }
          tf.x = Math.round(tf.x / su) * su;
          tf.width = Math.round(tf.width);
-         // crisp glyphs: advanced AA, pixel grid fit, a touch of extra weight on small sizes (ignored where unsupported)
+         // normal (animation) AA: one glyph-cache entry per glyph at any size (advanced AA kept one per size and overflowed the cache on hover); grid fit, sharpness and thickness apply only to advanced AA and are ignored here
          try
          {
             tf.antiAliasType = "normal";

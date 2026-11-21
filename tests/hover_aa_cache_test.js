@@ -6,7 +6,7 @@
 // entry per glyph. See BOT2_HOVER_ROOTCAUSE.md.
 // Proves: no antiAliasType "advanced" in horizon_block.as or the compiled Horizon blocks (comms, scanner, scope,
 // favorites); the three Horizon text builders still set antiAliasType explicitly, to "normal".
-// HZ_HOVER_SRC overrides the horizon_block.as path (mutation checks).
+// HZ_HOVER_SRC overrides the horizon_block.as path (mutation checks). A missing horizon_block.as or block file fails.
 // Author: Moragar. Last modified: 2026-11-21.
 "use strict";
 const fs = require("fs");
@@ -34,8 +34,10 @@ function advancedLines(src) {
 	src.split("\n").forEach((l, i) => { if (/antiAliasType\s*=\s*["']advanced["']/.test(l)) hits.push(i + 1); });
 	return hits;
 }
-const SRC = read(MAIN);
-{
+const mainOk = fs.existsSync(MAIN);
+expect(mainOk, "horizon_block.as present (" + MAIN + ")");
+const SRC = mainOk ? read(MAIN) : "";
+if (mainOk) {
 	const hits = advancedLines(SRC);
 	expect(hits.length === 0, "horizon_block.as: no antiAliasType \"advanced\"" + (hits.length ? " (lines " + hits.join(", ") + ")" : ""));
 	const normal = (SRC.match(/antiAliasType\s*=\s*"normal"/g) || []).length;
@@ -43,7 +45,7 @@ const SRC = read(MAIN);
 }
 for (const rel of BLOCKS) {
 	const p = path.join(root, rel);
-	if (!fs.existsSync(p)) { expect(true, rel + ": not present, skipped"); continue; }
+	if (!fs.existsSync(p)) { expect(false, rel + ": missing (a compiled Horizon block must exist)"); continue; }
 	const hits = advancedLines(read(p));
 	expect(hits.length === 0, rel + ": no antiAliasType \"advanced\"" + (hits.length ? " (lines " + hits.join(", ") + ")" : ""));
 }
