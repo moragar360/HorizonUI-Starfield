@@ -3960,7 +3960,7 @@
          t.setTextFormat(f);
          t.textColor = col;
          t.filters = this.hz35Shadow(false);
-         try { t.antiAliasType = "advanced"; t.gridFitType = "pixel"; } catch(err:Error) { }
+         try { t.antiAliasType = "normal"; t.gridFitType = "pixel"; } catch(err:Error) { }
          p.addChild(t);
          return t;
       }
@@ -6613,7 +6613,7 @@
          else if(align == "center") { t.x = Math.round(x - w / 2); }
          else { t.x = Math.round(x - 2); }
          t.y = Math.round(y - 3 - (sz - fs) / 2);
-         try { t.antiAliasType = "advanced"; t.gridFitType = "pixel"; } catch(errAA:Error) { }
+         try { t.antiAliasType = "normal"; t.gridFitType = "pixel"; } catch(errAA:Error) { }
          p.addChild(t);
          return t;
       }
@@ -9599,7 +9599,7 @@
          // crisp glyphs: advanced AA, pixel grid fit, a touch of extra weight on small sizes (ignored where unsupported)
          try
          {
-            tf.antiAliasType = "advanced";
+            tf.antiAliasType = "normal";
             tf.gridFitType = sz >= 14 ? "subpixel" : "pixel";
             tf.sharpness = 60;
             tf.thickness = sz <= 12 ? 60 : (sz <= 15 ? 35 : 15);
