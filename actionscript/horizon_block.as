@@ -8809,7 +8809,6 @@
             }
          }
          if(!this.hzEqHasAmmo) { this.hzEqLow = false; }
-         if(!this.hzEqLow && this.hzEqCount) { this.hzEqCount.alpha = 1; }
          this.hzEqLastClip = this.hzEqClip;
          this.hzEqLayout();
          this.hzE19Sync();
@@ -8820,11 +8819,9 @@
          if(!this.hzEqNew) { return; }
          var want:Boolean = this.hzArrange || this.hzFrameN < this.hzEqExpandUntil;
          if(want != this.hzEqExpanded) { this.hzEqLayout(); }
-         if(this.hzEqLow && this.hzEqCount)
-         {
-            this.hzEqPulse += 0.25;
-            this.hzEqCount.alpha = 0.5 + 0.5 * (0.5 + 0.5 * Math.sin(this.hzEqPulse));
-         }
+         // the low-ammo pulse phase; hzE19Tick turns it into the visible glow on hzE19Cnt. (0.43.6 round 3: hzEqCount sits
+         // in the style-1 card, which is always hidden (and detached once hzEqShedNew runs), so its alpha is not written.)
+         if(this.hzEqLow && this.hzEqCount) { this.hzEqPulse += 0.25; }
          this.hzE19Tick();
       }
 
