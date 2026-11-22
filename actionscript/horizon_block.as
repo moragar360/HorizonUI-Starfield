@@ -3415,7 +3415,7 @@
       {
          if(this.hzAmInvOn) { this.hzResolveAmmoType(); return; }   // the old path owns it once it runs
          var wn:String = this.hzWeapName;
-         if(wn.length == 0 || !this.hzAmmoDrawn) { this.hzAmT0 = NaN; if(!this.hzAmmoDrawn) { this.hzSetAmmoType(""); } return; }
+         if(wn.length == 0) { this.hzAmT0 = NaN; return; }
          var k:Object = this.hzAmFind(wn);
          if(k != null)
          {
@@ -3425,6 +3425,7 @@
             return;
          }
          this.hzSetAmmoType("");
+         if(!this.hzAmmoDrawn) { this.hzAmT0 = NaN; return; }   // melee / no ammo shown: nothing to look up
          var now:Number = this.hz26Now();
          if(isNaN(this.hzAmT0)) { this.hzAmT0 = now; }
          if(this.hzAmFavSeen || now - this.hzAmT0 >= HZ_AM_WAIT) { this.hzAmInvStart(); }

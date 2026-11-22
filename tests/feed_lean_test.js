@@ -144,5 +144,13 @@ function host() {
 	expect(h.hzAmLearn("Breach (Calibrated)", "12G Shotgun Shell", 0) === false, "relearning the same entry is not a change");
 }
 
+{
+	const h = host();
+	h.hzAmOnFav({ data: { aFavoriteItems: [{ sName: "Grendel", bIsEquippable: true, sAmmoName: "6.5mm CT" }] } });
+	h.hzWeapName = "Grendel"; h.hzAmmoDrawn = false;
+	h.hzAmResolve();
+	expect(h.typ === "6.5mm CT" && h.subs.length === 0, "a known gun keeps its ammo type while bDisplayAmmo is off (holstered)");
+}
+
 if (failed) { console.error(failed + " failed"); process.exit(1); }
 console.log("all ok");
