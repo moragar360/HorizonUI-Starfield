@@ -1407,7 +1407,10 @@
          BSUIDataManager.Subscribe("WeaponData",this.hzOnWeapon);
          BSUIDataManager.Subscribe("QuestData",this.hzOnQuestData);
          BSUIDataManager.Subscribe("QuestUpdateData",this.hzOnQuestUpdate);
-         BSUIDataManager.Subscribe("PlayerInventoryData",this.hzOnInventory);
+         // 0.43.5: no PlayerInventoryData watch here. The vanilla HUD never watches it, and the game rebuilds and ships the whole
+         // inventory to every watcher. Credits and weight come from PlayerData (hz26OnPlayer); ammo type and magazine size from
+         // FavoritesData and the rollover's item data (hzAmResolve). The inventory feed is the last-resort fallback (hzAmInvStart).
+         try { BSUIDataManager.Subscribe("FavoritesData",this.hzAmOnFav); } catch(eAmF:Error) { }
          // alpha option A-N2: the game's HUD opacity value from the very first dispatch (hzBuildEnv runs inside hzBuild, before HUDMenu's own
          // subscriptions, so it only records the value; the re-hide after the game's write is hz44OnOpacity, added later)
          if(HZ44_BY_ALPHA) { try { BSUIDataManager.Subscribe("HUDOpacityData",this.hz44OnOpacityEarly); } catch(e44o:Error) { } }
@@ -1781,7 +1784,7 @@
          var d:Object = e.data;
          this.hzFixFonts();
          this.hzAmmoDrawn = d.bDisplayAmmo === true;
-         this.hzDbgWeap = this.hzDump(d);
+         if(this.hzDebug) { this.hzDbgWeap = this.hzDump(d); }   // 0.43.5: no debug string on a normal weapon update
          this.hzDbgShow();
          var clip:Number = Number(d.uClipAmmo);
          var tot:Number = Number(d.uTotalAmmo);
@@ -1800,7 +1803,7 @@
          }
          // per-model outline: WeaponData.sIconLinkageName (vanilla BottomRightGroup loads it from WeaponIcons.swf)
          var icn:String = d.sIconLinkageName != undefined && d.sIconLinkageName != null ? String(d.sIconLinkageName) : "";
-         this.hzDbgWeap = "sIconLinkageName=" + icn + " | " + this.hzDbgWeap;
+         if(this.hzDebug) { this.hzDbgWeap = "sIconLinkageName=" + icn + " | " + this.hzDbgWeap; }
          try { this.hzE19SetSym(icn); } catch(errSym:Error) { }
          this.hzDbgShow();
          var wn:String = this.hzPick(d,["sWeaponName","sName","sEquippedWeaponName","sItemName","WeaponName"]);
@@ -1813,7 +1816,7 @@
             this.hzMagCap = 0;
          }
          if(!isNaN(clip)) { this.hzMagClip = clip; if(clip > this.hzMagMax) { this.hzMagMax = clip; } }
-         this.hzResolveAmmoType();
+         this.hzAmResolve();
          this.hzDrawMag();
          if(this.hzCAmmo) { this.hzCAmmo.text = this.hzAmmoCount.text; }
          this.hzEqSync();
@@ -2627,7 +2630,7 @@
          if(ct != this.hzCrossType) { this.hzT19Ver++; }
          this.hzCrossType = ct;
          this.hzWpnRet = this.hzWpnReticle(ct,this.hzWpnRet);   // arch-fixes Fix 3
-         this.hzDbgCross = this.hzDump(e.data);
+         if(this.hzDebug) { this.hzDbgCross = this.hzDump(e.data); }   // 0.43.5: no debug string per crosshair update
          this.hzDbgShow();
          this.hzRefreshVisibility();
       }
@@ -3085,6 +3088,7 @@
       private function hzOnPlayerFrequent(e:FromClientDataEvent) : *
       {
          try { this.hz36HideTick(); } catch(e36q:Error) { }   // v0.36: the game re-shows HealthBarGhost_mc on these updates (heal)
+         if(!isNaN(this.hzAmT0)) { try { this.hzAmResolve(); this.hzDrawMag(); } catch(errAm:Error) { this.hzAmT0 = NaN; } }   // 0.43.5: an unknown gun's 3 s wait, checked on a feed that keeps arriving
          var d:Object = e.data;
          this.hzFixFonts();
          var hp:Number = Number(d.fHealth);
@@ -3152,7 +3156,8 @@
       {
          if(this.hzAmmoType)
          {
-            this.hzAmmoType.text = name && name.length > 0 ? name.toUpperCase() : "--";
+            var at:String = name && name.length > 0 ? name.toUpperCase() : "--";
+            if(this.hzAmmoType.text != at) { this.hzAmmoType.text = at; }   // 0.43.5: change-only (runs on every WeaponData update)
          }
          this.hzEqSync();
       }
@@ -3336,6 +3341,102 @@
          this.hzInvItems = e.data ? e.data.aItems as Array : null;
          this.hzResolveAmmoType();
          this.hzDrawMag();
+      }
+
+      // ---- 0.43.5: ammo type and magazine size without watching the player inventory ----
+      // Sources, cheapest first: what was already learned for this weapon name, FavoritesData.aFavoriteItems (sAmmoName, the
+      // same feed the quick-select wheel reads), and the rollover's ItemData / CompareItemData (WeaponInfo.sAmmoType and
+      // uAmmoCapacity, sent when a weapon is hovered). Only a gun none of them knows starts the old inventory path, once per session.
+      private var hzAmFav:Array = null;
+      private var hzAmFavSeen:Boolean = false;
+      private var hzAmKnown:Object = {};      // item name -> {t: ammo type, c: magazine size or 0}
+      private var hzAmInvOn:Boolean = false;  // fallback: PlayerInventoryData watched (sticky: the game keeps a watch once made)
+      private var hzAmT0:Number = NaN;        // when an unknown gun was first seen (hz26Now ms); NaN = nothing pending
+      private static const HZ_AM_WAIT:Number = 3000;
+
+      private function hzAmOnFav(e:FromClientDataEvent) : *
+      {
+         try { this.hzAmFav = (e.data && e.data.aFavoriteItems is Array) ? e.data.aFavoriteItems as Array : null; } catch(err:Error) { this.hzAmFav = null; }
+         this.hzAmFavSeen = true;
+         var i:int = 0;
+         while(this.hzAmFav != null && i < this.hzAmFav.length)
+         {
+            var f:Object = this.hzAmFav[i];
+            if(f != null && f.bIsEquippable === true && f.sName != null && f.sAmmoName != null && String(f.sAmmoName).length > 0)
+            {
+               this.hzAmLearn(String(f.sName),String(f.sAmmoName),this.hzFindNum(f,"uAmmoCapacity",0));
+            }
+            i++;
+         }
+         if(!this.hzAmInvOn) { this.hzAmResolve(); this.hzDrawMag(); }
+      }
+
+      // rollover item data: ItemData (the hovered item) and CompareItemData (the equipped one it is compared with)
+      private function hzAmHover(a:Object) : void
+      {
+         if(a == null || this.hzAmInvOn) { return; }
+         var got:Boolean = this.hzAmItem(a.ItemData);
+         if(this.hzAmItem(a.CompareItemData)) { got = true; }
+         if(got && !isNaN(this.hzAmT0)) { this.hzAmResolve(); this.hzDrawMag(); }
+      }
+
+      private function hzAmItem(it:Object) : Boolean
+      {
+         if(it == null || it.WeaponInfo == null || it.sName == null) { return false; }
+         var w:Object = it.WeaponInfo;
+         if(w.sAmmoType == null || String(w.sAmmoType).length == 0) { return false; }
+         var cap:Number = Number(w.uAmmoCapacity);
+         return this.hzAmLearn(String(it.sName),String(w.sAmmoType),(isNaN(cap) || cap >= 4294967295) ? 0 : cap);
+      }
+
+      // Outputs: true when the entry is new or changed
+      private function hzAmLearn(nm:String, t:String, cap:Number) : Boolean
+      {
+         if(nm.length == 0) { return false; }
+         var c:Number = isNaN(cap) || cap < 0 ? 0 : cap;
+         var k:Object = this.hzAmKnown[nm];
+         if(k != null && k.t == t && (c <= 0 || k.c == c)) { return false; }
+         if(k == null) { k = this.hzAmKnown[nm] = {"t":t,"c":0}; }
+         k.t = t;
+         if(c > 0) { k.c = c; }
+         return true;
+      }
+
+      // the same name rule the inventory path uses: the item name starts with WeaponData's weapon name
+      private function hzAmFind(wn:String) : Object
+      {
+         var k:Object = this.hzAmKnown[wn];
+         if(k != null) { return k; }
+         for(var nm:String in this.hzAmKnown) { if(nm.indexOf(wn) == 0) { return this.hzAmKnown[nm]; } }
+         return null;
+      }
+
+      private function hzAmResolve() : void
+      {
+         if(this.hzAmInvOn) { this.hzResolveAmmoType(); return; }   // the old path owns it once it runs
+         var wn:String = this.hzWeapName;
+         if(wn.length == 0 || !this.hzAmmoDrawn) { this.hzAmT0 = NaN; if(!this.hzAmmoDrawn) { this.hzSetAmmoType(""); } return; }
+         var k:Object = this.hzAmFind(wn);
+         if(k != null)
+         {
+            this.hzAmT0 = NaN;
+            if(k.c > 0) { this.hzMagCap = k.c; }
+            this.hzSetAmmoType(String(k.t));
+            return;
+         }
+         this.hzSetAmmoType("");
+         var now:Number = this.hz26Now();
+         if(isNaN(this.hzAmT0)) { this.hzAmT0 = now; }
+         if(this.hzAmFavSeen || now - this.hzAmT0 >= HZ_AM_WAIT) { this.hzAmInvStart(); }
+      }
+
+      // last resort, kept so no gun ever loses its ammo type: the pre-0.43.5 inventory walk
+      private function hzAmInvStart() : void
+      {
+         if(this.hzAmInvOn) { return; }
+         this.hzAmInvOn = true;
+         this.hzAmT0 = NaN;
+         try { BSUIDataManager.Subscribe("PlayerInventoryData",this.hzOnInventory); } catch(eAmI:Error) { }
       }
       private function hzFindAmmo(o:Object, depth:int) : String
       {
@@ -8777,6 +8878,7 @@
          if(this.hzPerfSkipLive()) { return; }
          try { this.hzTgAct = e.data; } catch(err:Error) { this.hzTgAct = null; }
          this.hzTgDirty = true;
+         try { this.hzAmHover(this.hzTgAct); } catch(eAmH:Error) { }   // 0.43.5: a hovered weapon teaches its ammo type
          var pay:String = this.hzT19ActPay(this.hzTgAct);
          if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.act++; this.hzPerfTickHadAct = true; }
          if(pay != this.hzT19ActCached)
@@ -9699,6 +9801,7 @@
          if(o.tint != undefined && o.tint !== null) { col = o.abs ? uint(o.tint) : this.hzIconCol(uint(o.tint)); }
          var face:String = String(o.face);
          if(face == "rg" && sz <= 12) { face = "sb"; } // small labels never thinner than SemiBold
+         o.szAp = sz;   // 0.43.5 (PR #12 cache key): the applied pixel size, which HudScale / HoverScale floors change without o.fs changing
          var f:TextFormat = new TextFormat(this.hzFontName(face),sz,col);
          if(o.right) { f.align = "right"; }
          if(o.center) { f.align = "center"; }
@@ -9817,7 +9920,7 @@
          // FontFace / TextScale / HeaderStyle / resolved face (late fontlibs) must miss. Include them so F11 apply misses.
          if(o && o.twTxt === txt && o.twFs == o.fs && o.twLsVal == o.ls && o.twLsMode == this.hzLsMode
             && o.twFace == this.hzFontFace && o.twTs == this.hzTextScale && o.twHdr == this.hzHeaderStyle
-            && o.twFn === fn && !isNaN(Number(o.twW)))
+            && o.twFn === fn && o.twSz === o.szAp && !isNaN(Number(o.twW)))
          {
             if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.twHit++; }
             return Number(o.twW);
@@ -9856,6 +9959,7 @@
             o.twTs = this.hzTextScale;
             o.twHdr = this.hzHeaderStyle;
             o.twFn = fn;
+            o.twSz = o.szAp;
          }
          return w;
       }
@@ -14708,7 +14812,7 @@
          try { this.hz26BuildVit(); } catch(e6:Error) { }
          try { this.hz26BuildEq(); } catch(e7:Error) { }
          try { BSUIDataManager.Subscribe("PlayerData",this.hz26OnPlayer); } catch(s1:Error) { }
-         try { BSUIDataManager.Subscribe("PlayerInventoryData",this.hz26OnInv); } catch(s2:Error) { }
+         // 0.43.5: PlayerInventoryData is no longer watched for credits / weight (PlayerData carries uCredits, fEncumbrance, fMaxEncumbrance)
          try { BSUIDataManager.Subscribe("PlayerFrequentData",this.hz26OnFreq); } catch(s3:Error) { }
          try { BSUIDataManager.Subscribe("WeaponData",this.hz26OnWeapon); } catch(s4:Error) { }
          try { BSUIDataManager.Subscribe("XPData",this.hz26OnXp); } catch(s5:Error) { }
@@ -14766,8 +14870,10 @@
             var en:Number = Number(d.fEncumbrance);
             var em:Number = Number(d.fMaxEncumbrance);
             if(!isNaN(en) && em > 0) { this.hz26Enc = en; this.hz26EncMax = em; }
+            var cr0:Number = NaN;   // 0.43.5: credits from PlayerData.uCredits (as the Data Menu reads them), not the inventory feed
+            if(d.uCredits != undefined && !isNaN(Number(d.uCredits))) { cr0 = Number(d.uCredits); this.hz26Cr = cr0; }
             this.hz26CharOk = this.hz26Lv >= 0 || this.hz26Name.length > 0;
-            try { this.hz27CharData(this.hz26Lv,this.hz26Sp,NaN); } catch(err27:Error) { }
+            try { this.hz27CharData(this.hz26Lv,this.hz26Sp,cr0); } catch(err27:Error) { }
             this.hz26CharChanged();
          }
          catch(err:Error) { }
@@ -15487,6 +15593,8 @@
          g.lineStyle();
       }
 
+      private var hz26PowFk:int = -1;
+      private var hz26PowFc:uint = 0;
       private function hz26PowIcon(cx:Number, cy:Number, r:Number, ready:Boolean) : void
       {
          var col:uint = this.hzIconCol(HZ_VIO);
@@ -15510,7 +15618,16 @@
          if(!used) { this.hz26PowGlyph(gg,cx,cy,r,col,1); }
          var tgt:Sprite = used ? this.hz26PowHold : this.hz26PowGly;
          tgt.alpha = ready ? 1 : 0.6;
-         tgt.filters = ready ? [new GlowFilter(col,0.55,7,7,1.4,1)] : [];
+         // 0.43.5: a filter assignment rebuilds the filter's cached render target, so only when the look changes
+         var pk:int = (ready ? 1 : 0) | (used ? 2 : 0);
+         if(pk != this.hz26PowFk || col != this.hz26PowFc)
+         {
+            this.hz26PowFk = pk;
+            this.hz26PowFc = col;
+            tgt.filters = ready ? [new GlowFilter(col,0.55,7,7,1.4,1)] : [];
+            var oth:Sprite = used ? this.hz26PowGly : this.hz26PowHold;
+            if(oth && oth.filters.length > 0) { oth.filters = []; }
+         }
       }
 
       private function hz26Grenade(g:*, cx:Number, cy:Number, col:uint, k:Number) : void
