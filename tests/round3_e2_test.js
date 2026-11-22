@@ -166,8 +166,11 @@ function fxHost(src, cg) {
 	expect((of.match(/this\.hz26Now\(\)/g) || []).length === 1 && /this\.hz40Frame\(wall\)/.test(of) && /this\.hz26Tick\(wall\)/.test(of) && /this\.hzAfLoadWatch\(wall\)/.test(of), "hzOnFrame: one clock read, passed to hz40Frame, hz26Tick and hzAfLoadWatch");
 	for (const f of ["hz40Frame", "hz26Tick", "hzAfLoadWatch"]) {
 		const t = fnText(as, f);
-		expect(/now0:Number = NaN/.test(t.sig) && /var now:Number = isNaN\(now0\) \? /.test(t.body), f + ": uses the frame's clock, or reads its own when called without one (as before)");
+		expect(/now0:Number = -1/.test(t.sig) && /var now:Number = now0 >= 0 \? now0 : /.test(t.body), f + ": uses the frame's clock, or reads its own when called without one (as before)");
 	}
-	expect(/this\.hz26Vis\(base,now\)/.test(fnText(as, "hz26Tick").body) && /isNaN\(now0\) \? this\.hz26Now\(\) : now0/.test(fnText(as, "hz26Vis").body), "hz26Vis: the frame's clock from hz26Tick; other callers read their own");
+	expect(/this\.hz26Vis\(base,now\)/.test(fnText(as, "hz26Tick").body) && /now0 >= 0 \? now0 : this\.hz26Now\(\)/.test(fnText(as, "hz26Vis").body), "hz26Vis: the frame's clock from hz26Tick; other callers read their own");
 }
+// FFDec importScript (the build) rejects a parameter default that is not a compile-time constant, NaN included
+// ("Default value must be compiletime constant"); -1 is the "no clock given" value instead
+expect(!/function \w+\([^)]*=\s*NaN\b/.test(as), "no function parameter defaults to NaN (FFDec build rule)");
 finish("round3 E2");

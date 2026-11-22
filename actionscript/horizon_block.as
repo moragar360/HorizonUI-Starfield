@@ -11321,9 +11321,12 @@
          catch(err:Error) { }
       }
 
-      private function hzAfLoadWatch(now0:Number = NaN) : void
+      // now0 (round 3 E2): the frame's clock, or -1 = read it here. A parameter default must be a compile-time constant
+      // for the FFDec importScript build (NaN is rejected there), so the "no clock given" value is -1 (the wall clock
+      // in ms is never negative).
+      private function hzAfLoadWatch(now0:Number = -1) : void
       {
-         var now:Number = isNaN(now0) ? this.hz26Now() : now0;   // now0: the frame's clock from hzOnFrame
+         var now:Number = now0 >= 0 ? now0 : this.hz26Now();   // now0: the frame's clock from hzOnFrame
          if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAfArmRelayout(); }
          if(now > 0) { this.hzAfLastWall = now; }
          if(this.hzAfLoadAt > 0)
@@ -16614,10 +16617,10 @@
       }
 
       // ---------- per frame ----------
-      private function hz26Tick(now0:Number = NaN) : void
+      private function hz26Tick(now0:Number = -1) : void
       {
          if(!this.hz26Built) { return; }
-         var now:Number = isNaN(now0) ? this.hz26Now() : now0;   // now0: the frame's clock from hzOnFrame
+         var now:Number = now0 >= 0 ? now0 : this.hz26Now();   // now0: the frame's clock from hzOnFrame
          var base:Boolean = this.hzGroupVisible && !this.hzUserHidden;
          try { this.hz26VEdge(now); } catch(e0e:Error) { }   // round 3 SF-1: load / child-count edges restart the hz26V miss counts
          // stealth: vanilla rule (sneaking and the meter is on)
@@ -16670,10 +16673,10 @@
          if(this.hz26ChsXpBar && this.hz26ChS && this.hz26ChS.visible) { this.hz26Bar(this.hz26ChsXpBar,80,5,xf,HZ_ACCENT,gF,this.hz26XpGA); }
       }
 
-      // now0: the frame's clock from hz26Tick (round 3 E2: one clock read per frame there); NaN = read it here
-      private function hz26Vis(base:Boolean, now0:Number = NaN) : void
+      // now0: the frame's clock from hz26Tick (round 3 E2: one clock read per frame there); -1 = read it here
+      private function hz26Vis(base:Boolean, now0:Number = -1) : void
       {
-         var now:Number = isNaN(now0) ? this.hz26Now() : now0;
+         var now:Number = now0 >= 0 ? now0 : this.hz26Now();
          if(this.HorizonChar_mc) { this.hzShow(this.HorizonChar_mc,base && !this.hz40Hide && this.hzShowChar && this.hz26CharOk && this.hz27CharRuleOk()); }
          if(this.HorizonEnemy_mc) { this.hzShow(this.HorizonEnemy_mc,base && this.hzEnemyBarOn && this.hz26EnOn); }
          if(this.HorizonStealth_mc) { this.hzShow(this.HorizonStealth_mc,base && this.hzStealthOn && this.hz26StOn); }
@@ -21309,9 +21312,9 @@
       }
       // every frame: a frame gap over 1 s (a load) or a HUD group visibility change clears the hide; the next scanner
       // update sets it again while the scanner is really open
-      private function hz40Frame(now0:Number = NaN) : void
+      private function hz40Frame(now0:Number = -1) : void
       {
-         var now:Number = isNaN(now0) ? new Date().getTime() : now0;   // now0: the frame's clock from hzOnFrame
+         var now:Number = now0 >= 0 ? now0 : new Date().getTime();   // now0: the frame's clock from hzOnFrame
          if(this.hz40LastT > 0 && now - this.hz40LastT > 1000 && (this.hz40Hide || this.hz40Scan)) { this.hz40Scan = false; this.hz40Latch = false; this.hz40Clear(false); }   // v0.40.3: a latched scan / HideMainHudWhileScanning=0 too
          this.hz40LastT = now;
          var gv:int = this.hzGroupVisible ? 1 : 0;
