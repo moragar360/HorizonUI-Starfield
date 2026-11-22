@@ -3067,6 +3067,7 @@
          this.hzLoadIni();
          this.hzBuildCompact();
          try { this.hz55ShedOld(); } catch(e55s:Error) { }   // 0.43.5: tear down the always-hidden classic card trees
+         try { this.hzEqShedNew(); } catch(eEqS:Error) { }   // 0.43.6 (round 3 C): and the always-hidden style-1 Equipment card
          addEventListener(Event.ENTER_FRAME,this.hzPbFrame);
          this.hzRefreshVisibility();
       }
@@ -8446,8 +8447,9 @@
       // scan with one native indexOf instead of an AS loop over ~200 entries. A hit is checked against hzTexts[i].tf on
       // every use and a stale or null slot falls back to the original scan. A miss (tf not in the index) returns null
       // without the scan: that answer relies on the same two invariants (append-only, no tf reassignment), which the
-      // source tests pin; code that reassigns an entry's tf or removes entries must drop hzTextTf first. The one removal
-      // is hz55ShedOld (0.43.5, once at build), which drops hzTextTf before and after it removes the classic entries.
+      // source tests pin; code that reassigns an entry's tf or removes entries must drop hzTextTf first. The two removals
+      // are hz55ShedOld (0.43.5) and hzEqShedNew (0.43.6 round 3 C), each once at build; both drop hzTextTf before and
+      // after they remove entries.
       // Inputs: tf. Outputs: the entry or null. Author: Moragar. Last modified: 2026-11-22.
       private function hzTxtObj(tf:TextField) : Object
       {
@@ -8544,6 +8546,7 @@
       // Two-row layout; rows collapse when irrelevant (no gaps). Top-left stays fixed.
       private function hzEqLayout() : void
       {
+         if(this.hzEqShedOn) { this.hzEqExpanded = this.hzArrange || this.hzFrameN < this.hzEqExpandUntil; return; }   // round 3 C: nothing left to lay out
          if(!this.hzEqNew || !this.hzEqWeap) { return; }
          var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
          var W:Number = HZ_EQ_W;
@@ -8598,6 +8601,40 @@
          this.hzEqDrawBody();
       }
 
+
+      // 0.43.6 (round 3 C, Equipment): the style-1 card (hzBuildEqNew) is never shown since v0.27 (hzEqApplyStyle hides it),
+      // yet it stayed in the card with its panel, weapon art (with a glow filter), cartridge art and four text fields, and
+      // every ammo update laid it out again (text fitting and measuring, a panel redraw) for nobody. Once the v0.19 card
+      // (hzEq19) is built, the hidden card is taken out of the HUD: the panel and both art sprites are emptied and
+      // dropped, the name and type fields are dropped with their registry entries, and the card leaves the display list.
+      // hzEqCount and hzEqReserve stay (detached) because they carry the clip / reserve text and the low-ammo tint that
+      // hzE19Sync copies to the visible card; hzEqNew stays as their (detached) holder so hzEqSync / hzEqTick still run.
+      // The weapon class (hzEqKind) still updates and still redraws the visible icon (hzEqDrawWeapIcon).
+      // Inputs: none. Outputs: hzEqShedOn. Author: Moragar. Last modified: 2026-11-22.
+      private var hzEqShedOn:Boolean = false;
+
+      private function hzEqShedNew() : void
+      {
+         if(this.hzEqShedOn || !this.hzEqNew || !this.hzEq19 || !this.hzEqCount || !this.hzEqReserve) { return; }
+         var drop:Array = [];
+         for each(var s:Sprite in [this.hzEqBody,this.hzEqWIcon,this.hzEqAmmoIcon])
+         {
+            if(s == null) { continue; }
+            s.graphics.clear();
+            s.filters = null;
+            if(s.parent != null) { s.parent.removeChild(s); }
+         }
+         if(this.hzEqWeap) { drop.push(this.hzEqWeap); }
+         if(this.hzEqType) { drop.push(this.hzEqType); }
+         this.hzTextTf = [];   // hzTxtObj rule: drop the index before entries are removed
+         if(drop.length > 0) { this.hz55Purge(this.hzTexts,"tf",drop); }
+         for each(var t:TextField in drop) { if(t.parent != null) { t.parent.removeChild(t); } }
+         this.hzTextTf = [];
+         if(this.hzEqNew.parent != null) { this.hzEqNew.parent.removeChild(this.hzEqNew); }
+         this.hzEqBody = this.hzEqWIcon = this.hzEqAmmoIcon = null;
+         this.hzEqWeap = this.hzEqType = null;
+         this.hzEqShedOn = true;
+      }
 
       private function hzEqApplyStyle() : void
       {
@@ -8654,15 +8691,18 @@
       // ~48x24 original line-art silhouettes, drawn in the text color with a soft glow
       private function hzEqDrawWeapIcon(kind:String) : void
       {
-         if(!this.hzEqWIcon) { return; }
+         if(!this.hzEqWIcon && !this.hzEqShedOn) { return; }
          this.hzEqKind = kind;
-         var g:* = this.hzEqWIcon.graphics;
-         var c:uint = this.hzTxtMain();
-         g.clear();
-         g.lineStyle(1.5,c,1,true);
-         this.hzWeapPath(g,kind);
-         g.lineStyle();
-         this.hzEqWIcon.filters = [new GlowFilter(this.hzDarkText() ? 0xFFFFFF : c,this.hzDarkText() ? 0.35 : 0.3,5,5,1.2,1)];
+         if(this.hzEqWIcon)
+         {
+            var g:* = this.hzEqWIcon.graphics;
+            var c:uint = this.hzTxtMain();
+            g.clear();
+            g.lineStyle(1.5,c,1,true);
+            this.hzWeapPath(g,kind);
+            g.lineStyle();
+            this.hzEqWIcon.filters = [new GlowFilter(this.hzDarkText() ? 0xFFFFFF : c,this.hzDarkText() ? 0.35 : 0.3,5,5,1.2,1)];
+         }
          this.hzE19DrawIcon();
       }
 

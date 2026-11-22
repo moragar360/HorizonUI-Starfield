@@ -183,7 +183,9 @@ for (const miss of ["hzTg19", "hzVitNew", "hzPlanPill"]) {
 	const sb = fnText(as, "hz55ShedOld").body;
 	expect(sb.indexOf("this.hzTextTf = [];") >= 0 && sb.indexOf("this.hzTextTf = [];") < sb.indexOf("hz55Purge(this.hzTexts"), "hz55ShedOld: drops the hzTxtObj index before it removes text entries");
 	const rm = as.split("\n").filter((l) => /hz55Purge\(this\.hzTexts/.test(l));
-	expect(rm.length === 1, "source: hz55ShedOld is the only place that removes hzTexts entries");
+	expect(rm.length === 2, "source: hz55ShedOld and hzEqShedNew (0.43.6 round 3 C) are the only places that remove hzTexts entries");
+	const eb = fnText(as, "hzEqShedNew").body;
+	expect(eb.indexOf("this.hzTextTf = [];") >= 0 && eb.indexOf("this.hzTextTf = [];") < eb.indexOf("hz55Purge(this.hzTexts") && eb.lastIndexOf("this.hzTextTf = [];") > eb.indexOf("hz55Purge(this.hzTexts"), "hzEqShedNew: drops the hzTxtObj index before and after it removes text entries");
 }
 
 // ---- hzTickFades: change-only writes, same results; a card toggled off and on comes back the same ----
