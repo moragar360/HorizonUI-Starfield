@@ -6256,6 +6256,23 @@
          this.hzSetDrag = -1;
          if(this.HorizonSettings_mc) { this.HorizonSettings_mc.visible = false; }
          if(this.hzSetCursor) { this.hzSetCursor.visible = false; }
+         this.hzSetFree();
+      }
+
+      // 0.43.6 (round 3 B): a closed F11 window keeps nothing drawn. hzSetDraw already empties hzSetBody and draws every
+      // tab, row, label, keycap and preview again on each open (hzToggleSettings, and ARRANGE CANCEL back into F11), so
+      // the panel's text fields and sprites no longer stay alive in the HUD for the rest of the session after the first
+      // F11 use. The window containers (HorizonSettings_mc, hzSetBody, hzSetCursor, hzSetKeyOv) stay, empty.
+      private function hzSetFree() : void
+      {
+         if(this.hzSetIsOpen) { return; }
+         if(this.hzSetBody != null)
+         {
+            while(this.hzSetBody.numChildren > 0) { this.hzSetBody.removeChildAt(0); }
+            this.hzSetBody.graphics.clear();
+         }
+         if(this.hzSetKeyOv != null) { this.hzSetKeyOv.graphics.clear(); }
+         this.hzSetHits = [];
       }
 
       public function hzTakeSaveIni() : String
@@ -22511,6 +22528,15 @@
          this.hzSplash.visible = true;
       }
 
+      // 0.43.6 (round 3 B): the intro splash is drawn once per start (hzSplashStart -> hzSplashMake empties and rebuilds it),
+      // so once it is done its streaks, stars, outline copies and text are given back instead of staying hidden all session
+      private function hzSplashFree() : void
+      {
+         if(this.hzSplash == null || this.hzSplashOn) { return; }
+         while(this.hzSplash.numChildren > 0) { this.hzSplash.removeChildAt(0); }
+         this.hzSplash.graphics.clear();
+      }
+
       private function hzSplashTick() : void
       {
          if(this.hzSplashDead) { return; }
@@ -22537,13 +22563,14 @@
          if(this.hzSplashCancel)
          {
             fade = 1 - (this.hz41Now() - this.hzSplashCancelT) / 150;
-            if(fade <= 0) { this.hzSplashOn = false; this.hzSplash.visible = false; this.hzSplashState = "done"; return; }
+            if(fade <= 0) { this.hzSplashOn = false; this.hzSplash.visible = false; this.hzSplashState = "done"; this.hzSplashFree(); return; }
          }
          else if(t >= 6.0)
          {
             this.hzSplashOn = false;
             this.hzSplash.visible = false;
             this.hzSplashState = "done";
+            this.hzSplashFree();
             return;
          }
          try { this.hzSplashRefreshName(); } catch(eNm:Error) { }
