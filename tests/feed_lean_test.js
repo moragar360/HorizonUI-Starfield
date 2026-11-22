@@ -1,8 +1,9 @@
-// 0.43.5 lean feeds: proves the HUD no longer watches PlayerInventoryData on the normal path. Credits and weight come
-// from PlayerData, ammo type and magazine size from FavoritesData and the rollover's item data, and the old inventory
-// walk is kept as a once-per-session fallback so no gun loses its ammo type. Also pins the edge-only debug strings,
-// the PR #12 width-cache key (applied pixel size) and the change-only power-icon glow.
-// The production AS bodies are bound into a small JS host (same harness pattern as slim_shed_test.js).
+// 0.43.5 lean feeds: the HUD does not watch PlayerInventoryData on the normal path, and no ammo data is lost.
+// - credits and weight are stored from PlayerData (hz26OnPlayer, run here);
+// - ammo type and magazine size come from DataInventoryProvider.EquippedWeapon, the rollover's item data (strong only for
+//   the equipped handle), and FavoritesData (ammo name only: the game sends no magazine size there);
+// - anything still unknown starts the old inventory walk once per session, so the real magazine size is always recovered.
+// Behavior cases run the production AS bodies in a small JS host; source pins strip // comments first.
 // Run: node tests/feed_lean_test.js
 // Author: Moragar. Last modified: 2026-11-22.
 "use strict";
@@ -11,7 +12,21 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.join(__dirname, "..");
-const as = fs.readFileSync(path.join(root, "actionscript", "horizon_block.as"), "utf8").replace(/\r\n/g, "\n");
+const raw = fs.readFileSync(path.join(root, "actionscript", "horizon_block.as"), "utf8").replace(/\r\n/g, "\n");
+// strip // comments (outside string literals) so commented-out code never counts as live
+function stripComments(src) {
+	return src.split("\n").map((line) => {
+		let q = null;
+		for (let i = 0; i < line.length; i++) {
+			const ch = line[i];
+			if (q) { if (ch === "\\") { i++; continue; } if (ch === q) q = null; continue; }
+			if (ch === '"' || ch === "'") { q = ch; continue; }
+			if (ch === "/" && line[i + 1] === "/") return line.slice(0, i);
+		}
+		return line;
+	}).join("\n");
+}
+const as = stripComments(raw);
 
 let failed = 0;
 function expect(cond, msg) {
@@ -49,107 +64,165 @@ function bind(host, name) {
 	host[name] = Function.apply(null, argNames(f.sig).concat(["with(this){\n" + toJs(f.body) + "\n}"])).bind(host);
 }
 
-// ---- source pins ----
-const subs = [...as.matchAll(/Subscribe\("PlayerInventoryData",this\.(\w+)\)/g)].map((m) => m[1]);
-expect(subs.length === 1 && subs[0] === "hzOnInventory", "PlayerInventoryData is subscribed at exactly one site (" + subs.join(",") + ")");
+// ---- source pins (comments stripped) ----
+const lits = [...as.matchAll(/"PlayerInventoryData"/g)].length;
 const invStart = fnText(as, "hzAmInvStart");
-expect(invStart && /Subscribe\("PlayerInventoryData",this\.hzOnInventory\)/.test(invStart.body), "that one site is the fallback hzAmInvStart");
-expect(/Subscribe\("FavoritesData",this\.hzAmOnFav\)/.test(as), "FavoritesData feeds the ammo type");
-const onPlayer = fnText(as, "hz26OnPlayer");
-expect(onPlayer && /d\.uCredits/.test(onPlayer.body) && /hz27CharData\(this\.hz26Lv,this\.hz26Sp,cr0\)/.test(onPlayer.body), "credits come from PlayerData.uCredits");
-expect(onPlayer && /d\.fEncumbrance/.test(onPlayer.body) && /d\.fMaxEncumbrance/.test(onPlayer.body), "weight comes from PlayerData");
+expect(lits === 1 && /Subscribe\(\s*"PlayerInventoryData"\s*,\s*this\.hzOnInventory\s*\)/.test(invStart.body),
+	"the only PlayerInventoryData literal in live code is the fallback subscribe in hzAmInvStart (" + lits + ")");
+expect(!/function hz26OnInv\(/.test(as), "the dead hz26OnInv handler is gone");
+expect(/Subscribe\(\s*"FavoritesData"\s*,\s*this\.hzAmOnFav\s*\)/.test(as), "FavoritesData is watched");
+expect(/Subscribe\(\s*"DataInventoryProvider"\s*,\s*this\.hzAmOnEq\s*\)/.test(as), "DataInventoryProvider (equipped weapon) is watched");
 const onWeap = fnText(as, "hzOnWeapon");
-expect(onWeap && /this\.hzAmResolve\(\)/.test(onWeap.body) && !/this\.hzResolveAmmoType\(\)/.test(onWeap.body), "WeaponData resolves through hzAmResolve");
-expect(onWeap && /if\(this\.hzDebug\) \{ this\.hzDbgWeap = this\.hzDump\(d\); \}/.test(onWeap.body), "weapon debug dump only with Debug");
+expect(/this\.hzAmResolve\(\)/.test(onWeap.body) && !/this\.hzResolveAmmoType\(\)/.test(onWeap.body), "WeaponData resolves through hzAmResolve");
+expect(/if\(this\.hzDebug\) \{ this\.hzDbgWeap = this\.hzDump\(d\); \}/.test(onWeap.body), "weapon debug dump only with Debug");
+expect(/if\(this\.hzDebug\) \{ this\.hzDbgWeap = "sIconLinkageName=" \+ icn/.test(onWeap.body) && !/^\s*this\.hzDbgWeap = "sIconLinkageName="/m.test(onWeap.body), "weapon icon debug prefix only with Debug");
 expect(/if\(this\.hzDebug\) \{ this\.hzDbgCross = this\.hzDump\(e\.data\); \}/.test(as), "crosshair debug dump only with Debug");
-const dumps = [...as.matchAll(/this\.hzDump\(/g)].length;
-expect(dumps === 4, "no new hzDump call sites (" + dumps + ")");
-const fmt = fnText(as, "hzApplyFmt19");
-expect(fmt && /o\.szAp = sz;/.test(fmt.body), "hzApplyFmt19 records the applied pixel size");
+expect([...as.matchAll(/this\.hzDump\(/g)].length === 4, "no new hzDump call sites");
+expect(/o\.szAp = sz;/.test(fnText(as, "hzApplyFmt19").body), "hzApplyFmt19 records the applied pixel size (live code)");
 const tw = fnText(as, "hzTW");
-expect(tw && /o\.twSz === o\.szAp/.test(tw.body) && /o\.twSz = o\.szAp;/.test(tw.body), "hzTW cache key includes the applied pixel size (PR #12)");
-const pow = fnText(as, "hz26PowIcon");
-expect(pow && /if\(pk != this\.hz26PowFk \|\| col != this\.hz26PowFc\)/.test(pow.body), "power icon glow assigned only on a look change");
+expect(/o\.twSz === o\.szAp/.test(tw.body) && /o\.twSz = o\.szAp;/.test(tw.body), "hzTW cache key includes the applied pixel size (PR #12)");
+expect(/if\(pk != this\.hz26PowFk \|\| col != this\.hz26PowFc\)/.test(fnText(as, "hz26PowIcon").body), "power icon glow assigned only on a look change");
+const freq = fnText(as, "hzOnPlayerFrequent").body.split("\n").filter((l) => /hzAmT0/.test(l));
+expect(freq.length === 1, "PlayerFrequentData carries the pending check");
+expect(/this\.hzAmHover\(this\.hzTgAct\)/.test(fnText(as, "hzOnTgAct").body), "every rollover activation update offers its item data to hzAmHover (live code)");
+const DBG = fnText(as, "hz26DbgText");
+expect(!/PlayerInventoryData/.test(DBG.body), "the debug key list no longer names PlayerInventoryData");
 
-// ---- behavior ----
+// ---- behavior host ----
 function host() {
 	const h = {
-		hzAmFav: null, hzAmFavSeen: false, hzAmKnown: {}, hzAmInvOn: false, hzAmT0: NaN, HZ_AM_WAIT: 3000,
+		hzAmFav: null, hzAmEq: null, hzAmEqH: NaN, hzAmKnown: {}, hzAmInvOn: false, hzAmT0: NaN,
+		HZ_AM_WAIT: 3000, HZ_AM_NOMAG: 4294967295,
 		hzWeapName: "", hzAmmoDrawn: true, hzMagCap: 0, hzInvItems: null, hzInvWeapName: "",
-		typ: null, subs: [], nowMs: 1000, resolvedOld: 0,
+		hzAmmoType: { _t: "--", writes: 0, get text() { return this._t; }, set text(v) { this._t = v; this.writes++; } },
+		subs: [], nowMs: 1000, eqSync: 0,
 		BSUIDataManager: null,
-		hzSetAmmoType(n) { this.typ = n; },
-		hzResolveAmmoType() { this.resolvedOld++; },
+		hzEqSync() { this.eqSync++; },
 		hzDrawMag() {},
 		hz26Now() { return this.nowMs; },
-		hzOnInventory() {},
 	};
 	h.BSUIDataManager = { Subscribe: (n, f) => { h.subs.push(n); } };
-	for (const n of ["hzAmOnFav", "hzAmHover", "hzAmItem", "hzAmLearn", "hzAmFind", "hzAmResolve", "hzAmInvStart", "hzFindNum"]) bind(h, n);
+	for (const n of ["hzAmCap", "hzAmOnEq", "hzAmOnFav", "hzAmHover", "hzAmItem", "hzAmLearn", "hzAmFind", "hzAmResolve", "hzAmInvStart",
+		"hzFindNum", "hzFindAmmo", "hzResolveAmmoType", "hzOnInventory", "hzSetAmmoType"]) bind(h, n);
+	h.pending = Function("with(this){\n" + toJs(freq[0]) + "\n}").bind(h);   // the production line from hzOnPlayerFrequent
+	h.weapon = (name, drawn) => { if (h.hzWeapName !== name) h.hzMagCap = 0; h.hzWeapName = name; h.hzAmmoDrawn = drawn !== false; h.hzAmResolve(); };
 	return h;
 }
-{
-	const h = host();
-	h.hzWeapName = "Grendel";
-	h.hzAmResolve();
-	expect(h.typ === "" && h.subs.length === 0 && !isNaN(h.hzAmT0), "unknown gun before favorites: shows -- and waits");
-	h.hzAmOnFav({ data: { aFavoriteItems: [{ sName: "Grendel", bIsEquippable: true, sAmmoName: "6.5mm CT", uAmmoCount: 120 }, { sName: "Med Pack", bIsEquippable: false }] } });
-	expect(h.typ === "6.5mm CT" && h.subs.length === 0 && isNaN(h.hzAmT0), "favorited gun: ammo type from FavoritesData, no inventory watch");
-}
-{
-	const h = host();
-	h.hzAmOnFav({ data: { aFavoriteItems: [] } });
-	h.hzWeapName = "Coachman";
-	h.hzAmHover({ CompareItemData: { sName: "Coachman", WeaponInfo: { sAmmoType: "12G Shotgun Shell", uAmmoCapacity: 2 } } });
-	h.hzAmResolve();
-	expect(h.typ === "12G Shotgun Shell" && h.hzMagCap === 2 && h.subs.length === 0, "hovered weapon data teaches ammo type and magazine size");
-}
-{
-	const h = host();
-	h.hzAmHover({ ItemData: { sName: "Old Earth Hunting Rifle", WeaponInfo: { sAmmoType: ".27-30", uAmmoCapacity: 4294967295 } } });
-	h.hzWeapName = "Old Earth Hunting Rifle";
-	h.hzAmResolve();
-	expect(h.typ === ".27-30" && h.hzMagCap === 0, "no-magazine sentinel (uint max) is not a magazine size");
-}
-{
-	const h = host();
-	h.hzAmOnFav({ data: { aFavoriteItems: [] } });
-	h.hzWeapName = "Kodama";
-	h.hzAmResolve();
-	expect(h.hzAmInvOn && h.subs.join() === "PlayerInventoryData", "gun nobody knows after favorites arrived: old inventory path starts");
-	h.hzAmResolve(); h.hzAmInvStart();
-	expect(h.subs.length === 1 && h.resolvedOld === 1, "fallback subscribes once and then owns the resolve");
-}
-{
-	const h = host();
-	h.hzWeapName = "Kodama";
-	h.hzAmResolve();
-	h.nowMs += 2999; h.hzAmResolve();
-	expect(h.subs.length === 0, "no favorites yet: still waiting inside 3 s");
-	h.nowMs += 1; h.hzAmResolve();
-	expect(h.subs.length === 1, "no favorites after 3 s: fallback starts");
-}
-{
-	const h = host();
-	h.hzWeapName = "Tanto"; h.hzAmmoDrawn = false; h.typ = "X";
-	h.hzAmResolve();
-	expect(h.typ === "" && h.subs.length === 0 && isNaN(h.hzAmT0), "melee / no ammo display: -- and no inventory watch");
-}
-{
-	const h = host();
-	h.hzAmOnFav({ data: { aFavoriteItems: [{ sName: "Breach (Calibrated)", bIsEquippable: true, sAmmoName: "12G Shotgun Shell" }] } });
-	h.hzWeapName = "Breach";
-	h.hzAmResolve();
-	expect(h.typ === "12G Shotgun Shell", "same name-prefix rule as the inventory walk");
-	expect(h.hzAmLearn("Breach (Calibrated)", "12G Shotgun Shell", 0) === false, "relearning the same entry is not a change");
-}
+const typ = (h) => h.hzAmmoType.text;
+const inv = (items) => ({ data: { aItems: items } });
+const fav = (items) => ({ data: { aFavoriteItems: items } });
 
-{
+{	// M-1: a favorited gun, never hovered, no equipped feed: the game's favorites entry has no uAmmoCapacity
 	const h = host();
-	h.hzAmOnFav({ data: { aFavoriteItems: [{ sName: "Grendel", bIsEquippable: true, sAmmoName: "6.5mm CT" }] } });
-	h.hzWeapName = "Grendel"; h.hzAmmoDrawn = false;
-	h.hzAmResolve();
-	expect(h.typ === "6.5mm CT" && h.subs.length === 0, "a known gun keeps its ammo type while bDisplayAmmo is off (holstered)");
+	h.hzAmOnFav(fav([{ sName: "Grendel", bIsEquippable: true, sAmmoName: "6.5mm CT", uAmmoCount: 120, uCount: 1 }]));
+	h.weapon("Grendel");
+	expect(typ(h) === "6.5MM CT" && h.subs.length === 0 && h.hzMagCap === 0, "favorites give the ammo type at once; the size is still unknown");
+	h.nowMs += 2999; h.pending();
+	expect(h.subs.length === 0, "inside 3 s the PlayerFrequentData check keeps waiting");
+	h.nowMs += 1; h.pending();
+	expect(h.subs.join() === "PlayerInventoryData" && h.hzAmInvOn, "after 3 s the PlayerFrequentData check starts the inventory read");
+	h.hzOnInventory(inv([{ sName: "Grendel", bIsEquipped: true, WeaponInfo: { sAmmoType: "6.5mm CT", uAmmoCapacity: 30 } }, { sName: "Spacesuit", bIsEquipped: true }]));
+	expect(h.hzMagCap === 30 && typ(h) === "6.5MM CT", "magazine size recovered without a hover (30 from the inventory read)");
+	h.pending(); h.weapon("Grendel");
+	expect(h.subs.length === 1, "the inventory read subscribes once for the session");
+}
+{	// equipped feed with the real size: nothing else needed
+	const h = host();
+	h.hzAmOnEq({ data: { EquippedWeapon: { sName: "Coachman", uFormID: 77, uHandleID: 5, WeaponInfo: { sAmmoType: "12G Shotgun Shell", uAmmoCapacity: 2 } } } });
+	h.weapon("Coachman");
+	expect(typ(h) === "12G SHOTGUN SHELL" && h.hzMagCap === 2 && h.subs.length === 0 && isNaN(h.hzAmT0), "the equipped feed gives type and size, no inventory watch");
+}
+{	// equipped feed spoke for this gun but has no size: fall back at once
+	const h = host();
+	h.hzAmOnEq({ data: { EquippedWeapon: { sName: "Kodama", uFormID: 9, uHandleID: 3, WeaponInfo: { sAmmoType: "7.77mm Caseless", uAmmoCapacity: 4294967295 } } } });
+	h.weapon("Kodama");
+	expect(h.subs.length === 1, "equipped feed without a usable size (no-magazine value filtered): inventory read starts at once");
+}
+{	// weapon swap: WeaponData first, the equipped feed a moment later -> no early fallback
+	const h = host();
+	h.hzAmOnEq({ data: { EquippedWeapon: { sName: "Coachman", uFormID: 77, uHandleID: 5, WeaponInfo: { sAmmoType: "12G Shotgun Shell", uAmmoCapacity: 2 } } } });
+	h.weapon("Coachman");
+	h.weapon("Breach");
+	expect(h.subs.length === 0 && !isNaN(h.hzAmT0), "a swap waits for the equipped feed instead of starting the fallback");
+	h.hzAmOnEq({ data: { EquippedWeapon: { sName: "Breach", uFormID: 78, uHandleID: 6, WeaponInfo: { sAmmoType: "12G Shotgun Shell", uAmmoCapacity: 4 } } } });
+	expect(h.hzMagCap === 4 && h.subs.length === 0 && isNaN(h.hzAmT0), "the equipped feed for the new gun settles it");
+}
+{	// S-3: no-magazine value on the favorites path
+	const h = host();
+	h.hzAmOnFav(fav([{ sName: "Tanto", bIsEquippable: true, sAmmoName: "X", uAmmoCapacity: 4294967295 }]));
+	expect(h.hzAmKnown["Tanto"].c === 0, "favorites path filters 4294967295 like the hover path");
+	expect(h.hzAmCap(4294967295) === 0 && h.hzAmCap(-1) === 0 && h.hzAmCap(undefined) === 0 && h.hzAmCap(30) === 30, "hzAmCap: invalid, missing and no-magazine are 0");
+}
+{	// hover learning before the wait ends, equipped handle known
+	const h = host();
+	h.hzAmOnEq({ data: { EquippedWeapon: { sName: "Old Earth Hunting Rifle", uFormID: 1, uHandleID: 42 } } });   // no WeaponInfo
+	h.hzAmOnFav(fav([{ sName: "Old Earth Hunting Rifle", bIsEquippable: true, sAmmoName: ".27-30" }]));
+	h.weapon("Old Earth Hunting Rifle");
+	expect(h.subs.length === 1, "(control) equipped feed for this gun without WeaponInfo: fallback");
+	const g = host();
+	g.hzAmOnFav(fav([{ sName: "Old Earth Hunting Rifle", bIsEquippable: true, sAmmoName: ".27-30" }]));
+	g.weapon("Old Earth Hunting Rifle");
+	g.hzAmHover({ CompareItemData: { sName: "Old Earth Hunting Rifle", uHandleID: 42, WeaponInfo: { sAmmoType: ".27-30", uAmmoCapacity: 4 } } });
+	expect(g.hzMagCap === 4 && g.subs.length === 0 && isNaN(g.hzAmT0), "hover data fills the missing size, so no fallback starts");
+}
+{	// S-2: a same-name copy hovered must not overwrite the equipped gun's known size or type
+	const h = host();
+	h.hzAmOnEq({ data: { EquippedWeapon: { sName: "Grendel", uFormID: 7, uHandleID: 100, WeaponInfo: { sAmmoType: "6.5mm CT", uAmmoCapacity: 45 } } } });
+	h.weapon("Grendel");
+	h.hzAmHover({ ItemData: { sName: "Grendel", uHandleID: 200, WeaponInfo: { sAmmoType: "6.5mm CT", uAmmoCapacity: 30 } } });
+	h.weapon("Grendel");
+	expect(h.hzMagCap === 45, "a hovered copy with another handle does not overwrite the equipped size (45 kept)");
+	h.hzAmHover({ ItemData: { sName: "Grendel", uHandleID: 100, WeaponInfo: { sAmmoType: "6.5mm CT", uAmmoCapacity: 60 } } });
+	h.weapon("Grendel");
+	expect(h.hzMagCap === 60, "the equipped handle itself is authoritative (60 after a magazine mod)");
+	const k = host();
+	k.hzAmLearn("Rattler", "Heavy Fuel", 30, false);
+	k.hzAmLearn("Rattler", "Other", 0, false);
+	k.hzAmLearn("Rattler", "Heavy Fuel", 99, false);
+	expect(k.hzAmKnown["Rattler"].c === 30 && k.hzAmKnown["Rattler"].t === "Heavy Fuel", "weak sources never overwrite a known size (with 0 or another value) or type");
+	k.hzAmLearn("Rattler", "Heavy Fuel", 0, true);
+	expect(k.hzAmKnown["Rattler"].c === 30, "even a strong 0 never replaces a known size");
+}
+{	// N-6: prefix ambiguity
+	const h = host();
+	h.hzAmLearn("X Extended", "A", 10, false);
+	h.hzAmLearn("X (Calibrated)", "B", 20, false);
+	expect(h.hzAmFind("X").t === "B", "\"X\" picks \"X (Calibrated)\" over \"X Extended\" regardless of insert order");
+	const g = host();
+	g.hzAmLearn("X (Calibrated)", "B", 20, false);
+	g.hzAmLearn("X Extended", "A", 10, false);
+	expect(g.hzAmFind("X").t === "B", "same pick with the other insert order");
+}
+{	// N-3 and melee
+	const h = host();
+	h.weapon("Kodama", false);
+	h.nowMs += 3000; h.pending();
+	expect(h.subs.length === 1, "an unknown holstered gun still gets the fallback after 3 s");
+	const m = host();
+	m.hzAmOnFav(fav([{ sName: "Tanto", bIsEquippable: true }]));
+	m.weapon("Tanto", false);
+	m.nowMs += 5000; m.pending();
+	expect(m.subs.length === 0 && typ(m) === "--", "a favorited melee weapon (no ammo name) is known: no fallback, type --");
+}
+{	// change-only ammo-type text
+	const h = host();
+	h.hzSetAmmoType("6.5mm CT"); h.hzSetAmmoType("6.5mm CT"); h.hzSetAmmoType("6.5mm CT");
+	expect(h.hzAmmoType.writes === 1, "ammo-type text written once for three identical updates");
+	h.hzSetAmmoType(""); expect(h.hzAmmoType.writes === 2 && typ(h) === "--", "a real change is written");
+}
+{	// credits and weight stored from PlayerData
+	const h = {
+		hz26Name: "", hz26Lv: -1, hz26Xp: NaN, hz26XpN: NaN, hz26XpSeen: true, hz26Sp: -1, hz26Enc: NaN, hz26EncMax: NaN, hz26Cr: NaN, hz26CharOk: false,
+		crArg: null, changed: 0,
+		int(v) { return Number(v) | 0; },
+		hz26Log() {}, hz26XpAdd() {}, hz27CharData(lv, sp, cr) { this.crArg = cr; }, hz26CharChanged() { this.changed++; },
+	};
+	bind(h, "hz26OnPlayer");
+	h.hz26OnPlayer({ data: { sName: "Player", uLevel: 12, fLevelXP: 5, fNextLevelXP: 10, uSkillPoints: 1, uCredits: 76320, fEncumbrance: 77, fMaxEncumbrance: 169 } });
+	expect(h.hz26Cr === 76320 && h.crArg === 76320, "credits stored from PlayerData.uCredits and passed on");
+	expect(h.hz26Enc === 77 && h.hz26EncMax === 169 && h.changed === 1, "weight stored from PlayerData");
+	h.hz26OnPlayer({ data: { uLevel: 12 } });
+	expect(h.hz26Cr === 76320 && isNaN(h.crArg), "an update without uCredits keeps the stored credits");
 }
 
 if (failed) { console.error(failed + " failed"); process.exit(1); }

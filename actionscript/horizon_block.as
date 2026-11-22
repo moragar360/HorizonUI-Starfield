@@ -1411,6 +1411,7 @@
          // inventory to every watcher. Credits and weight come from PlayerData (hz26OnPlayer); ammo type and magazine size from
          // FavoritesData and the rollover's item data (hzAmResolve). The inventory feed is the last-resort fallback (hzAmInvStart).
          try { BSUIDataManager.Subscribe("FavoritesData",this.hzAmOnFav); } catch(eAmF:Error) { }
+         try { BSUIDataManager.Subscribe("DataInventoryProvider",this.hzAmOnEq); } catch(eAmE:Error) { }   // EquippedWeapon only (the Data Menu's weapon line)
          // alpha option A-N2: the game's HUD opacity value from the very first dispatch (hzBuildEnv runs inside hzBuild, before HUDMenu's own
          // subscriptions, so it only records the value; the re-hide after the game's write is hz44OnOpacity, added later)
          if(HZ44_BY_ALPHA) { try { BSUIDataManager.Subscribe("HUDOpacityData",this.hz44OnOpacityEarly); } catch(e44o:Error) { } }
@@ -3344,27 +3345,59 @@
       }
 
       // ---- 0.43.5: ammo type and magazine size without watching the player inventory ----
-      // Sources, cheapest first: what was already learned for this weapon name, FavoritesData.aFavoriteItems (sAmmoName, the
-      // same feed the quick-select wheel reads), and the rollover's ItemData / CompareItemData (WeaponInfo.sAmmoType and
-      // uAmmoCapacity, sent when a weapon is hovered). Only a gun none of them knows starts the old inventory path, once per session.
+      // Sources, strongest first:
+      //  1. DataInventoryProvider.EquippedWeapon: the equipped instance itself (uHandleID, sName, WeaponInfo.sAmmoType and
+      //     WeaponInfo.uAmmoCapacity), the small feed the Data Menu's weapon line reads. Authoritative for the equipped gun.
+      //  2. HUDRolloverActivationData ItemData / CompareItemData (WeaponInfo, sent on a hover): authoritative only when its
+      //     uHandleID is the equipped handle; otherwise it may only fill what is still missing (never overwrites a known value).
+      //  3. FavoritesData.aFavoriteItems: sAmmoName only (the game sends no magazine size there). Fills missing values only.
+      // Magazine size has no favorites source, so a gun whose type or size is still unknown after the 3 s wait (or at once
+      // when the equipped feed has spoken for it without one) starts the old inventory walk, once per session (hzAmInvStart).
       private var hzAmFav:Array = null;
-      private var hzAmFavSeen:Boolean = false;
-      private var hzAmKnown:Object = {};      // item name -> {t: ammo type, c: magazine size or 0}
+      private var hzAmEqH:Number = NaN;       // equipped weapon uHandleID from DataInventoryProvider (NaN = unknown)
+      private var hzAmEq:Object = null;       // {n: name, t: ammo type, c: magazine size or 0} of the equipped instance
+      private var hzAmKnown:Object = {};      // item name -> {t: ammo type (null = unknown), c: magazine size or 0}
       private var hzAmInvOn:Boolean = false;  // fallback: PlayerInventoryData watched (sticky: the game keeps a watch once made)
-      private var hzAmT0:Number = NaN;        // when an unknown gun was first seen (hz26Now ms); NaN = nothing pending
+      private var hzAmT0:Number = NaN;        // when the wait for an unknown type / size started (hz26Now ms); NaN = nothing pending
       private static const HZ_AM_WAIT:Number = 3000;
+      private static const HZ_AM_NOMAG:Number = 4294967295;   // uint.MAX_VALUE: the game's "no magazine" value
+
+      // a magazine size from game data: 0 for missing, invalid or the no-magazine value
+      private function hzAmCap(v:*) : Number
+      {
+         var c:Number = Number(v);
+         return (isNaN(c) || c <= 0 || c >= HZ_AM_NOMAG) ? 0 : c;
+      }
+
+      private function hzAmOnEq(e:FromClientDataEvent) : *
+      {
+         var w:Object = null;
+         try { w = e.data ? e.data.EquippedWeapon : null; } catch(err:Error) { w = null; }
+         if(w == null || Number(w.uFormID) == 0 || Number(w.uHandleID) >= HZ_AM_NOMAG || w.sName == null)
+         {
+            this.hzAmEq = null; this.hzAmEqH = NaN;
+         }
+         else
+         {
+            var wi:Object = w.WeaponInfo;
+            var t:String = (wi != null && wi.sAmmoType != null) ? String(wi.sAmmoType) : "";
+            this.hzAmEq = {"n":String(w.sName),"t":t,"c":wi != null ? this.hzAmCap(wi.uAmmoCapacity) : 0};
+            this.hzAmEqH = Number(w.uHandleID);
+         }
+         if(!this.hzAmInvOn) { this.hzAmResolve(); this.hzDrawMag(); }
+      }
 
       private function hzAmOnFav(e:FromClientDataEvent) : *
       {
          try { this.hzAmFav = (e.data && e.data.aFavoriteItems is Array) ? e.data.aFavoriteItems as Array : null; } catch(err:Error) { this.hzAmFav = null; }
-         this.hzAmFavSeen = true;
          var i:int = 0;
          while(this.hzAmFav != null && i < this.hzAmFav.length)
          {
             var f:Object = this.hzAmFav[i];
-            if(f != null && f.bIsEquippable === true && f.sName != null && f.sAmmoName != null && String(f.sAmmoName).length > 0)
+            if(f != null && f.bIsEquippable === true && f.sName != null)
             {
-               this.hzAmLearn(String(f.sName),String(f.sAmmoName),this.hzFindNum(f,"uAmmoCapacity",0));
+               // an equippable favorite with no ammo name is a no-ammo item (melee): known, so it never starts the fallback
+               this.hzAmLearn(String(f.sName),f.sAmmoName != null ? String(f.sAmmoName) : "",this.hzAmCap(f.uAmmoCapacity),false);
             }
             i++;
          }
@@ -3377,38 +3410,58 @@
          if(a == null || this.hzAmInvOn) { return; }
          var got:Boolean = this.hzAmItem(a.ItemData);
          if(this.hzAmItem(a.CompareItemData)) { got = true; }
-         if(got && !isNaN(this.hzAmT0)) { this.hzAmResolve(); this.hzDrawMag(); }
+         if(got) { this.hzAmResolve(); this.hzDrawMag(); }
       }
 
       private function hzAmItem(it:Object) : Boolean
       {
          if(it == null || it.WeaponInfo == null || it.sName == null) { return false; }
          var w:Object = it.WeaponInfo;
-         if(w.sAmmoType == null || String(w.sAmmoType).length == 0) { return false; }
-         var cap:Number = Number(w.uAmmoCapacity);
-         return this.hzAmLearn(String(it.sName),String(w.sAmmoType),(isNaN(cap) || cap >= 4294967295) ? 0 : cap);
+         if(w.sAmmoType == null) { return false; }
+         var t:String = String(w.sAmmoType);
+         var c:Number = this.hzAmCap(w.uAmmoCapacity);
+         var mine:Boolean = !isNaN(this.hzAmEqH) && it.uHandleID != undefined && Number(it.uHandleID) == this.hzAmEqH;
+         if(mine)
+         {
+            var ch:Boolean = this.hzAmEq == null || this.hzAmEq.t != t || (c > 0 && this.hzAmEq.c != c);
+            if(this.hzAmEq == null) { this.hzAmEq = {"n":String(it.sName),"t":t,"c":c}; }
+            else { this.hzAmEq.t = t; if(c > 0) { this.hzAmEq.c = c; } }
+            return ch;
+         }
+         if(t.length == 0) { return false; }
+         return this.hzAmLearn(String(it.sName),t,c,false);
       }
 
-      // Outputs: true when the entry is new or changed
-      private function hzAmLearn(nm:String, t:String, cap:Number) : Boolean
+      // Outputs: true when something was added. A weak source (strong == false) only fills a missing type or a 0 size;
+      // a known non-empty type or non-zero size is never overwritten by it, and a 0 size never replaces a known one.
+      private function hzAmLearn(nm:String, t:String, cap:Number, strong:Boolean) : Boolean
       {
          if(nm.length == 0) { return false; }
-         var c:Number = isNaN(cap) || cap < 0 ? 0 : cap;
+         var c:Number = this.hzAmCap(cap);
          var k:Object = this.hzAmKnown[nm];
-         if(k != null && k.t == t && (c <= 0 || k.c == c)) { return false; }
-         if(k == null) { k = this.hzAmKnown[nm] = {"t":t,"c":0}; }
-         k.t = t;
-         if(c > 0) { k.c = c; }
-         return true;
+         if(k == null) { this.hzAmKnown[nm] = {"t":t,"c":c}; return true; }
+         var ch:Boolean = false;
+         if(t != null && t != k.t && (strong || k.t == null || String(k.t).length == 0)) { k.t = t; ch = true; }
+         if(c > 0 && c != k.c && (strong || !(k.c > 0))) { k.c = c; ch = true; }
+         return ch;
       }
 
-      // the same name rule the inventory path uses: the item name starts with WeaponData's weapon name
+      // exact name first; otherwise the inventory walk's rule (the item name starts with WeaponData's weapon name). Of several
+      // such names, a "<name> (...)" copy (the game's modded-name form) beats a longer different name ("X" picks "X (Calibrated)"
+      // over "X Extended"), then the shortest, then name order, so the pick never depends on for..in order
       private function hzAmFind(wn:String) : Object
       {
          var k:Object = this.hzAmKnown[wn];
          if(k != null) { return k; }
-         for(var nm:String in this.hzAmKnown) { if(nm.indexOf(wn) == 0) { return this.hzAmKnown[nm]; } }
-         return null;
+         var best:String = null;
+         var bestR:int = 2;
+         for(var nm:String in this.hzAmKnown)
+         {
+            if(nm.indexOf(wn) != 0) { continue; }
+            var r:int = nm.substr(wn.length,2) == " (" ? 0 : 1;
+            if(best == null || r < bestR || (r == bestR && (nm.length < best.length || (nm.length == best.length && nm < best)))) { best = nm; bestR = r; }
+         }
+         return best != null ? this.hzAmKnown[best] : null;
       }
 
       private function hzAmResolve() : void
@@ -3416,28 +3469,36 @@
          if(this.hzAmInvOn) { this.hzResolveAmmoType(); return; }   // the old path owns it once it runs
          var wn:String = this.hzWeapName;
          if(wn.length == 0) { this.hzAmT0 = NaN; return; }
+         var t:String = null;
+         var c:Number = 0;
+         var eqMine:Boolean = this.hzAmEq != null && String(this.hzAmEq.n).indexOf(wn) == 0;   // the equipped feed is about this gun
+         if(eqMine) { t = this.hzAmEq.t; c = Number(this.hzAmEq.c); }
          var k:Object = this.hzAmFind(wn);
          if(k != null)
          {
-            this.hzAmT0 = NaN;
-            if(k.c > 0) { this.hzMagCap = k.c; }
-            this.hzSetAmmoType(String(k.t));
-            return;
+            if(t == null || t.length == 0) { if(k.t != null) { t = String(k.t); } }
+            if(!(c > 0) && k.c > 0) { c = Number(k.c); }
          }
-         this.hzSetAmmoType("");
-         if(!this.hzAmmoDrawn) { this.hzAmT0 = NaN; return; }   // melee / no ammo shown: nothing to look up
+         if(c > 0) { this.hzMagCap = c; }
+         this.hzSetAmmoType(t != null ? t : "");
+         // still needed: an unknown type, or a gun that shows ammo with no type or no magazine size yet
+         var need:Boolean = t == null || (this.hzAmmoDrawn && (t.length == 0 || !(c > 0)));
+         if(!need) { this.hzAmT0 = NaN; return; }
          var now:Number = this.hz26Now();
          if(isNaN(this.hzAmT0)) { this.hzAmT0 = now; }
-         if(this.hzAmFavSeen || now - this.hzAmT0 >= HZ_AM_WAIT) { this.hzAmInvStart(); }
+         // at once when the equipped feed itself has spoken for this gun and still lacks it; otherwise after the wait, so a
+         // weapon swap (WeaponData first, the equipped feed a moment later) or favorites arriving first never start it early
+         if(eqMine || now - this.hzAmT0 >= HZ_AM_WAIT) { this.hzAmInvStart(); }
       }
 
-      // last resort, kept so no gun ever loses its ammo type: the pre-0.43.5 inventory walk
+      // last resort, kept so no gun ever loses its ammo type or magazine size: the pre-0.43.5 inventory walk
       private function hzAmInvStart() : void
       {
          if(this.hzAmInvOn) { return; }
          this.hzAmInvOn = true;
          this.hzAmT0 = NaN;
          try { BSUIDataManager.Subscribe("PlayerInventoryData",this.hzOnInventory); } catch(eAmI:Error) { }
+         try { this.hzResolveAmmoType(); this.hzDrawMag(); } catch(eAmR:Error) { }
       }
       private function hzFindAmmo(o:Object, depth:int) : String
       {
@@ -14837,7 +14898,7 @@
       private function hz26DbgText() : String
       {
          var out:String = "";
-         for each(var k:String in ["PersonalEffectsData","PersonalAlertsData","aPersonalAlerts[0]","Afflictions","QuestObjectives","PlayerData","PlayerInventoryData","XPData","XPData[0]","HUDStealthData","HudHitKillIndicatorData","KillDataA[0]","HUDDirectionalHitData","aDirectionalHitIndicators[0]","PlayerHealthBoostData","HUDStarbornPowersData","PowerIcon","Enemy","EnemyModifiers"])
+         for each(var k:String in ["PersonalEffectsData","PersonalAlertsData","aPersonalAlerts[0]","Afflictions","QuestObjectives","PlayerData","XPData","XPData[0]","HUDStealthData","HudHitKillIndicatorData","KillDataA[0]","HUDDirectionalHitData","aDirectionalHitIndicators[0]","PlayerHealthBoostData","HUDStarbornPowersData","PowerIcon","Enemy","EnemyModifiers"])
          {
             if(this.hz26Dbg[k] != undefined) { out += k + ": " + String(this.hz26Dbg[k]) + "\n"; }
          }
@@ -14875,27 +14936,6 @@
             if(d.uCredits != undefined && !isNaN(Number(d.uCredits))) { cr0 = Number(d.uCredits); this.hz26Cr = cr0; }
             this.hz26CharOk = this.hz26Lv >= 0 || this.hz26Name.length > 0;
             try { this.hz27CharData(this.hz26Lv,this.hz26Sp,cr0); } catch(err27:Error) { }
-            this.hz26CharChanged();
-         }
-         catch(err:Error) { }
-      }
-
-      private function hz26OnInv(e:FromClientDataEvent) : *
-      {
-         try
-         {
-            var d:Object = e.data;
-            if(!d) { return; }
-            if(this.hzDebug)
-            {
-               var lite:Object = {};
-               for(var k:String in d) { if(k != "aItems") { lite[k] = d[k]; } }
-               this.hz26Log("PlayerInventoryData",lite);
-            }
-            if(d.uCoin != undefined && !isNaN(Number(d.uCoin))) { this.hz26Cr = Number(d.uCoin); try { this.hz27CharData(-1,-1,this.hz26Cr); } catch(err27:Error) { } }
-            var en:Number = Number(d.fEncumbrance);
-            var em:Number = Number(d.fMaxEncumbrance);
-            if(!isNaN(en) && em > 0) { this.hz26Enc = en; this.hz26EncMax = em; }
             this.hz26CharChanged();
          }
          catch(err:Error) { }
