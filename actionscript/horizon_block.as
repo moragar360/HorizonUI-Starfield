@@ -2827,6 +2827,7 @@
             li++;
          }
          try { this.hz26LayoutAfter(this.hz34S("Character")); } catch(err26b:Error) { }
+         if(this.hzPerfOn && this.hzCensusS == null) { try { this.hzCensusTake(); } catch(eCen:Error) { } }   // round 3 G: PerfDiag only, once, at the first layout
          return true;
       }
 
@@ -12866,6 +12867,7 @@
          if(this.hzPerfOn && this.hzPerfN == null) { this.hzPerfResetN(); }
          if(!this.hzPerfOn) { this.hzPerfDumpSeen = false; }
          this.hzWlApply();
+         if(this.hzPerfOn && this.hzLayEver && this.hzCensusS == null) { try { this.hzCensusTake(); } catch(eCen:Error) { } }
          if(this.hzPerfMode != 2 && this.hzT19Sig == "FIXTURE") { this.hzT19Sig = ""; }
          this.hzT19SkipSet();
       }
@@ -13292,8 +13294,82 @@
          s += " | hc holds=" + this.hzPcHoldN + " olHit=" + this.hzPcOlHit + " olMiss=" + this.hzPcOlMiss;
          s += " | co qsSkip=" + this.hzPcQsSkip + " qsRun=" + this.hzPcQsRun + " txHit=" + this.hzPcTxHit + " txMiss=" + this.hzPcTxMiss;
          s += " | hw walk=" + this.hzPcHrWalk + " fb=" + this.hzPcHrFb + " wcSkip=" + this.hzPcWcSkip;
+         if(this.hzCensusS != null && this.hzCensusS.length > 0) { s += " | " + this.hzCensusS; }   // round 3 G
          if(this.hzWlOn) { s += " | wl n=" + this.hzWlCostN + " sumMs=" + Math.round(this.hzWlCostSum) + " maxMs=" + Math.round(this.hzWlCostMax) + " mode=" + this.hzWlModeName(); }
          return s;
+      }
+
+      // ===================== census (private diag, round 3 G) =====================
+      // Purpose: one count of what the HUD movie holds, so a review can check the round 3 teardown (B) and build-on-use
+      // (C) changes without a test session. Gate: [Debug] PerfDiag=1 (hzPerfOn); off by default, no default-INI key,
+      // nothing on F11. Off: never runs (two Boolean tests, only on the first successful layout and on a PerfDiag change).
+      // On: taken once, when the HUD is first laid out (or when PerfDiag turns on after that), never again in the
+      // session. The line is kept in hzCensusS, added to every "perf parts" dump line (hzPerfParts, PerfDump) and, with
+      // WatchLog=1 as well, queued once for HorizonUI.log. It reads the display tree only; it changes nothing.
+      // Line: "census t=<ms> f=<frame> hz=<objects>,<text fields>,<containers>,<hidden>,<hidden text fields>
+      //   roots=<present>/<listed> hud=<the same five for the whole HUD movie> reg=<registered texts>,<fades>,<sizes>
+      //   shed=<classic>,<style-1 equipment>,<character strip built>,<F11 body children>,<splash children>
+      //   | <root>=<objects>/<text fields> ..." (hidden = not visible itself or below a hidden parent).
+      // Inputs: none. Outputs: hzCensusS. Author: Moragar. Last modified: 2026-11-22.
+      private var hzCensusS:String = null;
+      private static const HZ_CENSUS_ROOTS:Array = ["Card","Vitals","Env","Affl","Quest","CompactQuest","Ammo","Compact","Compass","Target","Hazard","Char","Enemy","Stealth","Xp","Fx","Edge","Settings","Arr","Splash","Watch"];
+      // the persistent Horizon containers, in HZ_CENSUS_ROOTS order (direct references: private members cannot be read by name)
+      private function hzCensusRoots() : Array
+      {
+         return [this.HorizonCard_mc,this.HorizonVitals_mc,this.HorizonEnv_mc,this.HorizonAffl_mc,this.HorizonQuest_mc,this.HorizonCompactQuest_mc,this.HorizonAmmo_mc,this.HorizonCompact_mc,this.HorizonCompass_mc,this.HorizonTarget_mc,this.HorizonHazard_mc,this.HorizonChar_mc,this.HorizonEnemy_mc,this.HorizonStealth_mc,this.HorizonXp_mc,this.HorizonFx_mc,this.HorizonEdge_mc,this.HorizonSettings_mc,this.hzArr_mc,this.hzSplash,this.hz43Watch];
+      }
+      private static const HZ_CENSUS_MAX:int = 40000;
+
+      // adds d and everything below it to n: [objects, text fields, containers, hidden, hidden text fields]
+      private function hzCensusWalk(d:DisplayObject, hid:Boolean, n:Array, depth:int) : void
+      {
+         if(d == null || int(n[0]) >= HZ_CENSUS_MAX) { return; }
+         var h:Boolean = hid || !d.visible;
+         n[0] = int(n[0]) + 1;
+         var tf:Boolean = d is TextField;
+         if(tf) { n[1] = int(n[1]) + 1; }
+         if(h) { n[3] = int(n[3]) + 1; if(tf) { n[4] = int(n[4]) + 1; } }
+         if(!(d is DisplayObjectContainer) || depth >= 32) { return; }
+         n[2] = int(n[2]) + 1;
+         var c:DisplayObjectContainer = DisplayObjectContainer(d);
+         var i:int = 0;
+         while(i < c.numChildren) { this.hzCensusWalk(c.getChildAt(i),h,n,depth + 1); i++; }
+      }
+
+      private function hzCensusTake() : void
+      {
+         if(!this.hzPerfOn || this.hzCensusS != null) { return; }
+         this.hzCensusS = "";   // once per session, even if a read below throws
+         var hz:Array = [0,0,0,0,0];
+         var per:Array = [];
+         var got:int = 0;
+         var rs:Array = this.hzCensusRoots();
+         var ri:int = 0;
+         while(ri < rs.length)
+         {
+            var r:DisplayObject = rs[ri] as DisplayObject;
+            var nm:String = String(HZ_CENSUS_ROOTS[ri]);
+            ri++;
+            if(r == null) { continue; }
+            got++;
+            var one:Array = [0,0,0,0,0];
+            this.hzCensusWalk(r,false,one,0);
+            var k:int = 0;
+            while(k < 5) { hz[k] = int(hz[k]) + int(one[k]); k++; }
+            per.push(nm + "=" + one[0] + "/" + one[1]);
+         }
+         var hud:Array = [0,0,0,0,0];
+         this.hzCensusWalk(this,false,hud,0);
+         var setN:int = -1;
+         var spN:int = -1;
+         try { setN = this.hzSetBody != null ? this.hzSetBody.numChildren : -1; } catch(eS:Error) { }
+         try { spN = this.hzSplash != null ? this.hzSplash.numChildren : -1; } catch(eP:Error) { }
+         var s:String = "census t=" + Math.round(this.hzPerfNow()) + " f=" + this.hzFrameN + " hz=" + hz.join(",") + " roots=" + got + "/" + HZ_CENSUS_ROOTS.length;
+         s += " hud=" + hud.join(",") + " reg=" + (this.hzTexts != null ? this.hzTexts.length : -1) + "," + (this.hzFades != null ? this.hzFades.length : -1) + "," + (this.hzSz != null ? this.hzSz.length : -1);
+         s += " shed=" + (this.hz55Shed ? 1 : 0) + "," + (this.hzEqShedOn ? 1 : 0) + "," + (this.hz26ChS != null ? 1 : 0) + "," + setN + "," + spN;
+         s += " | " + per.join(" ");
+         this.hzCensusS = s;
+         if(this.hzWlOn) { this.hzWlPush(s); }
       }
 
       // ===================== watchlog (private diag) =====================

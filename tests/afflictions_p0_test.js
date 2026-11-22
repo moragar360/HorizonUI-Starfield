@@ -283,7 +283,10 @@ if (base) {
 		expect(x != null && y != null && scopeSame(x, y), "scope: afflictions commit " + c.slice(0, 7) + " leaves hzOnEnvEffects, hzAfSetEnv, hzHsSync, hz27Tick and every hzHs* line as its parent had them");
 	}
 	const added = as.length - base.length;
-	const addedText = (() => { const A = as.split("\n"), B = new Set(base.split("\n")); return A.filter((l) => !B.has(l)).join("\n"); })();
+	// 0.43.6 round 3 G: the private census (PerfDiag=1 only, once per session) walks the display tree on purpose; its
+	// walker's lines are the one exception to the tree-lookup rule below
+	const censusWalk = (() => { const i = as.indexOf("private function hzCensusWalk("); if (i < 0) return new Set(); const j = as.indexOf("\n      }\n", i); return new Set(as.slice(i, j).split("\n")); })();
+	const addedText = (() => { const A = as.split("\n"), B = new Set(base.split("\n")); return A.filter((l) => !B.has(l) && !censusWalk.has(l)).join("\n"); })();
 	expect(!/addEventListener|enterFrame|ENTER_FRAME|new Timer|setInterval|setTimeout|getChildByName|getChildAt/.test(addedText), "scope: no new listeners, timers, frame handlers or tree lookups in the added lines (" + added + " chars)");
 	expect(!/hzFrameN\s*%/.test(addedText), "scope: no new frame-count polling in the added lines");
 }
