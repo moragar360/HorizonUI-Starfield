@@ -15096,11 +15096,13 @@
       private static const HZ26_V_MISSMAX:int = 540;
       // 0.43.6 (round 3 D, review SF-1): the miss counts start again on every edge where a missing clip can appear: a
       // save load (a frame gap over 1 s), a hide-list rebuild, and a child-count change of the HUD, the BottomLeftGroup or
-      // the containers of the clips already found (the walk-only names are siblings there). The child counts are read
-      // only while a name is at the cap (hz26VCapN), so the steady path stays one int test and one clock compare.
+      // the containers of the clips already found (the walk-only names are siblings there). The signature is taken when
+      // counting starts (the first miss after a reset), so a part that arrives at any point of the 540-frame window is
+      // seen. The counts are compared every frame while a name is at the cap (hz26VCapN): 2 + hz26VPar.length
+      // numChildren reads, no allocation and no walk. With nothing capped: one int test and one clock compare.
       private var hz26VMissAny:Boolean = false;   // some name has a count
       private var hz26VCapN:int = 0;              // names at HZ26_V_MISSMAX
-      private var hz26VSig:Number = -1;           // child-count signature when the cap was reached (-1 = take it next frame)
+      private var hz26VSig:Number = -1;           // child-count signature taken when counting started (-1 = none yet)
       private var hz26VLastW:Number = 0;          // last frame's clock (the load gap)
       private var hz26VPar:Array = [];            // distinct containers of the clips found so far
       private var hz26VHid:Object = {};
@@ -16487,8 +16489,11 @@
          var d:DisplayObject = this.hz26VCache[name] as DisplayObject;
          if(d != null)
          {
-            if(d.parent != null) { return d; }
-            delete this.hz26VCache[name];   // SF-1: a kept clip the game (or a mod) took out of the HUD is searched again
+            // SF-1: a kept clip the game (or a mod) took out of the HUD is searched again: out of its parent, or (re-review
+            // S-1) still in a parent that itself left the HUD, e.g. a whole replaced group (stage == null, as hz36HideTick
+            // reads it). Only while the HUD itself is on the stage, so an off-stage HUD keeps its refs.
+            if(d.parent != null && (d.stage != null || this.stage == null)) { return d; }
+            delete this.hz26VCache[name];
             d = null;
          }
          try
@@ -16513,7 +16518,8 @@
                var mc:int = int(this.hz26VMiss[name]) + 1;
                this.hz26VMiss[name] = mc;
                this.hz26VMissAny = true;
-               if(mc == HZ26_V_MISSMAX) { this.hz26VCapN++; this.hz26VSig = -1; }
+               if(this.hz26VSig < 0) { this.hz26VSig = this.hz26VKids(); }   // re-review S-2: the snapshot when counting starts
+               if(mc == HZ26_V_MISSMAX) { this.hz26VCapN++; }
             }
          }
          catch(err:Error) { d = null; }
@@ -16522,7 +16528,18 @@
             this.hz26VCache[name] = d;
             if(int(this.hz26VMiss[name]) >= HZ26_V_MISSMAX) { this.hz26VCapN--; }
             delete this.hz26VMiss[name];
-            try { var vp:DisplayObjectContainer = d.parent; if(vp != null && this.hz26VPar.indexOf(vp) < 0) { this.hz26VPar.push(vp); } } catch(eVp:Error) { }
+            try
+            {
+               var vp:DisplayObjectContainer = d.parent;
+               if(vp != null && this.hz26VPar.indexOf(vp) < 0)
+               {
+                  this.hz26VPar.push(vp);
+                  // fold the new container into the snapshot the way hz26VKids appends it, so a newly known container is
+                  // not itself read as a count change
+                  if(this.hz26VSig >= 0) { this.hz26VSig = (this.hz26VSig * 1009 + vp.numChildren) % 2147483647; }
+               }
+            }
+            catch(eVp:Error) { }
          }
          return d;
       }
@@ -16557,7 +16574,7 @@
          if(gap) { this.hz26VMissReset(); return; }
          if(this.hz26VCapN <= 0) { return; }
          var k:Number = this.hz26VKids();
-         if(this.hz26VSig < 0) { this.hz26VSig = k; return; }
+         if(this.hz26VSig < 0) { this.hz26VSig = k; return; }   // fallback only: counting normally took it (S-2)
          if(k != this.hz26VSig) { this.hz26VMissReset(); }
       }
 

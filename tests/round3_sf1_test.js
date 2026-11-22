@@ -1,7 +1,8 @@
 // 0.43.6 round 3 review SF-1: the step D walk cutoff (HZ26_V_MISSMAX) starts again on every edge where a missing
 // clip can appear: a save load (a frame gap over 1 s), a hide-list rebuild, and a child-count change (HUD, BottomLeftGroup,
-// or a container of a clip already found). A kept clip that leaves the HUD is searched again. Edges only: the child
-// counts are read only while a name is at the cap.
+// or a container of a clip already found), with the count snapshot taken when counting starts (re-review S-2). A kept
+// clip that leaves the HUD, by itself or with its whole group (stage null, re-review S-1), is searched again. Edges only:
+// besides the snapshot, the child counts are read only while a name is at the cap.
 // Run: node tests/round3_sf1_test.js
 // Author: Moragar. Last modified: 2026-11-22.
 "use strict";
@@ -113,6 +114,65 @@ const G = "EquippedGrenadeIcon_mc", P = "PowerBar_mc";
 	expect(i > 0 && j > i && j - i < 300, "hzOnFrame: the hide-list rebuild block calls hz26VMissReset");
 	const tb = fnText(as, "hz26Tick").body;
 	expect(tb.indexOf("this.hz26VEdge(now);") > 0 && tb.indexOf("this.hz26VEdge(now);") < tb.indexOf("this.hz26Vanilla();"), "hz26Tick runs hz26VEdge before the vanilla lookups");
+}
+{
+	// re-review S-2: the snapshot is taken when counting starts, so a part that arrives late in the 540-frame window
+	// (after the last walk slot at frame 455, before the cap at 540) is still found once the name is capped
+	for (const a of [456, 460, 500, 539, 540]) {
+		const h = host();
+		run(h, 1, a - 1, [G], 0);
+		h.tree[G] = { name: G, parent: h.brg };
+		h.numChildren++;   // the part's group arrives at frame a
+		run(h, a, 1200, [G], 0);
+		expect(h.hz26VCache[G] === h.tree[G], "arrival with a child-count change at frame " + a + " of the window: found");
+	}
+	const h = host();
+	run(h, 1, 1, [G], 0);
+	expect(h.hz26VSig >= 0 && h.kidReads === 1, "the first miss takes the snapshot (one read)");
+	run(h, 2, 400, [G], 0);
+	expect(h.kidReads === 1, "and nothing else reads the counts before the cap");
+}
+{
+	// re-review S-2 companion: a container found mid-window is folded into the snapshot, not read as a change
+	const h = host();
+	run(h, 1, 3, [P], 0);
+	h.tree[G] = { name: G, parent: h.brg };
+	run(h, 4, 545, [G, P], 0);
+	expect(h.hz26VPar.indexOf(h.brg) >= 0 && h.hz26VCapN === 1, "the grenade group is learned after counting started; PowerBar capped at frame 540");
+	expect(run(h, 546, 1200, [G, P], 0) === 0 && h.hz26VCapN === 1, "the newly known container alone does not reset the counts (no walks after the cap)");
+}
+{
+	// re-review S-1: a whole group replaced: the kept clip still has its (old) parent, but that parent left the HUD
+	const h = host();
+	h.stage = {};
+	const oldGrp = { numChildren: 5, stage: h.stage };
+	const old = { name: G, parent: oldGrp, stage: h.stage };
+	h.tree[G] = old;
+	run(h, 1, 100, [G], 0);
+	expect(h.hz26VCache[G] === old && h.walks === 1, "found and kept while on the stage (no more walks)");
+	run(h, 101, 400, [G], 0);
+	expect(h.walks === 1, "a kept on-stage clip costs no walks");
+	oldGrp.stage = null; old.stage = null;   // the group is torn down with its children; old.parent stays oldGrp
+	const nu = { name: G, parent: { numChildren: 5, stage: h.stage }, stage: h.stage };
+	h.tree[G] = nu;
+	run(h, 401, 700, [G], 0);
+	expect(h.hz26VCache[G] === nu, "the old clip's group left the HUD (stage null, parent kept): the new clip is found");
+	const k = host();
+	k.stage = null;   // the HUD itself is off the stage: refs are kept, nothing is searched
+	const c = { name: G, parent: k.brg, stage: null };
+	k.hz26VCache[G] = c;
+	expect(k.hz26V(G) === c && k.walks === 0, "an off-stage HUD keeps its refs");
+}
+{
+	// review N-4: a capped name found later by the property path leaves the capped count (no needless count reads)
+	const h = host();
+	run(h, 1, 600, ["HitDamageBase_mc"], 0);
+	expect(h.hz26VCapN === 1, "a property-path name capped");
+	h.HitDamageBase_mc = { name: "HitDamageBase_mc", parent: h };
+	run(h, 601, 602, ["HitDamageBase_mc"], 0);
+	const r = h.kidReads;
+	run(h, 603, 700, ["HitDamageBase_mc"], 0);
+	expect(h.hz26VCapN === 0 && h.kidReads === r, "found by the property path: nothing capped, no count reads");
 }
 {
 	// still edge-only and within the step D rules
