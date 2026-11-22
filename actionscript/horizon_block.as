@@ -8625,7 +8625,7 @@
       // ===== 0.43.5 slim: tear down the always-hidden classic card trees =====
       // Purpose: since v0.24 the classic forms (hzPlanOld, hzVitOld, hzJetOld, hzCmpOld, hzQOld, hzCQOld, hzAfOld,
       // hzTgOld, and the never-attached hzEqOld) are never shown: hzFrameApply hides them with a constant and hzV19() is
-      // always true. They still held ~60 text fields and ~60 sprites in the display list and in the text, icon, tile,
+      // always true. They still held ~39 text fields and ~60 sprites in the display list and in the text, icon, tile,
       // body and bar registries, so every typography / color pass, every GC mark and every display-tree walk paid for
       // them, and the jetpack, vitals, compass and alert pulses kept redrawing them. hz55ShedOld runs once after hzBuild:
       // it takes their objects out of every registry (hzTextTf dropped first, the hzTxtObj rule), clears their vector
