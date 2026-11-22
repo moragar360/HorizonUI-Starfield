@@ -8621,7 +8621,7 @@
          {
             if(s == null) { continue; }
             s.graphics.clear();
-            s.filters = null;
+            s.filters = [];
             if(s.parent != null) { s.parent.removeChild(s); }
          }
          if(this.hzEqWeap) { drop.push(this.hzEqWeap); }

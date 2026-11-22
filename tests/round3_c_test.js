@@ -43,7 +43,7 @@ function eqHost(extra) {
 	const body = h.hzEqBody, wi = h.hzEqWIcon, ai = h.hzEqAmmoIcon, count = h.hzEqCount, res = h.hzEqReserve;
 	h.hzEqShedNew();
 	expect(h.hzEqShedOn && h.hzEqNew.parent === null && h.HorizonAmmo_mc.kids.length === 1 && h.HorizonAmmo_mc.kids[0] === h.hzEq19, "C1: the hidden style-1 card leaves the Equipment card; the v0.19 card stays");
-	expect(body.parent === null && wi.parent === null && ai.parent === null && body.graphics.n === 1 && wi.graphics.n === 1 && ai.graphics.n === 1 && wi.filters === null, "C1: panel, weapon art (glow filter too) and cartridge art are emptied and dropped");
+	expect(body.parent === null && wi.parent === null && ai.parent === null && body.graphics.n === 1 && wi.graphics.n === 1 && ai.graphics.n === 1 && Array.isArray(wi.filters) && wi.filters.length === 0, "C1: panel, weapon art (glow filter too) and cartridge art are emptied and dropped");
 	expect(h.hzEqBody === null && h.hzEqWIcon === null && h.hzEqAmmoIcon === null && h.hzEqWeap === null && h.hzEqType === null, "C1: references to the dropped parts are cleared");
 	expect(h.hzEqCount === count && h.hzEqReserve === res && h.hzEqNew.kids.length === 2, "C1: the clip and reserve fields stay as data holders");
 	expect(h.hzTexts.length === 3 && h.hzTexts.some((e) => e.tf === count && e.tint === 0xF2B45F) && h.hzTexts.some((e) => e.tf === res) && h.hzTexts.some((e) => e.tf.other), "C1: only the name and type registry entries are removed; the clip tint (read by hzE19Sync) stays");
@@ -148,6 +148,7 @@ function charHost(src) {
 	const re = /(?:private|public) function (\w+)\(/g; let m; const idx = [];
 	while ((m = re.exec(as))) idx.push([m.index, m[1]]);
 	idx.forEach((e, i) => { const seg = as.slice(e[0], i + 1 < idx.length ? idx[i + 1][0] : as.length); if (/hz26Chs\w|hz26ChS\b|hz26ChSG/.test(seg)) users.push(e[1]); });
-	expect(users.filter((u) => u !== "hzT19Content").sort().join(",") === "hz26BuildCharS,hz26CharBarsOnly,hz26CharSync", "C2: only the builder, the sync and the bar fade touch the strip (" + users.join(",") + ")");
+	expect(users.filter((u) => u !== "hzT19Content").sort().join(",") === "hz26BuildCharS,hz26CharBarsOnly,hz26CharSync,hzCensusTake", "C2: only the builder, the sync, the bar fade and the private census (a null check) touch the strip (" + users.join(",") + ")");
+	expect(/this\.hz26ChS != null \? 1 : 0/.test(fnText(as, "hzCensusTake").body), "C2: the census only checks whether the strip exists");
 }
 finish("round3 C");
