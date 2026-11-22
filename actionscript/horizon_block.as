@@ -15,7 +15,7 @@
       public var HorizonVitals_mc:Sprite = null;
       private var hzFont:String = null;
       private var hzTexts:Array = [];
-      private var hzTextTf:Array = [];   // hzTexts[i].tf for hzTxtObj (hzTexts is append-only)
+      private var hzTextTf:Array = [];   // hzTexts[i].tf for hzTxtObj (hzTexts is append-only after hz55ShedOld)
       private var hzJetPct:TextField = null;
       private var hzJetBar:Sprite = null;
       private var hzJetCharge:Number = 1;
@@ -805,6 +805,7 @@
 
       private function hzDrawVitBg(alert:Number) : void
       {
+         if(this.hz55Shed) { return; }   // 0.43.5: the outline sits on the classic vitals card, which is torn down
          var g:Sprite = this.hzVitBg;
          g.graphics.clear();
          if(alert > 0)
@@ -1010,6 +1011,7 @@
       // Sets a bar's target; hzTickBars glides it there. Health bar keeps a fading damage ghost.
       private function hzMeter(b:Sprite, w:Number, f:Number, col:uint) : void
       {
+         if(b == null || (this.hz55Shed && this.hz55Bars.indexOf(b) >= 0)) { return; }   // 0.43.5: torn-down classic bars stay out of hzBars
          var e:Object = null;
          for each(var o:Object in this.hzBars) { if(o.b == b) { e = o; break; } }
          f = Math.max(0,Math.min(1,f));
@@ -1170,7 +1172,7 @@
          var due:Boolean = this.hzCmpTickDue(deg);
          if(due)
          {
-            var i:int = 0;
+            var i:int = this.hz55Shed ? HZ_CARD.length : 0;   // 0.43.5: the classic strip labels are torn down
             var ppd:Number = (HZ_CMP_W - 40) / 180;
             while(i < HZ_CARD.length)
             {
@@ -1183,7 +1185,7 @@
                i++;
             }
             var hi:int = int(Math.round(deg)) % 360;
-            if(hi != this.hzCmpCtrI)   // the card point follows the whole degree, so the text changes only with it
+            if(hi != this.hzCmpCtrI && !this.hz55Shed)   // the card point follows the whole degree, so the text changes only with it
             {
                this.hzCmpCtrI = hi;
                var idx:int = int(Math.round(deg / 45)) % 8;
@@ -3054,6 +3056,7 @@
          try { this.hz40Init(); } catch(err40:Error) { }
          this.hzLoadIni();
          this.hzBuildCompact();
+         try { this.hz55ShedOld(); } catch(e55s:Error) { }   // 0.43.5: tear down the always-hidden classic card trees
          addEventListener(Event.ENTER_FRAME,this.hzPbFrame);
          this.hzRefreshVisibility();
       }
@@ -3065,9 +3068,15 @@
          this.hzFixFonts();
          this.hzJetCharge = c;
          var f:Number = c < 0 ? 1 : Math.max(0,Math.min(1,c));
-         this.hzJetPct.text = Math.round(f * 100) + "%";
-         if(this.hzCJet) { this.hzCJet.text = Math.round(f * 100) + "%"; this.hzMeter(this.hzCJetBar,80,f,f < 0.25 ? HZ_RED : HZ_ACCENT); }
-         this.hzMeter(this.hzJetBar,HZ_W - 32,f,f < 0.25 ? HZ_RED : HZ_ACCENT);
+         // 0.43.5: the percent string is made only when the whole percent changes; a text that differs (a strip built
+         // after the first update) is still written
+         var pct:int = Math.round(f * 100);
+         var pctNew:Boolean = pct != this.hz55JetPct;
+         if(pctNew) { this.hz55JetPct = pct; this.hz55JetS = pct + "%"; }
+         var ps:String = this.hz55JetS;
+         if(!this.hz55Shed) { this.hzJetPct.text = ps; }
+         if(this.hzCJet) { if(pctNew || this.hzCJet.text != ps) { this.hzCJet.text = ps; } this.hzMeter(this.hzCJetBar,80,f,f < 0.25 ? HZ_RED : HZ_ACCENT); }
+         if(!this.hz55Shed) { this.hzMeter(this.hzJetBar,HZ_W - 32,f,f < 0.25 ? HZ_RED : HZ_ACCENT); }
          this.hzDot(this.hzDotJet,f < 0.25 ? HZ_RED : (f < 0.5 ? HZ_YELLOW : HZ_GREEN));
          this.hzJetTrack(c);
          this.hzRefreshVisibility();
@@ -3082,13 +3091,19 @@
          var mhp:Number = Number(d.fMaxHealth);
          if(!isNaN(hp) && mhp > 0)
          {
-            this.hzVitHp.text = Math.round(hp) + " / " + Math.round(mhp);
+            // 0.43.5: one string per whole-number change, shared by every health text (was three per update)
+            var hpR:int = Math.round(hp);
+            var mhpR:int = Math.round(mhp);
+            var hpNew:Boolean = hpR != this.hz55HpR || mhpR != this.hz55MhpR;
+            if(hpNew) { this.hz55HpR = hpR; this.hz55MhpR = mhpR; this.hz55HpS = hpR + " / " + mhpR; }
+            var hs:String = this.hz55HpS;
+            if(!this.hz55Shed) { this.hzVitHp.text = hs; }
             var hf:Number = hp / mhp;
             this.hzVitHpF = hf;
             var hc:uint = hf <= 0.3 ? HZ_RED : (hf <= 0.6 ? HZ_YELLOW : HZ_GREEN);
-            this.hzMeter(this.hzVitHpBar,HZ_W - 32,hf,hc);
-            if(this.hzVnHp) { this.hzVnHp.text = Math.round(hp) + " / " + Math.round(mhp); this.hzMeter(this.hzVnHpBar,HZ_VN_W - 28,hf,this.hz26WarnCol(hf,HZ_GREEN)); this.hzTxtTint(this.hzVnHp,hf < 0.35 ? this.hz26WarnCol(hf,HZ_GREEN) : null); this.hz26VnWarn(0,hf); }
-            if(this.hzCHp) { this.hzCHp.text = Math.round(hp) + " / " + Math.round(mhp); this.hzMeter(this.hzCHpBar,80,hf,hc); }
+            if(!this.hz55Shed) { this.hzMeter(this.hzVitHpBar,HZ_W - 32,hf,hc); }
+            if(this.hzVnHp) { if(hpNew || this.hzVnHp.text != hs) { this.hzVnHp.text = hs; } this.hzMeter(this.hzVnHpBar,HZ_VN_W - 28,hf,this.hz26WarnCol(hf,HZ_GREEN)); this.hzTxtTint(this.hzVnHp,hf < 0.35 ? this.hz26WarnCol(hf,HZ_GREEN) : null); this.hz26VnWarn(0,hf); }
+            if(this.hzCHp) { if(hpNew || this.hzCHp.text != hs) { this.hzCHp.text = hs; } this.hzMeter(this.hzCHpBar,80,hf,hc); }
             this.hzDot(this.hzDotVit,hc);
             this.hzLowHealth = hf <= 0.3 && hp > 0;
             if(!this.hzLowHealth) { this.hzDrawVitBg(0); }
@@ -3097,15 +3112,22 @@
          var mo2:Number = Number(d.fMaxO2CO2);
          if(!isNaN(o2) && mo2 > 0)
          {
-            this.hzVitO2.text = Math.round(o2 / mo2 * 100) + "%";
-            if(this.hzVnO2) { this.hzVnO2.text = Math.round(o2 / mo2 * 100) + "%"; this.hzMeter(this.hzVnO2Bar,HZ_VN_W - 28,o2 / mo2,this.hz26WarnCol(o2 / mo2,HZ_O2_BLUE)); this.hzTxtTint(this.hzVnO2,o2 / mo2 < 0.35 ? this.hz26WarnCol(o2 / mo2,HZ_O2_BLUE) : null); this.hz26VnWarn(1,o2 / mo2); }
-            this.hzMeter(this.hzVitO2Bar,HZ_W - 32,o2 / mo2,o2 / mo2 < 0.25 ? 0xF2735F : HZ_ACCENT);
-            if(this.hzCO2) { this.hzCO2.text = Math.round(o2 / mo2 * 100) + "%"; this.hzMeter(this.hzCO2Bar,80,o2 / mo2,o2 / mo2 < 0.25 ? HZ_RED : HZ_ACCENT); }
+            var o2R:int = Math.round(o2 / mo2 * 100);
+            var o2New:Boolean = o2R != this.hz55O2R;
+            if(o2New) { this.hz55O2R = o2R; this.hz55O2S = o2R + "%"; }
+            var os:String = this.hz55O2S;
+            if(!this.hz55Shed) { this.hzVitO2.text = os; }
+            if(this.hzVnO2) { if(o2New || this.hzVnO2.text != os) { this.hzVnO2.text = os; } this.hzMeter(this.hzVnO2Bar,HZ_VN_W - 28,o2 / mo2,this.hz26WarnCol(o2 / mo2,HZ_O2_BLUE)); this.hzTxtTint(this.hzVnO2,o2 / mo2 < 0.35 ? this.hz26WarnCol(o2 / mo2,HZ_O2_BLUE) : null); this.hz26VnWarn(1,o2 / mo2); }
+            if(!this.hz55Shed) { this.hzMeter(this.hzVitO2Bar,HZ_W - 32,o2 / mo2,o2 / mo2 < 0.25 ? 0xF2735F : HZ_ACCENT); }
+            if(this.hzCO2) { if(o2New || this.hzCO2.text != os) { this.hzCO2.text = os; } this.hzMeter(this.hzCO2Bar,80,o2 / mo2,o2 / mo2 < 0.25 ? HZ_RED : HZ_ACCENT); }
          }
          if(!isNaN(o2) && mo2 > 0) { this.hzVitO2F = o2 / mo2; }
          if(this.hzRuleVitals == 5) { this.hzRefreshVisibility(); }
-         this.hzVitHp.visible = this.hzVitHpLbl.visible = this.hzVitHpBar.visible = this.hzShowHealth;
-         this.hzVitO2.visible = this.hzVitO2Lbl.visible = this.hzVitO2Bar.visible = this.hzShowOxygen;
+         if(!this.hz55Shed)
+         {
+            this.hzVitHp.visible = this.hzVitHpLbl.visible = this.hzVitHpBar.visible = this.hzShowHealth;
+            this.hzVitO2.visible = this.hzVitO2Lbl.visible = this.hzVitO2Bar.visible = this.hzShowOxygen;
+         }
       }
 
       private var hzPlugActive:Boolean = false;
@@ -3523,9 +3545,16 @@
             if(e.m == undefined) { e.m = mul; }
             e.m += (mul - e.m) * 0.08;
             var c:Sprite = e.c;
-            c.visible = (this.hzLaidOut || this.hzLayEver) && e.s > 0.02; // v0.26: cards stay up while a relayout is pending
-            c.alpha = e.s * e.m; // CardOpacity is applied to panel fills only (hzPanelA), text stays solid
-            c.y = e.base + (1 - e.s) * 10;
+            // 0.43.5: same values as before, written only when a write could change the card (a settled card costs no
+            // display writes). e.wa / e.wy are the last values written and e.ra / e.ry what the card read back right
+            // after: the same value written again stores the same thing, so the write is skipped. A write by other code
+            // (a force-hide alpha 0, a re-anchor) changes the read-back and is corrected on this frame, as before.
+            var vis:Boolean = (this.hzLaidOut || this.hzLayEver) && e.s > 0.02; // v0.26: cards stay up while a relayout is pending
+            var al:Number = e.s * e.m; // CardOpacity is applied to panel fills only (hzPanelA), text stays solid
+            var yy:Number = e.base + (1 - e.s) * 10;
+            if(c.visible != vis) { c.visible = vis; }
+            if(al !== e.wa || c.alpha !== e.ra) { c.alpha = al; e.wa = al; e.ra = c.alpha; }
+            if(yy !== e.wy || c.y !== e.ry) { c.y = yy; e.wy = yy; e.ry = c.y; }
          }
       }
 
@@ -3694,7 +3723,7 @@
          try { this.hzMsglogCaretTick(); } catch(eMlC:Error) { }
          try { this.hzAfLoadWatch(); } catch(errAfW:Error) { }
          if(this.hzPerfOn) { this.hzPsMark(21); }
-         if(this.hzPlanAlertOn)
+         if(this.hzPlanAlertOn && !this.hz55Shed)   // 0.43.5: hzPlanAlert is on the torn-down classic planet card
          {
             this.hzPlanPulse += 0.07;
             var pa:Number = 0.5 + 0.5 * Math.sin(this.hzPlanPulse);
@@ -8191,8 +8220,9 @@
       // scan with one native indexOf instead of an AS loop over ~200 entries. A hit is checked against hzTexts[i].tf on
       // every use and a stale or null slot falls back to the original scan. A miss (tf not in the index) returns null
       // without the scan: that answer relies on the same two invariants (append-only, no tf reassignment), which the
-      // source tests pin; code that reassigns an entry's tf or removes entries must drop hzTextTf first.
-      // Inputs: tf. Outputs: the entry or null. Author: Moragar. Last modified: 2026-11-10.
+      // source tests pin; code that reassigns an entry's tf or removes entries must drop hzTextTf first. The one removal
+      // is hz55ShedOld (0.43.5, once at build), which drops hzTextTf before and after it removes the classic entries.
+      // Inputs: tf. Outputs: the entry or null. Author: Moragar. Last modified: 2026-11-22.
       private function hzTxtObj(tf:TextField) : Object
       {
          var n:int = this.hzTexts.length;
@@ -8591,6 +8621,99 @@
          this.hzV19Redraw();
          this.hzLaidOut = false;
       }
+
+      // ===== 0.43.5 slim: tear down the always-hidden classic card trees =====
+      // Purpose: since v0.24 the classic forms (hzPlanOld, hzVitOld, hzJetOld, hzCmpOld, hzQOld, hzCQOld, hzAfOld,
+      // hzTgOld, and the never-attached hzEqOld) are never shown: hzFrameApply hides them with a constant and hzV19() is
+      // always true. They still held ~60 text fields and ~60 sprites in the display list and in the text, icon, tile,
+      // body and bar registries, so every typography / color pass, every GC mark and every display-tree walk paid for
+      // them, and the jetpack, vitals, compass and alert pulses kept redrawing them. hz55ShedOld runs once after hzBuild:
+      // it takes their objects out of every registry (hzTextTf dropped first, the hzTxtObj rule), clears their vector
+      // graphics, unlinks every node of the subtree from its parent and nulls the wrapper and dot fields. Field
+      // references that other code reads (hzQActive.text, hzAmmoCount.text, hzTgName and the like) are kept, so those
+      // reads and writes still work on the detached fields; writes whose only effect was on the classic look are skipped
+      // with hz55Shed. Visible cards, positions and sizes are unchanged (every shed card has a declared hzSz size).
+      // Inputs: none. Outputs: the counts in hz55Stat. Author: Moragar. Last modified: 2026-11-22.
+      private var hz55Shed:Boolean = false;
+      private var hz55Bars:Array = [];       // classic meter sprites that hzMeter ignores after the shed
+      private var hz55Stat:Object = null;    // {"t":texts, "s":sprites, "i":icons, "b":bars} removed (diagnostics)
+      private var hz55JetPct:int = -1;
+      private var hz55JetS:String = "";
+      private var hz55HpR:int = -1;
+      private var hz55MhpR:int = -1;
+      private var hz55HpS:String = "";
+      private var hz55O2R:int = -1;
+      private var hz55O2S:String = "";
+
+      private function hz55ShedOld() : void
+      {
+         if(this.hz55Shed) { return; }
+         // only when every v0.19 form was built: a failed builder leaves its classic form as the fallback (hzTgTick)
+         if(!this.hzPlanPill || !this.hzVitNew || !this.hzJetNew || !this.hzCmpNew || !this.hzQNew || !this.hzCQNew || !this.hzAfNew || !this.hzTg19) { return; }
+         var roots:Array = [this.hzPlanOld,this.hzVitOld,this.hzJetOld,this.hzCmpOld,this.hzQOld,this.hzCQOld,this.hzAfOld,this.hzTgOld,this.hzEqOld];
+         var live:Array = [];
+         for each(var r:Sprite in roots) { if(r != null) { live.push(r); } }
+         if(live.length == 0) { return; }
+         var st:Object = {"t":0,"s":0,"i":0,"b":0};
+         this.hzTextTf = [];   // hzTxtObj rule: drop the index before entries are removed
+         st.t = this.hz55Purge(this.hzTexts,"tf",live);
+         st.i = this.hz55Purge(this.hzIcons,"s",live);
+         this.hz55Purge(this.hzTiles,"s",live);
+         this.hz55Purge(this.hzCardBodies,"s",live);
+         var bi:int = 0;
+         while(bi < this.hzBars.length) { if(this.hz55Under(this.hzBars[bi].b,live)) { this.hz55Bars.push(this.hzBars[bi].b); } bi++; }
+         st.b = this.hz55Purge(this.hzBars,"b",live);
+         for each(var r2:Sprite in live)
+         {
+            if(r2.parent != null) { r2.parent.removeChild(r2); }
+            st.s += this.hz55Unlink(r2);
+         }
+         this.hzPlanOld = this.hzVitOld = this.hzJetOld = this.hzCmpOld = this.hzQOld = this.hzCQOld = this.hzAfOld = this.hzTgOld = this.hzEqOld = null;
+         this.hzDotJet = this.hzDotVit = this.hzDotPlan = this.hzDotAff = this.hzDotAmmo = null;   // hzDot returns on null
+         this.hzMagSp = null;   // classic magazine bar (hzDrawMag returns on null)
+         this.hzTextTf = [];
+         this.hz55Shed = true;
+         this.hz55Stat = st;
+      }
+
+      // true when d is one of roots or sits below one (walks up the parent chain; no child lookups)
+      private function hz55Under(d:DisplayObject, roots:Array) : Boolean
+      {
+         var n:int = 0;
+         while(d != null && n < 64)
+         {
+            if(roots.indexOf(d) >= 0) { return true; }
+            d = d.parent;
+            n++;
+         }
+         return false;
+      }
+
+      // removes the entries whose key object sits below one of roots; returns how many
+      private function hz55Purge(a:Array, key:String, roots:Array) : int
+      {
+         var n:int = 0;
+         var i:int = a.length - 1;
+         while(i >= 0) { var o:Object = a[i]; if(o != null && this.hz55Under(o[key] as DisplayObject,roots)) { a.splice(i,1); n++; } i--; }
+         return n;
+      }
+
+      // unlinks every node below r from its parent, deepest first, and clears each sprite's vector graphics, so a kept
+      // field does not hold the whole tree and no mesh stays cached; returns the sprites cleared (r included)
+      private function hz55Unlink(r:DisplayObjectContainer) : int
+      {
+         var n:int = 0;
+         if(r is Sprite) { try { Sprite(r).graphics.clear(); } catch(eG:Error) { } n++; }
+         while(r.numChildren > 0)
+         {
+            var ch:DisplayObject = r.removeChildAt(r.numChildren - 1);
+            if(ch is DisplayObjectContainer) { n += this.hz55Unlink(DisplayObjectContainer(ch)); }
+         }
+         return n;
+      }
+
+      // Later step (not in 0.43.5): restyling the vanilla rollover in place instead of drawing HorizonTarget_mc would
+      // go in hzT19Tick and hz38Vanilla (where the vanilla rollover is hidden today).
 
       private function hzV19Redraw() : void
       {
