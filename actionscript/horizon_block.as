@@ -278,6 +278,10 @@
       private var hzObjRing:int = 0;             // ObjectRing: 0 off, 1 container lists only, 2 vanilla
       private var hzXh:Sprite = null;
       private var hzXhSig:String = "";
+      private var hzXhLs:int = -1;        // 0.43.6: the last drawn style / device-pixel unit / accent (hzXhTick)
+      private var hzXhLp:Number = NaN;
+      private var hzXhLa:uint = 0;
+      private static const HZ_PT0:Point = new Point(0,0);   // 0.43.6: read-only origin for localToGlobal
       private var hzXhHid:Array = [];
       private var hzIniLoader:URLLoader = null;
       public var hzFadeCards:Boolean = true;
@@ -11808,6 +11812,11 @@
       private var hzT19BarW:Number = 0;
       private var hzT19BarOn:Boolean = false;
       private var hzT19BarSig:String = "";
+      private var hzT19BkOn:Boolean = false;   // 0.43.6: the last painted foe-bar values (hzT19PaintFoeBars)
+      private var hzT19BkW:Number = NaN;
+      private var hzT19BkY:Number = NaN;
+      private var hzT19BkF:int = -1;
+      private var hzT19BkG:int = -1;
       private var hzT19HoldSig:String = "";
 
       private function hzBuildTg19() : void
@@ -11902,9 +11911,12 @@
       }
 
       // undo hzT19HideReticle only (the activation widget stays hidden)
+      private var hzT19RetDs:Array = null;   // 0.43.6: hzT19ShowReticle's reused list
       private function hzT19ShowReticle(rw:Object) : void
       {
-         var ds:Array = [];
+         if(this.hzT19RetDs == null) { this.hzT19RetDs = []; }
+         var ds:Array = this.hzT19RetDs;   // 0.43.6 (round 3 E): emptied per call instead of a new array every frame
+         ds.length = 0;
          try { if(rw.Reticle_mc) { ds.push(rw.Reticle_mc); } } catch(e1:Error) { }
          try
          {
@@ -11930,6 +11942,7 @@
             }
             k--;
          }
+         ds.length = 0;   // keep no clip references between calls
       }
 
       // ---- CROSSHAIR STYLE (interact reticle only) ----
@@ -11992,13 +12005,13 @@
          }
          // device pixel in stage units (ScreenHeight; 1080 assumed when 0) -> the glyph is drawn in device pixels
          var pu:Number = this.hzScrH >= 360 ? 1080 / this.hzScrH : 1;
-         var gp:Point = (rb as DisplayObject).localToGlobal(new Point(0,0));
+         var gp:Point = (rb as DisplayObject).localToGlobal(HZ_PT0);   // 0.43.6: shared origin (localToGlobal does not change its argument)
          var lp:Point = globalToLocal(gp);
          this.hzXh.scaleX = this.hzXh.scaleY = pu;
          this.hzXh.x = Math.round(lp.x / pu) * pu;
          this.hzXh.y = Math.round(lp.y / pu) * pu;
-         var sig:String = this.hzXhStyle + "|" + pu + "|" + HZ_ACCENT;
-         if(sig != this.hzXhSig) { this.hzXhSig = sig; this.hzXhDraw(pu); }
+         // 0.43.6 (round 3 E): field compare; hzXhSig "" (a CrosshairStyle change) still forces the redraw
+         if(this.hzXhSig == "" || this.hzXhStyle != this.hzXhLs || !this.hzSameN(pu,this.hzXhLp) || HZ_ACCENT !== this.hzXhLa) { this.hzXhSig = "1"; this.hzXhLs = this.hzXhStyle; this.hzXhLp = pu; this.hzXhLa = HZ_ACCENT; this.hzXhDraw(pu); }
          this.hzXh.visible = true;
       }
 
@@ -13818,9 +13831,11 @@
          if(!this.hzT19BarG) { return; }
          var f:Number = Math.max(0,Math.min(1,this.hzTgHpV));
          var gh:Number = Math.max(f,this.hzTgGhost);
-         var sig:String = (this.hzT19BarOn ? "1" : "0") + "|" + String(this.hzT19BarW) + "|" + String(this.hzT19BarY) + "|" + String(int(f * 200)) + "|" + String(int(gh * 200));
-         if(sig == this.hzT19BarSig) { return; }
-         this.hzT19BarSig = sig;
+         // 0.43.6 (round 3 E): field compare instead of a signature string; hzT19BarSig "" still forces a repaint
+         var fi:int = int(f * 200);
+         var gi:int = int(gh * 200);
+         if(this.hzT19BarSig != "" && this.hzT19BarOn === this.hzT19BkOn && this.hzSameN(this.hzT19BarW,this.hzT19BkW) && this.hzSameN(this.hzT19BarY,this.hzT19BkY) && fi == this.hzT19BkF && gi == this.hzT19BkG) { return; }
+         this.hzT19BarSig = "1"; this.hzT19BkOn = this.hzT19BarOn; this.hzT19BkW = this.hzT19BarW; this.hzT19BkY = this.hzT19BarY; this.hzT19BkF = fi; this.hzT19BkG = gi;
          var g:* = this.hzT19BarG.graphics;
          g.clear();
          if(!this.hzT19BarOn) { this.hzT19BarG.visible = false; return; }
@@ -13834,11 +13849,14 @@
          if(f > 0) { g.beginFill(rc,1); g.drawRoundRect(20,by,Math.max(7,hw * f),7,7,7); g.endFill(); }
          if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.barPaint++; }
       }
+      private var hzT19HoldDr:Array = null;   // 0.43.6: hzT19PaintHold's reused draw list
       private function hzT19PaintHold(aw:Object) : void
       {
          if(!this.hzT19HoldG) { return; }
          var sig:String = "";
-         var draws:Array = [];
+         if(this.hzT19HoldDr == null) { this.hzT19HoldDr = []; }
+         var draws:Array = this.hzT19HoldDr;   // 0.43.6 (round 3 E): one array for the session, emptied per call
+         draws.length = 0;
          for each(var slot:Object in this.hzT19Btn)
          {
             if(!slot || slot.holdOn !== true) { continue; }
@@ -13847,7 +13865,7 @@
             sig += int(slot.holdT) + ":" + String(int(frac * 100)) + ":" + String(slot.holdX) + ",";
             draws.push(slot,frac);
          }
-         if(sig == this.hzT19HoldSig) { return; }
+         if(sig == this.hzT19HoldSig) { draws.length = 0; return; }
          this.hzT19HoldSig = sig;
          var g:* = this.hzT19HoldG.graphics;
          g.clear();
@@ -13864,6 +13882,7 @@
             di += 2;
          }
          this.hzT19HoldG.visible = any;
+         draws.length = 0;   // keep no clip references between calls
          if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.holdPaint++; }
       }
       private function hzT19Fixture() : void
@@ -14824,6 +14843,16 @@
       private var hz26ChW:Number = 360;
       private var hz26ChH:Number = 150;
       private var hz26ChSig:String = "";
+      private var hz26ChC:Boolean = false;   // 0.43.6: the last synced look (see hz26Tick)
+      private var hz26ChA:Boolean = false;
+      private var hz26ChCol:int = -1;
+      private var hz26ChAcc:uint = 0;
+      private var hz26ChTs:Number = NaN;
+      // 0.43.6: number equality where NaN equals NaN (what the old String() signatures did)
+      private function hzSameN(a:Number, b:Number) : Boolean
+      {
+         return a == b || (a != a && b != b);
+      }
       // XP toast + bar ghost
       private var hz26XpAmt:Number = 0;
       private var hz26XpLastT:Number = 0;
@@ -16332,8 +16361,14 @@
             if(now > this.hz26XpUntil) { this.hz26XpGA = Math.max(0,this.hz26XpGA - 0.04); }
             try { this.hz26CharBarsOnly(); } catch(e8:Error) { }
          }
-         var sig:String = this.hz34C("Character") + "|" + this.hzArrange + "|" + this.hzCardColor + "|" + HZ_ACCENT + "|" + this.hzTextScale;
-         if(sig != this.hz26ChSig) { this.hz26ChSig = sig; try { this.hz26CharSync(); this.hz26XpSync(); } catch(e9:Error) { } }
+         // 0.43.6 (round 3 E): the same five values compared as fields, no string built per frame. hz26ChSig "" (set by
+         // every old reset site) still forces the sync; any other value means "the fields hold the last synced look".
+         var chC:Boolean = Boolean(this.hz34C("Character"));
+         if(this.hz26ChSig == "" || chC !== this.hz26ChC || this.hzArrange !== this.hz26ChA || this.hzCardColor !== this.hz26ChCol || HZ_ACCENT !== this.hz26ChAcc || !this.hzSameN(this.hzTextScale,this.hz26ChTs))
+         {
+            this.hz26ChSig = "1"; this.hz26ChC = chC; this.hz26ChA = this.hzArrange; this.hz26ChCol = this.hzCardColor; this.hz26ChAcc = HZ_ACCENT; this.hz26ChTs = this.hzTextScale;
+            try { this.hz26CharSync(); this.hz26XpSync(); } catch(e9:Error) { }
+         }
          if(this.hzPerfOn) { this.hzPsMark(31); }
          if(!this.hzArrange) { try { this.hz26Vis(base); } catch(e10:Error) { } }
          if(this.hzPerfOn) { this.hzPsMark(32); }

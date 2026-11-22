@@ -61,6 +61,7 @@ function makeHost() {
 		hzDarkText() { return false; }, hzIconCol(c) { return c; },
 	};
 	for (const n of ["hzT19PaintFoeBars", "hzT19ResetPay", "hzT19FadeOut"]) { const f = fnText(as, n); h[n] = mkFn(h, [], f.body); }
+	h.hzSameN = mkFn(h, ["a", "b"], fnText(as, "hzSameN").body);   // 0.43.6: the foe bars compare fields (round 3 E)
 	const head = mkFn(h, ["kind", "a", "aw", "sel", "start"], HEAD);
 	h.hzT19Content = function (kind, a, aw, sel, start) {
 		h.contents++;
