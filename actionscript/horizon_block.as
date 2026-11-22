@@ -3798,9 +3798,13 @@
          var wlOld:Array = null;   // watchlog only
          var wlWhy:int = 0;
          this.hzFrameN++;
+         // 0.43.6 (round 3 E2): one wall-clock read (the same Date clock) for the three per-frame readers below, which
+         // each made their own Date every frame; NaN (a throw) lets each read its own as before
+         var wall:Number = NaN;
+         try { wall = this.hz26Now(); } catch(eWall:Error) { wall = NaN; }
          try { this.hz42VehTick(); } catch(e42v:Error) { }   // 0.42.0.7: own try, first, so a throw later in this frame cannot skip the exit pill
          if(this.hzPerfOn) { this.hzPsMark(0); }
-         try { this.hz40Frame(); } catch(e40f:Error) { }
+         try { this.hz40Frame(wall); } catch(e40f:Error) { }
          if(this.hzPerfOn) { this.hzPsMark(1); }
          try { this.hz42QmFont(); } catch(e42q:Error) { }   // v0.40.2: in-world quest-marker labels in the Horizon face
          if(this.hzPerfOn) { this.hzPsMark(2); }
@@ -3929,10 +3933,10 @@
          try { this.hzTickVitals(); } catch(e36v:Error) { }
          if(this.hzPerfOn) { this.hzPsMark(19); }
          var p26:Number = this.hzPerfOn ? this.hzPsT : 0;
-         try { this.hz26Tick(); } catch(err26:Error) { }
+         try { this.hz26Tick(wall); } catch(err26:Error) { }
          if(this.hzPerfOn) { this.hzPsSpan(20,p26,true); }
          try { this.hzMsglogCaretTick(); } catch(eMlC:Error) { }
-         try { this.hzAfLoadWatch(); } catch(errAfW:Error) { }
+         try { this.hzAfLoadWatch(wall); } catch(errAfW:Error) { }
          if(this.hzPerfOn) { this.hzPsMark(21); }
          if(this.hzPlanAlertOn && !this.hz55Shed)   // 0.43.5: hzPlanAlert is on the torn-down classic planet card
          {
@@ -11319,9 +11323,9 @@
          catch(err:Error) { }
       }
 
-      private function hzAfLoadWatch() : void
+      private function hzAfLoadWatch(now0:Number = NaN) : void
       {
-         var now:Number = this.hz26Now();
+         var now:Number = isNaN(now0) ? this.hz26Now() : now0;   // now0: the frame's clock from hzOnFrame
          if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAfArmRelayout(); }
          if(now > 0) { this.hzAfLastWall = now; }
          if(this.hzAfLoadAt > 0)
@@ -13983,11 +13987,16 @@
          if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.barPaint++; }
       }
       private var hzT19HoldDr:Array = null;   // 0.43.6: hzT19PaintHold's reused draw list
+      // 0.43.6 (round 3 E2): the last painted holds as fields (type, whole percent, x per hold), reused for the session.
+      // hzT19HoldSig keeps its reset role: "" = the last paint was empty (every reset site writes ""), "1" = hzT19HoldK
+      // holds the last list; any other value never matches, so it forces a repaint, as before.
+      private var hzT19HoldK:Array = null;
+      private var hzT19HoldKN:int = 0;
       private function hzT19PaintHold(aw:Object) : void
       {
          if(!this.hzT19HoldG) { return; }
-         var sig:String = "";
          if(this.hzT19HoldDr == null) { this.hzT19HoldDr = []; }
+         if(this.hzT19HoldK == null) { this.hzT19HoldK = []; }
          var draws:Array = this.hzT19HoldDr;   // 0.43.6 (round 3 E): one array for the session, emptied per call
          draws.length = 0;
          for each(var slot:Object in this.hzT19Btn)
@@ -13995,11 +14004,32 @@
             if(!slot || slot.holdOn !== true) { continue; }
             var frac:Number = this.hzT19HoldFrac(this.hzT19BtnClip(aw,int(slot.holdT)));
             if(frac <= 0.02) { continue; }
-            sig += int(slot.holdT) + ":" + String(int(frac * 100)) + ":" + String(slot.holdX) + ",";
             draws.push(slot,frac);
          }
-         if(sig == this.hzT19HoldSig) { draws.length = 0; return; }
-         this.hzT19HoldSig = sig;
+         var k:Array = this.hzT19HoldK;
+         var cnt:int = draws.length >> 1;
+         var same:Boolean = cnt == 0 ? this.hzT19HoldSig == "" : (this.hzT19HoldSig == "1" && cnt == this.hzT19HoldKN);
+         var ki:int = 0;
+         while(same && ki < cnt)
+         {
+            var ks:Object = draws[ki * 2];
+            var kx:* = ks.holdX;
+            var lx:* = k[ki * 3 + 2];
+            same = int(k[ki * 3]) == int(ks.holdT) && int(k[ki * 3 + 1]) == int(Number(draws[ki * 2 + 1]) * 100) && (kx === lx || (kx != kx && lx != lx));
+            ki++;
+         }
+         if(same) { draws.length = 0; return; }
+         this.hzT19HoldSig = cnt > 0 ? "1" : "";
+         this.hzT19HoldKN = cnt;
+         ki = 0;
+         while(ki < cnt)
+         {
+            var ws:Object = draws[ki * 2];
+            k[ki * 3] = int(ws.holdT);
+            k[ki * 3 + 1] = int(Number(draws[ki * 2 + 1]) * 100);
+            k[ki * 3 + 2] = ws.holdX;
+            ki++;
+         }
          var g:* = this.hzT19HoldG.graphics;
          g.clear();
          var any:Boolean = false;
@@ -15059,6 +15089,9 @@
       private var hz26Nums:Array = [];
       private var hz26Ring:Sprite;
       private var hz26Arcs:Array = [];
+      private var hz26HitDr:Boolean = true;    // round 3 E2: the layer was drawn last frame (true at start: the first frame clears)
+      private var hz26KillDr:Boolean = true;
+      private var hz26RingDr:Boolean = true;
       private var hz26VCache:Object = {};
       private var hz26VMiss:Object = {};    // 0.43.6: frames each name has been missing (hz26V); capped at HZ26_V_MISSMAX
       private var hz26VMissF:Object = {};   // 0.43.6: the last frame counted per name (one count per frame)
@@ -16279,11 +16312,18 @@
          addChild(c);
       }
 
+      // 0.43.6 (round 3 E2): one Point for the session instead of two new ones per frame (hz26TickFx calls this every
+      // frame). Same values and fallbacks as before; every caller reads x / y at once and keeps no reference.
+      private var hz26CtrP:Point = null;
       private function hz26Center() : Point
       {
-         var p:Point = new Point(960,540);
-         try { p = new Point(HUDMenu.CENTER_GROUP_POINT.x,HUDMenu.CENTER_GROUP_POINT.y); } catch(err:Error) { }
-         if(isNaN(p.x) || isNaN(p.y) || (p.x == 0 && p.y == 0)) { var vr:Rectangle = this.hzVis(); p = new Point(vr.x + vr.width / 2,vr.y + vr.height / 2); }
+         if(this.hz26CtrP == null) { this.hz26CtrP = new Point(960,540); }
+         var p:Point = this.hz26CtrP;
+         var px:Number = 960;
+         var py:Number = 540;
+         try { var gx:Number = Number(HUDMenu.CENTER_GROUP_POINT.x); var gy:Number = Number(HUDMenu.CENTER_GROUP_POINT.y); px = gx; py = gy; } catch(err:Error) { }
+         if(isNaN(px) || isNaN(py) || (px == 0 && py == 0)) { var vr:Rectangle = this.hzVis(); px = vr.x + vr.width / 2; py = vr.y + vr.height / 2; }
+         p.x = px; p.y = py;
          return p;
       }
 
@@ -16345,10 +16385,14 @@
          var c:Point = this.hz26Center();
          var s:Number = HZ_SCALE * this.hzHudScale;
          // hit marker: four diagonal ticks, ~0.25 s; crit amber
+         // 0.43.6 (round 3 E2): a layer is cleared only when it was drawn last frame or is drawn now (an empty layer
+         // cleared again every frame showed the same nothing)
          var hg:* = this.hz26Hit.graphics;
-         hg.clear();
          var ht:Number = (now - this.hz26HitT) / 250;
-         if(this.hzHitMarkOn && ht >= 0 && ht < 1)
+         var hOn:Boolean = this.hzHitMarkOn && ht >= 0 && ht < 1;
+         if(hOn || this.hz26HitDr) { hg.clear(); }
+         this.hz26HitDr = hOn;
+         if(hOn)
          {
             var hc:uint = this.hz26HitCrit ? HZ_AMB : 0xFFFFFF;
             var r0:Number = 7 + 3 * ht;
@@ -16365,9 +16409,11 @@
          this.hz26Hit.x = c.x; this.hz26Hit.y = c.y; this.hz26Hit.scaleX = this.hz26Hit.scaleY = s;
          // kill: red X + dot, ~0.6 s
          var kg:* = this.hz26Kill.graphics;
-         kg.clear();
          var kt:Number = (now - this.hz26KillT) / 600;
-         if(this.hzHitMarkOn && kt >= 0 && kt < 1)
+         var kOn:Boolean = this.hzHitMarkOn && kt >= 0 && kt < 1;
+         if(kOn || this.hz26KillDr) { kg.clear(); }
+         this.hz26KillDr = kOn;
+         if(kOn)
          {
             var ka:Number = kt < 0.7 ? 1 : (1 - kt) / 0.3;
             var kr:Number = 9 + 4 * Math.min(1,kt * 3);
@@ -16390,17 +16436,23 @@
          }
          // direction ring: arcs at iRotation (0 = ahead / top), 1.2 s each
          var rg:* = this.hz26Ring.graphics;
-         rg.clear();
+         var arcs:Array = this.hz26Arcs;
+         if(this.hz26RingDr || (this.hzDirRingOn && arcs.length > 0)) { rg.clear(); }
          var R:Number = 90;
          var any:Boolean = false;
          if(this.hzDirRingOn)
          {
-            var keep:Array = [];
-            for each(var ar:Object in this.hz26Arcs)
+            // 0.43.6 (round 3 E2): the live arcs are kept in the same list (in order), no new list per frame
+            var kw:int = 0;
+            var ai:int = 0;
+            while(ai < arcs.length)
             {
+               var ar:Object = arcs[ai];
+               ai++;
                var at:Number = (now - Number(ar.t)) / 1200;
                if(at >= 1) { continue; }
-               keep.push(ar);
+               arcs[kw] = ar;
+               kw++;
                any = true;
                var al:Number = at < 0.6 ? 1 : (1 - at) / 0.4;
                var mid:Number = (Number(ar.r) - 90) * Math.PI / 180;
@@ -16414,10 +16466,11 @@
                }
                rg.lineStyle();
             }
-            this.hz26Arcs = keep;
+            arcs.length = kw;
             if(any) { rg.lineStyle(1,0xFFFFFF,0.12,true); rg.drawCircle(0,0,R); rg.lineStyle(); }
          }
-         else { this.hz26Arcs = []; }
+         else { arcs.length = 0; }
+         this.hz26RingDr = any;
          this.hz26Ring.x = c.x; this.hz26Ring.y = c.y; this.hz26Ring.scaleX = this.hz26Ring.scaleY = s;
       }
 
@@ -16485,10 +16538,10 @@
       }
 
       // ---------- per frame ----------
-      private function hz26Tick() : void
+      private function hz26Tick(now0:Number = NaN) : void
       {
          if(!this.hz26Built) { return; }
-         var now:Number = this.hz26Now();
+         var now:Number = isNaN(now0) ? this.hz26Now() : now0;   // now0: the frame's clock from hzOnFrame
          var base:Boolean = this.hzGroupVisible && !this.hzUserHidden;
          // stealth: vanilla rule (sneaking and the meter is on)
          var sd:Object = this.hz26St;
@@ -16525,7 +16578,7 @@
             try { this.hz26CharSync(); this.hz26XpSync(); } catch(e9:Error) { }
          }
          if(this.hzPerfOn) { this.hzPsMark(31); }
-         if(!this.hzArrange) { try { this.hz26Vis(base); } catch(e10:Error) { } }
+         if(!this.hzArrange) { try { this.hz26Vis(base,now); } catch(e10:Error) { } }
          if(this.hzPerfOn) { this.hzPsMark(32); }
          try { this.hz27Tick(now); } catch(e11:Error) { }
          if(this.hzPerfOn) { this.hzPsMark(33); }
@@ -16540,9 +16593,10 @@
          if(this.hz26ChsXpBar && this.hz26ChS && this.hz26ChS.visible) { this.hz26Bar(this.hz26ChsXpBar,80,5,xf,HZ_ACCENT,gF,this.hz26XpGA); }
       }
 
-      private function hz26Vis(base:Boolean) : void
+      // now0: the frame's clock from hz26Tick (round 3 E2: one clock read per frame there); NaN = read it here
+      private function hz26Vis(base:Boolean, now0:Number = NaN) : void
       {
-         var now:Number = this.hz26Now();
+         var now:Number = isNaN(now0) ? this.hz26Now() : now0;
          if(this.HorizonChar_mc) { this.hzShow(this.HorizonChar_mc,base && !this.hz40Hide && this.hzShowChar && this.hz26CharOk && this.hz27CharRuleOk()); }
          if(this.HorizonEnemy_mc) { this.hzShow(this.HorizonEnemy_mc,base && this.hzEnemyBarOn && this.hz26EnOn); }
          if(this.HorizonStealth_mc) { this.hzShow(this.HorizonStealth_mc,base && this.hzStealthOn && this.hz26StOn); }
@@ -16772,12 +16826,12 @@
       // 0 always, 7 XP / level / credits / skill point (N s, then fade), 8 overweight, 9 either, 1 combat only, 2 hide in ship
       private function hz27CharRuleOk() : Boolean
       {
-         var ev:Boolean = this.hz26Now() < this.hz27CharEvUntil;
+         // 0.43.6 (round 3 E2): the clock is read only by the two event rules (it was read on every call, every frame)
          switch(this.hzRuleChar)
          {
-            case 7: return ev;
+            case 7: return this.hz26Now() < this.hz27CharEvUntil;
             case 8: return this.hz26Over;
-            case 9: return ev || this.hz26Over;
+            case 9: return this.hz26Now() < this.hz27CharEvUntil || this.hz26Over;
          }
          return this.hzRuleOk(this.hzRuleChar);
       }
@@ -18806,7 +18860,7 @@
       // ===================== v0.36 combat flag, vanilla hide, outline rings =====================
       private var hz36HideStale:Boolean = false;
       private var hz36CmpTries:int = 0;
-      private var hz36CmpLast:String = "";
+      private var hz36CmpLast:int = -1;   // 0.43.6 (round 3 E2): the last form bits tried (was the signature string; -1 = none)
       // Sets the combat flag from either provider (PlayerData.bIsInCombat or HUDStealthData.bIsInCombat, the feed the
       // game's own stealth meter reads; see hzOnPlayerData). Returns true when the state changed.
       private function hz36SetCombat(v:Boolean) : Boolean
@@ -18919,7 +18973,9 @@
             try
             {
                var p:DisplayObjectContainer = e.p;
-               if(p != null)
+               // 0.43.6 (round 3 E2): the name lookup runs only when the cached clip is no longer a child of its parent
+               // (the game replaced or removed it); a clip still in place is the one the lookup would return
+               if(p != null && (d == null || d.parent !== p))
                {
                   var cur:DisplayObject = p.getChildByName(String(e.n));
                   if(cur != null && cur != d) { e.d = cur; d = cur; }
@@ -18974,28 +19030,36 @@
       // throw during an early apply (cards still building at ini load) left the guard saying "compact applied" while the
       // card kept its full form; every later global toggle then compared equal and was skipped. This signature check runs
       // every frame and force-applies every compact-capable card whenever the resolved form or a card's build state changes.
-      private var hz35CmpSigS:String = "";
+      // 0.43.6 (round 3 E2): the signature is an int of form bits (hz35CmpBits), not a string built every frame. Same
+      // inputs, same equal / not-equal answers, so the force-apply runs on exactly the same frames. -1 = nothing applied.
+      private var hz35CmpSigN:int = -1;
       private var hz35CmpWait:int = 0;
       private function hz35Form(card:String) : Boolean
       {
          for each(var c:Array in HZ34_CARDS) { if(c[0] == card) { return c[1] ? this.hz34C(card) : this.hzCompact; } }
          return this.hzCompact;
       }
-      private function hz35CmpSig() : String
+      // bit 0 global Compact; bits 1-4 build state (compass, planet, equipment, compact quests); bits 5+ the resolved form
+      // of each compact-capable card in HZ34_CARDS order (6 cards today, room for 26)
+      private function hz35CmpBits() : int
       {
-         var s:String = this.hzCompact ? "G1" : "G0";
-         for each(var c:Array in HZ34_CARDS) { if(c[1]) { s += this.hz34C(String(c[0])) ? "1" : "0"; } }
-         s += "|" + (this.hzCmpBody19 ? "c" : "") + (this.hzPlanPill && this.hzPpName ? "p" : "") + (this.hzEq19 && this.hzEqCount ? "e" : "") + (this.HorizonCompactQuest_mc ? "q" : "");
-         return s;
+         var b:int = this.hzCompact ? 1 : 0;
+         if(this.hzCmpBody19) { b |= 2; }
+         if(this.hzPlanPill && this.hzPpName) { b |= 4; }
+         if(this.hzEq19 && this.hzEqCount) { b |= 8; }
+         if(this.HorizonCompactQuest_mc) { b |= 16; }
+         var bit:int = 32;
+         for each(var c:Array in HZ34_CARDS) { if(c[1]) { if(this.hz34C(c[0])) { b |= bit; } bit = bit << 1; } }
+         return b;
       }
       private function hz35CmpTick() : void
       {
          if(this.hz35CmpWait > 0) { this.hz35CmpWait--; return; }
-         var sig:String = this.hz35CmpSig();
-         if(sig == this.hz35CmpSigS) { return; }
+         var sig:int = this.hz35CmpBits();
+         if(sig == this.hz35CmpSigN) { return; }
          if(sig != this.hz36CmpLast) { this.hz36CmpLast = sig; this.hz36CmpTries = 0; }
          this.hz36CmpTries++;
-         if(this.hz35CmpForce() || this.hz36CmpTries >= 4) { this.hz35CmpSigS = sig; this.hz36CmpTries = 0; }   // v0.36: bounded
+         if(this.hz35CmpForce() || this.hz36CmpTries >= 4) { this.hz35CmpSigN = sig; this.hz36CmpTries = 0; }   // v0.36: bounded
          else { this.hz35CmpWait = 30; }   // retry in ~0.5 s, never every frame
       }
       private function hz35CmpForce() : Boolean
@@ -21168,9 +21232,9 @@
       }
       // every frame: a frame gap over 1 s (a load) or a HUD group visibility change clears the hide; the next scanner
       // update sets it again while the scanner is really open
-      private function hz40Frame() : void
+      private function hz40Frame(now0:Number = NaN) : void
       {
-         var now:Number = new Date().getTime();
+         var now:Number = isNaN(now0) ? new Date().getTime() : now0;   // now0: the frame's clock from hzOnFrame
          if(this.hz40LastT > 0 && now - this.hz40LastT > 1000 && (this.hz40Hide || this.hz40Scan)) { this.hz40Scan = false; this.hz40Latch = false; this.hz40Clear(false); }   // v0.40.3: a latched scan / HideMainHudWhileScanning=0 too
          this.hz40LastT = now;
          var gv:int = this.hzGroupVisible ? 1 : 0;
