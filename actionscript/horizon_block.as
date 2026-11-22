@@ -15304,7 +15304,22 @@
          this.hz26ChNext = this.hzT(f,"",W - 14 - 200,80,200,11,"sb","dim",0.6,"right");
          this.hz26ChML = this.hzT(f,"MASS",44,114,160,11,"sb","mut",1.6);
          this.hz26ChMV = this.hzT(f,"",W - 14 - 200,110,200,14,"sb","main",0.5,"right");
-         var s:Sprite = new Sprite(); c.addChild(s); this.hz26ChS = s;
+         // 0.43.6 (round 3 C): the compact strip is built the first time the card is drawn in compact form (hz26CharSync)
+         addChild(c);
+         c.visible = false;
+         this.hzSetSz(c,W,HZ_CH_H);
+         this.hz26CharSync();
+      }
+
+      // 0.43.6 (round 3 C, Character): the compact strip of the character card, built on first use instead of at load.
+      // With the default full card it never exists (five text fields and three sprites fewer in the HUD). Same parts,
+      // order, positions and styles as the 0.43.5 build; it is the last child of the card, as before. Once built it
+      // stays for the session, so switching forms back and forth only flips visibility, exactly as before.
+      // Inputs: none. Outputs: hz26ChS and its parts. Author: Moragar. Last modified: 2026-11-22.
+      private function hz26BuildCharS() : void
+      {
+         if(this.hz26ChS || !this.HorizonChar_mc) { return; }
+         var s:Sprite = new Sprite(); this.HorizonChar_mc.addChild(s); this.hz26ChS = s;
          this.hz26ChSG = new Sprite(); s.addChild(this.hz26ChSG);
          this.hz26ChsLv = this.hzT(s,"LV --",16,10,70,14,"bd","acc",1);
          this.hz26ChsXpBar = new Sprite(); s.addChild(this.hz26ChsXpBar);
@@ -15313,10 +15328,6 @@
          this.hz26ChsCr = this.hzT(s,"",0,11,150,12,"sb","main",0.4);
          this.hz26ChsSp = this.hzT(s,"",0,11,80,12,"bd","col",0.8,"left",HZ_AMB);
          s.visible = false;
-         addChild(c);
-         c.visible = false;
-         this.hzSetSz(c,W,HZ_CH_H);
-         this.hz26CharSync();
       }
 
       private function hz26Bar(sp:Sprite, w:Number, h:Number, f:Number, col:uint, gFrom:Number, gA:Number) : void
@@ -15369,8 +15380,10 @@
          var dk:Boolean = this.hzDarkText();
          var bg:uint = dk ? this.hzMix(this.hzPanelFill(),0x000000,0.14) : 0x060A0E;
          var gF:Number = this.hz26XpGA > 0.01 ? this.hz26XpG : -1;
+         if(cm && !this.hz26ChS) { try { this.hz26BuildCharS(); } catch(e26s:Error) { } }   // round 3 C: strip on first use
+         if(cm && (!this.hz26ChS || !this.hz26ChsSp)) { cm = false; }   // a strip that could not be built: the full card stays
          this.hz26ChF.visible = !cm;
-         this.hz26ChS.visible = cm;
+         if(this.hz26ChS) { this.hz26ChS.visible = cm; }
          if(!cm)
          {
             var W:Number = HZ_CH_W;
@@ -16448,7 +16461,7 @@
          var xf:Number = this.hz26XpN > 0 && !isNaN(this.hz26Xp) ? Math.max(0,Math.min(1,this.hz26Xp / this.hz26XpN)) : 0;
          var gF:Number = this.hz26XpGA > 0.01 ? this.hz26XpG : -1;
          if(this.hz26ChXpBar && this.hz26ChF.visible) { this.hz26Bar(this.hz26ChXpBar,HZ_CH_W - 14 - 76,6,xf,HZ_ACCENT,gF,this.hz26XpGA); }
-         if(this.hz26ChsXpBar && this.hz26ChS.visible) { this.hz26Bar(this.hz26ChsXpBar,80,5,xf,HZ_ACCENT,gF,this.hz26XpGA); }
+         if(this.hz26ChsXpBar && this.hz26ChS && this.hz26ChS.visible) { this.hz26Bar(this.hz26ChsXpBar,80,5,xf,HZ_ACCENT,gF,this.hz26XpGA); }
       }
 
       private function hz26Vis(base:Boolean) : void

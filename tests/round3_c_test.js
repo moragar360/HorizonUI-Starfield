@@ -2,12 +2,16 @@
 //   C1 Equipment: the style-1 card (hzBuildEqNew, hidden since v0.27) leaves the HUD once the v0.19 card is built;
 //      its clip / reserve fields stay as detached data holders for hzE19Sync, and the weapon class still redraws the
 //      visible icon.
+//   C2 Character: the compact strip is built the first time the card is drawn in compact form; the default full card
+//      never builds it. Same parts, order and styles as before (old-vs-new build compared below).
 // Run: node tests/round3_c_test.js
 // Author: Moragar. Last modified: 2026-11-22.
 "use strict";
 
-const { readAs, fnText, bind, baseHost, expect, finish } = require("./lib/r3");
+const { readAs, stripComments, fnText, bind, mkFn, baseHost, expect, finish } = require("./lib/r3");
+const { execSync } = require("child_process");
 const as = readAs();
+const asOld = stripComments(execSync("git show 0566589:actionscript/horizon_block.as", { cwd: __dirname + "/..", encoding: "utf8", maxBuffer: 1 << 26 }).replace(/\r\n/g, "\n"));
 
 function node(name, extra) {
 	const n = Object.assign({ name: name, parent: null, kids: [], filters: ["glow"], visible: true, alpha: 1, x: 0, y: 0, text: "",
@@ -102,5 +106,48 @@ function eqHost(extra) {
 	expect(/if\(this\.hzEqNew\) \{ this\.hzEqNew\.visible = false; \}/.test(fnText(as, "hzEqApplyStyle").body), "C1: the style-1 card was hidden on every path (nothing visible is removed)");
 	const e19 = fnText(as, "hzE19Sync").body;
 	expect(!/hzEqWeap|hzEqType|hzEqAmmoIcon|hzEqWIcon|hzEqBody\b/.test(e19), "C1: the visible card reads none of the dropped parts");
+}
+// ---- C2 Character ----
+function charHost(src) {
+	let id = 0;
+	const log = [];
+	const h = baseHost({ HZ_CH_W: 360, HZ_CH_H: 150, HZ_AMB: 0xF2A93B, HorizonChar_mc: null, hz26ChS: null, hz26ChsSp: null, hzTexts: [], syncs: 0, top: [] });
+	h.mkSprite = function () { return node("sp" + (id++)); };
+	const bindS = (name) => { h[name] = mkFn(h, [], fnText(src, name).body.replace(/new Sprite\(\)/g, "mkSprite()")); };
+	h.hzT = function (p, txt, x, y, w, fs, face, tone, ls, align, col) { const t = p.addChild(node("tf" + (id++), { __tf: true, text: txt })); log.push([p === h.hz26ChS ? "S" : (p === h.hz26ChF ? "F" : "?"), txt, x, y, w, fs, face, tone, ls, align, col].join("|")); return t; };
+	h.hzHdr19 = () => {}; h.hzSetSz = () => {}; h.addChild = (c) => { h.top.push(c); };
+	h.hz26CharSync = () => { h.syncs++; };
+	bindS("hz26BuildChar");
+	if (src === as) bindS("hz26BuildCharS");
+	h.log = log;
+	return h;
+}
+{
+	const o = charHost(asOld); o.hz26BuildChar();
+	const n = charHost(as); n.hz26BuildChar();
+	const c = n.HorizonChar_mc;
+	expect(n.hz26ChS === null && c.kids.length === 1 && c.kids[0] === n.hz26ChF && n.syncs === 1 && n.top[0] === c && c.visible === false, "C2: the load-time build makes only the full card");
+	expect(n.log.length === 8 && n.log.every((l) => l[0] === "F") && o.log.filter((l) => l[0] === "F").join("\n") === n.log.join("\n"), "C2: the full card's eight text fields are made exactly as before");
+	n.hz26BuildCharS();
+	const s = n.hz26ChS;
+	expect(c.kids.length === 2 && c.kids[1] === s && s.visible === false && s.kids.length === 7 && s.kids[0] === n.hz26ChSG && s.kids[2] === n.hz26ChsXpBar, "C2: the strip is the card's last child, hidden, same seven parts in the same order");
+	expect(o.log.filter((l) => l[0] === "S").join("\n") === n.log.filter((l) => l[0] === "S").join("\n") && n.log.length === 13, "C2: its five text fields have the same text, position, size, face, tone, spacing and color as before");
+	const k = s.kids.length; n.hz26BuildCharS();
+	expect(n.hz26ChS === s && s.kids.length === k && c.kids.length === 2, "C2: built once; later form switches reuse it");
+}
+{
+	const sync = fnText(as, "hz26CharSync").body;
+	const iB = sync.indexOf("this.hz26BuildCharS();"), iV = sync.indexOf("this.hz26ChF.visible = !cm;"), iS = sync.indexOf("if(!cm)");
+	expect(iB > 0 && iV > iB && iS > iV && /if\(cm && !this\.hz26ChS\) \{ try \{ this\.hz26BuildCharS\(\);/.test(sync), "C2: the sync builds the strip on the first compact draw, before the form is chosen");
+	expect(/if\(cm && \(!this\.hz26ChS \|\| !this\.hz26ChsSp\)\) \{ cm = false; \}/.test(sync) && /if\(this\.hz26ChS\) \{ this\.hz26ChS\.visible = cm; \}/.test(sync), "C2: a strip that failed to build leaves the full card; the strip's visibility is guarded");
+	expect(sync.slice(0, iS).replace(/hz26ChS\b|hz26ChsSp/g, "") .indexOf("hz26Chs") < 0, "C2: no strip part is read before the compact branch");
+	expect(/this\.hz26ChsXpBar && this\.hz26ChS && this\.hz26ChS\.visible/.test(fnText(as, "hz26CharBarsOnly").body), "C2: the XP ghost fade checks the strip exists");
+	const tick = as.slice(as.indexOf("var chC:Boolean = Boolean(this.hz34C(\"Character\"));"), as.indexOf("var chC:Boolean = Boolean(this.hz34C(\"Character\"));") + 600);
+	expect(/chC !== this\.hz26ChC[\s\S]*this\.hz26CharSync\(\)/.test(tick), "C2: a compact form change (F11 or global COMPACT) runs the sync, which builds the strip");
+	const users = [];
+	const re = /(?:private|public) function (\w+)\(/g; let m; const idx = [];
+	while ((m = re.exec(as))) idx.push([m.index, m[1]]);
+	idx.forEach((e, i) => { const seg = as.slice(e[0], i + 1 < idx.length ? idx[i + 1][0] : as.length); if (/hz26Chs\w|hz26ChS\b|hz26ChSG/.test(seg)) users.push(e[1]); });
+	expect(users.filter((u) => u !== "hzT19Content").sort().join(",") === "hz26BuildCharS,hz26CharBarsOnly,hz26CharSync", "C2: only the builder, the sync and the bar fade touch the strip (" + users.join(",") + ")");
 }
 finish("round3 C");
