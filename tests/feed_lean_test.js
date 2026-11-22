@@ -6,6 +6,7 @@
 // - anything still unknown starts the old inventory walk once per session, so the real magazine size is always recovered.
 // Behavior cases run the production AS bodies in a small JS host; source pins strip // comments first.
 // Run: node tests/feed_lean_test.js
+// 0.43.6: first-watch priming (hzSubPrime / hzAmInvPeek) for the fallback, FavoritesData and DataInventoryProvider.
 // Author: Moragar. Last modified: 2026-11-22.
 "use strict";
 
@@ -68,11 +69,12 @@ function bind(host, name) {
 // ---- source pins (comments stripped) ----
 const lits = [...as.matchAll(/"PlayerInventoryData"/g)].length;
 const invStart = fnText(as, "hzAmInvStart");
-expect(lits === 1 && /Subscribe\(\s*"PlayerInventoryData"\s*,\s*this\.hzOnInventory\s*\)/.test(invStart.body),
-	"the only PlayerInventoryData literal in live code is the fallback subscribe in hzAmInvStart (" + lits + ")");
+expect(lits === 1 && /HZ_AM_INV:String = "PlayerInventoryData"/.test(as) && /hzSubPrime\(\s*HZ_AM_INV\s*,\s*this\.hzOnInventory\s*,\s*"aItems"\s*\)/.test(invStart.body),
+	"the only PlayerInventoryData literal in live code is HZ_AM_INV, used by the fallback in hzAmInvStart (" + lits + ")");
+expect([...as.matchAll(/HZ_AM_INV\b/g)].length === 3, "HZ_AM_INV is used only by the fallback subscribe and its peek");
 expect(!/function hz26OnInv\(/.test(as), "the dead hz26OnInv handler is gone");
-expect(/Subscribe\(\s*"FavoritesData"\s*,\s*this\.hzAmOnFav\s*\)/.test(as), "FavoritesData is watched");
-expect(/Subscribe\(\s*"DataInventoryProvider"\s*,\s*this\.hzAmOnEq\s*\)/.test(as), "DataInventoryProvider (equipped weapon) is watched");
+expect(/hzSubPrime\(\s*"FavoritesData"\s*,\s*this\.hzAmOnFav\s*,\s*"aFavoriteItems"\s*\)/.test(as), "FavoritesData is watched (primed)");
+expect(/hzSubPrime\(\s*"DataInventoryProvider"\s*,\s*this\.hzAmOnEq\s*,\s*"EquippedWeapon"\s*\)/.test(as), "DataInventoryProvider (equipped weapon) is watched (primed)");
 const onWeap = fnText(as, "hzOnWeapon");
 expect(/this\.hzAmResolve\(\)/.test(onWeap.body) && !/this\.hzResolveAmmoType\(\)/.test(onWeap.body), "WeaponData resolves through hzAmResolve");
 expect(/if\(this\.hzDebug\) \{ this\.hzDbgWeap = this\.hzDump\(d\); \}/.test(onWeap.body), "weapon debug dump only with Debug");
@@ -103,8 +105,18 @@ function host() {
 		hzDrawMag() {},
 		hz26Now() { return this.nowMs; },
 	};
-	h.BSUIDataManager = { Subscribe: (n, f) => { h.subs.push(n); } };
-	for (const n of ["hzAmCap", "hzAmOnEq", "hzAmOnFav", "hzAmHover", "hzAmItem", "hzAmLearn", "hzAmFind", "hzAmResolve", "hzAmInvStart",
+	// a model of the game's BSUIDataManager (Bethesda/Shared/AS3/Data/BSUIDataManager.as): Subscribe calls the listener at
+	// once only for a provider that existed and was ready before; a first watch after the link is attached fills the
+	// payload but its CHANGE goes out before the listener is added. h.prov[name] = { dataReady, data, existed }.
+	h.prov = {};
+	h.calls = [];
+	h.BSUIDataManager = {
+		Subscribe: (n, f) => { h.subs.push(n); let p = h.prov[n]; const existed = p && p.existed; if (!p) p = h.prov[n] = { dataReady: false, data: {} }; p.existed = true; if (existed && p.dataReady) f({ data: p.data }); },
+		GetDataFromClient: (n, create) => { const p = h.prov[n]; return p && p.existed ? p : null; },
+	};
+	h.FromClientDataEvent = function (p) { this.data = p.data; };
+	h.HZ_AM_INV = "PlayerInventoryData";
+	for (const n of ["hzSubPrime", "hzAmInvPeek", "hzAmCap", "hzAmOnEq", "hzAmOnFav", "hzAmHover", "hzAmItem", "hzAmLearn", "hzAmFind", "hzAmResolve", "hzAmInvStart",
 		"hzFindNum", "hzFindAmmo", "hzResolveAmmoType", "hzOnInventory", "hzSetAmmoType", "hz26Log"]) bind(h, n);
 	h.pending = Function("with(this){\n" + toJs(freq[0]) + "\n}").bind(h);   // the production line from hzOnPlayerFrequent
 	h.weapon = (name, drawn) => { if (h.hzWeapName !== name) h.hzMagCap = 0; h.hzWeapName = name; h.hzAmmoDrawn = drawn !== false; h.hzAmResolve(); };
@@ -258,6 +270,47 @@ const fav = (items) => ({ data: { aFavoriteItems: items } });
 	m.weapon("Tanto", false);
 	m.nowMs += 5000; m.pending();
 	expect(m.subs.length === 0 && typ(m) === "--", "a favorited melee weapon (no ammo name) is known: no fallback, type --");
+}
+{	// 0.43.6 fresh game (a new-game start that hands the player a gun): no favorites, never hovered, the equipped feed
+	// silent. The fallback's first watch is made at run time, so the game's Subscribe never delivers the current inventory;
+	// before 0.43.6 the ammo name stayed "--" until the first shot changed the inventory. hzSubPrime hands it over at once.
+	const h = host();
+	h.prov.PlayerInventoryData = { dataReady: true, data: { aItems: [{ sName: "Grendel", bIsEquipped: true, WeaponInfo: { sAmmoType: "6.5mm CT", uAmmoCapacity: 30 } }] } };
+	h.weapon("Grendel");
+	expect(typ(h) === "--" && h.subs.length === 0, "fresh game: nothing known, waiting");
+	h.nowMs += 3000; h.pending();
+	expect(h.subs.join() === "PlayerInventoryData" && typ(h) === "6.5MM CT" && h.hzMagCap === 30 && isNaN(h.hzAmT0),
+		"fresh game: the fallback shows the ammo name and magazine size at once, no shot needed");
+	h.pending(); h.weapon("Grendel");
+	expect(h.subs.length === 1, "still one inventory subscribe for the session");
+}
+{	// payload filled only after the subscribe: found on the next PlayerFrequentData check, still no shot needed
+	const h = host();
+	h.weapon("Grendel");
+	h.nowMs += 3000; h.pending();
+	expect(h.subs.length === 1 && typ(h) === "--" && !isNaN(h.hzAmT0), "empty payload at the subscribe: the check stays armed");
+	h.prov.PlayerInventoryData.dataReady = true;
+	h.prov.PlayerInventoryData.data = { aItems: [{ sName: "Grendel", bIsEquipped: true, WeaponInfo: { sAmmoType: "6.5mm CT", uAmmoCapacity: 30 } }] };
+	h.nowMs += 100; h.pending();
+	expect(typ(h) === "6.5MM CT" && h.hzMagCap === 30 && isNaN(h.hzAmT0), "the next PlayerFrequentData check reads the filled payload and disarms");
+}
+{	// the equipped feed primed at build time when the movie already holds it: no fallback at all
+	const h = host();
+	h.prov.DataInventoryProvider = { dataReady: true, data: { EquippedWeapon: { sName: "Coachman", uFormID: 77, uHandleID: 5, WeaponInfo: { sAmmoType: "12G Shotgun Shell", uAmmoCapacity: 2 } } } };
+	h.hzSubPrime("DataInventoryProvider", h.hzAmOnEq, "EquippedWeapon");
+	h.weapon("Coachman");
+	expect(typ(h) === "12G SHOTGUN SHELL" && h.hzMagCap === 2 && h.subs.join() === "DataInventoryProvider", "primed equipped feed gives type and size; no inventory watch");
+}
+{	// a provider that existed and was ready: Subscribe delivers it itself, hzSubPrime does not call a second time
+	const h = host();
+	let n = 0;
+	h.prov.FavoritesData = { existed: true, dataReady: true, data: { aFavoriteItems: [] } };
+	h.hzSubPrime("FavoritesData", () => { n++; }, "aFavoriteItems");
+	expect(n === 1, "one call for an already-watched provider");
+	let m = 0;
+	h.prov.QuestData = { dataReady: false, data: {} };
+	h.hzSubPrime("QuestData", () => { m++; }, "aQuests");
+	expect(m === 0, "a provider that is not ready yet is left to the link's first dispatch");
 }
 {	// change-only ammo-type text
 	const h = host();

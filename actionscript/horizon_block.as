@@ -1410,8 +1410,10 @@
          // 0.43.5: no PlayerInventoryData watch here. The vanilla HUD never watches it, and the game rebuilds and ships the whole
          // inventory to every watcher. Credits and weight come from PlayerData (hz26OnPlayer); ammo type and magazine size from
          // FavoritesData and the rollover's item data (hzAmResolve). The inventory feed is the last-resort fallback (hzAmInvStart).
-         try { BSUIDataManager.Subscribe("FavoritesData",this.hzAmOnFav); } catch(eAmF:Error) { }
-         try { BSUIDataManager.Subscribe("DataInventoryProvider",this.hzAmOnEq); } catch(eAmE:Error) { }   // EquippedWeapon only (the Data Menu's weapon line)
+         // 0.43.6: hzSubPrime also hands over the state the movie already holds (a first watch made after the game attached the
+         // data link never gets its first dispatch, see hzSubPrime)
+         try { this.hzSubPrime("FavoritesData",this.hzAmOnFav,"aFavoriteItems"); } catch(eAmF:Error) { }
+         try { this.hzSubPrime("DataInventoryProvider",this.hzAmOnEq,"EquippedWeapon"); } catch(eAmE:Error) { }   // EquippedWeapon only (the Data Menu's weapon line)
          // alpha option A-N2: the game's HUD opacity value from the very first dispatch (hzBuildEnv runs inside hzBuild, before HUDMenu's own
          // subscriptions, so it only records the value; the re-hide after the game's write is hz44OnOpacity, added later)
          if(HZ44_BY_ALPHA) { try { BSUIDataManager.Subscribe("HUDOpacityData",this.hz44OnOpacityEarly); } catch(e44o:Error) { } }
@@ -3363,6 +3365,25 @@
       private var hzAmT0:Number = NaN;        // when the wait for an unknown type / size started (hz26Now ms); NaN = nothing pending
       private static const HZ_AM_WAIT:Number = 3000;
       private static const HZ_AM_NOMAG:Number = 4294967295;   // uint.MAX_VALUE: the game's "no magazine" value
+      private static const HZ_AM_INV:String = "PlayerInventoryData";   // the fallback feed (hzAmInvStart, hzAmInvPeek)
+
+      // 0.43.6: Subscribe, then deliver the state this movie already holds when Subscribe itself does not. In the game's
+      // BSUIDataManager.Subscribe the listener is called at once only for a provider this movie was already watching. For a
+      // first watch made after the data link is attached, UIDataShuttleConnector.Watch fills the payload and dispatches CHANGE
+      // (SetReady) before Subscribe adds the listener, so that first state never reaches it; the next call comes only when
+      // the data changes (for the inventory: the first shot). key: a payload field that shows the payload is filled.
+      // A provider that is not ready yet (a watch made before the link is attached) gets the link's own first dispatch.
+      private function hzSubPrime(name:String, fn:Function, key:String) : void
+      {
+         var p:* = null;
+         var had:Boolean = false;
+         try { p = BSUIDataManager.GetDataFromClient(name,false); had = p != null && Boolean(p.dataReady); } catch(e0:Error) { had = false; }
+         BSUIDataManager.Subscribe(name,fn);   // a throw goes to the caller's try, as before
+         if(had) { return; }   // Subscribe has already called fn with the current data
+         try { p = BSUIDataManager.GetDataFromClient(name,false); } catch(e1:Error) { p = null; }
+         if(p == null || !Boolean(p.dataReady) || p.data == null || p.data[key] == undefined) { return; }
+         fn(new FromClientDataEvent(p));
+      }
 
       // a magazine size from game data: 0 for missing, invalid or the no-magazine value
       private function hzAmCap(v:*) : Number
@@ -3471,7 +3492,15 @@
 
       private function hzAmResolve() : void
       {
-         if(this.hzAmInvOn) { this.hzResolveAmmoType(); return; }   // the old path owns it once it runs
+         if(this.hzAmInvOn)   // the old path owns it once it runs
+         {
+            // 0.43.6: until the inventory payload is seen, look at it again on this call (WeaponData, or the PlayerFrequentData
+            // check while hzAmT0 is set), so a payload filled after the subscribe is used without waiting for a shot
+            if(this.hzInvItems == null) { this.hzAmInvPeek(); }
+            this.hzAmT0 = this.hzInvItems == null ? (isNaN(this.hzAmT0) ? this.hz26Now() : this.hzAmT0) : NaN;
+            this.hzResolveAmmoType();
+            return;
+         }
          var wn:String = this.hzWeapName;
          if(wn.length == 0) { this.hzAmT0 = NaN; return; }
          var t:String = null;
@@ -3498,8 +3527,20 @@
          if(this.hzAmInvOn) { return; }
          this.hzAmInvOn = true;
          this.hzAmT0 = NaN;
-         try { BSUIDataManager.Subscribe("PlayerInventoryData",this.hzOnInventory); } catch(eAmI:Error) { }
+         // 0.43.6: a first watch at run time: hzSubPrime hands over the current inventory (before, nothing came until the
+         // inventory changed, so a fresh game showed no ammo name until the first shot)
+         try { this.hzSubPrime(HZ_AM_INV,this.hzOnInventory,"aItems"); } catch(eAmI:Error) { }
+         if(this.hzInvItems == null) { this.hzAmInvPeek(); }
+         if(this.hzInvItems == null) { this.hzAmT0 = this.hz26Now(); }   // keep looking on the PlayerFrequentData check
          try { this.hzResolveAmmoType(); this.hzDrawMag(); } catch(eAmR:Error) { }
+      }
+
+      // the fallback feed's current payload, read directly (no event needed)
+      private function hzAmInvPeek() : void
+      {
+         var p:* = null;
+         try { p = BSUIDataManager.GetDataFromClient(HZ_AM_INV,false); } catch(e0:Error) { p = null; }
+         try { if(p != null && Boolean(p.dataReady) && p.data != null && p.data.aItems is Array) { this.hzInvItems = p.data.aItems as Array; } } catch(e1:Error) { }
       }
       private function hzFindAmmo(o:Object, depth:int) : String
       {
