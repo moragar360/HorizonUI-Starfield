@@ -14927,6 +14927,9 @@
       private var hz26Ring:Sprite;
       private var hz26Arcs:Array = [];
       private var hz26VCache:Object = {};
+      private var hz26VMiss:Object = {};    // 0.43.6: frames each name has been missing (hz26V); capped at HZ26_V_MISSMAX
+      private var hz26VMissF:Object = {};   // 0.43.6: the last frame counted per name (one count per frame)
+      private static const HZ26_V_MISSMAX:int = 540;
       private var hz26VHid:Object = {};
 
       private function hz26Now() : Number
@@ -16287,7 +16290,13 @@
                case "StealthMeter_mc": d = this.TopCenterGroup_mc ? Object(this.TopCenterGroup_mc).StealthMeter_mc as DisplayObject : null; break;
                case "DirectionalHitIndicatorBase_mc": d = this.CenterGroup_mc ? Object(this.CenterGroup_mc).DirectionalHitIndicatorBase_mc as DisplayObject : null; break;
             }
+            // 0.43.6 (round 3 D): a name that the property path and the whole-HUD walk below have not found for 540 frames
+            // (6 of the walk's 90-frame slots) gets no more walks. Each walk touched every container in the HUD (about
+            // 1,250 a time in leg 32's h26Van count) forever for a name this game build never has. The property path above
+            // is still read on every call, so a clip that does appear is still found.
+            if(d == null && int(this.hz26VMiss[name]) >= HZ26_V_MISSMAX) { return null; }
             if(d == null && this.hzFrameN % 90 == 5) { d = this.hzFindByName(this,name,0); }
+            if(d == null && this.hz26VMissF[name] !== this.hzFrameN) { this.hz26VMissF[name] = this.hzFrameN; this.hz26VMiss[name] = int(this.hz26VMiss[name]) + 1; }
          }
          catch(err:Error) { d = null; }
          if(d != null) { this.hz26VCache[name] = d; }
