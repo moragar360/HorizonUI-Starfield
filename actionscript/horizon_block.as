@@ -3348,15 +3348,17 @@
       // Sources, strongest first:
       //  1. DataInventoryProvider.EquippedWeapon: the equipped instance itself (uHandleID, sName, WeaponInfo.sAmmoType and
       //     WeaponInfo.uAmmoCapacity), the small feed the Data Menu's weapon line reads. Authoritative for the equipped gun.
-      //  2. HUDRolloverActivationData ItemData / CompareItemData (WeaponInfo, sent on a hover): authoritative only when its
-      //     uHandleID is the equipped handle; otherwise it may only fill what is still missing (never overwrites a known value).
-      //  3. FavoritesData.aFavoriteItems: sAmmoName only (the game sends no magazine size there). Fills missing values only.
-      // Magazine size has no favorites source, so a gun whose type or size is still unknown after the 3 s wait (or at once
-      // when the equipped feed has spoken for it without one) starts the old inventory walk, once per session (hzAmInvStart).
+      //  2. HUDRolloverActivationData ItemData / CompareItemData (WeaponInfo, sent on a hover): authoritative when its
+      //     uHandleID is the equipped handle. While the equipped feed is silent, CompareItemData (the equipped item the hovered
+      //     one is compared with) stands in for it. Any other hover gives an ammo name only, filling a missing one.
+      //  3. FavoritesData.aFavoriteItems: sAmmoName only (the game sends no magazine size there). Fills missing names only.
+      // A magazine size is only ever taken from the equipped instance (1, or 2 when it is the equipped one), never from a
+      // same-name copy found by name. A gun whose type or size is still unknown after the 3 s wait (or at once when the
+      // equipped data has spoken for it without one) starts the old inventory walk, once per session (hzAmInvStart).
       private var hzAmFav:Array = null;
       private var hzAmEqH:Number = NaN;       // equipped weapon uHandleID from DataInventoryProvider (NaN = unknown)
-      private var hzAmEq:Object = null;       // {n: name, t: ammo type, c: magazine size or 0} of the equipped instance
-      private var hzAmKnown:Object = {};      // item name -> {t: ammo type (null = unknown), c: magazine size or 0}
+      private var hzAmEq:Object = null;       // {n: name, t: ammo type, c: magazine size or 0, s: "eq" feed / "cmp" compare data}
+      private var hzAmKnown:Object = {};      // item name -> {t: ammo type (null = unknown)}; names only, never a size
       private var hzAmInvOn:Boolean = false;  // fallback: PlayerInventoryData watched (sticky: the game keeps a watch once made)
       private var hzAmT0:Number = NaN;        // when the wait for an unknown type / size started (hz26Now ms); NaN = nothing pending
       private static const HZ_AM_WAIT:Number = 3000;
@@ -3381,9 +3383,10 @@
          {
             var wi:Object = w.WeaponInfo;
             var t:String = (wi != null && wi.sAmmoType != null) ? String(wi.sAmmoType) : "";
-            this.hzAmEq = {"n":String(w.sName),"t":t,"c":wi != null ? this.hzAmCap(wi.uAmmoCapacity) : 0};
+            this.hzAmEq = {"n":String(w.sName),"t":t,"c":wi != null ? this.hzAmCap(wi.uAmmoCapacity) : 0,"s":"eq"};
             this.hzAmEqH = Number(w.uHandleID);
          }
+         if(this.hzDebug) { this.hz26Log("DataInventoryProvider",{"EquippedWeapon":w,"use":this.hzAmEq,"inv":this.hzAmInvOn}); }
          if(!this.hzAmInvOn) { this.hzAmResolve(); this.hzDrawMag(); }
       }
 
@@ -3397,7 +3400,7 @@
             if(f != null && f.bIsEquippable === true && f.sName != null)
             {
                // an equippable favorite with no ammo name is a no-ammo item (melee): known, so it never starts the fallback
-               this.hzAmLearn(String(f.sName),f.sAmmoName != null ? String(f.sAmmoName) : "",this.hzAmCap(f.uAmmoCapacity),false);
+               this.hzAmLearn(String(f.sName),f.sAmmoName != null ? String(f.sAmmoName) : "");
             }
             i++;
          }
@@ -3408,42 +3411,44 @@
       private function hzAmHover(a:Object) : void
       {
          if(a == null || this.hzAmInvOn) { return; }
-         var got:Boolean = this.hzAmItem(a.ItemData);
-         if(this.hzAmItem(a.CompareItemData)) { got = true; }
+         var got:Boolean = this.hzAmItem(a.ItemData,false);
+         if(this.hzAmItem(a.CompareItemData,true)) { got = true; }
          if(got) { this.hzAmResolve(); this.hzDrawMag(); }
       }
 
-      private function hzAmItem(it:Object) : Boolean
+      private function hzAmItem(it:Object, cmp:Boolean) : Boolean
       {
          if(it == null || it.WeaponInfo == null || it.sName == null) { return false; }
          var w:Object = it.WeaponInfo;
          if(w.sAmmoType == null) { return false; }
          var t:String = String(w.sAmmoType);
          var c:Number = this.hzAmCap(w.uAmmoCapacity);
+         var nm:String = String(it.sName);
          var mine:Boolean = !isNaN(this.hzAmEqH) && it.uHandleID != undefined && Number(it.uHandleID) == this.hzAmEqH;
-         if(mine)
+         // the equipped feed is silent (no handle): the compare item is the equipped one. Feed data always has a handle, so
+         // compare data never overrides it; it may only refresh earlier compare data
+         var stand:Boolean = cmp && isNaN(this.hzAmEqH);
+         if(mine || stand)
          {
-            var ch:Boolean = this.hzAmEq == null || this.hzAmEq.t != t || (c > 0 && this.hzAmEq.c != c);
-            if(this.hzAmEq == null) { this.hzAmEq = {"n":String(it.sName),"t":t,"c":c}; }
-            else { this.hzAmEq.t = t; if(c > 0) { this.hzAmEq.c = c; } }
+            if(this.hzAmEq == null || this.hzAmEq.n != nm) { this.hzAmEq = {"n":nm,"t":t,"c":c,"s":mine ? "eq" : "cmp"}; return true; }
+            var ch:Boolean = false;
+            if(t.length > 0 && this.hzAmEq.t != t) { this.hzAmEq.t = t; ch = true; }   // an empty name never blanks a known one
+            if(c > 0 && this.hzAmEq.c != c) { this.hzAmEq.c = c; ch = true; }          // nor a 0 size a known one
             return ch;
          }
          if(t.length == 0) { return false; }
-         return this.hzAmLearn(String(it.sName),t,c,false);
+         return this.hzAmLearn(nm,t);   // a copy found by name: its ammo name may fill a gap, its magazine size is never used
       }
 
-      // Outputs: true when something was added. A weak source (strong == false) only fills a missing type or a 0 size;
-      // a known non-empty type or non-zero size is never overwritten by it, and a 0 size never replaces a known one.
-      private function hzAmLearn(nm:String, t:String, cap:Number, strong:Boolean) : Boolean
+      // Outputs: true when something was added. Name-keyed sources only fill a missing or empty ammo name; a known non-empty
+      // name is never overwritten. No magazine size is kept here: a same-name copy may carry a different magazine.
+      private function hzAmLearn(nm:String, t:String) : Boolean
       {
          if(nm.length == 0) { return false; }
-         var c:Number = this.hzAmCap(cap);
          var k:Object = this.hzAmKnown[nm];
-         if(k == null) { this.hzAmKnown[nm] = {"t":t,"c":c}; return true; }
-         var ch:Boolean = false;
-         if(t != null && t != k.t && (strong || k.t == null || String(k.t).length == 0)) { k.t = t; ch = true; }
-         if(c > 0 && c != k.c && (strong || !(k.c > 0))) { k.c = c; ch = true; }
-         return ch;
+         if(k == null) { this.hzAmKnown[nm] = {"t":t}; return true; }
+         if(t != null && t.length > 0 && t != k.t && (k.t == null || String(k.t).length == 0)) { k.t = t; return true; }
+         return false;
       }
 
       // exact name first; otherwise the inventory walk's rule (the item name starts with WeaponData's weapon name). Of several
@@ -3474,11 +3479,7 @@
          var eqMine:Boolean = this.hzAmEq != null && String(this.hzAmEq.n).indexOf(wn) == 0;   // the equipped feed is about this gun
          if(eqMine) { t = this.hzAmEq.t; c = Number(this.hzAmEq.c); }
          var k:Object = this.hzAmFind(wn);
-         if(k != null)
-         {
-            if(t == null || t.length == 0) { if(k.t != null) { t = String(k.t); } }
-            if(!(c > 0) && k.c > 0) { c = Number(k.c); }
-         }
+         if(k != null && (t == null || t.length == 0) && k.t != null) { t = String(k.t); }
          if(c > 0) { this.hzMagCap = c; }
          this.hzSetAmmoType(t != null ? t : "");
          // still needed: an unknown type, or a gun that shows ammo with no type or no magazine size yet
@@ -3626,7 +3627,7 @@
             if(this.hzWeapName.length == 0 && nm.length > 0) { this.hzInvWeapName = nm; }
             if(this.hzWeapName.length > 0 && nm.indexOf(this.hzWeapName) == 0)
             {
-               var cap:Number = this.hzFindNum(it,"uAmmoCapacity",0);
+               var cap:Number = this.hzAmCap(this.hzFindNum(it,"uAmmoCapacity",0));   // no-magazine value -> 0
                if(cap > 0) { this.hzMagCap = cap; }
                this.hzSetAmmoType(t);
                return;
@@ -14898,7 +14899,7 @@
       private function hz26DbgText() : String
       {
          var out:String = "";
-         for each(var k:String in ["PersonalEffectsData","PersonalAlertsData","aPersonalAlerts[0]","Afflictions","QuestObjectives","PlayerData","XPData","XPData[0]","HUDStealthData","HudHitKillIndicatorData","KillDataA[0]","HUDDirectionalHitData","aDirectionalHitIndicators[0]","PlayerHealthBoostData","HUDStarbornPowersData","PowerIcon","Enemy","EnemyModifiers"])
+         for each(var k:String in ["PersonalEffectsData","PersonalAlertsData","aPersonalAlerts[0]","Afflictions","QuestObjectives","PlayerData","XPData","XPData[0]","HUDStealthData","HudHitKillIndicatorData","KillDataA[0]","HUDDirectionalHitData","aDirectionalHitIndicators[0]","PlayerHealthBoostData","HUDStarbornPowersData","PowerIcon","Enemy","EnemyModifiers","DataInventoryProvider"])
          {
             if(this.hz26Dbg[k] != undefined) { out += k + ": " + String(this.hz26Dbg[k]) + "\n"; }
          }
