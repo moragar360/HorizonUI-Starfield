@@ -13,7 +13,7 @@ const as = readAs();
 function host() {
 	const h = baseHost({ hz26VCache: {}, hz26VMiss: {}, hz26VMissF: {}, HZ26_V_MISSMAX: 540, hzFrameN: 0, walks: 0, found: null,
 		EnemyHealthHolder_mc: null, HitDamageBase_mc: null, HitAndKillIndicator_mc: null, TopCenterGroup_mc: null, CenterGroup_mc: null,
-		Object: (o) => o });
+		hz26VMissAny: false, hz26VCapN: 0, hz26VSig: -1, hz26VPar: [], Object: (o) => o });
 	h.hzFindByName = (c, n) => { h.walks++; return h.found; };
 	h.hz26V = mkFn(h, ["name"], fnText(as, "hz26V").body);
 	return h;
@@ -23,14 +23,14 @@ function host() {
 	let walkFrames = [];
 	for (let f = 1; f <= 2000; f++) { h.hzFrameN = f; const w = h.walks; h.hz26V("HitDamageBase_mc"); h.hz26V("HitDamageBase_mc"); if (h.walks > w) walkFrames.push(f); }
 	expect(walkFrames.length === 6 && walkFrames.every((f) => f % 90 === 5), "a never-found name: 6 walks on the old 90-frame slots, then none (" + walkFrames.join(",") + ")");
-	h.HitDamageBase_mc = { name: "HitDamageBase_mc" };
+	h.HitDamageBase_mc = { name: "HitDamageBase_mc", parent: h };
 	expect(h.hz26V("HitDamageBase_mc") === h.HitDamageBase_mc, "the property path still finds it after the cap");
 	h.HitDamageBase_mc = null;
-	expect(h.hz26V("HitDamageBase_mc") != null, "and the found clip is kept, as before");
+	expect(h.hz26V("HitDamageBase_mc") != null, "and the found clip is kept, as before (while it is still in the HUD)");
 }
 {
 	const h = host();
-	h.found = { name: "StealthMeter_mc" };
+	h.found = { name: "StealthMeter_mc", parent: {} };
 	h.hzFrameN = 95; const d = h.hz26V("StealthMeter_mc");
 	expect(d === h.found && h.walks === 1, "a walk that finds the clip keeps it (before the cap)");
 }

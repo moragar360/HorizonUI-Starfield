@@ -3831,6 +3831,7 @@
             if(this.hzWlOn) { wlOld = this.hzHideCache; wlWhy = wlOld == null ? 0 : (this.hz36HideStale ? 2 : 1); this.hzWlRbNow = true; }
             this.hzHideCache = [];
             this.hz36HideStale = false;
+            try { this.hz26VMissReset(); } catch(e26r:Error) { }   // round 3 SF-1: a hide-list rebuild restarts the hz26V miss counts
             names = [];
             var grp:Boolean = this.hz44Hid;   // BLG hidden as a whole: its children need no per-piece entries
             if(this.hzHideVanillaBoost) { names.push("JetpackMeterWrapper_mc","JetpackMeterAnim_mc"); }
@@ -15096,6 +15097,15 @@
       private var hz26VMiss:Object = {};    // 0.43.6: frames each name has been missing (hz26V); capped at HZ26_V_MISSMAX
       private var hz26VMissF:Object = {};   // 0.43.6: the last frame counted per name (one count per frame)
       private static const HZ26_V_MISSMAX:int = 540;
+      // 0.43.6 (round 3 D, review SF-1): the miss counts start again on every edge where a missing clip can appear: a
+      // save load (a frame gap over 1 s), a hide-list rebuild, and a child-count change of the HUD, the BottomLeftGroup or
+      // the containers of the clips already found (the walk-only names are siblings there). The child counts are read
+      // only while a name is at the cap (hz26VCapN), so the steady path stays one int test and one clock compare.
+      private var hz26VMissAny:Boolean = false;   // some name has a count
+      private var hz26VCapN:int = 0;              // names at HZ26_V_MISSMAX
+      private var hz26VSig:Number = -1;           // child-count signature when the cap was reached (-1 = take it next frame)
+      private var hz26VLastW:Number = 0;          // last frame's clock (the load gap)
+      private var hz26VPar:Array = [];            // distinct containers of the clips found so far
       private var hz26VHid:Object = {};
 
       private function hz26Now() : Number
@@ -16478,7 +16488,12 @@
       private function hz26V(name:String) : DisplayObject
       {
          var d:DisplayObject = this.hz26VCache[name] as DisplayObject;
-         if(d != null) { return d; }
+         if(d != null)
+         {
+            if(d.parent != null) { return d; }
+            delete this.hz26VCache[name];   // SF-1: a kept clip the game (or a mod) took out of the HUD is searched again
+            d = null;
+         }
          try
          {
             switch(name)
@@ -16495,11 +16510,58 @@
             // is still read on every call, so a clip that does appear is still found.
             if(d == null && int(this.hz26VMiss[name]) >= HZ26_V_MISSMAX) { return null; }
             if(d == null && this.hzFrameN % 90 == 5) { d = this.hzFindByName(this,name,0); }
-            if(d == null && this.hz26VMissF[name] !== this.hzFrameN) { this.hz26VMissF[name] = this.hzFrameN; this.hz26VMiss[name] = int(this.hz26VMiss[name]) + 1; }
+            if(d == null && this.hz26VMissF[name] !== this.hzFrameN)
+            {
+               this.hz26VMissF[name] = this.hzFrameN;
+               var mc:int = int(this.hz26VMiss[name]) + 1;
+               this.hz26VMiss[name] = mc;
+               this.hz26VMissAny = true;
+               if(mc == HZ26_V_MISSMAX) { this.hz26VCapN++; this.hz26VSig = -1; }
+            }
          }
          catch(err:Error) { d = null; }
-         if(d != null) { this.hz26VCache[name] = d; }
+         if(d != null)
+         {
+            this.hz26VCache[name] = d;
+            if(int(this.hz26VMiss[name]) >= HZ26_V_MISSMAX) { this.hz26VCapN--; }
+            delete this.hz26VMiss[name];
+            try { var vp:DisplayObjectContainer = d.parent; if(vp != null && this.hz26VPar.indexOf(vp) < 0) { this.hz26VPar.push(vp); } } catch(eVp:Error) { }
+         }
          return d;
+      }
+
+      // SF-1: every miss count starts again (edges only)
+      private function hz26VMissReset() : void
+      {
+         if(!this.hz26VMissAny) { return; }
+         this.hz26VMiss = {};
+         this.hz26VMissF = {};
+         this.hz26VMissAny = false;
+         this.hz26VCapN = 0;
+         this.hz26VSig = -1;
+      }
+
+      // SF-1: child counts of the HUD, the BottomLeftGroup and the found clips' containers, as one number
+      private function hz26VKids() : Number
+      {
+         var k:Number = this.numChildren;
+         if(this.hzBlg != null) { k = k * 1009 + this.hzBlg.numChildren; }
+         var i:int = 0;
+         while(i < this.hz26VPar.length) { var p:DisplayObjectContainer = this.hz26VPar[i] as DisplayObjectContainer; if(p != null) { k = (k * 1009 + p.numChildren) % 2147483647; } i++; }
+         return k;
+      }
+
+      // SF-1, once per frame from hz26Tick (before hz26Vanilla): the load gap always; the child counts only while a name
+      // is at the cap
+      private function hz26VEdge(now:Number) : void
+      {
+         var gap:Boolean = this.hz26VLastW > 0 && now - this.hz26VLastW > 1000;
+         this.hz26VLastW = now;
+         if(gap) { this.hz26VMissReset(); return; }
+         if(this.hz26VCapN <= 0) { return; }
+         var k:Number = this.hz26VKids();
+         if(this.hz26VSig < 0) { this.hz26VSig = k; return; }
+         if(k != this.hz26VSig) { this.hz26VMissReset(); }
       }
 
       private function hz26HideV(name:String, on:Boolean) : void
@@ -16543,6 +16605,7 @@
          if(!this.hz26Built) { return; }
          var now:Number = isNaN(now0) ? this.hz26Now() : now0;   // now0: the frame's clock from hzOnFrame
          var base:Boolean = this.hzGroupVisible && !this.hzUserHidden;
+         try { this.hz26VEdge(now); } catch(e0e:Error) { }   // round 3 SF-1: load / child-count edges restart the hz26V miss counts
          // stealth: vanilla rule (sneaking and the meter is on)
          var sd:Object = this.hz26St;
          this.hz26StOn = sd != null && sd.bSneaking === true && sd.bShowMeter === true;
