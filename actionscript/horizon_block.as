@@ -18706,7 +18706,7 @@
       // URLLoader on the same relative path base the HUD already reads HorizonUI.ini from; a missing file / folder
       // only raises IOErrorEvent (caught). State: undefined/-1 checking, 0 absent, 1 present. Re-probed on every F11
       // open so an install / uninstall shows without restarting.
-      private static const HZ30_MODS:Array = ["scanner","comms","font","comms_dialogue","es","edi","edi2","scope","notifications"];   // 0.43.0.1: + notifications.marker
+      private static const HZ30_MODS:Array = ["scanner","comms","font","comms_dialogue","es","edi","edi2","scope","notifications","quickmenu"];   // 0.43.4: + quickmenu.marker (optional Quick Menu module)
       private var hz30Mod:Object = {};
       private var hz30ModLdr:Object = {};
       private var hz30ModT0:Number = 0;
@@ -19513,6 +19513,23 @@
          }
          rows.push(mt); rows.push(ms);
          try { this.hz42ScRows(rows); } catch(err42r:Error) { }   // v0.42.0 r2: SCOPE rows (only with the Scope module)
+         // 0.43.4: QUICK MENU > HORIZON STYLE locks when quickmenu.marker is absent (optional FOMOD module).
+         // The saved QuickMenuHorizon value is left untouched; a locked row cannot be changed.
+         var qmi:int = 0;
+         while(qmi < rows.length)
+         {
+            if(rows[qmi].k == "QuickMenuHorizon")
+            {
+               if(this.hz30Mod["quickmenu"] !== 1)
+               {
+                  rows[qmi].dis = true;
+                  rows[qmi].dv = false;
+                  rows[qmi].note = "Quick Menu module not installed. Install it from the Horizon UI installer.";
+               }
+               break;
+            }
+            qmi++;
+         }
          // 0.43.3.2 batch e: the help text moves into the row's (i) popup (hz35InfoOf: r.inote first), so the list is just
          // rows. A disabled row keeps its note under it: the note says why it is off, and a disabled row has no (i).
          var ni:int = 0;

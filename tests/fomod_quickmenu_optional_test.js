@@ -2,10 +2,12 @@
 // Checks fomod/ModuleConfig.xml and fomod/info.xml:
 //  1. both files are well-formed XML;
 //  2. requiredInstallFiles installs only 00 Core, and does not name favoritesmenu;
-//  3. the Optional Modules step has a Recommended (default) plugin "Quick Menu (Favorites)"
-//     that installs the folder "05 Quick Menu", with a CouldBeUsable pattern when a loose
-//     favoritesmenu.swf or favoritesmenu_lrg.swf is already present;
-//  4. the compatibility note and info.xml no longer say the quick menu is part of Core.
+//  3. the Optional Modules step has a Recommended plugin "Quick Menu (Favorites)" that
+//     installs the folder "05 Quick Menu" and is always ticked by default (no CouldBeUsable
+//     pattern: a leftover Horizon favoritesmenu.swf must not silently untick it on upgrade);
+//  4. the compatibility note and info.xml no longer say the quick menu is part of Core;
+//  5. quickmenu.marker ships in the repo, HZ30_MODS probes it, and F11 locks HORIZON STYLE
+//     when it is absent (same install-note pattern as Comms).
 // Run: node tests/fomod_quickmenu_optional_test.js
 // Author: Moragar. Last modified: 2026-11-22.
 "use strict";
@@ -67,11 +69,9 @@ const plug = pluginRe.exec(optBody);
 expect(!!plug, "Optional Modules has the plugin Quick Menu (Favorites)");
 const plugBody = plug ? plug[1] : "";
 expect(/<folder\s+source="05 Quick Menu"\s+destination=""\s+priority="0"\s*\/>/.test(plugBody), "Quick Menu (Favorites) installs the folder 05 Quick Menu");
-expect(/<defaultType\s+name="Recommended"\s*\/>/.test(plugBody), "Quick Menu (Favorites) defaults to Recommended (ticked unless a conflict is detected)");
-expect(/<type\s+name="CouldBeUsable"\s*\/>/.test(plugBody), "Quick Menu (Favorites) has a CouldBeUsable pattern");
-expect(/<fileDependency\s+file="Interface\\favoritesmenu\.swf"\s+state="Active"\s*\/>/.test(plugBody), "CouldBeUsable depends on a loose Interface\\favoritesmenu.swf");
-expect(/<fileDependency\s+file="Interface\\favoritesmenu_lrg\.swf"\s+state="Active"\s*\/>/.test(plugBody), "CouldBeUsable also depends on a loose Interface\\favoritesmenu_lrg.swf");
+expect(/<typeDescriptor>\s*<type\s+name="Recommended"\s*\/>\s*<\/typeDescriptor>/.test(plugBody) && !/dependencyType|CouldBeUsable|fileDependency/.test(plugBody), "Quick Menu (Favorites) is plain Recommended (always ticked; no CouldBeUsable pattern)");
 expect(/untick this to keep the game's quick menu or another mod's/i.test(plugBody), "the plugin description says to untick it to keep the game's or another mod's quick menu");
+expect(/HORIZON STYLE appears locked/.test(plugBody), "the plugin description says the F11 row appears locked when the module is not installed");
 
 expect(!/quick menu \(Core\)/i.test(cfg), "ModuleConfig.xml no longer calls the quick menu part of Core");
 expect(/optional Quick Menu \(Favorites\) module replaces Interface\\favoritesmenu\.swf/i.test(cfg), "the compatibility note points at the optional Quick Menu (Favorites) module");
@@ -81,7 +81,18 @@ expect(/optional Quick Menu \(Favorites\) module replaces the quick menu/i.test(
 expect(/Untick it to keep the game's quick menu or another mod's/i.test(info), "info.xml says to untick it to keep the game's or another mod's quick menu");
 
 // The repo does not stage the 00 Core / 05 Quick Menu folders; those exist only in the FOMOD zip.
-// This test locks the installer source so a later pack step can move the two movies into 05 Quick Menu.
+// This test locks the installer source so a later pack step can move the two movies into 05 Quick Menu
+// and copy Interface/HorizonUI/modules/quickmenu.marker into 05 Quick Menu.
 expect(!/source="00 Core\/Interface\/favoritesmenu/i.test(cfg), "ModuleConfig.xml does not install favoritesmenu from 00 Core by path");
+
+const marker = path.join(root, "Interface", "HorizonUI", "modules", "quickmenu.marker");
+expect(fs.existsSync(marker), "the repo has Interface/HorizonUI/modules/quickmenu.marker");
+const markerTxt = fs.readFileSync(marker, "utf8");
+expect(/quickmenu/.test(markerTxt) && /The HUD only checks that this file exists/.test(markerTxt), "quickmenu.marker is an existence marker, like font.marker");
+
+const as = fs.readFileSync(path.join(root, "actionscript", "horizon_block.as"), "utf8").replace(/\r\n/g, "\n");
+const mods = /private static const HZ30_MODS:Array = \[([^\]]+)\]/.exec(as);
+expect(!!mods && mods[1].indexOf('"quickmenu"') >= 0, "HZ30_MODS includes quickmenu");
+expect(/this\.hz30Mod\["quickmenu"\] !== 1/.test(as) && /Quick Menu module not installed\. Install it from the Horizon UI installer\./.test(as), "hz34CardRows locks HORIZON STYLE when quickmenu.marker is absent, with the same install-note wording as Comms");
 
 finish("fomod_quickmenu_optional_test");

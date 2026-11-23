@@ -9,6 +9,7 @@
 //  4. headers are never rows: every row has a key and a control, a header rides on the row below it, and the list
 //     geometry (selection follow / scroll) counts its 24 px, so keyboard / gamepad lands on real rows;
 //  5. SCOPE rows only with the Scope module; MISSION TOAST + SIZE locked (grayed, off, GLOBAL) without Comms;
+//     QUICK MENU > HORIZON STYLE locked (grayed, off) without the Quick Menu module, same install-note pattern;
 //  6. batch e: the help text under the rows moved into each row's (i) popup (r.inote, shown first by hz35InfoOf), so
 //     the list is just rows; a disabled row keeps its reason under it (it has no (i));
 //  7. batch j: the ACTIVE BUFFS section and its rows are gone (the base compare leaves them out of the old list,
@@ -75,7 +76,7 @@ const MAIN = ["CompactScale", "ShowVitals", "ShowJetpack", "ShowAmmo", "ShowComp
 const GONE = ["ActiveBuffs", "BuffsScale", "BuffsShow", "BuffsCompact", "BuffsMax", "BuffsTimers", "BuffsPermanent", "BuffsHideEmpty"];
 const GONE_DEF = ',"ActiveBuffs":1,"BuffsShow":0,"BuffsMax":6,"BuffsTimers":1,"BuffsPermanent":0,"BuffsHideEmpty":1,"BuffsRule":0,"BuffsScale":-1,"BuffsCompact":0';
 const comms = { comms: 1 };
-const all = { comms: 1, scope: 1 };
+const all = { comms: 1, scope: 1, quickmenu: 1 };   // 0.43.4: + quickmenu so HORIZON STYLE stays unlocked here
 const now = rowsOf(as, comms);
 // ---- 1. headers ----
 expect(JSON.stringify(list(now).filter((r) => r.h).map((r) => r.h)) === JSON.stringify(ORDER), "section headers in order: " + list(now).filter((r) => r.h).map((r) => r.h).join(", "));
@@ -185,6 +186,11 @@ const mt = noComms.find((r) => r.k === "MissionToast"), ms = noComms.find((r) =>
 expect(mt.dis === true && mt.dv === false && ms.dis === true && ms.dv === -1 && ms.note === "Comms module not installed. Install it from the Horizon UI installer.", "without Comms: MISSION TOAST and SIZE locked (off, GLOBAL) with the install note");
 const mt2 = now.find((r) => r.k === "MissionToast"), ms2 = now.find((r) => r.k === "MissionToastScale");
 expect(!mt2.dis && !ms2.dis && ms2.inote === "Same switch as COMMS > MISSION TOAST. Move it in ARRANGE CARDS" && ms2.note === undefined, "with Comms: unlocked, same text as before (now in its (i) popup)");
+// 0.43.4: QUICK MENU > HORIZON STYLE locks when quickmenu.marker is absent (same pattern as MISSION TOAST / Comms)
+const qmOff = now.find((r) => r.k === "QuickMenuHorizon");
+expect(qmOff && qmOff.dis === true && qmOff.dv === false && qmOff.note === "Quick Menu module not installed. Install it from the Horizon UI installer." && qmOff.n13 === true && !qmOff.inote && qmOff.h === "QUICK MENU" && qmOff.l === "HORIZON STYLE", "without Quick Menu: HORIZON STYLE locked (off) with the install note under the row, no (i) popup");
+const qmOn = withScope.find((r) => r.k === "QuickMenuHorizon");
+expect(qmOn && !qmOn.dis && qmOn.inote === "The game's quick menu (favorites cross) as Horizon cards. Off = the game's look." && qmOn.note === undefined && !qmOn.n13, "with Quick Menu: unlocked, the usual help text in its (i) popup");
 expect(!/addEventListener|ENTER_FRAME|setInterval|setTimeout|new Timer/.test(fnText(as, "hz34CardRows").body), "menu rows only: no timer or listener");
 
 console.log("f11_cards_layout_test " + (failed ? "FAILED" : "passed") + " (" + passed + " ok, " + failed + " FAIL)");

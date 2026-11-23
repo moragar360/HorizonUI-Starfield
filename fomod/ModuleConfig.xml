@@ -85,7 +85,7 @@
         <group name="Optional Modules" type="SelectAny">
           <plugins order="Explicit">
             <plugin name="Quick Menu (Favorites)">
-              <description>Horizon-styled quick menu, the favorites cross (Interface\favoritesmenu.swf + _lrg). Replaces the game's quick menu and any other mod that replaces those files. Ticked by default; untick this to keep the game's quick menu or another mod's. Not ticked by default if a loose favoritesmenu.swf is already present. The Horizon look can also be turned off later in F11 &gt; CARDS &gt; QUICK MENU &gt; HORIZON STYLE.</description>
+              <description>Horizon-styled quick menu, the favorites cross (Interface\favoritesmenu.swf + _lrg). Replaces the game's quick menu and any other mod that replaces those files. Ticked by default; untick this to keep the game's quick menu or another mod's. Unticked, F11 &gt; CARDS &gt; QUICK MENU &gt; HORIZON STYLE appears locked. When the module is installed, that same setting can also turn the Horizon look off.</description>
               <files>
                 <folder source="05 Quick Menu" destination="" priority="0"/>
               </files>
@@ -93,21 +93,7 @@
                 <flag name="QuickMenu">On</flag>
               </conditionFlags>
               <typeDescriptor>
-                <dependencyType>
-                  <defaultType name="Recommended"/>
-                  <patterns>
-                    <!-- A loose favoritesmenu.swf or favoritesmenu_lrg.swf. FOMOD cannot also test that a
-                         previous Horizon Quick Menu install is absent, so a previous Horizon Quick Menu
-                         install also triggers this. -->
-                    <pattern>
-                      <dependencies operator="Or">
-                        <fileDependency file="Interface\favoritesmenu.swf" state="Active"/>
-                        <fileDependency file="Interface\favoritesmenu_lrg.swf" state="Active"/>
-                      </dependencies>
-                      <type name="CouldBeUsable"/>
-                    </pattern>
-                  </patterns>
-                </dependencyType>
+                <type name="Recommended"/>
               </typeDescriptor>
             </plugin>
             <plugin name="Comms (Subtitles and Dialogue)">
