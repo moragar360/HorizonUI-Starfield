@@ -6819,7 +6819,7 @@
       }
 
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
-      private static const HZ_VERSION:String = "0.43.4.0";   // settings schema = HZF::kVersion (0.43.4.0 since 2026-11-22; 0.42.0 until 2026-11-19)
+      private static const HZ_VERSION:String = "0.43.3.0";   // settings schema = HZF::kVersion (0.42.0 until 2026-11-19; 0.43.4 adds no settings, so it stays)
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
       private static const HZ_BUILD:String = "0.43.4.0";   // 0.43.4.0: versions aligned (user request, 2026-11-22; was 0.43.3.0)
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
