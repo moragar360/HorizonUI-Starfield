@@ -3527,6 +3527,21 @@
          if(eqMine || now - this.hzAmT0 >= HZ_AM_WAIT) { this.hzAmInvStart(); }
       }
 
+      // Purpose: the unknown-gun 3 s wait (hzAmT0) was only checked again from game events (PlayerFrequentData, WeaponData,
+      // the favorites and equipped feeds, hover). On a fresh start with a gun in hand and full health and oxygen the game
+      // may send none of them until the first shot, so the ammo type stayed "--" until then. This checks the wait from the
+      // frame tick and on the load edge. No timer, listener or allocation; every ammo source stays, and the inventory
+      // fallback still starts at most once per session (hzAmInvStart). Once the fallback owns it (hzAmInvOn), only the
+      // load edge looks again, so the per-frame path never runs the inventory peek every frame.
+      // Inputs: now (the frame's clock, hz26Now ms; NaN never passes the wait test), edge (true on a load gap).
+      // Outputs: hzAmResolve and hzDrawMag, as in hzOnPlayerFrequent. Author: Moragar. Last modified: 2026-11-22.
+      private function hzAmWaitTick(now:Number, edge:Boolean) : void
+      {
+         if(isNaN(this.hzAmT0)) { return; }
+         if(!edge && (this.hzAmInvOn || !(now - this.hzAmT0 >= HZ_AM_WAIT))) { return; }
+         try { this.hzAmResolve(); this.hzDrawMag(); } catch(errAmW:Error) { this.hzAmT0 = NaN; }
+      }
+
       // last resort, kept so no gun ever loses its ammo type or magazine size: the pre-0.43.5 inventory walk
       private function hzAmInvStart() : void
       {
@@ -3938,6 +3953,7 @@
          if(this.hzPerfOn) { this.hzPsSpan(20,p26,true); }
          try { this.hzMsglogCaretTick(); } catch(eMlC:Error) { }
          try { this.hzAfLoadWatch(wall); } catch(errAfW:Error) { }
+         try { this.hzAmWaitTick(wall,false); } catch(errAmWt:Error) { }   // 0.43.6 round 4: one isNaN test while no wait is pending
          if(this.hzPerfOn) { this.hzPsMark(21); }
          if(this.hzPlanAlertOn && !this.hz55Shed)   // 0.43.5: hzPlanAlert is on the torn-down classic planet card
          {
@@ -11328,6 +11344,7 @@
       {
          var now:Number = now0 >= 0 ? now0 : this.hz26Now();   // now0: the frame's clock from hzOnFrame
          if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAfArmRelayout(); }
+         if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAmWaitTick(now,true); }   // 0.43.6 round 4: a pending ammo wait, on the load edge
          if(now > 0) { this.hzAfLastWall = now; }
          if(this.hzAfLoadAt > 0)
          {
