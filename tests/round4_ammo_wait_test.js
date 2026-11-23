@@ -52,11 +52,20 @@ function mk(o) {
 	expect(h.resolveN === before, "nothing more runs per frame once the fallback owns it");
 }
 
-// nothing pending: the tick does nothing (one isNaN)
+// nothing pending: the tick does nothing (hzOnFrame's inline guard skips the call; the tick's own isNaN returns)
 {
 	const h = mk();
 	for (let t = 0; t < 10000; t += 16) h.tick(t, false);
 	expect(h.resolveN === 0 && h.starts === 0 && h.draws === 0, "no wait pending: the tick is a no-op");
+}
+
+// load edge with nothing pending: the leading isNaN return keeps it a no-op (no resolve, draw or peek)
+{
+	const h = mk({ hzAmInvOn: true, hzInvItems: null });
+	h.tick(5000, true); h.tick(9000, true);
+	expect(h.resolveN === 0 && h.draws === 0 && h.peeks === 0 && h.starts === 0, "a load edge with no wait pending does nothing");
+	const lead = tick.body.replace(/\s+/g, " ").trim();
+	expect(lead.indexOf("if(isNaN(this.hzAmT0)) { return; }") === 0 || lead.indexOf("if(isNaN(this.hzAmT0)) return;") === 0, "hzAmWaitTick starts with the isNaN(hzAmT0) return");
 }
 
 // NaN clock never passes the wait
@@ -103,6 +112,7 @@ function mk(o) {
 	const iW = of.indexOf("this.hzAfLoadWatch(wall)");
 	const iT = of.indexOf("this.hzAmWaitTick(wall,false)");
 	expect(iW > 0 && iT > iW, "hzOnFrame checks the wait each frame, after the load watch, with the frame clock");
+	expect(of.indexOf("if(!isNaN(this.hzAmT0)) { try { this.hzAmWaitTick(wall,false); }") >= 0, "hzOnFrame calls the tick only while a wait is pending (inline isNaN guard)");
 	const lw = fnText(as, "hzAfLoadWatch").body;
 	expect(lw.indexOf("if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAmWaitTick(now,true); }") > lw.indexOf("{ this.hzAfArmRelayout(); }") && lw.indexOf("{ this.hzAfArmRelayout(); }") > 0 && lw.indexOf("if(now > 0) { this.hzAfLastWall = now; }") > lw.indexOf("hzAmWaitTick(now,true)"), "the load gap edge checks the wait, after the relayout arm and before the last-wall update");
 	const pf = fnText(as, "hzOnPlayerFrequent").body;

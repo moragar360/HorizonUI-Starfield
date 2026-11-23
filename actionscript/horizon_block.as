@@ -3953,7 +3953,7 @@
          if(this.hzPerfOn) { this.hzPsSpan(20,p26,true); }
          try { this.hzMsglogCaretTick(); } catch(eMlC:Error) { }
          try { this.hzAfLoadWatch(wall); } catch(errAfW:Error) { }
-         try { this.hzAmWaitTick(wall,false); } catch(errAmWt:Error) { }   // 0.43.6 round 4: one isNaN test while no wait is pending
+         if(!isNaN(this.hzAmT0)) { try { this.hzAmWaitTick(wall,false); } catch(errAmWt:Error) { } }   // 0.43.6 round 4: one inline isNaN per frame; the call (plus its own isNaN and the wait test) runs only while a wait is pending
          if(this.hzPerfOn) { this.hzPsMark(21); }
          if(this.hzPlanAlertOn && !this.hz55Shed)   // 0.43.5: hzPlanAlert is on the torn-down classic planet card
          {
