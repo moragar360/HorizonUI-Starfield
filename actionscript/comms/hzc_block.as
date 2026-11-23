@@ -342,7 +342,7 @@
             if(GlobalFunc.HasFireForgetEvent(ev.data,"MonocleMenu_Opened") || GlobalFunc.HasFireForgetEvent(ev.data,"ShipHud_OnMonocleToggle_Opened"))
             {
                this.hzcScanShip = !GlobalFunc.HasFireForgetEvent(ev.data,"MonocleMenu_Opened");
-               this.hzcScan = true; this.hzcScanT0 = getTimer(); this.hzcScanLast = getTimer(); this.hzcReload();
+               this.hzcScan = true; this.hzcScanT0 = getTimer(); this.hzcScanLast = getTimer(); if(!this.hzcIniPush || this.hzcIniState == 0) { this.hzcReload(); }   // 0.43.6 r4: no file read on a scanner open once the DLL pushes saves
                if(!this.hzcScanTick) { this.hzcScanTick = true; addEventListener(Event.ENTER_FRAME,this.hzcScanFrame); }
             }
             else if(GlobalFunc.HasFireForgetEvent(ev.data,"MonocleMenu_Closed") || GlobalFunc.HasFireForgetEvent(ev.data,"ShipHud_OnMonocleToggle_Closed"))
@@ -384,7 +384,7 @@
             if(this.hzcDllOn && !this.hzcScan)
             {
                this.hzcScanShip = false;
-               this.hzcScan = true; this.hzcScanT0 = getTimer(); this.hzcScanLast = getTimer(); this.hzcReload();
+               this.hzcScan = true; this.hzcScanT0 = getTimer(); this.hzcScanLast = getTimer(); if(!this.hzcIniPush || this.hzcIniState == 0) { this.hzcReload(); }   // 0.43.6 r4: no file read on a scanner open once the DLL pushes saves
                if(!this.hzcScanTick) { this.hzcScanTick = true; addEventListener(Event.ENTER_FRAME,this.hzcScanFrame); }
                this.hzcRefreshAlphas();
                this.hzcToastVis();

@@ -3331,6 +3331,7 @@ namespace HZ
 		} catch (...) {
 			return;
 		}
+		if (batch.empty()) return;   // 0.43.6 r4: no HUD message queued (almost every frame): skip the dialogue check, the Messages_mc reads and the phrase-table copy
 		const bool dialogue = ui->IsMenuOpen("DialogueMenu");
 		const int  vis = HzRxMessagesVisible(ui);
 		const char* visTx = vis < 0 ? "unknown" : (vis ? "1" : "0");
