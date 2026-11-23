@@ -19,7 +19,7 @@
 #include <vector>
 
 namespace HZF {
-inline const char* kVersion = "0.43.3.0";
+inline const char* kVersion = "0.43.4.0";
 }
 #include "hz_ini_diff.h"
 #include "hz_preset_apply.h"   // r7 (S-4): the real PresetToUser
@@ -60,7 +60,7 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.3.0", "file version string");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.4.0", "file version string");
 	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 3 && HZ_FILE_VERSION_BUILD == 0, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "verbose reaction trace is off for this release");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "unfiltered HUD capture is off for this release");
@@ -640,7 +640,7 @@ int main()
 		Expect(load != std::string::npos, "plugin load function is present");
 		Expect(src.find("REX::INFO(\"HorizonUI {} loaded\", HZ::DllFileVersion());", load) != std::string::npos, "load line prints DllFileVersion");
 		Expect(src.find("HorizonUI 0.42.0 loaded") == std::string::npos, "load line is not a typed schema version");
-		Expect(src.find("inline const char* kVersion = \"0.43.3.0\"") != std::string::npos, "settings schema is 0.43.3.0");
+		Expect(src.find("inline const char* kVersion = \"0.43.4.0\"") != std::string::npos, "settings schema is 0.43.4.0");
 		Expect(src.find("\n#include \"hz_ini_diff.h\"") != std::string::npos, "F11 save uses the shared Diff header");
 		{
 			const auto inc = src.find("\n#include \"hz_ini_diff.h\"");
@@ -829,7 +829,7 @@ int main()
 		Expect(ini.find("\r\n") != std::string::npos, "Moragar's Choice stays CRLF");
 		Expect(ini.find("Name=Moragar's Choice") != std::string::npos, "preset name");
 		Expect(ini.find("Author=Moragar") != std::string::npos, "preset author");
-		Expect(ini.find("Version=0.43.3.0") != std::string::npos, "preset Version is the file version");
+		Expect(ini.find("Version=0.43.4.0") != std::string::npos, "preset Version is the file version");
 		Expect(ini.find("Description=The author's own settings, matching the Nexus screenshots.") != std::string::npos, "preset description");
 		Expect(ini.find("NameHover=0") != std::string::npos, "Moragar's Choice sets NameHover");
 		Expect(ini.find("VitalsBars=0") != std::string::npos, "Moragar's Choice sets VitalsBars");

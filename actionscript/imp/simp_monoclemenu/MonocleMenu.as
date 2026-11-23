@@ -1301,7 +1301,7 @@ package
       // a new movie for every open). arch-fixes Fix 2: no 2 s re-read while it is open: F11 opens from the main HUD only
       // (never while scanning), so a save always lands before the next open, which re-reads. 0.43.4: the open frame
       // (hzsOnOpened) no longer reads the files a second time right after the start read.
-      private static const HZS_VERSION:String = "0.43.3.0";   // 0.43.3.0: the scanner movie's build version (= the DLL file version); bump here only
+      private static const HZS_VERSION:String = "0.43.4.0";   // 0.43.4.0: the scanner movie's build version (= the DLL file version); bump here only
       private static const HZS_LRG:Boolean = false;
       private static const HZS_SCALE:Number = HZS_LRG ? 1.07 : 1;
       // design tokens 0.3.1 (exotic purple added in v0.40)

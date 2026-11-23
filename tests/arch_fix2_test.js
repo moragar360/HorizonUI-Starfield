@@ -169,7 +169,7 @@ COMMS.forEach((file, fi) => {
 	const job = f("FilesPollWork");
 	expect(bumps === 3 && (job.match(/g_iniSavedRev\.fetch_add/g) || []).length === 3, "DLL: the job thread bumps the counter after each user.ini write (save, preset apply / restore / undo, message log)");
 	expect(job.indexOf("Invoke") < 0 && job.indexOf("MenuLive") < 0, "DLL: the job thread never touches Scaleform");
-	expect(/kVersion\s*=\s*"0\.43\.3\.0"/.test(cpp), "DLL: HZF::kVersion is 0.43.3.0");
+	expect(/kVersion\s*=\s*"0\.43\.4\.0"/.test(cpp), "DLL: HZF::kVersion is 0.43.4.0");
 	const sp = f("ScanPushMsg") + f("ScanPushHud");
 	expect(sp.indexOf("a_next = a_now + 100;") < 0 && f("ScanPushReady").indexOf("a_next = a_now + 100;") > 0, "DLL: the scan push cadence is unchanged (kept on purpose, see CHANGES)");
 }

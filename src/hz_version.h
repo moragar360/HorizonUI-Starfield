@@ -4,9 +4,11 @@
 // res/HorizonUI.rc.in includes this header, and the plugin logs and sends the same
 // string (or the version resource that this header produced). Do not copy the
 // numbers into the resource script or into a log line.
-// Product version matches the file version (0.43.3.0). The settings-schema string
-// in the plugin (HZF::kVersion, "0.43.3.0" since 2026-11-19, was "0.42.0") is a separate value: preset age and the
+// Product version matches the file version (0.43.4.0). The settings-schema string
+// in the plugin (HZF::kVersion, "0.43.4.0" since 2026-11-22, "0.43.3.0" since 2026-11-19, was "0.42.0") is a separate value: preset age and the
 // update backup compare against that, not against this file version.
+// 2026-11-22: every version label was bumped to 0.43.4.0 for the 0.43.4 release (user request): file and product
+// version, settings schema, movie build stamps (HUD, scanner, Comms), F11 header, default ini, preset.
 // 2026-11-18: every version label was aligned to 0.43.3.0 at the user's request (file and product version,
 // movie build stamps, F11 header, FOMOD, docs). That is lower than the earlier internal test labels
 // 0.43.3.1 / 0.43.3.2; the history below keeps those labels.
@@ -34,9 +36,9 @@
 
 #define HZ_FILE_VERSION_MAJOR 0
 #define HZ_FILE_VERSION_MINOR 43
-#define HZ_FILE_VERSION_PATCH 3
+#define HZ_FILE_VERSION_PATCH 4
 #define HZ_FILE_VERSION_BUILD 0
-#define HZ_FILE_VERSION_STR "0.43.3.0"
+#define HZ_FILE_VERSION_STR "0.43.4.0"
 
 // 0.43.2.0: 0 is the release state. 1 writes the verbose HUD-message trace (the
 // "hud message:" line and the Comms movie queue as "comms msg:" lines). The card
