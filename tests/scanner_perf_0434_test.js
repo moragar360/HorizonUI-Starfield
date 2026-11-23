@@ -8,6 +8,8 @@
 //     after each step, while the new code makes far fewer text fields (none on a move-only frame)
 //  5. the 6-frame poll skips the event-only planet / bioscan cards; events and the frequent env data still redraw them
 //  6. settings: the open frame no longer reads the files again right after the start read
+//  7. Social card (review M-1): a bounty with a key prompt draws as in 3ee48a4 on an empty card and on a card that
+//     already had fields (the key is measured on a throwaway sprite, never added to and removed from the card)
 // Old bodies come from git (tests/lib/git_base.js: SKIP in a source zip without git, HZ_REQUIRE_GIT=1 makes it a FAIL).
 // Author: Moragar. Last modified: 2026-11-22.
 "use strict";
@@ -65,6 +67,7 @@ class Gfx {
 	lineTo(x, y) { this.ops.push(["lt", x, y]); }
 	drawCircle(x, y, r) { this.ops.push(["dc", x, y, r]); }
 	drawRoundRect(x, y, w, h, a, b) { this.ops.push(["rr", x, y, w, h, a, b]); }
+	drawRect(x, y, w, h) { this.ops.push(["rr", x, y, w, h, 0, 0]); }
 }
 let nid = 0;
 class DO { constructor() { this.x = 0; this.y = 0; this.alpha = 1; this.visible = true; this.scaleX = 1; this.scaleY = 1; this.name = "instance" + (++nid); this.parent = null; this.mouseEnabled = true; this.mouseChildren = true; } }
@@ -72,9 +75,11 @@ class Sprite extends DO {
 	constructor() { super(); this.kids = []; this.graphics = new Gfx(); }
 	get numChildren() { return this.kids.length; }
 	addChild(c) { if (c.parent) c.parent.kids.splice(c.parent.kids.indexOf(c), 1); this.kids.push(c); c.parent = this; return c; }
-	addChildAt(c, i) { if (c.parent) c.parent.kids.splice(c.parent.kids.indexOf(c), 1); this.kids.splice(i, 0, c); c.parent = this; return c; }
-	removeChildAt(i) { const c = this.kids.splice(i, 1)[0]; if (c) c.parent = null; return c; }
-	getChildAt(i) { return this.kids[i] || null; }
+	addChildAt(c, i) { if (i < 0 || i > this.kids.length) throw new RangeError("Error #2006"); if (c.parent) c.parent.kids.splice(c.parent.kids.indexOf(c), 1); this.kids.splice(i, 0, c); c.parent = this; return c; }
+	removeChildAt(i) { if (i < 0 || i >= this.kids.length) throw new RangeError("Error #2006"); const c = this.kids.splice(i, 1)[0]; if (c) c.parent = null; return c; }
+	getChildAt(i) { if (i < 0 || i >= this.kids.length) throw new RangeError("Error #2006"); return this.kids[i]; }
+	removeChild(c) { const i = this.kids.indexOf(c); if (i < 0) throw new Error("Error #2025"); this.kids.splice(i, 1); c.parent = null; return c; }
+	setChildIndex(c, i) { const j = this.kids.indexOf(c); if (j < 0) throw new Error("Error #2025"); if (i < 0 || i >= this.kids.length) throw new RangeError("Error #2006"); this.kids.splice(j, 1); this.kids.splice(i, 0, c); }
 }
 // a width model: per character advance by face weight, size and tracking, plus a small pair kerning (never net negative)
 let WIDTH = (t) => {
@@ -126,6 +131,8 @@ function argList(sig) {
 	return m[1].split(",").map((a) => { const n = a.trim().split(":")[0].trim(); const d = a.indexOf("=") >= 0 ? a.slice(a.indexOf("=") + 1).trim() : null; return d != null ? n + " = " + d : n; });
 }
 const CONST = { HZS_SCALE: 1, HZS_MINPX: 13, HZS_WHITE: 0xFFFFFF, HZS_LABEL: 0xC4D2D9, HZS_MUTED: 0x96A6AE, HZS_AMB: 0xF2A93B, HZS_RED: 0xFF5B5B, HZS_O2B: 0x4DB6FF, HZS_VIO: 0xB48CFF, HZS_BG: 0x0B1218, HZS_R_STRIP: 14, HZS_QST: 0xFFD25E, HZS_REREAD_MS: 3000 };
+// the block's own plain number constants (sizes, radii, colors) fill in any the list above does not set
+for (const m of AS.matchAll(/private static const (HZS_\w+):(?:Number|uint|int) = (0x[0-9A-Fa-f]+|-?[0-9.]+);/g)) if (!(m[1] in CONST)) CONST[m[1]] = Number(m[2]);
 function host(src, names, extra) {
 	const G = Object.assign({ Sprite, TextField, TextFormat, Point, TextFieldAutoSize: { LEFT: "left" }, Math, String, Number, isNaN: (v) => Number.isNaN(Number(v)), int: (v) => Number(v) | 0, uint: (v) => Number(v) >>> 0,
 		hzVals: (o) => (o == null ? [] : Array.isArray(o) ? o.slice() : Object.keys(o).map((k) => o[k])), isTf: (o) => !!(o && o.__tf), stage: { stageWidth: 1920, stageHeight: 1080 }, getTimer: () => 0 }, CONST);
@@ -210,6 +217,20 @@ if (OLD) {
 		cases++; ln += tn.layouts; lo += to.layouts;
 		if (tn.text !== to.text || !same(flat(pn), flat(po))) { ok = false; console.error("  differs: '" + s + "' maxW " + mw + ": '" + tn.text + "' vs '" + to.text + "'"); }
 	}
+	// boundary: maxW exactly the width of each shortened candidate (the "<=" fits case)
+	let bok = true, bcases = 0;
+	for (const s of corpus) {
+		if (s.length < 4) continue;
+		for (let n = 2; n < s.length; n += Math.max(1, s.length >> 3)) {
+			const pr = new Sprite(); const pt = ho.hzsT(pr, s.substr(0, n).replace(/\s+$/, "") + "...", 0, 0, 15, 0xFFFFFF, "sb", 0.12);
+			const mw = pt.textWidth;
+			const pn = new Sprite(), po = new Sprite();
+			const tn = hn.hzsT(pn, s, 0, 0, 15, 0xFFFFFF, "sb", 0.12, "l", 1, mw), to = ho.hzsT(po, s, 0, 0, 15, 0xFFFFFF, "sb", 0.12, "l", 1, mw);
+			bcases++;
+			if (tn.text !== to.text || !same(flat(pn), flat(po))) { bok = false; console.error("  boundary differs: '" + s + "' maxW " + mw + ": '" + tn.text + "' vs '" + to.text + "'"); }
+		}
+	}
+	expect(bok && bcases > 20, "shortening: a candidate exactly maxW wide is kept, as in the old loop (" + bcases + " boundary cases)");
 	expect(ok, "shortening: the same text and spot as the one-character loop in all " + cases + " cases");
 	expect(ln < lo, "shortening: fewer layouts (" + ln + " vs " + lo + ")");
 	expect(/str\.length - 1;\s*\n\s*if\(hi < 2\) \{ return; \}/.test(fnText(AS, "hzsTrunc").body), "shortening: a two-character text is left as it is (the old loop never ran for it)");
@@ -257,6 +278,8 @@ function both(fn, steps, label) {
 		{ name: "a marker left the view", set: (h) => { h.hzsFD = mk(base.slice(1)); } },
 		{ name: "none in view", set: (h) => { h.hzsFD = mk([]); } },
 		{ name: "back", set: (h) => { h.hzsFD = mk(base); } },
+		{ name: "only the ship owner changed (mine -> other)", set: (h) => { const l = base.slice(1); l[2] = Object.assign({}, l[2], { own: "other" }); h.hzsFD = mk(l); } },
+		{ name: "owner back, vehicle owner cleared", set: (h) => { const l = base.slice(1); l[3] = Object.assign({}, l[3], { own: "" }); h.hzsFD = mk(l); } },
 		{ name: "settings change", set: (h) => { h.hzsCfgRev++; } },
 		{ name: "markers off", set: (h) => { h.hzsOn = (k) => k !== "ScanWorldMarkers"; } },
 		{ name: "markers on", set: (h) => { h.hzsOn = () => true; h.hzsFD = mk(moved(0.03, 0)); } },
@@ -298,6 +321,46 @@ function both(fn, steps, label) {
 		{ name: "font arrived + range", set: (h) => { h.hzsFontLib = 2; h.hzsFace = (w) => "$Horizon_Font_Alt" + w; h.hzsFD = { iScanDistance: 40 }; } },
 	];
 	both("hzsDrawRet", steps, "reticle, range and tag");
+}
+
+// ---------------------------------------------------------------- 7. Social card vs 3ee48a4
+if (OLD) {
+	const SOC = ["hzsDrawPanel", "hzsDSocial", "hzsSection", "hzsGs", "hzsRight", "hzsDur", "hzsKeycap", "hzsKeyOf"];
+	const mkS = (src, isNew) => {
+		const P = { Social: new Sprite() };
+		return host(src, (isNew ? NEW_T : OLD_T).concat(SOC), { hzsP: P, hzsSig: {}, hzsSz: {}, hzsK: () => 1, hzsTitle: () => false, hzsMSocial: function () { return this.__soc; }, hzsCard: (g, w, h2, r, stripe, ring, ringA) => { g.ops.push(["card", w, h2, r, stripe, ring === undefined ? 0xFFFFFF : ring, ringA === undefined ? 0.1 : ringA]); } });
+	};
+	const Object_ = (o) => o;
+	const keyB = (amt, key, lab) => ({ acc: 0, amt, key, lab, font: null });
+	const steps = [
+		{ name: "empty card -> bounty with key (no skills)", soc: { rows: [], b: keyB("1500", "R", "Pay") } },
+		{ name: "same", soc: { rows: [], b: keyB("1500", "R", "Pay") } },
+		{ name: "skills + bounty with key", soc: { rows: [["Persuasion", 40, 0, 1], ["Intimidate", 25, 90, 0]], b: keyB("1500", "R", "Pay") } },
+		{ name: "amount changed", soc: { rows: [["Persuasion", 40, 0, 1], ["Intimidate", 25, 90, 0]], b: keyB("2250", "R", "Pay") } },
+		{ name: "longer key and label", soc: { rows: [["Persuasion", 45, 30, 1]], b: keyB("2250", "Enter", "Pay bounty") } },
+		{ name: "skills only", soc: { rows: [["Persuasion", 45, 30, 1]], b: null } },
+		{ name: "bounty without key", soc: { rows: [["Persuasion", 45, 30, 0]], b: keyB("900", "", "") } },
+		{ name: "bounty accepted", soc: { rows: [], b: { acc: 1, amt: "900" } } },
+		{ name: "person note", soc: { note: "Not in range", rows: [] } },
+		{ name: "bounty with key again", soc: { rows: [], b: keyB("1500", "R", "Pay") } },
+		{ name: "hidden", soc: null },
+		{ name: "after hide: skills + bounty with key", soc: { rows: [["Deception", 10, 0, 1]], b: keyB("300", "E", "Pay") } },
+	];
+	const hn = mkS(AS, true), ho = mkS(OLD, false);
+	let ok = true, err = null;
+	for (const st of steps) {
+		for (const h of [hn, ho]) h.__soc = st.soc == null ? null : JSON.parse(JSON.stringify(st.soc));
+		try { hn.hzsDrawPanel("Social"); } catch (e) { err = e; }
+		ho.hzsDrawPanel("Social");
+		const P = hn.hzsP.Social, Q = ho.hzsP.Social;
+		const a = flat(P), b = flat(Q);
+		if (!same(a, b) || P.visible !== Q.visible || !same(hn.hzsSz.Social, ho.hzsSz.Social)) { ok = false; console.error("  Social differs at: " + st.name + " (new " + a.length + " items, old " + b.length + ")"); }
+		if (st.soc && P.visible !== true) { ok = false; console.error("  Social card hidden at: " + st.name); }
+		const keys = P.kids.filter((t) => t.visible && t._text === (st.soc && st.soc.b ? st.soc.b.key : "\u0000")).length;
+		if (st.soc && st.soc.b && st.soc.b.key && keys !== 1) { ok = false; console.error("  Social key shown " + keys + " times at: " + st.name); }
+	}
+	expect(err === null, "Social: no display list error while drawing (" + (err ? err.message : "none") + ")");
+	expect(ok, "Social: a bounty with a key prompt draws as in 3ee48a4 after each of " + steps.length + " steps (empty card, card with fields, after hide)");
 }
 
 // ---------------------------------------------------------------- 5. 6-frame poll
@@ -348,6 +411,12 @@ function both(fn, steps, label) {
 	const fns = [...AS.matchAll(/private function (\w+)\(/g)].map((m) => m[1]);
 	const adders = fns.filter((n) => /\.addChild(At)?\(/.test(fnText(AS, n).body));
 	expect(same(adders.sort(), ["hzsDrawMarks", "hzsDrawRet", "hzsInit", "hzsMkSlot", "hzsT"].sort()), "pool: only hzsT adds children to panels, the compass, the pill and the tag (" + adders.join(", ") + ")");
+	const removers = fns.filter((n) => /\.removeChild(At)?\(/.test(fnText(AS, n).body));
+	expect(same(removers.sort(), ["hzsClr", "hzsT", "hzsTPEnd"].sort()), "pool: only hzsT, hzsTPEnd and hzsClr remove children (" + removers.join(", ") + ")");
+	const movers = fns.filter((n) => /\.(setChildIndex|swapChildren|swapChildrenAt)\(/.test(fnText(AS, n).body));
+	const bio = fnText(AS, "hzsDBio").body; const si = bio.indexOf("p.setChildIndex(ct");
+	expect(same(movers, ["hzsDBio"]) && si > 0 && !/hzsT\(|hzsKeycap\(|hzsSection\(/.test(bio.slice(si)), "pool: the one reorder (scan complete chip on top) is the last field of its pass, so it moves nothing");
+	expect(!/\.hzsT\(p,String\(b\.key\)/.test(fnText(AS, "hzsDSocial").body) && /var kw:TextField = this\.hzsT\(new Sprite\(\),String\(b\.key\)/.test(fnText(AS, "hzsDSocial").body), "Social: the key prompt is measured on a throwaway sprite, not on the card");
 	const dp = fnText(AS, "hzsDrawPanel").body;
 	expect(/if\(m == null\) \{ this\.hzsClr\(p\);/.test(dp) && /this\.hzsTPBegin\(p\);/.test(dp) && /this\.hzsTPEnd\(\);\s*\n\s*this\.hzsTk = 1;/.test(dp), "pool: the panels open a text pass after the empty check and close it after drawing");
 	expect(!/probe/.test(fnText(AS, "hzsDrawMarks").body) && !/probe/.test(fnText(AS, "hzsDrawRet").body) && !/probe/.test(fnText(AS, "hzsDrawCompassIfMoved").body), "markers, reticle and compass measure their own fields (no probe copies)");

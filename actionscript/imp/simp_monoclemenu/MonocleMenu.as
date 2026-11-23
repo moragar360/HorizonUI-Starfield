@@ -3470,9 +3470,8 @@ package
                if(String(b.key).length > 0)
                {
                   var lt:TextField = this.hzsT(p,this.hzsGs(String(b.lab)),w - HZS_PAD,by,14,HZS_WHITE,"sb",0.14,"r",1,120);
-                  var kw:TextField = this.hzsT(p,String(b.key),0,by,13,HZS_AMB,"bd",0.08,"l",1,0,b.font != null ? String(b.font) : null);
+                  var kw:TextField = this.hzsT(new Sprite(),String(b.key),0,by,13,HZS_AMB,"bd",0.08,"l",1,0,b.font != null ? String(b.font) : null);
                   var kcw:Number = Math.max(26,this.hzsTw(kw) + 16);
-                  p.removeChild(kw);
                   rx = this.hzsKeycap(p,lt.x - 10 - kcw,by,String(b.key),HZS_AMB,false,b.font != null ? String(b.font) : null) - kcw - 10;
                }
                var e:Number = this.hzsRight(this.hzsT(p,this.hzsCs("BOUNTY"),x0,by,13,HZS_AMB,"bd",0.14));
