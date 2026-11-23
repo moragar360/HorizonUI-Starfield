@@ -844,7 +844,10 @@ package
             if(gvWas && !this.hzcGroupVis && this.hzcScan && !(this.hzcDllFresh() && this.hzcDllOn)) { this.hzcScan = false; this.hzcRefreshAlphas(); this.hzcToastVis(); }   // v0.41.0: not while the DLL says the scanner is open
             this.hzcLayer.visible = this.hzcGroupVis;
             if(was && !this.hzcInDlg) { this.hzcLine = ""; this.hzcHideCards(); }
-            this.hzcReload();
+            // 0.43.6 r4: with the DLL's settings-saved push (hzcIniSaved) every write already re-reads once; a HUD mode
+            // change re-reads (three file loads and a 25 KB merge) only for an older DLL that never announced it, or
+            // while no settings text has landed yet (the old retry).
+            if(!this.hzcIniPush || this.hzcIniState == 0) { this.hzcReload(); }
             if(this.hzcShown) { this.hzcLayout(); }
             this.hzcToastVis();
          }
