@@ -78,13 +78,15 @@ SCAN.forEach((file, fi) => {
 	const sites = ["hzsDrawCompassIfMoved", "hzsDrawRet", "hzsDrawMarks"].map((n) => codeOnly(fnText(src, n).body));
 	expect(sites.every((b) => b.indexOf("this.hzsCfgRev") >= 0) && sites[0].indexOf("this.hzsVrRev") >= 0 && sites[1].indexOf("this.hzsVrRev") >= 0,
 		tag + ": compass, reticle and marker signatures use the config / visible-rect revisions");
-	expect((src.match(/\+ "\|" \+ this\.hzsCfgRev/g) || []).length === 4, tag + ": all four signature sites use the int revision");
+	// 0.43.4: the marker layer compares its list field by field; its settings key is the int revision (+ the font state)
+	expect((src.match(/\+ "\|" \+ this\.hzsCfgRev/g) || []).length === 3 && /var ck:String = this\.hzsCfgRev \+ "\|" \+ this\.hzsFontLib;/.test(codeOnly(fnText(src, "hzsDrawMarks").body)),
+		tag + ": the three signature strings and the marker settings key use the int revision");
 	expect(codeOnly(fnText(src, "hzsSer").body).indexOf(".sort(") < 0, tag + ": hzsSer has no sort");
 	// hzsOnIni: a changed text bumps the revision once; the same text does not
 	{
 		let parsed = 0;
 		const h = bind({ hzsReading: true, hzs37Got: null, hzsTxt: "", hzsReady: false, hzsCfgRev: 0, hzsSig: null, hzsDirty: false, hzsC: {}, hzsS: {},
-			hzsParse: () => { parsed++; }, hzsSer: () => { throw new Error("hzsSer called"); } }, src, ["hzsOnIni"], { HZS_MAX_INI: 65536, String: String });
+			hzsParse: () => { parsed++; }, hzsSer: () => { throw new Error("hzsSer called"); } }, src, ["hzsOnIni"], { HZS_MAX_INI: 65536, String: String, getTimer: () => 0 });   // 0.43.4: hzsOnIni stamps hzsReadT
 		h.hzsOnIni("[Scanner]\nA=1");
 		h.hzsOnIni("[Scanner]\nA=1");
 		const r1 = h.hzsCfgRev;
