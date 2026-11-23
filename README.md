@@ -12,13 +12,13 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 - **Adaptive:** every card has its own visibility rule, so cards appear when they matter. Warnings react to your health and oxygen, and the Planet card lights up in hazards.
 - **Dynamic:** cards update live, including XP, carry weight, ammo, the Starborn power meter, and two clocks (in-game time and your real PC time). You also get combat feedback and live previews in F11.
 - **Customizable:** more than 100 settings, Arrange Cards and Arrange Scanner to move anything (the scope's hold-breath chip included), a vertical or horizontal Vitals card, colors, fonts, sizes, and presets you can save and switch.
-- **Modular:** a core HUD plus optional **Horizon Font**, **Comms** (subtitles, dialogue and companion reactions), the **Message Log** (a searchable history of your HUD messages), the optional **Scanner**, Horizon's own hand scanner screen, and the optional **Scope** module, a Horizon hold-breath chip for weapon scopes. Core is always installed; the modules are optional parts of the same FOMOD installer and need Core.
+- **Modular:** a core HUD plus optional **Horizon Font**, the optional **Quick Menu** (the favorites cross as Horizon cards), **Comms** (subtitles, dialogue and companion reactions), the **Message Log** (a searchable history of your HUD messages), the optional **Scanner**, Horizon's own hand scanner screen, and the optional **Scope** module, a Horizon hold-breath chip for weapon scopes. Core is always installed; the modules are optional parts of the same FOMOD installer and need Core.
 
 ## New in 0.43.3.0 (alpha)
 
 Released as v0.43.3.0-alpha. The settings schema (HZF::kVersion) is 0.43.3.0 (it was 0.42.0); your `HorizonUI.user.ini` and saved presets carry over, and the first start backs up `HorizonUI.user.ini` to `HorizonUI.user.bak.ini` once. The full list is in [CHANGELOG.md](CHANGELOG.md).
 
-- **Quick menu (Core):** the favorites cross is drawn as Horizon cards in your card style, with your bound keys and an item info card. F11 > CARDS > QUICK MENU > HORIZON STYLE turns it off. Play-tested in the 20261119c test build (keyboard keys, same-size slot boxes, weapon icons inside their boxes, controller Cancel hint).
+- **Quick menu (Core in 0.43.3.0):** the favorites cross is drawn as Horizon cards in your card style, with your bound keys and an item info card. F11 > CARDS > QUICK MENU > HORIZON STYLE turns the Horizon look off. Play-tested in the 20261119c test build (keyboard keys, same-size slot boxes, weapon icons inside their boxes, controller Cancel hint). From 0.43.4 this is an optional FOMOD module: untick Quick Menu (Favorites) to keep the game's quick menu or another mod's.
 - **Hazard Status:** turns green for about 4 seconds after you leave a hazard, then hides.
 - **Locked containers:** the full prompt with the lock level (for example "STEAL FROM [MASTER]") shows instead of being cut off.
 - **Horizon watch:** HORIZON DIGITAL / HORIZON ANALOG no longer re-write the face every frame, and the face hides in ship HUD mode.
@@ -111,7 +111,7 @@ The Message Log is a history of the messages Horizon shows on your HUD, so you c
 - **Starfield** (PC). Tested on game version 1.16.244.
 - **[Starfield Script Extender (SFSE)](https://sfse.silverlock.org/)** for that game version. SFSE isn't included, so install it separately and launch with `sfse_loader.exe`.
 - **[Address Library for SFSE Plugins](https://www.nexusmods.com/starfield/mods/3256)** for that game version (required). It isn't included; `HorizonUI.dll` needs it to load.
-- **Horizon UI Core**, always required. The FOMOD (`HorizonUI-0.43.3.0-FOMOD.zip`) installs it automatically; Comms, the Message Log, the Scanner and Scope are optional modules inside it, not separate mods. They all need Core's `HorizonUI.dll`, settings files, F11 menu and HUD.
+- **Horizon UI Core**, always required. The FOMOD (`HorizonUI-0.43.3.0-FOMOD.zip`) installs it automatically; Quick Menu, Comms, the Message Log, the Scanner and Scope are optional modules inside it, not separate mods. They all need Core's `HorizonUI.dll`, settings files, F11 menu and HUD.
 - **Loose files enabled** in `Documents\My Games\Starfield\StarfieldCustom.ini` (create it if missing):
 
   ```ini
@@ -123,7 +123,7 @@ The Message Log is a history of the messages Horizon shows on your HUD, so you c
   Without this, Starfield ignores loose interface files and you'll see the vanilla HUD.
 
 ## Install
-Download the one **FOMOD installer**, `HorizonUI-0.43.3.0-FOMOD.zip`, from [Releases](https://github.com/moragar360/HorizonUI-Starfield/releases), and install it with Vortex or Mod Organizer 2. **Core** (the HUD, the settings files, the F11 menu and `HorizonUI.dll`) is always required and installs automatically. The installer then walks you through Font, Settings Preset and the optional modules: Comms (subtitles and dialogue), Scanner, Scope and Message Log. Those modules are part of the same download, not separate mods, and they need Core.
+Download the one **FOMOD installer**, `HorizonUI-0.43.3.0-FOMOD.zip`, from [Releases](https://github.com/moragar360/HorizonUI-Starfield/releases), and install it with Vortex or Mod Organizer 2. **Core** (the HUD, the settings files, the F11 menu and `HorizonUI.dll`) is always required and installs automatically. The installer then walks you through Font, Settings Preset and the optional modules: Quick Menu (Favorites), Comms (subtitles and dialogue), Scanner, Scope and Message Log. Those modules are part of the same download, not separate mods, and they need Core.
 
 **Scope:** the Scope module changes the scope view and is ticked by default. If you use another scope mod, untick Scope.
 
@@ -131,7 +131,7 @@ Download the one **FOMOD installer**, `HorizonUI-0.43.3.0-FOMOD.zip`, from [Rele
 
 **Updating from 0.42.x:** install 0.43.3.0 over your existing Horizon UI. Your `HorizonUI.user.ini` and saved presets are kept, and the new settings start at their defaults. The name hover is now Compact by default; to get the taller card back, choose **FULL** under NAME HOVER in F11 > CARDS. In Vortex, an update reuses your earlier installer choices; to change them, right-click the mod and choose Reinstall.
 
-For a manual install, extract the zip and copy the contents of its `00 Core` folder into `Data\`, then the folders of any parts you want (`01 Horizon Font`, `02 Preset - Moragars Choice`, `10 Comms`, `11 Comms Dialogue`, `20 Scanner`, `30 Scope`, `40 Notifications` for the Message Log). Skip the `fomod` folder, and don't create `HorizonUI.user.ini` yourself; F11 makes it.
+For a manual install, extract the zip and copy the contents of its `00 Core` folder into `Data\`, then the folders of any parts you want (`01 Horizon Font`, `02 Preset - Moragars Choice`, `05 Quick Menu`, `10 Comms`, `11 Comms Dialogue`, `20 Scanner`, `30 Scope`, `40 Notifications` for the Message Log). Skip the `fomod` folder, and don't create `HorizonUI.user.ini` yourself; F11 makes it.
 
 ## Tip: the COMMS tab in F11
 Subtitles and dialogue share one tab in F11. At the top of the **COMMS** tab, a full-width **SUBTITLES / DIALOGUE** selector switches between the two pages. The settings below it change only the page you've picked, so check which one is selected before you edit.

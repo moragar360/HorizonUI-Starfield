@@ -10,7 +10,7 @@
         <group name="Compatibility" type="SelectAll">
           <plugins order="Explicit">
             <plugin name="Compatibility note">
-              <description>Not compatible with other mods that replace the HUD (hudmenu.gfx). Disable them before using Horizon's HUD. Horizon's quick menu (Core) replaces Interface\favoritesmenu.swf and favoritesmenu_lrg.swf, so it conflicts with other mods that replace those files: install one or the other.</description>
+              <description>Not compatible with other mods that replace the HUD (hudmenu.gfx). Disable them before using Horizon's HUD. The optional Quick Menu (Favorites) module replaces Interface\favoritesmenu.swf and favoritesmenu_lrg.swf. If you use another favorites or quick-menu mod, untick Quick Menu (Favorites) on the Optional Modules page.</description>
               <conditionFlags>
                 <flag name="CompatNote">Shown</flag>
               </conditionFlags>
@@ -84,6 +84,32 @@
       <optionalFileGroups order="Explicit">
         <group name="Optional Modules" type="SelectAny">
           <plugins order="Explicit">
+            <plugin name="Quick Menu (Favorites)">
+              <description>Horizon-styled quick menu, the favorites cross (Interface\favoritesmenu.swf + _lrg). Replaces the game's quick menu and any other mod that replaces those files. Ticked by default; untick this to keep the game's quick menu or another mod's. Not ticked by default if a loose favoritesmenu.swf is already present. The Horizon look can also be turned off later in F11 &gt; CARDS &gt; QUICK MENU &gt; HORIZON STYLE.</description>
+              <files>
+                <folder source="05 Quick Menu" destination="" priority="0"/>
+              </files>
+              <conditionFlags>
+                <flag name="QuickMenu">On</flag>
+              </conditionFlags>
+              <typeDescriptor>
+                <dependencyType>
+                  <defaultType name="Recommended"/>
+                  <patterns>
+                    <!-- A loose favoritesmenu.swf or favoritesmenu_lrg.swf. FOMOD cannot also test that a
+                         previous Horizon Quick Menu install is absent, so a previous Horizon Quick Menu
+                         install also triggers this. -->
+                    <pattern>
+                      <dependencies operator="Or">
+                        <fileDependency file="Interface\favoritesmenu.swf" state="Active"/>
+                        <fileDependency file="Interface\favoritesmenu_lrg.swf" state="Active"/>
+                      </dependencies>
+                      <type name="CouldBeUsable"/>
+                    </pattern>
+                  </patterns>
+                </dependencyType>
+              </typeDescriptor>
+            </plugin>
             <plugin name="Comms (Subtitles and Dialogue)">
               <description>Horizon-styled subtitles and speaker card (Interface\hudmessagesmenu.gfx + _lrg). The next page lets you choose whether to also install the Horizon dialogue menu, which replaces other dialogue menu mods. Conflicts with other subtitles mods and any other mod that replaces hudmessagesmenu: install one or the other. Not ticked by default if one of them is detected. Modules you don't install appear locked in the F11 settings window.</description>
               <files>
