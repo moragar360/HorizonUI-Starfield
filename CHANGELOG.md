@@ -6,10 +6,10 @@ Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never publish
 
 ## [0.43.4-alpha] - Unreleased
 
-Private test build only so far. The SFSE plugin, its file version and the settings schema (HZF::kVersion) stay 0.43.3.0; existing `HorizonUI.user.ini` files and saved presets carry over unchanged.
+Private test build only so far. The SFSE plugin, its file version, the F11 header and the movie build labels read 0.43.4.0. 0.43.4 adds no settings, so only the settings schema (HZF::kVersion and the HUD's HZ_VERSION) stays 0.43.3.0: existing `HorizonUI.user.ini` files and saved presets carry over unchanged, there is no update backup of `HorizonUI.user.ini`, and presets saved in 0.43.3 are not shown as made for an older version.
 
 ### Fixed
-- **Comms hover stutter:** with Comms installed, hovering items or containers no longer causes repeated 60 to 120 ms freezes. Comms no longer reads its settings files during HUD mode changes, scanner opens or dialogue updates; it rereads them only after an F11 save. In a FrameView test on an older PC, 30 stalls in 22 seconds dropped to 1 frame over 50 ms in 44 seconds.
+- **Comms hover stutter:** with Comms installed, hovering items or containers no longer causes repeated 60 to 120 ms freezes. Comms no longer reads its settings files during HUD mode changes, scanner opens or dialogue updates; it rereads them only after an F11 save. In testing on an older PC, these freezes became much rarer.
 - **Scanner frame rate:** while the hand scanner is open, its markers, compass labels and range tags are no longer torn down and rebuilt almost every frame while you move or turn. Text pieces are created once and reused, markers that only move are just moved, and each part redraws only when its own information changes. The look and every F11 SCANNER setting are unchanged.
 - **Scanner open hitch:** opening the scanner no longer reads the settings files twice.
 
