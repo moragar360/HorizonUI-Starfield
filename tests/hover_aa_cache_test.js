@@ -3,7 +3,7 @@
 // Why: Scaleform keeps one glyph-cache entry per glyph per pixel size for readability text, and Horizon draws its
 // text in three faces at many scaled sizes. That fills the fixed dynamic glyph cache, so new text on a hover edge
 // forces a re-rasterize of visible glyphs (a 65-75 ms stall with the GPU idle). Animation AA ("normal") keeps one
-// entry per glyph. See BOT2_HOVER_ROOTCAUSE.md.
+// entry per glyph.
 // Proves: no antiAliasType "advanced" in horizon_block.as or the compiled Horizon blocks (comms, scanner, scope,
 // favorites); the three Horizon text builders still set antiAliasType explicitly, to "normal".
 // HZ_HOVER_SRC overrides the horizon_block.as path (mutation checks). A missing horizon_block.as or block file fails.

@@ -16,9 +16,9 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 
 ## New in 0.43.4 (alpha)
 
-The plugin, the F11 header and the log read 0.43.4.0. 0.43.4 adds no settings, so the settings schema stays 0.43.3.0, and your `HorizonUI.user.ini` and saved presets carry over unchanged. The full list is in [CHANGELOG.md](CHANGELOG.md).
+Released as v0.43.4.0-alpha, Performance Update Pass 3. The plugin, the F11 header and the log read 0.43.4.0. 0.43.4 adds no settings, so the settings schema stays 0.43.3.0, and your `HorizonUI.user.ini` and saved presets carry over unchanged. The full list is in [CHANGELOG.md](CHANGELOG.md).
 
-- **Comms hover freeze fixed:** with Comms installed, hovering items or containers no longer causes repeated short freezes. Comms now rereads its settings only after an F11 save.
+- **Comms hover performance:** with Comms installed, hovering items or containers no longer causes repeated short freezes. Comms now rereads its settings only after an F11 save.
 - **Scanner frame rate:** while the hand scanner is open, its marker labels, compass labels and range tags are no longer rebuilt almost every frame; they are reused and redrawn only when their information changes. Opening the scanner also no longer reads the settings files twice. The look and every F11 SCANNER setting are unchanged.
 - **Quick Menu is optional:** the Horizon quick menu is now its own **Quick Menu (Favorites)** module on the installer's Optional Modules page, ticked by default. Untick it to keep the game's quick menu or another mod's. In Vortex, an update or reinstall that reuses your earlier installer choices may untick it; re-tick it to keep Horizon's quick menu.
 

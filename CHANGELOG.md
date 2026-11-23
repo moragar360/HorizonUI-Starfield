@@ -4,11 +4,11 @@ All notable changes to Horizon UI are listed here, newest first. The format foll
 
 Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never published; 0.41.0 replaced 0.40.3, and its entry includes the changes prepared for 0.40.3.
 
-## [0.43.4-alpha] - Unreleased
+## [0.43.4.0-alpha] - 2026-11-23
 
-Private test build only so far. The SFSE plugin, its file version, the F11 header and the movie build labels read 0.43.4.0. 0.43.4 adds no settings, so only the settings schema (HZF::kVersion and the HUD's HZ_VERSION) stays 0.43.3.0: existing `HorizonUI.user.ini` files and saved presets carry over unchanged, there is no update backup of `HorizonUI.user.ini`, and presets saved in 0.43.3 are not shown as made for an older version.
+Released as v0.43.4.0-alpha, Performance Update Pass 3. The SFSE plugin, its file version, the F11 header and the movie build labels read 0.43.4.0. 0.43.4 adds no settings, so only the settings schema (HZF::kVersion and the HUD's HZ_VERSION) stays 0.43.3.0: existing `HorizonUI.user.ini` files and saved presets carry over unchanged, there is no update backup of `HorizonUI.user.ini`, and presets saved in 0.43.3 are not shown as made for an older version.
 
-### Fixed
+### Performance
 - **Comms hover stutter:** with Comms installed, hovering items or containers no longer causes repeated 60 to 120 ms freezes. Comms no longer reads its settings files during HUD mode changes, scanner opens or dialogue updates; it rereads them only after an F11 save. In testing on an older PC, these freezes became much rarer.
 - **Scanner frame rate:** while the hand scanner is open, its markers, compass labels and range tags are no longer torn down and rebuilt almost every frame while you move or turn. Text pieces are created once and reused, markers that only move are just moved, and each part redraws only when its own information changes. The look and every F11 SCANNER setting are unchanged.
 - **Scanner open hitch:** opening the scanner no longer reads the settings files twice.
@@ -314,6 +314,7 @@ Alpha pre-release. This entry covers everything since 0.42.0.13-alpha. The setti
 - **SFSE plugin** (`HorizonUI.dll`): F11 window input, mouse wheel, settings files and presets.
 - **Requirements:** SFSE and Address Library for SFSE Plugins, both required.
 
+[0.43.4.0-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.4.0-alpha
 [0.43.3.0-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.3.0-alpha
 [0.43.2.0-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.2.0-alpha
 [0.43.1.0-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.1.0-alpha
