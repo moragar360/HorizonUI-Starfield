@@ -191,6 +191,13 @@ const qmOff = now.find((r) => r.k === "QuickMenuHorizon");
 expect(qmOff && qmOff.dis === true && qmOff.dv === false && qmOff.note === "Quick Menu module not installed. Install it from the Horizon UI installer." && qmOff.n13 === true && !qmOff.inote && qmOff.h === "QUICK MENU" && qmOff.l === "HORIZON STYLE", "without Quick Menu: HORIZON STYLE locked (off) with the install note under the row, no (i) popup");
 const qmOn = withScope.find((r) => r.k === "QuickMenuHorizon");
 expect(qmOn && !qmOn.dis && qmOn.inote === "The game's quick menu (favorites cross) as Horizon cards. Off = the game's look." && qmOn.note === undefined && !qmOn.n13, "with Quick Menu: unlocked, the usual help text in its (i) popup");
+{
+	// S-3: the lock only grays the row; it must not clear hzQmOn or the pending setting
+	const h = { hz30Mod: { comms: 1 }, hzQmOn: true, hzSetPend: { QuickMenuHorizon: 1 } };
+	for (const n of ["hz34CardRows", "hz34Sz", "hz34Cmp", "hz42ScRows"]) h[n] = toJs(as, n);
+	const qm = h.hz34CardRows().find((r) => r.k === "QuickMenuHorizon");
+	expect(qm && qm.dis === true && qm.dv === false && h.hzQmOn === true && h.hzSetPend.QuickMenuHorizon === 1 && !/hzQmOn\s*=/.test(fnText(as, "hz34CardRows").body) && !/hzSetPend/.test(fnText(as, "hz34CardRows").body), "the lock leaves the saved QuickMenuHorizon value alone (hzQmOn and hzSetPend are untouched)");
+}
 expect(!/addEventListener|ENTER_FRAME|setInterval|setTimeout|new Timer/.test(fnText(as, "hz34CardRows").body), "menu rows only: no timer or listener");
 
 console.log("f11_cards_layout_test " + (failed ? "FAILED" : "passed") + " (" + passed + " ok, " + failed + " FAIL)");

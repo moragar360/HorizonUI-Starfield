@@ -131,7 +131,11 @@ Download the one **FOMOD installer**, `HorizonUI-0.43.3.0-FOMOD.zip`, from [Rele
 
 **Updating from 0.42.x:** install 0.43.3.0 over your existing Horizon UI. Your `HorizonUI.user.ini` and saved presets are kept, and the new settings start at their defaults. The name hover is now Compact by default; to get the taller card back, choose **FULL** under NAME HOVER in F11 > CARDS. In Vortex, an update reuses your earlier installer choices; to change them, right-click the mod and choose Reinstall.
 
+**Updating to 0.43.4:** Quick Menu (Favorites) is a new optional module and is ticked on a fresh install. In Vortex, an update or reinstall that reuses your earlier installer choices may untick it; re-tick Quick Menu (Favorites) to keep Horizon's quick menu.
+
 For a manual install, extract the zip and copy the contents of its `00 Core` folder into `Data\`, then the folders of any parts you want (`01 Horizon Font`, `02 Preset - Moragars Choice`, `05 Quick Menu`, `10 Comms`, `11 Comms Dialogue`, `20 Scanner`, `30 Scope`, `40 Notifications` for the Message Log). Skip the `fomod` folder, and don't create `HorizonUI.user.ini` yourself; F11 makes it.
+
+If you untick Quick Menu (Favorites), or skip `05 Quick Menu` on a manual install or an MO2 Merge upgrade, also remove any leftover `Interface\favoritesmenu.swf` and `favoritesmenu_lrg.swf` left from Core. Otherwise Horizon's quick menu stays in place while F11 shows the style setting locked.
 
 ## Tip: the COMMS tab in F11
 Subtitles and dialogue share one tab in F11. At the top of the **COMMS** tab, a full-width **SUBTITLES / DIALOGUE** selector switches between the two pages. The settings below it change only the page you've picked, so check which one is selected before you edit.

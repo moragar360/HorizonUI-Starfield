@@ -72,9 +72,12 @@ expect(/<folder\s+source="05 Quick Menu"\s+destination=""\s+priority="0"\s*\/>/.
 expect(/<typeDescriptor>\s*<type\s+name="Recommended"\s*\/>\s*<\/typeDescriptor>/.test(plugBody) && !/dependencyType|CouldBeUsable|fileDependency/.test(plugBody), "Quick Menu (Favorites) is plain Recommended (always ticked; no CouldBeUsable pattern)");
 expect(/untick this to keep the game's quick menu or another mod's/i.test(plugBody), "the plugin description says to untick it to keep the game's or another mod's quick menu");
 expect(/HORIZON STYLE appears locked/.test(plugBody), "the plugin description says the F11 row appears locked when the module is not installed");
+expect(/Vortex update or reinstall that reuses your earlier choices may untick this/i.test(plugBody) && /re-tick it to keep Horizon's quick menu/i.test(plugBody), "the plugin description warns that a Vortex update reusing earlier choices may untick it, and to re-tick it to keep Horizon's quick menu");
+expect(/<group name="Optional Modules" type="SelectAny">/.test(cfg) && /<installStep name="Quick Menu"/.test(cfg) === false, "Quick Menu stays in the Optional Modules group (no separate install step)");
 
 expect(!/quick menu \(Core\)/i.test(cfg), "ModuleConfig.xml no longer calls the quick menu part of Core");
 expect(/optional Quick Menu \(Favorites\) module replaces Interface\\favoritesmenu\.swf/i.test(cfg), "the compatibility note points at the optional Quick Menu (Favorites) module");
+expect(/Vortex update that reuses earlier choices may untick it/i.test(cfg) && /re-tick it to keep Horizon's quick menu/i.test(cfg), "the compatibility note also warns that a Vortex update may untick Quick Menu");
 
 expect(!/Core also replaces the quick menu/i.test(info), "info.xml no longer says Core replaces the quick menu");
 expect(/optional Quick Menu \(Favorites\) module replaces the quick menu/i.test(info), "info.xml describes Quick Menu (Favorites) as optional");
@@ -94,5 +97,9 @@ const as = fs.readFileSync(path.join(root, "actionscript", "horizon_block.as"), 
 const mods = /private static const HZ30_MODS:Array = \[([^\]]+)\]/.exec(as);
 expect(!!mods && mods[1].indexOf('"quickmenu"') >= 0, "HZ30_MODS includes quickmenu");
 expect(/this\.hz30Mod\["quickmenu"\] !== 1/.test(as) && /Quick Menu module not installed\. Install it from the Horizon UI installer\./.test(as), "hz34CardRows locks HORIZON STYLE when quickmenu.marker is absent, with the same install-note wording as Comms");
+
+const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+expect(/Updating to 0\.43\.4/.test(readme) && /may untick it; re-tick Quick Menu \(Favorites\) to keep Horizon's quick menu/.test(readme), "README update section warns that a Vortex upgrade may untick Quick Menu and to re-tick it");
+expect(/MO2 Merge/.test(readme) && /favoritesmenu\.swf/.test(readme) && /favoritesmenu_lrg\.swf/.test(readme), "README tells manual installs and MO2 Merge upgrades to remove leftover favoritesmenu files if Quick Menu is skipped");
 
 finish("fomod_quickmenu_optional_test");
