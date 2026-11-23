@@ -5,9 +5,10 @@
       // The game's clips stay on stage and keep working: they are only made transparent (alpha 0, never removed), the
       // game's button bar keeps handling every key, and every dispatch / user event / close path is the game's own code.
       // Horizon draws its own panels from the same data providers. Settings: [Scanner] of HorizonUI.default.ini with
-      // HorizonUI.user.ini laid over (the shared reader, prefix hzs37); read when the scanner movie starts and when the
-      // scanner opens (hzsOnOpened). arch-fixes Fix 2: no 2 s re-read while it is open: F11 opens from the main HUD only
-      // (never while scanning), so a save always lands before the next open, which re-reads.
+      // HorizonUI.user.ini laid over (the shared reader, prefix hzs37); read when the scanner movie starts (the game makes
+      // a new movie for every open). arch-fixes Fix 2: no 2 s re-read while it is open: F11 opens from the main HUD only
+      // (never while scanning), so a save always lands before the next open, which re-reads. 0.43.4: the open frame
+      // (hzsOnOpened) no longer reads the files a second time right after the start read.
       private static const HZS_VERSION:String = "0.43.3.0";   // 0.43.3.0: the scanner movie's build version (= the DLL file version); bump here only
       private static const HZS_LRG:Boolean = __HZS_LRG__;
       private static const HZS_SCALE:Number = HZS_LRG ? 1.07 : 1;
@@ -147,9 +148,21 @@
       {
          try { BSUIDataManager.Subscribe(n,f); } catch(e:Error) { }
       }
-      // called by the hook in the game's open-complete frame: re-read the settings
+      // called by the hook in the game's open-complete frame
+      // 0.43.4: the game makes a new scanner movie for every open (MonocleMenu is closed with CloseMenu and its
+      // isMenuClosing is never set back), and that movie already read the settings when it started (hzsInit), a few
+      // frames before this frame. The second read here opened the same four files again, each a synchronous file open
+      // inside the movie's advance (the Comms stall mechanism). It now reads only when this movie has no read running
+      // and none finished in the last HZS_REREAD_MS (so a movie kept across opens would still pick up a save made in
+      // between). A save cannot happen while the scanner is open: F11 opens from the main HUD only.
+      private static const HZS_REREAD_MS:int = 3000;
+      private var hzsReadT:int = -1;          // 0.43.4: getTimer() when this movie's last settings read finished
+      private var hzsOpenReads:int = 0;       // 0.43.4: settings reads started by the open frame (diagnostic count, never shown)
       private function hzsOnOpened() : void
       {
+         if(this.hzsReading) { return; }
+         if(this.hzsReadT >= 0 && getTimer() - this.hzsReadT < HZS_REREAD_MS) { return; }
+         this.hzsOpenReads++;
          this.hzsRead();
       }
       private function hzsOnMD(e:FromClientDataEvent) : void { try { this.hzsMD = e.data; this.hzsGot.md = 1; this.hzsDirty = true; } catch(x:Error) { } }
@@ -185,7 +198,7 @@
       private function hzsOnEnv(e:FromClientDataEvent) : void { try { this.hzsEnv = e.data; this.hzsGot.env = 1; this.hzsDirty = true; } catch(x:Error) { } }
       private function hzsOnFx(e:FromClientDataEvent) : void { try { this.hzsFx = e.data; this.hzsGot.fx = 1; this.hzsDirty = true; } catch(x:Error) { } }
       private function hzsOnLoc(e:FromClientDataEvent) : void { try { this.hzsLoc = e.data; this.hzsGot.loc = 1; this.hzsDirty = true; } catch(x:Error) { } }
-      private function hzsOnEnvF(e:FromClientDataEvent) : void { try { this.hzsEnvF = e.data; this.hzsGot.envf = 1; } catch(x:Error) { } }
+      private function hzsOnEnvF(e:FromClientDataEvent) : void { try { this.hzsEnvF = e.data; this.hzsGot.envf = 1; this.hzsEnvFRev++; } catch(x:Error) { } }
       private function hzsOnCmp(e:FromClientDataEvent) : void
       {
          try
@@ -319,6 +332,7 @@
       private function hzsOnIni(txt:String) : void
       {
          this.hzsReading = false;
+         this.hzsReadT = getTimer();   // 0.43.4: the open frame skips a second read right after this one
          try
          {
             // a file over 64 KB is ignored: compose again without it
@@ -373,8 +387,9 @@
          var all:Boolean = false;   // 0.43.3.2: hzsDrawAll already ran the compass check this frame
          if(this.hzsDirty || this.hzsFrame % 6 == 0)
          {
+            var ev:Boolean = this.hzsDirty;   // 0.43.4: an event walk redraws every card; the 6-frame poll skips event-only cards
             this.hzsDirty = false;
-            try { this.hzsDrawAll(); all = true; } catch(e2:Error) { }   // a throw keeps the old second check
+            try { this.hzsDrawAll(ev); all = true; } catch(e2:Error) { }   // a throw keeps the old second check
          }
          if(!all) { try { this.hzsDrawCompassIfMoved(); } catch(e3:Error) { } }
          try { this.hzsDrawMarks(); } catch(e4:Error) { }
@@ -613,30 +628,119 @@
       }
       // one text field. (x, cy) = left / right / center x and the vertical middle; tr = tracking in em.
       // maxW > 0 shortens the text with "..." to fit. Returns the field (its right edge = x + width for "l").
+      // 0.43.4: while a text pass is open for p (hzsTPBegin), the field in p's next slot is reused instead of a new one
+      // (see hzsTPBegin). A new field is made and formatted exactly as before.
       private function hzsT(p:Sprite, s:String, x:Number, cy:Number, size:Number, col:uint, w:String = "sb", tr:Number = 0, al:String = "l", a:Number = 1, maxW:Number = 0, font:String = null) : TextField
+      {
+         var fs:Number = this.hzsFs(size);
+         var face:String = font != null ? font : this.hzsFace(w);
+         var ls:Number = Math.round(fs * tr * 10) / 10;
+         var str:String = s == null ? "" : s;
+         var t:TextField = null;
+         if(p != null && p === this.hzsTPc)
+         {
+            var fk:String = face + "|" + fs + "|" + col + "|" + ls + "\u0001";
+            var key:String = fk + maxW + "\u0001" + str;
+            var i:int = this.hzsTPi;
+            this.hzsTPi = i + 1;
+            var old:TextField = i < p.numChildren ? p.getChildAt(i) as TextField : null;
+            if(old != null && old.name == key) { t = old; }   // the same text in the same format: nothing to lay out again
+            else if(old != null && old.name.indexOf(fk) == 0)   // the same format, new text: set it the way a new field gets it
+            {
+               t = old;
+               t.name = key;
+               this.hzsTSet(t,str,this.hzsTFmt(face,fs,col,ls),maxW);
+               this.hzsTPNew++;
+            }
+            else
+            {
+               t = this.hzsTNew(face,fs,col,ls,str,maxW);
+               t.name = key;
+               if(i < p.numChildren) { p.removeChildAt(i); }
+               p.addChildAt(t,i);
+               this.hzsTPMade++;
+            }
+         }
+         else
+         {
+            t = this.hzsTNew(face,fs,col,ls,str,maxW);
+            p.addChild(t);
+         }
+         t.alpha = a;
+         var tw:Number = t.textWidth;
+         t.x = al == "r" ? Math.round(x - tw - 2) : (al == "c" ? Math.round(x - tw / 2 - 2) : Math.round(x - 2));
+         t.y = Math.round(cy - t.height / 2);
+         return t;
+      }
+      private function hzsTFmt(face:String, fs:Number, col:uint, ls:Number) : TextFormat
+      {
+         var f:TextFormat = new TextFormat(face,fs,col);
+         f.letterSpacing = ls;
+         return f;
+      }
+      // a new field (the pre-0.43.4 hzsT body: same flags, same format, same order)
+      private function hzsTNew(face:String, fs:Number, col:uint, ls:Number, str:String, maxW:Number) : TextField
       {
          var t:TextField = new TextField();
          t.embedFonts = true;
          t.selectable = false;
          t.mouseEnabled = false;
          t.autoSize = TextFieldAutoSize.LEFT;
-         var fs:Number = this.hzsFs(size);
-         var f:TextFormat = new TextFormat(font != null ? font : this.hzsFace(w),fs,col);
-         f.letterSpacing = Math.round(fs * tr * 10) / 10;
+         var f:TextFormat = this.hzsTFmt(face,fs,col,ls);
          t.defaultTextFormat = f;
-         t.text = s == null ? "" : s;
-         t.setTextFormat(f);
-         if(maxW > 0 && t.textWidth > maxW && s != null && s.length > 1)
-         {
-            var n:int = s.length - 1;
-            while(n > 1 && t.textWidth > maxW) { t.text = s.substr(0,n).replace(/\s+$/,"") + "..."; t.setTextFormat(f); n--; }
-         }
-         t.alpha = a;
-         var tw:Number = t.textWidth;
-         t.x = al == "r" ? Math.round(x - tw - 2) : (al == "c" ? Math.round(x - tw / 2 - 2) : Math.round(x - 2));
-         t.y = Math.round(cy - t.height / 2);
-         p.addChild(t);
+         this.hzsTSet(t,str,f,maxW);
          return t;
+      }
+      private function hzsTSet(t:TextField, str:String, f:TextFormat, maxW:Number) : void
+      {
+         t.text = str;
+         t.setTextFormat(f);
+         if(maxW > 0 && t.textWidth > maxW && str.length > 1) { this.hzsTrunc(t,str,f,maxW); }
+      }
+      // 0.43.4: "..." shortening by halving instead of one character at a time. The old loop tried n = length - 1, length - 2,
+      // ... 2 (each "the first n characters, trailing spaces cut, then ...") and kept the first that fit, or n = 2 when none
+      // did; that is the longest fitting n. This finds the same n in about log2(length) layouts, given that a longer
+      // prefix is never narrower (each added glyph adds its advance). Length 2 stays as it is, as before (the old loop
+      // never ran for it).
+      private function hzsTrunc(t:TextField, str:String, f:TextFormat, maxW:Number) : void
+      {
+         var hi:int = str.length - 1;
+         if(hi < 2) { return; }
+         var lo:int = 2;
+         var best:int = 2;
+         var cur:int = -1;
+         while(lo <= hi)
+         {
+            var mid:int = (lo + hi) >> 1;
+            t.text = str.substr(0,mid).replace(/\s+$/,"") + "...";
+            t.setTextFormat(f);
+            cur = mid;
+            if(t.textWidth <= maxW) { best = mid; lo = mid + 1; }
+            else { hi = mid - 1; }
+         }
+         if(cur != best) { t.text = str.substr(0,best).replace(/\s+$/,"") + "..."; t.setTextFormat(f); }
+      }
+      // 0.43.4 text pool. hzsTPBegin(p) clears p's drawing and opens a pass: each hzsT(p, ...) call of the pass takes p's
+      // next child slot. A slot whose field has the same face, size, color and tracking is reused (its text set again only
+      // when it changed); anything else is replaced in that same slot, so the child order is the call order, as before.
+      // hzsTPEnd drops the slots the pass did not use. Only containers whose children all come from hzsT use it.
+      private var hzsTPc:Sprite = null;
+      private var hzsTPi:int = 0;
+      private var hzsTPMade:int = 0;   // fields made by pooled passes (diagnostic count, never shown)
+      private var hzsTPNew:int = 0;    // fields given a new text by pooled passes (diagnostic count)
+      private function hzsTPBegin(p:Sprite) : void
+      {
+         this.hzsTPEnd();
+         p.graphics.clear();
+         this.hzsTPc = p;
+         this.hzsTPi = 0;
+      }
+      private function hzsTPEnd() : void
+      {
+         var p:Sprite = this.hzsTPc;
+         this.hzsTPc = null;
+         if(p != null) { while(p.numChildren > this.hzsTPi) { p.removeChildAt(p.numChildren - 1); } }
+         this.hzsTPi = 0;
       }
       private function hzsTw(t:TextField) : Number { return t == null ? 0 : t.textWidth; }
       private function hzsRight(t:TextField) : Number { return t.x + 2 + t.textWidth; }
@@ -816,6 +920,7 @@
       }
       private function hzsClr(p:Sprite) : void
       {
+         if(p === this.hzsTPc) { this.hzsTPc = null; this.hzsTPi = 0; }   // 0.43.4: a full clear ends that container's text pass
          while(p.numChildren > 0) { p.removeChildAt(0); }   // Horizon's own text fields only
          p.graphics.clear();
       }
@@ -1664,8 +1769,8 @@
          var sig:String = this.hzsSer(m) + "|" + this.hzsCfgRev;
          if(sig == this.hzsSig[n]) { return; }
          this.hzsSig[n] = sig;
-         this.hzsClr(p);
-         if(m == null) { p.visible = false; this.hzsSz[n] = null; return; }
+         if(m == null) { this.hzsClr(p); p.visible = false; this.hzsSz[n] = null; return; }
+         this.hzsTPBegin(p);   // 0.43.4: the panel's text fields are reused slot by slot (was: all removed and made again)
          var wh:Array = null;
          this.hzsTk = this.hzsK(this.hzsKeyOf(n));   // 0.42.0.4: text floor after this panel's scale
          try
@@ -1679,6 +1784,7 @@
             else if(n == "Hints") { wh = this.hzsDHints2(p,m); }
          }
          catch(e1:Error) { wh = null; }
+         this.hzsTPEnd();
          this.hzsTk = 1;
          if(wh == null) { this.hzsClr(p); p.visible = false; this.hzsSz[n] = null; return; }
          this.hzsSz[n] = wh;
@@ -2132,9 +2238,8 @@
          var sig:String = head + "|" + this.hzsCfgRev + "|" + this.hzsVrRev + "|" + this.hzsCmpMarks();
          if(!force && sig == this.hzsCmpSig) { return; }
          this.hzsCmpSig = sig;
-         this.hzsClr(p);
-         this.hzsClr(hp);
-         if(!on) { p.visible = false; hp.visible = false; this.hzsSz.Compass = null; this.hzsSz.Head = null; this.hzsPlace(); return; }
+         if(!on) { this.hzsClr(p); this.hzsClr(hp); p.visible = false; hp.visible = false; this.hzsSz.Compass = null; this.hzsSz.Head = null; this.hzsPlace(); return; }
+         this.hzsTPBegin(p);   // 0.43.4: the direction labels are reused (moved and faded) instead of made again on every turn
          var cmp:Boolean = this.hzsCmpOn("Compass");
          var acc:uint = this.hzsAccent();
          this.hzsTk = this.hzsK("Compass");   // 0.42.0.4: compass + heading pill (both drawn at the compass scale)
@@ -2190,12 +2295,14 @@
          g.beginFill(acc,1); g.moveTo(cx - 6,0); g.lineTo(cx + 6,0); g.lineTo(cx,7); g.lineTo(cx - 6,0); g.endFill();
          this.hzsSz.Compass = [wd,hh];
          p.visible = true;
-         // heading pill
-         var probe:Sprite = new Sprite();
+         // heading pill (0.43.4: measured on its own reused field; it was a probe copy of the same text and format)
+         this.hzsTPBegin(hp);
          var txt:String = String(int(Math.round(head)) % 360) + String.fromCharCode(0xB0);
-         var w:Number = this.hzsTw(this.hzsT(probe,txt,0,14,14,HZS_WHITE,"sb",0.06)) + 28;
+         var ht:TextField = this.hzsT(hp,txt,0,14,14,HZS_WHITE,"sb",0.06,"c");
+         var w:Number = this.hzsTw(ht) + 28;
          this.hzsCard(hp.graphics,w,28,HZS_R_STRIP,-1);
-         this.hzsT(hp,txt,w / 2,14,14,HZS_WHITE,"sb",0.06,"c");
+         ht.x = Math.round(w / 2 - this.hzsTw(ht) / 2 - 2);   // = hzsT(hp, txt, w / 2, ..., "c")
+         this.hzsTPEnd();
          this.hzsTk = 1;
          this.hzsSz.Head = [w,28];
          hp.visible = true;
@@ -2244,6 +2351,13 @@
       {
          return new Point(this.hzsVr.x + this.hzsVr.width / 2,this.hzsVr.y + this.hzsVr.height / 2);
       }
+      // 0.43.4: three parts, each redrawn only when its own input changed: the corner frame + reticle (+ the tag leader),
+      // the RANGE pill (kept; its text is updated in place) and the world tag (its text fields reused). Same drawing code,
+      // same order (reticle graphics under the pill), same positions as the one-piece redraw before.
+      private var hzsRetGK:String = null;
+      private var hzsRetRK:String = null;
+      private var hzsRetTK:String = null;
+      private var hzsRetRP:Sprite = null;
       private function hzsDrawRet() : void
       {
          var p:Sprite = this.hzsP.Ret as Sprite;
@@ -2257,69 +2371,98 @@
          catch(e0:Error) { rng = ""; }
          var tag:Object = null;
          try { tag = this.hzsMTag(); } catch(e1:Error) { tag = null; }
-         var sig:String = rng + "|" + this.hzsSer(tag) + "|" + this.hzsCfgRev + "|" + this.hzsVrRev;
+         var ser:String = this.hzsSer(tag);
+         var sig:String = rng + "|" + ser + "|" + this.hzsCfgRev + "|" + this.hzsVrRev;
          if(sig == this.hzsRetSig) { return; }
          this.hzsRetSig = sig;
          var acc:uint = this.hzsAccent();
          var c:Point = this.hzsCenter();
-         // corner frame
-         this.hzsClr(fr);
-         var fg:* = fr.graphics;
-         var L:Number = 46;
-         for each(var q:Array in [[18,18,1,1],[-18,18,-1,1],[18,-18,1,-1],[-18,-18,-1,-1]])
-         {
-            var fx:Number = q[0] > 0 ? this.hzsVr.left + q[0] : this.hzsVr.right + q[0];
-            var fy:Number = q[1] > 0 ? this.hzsVr.top + q[1] : this.hzsVr.bottom + q[1];
-            fg.lineStyle(2,acc,120 / 255,true);
-            fg.moveTo(fx,fy + q[3] * L); fg.lineTo(fx,fy); fg.lineTo(fx + q[2] * L,fy);
-            fg.lineStyle();
-         }
-         fr.visible = true;
-         // reticle
-         this.hzsClr(p);
-         var g:* = p.graphics;
          var k:Number = HZS_SCALE;
-         g.lineStyle(1.4,0xFFFFFF,90 / 255,true); g.drawCircle(c.x,c.y,40 * k); g.lineStyle();
-         for each(var a0:Number in [40,130,220,310])
+         var base:String = this.hzsCfgRev + "|" + this.hzsVrRev + "|" + this.hzsFontLib;
+         var tp:Sprite = this.hzsP.Tag as Sprite;
+         var tk:Number = this.hzsK("WorldTag");   // 0.42.0.4: = HZS_SCALE x hzsF, never under HZS_KMIN
+         var tw:Number = 250;
+         var tc:uint = tag != null ? uint(tag.col) : 0;
+         var tpx:Number = Math.round(Math.max(this.hzsVr.left + 8,c.x - 370 * k));
+         var tpy:Number = Math.round(c.y + 34 * k);
+         var gk:String = base + "|" + (tag != null ? String(tc) : "-");
+         if(gk != this.hzsRetGK)
          {
-            g.lineStyle(2,acc,200 / 255,true);
-            var st:int = 0;
-            while(st <= 8)
+            this.hzsRetGK = gk;
+            // corner frame
+            this.hzsClr(fr);
+            var fg:* = fr.graphics;
+            var L:Number = 46;
+            for each(var q:Array in [[18,18,1,1],[-18,18,-1,1],[18,-18,1,-1],[-18,-18,-1,-1]])
             {
-               var an:Number = (a0 + st * 5) * Math.PI / 180;
-               var ax:Number = c.x + 52 * k * Math.cos(an);
-               var ay:Number = c.y + 52 * k * Math.sin(an);
-               if(st == 0) { g.moveTo(ax,ay); } else { g.lineTo(ax,ay); }
-               st++;
+               var fx:Number = q[0] > 0 ? this.hzsVr.left + q[0] : this.hzsVr.right + q[0];
+               var fy:Number = q[1] > 0 ? this.hzsVr.top + q[1] : this.hzsVr.bottom + q[1];
+               fg.lineStyle(2,acc,120 / 255,true);
+               fg.moveTo(fx,fy + q[3] * L); fg.lineTo(fx,fy); fg.lineTo(fx + q[2] * L,fy);
+               fg.lineStyle();
             }
-            g.lineStyle();
+            fr.visible = true;
+            // reticle
+            var g:* = p.graphics;
+            g.clear();
+            g.lineStyle(1.4,0xFFFFFF,90 / 255,true); g.drawCircle(c.x,c.y,40 * k); g.lineStyle();
+            for each(var a0:Number in [40,130,220,310])
+            {
+               g.lineStyle(2,acc,200 / 255,true);
+               var st:int = 0;
+               while(st <= 8)
+               {
+                  var an:Number = (a0 + st * 5) * Math.PI / 180;
+                  var ax:Number = c.x + 52 * k * Math.cos(an);
+                  var ay:Number = c.y + 52 * k * Math.sin(an);
+                  if(st == 0) { g.moveTo(ax,ay); } else { g.lineTo(ax,ay); }
+                  st++;
+               }
+               g.lineStyle();
+            }
+            for each(var d:Array in [[-14,0],[14,0],[0,-14],[0,14]])
+            {
+               g.lineStyle(1.6,0xFFFFFF,1,true); g.moveTo(c.x + d[0] * 0.45 * k,c.y + d[1] * 0.45 * k); g.lineTo(c.x + d[0] * k,c.y + d[1] * k); g.lineStyle();
+            }
+            g.beginFill(0xFFFFFF,1); g.drawCircle(c.x,c.y,1.6); g.endFill();
+            // leader from the tag to the reticle ring (the tag's own spot: tpx / tpy, the same formula as the tag below)
+            if(tag != null)
+            {
+               g.lineStyle(1.4,tc,200 / 255,true);
+               g.moveTo(tpx + tw * tk + 2,tpy + 26 * tk); g.lineTo(c.x - 44 * k,c.y + 18 * k);
+               g.lineStyle();
+            }
          }
-         for each(var d:Array in [[-14,0],[14,0],[0,-14],[0,14]])
+         var rk:String = base + "|" + rng;
+         if(rk != this.hzsRetRK)
          {
-            g.lineStyle(1.6,0xFFFFFF,1,true); g.moveTo(c.x + d[0] * 0.45 * k,c.y + d[1] * 0.45 * k); g.lineTo(c.x + d[0] * k,c.y + d[1] * k); g.lineStyle();
-         }
-         g.beginFill(0xFFFFFF,1); g.drawCircle(c.x,c.y,1.6); g.endFill();
-         if(rng.length > 0)
-         {
-            var rp:Sprite = new Sprite();
-            var probe:Sprite = new Sprite();
-            var w:Number = this.hzsTw(this.hzsT(probe,rng,0,14,13,HZS_LABEL,"sb",0.06)) + 28;
-            this.hzsCard(rp.graphics,w,28,HZS_R_STRIP,-1);
-            this.hzsT(rp,rng,w / 2,14,13,HZS_LABEL,"sb",0.06,"c");
-            rp.scaleX = rp.scaleY = k;
-            rp.x = Math.round(c.x - w * k / 2);
-            rp.y = Math.round(c.y + 88 * k);
-            p.addChild(rp);
+            this.hzsRetRK = rk;
+            var rp:Sprite = this.hzsRetRP;
+            if(rp == null) { rp = this.hzsRetRP = new Sprite(); rp.mouseEnabled = false; rp.mouseChildren = false; }
+            if(rp.parent !== p) { p.addChild(rp); }
+            if(rng.length > 0)
+            {
+               this.hzsTPBegin(rp);
+               var rt:TextField = this.hzsT(rp,rng,0,14,13,HZS_LABEL,"sb",0.06,"c");   // measured on itself (was a probe copy)
+               var w:Number = this.hzsTw(rt) + 28;
+               this.hzsCard(rp.graphics,w,28,HZS_R_STRIP,-1);
+               rt.x = Math.round(w / 2 - this.hzsTw(rt) / 2 - 2);   // = hzsT(rp, rng, w / 2, ..., "c")
+               this.hzsTPEnd();
+               rp.scaleX = rp.scaleY = k;
+               rp.x = Math.round(c.x - w * k / 2);
+               rp.y = Math.round(c.y + 88 * k);
+               rp.visible = true;
+            }
+            else { rp.visible = false; }
          }
          p.visible = true;
          // world tag
-         var tp:Sprite = this.hzsP.Tag as Sprite;
-         this.hzsClr(tp);
-         if(tag == null) { tp.visible = false; return; }
-         var tk:Number = this.hzsK("WorldTag");   // 0.42.0.4: = HZS_SCALE x hzsF, never under HZS_KMIN
+         var tgk:String = base + "|" + ser;
+         if(tgk == this.hzsRetTK) { return; }
+         this.hzsRetTK = tgk;
+         if(tag == null) { this.hzsClr(tp); tp.visible = false; return; }
+         this.hzsTPBegin(tp);
          this.hzsTk = tk;   // 0.42.0.4: world tag text floor after its scale
-         var tc:uint = uint(tag.col);
-         var tw:Number = 250;
          var tg:* = tp.graphics;
          this.hzsCard(tg,tw,52,HZS_R_STRIP,-1,tc,100 / 255);
          var tx:Number = 14;
@@ -2345,18 +2488,24 @@
                fx0 += fcw + 6;
             }
          }
+         this.hzsTPEnd();
          this.hzsTk = 1;
          tp.scaleX = tp.scaleY = tk;
-         tp.x = Math.round(Math.max(this.hzsVr.left + 8,c.x - 370 * k));
-         tp.y = Math.round(c.y + 34 * k);
-         // leader from the tag to the reticle ring
-         g.lineStyle(1.4,tc,200 / 255,true);
-         g.moveTo(tp.x + tw * tk + 2,tp.y + 26 * tk); g.lineTo(c.x - 44 * k,c.y + 18 * k);
-         g.lineStyle();
+         tp.x = tpx;
+         tp.y = tpy;
          tp.visible = true;
       }
 
       // ---------------------------------------------------------------- POI markers in the world view
+      // 0.43.4: one icon sprite and one text sprite per marker slot (the icon layer under the text layer, so every icon
+      // still sits under every label, as when they shared one drawing). A slot is redrawn only when what it shows
+      // changed (seen, distance, name, icon, owner); a marker that only moved on the screen moves its two sprites. The
+      // drawing is the same code at the slot's origin, and the slot sits at the same whole-unit spot as before.
+      private var hzsMkI:Sprite = null;
+      private var hzsMkT:Sprite = null;
+      private var hzsMkK:Array = [];
+      private var hzsMkL:Array = null;
+      private var hzsMkC:String = null;
       private function hzsDrawMarks() : void
       {
          var p:Sprite = this.hzsP.Marks as Sprite;
@@ -2380,36 +2529,100 @@
                list.push([Math.round(pp.x),Math.round(pp.y),o.bIsDiscovered === true ? 1 : 0,this.hzsDist(Number(o.uRangeM)),o.bIsDiscovered === true ? this.hzsMarkName(o) : "",this.hzsMarkIcon(o),this.hzs41Own(o)]);
             }
          }
-         var sig:String = this.hzsSer(list) + "|" + this.hzsCfgRev;
-         if(sig == this.hzsMarkSig) { return; }
-         this.hzsMarkSig = sig;
-         this.hzsClr(p);
+         var ck:String = this.hzsCfgRev + "|" + this.hzsFontLib;
+         if(ck == this.hzsMkC && this.hzsMkSame(list,this.hzsMkL)) { return; }   // field by field (was a serialized string every frame)
+         this.hzsMkL = list;
+         if(ck != this.hzsMkC) { this.hzsMkC = ck; this.hzsMkK = []; }
          if(list.length == 0) { p.visible = false; return; }
+         if(this.hzsMkI == null || this.hzsMkI.parent !== p)
+         {
+            this.hzsClr(p);
+            this.hzsMkI = new Sprite(); this.hzsMkI.mouseEnabled = false; this.hzsMkI.mouseChildren = false;
+            this.hzsMkT = new Sprite(); this.hzsMkT.mouseEnabled = false; this.hzsMkT.mouseChildren = false;
+            p.addChild(this.hzsMkI);
+            p.addChild(this.hzsMkT);
+            this.hzsMkK = [];
+         }
          var acc:uint = this.hzsAccent();
-         var g:* = p.graphics;
          var named:int = 0;
+         var i:int = 0;
          for each(var m:Array in list)
          {
-            var c:uint = int(m[2]) == 1 ? acc : HZS_MUTED;
-            if(String(m[5]) == "ship" || String(m[5]) == "vehicle") { c = String(m[6]) == "mine" ? HZS_O2B : (String(m[6]) == "other" ? HZS_VIO : c); this.hzsIcon(g,String(m[5]),m[0],m[1],c,1.15); }   // r2: yours blue, a companion's violet, in doubt the normal color
-            else { this.hzsIcon(g,"hex",m[0],m[1],c,1.15); g.beginFill(c,1); g.drawCircle(m[0],m[1],2.5); g.endFill(); }
-            this.hzsT(p,String(m[3]),m[0],m[1] + 22,13,c,"sb",0.04,"c");
-            if(String(m[4]).length > 0 && named < 3)
+            var nm:Boolean = String(m[4]).length > 0 && named < 3;
+            if(nm) { named++; }
+            var si:Sprite = this.hzsMkSlot(this.hzsMkI,i);
+            var sx:Sprite = this.hzsMkSlot(this.hzsMkT,i);
+            var key:String = m[2] + "\u0001" + m[3] + "\u0001" + (nm ? m[4] : "") + "\u0001" + m[5] + "\u0001" + m[6] + "\u0001" + (nm ? 1 : 0);
+            if(this.hzsMkK[i] !== key)
             {
-               named++;
-               var probe:Sprite = new Sprite();
-               var w:Number = this.hzsTw(this.hzsT(probe,String(m[4]),0,0,14,HZS_WHITE,"sb",0.12,"l",1,260)) + 28;
-               g.lineStyle(1,c,120 / 255,true); g.beginFill(HZS_BG,200 / 255); g.drawRoundRect(m[0] + 16,m[1] - 13,w,26,26,26); g.endFill(); g.lineStyle();
-               this.hzsT(p,String(m[4]),m[0] + 30,m[1],14,HZS_WHITE,"sb",0.12,"l",1,260);
+               this.hzsMkK[i] = key;
+               var c:uint = int(m[2]) == 1 ? acc : HZS_MUTED;
+               var g:* = si.graphics;
+               g.clear();
+               if(String(m[5]) == "ship" || String(m[5]) == "vehicle") { c = String(m[6]) == "mine" ? HZS_O2B : (String(m[6]) == "other" ? HZS_VIO : c); this.hzsIcon(g,String(m[5]),0,0,c,1.15); }   // r2: yours blue, a companion's violet, in doubt the normal color
+               else { this.hzsIcon(g,"hex",0,0,c,1.15); g.beginFill(c,1); g.drawCircle(0,0,2.5); g.endFill(); }
+               this.hzsTPBegin(sx);
+               this.hzsT(sx,String(m[3]),0,22,13,c,"sb",0.04,"c");
+               if(nm)
+               {
+                  var nt:TextField = this.hzsT(sx,String(m[4]),30,0,14,HZS_WHITE,"sb",0.12,"l",1,260);   // measured on itself (was a probe copy)
+                  var w:Number = this.hzsTw(nt) + 28;
+                  g.lineStyle(1,c,120 / 255,true); g.beginFill(HZS_BG,200 / 255); g.drawRoundRect(16,-13,w,26,26,26); g.endFill(); g.lineStyle();
+               }
+               this.hzsTPEnd();
             }
+            si.x = sx.x = Number(m[0]);
+            si.y = sx.y = Number(m[1]);
+            si.visible = sx.visible = true;
+            i++;
          }
+         while(i < this.hzsMkI.numChildren) { this.hzsMkI.getChildAt(i).visible = false; this.hzsMkT.getChildAt(i).visible = false; i++; }
          p.visible = true;
+      }
+      private function hzsMkSlot(layer:Sprite, i:int) : Sprite
+      {
+         if(i < layer.numChildren) { return layer.getChildAt(i) as Sprite; }
+         var s:Sprite = new Sprite();
+         s.mouseEnabled = false;
+         s.mouseChildren = false;
+         layer.addChild(s);
+         return s;
+      }
+      private function hzsMkSame(a:Array, b:Array) : Boolean
+      {
+         if(a == null || b == null || a.length != b.length) { return false; }
+         var i:int = 0;
+         while(i < a.length)
+         {
+            var x:Array = a[i] as Array;
+            var y:Array = b[i] as Array;
+            var j:int = 0;
+            while(j < 7) { if(x[j] !== y[j]) { return false; } j++; }
+            i++;
+         }
+         return true;
       }
 
       // ---------------------------------------------------------------- layout
-      private function hzsDrawAll() : void
+      // 0.43.4: ev = a data event, a pick, a settings / font / screen change asked for this walk (hzsDirty). The planet and
+      // bioscan cards are built only from those events (MonocleMenuData, LocalEnvironmentData, EnvironmentEffectsData,
+      // HUDLocationData; the bioscan flash has its own per-frame redraw), plus LocalEnvData_Frequent for the planet card's
+      // local time, so the 6-frame poll leaves them alone when none of that arrived. Signals, traits, the person strip,
+      // mode and hints also mirror the game's own pick state and button bar, so they keep the 6-frame check.
+      private var hzsEnvFRev:int = 0;
+      private var hzsEnvFDrawn:int = -1;
+      private function hzsDrawAll(ev:Boolean = true) : void
       {
-         for each(var n:String in ["Planet","Bioscan","Signals","Traits","Social","Mode","Hints"]) { this.hzsDrawPanel(n); }
+         for each(var n:String in ["Planet","Bioscan","Signals","Traits","Social","Mode","Hints"])
+         {
+            if(!ev && n == "Bioscan") { continue; }
+            if(n == "Planet")
+            {
+               if(!ev && this.hzsEnvFDrawn == this.hzsEnvFRev) { continue; }
+               this.hzsEnvFDrawn = this.hzsEnvFRev;
+            }
+            this.hzsDrawPanel(n);
+         }
          this.hzsDrawCompassIfMoved();
          this.hzsPlace();
       }

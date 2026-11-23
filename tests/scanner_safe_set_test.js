@@ -145,7 +145,7 @@ const OLD = (() => {
 // ---- S2: one compass check per frame ----
 {
 	const tick = fnText(AS, "hzsTick").body;
-	expect((tick.match(/all = true;/g) || []).length === 1 && /var all:Boolean = false;/.test(tick) && /try \{ this\.hzsDrawAll\(\); all = true; \} catch/.test(tick) && /if\(!all\) \{ try \{ this\.hzsDrawCompassIfMoved\(\); \}/.test(tick), "S2: hzsTick skips its own compass check only after hzsDrawAll completed this frame");
+	expect((tick.match(/all = true;/g) || []).length === 1 && /var all:Boolean = false;/.test(tick) && /try \{ this\.hzsDrawAll\((ev)?\); all = true; \} catch/.test(tick) && /if\(!all\) \{ try \{ this\.hzsDrawCompassIfMoved\(\); \}/.test(tick), "S2: hzsTick skips its own compass check only after hzsDrawAll completed this frame");
 	expect(/this\.hzsDrawCompassIfMoved\(\);/.test(fnText(AS, "hzsDrawAll").body), "S2: hzsDrawAll still runs the compass check");
 	// behavior: the production tick on a stub host
 	const calls = { all: 0, cmp: 0 };
