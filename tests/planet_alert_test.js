@@ -35,8 +35,8 @@ function pin(snippet, msg) {
 	expect(src.indexOf(snippet) >= 0, msg || snippet);
 }
 
-pin('private static const HZ_VERSION:String = "0.43.3.0";', "schema version is 0.43.3.0 (= HZF::kVersion)");
-pin('private static const HZ_BUILD:String = "0.43.3.0";', "HUD build id is 0.43.3.0 (versions aligned)");
+pin('private static const HZ_VERSION:String = "0.43.3.0";', "schema version is 0.43.3.0 (0.43.4 adds no settings) (= HZF::kVersion)");
+pin('private static const HZ_BUILD:String = "0.43.4.0";', "HUD build id is 0.43.4.0 (versions aligned)");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin("tf.text = this.hzFmtLocGame(uh,um,true);", "GAME Local/Game value honors ClockFormat");
 pin("tf.text = this.hzFmtLocGame(H,M,false);", "LOCAL Local/Game value honors ClockFormat");
@@ -74,8 +74,8 @@ expect(hzTempText(Number.NaN, 0) === "--", "a NaN temperature shows --");
 }
 pin('"HudMessages"', "HUD Messages is an arrangeable layout key");
 pin("private function hzArrFs(want:int)", "HUD Messages ghost type size is corrected once");
-pin('this.hzSText(p,"HUD MESSAGES",16 * hz,12 * hz,sz.x - 32 * hz,this.hzArrFs(15),acc,"left","hdr");', "HUD MESSAGES header uses hzArrFs");
-pin('this.hzSText(p,"Companion, crew, crime, credits, afflictions",16 * hz,34 * hz,sz.x - 32 * hz,this.hzArrFs(13),0xF2F7F9,"left");', "HUD MESSAGES body uses hzArrFs");
+pin('this.hzSText(p,"HUD MESSAGES",14 * hz,7 * hz,sz.x - 28 * hz,this.hzArrFs(15),acc,"left","hdr");', "HUD MESSAGES header uses hzArrFs");
+pin('this.hzSText(p,"Cards keep this box\'s anchored edge",14 * hz,29 * hz,sz.x - 28 * hz,this.hzArrFs(13),0xF2F7F9,"left");', "HUD MESSAGES body uses hzArrFs");
 expect(src.indexOf('Math.round(13 * hz)') < 0, "HUD MESSAGES body is not scaled twice");
 function hzArrFs(want, textScale) {
 	let ts = textScale;
@@ -593,7 +593,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect((!hasCrlf && !loneCr && loneLf) || (hasCrlf && !loneLf && !loneCr), rel + " stays LF or a CRLF checkout");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.3.0";') >= 0, rel + " build is 0.43.3.0");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.4.0";') >= 0, rel + " build is 0.43.4.0");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -1600,7 +1600,7 @@ expect("VASCO\r\n".replace(/\r\n/g, "\n").indexOf("VASCO\n") === 0, "a CRLF sour
 	expect(pill.indexOf("var pillMax:Number = 640;") >= 0, "the pill grows only up to 640 px for the name");
 	expect(pill.indexOf("var lineFs:Number = 14;") >= 0, "the pill name, key, and verb share one size");
 	expect(pill.indexOf("hzCapTop(nmTf,cy)") >= 0, "the pill name uses the keycap center");
-	expect(pill.indexOf("hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,0,lineFs)") >= 0, "verbs are measured in full");
+	expect(pill.indexOf("hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,0,lineFs,true)") >= 0, "verbs are measured in full (0.43.4: own row for a long label)");
 	expect(pill.indexOf("nameX + nameRoom + gap") >= 0, "buttons start after the name");
 	expect(pill.indexOf("btnMax") < 0, "the pill does not give the verb row a width limit");
 	expect(pill.indexOf('o.tone = "acc"') >= 0, "the compact pill name uses the text accent");
@@ -1620,7 +1620,7 @@ expect("VASCO\r\n".replace(/\r\n/g, "\n").indexOf("VASCO\n") === 0, "a CRLF sour
 	expect(stealOff.tone === "acc" && stealOff.tint === null, "a normal prompt draws the name in the accent");
 	expect(pillNameColor(true).tint === "HZ_RED" && pillNameColor(false).tint === null && pillNameColor(true).tint === "HZ_RED", "steal and normal each set their own color");
 	expect(pill.indexOf("var lineFs:Number = 14;") >= 0, "the pill name stays 14 px");
-	expect(pill.indexOf("hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,0,lineFs)") >= 0, "verbs and key chips draw in full");
+	expect(pill.indexOf("hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,0,lineFs,true)") >= 0, "verbs and key chips draw in full (0.43.4: own row for a long label)");
 	const fullPrompt = src.slice(src.indexOf('else if(kind == "prompt")'), src.indexOf('else if(kind == "foe")'));
 	expect(fullPrompt.indexOf("this.hzTxtTint(nmTf,null)") >= 0, "the full name card keeps its body color");
 	expect(fullPrompt.indexOf('o.tone = "acc"') < 0, "the full name card does not take the pill accent");

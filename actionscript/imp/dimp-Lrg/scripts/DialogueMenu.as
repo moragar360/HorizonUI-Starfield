@@ -106,6 +106,7 @@ package
       private var hzdFontOk:Object = {};
       private var hzdRevTxt:String = null;   // last ini text applied
       private var hzdReloadT:int = -100000;
+      private var hzdTalkRead:Boolean = false;   // 0.43.6 r4: one settings re-read per conversation (F11 cannot open in dialogue)
       private var hzdBare:Boolean = false;   // DlgCard=0 while drawing
 
       private function hzdInit() : void
@@ -139,6 +140,7 @@ package
       }
       private function hzdOnStage(e:Event) : void
       {
+         this.hzdTalkRead = false;   // 0.43.6 r4: a new showing reads the settings once
          try { stage.addEventListener(KeyboardEvent.KEY_DOWN,this.hzdOnKey); } catch(err:Error) { }
       }
       // v0.37: merged default + user settings -> hzdLoaded("ini", text or null)
@@ -181,7 +183,10 @@ package
       // re-read the settings (throttled); a changed merged text (Arrange save, F11, HzRev bump) is applied in hzdLoaded
       private function hzdReload() : void
       {
-         if(this.hzdIni == 0 || getTimer() - this.hzdReloadT < 1000) { return; }
+         // 0.43.6 r4: each read is a blocking file load on the menu thread; settings cannot change mid-conversation,
+         // so read once per conversation (a failed read, state 2, still retries)
+         if(this.hzdIni == 0 || (this.hzdTalkRead && this.hzdIni == 1) || getTimer() - this.hzdReloadT < 1000) { return; }
+         this.hzdTalkRead = true;
          this.hzdReloadT = getTimer();
          this.hzdIniLoad();
       }
@@ -266,7 +271,7 @@ package
          {
             this.hzdWho = param1.data.sSpeakerName != null ? String(param1.data.sSpeakerName) : "";
             this.hzdReload();
-            if(param1.data.bClosingMenu) { this.hzdOpen = false; this.hzdLayer.visible = false; this.hzdPmData = null; this.hzdPmDrop(); try { this.hzdPmApply(); } catch(epm0:Error) { } return; }
+            if(param1.data.bClosingMenu) { this.hzdTalkRead = false; this.hzdOpen = false; this.hzdLayer.visible = false; this.hzdPmData = null; this.hzdPmDrop(); try { this.hzdPmApply(); } catch(epm0:Error) { } return; }
             if(this.hzdOn) { this.hzdLayer.visible = true; this.hzdDrawSpeaker(); }
          }
          catch(e:Error) { }

@@ -125,7 +125,7 @@ function host(src, W, isNew) {
 		hzFrameN: 1, hzVehPad: 0, walks: 0
 	};
 	if (isNew) Object.assign(h, { hzT19Bc: null, hzT19BcAw: null, hzT19BcF: -1, hzT19EdAw: null, hzT19EdShow: false, hzT19EdM: -2, hzT19EdPad: -2, hzT19EdF: -10, hzT19EdDecF: -10,
-		hzT19EdgeN: 3, hzT19LblDue: true, hzT19LblC: null, hzT19HcDue: true, hzT19HcRec: false, hzT19HcValid: false, hzT19HcAw: null, hzT19HcHd: null, hzT19HcArr: null,
+		hzT19EdgeN: 3, hzT19WalkSkip: 0, hzT19LblDue: true, hzT19LblC: null, hzT19HcDue: true, hzT19HcRec: false, hzT19HcValid: false, hzT19HcAw: null, hzT19HcHd: null, hzT19HcArr: null,
 		hzT19HcLen: -1, hzT19HcBtn: null, hzT19HcD: [], hzT19HcP: [], hzT19HcDN: 0, hzT19HcB: [], hzT19HcBK: [], hzT19HcBP: [], hzT19HcBN: 0 });
 	for (const f of HIDE_FN) bind(h, src, f);
 	if (isNew) for (const f of NEW_FN) bind(h, src, f);
@@ -381,8 +381,30 @@ if (baseAs) {
 	if (baseAs) {
 		// 0.43.3.2: the only allowed change is the pill-name wrap reset (two exact lines, no red bar code)
 		const wrapReset = (b) => b.replace('o.tone = "main"; o.lines = 1; }', 'o.tone = "main"; }').replace("\n         if(nmTf.wordWrap) { nmTf.wordWrap = false; nmTf.multiline = false; }   // 0.43.3.2: only a wrapped pill name sets these", "");
-		expect(wrapReset(fnText(as, "hzT19Content").body) === fnText(baseAs, "hzT19Content").body && fnText(as, "hzT19ResetPay").body === fnText(baseAs, "hzT19ResetPay").body, "the loot card red bar code (hzT19Content, hzT19ResetPay) is unchanged from " + BASE);
-		expect(fnText(as, "hzT19PaintHold").body === fnText(baseAs, "hzT19PaintHold").body && fnText(as, "hzT19PaintFoeBars").body === fnText(baseAs, "hzT19PaintFoeBars").body, "the hold fill and foe bars are unchanged");
+		// 0.43.4 item 2: the keycap rows (ownRow, hzT19RowsH) are the only other change; undone here line by line
+		const rows043 = [
+			["this.hzT19Buttons(null,a,aw,0,0,acol,0,0,true) : 0;\n         var rowsH:Number = bw > 0 ? this.hzT19RowsH : 0;   // 0.43.4: all keycap rows (one per long label)", "this.hzT19Buttons(null,a,aw,0,0,acol) : 0;"],
+			["dvY + 8 + rowsH + 18", "dvY + 8 + this.hzT19CapH() + 18"], ["(hasBtn ? rowsH + 10 : 0)", "(hasBtn ? this.hzT19CapH() + 10 : 0)"],
+			["bodyEnd + 12 + rowsH + 14", "bodyEnd + 12 + this.hzT19CapH() + 14"], ["fy + 42 + rowsH + 14", "fy + 42 + this.hzT19CapH() + 14"],
+			["dvY + 8,HZ_ACCENT,0,0,true)", "dvY + 8,HZ_ACCENT)"], ["by + 24,HZ_RED,0,0,true)", "by + 24,HZ_RED)"], ["bodyEnd + 12,acol,0,0,true)", "bodyEnd + 12,acol)"], ["fy + 42,acol,0,0,true)", "fy + 42,acol)"],
+		];
+		// 0.43.4 item 1: the private HoverDiag bits (hv) pick the size and may skip the full-size measure
+		rows043.unshift(["         var nh:int = hv == 0 ? this.hzNameHover : ((hv & 2) != 0 ? 1 : ((hv & 4) != 0 ? 0 : this.hzNameHover));\n         var bw:Number = a ? (hv != 0 && (hv & 8) != 0 && kind == \"prompt\" && nh != 1 ? 1 : this.hzT19Buttons(null,a,aw,0,0,acol,0,0,true)) : 0;", "         var bw:Number = a ? this.hzT19Buttons(null,a,aw,0,0,acol,0,0,true) : 0;"]);
+		rows043.push(["if(kind == \"prompt\" && nh != 1)", "if(kind == \"prompt\" && this.hzNameHover != 1)"]);
+		const undo043 = (b) => rows043.reduce((t, r) => t.split(r[0]).join(r[1]), b);
+		expect(undo043(wrapReset(fnText(as, "hzT19Content").body)) === fnText(baseAs, "hzT19Content").body && fnText(as, "hzT19ResetPay").body === fnText(baseAs, "hzT19ResetPay").body, "the loot card red bar code (hzT19Content, hzT19ResetPay) is unchanged from " + BASE);
+		// 0.43.6 round 3 E / E2 rewrote both for allocation (reused draw list, field compare); that behavior is tested in
+		// tests/round3_e_test.js, round3_e2_test.js and target_foebar_test.js. Review SF-3: each body must still be
+		// exactly the pre-0.43.6 body or exactly the reviewed round 3 body (frozen at R3_BASE), nothing else.
+		const R3_BASE = process.env.HZ_R3_BASE || "d8c7a59";
+		const r3Res = gitBase.readBase(root, R3_BASE);
+		if (r3Res.src == null) {
+			expect(r3Res.skip, "round 3 reference " + R3_BASE + " readable (" + r3Res.why + ")");
+		} else {
+			const r3 = r3Res.src;
+			const same = (n) => fnText(as, n).body === fnText(baseAs, n).body || fnText(as, n).body === fnText(r3, n).body;
+			expect(same("hzT19PaintHold") && same("hzT19PaintFoeBars"), "the hold fill and foe bars are unchanged (pre-0.43.6, or the reviewed round 3 form at " + R3_BASE + ")");
+		}
 	}
 }
 

@@ -4,12 +4,27 @@ All notable changes to Horizon UI are listed here, newest first. The format foll
 
 Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never published; 0.41.0 replaced 0.40.3, and its entry includes the changes prepared for 0.40.3.
 
+## [0.43.4.0-alpha] - 2026-11-23
+
+Released as v0.43.4.0-alpha, Performance Update Pass 3. The SFSE plugin, its file version, the F11 header and the movie build labels read 0.43.4.0. 0.43.4 adds no settings, so only the settings schema (HZF::kVersion and the HUD's HZ_VERSION) stays 0.43.3.0: existing `HorizonUI.user.ini` files and saved presets carry over unchanged, there is no update backup of `HorizonUI.user.ini`, and presets saved in 0.43.3 are not shown as made for an older version.
+
+### Performance
+- **Comms hover stutter:** with Comms installed, hovering items or containers no longer causes repeated 60 to 120 ms freezes. Comms no longer reads its settings files during HUD mode changes, scanner opens or dialogue updates; it rereads them only after an F11 save. In testing on an older PC, these freezes became much rarer.
+- **Scanner frame rate:** while the hand scanner is open, its markers, compass labels and range tags are no longer torn down and rebuilt almost every frame while you move or turn. Text pieces are created once and reused, markers that only move are just moved, and each part redraws only when its own information changes. The look and every F11 SCANNER setting are unchanged.
+- **Scanner open hitch:** opening the scanner no longer reads the settings files twice.
+
+### Changed
+- **Quick Menu is optional:** the Horizon quick menu (`favoritesmenu.swf` and `favoritesmenu_lrg.swf`) moved out of Core into its own **Quick Menu (Favorites)** module on the Optional Modules page. It is ticked by default; untick it to keep the game's quick menu or another mod's. Unticked, F11 > CARDS > QUICK MENU > HORIZON STYLE appears locked, and your saved value is kept.
+
+### Upgrade note
+- **Vortex:** an update or reinstall that reuses your earlier installer choices may bring Quick Menu (Favorites) up unticked, because it is a new option. Re-tick it to keep Horizon's quick menu. For a manual install or an MO2 merge, remove any leftover `Interface\favoritesmenu.swf` and `favoritesmenu_lrg.swf` if you untick it.
+
 ## [0.43.3.0-alpha] - 2026-11-19
 
 Released as v0.43.3.0-alpha. The settings schema (HZF::kVersion and the HUD's HZ_VERSION) is 0.43.3.0 (it was 0.42.0). An existing `HorizonUI.user.ini` and saved presets still carry over. On the first start of this DLL the plugin copies `HorizonUI.user.ini` to `HorizonUI.user.bak.ini` once (the usual update backup; it replaces an older backup), new saved presets read Version=0.43.3.0, and a preset saved with 0.42.0 shows "Made for 0.42.0: new settings use defaults." in F11 (it still applies as before).
 
 ### Added
-- **Quick menu (Core):** the game's quick menu (the favorites cross) draws each of the 12 slots as a Horizon card in your card style (accent, card color, opacity, shadow, text tone, font, text size, header case; read when the menu opens). All 12 slots use the same box size, and each slot's icon is scaled down to fit inside its box (it keeps its shape, is never enlarged, and stays clear of the key). Each slot shows the key you bound to it (keyboard and mouse; a controller shows no slot key text, like the game), a QUICK MENU header shows your bound close key (on a controller: the button mapped to Cancel, or no hint when that button is not known), and the selected slot gets the F11 selected look. The info card shows only what the game sends: the item name (and count), AMMO (name and count), DAMAGE (physical / EM / energy values) and SLOT (the selected slot's key, keyboard and mouse). The game sends no magazine / reserve split, so there is none. The game's icons, mouse, controller, assigning a slot and the close animation are the game's own code. Off switch: F11 > CARDS > QUICK MENU > HORIZON STYLE (`QuickMenuHorizon` under `[Cards Extra]`, default 1). Ships `favoritesmenu.swf` and `favoritesmenu_lrg.swf` in Core; another mod that replaces the same movie conflicts with it. *(Play-tested in the 20261119c test build: keyboard and mouse slot keys, the same box size for all 12 slots, weapon icons inside their boxes, and the controller Cancel hint on the QUICK MENU header.)*
+- **Quick menu (Core in 0.43.3.0; optional from 0.43.4):** the game's quick menu (the favorites cross) draws each of the 12 slots as a Horizon card in your card style (accent, card color, opacity, shadow, text tone, font, text size, header case; read when the menu opens). All 12 slots use the same box size, and each slot's icon is scaled down to fit inside its box (it keeps its shape, is never enlarged, and stays clear of the key). Each slot shows the key you bound to it (keyboard and mouse; a controller shows no slot key text, like the game), a QUICK MENU header shows your bound close key (on a controller: the button mapped to Cancel, or no hint when that button is not known), and the selected slot gets the F11 selected look. The info card shows only what the game sends: the item name (and count), AMMO (name and count), DAMAGE (physical / EM / energy values) and SLOT (the selected slot's key, keyboard and mouse). The game sends no magazine / reserve split, so there is none. The game's icons, mouse, controller, assigning a slot and the close animation are the game's own code. Off switch: F11 > CARDS > QUICK MENU > HORIZON STYLE (`QuickMenuHorizon` under `[Cards Extra]`, default 1). Shipped `favoritesmenu.swf` and `favoritesmenu_lrg.swf` in Core in this release (an optional Quick Menu module from 0.43.4); another mod that replaces the same movie conflicts with it. *(Play-tested in the 20261119c test build: keyboard and mouse slot keys, the same box size for all 12 slots, weapon icons inside their boxes, and the controller Cancel hint on the QUICK MENU header.)*
 
 ### Fixed
 - **Vehicle exit pill:** after you placed it in ARRANGE CARDS, the pill no longer jumps to the bottom left of the screen. Its default spot is now worked out from the visible screen area only (bottom right, where the game shows its exit prompt), never from the game's button, so ARRANGE CARDS on foot and the pill in a vehicle use the same spot. Dragging, the arrow keys, RESET and the saved spot all keep it there, and the whole pill stays on screen. The pill is placed only when something changes (shown, a new spot, a new screen area); nothing is measured every frame. Saved `VehicleExitX` / `VehicleExitY` values are kept and now count from that default spot.
@@ -299,6 +314,7 @@ Alpha pre-release. This entry covers everything since 0.42.0.13-alpha. The setti
 - **SFSE plugin** (`HorizonUI.dll`): F11 window input, mouse wheel, settings files and presets.
 - **Requirements:** SFSE and Address Library for SFSE Plugins, both required.
 
+[0.43.4.0-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.4.0-alpha
 [0.43.3.0-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.3.0-alpha
 [0.43.2.0-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.2.0-alpha
 [0.43.1.0-alpha]: https://github.com/moragar360/HorizonUI-Starfield/releases/tag/v0.43.1.0-alpha

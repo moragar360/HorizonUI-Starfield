@@ -15,7 +15,7 @@
       public var HorizonVitals_mc:Sprite = null;
       private var hzFont:String = null;
       private var hzTexts:Array = [];
-      private var hzTextTf:Array = [];   // hzTexts[i].tf for hzTxtObj (hzTexts is append-only)
+      private var hzTextTf:Array = [];   // hzTexts[i].tf for hzTxtObj (hzTexts is append-only after hz55ShedOld)
       private var hzJetPct:TextField = null;
       private var hzJetBar:Sprite = null;
       private var hzJetCharge:Number = 1;
@@ -278,6 +278,10 @@
       private var hzObjRing:int = 0;             // ObjectRing: 0 off, 1 container lists only, 2 vanilla
       private var hzXh:Sprite = null;
       private var hzXhSig:String = "";
+      private var hzXhLs:int = -1;        // 0.43.6: the last drawn style / device-pixel unit / accent (hzXhTick)
+      private var hzXhLp:Number = NaN;
+      private var hzXhLa:uint = 0;
+      private static const HZ_PT0:Point = new Point(0,0);   // 0.43.6: read-only origin for localToGlobal
       private var hzXhHid:Array = [];
       private var hzIniLoader:URLLoader = null;
       public var hzFadeCards:Boolean = true;
@@ -561,6 +565,7 @@
          try { this.hz26StDraw(this.hz26Now()); } catch(errSt13:Error) { }
          try { this.hzAfRetryLayout(); } catch(errAfS:Error) { }
          this.hzLaidOut = this.hzLayout();
+         if(this.hzArrange) { try { this.hz31PxSync(); } catch(err31z:Error) { } }   // 0.43.4: the HUD MESSAGES box follows HudScale
       }
 
       // Affliction + chip-family 13 px floor. Re-run after HudScale / per-card scale so F11
@@ -804,6 +809,7 @@
 
       private function hzDrawVitBg(alert:Number) : void
       {
+         if(this.hz55Shed) { return; }   // 0.43.5: the outline sits on the classic vitals card, which is torn down
          var g:Sprite = this.hzVitBg;
          g.graphics.clear();
          if(alert > 0)
@@ -1009,6 +1015,7 @@
       // Sets a bar's target; hzTickBars glides it there. Health bar keeps a fading damage ghost.
       private function hzMeter(b:Sprite, w:Number, f:Number, col:uint) : void
       {
+         if(b == null || (this.hz55Shed && this.hz55Bars.indexOf(b) >= 0)) { return; }   // 0.43.5: torn-down classic bars stay out of hzBars
          var e:Object = null;
          for each(var o:Object in this.hzBars) { if(o.b == b) { e = o; break; } }
          f = Math.max(0,Math.min(1,f));
@@ -1169,7 +1176,7 @@
          var due:Boolean = this.hzCmpTickDue(deg);
          if(due)
          {
-            var i:int = 0;
+            var i:int = this.hz55Shed ? HZ_CARD.length : 0;   // 0.43.5: the classic strip labels are torn down
             var ppd:Number = (HZ_CMP_W - 40) / 180;
             while(i < HZ_CARD.length)
             {
@@ -1182,7 +1189,7 @@
                i++;
             }
             var hi:int = int(Math.round(deg)) % 360;
-            if(hi != this.hzCmpCtrI)   // the card point follows the whole degree, so the text changes only with it
+            if(hi != this.hzCmpCtrI && !this.hz55Shed)   // the card point follows the whole degree, so the text changes only with it
             {
                this.hzCmpCtrI = hi;
                var idx:int = int(Math.round(deg / 45)) % 8;
@@ -1404,7 +1411,13 @@
          BSUIDataManager.Subscribe("WeaponData",this.hzOnWeapon);
          BSUIDataManager.Subscribe("QuestData",this.hzOnQuestData);
          BSUIDataManager.Subscribe("QuestUpdateData",this.hzOnQuestUpdate);
-         BSUIDataManager.Subscribe("PlayerInventoryData",this.hzOnInventory);
+         // 0.43.5: no PlayerInventoryData watch here. The vanilla HUD never watches it, and the game rebuilds and ships the whole
+         // inventory to every watcher. Credits and weight come from PlayerData (hz26OnPlayer); ammo type and magazine size from
+         // FavoritesData and the rollover's item data (hzAmResolve). The inventory feed is the last-resort fallback (hzAmInvStart).
+         // 0.43.6: hzSubPrime also hands over the state the movie already holds (a first watch made after the game attached the
+         // data link never gets its first dispatch, see hzSubPrime)
+         try { this.hzSubPrime("FavoritesData",this.hzAmOnFav,"aFavoriteItems"); } catch(eAmF:Error) { }
+         try { this.hzSubPrime("DataInventoryProvider",this.hzAmOnEq,"EquippedWeapon"); } catch(eAmE:Error) { }   // EquippedWeapon only (the Data Menu's weapon line)
          // alpha option A-N2: the game's HUD opacity value from the very first dispatch (hzBuildEnv runs inside hzBuild, before HUDMenu's own
          // subscriptions, so it only records the value; the re-hide after the game's write is hz44OnOpacity, added later)
          if(HZ44_BY_ALPHA) { try { BSUIDataManager.Subscribe("HUDOpacityData",this.hz44OnOpacityEarly); } catch(e44o:Error) { } }
@@ -1778,7 +1791,7 @@
          var d:Object = e.data;
          this.hzFixFonts();
          this.hzAmmoDrawn = d.bDisplayAmmo === true;
-         this.hzDbgWeap = this.hzDump(d);
+         if(this.hzDebug) { this.hzDbgWeap = this.hzDump(d); }   // 0.43.5: no debug string on a normal weapon update
          this.hzDbgShow();
          var clip:Number = Number(d.uClipAmmo);
          var tot:Number = Number(d.uTotalAmmo);
@@ -1797,7 +1810,7 @@
          }
          // per-model outline: WeaponData.sIconLinkageName (vanilla BottomRightGroup loads it from WeaponIcons.swf)
          var icn:String = d.sIconLinkageName != undefined && d.sIconLinkageName != null ? String(d.sIconLinkageName) : "";
-         this.hzDbgWeap = "sIconLinkageName=" + icn + " | " + this.hzDbgWeap;
+         if(this.hzDebug) { this.hzDbgWeap = "sIconLinkageName=" + icn + " | " + this.hzDbgWeap; }
          try { this.hzE19SetSym(icn); } catch(errSym:Error) { }
          this.hzDbgShow();
          var wn:String = this.hzPick(d,["sWeaponName","sName","sEquippedWeaponName","sItemName","WeaponName"]);
@@ -1810,7 +1823,7 @@
             this.hzMagCap = 0;
          }
          if(!isNaN(clip)) { this.hzMagClip = clip; if(clip > this.hzMagMax) { this.hzMagMax = clip; } }
-         this.hzResolveAmmoType();
+         this.hzAmResolve();
          this.hzDrawMag();
          if(this.hzCAmmo) { this.hzCAmmo.text = this.hzAmmoCount.text; }
          this.hzEqSync();
@@ -2456,7 +2469,9 @@
       // dropped; every other line, and the line breaks, stay as they were. No key in the text: one indexOf, same string.
       private function hzEnvP0NoKey(txt:String) : String
       {
-         if(txt == null || txt.toLowerCase().indexOf("envalertlog") < 0) { return txt; }
+         if(txt == null) { return txt; }
+         var lc0:String = txt.toLowerCase();
+         if(lc0.indexOf("envalertlog") < 0 && lc0.indexOf("hoverdiag") < 0) { return txt; }   // 0.43.4: HoverDiag too
          var out:Array = [];
          var sec:String = "";
          for each(var ln:String in txt.split("\n"))
@@ -2469,7 +2484,8 @@
                var sc:int = t.indexOf(";");
                if(sc >= 0) { t = t.substr(0,sc); }
                var eq:int = t.indexOf("=");
-               if(eq > 0 && t.substr(0,eq).replace(/\s/g,"").toLowerCase() == "envalertlog") { continue; }
+               var dk0:String = eq > 0 ? t.substr(0,eq).replace(/\s/g,"").toLowerCase() : "";
+               if(dk0 == "envalertlog" || dk0 == "hoverdiag") { continue; }
             }
             out.push(ln);
          }
@@ -2621,7 +2637,7 @@
          if(ct != this.hzCrossType) { this.hzT19Ver++; }
          this.hzCrossType = ct;
          this.hzWpnRet = this.hzWpnReticle(ct,this.hzWpnRet);   // arch-fixes Fix 3
-         this.hzDbgCross = this.hzDump(e.data);
+         if(this.hzDebug) { this.hzDbgCross = this.hzDump(e.data); }   // 0.43.5: no debug string per crosshair update
          this.hzDbgShow();
          this.hzRefreshVisibility();
       }
@@ -2786,6 +2802,8 @@
             try { this.hz26LayoutDefaults(left,top,cx,tl.y + this.hz27CmpTop(),sP); } catch(err26:Error) { }
          }
          try { this.hz31PxDefaults(tl,br); } catch(err31x:Error) { }
+         this.hzLayTL = tl;   // 0.43.4: hzLayNow re-resolves one card in this same rect on its size-change edge
+         this.hzLayBR = br;
          // user layout (ARRANGE CARDS): normalized top-left in the visible rect, clamped on screen
          var vw:Number = br.x - tl.x;
          var vh:Number = br.y - tl.y;
@@ -2809,6 +2827,7 @@
             li++;
          }
          try { this.hz26LayoutAfter(this.hz34S("Character")); } catch(err26b:Error) { }
+         if(this.hzPerfOn && this.hzCensusS == null) { try { this.hzCensusTake(); } catch(eCen:Error) { } }   // round 3 G: PerfDiag only, once, at the first layout
          return true;
       }
 
@@ -3048,6 +3067,8 @@
          try { this.hz40Init(); } catch(err40:Error) { }
          this.hzLoadIni();
          this.hzBuildCompact();
+         try { this.hz55ShedOld(); } catch(e55s:Error) { }   // 0.43.5: tear down the always-hidden classic card trees
+         try { this.hzEqShedNew(); } catch(eEqS:Error) { }   // 0.43.6 (round 3 C): and the always-hidden style-1 Equipment card
          addEventListener(Event.ENTER_FRAME,this.hzPbFrame);
          this.hzRefreshVisibility();
       }
@@ -3059,9 +3080,15 @@
          this.hzFixFonts();
          this.hzJetCharge = c;
          var f:Number = c < 0 ? 1 : Math.max(0,Math.min(1,c));
-         this.hzJetPct.text = Math.round(f * 100) + "%";
-         if(this.hzCJet) { this.hzCJet.text = Math.round(f * 100) + "%"; this.hzMeter(this.hzCJetBar,80,f,f < 0.25 ? HZ_RED : HZ_ACCENT); }
-         this.hzMeter(this.hzJetBar,HZ_W - 32,f,f < 0.25 ? HZ_RED : HZ_ACCENT);
+         // 0.43.5: the percent string is made only when the whole percent changes; a text that differs (a strip built
+         // after the first update) is still written
+         var pct:int = Math.round(f * 100);
+         var pctNew:Boolean = pct != this.hz55JetPct;
+         if(pctNew) { this.hz55JetPct = pct; this.hz55JetS = pct + "%"; }
+         var ps:String = this.hz55JetS;
+         if(!this.hz55Shed) { this.hzJetPct.text = ps; }
+         if(this.hzCJet) { if(pctNew || this.hzCJet.text != ps) { this.hzCJet.text = ps; } this.hzMeter(this.hzCJetBar,80,f,f < 0.25 ? HZ_RED : HZ_ACCENT); }
+         if(!this.hz55Shed) { this.hzMeter(this.hzJetBar,HZ_W - 32,f,f < 0.25 ? HZ_RED : HZ_ACCENT); }
          this.hzDot(this.hzDotJet,f < 0.25 ? HZ_RED : (f < 0.5 ? HZ_YELLOW : HZ_GREEN));
          this.hzJetTrack(c);
          this.hzRefreshVisibility();
@@ -3070,19 +3097,26 @@
       private function hzOnPlayerFrequent(e:FromClientDataEvent) : *
       {
          try { this.hz36HideTick(); } catch(e36q:Error) { }   // v0.36: the game re-shows HealthBarGhost_mc on these updates (heal)
+         if(!isNaN(this.hzAmT0)) { try { this.hzAmResolve(); this.hzDrawMag(); } catch(errAm:Error) { this.hzAmT0 = NaN; } }   // 0.43.5: an unknown gun's 3 s wait, checked on a feed that keeps arriving
          var d:Object = e.data;
          this.hzFixFonts();
          var hp:Number = Number(d.fHealth);
          var mhp:Number = Number(d.fMaxHealth);
          if(!isNaN(hp) && mhp > 0)
          {
-            this.hzVitHp.text = Math.round(hp) + " / " + Math.round(mhp);
+            // 0.43.5: one string per whole-number change, shared by every health text (was three per update)
+            var hpR:int = Math.round(hp);
+            var mhpR:int = Math.round(mhp);
+            var hpNew:Boolean = hpR != this.hz55HpR || mhpR != this.hz55MhpR;
+            if(hpNew) { this.hz55HpR = hpR; this.hz55MhpR = mhpR; this.hz55HpS = hpR + " / " + mhpR; }
+            var hs:String = this.hz55HpS;
+            if(!this.hz55Shed) { this.hzVitHp.text = hs; }
             var hf:Number = hp / mhp;
             this.hzVitHpF = hf;
             var hc:uint = hf <= 0.3 ? HZ_RED : (hf <= 0.6 ? HZ_YELLOW : HZ_GREEN);
-            this.hzMeter(this.hzVitHpBar,HZ_W - 32,hf,hc);
-            if(this.hzVnHp) { this.hzVnHp.text = Math.round(hp) + " / " + Math.round(mhp); this.hzMeter(this.hzVnHpBar,HZ_VN_W - 28,hf,this.hz26WarnCol(hf,HZ_GREEN)); this.hzTxtTint(this.hzVnHp,hf < 0.35 ? this.hz26WarnCol(hf,HZ_GREEN) : null); this.hz26VnWarn(0,hf); }
-            if(this.hzCHp) { this.hzCHp.text = Math.round(hp) + " / " + Math.round(mhp); this.hzMeter(this.hzCHpBar,80,hf,hc); }
+            if(!this.hz55Shed) { this.hzMeter(this.hzVitHpBar,HZ_W - 32,hf,hc); }
+            if(this.hzVnHp) { if(hpNew || this.hzVnHp.text != hs) { this.hzVnHp.text = hs; } this.hzMeter(this.hzVnHpBar,HZ_VN_W - 28,hf,this.hz26WarnCol(hf,HZ_GREEN)); this.hzTxtTint(this.hzVnHp,hf < 0.35 ? this.hz26WarnCol(hf,HZ_GREEN) : null); this.hz26VnWarn(0,hf); }
+            if(this.hzCHp) { if(hpNew || this.hzCHp.text != hs) { this.hzCHp.text = hs; } this.hzMeter(this.hzCHpBar,80,hf,hc); }
             this.hzDot(this.hzDotVit,hc);
             this.hzLowHealth = hf <= 0.3 && hp > 0;
             if(!this.hzLowHealth) { this.hzDrawVitBg(0); }
@@ -3091,15 +3125,22 @@
          var mo2:Number = Number(d.fMaxO2CO2);
          if(!isNaN(o2) && mo2 > 0)
          {
-            this.hzVitO2.text = Math.round(o2 / mo2 * 100) + "%";
-            if(this.hzVnO2) { this.hzVnO2.text = Math.round(o2 / mo2 * 100) + "%"; this.hzMeter(this.hzVnO2Bar,HZ_VN_W - 28,o2 / mo2,this.hz26WarnCol(o2 / mo2,HZ_O2_BLUE)); this.hzTxtTint(this.hzVnO2,o2 / mo2 < 0.35 ? this.hz26WarnCol(o2 / mo2,HZ_O2_BLUE) : null); this.hz26VnWarn(1,o2 / mo2); }
-            this.hzMeter(this.hzVitO2Bar,HZ_W - 32,o2 / mo2,o2 / mo2 < 0.25 ? 0xF2735F : HZ_ACCENT);
-            if(this.hzCO2) { this.hzCO2.text = Math.round(o2 / mo2 * 100) + "%"; this.hzMeter(this.hzCO2Bar,80,o2 / mo2,o2 / mo2 < 0.25 ? HZ_RED : HZ_ACCENT); }
+            var o2R:int = Math.round(o2 / mo2 * 100);
+            var o2New:Boolean = o2R != this.hz55O2R;
+            if(o2New) { this.hz55O2R = o2R; this.hz55O2S = o2R + "%"; }
+            var os:String = this.hz55O2S;
+            if(!this.hz55Shed) { this.hzVitO2.text = os; }
+            if(this.hzVnO2) { if(o2New || this.hzVnO2.text != os) { this.hzVnO2.text = os; } this.hzMeter(this.hzVnO2Bar,HZ_VN_W - 28,o2 / mo2,this.hz26WarnCol(o2 / mo2,HZ_O2_BLUE)); this.hzTxtTint(this.hzVnO2,o2 / mo2 < 0.35 ? this.hz26WarnCol(o2 / mo2,HZ_O2_BLUE) : null); this.hz26VnWarn(1,o2 / mo2); }
+            if(!this.hz55Shed) { this.hzMeter(this.hzVitO2Bar,HZ_W - 32,o2 / mo2,o2 / mo2 < 0.25 ? 0xF2735F : HZ_ACCENT); }
+            if(this.hzCO2) { if(o2New || this.hzCO2.text != os) { this.hzCO2.text = os; } this.hzMeter(this.hzCO2Bar,80,o2 / mo2,o2 / mo2 < 0.25 ? HZ_RED : HZ_ACCENT); }
          }
          if(!isNaN(o2) && mo2 > 0) { this.hzVitO2F = o2 / mo2; }
          if(this.hzRuleVitals == 5) { this.hzRefreshVisibility(); }
-         this.hzVitHp.visible = this.hzVitHpLbl.visible = this.hzVitHpBar.visible = this.hzShowHealth;
-         this.hzVitO2.visible = this.hzVitO2Lbl.visible = this.hzVitO2Bar.visible = this.hzShowOxygen;
+         if(!this.hz55Shed)
+         {
+            this.hzVitHp.visible = this.hzVitHpLbl.visible = this.hzVitHpBar.visible = this.hzShowHealth;
+            this.hzVitO2.visible = this.hzVitO2Lbl.visible = this.hzVitO2Bar.visible = this.hzShowOxygen;
+         }
       }
 
       private var hzPlugActive:Boolean = false;
@@ -3124,7 +3165,8 @@
       {
          if(this.hzAmmoType)
          {
-            this.hzAmmoType.text = name && name.length > 0 ? name.toUpperCase() : "--";
+            var at:String = name && name.length > 0 ? name.toUpperCase() : "--";
+            if(this.hzAmmoType.text != at) { this.hzAmmoType.text = at; }   // 0.43.5: change-only (runs on every WeaponData update)
          }
          this.hzEqSync();
       }
@@ -3309,6 +3351,218 @@
          this.hzResolveAmmoType();
          this.hzDrawMag();
       }
+
+      // ---- 0.43.5: ammo type and magazine size without watching the player inventory ----
+      // Sources, strongest first:
+      //  1. DataInventoryProvider.EquippedWeapon: the equipped instance itself (uHandleID, sName, WeaponInfo.sAmmoType and
+      //     WeaponInfo.uAmmoCapacity), the small feed the Data Menu's weapon line reads. Authoritative for the equipped gun.
+      //  2. HUDRolloverActivationData ItemData / CompareItemData (WeaponInfo, sent on a hover): authoritative when its
+      //     uHandleID is the equipped handle. While the equipped feed is silent, CompareItemData (the equipped item the hovered
+      //     one is compared with) stands in for it. Any other hover gives an ammo name only, filling a missing one.
+      //  3. FavoritesData.aFavoriteItems: sAmmoName only (the game sends no magazine size there). Fills missing names only.
+      // A magazine size is only ever taken from the equipped instance (1, or 2 when it is the equipped one), never from a
+      // same-name copy found by name. A gun whose type or size is still unknown after the 3 s wait (or at once when the
+      // equipped data has spoken for it without one) starts the old inventory walk, once per session (hzAmInvStart).
+      private var hzAmFav:Array = null;
+      private var hzAmEqH:Number = NaN;       // equipped weapon uHandleID from DataInventoryProvider (NaN = unknown)
+      private var hzAmEq:Object = null;       // {n: name, t: ammo type, c: magazine size or 0, s: "eq" feed / "cmp" compare data}
+      private var hzAmKnown:Object = {};      // item name -> {t: ammo type (null = unknown)}; names only, never a size
+      private var hzAmInvOn:Boolean = false;  // fallback: PlayerInventoryData watched (sticky: the game keeps a watch once made)
+      private var hzAmT0:Number = NaN;        // when the wait for an unknown type / size started (hz26Now ms); NaN = nothing pending
+      private static const HZ_AM_WAIT:Number = 3000;
+      private static const HZ_AM_NOMAG:Number = 4294967295;   // uint.MAX_VALUE: the game's "no magazine" value
+      private static const HZ_AM_INV:String = "PlayerInventoryData";   // the fallback feed (hzAmInvStart, hzAmInvPeek)
+
+      // 0.43.6: Subscribe, then deliver the state this movie already holds when Subscribe itself does not. In the game's
+      // BSUIDataManager.Subscribe the listener is called at once only for a provider this movie was already watching. For a
+      // first watch made after the data link is attached, UIDataShuttleConnector.Watch fills the payload and dispatches CHANGE
+      // (SetReady) before Subscribe adds the listener, so that first state never reaches it; the next call comes only when
+      // the data changes (for the inventory: the first shot). key: a payload field that shows the payload is filled.
+      // A provider that is not ready yet (a watch made before the link is attached) gets the link's own first dispatch.
+      private function hzSubPrime(name:String, fn:Function, key:String) : void
+      {
+         var p:* = null;
+         var had:Boolean = false;
+         try { p = BSUIDataManager.GetDataFromClient(name,false); had = p != null && Boolean(p.dataReady); } catch(e0:Error) { had = false; }
+         BSUIDataManager.Subscribe(name,fn);   // a throw goes to the caller's try, as before
+         if(had) { return; }   // Subscribe has already called fn with the current data
+         try { p = BSUIDataManager.GetDataFromClient(name,false); } catch(e1:Error) { p = null; }
+         if(p == null || !Boolean(p.dataReady) || p.data == null || p.data[key] == undefined) { return; }
+         fn(new FromClientDataEvent(p));
+      }
+
+      // a magazine size from game data: 0 for missing, invalid or the no-magazine value
+      private function hzAmCap(v:*) : Number
+      {
+         var c:Number = Number(v);
+         return (isNaN(c) || c <= 0 || c >= HZ_AM_NOMAG) ? 0 : c;
+      }
+
+      private function hzAmOnEq(e:FromClientDataEvent) : *
+      {
+         var w:Object = null;
+         try { w = e.data ? e.data.EquippedWeapon : null; } catch(err:Error) { w = null; }
+         if(w == null || Number(w.uFormID) == 0 || Number(w.uHandleID) >= HZ_AM_NOMAG || w.sName == null)
+         {
+            this.hzAmEq = null; this.hzAmEqH = NaN;
+         }
+         else
+         {
+            var wi:Object = w.WeaponInfo;
+            var t:String = (wi != null && wi.sAmmoType != null) ? String(wi.sAmmoType) : "";
+            this.hzAmEq = {"n":String(w.sName),"t":t,"c":wi != null ? this.hzAmCap(wi.uAmmoCapacity) : 0,"s":"eq"};
+            this.hzAmEqH = Number(w.uHandleID);
+         }
+         if(this.hzDebug) { this.hz26Log("DataInventoryProvider",{"EquippedWeapon":w,"use":this.hzAmEq,"inv":this.hzAmInvOn}); }
+         if(!this.hzAmInvOn) { this.hzAmResolve(); this.hzDrawMag(); }
+      }
+
+      private function hzAmOnFav(e:FromClientDataEvent) : *
+      {
+         try { this.hzAmFav = (e.data && e.data.aFavoriteItems is Array) ? e.data.aFavoriteItems as Array : null; } catch(err:Error) { this.hzAmFav = null; }
+         var i:int = 0;
+         while(this.hzAmFav != null && i < this.hzAmFav.length)
+         {
+            var f:Object = this.hzAmFav[i];
+            if(f != null && f.bIsEquippable === true && f.sName != null)
+            {
+               // an equippable favorite with no ammo name is a no-ammo item (melee): known, so it never starts the fallback
+               this.hzAmLearn(String(f.sName),f.sAmmoName != null ? String(f.sAmmoName) : "");
+            }
+            i++;
+         }
+         if(!this.hzAmInvOn) { this.hzAmResolve(); this.hzDrawMag(); }
+      }
+
+      // rollover item data: ItemData (the hovered item) and CompareItemData (the equipped one it is compared with)
+      private function hzAmHover(a:Object) : void
+      {
+         if(a == null || this.hzAmInvOn) { return; }
+         var got:Boolean = this.hzAmItem(a.ItemData,false);
+         if(this.hzAmItem(a.CompareItemData,true)) { got = true; }
+         if(got) { this.hzAmResolve(); this.hzDrawMag(); }
+      }
+
+      private function hzAmItem(it:Object, cmp:Boolean) : Boolean
+      {
+         if(it == null || it.WeaponInfo == null || it.sName == null) { return false; }
+         var w:Object = it.WeaponInfo;
+         if(w.sAmmoType == null) { return false; }
+         var t:String = String(w.sAmmoType);
+         var c:Number = this.hzAmCap(w.uAmmoCapacity);
+         var nm:String = String(it.sName);
+         var mine:Boolean = !isNaN(this.hzAmEqH) && it.uHandleID != undefined && Number(it.uHandleID) == this.hzAmEqH;
+         // the equipped feed is silent (no handle): the compare item is the equipped one. Feed data always has a handle, so
+         // compare data never overrides it; it may only refresh earlier compare data
+         var stand:Boolean = cmp && isNaN(this.hzAmEqH);
+         if(mine || stand)
+         {
+            if(this.hzAmEq == null || this.hzAmEq.n != nm) { this.hzAmEq = {"n":nm,"t":t,"c":c,"s":mine ? "eq" : "cmp"}; return true; }
+            var ch:Boolean = false;
+            if(t.length > 0 && this.hzAmEq.t != t) { this.hzAmEq.t = t; ch = true; }   // an empty name never blanks a known one
+            if(c > 0 && this.hzAmEq.c != c) { this.hzAmEq.c = c; ch = true; }          // nor a 0 size a known one
+            return ch;
+         }
+         if(t.length == 0) { return false; }
+         return this.hzAmLearn(nm,t);   // a copy found by name: its ammo name may fill a gap, its magazine size is never used
+      }
+
+      // Outputs: true when something was added. Name-keyed sources only fill a missing or empty ammo name; a known non-empty
+      // name is never overwritten. No magazine size is kept here: a same-name copy may carry a different magazine.
+      private function hzAmLearn(nm:String, t:String) : Boolean
+      {
+         if(nm.length == 0) { return false; }
+         var k:Object = this.hzAmKnown[nm];
+         if(k == null) { this.hzAmKnown[nm] = {"t":t}; return true; }
+         if(t != null && t.length > 0 && t != k.t && (k.t == null || String(k.t).length == 0)) { k.t = t; return true; }
+         return false;
+      }
+
+      // exact name first; otherwise the inventory walk's rule (the item name starts with WeaponData's weapon name). Of several
+      // such names, a "<name> (...)" copy (the game's modded-name form) beats a longer different name ("X" picks "X (Calibrated)"
+      // over "X Extended"), then the shortest, then name order, so the pick never depends on for..in order
+      private function hzAmFind(wn:String) : Object
+      {
+         var k:Object = this.hzAmKnown[wn];
+         if(k != null) { return k; }
+         var best:String = null;
+         var bestR:int = 2;
+         for(var nm:String in this.hzAmKnown)
+         {
+            if(nm.indexOf(wn) != 0) { continue; }
+            var r:int = nm.substr(wn.length,2) == " (" ? 0 : 1;
+            if(best == null || r < bestR || (r == bestR && (nm.length < best.length || (nm.length == best.length && nm < best)))) { best = nm; bestR = r; }
+         }
+         return best != null ? this.hzAmKnown[best] : null;
+      }
+
+      private function hzAmResolve() : void
+      {
+         if(this.hzAmInvOn)   // the old path owns it once it runs
+         {
+            // 0.43.6: until the inventory payload is seen, look at it again on this call (WeaponData, or the PlayerFrequentData
+            // check while hzAmT0 is set), so a payload filled after the subscribe is used without waiting for a shot
+            if(this.hzInvItems == null) { this.hzAmInvPeek(); }
+            this.hzAmT0 = this.hzInvItems == null ? (isNaN(this.hzAmT0) ? this.hz26Now() : this.hzAmT0) : NaN;
+            this.hzResolveAmmoType();
+            return;
+         }
+         var wn:String = this.hzWeapName;
+         if(wn.length == 0) { this.hzAmT0 = NaN; return; }
+         var t:String = null;
+         var c:Number = 0;
+         var eqMine:Boolean = this.hzAmEq != null && String(this.hzAmEq.n).indexOf(wn) == 0;   // the equipped feed is about this gun
+         if(eqMine) { t = this.hzAmEq.t; c = Number(this.hzAmEq.c); }
+         var k:Object = this.hzAmFind(wn);
+         if(k != null && (t == null || t.length == 0) && k.t != null) { t = String(k.t); }
+         if(c > 0) { this.hzMagCap = c; }
+         this.hzSetAmmoType(t != null ? t : "");
+         // still needed: an unknown type, or a gun that shows ammo with no type or no magazine size yet
+         var need:Boolean = t == null || (this.hzAmmoDrawn && (t.length == 0 || !(c > 0)));
+         if(!need) { this.hzAmT0 = NaN; return; }
+         var now:Number = this.hz26Now();
+         if(isNaN(this.hzAmT0)) { this.hzAmT0 = now; }
+         // at once when the equipped feed itself has spoken for this gun and still lacks it; otherwise after the wait, so a
+         // weapon swap (WeaponData first, the equipped feed a moment later) or favorites arriving first never start it early
+         if(eqMine || now - this.hzAmT0 >= HZ_AM_WAIT) { this.hzAmInvStart(); }
+      }
+
+      // Purpose: the unknown-gun 3 s wait (hzAmT0) was only checked again from game events (PlayerFrequentData, WeaponData,
+      // the favorites and equipped feeds, hover). On a fresh start with a gun in hand and full health and oxygen the game
+      // may send none of them until the first shot, so the ammo type stayed "--" until then. This checks the wait from the
+      // frame tick and on the load edge. No timer, listener or allocation; every ammo source stays, and the inventory
+      // fallback still starts at most once per session (hzAmInvStart). Once the fallback owns it (hzAmInvOn), only the
+      // load edge looks again, so the per-frame path never runs the inventory peek every frame.
+      // Inputs: now (the frame's clock, hz26Now ms; NaN never passes the wait test), edge (true on a load gap).
+      // Outputs: hzAmResolve and hzDrawMag, as in hzOnPlayerFrequent. Author: Moragar. Last modified: 2026-11-22.
+      private function hzAmWaitTick(now:Number, edge:Boolean) : void
+      {
+         if(isNaN(this.hzAmT0)) { return; }
+         if(!edge && (this.hzAmInvOn || !(now - this.hzAmT0 >= HZ_AM_WAIT))) { return; }
+         try { this.hzAmResolve(); this.hzDrawMag(); } catch(errAmW:Error) { this.hzAmT0 = NaN; }
+      }
+
+      // last resort, kept so no gun ever loses its ammo type or magazine size: the pre-0.43.5 inventory walk
+      private function hzAmInvStart() : void
+      {
+         if(this.hzAmInvOn) { return; }
+         this.hzAmInvOn = true;
+         this.hzAmT0 = NaN;
+         // 0.43.6: a first watch at run time: hzSubPrime hands over the current inventory (before, nothing came until the
+         // inventory changed, so a fresh game showed no ammo name until the first shot)
+         try { this.hzSubPrime(HZ_AM_INV,this.hzOnInventory,"aItems"); } catch(eAmI:Error) { }
+         if(this.hzInvItems == null) { this.hzAmInvPeek(); }
+         if(this.hzInvItems == null) { this.hzAmT0 = this.hz26Now(); }   // keep looking on the PlayerFrequentData check
+         try { this.hzResolveAmmoType(); this.hzDrawMag(); } catch(eAmR:Error) { }
+      }
+
+      // the fallback feed's current payload, read directly (no event needed)
+      private function hzAmInvPeek() : void
+      {
+         var p:* = null;
+         try { p = BSUIDataManager.GetDataFromClient(HZ_AM_INV,false); } catch(e0:Error) { p = null; }
+         try { if(p != null && Boolean(p.dataReady) && p.data != null && p.data.aItems is Array) { this.hzInvItems = p.data.aItems as Array; } } catch(e1:Error) { }
+      }
       private function hzFindAmmo(o:Object, depth:int) : String
       {
          if(o == null || depth > 2) { return null; }
@@ -3435,7 +3689,7 @@
             if(this.hzWeapName.length == 0 && nm.length > 0) { this.hzInvWeapName = nm; }
             if(this.hzWeapName.length > 0 && nm.indexOf(this.hzWeapName) == 0)
             {
-               var cap:Number = this.hzFindNum(it,"uAmmoCapacity",0);
+               var cap:Number = this.hzAmCap(this.hzFindNum(it,"uAmmoCapacity",0));   // no-magazine value -> 0
                if(cap > 0) { this.hzMagCap = cap; }
                this.hzSetAmmoType(t);
                return;
@@ -3517,9 +3771,16 @@
             if(e.m == undefined) { e.m = mul; }
             e.m += (mul - e.m) * 0.08;
             var c:Sprite = e.c;
-            c.visible = (this.hzLaidOut || this.hzLayEver) && e.s > 0.02; // v0.26: cards stay up while a relayout is pending
-            c.alpha = e.s * e.m; // CardOpacity is applied to panel fills only (hzPanelA), text stays solid
-            c.y = e.base + (1 - e.s) * 10;
+            // 0.43.5: same values as before, written only when a write could change the card (a settled card costs no
+            // display writes). e.wa / e.wy are the last values written and e.ra / e.ry what the card read back right
+            // after: the same value written again stores the same thing, so the write is skipped. A write by other code
+            // (a force-hide alpha 0, a re-anchor) changes the read-back and is corrected on this frame, as before.
+            var vis:Boolean = (this.hzLaidOut || this.hzLayEver) && e.s > 0.02; // v0.26: cards stay up while a relayout is pending
+            var al:Number = e.s * e.m; // CardOpacity is applied to panel fills only (hzPanelA), text stays solid
+            var yy:Number = e.base + (1 - e.s) * 10;
+            if(c.visible != vis) { c.visible = vis; }
+            if(al !== e.wa || c.alpha !== e.ra) { c.alpha = al; e.wa = al; e.ra = c.alpha; }
+            if(yy !== e.wy || c.y !== e.ry) { c.y = yy; e.wy = yy; e.ry = c.y; }
          }
       }
 
@@ -3552,9 +3813,13 @@
          var wlOld:Array = null;   // watchlog only
          var wlWhy:int = 0;
          this.hzFrameN++;
+         // 0.43.6 (round 3 E2): one wall-clock read (the same Date clock) for the three per-frame readers below, which
+         // each made their own Date every frame; NaN (a throw) lets each read its own as before
+         var wall:Number = NaN;
+         try { wall = this.hz26Now(); } catch(eWall:Error) { wall = NaN; }
          try { this.hz42VehTick(); } catch(e42v:Error) { }   // 0.42.0.7: own try, first, so a throw later in this frame cannot skip the exit pill
          if(this.hzPerfOn) { this.hzPsMark(0); }
-         try { this.hz40Frame(); } catch(e40f:Error) { }
+         try { this.hz40Frame(wall); } catch(e40f:Error) { }
          if(this.hzPerfOn) { this.hzPsMark(1); }
          try { this.hz42QmFont(); } catch(e42q:Error) { }   // v0.40.2: in-world quest-marker labels in the Horizon face
          if(this.hzPerfOn) { this.hzPsMark(2); }
@@ -3581,6 +3846,7 @@
             if(this.hzWlOn) { wlOld = this.hzHideCache; wlWhy = wlOld == null ? 0 : (this.hz36HideStale ? 2 : 1); this.hzWlRbNow = true; }
             this.hzHideCache = [];
             this.hz36HideStale = false;
+            try { this.hz26VMissReset(); } catch(e26r:Error) { }   // round 3 SF-1: a hide-list rebuild restarts the hz26V miss counts
             names = [];
             var grp:Boolean = this.hz44Hid;   // BLG hidden as a whole: its children need no per-piece entries
             if(this.hzHideVanillaBoost) { names.push("JetpackMeterWrapper_mc","JetpackMeterAnim_mc"); }
@@ -3683,12 +3949,13 @@
          try { this.hzTickVitals(); } catch(e36v:Error) { }
          if(this.hzPerfOn) { this.hzPsMark(19); }
          var p26:Number = this.hzPerfOn ? this.hzPsT : 0;
-         try { this.hz26Tick(); } catch(err26:Error) { }
+         try { this.hz26Tick(wall); } catch(err26:Error) { }
          if(this.hzPerfOn) { this.hzPsSpan(20,p26,true); }
          try { this.hzMsglogCaretTick(); } catch(eMlC:Error) { }
-         try { this.hzAfLoadWatch(); } catch(errAfW:Error) { }
+         try { this.hzAfLoadWatch(wall); } catch(errAfW:Error) { }
+         if(!isNaN(this.hzAmT0)) { try { this.hzAmWaitTick(wall,false); } catch(errAmWt:Error) { } }   // 0.43.6 round 4: one inline isNaN per frame; the call (plus its own isNaN and the wait test) runs only while a wait is pending
          if(this.hzPerfOn) { this.hzPsMark(21); }
-         if(this.hzPlanAlertOn)
+         if(this.hzPlanAlertOn && !this.hz55Shed)   // 0.43.5: hzPlanAlert is on the torn-down classic planet card
          {
             this.hzPlanPulse += 0.07;
             var pa:Number = 0.5 + 0.5 * Math.sin(this.hzPlanPulse);
@@ -3954,7 +4221,7 @@
          t.setTextFormat(f);
          t.textColor = col;
          t.filters = this.hz35Shadow(false);
-         try { t.antiAliasType = "advanced"; t.gridFitType = "pixel"; } catch(err:Error) { }
+         try { t.antiAliasType = "normal"; t.gridFitType = "pixel"; } catch(err:Error) { }
          p.addChild(t);
          return t;
       }
@@ -6012,6 +6279,23 @@
          this.hzSetDrag = -1;
          if(this.HorizonSettings_mc) { this.HorizonSettings_mc.visible = false; }
          if(this.hzSetCursor) { this.hzSetCursor.visible = false; }
+         this.hzSetFree();
+      }
+
+      // 0.43.6 (round 3 B): a closed F11 window keeps nothing drawn. hzSetDraw already empties hzSetBody and draws every
+      // tab, row, label, keycap and preview again on each open (hzToggleSettings, and ARRANGE CANCEL back into F11), so
+      // the panel's text fields and sprites no longer stay alive in the HUD for the rest of the session after the first
+      // F11 use. The window containers (HorizonSettings_mc, hzSetBody, hzSetCursor, hzSetKeyOv) stay, empty.
+      private function hzSetFree() : void
+      {
+         if(this.hzSetIsOpen) { return; }
+         if(this.hzSetBody != null)
+         {
+            while(this.hzSetBody.numChildren > 0) { this.hzSetBody.removeChildAt(0); }
+            this.hzSetBody.graphics.clear();
+         }
+         if(this.hzSetKeyOv != null) { this.hzSetKeyOv.graphics.clear(); }
+         this.hzSetHits = [];
       }
 
       public function hzTakeSaveIni() : String
@@ -6535,9 +6819,9 @@
       }
 
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
-      private static const HZ_VERSION:String = "0.43.3.0";   // settings schema = HZF::kVersion (0.42.0 until 2026-11-19)
+      private static const HZ_VERSION:String = "0.43.3.0";   // settings schema = HZF::kVersion (0.42.0 until 2026-11-19; 0.43.4 adds no settings, so it stays)
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.3.0";   // 0.43.3.0: versions aligned (user request, 2026-11-18)
+      private static const HZ_BUILD:String = "0.43.4.0";   // 0.43.4.0: versions aligned (user request, 2026-11-22; was 0.43.3.0)
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
@@ -6607,7 +6891,7 @@
          else if(align == "center") { t.x = Math.round(x - w / 2); }
          else { t.x = Math.round(x - 2); }
          t.y = Math.round(y - 3 - (sz - fs) / 2);
-         try { t.antiAliasType = "advanced"; t.gridFitType = "pixel"; } catch(errAA:Error) { }
+         try { t.antiAliasType = "normal"; t.gridFitType = "pixel"; } catch(errAA:Error) { }
          p.addChild(t);
          return t;
       }
@@ -8185,8 +8469,10 @@
       // scan with one native indexOf instead of an AS loop over ~200 entries. A hit is checked against hzTexts[i].tf on
       // every use and a stale or null slot falls back to the original scan. A miss (tf not in the index) returns null
       // without the scan: that answer relies on the same two invariants (append-only, no tf reassignment), which the
-      // source tests pin; code that reassigns an entry's tf or removes entries must drop hzTextTf first.
-      // Inputs: tf. Outputs: the entry or null. Author: Moragar. Last modified: 2026-11-10.
+      // source tests pin; code that reassigns an entry's tf or removes entries must drop hzTextTf first. The two removals
+      // are hz55ShedOld (0.43.5) and hzEqShedNew (0.43.6 round 3 C), each once at build; both drop hzTextTf before and
+      // after they remove entries.
+      // Inputs: tf. Outputs: the entry or null. Author: Moragar. Last modified: 2026-11-22.
       private function hzTxtObj(tf:TextField) : Object
       {
          var n:int = this.hzTexts.length;
@@ -8282,6 +8568,7 @@
       // Two-row layout; rows collapse when irrelevant (no gaps). Top-left stays fixed.
       private function hzEqLayout() : void
       {
+         if(this.hzEqShedOn) { this.hzEqExpanded = this.hzArrange || this.hzFrameN < this.hzEqExpandUntil; return; }   // round 3 C: nothing left to lay out
          if(!this.hzEqNew || !this.hzEqWeap) { return; }
          var ts:Number = Math.max(0.8,Math.min(1.3,this.hzTextScale));
          var W:Number = HZ_EQ_W;
@@ -8336,6 +8623,40 @@
          this.hzEqDrawBody();
       }
 
+
+      // 0.43.6 (round 3 C, Equipment): the style-1 card (hzBuildEqNew) is never shown since v0.27 (hzEqApplyStyle hides it),
+      // yet it stayed in the card with its panel, weapon art (with a glow filter), cartridge art and four text fields, and
+      // every ammo update laid it out again (text fitting and measuring, a panel redraw) for nobody. Once the v0.19 card
+      // (hzEq19) is built, the hidden card is taken out of the HUD: the panel and both art sprites are emptied and
+      // dropped, the name and type fields are dropped with their registry entries, and the card leaves the display list.
+      // hzEqCount and hzEqReserve stay (detached) because they carry the clip / reserve text and the low-ammo tint that
+      // hzE19Sync copies to the visible card; hzEqNew stays as their (detached) holder so hzEqSync / hzEqTick still run.
+      // The weapon class (hzEqKind) still updates and still redraws the visible icon (hzEqDrawWeapIcon).
+      // Inputs: none. Outputs: hzEqShedOn. Author: Moragar. Last modified: 2026-11-22.
+      private var hzEqShedOn:Boolean = false;
+
+      private function hzEqShedNew() : void
+      {
+         if(this.hzEqShedOn || !this.hzEqNew || !this.hzEq19 || !this.hzEqCount || !this.hzEqReserve) { return; }
+         var drop:Array = [];
+         for each(var s:Sprite in [this.hzEqBody,this.hzEqWIcon,this.hzEqAmmoIcon])
+         {
+            if(s == null) { continue; }
+            s.graphics.clear();
+            s.filters = [];
+            if(s.parent != null) { s.parent.removeChild(s); }
+         }
+         if(this.hzEqWeap) { drop.push(this.hzEqWeap); }
+         if(this.hzEqType) { drop.push(this.hzEqType); }
+         this.hzTextTf = [];   // hzTxtObj rule: drop the index before entries are removed
+         if(drop.length > 0) { this.hz55Purge(this.hzTexts,"tf",drop); }
+         for each(var t:TextField in drop) { if(t.parent != null) { t.parent.removeChild(t); } }
+         this.hzTextTf = [];
+         if(this.hzEqNew.parent != null) { this.hzEqNew.parent.removeChild(this.hzEqNew); }
+         this.hzEqBody = this.hzEqWIcon = this.hzEqAmmoIcon = null;
+         this.hzEqWeap = this.hzEqType = null;
+         this.hzEqShedOn = true;
+      }
 
       private function hzEqApplyStyle() : void
       {
@@ -8392,15 +8713,18 @@
       // ~48x24 original line-art silhouettes, drawn in the text color with a soft glow
       private function hzEqDrawWeapIcon(kind:String) : void
       {
-         if(!this.hzEqWIcon) { return; }
+         if(!this.hzEqWIcon && !this.hzEqShedOn) { return; }
          this.hzEqKind = kind;
-         var g:* = this.hzEqWIcon.graphics;
-         var c:uint = this.hzTxtMain();
-         g.clear();
-         g.lineStyle(1.5,c,1,true);
-         this.hzWeapPath(g,kind);
-         g.lineStyle();
-         this.hzEqWIcon.filters = [new GlowFilter(this.hzDarkText() ? 0xFFFFFF : c,this.hzDarkText() ? 0.35 : 0.3,5,5,1.2,1)];
+         if(this.hzEqWIcon)
+         {
+            var g:* = this.hzEqWIcon.graphics;
+            var c:uint = this.hzTxtMain();
+            g.clear();
+            g.lineStyle(1.5,c,1,true);
+            this.hzWeapPath(g,kind);
+            g.lineStyle();
+            this.hzEqWIcon.filters = [new GlowFilter(this.hzDarkText() ? 0xFFFFFF : c,this.hzDarkText() ? 0.35 : 0.3,5,5,1.2,1)];
+         }
          this.hzE19DrawIcon();
       }
 
@@ -8501,7 +8825,6 @@
             }
          }
          if(!this.hzEqHasAmmo) { this.hzEqLow = false; }
-         if(!this.hzEqLow && this.hzEqCount) { this.hzEqCount.alpha = 1; }
          this.hzEqLastClip = this.hzEqClip;
          this.hzEqLayout();
          this.hzE19Sync();
@@ -8512,11 +8835,9 @@
          if(!this.hzEqNew) { return; }
          var want:Boolean = this.hzArrange || this.hzFrameN < this.hzEqExpandUntil;
          if(want != this.hzEqExpanded) { this.hzEqLayout(); }
-         if(this.hzEqLow && this.hzEqCount)
-         {
-            this.hzEqPulse += 0.25;
-            this.hzEqCount.alpha = 0.5 + 0.5 * (0.5 + 0.5 * Math.sin(this.hzEqPulse));
-         }
+         // the low-ammo pulse phase; hzE19Tick turns it into the visible glow on hzE19Cnt. (0.43.6 round 3: hzEqCount sits
+         // in the style-1 card, which is always hidden (and detached once hzEqShedNew runs), so its alpha is not written.)
+         if(this.hzEqLow && this.hzEqCount) { this.hzEqPulse += 0.25; }
          this.hzE19Tick();
       }
 
@@ -8586,6 +8907,99 @@
          this.hzLaidOut = false;
       }
 
+      // ===== 0.43.5 slim: tear down the always-hidden classic card trees =====
+      // Purpose: since v0.24 the classic forms (hzPlanOld, hzVitOld, hzJetOld, hzCmpOld, hzQOld, hzCQOld, hzAfOld,
+      // hzTgOld, and the never-attached hzEqOld) are never shown: hzFrameApply hides them with a constant and hzV19() is
+      // always true. They still held ~39 text fields and ~60 sprites in the display list and in the text, icon, tile,
+      // body and bar registries, so every typography / color pass, every GC mark and every display-tree walk paid for
+      // them, and the jetpack, vitals, compass and alert pulses kept redrawing them. hz55ShedOld runs once after hzBuild:
+      // it takes their objects out of every registry (hzTextTf dropped first, the hzTxtObj rule), clears their vector
+      // graphics, unlinks every node of the subtree from its parent and nulls the wrapper and dot fields. Field
+      // references that other code reads (hzQActive.text, hzAmmoCount.text, hzTgName and the like) are kept, so those
+      // reads and writes still work on the detached fields; writes whose only effect was on the classic look are skipped
+      // with hz55Shed. Visible cards, positions and sizes are unchanged (every shed card has a declared hzSz size).
+      // Inputs: none. Outputs: the counts in hz55Stat. Author: Moragar. Last modified: 2026-11-22.
+      private var hz55Shed:Boolean = false;
+      private var hz55Bars:Array = [];       // classic meter sprites that hzMeter ignores after the shed
+      private var hz55Stat:Object = null;    // {"t":texts, "s":sprites, "i":icons, "b":bars} removed (diagnostics)
+      private var hz55JetPct:int = -1;
+      private var hz55JetS:String = "";
+      private var hz55HpR:int = -1;
+      private var hz55MhpR:int = -1;
+      private var hz55HpS:String = "";
+      private var hz55O2R:int = -1;
+      private var hz55O2S:String = "";
+
+      private function hz55ShedOld() : void
+      {
+         if(this.hz55Shed) { return; }
+         // only when every v0.19 form was built: a failed builder leaves its classic form as the fallback (hzTgTick)
+         if(!this.hzPlanPill || !this.hzVitNew || !this.hzJetNew || !this.hzCmpNew || !this.hzQNew || !this.hzCQNew || !this.hzAfNew || !this.hzTg19) { return; }
+         var roots:Array = [this.hzPlanOld,this.hzVitOld,this.hzJetOld,this.hzCmpOld,this.hzQOld,this.hzCQOld,this.hzAfOld,this.hzTgOld,this.hzEqOld];
+         var live:Array = [];
+         for each(var r:Sprite in roots) { if(r != null) { live.push(r); } }
+         if(live.length == 0) { return; }
+         var st:Object = {"t":0,"s":0,"i":0,"b":0};
+         this.hzTextTf = [];   // hzTxtObj rule: drop the index before entries are removed
+         st.t = this.hz55Purge(this.hzTexts,"tf",live);
+         st.i = this.hz55Purge(this.hzIcons,"s",live);
+         this.hz55Purge(this.hzTiles,"s",live);
+         this.hz55Purge(this.hzCardBodies,"s",live);
+         var bi:int = 0;
+         while(bi < this.hzBars.length) { if(this.hz55Under(this.hzBars[bi].b,live)) { this.hz55Bars.push(this.hzBars[bi].b); } bi++; }
+         st.b = this.hz55Purge(this.hzBars,"b",live);
+         for each(var r2:Sprite in live)
+         {
+            if(r2.parent != null) { r2.parent.removeChild(r2); }
+            st.s += this.hz55Unlink(r2);
+         }
+         this.hzPlanOld = this.hzVitOld = this.hzJetOld = this.hzCmpOld = this.hzQOld = this.hzCQOld = this.hzAfOld = this.hzTgOld = this.hzEqOld = null;
+         this.hzDotJet = this.hzDotVit = this.hzDotPlan = this.hzDotAff = this.hzDotAmmo = null;   // hzDot returns on null
+         this.hzMagSp = null;   // classic magazine bar (hzDrawMag returns on null)
+         this.hzTextTf = [];
+         this.hz55Shed = true;
+         this.hz55Stat = st;
+      }
+
+      // true when d is one of roots or sits below one (walks up the parent chain; no child lookups)
+      private function hz55Under(d:DisplayObject, roots:Array) : Boolean
+      {
+         var n:int = 0;
+         while(d != null && n < 64)
+         {
+            if(roots.indexOf(d) >= 0) { return true; }
+            d = d.parent;
+            n++;
+         }
+         return false;
+      }
+
+      // removes the entries whose key object sits below one of roots; returns how many
+      private function hz55Purge(a:Array, key:String, roots:Array) : int
+      {
+         var n:int = 0;
+         var i:int = a.length - 1;
+         while(i >= 0) { var o:Object = a[i]; if(o != null && this.hz55Under(o[key] as DisplayObject,roots)) { a.splice(i,1); n++; } i--; }
+         return n;
+      }
+
+      // unlinks every node below r from its parent, deepest first, and clears each sprite's vector graphics, so a kept
+      // field does not hold the whole tree and no mesh stays cached; returns the sprites cleared (r included)
+      private function hz55Unlink(r:DisplayObjectContainer) : int
+      {
+         var n:int = 0;
+         if(r is Sprite) { try { Sprite(r).graphics.clear(); } catch(eG:Error) { } n++; }
+         while(r.numChildren > 0)
+         {
+            var ch:DisplayObject = r.removeChildAt(r.numChildren - 1);
+            if(ch is DisplayObjectContainer) { n += this.hz55Unlink(DisplayObjectContainer(ch)); }
+         }
+         return n;
+      }
+
+      // Later step (not in 0.43.5): restyling the vanilla rollover in place instead of drawing HorizonTarget_mc would
+      // go in hzT19Tick and hz38Vanilla (where the vanilla rollover is hidden today).
+
       private function hzV19Redraw() : void
       {
          if(!this.hzV19()) { return; }
@@ -8648,6 +9062,7 @@
          if(this.hzPerfSkipLive()) { return; }
          try { this.hzTgAct = e.data; } catch(err:Error) { this.hzTgAct = null; }
          this.hzTgDirty = true;
+         try { this.hzAmHover(this.hzTgAct); } catch(eAmH:Error) { }   // 0.43.5: a hovered weapon teaches its ammo type
          var pay:String = this.hzT19ActPay(this.hzTgAct);
          if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.act++; this.hzPerfTickHadAct = true; }
          if(pay != this.hzT19ActCached)
@@ -9411,8 +9826,60 @@
       private function hzSetSz(c:Sprite, w:Number, h:Number) : void
       {
          if(!c) { return; }
-         for each(var o:Object in this.hzSz) { if(o.c == c) { o.w = w; o.h = h; return; } }
+         for each(var o:Object in this.hzSz)
+         {
+            if(o.c == c)
+            {
+               if(Number(o.w) == w && Number(o.h) == h) { return; }
+               o.w = w;
+               o.h = h;
+               this.hzLayNow(c);   // 0.43.4: a size change moves a placed card on this same edge
+               return;
+            }
+         }
          this.hzSz.push({"c":c,"w":w,"h":h});
+         this.hzLayNow(c);
+      }
+
+      // 0.43.4: first-appearance spot of an ARRANGE CARDS card. hzLayout places a card from its last known size; a card
+      // that has not drawn yet (or that changed size since) used the fallback size, so an R / B / C anchored card came up
+      // a few units off its saved spot the first time and only landed on it at a later relayout (the XP toast and the
+      // enemy card never asked for one). Now the size-change edge (hzSetSz, after the content and size are final)
+      // re-resolves that one card with the same rule hzLayout uses, so it lands on the saved spot on its first frame.
+      // Edge only (a size change); no polling, no bounds read; the visible rect is the one hzLayout last used.
+      private var hzLayTL:Point = null;
+      private var hzLayBR:Point = null;
+      private function hzLayNow(c:Sprite) : void
+      {
+         if(this.hzLayTL == null) { return; }   // before the first good hzLayout: that layout places it
+         var lk:String = this.hzLayKeyOf(c);
+         if(lk == null || lk == this.hzArrDrag) { return; }
+         var lo:Object = this.hzLay[lk];
+         if(!lo) { return; }
+         var s:Number = HZ_SCALE * this.hzHudScale;
+         var cw:Number = this.hzCW(c) > 1 ? this.hzCW(c) : HZ_W * s;
+         var ch:Number = this.hzCH(c) > 1 ? this.hzCH(c) : 60 * s;
+         var p:Point = this.hz30Resolve(lk,lo,cw,ch,this.hzLayTL,this.hzLayBR);
+         this.hzPlace(c,p.x,p.y);
+      }
+      // the ARRANGE CARDS key of a card that hzLayout places from its own size (the Comms stand-ins and the watch have
+      // their own placement)
+      private function hzLayKeyOf(c:Sprite) : String
+      {
+         if(c == this.HorizonCard_mc) { return "Jetpack"; }
+         if(c == this.HorizonVitals_mc) { return "Vitals"; }
+         if(c == this.HorizonEnv_mc) { return "Planet"; }
+         if(c == this.HorizonAffl_mc) { return "Afflictions"; }
+         if(c == this.HorizonAmmo_mc) { return "Ammo"; }
+         if(c == this.HorizonQuest_mc || c == this.HorizonCompactQuest_mc) { return "Quests"; }
+         if(c == this.HorizonCompass_mc) { return "Compass"; }
+         if(c == this.HorizonCompact_mc) { return "Compact"; }
+         if(c == this.HorizonChar_mc) { return "Character"; }
+         if(c == this.HorizonEnemy_mc) { return "Enemy"; }
+         if(c == this.HorizonStealth_mc) { return "Stealth"; }
+         if(c == this.HorizonXp_mc) { return "XpToast"; }
+         if(c == this.HorizonHazard_mc) { return "Hazard"; }
+         return null;
       }
 
       // on-screen size of a card (known v0.19 sizes; hidden classic children are not counted)
@@ -9518,6 +9985,7 @@
          if(o.tint != undefined && o.tint !== null) { col = o.abs ? uint(o.tint) : this.hzIconCol(uint(o.tint)); }
          var face:String = String(o.face);
          if(face == "rg" && sz <= 12) { face = "sb"; } // small labels never thinner than SemiBold
+         o.szAp = sz;   // 0.43.5 (PR #12 cache key): the applied pixel size, which HudScale / HoverScale floors change without o.fs changing
          var f:TextFormat = new TextFormat(this.hzFontName(face),sz,col);
          if(o.right) { f.align = "right"; }
          if(o.center) { f.align = "center"; }
@@ -9538,10 +10006,10 @@
          if(o.y0 != undefined && o.y0 != null) { tf.y = Math.round((Number(o.y0) - (sz - fs) / 2) / su) * su; }
          tf.x = Math.round(tf.x / su) * su;
          tf.width = Math.round(tf.width);
-         // crisp glyphs: advanced AA, pixel grid fit, a touch of extra weight on small sizes (ignored where unsupported)
+         // normal (animation) AA: one glyph-cache entry per glyph at any size (advanced AA kept one per size and overflowed the cache on hover); grid fit, sharpness and thickness apply only to advanced AA and are ignored here
          try
          {
-            tf.antiAliasType = "advanced";
+            tf.antiAliasType = "normal";
             tf.gridFitType = sz >= 14 ? "subpixel" : "pixel";
             tf.sharpness = 60;
             tf.thickness = sz <= 12 ? 60 : (sz <= 15 ? 35 : 15);
@@ -9636,7 +10104,7 @@
          // FontFace / TextScale / HeaderStyle / resolved face (late fontlibs) must miss. Include them so F11 apply misses.
          if(o && o.twTxt === txt && o.twFs == o.fs && o.twLsVal == o.ls && o.twLsMode == this.hzLsMode
             && o.twFace == this.hzFontFace && o.twTs == this.hzTextScale && o.twHdr == this.hzHeaderStyle
-            && o.twFn === fn && !isNaN(Number(o.twW)))
+            && o.twFn === fn && o.twSz === o.szAp && !isNaN(Number(o.twW)))
          {
             if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.twHit++; }
             return Number(o.twW);
@@ -9675,6 +10143,7 @@
             o.twTs = this.hzTextScale;
             o.twHdr = this.hzHeaderStyle;
             o.twFn = fn;
+            o.twSz = o.szAp;
          }
          return w;
       }
@@ -10868,10 +11337,14 @@
          catch(err:Error) { }
       }
 
-      private function hzAfLoadWatch() : void
+      // now0 (round 3 E2): the frame's clock, or -1 = read it here. A parameter default must be a compile-time constant
+      // for the FFDec importScript build (NaN is rejected there), so the "no clock given" value is -1 (the wall clock
+      // in ms is never negative).
+      private function hzAfLoadWatch(now0:Number = -1) : void
       {
-         var now:Number = this.hz26Now();
+         var now:Number = now0 >= 0 ? now0 : this.hz26Now();   // now0: the frame's clock from hzOnFrame
          if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAfArmRelayout(); }
+         if(this.hzAfLastWall > 0 && now - this.hzAfLastWall > 4000) { this.hzAmWaitTick(now,true); }   // 0.43.6 round 4: a pending ammo wait, on the load edge
          if(now > 0) { this.hzAfLastWall = now; }
          if(this.hzAfLoadAt > 0)
          {
@@ -11419,6 +11892,11 @@
       private var hzT19BarW:Number = 0;
       private var hzT19BarOn:Boolean = false;
       private var hzT19BarSig:String = "";
+      private var hzT19BkOn:Boolean = false;   // 0.43.6: the last painted foe-bar values (hzT19PaintFoeBars)
+      private var hzT19BkW:Number = NaN;
+      private var hzT19BkY:Number = NaN;
+      private var hzT19BkF:int = -1;
+      private var hzT19BkG:int = -1;
       private var hzT19HoldSig:String = "";
 
       private function hzBuildTg19() : void
@@ -11513,9 +11991,12 @@
       }
 
       // undo hzT19HideReticle only (the activation widget stays hidden)
+      private var hzT19RetDs:Array = null;   // 0.43.6: hzT19ShowReticle's reused list
       private function hzT19ShowReticle(rw:Object) : void
       {
-         var ds:Array = [];
+         if(this.hzT19RetDs == null) { this.hzT19RetDs = []; }
+         var ds:Array = this.hzT19RetDs;   // 0.43.6 (round 3 E): emptied per call instead of a new array every frame
+         ds.length = 0;
          try { if(rw.Reticle_mc) { ds.push(rw.Reticle_mc); } } catch(e1:Error) { }
          try
          {
@@ -11541,6 +12022,7 @@
             }
             k--;
          }
+         ds.length = 0;   // keep no clip references between calls
       }
 
       // ---- CROSSHAIR STYLE (interact reticle only) ----
@@ -11603,13 +12085,13 @@
          }
          // device pixel in stage units (ScreenHeight; 1080 assumed when 0) -> the glyph is drawn in device pixels
          var pu:Number = this.hzScrH >= 360 ? 1080 / this.hzScrH : 1;
-         var gp:Point = (rb as DisplayObject).localToGlobal(new Point(0,0));
+         var gp:Point = (rb as DisplayObject).localToGlobal(HZ_PT0);   // 0.43.6: shared origin (localToGlobal does not change its argument)
          var lp:Point = globalToLocal(gp);
          this.hzXh.scaleX = this.hzXh.scaleY = pu;
          this.hzXh.x = Math.round(lp.x / pu) * pu;
          this.hzXh.y = Math.round(lp.y / pu) * pu;
-         var sig:String = this.hzXhStyle + "|" + pu + "|" + HZ_ACCENT;
-         if(sig != this.hzXhSig) { this.hzXhSig = sig; this.hzXhDraw(pu); }
+         // 0.43.6 (round 3 E): field compare; hzXhSig "" (a CrosshairStyle change) still forces the redraw
+         if(this.hzXhSig == "" || this.hzXhStyle != this.hzXhLs || !this.hzSameN(pu,this.hzXhLp) || HZ_ACCENT !== this.hzXhLa) { this.hzXhSig = "1"; this.hzXhLs = this.hzXhStyle; this.hzXhLp = pu; this.hzXhLa = HZ_ACCENT; this.hzXhDraw(pu); }
          this.hzXh.visible = true;
       }
 
@@ -12000,7 +12482,7 @@
          this.hzT19EdPad = this.hzVehPad;
          this.hzT19EdF = f;
          this.hzT19LblDue = this.hzT19EdgeN > 0;
-         this.hzT19HcDue = this.hzT19LblDue;
+         this.hzT19HcDue = this.hzT19EdgeN > this.hzT19WalkSkip;   // 0 = the edge frame and the 2 after it (HoverDiag 16: edge frame only)
          if(this.hzT19EdgeN > 0 && f != this.hzT19EdDecF) { this.hzT19EdgeN--; this.hzT19EdDecF = f; }
       }
 
@@ -12204,10 +12686,18 @@
 
       // our keycap action row from aButtons (iType / bVisible / bEnabled / bPressAndRelease / bPressAndHold / labels).
       // g == null only measures. Returns the row width.
-      private function hzT19Buttons(g:*, a:Object, aw:Object, x0:Number, y:Number, col:uint, maxW:Number = 0, lineFs:Number = 0) : Number
+      // 0.43.4: ownRow = a long label (the steal / lock-difficulty line, hzT19LblLong) gets a row of its own, and the
+      // next button starts a new row below it, so that label can never run into a keycap. Same font size; the card
+      // grows by one row (hzT19RowsN / hzT19RowsH, set by every call). A long label also reserves HZ_T19_SLACK of its
+      // width after it, so a label painted a little wider than measured stays inside the card.
+      private function hzT19Buttons(g:*, a:Object, aw:Object, x0:Number, y:Number, col:uint, maxW:Number = 0, lineFs:Number = 0, ownRow:Boolean = false) : Number
       {
          var x:Number = x0;
          var used:int = 0;
+         var rowsN:int = 1;
+         var rowMax:Number = 0;
+         var prevLong:Boolean = false;
+         var khRow:Number = lineFs > 0 ? this.hzT19PillCap(lineFs) : this.hzT19CapH();
          if(g != null)
          {
             for each(var clr:Object in this.hzT19Btn) { clr.holdOn = false; }
@@ -12225,6 +12715,20 @@
             var press:String = b.bPressAndRelease === false ? "" : this.hzT19Label(aw,t,false,b.sTextPressAndRelease);
             var hold:String = b.bPressAndHold === false ? "" : this.hzT19Label(aw,t,true,b.sTextHold);
             if(press.length == 0 && hold.length == 0) { continue; }
+            var lng:Boolean = false;
+            if(ownRow)
+            {
+               this.hzT19RowFace(this.hzT19Btn[used],lineFs);
+               lng = this.hzT19LblLong(this.hzT19Btn[used],press,hold);
+               if(x > x0 && (lng || prevLong))
+               {
+                  if(x - x0 > rowMax) { rowMax = x - x0; }
+                  x = x0;
+                  y += khRow + HZ_T19_ROWGAP;
+                  rowsN++;
+               }
+               prevLong = lng;
+            }
             var gapX:Number = x > x0 ? 16 : 0;
             if(limit > 0 && x + gapX + 26 + 7 + 16 > limit) { break; }
             var on:Boolean = b.bEnabled !== false;
@@ -12252,7 +12756,17 @@
                var koTk:Object = this.hzTxtObj(kt); if(koTk && koTk.chipMin) { this.hzApplyFmt(koTk); }
                if(isHold)
                {
-                  if(pairs.length > 1) { x += 14; }
+                  if(lng && pairs.length > 1)
+                  {
+                     // 0.43.4: a long press label: its hold half starts its own row too
+                     if(x - x0 > rowMax) { rowMax = x - x0; }
+                     x = x0;
+                     y += khRow + HZ_T19_ROWGAP;
+                     rowsN++;
+                     ky = this.hzSnapU(y,u);
+                     kcy = ky + kh / 2;
+                  }
+                  else if(pairs.length > 1) { x += 14; }
                   var ht:TextField = TextField(slot.hh);
                   var hoTk:Object = this.hzTxtObj(ht); if(hoTk && hoTk.chipMin) { this.hzApplyFmt(hoTk); }
                   var holdW:Number = this.hzTW(ht) + 6;
@@ -12302,12 +12816,39 @@
                   break;
                }
                x += piece;
+               if(lng) { x += Math.ceil(piece * HZ_T19_SLACK); }
             }
             if(stopRow) { break; }
          }
-         var rowW:Number = x - x0;
+         var rowW:Number = Math.max(rowMax,x - x0);
          if(maxW > 0 && rowW > maxW) { rowW = maxW; }
+         this.hzT19RowsN = rowsN;
+         this.hzT19RowsH = rowsN * khRow + (rowsN - 1) * HZ_T19_ROWGAP;
          return rowW;
+      }
+
+      // 0.43.4: a label that needs its own keycap row: one with the lock level or owner joined in brackets (the steal /
+      // lock-difficulty line), or one wider than HZ_T19_LONGW. Measures in the slot's own label fields at their row
+      // size (hzT19RowFace already ran). Content edge only, like hzT19Buttons.
+      private static const HZ_T19_LONGW:Number = 200;
+      private static const HZ_T19_ROWGAP:Number = 6;
+      private static const HZ_T19_SLACK:Number = 0.15;
+      private var hzT19RowsN:int = 1;
+      private var hzT19RowsH:Number = 0;
+      private function hzT19LblLong(slot:Object, press:String, hold:String) : Boolean
+      {
+         var two:Array = [[slot.lp,press],[slot.lh,hold]];
+         for each(var pr:Array in two)
+         {
+            var s:String = String(pr[1]);
+            if(s.length == 0) { continue; }
+            if(s.indexOf("[") >= 0) { return true; }
+            var lt:TextField = TextField(pr[0]);
+            if(lt.width != HZ_T19_LBLW) { lt.width = HZ_T19_LBLW; }
+            lt.text = s.toUpperCase();
+            if(this.hzTW(lt) > HZ_T19_LONGW) { return true; }
+         }
+         return false;
       }
 
       // Purpose: off-by-default HUD timing and isolation gates. Perf helpers use
@@ -12348,7 +12889,9 @@
          if(this.hzPerfOn && this.hzPerfN == null) { this.hzPerfResetN(); }
          if(!this.hzPerfOn) { this.hzPerfDumpSeen = false; }
          this.hzWlApply();
+         if(this.hzPerfOn && this.hzLayEver && this.hzCensusS == null) { try { this.hzCensusTake(); } catch(eCen:Error) { } }
          if(this.hzPerfMode != 2 && this.hzT19Sig == "FIXTURE") { this.hzT19Sig = ""; }
+         this.hzT19SkipSet();
       }
       private function hzPerfSkipLive() : Boolean
       {
@@ -12773,8 +13316,82 @@
          s += " | hc holds=" + this.hzPcHoldN + " olHit=" + this.hzPcOlHit + " olMiss=" + this.hzPcOlMiss;
          s += " | co qsSkip=" + this.hzPcQsSkip + " qsRun=" + this.hzPcQsRun + " txHit=" + this.hzPcTxHit + " txMiss=" + this.hzPcTxMiss;
          s += " | hw walk=" + this.hzPcHrWalk + " fb=" + this.hzPcHrFb + " wcSkip=" + this.hzPcWcSkip;
+         if(this.hzCensusS != null && this.hzCensusS.length > 0) { s += " | " + this.hzCensusS; }   // round 3 G
          if(this.hzWlOn) { s += " | wl n=" + this.hzWlCostN + " sumMs=" + Math.round(this.hzWlCostSum) + " maxMs=" + Math.round(this.hzWlCostMax) + " mode=" + this.hzWlModeName(); }
          return s;
+      }
+
+      // ===================== census (private diag, round 3 G) =====================
+      // Purpose: one count of what the HUD movie holds, so a review can check the round 3 teardown (B) and build-on-use
+      // (C) changes without a test session. Gate: [Debug] PerfDiag=1 (hzPerfOn); off by default, no default-INI key,
+      // nothing on F11. Off: never runs (two Boolean tests, only on the first successful layout and on a PerfDiag change).
+      // On: taken once, when the HUD is first laid out (or when PerfDiag turns on after that), never again in the
+      // session. The line is kept in hzCensusS, added to every "perf parts" dump line (hzPerfParts, PerfDump) and, with
+      // WatchLog=1 as well, queued once for HorizonUI.log. It reads the display tree only; it changes nothing.
+      // Line: "census t=<ms> f=<frame> hz=<objects>,<text fields>,<containers>,<hidden>,<hidden text fields>
+      //   roots=<present>/<listed> hud=<the same five for the whole HUD movie> reg=<registered texts>,<fades>,<sizes>
+      //   shed=<classic>,<style-1 equipment>,<character strip built>,<F11 body children>,<splash children>
+      //   | <root>=<objects>/<text fields> ..." (hidden = not visible itself or below a hidden parent).
+      // Inputs: none. Outputs: hzCensusS. Author: Moragar. Last modified: 2026-11-22.
+      private var hzCensusS:String = null;
+      private static const HZ_CENSUS_ROOTS:Array = ["Card","Vitals","Env","Affl","Quest","CompactQuest","Ammo","Compact","Compass","Target","Hazard","Char","Enemy","Stealth","Xp","Fx","Edge","Settings","Arr","Splash","Watch"];
+      // the persistent Horizon containers, in HZ_CENSUS_ROOTS order (direct references: private members cannot be read by name)
+      private function hzCensusRoots() : Array
+      {
+         return [this.HorizonCard_mc,this.HorizonVitals_mc,this.HorizonEnv_mc,this.HorizonAffl_mc,this.HorizonQuest_mc,this.HorizonCompactQuest_mc,this.HorizonAmmo_mc,this.HorizonCompact_mc,this.HorizonCompass_mc,this.HorizonTarget_mc,this.HorizonHazard_mc,this.HorizonChar_mc,this.HorizonEnemy_mc,this.HorizonStealth_mc,this.HorizonXp_mc,this.HorizonFx_mc,this.HorizonEdge_mc,this.HorizonSettings_mc,this.hzArr_mc,this.hzSplash,this.hz43Watch];
+      }
+      private static const HZ_CENSUS_MAX:int = 40000;
+
+      // adds d and everything below it to n: [objects, text fields, containers, hidden, hidden text fields]
+      private function hzCensusWalk(d:DisplayObject, hid:Boolean, n:Array, depth:int) : void
+      {
+         if(d == null || int(n[0]) >= HZ_CENSUS_MAX) { return; }
+         var h:Boolean = hid || !d.visible;
+         n[0] = int(n[0]) + 1;
+         var tf:Boolean = d is TextField;
+         if(tf) { n[1] = int(n[1]) + 1; }
+         if(h) { n[3] = int(n[3]) + 1; if(tf) { n[4] = int(n[4]) + 1; } }
+         if(!(d is DisplayObjectContainer) || depth >= 32) { return; }
+         n[2] = int(n[2]) + 1;
+         var c:DisplayObjectContainer = DisplayObjectContainer(d);
+         var i:int = 0;
+         while(i < c.numChildren) { this.hzCensusWalk(c.getChildAt(i),h,n,depth + 1); i++; }
+      }
+
+      private function hzCensusTake() : void
+      {
+         if(!this.hzPerfOn || this.hzCensusS != null) { return; }
+         this.hzCensusS = "";   // once per session, even if a read below throws
+         var hz:Array = [0,0,0,0,0];
+         var per:Array = [];
+         var got:int = 0;
+         var rs:Array = this.hzCensusRoots();
+         var ri:int = 0;
+         while(ri < rs.length)
+         {
+            var r:DisplayObject = rs[ri] as DisplayObject;
+            var nm:String = String(HZ_CENSUS_ROOTS[ri]);
+            ri++;
+            if(r == null) { continue; }
+            got++;
+            var one:Array = [0,0,0,0,0];
+            this.hzCensusWalk(r,false,one,0);
+            var k:int = 0;
+            while(k < 5) { hz[k] = int(hz[k]) + int(one[k]); k++; }
+            per.push(nm + "=" + one[0] + "/" + one[1]);
+         }
+         var hud:Array = [0,0,0,0,0];
+         this.hzCensusWalk(this,false,hud,0);
+         var setN:int = -1;
+         var spN:int = -1;
+         try { setN = this.hzSetBody != null ? this.hzSetBody.numChildren : -1; } catch(eS:Error) { }
+         try { spN = this.hzSplash != null ? this.hzSplash.numChildren : -1; } catch(eP:Error) { }
+         var s:String = "census t=" + Math.round(this.hzPerfNow()) + " f=" + this.hzFrameN + " hz=" + hz.join(",") + " roots=" + got + "/" + HZ_CENSUS_ROOTS.length;
+         s += " hud=" + hud.join(",") + " reg=" + (this.hzTexts != null ? this.hzTexts.length : -1) + "," + (this.hzFades != null ? this.hzFades.length : -1) + "," + (this.hzSz != null ? this.hzSz.length : -1);
+         s += " shed=" + (this.hz55Shed ? 1 : 0) + "," + (this.hzEqShedOn ? 1 : 0) + "," + (this.hz26ChS != null ? 1 : 0) + "," + setN + "," + spN;
+         s += " | " + per.join(" ");
+         this.hzCensusS = s;
+         if(this.hzWlOn) { this.hzWlPush(s); }
       }
 
       // ===================== watchlog (private diag) =====================
@@ -13369,9 +13986,11 @@
          if(!this.hzT19BarG) { return; }
          var f:Number = Math.max(0,Math.min(1,this.hzTgHpV));
          var gh:Number = Math.max(f,this.hzTgGhost);
-         var sig:String = (this.hzT19BarOn ? "1" : "0") + "|" + String(this.hzT19BarW) + "|" + String(this.hzT19BarY) + "|" + String(int(f * 200)) + "|" + String(int(gh * 200));
-         if(sig == this.hzT19BarSig) { return; }
-         this.hzT19BarSig = sig;
+         // 0.43.6 (round 3 E): field compare instead of a signature string; hzT19BarSig "" still forces a repaint
+         var fi:int = int(f * 200);
+         var gi:int = int(gh * 200);
+         if(this.hzT19BarSig != "" && this.hzT19BarOn === this.hzT19BkOn && this.hzSameN(this.hzT19BarW,this.hzT19BkW) && this.hzSameN(this.hzT19BarY,this.hzT19BkY) && fi == this.hzT19BkF && gi == this.hzT19BkG) { return; }
+         this.hzT19BarSig = "1"; this.hzT19BkOn = this.hzT19BarOn; this.hzT19BkW = this.hzT19BarW; this.hzT19BkY = this.hzT19BarY; this.hzT19BkF = fi; this.hzT19BkG = gi;
          var g:* = this.hzT19BarG.graphics;
          g.clear();
          if(!this.hzT19BarOn) { this.hzT19BarG.visible = false; return; }
@@ -13385,21 +14004,50 @@
          if(f > 0) { g.beginFill(rc,1); g.drawRoundRect(20,by,Math.max(7,hw * f),7,7,7); g.endFill(); }
          if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.barPaint++; }
       }
+      private var hzT19HoldDr:Array = null;   // 0.43.6: hzT19PaintHold's reused draw list
+      // 0.43.6 (round 3 E2): the last painted holds as fields (type, whole percent, x per hold), reused for the session.
+      // hzT19HoldSig keeps its reset role: "" = the last paint was empty (every reset site writes ""), "1" = hzT19HoldK
+      // holds the last list; any other value never matches, so it forces a repaint, as before.
+      private var hzT19HoldK:Array = null;
+      private var hzT19HoldKN:int = 0;
       private function hzT19PaintHold(aw:Object) : void
       {
          if(!this.hzT19HoldG) { return; }
-         var sig:String = "";
-         var draws:Array = [];
+         if(this.hzT19HoldDr == null) { this.hzT19HoldDr = []; }
+         if(this.hzT19HoldK == null) { this.hzT19HoldK = []; }
+         var draws:Array = this.hzT19HoldDr;   // 0.43.6 (round 3 E): one array for the session, emptied per call
+         draws.length = 0;
          for each(var slot:Object in this.hzT19Btn)
          {
             if(!slot || slot.holdOn !== true) { continue; }
             var frac:Number = this.hzT19HoldFrac(this.hzT19BtnClip(aw,int(slot.holdT)));
             if(frac <= 0.02) { continue; }
-            sig += int(slot.holdT) + ":" + String(int(frac * 100)) + ":" + String(slot.holdX) + ",";
             draws.push(slot,frac);
          }
-         if(sig == this.hzT19HoldSig) { return; }
-         this.hzT19HoldSig = sig;
+         var k:Array = this.hzT19HoldK;
+         var cnt:int = draws.length >> 1;
+         var same:Boolean = cnt == 0 ? this.hzT19HoldSig == "" : (this.hzT19HoldSig == "1" && cnt == this.hzT19HoldKN);
+         var ki:int = 0;
+         while(same && ki < cnt)
+         {
+            var ks:Object = draws[ki * 2];
+            var kx:* = ks.holdX;
+            var lx:* = k[ki * 3 + 2];
+            same = int(k[ki * 3]) == int(ks.holdT) && int(k[ki * 3 + 1]) == int(Number(draws[ki * 2 + 1]) * 100) && (kx === lx || (kx != kx && lx != lx));
+            ki++;
+         }
+         if(same) { draws.length = 0; return; }
+         this.hzT19HoldSig = cnt > 0 ? "1" : "";
+         this.hzT19HoldKN = cnt;
+         ki = 0;
+         while(ki < cnt)
+         {
+            var ws:Object = draws[ki * 2];
+            k[ki * 3] = int(ws.holdT);
+            k[ki * 3 + 1] = int(Number(draws[ki * 2 + 1]) * 100);
+            k[ki * 3 + 2] = ws.holdX;
+            ki++;
+         }
          var g:* = this.hzT19HoldG.graphics;
          g.clear();
          var any:Boolean = false;
@@ -13415,6 +14063,7 @@
             di += 2;
          }
          this.hzT19HoldG.visible = any;
+         draws.length = 0;   // keep no clip references between calls
          if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.holdPaint++; }
       }
       private function hzT19Fixture() : void
@@ -13461,7 +14110,7 @@
          if(this.hzPerfOn && this.hzPerfMode == 2) { this.hzT19Fixture(); return; }
          if(this.hzTgOld) { this.hzTgOld.visible = false; }
          if(!this.hzTg19) { this.hzT19Off(); return; }
-         if(this.hzPerfSkipHover())
+         if(this.hzT19SkipC)   // 0.43.4: cached PerfMode 1 / 7 or [Debug] HoverDiag bit 1 (hzT19SkipSet), no call per frame
          {
             if(this.HorizonTarget_mc && this.HorizonTarget_mc.visible) { this.hzT19Off(); }
             if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.skipGfx++; }
@@ -13589,7 +14238,12 @@
             this.hzCardOpacity = this.hzContOpacity;
             this.hz38DrawOk = false;
             if(this.hzPerfOn) { try { this.hzPerfBegin("content"); } catch(ePbc:Error) { } }
-            try { this.hzT19Content(kind,show ? a : null,aw,sel,start); this.hz38DrawOk = true; }
+            try
+            {
+               if(this.hzHvdOn) { this.hzHvdContent(kind,show ? a : null,aw,sel,start); }   // [Debug] HoverDiag (off by default)
+               else { this.hzT19Content(kind,show ? a : null,aw,sel,start); }
+               this.hz38DrawOk = true;
+            }
             catch(eOp:Error)
             {
                // v0.38: v0.37 swallowed this with the signature already stored, so the card never redrew and the prompt
@@ -13811,7 +14465,8 @@
          var nameX:Number = padL + rad * 2 + 12;
          var pillMax:Number = 640;
          var fullBw:Number = 0;
-         if(hasBtn) { fullBw = this.hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,0,lineFs); }
+         var pRowsH:Number = cap;
+         if(hasBtn) { fullBw = this.hzT19Buttons(null,a,aw,0,0,HZ_ACCENT,0,lineFs,true); pRowsH = this.hzT19RowsH; }
          var gapUse:Number = fullBw > 0 ? gap : 0;
          var nameRoom:Number = nameWant;
          var fitBw:Number = fullBw;
@@ -13851,15 +14506,17 @@
             this.hzApplyFmt(o);
             if(nmTf.visible) { this.hzFitText(nmTf,shown,nameRoom); }
          }
+         // 0.43.4: more than one keycap row (a long steal / lock line on its own row): the pill grows to fit them all
+         if(pRowsH > cap) { H = Math.max(H,pRowsH + (H1 - cap)); }
          this.hzPanel(g,W,H,Math.round(H1 / 2));
          this.hzT19Tile(g,padL + rad,Math.round(H / 2),HZ_ACCENT,rad);
          var u:Number = this.hzT19U();
-         var yBtn:Number = this.hzSnapU((H - cap) / 2,u);
-         var cy:Number = yBtn + cap / 2;
+         var yBtn:Number = this.hzSnapU((H - pRowsH) / 2,u);
+         var cy:Number = pRowsH > cap ? H / 2 : yBtn + cap / 2;
          this.hzTxtTopU(nmTf,this.hzCapTop(nmTf,cy) - lineAdv / 2,u);
          if(fitBw > 0)
          {
-            this.hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,0,lineFs);
+            this.hzT19Buttons(g,a,aw,Math.round(nameX + nameRoom + gap),yBtn,HZ_ACCENT,0,lineFs,true);
          }
          return {"W":W,"H":H};
       }
@@ -13892,7 +14549,74 @@
          return Math.round(adv);
       }
 
-      private function hzT19Content(kind:String, a:Object, aw:Object, sel:int, start:int) : void
+      // 0.43.4 private hover-card stutter diagnostics: [Debug] HoverDiag = sum of bits. Off (0, or no key) by default; not
+      // in the shipped default.ini, the installer or the README, and stripped from saved presets (hzEnvP0NoKey).
+      //   1  bypass the Horizon hover card (the game's own prompt shows; same path as PerfMode 1)
+      //   2  force the FULL card        4  force the COMPACT pill (2 wins when both are set)
+      //   8  compact pill: skip the full-size measure pass (the pill measures its own row)
+      //  16  run the vanilla prompt hide walk on the edge frame only (not the 2 frames after it)
+      //  32  time (hzPerfNow, edge frames only) a: the content draw with its keycap layout passes, b: each hide walk frame;
+      //      lines "HVD a ..." / "HVD b ..." go to the watchlog queue ([Debug] PerfDiag=1 and WatchLog=1, HorizonUI.log)
+      // Read on INI load and every F11 reload, section-aware, last line wins; no key: one indexOf, then off. When off the
+      // hover card costs one cached Boolean read on the content edge and one on the hide walk edge, no extra calls.
+      private var hzHvd:int = 0;
+      private var hzHvdOn:Boolean = false;      // any bit: the content edge goes through hzHvdContent
+      private var hzHvdT:Boolean = false;       // bit 32: edge timing
+      private var hzT19SkipC:Boolean = false;   // cached hzPerfSkipHover() || HoverDiag bit 1 (read per frame in hzT19Tick)
+      private var hzT19WalkSkip:int = 0;        // 0: walk on the edge frame and the 2 after it; 2: edge frame only
+      private function hzHvdParseIni(txt:String) : void
+      {
+         var v:int = 0;
+         if(txt.toLowerCase().indexOf("hoverdiag") >= 0)
+         {
+            var sec:String = "";
+            for each(var ln:String in txt.split("\r").join("").split("\n"))
+            {
+               var h:String = this.hz30Hdr(ln);
+               if(h != null) { sec = h; continue; }
+               if(sec != "debug") { continue; }
+               var t:String = ln;
+               var sc:int = t.indexOf(";");
+               if(sc >= 0) { t = t.substr(0,sc); }
+               var eq:int = t.indexOf("=");
+               if(eq <= 0) { continue; }
+               if(t.substr(0,eq).replace(/\s/g,"").toLowerCase() != "hoverdiag") { continue; }
+               var n:Number = Number(t.substr(eq + 1).replace(/^\s+|\s+$/g,""));
+               v = isNaN(n) || n < 0 || n > 63 ? 0 : int(n);
+            }
+         }
+         this.hzHvdSet(v);
+      }
+      private function hzHvdSet(v:int) : void
+      {
+         if(v == this.hzHvd) { return; }
+         this.hzHvd = v;
+         this.hzHvdOn = v != 0;
+         this.hzHvdT = (v & 32) != 0;
+         this.hzT19WalkSkip = (v & 16) != 0 ? 2 : 0;
+         this.hzT19Sig = "";   // redraw the hover card with the new bits
+         this.hzT19SkipSet();
+      }
+      private function hzT19SkipSet() : void
+      {
+         this.hzT19SkipC = this.hzPerfSkipHover() || (this.hzHvd & 1) != 0;
+      }
+      // the content edge with HoverDiag on (never called when off)
+      private function hzHvdContent(kind:String, a:Object, aw:Object, sel:int, start:int) : void
+      {
+         var t0:Number = this.hzHvdT ? this.hzPerfNow() : -1;
+         this.hzT19Content(kind,a,aw,sel,start,this.hzHvd);
+         if(t0 >= 0) { this.hzHvdLog("a",kind,t0); }
+      }
+      private function hzHvdLog(part:String, kind:String, t0:Number) : void
+      {
+         var nh:int = (this.hzHvd & 2) != 0 ? 1 : ((this.hzHvd & 4) != 0 ? 0 : this.hzNameHover);
+         if(this.hzWlOn) { this.hzWlPush("HVD " + part + " t=" + Math.round(t0) + " f=" + this.hzFrameN + " ms=" + Math.round(this.hzPerfNow() - t0) + " kind=" + kind + " size=" + (nh == 1 ? "FULL" : "COMPACT") + " bits=" + this.hzHvd + (part == "b" ? " edgeN=" + this.hzT19EdgeN : "")); }
+      }
+
+      // hv: the [Debug] HoverDiag bits from hzHvdContent (0 = off, the normal draw): 2 FULL, 4 COMPACT, 8 no full-size
+      // measure pass before the compact pill (the pill measures its own row)
+      private function hzT19Content(kind:String, a:Object, aw:Object, sel:int, start:int, hv:int = 0) : void
       {
          if(this.hzT19Kov) { this.hzT19Kov.graphics.clear(); }
          var g:* = this.hzT19G.graphics;
@@ -13922,9 +14646,11 @@
          if(nmTf.wordWrap) { nmTf.wordWrap = false; nmTf.multiline = false; }   // 0.43.3.2: only a wrapped pill name sets these
          var hdrTxt:String = a && a.sHeaderText != null ? this.hzT19Xl(String(a.sHeaderText)) : "";
          var rar:int = a && a.uRarity != undefined ? int(a.uRarity) : 0;
-         var bw:Number = a ? this.hzT19Buttons(null,a,aw,0,0,acol) : 0;
+         var nh:int = hv == 0 ? this.hzNameHover : ((hv & 2) != 0 ? 1 : ((hv & 4) != 0 ? 0 : this.hzNameHover));
+         var bw:Number = a ? (hv != 0 && (hv & 8) != 0 && kind == "prompt" && nh != 1 ? 1 : this.hzT19Buttons(null,a,aw,0,0,acol,0,0,true)) : 0;
+         var rowsH:Number = bw > 0 ? this.hzT19RowsH : 0;   // 0.43.4: all keycap rows (one per long label)
          var hasBtn:Boolean = bw > 0;
-         if(kind == "prompt" && this.hzNameHover != 1)
+         if(kind == "prompt" && nh != 1)
          {
             var pill:Object = this.hzT19PromptPill(g,a,aw,o,nmTf,hdrTxt,hasBtn,bw);
             W = Number(pill.W);
@@ -13946,7 +14672,7 @@
             var cw:Number = W - 2 * PX;
             var L38:Object = this.hz38PromptY();
             var dvY:Number = Number(L38.dv);
-            H = hasBtn ? dvY + 8 + this.hzT19CapH() + 18 : dvY + 6;
+            H = hasBtn ? dvY + 8 + rowsH + 18 : dvY + 6;
             this.hzPanel(g,W,H,18,-1,-1);
             g.beginFill(this.hzIconCol(HZ_ACCENT),1); g.drawRoundRect(0,16,4,H - 32,4,4); g.endFill();
             this.hzT19Tile(g,Math.round(W / 2),Number(L38.icy),HZ_ACCENT);
@@ -13960,7 +14686,7 @@
                g.lineStyle(1,dk ? 0x000000 : 0xFFFFFF,dk ? 0.18 : 0.13,true,"none");
                g.moveTo(PX,dvY + 0.5); g.lineTo(W - PX,dvY + 0.5);
                g.lineStyle();
-               this.hzT19Buttons(g,a,aw,Math.round((W - fbw) / 2),dvY + 8,HZ_ACCENT);
+               this.hzT19Buttons(g,a,aw,Math.round((W - fbw) / 2),dvY + 8,HZ_ACCENT,0,0,true);
             }
          }
          else if(kind == "foe")
@@ -13976,7 +14702,7 @@
             this.hzFitText(nmTf,this.hzUC(en),W - 40);
             this.hzTxtTop(nmTf,11);
             var by:Number = stars > 0 ? 48 : 40;
-            H = by + 7 + 15 + (hasBtn ? this.hzT19CapH() + 10 : 0);
+            H = by + 7 + 15 + (hasBtn ? rowsH + 10 : 0);
             this.hzPanel(g,W,H,18,tint,edge);
             i = 0;
             while(i < stars) { this.hzT19Star(g,W / 2 + (i - (stars - 1) / 2) * 15,36,this.hzIconCol(0xF2C14E)); i++; }
@@ -13986,7 +14712,7 @@
             if(hasBtn)
             {
                this.hzT19Line(g,by + 16,W,true);
-               this.hzT19Buttons(g,a,aw,Math.round((W - bw) / 2),by + 24,HZ_RED);
+               this.hzT19Buttons(g,a,aw,Math.round((W - bw) / 2),by + 24,HZ_RED,0,0,true);
             }
          }
          else if(kind == "item" || kind == "cmp")
@@ -14019,7 +14745,7 @@
             var rows:Array = kind == "cmp" ? this.hzT19CmpRows(it,cmp) : [];
             var rowsY:Number = head + 9;
             var bodyEnd:Number = kind == "cmp" ? rowsY + rows.length * 24 : head;
-            H = hasBtn ? bodyEnd + 12 + this.hzT19CapH() + 14 : bodyEnd + (kind == "cmp" ? 6 : 0);
+            H = hasBtn ? bodyEnd + 12 + rowsH + 14 : bodyEnd + (kind == "cmp" ? 6 : 0);
             this.hzPanel(g,W,H,18,tint,edge);
             // v0.25: left accent stripe like the equipment card (red while stealing; rarity stays on its chip)
             this.hzAccStripe(g,H,steal ? HZ_RED : HZ_ACCENT);
@@ -14082,7 +14808,7 @@
             if(hasBtn)
             {
                this.hzT19Line(g,bodyEnd + 2,W,steal);
-               this.hzT19Buttons(g,a,aw,18,bodyEnd + 12,acol);
+               this.hzT19Buttons(g,a,aw,18,bodyEnd + 12,acol,0,0,true);
             }
          }
          else if(kind == "list")
@@ -14121,7 +14847,7 @@
                if(se.fWeight != undefined && !isNaN(sw) && sw > 0) { fmeta.push(sw.toFixed(1) + " KG"); }
             }
             // v0.25: value / weight line, then a thin divider, then the keycap row a little lower (whole units)
-            H = hasBtn ? fy + 42 + this.hzT19CapH() + 14 : fy + 30;
+            H = hasBtn ? fy + 42 + rowsH + 14 : fy + 30;
             this.hzPanel(g,W,H,18,tint,edge);
             this.hzAccStripe(g,H,steal ? HZ_RED : HZ_ACCENT);
             if(steal)
@@ -14215,7 +14941,7 @@
             if(hasBtn)
             {
                this.hzT19Line(g,fy + 32,W,steal);
-               this.hzT19Buttons(g,a,aw,14,fy + 42,acol);
+               this.hzT19Buttons(g,a,aw,14,fy + 42,acol,0,0,true);
             }
          }
          // every tag text field on the device-pixel grid too (no half-pixel glyph origins at 1.5x)
@@ -14298,6 +15024,16 @@
       private var hz26ChW:Number = 360;
       private var hz26ChH:Number = 150;
       private var hz26ChSig:String = "";
+      private var hz26ChC:Boolean = false;   // 0.43.6: the last synced look (see hz26Tick)
+      private var hz26ChA:Boolean = false;
+      private var hz26ChCol:int = -1;
+      private var hz26ChAcc:uint = 0;
+      private var hz26ChTs:Number = NaN;
+      // 0.43.6: number equality where NaN equals NaN (what the old String() signatures did)
+      private function hzSameN(a:Number, b:Number) : Boolean
+      {
+         return a == b || (a != a && b != b);
+      }
       // XP toast + bar ghost
       private var hz26XpAmt:Number = 0;
       private var hz26XpLastT:Number = 0;
@@ -14371,7 +15107,24 @@
       private var hz26Nums:Array = [];
       private var hz26Ring:Sprite;
       private var hz26Arcs:Array = [];
+      private var hz26HitDr:Boolean = true;    // round 3 E2: the layer was drawn last frame (true at start: the first frame clears)
+      private var hz26KillDr:Boolean = true;
+      private var hz26RingDr:Boolean = true;
       private var hz26VCache:Object = {};
+      private var hz26VMiss:Object = {};    // 0.43.6: frames each name has been missing (hz26V); capped at HZ26_V_MISSMAX
+      private var hz26VMissF:Object = {};   // 0.43.6: the last frame counted per name (one count per frame)
+      private static const HZ26_V_MISSMAX:int = 540;
+      // 0.43.6 (round 3 D, review SF-1): the miss counts start again on every edge where a missing clip can appear: a
+      // save load (a frame gap over 1 s), a hide-list rebuild, and a child-count change of the HUD, the BottomLeftGroup or
+      // the containers of the clips already found (the walk-only names are siblings there). The signature is taken when
+      // counting starts (the first miss after a reset), so a part that arrives at any point of the 540-frame window is
+      // seen. The counts are compared every frame while a name is at the cap (hz26VCapN): 2 + hz26VPar.length
+      // numChildren reads, no allocation and no walk. With nothing capped: one int test and one clock compare.
+      private var hz26VMissAny:Boolean = false;   // some name has a count
+      private var hz26VCapN:int = 0;              // names at HZ26_V_MISSMAX
+      private var hz26VSig:Number = -1;           // child-count signature taken when counting started (-1 = none yet)
+      private var hz26VLastW:Number = 0;          // last frame's clock (the load gap)
+      private var hz26VPar:Array = [];            // distinct containers of the clips found so far
       private var hz26VHid:Object = {};
 
       private function hz26Now() : Number
@@ -14390,7 +15143,7 @@
          try { this.hz26BuildVit(); } catch(e6:Error) { }
          try { this.hz26BuildEq(); } catch(e7:Error) { }
          try { BSUIDataManager.Subscribe("PlayerData",this.hz26OnPlayer); } catch(s1:Error) { }
-         try { BSUIDataManager.Subscribe("PlayerInventoryData",this.hz26OnInv); } catch(s2:Error) { }
+         // 0.43.5: PlayerInventoryData is no longer watched for credits / weight (PlayerData carries uCredits, fEncumbrance, fMaxEncumbrance)
          try { BSUIDataManager.Subscribe("PlayerFrequentData",this.hz26OnFreq); } catch(s3:Error) { }
          try { BSUIDataManager.Subscribe("WeaponData",this.hz26OnWeapon); } catch(s4:Error) { }
          try { BSUIDataManager.Subscribe("XPData",this.hz26OnXp); } catch(s5:Error) { }
@@ -14414,7 +15167,7 @@
       private function hz26DbgText() : String
       {
          var out:String = "";
-         for each(var k:String in ["PersonalEffectsData","PersonalAlertsData","aPersonalAlerts[0]","Afflictions","QuestObjectives","PlayerData","PlayerInventoryData","XPData","XPData[0]","HUDStealthData","HudHitKillIndicatorData","KillDataA[0]","HUDDirectionalHitData","aDirectionalHitIndicators[0]","PlayerHealthBoostData","HUDStarbornPowersData","PowerIcon","Enemy","EnemyModifiers"])
+         for each(var k:String in ["PersonalEffectsData","PersonalAlertsData","aPersonalAlerts[0]","Afflictions","QuestObjectives","PlayerData","XPData","XPData[0]","HUDStealthData","HudHitKillIndicatorData","KillDataA[0]","HUDDirectionalHitData","aDirectionalHitIndicators[0]","PlayerHealthBoostData","HUDStarbornPowersData","PowerIcon","Enemy","EnemyModifiers","DataInventoryProvider"])
          {
             if(this.hz26Dbg[k] != undefined) { out += k + ": " + String(this.hz26Dbg[k]) + "\n"; }
          }
@@ -14448,29 +15201,10 @@
             var en:Number = Number(d.fEncumbrance);
             var em:Number = Number(d.fMaxEncumbrance);
             if(!isNaN(en) && em > 0) { this.hz26Enc = en; this.hz26EncMax = em; }
+            var cr0:Number = NaN;   // 0.43.5: credits from PlayerData.uCredits (as the Data Menu reads them), not the inventory feed
+            if(d.uCredits != undefined && !isNaN(Number(d.uCredits))) { cr0 = Number(d.uCredits); this.hz26Cr = cr0; }
             this.hz26CharOk = this.hz26Lv >= 0 || this.hz26Name.length > 0;
-            try { this.hz27CharData(this.hz26Lv,this.hz26Sp,NaN); } catch(err27:Error) { }
-            this.hz26CharChanged();
-         }
-         catch(err:Error) { }
-      }
-
-      private function hz26OnInv(e:FromClientDataEvent) : *
-      {
-         try
-         {
-            var d:Object = e.data;
-            if(!d) { return; }
-            if(this.hzDebug)
-            {
-               var lite:Object = {};
-               for(var k:String in d) { if(k != "aItems") { lite[k] = d[k]; } }
-               this.hz26Log("PlayerInventoryData",lite);
-            }
-            if(d.uCoin != undefined && !isNaN(Number(d.uCoin))) { this.hz26Cr = Number(d.uCoin); try { this.hz27CharData(-1,-1,this.hz26Cr); } catch(err27:Error) { } }
-            var en:Number = Number(d.fEncumbrance);
-            var em:Number = Number(d.fMaxEncumbrance);
-            if(!isNaN(en) && em > 0) { this.hz26Enc = en; this.hz26EncMax = em; }
+            try { this.hz27CharData(this.hz26Lv,this.hz26Sp,cr0); } catch(err27:Error) { }
             this.hz26CharChanged();
          }
          catch(err:Error) { }
@@ -14708,7 +15442,22 @@
          this.hz26ChNext = this.hzT(f,"",W - 14 - 200,80,200,11,"sb","dim",0.6,"right");
          this.hz26ChML = this.hzT(f,"MASS",44,114,160,11,"sb","mut",1.6);
          this.hz26ChMV = this.hzT(f,"",W - 14 - 200,110,200,14,"sb","main",0.5,"right");
-         var s:Sprite = new Sprite(); c.addChild(s); this.hz26ChS = s;
+         // 0.43.6 (round 3 C): the compact strip is built the first time the card is drawn in compact form (hz26CharSync)
+         addChild(c);
+         c.visible = false;
+         this.hzSetSz(c,W,HZ_CH_H);
+         this.hz26CharSync();
+      }
+
+      // 0.43.6 (round 3 C, Character): the compact strip of the character card, built on first use instead of at load.
+      // With the default full card it never exists (five text fields and three sprites fewer in the HUD). Same parts,
+      // order, positions and styles as the 0.43.5 build; it is the last child of the card, as before. Once built it
+      // stays for the session, so switching forms back and forth only flips visibility, exactly as before.
+      // Inputs: none. Outputs: hz26ChS and its parts. Author: Moragar. Last modified: 2026-11-22.
+      private function hz26BuildCharS() : void
+      {
+         if(this.hz26ChS || !this.HorizonChar_mc) { return; }
+         var s:Sprite = new Sprite(); this.HorizonChar_mc.addChild(s); this.hz26ChS = s;
          this.hz26ChSG = new Sprite(); s.addChild(this.hz26ChSG);
          this.hz26ChsLv = this.hzT(s,"LV --",16,10,70,14,"bd","acc",1);
          this.hz26ChsXpBar = new Sprite(); s.addChild(this.hz26ChsXpBar);
@@ -14717,10 +15466,6 @@
          this.hz26ChsCr = this.hzT(s,"",0,11,150,12,"sb","main",0.4);
          this.hz26ChsSp = this.hzT(s,"",0,11,80,12,"bd","col",0.8,"left",HZ_AMB);
          s.visible = false;
-         addChild(c);
-         c.visible = false;
-         this.hzSetSz(c,W,HZ_CH_H);
-         this.hz26CharSync();
       }
 
       private function hz26Bar(sp:Sprite, w:Number, h:Number, f:Number, col:uint, gFrom:Number, gA:Number) : void
@@ -14773,8 +15518,10 @@
          var dk:Boolean = this.hzDarkText();
          var bg:uint = dk ? this.hzMix(this.hzPanelFill(),0x000000,0.14) : 0x060A0E;
          var gF:Number = this.hz26XpGA > 0.01 ? this.hz26XpG : -1;
+         if(cm && !this.hz26ChS) { try { this.hz26BuildCharS(); } catch(e26s:Error) { } }   // round 3 C: strip on first use
+         if(cm && (!this.hz26ChS || !this.hz26ChsSp)) { cm = false; }   // a strip that could not be built: the full card stays
          this.hz26ChF.visible = !cm;
-         this.hz26ChS.visible = cm;
+         if(this.hz26ChS) { this.hz26ChS.visible = cm; }
          if(!cm)
          {
             var W:Number = HZ_CH_W;
@@ -15169,6 +15916,8 @@
          g.lineStyle();
       }
 
+      private var hz26PowFk:int = -1;
+      private var hz26PowFc:uint = 0;
       private function hz26PowIcon(cx:Number, cy:Number, r:Number, ready:Boolean) : void
       {
          var col:uint = this.hzIconCol(HZ_VIO);
@@ -15192,7 +15941,16 @@
          if(!used) { this.hz26PowGlyph(gg,cx,cy,r,col,1); }
          var tgt:Sprite = used ? this.hz26PowHold : this.hz26PowGly;
          tgt.alpha = ready ? 1 : 0.6;
-         tgt.filters = ready ? [new GlowFilter(col,0.55,7,7,1.4,1)] : [];
+         // 0.43.5: a filter assignment rebuilds the filter's cached render target, so only when the look changes
+         var pk:int = (ready ? 1 : 0) | (used ? 2 : 0);
+         if(pk != this.hz26PowFk || col != this.hz26PowFc)
+         {
+            this.hz26PowFk = pk;
+            this.hz26PowFc = col;
+            tgt.filters = ready ? [new GlowFilter(col,0.55,7,7,1.4,1)] : [];
+            var oth:Sprite = used ? this.hz26PowGly : this.hz26PowHold;
+            if(oth && oth.filters.length > 0) { oth.filters = []; }
+         }
       }
 
       private function hz26Grenade(g:*, cx:Number, cy:Number, col:uint, k:Number) : void
@@ -15583,11 +16341,18 @@
          addChild(c);
       }
 
+      // 0.43.6 (round 3 E2): one Point for the session instead of two new ones per frame (hz26TickFx calls this every
+      // frame). Same values and fallbacks as before; every caller reads x / y at once and keeps no reference.
+      private var hz26CtrP:Point = null;
       private function hz26Center() : Point
       {
-         var p:Point = new Point(960,540);
-         try { p = new Point(HUDMenu.CENTER_GROUP_POINT.x,HUDMenu.CENTER_GROUP_POINT.y); } catch(err:Error) { }
-         if(isNaN(p.x) || isNaN(p.y) || (p.x == 0 && p.y == 0)) { var vr:Rectangle = this.hzVis(); p = new Point(vr.x + vr.width / 2,vr.y + vr.height / 2); }
+         if(this.hz26CtrP == null) { this.hz26CtrP = new Point(960,540); }
+         var p:Point = this.hz26CtrP;
+         var px:Number = 960;
+         var py:Number = 540;
+         try { var gx:Number = Number(HUDMenu.CENTER_GROUP_POINT.x); var gy:Number = Number(HUDMenu.CENTER_GROUP_POINT.y); px = gx; py = gy; } catch(err:Error) { }
+         if(isNaN(px) || isNaN(py) || (px == 0 && py == 0)) { var vr:Rectangle = this.hzVis(); px = vr.x + vr.width / 2; py = vr.y + vr.height / 2; }
+         p.x = px; p.y = py;
          return p;
       }
 
@@ -15649,10 +16414,14 @@
          var c:Point = this.hz26Center();
          var s:Number = HZ_SCALE * this.hzHudScale;
          // hit marker: four diagonal ticks, ~0.25 s; crit amber
+         // 0.43.6 (round 3 E2): a layer is cleared only when it was drawn last frame or is drawn now (an empty layer
+         // cleared again every frame showed the same nothing)
          var hg:* = this.hz26Hit.graphics;
-         hg.clear();
          var ht:Number = (now - this.hz26HitT) / 250;
-         if(this.hzHitMarkOn && ht >= 0 && ht < 1)
+         var hOn:Boolean = this.hzHitMarkOn && ht >= 0 && ht < 1;
+         if(hOn || this.hz26HitDr) { hg.clear(); }
+         this.hz26HitDr = hOn;
+         if(hOn)
          {
             var hc:uint = this.hz26HitCrit ? HZ_AMB : 0xFFFFFF;
             var r0:Number = 7 + 3 * ht;
@@ -15669,9 +16438,11 @@
          this.hz26Hit.x = c.x; this.hz26Hit.y = c.y; this.hz26Hit.scaleX = this.hz26Hit.scaleY = s;
          // kill: red X + dot, ~0.6 s
          var kg:* = this.hz26Kill.graphics;
-         kg.clear();
          var kt:Number = (now - this.hz26KillT) / 600;
-         if(this.hzHitMarkOn && kt >= 0 && kt < 1)
+         var kOn:Boolean = this.hzHitMarkOn && kt >= 0 && kt < 1;
+         if(kOn || this.hz26KillDr) { kg.clear(); }
+         this.hz26KillDr = kOn;
+         if(kOn)
          {
             var ka:Number = kt < 0.7 ? 1 : (1 - kt) / 0.3;
             var kr:Number = 9 + 4 * Math.min(1,kt * 3);
@@ -15694,17 +16465,23 @@
          }
          // direction ring: arcs at iRotation (0 = ahead / top), 1.2 s each
          var rg:* = this.hz26Ring.graphics;
-         rg.clear();
+         var arcs:Array = this.hz26Arcs;
+         if(this.hz26RingDr || (this.hzDirRingOn && arcs.length > 0)) { rg.clear(); }
          var R:Number = 90;
          var any:Boolean = false;
          if(this.hzDirRingOn)
          {
-            var keep:Array = [];
-            for each(var ar:Object in this.hz26Arcs)
+            // 0.43.6 (round 3 E2): the live arcs are kept in the same list (in order), no new list per frame
+            var kw:int = 0;
+            var ai:int = 0;
+            while(ai < arcs.length)
             {
+               var ar:Object = arcs[ai];
+               ai++;
                var at:Number = (now - Number(ar.t)) / 1200;
                if(at >= 1) { continue; }
-               keep.push(ar);
+               arcs[kw] = ar;
+               kw++;
                any = true;
                var al:Number = at < 0.6 ? 1 : (1 - at) / 0.4;
                var mid:Number = (Number(ar.r) - 90) * Math.PI / 180;
@@ -15718,10 +16495,11 @@
                }
                rg.lineStyle();
             }
-            this.hz26Arcs = keep;
+            arcs.length = kw;
             if(any) { rg.lineStyle(1,0xFFFFFF,0.12,true); rg.drawCircle(0,0,R); rg.lineStyle(); }
          }
-         else { this.hz26Arcs = []; }
+         else { arcs.length = 0; }
+         this.hz26RingDr = any;
          this.hz26Ring.x = c.x; this.hz26Ring.y = c.y; this.hz26Ring.scaleX = this.hz26Ring.scaleY = s;
       }
 
@@ -15729,7 +16507,15 @@
       private function hz26V(name:String) : DisplayObject
       {
          var d:DisplayObject = this.hz26VCache[name] as DisplayObject;
-         if(d != null) { return d; }
+         if(d != null)
+         {
+            // SF-1: a kept clip the game (or a mod) took out of the HUD is searched again: out of its parent, or (re-review
+            // S-1) still in a parent that itself left the HUD, e.g. a whole replaced group (stage == null, as hz36HideTick
+            // reads it). Only while the HUD itself is on the stage, so an off-stage HUD keeps its refs.
+            if(d.parent != null && (d.stage != null || this.stage == null)) { return d; }
+            delete this.hz26VCache[name];
+            d = null;
+         }
          try
          {
             switch(name)
@@ -15740,11 +16526,76 @@
                case "StealthMeter_mc": d = this.TopCenterGroup_mc ? Object(this.TopCenterGroup_mc).StealthMeter_mc as DisplayObject : null; break;
                case "DirectionalHitIndicatorBase_mc": d = this.CenterGroup_mc ? Object(this.CenterGroup_mc).DirectionalHitIndicatorBase_mc as DisplayObject : null; break;
             }
+            // 0.43.6 (round 3 D): a name that the property path and the whole-HUD walk below have not found for 540 frames
+            // (6 of the walk's 90-frame slots) gets no more walks. Each walk touched every container in the HUD (about
+            // 1,250 a time in leg 32's h26Van count) forever for a name this game build never has. The property path above
+            // is still read on every call, so a clip that does appear is still found.
+            if(d == null && int(this.hz26VMiss[name]) >= HZ26_V_MISSMAX) { return null; }
             if(d == null && this.hzFrameN % 90 == 5) { d = this.hzFindByName(this,name,0); }
+            if(d == null && this.hz26VMissF[name] !== this.hzFrameN)
+            {
+               this.hz26VMissF[name] = this.hzFrameN;
+               var mc:int = int(this.hz26VMiss[name]) + 1;
+               this.hz26VMiss[name] = mc;
+               this.hz26VMissAny = true;
+               if(this.hz26VSig < 0) { this.hz26VSig = this.hz26VKids(); }   // re-review S-2: the snapshot when counting starts
+               if(mc == HZ26_V_MISSMAX) { this.hz26VCapN++; }
+            }
          }
          catch(err:Error) { d = null; }
-         if(d != null) { this.hz26VCache[name] = d; }
+         if(d != null)
+         {
+            this.hz26VCache[name] = d;
+            if(int(this.hz26VMiss[name]) >= HZ26_V_MISSMAX) { this.hz26VCapN--; }
+            delete this.hz26VMiss[name];
+            try
+            {
+               var vp:DisplayObjectContainer = d.parent;
+               if(vp != null && this.hz26VPar.indexOf(vp) < 0)
+               {
+                  this.hz26VPar.push(vp);
+                  // fold the new container into the snapshot the way hz26VKids appends it, so a newly known container is
+                  // not itself read as a count change
+                  if(this.hz26VSig >= 0) { this.hz26VSig = (this.hz26VSig * 1009 + vp.numChildren) % 2147483647; }
+               }
+            }
+            catch(eVp:Error) { }
+         }
          return d;
+      }
+
+      // SF-1: every miss count starts again (edges only)
+      private function hz26VMissReset() : void
+      {
+         if(!this.hz26VMissAny) { return; }
+         this.hz26VMiss = {};
+         this.hz26VMissF = {};
+         this.hz26VMissAny = false;
+         this.hz26VCapN = 0;
+         this.hz26VSig = -1;
+      }
+
+      // SF-1: child counts of the HUD, the BottomLeftGroup and the found clips' containers, as one number
+      private function hz26VKids() : Number
+      {
+         var k:Number = this.numChildren;
+         if(this.hzBlg != null) { k = k * 1009 + this.hzBlg.numChildren; }
+         var i:int = 0;
+         while(i < this.hz26VPar.length) { var p:DisplayObjectContainer = this.hz26VPar[i] as DisplayObjectContainer; if(p != null) { k = (k * 1009 + p.numChildren) % 2147483647; } i++; }
+         return k;
+      }
+
+      // SF-1, once per frame from hz26Tick (before hz26Vanilla): the load gap always; the child counts only while a name
+      // is at the cap
+      private function hz26VEdge(now:Number) : void
+      {
+         var gap:Boolean = this.hz26VLastW > 0 && now - this.hz26VLastW > 1000;
+         this.hz26VLastW = now;
+         if(gap) { this.hz26VMissReset(); return; }
+         if(this.hz26VCapN <= 0) { return; }
+         var k:Number = this.hz26VKids();
+         if(this.hz26VSig < 0) { this.hz26VSig = k; return; }   // fallback only: counting normally took it (S-2)
+         if(k != this.hz26VSig) { this.hz26VMissReset(); }
       }
 
       private function hz26HideV(name:String, on:Boolean) : void
@@ -15783,11 +16634,12 @@
       }
 
       // ---------- per frame ----------
-      private function hz26Tick() : void
+      private function hz26Tick(now0:Number = -1) : void
       {
          if(!this.hz26Built) { return; }
-         var now:Number = this.hz26Now();
+         var now:Number = now0 >= 0 ? now0 : this.hz26Now();   // now0: the frame's clock from hzOnFrame
          var base:Boolean = this.hzGroupVisible && !this.hzUserHidden;
+         try { this.hz26VEdge(now); } catch(e0e:Error) { }   // round 3 SF-1: load / child-count edges restart the hz26V miss counts
          // stealth: vanilla rule (sneaking and the meter is on)
          var sd:Object = this.hz26St;
          this.hz26StOn = sd != null && sd.bSneaking === true && sd.bShowMeter === true;
@@ -15814,10 +16666,16 @@
             if(now > this.hz26XpUntil) { this.hz26XpGA = Math.max(0,this.hz26XpGA - 0.04); }
             try { this.hz26CharBarsOnly(); } catch(e8:Error) { }
          }
-         var sig:String = this.hz34C("Character") + "|" + this.hzArrange + "|" + this.hzCardColor + "|" + HZ_ACCENT + "|" + this.hzTextScale;
-         if(sig != this.hz26ChSig) { this.hz26ChSig = sig; try { this.hz26CharSync(); this.hz26XpSync(); } catch(e9:Error) { } }
+         // 0.43.6 (round 3 E): the same five values compared as fields, no string built per frame. hz26ChSig "" (set by
+         // every old reset site) still forces the sync; any other value means "the fields hold the last synced look".
+         var chC:Boolean = Boolean(this.hz34C("Character"));
+         if(this.hz26ChSig == "" || chC !== this.hz26ChC || this.hzArrange !== this.hz26ChA || this.hzCardColor !== this.hz26ChCol || HZ_ACCENT !== this.hz26ChAcc || !this.hzSameN(this.hzTextScale,this.hz26ChTs))
+         {
+            this.hz26ChSig = "1"; this.hz26ChC = chC; this.hz26ChA = this.hzArrange; this.hz26ChCol = this.hzCardColor; this.hz26ChAcc = HZ_ACCENT; this.hz26ChTs = this.hzTextScale;
+            try { this.hz26CharSync(); this.hz26XpSync(); } catch(e9:Error) { }
+         }
          if(this.hzPerfOn) { this.hzPsMark(31); }
-         if(!this.hzArrange) { try { this.hz26Vis(base); } catch(e10:Error) { } }
+         if(!this.hzArrange) { try { this.hz26Vis(base,now); } catch(e10:Error) { } }
          if(this.hzPerfOn) { this.hzPsMark(32); }
          try { this.hz27Tick(now); } catch(e11:Error) { }
          if(this.hzPerfOn) { this.hzPsMark(33); }
@@ -15829,12 +16687,13 @@
          var xf:Number = this.hz26XpN > 0 && !isNaN(this.hz26Xp) ? Math.max(0,Math.min(1,this.hz26Xp / this.hz26XpN)) : 0;
          var gF:Number = this.hz26XpGA > 0.01 ? this.hz26XpG : -1;
          if(this.hz26ChXpBar && this.hz26ChF.visible) { this.hz26Bar(this.hz26ChXpBar,HZ_CH_W - 14 - 76,6,xf,HZ_ACCENT,gF,this.hz26XpGA); }
-         if(this.hz26ChsXpBar && this.hz26ChS.visible) { this.hz26Bar(this.hz26ChsXpBar,80,5,xf,HZ_ACCENT,gF,this.hz26XpGA); }
+         if(this.hz26ChsXpBar && this.hz26ChS && this.hz26ChS.visible) { this.hz26Bar(this.hz26ChsXpBar,80,5,xf,HZ_ACCENT,gF,this.hz26XpGA); }
       }
 
-      private function hz26Vis(base:Boolean) : void
+      // now0: the frame's clock from hz26Tick (round 3 E2: one clock read per frame there); -1 = read it here
+      private function hz26Vis(base:Boolean, now0:Number = -1) : void
       {
-         var now:Number = this.hz26Now();
+         var now:Number = now0 >= 0 ? now0 : this.hz26Now();
          if(this.HorizonChar_mc) { this.hzShow(this.HorizonChar_mc,base && !this.hz40Hide && this.hzShowChar && this.hz26CharOk && this.hz27CharRuleOk()); }
          if(this.HorizonEnemy_mc) { this.hzShow(this.HorizonEnemy_mc,base && this.hzEnemyBarOn && this.hz26EnOn); }
          if(this.HorizonStealth_mc) { this.hzShow(this.HorizonStealth_mc,base && this.hzStealthOn && this.hz26StOn); }
@@ -16064,12 +16923,12 @@
       // 0 always, 7 XP / level / credits / skill point (N s, then fade), 8 overweight, 9 either, 1 combat only, 2 hide in ship
       private function hz27CharRuleOk() : Boolean
       {
-         var ev:Boolean = this.hz26Now() < this.hz27CharEvUntil;
+         // 0.43.6 (round 3 E2): the clock is read only by the two event rules (it was read on every call, every frame)
          switch(this.hzRuleChar)
          {
-            case 7: return ev;
+            case 7: return this.hz26Now() < this.hz27CharEvUntil;
             case 8: return this.hz26Over;
-            case 9: return ev || this.hz26Over;
+            case 9: return this.hz26Now() < this.hz27CharEvUntil || this.hz26Over;
          }
          return this.hzRuleOk(this.hzRuleChar);
       }
@@ -17589,7 +18448,7 @@
          }
          if(k == "Speaker" || k == "SpeakerD") { return new Point(Math.round(400 * ts),Math.round(86 * ts)); }
          if(k == "MissionToast") { var mf:Number = ts * this.hz34ToastF(); return new Point(Math.round(460 * mf),Math.round(88 * mf)); }
-         if(k == "HudMessages") { return new Point(Math.round(360 * ts),Math.round(80 * ts)); }
+         if(k == "HudMessages") { var mz:Number = this.hz31MsgZ(); return new Point(Math.max(280,Math.round(360 * mz)),Math.round(56 * mz)); }
          var ds:Number = this.hz33DlgScale();
          var dz:Number = Number(c.DlgTextSize) * ts * ds;
          var cmp:Boolean = int(c.DlgLayout) == 1;
@@ -17598,6 +18457,20 @@
          var n:int = this.hz31PxRows();
          var dh:Number = hd + n * (rowH + 4 * ds) + 14 * ds + (int(c.DlgMoreHint) == 1 && int(c.DlgVisible) > 0 ? 24 * ds : 0) + (int(c.DlgNumberKeys) == 1 && int(c.DlgQuickPickHint) == 1 && int(c.DlgButtonBar) != 0 ? 40 * ds : 0);
          return new Point(Math.round(620 * ds),Math.round(dh));
+      }
+      // 0.43.4: the HUD MESSAGES box is the Comms box (hzcMsgLayout / hzcCardZ): 360x56 x TextScale x HudScale,
+      // x1.25 in the large movie, clamped 0.75..2.2. The large HUD movie is the one with HZ_SCALE above 1.
+      private function hz31MsgZ() : Number
+      {
+         var ts:Number = this.hzTextScale;
+         if(isNaN(ts) || ts <= 0) { ts = 1; }
+         var hs:Number = this.hzHudScale;
+         if(isNaN(hs) || hs <= 0) { hs = 1; }
+         var z:Number = ts * hs;
+         if(HZ_SCALE > 1) { z = z * 1.25; }
+         if(z < 0.75) { z = 0.75; }
+         if(z > 2.2) { z = 2.2; }
+         return z;
       }
       // v0.34 mission toast size factor (MissionToastScale, -1 = HudScale); the toast multiplies TextScale on top
       private function hz34ToastF() : Number
@@ -17750,10 +18623,9 @@
          }
          else if(k == "HudMessages")
          {
-            var hz:Number = this.hzTextScale;
-            this.hzSText(p,"HUD MESSAGES",16 * hz,12 * hz,sz.x - 32 * hz,this.hzArrFs(15),acc,"left","hdr");
-            this.hzSText(p,"Companion, crew, crime, credits, afflictions",16 * hz,34 * hz,sz.x - 32 * hz,this.hzArrFs(13),0xF2F7F9,"left");
-            this.hzSText(p,"Default spot matches the current message column",16 * hz,52 * hz,sz.x - 32 * hz,this.hzArrFs(13),0x96A6AE,"left");
+            var hz:Number = sz.y / 56;   // 0.43.4: the real Comms box, two lines
+            this.hzSText(p,"HUD MESSAGES",14 * hz,7 * hz,sz.x - 28 * hz,this.hzArrFs(15),acc,"left","hdr");
+            this.hzSText(p,"Cards keep this box's anchored edge",14 * hz,29 * hz,sz.x - 28 * hz,this.hzArrFs(13),0xF2F7F9,"left");
          }
          else if(k == "MissionToast")
          {
@@ -17834,7 +18706,7 @@
       // URLLoader on the same relative path base the HUD already reads HorizonUI.ini from; a missing file / folder
       // only raises IOErrorEvent (caught). State: undefined/-1 checking, 0 absent, 1 present. Re-probed on every F11
       // open so an install / uninstall shows without restarting.
-      private static const HZ30_MODS:Array = ["scanner","comms","font","comms_dialogue","es","edi","edi2","scope","notifications"];   // 0.43.0.1: + notifications.marker
+      private static const HZ30_MODS:Array = ["scanner","comms","font","comms_dialogue","es","edi","edi2","scope","notifications","quickmenu"];   // 0.43.4: + quickmenu.marker (optional Quick Menu module)
       private var hz30Mod:Object = {};
       private var hz30ModLdr:Object = {};
       private var hz30ModT0:Number = 0;
@@ -18085,7 +18957,7 @@
       // ===================== v0.36 combat flag, vanilla hide, outline rings =====================
       private var hz36HideStale:Boolean = false;
       private var hz36CmpTries:int = 0;
-      private var hz36CmpLast:String = "";
+      private var hz36CmpLast:int = -1;   // 0.43.6 (round 3 E2): the last form bits tried (was the signature string; -1 = none)
       // Sets the combat flag from either provider (PlayerData.bIsInCombat or HUDStealthData.bIsInCombat, the feed the
       // game's own stealth meter reads; see hzOnPlayerData). Returns true when the state changed.
       private function hz36SetCombat(v:Boolean) : Boolean
@@ -18198,7 +19070,9 @@
             try
             {
                var p:DisplayObjectContainer = e.p;
-               if(p != null)
+               // 0.43.6 (round 3 E2): the name lookup runs only when the cached clip is no longer a child of its parent
+               // (the game replaced or removed it); a clip still in place is the one the lookup would return
+               if(p != null && (d == null || d.parent !== p))
                {
                   var cur:DisplayObject = p.getChildByName(String(e.n));
                   if(cur != null && cur != d) { e.d = cur; d = cur; }
@@ -18253,28 +19127,36 @@
       // throw during an early apply (cards still building at ini load) left the guard saying "compact applied" while the
       // card kept its full form; every later global toggle then compared equal and was skipped. This signature check runs
       // every frame and force-applies every compact-capable card whenever the resolved form or a card's build state changes.
-      private var hz35CmpSigS:String = "";
+      // 0.43.6 (round 3 E2): the signature is an int of form bits (hz35CmpBits), not a string built every frame. Same
+      // inputs, same equal / not-equal answers, so the force-apply runs on exactly the same frames. -1 = nothing applied.
+      private var hz35CmpSigN:int = -1;
       private var hz35CmpWait:int = 0;
       private function hz35Form(card:String) : Boolean
       {
          for each(var c:Array in HZ34_CARDS) { if(c[0] == card) { return c[1] ? this.hz34C(card) : this.hzCompact; } }
          return this.hzCompact;
       }
-      private function hz35CmpSig() : String
+      // bit 0 global Compact; bits 1-4 build state (compass, planet, equipment, compact quests); bits 5+ the resolved form
+      // of each compact-capable card in HZ34_CARDS order (6 cards today, room for 26)
+      private function hz35CmpBits() : int
       {
-         var s:String = this.hzCompact ? "G1" : "G0";
-         for each(var c:Array in HZ34_CARDS) { if(c[1]) { s += this.hz34C(String(c[0])) ? "1" : "0"; } }
-         s += "|" + (this.hzCmpBody19 ? "c" : "") + (this.hzPlanPill && this.hzPpName ? "p" : "") + (this.hzEq19 && this.hzEqCount ? "e" : "") + (this.HorizonCompactQuest_mc ? "q" : "");
-         return s;
+         var b:int = this.hzCompact ? 1 : 0;
+         if(this.hzCmpBody19) { b |= 2; }
+         if(this.hzPlanPill && this.hzPpName) { b |= 4; }
+         if(this.hzEq19 && this.hzEqCount) { b |= 8; }
+         if(this.HorizonCompactQuest_mc) { b |= 16; }
+         var bit:int = 32;
+         for each(var c:Array in HZ34_CARDS) { if(c[1]) { if(this.hz34C(c[0])) { b |= bit; } bit = bit << 1; } }
+         return b;
       }
       private function hz35CmpTick() : void
       {
          if(this.hz35CmpWait > 0) { this.hz35CmpWait--; return; }
-         var sig:String = this.hz35CmpSig();
-         if(sig == this.hz35CmpSigS) { return; }
+         var sig:int = this.hz35CmpBits();
+         if(sig == this.hz35CmpSigN) { return; }
          if(sig != this.hz36CmpLast) { this.hz36CmpLast = sig; this.hz36CmpTries = 0; }
          this.hz36CmpTries++;
-         if(this.hz35CmpForce() || this.hz36CmpTries >= 4) { this.hz35CmpSigS = sig; this.hz36CmpTries = 0; }   // v0.36: bounded
+         if(this.hz35CmpForce() || this.hz36CmpTries >= 4) { this.hz35CmpSigN = sig; this.hz36CmpTries = 0; }   // v0.36: bounded
          else { this.hz35CmpWait = 30; }   // retry in ~0.5 s, never every frame
       }
       private function hz35CmpForce() : Boolean
@@ -18631,6 +19513,23 @@
          }
          rows.push(mt); rows.push(ms);
          try { this.hz42ScRows(rows); } catch(err42r:Error) { }   // v0.42.0 r2: SCOPE rows (only with the Scope module)
+         // 0.43.4: QUICK MENU > HORIZON STYLE locks when quickmenu.marker is absent (optional FOMOD module).
+         // The saved QuickMenuHorizon value is left untouched; a locked row cannot be changed.
+         var qmi:int = 0;
+         while(qmi < rows.length)
+         {
+            if(rows[qmi].k == "QuickMenuHorizon")
+            {
+               if(this.hz30Mod["quickmenu"] !== 1)
+               {
+                  rows[qmi].dis = true;
+                  rows[qmi].dv = false;
+                  rows[qmi].note = "Quick Menu module not installed. Install it from the Horizon UI installer.";
+               }
+               break;
+            }
+            qmi++;
+         }
          // 0.43.3.2 batch e: the help text moves into the row's (i) popup (hz35InfoOf: r.inote first), so the list is just
          // rows. A disabled row keeps its note under it: the note says why it is off, and a disabled row has no (i).
          var ni:int = 0;
@@ -19459,6 +20358,7 @@
          if(txt != null) { this.hz37Txt = txt; try { this.hzOnIni(null); } catch(errA:Error) { } }
          if(txt != null) { try { this.hz49Sync(); } catch(e49i:Error) { } }   // r9e (N-1): the scan group hide, once hzOnIni has read BlgGroupHide / WatchStyle / the enemy-cue keys (INI event; a no-op when unchanged)
          if(txt != null) { try { this.hzEnvP0ParseIni(txt); } catch(errP0:Error) { } }   // private diag (env alert Phase 0): [Debug] EnvAlertLog
+         if(txt != null) { try { this.hzHvdParseIni(txt); } catch(errHvd:Error) { } }   // 0.43.4 private diag: [Debug] HoverDiag
          if(this.hz37Refresh)
          {
             this.hz37Refresh = false;
@@ -19935,6 +20835,7 @@
          if(this.hzT19HcOk(aw,hd0)) { this.hzT19HcApply(); }
          else
          {
+            var hvT:Number = this.hzHvdT ? this.hzPerfNow() : -1;   // [Debug] HoverDiag 32 only (off: one cached Boolean read)
             var walkOk:Boolean = true;
             this.hzT19HcRec = true;
             this.hzT19HcDN = 0;
@@ -19967,6 +20868,7 @@
             var bi:int = 0;
             while(bi < 4) { this.hzT19HcBtn[bi] = buttons[bi]; bi++; }
             this.hzT19HcValid = walkOk;
+            if(hvT >= 0) { this.hzHvdLog("b",kind,hvT); }
          }
          this.hzT19KeepHold(aw);
          // ObjectRing: 0 always hidden, 1 shown for container lists only, 2 as the game draws it
@@ -20444,9 +21346,9 @@
       }
       // every frame: a frame gap over 1 s (a load) or a HUD group visibility change clears the hide; the next scanner
       // update sets it again while the scanner is really open
-      private function hz40Frame() : void
+      private function hz40Frame(now0:Number = -1) : void
       {
-         var now:Number = new Date().getTime();
+         var now:Number = now0 >= 0 ? now0 : new Date().getTime();   // now0: the frame's clock from hzOnFrame
          if(this.hz40LastT > 0 && now - this.hz40LastT > 1000 && (this.hz40Hide || this.hz40Scan)) { this.hz40Scan = false; this.hz40Latch = false; this.hz40Clear(false); }   // v0.40.3: a latched scan / HideMainHudWhileScanning=0 too
          this.hz40LastT = now;
          var gv:int = this.hzGroupVisible ? 1 : 0;
@@ -21933,6 +22835,15 @@
          this.hzSplash.visible = true;
       }
 
+      // 0.43.6 (round 3 B): the intro splash is drawn once per start (hzSplashStart -> hzSplashMake empties and rebuilds it),
+      // so once it is done its streaks, stars, outline copies and text are given back instead of staying hidden all session
+      private function hzSplashFree() : void
+      {
+         if(this.hzSplash == null || this.hzSplashOn) { return; }
+         while(this.hzSplash.numChildren > 0) { this.hzSplash.removeChildAt(0); }
+         this.hzSplash.graphics.clear();
+      }
+
       private function hzSplashTick() : void
       {
          if(this.hzSplashDead) { return; }
@@ -21959,13 +22870,14 @@
          if(this.hzSplashCancel)
          {
             fade = 1 - (this.hz41Now() - this.hzSplashCancelT) / 150;
-            if(fade <= 0) { this.hzSplashOn = false; this.hzSplash.visible = false; this.hzSplashState = "done"; return; }
+            if(fade <= 0) { this.hzSplashOn = false; this.hzSplash.visible = false; this.hzSplashState = "done"; this.hzSplashFree(); return; }
          }
          else if(t >= 6.0)
          {
             this.hzSplashOn = false;
             this.hzSplash.visible = false;
             this.hzSplashState = "done";
+            this.hzSplashFree();
             return;
          }
          try { this.hzSplashRefreshName(); } catch(eNm:Error) { }

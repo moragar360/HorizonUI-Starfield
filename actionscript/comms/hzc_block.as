@@ -318,7 +318,10 @@
             if(gvWas && !this.hzcGroupVis && this.hzcScan && !(this.hzcDllFresh() && this.hzcDllOn)) { this.hzcScan = false; this.hzcRefreshAlphas(); this.hzcToastVis(); }   // v0.41.0: not while the DLL says the scanner is open
             this.hzcLayer.visible = this.hzcGroupVis;
             if(was && !this.hzcInDlg) { this.hzcLine = ""; this.hzcHideCards(); }
-            this.hzcReload();
+            // 0.43.6 r4: with the DLL's settings-saved push (hzcIniSaved) every write already re-reads once; a HUD mode
+            // change re-reads (three file loads and a 25 KB merge) only for an older DLL that never announced it, or
+            // while no settings text has landed yet (the old retry).
+            if(!this.hzcIniPush || this.hzcIniState == 0) { this.hzcReload(); }
             if(this.hzcShown) { this.hzcLayout(); }
             this.hzcToastVis();
          }
@@ -339,7 +342,7 @@
             if(GlobalFunc.HasFireForgetEvent(ev.data,"MonocleMenu_Opened") || GlobalFunc.HasFireForgetEvent(ev.data,"ShipHud_OnMonocleToggle_Opened"))
             {
                this.hzcScanShip = !GlobalFunc.HasFireForgetEvent(ev.data,"MonocleMenu_Opened");
-               this.hzcScan = true; this.hzcScanT0 = getTimer(); this.hzcScanLast = getTimer(); this.hzcReload();
+               this.hzcScan = true; this.hzcScanT0 = getTimer(); this.hzcScanLast = getTimer(); if(!this.hzcIniPush || this.hzcIniState == 0) { this.hzcReload(); }   // 0.43.6 r4: no file read on a scanner open once the DLL pushes saves
                if(!this.hzcScanTick) { this.hzcScanTick = true; addEventListener(Event.ENTER_FRAME,this.hzcScanFrame); }
             }
             else if(GlobalFunc.HasFireForgetEvent(ev.data,"MonocleMenu_Closed") || GlobalFunc.HasFireForgetEvent(ev.data,"ShipHud_OnMonocleToggle_Closed"))
@@ -381,7 +384,7 @@
             if(this.hzcDllOn && !this.hzcScan)
             {
                this.hzcScanShip = false;
-               this.hzcScan = true; this.hzcScanT0 = getTimer(); this.hzcScanLast = getTimer(); this.hzcReload();
+               this.hzcScan = true; this.hzcScanT0 = getTimer(); this.hzcScanLast = getTimer(); if(!this.hzcIniPush || this.hzcIniState == 0) { this.hzcReload(); }   // 0.43.6 r4: no file read on a scanner open once the DLL pushes saves
                if(!this.hzcScanTick) { this.hzcScanTick = true; addEventListener(Event.ENTER_FRAME,this.hzcScanFrame); }
                this.hzcRefreshAlphas();
                this.hzcToastVis();
@@ -1056,15 +1059,18 @@
          if(this.hzcRxLayer == null || this.hzcCfg == null) { return; }
          var xs:String = String(this.hzcCfg.HudMessagesX);
          var ys:String = String(this.hzcCfg.HudMessagesY);
-         if((xs == "-1" || xs == "undefined" || xs == "null") && (ys == "-1" || ys == "undefined" || ys == "null"))
+         var xd:Boolean = xs == "-1" || xs == "undefined" || xs == "null";
+         var yd:Boolean = ys == "-1" || ys == "undefined" || ys == "null";
+         if(xd && yd)
          {
             this.hzcRxLayer.x = 0;
             this.hzcRxLayer.y = 0;
+            this.hzcMsgBox = null;
             return;
          }
          var vr:Rectangle = null;
          try { vr = this.hzcVis(); } catch(e1:Error) { vr = null; }
-         if(vr == null) { this.hzcRxLayer.x = 0; this.hzcRxLayer.y = 0; return; }
+         if(vr == null) { this.hzcRxLayer.x = 0; this.hzcRxLayer.y = 0; this.hzcMsgBox = null; return; }
          var z:Number = this.hzcCardZ();
          var w:Number = Math.round(360 * z);
          if(w < 280) { w = 280; }
@@ -1072,11 +1078,83 @@
          var home:Point = this.hzcMsgHome(vr,w,h);
          var x:Number = (xs == "-1" || xs == "undefined" || xs == "null") ? home.x : this.hzcAnchor(xs,"x",w,vr.x,vr.right);
          var y:Number = (ys == "-1" || ys == "undefined" || ys == "null") ? home.y : this.hzcAnchor(ys,"y",h,vr.y,vr.bottom);
-         if(isNaN(x) || isNaN(y) || isNaN(home.x) || isNaN(home.y)) { this.hzcRxLayer.x = 0; this.hzcRxLayer.y = 0; return; }
+         if(isNaN(x) || isNaN(y) || isNaN(home.x) || isNaN(home.y)) { this.hzcRxLayer.x = 0; this.hzcRxLayer.y = 0; this.hzcMsgBox = null; return; }
          x = Math.max(vr.x,Math.min(vr.right - w,x));
          y = Math.max(vr.y,Math.min(vr.bottom - h,y));
          this.hzcRxLayer.x = Math.round(x - home.x);
          this.hzcRxLayer.y = Math.round(y - home.y);
+         // 0.43.4: the box is the ARRANGE stand-in; cards keep its anchored edge (unsaved axis: right / top, as before)
+         var ax:String = xd ? "R" : xs.charAt(0).toUpperCase();
+         if(ax != "L" && ax != "C" && ax != "R") { ax = "L"; }   // a legacy 0-1 fraction is a left / top spot
+         var ay:String = yd ? "T" : ys.charAt(0).toUpperCase();
+         if(ay != "T" && ay != "C" && ay != "B") { ay = "T"; }
+         var bx:Number = Math.round(home.x);
+         var by:Number = Math.round(home.y);
+         var b:Object = this.hzcMsgBox;
+         if(b == null || b.x != bx || b.y != by || b.w != w || b.h != h || b.ax != ax || b.ay != ay)
+         {
+            this.hzcMsgBox = {"x":bx,"y":by,"w":w,"h":h,"ax":ax,"ay":ay};
+            this.hzcRxDirty = true;
+         }
+      }
+      // 0.43.4: saved HUD MESSAGES spot: every card holds the box's anchored edge and grows away from it (L/C/R, T/C/B).
+      // The first card sits on the edge; more cards stack away from it (down, or up for a B anchor, newest at the edge).
+      // Runs only on an edge (a card drawn, shown, hidden, added or removed, or the box changed), never per frame.
+      private function hzcRxArrPlace() : void
+      {
+         this.hzcRxDirty = false;
+         var b:Object = this.hzcMsgBox;
+         if(b == null) { return; }
+         var vis:Array = [];
+         for each(var e0:Object in this.hzcRx)
+         {
+            if(e0 != null && e0.st == 1 && e0.c != null && e0.c.visible == true) { vis.push(e0); }
+         }
+         var gap:Number = 8;
+         var i:int = 0;
+         var e:Object = null;
+         var ew:Number = 0;
+         var eh:Number = 0;
+         var y:Number = 0;
+         if(b.ay == "B")
+         {
+            y = Number(b.y) + Number(b.h);
+            i = vis.length - 1;
+            while(i >= 0)
+            {
+               e = vis[i];
+               eh = Number(e.h);
+               if(isNaN(eh)) { eh = 0; }
+               y -= eh;
+               e.c.y = Math.round(y);
+               y -= gap;
+               i--;
+            }
+         }
+         else
+         {
+            y = Number(b.y);
+            if(b.ay == "C" && vis.length > 0)
+            {
+               eh = Number(vis[0].h);
+               y += (Number(b.h) - (isNaN(eh) ? 0 : eh)) / 2;
+            }
+            for each(var eT:Object in vis)
+            {
+               eh = Number(eT.h);
+               if(isNaN(eh)) { eh = 0; }
+               eT.c.y = Math.round(y);
+               y += eh + gap;
+            }
+         }
+         for each(var eX:Object in vis)
+         {
+            ew = Number(eX.w);
+            if(isNaN(ew)) { ew = 0; }
+            if(b.ax == "L") { eX.c.x = Math.round(Number(b.x)); }
+            else if(b.ax == "C") { eX.c.x = Math.round(Number(b.x) + (Number(b.w) - ew) / 2); }
+            else { eX.c.x = Math.round(Number(b.x) + Number(b.w) - ew); }
+         }
       }
       // default spot top-center under the compass; [Layout] MissionToastX/Y anchor the newest card, the stack grows away
       // from the anchored edge (down, or up for a B anchor)
@@ -1132,6 +1210,9 @@
       private var hzcRxDupN:int = 0;         // sum of e.dups lengths; hzcRxLink skips a held line only while this is above 0
       private var hzcRxLayer:Sprite = null;
       private var hzcMsgHomeLogged:Boolean = false;
+      // 0.43.4: the saved HUD MESSAGES box in layer units ({x,y,w,h,ax,ay}; null = unsaved, cards follow the game column)
+      private var hzcMsgBox:Object = null;
+      private var hzcRxDirty:Boolean = false;
       private var hzcRxOff:Boolean = false;  // after three message misses: lines stay the game's until the cooldown or a settings reload
       private var hzcRxOffAt:int = 0;
       private var hzcRxSkip:Boolean = true;  // true only while Subscribe may replay the cached value
@@ -1359,7 +1440,7 @@
       // ---------- 0.42.0.6: message log. HZC_MSG_LOG is the switch (false on this release). ----------
       // The DLL still writes the one-line status. Debug=0 in the ini also stops the queue.
       private static const HZC_MSG_LOG:Boolean = false;
-      private static const HZC_BUILD:String = "0.43.3.0";
+      private static const HZC_BUILD:String = "0.43.4.0";
       private var hzcRxDbgOn:Boolean = false;   // 0.42.0.14: off for release. hzcRxDbgIni still follows Debug=0.
       private var hzcRxDbgQ:Array = [];
       private var hzcRxDbgSeen:Array = [];   // {it, f}
@@ -2132,6 +2213,7 @@
             }
             keep.push(e0);
          }
+         if(keep.length != this.hzcRx.length) { this.hzcRxDirty = true; }
          this.hzcRx = keep;
          if(this.hzcRxDbgOn) { try { this.hzcRxDbgScan(arr); } catch(eDbg:Error) { } }
          var newest:Object = null;
@@ -2153,7 +2235,8 @@
             }
          }
          if(drew) { this.hzcRxFail = 0; }
-         try { this.hzcRxStack(); } catch(eSt:Error) { }
+         if(this.hzcMsgBox != null) { if(this.hzcRxDirty) { try { this.hzcRxArrPlace(); } catch(eAp:Error) { this.hzcRxDirty = false; } } }
+         else { try { this.hzcRxStack(); } catch(eSt:Error) { } }
          if(this.hzcRxFail >= 3) { this.hzcRxLatch(); return; }
       }
       // A card is taller than the gap between game lines. The top card stays. Lower cards move down. x stays.
@@ -2199,13 +2282,31 @@
          if(isNaN(s) || s <= 0) { s = 1; }
          return Math.max(13 / 14,Math.min(1.3,s));   // 13 px text at least; at most 1.3 so it stays near the game's line height
       }
+      // 0.43.4: a card with no game line to follow. With a saved [Layout] HudMessagesX/Y it starts on the stable home
+      // spot (the layer offset from hzcMsgLayout then puts it exactly on the saved ARRANGE CARDS spot, right edges
+      // together), not on the live bounds of the game's message column, which differ from that home and shift as lines
+      // come and fade (the first card used to land a few units off and later ones closer). No bounds read then.
+      private function hzcMsgArranged() : Boolean
+      {
+         var xs:String = String(this.hzcCfg.HudMessagesX);
+         var ys:String = String(this.hzcCfg.HudMessagesY);
+         return !((xs == "-1" || xs == "undefined" || xs == "null") && (ys == "-1" || ys == "undefined" || ys == "null"));
+      }
       private function hzcRxAnchor(e:Object, m:*) : void
       {
          if(e == null || e.c == null) { return; }
+         if(this.hzcMsgBox != null)
+         {
+            // 0.43.4: a saved spot: hzcRxArrPlace puts it on the box's anchored edge (this frame, on the show edge)
+            if(e.c.visible != true) { this.hzcRxDirty = true; }
+            e.c.alpha = 1;
+            e.c.visible = true;
+            return;
+         }
          var x:Number = 40;
          var y:Number = 80;
          var r:Rectangle = null;
-         if(m != null) { try { r = m.getBounds(this); } catch(e0:Error) { r = null; } }
+         if(m != null && !this.hzcMsgArranged()) { try { r = m.getBounds(this); } catch(e0:Error) { r = null; } }
          if(r != null && !isNaN(r.x) && !isNaN(r.y) && !isNaN(r.width) && r.width > 2 && r.height > 2)
          {
             x = r.x + r.width - Number(e.w);
@@ -2231,9 +2332,10 @@
          {
             this.hzcRxDraw(e,newest);
             e.sig = sig;
+            this.hzcRxDirty = true;   // 0.43.4: new content / size: the saved-spot pass runs once
          }
          if(e.c == null) { return; }
-         if(!slot) { e.c.visible = false; return; }
+         if(!slot) { if(e.c.visible == true) { this.hzcRxDirty = true; } e.c.visible = false; return; }
          var it:* = e.it;
          var placed:Boolean = false;
          if(it != null)
@@ -2244,7 +2346,20 @@
             {
                var bg:* = null;
                try { bg = im.Background_mc; } catch(eBg:Error) { bg = null; }
-               if(bg != null)
+               if(bg != null && this.hzcMsgBox != null)
+               {
+                  // 0.43.4: a saved spot does not follow the game line's x / y (its width and height change per
+                  // message); hzcRxArrPlace sets x / y on the edge. The line still drives the fade.
+                  var a0:Number = 1;
+                  try { a0 = Number(it.alpha) * Number(im.alpha) * Number(m.alpha); } catch(eA0:Error) { a0 = 1; }
+                  if(isNaN(a0)) { a0 = 1; }
+                  if(e.c.visible != true) { this.hzcRxDirty = true; }
+                  e.c.alpha = Math.max(0,Math.min(1,a0));
+                  e.c.visible = true;
+                  placed = true;
+                  if(Number(e.w) > 0) { this.hzcRxCover(e, it); }
+               }
+               else if(bg != null)
                {
                   var gp:Point = null;
                   try { gp = im.localToGlobal(new Point(Number(bg.x) + Number(bg.width),Number(bg.y) + Number(bg.height) / 2)); } catch(eGp:Error) { gp = null; }
@@ -2267,6 +2382,7 @@
          }
          if(!placed)
          {
+            if(e.linked == true && e.c.visible == true) { this.hzcRxDirty = true; }
             if(e.linked == true) { this.hzcRxShow(e); return; }
             this.hzcRxAnchor(e,m);
          }

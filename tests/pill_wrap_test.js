@@ -123,7 +123,8 @@ expect(count(as, "this.hzT19PromptPill(") === 1 && fnText(as, "hzT19Content").bo
 expect(count(as, "this.hzT19WrapN(") === 1 && count(as, "this.hzT19LineAdv(") === 1, "the wrap helpers are called only from the pill");
 const tick = fnText(as, "hzT19Tick").body;
 const ci = tick.indexOf("this.hzT19Content(");
-expect(count(as, "this.hzT19Content(") === 1 && ci > 0 && tick.lastIndexOf("if(sig != this.hzT19Sig)", ci) > 0, "hzT19Content runs only behind the content-signature change (an edge, not per frame)");
+const hi = tick.indexOf("this.hzHvdContent(");   // 0.43.4: the private HoverDiag wrapper, on the same edge
+expect(count(as, "this.hzT19Content(") === 2 && count(as, "this.hzHvdContent(") === 1 && fnText(as, "hzHvdContent").body.indexOf("this.hzT19Content(") >= 0 && ci > 0 && hi > 0 && tick.lastIndexOf("if(sig != this.hzT19Sig)", ci) > 0 && tick.lastIndexOf("if(sig != this.hzT19Sig)", hi) === tick.lastIndexOf("if(sig != this.hzT19Sig)", ci), "hzT19Content runs only behind the content-signature change (an edge, not per frame)");
 const head = fnText(as, "hzT19Content").body;
 expect(head.indexOf('o.tone = "main"; o.lines = 1; }') >= 0 && head.indexOf("if(nmTf.wordWrap) { nmTf.wordWrap = false; nmTf.multiline = false; }") >= 0 && head.indexOf("o.lines = 1;") < head.indexOf("this.hzT19PromptPill("), "every redraw clears the wrap state first, so other card kinds stay one line");
 
