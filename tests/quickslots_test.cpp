@@ -288,6 +288,8 @@ int main()
 		Expect(!a5.power && a5.formId == 0x0002A04Au && a5.name == "Modified Razorback", "I|0xFORM|name keeps the form ID and display name");
 		auto a6 = ParseAssignExtra("I|0xABC|");
 		Expect(a6.formId == 0xABCu && a6.name.empty(), "I|0xFORM| with an empty name still carries the form ID");
+		auto a7 = ParseAssignExtra("I|Dead Drop|X");
+		Expect(a7.formId == 0 && a7.name == "Dead Drop|X", "Dead Drop|X is not a form ID");
 		Expect(IsEssenceName("Quantum Essence"), "essence name");
 		Expect(!IsEssenceName("Med Pack"), "not essence");
 		ExpectEqS(PayloadSafe("a|b;c"), "a/b/c", "payload separators replaced");
@@ -327,6 +329,28 @@ int main()
 		Assignment inst = a; inst.base = "Razorback"; inst.name = "Modified Razorback";
 		Expect(!AssignmentStale(inst, "Razorback", true) && !AssignmentStale(inst, "Modified Razorback", true) && !AssignmentClears(inst, "Razorback", true), "instance display vs TESFullName is the same item");
 		Expect(NamesMatch("Modified Razorback", "Razorback") && NamesMatch("Razorback", "modified razorback"), "NamesMatch: instance prefix, case-insensitive");
+
+		Expect(ParseFormId("0x0002A04A") == 0x0002A04Au && ParseFormId("0xABC") == 0xABCu && ParseFormId("0X2a") == 0x2Au, "ParseFormId: 0x + 1-8 hex digits");
+		Expect(ParseFormId("Dead Drop") == 0 && ParseFormId("Dead Drop|X") == 0 && ParseFormId("2A04A") == 0, "ParseFormId: no 0x prefix is not a form ID");
+		Expect(ParseFormId("#2A04A") == 0 && ParseFormId("0x") == 0 && ParseFormId("0x123456789") == 0, "ParseFormId: hash, empty, and 9 hex digits refuse");
+		Expect(ParseFormId("0x-1") == 0 && ParseFormId("0x2A04Axyz") == 0 && ParseFormId("  0xFF  ") == 0xFFu, "ParseFormId: no minus, fully consumed, trim");
+		Expect(AssignIdMatchesName("Modified Razorback", "Razorback") && AssignIdMatchesName("", "Razorback"), "AssignIdMatchesName: instance prefix and ID-only extra");
+		Expect(!AssignIdMatchesName("Med Pack", "Frag Grenade") && !AssignIdMatchesName("Razorback", "") && !AssignIdMatchesName("Med Pack", "Pack"), "AssignIdMatchesName: wrong item, empty lookup, short suffix");
+		{
+			const NameId rows[] = {
+				{ "Heavy Modified Razorback", 1 },
+				{ "Razorback", 2 },
+				{ "Modified Razorback", 3 }
+			};
+			Expect(PickFormByDisplayName("Razorback", rows, 3) == 2, "PickFormByDisplayName: exact Razorback, not Heavy Modified Razorback");
+			Expect(PickFormByDisplayName("razorback", rows, 3) == 2, "PickFormByDisplayName: case-insensitive exact");
+			const NameId noExact[] = {
+				{ "Heavy Modified Razorback", 1 },
+				{ "Modified Razorback", 3 }
+			};
+			Expect(PickFormByDisplayName("Razorback", noExact, 2) == 3, "PickFormByDisplayName: shortest prefix, never the longest");
+			Expect(PickFormByDisplayName("No Such Gun", rows, 3) == 0, "PickFormByDisplayName: missing");
+		}
 		Expect(!NamesMatch("Med Pack", "Pack") && !NamesMatch("Pack", "Med Pack"), "NamesMatch: a short suffix is not the same item");
 		Expect(!NamesMatch("", "Razorback") && !NamesMatch("Razorback", ""), "NamesMatch: empty is not a match");
 		Assignment c = a; c.base.clear(); c.name.clear();

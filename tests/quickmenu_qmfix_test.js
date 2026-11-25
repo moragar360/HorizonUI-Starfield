@@ -43,12 +43,22 @@ const hud = rd("actionscript/horizon_block.as");
 		"1: ParseAssignExtra reads I|0xFORM|name");
 	expect(/form = ex\.formId/.test(game) && /QmFormByName\(ex\.name/.test(game),
 		"1: QmAssign prefers the movie form ID, then the inventory name walk");
+	{
+		const assign = game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("));
+		expect(/AssignIdMatchesName\(ex\.name/.test(assign) && /if \(ex\.formId \|\| !ex\.name\.empty\(\)\) return "missing"/.test(assign),
+			"1: QmAssign ignores an ID whose TESFullName does not NamesMatch, and returns missing if lookup fails");
+	}
 	expect(/inline bool NamesMatch\(/.test(hdr) && /shortn\.size\(\) < 5/.test(hdr),
 		"1: NamesMatch requires a 5-letter suffix so Med Pack vs Pack is not the same item");
 	expect(/NamesMatch\(a\.base, a_curName\)/.test(hdr) && /NamesMatch\(a\.name, a_curName\)/.test(hdr),
 		"1: AssignmentCheck uses NamesMatch on base and display name (instance prefix is not a load-order refuse)");
-	expect(/NamesMatch\(a_name, n\)/.test(game) && /foundPx/.test(game),
-		"1: the inventory form-ID walk can find an instance by TESFullName suffix");
+	expect(/PickFormByDisplayName\(a_name/.test(game) && /shortest/.test(hdr) && /never the longest/.test(hdr),
+		"1: QmFormByName uses exact then shortest NamesMatch prefix, never the longest");
+	expect(/t\[0\] != '0'/.test(hdr) && /hex\.size\(\) > 8/.test(hdr) && /Dead Drop/.test(hdr),
+		"1: ParseFormId requires 0x, 1-8 hex digits, fully consumed (Dead Drop is not 0xDEAD)");
+	const fid = fnText(qm, "hzqExtFormId").body;
+	expect(/it\.uFormID/.test(fid) && !/uHandleID/.test(fid),
+		"1: hzqExtFormId reads uFormID and never sends uHandleID");
 }
 
 // ---- 2 / 3. Horizon card style and a closed selection border ----
@@ -79,8 +89,10 @@ const hud = rd("actionscript/horizon_block.as");
 	expect(/HZQ_REST_X/.test(rem) && !/\.x/.test(rem.replace(/HZQ_REST_X/g, "")) && !/getBounds/.test(rem),
 		"4: homes are authored rest, never captured during the Open animation");
 	const place = codeOnly(fnText(qm, "hzqExtPlace").body);
-	expect(/if\(bars\)/.test(place) && !/eh\.x/.test(place),
-		"4 / 6: CROSS+BARS does not write Entry_0..11 x/y (the vanilla T stays visible)");
+	expect(/if\(bars\)/.test(place) && /ev\.x = x0 \+ col \* pitch/.test(place) && /ev\.y = y0 \+ row \* pitch/.test(place) && !/getBounds/.test(place),
+		"4 / 6: BARS sets clip x/y to the cell center (center-registered; no live getBounds)");
+	expect(/else if\(this\.hzqExtMoved\)/.test(place) && /er\.x = Number\(this\.hzqExtHome/.test(place),
+		"4 / 6: CROSS restores Entry_0..11 when hzqExtMoved is set");
 	expect(/CenterClip_mc\.visible = !bars/.test(place),
 		"6: CROSS+BARS keeps the vanilla cross; BARS hides it");
 	const rest = codeOnly(fnText(qm, "hzqExtRestore").body);
@@ -100,10 +112,12 @@ const hud = rd("actionscript/horizon_block.as");
 		"5: when HORIZON STYLE is off, Extended rows lock");
 	expect(/Extended Mode needs HORIZON STYLE\. Your saved setting is kept\./.test(rows),
 		"5: the under-row note says the saved setting is kept");
-	expect(!/hzQmExt\s*=/.test(rows) && !/hzSetPend\.\w+\s*=/.test(rows),
+	expect(!/hzQmExt\s*=/.test(rows) && !/hzSetPend\.\w+\s*=(?!=)/.test(rows),
 		"5: the lock does not write the saved Extended value");
 	expect(/this\.hzQmOn !== false/.test(rows),
 		"5: a missing hzQmOn defaults to on (m09 host without the flag stays unlocked)");
+	expect(/hzSetPend\.QuickMenuHorizon !== undefined/.test(rows) && /qmHzOn = this\.hzSetPend\.QuickMenuHorizon === true/.test(rows),
+		"5: toggling pending HORIZON STYLE relocks Extended rows at once");
 }
 
 // ---- perf pins: change-driven draw, clips built once, bind still edge-only ----

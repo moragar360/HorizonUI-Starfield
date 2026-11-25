@@ -198,7 +198,17 @@ expect(qmOn && !qmOn.dis && qmOn.inote === "The game's quick menu (favorites cro
 	const h = { hz30Mod: { comms: 1 }, hzQmOn: true, hzSetPend: { QuickMenuHorizon: 1 } };
 	for (const n of ["hz34CardRows", "hz34Sz", "hz34Cmp", "hz42ScRows"]) h[n] = toJs(as, n);
 	const qm = h.hz34CardRows().find((r) => r.k === "QuickMenuHorizon");
-	expect(qm && qm.dis === true && qm.dv === false && h.hzQmOn === true && h.hzSetPend.QuickMenuHorizon === 1 && !/hzQmOn\s*=/.test(fnText(as, "hz34CardRows").body) && !/hzSetPend/.test(fnText(as, "hz34CardRows").body), "the lock leaves the saved QuickMenuHorizon value alone (hzQmOn and hzSetPend are untouched)");
+	expect(qm && qm.dis === true && qm.dv === false && h.hzQmOn === true && h.hzSetPend.QuickMenuHorizon === 1 && !/this\.hzQmOn\s*=/.test(fnText(as, "hz34CardRows").body) && !/hzSetPend\.\w+\s*=(?!=)/.test(fnText(as, "hz34CardRows").body), "the lock leaves the saved QuickMenuHorizon value alone (hzQmOn and hzSetPend are not written)");
+}
+{
+	const h = { hz30Mod: { comms: 1, quickmenu: 1 }, hzQmOn: true, hzQmExt: true, hzQmConflict: false, hzSetPend: { QuickMenuHorizon: false, QuickMenuExtended: true } };
+	for (const n of ["hz34CardRows", "hz34Sz", "hz34Cmp", "hz42ScRows"]) h[n] = toJs(as, n);
+	const off = h.hz34CardRows();
+	const extOff = off.find((r) => r.k === "QuickMenuExtended");
+	expect(!off.find((r) => r.k === "QuickMenuHorizon").dis && extOff.dis === true && extOff.dv === false && h.hzSetPend.QuickMenuExtended === true && h.hzQmExt === true, "pending HORIZON STYLE off greys Extended rows at once and does not write the saved Extended value");
+	h.hzSetPend.QuickMenuHorizon = true;
+	const on = h.hz34CardRows();
+	expect(!on.find((r) => r.k === "QuickMenuExtended").dis && h.hzSetPend.QuickMenuExtended === true && h.hzQmExt === true, "pending HORIZON STYLE on unlocks Extended rows without writing the saved Extended value");
 }
 expect(!/addEventListener|ENTER_FRAME|setInterval|setTimeout|new Timer/.test(fnText(as, "hz34CardRows").body), "menu rows only: no timer or listener");
 

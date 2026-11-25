@@ -137,6 +137,49 @@ inline bool NamesMatch(std::string_view a, std::string_view b)
 	return prefixed(la, lb) || prefixed(lb, la);
 }
 
+// Keep a LookupByID result only when its TESFullName is the item the movie named.
+// Empty sentName: the movie sent an ID only; keep it if the form has a name.
+// Empty formName: LookupByID did not yield a named form (a miss, so the caller can name-walk).
+inline bool AssignIdMatchesName(std::string_view sentName, std::string_view formName)
+{
+	if (formName.empty()) return false;
+	if (sentName.empty()) return true;
+	return NamesMatch(sentName, formName);
+}
+
+// One inventory row for PickFormByDisplayName (TESFullName + form ID).
+struct NameId
+{
+	std::string_view name;
+	std::uint32_t    id = 0;
+};
+
+// Prefer an exact TESFullName, then a case-insensitive exact, then the shortest
+// NamesMatch prefix (never the longest). "Razorback" must not resolve to
+// "Heavy Modified Razorback" when a shorter match exists.
+inline std::uint32_t PickFormByDisplayName(std::string_view want, const NameId* rows, int n)
+{
+	if (want.empty() || !rows || n <= 0) return 0;
+	std::uint32_t found = 0;
+	std::uint32_t foundCi = 0;
+	std::uint32_t foundPx = 0;
+	std::size_t pxLen = static_cast<std::size_t>(-1);
+	const auto wantL = Lower(std::string(want));
+	for (int i = 0; i < n; ++i) {
+		const auto nm = rows[i].name;
+		if (nm.empty() || !rows[i].id) continue;
+		if (want == nm) { found = rows[i].id; break; }
+		if (!foundCi && Lower(std::string(nm)) == wantL) foundCi = rows[i].id;
+		if (NamesMatch(want, nm) && nm.size() < pxLen) {
+			foundPx = rows[i].id;
+			pxLen = nm.size();
+		}
+	}
+	if (found) return found;
+	if (foundCi) return foundCi;
+	return foundPx;
+}
+
 inline std::string Trim(std::string_view a)
 {
 	std::size_t i = 0, j = a.size();
@@ -194,16 +237,25 @@ inline bool ParseBool01(std::string_view v, bool def = false)
 	return def;
 }
 
+// Form IDs are a 0x/0X prefix, then 1-8 hex digits, fully consumed. No minus,
+// no '#', no 64-bit truncation. "Dead Drop" is a name, not 0xDEAD.
 inline std::uint32_t ParseFormId(std::string_view raw)
 {
-	auto s = Trim(raw);
-	if (s.empty()) return 0;
-	if (s.rfind("0x", 0) == 0 || s.rfind("0X", 0) == 0) s = s.substr(2);
-	if (s.rfind("#", 0) == 0) s = s.substr(1);
-	char* end = nullptr;
-	const unsigned long v = std::strtoul(s.c_str(), &end, 16);
-	if (end == s.c_str()) return 0;
-	return static_cast<std::uint32_t>(v);
+	const auto t = Trim(raw);
+	if (t.size() < 3) return 0;
+	if (t[0] != '0' || (t[1] != 'x' && t[1] != 'X')) return 0;
+	const auto hex = t.substr(2);
+	if (hex.empty() || hex.size() > 8) return 0;
+	std::uint32_t v = 0;
+	for (unsigned char c : hex) {
+		std::uint32_t d = 0;
+		if (c >= '0' && c <= '9') d = static_cast<std::uint32_t>(c - '0');
+		else if (c >= 'a' && c <= 'f') d = 10u + static_cast<std::uint32_t>(c - 'a');
+		else if (c >= 'A' && c <= 'F') d = 10u + static_cast<std::uint32_t>(c - 'A');
+		else return 0;
+		v = (v << 4) | d;
+	}
+	return v;
 }
 
 inline std::string FormHex(std::uint32_t id)

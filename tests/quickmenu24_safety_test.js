@@ -221,6 +221,13 @@ expect(/return hzqs::FallbackReservedKey\(k\);/.test(game) && /"F5","F9"/.test(c
 		"m09: HORIZON STYLE off greys Extended rows (looks off) and leaves HORIZON STYLE editable");
 	const hz = run.call({ hz30Mod: { quickmenu: 1 }, hzQmConflict: false, hzQmOn: true }, mk());
 	expect(hz.every((r) => !r.dis), "m09: HORIZON STYLE on leaves Extended rows editable");
+	const pendOff = run.call({ hz30Mod: { quickmenu: 1 }, hzQmConflict: false, hzQmOn: true, hzSetPend: { QuickMenuHorizon: false, QuickMenuExtended: true } }, mk());
+	expect(!pendOff[0].dis && pendOff[1].dis && pendOff[1].dv === false && pendOff[2].dis && pendOff[3].dis,
+		"m09: pending HORIZON STYLE off greys Extended rows at once");
+	expect(pendOff[1].note && /HORIZON STYLE/.test(pendOff[1].note),
+		"m09: the pending lock keeps the saved-setting note");
+	const pendOn = run.call({ hz30Mod: { quickmenu: 1 }, hzQmConflict: false, hzQmOn: false, hzSetPend: { QuickMenuHorizon: true, QuickMenuExtended: true } }, mk());
+	expect(pendOn.every((r) => !r.dis), "m09: pending HORIZON STYLE on unlocks Extended rows at once");
 }
 
 // ---- M-3: 13 px floor ----

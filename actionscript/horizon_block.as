@@ -19650,7 +19650,13 @@
          var qmi:int = 0;
          var qmOff:Boolean = this.hz30Mod["quickmenu"] !== 1;
          var qmConf:Boolean = this.hzQmConflict;
+         // Pending HORIZON STYLE (the F11 list) relocks Extended rows at once. A missing
+         // hzQmOn still defaults to on (m09 host). The saved Extended value is not written.
          var qmHzOn:Boolean = this.hzQmOn !== false;
+         if(this.hzSetPend != null && this.hzSetPend.QuickMenuHorizon !== undefined)
+         {
+            qmHzOn = this.hzSetPend.QuickMenuHorizon === true || Number(this.hzSetPend.QuickMenuHorizon) >= 0.5;
+         }
          while(qmi < rows.length)
          {
             var qmk:String = String(rows[qmi].k);

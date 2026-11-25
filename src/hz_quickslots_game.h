@@ -1072,25 +1072,16 @@
 		if (!pc) return 0;
 		auto& snap = QmSnapBuf();
 		if (!QmInvSnapshot(pc, snap)) return 0;
-		std::uint32_t found = 0;
-		std::uint32_t foundCi = 0;
-		std::uint32_t foundPx = 0;
-		std::size_t pxLen = 0;
-		const auto want = hzqs::Lower(a_name);
+		std::vector<hzqs::NameId> hits;
+		hits.reserve(snap.n > 0 ? static_cast<std::size_t>(snap.n) : 0);
 		for (int i = 0; i < snap.n; ++i) {
 			const char* n = QmFormName(snap.e[i].obj);
-			if (!n || !n[0]) continue;
-			if (a_name == n) { found = snap.e[i].formId; break; }
-			if (!foundCi && hzqs::Lower(n) == want) foundCi = snap.e[i].formId;
-			if (hzqs::NamesMatch(a_name, n)) {
-				const auto ln = std::strlen(n);
-				if (ln > pxLen) { foundPx = snap.e[i].formId; pxLen = ln; }
-			}
+			if (!n || !n[0] || !snap.e[i].formId) continue;
+			hits.push_back({ n, snap.e[i].formId });
 		}
-		if (!found) found = foundCi;
-		if (!found) found = foundPx;
+		const auto found = hzqs::PickFormByDisplayName(a_name, hits.data(), static_cast<int>(hits.size()));
 		if (!found) return 0;
-		*a_kind = want.find("quantum essence") != std::string::npos ? hzqs::Kind::Essence : hzqs::Kind::Inventory;
+		*a_kind = hzqs::Lower(a_name).find("quantum essence") != std::string::npos ? hzqs::Kind::Essence : hzqs::Kind::Inventory;
 		return found;
 	}
 
@@ -1200,8 +1191,12 @@
 		// TESTONLY: 13-24 take inventory items only (powers / Quantum Essence are spike-dependent).
 		if (ex.power) return "power-later";
 		if (hzqs::IsEssenceName(ex.name)) return "essence-later";
-		// The movie sends I|<formId>|<displayName> on an assign click. Prefer that form ID.
-		// g_qmPendingForm is a leftover path and is never written; consume it so a stale value cannot stick.
+		// The movie may send I|<formId>|<displayName>. Inventory items name uFormID and
+		// uHandleID as separate fields; FavoritesMenu never reads either, so the extra ID
+		// may be missing, a real form ID, or (if the engine reused a field) a handle.
+		// Keep LookupByID only when QmFormName NamesMatch the sent name; otherwise walk
+		// by name. Return missing if that lookup fails. g_qmPendingForm is never written;
+		// consume it so a stale value cannot stick.
 		std::uint32_t form = ex.formId;
 		if (form)
 			g_qmPendingForm.store(0, std::memory_order_release);
@@ -1209,15 +1204,24 @@
 			form = g_qmPendingForm.exchange(0, std::memory_order_acq_rel);
 		hzqs::Kind kind = hzqs::Kind::Inventory;
 		std::string name = ex.name;
+		bool usedId = false;
 		if (form) {
 			if (auto* f = RE::TESForm::LookupByID(form)) {
-				kind = QmKindOfForm(f);
-				if (name.empty()) name = QmFormName(f);
+				const char* fn = QmFormName(f);
+				if (hzqs::AssignIdMatchesName(ex.name, fn ? fn : "")) {
+					usedId = true;
+					kind = QmKindOfForm(f);
+					if (name.empty()) name = fn ? fn : "";
+				}
 			}
 		}
+		if (!usedId) form = 0;
 		if (!form && !ex.name.empty()) {
 			form = QmFormByName(ex.name, &kind);
 			if (!form) return "missing";
+		}
+		if (!form) {
+			if (ex.formId || !ex.name.empty()) return "missing";
 		}
 		if (kind != hzqs::Kind::Inventory) return kind == hzqs::Kind::Power ? "power-later" : "essence-later";
 		std::string base;   // S-3: the form's own name, checked again on every use and open

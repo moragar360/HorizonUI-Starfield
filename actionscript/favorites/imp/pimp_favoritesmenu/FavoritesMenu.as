@@ -1401,6 +1401,11 @@ package
          catch(e:Error) { }
          return "";
       }
+      // InventoryMenu item objects name both uFormID and uHandleID (separate fields). FavoritesMenu
+      // never reads either: AssignedItem / aFavoriteItems are used as sName, bIsPower, iconImage,
+      // uCount, sAmmoName, uAmmoCount, aElementalStats. ItemToBeAssigned may still carry uFormID
+      // when it is a full inventory object. Never send uHandleID. The DLL keeps the ID only when
+      // LookupByID's TESFullName NamesMatch the sent name.
       private function hzqExtFormId(it:Object) : uint
       {
          if(it == null) { return 0; }
@@ -1477,18 +1482,8 @@ package
          catch(eCc:Error) { }
          if(bars)
          {
-            // restore authored rest first so each clip's bounds are at home, then slide it by the delta to its grid cell
-            i = 0;
-            while(i < 12)
-            {
-               var er:MovieClip = this.hzqSlot(i);
-               if(er != null && this.hzqExtHome != null && this.hzqExtHome[i] != null)
-               {
-                  er.x = Number(this.hzqExtHome[i].x);
-                  er.y = Number(this.hzqExtHome[i].y);
-               }
-               i++;
-            }
+            // Clips are center-registered. Live getBounds during Open is the collapsed T, so
+            // write x/y to the grid cell center directly (no bounds delta).
             this.hzqExtMoved = true;
             var rows:int = int(Math.ceil(n / per));
             var y0:Number = box.cy - (rows - 1) * pitch / 2;
@@ -1503,12 +1498,26 @@ package
                var ev:MovieClip = this.hzqSlot(i);
                if(ev != null)
                {
-                  var vb:Rectangle = ev.getBounds(this);
-                  ev.x = ev.x + ((x0 + col * pitch) - (vb.x + vb.width / 2));
-                  ev.y = ev.y + ((y0 + row * pitch) - (vb.y + vb.height / 2));
+                  ev.x = x0 + col * pitch;
+                  ev.y = y0 + row * pitch;
                }
                i++;
             }
+         }
+         else if(this.hzqExtMoved)
+         {
+            i = 0;
+            while(i < 12)
+            {
+               var er:MovieClip = this.hzqSlot(i);
+               if(er != null && this.hzqExtHome != null && this.hzqExtHome[i] != null)
+               {
+                  er.x = Number(this.hzqExtHome[i].x);
+                  er.y = Number(this.hzqExtHome[i].y);
+               }
+               i++;
+            }
+            this.hzqExtMoved = false;
          }
          this.hzqExtBuildClips(box);
       }
