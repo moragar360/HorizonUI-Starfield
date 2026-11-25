@@ -1,5 +1,5 @@
 // watchlog frame-delta histogram (hz_wl.h) host test.
-//   zig c++ -std=c++20 -Wall -Wextra -Wpedantic -I src tests/watchlog_fdh_test.cpp -o /tmp/watchlog_fdh_test
+//   zig c++ -std=c++20 -Wall -Wextra -Wpedantic -I src tests/watchlog_fdh_test.cpp -o test_scratch/watchlog_fdh_test
 // Author: Moragar. Last modified: 2026-11-10.
 #include "hz_wl.h"
 

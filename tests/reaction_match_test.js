@@ -52,7 +52,7 @@ const DIR = numArray("HZC_RX_DIR");
 const NOT = stringArray("HZC_RX_NOT");
 const TITLE = stringArray("HZC_RX_TITLE");
 
-expect(src.indexOf('private static const HZC_BUILD:String = "0.43.4.0";') >= 0, "comms build id is 0.43.4.0 (versions aligned)");
+expect(src.indexOf('private static const HZC_BUILD:String = "0.43.5.0";') >= 0, "comms build id is 0.43.5.0 (versions aligned)");
 expect(src.indexOf('HudMessagesX') >= 0 && src.indexOf("function hzcMsgLayout") >= 0, "HUD Messages box reads a saved layout");
 expect(src.indexOf("x = Math.max(vr.x,Math.min(vr.right - w,x));") >= 0, "HUD Messages box is clamped on screen");
 expect(src.indexOf("y = Math.max(vr.y,Math.min(vr.bottom - h,y));") >= 0, "HUD Messages box is clamped vertically");
@@ -1878,6 +1878,7 @@ function asToJs(text) {
 	s = s.replace(/\bgetTimer\(\)/g, "this.getTimer()");
 	s = s.replace(/\bHZC_RX_PAIR\b/g, "this.HZC_RX_PAIR");
 	s = s.replace(/\bHZC_RX_VIS\b/g, "this.HZC_RX_VIS");
+	s = s.replace(/\bHZC_V3_MAX\b/g, "this.HZC_V3_MAX");
 	return s;
 }
 function installAsFn(host, asText) {
@@ -1897,6 +1898,8 @@ function makeHzcHost(now) {
 	const host = {
 		HZC_RX_PAIR: 3000,
 		HZC_RX_VIS: 4000,
+		HZC_V3_MAX: 3,
+		HZC_V3_W: 460,
 		hzcRx: [],
 		hzcRxPendN: 0,
 		hzcRxDupN: 0,
@@ -2072,7 +2075,7 @@ function makeHzcHost(now) {
 	// source pins: event-driven, the count is drawn, no new per-frame loop when nothing is merged
 	const link = fnBody("private function hzcRxLink", "private function hzcRxSlot");
 	expect(link.indexOf("if(this.hzcRxDupN > 0 && this.hzcRxDupOf(it) != null) { continue; }") >= 0 && link.indexOf("else if(this.hzcRxPendN > 0) { this.hzcRxTakeDup(it,tx); }") >= 0, "r6: the link pass reads two counters; the merge helpers run only while a merge is pending or held");
-	expect(fnBody("private function hzcCardDraw", "private function hzcRxDraw").indexOf('title = title + "  x" + int(e.cnt);') >= 0 && src.indexOf('String(HZC_RX_LBL[e.k]) + (int(e.cnt) > 1 ? "  x" + int(e.cnt) : "")') >= 0, "r6: both card kinds draw the xN count");
+	expect(fnBody("private function hzcCardDraw", "private function hzcRxDraw").indexOf('ttl = ttl + "  x" + int(e.cnt);') >= 0 && src.indexOf('String(HZC_RX_LBL[k]) + (int(e.cnt) > 1 ? "  x" + int(e.cnt) : "")') >= 0 && src.indexOf('String(HZC_RX_LBL[e.k]) + (int(e.cnt) > 1 ? "  x" + int(e.cnt) : "")') >= 0, "r6: both card kinds draw the xN count");
 	const take = fnBody("private function hzcRxTakeDup", "private function hzcRxEnd");
 	expect(take.indexOf(".alpha") < 0 && take.indexOf("int(e.pend) <= 0") >= 0, "r6: a held line is touched only for a card with a pending merge, never its alpha");
 	expect(src.indexOf("HZC_RX_DUP") < 0 && fnBody("public function hzcCardPush", "public function hzcRxWhy").indexOf("getTimer() - ") < 0, "r6: the merge is while the card is up, not a time window");

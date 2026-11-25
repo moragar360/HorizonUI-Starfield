@@ -35,8 +35,8 @@ function pin(snippet, msg) {
 	expect(src.indexOf(snippet) >= 0, msg || snippet);
 }
 
-pin('private static const HZ_VERSION:String = "0.43.3.0";', "schema version is 0.43.3.0 (0.43.4 adds no settings) (= HZF::kVersion)");
-pin('private static const HZ_BUILD:String = "0.43.4.0";', "HUD build id is 0.43.4.0 (versions aligned)");
+pin('private static const HZ_VERSION:String = "0.43.5.0";', "schema version is 0.43.5.0 (0.43.5 adds [Scanner] ScanReach) (= HZF::kVersion)");
+pin('private static const HZ_BUILD:String = "0.43.5.0";', "HUD build id is 0.43.5.0");
 pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
 pin("tf.text = this.hzFmtLocGame(uh,um,true);", "GAME Local/Game value honors ClockFormat");
 pin("tf.text = this.hzFmtLocGame(H,M,false);", "LOCAL Local/Game value honors ClockFormat");
@@ -74,8 +74,8 @@ expect(hzTempText(Number.NaN, 0) === "--", "a NaN temperature shows --");
 }
 pin('"HudMessages"', "HUD Messages is an arrangeable layout key");
 pin("private function hzArrFs(want:int)", "HUD Messages ghost type size is corrected once");
-pin('this.hzSText(p,"HUD MESSAGES",14 * hz,7 * hz,sz.x - 28 * hz,this.hzArrFs(15),acc,"left","hdr");', "HUD MESSAGES header uses hzArrFs");
-pin('this.hzSText(p,"Cards keep this box\'s anchored edge",14 * hz,29 * hz,sz.x - 28 * hz,this.hzArrFs(13),0xF2F7F9,"left");', "HUD MESSAGES body uses hzArrFs");
+pin('this.hzSText(p,"HUD MESSAGES",14 * hz,20 * hz,sz.x - 28 * hz,this.hzArrFs(15),acc,"left","hdr");', "HUD MESSAGES header uses hzArrFs");
+pin('this.hzSText(p,"Cards keep this box\'s anchored edge",14 * hz,46 * hz,sz.x - 28 * hz,this.hzArrFs(13),0xF2F7F9,"left");', "HUD MESSAGES body uses hzArrFs");
 expect(src.indexOf('Math.round(13 * hz)') < 0, "HUD MESSAGES body is not scaled twice");
 function hzArrFs(want, textScale) {
 	let ts = textScale;
@@ -593,7 +593,7 @@ for (let i = 0; i < scopeFiles.length; i++) {
 	const loneCr = stripped.includes("\r");
 	if (wantCrlf) expect(hasCrlf && !loneLf && !loneCr, rel + " stays CRLF");
 	else expect((!hasCrlf && !loneCr && loneLf) || (hasCrlf && !loneLf && !loneCr), rel + " stays LF or a CRLF checkout");
-	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.4.0";') >= 0, rel + " build is 0.43.4.0");
+	expect(body.indexOf('private static const HZP_BUILD:String = "0.43.5.0";') >= 0, rel + " build is 0.43.5.0");
 	expect(body.indexOf("private static const HZP_KEX:Number = 16;") >= 0, rel + " key cap adds 16");
 	expect(body.indexOf("ktw = this.hzpKeyW(kt,HZP_KEX);") >= 0, rel + " only the key field gets that extra");
 	expect(body.indexOf("var w:Number = this.hzpKeyW(t);") >= 0, rel + " the label slot does not get the key extra");
@@ -1904,6 +1904,8 @@ expect(src.indexOf("if(rows[ni].dis) { rows[ni].n13 = true; }") >= 0, "CARDS tab
 		["actionscript/imp/imp/scripts/HUDMessagesMenu.as", "HZC_BUILD"],
 		["actionscript/imp/imp-Lrg/scripts/HUDMessagesMenu.as", "HZC_BUILD"]
 	];
+	// Combined TESTONLY: source stamps read 0.43.5.0 with the file version. Scanner and scope movies that did not
+	// change still ship their existing binaries until the release rebuilds them.
 	for (let i = 0; i < stamps.length; i++) {
 		const body = readText(path.join(__dirname, "..", stamps[i][0]));
 		expect(body.indexOf("private static const " + stamps[i][1] + ':String = "' + ver + '";') >= 0, stamps[i][0] + " " + stamps[i][1] + " is the file version " + ver);

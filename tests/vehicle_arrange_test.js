@@ -209,7 +209,7 @@ const inVehicle = (h, frames) => { h.hzVehIn = 1; for (let i = 0; i < (frames ||
 	expect(a[0].indexOf("default bottom-right spot") > 0 && a[0].indexOf("game's prompt") < 0, "writer comment: offset from the default bottom-right spot");
 	const sd = JSON.parse(/HZ_SET_DEF:Object = (\{[^;]*\});/.exec(as)[1]);
 	expect(sd.VehicleExitX === 0 && sd.VehicleExitY === 0 && sd.VehicleExitPill === 1, "HZ_SET_DEF: 0 / 0 (DEFAULTS = the default spot)");
-	expect(/\nEquipmentExtras=1\n; Vehicle exit pill spot[^\n]*\nVehicleExitX=0\nVehicleExitY=0\n; Quick menu[^\n]*\nQuickMenuHorizon=1\n\n\[Effects\]/.test(ini), "default.ini [Cards Extra]: VehicleExitX=0 / VehicleExitY=0, where the writer puts them");
+	expect(/\nEquipmentExtras=1\n; Vehicle exit pill spot[^\n]*\nVehicleExitX=0\nVehicleExitY=0\n; Quick menu[^\n]*\nQuickMenuHorizon=1\n(?:(?:; [^\n]*|QuickMenu[A-Za-z0-9]+=[^\n]*)\n)*\n\[Effects\]/.test(ini), "default.ini [Cards Extra]: VehicleExitX=0 / VehicleExitY=0, where the writer puts them");
 	expect(ini.indexOf("; Vehicle exit pill spot (ARRANGE CARDS): offset from the default bottom-right spot in HUD units (X + = right, Y + = up); 0 / 0 = the default spot\n") >= 0, "default.ini comment matches the writer");
 	expect(/this\.hzVehIni\(k,nv\)/.test(fnText(as, "hz26Ini").body) && /this\.hzVehSetCur\(o\)/.test(fnText(as, "hz26SetCur").body) && /this\.hzVehSetLive\(p\)/.test(fnText(as, "hz26SetLive").body) && /a\.push\("EquipmentExtras=[^\n]*\n\s*this\.hzVehIniLines\(a,p\)/.test(as), "the hz26 settings chain reads, writes and applies the offsets");
 }

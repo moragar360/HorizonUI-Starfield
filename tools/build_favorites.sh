@@ -5,13 +5,22 @@
 # movie, then decompile the result (script + p-code) and the vanilla p-code for the checks. Nothing is deleted or
 # overwritten: the output folder must not exist.
 #   tools/build_favorites.sh OUT_DIR [VANILLA_DIR]
-# Needs: java (FFDec 26.x at $F), python3. Stops when less than 5.5 GB would be left on the output disk.
+# Needs: java (FFDec 26.x) and python3. Vanilla movies come from $2, HZ_VANILLA_FAV, or HORIZON_VANILLA_FAVORITES.
+# FFDEC_JAR, or a ffdec.jar under tools/. Optional HZ_JAVA_BIN or JAVA_HOME. Stops when less than 5.5 GB would be left on the output disk.
 set -u
 O=$1; [ -e "$O" ] && { echo "$O exists"; exit 1; }
 R=$(cd "$(dirname "$0")/.." && pwd)
-V=${2:-/workspace/harness/h043/vendor/v042/r042/vanilla_favorites}
-F=${FFDEC_JAR:-/workspace/tools/ffdec/ffdec.jar}
-[ -d /home/box/jdk41/jdk-21.0.12.1+1-jre/bin ] && export PATH=/home/box/jdk41/jdk-21.0.12.1+1-jre/bin:$PATH
+V=${2:-${HZ_VANILLA_FAV:-${HORIZON_VANILLA_FAVORITES:-}}}
+[ -n "$V" ] || { echo "give VANILLA_DIR (or set HZ_VANILLA_FAV / HORIZON_VANILLA_FAVORITES)"; exit 1; }
+F=${FFDEC_JAR:-}
+if [ -z "$F" ]; then
+  for c in "$R/tools/ffdec/ffdec.jar" "$R/../tools/ffdec/ffdec.jar"; do
+    [ -f "$c" ] && F=$c && break
+  done
+fi
+[ -n "$F" ] && [ -f "$F" ] || { echo "set FFDEC_JAR to the FFDec jar"; exit 1; }
+[ -n "${HZ_JAVA_BIN:-}" ] && export PATH=$HZ_JAVA_BIN:$PATH
+[ -n "${JAVA_HOME:-}" ] && export PATH="$JAVA_HOME/bin:$PATH"
 mkdir -p "$O"
 free_kb=$(df -Pk "$O" | awk 'NR==2 {print $4}')
 if [ "$free_kb" -lt 6291456 ]; then echo "STOP: under 6 GB free on the output disk ($free_kb KB)"; exit 1; fi

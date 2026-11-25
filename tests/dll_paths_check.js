@@ -65,7 +65,7 @@ function expect(cond, msg) {
 }
 const u16 = (s) => Buffer.from(s, "utf16le");
 const pad = Buffer.from([0, 1, 2, 3]);
-const bad1 = Buffer.concat([pad, Buffer.from("C:\\Users\\someone\\build\\src\\lib\\x.h"), pad]);
+const bad1 = Buffer.concat([pad, Buffer.from(["C:", "Users", "someone", "build", "src", "lib", "x.h"].join("\\")), pad]);
 const bad2 = Buffer.concat([pad, u16("D:\\work\\HorizonUI\\build\\HorizonUI.pdb"), pad]);
 const bad3 = Buffer.concat([pad, Buffer.from("built by alice-pc"), pad]);
 const good = Buffer.concat([pad, Buffer.from("HorizonUI.pdb"), pad, Buffer.from("\\lib\\commonlibsf\\include\\SFSE/Interfaces.h"), pad, u16("HorizonUI.user.ini"), pad]);
@@ -79,6 +79,6 @@ const blk = xm.slice(0, inc);
 expect(inc > 0 && blk.indexOf('add_cxflags("/d1trimfile:$(projectdir)", {tools = "cl", force = true})') >= 0, "xmake.lua: MSVC trims the project folder from __FILE__, before CommonLibSF is included");
 expect(blk.indexOf('add_cxflags("/clang:-ffile-prefix-map=$(projectdir)=.", {tools = "clang_cl", force = true})') >= 0, "xmake.lua: clang-cl maps the project folder away");
 expect(blk.indexOf('add_shflags("/PDBALTPATH:%_PDB%", {force = true})') >= 0 && blk.indexOf('add_ldflags("/PDBALTPATH:%_PDB%", {force = true})') >= 0, "xmake.lua: the DLL names only its PDB file");
-expect(/set_version\("0\.43\.4\.0"\)/.test(xm), "xmake.lua: file version is 0.43.4.0 (versions aligned 2026-11-22)");
+expect(/set_version\("0\.43\.5\.0"\)/.test(xm), "xmake.lua: file version is 0.43.5.0");
 if (failed) { console.error(failed + " failed"); process.exit(1); }
 console.log("dll paths check self-test: " + passed + " ok, all passed");

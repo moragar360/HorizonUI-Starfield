@@ -20,7 +20,13 @@ namespace HZF {
 		inline bool ApplySkips(const std::string& a_sec) { return a_sec == "debug"; }
 		// v0.37 personal keys (approved): the settings hotkey(s) - every key in [Hotkeys] - and ScreenHeight (the
 		// player's monitor). Apply keeps the player's own values (like [Debug]); saved presets never hold them.
-		inline bool PersonalKey(const std::string& a_sec, const std::string& a_kl) { return a_sec == "hotkeys" || a_kl == "screenheight"; }
+		// 0.43.5 (user approved): the [Scanner] game-setting choices are personal too - ScanHighlightArea,
+		// ScanOutlineThickness and ScanReach. A preset Apply used to put them back to Vanilla because no preset lists them.
+		inline bool PersonalKey(const std::string& a_sec, const std::string& a_kl)
+		{
+			if (a_sec == "hotkeys" || a_kl == "screenheight") return true;
+			return a_sec == "scanner" && (a_kl == "scanhighlightarea" || a_kl == "scanoutlinethickness" || a_kl == "scanreach");
+		}
 		inline std::string StripPersonal(const std::string& a_text)
 		{
 			std::vector<std::string> out;

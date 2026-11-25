@@ -2871,6 +2871,7 @@
             var bv:Boolean = v == "1" || v.toLowerCase() == "true";
             var nv:Number = Number(v);
             if(isNaN(nv) && this.hz30IniPos(k,v)) { continue; }
+            if(k.indexOf("quickmenu") == 0 && this.hzQmIniVal(k,v)) { continue; }  // 0.43.5 Extended Quick Menu values (count, per row, layout, keys)
             switch(k)
             {
                case "showjetpack": this.hzShowJetpack = bv; break;
@@ -4575,24 +4576,101 @@
       // 0.43.3.0 batch f: [Cards Extra] QuickMenuHorizon (F11 > CARDS > QUICK MENU > HORIZON STYLE, default 1). The HUD only
       // stores and writes it; the quick menu movie (favoritesmenu.swf, actionscript/favorites/hzq_main.as) reads it on open.
       // 0 = the game's own quick menu look.
+      // 0.43.5: Extended Mode (up to 24 slots), slot count, slots per row, CROSS+BARS / BARS, and keys 13-24.
       private var hzQmOn:Boolean = true;
+      private var hzQmExt:Boolean = false;
+      private var hzQmCount:int = 24;
+      private var hzQmPerRow:int = 6;
+      private var hzQmLayout:int = 0;   // 0 CROSS + BARS, 1 BARS
+      private var hzQmKeys:Array = ["","","","","","","","","","","",""];
+      private var hzQmConflict:Boolean = false;   // set by the DLL when another extended-favorites mod is found
+      public function hzQmSetConflict(v:Number) : void { this.hzQmConflict = v >= 0.5; }
+      public function hzQmSetSlotCount(v:Number) : void { this.hzQmCount = this.hzQmClampCount(v); }
+      private function hzQmClampCount(n:Number) : int { return int(Math.max(12,Math.min(24,Math.round(n)))); }
+      private function hzQmClampRow(n:Number) : int
+      {
+         var i:int = int(Math.round(n));
+         if(i <= 4) { return 4; }
+         if(i >= 8) { return 8; }
+         return 6;
+      }
+      private function hzQmKeyAt(i:int) : String
+      {
+         if(i < 0 || i >= 12 || this.hzQmKeys == null) { return ""; }
+         return String(this.hzQmKeys[i] != null ? this.hzQmKeys[i] : "");
+      }
       private function hzQmIni(k:String, bv:Boolean) : Boolean
       {
          if(k == "quickmenuhorizon") { this.hzQmOn = bv; return true; }
+         if(k == "quickmenuextended") { this.hzQmExt = bv; return true; }
+         return false;
+      }
+      private function hzQmIniVal(k:String, v:String) : Boolean
+      {
+         if(k == "quickmenuslotcount") { this.hzQmCount = this.hzQmClampCount(Number(v)); return true; }
+         if(k == "quickmenuslotsperrow") { this.hzQmPerRow = this.hzQmClampRow(Number(v)); return true; }
+         if(k == "quickmenuextendedlayout")
+         {
+            var lv:String = v.toLowerCase();
+            this.hzQmLayout = (lv == "1" || lv == "bars" || lv == "bar") ? 1 : 0;
+            return true;
+         }
+         if(k.indexOf("quickmenukey") == 0 && k.length > 12)
+         {
+            var slot:int = int(Number(k.substring(12)));
+            if(slot >= 13 && slot <= 24)
+            {
+               this.hzQmKeys[slot - 13] = v;
+               return true;
+            }
+         }
          return false;
       }
       private function hzQmSetCur(o:Object) : void
       {
          o.QuickMenuHorizon = this.hzQmOn;
+         o.QuickMenuExtended = this.hzQmExt;
+         o.QuickMenuSlotCount = this.hzQmCount;
+         o.QuickMenuSlotsPerRow = this.hzQmPerRow;
+         o.QuickMenuExtendedLayout = this.hzQmLayout;
+         var i:int = 0;
+         while(i < 12) { o["QuickMenuKey" + (13 + i)] = this.hzQmKeyAt(i); i++; }
       }
       private function hzQmSetLive(p:Object) : void
       {
          if(p.QuickMenuHorizon !== undefined) { this.hzQmOn = p.QuickMenuHorizon === true || Number(p.QuickMenuHorizon) >= 0.5; }
+         if(p.QuickMenuExtended !== undefined) { this.hzQmExt = p.QuickMenuExtended === true || Number(p.QuickMenuExtended) >= 0.5; }
+         if(p.QuickMenuSlotCount !== undefined) { this.hzQmCount = this.hzQmClampCount(Number(p.QuickMenuSlotCount)); }
+         if(p.QuickMenuSlotsPerRow !== undefined) { this.hzQmPerRow = this.hzQmClampRow(Number(p.QuickMenuSlotsPerRow)); }
+         if(p.QuickMenuExtendedLayout !== undefined) { this.hzQmLayout = int(Number(p.QuickMenuExtendedLayout)) != 0 ? 1 : 0; }
+         var i:int = 0;
+         while(i < 12)
+         {
+            var kk:String = "QuickMenuKey" + (13 + i);
+            if(p[kk] !== undefined) { this.hzQmKeys[i] = String(p[kk]); }
+            i++;
+         }
       }
       private function hzQmIniLines(a:Array, p:Object) : void
       {
          a.push("; Quick menu (the game's favorites cross): 1 = Horizon cards in your card style, 0 = the game's own look. Read when the menu opens.");
          a.push("QuickMenuHorizon=" + this.hzB(p.QuickMenuHorizon !== undefined ? p.QuickMenuHorizon : this.hzQmOn));
+         a.push("; Extended Mode: 0 = the game's 12-slot T, 1 = up to 24 slots (CROSS + BARS by default). Off until the player turns it on.");
+         a.push("QuickMenuExtended=" + this.hzB(p.QuickMenuExtended !== undefined ? p.QuickMenuExtended : this.hzQmExt));
+         a.push("; Total slot count when Extended Mode is on, 12-24. 24 is the default when it is first turned on.");
+         a.push("QuickMenuSlotCount=" + String(this.hzQmClampCount(p.QuickMenuSlotCount !== undefined ? Number(p.QuickMenuSlotCount) : this.hzQmCount)));
+         a.push("; Extended slots per row: 4, 6, or 8 (6 is the default)");
+         a.push("QuickMenuSlotsPerRow=" + String(this.hzQmClampRow(p.QuickMenuSlotsPerRow !== undefined ? Number(p.QuickMenuSlotsPerRow) : this.hzQmPerRow)));
+         a.push("; Extended layout: 0 = CROSS + BARS (the T for 1-12, bars under it), 1 = BARS (every slot in rows)");
+         a.push("QuickMenuExtendedLayout=" + String(int((p.QuickMenuExtendedLayout !== undefined ? Number(p.QuickMenuExtendedLayout) : this.hzQmLayout) != 0 ? 1 : 0)));
+         a.push("; Keys for Horizon slots 13-24. Empty = no bind (the slot still works from the menu). A key bound in the game's controls, the settings key, or a key another slot uses is ignored.");
+         var i:int = 0;
+         while(i < 12)
+         {
+            var kk:String = "QuickMenuKey" + (13 + i);
+            a.push(kk + "=" + String(p[kk] !== undefined ? p[kk] : this.hzQmKeyAt(i)));
+            i++;
+         }
       }
       // =================== Horizon settings window (keyboard + mouse) ===================
       public var HorizonSettings_mc:Sprite = null;
@@ -4614,6 +4692,7 @@
       private static const HZ_SET_H:Number = 660;
       private static const HZ_SET_TABS:Array = ["CARDS","STYLE","TEXT","EFFECTS","RULES","COMPASS","CONTROLS","SCANNER","COMMS"];   // v0.30: 7 SCANNER, 8 COMMS (optional modules)
       private static const HZ_SET_KEYS:Array = ["F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"];
+      private static const HZ_QM_KEYS:Array = ["","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"];
       private static const HZ_SET_ACCNAMES:Array = ["CYAN","TEAL","AMBER","VIOLET","LIME","WHITE","ROSE","ORANGE","SKY","GOLD","MINT","STEEL","DEEP BLUE"];
 
       // Row definitions: k = INI key, t = b(ool) / n(umber slider) / a(ccent swatches) / r(choice) / q(rule) / l(value list) / c(key) / x(action)
@@ -6430,6 +6509,35 @@
             if(i < 0) { i = 10; }
             this.hzSetPend[k] = HZ_SET_KEYS[(i + dir + HZ_SET_KEYS.length) % HZ_SET_KEYS.length];
          }
+         else if(r.t == "k")
+         {
+            // skip keys already used by another extended slot or by the settings key; "" (no key) is always allowed.
+            // Keys bound in the game's own controls are refused by the DLL at runtime (logged, slot key ignored).
+            var km:Array = HZ_QM_KEYS;
+            var ki:int = km.indexOf(String(this.hzSetPend[k]));
+            if(ki < 0) { ki = 0; }
+            var setKey:String = String(this.hzSetPend.SettingsKey != null ? this.hzSetPend.SettingsKey : this.hzSettingsKeyName).toUpperCase();
+            var tries:int = 0;
+            var cand:String = "";
+            while(tries < km.length)
+            {
+               ki = (ki + dir + km.length) % km.length;
+               cand = String(km[ki]);
+               tries++;
+               if(cand == "") { break; }
+               if(cand.toUpperCase() == setKey) { continue; }
+               var used:Boolean = false;
+               var qn:int = 13;
+               while(qn <= 24)
+               {
+                  var qk:String = "QuickMenuKey" + qn;
+                  if(qk != k && String(this.hzSetPend[qk] != null ? this.hzSetPend[qk] : "").toUpperCase() == cand.toUpperCase()) { used = true; break; }
+                  qn++;
+               }
+               if(!used) { break; }
+            }
+            this.hzSetPend[k] = cand;
+         }
          this.hzSetLive(this.hzSetPend);
       }
 
@@ -6819,16 +6927,16 @@
       }
 
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
-      private static const HZ_VERSION:String = "0.43.3.0";   // settings schema = HZF::kVersion (0.42.0 until 2026-11-19; 0.43.4 adds no settings, so it stays)
+      private static const HZ_VERSION:String = "0.43.5.0";   // settings schema = HZF::kVersion (0.43.5.0 since 2026-11-23: [Scanner] ScanReach; 0.43.3.0 from 2026-11-19, 0.42.0 before)
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.4.0";   // 0.43.4.0: versions aligned (user request, 2026-11-22; was 0.43.3.0)
+      private static const HZ_BUILD:String = "0.43.5.0";   // 0.43.5.0: combined TESTONLY (Quick Menu, message card, scanner)
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"","PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -7277,7 +7385,7 @@
                   j++;
                }
             }
-            else if(r.t == "r" || r.t == "q" || r.t == "l" || r.t == "c")
+            else if(r.t == "r" || r.t == "q" || r.t == "l" || r.t == "c" || r.t == "k")
             {
                var txt:String = "";
                if(r.t == "r") { txt = String((r.opts as Array)[Math.max(0,Math.min((r.opts as Array).length - 1,this.hz29OptIdx(r,v)))]); }
@@ -7288,13 +7396,15 @@
                   txt = String((r.names as Array)[vi]);
                }
                var x0:Number = 0;
-               if(r.t == "c")
+               if(r.t == "c" || r.t == "k")
                {
-                  var kt:TextField = this.hzWT(b,String(v),0,0,120,11,"bd",acc,0.4);
+                  var kn:String = String(v);
+                  if(r.t == "k" && kn.length == 0) { kn = "NONE"; }
+                  var kt:TextField = this.hzWT(b,kn,0,0,120,11,"bd",acc,0.4);
                   var kw:Number = Math.max(28,Math.round(this.hzTW(kt) + 16));
                   b.removeChild(kt);
                   x0 = Math.round(R - 14 - kw);
-                  this.hzSetKey(b,g,x0,cy - 12,String(v),isDef ? uint(T.txt) : acc,24,11);
+                  this.hzSetKey(b,g,x0,cy - 12,kn,isDef ? uint(T.txt) : acc,24,11);
                }
                else
                {
@@ -7887,7 +7997,7 @@
                var ri:int = int(id.substr(3));
                this.hzSetRow = ri;
                var rr:Object = rows[ri];
-               if(rr.t == "b" || rr.t == "a" || rr.t == "c" || rr.t == "r" || rr.t == "q" || rr.t == "x" || rr.t == "m" || rr.t == "p" || rr.t == "g") { this.hzSetChange(rr,1); if(this.hzArrange) { return; } }
+               if(rr.t == "b" || rr.t == "a" || rr.t == "c" || rr.t == "k" || rr.t == "r" || rr.t == "q" || rr.t == "x" || rr.t == "m" || rr.t == "p" || rr.t == "g") { this.hzSetChange(rr,1); if(this.hzArrange) { return; } }
                else if(rr.t == "z" && !rr.dis) { this.hz34ZToggle(String(rr.k)); }
                dirty = true;
             }
@@ -18236,7 +18346,7 @@
             "DlgAnim":"0 off, 1 fast, 2 vanilla-like",
             "MissionToastScale":"toast size: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = its own size (TextScale applies on top)",
             "DlgButtonBar":"dialogue key bar: 0 Horizon (under the card), 1 the game's bar, 2 hidden (keys still work)",
-            "GameCardTitle":"title of the info message cards (the game's other notices): 0 INFO (default), 1 DATA, 2 MISC, 3 GAME (as before). ARTIFACT cards keep their title",
+            "GameCardTitle":"label on the info message cards (the game's other notices): 0 NONE (default, just the message), 1 DATA, 2 MISC. 3 (the old GAME title) is read as NONE. ARTIFACT cards keep their label",
             "DlgQuickPickHint":"1 = '1 - 9 QUICK PICK' hint on the Horizon bar (keyboard, with DlgNumberKeys=1)",
             "DlgSelectHint":"1 = SELECT key on the Horizon bar (keyboard)"};
          a.push("[Comms]");
@@ -18337,7 +18447,7 @@
                {"k":"MissionToastScale","l":"TOAST SIZE","t":"z","note":"GLOBAL = HUD SCALE (STYLE). Also in CARDS"},
                {"k":"MissionToastSound","l":"GAME QUEST SOUND","t":"b","dis":true,"dv":true,"note":"The sound comes from the game's banner and always plays for now"},
                {"k":"ReactionCard","l":"COMPANION REACTION CARD","t":"b","h":"COMPANION REACTIONS","note":"Restyles the 'liked that' line. English game text only for now; other lines stay the game's"},
-               {"k":"GameCardTitle","l":"INFO MESSAGE TITLE","t":"r","opts":["INFO","DATA","MISC","GAME"],"ids":[0,1,2,3],"note":"Title of the cards for the game's other notices. Applies from the next message"},
+               {"k":"GameCardTitle","l":"GENERIC NOTICE LABEL","t":"r","opts":["NONE","DATA","MISC"],"ids":[0,1,2],"note":"Small label above the game's other notices. NONE shows just the message. Applies from the next message"},
                {"k":"_hz40goscan","l":"SCANNER POPUPS: NOW IN THE SCANNER TAB","t":"x","btn":"OPEN","h":"SCANNER POPUPS"}];
          }
          else
@@ -18448,7 +18558,7 @@
          }
          if(k == "Speaker" || k == "SpeakerD") { return new Point(Math.round(400 * ts),Math.round(86 * ts)); }
          if(k == "MissionToast") { var mf:Number = ts * this.hz34ToastF(); return new Point(Math.round(460 * mf),Math.round(88 * mf)); }
-         if(k == "HudMessages") { var mz:Number = this.hz31MsgZ(); return new Point(Math.max(280,Math.round(360 * mz)),Math.round(56 * mz)); }
+         if(k == "HudMessages") { var mz:Number = this.hz31MsgZ(); return new Point(Math.max(280,Math.round(460 * mz)),Math.round(88 * mz)); }
          var ds:Number = this.hz33DlgScale();
          var dz:Number = Number(c.DlgTextSize) * ts * ds;
          var cmp:Boolean = int(c.DlgLayout) == 1;
@@ -18458,7 +18568,7 @@
          var dh:Number = hd + n * (rowH + 4 * ds) + 14 * ds + (int(c.DlgMoreHint) == 1 && int(c.DlgVisible) > 0 ? 24 * ds : 0) + (int(c.DlgNumberKeys) == 1 && int(c.DlgQuickPickHint) == 1 && int(c.DlgButtonBar) != 0 ? 40 * ds : 0);
          return new Point(Math.round(620 * ds),Math.round(dh));
       }
-      // 0.43.4: the HUD MESSAGES box is the Comms box (hzcMsgLayout / hzcCardZ): 360x56 x TextScale x HudScale,
+      // 0.43.5: the HUD MESSAGES box is the Comms box (hzcMsgLayout / hzcCardZ): 460x88 (the v3 card) x TextScale x HudScale,
       // x1.25 in the large movie, clamped 0.75..2.2. The large HUD movie is the one with HZ_SCALE above 1.
       private function hz31MsgZ() : Number
       {
@@ -18623,9 +18733,9 @@
          }
          else if(k == "HudMessages")
          {
-            var hz:Number = sz.y / 56;   // 0.43.4: the real Comms box, two lines
-            this.hzSText(p,"HUD MESSAGES",14 * hz,7 * hz,sz.x - 28 * hz,this.hzArrFs(15),acc,"left","hdr");
-            this.hzSText(p,"Cards keep this box's anchored edge",14 * hz,29 * hz,sz.x - 28 * hz,this.hzArrFs(13),0xF2F7F9,"left");
+            var hz:Number = sz.y / 88;   // 0.43.5: the real Comms box (the v3 card)
+            this.hzSText(p,"HUD MESSAGES",14 * hz,20 * hz,sz.x - 28 * hz,this.hzArrFs(15),acc,"left","hdr");
+            this.hzSText(p,"Cards keep this box's anchored edge",14 * hz,46 * hz,sz.x - 28 * hz,this.hzArrFs(13),0xF2F7F9,"left");
          }
          else if(k == "MissionToast")
          {
@@ -19200,7 +19310,7 @@
          "DlgInputDelay":"After the option list opens, input is ignored for this long so a held key doesn't pick an option by accident. The game's own delay is 1000 ms; lower is faster.",
          "DlgHoverScroll":"With the mouse resting on the top or bottom visible option for a quarter second, the list scrolls one option. Only matters when VISIBLE OPTIONS limits the list.",
          "DlgButtonBar":"HORIZON: a restyled key strip under the options card. GAME BAR: the game's own button bar. HIDDEN: no bar at all - the keys still work.",
-         "GameCardTitle":"The title on the Horizon card for the game's other notices (the ones that are not crime, credits, crew or afflictions). INFO is the default; GAME is the old title. ARTIFACT cards keep theirs.",
+         "GameCardTitle":"The small label on the Horizon card for the game's other notices (the ones that are not crime, credits, crew or afflictions). NONE is the default and shows just the message; the old INFO and GAME titles are gone. ARTIFACT cards keep theirs.",
          "DlgVisible":"How many options the card shows at once. ALL sizes the card to every option. A number limits it; the rest scroll with the selection, the wheel or hover.",
          "DlgMoreHint":"With VISIBLE OPTIONS limited, a small 'N MORE' line shows how many more options there are.",
          "DlgNumberKeys":"Keys 1 - 9 pick the option with that number. Numbers follow the shown options (HIDDEN already-said options are skipped).",
@@ -19233,6 +19343,11 @@
          "CompassMarkers":"Master switch for every Horizon compass marker below. Quest objectives always show while it is on.",
          "ShowTarget":"Horizon's own card for the game's activate prompt (take, talk, open) and the item / container hover cards. Off = the game's prompt.",
          "QuickMenuHorizon":"The quick menu (the favorites cross you open with your quick-menu key) draws each slot as a Horizon card in your card style: accent, card color, opacity, font and text size. Each slot shows the key you bound to it, and the info card shows the item name, ammo, damage and slot key that the game sends. Mouse, controller and assigning a slot work as in the game. Read when the menu opens. Off = the game's own look.",
+         "QuickMenuExtended":"Adds up to 24 quick slots. Off = the game's 12-slot T (its own favorites). On = Horizon slots 13-24 in bars under the T (or in rows, if you pick BARS). Item assignments are stored per character.",
+         "QuickMenuSlotCount":"How many slots are shown when Extended Mode is on, from 12 to 24. Removing a slot only hides it; its item comes back if you add the slot again. 24 is the default.",
+         "QuickMenuSlotsPerRow":"How many extended slots sit in each bar: 4, 6, or 8. 6 is the default.",
+         "QuickMenuExtendedLayout":"CROSS + BARS keeps the vanilla T for slots 1-12 and puts Horizon slots in bars underneath. BARS draws every slot in rows. CROSS + BARS is the default.",
+         "QuickMenuKey13":"The key that uses Horizon slot 13 while you are not in a menu. Empty = the slot still works from the Quick Menu. Keys already bound in the game's controls are refused.",
          "VehicleExitPill":"While you are in a vehicle, the hold-to-exit prompt is a Horizon pill: the key the game shows, then EXIT. A fill sweeps across while you hold, and the pill turns green with a check when the hold completes. The game's button stays at alpha 0, so the hold still finishes. Off shows the game's prompt.",
          "PlanetDetails":"Adds a gravity / air line to the planet card.",
          "TempUnit":"Planet card and scanner temperature units. The game value is Celsius. Fahrenheit is C times 9/5 plus 32, rounded. Default Celsius.",
@@ -19500,6 +19615,22 @@
             {"k":"HoverScale","l":"HOVER CARDS: SIZE","t":"z","sub":true,"note":"Activate prompts, loose item / take card, compare and enemy tags"},
             {"k":"ContainerScale","l":"CONTAINER WINDOW: SIZE","t":"z","sub":true,"note":"The full container item list"},
             {"k":"QuickMenuHorizon","l":"HORIZON STYLE","t":"b","h":"QUICK MENU","note":"The game's quick menu (favorites cross) as Horizon cards. Off = the game's look."},
+            {"k":"QuickMenuExtended","l":"EXTENDED MODE","t":"b","note":"Off = the game's 12 slots. On = up to 24 slots. CROSS + BARS is the default layout."},
+            {"k":"QuickMenuSlotCount","l":"SLOT COUNT","t":"n","mn":12,"mx":24,"st":1,"sub":true,"note":"ADD SLOT / REMOVE SLOT any time. Slots 13-24 are Horizon slots."},
+            {"k":"QuickMenuSlotsPerRow","l":"SLOTS PER ROW","t":"r","opts":["4","6","8"],"ids":[4,6,8],"sub":true},
+            {"k":"QuickMenuExtendedLayout","l":"EXTENDED LAYOUT","t":"r","opts":["CROSS + BARS","BARS"],"ids":[0,1],"sub":true},
+            {"k":"QuickMenuKey13","l":"SLOT 13 KEY","t":"k","sub":true,"note":"Empty = no key. The slot still works from the menu. Keys used by another slot or the settings key are skipped; keys bound in the game's controls are ignored."},
+            {"k":"QuickMenuKey14","l":"SLOT 14 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey15","l":"SLOT 15 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey16","l":"SLOT 16 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey17","l":"SLOT 17 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey18","l":"SLOT 18 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey19","l":"SLOT 19 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey20","l":"SLOT 20 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey21","l":"SLOT 21 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey22","l":"SLOT 22 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey23","l":"SLOT 23 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey24","l":"SLOT 24 KEY","t":"k","sub":true},
             {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","h":"NOTIFICATIONS"}];
          var on:Boolean = this.hz30Mod["comms"] === 1;
          var mt:Object = {"k":"MissionToast","l":"MISSION TOAST","t":"b"};   // 0.43.3.2: under NOTIFICATIONS, right after XP TOAST: SIZE
@@ -19514,19 +19645,28 @@
          rows.push(mt); rows.push(ms);
          try { this.hz42ScRows(rows); } catch(err42r:Error) { }   // v0.42.0 r2: SCOPE rows (only with the Scope module)
          // 0.43.4: QUICK MENU > HORIZON STYLE locks when quickmenu.marker is absent (optional FOMOD module).
-         // The saved QuickMenuHorizon value is left untouched; a locked row cannot be changed.
+         // 0.43.5: Extended Mode rows lock the same way, and also when another extended-favorites mod is found.
+         // Saved values are left untouched; a locked row cannot be changed.
          var qmi:int = 0;
+         var qmOff:Boolean = this.hz30Mod["quickmenu"] !== 1;
+         var qmConf:Boolean = this.hzQmConflict;
          while(qmi < rows.length)
          {
-            if(rows[qmi].k == "QuickMenuHorizon")
+            var qmk:String = String(rows[qmi].k);
+            if(qmk == "QuickMenuHorizon" || qmk == "QuickMenuExtended" || qmk == "QuickMenuSlotCount" || qmk == "QuickMenuSlotsPerRow" || qmk == "QuickMenuExtendedLayout" || qmk.indexOf("QuickMenuKey") == 0)
             {
-               if(this.hz30Mod["quickmenu"] !== 1)
+               if(qmOff)
                {
                   rows[qmi].dis = true;
-                  rows[qmi].dv = false;
+                  if(rows[qmi].t == "b") { rows[qmi].dv = false; }
                   rows[qmi].note = "Quick Menu module not installed. Install it from the Horizon UI installer.";
                }
-               break;
+               else if(qmConf && qmk != "QuickMenuHorizon")
+               {
+                  rows[qmi].dis = true;
+                  if(rows[qmi].t == "b") { rows[qmi].dv = false; }
+                  rows[qmi].note = "Extended Mode is locked because another extended-favorites mod is installed (Favorites Menu Extended or Favorites Banks).";
+               }
             }
             qmi++;
          }
@@ -20970,8 +21110,8 @@
       // The scanner movie (monoclemenu.swf / _lrg) reads the same [Scanner] keys itself; this movie writes them (F11) and
       // hides its own cards while the Horizon scanner is open. Types: b 0/1, i int, f float, z size, o -1 or a number,
       // p position (-1, L/R/C+n, T/B/C+n), s hex.
-      private static const HZ40_SCAN_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanHideBioscanDone","b",0,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["ScanHighlightArea","i",1,0,3],["ScanOutlineThickness","i",0,0,2],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideWatchWhileScanning","b",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];
-      private static const HZ40_SCAN_CM:Object = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanHideBioscanDone":["1 = no bioscan card once the planet is fully scanned (every fauna, flora, resource and trait found). Default 0"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"ScanHighlightArea":["Highlight area of the hand scanner (the game's own pick-up cone and outline radius, set by the DLL): 0 = Horizon dot (smaller than the game),","1 = Vanilla (default: the game's own values, nothing is changed), 2 = Full screen (wide screens too), 3 = Max. Applies the next time you open the scanner"],"ScanOutlineThickness":["Outline thickness of the hand scanner highlight (the game's own [Monocle] outline settings, set by the DLL): 0 = Vanilla","(default: the game's own values, nothing is changed), 1 = Thick (1.5x), 2 = Thicker (2x). Applies the next time you open the scanner"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"],"HideWatchWhileScanning":["1 = the watch hides while the hand scanner is open, in every WatchStyle that shows one. With EnemyBar, StealthMeter or","EdgePulse on, the whole bottom-left watch corner hides, planet / bio alerts and the vanilla enemy ring too. With all","three off, only the watch pieces and the env / bio alert text hide (1 / 2 vanilla: the watch; 3 / 4 Horizon: the face","and its marker icons); the alert icons and the enemy ring still show. 0 = shown (default)"]};
+      private static const HZ40_SCAN_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanHideBioscanDone","b",0,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["ScanHighlightArea","i",1,0,5],["ScanOutlineThickness","i",0,0,2],["ScanReach","i",0,0,3],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideWatchWhileScanning","b",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];
+      private static const HZ40_SCAN_CM:Object = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanHideBioscanDone":["1 = no bioscan card once the planet is fully scanned (every fauna, flora, resource and trait found). Default 0"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"ScanHighlightArea":["Highlight area of the hand scanner (the game's own pick-up cone and outline radius, set by the DLL; not the scan distance): 0 = Small (half the game's circle),","1 = Vanilla (default: the game's own values, nothing is changed), 4 = Large, 5 = Wide, 2 = Full screen (3, the old Max, reads as 2). Applies the next time you open the scanner"],"ScanOutlineThickness":["Outline thickness of the hand scanner highlight (the game's own [Monocle] outline settings, set by the DLL): 0 = Vanilla","(default: the game's own values, nothing is changed), 1 = Thick (1.5x), 2 = Thicker (2x). Applies the next time you open the scanner"],"ScanReach":["Scan reach (changes gameplay; the game's own hand scanner range settings, set by the DLL): 0 = Vanilla (default: nothing is changed, range mods keep theirs),","1 = x2, 2 = x3, 3 = x5 of the game's highlight distance (50 m) and scan distance (10 m); the Surveying bonus still adds on top; never more than 500 m. Applies the next time you open the scanner"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"],"HideWatchWhileScanning":["1 = the watch hides while the hand scanner is open, in every WatchStyle that shows one. With EnemyBar, StealthMeter or","EdgePulse on, the whole bottom-left watch corner hides, planet / bio alerts and the vanilla enemy ring too. With all","three off, only the watch pieces and the env / bio alert text hide (1 / 2 vanilla: the watch; 3 / 4 Horizon: the face","and its marker icons); the alert icons and the enemy ring still show. 0 = shown (default)"]};
       private static const HZ40_POPUP:Array = ["HideQuestPopupsWhileScanning","DimTraitPopupDuringBioscan","TraitPopupDim"];
       private static const HZ40_OPA_V:Array = [-1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6];
       private static const HZ40_OPA_N:Array = ["FOLLOW HUD","0.20","0.30","0.40","0.50","0.60","0.70","0.80","0.90","1.00","1.10","1.20","1.30","1.40","1.50","1.60"];
@@ -21034,6 +21174,7 @@
       }
       private function hz40Fix(c:Object) : void
       {
+         if(int(c.ScanHighlightArea) == 3) { c.ScanHighlightArea = 2; }   // 0.43.5: the retired MAX is FULL SCREEN (the DLL reads 3 the same way)
          if(int(c.ScanHazardCrit) < int(c.ScanHazardWarn) + 5) { c.ScanHazardCrit = Math.min(100,int(c.ScanHazardWarn) + 5); }
          c.ScanLayoutVersion = 1;
       }
@@ -21199,8 +21340,9 @@
             {"k":"ScanLeftToFind","l":"\"LEFT TO FIND\" COUNTS","t":"b","note":"Planet totals under the bioscan rows"},
             {"k":"ScanMinRarity","l":"RESOURCES SHOWN","t":"r","opts":["ALL","UNCOMMON+","RARE+","EXOTIC+","UNIQUE"],"ids":[0,1,2,3,4]},
             {"k":"ScanNearestUnscanned","l":"HIGHLIGHT NEAREST UNDISCOVERED","t":"b","note":"Signals list only"},
-            {"k":"ScanHighlightArea","l":"HIGHLIGHT AREA","t":"r","opts":["HORIZON DOT","VANILLA","FULL SCREEN","MAX"],"ids":[0,1,2,3],"note":"How much of the screen the scanner picks up and outlines (minerals, flora, fauna, items). HORIZON DOT: smaller. VANILLA: the game's own. FULL SCREEN: the whole screen, wide screens and a high FOV too. MAX: the widest, past every screen edge. Applies the next time you open the scanner"},
+            {"k":"ScanHighlightArea","l":"HIGHLIGHT AREA","t":"r","opts":["SMALL","VANILLA","LARGE","WIDE","FULL SCREEN"],"ids":[0,1,4,5,2],"note":"How far from the screen center the scanner picks up and outlines things. It doesn't change how far away you can scan (that's SCAN REACH). SMALL: about half the game's circle. VANILLA: the game's own (or your own INI tweak). LARGE: reaches the top and bottom of the screen. WIDE: reaches the left and right edges. FULL SCREEN: the whole screen, corners too. Applies the next time you open the scanner"},
             {"k":"ScanOutlineThickness","l":"OUTLINE THICKNESS","t":"r","opts":["VANILLA","THICK","THICKER"],"ids":[0,1,2],"note":"How thick the scanner outlines highlighted minerals, flora, fauna and items. VANILLA: the game's own (your ini tweaks stay). THICK: 1.5x. THICKER: 2x. Applies the next time you open the scanner"},
+            {"k":"ScanReach","l":"SCAN REACH","t":"r","opts":["VANILLA","2X","3X","5X"],"ids":[0,1,2,3],"note":"Changes gameplay: how far away the scanner outlines things (game: 50 m) and how far you can scan them (game: 10 m plus your Surveying bonus). 2X / 3X / 5X multiply your game's values (other range mods included), capped at 500 m. VANILLA changes nothing. A long reach can cost FPS in busy areas. Applies the next time you open the scanner"},
             {"k":"ScanOpacity","l":"OPACITY","t":"l","vals":HZ40_OPA_V,"names":HZ40_OPA_N,"h":"LOOK","note":"FOLLOW HUD = CARD OPACITY (STYLE)"},
             {"k":"ScanAccIdx","l":"ACCENT","t":"a","pal":this.hz40AccPal(),"names":this.hz40AccNames(),"note":"Custom: ScanAccent=13 + ScanAccentHex=#RRGGBB in the ini"},
             {"k":"ScanTextCase","l":"TEXT CASE","t":"r","opts":["FOLLOW HUD","CAPS","TITLE"],"ids":[-1,0,1],"note":"Game names are never re-cased to Title"},

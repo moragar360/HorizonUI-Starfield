@@ -1,6 +1,6 @@
 // Unit tests for 0.43.3.2 [Scanner] ScanOutlineThickness (src/hz_scan_ol.h) plus source pins for its main.cpp glue,
 // the HUD F11 row and the default ini. No game, no CommonLibSF. Build:
-//   zig c++ -std=c++20 -Wall -Wextra -I src tests/scan_ol_test.cpp -o /tmp/scan_ol_test   (run from the repo root)
+//   zig c++ -std=c++20 -Wall -Wextra -I src tests/scan_ol_test.cpp -o test_scratch/scan_ol_test   (run from the repo root)
 // Proves:
 //  1. Parse: "0" / "1" / "2" (spaces trimmed) map to the positions; anything else is Vanilla;
 //  2. Value: Thick 1.5x / Thicker 2x of the captured game value; 0 (a kind turned off) stays 0; capped at 12;
@@ -9,7 +9,7 @@
 //     start or a Vanilla-only run never touches the game, a setting not found is never written;
 //  4. mutants (factor of the current value, Thicker 3x, no restore on Vanilla, 0 scaled, a Vanilla start write) fail (3);
 //  5. source pins: the apply runs only from BannerPoll right after ScanHlApply (UI thread), behind the id check and
-//     SEH, steady state is one compare; LoadIni stores the key; the ten [Monocle] names; the F11 row; the HUD key
+//     SEH, steady state is one compare; LoadIni stores the key; the eleven [Monocle] names (0.43.5: + _Bounty); the F11 row; the HUD key
 //     table, the writer comment and default.ini agree; no file work.
 // Author: Moragar. Last modified: 2026-11-18.
 
@@ -173,11 +173,11 @@ int main()
 	const auto load = FnBody(cpp, "void LoadIni(bool a_reloadMsglog = true)");
 	Expect(Has(load, "if (get(\"scanoutlinethickness\", v)) scanOl = hzscanol::Parse(v);") && Has(load, "g_scanOlWant.store(scanOl"), "LoadIni (load and every save / apply) stores the wanted position");
 	const auto hdr = ReadAll("src/hz_scan_ol.h");
-	const char* names[] = { "", "_FullyScanned", "_Generic", "_Scanned", "_Social", "_TargetFullyScanned", "_TargetGeneric", "_TargetScannable", "_TargetScanned", "_Tracked" };
+	const char* names[] = { "", "_FullyScanned", "_Generic", "_Scanned", "_Social", "_TargetFullyScanned", "_TargetGeneric", "_TargetScannable", "_TargetScanned", "_Tracked", "_Bounty" };
 	bool allNames = true;
 	for (const char* n : names) allNames = allNames && Has(hdr, std::string("\"fHighlightScannableOutlineThickness") + n + ":Monocle\"");
-	Expect(allNames && kN == 10, "the ten [Monocle] outline settings, by their game names");
-	Expect(Has(as, "[\"ScanHighlightArea\",\"i\",1,0,3],[\"ScanOutlineThickness\",\"i\",0,0,2],"), "HZ40_SCAN_KEYS: ScanOutlineThickness, int 0 - 2, default 0 (Vanilla)");
+	Expect(allNames && kN == 11, "the eleven [Monocle] outline settings, by their game names (0.43.5: + _Bounty, bounty targets)");
+	Expect(Has(as, "[\"ScanHighlightArea\",\"i\",1,0,5],[\"ScanOutlineThickness\",\"i\",0,0,2],"), "HZ40_SCAN_KEYS: ScanOutlineThickness, int 0 - 2, default 0 (Vanilla)");
 	Expect(Has(as, "{\"k\":\"ScanOutlineThickness\",\"l\":\"OUTLINE THICKNESS\",\"t\":\"r\",\"opts\":[\"VANILLA\",\"THICK\",\"THICKER\"],\"ids\":[0,1,2],\"note\":\""), "F11 SCANNER row shows labels, not numbers");
 	const auto iniKey = ini.find("\r\nScanOutlineThickness=0\r\n");
 	Expect(iniKey != std::string::npos && ini.find("\r\nScanHighlightArea=1\r\n") < iniKey && iniKey < ini.find("HideMainHudWhileScanning=1"), "default.ini: ScanOutlineThickness=0 under [Scanner], in the HZ40_SCAN_KEYS order");

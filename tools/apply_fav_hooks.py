@@ -30,7 +30,8 @@ once(src, 'public class FavoritesMenu extends IMenu', 'class declaration')
 imports = ['Shared.InventoryItemUtils', 'Shared.PlatformUtils', 'flash.display.DisplayObject', 'flash.display.MovieClip',
            'flash.display.Sprite', 'flash.events.Event', 'flash.events.IOErrorEvent', 'flash.filters.DropShadowFilter',
            'flash.geom.ColorTransform', 'flash.geom.Rectangle', 'flash.net.URLLoader', 'flash.net.URLRequest',
-           'flash.text.TextField', 'flash.text.TextFieldAutoSize', 'flash.text.TextFormat']
+           'flash.text.TextField', 'flash.text.TextFieldAutoSize', 'flash.text.TextFormat',
+           'flash.display.Graphics', 'flash.events.KeyboardEvent', 'flash.events.MouseEvent']  # last three: 0.43.5 Extended Mode
 m = list(re.finditer(r'(?m)^[ \t]*import [A-Za-z0-9_.]+;[ \t]*\r?$', src))
 last = m[-1]; add = ''
 for im in imports:

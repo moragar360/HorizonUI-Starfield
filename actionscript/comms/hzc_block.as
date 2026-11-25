@@ -45,7 +45,7 @@
       private static const HZC_RED:uint = 0xFF5B5B;
       private static const HZC_TST_HEAD:Array = ["MISSION UPDATED","NEW MISSION","OBJECTIVE COMPLETE","MISSION COMPLETE","MISSION FAILED"];
       private static const HZC_TST_PRIO:Array = [1,3,2,4,5];   // merging two updates of one quest keeps the stronger state
-      private var hzcCfg:Object = {"ReactionCard":1,"GameCardTitle":0,"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"ShowSpeaker":1,"SpeakerColor":-1,"SpeakerHex":"","SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4,"XpToast":0,"FontFace":1,"AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"SubtitleX":"-1","SubtitleY":"-1","SpeakerX":"-1","SpeakerY":"-1","SubTextColor":-1,"SubTextHex":"","SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"HudScale":1,"MissionToastX":"-1","MissionToastY":"-1","HudMessagesX":"-1","HudMessagesY":"-1","HzRev":0};
+      private var hzcCfg:Object = {"ReactionCard":1,"GameCardTitle":0,"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"ShowSpeaker":1,"SpeakerColor":-1,"SpeakerHex":"","SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4,"XpToast":0,"FontFace":1,"AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"SubtitleX":"-1","SubtitleY":"-1","SpeakerX":"-1","SpeakerY":"-1","SubTextColor":-1,"SubTextHex":"","SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"HudScale":1,"MissionToastX":"-1","MissionToastY":"-1","HudMessagesX":"-1","HudMessagesY":"-1","CardOpacity":1,"CardBgOpacity":92,"Compact":0,"HzRev":0};
       private var hzcIniState:int = 0;       // 0 loading, 1 read, 2 missing / unreadable (defaults)
       private var hzcSubBg:Shape = null;     // card art: a fresh Shape per draw (no stale path can survive)
       private var hzcSpkBg:Shape = null;
@@ -166,6 +166,7 @@
                var n:Number = Number(o[k]);
                if(!isNaN(n)) { this.hzcCfg[k] = n; }
             }
+            this.hzcRxRev++;   // 0.43.5: every card redraws once on the next frame (hzcRxPlace compares this number, not a string)
             this.hzcApply();
          }
          catch(e1:Error) { }
@@ -1072,9 +1073,9 @@
          try { vr = this.hzcVis(); } catch(e1:Error) { vr = null; }
          if(vr == null) { this.hzcRxLayer.x = 0; this.hzcRxLayer.y = 0; this.hzcMsgBox = null; return; }
          var z:Number = this.hzcCardZ();
-         var w:Number = Math.round(360 * z);
+         var w:Number = Math.round(HZC_V3_W * z);   // 0.43.5: the v3 card box (the F11 stand-in is the same size)
          if(w < 280) { w = 280; }
-         var h:Number = Math.round(56 * z);
+         var h:Number = Math.round(88 * z);
          var home:Point = this.hzcMsgHome(vr,w,h);
          var x:Number = (xs == "-1" || xs == "undefined" || xs == "null") ? home.x : this.hzcAnchor(xs,"x",w,vr.x,vr.right);
          var y:Number = (ys == "-1" || ys == "undefined" || ys == "null") ? home.y : this.hzcAnchor(ys,"y",h,vr.y,vr.bottom);
@@ -1213,6 +1214,7 @@
       // 0.43.4: the saved HUD MESSAGES box in layer units ({x,y,w,h,ax,ay}; null = unsaved, cards follow the game column)
       private var hzcMsgBox:Object = null;
       private var hzcRxDirty:Boolean = false;
+      private var hzcRxRev:int = 0;          // 0.43.5: bumped when the settings text changes; a card drawn at another number is stale
       private var hzcRxOff:Boolean = false;  // after three message misses: lines stay the game's until the cooldown or a settings reload
       private var hzcRxOffAt:int = 0;
       private var hzcRxSkip:Boolean = true;  // true only while Subscribe may replay the cached value
@@ -1440,7 +1442,7 @@
       // ---------- 0.42.0.6: message log. HZC_MSG_LOG is the switch (false on this release). ----------
       // The DLL still writes the one-line status. Debug=0 in the ini also stops the queue.
       private static const HZC_MSG_LOG:Boolean = false;
-      private static const HZC_BUILD:String = "0.43.4.0";
+      private static const HZC_BUILD:String = "0.43.5.0";
       private var hzcRxDbgOn:Boolean = false;   // 0.42.0.14: off for release. hzcRxDbgIni still follows Debug=0.
       private var hzcRxDbgQ:Array = [];
       private var hzcRxDbgSeen:Array = [];   // {it, f}
@@ -1922,6 +1924,14 @@
          {
             if(e == null || it == null || it.Internal_mc == null) { return; }
             var im:* = it.Internal_mc;
+            // already covered and still hidden: a visibility read only, no write (shown cards call this each frame)
+            if(e.covered == true)
+            {
+               var hid:Boolean = true;
+               if(im.Text_tf != null && im.Text_tf.visible == true) { hid = false; }
+               if(im.Background_mc != null && im.Background_mc.visible == true) { hid = false; }
+               if(hid) { return; }
+            }
             if(im.Text_tf != null) { im.Text_tf.visible = false; e.covered = true; }
             if(im.Background_mc != null) { im.Background_mc.visible = false; e.covered = true; }
          }
@@ -2219,6 +2229,16 @@
          var newest:Object = null;
          for each(var eN:Object in this.hzcRx) { if(eN != null && eN.st == 1) { newest = eN; } }
          var drew:Boolean = false;
+         var capN:int = 0;
+         var capI:int = this.hzcRx.length - 1;
+         while(capI >= 0)   // 0.43.5: the newest HZC_V3_MAX cards show (newest = last in the list); older ones are capped
+         {
+            var eC:Object = this.hzcRx[capI];
+            capI--;
+            if(eC == null || eC.st != 1) { continue; }
+            capN++;
+            if((capN > HZC_V3_MAX) != (eC.capped == true)) { eC.capped = capN > HZC_V3_MAX; this.hzcRxDirty = true; }   // written on a change only
+         }
          for each(var e:Object in this.hzcRx)
          {
             if(e == null || e.st != 1) { continue; }
@@ -2232,11 +2252,14 @@
                if(e.blamed != true) { e.blamed = true; e.judged = true; this.hzcRxHit(err); }
                e.sig = "";
                try { if(e.c != null) { e.c.visible = false; } } catch(eHide:Error) { }
+               // 0.43.5: fail-open. A capped card may already have hidden the game line; if this place/draw
+               // throws, show the line again so the message is not lost.
+               try { if(e.covered == true && e.it != null) { this.hzcRxReveal(e.it); e.covered = false; } } catch(eRev:Error) { }
             }
          }
          if(drew) { this.hzcRxFail = 0; }
          if(this.hzcMsgBox != null) { if(this.hzcRxDirty) { try { this.hzcRxArrPlace(); } catch(eAp:Error) { this.hzcRxDirty = false; } } }
-         else { try { this.hzcRxStack(); } catch(eSt:Error) { } }
+         else if(this.hzcRxDirty) { this.hzcRxDirty = false; try { this.hzcRxStack(); } catch(eSt:Error) { } }   // 0.43.5: only on an edge (card drawn, shown, hidden, moved, added or removed)
          if(this.hzcRxFail >= 3) { this.hzcRxLatch(); return; }
       }
       // A card is taller than the gap between game lines. The top card stays. Lower cards move down. x stays.
@@ -2246,7 +2269,10 @@
          for each(var e0:Object in this.hzcRx)
          {
             if(e0 == null || e0.c == null || e0.c.visible != true) { continue; }
-            if(isNaN(Number(e0.c.y)) || isNaN(Number(e0.h))) { continue; }
+            // 0.43.5: sy = the spot the game line / column gave the card (hzcRxPlace, hzcRxAnchor); a card pushed down
+            // earlier goes back up here when the card above it ends
+            e0.sy = isNaN(Number(e0.ly)) ? Number(e0.c.y) : Number(e0.ly);
+            if(isNaN(e0.sy) || isNaN(Number(e0.h))) { continue; }
             vis.push(e0);
          }
          var i:int = 0;
@@ -2255,7 +2281,7 @@
             var j:int = i + 1;
             while(j < vis.length)
             {
-               if(Number(vis[j].c.y) < Number(vis[i].c.y))
+               if(Number(vis[j].sy) < Number(vis[i].sy))
                {
                   var tmp:Object = vis[i];
                   vis[i] = vis[j];
@@ -2266,13 +2292,19 @@
             i++;
          }
          var gap:Number = 8;
-         var p:int = 1;
+         var p:int = 0;
+         var y:Number = 0;
          while(p < vis.length)
          {
-            var prev:Object = vis[p - 1];
             var cur:Object = vis[p];
-            var floorY:Number = Number(prev.c.y) + Number(prev.h) + gap;
-            if(Number(cur.c.y) < floorY) { cur.c.y = Math.round(floorY); }
+            y = Number(cur.sy);
+            if(p > 0)
+            {
+               var prev:Object = vis[p - 1];
+               var floorY:Number = Number(prev.c.y) + Number(prev.h) + gap;
+               if(y < floorY) { y = Math.round(floorY); }
+            }
+            if(cur.c.y != y) { cur.c.y = y; }
             p++;
          }
       }
@@ -2295,11 +2327,17 @@
       private function hzcRxAnchor(e:Object, m:*) : void
       {
          if(e == null || e.c == null) { return; }
+         // 0.43.5: a card with no game line carries the game's HUD opacity itself (the line's own alpha chain does that for
+         // the others); the fill does not, so the opacity is applied once
+         var av:Number = Number(this.hzcOpacity);
+         if(isNaN(av)) { av = 1; }
+         av = Math.max(0,Math.min(1,av));
+         if(e.c.alpha != av) { e.c.alpha = av; }
          if(this.hzcMsgBox != null)
          {
             // 0.43.4: a saved spot: hzcRxArrPlace puts it on the box's anchored edge (this frame, on the show edge)
             if(e.c.visible != true) { this.hzcRxDirty = true; }
-            e.c.alpha = 1;
+            e.lm = 1;
             e.c.visible = true;
             return;
          }
@@ -2319,24 +2357,41 @@
             if(vr != null && !isNaN(vr.right)) { x = vr.right - Number(e.w) - 40; y = vr.y + 80; }
          }
          if(isNaN(x) || isNaN(y)) { e.c.visible = false; return; }
-         e.c.x = Math.round(x);
-         e.c.y = Math.round(y);
-         e.c.alpha = 1;
-         e.c.visible = true;
+         x = Math.round(x);
+         y = Math.round(y);
+         // written (and the stack pass asked for) only when the spot, or the way it is placed, changed
+         if(e.lm != 0 || e.lx != x || e.ly != y) { e.lm = 0; e.lx = x; e.ly = y; e.c.x = x; e.c.y = y; this.hzcRxDirty = true; }
+         if(e.c.visible != true) { e.c.visible = true; this.hzcRxDirty = true; }
       }
       private function hzcRxPlace(e:Object, newest:Boolean, m:*, slot:Boolean) : void
       {
          if(e == null || m == null || this.hzcRxLayer == null) { return; }
-         var sig:String = (newest ? "1" : "0") + "|" + this.hzcRxScale() + "|" + this.hzcCfg.SubCard + "|" + this.hzcCfg.SubBgOpacity + "|" + this.hzcCfg.SpeakerColor + "|" + this.hzcCfg.SpeakerHex + "|" + this.hzcCfg.SubFont + "|" + this.hzcCfg.FontFace + "|" + this.hzcCfg.AccentColor + "|" + this.hzcCfg.AccentHex + "|" + e.k + "|" + e.n + "|" + (e.kind != null ? String(e.kind) : "") + "|" + (e.sub != null ? String(e.sub) : "") + "|" + (e.value != null ? String(e.value) : "");
-         if(e.c == null || e.sig != sig)
+         var it:* = e.it;
+         if(e.capped == true)
+         {
+            // 0.43.5: only the newest HZC_V3_MAX cards show. A capped card is not drawn (a burst of messages does not build
+            // cards nobody sees); its game line stays covered. It is drawn on the edge where it stops being capped.
+            if(e.c != null && e.c.visible == true) { e.c.visible = false; this.hzcRxDirty = true; }
+            if(it != null && e.covered != true) { this.hzcRxCover(e,it); }
+            return;
+         }
+         // 0.43.5: stale = never drawn, forced (sig ""), the settings text changed (hzcRxRev), or the message changed. Plain
+         // compares: no string is built per frame.
+         if(e.c == null || e.sig != "1" || e.sigRev != this.hzcRxRev || e.sigK != e.k || e.sigN != e.n || e.sigKind != e.kind || e.sigSub != e.sub || e.sigVal != e.value)
          {
             this.hzcRxDraw(e,newest);
-            e.sig = sig;
+            e.sig = "1"; e.sigRev = this.hzcRxRev; e.sigK = e.k; e.sigN = e.n; e.sigKind = e.kind; e.sigSub = e.sub; e.sigVal = e.value;
+            e.ly = NaN;
             this.hzcRxDirty = true;   // 0.43.4: new content / size: the saved-spot pass runs once
          }
-         if(e.c == null) { return; }
+         if(e.c == null)
+         {
+            // 0.43.5: fail-open. A never-drawn capped card already covered its game line; if the later
+            // draw left no card, show the line again so the message is not lost.
+            if(e.covered == true && it != null) { this.hzcRxReveal(it); e.covered = false; }
+            return;
+         }
          if(!slot) { if(e.c.visible == true) { this.hzcRxDirty = true; } e.c.visible = false; return; }
-         var it:* = e.it;
          var placed:Boolean = false;
          if(it != null)
          {
@@ -2353,8 +2408,10 @@
                   var a0:Number = 1;
                   try { a0 = Number(it.alpha) * Number(im.alpha) * Number(m.alpha); } catch(eA0:Error) { a0 = 1; }
                   if(isNaN(a0)) { a0 = 1; }
+                  a0 = Math.max(0,Math.min(1,a0));
                   if(e.c.visible != true) { this.hzcRxDirty = true; }
-                  e.c.alpha = Math.max(0,Math.min(1,a0));
+                  if(e.c.alpha != a0) { e.c.alpha = a0; }
+                  e.lm = 1;
                   e.c.visible = true;
                   placed = true;
                   if(Number(e.w) > 0) { this.hzcRxCover(e, it); }
@@ -2367,15 +2424,19 @@
                   if(gp != null) { try { lp = this.globalToLocal(gp); } catch(eLp:Error) { lp = null; } }
                   if(lp != null && !isNaN(lp.x) && !isNaN(lp.y))
                   {
-                     e.c.x = Math.round(lp.x - Number(e.w));
-                     e.c.y = Math.round(lp.y - Number(e.h) / 2);
+                     var px:Number = Math.round(lp.x - Number(e.w));
+                     var py:Number = Math.round(lp.y - Number(e.h) / 2);
+                     // 0.43.5: x / y are written, and the stack pass asked for, only when the game line moved. e.ly stays
+                     // the line's own spot; hzcRxStack pushes a card down from it and back up again.
+                     if(e.lm != 0 || e.lx != px || e.ly != py) { e.lm = 0; e.lx = px; e.ly = py; e.c.x = px; e.c.y = py; this.hzcRxDirty = true; }
                      var a:Number = 1;
                      try { a = Number(it.alpha) * Number(im.alpha) * Number(m.alpha); } catch(eA:Error) { a = 1; }
                      if(isNaN(a)) { a = 1; }
-                     e.c.alpha = Math.max(0,Math.min(1,a));
-                     e.c.visible = true;
+                     a = Math.max(0,Math.min(1,a));
+                     if(e.c.alpha != a) { e.c.alpha = a; }
+                     if(e.c.visible != true) { e.c.visible = true; this.hzcRxDirty = true; }
                      placed = true;
-                     if(e.c.visible == true && Number(e.w) > 0) { this.hzcRxCover(e, it); }
+                     if(Number(e.w) > 0) { this.hzcRxCover(e, it); }
                   }
                }
             }
@@ -2478,9 +2539,10 @@
          if(String(kind).length == 0) { return null; }
          return {"kind":String(kind),"sub":String(sub),"title":this.hzcCardTitle(kind,sub,name),"tone":this.hzcCardTone(kind,sub),"value":(kind == "game" && value == "GAME") ? this.hzcGameTitle() : String(value)};
       }
-      // [Comms] GameCardTitle: the word the DLL's generic game notice (kind "game", name / value "GAME", hz_msg_match.h
-      // GameNotice) shows as its title and chip: 0 INFO (default), 1 DATA, 2 MISC, 3 GAME (the old word). Read once per
-      // card draw (hzcCardDraw -> hzcCardMatch); ARTIFACT titles and the Message Log are unchanged. No text matching.
+      // [Comms] GameCardTitle: the small label on the DLL's generic game notice (kind "game", name / value "GAME",
+      // hz_msg_match.h GameNotice): 0 NONE (default, just the message), 1 DATA, 2 MISC. 3 (the old GAME title) is
+      // read as NONE (the card hides both INFO and GAME). Read once per card draw (hzcCardDraw -> hzcCardMatch);
+      // ARTIFACT labels and the Message Log are unchanged. No text matching.
       private static const HZC_GAME_TITLES:Array = ["INFO","DATA","MISC","GAME"];
       private function hzcGameTitle() : String
       {
@@ -2558,45 +2620,280 @@
          if(kind == "game") { return n.length > 0 ? n.toUpperCase() : "GAME"; }
          return "NOTICE";
       }
-      private function hzcCardIcon(g:*, kind:String, ix:Number, iy:Number, s:Number, col:uint) : void
+      // =================== 0.43.5 message card v3 ===================
+      // One chrome for every Horizon message card (the DLL cards and the companion reaction card): 460 wide, 16 radius, the
+      // mission toast's fill, edge and accent bar, a round icon tile, a small tone header, an uppercase title and up to two
+      // body lines. There is no timer line: the card fades with the game's own line (hzcRxPlace). The fill follows
+      // [Style] CardBgOpacity / CardOpacity (the F11 panel rule); the whole card (fill and text) fades with the game's HUD
+      // opacity once, through the card's alpha.
+      // [Style] Compact = 1 draws the 56 unit one-line card. At most HZC_V3_MAX cards show at once (the newest); the
+      // game's own lines stay covered, so a hidden card never reveals one. Drawn on an edge only (hzcRxPlace compares hzcRxRev and the message).
+      private static const HZC_V3_W:Number = 460;
+      private static const HZC_V3_MAX:int = 3;
+      private static const HZC_V3_TTL:uint = 0xF2F7F9;
+      private static const HZC_V3_BODY:uint = 0x96A6AE;
+      private function hzcV3Fs(size:Number, z:Number) : Number { return Math.max(13,Math.round(size * z)); }
+      private function hzcV3Fill() : Number
       {
-         var cx:Number = ix + s / 2;
-         var cy:Number = iy + s / 2;
-         if(kind == "credits")
+         var bg:Number = Number(this.hzcCfg.CardBgOpacity);
+         if(isNaN(bg)) { bg = 92; }
+         var a:Number = Math.max(0,Math.min(100,bg)) / 100;
+         var co:Number = Number(this.hzcCfg.CardOpacity);
+         if(isNaN(co)) { co = 1; }
+         if(co < 1) { a = a * Math.max(0.2,co); }   // above 1 adds nothing: the same rule as the F11 panels
+         return Math.max(0,Math.min(1,a));   // the game's HUD opacity is not in here: the card's alpha carries it once (hzcRxPlace / hzcRxAnchor)
+      }
+      // one-line field cut to maxW with "...": a binary search (about log2 of the length passes, not one per character)
+      private function hzcV3Fit(tf:TextField, maxW:Number) : void
+      {
+         if(tf.textWidth <= maxW) { return; }
+         var s:String = tf.text;
+         var f:TextFormat = tf.getTextFormat();
+         var lo:int = 1;
+         var hi:int = s.length - 1;
+         var best:int = 1;
+         var last:int = 0;
+         while(lo <= hi)
          {
-            g.lineStyle(Math.max(1,s / 12),col,1,true,"none");
-            g.beginFill(col,0.14);
-            g.drawCircle(cx,cy,s * 0.36);
-            g.endFill();
+            var mid:int = (lo + hi) >> 1;
+            last = mid;
+            tf.text = s.substr(0,mid).replace(/\s+$/,"") + "...";
+            tf.setTextFormat(f);
+            if(tf.textWidth <= maxW) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
+         }
+         if(last != best)
+         {
+            tf.text = s.substr(0,best).replace(/\s+$/,"") + "...";
+            tf.setTextFormat(f);
+         }
+      }
+      // body text: wraps at maxW and keeps at most maxLines lines; the rest is cut at a word boundary and ends in "..."
+      // one pass: getLineOffset(maxLines) is the first character of the line after the last we keep; then at most two
+      // word step-backs if the ellipsis still overflows (1 to 3 relayouts). Binary search is the fallback if
+      // getLineOffset is missing or the one-pass cut still overflows.
+      private function hzcV3Body(tf:TextField, s:String, size:Number, col:uint, maxW:Number, maxLines:int) : void
+      {
+         tf.multiline = true;
+         tf.wordWrap = true;
+         tf.autoSize = TextFieldAutoSize.LEFT;
+         tf.width = Math.round(maxW);
+         this.hzcSet(tf,s,"rg",size,col,0,"left");
+         if(tf.numLines <= maxLines) { return; }
+         var f:TextFormat = tf.getTextFormat();
+         var cut:int = -1;
+         try { cut = int(tf.getLineOffset(maxLines)); } catch(eOff:Error) { cut = -1; }
+         if(cut > 0)
+         {
+            var sp0:int = s.lastIndexOf(" ",cut - 1);
+            if(sp0 > 0) { cut = sp0; }
+            var n:int = 0;
+            while(n < 3)
+            {
+               tf.text = s.substr(0,cut).replace(/[\s,;:.\-]+$/,"") + "...";
+               tf.setTextFormat(f);
+               if(tf.numLines <= maxLines) { return; }
+               var sp1:int = s.lastIndexOf(" ",cut - 1);
+               if(sp1 <= 0) { break; }
+               cut = sp1;
+               n++;
+            }
+            if(tf.numLines <= maxLines) { return; }
+         }
+         var lo:int = 1;
+         var hi:int = s.length - 1;
+         var best:int = 1;
+         while(lo <= hi)
+         {
+            var mid:int = (lo + hi) >> 1;
+            tf.text = s.substr(0,mid).replace(/[\s,;:.\-]+$/,"") + "...";
+            tf.setTextFormat(f);
+            if(tf.numLines <= maxLines) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
+         }
+         var spb:int = s.lastIndexOf(" ",best);
+         if(spb > 0) { best = spb; }
+         tf.text = s.substr(0,best).replace(/[\s,;:.\-]+$/,"") + "...";
+         tf.setTextFormat(f);
+      }
+      private function hzcV3Icon(g:*, glyph:String, dir:int, cx:Number, cy:Number, z:Number, col:uint) : void
+      {
+         if(glyph == "credits")
+         {
+            g.lineStyle(2 * z,col,1,true);
+            g.drawCircle(cx - 3.5 * z,cy,6.5 * z);
+            g.drawCircle(cx + 3.5 * z,cy,6.5 * z);
             g.lineStyle();
             return;
          }
-         if(kind == "unavailable" || kind == "crime")
+         if(glyph == "crew")
+         {
+            g.lineStyle(2 * z,col,1,true,"normal","round","round");
+            g.drawCircle(cx,cy - 4.5 * z,4 * z);
+            g.moveTo(cx - 8 * z,cy + 9 * z);
+            g.curveTo(cx,cy - 0.5 * z,cx + 8 * z,cy + 9 * z);
+            g.lineStyle();
+            return;
+         }
+         if(glyph == "medical")
+         {
+            g.lineStyle(3 * z,col,1,true,"normal","round","round");
+            g.moveTo(cx - 8 * z,cy); g.lineTo(cx + 8 * z,cy);
+            g.moveTo(cx,cy - 8 * z); g.lineTo(cx,cy + 8 * z);
+            g.lineStyle();
+            return;
+         }
+         if(glyph == "pause")
          {
             g.beginFill(col,1);
-            g.drawRoundRect(cx - s * 0.22,cy - s * 0.28,s * 0.12,s * 0.56,2,2);
-            g.drawRoundRect(cx + s * 0.10,cy - s * 0.28,s * 0.12,s * 0.56,2,2);
+            g.drawRoundRect(cx - 7 * z,cy - 8 * z,4.5 * z,16 * z,2 * z,2 * z);
+            g.drawRoundRect(cx + 2.5 * z,cy - 8 * z,4.5 * z,16 * z,2 * z,2 * z);
             g.endFill();
             return;
          }
-         if(kind == "crew")
+         if(glyph == "rx")
          {
-            g.lineStyle(Math.max(1,s / 14),col,1,true,"none");
-            g.beginFill(col,0.16);
-            g.drawCircle(cx,cy - s * 0.16,s * 0.16);
-            g.endFill();
-            g.lineStyle(Math.max(1,s / 12),col,1,true,"none");
-            g.moveTo(cx - s * 0.28,cy + s * 0.28);
-            g.curveTo(cx,cy - s * 0.02,cx + s * 0.28,cy + s * 0.28);
+            var n:int = dir < 0 ? -dir : dir;
+            var j:int = 0;
+            g.lineStyle(2.4 * z,col,1,true,"normal","round","round");
+            while(j < n)
+            {
+               var oy:Number = n == 2 ? (j == 0 ? -4.2 * z : 4.2 * z) : 0;
+               if(dir > 0) { g.moveTo(cx - 6.5 * z,cy + oy + 3.2 * z); g.lineTo(cx,cy + oy - 3.2 * z); g.lineTo(cx + 6.5 * z,cy + oy + 3.2 * z); }
+               else { g.moveTo(cx - 6.5 * z,cy + oy - 3.2 * z); g.lineTo(cx,cy + oy + 3.2 * z); g.lineTo(cx + 6.5 * z,cy + oy - 3.2 * z); }
+               j++;
+            }
             g.lineStyle();
             return;
          }
-         g.lineStyle(Math.max(1.5,s / 10),col,1,true,"none","round");
-         g.moveTo(cx - s * 0.28,cy);
-         g.lineTo(cx + s * 0.28,cy);
-         g.moveTo(cx,cy - s * 0.28);
-         g.lineTo(cx,cy + s * 0.28);
+         // info
+         g.lineStyle(2 * z,col,1,true);
+         g.drawCircle(cx,cy,9 * z);
          g.lineStyle();
+         g.beginFill(col,1);
+         g.drawCircle(cx,cy - 4 * z,1.5 * z);
+         g.drawRoundRect(cx - 1.2 * z,cy - 1 * z,2.4 * z,6.5 * z,1.2 * z,1.2 * z);
+         g.endFill();
+      }
+      // The one card builder. hdr: small tone line; ttl: the uppercase title; txt: the body; both of the first two may be empty.
+      private function hzcV3Card(e:Object, hdr:String, ttl:String, txt:String, tone:uint, ttlCol:uint, glyph:String, dir:int) : Boolean
+      {
+         if(e == null || this.hzcRxLayer == null || this.hzcCfg == null) { return false; }
+         var z:Number = this.hzcCardZ();
+         var cmp:Boolean = int(this.hzcCfg.Compact) == 1;
+         var acc:uint = this.hzcAccent();
+         var W:Number = Math.round(HZC_V3_W * z);
+         if(txt == null) { txt = ""; }
+         txt = txt.split("\r").join(" ").split("\n").join(" ");
+         if(hdr.length == 0 && ttl.length == 0 && txt.length == 0) { ttl = "NOTICE"; }
+         var c:Sprite = new Sprite();
+         c.mouseEnabled = false;
+         c.mouseChildren = false;
+         var g:* = c.graphics;
+         if(g == null) { return false; }
+         var H:Number = 0;
+         var tx:Number = 0;
+         var maxW:Number = 0;
+         var hd:TextField = null;
+         var tt:TextField = null;
+         var bd:TextField = null;
+         var cx:Number = 0;
+         var cy:Number = 0;
+         var isc:Number = z;
+         var fs:Number = 0;
+         if(!cmp)
+         {
+            tx = Math.round(80 * z);
+            maxW = W - tx - Math.round(18 * z);
+            if(hdr.length > 0)
+            {
+               fs = this.hzcV3Fs(13,z);
+               hd = this.hzcField(true);
+               this.hzcSet(hd,hdr,"nm",fs,tone,Math.round(fs * 0.18),"left");
+               this.hzcV3Fit(hd,maxW);
+            }
+            if(ttl.length > 0)
+            {
+               fs = this.hzcV3Fs(19,z);
+               tt = this.hzcField(true);
+               this.hzcSet(tt,ttl,"nm",fs,ttlCol,Math.round(fs * 0.12),"left");
+               this.hzcV3Fit(tt,maxW);
+            }
+            var nb:int = 0;
+            if(txt.length > 0)
+            {
+               bd = this.hzcField(false);
+               this.hzcV3Body(bd,txt,this.hzcV3Fs(16,z),(hd == null && tt == null) ? HZC_TXT : HZC_V3_BODY,maxW,2);   // a card that is only a message: the full text color
+               nb = Math.max(1,Math.min(2,bd.numLines));
+            }
+            var rowsH:Number = (hd != null ? 17 : 0) + (tt != null ? 26 : 0) + nb * 22;
+            H = Math.max(Math.round(56 * z),Math.round((23 + rowsH) * z));
+            var off:Number = Math.round((H - (23 + rowsH) * z) / 2);
+            var yy:Number = off + Math.round(10 * z);
+            if(hd != null) { hd.x = tx; hd.y = yy; yy += Math.round(17 * z); c.addChild(hd); }
+            if(tt != null) { tt.x = tx; tt.y = yy; yy += Math.round(26 * z); c.addChild(tt); }
+            if(bd != null) { bd.x = tx; bd.y = yy; c.addChild(bd); }
+            cx = Math.round(44 * z);
+            cy = Math.round(Math.min(H / 2,44 * z));
+            this.hzcCard(g,W,H,16 * z,this.hzcV3Fill(),acc,10 * z,3 * z);
+            g.beginFill(0x060A0E,0.92); g.drawCircle(cx,cy,24 * z); g.endFill();
+            g.lineStyle(1.4 * z,tone,0.45,true); g.drawCircle(cx,cy,19 * z); g.lineStyle();
+         }
+         else
+         {
+            // Compact: one line, 56 units. The title (or the body when there is none) and, if it fits whole, a muted snippet.
+            H = Math.round(56 * z);
+            tx = Math.round(58 * z);
+            maxW = W - tx - Math.round(18 * z);
+            var sCol:uint = HZC_V3_BODY;
+            var snip:String = txt;
+            if(ttl.length == 0 && hdr.length > 0) { ttl = hdr; ttlCol = tone; hdr = ""; }
+            if(snip.length == 0 && hdr.length > 0 && ttl.length > 0) { snip = hdr; sCol = tone; }
+            if(ttl.length > 0)
+            {
+               fs = this.hzcV3Fs(16,z);
+               tt = this.hzcField(true);
+               this.hzcSet(tt,ttl,"nm",fs,ttlCol,Math.round(fs * 0.08 * 10) / 10,"left");
+               this.hzcV3Fit(tt,maxW);
+               tt.x = tx; tt.y = Math.round(H / 2 - tt.height / 2);
+               c.addChild(tt);
+               if(snip.length > 0)
+               {
+                  var room:Number = maxW - Math.ceil(tt.textWidth) - Math.round(12 * z);
+                  if(room >= Math.round(60 * z))
+                  {
+                     bd = this.hzcField(false);
+                     this.hzcSet(bd,snip,"rg",this.hzcV3Fs(14,z),sCol,0,"left");
+                     if(bd.textWidth <= room)   // measured once: it fits whole or it is left out (no cut-off stub)
+                     {
+                        bd.x = tx + Math.ceil(tt.textWidth) + Math.round(12 * z);
+                        bd.y = Math.round(tt.y + (tt.height - bd.height) * 0.8);
+                        c.addChild(bd);
+                     }
+                  }
+               }
+            }
+            else
+            {
+               fs = this.hzcV3Fs(15,z);
+               bd = this.hzcField(false);
+               this.hzcSet(bd,txt,"rg",fs,HZC_TXT,0,"left");
+               this.hzcV3Fit(bd,maxW);
+               bd.x = tx; bd.y = Math.round(H / 2 - bd.height / 2);
+               c.addChild(bd);
+            }
+            cx = Math.round(30 * z);
+            cy = Math.round(H / 2);
+            isc = z * 0.67;
+            this.hzcCard(g,W,H,16 * z,this.hzcV3Fill(),acc,10 * z,3 * z);
+            g.beginFill(0x060A0E,0.92); g.drawCircle(cx,cy,16 * z); g.endFill();
+            g.lineStyle(1.2 * z,tone,0.45,true); g.drawCircle(cx,cy,12.5 * z); g.lineStyle();
+         }
+         this.hzcV3Icon(g,glyph,dir,cx,cy,isc,tone);
+         c.visible = false;
+         this.hzcRxLayer.addChild(c);
+         e.c = c;
+         e.w = W;
+         e.h = H;
+         return true;
       }
       private function hzcCardDraw(e:Object) : void
       {
@@ -2610,18 +2907,8 @@
          var raw:String = e.tx != null ? String(e.tx) : "";
          var hit:Object = this.hzcCardMatch(kind,sub,name,value);
          if(hit == null) { return; }
-         var z:Number = this.hzcCardZ();
-         var acc:uint = this.hzcAccent();
          var toneI:int = int(hit.tone);
-         var tone:uint = toneI < 0 ? acc : uint(toneI);
-         var c:Sprite = new Sprite();
-         c.mouseEnabled = false;
-         c.mouseChildren = false;
-         var titleFs:Number = Math.max(13,Math.round(15 * z));
-         var subFs:Number = Math.max(13,Math.round(13 * z));
-         var chipFs:Number = Math.max(13,Math.round(13 * z));
-         var title:String = String(hit.title);
-         if(int(e.cnt) > 1) { title = title + "  x" + int(e.cnt); }   // r6: merged identical messages
+         var tone:uint = toneI < 0 ? this.hzcAccent() : uint(toneI);
          value = String(hit.value);
          var phrase:String = "";
          if(kind == "unavailable" || kind == "credits" || kind == "crime") { phrase = raw; }
@@ -2635,97 +2922,38 @@
             }
             if(phrase.length == 0) { phrase = raw; }
          }
-         var chipTx:String = value;
-         if(kind == "credits" && sub == "kid" && value.length > 0) { chipTx = value + " CR"; }
-         var w:Number = Math.round(360 * z);
-         if(w < 280) { w = 280; }
-         var nm:TextField = this.hzcField(true);
-         if(nm == null) { return; }
-         this.hzcSet(nm,title,"nm",titleFs,0xFFFFFF,Math.round(titleFs * 0.04 * 10) / 10,"left");
-         nm.alpha = 0.95;
-         var chip:TextField = null;
-         var cw:Number = 0;
-         var chipH:Number = Math.round(20 * z);
-         if(chipH < 20) { chipH = 20; }
-         if(chipTx.length > 0)
+         // header (small, tone color) / title (large, white) / body. The generic game notice has no type label:
+         // INFO and GAME are hidden; DATA, MISC and ARTIFACT still show as the header.
+         var hdr:String = "";
+         var ttl:String = "";
+         var glyph:String = "info";
+         var ttlCol:uint = HZC_V3_TTL;
+         if(kind == "credits")
          {
-            chip = this.hzcField(true);
-            if(chip != null)
-            {
-               this.hzcSet(chip,chipTx,"nm",chipFs,tone,0,"left");
-               var tw:Number = Math.ceil(chip.textWidth);
-               if(isNaN(tw) || tw < 0) { tw = 40; }
-               cw = tw + Math.round(16 * z);
-            }
+            hdr = String(hit.title);
+            ttl = value.length > 0 ? value + " CR" : "";
+            ttlCol = tone;
+            glyph = "credits";
          }
-         var tx:Number = Math.round(52 * z);
-         var right:Number = Math.round(14 * z);
-         var gap:Number = Math.round(8 * z);
-         var titleW:Number = w - tx - right - (cw > 0 ? cw + gap : 0);
-         if(titleW < 48) { titleW = 48; }
-         nm.autoSize = TextFieldAutoSize.NONE;
-         nm.width = titleW;
-         nm.height = Math.round(titleFs + 6);
-         var body:TextField = this.hzcField(false);
-         if(body == null) { return; }
-         body.multiline = true;
-         body.wordWrap = true;
-         body.autoSize = TextFieldAutoSize.NONE;
-         body.width = w - tx - right;
-         this.hzcSet(body,phrase,"rg",subFs,0xFFFFFF,0,"left");
-         body.alpha = 0.7;
-         var bodyH:Number = body.textHeight + 4;
-         var two:Number = subFs * 2 + 8;
-         if(bodyH > two) { bodyH = two; }
-         if(bodyH < subFs) { bodyH = subFs + 4; }
-         body.height = bodyH;
-         var top:Number = Math.round(10 * z);
-         var bot:Number = Math.round(10 * z);
-         var rowH:Number = nm.height;
-         if(chip != null && chipH > rowH) { rowH = chipH; }
-         var h:Number = Math.round(top + rowH + 2 + bodyH + bot);
-         var minH:Number = Math.round(56 * z);
-         if(h < minH) { h = minH; }
-         var opa:Number = Number(this.hzcOpacity);
-         if(isNaN(opa)) { opa = 1; }
-         opa = Math.max(0,Math.min(1,opa)) * 0.88;
-         var g:* = c.graphics;
-         if(g == null) { return; }
-         var rad:Number = Math.max(4,Math.round(4 * z) * 2);
-         g.beginFill(HZC_CARD_BG,opa);
-         g.drawRoundRect(0,0,w,h,rad,rad);
-         g.endFill();
-         g.beginFill(acc,1);
-         g.drawRect(0,0,Math.max(4,Math.round(4 * z)),h);
-         g.endFill();
-         g.lineStyle(1,0xFFFFFF,0.08,true,"none");
-         g.drawRoundRect(0.5,0.5,w - 1,h - 1,rad,rad);
-         g.lineStyle();
-         var iconS:Number = Math.round(24 * z);
-         if(iconS < 18) { iconS = 18; }
-         this.hzcCardIcon(g,kind,Math.round(16 * z),(h - iconS) / 2,iconS,tone);
-         nm.x = tx;
-         nm.y = top + Math.round((rowH - nm.height) / 2);
-         body.x = tx;
-         body.y = top + rowH + 2;
-         c.addChild(nm);
-         c.addChild(body);
-         if(chip != null && cw > 0)
+         else if(kind == "game")
          {
-            var boxX:Number = w - right - cw;
-            var boxY:Number = top + Math.round((rowH - chipH) / 2);
-            g.beginFill(tone,0.14);
-            g.drawRoundRect(boxX,boxY,cw,chipH,6,6);
-            g.endFill();
-            chip.x = boxX + Math.round(8 * z);
-            chip.y = boxY + Math.round((chipH - chip.height) / 2);
-            c.addChild(chip);
+            var gh:String = String(hit.title);
+            hdr = (gh == "INFO" || gh == "GAME") ? "" : gh;
          }
-         c.visible = false;
-         this.hzcRxLayer.addChild(c);
-         e.c = c;
-         e.w = w;
-         e.h = h;
+         else
+         {
+            hdr = value.toUpperCase();
+            ttl = String(hit.title);
+            glyph = kind == "crew" ? "crew" : (kind == "medical" ? "medical" : "pause");
+         }
+         if(hdr.length > 0 && hdr == ttl) { hdr = ""; }
+         if(int(e.cnt) > 1)   // r6: merged identical messages
+         {
+            if(ttl.length > 0) { ttl = ttl + "  x" + int(e.cnt); }
+            else if(hdr.length > 0) { hdr = hdr + "  x" + int(e.cnt); }
+            else { hdr = "X" + int(e.cnt); }
+         }
+         if(!this.hzcV3Card(e,hdr,ttl,phrase,tone,ttlCol,glyph,0)) { return; }
          if(kind == "crew" && this.hzcRxDbgOn)
          {
             try { this.hzcRxDbgPush("crew card: path=hzcCardDraw sub=" + sub + " name=\"" + this.hzcRxDbgEsc(name) + "\" raw=\"" + this.hzcRxDbgEsc(raw) + "\""); } catch(eCrew:Error) { }
@@ -2743,12 +2971,20 @@
          if(this.hzcRxLayer == null || this.hzcCfg == null) { return; }
          var k:int = int(e.k);
          if(k < 0 || k >= HZC_RX_LBL.length || k >= HZC_RX_COL.length || k >= HZC_RX_DIR.length) { return; }
+         if(int(this.hzcCfg.SubCard) == 1)
+         {
+            // 0.43.5: the card form is the v3 card (header = the reaction, title = the name); the text-only form below (SubCard other than 1) is unchanged
+            if(e.n == null) { e.n = ""; }
+            var rlb:String = String(HZC_RX_LBL[k]) + (int(e.cnt) > 1 ? "  x" + int(e.cnt) : "");   // r6: xN
+            var rnc:uint = int(this.hzcCfg.SpeakerColor) >= 0 ? this.hzcSpeakerCol() : HZC_V3_TTL;
+            this.hzcV3Card(e,rlb,String(e.n).toUpperCase(),"",uint(HZC_RX_COL[k]),rnc,"rx",int(HZC_RX_DIR[k]));
+            return;
+         }
          var c:Sprite = new Sprite();
          c.mouseEnabled = false;
          c.mouseChildren = false;
          var z:Number = this.hzcRxScale();
          var col:uint = uint(HZC_RX_COL[e.k]);
-         var card:Boolean = int(this.hzcCfg.SubCard) == 1;
          var fs:Number = Math.max(13,Math.round(14 * z));
          var h:Number = Math.round(44 * z);
          var nm:TextField = this.hzcField(true);
@@ -2770,17 +3006,6 @@
          if(h < 20) { h = 20; }
          var g:* = c.graphics;
          if(g == null) { return; }
-         if(card)
-         {
-            var bo:Number = Number(this.hzcCfg.SubBgOpacity);
-            if(isNaN(bo)) { bo = 0.7; }
-            g.beginFill(0x0B1218,Math.max(0,Math.min(1,bo)));
-            g.drawRoundRect(0,0,w,h,h,h);
-            g.endFill();
-            if(newest) { g.lineStyle(1,col,150 / 255,true); } else { g.lineStyle(1,0xFFFFFF,HZC_EDGE,true); }
-            g.beginFill(0xFFFFFF,0.004); g.drawRoundRect(0.5,0.5,w - 1,h - 1,h - 1,h - 1); g.endFill();
-            g.lineStyle();
-         }
          // chevron tile
          var tr:Number = 15 * z;
          var tcx:Number = 14 * z + tr;
@@ -2806,7 +3031,8 @@
          g.beginFill(HZC_RX_LABEL,160 / 255); g.drawCircle(nx + nw + 7 * z,tcy,1.5 * z); g.endFill();
          nm.x = nx; nm.y = Math.round(h / 2 - nm.height / 2);
          lb.x = lx; lb.y = Math.round(h / 2 - lb.height / 2);
-         if(!card) { var gf:GlowFilter = new GlowFilter(0x000000,0.85,4,4,3,1); nm.filters = [gf]; lb.filters = [gf]; }
+         var gf:GlowFilter = new GlowFilter(0x000000,0.85,4,4,3,1);   // the text-only form: a soft dark outline so it stays readable
+         nm.filters = [gf]; lb.filters = [gf];
          c.addChild(nm);
          c.addChild(lb);
          c.visible = false;

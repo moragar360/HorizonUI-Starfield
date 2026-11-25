@@ -4,6 +4,32 @@ All notable changes to Horizon UI are listed here, newest first. The format foll
 
 Only published releases are listed. 0.40.0, 0.40.1 and 0.40.3 were never published; 0.41.0 replaced 0.40.3, and its entry includes the changes prepared for 0.40.3.
 
+## [0.43.5.0-alpha] - unreleased (TESTONLY)
+
+TESTONLY build on `test/0.43.5-all`, from `release/0.43.4.0`, with the Extended Quick Menu, the new HUD message card, and the 0.43.5 scanner work. The file version, F11 header and movie build labels read 0.43.5.0. The settings schema (HZF::kVersion and the HUD's HZ_VERSION) is 0.43.5.0 because of the new SCAN REACH setting. Existing `HorizonUI.user.ini` files and saved presets carry over; on the first start the plugin makes the usual one-time `HorizonUI.user.bak.ini` update backup, and presets saved before show "Made for 0.43.3.0: new settings use defaults." New Quick Menu keys default with Extended Mode off.
+
+### Added
+- **Quick Menu Extended Mode:** an F11 toggle adds Horizon slots 13-24. CROSS + BARS (the default) keeps the vanilla T for slots 1-12 and puts the extra slots in bars underneath. BARS is an F11 alternate that draws every slot in rows. Slot count defaults to 24 when Extended Mode is first turned on, and SLOTS PER ROW stays 4 / 6 / 8 (default 6). Keys for slots 13-24 start empty; you assign them in F11. Item assignments are stored per character. The game's own 12 favorites are unchanged. Controller support for the extra slots is later. Extended Mode locks if the Quick Menu module is not installed, or if Favorites Menu Extended or Favorites Banks is found.
+- **SCAN REACH (changes gameplay):** F11 > SCANNER > SCAN REACH (`ScanReach` under `[Scanner]`, default 0 = VANILLA). 2X / 3X / 5X multiply the game's hand scanner highlight distance (50 m in the game) and scan distance (10 m in the game; the Surveying bonus still adds on top), capped at 500 m. The multiplier works on your game's current values, so another range mod's values are multiplied, not replaced. VANILLA changes nothing; going back to VANILLA restores the values Horizon found. If another mod, a startup bat or the console changes the range after Horizon set it, Horizon logs one line, gives back only the setting that still holds its own multiplied value, and leaves the rest alone until you pick another SCAN REACH. A long reach can cost FPS in busy areas. Applies the next time you open the scanner.
+
+### Changed
+- **New HUD message card:** the cards Comms draws for game messages (credits, crew, medical, crime, "unavailable" notices, generic game notices) and the companion reaction card (LIKED THAT and the others) now share one look, the mission toast's: a 460 wide card with a round icon tile, a small colored header, a large uppercase title and up to two lines of text. The left bar is your accent color. The fill follows the F11 CARD OPACITY (HUD CARDS) and CARD BACKGROUND % settings; the card as a whole (fill and text) fades with the game's HUD opacity once, like the game's own messages, and out with the game's own message line. There is no timer line. The font and every F11 setting are unchanged.
+- **At most 3 cards at once:** only the newest three message cards show. A card that has been pushed out stays hidden and its game line stays hidden too, so you never see the plain game text pop back; when a newer card ends, the older one shows again.
+- **Generic game notices:** the old INFO and GAME type labels are gone, so the card is just the message. The F11 row is now GENERIC NOTICE LABEL: NONE (default), DATA or MISC. ARTIFACT cards keep their label. A saved GAME (3) from an older INI reads as NONE.
+- **Compact:** The global COMPACT MODE setting now also makes the message cards one line tall (56): the title and, only when it fits whole, a short muted snippet (never a cut-off one).
+- **Reaction card:** the companion reaction card ("Sarah liked that.") uses the same card. The reaction is the header, the name is the title (in the speaker color only if you picked one in F11 > COMMS; the default is the title white). The text-only form (card off) looks the same; on a message with no game line it now also fades with the game's HUD opacity.
+- **ARRANGE CARDS:** the HUD MESSAGES box is 460 by 88 (it was 360 by 56) to match the new card. Saved positions keep their anchored edge. A card with no saved position still starts at the upper right.
+- **HIGHLIGHT AREA:** the levels are now SMALL, VANILLA, LARGE, WIDE and FULL SCREEN (`ScanHighlightArea` 0, 1, 4, 5, 2). The old MAX (3) reads as FULL SCREEN. VANILLA is still the game's own cone and changes nothing.
+- **Presets keep your scanner choices:** applying a preset no longer puts HIGHLIGHT AREA, OUTLINE THICKNESS or SCAN REACH back to the default; a saved preset leaves them out.
+- **OUTLINE THICKNESS** now also covers bounty targets.
+
+### Fixed
+- **Highlight area sticks:** each time you open the scanner Horizon checks the cone and outline values it set and sets them again if something changed them (one log line). If something keeps changing them (three resets), Horizon gives back what it set and stops managing HIGHLIGHT AREA until you pick another level, so it never fights another mod. The log also notes once at load when your INI or another mod already widens the scanner.
+
+### Notes
+- This is a private TESTONLY build. It is not a public release.
+
+
 ## [0.43.4.0-alpha] - 2026-11-23
 
 Released as v0.43.4.0-alpha, Performance Update Pass 3. The SFSE plugin, its file version, the F11 header and the movie build labels read 0.43.4.0. 0.43.4 adds no settings, so only the settings schema (HZF::kVersion and the HUD's HZ_VERSION) stays 0.43.3.0: existing `HorizonUI.user.ini` files and saved presets carry over unchanged, there is no update backup of `HorizonUI.user.ini`, and presets saved in 0.43.3 are not shown as made for an older version.
