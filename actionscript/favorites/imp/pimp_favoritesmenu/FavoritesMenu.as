@@ -1345,7 +1345,8 @@ package
       }
 
       // ---------- 0.43.5 Extended Mode (original Horizon layout; slots 13-24) ----------
-      // CROSS + BARS keeps Entry_0..11 on the vanilla T. BARS repositions those clips into rows.
+      // CROSS + BARS leaves Entry_0..11 on the vanilla T (authored rest; never captured live during
+      // the Open animation). BARS restores those clips to authored rest, then slides them into rows.
       // Extended slots are Horizon clips (not vanilla Entry_N). selectedIndex stays 0-12 (FS_NONE).
       private var hzqExtSel:int = 0;          // 13-24, or 0
       private var hzqExtHold:Sprite = null;
@@ -1353,7 +1354,8 @@ package
       private var hzqExtAdd:Sprite = null;
       private var hzqExtPool:Array = null;    // 12 slot clips (13-24), built once per open, reused (perf standards 2)
       private var hzqExtAddDrawn:Boolean = false;
-      private var hzqExtHome:Array = null;    // {x,y} for Entry_0..11
+      private var hzqExtHome:Array = null;    // authored rest {x,y} for Entry_0..11 (BARS restore)
+      private var hzqExtMoved:Boolean = false;  // true after BARS moved Entry_0..11 off the T
       private var hzqExtData:Object = {};     // "13" -> {name,count,kind,empty,refuse}
       private var hzqExtKeyL:Boolean = false;
       private var hzqExtGot:Boolean = false;  // "ready" answered this open
@@ -1362,6 +1364,15 @@ package
       public var hzqExtCmd:Function = null;
       private var hzqExtMask:int = 0;   // N-4: bit i = the DLL refused slot 13+i's key (game-bound, F11 or duplicate)
       private static const HZQ_PITCH:Number = 70;
+      // Vanilla FavoritesMenu rest geometry (game 1.16.244, both scales). Live getBounds during Open
+      // collapses the T to the origin, which stacked the bars on the cross and hid slots 1-12.
+      private static const HZQ_REST_X:Array = [-195.75,-120.8,-40.05,40,120.8,195.8,0,0,0,0,0,0];
+      private static const HZQ_REST_Y:Array = [0,0,0,0,0,0,-195.65,-120.65,-39.95,40.05,120.65,195.75];
+      private static const HZQ_T_LEFT:Number = -267.75;
+      private static const HZQ_T_RIGHT:Number = 268.8;
+      private static const HZQ_T_TOP:Number = -267.65;
+      private static const HZQ_T_BOTTOM:Number = 268.75;
+      private static const HZQ_T_CX:Number = 0;
       private function hzqExtOn() : Boolean
       {
          return this.hzqOn && this.hzqS != null && this.hzqS.Extended === true;
@@ -1389,6 +1400,21 @@ package
          }
          catch(e:Error) { }
          return "";
+      }
+      private function hzqExtFormId(it:Object) : uint
+      {
+         if(it == null) { return 0; }
+         var n:Number;
+         try { n = Number(it.uFormID); if(n > 0 && n < 4294967295) { return uint(n); } } catch(e1:Error) { }
+         try { n = Number(it.formID); if(n > 0 && n < 4294967295) { return uint(n); } } catch(e2:Error) { }
+         try { n = Number(it.uBaseFormID); if(n > 0 && n < 4294967295) { return uint(n); } } catch(e3:Error) { }
+         return 0;
+      }
+      private function hzqExtHex(id:uint) : String
+      {
+         var s:String = id.toString(16).toUpperCase();
+         while(s.length < 8) { s = "0" + s; }
+         return "0x" + s;
       }
       private function hzqExtPrepare() : void
       {
@@ -1426,38 +1452,13 @@ package
          var i:int = 0;
          while(i < 12)
          {
-            var e:MovieClip = this.hzqSlot(i);
-            this.hzqExtHome.push(e != null ? {"x":e.x,"y":e.y} : {"x":0,"y":0});
+            this.hzqExtHome.push({"x":Number(HZQ_REST_X[i]),"y":Number(HZQ_REST_Y[i])});
             i++;
          }
       }
       private function hzqExtTBox() : Object
       {
-         var l:Number = 0;
-         var r:Number = 0;
-         var t:Number = 0;
-         var b:Number = 0;
-         var n:int = 0;
-         var i:int = 0;
-         while(i < 12)
-         {
-            var e:MovieClip = this.hzqSlot(i);
-            if(e != null)
-            {
-               var bx:Rectangle = e.getBounds(this);
-               if(n == 0) { l = bx.x; r = bx.x + bx.width; t = bx.y; b = bx.y + bx.height; }
-               else
-               {
-                  if(bx.x < l) { l = bx.x; }
-                  if(bx.x + bx.width > r) { r = bx.x + bx.width; }
-                  if(bx.y < t) { t = bx.y; }
-                  if(bx.y + bx.height > b) { b = bx.y + bx.height; }
-               }
-               n++;
-            }
-            i++;
-         }
-         return {"l":l,"r":r,"t":t,"b":b,"cx":(l + r) / 2,"cy":(t + b) / 2};
+         return {"l":HZQ_T_LEFT,"r":HZQ_T_RIGHT,"t":HZQ_T_TOP,"b":HZQ_T_BOTTOM,"cx":HZQ_T_CX,"cy":0};
       }
       private function hzqExtPlace() : void
       {
@@ -1469,9 +1470,14 @@ package
          var pitch:Number = HZQ_PITCH;
          var bars:Boolean = int(this.hzqS.ExtLayout) != 0;
          var i:int;
+         try
+         {
+            if(this.CenterClip_mc != null) { this.CenterClip_mc.visible = !bars; }
+         }
+         catch(eCc:Error) { }
          if(bars)
          {
-            // restore the T first so each clip's bounds are at home, then slide it by the delta to its grid cell
+            // restore authored rest first so each clip's bounds are at home, then slide it by the delta to its grid cell
             i = 0;
             while(i < 12)
             {
@@ -1483,6 +1489,7 @@ package
                }
                i++;
             }
+            this.hzqExtMoved = true;
             var rows:int = int(Math.ceil(n / per));
             var y0:Number = box.cy - (rows - 1) * pitch / 2;
             i = 0;
@@ -1499,20 +1506,6 @@ package
                   var vb:Rectangle = ev.getBounds(this);
                   ev.x = ev.x + ((x0 + col * pitch) - (vb.x + vb.width / 2));
                   ev.y = ev.y + ((y0 + row * pitch) - (vb.y + vb.height / 2));
-               }
-               i++;
-            }
-         }
-         else
-         {
-            i = 0;
-            while(i < 12)
-            {
-               var eh:MovieClip = this.hzqSlot(i);
-               if(eh != null && this.hzqExtHome != null && this.hzqExtHome[i] != null)
-               {
-                  eh.x = Number(this.hzqExtHome[i].x);
-                  eh.y = Number(this.hzqExtHome[i].y);
                }
                i++;
             }
@@ -1695,9 +1688,10 @@ package
             var extra:String = "";
             if(assign && this.AssignedItem != null)
             {
-               // kind prefix: P| = a power (Powers menu), I| = an inventory item
+               // kind prefix: P| = a power (Powers menu), I|<formId>|<name> = inventory (form ID is the durable key)
                var pw:Boolean = false; try { pw = this.AssignedItem.bIsPower == true; } catch(eP:Error) { }
-               extra = (pw ? "P|" : "I|") + String(this.AssignedItem.sName);
+               var fid:uint = this.hzqExtFormId(this.AssignedItem);
+               extra = (pw ? "P|" : "I|") + (fid != 0 ? this.hzqExtHex(fid) + "|" : "") + String(this.AssignedItem.sName);
             }
             var res:String = this.hzqExtCmdSend(op,slot,extra);
             if(res != "ok")
@@ -1706,6 +1700,12 @@ package
                var why:String = res == "power-later" ? "POWERS: USE SLOTS 1-12 FOR NOW" : (res == "essence-later" ? "QUANTUM ESSENCE: USE SLOTS 1-12 FOR NOW" : (res == "missing" ? "ITEM NOT FOUND IN INVENTORY" : "EXTENDED SLOTS UNAVAILABLE"));
                this.hzqInfoSet({"sName":why,"uCount":0,"sAmmoName":"","uAmmoCount":0,"aElementalStats":null},true);
                return;
+            }
+            if(assign)
+            {
+               this.hzqExtGot = false;
+               this.hzqExtFetch();
+               this.hzqExtDraw();
             }
             try { this.StartClosingMenu(); } catch(eC:Error) { GlobalFunc.CloseMenu("FavoritesMenu"); }
          }
@@ -1724,29 +1724,33 @@ package
             var refuse:Boolean = d != null && d.refuse === true && d.name != null && String(d.name).length > 0;
             var empty:Boolean = !refuse && (d == null || d.empty === true || d.name == null || String(d.name).length == 0);
             var dim:Boolean = empty || refuse;
-            if(o.cSel !== sel || o.cEmpty !== empty || o.cRefuse !== refuse)
+            var key:String = "";
+            if(this.hzqKb && this.hzqS != null && this.hzqS.Keys != null) { key = String(this.hzqS.Keys[slot - 13] != null ? this.hzqS.Keys[slot - 13] : ""); }
+            if(o.cSel !== sel || o.cEmpty !== empty || o.cRefuse !== refuse || o.cKey !== key)
             {
                var g:Graphics = o.s.graphics;
                g.clear();
-               this.hzqPanel(g,-29,-29,58,58,8,dim ? 0.6 : 1);
+               var acc:uint = this.hzqAccent();
+               this.hzqPanel(g,-29,-29,58,58,8,dim && !sel ? 0.6 : 1);
                if(sel)
                {
-                  g.lineStyle(2,this.hzqAccent(),1);
-                  g.drawRoundRect(-29,-29,58,58,8,8);
+                  g.beginFill(acc,0.13);
+                  g.drawRoundRect(-28,-28,56,56,14,14);
+                  g.endFill();
+                  g.lineStyle(2,acc,1,true,"none");
+                  g.drawRoundRect(-28,-28,56,56,14,14);
                   g.lineStyle();
                }
-            }
-            var key:String = "";
-            if(this.hzqKb && this.hzqS != null && this.hzqS.Keys != null) { key = String(this.hzqS.Keys[slot - 13] != null ? this.hzqS.Keys[slot - 13] : ""); }
-            if(o.cKey !== key || o.cSel !== sel)
-            {
                if(key.length > 0)
                {
                   var klab:String = this.hzqExtKeyShort(key);
-                  this.hzqSet(o.k,klab,13,sel ? this.hzqTextAccent() : this.hzqDimCol(),"bd",0.04,false);
+                  this.hzqSet(o.k,klab,13,sel ? this.hzqTextAccent() : this.hzqMutCol(),"sb",0.04,false);
                   this.hzqExtFit(o.k,klab,50);
-                  o.k.x = -26;
-                  o.k.y = -36;
+                  var kw:Number = Math.max(16,Math.ceil(o.k.textWidth * 1.08) + 8);
+                  var kh:Number = Math.max(16,Math.ceil(o.k.textHeight) + 3);
+                  this.hzqKeycap(g,-24,-24,kw,kh,sel ? this.hzqIconCol(acc) : this.hzqDimCol());
+                  o.k.x = -24 + (kw - o.k.width) / 2;
+                  o.k.y = -24 + (kh - o.k.height) / 2;
                   if(!o.k.visible) { o.k.visible = true; }
                }
                else if(o.k.visible) { o.k.visible = false; }
@@ -1768,12 +1772,10 @@ package
          }
          if(this.hzqExtAdd != null && !this.hzqExtAddDrawn)
          {
-            // ADD tile art is static for the open: drawn once
+            // ADD tile art is static for the open: drawn once, same Horizon card panel as the slots
             var ag:Graphics = this.hzqExtAdd.graphics;
-            ag.lineStyle(1.5,this.hzqAccent(),0.6);
-            ag.beginFill(this.hzqCardFill(),0.08);
-            ag.drawRoundRect(-29,-29,58,58,8,8);
-            ag.endFill();
+            ag.clear();
+            this.hzqPanel(ag,-29,-29,58,58,8,0.6);
             var at:TextField = this.hzqTf(this.hzqExtAdd);
             this.hzqSet(at,"+",22,this.hzqTextAccent(),"rg",0,false);
             at.x = -12;
@@ -1892,7 +1894,7 @@ package
       {
          this.hzqExtListen(false);
          this.hzqExtSel = 0;
-         if(this.hzqExtHome != null)
+         if(this.hzqExtMoved && this.hzqExtHome != null)
          {
             var i:int = 0;
             while(i < 12)
@@ -1902,6 +1904,8 @@ package
                i++;
             }
          }
+         this.hzqExtMoved = false;
+         try { if(this.CenterClip_mc != null) { this.CenterClip_mc.visible = true; } } catch(eCcR:Error) { }
          if(this.hzqExtHold != null)
          {
             try { if(this.hzqExtHold.parent != null) { this.hzqExtHold.parent.removeChild(this.hzqExtHold); } } catch(e:Error) { }
@@ -2199,7 +2203,6 @@ package
          if(this.hzq37N.length > 0 && this.hzq37Step == 0) { this.hzq37Q = this.hzq37N; this.hzq37N = []; this.hzq37Begin(); }
       }
       // =================== end shared settings reader ===================
-
       internal function frame13() : *
       {
          stop();

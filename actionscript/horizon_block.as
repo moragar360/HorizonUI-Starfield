@@ -19650,6 +19650,7 @@
          var qmi:int = 0;
          var qmOff:Boolean = this.hz30Mod["quickmenu"] !== 1;
          var qmConf:Boolean = this.hzQmConflict;
+         var qmHzOn:Boolean = this.hzQmOn !== false;
          while(qmi < rows.length)
          {
             var qmk:String = String(rows[qmi].k);
@@ -19666,6 +19667,14 @@
                   rows[qmi].dis = true;
                   if(rows[qmi].t == "b") { rows[qmi].dv = false; }
                   rows[qmi].note = "Extended Mode is locked because another extended-favorites mod is installed (Favorites Menu Extended or Favorites Banks).";
+               }
+               else if(!qmHzOn && qmk != "QuickMenuHorizon")
+               {
+                  // Vanilla (HORIZON STYLE off): Extended Mode does nothing. Grey the rows so ON is not
+                  // misleading. dv is display-only; the saved Extended setting is not written.
+                  rows[qmi].dis = true;
+                  if(rows[qmi].t == "b") { rows[qmi].dv = false; }
+                  rows[qmi].note = "Extended Mode needs HORIZON STYLE. Your saved setting is kept.";
                }
             }
             qmi++;

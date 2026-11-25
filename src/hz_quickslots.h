@@ -119,6 +119,24 @@ inline std::string Lower(std::string s)
 	return s;
 }
 
+// True when a and b name the same item: case-insensitive equality, or one is the other
+// with an instance prefix ("Modified Razorback" vs "Razorback"). A short suffix of 4
+// letters or fewer is not treated as the same item ("Med Pack" vs "Pack").
+// Empty names are not a match (callers treat empty as unknown separately).
+inline bool NamesMatch(std::string_view a, std::string_view b)
+{
+	if (a.empty() || b.empty()) return false;
+	auto la = Lower(std::string(a));
+	auto lb = Lower(std::string(b));
+	if (la == lb) return true;
+	auto prefixed = [](const std::string& longn, const std::string& shortn) {
+		if (shortn.size() < 5 || longn.size() <= shortn.size()) return false;
+		if (longn.compare(longn.size() - shortn.size(), shortn.size(), shortn) != 0) return false;
+		return longn[longn.size() - shortn.size() - 1] == ' ';
+	};
+	return prefixed(la, lb) || prefixed(lb, la);
+}
+
 inline std::string Trim(std::string_view a)
 {
 	std::size_t i = 0, j = a.size();
@@ -715,10 +733,11 @@ enum class SlotCheck : int { Ok = 0, Refuse = 1, Clear = 2 };
 inline SlotCheck AssignmentCheck(const Assignment& a, std::string_view a_curName, bool a_isItem)
 {
 	if (!a_isItem && a.kind == Kind::Inventory) return SlotCheck::Clear;
-	const std::string& want = a.base.empty() ? a.name : a.base;
-	if (want.empty() || a_curName.empty()) return SlotCheck::Ok;
-	if (Lower(std::string(a_curName)) != Lower(want)) return SlotCheck::Refuse;
-	return SlotCheck::Ok;
+	if (a_curName.empty()) return SlotCheck::Ok;
+	if (!a.base.empty() && NamesMatch(a.base, a_curName)) return SlotCheck::Ok;
+	if (!a.name.empty() && NamesMatch(a.name, a_curName)) return SlotCheck::Ok;
+	if (a.base.empty() && a.name.empty()) return SlotCheck::Ok;
+	return SlotCheck::Refuse;
 }
 
 inline bool AssignmentStale(const Assignment& a, std::string_view a_curName, bool a_isItem)
@@ -853,11 +872,13 @@ inline bool CanBind(const Settings& s, int slot, std::string_view raw, const Use
 	return true;
 }
 
-// Movie assign payload: "P|name" (power), "I|name" (inventory), or a bare name (older movie = inventory).
+// Movie assign payload: "P|name" (power), "I|name" (inventory), "I|0xFORM|name" (inventory with
+// the item's form ID from the assign click), or a bare name (older movie = inventory).
 struct AssignExtra
 {
-	bool        power = false;
-	std::string name;
+	bool          power = false;
+	std::string   name;
+	std::uint32_t formId = 0;
 };
 
 inline AssignExtra ParseAssignExtra(std::string_view raw)
@@ -866,6 +887,16 @@ inline AssignExtra ParseAssignExtra(std::string_view raw)
 	if (raw.size() >= 2 && raw[1] == '|' && (raw[0] == 'P' || raw[0] == 'I')) {
 		o.power = raw[0] == 'P';
 		raw.remove_prefix(2);
+	}
+	if (!o.power) {
+		const auto bar = raw.find('|');
+		if (bar != std::string_view::npos && bar > 0) {
+			const auto id = ParseFormId(raw.substr(0, bar));
+			if (id) {
+				o.formId = id;
+				raw.remove_prefix(bar + 1);
+			}
+		}
 	}
 	o.name = std::string(raw);
 	return o;

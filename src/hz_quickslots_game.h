@@ -1074,14 +1074,21 @@
 		if (!QmInvSnapshot(pc, snap)) return 0;
 		std::uint32_t found = 0;
 		std::uint32_t foundCi = 0;
+		std::uint32_t foundPx = 0;
+		std::size_t pxLen = 0;
 		const auto want = hzqs::Lower(a_name);
 		for (int i = 0; i < snap.n; ++i) {
 			const char* n = QmFormName(snap.e[i].obj);
 			if (!n || !n[0]) continue;
 			if (a_name == n) { found = snap.e[i].formId; break; }
 			if (!foundCi && hzqs::Lower(n) == want) foundCi = snap.e[i].formId;
+			if (hzqs::NamesMatch(a_name, n)) {
+				const auto ln = std::strlen(n);
+				if (ln > pxLen) { foundPx = snap.e[i].formId; pxLen = ln; }
+			}
 		}
 		if (!found) found = foundCi;
+		if (!found) found = foundPx;
 		if (!found) return 0;
 		*a_kind = want.find("quantum essence") != std::string::npos ? hzqs::Kind::Essence : hzqs::Kind::Inventory;
 		return found;
@@ -1193,7 +1200,13 @@
 		// TESTONLY: 13-24 take inventory items only (powers / Quantum Essence are spike-dependent).
 		if (ex.power) return "power-later";
 		if (hzqs::IsEssenceName(ex.name)) return "essence-later";
-		std::uint32_t form = g_qmPendingForm.exchange(0, std::memory_order_acq_rel);
+		// The movie sends I|<formId>|<displayName> on an assign click. Prefer that form ID.
+		// g_qmPendingForm is a leftover path and is never written; consume it so a stale value cannot stick.
+		std::uint32_t form = ex.formId;
+		if (form)
+			g_qmPendingForm.store(0, std::memory_order_release);
+		else
+			form = g_qmPendingForm.exchange(0, std::memory_order_acq_rel);
 		hzqs::Kind kind = hzqs::Kind::Inventory;
 		std::string name = ex.name;
 		if (form) {
@@ -1201,7 +1214,8 @@
 				kind = QmKindOfForm(f);
 				if (name.empty()) name = QmFormName(f);
 			}
-		} else if (!ex.name.empty()) {
+		}
+		if (!form && !ex.name.empty()) {
 			form = QmFormByName(ex.name, &kind);
 			if (!form) return "missing";
 		}

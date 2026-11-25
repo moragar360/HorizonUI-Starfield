@@ -278,11 +278,16 @@ int main()
 		auto a2 = ParseAssignExtra("I|Med Pack");
 		Expect(!a2.power, "I| prefix is inventory");
 		ExpectEqS(a2.name, "Med Pack", "I| name");
+		Expect(a2.formId == 0, "I|name has no form ID");
 		auto a3 = ParseAssignExtra("Med Pack");
 		Expect(!a3.power, "bare name is inventory");
 		ExpectEqS(a3.name, "Med Pack", "bare name kept");
 		auto a4 = ParseAssignExtra("X|odd");
 		ExpectEqS(a4.name, "X|odd", "unknown prefix kept as name");
+		auto a5 = ParseAssignExtra("I|0x0002A04A|Modified Razorback");
+		Expect(!a5.power && a5.formId == 0x0002A04Au && a5.name == "Modified Razorback", "I|0xFORM|name keeps the form ID and display name");
+		auto a6 = ParseAssignExtra("I|0xABC|");
+		Expect(a6.formId == 0xABCu && a6.name.empty(), "I|0xFORM| with an empty name still carries the form ID");
 		Expect(IsEssenceName("Quantum Essence"), "essence name");
 		Expect(!IsEssenceName("Med Pack"), "not essence");
 		ExpectEqS(PayloadSafe("a|b;c"), "a/b/c", "payload separators replaced");
@@ -317,7 +322,13 @@ int main()
 		Expect(!AssignmentStale(a, "", true) && !AssignmentClears(a, "", true), "S-B: an unreadable (empty) name is unknown, not stale");
 		Expect(AssignmentCheck(a, "Frag Grenade", true) == SlotCheck::Refuse && AssignmentCheck(a, "Med Pack", false) == SlotCheck::Clear && AssignmentCheck(a, "", true) == SlotCheck::Ok, "S-B: AssignmentCheck distinguishes refuse vs clear vs ok");
 		Assignment b = a; b.base.clear(); b.name = "Advanced Grendel";
-		Expect(!AssignmentStale(b, "Advanced Grendel", true) && AssignmentStale(b, "Grendel", true) && !AssignmentClears(b, "Grendel", true), "S-3: no base name: the display name is compared, name-only mismatch is not cleared");
+		Expect(!AssignmentStale(b, "Advanced Grendel", true) && !AssignmentStale(b, "Grendel", true) && !AssignmentClears(b, "Grendel", true), "instance prefix matches the base name and is not refused");
+		Expect(AssignmentCheck(b, "Frag Grenade", true) == SlotCheck::Refuse, "a different item is still refused");
+		Assignment inst = a; inst.base = "Razorback"; inst.name = "Modified Razorback";
+		Expect(!AssignmentStale(inst, "Razorback", true) && !AssignmentStale(inst, "Modified Razorback", true) && !AssignmentClears(inst, "Razorback", true), "instance display vs TESFullName is the same item");
+		Expect(NamesMatch("Modified Razorback", "Razorback") && NamesMatch("Razorback", "modified razorback"), "NamesMatch: instance prefix, case-insensitive");
+		Expect(!NamesMatch("Med Pack", "Pack") && !NamesMatch("Pack", "Med Pack"), "NamesMatch: a short suffix is not the same item");
+		Expect(!NamesMatch("", "Razorback") && !NamesMatch("Razorback", ""), "NamesMatch: empty is not a match");
 		Assignment c = a; c.base.clear(); c.name.clear();
 		Expect(!AssignmentStale(c, "Anything", true), "S-3: nothing stored to compare: not stale");
 

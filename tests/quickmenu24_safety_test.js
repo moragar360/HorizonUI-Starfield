@@ -216,6 +216,11 @@ expect(/return hzqs::FallbackReservedKey\(k\);/.test(game) && /"F5","F9"/.test(c
 	expect(free.every((r) => !r.dis), "m09: without a conflict nothing locks");
 	const off = run.call({ hz30Mod: {}, hzQmConflict: false }, mk());
 	expect(off[0].dis && off[1].dis && off[3].dis && !off[4].dis, "module unticked: every Quick Menu row locks");
+	const van = run.call({ hz30Mod: { quickmenu: 1 }, hzQmConflict: false, hzQmOn: false }, mk());
+	expect(!van[0].dis && van[1].dis && van[1].dv === false && van[2].dis && van[3].dis && !van[4].dis && /HORIZON STYLE/.test(van[1].note),
+		"m09: HORIZON STYLE off greys Extended rows (looks off) and leaves HORIZON STYLE editable");
+	const hz = run.call({ hz30Mod: { quickmenu: 1 }, hzQmConflict: false, hzQmOn: true }, mk());
+	expect(hz.every((r) => !r.dis), "m09: HORIZON STYLE on leaves Extended rows editable");
 }
 
 // ---- M-3: 13 px floor ----
@@ -260,8 +265,10 @@ expect(/this\.hzqS\.SlotCount = dc;/.test(qm) && /o \+= ";c\|" \+ std::to_string
 		"N-d k11: QmPayload still clears slots, but only the ones AssignmentCheck marked Clear");
 	expect(/chk == hzqs::SlotCheck::Refuse/.test(cBody(game, "std::string QmPayload()")) && /refuse\[i - hzqs::kExtFirst\] \? "1" : "0"/.test(cBody(game, "std::string QmPayload()")),
 		"N-i: the payload sends a refuse flag for a name-only mismatch");
-	expect(/d\.refuse === true/.test(qm) && /var dim:Boolean = empty \|\| refuse;/.test(qm) && /hzqPanel\(g,-29,-29,58,58,8,dim \? 0\.6 : 1\)/.test(qm) && /this\.hzqSet\(o\.n,this\.hzqUC\(label\),13,dim \? this\.hzqDimCol\(\) : this\.hzqMainCol\(\)/.test(qm) && /"refuse":f\.length > 5 && String\(f\[5\]\) == "1"/.test(qm),
+	expect(/d\.refuse === true/.test(qm) && /var dim:Boolean = empty \|\| refuse;/.test(qm) && /hzqPanel\(g,-29,-29,58,58,8,dim && !sel \? 0\.6 : 1\)/.test(qm) && /this\.hzqSet\(o\.n,this\.hzqUC\(label\),13,dim \? this\.hzqDimCol\(\) : this\.hzqMainCol\(\)/.test(qm) && /"refuse":f\.length > 5 && String\(f\[5\]\) == "1"/.test(qm),
 		"N-i: a refused slot is drawn with the unavailable look, the item name, and 13 px text");
+	expect(/lineStyle\(2,acc,1,true,"none"\)/.test(qm) && /drawRoundRect\(-28,-28,56,56,14,14\)/.test(qm),
+		"N-i: extended selection uses the Horizon card stroke (inset 1, ellipse 14, none scale mode)");
 	const name = cBody(game, "static const char* QmFormName(");
 	expect(/QmRttiOk\(\)/.test(name) && name.indexOf("QmRttiOk()") < name.indexOf("starfield_cast"), "N-d k23: QmFormName does not call starfield_cast unless the RTTI IDs resolved");
 }
