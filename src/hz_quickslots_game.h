@@ -1292,7 +1292,7 @@
 		if (!form && invSel.form) { form = invSel.form; trusted = true; }
 		// InventoryMenu selectedEntry can be a category or a different row than AssignedItem.
 		// Keep that ID only when it names the same item the movie is assigning.
-		if (trusted && invSel.src == "inv" && !ex.name.empty()) {
+		if (trusted && std::strcmp(invSel.src, "inv") == 0 && !ex.name.empty()) {
 			std::string formName;
 			if (form) {
 				if (auto* f = RE::TESForm::LookupByID(form)) {
