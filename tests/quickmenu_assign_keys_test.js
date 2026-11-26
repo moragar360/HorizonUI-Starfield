@@ -75,7 +75,8 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		const assign = game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("));
 		expect(/QmReadFavAssigned\(/.test(assign) && /QmReadLiveInv\(/.test(assign)
 			&& !/QmSnapAssign\(\)/.test(assign) && /g_qmPendingHandle\.load/.test(assign)
-			&& /KeepPendingForAssigned/.test(assign),
+			&& /KeepPendingForAssigned/.test(assign) && /ex\.handle/.test(assign)
+			&& /GetDataForEntry/.test(game) && /IsUInt\(\)/.test(game),
 			"DLL assign uses this-open pending, then AssignedItem, then extra, then NamesMatch-gated live inventory");
 	}
 	const nav = fnText(qm, "hzqExtNav").body;
@@ -98,8 +99,9 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 // ---- B. selection outline sits fully inside the 58 px panel ----
 {
 	const ring = fnText(qm, "hzqRingDraw").body;
-	expect(/drawRoundRect\(x - 26,y - 26,52,52,14,14\)/.test(ring) && /lineStyle\(2,acc,1,true,"none"\)/.test(ring),
-		"accent hover/focus stroke is a 2 px overlay ring (menu-level, 52 px, scale none)");
+	expect(/drawRoundRect\(x - 28,y - 28,56,56,14,14\)/.test(ring) && /lineStyle\(2,acc,1,true,"normal"\)/.test(ring)
+		&& !/drawRect\(x - 40/.test(ring) && !/"none"/.test(ring),
+		"accent hover/focus stroke is a 2 px local-unit ring inside the 58 px card (last column included)");
 	expect(/function hzqUnclip/.test(qm) && /gotoAndStop\("Unselected"\)/.test(fnText(qm, "hzqCard").body),
 		"vanilla Selected-frame outline is not used; Entry/Catcher mask and scrollRect are cleared");
 	expect(/this\.addChild\(s\)/.test(fnText(qm, "hzqRingEnsure").body) && /mouseEnabled = false/.test(fnText(qm, "hzqRingEnsure").body),
@@ -216,7 +218,8 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 	const h = {
 		hzqExtDone: false, hzqExtSel: 0, hzqExtData: {}, selectedIndex: 12, AssignedItem: { sName: "Med Pack" },
 		hzqExtPad() {}, hzqInfoSet() {}, hzqExtDraw() {}, hzqRingDraw() {}, hzqExtFetch() {},
-		isAssigningItem() { return true; }, hzqExtFormId() { return 0; }, hzqExtHex() { return ""; },
+		isAssigningItem() { return true; }, hzqExtFormId() { return 0; }, hzqExtHandle() { return 0; }, hzqExtHex() { return ""; },
+		SelectQuickslot_mc: { visible: true },
 		StartClosingMenu() { this.closed = (this.closed || 0) + 1; },
 		sends: [],
 		hzqExtCmdSend(op, slot, extra) { this.sends.push(op + ":" + slot); return "ok"; }
@@ -312,10 +315,13 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		"G: stage KEY_UP map does not treat Tab (9) or Escape (27) as a slot key");
 	expect(/QmSnapAssign\(\)/.test(game) && /QmClearPending\(\)/.test(game)
 		&& /g_qmPendingHandle\.store\(s\.handle/.test(game) && /SetSlot\(g_qmStore, a\)/.test(game)
+		&& /if \(!s\.handle && !s\.form && s\.name\.empty\(\)\) return;/.test(game)
+		&& /GetDataForEntry/.test(game) && /hzqs::GfxU32/.test(game)
 		&& /hzqExtFetch\(\)/.test(pick) && /hzqExtCmdSend\("ready"/.test(qm),
-		"G: inventory assign snapshots FormID at open, writes the store, refreshes the payload");
-	expect(/this\.hzqExtCmdSend\(op,slot,extra\)/.test(pick),
-		"G: picking slot 13 or 18 sends assign with that slot (persists via SetSlot + payload fetch)");
+		"G: inventory assign snapshots uint FormID/handle at open, writes the store, refreshes the payload");
+	expect(/this\.hzqExtCmdSend\(op,slot,extra\)/.test(pick) && /hzqExtHandle/.test(pick)
+		&& /SelectQuickslot_mc != null && this\.SelectQuickslot_mc\.visible/.test(pick),
+		"G: picking slot 13 or 18 sends assign with that slot (overlay-visible is assign, not use)");
 	const sel = fnText(qm, "hzqSel").body;
 	expect(/if\(this\.hzqExtSel < 13\)\s*\{\s*this\.hzqInfObj = this\.selectedEntry/.test(sel)
 		&& (sel.match(/if\(this\.hzqExtSel < 13\)/g) || []).length >= 2,
@@ -343,6 +349,41 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		"H: pending IDs are dropped when AssignedItem names a different item");
 	expect(/case "Cancel":/.test(pimp) && /this\.StartClosingMenu\(\)/.test(pimp),
 		"H: Tab/Cancel still closes; pending clear is on the close edge, not in SelectItem 0-11");
+}
+
+// ---- I. inventory-open assign actually commits; last-column ring stays inside the T ----
+{
+	const pick = fnText(qm, "hzqExtPick").body;
+	expect(/SelectQuickslot_mc\.visible/.test(pick) && /op:String = assign \? "assign" : "use"/.test(pick)
+		&& /hzqExtHandle\(this\.AssignedItem\)/.test(pick) && /"h" \+ hid\.toString\(10\)/.test(pick),
+		"I: overlay-visible extra click is assign (not use) and sends hHANDLE with the item");
+	function pickOp(overlay, assigned) {
+		let assign = false;
+		try { assign = assigned != null && String(assigned.sName != null ? assigned.sName : "").length > 0; } catch (eA) { assign = false; }
+		try { if (!assign && overlay != null && overlay.visible) assign = true; } catch (eOv) {}
+		return assign ? "assign" : "use";
+	}
+	expect(pickOp({ visible: true }, { sName: "Med Pack" }) === "assign",
+		"I: inventory assign mode (AssignedItem + overlay) is assign");
+	expect(pickOp({ visible: true }, { sName: "" }) === "assign",
+		"I: overlay visible still assigns when sName is empty (native ItemToBeAssigned delay)");
+	expect(pickOp({ visible: false }, null) === "use",
+		"I: ordinary Q-open extra click is still use");
+	expect(/QmGfxSlotArg/.test(game) && /IsUInt\(\)/.test(game) && /GetDataForEntry/.test(game)
+		&& !/ClearSlot\(g_qmStore/.test(game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("))),
+		"I: uint/int Scaleform IDs are read; assign commits SetSlot and does not ClearSlot on a miss");
+	const bld = fnText(qm, "hzqExtBuildClips").body;
+	const pitch = 70, per = 6, cx = 0, tRight = 268.8, tLeft = -267.75, tTop = -267.65, tBottom = 268.75;
+	const take = 6, col = 5;
+	const x = cx - (take - 1) * pitch / 2 + col * pitch;
+	const y = tBottom + 12 + 29;
+	const half = 29;
+	expect(/y = box\.b \+ 12 \+ 29 \+ row \* pitch/.test(bld), "I: extra row sits under the T at authored rest");
+	expect(x + half <= tRight && x - half >= tLeft && y - half >= tTop,
+		"I: last-column 58 px card (and inner 56 px ring) stays inside the vanilla T box");
+	expect(/drawRoundRect\(x - 28,y - 28,56,56,14,14\)/.test(fnText(qm, "hzqRingDraw").body)
+		&& /scrollRect = new Rectangle\(sr\.x,sr\.y,sr\.width \+ 8,sr\.height \+ 8\)/.test(fnText(qm, "hzqClipPadOnce").body),
+		"I: ring is inside the card; ancestor scrollRect grows 8 px on the right and bottom once");
 }
 
 console.log("quickmenu_assign_keys_test " + (failed ? "FAILED" : "passed") + " (" + passed + " ok, " + failed + " FAIL)");

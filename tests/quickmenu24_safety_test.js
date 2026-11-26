@@ -279,9 +279,9 @@ expect(/this\.hzqS\.SlotCount = dc;/.test(qm) && /o \+= ";c\|" \+ std::to_string
 		"N-i: the payload sends a refuse flag for a name-only mismatch");
 	expect(/d\.refuse === true/.test(qm) && /var dim:Boolean = empty \|\| refuse;/.test(qm) && /hzqPanel\(g,-29,-29,58,58,8,dim && !sel \? 0\.6 : 1\)/.test(qm) && /this\.hzqSet\(o\.n,this\.hzqUC\(label\),13,dim \? this\.hzqDimCol\(\) : this\.hzqMainCol\(\)/.test(qm) && /"refuse":f\.length > 5 && String\(f\[5\]\) == "1"/.test(qm),
 		"N-i: a refused slot is drawn with the unavailable look, the item name, and 13 px text");
-	expect(/lineStyle\(2,acc,1,true,"none"\)/.test(qm) && /drawRoundRect\(x - 26,y - 26,52,52,14,14\)/.test(qm)
-		&& /function hzqRingDraw/.test(qm),
-		"N-i: hover/focus uses a menu-level accent overlay ring (ellipse 14, none scale mode)");
+	expect(/lineStyle\(2,acc,1,true,"normal"\)/.test(qm) && /drawRoundRect\(x - 28,y - 28,56,56,14,14\)/.test(qm)
+		&& /function hzqRingDraw/.test(qm) && /function hzqClipPadOnce/.test(qm),
+		"N-i: hover/focus uses a menu-level accent overlay ring inside the 58 px card");
 	const name = cBody(game, "static const char* QmFormName(");
 	expect(/QmRttiOk\(\)/.test(name) && name.indexOf("QmRttiOk()") < name.indexOf("starfield_cast"), "N-d k23: QmFormName does not call starfield_cast unless the RTTI IDs resolved");
 }

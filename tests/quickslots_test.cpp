@@ -304,6 +304,56 @@ int main()
 		Expect(a6.formId == 0xABCu && a6.name.empty(), "I|0xFORM| with an empty name still carries the form ID");
 		auto a7 = ParseAssignExtra("I|Dead Drop|X");
 		Expect(a7.formId == 0 && a7.name == "Dead Drop|X", "Dead Drop|X is not a form ID");
+		auto a8 = ParseAssignExtra("I|0x0002A04A|h40821|Med Pack");
+		Expect(a8.formId == 0x0002A04Au && a8.handle == 40821u && a8.name == "Med Pack",
+			"I|0xFORM|hHANDLE|name keeps uint inventory IDs");
+		auto a9 = ParseAssignExtra("I|h0xABC|Med Pack");
+		Expect(a9.formId == 0 && a9.handle == 0xABCu && a9.name == "Med Pack",
+			"I|h0xHANDLE|name is a handle-only hint");
+		Expect(GfxU32(GfxScalar::Number, 0, 0, 0x0002A04Au) == 0,
+			"kNumber-only read drops InventoryMenu uint IDs");
+		Expect(GfxU32(GfxScalar::UInt, 0, 0, 0x0002A04Au) == 0x0002A04Au
+			&& GfxU32(GfxScalar::Int, 0, 0x1234, 0) == 0x1234u,
+			"kUInt/kInt are the inventory uFormID/uHandleID types");
+		{
+			Store st;
+			Assignment a;
+			a.index = 13;
+			a.formId = GfxU32(GfxScalar::UInt, 0, 0, 0x0002A04Au);
+			a.formHex = FormHex(a.formId);
+			a.name = "Med Pack";
+			a.base = "Med Pack";
+			a.kind = Kind::Inventory;
+			SetSlot(st, a);
+			Expect(FindSlot(st, 13) && FindSlot(st, 13)->formId == 0x0002A04Au
+				&& FindSlot(st, 13)->name == "Med Pack",
+				"inventory-open assign to slot 13 commits and persists by FormID");
+			Assignment b = a;
+			b.index = 18;
+			b.formId = GfxU32(GfxScalar::UInt, 0, 0, 0x0002B00Bu);
+			b.formHex = FormHex(b.formId);
+			b.name = "Digipick";
+			b.base = "Digipick";
+			SetSlot(st, b);
+			Expect(FindSlot(st, 18) && FindSlot(st, 18)->formId == 0x0002B00Bu
+				&& FindSlot(st, 13)->formId == 0x0002A04Au,
+				"inventory-open assign to slot 18 persists without clearing 13");
+		}
+		{
+			Settings s;
+			s.extended = true;
+			s.slotCount = 24;
+			s.slotsPerRow = 6;
+			s.layout = Layout::CrossBars;
+			const auto p = PlaceSlots(s, -267.75f, 268.8f, 268.75f, 0.f, 0.f, 0.f);
+			const SlotPos* lastCol = nullptr;
+			for (const auto& x : p) if (x.index == 18) lastCol = &x;
+			Expect(lastCol != nullptr, "CROSS+BARS slot 18 is the last column of the first extra row");
+			Expect(AccentRingInside(lastCol->x, lastCol->y, -267.75f, 268.8f, -400.f, 800.f),
+				"last-column inner accent ring stays inside the vanilla T width");
+			Expect(!AccentRingInside(lastCol->x, lastCol->y, lastCol->x - 20.f, lastCol->x + 20.f, lastCol->y - 20.f, lastCol->y + 20.f),
+				"a 40 px clip (old 80 px fill / none-scale stroke) still cuts the right edge");
+		}
 		Expect(IsEssenceName("Quantum Essence"), "essence name");
 		Expect(!IsEssenceName("Med Pack"), "not essence");
 		ExpectEqS(PayloadSafe("a|b;c"), "a/b/c", "payload separators replaced");

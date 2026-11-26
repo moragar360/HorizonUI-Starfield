@@ -156,6 +156,35 @@ inline bool KeepPendingForAssigned(std::string_view pendingName, std::string_vie
 	return NamesMatch(pendingName, assignedName);
 }
 
+// Scaleform GFx Value numbers. InventoryMenu uFormID / uHandleID are AS3 uint, which
+// the runtime stores as kUInt (sometimes kInt), not kNumber. Reading only kNumber
+// dropped every inventory ID, so QmSnapAssign never committed from Inventory.
+enum class GfxScalar : int { None = 0, Number = 1, Int = 2, UInt = 3 };
+
+inline std::uint32_t GfxU32(GfxScalar k, double number, std::int32_t i32, std::uint32_t u32)
+{
+	if (k == GfxScalar::UInt)
+		return (u32 > 0 && u32 < 0xFFFFFFFFu) ? u32 : 0;
+	if (k == GfxScalar::Int)
+		return i32 > 0 ? static_cast<std::uint32_t>(i32) : 0;
+	if (k == GfxScalar::Number && number > 0 && number < 4294967295.0)
+		return static_cast<std::uint32_t>(number);
+	return 0;
+}
+
+// Accent ring is a 2 px stroke inside the 58 px card (56 px round-rect, normal scale).
+// Outer edge is the card edge, so a parent scrollRect sized to the card still shows
+// the right side. The old 52 px "none" scale stroke plus an 80 px getBounds fill
+// stuck out past the card and was clipped on the right / bottom.
+inline constexpr float kAccentRingOuter = kBox;
+
+inline bool AccentRingInside(float cx, float cy, float left, float right, float top, float bottom)
+{
+	const float half = kAccentRingOuter * 0.5f;
+	return cx - half >= left && cx + half <= right
+		&& cy - half >= top && cy + half <= bottom;
+}
+
 // One inventory row for PickFormByDisplayName (TESFullName + form ID).
 struct NameId
 {
@@ -933,14 +962,37 @@ inline bool CanBind(const Settings& s, int slot, std::string_view raw, const Use
 	return true;
 }
 
-// Movie assign payload: "P|name" (power), "I|name" (inventory), "I|0xFORM|name" (inventory with
-// the item's form ID from the assign click), or a bare name (older movie = inventory).
+// Movie assign payload: "P|name" (power), "I|name" (inventory), "I|0xFORM|name",
+// "I|0xFORM|hHANDLE|name" (inventory handle from Number(uHandleID)), or a bare name.
 struct AssignExtra
 {
 	bool          power = false;
 	std::string   name;
 	std::uint32_t formId = 0;
+	std::uint32_t handle = 0;
 };
+
+inline std::uint32_t ParseDecU32(std::string_view raw)
+{
+	const auto t = Trim(raw);
+	if (t.empty() || t.size() > 10) return 0;
+	std::uint64_t v = 0;
+	for (unsigned char c : t) {
+		if (c < '0' || c > '9') return 0;
+		v = v * 10u + static_cast<std::uint64_t>(c - '0');
+		if (v > 0xFFFFFFFFull) return 0;
+	}
+	return v == 0 ? 0 : static_cast<std::uint32_t>(v);
+}
+
+inline std::uint32_t ParseHandleToken(std::string_view tok)
+{
+	if (tok.size() < 2) return 0;
+	if (tok[0] != 'h' && tok[0] != 'H') return 0;
+	const auto rest = tok.substr(1);
+	if (const auto hx = ParseFormId(rest)) return hx;
+	return ParseDecU32(rest);
+}
 
 inline AssignExtra ParseAssignExtra(std::string_view raw)
 {
@@ -950,11 +1002,19 @@ inline AssignExtra ParseAssignExtra(std::string_view raw)
 		raw.remove_prefix(2);
 	}
 	if (!o.power) {
-		const auto bar = raw.find('|');
+		auto bar = raw.find('|');
 		if (bar != std::string_view::npos && bar > 0) {
 			const auto id = ParseFormId(raw.substr(0, bar));
 			if (id) {
 				o.formId = id;
+				raw.remove_prefix(bar + 1);
+			}
+		}
+		bar = raw.find('|');
+		if (bar != std::string_view::npos && bar > 1) {
+			const auto h = ParseHandleToken(raw.substr(0, bar));
+			if (h) {
+				o.handle = h;
 				raw.remove_prefix(bar + 1);
 			}
 		}

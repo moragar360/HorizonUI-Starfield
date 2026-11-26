@@ -35,8 +35,9 @@ const hud = rd("actionscript/horizon_block.as");
 // ---- 1. assign handoff: form ID extra, NamesMatch, no name-only refuse for instance prefixes ----
 {
 	const pick = fnText(qm, "hzqExtPick").body;
-	expect(/this\.hzqExtFormId\(this\.AssignedItem\)/.test(pick) && /this\.hzqExtHex\(fid\)/.test(pick) && /"I\|"/.test(pick),
-		"1: the assign extra is I|<formId>|<name> (or P|<name>)");
+	expect(/this\.hzqExtFormId\(this\.AssignedItem\)/.test(pick) && /this\.hzqExtHandle\(this\.AssignedItem\)/.test(pick)
+		&& /this\.hzqExtHex\(fid\)/.test(pick) && /"I\|"/.test(pick),
+		"1: the assign extra is I|<formId>|hHANDLE|<name> (or P|<name>)");
 	expect(/this\.hzqExtFetch\(\)/.test(pick) && /this\.hzqExtDraw\(\)/.test(pick),
 		"1: a successful assign fetches the payload and redraws before the menu closes");
 	expect(/o\.formId = id/.test(hdr) && /ParseFormId\(raw\.substr\(0, bar\)\)/.test(hdr),
@@ -68,6 +69,8 @@ const hud = rd("actionscript/horizon_block.as");
 	const fid = fnText(qm, "hzqExtFormId").body;
 	expect(/it\.uFormID/.test(fid) && !/uHandleID/.test(fid),
 		"1: hzqExtFormId reads uFormID and never treats uHandleID as a form ID");
+	expect(/it\.uHandleID/.test(fnText(qm, "hzqExtHandle").body) && /it\.uItemHandle/.test(fnText(qm, "hzqExtHandle").body),
+		"1: hzqExtHandle reads uHandleID via Number() (AS3 uint) as a separate hint");
 	{
 		const bind = game.slice(game.indexOf("static bool QmBindExtCmd"), game.indexOf("void PollFavorites"));
 		const onFav = game.slice(game.indexOf("void QmOnFavoritesMovie("), game.indexOf("void QmOnFavoritesMovie(") + 900);
@@ -87,8 +90,9 @@ const hud = rd("actionscript/horizon_block.as");
 		"2: extended slots use hzqPanel (CardOpacity / CardBgOpacity) like the 1-12 Horizon cards");
 	expect(/g\.beginFill\(acc,0\.13\)/.test(drw) && /this\.hzqKeycap\(g,-24,-24,kw,kh/.test(drw),
 		"2: selected fill and keycap match hzqCard");
-	expect(/function hzqRingDraw/.test(qm) && /drawRoundRect\(x - 26,y - 26,52,52,14,14\)/.test(fnText(qm, "hzqRingDraw").body)
-		&& /s\.name = "hzqRing"/.test(fnText(qm, "hzqRingEnsure").body) && /s\.mouseEnabled = false/.test(fnText(qm, "hzqRingEnsure").body),
+	expect(/function hzqRingDraw/.test(qm) && /drawRoundRect\(x - 28,y - 28,56,56,14,14\)/.test(fnText(qm, "hzqRingDraw").body)
+		&& /s\.name = "hzqRing"/.test(fnText(qm, "hzqRingEnsure").body) && /s\.mouseEnabled = false/.test(fnText(qm, "hzqRingEnsure").body)
+		&& /hzqClipPadOnce/.test(fnText(qm, "hzqRingEnsure").body),
 		"3: accent hover/focus stroke is drawn on a menu-level overlay (not clipped by Entry/Catcher)");
 	expect(/function hzqUnclip/.test(qm) && /d\.mask = null/.test(fnText(qm, "hzqUnclip").body) && /scrollRect = null/.test(fnText(qm, "hzqUnclip").body),
 		"3: Entry / Catcher mask and scrollRect are cleared so the overlay ring is visible on all four sides");

@@ -48,6 +48,7 @@
       private static const HZQ_INF_W:Number = 380;
       private var hzqOn:Boolean = false;        // Horizon look active for this open (switch on, ini read, no error)
       private var hzqOpened:Boolean = false;
+      private var hzqClipPad:Boolean = false;  // ancestor scrollRect grown once per open (right/bottom)
       private var hzqErr:Boolean = false;
       private var hzqS:Object = null;           // [Style] values, read on open
       private var hzqFontLib:int = -1;          // font.marker: -1 checking, 0 absent, 1 present
@@ -77,6 +78,7 @@
       {
          this.hzqExtDone = false;   // one extra-slot confirm per open
          this.hzqLastExt = 0;
+         this.hzqClipPad = false;
          if(this.hzqOpened) { return; }
          this.hzqOpened = true;
          try { this.hzq37IniRead(this.hzqOnIni); } catch(e:Error) { this.hzqOn = false; }
@@ -581,6 +583,34 @@
             if(c != null) { c.mask = null; c.scrollRect = null; }
          }
          catch(e2:Error) { }
+      }
+      // Parent scrollRect clips overflow on the right and bottom (x/y stay). Grow once per open
+      // so the last-column accent ring is inside the visible box. Never a per-frame walk.
+      private function hzqClipPadOnce(d:DisplayObject) : void
+      {
+         if(this.hzqClipPad || d == null) { return; }
+         this.hzqClipPad = true;
+         var p:DisplayObject = d;
+         var n:int = 0;
+         while(p != null && n < 8)
+         {
+            try
+            {
+               var m:MovieClip = p as MovieClip;
+               if(m != null)
+               {
+                  var sr:Rectangle = null;
+                  try { sr = m.scrollRect; } catch(eS:Error) { sr = null; }
+                  if(sr != null)
+                  {
+                     m.scrollRect = new Rectangle(sr.x,sr.y,sr.width + 8,sr.height + 8);
+                  }
+               }
+            }
+            catch(eP:Error) { }
+            try { p = p.parent; } catch(eN:Error) { p = null; }
+            n++;
+         }
       }
       private function hzqCard(i:int) : void
       {
@@ -1089,7 +1119,8 @@
          }
       }
       // Accent hover/focus outline. Drawn on a menu-level sprite so Entry / Catcher / SelectQuickslot
-      // cannot clip any of the four sides. Same 2 px accent stroke as the card; the card look is unchanged.
+      // cannot clip any of the four sides. 2 px stroke in local units inside the 58 px card (FME's
+      // Selected frame stays inside the clip; a "none" scale stroke plus an 80 px fill did not).
       private function hzqRingEnsure() : void
       {
          if(this.hzqRing != null) { return; }
@@ -1100,6 +1131,7 @@
          s.tabEnabled = false;
          this.addChild(s);
          this.hzqRing = s;
+         this.hzqClipPadOnce(this);
       }
       private function hzqRingDraw() : void
       {
@@ -1134,11 +1166,9 @@
             }
          }
          if(!on) { return; }
-         g.beginFill(0,0.01);
-         g.drawRect(x - 40,y - 40,80,80);
-         g.endFill();
-         g.lineStyle(2,acc,1,true,"none");
-         g.drawRoundRect(x - 26,y - 26,52,52,14,14);
+         // Local 2 px stroke on a 56 px round-rect: outer edge is the 58 px card, including the last column.
+         g.lineStyle(2,acc,1,true,"normal");
+         g.drawRoundRect(x - 28,y - 28,56,56,14,14);
          g.lineStyle();
       }
       // InventoryMenu item objects name both uFormID and uHandleID (separate fields). FavoritesMenu
@@ -1153,6 +1183,15 @@
          try { n = Number(it.uFormID); if(n > 0 && n < 4294967295) { return uint(n); } } catch(e1:Error) { }
          try { n = Number(it.formID); if(n > 0 && n < 4294967295) { return uint(n); } } catch(e2:Error) { }
          try { n = Number(it.uBaseFormID); if(n > 0 && n < 4294967295) { return uint(n); } } catch(e3:Error) { }
+         return 0;
+      }
+      // Number() coerces AS3 uint. The DLL must also read kUInt; this hint is a backup.
+      private function hzqExtHandle(it:Object) : uint
+      {
+         if(it == null) { return 0; }
+         var n:Number;
+         try { n = Number(it.uHandleID); if(n > 0 && n < 4294967295) { return uint(n); } } catch(e1:Error) { }
+         try { n = Number(it.uItemHandle); if(n > 0 && n < 4294967295) { return uint(n); } } catch(e2:Error) { }
          return 0;
       }
       private function hzqExtHex(id:uint) : String
@@ -1650,14 +1689,16 @@
          {
             if(this.hzqExtDone) { return; }
             var assign:Boolean = false; try { assign = this.isAssigningItem(); } catch(eA:Error) { assign = this.AssignedItem != null && String(this.AssignedItem.sName != null ? this.AssignedItem.sName : "").length > 0; }
+            try { if(!assign && this.SelectQuickslot_mc != null && this.SelectQuickslot_mc.visible) { assign = true; } } catch(eOv:Error) { }
             var op:String = assign ? "assign" : "use";
             var extra:String = "";
             if(assign && this.AssignedItem != null)
             {
-               // Hint only: the DLL uses the open-time inventory snapshot first, then this AssignedItem hint.
+               // Hint: Number() coerces uint fields the C++ kNumber-only reader missed. DLL still snaps InventoryMenu.
                var pw:Boolean = false; try { pw = this.AssignedItem.bIsPower == true; } catch(eP:Error) { }
                var fid:uint = this.hzqExtFormId(this.AssignedItem);
-               extra = (pw ? "P|" : "I|") + (fid != 0 ? this.hzqExtHex(fid) + "|" : "") + String(this.AssignedItem.sName);
+               var hid:uint = this.hzqExtHandle(this.AssignedItem);
+               extra = (pw ? "P|" : "I|") + (fid != 0 ? this.hzqExtHex(fid) + "|" : "") + (hid != 0 ? "h" + hid.toString(10) + "|" : "") + String(this.AssignedItem.sName);
             }
             var res:String = this.hzqExtCmdSend(op,slot,extra);
             if(res != "ok")
