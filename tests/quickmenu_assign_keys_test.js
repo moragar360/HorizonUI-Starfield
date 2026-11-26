@@ -113,11 +113,12 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		"type k starts a capture prompt (PRESS A KEY), it does not scroll a list");
 	expect(/hzQmCap\.length > 0/.test(fnText(hud, "hzSettingsKey").body),
 		"capture runs on the existing hzSettingsKey / QueueKey path (F11 open only)");
-	expect(/code == "cancel"/.test(fnText(hud, "hzQmCapKey").body) && /code == "bksp"/.test(fnText(hud, "hzQmCapKey").body),
-		"ESC / cancel aborts capture; BACKSPACE clears the binding");
+	expect(/code == "cancel"/.test(fnText(hud, "hzQmCapKey").body) && /code == "bksp"/.test(fnText(hud, "hzQmCapKey").body) && /code == "del"/.test(fnText(hud, "hzQmCapKey").body),
+		"ESC / cancel aborts capture; BACKSPACE or DELETE clears the binding");
 	expect(/hz37DrawWarn/.test(hud) && /already SLOT/.test(fnText(hud, "hzQmCapClash").body)
 		&& /HORIZON SETTINGS/.test(fnText(hud, "hzQmCapClash").body)
-		&& /game or Horizon default/.test(fnText(hud, "hzQmCapClash").body),
+		&& /game or Horizon default/.test(fnText(hud, "hzQmCapClash").body)
+		&& /u == \"0\" \|\| u == \"1\"/.test(fnText(hud, "hzQmNameKind").body),
 		"a used key shows the Horizon amber warning (icon + word) and names the clash");
 	expect(/hzQmCapKind == "slot"/.test(fnText(hud, "hzQmCapKey").body)
 		&& /hzQmCapKind != "settings"/.test(fnText(hud, "hzQmCapKey").body),

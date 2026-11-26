@@ -297,6 +297,7 @@ once(
                dirty = true;
             }
             else if(id.indexOf("qmk") == 0) { this.hzQmCapBegin("QuickMenuKey" + id.substr(3)); dirty = true; }
+            else if(id == "qmclr") { this.hz51QmClear(); dirty = true; }
             else if(id == "page0" || id == "page1")`,
 	"mouse"
 );
@@ -320,13 +321,7 @@ replaceFn("      private function hzSetRowH(r:Object) : Number", `      private 
          if(r.t == "w") { return (r.h ? 24 : 0) + 44; }
          if(r.t == "kg")
          {
-            var count:int = this.hzSetPend != null ? int(this.hzSetPend.QuickMenuSlotCount) : 24;
-            if(count < 12) { count = 12; }
-            var extra:int = Math.max(0, count - 12);
-            var per:int = this.hzSetPend != null ? int(this.hzSetPend.QuickMenuSlotsPerRow) : 6;
-            if(per < 1) { per = 6; }
-            var lines:int = extra <= 0 ? 1 : int(Math.ceil(extra / per));
-            return (r.h ? 24 : 0) + HZ51_ROW + lines * 34 + 8;
+            return (r.h ? 24 : 0) + this.hz51QmGridH(r.dis);
          }
          return (r.h ? 24 : 0) + HZ51_ROW;
       }

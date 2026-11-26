@@ -20,6 +20,12 @@
       private static const HZ51_SIDE_W:Number = 168;
       private static const HZ51_PREV_W:Number = 196;
       private static const HZ51_FOOT:Number = 100;
+      private static const HZ51_QM_TH:Number = 76;
+      private static const HZ51_QM_HEAD:Number = 42;
+      private static const HZ51_QM_LOCK:Number = 24;
+      private static const HZ51_QM_GAP:Number = 6;
+      private static const HZ51_QM_WARN:Number = 44;
+      private static const HZ51_QM_CLASH:uint = 0xF2A03A;
       private static const HZ51_PERF_NAMES:Array = ["BASELINE","HOVER SKIP","FIXTURE","FULL PIPELINE","SAME TARGET","RAPID TARGETS","SCANNER","BACKGROUND HUD"];
 
       private function hz51Side(tab:int) : Array
@@ -142,6 +148,7 @@
       {
          switch(k)
          {
+            case "_qmkeys": return "Click a key chip to bind. Esc cancels. Backspace or Delete clears. An orange warning appears if the key is already used by another extra slot, the settings key, a game favorite key for slots 1-12, or another Horizon key. The grid shows tiles 13 through Slot Count, wrapped by Slots per Row. Lowering the count only hides tiles; saved keys and items are kept. If Extended Mode is off or paused, the grid is greyed and saved keys are kept.";
             case "Debug": return "Shows extra yellow text on the HUD about the crosshair, the weapon in your hands, what the compass sees, and environment keys. Compass icons also get small numbers. You see this on screen as soon as it is on. Turn it on only while you are tracking down a HUD problem, then turn it off so the extra text does not stay.";
             case "PerfDiag": return "Measures how long the HUD takes to update and keeps those timings so a slowdown can be found. You will not see a new panel on screen; the numbers are stored for a report. Ordinary play should leave this off. Turn it on only when you need a timing report, then turn it off. Saved looks do not change this.";
             case "PerfMode": return "Switches which HUD test runs while Advanced Performance Timing is on. Baseline is ordinary play and is the one to use unless you were asked to try a specific test. Hover Skip turns off Horizon hover cards and scanner drawing (the game's own hover can still show). Fixture shows a test stand-in instead of live loot, people, or ships. Full Pipeline, Same Target, Rapid Targets, Scanner, and Background HUD each isolate a different part of the HUD. These tests can hide cards or drawing on purpose.";
@@ -211,7 +218,7 @@
             case "QuickMenuSlotCount": return "How many slots show when Extended Mode is on, from 12 to 24. Lowering the count only hides extra tiles; keys and items are kept.";
             case "QuickMenuSlotsPerRow": return "How many extra slots sit in each row: 4, 6, or 8.";
             case "QuickMenuExtendedLayout": return "Cross + Bars keeps the game's T for slots 1-12 and puts extra slots in bars under it. Bars draws every slot in rows.";
-            case "_qmkeys": return "Keys for extra slots 13 and up. Press a chip, then press a key. Esc cancels. Backspace or Delete clears. An orange warning appears if that key is already used. Slots 1-12 use the game's own favorite keys.";
+            case "_qmkeys": return "Press a chip, then press a key. Esc cancels. Backspace or Delete clears. Orange means that key is already used. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Slots 1-12 keep the game's own favorite keys.";
             case "_qmclear": return "Clears every extra-slot key. The slots still work from the menu.";
             case "XpToast": return "A short +XP note beside the character card. With Horizon messages installed, the game's own +XP popup is hidden while this is on.";
             case "MissionToast": return "Replaces the game's quest banner with a Horizon toast. Move it in Arrange Cards.";
@@ -584,8 +591,7 @@
             {"k":"QuickMenuSlotCount","l":"SLOT COUNT","t":"n","mn":12,"mx":24,"st":1},
             {"k":"QuickMenuSlotsPerRow","l":"SLOTS PER ROW","t":"r","opts":["4","6","8"],"ids":[4,6,8]},
             {"k":"QuickMenuExtendedLayout","l":"EXTENDED LAYOUT","t":"r","opts":["CROSS + BARS","BARS"],"ids":[0,1]},
-            {"k":"_qmkeys","l":"EXTENDED SLOT KEYS","t":"kg","h":"EXTENDED SLOT KEYS"},
-            {"k":"_qmclear","l":"CLEAR ALL KEYS","t":"x","btn":"CLEAR"}];
+            {"k":"_qmkeys","l":"EXTENDED SLOT KEYS","t":"kg","h":"EXTENDED SLOT KEYS"}];
          var qmOff:Boolean = this.hz30Mod["quickmenu"] !== 1;
          var qmConf:Boolean = this.hzQmConflict;
          if(qmOff) { return this.hz51Unavail(rows, "Install it from the Horizon UI installer. Saved settings are kept."); }

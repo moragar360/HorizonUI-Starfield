@@ -83,6 +83,11 @@ expect(/CharacterShowSeconds/.test(cards) && /SHOW FOR \(SECONDS\)/.test(cards),
 expect(/CrosshairRule/.test(cards) && /ALWAYS/.test(cards), "Crosshair Show when default Always is in the combat page");
 expect(/XpToast/.test(cards) && !/MissionToast/.test(cards), "Notifications is XP toast; Mission Toasts live on Comms");
 
+const qm = fnText(as, "hz51Quick").body;
+expect(/EXTENDED SLOT KEYS/.test(qm) && /\"t\":\"kg\"/.test(qm), "Cards > Quick Menu has the EXTENDED SLOT KEYS grid");
+expect(/UNBOUND/.test(fnText(as, "hz51DrawQmGrid").body) && /CLEAR ALL KEYS/.test(fnText(as, "hz51DrawQmGrid").body), "key grid draws UNBOUND chips and CLEAR ALL KEYS");
+expect(/Turn on Extended Mode to bind keys\. Saved keys are kept\./.test(fnText(as, "hz51Mute").body), "Extended off greys the grid and keeps saved keys");
+
 expect(/function hz34CardRows/.test(as), "old hz34CardRows stays as the CARDS data source");
 expect(/function hz40ScanRows/.test(as) && /function hz31CommsRows/.test(as) && /function hz37Rows/.test(as), "scanner, comms, and preset row builders stay");
 

@@ -259,6 +259,15 @@
                li++;
                continue;
             }
+            if(r.t == "kg")
+            {
+               var gh:Number = this.hz51DrawQmGrid(b,g,T,acc,x0,y,R,r.dis,i,boxW);
+               y += gh;
+               boxH = y - boxY + 4;
+               lastShown = li;
+               li++;
+               continue;
+            }
             var hit0:int = this.hzSetHits.length;
             if(r.dis)
             {
@@ -310,7 +319,6 @@
                g.beginFill(acc,0.14); g.drawRoundRect(bx,cy - 10,bw,20,6,6); g.endFill();
                this.hz33Edge(b,bx,cy - 10,bw,20,6,acc,0.55,1);
             }
-            if(r.t == "kg") { y += this.hz51DrawQmGrid(b,g,T,acc,x0,y + HZ51_ROW,R,r.dis); }
             if(r.dis)
             {
                this.hzSetHits.splice(hit0,this.hzSetHits.length - hit0);
@@ -401,42 +409,141 @@
          else if(r.t == "x" && String(r.k).indexOf("_hz37") == 0) { this.hz37DrawBtn(b,g,r,i,R,cy,rh,T); }
          else if(r.t == "x") { this.hzSetBtn(b,g,R,cy - 14,r.btn != undefined ? String(r.btn) : "OPEN",false,true,rh,T,"row" + i); }
       }
-      private function hz51DrawQmGrid(b:Sprite, g:*, T:Object, acc:uint, x0:Number, y:Number, R:Number, dis:Boolean) : Number
+      // Purpose: extra-slot key grid (QuickMenuKey13-24). Tiles 13..SlotCount wrap by
+      // Slots per Row. Lowering count only hides tiles; pending keys stay. Capture is
+      // event-driven (hzQmCap*) while a chip is waiting; no idle poll.
+      // Inputs: pending count/row/keys, hzQmCap*. Outputs: hits qmkN / qmclr.
+      private function hz51QmCount() : int
       {
          var count:int = this.hzSetPend != null ? int(this.hzSetPend.QuickMenuSlotCount) : 24;
          if(count < 12) { count = 12; }
          if(count > 24) { count = 24; }
+         return count;
+      }
+      private function hz51QmPer() : int
+      {
          var per:int = this.hzSetPend != null ? int(this.hzSetPend.QuickMenuSlotsPerRow) : 6;
          if(per != 4 && per != 6 && per != 8) { per = 6; }
+         return per;
+      }
+      private function hz51QmGridH(dis:Boolean) : Number
+      {
+         var extra:int = Math.max(0, this.hz51QmCount() - 12);
+         var per:int = this.hz51QmPer();
+         var lines:int = extra <= 0 ? 0 : int(Math.ceil(extra / per));
+         var h:Number = HZ51_QM_HEAD + lines * (HZ51_QM_TH + HZ51_QM_GAP) + 8;
+         var qmOff:Boolean = this.hz30Mod != null && this.hz30Mod["quickmenu"] !== 1;
+         if(dis && !qmOff) { h += HZ51_QM_LOCK; }
+         if(this.hzQmCapWarn != null && String(this.hzQmCapWarn).length > 0) { h += HZ51_QM_WARN; }
+         return h;
+      }
+      private function hz51DrawQmGrid(b:Sprite, g:*, T:Object, acc:uint, x0:Number, y:Number, R:Number, dis:Boolean, rowIdx:int = -1, boxW:Number = 0) : Number
+      {
+         var start:Number = y;
+         var innerW:Number = boxW > 0 ? boxW : (R - x0);
+         var rs:Boolean = rowIdx >= 0 && rowIdx == this.hzSetRow && this.hzSetFocus == 0;
+         var rh:Boolean = rowIdx >= 0 && this.hzSetHover == "row" + rowIdx;
+         var gh:Number = this.hz51QmGridH(dis);
+         if(rs || rh)
+         {
+            g.beginFill(acc,rs ? 0.12 : 0.06);
+            g.drawRect(x0,y,innerW,gh);
+            g.endFill();
+            if(rs) { g.beginFill(acc,1); g.drawRect(x0,y,3,gh); g.endFill(); }
+         }
+         if(rowIdx >= 0) { this.hzSetHits.push({"id":"row" + rowIdx,"x":x0,"y":y,"w":innerW,"h":gh}); }
+         var qmOff:Boolean = this.hz30Mod != null && this.hz30Mod["quickmenu"] !== 1;
+         if(dis && !qmOff)
+         {
+            this.hzWT(b,"Turn on Extended Mode to bind keys. Saved keys are kept.",x0 + 12,y + 6,innerW - 24,10,"rg",uint(T.mut),0.1,"left",11);
+            y += HZ51_QM_LOCK;
+         }
+         var bMain:Sprite = b;
+         var gMain:* = g;
+         var dimS:Sprite = null;
+         if(dis)
+         {
+            dimS = new Sprite();
+            dimS.mouseEnabled = false; dimS.mouseChildren = false;
+            dimS.alpha = 0.42;
+            b.addChild(dimS);
+            b = dimS; g = dimS.graphics;
+         }
+         var helpW:Number = Math.max(120, innerW - 148);
+         var ht:TextField = this.hzWT(b,"Click a key chip to bind. Esc cancels. Backspace or Delete clears. A clash (another slot, the settings key, or a game control) is warned and ignored. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Slots 1-12 keep the game's own favorite keys.",x0 + 12,y + 6,helpW,10,"rg",uint(T.mut),0.05,"left",11);
+         ht.wordWrap = true;
+         ht.multiline = true;
+         var btnW:Number = 118;
+         var btnH:Number = 22;
+         var btnX:Number = Math.round(x0 + innerW - btnW - 12);
+         var btnY:Number = y + 8;
+         g.beginFill(uint(T.tile),Number(T.tia));
+         g.drawRoundRect(btnX,btnY,btnW,btnH,6,6);
+         g.endFill();
+         this.hz33Edge(b,btnX,btnY,btnW,btnH,6,dis ? uint(T.mut) : acc,dis ? 0.35 : 0.7,1);
+         this.hzWT(b,"CLEAR ALL KEYS",btnX,btnY + 4,btnW,9,"sb",dis ? uint(T.mut) : acc,0.8,"center");
+         if(!dis) { this.hzSetHits.push({"id":"qmclr","x":btnX,"y":btnY,"w":btnW,"h":btnH}); }
+         y += HZ51_QM_HEAD;
+         var count:int = this.hz51QmCount();
+         var per:int = this.hz51QmPer();
          var n:int = 13;
          var col:int = 0;
          var row:int = 0;
-         var cw:Number = 64;
-         var ch:Number = 28;
+         var tw:Number = (innerW - 20 - (per - 1) * HZ51_QM_GAP) / per;
+         if(tw < 48) { tw = 48; }
+         var th:Number = HZ51_QM_TH;
+         var clashCol:uint = HZ51_QM_CLASH;
          while(n <= count)
          {
             var k:String = "QuickMenuKey" + n;
-            var kn:String = String(this.hzSetPend[k] != null ? this.hzSetPend[k] : "");
-            if(this.hzQmCap == k) { kn = this.hzQmCapCand.length > 0 ? this.hzQmCapCand : "PRESS"; }
-            else if(kn.length == 0) { kn = "NONE"; }
-            var xx:Number = x0 + 16 + col * (cw + 8);
-            var yy:Number = y + row * (ch + 6);
-            var on:Boolean = this.hzQmCap == k || this.hzSetHover == "qmk" + n;
-            g.beginFill(acc,on ? 0.22 : 0.1); g.drawRoundRect(xx,yy,cw,ch,8,8); g.endFill();
-            this.hzWT(b,String(n),xx + 4,yy + 2,20,9,"sb",uint(T.mut),0.4);
-            this.hzWT(b,kn,xx + 20,yy + 6,cw - 24,10,"sb",acc,0.4);
-            if(!dis) { this.hzSetHits.push({"id":"qmk" + n,"x":xx,"y":yy,"w":cw,"h":ch}); }
+            var raw:String = this.hzSetPend != null ? String(this.hzSetPend[k] != null ? this.hzSetPend[k] : "") : "";
+            var cap:Boolean = this.hzQmCap == k;
+            var kn:String = raw;
+            if(cap) { kn = this.hzQmCapCand.length > 0 ? this.hzQmCapCand : "PRESS ANY KEY…"; }
+            else if(kn.length == 0) { kn = "UNBOUND"; }
+            var kind:String = "";
+            if(cap && this.hzQmCapCand.length > 0) { kind = this.hzQmCapKind; }
+            else if(!cap && raw.length > 0) { kind = this.hzQmNameKind(raw, k); }
+            var isClash:Boolean = kind != null && kind.length > 0;
+            var xx:Number = x0 + 10 + col * (tw + HZ51_QM_GAP);
+            var yy:Number = y + row * (th + HZ51_QM_GAP);
+            var on:Boolean = cap || this.hzSetHover == "qmk" + n;
+            var bcol:uint = isClash ? clashCol : acc;
+            g.beginFill(isClash ? clashCol : acc, cap ? 0.14 : (isClash ? 0.08 : (on ? 0.1 : 0.04)));
+            g.drawRoundRect(xx,yy,tw,th,8,8);
+            g.endFill();
+            this.hz33Edge(b,xx,yy,tw,th,8,bcol,cap || isClash ? 0.85 : 0.22,1);
+            this.hzWT(b,"SLOT " + n,xx + 6,yy + 4,tw - 12,8,"sb",acc,1.4);
+            g.beginFill(uint(T.tile),0.55);
+            g.drawRoundRect(xx + 6,yy + 18,16,16,4,4);
+            g.endFill();
+            this.hzWT(b,"Empty",xx + 26,yy + 20,tw - 34,9,"rg",uint(T.mut),0.2);
+            var chipH:Number = 18;
+            var chipY:Number = yy + th - chipH - 8;
+            var chipW:Number = tw - 12;
+            var chipX:Number = xx + 6;
+            g.beginFill(uint(T.fill),0.7);
+            g.drawRoundRect(chipX,chipY,chipW,chipH,6,6);
+            g.endFill();
+            this.hz33Edge(b,chipX,chipY,chipW,chipH,6,isClash ? clashCol : (cap ? acc : uint(T.line)),isClash || cap ? 0.9 : 0.4,1);
+            var chipCol:uint = isClash ? clashCol : (kn == "UNBOUND" || kn == "PRESS ANY KEY…" ? uint(T.mut) : acc);
+            this.hzWT(b,kn,chipX,chipY + 2,chipW,9,"sb",chipCol,0.4,"center");
+            if(isClash) { this.hzWT(b,"CLASH",xx + 6,yy + 38,tw - 12,8,"sb",clashCol,0.8); }
+            if(!dis) { this.hzSetHits.push({"id":"qmk" + n,"x":chipX,"y":chipY,"w":chipW,"h":chipH}); }
             col++;
             if(col >= per) { col = 0; row++; }
             n++;
          }
-         var extra:Number = (row + (col > 0 ? 1 : 0)) * (ch + 6) + 8;
-         if(this.hzQmCapWarn.length > 0)
+         var extraTiles:int = Math.max(0, count - 12);
+         var lines:int = extraTiles <= 0 ? 0 : int(Math.ceil(extraTiles / per));
+         y = start + (dis && !qmOff ? HZ51_QM_LOCK : 0) + HZ51_QM_HEAD + lines * (th + HZ51_QM_GAP) + 8;
+         if(dimS != null) { b = bMain; g = gMain; }
+         if(this.hzQmCapWarn != null && String(this.hzQmCapWarn).length > 0)
          {
-            this.hz37DrawWarn(b,g,y + extra,R,T,this.hzQmCapWarn);
-            extra += 44;
+            this.hz37DrawWarn(b,g,y,R,T,this.hzQmCapWarn);
+            y += HZ51_QM_WARN;
          }
-         return extra;
+         return y - start;
       }
       private function hz51DrawRight(b:Sprite, g:*, T:Object, acc:uint, rows:Array) : void
       {

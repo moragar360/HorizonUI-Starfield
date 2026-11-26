@@ -1280,6 +1280,7 @@ namespace HZ
 		case VK_RETURN: return "ok";
 		case VK_ESCAPE: return "cancel";
 		case VK_BACK: return "bksp";   // v0.37: delete in the preset name entry (the HUD treats it as cancel elsewhere)
+		case VK_DELETE: return "del";  // extra-slot key chips: Delete clears while capturing (same as Backspace)
 		default: return nullptr;
 		}
 	}
