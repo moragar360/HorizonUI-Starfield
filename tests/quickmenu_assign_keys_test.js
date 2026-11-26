@@ -96,14 +96,22 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		"assign path adds no enterFrame / timer");
 }
 
-// ---- B. selection outline sits fully inside the 58 px panel ----
+// ---- B. selection outline is a filled border (GFx clips stroke-only on +x) ----
 {
 	const ring = fnText(qm, "hzqRingDraw").body;
-	expect(/drawRoundRect\(x - 28,y - 28,56,56,14,14\)/.test(ring) && /lineStyle\(2,acc,1,true,"normal"\)/.test(ring)
-		&& !/drawRect\(x - 40/.test(ring) && !/"none"/.test(ring),
-		"accent hover/focus stroke is a 2 px local-unit ring inside the 58 px card (last column included)");
-	expect(/function hzqUnclip/.test(qm) && /gotoAndStop\("Unselected"\)/.test(fnText(qm, "hzqCard").body),
-		"vanilla Selected-frame outline is not used; Entry/Catcher mask and scrollRect are cleared");
+	const acc = fnText(qm, "hzqAccentRing").body;
+	const border = fnText(qm, "hzqFilledBorder").body;
+	expect(/this\.hzqAccentRing\(g,x,y,box\)/.test(ring) && /HZQ_EXT_BOX/.test(ring)
+		&& !/lineStyle\(2,acc/.test(ring) && !/drawRect\(x - 40/.test(ring),
+		"overlay ring calls hzqAccentRing (filled), vanilla box or HZQ_EXT_BOX, no stroke-only lineStyle");
+	expect(/this\.hzqFilledBorder\(g,x - box \* 0\.5,y - box \* 0\.5,box,box,2,8/.test(acc)
+		&& /g\.beginFill\(col,1\); g\.drawRect/.test(border) && /this\.hzqKeyCorner/.test(border)
+		&& /g\.lineStyle\(\);/.test(border) && !/lineStyle\(2,/.test(border),
+		"accent ring is the same filled-edge construction as hzqKeycap (all four sides, no lineStyle stroke)");
+	expect(/this\.hzqAccentRing\(g,r\.x \+ r\.width \/ 2,r\.y \+ r\.height \/ 2,r\.width\)/.test(fnText(qm, "hzqCard").body),
+		"vanilla 1-12 selected cards draw the filled ring on the card as well as the overlay");
+	expect(/gotoAndStop\("Unselected"\)/.test(fnText(qm, "hzqCard").body),
+		"vanilla Selected-frame outline is not used (FME uses that filled timeline art; Horizon hides it)");
 	expect(/this\.addChild\(s\)/.test(fnText(qm, "hzqRingEnsure").body) && /mouseEnabled = false/.test(fnText(qm, "hzqRingEnsure").body),
 		"the overlay ring is a child of the menu and does not steal hits");
 }
@@ -200,10 +208,10 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		"hzqOpen clears the one-shot confirm flag at the start of every open");
 	expect(/this\._SelectedIndex = FS_NONE/.test(fnText(qm, "hzqExtRestore").body),
 		"hzqExtRestore sets _SelectedIndex = FS_NONE directly (no GetEntryClip on a removed Entry_13-24)");
-	expect(/function hzqExtHideVan/.test(qm) && /d\.name != "hzqCard"/.test(fnText(qm, "hzqExtHideVan").body)
+	expect(/function hzqExtHideVan/.test(qm) && /d\.name != "hzqCard" && d\.name != "Icon_mc"/.test(fnText(qm, "hzqExtHideVan").body)
 		&& /Quickkey_tf/.test(fnText(qm, "hzqExtHideVan").body)
 		&& /hzqExtHideVan\(s\)/.test(make) && /hzqExtHideVan\(o\.s/.test(fnText(qm, "hzqExtDraw").body),
-		"Entry_13-24 hide vanilla outline / icon frame / key label; only the Horizon card stays visible");
+		"Entry_13-24 hide leftover vanilla art; Icon_mc (vanilla fixture) and the Horizon card stay visible");
 	function toJsPick() {
 		const f = fnText(qm, "hzqExtPick");
 		const params = f.params.split(",").map((p) => p.trim()).filter(Boolean).map((p) => p.split(":")[0].trim());
@@ -219,6 +227,7 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		hzqExtDone: false, hzqExtSel: 0, hzqExtData: {}, selectedIndex: 12, AssignedItem: { sName: "Med Pack" },
 		hzqExtPad() {}, hzqInfoSet() {}, hzqExtDraw() {}, hzqRingDraw() {}, hzqExtFetch() {},
 		isAssigningItem() { return true; }, hzqExtFormId() { return 0; }, hzqExtHandle() { return 0; }, hzqExtHex() { return ""; },
+		hzqExtIconExtra() { return ""; },
 		SelectQuickslot_mc: { visible: true },
 		StartClosingMenu() { this.closed = (this.closed || 0) + 1; },
 		sends: [],
@@ -265,8 +274,8 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 	const conf = fnText(qm, "hzqExtConfirm").body;
 	const pick = fnText(qm, "hzqExtPick").body;
 	expect(/s\.buttonMode = false/.test(make) && /s\.tabEnabled = false/.test(make)
-		&& /s\.tabChildren = false/.test(make) && /drawRect\(-29,-29,58,58\)/.test(make),
-		"G: extra clips are 58 px hits, not in the Tab cycle, no FavoritesEntry Catcher");
+		&& /s\.tabChildren = false/.test(make) && /drawRect\(-HZQ_EXT_BOX \* 0\.5,-HZQ_EXT_BOX \* 0\.5,HZQ_EXT_BOX,HZQ_EXT_BOX\)/.test(make),
+		"G: extra clips are 72 px hits, not in the Tab cycle, no FavoritesEntry Catcher");
 	expect(/hzqExtHold\.mouseEnabled = false/.test(hold) && /hzqExtHold\.tabEnabled = false/.test(hold)
 		&& /add\.tabEnabled = false/.test(hold),
 		"G: hold overlay and ADD tile do not steal Tab / do not cover Entry_0-11");
@@ -373,17 +382,43 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		&& !/ClearSlot\(g_qmStore/.test(game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("))),
 		"I: uint/int Scaleform IDs are read; assign commits SetSlot and does not ClearSlot on a miss");
 	const bld = fnText(qm, "hzqExtBuildClips").body;
-	const pitch = 70, per = 6, cx = 0, tRight = 268.8, tLeft = -267.75, tTop = -267.65, tBottom = 268.75;
+	const pitch = 86, per = 6, cx = 0, tRight = 268.8, tLeft = -267.75, tTop = -267.65, tBottom = 268.75;
 	const take = 6, col = 5;
+	const pad = 14, title = 22, extBox = 72, half = extBox / 2;
+	const y0x = tBottom + 12 + pad + title + extBox / 2;
 	const x = cx - (take - 1) * pitch / 2 + col * pitch;
-	const y = tBottom + 12 + 29;
-	const half = 29;
-	expect(/y = box\.b \+ 12 \+ 29 \+ row \* pitch/.test(bld), "I: extra row sits under the T at authored rest");
-	expect(x + half <= tRight && x - half >= tLeft && y - half >= tTop,
-		"I: last-column 58 px card (and inner 56 px ring) stays inside the vanilla T box");
-	expect(/drawRoundRect\(x - 28,y - 28,56,56,14,14\)/.test(fnText(qm, "hzqRingDraw").body)
-		&& /scrollRect = new Rectangle\(sr\.x,sr\.y,sr\.width \+ 8,sr\.height \+ 8\)/.test(fnText(qm, "hzqClipPadOnce").body),
-		"I: ring is inside the card; ancestor scrollRect grows 8 px on the right and bottom once");
+	const y = y0x;
+	expect(/HZQ_EXT_PITCH/.test(bld) && /y0x:Number = box\.b \+ 12 \+ HZQ_FRAME_PAD \+ HZQ_FRAME_TITLE \+ HZQ_EXT_BOX \* 0\.5/.test(bld),
+		"I: extra row sits under the T, below the EXTENDED frame title");
+	const visL = -960, visR = 960, visT = -540, visB = 540;
+	expect(x + half <= visR && x - half >= visL && y - half >= visT && y + half <= visB,
+		"I: last-column 72 px extra card (and filled ring) stays inside the visible area");
+	expect(0 + 29 <= tRight && 0 - 29 >= tLeft,
+		"I: the selected top T card (center, screenshot) sits inside the T AABB, so a T-width scrollRect cannot cut its right edge");
+	const x8 = cx - (8 - 1) * pitch / 2 + 7 * pitch;
+	expect(x8 + half > tRight && x8 + half <= visR,
+		"I: an 8-per-row extra last column sticks out of the T AABB but stays in the visible area");
+	expect(/function hzqAccentRing/.test(qm) && /function hzqFilledBorder/.test(qm)
+		&& /this\.hzqAccentRing\(g,x,y,box\)/.test(fnText(qm, "hzqRingDraw").body),
+		"I: ring is a filled border on the overlay, same size as the card");
+	expect(/function hzqInfoPlace/.test(qm) && /Extensions\.visibleRect/.test(fnText(qm, "hzqInfoPlace").body)
+		&& /HZQ_EQ_RESERVE/.test(fnText(qm, "hzqInfoPlace").body)
+		&& /this\.hzqSprite\(this, -1\)/.test(fnText(qm, "hzqBuild").body),
+		"I: info panel is a menu child, placed at visibleRect bottom-right above the HUD equipment card");
+	expect(/EXTENDED QUICK \/ FAVORITE SLOTS/.test(qm) && /function hzqExtFrameDraw/.test(qm),
+		"I: extra grid has a Horizon framed box titled EXTENDED QUICK / FAVORITE SLOTS");
+	expect(/new ImageFixture\(\)/.test(fnText(qm, "hzqExtMake").body)
+		&& /LoadImageFixtureFromUIData\(img,"FavoritesIconBuffer"\)/.test(fnText(qm, "hzqExtLoadIcon").body)
+		&& !/o\.n/.test(fnText(qm, "hzqExtDraw").body)
+		&& !/empty \? "EMPTY"/.test(fnText(qm, "hzqExtDraw").body),
+		"I: extra cards show vanilla Icon_mc + key chip, no item name, no EMPTY text");
+	const infoW = 380, infoH = 120, eq = 84, m = 16;
+	const infX = visR - m - infoW, infY = visB - m - eq - 12 - infoH;
+	const slotR = x + half, slotB = y + half, slotL = x - half, slotT = y - half;
+	expect(!(infX < slotR && infX + infoW > slotL && infY < slotB && infY + infoH > slotT),
+		"I: bottom-right info panel does not overlap the last extra slot");
+	expect(!(infX < tRight && infX + infoW > tLeft && infY < tBottom && infY + infoH > tTop),
+		"I: bottom-right info panel does not overlap the vanilla T");
 }
 
 console.log("quickmenu_assign_keys_test " + (failed ? "FAILED" : "passed") + " (" + passed + " ok, " + failed + " FAIL)");

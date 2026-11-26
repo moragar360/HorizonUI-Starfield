@@ -1189,6 +1189,14 @@
 			o += has ? "0" : "1";
 			o.push_back('|');
 			o += refuse[i - hzqs::kExtFirst] ? "1" : "0";
+			if (a->iconType >= 0 && !a->iconName.empty()) {
+				o.push_back('|');
+				o += std::to_string(a->iconType);
+				o.push_back('|');
+				o += hzqs::PayloadSafe(a->iconDir);
+				o.push_back('|');
+				o += hzqs::PayloadSafe(a->iconName);
+			}
 		}
 		QmInvFindReset();  // N-j: QmHookHas above may have filled the cache on the UI thread
 		if (anyStale) {
@@ -1525,6 +1533,9 @@
 			a.name = name.empty() ? base : name;
 			a.base = base;
 			a.kind = kind;
+			a.iconType = ex.iconType;
+			a.iconDir = ex.iconDir;
+			a.iconName = ex.iconName;
 			hzqs::SetSlot(g_qmStore, a);
 		}
 		QmMarkStoreDirty();

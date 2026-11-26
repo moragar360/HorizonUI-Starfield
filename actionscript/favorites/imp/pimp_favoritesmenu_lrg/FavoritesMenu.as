@@ -19,6 +19,7 @@ package
    import flash.geom.ColorTransform;
    import flash.geom.Rectangle;
    import flash.geom.Point;
+   import scaleform.gfx.Extensions;
    import flash.net.URLLoader;
    import flash.net.URLRequest;
    import flash.text.TextField;
@@ -386,9 +387,9 @@ package
       //    mouse only, the same rule as the vanilla Quickkey_tf. No key is hardcoded and nothing keys off Q;
       //  - a header pill above the top slot: QUICK MENU and the bound "Cancel" key: keyboard and mouse = the key text;
       //    controller = the mapped Cancel button (hzqPadKey: a glyph, or the HUD's keycap text, or nothing; never a $ name);
-      //  - an info card in ItemInfo_mc built only from the fields the game sends (FavoritesData aFavoriteItems):
-      //    sName (+ " (n)" from uCount), AMMO = sAmmoName + uAmmoCount, DAMAGE = aElementalStats (type + floor(fValue)),
-      //    SLOT = the selected slot's bound key. There is no magazine / reserve split in the data, so none is shown.
+      //  - an info card (name / ammo / damage / slot) as a child of the menu, fixed at the bottom-right of
+      //    Extensions.visibleRect, sitting above the HUD equipment card (84 px reserve). Built only from the
+      //    fields the game sends (FavoritesData aFavoriteItems / extra payload). There is no magazine / reserve split.
       // Theme: [Style] AccentColor / AccentHex / CardColor / CardHex / CardOpacity / CardBgOpacity / CardShadow / TextTone /
       // FontFace / TextScale / HeaderStyle / TextShadow, read once when the menu opens, through ports of the HUD card
       // functions (hzCardPal, hzAccPal, hzPanel, hzKeycap, ...). Switch: [Cards Extra] QuickMenuHorizon (1 default,
@@ -417,6 +418,12 @@ package
       // center disc (CenterClip_mc "Quick" backdrop hole) has radius 54. 58 x 58 leaves at least 14.6 between neighbors
       // and 4.95 to the disc, and fits the 64-wide catcher (3 each side) on both arms.
       private static const HZQ_BOX:Number = 58;
+      private static const HZQ_EXT_BOX:Number = 72;       // extra slots: large enough for vanilla Icon_mc
+      private static const HZQ_EXT_GAP:Number = 14;
+      private static const HZQ_FRAME_PAD:Number = 14;
+      private static const HZQ_FRAME_TITLE:Number = 22;
+      private static const HZQ_EQ_RESERVE:Number = 84;    // HUD equipment card height (HorizonAmmo_mc)
+      private static const HZQ_SAFE_M:Number = 16;
       private static const HZQ_ICPAD:Number = 4;          // icon padding inside the box
       private static const HZQ_GLYPH:String = "$Controller_Buttons";   // the game's controller glyph face (fontconfig map)
       // controller glyph character (GlobalFunc.NameToTextMap value) -> keycap text: the HUD's table (horizon_block.as HZ_T19_PADK)
@@ -424,7 +431,7 @@ package
       private static const HZQ_INF_W:Number = 380;
       private var hzqOn:Boolean = false;        // Horizon look active for this open (switch on, ini read, no error)
       private var hzqOpened:Boolean = false;
-      private var hzqClipPad:Boolean = false;  // ancestor scrollRect grown once per open (right/bottom)
+      private var hzqClipPad:Boolean = false;  // unused leftover; ring is a filled shape, not a grown scrollRect
       private var hzqErr:Boolean = false;
       private var hzqS:Object = null;           // [Style] values, read on open
       private var hzqFontLib:int = -1;          // font.marker: -1 checking, 0 absent, 1 present
@@ -650,6 +657,37 @@ package
          g.drawRoundRect(x + 0.5,y + 0.5,w - 1,h - 1,rr * 2,rr * 2);
          g.endFill();
          g.lineStyle();
+      }
+      // Filled 2 px accent ring. Same filled-edge construction as hzqKeycap (the key chips on the
+      // selected top slot show all four sides in-game). Stroke-only lineStyle is clipped on the
+      // max-X edge in Scaleform GFx (in-game selected top slot). FME Selected is filled
+      // timeline art at depth 1; vanilla favoritesmenu.swf has no clipDepth masks.
+      // Purpose: all four sides of the hover/focus border, vanilla 1-12 and extra slots.
+      // Inputs: graphics, center, outer box. Outputs: fill in the accent color. No lineStyle.
+      private function hzqAccentRing(g:*, x:Number, y:Number, box:Number) : void
+      {
+         if(g == null || !(box > 8)) { return; }
+         this.hzqFilledBorder(g,x - box * 0.5,y - box * 0.5,box,box,2,8,this.hzqAccent());
+      }
+      // Purpose: a filled round-rect border with no lineStyle. GFx clips stroke-only on max-X.
+      // Inputs: graphics, top-left, size, thickness, corner radius, color. Outputs: four filled
+      // sides plus hzqKeyCorner pies. Built once per card/frame draw, never per frame.
+      private function hzqFilledBorder(g:*, x:Number, y:Number, w:Number, h:Number, t:Number, r:Number, col:uint) : void
+      {
+         if(g == null || !(w > 8) || !(h > 8)) { return; }
+         var bt:Number = t < 1 ? 1 : t;
+         var rr:Number = Math.min(r,Math.min(h,w) / 2);
+         var ri:Number = Math.max(0,rr - bt);
+         var ov:Number = Math.min(0.5,bt / 2);
+         g.lineStyle();
+         g.beginFill(col,1); g.drawRect(x + rr - ov,y,w - 2 * rr + 2 * ov,bt); g.endFill();
+         g.beginFill(col,1); g.drawRect(x + rr - ov,y + h - bt,w - 2 * rr + 2 * ov,bt); g.endFill();
+         g.beginFill(col,1); g.drawRect(x,y + rr - ov,bt,h - 2 * rr + 2 * ov); g.endFill();
+         g.beginFill(col,1); g.drawRect(x + w - bt,y + rr - ov,bt,h - 2 * rr + 2 * ov); g.endFill();
+         this.hzqKeyCorner(g,x + rr,y + rr,rr,ri,-1,-1,col);
+         this.hzqKeyCorner(g,x + w - rr,y + rr,rr,ri,1,-1,col);
+         this.hzqKeyCorner(g,x + w - rr,y + h - rr,rr,ri,1,1,col);
+         this.hzqKeyCorner(g,x + rr,y + h - rr,rr,ri,-1,1,col);
       }
       // hzKeycap + hzKeyCorner: 12 % fill and a ring border in the key color
       private function hzqKeycap(g:*, x:Number, y:Number, w:Number, h:Number, col:uint) : void
@@ -885,19 +923,16 @@ package
             this.hzqHdrT = this.hzqTf(this.hzqHdr);
             this.hzqHdrK = this.hzqTf(this.hzqHdr);
          }
-         // info card: a child of ItemInfo_mc, centered where the game centers its rows (x = 0), top = the name bar's top
-         if(this.ItemInfo_mc != null)
-         {
-            this.hzqInf = this.hzqSprite(this.ItemInfo_mc,0);
-            this.hzqInf.name = "hzqInfo";
-            var nb:Rectangle = null;
-            try { nb = this.ItemInfo_mc.ItemNameBg_mc.getBounds(this.ItemInfo_mc); } catch(eNb:Error) { nb = null; }
-            this.hzqInfX = -HZQ_INF_W / 2;
-            this.hzqInfY = nb != null ? nb.y : 0;
-            this.hzqInfT = [];
-            var j:int = 0;
-            while(j < 7) { this.hzqInfT.push(this.hzqTf(this.hzqInf)); j++; }
-         }
+         // info card: a child of the menu (not ItemInfo_mc). Position is bottom-right of visibleRect,
+         // above the HUD equipment card. Vanilla ItemInfo_mc sits on the T and overlaps the top slot.
+         this.hzqInf = this.hzqSprite(this, -1);
+         this.hzqInf.name = "hzqInfo";
+         this.hzqInfX = 0;
+         this.hzqInfY = 0;
+         this.hzqInfT = [];
+         var j:int = 0;
+         while(j < 7) { this.hzqInfT.push(this.hzqTf(this.hzqInf)); j++; }
+         try { if(this.ItemInfo_mc != null) { this.ItemInfo_mc.visible = false; } } catch(eInfH:Error) { }
       }
       // ---------- draw ----------
       private function hzqRedraw() : void
@@ -1011,6 +1046,8 @@ package
             g.beginFill(acc,0.13);
             g.drawRoundRect(r.x + 1,r.y + 1,r.width - 2,r.height - 2,14,14);
             g.endFill();
+            // Inner filled ring on the card (same size as the overlay). Stroke-only was clipped on +x.
+            this.hzqAccentRing(g,r.x + r.width / 2,r.y + r.height / 2,r.width);
          }
          // key badge: top left, the bound Quickkey<n>, keyboard and mouse only
          var kt:String = this.hzqKb ? this.hzqKey("Quickkey" + (i + 1)) : "";
@@ -1230,11 +1267,15 @@ package
          if(l == "energy") { return "ENERGY"; }
          return "";
       }
+      // Purpose: draw the item info card at bottom-right of the visible area, above the HUD weapon card.
+      // Inputs: hzqInfObj / hzqInfSel (set only on selection / assign). Outputs: panel at hzqInf.x/y.
+      // Dependencies: Extensions.visibleRect, HZQ_EQ_RESERVE (84, same as HorizonAmmo_mc).
       private function hzqInfo() : void
       {
          if(this.hzqInf == null) { return; }
          var o:Object = this.hzqInfObj;
          this.hzqHideInfoVan(true);
+         try { if(this.ItemInfo_mc != null) { this.ItemInfo_mc.visible = false; } } catch(eH:Error) { }
          var g:* = this.hzqInf.graphics;
          g.clear();
          var T:Array = this.hzqInfT;
@@ -1242,25 +1283,38 @@ package
          {
             var z:int = 0;
             while(z < T.length) { TextField(T[z]).visible = false; z++; }
+            this.hzqInf.visible = false;
             return;
          }
          var W:Number = HZQ_INF_W;
          var P:Number = 16;
          var acc:uint = this.hzqAccent();
          var empty:Boolean = String(o.sName).length == 0;
-         // name: the game's string ($EMPTY SLOT is translated by GlobalFunc.SetText), + " (n)" like the game
+         var extEmpty:Boolean = empty && this.hzqExtSel >= 13;
+         // Local coords of the sprite: panel origin (0,0). Sprite is moved after height is known.
+         this.hzqInfX = 0;
+         this.hzqInfY = 0;
          var nt:TextField = T[0];
-         this.hzqSet(nt," ",17,empty ? this.hzqDimCol() : this.hzqMainCol(),"bd",0.04,false);
-         GlobalFunc.SetText(nt,empty ? "$EMPTY SLOT" : String(o.sName),false);
-         if(!empty && uint(o.uCount) > 1) { nt.appendText(" (" + uint(o.uCount) + ")"); }
-         nt.autoSize = TextFieldAutoSize.NONE;
-         nt.wordWrap = true;
-         nt.multiline = true;
-         nt.width = W - P * 2;
-         nt.height = Math.ceil(nt.textHeight) + 4;
-         nt.x = this.hzqInfX + P;
-         nt.y = this.hzqInfY + 12;
-         nt.visible = true;
+         if(extEmpty)
+         {
+            nt.visible = false;
+            nt.height = 0;
+            nt.y = 8;
+         }
+         else
+         {
+            this.hzqSet(nt," ",17,empty ? this.hzqDimCol() : this.hzqMainCol(),"bd",0.04,false);
+            GlobalFunc.SetText(nt,empty ? "$EMPTY SLOT" : String(o.sName),false);
+            if(!empty && uint(o.uCount) > 1) { nt.appendText(" (" + uint(o.uCount) + ")"); }
+            nt.autoSize = TextFieldAutoSize.NONE;
+            nt.wordWrap = true;
+            nt.multiline = true;
+            nt.width = W - P * 2;
+            nt.height = Math.ceil(nt.textHeight) + 4;
+            nt.x = P;
+            nt.y = 12;
+            nt.visible = true;
+         }
          var rows:Array = [];
          if(!empty && o.bIsEquippable && o.sAmmoName != null && String(o.sAmmoName).length > 0)
          {
@@ -1281,10 +1335,15 @@ package
          }
          if(this.hzqInfSel && this.hzqKb)
          {
-            var sk:String = this.hzqKey("Quickkey" + (int(this.selectedIndex) + 1));
+            var sk:String = "";
+            if(this.hzqExtSel >= 13 && this.hzqS != null && this.hzqS.Keys != null)
+            {
+               sk = this.hzqExtKeyShort(String(this.hzqS.Keys[this.hzqExtSel - 13] != null ? this.hzqS.Keys[this.hzqExtSel - 13] : ""));
+            }
+            else { sk = this.hzqKey("Quickkey" + (int(this.selectedIndex) + 1)); }
             if(sk.length > 0) { rows.push(["SLOT",sk]); }
          }
-         var y:Number = nt.y + nt.height + (rows.length > 0 ? 8 : 4);
+         var y:Number = (extEmpty ? 10 : nt.y + nt.height) + (rows.length > 0 ? 8 : 4);
          var div:Number = y - 4;
          var j:int = 0;
          while(j < 3)
@@ -1295,26 +1354,54 @@ package
             {
                this.hzqSet(lt,this.hzqUC(String(rows[j][0])),13,this.hzqDimCol(),"sb",0.14,true);
                this.hzqSet(vt,String(rows[j][1]),13,this.hzqMainCol(),"sb",0.02,false);
-               lt.x = this.hzqInfX + P; lt.y = y + (vt.height - lt.height) / 2;
-               vt.x = this.hzqInfX + W - P - vt.width; vt.y = y;
+               lt.x = P; lt.y = y + (vt.height - lt.height) / 2;
+               vt.x = W - P - vt.width; vt.y = y;
                lt.visible = true; vt.visible = true;
                y += vt.height + 2;
             }
             else { lt.visible = false; vt.visible = false; }
             j++;
          }
-         var H:Number = Math.ceil(y - this.hzqInfY + 10);
-         this.hzqPanel(g,this.hzqInfX,this.hzqInfY,W,H,10,1);
-         // the accent bar on the left edge (hzAccStripe on tall cards; this card is short, so a slim bar the card's height)
+         if(extEmpty && rows.length == 0)
+         {
+            this.hzqInf.visible = false;
+            return;
+         }
+         var H:Number = Math.ceil(y + 10);
+         this.hzqPanel(g,0,0,W,H,10,1);
          g.beginFill(this.hzqIconCol(acc),1);
-         g.drawRoundRect(this.hzqInfX,this.hzqInfY + 10,3,Math.max(8,H - 20),3,3);
+         g.drawRoundRect(0,10,3,Math.max(8,H - 20),3,3);
          g.endFill();
-         if(rows.length > 0)
+         if(rows.length > 0 && !extEmpty)
          {
             g.beginFill(this.hzqLight() ? 0x0E1E1C : 0xFFFFFF,0.1);
-            g.drawRect(this.hzqInfX + P,div,W - P * 2,1);
+            g.drawRect(P,div,W - P * 2,1);
             g.endFill();
          }
+         this.hzqInfoPlace(W,H);
+         this.hzqInf.visible = true;
+         try { if(this.hzqInf.parent == this) { this.setChildIndex(this.hzqInf,this.numChildren - 1); } } catch(eZ:Error) { }
+      }
+      // Bottom-right of Extensions.visibleRect, above the HUD equipment card. Once per info redraw
+      // (selection / assign), never per frame.
+      private function hzqInfoPlace(W:Number, H:Number) : void
+      {
+         var m:Number = HZQ_SAFE_M;
+         var hs:Number = this.hzqS != null ? Number(this.hzqS.HudScale) : 1;
+         if(!(hs > 0)) { hs = 1; }
+         if(hs < 0.7) { hs = 0.7; }
+         if(hs > 1.4) { hs = 1.4; }
+         var eq:Number = HZQ_EQ_RESERVE * hs;
+         var br:Point = null;
+         try
+         {
+            var vr:Rectangle = scaleform.gfx.Extensions.visibleRect;
+            if(vr != null && vr.width > 100) { br = this.globalToLocal(new Point(vr.right,vr.bottom)); }
+         }
+         catch(eV:Error) { br = null; }
+         if(br == null || isNaN(br.x) || isNaN(br.y)) { br = new Point(960,540); }
+         this.hzqInf.x = br.x - m - W;
+         this.hzqInf.y = br.y - m - eq - 12 - H;
       }
       private function hzqHideInfoVan(hide:Boolean) : void
       {
@@ -1351,7 +1438,7 @@ package
                this.hzqExtSel = idx;
                var d:Object = this.hzqExtData[String(idx)];
                if(d != null) { this.hzqInfoSet({"sName":String(d.name != null ? d.name : ""),"uCount":d.count,"sAmmoName":"","uAmmoCount":0,"aElementalStats":null},true); }
-               else { this.hzqInfoSet({"sName":"EMPTY","uCount":0},true); }
+               else { this.hzqInfoSet({"sName":"","uCount":0},true); }
             }
             else
             {
@@ -1420,6 +1507,7 @@ package
          if(this.hzqHdr != null) { this.hzqHdr.visible = false; }
          if(this.hzqInf != null) { this.hzqInf.visible = false; }
          try { this.hzqHideInfoVan(false); } catch(e3:Error) { }
+         try { if(this.ItemInfo_mc != null) { this.ItemInfo_mc.visible = true; } } catch(eInfR:Error) { }
          try { this.hzqExtRestore(); } catch(e4:Error) { }
       }
 
@@ -1430,8 +1518,11 @@ package
       // Index 12 stays FS_NONE (vanilla). AssignQuickkey is never sent with an index >= 12.
       private var hzqExtSel:int = 0;          // 13-24, or 0
       private var hzqExtHold:Sprite = null;
-      private var hzqRing:Sprite = null;      // accent hover/focus ring; child of the menu so Entry/Catcher cannot clip it
-      private var hzqExtSlots:Array = null;   // {s:MovieClip, k:TextField, n:TextField, i:int}
+      private var hzqExtFrame:Sprite = null;  // framed box around the extra grid (built once)
+      private var hzqExtFrameT:TextField = null;
+      private var hzqExtFrameKey:String = "";
+      private var hzqRing:Sprite = null;      // filled accent ring; child of the menu
+      private var hzqExtSlots:Array = null;   // {s:MovieClip, k:TextField, ic:ImageFixture, i:int}
       private var hzqExtAdd:Sprite = null;
       private var hzqExtPool:Array = null;    // 12 slot clips (13-24), built once per open, reused (perf standards 2)
       private var hzqExtAddDrawn:Boolean = false;
@@ -1446,7 +1537,8 @@ package
       public var hzqExtCmd:Function = null;
       public var hzqLastExt:int = 0;    // 13-24 when an extra slot is chosen; 0 otherwise. DLL reads this; never sent as uQuickkeyIndex.
       private var hzqExtMask:int = 0;   // N-4: bit i = the DLL refused slot 13+i's key (game-bound, F11 or duplicate)
-      private static const HZQ_PITCH:Number = 70;
+      private static const HZQ_PITCH:Number = 70;           // vanilla 1-12 BARS cells (58 + 12)
+      private static const HZQ_EXT_PITCH:Number = 86;       // extra slots (72 + 14)
       // Vanilla FavoritesMenu rest geometry (game 1.16.244, both scales). Live getBounds during Open
       // collapses the T to the origin, which stacked the bars on the cross and hid slots 1-12.
       private static const HZQ_REST_X:Array = [-195.75,-120.8,-40.05,40,120.8,195.8,0,0,0,0,0,0];
@@ -1494,9 +1586,8 @@ package
             this.FavoritesInfoA.push({sName:"",uCount:0,bIsEquippable:false,iconImage:{iFixtureType:0}});
          }
       }
-      // Accent hover/focus outline. Drawn on a menu-level sprite so Entry / Catcher / SelectQuickslot
-      // cannot clip any of the four sides. 2 px stroke in local units inside the 58 px card (FME's
-      // Selected frame stays inside the clip; a "none" scale stroke plus an 80 px fill did not).
+      // Accent hover/focus outline. Filled keycap-style border (FME Selected is filled timeline art).
+      // Stroke-only lineStyle is clipped on the +x edge in Scaleform GFx (in-game selected top slot).
       private function hzqRingEnsure() : void
       {
          if(this.hzqRing != null) { return; }
@@ -1507,7 +1598,6 @@ package
          s.tabEnabled = false;
          this.addChild(s);
          this.hzqRing = s;
-         this.hzqClipPadOnce(this);
       }
       private function hzqRingDraw() : void
       {
@@ -1515,9 +1605,9 @@ package
          var g:Graphics = this.hzqRing.graphics;
          g.clear();
          if(!this.hzqOn) { return; }
-         var acc:uint = this.hzqAccent();
          var x:Number = 0;
          var y:Number = 0;
+         var box:Number = HZQ_BOX;
          var on:Boolean = false;
          var idx:int = int(this.selectedIndex);
          if(idx >= 0 && idx < 12 && this.hzqCards != null && this.hzqCards[idx] != null)
@@ -1529,6 +1619,7 @@ package
                var p:Point = this.globalToLocal(e.localToGlobal(new Point(r.x + r.width / 2,r.y + r.height / 2)));
                x = p.x;
                y = p.y;
+               box = r.width;
                on = true;
             }
          }
@@ -1537,15 +1628,12 @@ package
             var k:int = 0;
             while(this.hzqExtSlots != null && k < this.hzqExtSlots.length)
             {
-               if(int(this.hzqExtSlots[k].i) == this.hzqExtSel) { x = Number(this.hzqExtSlots[k].x); y = Number(this.hzqExtSlots[k].y); on = true; break; }
+               if(int(this.hzqExtSlots[k].i) == this.hzqExtSel) { x = Number(this.hzqExtSlots[k].x); y = Number(this.hzqExtSlots[k].y); box = HZQ_EXT_BOX; on = true; break; }
                k++;
             }
          }
          if(!on) { return; }
-         // Local 2 px stroke on a 56 px round-rect: outer edge is the 58 px card, including the last column.
-         g.lineStyle(2,acc,1,true,"normal");
-         g.drawRoundRect(x - 28,y - 28,56,56,14,14);
-         g.lineStyle();
+         this.hzqAccentRing(g,x,y,box);
       }
       // InventoryMenu item objects name both uFormID and uHandleID (separate fields). FavoritesMenu
       // never reads either: AssignedItem / aFavoriteItems are used as sName, bIsPower, iconImage,
@@ -1627,7 +1715,7 @@ package
          var box:Object = this.hzqExtTBox();
          var n:int = this.hzqExtCount();
          var per:int = this.hzqExtPer();
-         var pitch:Number = HZQ_PITCH;
+         var pitch:Number = HZQ_EXT_PITCH;
          var bars:Boolean = int(this.hzqS.ExtLayout) != 0;
          var i:int;
          try
@@ -1638,7 +1726,7 @@ package
          if(bars)
          {
             // Clips are center-registered. Live getBounds during Open is the collapsed T, so
-            // write x/y to the grid cell center directly (no bounds delta).
+            // write x/y to the grid cell center directly (no bounds delta). Extra pitch so 13-24 line up.
             this.hzqExtMoved = true;
             var rows:int = int(Math.ceil(n / per));
             var y0:Number = box.cy - (rows - 1) * pitch / 2;
@@ -1675,6 +1763,7 @@ package
             this.hzqExtMoved = false;
          }
          this.hzqExtBuildClips(box);
+         this.hzqExtFrameDraw(box);
          this.hzqExtRaise();
       }
       // Extra slots are first-class Entry_13..Entry_24 in the same container as Entry_0..11 so
@@ -1682,6 +1771,12 @@ package
       // Purpose: inventory assign and hover+Enter can pick 13-24. Inputs: none. Outputs: z-order.
       private function hzqExtRaise() : void
       {
+         // Frame (hold) under extras, extras under the filled ring, info last. Hold last would
+         // cover the extra clips with the frame fill (mouseEnabled is false, but the art hides).
+         if(this.hzqExtHold != null)
+         {
+            try { if(this.hzqExtHold.parent == this) { this.setChildIndex(this.hzqExtHold,this.numChildren - 1); } } catch(eZ:Error) { }
+         }
          var i:int = 0;
          while(this.hzqExtSlots != null && i < this.hzqExtSlots.length)
          {
@@ -1689,13 +1784,13 @@ package
             try { if(clip != null && clip.parent == this) { this.setChildIndex(clip,this.numChildren - 1); } } catch(eE:Error) { }
             i++;
          }
-         if(this.hzqExtHold != null)
-         {
-            try { if(this.hzqExtHold.parent == this) { this.setChildIndex(this.hzqExtHold,this.numChildren - 1); } } catch(eZ:Error) { }
-         }
          if(this.hzqRing != null)
          {
             try { if(this.hzqRing.parent == this) { this.setChildIndex(this.hzqRing,this.numChildren - 1); } } catch(eR:Error) { }
+         }
+         if(this.hzqInf != null)
+         {
+            try { if(this.hzqInf.parent == this) { this.setChildIndex(this.hzqInf,this.numChildren - 1); } } catch(eI:Error) { }
          }
          try
          {
@@ -1856,6 +1951,13 @@ package
             this.hzqExtHold.mouseChildren = true;
             this.hzqExtHold.tabEnabled = false;
             this.addChild(this.hzqExtHold);
+            this.hzqExtFrame = new Sprite();
+            this.hzqExtFrame.name = "hzqExtFrame";
+            this.hzqExtFrame.mouseEnabled = false;
+            this.hzqExtFrame.mouseChildren = false;
+            this.hzqExtFrame.tabEnabled = false;
+            this.hzqExtHold.addChildAt(this.hzqExtFrame,0);
+            this.hzqExtFrameT = this.hzqTf(this.hzqExtFrame);
          }
          if(this.hzqExtPool == null)
          {
@@ -1883,9 +1985,10 @@ package
          this.hzqExtEnsureClips();
          var n:int = this.hzqExtCount();
          var per:int = this.hzqExtPer();
-         var pitch:Number = HZQ_PITCH;
+         var pitch:Number = HZQ_EXT_PITCH;
          var bars:Boolean = int(this.hzqS.ExtLayout) != 0;
          var extN:int = n > 12 ? n - 12 : 0;
+         var y0x:Number = box.b + 12 + HZQ_FRAME_PAD + HZQ_FRAME_TITLE + HZQ_EXT_BOX * 0.5;
          this.hzqExtSlots.length = 0;   // the active subset of the pool (array reused)
          var k:int = 0;
          while(k < 12)
@@ -1917,7 +2020,7 @@ package
                   var take:int = extN - row * per;
                   if(take > per) { take = per; }
                   x = box.cx - (take - 1) * pitch / 2 + col * pitch;
-                  y = box.b + 12 + 29 + row * pitch;
+                  y = y0x + row * pitch;
                }
                if(o.s.x != x) { o.s.x = x; }
                if(o.s.y != y) { o.s.y = y; }
@@ -1932,7 +2035,7 @@ package
          if(showAdd)
          {
             var ax:Number = box.cx;
-            var ay:Number = box.b + 12 + 29;
+            var ay:Number = box.b + 12 + HZQ_FRAME_PAD + HZQ_FRAME_TITLE + HZQ_EXT_BOX * 0.5;
             if(bars)
             {
                var rowA:int = int(Math.floor(n / per));
@@ -1973,19 +2076,23 @@ package
          var card:Sprite = this.hzqSprite(s,0);
          card.name = "hzqCard";
          var k:TextField = this.hzqTf(card);
-         var nm:TextField = this.hzqTf(card);
+         var ic:ImageFixture = new ImageFixture();
+         ic.name = "Icon_mc";
+         ic.mouseEnabled = false;
+         ic.mouseChildren = false;
+         s.addChild(ic);
          this.addChild(s);
          this.hzqUnclip(s);
          this.hzqExtHideVan(s);
          try
          {
             s.graphics.beginFill(0,0.01);
-            s.graphics.drawRect(-29,-29,58,58);
+            s.graphics.drawRect(-HZQ_EXT_BOX * 0.5,-HZQ_EXT_BOX * 0.5,HZQ_EXT_BOX,HZQ_EXT_BOX);
             s.graphics.endFill();
          }
          catch(eHit:Error) { }
-         // c* = what is on screen now (change-driven draw)
-         return {"s":s,"c":card,"k":k,"n":nm,"i":slot,"x":0,"y":0,"cSel":null,"cEmpty":null,"cLabel":null,"cKey":null};
+         // c* = what is on screen now (change-driven draw). No name field: name is the info panel only.
+         return {"s":s,"c":card,"k":k,"ic":ic,"i":slot,"x":0,"y":0,"cSel":null,"cEmpty":null,"cKey":null,"cIcon":null};
       }
       private function hzqExtClick(e:MouseEvent) : void
       {
@@ -2050,7 +2157,7 @@ package
          {
             this.hzqInfoSet({"sName":String(d.name != null ? d.name : ""),"uCount":d.count,"sAmmoName":"","uAmmoCount":0,"aElementalStats":null},true);
          }
-         else { this.hzqInfoSet({"sName":"EMPTY","uCount":0},true); }
+         else { this.hzqInfoSet({"sName":"","uCount":0},true); }
          // Extra selection lives in hzqExtSel / hzqLastExt only. Never write selectedIndex 13-24:
          // GetEntryClip is `as FavoritesEntry` (null for these clips) and the setter then throws
          // after storing the index, which stuck vanilla 0-11 and skipped AssignQuickkey.
@@ -2075,6 +2182,7 @@ package
                var fid:uint = this.hzqExtFormId(this.AssignedItem);
                var hid:uint = this.hzqExtHandle(this.AssignedItem);
                extra = (pw ? "P|" : "I|") + (fid != 0 ? this.hzqExtHex(fid) + "|" : "") + (hid != 0 ? "h" + hid.toString(10) + "|" : "") + String(this.AssignedItem.sName);
+               extra += this.hzqExtIconExtra(this.AssignedItem);
             }
             var res:String = this.hzqExtCmdSend(op,slot,extra);
             if(res != "ok")
@@ -2119,12 +2227,14 @@ package
                var g:Graphics = spr.graphics;
                g.clear();
                var acc:uint = this.hzqAccent();
-               this.hzqPanel(g,-29,-29,58,58,8,dim && !sel ? 0.6 : 1);
+               var hb:Number = HZQ_EXT_BOX * 0.5;
+               this.hzqPanel(g,-hb,-hb,HZQ_EXT_BOX,HZQ_EXT_BOX,8,dim && !sel ? 0.6 : 1);
                if(sel)
                {
                   g.beginFill(acc,0.13);
-                  g.drawRoundRect(-28,-28,56,56,14,14);
+                  g.drawRoundRect(-hb + 1,-hb + 1,HZQ_EXT_BOX - 2,HZQ_EXT_BOX - 2,14,14);
                   g.endFill();
+                  this.hzqAccentRing(g,0,0,HZQ_EXT_BOX);
                }
                if(key.length > 0)
                {
@@ -2133,26 +2243,20 @@ package
                   this.hzqExtFit(o.k,klab,50);
                   var kw:Number = Math.max(16,Math.ceil(o.k.textWidth * 1.08) + 8);
                   var kh:Number = Math.max(16,Math.ceil(o.k.textHeight) + 3);
-                  this.hzqKeycap(g,-24,-24,kw,kh,sel ? this.hzqIconCol(acc) : this.hzqDimCol());
-                  o.k.x = -24 + (kw - o.k.width) / 2;
-                  o.k.y = -24 + (kh - o.k.height) / 2;
+                  this.hzqKeycap(g,-hb + 5,-hb + 5,kw,kh,sel ? this.hzqIconCol(acc) : this.hzqDimCol());
+                  o.k.x = -hb + 5 + (kw - o.k.width) / 2;
+                  o.k.y = -hb + 5 + (kh - o.k.height) / 2;
                   if(!o.k.visible) { o.k.visible = true; }
+                  o.kb = 5 + kh;
                }
-               else if(o.k.visible) { o.k.visible = false; }
-            }
-            var label:String = empty ? "EMPTY" : String(d.name);
-            if(o.cLabel !== label || o.cEmpty !== empty || o.cRefuse !== refuse)
-            {
-               this.hzqSet(o.n,this.hzqUC(label),13,dim ? this.hzqDimCol() : this.hzqMainCol(),"rg",0.02,false);
-               this.hzqExtFit(o.n,this.hzqUC(label),50);   // one line in the 58 px box, "..." when longer
-               o.n.x = -26;
-               o.n.y = 6;
+               else { if(o.k.visible) { o.k.visible = false; } o.kb = 0; }
             }
             o.cSel = sel;
             o.cEmpty = empty;
             o.cRefuse = refuse;
-            o.cLabel = label;
             o.cKey = key;
+            var isig:String = d == null ? "" : String(d.name) + "|" + String(d.ft) + "|" + String(d.img);
+            if(o.cIcon !== isig) { this.hzqExtLoadIcon(o,d); o.cIcon = isig; }
             i++;
          }
          if(this.hzqExtAdd != null && !this.hzqExtAddDrawn)
@@ -2160,7 +2264,7 @@ package
             // ADD tile art is static for the open: drawn once, same Horizon card panel as the slots
             var ag:Graphics = this.hzqExtAdd.graphics;
             ag.clear();
-            this.hzqPanel(ag,-29,-29,58,58,8,0.6);
+            this.hzqPanel(ag,-HZQ_EXT_BOX * 0.5,-HZQ_EXT_BOX * 0.5,HZQ_EXT_BOX,HZQ_EXT_BOX,8,0.6);
             var at:TextField = this.hzqTf(this.hzqExtAdd);
             this.hzqSet(at,"+",22,this.hzqTextAccent(),"rg",0,false);
             at.x = -12;
@@ -2198,6 +2302,142 @@ package
          }
          if(cur != best) { t.text = str.substr(0,best).replace(/\s+$/,"") + "..."; t.setTextFormat(f); }
       }
+      private function hzqExtIconExtra(it:Object) : String
+      {
+         if(it == null || it.iconImage == null) { return ""; }
+         var ft:int = -1;
+         var dir:String = "";
+         var img:String = "";
+         try { ft = int(it.iconImage.iFixtureType); } catch(e1:Error) { return ""; }
+         try { dir = String(it.iconImage.sDirectory != null ? it.iconImage.sDirectory : ""); } catch(e2:Error) { }
+         try { img = String(it.iconImage.sImageName != null ? it.iconImage.sImageName : ""); } catch(e3:Error) { }
+         if(ft < 0 || img.length == 0) { return ""; }
+         dir = dir.split("|").join("/").split(";").join("/");
+         img = img.split("|").join("/").split(";").join("/");
+         return "\tICON\t" + String(ft) + "\t" + dir + "\t" + img;
+      }
+      private function hzqExtIconSrc(d:Object) : Object
+      {
+         if(d != null && int(d.ft) >= 0 && String(d.img != null ? d.img : "").length > 0)
+         {
+            return {"iconImage":{"iFixtureType":int(d.ft),"sDirectory":String(d.dir),"sImageName":String(d.img)},"bIsPower":d.kind == "power"};
+         }
+         var want:String = d != null ? String(d.name) : "";
+         if(this.AssignedItem != null && want.length > 0 && String(this.AssignedItem.sName) == want) { return this.AssignedItem; }
+         var i:int = 0;
+         while(this.FavoritesInfoA != null && i < 12 && i < this.FavoritesInfoA.length)
+         {
+            var it:Object = this.FavoritesInfoA[i];
+            if(it != null && want.length > 0 && String(it.sName) == want && it.iconImage != null) { return it; }
+            i++;
+         }
+         return null;
+      }
+      // Same LoadIcon path as FavoritesEntry: LoadImageFixtureFromUIData(..., "FavoritesIconBuffer").
+      private function hzqExtLoadIcon(o:Object, d:Object) : void
+      {
+         if(o == null || o.ic == null) { return; }
+         var ic:* = o.ic;
+         var src:Object = this.hzqExtIconSrc(d);
+         var img:Object = src != null ? src.iconImage : null;
+         var bad:Boolean = img == null || int(img.iFixtureType) == ImageFixture.FT_INVALID;
+         try { ic.Unload(); } catch(eU:Error) { }
+         if(bad)
+         {
+            ic.visible = false;
+            return;
+         }
+         try
+         {
+            if(int(img.iFixtureType) == ImageFixture.FT_SYMBOL)
+            {
+               if(src.bIsPower == true) { ic.clipSizer = "Sizer_mc"; }
+               ic.centerClip = true;
+            }
+            else
+            {
+               ic.clipSizer = "";
+               ic.centerClip = false;
+            }
+            ic.LoadImageFixtureFromUIData(img,"FavoritesIconBuffer");
+            ic.visible = true;
+            this.hzqExtFitIcon(o);
+         }
+         catch(eL:Error) { ic.visible = false; }
+      }
+      private function hzqExtFitIcon(o:Object) : void
+      {
+         var ic:* = o.ic;
+         var e:MovieClip = o.s as MovieClip;
+         if(ic == null || e == null) { return; }
+         var nb:Rectangle = this.hzqIcB(ic,e);
+         if(nb == null || !(nb.width > 0.5) || !(nb.height > 0.5)) { return; }
+         var hb:Number = HZQ_EXT_BOX * 0.5;
+         var top:Number = -hb + HZQ_ICPAD;
+         if(Number(o.kb) > 0) { top = Math.max(top, -hb + Number(o.kb) + 2); }
+         var aw:Number = HZQ_EXT_BOX - HZQ_ICPAD * 2;
+         var ah:Number = hb - HZQ_ICPAD - top;
+         if(aw < 4 || ah < 4) { return; }
+         var k:Number = Math.min(1,Math.min(aw / nb.width,ah / nb.height));
+         ic.scaleX = k;
+         ic.scaleY = k;
+         ic.x = -(nb.x + nb.width / 2) * k;
+         ic.y = top + ah / 2 - (nb.y + nb.height / 2) * k;
+      }
+      // Purpose: Horizon card around extra slots. Drawn once per layout/count change, not per selection.
+      private function hzqExtFrameDraw(box:Object) : void
+      {
+         if(this.hzqExtFrame == null || box == null) { return; }
+         var n:int = this.hzqExtCount();
+         var per:int = this.hzqExtPer();
+         var extN:int = n > 12 ? n - 12 : 0;
+         var bars:Boolean = int(this.hzqS.ExtLayout) != 0;
+         var addOn:Boolean = this.hzqExtAdd != null && this.hzqExtAdd.visible;
+         var key:String = String(n) + ":" + String(per) + ":" + (bars ? "1" : "0") + ":" + (addOn ? "1" : "0");
+         if(key == this.hzqExtFrameKey) { return; }
+         this.hzqExtFrameKey = key;
+         var g:Graphics = this.hzqExtFrame.graphics;
+         g.clear();
+         if(this.hzqExtFrameT != null) { this.hzqExtFrameT.visible = false; }
+         if(extN <= 0 && !addOn) { return; }
+         var pitch:Number = HZQ_EXT_PITCH;
+         var cols:int = per;
+         var rows:int;
+         if(bars)
+         {
+            rows = int(Math.ceil((n + (addOn ? 1 : 0)) / per));
+            var take0:int = n + (addOn ? 1 : 0);
+            if(take0 > per) { take0 = per; }
+            cols = take0;
+         }
+         else
+         {
+            var vis:int = extN + (addOn ? 1 : 0);
+            cols = vis < per ? vis : per;
+            if(cols < 1) { cols = 1; }
+            rows = int(Math.ceil(vis / per));
+            if(rows < 1) { rows = 1; }
+         }
+         var fw:Number = (cols - 1) * pitch + HZQ_EXT_BOX + HZQ_FRAME_PAD * 2;
+         var fh:Number = rows * pitch - (pitch - HZQ_EXT_BOX) + HZQ_FRAME_PAD * 2 + HZQ_FRAME_TITLE;
+         var fx:Number = box.cx - fw * 0.5;
+         var fy:Number;
+         if(bars)
+         {
+            var rowsAll:int = int(Math.ceil(n / per));
+            fy = box.cy - (rowsAll - 1) * pitch / 2 - HZQ_EXT_BOX * 0.5 - HZQ_FRAME_PAD - HZQ_FRAME_TITLE;
+         }
+         else { fy = box.b + 12; }
+         this.hzqPanel(g,fx,fy,fw,fh,10,1);
+         this.hzqFilledBorder(g,fx,fy,fw,fh,2,10,this.hzqAccent());
+         if(this.hzqExtFrameT != null)
+         {
+            this.hzqSet(this.hzqExtFrameT,this.hzqUC("EXTENDED QUICK / FAVORITE SLOTS"),13,this.hzqTextAccent(),"bd",0.14,true);
+            this.hzqExtFrameT.x = fx + HZQ_FRAME_PAD;
+            this.hzqExtFrameT.y = fy + 6;
+            this.hzqExtFrameT.visible = true;
+         }
+      }
       private function hzqExtApply(pay:String) : void
       {
          this.hzqExtData = {};
@@ -2222,7 +2462,7 @@ package
                      continue;
                   }
                   var slot:int = int(Number(f[0]));
-                  this.hzqExtData[String(slot)] = {"name":f.length > 1 ? String(f[1]) : "","count":f.length > 2 ? Number(f[2]) : 0,"kind":f.length > 3 ? String(f[3]) : "inventory","empty":f.length > 4 ? String(f[4]) == "1" : (f.length <= 1 || String(f[1]).length == 0),"refuse":f.length > 5 && String(f[5]) == "1"};
+                  this.hzqExtData[String(slot)] = {"name":f.length > 1 ? String(f[1]) : "","count":f.length > 2 ? Number(f[2]) : 0,"kind":f.length > 3 ? String(f[3]) : "inventory","empty":f.length > 4 ? String(f[4]) == "1" : (f.length <= 1 || String(f[1]).length == 0),"refuse":f.length > 5 && String(f[5]) == "1","ft":f.length > 6 ? int(Number(f[6])) : -1,"dir":f.length > 7 ? String(f[7]) : "","img":f.length > 8 ? String(f[8]) : ""};
                }
             }
             i++;
@@ -2286,11 +2526,10 @@ package
          while(i < n)
          {
             var d:DisplayObject = e.getChildAt(i);
-            if(d != null && d.name != "hzqCard") { d.visible = false; }
+            if(d != null && d.name != "hzqCard" && d.name != "Icon_mc") { d.visible = false; }
             i++;
          }
          try { var q:* = e["Quickkey_tf"]; if(q != null) { q.visible = false; q.alpha = 0; } } catch(eQ:Error) { }
-         try { var ic:* = e["Icon_mc"]; if(ic != null) { ic.visible = false; } } catch(eI:Error) { }
       }
       private function hzqExtRestore() : void
       {
@@ -2336,6 +2575,9 @@ package
          this.hzqExtPool = null;
          this.hzqExtAdd = null;
          this.hzqExtAddDrawn = false;
+         this.hzqExtFrame = null;
+         this.hzqExtFrameT = null;
+         this.hzqExtFrameKey = "";
       }
       private function hzqFail() : void
       {
@@ -2623,6 +2865,7 @@ package
          if(this.hzq37N.length > 0 && this.hzq37Step == 0) { this.hzq37Q = this.hzq37N; this.hzq37N = []; this.hzq37Begin(); }
       }
       // =================== end shared settings reader ===================
+
 
       internal function frame13() : *
       {

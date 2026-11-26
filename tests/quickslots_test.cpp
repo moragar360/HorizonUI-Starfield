@@ -107,6 +107,15 @@ int main()
 		SetSlot(st, Assignment{13, 0x11, "", "Med Pack", Kind::Inventory, ""});
 		SetSlot(st, Assignment{20, 0x22, "", "Void Form", Kind::Power, ""});
 		SetSlot(st, Assignment{24, 0x33, "", "Quantum Essence", Kind::Essence, ""});
+		Assignment ic;
+		ic.index = 14;
+		ic.formId = 0x44;
+		ic.name = "Digipick";
+		ic.kind = Kind::Inventory;
+		ic.iconType = 1;
+		ic.iconDir = "Data";
+		ic.iconName = "Icons/digi";
+		SetSlot(st, ic);
 		const auto body = WriteStore(st);
 		Expect(body.find("horizon.quickslots") != std::string::npos, "type tag");
 		const auto back = ParseStore(body);
@@ -115,6 +124,10 @@ int main()
 		Expect(FindSlot(back, 20) && FindSlot(back, 20)->kind == Kind::Power, "slot 20 power");
 		Expect(FindSlot(back, 24) && FindSlot(back, 24)->kind == Kind::Essence, "slot 24 essence");
 		ExpectEqS(FindSlot(back, 13)->name, "Med Pack", "name");
+		Expect(FindSlot(back, 14) && FindSlot(back, 14)->iconType == 1
+			&& FindSlot(back, 14)->iconDir == "Data" && FindSlot(back, 14)->iconName == "Icons/digi",
+			"icon fixture path round-trips in the store");
+		Expect(FindSlot(back, 13)->iconType == -1, "slots without an icon keep iconType -1");
 	}
 
 	// zero player id: memory only
@@ -158,13 +171,13 @@ int main()
 		ExpectEqI(native, 12, "12 native T slots");
 		ExpectEqI(ext, 12, "12 extended");
 		ExpectEqI(add, 0, "no add tile at 24");
-		// first extended bar centered on tCx=300, 6 slots, pitch 70: first x = 300 - 2.5*70 = 125
+		// first extended bar centered on tCx=300, 6 slots, pitch 86: first x = 300 - 2.5*86 = 85
 		const auto* e13 = &*std::find_if(p.begin(), p.end(), [](const SlotPos& q) { return q.index == 13; });
 		Expect(!e13->native, "13 is not native");
-		Expect(std::abs(e13->x - 125.f) < 0.5f, "bar 1 centered on T");
-		Expect(std::abs(e13->y - (400 + 12 + 29)) < 0.5f, "bar 1 under T");
+		Expect(std::abs(e13->x - 85.f) < 0.5f, "bar 1 centered on T");
+		Expect(std::abs(e13->y - (400.f + 12.f + kExtFramePad + kExtFrameTitle + kExtBox * 0.5f)) < 0.5f, "bar 1 under T, below the frame title");
 		const auto* e19 = &*std::find_if(p.begin(), p.end(), [](const SlotPos& q) { return q.index == 19; });
-		Expect(std::abs(e19->y - e13->y - 70.f) < 0.5f, "bar 2 under bar 1");
+		Expect(std::abs(e19->y - e13->y - kExtPitch) < 0.5f, "bar 2 under bar 1");
 	}
 
 	// add tile and 18 slots / 4 per row
@@ -310,6 +323,12 @@ int main()
 		auto a9 = ParseAssignExtra("I|h0xABC|Med Pack");
 		Expect(a9.formId == 0 && a9.handle == 0xABCu && a9.name == "Med Pack",
 			"I|h0xHANDLE|name is a handle-only hint");
+		auto a10 = ParseAssignExtra("I|0x0002A04A|h40821|Med Pack\tICON\t1\tData\tIcons/med");
+		Expect(a10.formId == 0x0002A04Au && a10.handle == 40821u && a10.name == "Med Pack"
+			&& a10.iconType == 1 && a10.iconDir == "Data" && a10.iconName == "Icons/med",
+			"ICON trailer after the name is the vanilla ImageFixture path");
+		auto a11 = ParseAssignExtra("I|Med Pack");
+		Expect(a11.iconType == -1 && a11.iconName.empty(), "no ICON trailer leaves icon unset");
 		Expect(GfxU32(GfxScalar::Number, 0, 0, 0x0002A04Au) == 0,
 			"kNumber-only read drops InventoryMenu uint IDs");
 		Expect(GfxU32(GfxScalar::UInt, 0, 0, 0x0002A04Au) == 0x0002A04Au
@@ -349,10 +368,28 @@ int main()
 			const SlotPos* lastCol = nullptr;
 			for (const auto& x : p) if (x.index == 18) lastCol = &x;
 			Expect(lastCol != nullptr, "CROSS+BARS slot 18 is the last column of the first extra row");
-			Expect(AccentRingInside(lastCol->x, lastCol->y, -267.75f, 268.8f, -400.f, 800.f),
-				"last-column inner accent ring stays inside the vanilla T width");
-			Expect(!AccentRingInside(lastCol->x, lastCol->y, lastCol->x - 20.f, lastCol->x + 20.f, lastCol->y - 20.f, lastCol->y + 20.f),
-				"a 40 px clip (old 80 px fill / none-scale stroke) still cuts the right edge");
+			Expect(AccentRingInside(lastCol->x, lastCol->y, -960.f, 960.f, -540.f, 540.f, kExtBox),
+				"last-column extra ring stays inside the visible area");
+			Expect(AccentRingInside(0.f, 0.f, -29.f, 29.f, -29.f, 29.f, kBox),
+				"vanilla 58 px filled ring fits inside the 58 px card on every T slot");
+			Expect(!AccentRingInside(0.f, 0.f, -28.f, 28.f, -28.f, 28.f, kBox),
+				"a 56 px clip still cuts the right edge of a 58 px filled ring");
+			s.slotsPerRow = 8;
+			const auto p8 = PlaceSlots(s, -267.75f, 268.8f, 268.75f, 0.f, 0.f, 0.f);
+			const SlotPos* last8 = nullptr;
+			for (const auto& x : p8) if (x.index == 20) last8 = &x;
+			Expect(last8 != nullptr, "8-per-row extra last column exists");
+			Expect(!AccentRingInside(last8->x, last8->y, -267.75f, 268.8f, -400.f, 800.f, kExtBox),
+				"T AABB does not contain an 8-per-row extra last-column ring (previous clip theory)");
+			Expect(AccentRingInside(last8->x, last8->y, -960.f, 960.f, -540.f, 540.f, kExtBox),
+				"8-per-row extra last-column ring stays inside the visible area");
+			const auto inf = PlaceInfoPanel(960.f, 540.f, kInfoW, 120.f, 1.f);
+			Expect(inf.x > 268.8f && inf.y + inf.h < 540.f,
+				"info panel sits at bottom-right, left of the HUD equipment reserve");
+			Expect(InfoClearsLayout(inf, p, -267.75f, 268.8f, -267.65f, 268.75f),
+				"info panel does not overlap the T or extra slots (6 per row)");
+			Expect(InfoClearsLayout(inf, p8, -267.75f, 268.8f, -267.65f, 268.75f),
+				"info panel does not overlap the T or extra slots (8 per row)");
 		}
 		Expect(IsEssenceName("Quantum Essence"), "essence name");
 		Expect(!IsEssenceName("Med Pack"), "not essence");

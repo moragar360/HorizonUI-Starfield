@@ -139,8 +139,8 @@ expect(listeners.length === 3 && listeners.every((l) => /hzqFont(Ok|Err)Ev/.test
 	expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout|getTimer|getChildByName/.test(extCode), "Extended Mode: no enterFrame, timer or name search");
 	// performance standards: clips built once and reused, change-driven draw
 	const ens = fnText(main, "hzqExtEnsureClips").body, bld = fnText(main, "hzqExtBuildClips").body, drw = fnText(main, "hzqExtDraw").body;
-	expect(/if\(this\.hzqExtPool == null\)/.test(ens) && /if\(this\.hzqExtAdd == null\)/.test(ens) && !/new Sprite|removeChild|addEventListener/.test(bld) && (extCode.match(/new Sprite\(\)/g) || []).length === 3, "Extended Mode: hold, 12 slot clips and ADD tile are built once per open; a layout change only moves / shows / hides them");
-	expect(/o\.cSel !== sel \|\| o\.cEmpty !== empty/.test(drw) && /o\.cLabel !== label/.test(drw) && /!this\.hzqExtAddDrawn/.test(drw), "Extended Mode: a slot is redrawn only when its selection, empty state, label or key changed; the ADD tile art is drawn once");
+	expect(/if\(this\.hzqExtPool == null\)/.test(ens) && /if\(this\.hzqExtAdd == null\)/.test(ens) && /if\(this\.hzqExtHold == null\)/.test(ens) && !/new Sprite|removeChild|addEventListener/.test(bld) && (extCode.match(/new Sprite\(\)/g) || []).length === 4, "Extended Mode: hold, frame, 12 slot clips, ADD tile and overlay ring are built once per open; a layout change only moves / shows / hides them");
+	expect(/o\.cSel !== sel \|\| o\.cEmpty !== empty/.test(drw) && /o\.cKey !== key/.test(drw) && /o\.cIcon !== isig/.test(drw) && /!this\.hzqExtAddDrawn/.test(drw), "Extended Mode: a slot is redrawn only when its selection, empty/refuse, key or icon changed; the ADD tile art is drawn once");
 	expect(/public var hzqExtCmd:Function = null;/.test(main) && /public function hzqExtKick\(\)/.test(main), "Extended Mode: declared hzqExtCmd slot (sealed class) and the DLL kick");
 }
 const redrawCallers = FNS.concat(["hzqFontOkEv"]).filter((n) => { try { return /this\.hzqRedraw\(\)/.test(fnText(main, n).body); } catch (e) { return false; } });
