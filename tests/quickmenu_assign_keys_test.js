@@ -51,6 +51,14 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		"hzqExtConfirm only fires when an extra slot is highlighted");
 	expect(/if\(this\.hzqExtConfirm\(\)\) return;/.test(pimp) && /if\(this\.hzqExtConfirm\(\)\) return;/.test(pimpL),
 		"SelectItem in both movies returns after hzqExtConfirm (never AssignQuickkey index 12)");
+	function selectGuard(as, label) {
+		const m = /function SelectItem\(\)[\s\S]*?hzqExtConfirm\(\)\) return;[\s\S]*?if\(int\(this\.selectedIndex\) >= 12\) return;[\s\S]*?AssignQuickkey[\s\S]*?\n      \}/.exec(as);
+		expect(!!m, label + ": SelectItem returns on selectedIndex >= 12 after hzqExtConfirm, before AssignQuickkey");
+	}
+	selectGuard(pimp, "pimp");
+	selectGuard(pimpL, "pimp_lrg");
+	expect(/if\(int\(this\.selectedIndex\) >= 12\) return;/.test(hooks),
+		"apply_fav_hooks.py plants the selectedIndex >= 12 SelectItem guard");
 	expect(/hzqExtUser\(param1,param2\)/.test(pimp) && /hzqExtArrow\(param1\)/.test(pimp)
 		&& /Keyboard\.ENTER && this\.hzqExtConfirm/.test(pimp),
 		"ProcessUserEvent / arrows / ENTER are hooked so hover+Enter and D-pad reach 13-24");
@@ -159,6 +167,70 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 	host.hzQmCap = "QuickMenuKey13";
 	host.hz37Press("row0", [{ k: "QuickMenuKey13" }, { k: "QuickMenuHorizon" }]);
 	expect(host.hzQmCap === "QuickMenuKey13", "a click on the capturing row leaves PRESS A KEY armed");
+}
+
+// ---- F. one confirm per click/Enter; restore clears the extra selection without GetEntryClip ----
+{
+	const make = fnText(qm, "hzqExtMake").body;
+	expect(!/MouseEvent\.MOUSE_DOWN/.test(make) && /MouseEvent\.CLICK,this\.hzqExtClick/.test(make)
+		&& /MouseEvent\.ROLL_OVER,this\.hzqExtOver/.test(make),
+		"extra-slot MOUSE_DOWN is gone; CLICK confirms, ROLL_OVER highlights");
+	const pick = fnText(qm, "hzqExtPick").body;
+	const conf = fnText(qm, "hzqExtConfirm").body;
+	const open = fnText(qm, "hzqOpen").body;
+	expect(/if\(this\.hzqExtDone\) \{ return; \}/.test(pick) && /this\.hzqExtDone = true/.test(pick),
+		"hzqExtPick sends assign/use once; a second confirm is a no-op");
+	expect(/if\(this\.hzqExtDone\) \{ return true; \}/.test(conf),
+		"hzqExtConfirm after success still swallows Enter/SelectItem");
+	expect(/this\.hzqExtDone = false/.test(open) && open.indexOf("hzqExtDone") < open.indexOf("hzqOpened"),
+		"hzqOpen clears the one-shot confirm flag at the start of every open");
+	expect(/this\._SelectedIndex = FS_NONE/.test(fnText(qm, "hzqExtRestore").body),
+		"hzqExtRestore sets _SelectedIndex = FS_NONE directly (no GetEntryClip on a removed Entry_13-24)");
+	expect(/function hzqExtHideVan/.test(qm) && /d\.name != "hzqCard"/.test(fnText(qm, "hzqExtHideVan").body)
+		&& /Quickkey_tf/.test(fnText(qm, "hzqExtHideVan").body)
+		&& /hzqExtHideVan\(s\)/.test(make) && /hzqExtHideVan\(o\.s/.test(fnText(qm, "hzqExtDraw").body),
+		"Entry_13-24 hide vanilla outline / icon frame / key label; only the Horizon card stays visible");
+	function toJsPick() {
+		const f = fnText(qm, "hzqExtPick");
+		const params = f.params.split(",").map((p) => p.trim()).filter(Boolean).map((p) => p.split(":")[0].trim());
+		const b = f.body
+			.replace(/var (\w+):[\w*.]+/g, "let $1")
+			.replace(/catch\((\w+):\w+\)/g, "catch($1)")
+			.replace(/int\(/g, "(")
+			.replace(/uint\(/g, "(")
+			.replace(/String\(/g, "String(");
+		return new Function(...params, b);
+	}
+	const h = {
+		hzqExtDone: false, hzqExtSel: 0, hzqExtData: {}, selectedIndex: 12, AssignedItem: { sName: "Med Pack" },
+		hzqExtPad() {}, hzqInfoSet() {}, hzqExtDraw() {}, hzqRingDraw() {}, hzqExtFetch() {},
+		isAssigningItem() { return true; }, hzqExtFormId() { return 0; }, hzqExtHex() { return ""; },
+		StartClosingMenu() { this.closed = (this.closed || 0) + 1; },
+		sends: [],
+		hzqExtCmdSend(op, slot, extra) { this.sends.push(op + ":" + slot); return "ok"; }
+	};
+	const pickFn = toJsPick().bind(h);
+	pickFn(13, true);
+	pickFn(13, true);
+	expect(h.sends.length === 1 && h.sends[0] === "assign:13" && h.closed === 1 && h.hzqExtDone === true,
+		"two hzqExtPick(13,true) send one assign and close once");
+	h.hzqExtDone = false;
+	h.hzqExtPick = pickFn;
+	const confFn = (function () {
+		const f = fnText(qm, "hzqExtConfirm");
+		const b = f.body
+			.replace(/var (\w+):[\w*.]+/g, "let $1")
+			.replace(/catch\((\w+):\w+\)/g, "catch($1)")
+			.replace(/int\(/g, "(");
+		return new Function(b);
+	})().bind(h);
+	h.hzqExtOn = function () { return true; };
+	h.hzqExtSel = 13;
+	h.selectedIndex = 13;
+	h.sends = [];
+	h.closed = 0;
+	expect(confFn() === true && h.sends.length === 1, "first Enter/Accept confirm sends once");
+	expect(confFn() === true && h.sends.length === 1, "second Enter/Accept confirm is swallowed");
 }
 
 console.log("quickmenu_assign_keys_test " + (failed ? "FAILED" : "passed") + " (" + passed + " ok, " + failed + " FAIL)");

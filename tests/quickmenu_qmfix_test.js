@@ -46,8 +46,10 @@ const hud = rd("actionscript/horizon_block.as");
 	{
 		const assign = game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("));
 		expect(/AssignIdMatchesName\(ex\.name/.test(assign) && /return "missing"/.test(assign)
-			&& /QmInvObjectFormId\(inv, handle\)/.test(assign),
-			"1: a trusted inventory handle skips NamesMatch; a movie-only ID still NamesMatch; missing if lookup fails");
+			&& /QmInvObjectFormId\(inv, handle\)/.test(assign)
+			&& /invSel\.src == "inv"/.test(assign) && /NamesMatch\(ex\.name, formName\)/.test(assign)
+			&& /NamesMatch\(ex\.name, invSel\.name\)/.test(assign),
+			"1: InventoryMenu identity NamesMatch the assigned name; a movie-only ID still NamesMatch; missing if lookup fails");
 	}
 	expect(/inline bool NamesMatch\(/.test(hdr) && /shortn\.size\(\) < 5/.test(hdr),
 		"1: NamesMatch requires a 5-letter suffix so Med Pack vs Pack is not the same item");

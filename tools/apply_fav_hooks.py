@@ -57,7 +57,8 @@ src = after(src, '      public function onKeyDownHandler(param1:KeyboardEvent) :
 src = after(src, '      public function onKeyUpHandler(param1:KeyboardEvent) : *\n      {\n',
             '         try { if(param1.keyCode == Keyboard.ENTER && this.hzqExtConfirm()) { param1.stopPropagation(); return; } } catch(hzqE7:Error) { }\n', 'onKeyUpHandler')
 src = after(src, '      private function SelectItem() : void\n      {\n',
-            '         try { if(this.hzqExtConfirm()) return; } catch(hzqE8:Error) { }   // Horizon: never AssignQuickkey with index >= 12\n', 'SelectItem')
+            '         try { if(this.hzqExtConfirm()) return; } catch(hzqE8:Error) { }   // Horizon: never AssignQuickkey with index >= 12\n'
+            '         if(int(this.selectedIndex) >= 12) return;\n', 'SelectItem')
 src = after(src, '      private function onFavEntryMouseover(param1:Event) : void\n      {\n',
             '         try { if(this.hzqExtMouse(param1)) return; } catch(hzqE9:Error) { }   // Horizon: Entry_13-24 name, not constructed entryIndex 0\n', 'onFavEntryMouseover')
 # 3. members (OnControlMapChanged override included): before the frame scripts (end of the class)

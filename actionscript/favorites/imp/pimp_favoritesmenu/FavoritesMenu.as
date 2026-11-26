@@ -350,6 +350,7 @@ package
       private function SelectItem() : void
       {
          try { if(this.hzqExtConfirm()) return; } catch(hzqE8:Error) { }   // Horizon: never AssignQuickkey with index >= 12
+         if(int(this.selectedIndex) >= 12) return;
          if(this.isAssigningItem())
          {
             BSUIDataManager.dispatchEvent(new CustomEvent("FavoritesMenu_AssignQuickkey",{"uQuickkeyIndex":this.selectedIndex}));
@@ -450,6 +451,7 @@ package
 
       private function hzqOpen() : void
       {
+         this.hzqExtDone = false;   // one confirm per open (mouse + SelectItem + Enter must not fire 2-3 assigns)
          if(this.hzqOpened) { return; }
          this.hzqOpened = true;
          try { this.hzq37IniRead(this.hzqOnIni); } catch(e:Error) { this.hzqOn = false; }
@@ -1403,6 +1405,7 @@ package
       private var hzqExtData:Object = {};     // "13" -> {name,count,kind,empty,refuse}
       private var hzqExtKeyL:Boolean = false;
       private var hzqExtGot:Boolean = false;  // "ready" answered this open
+      private var hzqExtDone:Boolean = false; // one-shot: a successful assign/use this open already ran
       // Set by the DLL (SetMember) on the first frame of each open. FavoritesMenu is a sealed class, so the slot
       // must be declared for SetMember to land; null until the DLL binds it.
       public var hzqExtCmd:Function = null;
@@ -1695,6 +1698,7 @@ package
          return true;
       }
       // Confirm the highlighted extra slot (assign or use). Never dispatches uQuickkeyIndex >= 12.
+      // Returns true when vanilla SelectItem must not run (including a second Enter/click after success).
       private function hzqExtConfirm() : Boolean
       {
          if(!this.hzqExtOn()) { return false; }
@@ -1702,6 +1706,7 @@ package
          var idx:int = int(this.selectedIndex);
          if(idx >= 13 && idx <= 24) { slot = idx; }
          if(slot < 13) { return false; }
+         if(this.hzqExtDone) { return true; }
          this.hzqExtPick(slot,true);
          return true;
       }
@@ -1918,7 +1923,8 @@ package
          s.mouseChildren = false;
          s.buttonMode = true;
          s.visible = false;
-         s.addEventListener(MouseEvent.MOUSE_DOWN,this.hzqExtClick,false,1,true);
+         // CLICK confirms once (hzqExtDone). ROLL_OVER highlights. Do not listen on MOUSE_DOWN:
+         // that plus CLICK plus vanilla SelectItem was 2-3 assigns/uses per press.
          s.addEventListener(MouseEvent.CLICK,this.hzqExtClick,false,1,true);
          s.addEventListener(MouseEvent.ROLL_OVER,this.hzqExtOver,false,1,true);
          var card:Sprite = this.hzqSprite(s,0);
@@ -1927,6 +1933,7 @@ package
          var nm:TextField = this.hzqTf(card);
          this.addChild(s);
          this.hzqUnclip(s);
+         this.hzqExtHideVan(s);
          try
          {
             s.graphics.beginFill(0,0.01);
@@ -2014,6 +2021,7 @@ package
          this.hzqRingDraw();
          if(useIt)
          {
+            if(this.hzqExtDone) { return; }
             var assign:Boolean = false; try { assign = this.isAssigningItem(); } catch(eA:Error) { assign = this.AssignedItem != null && String(this.AssignedItem.sName != null ? this.AssignedItem.sName : "").length > 0; }
             var op:String = assign ? "assign" : "use";
             var extra:String = "";
@@ -2032,6 +2040,7 @@ package
                this.hzqInfoSet({"sName":why,"uCount":0,"sAmmoName":"","uAmmoCount":0,"aElementalStats":null},true);
                return;
             }
+            this.hzqExtDone = true;
             if(assign)
             {
                this.hzqExtGot = false;
@@ -2059,6 +2068,7 @@ package
             var key:String = "";
             if(this.hzqKb && this.hzqS != null && this.hzqS.Keys != null) { key = String(this.hzqS.Keys[slot - 13] != null ? this.hzqS.Keys[slot - 13] : ""); }
             try { this.hzqUnclip(o.s as DisplayObject); } catch(eUc:Error) { }
+            try { this.hzqExtHideVan(o.s as MovieClip); } catch(eHv:Error) { }
             if(o.cSel !== sel || o.cEmpty !== empty || o.cRefuse !== refuse || o.cKey !== key)
             {
                var spr:Sprite = o.c != null ? o.c : o.s;
@@ -2221,10 +2231,30 @@ package
          if(code == 34) { return "PageDown"; }
          return "";
       }
+      // Hide FavoritesEntry timeline art on extra slots (outline, icon frame, Quickkey "1") so only the Horizon card shows.
+      // Direct children only, at most 10, same cap as hzqHideArt. Selected/Unselected frames re-create those kids.
+      private function hzqExtHideVan(e:MovieClip) : void
+      {
+         if(e == null) { return; }
+         try { e.gotoAndStop("Unselected"); } catch(eUs:Error) { }
+         var n:int = Math.min(e.numChildren,10);
+         var i:int = 0;
+         while(i < n)
+         {
+            var d:DisplayObject = e.getChildAt(i);
+            if(d != null && d.name != "hzqCard") { d.visible = false; }
+            i++;
+         }
+         try { var q:* = e["Quickkey_tf"]; if(q != null) { q.visible = false; q.alpha = 0; } } catch(eQ:Error) { }
+         try { var ic:* = e["Icon_mc"]; if(ic != null) { ic.visible = false; } } catch(eI:Error) { }
+      }
       private function hzqExtRestore() : void
       {
          this.hzqExtListen(false);
          this.hzqExtSel = 0;
+         this.hzqExtDone = false;
+         // Bypass the setter: GetEntryClip(13-24) is about to be removed (and is null after hzqFail).
+         try { this._SelectedIndex = FS_NONE; } catch(eIdxR:Error) { }
          if(this.hzqExtMoved && this.hzqExtHome != null)
          {
             var i:int = 0;

@@ -135,7 +135,7 @@ expect(listeners.length === 3 && listeners.every((l) => /hzqFont(Ok|Err)Ev/.test
 	const extL = extCode.match(/addEventListener\([^)]*\)/g) || [];
 	const keyL = extL.filter((l) => /KeyboardEvent/.test(l));
 	expect(keyL.length === 1 && /KEY_UP,this\.hzqExtKey,false,0,true/.test(keyL[0]) && /removeEventListener\(KeyboardEvent\.KEY_UP,this\.hzqExtKey\)/.test(extCode), "Extended Mode: one weak KEY_UP listener on the stage, removed when it turns off");
-	expect(extL.filter((l) => /MouseEvent/.test(l)).length === 4 && extL.length === 5, "Extended Mode: mouse listeners only on its own slot and ADD SLOT clips");
+	expect(extL.filter((l) => /MouseEvent/.test(l)).length === 3 && extL.length === 4, "Extended Mode: mouse listeners only on its own slot and ADD SLOT clips");
 	expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout|getTimer|getChildByName/.test(extCode), "Extended Mode: no enterFrame, timer or name search");
 	// performance standards: clips built once and reused, change-driven draw
 	const ens = fnText(main, "hzqExtEnsureClips").body, bld = fnText(main, "hzqExtBuildClips").body, drw = fnText(main, "hzqExtDraw").body;

@@ -1212,17 +1212,26 @@
 		return v.GetBoolean();
 	}
 
-	// Purpose: read the item InventoryMenu currently has selected (uFormID + uHandleID).
+	static std::string QmGfxString(const GValue& a_obj, const char* a_name)
+	{
+		if (!a_name || !a_obj.IsObject()) return {};
+		GValue v;
+		if (!a_obj.GetMember(a_name, &v) || !v.IsString()) return {};
+		const char* s = v.GetString();
+		return s ? s : "";
+	}
+
+	// Purpose: read the item InventoryMenu currently has selected (uFormID + uHandleID + sName).
 	// Inputs: none (looks up InventoryMenu, then FavoritesMenu.assignedItem as a fallback).
-	// Outputs: form ID, inventory handle, power flag. 0 form/handle when that movie is not open.
-	// The engine already has this item (InventoryMenu_ToggleFavorite sent both IDs); FavoritesMenu
-	// never reads them, so assign to 13-24 must not trust the movie display name.
+	// Outputs: form ID, inventory handle, display name, power flag. 0 form/handle when that movie is not open.
+	// QmAssign name-compares an InventoryMenu hit against the assigned item before storing it.
 	struct QmInvSel
 	{
 		std::uint32_t form = 0;
 		std::uint32_t handle = 0;
 		bool          power = false;
 		const char*   src = "none";
+		std::string   name;
 	};
 
 	static QmInvSel QmReadInvAssign()
@@ -1241,6 +1250,7 @@
 			o.handle = altHandle;
 			o.power = QmGfxBool(entry, "bIsPower");
 			o.src = src;
+			o.name = QmGfxString(entry, "sName");
 		};
 		if (ui->IsMenuOpen(QmInvName())) {
 			auto inv = ui->GetMenu(QmInvName());
@@ -1263,7 +1273,8 @@
 	}
 
 	// Returns "ok", "power-later", "essence-later", "missing" or "bad".
-	// Identity: InventoryMenu selected handle / FormID first, then assignedItem, then the movie hint.
+	// Identity: InventoryMenu selected handle / FormID first (kept only when NamesMatch the
+	// assigned item name), then assignedItem, then the movie hint, then the inventory name walk.
 	std::string QmAssign(int a_slot, const std::string& a_extra)
 	{
 		if (a_slot < hzqs::kExtFirst || a_slot > hzqs::kMaxSlots) return "bad";
@@ -1279,6 +1290,21 @@
 			if (form) trusted = true;
 		}
 		if (!form && invSel.form) { form = invSel.form; trusted = true; }
+		// InventoryMenu selectedEntry can be a category or a different row than AssignedItem.
+		// Keep that ID only when it names the same item the movie is assigning.
+		if (trusted && invSel.src == "inv" && !ex.name.empty()) {
+			std::string formName;
+			if (form) {
+				if (auto* f = RE::TESForm::LookupByID(form)) {
+					if (const char* fn = QmFormName(f)) formName = fn;
+				}
+			}
+			if (!hzqs::NamesMatch(ex.name, formName) && !hzqs::NamesMatch(ex.name, invSel.name)) {
+				trusted = false;
+				form = 0;
+				handle = 0;
+			}
+		}
 		if (!form) {
 			form = ex.formId;
 			if (form)
