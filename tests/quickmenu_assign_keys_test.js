@@ -39,13 +39,18 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 // ---- A. inventory assign: extra slots are Horizon clips, never vanilla index >= 12 ----
 {
 	const pick = fnText(qm, "hzqExtPick").body;
-	expect(/this\.selectedIndex = slot/.test(pick) && /this\.hzqExtCmdSend\(op,slot,extra\)/.test(pick),
-		"assign/use for 13-24 goes through hzqExtCmd, with selectedIndex set to the extra Entry index");
+	expect(/this\.hzqLastExt = slot/.test(pick) && /this\.selectedIndex = 12/.test(pick)
+		&& !/this\.selectedIndex = slot/.test(pick) && /this\.hzqExtCmdSend\(op,slot,extra\)/.test(pick),
+		"assign/use for 13-24 goes through hzqExtCmd; selectedIndex stays FS_NONE (12), never 13-24");
 	expect(!/FavoritesMenu_AssignQuickkey/.test(qm),
 		"Horizon extra-slot path never sends FavoritesMenu_AssignQuickkey");
-	expect(/name = "Entry_" \+ slot/.test(fnText(qm, "hzqExtMake").body)
-		&& /hzqExtMouse/.test(qm) && /hzqE9/.test(hooks) && /hzqE9/.test(pimp),
-		"extra slots are Entry_13-24 in the vanilla container; mouseover uses the clip name");
+	{
+		const make = fnText(qm, "hzqExtMake").body;
+		expect(/name = "Entry_" \+ slot/.test(make) && /new MovieClip\(\)/.test(make)
+			&& !/new FavoritesEntry/.test(make) && /s\.buttonMode = false/.test(make)
+			&& /s\.tabEnabled = false/.test(make) && /hzqExtMouse/.test(qm) && /hzqE9/.test(hooks) && /hzqE9/.test(pimp),
+			"extra slots are plain Entry_13-24 MovieClips (no FavoritesEntry hitArea, not in the Tab cycle)");
+	}
 	const conf = fnText(qm, "hzqExtConfirm").body;
 	expect(/slot < 13/.test(conf) && /hzqExtPick\(slot,true\)/.test(conf),
 		"hzqExtConfirm only fires when an extra slot is highlighted");
@@ -59,13 +64,16 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 	selectGuard(pimpL, "pimp_lrg");
 	expect(/if\(int\(this\.selectedIndex\) >= 12\) return;/.test(hooks),
 		"apply_fav_hooks.py plants the selectedIndex >= 12 SelectItem guard");
-	expect(/hzqExtUser\(param1,param2\)/.test(pimp) && /hzqExtArrow\(param1\)/.test(pimp)
+	expect(/param1 != "Cancel" && param1 != "Quickkeys" && param1 != "YButton" && this\.hzqExtUser/.test(pimp)
+		&& /param1 != "Cancel" && param1 != "Quickkeys" && param1 != "YButton" && this\.hzqExtUser/.test(pimpL)
+		&& /hzqExtArrow\(param1\)/.test(pimp)
 		&& /Keyboard\.ENTER && this\.hzqExtConfirm/.test(pimp),
-		"ProcessUserEvent / arrows / ENTER are hooked so hover+Enter and D-pad reach 13-24");
+		"ProcessUserEvent never swallows Cancel/Quickkeys/YButton; arrows / ENTER still reach 13-24");
 	expect(/hzqExtUser\(param1,param2\)/.test(hooks) && /hzqE8/.test(hooks) && /hzqE9/.test(hooks),
 		"apply_fav_hooks.py plants the extra-slot confirm and mouseover hooks on a fresh vanilla export");
-	expect(/QmReadInvAssign\(/.test(game) && /ItemList_mc/.test(game) && /uHandleID/.test(game),
-		"DLL assign reads InventoryMenu selectedEntry handle/FormID (not the movie display name)");
+	expect(/QmSnapAssign\(/.test(game) && /QmReadInvAssign\(/.test(game) && /ItemList_mc/.test(game) && /uHandleID/.test(game)
+		&& /g_qmPendingHandle\.load/.test(game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("))),
+		"DLL assign uses the open-time inventory snapshot first (not the live selectedEntry at click)");
 	const nav = fnText(qm, "hzqExtNav").body;
 	expect(/idx >= 9 && idx <= 11/.test(nav) && /hzqExtPick\(13,false\)/.test(nav),
 		"CROSS+BARS: Down from the T (slots 10-12) lands on slot 13");
@@ -226,11 +234,81 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 	})().bind(h);
 	h.hzqExtOn = function () { return true; };
 	h.hzqExtSel = 13;
-	h.selectedIndex = 13;
+	h.selectedIndex = 12;
 	h.sends = [];
 	h.closed = 0;
 	expect(confFn() === true && h.sends.length === 1, "first Enter/Accept confirm sends once");
 	expect(confFn() === true && h.sends.length === 1, "second Enter/Accept confirm is swallowed");
+	h.hzqExtDone = false;
+	h.sends = [];
+	h.closed = 0;
+	h.hzqExtSel = 0;
+	h.selectedIndex = 0;
+	expect(confFn() === false && h.sends.length === 0, "hzqExtConfirm leaves vanilla slot 0 to SelectItem");
+	h.hzqExtSel = 11;
+	h.selectedIndex = 11;
+	expect(confFn() === false && h.sends.length === 0, "hzqExtConfirm leaves vanilla slot 11 to SelectItem");
+}
+
+// ---- G. 0435d regressions: vanilla 0-11, Tab/Escape close, inventory assign 13 and 18 persist ----
+{
+	const make = fnText(qm, "hzqExtMake").body;
+	const hold = fnText(qm, "hzqExtEnsureClips").body;
+	const user = fnText(qm, "hzqExtUser").body;
+	const conf = fnText(qm, "hzqExtConfirm").body;
+	const pick = fnText(qm, "hzqExtPick").body;
+	expect(/s\.buttonMode = false/.test(make) && /s\.tabEnabled = false/.test(make)
+		&& /s\.tabChildren = false/.test(make) && /drawRect\(-29,-29,58,58\)/.test(make),
+		"G: extra clips are 58 px hits, not in the Tab cycle, no FavoritesEntry Catcher");
+	expect(/hzqExtHold\.mouseEnabled = false/.test(hold) && /hzqExtHold\.tabEnabled = false/.test(hold)
+		&& /add\.tabEnabled = false/.test(hold),
+		"G: hold overlay and ADD tile do not steal Tab / do not cover Entry_0-11");
+	expect(/s\.tabEnabled = false/.test(fnText(qm, "hzqRingEnsure").body),
+		"G: overlay ring is out of the Tab cycle");
+	expect(/u == "CANCEL"/.test(user) && /u == "QUICKKEYS"/.test(user) && /return false/.test(user),
+		"G: hzqExtUser returns false for Cancel / Quickkeys so Tab reaches StartClosingMenu");
+	expect(/case "Cancel":/.test(pimp) && /case "Quickkeys":/.test(pimp) && /this\.StartClosingMenu\(\)/.test(pimp)
+		&& /case "Cancel":/.test(pimpL) && /this\.StartClosingMenu\(\)/.test(pimpL),
+		"G: ProcessUserEvent still closes on Cancel / Quickkeys / YButton in both movies");
+	expect(/slot < 13/.test(conf) && /return false/.test(conf),
+		"G: hzqExtConfirm is a no-op for slots 0-11 (click / Enter / assign / use stay vanilla)");
+	expect(!/this\.selectedIndex = slot/.test(pick) && /this\.selectedIndex = 12/.test(pick),
+		"G: extra highlight writes FS_NONE, never selectedIndex 13-24");
+	expect(/FavoritesMenu_AssignQuickkey/.test(pimp) && /uQuickkeyIndex":this\.selectedIndex/.test(pimp)
+		&& /if\(int\(this\.selectedIndex\) >= 12\) return;/.test(pimp),
+		"G: vanilla SelectItem still AssignQuickkey / UseQuickkey for index 0-11");
+	function toJsUser() {
+		const f = fnText(qm, "hzqExtUser");
+		const params = f.params.split(",").map((p) => p.trim()).filter(Boolean).map((p) => p.split(":")[0].trim());
+		const b = f.body
+			.replace(/var (\w+):[\w*.]+/g, "let $1")
+			.replace(/catch\((\w+):\w+\)/g, "catch($1)");
+		return new Function(...params, b);
+	}
+	const uh = {
+		hzqExtOn() { return true; },
+		confirms: 0, navs: 0,
+		hzqExtConfirm() { this.confirms++; return true; },
+		hzqExtNav() { this.navs++; return true; }
+	};
+	const userFn = toJsUser().bind(uh);
+	expect(userFn("Cancel", false) === false && uh.confirms === 0 && uh.navs === 0,
+		"G: Tab/Cancel is not intercepted from an extra-slot highlight");
+	expect(userFn("Quickkeys", false) === false && userFn("YButton", false) === false
+		&& userFn("Back", false) === false && userFn("Pause", false) === false,
+		"G: Quickkeys / YButton / Back / Pause still close (not intercepted)");
+	expect(userFn("Cancel", true) === false, "G: Cancel key-down is ignored (vanilla still sees the up)");
+	uh.hzqExtSel = 13;
+	expect(userFn("Activate", false) === true && uh.confirms === 1, "G: Activate still confirms an extra slot");
+	const keyName = fnText(qm, "hzqExtKeyName").body;
+	expect(!/code == 9/.test(keyName) && !/code == 27/.test(keyName) && /return "";/.test(keyName),
+		"G: stage KEY_UP map does not treat Tab (9) or Escape (27) as a slot key");
+	expect(/QmSnapAssign\(\)/.test(game) && /QmClearPending\(\)/.test(game)
+		&& /g_qmPendingHandle\.store\(s\.handle/.test(game) && /SetSlot\(g_qmStore, a\)/.test(game)
+		&& /hzqExtFetch\(\)/.test(pick) && /hzqExtCmdSend\("ready"/.test(qm),
+		"G: inventory assign snapshots FormID at open, writes the store, refreshes the payload");
+	expect(/this\.hzqExtCmdSend\(op,slot,extra\)/.test(pick),
+		"G: picking slot 13 or 18 sends assign with that slot (persists via SetSlot + payload fetch)");
 }
 
 console.log("quickmenu_assign_keys_test " + (failed ? "FAILED" : "passed") + " (" + passed + " ok, " + failed + " FAIL)");

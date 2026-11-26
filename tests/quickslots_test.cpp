@@ -86,6 +86,20 @@ int main()
 		Expect(VisibleAssignment(s, st, 18) != nullptr, "18 returns when added back");
 	}
 
+	// inventory assign to 13 and 18 persists after a reopen (write then parse)
+	{
+		Store st;
+		st.character = hzlog::MakeCharacter(0xABCDu, "Sam");
+		SetSlot(st, Assignment{13, 0xAAA, "0x00000AAA", "Med Pack", Kind::Inventory, "Med Pack"});
+		SetSlot(st, Assignment{18, 0xBBB, "0x00000BBB", "Razorback", Kind::Inventory, "Razorback"});
+		const auto body = WriteStore(st);
+		const auto back = ParseStore(body);
+		Expect(FindSlot(back, 13) && FindSlot(back, 13)->formId == 0xAAA, "reopen: slot 13 FormID kept");
+		Expect(FindSlot(back, 18) && FindSlot(back, 18)->formId == 0xBBB, "reopen: slot 18 FormID kept");
+		ExpectEqS(FindSlot(back, 13)->name, "Med Pack", "reopen: slot 13 name kept");
+		ExpectEqS(FindSlot(back, 18)->name, "Razorback", "reopen: slot 18 name kept");
+	}
+
 	// json round trip
 	{
 		Store st;

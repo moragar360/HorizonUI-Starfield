@@ -41,15 +41,17 @@ const hud = rd("actionscript/horizon_block.as");
 		"1: a successful assign fetches the payload and redraws before the menu closes");
 	expect(/o\.formId = id/.test(hdr) && /ParseFormId\(raw\.substr\(0, bar\)\)/.test(hdr),
 		"1: ParseAssignExtra reads I|0xFORM|name");
-	expect(/QmReadInvAssign\(/.test(game) && /form = ex\.formId/.test(game) && /QmFormByName\(ex\.name/.test(game),
-		"1: QmAssign prefers InventoryMenu handle/FormID, then the movie form hint, then the inventory name walk");
+	expect(/QmSnapAssign\(/.test(game) && /QmReadInvAssign\(/.test(game) && /form = ex\.formId/.test(game) && /QmFormByName\(ex\.name/.test(game),
+		"1: QmAssign snapshots the inventory item at menu open, then the movie form hint, then the inventory name walk");
 	{
 		const assign = game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("));
-		expect(/AssignIdMatchesName\(ex\.name/.test(assign) && /return "missing"/.test(assign)
+		expect(/QmSnapAssign\(\)/.test(assign) && /g_qmPendingHandle\.load/.test(assign)
+			&& /AssignIdMatchesName\(ex\.name/.test(assign) && /return "missing"/.test(assign)
 			&& /QmInvObjectFormId\(inv, handle\)/.test(assign)
-			&& /strcmp\(invSel\.src, "inv"\)/.test(assign) && /NamesMatch\(ex\.name, formName\)/.test(assign)
-			&& /NamesMatch\(ex\.name, invSel\.name\)/.test(assign),
-			"1: InventoryMenu identity NamesMatch the assigned name; a movie-only ID still NamesMatch; missing if lookup fails");
+			&& /strcmp\(invSel\.src, "inv"\)/.test(assign)
+			&& /NamesMatch\(ex\.name, invSel\.name\)/.test(assign)
+			&& /skip live inventory row/.test(assign),
+			"1: pending snapshot first; live InventoryMenu row only when NamesMatch; a movie-only ID still NamesMatch; missing if lookup fails");
 	}
 	expect(/inline bool NamesMatch\(/.test(hdr) && /shortn\.size\(\) < 5/.test(hdr),
 		"1: NamesMatch requires a 5-letter suffix so Med Pack vs Pack is not the same item");
@@ -62,8 +64,12 @@ const hud = rd("actionscript/horizon_block.as");
 	const fid = fnText(qm, "hzqExtFormId").body;
 	expect(/it\.uFormID/.test(fid) && !/uHandleID/.test(fid),
 		"1: hzqExtFormId reads uFormID and never treats uHandleID as a form ID");
-	expect(/QmReadInvAssign\(/.test(game) && /ItemList_mc/.test(game) && /uHandleID/.test(game),
-		"1: QmAssign reads InventoryMenu's selected handle / FormID instead of trusting the movie name");
+	{
+		const bind = game.slice(game.indexOf("static bool QmBindExtCmd"), game.indexOf("void PollFavorites"));
+		expect(/QmReadInvAssign\(/.test(game) && /ItemList_mc/.test(game) && /uHandleID/.test(game)
+			&& /Invoke\("hzqExtKick"/.test(bind) && /QmSnapAssign\(\);/.test(bind),
+			"1: FavoritesMenu open snapshots InventoryMenu selected handle/FormID (not the movie display name)");
+	}
 }
 
 // ---- 2 / 3. Horizon card style and a closed selection border ----

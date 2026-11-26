@@ -31,6 +31,7 @@
 	int                     g_qmLastResult[13]{};   // HUD thread: last logged use result per slot (log changes only)
 	std::atomic<std::uint32_t> g_qmPendingForm{0};
 	std::atomic<std::uint32_t> g_qmPendingHandle{0};
+	std::string             g_qmPendingName;        // display name from the open-time snapshot (g_qmMu)
 	std::atomic<bool>       g_qmStoreDirty{false};
 	std::string             g_qmStoreLast;
 	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_favRoot{nullptr};
@@ -39,6 +40,9 @@
 	bool                    g_qmUseMissLogged = false;
 	bool                    g_qmLateLogged = false;  // HUD thread: one line the first time a late key press is dropped
 	bool                    g_qmKeyDown[12]{};
+
+	static void QmClearPending();
+	static void QmSnapAssign();
 
 	// N-6: the quick menu's name as one pool string, built on first use and never destroyed (no pool release at exit).
 	const RE::BSFixedString& QmFavName()
@@ -1018,6 +1022,7 @@
 			if (auto ui = RE::UI::GetSingleton(); ui && !ui->IsMenuOpen(QmFavName())) {
 				g_qmMenuOpen.store(false, std::memory_order_release);
 				g_qmBound.store(false, std::memory_order_release);
+				QmClearPending();
 			}
 		}
 		QmRecomputeKeyBlock();
@@ -1224,7 +1229,7 @@
 	// Purpose: read the item InventoryMenu currently has selected (uFormID + uHandleID + sName).
 	// Inputs: none (looks up InventoryMenu, then FavoritesMenu.assignedItem as a fallback).
 	// Outputs: form ID, inventory handle, display name, power flag. 0 form/handle when that movie is not open.
-	// QmAssign name-compares an InventoryMenu hit against the assigned item before storing it.
+	// Callers snapshot this at FavoritesMenu open (the favorite-button item), not at click time.
 	struct QmInvSel
 	{
 		std::uint32_t form = 0;
@@ -1267,61 +1272,129 @@
 			if (fav && fav->menuObj.IsObject()) {
 				GValue item;
 				if (fav->menuObj.GetMember("assignedItem", &item)) readEntry(item, "assigned");
+				if (!o.form && !o.handle && fav->menuObj.GetMember("AssignedItem", &item))
+					readEntry(item, "assigned");
 			}
 		}
 		return o;
 	}
 
+	static void QmClearPending()
+	{
+		g_qmPendingHandle.store(0, std::memory_order_release);
+		g_qmPendingForm.store(0, std::memory_order_release);
+		std::lock_guard lk(g_qmMu);
+		g_qmPendingName.clear();
+	}
+
+	// Purpose: snapshot the InventoryMenu selected handle/FormID when FavoritesMenu opens (favorite-button item).
+	// Inputs: none (QmReadInvAssign). A later live selectedEntry can be a category; do not overwrite a good snap.
+	// Outputs: g_qmPendingHandle / g_qmPendingForm / g_qmPendingName. No-op when both IDs are 0.
+	static void QmSnapAssign()
+	{
+		if (g_qmPendingHandle.load(std::memory_order_acquire) || g_qmPendingForm.load(std::memory_order_acquire))
+			return;
+		const auto s = QmReadInvAssign();
+		if (!s.handle && !s.form) return;
+		if (s.handle)
+			g_qmPendingHandle.store(s.handle, std::memory_order_release);
+		if (s.form)
+			g_qmPendingForm.store(s.form, std::memory_order_release);
+		if (!s.name.empty()) {
+			std::lock_guard lk(g_qmMu);
+			g_qmPendingName = s.name;
+		}
+		if (HzWlOn())
+			REX::INFO("quick menu: snap src={} form={} handle={}", s.src, s.form != 0 ? 1 : 0, s.handle != 0 ? 1 : 0);
+	}
+
 	// Returns "ok", "power-later", "essence-later", "missing" or "bad".
-	// Identity: InventoryMenu selected handle / FormID first (kept only when NamesMatch the
-	// assigned item name), then assignedItem, then the movie hint, then the inventory name walk.
+	// Identity: open-time snapshot first (handle -> FormID), then assignedItem IDs, then a live
+	// InventoryMenu row only when NamesMatch the assigned/pending name, then the movie hint, then name walk.
 	std::string QmAssign(int a_slot, const std::string& a_extra)
 	{
 		if (a_slot < hzqs::kExtFirst || a_slot > hzqs::kMaxSlots) return "bad";
 		const auto ex = hzqs::ParseAssignExtra(a_extra);
+		QmSnapAssign();
 		const auto invSel = QmReadInvAssign();
-		std::uint32_t handle = invSel.handle ? invSel.handle
-			: g_qmPendingHandle.exchange(0, std::memory_order_acq_rel);
-		std::uint32_t form = 0;
-		bool trusted = false;
+		std::uint32_t handle = g_qmPendingHandle.load(std::memory_order_acquire);
+		std::uint32_t form = g_qmPendingForm.load(std::memory_order_acquire);
+		const char* src = "pending";
 		if (handle) {
+			if (auto* inv = RE::BGSInventoryInterface::GetSingleton()) {
+				if (const auto fid = QmInvObjectFormId(inv, handle))
+					form = fid;
+			}
+		}
+		bool trusted = form != 0;
+		if (!form && std::strcmp(invSel.src, "assigned") == 0 && invSel.form) {
+			form = invSel.form;
+			if (!handle) handle = invSel.handle;
+			trusted = true;
+			src = "assigned";
+		}
+		if (!handle && std::strcmp(invSel.src, "assigned") == 0)
+			handle = invSel.handle;
+		if (handle && !form) {
 			if (auto* inv = RE::BGSInventoryInterface::GetSingleton())
 				form = QmInvObjectFormId(inv, handle);
 			if (form) trusted = true;
 		}
-		if (!form && invSel.form) { form = invSel.form; trusted = true; }
-		// InventoryMenu selectedEntry can be a category or a different row than AssignedItem.
-		// Keep that ID only when it names the same item the movie is assigning.
-		if (trusted && std::strcmp(invSel.src, "inv") == 0 && !ex.name.empty()) {
-			std::string formName;
-			if (form) {
+		// Live InventoryMenu selectedEntry is only the item when it names the assigned row.
+		if (!form && std::strcmp(invSel.src, "inv") == 0 && (invSel.form || invSel.handle)) {
+			std::string pendingName;
+			{
+				std::lock_guard lk(g_qmMu);
+				pendingName = g_qmPendingName;
+			}
+			const bool named = (!ex.name.empty() && (hzqs::NamesMatch(ex.name, invSel.name)
+				|| hzqs::NamesMatch(ex.name, pendingName)))
+				|| (ex.name.empty() && !pendingName.empty() && hzqs::NamesMatch(pendingName, invSel.name));
+			if (named) {
+				form = invSel.form;
+				if (!handle) handle = invSel.handle;
+				if (handle && !form) {
+					if (auto* inv = RE::BGSInventoryInterface::GetSingleton())
+						form = QmInvObjectFormId(inv, handle);
+				}
+				if (form) {
+					trusted = true;
+					src = "inv";
+				}
+			} else if (HzWlOn()) {
+				REX::INFO("quick menu: skip live inventory row slot={}", a_slot);
+			}
+		}
+		if (!form && ex.formId) {
+			form = ex.formId;
+			src = "extra";
+			if (!ex.name.empty()) {
 				if (auto* f = RE::TESForm::LookupByID(form)) {
-					if (const char* fn = QmFormName(f)) formName = fn;
+					const char* fn = QmFormName(f);
+					if (fn && !hzqs::NamesMatch(ex.name, fn))
+						form = 0;
 				}
 			}
-			if (!hzqs::NamesMatch(ex.name, formName) && !hzqs::NamesMatch(ex.name, invSel.name)) {
-				trusted = false;
-				form = 0;
-				handle = 0;
-			}
+			if (form) trusted = true;
 		}
-		if (!form) {
-			form = ex.formId;
-			if (form)
-				g_qmPendingForm.store(0, std::memory_order_release);
-			else
-				form = g_qmPendingForm.exchange(0, std::memory_order_acq_rel);
-		} else {
-			g_qmPendingForm.store(0, std::memory_order_release);
-			g_qmPendingHandle.store(0, std::memory_order_release);
-		}
+		if (HzWlOn())
+			REX::INFO("quick menu: assign slot={} src={} pendingF={} pendingH={} liveSrc={} liveF={} liveH={} extraF={} extraN={}",
+				a_slot, src,
+				g_qmPendingForm.load(std::memory_order_acquire) != 0 ? 1 : 0,
+				g_qmPendingHandle.load(std::memory_order_acquire) != 0 ? 1 : 0,
+				invSel.src, invSel.form != 0 ? 1 : 0, invSel.handle != 0 ? 1 : 0,
+				ex.formId != 0 ? 1 : 0, ex.name.empty() ? 0 : 1);
 		if (invSel.power || ex.power) {
-			if (HzWlOn()) REX::INFO("quick menu: assign slot={} src={} power", a_slot, invSel.src);
+			if (HzWlOn()) REX::INFO("quick menu: assign slot={} src={} power", a_slot, src);
 			return "power-later";
 		}
 		if (hzqs::IsEssenceName(ex.name)) return "essence-later";
 		hzqs::Kind kind = hzqs::Kind::Inventory;
 		std::string name = ex.name;
+		if (name.empty()) {
+			std::lock_guard lk(g_qmMu);
+			name = g_qmPendingName;
+		}
 		bool usedId = trusted;
 		if (form && !usedId) {
 			if (auto* f = RE::TESForm::LookupByID(form)) {
@@ -1346,7 +1419,10 @@
 			if (!form) return "missing";
 		}
 		if (!form) {
-			if (ex.formId || !ex.name.empty() || handle || invSel.form) return "missing";
+			if (ex.formId || !ex.name.empty() || handle || invSel.form
+				|| g_qmPendingHandle.load(std::memory_order_acquire)
+				|| g_qmPendingForm.load(std::memory_order_acquire))
+				return "missing";
 		}
 		if (kind != hzqs::Kind::Inventory) return kind == hzqs::Kind::Power ? "power-later" : "essence-later";
 		std::string base;
@@ -1368,9 +1444,10 @@
 			}
 		}
 		QmMarkStoreDirty();
+		QmClearPending();
 		if (HzWlOn())
 			REX::INFO("quick menu: assign slot={} src={} form={} handle={} res=ok",
-				a_slot, invSel.src, form != 0 ? 1 : 0, handle != 0 ? 1 : 0);
+				a_slot, src, form != 0 ? 1 : 0, handle != 0 ? 1 : 0);
 		return "ok";
 	}
 
@@ -1429,6 +1506,7 @@
 		a_menu->uiMovie->asMovieRoot->CreateFunction(&fn, &g_qmFn);
 		if (!a_menu->menuObj.SetMember("hzqExtCmd", fn)) return false;
 		a_menu->menuObj.Invoke("hzqExtKick", nullptr, nullptr, 0);
+		QmSnapAssign();
 		return true;
 	}
 
@@ -1463,6 +1541,10 @@
 		g_favRoot.store(root, std::memory_order_release);
 		g_qmBound.store(false, std::memory_order_release);
 		g_qmMenuOpen.store(root != nullptr, std::memory_order_release);
-		if (root && g_qmExtOn.load(std::memory_order_acquire) && QmBindExtCmd(a_menu))
-			g_qmBound.store(true, std::memory_order_release);
+		if (root && g_qmExtOn.load(std::memory_order_acquire)) {
+			if (QmBindExtCmd(a_menu))
+				g_qmBound.store(true, std::memory_order_release);
+			else
+				QmSnapAssign();
+		}
 	}

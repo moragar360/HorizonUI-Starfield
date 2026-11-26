@@ -51,7 +51,7 @@ src = after(src, '      private function onSelectionChange() : void\n      {\n  
 # Extra slots 13-24 are Horizon clips, not native favorites. Confirm / arrows must not fall
 # through to vanilla SelectItem (uQuickkeyIndex 0-11 only) or the T d-pad tables.
 src = after(src, '      public function ProcessUserEvent(param1:String, param2:Boolean) : Boolean\n      {\n         var _loc4_:Number = NaN;\n         var _loc3_:Boolean = false;',
-            '\n         try { if(this.hzqExtUser(param1,param2)) return true; } catch(hzqE5:Error) { }   // Horizon: extra slots 13-24', 'ProcessUserEvent')
+            '\n         try { if(param1 != "Cancel" && param1 != "Quickkeys" && param1 != "YButton" && this.hzqExtUser(param1,param2)) return true; } catch(hzqE5:Error) { }   // Horizon: extra slots 13-24; never swallow close\n', 'ProcessUserEvent')
 src = after(src, '      public function onKeyDownHandler(param1:KeyboardEvent) : *\n      {\n',
             '         try { if(this.hzqExtArrow(param1)) { param1.stopPropagation(); return; } } catch(hzqE6:Error) { }\n', 'onKeyDownHandler')
 src = after(src, '      public function onKeyUpHandler(param1:KeyboardEvent) : *\n      {\n',

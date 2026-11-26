@@ -267,7 +267,7 @@ package
       {
          var _loc4_:Number = NaN;
          var _loc3_:Boolean = false;
-         try { if(this.hzqExtUser(param1,param2)) return true; } catch(hzqE5:Error) { }   // Horizon: extra slots 13-24
+         try { if(param1 != "Cancel" && param1 != "Quickkeys" && param1 != "YButton" && this.hzqExtUser(param1,param2)) return true; } catch(hzqE5:Error) { }   // Horizon: extra slots 13-24; never swallow close
          if(!param2)
          {
             _loc3_ = true;
@@ -451,7 +451,8 @@ package
 
       private function hzqOpen() : void
       {
-         this.hzqExtDone = false;   // one confirm per open (mouse + SelectItem + Enter must not fire 2-3 assigns)
+         this.hzqExtDone = false;   // one extra-slot confirm per open
+         this.hzqLastExt = 0;
          if(this.hzqOpened) { return; }
          this.hzqOpened = true;
          try { this.hzq37IniRead(this.hzqOnIni); } catch(e:Error) { this.hzqOn = false; }
@@ -1326,11 +1327,12 @@ package
             {
                this.hzqInfObj = this.selectedEntry;
                this.hzqInfSel = true;
-               if(idx >= 0 && idx < 12 && this.hzqExtSel != 0) { this.hzqExtSel = 0; }
+               if(idx >= 0 && idx < 12 && this.hzqExtSel != 0) { this.hzqExtSel = 0; this.hzqLastExt = 0; }
             }
             var i:int = 0;
             while(i < 12) { this.hzqCard(i); i++; }
-            if(idx < 13) { this.hzqInfo(); }
+            // FS_NONE (12) with an extra highlight must not overwrite that slot's info from selectedEntry.
+            if(this.hzqExtSel < 13) { this.hzqInfo(); }
             this.hzqExtDraw();
             this.hzqRingDraw();
          }
@@ -1409,6 +1411,7 @@ package
       // Set by the DLL (SetMember) on the first frame of each open. FavoritesMenu is a sealed class, so the slot
       // must be declared for SetMember to land; null until the DLL binds it.
       public var hzqExtCmd:Function = null;
+      public var hzqLastExt:int = 0;    // 13-24 when an extra slot is chosen; 0 otherwise. DLL reads this; never sent as uQuickkeyIndex.
       private var hzqExtMask:int = 0;   // N-4: bit i = the DLL refused slot 13+i's key (game-bound, F11 or duplicate)
       private static const HZQ_PITCH:Number = 70;
       // Vanilla FavoritesMenu rest geometry (game 1.16.244, both scales). Live getBounds during Open
@@ -1448,8 +1451,8 @@ package
          catch(e:Error) { }
          return "";
       }
-      // Pad aFavoriteItems so selectedIndex 13-24 (and FS_NONE=12) has a dummy row.
-      // Vanilla UpdateDisplay(null) throws; index 12 is FS_NONE, not a slot.
+      // Pad aFavoriteItems so FS_NONE=12 (and any stray index 13-24) has a dummy row.
+      // Vanilla UpdateDisplay(null) throws; extra highlight uses hzqExtSel, not selectedIndex 13-24.
       private function hzqExtPad() : void
       {
          if(this.FavoritesInfoA == null) { this.FavoritesInfoA = []; }
@@ -1467,6 +1470,7 @@ package
          s.name = "hzqRing";
          s.mouseEnabled = false;
          s.mouseChildren = false;
+         s.tabEnabled = false;
          this.addChild(s);
          this.hzqRing = s;
       }
@@ -1698,13 +1702,11 @@ package
          return true;
       }
       // Confirm the highlighted extra slot (assign or use). Never dispatches uQuickkeyIndex >= 12.
-      // Returns true when vanilla SelectItem must not run (including a second Enter/click after success).
+      // Returns true only for extra slots so vanilla 0-11 SelectItem (click / Enter / assign / use) is unchanged.
       private function hzqExtConfirm() : Boolean
       {
          if(!this.hzqExtOn()) { return false; }
          var slot:int = this.hzqExtSel;
-         var idx:int = int(this.selectedIndex);
-         if(idx >= 13 && idx <= 24) { slot = idx; }
          if(slot < 13) { return false; }
          if(this.hzqExtDone) { return true; }
          this.hzqExtPick(slot,true);
@@ -1724,10 +1726,12 @@ package
          return this.hzqExtNav(dx,dy);
       }
       // Gamepad / mapped user events (Activate, D-pad names). param2 true = key down: ignore.
+      // Cancel / Quickkeys / YButton must reach vanilla StartClosingMenu (Tab is Cancel on PC).
       private function hzqExtUser(name:String, down:Boolean) : Boolean
       {
          if(down || name == null || !this.hzqExtOn()) { return false; }
          var u:String = name.toUpperCase();
+         if(u == "CANCEL" || u == "QUICKKEYS" || u == "YBUTTON" || u == "BACK" || u == "PAUSE") { return false; }
          if(u == "ACTIVATE" || u == "ACCEPT" || u == "OK") { return this.hzqExtConfirm(); }
          if(u == "LEFT") { return this.hzqExtNav(-1,0); }
          if(u == "RIGHT") { return this.hzqExtNav(1,0); }
@@ -1808,6 +1812,9 @@ package
          {
             this.hzqExtHold = new Sprite();
             this.hzqExtHold.name = "hzqExtHold";
+            this.hzqExtHold.mouseEnabled = false;
+            this.hzqExtHold.mouseChildren = true;
+            this.hzqExtHold.tabEnabled = false;
             this.addChild(this.hzqExtHold);
          }
          if(this.hzqExtPool == null)
@@ -1824,6 +1831,7 @@ package
             add.mouseEnabled = true;
             add.mouseChildren = false;
             add.buttonMode = true;
+            add.tabEnabled = false;
             add.addEventListener(MouseEvent.CLICK,this.hzqExtAddClick);
             add.visible = false;
             this.hzqExtHold.addChild(add);
@@ -1905,26 +1913,21 @@ package
       }
       private function hzqExtMake(slot:int) : Object
       {
-         var s:MovieClip = null;
-         try
-         {
-            var fe:FavoritesEntry = new FavoritesEntry();
-            fe.name = "Entry_" + slot;
-            s = fe;
-         }
-         catch(eFe:Error) { s = null; }
-         if(s == null)
-         {
-            s = new MovieClip();
-            s.name = "Entry_" + slot;
-            s.entryIndex = slot;
-         }
+         // Plain MovieClip: a constructed FavoritesEntry keeps Catcher as hitArea and a timeline
+         // bounding box that covers Entry_0..11 once these clips are raised, and buttonMode puts
+         // them in the Tab cycle so Cancel never arrives. GetEntryClip("Entry_N") as FavoritesEntry
+         // is then null, so selectedIndex is never set to 13-24 (vanilla 0-11 keep FS_NONE / 0-11).
+         var s:MovieClip = new MovieClip();
+         s.name = "Entry_" + slot;
+         s.entryIndex = slot;
          s.mouseEnabled = true;
          s.mouseChildren = false;
-         s.buttonMode = true;
+         s.buttonMode = false;
+         s.tabEnabled = false;
+         s.tabChildren = false;
          s.visible = false;
-         // CLICK confirms once (hzqExtDone). ROLL_OVER highlights. Do not listen on MOUSE_DOWN:
-         // that plus CLICK plus vanilla SelectItem was 2-3 assigns/uses per press.
+         // CLICK confirms once (hzqExtDone). ROLL_OVER highlights. No MOUSE_DOWN (that plus CLICK
+         // plus vanilla SelectItem was 2-3 assigns/uses per press).
          s.addEventListener(MouseEvent.CLICK,this.hzqExtClick,false,1,true);
          s.addEventListener(MouseEvent.ROLL_OVER,this.hzqExtOver,false,1,true);
          var card:Sprite = this.hzqSprite(s,0);
@@ -1937,7 +1940,7 @@ package
          try
          {
             s.graphics.beginFill(0,0.01);
-            s.graphics.drawRect(-32,-32,64,64);
+            s.graphics.drawRect(-29,-29,58,58);
             s.graphics.endFill();
          }
          catch(eHit:Error) { }
@@ -2008,14 +2011,13 @@ package
             this.hzqInfoSet({"sName":String(d.name != null ? d.name : ""),"uCount":d.count,"sAmmoName":"","uAmmoCount":0,"aElementalStats":null},true);
          }
          else { this.hzqInfoSet({"sName":"EMPTY","uCount":0},true); }
-         // first-class index 13-24 so GetEntryClip / SelectItem see the extra entry; never send that index on AssignQuickkey
+         // Extra selection lives in hzqExtSel / hzqLastExt only. Never write selectedIndex 13-24:
+         // GetEntryClip is `as FavoritesEntry` (null for these clips) and the setter then throws
+         // after storing the index, which stuck vanilla 0-11 and skipped AssignQuickkey.
          if(slot >= 13 && slot <= 24)
          {
-            try { if(int(this.selectedIndex) != slot) { this.selectedIndex = slot; } } catch(eIdx:Error) { }
-         }
-         else if(this.selectedIndex != 12)
-         {
-            try { this.selectedIndex = 12; } catch(eNone:Error) { }
+            this.hzqLastExt = slot;
+            try { if(int(this.selectedIndex) < 12) { this.selectedIndex = 12; } } catch(eIdx:Error) { }
          }
          this.hzqExtDraw();
          this.hzqRingDraw();
@@ -2027,7 +2029,7 @@ package
             var extra:String = "";
             if(assign && this.AssignedItem != null)
             {
-               // Hint only: the DLL prefers InventoryMenu's selected handle / FormID over this display name.
+               // Hint only: the DLL uses the open-time inventory snapshot first, then this AssignedItem hint.
                var pw:Boolean = false; try { pw = this.AssignedItem.bIsPower == true; } catch(eP:Error) { }
                var fid:uint = this.hzqExtFormId(this.AssignedItem);
                extra = (pw ? "P|" : "I|") + (fid != 0 ? this.hzqExtHex(fid) + "|" : "") + String(this.AssignedItem.sName);
