@@ -583,11 +583,17 @@
          this.hzqPanel(g,r.x,r.y,r.width,r.height,8,empty && !sel ? 0.6 : 1);
          if(sel)
          {
+            // 2 px stroke sits fully inside the 58 px panel (Entry / Catcher clip the outer edge if
+            // the path is inset only 1). Invisible pad expands the sprite bounds so Scaleform does
+            // not clip the stroke against the fill.
+            g.beginFill(0,0);
+            g.drawRect(r.x - 4,r.y - 4,r.width + 8,r.height + 8);
+            g.endFill();
             g.beginFill(acc,0.13);
             g.drawRoundRect(r.x + 1,r.y + 1,r.width - 2,r.height - 2,14,14);
             g.endFill();
             g.lineStyle(2,acc,1,true,"none");
-            g.drawRoundRect(r.x + 1,r.y + 1,r.width - 2,r.height - 2,14,14);
+            g.drawRoundRect(r.x + 3,r.y + 3,r.width - 6,r.height - 6,14,14);
             g.lineStyle();
          }
          // key badge: top left, the bound Quickkey<n>, keyboard and mouse only
@@ -921,11 +927,20 @@
             if(this.hzqCards != null) { try { var j:int = 0; while(j < 12) { this.hzqIcRestore(j); j++; } } catch(e0:Error) { } }
             return;
          }
-         try { var i:int = 0; while(i < 12) { this.hzqCard(i); i++; } this.hzqInfo(); this.hzqExtDraw(); } catch(e:Error) { this.hzqFail(); }
+         try
+         {
+            // vanilla 1-12 selection clears the extended highlight so both rings are never on
+            if(int(this.selectedIndex) >= 0 && int(this.selectedIndex) < 12 && this.hzqExtSel != 0) { this.hzqExtSel = 0; }
+            var i:int = 0;
+            while(i < 12) { this.hzqCard(i); i++; }
+            this.hzqInfo();
+            this.hzqExtDraw();
+         }
+         catch(e:Error) { this.hzqFail(); }
       }
       private function hzqAssign() : void
       {
-         try { this.hzqInfoSet(this.AssignedItem,false); if(this.hzqOn) { this.hzqFitAll(); } } catch(e:Error) { this.hzqFail(); }
+         try { this.hzqInfoSet(this.AssignedItem,false); if(this.hzqOn) { this.hzqFitAll(); } if(this.hzqExtOn()) { this.hzqExtRaise(); } } catch(e:Error) { this.hzqFail(); }
       }
       override protected function OnControlMapChanged(param1:Object) : void
       {
@@ -1151,6 +1166,133 @@
             this.hzqExtMoved = false;
          }
          this.hzqExtBuildClips(box);
+         this.hzqExtRaise();
+      }
+      // Extra slots are Horizon clips, not native aFavoriteItems. Keep them above the assign
+      // overlay / vignette so mouse hits reach 13-24, and turn those overlays' mouse off.
+      // Purpose: inventory assign and hover+Enter can pick 13-24. Inputs: none. Outputs: z-order.
+      private function hzqExtRaise() : void
+      {
+         if(this.hzqExtHold != null)
+         {
+            try { if(this.hzqExtHold.parent == this) { this.setChildIndex(this.hzqExtHold,this.numChildren - 1); } } catch(eZ:Error) { }
+         }
+         try
+         {
+            if(this.SelectQuickslot_mc != null)
+            {
+               this.SelectQuickslot_mc.mouseEnabled = false;
+               this.SelectQuickslot_mc.mouseChildren = false;
+            }
+         }
+         catch(eSq:Error) { }
+         try
+         {
+            if(this.Vignette_mc != null)
+            {
+               this.Vignette_mc.mouseEnabled = false;
+               this.Vignette_mc.mouseChildren = false;
+            }
+         }
+         catch(eVg:Error) { }
+      }
+      // Confirm the highlighted extra slot (assign or use). Never dispatches uQuickkeyIndex >= 12.
+      private function hzqExtConfirm() : Boolean
+      {
+         if(!this.hzqExtOn() || this.hzqExtSel < 13) { return false; }
+         this.hzqExtPick(this.hzqExtSel,true);
+         return true;
+      }
+      // Keyboard arrows / Enter while FavoritesMenu is open. Returns true when vanilla must not run.
+      private function hzqExtArrow(e:KeyboardEvent) : Boolean
+      {
+         if(e == null || !this.hzqExtOn()) { return false; }
+         var dx:int = 0;
+         var dy:int = 0;
+         if(e.keyCode == Keyboard.LEFT) { dx = -1; }
+         else if(e.keyCode == Keyboard.RIGHT) { dx = 1; }
+         else if(e.keyCode == Keyboard.UP) { dy = -1; }
+         else if(e.keyCode == Keyboard.DOWN) { dy = 1; }
+         else { return false; }
+         return this.hzqExtNav(dx,dy);
+      }
+      // Gamepad / mapped user events (Activate, D-pad names). param2 true = key down: ignore.
+      private function hzqExtUser(name:String, down:Boolean) : Boolean
+      {
+         if(down || name == null || !this.hzqExtOn()) { return false; }
+         var u:String = name.toUpperCase();
+         if(u == "ACTIVATE" || u == "ACCEPT" || u == "OK") { return this.hzqExtConfirm(); }
+         if(u == "LEFT") { return this.hzqExtNav(-1,0); }
+         if(u == "RIGHT") { return this.hzqExtNav(1,0); }
+         if(u == "UP") { return this.hzqExtNav(0,-1); }
+         if(u == "DOWN") { return this.hzqExtNav(0,1); }
+         return false;
+      }
+      // Move onto / around slots 13-24. Down from the T (or the last BARS vanilla row) lands on 13-N.
+      // Up from the first extra row returns to vanilla 1-12. Left / right wrap in the extra row.
+      private function hzqExtNav(dx:int, dy:int) : Boolean
+      {
+         var n:int = this.hzqExtCount();
+         if(n <= 12) { return false; }
+         var per:int = this.hzqExtPer();
+         if(per < 1) { per = 6; }
+         var bars:Boolean = this.hzqS != null && int(this.hzqS.ExtLayout) != 0;
+         if(this.hzqExtSel >= 13)
+         {
+            var k:int = this.hzqExtSel - 13;
+            var extN:int = n - 12;
+            var col:int = k - int(Math.floor(k / per)) * per;
+            var row:int = int(Math.floor(k / per));
+            col += dx;
+            row += dy;
+            if(dx != 0)
+            {
+               var rowW:int = extN - row * per;
+               if(rowW > per) { rowW = per; }
+               if(rowW <= 0) { return true; }
+               if(col < 0) { col = rowW - 1; }
+               if(col >= rowW) { col = 0; }
+               this.hzqExtPick(13 + row * per + col,false);
+               return true;
+            }
+            if(row < 0)
+            {
+               this.hzqExtSel = 0;
+               if(bars)
+               {
+                  var vIdx:int = 12 - per + (k - int(Math.floor(k / per)) * per);
+                  if(vIdx < 0) { vIdx = 0; }
+                  if(vIdx > 11) { vIdx = 11; }
+                  this.selectedIndex = vIdx;
+               }
+               else { this.selectedIndex = 11; }
+               this.hzqExtDraw();
+               return true;
+            }
+            var next:int = 13 + row * per + col;
+            if(next < 13 || next > n) { return true; }
+            this.hzqExtPick(next,false);
+            return true;
+         }
+         var idx:int = int(this.selectedIndex);
+         if(idx < 0 || idx > 11) { return false; }
+         if(dy <= 0) { return false; }
+         if(bars)
+         {
+            var nextB:int = idx + per;
+            if(nextB >= 12 && nextB < n)
+            {
+               this.hzqExtPick(nextB + 1,false);
+               return true;
+            }
+            return false;
+         }
+         if(idx >= 9 && idx <= 11)
+         {
+            this.hzqExtPick(13,false);
+            return true;
+         }
+         return false;
       }
       // Build once (hold, 12 slot clips, ADD tile), then every layout change only moves / shows / hides them.
       private function hzqExtEnsureClips() : void
@@ -1374,11 +1516,14 @@
                this.hzqPanel(g,-29,-29,58,58,8,dim && !sel ? 0.6 : 1);
                if(sel)
                {
+                  g.beginFill(0,0);
+                  g.drawRect(-33,-33,66,66);
+                  g.endFill();
                   g.beginFill(acc,0.13);
                   g.drawRoundRect(-28,-28,56,56,14,14);
                   g.endFill();
                   g.lineStyle(2,acc,1,true,"none");
-                  g.drawRoundRect(-28,-28,56,56,14,14);
+                  g.drawRoundRect(-26,-26,52,52,14,14);
                   g.lineStyle();
                }
                if(key.length > 0)

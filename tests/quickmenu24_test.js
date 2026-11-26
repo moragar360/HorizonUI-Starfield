@@ -24,7 +24,7 @@ for (const k of ["QuickMenuExtended","QuickMenuSlotCount","QuickMenuSlotsPerRow"
 expect(/"k":"QuickMenuExtendedLayout".*"opts":\["CROSS \+ BARS","BARS"\]/.test(as), "EXTENDED LAYOUT options are CROSS + BARS and BARS");
 expect(/"k":"QuickMenuSlotsPerRow".*"opts":\["4","6","8"\]/.test(as), "SLOTS PER ROW is 4/6/8");
 expect(/"k":"QuickMenuKey13".*"t":"k"/.test(as), "slot keys use type k (includes NONE)");
-expect(as.indexOf("HZ_QM_KEYS") >= 0 && as.indexOf('private static const HZ_QM_KEYS:Array = ["","F1"') >= 0, "type k cycles from empty/NONE");
+expect(as.indexOf("HZ_QM_NAMED") >= 0 && as.indexOf("hzQmCapBegin") >= 0 && as.indexOf("PRESS A KEY") >= 0, "type k captures the next key (rebind prompt), not a preset list");
 expect(as.indexOf("Favorites Menu Extended") >= 0 && as.indexOf("Favorites Banks") >= 0, "F11 lock note names the conflicting mods");
 expect(as.indexOf("hzQmSetConflict") >= 0 && as.indexOf("hzQmSetSlotCount") >= 0, "HUD has conflict and slot-count setters");
 

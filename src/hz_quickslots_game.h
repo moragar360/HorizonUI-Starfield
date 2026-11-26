@@ -169,12 +169,15 @@
 				if (switchOut) ignoreBackoffUntilGen = gen;
 			}
 		}
+		// Copy parked stores only when a write can run this poll. Pending() copies the whole
+		// entries vector; skip that during write backoff (unless a character switch must flush).
+		const auto now = GetTickCount64();
+		if (now >= s_nextTry || ignoreBackoffUntilGen != 0) {
 		auto pending = []() {
 			std::lock_guard lk(g_qmMu);
 			return g_qmParked.Pending();
 		}();
 		if (!pending.empty()) {
-			const auto now = GetTickCount64();
 			for (const auto& item : pending) {
 				const bool ignore = ignoreBackoffUntilGen && item.gen == ignoreBackoffUntilGen;
 				if (now >= s_nextTry || ignore) {
@@ -209,6 +212,7 @@
 				}
 				}
 			}
+		}
 		}
 		if (g_qmLoadReq.load(std::memory_order_acquire)) {
 			hzlog::Character ch;

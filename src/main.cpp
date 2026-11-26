@@ -1311,6 +1311,24 @@ namespace HZ
 		return std::string("ch:") + c;
 	}
 
+	// Names ValidKeyName / KeyNameToScan already map (A-Z, 0-9, F1-F12, Insert, Home, End,
+	// PageUp, PageDown). Queued as "bind:<Name>" on the existing F11 raw-input path only;
+	// the HUD ignores it unless a Quick Menu key row is capturing. No extra polling.
+	std::string VkToBind(UINT a_vk)
+	{
+		if (a_vk >= 'A' && a_vk <= 'Z') return std::string(1, static_cast<char>(a_vk));
+		if (a_vk >= '0' && a_vk <= '9') return std::string(1, static_cast<char>(a_vk));
+		if (a_vk >= VK_NUMPAD0 && a_vk <= VK_NUMPAD9)
+			return std::string(1, static_cast<char>('0' + (a_vk - VK_NUMPAD0)));
+		if (a_vk >= VK_F1 && a_vk <= VK_F12) return "F" + std::to_string(a_vk - VK_F1 + 1);
+		if (a_vk == VK_INSERT) return "Insert";
+		if (a_vk == VK_HOME) return "Home";
+		if (a_vk == VK_END) return "End";
+		if (a_vk == VK_PRIOR) return "PageUp";
+		if (a_vk == VK_NEXT) return "PageDown";
+		return {};
+	}
+
 	// key repeat state (window thread only)
 	bool      g_kDown[256]{};
 	ULONGLONG g_kNext[256]{};
@@ -1326,9 +1344,15 @@ namespace HZ
 		if (!g_kDown[a_vk]) { fire = true; g_kNext[a_vk] = now + 400; }
 		else if (IsArrow(a_vk) && now >= g_kNext[a_vk]) { fire = true; g_kNext[a_vk] = now + 150; }
 		g_kDown[a_vk] = true;
-		if (fire && (code || !chr.empty())) {
-			std::lock_guard l(g_qLock);
-			if (g_keyQueue.size() < 64) g_keyQueue.emplace_back(code ? std::string(code) : chr);
+		if (fire) {
+			std::string bind = VkToBind(a_vk);
+			if (code || !chr.empty() || !bind.empty()) {
+				std::lock_guard l(g_qLock);
+				if ((code || !chr.empty()) && g_keyQueue.size() < 64)
+					g_keyQueue.emplace_back(code ? std::string(code) : chr);
+				if (!bind.empty() && g_keyQueue.size() < 64)
+					g_keyQueue.emplace_back(std::string("bind:") + bind);
+			}
 		}
 	}
 

@@ -68,8 +68,8 @@ const hud = rd("actionscript/horizon_block.as");
 		"2: extended slots use hzqPanel (CardOpacity / CardBgOpacity) like the 1-12 Horizon cards");
 	expect(/g\.beginFill\(acc,0\.13\)/.test(drw) && /this\.hzqKeycap\(g,-24,-24,kw,kh/.test(drw),
 		"2: selected fill and keycap match hzqCard");
-	expect(/lineStyle\(2,acc,1,true,"none"\)/.test(drw) && /drawRoundRect\(-28,-28,56,56,14,14\)/.test(drw),
-		"3: selection stroke is inset 1 with ellipse 14 and scale mode none (the border closes)");
+	expect(/lineStyle\(2,acc,1,true,"none"\)/.test(drw) && /drawRoundRect\(-26,-26,52,52,14,14\)/.test(drw),
+		"3: selection stroke is inset inside the 58 px panel (ellipse 14, scale none) so Entry/Catcher does not clip it");
 	expect(/this\.hzqSet\(o\.n,this\.hzqUC\(label\),13,/.test(drw) && /this\.hzqSet\(o\.k,klab,13,/.test(drw),
 		"2: extended text uses hzqSet at 13 px (Exo 2 through hzqFace)");
 	expect(/this\.hzqPanel\(ag,-29,-29,58,58,8,0\.6\)/.test(drw),

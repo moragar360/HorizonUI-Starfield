@@ -4692,7 +4692,11 @@
       private static const HZ_SET_H:Number = 660;
       private static const HZ_SET_TABS:Array = ["CARDS","STYLE","TEXT","EFFECTS","RULES","COMPASS","CONTROLS","SCANNER","COMMS"];   // v0.30: 7 SCANNER, 8 COMMS (optional modules)
       private static const HZ_SET_KEYS:Array = ["F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"];
-      private static const HZ_QM_KEYS:Array = ["","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"];
+      private static const HZ_QM_NAMED:Array = ["F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"];
+      private var hzQmCap:String = "";       // QuickMenuKeyN while capturing the next key; "" = off
+      private var hzQmCapWarn:String = "";   // amber warning while a captured key is already used
+      private var hzQmCapCand:String = "";   // candidate waiting for ENTER confirm
+      private var hzQmCapKind:String = "";   // "" | "slot" | "game" | "settings"
       private static const HZ_SET_ACCNAMES:Array = ["CYAN","TEAL","AMBER","VIOLET","LIME","WHITE","ROSE","ORANGE","SKY","GOLD","MINT","STEEL","DEEP BLUE"];
 
       // Row definitions: k = INI key, t = b(ool) / n(umber slider) / a(ccent swatches) / r(choice) / q(rule) / l(value list) / c(key) / x(action)
@@ -6352,6 +6356,7 @@
       {
          this.hzMsglogForceClose();
          this.hzSetIsOpen = false;
+         this.hzQmCapEnd();
          try { this.hz37Reset(); } catch(e37r:Error) { }
          this.hzSetPend = null;
          this.hzSetOrig = null;
@@ -6418,8 +6423,9 @@
          if(this.hzPopLayers != null && this.hzPopLayers.length > 0) { this.hzPopKey(code); return; }   // 0.43.0.1: only the top layer
          if(this.hzArrange) { this.hzArrKey(code); return; }
          if(!this.hzSetIsOpen) { return; }
+         if(this.hzQmCap.length > 0) { this.hzQmCapKey(code); this.hzSetDraw(); return; }   // 0.43.5: extra-slot rebind prompt
          if(this.hz37Key(code)) { this.hzSetDraw(); return; }   // v0.37: preset name entry / pending confirm
-         if(code.indexOf("ch:") == 0 || code == "bksp") { return; }
+         if(code.indexOf("ch:") == 0 || code == "bksp" || code.indexOf("bind:") == 0) { return; }
          var rows:Array = this.hzSetRows(this.hzSetTab);
          switch(code)
          {
@@ -6511,34 +6517,133 @@
          }
          else if(r.t == "k")
          {
-            // skip keys already used by another extended slot or by the settings key; "" (no key) is always allowed.
-            // Keys bound in the game's own controls are refused by the DLL at runtime (logged, slot key ignored).
-            var km:Array = HZ_QM_KEYS;
-            var ki:int = km.indexOf(String(this.hzSetPend[k]));
-            if(ki < 0) { ki = 0; }
-            var setKey:String = String(this.hzSetPend.SettingsKey != null ? this.hzSetPend.SettingsKey : this.hzSettingsKeyName).toUpperCase();
-            var tries:int = 0;
-            var cand:String = "";
-            while(tries < km.length)
-            {
-               ki = (ki + dir + km.length) % km.length;
-               cand = String(km[ki]);
-               tries++;
-               if(cand == "") { break; }
-               if(cand.toUpperCase() == setKey) { continue; }
-               var used:Boolean = false;
-               var qn:int = 13;
-               while(qn <= 24)
-               {
-                  var qk:String = "QuickMenuKey" + qn;
-                  if(qk != k && String(this.hzSetPend[qk] != null ? this.hzSetPend[qk] : "").toUpperCase() == cand.toUpperCase()) { used = true; break; }
-                  qn++;
-               }
-               if(!used) { break; }
-            }
-            this.hzSetPend[k] = cand;
+            // Capture the next key press (rebind prompt). Left / click starts capture; no preset list.
+            this.hzQmCapBegin(k);
+            return;
          }
          this.hzSetLive(this.hzSetPend);
+      }
+
+      // Purpose: start / run the extra-slot key capture prompt (slots 13-24). Event-driven only
+      // while F11 is open: codes come from hzSettingsKey (existing QueueKey path). Inputs: INI key
+      // or a queued code (bind:/ch:/ok/cancel/bksp). Outputs: pending QuickMenuKeyN. No defaults.
+      private function hzQmCapBegin(k:String) : void
+      {
+         this.hzQmCap = k;
+         this.hzQmCapWarn = "";
+         this.hzQmCapCand = "";
+         this.hzQmCapKind = "";
+      }
+      private function hzQmCapEnd() : void
+      {
+         this.hzQmCap = "";
+         this.hzQmCapWarn = "";
+         this.hzQmCapCand = "";
+         this.hzQmCapKind = "";
+      }
+      private function hzQmKeyOk(n:String) : Boolean
+      {
+         if(n == null || n.length == 0) { return false; }
+         if(n.length == 1)
+         {
+            var c:int = n.charCodeAt(0);
+            return (c >= 65 && c <= 90) || (c >= 48 && c <= 57);
+         }
+         var i:int = 0;
+         while(i < HZ_QM_NAMED.length)
+         {
+            if(String(HZ_QM_NAMED[i]).toUpperCase() == n.toUpperCase()) { return true; }
+            i++;
+         }
+         return false;
+      }
+      private function hzQmCanon(n:String) : String
+      {
+         if(n == null || n.length == 0) { return ""; }
+         if(n.length == 1) { return n.toUpperCase(); }
+         var u:String = n.toUpperCase();
+         if(u == "PAGEUP") { return "PageUp"; }
+         if(u == "PAGEDOWN") { return "PageDown"; }
+         if(u == "INSERT") { return "Insert"; }
+         if(u == "HOME") { return "Home"; }
+         if(u == "END") { return "End"; }
+         if(u.charAt(0) == "F" && u.length <= 3) { return "F" + u.substring(1); }
+         return n;
+      }
+      private function hzQmCapClash(name:String) : String
+      {
+         var u:String = name.toUpperCase();
+         var setKey:String = String(this.hzSetPend != null && this.hzSetPend.SettingsKey != null ? this.hzSetPend.SettingsKey : this.hzSettingsKeyName).toUpperCase();
+         if(u == setKey)
+         {
+            this.hzQmCapKind = "settings";
+            return name + " is HORIZON SETTINGS. Press another key, or ESC to cancel.";
+         }
+         var qn:int = 13;
+         while(qn <= 24)
+         {
+            var qk:String = "QuickMenuKey" + qn;
+            if(qk != this.hzQmCap && String(this.hzSetPend[qk] != null ? this.hzSetPend[qk] : "").toUpperCase() == u)
+            {
+               this.hzQmCapKind = "slot";
+               return name + " is already SLOT " + qn + ". ENTER uses it here and clears slot " + qn + ". Press another key, or ESC to cancel.";
+            }
+            qn++;
+         }
+         if(u == "W" || u == "A" || u == "S" || u == "D" || u == "Q" || u == "E"
+            || u == "F1" || u == "F2" || u == "F3" || u == "F4" || u == "F5" || u == "F6"
+            || u == "F7" || u == "F8" || u == "F9" || u == "F10" || u == "F11" || u == "F12")
+         {
+            this.hzQmCapKind = "game";
+            return name + " is a game or Horizon default. ENTER uses it here anyway. Press another key, or ESC to cancel.";
+         }
+         this.hzQmCapKind = "";
+         return "";
+      }
+      private function hzQmCapApply(name:String, steal:Boolean) : void
+      {
+         var k:String = this.hzQmCap;
+         if(k.length == 0 || this.hzSetPend == null) { this.hzQmCapEnd(); return; }
+         if(steal)
+         {
+            var qn:int = 13;
+            while(qn <= 24)
+            {
+               var qk:String = "QuickMenuKey" + qn;
+               if(qk != k && String(this.hzSetPend[qk] != null ? this.hzSetPend[qk] : "").toUpperCase() == name.toUpperCase()) { this.hzSetPend[qk] = ""; }
+               qn++;
+            }
+         }
+         this.hzSetPend[k] = name;
+         this.hzQmCapEnd();
+         this.hzSetLive(this.hzSetPend);
+      }
+      private function hzQmCapTake(raw:String) : void
+      {
+         var name:String = this.hzQmCanon(raw);
+         if(!this.hzQmKeyOk(name)) { return; }
+         var clash:String = this.hzQmCapClash(name);
+         if(clash.length == 0)
+         {
+            this.hzQmCapApply(name,false);
+            return;
+         }
+         this.hzQmCapCand = name;
+         this.hzQmCapWarn = clash;
+      }
+      private function hzQmCapKey(code:String) : Boolean
+      {
+         if(this.hzQmCap.length == 0) { return false; }
+         if(code == "cancel") { this.hzQmCapEnd(); return true; }
+         if(code == "bksp") { this.hzQmCapApply("",false); return true; }
+         if(code == "ok")
+         {
+            if(this.hzQmCapCand.length > 0 && this.hzQmCapKind != "settings") { this.hzQmCapApply(this.hzQmCapCand,this.hzQmCapKind == "slot"); }
+            return true;
+         }
+         if(code.indexOf("bind:") == 0) { this.hzQmCapTake(code.substring(5)); return true; }
+         if(code.indexOf("ch:") == 0 && code.length == 4) { this.hzQmCapTake(code.substring(3).toUpperCase()); return true; }
+         return true;
       }
 
       private function hzSetSnap(v:Number, r:Object) : Number
@@ -7399,8 +7504,9 @@
                if(r.t == "c" || r.t == "k")
                {
                   var kn:String = String(v);
-                  if(r.t == "k" && kn.length == 0) { kn = "NONE"; }
-                  var kt:TextField = this.hzWT(b,kn,0,0,120,11,"bd",acc,0.4);
+                  if(r.t == "k" && this.hzQmCap == r.k) { kn = this.hzQmCapCand.length > 0 ? this.hzQmCapCand : "PRESS A KEY"; }
+                  else if(r.t == "k" && kn.length == 0) { kn = "NONE"; }
+                  var kt:TextField = this.hzWT(b,kn,0,0,140,11,"bd",acc,0.4);
                   var kw:Number = Math.max(28,Math.round(this.hzTW(kt) + 16));
                   b.removeChild(kt);
                   x0 = Math.round(R - 14 - kw);
@@ -7411,12 +7517,15 @@
                   var ct:TextField = this.hzWT(b,txt,R - 14,cy - 9,260,13,"sb",vcol,1.2,"right");
                   x0 = Math.round(R - 14 - this.hzTW(ct));
                }
-               var lh:Boolean = this.hzSetHover == "lt" + i;
-               var rhv:Boolean = this.hzSetHover == "rt" + i;
-               this.hzSetTri(g,x0 - 14,cy,-1,acc,lh ? 1 : 0.78);
-               this.hzSetTri(g,R,cy,1,acc,rhv ? 1 : 0.78);
-               this.hzSetHits.push({"id":"lt" + i,"x":x0 - 24,"y":y,"w":22,"h":32});
-               this.hzSetHits.push({"id":"rt" + i,"x":R - 10,"y":y,"w":22,"h":32});
+               if(r.t != "k")
+               {
+                  var lh:Boolean = this.hzSetHover == "lt" + i;
+                  var rhv:Boolean = this.hzSetHover == "rt" + i;
+                  this.hzSetTri(g,x0 - 14,cy,-1,acc,lh ? 1 : 0.78);
+                  this.hzSetTri(g,R,cy,1,acc,rhv ? 1 : 0.78);
+                  this.hzSetHits.push({"id":"lt" + i,"x":x0 - 24,"y":y,"w":22,"h":32});
+                  this.hzSetHits.push({"id":"rt" + i,"x":R - 10,"y":y,"w":22,"h":32});
+               }
             }
             else if(r.t == "p") { this.hz37DrawPick(b,g,r,i,cy,R,T); }
             else if(r.t == "x" && String(r.k).indexOf("_hz37") == 0) { this.hz37DrawBtn(b,g,r,i,R,cy,rh,T); }
@@ -7439,6 +7548,20 @@
                var oneN:Number = notePx >= 13 ? 20 : 18;
                if(nh > oneN) { this.hzMsglogWrap(nt,nw,160); nt.height = Math.round(nh); }
                y += nh;
+            }
+            if(r.t == "k" && this.hzQmCap == r.k)
+            {
+               if(this.hzQmCapWarn.length > 0)
+               {
+                  this.hz37DrawWarn(b,g,y,R,T,this.hzQmCapWarn);
+                  y += 44;
+               }
+               else
+               {
+                  var capN:TextField = this.hzWT(b,"Press any letter, number, F1-F12, Insert, Home, End, Page Up, or Page Down. ESC cancels. BACKSPACE clears.",(r.dis ? 56 : 34) + (r.sub ? 22 : 0),y - 2,this.hzSetNoteW(),13,"rg",uint(T.note),0.2,"left",13);
+                  this.hzMsglogWrap(capN,this.hzSetNoteW(),80);
+                  y += Math.max(20,capN.textHeight + 6);
+               }
             }
             y += 4;
             lastShown = li;
