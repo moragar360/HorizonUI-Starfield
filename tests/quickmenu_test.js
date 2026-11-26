@@ -91,7 +91,7 @@ function host(iniText) {
 	// 0.43.5 Extended Mode helpers: off (the default), so the 0.43.3 flow under test is unchanged. Checked in 3b.
 	h.hzqExtGot = false;
 	h.hzqExtOn = function () { return false; };
-	for (const n of ["hzqExtPrepare", "hzqExtDraw", "hzqExtFetch", "hzqExtRestore", "hzqExtListen", "hzqExtPlace"]) h[n] = function () {};
+	for (const n of ["hzqExtPrepare", "hzqExtDraw", "hzqExtFetch", "hzqExtRestore", "hzqExtListen", "hzqExtPlace", "hzqExtPad", "hzqExtRaise", "hzqRingDraw", "hzqUnclip"]) h[n] = function () {};
 	h.ItemInfo_mc = { ItemNameBg_mc: clip("a"), ItemName_mc: clip("b"), AmmoType_mc: clip("c"), AmmoAmount_mc: clip("d"), DamageTypeHolder_mc: clip("e") };
 	for (let i = 0; i < 12; i++) h["Entry_" + i] = Object.assign(clip("Entry_" + i, [clip("instance1"), clip("Icon_mc"), clip("Catcher_mc"), clip("Quickkey_tf"), clip("SlotInfoSpacer_mc"), clip("hzqCard")]),
 		{ Icon_mc: null, Quickkey_tf: null });
@@ -135,7 +135,7 @@ expect(listeners.length === 3 && listeners.every((l) => /hzqFont(Ok|Err)Ev/.test
 	const extL = extCode.match(/addEventListener\([^)]*\)/g) || [];
 	const keyL = extL.filter((l) => /KeyboardEvent/.test(l));
 	expect(keyL.length === 1 && /KEY_UP,this\.hzqExtKey,false,0,true/.test(keyL[0]) && /removeEventListener\(KeyboardEvent\.KEY_UP,this\.hzqExtKey\)/.test(extCode), "Extended Mode: one weak KEY_UP listener on the stage, removed when it turns off");
-	expect(extL.filter((l) => /MouseEvent/.test(l)).length === 3 && extL.length === 4, "Extended Mode: mouse listeners only on its own slot and ADD SLOT clips");
+	expect(extL.filter((l) => /MouseEvent/.test(l)).length === 4 && extL.length === 5, "Extended Mode: mouse listeners only on its own slot and ADD SLOT clips");
 	expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout|getTimer|getChildByName/.test(extCode), "Extended Mode: no enterFrame, timer or name search");
 	// performance standards: clips built once and reused, change-driven draw
 	const ens = fnText(main, "hzqExtEnsureClips").body, bld = fnText(main, "hzqExtBuildClips").body, drw = fnText(main, "hzqExtDraw").body;

@@ -6424,6 +6424,9 @@
          if(this.hzArrange) { this.hzArrKey(code); return; }
          if(!this.hzSetIsOpen) { return; }
          if(this.hzQmCap.length > 0) { this.hzQmCapKey(code); this.hzSetDraw(); return; }   // 0.43.5: extra-slot rebind prompt
+         // QueueKey also sends bind:<Key> for letters/digits/F-keys (capture-only). Ignore it here so
+         // preset naming keeps ch:a and a pending confirm is not dropped after the first character.
+         if(code.indexOf("bind:") == 0) { return; }
          if(this.hz37Key(code)) { this.hzSetDraw(); return; }   // v0.37: preset name entry / pending confirm
          if(code.indexOf("ch:") == 0 || code == "bksp" || code.indexOf("bind:") == 0) { return; }
          var rows:Array = this.hzSetRows(this.hzSetTab);
@@ -20888,7 +20891,7 @@
          }
          return false;
       }
-      // mouse press: a click anywhere else drops a pending confirm / the name entry
+      // mouse press: a click anywhere else drops a pending confirm / the name entry / a PRESS A KEY capture
       private function hz37Press(id:String, rows:Array) : void
       {
          var ri:int = -1;
@@ -20897,6 +20900,7 @@
          var k:String = ri >= 0 && ri < rows.length ? String(rows[ri].k) : "";
          if(k != this.hz37Cf && id.indexOf("inf") != 0) { this.hz37Cf = ""; }
          if(this.hz37Edit != null && k != "_hz37save") { this.hz37Edit = null; }
+         if(this.hzQmCap.length > 0 && k != this.hzQmCap) { this.hzQmCapEnd(); }
       }
       private function hz37Reset() : void
       {

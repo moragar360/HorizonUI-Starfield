@@ -30,8 +30,9 @@ once(src, 'public class FavoritesMenu extends IMenu', 'class declaration')
 imports = ['Shared.InventoryItemUtils', 'Shared.PlatformUtils', 'flash.display.DisplayObject', 'flash.display.MovieClip',
            'flash.display.Sprite', 'flash.events.Event', 'flash.events.IOErrorEvent', 'flash.filters.DropShadowFilter',
            'flash.geom.ColorTransform', 'flash.geom.Rectangle', 'flash.net.URLLoader', 'flash.net.URLRequest',
-           'flash.text.TextField', 'flash.text.TextFieldAutoSize', 'flash.text.TextFormat',
-           'flash.display.Graphics', 'flash.events.KeyboardEvent', 'flash.events.MouseEvent']  # last three: 0.43.5 Extended Mode
+           'flash.text.TextField', 'flash.text.TextFieldAutoSize',            'flash.text.TextFormat',
+           'flash.display.Graphics', 'flash.events.KeyboardEvent', 'flash.events.MouseEvent',
+           'flash.geom.Point']  # last four: 0.43.5 Extended Mode
 m = list(re.finditer(r'(?m)^[ \t]*import [A-Za-z0-9_.]+;[ \t]*\r?$', src))
 last = m[-1]; add = ''
 for im in imports:
@@ -57,6 +58,8 @@ src = after(src, '      public function onKeyUpHandler(param1:KeyboardEvent) : *
             '         try { if(param1.keyCode == Keyboard.ENTER && this.hzqExtConfirm()) { param1.stopPropagation(); return; } } catch(hzqE7:Error) { }\n', 'onKeyUpHandler')
 src = after(src, '      private function SelectItem() : void\n      {\n',
             '         try { if(this.hzqExtConfirm()) return; } catch(hzqE8:Error) { }   // Horizon: never AssignQuickkey with index >= 12\n', 'SelectItem')
+src = after(src, '      private function onFavEntryMouseover(param1:Event) : void\n      {\n',
+            '         try { if(this.hzqExtMouse(param1)) return; } catch(hzqE9:Error) { }   // Horizon: Entry_13-24 name, not constructed entryIndex 0\n', 'onFavEntryMouseover')
 # 3. members (OnControlMapChanged override included): before the frame scripts (end of the class)
 f = once(src, '      internal function frame13() : *', 'frame13')
 src = src[:f] + blk + nl + src[f:]

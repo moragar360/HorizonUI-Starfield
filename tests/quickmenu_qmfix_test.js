@@ -41,12 +41,13 @@ const hud = rd("actionscript/horizon_block.as");
 		"1: a successful assign fetches the payload and redraws before the menu closes");
 	expect(/o\.formId = id/.test(hdr) && /ParseFormId\(raw\.substr\(0, bar\)\)/.test(hdr),
 		"1: ParseAssignExtra reads I|0xFORM|name");
-	expect(/form = ex\.formId/.test(game) && /QmFormByName\(ex\.name/.test(game),
-		"1: QmAssign prefers the movie form ID, then the inventory name walk");
+	expect(/QmReadInvAssign\(/.test(game) && /form = ex\.formId/.test(game) && /QmFormByName\(ex\.name/.test(game),
+		"1: QmAssign prefers InventoryMenu handle/FormID, then the movie form hint, then the inventory name walk");
 	{
 		const assign = game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("));
-		expect(/AssignIdMatchesName\(ex\.name/.test(assign) && /if \(ex\.formId \|\| !ex\.name\.empty\(\)\) return "missing"/.test(assign),
-			"1: QmAssign ignores an ID whose TESFullName does not NamesMatch, and returns missing if lookup fails");
+		expect(/AssignIdMatchesName\(ex\.name/.test(assign) && /return "missing"/.test(assign)
+			&& /QmInvObjectFormId\(inv, handle\)/.test(assign),
+			"1: a trusted inventory handle skips NamesMatch; a movie-only ID still NamesMatch; missing if lookup fails");
 	}
 	expect(/inline bool NamesMatch\(/.test(hdr) && /shortn\.size\(\) < 5/.test(hdr),
 		"1: NamesMatch requires a 5-letter suffix so Med Pack vs Pack is not the same item");
@@ -58,7 +59,9 @@ const hud = rd("actionscript/horizon_block.as");
 		"1: ParseFormId requires 0x, 1-8 hex digits, fully consumed (Dead Drop is not 0xDEAD)");
 	const fid = fnText(qm, "hzqExtFormId").body;
 	expect(/it\.uFormID/.test(fid) && !/uHandleID/.test(fid),
-		"1: hzqExtFormId reads uFormID and never sends uHandleID");
+		"1: hzqExtFormId reads uFormID and never treats uHandleID as a form ID");
+	expect(/QmReadInvAssign\(/.test(game) && /ItemList_mc/.test(game) && /uHandleID/.test(game),
+		"1: QmAssign reads InventoryMenu's selected handle / FormID instead of trusting the movie name");
 }
 
 // ---- 2 / 3. Horizon card style and a closed selection border ----
@@ -68,8 +71,11 @@ const hud = rd("actionscript/horizon_block.as");
 		"2: extended slots use hzqPanel (CardOpacity / CardBgOpacity) like the 1-12 Horizon cards");
 	expect(/g\.beginFill\(acc,0\.13\)/.test(drw) && /this\.hzqKeycap\(g,-24,-24,kw,kh/.test(drw),
 		"2: selected fill and keycap match hzqCard");
-	expect(/lineStyle\(2,acc,1,true,"none"\)/.test(drw) && /drawRoundRect\(-26,-26,52,52,14,14\)/.test(drw),
-		"3: selection stroke is inset inside the 58 px panel (ellipse 14, scale none) so Entry/Catcher does not clip it");
+	expect(/function hzqRingDraw/.test(qm) && /drawRoundRect\(x - 26,y - 26,52,52,14,14\)/.test(fnText(qm, "hzqRingDraw").body)
+		&& /s\.name = "hzqRing"/.test(fnText(qm, "hzqRingEnsure").body) && /s\.mouseEnabled = false/.test(fnText(qm, "hzqRingEnsure").body),
+		"3: accent hover/focus stroke is drawn on a menu-level overlay (not clipped by Entry/Catcher)");
+	expect(/function hzqUnclip/.test(qm) && /d\.mask = null/.test(fnText(qm, "hzqUnclip").body) && /scrollRect = null/.test(fnText(qm, "hzqUnclip").body),
+		"3: Entry / Catcher mask and scrollRect are cleared so the overlay ring is visible on all four sides");
 	expect(/this\.hzqSet\(o\.n,this\.hzqUC\(label\),13,/.test(drw) && /this\.hzqSet\(o\.k,klab,13,/.test(drw),
 		"2: extended text uses hzqSet at 13 px (Exo 2 through hzqFace)");
 	expect(/this\.hzqPanel\(ag,-29,-29,58,58,8,0\.6\)/.test(drw),

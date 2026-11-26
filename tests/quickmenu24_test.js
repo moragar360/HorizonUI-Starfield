@@ -30,8 +30,9 @@ expect(as.indexOf("hzQmSetConflict") >= 0 && as.indexOf("hzQmSetSlotCount") >= 0
 
 expect(qm.indexOf("hzqExtPrepare") >= 0 && qm.indexOf("hzqExtPlace") >= 0 && qm.indexOf("hzqExtCmd") >= 0, "quick menu movie has Extended Mode hooks");
 expect(qm.indexOf("HZQ_PITCH:Number = 70") >= 0, "slot pitch is 70 (58 box + 12 gap)");
-expect(qm.indexOf("selectedIndex = 12") >= 0, "extended selection uses FS_NONE, never a vanilla index past 12");
-expect(qm.indexOf("hzqExt_") >= 0 && qm.indexOf("hzqExtAdd") >= 0, "extended clips and ADD SLOT tile exist");
+expect(qm.indexOf("Entry_\" + slot") >= 0 && qm.indexOf("hzqExtMouse") >= 0, "extended slots are first-class Entry_13-24 in the vanilla container");
+expect(qm.indexOf("selectedIndex = 12") >= 0, "FS_NONE (12) is still used when no extra slot is highlighted");
+expect(qm.indexOf("hzqExtAdd") >= 0, "ADD SLOT tile exists");
 // must not dispatch vanilla use/assign with an index past 11
 expect(!/uQuickkeyIndex["']?\s*:\s*this\.hzqExt/.test(qm), "does not send extended indexes on FavoritesMenu_UseQuickkey");
 

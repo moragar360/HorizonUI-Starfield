@@ -39,20 +39,25 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 // ---- A. inventory assign: extra slots are Horizon clips, never vanilla index >= 12 ----
 {
 	const pick = fnText(qm, "hzqExtPick").body;
-	expect(/this\.selectedIndex = 12/.test(pick) && /this\.hzqExtCmdSend\(op,slot,extra\)/.test(pick),
-		"assign/use for 13-24 goes through hzqExtCmd, with selectedIndex parked at FS_NONE");
-	expect(!/FavoritesMenu_AssignQuickkey/.test(qm) && !/dispatchEvent/.test(qm),
+	expect(/this\.selectedIndex = slot/.test(pick) && /this\.hzqExtCmdSend\(op,slot,extra\)/.test(pick),
+		"assign/use for 13-24 goes through hzqExtCmd, with selectedIndex set to the extra Entry index");
+	expect(!/FavoritesMenu_AssignQuickkey/.test(qm),
 		"Horizon extra-slot path never sends FavoritesMenu_AssignQuickkey");
+	expect(/name = "Entry_" \+ slot/.test(fnText(qm, "hzqExtMake").body)
+		&& /hzqExtMouse/.test(qm) && /hzqE9/.test(hooks) && /hzqE9/.test(pimp),
+		"extra slots are Entry_13-24 in the vanilla container; mouseover uses the clip name");
 	const conf = fnText(qm, "hzqExtConfirm").body;
-	expect(/hzqExtSel < 13/.test(conf) && /hzqExtPick\(this\.hzqExtSel,true\)/.test(conf),
+	expect(/slot < 13/.test(conf) && /hzqExtPick\(slot,true\)/.test(conf),
 		"hzqExtConfirm only fires when an extra slot is highlighted");
 	expect(/if\(this\.hzqExtConfirm\(\)\) return;/.test(pimp) && /if\(this\.hzqExtConfirm\(\)\) return;/.test(pimpL),
 		"SelectItem in both movies returns after hzqExtConfirm (never AssignQuickkey index 12)");
 	expect(/hzqExtUser\(param1,param2\)/.test(pimp) && /hzqExtArrow\(param1\)/.test(pimp)
 		&& /Keyboard\.ENTER && this\.hzqExtConfirm/.test(pimp),
 		"ProcessUserEvent / arrows / ENTER are hooked so hover+Enter and D-pad reach 13-24");
-	expect(/hzqExtUser\(param1,param2\)/.test(hooks) && /hzqE8/.test(hooks),
-		"apply_fav_hooks.py plants the extra-slot confirm hooks on a fresh vanilla export");
+	expect(/hzqExtUser\(param1,param2\)/.test(hooks) && /hzqE8/.test(hooks) && /hzqE9/.test(hooks),
+		"apply_fav_hooks.py plants the extra-slot confirm and mouseover hooks on a fresh vanilla export");
+	expect(/QmReadInvAssign\(/.test(game) && /ItemList_mc/.test(game) && /uHandleID/.test(game),
+		"DLL assign reads InventoryMenu selectedEntry handle/FormID (not the movie display name)");
 	const nav = fnText(qm, "hzqExtNav").body;
 	expect(/idx >= 9 && idx <= 11/.test(nav) && /hzqExtPick\(13,false\)/.test(nav),
 		"CROSS+BARS: Down from the T (slots 10-12) lands on slot 13");
@@ -64,7 +69,7 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 	expect(/this\.hzqExtRaise\(\)/.test(fnText(qm, "hzqExtPlace").body)
 		&& /this\.hzqExtRaise\(\)/.test(fnText(qm, "hzqAssign").body),
 		"raise runs on layout and when assign mode starts (overlay appears after open)");
-	expect(/selectedIndex\) < 12 && this\.hzqExtSel != 0/.test(fnText(qm, "hzqSel").body),
+	expect(/idx < 12 && this\.hzqExtSel != 0/.test(fnText(qm, "hzqSel").body),
 		"a vanilla 1-12 selection clears the extra-slot highlight");
 	expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(codeOnly(qm.slice(qm.indexOf("0.43.5 Extended Mode")))),
 		"assign path adds no enterFrame / timer");
@@ -72,15 +77,13 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 
 // ---- B. selection outline sits fully inside the 58 px panel ----
 {
-	const card = fnText(qm, "hzqCard").body;
-	const drw = fnText(qm, "hzqExtDraw").body;
-	expect(/drawRoundRect\(r\.x \+ 3,r\.y \+ 3,r\.width - 6,r\.height - 6,14,14\)/.test(card)
-		&& /lineStyle\(2,acc,1,true,"none"\)/.test(card),
-		"slots 1-12: 2 px selection stroke is inset 3 px (inside Catcher), scale none");
-	expect(/drawRoundRect\(-26,-26,52,52,14,14\)/.test(drw) && /drawRect\(-33,-33,66,66\)/.test(drw),
-		"slots 13-24: matching inset stroke plus an invisible pad so Scaleform does not clip the line");
-	expect(/drawRect\(r\.x - 4,r\.y - 4,r\.width \+ 8,r\.height \+ 8\)/.test(card),
-		"slots 1-12: the same invisible pad expands sprite bounds");
+	const ring = fnText(qm, "hzqRingDraw").body;
+	expect(/drawRoundRect\(x - 26,y - 26,52,52,14,14\)/.test(ring) && /lineStyle\(2,acc,1,true,"none"\)/.test(ring),
+		"accent hover/focus stroke is a 2 px overlay ring (menu-level, 52 px, scale none)");
+	expect(/function hzqUnclip/.test(qm) && /gotoAndStop\("Unselected"\)/.test(fnText(qm, "hzqCard").body),
+		"vanilla Selected-frame outline is not used; Entry/Catcher mask and scrollRect are cleared");
+	expect(/this\.addChild\(s\)/.test(fnText(qm, "hzqRingEnsure").body) && /mouseEnabled = false/.test(fnText(qm, "hzqRingEnsure").body),
+		"the overlay ring is a child of the menu and does not steal hits");
 }
 
 // ---- C. F11 capture-any-key + Horizon warning, never a silent double-bind ----
@@ -116,6 +119,46 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 	const pendAt = flush.indexOf("g_qmParked.Pending()");
 	expect(nowAt >= 0 && gateAt > nowAt && pendAt > gateAt,
 		"QmFlushStore checks the write-backoff clock before copying parked stores");
+}
+
+// ---- E. F11 bind: must not end preset naming; off-row click ends PRESS A KEY ----
+{
+	const keyFn = fnText(hud, "hzSettingsKey").body;
+	const capAt = keyFn.indexOf("hzQmCap.length > 0");
+	const bindAt = keyFn.indexOf('code.indexOf("bind:") == 0');
+	const hz37At = keyFn.indexOf("this.hz37Key(code)");
+	expect(capAt >= 0 && bindAt > capAt && bindAt < hz37At,
+		"hzSettingsKey ignores bind: after capture and before hz37Key (preset naming keeps ch:a)");
+	function toJs(name) {
+		const f = fnText(hud, name);
+		const params = f.params.split(",").map((p) => p.trim()).filter(Boolean).map((p) => p.split(":")[0].trim());
+		const b = f.body
+			.replace(/var (\w+):[\w*.]+/g, "let $1")
+			.replace(/catch\((\w+):\w+\)/g, "catch($1)")
+			.replace(/int\(/g, "(");
+		return new Function(...params, b);
+	}
+	const host = {
+		hzSetIsOpen: true, hzQmCap: "", hzPopLayers: null, hzArrange: false, hz35Kb: false,
+		hz37Edit: "", hz37Cf: "", hzSetTab: 0, hzSetRow: 0, hzSetScroll: 0,
+		hzSetDraw() {}, hzSetRows() { return [{ k: "_hz37save" }, { k: "QuickMenuHorizon" }]; },
+		hz42NmOk(ch) { return /[a-zA-Z0-9]/.test(ch); },
+		hzQmCapKey() {}, hzPopKey() {}, hzArrKey() {}, hz30RowStep() {}, hzSetChange() {},
+		hzQmCapEnd() { this.hzQmCap = ""; }
+	};
+	host.hz37Key = toJs("hz37Key").bind(host);
+	host.hzSettingsKey = toJs("hzSettingsKey").bind(host);
+	host.hz37Press = toJs("hz37Press").bind(host);
+	host.hz37Edit = "";
+	host.hzSettingsKey("ch:a");
+	host.hzSettingsKey("bind:A");
+	expect(host.hz37Edit === "a", "ch:a then bind:A leaves the preset name as a");
+	host.hzQmCap = "QuickMenuKey13";
+	host.hz37Press("row1", [{ k: "QuickMenuKey13" }, { k: "QuickMenuHorizon" }]);
+	expect(host.hzQmCap === "", "a click on another F11 row ends PRESS A KEY capture");
+	host.hzQmCap = "QuickMenuKey13";
+	host.hz37Press("row0", [{ k: "QuickMenuKey13" }, { k: "QuickMenuHorizon" }]);
+	expect(host.hzQmCap === "QuickMenuKey13", "a click on the capturing row leaves PRESS A KEY armed");
 }
 
 console.log("quickmenu_assign_keys_test " + (failed ? "FAILED" : "passed") + " (" + passed + " ok, " + failed + " FAIL)");

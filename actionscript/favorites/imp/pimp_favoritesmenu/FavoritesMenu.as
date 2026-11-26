@@ -18,6 +18,7 @@ package
    import flash.filters.DropShadowFilter;
    import flash.geom.ColorTransform;
    import flash.geom.Rectangle;
+   import flash.geom.Point;
    import flash.net.URLLoader;
    import flash.net.URLRequest;
    import flash.text.TextField;
@@ -362,6 +363,7 @@ package
       
       private function onFavEntryMouseover(param1:Event) : void
       {
+         try { if(this.hzqExtMouse(param1)) return; } catch(hzqE9:Error) { }   // Horizon: Entry_13-24 name, not constructed entryIndex 0
          this.selectedIndex = param1.target.entryIndex;
          this.OverEntry = true;
       }
@@ -939,12 +941,29 @@ package
          var q:* = e["Quickkey_tf"];
          if(q != null) { q.alpha = hide ? 0 : 1; }
       }
+      // Entry / Catcher / a parent mask clip any stroke drawn on the card. Clear those so the
+      // overlay ring (a child of the menu) is not cut off. Does not change the 58 px card.
+      private function hzqUnclip(d:DisplayObject) : void
+      {
+         if(d == null) { return; }
+         try { d.mask = null; } catch(e0:Error) { }
+         try { var m:MovieClip = d as MovieClip; if(m != null) { m.scrollRect = null; } } catch(e1:Error) { }
+         try
+         {
+            var c:* = d["Catcher_mc"];
+            if(c != null) { c.mask = null; c.scrollRect = null; }
+         }
+         catch(e2:Error) { }
+      }
       private function hzqCard(i:int) : void
       {
          var c:Object = this.hzqCards[i];
          var e:MovieClip = this.hzqSlot(i);
          if(c == null || e == null) { return; }
          this.hzqHideArt(e,true);
+         this.hzqUnclip(e);
+         // vanilla Selected frame draws an accent outline that Catcher clips; overlay ring is the hover stroke
+         try { e.gotoAndStop("Unselected"); } catch(eUs:Error) { }
          var it:Object = this.FavoritesInfoA != null && i < this.FavoritesInfoA.length ? this.FavoritesInfoA[i] : null;
          var empty:Boolean = it == null || it.sName == null || String(it.sName).length == 0;
          var sel:Boolean = i == int(this.selectedIndex);
@@ -956,18 +975,9 @@ package
          this.hzqPanel(g,r.x,r.y,r.width,r.height,8,empty && !sel ? 0.6 : 1);
          if(sel)
          {
-            // 2 px stroke sits fully inside the 58 px panel (Entry / Catcher clip the outer edge if
-            // the path is inset only 1). Invisible pad expands the sprite bounds so Scaleform does
-            // not clip the stroke against the fill.
-            g.beginFill(0,0);
-            g.drawRect(r.x - 4,r.y - 4,r.width + 8,r.height + 8);
-            g.endFill();
             g.beginFill(acc,0.13);
             g.drawRoundRect(r.x + 1,r.y + 1,r.width - 2,r.height - 2,14,14);
             g.endFill();
-            g.lineStyle(2,acc,1,true,"none");
-            g.drawRoundRect(r.x + 3,r.y + 3,r.width - 6,r.height - 6,14,14);
-            g.lineStyle();
          }
          // key badge: top left, the bound Quickkey<n>, keyboard and mouse only
          var kt:String = this.hzqKb ? this.hzqKey("Quickkey" + (i + 1)) : "";
@@ -1288,32 +1298,45 @@ package
       private function hzqData() : void
       {
          if(!this.hzqOn) { return; }
-         try { var i:int = 0; while(i < 12) { this.hzqCard(i); i++; } if(!this.hzqExtGot && this.hzqExtOn()) { this.hzqExtFetch(); } this.hzqExtDraw(); } catch(e:Error) { this.hzqFail(); }
+         try { this.hzqExtPad(); var i:int = 0; while(i < 12) { this.hzqCard(i); i++; } if(!this.hzqExtGot && this.hzqExtOn()) { this.hzqExtFetch(); } this.hzqExtDraw(); if(this.hzqExtOn()) { this.hzqExtRaise(); } this.hzqRingDraw(); } catch(e:Error) { this.hzqFail(); }
       }
       private function hzqSel() : void
       {
-         this.hzqInfObj = this.selectedEntry;
-         this.hzqInfSel = true;
          if(!this.hzqOn)
          {
+            this.hzqInfObj = this.selectedEntry;
+            this.hzqInfSel = true;
             // after an error: the game's icon tint follows the selection again (hzqRestore set it once)
             if(this.hzqCards != null) { try { var j:int = 0; while(j < 12) { this.hzqIcRestore(j); j++; } } catch(e0:Error) { } }
             return;
          }
          try
          {
-            // vanilla 1-12 selection clears the extended highlight so both rings are never on
-            if(int(this.selectedIndex) >= 0 && int(this.selectedIndex) < 12 && this.hzqExtSel != 0) { this.hzqExtSel = 0; }
+            var idx:int = int(this.selectedIndex);
+            if(idx >= 13 && idx <= 24)
+            {
+               this.hzqExtSel = idx;
+               var d:Object = this.hzqExtData[String(idx)];
+               if(d != null) { this.hzqInfoSet({"sName":String(d.name != null ? d.name : ""),"uCount":d.count,"sAmmoName":"","uAmmoCount":0,"aElementalStats":null},true); }
+               else { this.hzqInfoSet({"sName":"EMPTY","uCount":0},true); }
+            }
+            else
+            {
+               this.hzqInfObj = this.selectedEntry;
+               this.hzqInfSel = true;
+               if(idx >= 0 && idx < 12 && this.hzqExtSel != 0) { this.hzqExtSel = 0; }
+            }
             var i:int = 0;
             while(i < 12) { this.hzqCard(i); i++; }
-            this.hzqInfo();
+            if(idx < 13) { this.hzqInfo(); }
             this.hzqExtDraw();
+            this.hzqRingDraw();
          }
          catch(e:Error) { this.hzqFail(); }
       }
       private function hzqAssign() : void
       {
-         try { this.hzqInfoSet(this.AssignedItem,false); if(this.hzqOn) { this.hzqFitAll(); } if(this.hzqExtOn()) { this.hzqExtRaise(); } } catch(e:Error) { this.hzqFail(); }
+         try { this.hzqExtPad(); this.hzqInfoSet(this.AssignedItem,false); if(this.hzqOn) { this.hzqFitAll(); } if(this.hzqExtOn()) { this.hzqExtRaise(); this.hzqRingDraw(); } } catch(e:Error) { this.hzqFail(); }
       }
       override protected function OnControlMapChanged(param1:Object) : void
       {
@@ -1366,10 +1389,12 @@ package
       // ---------- 0.43.5 Extended Mode (original Horizon layout; slots 13-24) ----------
       // CROSS + BARS leaves Entry_0..11 on the vanilla T (authored rest; never captured live during
       // the Open animation). BARS restores those clips to authored rest, then slides them into rows.
-      // Extended slots are Horizon clips (not vanilla Entry_N). selectedIndex stays 0-12 (FS_NONE).
+      // Extended slots are first-class Entry_13..Entry_24 in the same container as Entry_0..11.
+      // Index 12 stays FS_NONE (vanilla). AssignQuickkey is never sent with an index >= 12.
       private var hzqExtSel:int = 0;          // 13-24, or 0
       private var hzqExtHold:Sprite = null;
-      private var hzqExtSlots:Array = null;   // {s:Sprite, k:TextField, n:TextField, i:int}
+      private var hzqRing:Sprite = null;      // accent hover/focus ring; child of the menu so Entry/Catcher cannot clip it
+      private var hzqExtSlots:Array = null;   // {s:MovieClip, k:TextField, n:TextField, i:int}
       private var hzqExtAdd:Sprite = null;
       private var hzqExtPool:Array = null;    // 12 slot clips (13-24), built once per open, reused (perf standards 2)
       private var hzqExtAddDrawn:Boolean = false;
@@ -1420,11 +1445,73 @@ package
          catch(e:Error) { }
          return "";
       }
+      // Pad aFavoriteItems so selectedIndex 13-24 (and FS_NONE=12) has a dummy row.
+      // Vanilla UpdateDisplay(null) throws; index 12 is FS_NONE, not a slot.
+      private function hzqExtPad() : void
+      {
+         if(this.FavoritesInfoA == null) { this.FavoritesInfoA = []; }
+         while(this.FavoritesInfoA.length < 25)
+         {
+            this.FavoritesInfoA.push({sName:"",uCount:0,bIsEquippable:false,iconImage:{iFixtureType:0}});
+         }
+      }
+      // Accent hover/focus outline. Drawn on a menu-level sprite so Entry / Catcher / SelectQuickslot
+      // cannot clip any of the four sides. Same 2 px accent stroke as the card; the card look is unchanged.
+      private function hzqRingEnsure() : void
+      {
+         if(this.hzqRing != null) { return; }
+         var s:Sprite = new Sprite();
+         s.name = "hzqRing";
+         s.mouseEnabled = false;
+         s.mouseChildren = false;
+         this.addChild(s);
+         this.hzqRing = s;
+      }
+      private function hzqRingDraw() : void
+      {
+         this.hzqRingEnsure();
+         var g:Graphics = this.hzqRing.graphics;
+         g.clear();
+         if(!this.hzqOn) { return; }
+         var acc:uint = this.hzqAccent();
+         var x:Number = 0;
+         var y:Number = 0;
+         var on:Boolean = false;
+         var idx:int = int(this.selectedIndex);
+         if(idx >= 0 && idx < 12 && this.hzqCards != null && this.hzqCards[idx] != null)
+         {
+            var e:MovieClip = this.hzqSlot(idx);
+            var r:Rectangle = this.hzqCards[idx].r;
+            if(e != null && r != null)
+            {
+               var p:Point = this.globalToLocal(e.localToGlobal(new Point(r.x + r.width / 2,r.y + r.height / 2)));
+               x = p.x;
+               y = p.y;
+               on = true;
+            }
+         }
+         else if(this.hzqExtSel >= 13)
+         {
+            var k:int = 0;
+            while(this.hzqExtSlots != null && k < this.hzqExtSlots.length)
+            {
+               if(int(this.hzqExtSlots[k].i) == this.hzqExtSel) { x = Number(this.hzqExtSlots[k].x); y = Number(this.hzqExtSlots[k].y); on = true; break; }
+               k++;
+            }
+         }
+         if(!on) { return; }
+         g.beginFill(0,0.01);
+         g.drawRect(x - 40,y - 40,80,80);
+         g.endFill();
+         g.lineStyle(2,acc,1,true,"none");
+         g.drawRoundRect(x - 26,y - 26,52,52,14,14);
+         g.lineStyle();
+      }
       // InventoryMenu item objects name both uFormID and uHandleID (separate fields). FavoritesMenu
       // never reads either: AssignedItem / aFavoriteItems are used as sName, bIsPower, iconImage,
       // uCount, sAmmoName, uAmmoCount, aElementalStats. ItemToBeAssigned may still carry uFormID
-      // when it is a full inventory object. Never send uHandleID. The DLL keeps the ID only when
-      // LookupByID's TESFullName NamesMatch the sent name.
+      // when it is a full inventory object. The DLL resolves the item from InventoryMenu's selected
+      // handle / FormID; the movie only sends a hint. Never send uHandleID as a form ID.
       private function hzqExtFormId(it:Object) : uint
       {
          if(it == null) { return 0; }
@@ -1541,14 +1628,25 @@ package
          this.hzqExtBuildClips(box);
          this.hzqExtRaise();
       }
-      // Extra slots are Horizon clips, not native aFavoriteItems. Keep them above the assign
-      // overlay / vignette so mouse hits reach 13-24, and turn those overlays' mouse off.
+      // Extra slots are first-class Entry_13..Entry_24 in the same container as Entry_0..11 so
+      // vanilla MOUSE_OVER / CLICK / SelectItem reach them. Keep them above the assign overlay.
       // Purpose: inventory assign and hover+Enter can pick 13-24. Inputs: none. Outputs: z-order.
       private function hzqExtRaise() : void
       {
+         var i:int = 0;
+         while(this.hzqExtSlots != null && i < this.hzqExtSlots.length)
+         {
+            var clip:MovieClip = this.hzqExtSlots[i].s as MovieClip;
+            try { if(clip != null && clip.parent == this) { this.setChildIndex(clip,this.numChildren - 1); } } catch(eE:Error) { }
+            i++;
+         }
          if(this.hzqExtHold != null)
          {
             try { if(this.hzqExtHold.parent == this) { this.setChildIndex(this.hzqExtHold,this.numChildren - 1); } } catch(eZ:Error) { }
+         }
+         if(this.hzqRing != null)
+         {
+            try { if(this.hzqRing.parent == this) { this.setChildIndex(this.hzqRing,this.numChildren - 1); } } catch(eR:Error) { }
          }
          try
          {
@@ -1568,12 +1666,43 @@ package
             }
          }
          catch(eVg:Error) { }
+         try
+         {
+            if(this.CenterClip_mc != null)
+            {
+               this.CenterClip_mc.mouseEnabled = false;
+               this.CenterClip_mc.mouseChildren = false;
+            }
+         }
+         catch(eCc:Error) { }
+         try
+         {
+            if(this.AssignedItemIcon_mc != null)
+            {
+               this.AssignedItemIcon_mc.mouseEnabled = false;
+               this.AssignedItemIcon_mc.mouseChildren = false;
+            }
+         }
+         catch(eAi:Error) { }
+      }
+      // Native FavoritesEntry.MOUSE_OVER uses target.entryIndex (0 on a constructed clip). Read Entry_N's name instead.
+      private function hzqExtMouse(e:Event) : Boolean
+      {
+         if(e == null || !this.hzqExtOn()) { return false; }
+         var slot:int = this.hzqExtSlotOf(e.target);
+         if(slot < 13) { return false; }
+         this.hzqExtPick(slot,false);
+         return true;
       }
       // Confirm the highlighted extra slot (assign or use). Never dispatches uQuickkeyIndex >= 12.
       private function hzqExtConfirm() : Boolean
       {
-         if(!this.hzqExtOn() || this.hzqExtSel < 13) { return false; }
-         this.hzqExtPick(this.hzqExtSel,true);
+         if(!this.hzqExtOn()) { return false; }
+         var slot:int = this.hzqExtSel;
+         var idx:int = int(this.selectedIndex);
+         if(idx >= 13 && idx <= 24) { slot = idx; }
+         if(slot < 13) { return false; }
+         this.hzqExtPick(slot,true);
          return true;
       }
       // Keyboard arrows / Enter while FavoritesMenu is open. Returns true when vanilla must not run.
@@ -1771,25 +1900,49 @@ package
       }
       private function hzqExtMake(slot:int) : Object
       {
-         var s:Sprite = new Sprite();
-         s.name = "hzqExt_" + slot;
+         var s:MovieClip = null;
+         try
+         {
+            var fe:FavoritesEntry = new FavoritesEntry();
+            fe.name = "Entry_" + slot;
+            s = fe;
+         }
+         catch(eFe:Error) { s = null; }
+         if(s == null)
+         {
+            s = new MovieClip();
+            s.name = "Entry_" + slot;
+            s.entryIndex = slot;
+         }
          s.mouseEnabled = true;
          s.mouseChildren = false;
          s.buttonMode = true;
          s.visible = false;
-         s.addEventListener(MouseEvent.CLICK,this.hzqExtClick);
-         s.addEventListener(MouseEvent.ROLL_OVER,this.hzqExtOver);
-         var k:TextField = this.hzqTf(s);
-         var nm:TextField = this.hzqTf(s);
-         this.hzqExtHold.addChild(s);
+         s.addEventListener(MouseEvent.MOUSE_DOWN,this.hzqExtClick,false,1,true);
+         s.addEventListener(MouseEvent.CLICK,this.hzqExtClick,false,1,true);
+         s.addEventListener(MouseEvent.ROLL_OVER,this.hzqExtOver,false,1,true);
+         var card:Sprite = this.hzqSprite(s,0);
+         card.name = "hzqCard";
+         var k:TextField = this.hzqTf(card);
+         var nm:TextField = this.hzqTf(card);
+         this.addChild(s);
+         this.hzqUnclip(s);
+         try
+         {
+            s.graphics.beginFill(0,0.01);
+            s.graphics.drawRect(-32,-32,64,64);
+            s.graphics.endFill();
+         }
+         catch(eHit:Error) { }
          // c* = what is on screen now (change-driven draw)
-         return {"s":s,"k":k,"n":nm,"i":slot,"x":0,"y":0,"cSel":null,"cEmpty":null,"cLabel":null,"cKey":null};
+         return {"s":s,"c":card,"k":k,"n":nm,"i":slot,"x":0,"y":0,"cSel":null,"cEmpty":null,"cLabel":null,"cKey":null};
       }
       private function hzqExtClick(e:MouseEvent) : void
       {
          try
          {
-            var slot:int = this.hzqExtSlotOf(e.currentTarget);
+            if(e != null) { e.stopPropagation(); }
+            var slot:int = this.hzqExtSlotOf(e != null ? e.currentTarget : null);
             if(slot <= 0) { return; }
             this.hzqExtPick(slot,true);
          }
@@ -1799,7 +1952,7 @@ package
       {
          try
          {
-            var slot:int = this.hzqExtSlotOf(e.currentTarget);
+            var slot:int = this.hzqExtSlotOf(e != null ? e.currentTarget : null);
             if(slot <= 0) { return; }
             this.hzqExtPick(slot,false);
          }
@@ -1807,10 +1960,23 @@ package
       }
       private function hzqExtSlotOf(t:*) : int
       {
-         if(t == null || t.name == null) { return 0; }
-         var s:String = String(t.name);
-         if(s.indexOf("hzqExt_") != 0) { return 0; }
-         return int(Number(s.substring(7)));
+         while(t != null)
+         {
+            var got:int = this.hzqExtNameSlot(t.name);
+            if(got >= 13) { return got; }
+            try { t = t.parent; } catch(eP:Error) { t = null; }
+         }
+         return 0;
+      }
+      private function hzqExtNameSlot(nm:*) : int
+      {
+         if(nm == null) { return 0; }
+         var s:String = String(nm);
+         var n:int = 0;
+         if(s.indexOf("Entry_") == 0) { n = int(Number(s.substring(6))); }
+         else if(s.indexOf("hzqExt_") == 0) { n = int(Number(s.substring(7))); }
+         if(n >= 13 && n <= 24) { return n; }
+         return 0;
       }
       private function hzqExtAddClick(e:MouseEvent) : void
       {
@@ -1827,7 +1993,7 @@ package
       }
       private function hzqExtPick(slot:int, useIt:Boolean) : void
       {
-         if(this.selectedIndex != 12) { this.selectedIndex = 12; }  // FS_NONE: clear the vanilla selection
+         this.hzqExtPad();
          this.hzqExtSel = slot;
          var d:Object = this.hzqExtData[String(slot)];
          if(d != null)
@@ -1835,7 +2001,17 @@ package
             this.hzqInfoSet({"sName":String(d.name != null ? d.name : ""),"uCount":d.count,"sAmmoName":"","uAmmoCount":0,"aElementalStats":null},true);
          }
          else { this.hzqInfoSet({"sName":"EMPTY","uCount":0},true); }
+         // first-class index 13-24 so GetEntryClip / SelectItem see the extra entry; never send that index on AssignQuickkey
+         if(slot >= 13 && slot <= 24)
+         {
+            try { if(int(this.selectedIndex) != slot) { this.selectedIndex = slot; } } catch(eIdx:Error) { }
+         }
+         else if(this.selectedIndex != 12)
+         {
+            try { this.selectedIndex = 12; } catch(eNone:Error) { }
+         }
          this.hzqExtDraw();
+         this.hzqRingDraw();
          if(useIt)
          {
             var assign:Boolean = false; try { assign = this.isAssigningItem(); } catch(eA:Error) { assign = this.AssignedItem != null && String(this.AssignedItem.sName != null ? this.AssignedItem.sName : "").length > 0; }
@@ -1843,7 +2019,7 @@ package
             var extra:String = "";
             if(assign && this.AssignedItem != null)
             {
-               // kind prefix: P| = a power (Powers menu), I|<formId>|<name> = inventory (form ID is the durable key)
+               // Hint only: the DLL prefers InventoryMenu's selected handle / FormID over this display name.
                var pw:Boolean = false; try { pw = this.AssignedItem.bIsPower == true; } catch(eP:Error) { }
                var fid:uint = this.hzqExtFormId(this.AssignedItem);
                extra = (pw ? "P|" : "I|") + (fid != 0 ? this.hzqExtHex(fid) + "|" : "") + String(this.AssignedItem.sName);
@@ -1861,6 +2037,7 @@ package
                this.hzqExtGot = false;
                this.hzqExtFetch();
                this.hzqExtDraw();
+               this.hzqRingDraw();
             }
             try { this.StartClosingMenu(); } catch(eC:Error) { GlobalFunc.CloseMenu("FavoritesMenu"); }
          }
@@ -1868,9 +2045,9 @@ package
       // Change-driven: a slot's art / text is touched only when its selection, empty / refuse state, label or key changed.
       private function hzqExtDraw() : void
       {
-         if(!this.hzqExtOn() || this.hzqExtHold == null) { return; }
+         if(!this.hzqExtOn() || this.hzqExtSlots == null) { return; }
          var i:int = 0;
-         while(this.hzqExtSlots != null && i < this.hzqExtSlots.length)
+         while(i < this.hzqExtSlots.length)
          {
             var o:Object = this.hzqExtSlots[i];
             var slot:int = int(o.i);
@@ -1881,23 +2058,19 @@ package
             var dim:Boolean = empty || refuse;
             var key:String = "";
             if(this.hzqKb && this.hzqS != null && this.hzqS.Keys != null) { key = String(this.hzqS.Keys[slot - 13] != null ? this.hzqS.Keys[slot - 13] : ""); }
+            try { this.hzqUnclip(o.s as DisplayObject); } catch(eUc:Error) { }
             if(o.cSel !== sel || o.cEmpty !== empty || o.cRefuse !== refuse || o.cKey !== key)
             {
-               var g:Graphics = o.s.graphics;
+               var spr:Sprite = o.c != null ? o.c : o.s;
+               var g:Graphics = spr.graphics;
                g.clear();
                var acc:uint = this.hzqAccent();
                this.hzqPanel(g,-29,-29,58,58,8,dim && !sel ? 0.6 : 1);
                if(sel)
                {
-                  g.beginFill(0,0);
-                  g.drawRect(-33,-33,66,66);
-                  g.endFill();
                   g.beginFill(acc,0.13);
                   g.drawRoundRect(-28,-28,56,56,14,14);
                   g.endFill();
-                  g.lineStyle(2,acc,1,true,"none");
-                  g.drawRoundRect(-26,-26,52,52,14,14);
-                  g.lineStyle();
                }
                if(key.length > 0)
                {
@@ -2064,10 +2237,25 @@ package
          }
          this.hzqExtMoved = false;
          try { if(this.CenterClip_mc != null) { this.CenterClip_mc.visible = true; } } catch(eCcR:Error) { }
+         if(this.hzqExtPool != null)
+         {
+            var p:int = 0;
+            while(p < this.hzqExtPool.length)
+            {
+               var clip:MovieClip = this.hzqExtPool[p] != null ? this.hzqExtPool[p].s as MovieClip : null;
+               try { if(clip != null && clip.parent != null) { clip.parent.removeChild(clip); } } catch(eP:Error) { }
+               p++;
+            }
+         }
          if(this.hzqExtHold != null)
          {
             try { if(this.hzqExtHold.parent != null) { this.hzqExtHold.parent.removeChild(this.hzqExtHold); } } catch(e:Error) { }
             this.hzqExtHold = null;
+         }
+         if(this.hzqRing != null)
+         {
+            try { this.hzqRing.graphics.clear(); if(this.hzqRing.parent != null) { this.hzqRing.parent.removeChild(this.hzqRing); } } catch(eRg:Error) { }
+            this.hzqRing = null;
          }
          // off / error: release the pooled clips (their listeners go with them; nothing else holds them)
          this.hzqExtSlots = null;
@@ -2361,6 +2549,7 @@ package
          if(this.hzq37N.length > 0 && this.hzq37Step == 0) { this.hzq37Q = this.hzq37N; this.hzq37N = []; this.hzq37Begin(); }
       }
       // =================== end shared settings reader ===================
+
 
       internal function frame13() : *
       {
