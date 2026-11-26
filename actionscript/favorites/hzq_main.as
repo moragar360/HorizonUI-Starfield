@@ -10,8 +10,8 @@
       //    mouse only, the same rule as the vanilla Quickkey_tf. No key is hardcoded and nothing keys off Q;
       //  - a header pill above the top slot: QUICK MENU and the bound "Cancel" key: keyboard and mouse = the key text;
       //    controller = the mapped Cancel button (hzqPadKey: a glyph, or the HUD's keycap text, or nothing; never a $ name);
-      //  - an info card (name / ammo / damage / slot) as a child of the menu, fixed at the bottom-right of
-      //    Extensions.visibleRect, sitting above the HUD equipment card (84 px reserve). Built only from the
+      //  - an info card (name / ammo / damage / slot) as a child of the menu, fixed at the center-right of
+      //    Extensions.visibleRect (right inset, vertically centered). Built only from the
       //    fields the game sends (FavoritesData aFavoriteItems / extra payload). There is no magazine / reserve split.
       // Theme: [Style] AccentColor / AccentHex / CardColor / CardHex / CardOpacity / CardBgOpacity / CardShadow / TextTone /
       // FontFace / TextScale / HeaderStyle / TextShadow, read once when the menu opens, through ports of the HUD card
@@ -48,6 +48,7 @@
       private static const HZQ_EQ_RESERVE:Number = 84;    // HUD equipment card height (HorizonAmmo_mc)
       private static const HZQ_SAFE_M:Number = 16;
       private static const HZQ_ICPAD:Number = 4;          // icon padding inside the box
+      private static const HZQ_ICBOUND:Number = 60;       // vanilla Icon_mc BoundClip_mc (FavoritesEntry timeline)
       private static const HZQ_GLYPH:String = "$Controller_Buttons";   // the game's controller glyph face (fontconfig map)
       // controller glyph character (GlobalFunc.NameToTextMap value) -> keycap text: the HUD's table (horizon_block.as HZ_T19_PADK)
       private static const HZQ_PADK:Object = {"A":"A","B":"B","C":"X","D":"Y","E":"VIEW","O":"MENU","G":"LB","L":"RB","I":"LT","N":"RT","Y":"LT","X":"RT","F":"LS","H":"LS","K":"RS","M":"RS","1":"LB+RB","J":"LT+RT","a":"A","d":"B","c":"X","b":"Y","z":"VIEW","p":"MENU","g":"LB","m":"RB","j":"LT","o":"RT","y":"LT","x":"RT","i":"LS","f":"LS","n":"RS","l":"RS","h":"LB+RB","k":"LT+RT","T":"LEFT","U":"RIGHT","V":"DOWN","W":"UP","t":"LEFT","u":"RIGHT","v":"DOWN","w":"UP","q":"D-PAD","r":"D-PAD","s":"D-PAD"};
@@ -463,6 +464,7 @@
          var fs:Number = this.hzqFs(size);
          var f:TextFormat = new TextFormat(this.hzqFace(w),fs,col);
          f.letterSpacing = hdr && int(this.hzqS.HeaderStyle) == 1 ? 0 : Math.round(fs * tr * 10) / 10;
+         t.embedFonts = true;
          t.defaultTextFormat = f;
          t.text = s;
          t.setTextFormat(f);
@@ -538,6 +540,7 @@
          if(this.hzqCtU == null) { this.hzqCtU = new ColorTransform(0,0,0,1,183,183,183,0); }
          if(this.hzqCtS == null) { this.hzqCtS = new ColorTransform(0,0,0,1,54,54,54,0); }
          this.hzqIcCb = [this.hzqIc0,this.hzqIc1,this.hzqIc2,this.hzqIc3,this.hzqIc4,this.hzqIc5,this.hzqIc6,this.hzqIc7,this.hzqIc8,this.hzqIc9,this.hzqIc10,this.hzqIc11];
+         this.hzqExtIcCb = [this.hzqExtIc13,this.hzqExtIc14,this.hzqExtIc15,this.hzqExtIc16,this.hzqExtIc17,this.hzqExtIc18,this.hzqExtIc19,this.hzqExtIc20,this.hzqExtIc21,this.hzqExtIc22,this.hzqExtIc23,this.hzqExtIc24];
          // header pill: a child of the top slot (FS_UP_3), so it fades with the slots
          if(this.Entry_6 != null && cards[6] != null)
          {
@@ -546,8 +549,8 @@
             this.hzqHdrT = this.hzqTf(this.hzqHdr);
             this.hzqHdrK = this.hzqTf(this.hzqHdr);
          }
-         // info card: a child of the menu (not ItemInfo_mc). Position is bottom-right of visibleRect,
-         // above the HUD equipment card. Vanilla ItemInfo_mc sits on the T and overlaps the top slot.
+         // info card: a child of the menu (not ItemInfo_mc). Position is center-right of visibleRect
+         // (right inset, vertically centered). Vanilla ItemInfo_mc sits on the T and overlaps the top slot.
          this.hzqInf = this.hzqSprite(this, -1);
          this.hzqInf.name = "hzqInfo";
          this.hzqInfX = 0;
@@ -566,7 +569,13 @@
          while(i < 12) { this.hzqCard(i); i++; }
          this.hzqHeader();
          this.hzqInfo();
-         try { this.hzqExtDraw(); } catch(eExtR:Error) { }
+         try
+         {
+            this.hzqExtFontTouch();
+            this.hzqExtDraw();
+            if(this.hzqExtOn() && this.hzqExtLastBox != null) { this.hzqExtFrameDraw(this.hzqExtLastBox); }
+         }
+         catch(eExtR:Error) { }
       }
       private function hzqTints() : void
       {
@@ -890,9 +899,9 @@
          if(l == "energy") { return "ENERGY"; }
          return "";
       }
-      // Purpose: draw the item info card at bottom-right of the visible area, above the HUD weapon card.
+      // Purpose: draw the item info card at center-right of the visible area (right inset, vertically centered).
       // Inputs: hzqInfObj / hzqInfSel (set only on selection / assign). Outputs: panel at hzqInf.x/y.
-      // Dependencies: Extensions.visibleRect, HZQ_EQ_RESERVE (84, same as HorizonAmmo_mc).
+      // Dependencies: Extensions.visibleRect. Not on the T, extra grid, or HUD cards (top-right quest / bottom-right equipment).
       private function hzqInfo() : void
       {
          if(this.hzqInf == null) { return; }
@@ -1005,26 +1014,25 @@
          this.hzqInf.visible = true;
          try { if(this.hzqInf.parent == this) { this.setChildIndex(this.hzqInf,this.numChildren - 1); } } catch(eZ:Error) { }
       }
-      // Bottom-right of Extensions.visibleRect, above the HUD equipment card. Once per info redraw
-      // (selection / assign), never per frame.
+      // Center-right of Extensions.visibleRect. Once per info redraw (selection / assign), never per frame.
       private function hzqInfoPlace(W:Number, H:Number) : void
       {
          var m:Number = HZQ_SAFE_M;
-         var hs:Number = this.hzqS != null ? Number(this.hzqS.HudScale) : 1;
-         if(!(hs > 0)) { hs = 1; }
-         if(hs < 0.7) { hs = 0.7; }
-         if(hs > 1.4) { hs = 1.4; }
-         var eq:Number = HZQ_EQ_RESERVE * hs;
+         var tr:Point = null;
          var br:Point = null;
          try
          {
             var vr:Rectangle = scaleform.gfx.Extensions.visibleRect;
-            if(vr != null && vr.width > 100) { br = this.globalToLocal(new Point(vr.right,vr.bottom)); }
+            if(vr != null && vr.width > 100)
+            {
+               tr = this.globalToLocal(new Point(vr.right,vr.top));
+               br = this.globalToLocal(new Point(vr.right,vr.bottom));
+            }
          }
-         catch(eV:Error) { br = null; }
-         if(br == null || isNaN(br.x) || isNaN(br.y)) { br = new Point(960,540); }
+         catch(eV:Error) { tr = null; br = null; }
+         if(br == null || tr == null || isNaN(br.x) || isNaN(br.y) || isNaN(tr.y)) { tr = new Point(960,-540); br = new Point(960,540); }
          this.hzqInf.x = br.x - m - W;
-         this.hzqInf.y = br.y - m - eq - 12 - H;
+         this.hzqInf.y = (tr.y + br.y) * 0.5 - H * 0.5;
       }
       private function hzqHideInfoVan(hide:Boolean) : void
       {
@@ -1144,8 +1152,10 @@
       private var hzqExtFrame:Sprite = null;  // framed box around the extra grid (built once)
       private var hzqExtFrameT:TextField = null;
       private var hzqExtFrameKey:String = "";
+      private var hzqExtLastBox:Object = null;  // last layout box; retitle after font.marker without a new layout
       private var hzqRing:Sprite = null;      // filled accent ring; child of the menu
-      private var hzqExtSlots:Array = null;   // {s:MovieClip, k:TextField, ic:ImageFixture, i:int}
+      private var hzqExtSlots:Array = null;   // {s:MovieClip, k:TextField, ic:ImageFixture, i:int, ib:{sx,sy,x,y}}
+      private var hzqExtIcCb:Array = null;    // per extra slot icon-load handler (hzqExtIc13 .. hzqExtIc24)
       private var hzqExtAdd:Sprite = null;
       private var hzqExtPool:Array = null;    // 12 slot clips (13-24), built once per open, reused (perf standards 2)
       private var hzqExtAddDrawn:Boolean = false;
@@ -1385,6 +1395,7 @@
             }
             this.hzqExtMoved = false;
          }
+         this.hzqExtLastBox = box;
          this.hzqExtBuildClips(box);
          this.hzqExtFrameDraw(box);
          this.hzqExtRaise();
@@ -1704,6 +1715,7 @@
          ic.mouseEnabled = false;
          ic.mouseChildren = false;
          s.addChild(ic);
+         this.hzqExtIconBound(ic);
          this.addChild(s);
          this.hzqUnclip(s);
          this.hzqExtHideVan(s);
@@ -1715,7 +1727,7 @@
          }
          catch(eHit:Error) { }
          // c* = what is on screen now (change-driven draw). No name field: name is the info panel only.
-         return {"s":s,"c":card,"k":k,"ic":ic,"i":slot,"x":0,"y":0,"cSel":null,"cEmpty":null,"cKey":null,"cIcon":null};
+         return {"s":s,"c":card,"k":k,"ic":ic,"i":slot,"x":0,"y":0,"ib":{"sx":1,"sy":1,"x":0,"y":0},"cSel":null,"cEmpty":null,"cKey":null,"cIcon":null};
       }
       private function hzqExtClick(e:MouseEvent) : void
       {
@@ -1880,6 +1892,7 @@
             o.cKey = key;
             var isig:String = d == null ? "" : String(d.name) + "|" + String(d.ft) + "|" + String(d.img);
             if(o.cIcon !== isig) { this.hzqExtLoadIcon(o,d); o.cIcon = isig; }
+            else if(!empty && o.ic != null && o.ic.visible) { this.hzqExtFitIcon(o); }
             i++;
          }
          if(this.hzqExtAdd != null && !this.hzqExtAddDrawn)
@@ -1956,7 +1969,11 @@
          }
          return null;
       }
-      // Same LoadIcon path as FavoritesEntry: LoadImageFixtureFromUIData(..., "FavoritesIconBuffer").
+      // Vanilla FavoritesEntry.LoadIcon: clipSizer / centerClip, then onLoadAttemptComplete, then
+      // LoadImageFixtureFromUIData(..., "FavoritesIconBuffer"). FavoritesIconBuffer is the image-cache
+      // name, not a size. Timeline Icon_mc has BoundClip_mc 60 x 60; AddDisplayObject scales the
+      // loaded bitmap/symbol into that sizer. Constructed ImageFixture has no timeline BoundClip, so
+      // extras attach one (hzqExtIconBound) and fit Icon_mc after the load callback, like hzqFit.
       private function hzqExtLoadIcon(o:Object, d:Object) : void
       {
          if(o == null || o.ic == null) { return; }
@@ -1972,6 +1989,7 @@
          }
          try
          {
+            this.hzqExtIconBound(ic);
             if(int(img.iFixtureType) == ImageFixture.FT_SYMBOL)
             {
                if(src.bIsPower == true) { ic.clipSizer = "Sizer_mc"; }
@@ -1982,17 +2000,84 @@
                ic.clipSizer = "";
                ic.centerClip = false;
             }
+            var ei:int = int(o.i) - 13;
+            if(this.hzqExtIcCb != null && ei >= 0 && ei < this.hzqExtIcCb.length) { ic.onLoadAttemptComplete = this.hzqExtIcCb[ei]; }
             ic.LoadImageFixtureFromUIData(img,"FavoritesIconBuffer");
             ic.visible = true;
+            ic.mouseEnabled = false;
+            ic.mouseChildren = false;
             this.hzqExtFitIcon(o);
          }
          catch(eL:Error) { ic.visible = false; }
       }
+      // Purpose: give a constructed ImageFixture the vanilla 60 x 60 BoundClip_mc sizer.
+      // Inputs: extra-slot Icon_mc. Outputs: BoundClip_mc on the fixture and its loader children.
+      // ImageFixture only copies BoundClip_mc in the constructor (timeline instances).
+      private function hzqExtIconBound(ic:ImageFixture) : void
+      {
+         if(ic == null) { return; }
+         var b:MovieClip = ic.BoundClip_mc;
+         if(b == null)
+         {
+            b = new MovieClip();
+            b.name = "BoundClip_mc";
+            b.mouseEnabled = false;
+            b.mouseChildren = false;
+            b.graphics.beginFill(0,0);
+            b.graphics.drawRect(0,0,HZQ_ICBOUND,HZQ_ICBOUND);
+            b.graphics.endFill();
+            ic.BoundClip_mc = b;
+            ic.addChild(b);
+         }
+         var i:int = 0;
+         while(i < ic.numChildren)
+         {
+            var ch:* = ic.getChildAt(i);
+            try { if(ch != null && ch != b) { ch.BoundClip_mc = b; } } catch(eB:Error) { }
+            i++;
+         }
+      }
+      private function hzqExtIc13() : void { this.hzqExtIcDone(13); }
+      private function hzqExtIc14() : void { this.hzqExtIcDone(14); }
+      private function hzqExtIc15() : void { this.hzqExtIcDone(15); }
+      private function hzqExtIc16() : void { this.hzqExtIcDone(16); }
+      private function hzqExtIc17() : void { this.hzqExtIcDone(17); }
+      private function hzqExtIc18() : void { this.hzqExtIcDone(18); }
+      private function hzqExtIc19() : void { this.hzqExtIcDone(19); }
+      private function hzqExtIc20() : void { this.hzqExtIcDone(20); }
+      private function hzqExtIc21() : void { this.hzqExtIcDone(21); }
+      private function hzqExtIc22() : void { this.hzqExtIcDone(22); }
+      private function hzqExtIc23() : void { this.hzqExtIcDone(23); }
+      private function hzqExtIc24() : void { this.hzqExtIcDone(24); }
+      private function hzqExtIcDone(slot:int) : void
+      {
+         var o:Object = this.hzqExtSlotObj(slot);
+         if(o == null || o.ic == null) { return; }
+         try { o.ic.mouseEnabled = false; o.ic.mouseChildren = false; } catch(eM:Error) { }
+         try { this.hzqExtFitIcon(o); } catch(e1:Error) { }
+      }
+      private function hzqExtSlotObj(slot:int) : Object
+      {
+         if(this.hzqExtPool == null) { return null; }
+         var i:int = slot - 13;
+         if(i < 0 || i >= this.hzqExtPool.length) { return null; }
+         return this.hzqExtPool[i];
+      }
+      // Same rule as hzqFit: reset to the captured base (identity on constructed extras) so a second
+      // fit never compounds, measure the loaded picture / symbol, then scale by min(1, room w / w,
+      // room h / h) into the 72 px card below the key chip. Nothing loaded: identity stays.
       private function hzqExtFitIcon(o:Object) : void
       {
          var ic:* = o.ic;
          var e:MovieClip = o.s as MovieClip;
          if(ic == null || e == null) { return; }
+         if(o.ib == null) { o.ib = {"sx":1,"sy":1,"x":0,"y":0}; }
+         var b:Object = o.ib;
+         ic.scaleX = b.sx;
+         ic.scaleY = b.sy;
+         ic.x = b.x;
+         ic.y = b.y;
+         if(!ic.visible) { return; }
          var nb:Rectangle = this.hzqIcB(ic,e);
          if(nb == null || !(nb.width > 0.5) || !(nb.height > 0.5)) { return; }
          var hb:Number = HZQ_EXT_BOX * 0.5;
@@ -2002,10 +2087,10 @@
          var ah:Number = hb - HZQ_ICPAD - top;
          if(aw < 4 || ah < 4) { return; }
          var k:Number = Math.min(1,Math.min(aw / nb.width,ah / nb.height));
-         ic.scaleX = k;
-         ic.scaleY = k;
-         ic.x = -(nb.x + nb.width / 2) * k;
-         ic.y = top + ah / 2 - (nb.y + nb.height / 2) * k;
+         ic.scaleX = b.sx * k;
+         ic.scaleY = b.sy * k;
+         ic.x = -(nb.x + nb.width / 2 - b.x) * k;
+         ic.y = top + ah / 2 - (nb.y + nb.height / 2 - b.y) * k;
       }
       // Purpose: Horizon card around extra slots. Drawn once per layout/count change, not per selection.
       private function hzqExtFrameDraw(box:Object) : void
@@ -2016,7 +2101,7 @@
          var extN:int = n > 12 ? n - 12 : 0;
          var bars:Boolean = int(this.hzqS.ExtLayout) != 0;
          var addOn:Boolean = this.hzqExtAdd != null && this.hzqExtAdd.visible;
-         var key:String = String(n) + ":" + String(per) + ":" + (bars ? "1" : "0") + ":" + (addOn ? "1" : "0");
+         var key:String = String(n) + ":" + String(per) + ":" + (bars ? "1" : "0") + ":" + (addOn ? "1" : "0") + ":" + this.hzqFace("bd");
          if(key == this.hzqExtFrameKey) { return; }
          this.hzqExtFrameKey = key;
          var g:Graphics = this.hzqExtFrame.graphics;
@@ -2059,6 +2144,22 @@
             this.hzqExtFrameT.x = fx + HZQ_FRAME_PAD;
             this.hzqExtFrameT.y = fy + 6;
             this.hzqExtFrameT.visible = true;
+         }
+      }
+      // Font.marker / ControlMap / ini redraw: the extra title and key chips were first drawn
+      // before $Horizon_Font was registered, and hzqExtFrameDraw skips when the layout key is
+      // unchanged. Clear those caches so hzqSet runs again through hzqFace (same as the header
+      // and info panel). Edge only, not per frame.
+      private function hzqExtFontTouch() : void
+      {
+         this.hzqExtFrameKey = "";
+         this.hzqExtAddDrawn = false;
+         if(this.hzqExtSlots == null) { return; }
+         var i:int = 0;
+         while(i < this.hzqExtSlots.length)
+         {
+            this.hzqExtSlots[i].cKey = null;
+            i++;
          }
       }
       private function hzqExtApply(pay:String) : void
@@ -2201,6 +2302,7 @@
          this.hzqExtFrame = null;
          this.hzqExtFrameT = null;
          this.hzqExtFrameKey = "";
+         this.hzqExtLastBox = null;
       }
       private function hzqFail() : void
       {

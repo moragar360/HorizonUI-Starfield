@@ -383,13 +383,50 @@ int main()
 				"T AABB does not contain an 8-per-row extra last-column ring (previous clip theory)");
 			Expect(AccentRingInside(last8->x, last8->y, -960.f, 960.f, -540.f, 540.f, kExtBox),
 				"8-per-row extra last-column ring stays inside the visible area");
-			const auto inf = PlaceInfoPanel(960.f, 540.f, kInfoW, 120.f, 1.f);
-			Expect(inf.x > 268.8f && inf.y + inf.h < 540.f,
-				"info panel sits at bottom-right, left of the HUD equipment reserve");
-			Expect(InfoClearsLayout(inf, p, -267.75f, 268.8f, -267.65f, 268.75f),
-				"info panel does not overlap the T or extra slots (6 per row)");
-			Expect(InfoClearsLayout(inf, p8, -267.75f, 268.8f, -267.65f, 268.75f),
-				"info panel does not overlap the T or extra slots (8 per row)");
+			const auto inf1080 = PlaceInfoPanel(960.f, -540.f, 540.f, kInfoW, 120.f);
+			Expect(inf1080.x == 960.f - kSafeM - kInfoW && inf1080.y == -60.f,
+				"info panel sits at center-right on 1920x1080");
+			Expect(InfoClearsLayout(inf1080, p, -267.75f, 268.8f, -267.65f, 268.75f),
+				"info panel does not overlap the T or extra slots (6 per row, 1920x1080)");
+			Expect(InfoClearsLayout(inf1080, p8, -267.75f, 268.8f, -267.65f, 268.75f),
+				"info panel does not overlap the T or extra slots (8 per row, 1920x1080)");
+			Expect(!RectsOverlap(inf1080.x, inf1080.y, inf1080.w, inf1080.h,
+					960.f - kHudCardW, 540.f - kEqReserve, kHudCardW, kEqReserve),
+				"center-right info does not overlap the HUD equipment card at 1920x1080");
+			Expect(!RectsOverlap(inf1080.x, inf1080.y, inf1080.w, inf1080.h,
+					960.f - kHudCardW, -540.f, kHudCardW, kHudQuestH),
+				"center-right info does not overlap the HUD quest card at 1920x1080");
+			const auto inf1440 = PlaceInfoPanel(1280.f, -720.f, 720.f, kInfoW, 120.f);
+			Expect(inf1440.x == 1280.f - kSafeM - kInfoW && inf1440.y == -60.f,
+				"info panel sits at center-right on 2560x1440");
+			Expect(InfoClearsLayout(inf1440, p, -267.75f, 268.8f, -267.65f, 268.75f),
+				"info panel does not overlap the T or extra slots (2560x1440)");
+			Expect(!RectsOverlap(inf1440.x, inf1440.y, inf1440.w, inf1440.h,
+					1280.f - kHudCardW, 720.f - kEqReserve, kHudCardW, kEqReserve),
+				"center-right info does not overlap the HUD equipment card at 2560x1440");
+			const auto infUw = PlaceInfoPanel(1720.f, -720.f, 720.f, kInfoW, 120.f);
+			Expect(infUw.x == 1720.f - kSafeM - kInfoW && infUw.y == -60.f,
+				"info panel sits at center-right on 3440x1440 ultrawide");
+			Expect(InfoClearsLayout(infUw, p, -267.75f, 268.8f, -267.65f, 268.75f),
+				"info panel does not overlap the T or extra slots (ultrawide)");
+			Expect(!RectsOverlap(infUw.x, infUw.y, infUw.w, infUw.h,
+					1720.f - kHudCardW, 720.f - kEqReserve, kHudCardW, kEqReserve),
+				"center-right info does not overlap the HUD equipment card on ultrawide");
+			{
+				const float kb = 24.f;
+				const auto tiny = FitExtraIcon(-10.f, -10.f, 20.f, 20.f, kb);
+				Expect(tiny.scale == 1.f, "a small extra icon is never enlarged");
+				const auto huge = FitExtraIcon(0.f, 0.f, 256.f, 256.f, kb);
+				Expect(huge.scale < 1.f && ExtraIconInsideCard(huge, 0.f, 0.f, 256.f, 256.f, kb),
+					"a 256 px extra icon is scaled into the 72 px card below the keychip");
+				const auto wide = FitExtraIcon(0.f, 0.f, 400.f, 160.f, kb);
+				Expect(wide.scale < 1.f && ExtraIconInsideCard(wide, 0.f, 0.f, 400.f, 160.f, kb),
+					"a wide extra icon stays inside the padded 72 px card (one scale on both axes)");
+				const auto again = FitExtraIcon(0.f, 0.f, 256.f, 256.f, kb);
+				Expect(again.scale == huge.scale && again.x == huge.x && again.y == huge.y,
+					"extra icon fit from identity does not compound");
+				Expect(kIcBound == 60.f, "vanilla BoundClip_mc target is 60 x 60");
+			}
 		}
 		Expect(IsEssenceName("Quantum Essence"), "essence name");
 		Expect(!IsEssenceName("Med Pack"), "not essence");

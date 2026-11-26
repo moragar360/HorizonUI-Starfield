@@ -40,9 +40,13 @@ inline constexpr float kExtGap = 14.f;
 inline constexpr float kExtPitch = kExtBox + kExtGap;
 inline constexpr float kExtFramePad = 14.f;
 inline constexpr float kExtFrameTitle = 22.f;
-inline constexpr float kEqReserve = 84.f;       // HUD equipment card (HorizonAmmo_mc)
+inline constexpr float kEqReserve = 84.f;       // HUD equipment card (HorizonAmmo_mc); overlap tests only
+inline constexpr float kHudCardW = 280.f;       // HUD cards on the right edge (equipment / quest)
+inline constexpr float kHudQuestH = 80.f;
 inline constexpr float kSafeM = 16.f;
 inline constexpr float kInfoW = 380.f;
+inline constexpr float kIcPad = 4.f;            // icon padding inside a slot card
+inline constexpr float kIcBound = 60.f;         // vanilla Icon_mc BoundClip_mc
 
 enum class Layout : int
 {
@@ -208,19 +212,62 @@ struct InfoPanelRect
 	float h = 0;
 };
 
-// Movie-local: origin at screen center, visRight/visBottom = visibleRect right/bottom.
-// Sits above the HUD equipment card (kEqReserve * HudScale) with kSafeM inset.
-inline InfoPanelRect PlaceInfoPanel(float visRight, float visBottom, float w, float h, float hudScale = 1.f)
+// Purpose: place the Quick Menu item info panel at center-right of the visible area.
+// Inputs: visibleRect right / top / bottom in movie-local space (origin at screen center), panel size.
+// Outputs: top-left x/y and size. Right inset kSafeM, vertically centered. No per-frame work.
+// Dependencies: kSafeM, kInfoW callers. HUD equipment / quest cards sit at the bottom-right and
+// top-right of the same edge; they do not occupy the vertical center.
+inline InfoPanelRect PlaceInfoPanel(float visRight, float visTop, float visBottom, float w, float h)
 {
-	if (!(hudScale > 0.f)) hudScale = 1.f;
-	if (hudScale < 0.7f) hudScale = 0.7f;
-	if (hudScale > 1.4f) hudScale = 1.4f;
 	InfoPanelRect r;
 	r.w = w;
 	r.h = h;
 	r.x = visRight - kSafeM - w;
-	r.y = visBottom - kSafeM - kEqReserve * hudScale - 12.f - h;
+	r.y = (visTop + visBottom) * 0.5f - h * 0.5f;
 	return r;
+}
+
+struct ExtraIconFit
+{
+	float scale = 1.f;
+	float x = 0.f;
+	float y = 0.f;
+};
+
+// Purpose: extra-slot icon transform after the ImageFixture load callback (same rule as hzqFit).
+// Inputs: loaded picture bounds at identity (vanilla BoundClip already applied), keychip height kb.
+// Outputs: Icon_mc scale/x/y. Aspect kept, never enlarged, sits in kExtBox below the keychip.
+inline ExtraIconFit FitExtraIcon(float nbX, float nbY, float nbW, float nbH, float kb)
+{
+	ExtraIconFit f;
+	const float hb = kExtBox * 0.5f;
+	float top = -hb + kIcPad;
+	if (kb > 0.f) top = (std::max)(top, -hb + kb + 2.f);
+	const float aw = kExtBox - kIcPad * 2.f;
+	const float ah = hb - kIcPad - top;
+	if (!(nbW > 0.5f) || !(nbH > 0.5f) || aw < 4.f || ah < 4.f) return f;
+	const float k = (std::min)(1.f, (std::min)(aw / nbW, ah / nbH));
+	f.scale = k;
+	f.x = -(nbX + nbW * 0.5f) * k;
+	f.y = top + ah * 0.5f - (nbY + nbH * 0.5f) * k;
+	return f;
+}
+
+inline bool ExtraIconInsideCard(const ExtraIconFit& f, float nbX, float nbY, float nbW, float nbH, float kb)
+{
+	const float hb = kExtBox * 0.5f;
+	float top = -hb + kIcPad;
+	if (kb > 0.f) top = (std::max)(top, -hb + kb + 2.f);
+	const float left = -hb + kIcPad;
+	const float right = hb - kIcPad;
+	const float bottom = hb - kIcPad;
+	const float x = f.x + nbX * f.scale;
+	const float y = f.y + nbY * f.scale;
+	const float w = nbW * f.scale;
+	const float h = nbH * f.scale;
+	return x >= left - 0.05f && x + w <= right + 0.05f
+		&& y >= top - 0.05f && y + h <= bottom + 0.05f
+		&& w <= kExtBox && h <= kExtBox;
 }
 
 inline float SlotBoxForIndex(int index)

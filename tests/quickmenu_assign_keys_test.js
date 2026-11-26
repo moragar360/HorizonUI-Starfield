@@ -402,23 +402,84 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		&& /this\.hzqAccentRing\(g,x,y,box\)/.test(fnText(qm, "hzqRingDraw").body),
 		"I: ring is a filled border on the overlay, same size as the card");
 	expect(/function hzqInfoPlace/.test(qm) && /Extensions\.visibleRect/.test(fnText(qm, "hzqInfoPlace").body)
-		&& /HZQ_EQ_RESERVE/.test(fnText(qm, "hzqInfoPlace").body)
+		&& /vr\.right,vr\.top/.test(fnText(qm, "hzqInfoPlace").body)
+		&& /vr\.right,vr\.bottom/.test(fnText(qm, "hzqInfoPlace").body)
+		&& /\(tr\.y \+ br\.y\) \* 0\.5 - H \* 0\.5/.test(fnText(qm, "hzqInfoPlace").body)
+		&& !/HZQ_EQ_RESERVE/.test(fnText(qm, "hzqInfoPlace").body)
 		&& /this\.hzqSprite\(this, -1\)/.test(fnText(qm, "hzqBuild").body),
-		"I: info panel is a menu child, placed at visibleRect bottom-right above the HUD equipment card");
+		"I: info panel is a menu child, placed at visibleRect center-right (right inset, vertically centered)");
 	expect(/EXTENDED QUICK \/ FAVORITE SLOTS/.test(qm) && /function hzqExtFrameDraw/.test(qm),
 		"I: extra grid has a Horizon framed box titled EXTENDED QUICK / FAVORITE SLOTS");
+	{
+		const frame = fnText(qm, "hzqExtFrameDraw").body;
+		const setb = fnText(qm, "hzqSet").body;
+		const face = fnText(qm, "hzqFace").body;
+		expect(/this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED QUICK \/ FAVORITE SLOTS"\),13,this\.hzqTextAccent\(\),"bd",0\.14,true\)/.test(frame)
+			&& /this\.hzqFace\(w\)/.test(setb) && /t\.embedFonts = true/.test(setb)
+			&& /\$Horizon_Font/.test(face) && !/new TextFormat\(\s*["']/.test(frame)
+			&& !/_sans|Arial|Times|Courier|Exo 2|Exo2/.test(frame),
+			"I: EXTENDED QUICK title uses hzqSet -> hzqFace (embedded Horizon face), not a hardcoded/system font");
+		expect(/this\.hzqSet\(o\.k,klab,13,/.test(fnText(qm, "hzqExtDraw").body)
+			&& /this\.hzqSet\(nt,/.test(fnText(qm, "hzqInfo").body)
+			&& /this\.hzqSet\(lt,this\.hzqUC\(String\(rows\[j\]\[0\]\)\),13,/.test(fnText(qm, "hzqInfo").body),
+			"I: extra key chips and the info panel text use the same hzqSet / hzqFace path");
+		expect(/this\.hzqFace\("bd"\)/.test(frame)
+			&& /this\.hzqExtFontTouch\(\)/.test(fnText(qm, "hzqRedraw").body)
+			&& /this\.hzqExtFrameDraw\(this\.hzqExtLastBox\)/.test(fnText(qm, "hzqRedraw").body)
+			&& /this\.hzqExtSlots\[i\]\.cKey = null/.test(fnText(qm, "hzqExtFontTouch").body),
+			"I: after font.marker, redraw retitles the extra frame and re-sets extra key chips through hzqFace");
+		expect(/this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED QUICK \/ FAVORITE SLOTS"\)/.test(pimp)
+			&& /this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED QUICK \/ FAVORITE SLOTS"\)/.test(pimpL)
+			&& /t\.embedFonts = true/.test(fnText(pimp, "hzqSet").body)
+			&& /t\.embedFonts = true/.test(fnText(pimpL, "hzqSet").body),
+			"I: both movies apply the shared Horizon font helper to the extra frame title");
+	}
 	expect(/new ImageFixture\(\)/.test(fnText(qm, "hzqExtMake").body)
 		&& /LoadImageFixtureFromUIData\(img,"FavoritesIconBuffer"\)/.test(fnText(qm, "hzqExtLoadIcon").body)
 		&& !/o\.n/.test(fnText(qm, "hzqExtDraw").body)
 		&& !/empty \? "EMPTY"/.test(fnText(qm, "hzqExtDraw").body),
 		"I: extra cards show vanilla Icon_mc + key chip, no item name, no EMPTY text");
-	const infoW = 380, infoH = 120, eq = 84, m = 16;
-	const infX = visR - m - infoW, infY = visB - m - eq - 12 - infoH;
+	const loadBody = fnText(qm, "hzqExtLoadIcon").body;
+	expect(loadBody.indexOf("ic.onLoadAttemptComplete = this.hzqExtIcCb[ei]") < loadBody.indexOf("ic.LoadImageFixtureFromUIData")
+		&& /this\.hzqExtIconBound\(ic\)/.test(loadBody)
+		&& /HZQ_ICBOUND/.test(fnText(qm, "hzqExtIconBound").body)
+		&& !/clipWidth|clipHeight/.test(loadBody),
+		"I: extra LoadIcon matches vanilla: BoundClip 60x60, hook before Load, no clipWidth/clipHeight (those distort)");
+	const fitBody = fnText(qm, "hzqExtFitIcon").body;
+	expect(fitBody.indexOf("ic.scaleX = b.sx;") < fitBody.indexOf("this.hzqIcB(ic,e)")
+		&& /Math\.min\(1,Math\.min\(aw \/ nb\.width,ah \/ nb\.height\)\)/.test(fitBody)
+		&& /Number\(o\.kb\) > 0/.test(fitBody),
+		"I: extra icon fit resets to identity, then scales after the loaded bounds, below the key chip");
+	expect(/function hzqExtIcDone/.test(qm) && /function hzqExtIc13/.test(qm) && /function hzqExtIc24/.test(qm)
+		&& /this\.hzqExtIcCb = \[this\.hzqExtIc13/.test(fnText(qm, "hzqBuild").body),
+		"I: extra icon-load edge is the same per-slot callback pattern as vanilla 1-12");
+	expect(/function hzqExtFitIcon/.test(pimp) && /function hzqExtIconBound/.test(pimp)
+		&& /function hzqExtFitIcon/.test(pimpL) && /function hzqExtIconBound/.test(pimpL)
+		&& /function hzqInfoPlace/.test(pimp) && /function hzqInfoPlace/.test(pimpL),
+		"I: extra icon fit and center-right info are in both movies");
+	const infoW = 380, infoH = 120, m = 16;
+	function infoAt(visR, visT, visB) {
+		return { x: visR - m - infoW, y: (visT + visB) * 0.5 - infoH * 0.5, w: infoW, h: infoH };
+	}
+	function overlaps(a, bx, by, bw, bh) {
+		return a.x < bx + bw && a.x + a.w > bx && a.y < by + bh && a.y + a.h > by;
+	}
+	const inf1080 = infoAt(960, -540, 540);
+	const inf1440 = infoAt(1280, -720, 720);
+	const infUw = infoAt(1720, -720, 720);
 	const slotR = x + half, slotB = y + half, slotL = x - half, slotT = y - half;
-	expect(!(infX < slotR && infX + infoW > slotL && infY < slotB && infY + infoH > slotT),
-		"I: bottom-right info panel does not overlap the last extra slot");
-	expect(!(infX < tRight && infX + infoW > tLeft && infY < tBottom && infY + infoH > tTop),
-		"I: bottom-right info panel does not overlap the vanilla T");
+	expect(!overlaps(inf1080, slotL, slotT, slotR - slotL, slotB - slotT)
+		&& !overlaps(inf1440, slotL, slotT, slotR - slotL, slotB - slotT)
+		&& !overlaps(infUw, slotL, slotT, slotR - slotL, slotB - slotT),
+		"I: center-right info panel does not overlap the last extra slot at 1920x1080, 2560x1440, or ultrawide");
+	expect(!overlaps(inf1080, tLeft, tTop, tRight - tLeft, tBottom - tTop)
+		&& !overlaps(inf1440, tLeft, tTop, tRight - tLeft, tBottom - tTop)
+		&& !overlaps(infUw, tLeft, tTop, tRight - tLeft, tBottom - tTop),
+		"I: center-right info panel does not overlap the vanilla T at 1920x1080, 2560x1440, or ultrawide");
+	expect(!overlaps(inf1080, 960 - 280, 540 - 84, 280, 84)
+		&& !overlaps(inf1440, 1280 - 280, 720 - 84, 280, 84)
+		&& !overlaps(infUw, 1720 - 280, 720 - 84, 280, 84),
+		"I: center-right info panel does not overlap the HUD equipment card on the right edge");
 }
 
 console.log("quickmenu_assign_keys_test " + (failed ? "FAILED" : "passed") + " (" + passed + " ok, " + failed + " FAIL)");

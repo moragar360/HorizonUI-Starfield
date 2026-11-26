@@ -246,7 +246,7 @@ expect(/return Math\.max\(13,Math\.round\(size \* ts \* 10\) \/ 10\);/.test(cBod
 	expect(sizes.length >= 3 && sizes.every((v) => v >= 13), "M-3: every Extended text size is 13 or more (" + sizes.join(", ") + ")");
 	expect(!/this\.hzqExtFit\(o\.n/.test(ext) && /this\.hzqExtFit\(o\.k,klab,50\)/.test(ext)
 		&& /this\.hzqSprite\(this, -1\)/.test(qm),
-		"M-3: extra cards have no name field; the name is the bottom-right info panel");
+		"M-3: extra cards have no name field; the name is the center-right info panel");
 	expect(/hzqExtKeyShort/.test(ext) && /PAGEDOWN/.test(cBody(qm, "private function hzqExtKeyShort(")) && /this\.hzqExtFit\(o\.k,klab,50\);/.test(ext),
 		"N-a: long key names use a short form (PGDN) and are fitted to 50 px");
 }
