@@ -4851,7 +4851,7 @@
       {
          switch(k)
          {
-            case "_qmkeys": return "Click a key chip to bind. Esc cancels. Backspace or Delete clears. An orange warning appears if the key is already used by another extra slot, the settings key, a game favorite key for slots 1-12, or another Horizon key. The grid shows tiles 13 through Slot Count, wrapped by Slots per Row. Lowering the count only hides tiles; saved keys and items are kept. If Extended Mode is off or paused, the grid is greyed and saved keys are kept.";
+            case "_qmkeys": return "Click a key chip to bind. Esc cancels. Backspace or Delete clears. An orange warning appears if that key is already used by another extra slot, the settings key, a game favorite key for slots 1-12, or another Horizon key. Enter uses a warned game key anyway, or moves a slot key here; the settings key is refused. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Lowering the count only hides tiles; saved keys and items are kept. If Extended Mode is off or paused, the grid is grayed and saved keys are kept.";
             case "Debug": return "Shows extra yellow text on the HUD about the crosshair, the weapon in your hands, what the compass sees, and environment keys. Compass icons also get small numbers. You see this on screen as soon as it is on. Turn it on only while you are tracking down a HUD problem, then turn it off so the extra text does not stay.";
             case "PerfDiag": return "Measures how long the HUD takes to update and keeps those timings so a slowdown can be found. You will not see a new panel on screen; the numbers are stored for a report. Ordinary play should leave this off. Turn it on only when you need a timing report, then turn it off. Saved looks do not change this.";
             case "PerfMode": return "Switches which HUD test runs while Advanced Performance Timing is on. Baseline is ordinary play and is the one to use unless you were asked to try a specific test. Hover Skip turns off Horizon hover cards and scanner drawing (the game's own hover can still show). Fixture shows a test stand-in instead of live loot, people, or ships. Full Pipeline, Same Target, Rapid Targets, Scanner, and Background HUD each isolate a different part of the HUD. These tests can hide cards or drawing on purpose.";
@@ -4921,7 +4921,6 @@
             case "QuickMenuSlotCount": return "How many slots show when Extended Mode is on, from 12 to 24. Lowering the count only hides extra tiles; keys and items are kept.";
             case "QuickMenuSlotsPerRow": return "How many extra slots sit in each row: 4, 6, or 8.";
             case "QuickMenuExtendedLayout": return "Cross + Bars keeps the game's T for slots 1-12 and puts extra slots in bars under it. Bars draws every slot in rows.";
-            case "_qmkeys": return "Press a chip, then press a key. Esc cancels. Backspace or Delete clears. Orange means that key is already used. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Slots 1-12 keep the game's own favorite keys.";
             case "_qmclear": return "Clears every extra-slot key. The slots still work from the menu.";
             case "XpToast": return "A short +XP note beside the character card. With Horizon messages installed, the game's own +XP popup is hidden while this is on.";
             case "MissionToast": return "Replaces the game's quest banner with a Horizon toast. Move it in Arrange Cards.";
@@ -4997,6 +4996,7 @@
                r.n13 = true;
             }
             else { r.note = this.hz51Line(k, r); }
+            if(this.hz37Cf == k && k.indexOf("_hz37") != 0) { r.note = this.hz37Note(k, String(r.note)); }
             if(k.length >= 7 && k.substr(k.length - 7) == "Compact" && r.opts == undefined)
             {
                r.t = "r";
@@ -5515,7 +5515,7 @@
             {"k":"_mlfolder","l":"FOLDER","t":"x","btn":"SHOW"},
             {"k":"_mlold","l":"OLD CHARACTERS","t":"x","btn":"OPEN"},
             {"k":"_msglog","l":"OPEN LOG","t":"x","btn":"OPEN"}];
-         if(this.hzMsglogModule() == 0) { return this.hz51Unavail(rows, "Install it from the Horizon UI installer. Saved settings are kept."); }
+         if(this.hzMsglogModule() == 0) { return this.hz51Unavail(rows, "needs Notifications"); }
          return rows;
       }
       private function hz51IndexBuild() : void
@@ -6126,7 +6126,7 @@
             b = dimS; g = dimS.graphics;
          }
          var helpW:Number = Math.max(120, innerW - 148);
-         var ht:TextField = this.hzWT(b,"Click a key chip to bind. Esc cancels. Backspace or Delete clears. A clash (another slot, the settings key, or a game control) is warned and ignored. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Slots 1-12 keep the game's own favorite keys.",x0 + 12,y + 6,helpW,10,"rg",uint(T.mut),0.05,"left",11);
+         var ht:TextField = this.hzWT(b,"Click a key chip to bind. Esc cancels. Backspace or Delete clears. Orange means a clash: Enter uses a game key anyway or moves a slot key here; the settings key is refused. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Slots 1-12 keep the game's own favorite keys.",x0 + 12,y + 6,helpW,10,"rg",uint(T.mut),0.05,"left",11);
          ht.wordWrap = true;
          ht.multiline = true;
          var btnW:Number = 118;
@@ -6329,7 +6329,7 @@
       {
          if(this.hzSetFindOn)
          {
-            if(code == "cancel") { this.hzSetFindOn = false; this.hzSetFind = ""; this.hzSetFocus = 0; return true; }
+            if(code == "cancel") { this.hzSetFindOn = false; this.hzSetFind = ""; this.hzSetFocus = 0; this.hzSetGlowK = ""; return true; }
             if(code == "ok")
             {
                var hits:Array = this.hz51FindHits();
@@ -6347,12 +6347,14 @@
             {
                if(this.hzSetFind.length > 0) { this.hzSetFind = this.hzSetFind.substr(0,this.hzSetFind.length - 1); }
                this.hzSetFindHi = 0;
+               this.hzSetGlowK = "";
                return true;
             }
             if(code.indexOf("ch:") == 0 && code.length >= 4)
             {
                this.hzSetFind += code.substr(3,1);
                this.hzSetFindHi = 0;
+               this.hzSetGlowK = "";
                return true;
             }
             return true;
@@ -8073,6 +8075,7 @@
          this.hzSetFindOn = false;
          this.hzSetDrop = -1;
          this.hzSetHexK = "";
+         this.hzSetGlowK = "";
          this.hzQmCapEnd();
          try { this.hz37Reset(); } catch(e37r:Error) { }
          this.hzSetPend = null;
@@ -8190,22 +8193,16 @@
             case "wheelup": this.hzSetScrollBy(-1); break;
             case "wheeldown": this.hzSetScrollBy(1); break;
             case "ok":
-               if(this.hzSetFocus == 1) { this.hzSetFocus = 0; this.hzSetDraw(); return; }
-               if(this.hzSetRow >= 0 && this.hzSetRow < rows.length && rows[this.hzSetRow] != null)
+               if(this.hzSetRow >= 0 && this.hzSetRow < rows.length && rows[this.hzSetRow] != null && rows[this.hzSetRow].t == "x")
                {
-                  var okRow:Object = rows[this.hzSetRow];
-                  if(okRow.t == "r" || okRow.t == "q" || okRow.t == "l" || okRow.t == "a" || okRow.t == "c" || okRow.t == "p")
+                  var xk:String = String(rows[this.hzSetRow].k);
+                  if(xk == "_msglog" || xk == "_arrange")
                   {
-                     this.hz51OpenDrop(this.hzSetRow, rows);
+                     this.hzSetChange(rows[this.hzSetRow],1);
                      this.hzSetDraw();
                      return;
                   }
-                  if(okRow.t == "x" || okRow.t == "b" || okRow.t == "kg")
-                  {
-                     this.hzSetChange(okRow,1);
-                     this.hzSetDraw();
-                     return;
-                  }
+                  return;
                }
                this.hzSetApply();
                return;
@@ -8256,7 +8253,7 @@
          {
             if(r.k == "_arrange") { this.hzArrEnter(); return; }
             if(r.k == "_msglog") { this.hzMsglogOpen(); return; }
-            if(r.k == "_qmclear") { this.hz51QmClear(); return; }
+            if(r.k == "_qmclear") { this.hz37Act(r,dir); return; }
             if(r.k == "_mlfolder") { try { this.hzMsglogOpenSettings(); } catch(eFold:Error) { } return; }
             if(r.k == "_mlold") { try { this.hzMsglogOpenSettings(); } catch(eOld:Error) { } return; }
             if(r.goT != undefined) { this.hz51Jump(int(r.goT), int(r.goP), String(r.goK)); return; }
@@ -8265,9 +8262,7 @@
             else if(r.k == "_hz31usedlg") { this.hzSetPend.DlgAutoPause = false; }
             else if(r.k == "_hz31gocomms") { this.hz51Jump(3, 0, "Dialogue"); return; }
             else if(r.k == "_hz40goscan") { this.hz51Jump(2, 0, "ScanReach"); return; }
-            else if(r.k == "_hz42scrst") { this.hzSetPend.ScopeChipX = 0; this.hzSetPend.ScopeChipY = 0; this.hzSetPend.ScopeChipScale = 1; }   // v0.42.0 r2
-            else if(r.k == "_hz40rstlay") { this.hz40Reset(true); }
-            else if(r.k == "_hz40rstall") { this.hz40Reset(false); }
+            else if(r.k == "_hz42scrst" || r.k == "_hz40rstlay" || r.k == "_hz40rstall") { this.hz37Act(r,dir); return; }
             else { return; }
          }
          else if(r.t == "c")
@@ -9570,7 +9565,7 @@
                dirty = true;
             }
             else if(id.indexOf("qmk") == 0) { this.hzQmCapBegin("QuickMenuKey" + id.substr(3)); dirty = true; }
-            else if(id == "qmclr") { this.hz51QmClear(); dirty = true; }
+            else if(id == "qmclr") { this.hz37Act({"k":"_qmclear","t":"x"},1); dirty = true; }
             else if(id == "page0" || id == "page1")
             {
                this.hz31Page = id == "page1" ? 1 : 0;
@@ -22367,6 +22362,10 @@
          else if(k == "_hz37del" && p != null && p.u) { this.hz37Send("delete|" + p.id,k); }
          else if(k == "_hz37undo") { this.hz37Send("undo",k); }
          else if(k == "_hz37bak") { this.hz37Send("restore",k); }
+         else if(k == "_hz40rstlay") { this.hz40Reset(true); }
+         else if(k == "_hz40rstall") { this.hz40Reset(false); }
+         else if(k == "_hz42scrst") { this.hzSetPend.ScopeChipX = 0; this.hzSetPend.ScopeChipY = 0; this.hzSetPend.ScopeChipScale = 1; }
+         else if(k == "_qmclear") { this.hz51QmClear(); }
       }
       // keys first come here: name entry and pending confirms; true = used
       private function hz37Key(code:String) : Boolean
@@ -22389,7 +22388,11 @@
          if(code == "padx" || code == "pady") { return false; }   // fall through as actions, never text
          if(this.hz37Cf.length > 0)
          {
-            if(r != null && rk == this.hz37Cf && (code == "ok" || code == "right" || code == "left")) { this.hz37Act(r,1); return true; }
+            if(r != null && rk == this.hz37Cf && (code == "ok" || code == "right" || code == "left"))
+            {
+               if(rk.indexOf("_hz37") == 0) { this.hz37Act(r,1); return true; }
+               return false;
+            }
             this.hz37Cf = "";
             return code == "cancel" || code == "bksp";   // ESC drops only the confirm
          }
@@ -22402,6 +22405,7 @@
          if(id.indexOf("row") == 0 || id.indexOf("inf") == 0) { ri = int(id.substr(3)); }
          else if(id.indexOf("lt") == 0 || id.indexOf("rt") == 0) { ri = int(id.substr(2)); }
          var k:String = ri >= 0 && ri < rows.length ? String(rows[ri].k) : "";
+         if(id == "qmclr") { k = "_qmclear"; }
          if(k != this.hz37Cf && id.indexOf("inf") != 0) { this.hz37Cf = ""; }
          if(this.hz37Edit != null && k != "_hz37save") { this.hz37Edit = null; }
          if(this.hzQmCap.length > 0 && k != this.hzQmCap) { this.hzQmCapEnd(); }
@@ -22425,6 +22429,10 @@
             if(k == "_hz37undo") { return "Puts back your settings from before the last preset. Press again (or ENTER) to confirm"; }
             if(k == "_hz37bak") { return "Replaces your settings with the update backup. Press again (or ENTER) to confirm"; }
             if(k == "_hz37save") { return "'" + this.hz37Trim(String(this.hz37Edit)) + "' already exists. Press again (or ENTER) to overwrite - ESC cancels"; }
+            if(k == "_hz40rstlay") { return "Puts scanner panel spots, sizes, and compact forms back to their defaults. Press the button again to confirm. Enter does not run this reset."; }
+            if(k == "_hz40rstall") { return "Puts every scanner setting back to its default. Press the button again to confirm. Enter does not run this reset."; }
+            if(k == "_hz42scrst") { return "Puts the hold-breath chip back at the game's spot and size. Press the button again to confirm. Enter does not run this reset."; }
+            if(k == "_qmclear") { return "Clears every extra-slot key. Press Clear all keys again to confirm. Enter does not clear keys."; }
          }
          if(k == "_hz37save" && this.hz37Edit != null) { return "Type a name - ENTER saves - ESC cancels (with a controller: confirm the suggested name)"; }
          if(this.hz37MsgK == k && this.hz37Msg.length > 0) { return this.hz37Msg; }

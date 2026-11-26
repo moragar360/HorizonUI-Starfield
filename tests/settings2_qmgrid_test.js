@@ -46,12 +46,14 @@ expect(/Install it from the Horizon UI installer\. Saved settings are kept\./.te
 expect(mute.indexOf("Turn on Extended Mode to bind keys. Saved keys are kept.") >= 0, "Extended off greys the key grid with the saved-keys note");
 expect(grid.indexOf("Turn on Extended Mode to bind keys. Saved keys are kept.") >= 0, "grid draws the Extended-off lock note on the tiles");
 expect(/CLEAR ALL KEYS/.test(grid) && /id\":\"qmclr\"/.test(grid), "CLEAR ALL KEYS sits on the key grid");
-expect(/hz51QmClear/.test(fnText(as, "hzSettingsMouse").body) && /id == \"qmclr\"/.test(fnText(as, "hzSettingsMouse").body), "CLEAR ALL KEYS click clears pending extra-slot keys");
+expect(/id == \"qmclr\"/.test(fnText(as, "hzSettingsMouse").body) && /hz37Act/.test(fnText(as, "hzSettingsMouse").body), "CLEAR ALL KEYS click arms a confirm, it does not clear on the first press");
+expect(/k == \"_qmclear\"/.test(fnText(as, "hz37Act").body) && /hz51QmClear/.test(fnText(as, "hz37Act").body), "the second confirm press clears pending extra-slot keys");
 expect(/while\(n <= 24\)/.test(clear) && /QuickMenuKey/.test(clear), "Clear all writes empty QuickMenuKey13-24 (hidden slots included)");
 
 expect(/var n:int = 13/.test(grid) && /while\(n <= count\)/.test(grid) && /col >= per/.test(grid), "tiles are 13..SlotCount wrapped by Slots per Row");
 expect(/SLOT \" \+ n/.test(grid) && /UNBOUND/.test(grid) && /PRESS ANY KEY/.test(grid), "tiles show SLOT N, UNBOUND, and PRESS ANY KEY capture");
 expect(/0xF2A03A/.test(as) && /CLASH/.test(grid) && /hzQmNameKind/.test(grid), "clashing chips use the orange clash warning");
+expect(/Enter uses a game key anyway/.test(grid) && !/warned and ignored/.test(grid), "clash tile text matches Enter confirm / settings refuse");
 expect(/\"0\" \|\| u == \"1\"/.test(kind) && /F1/.test(kind) && /return \"settings\"/.test(kind) && /return \"slot\"/.test(kind), "clash checks slots 1-12 game keys, other extra slots, and the Horizon settings key");
 
 expect(/code == \"cancel\"/.test(capKey) && /code == \"bksp\" \|\| code == \"del\"/.test(capKey), "Esc cancels capture; Backspace and Delete clear");

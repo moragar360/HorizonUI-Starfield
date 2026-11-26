@@ -470,7 +470,7 @@
             b = dimS; g = dimS.graphics;
          }
          var helpW:Number = Math.max(120, innerW - 148);
-         var ht:TextField = this.hzWT(b,"Click a key chip to bind. Esc cancels. Backspace or Delete clears. A clash (another slot, the settings key, or a game control) is warned and ignored. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Slots 1-12 keep the game's own favorite keys.",x0 + 12,y + 6,helpW,10,"rg",uint(T.mut),0.05,"left",11);
+         var ht:TextField = this.hzWT(b,"Click a key chip to bind. Esc cancels. Backspace or Delete clears. Orange means a clash: Enter uses a game key anyway or moves a slot key here; the settings key is refused. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Slots 1-12 keep the game's own favorite keys.",x0 + 12,y + 6,helpW,10,"rg",uint(T.mut),0.05,"left",11);
          ht.wordWrap = true;
          ht.multiline = true;
          var btnW:Number = 118;
@@ -673,7 +673,7 @@
       {
          if(this.hzSetFindOn)
          {
-            if(code == "cancel") { this.hzSetFindOn = false; this.hzSetFind = ""; this.hzSetFocus = 0; return true; }
+            if(code == "cancel") { this.hzSetFindOn = false; this.hzSetFind = ""; this.hzSetFocus = 0; this.hzSetGlowK = ""; return true; }
             if(code == "ok")
             {
                var hits:Array = this.hz51FindHits();
@@ -691,12 +691,14 @@
             {
                if(this.hzSetFind.length > 0) { this.hzSetFind = this.hzSetFind.substr(0,this.hzSetFind.length - 1); }
                this.hzSetFindHi = 0;
+               this.hzSetGlowK = "";
                return true;
             }
             if(code.indexOf("ch:") == 0 && code.length >= 4)
             {
                this.hzSetFind += code.substr(3,1);
                this.hzSetFindHi = 0;
+               this.hzSetGlowK = "";
                return true;
             }
             return true;

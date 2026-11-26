@@ -84,9 +84,17 @@ expect(/CrosshairRule/.test(cards) && /ALWAYS/.test(cards), "Crosshair Show when
 expect(/XpToast/.test(cards) && !/MissionToast/.test(cards), "Notifications is XP toast; Mission Toasts live on Comms");
 
 const qm = fnText(as, "hz51Quick").body;
+const keyFn = fnText(as, "hzSettingsKey").body;
+expect(keyFn.indexOf('xk == "_msglog" || xk == "_arrange"') >= 0, "Enter on x-rows activates only Message Log and Arrange");
+expect(/hzQmCap\.length > 0/.test(keyFn) && /hz51Key\(code\)/.test(keyFn), "Enter still acts locally for key capture, search, hex, and an open dropdown");
+expect(!/okRow\.t == \"x\" \|\| okRow\.t == \"b\"/.test(keyFn), "Enter does not toggle switches or fire RESET");
+expect(/rk.indexOf\("_hz37"\) == 0/.test(fnText(as, "hz37Key").body) && /Enter does not run this reset/.test(fnText(as, "hz37Note").body), "Enter confirms preset rows only; scanner and key resets stay behind a second button press");
+expect(/\["ENTER","OK"\]/.test(fnText(as, "hz51DrawFooter").body), "footer still labels Enter as OK (Apply)");
+
 expect(/EXTENDED SLOT KEYS/.test(qm) && /\"t\":\"kg\"/.test(qm), "Cards > Quick Menu has the EXTENDED SLOT KEYS grid");
 expect(/UNBOUND/.test(fnText(as, "hz51DrawQmGrid").body) && /CLEAR ALL KEYS/.test(fnText(as, "hz51DrawQmGrid").body), "key grid draws UNBOUND chips and CLEAR ALL KEYS");
-expect(/Turn on Extended Mode to bind keys\. Saved keys are kept\./.test(fnText(as, "hz51Mute").body), "Extended off greys the grid and keeps saved keys");
+expect(/Turn on Extended Mode to bind keys\. Saved keys are kept\./.test(fnText(as, "hz51Mute").body), "Extended off grays the grid and keeps saved keys");
+expect(/the grid is grayed/.test(fnText(as, "hz51Help").body) && !/greyed/.test(as), "player help uses American grayed");
 
 expect(/function hz34CardRows/.test(as), "old hz34CardRows stays as the CARDS data source");
 expect(/function hz40ScanRows/.test(as) && /function hz31CommsRows/.test(as) && /function hz37Rows/.test(as), "scanner, comms, and preset row builders stay");

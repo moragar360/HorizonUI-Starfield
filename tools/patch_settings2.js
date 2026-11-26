@@ -94,7 +94,7 @@ once(
 );
 once(
 	"         this.hzSetIsOpen = false;\n         this.hzQmCapEnd();",
-	'         this.hzSetIsOpen = false;\n         this.hzSetIdx = null;\n         this.hzSetFindOn = false;\n         this.hzSetDrop = -1;\n         this.hzSetHexK = "";\n         this.hzQmCapEnd();',
+	'         this.hzSetIsOpen = false;\n         this.hzSetIdx = null;\n         this.hzSetFindOn = false;\n         this.hzSetDrop = -1;\n         this.hzSetHexK = "";\n         this.hzSetGlowK = "";\n         this.hzQmCapEnd();',
 	"close"
 );
 once(
@@ -232,22 +232,16 @@ once(
                this.hzSetApply();
                return;`,
 	`            case "ok":
-               if(this.hzSetFocus == 1) { this.hzSetFocus = 0; this.hzSetDraw(); return; }
-               if(this.hzSetRow >= 0 && this.hzSetRow < rows.length && rows[this.hzSetRow] != null)
+               if(this.hzSetRow >= 0 && this.hzSetRow < rows.length && rows[this.hzSetRow] != null && rows[this.hzSetRow].t == "x")
                {
-                  var okRow:Object = rows[this.hzSetRow];
-                  if(okRow.t == "r" || okRow.t == "q" || okRow.t == "l" || okRow.t == "a" || okRow.t == "c" || okRow.t == "p")
+                  var xk:String = String(rows[this.hzSetRow].k);
+                  if(xk == "_msglog" || xk == "_arrange")
                   {
-                     this.hz51OpenDrop(this.hzSetRow, rows);
+                     this.hzSetChange(rows[this.hzSetRow],1);
                      this.hzSetDraw();
                      return;
                   }
-                  if(okRow.t == "x" || okRow.t == "b" || okRow.t == "kg")
-                  {
-                     this.hzSetChange(okRow,1);
-                     this.hzSetDraw();
-                     return;
-                  }
+                  return;
                }
                this.hzSetApply();
                return;`,
@@ -259,12 +253,58 @@ once(
             if(r.k == "_hz41arrscan") { this.hz41SAEnter(); return; }   // v0.41.0: ARRANGE SCANNER`,
 	`            if(r.k == "_arrange") { this.hzArrEnter(); return; }
             if(r.k == "_msglog") { this.hzMsglogOpen(); return; }
-            if(r.k == "_qmclear") { this.hz51QmClear(); return; }
+            if(r.k == "_qmclear") { this.hz37Act(r,dir); return; }
             if(r.k == "_mlfolder") { try { this.hzMsglogOpenSettings(); } catch(eFold:Error) { } return; }
             if(r.k == "_mlold") { try { this.hzMsglogOpenSettings(); } catch(eOld:Error) { } return; }
             if(r.goT != undefined) { this.hz51Jump(int(r.goT), int(r.goP), String(r.goK)); return; }
             if(r.k == "_hz41arrscan") { this.hz41SAEnter(); return; }   // v0.41.0: ARRANGE SCANNER`,
 	"change x"
+);
+once(
+	`            else if(r.k == "_hz42scrst") { this.hzSetPend.ScopeChipX = 0; this.hzSetPend.ScopeChipY = 0; this.hzSetPend.ScopeChipScale = 1; }   // v0.42.0 r2
+            else if(r.k == "_hz40rstlay") { this.hz40Reset(true); }
+            else if(r.k == "_hz40rstall") { this.hz40Reset(false); }`,
+	`            else if(r.k == "_hz42scrst" || r.k == "_hz40rstlay" || r.k == "_hz40rstall") { this.hz37Act(r,dir); return; }`,
+	"rst confirm"
+);
+once(
+	`         else if(k == "_hz37bak") { this.hz37Send("restore",k); }
+      }`,
+	`         else if(k == "_hz37bak") { this.hz37Send("restore",k); }
+         else if(k == "_hz40rstlay") { this.hz40Reset(true); }
+         else if(k == "_hz40rstall") { this.hz40Reset(false); }
+         else if(k == "_hz42scrst") { this.hzSetPend.ScopeChipX = 0; this.hzSetPend.ScopeChipY = 0; this.hzSetPend.ScopeChipScale = 1; }
+         else if(k == "_qmclear") { this.hz51QmClear(); }
+      }`,
+	"hz37 act"
+);
+once(
+	`            if(r != null && rk == this.hz37Cf && (code == "ok" || code == "right" || code == "left")) { this.hz37Act(r,1); return true; }`,
+	`            if(r != null && rk == this.hz37Cf && (code == "ok" || code == "right" || code == "left"))
+            {
+               if(rk.indexOf("_hz37") == 0) { this.hz37Act(r,1); return true; }
+               return false;
+            }`,
+	"hz37 key"
+);
+once(
+	`         var k:String = ri >= 0 && ri < rows.length ? String(rows[ri].k) : "";
+         if(k != this.hz37Cf && id.indexOf("inf") != 0) { this.hz37Cf = ""; }`,
+	`         var k:String = ri >= 0 && ri < rows.length ? String(rows[ri].k) : "";
+         if(id == "qmclr") { k = "_qmclear"; }
+         if(k != this.hz37Cf && id.indexOf("inf") != 0) { this.hz37Cf = ""; }`,
+	"hz37 press"
+);
+once(
+	`            if(k == "_hz37save") { return "'" + this.hz37Trim(String(this.hz37Edit)) + "' already exists. Press again (or ENTER) to overwrite - ESC cancels"; }
+         }`,
+	`            if(k == "_hz37save") { return "'" + this.hz37Trim(String(this.hz37Edit)) + "' already exists. Press again (or ENTER) to overwrite - ESC cancels"; }
+            if(k == "_hz40rstlay") { return "Puts scanner panel spots, sizes, and compact forms back to their defaults. Press the button again to confirm. Enter does not run this reset."; }
+            if(k == "_hz40rstall") { return "Puts every scanner setting back to its default. Press the button again to confirm. Enter does not run this reset."; }
+            if(k == "_hz42scrst") { return "Puts the hold-breath chip back at the game's spot and size. Press the button again to confirm. Enter does not run this reset."; }
+            if(k == "_qmclear") { return "Clears every extra-slot key. Press Clear all keys again to confirm. Enter does not clear keys."; }
+         }`,
+	"hz37 note"
 );
 once(
 	`            if(id == "ok") { this.hzSetApply(); return; }
@@ -297,7 +337,7 @@ once(
                dirty = true;
             }
             else if(id.indexOf("qmk") == 0) { this.hzQmCapBegin("QuickMenuKey" + id.substr(3)); dirty = true; }
-            else if(id == "qmclr") { this.hz51QmClear(); dirty = true; }
+            else if(id == "qmclr") { this.hz37Act({"k":"_qmclear","t":"x"},1); dirty = true; }
             else if(id == "page0" || id == "page1")`,
 	"mouse"
 );

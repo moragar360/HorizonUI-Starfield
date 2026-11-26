@@ -148,7 +148,7 @@
       {
          switch(k)
          {
-            case "_qmkeys": return "Click a key chip to bind. Esc cancels. Backspace or Delete clears. An orange warning appears if the key is already used by another extra slot, the settings key, a game favorite key for slots 1-12, or another Horizon key. The grid shows tiles 13 through Slot Count, wrapped by Slots per Row. Lowering the count only hides tiles; saved keys and items are kept. If Extended Mode is off or paused, the grid is greyed and saved keys are kept.";
+            case "_qmkeys": return "Click a key chip to bind. Esc cancels. Backspace or Delete clears. An orange warning appears if that key is already used by another extra slot, the settings key, a game favorite key for slots 1-12, or another Horizon key. Enter uses a warned game key anyway, or moves a slot key here; the settings key is refused. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Lowering the count only hides tiles; saved keys and items are kept. If Extended Mode is off or paused, the grid is grayed and saved keys are kept.";
             case "Debug": return "Shows extra yellow text on the HUD about the crosshair, the weapon in your hands, what the compass sees, and environment keys. Compass icons also get small numbers. You see this on screen as soon as it is on. Turn it on only while you are tracking down a HUD problem, then turn it off so the extra text does not stay.";
             case "PerfDiag": return "Measures how long the HUD takes to update and keeps those timings so a slowdown can be found. You will not see a new panel on screen; the numbers are stored for a report. Ordinary play should leave this off. Turn it on only when you need a timing report, then turn it off. Saved looks do not change this.";
             case "PerfMode": return "Switches which HUD test runs while Advanced Performance Timing is on. Baseline is ordinary play and is the one to use unless you were asked to try a specific test. Hover Skip turns off Horizon hover cards and scanner drawing (the game's own hover can still show). Fixture shows a test stand-in instead of live loot, people, or ships. Full Pipeline, Same Target, Rapid Targets, Scanner, and Background HUD each isolate a different part of the HUD. These tests can hide cards or drawing on purpose.";
@@ -218,7 +218,6 @@
             case "QuickMenuSlotCount": return "How many slots show when Extended Mode is on, from 12 to 24. Lowering the count only hides extra tiles; keys and items are kept.";
             case "QuickMenuSlotsPerRow": return "How many extra slots sit in each row: 4, 6, or 8.";
             case "QuickMenuExtendedLayout": return "Cross + Bars keeps the game's T for slots 1-12 and puts extra slots in bars under it. Bars draws every slot in rows.";
-            case "_qmkeys": return "Press a chip, then press a key. Esc cancels. Backspace or Delete clears. Orange means that key is already used. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Slots 1-12 keep the game's own favorite keys.";
             case "_qmclear": return "Clears every extra-slot key. The slots still work from the menu.";
             case "XpToast": return "A short +XP note beside the character card. With Horizon messages installed, the game's own +XP popup is hidden while this is on.";
             case "MissionToast": return "Replaces the game's quest banner with a Horizon toast. Move it in Arrange Cards.";
@@ -294,6 +293,7 @@
                r.n13 = true;
             }
             else { r.note = this.hz51Line(k, r); }
+            if(this.hz37Cf == k && k.indexOf("_hz37") != 0) { r.note = this.hz37Note(k, String(r.note)); }
             if(k.length >= 7 && k.substr(k.length - 7) == "Compact" && r.opts == undefined)
             {
                r.t = "r";
@@ -812,7 +812,7 @@
             {"k":"_mlfolder","l":"FOLDER","t":"x","btn":"SHOW"},
             {"k":"_mlold","l":"OLD CHARACTERS","t":"x","btn":"OPEN"},
             {"k":"_msglog","l":"OPEN LOG","t":"x","btn":"OPEN"}];
-         if(this.hzMsglogModule() == 0) { return this.hz51Unavail(rows, "Install it from the Horizon UI installer. Saved settings are kept."); }
+         if(this.hzMsglogModule() == 0) { return this.hz51Unavail(rows, "needs Notifications"); }
          return rows;
       }
       private function hz51IndexBuild() : void
