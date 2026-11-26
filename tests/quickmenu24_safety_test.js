@@ -142,8 +142,13 @@ expect(/kIdInventoryAgentLock = 888731;/.test(hdr), "S-1: agent lock is address-
 
 // ---- m03: the per-frame bind gate ----
 {
-	const b = code(cBody(game, "void PollFavorites(RE::Scaleform::GFx::ASMovieRootBase* a_this)")).trim().split("\n").map((l) => l.trim()).filter(Boolean);
-	expect(b[0] === "if (!a_this) return;" && /g_qmExtOn/.test(b[1]) && /g_qmBound/.test(b[2]), "m03 / N-f: PollFavorites returns immediately when Extended is off or already bound (no per-frame menu lookups)");
+	const poll = code(cBody(game, "void PollFavorites(RE::Scaleform::GFx::ASMovieRootBase* a_this)"));
+	const b = poll.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+	expect(b[0] === "if (!a_this) return;" && /g_qmExtOn/.test(b[1]) && /g_qmBound/.test(b[2])
+		&& /if \(!ext && !hold\) return;/.test(poll)
+		&& /QmClearPending\(\);/.test(poll)
+		&& /if \(g_qmBound\.load/.test(poll),
+		"m03 / N-f: PollFavorites returns immediately when Extended is off with nothing to clear; close clears pending; bound+open does no bind");
 }
 expect(!/IsMenuOpen\("FavoritesMenu"\)|GetMenu\("FavoritesMenu"\)/.test(game), "N-6: no BSFixedString built per frame for the quick menu name");
 

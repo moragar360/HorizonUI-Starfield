@@ -147,6 +147,15 @@ inline bool AssignIdMatchesName(std::string_view sentName, std::string_view form
 	return NamesMatch(sentName, formName);
 }
 
+// Purpose: keep an open-time pending snapshot only when it names the AssignedItem.
+// Inputs: pending display name, AssignedItem sName. Empty on either side: no cross-check.
+// Outputs: true = keep pending IDs; false = they are a different item (A stuck into B).
+inline bool KeepPendingForAssigned(std::string_view pendingName, std::string_view assignedName)
+{
+	if (pendingName.empty() || assignedName.empty()) return true;
+	return NamesMatch(pendingName, assignedName);
+}
+
 // One inventory row for PickFormByDisplayName (TESFullName + form ID).
 struct NameId
 {

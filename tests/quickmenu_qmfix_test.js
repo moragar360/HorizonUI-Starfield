@@ -41,17 +41,21 @@ const hud = rd("actionscript/horizon_block.as");
 		"1: a successful assign fetches the payload and redraws before the menu closes");
 	expect(/o\.formId = id/.test(hdr) && /ParseFormId\(raw\.substr\(0, bar\)\)/.test(hdr),
 		"1: ParseAssignExtra reads I|0xFORM|name");
-	expect(/QmSnapAssign\(/.test(game) && /QmReadInvAssign\(/.test(game) && /form = ex\.formId/.test(game) && /QmFormByName\(ex\.name/.test(game),
-		"1: QmAssign snapshots the inventory item at menu open, then the movie form hint, then the inventory name walk");
+	expect(/QmSnapAssign\(/.test(game) && /QmReadFavAssigned\(/.test(game) && /form = ex\.formId/.test(game) && /QmFormByName\(ex\.name/.test(game),
+		"1: QmAssign uses the open-time pending snapshot, then AssignedItem, then the movie form hint, then the name walk");
 	{
 		const assign = game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("));
-		expect(/QmSnapAssign\(\)/.test(assign) && /g_qmPendingHandle\.load/.test(assign)
+		expect(!/QmSnapAssign\(\)/.test(assign) && /g_qmPendingHandle\.load/.test(assign)
+			&& /QmReadFavAssigned\(\)/.test(assign) && /QmReadLiveInv\(\)/.test(assign)
+			&& assign.indexOf("KeepPendingForAssigned") < assign.indexOf("assigned.form")
+			&& assign.indexOf("ex.formId") < assign.indexOf("NamesMatch(ex.name, live.name)")
+			&& /KeepPendingForAssigned\(pendingName, assigned\.name\)/.test(assign)
 			&& /AssignIdMatchesName\(ex\.name/.test(assign) && /return "missing"/.test(assign)
-			&& /QmInvObjectFormId\(inv, handle\)/.test(assign)
-			&& /strcmp\(invSel\.src, "inv"\)/.test(assign)
-			&& /NamesMatch\(ex\.name, invSel\.name\)/.test(assign)
-			&& /skip live inventory row/.test(assign),
-			"1: pending snapshot first; live InventoryMenu row only when NamesMatch; a movie-only ID still NamesMatch; missing if lookup fails");
+			&& /QmFormFromHandle\(handle\)/.test(assign)
+			&& /NamesMatch\(ex\.name, live\.name\)/.test(assign)
+			&& /skip live inventory row/.test(assign)
+			&& /if \(ex\.power\)/.test(assign) && !/live\.power/.test(assign) && !/invSel\.power/.test(assign),
+			"1: click does not snap; pending then AssignedItem then extra then NamesMatch live; a live power row does not veto pending");
 	}
 	expect(/inline bool NamesMatch\(/.test(hdr) && /shortn\.size\(\) < 5/.test(hdr),
 		"1: NamesMatch requires a 5-letter suffix so Med Pack vs Pack is not the same item");
@@ -66,9 +70,13 @@ const hud = rd("actionscript/horizon_block.as");
 		"1: hzqExtFormId reads uFormID and never treats uHandleID as a form ID");
 	{
 		const bind = game.slice(game.indexOf("static bool QmBindExtCmd"), game.indexOf("void PollFavorites"));
-		expect(/QmReadInvAssign\(/.test(game) && /ItemList_mc/.test(game) && /uHandleID/.test(game)
-			&& /Invoke\("hzqExtKick"/.test(bind) && /QmSnapAssign\(\);/.test(bind),
-			"1: FavoritesMenu open snapshots InventoryMenu selected handle/FormID (not the movie display name)");
+		const onFav = game.slice(game.indexOf("void QmOnFavoritesMovie("), game.indexOf("void QmOnFavoritesMovie(") + 900);
+		const poll = game.slice(game.indexOf("void PollFavorites("), game.indexOf("void QmOnFavoritesMovie("));
+		expect(/QmReadLiveInv\(/.test(game) && /ItemList_mc/.test(game) && /uHandleID/.test(game)
+			&& /Invoke\("hzqExtKick"/.test(bind) && /QmSnapAssign\(\);/.test(bind)
+			&& onFav.indexOf("QmClearPending();") < onFav.indexOf("QmBindExtCmd")
+			&& /QmClearPending\(\);/.test(poll) && /!ui \|\| !ui->IsMenuOpen\(QmFavName\(\)\)/.test(poll),
+			"1: every FavoritesMenu open clears pending then snapshots; close also clears (Tab / vanilla 0-11)");
 	}
 }
 
@@ -140,8 +148,8 @@ const hud = rd("actionscript/horizon_block.as");
 	const bld = fnText(qm, "hzqExtBuildClips").body;
 	expect(/if\(this\.hzqExtPool == null\)/.test(ens) && !/new Sprite|addEventListener/.test(bld),
 		"perf: hold / pool / ADD are built once; layout only moves clips");
-	expect(/if \(!g_qmExtOn\.load/.test(game) && /if \(g_qmBound\.load/.test(game) && /CreateFunction/.test(game),
-		"perf: PollFavorites still early-outs when Extended is off or already bound");
+	expect(/if \(!ext && !hold\) return;/.test(game) && /if \(g_qmBound\.load/.test(game) && /CreateFunction/.test(game),
+		"perf: PollFavorites still early-outs when Extended is off with nothing to clear, or already bound while open");
 }
 
 console.log("quickmenu_qmfix_test " + (failed ? "FAILED" : "passed") + " (" + passed + " ok, " + failed + " FAIL)");

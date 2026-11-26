@@ -71,9 +71,13 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		"ProcessUserEvent never swallows Cancel/Quickkeys/YButton; arrows / ENTER still reach 13-24");
 	expect(/hzqExtUser\(param1,param2\)/.test(hooks) && /hzqE8/.test(hooks) && /hzqE9/.test(hooks),
 		"apply_fav_hooks.py plants the extra-slot confirm and mouseover hooks on a fresh vanilla export");
-	expect(/QmSnapAssign\(/.test(game) && /QmReadInvAssign\(/.test(game) && /ItemList_mc/.test(game) && /uHandleID/.test(game)
-		&& /g_qmPendingHandle\.load/.test(game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("))),
-		"DLL assign uses the open-time inventory snapshot first (not the live selectedEntry at click)");
+	{
+		const assign = game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("));
+		expect(/QmReadFavAssigned\(/.test(assign) && /QmReadLiveInv\(/.test(assign)
+			&& !/QmSnapAssign\(\)/.test(assign) && /g_qmPendingHandle\.load/.test(assign)
+			&& /KeepPendingForAssigned/.test(assign),
+			"DLL assign uses this-open pending, then AssignedItem, then extra, then NamesMatch-gated live inventory");
+	}
 	const nav = fnText(qm, "hzqExtNav").body;
 	expect(/idx >= 9 && idx <= 11/.test(nav) && /hzqExtPick\(13,false\)/.test(nav),
 		"CROSS+BARS: Down from the T (slots 10-12) lands on slot 13");
@@ -300,6 +304,9 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 	expect(userFn("Cancel", true) === false, "G: Cancel key-down is ignored (vanilla still sees the up)");
 	uh.hzqExtSel = 13;
 	expect(userFn("Activate", false) === true && uh.confirms === 1, "G: Activate still confirms an extra slot");
+	expect(userFn("Left", false) === false && userFn("Up", false) === false && uh.navs === 0
+		&& /hzqExtNav/.test(fnText(qm, "hzqExtArrow").body) && !/hzqExtNav/.test(user),
+		"G: mapped Up/Down/Left/Right do not nav (keyboard arrows in hzqExtArrow only)");
 	const keyName = fnText(qm, "hzqExtKeyName").body;
 	expect(!/code == 9/.test(keyName) && !/code == 27/.test(keyName) && /return "";/.test(keyName),
 		"G: stage KEY_UP map does not treat Tab (9) or Escape (27) as a slot key");
@@ -309,6 +316,33 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		"G: inventory assign snapshots FormID at open, writes the store, refreshes the payload");
 	expect(/this\.hzqExtCmdSend\(op,slot,extra\)/.test(pick),
 		"G: picking slot 13 or 18 sends assign with that slot (persists via SetSlot + payload fetch)");
+	const sel = fnText(qm, "hzqSel").body;
+	expect(/if\(this\.hzqExtSel < 13\)\s*\{\s*this\.hzqInfObj = this\.selectedEntry/.test(sel)
+		&& (sel.match(/if\(this\.hzqExtSel < 13\)/g) || []).length >= 2,
+		"G: hzqSel does not write the FS_NONE dummy into hzqInfObj while an extra slot is highlighted");
+}
+
+// ---- H. pending snapshot lifetime: A then B, ordinary open, Tab close ----
+{
+	const onFav = game.slice(game.indexOf("void QmOnFavoritesMovie("), game.indexOf("void QmOnFavoritesMovie(") + 1200);
+	const poll = game.slice(game.indexOf("void PollFavorites("), game.indexOf("void QmOnFavoritesMovie("));
+	const assign = game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("));
+	const hud = game.slice(game.indexOf("void QmHudTick("), game.indexOf("void QmHudTick(") + 1600);
+	expect(onFav.indexOf("QmClearPending();") < onFav.indexOf("g_favRoot")
+		&& onFav.indexOf("QmClearPending();") < onFav.indexOf("QmSnapAssign"),
+		"H: every FavoritesMenu open clears pending before a new snapshot (A then B saves B)");
+	expect(/QmClearPending\(\);/.test(poll) && poll.indexOf("QmClearPending();") < poll.indexOf("QmBindExtCmd")
+		&& /!ui \|\| !ui->IsMenuOpen\(QmFavName\(\)\)/.test(poll),
+		"H: PollFavorites clears pending when FavoritesMenu is not open (Tab / vanilla close)");
+	expect(/QmClearPending\(\);/.test(hud) && /!ui->IsMenuOpen\(QmFavName\(\)\)/.test(hud),
+		"H: HUD tick also clears pending when the menu has closed");
+	expect(!/QmSnapAssign\(\)/.test(assign),
+		"H: QmAssign does not snapshot at click (ordinary open must not pick up a leftover item)");
+	expect(/KeepPendingForAssigned\(pendingName, assigned\.name\)/.test(assign)
+		&& /inline bool KeepPendingForAssigned\(/.test(rd("src/hz_quickslots.h")),
+		"H: pending IDs are dropped when AssignedItem names a different item");
+	expect(/case "Cancel":/.test(pimp) && /this\.StartClosingMenu\(\)/.test(pimp),
+		"H: Tab/Cancel still closes; pending clear is on the close edge, not in SelectItem 0-11");
 }
 
 console.log("quickmenu_assign_keys_test " + (failed ? "FAILED" : "passed") + " (" + passed + " ok, " + failed + " FAIL)");

@@ -949,13 +949,16 @@
             }
             else
             {
-               this.hzqInfObj = this.selectedEntry;
-               this.hzqInfSel = true;
                if(idx >= 0 && idx < 12 && this.hzqExtSel != 0) { this.hzqExtSel = 0; this.hzqLastExt = 0; }
+               // Extra highlight uses FS_NONE: do not replace the extra info with the dummy selectedEntry.
+               if(this.hzqExtSel < 13)
+               {
+                  this.hzqInfObj = this.selectedEntry;
+                  this.hzqInfSel = true;
+               }
             }
             var i:int = 0;
             while(i < 12) { this.hzqCard(i); i++; }
-            // FS_NONE (12) with an extra highlight must not overwrite that slot's info from selectedEntry.
             if(this.hzqExtSel < 13) { this.hzqInfo(); }
             this.hzqExtDraw();
             this.hzqRingDraw();
@@ -1336,7 +1339,7 @@
          this.hzqExtPick(slot,true);
          return true;
       }
-      // Keyboard arrows / Enter while FavoritesMenu is open. Returns true when vanilla must not run.
+      // Keyboard arrows (the only extra-slot nav path; mapped Up/Down/Left/Right are ignored in hzqExtUser).
       private function hzqExtArrow(e:KeyboardEvent) : Boolean
       {
          if(e == null || !this.hzqExtOn()) { return false; }
@@ -1349,18 +1352,16 @@
          else { return false; }
          return this.hzqExtNav(dx,dy);
       }
-      // Gamepad / mapped user events (Activate, D-pad names). param2 true = key down: ignore.
-      // Cancel / Quickkeys / YButton must reach vanilla StartClosingMenu (Tab is Cancel on PC).
+      // Mapped user events. Arrows are keyboard-only in hzqExtArrow: a PC press also sends
+      // Up/Down/Left/Right here, and handling both double-stepped extras. Gamepad d-pad is
+      // Keyboard.UP etc. on this menu (vanilla onKeyDownHandler). Cancel must not be swallowed.
       private function hzqExtUser(name:String, down:Boolean) : Boolean
       {
          if(down || name == null || !this.hzqExtOn()) { return false; }
          var u:String = name.toUpperCase();
          if(u == "CANCEL" || u == "QUICKKEYS" || u == "YBUTTON" || u == "BACK" || u == "PAUSE") { return false; }
+         if(u == "LEFT" || u == "RIGHT" || u == "UP" || u == "DOWN") { return false; }
          if(u == "ACTIVATE" || u == "ACCEPT" || u == "OK") { return this.hzqExtConfirm(); }
-         if(u == "LEFT") { return this.hzqExtNav(-1,0); }
-         if(u == "RIGHT") { return this.hzqExtNav(1,0); }
-         if(u == "UP") { return this.hzqExtNav(0,-1); }
-         if(u == "DOWN") { return this.hzqExtNav(0,1); }
          return false;
       }
       // Move onto / around slots 13-24. Down from the T (or the last BARS vanilla row) lands on 13-N.

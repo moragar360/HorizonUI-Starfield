@@ -343,6 +343,12 @@ int main()
 		Assignment inst = a; inst.base = "Razorback"; inst.name = "Modified Razorback";
 		Expect(!AssignmentStale(inst, "Razorback", true) && !AssignmentStale(inst, "Modified Razorback", true) && !AssignmentClears(inst, "Razorback", true), "instance display vs TESFullName is the same item");
 		Expect(NamesMatch("Modified Razorback", "Razorback") && NamesMatch("Razorback", "modified razorback"), "NamesMatch: instance prefix, case-insensitive");
+		Expect(KeepPendingForAssigned("Med Pack", "Med Pack") && KeepPendingForAssigned("Modified Razorback", "Razorback"),
+			"pending A matches AssignedItem A");
+		Expect(!KeepPendingForAssigned("Med Pack", "Razorback") && !KeepPendingForAssigned("Item A", "Item B"),
+			"pending A does not keep when AssignedItem is B");
+		Expect(KeepPendingForAssigned("", "Med Pack") && KeepPendingForAssigned("Med Pack", "") && KeepPendingForAssigned("", ""),
+			"empty pending or AssignedItem name cannot cross-check (ordinary open relies on ClearPending)");
 
 		Expect(ParseFormId("0x0002A04A") == 0x0002A04Au && ParseFormId("0xABC") == 0xABCu && ParseFormId("0X2a") == 0x2Au, "ParseFormId: 0x + 1-8 hex digits");
 		Expect(ParseFormId("Dead Drop") == 0 && ParseFormId("Dead Drop|X") == 0 && ParseFormId("2A04A") == 0, "ParseFormId: no 0x prefix is not a form ID");
