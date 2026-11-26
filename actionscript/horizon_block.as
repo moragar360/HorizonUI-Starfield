@@ -373,28 +373,28 @@
       private function hzCardPal() : Array
       {
          var a:Array = HZ_CARDCOLS.concat();
-         if(this.hzCardHex >= 0) { a.push(uint(this.hzCardHex)); }
+         a.push(this.hzCardHex >= 0 ? uint(this.hzCardHex) : uint(HZ_CARDCOLS[0]));
          return a;
       }
 
       private function hzCardNames() : Array
       {
          var a:Array = HZ_CARDNAMES.concat();
-         if(this.hzCardHex >= 0) { a.push("CUSTOM"); }
+         a.push("CUSTOM");
          return a;
       }
 
       private function hzAccPal() : Array
       {
          var a:Array = HZ_ACCENTS.concat();
-         if(this.hzAccentHex >= 0) { a.push(uint(this.hzAccentHex)); }
+         a.push(this.hzAccentHex >= 0 ? uint(this.hzAccentHex) : HZ_ACCENT);
          return a;
       }
 
       private function hzAccNames() : Array
       {
          var a:Array = HZ_SET_ACCNAMES.concat();
-         if(this.hzAccentHex >= 0) { a.push("CUSTOM"); }
+         a.push("CUSTOM");
          return a;
       }
 
@@ -4689,8 +4689,8 @@
       private var hzSetPrevDown:Boolean = false;
       private var hzSetSaveText:String = "";
       private static const HZ_SET_W:Number = 1000;
-      private static const HZ_SET_H:Number = 660;
-      private static const HZ_SET_TABS:Array = ["CARDS","STYLE","TEXT","EFFECTS","RULES","COMPASS","CONTROLS","SCANNER","COMMS"];   // v0.30: 7 SCANNER, 8 COMMS (optional modules)
+      private static const HZ_SET_H:Number = 700;
+      private static const HZ_SET_TABS:Array = ["CARDS","APPEARANCE","SCANNER","COMMS","SYSTEM"];   // Settings 2.0
       private static const HZ_SET_KEYS:Array = ["F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"];
       private static const HZ_QM_NAMED:Array = ["F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"];
       private var hzQmCap:String = "";       // QuickMenuKeyN while capturing the next key; "" = off
@@ -4701,38 +4701,1621 @@
 
       // Row definitions: k = INI key, t = b(ool) / n(umber slider) / a(ccent swatches) / r(choice) / q(rule) / l(value list) / c(key) / x(action)
       // h = section heading drawn above the row; pill = drawn as the highlighted toggle in the tab header (CARDS: COMPACT MODE)
+      // ===================== Settings 2.0 (F11 rebuild) =====================
+      // Purpose: five-tab settings shell (CARDS / APPEARANCE / SCANNER / COMMS / SYSTEM)
+      // with one shared sidebar, table-boxed rows, dropdowns, header search, and live
+      // Diagnostics. Runs only while F11 is open: the search index is built on open
+      // and dropped on close. No HUD-frame polling. Author: Moragar. Last modified: 2026-11-26.
+      private var hzSetPage:int = 0;
+      private var hzSetDrop:int = -1;
+      private var hzSetDropHi:int = 0;
+      private var hzSetFindOn:Boolean = false;
+      private var hzSetFind:String = "";
+      private var hzSetFindHi:int = 0;
+      private var hzSetIdx:Array = null;
+      private var hzSetGlowK:String = "";
+      private var hzSetGlowT:Number = 0;
+      private var hzSetHexK:String = "";
+      private var hzSetHexBuf:String = "";
+      private var hzSetHexPrev:int = -1;
+      private var hzSetSideHits:Array = [];
+      private static const HZ51_ROW:Number = 54;
+      private static const HZ51_SIDE_W:Number = 168;
+      private static const HZ51_PREV_W:Number = 196;
+      private static const HZ51_FOOT:Number = 100;
+      private static const HZ51_PERF_NAMES:Array = ["BASELINE","HOVER SKIP","FIXTURE","FULL PIPELINE","SAME TARGET","RAPID TARGETS","SCANNER","BACKGROUND HUD"];
+
+      private function hz51Side(tab:int) : Array
+      {
+         if(tab == 0) { return [{"g":"HUD CARDS","items":[{"id":"gen","l":"GENERAL","s":"Compact strips · HUD scale"},{"id":"sta","l":"STATUS","s":"Vitals · Jetpack · Afflictions"},{"id":"com","l":"COMBAT","s":"Equipment · Enemy · Scope"},{"id":"nav","l":"NAVIGATION","s":"Compass · Quests · Planet"},{"id":"chr","l":"CHARACTER & WATCH","s":"Character · Watch"}]},{"g":"WORLD","items":[{"id":"int","l":"INTERACTION","s":"Target · Container · Vehicle"}]},{"g":"MENUS & ALERTS","items":[{"id":"qm","l":"QUICK MENU / FAVORITES MENU","s":"Horizon style · Extended"},{"id":"ntf","l":"NOTIFICATIONS","s":"XP toast"}]}]; }
+         if(tab == 1) { return [{"g":"LOOK","items":[{"id":"col","l":"COLORS","s":"Accent · Card background"},{"id":"pan","l":"PANELS","s":"Opacity · Background % · Shadow"},{"id":"typ","l":"TYPOGRAPHY","s":"Font · Size · Tone"}]},{"g":"PLACE","items":[{"id":"siz","l":"SIZE & PLACEMENT","s":"HUD scale · Margin · Pixel snap"}]},{"g":"MOTION","items":[{"id":"mot","l":"MOTION & FADING","s":"Smooth bars · Fade · Combat dim"}]},{"g":"CLOCKS","items":[{"id":"clk","l":"CLOCKS & UNITS","s":"Planet time · 12/24 · Temperature"}]}]; }
+         if(tab == 2) { return [{"g":"SCANNER","items":[{"id":"ov","l":"OVERVIEW","s":"Module · Layout · Reach"},{"id":"hud","l":"HUD","s":"What stays while you scan"},{"id":"tl","l":"TOOLS","s":"Mode pill · Hints · Outlines"}]},{"g":"FINDINGS","items":[{"id":"sig","l":"SIGNALS","s":"Signals · Compass · World tags"},{"id":"sv","l":"SURVEY","s":"Planet · Bioscan · Traits"}]},{"g":"LOOK","items":[{"id":"pop","l":"POPUPS","s":"Quest and trait popups"},{"id":"ap","l":"APPEARANCE","s":"Colors · Font · Distance"}]}]; }
+         if(tab == 3) { return [{"g":"CONVERSATION","items":[{"id":"dlg","l":"DIALOGUE","s":"Layout and look"},{"id":"sub","l":"SUBTITLES","s":"Lines · Speaker · Card"}]},{"g":"ALERTS","items":[{"id":"mst","l":"MISSION TOASTS & REACTIONS","s":"Quest banner and companion lines"}]},{"g":"MODULE","items":[{"id":"cmp","l":"COMPATIBILITY","s":"When another add-on is in the way"}]}]; }
+         return [{"g":"SETUP","items":[{"id":"pr","l":"PRESETS","s":"Select · Apply · Save"},{"id":"mod","l":"MODULES","s":"Enabled · Paused · Missing"}]},{"g":"DATA","items":[{"id":"ml","l":"MESSAGE LOG","s":"Record · History · Open"}]},{"g":"SESSION","items":[{"id":"ctl","l":"CONTROLS & WINDOW","s":"Menu key · Opacity"},{"id":"bak","l":"BACKUP & RESET","s":"Backup · scoped resets"},{"id":"dg","l":"DIAGNOSTICS","s":"Debug overlay"}]}];
+      }
+      private function hz51Pages(tab:int) : Array
+      {
+         var out:Array = [];
+         var g:int = 0;
+         var groups:Array = this.hz51Side(tab);
+         while(g < groups.length)
+         {
+            var items:Array = groups[g].items as Array;
+            var i:int = 0;
+            while(i < items.length) { out.push(items[i]); i++; }
+            g++;
+         }
+         return out;
+      }
+      private function hz51PageClamp(tab:int) : int
+      {
+         var n:int = this.hz51Pages(tab).length;
+         if(n <= 0) { return 0; }
+         if(this.hzSetPage < 0) { return 0; }
+         if(this.hzSetPage >= n) { return n - 1; }
+         return this.hzSetPage;
+      }
+      private function hz51PageId(tab:int) : String
+      {
+         var p:Array = this.hz51Pages(tab);
+         var i:int = this.hz51PageClamp(tab);
+         if(i < 0 || i >= p.length) { return ""; }
+         return String(p[i].id);
+      }
+      private function hz51Crumb(tab:int, page:int) : String
+      {
+         var tabs:Array = HZ_SET_TABS;
+         var t:String = tab >= 0 && tab < tabs.length ? String(tabs[tab]) : "";
+         var pages:Array = this.hz51Pages(tab);
+         var lab:String = page >= 0 && page < pages.length ? String(pages[page].l) : "";
+         var gid:String = page >= 0 && page < pages.length ? String(pages[page].id) : "";
+         var gname:String = "";
+         var groups:Array = this.hz51Side(tab);
+         var g:int = 0;
+         while(g < groups.length)
+         {
+            var items:Array = groups[g].items as Array;
+            var i:int = 0;
+            while(i < items.length)
+            {
+               if(String(items[i].id) == gid) { gname = String(groups[g].g); }
+               i++;
+            }
+            g++;
+         }
+         if(lab.length == 0) { return t; }
+         if(gname.length > 0 && gname != lab) { return t + " > " + gname + " > " + lab; }
+         return t + " > " + lab;
+      }
+      private function hz51Copy(r:Object) : Object
+      {
+         var o:Object = {};
+         for(var k:String in r) { o[k] = r[k]; }
+         return o;
+      }
+      private function hz51ByKey(rows:Array) : Object
+      {
+         var m:Object = {};
+         var i:int = 0;
+         while(i < rows.length) { if(rows[i] != null && rows[i].k != null) { m[String(rows[i].k)] = rows[i]; } i++; }
+         return m;
+      }
+      private function hz51Pick(src:Array, keys:Array) : Array
+      {
+         var m:Object = this.hz51ByKey(src);
+         var out:Array = [];
+         var i:int = 0;
+         while(i < keys.length)
+         {
+            var k:String = String(keys[i]);
+            if(m[k] != undefined) { out.push(this.hz51Copy(m[k])); }
+            i++;
+         }
+         return out;
+      }
+      private function hz51HelpOf(k:String, r:Object) : String
+      {
+         var h:String = this.hz51Help(k);
+         if(h != null && h.length > 0) { return h; }
+         if(r != null && r.inote != undefined) { return String(r.inote); }
+         if(r != null && r.info != undefined) { return String(r.info); }
+         if(r != null && r.note != undefined) { return String(r.note); }
+         var lab:String = r != null && r.l != undefined ? String(r.l) : k;
+         return "Changes " + lab.toLowerCase() + " on your HUD.";
+      }
+      // Short line under the row label. Diagnostics wording is from the live overlay / timing / dump paths.
+      private function hz51Line(k:String, r:Object) : String
+      {
+         switch(k)
+         {
+            case "Debug": return "Shows extra on-screen info about the scanner and compass to help track down a problem.";
+            case "PerfDiag": return "Measures how long the HUD takes to update and saves it so a problem can be found.";
+            case "PerfMode": return "Switches which HUD test runs. Ordinary play uses Baseline.";
+            case "PerfDump": return "Saves one performance report the next time you apply settings.";
+            case "_diagoff": return "These stay off while you play. Turn them on only if something needs checking.";
+            default: break;
+         }
+         var h:String = this.hz51HelpOf(k, r);
+         var d:int = h.indexOf(". ");
+         if(d > 16 && d < 148) { return h.substr(0, d + 1); }
+         if(h.length > 118) { return h.substr(0, 115) + "..."; }
+         return h;
+      }
+      private function hz51Help(k:String) : String
+      {
+         switch(k)
+         {
+            case "Debug": return "Shows extra yellow text on the HUD about the crosshair, the weapon in your hands, what the compass sees, and environment keys. Compass icons also get small numbers. You see this on screen as soon as it is on. Turn it on only while you are tracking down a HUD problem, then turn it off so the extra text does not stay.";
+            case "PerfDiag": return "Measures how long the HUD takes to update and keeps those timings so a slowdown can be found. You will not see a new panel on screen; the numbers are stored for a report. Ordinary play should leave this off. Turn it on only when you need a timing report, then turn it off. Saved looks do not change this.";
+            case "PerfMode": return "Switches which HUD test runs while Advanced Performance Timing is on. Baseline is ordinary play and is the one to use unless you were asked to try a specific test. Hover Skip turns off Horizon hover cards and scanner drawing (the game's own hover can still show). Fixture shows a test stand-in instead of live loot, people, or ships. Full Pipeline, Same Target, Rapid Targets, Scanner, and Background HUD each isolate a different part of the HUD. These tests can hide cards or drawing on purpose.";
+            case "PerfDump": return "Saves one performance report the next time you press OK. Leave this off for ordinary play. Turn it on, press OK, play for a short while, then turn it off again. Nothing is saved until you apply settings. Needs Advanced Performance Timing to be on.";
+            case "_diagoff": return "Debug Overlay, Advanced Performance Timing, Perf Mode, and Arm Perf Dump stay off during ordinary play. Support can turn them on if something needs checking.";
+            case "Compact": return "Turns the jetpack, health, and oxygen into slim strips. Mouse and keyboard only; this switch stays in the header so it is always in reach.";
+            case "CompactScale": return "Size of the slim jetpack, health, and oxygen strips when Compact Mode is on. Follow HUD uses the overall HUD size. Custom sets a size just for those strips.";
+            case "ShowVitals": return "Turns the health and oxygen card on or off. When it is on, Show when still decides the moments it appears, so an On switch with a Show when rule is not broken.";
+            case "VitalsRule": return "When the vitals card appears. Always keeps it visible. HP or O2 below full shows it only when health or oxygen is not full. It can also show only in combat, or hide while you are in your ship.";
+            case "VitalsLayout": return "Vertical stacks health above oxygen. Horizontal puts oxygen beside health on one row.";
+            case "VitalsBars": return "Full keeps separate health and oxygen cards. Compact uses the same slim boost, health, and oxygen card as Compact Mode. If either Compact Mode or this Compact choice is on, that merged card shows.";
+            case "AutoCenterVitals": return "When the equipment card is hidden, the vitals card slides to the exact center. After you move vitals in Arrange Cards, this is ignored.";
+            case "RegenSliver": return "A green sliver ahead of the health bar while health is coming back.";
+            case "ShowJetpack": return "Turns the boost card on or off. Show when still decides the moments it appears.";
+            case "JetpackRule": return "When the boost card appears. In use / not full shows it while you are boosting or boost is not full.";
+            case "ShowAfflictions": return "Turns the afflictions card on or off.";
+            case "AfflictionsRule": return "When the afflictions card appears. Only when afflicted shows it while you have an injury or effect.";
+            case "AfflictionLayout": return "How affliction chips are arranged: a column, a row, or icons only.";
+            case "HazardStatus": return "A small card that turns red while a hazard is hurting you and green while suit protection is restoring.";
+            case "EdgePulse": return "A soft pulse at the edges of the screen when health or oxygen is very low. The center of the view stays clear.";
+            case "ShowAmmo": return "Turns the equipment card (weapon, ammo, grenades, Starborn power) on or off.";
+            case "AmmoRule": return "Crosshair off? Set this to ALWAYS or COMBAT ONLY.";
+            case "EquipmentExtras": return "Shows grenade count and the selected Starborn power on the equipment card.";
+            case "EnemyBar": return "Enemy health at the top center. Turns off the game's own enemy bar while this is on.";
+            case "StealthMeter": return "A stealth pill above the crosshair while you sneak. Turns off the game's own stealth meter while this is on.";
+            case "CrosshairRule": return "When the center aiming reticle shows. Always is the default. When weapon drawn shows it only with a weapon out. Off hides the reticle only; prompts, target cards, hit markers, the kill X, the damage ring, and the stealth pill stay.";
+            case "CrosshairStyle": return "Look of the reticle while you look at something you can use: the game's ring, a Horizon dot, a Horizon cross, or none.";
+            case "HitMarkers": return "A hit mark and a kill X at the crosshair. Turns off the game's own markers while this is on.";
+            case "DamageNumbers": return "Floating damage numbers. Turns off the game's own numbers while this is on.";
+            case "DirectionRing": return "A ring around the crosshair that shows where damage came from. Turns off the game's own arcs while this is on.";
+            case "ScopeHoldBreathChip": return "While you aim down a scope, the hold-breath prompt is a Horizon chip with an oxygen meter. Off uses the game's own prompt.";
+            case "ScopeChipScale": return "Size of the hold-breath chip. 1.00 matches the game's prompt. Use plus and minus for a precise size.";
+            case "_hz42scrst": return "Puts the hold-breath chip back at the game's spot and size.";
+            case "ShowCompass": return "Turns the Horizon compass on or off.";
+            case "CompassRule": return "When the compass appears.";
+            case "CompassMarkers": return "Master switch for markers on the Horizon compass. Quest objectives still show while this is on.";
+            case "ShowFollowers": return "Markers for your follower and companions on the compass.";
+            case "FollowerColor": return "Color of follower and companion markers on the compass.";
+            case "ShowLocations": return "Location, point-of-interest, and outpost markers on the compass.";
+            case "ShowShip": return "Your ship and vehicle on the compass.";
+            case "ShowEnemies": return "Enemy markers on the compass.";
+            case "ShowPlayerMarker": return "Your custom map marker on the compass.";
+            case "ShowQuests": return "Turns the quest tracker on or off.";
+            case "QuestsRule": return "When the quest tracker appears.";
+            case "QuestsWidth": return "How wide the quest tracker is. Font size stays the same. A narrower card wraps the objective onto more lines.";
+            case "QuestsMaxHeight": return "How tall the quest tracker may grow. Extra lines stop at this height.";
+            case "QuestsWrap": return "When on, long quest text starts a new line instead of ending in an ellipsis.";
+            case "ShowPlanet": return "Turns the planet card on or off.";
+            case "PlanetRule": return "When the planet card appears.";
+            case "PlanetDetails": return "Adds a gravity and air line under the planet name.";
+            case "HazardAlert": return "While exposure to heat, cold, radiation, or other hazards builds up, the planet card gets a pulsing amber outline.";
+            case "ShowCharacter": return "Turns the character card (level, XP, credits, mass) on or off.";
+            case "CharacterRule": return "When the character card appears. Event choices show it for a few seconds after XP, a level up, credits, or a skill point, and can also show when you are overweight.";
+            case "CharacterShowSeconds": return "How many seconds the character card stays up after an event. This is used only when Show when is an event choice. It does nothing when Show when is Always.";
+            case "WatchStyle": return "Wrist watch in the lower left: Off, the game's watch, the game's watch with Horizon colors, Horizon digital, or Horizon analog.";
+            case "ShowTarget": return "Horizon's card for the activate prompt and item hover. Off uses the game's prompt.";
+            case "NameHover": return "Compact is one line: icon, name, and key. Full is the taller card.";
+            case "HoverScale": return "Size of activate prompts, loose-item cards, compare cards, and enemy tags.";
+            case "TargetAnchor": return "Where hover cards sit. Crosshair keeps them by the reticle. Follow target sits them next to the object on screen.";
+            case "TargetShowValue": return "Shows value and weight on the item hover card and on the selected container row.";
+            case "ContainerScale": return "Size of the full container item list.";
+            case "ContainerOpacity": return "How solid the container list and crosshair item cards are. This is separate from HUD card opacity.";
+            case "ObjectRing": return "The ring and line the game draws around the object you look at. Off never shows it. Containers only shows it on a container list. Vanilla is the game's own drawing.";
+            case "VehicleExitPill": return "While you are in a vehicle, the hold-to-exit prompt is a Horizon pill. Off uses the game's prompt. Move it in Arrange Cards.";
+            case "QuickMenuHorizon": return "The favorites menu draws each slot as a Horizon card in your colors and font. Off uses the game's own look.";
+            case "QuickMenuExtended": return "Adds extra slots beyond the game's twelve. Off is the game's twelve-slot layout. On shows up to twenty-four. Slots 1-12 still use the game's own favorite keys.";
+            case "QuickMenuSlotCount": return "How many slots show when Extended Mode is on, from 12 to 24. Lowering the count only hides extra tiles; keys and items are kept.";
+            case "QuickMenuSlotsPerRow": return "How many extra slots sit in each row: 4, 6, or 8.";
+            case "QuickMenuExtendedLayout": return "Cross + Bars keeps the game's T for slots 1-12 and puts extra slots in bars under it. Bars draws every slot in rows.";
+            case "_qmkeys": return "Keys for extra slots 13 and up. Press a chip, then press a key. Esc cancels. Backspace or Delete clears. An orange warning appears if that key is already used. Slots 1-12 use the game's own favorite keys.";
+            case "_qmclear": return "Clears every extra-slot key. The slots still work from the menu.";
+            case "XpToast": return "A short +XP note beside the character card. With Horizon messages installed, the game's own +XP popup is hidden while this is on.";
+            case "MissionToast": return "Replaces the game's quest banner with a Horizon toast. Move it in Arrange Cards.";
+            case "MissionToastTime": return "How many seconds each mission toast stays on screen.";
+            case "MissionToastMax": return "How many mission toasts may stack at once.";
+            case "MissionToastScale": return "Size of the mission toast. Follow HUD uses the overall HUD size.";
+            case "MissionToastSound": return "The quest sound comes from the game's banner and always plays. It cannot be turned off here.";
+            case "ReactionCard": return "Restyles companion 'liked that' lines as a Horizon card. English game text only for now; other lines stay the game's.";
+            case "GameCardTitle": return "Small label above the game's other notices. None shows just the message. Data or Misc adds that label. Applies from the next message.";
+            case "AccentColor": return "Color of highlights, switches, and this window. Custom lets you type a six-digit color. An invalid color keeps the last good one. The whole settings screen follows this color.";
+            case "CardColor": return "Fill color of HUD cards and this window. Custom lets you type a six-digit color. Light fills switch the text to dark.";
+            case "CardOpacity": return "How solid HUD cards are. Values above 1.00 stay fully solid and then push the fill darker or brighter. This is not the same as Card background.";
+            case "CardBgOpacity": return "How see-through the card fill is, from clear at 0 to solid at 100. This is direct transparency and is separate from Card opacity, which can go above 1.00.";
+            case "CardShadow": return "Strength of the shadow under HUD cards. 0 is none. 12 is the built-in look. 100 is a strong shadow.";
+            case "SettingsOpacity": return "How see-through this settings window is. 30 is the lightest. 100 is solid.";
+            case "FontFace": return "Font for Horizon text. Exo 2 is the default. If a Horizon font is not installed, the game font is used and your choice is kept.";
+            case "TextScale": return "Size of Horizon text, on top of HUD scale.";
+            case "TextTone": return "Auto uses dark text on light card colors. Light and Dark force one tone.";
+            case "HeaderStyle": return "Card titles in spaced capital letters, or in title case with tight spacing.";
+            case "TextShadow": return "A soft drop shadow under HUD text. Helps on bright scenery; off is sharpest.";
+            case "HudScale": return "Size of every Horizon card that follows the HUD. A card with its own Custom size no longer follows this.";
+            case "Margin": return "Gap between the screen edge and the cards. Cards you moved in Arrange Cards keep their distance from this line.";
+            case "ScreenHeight": return "Your vertical resolution so crosshair cards land on whole pixels and stay sharp. Off skips snapping.";
+            case "SmoothBars": return "Horizon bars glide to a new value instead of jumping. Health bars also keep a short fading ghost of what you just lost.";
+            case "FadeCards": return "Cards fade and slide when they appear or hide, instead of popping.";
+            case "CombatDim": return "Out of combat (and not at low health) HUD cards fade toward Dim opacity.";
+            case "DimOpacity": return "How far cards fade out of combat. Lower is fainter.";
+            case "TimeDisplay": return "Time on the planet card: off, local planet time, your PC clock, or both.";
+            case "ClockFormat": return "12-hour or 24-hour clock for local, game, and PC time.";
+            case "TempUnit": return "Celsius or Fahrenheit on the planet card and scanner.";
+            case "StartupIntro": return "Plays a short HORIZON UI welcome after you load a save. It never pauses the game and never takes input.";
+            case "SettingsKey": return "The key that opens this window. A new key takes effect after you restart the game.";
+            case "Record": return "When on, new HUD messages are stored in the log. When off, nothing new is stored. Messages still show on screen.";
+            case "Persist": return "When on, the log is saved on disk. Turning this off only stops writing; existing files are not deleted.";
+            case "HistorySize": return "How many messages to keep per character.";
+            case "_mlfolder": return "Folder on disk where saved logs are kept, when Save to disk is on.";
+            case "_mlold": return "Logs from earlier characters. Open one from here; search and pins stay inside the log window.";
+            case "_msglog": return "Opens the message log. Type filters, search, pins, and clear stay inside that window.";
+            case "ScanReach": return "Changes how far the scanner can outline and scan things. Vanilla leaves the game as it is. 2x, 3x, and 5x multiply that distance, never past 500 meters. A long reach can cost frame rate in busy areas. Applies the next time you open the scanner.";
+            case "ScanHighlightArea": return "How far from the screen center the scanner picks up and outlines things. This does not change how far away you can scan (that is Scan reach). Small is about half the game's circle. Vanilla is the game's own. Large reaches the top and bottom. Wide reaches the left and right. Full screen covers the corners too. Applies the next time you open the scanner.";
+            case "ScanOutlineThickness": return "How thick scanner outlines are. Vanilla keeps the game's own look. Thick is one and a half times. Thicker is twice. Applies the next time you open the scanner.";
+            case "HideMainHudWhileScanning": return "Hides ordinary Horizon HUD cards while the hand scanner is open. Item cards, the container list, the activate prompt, and combat feedback always stay.";
+            case "HideWatchWhileScanning": return "Hides the watch while the hand scanner is open. Shared clocks on the planet card are unchanged.";
+            case "HideQuestPopupsWhileScanning": return "Hides quest popups and the mission toast while you scan. This belongs with messages and works even when the scanner add-on is not installed.";
+            case "DimTraitPopupDuringBioscan": return "Dims the trait popup while you scan. This belongs with messages and works even when the scanner add-on is not installed.";
+            case "TraitPopupDim": return "How dim the trait popup is while you scan.";
+            case "_hz41arrscan": return "Opens a mock scanner on the HUD so you can drag panels and the kept vitals, then save.";
+            case "_hz40rstlay": return "Puts scanner panel spots, sizes, and compact forms back to their defaults. Other Horizon settings are kept.";
+            case "_hz40rstall": return "Puts every scanner setting back to its default. Cards, look, and message settings are kept.";
+            case "_goto_hudscale": return "Opens Size and Placement so you can change the shared HUD scale.";
+            case "_goto_margin": return "Opens Size and Placement so you can change the shared screen margin.";
+            case "_goto_clocks": return "Opens Clocks and Units, which the watch and planet card also use.";
+            case "_goto_scanwatch": return "Opens Scanner HUD for hiding the watch while you scan.";
+            case "_arrange": return "Drag HUD cards on screen. Save keeps the new spots.";
+            default: return "";
+         }
+      }
+      private function hz51Finish(rows:Array) : Array
+      {
+         // Compact Mode lives in the header, not as a list row. Every list row keeps a
+         // short help line (note) and longer Setting Details (inote).
+         var out:Array = [];
+         var i:int = 0;
+         while(i < rows.length)
+         {
+            var r:Object = this.hz51Copy(rows[i]);
+            var k:String = String(r.k);
+            var help:String = this.hz51HelpOf(k, r);
+            r.inote = help;
+            if(r.dis)
+            {
+               if(r.note == undefined || String(r.note).length == 0) { r.note = help; }
+               r.n13 = true;
+            }
+            else { r.note = this.hz51Line(k, r); }
+            if(k.length >= 7 && k.substr(k.length - 7) == "Compact" && r.opts == undefined)
+            {
+               r.t = "r";
+               r.opts = ["GLOBAL","ON","OFF"];
+               r.ids = [-1,1,0];
+            }
+            if(r.t == "a" && r.names != undefined)
+            {
+               var names:Array = (r.names as Array).concat();
+               if(names.length == 0 || String(names[names.length - 1]) != "CUSTOM") { names.push("CUSTOM"); r.names = names; }
+               if(r.pal != undefined)
+               {
+                  var pal:Array = (r.pal as Array).concat();
+                  if(pal.length < names.length) { pal.push(pal.length > 0 ? pal[pal.length - 1] : HZ_ACCENT); r.pal = pal; }
+               }
+            }
+            out.push(r);
+            i++;
+         }
+         return this.hz51Mute(out);
+      }
+      private function hz51On(k:String) : Boolean
+      {
+         if(this.hzSetPend == null) { return true; }
+         var v:* = this.hzSetPend[k];
+         if(v === undefined) { return true; }
+         if(v is Boolean) { return Boolean(v); }
+         return Number(v) >= 0.5;
+      }
+      private function hz51Mute(rows:Array) : Array
+      {
+         var i:int = 0;
+         var parentOn:Boolean = true;
+         var extOn:Boolean = this.hz51On("QuickMenuExtended") && this.hz51On("QuickMenuHorizon");
+         var hideHud:Boolean = this.hz51On("HideMainHudWhileScanning");
+         var charRule:int = this.hzSetPend != null ? int(this.hzSetPend.CharacterRule) : 0;
+         while(i < rows.length)
+         {
+            var r:Object = rows[i];
+            var k:String = String(r.k);
+            if(r.t == "b" && k.indexOf("Show") == 0) { parentOn = this.hz51On(k); }
+            if(k == "HazardStatus" || k == "EnemyBar" || k == "StealthMeter" || k == "XpToast" || k == "MissionToast" || k == "Subtitles" || k == "Dialogue" || k == "QuickMenuHorizon" || k == "QuickMenuExtended" || k == "Record" || k == "Persist") { parentOn = this.hz51On(k); }
+            if(r.sub && !parentOn && !r.dis)
+            {
+               r.dis = true;
+               if(r.dv === undefined) { r.dv = this.hzSetPend != null ? this.hzSetPend[k] : 0; }
+            }
+            if(k == "CharacterShowSeconds")
+            {
+               var eventRule:Boolean = charRule == 7 || charRule == 8 || charRule == 9;
+               if(!eventRule)
+               {
+                  r.dis = true;
+                  r.dv = this.hzSetPend != null ? this.hzSetPend.CharacterShowSeconds : 8;
+                  r.note = "Used only when Show when is an event choice. Your saved time is kept.";
+                  r.n13 = true;
+               }
+            }
+            if((k.indexOf("QuickMenuKey") == 0 || k == "QuickMenuSlotCount" || k == "QuickMenuSlotsPerRow" || k == "QuickMenuExtendedLayout" || k == "_qmkeys" || k == "_qmclear") && !extOn && !r.dis)
+            {
+               r.dis = true;
+               r.note = "Turn on Extended Mode to bind keys. Saved keys are kept.";
+               r.n13 = true;
+            }
+            if(k.indexOf("ScanShowVitals") == 0 || k == "ScanVitalsCompact" || k == "ScanVitalsLayout")
+            {
+               if(!hideHud && !r.dis)
+               {
+                  r.dis = true;
+                  r.dv = this.hzSetPend != null ? this.hzSetPend[k] : 0;
+                  r.note = "Only used while Hide Horizon HUD while scanning is on.";
+                  r.n13 = true;
+               }
+            }
+            if((k == "PerfMode" || k == "PerfDump") && !this.hz51On("PerfDiag") && !r.dis)
+            {
+               r.dis = true;
+               r.dv = this.hzSetPend != null ? this.hzSetPend[k] : 0;
+               r.note = "Turn on Advanced Performance Timing first. Your saved choice is kept.";
+               r.n13 = true;
+            }
+            i++;
+         }
+         return rows;
+      }
+      private function hz51RuleRow(key:String, ids:Array) : Object
+      {
+         var opts:Array = [];
+         var i:int = 0;
+         while(i < ids.length)
+         {
+            var id:int = int(ids[i]);
+            if(key == "CrosshairRule")
+            {
+               if(id == 0) { opts.push("ALWAYS"); }
+               else if(id == 1) { opts.push("WHEN WEAPON DRAWN"); }
+               else { opts.push("OFF"); }
+            }
+            else { opts.push(String(HZ_RULE_NAMES[Math.max(0,Math.min(HZ_RULE_NAMES.length - 1,id))])); }
+            i++;
+         }
+         var t:String = key == "CrosshairRule" ? "r" : "q";
+         var r:Object = {"k":key,"l":"SHOW WHEN","t":t,"ids":ids,"opts":opts,"sub":true};
+         if(key == "CrosshairRule") { r.t = "r"; }
+         return r;
+      }
+      private function hz51Card(onKey:String, onLab:String, section:String, ruleKey:String, ruleIds:Array, scaleKey:String, compactKey:String, extra:Array) : Array
+      {
+         var rows:Array = [{"k":onKey,"l":onLab,"t":"b","h":section}];
+         if(ruleKey != null && ruleKey.length > 0) { rows.push(this.hz51RuleRow(ruleKey, ruleIds)); }
+         if(scaleKey != null && scaleKey.length > 0) { rows.push({"k":scaleKey,"l":"SIZE","t":"z","sub":true}); }
+         if(compactKey != null && compactKey.length > 0) { rows.push({"k":compactKey,"l":"COMPACT FORM","t":"r","opts":["GLOBAL","ON","OFF"],"ids":[-1,1,0],"sub":true}); }
+         var i:int = 0;
+         while(extra != null && i < extra.length) { rows.push(extra[i]); i++; }
+         return rows;
+      }
+      private function hz51Goto(id:String, lab:String, tab:int, page:int, key:String, section:String) : Object
+      {
+         return {"k":id,"l":lab,"t":"x","btn":"OPEN","h":section,"goT":tab,"goP":page,"goK":key};
+      }
+      private function hz51ModState(id:String) : Object
+      {
+         var st:Object = {"id":id,"on":false,"inst":false,"paused":false,"why":"","act":""};
+         if(id == "core") { st.inst = true; st.on = true; return st; }
+         if(id == "font") { st.inst = this.hz30FontAvail(); st.on = st.inst; if(!st.inst) { st.why = "Install it from the Horizon UI installer."; } return st; }
+         if(id == "quickmenu")
+         {
+            st.inst = this.hz30Mod["quickmenu"] === 1;
+            st.on = st.inst && this.hzQmOn !== false;
+            st.paused = st.inst && this.hzQmConflict;
+            if(!st.inst) { st.why = "Install it from the Horizon UI installer."; }
+            else if(st.paused) { st.why = "Extended Mode is paused because another favorites add-on is installed."; st.act = "Horizon style still works. Extended slots stay off until the other add-on is removed."; }
+            return st;
+         }
+         if(id == "comms")
+         {
+            st.inst = this.hz30Mod["comms"] === 1;
+            st.on = st.inst;
+            st.paused = st.inst && ((this.hz31SubForeign().length > 0 && Boolean(this.hz31Val("SubAutoPause"))) || (this.hz31On("comms_dialogue") && this.hz31DlgForeign() && Boolean(this.hz31Val("DlgAutoPause"))));
+            if(!st.inst) { st.why = "Install it from the Horizon UI installer."; }
+            else if(st.paused) { st.why = "Horizon subtitles or dialogue are paused because another add-on was found."; st.act = "Use Horizon to turn Horizon's own menus back on."; }
+            return st;
+         }
+         if(id == "scanner")
+         {
+            st.inst = this.hz30Mod["scanner"] === 1;
+            st.on = st.inst;
+            if(!st.inst) { st.why = "Install it from the Horizon UI installer."; }
+            return st;
+         }
+         if(id == "scope")
+         {
+            st.inst = this.hz30Mod["scope"] === 1;
+            st.on = st.inst;
+            if(!st.inst) { st.why = "Install it from the Horizon UI installer."; }
+            return st;
+         }
+         st.inst = this.hzMsglogModule() == 1;
+         st.on = st.inst;
+         if(!st.inst) { st.why = "Install it from the Horizon UI installer."; }
+         return st;
+      }
+      private function hz51Unavail(rows:Array, why:String) : Array
+      {
+         var i:int = 0;
+         while(i < rows.length)
+         {
+            if(!rows[i].pill)
+            {
+               rows[i].dis = true;
+               if(rows[i].dv === undefined && this.hzSetPend != null) { rows[i].dv = this.hzSetPend[String(rows[i].k)]; }
+               rows[i].note = why;
+               rows[i].n13 = true;
+            }
+            i++;
+         }
+         rows.unshift({"k":"_unavail","l":"UNAVAILABLE","t":"w","dis":true});
+         return rows;
+      }
+      private function hz51Rows(tab:int, page:int) : Array
+      {
+         var id:String = "";
+         var pages:Array = this.hz51Pages(tab);
+         if(page >= 0 && page < pages.length) { id = String(pages[page].id); }
+         var rows:Array = [];
+         if(tab == 0) { rows = this.hz51Cards(id); }
+         else if(tab == 1) { rows = this.hz51Appear(id); }
+         else if(tab == 2) { rows = this.hz51Scan(id); }
+         else if(tab == 3) { rows = this.hz51Comms(id); }
+         else { rows = this.hz51System(id); }
+         return this.hz51Finish(rows);
+      }
+      private function hz51Cards(id:String) : Array
+      {
+         var all:Array = this.hz34CardRows();
+         var m:Object = this.hz51ByKey(all);
+         var rows:Array = [];
+         if(id == "gen")
+         {
+            if(m["CompactScale"] != undefined) { var cs:Object = this.hz51Copy(m["CompactScale"]); cs.h = "COMPACT STRIPS"; cs.l = "COMPACT STRIPS: SIZE"; rows.push(cs); }
+            rows.push(this.hz51Goto("_goto_hudscale","HUD SCALE",1,3,"HudScale","RELATED APPEARANCE SETTINGS"));
+            rows.push(this.hz51Goto("_goto_margin","SCREEN MARGIN",1,3,"Margin",""));
+            rows.push({"k":"_arrange","l":"ARRANGE CARDS","t":"x","btn":"ARRANGE"});
+            return rows;
+         }
+         if(id == "sta")
+         {
+            rows = rows.concat(this.hz51Card("ShowVitals","VITALS","VITALS","VitalsRule",[0,5,1,2],"VitalsScale","", [
+               this.hz51Copy(m["VitalsLayout"] != undefined ? m["VitalsLayout"] : {"k":"VitalsLayout","l":"LAYOUT","t":"r","opts":["VERTICAL","HORIZONTAL"],"ids":[0,1],"sub":true}),
+               this.hz51Copy(m["VitalsBars"] != undefined ? m["VitalsBars"] : {"k":"VitalsBars","l":"HEALTH AND O2 BARS","t":"r","opts":["FULL","COMPACT"],"ids":[0,1],"sub":true}),
+               {"k":"AutoCenterVitals","l":"AUTO-CENTER WHEN EQUIPMENT HIDDEN","t":"b","sub":true},
+               {"k":"RegenSliver","l":"HEALING REGEN SLIVER","t":"b","sub":true}
+            ]));
+            rows = rows.concat(this.hz51Card("ShowJetpack","JETPACK","JETPACK","JetpackRule",[0,4,1,2],"JetpackScale","", []));
+            rows = rows.concat(this.hz51Card("ShowAfflictions","AFFLICTIONS","AFFLICTIONS","AfflictionsRule",[0,6,1,2],"AfflictionsScale","", [
+               {"k":"AfflictionLayout","l":"LAYOUT","t":"r","opts":HZ_AFLAY_NAMES,"sub":true}
+            ]));
+            rows = rows.concat(this.hz51Card("HazardStatus","HAZARD STATUS","HAZARD STATUS","","", "HazardScale","HazardCompact", []));
+            rows.push({"k":"EdgePulse","l":"LOW HEALTH / O2 SCREEN-EDGE PULSE","t":"b","h":"WARNINGS"});
+            return rows;
+         }
+         if(id == "com")
+         {
+            rows = rows.concat(this.hz51Card("ShowAmmo","EQUIPMENT","EQUIPMENT","AmmoRule",[0,3,1,2],"EquipmentScale","EquipmentCompact", [
+               {"k":"EquipmentExtras","l":"GRENADES + STARBORN POWER","t":"b","sub":true}
+            ]));
+            rows = rows.concat(this.hz51Card("EnemyBar","ENEMY HEALTH","ENEMY HEALTH","","","EnemyScale","", []));
+            rows = rows.concat(this.hz51Card("StealthMeter","STEALTH","STEALTH","","","StealthScale","", []));
+            rows.push({"k":"CrosshairRule","l":"SHOW WHEN","t":"r","opts":["ALWAYS","WHEN WEAPON DRAWN","OFF"],"ids":[0,1,2],"h":"CROSSHAIR"});
+            rows.push({"k":"CrosshairStyle","l":"INTERACTION STYLE","t":"r","opts":HZ_XH_NAMES,"sub":true});
+            rows.push({"k":"HitMarkers","l":"HIT MARKER / KILL X","t":"b","h":"COMBAT FEEDBACK"});
+            rows.push({"k":"DamageNumbers","l":"DAMAGE NUMBERS","t":"b"});
+            rows.push({"k":"DirectionRing","l":"DAMAGE DIRECTION RING","t":"b"});
+            try { this.hz42ScRows(rows); } catch(eSc:Error) { }
+            return rows;
+         }
+         if(id == "nav")
+         {
+            rows = rows.concat(this.hz51Card("ShowCompass","COMPASS","COMPASS","CompassRule",[0,1,2],"CompassScale","CompassCompact", [
+               {"k":"CompassMarkers","l":"MARKERS","t":"b","sub":true},
+               {"k":"ShowFollowers","l":"FOLLOWERS / COMPANIONS","t":"b","sub":true},
+               {"k":"FollowerColor","l":"MARKER COLOR","t":"a","pal":HZ_FOL_PAL,"names":HZ_FOL_NAMES,"sub":true},
+               {"k":"ShowLocations","l":"LOCATIONS / POIS / OUTPOSTS","t":"b","sub":true},
+               {"k":"ShowShip","l":"SHIP / VEHICLE","t":"b","sub":true},
+               {"k":"ShowEnemies","l":"ENEMIES","t":"b","sub":true},
+               {"k":"ShowPlayerMarker","l":"CUSTOM MAP MARKER","t":"b","sub":true}
+            ]));
+            rows = rows.concat(this.hz51Card("ShowQuests","QUEST TRACKER","QUEST TRACKER","QuestsRule",[0,1,2],"QuestsScale","QuestsCompact", [
+               {"k":"QuestsWidth","l":"WIDTH","t":"n","mn":380,"mx":660,"st":20,"sub":true},
+               {"k":"QuestsMaxHeight","l":"MAX HEIGHT","t":"n","mn":100,"mx":300,"st":10,"sub":true},
+               {"k":"QuestsWrap","l":"TEXT WRAPPING","t":"b","sub":true}
+            ]));
+            rows = rows.concat(this.hz51Card("ShowPlanet","PLANET","PLANET","PlanetRule",[0,1,2],"PlanetScale","PlanetCompact", [
+               {"k":"PlanetDetails","l":"DETAILS LINE","t":"b","sub":true},
+               {"k":"HazardAlert","l":"HAZARD ALERT","t":"b","sub":true}
+            ]));
+            return rows;
+         }
+         if(id == "chr")
+         {
+            rows = rows.concat(this.hz51Card("ShowCharacter","CHARACTER","CHARACTER","CharacterRule",[0,7,8,9,1,2],"CharacterScale","CharacterCompact", [
+               {"k":"CharacterShowSeconds","l":"SHOW FOR (SECONDS)","t":"n","mn":2,"mx":60,"st":1,"sub":true}
+            ]));
+            rows.push({"k":"WatchStyle","l":"WATCH","t":"r","h":"WATCH","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4]});
+            if(m["WatchScale"] != undefined) { var ws:Object = this.hz51Copy(m["WatchScale"]); ws.l = "SIZE"; ws.sub = true; rows.push(ws); }
+            rows.push(this.hz51Goto("_goto_clocks","CLOCKS & UNITS",1,5,"TimeDisplay","LINKS"));
+            rows.push(this.hz51Goto("_goto_scanwatch","HIDE WATCH WHILE SCANNING",2,1,"HideWatchWhileScanning",""));
+            return rows;
+         }
+         if(id == "int")
+         {
+            rows = rows.concat(this.hz51Card("ShowTarget","TARGET CARD","TARGET & HOVER","","","", "", [
+               this.hz51Copy(m["NameHover"] != undefined ? m["NameHover"] : {"k":"NameHover","l":"NAME HOVER","t":"r","opts":["COMPACT","FULL"],"ids":[0,1],"sub":true}),
+               {"k":"HoverScale","l":"HOVER SIZE","t":"z","sub":true},
+               {"k":"TargetAnchor","l":"ANCHOR","t":"r","opts":HZ_TGANCHOR_NAMES,"sub":true},
+               {"k":"TargetShowValue","l":"ITEM VALUE / WEIGHT","t":"b","sub":true}
+            ]));
+            rows.push({"k":"ContainerScale","l":"LIST SIZE","t":"z","h":"CONTAINER"});
+            rows.push({"k":"ContainerOpacity","l":"CONTAINER / CROSSHAIR CARD OPACITY","t":"n","mn":0.2,"mx":1.6,"st":0.05,"sub":true});
+            rows.push({"k":"ObjectRing","l":"OBJECT RING / LEADER LINE","t":"r","opts":HZ_RING_NAMES,"h":"OBJECT HIGHLIGHT"});
+            rows.push({"k":"VehicleExitPill","l":"HORIZON EXIT PILL","t":"b","h":"VEHICLE"});
+            return rows;
+         }
+         if(id == "qm") { return this.hz51Quick(); }
+         var xp:Object = m["XpToastScale"] != undefined ? this.hz51Copy(m["XpToastScale"]) : {"k":"XpToastScale","l":"SIZE","t":"z"};
+         xp.h = "XP TOAST";
+         rows.push({"k":"XpToast","l":"XP TOAST","t":"b","h":"XP TOAST"});
+         rows.push(xp);
+         return rows;
+      }
+      private function hz51Quick() : Array
+      {
+         var rows:Array = [{"k":"QuickMenuHorizon","l":"HORIZON STYLE","t":"b","h":"QUICK MENU"},
+            {"k":"QuickMenuExtended","l":"EXTENDED MODE","t":"b"},
+            {"k":"QuickMenuSlotCount","l":"SLOT COUNT","t":"n","mn":12,"mx":24,"st":1},
+            {"k":"QuickMenuSlotsPerRow","l":"SLOTS PER ROW","t":"r","opts":["4","6","8"],"ids":[4,6,8]},
+            {"k":"QuickMenuExtendedLayout","l":"EXTENDED LAYOUT","t":"r","opts":["CROSS + BARS","BARS"],"ids":[0,1]},
+            {"k":"_qmkeys","l":"EXTENDED SLOT KEYS","t":"kg","h":"EXTENDED SLOT KEYS"},
+            {"k":"_qmclear","l":"CLEAR ALL KEYS","t":"x","btn":"CLEAR"}];
+         var qmOff:Boolean = this.hz30Mod["quickmenu"] !== 1;
+         var qmConf:Boolean = this.hzQmConflict;
+         if(qmOff) { return this.hz51Unavail(rows, "Install it from the Horizon UI installer. Saved settings are kept."); }
+         if(qmConf)
+         {
+            var i:int = 0;
+            while(i < rows.length)
+            {
+               if(String(rows[i].k) != "QuickMenuHorizon")
+               {
+                  rows[i].dis = true;
+                  rows[i].note = "Extended Mode is paused because another favorites add-on is installed. Saved keys are kept.";
+                  rows[i].n13 = true;
+               }
+               i++;
+            }
+            rows.unshift({"k":"_qmconf","l":"EXTENDED MODE PAUSED","t":"w","dis":true});
+         }
+         return rows;
+      }
+      private function hz51Appear(id:String) : Array
+      {
+         if(id == "col")
+         {
+            return [{"k":"AccentColor","l":"ACCENT COLOR","t":"a","pal":this.hzAccPal(),"names":this.hzAccNames(),"h":"ACCENT"},
+               {"k":"AccentHex","l":"CUSTOM ACCENT","t":"h","hex":"AccentHex","sub":true},
+               {"k":"CardColor","l":"CARD BACKGROUND","t":"a","pal":this.hzCardPal(),"names":this.hzCardNames(),"h":"BACKGROUND"},
+               {"k":"CardHex","l":"CUSTOM BACKGROUND","t":"h","hex":"CardHex","sub":true}];
+         }
+         if(id == "pan")
+         {
+            return [{"k":"CardOpacity","l":"HUD CARD OPACITY","t":"n","mn":0.2,"mx":1.6,"st":0.05,"h":"PANELS"},
+               {"k":"CardBgOpacity","l":"CARD BACKGROUND %","t":"n","mn":0,"mx":100,"st":1,"pct":1},
+               {"k":"CardShadow","l":"CARD SHADOW %","t":"n","mn":0,"mx":100,"st":1,"pct":1}];
+         }
+         if(id == "typ")
+         {
+            return this.hz30FontRows([{"k":"FontFace","l":"FONT","t":"r","opts":HZ_FONT_NAMES,"ids":HZ_FONT_IDS,"h":"TYPE"},
+               {"k":"TextScale","l":"TEXT SIZE","t":"n","mn":0.8,"mx":1.3,"st":0.05},
+               {"k":"TextTone","l":"TEXT TONE","t":"r","opts":HZ_TONE_NAMES},
+               {"k":"HeaderStyle","l":"HEADER STYLE","t":"r","opts":HZ_HDRSTYLE_NAMES},
+               {"k":"TextShadow","l":"TEXT SHADOW","t":"b"}]);
+         }
+         if(id == "siz")
+         {
+            return [{"k":"HudScale","l":"HUD SCALE","t":"n","mn":0.7,"mx":1.4,"st":0.05,"h":"SIZE & PLACEMENT"},
+               {"k":"Margin","l":"SCREEN MARGIN","t":"n","mn":20,"mx":200,"st":10},
+               {"k":"ScreenHeight","l":"SCREEN HEIGHT (PIXEL SNAP)","t":"l","vals":HZ_SET_SCRH,"names":HZ_SET_SCRH_N}];
+         }
+         if(id == "mot")
+         {
+            return [{"k":"SmoothBars","l":"SMOOTH BARS","t":"b","h":"MOTION"},
+               {"k":"FadeCards","l":"FADE CARDS","t":"b"},
+               {"k":"CombatDim","l":"DIM OUT OF COMBAT","t":"b"},
+               {"k":"DimOpacity","l":"DIM OPACITY","t":"n","mn":0.2,"mx":1,"st":0.05}];
+         }
+         return [{"k":"TimeDisplay","l":"PLANET TIME","t":"r","opts":HZ_TIME_NAMES,"h":"CLOCKS"},
+            {"k":"ClockFormat","l":"CLOCK FORMAT","t":"r","opts":HZ_CLOCK_NAMES},
+            {"k":"TempUnit","l":"TEMPERATURE UNITS","t":"r","opts":HZ_TEMP_NAMES}];
+      }
+      private function hz51Scan(id:String) : Array
+      {
+         var scanOn:Boolean = this.hz30Mod["scanner"] === 1;
+         var commsOn:Boolean = this.hz30Mod["comms"] === 1;
+         if(id == "pop")
+         {
+            var pop:Array = this.hz40PopupRows();
+            var i:int = 0;
+            while(i < pop.length) { if(String(pop[i].k) == "HideQuestPopupsWhileScanning") { pop[i].h = "POPUPS"; } i++; }
+            return pop;
+         }
+         if(!scanOn)
+         {
+            if(id == "ap" || id == "hud" || id == "tl" || id == "sig" || id == "sv" || id == "ov")
+            {
+               return this.hz51Unavail([{"k":"_scanmiss","l":"SCANNER","t":"b","dis":true,"dv":false,"h":"SCANNER"}], "Install it from the Horizon UI installer.");
+            }
+         }
+         var src:Array = this.hz40ScanRows();
+         var m:Object = this.hz51ByKey(src);
+         var keys:Array = [];
+         if(id == "ov") { keys = ["_hz41arrscan","ScanCompactAll","ScanHighlightArea","ScanReach","_hz40rstlay","_hz40rstall"]; }
+         else if(id == "hud") { keys = ["HideMainHudWhileScanning","ScanShowVitalsHealth","ScanShowVitalsO2","ScanShowVitalsBoost","ScanVitalsCompact","ScanVitalsLayout","HideWatchWhileScanning"]; }
+         else if(id == "tl") { keys = ["ScanShowMode","ScanModeScale","ScanShowHints","ScanHintsScale","ScanHighlightArea","ScanOutlineThickness"]; }
+         else if(id == "sig") { keys = ["ScanShowSignals","ScanSignalsScale","ScanSignalsCompact","ScanMaxSignals","ScanShowShip","ScanNearestUnscanned","ScanShowCompass","ScanCompassScale","ScanCompassCompact","ScanShowWorldTags","ScanWorldTagScale","ScanWorldMarkers"]; }
+         else if(id == "sv") { keys = ["ScanShowPlanet","ScanPlanetScale","ScanPlanetCompact","ScanShowBodyType","ScanHazardWarn","ScanHazardCrit","ScanShowBioscan","ScanBioscanScale","ScanBioscanCompact","ScanHideBioscanDone","ScanCompleteFlash","ScanLeftToFind","ScanShowTraits","ScanTraitsScale","ScanTraitsCompact","ScanMinRarity"]; }
+         else { keys = ["ScanOpacity","ScanAccIdx","ScanTextCase","ScanFont","ScanMargin","ScanUnits"]; }
+         var rows:Array = this.hz51Pick(src, keys);
+         if(id == "ov" && m["_hz30m_scanner"] != undefined) { rows.unshift(this.hz51Copy(m["_hz30m_scanner"])); }
+         if(id == "ap") { rows.push(this.hz51Goto("_goto_temp","TEMPERATURE UNITS",1,5,"TempUnit","SHORTCUT")); }
+         return rows;
+      }
+      private function hz51Comms(id:String) : Array
+      {
+         var on:Boolean = this.hz30Mod["comms"] === 1;
+         if(id == "mst")
+         {
+            var alerts:Array = [{"k":"MissionToast","l":"MISSION TOAST","t":"b","h":"MISSION TOASTS"},
+               {"k":"MissionToastScale","l":"SIZE","t":"z","sub":true},
+               {"k":"MissionToastTime","l":"SECONDS ON SCREEN","t":"n","mn":2,"mx":15,"st":1,"sub":true},
+               {"k":"MissionToastMax","l":"MAX STACKED","t":"n","mn":1,"mx":5,"st":1,"sub":true},
+               {"k":"MissionToastSound","l":"GAME QUEST SOUND","t":"b","dis":true,"dv":true},
+               {"k":"ReactionCard","l":"COMPANION REACTION CARD","t":"b","h":"REACTIONS"},
+               {"k":"GameCardTitle","l":"NOTICE LABEL","t":"r","opts":["NONE","DATA","MISC"],"ids":[0,1,2]}];
+            if(!on) { return this.hz51Unavail(alerts, "Install it from the Horizon UI installer. Saved settings are kept."); }
+            return alerts;
+         }
+         if(!on)
+         {
+            return this.hz51Unavail([{"k":"Subtitles","l":"HORIZON SUBTITLES","t":"b","h":"SUBTITLES"}], "Install it from the Horizon UI installer. Saved settings are kept.");
+         }
+         var saved:int = this.hz31Page;
+         this.hz31Page = id == "dlg" ? 1 : 0;
+         var full:Array = this.hz31CommsRows();
+         this.hz31Page = saved;
+         var skip:Object = {"_hz30m_comms":1,"_hz31page":1,"MissionToast":1,"MissionToastTime":1,"MissionToastMax":1,"MissionToastScale":1,"MissionToastSound":1,"ReactionCard":1,"GameCardTitle":1,"_hz40goscan":1};
+         var rows:Array = [];
+         var i:int = 0;
+         while(i < full.length)
+         {
+            var k:String = String(full[i].k);
+            if(skip[k] == 1) { i++; continue; }
+            if(id == "cmp")
+            {
+               if(k == "_hz31usesub" || k == "_hz31usedlg") { rows.push(this.hz51Copy(full[i])); }
+            }
+            else if(id == "sub")
+            {
+               if(k == "_hz31usesub") { i++; continue; }
+               if(k.indexOf("Dlg") == 0 || k == "Dialogue") { i++; continue; }
+               rows.push(this.hz51Copy(full[i]));
+            }
+            else
+            {
+               if(k == "_hz31usedlg") { i++; continue; }
+               if(k == "Subtitles" || k.indexOf("Sub") == 0 || k == "ShowSpeaker" || k == "SpkColIdx" || k == "TxtColIdx" || k == "KeepInDialogue" || k == "FixedInDialogue") { i++; continue; }
+               rows.push(this.hz51Copy(full[i]));
+            }
+            i++;
+         }
+         if(id == "cmp" && rows.length == 0)
+         {
+            rows.push({"k":"_cmpok","l":"NO CONFLICT","t":"x","btn":"OK","dis":true,"dv":true,"h":"COMPATIBILITY","note":"Horizon is drawing its own subtitles and dialogue."});
+         }
+         return rows;
+      }
+      private function hz51System(id:String) : Array
+      {
+         if(id == "pr")
+         {
+            var pr:Array = this.hz37Rows();
+            var keep:Array = [];
+            var i:int = 0;
+            while(i < pr.length)
+            {
+               var k:String = String(pr[i].k);
+               if(k == "_hz37bak") { i++; continue; }
+               keep.push(pr[i]);
+               i++;
+            }
+            return keep;
+         }
+         if(id == "mod") { return this.hz51Modules(); }
+         if(id == "ml") { return this.hz51Msglog(); }
+         if(id == "ctl")
+         {
+            return [{"k":"SettingsKey","l":"SETTINGS MENU KEY","t":"c","h":"CONTROLS"},
+               {"k":"SettingsOpacity","l":"SETTINGS WINDOW %","t":"n","mn":30,"mx":100,"st":1,"pct":1,"h":"WINDOW"},
+               {"k":"StartupIntro","l":"WELCOME INTRO","t":"b","h":"WELCOME","note":"Plays HORIZON UI on save load","n13":true}];
+         }
+         if(id == "bak")
+         {
+            var bak:Array = [];
+            var src:Array = this.hz37Rows();
+            var j:int = 0;
+            while(j < src.length) { if(String(src[j].k) == "_hz37bak") { bak.push(src[j]); } j++; }
+            bak.push({"k":"_hz40rstlay","l":"RESET SCANNER LAYOUT","t":"x","btn":"RESET","h":"SCOPED RESETS"});
+            bak.push({"k":"_hz40rstall","l":"RESET ALL SCANNER SETTINGS","t":"x","btn":"RESET"});
+            bak.push({"k":"_hz42scrst","l":"RESET SCOPE CHIP","t":"x","btn":"RESET"});
+            return bak;
+         }
+         return [{"k":"Debug","l":"DEBUG OVERLAY","t":"b","h":"DEBUG"},
+            {"k":"PerfDiag","l":"ADVANCED PERFORMANCE TIMING","t":"b","h":"PERFORMANCE"},
+            {"k":"PerfMode","l":"PERF MODE","t":"r","opts":HZ51_PERF_NAMES,"ids":[0,1,2,3,4,5,6,7]},
+            {"k":"PerfDump","l":"ARM PERF DUMP","t":"b"},
+            {"k":"_diagoff","l":"LEAVE THESE OFF","t":"x","btn":"KEEP OFF","h":"NOTE","dis":true,"dv":true}];
+      }
+      private function hz51Modules() : Array
+      {
+         var list:Array = [
+            {"id":"core","l":"CORE HUD"},
+            {"id":"font","l":"HORIZON FONT"},
+            {"id":"quickmenu","l":"QUICK MENU"},
+            {"id":"comms","l":"COMMS AND DIALOGUE"},
+            {"id":"scanner","l":"SCANNER"},
+            {"id":"scope","l":"SCOPE"},
+            {"id":"msglog","l":"MESSAGE LOG"}
+         ];
+         var rows:Array = [];
+         var i:int = 0;
+         while(i < list.length)
+         {
+            var st:Object = this.hz51ModState(String(list[i].id));
+            var badge:String = !st.inst ? "NOT INSTALLED" : (st.paused ? "PAUSED" : (st.on ? "ENABLED" : "DISABLED"));
+            var r:Object = {"k":"_mod_" + list[i].id,"l":String(list[i].l),"t":"md","badge":badge,"h": i == 0 ? "MODULES" : "","modid":list[i].id};
+            if(!st.inst) { r.note = st.why; r.n13 = true; r.dis = true; r.dv = 0; }
+            else if(st.paused) { r.note = String(st.why) + (st.act.length > 0 ? " " + st.act : ""); r.n13 = true; }
+            rows.push(r);
+            i++;
+         }
+         return rows;
+      }
+      private function hz51Msglog() : Array
+      {
+         var rows:Array = [{"k":"Record","l":"RECORD MESSAGES","t":"b","h":"MESSAGE LOG"},
+            {"k":"Persist","l":"SAVE TO DISK","t":"b"},
+            {"k":"HistorySize","l":"HISTORY LENGTH","t":"n","mn":100,"mx":1000,"st":100},
+            {"k":"_mlfolder","l":"FOLDER","t":"x","btn":"SHOW"},
+            {"k":"_mlold","l":"OLD CHARACTERS","t":"x","btn":"OPEN"},
+            {"k":"_msglog","l":"OPEN LOG","t":"x","btn":"OPEN"}];
+         if(this.hzMsglogModule() == 0) { return this.hz51Unavail(rows, "Install it from the Horizon UI installer. Saved settings are kept."); }
+         return rows;
+      }
+      private function hz51IndexBuild() : void
+      {
+         var idx:Array = [];
+         var tab:int = 0;
+         var savedPage:int = this.hzSetPage;
+         while(tab < HZ_SET_TABS.length)
+         {
+            var pages:Array = this.hz51Pages(tab);
+            var p:int = 0;
+            while(p < pages.length)
+            {
+               var rows:Array = this.hz51Rows(tab, p);
+               var r:int = 0;
+               while(r < rows.length)
+               {
+                  var row:Object = rows[r];
+                  if(row == null || row.pill || row.t == "m" || row.t == "g" || row.t == "w") { r++; continue; }
+                  var lab:String = String(row.l != undefined ? row.l : "");
+                  if(lab.length == 0) { r++; continue; }
+                  var help:String = this.hz51HelpOf(String(row.k), row);
+                  var hay:String = (lab + " " + help + " " + this.hz51Crumb(tab, p)).toLowerCase();
+                  idx.push({"k":String(row.k),"l":lab,"tab":tab,"page":p,"row":r,"crumb":this.hz51Crumb(tab, p),"hay":hay});
+                  r++;
+               }
+               p++;
+            }
+            tab++;
+         }
+         this.hzSetPage = savedPage;
+         this.hzSetIdx = idx;
+      }
+      private function hz51FindHits() : Array
+      {
+         var q:String = this.hzSetFind.toLowerCase();
+         var out:Array = [];
+         if(this.hzSetIdx == null || q.length == 0) { return out; }
+         var i:int = 0;
+         while(i < this.hzSetIdx.length)
+         {
+            if(String(this.hzSetIdx[i].hay).indexOf(q) >= 0) { out.push(this.hzSetIdx[i]); }
+            i++;
+         }
+         return out;
+      }
+      private function hz51GotoHit(h:Object) : void
+      {
+         if(h == null) { return; }
+         this.hzSetFindOn = false;
+         this.hzSetTab = int(h.tab);
+         this.hzSetPage = int(h.page);
+         this.hzSetGlowK = String(h.k);
+         this.hzSetGlowT = new Date().getTime() + 1800;
+         var rows:Array = this.hzSetRows(this.hzSetTab);
+         var i:int = 0;
+         while(i < rows.length)
+         {
+            if(String(rows[i].k) == String(h.k)) { this.hzSetRow = i; break; }
+            i++;
+         }
+         this.hzSetScroll = 0;
+         this.hzSetFollow(rows);
+      }
+      private function hz51Jump(tab:int, page:int, key:String) : void
+      {
+         this.hzSetTab = tab;
+         this.hzSetPage = page;
+         this.hzSetRow = 0;
+         this.hzSetScroll = 0;
+         this.hzSetDrop = -1;
+         if(key != null && key.length > 0)
+         {
+            var rows:Array = this.hzSetRows(tab);
+            var i:int = 0;
+            while(i < rows.length) { if(String(rows[i].k) == key) { this.hzSetRow = i; break; } i++; }
+            this.hzSetGlowK = key;
+            this.hzSetGlowT = new Date().getTime() + 1800;
+            this.hzSetFollow(rows);
+         }
+      }
+      private function hz51DropOpts(r:Object) : Array
+      {
+         if(r == null) { return []; }
+         if(r.t == "r" || r.t == "l") { return r.opts != undefined ? r.opts as Array : (r.names as Array); }
+         if(r.t == "q")
+         {
+            var ids:Array = r.ids as Array;
+            var o:Array = [];
+            var i:int = 0;
+            while(ids != null && i < ids.length)
+            {
+               var id:int = int(ids[i]);
+               o.push(String(HZ_RULE_NAMES[Math.max(0,Math.min(HZ_RULE_NAMES.length - 1,id))]));
+               i++;
+            }
+            if(r.opts != undefined) { return r.opts as Array; }
+            return o;
+         }
+         if(r.t == "a") { return r.names as Array; }
+         if(r.t == "c") { return HZ_SET_KEYS; }
+         return [];
+      }
+      private function hz51DropPick(r:Object, idx:int) : void
+      {
+         if(r == null || this.hzSetPend == null) { return; }
+         var k:String = String(r.k);
+         if(r.t == "r" && r.ids != undefined) { this.hzSetPend[k] = int((r.ids as Array)[idx]); }
+         else if(r.t == "r") { this.hzSetPend[k] = idx; }
+         else if(r.t == "q") { this.hzSetPend[k] = int((r.ids as Array)[idx]); }
+         else if(r.t == "l") { this.hzSetPend[k] = (r.vals as Array)[idx]; }
+         else if(r.t == "a") { this.hzSetPend[k] = idx; }
+         else if(r.t == "c") { this.hzSetPend[k] = HZ_SET_KEYS[idx]; }
+         this.hzSetLive(this.hzSetPend);
+      }
+      private function hz51HexCommit() : void
+      {
+         if(this.hzSetHexK.length == 0 || this.hzSetPend == null) { return; }
+         var n:int = this.hzParseHex(this.hzSetHexBuf);
+         if(n < 0)
+         {
+            this.hzSetHexBuf = this.hzSetHexPrev >= 0 ? this.hzHex(this.hzSetHexPrev).substr(1) : this.hzSetHexBuf;
+            return;
+         }
+         this.hzSetPend[this.hzSetHexK] = this.hzHex(n);
+         if(this.hzSetHexK == "AccentHex") { this.hzAccentHex = n; this.hzSetPend.AccentColor = this.hzAccPal().length - 1; }
+         else if(this.hzSetHexK == "CardHex") { this.hzCardHex = n; this.hzSetPend.CardColor = this.hzCardPal().length - 1; }
+         else if(this.hzSetHexK == "ScanAccentHex") { this.hzSetPend.ScanAccIdx = this.hz40AccPal().length - 1; }
+         this.hzSetLive(this.hzSetPend);
+      }
+      private function hz51QmClear() : void
+      {
+         if(this.hzSetPend == null) { return; }
+         var n:int = 13;
+         while(n <= 24) { this.hzSetPend["QuickMenuKey" + n] = ""; n++; }
+         this.hzSetLive(this.hzSetPend);
+      }
+
+      private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 hex
+
+      // Purpose: draw the Settings 2.0 window. Layout matches the approved mockups
+      // (header compact + search, grouped sidebar, table boxes, help lines, preview,
+      // dual footer). Colors come from hzSetTheme (player Accent / Background).
+      // Inputs: hzSetPend while F11 is open. Outputs: redrawn HorizonSettings_mc.
+      // Author: Moragar. Last modified: 2026-11-26.
+      private function hz51Draw() : void
+      {
+         if(!this.HorizonSettings_mc || !this.hzSetPend) { return; }
+         var b:Sprite = this.hzSetBody;
+         while(b.numChildren > 0) { b.removeChildAt(0); }
+         b.graphics.clear();
+         this.hzSetKeyOv.graphics.clear();
+         this.hzSetHits = [];
+         this.hzSetSideHits = [];
+         var T:Object = this.hzSetTheme();
+         var acc:uint = uint(T.acc);
+         var W:Number = HZ_SET_W;
+         var H:Number = HZ_SET_H;
+         var g:* = b.graphics;
+         var i:int = 0;
+         i = 0;
+         while(i < 5) { g.beginFill(0x000000,0.07); g.drawRoundRect(-2 - i * 2,4 - i,W + 4 + i * 4,H + 4 + i * 3,(14 + i * 2) * 2,(14 + i * 2) * 2); g.endFill(); i++; }
+         g.beginFill(uint(T.fill),Number(T.fa));
+         g.drawRoundRect(0,0,W,H,14,14);
+         g.endFill();
+         this.hz33Edge(b,0,0,W,H,14,acc,0.28,1);
+         this.hz51DrawHead(b,g,T,acc,W);
+         this.hz51DrawTabs(b,g,T,acc,W);
+         g.beginFill(uint(T.line),Number(T.la)); g.drawRect(0,74,W,1); g.endFill();
+         this.hz51DrawSide(b,g,T,acc);
+         var rows:Array = this.hzSetRows(this.hzSetTab);
+         if(this.hzSetRow >= rows.length) { this.hzSetRow = 0; }
+         this.hzSetFollow(rows);
+         this.hz51DrawList(b,g,T,acc,rows);
+         this.hz51DrawRight(b,g,T,acc,rows);
+         this.hz51DrawFooter(b,g,T,acc,W,H);
+         if(this.hzSetFindOn || this.hzSetFind.length > 0) { this.hz51DrawFind(b,g,T,acc,W,H); }
+         if(this.hzSetDrop >= 0) { this.hz51DrawDrop(b,g,T,acc,rows); }
+         b.addChild(this.hzSetKeyOv);
+         try { this.hz35TipDraw(b,W,H,T,acc); } catch(e35p:Error) { }
+         this.HorizonSettings_mc.setChildIndex(this.hzSetCursor,this.HorizonSettings_mc.numChildren - 1);
+         if(this.HorizonSettings_mc.parent == this && getChildIndex(this.HorizonSettings_mc) != numChildren - 1)
+         {
+            setChildIndex(this.HorizonSettings_mc,numChildren - 1);
+         }
+      }
+      private function hz51DrawHead(b:Sprite, g:*, T:Object, acc:uint, W:Number) : void
+      {
+         g.beginFill(uint(T.line),Number(T.la)); g.drawRect(0,40,W,1); g.endFill();
+         this.hzWT(b,"HORIZON UI",24,12,220,16,"bd",uint(T.txt),2.2);
+         this.hzWT(b,"SETTINGS",24 + 132,16,120,10,"sb",uint(T.mut),2.6);
+         var hv:String = HZ_BUILD;
+         if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
+         var pillW:Number = 70;
+         var pillX:Number = 248;
+         g.beginFill(uint(T.txt),0.04); g.drawRoundRect(pillX,10,pillW,20,20,20); g.endFill();
+         this.hz33Edge(b,pillX,10,pillW,20,20,uint(T.txt),0.16,1);
+         g.beginFill(acc,1); g.drawCircle(pillX + 10,20,3.5); g.endFill();
+         this.hzWT(b,"v" + hv,pillX + 16,13,pillW - 20,10,"sb",uint(T.mut),0.4);
+         this.hz51DrawCompact(b,g,T,acc,W);
+         this.hz51DrawSearchBox(b,g,T,acc,W);
+         if(this.hzSetTab != 4)
+         {
+            var alab:String = this.hzSetTab == 2 ? "ARRANGE SCANNER" : "ARRANGE CARDS";
+            var aid:String = this.hzSetTab == 2 ? "arrscan" : "arrange";
+            var aw:Number = this.hzSetTab == 2 ? 150 : 128;
+            var ax:Number = W - 24 - aw;
+            var hovA:Boolean = this.hzSetHover == aid;
+            g.beginFill(acc,hovA ? 1 : 0.92); g.drawRoundRect(ax,8,aw,24,6,6); g.endFill();
+            this.hzWT(b,alab,ax,13,aw,10,"sb",uint(T.ontxt),1.4,"center");
+            this.hzSetHits.push({"id":aid,"x":ax,"y":8,"w":aw,"h":24});
+         }
+      }
+      private function hz51DrawTabs(b:Sprite, g:*, T:Object, acc:uint, W:Number) : void
+      {
+         var tx:Number = 48;
+         var ty:Number = 48;
+         this.hzSetKey(b,g,24,ty + 4,"LB",acc,16,8);
+         var i:int = 0;
+         var tabTf:Array = [];
+         var tabSum:Number = 0;
+         while(i < HZ_SET_TABS.length)
+         {
+            var sel:Boolean = i == this.hzSetTab;
+            var hov:Boolean = this.hzSetHover == "tab" + i;
+            var tb:TextField = this.hzWT(b,String(HZ_SET_TABS[i]),0,ty,140,11,"sb",sel || hov ? acc : uint(T.mut),1.6);
+            tabTf.push(tb);
+            tabSum += Math.round(this.hzTW(tb));
+            i++;
+         }
+         var tgap:Number = Math.max(10,Math.min(22,Math.floor((W - 200 - tabSum) / Math.max(1,HZ_SET_TABS.length - 1))));
+         i = 0;
+         while(i < tabTf.length)
+         {
+            var tbx:TextField = tabTf[i] as TextField;
+            var tw:Number = Math.round(this.hzTW(tbx));
+            tbx.x = Math.round(tx - 2);
+            if(i == this.hzSetTab) { g.beginFill(acc,1); g.drawRect(tx,70,tw,2); g.endFill(); }
+            this.hzSetHits.push({"id":"tab" + i,"x":tx - 6,"y":ty - 6,"w":tw + 12,"h":30});
+            tx += tw + tgap;
+            i++;
+         }
+         this.hzSetKey(b,g,tx + 4,ty + 4,"RB",acc,16,8);
+      }
+      private function hz51DrawCompact(b:Sprite, g:*, T:Object, acc:uint, W:Number) : void
+      {
+         var pon:Boolean = Boolean(this.hzSetPend.Compact);
+         var psel:Boolean = this.hzSetHover == "compact";
+         var plab:String = "COMPACT MODE (STRIPS)";
+         var pt:TextField = this.hzWT(b,plab,0,14,240,9,"sb",uint(T.mut),1.4);
+         var pw:Number = Math.round(this.hzTW(pt) + 14 + 52);
+         var arrW:Number = this.hzSetTab == 4 ? 0 : (this.hzSetTab == 2 ? 160 : 138);
+         var px0:Number = W - 24 - arrW - 8 - 186 - 8 - pw;
+         if(px0 < 330) { pt.text = "COMPACT"; pw = Math.round(this.hzTW(pt) + 14 + 52); px0 = W - 24 - arrW - 8 - 186 - 8 - pw; }
+         var py0:Number = 8;
+         g.beginFill(0,0);
+         this.hz33Edge(b,px0,py0,pw,24,18,uint(T.txt),psel ? 0.28 : 0.16,1);
+         pt.x = px0 + 12;
+         this.hzSetSwitch(b,g,px0 + pw - 8,py0 + 12,pon,T,true);
+         this.hzSetHits.push({"id":"compact","x":px0,"y":py0,"w":pw,"h":24});
+      }
+      private function hz51DrawSearchBox(b:Sprite, g:*, T:Object, acc:uint, W:Number) : void
+      {
+         var arrW:Number = this.hzSetTab == 4 ? 0 : (this.hzSetTab == 2 ? 160 : 138);
+         var bw:Number = 186;
+         var bx:Number = W - 24 - arrW - (arrW > 0 ? 8 : 0) - bw;
+         var by:Number = 8;
+         var on:Boolean = this.hzSetFindOn || this.hzSetHover == "findbox";
+         g.beginFill(uint(T.fill),0.55);
+         g.drawRoundRect(bx,by,bw,24,8,8);
+         g.endFill();
+         this.hz33Edge(b,bx,by,bw,24,8,on ? acc : uint(T.txt),on ? 0.55 : 0.18,1);
+         var txt:String = this.hzSetFindOn || this.hzSetFind.length > 0 ? this.hzSetFind : "Search settings...";
+         var col:uint = this.hzSetFindOn || this.hzSetFind.length > 0 ? uint(T.txt) : uint(T.mut);
+         this.hzWT(b,txt,bx + 12,by + 5,bw - 20,11,"rg",col,0.2);
+         this.hzSetHits.push({"id":"findbox","x":bx,"y":by,"w":bw,"h":24});
+      }
+      private function hz51DrawSide(b:Sprite, g:*, T:Object, acc:uint) : void
+      {
+         var x0:Number = 0;
+         var y0:Number = 76;
+         var w:Number = HZ51_SIDE_W;
+         var H:Number = HZ_SET_H - HZ51_FOOT - y0;
+         g.beginFill(uint(T.line),Number(T.la)); g.drawRect(w,y0,1,H); g.endFill();
+         var groups:Array = this.hz51Side(this.hzSetTab);
+         var y:Number = y0 + 6;
+         var gi:int = 0;
+         var pi:int = 0;
+         while(gi < groups.length)
+         {
+            var grp:Object = groups[gi];
+            this.hzWT(b,String(grp.g),x0 + 14,y + 4,w - 24,8,"sb",acc,2.0);
+            g.beginFill(acc,0.28); g.drawRect(x0 + 14,y + 18,w - 28,1); g.endFill();
+            y += 24;
+            var items:Array = grp.items as Array;
+            var ii:int = 0;
+            while(ii < items.length)
+            {
+               var it:Object = items[ii];
+               var sel:Boolean = pi == this.hz51PageClamp(this.hzSetTab);
+               var sideSel:Boolean = sel && this.hzSetFocus == 1;
+               if(sel)
+               {
+                  g.beginFill(acc,sideSel ? 0.18 : 0.12);
+                  g.drawRect(x0,y,w,34);
+                  g.endFill();
+                  g.beginFill(acc,1); g.drawRect(x0,y,3,34); g.endFill();
+               }
+               this.hzWT(b,String(it.l),x0 + 16,y + 3,w - 22,10,"sb",sel ? acc : uint(T.lab),0.8);
+               this.hzWT(b,String(it.s),x0 + 16,y + 17,w - 22,9,"rg",uint(T.mut),0.2);
+               this.hzSetHits.push({"id":"side" + pi,"x":x0,"y":y,"w":w,"h":34});
+               y += 36;
+               pi++;
+               ii++;
+            }
+            y += 6;
+            gi++;
+         }
+      }
+      private function hz51DrawList(b:Sprite, g:*, T:Object, acc:uint, rows:Array) : void
+      {
+         var box:Object = this.hz51ListBox();
+         var x0:Number = Number(box.x);
+         var right:Number = Number(box.r);
+         var R:Number = right - 8;
+         var bottom:Number = HZ_SET_H - HZ51_FOOT - 8;
+         this.hzWT(b,this.hz51Crumb(this.hzSetTab, this.hz51PageClamp(this.hzSetTab)),x0 + 10,HZ_SET_TOP + 8,right - x0 - 20,9,"sb",uint(T.mut),1.8);
+         var pages:Array = this.hz51Pages(this.hzSetTab);
+         var pobj:Object = pages[this.hz51PageClamp(this.hzSetTab)];
+         var title:String = pobj != null ? String(pobj.l) : "";
+         this.hzWT(b,title,x0 + 10,HZ_SET_TOP + 22,right - x0 - 20,16,"bd",uint(T.txt),1.6);
+         var list:Array = [];
+         var ri:int = 0;
+         while(ri < rows.length) { if(!rows[ri].pill) { list.push(rows[ri]); } ri++; }
+         var y:Number = Number(box.y);
+         var li:int = this.hzSetScroll;
+         var lastShown:int = li - 1;
+         this.hz35Tip = null;
+         var bMain:Sprite = b;
+         var gMain:* = g;
+         var dimS:Sprite = new Sprite();
+         dimS.mouseEnabled = false; dimS.mouseChildren = false;
+         dimS.alpha = 0.42;
+         b.addChild(dimS);
+         var boxOpen:Boolean = false;
+         var boxY:Number = 0;
+         var boxH:Number = 0;
+         var boxX:Number = x0;
+         var boxW:Number = right - x0;
+         while(li < list.length)
+         {
+            var r:Object = list[li];
+            if(y + this.hzSetRowH(r) - 4 > bottom) { break; }
+            var i:int = rows.indexOf(r);
+            if(r.h)
+            {
+               if(boxOpen)
+               {
+                  this.hz33Edge(bMain,boxX,boxY,boxW,boxH,8,acc,0.18,1);
+                  boxOpen = false;
+               }
+               y += 8;
+               var ht:TextField = this.hzWT(b,String(r.h),x0 + 8,y + 2,300,9,"sb",acc,2.0);
+               g.beginFill(acc,0.28); g.drawRect(x0 + 12 + Math.min(160,this.hzTW(ht) + 8),y + 10,Math.max(16,boxW - this.hzTW(ht) - 20),1); g.endFill();
+               y += 20;
+               boxY = y;
+               boxH = 8;
+               boxOpen = true;
+               g.beginFill(uint(T.tile),Number(T.tia) * 0.35 + 0.04);
+               g.drawRoundRect(boxX,boxY,boxW,8,8,8);
+               g.endFill();
+            }
+            else if(!boxOpen)
+            {
+               boxY = y;
+               boxH = 8;
+               boxOpen = true;
+               g.beginFill(uint(T.tile),Number(T.tia) * 0.35 + 0.04);
+               g.drawRoundRect(boxX,boxY,boxW,8,8,8);
+               g.endFill();
+            }
+            if(r.t == "w")
+            {
+               this.hz37DrawWarn(b,g,y,right,T,String(r.l) + (r.note != undefined ? "  " + String(r.note) : ""));
+               y += 44;
+               boxH = y - boxY;
+               lastShown = li;
+               li++;
+               continue;
+            }
+            if(r.t == "m")
+            {
+               try { this.hz30ModBanner(b,g,y,right,T,String(r.mod),i == this.hzSetRow,i); } catch(errMb:Error) { }
+               y += this.hz34BanH();
+               boxH = y - boxY;
+               lastShown = li;
+               li++;
+               continue;
+            }
+            var hit0:int = this.hzSetHits.length;
+            if(r.dis)
+            {
+               this.hz30Lock(g,x0 + 12,y + 18,11,uint(T.mut),0.95,uint(T.fill));
+               b = dimS; g = dimS.graphics;
+            }
+            var rs:Boolean = i == this.hzSetRow && this.hzSetFocus == 0;
+            var rh:Boolean = this.hzSetHover == "row" + i;
+            var glow:Boolean = this.hzSetGlowK == String(r.k) && new Date().getTime() < this.hzSetGlowT;
+            if(rs || rh || glow)
+            {
+               g.beginFill(acc,glow ? 0.18 : (rs ? 0.12 : 0.06));
+               g.drawRect(x0,y,boxW,HZ51_ROW);
+               g.endFill();
+               if(rs) { g.beginFill(acc,1); g.drawRect(x0,y,3,HZ51_ROW); g.endFill(); }
+            }
+            if(li > this.hzSetScroll && !r.h)
+            {
+               g.beginFill(uint(T.line),Number(T.la)); g.drawRect(x0 + 10,y,boxW - 20,1); g.endFill();
+            }
+            var labX:Number = r.dis ? x0 + 28 : x0 + 12;
+            var lb35:TextField = this.hzWT(b,String(r.l),labX,y + 8,boxW - 200,11,"sb",uint(T.txt),1.2);
+            this.hzSetHits.push({"id":"row" + i,"x":x0,"y":y,"w":boxW,"h":HZ51_ROW});
+            var inf35:String = r.dis ? null : this.hz35InfoOf(r);
+            if(inf35 != null && lb35 != null && String(r.l).length > 0)
+            {
+               var ix35:Number = Math.round(lb35.x + 2 + Math.min(lb35.width,this.hzTW(lb35)) + 10);
+               var ion35:Boolean = this.hzSetHover == "inf" + i || (rs && this.hz35Kb);
+               this.hz35InfoIcon(b,g,ix35,y + 16,acc,T,ion35,i);
+               if(ion35) { this.hz35Tip = {"t":inf35,"x":ix35,"y":y,"h":HZ51_ROW}; }
+            }
+            var help:String = r.note != undefined ? String(r.note) : "";
+            if(help.length > 0)
+            {
+               var ht2:TextField = this.hzWT(b,help,labX,y + 28,boxW - 200,10,"rg",uint(T.mut),0.1,"left",11);
+               ht2.wordWrap = false;
+               ht2.multiline = false;
+            }
+            var v:* = r.dis ? r.dv : this.hzSetPend[r.k];
+            var cy:Number = y + 27;
+            this.hz51DrawCtrl(b,g,r,i,y,R,cy,v,T,acc,rh);
+            if(r.t == "md")
+            {
+               var badge:String = String(r.badge);
+               var bt:TextField = this.hzWT(b,badge,0,cy - 9,140,9,"sb",acc,1.2);
+               var bw:Number = Math.round(this.hzTW(bt) + 16);
+               var bx:Number = Math.round(R - bw);
+               bt.x = bx + 6;
+               g.beginFill(acc,0.14); g.drawRoundRect(bx,cy - 10,bw,20,6,6); g.endFill();
+               this.hz33Edge(b,bx,cy - 10,bw,20,6,acc,0.55,1);
+            }
+            if(r.t == "kg") { y += this.hz51DrawQmGrid(b,g,T,acc,x0,y + HZ51_ROW,R,r.dis); }
+            if(r.dis)
+            {
+               this.hzSetHits.splice(hit0,this.hzSetHits.length - hit0);
+               b = bMain; g = gMain;
+            }
+            y += HZ51_ROW;
+            boxH = y - boxY + 4;
+            lastShown = li;
+            li++;
+         }
+         if(boxOpen) { this.hz33Edge(bMain,boxX,boxY,boxW,Math.max(20,boxH),8,acc,0.18,1); }
+         if(this.hzSetMaxScroll > 0)
+         {
+            var trX:Number = right + 4;
+            var trT:Number = Number(box.y);
+            var trH:Number = bottom - trT - 4;
+            var shown:int = Math.max(1,lastShown - this.hzSetScroll + 1);
+            var tot:int = list.length;
+            var thH:Number = Math.max(18,Math.round(trH * shown / tot));
+            var thY:Number = Math.round(trT + (trH - thH) * this.hzSetScroll / Math.max(1,this.hzSetMaxScroll));
+            gMain.beginFill(uint(T.track),Number(T.ta)); gMain.drawRoundRect(trX,trT,5,trH,3,3); gMain.endFill();
+            gMain.beginFill(acc,0.9); gMain.drawRoundRect(trX,thY,5,thH,3,3); gMain.endFill();
+            this.hzSetHits.push({"id":"strk","x":trX - 8,"y":trT,"w":19,"h":trH,"ty":trT,"th":trH});
+         }
+      }
+      private function hz51DrawCtrl(b:Sprite, g:*, r:Object, i:int, y:Number, R:Number, cy:Number, v:*, T:Object, acc:uint, rh:Boolean) : void
+      {
+         var isDef:Boolean = this.hzSetIsDef(String(r.k),v);
+         var vcol:uint = isDef ? uint(T.txt) : acc;
+         if(r.t == "b") { this.hzSetSwitch(b,g,R,cy,Boolean(v),T); }
+         else if(r.t == "n")
+         {
+            var bw:Number = 148;
+            var bx:Number = R - 52 - bw;
+            var fr:Number = Math.max(0,Math.min(1,(Number(v) - r.mn) / (r.mx - r.mn)));
+            var vlab:String = r.st < 1 ? this.hzSetNum(Number(v)) : String(int(Math.round(Number(v))));
+            if(r.pct) { vlab = String(int(Math.round(Number(v)))) + "%"; }
+            this.hzWT(b,vlab,R,cy - 9,50,13,"sb",acc,0.5,"right");
+            g.beginFill(uint(T.track),Number(T.ta)); g.drawRoundRect(bx,cy - 2,bw,4,4,4); g.endFill();
+            if(fr > 0) { g.beginFill(acc,1); g.drawRoundRect(bx,cy - 2,Math.max(4,Math.round(bw * fr)),4,4,4); g.endFill(); }
+            var kx:Number = Math.round(bx + bw * fr);
+            g.beginFill(acc,1); g.drawCircle(kx,cy,8); g.endFill();
+            this.hzSetHits.push({"id":"bar" + i,"x":bx - 10,"y":y,"w":bw + 20,"h":HZ51_ROW,"bx":bx,"bw":bw});
+         }
+         else if(r.t == "z") { this.hz34ZDraw(b,g,i,y,R,v,T,acc,true); }
+         else if(r.t == "h")
+         {
+            var hx:String = this.hzSetHexK == String(r.hex) ? this.hzSetHexBuf : String(v != undefined ? v : "");
+            if(hx.indexOf("#") == 0) { hx = hx.substr(1); }
+            var hexOn:Boolean = this.hzSetHexK == String(r.hex);
+            var hw:Number = 96;
+            var hxx:Number = R - hw;
+            g.beginFill(uint(T.tile),hexOn ? 0.55 : Number(T.tia)); g.drawRoundRect(hxx,cy - 12,hw,24,6,6); g.endFill();
+            this.hz33Edge(b,hxx,cy - 12,hw,24,6,hexOn ? acc : uint(T.line),hexOn ? 1 : 0.5,1);
+            this.hzWT(b,"#" + hx,hxx + 8,cy - 9,hw - 16,12,"sb",uint(T.txt),0.3);
+            var col:int = this.hzParseHex(hx);
+            if(col >= 0) { g.beginFill(uint(col),1); g.drawRoundRect(hxx - 22,cy - 8,14,16,4,4); g.endFill(); }
+            this.hzSetHits.push({"id":"hex" + i,"x":hxx - 24,"y":y,"w":hw + 28,"h":HZ51_ROW});
+         }
+         else if(r.t == "r" || r.t == "q" || r.t == "l" || r.t == "c" || r.t == "a" || r.t == "p")
+         {
+            var txt:String = "";
+            if(r.t == "p") { var p:Object = this.hz37Cur(); txt = p != null ? String(p.n) : "NONE"; }
+            else if(r.t == "r") { txt = String((r.opts as Array)[Math.max(0,Math.min((r.opts as Array).length - 1,this.hz29OptIdx(r,v)))]); }
+            else if(r.t == "q") { txt = String(HZ_RULE_NAMES[Math.max(0,Math.min(HZ_RULE_NAMES.length - 1,int(v)))]); if(r.opts != undefined) { txt = String((r.opts as Array)[Math.max(0,this.hz29OptIdx(r,v))]); } }
+            else if(r.t == "l") { txt = String((r.names as Array)[this.hzSetListIdx(r,v)]); }
+            else if(r.t == "c") { txt = String(v); }
+            else if(r.t == "a") { txt = String((r.names as Array)[Math.max(0,Math.min((r.names as Array).length - 1,int(v)))]); }
+            var ct:TextField = this.hzWT(b,txt,0,cy - 9,220,11,"sb",vcol,0.4);
+            var cw:Number = Math.max(96,Math.round(this.hzTW(ct) + 28));
+            var cx:Number = Math.round(R - cw);
+            b.removeChild(ct);
+            g.beginFill(uint(T.fill),0.7); g.drawRoundRect(cx,cy - 12,cw,24,6,6); g.endFill();
+            this.hz33Edge(b,cx,cy - 12,cw,24,6,this.hzSetDrop == i ? acc : uint(T.txt),this.hzSetDrop == i ? 0.7 : 0.22,1);
+            if(r.t == "a")
+            {
+               var pal:Array = r.pal as Array;
+               var ai:int = Math.max(0,Math.min(pal.length - 1,int(v)));
+               g.beginFill(uint(pal[ai]),1); g.drawRoundRect(cx + 6,cy - 7,12,14,4,4); g.endFill();
+               this.hzWT(b,txt,cx + 22,cy - 9,cw - 36,11,"sb",vcol,0.4);
+            }
+            else { this.hzWT(b,txt,cx + 10,cy - 9,cw - 28,11,"sb",vcol,0.4); }
+            g.beginFill(uint(T.mut),0.9);
+            g.moveTo(R - 14,cy - 2); g.lineTo(R - 6,cy - 2); g.lineTo(R - 10,cy + 4); g.lineTo(R - 14,cy - 2);
+            g.endFill();
+            this.hzSetHits.push({"id":"dd" + i,"x":cx,"y":y,"w":cw,"h":HZ51_ROW});
+         }
+         else if(r.t == "x" && String(r.k).indexOf("_hz37") == 0) { this.hz37DrawBtn(b,g,r,i,R,cy,rh,T); }
+         else if(r.t == "x") { this.hzSetBtn(b,g,R,cy - 14,r.btn != undefined ? String(r.btn) : "OPEN",false,true,rh,T,"row" + i); }
+      }
+      private function hz51DrawQmGrid(b:Sprite, g:*, T:Object, acc:uint, x0:Number, y:Number, R:Number, dis:Boolean) : Number
+      {
+         var count:int = this.hzSetPend != null ? int(this.hzSetPend.QuickMenuSlotCount) : 24;
+         if(count < 12) { count = 12; }
+         if(count > 24) { count = 24; }
+         var per:int = this.hzSetPend != null ? int(this.hzSetPend.QuickMenuSlotsPerRow) : 6;
+         if(per != 4 && per != 6 && per != 8) { per = 6; }
+         var n:int = 13;
+         var col:int = 0;
+         var row:int = 0;
+         var cw:Number = 64;
+         var ch:Number = 28;
+         while(n <= count)
+         {
+            var k:String = "QuickMenuKey" + n;
+            var kn:String = String(this.hzSetPend[k] != null ? this.hzSetPend[k] : "");
+            if(this.hzQmCap == k) { kn = this.hzQmCapCand.length > 0 ? this.hzQmCapCand : "PRESS"; }
+            else if(kn.length == 0) { kn = "NONE"; }
+            var xx:Number = x0 + 16 + col * (cw + 8);
+            var yy:Number = y + row * (ch + 6);
+            var on:Boolean = this.hzQmCap == k || this.hzSetHover == "qmk" + n;
+            g.beginFill(acc,on ? 0.22 : 0.1); g.drawRoundRect(xx,yy,cw,ch,8,8); g.endFill();
+            this.hzWT(b,String(n),xx + 4,yy + 2,20,9,"sb",uint(T.mut),0.4);
+            this.hzWT(b,kn,xx + 20,yy + 6,cw - 24,10,"sb",acc,0.4);
+            if(!dis) { this.hzSetHits.push({"id":"qmk" + n,"x":xx,"y":yy,"w":cw,"h":ch}); }
+            col++;
+            if(col >= per) { col = 0; row++; }
+            n++;
+         }
+         var extra:Number = (row + (col > 0 ? 1 : 0)) * (ch + 6) + 8;
+         if(this.hzQmCapWarn.length > 0)
+         {
+            this.hz37DrawWarn(b,g,y + extra,R,T,this.hzQmCapWarn);
+            extra += 44;
+         }
+         return extra;
+      }
+      private function hz51DrawRight(b:Sprite, g:*, T:Object, acc:uint, rows:Array) : void
+      {
+         var px:Number = HZ_SET_W - HZ51_PREV_W;
+         var py:Number = 76;
+         var ph:Number = HZ_SET_H - HZ51_FOOT - py;
+         g.beginFill(uint(T.line),Number(T.la)); g.drawRect(px,py,1,ph); g.endFill();
+         this.hzWT(b,"LIVE PREVIEW",px + 14,py + 10,HZ51_PREV_W - 24,9,"sb",acc,2.0);
+         this.hzSetPvDraw(b,g,px + 12,py + 28,T);
+         var dy:Number = py + 248;
+         this.hzWT(b,"SETTING DETAILS",px + 14,dy,HZ51_PREV_W - 24,9,"sb",acc,2.0);
+         g.beginFill(acc,0.28); g.drawRect(px + 14,dy + 16,HZ51_PREV_W - 28,1); g.endFill();
+         var r:Object = this.hzSetRow >= 0 && this.hzSetRow < rows.length ? rows[this.hzSetRow] : null;
+         var help:String = r != null ? this.hz51HelpOf(String(r.k), r) : "Pick a setting to see what it does.";
+         var title:String = r != null && r.l != undefined ? String(r.l) : "";
+         if(title.length > 0) { this.hzWT(b,title,px + 14,dy + 24,HZ51_PREV_W - 28,11,"sb",uint(T.txt),1.4); }
+         var tf:TextField = this.hzWT(b,help,px + 14,dy + 44,HZ51_PREV_W - 28,11,"rg",uint(T.lab),0.1,"left",12);
+         tf.wordWrap = true; tf.multiline = true; tf.width = HZ51_PREV_W - 28; tf.text = help;
+         this.hzMsglogWrap(tf,HZ51_PREV_W - 28,160);
+         if(r != null && this.hz51On(String(r.k)) && String(r.k).indexOf("Show") == 0 && r.k != "ShowFollowers" && r.k != "ShowLocations" && r.k != "ShowShip" && r.k != "ShowEnemies" && r.k != "ShowPlayerMarker" && r.k != "ShowSpeaker" && r.k != "ShowTarget")
+         {
+            var ruleK:String = String(r.k).substr(4) + "Rule";
+            if(r.k == "ShowAmmo") { ruleK = "AmmoRule"; }
+            if(this.hzSetPend[ruleK] != undefined && int(this.hzSetPend[ruleK]) != 0)
+            {
+               var hint:String = "This card stays on. It only appears when Show when says so. That is not a fault.";
+               this.hzWT(b,hint,px + 14,dy + 44 + tf.textHeight + 12,HZ51_PREV_W - 28,11,"rg",uint(T.mut),0.2,"left",12);
+            }
+         }
+      }
+      private function hz51DrawFooter(b:Sprite, g:*, T:Object, acc:uint, W:Number, H:Number) : void
+      {
+         var fy:Number = H - HZ51_FOOT;
+         g.beginFill(uint(T.line),Number(T.la)); g.drawRect(0,fy,W,1); g.endFill();
+         g.beginFill(uint(T.txt),0.015); g.drawRect(0,fy + 50,W,50); g.endFill();
+         g.beginFill(uint(T.line),Number(T.la) * 0.7); g.drawRect(0,fy + 50,W,1); g.endFill();
+         var hx:Number = 24;
+         var by:Number = fy + 14;
+         this.hzWT(b,"KEYBOARD",hx,by + 4,88,8,"sb",uint(T.mut),1.8);
+         hx = 118;
+         for each(var hk:Array in [["UP/DN","SELECT"],["L/R","CHANGE"],["PGUP","TAB"],["ENTER","OK"],["ESC","CANCEL"],["/","SEARCH"]])
+         {
+            var hkw:Number = this.hzSetKey(b,g,hx,by,String(hk[0]),uint(T.mut),18,8);
+            var hl:TextField = this.hzWT(b,String(hk[1]),hx + hkw + 4,by + 3,72,9,"sb",uint(T.lab),1.0);
+            hx = Math.round(hx + hkw + 4 + this.hzTW(hl) + 10);
+         }
+         var bxr:Number = W - 24;
+         bxr -= this.hzSetBtn(b,g,bxr,fy + 12,"CANCEL",false,false,this.hzSetHover == "cancel",T,"cancel") + 8;
+         this.hzSetBtn(b,g,bxr,fy + 12,"OK",true,false,this.hzSetHover == "ok",T,"ok");
+         hx = 24;
+         by = fy + 64;
+         this.hzWT(b,"CONTROLLER",hx,by + 4,88,8,"sb",uint(T.mut),1.8);
+         hx = 118;
+         for each(var ck:Array in [["LB/RB","TABS"],["D-PAD","SECTION / SETTING"],["A","SELECT"],["B","BACK"],["LS","MOVE"],["RS","SCROLL"]])
+         {
+            var ckw:Number = this.hzSetKey(b,g,hx,by,String(ck[0]),acc,18,8);
+            var cl:TextField = this.hzWT(b,String(ck[1]),hx + ckw + 4,by + 3,110,9,"sb",uint(T.lab),1.0);
+            hx = Math.round(hx + ckw + 4 + this.hzTW(cl) + 10);
+         }
+      }
+      private function hz51DrawFind(b:Sprite, g:*, T:Object, acc:uint, W:Number, H:Number) : void
+      {
+         var hits:Array = this.hz51FindHits();
+         var arrW:Number = this.hzSetTab == 4 ? 0 : (this.hzSetTab == 2 ? 160 : 138);
+         var w:Number = 280;
+         var x:Number = W - 24 - arrW - (arrW > 0 ? 8 : 0) - 186;
+         x = x + 186 - w;
+         var y:Number = 36;
+         var h:Number = Math.min(240, 40 + Math.max(1,hits.length) * 34 + 28);
+         if(hits.length == 0) { h = 72; }
+         g.beginFill(uint(T.fill),Math.max(0.94,Number(T.fa))); g.drawRoundRect(x,y,w,h,8,8); g.endFill();
+         this.hz33Edge(b,x,y,w,h,8,acc,0.55,1);
+         if(!this.hzSetFindOn && this.hzSetFind.length == 0) { return; }
+         if(hits.length == 0)
+         {
+            this.hzWT(b,"No settings match",x + 14,y + 16,w - 28,12,"sb",uint(T.mut),0.3);
+            return;
+         }
+         if(this.hzSetFindHi >= hits.length) { this.hzSetFindHi = 0; }
+         var i:int = 0;
+         var yy:Number = y + 6;
+         while(i < hits.length && yy + 34 < y + h - 24)
+         {
+            var hit:Object = hits[i];
+            var sel:Boolean = i == this.hzSetFindHi;
+            if(sel) { g.beginFill(acc,0.18); g.drawRect(x + 4,yy,w - 8,32); g.endFill(); g.beginFill(acc,1); g.drawRect(x + 4,yy,3,32); g.endFill(); }
+            this.hzWT(b,String(hit.l),x + 16,yy + 3,w - 28,11,"sb",sel ? acc : uint(T.txt),0.4);
+            this.hzWT(b,String(hit.crumb),x + 16,yy + 17,w - 28,9,"rg",uint(T.mut),0.2);
+            this.hzSetHits.push({"id":"fhit" + i,"x":x + 4,"y":yy,"w":w - 8,"h":32});
+            yy += 34;
+            i++;
+         }
+      }
+      private function hz51DrawDrop(b:Sprite, g:*, T:Object, acc:uint, rows:Array) : void
+      {
+         if(this.hzSetDrop < 0 || this.hzSetDrop >= rows.length) { return; }
+         var r:Object = rows[this.hzSetDrop];
+         var opts:Array = this.hz51DropOpts(r);
+         if(opts == null || opts.length == 0) { this.hzSetDrop = -1; return; }
+         var box:Object = this.hz51ListBox();
+         var w:Number = 220;
+         var h:Number = Math.min(260, 8 + opts.length * 26);
+         var x:Number = Number(box.r) - w;
+         var y:Number = Number(box.y);
+         g.beginFill(uint(T.fill),Math.max(0.95,Number(T.fa))); g.drawRoundRect(x,y,w,h,6,6); g.endFill();
+         this.hz33Edge(b,x,y,w,h,6,acc,0.7,1);
+         if(this.hzSetDropHi < 0) { this.hzSetDropHi = 0; }
+         if(this.hzSetDropHi >= opts.length) { this.hzSetDropHi = opts.length - 1; }
+         var i:int = 0;
+         while(i < opts.length)
+         {
+            var yy:Number = y + 4 + i * 26;
+            var sel:Boolean = i == this.hzSetDropHi;
+            if(sel) { g.beginFill(acc,0.16); g.drawRoundRect(x + 4,yy,w - 8,24,4,4); g.endFill(); }
+            if(r.t == "a" && r.pal != undefined)
+            {
+               var pal:Array = r.pal as Array;
+               g.beginFill(uint(pal[Math.min(pal.length - 1,i)]),1); g.drawRoundRect(x + 12,yy + 5,12,14,3,3); g.endFill();
+               this.hzWT(b,String(opts[i]),x + 30,yy + 4,w - 42,11,"sb",sel ? acc : uint(T.lab),0.3);
+            }
+            else { this.hzWT(b,String(opts[i]),x + 12,yy + 4,w - 24,11,"sb",sel ? acc : uint(T.lab),0.3); }
+            this.hzSetHits.push({"id":"dopt" + i,"x":x + 4,"y":yy,"w":w - 8,"h":24});
+            i++;
+         }
+      }
+      private function hz51Key(code:String) : Boolean
+      {
+         if(this.hzSetFindOn)
+         {
+            if(code == "cancel") { this.hzSetFindOn = false; this.hzSetFind = ""; this.hzSetFocus = 0; return true; }
+            if(code == "ok")
+            {
+               var hits:Array = this.hz51FindHits();
+               if(this.hzSetFindHi >= 0 && this.hzSetFindHi < hits.length) { this.hz51GotoHit(hits[this.hzSetFindHi]); }
+               return true;
+            }
+            if(code == "up" || code == "down")
+            {
+               var hs:Array = this.hz51FindHits();
+               if(hs.length == 0) { return true; }
+               this.hzSetFindHi = (this.hzSetFindHi + (code == "down" ? 1 : hs.length - 1)) % hs.length;
+               return true;
+            }
+            if(code == "bksp")
+            {
+               if(this.hzSetFind.length > 0) { this.hzSetFind = this.hzSetFind.substr(0,this.hzSetFind.length - 1); }
+               this.hzSetFindHi = 0;
+               return true;
+            }
+            if(code.indexOf("ch:") == 0 && code.length >= 4)
+            {
+               this.hzSetFind += code.substr(3,1);
+               this.hzSetFindHi = 0;
+               return true;
+            }
+            return true;
+         }
+         if(this.hzSetHexK.length > 0)
+         {
+            if(code == "cancel") { this.hzSetHexBuf = this.hzSetHexPrev >= 0 ? this.hzHex(this.hzSetHexPrev).substr(1) : this.hzSetHexBuf; this.hzSetHexK = ""; this.hzSetFocus = 0; return true; }
+            if(code == "ok") { this.hz51HexCommit(); this.hzSetHexK = ""; this.hzSetFocus = 0; return true; }
+            if(code == "bksp") { if(this.hzSetHexBuf.length > 0) { this.hzSetHexBuf = this.hzSetHexBuf.substr(0,this.hzSetHexBuf.length - 1); } return true; }
+            if(code.indexOf("ch:") == 0 && code.length >= 4)
+            {
+               var ch:String = code.substr(3,1).toUpperCase();
+               if("0123456789ABCDEF".indexOf(ch) >= 0 && this.hzSetHexBuf.length < 6) { this.hzSetHexBuf += ch; }
+               return true;
+            }
+            return true;
+         }
+         if(this.hzSetDrop >= 0)
+         {
+            var rowsD:Array = this.hzSetRows(this.hzSetTab);
+            var rr:Object = this.hzSetDrop < rowsD.length ? rowsD[this.hzSetDrop] : null;
+            var opts:Array = this.hz51DropOpts(rr);
+            if(code == "cancel" || code == "left") { this.hzSetDrop = -1; this.hzSetFocus = 0; return true; }
+            if(code == "up" || code == "down")
+            {
+               if(opts.length == 0) { return true; }
+               this.hzSetDropHi = (this.hzSetDropHi + (code == "down" ? 1 : opts.length - 1)) % opts.length;
+               return true;
+            }
+            if(code == "ok" || code == "right")
+            {
+               this.hz51DropPick(rr, this.hzSetDropHi);
+               this.hzSetDrop = -1;
+               this.hzSetFocus = 0;
+               return true;
+            }
+            return true;
+         }
+         if(code.indexOf("ch:") == 0 && code.substr(3) == "/")
+         {
+            this.hzSetFindOn = true;
+            this.hzSetFindHi = 0;
+            this.hzSetFocus = 2;
+            return true;
+         }
+         return false;
+      }
+      private function hz51OpenDrop(i:int, rows:Array) : void
+      {
+         if(i < 0 || i >= rows.length) { return; }
+         var r:Object = rows[i];
+         if(r.dis) { return; }
+         if(r.t != "r" && r.t != "q" && r.t != "l" && r.t != "a" && r.t != "c" && r.t != "p") { return; }
+         this.hzSetDrop = i;
+         this.hzSetDropHi = 0;
+         this.hzSetFocus = 3;
+         if(r.t == "r") { this.hzSetDropHi = Math.max(0,this.hz29OptIdx(r,this.hzSetPend[r.k])); }
+         else if(r.t == "q") { var ids:Array = r.ids as Array; this.hzSetDropHi = Math.max(0,ids.indexOf(int(this.hzSetPend[r.k]))); }
+         else if(r.t == "l") { this.hzSetDropHi = this.hzSetListIdx(r,this.hzSetPend[r.k]); }
+         else if(r.t == "a" || r.t == "c") { this.hzSetDropHi = Math.max(0,int(this.hzSetPend[r.k])); if(r.t == "c") { this.hzSetDropHi = Math.max(0,HZ_SET_KEYS.indexOf(String(this.hzSetPend[r.k]))); } }
+      }
+      private function hz51ListBox() : Object
+      {
+         var x:Number = HZ51_SIDE_W + 12;
+         var y:Number = HZ_SET_TOP + 44;
+         var r:Number = HZ_SET_W - HZ51_PREV_W - 10;
+         return {"x":x,"y":y,"r":r,"w":r - x};
+      }
+
+
       private function hzSetRows(tab:int) : Array
       {
-         if(tab == 0)
-         {
-            return this.hz34CardRows();   // v0.34: per-card SIZE / COMPACT FORM sub-rows
-         }
-         if(tab == 1)
-         {
-            return [{"k":"CardOpacity","l":"CARD OPACITY (HUD CARDS)","t":"n","mn":0.2,"mx":1.6,"st":0.05,"h":"PANEL"},{"k":"CardBgOpacity","l":"CARD BACKGROUND %","t":"n","mn":0,"mx":100,"st":1,"pct":1,"n13":true,"note":"0 is clear. 100 is a solid card color. Dark and bright cards both use it."},{"k":"CardShadow","l":"CARD SHADOW %","t":"n","mn":0,"mx":100,"st":1,"pct":1,"n13":true,"note":"0 is none. 12 is the built-in strength. 100 is a strong shadow."},{"k":"ContainerOpacity","l":"CONTAINER / CROSSHAIR CARD OPACITY","t":"n","mn":0.2,"mx":1.6,"st":0.05},{"k":"SettingsOpacity","l":"SETTINGS WINDOW %","t":"n","mn":30,"mx":100,"st":1,"pct":1,"n13":true,"note":"Opacity of this window. 30 is the minimum. 100 is solid."},{"k":"AccentColor","l":"ACCENT COLOR","t":"a","pal":this.hzAccPal(),"names":this.hzAccNames(),"note":"Also tints this window. Custom: AccentHex=#RRGGBB in the ini","n13":true,"h":"COLOR"},{"k":"CardColor","l":"CARD COLOR","t":"a","pal":this.hzCardPal(),"names":this.hzCardNames(),"note":"Light colors switch the text (and this window) to dark","n13":true},{"k":"HudScale","l":"HUD SCALE","t":"n","mn":0.7,"mx":1.4,"st":0.05,"h":"SIZE & PLACEMENT","note":"Every card on GLOBAL size. Per-card sizes are in CARDS","n13":true},{"k":"Margin","l":"SCREEN MARGIN","t":"n","mn":20,"mx":200,"st":10,"note":"Moves every card, ARRANGE-placed ones too (they keep their distance from it)","n13":true},{"k":"AfflictionLayout","l":"AFFLICTIONS LAYOUT","t":"r","opts":HZ_AFLAY_NAMES},{"k":"CrosshairStyle","l":"CROSSHAIR STYLE (INTERACT)","t":"r","opts":HZ_XH_NAMES,"h":"CROSSHAIR"},{"k":"ObjectRing","l":"OBJECT RING","t":"r","opts":HZ_RING_NAMES,"note":"The ring + line the game draws around the object you look at","n13":true},{"k":"ScreenHeight","l":"SCREEN HEIGHT (PIXEL SNAP)","t":"l","vals":HZ_SET_SCRH,"names":HZ_SET_SCRH_N,"note":"Your vertical resolution: crosshair cards snap to whole pixels","n13":true}];
-         }
-         if(tab == 2)
-         {
-            return this.hz30FontRows([{"k":"TextTone","l":"TEXT TONE","t":"r","opts":HZ_TONE_NAMES,"note":"AUTO = dark text on light card colors","h":"TYPE"},{"k":"FontFace","l":"FONT","t":"r","opts":HZ_FONT_NAMES,"ids":HZ_FONT_IDS,"note":"EXO 2 (default) / ROBOTO need fonts_horizon.swf + fontconfig; game font is used if missing."},{"k":"TextScale","l":"TEXT SIZE","t":"n","mn":0.8,"mx":1.3,"st":0.05},{"k":"HeaderStyle","l":"CARD HEADER STYLE","t":"r","opts":HZ_HDRSTYLE_NAMES},{"k":"TextShadow","l":"TEXT SHADOW","t":"b"},{"k":"TimeDisplay","l":"PLANET TIME","t":"r","opts":HZ_TIME_NAMES,"h":"CLOCK"},{"k":"ClockFormat","l":"CLOCK FORMAT","t":"r","opts":HZ_CLOCK_NAMES},{"k":"TempUnit","l":"TEMPERATURE UNITS","t":"r","opts":HZ_TEMP_NAMES}]);
-         }
-         if(tab == 3)
-         {
-            return [{"k":"StartupIntro","l":"WELCOME INTRO","t":"b","h":"WELCOME","n13":true,"note":"Plays HORIZON UI on save load"},{"k":"SmoothBars","l":"SMOOTH BARS","t":"b","h":"CARDS"},{"k":"FadeCards","l":"FADE CARDS","t":"b"},{"k":"CombatDim","l":"DIM OUT OF COMBAT","t":"b"},{"k":"DimOpacity","l":"DIM OPACITY","t":"n","mn":0.2,"mx":1,"st":0.05},{"k":"HazardAlert","l":"HAZARD ALERT","t":"b"},{"k":"AutoCenterVitals","l":"CENTER VITALS WHEN EQUIPMENT HIDDEN","t":"b","note":"Ignored once the vitals card is moved in ARRANGE CARDS"},{"k":"TargetAnchor","l":"TARGET: ANCHOR","t":"r","opts":HZ_TGANCHOR_NAMES,"h":"TARGET"},{"k":"TargetShowValue","l":"TARGET: ITEM VALUE / WEIGHT","t":"b"},{"k":"EdgePulse","l":"LOW HEALTH / O2 SCREEN-EDGE PULSE","t":"b","h":"WARNINGS"},{"k":"XpToast","l":"XP GAIN TOAST","t":"b","note":"With the Comms module the game's own +XP popup is hidden while this is on"},{"k":"RegenSliver","l":"HEALING REGEN SLIVER","t":"b"},{"k":"HitMarkers","l":"HIT MARKER + KILL X","t":"b","h":"COMBAT FEEDBACK"},{"k":"DamageNumbers","l":"FLOATING DAMAGE NUMBERS","t":"b"},{"k":"DirectionRing","l":"DAMAGE DIRECTION RING","t":"b"}];
-         }
-         if(tab == 4)
-         {
-            return [{"k":"JetpackRule","l":"JETPACK","t":"q","ids":[0,4,1,2],"h":"WHEN EACH CARD SHOWS"},{"k":"VitalsRule","l":"VITALS","t":"q","ids":[0,5,1,2]},{"k":"PlanetRule","l":"PLANET","t":"q","ids":[0,1,2]},{"k":"AfflictionsRule","l":"AFFLICTIONS","t":"q","ids":[0,6,1,2]},{"k":"AmmoRule","l":"EQUIPMENT","t":"q","ids":[0,3,1,2],"note":"Crosshair off? Set this to ALWAYS or COMBAT ONLY."},{"k":"QuestsRule","l":"QUEST TRACKER","t":"q","ids":[0,1,2]},{"k":"CompassRule","l":"COMPASS","t":"q","ids":[0,1,2]},{"k":"CharacterRule","l":"CHARACTER CARD","t":"q","ids":[0,7,8,9,1,2],"note":"XP / level / credits / skill point: shows for 8 s, then fades (CharacterShowSeconds in the ini)"},{"k":"CrosshairRule","l":"CROSSHAIR","t":"r","opts":["ALWAYS","WEAPON DRAWN","OFF"],"ids":[0,1,2],"h":"CENTER RETICLE","note":"The center reticle only. Prompts, target cards, hit markers, the kill X, the damage ring, and the stealth pill stay."}];
-         }
-         if(tab == 5)
-         {
-            return [{"k":"CompassMarkers","l":"COMPASS MARKERS (ALL)","t":"b","h":"COMPASS MARKERS"},{"k":"ShowFollowers","l":"FOLLOWERS / COMPANIONS","t":"b"},{"k":"FollowerColor","l":"FOLLOWER MARKER COLOR","t":"a","pal":HZ_FOL_PAL,"names":HZ_FOL_NAMES},{"k":"ShowLocations","l":"LOCATIONS / POIS / OUTPOSTS","t":"b"},{"k":"ShowShip","l":"SHIP / VEHICLE","t":"b"},{"k":"ShowEnemies","l":"ENEMIES","t":"b"},{"k":"ShowPlayerMarker","l":"CUSTOM MAP MARKER","t":"b","note":"Quest objectives always show while markers are on"}];
-         }
-         if(tab == 7) { return this.hz37WithWarn(this.hz40ScanRows()); }
-         if(tab == 8) { return this.hz37WithWarn(this.hz30Mod["comms"] === 1 ? this.hz31CommsRows() : this.hz30ModRows("comms")); }
-         var ml:Object = {"k":"_msglog","l":"MESSAGE LOG","t":"x","btn":"OPEN","n13":true};
-         if(this.hzMsglogModule() == 0) { ml.dis = true; ml.note = "needs Notifications"; }
-         return this.hz37WithWarn([{"k":"SettingsKey","l":"SETTINGS MENU KEY","t":"c","note":"takes effect after restart","h":"CONTROLS"},{"k":"_arrange","l":"ARRANGE CARDS  (drag cards on screen)","t":"x"},ml]).concat(this.hz37Rows());
+         this.hzSetPage = this.hz51PageClamp(tab);
+         return this.hz51Rows(tab, this.hzSetPage);
       }
+
 
       private function hzSetCurrent() : Object
       {
@@ -4742,6 +6325,15 @@
          try { this.hz34SetCur(cur); } catch(err34:Error) { }
          try { this.hz40SetCur(cur); } catch(err40:Error) { }
          try { this.hz42ScSetCur(cur); } catch(err42c:Error) { }   // v0.42.0 r2: [Scope]
+         cur.Debug = this.hzDebug;
+         cur.PerfDiag = this.hzPerfDiag;
+         cur.PerfMode = this.hzPerfMode;
+         cur.PerfDump = this.hzPerfDumpIni;
+         cur.AccentHex = this.hzAccentHex >= 0 ? this.hzHex(this.hzAccentHex) : "";
+         cur.CardHex = this.hzCardHex >= 0 ? this.hzHex(this.hzCardHex) : "";
+         cur.Record = this.hzMlRecord;
+         cur.Persist = this.hzMlPersist;
+         cur.HistorySize = this.hzMlHistory;
          return cur;
       }
 
@@ -6323,6 +7915,14 @@
          this.hzSetOrig = this.hzSetCurrent();
          this.hzSetPend = this.hzSetCurrent();
          this.hzSetTab = 0;
+         this.hzSetPage = 0;
+         this.hzSetFocus = 0;
+         this.hzSetDrop = -1;
+         this.hzSetFindOn = false;
+         this.hzSetFind = "";
+         this.hzSetHexK = "";
+         this.hzSetGlowK = "";
+         try { this.hz51IndexBuild(); } catch(eIdx:Error) { this.hzSetIdx = []; }
          this.hzSetRow = 0;
          this.hzSetScroll = 0;
          this.hzSetDrag = -1;
@@ -6356,6 +7956,10 @@
       {
          this.hzMsglogForceClose();
          this.hzSetIsOpen = false;
+         this.hzSetIdx = null;
+         this.hzSetFindOn = false;
+         this.hzSetDrop = -1;
+         this.hzSetHexK = "";
          this.hzQmCapEnd();
          try { this.hz37Reset(); } catch(e37r:Error) { }
          this.hzSetPend = null;
@@ -6426,32 +8030,69 @@
          if(this.hzQmCap.length > 0) { this.hzQmCapKey(code); this.hzSetDraw(); return; }   // 0.43.5: extra-slot rebind prompt
          // QueueKey also sends bind:<Key> for letters/digits/F-keys (capture-only). Ignore it here so
          // preset naming keeps ch:a and a pending confirm is not dropped after the first character.
+         try { if(this.hz51Key(code)) { this.hzSetDraw(); return; } } catch(e51k:Error) { }
          if(code.indexOf("bind:") == 0) { return; }
          if(this.hz37Key(code)) { this.hzSetDraw(); return; }   // v0.37: preset name entry / pending confirm
          if(code.indexOf("ch:") == 0 || code == "bksp" || code.indexOf("bind:") == 0) { return; }
          var rows:Array = this.hzSetRows(this.hzSetTab);
          switch(code)
          {
-            case "up": this.hz30RowStep(rows,-1); break;
-            case "down": this.hz30RowStep(rows,1); break;
-            case "left": this.hzSetChange(rows[this.hzSetRow],-1); break;
-            case "right": this.hzSetChange(rows[this.hzSetRow],1); break;
-            case "tabprev": this.hzSetTab = (this.hzSetTab + HZ_SET_TABS.length - 1) % HZ_SET_TABS.length; this.hzSetRow = 0; this.hzSetScroll = 0; break;
-            case "tabnext": this.hzSetTab = (this.hzSetTab + 1) % HZ_SET_TABS.length; this.hzSetRow = 0; this.hzSetScroll = 0; break;
+            case "up":
+               if(this.hzSetFocus == 1)
+               {
+                  this.hzSetPage = this.hz51PageClamp(this.hzSetTab);
+                  this.hzSetPage = (this.hzSetPage + this.hz51Pages(this.hzSetTab).length - 1) % this.hz51Pages(this.hzSetTab).length;
+                  this.hzSetRow = 0; this.hzSetScroll = 0;
+               }
+               else { this.hz30RowStep(rows,-1); }
+               break;
+            case "down":
+               if(this.hzSetFocus == 1)
+               {
+                  this.hzSetPage = (this.hz51PageClamp(this.hzSetTab) + 1) % this.hz51Pages(this.hzSetTab).length;
+                  this.hzSetRow = 0; this.hzSetScroll = 0;
+               }
+               else { this.hz30RowStep(rows,1); }
+               break;
+            case "left":
+               if(this.hzSetFocus == 0)
+               {
+                  var lr:Object = rows[this.hzSetRow];
+                  if(lr != null && (lr.t == "n" || lr.t == "z" || lr.t == "b")) { this.hzSetChange(lr,-1); }
+                  else { this.hzSetFocus = 1; }
+               }
+               break;
+            case "right":
+               if(this.hzSetFocus == 1) { this.hzSetFocus = 0; }
+               else
+               {
+                  var rr2:Object = rows[this.hzSetRow];
+                  if(rr2 != null && (rr2.t == "n" || rr2.t == "z" || rr2.t == "b")) { this.hzSetChange(rr2,1); }
+                  else { this.hz51OpenDrop(this.hzSetRow, rows); }
+               }
+               break;
+            case "tabprev": this.hzSetTab = (this.hzSetTab + HZ_SET_TABS.length - 1) % HZ_SET_TABS.length; this.hzSetPage = 0; this.hzSetRow = 0; this.hzSetScroll = 0; this.hzSetDrop = -1; break;
+            case "tabnext": this.hzSetTab = (this.hzSetTab + 1) % HZ_SET_TABS.length; this.hzSetPage = 0; this.hzSetRow = 0; this.hzSetScroll = 0; this.hzSetDrop = -1; break;
             // optional codes (a plugin build that forwards the mouse wheel); the selection follows the view
             case "wheelup": this.hzSetScrollBy(-1); break;
             case "wheeldown": this.hzSetScrollBy(1); break;
             case "ok":
-               if(this.hzSetRow >= 0 && this.hzSetRow < rows.length && rows[this.hzSetRow] != null && rows[this.hzSetRow].t == "x")
+               if(this.hzSetFocus == 1) { this.hzSetFocus = 0; this.hzSetDraw(); return; }
+               if(this.hzSetRow >= 0 && this.hzSetRow < rows.length && rows[this.hzSetRow] != null)
                {
-                  var xk:String = String(rows[this.hzSetRow].k);
-                  if(xk == "_msglog" || xk == "_arrange")
+                  var okRow:Object = rows[this.hzSetRow];
+                  if(okRow.t == "r" || okRow.t == "q" || okRow.t == "l" || okRow.t == "a" || okRow.t == "c" || okRow.t == "p")
                   {
-                     this.hzSetChange(rows[this.hzSetRow],1);
+                     this.hz51OpenDrop(this.hzSetRow, rows);
                      this.hzSetDraw();
                      return;
                   }
-                  return;
+                  if(okRow.t == "x" || okRow.t == "b" || okRow.t == "kg")
+                  {
+                     this.hzSetChange(okRow,1);
+                     this.hzSetDraw();
+                     return;
+                  }
                }
                this.hzSetApply();
                return;
@@ -6502,11 +8143,15 @@
          {
             if(r.k == "_arrange") { this.hzArrEnter(); return; }
             if(r.k == "_msglog") { this.hzMsglogOpen(); return; }
+            if(r.k == "_qmclear") { this.hz51QmClear(); return; }
+            if(r.k == "_mlfolder") { try { this.hzMsglogOpenSettings(); } catch(eFold:Error) { } return; }
+            if(r.k == "_mlold") { try { this.hzMsglogOpenSettings(); } catch(eOld:Error) { } return; }
+            if(r.goT != undefined) { this.hz51Jump(int(r.goT), int(r.goP), String(r.goK)); return; }
             if(r.k == "_hz41arrscan") { this.hz41SAEnter(); return; }   // v0.41.0: ARRANGE SCANNER
             if(r.k == "_hz31usesub") { this.hzSetPend.SubAutoPause = false; }
             else if(r.k == "_hz31usedlg") { this.hzSetPend.DlgAutoPause = false; }
-            else if(r.k == "_hz31gocomms") { this.hzSetTab = 8; this.hzSetRow = 0; this.hzSetScroll = 0; return; }
-            else if(r.k == "_hz40goscan") { this.hzSetTab = 7; this.hzSetRow = 0; this.hzSetScroll = 0; return; }
+            else if(r.k == "_hz31gocomms") { this.hz51Jump(3, 0, "Dialogue"); return; }
+            else if(r.k == "_hz40goscan") { this.hz51Jump(2, 0, "ScanReach"); return; }
             else if(r.k == "_hz42scrst") { this.hzSetPend.ScopeChipX = 0; this.hzSetPend.ScopeChipY = 0; this.hzSetPend.ScopeChipScale = 1; }   // v0.42.0 r2
             else if(r.k == "_hz40rstlay") { this.hz40Reset(true); }
             else if(r.k == "_hz40rstall") { this.hz40Reset(false); }
@@ -6810,6 +8455,31 @@
          try { this.hz34SetLive(p); } catch(err34:Error) { }
          try { this.hz40SetLive(p); } catch(err40:Error) { }
          try { this.hz42ScSetLive(p); } catch(err42l:Error) { }   // v0.42.0 r2: [Scope] (live preview / cancel)
+         if(p.Debug != undefined)
+         {
+            var ndb:Boolean = p.Debug === true || Number(p.Debug) >= 0.5;
+            if(ndb != this.hzDebug) { this.hzDebug = ndb; this.hzDbgShow(); this.hzDbgEnvSub(); }
+         }
+         if(p.PerfDiag != undefined || p.PerfMode != undefined || p.PerfDump != undefined)
+         {
+            if(p.PerfDiag != undefined) { this.hzPerfDiag = p.PerfDiag === true || Number(p.PerfDiag) >= 0.5; }
+            if(p.PerfMode != undefined && !isNaN(Number(p.PerfMode))) { var npm:int = int(p.PerfMode); this.hzPerfMode = npm < 0 || npm > 7 ? 0 : npm; }
+            if(p.PerfDump != undefined) { this.hzPerfDumpIni = p.PerfDump === true || Number(p.PerfDump) >= 0.5; }
+            this.hzPerfApply();
+         }
+         if(p.AccentHex != undefined)
+         {
+            var ah:int = this.hzParseHex(String(p.AccentHex));
+            if(ah >= 0) { this.hzAccentHex = ah; }
+         }
+         if(p.CardHex != undefined)
+         {
+            var chx:int = this.hzParseHex(String(p.CardHex));
+            if(chx >= 0) { this.hzCardHex = chx; }
+         }
+         if(p.Record != undefined) { this.hzMlRecord = p.Record === true || Number(p.Record) >= 0.5; }
+         if(p.Persist != undefined) { this.hzMlPersist = p.Persist === true || Number(p.Persist) >= 0.5; }
+         if(p.HistorySize != undefined && !isNaN(Number(p.HistorySize))) { this.hzMlHistory = int(Math.max(100,Math.min(1000,Math.round(Number(p.HistorySize) / 100) * 100))); }
          this.hzRefreshVisibility();
       }
 
@@ -7038,13 +8708,13 @@
       private static const HZ_VERSION:String = "0.43.5.0";   // settings schema = HZF::kVersion (0.43.5.0 since 2026-11-23: [Scanner] ScanReach; 0.43.3.0 from 2026-11-19, 0.42.0 before)
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
       private static const HZ_BUILD:String = "0.43.5.0";   // 0.43.5.0: combined TESTONLY (Quick Menu, message card, scanner)
-      private static const HZ_SET_TOP:Number = 112;      // list viewport top
+      private static const HZ_SET_TOP:Number = 76;       // body top (below header + tabs)
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"","PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"","PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0,"CharacterShowSeconds":8,"Debug":0,"PerfDiag":0,"PerfMode":0,"PerfDump":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -7178,8 +8848,7 @@
       // Note column width. Matches the row note field (right edge minus the 40 px gutter).
       private function hzSetNoteW() : Number
       {
-         var prev:Boolean = this.hzSetTab == 1 || this.hzSetTab == 2;
-         var right:Number = HZ_SET_W - 28 - (prev ? 250 : 0);
+         var right:Number = HZ_SET_W - HZ51_PREV_W - HZ51_SIDE_W;
          var w:Number = right - 40;
          if(w < 80) { w = 80; }
          return w;
@@ -7225,15 +8894,26 @@
          if(r.t == "m") { return (r.h ? 24 : 0) + this.hz34BanH(); }
          if(r.t == "g") { return 48; }
          if(r.t == "w") { return (r.h ? 24 : 0) + 44; }
-         return (r.h ? 24 : 0) + 32 + this.hzSetNoteH(r) + 4;
+         if(r.t == "kg")
+         {
+            var count:int = this.hzSetPend != null ? int(this.hzSetPend.QuickMenuSlotCount) : 24;
+            if(count < 12) { count = 12; }
+            var extra:int = Math.max(0, count - 12);
+            var per:int = this.hzSetPend != null ? int(this.hzSetPend.QuickMenuSlotsPerRow) : 6;
+            if(per < 1) { per = 6; }
+            var lines:int = extra <= 0 ? 1 : int(Math.ceil(extra / per));
+            return (r.h ? 24 : 0) + HZ51_ROW + lines * 34 + 8;
+         }
+         return (r.h ? 24 : 0) + HZ51_ROW;
       }
+
 
       // scroll so the selected row is fully visible ("selection follows"); also computes the max scroll
       private function hzSetFollow(rows:Array) : void
       {
          var list:Array = [];
          for each(var r:Object in rows) { if(!r.pill) { list.push(r); } }
-         var avail:Number = HZ_SET_H - 64 - HZ_SET_TOP;
+         var avail:Number = HZ_SET_H - HZ51_FOOT - HZ_SET_TOP - 44;
          var ms:int = 0;
          var tot:Number = 0;
          var i:int = list.length - 1;
@@ -7266,7 +8946,7 @@
          this.hzSetScroll = Math.max(0,Math.min(this.hzSetMaxScroll,this.hzSetScroll + d));
          var list:Array = [];
          for each(var r:Object in rows) { if(!r.pill) { list.push(r); } }
-         var avail:Number = HZ_SET_H - 64 - HZ_SET_TOP;
+         var avail:Number = HZ_SET_H - HZ51_FOOT - HZ_SET_TOP - 44;
          var first:int = this.hzSetScroll;
          var last:int = first;
          var y:Number = 0;
@@ -7280,348 +8960,9 @@
 
       private function hzSetDraw() : void
       {
-         if(!this.HorizonSettings_mc || !this.hzSetPend) { return; }
-         var b:Sprite = this.hzSetBody;
-         while(b.numChildren > 0) { b.removeChildAt(0); }
-         b.graphics.clear();
-         this.hzSetKeyOv.graphics.clear();
-         this.hzSetHits = [];
-         var T:Object = this.hzSetTheme();
-         var acc:uint = uint(T.acc);
-         var W:Number = HZ_SET_W;
-         var H:Number = HZ_SET_H;
-         var g:* = b.graphics;
-         var i:int = 0;
-         // soft shadow (stacked, no filter) + body + 1 px edge
-         i = 0;
-         while(i < 5) { g.beginFill(0x000000,0.07); g.drawRoundRect(-2 - i * 2,4 - i,W + 4 + i * 4,H + 4 + i * 3,(18 + i * 2) * 2,(18 + i * 2) * 2); g.endFill(); i++; }
-         g.beginFill(uint(T.fill),Number(T.fa));   // ignores CardOpacity. fa follows SettingsOpacity.
-         g.drawRoundRect(0,0,W,H,36,36);
-         g.endFill();
-         this.hz33Edge(b,0,0,W,H,36,uint(T.edge),Number(T.ea),1);   // v0.33: stroked edge on its own Sprite (no even-odd ring)
-         // title
-         var tt:TextField = this.hzWT(b,"HORIZON UI",28,20,260,18,"bd",uint(T.txt),3);
-         this.hzWT(b,"SETTINGS",28 + this.hzTW(tt) + 12,25,200,12,"sb",uint(T.mut),2.4);
-         // v0.42.0.4: exact DLL file version. HZ_BUILD until hzSetDllFileVersion arrives.
-         // The last argument is a 13 px floor. hzWT multiplies by TextScale (clamped to 0.9) and rounds,
-         // so a bare 13 would draw at 12 px when TextScale is 0.9.
-         var hv:String = HZ_BUILD;
-         if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
-         var vt:TextField = this.hzWT(b,"v" + hv,W - 28,24,170,13,"sb",uint(T.mut),0.4,"right",13);
-         g.beginFill(acc,1); g.drawCircle(Math.round(W - 28 - this.hzTW(vt) - 14),32,4); g.endFill();
-         // tabs
-         var tx:Number = 28;
-         var ty:Number = 62;
-         // v0.30: 9 tabs; the gap shrinks (26 -> 12) so the tab row keeps room for the COMPACT pill / PGUP hint
-         var tabTf:Array = [];
-         var tabSum:Number = 0;
-         i = 0;
-         while(i < HZ_SET_TABS.length)
-         {
-            var sel:Boolean = i == this.hzSetTab;
-            var hov:Boolean = this.hzSetHover == "tab" + i;
-            var tb:TextField = this.hzWT(b,String(HZ_SET_TABS[i]),0,ty,160,11,"sb",sel || hov ? uint(T.txt) : uint(T.mut),2);
-            tabTf.push(tb);
-            tabSum += Math.round(this.hzTW(tb));
-            i++;
-         }
-         var tgap:Number = Math.max(12,Math.min(26,Math.floor((W - 56 - 150 - tabSum) / Math.max(1,HZ_SET_TABS.length - 1))));
-         i = 0;
-         while(i < tabTf.length)
-         {
-            var tbx:TextField = tabTf[i] as TextField;
-            var tw:Number = Math.round(this.hzTW(tbx));
-            tbx.x = Math.round(tx - 2);
-            if(i == this.hzSetTab) { g.beginFill(acc,1); g.drawRoundRect(tx,ty + 20,tw,2.5,2,2); g.endFill(); }
-            if(i >= 7 && this.hz30Mod[i == 7 ? "scanner" : "comms"] !== 1) { this.hz30Lock(g,tx + tw + 7,ty + 5,9,uint(T.mut),0.9,uint(T.fill)); tw += 12; }
-            this.hzSetHits.push({"id":"tab" + i,"x":tx - 6,"y":ty - 8,"w":tw + 12,"h":34});
-            tx += tw + tgap;
-            i++;
-         }
-         var tabEnd:Number = tx - tgap;
-         var rows:Array = this.hzSetRows(this.hzSetTab);
-         if(this.hzSetRow >= rows.length) { this.hzSetRow = 0; }
-         // CARDS tab: COMPACT MODE as a highlighted pill toggle at the top right of the tab header
-         var pillRow:int = -1;
-         i = 0;
-         while(i < rows.length) { if(rows[i].pill) { pillRow = i; } i++; }
-         if(pillRow >= 0)
-         {
-            var pr:Object = rows[pillRow];
-            var pon:Boolean = Boolean(this.hzSetPend[pr.k]);
-            var psel:Boolean = this.hzSetRow == pillRow;
-            var phov:Boolean = this.hzSetHover == "row" + pillRow;
-            var plab:String = String(pr.l);
-            var pt:TextField = this.hzWT(b,plab,0,ty,260,11,"sb",uint(T.txt),1.6);
-            var pw:Number = Math.round(this.hzTW(pt) + 14 + 10 + 38 + 12);
-            if(W - 28 - pw < tabEnd + 16) { pt.text = "COMPACT"; pw = Math.round(this.hzTW(pt) + 14 + 10 + 38 + 12); }
-            if(W - 28 - pw < tabEnd + 16) { pt.text = ""; pw = 14 + 38 + 12; }   // v0.30: very large text scale: switch only
-            var px0:Number = W - 28 - pw;
-            var py0:Number = 55;
-            g.beginFill(acc,psel ? 0.3 : (phov ? 0.24 : (pon ? 0.2 : 0.12)));
-            g.drawRoundRect(px0,py0,pw,26,26,26);
-            g.endFill();
-            var pb:Number = psel ? 2 : 1;
-            this.hz33Edge(b,px0,py0,pw,26,26,acc,psel || pon ? 1 : 0.7,pb);
-            pt.x = px0 + 12;
-            this.hzSetSwitch(b,g,px0 + pw - 6,py0 + 13,pon,T,false);
-            this.hzSetHits.push({"id":"row" + pillRow,"x":px0,"y":py0,"w":pw,"h":26});
-         }
-         else { this.hzWT(b,"PGUP / PGDN",W - 28,ty + 1,160,10,"rg",uint(T.mut),1,"right"); }
-         g.beginFill(uint(T.line),Number(T.la)); g.drawRect(28,ty + 28,W - 56,1); g.endFill();
-         // rows (scroll in whole rows; only rows that fit are drawn)
-         var prev:Boolean = this.hzSetTab == 1 || this.hzSetTab == 2;   // STYLE + TEXT: live preview column
-         var right:Number = W - 28 - (prev ? 250 : 0);
-         var R:Number = right - 6;
-         this.hzSetFollow(rows);
-         var list:Array = [];
-         for each(var lr:Object in rows) { if(!lr.pill) { list.push(lr); } }
-         var bottom:Number = H - 64;
-         var y:Number = HZ_SET_TOP;
-         var li:int = this.hzSetScroll;
-         var lastShown:int = li - 1;
-         this.hz35Tip = null;
-         var bMain:Sprite = b;
-         var gMain:* = g;
-         var dimS:Sprite = new Sprite();
-         dimS.mouseEnabled = false; dimS.mouseChildren = false;
-         dimS.alpha = 0.4;   // v0.30: locked rows: grayed, no hit areas
-         b.addChild(dimS);
-         while(li < list.length)
-         {
-            var r:Object = list[li];
-            if(y + this.hzSetRowH(r) - 4 > bottom) { break; }
-            i = rows.indexOf(r);
-            if(r.h)
-            {
-               this.hzWT(b,String(r.h),32,y + 6,300,9,"sb",r.dis && r.k != "FontFace" ? uint(T.mut) : acc,2.2);
-               y += 24;
-            }
-            if(r.t == "w")
-            {
-               this.hz37DrawWarn(b,g,y,right,T,String(r.l));   // v0.37: amber install warning (another HUD mod)
-               y += 44;
-               lastShown = li;
-               li++;
-               continue;
-            }
-            if(r.t == "m")
-            {
-               try { this.hz30ModBanner(b,g,y,right,T,String(r.mod),i == this.hzSetRow,i); } catch(errMb:Error) { }
-               y += this.hz34BanH();
-               lastShown = li;
-               li++;
-               continue;
-            }
-            if(r.t == "g")
-            {
-               try { this.hz31DrawPage(b,g,y,right,T,i == this.hzSetRow,i); } catch(errPg:Error) { }
-               y += 48;
-               lastShown = li;
-               li++;
-               continue;
-            }
-            var hit0:int = this.hzSetHits.length;
-            var lb35:TextField = null;
-            if(r.dis)
-            {
-               this.hz30Lock(g,40,y + 15,11,uint(T.mut),0.95,uint(T.fill));
-               b = dimS; g = dimS.graphics;
-            }
-            var rs:Boolean = i == this.hzSetRow && !r.dis;
-            var rh:Boolean = this.hzSetHover == "row" + i;
-            if(rs || rh)
-            {
-               g.beginFill(acc,rs ? 0.13 : 0.07); g.drawRoundRect(22,y,right + 6 - 22,32,18,18); g.endFill();
-               if(rs) { g.beginFill(acc,1); g.drawRoundRect(22,y + 8,3,16,3,3); g.endFill(); }
-            }
-            if(r.sub)
-            {
-               // v0.34 sub-row of the card above: indented, smaller label, short accent tick
-               g.beginFill(uint(T.line),0.9); g.drawRect(r.dis ? 60 : 40,y + 16,10,1); g.endFill();
-               lb35 = this.hzWT(b,String(r.l),r.dis ? 76 : 56,y + 9,right - 340,11,"sb",rs ? uint(T.txt) : uint(T.lab),1.2);
-            }
-            else { lb35 = this.hzWT(b,String(r.l),r.dis ? 56 : 34,y + 8,right - 300,13,"rg",rs ? uint(T.txt) : uint(T.lab),0.3); }
-            this.hzSetHits.push({"id":"row" + i,"x":22,"y":y,"w":right + 6 - 22,"h":32});
-            // v0.35: "i" after the label; hover it, or select the row with keys / controller, for the explanation
-            var inf35:String = r.dis ? null : this.hz35InfoOf(r);
-            if(inf35 != null && lb35 != null && String(r.l).length > 0)
-            {
-               var ix35:Number = Math.round(lb35.x + 2 + Math.min(lb35.width,this.hzTW(lb35)) + 14);
-               var ion35:Boolean = this.hzSetHover == "inf" + i || (rs && this.hz35Kb);
-               this.hz35InfoIcon(b,g,ix35,y + 16,acc,T,ion35,i);
-               if(ion35) { this.hz35Tip = {"t":inf35,"x":ix35,"y":y,"h":32}; }
-            }
-            var v:* = r.dis ? r.dv : this.hzSetPend[r.k];
-            var cy:Number = y + 16;
-            var isDef:Boolean = this.hzSetIsDef(String(r.k),v);
-            var vcol:uint = isDef ? uint(T.txt) : acc;
-            if(r.t == "b") { this.hzSetSwitch(b,g,R,cy,Boolean(v),T); }
-            else if(r.t == "n")
-            {
-               var bw:Number = prev ? 150 : 200;
-               var bx:Number = R - 56 - bw;
-               var fr:Number = Math.max(0,Math.min(1,(Number(v) - r.mn) / (r.mx - r.mn)));
-               var vlab:String = r.st < 1 ? this.hzSetNum(Number(v)) : String(int(Math.round(Number(v))));
-               if(r.pct) { vlab = String(int(Math.round(Number(v)))) + "%"; }
-               this.hzWT(b,vlab,R,cy - 9,56,13,"sb",vcol,0.5,"right");
-               g.beginFill(uint(T.track),Number(T.ta)); g.drawRoundRect(bx,cy - 2,bw,4,4,4); g.endFill();
-               if(fr > 0) { g.beginFill(acc,1); g.drawRoundRect(bx,cy - 2,Math.max(4,Math.round(bw * fr)),4,4,4); g.endFill(); }
-               var kx:Number = Math.round(bx + bw * fr);
-               g.beginFill(acc,1); g.drawCircle(kx,cy,7); g.endFill();
-               g.beginFill(uint(T.txt),1); g.drawCircle(kx,cy,5); g.endFill();
-               this.hzSetHits.push({"id":"bar" + i,"x":bx - 10,"y":y,"w":bw + 20,"h":32,"bx":bx,"bw":bw});
-            }
-            else if(r.t == "z") { this.hz34ZDraw(b,g,i,y,R,v,T,acc,prev); }
-            else if(r.t == "a")
-            {
-               var ai:int = int(v);
-               var pal:Array = r.pal as Array;
-               var nm:String = String((r.names as Array)[Math.max(0,Math.min(pal.length - 1,ai))]);
-               var nt:TextField = this.hzWT(b,nm,R,cy - 9,140,13,"sb",r.k == "AccentColor" ? this.hzIconCol(uint(pal[ai])) : vcol,1.2,"right");
-               var st:Number = 17;
-               var sx:Number = Math.round(R - this.hzTW(nt) - 18 - st * pal.length);
-               var j:int = 0;
-               while(j < pal.length)
-               {
-                  var xx:Number = sx + j * st;
-                  var cs:Boolean = j == ai;
-                  if(cs) { g.beginFill(uint(T.txt),1); g.drawRoundRect(xx - 2,cy - 9,16,18,9,9); g.endFill(); }
-                  else { g.beginFill(uint(T.line),0.35); g.drawRoundRect(xx - 1,cy - 8,14,16,8,8); g.endFill(); }
-                  g.beginFill(uint(pal[j]),1); g.drawRoundRect(xx,cy - 7,12,14,7,7); g.endFill();
-                  this.hzSetHits.push({"id":"sw" + i + "_" + j,"x":xx - 2,"y":y,"w":st,"h":32});
-                  j++;
-               }
-            }
-            else if(r.t == "r" || r.t == "q" || r.t == "l" || r.t == "c" || r.t == "k")
-            {
-               var txt:String = "";
-               if(r.t == "r") { txt = String((r.opts as Array)[Math.max(0,Math.min((r.opts as Array).length - 1,this.hz29OptIdx(r,v)))]); }
-               else if(r.t == "q") { txt = String(HZ_RULE_NAMES[Math.max(0,Math.min(HZ_RULE_NAMES.length - 1,int(v)))]); }
-               else if(r.t == "l")
-               {
-                  var vi:int = this.hzSetListIdx(r,v);
-                  txt = String((r.names as Array)[vi]);
-               }
-               var x0:Number = 0;
-               if(r.t == "c" || r.t == "k")
-               {
-                  var kn:String = String(v);
-                  if(r.t == "k" && this.hzQmCap == r.k) { kn = this.hzQmCapCand.length > 0 ? this.hzQmCapCand : "PRESS A KEY"; }
-                  else if(r.t == "k" && kn.length == 0) { kn = "NONE"; }
-                  var kt:TextField = this.hzWT(b,kn,0,0,140,11,"bd",acc,0.4);
-                  var kw:Number = Math.max(28,Math.round(this.hzTW(kt) + 16));
-                  b.removeChild(kt);
-                  x0 = Math.round(R - 14 - kw);
-                  this.hzSetKey(b,g,x0,cy - 12,kn,isDef ? uint(T.txt) : acc,24,11);
-               }
-               else
-               {
-                  var ct:TextField = this.hzWT(b,txt,R - 14,cy - 9,260,13,"sb",vcol,1.2,"right");
-                  x0 = Math.round(R - 14 - this.hzTW(ct));
-               }
-               if(r.t != "k")
-               {
-                  var lh:Boolean = this.hzSetHover == "lt" + i;
-                  var rhv:Boolean = this.hzSetHover == "rt" + i;
-                  this.hzSetTri(g,x0 - 14,cy,-1,acc,lh ? 1 : 0.78);
-                  this.hzSetTri(g,R,cy,1,acc,rhv ? 1 : 0.78);
-                  this.hzSetHits.push({"id":"lt" + i,"x":x0 - 24,"y":y,"w":22,"h":32});
-                  this.hzSetHits.push({"id":"rt" + i,"x":R - 10,"y":y,"w":22,"h":32});
-               }
-            }
-            else if(r.t == "p") { this.hz37DrawPick(b,g,r,i,cy,R,T); }
-            else if(r.t == "x" && String(r.k).indexOf("_hz37") == 0) { this.hz37DrawBtn(b,g,r,i,R,cy,rh,T); }
-            else if(r.t == "x")
-            {
-               this.hzSetBtn(b,g,R,cy - 14,r.btn != undefined ? String(r.btn) : "OPEN",false,true,rh,T,"row" + i);
-            }
-            if(r.dis)
-            {
-               this.hzSetHits.splice(hit0,this.hzSetHits.length - hit0);
-               b = bMain; g = gMain;
-            }
-            y += 32;
-            if(r.note)
-            {
-               var notePx:int = (this.hzSetTab == 1 || r.n13) ? 13 : 11;
-               var nw:Number = this.hzSetNoteW();
-               var nh:Number = this.hzSetNoteH(r);
-               var nt:TextField = this.hzWT(b,String(r.note),(r.dis ? 56 : 34) + (r.sub ? 22 : 0),y - 2,nw,notePx,"rg",uint(T.note),0.2,"left",13);
-               var oneN:Number = notePx >= 13 ? 20 : 18;
-               if(nh > oneN) { this.hzMsglogWrap(nt,nw,160); nt.height = Math.round(nh); }
-               y += nh;
-            }
-            if(r.t == "k" && this.hzQmCap == r.k)
-            {
-               if(this.hzQmCapWarn.length > 0)
-               {
-                  this.hz37DrawWarn(b,g,y,R,T,this.hzQmCapWarn);
-                  y += 44;
-               }
-               else
-               {
-                  var capN:TextField = this.hzWT(b,"Press any letter, number, F1-F12, Insert, Home, End, Page Up, or Page Down. ESC cancels. BACKSPACE clears.",(r.dis ? 56 : 34) + (r.sub ? 22 : 0),y - 2,this.hzSetNoteW(),13,"rg",uint(T.note),0.2,"left",13);
-                  this.hzMsglogWrap(capN,this.hzSetNoteW(),80);
-                  y += Math.max(20,capN.textHeight + 6);
-               }
-            }
-            y += 4;
-            lastShown = li;
-            li++;
-         }
-         // scroll track (only when the tab does not fit)
-         if(this.hzSetMaxScroll > 0)
-         {
-            var trX:Number = right + 12;
-            var trT:Number = HZ_SET_TOP + 4;
-            var trH:Number = bottom - trT - 4;
-            var shown:int = Math.max(1,lastShown - this.hzSetScroll + 1);
-            var tot:int = list.length;
-            var thH:Number = Math.max(24,Math.round(trH * shown / tot));
-            var thY:Number = Math.round(trT + (trH - thH) * this.hzSetScroll / Math.max(1,this.hzSetMaxScroll));
-            g.beginFill(uint(T.track),Number(T.ta)); g.drawRoundRect(trX,trT,3,trH,3,3); g.endFill();
-            g.beginFill(acc,0.9); g.drawRoundRect(trX,thY,3,thH,3,3); g.endFill();
-            this.hzSetHits.push({"id":"strk","x":trX - 8,"y":trT,"w":19,"h":trH,"ty":trT,"th":trH});
-         }
-         // STYLE tab: live preview column
-         if(this.hzSetPv) { this.hzSetPv.visible = false; }
-         if(this.hzSetPvTg) { this.hzSetPvTg.visible = false; }
-         if(this.hzSetPvAf) { this.hzSetPvAf.visible = false; }
-         if(this.hzSetPvOp) { this.hzSetPvOp.visible = false; }
-         if(prev)
-         {
-            var pvk:String = this.hzSetRow >= 0 && this.hzSetRow < rows.length ? String(rows[this.hzSetRow].k) : "";
-            if(pvk == "ContainerScale" || pvk == "HoverScale" || pvk == "CrosshairStyle" || pvk == "ObjectRing" || pvk == "ScreenHeight") { this.hz30PvKey = pvk; this.hzSetPvTgDraw(b,g,W - 28 - 226,HZ_SET_TOP,T); }
-            else if(pvk == "AfflictionLayout") { this.hzSetPvAfDraw(b,g,W - 28 - 226,HZ_SET_TOP,T); }
-            else if(pvk == "CardOpacity" || pvk == "CardBgOpacity" || pvk == "CardShadow" || pvk == "ContainerOpacity" || pvk == "SettingsOpacity") { this.hzSetPvOpDraw(b,g,W - 28 - 226,HZ_SET_TOP,T); }
-            else { this.hzSetPvDraw(b,g,W - 28 - 226,HZ_SET_TOP,T); }
-         }
-         // footer: keycap hints + buttons
-         var fy:Number = H - 56;
-         g.beginFill(uint(T.line),Number(T.la)); g.drawRect(22,fy,W - 44,1); g.endFill();
-         var by:Number = fy + 18;
-         var hx:Number = 28;
-         for each(var hk:Array in [["UP/DN","SELECT"],["L/R","CHANGE"],["PGUP","TAB"],["ENTER","OK"],["ESC","CANCEL"]])
-         {
-            var hkw:Number = this.hzSetKey(b,g,hx,by - 2,String(hk[0]),uint(T.mut),22,10);
-            var hl:TextField = this.hzWT(b,String(hk[1]),hx + hkw + 6,by + 3,120,10,"sb",uint(T.mut),1.2);
-            hl.y = Math.round(this.hzCapTop(hl,by + 9));
-            hx = Math.round(hx + hkw + 5 + this.hzTW(hl) + 12);
-         }
-         var bxr:Number = W - 28;
-         bxr -= this.hzSetBtn(b,g,bxr,by - 5,"CANCEL",false,false,this.hzSetHover == "cancel",T,"cancel") + 10;
-         bxr -= this.hzSetBtn(b,g,bxr,by - 5,"OK",true,false,this.hzSetHover == "ok",T,"ok") + 10;
-         this.hzSetBtn(b,g,bxr,by - 5,"ARRANGE CARDS",false,true,this.hzSetHover == "arrange",T,"arrange");
-         b.addChild(this.hzSetKeyOv);   // keycap outlines above every text field of the window
-         try { this.hz35TipDraw(b,W,H,T,acc); } catch(e35p:Error) { }   // v0.35 info tooltip, above everything
-         // keep cursor on top and the window above the cards
-         this.HorizonSettings_mc.setChildIndex(this.hzSetCursor,this.HorizonSettings_mc.numChildren - 1);
-         if(this.HorizonSettings_mc.parent == this && getChildIndex(this.HorizonSettings_mc) != numChildren - 1)
-         {
-            setChildIndex(this.HorizonSettings_mc,numChildren - 1);
-         }
+         this.hz51Draw();
       }
+
 
       private function hzSetListIdx(r:Object, v:*) : int
       {
@@ -8070,14 +9411,37 @@
             if(id == "ok") { this.hzSetApply(); return; }
             if(id == "cancel") { this.hzSetCancel(); return; }
             if(id == "arrange") { this.hzArrEnter(); return; }
-            if(id == "page0" || id == "page1")
+            if(id == "arrscan") { this.hz41SAEnter(); return; }
+            if(id == "compact") { this.hzSetPend.Compact = !Boolean(this.hzSetPend.Compact); this.hzSetLive(this.hzSetPend); dirty = true; }
+            else if(id == "findbox") { this.hzSetFindOn = true; this.hzSetFocus = 2; dirty = true; }
+            else if(id.indexOf("side") == 0) { this.hzSetPage = int(id.substr(4)); this.hzSetRow = 0; this.hzSetScroll = 0; this.hzSetFocus = 0; this.hzSetDrop = -1; dirty = true; }
+            else if(id.indexOf("fhit") == 0) { var fh:Array = this.hz51FindHits(); var fi:int = int(id.substr(4)); if(fi >= 0 && fi < fh.length) { this.hz51GotoHit(fh[fi]); dirty = true; } }
+            else if(id.indexOf("dopt") == 0) { this.hz51DropPick(rows[this.hzSetDrop], int(id.substr(4))); this.hzSetDrop = -1; this.hzSetFocus = 0; dirty = true; }
+            else if(id.indexOf("dd") == 0) { this.hzSetRow = int(id.substr(2)); this.hz51OpenDrop(this.hzSetRow, rows); dirty = true; }
+            else if(id.indexOf("hex") == 0)
+            {
+               var hi:int = int(id.substr(3));
+               this.hzSetRow = hi;
+               var hr:Object = rows[hi];
+               if(hr != null && !hr.dis)
+               {
+                  this.hzSetHexK = String(hr.hex);
+                  var curH:String = String(this.hzSetPend[this.hzSetHexK] != undefined ? this.hzSetPend[this.hzSetHexK] : "");
+                  this.hzSetHexPrev = this.hzParseHex(curH);
+                  this.hzSetHexBuf = curH.indexOf("#") == 0 ? curH.substr(1) : curH;
+                  this.hzSetFocus = 4;
+               }
+               dirty = true;
+            }
+            else if(id.indexOf("qmk") == 0) { this.hzQmCapBegin("QuickMenuKey" + id.substr(3)); dirty = true; }
+            else if(id == "page0" || id == "page1")
             {
                this.hz31Page = id == "page1" ? 1 : 0;
                if(this.hzSetPend != null) { this.hzSetPend._hz31page = this.hz31Page; }
                this.hzSetScroll = 0;
                dirty = true;
             }
-            else if(id.indexOf("tab") == 0) { this.hzSetTab = int(id.substr(3)); this.hzSetRow = 0; this.hzSetScroll = 0; dirty = true; }
+            else if(id.indexOf("tab") == 0) { this.hzSetTab = int(id.substr(3)); this.hzSetPage = 0; this.hzSetRow = 0; this.hzSetScroll = 0; this.hzSetDrop = -1; dirty = true; }
             else if(id.indexOf("lt") == 0 || id.indexOf("rt") == 0)
             {
                // cycler arrows: left = previous, right = next
@@ -8123,7 +9487,8 @@
                var ri:int = int(id.substr(3));
                this.hzSetRow = ri;
                var rr:Object = rows[ri];
-               if(rr.t == "b" || rr.t == "a" || rr.t == "c" || rr.t == "k" || rr.t == "r" || rr.t == "q" || rr.t == "x" || rr.t == "m" || rr.t == "p" || rr.t == "g") { this.hzSetChange(rr,1); if(this.hzArrange) { return; } }
+               if(rr.t == "r" || rr.t == "q" || rr.t == "l" || rr.t == "a" || rr.t == "c" || rr.t == "p") { this.hz51OpenDrop(ri, rows); }
+               else if(rr.t == "b" || rr.t == "k" || rr.t == "x" || rr.t == "m" || rr.t == "g" || rr.t == "md") { this.hzSetChange(rr,1); if(this.hzArrange) { return; } }
                else if(rr.t == "z" && !rr.dis) { this.hz34ZToggle(String(rr.k)); }
                dirty = true;
             }
@@ -18027,6 +19392,7 @@
       private function hz27SetCur(o:Object) : void
       {
          o.CharacterRule = this.hzRuleChar;
+         o.CharacterShowSeconds = this.hz27CharSecs;
          o.FollowerColor = this.hzFolColor;
          o.HoverScale = this.hz30Hover;
       }
@@ -18034,6 +19400,7 @@
       private function hz27SetLive(p:Object) : void
       {
          if(p.CharacterRule != undefined && !isNaN(Number(p.CharacterRule))) { this.hzRuleChar = this.hzRuleFix("CharacterRule",int(p.CharacterRule)); }
+         if(p.CharacterShowSeconds != undefined && !isNaN(Number(p.CharacterShowSeconds))) { this.hz27CharSecs = Math.max(2,Math.min(60,Number(p.CharacterShowSeconds))); }
          if(p.FollowerColor != undefined && !isNaN(Number(p.FollowerColor)) && this.hzFolColor != int(p.FollowerColor))
          {
             this.hzFolColor = Math.max(0,Math.min(HZ_FOL_PAL.length - 1,int(p.FollowerColor)));

@@ -108,7 +108,7 @@ for (let i = 0; i < 4; i++) {
 	expect(/"ReactionCard":1,"GameCardTitle":0,/.test(as), "HZ31_DEF GameCardTitle = 0");
 	expect(as.indexOf('{"k":"GameCardTitle","l":"GENERIC NOTICE LABEL","t":"r","opts":["NONE","DATA","MISC"],"ids":[0,1,2]') > 0 && as.indexOf("INFO MESSAGE TITLE") < 0, "F11 COMMS row: GENERIC NOTICE LABEL NONE / DATA / MISC (no stale INFO MESSAGE TITLE)");
 	expect(/\n\[Comms\][\s\S]*?\nReactionCard=1\n; label on the info message cards[^\n]*\nGameCardTitle=0\n/.test(ini), "default INI [Comms] GameCardTitle=0");
-	expect(count(as.toLowerCase(), "gamecardtitle") === 5 && count(ini.toLowerCase(), "gamecardtitle") === 1, "no other GameCardTitle use (no key collision)");
+	expect(count(as.toLowerCase(), "gamecardtitle") === 8 && count(ini.toLowerCase(), "gamecardtitle") === 1, "no other GameCardTitle use (no key collision)");
 	expect(/kVersion = "0\.43\.5\.0"/.test(fs.readFileSync(path.join(root, "src", "main.cpp"), "utf8")), "HZF::kVersion is 0.43.5.0 (settings schema; 0.43.5 adds [Scanner] ScanReach)");
 	// the production [Comms] writer (F11 save, in-game preset save)
 	const keysSrc = /private static const HZ31_KEYS:Array = (\[[\s\S]*?\]\]);/.exec(as)[1];

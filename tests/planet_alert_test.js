@@ -1683,11 +1683,13 @@ expect(src.indexOf("(this.hzCompact || this.hzShowJetpack) && this.hzRuleOk(this
 expect(src.indexOf("(this.hzCompact || this.hzShowVitals) && this.hzRuleOk(this.hzRuleVitals)") >= 0, "the merged card follows the vitals rule");
 expect(src.indexOf('"StartupIntro":1') >= 0, "the welcome splash defaults on in the settings object");
 {
-	const effects = src.slice(src.indexOf("if(tab == 3)"), src.indexOf("if(tab == 4)"));
-	expect(effects.indexOf('"k":"StartupIntro","l":"WELCOME INTRO","t":"b"') >= 0, "WELCOME INTRO is an on/off row on EFFECTS");
-	expect(effects.indexOf('"note":"Plays HORIZON UI on save load"') >= 0, "the welcome row says it plays on save load");
-	expect(effects.indexOf('"n13":true') >= 0, "the welcome info line stays at least 13 px");
-	expect(effects.indexOf("StartupIntro") < effects.indexOf("SmoothBars"), "the welcome row is on the EFFECTS tab");
+	const sysStart = src.indexOf("private function hz51System");
+	const sysEnd = src.indexOf("private function hz51Modules");
+	const welcome = sysStart >= 0 && sysEnd > sysStart ? src.slice(sysStart, sysEnd) : "";
+	expect(welcome.indexOf('"k":"StartupIntro","l":"WELCOME INTRO","t":"b"') >= 0, "WELCOME INTRO is an on/off row on System > Controls");
+	expect(welcome.indexOf('"note":"Plays HORIZON UI on save load"') >= 0, "the welcome row says it plays on save load");
+	expect(welcome.indexOf('"n13":true') >= 0, "the welcome info line stays at least 13 px");
+	expect(welcome.indexOf("StartupIntro") > 0, "the welcome row is on the System tab");
 	expect(src.indexOf('if(!this.hzSplashWelcome) { this.hzSplashState = "skipped"; return "skipped"; }') >= 0, "an intro that is off still returns skipped");
 	const open = src.slice(src.indexOf("public function hzToggleSettings"), src.indexOf("private function hzSetCancel"));
 	const fold = open.indexOf("this.hz34NoteCmp = true;");

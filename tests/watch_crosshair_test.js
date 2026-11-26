@@ -42,7 +42,7 @@ expect(ini.indexOf("0 off (default), 1 vanilla, 2 vanilla with Horizon colors, 3
 expect(ini.indexOf("0 always (default), 1 only with weapon drawn, 2 off") >= 0, "crosshair comment");
 expect(as.indexOf('"WatchStyle":0') >= 0 && as.indexOf('"CrosshairRule":0') >= 0, "F11 defaults");
 expect(as.indexOf('"l":"WATCH"') >= 0, "CARDS row");
-expect(as.indexOf('"l":"CROSSHAIR"') >= 0, "RULES row");
+expect(as.indexOf('"h":"CROSSHAIR"') >= 0, "CROSSHAIR card (Show when under Combat)");
 expect(as.indexOf("HORIZON DIGITAL") >= 0 && as.indexOf("HORIZON ANALOG") >= 0, "watch choices");
 expect(as.indexOf("WEAPON DRAWN") >= 0, "weapon drawn choice");
 expect(block.indexOf("getTimer") < 0, "watch block has no getTimer");

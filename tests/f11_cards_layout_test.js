@@ -99,7 +99,7 @@ if (baseAs) {
 	const defLine = (src, re) => (src.match(re) || [""])[0];
 	// 0.43.3.2 batch e: the only HZ_SET_DEF change since the base is the two vehicle exit pill offsets (0 / 0 = the game's spot)
 	const QMDEF = '"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"",';
-	const defNow = defLine(as, /private static const HZ_SET_DEF:Object = .*/).replace('"VehicleExitX":0,"VehicleExitY":0,' + QMDEF, "");
+	const defNow = defLine(as, /private static const HZ_SET_DEF:Object = .*/).replace('"VehicleExitX":0,"VehicleExitY":0,' + QMDEF, "").replace(',"CharacterShowSeconds":8,"Debug":0,"PerfDiag":0,"PerfMode":0,"PerfDump":0', "");
 	const defBase = defLine(baseAs, /private static const HZ_SET_DEF:Object = .*/).replace(GONE_DEF, "");
 	expect(defNow === defBase && defLine(as, /private static const HZ31_DEF:Object = .*/) === defLine(baseAs, /private static const HZ31_DEF:Object = .*/), "defaults tables (HZ_SET_DEF, HZ31_DEF) unchanged except the Quick Menu keys (schema stays 0.43.3.0)");
 	expect(fnText(as, "hz34IniLines").body === fnText(baseAs, "hz34IniLines").body && fnText(as, "hz34Ini").body === fnText(baseAs, "hz34Ini").body && fnText(as, "hz34SetCur").body === fnText(baseAs, "hz34SetCur").body, "the [Cards] reader, writer and current values unchanged (saved settings and presets behave as before)");
@@ -130,17 +130,20 @@ expect(secOf("PlanetDetails") === "PLANET" && secOf("EquipmentExtras") === "EQUI
 // ---- 4. headers are not rows ----
 expect(now.every((r) => typeof r.k === "string" && r.k.length > 0 && typeof r.t === "string"), "every row has a key and a control (no header-only row to land on)");
 const rh = fnText(as, "hzSetRowH").body;
-expect(/\(r\.h \? 24 : 0\) \+ 32/.test(rh), "row geometry counts a header's 24 px, so selection follow and scrolling keep the header with its row");
+expect(/\(r\.h \? 24 : 0\) \+ HZ51_ROW/.test(rh), "row geometry counts a header's 24 px, so selection follow and scrolling keep the header with its row");
 {
 	// selection follow over the real geometry: moving down through every row keeps the selected row inside the view
-	const h = { hzSetRow: 0, hzSetScroll: 0, hzSetMaxScroll: 0, HZ_SET_H: 660, HZ_SET_TOP: 112, hz34BanH() { return 40; }, hzSetNoteH(r) { return r.note ? 20 : 0; } };
+	const h = { hzSetRow: 0, hzSetScroll: 0, hzSetMaxScroll: 0, HZ_SET_H: 700, HZ_SET_TOP: 76, HZ51_FOOT: 100, HZ51_ROW: 54, hz34BanH() { return 40; }, hzSetNoteH(r) { return r.note ? 20 : 0; } };
 	const k = /HZ_SET_TOP:Number = (\d+)/.exec(as); if (k) h.HZ_SET_TOP = Number(k[1]);
 	const kh = /HZ_SET_H:Number = (\d+)/.exec(as); if (kh) h.HZ_SET_H = Number(kh[1]);
-	h.hzSetRowH = toJs(as, "hzSetRowH");
+	const kf = /HZ51_FOOT:Number = (\d+)/.exec(as); if (kf) h.HZ51_FOOT = Number(kf[1]);
+	const kr = /HZ51_ROW:Number = (\d+)/.exec(as); if (kr) h.HZ51_ROW = Number(kr[1]);
+	const rhBody = fnText(as, "hzSetRowH").body.replace(/var (\w+):[\w*]+/g, "let $1").replace(/([^.\w])HZ51_ROW\b/g, "$1this.HZ51_ROW");
+	h.hzSetRowH = new Function("r", rhBody);
 	const fol = fnText(as, "hzSetFollow");
-	h.hzSetFollow = new Function(fol.params.split(":")[0], fol.body.replace(/for each\(var (\w+):[\w*]+ in /g, "for (let $1 of ").replace(/var (\w+):[\w*]+/g, "let $1").replace(/([^.\w])HZ_SET_(H|TOP)\b/g, "$1this.HZ_SET_$2"));
+	h.hzSetFollow = new Function(fol.params.split(":")[0], fol.body.replace(/for each\(var (\w+):[\w*]+ in /g, "for (let $1 of ").replace(/var (\w+):[\w*]+/g, "let $1").replace(/([^.\w])HZ_SET_(H|TOP)\b/g, "$1this.HZ_SET_$2").replace(/([^.\w])HZ51_(FOOT|ROW)\b/g, "$1this.HZ51_$2"));
 	const L = list(withScope);
-	const avail = h.HZ_SET_H - 64 - h.HZ_SET_TOP;
+	const avail = h.HZ_SET_H - h.HZ51_FOOT - h.HZ_SET_TOP - 44;
 	let ok = true;
 	for (let i = 1; i < withScope.length; i++) {
 		h.hzSetRow = i; h.hzSetFollow(withScope);
