@@ -30,7 +30,7 @@
     },
     "language": {
       "label": "LANGUAGE",
-      "help": "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language. A change takes effect after you restart the game. Game item names and the game's own $ tokens stay in the game language.",
+      "help": "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language. Changing this and pressing OK reloads the language once. Game item names and the game's own $ tokens stay in the game language.",
       "auto": "AUTO (GAME)",
       "en": "ENGLISH",
       "de": "GERMAN",

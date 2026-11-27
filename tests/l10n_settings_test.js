@@ -42,6 +42,7 @@ expect(/AUTO \(GAME\)/.test(as) && /hz51LangOpts/.test(sys), "dropdown starts wi
 
 const help = fnText(as, "hz51Help").body;
 expect(help.indexOf("Language for Horizon labels") >= 0, "Language Setting Details exist");
+expect(help.indexOf("pressing OK reloads the table once") >= 0, "Language help says OK reloads once, not a restart");
 expect(help.indexOf("when Horizon started") >= 0, "detected-language details say it is cached at start");
 expect(!/\bini\b/i.test(fnText(as, "hz51Line").body.match(/case "Language"[\s\S]*?return "[^"]+"/) || [""])[0], "Language help line has no ini jargon");
 

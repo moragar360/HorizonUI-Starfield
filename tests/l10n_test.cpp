@@ -52,6 +52,10 @@ int main()
 	Expect(MapCode("auto") == "auto" && MapCode("") == "auto" && MapCode(" EN ") == "en", "MapCode: auto / empty / trim");
 	Expect(MapCode("jp") == "ja" && MapCode("JA") == "ja", "MapCode: jp and ja become ja");
 	Expect(MapCode("zhhans") == "zh-cn" && MapCode("zh-CN") == "zh-cn" && MapCode("zh") == "zh-cn", "MapCode: Chinese Simplified");
+	Expect(MapCode("../en") == "auto" && MapCode("en/../de") == "auto" && MapCode("..") == "auto",
+		"MapCode: parent segments become auto");
+	Expect(MapCode("en\\de") == "auto" && MapCode("en/de") == "auto" && MapCode("C:en") == "auto",
+		"MapCode: path separators and drive letters become auto");
 	Expect(std::string(DisplayName("en")) == "English" && std::string(DisplayName("zhhans")) == "Chinese (Simplified)", "DisplayName: English and Chinese");
 	Expect(MenuName("auto") == "AUTO (GAME)" && MenuName("de") == "GERMAN", "MenuName: Settings 2.0 labels");
 
@@ -123,6 +127,12 @@ int main()
 	{
 		const auto t = Load(dir, "auto", "zhhans");
 		Expect(t.gameCode == "zh-cn" && t.gameName == "Chinese (Simplified)", "zhhans maps to zh-cn");
+	}
+
+	{
+		const auto t = Load(dir, "../en", "de");
+		Expect(t.overrideCode == "auto" && t.usedCode == "de" && Get(t, "hud.health", "X") == "GESUNDHEIT",
+			"path-like Language= is ignored; auto follows the detected game language");
 	}
 
 	{
@@ -239,6 +249,9 @@ int main()
 	Expect(Has(shipped, "\"health\"") && Has(shipped, "HEALTH"), "shipped en.json has HUD health");
 	Expect(Has(shipped, "\"language\"") && Has(shipped, "AUTO (GAME)"), "shipped en.json has the Language page strings");
 	Expect(Has(shipped, "American English") || Has(shipped, "English"), "en.json is American English source");
+	Expect(Has(shipped, "pressing OK reloads the language once"), "en.json language help says OK reloads once");
+	Expect(!Has(shipped, "A change takes effect after you restart the game."),
+		"en.json language help does not require a restart");
 
 	if (g_fail) {
 		std::cerr << "\n" << g_fail << " failed, " << g_ok << " passed\n";

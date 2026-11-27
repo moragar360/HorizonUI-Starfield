@@ -51,11 +51,16 @@ inline std::string Trim(std::string_view a_s)
 // Map a game or INI language token to a Localization file stem.
 // jp/ja -> ja, zhhans/zh-cn -> zh-cn. Unknown codes stay as lowercased
 // tokens so a community file can still match. auto and empty stay auto.
+// Path separators, drive letters, and '..' are rejected (become auto)
+// so Language= cannot walk out of the Localization folder.
 inline std::string MapCode(std::string_view a_raw)
 {
 	auto s = Lower(Trim(a_raw));
 	if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
 		s = s.substr(1, s.size() - 2);
+	s = Trim(s);
+	if (s.find_first_of("/\\:") != std::string::npos || s.find("..") != std::string::npos)
+		return "auto";
 	if (s.empty() || s == "auto") return "auto";
 	if (s == "jp" || s == "ja") return "ja";
 	if (s == "zhhans" || s == "zh-cn" || s == "zhcn" || s == "zh_cn" || s == "zh") return "zh-cn";
@@ -336,6 +341,7 @@ inline std::vector<std::string> ListLangFiles(const std::filesystem::path& a_dir
 		if (Lower(it->path().extension().string()) != ".json") continue;
 		auto stem = Lower(it->path().stem().string());
 		if (stem.empty() || stem.front() == '_') continue;
+		if (stem.find_first_of("/\\:") != std::string::npos || stem.find("..") != std::string::npos) continue;
 		out.push_back(std::move(stem));
 	}
 	std::sort(out.begin(), out.end());
