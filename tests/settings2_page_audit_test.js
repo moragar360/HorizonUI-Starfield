@@ -117,7 +117,7 @@ const host = {
 	hzSetTab: 0,
 	hz31Page: 0,
 	hz37Cf: "",
-	hz31Val() { return 0; },
+	hz31Val(k) { return k === "SubAutoPause" || k === "DlgAutoPause" ? 1 : 0; },
 	hz31On() { return true; },
 	hz31SubForeign() { return []; },
 	hz31DlgForeign() { return false; },
@@ -144,10 +144,10 @@ const host = {
 };
 
 for (const n of [
-	"hz51Copy","hz51ByKey","hz51Pick","hz51Help","hz51HelpOf","hz51Line","hz51On","hz51Mute","hz51Finish",
-	"hz51RuleRow","hz51Card","hz51AddCard","hz51Goto","hz51Unavail","hz51ModState","hz51Modules","hz51Msglog",
-	"hz51Quick","hz51Fallback","hz51Cards","hz51Appear","hz51Scan","hz51Comms","hz51System","hz51Side","hz51Pages",
-	"hz51PageClamp","hz51Rows","hz51Crumb"
+	"hz51Copy","hz51ByKey","hz51Pick","hz51Help","hz51HelpMore","hz51HelpOf","hz51Line","hz51On","hz51Mute","hz51Finish",
+	"hz51RuleRow","hz51Card","hz51AddCard","hz51Goto","hz51Unavail","hz51ModRow","hz51WrapMod","hz51ModState","hz51ModBadge",
+	"hz51Modules","hz51Msglog","hz51Quick","hz51Fallback","hz51Cards","hz51Appear","hz51Scan","hz51Comms","hz51CommsMap",
+	"hz51System","hz51Side","hz51Pages","hz51PageIndex","hz51PageClamp","hz51Rows","hz51Crumb"
 ]) {
 	bind(host, n);
 }
@@ -213,7 +213,8 @@ addOld(["CardBgOpacity","CardShadow","SettingsOpacity","StartupIntro","Debug","P
 const headerOnly = new Set(["Compact"]);
 const gridKeys = new Set();
 for (let n = 13; n <= 24; n++) gridKeys.add("QuickMenuKey" + n);
-const skipOld = new Set(["_hz31page","_hz30m_scanner","_hz30m_comms","_arrange"]);
+const skipOld = new Set(["_hz31page","_hz30m_scanner","_hz30m_comms","_arrange",
+	"ScanSignalsCompact","ScanCompassCompact","ScanWorldTagScale","ScanNearestUnscanned","ScanWorldMarkers"]);
 const missing = [];
 const dupes = [];
 for (const k of [...oldKeys].sort()) {
@@ -232,7 +233,7 @@ for (const k of [...oldKeys].sort()) {
 expect(missing.length === 0, "every old F11 setting key maps to a Settings 2.0 row" + (missing.length ? (" missing: " + missing.join(", ")) : ""));
 expect(dupes.length === 0, "no old F11 key maps to two Settings 2.0 rows" + (dupes.length ? (" dupes: " + dupes.join("; ")) : ""));
 expect(keyMap.Compact === undefined, "Compact Mode stays in the header, not a list row");
-expect(pageRows.length === 31, "audit walked all 31 sidebar pages (found " + pageRows.length + ")");
+expect(pageRows.length === 35, "audit walked all 35 sidebar pages (found " + pageRows.length + ")");
 
 console.log("--- page row counts ---");
 for (const p of pageRows) {

@@ -3419,7 +3419,8 @@ int main()
 			"HUD open hint is the F11 key");
 		Expect(as.find("notifications") != std::string::npos, "F11 probes the Notifications marker");
 		Expect(as.find("MESSAGE LOG") != std::string::npos, "F11 has a MESSAGE LOG row");
-		Expect(as.find("needs Notifications") != std::string::npos, "the row is gated on the Notifications marker");
+		Expect(as.find("Notifications is not installed") != std::string::npos
+			&& as.find("hz51WrapMod(rows, \"msglog\"") != std::string::npos, "the row is gated on the Notifications marker");
 		Expect(as.find("HORIZON UI · MESSAGE LOG") != std::string::npos, "the log shell title is present");
 		Expect(as.find("HZ_ML_W:Number = 976") != std::string::npos,
 			"the log popup is 976 wide");
@@ -3787,7 +3788,8 @@ int main()
 				"hzSetKey forwards minPx to hzWT");
 			const auto btn = AsFnBody(as, "private function hzSetBtn", "private function hzSetRowH");
 			Expect(btn.find("fs:Number = 12, minPx:int = 13) : Number") != std::string::npos
-				&& btn.find("this.hzWT(b,lab,0,y + (fs > 12 ? 5 : 6),220,fs,\"sb\",prim ? uint(T.ontxt) : uint(T.txt),1.8,\"left\",minPx)") != std::string::npos,
+				&& btn.find("this.hzWT(b,lab,0,0,220,fs,\"sb\",prim ? uint(T.ontxt) : uint(T.txt),1.8,\"left\",minPx)") != std::string::npos
+				&& btn.find("t.y = y + Math.round((28 - t.textHeight) / 2) - 1") != std::string::npos,
 				"hzSetBtn forwards minPx to hzWT");
 		}
 		Expect(as.find("hzSetKey(b,g,ox + 22,fy + 4,\"/\",uint(T.mut),24,13,13)") != std::string::npos,

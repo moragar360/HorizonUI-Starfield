@@ -1,6 +1,6 @@
 // Purpose: splice hz51_insert.as + hz51_draw.as into the live horizon_block.as
 // after Settings 2.0 is already patched. Does not re-run the one-shot replacements.
-// Author: Moragar. Last modified: 2026-11-26.
+// Author: Moragar. Last modified: 2026-11-27.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -33,12 +33,22 @@ text = text.replace(
 text = text.replace(/HZ_SET_H - HZ51_FOOT - HZ_SET_TOP - \d+/g, "HZ_SET_H - HZ51_FOOT - HZ_SET_TOP - 64");
 text = text.replace(
 	'if(r.t == "m") { return (r.h ? HZ51_SEC : 0) + this.hz34BanH(); }',
-	'if(r.t == "m") { return (r.h ? HZ51_SEC : 0) + 40; }'
+	'if(r.t == "m") { return (r.h ? HZ51_SEC : 0) + 40; }\n         if(r.t == "mb") { return (r.h ? HZ51_SEC : 0) + 88; }\n         if(r.t == "mc") { return (r.h ? HZ51_SEC : 0) + 76; }'
+);
+text = text.replace(
+	'if(r.t == "m") { return (r.h ? HZ51_SEC : 0) + 40; }\n         if(r.t == "g") { return 48; }',
+	'if(r.t == "m") { return (r.h ? HZ51_SEC : 0) + 40; }\n         if(r.t == "mb") { return (r.h ? HZ51_SEC : 0) + 88; }\n         if(r.t == "mc") { return (r.h ? HZ51_SEC : 0) + 76; }\n         if(r.t == "g") { return 48; }'
 );
 if (!text.includes('id == "findx"')) {
 	text = text.replace(
 		'else if(id == "findbox") { this.hzSetFindOn = true; this.hzSetFocus = 2; dirty = true; }',
 		'else if(id == "findx") { this.hz51FindClose(); dirty = true; }\n            else if(id == "findbox") { this.hzSetFindOn = true; this.hzSetFocus = 2; dirty = true; }'
+	);
+}
+if (!text.includes('id == "modqh"')) {
+	text = text.replace(
+		'else if(id == "qmclr") { this.hz37Act({"k":"_qmclear","t":"x"},1); dirty = true; }',
+		'else if(id == "modqh") { this.hzSetPend.QuickMenuHorizon = !this.hzSetPend.QuickMenuHorizon; this.hzSetLive(this.hzSetPend); dirty = true; }\n            else if(id == "qmclr") { this.hz37Act({"k":"_qmclear","t":"x"},1); dirty = true; }'
 	);
 }
 text = text.replace(
@@ -71,7 +81,7 @@ if (!text.includes("SETTINGS FALLBACK")) {
 		'var fb51:String = this.hz51FbDbg != null && this.hz51FbDbg.length > 0 ? "\\n\\nSETTINGS FALLBACK:\\n" + this.hz51FbDbg : "";\n         this.hzDbgText.text = "CROSSHAIR: " + this.hzDbgCross + "\\n\\nWEAPON: " + this.hzDbgWeap + "\\n\\nCOMPASS (array:type x count): " + this.hzDbgCmp + "\\n\\nENV KEYS:\\n" + this.hzDbgEnv + "\\n\\nV0.26 PROVIDERS:\\n" + this.hz26DbgText() + fb51;'
 	);
 }
-if (!text.includes("function hz51Stroke") || !text.includes("function hz51HeadSlots") || !text.includes("hzSetOver") || !text.includes("function hz51HitAt") || !text.includes("function hz51Disk") || !text.includes("function hz51FbLog")) {
+if (!text.includes("function hz51Stroke") || !text.includes("function hz51HeadSlots") || !text.includes("hzSetOver") || !text.includes("function hz51HitAt") || !text.includes("function hz51Disk") || !text.includes("function hz51FbLog") || !text.includes("function hz51PvPaint") || !text.includes("function hz51WrapMod") || !text.includes("function hz51DrawArrangeBtn") || !text.includes("function hz51UnavailChip")) {
 	console.error("splice missing new helpers");
 	process.exit(1);
 }

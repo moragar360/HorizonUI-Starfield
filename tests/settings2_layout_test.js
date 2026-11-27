@@ -71,8 +71,8 @@ expect(/hudmenu_lrg 1\.07 scales HUD cards only/.test(as), "comment records that
 expect(/HZ51_SIDE_W \+ 20/.test(fnText(as, "hz51ListBox").body), "list has 20px main padding so labels do not run into the sidebar");
 expect(constN("HZ51_SEC") === 36 && /HZ_SET_TOP \+ 64/.test(fnText(as, "hz51ListBox").body),
 	"page title has 64px before the list; section headers keep a 36px gap before the first row");
-expect(/firstSec \? 2 : 10/.test(fnText(as, "hz51DrawList").body),
-	"section titles add extra space before the first setting row on every page");
+expect(/var shY:Number = y \+ 10/.test(fnText(as, "hz51DrawList").body) && !/firstSec \? 2 : 10/.test(fnText(as, "hz51DrawList").body),
+	"every section title, including the first on a page, uses the same 10px gap before the card");
 expect(/h\":HZ51_DROP_ITEM/.test(fnText(as, "hz51DrawDrop").body),
 	"dropdown option hit rects use the full 24px row (no 2px gap that misses the click)");
 expect(/function hz51HitAt/.test(as) && /dropout/.test(fnText(as, "hz51HitAt").body),
@@ -110,7 +110,7 @@ expect(/_empty/.test(fnText(as, "hz51Rows").body) && /NO SETTINGS IN THIS SECTIO
 const side = fnText(as, "hz51Side").body;
 const pageIds = [];
 side.replace(/\"id\":\"([a-z]+)\"/g, (_, id) => { pageIds.push(id); return ""; });
-expect(pageIds.length === 31, "five tabs expose 31 sidebar pages (found " + pageIds.length + ")");
+expect(pageIds.length === 35, "five tabs expose 35 sidebar pages (found " + pageIds.length + ")");
 expect(/hz51Cards/.test(fnText(as, "hz51Rows").body) && /hz51Appear/.test(fnText(as, "hz51Rows").body) && /hz51Scan/.test(fnText(as, "hz51Rows").body) && /hz51Comms/.test(fnText(as, "hz51Rows").body) && /hz51System/.test(fnText(as, "hz51Rows").body), "every tab has a row builder");
 
 // 5. Preview inside the panel

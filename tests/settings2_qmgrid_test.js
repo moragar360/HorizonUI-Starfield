@@ -41,8 +41,8 @@ const quick = fnText(as, "hz51Quick").body;
 const settingsKey = fnText(as, "hzSettingsKey").body;
 
 expect(/\"t\":\"kg\"/.test(quick) && /EXTENDED SLOT KEYS/.test(quick), "Quick Menu page has an EXTENDED SLOT KEYS grid row");
-expect(/UNAVAILABLE/.test(fnText(as, "hz51Unavail").body), "missing Quick Menu module uses the UNAVAILABLE banner");
-expect(/Install it from the Horizon UI installer\. Saved settings are kept\./.test(quick), "not-installed Quick Menu keeps saved settings and greys the page");
+expect(/chip = "unavail"/.test(fnText(as, "hz51Unavail").body) && /hz51ModRow\("quickmenu"/.test(quick), "missing Quick Menu module uses the module banner and UNAVAILABLE chips");
+expect(/Quick Menu is not installed/.test(quick) && /Saved choices are kept/.test(quick) && /hz51Unavail/.test(quick), "not-installed Quick Menu keeps saved settings and greys the page");
 expect(mute.indexOf("Turn on Extended Mode to bind keys. Saved keys are kept.") >= 0, "Extended off greys the key grid with the saved-keys note");
 expect(grid.indexOf("Turn on Extended Mode to bind keys. Saved keys are kept.") >= 0, "grid draws the Extended-off lock note on the tiles");
 expect(/CLEAR ALL KEYS/.test(grid) && /id\":\"qmclr\"/.test(grid), "CLEAR ALL KEYS sits on the key grid");
@@ -53,7 +53,7 @@ expect(/while\(n <= 24\)/.test(clear) && /QuickMenuKey/.test(clear), "Clear all 
 expect(/var n:int = 13/.test(grid) && /while\(n <= count\)/.test(grid) && /col >= per/.test(grid), "tiles are 13..SlotCount wrapped by Slots per Row");
 expect(/SLOT \" \+ n/.test(grid) && /UNBOUND/.test(grid) && /PRESS ANY KEY/.test(grid), "tiles show SLOT N, UNBOUND, and PRESS ANY KEY capture");
 expect(/0xF2A03A/.test(as) && /CLASH/.test(grid) && /hzQmNameKind/.test(grid), "clashing chips use the orange clash warning");
-expect(/Enter uses a warned game key anyway/.test(fnText(as, "hz51Help").body) && !/warned and ignored/.test(grid), "clash help matches Enter confirm / settings refuse; the grid itself stays a one-line hint");
+expect(/A clash \(another slot, the settings key, or a game control\) is warned and ignored/.test(fnText(as, "hz51Help").body) && !/Enter uses a warned game key anyway/.test(grid), "clash help lives in Setting Details; the grid itself stays a one-line hint");
 expect(/\"0\" \|\| u == \"1\"/.test(kind) && /F1/.test(kind) && /return \"settings\"/.test(kind) && /return \"slot\"/.test(kind), "clash checks slots 1-12 game keys, other extra slots, and the Horizon settings key");
 
 expect(/code == \"cancel\"/.test(capKey) && /code == \"bksp\" \|\| code == \"del\"/.test(capKey), "Esc cancels capture; Backspace and Delete clear");

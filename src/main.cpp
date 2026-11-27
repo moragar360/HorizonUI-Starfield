@@ -40,6 +40,7 @@
 #include <winver.h>
 #include <Xinput.h>
 #include <ShlObj.h>
+#include <shellapi.h>
 #include <psapi.h>
 #pragma comment(lib, "version.lib")
 #pragma comment(lib, "shell32.lib")
@@ -175,6 +176,7 @@ namespace HZ
 	std::atomic<bool>          g_splashDefer{false};
 	std::atomic<bool>          g_splashWatch{false};
 	std::atomic<std::uint64_t> g_splashPushedGen{0};
+	std::atomic<std::uint64_t> g_f11PushedGen{0};   // last preset list pushed while F11 is open
 	std::atomic<bool>          g_splashLoadNoted{false};
 	std::atomic<int>           g_splashTries{0};
 	ULONGLONG                  g_splashWatchSince{0};
@@ -1679,7 +1681,23 @@ namespace HZ
 			std::string kind = "?";
 			HZF::Result r;
 			try {
-				r = HZF::DoAction(FilesP(), act, Today(), kind);
+				if (act == "openfolder" || act.rfind("openfolder", 0) == 0) {
+					kind = "openfolder";
+					const auto shown = MsglogFolderPath();
+					std::filesystem::path dir = shown.empty() ? std::filesystem::path{} : std::filesystem::path(shown);
+					std::error_code ec;
+					std::filesystem::path open = dir;
+					if (!open.empty() && !std::filesystem::exists(open, ec) && open.has_parent_path())
+						open = open.parent_path();
+					if (!open.empty())
+						::ShellExecuteW(nullptr, L"open", open.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+					r.ok = true;
+					r.msg = shown.empty() ? open.generic_string() : shown;
+					if (!dir.empty() && !std::filesystem::exists(dir, ec))
+						r.msg += " (not created yet - turn on Save to disk)";
+				} else {
+					r = HZF::DoAction(FilesP(), act, Today(), kind);
+				}
 			} catch (...) {
 				r.ok = false;
 				r.msg = "error";
@@ -1820,7 +1838,19 @@ namespace HZ
 			REX::INFO("settings {}", isOpen ? "opened" : "closed");
 			g_open.store(isOpen);
 			OnSettingsOpenChanged(isOpen);
-			if (isOpen) PushFileState();   // v0.37: presets / backup state for the F11 rows
+			if (isOpen) {
+				PushFileState();   // v0.37: presets / backup state for the F11 rows
+				g_f11PushedGen.store(g_fileStateGen.load(std::memory_order_relaxed), std::memory_order_relaxed);
+			} else {
+				g_f11PushedGen.store(0, std::memory_order_relaxed);
+			}
+		}
+		if (isOpen) {
+			const auto gen = g_fileStateGen.load(std::memory_order_relaxed);
+			if (gen != 0 && gen != g_f11PushedGen.load(std::memory_order_relaxed)) {
+				PushFileState();
+				g_f11PushedGen.store(gen, std::memory_order_relaxed);
+			}
 		}
 		g_swallow = isOpen;
 		if (isOpen) g_lastOpen = a_now;

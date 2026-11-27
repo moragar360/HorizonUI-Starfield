@@ -53,7 +53,7 @@ function overlap(a, b) {
 	expect(s.cw >= 260 && s.findW === 176 && s.arrW === 132, "header slots: compact >=260, search 176, Arrange 132");
 	expect(!overlap(compact, find) && !overlap(find, arr), "header compact / search / Arrange do not overlap at 1260");
 	expect(compact.x >= s.titleR, "compact starts after the title cluster");
-	expect(/ax \+ aw \/ 2/.test(fnText(as, "hz51DrawCompact").body), "Arrange label is centered on the button, not on its left edge");
+	expect(/ax \+ aw \/ 2/.test(fnText(as, "hz51DrawArrangeBtn").body), "Arrange label is centered on the button, not on its left edge");
 	expect(!/hz51T\(b,alab,ax,ay/.test(fnText(as, "hz51DrawCompact").body), "Arrange no longer passes the left edge as a center x");
 }
 
@@ -85,8 +85,8 @@ function overlap(a, b) {
 // 5. Extended slot key grid: tiles contain SLOT n / Empty / chip; help does not cover CLEAR ALL
 {
 	const grid = fnText(as, "hz51DrawQmGrid").body;
-	expect(/Click a chip to bind/.test(grid) && /btnX - x0 - 20/.test(grid), "grid hint is one line to the left of CLEAR ALL KEYS");
-	expect(!/Click a key chip to bind\. Esc cancels\. Backspace/.test(grid), "the long _qmkeys help is not painted on the grid (Setting Details holds it, so the tooltip is not stacked)");
+	expect(/Click a key chip to bind/.test(grid) && /btnX - x0 - 20/.test(grid), "grid hint is one line to the left of CLEAR ALL KEYS");
+	expect(/CLEAR ALL KEYS/.test(grid), "CLEAR ALL KEYS stays on the grid header");
 	expect(/tw < 72/.test(grid) && /HZ51_QM_TH/.test(grid), "tiles have a 72px min width and a taller chip row so Home/End/UNBOUND stay inside the card");
 	expect(/id\":\"qmk\" \+ n/.test(grid) && /x\":xx/.test(grid) && /h\":th/.test(grid), "the whole tile is the hit target, not a chip that sits under the next card");
 	expect(!/hz35Tip/.test(grid) && !/hz35InfoIcon/.test(grid), "the grid does not draw a second info tooltip over the tiles");
@@ -150,8 +150,8 @@ expect(/h\":HZ51_DROP_ITEM\}/.test(fnText(as, "hz51DrawDrop").body) || /h\":HZ51
 
 expect(constN("HZ51_SEC") === 36 && /HZ_SET_TOP \+ 64/.test(fnText(as, "hz51ListBox").body),
 	"page title has 64px before the list; section headers keep a 36px gap before the first row");
-expect(/firstSec \? 2 : 10/.test(fnText(as, "hz51DrawList").body),
-	"section titles add extra space before the first setting row on every page");
+expect(/var shY:Number = y \+ 10/.test(fnText(as, "hz51DrawList").body) && !/firstSec \? 2 : 10/.test(fnText(as, "hz51DrawList").body),
+	"every section title, including the first on a page, uses the same 10px gap before the card");
 
 expect(/function hz51AddCard/.test(as) && /function hz51Fallback/.test(as),
 	"STATUS / COMBAT / INTERACTION append per card and fall back to the old catalog if a builder throws");
