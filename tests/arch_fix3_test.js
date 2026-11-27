@@ -3,8 +3,8 @@
 // Proves, by running the production AS functions (types stripped) on a small host:
 //  1. combat: HUDStealthData.bIsInCombat (already subscribed) and PlayerData.bIsInCombat each count on their own edge;
 //     the latest edge wins, a provider repeating its old value never undoes the other's newer edge; refresh on change only;
-//  2. weapon out: hzSetWeaponDrawn decides when called; otherwise only a weapon reticle (with ammo counter and crosshair
-//     on) counts; unknown / unarmed / tool / none do not; interact / command keep the last decision; the old
+//  2. weapon out: hzSetWeaponDrawn decides when called; otherwise a weapon reticle counts (the HUD crosshair can be
+//     off; uType still arrives). Unknown / unarmed / tool / none do not; interact / command keep the last decision; the old
 //     "uType != 2" fallback (true before any crosshair update) is gone;
 //  3. static: no timer, listener or frame work added; the stealth handler stays exception-safe.
 // Author: Moragar. Last modified: 2026-11-13.
@@ -112,10 +112,10 @@ const ev = (d) => ({ data: d });
 	for (const t of [0, 1, 3, 4, 5]) { h.hzOnCrosshair(ev({ bEnabled: true, uType: 2 })); h.hzOnCrosshair(ev({ bEnabled: true, uType: t })); if (!h.hzWeaponOut()) expect(false, "type " + t + " must count"); }
 	expect(true, "pistol, cutter, shotgun, rifle and laser reticles count");
 	h.hzOnCrosshair(ev({ bEnabled: false, uType: 4 }));
-	expect(h.hzWeaponOut() === false, "crosshair off (scanner, menus): not out");
+	expect(h.hzWeaponOut() === true, "crosshair off, rifle reticle still last type: out (WEAPON DRAWN ONLY no longer needs the HUD reticle on)");
 	h.hzOnCrosshair(ev({ bEnabled: true, uType: 4 }));
 	h.hzAmmoDrawn = false;
-	expect(h.hzWeaponOut() === false, "no ammo counter (WeaponData.bDisplayAmmo off): not out");
+	expect(h.hzWeaponOut() === true, "no ammo counter: a weapon reticle still counts");
 	h.hzSetWeaponDrawn(false);
 	h.hzAmmoDrawn = true;
 	expect(h.hzWeaponOut() === false, "hzSetWeaponDrawn(false) decides over the reticle");

@@ -358,7 +358,7 @@
             case "HazardStatus": return "A small card that turns red while a hazard is hurting you and green while suit protection is restoring.";
             case "EdgePulse": return "A soft pulse at the edges of the screen when health or oxygen is very low. The center of the view stays clear.";
             case "ShowAmmo": return "Turns the equipment card (weapon, ammo, grenades, Starborn power) on or off.";
-            case "AmmoRule": return "Crosshair off? Set this to ALWAYS or COMBAT ONLY.";
+            case "AmmoRule": return "Drawn follows a weapon reticle (rifle, pistol, shotgun, laser, cutter). The HUD crosshair can be off.";
             case "EquipmentExtras": return "Shows grenade count and the selected Starborn power on the equipment card. Off hides those extras and also hides the game's leftover grenade and power clips so no stray line stays on the HUD.";
             case "EnemyBar": return "Enemy health at the top center. Turns off the game's own enemy bar while this is on.";
             case "StealthMeter": return "A stealth pill above the crosshair while you sneak. Turns off the game's own stealth meter while this is on.";

@@ -1,11 +1,10 @@
-// 0.43.3.2 item 5 tests: Equipment rule with the game's crosshair turned off.
+// Equipment rule with the game's HUD crosshair turned off (0.43.5 qmfix2).
 // Run: node tests/equip_crosshair_note_test.js
-// Without a drawn / holstered feed (no DLL calls hzSetWeaponDrawn), "Weapon drawn only" needs the crosshair on
-// (HudCrosshairData.bEnabled). With it off the card never shows, so the F11 Equipment rule row carries a note.
-// Checks: the note text on the AmmoRule row only; the two rules it names exist and are offered on that row; the
-// production hzWeaponOut / hzRuleOk (types stripped): crosshair off -> rule 3 hides, ALWAYS and COMBAT ONLY still
-// work; crosshair on with a weapon reticle -> rule 3 shows (Fix 3 unchanged). Mutants must fail.
-// Author: Moragar. Last modified: 2026-11-18.
+// Without a drawn / holstered feed (no DLL calls hzSetWeaponDrawn), "Weapon drawn only" follows the last weapon
+// reticle type. HudCrosshairData.bEnabled can be false. The F11 Equipment rule row says so. Checks: the note text
+// on the AmmoRule row only; ALWAYS and COMBAT ONLY are offered; crosshair off + rifle reticle -> rule 3 shows;
+// holstered (no weapon reticle) hides; a plugin feed still overrides. Mutants must fail.
+// Author: Moragar. Last modified: 2026-11-27.
 "use strict";
 
 const fs = require("fs");
@@ -13,7 +12,7 @@ const path = require("path");
 
 const root = path.join(__dirname, "..");
 const AS0 = fs.readFileSync(path.join(root, "actionscript", "horizon_block.as"), "utf8").replace(/\r\n/g, "\n");
-const NOTE = "Crosshair off? Set this to ALWAYS or COMBAT ONLY.";
+const NOTE = "Drawn follows a weapon reticle (rifle, pistol, shotgun, laser, cutter). The HUD crosshair can be off.";
 
 let failed = 0, passed = 0;
 function expect(cond, msg) {
@@ -40,7 +39,7 @@ function toJs(src, name) {
 }
 function rulesRows(src) {
 	const notes = [];
-	const re = /case "(\w+)": return "Crosshair off\? Set this to ALWAYS or COMBAT ONLY.";/g;
+	const re = /case "(\w+)": return "Drawn follows a weapon reticle \(rifle, pistol, shotgun, laser, cutter\)\. The HUD crosshair can be off.";/g;
 	let m;
 	while ((m = re.exec(src))) notes.push(m[1]);
 	const idsM = /"AmmoRule",\[([^\]]+)\]/.exec(src);
@@ -71,12 +70,12 @@ function behave(src, log) {
 			hzInCombat: false, hzInShip: false, hzJetCharge: 1, hzVitHpF: 1, hzVitO2F: 1, hzAfflCount: 0 };
 		h.hzWeaponOut = toJs(src, "hzWeaponOut").bind(h);
 		h.hzRuleOk = toJs(src, "hzRuleOk").bind(h);
-		chk(h.hzRuleOk(3) === false, "crosshair off, gun out: WEAPON DRAWN ONLY hides the card (why the note exists)");
+		chk(h.hzRuleOk(3) === true, "crosshair off, gun out (weapon reticle): WEAPON DRAWN ONLY shows the card");
 		chk(h.hzRuleOk(0) === true, "crosshair off: ALWAYS shows the card");
 		h.hzInCombat = true;
 		chk(h.hzRuleOk(1) === true, "crosshair off: COMBAT ONLY shows the card in combat");
 		h.hzInCombat = false; h.hzCrossOn = true;
-		chk(h.hzRuleOk(3) === true, "crosshair on with a weapon reticle: WEAPON DRAWN ONLY shows the card (Fix 3 unchanged)");
+		chk(h.hzRuleOk(3) === true, "crosshair on with a weapon reticle: WEAPON DRAWN ONLY still shows");
 		h.hzWpnRet = false;
 		chk(h.hzRuleOk(3) === false, "crosshair on, holstered (no weapon reticle): hidden (Fix 3 unchanged)");
 		h.hzPlugActive = true; h.hzPlugDrawn = true; h.hzCrossOn = false;
@@ -94,7 +93,7 @@ const AMMO_LINE = 'case "AmmoRule": return "' + NOTE + '";';
 const mutants = [
 	["note removed", (s) => s.replace(AMMO_LINE, 'case "AmmoRule": return "";')],
 	["note on the wrong row", (s) => s.replace(AMMO_LINE, 'case "AmmoRule": return "";').replace('case "CompassRule":', 'case "CompassRule": return "' + NOTE + '"; case "_hzAmmoNoteMoved":')],
-	["Fix 3 path changed", (s) => s.replace("(this.hzAmmoDrawn && this.hzCrossOn && this.hzWpnRet)", "(this.hzAmmoDrawn && this.hzWpnRet)")],
+	["fallback requires the HUD crosshair on again", (s) => s.replace("this.hzPlugActive ? this.hzPlugDrawn : this.hzWpnRet", "this.hzPlugActive ? this.hzPlugDrawn : (this.hzAmmoDrawn && this.hzCrossOn && this.hzWpnRet)")],
 ];
 for (const [name, fn] of mutants) {
 	const m = fn(AS0);

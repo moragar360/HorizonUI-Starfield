@@ -3627,17 +3627,15 @@
          }
       }
 
-      // 0.43.3.2: the game's crosshair setting reaches the HUD only as HudCrosshairData.bEnabled (the vanilla Crosshair.as
-      // has no other off switch; inferred, not seen in a log), so with it off WEAPON DRAWN ONLY never shows the Equipment
-      // card; the F11 Equipment rule row says so. Not loosened: whether the reticle type still updates then is unknown.
-      // arch-fixes Fix 3: hzSetWeaponDrawn (a drawn / holstered feed) decides when anything calls it. Without one, a gun
-      // counts as out only while the game shows a weapon reticle for it: the crosshair is on, the ammo counter is on and
-      // the last reticle type was a weapon one. Unknown (before the first crosshair update), unarmed, tool and none are
-      // not out; interact / command (looking at a door, an item, a crew order) keep the last decision, so the card does
-      // not flicker while aiming past objects.
+      // Weapon drawn only: hzSetWeaponDrawn decides when the plugin calls it (Papyrus IsWeaponOut 1 fists / 2 weapon).
+      // CommonLibSF's PlayerSetWeaponStateEvent has GetEventSource id 0 (calling it hard-exits), so the plugin does not
+      // register that sink. Without a feed, a gun counts as out while the last reticle type was a weapon one. The HUD
+      // crosshair (HudCrosshairData.bEnabled) can be off: uType still arrives, so a drawn rifle is not hidden. Unknown
+      // (before the first crosshair update), unarmed, tool and none are not out; interact / command keep the last
+      // decision, so the card does not flicker while aiming past objects.
       private function hzWeaponOut() : Boolean
       {
-         return this.hzPlugActive ? this.hzPlugDrawn : (this.hzAmmoDrawn && this.hzCrossOn && this.hzWpnRet);
+         return this.hzPlugActive ? this.hzPlugDrawn : this.hzWpnRet;
       }
       // HCT (HudCrosshairData.uType): 0 pistol, 1 cutter, 2 unarmed, 3 shotgun, 4 rifle, 5 laser, 6 tool, 7 interact,
       // 8 command, 9 none. Edge only: called from hzOnCrosshair.
@@ -5111,7 +5109,7 @@
             case "HazardStatus": return "A small card that turns red while a hazard is hurting you and green while suit protection is restoring.";
             case "EdgePulse": return "A soft pulse at the edges of the screen when health or oxygen is very low. The center of the view stays clear.";
             case "ShowAmmo": return "Turns the equipment card (weapon, ammo, grenades, Starborn power) on or off.";
-            case "AmmoRule": return "Crosshair off? Set this to ALWAYS or COMBAT ONLY.";
+            case "AmmoRule": return "Drawn follows a weapon reticle (rifle, pistol, shotgun, laser, cutter). The HUD crosshair can be off.";
             case "EquipmentExtras": return "Shows grenade count and the selected Starborn power on the equipment card. Off hides those extras and also hides the game's leftover grenade and power clips so no stray line stays on the HUD.";
             case "EnemyBar": return "Enemy health at the top center. Turns off the game's own enemy bar while this is on.";
             case "StealthMeter": return "A stealth pill above the crosshair while you sneak. Turns off the game's own stealth meter while this is on.";

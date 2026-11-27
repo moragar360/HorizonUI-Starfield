@@ -39,6 +39,16 @@
 //                                  the corners stay out.
 //   2 = Full screen                0.45 / 4.0 / fade 1.0: about 63 degrees, the corners too (16:9 up to FOV 110, 21:9
 //                                  up to about 105, 32:9 up to about 85).
+// Outline flash on scanner open/close (Nexus report; flora/fauna, flying still flash on Full/Max):
+//   Evidence: the three INI keys above (STEP getini, Nexus article 651, Fullscran). Small / Large / Wide leave the
+//   game's fade 0.25; Full writes fade 1.0. ScanHlApply writes on a setting change only. ScanHlRecheck on an
+//   undrifted open is read-only. Vanilla never writes. World flora/fauna outlines are engine Monocle/ResourceVeins
+//   decals, not Horizon Scaleform (hzsHideVanilla only alphas HUD clips).
+//   Hypotheses (not proven): decals pop as the cone/falloff come up; Full's long fade hides the edge; flying still
+//   flash on Full so ResourceVeins falloff is not that path.
+//   Not shipped: writing fade/falloff on every open (forbidden: 0.43.4, undrifted open must stay read-only);
+//   lengthening Small / Large / Wide fade (a look change, and it would not fix flying or Vanilla). Vanilla stays
+//   a passthrough.
 //   3 = the retired "Max" (0.2 / 10 / 10, about 78 degrees): read as Full screen. On a normal monitor it looked the same
 //       as Full screen and only added picks off screen, so a saved 3 keeps a full-screen scanner.
 // The outline radius follows one rule: about the circle's reach in half screen heights at 16:9 / FOV 85, which fits

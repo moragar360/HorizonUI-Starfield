@@ -1920,19 +1920,22 @@ package
          return f;
       }
       // one text field. (x, cy) = left / right / center x and the vertical middle; tr = tracking in em.
-      // maxW > 0 shortens the text with "..." to fit. Returns the field (its right edge = x + width for "l").
+      // maxW > 0 shortens the text with "..." to fit, unless wrap is true: then it wraps at maxW and the first line
+      // stays centered on cy (extra lines grow down). wrap defaults false so chips and the 0.43.4 pool stay truncated.
+      // Returns the field (its right edge = x + width for "l").
       // 0.43.4: while a text pass is open for p (hzsTPBegin), the field in p's next slot is reused instead of a new one
       // (see hzsTPBegin). A new field is made and formatted exactly as before.
-      private function hzsT(p:Sprite, s:String, x:Number, cy:Number, size:Number, col:uint, w:String = "sb", tr:Number = 0, al:String = "l", a:Number = 1, maxW:Number = 0, font:String = null) : TextField
+      private function hzsT(p:Sprite, s:String, x:Number, cy:Number, size:Number, col:uint, w:String = "sb", tr:Number = 0, al:String = "l", a:Number = 1, maxW:Number = 0, font:String = null, wrap:Boolean = false) : TextField
       {
          var fs:Number = this.hzsFs(size);
          var face:String = font != null ? font : this.hzsFace(w);
          var ls:Number = Math.round(fs * tr * 10) / 10;
          var str:String = s == null ? "" : s;
+         var wrapNow:Boolean = wrap == true && maxW > 0;
          var t:TextField = null;
          if(p != null && p === this.hzsTPc)
          {
-            var fk:String = face + "|" + fs + "|" + col + "|" + ls + "\u0001";
+            var fk:String = face + "|" + fs + "|" + col + "|" + ls + (wrapNow ? "|w" : "") + "\u0001";
             var key:String = fk + maxW + "\u0001" + str;
             var i:int = this.hzsTPi;
             this.hzsTPi = i + 1;
@@ -1942,12 +1945,12 @@ package
             {
                t = old;
                t.name = key;
-               this.hzsTSet(t,str,this.hzsTFmt(face,fs,col,ls),maxW);
+               this.hzsTSet(t,str,this.hzsTFmt(face,fs,col,ls),maxW,wrapNow);
                this.hzsTPNew++;
             }
             else
             {
-               t = this.hzsTNew(face,fs,col,ls,str,maxW);
+               t = this.hzsTNew(face,fs,col,ls,str,maxW,wrapNow);
                t.name = key;
                if(i < p.numChildren) { p.removeChildAt(i); }
                p.addChildAt(t,i);
@@ -1956,13 +1959,14 @@ package
          }
          else
          {
-            t = this.hzsTNew(face,fs,col,ls,str,maxW);
+            t = this.hzsTNew(face,fs,col,ls,str,maxW,wrapNow);
             p.addChild(t);
          }
          t.alpha = a;
          var tw:Number = t.textWidth;
          t.x = al == "r" ? Math.round(x - tw - 2) : (al == "c" ? Math.round(x - tw / 2 - 2) : Math.round(x - 2));
-         t.y = Math.round(cy - t.height / 2);
+         // wrap grows down from the first line; trunc keeps the old vertical middle of the one-line field
+         t.y = Math.round(cy - (wrapNow ? this.hzsTOne(size) : t.height) / 2);
          return t;
       }
       private function hzsTFmt(face:String, fs:Number, col:uint, ls:Number) : TextFormat
@@ -1972,7 +1976,7 @@ package
          return f;
       }
       // a new field (the pre-0.43.4 hzsT body: same flags, same format, same order)
-      private function hzsTNew(face:String, fs:Number, col:uint, ls:Number, str:String, maxW:Number) : TextField
+      private function hzsTNew(face:String, fs:Number, col:uint, ls:Number, str:String, maxW:Number, wrap:Boolean = false) : TextField
       {
          var t:TextField = new TextField();
          t.embedFonts = true;
@@ -1981,14 +1985,34 @@ package
          t.autoSize = TextFieldAutoSize.LEFT;
          var f:TextFormat = this.hzsTFmt(face,fs,col,ls);
          t.defaultTextFormat = f;
-         this.hzsTSet(t,str,f,maxW);
+         this.hzsTSet(t,str,f,maxW,wrap);
          return t;
       }
-      private function hzsTSet(t:TextField, str:String, f:TextFormat, maxW:Number) : void
+      private function hzsTSet(t:TextField, str:String, f:TextFormat, maxW:Number, wrap:Boolean = false) : void
       {
+         t.wordWrap = false;
+         t.multiline = false;
          t.text = str;
          t.setTextFormat(f);
-         if(maxW > 0 && t.textWidth > maxW && str.length > 1) { this.hzsTrunc(t,str,f,maxW); }
+         if(maxW > 0 && wrap == true)
+         {
+            t.wordWrap = true;
+            t.multiline = true;
+            t.width = maxW;
+            t.autoSize = TextFieldAutoSize.LEFT;
+            t.setTextFormat(f);
+         }
+         else if(maxW > 0 && t.textWidth > maxW && str.length > 1) { this.hzsTrunc(t,str,f,maxW); }
+      }
+      // one-line field height used when wrap grows down from cy (same formula the 0.43.4 mock uses)
+      private function hzsTOne(size:Number) : Number
+      {
+         return Math.round(this.hzsFs(size) * 1.25 + 4);
+      }
+      // extra pixels a wrapped field grew below one line (0 when it fit)
+      private function hzsTExtra(t:TextField, size:Number) : Number
+      {
+         return t == null ? 0 : Math.max(0,Math.round(t.height - this.hzsTOne(size)));
       }
       // 0.43.4: "..." shortening by halving instead of one character at a time. The old loop tried n = length - 1, length - 2,
       // ... 2 (each "the first n characters, trailing spaces cut, then ...") and kept the first that fit, or n = 2 when none
@@ -3100,8 +3124,8 @@ package
          var pt:TextField = this.hzsT(p,m.pct + "%",w - HZS_PAD,28,30,HZS_WHITE,"bd",0,"r");
          this.hzsT(p,this.hzsCs("SURVEYED"),w - HZS_PAD,52,13,HZS_LABEL,"sb",0.12,"r");
          var nmax:Number = pt.x - (x0 + 50) - 12;
-         this.hzsT(p,String(m.name),x0 + 50,26,22,HZS_WHITE,"sb",0.08,"l",1,nmax);
-         if(String(m.sys).length > 0) { this.hzsT(p,String(m.sys),x0 + 50,50,13,HZS_MUTED,"sb",0.08,"l",1,nmax); }
+         this.hzsT(p,String(m.name),x0 + 50,26,22,HZS_WHITE,"sb",0.08,"l",1,nmax,null,true);
+         if(String(m.sys).length > 0) { this.hzsT(p,String(m.sys),x0 + 50,50,13,HZS_MUTED,"sb",0.08,"l",1,nmax,null,true); }
          this.hzsBar(g,x0,68,iw,6,int(m.pct) / 100,acc);
          if(m.cond.length > 0)
          {
@@ -3155,7 +3179,7 @@ package
          }
          var lim:Number = w - 16 - nh * 30 - 10;
          var pct:String = m.pct + "%";
-         var nt:TextField = this.hzsT(p,String(m.name),48,22,15,HZS_WHITE,"sb",0.08,"l",1,Math.max(60,lim - 48 - 160));
+         var nt:TextField = this.hzsT(p,String(m.name),48,22,15,HZS_WHITE,"sb",0.08,"l",1,Math.max(60,lim - 48 - 160),null,true);
          var e:Number = this.hzsRight(nt);
          var pt:TextField = this.hzsT(p,pct,e + 10,22,16,HZS_WHITE,"bd");
          e = this.hzsRight(pt);
@@ -3219,7 +3243,7 @@ package
                if(!bk[0]) { continue; }
                var kt:TextField = this.hzsT(p,this.hzsCs(String(bk[1])),x0,bl,13,bk[2] ? HZS_GRN : HZS_LABEL,"sb",0.1);
                if(bk[2]) { this.hzsCheck(g,x0 + 72,bl,HZS_GRN,0.8); }
-               this.hzsT(p,this.hzsBiomeWord(Boolean(bk[2]),int(bk[3])),x0 + 88,bl,13,bk[2] ? HZS_GRN : HZS_WHITE,"rg",0.02,"l",1,iw - 88);
+               this.hzsT(p,this.hzsBiomeWord(Boolean(bk[2]),int(bk[3])),x0 + 88,bl,13,bk[2] ? HZS_GRN : HZS_WHITE,"rg",0.02,"l",1,iw - 88,null,true);
                bl += 22;
             }
          }
@@ -3284,7 +3308,16 @@ package
          var x0:Number = HZS_PAD + 2;
          var iw:Number = w - HZS_PAD - x0;
          var rows:Array = m.rows as Array;
-         var h:Number = 44 + rows.length * 48 + 12;
+         var extraH:Number = 0;
+         var scratch:Sprite = new Sprite();
+         for each(var r0:Object in rows)
+         {
+            var dt0:TextField = this.hzsT(scratch,String(r0.d),w - HZS_PAD,0,16,HZS_WHITE,"sb",0.02,"r");
+            var lim0:Number = dt0.x - (x0 + 42) - 10;
+            extraH += this.hzsTExtra(this.hzsT(scratch,String(r0.n),0,0,14,HZS_WHITE,"sb",0.1,"l",1,lim0,null,true),14);
+            extraH += this.hzsTExtra(this.hzsT(scratch,String(r0.sub),0,0,13,HZS_WHITE,"rg",0,"l",1,lim0,null,true),13);
+         }
+         var h:Number = 44 + rows.length * 48 + extraH + 12;
          this.hzsCard(g,w,h,HZS_R_CARD,acc);
          this.hzsSection(p,x0,18,iw,"SIGNALS",m.inr + " " + this.hzsCs("IN RANGE"),acc);
          var yy:Number = 44;
@@ -3307,10 +3340,10 @@ package
             this.hzsIcon(g,String(r.ic),x0 + 16,cy,hl ? acc : c,1);
             var dt:TextField = this.hzsT(p,String(r.d),w - HZS_PAD,cy,16,r.ic == "ship" || r.ic == "vehicle" ? acc : uint(r.dc),"sb",0.02,"r",r.ic == "ship" || r.ic == "vehicle" ? 0.67 : 1);
             var lim:Number = dt.x - (x0 + 42) - 10;
-            this.hzsT(p,String(r.n),x0 + 42,cy - 9,14,c != HZS_MUTED || hl ? HZS_WHITE : HZS_LABEL,"sb",0.1,"l",1,lim);
-            if(hl) { this.hzsT(p,String(r.sub),x0 + 42,cy + 10,13,acc,"bd",0.1,"l",1,lim); }
-            else { this.hzsT(p,String(r.sub),x0 + 42,cy + 10,13,undisc ? HZS_LABEL : HZS_MUTED,"rg",0,"l",1,lim); }
-            yy += 48;
+            var ntf:TextField = this.hzsT(p,String(r.n),x0 + 42,cy - 9,14,c != HZS_MUTED || hl ? HZS_WHITE : HZS_LABEL,"sb",0.1,"l",1,lim,null,true);
+            var nExtra:Number = this.hzsTExtra(ntf,14);
+            var stf:TextField = hl ? this.hzsT(p,String(r.sub),x0 + 42,cy + 10 + nExtra,13,acc,"bd",0.1,"l",1,lim,null,true) : this.hzsT(p,String(r.sub),x0 + 42,cy + 10 + nExtra,13,undisc ? HZS_LABEL : HZS_MUTED,"rg",0,"l",1,lim,null,true);
+            yy += 48 + nExtra + this.hzsTExtra(stf,13);
          }
          return [w,h];
       }
@@ -3324,7 +3357,7 @@ package
          var c:uint = m.near.hl ? acc : HZS_LABEL;
          this.hzsIcon(g,"hex",24,22,c);
          var dt:TextField = this.hzsT(p,String(m.near.d),w - 16,22,16,acc,"sb",0.02,"r");
-         this.hzsT(p,String(m.near.n),40,22,13,c,"bd",0.1,"l",1,dt.x - 50);
+         this.hzsT(p,String(m.near.n),40,22,13,c,"bd",0.1,"l",1,dt.x - 50,null,true);
          return [w,44];
       }
       // chips "Fe Iron" in rows; wraps inside the column
@@ -3349,7 +3382,7 @@ package
                var cc:uint = dis ? HZS_MUTED : c;
                var st:TextField = this.hzsT(p,String(it[0]),0,yy,13,cc,"bd",0,"l",1,60);
                var sw:Number = Math.max(26,this.hzsTw(st) + 10);
-               var nt:TextField = this.hzsT(p,String(it[1]),0,yy,13,dis ? HZS_MUTED : HZS_LABEL,"rg",0,"l",1,180);
+               var nt:TextField = this.hzsT(p,String(it[1]),0,yy,13,dis ? HZS_MUTED : HZS_LABEL,"rg",0,"l",1,180,null,true);
                var need:Number = sw + 5 + this.hzsTw(nt);
                if(cx > x0 + col && cx + need > x0 + iw) { yy += 28; cx = x0 + col; st.y = Math.round(yy - st.height / 2); nt.y = Math.round(yy - nt.height / 2); }
                g.lineStyle(1.2,cc,0.67,true); g.beginFill(cc,34 / 255); g.drawRoundRect(cx,yy - 11,sw,22,12,12); g.endFill(); g.lineStyle();
@@ -3393,8 +3426,8 @@ package
             if(m.sites != null)
             {
                var sx:Number = nt > 0 ? tx - 8 : x0;
-               this.hzsT(p,this.hzsCs("TRAIT SITES"),sx,44,13,HZS_MUTED,"sb",0.1,"l",1,w - HZS_PAD - sx);
-               this.hzsT(p,m.sites[0] + " / " + m.sites[1] + " " + this.hzsCs("SCANNED"),sx,62,14,HZS_WHITE,"sb",0.04,"l",1,w - HZS_PAD - sx);
+               this.hzsT(p,this.hzsCs("TRAIT SITES"),sx,44,13,HZS_MUTED,"sb",0.1,"l",1,w - HZS_PAD - sx,null,true);
+               this.hzsT(p,m.sites[0] + " / " + m.sites[1] + " " + this.hzsCs("SCANNED"),sx,62,14,HZS_WHITE,"sb",0.04,"l",1,w - HZS_PAD - sx,null,true);
             }
          }
          this.hzsSection(p,x0,ry,iw,"RESOURCES",String(m.lbl),acc);
@@ -3437,7 +3470,7 @@ package
          {
             this.hzsCard(g,w,52,HZS_R_STRIP,-1,acc,100 / 255);
             this.hzsT(p,this.hzsCs("PERSON"),x0,26,13,acc,"sb",0.1);
-            this.hzsT(p,String(m.note),w - HZS_PAD,26,13,HZS_LABEL,"rg",0.02,"r",1,iw - 70);
+            this.hzsT(p,String(m.note),w - HZS_PAD,26,13,HZS_LABEL,"rg",0.02,"r",1,iw - 70,null,true);
             return [w,52];
          }
          var yy:Number = 46 + rows.length * 32;
@@ -3458,7 +3491,7 @@ package
                   this.hzsRR(g,x0 - 8,y - 9,3,18,1.5,acc,1);
                }
                var rt:TextField = this.hzsT(p,int(r[1]) + "%" + (int(r[2]) > 0 ? "  " + String.fromCharCode(0xB7) + "  " + this.hzsDur(int(r[2])) : ""),w - HZS_PAD,y,14,sel ? acc : HZS_MUTED,"sb",0.04,"r",a);
-               this.hzsT(p,this.hzsGs(String(r[0])),x0 + 4,y,14,sel ? HZS_WHITE : HZS_LABEL,"sb",0.1,"l",a,rt.x - x0 - 14);
+               this.hzsT(p,this.hzsGs(String(r[0])),x0 + 4,y,14,sel ? HZS_WHITE : HZS_LABEL,"sb",0.1,"l",a,rt.x - x0 - 14,null,true);
                y += 32;
             }
             if(b != null) { g.beginFill(0xFFFFFF,0.086); g.drawRect(x0,yy - 10,iw,1); g.endFill(); }
@@ -3475,13 +3508,13 @@ package
                var rx:Number = w - HZS_PAD;
                if(String(b.key).length > 0)
                {
-                  var lt:TextField = this.hzsT(p,this.hzsGs(String(b.lab)),w - HZS_PAD,by,14,HZS_WHITE,"sb",0.14,"r",1,120);
+                  var lt:TextField = this.hzsT(p,this.hzsGs(String(b.lab)),w - HZS_PAD,by,14,HZS_WHITE,"sb",0.14,"r",1,120,null,true);
                   var kw:TextField = this.hzsT(new Sprite(),String(b.key),0,by,13,HZS_AMB,"bd",0.08,"l",1,0,b.font != null ? String(b.font) : null);
                   var kcw:Number = Math.max(26,this.hzsTw(kw) + 16);
                   rx = this.hzsKeycap(p,lt.x - 10 - kcw,by,String(b.key),HZS_AMB,false,b.font != null ? String(b.font) : null) - kcw - 10;
                }
                var e:Number = this.hzsRight(this.hzsT(p,this.hzsCs("BOUNTY"),x0,by,13,HZS_AMB,"bd",0.14));
-               if(String(b.amt).length > 0) { this.hzsT(p,String(b.amt),e + 12,by,17,HZS_AMB,"bd",0.02,"l",1,rx - e - 22); }
+               if(String(b.amt).length > 0) { this.hzsT(p,String(b.amt),e + 12,by,17,HZS_AMB,"bd",0.02,"l",1,rx - e - 22,null,true); }
             }
          }
          return [w,h];
@@ -3510,7 +3543,7 @@ package
          for each(var h0:Object in m.h)
          {
             x = this.hzsKeycap(probe,x,20,String(h0.k),acc,int(h0.en) != 1,h0.f != null ? String(h0.f) : null) + 8;
-            x = this.hzsRight(this.hzsT(probe,String(h0.l),x,20,14,HZS_LABEL,"sb",0.14,"l",1,220)) + 22;
+            x = this.hzsRight(this.hzsT(probe,String(h0.l),x,20,14,HZS_LABEL,"sb",0.14,"l",1,220,null,true)) + 22;
          }
          var w:Number = x - 22 + 16;
          this.hzsCard(p.graphics,w,40,HZS_R_STRIP,-1);
@@ -3519,7 +3552,7 @@ package
          {
             var dis:Boolean = int(h.en) != 1;
             x = this.hzsKeycap(p,x,20,String(h.k),acc,dis,h.f != null ? String(h.f) : null) + 8;
-            x = this.hzsRight(this.hzsT(p,String(h.l),x,20,14,HZS_LABEL,"sb",0.14,"l",dis ? 0.63 : 1,220)) + 22;
+            x = this.hzsRight(this.hzsT(p,String(h.l),x,20,14,HZS_LABEL,"sb",0.14,"l",dis ? 0.63 : 1,220,null,true)) + 22;
          }
          return [w,40];
       }
@@ -3761,18 +3794,26 @@ package
          this.hzsTPBegin(tp);
          this.hzsTk = tk;   // 0.42.0.4: world tag text floor after its scale
          var tg:* = tp.graphics;
-         this.hzsCard(tg,tw,52,HZS_R_STRIP,-1,tc,100 / 255);
          var tx:Number = 14;
          if(String(tag.sym).length > 0)
          {
-            tg.lineStyle(1.2,tc,180 / 255,true); tg.beginFill(tc,40 / 255); tg.drawRoundRect(12,13,34,26,12,12); tg.endFill(); tg.lineStyle();
             this.hzsT(tp,String(tag.sym),29,26,14,tc,"bd",0,"c",1,32);
             tx = 58;
          }
          var dt:TextField = String(tag.d).length > 0 ? this.hzsT(tp,String(tag.d),tw - 14,26,15,acc,"sb",0.02,"r") : null;
          var lim:Number = (dt != null ? dt.x - 8 : tw - 14) - tx;
-         this.hzsT(tp,String(tag.n),tx,String(tag.sub).length > 0 ? 17 : 26,15,HZS_WHITE,"sb",0.12,"l",1,lim);
-         if(String(tag.sub).length > 0) { this.hzsT(tp,String(tag.sub),tx,36,13,HZS_MUTED,"rg",0,"l",1,lim); }
+         var ntf:TextField = this.hzsT(tp,String(tag.n),tx,String(tag.sub).length > 0 ? 17 : 26,15,HZS_WHITE,"sb",0.12,"l",1,lim,null,true);
+         var extra:Number = this.hzsTExtra(ntf,15);
+         if(String(tag.sub).length > 0)
+         {
+            var stf:TextField = this.hzsT(tp,String(tag.sub),tx,36 + extra,13,HZS_MUTED,"rg",0,"l",1,lim,null,true);
+            extra += this.hzsTExtra(stf,13);
+         }
+         this.hzsCard(tg,tw,52 + extra,HZS_R_STRIP,-1,tc,100 / 255);
+         if(String(tag.sym).length > 0)
+         {
+            tg.lineStyle(1.2,tc,180 / 255,true); tg.beginFill(tc,40 / 255); tg.drawRoundRect(12,13,34,26,12,12); tg.endFill(); tg.lineStyle();
+         }
          if(String(tag.flg).length > 0)
          {
             var fx0:Number = 0;
@@ -3867,9 +3908,10 @@ package
                }
                if(nm)
                {
-                  var nt:TextField = this.hzsT(sx,String(m[4]),30,0,14,HZS_WHITE,"sb",0.12,"l",1,260);   // measured on itself (was a probe copy)
+                  var nt:TextField = this.hzsT(sx,String(m[4]),30,0,14,HZS_WHITE,"sb",0.12,"l",1,260,null,true);   // wrap at 260; the pill grows down
                   var w:Number = this.hzsTw(nt) + 28;
-                  g.lineStyle(1,c,120 / 255,true); g.beginFill(HZS_BG,200 / 255); g.drawRoundRect(16,-13,w,26,26,26); g.endFill(); g.lineStyle();
+                  var ph:Number = 26 + this.hzsTExtra(nt,14);
+                  g.lineStyle(1,c,120 / 255,true); g.beginFill(HZS_BG,200 / 255); g.drawRoundRect(16,-13,w,ph,26,26); g.endFill(); g.lineStyle();
                }
                this.hzsTPEnd();
             }
