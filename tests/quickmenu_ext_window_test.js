@@ -56,7 +56,7 @@ expect(consts.HZQ_BOX === 58 && consts.HZQ_EXT_BOX === 58 && consts.HZQ_EXT_GAP 
 expect(/HZQ_ICPAD:Number = 4/.test(qm) && /hzqKeycap\(g,-hb \+ pad,-hb \+ pad/.test(qm)
 	&& /drawRoundRect\(-hb,-hb,box,box,16,16\)/.test(fnText(qm, "hzqExtSlotArt").body)
 	&& /function hzqExtChipPad/.test(qm) && /function hzqExtChipTune/.test(qm)
-	&& /this\.hzqExtChipTune\(o\.k,klab,boxN\)/.test(fnText(qm, "hzqExtDraw").body)
+	&& /this\.hzqExtChipTune\(o\.k,klab,boxN,kcol\)/.test(fnText(qm, "hzqExtDraw").body)
 	&& !/hzqKeycap\(g,-hb \+ 5/.test(fnText(qm, "hzqExtDraw").body)
 	&& /hzqKeycap\(g,r\.x \+ 5,r\.y \+ 5/.test(qm),
 	"extra slots reuse vanilla radius 8; extra keychip pad/font scale from +5,+5 / 13 px; vanilla 1-12 chips stay +5,+5");
@@ -123,18 +123,24 @@ expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(qm.slice(
 }
 
 {
+	global.TextFormat = function (font, size, color) {
+		this.font = font;
+		this.size = size;
+		this.color = color;
+	};
 	function fakeChipTf() {
 		const t = {
 			text: "",
 			embedFonts: true,
-			filters: [],
+			filters: [{ keep: 1 }],
 			visible: true,
 			x: 0,
 			y: 0,
-			_fmt: { size: 13, font: "sb" },
+			_fmt: { size: 13, font: "sb", color: 0xB2C0C7 },
 			get defaultTextFormat() { return this._fmt; },
 			set defaultTextFormat(f) { this._fmt = f && typeof f === "object" ? f : this._fmt; },
 			setTextFormat(f) { if (f && typeof f === "object") this._fmt = f; },
+			getTextFormat() { return this._fmt; },
 			get _em() { const n = Number(this._fmt && this._fmt.size); return n > 0 ? n : 13; },
 			get textWidth() { return String(this.text || "").length * this._em * 0.62; },
 			get textHeight() { return this._em + 2; },
@@ -146,18 +152,19 @@ expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(qm.slice(
 	function chipHost(sc) {
 		const h = Object.assign({}, consts, {
 			HZQ_LRG: false,
-			hzqS: { ExtSlotScale: sc, TextScale: 1 }
+			hzqS: { ExtSlotScale: sc, TextScale: 1 },
+			hzqFace: function () { return "$Horizon_Font"; }
 		});
 		for (const n of ["hzqExtSc", "hzqExtBoxN", "hzqExtChipPad", "hzqExtChipFs", "hzqExtIcPad",
-			"hzqExtFit", "hzqExtChipTune", "hzqExtKeyShort"]) {
+			"hzqExtFit", "hzqExtChipApply", "hzqExtChipTune", "hzqExtKeyShort"]) {
 			h[n] = toJs(src, n);
 		}
 		return h;
 	}
-	function chipRect(h, label) {
+	function chipRect(h, label, col) {
 		const t = fakeChipTf();
 		const klab = h.hzqExtKeyShort(label);
-		h.hzqExtChipTune(t, klab, h.hzqExtBoxN());
+		h.hzqExtChipTune(t, klab, h.hzqExtBoxN(), col != null ? col : 0xB2C0C7);
 		const sc = h.hzqExtSc();
 		const pad = h.hzqExtChipPad();
 		const gap = Math.max(4, Math.round(8 * sc));
@@ -198,7 +205,7 @@ expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(qm.slice(
 	for (const sc of [0.7, 1.0, 1.4]) {
 		const h = chipHost(sc);
 		expect(Math.abs(h.hzqExtChipPad() - Math.max(2, Math.round(5 * sc))) < 1e-9
-			&& Math.abs(h.hzqExtChipFs() - Math.max(8, Math.round(13 * sc * 10) / 10)) < 1e-9,
+			&& h.hzqExtChipFs() === Math.max(8, Math.round(13 * sc)),
 			"Slot Scale " + sc + ": chip pad and design font follow Slot Scale (pad "
 			+ h.hzqExtChipPad() + ", fs " + h.hzqExtChipFs() + ")");
 		for (const name of names) {
@@ -224,8 +231,37 @@ expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(qm.slice(
 	expect(chipHost(0.7).hzqExtChipFs() < 13 && chipHost(0.7).hzqExtChipPad() < 5,
 		"Slot Scale 0.7 shrinks extra chip font and inset below the vanilla 13 / +5");
 	expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(
-		fnText(qm, "hzqExtChipTune").body + fnText(qm, "hzqExtChipPad").body + fnText(qm, "hzqExtChipFs").body),
+		fnText(qm, "hzqExtChipTune").body + fnText(qm, "hzqExtChipApply").body
+		+ fnText(qm, "hzqExtChipPad").body + fnText(qm, "hzqExtChipFs").body),
 		"chip scale helpers add no enterFrame or timer");
+	expect(/new TextFormat\(this\.hzqFace\("sb"\)/.test(fnText(qm, "hzqExtChipApply").body)
+		&& /t\.embedFonts = true/.test(fnText(qm, "hzqExtChipApply").body)
+		&& !/defaultTextFormat/.test(fnText(qm, "hzqExtChipTune").body)
+		&& /getTextFormat\(\)/.test(fnText(qm, "hzqExtFit").body)
+		&& !/t\.defaultTextFormat/.test(fnText(qm, "hzqExtFit").body),
+		"extra chip apply builds a fresh hzqFace TextFormat; GFx defaultTextFormat is never copied");
+	{
+		const h = chipHost(1);
+		const t = fakeChipTf();
+		const keep = t.filters;
+		h.hzqExtChipTune(t, "Home", 58, 0xB2C0C7);
+		expect(t.embedFonts === true && t.text === "Home" && t.textWidth > 0 && t.textHeight > 0
+			&& t.defaultTextFormat.font === "$Horizon_Font" && t.defaultTextFormat.color === 0xB2C0C7
+			&& t.defaultTextFormat.size === 13 && t.filters === keep,
+			"scale 1.0 extra chip keeps Exo 2 face, muted color, 13 px, measurable text, and hzqSet filters");
+		const sel = fakeChipTf();
+		h.hzqExtChipTune(sel, "End", 58, 0x3FD0E0);
+		expect(sel.defaultTextFormat.color === 0x3FD0E0 && sel.defaultTextFormat.font === "$Horizon_Font"
+			&& sel.text === "End" && sel.textWidth > 0,
+			"selected extra chip uses the same face with the accent color, not black");
+		const small = chipHost(0.7);
+		const t7 = fakeChipTf();
+		small.hzqExtChipTune(t7, "Home", small.hzqExtBoxN(), 0xB2C0C7);
+		expect(t7.embedFonts === true && t7.defaultTextFormat.font === "$Horizon_Font"
+			&& t7.defaultTextFormat.color === 0xB2C0C7 && t7.defaultTextFormat.size === 9
+			&& t7.text === "Home" && t7.textWidth > 0 && Number.isInteger(t7.defaultTextFormat.size),
+			"scale 0.7 extra chip is integer 9 px, still Exo 2 and readable color");
+	}
 }
 
 {

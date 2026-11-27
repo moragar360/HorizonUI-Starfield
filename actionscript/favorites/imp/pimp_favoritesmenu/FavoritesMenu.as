@@ -577,14 +577,14 @@ package
       {
          return Math.max(2,Math.round(HZQ_CHIP_PAD * this.hzqExtSc()));
       }
-      // Extra chip design size 13 at Slot Scale 1.0, times TextScale. Bypasses hzqFs's 13 px floor
-      // so a reduced extra card can still show HOME / END. Readable floor is HZQ_CHIP_MIN (8).
+      // Extra chip design size 13 at Slot Scale 1.0, times TextScale. Integer pixels: GFx
+      // embedFonts drops glyphs on fractional sizes. Floor HZQ_CHIP_MIN (8), not hzqFs's 13.
       private function hzqExtChipFs() : Number
       {
          var ts:Number = this.hzqS != null ? Number(this.hzqS.TextScale) : 1;
          if(isNaN(ts) || ts <= 0) { ts = 1; }
          if(HZQ_LRG) { ts *= 1.1; }
-         return Math.max(HZQ_CHIP_MIN,Math.round(13 * this.hzqExtSc() * ts * 10) / 10);
+         return Math.max(HZQ_CHIP_MIN,Math.round(13 * this.hzqExtSc() * ts));
       }
       // Extra icon pad follows Slot Scale so the picture stays inside the card at 0.7 and 1.4.
       private function hzqExtIcPad() : Number
@@ -2481,8 +2481,9 @@ package
                if(key.length > 0)
                {
                   var klab:String = this.hzqExtKeyShort(key);
-                  this.hzqSet(o.k,klab,13,sel ? this.hzqTextAccent() : this.hzqMutCol(),"sb",0.04,false);
-                  this.hzqExtChipTune(o.k,klab,boxN);
+                  var kcol:uint = sel ? this.hzqTextAccent() : this.hzqMutCol();
+                  this.hzqSet(o.k,klab,13,kcol,"sb",0.04,false);
+                  this.hzqExtChipTune(o.k,klab,boxN,kcol);
                   var pad:Number = this.hzqExtChipPad();
                   var gap:Number = Math.max(4,Math.round(8 * this.hzqExtSc()));
                   var minBox:Number = Math.max(HZQ_CHIP_MIN,Math.round(16 * this.hzqExtSc()));
@@ -2499,6 +2500,7 @@ package
                   o.k.x = -hb + pad + (kw - o.k.width) / 2;
                   o.k.y = -hb + pad + (kh - o.k.height) / 2;
                   if(!o.k.visible) { o.k.visible = true; }
+                  try { if(o.k.parent != null) { o.k.parent.addChild(o.k); } } catch(eKt:Error) { }
                   o.kb = pad + kh;
                }
                else { if(o.k.visible) { o.k.visible = false; } o.kb = 0; }
@@ -2552,29 +2554,39 @@ package
          if(u == "DELETE") { return "DEL"; }
          return key;
       }
+      // Purpose: extra chip text uses the same hzqFace / embedFonts path as vanilla 1-12 (hzqSet).
+      // GFx defaultTextFormat is incomplete (null face, size 0, color 0): copying it after hzqSet
+      // made extra chips draw as dark bars with no readable glyphs. Always new TextFormat.
+      // Inputs: reused chip field, label, integer px size, hzqMutCol / hzqTextAccent.
+      // Outputs: field formatted. Filters stay from the preceding hzqSet. Change-driven only.
+      private function hzqExtChipApply(t:TextField, s:String, fs:Number, col:uint) : void
+      {
+         if(!(fs >= HZQ_CHIP_MIN)) { fs = HZQ_CHIP_MIN; }
+         fs = Math.round(fs);
+         var f:TextFormat = new TextFormat(this.hzqFace("sb"),fs,col);
+         f.letterSpacing = Math.round(fs * 0.04 * 10) / 10;
+         t.embedFonts = true;
+         t.defaultTextFormat = f;
+         t.text = s;
+         t.setTextFormat(f);
+      }
       // Purpose: size the extra-slot key chip to Slot Scale, then shrink the font if a long name
       // (Home, End, PgUp, Insert, NUM *) would still spill. Ellipsis is last resort at 8 px.
-      // Inputs: reused chip TextField, label, live extra box. Called from hzqExtDraw only (change-driven).
-      // Outputs: field formatted so the chip box fits inside the card. Does not use hzqFs's 13 px floor.
-      private function hzqExtChipTune(t:TextField, str:String, boxN:Number) : void
+      // Inputs: reused chip TextField, label, live extra box, chip color. hzqExtDraw only.
+      // Outputs: field formatted so the chip box fits inside the card. Integer px, not hzqFs's 13 floor.
+      private function hzqExtChipTune(t:TextField, str:String, boxN:Number, col:uint) : void
       {
          var pad:Number = this.hzqExtChipPad();
          var gap:Number = Math.max(4,Math.round(8 * this.hzqExtSc()));
          var maxW:Number = boxN - pad * 2;
          if(maxW < HZQ_CHIP_MIN) { maxW = HZQ_CHIP_MIN; }
          var fs:Number = this.hzqExtChipFs();
-         var f:TextFormat = t.defaultTextFormat;
-         f.size = fs;
-         t.defaultTextFormat = f;
-         t.text = str;
-         t.setTextFormat(f);
+         this.hzqExtChipApply(t,str,fs,col);
          while(fs > HZQ_CHIP_MIN && Math.ceil(t.textWidth * 1.08) + gap > maxW)
          {
-            fs = Math.max(HZQ_CHIP_MIN,Math.round((fs - 0.5) * 10) / 10);
-            f.size = fs;
-            t.defaultTextFormat = f;
-            t.text = str;
-            t.setTextFormat(f);
+            fs = fs - 1;
+            if(fs < HZQ_CHIP_MIN) { fs = HZQ_CHIP_MIN; }
+            this.hzqExtChipApply(t,str,fs,col);
          }
          if(Math.ceil(t.textWidth * 1.08) + gap > maxW)
          {
@@ -2584,10 +2596,12 @@ package
          }
       }
       // One-line fit with "..." by halving (the scanner's pattern): about log2(length) layouts, only when a label changes.
+      // Uses getTextFormat (the live run), not defaultTextFormat: GFx's default getter can drop the face.
       private function hzqExtFit(t:TextField, str:String, maxW:Number) : void
       {
          if(t.textWidth <= maxW || str.length <= 2) { return; }
-         var f:TextFormat = t.defaultTextFormat;
+         var f:TextFormat = t.getTextFormat();
+         if(f == null || f.font == null || String(f.font).length == 0) { return; }
          var lo:int = 2;
          var hi:int = str.length - 1;
          var best:int = 2;

@@ -89,7 +89,7 @@ const hud = rd("actionscript/horizon_block.as");
 	expect(/this\.hzqExtSlotArt\(g,boxN,sel,dim\)/.test(drw) && /function hzqExtSlotArt/.test(qm) && /function hzqExtBoxN/.test(qm),
 		"2: extended slots use hzqExtSlotArt at vanilla 1-12 size (58 * Slot Scale)");
 	expect(/this\.hzqKeycap\(g,-hb \+ pad,-hb \+ pad,kw,kh/.test(drw)
-		&& /this\.hzqExtChipTune\(o\.k,klab,boxN\)/.test(drw)
+		&& /this\.hzqExtChipTune\(o\.k,klab,boxN,kcol\)/.test(drw)
 		&& /this\.hzqAccentRing\(g,0,0,box\)/.test(fnText(qm, "hzqExtSlotArt").body),
 		"2: selected fill, extra keycap inset scales from +5,+5 and filled accent ring match hzqCard");
 	expect(/function hzqRingDraw/.test(qm) && /this\.hzqAccentRing\(g,x,y,box\)/.test(fnText(qm, "hzqRingDraw").body)
@@ -98,7 +98,7 @@ const hud = rd("actionscript/horizon_block.as");
 		"3: accent hover/focus is a filled overlay ring (GFx clips stroke-only on +x; FME Selected is filled art)");
 	expect(/function hzqUnclip/.test(qm) && /d\.mask = null/.test(fnText(qm, "hzqUnclip").body) && /scrollRect = null/.test(fnText(qm, "hzqUnclip").body),
 		"3: Entry / Catcher mask and scrollRect are still cleared");
-	expect(/this\.hzqSet\(o\.k,klab,13,/.test(drw) && /this\.hzqExtChipTune\(o\.k,klab,boxN\)/.test(drw)
+	expect(/this\.hzqSet\(o\.k,klab,13,/.test(drw) && /this\.hzqExtChipTune\(o\.k,klab,boxN,kcol\)/.test(drw)
 		&& !/this\.hzqSet\(o\.n,/.test(drw)
 		&& /LoadImageFixtureFromUIData/.test(qm) && /FavoritesIconBuffer/.test(qm),
 		"2: extra cards show the vanilla icon + key chip (design 13 px, then Slot Scale); name is the info panel only");
