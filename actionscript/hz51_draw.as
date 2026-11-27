@@ -776,10 +776,11 @@
             }
          }
       }
-      // Purpose: change-driven Live Preview while F11 is open. One representative
-      // mini of the selected page group (dialogue options, HUD card, scanner
-      // signal, theme, module) from pending values. CANCEL reverts because
-      // paint reads hzSetPend. Change-driven while F11 is open; no HUD-frame work.
+      // Purpose: change-driven Live Preview while F11 is open. Dispatches on the
+      // selected row key (not the page group). Planet / character reuse the live
+      // card renderers (hzPpDrawIcon, character name/LV/XP). CANCEL reverts
+      // because paint reads hzSetPend. No per-frame timer. Author: Moragar.
+      // Last modified: 2026-11-27.
       private function hz51PvPaint(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, r:Object) : void
       {
          g.beginFill(uint(T.fill),0.80);
@@ -788,36 +789,22 @@
          this.hz34Ring(b,x,y,w,h,HZ51_BOX_R,uint(T.txt),0.14,1);
          var k:String = r != null && r.k != undefined ? String(r.k) : "";
          var p:Object = this.hzSetPend;
-         var pages:Array = this.hz51Pages(this.hzSetTab);
-         var pid:String = "";
-         var pi:int = this.hz51PageClamp(this.hzSetTab);
-         if(pages != null && pi >= 0 && pi < pages.length && pages[pi] != null) { pid = String(pages[pi].id); }
-         if(this.hzSetTab == 3 && (pid == "dly" || pid == "dlap" || pid == "prs" || pid == "inp" || k.indexOf("Dlg") == 0 || k == "Dialogue"))
-         {
-            this.hz51PvDialogue(b,g,T,acc,x,y,w,h,p,k);
-            return;
-         }
-         if(this.hzSetTab == 3 && (pid == "sub" || pid == "spk" || k.indexOf("Sub") == 0 || k == "Subtitles" || k == "ShowSpeaker"))
-         {
-            this.hz51PvSubtitle(b,g,T,acc,x,y,w,h,p,k);
-            return;
-         }
-         if(this.hzSetTab == 2 || k.indexOf("Scan") == 0)
-         {
-            this.hz51PvScanner(b,g,T,acc,x,y,w,h,p,k);
-            return;
-         }
-         if(this.hzSetTab == 1 || k == "AccentColor" || k == "AccentHex" || k == "CardColor" || k == "CardHex" || k == "FontFace" || k == "TextScale" || k == "TextTone")
-         {
-            this.hz51PvTheme(b,g,T,acc,x,y,w,h,p,k);
-            return;
-         }
-         if(this.hzSetTab == 4 && (pid == "mod" || k.indexOf("_mod_") == 0))
-         {
-            this.hz51PvModule(b,g,T,acc,x,y,w,h,r);
-            return;
-         }
-         if(this.hzSetTab == 4 && pid == "pr")
+         var kind:String = this.hz51PvKind(k);
+         if(kind == "text") { this.hz51PvText(b,T,acc,x,y,w,h,r,k); return; }
+         if(kind == "planet") { this.hz51PvPlanet(b,g,T,acc,x,y,w,h,p,k); return; }
+         if(kind == "character") { this.hz51PvCharacter(b,g,T,acc,x,y,w,h,p,k); return; }
+         if(kind == "vitals") { this.hz51PvVitals(b,g,T,acc,x,y,w,h,p,k); return; }
+         if(kind == "compass") { this.hz51PvCompass(b,g,T,acc,x,y,w,h,p,k); return; }
+         if(kind == "watch") { this.hz51PvWatch(b,g,T,acc,x,y,w,h,p,k); return; }
+         if(kind == "target" || kind == "crosshair") { this.hz51PvTarget(b,g,T,acc,x,y,w,h,p,k); return; }
+         if(kind == "qm") { this.hz51PvQm(b,g,T,acc,x,y,w,h,p,k); return; }
+         if(kind == "toast" || kind == "xp") { this.hz51PvToast(b,g,T,acc,x,y,w,h,p,k); return; }
+         if(kind == "speaker" || kind == "subtitle") { this.hz51PvSubtitle(b,g,T,acc,x,y,w,h,p,k); return; }
+         if(kind == "dialogue") { this.hz51PvDialogue(b,g,T,acc,x,y,w,h,p,k); return; }
+         if(kind == "scanner") { this.hz51PvScanner(b,g,T,acc,x,y,w,h,p,k); return; }
+         if(kind == "theme") { this.hz51PvTheme(b,g,T,acc,x,y,w,h,p,k); return; }
+         if(kind == "module") { this.hz51PvModule(b,g,T,acc,x,y,w,h,r); return; }
+         if(kind == "preset")
          {
             var pr:Object = this.hz37Cur();
             this.hz51T(b,pr != null ? String(pr.n) : "NO PRESET",x + w / 2,y + h / 2 - 8,w - 16,11,"bd",acc,0.6,"center");
@@ -825,6 +812,312 @@
             return;
          }
          this.hz51PvCard(b,g,T,acc,x,y,w,h,p,k);
+      }
+      // Purpose: pick the Live Preview painter for one settings row. Page group
+      // is not used; two rows on the same page can show different minis.
+      // Inputs: row key. Outputs: kind string. Author: Moragar. Last modified: 2026-11-27.
+      private function hz51PvKind(k:String) : String
+      {
+         if(k == null || k.length == 0) { return "text"; }
+         if(k.indexOf("_goto") == 0 || k == "_arrange" || k == "_empty" || k == "_diagoff" || k == "_dirinst" || k == "_cmpok" || k.indexOf("_own") == 0 || k.indexOf("_hz31") == 0 || k.indexOf("_modban") == 0) { return "text"; }
+         if(k.indexOf("_hz37") == 0) { return (k == "_hz37pick" || k == "_hz37save") ? "preset" : "text"; }
+         if(k.indexOf("_mod_") == 0) { return "module"; }
+         if(k.indexOf("_ml") == 0 || k == "_msglog" || k == "Record" || k == "Persist" || k == "HistorySize" || k == "SettingsKey" || k == "StartupIntro" || k == "Debug" || k.indexOf("Perf") == 0) { return "text"; }
+         if(k.indexOf("_hz40") == 0 || k.indexOf("_hz41") == 0 || k == "_hz42scrst" || k == "_qmclear" || k == "_qmkeys") { return "text"; }
+         if(k == "SubAutoPause" || k == "DlgAutoPause" || k == "DlgInputDelay" || k == "DlgRolloverSound" || k == "DlgMarkers" || k == "MissionToastSound" || k == "DlgHoverScroll" || k == "DlgWheel" || k == "DlgNumberKeys" || k == "DlgSelectHint" || k == "DlgQuickPickHint") { return "text"; }
+         if(k == "ShowPlanet" || k.indexOf("Planet") == 0 || k == "HazardAlert" || k == "TimeDisplay" || k == "ClockFormat" || k == "TempUnit") { return "planet"; }
+         if(k == "ShowCharacter" || k.indexOf("Character") == 0) { return "character"; }
+         if(k.indexOf("Watch") == 0) { return "watch"; }
+         if(k == "ShowVitals" || k.indexOf("Vitals") == 0 || k == "AutoCenterVitals" || k == "RegenSliver" || k == "SmoothBars" || k == "EdgePulse") { return "vitals"; }
+         if(k == "ShowJetpack" || k.indexOf("Jetpack") == 0) { return "jetpack"; }
+         if(k == "ShowAfflictions" || k.indexOf("Afflict") == 0) { return "affliction"; }
+         if(k.indexOf("Hazard") == 0) { return "hazard"; }
+         if(k == "ShowAmmo" || k.indexOf("Equipment") == 0 || k == "AmmoRule" || k == "EquipmentExtras") { return "equipment"; }
+         if(k.indexOf("Enemy") == 0) { return "enemy"; }
+         if(k.indexOf("Stealth") == 0) { return "stealth"; }
+         if(k.indexOf("Crosshair") == 0 || k == "HitMarkers" || k == "DamageNumbers" || k == "DirectionRing" || k.indexOf("Scope") == 0) { return "crosshair"; }
+         if(k == "ShowCompass" || k.indexOf("Compass") == 0 || k == "CompassMarkers" || k == "ShowFollowers" || k == "FollowerColor" || k == "ShowLocations" || k == "ShowShip" || k == "ShowEnemies" || k == "ShowPlayerMarker") { return "compass"; }
+         if(k == "ShowQuests" || k.indexOf("Quests") == 0) { return "quests"; }
+         if(k == "ShowTarget" || k == "NameHover" || k == "HoverScale" || k == "TargetAnchor" || k == "TargetShowValue" || k == "ContainerScale" || k == "ContainerOpacity" || k == "ObjectRing") { return "target"; }
+         if(k == "VehicleExitPill") { return "vehicle"; }
+         if(k.indexOf("QuickMenu") == 0) { return "qm"; }
+         if(k.indexOf("XpToast") == 0) { return "xp"; }
+         if(k.indexOf("MissionToast") == 0 || k == "ReactionCard" || k == "GameCardTitle") { return "toast"; }
+         if(k == "ShowSpeaker" || k == "SpeakerCard" || k == "SpkColIdx") { return "speaker"; }
+         if(k == "Subtitles" || k.indexOf("Sub") == 0 || k == "TxtColIdx" || k == "KeepInDialogue" || k == "FixedInDialogue") { return "subtitle"; }
+         if(k == "Dialogue" || k.indexOf("Dlg") == 0) { return "dialogue"; }
+         if(k.indexOf("Scan") == 0 || (k.indexOf("Hide") == 0 && k.indexOf("Scan") > 0) || k == "DimTraitPopupDuringBioscan" || k == "TraitPopupDim" || k == "HideQuestPopupsWhileScanning" || k == "HideMainHudWhileScanning" || k == "HideWatchWhileScanning") { return "scanner"; }
+         if(k == "AccentColor" || k == "AccentHex" || k == "CardColor" || k == "CardHex" || k == "CardOpacity" || k == "CardBgOpacity" || k == "CardShadow" || k == "FontFace" || k == "TextScale" || k == "TextTone" || k == "HeaderStyle" || k == "TextShadow" || k == "HudScale" || k == "Margin" || k == "ScreenHeight" || k == "FadeCards" || k == "CombatDim" || k == "DimOpacity" || k == "SettingsOpacity" || k == "CompactScale" || k == "Compact") { return "theme"; }
+         return "card";
+      }
+      private function hz51PvText(b:Sprite, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, r:Object, k:String) : void
+      {
+         var help:String = this.hz51HelpOf(k, r);
+         if(help == null || help.length == 0) { help = r != null && r.note != undefined ? String(r.note) : "This setting has no separate HUD picture. The details below describe what it does."; }
+         this.hz51T(b,"SETTING DETAILS",x + 10,y + 10,w - 20,8,"sb",acc,0.8);
+         var tf:TextField = this.hz51T(b,help,x + 10,y + 26,w - 20,10,"rg",uint(T.lab),0.1);
+         tf.wordWrap = true; tf.multiline = true; tf.width = w - 20;
+         this.hzMsglogWrap(tf,w - 20,h - 36);
+      }
+      // Purpose: planet-card Live Preview using the live disc renderer (hzPpDrawIcon)
+      // plus pending on/off, compact, scale, details, and hazard. Same painter the
+      // old F11 used for STYLE. Inputs: pending values + selected key.
+      private function hz51PvPlanet(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, p:Object, k:String) : void
+      {
+         if(k == "ShowPlanet" && !this.hz51On("ShowPlanet")) { this.hz51PvOff(b,T,x,y,w,h,"Planet card hidden"); return; }
+         if(!this.hz51On("ShowPlanet") && (k.indexOf("Planet") == 0 || k == "HazardAlert") && k != "ShowPlanet") { this.hz51PvOff(b,T,x,y,w,h,"Planet card hidden"); return; }
+         var compact:Boolean = p != null && (int(p.PlanetCompact) == 1 || (k == "PlanetCompact" && int(p.PlanetCompact) == 1));
+         if(p != null && int(p.PlanetCompact) < 0) { compact = Boolean(p.Compact); }
+         var sc:Number = p != null && !isNaN(Number(p.PlanetScale)) ? Number(p.PlanetScale) : 1;
+         if(isNaN(sc) || sc <= 0) { sc = 1; }
+         sc = Math.max(0.55, Math.min(1.2, sc));
+         var cw:Number = (w - 16) * (compact ? 0.82 : 1);
+         var ch:Number = (compact ? 36 : 64) * sc;
+         var cx:Number = x + 8;
+         var cy:Number = y + 12;
+         g.beginFill(uint(T.tile),0.92);
+         g.drawRoundRect(cx,cy,cw,ch,HZ51_BOX_R,HZ51_BOX_R);
+         g.endFill();
+         this.hz34Ring(b,cx,cy,cw,ch,HZ51_BOX_R,acc,0.7,1);
+         var disc:Sprite = new Sprite();
+         disc.x = cx + (compact ? 16 : 22);
+         disc.y = cy + ch / 2;
+         disc.scaleX = disc.scaleY = compact ? 0.32 : 0.48;
+         b.addChild(disc);
+         try { this.hzPpDrawIcon(disc); } catch(ePvP:Error) {
+            var dg:* = disc.graphics;
+            dg.beginFill(acc,0.9); dg.drawCircle(0,0,30); dg.endFill();
+         }
+         var nm:String = "--";
+         try { if(this.hzPpName != null && String(this.hzPpName.text).length > 0) { nm = String(this.hzPpName.text); } } catch(ePvN:Error) { }
+         this.hz51T(b,nm,cx + (compact ? 30 : 48),cy + (compact ? 10 : 8),cw - 56,compact ? 9 : 11,"bd",uint(T.txt),0.4);
+         var detOn:Boolean = p == null || p.PlanetDetails === undefined || Boolean(p.PlanetDetails);
+         if(k == "PlanetDetails") { detOn = this.hz51On("PlanetDetails"); }
+         if(!compact && detOn) { this.hz51T(b,"Temperate  ·  1.0 G",cx + 48,cy + 26,cw - 56,8,"rg",uint(T.mut),0.2); }
+         var hazOn:Boolean = this.hz51On("HazardAlert");
+         if(hazOn) { this.hz51T(b,"HAZARD",cx + cw - 52,cy + 8,48,8,"sb",acc,0.8); }
+         if(k == "TimeDisplay" || k == "ClockFormat") { this.hz51T(b,k == "ClockFormat" ? "14:32" : "PLANET TIME",cx + 48,cy + ch - 16,cw - 56,8,"sb",acc,0.6); }
+         if(k == "TempUnit") { this.hz51T(b,p != null && int(p.TempUnit) == 1 ? "68 F" : "20 C",cx + 48,cy + ch - 16,cw - 56,8,"sb",acc,0.6); }
+      }
+      // Purpose: character-card Live Preview from the live character fields
+      // (name, LV, XP, credits, mass) the same way the old F11 cloned the planet
+      // card. Compact / scale / show-for follow pending values.
+      private function hz51PvCharacter(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, p:Object, k:String) : void
+      {
+         if(!this.hz51On("ShowCharacter") && k != "ShowCharacter") { this.hz51PvOff(b,T,x,y,w,h,"Character card hidden"); return; }
+         if(k == "ShowCharacter" && !this.hz51On("ShowCharacter")) { this.hz51PvOff(b,T,x,y,w,h,"Character card hidden"); return; }
+         var compact:Boolean = p != null && int(p.CharacterCompact) == 1;
+         if(p != null && int(p.CharacterCompact) < 0) { compact = Boolean(p.Compact); }
+         var sc:Number = p != null && !isNaN(Number(p.CharacterScale)) ? Number(p.CharacterScale) : 1;
+         if(isNaN(sc) || sc <= 0) { sc = 1; }
+         sc = Math.max(0.6, Math.min(1.2, sc));
+         var nm:String = "Character";
+         try { if(this.hz26Name != null && String(this.hz26Name).length > 0) { nm = String(this.hz26Name); } } catch(ePvC:Error) { }
+         var lv:String = "LV 34";
+         try { if(this.hz26Lv >= 0) { lv = "LV " + String(this.hz26Lv); } } catch(ePvL:Error) { }
+         var cw:Number = (w - 16) * sc;
+         var ch:Number = (compact ? 28 : 58) * Math.max(0.85, sc);
+         var cx:Number = x + 8;
+         var cy:Number = y + 14;
+         g.beginFill(uint(T.tile),0.92);
+         g.drawRoundRect(cx,cy,cw,ch,HZ51_BOX_R,HZ51_BOX_R);
+         g.endFill();
+         this.hz34Ring(b,cx,cy,cw,ch,HZ51_BOX_R,acc,0.7,1);
+         this.hz51T(b,compact ? lv : nm,cx + 8,cy + 6,cw - 16,compact ? 9 : 11,"bd",uint(T.txt),0.4);
+         if(!compact)
+         {
+            this.hz51T(b,lv,cx + 8,cy + 22,60,8,"sb",acc,0.6);
+            g.beginFill(uint(T.fill),0.9); g.drawRoundRect(cx + 70,cy + 26,cw - 86,5,3,3); g.endFill();
+            g.beginFill(acc,1); g.drawRoundRect(cx + 70,cy + 26,Math.max(8,(cw - 86) * 0.62),5,3,3); g.endFill();
+            this.hz51T(b,"48,320 CR",cx + 8,cy + 38,cw * 0.5,8,"rg",uint(T.lab),0.2);
+            this.hz51T(b,"142 / 175 KG",cx + cw * 0.5,cy + 38,cw * 0.5 - 8,8,"rg",uint(T.lab),0.2);
+         }
+         else
+         {
+            g.beginFill(acc,1); g.drawRoundRect(cx + 52,cy + 12,Math.max(24,cw * 0.35),4,2,2); g.endFill();
+         }
+         if(k == "CharacterShowSeconds")
+         {
+            var secs:Number = p != null && !isNaN(Number(p.CharacterShowSeconds)) ? Number(p.CharacterShowSeconds) : 8;
+            this.hz51T(b,"SHOWS " + String(int(secs)) + "s",cx,cy + ch + 4,cw,8,"sb",acc,0.8);
+         }
+      }
+      private function hz51PvVitals(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, p:Object, k:String) : void
+      {
+         if(k == "ShowVitals" && !this.hz51On("ShowVitals")) { this.hz51PvOff(b,T,x,y,w,h,"Vitals hidden"); return; }
+         if(!this.hz51On("ShowVitals") && k.indexOf("Vitals") == 0 && k != "ShowVitals") { this.hz51PvOff(b,T,x,y,w,h,"Vitals hidden"); return; }
+         var horiz:Boolean = p != null && int(p.VitalsLayout) == 1;
+         var compact:Boolean = p != null && int(p.VitalsBars) == 1;
+         var bx:Number = x + 12;
+         var by:Number = y + 18;
+         var bw:Number = w - 24;
+         var bh:Number = compact ? 6 : 10;
+         if(horiz)
+         {
+            g.beginFill(acc,0.85); g.drawRoundRect(bx,by,bw * 0.46,bh,bh,bh); g.endFill();
+            g.beginFill(uint(T.lab),0.7); g.drawRoundRect(bx + bw * 0.52,by,bw * 0.46,bh,bh,bh); g.endFill();
+            this.hz51T(b,"HP",bx,by + 14,40,8,"sb",acc,0.6);
+            this.hz51T(b,"O2",bx + bw * 0.52,by + 14,40,8,"sb",uint(T.lab),0.6);
+         }
+         else
+         {
+            g.beginFill(acc,0.85); g.drawRoundRect(bx,by,bw,bh,bh,bh); g.endFill();
+            g.beginFill(uint(T.lab),0.7); g.drawRoundRect(bx,by + bh + 10,bw * 0.72,bh,bh,bh); g.endFill();
+            this.hz51T(b,"HEALTH",bx,by + bh + 2,bw,8,"sb",acc,0.6);
+            this.hz51T(b,"O2",bx,by + bh * 2 + 12,bw,8,"sb",uint(T.lab),0.6);
+         }
+         if(k == "RegenSliver" && this.hz51On("RegenSliver")) { g.beginFill(0x7DFFB3,0.9); g.drawRect(bx + bw * 0.62,by,3,bh); g.endFill(); }
+         if(k == "EdgePulse" && this.hz51On("EdgePulse")) { this.hz34Ring(b,x + 4,y + 4,w - 8,h - 8,HZ51_BOX_R,0xC45C5C,0.55,2); }
+         if(k == "SmoothBars") { this.hz51T(b,this.hz51On("SmoothBars") ? "SMOOTH FILL" : "SNAP FILL",x,y + h - 18,w,8,"sb",acc,0.8); }
+      }
+      private function hz51PvCompass(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, p:Object, k:String) : void
+      {
+         if(k == "ShowCompass" && !this.hz51On("ShowCompass")) { this.hz51PvOff(b,T,x,y,w,h,"Compass hidden"); return; }
+         if(!this.hz51On("ShowCompass") && k != "ShowCompass") { this.hz51PvOff(b,T,x,y,w,h,"Compass hidden"); return; }
+         var bx:Number = x + 10;
+         var by:Number = y + h / 2 - 10;
+         var bw:Number = w - 20;
+         g.beginFill(uint(T.tile),0.9); g.drawRoundRect(bx,by,bw,22,11,11); g.endFill();
+         this.hz34Ring(b,bx,by,bw,22,11,acc,0.55,1);
+         this.hz51T(b,"W",bx + 8,by + 5,16,9,"sb",uint(T.mut),0.4);
+         this.hz51T(b,"N",bx + bw / 2 - 6,by + 4,16,10,"bd",acc,0.4);
+         this.hz51T(b,"E",bx + bw - 20,by + 5,16,9,"sb",uint(T.mut),0.4);
+         if(!this.hz51On("CompassMarkers") && k != "CompassMarkers") { this.hz51T(b,"MARKERS OFF",bx,by + 26,bw,8,"sb",uint(T.mut),0.8); return; }
+         if(k == "CompassMarkers" && !this.hz51On("CompassMarkers")) { this.hz51T(b,"MARKERS OFF",bx,by + 26,bw,8,"sb",uint(T.mut),0.8); return; }
+         var folCol:uint = acc;
+         try { if(p != null && p.FollowerColor != undefined) { var pal:Array = HZ_FOL_PAL; var fi:int = int(p.FollowerColor); if(pal != null && fi >= 0 && fi < pal.length) { folCol = uint(pal[fi]); } } } catch(eFol:Error) { }
+         if(this.hz51On("ShowFollowers") || k == "ShowFollowers" || k == "FollowerColor")
+         {
+            if(k == "ShowFollowers" && !this.hz51On("ShowFollowers")) { }
+            else if(this.hz51On("ShowFollowers") || k == "FollowerColor") { g.beginFill(folCol,1); g.drawCircle(bx + bw * 0.38,by + 11,3); g.endFill(); }
+         }
+         if(this.hz51On("ShowLocations") || (k == "ShowLocations" && this.hz51On("ShowLocations"))) { g.beginFill(uint(T.txt),0.9); g.drawCircle(bx + bw * 0.62,by + 11,2.5); g.endFill(); }
+         if(this.hz51On("ShowShip") || (k == "ShowShip" && this.hz51On("ShowShip"))) { g.beginFill(acc,0.9); g.drawRoundRect(bx + bw * 0.72,by + 8,8,6,2,2); g.endFill(); }
+         if(this.hz51On("ShowEnemies") || (k == "ShowEnemies" && this.hz51On("ShowEnemies"))) { g.beginFill(0xC45C5C,1); g.drawCircle(bx + bw * 0.28,by + 11,2.5); g.endFill(); }
+         if(this.hz51On("ShowPlayerMarker") || (k == "ShowPlayerMarker" && this.hz51On("ShowPlayerMarker"))) { g.beginFill(acc,1); g.moveTo(bx + bw * 0.5,by + 4); g.lineTo(bx + bw * 0.5 + 4,by + 12); g.lineTo(bx + bw * 0.5 - 4,by + 12); g.lineTo(bx + bw * 0.5,by + 4); g.endFill(); }
+      }
+      private function hz51PvWatch(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, p:Object, k:String) : void
+      {
+         var ws:int = p != null ? int(p.WatchStyle) : 0;
+         if(ws == 0) { this.hz51PvOff(b,T,x,y,w,h,"Watch off"); return; }
+         var cx:Number = x + w / 2;
+         var cy:Number = y + h / 2 - 4;
+         var lab:String = ws == 4 ? "ANALOG" : (ws == 3 ? "DIGITAL" : (ws == 2 ? "VANILLA + HORIZON" : "VANILLA"));
+         if(ws == 4)
+         {
+            g.lineStyle(2,acc,0.9); g.drawCircle(cx,cy,22); g.lineStyle();
+            g.beginFill(acc,1); g.drawRect(cx - 1,cy - 14,2,14); g.endFill();
+            g.beginFill(uint(T.txt),0.8); g.drawRect(cx,cy - 1,12,2); g.endFill();
+         }
+         else
+         {
+            g.beginFill(uint(T.tile),0.92); g.drawRoundRect(cx - 40,cy - 16,80,32,8,8); g.endFill();
+            this.hz34Ring(b,cx - 40,cy - 16,80,32,8,acc,0.7,1);
+            this.hz51T(b,ws >= 3 ? "14:32" : "WATCH",cx,cy - 6,70,12,"bd",uint(T.txt),0.4,"center");
+         }
+         this.hz51T(b,lab,x,y + h - 18,w,8,"sb",acc,0.8);
+      }
+      private function hz51PvTarget(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, p:Object, k:String) : void
+      {
+         var cx:Number = x + w / 2;
+         var cy:Number = y + 28;
+         var style:int = p != null ? int(p.CrosshairStyle) : 1;
+         if(k == "CrosshairRule" && p != null && int(p.CrosshairRule) == 2) { this.hz51PvOff(b,T,x,y,w,h,"Crosshair off"); return; }
+         if(style == 3 && (k.indexOf("Crosshair") == 0)) { this.hz51T(b,"NONE",cx,cy,w - 16,11,"bd",uint(T.mut),0.6,"center"); }
+         else if(style == 2)
+         {
+            g.beginFill(acc,1); g.drawRect(cx - 8,cy - 1,6,2); g.drawRect(cx + 2,cy - 1,6,2); g.drawRect(cx - 1,cy - 8,2,6); g.drawRect(cx - 1,cy + 2,2,6); g.endFill();
+         }
+         else if(style == 1)
+         {
+            g.beginFill(acc,1); g.drawCircle(cx,cy,2.5); g.endFill();
+         }
+         else
+         {
+            g.lineStyle(1,acc,0.8); g.moveTo(cx - 8,cy); g.lineTo(cx + 8,cy); g.moveTo(cx,cy - 8); g.lineTo(cx,cy + 8); g.lineStyle();
+         }
+         if(k == "HitMarkers" && this.hz51On("HitMarkers")) { this.hz51T(b,"X",cx + 14,cy - 10,16,10,"bd",acc,0.4); }
+         if(k == "DamageNumbers" && this.hz51On("DamageNumbers")) { this.hz51T(b,"-12",cx + 18,cy - 4,28,9,"sb",0xC45C5C,0.4); }
+         if(k == "DirectionRing" && this.hz51On("DirectionRing")) { g.lineStyle(2,0xC45C5C,0.8); g.drawCircle(cx,cy,18); g.lineStyle(); }
+         if(k.indexOf("Scope") == 0)
+         {
+            g.beginFill(uint(T.tile),0.9); g.drawRoundRect(x + 16,y + h - 40,w - 32,22,6,6); g.endFill();
+            this.hz51T(b,this.hz51On("ScopeHoldBreathChip") ? "HOLD BREATH" : "CHIP OFF",x,y + h - 36,w,9,"sb",acc,0.6);
+            return;
+         }
+         var hoverOn:Boolean = this.hz51On("ShowTarget");
+         if(k == "ShowTarget" && !hoverOn) { this.hz51PvOff(b,T,x,y,w,h,"Target card hidden"); return; }
+         if(k == "ObjectRing")
+         {
+            var ring:int = p != null ? int(p.ObjectRing) : 0;
+            if(ring == 0) { this.hz51T(b,"RING OFF",x,y + h - 18,w,8,"sb",uint(T.mut),0.8); }
+            else { g.lineStyle(1,acc,0.7); g.drawCircle(cx,cy,22); g.lineStyle(); this.hz51T(b,ring == 1 ? "CONTAINERS" : "VANILLA",x,y + h - 18,w,8,"sb",acc,0.8); }
+            return;
+         }
+         if(hoverOn || k == "NameHover" || k == "HoverScale" || k == "TargetShowValue" || k == "ContainerScale" || k == "ContainerOpacity")
+         {
+            var hs:Number = p != null && !isNaN(Number(p.HoverScale)) ? Number(p.HoverScale) : 1;
+            if(k == "ContainerScale" && p != null && !isNaN(Number(p.ContainerScale))) { hs = Number(p.ContainerScale); }
+            if(isNaN(hs) || hs <= 0) { hs = 1; }
+            hs = Math.max(0.6, Math.min(1.3, hs));
+            var tw:Number = 96 * hs;
+            var th:Number = (p != null && int(p.NameHover) == 1 ? 36 : 20) * hs;
+            var tx:Number = cx - tw / 2;
+            var ty:Number = cy + 18;
+            var opa:Number = p != null && !isNaN(Number(p.ContainerOpacity)) ? Number(p.ContainerOpacity) : 1;
+            if(isNaN(opa) || opa <= 0) { opa = 1; }
+            if(opa > 1) { opa = 1; }
+            g.beginFill(uint(T.tile),0.55 + 0.4 * opa); g.drawRoundRect(tx,ty,tw,th,6,6); g.endFill();
+            this.hz34Ring(b,tx,ty,tw,th,6,acc,0.6,1);
+            this.hz51T(b,"LOCKBOX",tx + 6,ty + 3,tw - 12,9,"sb",uint(T.txt),0.4);
+            if(p != null && int(p.NameHover) == 1 && (k == "NameHover" || this.hz51On("TargetShowValue") || k == "TargetShowValue")) { this.hz51T(b,"12  ·  0.4 KG",tx + 6,ty + 18,tw - 12,8,"rg",uint(T.mut),0.2); }
+         }
+      }
+      private function hz51PvQm(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, p:Object, k:String) : void
+      {
+         if(k == "QuickMenuHorizon" && !this.hz51On("QuickMenuHorizon")) { this.hz51PvOff(b,T,x,y,w,h,"Game favorites menu"); return; }
+         var per:int = p != null ? int(p.QuickMenuSlotsPerRow) : 6;
+         if(per < 4) { per = 6; }
+         var count:int = p != null ? int(p.QuickMenuSlotCount) : 12;
+         if(count < 4) { count = 12; }
+         if(count > 12) { count = 12; }
+         var ext:Boolean = this.hz51On("QuickMenuExtended");
+         var n:int = ext ? Math.min(12, count) : 8;
+         var gap:Number = 4;
+         var tw:Number = Math.max(10, (w - 20 - (per - 1) * gap) / per);
+         var i:int = 0;
+         while(i < n)
+         {
+            var col:int = i % per;
+            var row:int = int(i / per);
+            var xx:Number = x + 10 + col * (tw + gap);
+            var yy:Number = y + 16 + row * (tw + gap);
+            g.beginFill(i < 4 ? acc : uint(T.tile),i < 4 ? 0.22 : 0.7);
+            g.drawRoundRect(xx,yy,tw,tw,3,3);
+            g.endFill();
+            i++;
+         }
+         if(k == "QuickMenuExtPanelOpacity" || k == "QuickMenuExtSlotScale") { this.hz51T(b,k == "QuickMenuExtSlotScale" ? "SLOT SCALE" : "PANEL OPACITY",x,y + h - 16,w,8,"sb",acc,0.8); }
+      }
+      private function hz51PvToast(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, p:Object, k:String) : void
+      {
+         var on:Boolean = true;
+         if(k.indexOf("XpToast") == 0) { on = this.hz51On("XpToast"); if(k == "XpToast" && !on) { this.hz51PvOff(b,T,x,y,w,h,"XP toast hidden"); return; } }
+         if(k.indexOf("MissionToast") == 0) { on = this.hz51On("MissionToast"); if(k == "MissionToast" && !on) { this.hz51PvOff(b,T,x,y,w,h,"Game quest banner"); return; } }
+         if(k == "ReactionCard" && !this.hz51On("ReactionCard")) { this.hz51PvOff(b,T,x,y,w,h,"Game reaction line"); return; }
+         var lab:String = k.indexOf("Xp") == 0 ? "+ 25 XP" : (k == "ReactionCard" ? "ANDREJA LIKED THAT" : "NEW MISSION");
+         var tw:Number = w - 28;
+         var th:Number = 28;
+         var tx:Number = x + 14;
+         var ty:Number = y + h / 2 - 14;
+         g.beginFill(uint(T.tile),0.92); g.drawRoundRect(tx,ty,tw,th,HZ51_BOX_R,HZ51_BOX_R); g.endFill();
+         this.hz34Ring(b,tx,ty,tw,th,HZ51_BOX_R,acc,0.7,1);
+         this.hz51T(b,lab,tx + 10,ty + 8,tw - 20,10,"bd",uint(T.txt),0.4);
+         if(k == "GameCardTitle")
+         {
+            var gt:int = p != null ? int(p.GameCardTitle) : 0;
+            this.hz51T(b,gt == 1 ? "DATA" : (gt == 2 ? "MISC" : "NO LABEL"),tx + 10,ty - 14,tw - 20,8,"sb",acc,0.8);
+         }
       }
       private function hz51PvOff(b:Sprite, T:Object, x:Number, y:Number, w:Number, h:Number, why:String) : void
       {
@@ -871,23 +1164,78 @@
             i++;
          }
          if(more) { this.hz51T(b,(6 - n) + " MORE",px + pw / 2,py + ph - 16,pw - 12,8,"sb",acc,0.8,"center"); }
+         if(k == "DlgPersuadeStyle" || k == "DlgPersuadeColor" || k == "DlgPersuasionMeter")
+         {
+            var psStyle:int = p != null ? int(p.DlgPersuadeStyle) : 0;
+            var pcol:uint = acc;
+            try { if(p != null && p.DlgPersuadeColor != undefined) { var ppal:Array = HZ_ACCENTS; var pi2:int = int(p.DlgPersuadeColor); if(ppal != null && pi2 >= 0 && pi2 < ppal.length) { pcol = uint(ppal[pi2]); } } } catch(ePrs:Error) { }
+            if(psStyle == 0) { g.beginFill(pcol,0.25); g.drawRoundRect(px + pw - 56,py + 10,44,14,4,4); g.endFill(); this.hz51T(b,"PERSUADE",px + pw - 54,py + 12,42,8,"sb",pcol,0.4); }
+            else if(psStyle == 1) { this.hz51T(b,"Persuade",px + pw - 54,py + 12,50,8,"sb",pcol,0.4); }
+            if(this.hz51On("DlgPersuasionMeter") || k == "DlgPersuasionMeter")
+            {
+               if(k != "DlgPersuasionMeter" || this.hz51On("DlgPersuasionMeter"))
+               {
+                  g.beginFill(uint(T.fill),0.9); g.drawRoundRect(px + 8,py + ph - 10,pw - 16,4,2,2); g.endFill();
+                  g.beginFill(pcol,1); g.drawRoundRect(px + 8,py + ph - 10,(pw - 16) * 0.55,4,2,2); g.endFill();
+               }
+            }
+         }
       }
       private function hz51PvSubtitle(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, p:Object, k:String) : void
       {
          if(k == "Subtitles" && !this.hz51On("Subtitles")) { this.hz51PvOff(b,T,x,y,w,h,"Game subtitles"); return; }
-         var barW:Number = w - 20;
-         var barH:Number = 36;
+         if(!this.hz51On("Subtitles") && k != "Subtitles" && k != "ShowSpeaker" && k != "SpeakerCard" && k != "SpkColIdx") { this.hz51PvOff(b,T,x,y,w,h,"Game subtitles"); return; }
+         var widthPct:Number = p != null && !isNaN(Number(p.SubWidth)) ? Number(p.SubWidth) : 70;
+         if(widthPct > 1) { widthPct = widthPct / 100; }
+         if(isNaN(widthPct) || widthPct <= 0) { widthPct = 0.7; }
+         var barW:Number = Math.max(80, (w - 20) * Math.max(0.45, Math.min(1, widthPct)));
+         var barH:Number = 40;
+         var align:int = p != null ? int(p.SubAlign) : 0;
          var bx:Number = x + 10;
-         var by:Number = y + h / 2 - 10;
+         if(align == 1) { bx = x + (w - barW) / 2; }
+         else if(align == 2) { bx = x + w - 10 - barW; }
+         var by:Number = y + h / 2 - 8;
+         if(k == "SubPosition" || k == "SubOffsetY")
+         {
+            var pos:int = p != null ? int(p.SubPosition) : 0;
+            by = pos == 1 ? y + 16 : (pos == 2 ? y + h - barH - 16 : y + h / 2 - 8);
+         }
          var opa:Number = p != null ? Number(p.SubBgOpacity) : 70;
          if(opa > 1) { opa = opa / 100; }
          if(isNaN(opa)) { opa = 0.7; }
-         g.beginFill(uint(T.fill),Math.max(0.25, opa));
-         g.drawRoundRect(bx,by,barW,barH,HZ51_BOX_R,HZ51_BOX_R);
-         g.endFill();
-         this.hz34Ring(b,bx,by,barW,barH,HZ51_BOX_R,acc,0.4,1);
-         if(this.hz51On("ShowSpeaker") || k == "ShowSpeaker") { this.hz51T(b,"ANDREJA",bx + 8,by + 4,barW - 16,8,"sb",acc,0.8); }
-         this.hz51T(b,"We should keep moving.",bx + 8,by + 16,barW - 16,10,"rg",uint(T.txt),0.2);
+         var cardOn:Boolean = p == null || p.SubCard === undefined || Boolean(p.SubCard);
+         if(k == "SubCard") { cardOn = this.hz51On("SubCard"); }
+         if(cardOn)
+         {
+            g.beginFill(uint(T.fill),Math.max(0.25, opa));
+            g.drawRoundRect(bx,by,barW,barH,HZ51_BOX_R,HZ51_BOX_R);
+            g.endFill();
+            this.hz34Ring(b,bx,by,barW,barH,HZ51_BOX_R,acc,0.4,1);
+         }
+         var spkOn:Boolean = this.hz51On("ShowSpeaker");
+         if(k == "ShowSpeaker") { spkOn = this.hz51On("ShowSpeaker"); }
+         var spkCard:Boolean = this.hz51On("SpeakerCard");
+         var fs:Number = 10;
+         if(p != null && !isNaN(Number(p.SubSize)) && Number(p.SubSize) > 0) { fs = Math.max(8, Math.min(13, 8 + Number(p.SubSize) * 2)); }
+         if(spkOn)
+         {
+            var sx:Number = bx + 8;
+            var sy:Number = by + (cardOn ? 4 : -12);
+            if(spkCard)
+            {
+               g.beginFill(uint(T.tile),0.95); g.drawRoundRect(sx - 2,sy - 2,64,14,4,4); g.endFill();
+               this.hz34Ring(b,sx - 2,sy - 2,64,14,4,acc,0.8,1);
+            }
+            var spkCol:uint = acc;
+            try { if(p != null && p.SpkColIdx != undefined) { var spal:Array = HZ_ACCENTS; var si:int = int(p.SpkColIdx); if(spal != null && si >= 0 && si < spal.length) { spkCol = uint(spal[si]); } } } catch(eSpk:Error) { }
+            this.hz51T(b,"ANDREJA",sx,sy,barW - 16,8,"sb",spkCol,0.8);
+            this.hz51T(b,"We should keep moving.",bx + 8,by + 18,barW - 16,fs,"rg",uint(T.txt),0.2);
+         }
+         else
+         {
+            this.hz51T(b,"We should keep moving.",bx + 8,by + 12,barW - 16,fs,"rg",uint(T.txt),0.2);
+         }
+         if(k == "SubMaxLines") { this.hz51T(b,String(p != null ? int(p.SubMaxLines) : 2) + " LINES",bx,by + barH + 4,barW,8,"sb",uint(T.mut),0.8); }
       }
       private function hz51PvScanner(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, p:Object, k:String) : void
       {
@@ -1002,11 +1350,25 @@
             this.hz51T(b,lab,cx + cw / 2,cy + ch + 8,cw,10,"sb",acc,0.4,"center");
             if(ws == 4) { g.beginFill(acc,0.18); g.drawCircle(cx + cw / 2,cy + ch / 2,Math.min(12,ch / 2 - 2)); g.endFill(); }
          }
+         else if(k.indexOf("Afflict") == 0)
+         {
+            var lay:int = p != null ? int(p.AfflictionLayout) : 0;
+            var ai:int = 0;
+            while(ai < 2)
+            {
+               var ax:Number = cx + 8 + (lay == 1 ? ai * 36 : 0);
+               var ay:Number = cy + 6 + (lay == 1 ? 0 : ai * 16);
+               if(lay == 2) { g.beginFill(acc,0.9); g.drawCircle(cx + 16 + ai * 18,cy + ch / 2,5); g.endFill(); }
+               else { g.beginFill(acc,0.2); g.drawRoundRect(ax,ay,32,12,4,4); g.endFill(); this.hz51T(b,ai == 0 ? "BURN" : "COLD",ax + 4,ay + 1,28,8,"sb",acc,0.6); }
+               ai++;
+            }
+            this.hz51T(b,lay == 2 ? "ICONS" : (lay == 1 ? "ROW" : "COLUMN"),cx + 8,cy + ch + 4,cw,8,"sb",uint(T.lab),0.4);
+         }
          else if(k.indexOf("Scale") > 0 || k.indexOf("Compact") > 0)
          {
             this.hz51T(b,compact ? "COMPACT" : (sc == 1 ? "FOLLOW HUD" : "CUSTOM " + this.hzSetNum(sc)),cx + 8,cy + ch + 6,cw,9,"sb",uint(T.lab),0.4);
          }
-         else { this.hz51T(b,"HUD CARD",cx + 8,cy + ch + 6,cw,8,"sb",acc,0.8); }
+         else { this.hz51T(b,String(k).toUpperCase(),cx + 8,cy + ch + 6,cw,8,"sb",acc,0.8); }
       }
       private function hz51DrawFooter(b:Sprite, g:*, T:Object, acc:uint, W:Number, H:Number) : void
       {

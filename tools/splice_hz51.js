@@ -95,7 +95,7 @@ if (!text.includes("SETTINGS FALLBACK")) {
 		'var fb51:String = this.hz51FbDbg != null && this.hz51FbDbg.length > 0 ? "\\n\\nSETTINGS FALLBACK:\\n" + this.hz51FbDbg : "";\n         this.hzDbgText.text = "CROSSHAIR: " + this.hzDbgCross + "\\n\\nWEAPON: " + this.hzDbgWeap + "\\n\\nCOMPASS (array:type x count): " + this.hzDbgCmp + "\\n\\nENV KEYS:\\n" + this.hzDbgEnv + "\\n\\nV0.26 PROVIDERS:\\n" + this.hz26DbgText() + fb51;'
 	);
 }
-if (!text.includes("function hz51Stroke") || !text.includes("function hz51HeadSlots") || !text.includes("hzSetOver") || !text.includes("function hz51HitAt") || !text.includes("function hz51Disk") || !text.includes("function hz51FbLog") || !text.includes("function hz51PvPaint") || !text.includes("function hz51WrapMod") || !text.includes("function hz51DrawArrangeBtn") || !text.includes("function hz51UnavailChip") || !text.includes("function hz51FillGroup") || !text.includes("function hz51PresetNames") || !text.includes("function hz51PvDialogue")) {
+if (!text.includes("function hz51Stroke") || !text.includes("function hz51HeadSlots") || !text.includes("hzSetOver") || !text.includes("function hz51HitAt") || !text.includes("function hz51Disk") || !text.includes("function hz51FbLog") || !text.includes("function hz51PvPaint") || !text.includes("function hz51WrapMod") || !text.includes("function hz51DrawArrangeBtn") || !text.includes("function hz51UnavailChip") || !text.includes("function hz51FillGroup") || !text.includes("function hz51PresetNames") || !text.includes("function hz51PvDialogue") || !text.includes("function hz51PvKind") || !text.includes("function hz51PvPlanet")) {
 	console.error("splice missing new helpers");
 	process.exit(1);
 }
