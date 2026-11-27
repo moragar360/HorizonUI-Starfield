@@ -119,6 +119,10 @@ const host = {
 	},
 	hzSetPage: 0,
 	hzSetTab: 0,
+	hzL10nFiles: ["en"],
+	hzL10nGame: "en",
+	hzL10nGameName: "English",
+	hzLanguage: "auto",
 	hz31Page: 0,
 	hz37Cf: "",
 	hz31Val(k) { return k === "SubAutoPause" || k === "DlgAutoPause" ? 1 : 0; },
@@ -151,7 +155,8 @@ for (const n of [
 	"hz51Copy","hz51ByKey","hz51Pick","hz51Help","hz51HelpMore","hz51HelpOf","hz51Line","hz51On","hz51Mute","hz51Finish","hz51FbLog",
 	"hz51RuleRow","hz51Card","hz51AddCard","hz51Goto","hz51Unavail","hz51ModRow","hz51WrapMod","hz51ModState","hz51ModBadge",
 	"hz51Modules","hz51Msglog","hz51Quick","hz51Fallback","hz51Cards","hz51Appear","hz51Scan","hz51Comms","hz51CommsMap",
-	"hz51System","hz51Side","hz51Pages","hz51PageIndex","hz51PageClamp","hz51Rows","hz51Crumb"
+	"hz51System","hz51Side","hz51Pages","hz51PageIndex","hz51PageClamp","hz51Rows","hz51Crumb",
+	"hz51LangName","hz51LangOpts"
 ]) {
 	bind(host, n);
 }
@@ -178,6 +183,10 @@ for (let tab = 0; tab < 5; tab++) {
 		expect(real.length > 0, label + " has more than 0 rows (" + real.length + ")");
 	}
 }
+
+const loc = pageRows.find((p) => p.id === "loc");
+expect(!!loc && loc.keys.indexOf("Language") >= 0 && loc.keys.indexOf("_l10nGame") >= 0,
+	"SYSTEM > LANGUAGE / LOCALIZATION has detected language and the Language override");
 
 const sta = pageRows.find((p) => p.id === "sta");
 const com = pageRows.find((p) => p.id === "com");
@@ -237,7 +246,7 @@ for (const k of [...oldKeys].sort()) {
 expect(missing.length === 0, "every old F11 setting key maps to a Settings 2.0 row" + (missing.length ? (" missing: " + missing.join(", ")) : ""));
 expect(dupes.length === 0, "no old F11 key maps to two Settings 2.0 rows" + (dupes.length ? (" dupes: " + dupes.join("; ")) : ""));
 expect(keyMap.Compact === undefined, "Compact Mode stays in the header, not a list row");
-expect(pageRows.length === 35, "audit walked all 35 sidebar pages (found " + pageRows.length + ")");
+expect(pageRows.length === 36, "audit walked all 36 sidebar pages (found " + pageRows.length + ")");
 
 console.log("--- page row counts ---");
 for (const p of pageRows) {

@@ -1,0 +1,130 @@
+// Horizon localization checker: missing / duplicate / obsolete keys, and
+// placeholder parity. Run from the repo root: node tests/l10n_check_test.js
+// Optional overlays (de.json and the rest) may be absent: that is English
+// fallback, not a failure. Fixtures that must fail write under test_scratch,
+// never /tmp. Author: Moragar. Last modified: 2026-11-27.
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+
+const root = path.join(__dirname, "..");
+const locDir = path.join(root, "Data", "SFSE", "Plugins", "HorizonUI", "Localization");
+const langs = ["en", "de", "fr", "es", "it", "ja", "ko", "pl", "zh-cn"];
+const PLACEHOLDER = /\{[A-Za-z0-9_]+\}/g;
+
+let failed = 0, passed = 0;
+function expect(cond, msg) {
+	if (cond) { passed++; console.log("ok  " + msg); return; }
+	failed++;
+	console.error("FAIL " + msg);
+}
+
+function flatten(obj, prefix, out) {
+	if (obj == null || typeof obj !== "object" || Array.isArray(obj)) {
+		if (prefix) out[prefix] = obj;
+		return;
+	}
+	for (const k of Object.keys(obj)) {
+		if (k.charAt(0) === "_") continue;
+		const p = prefix ? prefix + "." + k : k;
+		flatten(obj[k], p, out);
+	}
+}
+
+function loadLang(dir, code) {
+	const p = path.join(dir, code + ".json");
+	if (!fs.existsSync(p)) return null;
+	return JSON.parse(fs.readFileSync(p, "utf8"));
+}
+
+function uniqueKeys(flat) {
+	const seen = Object.create(null);
+	let dups = 0;
+	for (const k of Object.keys(flat)) {
+		if (seen[k]) dups++;
+		seen[k] = true;
+	}
+	return dups;
+}
+
+function checkPair(enFlat, other, code) {
+	const flat = {};
+	flatten(other, "", flat);
+	const enKeys = Object.keys(enFlat);
+	const missing = enKeys.filter((k) => flat[k] == null || String(flat[k]).length === 0);
+	const extra = Object.keys(flat).filter((k) => enFlat[k] == null);
+	let phBad = 0;
+	for (const k of enKeys) {
+		if (flat[k] == null) continue;
+		const a = (String(enFlat[k]).match(PLACEHOLDER) || []).slice().sort().join();
+		const b = (String(flat[k]).match(PLACEHOLDER) || []).slice().sort().join();
+		if (a !== b) phBad++;
+	}
+	return { missing, extra, phBad };
+}
+
+expect(fs.existsSync(path.join(root, "tools", "scan_l10n_strings.js")), "tools/scan_l10n_strings.js is committed");
+expect(fs.existsSync(path.join(locDir, "en.json")), "shipped Localization/en.json is present");
+
+const en = loadLang(locDir, "en");
+expect(!!en, "English table parses");
+if (!en) {
+	console.error("\nno English table; remaining checks skipped");
+	process.exit(1);
+}
+const enFlat = {};
+flatten(en, "", enFlat);
+const enKeys = Object.keys(enFlat);
+expect(enKeys.length > 0, "English table has keys (" + enKeys.length + ")");
+expect(uniqueKeys(enFlat) === 0, "no duplicate flattened keys in English");
+expect(enFlat["hud.health"] === "HEALTH", "hud.health is HEALTH");
+expect(enFlat["settings.tabs.cards"] === "CARDS", "settings.tabs.cards is CARDS");
+expect(String(enFlat["settings.language.auto"] || "").indexOf("AUTO") >= 0, "settings.language.auto names Auto");
+expect(!JSON.stringify(en).includes("$HEALTH"), "Horizon-owned strings are not wrapped in $ tokens");
+
+for (const code of langs) {
+	if (code === "en") continue;
+	const table = loadLang(locDir, code);
+	if (!table) {
+		expect(true, code + ": optional until a translator ships it (missing is English fallback)");
+		continue;
+	}
+	const r = checkPair(enFlat, table, code);
+	expect(r.missing.length === 0, code + ": no missing keys" + (r.missing.length ? " (" + r.missing.slice(0, 8).join(", ") + ")" : ""));
+	expect(r.extra.length === 0, code + ": no obsolete keys" + (r.extra.length ? " (" + r.extra.slice(0, 8).join(", ") + ")" : ""));
+	expect(r.phBad === 0, code + ": placeholders match English");
+}
+
+const scratch = path.join(root, "test_scratch", "l10n_check_" + process.pid);
+fs.mkdirSync(scratch, { recursive: true });
+fs.writeFileSync(path.join(scratch, "en.json"), JSON.stringify({
+	hud: { health: "HEALTH", oxygen: "OXYGEN {name}" },
+	settings: { tabs: { cards: "CARDS" } }
+}), "utf8");
+fs.writeFileSync(path.join(scratch, "de.json"), JSON.stringify({
+	hud: { health: "GESUNDHEIT", extra: "ALT" },
+	settings: { tabs: { cards: "KARTEN" } }
+}), "utf8");
+const fxEn = {};
+flatten(loadLang(scratch, "en"), "", fxEn);
+const fxDe = checkPair(fxEn, loadLang(scratch, "de"), "de");
+expect(fxDe.missing.indexOf("hud.oxygen") >= 0, "checker flags a missing overlay key");
+expect(fxDe.extra.indexOf("hud.extra") >= 0, "checker flags an obsolete overlay key");
+fs.writeFileSync(path.join(scratch, "fr.json"), JSON.stringify({
+	hud: { health: "SANTE", oxygen: "OXYGENE" },
+	settings: { tabs: { cards: "CARTES" } }
+}), "utf8");
+const fxFr = checkPair(fxEn, loadLang(scratch, "fr"), "fr");
+expect(fxFr.phBad === 1, "checker flags a placeholder mismatch");
+
+const as = fs.readFileSync(path.join(root, "actionscript", "horizon_block.as"), "utf8");
+expect(as.indexOf("function hzSetL10n") >= 0 && as.indexOf("function hzL(") >= 0, "HUD receiver is present");
+expect(as.indexOf("function hzVitTick") < 0 || as.split("function hzVitTick")[1].indexOf("this.hzL(") < 0, "P0 does not look up translations from a vitals tick helper");
+expect(!/HUSD|SCHROPE|rschr/i.test(as.slice(as.indexOf("function hzSetL10n"), as.indexOf("function hzSetL10n") + 1200)), "l10n receiver has no box paths or usernames");
+
+if (failed) {
+	console.error("\n" + failed + " failed, " + passed + " passed");
+	process.exit(1);
+}
+console.log("\n" + passed + " passed");

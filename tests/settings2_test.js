@@ -39,6 +39,7 @@ const side = fnText(as, "hz51Side").body;
 expect(/HUD CARDS/.test(side) && /MENUS & ALERTS/.test(side) && /QUICK MENU \/ FAVORITES MENU/.test(side), "CARDS uses the grouped sidebar");
 expect(/NOTIFICATIONS/.test(side) && /XP toast/.test(side), "Notifications is XP toast only");
 expect(/DIAGNOSTICS/.test(side) && /Debug overlay/.test(side), "SYSTEM sidebar has Diagnostics");
+expect(/LANGUAGE \/ LOCALIZATION/.test(side) && /Detected language/.test(side), "SYSTEM sidebar has Language / Localization");
 
 const line = fnText(as, "hz51Line").body;
 expect(line.indexOf("Shows extra on-screen info about the scanner and compass to help track down a problem.") >= 0, "Debug Overlay help line: what it does, what you see, when");

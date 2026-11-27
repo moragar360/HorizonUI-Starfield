@@ -26,6 +26,12 @@
       private var hz51FbDbg:String = "";          // Debug Overlay lines so a fallback never looks like success
       private var hz51OpenFolder:String = "";     // one-shot folder request for the DLL (Message Log SHOW)
       private var hzSetWinMask:Sprite = null;     // rounded clip for the settings window body
+      // P0 localization: filled once by hzSetL10n from the DLL. hzL is unused on HUD ticks.
+      private var hzL10n:Object = null;
+      private var hzL10nGame:String = "";
+      private var hzL10nGameName:String = "";
+      private var hzL10nFiles:Array = null;
+      private var hzLanguage:String = "auto";
       // Compact shell: old F11 was 1000x660. Height stays 726. Width 1260 gives the
       // header, extended key grid, and right-aligned controls room without covering
       // HUD side cards at 1080p or 1440p (hz51Fit never grows past this cap).
@@ -207,6 +213,113 @@
          else if(this.hzVehPad == 1 && (code == "up" || code == "down" || code == "left" || code == "right" || code == "ok" || code == "cancel")) { this.hz51Pad = true; }
          else if(this.hz51TypeChar(code).length > 0) { this.hz51Pad = false; }
       }
+      // Purpose: unescape one payload field from the DLL (#l10n1 snapshot).
+      private function hzL10nUnesc(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:String = s.charAt(i);
+            if(c == "\\" && i + 1 < s.length)
+            {
+               var n:String = s.charAt(i + 1);
+               if(n == "n") { o += "\n"; i += 2; continue; }
+               if(n == "r") { o += "\r"; i += 2; continue; }
+               if(n == "t") { o += "\t"; i += 2; continue; }
+               if(n == "\\") { o += "\\"; i += 2; continue; }
+               o += n; i += 2; continue;
+            }
+            o += c; i++;
+         }
+         return o;
+      }
+      // Purpose: Settings 2.0 label for a Localization file code.
+      private function hz51LangName(code:String) : String
+      {
+         var c:String = code != null ? String(code).toLowerCase() : "";
+         if(c == "auto" || c.length == 0) { return "AUTO (GAME)"; }
+         if(c == "en") { return "ENGLISH"; }
+         if(c == "de") { return "GERMAN"; }
+         if(c == "fr") { return "FRENCH"; }
+         if(c == "es") { return "SPANISH"; }
+         if(c == "it") { return "ITALIAN"; }
+         if(c == "ja" || c == "jp") { return "JAPANESE"; }
+         if(c == "ko") { return "KOREAN"; }
+         if(c == "pl") { return "POLISH"; }
+         if(c == "zh-cn" || c == "zhhans" || c == "zh") { return "CHINESE (SIMPLIFIED)"; }
+         if(c == "ptbr" || c == "pt-br") { return "PORTUGUESE (BRAZIL)"; }
+         return c.toUpperCase();
+      }
+      // Purpose: Auto plus one option per Localization/*.json the DLL listed at load.
+      private function hz51LangOpts() : Object
+      {
+         var vals:Array = ["auto"];
+         var names:Array = ["AUTO (GAME)"];
+         var files:Array = this.hzL10nFiles != null ? this.hzL10nFiles : ["en"];
+         var i:int = 0;
+         while(i < files.length)
+         {
+            var c:String = String(files[i]);
+            if(c.length > 0 && c != "auto")
+            {
+               vals.push(c);
+               names.push(this.hz51LangName(c));
+            }
+            i++;
+         }
+         return {"vals":vals,"names":names};
+      }
+      // Purpose: cache the localization snapshot from HorizonUI.dll. One Invoke
+      // per movie load or Language reload. No file I/O. Does not change HUD card
+      // text in P0 (hzL is unused on ticks). Author: Moragar. Last modified: 2026-11-27.
+      public function hzSetL10n(s:String) : void
+      {
+         try
+         {
+            if(s == null) { return; }
+            var lines:Array = String(s).split("\n");
+            if(lines.length == 0 || String(lines[0]).indexOf("#l10n1") != 0) { return; }
+            var tab:Object = {};
+            var files:Array = ["en"];
+            var i:int = 1;
+            while(i < lines.length)
+            {
+               var ln:String = String(lines[i]);
+               if(ln.length > 0 && ln.charAt(ln.length - 1) == "\r") { ln = ln.substr(0, ln.length - 1); }
+               var tabAt:int = ln.indexOf("\t");
+               if(tabAt > 0)
+               {
+                  var k:String = ln.substr(0, tabAt);
+                  var v:String = this.hzL10nUnesc(ln.substr(tabAt + 1));
+                  if(k == "g") { this.hzL10nGame = v; }
+                  else if(k == "gn") { this.hzL10nGameName = v; }
+                  else if(k == "files") { files = v.length > 0 ? v.split(",") : ["en"]; }
+                  else if(k != "o" && k != "used") { tab[k] = v; }
+               }
+               i++;
+            }
+            this.hzL10n = tab;
+            this.hzL10nFiles = files;
+            if(this.hzSetIsOpen) { this.hzSetDraw(); }
+         }
+         catch(err:Error) { }
+      }
+      // Purpose: look up a cached label. HUD ticks must not call this in P0.
+      private function hzL(key:String, fb:String) : String
+      {
+         if(this.hzL10n != null)
+         {
+            var v:* = this.hzL10n[key];
+            if(v != null)
+            {
+               var s:String = String(v);
+               if(s.length > 0) { return s; }
+            }
+         }
+         return fb != null ? fb : key;
+      }
 
       private function hz51Side(tab:int) : Array
       {
@@ -214,7 +327,7 @@
          if(tab == 1) { return [{"g":"LOOK","items":[{"id":"col","l":"COLORS","s":"Accent · Card background"},{"id":"pan","l":"PANELS","s":"Opacity · Background % · Shadow"},{"id":"typ","l":"TYPOGRAPHY","s":"Font · Size · Tone"}]},{"g":"PLACE","items":[{"id":"siz","l":"SIZE & PLACEMENT","s":"HUD scale · Margin · Pixel snap"}]},{"g":"MOTION","items":[{"id":"mot","l":"MOTION & FADING","s":"Smooth bars · Fade · Combat dim"}]},{"g":"CLOCKS","items":[{"id":"clk","l":"CLOCKS & UNITS","s":"Planet time · 12/24 · Temperature"}]}]; }
          if(tab == 2) { return [{"g":"SCANNER","items":[{"id":"ov","l":"OVERVIEW","s":"Module · Layout · Reach"},{"id":"hud","l":"HUD","s":"What stays while you scan"},{"id":"tl","l":"TOOLS","s":"Mode pill · Hints · Outlines"}]},{"g":"FINDINGS","items":[{"id":"sig","l":"SIGNALS","s":"Signals · Compass · World tags"},{"id":"sv","l":"SURVEY","s":"Planet · Bioscan · Traits"}]},{"g":"LOOK","items":[{"id":"pop","l":"POPUPS","s":"Quest and trait popups"},{"id":"ap","l":"APPEARANCE","s":"Colors · Font · Distance"}]}]; }
          if(tab == 3) { return [{"g":"CONVERSATION","items":[{"id":"sub","l":"SUBTITLES","s":"Lines · Size · Card"},{"id":"spk","l":"SPEAKER","s":"Name · Color · Card"},{"id":"dly","l":"DIALOGUE LAYOUT","s":"List · Size · Offset"},{"id":"dlap","l":"DIALOGUE APPEARANCE","s":"Font · Colors · Panel"},{"id":"prs","l":"CHOICES & PERSUASION","s":"Already-said · Tags · Meter"},{"id":"inp","l":"INPUT & HINTS","s":"Keys · Wheel · Bar"}]},{"g":"ALERTS","items":[{"id":"mst","l":"MISSION TOASTS & REACTIONS","s":"Quest banner and companion lines"}]},{"g":"MODULE","items":[{"id":"cmp","l":"COMPATIBILITY","s":"Auto-pause · Conflicts · Use Horizon"}]}]; }
-         return [{"g":"SETUP","items":[{"id":"pr","l":"PRESETS","s":"Select · Apply · Save"},{"id":"mod","l":"MODULES","s":"Enabled · Paused · Missing"}]},{"g":"DATA","items":[{"id":"ml","l":"MESSAGE LOG","s":"Record · History · Open"}]},{"g":"SESSION","items":[{"id":"ctl","l":"CONTROLS & WINDOW","s":"Menu key · Opacity"},{"id":"bak","l":"BACKUP & RESET","s":"Backup · scoped resets"},{"id":"dg","l":"DIAGNOSTICS","s":"Debug overlay"}]}];
+         return [{"g":"SETUP","items":[{"id":"pr","l":"PRESETS","s":"Select · Apply · Save"},{"id":"mod","l":"MODULES","s":"Enabled · Paused · Missing"}]},{"g":"DATA","items":[{"id":"ml","l":"MESSAGE LOG","s":"Record · History · Open"}]},{"g":"SESSION","items":[{"id":"loc","l":"LANGUAGE / LOCALIZATION","s":"Detected language · Override"},{"id":"ctl","l":"CONTROLS & WINDOW","s":"Menu key · Opacity"},{"id":"bak","l":"BACKUP & RESET","s":"Backup · scoped resets"},{"id":"dg","l":"DIAGNOSTICS","s":"Debug overlay"}]}];
       }
       private function hz51Pages(tab:int) : Array
       {
@@ -319,6 +432,8 @@
       {
          switch(k)
          {
+            case "Language": return "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language.";
+            case "_l10nGame": return "The interface language Starfield was using when Horizon started.";
             case "Debug": return "Shows extra on-screen info about the scanner and compass to help track down a problem.";
             case "PerfDiag": return "Measures how long the HUD takes to update and saves it so a problem can be found.";
             case "PerfMode": return "Switches which HUD test runs. Ordinary play uses Baseline.";
@@ -442,6 +557,8 @@
             case "TempUnit": return "Celsius or Fahrenheit on the planet card and scanner.";
             case "StartupIntro": return "Plays a short HORIZON UI welcome after you load a save. It never pauses the game and never takes input.";
             case "SettingsKey": return "The key that opens this window. A new key takes effect after you restart the game.";
+            case "Language": return "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language detected when Horizon started. Changing this and pressing OK reloads the table once. Game item names and the game's own $ tokens stay in the game language. HUD card words still use English until later localization work.";
+            case "_l10nGame": return "The interface language Starfield was using when Horizon started. This line is read once at init and does not change until you restart the game. It does not follow the override below.";
             case "Record": return "When on, new HUD messages are stored in the log. When off, nothing new is stored. Messages still show on screen.";
             case "Persist": return "When on, the log is saved on disk. Turning this off only stops writing; existing files are not deleted.";
             case "HistorySize": return "How many messages to keep per character.";
@@ -1290,6 +1407,14 @@
          }
          if(id == "mod") { return this.hz51Modules(); }
          if(id == "ml") { return this.hz51Msglog(); }
+         if(id == "loc")
+         {
+            var detected:String = this.hzL10nGameName != null && this.hzL10nGameName.length > 0 ? this.hzL10nGameName.toUpperCase() : this.hz51LangName(this.hzL10nGame);
+            if(detected == "AUTO (GAME)" || detected.length == 0) { detected = "—"; }
+            var opts:Object = this.hz51LangOpts();
+            return [{"k":"_l10nGame","l":"GAME LANGUAGE","t":"x","btn":detected,"h":"DETECTION","dis":true,"dv":true},
+               {"k":"Language","l":"HORIZON LANGUAGE","t":"l","vals":opts.vals,"names":opts.names,"h":"OVERRIDE"}];
+         }
          if(id == "ctl")
          {
             return [{"k":"SettingsKey","l":"SETTINGS MENU KEY","t":"c","h":"CONTROLS"},

@@ -84,6 +84,7 @@
 #include "hz_scan_hl.h"     // 0.43.3.1: [Scanner] ScanHighlightArea (pure helpers, tests/scan_hl_test.cpp)
 #include "hz_scan_ol.h"     // 0.43.3.2: [Scanner] ScanOutlineThickness (pure helpers, tests/scan_ol_test.cpp)
 #include "hz_scan_reach.h"  // 0.43.5: [Scanner] ScanReach (pure helpers, tests/scan_reach_test.cpp)
+#include "hz_l10n.h"        // P0: Localization JSON, load once / Language reload, cache forever
 #include "hz_quickslots.h"  // 0.43.5: Extended Quick Menu settings / store / use dispatch
 #include "preset_dedupe.h"
 
@@ -190,6 +191,9 @@ namespace HZ
 	void HzAddrLoad() noexcept;
 	void PreloadDllFileVersion();
 	void FilesJobPreload();
+	void L10nLoadOnce();
+	void L10nReloadIfLanguage(const std::string& a_v);
+	void PushL10n();
 	std::string MsglogFolderPath();   // Message Log folder for F11 Folder SHOW (defined with the log helpers)
 	void RecordUiTidOnce(std::uint32_t a_tid, const char* a_src);
 
@@ -915,6 +919,7 @@ namespace HZ
 			if (HzPerfOn())
 				REX::INFO("watchlog: {} ([Debug] WatchLog={}, needs PerfDiag=1)", g_wlOn.load(std::memory_order_relaxed) ? "on" : "off", g_wlOn.load(std::memory_order_relaxed));
 			if (get("settingskey", v) && !v.empty()) key = v;
+			if (get("language", v) && !v.empty()) L10nReloadIfLanguage(v);
 			if (get("scanhighlightarea", v)) scanHl = hzscanhl::Parse(v);
 			if (get("scanoutlinethickness", v)) scanOl = hzscanol::Parse(v);
 			if (get("scanreach", v)) scanReach = hzscanreach::Parse(v);
@@ -1255,6 +1260,7 @@ namespace HZ
 		if (!HudSafe()) { REX::INFO("ignored: full-screen or loading menu open"); return; }
 		if (ui->IsMenuOpen("MonocleMenu")) { REX::INFO("ignored: hand scanner open (F11 opens from the main HUD only)"); return; }   // v0.42.0
 		PushDllFileVersion();   // v0.42.0.4: the header reads this on the open that follows
+		try { PushL10n(); } catch (...) {}
 		bool ok = HudInvoke("hzToggleSettings", nullptr, nullptr, 0, true);
 		REX::INFO("hzToggleSettings invoke {}", ok ? "OK" : "FAILED (HUD lacks function or HUDMenu missing)");
 	}
@@ -2711,13 +2717,166 @@ namespace HZ
 		g_addrState.store(next, std::memory_order_release);
 	}
 
+	std::mutex                    g_l10nMu;
+	hzl10n::Table                 g_l10n;
+	std::string                   g_l10nOverrideHeld{"auto"};
+	std::string                   g_l10nGameHeld;
+	std::atomic<bool>             g_l10nReady{false};
+	std::atomic<bool>             g_l10nGameLatched{false};
+	std::atomic<std::uint32_t>    g_l10nGen{0};
+	std::atomic<std::uint32_t>    g_l10nPushed{0};
+	std::atomic<bool>             g_l10nLogged{false};
+
+	// Purpose: Data/SFSE/Plugins next to HorizonUI.dll. No user-home path.
+	std::filesystem::path L10nDir()
+	{
+		HMODULE mod = nullptr;
+		if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		        reinterpret_cast<LPCWSTR>(&L10nDir), &mod) || !mod)
+			return {};
+		wchar_t path[MAX_PATH]{};
+		const DWORD n = ::GetModuleFileNameW(mod, path, MAX_PATH);
+		if (n == 0 || n >= MAX_PATH) return {};
+		return std::filesystem::path(path).parent_path() / L"HorizonUI" / L"Localization";
+	}
+
+	// Purpose: Starfield sLanguage once at init. Cached. Never polled.
+	std::string L10nDetectGame()
+	{
+		if (g_l10nGameLatched.load(std::memory_order_acquire)) {
+			std::lock_guard lk(g_l10nMu);
+			return g_l10nGameHeld;
+		}
+		std::string found;
+		PWSTR docs = nullptr;
+		if (SUCCEEDED(::SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DONT_VERIFY, nullptr, &docs)) && docs) {
+			std::filesystem::path base(docs);
+			::CoTaskMemFree(docs);
+			base /= L"My Games";
+			base /= L"Starfield";
+			for (const wchar_t* name : { L"StarfieldCustom.ini", L"StarfieldPrefs.ini" }) {
+				std::string text;
+				if (!hzl10n::ReadUtf8File(base / name, text)) continue;
+				auto s = hzl10n::ParseSLanguage(text);
+				if (!s.empty()) { found = std::move(s); break; }
+			}
+		}
+		if (found.empty()) {
+			wchar_t exe[MAX_PATH]{};
+			GetModuleFileNameW(nullptr, exe, MAX_PATH);
+			std::string text;
+			if (hzl10n::ReadUtf8File(std::filesystem::path(exe).parent_path() / "Starfield.ini", text))
+				found = hzl10n::ParseSLanguage(text);
+		}
+		auto mapped = hzl10n::MapCode(found);
+		if (mapped == "auto" || mapped.empty()) mapped = "en";
+		{
+			std::lock_guard lk(g_l10nMu);
+			g_l10nGameHeld = mapped;
+		}
+		g_l10nGameLatched.store(true, std::memory_order_release);
+		return mapped;
+	}
+
+	std::string L10nReadOverride()
+	{
+		std::string text, v = "auto";
+		if (HZF::MergedText(FilesP(), text)) {
+			HZF::Doc d = HZF::Parse(text);
+			for (auto& sec : d.secs)
+				if (auto it = sec.kv.find("language"); it != sec.kv.end())
+					v = it->second.second;
+		}
+		auto m = hzl10n::MapCode(v);
+		return m.empty() ? std::string("auto") : m;
+	}
+
+	// Purpose: load or reload the Localization JSON on the job / load thread.
+	// File I/O only here. Never from PollScaleform. a_forceReload is for a
+	// Language= change after F11 OK. Inputs: optional override token.
+	// Outputs: cached table + generation bump. Author: Moragar.
+	// Last modified: 2026-11-27.
+	void L10nApply(const std::string& a_override, bool a_forceReload)
+	{
+		if (g_l10nReady.load(std::memory_order_acquire) && !a_forceReload) {
+			std::lock_guard lk(g_l10nMu);
+			if (a_override == g_l10nOverrideHeld) return;
+		}
+		const auto game = L10nDetectGame();
+		const auto dir = L10nDir();
+		auto table = hzl10n::Load(dir, a_override, game);
+		{
+			std::lock_guard lk(g_l10nMu);
+			g_l10n = std::move(table);
+			g_l10nOverrideHeld = a_override.empty() ? "auto" : a_override;
+		}
+		g_l10nReady.store(true, std::memory_order_release);
+		g_l10nGen.fetch_add(1, std::memory_order_acq_rel);
+		if (!g_l10nLogged.exchange(true, std::memory_order_acq_rel)) {
+			std::lock_guard lk(g_l10nMu);
+			REX::INFO("l10n: {}, {} keys", g_l10n.notice, g_l10n.count);
+		} else {
+			std::lock_guard lk(g_l10nMu);
+			REX::INFO("l10n reload: {}, {} keys", g_l10n.notice, g_l10n.count);
+		}
+	}
+
+	void L10nLoadOnce()
+	{
+		if (g_l10nReady.load(std::memory_order_acquire)) return;
+		L10nApply(L10nReadOverride(), false);
+	}
+
+	void L10nReloadIfLanguage(const std::string& a_v)
+	{
+		const auto ov = hzl10n::MapCode(a_v);
+		const auto want = ov.empty() ? std::string("auto") : ov;
+		if (g_l10nReady.load(std::memory_order_acquire)) {
+			std::lock_guard lk(g_l10nMu);
+			if (want == g_l10nOverrideHeld) return;
+		}
+		L10nApply(want, true);
+	}
+
+	// Purpose: one Scaleform Invoke of hzSetL10n per table generation (movie
+	// load or Language reload). Not on the 5s movie-build timer. No disk.
+	// Inputs: HUD AdvanceFrame / F11 key. Outputs: one payload string.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10n()
+	{
+		if (!g_l10nReady.load(std::memory_order_acquire)) return;
+		const auto gen = g_l10nGen.load(std::memory_order_acquire);
+		if (gen == 0 || gen == g_l10nPushed.load(std::memory_order_acquire)) return;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		auto menu = MenuLive(ui, "HUDMenu", "hzSetL10n");
+		if (!menu) return;
+		if (!menu->menuObj.HasMember("hzSetL10n")) {
+			g_l10nPushed.store(gen, std::memory_order_release);
+			return;
+		}
+		std::string payload;
+		{
+			std::lock_guard lk(g_l10nMu);
+			payload = g_l10n.payload;
+		}
+		if (payload.empty()) {
+			g_l10nPushed.store(gen, std::memory_order_release);
+			return;
+		}
+		GValue arg(payload.c_str());
+		if (!menu->menuObj.Invoke("hzSetL10n", nullptr, &arg, 1)) return;
+		g_l10nPushed.store(gen, std::memory_order_release);
+	}
+
 	// Purpose: job / load thread preload of versionlib and the DLL file
 	// version. The UI thread never calls this. Inputs: none. Outputs:
-	// ready flags. Author: Moragar. Last modified: 2026-10-28.
+	// ready flags. Author: Moragar. Last modified: 2026-11-27.
 	void FilesJobPreload()
 	{
 		HzAddrLoad();
 		PreloadDllFileVersion();
+		L10nLoadOnce();
 	}
 
 	static int HzAddrSlot(std::uint64_t a_id)
@@ -5792,6 +5951,7 @@ namespace HZ
 			MsglogPromoteId();
 		}
 		try { MsglogPollUi(); } catch (...) {}
+		try { PushL10n(); } catch (...) {}
 		BuildLogHud(now);
 		HWND wnd = GameWindow();
 		EnsureSubclass(wnd);
@@ -6187,6 +6347,7 @@ namespace HZ
 		if (!root) return;
 		if (isHud) {
 			g_hudRoot.store(root, std::memory_order_release);
+			g_l10nPushed.store(0, std::memory_order_release);
 			if (g_perfDumpReq.load(std::memory_order_acquire)) {
 				hzperf::UnarmWindow(g_perfCtl);
 				hzperf::BeginDump(g_perfAgg);
