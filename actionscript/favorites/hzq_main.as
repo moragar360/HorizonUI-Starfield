@@ -236,6 +236,73 @@
          if(n < 10) { return "0" + String(n); }
          return String(n);
       }
+      // Purpose: whether arrows may highlight an extra slot. Hide-empty skips unused extras;
+      // inventory assign still visits them (empties are drawn then). Called from hzqExtNav only.
+      // Inputs: 1-based extra slot. Outputs: true = visitable. No per-frame work.
+      private function hzqExtNavVis(slot:int) : Boolean
+      {
+         var n:int = this.hzqExtCount();
+         if(slot < 13 || slot > n) { return false; }
+         if(this.hzqExtShowEmpty() || this.hzqExtAssigning()) { return true; }
+         var d:Object = this.hzqExtData != null ? this.hzqExtData[String(slot)] : null;
+         if(d == null || d.empty === true || d.name == null || String(d.name).length == 0) { return false; }
+         return true;
+      }
+      // First visitable extra in 13-N (scan order). 0 = none. Down from the T uses this.
+      private function hzqExtNavFirst() : int
+      {
+         var n:int = this.hzqExtCount();
+         var s:int = 13;
+         while(s <= n)
+         {
+            if(this.hzqExtNavVis(s)) { return s; }
+            s++;
+         }
+         return 0;
+      }
+      // Next visitable extra from `from` in (dx, dy). Left/Right wrap in the row; Up/Down stay in the
+      // column and skip hidden cells. Returns the slot, 0 = stay, -1 = leave extras (Up off the top).
+      private function hzqExtNavStep(from:int, dx:int, dy:int) : int
+      {
+         var n:int = this.hzqExtCount();
+         var per:int = this.hzqExtPer();
+         if(per < 1) { per = 6; }
+         var extN:int = n > 12 ? n - 12 : 0;
+         var k:int = from - 13;
+         if(k < 0) { k = 0; }
+         var col0:int = k - int(Math.floor(k / per)) * per;
+         var row0:int = int(Math.floor(k / per));
+         if(dx != 0)
+         {
+            var rowW:int = extN - row0 * per;
+            if(rowW > per) { rowW = per; }
+            if(rowW <= 0) { return 0; }
+            var col:int = col0;
+            var i:int = 0;
+            while(i < rowW)
+            {
+               col += dx;
+               if(col < 0) { col = rowW - 1; }
+               if(col >= rowW) { col = 0; }
+               var s:int = 13 + row0 * per + col;
+               if(this.hzqExtNavVis(s)) { return s; }
+               i++;
+            }
+            return 0;
+         }
+         var row:int = row0;
+         var g:int = 0;
+         while(g < 12)
+         {
+            row += dy;
+            if(row < 0) { return -1; }
+            var next:int = 13 + row * per + col0;
+            if(next < 13 || next > n) { return 0; }
+            if(this.hzqExtNavVis(next)) { return next; }
+            g++;
+         }
+         return 0;
+      }
       // Dark rounded extra card (panel-style, 1 px gray filled border). Selected keeps the accent ring.
       // Inputs: graphics, live box (vanilla 58 * scale), selected / dim. Outputs: fill + border + optional ring.
       private function hzqExtSlotArt(g:Graphics, box:Number, sel:Boolean, dim:Boolean) : void
@@ -1636,8 +1703,9 @@
          if(u == "ACTIVATE" || u == "ACCEPT" || u == "OK") { return this.hzqExtConfirm(); }
          return false;
       }
-      // Move onto / around slots 13-24. Down from the T (or the last BARS vanilla row) lands on 13-N.
-      // Up from the first extra row returns to vanilla 1-12. Left / right wrap in the extra row.
+      // Move onto / around slots 13-24. Down from the T lands on the first visitable extra (occupied
+      // when EMPTY SLOTS is Hide; slot 13 when empties are shown). Up from the first extra row
+      // returns to vanilla 1-12. Left / right wrap in the extra row. Hidden empty cells are skipped.
       private function hzqExtNav(dx:int, dy:int) : Boolean
       {
          var n:int = this.hzqExtCount();
@@ -1648,22 +1716,8 @@
          if(this.hzqExtSel >= 13)
          {
             var k:int = this.hzqExtSel - 13;
-            var extN:int = n - 12;
-            var col:int = k - int(Math.floor(k / per)) * per;
-            var row:int = int(Math.floor(k / per));
-            col += dx;
-            row += dy;
-            if(dx != 0)
-            {
-               var rowW:int = extN - row * per;
-               if(rowW > per) { rowW = per; }
-               if(rowW <= 0) { return true; }
-               if(col < 0) { col = rowW - 1; }
-               if(col >= rowW) { col = 0; }
-               this.hzqExtPick(13 + row * per + col,false);
-               return true;
-            }
-            if(row < 0)
+            var step:int = this.hzqExtNavStep(this.hzqExtSel,dx,dy);
+            if(step < 0)
             {
                this.hzqExtSel = 0;
                if(bars)
@@ -1677,9 +1731,7 @@
                this.hzqExtDraw();
                return true;
             }
-            var next:int = 13 + row * per + col;
-            if(next < 13 || next > n) { return true; }
-            this.hzqExtPick(next,false);
+            if(step >= 13 && step != this.hzqExtSel) { this.hzqExtPick(step,false); }
             return true;
          }
          var idx:int = int(this.selectedIndex);
@@ -1690,14 +1742,18 @@
             var nextB:int = idx + per;
             if(nextB >= 12 && nextB < n)
             {
-               this.hzqExtPick(nextB + 1,false);
+               var land:int = nextB + 1;
+               if(this.hzqExtNavVis(land)) { this.hzqExtPick(land,false); return true; }
+               var skipB:int = this.hzqExtNavStep(land,0,1);
+               if(skipB >= 13) { this.hzqExtPick(skipB,false); }
                return true;
             }
             return false;
          }
          if(idx >= 9 && idx <= 11)
          {
-            this.hzqExtPick(13,false);
+            var first:int = this.hzqExtNavFirst();
+            if(first >= 13) { this.hzqExtPick(first,false); }
             return true;
          }
          return false;

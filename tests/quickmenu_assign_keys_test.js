@@ -80,8 +80,8 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 			"DLL assign uses this-open pending, then AssignedItem, then extra, then NamesMatch-gated live inventory");
 	}
 	const nav = fnText(qm, "hzqExtNav").body;
-	expect(/idx >= 9 && idx <= 11/.test(nav) && /hzqExtPick\(13,false\)/.test(nav),
-		"CROSS+BARS: Down from the T (slots 10-12) lands on slot 13");
+	expect(/idx >= 9 && idx <= 11/.test(nav) && /hzqExtNavFirst/.test(nav),
+		"CROSS+BARS: Down from the T (slots 10-12) lands on the first visitable extra");
 	expect(/nextB >= 12 && nextB < n/.test(nav),
 		"BARS: Down from the last vanilla row continues onto 13-N in the same grid");
 	const raise = fnText(qm, "hzqExtRaise").body;

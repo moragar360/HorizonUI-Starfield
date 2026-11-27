@@ -160,5 +160,105 @@ expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(qm.slice(
 		"F11 > CARDS > QUICK MENU has EMPTY SLOTS, PANEL OPACITY, SLOT SCALE");
 }
 
+{
+	const nav = fnText(qm, "hzqExtNav").body;
+	expect(/function hzqExtNavVis/.test(qm) && /function hzqExtNavFirst/.test(qm) && /function hzqExtNavStep/.test(qm)
+		&& /hzqExtNavFirst/.test(nav) && /hzqExtNavStep/.test(nav) && /hzqExtNavVis/.test(nav),
+		"hide-empty arrows use visitable helpers from hzqExtNav only");
+	expect(!/hzqExtNavVis|hzqExtNavFirst|hzqExtNavStep/.test(fnText(qm, "hzqExtDraw").body),
+		"draw does not scan visitable slots (no per-frame nav work)");
+	expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(
+		fnText(qm, "hzqExtNavVis").body + fnText(qm, "hzqExtNavFirst").body
+		+ fnText(qm, "hzqExtNavStep").body + nav),
+		"nav skip helpers add no enterFrame or timer");
+
+	function occ(name) { return { name: name, empty: false }; }
+	function navHost(opt) {
+		const h = {
+			hzqOn: true,
+			hzqS: {
+				Extended: true,
+				SlotCount: 24,
+				SlotsPerRow: opt.per != null ? opt.per : 6,
+				ExtLayout: opt.bars ? 1 : 0,
+				ExtEmptyShow: opt.showEmpty === true
+			},
+			hzqExtData: opt.data || {},
+			AssignedItem: opt.assigned || null,
+			SelectQuickslot_mc: opt.overlay || { visible: false },
+			hzqExtSel: opt.sel != null ? opt.sel : 0,
+			selectedIndex: opt.idx != null ? opt.idx : 11,
+			picked: [],
+			drew: 0
+		};
+		h.hzqExtOn = function () { return true; };
+		h.hzqExtPick = function (slot) { this.picked.push(slot); this.hzqExtSel = slot; };
+		h.hzqExtDraw = function () { this.drew++; };
+		for (const n of ["hzqExtCount", "hzqExtPer", "hzqExtShowEmpty", "hzqExtAssigning",
+			"hzqExtNavVis", "hzqExtNavFirst", "hzqExtNavStep", "hzqExtNav"]) {
+			h[n] = toJs(src, n);
+		}
+		return h;
+	}
+
+	const hide16 = navHost({ data: { "16": occ("Grendel") } });
+	expect(hide16.hzqExtNavFirst() === 16 && hide16.hzqExtNavVis(13) === false && hide16.hzqExtNavVis(16) === true,
+		"Hide: first visitable extra is the first occupied slot, not hidden 13");
+	expect(hide16.hzqExtNav(0, 1) === true && hide16.picked.join(",") === "16" && hide16.hzqExtSel === 16,
+		"Hide: Down from the T lands on the first occupied extra");
+
+	const hideNone = navHost({});
+	expect(hideNone.hzqExtNavFirst() === 0 && hideNone.hzqExtNav(0, 1) === true
+		&& hideNone.picked.length === 0 && hideNone.hzqExtSel === 0,
+		"Hide: Down from the T stays on the T when no extra is occupied");
+
+	const hideRow = navHost({ data: { "16": occ("Grendel"), "18": occ("Med Pack") }, sel: 16 });
+	expect(hideRow.hzqExtNavStep(16, 1, 0) === 18 && hideRow.hzqExtNavStep(18, 1, 0) === 16
+		&& hideRow.hzqExtNavStep(16, -1, 0) === 18,
+		"Hide: Left/Right in a row skip hidden empties and wrap to the next occupied");
+	expect(hideRow.hzqExtNav(1, 0) === true && hideRow.picked.join(",") === "18",
+		"Hide: Right from 16 picks 18");
+
+	const hideCol = navHost({ data: { "16": occ("Grendel"), "22": occ("Sidestar") }, sel: 16 });
+	expect(hideCol.hzqExtNavStep(16, 0, 1) === 22 && hideCol.hzqExtNavStep(22, 0, -1) === 16,
+		"Hide: Up/Down in a column skip hidden empties");
+	expect(hideCol.hzqExtNav(0, 1) === true && hideCol.picked.join(",") === "22",
+		"Hide: Down from 16 picks 22");
+
+	const hideStay = navHost({ data: { "16": occ("Grendel") }, sel: 16 });
+	expect(hideStay.hzqExtNavStep(16, 1, 0) === 16 && hideStay.hzqExtNavStep(16, 0, 1) === 0,
+		"Hide: only occupied in row/column stays (Right wraps to self; Down has nowhere)");
+	expect(hideStay.hzqExtNav(1, 0) === true && hideStay.picked.length === 0 && hideStay.hzqExtSel === 16,
+		"Hide: Right on the only occupied extra does not move the ring");
+
+	const hideUp = navHost({ data: { "22": occ("Sidestar") }, sel: 22 });
+	expect(hideUp.hzqExtNavStep(22, 0, -1) === -1, "Hide: Up past hidden 16 leaves the extra grid");
+	expect(hideUp.hzqExtNav(0, -1) === true && hideUp.hzqExtSel === 0 && hideUp.selectedIndex === 11 && hideUp.drew === 1,
+		"Hide: Up from 22 with 16 hidden returns to the T");
+
+	const show = navHost({ showEmpty: true });
+	expect(show.hzqExtNavFirst() === 13 && show.hzqExtNavVis(13) === true,
+		"Show: every extra is visitable, first is 13");
+	expect(show.hzqExtNav(0, 1) === true && show.picked.join(",") === "13",
+		"Show: Down from the T still lands on slot 13");
+
+	const assign = navHost({ assigned: { sName: "Med Pack" } });
+	expect(assign.hzqExtAssigning() === true && assign.hzqExtNavFirst() === 13 && assign.hzqExtNavVis(14) === true,
+		"assign: empties stay visitable while AssignedItem is set");
+	expect(assign.hzqExtNav(0, 1) === true && assign.picked.join(",") === "13",
+		"assign: Down from the T still lands on slot 13");
+
+	const overlay = navHost({ overlay: { visible: true } });
+	expect(overlay.hzqExtAssigning() === true && overlay.hzqExtNavFirst() === 13,
+		"assign overlay: visible SelectQuickslot_mc keeps empties visitable");
+
+	const barsSkip = navHost({ bars: true, data: { "19": occ("Grendel") }, idx: 6 });
+	expect(barsSkip.hzqExtNav(0, 1) === true && barsSkip.picked.join(",") === "19",
+		"BARS Hide: Down from the last vanilla column skips hidden 13 onto occupied 19");
+	const barsStay = navHost({ bars: true, data: { "15": occ("Med Pack") }, idx: 6 });
+	expect(barsStay.hzqExtNav(0, 1) === true && barsStay.picked.length === 0 && barsStay.hzqExtSel === 0,
+		"BARS Hide: Down stays when that column has no occupied extra");
+}
+
 if (failed) { console.error(failed + " failed"); process.exit(1); }
 console.log(passed + " ok, quickmenu_ext_window_test ok");
