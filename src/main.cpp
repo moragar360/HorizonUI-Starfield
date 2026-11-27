@@ -1717,13 +1717,18 @@ namespace HZ
 				LoadIni();
 				g_iniSavedRev.fetch_add(1, std::memory_order_acq_rel);   // arch-fixes Fix 2
 			}
+			// Scan after the write, before the UI can take the save-done reply.
+			// Publishing the reply first let PollSettings paint the old dropdown
+			// in the same tick the new file was still being indexed.
+			g_fileStateWant.store(true);
+			if (g_fileStateWant.exchange(false))
+				FilesScanPresets();
 			const std::string reply = kind + "|" + (r.ok ? "1" : "0") + "|" + HZF::CleanField(r.msg, 200);
 			{
 				std::lock_guard lk(g_fileMu);
 				g_fileReply = reply;
 				g_fileReplyReady.store(true);
 			}
-			g_fileStateWant.store(true);
 		}
 		if (g_fileStateWant.exchange(false))
 			FilesScanPresets();
@@ -1777,17 +1782,21 @@ namespace HZ
 	}
 
 	// Purpose: UI-thread only. Invokes hzSetFileState with the last
-	// job-thread scan. No disk. Author: Moragar. Last modified: 2026-10-28.
-	void PushFileState()
+	// job-thread scan. No disk. Returns the generation that was copied
+	// when the invoke succeeded, else 0 (do not mark that gen pushed).
+	// Author: Moragar. Last modified: 2026-11-27.
+	std::uint64_t PushFileState()
 	{
 		std::string st;
+		std::uint64_t gen = 0;
 		{
 			std::lock_guard lk(g_fileMu);
 			if (!g_fileStateReady.load()) {
 				g_fileStateWant.store(true);
-				return;
+				return 0;
 			}
 			st = g_fileState;
+			gen = g_fileStateGen.load(std::memory_order_relaxed);
 		}
 		GValue     arg(st.c_str());
 		const bool ok = HudInvoke("hzSetFileState", nullptr, &arg, 1);
@@ -1795,11 +1804,14 @@ namespace HZ
 			REX::INFO("files: hzSetFileState {}", ok ? "OK" : "FAILED (HUD gfx older than 0.37?)");
 			g_fileStateLogged = true;
 		}
+		return ok ? gen : 0;
 	}
 
 	// Purpose: UI-thread only. Takes a file action from the HUD and
-	// returns the last job-thread reply. No disk. Author: Moragar.
-	// Last modified: 2026-10-28.
+	// returns the last job-thread reply. After save/delete, push the
+	// post-write scan this tick so the PRESET dropdown rebuilds while
+	// F11 is still open. No disk. Author: Moragar.
+	// Last modified: 2026-11-27.
 	void PollFileAction()
 	{
 		GValue a;
@@ -1818,6 +1830,11 @@ namespace HZ
 				reply = std::move(g_fileReply);
 		}
 		if (reply.empty()) return;
+		if (reply.compare(0, 5, "save|") == 0 || reply.compare(0, 7, "delete|") == 0) {
+			const auto pushed = PushFileState();
+			if (pushed)
+				g_f11PushedGen.store(pushed, std::memory_order_relaxed);
+		}
 		GValue arg(reply.c_str());
 		HudInvoke("hzFileActionDone", nullptr, &arg, 1);
 		g_fileStateWant.store(true);
@@ -1850,8 +1867,9 @@ namespace HZ
 			g_open.store(isOpen);
 			OnSettingsOpenChanged(isOpen);
 			if (isOpen) {
-				PushFileState();   // v0.37: presets / backup state for the F11 rows
-				g_f11PushedGen.store(g_fileStateGen.load(std::memory_order_relaxed), std::memory_order_relaxed);
+				const auto pushed = PushFileState();   // v0.37: presets / backup state for the F11 rows
+				if (pushed)
+					g_f11PushedGen.store(pushed, std::memory_order_relaxed);
 			} else {
 				g_f11PushedGen.store(0, std::memory_order_relaxed);
 			}
@@ -1859,8 +1877,9 @@ namespace HZ
 		if (isOpen) {
 			const auto gen = g_fileStateGen.load(std::memory_order_relaxed);
 			if (gen != 0 && gen != g_f11PushedGen.load(std::memory_order_relaxed)) {
-				PushFileState();
-				g_f11PushedGen.store(gen, std::memory_order_relaxed);
+				const auto pushed = PushFileState();
+				if (pushed)
+					g_f11PushedGen.store(pushed, std::memory_order_relaxed);
 			}
 		}
 		g_swallow = isOpen;

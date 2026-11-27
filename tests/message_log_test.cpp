@@ -3553,7 +3553,7 @@ int main()
 		Expect(main.find("hzTakeMsglogIni") != std::string::npos, "DLL takes the MessageLog-only save");
 		Expect(main.find("IsMessageLogOnlyIni") != std::string::npos, "DLL rejects a full dump on the MessageLog save path");
 		{
-			const auto work = AsFnBody(main, "void FilesPollWork()", "void PushFileState()");
+			const auto work = AsFnBody(main, "void FilesPollWork()", "std::uint64_t PushFileState()");
 			Expect(work.find("MergeMessageLogUser") != std::string::npos,
 				"the shipped MessageLog save uses MergeMessageLogUser");
 			Expect(work.find("ReplaceSection(user") == std::string::npos,
