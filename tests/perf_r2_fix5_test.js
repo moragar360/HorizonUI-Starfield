@@ -128,6 +128,7 @@ function host(src, W, isNew) {
 		hzT19EdgeN: 3, hzT19WalkSkip: 0, hzT19LblDue: true, hzT19LblC: null, hzT19HcDue: true, hzT19HcRec: false, hzT19HcValid: false, hzT19HcAw: null, hzT19HcHd: null, hzT19HcArr: null,
 		hzT19HcLen: -1, hzT19HcBtn: null, hzT19HcD: [], hzT19HcP: [], hzT19HcDN: 0, hzT19HcB: [], hzT19HcBK: [], hzT19HcBP: [], hzT19HcBN: 0 });
 	for (const f of HIDE_FN) bind(h, src, f);
+	if (src.indexOf("function hzTgSnap(") >= 0) bind(h, src, "hzTgSnap");
 	if (isNew) for (const f of NEW_FN) bind(h, src, f);
 	const walk = h.hzT19HidePromptTree;
 	h.hzT19HidePromptTree = function(box, b) { if (box === W.hd) h.walks++; return walk(box, b); };   // one count per hz38HideVanilla walk (the holder pass)
@@ -392,7 +393,17 @@ if (baseAs) {
 		rows043.unshift(["         var nh:int = hv == 0 ? this.hzNameHover : ((hv & 2) != 0 ? 1 : ((hv & 4) != 0 ? 0 : this.hzNameHover));\n         var bw:Number = a ? (hv != 0 && (hv & 8) != 0 && kind == \"prompt\" && nh != 1 ? 1 : this.hzT19Buttons(null,a,aw,0,0,acol,0,0,true)) : 0;", "         var bw:Number = a ? this.hzT19Buttons(null,a,aw,0,0,acol,0,0,true) : 0;"]);
 		rows043.push(["if(kind == \"prompt\" && nh != 1)", "if(kind == \"prompt\" && this.hzNameHover != 1)"]);
 		const undo043 = (b) => rows043.reduce((t, r) => t.split(r[0]).join(r[1]), b);
-		expect(undo043(wrapReset(fnText(as, "hzT19Content").body)) === fnText(baseAs, "hzT19Content").body && fnText(as, "hzT19ResetPay").body === fnText(baseAs, "hzT19ResetPay").body, "the loot card red bar code (hzT19Content, hzT19ResetPay) is unchanged from " + BASE);
+		// list-card STEAL room math (140-wide ITEMS slot, measured chip, clamp). Covered by tests/hover_steal_list_test.js.
+		const undoStealList = (b) => {
+			const pairs = [
+				["            nmTf.x = 14;\n            this.hzTxtTint(nmTf,steal ? HZ_RED : null);\n            this.hzApplyFmt(o);\n            this.hzT19HdrR.visible = true;\n            this.hzT19Face(this.hzT19HdrR,\"sb\");\n            // ITEMS sits in a fixed 140-wide field on the right. Room math must use that slot, not the painted\n            // \"N ITEMS\" width, or STEAL (and a long title) run into the count.\n            var itemsSlot:Number = 140;\n            this.hzT19HdrR.width = itemsSlot;\n            this.hzT19HdrR.text = n + (n == 1 ? \" ITEM\" : \" ITEMS\");\n            this.hzT19HdrR.x = W - 14 - itemsSlot;\n            this.hzTxtTop(this.hzT19HdrR,15);\n            var stw:Number = 0;\n            if(steal)\n            {\n               this.hzT19Ch2.text = \"STEAL\";\n               stw = this.hzTW(this.hzT19Ch2) + 14;\n            }\n            else if(this.hzT19Ch2) { this.hzT19Ch2.visible = false; }\n            var hroom:Number = this.hzT19HdrR.x - 14 - (steal ? stw + 10 : 0);\n            if(hroom < 40) { hroom = 40; }\n            nmTf.width = hroom;\n",
+					"            nmTf.x = 14; nmTf.width = W - 28;\n            this.hzTxtTint(nmTf,steal ? HZ_RED : null);\n            this.hzApplyFmt(o);\n            this.hzT19HdrR.visible = true;\n            this.hzT19Face(this.hzT19HdrR,\"sb\");\n            this.hzT19HdrR.width = 140;\n            this.hzT19HdrR.text = n + (n == 1 ? \" ITEM\" : \" ITEMS\");\n            this.hzT19HdrR.x = W - 14 - 140;\n            this.hzTxtTop(this.hzT19HdrR,15);\n            var hroom:Number = W - 28 - this.hzTW(this.hzT19HdrR) - 14;\n            var stw:Number = 0;\n            if(steal) { stw = 60; hroom -= stw; }\n"],
+				["               var stx:Number = 14 + this.hzTW(nmTf) + 10;\n               if(stx + stw > this.hzT19HdrR.x - 4) { stx = this.hzT19HdrR.x - stw - 8; }\n               if(stx < 14) { stx = 14; }\n               this.hzChip(g,this.hzT19Ch2,stx,15,\"STEAL\",HZ_RED,true);\n",
+					"               var stx:Number = 14 + this.hzTW(nmTf) + 10;\n               this.hzChip(g,this.hzT19Ch2,stx,15,\"STEAL\",HZ_RED,true);\n"],
+			];
+			return pairs.reduce((t, r) => t.split(r[0]).join(r[1]), b);
+		};
+		expect(undo043(wrapReset(undoStealList(fnText(as, "hzT19Content").body))) === fnText(baseAs, "hzT19Content").body && fnText(as, "hzT19ResetPay").body === fnText(baseAs, "hzT19ResetPay").body, "the loot card red bar code (hzT19Content, hzT19ResetPay) is unchanged from " + BASE);
 		// 0.43.6 round 3 E / E2 rewrote both for allocation (reused draw list, field compare); that behavior is tested in
 		// tests/round3_e_test.js, round3_e2_test.js and target_foebar_test.js. Review SF-3: each body must still be
 		// exactly the pre-0.43.6 body or exactly the reviewed round 3 body (frozen at R3_BASE), nothing else.

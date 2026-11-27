@@ -60,6 +60,12 @@ function bindAll(h, src, names, thisFix) {
 		if (thisFix) js = thisFix(js);
 		h[n] = Function.apply(null, argNames(f.sig).concat(["with(this){\n" + js + "\n}"])).bind(wrap);
 	}
+	if (src.indexOf("function hzTgSnap(") >= 0 && names.indexOf("hzT19HideA") >= 0 && names.indexOf("hzTgSnap") < 0) {
+		const f = fnText(src, "hzTgSnap");
+		let js = toJs(f.body);
+		if (thisFix) js = thisFix(js);
+		h.hzTgSnap = Function.apply(null, argNames(f.sig).concat(["with(this){\n" + js + "\n}"])).bind(wrap);
+	}
 	return h;
 }
 function rng(seed) { let s = seed >>> 0; return function() { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
