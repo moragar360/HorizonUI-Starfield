@@ -1311,6 +1311,7 @@ package
       private static const HZS_WHITE:uint = 0xFFFFFF;
       private static const HZS_LABEL:uint = 0xC4D2D9;
       private static const HZS_MUTED:uint = 0x96A6AE;
+      private static const HZS_POI:uint = 0xD7E3E8;    // undiscovered markers / Signals rows: brighter than muted, still Horizon cool gray
       private static const HZS_DIM:uint = 0x8E9CA4;
       private static const HZS_AMB:uint = 0xF2A93B;
       private static const HZS_RED:uint = 0xFF5B5B;
@@ -2790,7 +2791,7 @@ package
             var hl:Boolean = near != null && o == near;
             var disc:Boolean = o.bIsDiscovered === true;
             var own:String = this.hzs41Own(o);   // v0.41.0 r2: "mine" / "other" (a companion's ship) / "" (neutral)
-            var mcol:uint = own == "mine" ? HZS_O2B : (own == "other" ? HZS_VIO : (disc || hl ? acc : HZS_MUTED));
+            var mcol:uint = own == "mine" ? HZS_O2B : (own == "other" ? HZS_VIO : (disc || hl ? acc : HZS_POI));
             var msub:String = hl ? this.hzsCs("NEAREST UNDISCOVERED") : (own == "other" ? "Companion ship" : (disc ? "Discovered" : "Undiscovered"));
             var myName:Boolean = own == "mine" && this.hzsOn("ScanShowShip");   // r2 (NIT-7): the YOUR SHIP name only with that row on
             rows.push({"ic":this.hzsMarkIcon(o),"n":myName ? this.hzsCs(this.hzs41Kind(o) == "veh" ? "YOUR VEHICLE" : "YOUR SHIP") : this.hzsMarkName(o),"sub":msub,"d":this.hzsDist(Number(o.uRangeM)),"hl":hl,"col":hl ? acc : mcol,"dc":acc});
@@ -3291,10 +3292,15 @@ package
          {
             var hl:Boolean = r.hl == true;
             var c:uint = uint(r.col);
+            var undisc:Boolean = !hl && c == HZS_POI;
             if(hl)
             {
                this.hzsRR(g,x0 - 8,yy,iw + 14,46,10,acc,34 / 255);
                this.hzsRR(g,x0 - 8,yy + 8,3,30,1.5,acc,1);
+            }
+            else if(undisc)
+            {
+               this.hzsRR(g,x0 - 8,yy,iw + 14,46,10,HZS_BG,0.55);
             }
             var cy:Number = yy + 23;
             this.hzsTile(g,x0 + 16,cy,16,hl ? acc : c,0.47);
@@ -3303,7 +3309,7 @@ package
             var lim:Number = dt.x - (x0 + 42) - 10;
             this.hzsT(p,String(r.n),x0 + 42,cy - 9,14,c != HZS_MUTED || hl ? HZS_WHITE : HZS_LABEL,"sb",0.1,"l",1,lim);
             if(hl) { this.hzsT(p,String(r.sub),x0 + 42,cy + 10,13,acc,"bd",0.1,"l",1,lim); }
-            else { this.hzsT(p,String(r.sub),x0 + 42,cy + 10,13,HZS_MUTED,"rg",0,"l",1,lim); }
+            else { this.hzsT(p,String(r.sub),x0 + 42,cy + 10,13,undisc ? HZS_LABEL : HZS_MUTED,"rg",0,"l",1,lim); }
             yy += 48;
          }
          return [w,h];
@@ -3847,13 +3853,18 @@ package
             if(this.hzsMkK[i] !== key)
             {
                this.hzsMkK[i] = key;
-               var c:uint = int(m[2]) == 1 ? acc : HZS_MUTED;
+               var c:uint = int(m[2]) == 1 ? acc : HZS_POI;
                var g:* = si.graphics;
                g.clear();
                if(String(m[5]) == "ship" || String(m[5]) == "vehicle") { c = String(m[6]) == "mine" ? HZS_O2B : (String(m[6]) == "other" ? HZS_VIO : c); this.hzsIcon(g,String(m[5]),0,0,c,1.15); }   // r2: yours blue, a companion's violet, in doubt the normal color
                else { this.hzsIcon(g,"hex",0,0,c,1.15); g.beginFill(c,1); g.drawCircle(0,0,2.5); g.endFill(); }
                this.hzsTPBegin(sx);
-               this.hzsT(sx,String(m[3]),0,22,13,c,"sb",0.04,"c");
+               var dtf:TextField = this.hzsT(sx,String(m[3]),0,22,13,c,"sb",0.04,"c");
+               if(int(m[2]) != 1)
+               {
+                  var dw:Number = this.hzsTw(dtf) + 16;
+                  g.beginFill(HZS_BG,180 / 255); g.drawRoundRect(Math.round(-dw / 2),12,Math.round(dw),18,12,12); g.endFill();
+               }
                if(nm)
                {
                   var nt:TextField = this.hzsT(sx,String(m[4]),30,0,14,HZS_WHITE,"sb",0.12,"l",1,260);   // measured on itself (was a probe copy)

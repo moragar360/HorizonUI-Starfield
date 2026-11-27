@@ -2853,9 +2853,10 @@ namespace HZ
 	// the HUDMessagesMenu advance (100 ms gate). Steady state: one atomic load and one int compare. No Scaleform, no
 	// GFx value, no file. The INISettingCollection singleton id is checked in the versionlib table first (a missing id
 	// would end the process inside REL); the lookups are null-checked and run under SEH. The setting lookup walks the
-	// game's INI list once per change. Vanilla at start writes nothing. The game's own values are read once, right
-	// before the first write, and written back on a later Vanilla. A missing id or setting is logged once and the
-	// change is dropped (no retry until the position changes again). Author: Moragar. Last modified: 2026-11-18.
+	// game's INI list once per change. Vanilla writes the game default cone (0.92 / 0.8 / 0.25) once when that
+	// level is applied (first load or a change to Vanilla), never on scanner open or every frame. A missing id or
+	// setting is logged once and the change is dropped (no retry until the position changes again). Author: Moragar.
+	// Last modified: 2026-11-27.
 	hzscanhl::State g_scanHl;                                // UI thread only: applied, yield/reapply guard, captured base, last write (hz_scan_hl.h)
 	bool            g_scanHlMissLogged = false;             // UI thread only
 	// 0.43.5: the load peek and the one-line logs
@@ -2961,11 +2962,12 @@ namespace HZ
 			return;
 		}
 		const bool restore = plan.act == hzscanhl::Act::Restore;
+		const bool vanilla = want == hzscanhl::kVanilla;
 		HzScanHlRaw io{};
 		io.capture = g_scanHl.orig.have ? 0 : 1;
 		io.writeDot = restore ? (g_scanHl.orig.dotOk ? 1 : 0) : 1;
 		io.writeDecal = restore ? (g_scanHl.orig.decalOk ? 1 : 0) : 1;
-		io.writeFall = plan.wFall ? 1 : 0;   // a restore / Horizon dot sets wFall only for a captured fade
+		io.writeFall = plan.wFall ? 1 : 0;   // Vanilla writes the game fade; Small / Large / Wide only a captured fade
 		io.dot = plan.dot;
 		io.decal = plan.decal;
 		io.fall = plan.fall;
@@ -2991,8 +2993,9 @@ namespace HZ
 			REX::WARN("scanner highlight: {} not found, the outline fade is left to the game", hzscanhl::kKeyFall);
 			g_scanHlMissLogged = true;
 		}
-		// 0.43.5: remember what is in the game now (a Vanilla restore turns the recheck off)
-		g_scanHl.wrote.on = !restore && io.dotFound != 0;
+		// 0.43.5: remember what is in the game now. Vanilla writes the default cone once and turns the recheck off
+		// (never rewritten on scanner open).
+		g_scanHl.wrote.on = !restore && !vanilla && io.dotFound != 0;
 		g_scanHl.wrote.dot = plan.dot;
 		g_scanHl.wrote.decal = plan.decal;
 		g_scanHl.wrote.wFall = plan.wFall && io.fallFound != 0;
@@ -3006,9 +3009,9 @@ namespace HZ
 	// mod that already widens the scanner, so a "Vanilla looks like Max" report can be answered from the log; (2) after
 	// a Horizon write, read the values back on the scanner open edge and every 2 s while the scanner is closed, and write
 	// them again when something else changed them (another mod's setini, a bat file, the console), logged once per
-	// session. With Vanilla nothing is ever written; it only logs once if the game's values changed after load.
+	// session. Vanilla writes its cone only from ScanHlApply (setting change); this path never writes Vanilla.
 	// UI thread only. Same id check and SEH as ScanHlApply (HzScanHlCall with no write = a read). Author: Moragar.
-	// Last modified: 2026-11-23.
+	// Last modified: 2026-11-27.
 	static bool HzScanHlRead(HzScanHlRaw& a_io)
 	{
 		const auto id = RE::ID::INISettingCollection::Singleton.id();
@@ -3033,7 +3036,7 @@ namespace HZ
 		g_scanHlPeekDecal = io.decalWas;
 		const bool wide = hzscanhl::WidenedByOther(io.dotFound != 0, io.dotWas, io.decalFound != 0, io.decalWas);
 		REX::INFO("scanner highlight: game values at load {} / {} / fade {}{}", io.dotWas, io.decalWas, io.fallWas,
-			wide ? " - your INI or another mod already widens the scanner (VANILLA keeps that)" : "");
+			wide ? " - your INI or another mod already widens the scanner (VANILLA writes the game default 0.92 / 0.8)" : "");
 	}
 
 	ULONGLONG g_scanReNext = 0;      // UI thread only: the next closed-scanner recheck
@@ -3042,7 +3045,7 @@ namespace HZ
 	static void ScanHlRecheck(bool a_openEdge)
 	{
 		if (!g_scanHl.wrote.on) {
-			// Vanilla: never write; one line if the game's own values changed after load (first scanner open only)
+			// Vanilla (or nothing written yet): never write here; one line if the game's values changed after load
 			if (!a_openEdge || g_scanHlVanChgLogged || !g_scanHlPeekOk) return;
 			g_scanHlVanChgLogged = true;
 			HzScanHlRaw io{};

@@ -2902,7 +2902,10 @@
                case "tempunit": if(!isNaN(nv)) { this.hzTempUnit = Math.max(0,Math.min(1,int(nv))); } break;
                case "afflictionlayout": if(!isNaN(nv)) { this.hzAfLayout = Math.max(0,Math.min(2,int(nv))); } break;
                case "planetdetails": this.hzPlanDetails = bv; break;
-               case "showtarget": this.hzShowTarget = bv; break;
+               case "showtarget":
+                  if(this.hzShowTarget && !bv) { this.hz38GiveBackVanilla(); }
+                  this.hzShowTarget = bv;
+                  break;
                case "targetanchor": if(!isNaN(nv)) { this.hzTgAnchor = Math.max(0,Math.min(1,int(nv))); } break;
                case "targetshowvalue": this.hzTgShowValue = bv; break;
                case "compact": this.hzCompact = bv; break;
@@ -6748,11 +6751,15 @@
             this.hzSetWinOpacity = this.hzPctOr(String(p.SettingsOpacity),93,30);
          }
          if(p.ContainerOpacity != undefined && !isNaN(Number(p.ContainerOpacity)) && Math.abs(this.hzContOpacity - Number(p.ContainerOpacity)) > 0.001) { this.hzContOpacity = Math.max(0.2,Math.min(1.6,Number(p.ContainerOpacity))); this.hzT19Sig = ""; }
-         if(p.ShowTarget != undefined) { this.hzShowTarget = Boolean(p.ShowTarget); }
+         if(p.ShowTarget != undefined)
+         {
+            var wantTg:Boolean = Boolean(p.ShowTarget);
+            if(this.hzShowTarget && !wantTg) { this.hz38GiveBackVanilla(); }   // Hover + Container off: stock card this frame
+            this.hzShowTarget = wantTg;
+         }
          if(p.TargetAnchor != undefined) { this.hzTgAnchor = int(p.TargetAnchor); }
          if(p.TargetShowValue != undefined) { this.hzTgShowValue = Boolean(p.TargetShowValue); }
          this.hzTgDirty = true;
-         if(!this.hzShowTarget) { this.hzTgRestore(); }
          if(p.TimeDisplay != undefined && this.hzTimeDisplay != int(p.TimeDisplay)) { this.hzTimeDisplay = Math.max(0,Math.min(3,int(p.TimeDisplay))); this.hzPpLayout(); }
          if(p.ClockFormat != undefined && this.hzClockFmt != int(p.ClockFormat)) { this.hzClockFmt = Math.max(0,Math.min(1,int(p.ClockFormat))); this.hzPpLayout(); }
          if(p.TempUnit != undefined && this.hzTempUnit != int(p.TempUnit))
@@ -14574,6 +14581,28 @@
          catch(eV:Error) { }
       }
 
+      // Purpose: Hover + Container off, on that setting edge only. Restore captured alphas, force the stock
+      // prompt to alpha 1 this frame, and hide Horizon's card. The per-frame hide walk does not run.
+      // Inputs: none (reads RolloverWidget_mc). Outputs: vanilla prompt visible; Horizon target card off.
+      // Dependencies: hzT19Off, hzTgRestore. Author: Moragar. Last modified: 2026-11-27.
+      private function hz38GiveBackVanilla() : void
+      {
+         this.hzT19Off();
+         this.hzT19HcValid = false;
+         this.hzT19HcDue = true;
+         try
+         {
+            var rw:Object = this.RolloverWidget_mc;
+            var aw:Object = rw ? rw.RolloverActivation_mc : null;
+            var hd:DisplayObject = rw ? rw.RolloverActivationHolder_mc as DisplayObject : null;
+            var ad:DisplayObject = aw as DisplayObject;
+            if(hd) { hd.alpha = 1; }
+            if(ad) { ad.alpha = 1; }
+         }
+         catch(eGb:Error) { }
+         this.hz38VanShown = true;
+      }
+
       // round icon tile with a neutral activation glyph (the prompt card for people and objects)
       private function hzT19Tile(g:*, cx:Number, cy:Number, col:uint, rad:Number = 23) : void
       {
@@ -15088,18 +15117,28 @@
             W = Math.max(340,Math.round(bw + 28));
             o.center = false; o.right = false; o.ls = 2; o.fs = 16; o.size = 16;
             nmTf.visible = true;
-            nmTf.x = 14; nmTf.width = W - 28;
+            nmTf.x = 14;
             this.hzTxtTint(nmTf,steal ? HZ_RED : null);
             this.hzApplyFmt(o);
             this.hzT19HdrR.visible = true;
             this.hzT19Face(this.hzT19HdrR,"sb");
-            this.hzT19HdrR.width = 140;
+            // ITEMS sits in a fixed 140-wide field on the right. Room math must use that slot, not the painted
+            // "N ITEMS" width, or STEAL (and a long title) run into the count.
+            var itemsSlot:Number = 140;
+            this.hzT19HdrR.width = itemsSlot;
             this.hzT19HdrR.text = n + (n == 1 ? " ITEM" : " ITEMS");
-            this.hzT19HdrR.x = W - 14 - 140;
+            this.hzT19HdrR.x = W - 14 - itemsSlot;
             this.hzTxtTop(this.hzT19HdrR,15);
-            var hroom:Number = W - 28 - this.hzTW(this.hzT19HdrR) - 14;
             var stw:Number = 0;
-            if(steal) { stw = 60; hroom -= stw; }
+            if(steal)
+            {
+               this.hzT19Ch2.text = "STEAL";
+               stw = this.hzTW(this.hzT19Ch2) + 14;
+            }
+            else if(this.hzT19Ch2) { this.hzT19Ch2.visible = false; }
+            var hroom:Number = this.hzT19HdrR.x - 14 - (steal ? stw + 10 : 0);
+            if(hroom < 40) { hroom = 40; }
+            nmTf.width = hroom;
             this.hzFitText(nmTf,this.hzUC(hdrTxt),hroom);
             this.hzTxtTop(nmTf,11);
             var vis:int = Math.min(5,n);
@@ -15123,6 +15162,8 @@
             if(steal)
             {
                var stx:Number = 14 + this.hzTW(nmTf) + 10;
+               if(stx + stw > this.hzT19HdrR.x - 4) { stx = this.hzT19HdrR.x - stw - 8; }
+               if(stx < 14) { stx = 14; }
                this.hzChip(g,this.hzT19Ch2,stx,15,"STEAL",HZ_RED,true);
             }
             var ac:uint = this.hzIconCol(acol);
@@ -21293,7 +21334,7 @@
       // hides its own cards while the Horizon scanner is open. Types: b 0/1, i int, f float, z size, o -1 or a number,
       // p position (-1, L/R/C+n, T/B/C+n), s hex.
       private static const HZ40_SCAN_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanHideBioscanDone","b",0,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["ScanHighlightArea","i",1,0,5],["ScanOutlineThickness","i",0,0,2],["ScanReach","i",0,0,3],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideWatchWhileScanning","b",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];
-      private static const HZ40_SCAN_CM:Object = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanHideBioscanDone":["1 = no bioscan card once the planet is fully scanned (every fauna, flora, resource and trait found). Default 0"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"ScanHighlightArea":["Highlight area of the hand scanner (the game's own pick-up cone and outline radius, set by the DLL; not the scan distance): 0 = Small (half the game's circle),","1 = Vanilla (default: the game's own values, nothing is changed), 4 = Large, 5 = Wide, 2 = Full screen (3, the old Max, reads as 2). Applies the next time you open the scanner"],"ScanOutlineThickness":["Outline thickness of the hand scanner highlight (the game's own [Monocle] outline settings, set by the DLL): 0 = Vanilla","(default: the game's own values, nothing is changed), 1 = Thick (1.5x), 2 = Thicker (2x). Applies the next time you open the scanner"],"ScanReach":["Scan reach (changes gameplay; the game's own hand scanner range settings, set by the DLL): 0 = Vanilla (default: nothing is changed, range mods keep theirs),","1 = x2, 2 = x3, 3 = x5 of the game's highlight distance (50 m) and scan distance (10 m); the Surveying bonus still adds on top; never more than 500 m. Applies the next time you open the scanner"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"],"HideWatchWhileScanning":["1 = the watch hides while the hand scanner is open, in every WatchStyle that shows one. With EnemyBar, StealthMeter or","EdgePulse on, the whole bottom-left watch corner hides, planet / bio alerts and the vanilla enemy ring too. With all","three off, only the watch pieces and the env / bio alert text hide (1 / 2 vanilla: the watch; 3 / 4 Horizon: the face","and its marker icons); the alert icons and the enemy ring still show. 0 = shown (default)"]};
+      private static const HZ40_SCAN_CM:Object = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanHideBioscanDone":["1 = no bioscan card once the planet is fully scanned (every fauna, flora, resource and trait found). Default 0"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"ScanHighlightArea":["Highlight area of the hand scanner (the game's own pick-up cone and outline radius, set by the DLL; not the scan distance): 0 = Small (half the game's circle),","1 = Vanilla (default: writes the game 0.92 / 0.8 cone, about 23 degrees, once when picked), 4 = Large, 5 = Wide, 2 = Full screen (3, the old Max, reads as 2). A change writes once; not on scanner open"],"ScanOutlineThickness":["Outline thickness of the hand scanner highlight (the game's own [Monocle] outline settings, set by the DLL): 0 = Vanilla","(default: the game's own values, nothing is changed), 1 = Thick (1.5x), 2 = Thicker (2x). Applies the next time you open the scanner"],"ScanReach":["Scan reach (changes gameplay; the game's own hand scanner range settings, set by the DLL): 0 = Vanilla (default: nothing is changed, range mods keep theirs),","1 = x2, 2 = x3, 3 = x5 of the game's highlight distance (50 m) and scan distance (10 m); the Surveying bonus still adds on top; never more than 500 m. Applies the next time you open the scanner"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"],"HideWatchWhileScanning":["1 = the watch hides while the hand scanner is open, in every WatchStyle that shows one. With EnemyBar, StealthMeter or","EdgePulse on, the whole bottom-left watch corner hides, planet / bio alerts and the vanilla enemy ring too. With all","three off, only the watch pieces and the env / bio alert text hide (1 / 2 vanilla: the watch; 3 / 4 Horizon: the face","and its marker icons); the alert icons and the enemy ring still show. 0 = shown (default)"]};
       private static const HZ40_POPUP:Array = ["HideQuestPopupsWhileScanning","DimTraitPopupDuringBioscan","TraitPopupDim"];
       private static const HZ40_OPA_V:Array = [-1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6];
       private static const HZ40_OPA_N:Array = ["FOLLOW HUD","0.20","0.30","0.40","0.50","0.60","0.70","0.80","0.90","1.00","1.10","1.20","1.30","1.40","1.50","1.60"];
@@ -21522,7 +21563,7 @@
             {"k":"ScanLeftToFind","l":"\"LEFT TO FIND\" COUNTS","t":"b","note":"Planet totals under the bioscan rows"},
             {"k":"ScanMinRarity","l":"RESOURCES SHOWN","t":"r","opts":["ALL","UNCOMMON+","RARE+","EXOTIC+","UNIQUE"],"ids":[0,1,2,3,4]},
             {"k":"ScanNearestUnscanned","l":"HIGHLIGHT NEAREST UNDISCOVERED","t":"b","note":"Signals list only"},
-            {"k":"ScanHighlightArea","l":"HIGHLIGHT AREA","t":"r","opts":["SMALL","VANILLA","LARGE","WIDE","FULL SCREEN"],"ids":[0,1,4,5,2],"note":"How far from the screen center the scanner picks up and outlines things. It doesn't change how far away you can scan (that's SCAN REACH). SMALL: about half the game's circle. VANILLA: the game's own (or your own INI tweak). LARGE: reaches the top and bottom of the screen. WIDE: reaches the left and right edges. FULL SCREEN: the whole screen, corners too. Applies the next time you open the scanner"},
+            {"k":"ScanHighlightArea","l":"HIGHLIGHT AREA","t":"r","opts":["SMALL","VANILLA","LARGE","WIDE","FULL SCREEN"],"ids":[0,1,4,5,2],"note":"How far from the screen center the scanner picks up and outlines things. It doesn't change how far away you can scan (that's SCAN REACH). SMALL: about half the game's circle. VANILLA: the game's default cone (about 23 degrees); Horizon writes that once when you pick it. LARGE: reaches the top and bottom of the screen. WIDE: reaches the left and right edges. FULL SCREEN: the whole screen, corners too. A change writes once; it is not rewritten when you open the scanner"},
             {"k":"ScanOutlineThickness","l":"OUTLINE THICKNESS","t":"r","opts":["VANILLA","THICK","THICKER"],"ids":[0,1,2],"note":"How thick the scanner outlines highlighted minerals, flora, fauna and items. VANILLA: the game's own (your ini tweaks stay). THICK: 1.5x. THICKER: 2x. Applies the next time you open the scanner"},
             {"k":"ScanReach","l":"SCAN REACH","t":"r","opts":["VANILLA","2X","3X","5X"],"ids":[0,1,2,3],"note":"Changes gameplay: how far away the scanner outlines things (game: 50 m) and how far you can scan them (game: 10 m plus your Surveying bonus). 2X / 3X / 5X multiply your game's values (other range mods included), capped at 500 m. VANILLA changes nothing. A long reach can cost FPS in busy areas. Applies the next time you open the scanner"},
             {"k":"ScanOpacity","l":"OPACITY","t":"l","vals":HZ40_OPA_V,"names":HZ40_OPA_N,"h":"LOOK","note":"FOLLOW HUD = CARD OPACITY (STYLE)"},
