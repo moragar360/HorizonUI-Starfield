@@ -39,9 +39,18 @@ function toJs(src, name) {
 	return new Function(...params, f.body.replace(/var (\w+):[\w*]+/g, "let $1"));
 }
 function rulesRows(src) {
-	const m = /return (\[\{"k":"JetpackRule".*?\]);\n/.exec(src);
-	if (!m) throw new Error("rules row list not found");
-	return JSON.parse(m[1]);
+	const notes = [];
+	const re = /case "(\w+)": return "Crosshair off\? Set this to ALWAYS or COMBAT ONLY.";/g;
+	let m;
+	while ((m = re.exec(src))) notes.push(m[1]);
+	const idsM = /"AmmoRule",\[([^\]]+)\]/.exec(src);
+	const ids = idsM ? JSON.parse("[" + idsM[1] + "]") : [];
+	const ammoNote = notes.indexOf("AmmoRule") >= 0 ? NOTE : "";
+	const rows = [{ k: "AmmoRule", note: ammoNote, ids: ids }];
+	for (const k of notes) {
+		if (k !== "AmmoRule") rows.push({ k: k, note: NOTE, ids: [] });
+	}
+	return rows;
 }
 function names(src) {
 	const m = /HZ_RULE_NAMES:Array = (\[[^\]]*\]);/.exec(src);
@@ -81,9 +90,10 @@ function behave(src, log) {
 
 behave(AS0, true);
 
+const AMMO_LINE = 'case "AmmoRule": return "' + NOTE + '";';
 const mutants = [
-	["note removed", (s) => s.replace(',"note":"' + NOTE + '"', "")],
-	["note on the wrong row", (s) => s.replace(',"note":"' + NOTE + '"', "").replace('"l":"COMPASS","t":"q","ids":[0,1,2]}', '"l":"COMPASS","t":"q","ids":[0,1,2],"note":"' + NOTE + '"}')],
+	["note removed", (s) => s.replace(AMMO_LINE, 'case "AmmoRule": return "";')],
+	["note on the wrong row", (s) => s.replace(AMMO_LINE, 'case "AmmoRule": return "";').replace('case "CompassRule":', 'case "CompassRule": return "' + NOTE + '"; case "_hzAmmoNoteMoved":')],
 	["Fix 3 path changed", (s) => s.replace("(this.hzAmmoDrawn && this.hzCrossOn && this.hzWpnRet)", "(this.hzAmmoDrawn && this.hzWpnRet)")],
 ];
 for (const [name, fn] of mutants) {

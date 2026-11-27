@@ -27,7 +27,7 @@ function spr() { return { kids: [], cleared: 0, get numChildren() { return this.
 	expect(/this\.hzSetIsOpen = false;[\s\S]*this\.hzSetFree\(\);\s*$/.test(close), "hzSetClose frees after it marks the window closed");
 	const tog = fnText(as, "hzToggleSettings").body;
 	expect(/this\.hzSetPlace\(\);\s*this\.hzSetDraw\(\);/.test(tog), "every open draws the whole window again");
-	const draw = fnText(as, "hzSetDraw").body;
+	const draw = fnText(as, "hz51Draw").body;
 	expect(/while\(b\.numChildren > 0\) \{ b\.removeChildAt\(0\); \}/.test(draw) && /b\.addChild\(this\.hzSetKeyOv\);/.test(draw), "hzSetDraw starts from an empty body and re-adds the keycap layer");
 	expect(/if\(this\.hzSetIsOpen && this\.HorizonSettings_mc\)[\s\S]*this\.hzSetDraw\(\);/.test(fnText(as, "hzArrExit").body), "ARRANGE CANCEL back into F11 redraws");
 	expect(/removeChildAt\(0\)/.test(fnText(as, "hzArrExit").body) && /removeChildAt\(0\)/.test(fnText(as, "hzMsglogForceClose").body), "ARRANGE and the message log already empty their layers");

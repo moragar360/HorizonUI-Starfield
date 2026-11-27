@@ -5,7 +5,7 @@
 //   g++ -std=c++20 -Wall -Wextra -pthread -I src -DMSGLOG_REPO_ROOT=\"$PWD\" tests/message_log_test.cpp -o test_scratch/message_log_test
 // Or: MSGLOG_REPO_ROOT=$PWD test_scratch/message_log_test  (relative __FILE__ still finds the repo).
 // Author: Moragar
-// Last modified: 2026-10-29.
+// Last modified: 2026-11-26.
 
 #include "hz_addr_probe.h"
 #include "hz_test_scratch.h"
@@ -3419,14 +3419,17 @@ int main()
 			"HUD open hint is the F11 key");
 		Expect(as.find("notifications") != std::string::npos, "F11 probes the Notifications marker");
 		Expect(as.find("MESSAGE LOG") != std::string::npos, "F11 has a MESSAGE LOG row");
-		Expect(as.find("needs Notifications") != std::string::npos, "the row is gated on the Notifications marker");
+		Expect(as.find("Notifications is not installed") != std::string::npos
+			&& as.find("hz51WrapMod(rows, \"msglog\"") != std::string::npos, "the row is gated on the Notifications marker");
 		Expect(as.find("HORIZON UI · MESSAGE LOG") != std::string::npos, "the log shell title is present");
 		Expect(as.find("HZ_ML_W:Number = 976") != std::string::npos,
 			"the log popup is 976 wide");
 		Expect(as.find("HZ_ML_CLOCK:Number = 168") != std::string::npos,
 			"the time column is 168 px");
-		Expect(as.find("HZ_SET_W:Number = 1000") != std::string::npos,
-			"the F11 window is 1000 wide");
+		Expect(as.find("HZ_SET_W:Number = 1260") != std::string::npos,
+			"the F11 window defaults to 1260 (height stays 726)");
+		Expect(as.find("HZ_SET_H:Number = 726") != std::string::npos,
+			"the F11 window defaults to 726 (10% over the old 660 clip)");
 		Expect(as.find("HZ_ML_H") != std::string::npos && as.find("620") != std::string::npos,
 			"the log popup is 620 tall");
 		Expect(as.find("HZ_ML_VIS") != std::string::npos && as.find("HZ_ML_ROW") != std::string::npos,
@@ -3550,7 +3553,7 @@ int main()
 		Expect(main.find("hzTakeMsglogIni") != std::string::npos, "DLL takes the MessageLog-only save");
 		Expect(main.find("IsMessageLogOnlyIni") != std::string::npos, "DLL rejects a full dump on the MessageLog save path");
 		{
-			const auto work = AsFnBody(main, "void FilesPollWork()", "void PushFileState()");
+			const auto work = AsFnBody(main, "void FilesPollWork()", "std::uint64_t PushFileState()");
 			Expect(work.find("MergeMessageLogUser") != std::string::npos,
 				"the shipped MessageLog save uses MergeMessageLogUser");
 			Expect(work.find("ReplaceSection(user") == std::string::npos,
@@ -3785,7 +3788,8 @@ int main()
 				"hzSetKey forwards minPx to hzWT");
 			const auto btn = AsFnBody(as, "private function hzSetBtn", "private function hzSetRowH");
 			Expect(btn.find("fs:Number = 12, minPx:int = 13) : Number") != std::string::npos
-				&& btn.find("this.hzWT(b,lab,0,y + (fs > 12 ? 5 : 6),220,fs,\"sb\",prim ? uint(T.ontxt) : uint(T.txt),1.8,\"left\",minPx)") != std::string::npos,
+				&& btn.find("this.hzWT(b,lab,0,0,220,fs,\"sb\",prim ? uint(T.ontxt) : uint(T.txt),1.8,\"left\",minPx)") != std::string::npos
+				&& btn.find("t.y = y + Math.round((28 - t.textHeight) / 2) - 1") != std::string::npos,
 				"hzSetBtn forwards minPx to hzWT");
 		}
 		Expect(as.find("hzSetKey(b,g,ox + 22,fy + 4,\"/\",uint(T.mut),24,13,13)") != std::string::npos,
@@ -3867,9 +3871,18 @@ int main()
 		Expect(main.find("MsglogDeleteSelected") == std::string::npos, "no DLL erase-selected call");
 		Expect(main.find("std::string MsglogFolderPath()") != std::string::npos, "DLL folder path getter");
 		{
-			const auto get = main.find("std::string MsglogFolderPath()");
-			const auto next = main.find("void MsglogOfferNote", get);
-			const auto body = get != std::string::npos && next > get ? main.substr(get, next - get) : std::string();
+			// Skip the forward declaration (ends in ';'). HzFnBody returns empty there,
+			// so this lands on the real definition that follows.
+			std::size_t get = 0;
+			std::string body;
+			const std::string needle = "std::string MsglogFolderPath()";
+			while ((get = main.find(needle, get)) != std::string::npos) {
+				body = HzFnBody(main, get);
+				if (!body.empty())
+					break;
+				get += needle.size();
+			}
+			Expect(!body.empty(), "folder path getter is anchored on the definition, not the forward declaration");
 			Expect(body.find("FolderPathDisplay") != std::string::npos, "folder path is a display string");
 			Expect(body.find("create_directories") == std::string::npos, "folder path getter does not create the folder");
 			Expect(body.find("ofstream") == std::string::npos && body.find("FileStore") == std::string::npos,

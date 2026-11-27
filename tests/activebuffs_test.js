@@ -54,8 +54,8 @@ const arrOf = (name) => JSON.parse(new RegExp("private static const " + name + "
 	expect(c34.indexOf("Buffs") < 0 && c34.indexOf('["Hazard",true]') >= 0 && c34.indexOf('["Afflictions",false]') >= 0, "[Cards] size / form list: no Buffs, Hazard and Afflictions kept");
 	const c40 = /private static const HZ40_CARDS:Array = (\[[^;]*\]);/.exec(as)[1];
 	expect(c40.indexOf("Buffs") < 0 && c40.indexOf("HorizonAffl_mc") >= 0, "the card list for the global hide: no Buffs card, Afflictions kept");
-	const rules = fnText(as, "hzSetRows").body;
-	expect(rules.indexOf("BuffsRule") < 0 && rules.indexOf("ACTIVE BUFFS") < 0 && rules.indexOf('"AfflictionsRule"') >= 0, "F11 > RULES: no ACTIVE BUFFS row, AFFLICTIONS row kept");
+	const rules = fnText(as, "hz51Cards").body;
+	expect(rules.indexOf("BuffsRule") < 0 && rules.indexOf("ACTIVE BUFFS") < 0 && rules.indexOf('"AfflictionsRule"') >= 0, "F11 Cards catalog: no ACTIVE BUFFS row, AFFLICTIONS row kept");
 	const cards = fnText(as, "hz34CardRows").body;
 	expect(!/Buffs|BUFFS/.test(cards) && cards.indexOf('"HazardStatus"') >= 0 && cards.indexOf('"ShowAfflictions"') >= 0, "F11 > CARDS: no ACTIVE BUFFS section or row, HAZARD STATUS and AFFLICTIONS kept");
 	const info = /private static const HZ35_INFO:Object = (\{[\s\S]*?\});\n/.exec(as)[1];

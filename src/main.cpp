@@ -40,6 +40,7 @@
 #include <winver.h>
 #include <Xinput.h>
 #include <ShlObj.h>
+#include <shellapi.h>
 #include <psapi.h>
 #pragma comment(lib, "version.lib")
 #pragma comment(lib, "shell32.lib")
@@ -175,6 +176,7 @@ namespace HZ
 	std::atomic<bool>          g_splashDefer{false};
 	std::atomic<bool>          g_splashWatch{false};
 	std::atomic<std::uint64_t> g_splashPushedGen{0};
+	std::atomic<std::uint64_t> g_f11PushedGen{0};   // last preset list pushed while F11 is open
 	std::atomic<bool>          g_splashLoadNoted{false};
 	std::atomic<int>           g_splashTries{0};
 	ULONGLONG                  g_splashWatchSince{0};
@@ -188,6 +190,7 @@ namespace HZ
 	void HzAddrLoad() noexcept;
 	void PreloadDllFileVersion();
 	void FilesJobPreload();
+	std::string MsglogFolderPath();   // Message Log folder for F11 Folder SHOW (defined with the log helpers)
 	void RecordUiTidOnce(std::uint32_t a_tid, const char* a_src);
 
 	std::filesystem::path IniPath()
@@ -1280,6 +1283,7 @@ namespace HZ
 		case VK_RETURN: return "ok";
 		case VK_ESCAPE: return "cancel";
 		case VK_BACK: return "bksp";   // v0.37: delete in the preset name entry (the HUD treats it as cancel elsewhere)
+		case VK_DELETE: return "del";  // extra-slot key chips: Delete clears while capturing (same as Backspace)
 		default: return nullptr;
 		}
 	}
@@ -1639,35 +1643,43 @@ namespace HZ
 		return b;
 	}
 
-	// Purpose: job-thread file work for F11. Never touches Scaleform.
+	// Purpose: rescan shipped + user presets into g_fileState. Called from the
+	// job thread after a save/delete/apply so the F11 dropdown can rebuild
+	// without reopening. Never touches Scaleform.
+	// Inputs: FilesP() folders. Outputs: g_fileState, g_fileStateReady, g_fileStateGen.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void FilesScanPresets()
+	{
+		try {
+			const auto P = FilesP();
+			const auto sc = HZF::ScanPresets(P, HZF::Defaults(P));
+			std::string sig;
+			for (const auto& k : sc.skipped) sig += k + "\n";
+			for (const auto& k : sc.deduped) sig += k + "\n";
+			if (sig != g_skipSig) {
+				g_skipSig = sig;
+				for (const auto& k : sc.skipped) REX::WARN("preset skipped: {}", k);
+				for (const auto& k : sc.deduped) REX::INFO("{}", k);
+				REX::INFO("presets: {} found, {} skipped, {} duplicate names hidden", sc.list.size(), sc.skipped.size(), sc.deduped.size());
+			}
+			const auto st = HZF::StateString(P, sc);
+			std::lock_guard lk(g_fileMu);
+			g_fileState = st;
+			g_fileStateReady.store(true);
+			g_fileStateGen.fetch_add(1, std::memory_order_relaxed);
+		} catch (...) {
+			REX::WARN("files: preset scan failed");
+		}
+	}
+
+	// Purpose: job-thread file work for F11. Action first, then preset rescan
+	// so a save-as-new-name is in g_fileState before the next UI push.
 	// Inputs: queued act / save-ini strings from the UI thread.
 	// Outputs: cached state string and action reply. Author: Moragar.
-	// Last modified: 2026-10-28.
+	// Last modified: 2026-11-27.
 	void FilesPollWork()
 	{
 		FilesJobPreload();
-		if (g_fileStateWant.exchange(false)) {
-			try {
-				const auto P = FilesP();
-				const auto sc = HZF::ScanPresets(P, HZF::Defaults(P));
-				std::string sig;
-				for (const auto& k : sc.skipped) sig += k + "\n";
-				for (const auto& k : sc.deduped) sig += k + "\n";
-				if (sig != g_skipSig) {
-					g_skipSig = sig;
-					for (const auto& k : sc.skipped) REX::WARN("preset skipped: {}", k);
-					for (const auto& k : sc.deduped) REX::INFO("{}", k);
-					REX::INFO("presets: {} found, {} skipped, {} duplicate names hidden", sc.list.size(), sc.skipped.size(), sc.deduped.size());
-				}
-				const auto st = HZF::StateString(P, sc);
-				std::lock_guard lk(g_fileMu);
-				g_fileState = st;
-				g_fileStateReady.store(true);
-				g_fileStateGen.fetch_add(1, std::memory_order_relaxed);
-			} catch (...) {
-				REX::WARN("files: preset scan failed");
-			}
-		}
 		std::string act;
 		{
 			std::lock_guard lk(g_fileMu);
@@ -1678,7 +1690,23 @@ namespace HZ
 			std::string kind = "?";
 			HZF::Result r;
 			try {
-				r = HZF::DoAction(FilesP(), act, Today(), kind);
+				if (act == "openfolder" || act.rfind("openfolder", 0) == 0) {
+					kind = "openfolder";
+					const auto shown = MsglogFolderPath();
+					std::filesystem::path dir = shown.empty() ? std::filesystem::path{} : std::filesystem::path(shown);
+					std::error_code ec;
+					std::filesystem::path open = dir;
+					if (!open.empty() && !std::filesystem::exists(open, ec) && open.has_parent_path())
+						open = open.parent_path();
+					if (!open.empty())
+						::ShellExecuteW(nullptr, L"open", open.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+					r.ok = true;
+					r.msg = shown.empty() ? open.generic_string() : shown;
+					if (!dir.empty() && !std::filesystem::exists(dir, ec))
+						r.msg += " (not created yet - turn on Save to disk)";
+				} else {
+					r = HZF::DoAction(FilesP(), act, Today(), kind);
+				}
 			} catch (...) {
 				r.ok = false;
 				r.msg = "error";
@@ -1689,14 +1717,21 @@ namespace HZ
 				LoadIni();
 				g_iniSavedRev.fetch_add(1, std::memory_order_acq_rel);   // arch-fixes Fix 2
 			}
+			// Scan after the write, before the UI can take the save-done reply.
+			// Publishing the reply first let PollSettings paint the old dropdown
+			// in the same tick the new file was still being indexed.
+			g_fileStateWant.store(true);
+			if (g_fileStateWant.exchange(false))
+				FilesScanPresets();
 			const std::string reply = kind + "|" + (r.ok ? "1" : "0") + "|" + HZF::CleanField(r.msg, 200);
 			{
 				std::lock_guard lk(g_fileMu);
 				g_fileReply = reply;
 				g_fileReplyReady.store(true);
 			}
-			g_fileStateWant.store(true);
 		}
+		if (g_fileStateWant.exchange(false))
+			FilesScanPresets();
 		std::string saveIni;
 		{
 			std::lock_guard lk(g_fileMu);
@@ -1747,17 +1782,21 @@ namespace HZ
 	}
 
 	// Purpose: UI-thread only. Invokes hzSetFileState with the last
-	// job-thread scan. No disk. Author: Moragar. Last modified: 2026-10-28.
-	void PushFileState()
+	// job-thread scan. No disk. Returns the generation that was copied
+	// when the invoke succeeded, else 0 (do not mark that gen pushed).
+	// Author: Moragar. Last modified: 2026-11-27.
+	std::uint64_t PushFileState()
 	{
 		std::string st;
+		std::uint64_t gen = 0;
 		{
 			std::lock_guard lk(g_fileMu);
 			if (!g_fileStateReady.load()) {
 				g_fileStateWant.store(true);
-				return;
+				return 0;
 			}
 			st = g_fileState;
+			gen = g_fileStateGen.load(std::memory_order_relaxed);
 		}
 		GValue     arg(st.c_str());
 		const bool ok = HudInvoke("hzSetFileState", nullptr, &arg, 1);
@@ -1765,11 +1804,14 @@ namespace HZ
 			REX::INFO("files: hzSetFileState {}", ok ? "OK" : "FAILED (HUD gfx older than 0.37?)");
 			g_fileStateLogged = true;
 		}
+		return ok ? gen : 0;
 	}
 
 	// Purpose: UI-thread only. Takes a file action from the HUD and
-	// returns the last job-thread reply. No disk. Author: Moragar.
-	// Last modified: 2026-10-28.
+	// returns the last job-thread reply. After save/delete, push the
+	// post-write scan this tick so the PRESET dropdown rebuilds while
+	// F11 is still open. No disk. Author: Moragar.
+	// Last modified: 2026-11-27.
 	void PollFileAction()
 	{
 		GValue a;
@@ -1788,6 +1830,11 @@ namespace HZ
 				reply = std::move(g_fileReply);
 		}
 		if (reply.empty()) return;
+		if (reply.compare(0, 5, "save|") == 0 || reply.compare(0, 7, "delete|") == 0) {
+			const auto pushed = PushFileState();
+			if (pushed)
+				g_f11PushedGen.store(pushed, std::memory_order_relaxed);
+		}
 		GValue arg(reply.c_str());
 		HudInvoke("hzFileActionDone", nullptr, &arg, 1);
 		g_fileStateWant.store(true);
@@ -1819,7 +1866,21 @@ namespace HZ
 			REX::INFO("settings {}", isOpen ? "opened" : "closed");
 			g_open.store(isOpen);
 			OnSettingsOpenChanged(isOpen);
-			if (isOpen) PushFileState();   // v0.37: presets / backup state for the F11 rows
+			if (isOpen) {
+				const auto pushed = PushFileState();   // v0.37: presets / backup state for the F11 rows
+				if (pushed)
+					g_f11PushedGen.store(pushed, std::memory_order_relaxed);
+			} else {
+				g_f11PushedGen.store(0, std::memory_order_relaxed);
+			}
+		}
+		if (isOpen) {
+			const auto gen = g_fileStateGen.load(std::memory_order_relaxed);
+			if (gen != 0 && gen != g_f11PushedGen.load(std::memory_order_relaxed)) {
+				const auto pushed = PushFileState();
+				if (pushed)
+					g_f11PushedGen.store(pushed, std::memory_order_relaxed);
+			}
 		}
 		g_swallow = isOpen;
 		if (isOpen) g_lastOpen = a_now;
@@ -5218,7 +5279,10 @@ namespace HZ
 		g_mlPadLast = b;
 		auto fire = [&](const char* code) {
 			std::lock_guard l(g_qLock);
-			if (g_keyQueue.size() < 64) g_keyQueue.emplace_back(code);
+			if (g_keyQueue.size() < 63) {
+				g_keyQueue.emplace_back("hzpad");  // D-pad/A/B/LB/RB: HUD switches the hint row (change-driven)
+				g_keyQueue.emplace_back(code);
+			}
 		};
 		struct Map { WORD mask; const char* code; int slot; bool repeat; };
 		const Map maps[] = {
