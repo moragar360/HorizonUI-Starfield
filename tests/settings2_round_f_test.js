@@ -61,6 +61,8 @@ expect(/EXTENDED SLOT KEYS/.test(quick) && /QuickMenuExtEmptySlots/.test(quick),
 const t19 = fnText(as, "hzT19Tick").body;
 expect(/!this\.hzShowTarget/.test(t19) && /hzT19Off/.test(t19),
 	"6: Target Card off restores and hides the Horizon prompt so vanilla is untouched");
+expect(/hzTgSnap\(d, true\)/.test(as) && /hideA && a < 0.05/.test(fnText(as, "hzTgSnap").body),
+	"6: HideA of mid-rollOn prompt art stores shown alpha 1 so Hover + Container off restores the name and TALK row");
 
 const btn = fnText(as, "hzSetBtn").body;
 expect(/28 - t\.textHeight/.test(btn),
@@ -73,6 +75,8 @@ expect(!/ScanNearestUnscanned/.test(scan) && !/ScanWorldMarkers/.test(scan) && !
 	"8: Signals hides internal keys from the UI");
 expect(/YOUR SHIP AND VEHICLE/.test(scan) && /PLACE NAMES/.test(scan) && /HOW MANY SIGNALS/.test(scan),
 	"8: Signals uses plain names");
+expect(insert.indexOf("Vanilla leaves the game's cone: Horizon writes nothing, so the game or another highlight-radius mod stays") >= 0,
+	"8: Settings 2.0 HIGHLIGHT AREA copy: Vanilla writes nothing");
 
 expect(/AccentHex/.test(fnText(as, "hz51Help").body) && /six digits/.test(fnText(as, "hz51Help").body),
 	"9: Accent custom color help is plain language");
