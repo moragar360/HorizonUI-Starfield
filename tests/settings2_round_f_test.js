@@ -125,8 +125,12 @@ expect(/drawRoundRect\(x0,y,boxW,HZ51_ROW,HZ51_BOX_R/.test(fnText(as, "hz51DrawL
 expect(/hz34Ring\(b,0,0,W,H,HZ51_WIN_R/.test(fnText(as, "hz51Draw").body) && /b.mask = this.hzSetWinMask/.test(fnText(as, "hz51Draw").body),
 	"24: the settings window uses a rounded ring and clips its body to that shape");
 
-expect(/DlgSaidStyle/.test(comms) && /DlgPersuadeStyle/.test(comms) && /DlgPersuadeColor/.test(comms) && /DlgPersuasionMeter/.test(comms) && /DlgMarkers/.test(comms),
-	"21: Choices & Persuasion lists already-said, tags, meter, and markers");
+expect(/"id":"prs","l":"CHOICES & PERSUASION"/.test(fnText(as, "hz51Side").body),
+	"21: Comms sidebar has CHOICES & PERSUASION");
+expect(/"k":"DlgSaidStyle"/.test(comms) && /"k":"DlgPersuadeStyle"/.test(comms) && /"k":"DlgPersuadeColor"/.test(comms) && /"k":"DlgPersuasionMeter"/.test(comms) && /"k":"DlgMarkers"/.test(comms),
+	"21: Choices & Persuasion lists every old F11 persuasion INI key");
+expect(/ALREADY-SAID STYLE/.test(comms) && /PERSUASION TAG COLOR/.test(comms) && /PERSUASION METER/.test(comms) && /QUESTION \/ ADVANCE MARKERS/.test(comms),
+	"21: persuasion rows keep the old F11 labels");
 
 const mods = fnText(as, "hz51Modules").body;
 expect(/STATUS DIRECTORY/.test(mods) && /SHOW WHEN/.test(mods) && /t":"mc"/.test(mods),

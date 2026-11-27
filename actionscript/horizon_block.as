@@ -5961,19 +5961,27 @@
             rows.unshift(this.hz51ModRow("comms", "", "on"));
             return rows;
          }
+         if(id == "prs")
+         {
+            // Same persuasion keys as the old F11 DIALOGUE page (OPTION TAGS), listed here
+            // so CHOICES & PERSUASION does not depend on copying that catalog.
+            rows = [{"k":"DlgSaidStyle","l":"ALREADY-SAID STYLE","t":"r","opts":["DIMMED","HIDDEN","TAGGED"],"h":"CHOICES & PERSUASION"},
+               {"k":"DlgPersuadeStyle","l":"PERSUASION TAG","t":"r","opts":["CHIP","COLORED TEXT","NONE"]},
+               {"k":"DlgPersuadeColor","l":"PERSUASION TAG COLOR","t":"a","pal":HZ_ACCENTS,"names":HZ_SET_ACCNAMES},
+               {"k":"DlgPersuasionMeter","l":"PERSUASION METER","t":"b"},
+               {"k":"DlgMarkers","l":"QUESTION / ADVANCE MARKERS","t":"b","dis":true,"dv":false}];
+            return this.hz51WrapMod(rows, "comms", miss);
+         }
          if(id == "sub") { keys = ["Subtitles","SubSize","SubWidth","SubBgOpacity","SubPosition","SubOffsetY","SubOffsetX","SubAlign","SubCard","TxtColIdx","KeepInDialogue","FixedInDialogue","SubMaxLines","SubFont"]; }
          else if(id == "spk") { keys = ["ShowSpeaker","SpkColIdx","SpeakerCard"]; }
          else if(id == "dly") { keys = ["Dialogue","DlgLayout","DlgVisible","DlgMoreHint","DlgScale","DlgOffsetX","DlgOffsetY"]; }
          else if(id == "dlap") { keys = ["DlgTextSize","DlgFont","DlgCard","DlgBgColor","DlgBgOpacity","DlgTxtIdx","DlgAnim"]; }
-         else if(id == "prs") { keys = ["DlgSaidStyle","DlgPersuadeStyle","DlgPersuadeColor","DlgPersuasionMeter","DlgMarkers"]; }
          else { keys = ["DlgNumberKeys","DlgWheel","DlgHoverScroll","DlgInputDelay","DlgRolloverSound","DlgButtonBar","DlgQuickPickHint","DlgSelectHint"]; }
          var ki:int = 0;
          while(ki < keys.length)
          {
             var kk:String = String(keys[ki]);
             if(src[kk] != undefined) { rows.push(this.hz51Copy(src[kk])); }
-            else if(kk == "DlgPersuasionMeter") { rows.push({"k":kk,"l":"PERSUASION METER","t":"b"}); }
-            else if(kk == "DlgMarkers") { rows.push({"k":kk,"l":"QUESTION / ADVANCE MARKERS","t":"b","dis":true,"dv":false}); }
             else { rows.push({"k":kk,"l":kk,"t":"b"}); }
             ki++;
          }
@@ -5981,7 +5989,6 @@
          if(id == "spk" && rows.length > 0) { rows[0].h = "SPEAKER"; }
          if(id == "dly" && rows.length > 0) { rows[0].h = "DIALOGUE LAYOUT"; }
          if(id == "dlap" && rows.length > 0) { rows[0].h = "DIALOGUE APPEARANCE"; }
-         if(id == "prs" && rows.length > 0) { rows[0].h = "CHOICES & PERSUASION"; }
          if(id == "inp" && rows.length > 0) { rows[0].h = "INPUT & HINTS"; }
          return this.hz51WrapMod(rows, "comms", miss);
       }

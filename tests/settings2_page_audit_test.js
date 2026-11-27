@@ -72,6 +72,8 @@ const HZ_FOL_PAL = [0x5CFF7A,0xC6FF4A,0xFFD24A,0xFF6BD6,0xF4F8FA,0x5EE3A1];
 const HZ_FOL_NAMES = ["BRIGHT GREEN","LIME","GOLD","PINK","WHITE","MINT"];
 const HZ51_PERF_NAMES = ["BASELINE","HOVER SKIP","FIXTURE","FULL PIPELINE","SAME TARGET","RAPID TARGETS","SCANNER","BACKGROUND HUD"];
 const HZ_ACCENT = 0x3FD0E0;
+const HZ_ACCENTS = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
+const HZ_SET_ACCNAMES = ["CYAN","TEAL","AMBER","VIOLET","LIME","WHITE","ROSE","ORANGE","SKY","GOLD","MINT","STEEL","DEEP BLUE"];
 const PRELUDE = [
 	"const HZ_RULE_NAMES = " + JSON.stringify(HZ_RULE_NAMES),
 	"const HZ_SET_TABS = " + JSON.stringify(HZ_SET_TABS),
@@ -87,7 +89,9 @@ const PRELUDE = [
 	"const HZ_FOL_PAL = " + JSON.stringify(HZ_FOL_PAL),
 	"const HZ_FOL_NAMES = " + JSON.stringify(HZ_FOL_NAMES),
 	"const HZ51_PERF_NAMES = " + JSON.stringify(HZ51_PERF_NAMES),
-	"const HZ_ACCENT = " + HZ_ACCENT
+	"const HZ_ACCENT = " + HZ_ACCENT,
+	"const HZ_ACCENTS = " + JSON.stringify(HZ_ACCENTS),
+	"const HZ_SET_ACCNAMES = " + JSON.stringify(HZ_SET_ACCNAMES)
 ].join(";\n") + ";\n";
 
 function bind(host, name) {
@@ -144,7 +148,7 @@ const host = {
 };
 
 for (const n of [
-	"hz51Copy","hz51ByKey","hz51Pick","hz51Help","hz51HelpMore","hz51HelpOf","hz51Line","hz51On","hz51Mute","hz51Finish",
+	"hz51Copy","hz51ByKey","hz51Pick","hz51Help","hz51HelpMore","hz51HelpOf","hz51Line","hz51On","hz51Mute","hz51Finish","hz51FbLog",
 	"hz51RuleRow","hz51Card","hz51AddCard","hz51Goto","hz51Unavail","hz51ModRow","hz51WrapMod","hz51ModState","hz51ModBadge",
 	"hz51Modules","hz51Msglog","hz51Quick","hz51Fallback","hz51Cards","hz51Appear","hz51Scan","hz51Comms","hz51CommsMap",
 	"hz51System","hz51Side","hz51Pages","hz51PageIndex","hz51PageClamp","hz51Rows","hz51Crumb"
