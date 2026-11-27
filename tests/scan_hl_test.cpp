@@ -48,17 +48,24 @@ std::size_t Count(const std::string& a_s, const std::string& a_n)
 	for (auto p = a_s.find(a_n); p != std::string::npos; p = a_s.find(a_n, p + 1)) ++n;
 	return n;
 }
+// Skip forward declarations (the first '{' after the signature can be a later
+// function when the file is CRLF, because a pin of "fn()\n" never matches "fn()\r\n").
 std::string FnBody(const std::string& a_s, const std::string& a_sig)
 {
-	const auto i = a_s.find(a_sig);
-	if (i == std::string::npos) return {};
-	const auto b = a_s.find('{', i);
-	int d = 0;
-	for (auto p = b; p < a_s.size(); ++p) {
-		if (a_s[p] == '{') ++d;
-		else if (a_s[p] == '}' && --d == 0) return a_s.substr(b, p - b + 1);
+	std::size_t i = 0;
+	for (;;) {
+		i = a_s.find(a_sig, i);
+		if (i == std::string::npos) return {};
+		const auto b = a_s.find_first_of(";{", i + a_sig.size());
+		if (b == std::string::npos) return {};
+		if (a_s[b] == ';') { i = b + 1; continue; }
+		int d = 0;
+		for (auto p = b; p < a_s.size(); ++p) {
+			if (a_s[p] == '{') ++d;
+			else if (a_s[p] == '}' && --d == 0) return a_s.substr(b, p - b + 1);
+		}
+		return {};
 	}
-	return {};
 }
 
 }
@@ -229,7 +236,7 @@ int main()
 	const auto as = ReadAll("actionscript/horizon_block.as");
 	const auto ini = ReadAll("Interface/HorizonUI/HorizonUI.default.ini");
 	const auto pa = ReadAll("src/hz_preset_apply.h");
-	const auto apply = FnBody(cpp, "void ScanHlApply()\n");
+	const auto apply = FnBody(cpp, "void ScanHlApply()");
 	Expect(!cpp.empty() && Count(cpp, "ScanHlApply();") == 2 && Has(FnBody(cpp, "void BannerPoll(ULONGLONG a_now)"), "ScanHlApply();"), "ScanHlApply is called once, from BannerPoll (the HUD messages advance, UI thread); plus its forward declaration");
 	Expect(Has(apply, "if (hzscanhl::Settled(g_scanHl, want)) return;") && apply.find("hzscanhl::Settled(") < apply.find("HzAddrSlot"), "steady state returns before any game call (a bool test, one atomic load and a compare)");
 	Expect(Has(apply, "if (!g_scanHlPeeked) ScanHlPeekOnce();") && apply.find("ScanHlPeekOnce();") < apply.find("int want = g_scanHlWant"), "0.43.5: the read-only load line runs once, before the first apply can write");
@@ -241,14 +248,14 @@ int main()
 	const auto load = FnBody(cpp, "void LoadIni(bool a_reloadMsglog = true)");
 	Expect(Has(load, "if (get(\"scanhighlightarea\", v)) scanHl = hzscanhl::Parse(v);") && Has(load, "g_scanHlWant.store(scanHl"), "LoadIni (load and every save / apply) stores the wanted position");
 	// 0.43.5 peek / recheck
-	const auto peek = FnBody(cpp, "static void ScanHlPeekOnce()\n");
+	const auto peek = FnBody(cpp, "static void ScanHlPeekOnce()");
 	Expect(Has(peek, "if (hzaddr::AddrSlotRetry(slot)) return;") && Has(peek, "g_scanHlPeeked = true;") && Has(peek, "HzScanHlRead(io)") && Has(peek, "WidenedByOther(") && Has(peek, "already widens the scanner") && !Has(peek, "SetFloat"), "load line: read only, after versionlib is read, once, and it flags an outside widening");
 	const auto rd = FnBody(cpp, "static bool HzScanHlRead(HzScanHlRaw& a_io)");
 	Expect(Has(rd, "a_io.capture = 1;") && !Has(rd, "writeDot = 1") && Has(rd, "AddrSlotMiss(slot)") && Has(rd, "HzScanHlSEH(&a_io)"), "HzScanHlRead reads under the id check and SEH with every write flag 0");
 	const auto re = FnBody(cpp, "static void ScanHlRecheck(bool a_openEdge)");
 	Expect(Has(re, "if (!g_scanHl.wrote.on) {") && re.find("SetFloat") == std::string::npos && Has(re, "hzscanhl::Recheck(g_scanHl, now)") && Has(re, "if (p.re == hzscanhl::Re::Reapply) {") && Has(re, "w.dot = p.dot;") && Has(re, "if (!g_scanHlReLogged) {"), "recheck: Vanilla never writes; after a Horizon write a drifted value is written back (at most 3 times per pick), logged once per session");
 	Expect(!Has(re, "g_scanHl.guard.yielded") && !Has(re, "g_scanHl.applied = hzscanhl::kVanilla") && !Has(re, "g_scanHl.wrote = hzscanhl::Wrote{}") && Has(ReadAll("src/hz_scan_hl.h"), "a_s.guard.yielded = a_s.applied;") && Has(re, "put back only the values it set"), "S-2: after 3 reapplies Horizon yields; the bookkeeping lives in hz_scan_hl.h (gives back only what still holds its value, forgets the base), one log line");
-	const auto rc = FnBody(cpp, "void ScanRecheck(RE::UI*, ULONGLONG a_now)\n");
+	const auto rc = FnBody(cpp, "void ScanRecheck(RE::UI*, ULONGLONG a_now)");
 	Expect(!Has(rc, "IsMenuOpen") && Has(rc, "g_scanOpenEdge.exchange(false") && Has(rc, "if (g_scanOpen.load(std::memory_order_acquire)) return;") && Has(rc, "if (a_now < g_scanReNext) return;") && Has(rc, "g_scanReNext = a_now + 2000;") && Has(rc, "if (!g_scanHl.wrote.on && g_scanReach.applied == hzscanreach::kVanilla) return;") && Has(FnBody(cpp, "void BannerPoll(ULONGLONG a_now)"), "ScanRecheck(ui, a_now);"), "S-1 / N-8: no IsMenuOpen polling; the open edge comes from the menu sink; the 2 s read runs only after a Horizon write and is skipped while the scanner is open");
 	Expect(Has(FnBody(cpp, "ProcessEvent(const RE::MenuOpenCloseEvent& a_event"), "g_scanOpenEdge.store(true, std::memory_order_release);") && Has(cpp, "std::atomic<bool>          g_scanOpenEdge{false};") && Has(cpp, "std::atomic<bool>          g_scanOpen{false};") && Has(FnBody(cpp, "ProcessEvent(const RE::MenuOpenCloseEvent& a_event"), "g_scanOpen.store(a_event.opening, std::memory_order_release);"), "the MenuOpenCloseEvent sink sets the scanner open edge and the open flag (one string compare per event, one lazy one-time allocation for the name)");
 	Expect(Has(apply, "g_scanHl.wrote.on = !restore && !vanilla && io.dotFound != 0;"), "a Vanilla restore turns the recheck off (never rewritten on scanner open)");
