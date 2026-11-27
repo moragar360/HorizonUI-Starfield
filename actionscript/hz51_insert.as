@@ -335,6 +335,9 @@
             case "QuickMenuSlotCount": return "How many slots show when Extended Mode is on, from 12 to 24. Lowering the count only hides extra tiles; keys and items are kept.";
             case "QuickMenuSlotsPerRow": return "How many extra slots sit in each row: 4, 6, or 8.";
             case "QuickMenuExtendedLayout": return "Cross + Bars keeps the game's T for slots 1-12 and puts extra slots in bars under it. Bars draws every slot in rows.";
+            case "QuickMenuExtEmptySlots": return "SHOW = unused extras appear as empty squares with a faint plus. HIDE = leave them off until assigned. Occupied extras always show, and inventory assign still shows empties so you can pick one.";
+            case "QuickMenuExtPanelOpacity": return "How solid the extra window is. It does not change other HUD cards. Applies the next time you open the Quick Menu.";
+            case "QuickMenuExtSlotScale": return "Extra slot size compared with slots 1-12; 1.0 is the same size. Applies the next time you open the Quick Menu.";
             case "_qmclear": return "Clears every extra-slot key. The slots still work from the menu.";
             case "XpToast": return "A short +XP note beside the character card. With Horizon messages installed, the game's own +XP popup is hidden while this is on.";
             case "MissionToast": return "Replaces the game's quest banner with a Horizon toast. Move it in Arrange Cards.";
@@ -469,7 +472,7 @@
                   r.n13 = true;
                }
             }
-            if((k.indexOf("QuickMenuKey") == 0 || k == "QuickMenuSlotCount" || k == "QuickMenuSlotsPerRow" || k == "QuickMenuExtendedLayout" || k == "_qmkeys" || k == "_qmclear") && !extOn && !r.dis)
+            if((k.indexOf("QuickMenuKey") == 0 || k == "QuickMenuSlotCount" || k == "QuickMenuSlotsPerRow" || k == "QuickMenuExtendedLayout" || k == "QuickMenuExtEmptySlots" || k == "QuickMenuExtPanelOpacity" || k == "QuickMenuExtSlotScale" || k == "_qmkeys" || k == "_qmclear") && !extOn && !r.dis)
             {
                r.dis = true;
                r.note = "Turn on Extended Mode to bind keys. Saved keys are kept.";
@@ -714,6 +717,9 @@
             {"k":"QuickMenuSlotCount","l":"SLOT COUNT","t":"n","mn":12,"mx":24,"st":1},
             {"k":"QuickMenuSlotsPerRow","l":"SLOTS PER ROW","t":"r","opts":["4","6","8"],"ids":[4,6,8]},
             {"k":"QuickMenuExtendedLayout","l":"EXTENDED LAYOUT","t":"r","opts":["CROSS + BARS","BARS"],"ids":[0,1]},
+            {"k":"QuickMenuExtEmptySlots","l":"EMPTY SLOTS","t":"r","opts":["SHOW","HIDE"],"ids":[1,0]},
+            {"k":"QuickMenuExtPanelOpacity","l":"PANEL OPACITY","t":"n","mn":0,"mx":100,"st":1,"pct":1,"n13":true},
+            {"k":"QuickMenuExtSlotScale","l":"SLOT SCALE","t":"n","mn":0.7,"mx":1.4,"st":0.05},
             {"k":"_qmkeys","l":"EXTENDED SLOT KEYS","t":"kg","h":"EXTENDED SLOT KEYS"}];
          var qmOff:Boolean = this.hz30Mod["quickmenu"] !== 1;
          var qmConf:Boolean = this.hzQmConflict;

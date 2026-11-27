@@ -15,10 +15,10 @@ const game = read("src/hz_quickslots_game.h");
 
 expect(/private static const HZ_VERSION:String = "0\.43\.5\.0"/.test(as), "settings schema HZ_VERSION is 0.43.5.0 (SCAN REACH)");
 expect(/#define HZ_FILE_VERSION_STR "0\.43\.5\.0"/.test(ver), "file version is 0.43.5.0");
-expect(/QuickMenuExtended=0/.test(ini) && /QuickMenuSlotCount=24/.test(ini) && /QuickMenuSlotsPerRow=6/.test(ini) && /QuickMenuExtendedLayout=0/.test(ini), "default.ini has Extended Mode off, 24 slots, 6 per row, CROSS+BARS");
+expect(/QuickMenuExtended=0/.test(ini) && /QuickMenuSlotCount=24/.test(ini) && /QuickMenuSlotsPerRow=6/.test(ini) && /QuickMenuExtendedLayout=0/.test(ini) && /QuickMenuExtEmptySlots=1/.test(ini) && /QuickMenuExtPanelOpacity=92/.test(ini) && /QuickMenuExtSlotScale=1/.test(ini), "default.ini has Extended Mode off, 24 slots, 6 per row, CROSS+BARS, empty extras shown, panel 92, scale 1.0");
 expect(/QuickMenuKey13=\r?\n/.test(ini) && /QuickMenuKey24=\r?\n/.test(ini), "default.ini leaves keys 13-24 empty");
 
-for (const k of ["QuickMenuExtended","QuickMenuSlotCount","QuickMenuSlotsPerRow","QuickMenuExtendedLayout","QuickMenuKey13","QuickMenuKey24"]) {
+for (const k of ["QuickMenuExtended","QuickMenuSlotCount","QuickMenuSlotsPerRow","QuickMenuExtendedLayout","QuickMenuExtEmptySlots","QuickMenuExtPanelOpacity","QuickMenuExtSlotScale","QuickMenuKey13","QuickMenuKey24"]) {
 	expect(as.indexOf('"k":"' + k + '"') >= 0, "F11 row " + k);
 }
 expect(/"k":"QuickMenuExtendedLayout".*"opts":\["CROSS \+ BARS","BARS"\]/.test(as), "EXTENDED LAYOUT options are CROSS + BARS and BARS");
