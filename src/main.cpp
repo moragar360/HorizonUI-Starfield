@@ -5210,7 +5210,10 @@ namespace HZ
 		g_mlPadLast = b;
 		auto fire = [&](const char* code) {
 			std::lock_guard l(g_qLock);
-			if (g_keyQueue.size() < 64) g_keyQueue.emplace_back(code);
+			if (g_keyQueue.size() < 63) {
+				g_keyQueue.emplace_back("hzpad");  // D-pad/A/B/LB/RB: HUD switches the hint row (change-driven)
+				g_keyQueue.emplace_back(code);
+			}
 		};
 		struct Map { WORD mask; const char* code; int slot; bool repeat; };
 		const Map maps[] = {

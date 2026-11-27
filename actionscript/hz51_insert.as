@@ -16,7 +16,7 @@
       private var hzSetHexBuf:String = "";
       private var hzSetHexPrev:int = -1;
       private var hzSetSideHits:Array = [];
-      private var hz51Pad:Boolean = false;        // last F11 input was gamepad (padx/pady/LB/RB); mouse/letters clear it
+      private var hz51Pad:Boolean = false;        // last F11 input was gamepad (hzpad / D-pad / A/B / LB/RB / stick); mouse/letters clear it
       private var hzSetDropBox:Object = null;     // last drawn dropdown control {x,y,w,h} for menu anchoring
       // Mockup (cards_status.html / search_jump.html) — whole pixels, filled-rect strokes.
       private static const HZ51_ROW:Number = 58;        // .row min-height: 58
@@ -65,8 +65,9 @@
                var vh:Number = br.y - tl.y;
                if(vw >= 400 && vh >= 300)
                {
-                  W = Math.round(Math.max(1180, Math.min(1848, vw - 72)));
-                  H = Math.round(Math.max(680, Math.min(1020, vh - 64)));
+                  W = Math.round(Math.max(1100, Math.min(1848, vw - 72)));
+                  // mockup: top 32 + height 1020 on 1080 → bottom 28 (not a symmetric 32)
+                  H = Math.round(Math.max(640, Math.min(1020, vh - 60)));
                }
             }
          }
@@ -74,21 +75,31 @@
          this.HZ_SET_W = W;
          this.HZ_SET_H = H;
       }
-      // Purpose: 1px window/box/row stroke as filled rects (whole pixels).
-      // Scaleform lineStyle outlines clip and look soft; filled 1xN rects stay sharp.
-      // Inputs: graphics, rounded box in local px, color, alpha. Outputs: four 1px bars.
-      private function hz51Stroke(g:*, x:Number, y:Number, w:Number, h:Number, col:uint, a:Number) : void
+      // Purpose: 1px stroke as a filled ring, pixel-snapped. Rounded fills use even-odd
+      // (outer round rect minus inner) so the border follows the same corner as the fill.
+      // r=0 keeps four 1px bars for sharp hairlines. Never lineStyle (clips / looks soft).
+      private function hz51Stroke(g:*, x:Number, y:Number, w:Number, h:Number, col:uint, a:Number, r:Number = 0) : void
       {
          x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
-         if(g == null || w < 1 || h < 1 || a <= 0) { return; }
-         g.beginFill(col, a);
-         g.drawRect(x, y, w, 1);
-         g.drawRect(x, y + h - 1, w, 1);
-         if(h > 2)
+         r = Math.max(0, Math.round(r));
+         if(g == null || w < 2 || h < 2 || a <= 0) { return; }
+         if(r < 1)
          {
-            g.drawRect(x, y + 1, 1, h - 2);
-            g.drawRect(x + w - 1, y + 1, 1, h - 2);
+            g.beginFill(col, a);
+            g.drawRect(x, y, w, 1);
+            g.drawRect(x, y + h - 1, w, 1);
+            if(h > 2)
+            {
+               g.drawRect(x, y + 1, 1, h - 2);
+               g.drawRect(x + w - 1, y + 1, 1, h - 2);
+            }
+            g.endFill();
+            return;
          }
+         var ir:Number = Math.max(0, r - 1);
+         g.beginFill(col, a);
+         g.drawRoundRect(x, y, w, h, r, r);
+         g.drawRoundRect(x + 1, y + 1, w - 2, h - 2, ir, ir);
          g.endFill();
       }
       // Purpose: whole-pixel filled hairline (row divider, section rule, column rule).
@@ -118,22 +129,19 @@
          }
          return {"x":x,"y":y,"w":Math.round(menuW),"h":Math.round(menuH)};
       }
-      // Purpose: one typed character from QueueKey. Search must accept both ch:a
-      // (character event) and bind:A (key bind), or letters never reach the find box.
+      // Purpose: one typed character from QueueKey. Letters arrive as the pair
+      // ch:v then bind:V (FlushInputToHud calls hzSettingsKey for each). Find and
+      // hex append only ch:; bind: is capture-only and must not type a second char.
       private function hz51TypeChar(code:String) : String
       {
          if(code == null) { return ""; }
          if(code.indexOf("ch:") == 0 && code.length >= 4) { return code.substr(3, 1); }
-         if(code.indexOf("bind:") == 0 && code.length >= 6)
-         {
-            var rest:String = code.substr(5);
-            if(rest.length == 1) { return rest; }
-         }
          return "";
       }
       private function hz51NotePad(code:String) : void
       {
-         if(code == "padx" || code == "pady" || code == "tabprev" || code == "tabnext") { this.hz51Pad = true; }
+         if(code == "hzpad" || code == "padx" || code == "pady" || code == "tabprev" || code == "tabnext") { this.hz51Pad = true; }
+         else if(this.hzVehPad == 1 && (code == "up" || code == "down" || code == "left" || code == "right" || code == "ok" || code == "cancel")) { this.hz51Pad = true; }
          else if(this.hz51TypeChar(code).length > 0) { this.hz51Pad = false; }
       }
 

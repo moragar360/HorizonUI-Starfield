@@ -57,30 +57,37 @@ expect(constN("HZ51_DD_H") === mock.ddH && constN("HZ51_PVC_H") === mock.pvcH, "
 expect(constN("HZ51_DIV_A") === mock.divA && constN("HZ51_BOX_A") === mock.boxA && constN("HZ51_SEL_A") === mock.selA, "divider 0.08 / box 0.18 / sel 0.10 mockup alphas implemented");
 expect(/HZ_SET_W:Number = 1848/.test(as) && /HZ_SET_H:Number = 1020/.test(as) && /HZ_SET_TOP:Number = 108/.test(as), "window 1848x1020, body top 108 (62+46)");
 expect(/hz51Stroke/.test(fnText(as, "hz51DrawList").body) && /HZ51_DIV_A/.test(fnText(as, "hz51DrawList").body), "list rows use filled-rect box stroke and 8% dividers");
-expect(!/lineStyle/.test(fnText(as, "hz51Stroke").body) && /drawRect\(x, y, w, 1\)/.test(fnText(as, "hz51Stroke").body), "hz51Stroke is four 1px filled rects, not lineStyle");
+expect(!/lineStyle/.test(fnText(as, "hz51Stroke").body) && /drawRect\(x, y, w, 1\)/.test(fnText(as, "hz51Stroke").body) && /drawRoundRect\(x, y, w, h, r, r\)/.test(fnText(as, "hz51Stroke").body) && /drawRoundRect\(x \+ 1, y \+ 1, w - 2, h - 2, ir, ir\)/.test(fnText(as, "hz51Stroke").body), "hz51Stroke is a pixel-snapped filled ring (outer minus inner round rect); r=0 keeps four 1px bars; never lineStyle");
 expect(/13,\"bd\"/.test(fnText(as, "hz51DrawList").body), "row title 13px bold (mockup .ln 13px/700)");
 expect(/12,\"rg\"/.test(fnText(as, "hz51DrawList").body), "row help 12px (mockup .help 12px/500)");
 expect(/11,\"bd\"/.test(fnText(as, "hz51DrawList").body) && /HZ51_SH_A/.test(fnText(as, "hz51DrawList").body), "section header 11px accent + 28% rule (mockup .sh)");
 
 // 1. Window from visibleRect
-expect(/vw - 72/.test(fnText(as, "hz51Fit").body) && /vh - 64/.test(fnText(as, "hz51Fit").body), "hz51Fit uses mockup 36px/32px margins (72/64)");
+expect(/vw - 72/.test(fnText(as, "hz51Fit").body) && /vh - 60/.test(fnText(as, "hz51Fit").body), "hz51Fit uses mockup 36px left and 32+28 top/bottom (72/60) so 1080p is 1020 tall");
+expect(Math.round(Math.max(1100, Math.min(1848, 1920 - 72))) === 1848 && Math.round(Math.max(640, Math.min(1020, 1080 - 60))) === 1020, "1080p visibleRect yields the mockup 1848x1020 (bottom of window at 30+1020=1050, 30px stage margin)");
 expect(/hz51Fit/.test(fnText(as, "hzSetPlace").body), "hzSetPlace sizes from visibleRect before centering");
+expect(!/HorizonSettings_mc\.scaleX/.test(fnText(as, "hzSetPlace").body) && !/HorizonSettings_mc\.scaleY/.test(fnText(as, "hzSetPlace").body), "hzSetPlace does not scale HorizonSettings_mc (old F11 in hudmenu_lrg also left the window at 1.0; HZ_SCALE 1.07 is cards only)");
+expect(/hudmenu_lrg 1\.07 scales HUD cards only/.test(as), "comment records that _lrg HZ_SCALE must not be applied to the F11 clip");
 expect(/HZ51_SIDE_W \+ 28/.test(fnText(as, "hz51ListBox").body), "list has 28px main padding so labels do not run into the sidebar");
 
 // 2. Active-device hints (change-driven, no poll)
 expect(/hz51Pad = this.hzVehPad == 1/.test(fnText(as, "hzToggleSettings").body), "open seeds the hint row from ControlMap (hzVehPad)");
 expect(/hz51Pad = false/.test(fnText(as, "hzSettingsMouse").body), "mouse move >2px switches the hint row to keyboard (same path as hz35Kb)");
-expect(/hz51NotePad/.test(fnText(as, "hz51Key").body) && /padx/.test(fnText(as, "hz51NotePad").body), "LB/RB and stick (padx/pady/tab) switch the hint row to controller");
+expect(/hz51NotePad/.test(fnText(as, "hz51Key").body) && /hzpad/.test(fnText(as, "hz51NotePad").body) && /padx/.test(fnText(as, "hz51NotePad").body), "any gamepad queue (hzpad plus D-pad/A/B/LB/RB/stick) switches the hint row to controller");
+expect(/emplace_back\("hzpad"\)/.test(fs.readFileSync(path.join(__dirname, "..", "src", "main.cpp"), "utf8")) && /if\(code == "hzpad"\) \{ return true; \}/.test(fnText(as, "hz51Key").body), "MsglogPadPoll prefixes hzpad; hz51Key sets the hint row and swallows the marker");
 expect(!/getTimer|ENTER_FRAME|setInterval/.test(fnText(as, "hz51NotePad").body + fnText(as, "hz51DrawFooter").body), "hint switching adds no polling");
 expect(/if\(this\.hz51Pad\)/.test(fnText(as, "hz51DrawFooter").body), "footer draws only the active device row");
 
-// 3. Header search: ch: and bind:, jump across tabs
-expect(/bind:/.test(fnText(as, "hz51TypeChar").body) && /ch:/.test(fnText(as, "hz51TypeChar").body), "typed characters come from ch: and bind:");
-expect(/hz51TypeChar/.test(fnText(as, "hz51Key").body), "find box consumes bind: letters instead of swallowing them");
+// 3. Header search: append only ch:; swallow bind: (QueueKey emits both for one key)
+expect(/ch:/.test(fnText(as, "hz51TypeChar").body) && !/bind:/.test(fnText(as, "hz51TypeChar").body), "typed characters come from ch: only");
+expect(/indexOf\("bind:"\) == 0/.test(fnText(as, "hz51Key").body) && /hzSetFindOn/.test(fnText(as, "hz51Key").body), "find and hex swallow bind: without appending");
 expect(/catch\(eIdxP:Error\)/.test(fnText(as, "hz51IndexBuild").body), "search index builds each sidebar page in a try so one miss does not empty the index");
 expect(/String\(row\.k\)/.test(fnText(as, "hz51IndexBuild").body), "search haystack includes the setting key");
 const typeChar = toJs(as, "hz51TypeChar");
-expect(typeChar("ch:v") === "v" && typeChar("bind:V") === "V" && typeChar("ok") === "", "ch:v and bind:V both yield a typed character");
+expect(typeChar("ch:v") === "v" && typeChar("bind:V") === "" && typeChar("ok") === "", "ch:v yields v; bind:V is not a typed character");
+const drawBody = fnText(as, "hz51Draw").body;
+expect(/drawRoundRect\(0,12,W,H/.test(drawBody) && !/while\(i < 5\)/.test(drawBody), "window shadow is one 12px-offset fill (mockup 0 12px 48px), not a 5-layer blur");
+expect(/HZ51_WIN_R/.test(fnText(as, "hz51Draw").body) && /HZ51_BOX_R/.test(fnText(as, "hz51DrawList").body), "window and box strokes pass the matching corner radius into the filled ring");
 
 const drop = toJs(as, "hz51DropRect");
 const below = drop(800, 400, 148, 34, 220, 120, 1848, 1020, 54, 108);
