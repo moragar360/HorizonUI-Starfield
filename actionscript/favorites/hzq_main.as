@@ -41,7 +41,9 @@
       // center disc (CenterClip_mc "Quick" backdrop hole) has radius 54. 58 x 58 leaves at least 14.6 between neighbors
       // and 4.95 to the disc, and fits the 64-wide catcher (3 each side) on both arms.
       private static const HZQ_BOX:Number = 58;
-      private static const HZQ_EXT_BOX:Number = 72;       // extra slots: large enough for vanilla Icon_mc
+      // Extra slots match vanilla 1-12 Horizon cards at Slot Scale 1.0 (same 58 box, radius 8,
+      // keychip at +5,+5, icon pad 4). HZQ_EXT_BOX is the unscaled size; live size is hzqExtBoxN().
+      private static const HZQ_EXT_BOX:Number = 58;
       private static const HZQ_EXT_GAP:Number = 14;
       private static const HZQ_FRAME_PAD:Number = 14;
       private static const HZQ_FRAME_TITLE:Number = 22;
@@ -111,7 +113,7 @@
       // defaults = HZ_SET_DEF; ranges = the HUD ini reader (horizon_block.as hzIniApply)
       private function hzqParse(txt:String) : Object
       {
-         var st:Object = {"On":true,"AccentColor":0,"AccentHex":-1,"CardColor":0,"CardHex":-1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"TextTone":0,"FontFace":1,"TextScale":1,"HeaderStyle":0,"TextShadow":false,"HudScale":1,"Extended":false,"SlotCount":24,"SlotsPerRow":6,"ExtLayout":0,"Keys":["","","","","","","","","","","",""]};
+         var st:Object = {"On":true,"AccentColor":0,"AccentHex":-1,"CardColor":0,"CardHex":-1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"TextTone":0,"FontFace":1,"TextScale":1,"HeaderStyle":0,"TextShadow":false,"HudScale":1,"Extended":false,"SlotCount":24,"SlotsPerRow":6,"ExtLayout":0,"ExtEmptyShow":true,"ExtPanelOpacity":92,"ExtSlotScale":1,"Keys":["","","","","","","","","","","",""]};
          if(txt == null) { return st; }
          var sec:String = "";
          for each(var ln:String in this.hzq37Lines(txt))
@@ -137,6 +139,9 @@
                var lv:String = v.toLowerCase();
                st.ExtLayout = (lv == "1" || lv == "bars" || lv == "bar") ? 1 : 0;
             }
+            else if(k == "quickmenuextemptyslots") { st.ExtEmptyShow = !off; }
+            else if(k == "quickmenuextpanelopacity") { st.ExtPanelOpacity = this.hzqPct(v,92); }
+            else if(k == "quickmenuextslotscale" && !isNaN(nv)) { st.ExtSlotScale = Math.max(0.7,Math.min(1.4,nv)); }
             else if(k.indexOf("quickmenukey") == 0 && k.length > 12)
             {
                var sl:int = int(Number(k.substring(12)));
@@ -176,6 +181,81 @@
          var n:Number = Number(t);
          if(isNaN(n)) { return def; }
          return Math.max(0,Math.min(100,n));
+      }
+      // Extra-slot size vs vanilla 1-12 (HZQ_BOX 58). Default 1.0. F11 SLOT SCALE, 0.7-1.4.
+      private function hzqExtSc() : Number
+      {
+         var n:Number = this.hzqS != null ? Number(this.hzqS.ExtSlotScale) : 1;
+         if(isNaN(n)) { n = 1; }
+         return Math.max(0.7,Math.min(1.4,n));
+      }
+      private function hzqExtBoxN() : Number
+      {
+         return Math.max(32,Math.round(HZQ_BOX * this.hzqExtSc()));
+      }
+      private function hzqExtPitchN() : Number
+      {
+         return this.hzqExtBoxN() + Math.max(8,Math.round(HZQ_EXT_GAP * this.hzqExtSc()));
+      }
+      // Extra-window fill 0-100 from F11 PANEL OPACITY. Default 92 (same as CardBgOpacity).
+      private function hzqExtPanelA() : Number
+      {
+         var n:Number = this.hzqS != null ? Number(this.hzqS.ExtPanelOpacity) : 92;
+         if(isNaN(n)) { n = 92; }
+         return Math.max(0,Math.min(100,n)) / 100;
+      }
+      private function hzqExtShowEmpty() : Boolean
+      {
+         return this.hzqS == null || this.hzqS.ExtEmptyShow !== false;
+      }
+      // Assign overlay / AssignedItem: empty extras stay clickable even when EMPTY SLOTS is Hide.
+      private function hzqExtAssigning() : Boolean
+      {
+         try { if(this.AssignedItem != null && String(this.AssignedItem.sName != null ? this.AssignedItem.sName : "").length > 0) { return true; } } catch(eA:Error) { }
+         try { if(this.SelectQuickslot_mc != null && this.SelectQuickslot_mc.visible) { return true; } } catch(eO:Error) { }
+         return false;
+      }
+      // Occupied extra slots (13-N) with a stored item. Used by the NN / 12 counter; change-driven.
+      private function hzqExtOccupied() : int
+      {
+         var n:int = this.hzqExtCount();
+         var c:int = 0;
+         var s:int = 13;
+         while(s <= n)
+         {
+            var d:Object = this.hzqExtData != null ? this.hzqExtData[String(s)] : null;
+            var empty:Boolean = d == null || d.empty === true || d.name == null || String(d.name).length == 0;
+            if(!empty) { c++; }
+            s++;
+         }
+         return c;
+      }
+      private function hzqExtPad2(n:int) : String
+      {
+         if(n < 0) { n = 0; }
+         if(n < 10) { return "0" + String(n); }
+         return String(n);
+      }
+      // Dark rounded extra card (panel-style, 1 px gray filled border). Selected keeps the accent ring.
+      // Inputs: graphics, live box (vanilla 58 * scale), selected / dim. Outputs: fill + border + optional ring.
+      private function hzqExtSlotArt(g:Graphics, box:Number, sel:Boolean, dim:Boolean) : void
+      {
+         if(g == null || !(box > 8)) { return; }
+         var hb:Number = box * 0.5;
+         var a:Number = this.hzqExtPanelA() * (dim && !sel ? 0.55 : 1);
+         g.lineStyle();
+         g.beginFill(0x0E1218,a);
+         g.drawRoundRect(-hb,-hb,box,box,16,16);
+         g.endFill();
+         this.hzqFilledBorder(g,-hb,-hb,box,box,1,8,0x3A4450);
+         if(sel)
+         {
+            var acc:uint = this.hzqAccent();
+            g.beginFill(acc,0.13);
+            g.drawRoundRect(-hb + 1,-hb + 1,box - 2,box - 2,14,14);
+            g.endFill();
+            this.hzqAccentRing(g,0,0,box);
+         }
       }
       // ---------- theme: ports of the HUD card functions (horizon_block.as), same names with hzq ----------
       private function hzqCardPal() : Array
@@ -1138,7 +1218,7 @@
       }
       private function hzqAssign() : void
       {
-         try { this.hzqExtPad(); this.hzqInfoSet(this.AssignedItem,false); if(this.hzqOn) { this.hzqFitAll(); } if(this.hzqExtOn()) { this.hzqExtRaise(); this.hzqRingDraw(); } } catch(e:Error) { this.hzqFail(); }
+         try { this.hzqExtPad(); this.hzqInfoSet(this.AssignedItem,false); if(this.hzqOn) { this.hzqFitAll(); } if(this.hzqExtOn()) { this.hzqExtRaise(); this.hzqExtDraw(); this.hzqRingDraw(); } } catch(e:Error) { this.hzqFail(); }
       }
       override protected function OnControlMapChanged(param1:Object) : void
       {
@@ -1198,6 +1278,7 @@
       private var hzqExtHold:Sprite = null;
       private var hzqExtFrame:Sprite = null;  // framed box around the extra grid (built once)
       private var hzqExtFrameT:TextField = null;
+      private var hzqExtFrameN:TextField = null;  // occupied counter "NN / 12"
       private var hzqExtFrameKey:String = "";
       private var hzqExtLastBox:Object = null;  // last layout box; retitle after font.marker without a new layout
       private var hzqRing:Sprite = null;      // filled accent ring; child of the menu
@@ -1218,7 +1299,7 @@
       public var hzqLastExt:int = 0;    // 13-24 when an extra slot is chosen; 0 otherwise. DLL reads this; never sent as uQuickkeyIndex.
       private var hzqExtMask:int = 0;   // N-4: bit i = the DLL refused slot 13+i's key (game-bound, F11 or duplicate)
       private static const HZQ_PITCH:Number = 70;           // vanilla 1-12 BARS cells (58 + 12)
-      private static const HZQ_EXT_PITCH:Number = 86;       // extra slots (72 + 14)
+      private static const HZQ_EXT_PITCH:Number = 72;       // extra slots at scale 1.0 (58 + 14). live pitch is hzqExtPitchN()
       // Vanilla FavoritesMenu rest geometry (game 1.16.244, both scales). Live getBounds during Open
       // collapses the T to the origin, which stacked the bars on the cross and hid slots 1-12.
       private static const HZQ_REST_X:Array = [-195.75,-120.8,-40.05,40,120.8,195.8,0,0,0,0,0,0];
@@ -1308,7 +1389,7 @@
             var k:int = 0;
             while(this.hzqExtSlots != null && k < this.hzqExtSlots.length)
             {
-               if(int(this.hzqExtSlots[k].i) == this.hzqExtSel) { x = Number(this.hzqExtSlots[k].x); y = Number(this.hzqExtSlots[k].y); box = HZQ_EXT_BOX; on = true; break; }
+               if(int(this.hzqExtSlots[k].i) == this.hzqExtSel) { x = Number(this.hzqExtSlots[k].x); y = Number(this.hzqExtSlots[k].y); box = this.hzqExtBoxN(); on = true; break; }
                k++;
             }
          }
@@ -1395,7 +1476,7 @@
          var box:Object = this.hzqExtTBox();
          var n:int = this.hzqExtCount();
          var per:int = this.hzqExtPer();
-         var pitch:Number = HZQ_EXT_PITCH;
+         var pitch:Number = this.hzqExtPitchN();
          var bars:Boolean = int(this.hzqS.ExtLayout) != 0;
          var i:int;
          try
@@ -1639,6 +1720,7 @@
             this.hzqExtFrame.tabEnabled = false;
             this.hzqExtHold.addChildAt(this.hzqExtFrame,0);
             this.hzqExtFrameT = this.hzqTf(this.hzqExtFrame);
+            this.hzqExtFrameN = this.hzqTf(this.hzqExtFrame);
          }
          if(this.hzqExtPool == null)
          {
@@ -1666,17 +1748,23 @@
          this.hzqExtEnsureClips();
          var n:int = this.hzqExtCount();
          var per:int = this.hzqExtPer();
-         var pitch:Number = HZQ_EXT_PITCH;
+         var pitch:Number = this.hzqExtPitchN();
+         var boxN:Number = this.hzqExtBoxN();
          var bars:Boolean = int(this.hzqS.ExtLayout) != 0;
          var extN:int = n > 12 ? n - 12 : 0;
-         var y0x:Number = box.b + 12 + HZQ_FRAME_PAD + HZQ_FRAME_TITLE + HZQ_EXT_BOX * 0.5;
+         var y0x:Number = box.b + 12 + HZQ_FRAME_PAD + HZQ_FRAME_TITLE + boxN * 0.5;
          this.hzqExtSlots.length = 0;   // the active subset of the pool (array reused)
          var k:int = 0;
          while(k < 12)
          {
             var o:Object = this.hzqExtPool[k];
             var on:Boolean = k < extN;
-            if(o.s.visible != on) { o.s.visible = on; }
+            var d0:Object = this.hzqExtData != null ? this.hzqExtData[String(o.i)] : null;
+            var empty0:Boolean = d0 == null || d0.empty === true || d0.name == null || String(d0.name).length == 0;
+            var hideE:Boolean = on && empty0 && !this.hzqExtShowEmpty() && !this.hzqExtAssigning();
+            var vis:Boolean = on && !hideE;
+            if(o.s.visible != vis) { o.s.visible = vis; }
+            if(on && o.s.mouseEnabled == hideE) { o.s.mouseEnabled = !hideE; }
             if(on)
             {
                var x:Number;
@@ -1707,6 +1795,19 @@
                if(o.s.y != y) { o.s.y = y; }
                o.x = x;
                o.y = y;
+               if(o.cBox !== boxN)
+               {
+                  o.cBox = boxN;
+                  o.cSel = null;
+                  try
+                  {
+                     o.s.graphics.clear();
+                     o.s.graphics.beginFill(0,0.01);
+                     o.s.graphics.drawRect(-boxN * 0.5,-boxN * 0.5,boxN,boxN);
+                     o.s.graphics.endFill();
+                  }
+                  catch(eHitB:Error) { }
+               }
                this.hzqExtSlots.push(o);
             }
             k++;
@@ -1716,7 +1817,7 @@
          if(showAdd)
          {
             var ax:Number = box.cx;
-            var ay:Number = box.b + 12 + HZQ_FRAME_PAD + HZQ_FRAME_TITLE + HZQ_EXT_BOX * 0.5;
+            var ay:Number = box.b + 12 + HZQ_FRAME_PAD + HZQ_FRAME_TITLE + boxN * 0.5;
             if(bars)
             {
                var rowA:int = int(Math.floor(n / per));
@@ -1757,6 +1858,8 @@
          var card:Sprite = this.hzqSprite(s,0);
          card.name = "hzqCard";
          var k:TextField = this.hzqTf(card);
+         var plus:TextField = this.hzqTf(card);
+         plus.visible = false;
          var ic:ImageFixture = new ImageFixture();
          ic.name = "Icon_mc";
          ic.mouseEnabled = false;
@@ -1774,7 +1877,7 @@
          }
          catch(eHit:Error) { }
          // c* = what is on screen now (change-driven draw). No name field: name is the info panel only.
-         return {"s":s,"c":card,"k":k,"ic":ic,"i":slot,"x":0,"y":0,"ib":{"sx":1,"sy":1,"x":0,"y":0},"cSel":null,"cEmpty":null,"cKey":null,"cIcon":null};
+         return {"s":s,"c":card,"k":k,"p":plus,"ic":ic,"i":slot,"x":0,"y":0,"ib":{"sx":1,"sy":1,"x":0,"y":0},"cSel":null,"cEmpty":null,"cKey":null,"cIcon":null,"cBox":null,"cHide":null};
       }
       private function hzqExtClick(e:MouseEvent) : void
       {
@@ -1899,25 +2002,28 @@
             var refuse:Boolean = d != null && d.refuse === true && d.name != null && String(d.name).length > 0;
             var empty:Boolean = !refuse && (d == null || d.empty === true || d.name == null || String(d.name).length == 0);
             var dim:Boolean = empty || refuse;
+            var hideE:Boolean = empty && !this.hzqExtShowEmpty() && !this.hzqExtAssigning();
             var key:String = "";
             if(this.hzqKb && this.hzqS != null && this.hzqS.Keys != null) { key = String(this.hzqS.Keys[slot - 13] != null ? this.hzqS.Keys[slot - 13] : ""); }
             try { this.hzqUnclip(o.s as DisplayObject); } catch(eUc:Error) { }
             try { this.hzqExtHideVan(o.s as MovieClip); } catch(eHv:Error) { }
-            if(o.cSel !== sel || o.cEmpty !== empty || o.cRefuse !== refuse || o.cKey !== key)
+            if(o.s.visible == hideE) { o.s.visible = !hideE; }
+            if(o.s.mouseEnabled == hideE) { o.s.mouseEnabled = !hideE; }
+            if(hideE)
+            {
+               o.cHide = true;
+               i++;
+               continue;
+            }
+            var boxN:Number = this.hzqExtBoxN();
+            if(o.cSel !== sel || o.cEmpty !== empty || o.cRefuse !== refuse || o.cKey !== key || o.cBox !== boxN || o.cHide !== false)
             {
                var spr:Sprite = o.c != null ? o.c : o.s;
                var g:Graphics = spr.graphics;
                g.clear();
                var acc:uint = this.hzqAccent();
-               var hb:Number = HZQ_EXT_BOX * 0.5;
-               this.hzqPanel(g,-hb,-hb,HZQ_EXT_BOX,HZQ_EXT_BOX,8,dim && !sel ? 0.6 : 1);
-               if(sel)
-               {
-                  g.beginFill(acc,0.13);
-                  g.drawRoundRect(-hb + 1,-hb + 1,HZQ_EXT_BOX - 2,HZQ_EXT_BOX - 2,14,14);
-                  g.endFill();
-                  this.hzqAccentRing(g,0,0,HZQ_EXT_BOX);
-               }
+               var hb:Number = boxN * 0.5;
+               this.hzqExtSlotArt(g,boxN,sel,dim);
                if(key.length > 0)
                {
                   var klab:String = this.hzqExtKeyShort(key);
@@ -1932,30 +2038,45 @@
                   o.kb = 5 + kh;
                }
                else { if(o.k.visible) { o.k.visible = false; } o.kb = 0; }
+               if(empty && o.p != null)
+               {
+                  this.hzqSet(o.p,"+",18,this.hzqDimCol(),"rg",0,false);
+                  o.p.alpha = 0.28;
+                  o.p.x = -o.p.width * 0.5;
+                  o.p.y = -o.p.height * 0.5;
+                  if(!o.p.visible) { o.p.visible = true; }
+               }
+               else if(o.p != null && o.p.visible) { o.p.visible = false; }
             }
             o.cSel = sel;
             o.cEmpty = empty;
             o.cRefuse = refuse;
             o.cKey = key;
+            o.cBox = boxN;
+            o.cHide = false;
             var isig:String = d == null ? "" : String(d.name) + "|" + String(d.ft) + "|" + String(d.img);
-            if(o.cIcon !== isig) { this.hzqExtLoadIcon(o,d); o.cIcon = isig; }
-            else if(!empty && o.ic != null && o.ic.visible) { this.hzqExtFitIcon(o); }
+            if(empty) { if(o.ic != null && o.ic.visible) { o.ic.visible = false; } o.cIcon = ""; }
+            else if(o.cIcon !== isig) { this.hzqExtLoadIcon(o,d); o.cIcon = isig; }
+            else if(o.ic != null && o.ic.visible) { this.hzqExtFitIcon(o); }
             // Tint is outside the art skip so an accent change (hzqRedraw) re-applies hzqCtW with no reload.
             try { this.hzqExtTintIcon(o,d,empty,sel); } catch(eTn:Error) { }
             i++;
          }
          if(this.hzqExtAdd != null && !this.hzqExtAddDrawn)
          {
-            // ADD tile art is static for the open: drawn once, same Horizon card panel as the slots
+            // ADD tile: same extra-slot card as occupied extras, bright plus. Reused clip; drawn on scale / font change.
             var ag:Graphics = this.hzqExtAdd.graphics;
             ag.clear();
-            this.hzqPanel(ag,-HZQ_EXT_BOX * 0.5,-HZQ_EXT_BOX * 0.5,HZQ_EXT_BOX,HZQ_EXT_BOX,8,0.6);
-            var at:TextField = this.hzqTf(this.hzqExtAdd);
+            var addBox:Number = this.hzqExtBoxN();
+            this.hzqExtSlotArt(ag,addBox,false,true);
+            var at:TextField = this.hzqExtAdd.numChildren > 0 ? this.hzqExtAdd.getChildAt(0) as TextField : null;
+            if(at == null) { at = this.hzqTf(this.hzqExtAdd); }
             this.hzqSet(at,"+",22,this.hzqTextAccent(),"rg",0,false);
-            at.x = -12;
-            at.y = -16;
+            at.x = -at.width * 0.5;
+            at.y = -at.height * 0.5;
             this.hzqExtAddDrawn = true;
          }
+         if(this.hzqExtLastBox != null) { this.hzqExtFrameDraw(this.hzqExtLastBox); }
       }
       // Short forms for long navigation key names so the 58 px Extended badge does not overflow (N-a).
       private function hzqExtKeyShort(key:String) : String
@@ -2137,7 +2258,7 @@
       }
       // Same rule as hzqFit: reset to the captured base (identity on constructed extras) so a second
       // fit never compounds, measure the loaded picture / symbol, then scale by min(1, room w / w,
-      // room h / h) into the 72 px card below the key chip. Nothing loaded: identity stays.
+      // room h / h) into the extra card (vanilla 58 * Slot Scale) below the key chip. Nothing loaded: identity stays.
       private function hzqExtFitIcon(o:Object) : void
       {
          var ic:* = o.ic;
@@ -2152,10 +2273,11 @@
          if(!ic.visible) { return; }
          var nb:Rectangle = this.hzqIcB(ic,e);
          if(nb == null || !(nb.width > 0.5) || !(nb.height > 0.5)) { return; }
-         var hb:Number = HZQ_EXT_BOX * 0.5;
+         var boxN:Number = this.hzqExtBoxN();
+         var hb:Number = boxN * 0.5;
          var top:Number = -hb + HZQ_ICPAD;
          if(Number(o.kb) > 0) { top = Math.max(top, -hb + Number(o.kb) + 2); }
-         var aw:Number = HZQ_EXT_BOX - HZQ_ICPAD * 2;
+         var aw:Number = boxN - HZQ_ICPAD * 2;
          var ah:Number = hb - HZQ_ICPAD - top;
          if(aw < 4 || ah < 4) { return; }
          var k:Number = Math.min(1,Math.min(aw / nb.width,ah / nb.height));
@@ -2164,7 +2286,8 @@
          ic.x = -(nb.x + nb.width / 2 - b.x) * k;
          ic.y = top + ah / 2 - (nb.y + nb.height / 2 - b.y) * k;
       }
-      // Purpose: Horizon card around extra slots. Drawn once per layout/count change, not per selection.
+      // Purpose: extra-slots window. Dark fill, 1 px gray filled border, left accent strip, title + occupied counter.
+      // Drawn when layout, occupancy, opacity, scale or font changes — not per selection. No accent ring on the panel.
       private function hzqExtFrameDraw(box:Object) : void
       {
          if(this.hzqExtFrame == null || box == null) { return; }
@@ -2173,14 +2296,18 @@
          var extN:int = n > 12 ? n - 12 : 0;
          var bars:Boolean = int(this.hzqS.ExtLayout) != 0;
          var addOn:Boolean = this.hzqExtAdd != null && this.hzqExtAdd.visible;
-         var key:String = String(n) + ":" + String(per) + ":" + (bars ? "1" : "0") + ":" + (addOn ? "1" : "0") + ":" + this.hzqFace("bd");
+         var occ:int = this.hzqExtOccupied();
+         var boxN:Number = this.hzqExtBoxN();
+         var pitch:Number = this.hzqExtPitchN();
+         var opa:Number = this.hzqExtPanelA();
+         var key:String = String(n) + ":" + String(per) + ":" + (bars ? "1" : "0") + ":" + (addOn ? "1" : "0") + ":" + this.hzqFace("bd") + ":" + String(occ) + ":" + String(boxN) + ":" + String(opa) + ":" + String(this.hzqAccent());
          if(key == this.hzqExtFrameKey) { return; }
          this.hzqExtFrameKey = key;
          var g:Graphics = this.hzqExtFrame.graphics;
          g.clear();
          if(this.hzqExtFrameT != null) { this.hzqExtFrameT.visible = false; }
+         if(this.hzqExtFrameN != null) { this.hzqExtFrameN.visible = false; }
          if(extN <= 0 && !addOn) { return; }
-         var pitch:Number = HZQ_EXT_PITCH;
          var cols:int = per;
          var rows:int;
          if(bars)
@@ -2198,24 +2325,42 @@
             rows = int(Math.ceil(vis / per));
             if(rows < 1) { rows = 1; }
          }
-         var fw:Number = (cols - 1) * pitch + HZQ_EXT_BOX + HZQ_FRAME_PAD * 2;
-         var fh:Number = rows * pitch - (pitch - HZQ_EXT_BOX) + HZQ_FRAME_PAD * 2 + HZQ_FRAME_TITLE;
+         var fw:Number = (cols - 1) * pitch + boxN + HZQ_FRAME_PAD * 2;
+         var fh:Number = rows * pitch - (pitch - boxN) + HZQ_FRAME_PAD * 2 + HZQ_FRAME_TITLE;
          var fx:Number = box.cx - fw * 0.5;
          var fy:Number;
          if(bars)
          {
             var rowsAll:int = int(Math.ceil(n / per));
-            fy = box.cy - (rowsAll - 1) * pitch / 2 - HZQ_EXT_BOX * 0.5 - HZQ_FRAME_PAD - HZQ_FRAME_TITLE;
+            fy = box.cy - (rowsAll - 1) * pitch / 2 - boxN * 0.5 - HZQ_FRAME_PAD - HZQ_FRAME_TITLE;
          }
          else { fy = box.b + 12; }
-         this.hzqPanel(g,fx,fy,fw,fh,10,1);
-         this.hzqFilledBorder(g,fx,fy,fw,fh,2,10,this.hzqAccent());
+         g.lineStyle();
+         g.beginFill(0x161A20,opa);
+         g.drawRoundRect(fx,fy,fw,fh,20,20);
+         g.endFill();
+         this.hzqFilledBorder(g,fx,fy,fw,fh,1,10,0x3A4450);
+         var acc:uint = this.hzqIconCol(this.hzqAccent());
+         var sh:Number = fh - 24;
+         if(sh > 8)
+         {
+            g.beginFill(acc,1);
+            g.drawRoundRect(fx + 6,fy + 12,4,sh,4,4);
+            g.endFill();
+         }
          if(this.hzqExtFrameT != null)
          {
-            this.hzqSet(this.hzqExtFrameT,this.hzqUC("EXTENDED QUICK / FAVORITE SLOTS"),13,this.hzqTextAccent(),"bd",0.14,true);
+            this.hzqSet(this.hzqExtFrameT,this.hzqUC("EXTENDED FAVORITES"),13,this.hzqTextAccent(),"bd",0.18,true);
             this.hzqExtFrameT.x = fx + HZQ_FRAME_PAD;
             this.hzqExtFrameT.y = fy + 6;
             this.hzqExtFrameT.visible = true;
+         }
+         if(this.hzqExtFrameN != null)
+         {
+            this.hzqSet(this.hzqExtFrameN,this.hzqExtPad2(occ) + " / " + this.hzqExtPad2(extN),13,this.hzqMutCol(),"sb",0.06,false);
+            this.hzqExtFrameN.x = fx + fw - HZQ_FRAME_PAD - this.hzqExtFrameN.width;
+            this.hzqExtFrameN.y = fy + 6;
+            this.hzqExtFrameN.visible = true;
          }
       }
       // Font.marker / ControlMap / ini redraw: the extra title and key chips were first drawn
@@ -2231,6 +2376,7 @@
          while(i < this.hzqExtSlots.length)
          {
             this.hzqExtSlots[i].cKey = null;
+            this.hzqExtSlots[i].cSel = null;
             i++;
          }
       }
@@ -2374,6 +2520,7 @@
          this.hzqExtAddDrawn = false;
          this.hzqExtFrame = null;
          this.hzqExtFrameT = null;
+         this.hzqExtFrameN = null;
          this.hzqExtFrameKey = "";
          this.hzqExtLastBox = null;
       }

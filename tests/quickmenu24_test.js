@@ -15,10 +15,10 @@ const game = read("src/hz_quickslots_game.h");
 
 expect(/private static const HZ_VERSION:String = "0\.43\.5\.0"/.test(as), "settings schema HZ_VERSION is 0.43.5.0 (SCAN REACH)");
 expect(/#define HZ_FILE_VERSION_STR "0\.43\.5\.0"/.test(ver), "file version is 0.43.5.0");
-expect(/QuickMenuExtended=0/.test(ini) && /QuickMenuSlotCount=24/.test(ini) && /QuickMenuSlotsPerRow=6/.test(ini) && /QuickMenuExtendedLayout=0/.test(ini), "default.ini has Extended Mode off, 24 slots, 6 per row, CROSS+BARS");
+expect(/QuickMenuExtended=0/.test(ini) && /QuickMenuSlotCount=24/.test(ini) && /QuickMenuSlotsPerRow=6/.test(ini) && /QuickMenuExtendedLayout=0/.test(ini) && /QuickMenuExtEmptySlots=1/.test(ini) && /QuickMenuExtPanelOpacity=92/.test(ini) && /QuickMenuExtSlotScale=1/.test(ini), "default.ini has Extended Mode off, 24 slots, 6 per row, CROSS+BARS, empty extras shown, panel 92, scale 1.0");
 expect(/QuickMenuKey13=\r?\n/.test(ini) && /QuickMenuKey24=\r?\n/.test(ini), "default.ini leaves keys 13-24 empty");
 
-for (const k of ["QuickMenuExtended","QuickMenuSlotCount","QuickMenuSlotsPerRow","QuickMenuExtendedLayout","QuickMenuKey13","QuickMenuKey24"]) {
+for (const k of ["QuickMenuExtended","QuickMenuSlotCount","QuickMenuSlotsPerRow","QuickMenuExtendedLayout","QuickMenuExtEmptySlots","QuickMenuExtPanelOpacity","QuickMenuExtSlotScale","QuickMenuKey13","QuickMenuKey24"]) {
 	expect(as.indexOf('"k":"' + k + '"') >= 0, "F11 row " + k);
 }
 expect(/"k":"QuickMenuExtendedLayout".*"opts":\["CROSS \+ BARS","BARS"\]/.test(as), "EXTENDED LAYOUT options are CROSS + BARS and BARS");
@@ -30,7 +30,7 @@ expect(as.indexOf("hzQmSetConflict") >= 0 && as.indexOf("hzQmSetSlotCount") >= 0
 
 expect(qm.indexOf("hzqExtPrepare") >= 0 && qm.indexOf("hzqExtPlace") >= 0 && qm.indexOf("hzqExtCmd") >= 0, "quick menu movie has Extended Mode hooks");
 expect(qm.indexOf("HZQ_PITCH:Number = 70") >= 0, "vanilla slot pitch is 70 (58 box + 12 gap)");
-expect(qm.indexOf("HZQ_EXT_PITCH:Number = 86") >= 0 && qm.indexOf("HZQ_EXT_BOX:Number = 72") >= 0, "extra slot pitch is 86 (72 box + 14 gap)");
+expect(qm.indexOf("HZQ_EXT_PITCH:Number = 72") >= 0 && qm.indexOf("HZQ_EXT_BOX:Number = 58") >= 0, "extra slots match vanilla 1-12 at scale 1.0 (58 box + 14 gap = 72 pitch)");
 expect(qm.indexOf("Entry_\" + slot") >= 0 && qm.indexOf("hzqExtMouse") >= 0, "extended slots are first-class Entry_13-24 in the vanilla container");
 expect(qm.indexOf("selectedIndex = 12") >= 0, "FS_NONE (12) is still used when no extra slot is highlighted");
 expect(qm.indexOf("hzqExtAdd") >= 0, "ADD SLOT tile exists");

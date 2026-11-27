@@ -279,8 +279,8 @@ expect(/this\.hzqS\.SlotCount = dc;/.test(qm) && /o \+= ";c\|" \+ std::to_string
 		"N-d k11: QmPayload still clears slots, but only the ones AssignmentCheck marked Clear");
 	expect(/chk == hzqs::SlotCheck::Refuse/.test(cBody(game, "std::string QmPayload()")) && /refuse\[i - hzqs::kExtFirst\] \? "1" : "0"/.test(cBody(game, "std::string QmPayload()")),
 		"N-i: the payload sends a refuse flag for a name-only mismatch");
-	expect(/d\.refuse === true/.test(qm) && /var dim:Boolean = empty \|\| refuse;/.test(qm) && /hzqPanel\(g,-hb,-hb,HZQ_EXT_BOX,HZQ_EXT_BOX,8,dim && !sel \? 0\.6 : 1\)/.test(qm) && /"refuse":f\.length > 5 && String\(f\[5\]\) == "1"/.test(qm),
-		"N-i: a refused slot is drawn with the unavailable look (dim panel); name is the info panel only");
+	expect(/d\.refuse === true/.test(qm) && /var dim:Boolean = empty \|\| refuse;/.test(qm) && /this\.hzqExtSlotArt\(g,boxN,sel,dim\)/.test(qm) && /"refuse":f\.length > 5 && String\(f\[5\]\) == "1"/.test(qm),
+		"N-i: a refused slot is drawn with the unavailable look (dim extra card); name is the info panel only");
 	expect(/function hzqAccentRing/.test(qm) && /function hzqFilledBorder/.test(qm)
 		&& /function hzqRingDraw/.test(qm) && /this\.hzqAccentRing\(g,x,y,box\)/.test(qm)
 		&& !/lineStyle\(2,acc,1,true,"normal"\)/.test(qm),

@@ -86,11 +86,11 @@ const hud = rd("actionscript/horizon_block.as");
 // ---- 2 / 3. Horizon card style and a closed selection border ----
 {
 	const drw = fnText(qm, "hzqExtDraw").body;
-	expect(/this\.hzqPanel\(g,-hb,-hb,HZQ_EXT_BOX,HZQ_EXT_BOX,8,dim && !sel \? 0\.6 : 1\)/.test(drw),
-		"2: extended slots use hzqPanel (CardOpacity / CardBgOpacity) like the 1-12 Horizon cards, at 72 px");
-	expect(/g\.beginFill\(acc,0\.13\)/.test(drw) && /this\.hzqKeycap\(g,-hb \+ 5,-hb \+ 5,kw,kh/.test(drw)
-		&& /this\.hzqAccentRing\(g,0,0,HZQ_EXT_BOX\)/.test(drw),
-		"2: selected fill, keycap and filled accent ring match hzqCard");
+	expect(/this\.hzqExtSlotArt\(g,boxN,sel,dim\)/.test(drw) && /function hzqExtSlotArt/.test(qm) && /function hzqExtBoxN/.test(qm),
+		"2: extended slots use hzqExtSlotArt at vanilla 1-12 size (58 * Slot Scale)");
+	expect(/this\.hzqKeycap\(g,-hb \+ 5,-hb \+ 5,kw,kh/.test(drw)
+		&& /this\.hzqAccentRing\(g,0,0,box\)/.test(fnText(qm, "hzqExtSlotArt").body),
+		"2: selected fill, keycap at +5,+5 and filled accent ring match hzqCard");
 	expect(/function hzqRingDraw/.test(qm) && /this\.hzqAccentRing\(g,x,y,box\)/.test(fnText(qm, "hzqRingDraw").body)
 		&& /s\.name = "hzqRing"/.test(fnText(qm, "hzqRingEnsure").body) && /s\.mouseEnabled = false/.test(fnText(qm, "hzqRingEnsure").body)
 		&& /function hzqFilledBorder/.test(qm) && !/lineStyle\(2,acc/.test(fnText(qm, "hzqRingDraw").body),
@@ -100,8 +100,8 @@ const hud = rd("actionscript/horizon_block.as");
 	expect(/this\.hzqSet\(o\.k,klab,13,/.test(drw) && !/this\.hzqSet\(o\.n,/.test(drw)
 		&& /LoadImageFixtureFromUIData/.test(qm) && /FavoritesIconBuffer/.test(qm),
 		"2: extra cards show the vanilla icon + key chip at 13 px (Exo 2); name is the info panel only");
-	expect(/this\.hzqPanel\(ag,-HZQ_EXT_BOX \* 0\.5,-HZQ_EXT_BOX \* 0\.5,HZQ_EXT_BOX,HZQ_EXT_BOX,8,0\.6\)/.test(drw),
-		"2: the ADD tile uses the same Horizon panel at 72 px");
+	expect(/this\.hzqExtSlotArt\(ag,addBox,false,true\)/.test(drw),
+		"2: the ADD tile uses the same extra-slot card at the live extra box size");
 }
 
 // ---- 4 / 6. CROSS+BARS: authored T, do not move 1-12, bars under the T ----
@@ -127,7 +127,7 @@ const hud = rd("actionscript/horizon_block.as");
 	expect(/hzqExtMoved/.test(rest) && /CenterClip_mc\.visible = true/.test(rest),
 		"4: restore only puts 1-12 back after BARS moved them");
 	const bld = fnText(qm, "hzqExtBuildClips").body;
-	expect(/y0x:Number = box\.b \+ 12 \+ HZQ_FRAME_PAD \+ HZQ_FRAME_TITLE \+ HZQ_EXT_BOX \* 0\.5/.test(bld)
+	expect(/y0x:Number = box\.b \+ 12 \+ HZQ_FRAME_PAD \+ HZQ_FRAME_TITLE \+ boxN \* 0\.5/.test(bld)
 		&& /y = y0x \+ row \* pitch/.test(bld),
 		"6: CROSS+BARS places 13-24 under the T, below the EXTENDED frame title");
 	expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(qm.slice(qm.indexOf("0.43.5 Extended Mode"))),

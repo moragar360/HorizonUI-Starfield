@@ -35,7 +35,7 @@ inline constexpr int kExtFirst = 13;         // first Horizon slot (1-based)
 inline constexpr float kBox = 58.f;
 inline constexpr float kGap = 12.f;
 inline constexpr float kPitch = kBox + kGap;
-inline constexpr float kExtBox = 72.f;          // extra slots: room for vanilla Icon_mc
+inline constexpr float kExtBox = 58.f;          // extra slots match vanilla 1-12 (HZQ_BOX) at Slot Scale 1.0
 inline constexpr float kExtGap = 14.f;
 inline constexpr float kExtPitch = kExtBox + kExtGap;
 inline constexpr float kExtFramePad = 14.f;
@@ -189,7 +189,7 @@ inline std::uint32_t GfxU32(GfxScalar k, double number, std::int32_t i32, std::u
 
 // Accent ring is a filled 2 px border (hzqFilledBorder / hzqKeycap sides), not a
 // stroke-only lineStyle. Outer edge is the card edge. box is HZQ_BOX (58) for
-// vanilla 1-12 and HZQ_EXT_BOX (72) for extra slots.
+// vanilla 1-12 and extra slots (both 58 at Slot Scale 1.0).
 inline constexpr float kAccentRingOuter = kBox;
 
 inline bool AccentRingInside(float cx, float cy, float left, float right, float top, float bottom, float box = kBox)
@@ -236,7 +236,7 @@ struct ExtraIconFit
 
 // Purpose: extra-slot icon transform after the ImageFixture load callback (same rule as hzqFit).
 // Inputs: loaded picture bounds at identity (vanilla BoundClip already applied), keychip height kb.
-// Outputs: Icon_mc scale/x/y. Aspect kept, never enlarged, sits in kExtBox below the keychip.
+// Outputs: Icon_mc scale/x/y. Aspect kept, never enlarged, sits in the extra card (vanilla 58) below the keychip.
 inline ExtraIconFit FitExtraIcon(float nbX, float nbY, float nbW, float nbH, float kb)
 {
 	ExtraIconFit f;

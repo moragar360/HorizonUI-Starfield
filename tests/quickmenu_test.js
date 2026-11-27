@@ -208,15 +208,15 @@ expect(/for\(var|while\(i < n\)/.test(fnText(main, "hzqHideArt").body) && /Math\
 expect(/\nVehicleExitY=0\n; Quick menu[^\n]*\nQuickMenuHorizon=1\n(?:(?:; [^\n]*|QuickMenu[A-Za-z0-9]+=[^\n]*)\n)*\n\[Effects\]/.test(ini), "default.ini [Cards Extra]: QuickMenuHorizon=1, where the writer puts it (0.43.5 Extended keys follow it)");
 expect(/"VehicleExitY":0,"QuickMenuHorizon":1,/.test(hud), "HZ_SET_DEF: QuickMenuHorizon 1 (DEFAULTS = on)");
 {
-	const h = { hzQmOn: true, hzQmExt: false, hzQmCount: 24, hzQmPerRow: 6, hzQmLayout: 0, hzQmKeys: ["", "", "", "", "", "", "", "", "", "", "", ""], hzB: (o) => (o ? "1" : "0") };
-	for (const n of ["hzQmIni", "hzQmSetCur", "hzQmSetLive", "hzQmIniLines", "hzQmKeyAt", "hzQmClampCount", "hzQmClampRow"]) h[n] = toJs(hud, n);
+	const h = { hzQmOn: true, hzQmExt: false, hzQmCount: 24, hzQmPerRow: 6, hzQmLayout: 0, hzQmEmpty: 1, hzQmPanelA: 92, hzQmSlotSc: 1, hzQmKeys: ["", "", "", "", "", "", "", "", "", "", "", ""], hzB: (o) => (o ? "1" : "0") };
+	for (const n of ["hzQmIni", "hzQmSetCur", "hzQmSetLive", "hzQmIniLines", "hzQmKeyAt", "hzQmClampCount", "hzQmClampRow", "hzQmClampEmpty", "hzQmClampPanelA", "hzQmClampScale"]) h[n] = toJs(hud, n);
 	expect(h.hzQmIni("quickmenuhorizon", false) === true && h.hzQmOn === false && h.hzQmIni("vehicleexitpill", true) === false, "HUD reader: quickmenuhorizon (any section, like the rest)");
 	const o = {}; h.hzQmSetCur(o);
 	expect(o.QuickMenuHorizon === false, "current values (settings save and presets)");
 	h.hzQmSetLive({ QuickMenuHorizon: 1 });
 	expect(h.hzQmOn === true, "live apply");
 	const a = []; h.hzQmIniLines(a, { QuickMenuHorizon: false });
-	expect(a.length === 23 && a[0].charAt(0) === ";" && a[1] === "QuickMenuHorizon=0" && a[3] === "QuickMenuExtended=0" && a[5] === "QuickMenuSlotCount=24" && a[7] === "QuickMenuSlotsPerRow=6" && a[9] === "QuickMenuExtendedLayout=0" && a[11] === "QuickMenuKey13=" && a[22] === "QuickMenuKey24=" && a.join("\n") === ini.slice(ini.indexOf("; Quick menu (the game"), ini.indexOf("QuickMenuKey24=") + 15).replace("QuickMenuHorizon=1", "QuickMenuHorizon=0"), "writer lines (0.43.5: Extended Mode off, 24 slots, 6 per row, CROSS + BARS, no keys)");
+	expect(a.length === 29 && a[0].charAt(0) === ";" && a[1] === "QuickMenuHorizon=0" && a[3] === "QuickMenuExtended=0" && a[5] === "QuickMenuSlotCount=24" && a[7] === "QuickMenuSlotsPerRow=6" && a[9] === "QuickMenuExtendedLayout=0" && a[11] === "QuickMenuExtEmptySlots=1" && a[13] === "QuickMenuExtPanelOpacity=92" && a[15] === "QuickMenuExtSlotScale=1" && a[17] === "QuickMenuKey13=" && a[28] === "QuickMenuKey24=" && a.join("\n") === ini.slice(ini.indexOf("; Quick menu (the game"), ini.indexOf("QuickMenuKey24=") + 15).replace("QuickMenuHorizon=1", "QuickMenuHorizon=0"), "writer lines (0.43.5: Extended Mode off, 24 slots, 6 per row, CROSS + BARS, empty extras shown, panel 92, scale 1.0, no keys)");
 	expect(/this\.hzQmIni\(k,bv\)/.test(fnText(hud, "hz26Ini").body) && /hzQmSetCur\(o\)/.test(fnText(hud, "hz26SetCur").body) && /hzQmSetLive\(p\)/.test(fnText(hud, "hz26SetLive").body) && /this\.hzVehIniLines\(a,p\);[^\n]*\n\s*this\.hzQmIniLines\(a,p\);/.test(fnText(hud, "hz26IniLines").body), "wired into the [Cards Extra] reader, current values, live apply and writer");
 	expect(/\{"k":"QuickMenuHorizon","l":"HORIZON STYLE","t":"b","h":"QUICK MENU"/.test(hud), "F11 > CARDS > QUICK MENU > HORIZON STYLE");
 }

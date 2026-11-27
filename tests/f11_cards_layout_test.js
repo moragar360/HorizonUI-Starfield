@@ -69,7 +69,7 @@ const KEYS = ["Compact", "CompactScale", "ShowVitals", "VitalsScale", "VitalsLay
 	"ShowCompass", "CompassScale", "CompassCompact", "ShowQuests", "QuestsScale", "QuestsCompact", "QuestsWidth", "QuestsMaxHeight", "QuestsWrap", "ShowPlanet", "PlanetScale", "PlanetCompact", "PlanetDetails",
 	"HazardStatus", "HazardScale", "HazardCompact", "ShowCharacter", "CharacterScale", "CharacterCompact", "WatchStyle", "WatchScale", "ShowAfflictions", "AfflictionsScale",
 	"EnemyBar", "EnemyScale", "StealthMeter", "StealthScale", "VehicleExitPill",
-	"ShowTarget", "NameHover", "HoverScale", "ContainerScale", "QuickMenuHorizon", "QuickMenuExtended", "QuickMenuSlotCount", "QuickMenuSlotsPerRow", "QuickMenuExtendedLayout", "QuickMenuKey13", "QuickMenuKey14", "QuickMenuKey15", "QuickMenuKey16", "QuickMenuKey17", "QuickMenuKey18", "QuickMenuKey19", "QuickMenuKey20", "QuickMenuKey21", "QuickMenuKey22", "QuickMenuKey23", "QuickMenuKey24", "XpToastScale", "MissionToast", "MissionToastScale"];
+	"ShowTarget", "NameHover", "HoverScale", "ContainerScale", "QuickMenuHorizon", "QuickMenuExtended", "QuickMenuSlotCount", "QuickMenuSlotsPerRow", "QuickMenuExtendedLayout", "QuickMenuExtEmptySlots", "QuickMenuExtPanelOpacity", "QuickMenuExtSlotScale", "QuickMenuKey13", "QuickMenuKey14", "QuickMenuKey15", "QuickMenuKey16", "QuickMenuKey17", "QuickMenuKey18", "QuickMenuKey19", "QuickMenuKey20", "QuickMenuKey21", "QuickMenuKey22", "QuickMenuKey23", "QuickMenuKey24", "XpToastScale", "MissionToast", "MissionToastScale"];
 const MAIN = ["CompactScale", "ShowVitals", "ShowJetpack", "ShowAmmo", "ShowCompass", "ShowQuests", "ShowPlanet", "HazardStatus", "ShowCharacter", "WatchStyle", "ShowAfflictions", "EnemyBar", "StealthMeter", "VehicleExitPill", "ShowTarget", "QuickMenuHorizon", "QuickMenuExtended", "XpToastScale", "MissionToast", "ScopeHoldBreathChip"];
 
 // 0.43.3.0 batch j: the Active Buffs rows of the base (0.43.3.1 / 0.43.3.2 test builds) that were removed
@@ -89,7 +89,7 @@ if (baseAs) {
 	for (const mods of [{}, comms, all]) {
 		// 0.43.3.0 batch f: QUICK MENU > HORIZON STYLE is the one new row; every other row is compared
 		// 0.43.3.0 batch j: the base's Active Buffs rows are left out (they were removed); every other row still matches
-		const QMNEW = ["QuickMenuHorizon","QuickMenuExtended","QuickMenuSlotCount","QuickMenuSlotsPerRow","QuickMenuExtendedLayout","QuickMenuKey13","QuickMenuKey14","QuickMenuKey15","QuickMenuKey16","QuickMenuKey17","QuickMenuKey18","QuickMenuKey19","QuickMenuKey20","QuickMenuKey21","QuickMenuKey22","QuickMenuKey23","QuickMenuKey24"];
+		const QMNEW = ["QuickMenuHorizon","QuickMenuExtended","QuickMenuSlotCount","QuickMenuSlotsPerRow","QuickMenuExtendedLayout","QuickMenuExtEmptySlots","QuickMenuExtPanelOpacity","QuickMenuExtSlotScale","QuickMenuKey13","QuickMenuKey14","QuickMenuKey15","QuickMenuKey16","QuickMenuKey17","QuickMenuKey18","QuickMenuKey19","QuickMenuKey20","QuickMenuKey21","QuickMenuKey22","QuickMenuKey23","QuickMenuKey24"];
 		const b = rowsOf(baseAs, mods).filter((r) => GONE.indexOf(r.k) < 0), n = rowsOf(as, mods).filter((r) => QMNEW.indexOf(r.k) < 0);
 		const bm = {}; b.forEach((r) => { bm[r.k] = strip(r); });
 		const nm = {}; n.forEach((r) => { nm[r.k] = strip(r); });
@@ -98,7 +98,7 @@ if (baseAs) {
 	}
 	const defLine = (src, re) => (src.match(re) || [""])[0];
 	// 0.43.3.2 batch e: the only HZ_SET_DEF change since the base is the two vehicle exit pill offsets (0 / 0 = the game's spot)
-	const QMDEF = '"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"",';
+	const QMDEF = '"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"","QuickMenuExtEmptySlots":1,"QuickMenuExtPanelOpacity":92,"QuickMenuExtSlotScale":1,';
 	const defNow = defLine(as, /private static const HZ_SET_DEF:Object = .*/).replace('"VehicleExitX":0,"VehicleExitY":0,' + QMDEF, "");
 	const defBase = defLine(baseAs, /private static const HZ_SET_DEF:Object = .*/).replace(GONE_DEF, "");
 	expect(defNow === defBase && defLine(as, /private static const HZ31_DEF:Object = .*/) === defLine(baseAs, /private static const HZ31_DEF:Object = .*/), "defaults tables (HZ_SET_DEF, HZ31_DEF) unchanged except the Quick Menu keys (schema stays 0.43.3.0)");

@@ -171,10 +171,10 @@ int main()
 		ExpectEqI(native, 12, "12 native T slots");
 		ExpectEqI(ext, 12, "12 extended");
 		ExpectEqI(add, 0, "no add tile at 24");
-		// first extended bar centered on tCx=300, 6 slots, pitch 86: first x = 300 - 2.5*86 = 85
+		// first extended bar centered on tCx=300, 6 slots: first x = 300 - 2.5 * kExtPitch
 		const auto* e13 = &*std::find_if(p.begin(), p.end(), [](const SlotPos& q) { return q.index == 13; });
 		Expect(!e13->native, "13 is not native");
-		Expect(std::abs(e13->x - 85.f) < 0.5f, "bar 1 centered on T");
+		Expect(std::abs(e13->x - (300.f - 2.5f * kExtPitch)) < 0.5f, "bar 1 centered on T");
 		Expect(std::abs(e13->y - (400.f + 12.f + kExtFramePad + kExtFrameTitle + kExtBox * 0.5f)) < 0.5f, "bar 1 under T, below the frame title");
 		const auto* e19 = &*std::find_if(p.begin(), p.end(), [](const SlotPos& q) { return q.index == 19; });
 		Expect(std::abs(e19->y - e13->y - kExtPitch) < 0.5f, "bar 2 under bar 1");
@@ -418,10 +418,10 @@ int main()
 				Expect(tiny.scale == 1.f, "a small extra icon is never enlarged");
 				const auto huge = FitExtraIcon(0.f, 0.f, 256.f, 256.f, kb);
 				Expect(huge.scale < 1.f && ExtraIconInsideCard(huge, 0.f, 0.f, 256.f, 256.f, kb),
-					"a 256 px extra icon is scaled into the 72 px card below the keychip");
+					"a 256 px extra icon is scaled into the extra card below the keychip");
 				const auto wide = FitExtraIcon(0.f, 0.f, 400.f, 160.f, kb);
 				Expect(wide.scale < 1.f && ExtraIconInsideCard(wide, 0.f, 0.f, 400.f, 160.f, kb),
-					"a wide extra icon stays inside the padded 72 px card (one scale on both axes)");
+					"a wide extra icon stays inside the padded extra card (one scale on both axes)");
 				const auto again = FitExtraIcon(0.f, 0.f, 256.f, 256.f, kb);
 				Expect(again.scale == huge.scale && again.x == huge.x && again.y == huge.y,
 					"extra icon fit from identity does not compound");

@@ -101,9 +101,9 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 	const ring = fnText(qm, "hzqRingDraw").body;
 	const acc = fnText(qm, "hzqAccentRing").body;
 	const border = fnText(qm, "hzqFilledBorder").body;
-	expect(/this\.hzqAccentRing\(g,x,y,box\)/.test(ring) && /HZQ_EXT_BOX/.test(ring)
+	expect(/this\.hzqAccentRing\(g,x,y,box\)/.test(ring) && /this\.hzqExtBoxN\(\)/.test(ring)
 		&& !/lineStyle\(2,acc/.test(ring) && !/drawRect\(x - 40/.test(ring),
-		"overlay ring calls hzqAccentRing (filled), vanilla box or HZQ_EXT_BOX, no stroke-only lineStyle");
+		"overlay ring calls hzqAccentRing (filled), vanilla box or live extra box, no stroke-only lineStyle");
 	expect(/this\.hzqFilledBorder\(g,x - box \* 0\.5,y - box \* 0\.5,box,box,2,8/.test(acc)
 		&& /g\.beginFill\(col,1\); g\.drawRect/.test(border) && /this\.hzqKeyCorner/.test(border)
 		&& /g\.lineStyle\(\);/.test(border) && !/lineStyle\(2,/.test(border),
@@ -275,7 +275,7 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 	const pick = fnText(qm, "hzqExtPick").body;
 	expect(/s\.buttonMode = false/.test(make) && /s\.tabEnabled = false/.test(make)
 		&& /s\.tabChildren = false/.test(make) && /drawRect\(-HZQ_EXT_BOX \* 0\.5,-HZQ_EXT_BOX \* 0\.5,HZQ_EXT_BOX,HZQ_EXT_BOX\)/.test(make),
-		"G: extra clips are 72 px hits, not in the Tab cycle, no FavoritesEntry Catcher");
+		"G: extra clips are vanilla-sized hits (58 at scale 1.0), not in the Tab cycle, no FavoritesEntry Catcher");
 	expect(/hzqExtHold\.mouseEnabled = false/.test(hold) && /hzqExtHold\.tabEnabled = false/.test(hold)
 		&& /add\.tabEnabled = false/.test(hold),
 		"G: hold overlay and ADD tile do not steal Tab / do not cover Entry_0-11");
@@ -382,17 +382,17 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		&& !/ClearSlot\(g_qmStore/.test(game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("))),
 		"I: uint/int Scaleform IDs are read; assign commits SetSlot and does not ClearSlot on a miss");
 	const bld = fnText(qm, "hzqExtBuildClips").body;
-	const pitch = 86, per = 6, cx = 0, tRight = 268.8, tLeft = -267.75, tTop = -267.65, tBottom = 268.75;
+	const pitch = 72, per = 6, cx = 0, tRight = 268.8, tLeft = -267.75, tTop = -267.65, tBottom = 268.75;
 	const take = 6, col = 5;
-	const pad = 14, title = 22, extBox = 72, half = extBox / 2;
+	const pad = 14, title = 22, extBox = 58, half = extBox / 2;
 	const y0x = tBottom + 12 + pad + title + extBox / 2;
 	const x = cx - (take - 1) * pitch / 2 + col * pitch;
 	const y = y0x;
-	expect(/HZQ_EXT_PITCH/.test(bld) && /y0x:Number = box\.b \+ 12 \+ HZQ_FRAME_PAD \+ HZQ_FRAME_TITLE \+ HZQ_EXT_BOX \* 0\.5/.test(bld),
+	expect(/this\.hzqExtPitchN\(\)/.test(bld) && /y0x:Number = box\.b \+ 12 \+ HZQ_FRAME_PAD \+ HZQ_FRAME_TITLE \+ boxN \* 0\.5/.test(bld),
 		"I: extra row sits under the T, below the EXTENDED frame title");
 	const visL = -960, visR = 960, visT = -540, visB = 540;
 	expect(x + half <= visR && x - half >= visL && y - half >= visT && y + half <= visB,
-		"I: last-column 72 px extra card (and filled ring) stays inside the visible area");
+		"I: last-column 58 px extra card (and filled ring) stays inside the visible area");
 	expect(0 + 29 <= tRight && 0 - 29 >= tLeft,
 		"I: the selected top T card (center, screenshot) sits inside the T AABB, so a T-width scrollRect cannot cut its right edge");
 	const x8 = cx - (8 - 1) * pitch / 2 + 7 * pitch;
@@ -408,17 +408,20 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		&& !/HZQ_EQ_RESERVE/.test(fnText(qm, "hzqInfoPlace").body)
 		&& /this\.hzqSprite\(this, -1\)/.test(fnText(qm, "hzqBuild").body),
 		"I: info panel is a menu child, placed at visibleRect center-right (right inset, vertically centered)");
-	expect(/EXTENDED QUICK \/ FAVORITE SLOTS/.test(qm) && /function hzqExtFrameDraw/.test(qm),
-		"I: extra grid has a Horizon framed box titled EXTENDED QUICK / FAVORITE SLOTS");
+	expect(/EXTENDED FAVORITES/.test(qm) && /function hzqExtFrameDraw/.test(qm) && !/EXTENDED QUICK \/ FAVORITE SLOTS/.test(qm),
+		"I: extra grid has a dark framed window titled EXTENDED FAVORITES");
 	{
 		const frame = fnText(qm, "hzqExtFrameDraw").body;
 		const setb = fnText(qm, "hzqSet").body;
 		const face = fnText(qm, "hzqFace").body;
-		expect(/this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED QUICK \/ FAVORITE SLOTS"\),13,this\.hzqTextAccent\(\),"bd",0\.14,true\)/.test(frame)
+		expect(/this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED FAVORITES"\),13,this\.hzqTextAccent\(\),"bd",0\.18,true\)/.test(frame)
 			&& /this\.hzqFace\(w\)/.test(setb) && /t\.embedFonts = true/.test(setb)
 			&& /\$Horizon_Font/.test(face) && !/new TextFormat\(\s*["']/.test(frame)
-			&& !/_sans|Arial|Times|Courier|Exo 2|Exo2/.test(frame),
-			"I: EXTENDED QUICK title uses hzqSet -> hzqFace (embedded Horizon face), not a hardcoded/system font");
+			&& !/_sans|Arial|Times|Courier|Exo 2|Exo2/.test(frame)
+			&& /0x161A20/.test(frame) && /hzqFilledBorder\(g,fx,fy,fw,fh,1,10,0x3A4450\)/.test(frame)
+			&& /drawRoundRect\(fx \+ 6,fy \+ 12,4,sh,4,4\)/.test(frame)
+			&& !/hzqFilledBorder\(g,fx,fy,fw,fh,2,10,this\.hzqAccent/.test(frame),
+			"I: EXTENDED FAVORITES title uses hzqSet -> hzqFace; panel is dark fill + gray 1px border + left accent strip, no outer accent ring");
 		expect(/this\.hzqSet\(o\.k,klab,13,/.test(fnText(qm, "hzqExtDraw").body)
 			&& /this\.hzqSet\(nt,/.test(fnText(qm, "hzqInfo").body)
 			&& /this\.hzqSet\(lt,this\.hzqUC\(String\(rows\[j\]\[0\]\)\),13,/.test(fnText(qm, "hzqInfo").body),
@@ -428,8 +431,8 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 			&& /this\.hzqExtFrameDraw\(this\.hzqExtLastBox\)/.test(fnText(qm, "hzqRedraw").body)
 			&& /this\.hzqExtSlots\[i\]\.cKey = null/.test(fnText(qm, "hzqExtFontTouch").body),
 			"I: after font.marker, redraw retitles the extra frame and re-sets extra key chips through hzqFace");
-		expect(/this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED QUICK \/ FAVORITE SLOTS"\)/.test(pimp)
-			&& /this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED QUICK \/ FAVORITE SLOTS"\)/.test(pimpL)
+		expect(/this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED FAVORITES"\)/.test(pimp)
+			&& /this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED FAVORITES"\)/.test(pimpL)
 			&& /t\.embedFonts = true/.test(fnText(pimp, "hzqSet").body)
 			&& /t\.embedFonts = true/.test(fnText(pimpL, "hzqSet").body),
 			"I: both movies apply the shared Horizon font helper to the extra frame title");

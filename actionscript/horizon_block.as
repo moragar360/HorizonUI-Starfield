@@ -4583,6 +4583,9 @@
       private var hzQmPerRow:int = 6;
       private var hzQmLayout:int = 0;   // 0 CROSS + BARS, 1 BARS
       private var hzQmKeys:Array = ["","","","","","","","","","","",""];
+      private var hzQmEmpty:int = 1;           // 1 = show empty extras, 0 = hide (assign mode still shows them)
+      private var hzQmPanelA:Number = 92;      // extra-window fill 0-100
+      private var hzQmSlotSc:Number = 1;       // extra-slot size vs vanilla 1-12
       private var hzQmConflict:Boolean = false;   // set by the DLL when another extended-favorites mod is found
       public function hzQmSetConflict(v:Number) : void { this.hzQmConflict = v >= 0.5; }
       public function hzQmSetSlotCount(v:Number) : void { this.hzQmCount = this.hzQmClampCount(v); }
@@ -4593,6 +4596,17 @@
          if(i <= 4) { return 4; }
          if(i >= 8) { return 8; }
          return 6;
+      }
+      private function hzQmClampEmpty(n:Number) : int { return n >= 0.5 ? 1 : 0; }
+      private function hzQmClampPanelA(n:Number) : Number
+      {
+         if(isNaN(n)) { return 92; }
+         return Math.max(0,Math.min(100,n));
+      }
+      private function hzQmClampScale(n:Number) : Number
+      {
+         if(isNaN(n)) { return 1; }
+         return Math.max(0.7,Math.min(1.4,n));
       }
       private function hzQmKeyAt(i:int) : String
       {
@@ -4624,6 +4638,14 @@
                return true;
             }
          }
+         if(k == "quickmenuextemptyslots")
+         {
+            var ev:String = v.toLowerCase();
+            this.hzQmEmpty = (ev == "0" || ev == "false" || ev == "hide") ? 0 : 1;
+            return true;
+         }
+         if(k == "quickmenuextpanelopacity") { this.hzQmPanelA = this.hzPctOr(v,92,0); return true; }
+         if(k == "quickmenuextslotscale") { this.hzQmSlotSc = this.hzQmClampScale(Number(v)); return true; }
          return false;
       }
       private function hzQmSetCur(o:Object) : void
@@ -4633,6 +4655,9 @@
          o.QuickMenuSlotCount = this.hzQmCount;
          o.QuickMenuSlotsPerRow = this.hzQmPerRow;
          o.QuickMenuExtendedLayout = this.hzQmLayout;
+         o.QuickMenuExtEmptySlots = this.hzQmEmpty;
+         o.QuickMenuExtPanelOpacity = this.hzQmPanelA;
+         o.QuickMenuExtSlotScale = this.hzQmSlotSc;
          var i:int = 0;
          while(i < 12) { o["QuickMenuKey" + (13 + i)] = this.hzQmKeyAt(i); i++; }
       }
@@ -4643,6 +4668,9 @@
          if(p.QuickMenuSlotCount !== undefined) { this.hzQmCount = this.hzQmClampCount(Number(p.QuickMenuSlotCount)); }
          if(p.QuickMenuSlotsPerRow !== undefined) { this.hzQmPerRow = this.hzQmClampRow(Number(p.QuickMenuSlotsPerRow)); }
          if(p.QuickMenuExtendedLayout !== undefined) { this.hzQmLayout = int(Number(p.QuickMenuExtendedLayout)) != 0 ? 1 : 0; }
+         if(p.QuickMenuExtEmptySlots !== undefined) { this.hzQmEmpty = this.hzQmClampEmpty(Number(p.QuickMenuExtEmptySlots)); }
+         if(p.QuickMenuExtPanelOpacity !== undefined) { this.hzQmPanelA = this.hzQmClampPanelA(Number(p.QuickMenuExtPanelOpacity)); }
+         if(p.QuickMenuExtSlotScale !== undefined) { this.hzQmSlotSc = this.hzQmClampScale(Number(p.QuickMenuExtSlotScale)); }
          var i:int = 0;
          while(i < 12)
          {
@@ -4663,6 +4691,12 @@
          a.push("QuickMenuSlotsPerRow=" + String(this.hzQmClampRow(p.QuickMenuSlotsPerRow !== undefined ? Number(p.QuickMenuSlotsPerRow) : this.hzQmPerRow)));
          a.push("; Extended layout: 0 = CROSS + BARS (the T for 1-12, bars under it), 1 = BARS (every slot in rows)");
          a.push("QuickMenuExtendedLayout=" + String(int((p.QuickMenuExtendedLayout !== undefined ? Number(p.QuickMenuExtendedLayout) : this.hzQmLayout) != 0 ? 1 : 0)));
+         a.push("; Empty extra slots: 1 = show a faint plus, 0 = hide unused extras (occupied slots still show). Assign mode still shows them.");
+         a.push("QuickMenuExtEmptySlots=" + String(this.hzQmClampEmpty(p.QuickMenuExtEmptySlots !== undefined ? Number(p.QuickMenuExtEmptySlots) : this.hzQmEmpty)));
+         a.push("; Extra-slots window fill, 0-100. 100 is solid. Does not change the rest of the HUD.");
+         a.push("QuickMenuExtPanelOpacity=" + String(this.hzQmClampPanelA(p.QuickMenuExtPanelOpacity !== undefined ? Number(p.QuickMenuExtPanelOpacity) : this.hzQmPanelA)));
+         a.push("; Extra-slot size vs the vanilla 1-12 Horizon cards (58 px). 1.0 is the same size. 0.7-1.4.");
+         a.push("QuickMenuExtSlotScale=" + String(this.hzQmClampScale(p.QuickMenuExtSlotScale !== undefined ? Number(p.QuickMenuExtSlotScale) : this.hzQmSlotSc)));
          a.push("; Keys for Horizon slots 13-24. Empty = no bind (the slot still works from the menu). A key bound in the game's controls, the settings key, or a key another slot uses is ignored.");
          var i:int = 0;
          while(i < 12)
@@ -7044,7 +7078,7 @@
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"","PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"","QuickMenuExtEmptySlots":1,"QuickMenuExtPanelOpacity":92,"QuickMenuExtSlotScale":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -19473,6 +19507,9 @@
          "QuickMenuSlotCount":"How many slots are shown when Extended Mode is on, from 12 to 24. Removing a slot only hides it; its item comes back if you add the slot again. 24 is the default.",
          "QuickMenuSlotsPerRow":"How many extended slots sit in each bar: 4, 6, or 8. 6 is the default.",
          "QuickMenuExtendedLayout":"CROSS + BARS keeps the vanilla T for slots 1-12 and puts Horizon slots in bars underneath. BARS draws every slot in rows. CROSS + BARS is the default.",
+         "QuickMenuExtEmptySlots":"SHOW draws unused extra slots as empty squares with a faint plus. HIDE leaves them off until you assign an item. Occupied extra slots always show. Assigning from inventory still shows empty extras so you can click them.",
+         "QuickMenuExtPanelOpacity":"How solid the extra-slots window is. 0 is clear. 100 is solid. Does not change other HUD cards. Applies the next time you open the Quick Menu.",
+         "QuickMenuExtSlotScale":"Size of extra slots compared with the original 12. 1.0 is the same size as slots 1-12. Smaller shrinks the extra window. Applies the next time you open the Quick Menu.",
          "QuickMenuKey13":"The key that uses Horizon slot 13 while you are not in a menu. Empty = the slot still works from the Quick Menu. Keys already bound in the game's controls are refused.",
          "VehicleExitPill":"While you are in a vehicle, the hold-to-exit prompt is a Horizon pill: the key the game shows, then EXIT. A fill sweeps across while you hold, and the pill turns green with a check when the hold completes. The game's button stays at alpha 0, so the hold still finishes. Off shows the game's prompt.",
          "PlanetDetails":"Adds a gravity / air line to the planet card.",
@@ -19745,6 +19782,9 @@
             {"k":"QuickMenuSlotCount","l":"SLOT COUNT","t":"n","mn":12,"mx":24,"st":1,"sub":true,"note":"ADD SLOT / REMOVE SLOT any time. Slots 13-24 are Horizon slots."},
             {"k":"QuickMenuSlotsPerRow","l":"SLOTS PER ROW","t":"r","opts":["4","6","8"],"ids":[4,6,8],"sub":true},
             {"k":"QuickMenuExtendedLayout","l":"EXTENDED LAYOUT","t":"r","opts":["CROSS + BARS","BARS"],"ids":[0,1],"sub":true},
+            {"k":"QuickMenuExtEmptySlots","l":"EMPTY SLOTS","t":"r","opts":["SHOW","HIDE"],"ids":[1,0],"sub":true,"note":"SHOW draws unused extra slots as empty squares with a faint plus. HIDE leaves them off until you assign an item. Occupied slots always show. Assign mode still shows empty extras so you can fill them."},
+            {"k":"QuickMenuExtPanelOpacity","l":"PANEL OPACITY","t":"n","mn":0,"mx":100,"st":1,"pct":1,"n13":true,"sub":true,"note":"How solid the extra-slots window is. 0 is clear. 100 is solid. Does not change other HUD cards."},
+            {"k":"QuickMenuExtSlotScale","l":"SLOT SCALE","t":"n","mn":0.7,"mx":1.4,"st":0.05,"sub":true,"note":"Size of extra slots compared with slots 1-12. 1.0 is the same size. Smaller shrinks the extra window."},
             {"k":"QuickMenuKey13","l":"SLOT 13 KEY","t":"k","sub":true,"note":"Empty = no key. The slot still works from the menu. Keys used by another slot or the settings key are skipped; keys bound in the game's controls are ignored."},
             {"k":"QuickMenuKey14","l":"SLOT 14 KEY","t":"k","sub":true},
             {"k":"QuickMenuKey15","l":"SLOT 15 KEY","t":"k","sub":true},
@@ -19786,7 +19826,7 @@
          while(qmi < rows.length)
          {
             var qmk:String = String(rows[qmi].k);
-            if(qmk == "QuickMenuHorizon" || qmk == "QuickMenuExtended" || qmk == "QuickMenuSlotCount" || qmk == "QuickMenuSlotsPerRow" || qmk == "QuickMenuExtendedLayout" || qmk.indexOf("QuickMenuKey") == 0)
+            if(qmk == "QuickMenuHorizon" || qmk == "QuickMenuExtended" || qmk == "QuickMenuSlotCount" || qmk == "QuickMenuSlotsPerRow" || qmk == "QuickMenuExtendedLayout" || qmk == "QuickMenuExtEmptySlots" || qmk == "QuickMenuExtPanelOpacity" || qmk == "QuickMenuExtSlotScale" || qmk.indexOf("QuickMenuKey") == 0)
             {
                if(qmOff)
                {
