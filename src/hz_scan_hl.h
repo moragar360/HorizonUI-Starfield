@@ -30,9 +30,9 @@
 // 0.43.5 levels (each one a visible step on a 16:9 screen at the default first-person FOV of 85, horizontal).
 // F11 lists them in size order; the ids keep their old meaning so a saved value does not change what it does:
 //   0 = Small (was "Horizon dot")  0.98 / 0.4, the game's fade: about 11.5 degrees, half the vanilla circle.
-//   1 = Vanilla (the default)      writes the game's own cone once when picked: 0.92 / 0.8 / fade 0.25, about 23 degrees.
-//                                  A widened StarfieldCustom.ini or another mod does not stay (that used to make Vanilla
-//                                  look like Max / Full screen).
+//   1 = Vanilla (the default)      writes nothing: the game, StarfieldCustom.ini, or another highlight-radius mod stays.
+//                                  Switching back from Small / Large / Wide / Full screen restores the values captured
+//                                  before Horizon's first write this session (same passthrough as Outline Thickness).
 //   4 = Large                      0.82 / 1.4, the game's fade: about 35 degrees, the circle reaches the top and bottom
 //                                  of the screen (0.82 is the published "in between" angle; 1.4 is the radius below).
 //   5 = Wide                       0.735 / 1.8, the game's fade: about 42.7 degrees, it reaches the left and right edges (the half width at 16:9 / FOV 85 is 42.5);
@@ -46,20 +46,22 @@
 // The ini ids keep their old meaning (0, 1, 2, and 3 read as 2), so no saved value changes meaning; Large and Wide got
 // the new ids 4 and 5. F11 lists them in size order: 0, 1, 4, 5, 2.
 // Screen corner math: at a horizontal FOV h and aspect a the corner sits atan(tan(h/2) * sqrt(1 + 1/a^2)) from the center.
-// Vanilla writes the hardcoded game defaults 0.92 / 0.8 / 0.25 once when that level is applied (first load or a change
-// to Vanilla). It is not rewritten on scanner open or every frame. Small, Large and Wide still leave the fade to the
-// game (they write back the captured fade when they follow Full screen). The game's values at load are still read once
-// for that fade capture and for the WidenedByOther log line.
+// Vanilla writes nothing at load. Going back to Vanilla restores the captured game values (if Horizon already wrote
+// another level this session). It is not rewritten on scanner open or every frame. Small, Large and Wide still leave
+// the fade to the game (they write back the captured fade when they follow Full screen). The game's values at load are
+// still read once for that fade capture and for the WidenedByOther log line. kGameDot / kGameDecal / kGameFall are the
+// published getini defaults (STEP dump; Nexus article 651, still 0.92 / 0.8 as of 2026-08-15). They are the WidenedByOther
+// comparison, not a Vanilla write. Full screen is 0.45 / 4.0 / fade 1.0; that pair is not a game default.
 // 0.43.5: main.cpp also reads the values back (Drifted) and writes them again when something else changed them, and
 // logs the game's own values once at load (WidenedByOther flags an INI tweak or another mod that already widens).
 // Pure logic: no game, no CommonLibSF, no thread (tests/scan_hl_test.cpp). main.cpp does the game calls.
-// Author: Moragar. Last modified: 2026-11-27.
+// Author: Moragar. Last modified: 2026-11-27. Vanilla is passthrough (no write / restore captured).
 
 #include <string>
 
 namespace hzscanhl {
 
-inline constexpr int kUnset = -1;    // applied starts here so the first BannerPoll can write Vanilla once
+inline constexpr int kUnset = -1;    // applied starts here so the first BannerPoll can record Vanilla without writing
 inline constexpr int kDot = 0;       // F11 "SMALL" (the name kDot is kept from 0.43.3.1)
 inline constexpr int kVanilla = 1;
 inline constexpr int kFull = 2;
@@ -77,7 +79,7 @@ inline constexpr float kFullAngleDot = 0.45f;   // Full screen: about 63 degrees
 inline constexpr float kFullDecal = 4.0f;
 inline constexpr float kFullFall = 1.0f;
 
-inline constexpr float kGameDot = 0.92f;        // the game's defaults (getini): Vanilla writes these once
+inline constexpr float kGameDot = 0.92f;        // published getini defaults (Vanilla does not write these)
 inline constexpr float kGameDecal = 0.8f;
 inline constexpr float kGameFall = 0.25f;       // the game's default outline fade
 
@@ -124,13 +126,14 @@ struct Plan
 	Act   act = Act::None;
 	float dot = 0.0f;
 	float decal = 0.0f;
-	bool  wFall = false;     // write the fade too (Full screen and Vanilla always; Small / Large / Wide only a captured fade)
+	bool  wFall = false;     // write the fade too (Full screen always; Vanilla restore only a captured fade; Small / Large / Wide only a captured fade)
 	float fall = 0.0f;
 };
 
-// a_applied: what Horizon last left in the game. Starts at kUnset so the first apply (including default Vanilla)
-// can write once. After that, None when nothing changes.
-// Vanilla always writes the game default cone (0.92 / 0.8 / 0.25), never the captured INI / other-mod values.
+// a_applied: what Horizon last left in the game. Starts at kUnset so the first apply can record Vanilla
+// without writing. After that, None when nothing changes.
+// Vanilla is a passthrough: write nothing until another level has been applied this session, then Restore
+// the captured game / INI / other-mod values (never force 0.92 / 0.8 / 0.25).
 inline Plan Next(int a_want, int a_applied, const Orig& a_orig)
 {
 	Plan p;
@@ -139,11 +142,13 @@ inline Plan Next(int a_want, int a_applied, const Orig& a_orig)
 	if (a_want != kDot && a_want != kFull && a_want != kLarge && a_want != kWide) a_want = kVanilla;
 	if (a_want == a_applied) return p;
 	if (a_want == kVanilla) {
-		p.act = Act::Write;
-		p.dot = kGameDot;
-		p.decal = kGameDecal;
-		p.wFall = true;
-		p.fall = kGameFall;
+		if (a_orig.have) {
+			p.act = Act::Restore;
+			p.dot = a_orig.dot;
+			p.decal = a_orig.decal;
+			p.wFall = a_orig.fallOk;
+			p.fall = a_orig.fall;
+		}
 		return p;
 	}
 	p.act = Act::Write;
@@ -224,7 +229,7 @@ inline Give GiveBack(const Wrote& a_w, const Orig& a_o, const Now& a_n)
 // the full HIGHLIGHT AREA state main.cpp and the tests share (applied, yield/reapply guard, captured base, last write)
 struct State
 {
-	int   applied = kUnset;  // first apply writes, including default Vanilla
+	int   applied = kUnset;  // first Vanilla apply records the level and writes nothing
 	Guard guard;
 	Orig  orig;
 	Wrote wrote;
