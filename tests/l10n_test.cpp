@@ -63,15 +63,57 @@ int main()
 		"MapCode: path separators and drive letters become auto");
 	Expect(std::string(DisplayName("en")) == "English"
 			&& std::string(DisplayName("de")) == "Deutsch (German)"
-			&& std::string(DisplayName("esmx")).find("Spanish, Latin America") != std::string::npos
-			&& std::string(DisplayName("zhhans")).find("Simplified Chinese") != std::string::npos,
-		"DisplayName: native name with English in parentheses");
+			&& std::string(DisplayName("esmx")).find("Latinoam") != std::string::npos
+			&& std::string(DisplayName("esmx")).find("Spanish, Latin America") == std::string::npos
+			&& std::string(DisplayName("ptbr")) == "Portugu\xC3\xAA" "s (Brasil)"
+			&& std::string(DisplayName("zhhans")) == "Simplified Chinese"
+			&& std::string(DisplayName("ja")) == "Japanese",
+		"DisplayName: Exo 2 native names; CJK stems are English-only");
 	Expect(MenuName("auto") == "Auto (game)" && MenuName("de") == "Deutsch (German)", "MenuName matches DisplayName");
+	Expect(Exo2Can("Deutsch (German)") && Exo2Can("Espa\xC3\xB1" "ol (Spanish)") && Exo2Can("Pols" "\xC5\x82" "i")
+			&& Exo2Can("Fran\xC3\xA7" "ais") && Exo2Can("Portugu\xC3\xAA" "s"),
+		"Exo2Can: Latin / Latin-1 / Polish l-stroke");
+	Expect(!Exo2Can("\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E (Japanese)")
+			&& !Exo2Can("\xE7\xAE\x80\xE4\xBD\x93\xE4\xB8\xAD\xE6\x96\x87")
+			&& !Exo2Can("\xED\x95\x9C\xEA\xB5\xAD\xEC\x96\xB4 (Korean)")
+			&& !Exo2Can("\xE0\xB9\x84\xE0\xB8\x97\xE0\xB8\xA2 (Thai)"),
+		"Exo2Can: CJK / Hangul / Thai are not in Exo 2");
+	Expect(Exo2Text("\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E (Japanese)", "Japanese") == "Japanese"
+			&& Exo2Text("\xE7\xAE\x80\xE4\xBD\x93\xE4\xB8\xAD\xE6\x96\x87 (Simplified Chinese)", "X") == "Simplified Chinese"
+			&& Exo2Text("\xED\x95\x9C\xEA\xB5\xAD\xEC\x96\xB4 (Korean)", "Korean") == "Korean"
+			&& Exo2Text("Deutsch (German)", "German") == "Deutsch (German)",
+		"Exo2Text: parenthetical English when the native script is not Exo 2");
 	Expect(std::string(FallbackStem("es-mx")) == "es" && FallbackStem("de") == nullptr, "es-mx falls back through es");
 
 	const auto sl = ParseSLanguage("[Display]\niPresentInterval=1\n[General]\nsLanguage=jp\n; ignore\nsLanguage=de\n");
 	Expect(MapCode(sl) == "de", "ParseSLanguage: last [General] sLanguage wins");
 	Expect(ParseSLanguage("[Audio]\nsLanguage=fr\n").empty(), "ParseSLanguage: ignores other sections");
+
+	Expect(LanguageIniName("german") == "Starfield_de.ini" && LanguageIniName("de") == "Starfield_de.ini",
+		"LanguageIniName: Steam german / sLanguage de -> Starfield_de.ini");
+	Expect(LanguageIniName("schinese") == "Starfield_zhhans.ini" && LanguageIniName("ja") == "Starfield_ja.ini"
+			&& LanguageIniName("brazilian") == "Starfield_ptbr.ini" && LanguageIniName("latam") == "Starfield_es.ini",
+		"LanguageIniName: zhhans / ja / ptbr / es stems match the game-folder files");
+	{
+		const auto acf =
+			"\"AppState\"\n{\n\t\"appid\"\t\t\"1716740\"\n"
+			"\t\"UserConfig\"\n\t{\n\t\t\"language\"\t\t\"german\"\n\t}\n"
+			"\t\"MountedConfig\"\n\t{\n\t\t\"language\"\t\t\"german\"\n\t}\n}\n";
+		Expect(ParseSteamAcfLanguage(acf) == "german", "ParseSteamAcfLanguage reads UserConfig.language");
+		std::unordered_map<std::string, std::string> langIni;
+		langIni["Starfield_de.ini"] = "[General]\nsLanguage=de\n";
+		const auto emptyIni = "[General]\nsStartingConsoleCommand=foo\n";
+		Expect(DetectGameLanguage(acf, emptyIni, langIni, emptyIni, "") == "de",
+			"Steam german + Starfield_de.ini is de when Prefs/Custom have no sLanguage");
+		Expect(DetectGameLanguage(acf, emptyIni, langIni, emptyIni, "[General]\nsLanguage=en\n") == "en",
+			"StarfieldCustom.ini sLanguage last-wins over Starfield_de.ini");
+		Expect(DetectGameLanguage(acf, emptyIni, {}, emptyIni, "") == "de",
+			"Steam ACF german is de when no INI sets sLanguage");
+		Expect(DetectGameLanguage("", emptyIni, {}, emptyIni, "") == "en",
+			"empty stack with no Steam language stays English");
+		Expect(DetectGameLanguage(acf, emptyIni, langIni, "[General]\nsLanguage=fr\n", "") == "fr",
+			"StarfieldPrefs.ini sLanguage wins over Starfield_de.ini");
+	}
 
 	const auto dir = HzTestScratch("l10n_");
 	const auto dirNorm = HzTestNorm(dir);
@@ -84,7 +126,8 @@ int main()
 		"{\n"
 		"  \"_meta\": { \"language\": \"en\", \"notes\": \"skip me\" },\n"
 		"  \"hud\": { \"health\": \"HEALTH\", \"oxygen\": \"OXYGEN\" },\n"
-		"  \"settings\": { \"tabs\": { \"cards\": \"CARDS\" }, \"language\": { \"auto\": \"AUTO (GAME)\" } }\n"
+		"  \"settings\": { \"tabs\": { \"cards\": \"CARDS\" }, \"language\": { \"auto\": \"AUTO (GAME)\" },\n"
+		"    \"details\": { \"_l10nGame\": \"cached at start\" } }\n"
 		"}\n");
 	WriteFile(dir / "de.json",
 		"{\n"
@@ -97,7 +140,8 @@ int main()
 		std::string body;
 		Expect(ReadUtf8File(dir / "en.json", body) && ParseFlat(body, flat), "ParseFlat: English table");
 		Expect(flat["hud.health"] == "HEALTH" && flat["settings.tabs.cards"] == "CARDS", "flatten dotted keys");
-		Expect(flat.find("_meta") == flat.end() && flat.find("_meta.language") == flat.end(), "underscore keys are skipped");
+		Expect(flat.find("_meta") == flat.end() && flat.find("_meta.language") == flat.end(), "_meta keys are skipped");
+		Expect(flat["settings.details._l10nGame"] == "cached at start", "setting ids that start with _ are kept");
 	}
 
 	{
@@ -225,6 +269,16 @@ int main()
 	const auto preload = fnBody("void FilesJobPreload()");
 	Expect(Has(preload, "L10nLoad"), "FilesJobPreload loads localization (file I/O off the UI thread)");
 
+	const auto detect = fnBody("std::string L10nDetectGame()");
+	Expect(Has(detect, "DetectGameLanguage") && Has(detect, "appmanifest_1716740") && Has(detect, "sLanguage:General"),
+		"L10nDetectGame uses live sLanguage:General then the game INI stack + Steam ACF");
+	Expect(!Has(detect, "StarfieldCustom.ini\", L\"StarfieldPrefs.ini\""),
+		"L10nDetectGame no longer stops at the first Documents INI");
+	Expect(Has(cpp, "L10nReadLiveSLanguage") && Has(cpp, "HzL10nLangSEH"),
+		"live sLanguage:General is one SEH read, not a poll");
+	Expect(!Has(poll, "L10nDetectGame") && !Has(poll, "ParseSteamAcfLanguage"),
+		"Poll does not re-detect the game language");
+
 	Expect(Has(cpp, "g_l10nPushed") || Has(cpp, "g_l10nPush"), "push is latched (generation / flag), not on a timer");
 	Expect(!Has(cpp, "g_buildsHudNext") || Count(cpp, "PushL10n") > 0, "PushL10n exists");
 	const auto buildLog = cpp.find("void BuildLogHud");
@@ -272,6 +326,10 @@ int main()
 		"language change refreshes HUD chrome once, not per tick");
 	Expect(Has(cpp, "PushL10nFavorites") && Has(qm, "function hzqSetL10n"),
 		"FavoritesMenu gets its own l10n push on open");
+	Expect(Has(cpp, "hzcSetL10n") && Has(cpp, "hzdSetL10n") && Has(cpp, "hzsSetL10n"),
+		"Comms, Dialogue, and Scanner movies get the same l10n payload");
+	Expect(Has(cpp, "PushL10nModules") && Has(cpp, "PushL10nForMenu"),
+		"module movies are pushed on language apply and on menu open");
 
 	Expect(Has(hdr, "kMaxFileBytes = 512 * 1024"), "512 KiB cap matches other JSON reads");
 	Expect(!Has(hdr, "HUSD") && !Has(cpp, "HUSD") && !Has(as, "HUSD"), "no HUSD IT in l10n sources");
@@ -312,6 +370,26 @@ int main()
 		}
 		Expect(!drop.empty() && drop.front() == "en" && hasMx && hasPt && !hasKo,
 			"Language dropdown is Steam langs (en first, es-mx, pt-br) without Korean");
+		Expect(drop.size() == 10, "dropdown is the ten Steam languages once");
+		int nMx = 0;
+		for (const auto& f : drop) if (f == "es-mx") ++nMx;
+		Expect(nMx == 1, "es-mx appears once among shipped files");
+	}
+	{
+		const auto tmp = HzTestScratch("l10n_drop_alias");
+		WriteFile(tmp / "en.json", "{\"hud\":{\"health\":\"HEALTH\"}}\n");
+		WriteFile(tmp / "es-mx.json", "{\"hud\":{\"health\":\"SALUD MX\"}}\n");
+		WriteFile(tmp / "es-419.json", "{\"hud\":{\"health\":\"SALUD 419\"}}\n");
+		WriteFile(tmp / "esmx.json", "{\"hud\":{\"health\":\"SALUD MX2\"}}\n");
+		const auto drop = DropdownCodes(tmp);
+		int nMx = 0, n419 = 0, nEsmx = 0;
+		for (const auto& f : drop) {
+			if (f == "es-mx") ++nMx;
+			if (f == "es-419") ++n419;
+			if (f == "esmx") ++nEsmx;
+		}
+		Expect(nMx == 1 && n419 == 0 && nEsmx == 0,
+			"es-419.json / esmx.json MapCode to es-mx and do not add a second Latinoamerica row");
 	}
 
 	const auto de = ReadAll("Data/SFSE/Plugins/HorizonUI/Localization/de.json");

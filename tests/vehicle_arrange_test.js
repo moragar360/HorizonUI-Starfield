@@ -233,7 +233,7 @@ const inVehicle = (h, frames) => { h.hzVehIn = 1; for (let i = 0; i < (frames ||
 
 	const list = fnText(as, "hzArrList").body, enter = fnText(as, "hzArrEnter").body, exit = fnText(as, "hzArrExit").body;
 	const reset = fnText(as, "hzArrReset").body, store = fnText(as, "hzArrStore").body, draw = fnText(as, "hzArrDraw").body;
-	expect(/"k":HZ_VEH_KEY,"n":"VEHICLE EXIT PILL","c":this\.hzVehPx/.test(list) && /this\.hzVehArr && this\.hzVehPx != null/.test(list), "hzArrList: VEHICLE EXIT PILL entry while the pill is the proxy");
+	expect(/"k":HZ_VEH_KEY,"n":this\.hzLt\("VEHICLE EXIT PILL"\),"c":this\.hzVehPx/.test(list) && /this\.hzVehArr && this\.hzVehPx != null/.test(list), "hzArrList: VEHICLE EXIT PILL entry while the pill is the proxy");
 	expect(/this\.hzVehOrig = \{"x":this\.hzVehX,"y":this\.hzVehY\}/.test(enter) && /this\.hzVehArrSync\(\)/.test(enter), "hzArrEnter: keeps the offsets for CANCEL, shows the pill");
 	const saveIdx = exit.indexOf("if(save)"), elseIdx = exit.indexOf("else", saveIdx);
 	expect(exit.indexOf("this.hzVehOrig = null;", saveIdx) < elseIdx && /this\.hzVehPut\(this\.hzVehOrig\.x,this\.hzVehOrig\.y\)/.test(exit.slice(elseIdx)) && /this\.hzVehArrSync\(\)/.test(exit), "hzArrExit: SAVE keeps, CANCEL restores, then hands the pill back");

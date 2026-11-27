@@ -27,7 +27,7 @@ function flatten(obj, prefix, out) {
 		return;
 	}
 	for (const k of Object.keys(obj)) {
-		if (k.charAt(0) === "_") continue;
+		if (k === "_meta" || k === "_comment") continue;
 		const p = prefix ? prefix + "." + k : k;
 		flatten(obj[k], p, out);
 	}

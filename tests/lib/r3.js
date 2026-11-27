@@ -65,6 +65,7 @@ function baseHost(extra) {
 		int: (v) => Number(v) | 0, uint: (v) => Number(v) >>> 0, isNaN: (v) => Number.isNaN(Number(v)),
 		hzVals: (o) => (o == null ? [] : Array.isArray(o) ? o.slice() : Object.keys(o).map((k) => o[k])),
 		isDoc: (o) => !!(o && o.__doc), isTf: (o) => !!(o && o.__tf),
+		hzLt: (s) => s, hzHasCjk: () => false,
 	};
 	return Object.assign(h, extra || {});
 }

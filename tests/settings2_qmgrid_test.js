@@ -51,7 +51,7 @@ expect(/k == \"_qmclear\"/.test(fnText(as, "hz37Act").body) && /hz51QmClear/.tes
 expect(/while\(n <= 24\)/.test(clear) && /QuickMenuKey/.test(clear), "Clear all writes empty QuickMenuKey13-24 (hidden slots included)");
 
 expect(/var n:int = 13/.test(grid) && /while\(n <= count\)/.test(grid) && /col >= per/.test(grid), "tiles are 13..SlotCount wrapped by Slots per Row");
-expect(/SLOT \" \+ n/.test(grid) && /UNBOUND/.test(grid) && /PRESS ANY KEY/.test(grid), "tiles show SLOT N, UNBOUND, and PRESS ANY KEY capture");
+expect(/hzLt\("SLOT"\) \+ " " \+ n/.test(grid) && /hzLt\("UNBOUND"\)/.test(grid) && /hzLt\("PRESS ANY KEY/.test(grid), "tiles show SLOT N, UNBOUND, and PRESS ANY KEY capture");
 expect(/0xF2A03A/.test(as) && /CLASH/.test(grid) && /hzQmNameKind/.test(grid), "clashing chips use the orange clash warning");
 expect(/A clash \(another slot, the settings key, or a game control\) is warned and ignored/.test(fnText(as, "hz51Help").body) && !/Enter uses a warned game key anyway/.test(grid), "clash help lives in Setting Details; the grid itself stays a one-line hint");
 expect(/\"0\" \|\| u == \"1\"/.test(kind) && /F1/.test(kind) && /return \"settings\"/.test(kind) && /return \"slot\"/.test(kind), "clash checks slots 1-12 game keys, other extra slots, and the Horizon settings key");

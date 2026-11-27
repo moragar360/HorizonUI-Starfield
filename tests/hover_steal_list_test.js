@@ -94,7 +94,7 @@ function makeHost() {
 		hzT19HdrR: mkTf("hdrR", 140, 12, 1.4), hzT19Foot: mkTf("foot", 200, 12, 0.3), hzT19FootR: mkTf("footR", 180, 12, 0.5),
 		hzTgItems: [], hzTgShowValue: false, hzT19RowsH: 32, hzT19W: 0, hzT19H: 0,
 		hzDarkText() { return false; }, hzIconCol(c) { return c; }, hzMix(a) { return a; }, hzPanelFill() { return 0; }, hzLight() { return false; },
-		hzT19PaintFoeBars() { }, hzT19Key() { return "E"; }, hzT19VanLbl() { return ""; }, hzT19Xl(s) { return s; }, hzUC(s) { return String(s).toUpperCase(); },
+		hzT19PaintFoeBars() { }, hzT19Key() { return "E"; }, hzT19VanLbl() { return ""; }, hzT19Xl(s) { return s; }, hzLt(s) { return s; }, hzUC(s) { return String(s).toUpperCase(); },
 		hzT19U() { return 1; }, hzSnapU(v) { return Math.round(v); }, hzChipSzOn(f) { return f; }, hzT19KeyOv() { return null; },
 		hzT19Line() { }, hzAccStripe() { }, hzT19Face() { }, hzRarCol() { return 0xD6DEE4; }, hzMainCol() { return 0xF2F7F9; },
 		hzTxtObj(t) { if (!objs.has(t)) objs.set(t, { tf: t, fs: t.fs, size: t.fs, ls: t.ls }); return objs.get(t); },

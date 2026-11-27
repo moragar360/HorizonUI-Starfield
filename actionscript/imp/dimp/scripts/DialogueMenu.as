@@ -108,6 +108,146 @@ package
       private var hzdReloadT:int = -100000;
       private var hzdTalkRead:Boolean = false;   // 0.43.6 r4: one settings re-read per conversation (F11 cannot open in dialogue)
       private var hzdBare:Boolean = false;   // DlgCard=0 while drawing
+      private var hzdL10n:Object = null;
+      private var hzdL10nC:Object = null;   // English chrome -> translated; filled at SetL10n / first lookup
+      // Purpose: cache the HUD localization snapshot on this movie. One Invoke
+      // per movie load / language reload. No file I/O. Lookups run at card /
+      // panel / speaker build, never on the fade tick.
+      // Author: Moragar. Last modified: 2026-11-27.
+      public function hzdSetL10n(s:String) : void
+      {
+         try
+         {
+            if(s == null) { return; }
+            var lines:Array = String(s).split("\n");
+            if(lines.length == 0 || String(lines[0]).indexOf("#l10n1") != 0) { return; }
+            var tab:Object = {};
+            var i:int = 1;
+            while(i < lines.length)
+            {
+               var ln:String = String(lines[i]);
+               if(ln.length > 0 && ln.charAt(ln.length - 1) == "\r") { ln = ln.substr(0, ln.length - 1); }
+               var tabAt:int = ln.indexOf("\t");
+               if(tabAt > 0)
+               {
+                  var k:String = ln.substr(0, tabAt);
+                  var v:String = this.hzdL10nUnesc(ln.substr(tabAt + 1));
+                  if(k != "g" && k != "gn" && k != "files" && k != "o" && k != "used") { tab[k] = v; }
+               }
+               i++;
+            }
+            this.hzdL10n = tab;
+            this.hzdL10nC = {};
+            if(this.hzdOn && this.hzdOpen)
+            {
+               try { this.hzdDraw(); } catch(eDr:Error) { }
+            }
+            else
+            {
+               try { this.hzdDrawSpeaker(); } catch(eSp:Error) { }
+            }
+         }
+         catch(err:Error) { }
+      }
+      private function hzdL10nUnesc(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:String = s.charAt(i);
+            if(c == "\\" && i + 1 < s.length)
+            {
+               var n:String = s.charAt(i + 1);
+               if(n == "n") { o += "\n"; i += 2; continue; }
+               if(n == "r") { o += "\r"; i += 2; continue; }
+               if(n == "t") { o += "\t"; i += 2; continue; }
+               if(n == "\\") { o += "\\"; i += 2; continue; }
+               o += n; i += 2; continue;
+            }
+            o += c; i++;
+         }
+         return o;
+      }
+      private function hzdL(key:String, fb:String) : String
+      {
+         if(this.hzdL10n != null)
+         {
+            var v:* = this.hzdL10n[key];
+            if(v != null)
+            {
+               var s:String = String(v);
+               if(s.length > 0) { return s; }
+            }
+         }
+         return fb != null ? fb : key;
+      }
+      private function hzdHasCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0x2E80 && c <= 0x9FFF) { return true; }
+            if(c >= 0xAC00 && c <= 0xD7AF) { return true; }
+            if(c >= 0xF900 && c <= 0xFAFF) { return true; }
+            if(c >= 0xFF00 && c <= 0xFFEF) { return true; }
+            i++;
+         }
+         return false;
+      }
+      private function hzdLSlug(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         var prevUs:Boolean = false;
+         while(i < s.length && o.length < 48)
+         {
+            var code:int = s.charCodeAt(i);
+            var ok:Boolean = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+            if(ok)
+            {
+               o += s.charAt(i).toLowerCase();
+               prevUs = false;
+            }
+            else if(o.length > 0 && !prevUs)
+            {
+               o += "_";
+               prevUs = true;
+            }
+            i++;
+         }
+         if(o.length > 0 && o.charAt(o.length - 1) == "_") { o = o.substr(0, o.length - 1); }
+         return o;
+      }
+      private function hzdLt(en:String) : String
+      {
+         if(en == null || en.length == 0) { return en; }
+         if(this.hzdL10nC != null)
+         {
+            var cached:* = this.hzdL10nC[en];
+            if(cached != null) { return String(cached); }
+         }
+         var slug:String = this.hzdLSlug(en);
+         var out:String = en;
+         if(slug.length > 0)
+         {
+            var pfx:Array = ["dlg.hud_label.","comms.hud_label.","settings.ui.","hud.hud_label.","hud."];
+            var i:int = 0;
+            while(i < pfx.length)
+            {
+               var v:String = this.hzdL(String(pfx[i]) + slug, "");
+               if(v.length > 0) { out = v; break; }
+               i++;
+            }
+         }
+         if(this.hzdL10nC == null) { this.hzdL10nC = {}; }
+         this.hzdL10nC[en] = out;
+         return out;
+      }
 
       private function hzdInit() : void
       {
@@ -562,7 +702,7 @@ package
       private function hzdTitle(who:String) : String
       {
          var w:String = who == null ? "" : String(who).replace(/^\s+|\s+$/g,"");
-         return w.length > 0 ? w.toUpperCase() : "RESPOND";
+         return w.length > 0 ? w.toUpperCase() : this.hzdLt("RESPOND");
       }
       // cut a one-line text field with "..." until it fits maxW (no change when it fits or maxW is not usable)
       private function hzdClip(t:TextField, maxW:Number) : void
@@ -745,8 +885,8 @@ package
          // header
          var hy:Number = pad + 4;
          // counter: right-aligned inside the header, mirroring the title's inset on the left (drawn first: the title stops before it)
-         var cntTf:TextField = this.hzdText(p,String(this.hzdSel + 1) + " OF " + String(this.hzdView.length),"",14 * ts,mut,Math.round(14 * ts * 0.12),W - pad - 14,hy,0,"right",false);
-         var ttlTf:TextField = this.hzdText(p,this.hzdPers ? "PERSUADE" : this.hzdTitle(this.hzdWho),"",(cmp ? 13 : 14) * ts,acc,Math.round(14 * ts * 0.22),pad + 14,hy,0,"left",false);
+         var cntTf:TextField = this.hzdText(p,String(this.hzdSel + 1) + " " + this.hzdLt("OF") + " " + String(this.hzdView.length),"",14 * ts,mut,Math.round(14 * ts * 0.12),W - pad - 14,hy,0,"right",false);
+         var ttlTf:TextField = this.hzdText(p,this.hzdPers ? this.hzdLt("PERSUADE") : this.hzdTitle(this.hzdWho),"",(cmp ? 13 : 14) * ts,acc,Math.round(14 * ts * 0.22),pad + 14,hy,0,"left",false);
          this.hzdClip(ttlTf,cntTf.x - 16 * ts - ttlTf.x);
          var y:Number = hy + 14 * ts + 12;
          if(!bare) { lg.beginFill(0xFFFFFF,0.09); lg.drawRect(pad,y,W - pad * 2,1); lg.endFill(); }
@@ -755,7 +895,7 @@ package
          var more:Boolean = int(this.hzdCfg.DlgMoreHint) == 1 && this.hzdLimit() > 0;
          if(more && this.hzdTop > 0)
          {
-            var at:TextField = this.hzdText(p,String(this.hzdTop) + " ABOVE","",14 * ts,mut,Math.round(14 * ts * 0.18),W / 2 + 11,y + 2,0,"center",false);
+            var at:TextField = this.hzdText(p,String(this.hzdTop) + " " + this.hzdLt("ABOVE"),"",14 * ts,mut,Math.round(14 * ts * 0.18),W / 2 + 11,y + 2,0,"center",false);
             this.hzdTri(lg,at.x - 10,y + 2 + at.textHeight / 2,false,acc);
             y += at.textHeight + 8;
          }
@@ -791,9 +931,9 @@ package
             }
             else if(Boolean(d.bIsSpeechChallenge) && int(this.hzdCfg.DlgPersuadeStyle) == 0)
             {
-               chipW = this.hzdChip(r,"PERSUADE",uint(HZD_ACC[Math.max(0,Math.min(12,int(this.hzdCfg.DlgPersuadeColor)))]),rx,padY + 3,ts);
+               chipW = this.hzdChip(r,this.hzdLt("PERSUADE"),uint(HZD_ACC[Math.max(0,Math.min(12,int(this.hzdCfg.DlgPersuadeColor)))]),rx,padY + 3,ts);
             }
-            if(wasSaid && said == 2) { chipW += this.hzdChip(r,"SAID",0x8FA3AE,rx - chipW - (chipW > 0 ? 6 : 0),padY + 3,ts) + (chipW > 0 ? 6 : 0); }
+            if(wasSaid && said == 2) { chipW += this.hzdChip(r,this.hzdLt("SAID"),0x8FA3AE,rx - chipW - (chipW > 0 ? 6 : 0),padY + 3,ts) + (chipW > 0 ? 6 : 0); }
             var label:String = String(d.sChoiceText != null ? d.sChoiceText : "");
             if(keys && v < 9 && !cls) { kw = this.hzdKeycap(r,String(v + 1),tx,padY + 1,ts,wasSaid ? 0x8FA3AE : acc,wasSaid ? 0.8 : 1) + gap; }
             if(keys && v < 9 && cls) { label = String(v + 1) + "   " + label; }
@@ -823,7 +963,7 @@ package
          var left:int = this.hzdView.length - (this.hzdTop + n);
          if(more && left > 0)
          {
-            var mt:TextField = this.hzdText(p,String(left) + " MORE","",14 * ts,mut,Math.round(14 * ts * 0.18),W / 2 + 11,y + 8,0,"center",false);
+            var mt:TextField = this.hzdText(p,String(left) + " " + this.hzdLt("MORE"),"",14 * ts,mut,Math.round(14 * ts * 0.18),W / 2 + 11,y + 8,0,"center",false);
             this.hzdTri(lg,mt.x - 10,y + 8 + mt.textHeight / 2,true,acc);
             y += mt.textHeight + 10;
          }
@@ -833,7 +973,7 @@ package
             if(!bare) { lg.beginFill(0xFFFFFF,0.09); lg.drawRect(pad,y,W - pad * 2,1); lg.endFill(); }
             y += 12;
             var fw:Number = this.hzdKeycap(p,"1-9",pad + 14,y,ts * 0.92,mut,1);
-            this.hzdText(p,"QUICK PICK","",14 * ts,mut,Math.round(14 * ts * 0.12),pad + 14 + fw + 10,y + 3,0,"left",false);
+            this.hzdText(p,this.hzdLt("QUICK PICK"),"",14 * ts,mut,Math.round(14 * ts * 0.12),pad + 14 + fw + 10,y + 3,0,"left",false);
             y += 26 * ts;
          }
          var H:Number = Math.round(y + 14 * ds);
@@ -863,7 +1003,7 @@ package
          g.beginFill(acc,0.9); g.drawCircle(46 * ts,36 * ts,7 * ts); g.endFill();
          g.beginFill(acc,0.9); g.drawRoundRect(34 * ts,46 * ts,24 * ts,12 * ts,12 * ts,12 * ts); g.endFill();
          this.hzdText(s,this.hzdWho.toUpperCase(),"",20 * ts,0xE8F0F5,Math.round(20 * ts * 0.16),90 * ts,16 * ts,w - 100 * ts,"left",false);
-         this.hzdText(s,"SPEAKING","",14 * ts,0x8FA3AE,Math.round(14 * ts * 0.14),90 * ts,50 * ts,0,"left",false);
+         this.hzdText(s,this.hzdLt("SPEAKING"),"",14 * ts,0x8FA3AE,Math.round(14 * ts * 0.14),90 * ts,50 * ts,0,"left",false);
          s.y = this.hzdPanel.y - this.hzdAnimDy - Math.round(104 * ts) - (this.hzdBarUp ? this.hzdBarH() + this.hzdBarGap() : 0);
          s.x = this.hzdPanel.x;
       }
@@ -1182,12 +1322,12 @@ package
          }
          if(mode == 0 && choices && !pad && int(this.hzdCfg.DlgSelectHint) == 1 && this.hzdAcceptKey.length > 0)
          {
-            right.push(this.hzdPill(b,"select",this.hzdAcceptKey,"SELECT",acc,txt,false,null,-1,z));
+            right.push(this.hzdPill(b,"select",this.hzdAcceptKey,this.hzdLt("SELECT"),acc,txt,false,null,-1,z));
          }
          var quick:Sprite = null;
          if(mode == 0 && choices && !pad && int(this.hzdCfg.DlgNumberKeys) == 1 && int(this.hzdCfg.DlgQuickPickHint) == 1)
          {
-            quick = this.hzdPill(b,"quick","1-9","QUICK PICK",mut,mut,false,null,-1,z);
+            quick = this.hzdPill(b,"quick","1-9",this.hzdLt("QUICK PICK"),mut,mut,false,null,-1,z);
          }
          this.hzdBare = false;
          if(right.length == 0 && quick == null) { b.visible = false; return; }
@@ -1615,11 +1755,11 @@ package
          var light:Boolean = false;
          try { light = this.hzdLight(bg); } catch(elb:Error) { light = false; }
          var mut:uint = light ? 0x4A5A64 : 0x8FA3AE;
-         var titleStr:String = "PERSUASION";
+         var titleStr:String = this.hzdLt("PERSUASION");
          var titleCol:uint = mut;
          var mark:int = 0;
-         if(o.won) { titleStr = "PERSUADED"; titleCol = col; mark = 1; }
-         else if(o.failed) { titleStr = "FAILED"; titleCol = col; mark = 2; }
+         if(o.won) { titleStr = this.hzdLt("PERSUADED"); titleCol = col; mark = 1; }
+         else if(o.failed) { titleStr = this.hzdLt("FAILED"); titleCol = col; mark = 2; }
          var titleFs:Number = fs;
          var titleBold:Boolean = false;
          if(mark != 0) { titleFs = 16.5; titleBold = true; }
@@ -1629,7 +1769,7 @@ package
          if(!isNaN(o.turns) && o.turns >= 0 && o.turns < 1000)
          {
             var ti:int = int(o.turns);
-            turnsTxt = "TURNS " + (ti < 10 ? "0" + String(ti) : String(ti));
+            turnsTxt = this.hzdLt("TURNS") + " " + (ti < 10 ? "0" + String(ti) : String(ti));
          }
          var pad:Number = Math.round(14 * u);
          var gap:Number = Math.round(8 * u);

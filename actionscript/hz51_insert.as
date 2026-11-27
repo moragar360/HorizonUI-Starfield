@@ -237,35 +237,120 @@
          }
          return o;
       }
-      // Purpose: Settings 2.0 label for a Localization file code.
+      // Purpose: true when every character is in the HUD Exo 2 face (Latin,
+      // Latin Extended, Vietnamese, combining marks, punctuation, currency).
+      // CJK / Hangul / Arabic / Thai / Cyrillic / surrogates are false. Used
+      // by the Language dropdown so it never draws tofu and never switches
+      // that list to $MAIN_Font. Not a per-stem flag: a future script Exo 2
+      // lacks is rejected the same way. Translated HUD text still uses
+      // hzHasCjk + $MAIN_Font when ja/zh-cn is active.
+      // Inputs: a UI string. Outputs: whether Exo 2 can render it.
+      private function hzExo2Can(s:String) : Boolean
+      {
+         if(s == null) { return true; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0xD800 && c <= 0xDFFF) { return false; }
+            var ok:Boolean = c <= 0x024F || (c >= 0x0300 && c <= 0x036F) || (c >= 0x1E00 && c <= 0x1EFF) || (c >= 0x2000 && c <= 0x206F) || (c >= 0x20A0 && c <= 0x20CF);
+            if(!ok) { return false; }
+            i++;
+         }
+         return true;
+      }
+      // Purpose: Language dropdown label that Exo 2 can draw. Native name if
+      // Exo 2 has the glyphs; otherwise the last parenthetical (English) or fb.
+      // Never returns CJK. Call at catalog / language change, not per HUD frame.
+      private function hz51Exo2Text(s:String, fb:String = null) : String
+      {
+         if(s == null || s.length == 0) { return fb != null ? fb : ""; }
+         if(this.hzExo2Can(s)) { return s; }
+         var a:int = s.lastIndexOf("(");
+         var b:int = s.lastIndexOf(")");
+         if(a >= 0 && b > a + 1)
+         {
+            var inner:String = s.substring(a + 1, b);
+            while(inner.length > 0 && inner.charAt(0) == " ") { inner = inner.substr(1); }
+            while(inner.length > 0 && inner.charAt(inner.length - 1) == " ") { inner = inner.substr(0, inner.length - 1); }
+            if(inner.length > 0 && this.hzExo2Can(inner)) { return inner; }
+         }
+         if(fb != null && fb.length > 0 && this.hzExo2Can(fb)) { return fb; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var ch:String = s.charAt(i);
+            if(this.hzExo2Can(ch)) { o += ch; }
+            i++;
+         }
+         while(o.length > 0 && o.charAt(0) == " ") { o = o.substr(1); }
+         while(o.length > 0 && o.charAt(o.length - 1) == " ") { o = o.substr(0, o.length - 1); }
+         if(o.length > 0) { return o; }
+         return fb != null && fb.length > 0 ? fb : s;
+      }
+      private function hz51Exo2Arr(a:Array) : void
+      {
+         if(a == null) { return; }
+         var i:int = 0;
+         while(i < a.length) { a[i] = this.hz51Exo2Text(String(a[i])); i++; }
+      }
+      // Purpose: MapCode for dropdown stems so es-419 / esmx / latam collapse
+      // to es-mx (one Español (Latinoamérica) row, not a community duplicate).
+      private function hz51LangCode(raw:String) : String
+      {
+         var c:String = raw != null ? String(raw).toLowerCase() : "";
+         while(c.length > 0 && (c.charAt(0) == " " || c.charAt(0) == "\t")) { c = c.substr(1); }
+         while(c.length > 0 && (c.charAt(c.length - 1) == " " || c.charAt(c.length - 1) == "\t")) { c = c.substr(0, c.length - 1); }
+         if(c.length == 0 || c == "auto") { return "auto"; }
+         if(c.indexOf("/") >= 0 || c.indexOf("\\") >= 0 || c.indexOf(":") >= 0 || c.indexOf("..") >= 0) { return "auto"; }
+         if(c == "en" || c == "english" || c == "en-us" || c == "en_us" || c == "enus") { return "en"; }
+         if(c == "de" || c == "german" || c == "de-de" || c == "de_de") { return "de"; }
+         if(c == "fr" || c == "french" || c == "fr-fr" || c == "fr_fr") { return "fr"; }
+         if(c == "it" || c == "italian" || c == "it-it" || c == "it_it") { return "it"; }
+         if(c == "esmx" || c == "es-mx" || c == "es_mx" || c == "esla" || c == "es-419" || c == "latam" || c == "es-latam" || c == "es_latam") { return "es-mx"; }
+         if(c == "es" || c == "spanish" || c == "es-es" || c == "es_es" || c == "eses") { return "es"; }
+         if(c == "jp" || c == "ja" || c == "japanese") { return "ja"; }
+         if(c == "pl" || c == "polish" || c == "pl-pl" || c == "pl_pl") { return "pl"; }
+         if(c == "ptbr" || c == "pt-br" || c == "pt_br" || c == "brazilian" || c == "pt-brz") { return "pt-br"; }
+         if(c == "zhhans" || c == "zh-cn" || c == "zhcn" || c == "zh_cn" || c == "zh" || c == "zh-hans" || c == "schinese") { return "zh-cn"; }
+         return c;
+      }
+      // Purpose: Settings 2.0 label for a Localization file code. Exo 2 only:
+      // native name when the face has the glyphs, English name otherwise.
       private function hz51LangName(code:String) : String
       {
-         var c:String = code != null ? String(code).toLowerCase() : "";
-         if(c == "auto" || c.length == 0) { return this.hzL("settings.language.auto", "Auto (game)"); }
-         if(c == "en") { return this.hzL("settings.language.en", "English"); }
-         if(c == "de") { return this.hzL("settings.language.de", "Deutsch (German)"); }
-         if(c == "fr") { return this.hzL("settings.language.fr", "Français (French)"); }
-         if(c == "es-mx" || c == "esmx" || c == "es_mx" || c == "latam" || c == "esla" || c == "es-419") { return this.hzL("settings.language.es-mx", "Español de Latinoamérica (Spanish, Latin America)"); }
-         if(c == "es") { return this.hzL("settings.language.es", "Español (Spanish)"); }
-         if(c == "it") { return this.hzL("settings.language.it", "Italiano (Italian)"); }
-         if(c == "ja" || c == "jp") { return this.hzL("settings.language.ja", "日本語 (Japanese)"); }
-         if(c == "pl") { return this.hzL("settings.language.pl", "Polski (Polish)"); }
-         if(c == "zh-cn" || c == "zhhans" || c == "zh") { return this.hzL("settings.language.zh-cn", "简体中文 (Simplified Chinese)"); }
-         if(c == "ptbr" || c == "pt-br" || c == "pt_br") { return this.hzL("settings.language.pt-br", "Português do Brasil (Portuguese, Brazil)"); }
-         return c.toUpperCase();
+         var c:String = this.hz51LangCode(code);
+         var fb:String = "";
+         if(c == "auto") { fb = "Auto (game)"; }
+         else if(c == "en") { fb = "English"; }
+         else if(c == "de") { fb = "Deutsch (German)"; }
+         else if(c == "fr") { fb = "Français (French)"; }
+         else if(c == "es-mx") { fb = "Español (Latinoamérica)"; }
+         else if(c == "es") { fb = "Español (Spanish)"; }
+         else if(c == "it") { fb = "Italiano (Italian)"; }
+         else if(c == "ja") { fb = "Japanese"; }
+         else if(c == "pl") { fb = "Polski (Polish)"; }
+         else if(c == "pt-br") { fb = "Português (Brasil)"; }
+         else if(c == "zh-cn") { fb = "Simplified Chinese"; }
+         else { return this.hz51Exo2Text(c.toUpperCase(), c.toUpperCase()); }
+         return this.hz51Exo2Text(this.hzL("settings.language." + c, fb), fb);
       }
-      // Purpose: Auto plus one option per Localization/*.json the DLL listed at load.
+      // Purpose: Auto plus one option per unique mapped stem the DLL listed.
+      // Alias files (es-419, esmx) share es-mx so Latinoamérica is not listed twice.
       private function hz51LangOpts() : Object
       {
          var vals:Array = ["auto"];
          var names:Array = [this.hz51LangName("auto")];
+         var seen:Object = {"auto":true};
          var files:Array = this.hzL10nFiles != null ? this.hzL10nFiles : ["en"];
          var i:int = 0;
          while(i < files.length)
          {
-            var c:String = String(files[i]);
-            if(c.length > 0 && c != "auto")
+            var c:String = this.hz51LangCode(String(files[i]));
+            if(c.length > 0 && seen[c] != true)
             {
+               seen[c] = true;
                vals.push(c);
                names.push(this.hz51LangName(c));
             }
@@ -415,7 +500,13 @@
          if(r.body != undefined) { r.body = this.hzLt(String(r.body)); }
          if(r.badge != undefined) { r.badge = this.hzLt(String(r.badge)); }
          if(r.btn != undefined && r.t == "x") { r.btn = this.hzLt(String(r.btn)); }
+         if(String(r.k) == "_l10nGame" && r.btn != undefined) { r.btn = this.hz51Exo2Text(String(r.btn)); }
          if(r.t == "p" || r.t == "c") { return; }
+         if(String(r.k) == "Language")
+         {
+            this.hz51Exo2Arr(r.names as Array);
+            return;
+         }
          this.hz51LocArr(r.opts as Array);
          this.hz51LocArr(r.names as Array);
       }
@@ -455,6 +546,7 @@
             this.hzHsWordLoc = this.hzLt("HAZARD");
             try { this.hz26CharSync(); } catch(eCh:Error) { }
             try { this.hzE19Sync(); } catch(eEq:Error) { }
+            try { this.hzPpLayout(); } catch(ePp:Error) { }
          }
          catch(eApp:Error) { }
       }

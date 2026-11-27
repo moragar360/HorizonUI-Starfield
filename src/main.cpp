@@ -191,10 +191,14 @@ namespace HZ
 	void HzAddrLoad() noexcept;
 	void PreloadDllFileVersion();
 	void FilesJobPreload();
+	static int HzAddrSlot(std::uint64_t a_id);
 	void L10nLoadOnce();
 	void L10nReloadIfLanguage(const std::string& a_v);
 	void PushL10n();
 	void PushL10nFavorites();
+	void PushL10nNamed(const char* a_menu, const char* a_fn);
+	void PushL10nModules();
+	void PushL10nForMenu(RE::IMenu* a_menu);
 	std::string MsglogFolderPath();   // Message Log folder for F11 Folder SHOW (defined with the log helpers)
 	void RecordUiTidOnce(std::uint32_t a_tid, const char* a_src);
 
@@ -2760,41 +2764,118 @@ namespace HZ
 		return std::filesystem::path(path).parent_path() / L"HorizonUI" / L"Localization";
 	}
 
+	// Purpose: one in-memory read of the live sLanguage:General setting.
+	// Same INISettingCollection + versionlib + SEH pattern as the scanner
+	// highlight peek. Empty if the collection is not ready. Never retried
+	// (no polling). File-stack DetectGameLanguage is the fallback.
+	struct HzL10nLangIo
+	{
+		char buf[32];
+		int  ok;
+	};
+
+	static void HzL10nLangCall(HzL10nLangIo* a_io)
+	{
+		if (!a_io) return;
+		a_io->ok = 0;
+		a_io->buf[0] = '\0';
+		auto* col = RE::INISettingCollection::GetSingleton();
+		if (!col) return;
+		auto* s = col->GetSetting("sLanguage:General");
+		if (!s || s->GetType() != RE::Setting::Type::kString) return;
+		const auto view = s->GetString();
+		if (view.empty()) return;
+		const auto n = view.size() < 31 ? view.size() : 31;
+		std::memcpy(a_io->buf, view.data(), n);
+		a_io->buf[n] = '\0';
+		a_io->ok = 1;
+	}
+
+#if defined(_MSC_VER)
+	static int HzL10nLangSEH(HzL10nLangIo* a_io) noexcept
+	{
+		if (!a_io) return 0;
+		using Fn = void (*)(HzL10nLangIo*);
+		Fn fn = &HzL10nLangCall;
+		__try {
+			fn(a_io);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+#else
+	static int HzL10nLangSEH(HzL10nLangIo* a_io) noexcept
+	{
+		if (!a_io) return 0;
+		try { HzL10nLangCall(a_io); return 1; } catch (...) { return 0; }
+	}
+#endif
+
+	static std::string L10nReadLiveSLanguage()
+	{
+		const auto id = RE::ID::INISettingCollection::Singleton.id();
+		if (id == 0) return {};
+		const int slot = HzAddrSlot(id);
+		if (hzaddr::AddrSlotRetry(slot) || hzaddr::AddrSlotMiss(slot)) return {};
+		HzL10nLangIo io{};
+		if (!HzL10nLangSEH(&io) || io.ok != 1 || io.buf[0] == '\0') return {};
+		return std::string(io.buf);
+	}
+
 	// Purpose: Starfield sLanguage once at init. Cached. Never polled.
+	// Live INISettingCollection sLanguage:General wins when the collection
+	// is already loaded (that is the value the string files used). Otherwise
+	// the game INI stack: Starfield.ini, Starfield_<Steam lang>.ini from
+	// appmanifest_1716740.acf UserConfig.language, Prefs, Custom last-wins.
+	// Steam ACF is the language when no INI sets sLanguage (German Steam
+	// writes Starfield_de.ini; Prefs/Custom stay empty). Registry is unused.
+	// File I/O stays on the job thread. Author: Moragar. Last modified: 2026-11-27.
 	std::string L10nDetectGame()
 	{
 		if (g_l10nGameLatched.load(std::memory_order_acquire)) {
 			std::lock_guard lk(g_l10nMu);
 			return g_l10nGameHeld;
 		}
-		std::string found;
-		PWSTR docs = nullptr;
-		if (SUCCEEDED(::SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DONT_VERIFY, nullptr, &docs)) && docs) {
-			std::filesystem::path base(docs);
-			::CoTaskMemFree(docs);
-			base /= L"My Games";
-			base /= L"Starfield";
-			for (const wchar_t* name : { L"StarfieldCustom.ini", L"StarfieldPrefs.ini" }) {
-				std::string text;
-				if (!hzl10n::ReadUtf8File(base / name, text)) continue;
-				auto s = hzl10n::ParseSLanguage(text);
-				if (!s.empty()) { found = std::move(s); break; }
-			}
-		}
-		if (found.empty()) {
+		std::string mapped;
+		const char* src = "ini stack";
+		const auto live = L10nReadLiveSLanguage();
+		const auto liveMapped = hzl10n::MapCode(live);
+		if (!live.empty() && !liveMapped.empty() && liveMapped != "auto") {
+			mapped = liveMapped;
+			src = "sLanguage:General";
+		} else {
 			wchar_t exe[MAX_PATH]{};
 			GetModuleFileNameW(nullptr, exe, MAX_PATH);
-			std::string text;
-			if (hzl10n::ReadUtf8File(std::filesystem::path(exe).parent_path() / "Starfield.ini", text))
-				found = hzl10n::ParseSLanguage(text);
+			const auto exeDir = std::filesystem::path(exe).parent_path();
+			std::string acf, gameIni, prefs, custom;
+			hzl10n::ReadUtf8File(exeDir / L"Starfield.ini", gameIni);
+			hzl10n::ReadUtf8File(exeDir.parent_path().parent_path() / L"appmanifest_1716740.acf", acf);
+			std::unordered_map<std::string, std::string> langIni;
+			const auto steam = hzl10n::MapCode(hzl10n::ParseSteamAcfLanguage(acf));
+			if (!steam.empty() && steam != "auto") {
+				const auto fn = hzl10n::LanguageIniName(steam);
+				std::string body;
+				if (hzl10n::ReadUtf8File(exeDir / fn, body)) langIni[fn] = std::move(body);
+			}
+			PWSTR docs = nullptr;
+			if (SUCCEEDED(::SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DONT_VERIFY, nullptr, &docs)) && docs) {
+				std::filesystem::path base(docs);
+				::CoTaskMemFree(docs);
+				base /= L"My Games";
+				base /= L"Starfield";
+				hzl10n::ReadUtf8File(base / L"StarfieldPrefs.ini", prefs);
+				hzl10n::ReadUtf8File(base / L"StarfieldCustom.ini", custom);
+			}
+			mapped = hzl10n::DetectGameLanguage(acf, gameIni, langIni, prefs, custom);
 		}
-		auto mapped = hzl10n::MapCode(found);
-		if (mapped == "auto" || mapped.empty()) mapped = "en";
+		if (mapped.empty() || mapped == "auto") mapped = "en";
 		{
 			std::lock_guard lk(g_l10nMu);
 			g_l10nGameHeld = mapped;
 		}
 		g_l10nGameLatched.store(true, std::memory_order_release);
+		REX::INFO("l10n: game language {} ({})", mapped, src);
 		return mapped;
 	}
 
@@ -2860,8 +2941,8 @@ namespace HZ
 
 	// Purpose: one Scaleform Invoke of hzSetL10n per table generation (movie
 	// load or Language reload). Not on the 5s movie-build timer. No disk.
-	// FavoritesMenu is a separate movie, so chrome is pushed from
-	// PushL10nFavorites on open (and here if that menu is already live).
+	// Module movies (Favorites, HUDMessages, Dialogue, Scanner) get the same
+	// payload from PushL10nModules on reload, and from PushL10nForMenu on open.
 	// Inputs: HUD AdvanceFrame / F11 key. Outputs: one payload string.
 	// Author: Moragar. Last modified: 2026-11-27.
 	void PushL10n()
@@ -2889,7 +2970,30 @@ namespace HZ
 		GValue arg(payload.c_str());
 		if (!menu->menuObj.Invoke("hzSetL10n", nullptr, &arg, 1)) return;
 		g_l10nPushed.store(gen, std::memory_order_release);
-		try { PushL10nFavorites(); } catch (...) {}
+		try { PushL10nModules(); } catch (...) {}
+	}
+
+	// Purpose: push the cached l10n payload to one live Scaleform menu. Called
+	// from PushL10n (language reload, if the menu is already open) and from
+	// PushL10nForMenu (that movie's create). Not on a timer. No disk.
+	// Inputs: menu name and public SetL10n function. Outputs: one Invoke.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10nNamed(const char* a_menu, const char* a_fn)
+	{
+		if (!a_menu || !a_fn) return;
+		if (!g_l10nReady.load(std::memory_order_acquire)) return;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		auto menu = MenuLive(ui, a_menu, a_fn);
+		if (!menu || !menu->menuObj.HasMember(a_fn)) return;
+		std::string payload;
+		{
+			std::lock_guard lk(g_l10nMu);
+			payload = g_l10n.payload;
+		}
+		if (payload.empty()) return;
+		GValue arg(payload.c_str());
+		menu->menuObj.Invoke(a_fn, nullptr, &arg, 1);
 	}
 
 	// Purpose: push the same l10n payload to FavoritesMenu.hzqSetL10n when that
@@ -2898,19 +3002,35 @@ namespace HZ
 	// Author: Moragar. Last modified: 2026-11-27.
 	void PushL10nFavorites()
 	{
-		if (!g_l10nReady.load(std::memory_order_acquire)) return;
-		auto ui = RE::UI::GetSingleton();
-		if (!ui) return;
-		auto menu = MenuLive(ui, "FavoritesMenu", "hzqSetL10n");
-		if (!menu || !menu->menuObj.HasMember("hzqSetL10n")) return;
-		std::string payload;
-		{
-			std::lock_guard lk(g_l10nMu);
-			payload = g_l10n.payload;
-		}
-		if (payload.empty()) return;
-		GValue arg(payload.c_str());
-		menu->menuObj.Invoke("hzqSetL10n", nullptr, &arg, 1);
+		PushL10nNamed("FavoritesMenu", "hzqSetL10n");
+	}
+
+	// Purpose: push the cached table to every Horizon module movie that is
+	// live. Favorites, Comms (HUDMessages), Dialogue, and Scanner. Called from
+	// PushL10n after the HUD payload lands. Movies that open later get the
+	// same payload from PushL10nForMenu. Not on a timer. No disk.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10nModules()
+	{
+		try { PushL10nNamed("FavoritesMenu", "hzqSetL10n"); } catch (...) {}
+		try { PushL10nNamed("HUDMessagesMenu", "hzcSetL10n"); } catch (...) {}
+		try { PushL10nNamed("DialogueMenu", "hzdSetL10n"); } catch (...) {}
+		try { PushL10nNamed("MonocleMenu", "hzsSetL10n"); } catch (...) {}
+	}
+
+	// Purpose: push l10n to a module movie at create time, so Dialogue and
+	// Scanner (opened after the HUD gen latch) still get the table. HUD
+	// Messages is almost always live with the HUD; this covers a late adopt.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10nForMenu(RE::IMenu* a_menu)
+	{
+		if (!a_menu) return;
+		if (a_menu->menuName == "HUDMessagesMenu")
+			PushL10nNamed("HUDMessagesMenu", "hzcSetL10n");
+		else if (a_menu->menuName == "DialogueMenu")
+			PushL10nNamed("DialogueMenu", "hzdSetL10n");
+		else if (a_menu->menuName == "MonocleMenu")
+			PushL10nNamed("MonocleMenu", "hzsSetL10n");
 	}
 
 	// Purpose: job / load thread preload of versionlib and the DLL file
@@ -6412,6 +6532,7 @@ namespace HZ
 		else if (isScope)
 			g_scopeRoot.store(root, std::memory_order_release);
 		try { QmOnFavoritesMovie(a_menu); } catch (...) {}
+		try { PushL10nForMenu(a_menu); } catch (...) {}
 		if (!isHud && !isMsg) {
 			if (!g_menuTidHinted.exchange(true))
 				REX::INFO("thread: menu-create tid={} (hint only)", ::GetCurrentThreadId());

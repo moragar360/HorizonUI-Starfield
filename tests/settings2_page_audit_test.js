@@ -161,7 +161,7 @@ for (const n of [
 	"hz51RuleRow","hz51Card","hz51AddCard","hz51Goto","hz51Unavail","hz51ModRow","hz51WrapMod","hz51ModState","hz51ModBadge",
 	"hz51Modules","hz51Msglog","hz51Quick","hz51Fallback","hz51Cards","hz51Appear","hz51Scan","hz51Comms","hz51CommsMap",
 	"hz51System","hz51Side","hz51Pages","hz51PageIndex","hz51PageClamp","hz51Rows","hz51Crumb",
-	"hz51LangName","hz51LangOpts"
+	"hz51LangName","hz51LangOpts","hzExo2Can","hz51Exo2Text","hz51Exo2Arr","hz51LangCode"
 ]) {
 	bind(host, n);
 }

@@ -100,6 +100,146 @@
       private var hzsCfgRev:int = 0;          // arch-fixes Fix 2: bumped when the settings text changed (was the serialized config)
       private var hzsCmpRev:int = 0;          // 0.43.3.2: bumped on every compass data event (hzsOnCmp)
       private var hzsTrC:Object = {};         // 0.43.3.2: "$KEY" -> translated text (one TextField per key per scanner open)
+      private var hzsL10n:Object = null;
+      private var hzsL10nC:Object = null;   // English chrome -> translated; filled at SetL10n / first lookup
+      // Purpose: cache the HUD localization snapshot on this movie. One Invoke
+      // per movie load / language reload. No file I/O. Lookups run at card /
+      // panel / speaker build, never on the fade tick.
+      // Author: Moragar. Last modified: 2026-11-27.
+      public function hzsSetL10n(s:String) : void
+      {
+         try
+         {
+            if(s == null) { return; }
+            var lines:Array = String(s).split("\n");
+            if(lines.length == 0 || String(lines[0]).indexOf("#l10n1") != 0) { return; }
+            var tab:Object = {};
+            var i:int = 1;
+            while(i < lines.length)
+            {
+               var ln:String = String(lines[i]);
+               if(ln.length > 0 && ln.charAt(ln.length - 1) == "\r") { ln = ln.substr(0, ln.length - 1); }
+               var tabAt:int = ln.indexOf("\t");
+               if(tabAt > 0)
+               {
+                  var k:String = ln.substr(0, tabAt);
+                  var v:String = this.hzsL10nUnesc(ln.substr(tabAt + 1));
+                  if(k != "g" && k != "gn" && k != "files" && k != "o" && k != "used") { tab[k] = v; }
+               }
+               i++;
+            }
+            this.hzsL10n = tab;
+            this.hzsL10nC = {};
+            this.hzsMNC = {};
+            this.hzsMNUnk = null;
+            this.hzsMNVeh = null;
+            this.hzsDirty = true;
+            if(this.hzsReady)
+            {
+               try { this.hzsDrawAll(false); } catch(eDr:Error) { }
+            }
+         }
+         catch(err:Error) { }
+      }
+      private function hzsL10nUnesc(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:String = s.charAt(i);
+            if(c == "\\" && i + 1 < s.length)
+            {
+               var n:String = s.charAt(i + 1);
+               if(n == "n") { o += "\n"; i += 2; continue; }
+               if(n == "r") { o += "\r"; i += 2; continue; }
+               if(n == "t") { o += "\t"; i += 2; continue; }
+               if(n == "\\") { o += "\\"; i += 2; continue; }
+               o += n; i += 2; continue;
+            }
+            o += c; i++;
+         }
+         return o;
+      }
+      private function hzsL(key:String, fb:String) : String
+      {
+         if(this.hzsL10n != null)
+         {
+            var v:* = this.hzsL10n[key];
+            if(v != null)
+            {
+               var s:String = String(v);
+               if(s.length > 0) { return s; }
+            }
+         }
+         return fb != null ? fb : key;
+      }
+      private function hzsHasCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0x2E80 && c <= 0x9FFF) { return true; }
+            if(c >= 0xAC00 && c <= 0xD7AF) { return true; }
+            if(c >= 0xF900 && c <= 0xFAFF) { return true; }
+            if(c >= 0xFF00 && c <= 0xFFEF) { return true; }
+            i++;
+         }
+         return false;
+      }
+      private function hzsLSlug(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         var prevUs:Boolean = false;
+         while(i < s.length && o.length < 48)
+         {
+            var code:int = s.charCodeAt(i);
+            var ok:Boolean = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+            if(ok)
+            {
+               o += s.charAt(i).toLowerCase();
+               prevUs = false;
+            }
+            else if(o.length > 0 && !prevUs)
+            {
+               o += "_";
+               prevUs = true;
+            }
+            i++;
+         }
+         if(o.length > 0 && o.charAt(o.length - 1) == "_") { o = o.substr(0, o.length - 1); }
+         return o;
+      }
+      private function hzsLt(en:String) : String
+      {
+         if(en == null || en.length == 0) { return en; }
+         if(this.hzsL10nC != null)
+         {
+            var cached:* = this.hzsL10nC[en];
+            if(cached != null) { return String(cached); }
+         }
+         var slug:String = this.hzsLSlug(en);
+         var out:String = en;
+         if(slug.length > 0)
+         {
+            var pfx:Array = ["scan.hud_label.","scan.help.","hud.hud_label.","settings.ui.","hud."];
+            var i:int = 0;
+            while(i < pfx.length)
+            {
+               var v:String = this.hzsL(String(pfx[i]) + slug, "");
+               if(v.length > 0) { out = v; break; }
+               i++;
+            }
+         }
+         if(this.hzsL10nC == null) { this.hzsL10nC = {}; }
+         this.hzsL10nC[en] = out;
+         return out;
+      }
       private var hzsMNC:Object = {};         // 0.43.3.2: marker category -> hzsMarkName result (valid for hzsMNRev / hzsMNTi)
       private var hzsMNUnk:String = null;     // 0.43.3.2: the UNKNOWN SIGNAL / VEHICLE names, same validity
       private var hzsMNVeh:String = null;
@@ -518,8 +658,12 @@
       }
       private function hzsCs(s:String) : String
       {
-         if(!this.hzsTitle()) { return s.toUpperCase(); }
-         var w:Array = s.toLowerCase().split(" ");
+         // Unit letters stay native. Longer Horizon chrome is looked up once
+         // (hzsLt memo) then cased. Game names use hzsGs / hzsTr, not this.
+         var loc:String = (s == null || s.length < 2) ? String(s) : this.hzsLt(s);
+         if(this.hzsHasCjk(loc)) { return loc; }
+         if(!this.hzsTitle()) { return loc.toUpperCase(); }
+         var w:Array = loc.toLowerCase().split(" ");
          var i:int = 0;
          while(i < w.length) { var x:String = String(w[i]); if(x.length > 0 && !/^(of|and|in|at|to)$/.test(x)) { w[i] = x.charAt(0).toUpperCase() + x.substr(1); } i++; }
          return w.join(" ");
@@ -1282,7 +1426,7 @@
             {
                var d:Number = Number(o.fDistanceToPlayer);
                if(isNaN(d) || d < 0) { return null; }   // no distance for the ship: the row stays hidden
-               return {"ic":"ship","n":this.hzsCs("YOUR SHIP"),"sub":"Landing zone","d":this.hzsDist(d),"hl":false,"col":HZS_O2B,"dc":this.hzsAccent()};
+               return {"ic":"ship","n":this.hzsCs("YOUR SHIP"),"sub":this.hzsCs("Landing zone"),"d":this.hzsDist(d),"hl":false,"col":HZS_O2B,"dc":this.hzsAccent()};
             }
          }
          catch(e:Error) { }
@@ -1435,7 +1579,7 @@
          if(v == null) { return null; }
          var d:Number = Number(v.fDistanceToPlayer);
          if(isNaN(d) || d < 0) { return null; }
-         return {"ic":"vehicle","n":this.hzsCs("YOUR VEHICLE"),"sub":"Vehicle","d":this.hzsDist(d),"hl":false,"col":HZS_O2B,"dc":this.hzsAccent()};
+         return {"ic":"vehicle","n":this.hzsCs("YOUR VEHICLE"),"sub":this.hzsCs("Vehicle"),"d":this.hzsDist(d),"hl":false,"col":HZS_O2B,"dc":this.hzsAccent()};
       }
       // the compass follower marker (a companion; never a companion's ship), green; list row only (no world marker)
       private function hzs41FolRow() : Object
@@ -1449,7 +1593,7 @@
                if(isNaN(d) || d < 0) { continue; }
                var nm:String = s.strText != null ? String(s.strText) : (s.sName != null ? String(s.sName) : "");
                var named:Boolean = nm.length > 0 && nm.charAt(0) != "$";
-               return {"ic":"person","n":named ? this.hzsGs(nm) : this.hzsCs("COMPANION"),"sub":named ? "Companion" : "Follower","d":this.hzsDist(d),"hl":false,"col":HZS_GRN,"dc":this.hzsAccent()};
+               return {"ic":"person","n":named ? this.hzsGs(nm) : this.hzsCs("COMPANION"),"sub":named ? this.hzsCs("Companion") : this.hzsCs("Follower"),"d":this.hzsDist(d),"hl":false,"col":HZS_GRN,"dc":this.hzsAccent()};
             }
          }
          catch(e:Error) { }
@@ -1500,7 +1644,7 @@
             var disc:Boolean = o.bIsDiscovered === true;
             var own:String = this.hzs41Own(o);   // v0.41.0 r2: "mine" / "other" (a companion's ship) / "" (neutral)
             var mcol:uint = own == "mine" ? HZS_O2B : (own == "other" ? HZS_VIO : (disc || hl ? acc : HZS_POI));
-            var msub:String = hl ? this.hzsCs("NEAREST UNDISCOVERED") : (own == "other" ? "Companion ship" : (disc ? "Discovered" : "Undiscovered"));
+            var msub:String = hl ? this.hzsCs("NEAREST UNDISCOVERED") : (own == "other" ? this.hzsCs("Companion ship") : (disc ? this.hzsCs("Discovered") : this.hzsCs("Undiscovered")));
             var myName:Boolean = own == "mine" && this.hzsOn("ScanShowShip");   // r2 (NIT-7): the YOUR SHIP name only with that row on
             rows.push({"ic":this.hzsMarkIcon(o),"n":myName ? this.hzsCs(this.hzs41Kind(o) == "veh" ? "YOUR VEHICLE" : "YOUR SHIP") : this.hzsMarkName(o),"sub":msub,"d":this.hzsDist(Number(o.uRangeM)),"hl":hl,"col":hl ? acc : mcol,"dc":acc});
          }

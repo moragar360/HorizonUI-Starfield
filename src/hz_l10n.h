@@ -92,7 +92,88 @@ inline std::string MapCode(std::string_view a_raw)
 	return s;
 }
 
-// Native name with English in parentheses (Settings 2.0 dropdown).
+// Exo 2 (Settings Language dropdown): Latin, Latin Extended, Vietnamese,
+// combining marks, general punctuation, currency. CJK / Hangul / Arabic /
+// Thai / Cyrillic / non-BMP are not in the HUD Exo 2 face, so those names
+// must never be drawn there (tofu). Translated HUD text still uses
+// $MAIN_Font via hzHasCjk when ja/zh-cn is active.
+inline bool Exo2CanCp(std::uint32_t a_cp)
+{
+	if (a_cp <= 0x024F) return true;
+	if (a_cp >= 0x0300 && a_cp <= 0x036F) return true;
+	if (a_cp >= 0x1E00 && a_cp <= 0x1EFF) return true;
+	if (a_cp >= 0x2000 && a_cp <= 0x206F) return true;
+	if (a_cp >= 0x20A0 && a_cp <= 0x20CF) return true;
+	return false;
+}
+
+inline bool Exo2Can(std::string_view a_s)
+{
+	for (std::size_t i = 0; i < a_s.size();) {
+		const auto b = static_cast<unsigned char>(a_s[i]);
+		std::uint32_t cp = 0;
+		int n = 1;
+		if (b < 0x80) {
+			cp = b;
+		} else if ((b & 0xE0) == 0xC0 && i + 1 < a_s.size()) {
+			cp = (static_cast<std::uint32_t>(b & 0x1F) << 6)
+				| (static_cast<unsigned char>(a_s[i + 1]) & 0x3F);
+			n = 2;
+		} else if ((b & 0xF0) == 0xE0 && i + 2 < a_s.size()) {
+			cp = (static_cast<std::uint32_t>(b & 0x0F) << 12)
+				| ((static_cast<unsigned char>(a_s[i + 1]) & 0x3F) << 6)
+				| (static_cast<unsigned char>(a_s[i + 2]) & 0x3F);
+			n = 3;
+		} else {
+			return false;
+		}
+		if (!Exo2CanCp(cp)) return false;
+		i += static_cast<std::size_t>(n);
+	}
+	return true;
+}
+
+// If Exo 2 cannot draw a_s, use the last parenthetical (the English name) or a_fb.
+inline std::string Exo2Text(std::string_view a_s, std::string_view a_fb)
+{
+	if (a_s.empty()) return std::string(a_fb);
+	if (Exo2Can(a_s)) return std::string(a_s);
+	const auto a = a_s.rfind('(');
+	const auto b = a_s.rfind(')');
+	if (a != std::string_view::npos && b != std::string_view::npos && b > a + 1) {
+		auto inner = Trim(a_s.substr(a + 1, b - a - 1));
+		if (!inner.empty() && Exo2Can(inner)) return inner;
+	}
+	if (!a_fb.empty() && Exo2Can(a_fb)) return std::string(a_fb);
+	std::string o;
+	for (std::size_t i = 0; i < a_s.size();) {
+		const auto b0 = static_cast<unsigned char>(a_s[i]);
+		std::uint32_t cp = 0;
+		int n = 1;
+		if (b0 < 0x80) {
+			cp = b0;
+		} else if ((b0 & 0xE0) == 0xC0 && i + 1 < a_s.size()) {
+			cp = (static_cast<std::uint32_t>(b0 & 0x1F) << 6)
+				| (static_cast<unsigned char>(a_s[i + 1]) & 0x3F);
+			n = 2;
+		} else if ((b0 & 0xF0) == 0xE0 && i + 2 < a_s.size()) {
+			cp = (static_cast<std::uint32_t>(b0 & 0x0F) << 12)
+				| ((static_cast<unsigned char>(a_s[i + 1]) & 0x3F) << 6)
+				| (static_cast<unsigned char>(a_s[i + 2]) & 0x3F);
+			n = 3;
+		} else {
+			break;
+		}
+		if (Exo2CanCp(cp)) o.append(a_s.substr(i, static_cast<std::size_t>(n)));
+		i += static_cast<std::size_t>(n);
+	}
+	o = Trim(o);
+	if (!o.empty()) return o;
+	return std::string(a_fb);
+}
+
+// Native name with English in parentheses (Settings 2.0 dropdown). Scripts
+// Exo 2 cannot draw use the English name only so the list never tofu.
 inline const char* DisplayName(std::string_view a_code)
 {
 	const auto c = MapCode(a_code);
@@ -101,12 +182,12 @@ inline const char* DisplayName(std::string_view a_code)
 	if (c == "de") return "Deutsch (German)";
 	if (c == "fr") return "Fran\xC3\xA7" "ais (French)";
 	if (c == "es") return "Espa\xC3\xB1" "ol (Spanish)";
-	if (c == "es-mx") return "Espa\xC3\xB1" "ol de Latinoam\xC3\xA9" "rica (Spanish, Latin America)";
+	if (c == "es-mx") return "Espa\xC3\xB1" "ol (Latinoam\xC3\xA9" "rica)";
 	if (c == "it") return "Italiano (Italian)";
-	if (c == "ja") return "\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E (Japanese)";
+	if (c == "ja") return "Japanese";
 	if (c == "pl") return "Polski (Polish)";
-	if (c == "pt-br") return "Portugu\xC3\xAA" "s do Brasil (Portuguese, Brazil)";
-	if (c == "zh-cn") return "\xE7\xAE\x80\xE4\xBD\x93\xE4\xB8\xAD\xE6\x96\x87 (Simplified Chinese)";
+	if (c == "pt-br") return "Portugu\xC3\xAA" "s (Brasil)";
+	if (c == "zh-cn") return "Simplified Chinese";
 	return "Unknown";
 }
 
@@ -146,6 +227,85 @@ inline std::string ParseSLanguage(std::string_view a_text)
 		last = Trim(line.substr(eq + 1));
 	}
 	return last;
+}
+
+// Steam appmanifest UserConfig.language (last quoted value). Empty if none.
+// Starfield stores the Steam UI language here; it is not written to Prefs.ini.
+inline std::string ParseSteamAcfLanguage(std::string_view a_text)
+{
+	std::string_view span = a_text;
+	const auto key = std::string_view("\"UserConfig\"");
+	const auto u = a_text.find(key);
+	if (u != std::string_view::npos) {
+		const auto brace = a_text.find('{', u + key.size());
+		if (brace != std::string_view::npos) {
+			int depth = 1;
+			std::size_t i = brace + 1;
+			while (i < a_text.size() && depth > 0) {
+				if (a_text[i] == '{') ++depth;
+				else if (a_text[i] == '}') --depth;
+				++i;
+			}
+			span = a_text.substr(brace, i - brace);
+		}
+	}
+	std::string last;
+	std::size_t p = 0;
+	while (p < span.size()) {
+		const auto k = span.find("\"language\"", p);
+		if (k == std::string_view::npos) break;
+		const auto q1 = span.find('"', k + 10);
+		if (q1 == std::string_view::npos) break;
+		const auto q2 = span.find('"', q1 + 1);
+		if (q2 == std::string_view::npos) break;
+		last.assign(span.substr(q1 + 1, q2 - q1 - 1));
+		p = q2 + 1;
+	}
+	return last;
+}
+
+// Game-directory language INI the engine loads after Starfield.ini
+// (Starfield_de.ini, Starfield_zhhans.ini, Starfield_ja.ini, ...).
+inline std::string LanguageIniName(std::string_view a_code)
+{
+	const auto c = MapCode(a_code);
+	if (c.empty() || c == "auto") return {};
+	if (c == "zh-cn") return "Starfield_zhhans.ini";
+	if (c == "pt-br") return "Starfield_ptbr.ini";
+	if (c == "es-mx") return "Starfield_es.ini";
+	return std::string("Starfield_") + c + ".ini";
+}
+
+// Merge order matches the game: Starfield.ini, then Starfield_<lang>.ini
+// (lang from Steam ACF), then Prefs, then Custom. Last sLanguage wins.
+// If no INI sets sLanguage, Steam ACF is the language (that is how a German
+// Steam install loads Starfield_de.ini while Prefs/Custom stay English-empty).
+inline std::string DetectGameLanguage(
+	std::string_view a_acf,
+	std::string_view a_gameIni,
+	const std::unordered_map<std::string, std::string>& a_langIni,
+	std::string_view a_prefs,
+	std::string_view a_custom)
+{
+	std::string last;
+	auto apply = [&](std::string_view body) {
+		auto s = ParseSLanguage(body);
+		if (!s.empty()) last = std::move(s);
+	};
+	apply(a_gameIni);
+	const auto steam = MapCode(ParseSteamAcfLanguage(a_acf));
+	if (!steam.empty() && steam != "auto") {
+		const auto fn = LanguageIniName(steam);
+		const auto it = a_langIni.find(fn);
+		if (it != a_langIni.end()) apply(it->second);
+	}
+	apply(a_prefs);
+	apply(a_custom);
+	if (last.empty() && !steam.empty() && steam != "auto") last = steam;
+	if (last.empty()) return "en";
+	auto mapped = MapCode(last);
+	if (mapped.empty() || mapped == "auto") return "en";
+	return mapped;
 }
 
 inline void Utf8Push(std::string& a_o, std::uint32_t a_cp)
@@ -299,7 +459,7 @@ inline bool ParseObject(Tok& a_t, const std::string& a_prefix,
 		if (!ParseString(a_t, key) || !a_t.Eat(':')) return false;
 		a_t.Skip();
 		if (a_t.p >= a_t.e) return false;
-		const bool skipKey = !key.empty() && key.front() == '_';
+		const bool skipKey = key == "_meta" || key == "_comment";
 		const std::string dotted = a_prefix.empty() ? key : (a_prefix + "." + key);
 		if (*a_t.p == '{') {
 			if (skipKey) {
@@ -376,7 +536,9 @@ inline std::vector<std::string> DropdownCodes(const std::filesystem::path& a_dir
 	out.reserve(16);
 	for (const char* s : kSteamLangs) out.emplace_back(s);
 	for (const auto& f : ListLangFiles(a_dir)) {
-		if (std::find(out.begin(), out.end(), f) == out.end()) out.push_back(f);
+		auto c = MapCode(f);
+		if (c.empty() || c == "auto") continue;
+		if (std::find(out.begin(), out.end(), c) == out.end()) out.push_back(c);
 	}
 	return out;
 }

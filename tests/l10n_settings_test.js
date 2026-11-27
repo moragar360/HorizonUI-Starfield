@@ -48,13 +48,14 @@ expect(fs.existsSync(locDe), "shipped de.json is present");
 expect(fs.existsSync(locEs), "shipped es.json is present");
 expect(fs.existsSync(locEsMx), "shipped es-mx.json is present");
 const langName = fnText(as, "hz51LangName").body;
-expect(/zh-cn/.test(langName) && /zhhans/.test(langName) && /Simplified Chinese/.test(langName),
+const langCode = fnText(as, "hz51LangCode").body;
+expect(/zh-cn/.test(langName) && /zhhans/.test(langCode) && /Simplified Chinese/.test(langName),
 	"dropdown names zh-cn / zhhans as Simplified Chinese");
 expect(/Deutsch \(German\)/.test(langName) && /es-mx/.test(langName) && /Latinoam/.test(langName) && /pt-br/.test(langName),
 	"dropdown names German, Latin American Spanish, and Brazilian Portuguese");
-expect(!/\bc == "ko"/.test(langName), "Korean is not a first-class Language option");
-expect(/hzL10nFiles/.test(fnText(as, "hz51LangOpts").body),
-	"dropdown options are the stems the DLL listed at load");
+expect(!/\bc == "ko"/.test(langName) && !/\bc == "ko"/.test(langCode), "Korean is not a first-class Language option");
+expect(/hzL10nFiles/.test(fnText(as, "hz51LangOpts").body) && /hz51LangCode/.test(fnText(as, "hz51LangOpts").body),
+	"dropdown options are unique mapped stems the DLL listed at load");
 expect(/Detected at start/.test(fnText(as, "hz51Line").body), "GAME LANGUAGE row line is short enough to fit");
 expect(/function hz51LocRows/.test(as) || /function hz51LocRows/.test(insert), "Settings rows are localized at catalog finish");
 
@@ -78,6 +79,8 @@ const setL = fnText(as, "hzSetL10n").body;
 expect(/hzL10nGame/.test(setL) && /hzL10nFiles/.test(setL), "one payload fills the detected language and the file list");
 expect(/URLLoader/.test(setL) === false && /LoadVars/.test(setL) === false, "AS receiver does no file I/O");
 
+expect(/DetectGameLanguage/.test(cpp) && /appmanifest_1716740/.test(cpp) && /sLanguage:General/.test(cpp),
+	"GAME LANGUAGE is live sLanguage:General or the Steam/INI stack, cached at start");
 expect(/L10nLoad/.test(cpp) && /PushL10n/.test(cpp), "DLL load + latched push");
 expect(cpp.indexOf("void Poll()") >= 0, "Poll still exists");
 function cppFn(name) {

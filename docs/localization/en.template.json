@@ -34,12 +34,12 @@
       "de": "Deutsch (German)",
       "fr": "Français (French)",
       "es": "Español (Spanish)",
-      "es-mx": "Español de Latinoamérica (Spanish, Latin America)",
+      "es-mx": "Español (Latinoamérica)",
       "it": "Italiano (Italian)",
-      "ja": "日本語 (Japanese)",
+      "ja": "Japanese",
       "pl": "Polski (Polish)",
-      "pt-br": "Português do Brasil (Portuguese, Brazil)",
-      "zh-cn": "简体中文 (Simplified Chinese)"
+      "pt-br": "Português (Brasil)",
+      "zh-cn": "Simplified Chinese"
     },
     "QuickMenuHorizon": {
       "label": "HORIZON STYLE",

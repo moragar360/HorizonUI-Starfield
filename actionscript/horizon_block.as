@@ -4991,35 +4991,120 @@
          }
          return o;
       }
-      // Purpose: Settings 2.0 label for a Localization file code.
+      // Purpose: true when every character is in the HUD Exo 2 face (Latin,
+      // Latin Extended, Vietnamese, combining marks, punctuation, currency).
+      // CJK / Hangul / Arabic / Thai / Cyrillic / surrogates are false. Used
+      // by the Language dropdown so it never draws tofu and never switches
+      // that list to $MAIN_Font. Not a per-stem flag: a future script Exo 2
+      // lacks is rejected the same way. Translated HUD text still uses
+      // hzHasCjk + $MAIN_Font when ja/zh-cn is active.
+      // Inputs: a UI string. Outputs: whether Exo 2 can render it.
+      private function hzExo2Can(s:String) : Boolean
+      {
+         if(s == null) { return true; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0xD800 && c <= 0xDFFF) { return false; }
+            var ok:Boolean = c <= 0x024F || (c >= 0x0300 && c <= 0x036F) || (c >= 0x1E00 && c <= 0x1EFF) || (c >= 0x2000 && c <= 0x206F) || (c >= 0x20A0 && c <= 0x20CF);
+            if(!ok) { return false; }
+            i++;
+         }
+         return true;
+      }
+      // Purpose: Language dropdown label that Exo 2 can draw. Native name if
+      // Exo 2 has the glyphs; otherwise the last parenthetical (English) or fb.
+      // Never returns CJK. Call at catalog / language change, not per HUD frame.
+      private function hz51Exo2Text(s:String, fb:String = null) : String
+      {
+         if(s == null || s.length == 0) { return fb != null ? fb : ""; }
+         if(this.hzExo2Can(s)) { return s; }
+         var a:int = s.lastIndexOf("(");
+         var b:int = s.lastIndexOf(")");
+         if(a >= 0 && b > a + 1)
+         {
+            var inner:String = s.substring(a + 1, b);
+            while(inner.length > 0 && inner.charAt(0) == " ") { inner = inner.substr(1); }
+            while(inner.length > 0 && inner.charAt(inner.length - 1) == " ") { inner = inner.substr(0, inner.length - 1); }
+            if(inner.length > 0 && this.hzExo2Can(inner)) { return inner; }
+         }
+         if(fb != null && fb.length > 0 && this.hzExo2Can(fb)) { return fb; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var ch:String = s.charAt(i);
+            if(this.hzExo2Can(ch)) { o += ch; }
+            i++;
+         }
+         while(o.length > 0 && o.charAt(0) == " ") { o = o.substr(1); }
+         while(o.length > 0 && o.charAt(o.length - 1) == " ") { o = o.substr(0, o.length - 1); }
+         if(o.length > 0) { return o; }
+         return fb != null && fb.length > 0 ? fb : s;
+      }
+      private function hz51Exo2Arr(a:Array) : void
+      {
+         if(a == null) { return; }
+         var i:int = 0;
+         while(i < a.length) { a[i] = this.hz51Exo2Text(String(a[i])); i++; }
+      }
+      // Purpose: MapCode for dropdown stems so es-419 / esmx / latam collapse
+      // to es-mx (one Español (Latinoamérica) row, not a community duplicate).
+      private function hz51LangCode(raw:String) : String
+      {
+         var c:String = raw != null ? String(raw).toLowerCase() : "";
+         while(c.length > 0 && (c.charAt(0) == " " || c.charAt(0) == "\t")) { c = c.substr(1); }
+         while(c.length > 0 && (c.charAt(c.length - 1) == " " || c.charAt(c.length - 1) == "\t")) { c = c.substr(0, c.length - 1); }
+         if(c.length == 0 || c == "auto") { return "auto"; }
+         if(c.indexOf("/") >= 0 || c.indexOf("\\") >= 0 || c.indexOf(":") >= 0 || c.indexOf("..") >= 0) { return "auto"; }
+         if(c == "en" || c == "english" || c == "en-us" || c == "en_us" || c == "enus") { return "en"; }
+         if(c == "de" || c == "german" || c == "de-de" || c == "de_de") { return "de"; }
+         if(c == "fr" || c == "french" || c == "fr-fr" || c == "fr_fr") { return "fr"; }
+         if(c == "it" || c == "italian" || c == "it-it" || c == "it_it") { return "it"; }
+         if(c == "esmx" || c == "es-mx" || c == "es_mx" || c == "esla" || c == "es-419" || c == "latam" || c == "es-latam" || c == "es_latam") { return "es-mx"; }
+         if(c == "es" || c == "spanish" || c == "es-es" || c == "es_es" || c == "eses") { return "es"; }
+         if(c == "jp" || c == "ja" || c == "japanese") { return "ja"; }
+         if(c == "pl" || c == "polish" || c == "pl-pl" || c == "pl_pl") { return "pl"; }
+         if(c == "ptbr" || c == "pt-br" || c == "pt_br" || c == "brazilian" || c == "pt-brz") { return "pt-br"; }
+         if(c == "zhhans" || c == "zh-cn" || c == "zhcn" || c == "zh_cn" || c == "zh" || c == "zh-hans" || c == "schinese") { return "zh-cn"; }
+         return c;
+      }
+      // Purpose: Settings 2.0 label for a Localization file code. Exo 2 only:
+      // native name when the face has the glyphs, English name otherwise.
       private function hz51LangName(code:String) : String
       {
-         var c:String = code != null ? String(code).toLowerCase() : "";
-         if(c == "auto" || c.length == 0) { return this.hzL("settings.language.auto", "Auto (game)"); }
-         if(c == "en") { return this.hzL("settings.language.en", "English"); }
-         if(c == "de") { return this.hzL("settings.language.de", "Deutsch (German)"); }
-         if(c == "fr") { return this.hzL("settings.language.fr", "Français (French)"); }
-         if(c == "es-mx" || c == "esmx" || c == "es_mx" || c == "latam" || c == "esla" || c == "es-419") { return this.hzL("settings.language.es-mx", "Español de Latinoamérica (Spanish, Latin America)"); }
-         if(c == "es") { return this.hzL("settings.language.es", "Español (Spanish)"); }
-         if(c == "it") { return this.hzL("settings.language.it", "Italiano (Italian)"); }
-         if(c == "ja" || c == "jp") { return this.hzL("settings.language.ja", "日本語 (Japanese)"); }
-         if(c == "pl") { return this.hzL("settings.language.pl", "Polski (Polish)"); }
-         if(c == "zh-cn" || c == "zhhans" || c == "zh") { return this.hzL("settings.language.zh-cn", "简体中文 (Simplified Chinese)"); }
-         if(c == "ptbr" || c == "pt-br" || c == "pt_br") { return this.hzL("settings.language.pt-br", "Português do Brasil (Portuguese, Brazil)"); }
-         return c.toUpperCase();
+         var c:String = this.hz51LangCode(code);
+         var fb:String = "";
+         if(c == "auto") { fb = "Auto (game)"; }
+         else if(c == "en") { fb = "English"; }
+         else if(c == "de") { fb = "Deutsch (German)"; }
+         else if(c == "fr") { fb = "Français (French)"; }
+         else if(c == "es-mx") { fb = "Español (Latinoamérica)"; }
+         else if(c == "es") { fb = "Español (Spanish)"; }
+         else if(c == "it") { fb = "Italiano (Italian)"; }
+         else if(c == "ja") { fb = "Japanese"; }
+         else if(c == "pl") { fb = "Polski (Polish)"; }
+         else if(c == "pt-br") { fb = "Português (Brasil)"; }
+         else if(c == "zh-cn") { fb = "Simplified Chinese"; }
+         else { return this.hz51Exo2Text(c.toUpperCase(), c.toUpperCase()); }
+         return this.hz51Exo2Text(this.hzL("settings.language." + c, fb), fb);
       }
-      // Purpose: Auto plus one option per Localization/*.json the DLL listed at load.
+      // Purpose: Auto plus one option per unique mapped stem the DLL listed.
+      // Alias files (es-419, esmx) share es-mx so Latinoamérica is not listed twice.
       private function hz51LangOpts() : Object
       {
          var vals:Array = ["auto"];
          var names:Array = [this.hz51LangName("auto")];
+         var seen:Object = {"auto":true};
          var files:Array = this.hzL10nFiles != null ? this.hzL10nFiles : ["en"];
          var i:int = 0;
          while(i < files.length)
          {
-            var c:String = String(files[i]);
-            if(c.length > 0 && c != "auto")
+            var c:String = this.hz51LangCode(String(files[i]));
+            if(c.length > 0 && seen[c] != true)
             {
+               seen[c] = true;
                vals.push(c);
                names.push(this.hz51LangName(c));
             }
@@ -5169,7 +5254,13 @@
          if(r.body != undefined) { r.body = this.hzLt(String(r.body)); }
          if(r.badge != undefined) { r.badge = this.hzLt(String(r.badge)); }
          if(r.btn != undefined && r.t == "x") { r.btn = this.hzLt(String(r.btn)); }
+         if(String(r.k) == "_l10nGame" && r.btn != undefined) { r.btn = this.hz51Exo2Text(String(r.btn)); }
          if(r.t == "p" || r.t == "c") { return; }
+         if(String(r.k) == "Language")
+         {
+            this.hz51Exo2Arr(r.names as Array);
+            return;
+         }
          this.hz51LocArr(r.opts as Array);
          this.hz51LocArr(r.names as Array);
       }
@@ -5209,6 +5300,7 @@
             this.hzHsWordLoc = this.hzLt("HAZARD");
             try { this.hz26CharSync(); } catch(eCh:Error) { }
             try { this.hzE19Sync(); } catch(eEq:Error) { }
+            try { this.hzPpLayout(); } catch(ePp:Error) { }
          }
          catch(eApp:Error) { }
       }
@@ -7316,8 +7408,25 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             var optsA:Array = r.opts as Array;
             if(optsA == null) { optsA = r.names as Array; }
             if(txt.length == 0 && optsA != null && optsA.length > 0) { txt = String(optsA[0]); }
-            var ct:TextField = this.hz51T(b,txt,0,cy - 8,220,12,"bd",vcol,0.3);
-            var cw:Number = Math.max(HZ51_CTRL_W,Math.round(this.hzTW(ct) + 36));
+            txt = this.hz51Exo2Text(txt);
+            var ct:TextField = this.hz51T(b,txt,0,cy - 8,280,12,"bd",vcol,0.3);
+            var maxTw:Number = this.hzTW(ct);
+            var labs:Array = r.t == "l" && r.names != undefined ? r.names as Array : dropOpts;
+            var li:int = 0;
+            while(labs != null && li < labs.length)
+            {
+               var lab:String = this.hz51Exo2Text(String(labs[li]));
+               if(lab != txt)
+               {
+                  ct.text = lab;
+                  var twLab:Number = this.hzTW(ct);
+                  if(twLab > maxTw) { maxTw = twLab; }
+               }
+               li++;
+            }
+            ct.text = txt;
+            var cw:Number = Math.max(HZ51_CTRL_W,Math.round(maxTw + 36));
+            if(cw > 280) { cw = 280; }
             var cx:Number = Math.round(R - cw);
             var dy:Number = Math.round(cy - HZ51_DD_H / 2);
             b.removeChild(ct);
@@ -8223,13 +8332,14 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             if(yy + HZ51_DROP_ITEM > y + h) { break; }
             var sel:Boolean = oi == this.hzSetDropHi;
             if(sel) { g.beginFill(acc,0.18); g.drawRoundRect(x + 3,yy,w - 6,HZ51_DROP_ITEM - 2,4,4); g.endFill(); }
+            var dlab:String = this.hz51Exo2Text(String(opts[oi]));
             if(r.t == "a" && r.pal != undefined)
             {
                var pal:Array = r.pal as Array;
                g.beginFill(uint(pal[Math.min(pal.length - 1,oi)]),1); g.drawRoundRect(x + 10,yy + 6,10,10,2,2); g.endFill();
-               this.hz51T(b,String(opts[oi]),x + 26,yy + 4,w - 36,11,"sb",sel ? acc : uint(T.txt),0.2);
+               this.hz51T(b,dlab,x + 26,yy + 4,w - 36,11,"sb",sel ? acc : uint(T.txt),0.2);
             }
-            else { this.hz51T(b,String(opts[oi]),x + 10,yy + 4,w - 20,11,"sb",sel ? acc : uint(T.txt),0.2); }
+            else { this.hz51T(b,dlab,x + 10,yy + 4,w - 20,11,"sb",sel ? acc : uint(T.txt),0.2); }
             this.hzSetHits.push({"id":"dopt" + oi,"x":x + 3,"y":yy,"w":w - 6,"h":HZ51_DROP_ITEM});
             i++;
          }
@@ -8689,7 +8799,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          }
          if(pins.length > 0)
          {
-            list.push({"g":1,"lab":"PINNED " + String(this.hzMlPinN) + " / " + String(this.hzMlPinCap)});
+            list.push({"g":1,"lab":this.hzLt("PINNED {n} / {cap}").split("{n}").join(String(this.hzMlPinN)).split("{cap}").join(String(this.hzMlPinCap))});
             i = 0;
             while(i < pins.length) { list.push(pins[i]); i++; }
          }
@@ -8721,8 +8831,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private function hzMsglogGroup(e:Object) : String
       {
          var today:Boolean = this.hzMsglogIsToday(Number(e.ts));
-         if(int(e.sess) == this.hzMlSess) { return today ? "Today · this session" : "This session"; }
-         return today ? "Today · earlier" : "Earlier";
+         if(int(e.sess) == this.hzMlSess) { return today ? this.hzLt("Today · this session") : this.hzLt("This session"); }
+         return today ? this.hzLt("Today · earlier") : this.hzLt("Earlier");
       }
 
       private function hzMsglogIsToday(ts:Number) : Boolean
@@ -8737,10 +8847,10 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       {
          if(ts <= 0) { return ""; }
          var sec:Number = Math.max(0, Math.floor(new Date().getTime() / 1000 - ts));
-         if(sec < 60) { return "just now"; }
-         if(sec < 3600) { return String(Math.floor(sec / 60)) + " min ago"; }
-         if(sec < 86400) { return String(Math.floor(sec / 3600)) + " h ago"; }
-         return String(Math.floor(sec / 86400)) + " d ago";
+         if(sec < 60) { return this.hzLt("just now"); }
+         if(sec < 3600) { return String(Math.floor(sec / 60)) + this.hzLt(" min ago"); }
+         if(sec < 86400) { return String(Math.floor(sec / 3600)) + this.hzLt(" h ago"); }
+         return String(Math.floor(sec / 86400)) + this.hzLt(" d ago");
       }
 
       private function hzMsglogClockTxt(v:Number) : String
@@ -8759,17 +8869,17 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var i:int = 0;
          while(i < HZ_ML_KIND.length)
          {
-            if(String(HZ_ML_KIND[i]) == k) { return String(HZ_ML_CHIPS[i]); }
+            if(String(HZ_ML_KIND[i]) == k) { return this.hzLt(String(HZ_ML_CHIPS[i])); }
             i++;
          }
-         return "GAME";
+         return this.hzLt("GAME");
       }
 
       private function hzMsglogStatusLab() : String
       {
-         if(this.hzMlStatus == "memory" || this.hzMlStatus == "paused") { return "History not saved"; }
-         if(this.hzMlStatus == "saving") { return "Saving"; }
-         if(this.hzMlStatus == "fallback") { return "Character key fallback"; }
+         if(this.hzMlStatus == "memory" || this.hzMlStatus == "paused") { return this.hzLt("History not saved"); }
+         if(this.hzMlStatus == "saving") { return this.hzLt("Saving"); }
+         if(this.hzMlStatus == "fallback") { return this.hzLt("Character key fallback"); }
          return "";
       }
 
@@ -9020,7 +9130,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.drawRoundRect(ox,oy,HZ_ML_W,HZ_ML_H,36,36);
          g.endFill();
          this.hz33Edge(b,ox,oy,HZ_ML_W,HZ_ML_H,36,uint(T.edge),Number(T.ea),1);
-         this.hzWT(b,"HORIZON UI · MESSAGE LOG",ox + 22,oy + 14,520,15,"bd",uint(T.txt),2, "left", 13);
+         this.hzWT(b,this.hzLt("HORIZON UI · MESSAGE LOG"),ox + 22,oy + 14,520,15,"bd",uint(T.txt),2, "left", 13);
          var st:String = this.hzMsglogStatusLab();
          if(st.length > 0) { this.hzWT(b,st,ox + HZ_ML_W - 22,oy + 16,240,13,"sb",uint(T.mut),0.4,"right",13); }
 
@@ -9091,8 +9201,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.drawRoundRect(boxX, fy, boxW, 28, 8, 8);
          g.endFill();
          g.lineStyle();
-         var findLab:String = this.hzMlFind.length > 0 ? this.hzMlFind : "Find...";
-         if(this.hzMlPad && !this.hzMlFindOn && this.hzMlFind.length == 0) { findLab = "Find (keyboard only)"; }
+         var findLab:String = this.hzMlFind.length > 0 ? this.hzMlFind : this.hzL("settings.ui.find_ellipsis", "Find...");
+         if(this.hzMlPad && !this.hzMlFindOn && this.hzMlFind.length == 0) { findLab = this.hzLt("Find (keyboard only)"); }
          var findCol:uint = (this.hzMlFindOn || this.hzMlFind.length > 0) ? uint(T.txt) : uint(T.mut);
          var ftf:TextField = this.hzWT(b,findLab,boxX + 10,fy + 6,boxW - 28,13,"rg",findCol,0.3,"left",13);
          if(this.hzMlFindOn && !overlayOn)
@@ -9118,7 +9228,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var allR:Number = ox + HZ_ML_W - 22;
          this.hzSetSwitch(b,g,allR,fy + 18,allOn,T,false);
          // hzMlAllTime: the words sit left of the switch with a gap, wide enough for the full label.
-         var atf:TextField = this.hzWT(b,"ALL TIME",0,fy + 8,220,13,"sb",uint(T.lab),1.2,"left",13);
+         var atf:TextField = this.hzWT(b,this.hzLt("ALL TIME"),0,fy + 8,220,13,"sb",uint(T.lab),1.2,"left",13);
          var atw:Number = Math.ceil(this.hzTW(atf) + 6);
          if(atw < 24) { atw = 8 * 13; }
          atf.width = atw;
@@ -9146,7 +9256,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(!haveSel) { this.hzMlSelId = 0; }
          if(list.length == 0)
          {
-            var empty:String = this.hzMlRows.length > 0 ? "No messages for the types that are shown. Stored messages stay." : "Starts empty. Messages from before this log was on cannot be recovered.";
+            var empty:String = this.hzMlRows.length > 0 ? this.hzLt("No messages for the types that are shown. Stored messages stay.") : this.hzLt("Starts empty. Messages from before this log was on cannot be recovered.");
             this.hzWT(b,empty,ox + 28,rowTop + 40,HZ_ML_W - 56,13,"rg",uint(T.mut),0.3,"left",13);
          }
          var vis:int = 0;
@@ -9194,7 +9304,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
                var tt:TextField = this.hzWT(b,line,textX,ry + 6,textW,13,"rg",tcol,0.3,"left",13);
                tt.alpha = aMul;
                this.hzMsglogWrap(tt,textW,rh - 8);
-               var chipLab:String = later ? "from a later point" : (String(it.tag).length > 0 ? String(it.tag) : this.hzMsglogKindLab(String(it.k)));
+               var chipLab:String = later ? this.hzLt("from a later point") : (String(it.tag).length > 0 ? String(it.tag) : this.hzMsglogKindLab(String(it.k)));
                var chp:TextField = this.hzWT(b,chipLab,0,0,140,13,"sb",later ? uint(T.mut) : uint(T.lab),1.2,"left",13);
                var chw:Number = Math.min(108, Math.round(this.hzTW(chp) + 14));
                g.beginFill(later ? uint(T.mut) : acc, later ? 0.12 : 0.18);
@@ -9252,8 +9362,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             this.hzMsglogEllip(dtf,HZ_ML_W - 78);
             var uts:String = this.hzMsglogClockTxt(Number(sel.ut));
             var lts:String = Number(sel.lt) >= 0 ? this.hzMsglogClockTxt(Number(sel.lt)) : "";
-            var when:String = uts.length > 0 ? "IN-GAME " + uts : "";
-            if(lts.length > 0) { when += (when.length > 0 ? " + " : "") + "local " + lts; }
+            var when:String = uts.length > 0 ? this.hzLt("IN-GAME") + " " + uts : "";
+            if(lts.length > 0) { when += (when.length > 0 ? " + " : "") + this.hzLt("local") + " " + lts; }
             var where:String = String(sel.loc).length > 0 ? String(sel.loc) : "";
             var real:String = "";
             if(Number(sel.ts) > 0)
@@ -9264,7 +9374,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             var d2:String = when;
             if(where.length > 0) { d2 += (d2.length > 0 ? "  ·  " : "") + where; }
             if(real.length > 0) { d2 += (d2.length > 0 ? "  ·  " : "") + real; }
-            if(sel.later == true) { d2 += (d2.length > 0 ? "  ·  " : "") + "from a later point"; }
+            if(sel.later == true) { d2 += (d2.length > 0 ? "  ·  " : "") + this.hzLt("from a later point"); }
             var dtf2:TextField = this.hzWT(b,d2.length > 0 ? d2 : " ",ox + 28,dy + 32,HZ_ML_W - 56,13,"rg",uint(T.mut),0.3,"left",13);
             this.hzMsglogEllip(dtf2,HZ_ML_W - 56);
          }
@@ -9275,10 +9385,10 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.endFill();
          var hx:Number = ox + 28;
          var hy:Number = foot + 10;
-         var pinLab:String = (sel != null && int(sel.pin) != 0) ? "UNPIN" : "PIN";
+         var pinLab:String = (sel != null && int(sel.pin) != 0) ? this.hzLt("UNPIN") : this.hzLt("PIN");
          var hints:Array = this.hzMlPad
-            ? [["LB/RB","CHIPS"],["A",pinLab],["X","SETTINGS"],["Y","CLEAR"],["B","BACK"]]
-            : [["UP/DN","SELECT"],["ENTER",pinLab],["ESC","BACK"],["/","FIND"]];
+            ? [["LB/RB",this.hzLt("CHIPS")],["A",pinLab],["X",this.hzLt("SETTINGS")],["Y",this.hzLt("CLEAR")],["B",this.hzLt("BACK")]]
+            : [["UP/DN",this.hzLt("SELECT")],["ENTER",pinLab],["ESC",this.hzLt("BACK")],["/",this.hzLt("FIND")]];
          // hzMlHintSlot: each hint is as wide as its words, so CLEAR, SETTINGS, UNPIN, and SELECT are not cut at 70 px.
          var hi:int = 0;
          while(hi < hints.length)
@@ -9294,10 +9404,10 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var by:Number = foot + 48;
          var bxr:Number = ox + HZ_ML_W - 22;
          var hit0:int = this.hzSetHits.length;
-         bxr -= this.hzSetBtn(b,g,bxr,by,"BACK",false,false,this.hzMlHover == "back",T,"mlback",13,13) + 10;
-         bxr -= this.hzSetBtn(b,g,bxr,by,"CLEAR SESSION",false,true,this.hzMlHover == "clear",T,"mlclear",13,13) + 10;
+         bxr -= this.hzSetBtn(b,g,bxr,by,this.hzLt("BACK"),false,false,this.hzMlHover == "back",T,"mlback",13,13) + 10;
+         bxr -= this.hzSetBtn(b,g,bxr,by,this.hzLt("CLEAR SESSION"),false,true,this.hzMlHover == "clear",T,"mlclear",13,13) + 10;
          bxr -= this.hzSetBtn(b,g,bxr,by,pinLab,true,false,this.hzMlHover == "pin",T,"mlpin",13,13) + 10;
-         var setW:Number = this.hzSetBtn(b,g,bxr,by,"SETTINGS",false,true,this.hzMlHover == "set",T,"mlset",13,13);
+         var setW:Number = this.hzSetBtn(b,g,bxr,by,this.hzLt("SETTINGS"),false,true,this.hzMlHover == "set",T,"mlset",13,13);
          while(this.hzSetHits.length > hit0)
          {
             this.hzMlHits.push(this.hzSetHits.pop());
@@ -9332,8 +9442,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var n:int = clearIds.length == 0 ? 0 : clearIds.split(",").length;
          var cw:Number = 560;
          var noteW:Number = cw - 44;
-         var title:TextField = this.hzWT(b,"Clear this session?",0,0,noteW,15,"bd",uint(T.txt),2,"left",13);
-         var note:TextField = this.hzWT(b,"Removes " + String(n) + " shown unpinned messages. Hidden messages stay. Can't be undone.",0,0,noteW,13,"rg",uint(T.lab),0.3,"left",13);
+         var title:TextField = this.hzWT(b,this.hzLt("Clear this session?"),0,0,noteW,15,"bd",uint(T.txt),2,"left",13);
+         var note:TextField = this.hzWT(b,this.hzLt("Removes {n} shown unpinned messages. Hidden messages stay. Can't be undone.").split("{n}").join(String(n)),0,0,noteW,13,"rg",uint(T.lab),0.3,"left",13);
          note.height = 160;
          var nh:Number = this.hzMsglogWrap(note,noteW,160);
          var guess:Number = this.hzMsglogGuessH(note.text,noteW);
@@ -9357,8 +9467,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var btnY:Number = cy + ch - 48;
          var br:Number = cx + cw - 22;
          var hit0:int = this.hzSetHits.length;
-         br -= this.hzSetBtn(b,g,br,btnY,"CANCEL",false,false,this.hzMlHover == "cfcancel",T,"cfcancel",13,13) + 10;
-         this.hzSetBtn(b,g,br,btnY,"CLEAR",true,false,this.hzMlHover == "cfok",T,"cfok",13,13);
+         br -= this.hzSetBtn(b,g,br,btnY,this.hzLt("CANCEL"),false,false,this.hzMlHover == "cfcancel",T,"cfcancel",13,13) + 10;
+         this.hzSetBtn(b,g,br,btnY,this.hzLt("CLEAR"),true,false,this.hzMlHover == "cfok",T,"cfok",13,13);
          while(this.hzSetHits.length > hit0)
          {
             this.hzMlHits.push(this.hzSetHits.pop());
@@ -9466,19 +9576,19 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private function hzMsglogSetRows() : Array
       {
          var rows:Array = [
-            {"id":"record","k":"record","l":"RECORD MESSAGES"},
-            {"id":"persist","k":"persist","l":"SAVE TO DISK"}
+            {"id":"record","k":"record","l":this.hzLt("RECORD MESSAGES")},
+            {"id":"persist","k":"persist","l":this.hzLt("SAVE TO DISK")}
          ];
-         if(!this.hzMlPersist) { rows.push({"id":"folder","k":"folder","l":"FOLDER"}); }
-         rows.push({"id":"history","k":"history","l":"HISTORY"});
-         rows.push({"id":"viewnote","k":"viewnote","l":"SHOW hides rows in this log. RECORD chooses what is saved."});
+         if(!this.hzMlPersist) { rows.push({"id":"folder","k":"folder","l":this.hzLt("FOLDER")}); }
+         rows.push({"id":"history","k":"history","l":this.hzLt("HISTORY")});
+         rows.push({"id":"viewnote","k":"viewnote","l":this.hzLt("SHOW hides rows in this log. RECORD chooses what is saved.")});
          var i:int = 1;
          while(i < HZ_ML_KIND.length)
          {
-            rows.push({"id":"type" + String(i),"k":String(HZ_ML_KIND[i]),"l":String(HZ_ML_CHIPS[i]),"type":1});
+            rows.push({"id":"type" + String(i),"k":String(HZ_ML_KIND[i]),"l":this.hzLt(String(HZ_ML_CHIPS[i])),"type":1});
             i++;
          }
-         rows.push({"id":"old","k":"old","l":"OLD CHARACTERS"});
+         rows.push({"id":"old","k":"old","l":this.hzLt("OLD CHARACTERS")});
          return rows;
       }
 
@@ -9497,7 +9607,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.drawRoundRect(cx,cy,cw,ch,28,28);
          g.endFill();
          this.hz33Edge(b,cx,cy,cw,ch,28,uint(T.edge),Number(T.ea),1);
-         this.hzWT(b,"MESSAGE LOG SETTINGS",cx + 22,cy + 16,cw - 44,15,"bd",uint(T.txt),2,"left",13);
+         this.hzWT(b,this.hzLt("MESSAGE LOG SETTINGS"),cx + 22,cy + 16,cw - 44,15,"bd",uint(T.txt),2,"left",13);
          var rows:Array = this.hzMsglogSetRows();
          var bodyY:Number = cy + 44;
          var bodyH:Number = ch - 44 - 56;
@@ -9524,7 +9634,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             if(r.id == "folder")
             {
                var path:String = this.hzMlFolder.length > 0 ? this.hzMlFolder : "MessageLog";
-               this.hzWT(b,"Memory only. Existing files stay on disk.",cx + 22,ry + 2,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
+               this.hzWT(b,this.hzLt("Memory only. Existing files stay on disk."),cx + 22,ry + 2,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
                var ptf:TextField = this.hzWT(b,path,cx + 22,ry + 16,cw - 44,13,"rg",uint(T.lab),0.3,"left",13);
                this.hzMsglogEllip(ptf,cw - 44);
             }
@@ -9543,9 +9653,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             }
             else if(r.id == "old")
             {
-               this.hzWT(b,"OLD CHARACTERS (" + String(this.hzMlOtherN) + " FILES)",cx + 22,ry + 8,320,13,"sb",uint(T.txt),1.2,"left",13);
+               this.hzWT(b,this.hzLt("OLD CHARACTERS ({n} FILES)").split("{n}").join(String(this.hzMlOtherN)),cx + 22,ry + 8,320,13,"sb",uint(T.txt),1.2,"left",13);
                var hit0:int = this.hzSetHits.length;
-               this.hzSetBtn(b,g,cx + cw - 18,ry + 4,"VIEW LIST",false,true,this.hzMlHover == "mlslist",T,"mlslist",13,13);
+               this.hzSetBtn(b,g,cx + cw - 18,ry + 4,this.hzLt("VIEW LIST"),false,true,this.hzMlHover == "mlslist",T,"mlslist",13,13);
                while(this.hzSetHits.length > hit0) { this.hzMlHits.push(this.hzSetHits.pop()); }
             }
             else if(r.id == "viewnote")
@@ -9556,11 +9666,11 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             {
                this.hzWT(b,String(r.l),cx + 22,ry + 8,180,13,"sb",uint(T.txt),1.2,"left",13);
                // SHOW uses the RECORD label-to-switch gap. The switch stays put; the label moves left to match it.
-               var recTf:TextField = this.hzWT(b,"RECORD",cx + cw - 168,ry + 8,70,13,"sb",uint(T.lab),0.4,"left",13);
+               var recTf:TextField = this.hzWT(b,this.hzLt("RECORD"),cx + cw - 168,ry + 8,70,13,"sb",uint(T.lab),0.4,"left",13);
                var recGap:Number = (cx + cw - 22 - 38) - (recTf.x + this.hzTW(recTf));
                if(!(recGap > 0)) { recGap = 16; }
                var showR:Number = cx + cw - 228;
-               var showTf:TextField = this.hzWT(b,"SHOW",0,ry + 8,80,13,"sb",uint(T.lab),0.4,"left",13);
+               var showTf:TextField = this.hzWT(b,this.hzLt("SHOW"),0,ry + 8,80,13,"sb",uint(T.lab),0.4,"left",13);
                var showW:Number = this.hzTW(showTf);
                showTf.x = Math.round(showR - 38 - recGap - showW);
                if(showTf.x < cx + 210) { showTf.x = cx + 210; }
@@ -9590,12 +9700,12 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(this.hzMlPad)
          {
             this.hzSetKey(b,g,hx,hy,"A",uint(T.mut),22,13,13);
-            this.hzWT(b,"TOGGLE",hx + 30,hy + 4,70,13,"sb",uint(T.mut),1.2,"left",13);
+            this.hzWT(b,this.hzLt("TOGGLE"),hx + 30,hy + 4,70,13,"sb",uint(T.mut),1.2,"left",13);
          }
          var br:Number = cx + cw - 22;
          var hit1:int = this.hzSetHits.length;
-         br -= this.hzSetBtn(b,g,br,foot + 20,"BACK",false,false,this.hzMlHover == "mlsback",T,"mlsback",13,13) + 10;
-         this.hzSetBtn(b,g,br,foot + 20,"CLEAR HISTORY",false,true,this.hzMlHover == "mlsclear",T,"mlsclear",13,13);
+         br -= this.hzSetBtn(b,g,br,foot + 20,this.hzLt("BACK"),false,false,this.hzMlHover == "mlsback",T,"mlsback",13,13) + 10;
+         this.hzSetBtn(b,g,br,foot + 20,this.hzLt("CLEAR HISTORY"),false,true,this.hzMlHover == "mlsclear",T,"mlsclear",13,13);
          while(this.hzSetHits.length > hit1) { this.hzMlHits.push(this.hzSetHits.pop()); }
          if(this.hzPopTop() == "mlhist") { this.hzMsglogDrawHist(T,acc,ox,oy); }
       }
@@ -9606,8 +9716,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var g:* = b.graphics;
          var cw:Number = 480;
          var noteW:Number = cw - 44;
-         var title:TextField = this.hzWT(b,"Clear all history?",0,0,noteW,15,"bd",uint(T.txt),2,"left",13);
-         var note:TextField = this.hzWT(b,"Removes every unpinned message for this character. Pins stay. Can't be undone.",0,0,noteW,13,"rg",uint(T.lab),0.3,"left",13);
+         var title:TextField = this.hzWT(b,this.hzLt("Clear all history?"),0,0,noteW,15,"bd",uint(T.txt),2,"left",13);
+         var note:TextField = this.hzWT(b,this.hzLt("Removes every unpinned message for this character. Pins stay. Can't be undone."),0,0,noteW,13,"rg",uint(T.lab),0.3,"left",13);
          note.height = 160;
          var nh:Number = this.hzMsglogWrap(note,noteW,160);
          var guess:Number = this.hzMsglogGuessH(note.text,noteW);
@@ -9631,8 +9741,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var btnY:Number = cy + ch - 48;
          var br:Number = cx + cw - 22;
          var hit0:int = this.hzSetHits.length;
-         br -= this.hzSetBtn(b,g,br,btnY,"CANCEL",false,false,this.hzMlHover == "mhcancel",T,"mhcancel",13,13) + 10;
-         this.hzSetBtn(b,g,br,btnY,"CLEAR",true,false,this.hzMlHover == "mhok",T,"mhok",13,13);
+         br -= this.hzSetBtn(b,g,br,btnY,this.hzLt("CANCEL"),false,false,this.hzMlHover == "mhcancel",T,"mhcancel",13,13) + 10;
+         this.hzSetBtn(b,g,br,btnY,this.hzLt("CLEAR"),true,false,this.hzMlHover == "mhok",T,"mhok",13,13);
          while(this.hzSetHits.length > hit0) { this.hzMlHits.push(this.hzSetHits.pop()); }
       }
 
@@ -9651,25 +9761,25 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.drawRoundRect(cx,cy,cw,ch,28,28);
          g.endFill();
          this.hz33Edge(b,cx,cy,cw,ch,28,uint(T.edge),Number(T.ea),1);
-         this.hzWT(b,"OLD CHARACTERS",cx + 22,cy + 16,cw - 44,15,"bd",uint(T.txt),2,"left",13);
-         this.hzWT(b,"Read-only. The current character is not listed.",cx + 22,cy + 40,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
+         this.hzWT(b,this.hzLt("OLD CHARACTERS"),cx + 22,cy + 16,cw - 44,15,"bd",uint(T.txt),2,"left",13);
+         this.hzWT(b,this.hzLt("Read-only. The current character is not listed."),cx + 22,cy + 40,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
          var i:int = 0;
          var ry:Number = cy + 68;
          if(this.hzMlOthers.length == 0)
          {
-            this.hzWT(b,"No other character files.",cx + 22,ry,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
+            this.hzWT(b,this.hzLt("No other character files."),cx + 22,ry,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
          }
          while(i < this.hzMlOthers.length && ry < cy + ch - 64)
          {
             var oc:Object = this.hzMlOthers[i];
             var nmCh:TextField = this.hzWT(b,String(oc.name),cx + 22,ry,300,13,"sb",uint(T.txt),1.2,"left",13);
             this.hzMsglogEllip(nmCh,300);
-            this.hzWT(b,String(oc.n) + " messages",cx + cw - 22,ry,160,13,"rg",uint(T.mut),0.3,"right",13);
+            this.hzWT(b,String(oc.n) + " " + this.hzLt("messages"),cx + cw - 22,ry,160,13,"rg",uint(T.mut),0.3,"right",13);
             ry += 28;
             i++;
          }
          var hit0:int = this.hzSetHits.length;
-         this.hzSetBtn(b,g,cx + cw - 22,cy + ch - 44,"BACK",false,false,this.hzMlHover == "mlcback",T,"mlcback",13,13);
+         this.hzSetBtn(b,g,cx + cw - 22,cy + ch - 44,this.hzLt("BACK"),false,false,this.hzMlHover == "mlcback",T,"mlcback",13,13);
          while(this.hzSetHits.length > hit0) { this.hzMlHits.push(this.hzSetHits.pop()); }
       }
 
@@ -13452,13 +13562,14 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hzFitText(this.hzPpName,this.hzUC(this.hzPpBodyName ? this.hzPpBodyName : "--"),nameW);
          // line 2: temp · status ; STATION / IN SHIP / IN SPACE
          var l2:String;
-         if(this.hzPpKind == "ship") { l2 = "IN SHIP"; }
-         else if(this.hzPpKind == "station") { l2 = "STATION"; }
-         else if(this.hzPpKind == "space") { l2 = "IN SPACE"; }
+         if(this.hzPpKind == "ship") { l2 = this.hzLt("IN SHIP"); }
+         else if(this.hzPpKind == "station") { l2 = this.hzLt("STATION"); }
+         else if(this.hzPpKind == "space") { l2 = this.hzLt("IN SPACE"); }
          else
          {
             var temp:String = this.hzEnvTemp ? this.hzEnvTemp.text : "--";
-            l2 = (temp.length > 0 && temp != "--") ? temp + "  ·  " + this.hzPpStatus : this.hzPpStatus;
+            var st:String = this.hzLt(this.hzPpStatus);
+            l2 = (temp.length > 0 && temp != "--") ? temp + "  ·  " + st : st;
          }
          if(cm)
          {
@@ -13479,7 +13590,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var parts:Array = [];
          if(this.hzPpSys.length > 0) { parts.push(this.hzPpSys.toUpperCase()); }
          if(surf && this.hzEnvGrav && this.hzEnvGrav.text != "--") { parts.push(this.hzEnvGrav.text); }
-         if(surf && this.hzEnvAir && this.hzEnvAir.text != "--") { parts.push("AIR " + this.hzEnvAir.text); }
+         if(surf && this.hzEnvAir && this.hzEnvAir.text != "--") { parts.push(this.hzLt("AIR") + " " + this.hzEnvAir.text); }
          var det:Boolean = this.hzPlanDetails && parts.length > 0 && !cm;
          this.hzPpDet.visible = det;
          if(cm)
@@ -16328,9 +16439,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       {
          var s:String = this.hzT19Trim(raw);
          if(s.length == 0) { return ""; }
-         if(s.indexOf("$") < 0) { return this.hzT19OneLine(s); }
          var v:String = this.hzT19Trim(this.hzT19VanLbl(aw,t,hold));
          if(v.length > 0 && v.indexOf("$") < 0) { return this.hzT19OneLine(v); }
+         if(s.indexOf("$") < 0) { return this.hzT19OneLine(this.hzLt(s)); }
          return this.hzT19OneLine(this.hzT19Trim(this.hzT19Xl(s)));
       }
 
@@ -27993,8 +28104,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             tg.lineTo(-84,ay + 6);
             tg.endFill();
          }
-         this.hz43SetTx(this.hz43LocL,"LOCAL/GAME");
-         this.hz43SetTx(this.hz43RealL,"PC/REAL");
+         this.hz43SetTx(this.hz43LocL,this.hzLt("LOCAL/GAME"));
+         this.hz43SetTx(this.hz43RealL,this.hzLt("PC/REAL"));
          this.hz43SetTx(this.hz43O2L,"O2");
          this.hz43SetTx(this.hz43CO2L,"CO2");
          this.hz43SetTx(this.hz43LocT,this.hz43Ok != 0 ? this.hzFmtLocGame(this.hz43H,this.hz43M,this.hz43Ut != 0) : "--");

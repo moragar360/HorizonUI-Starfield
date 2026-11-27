@@ -341,6 +341,7 @@ function makeQHost(kind, env) {
 		qDraw: 0, probes: [],
 		hzPerfNow: function() { return 0; }, hzRgPush: function() {}, hzPsSpan: function() {},
 		hzDarkText: function() { return h.hzDark; }, hzTextAccent: function() { return 0x7fd0ff; }, hzIconCol: function(c) { return c >>> 0; },
+		hzLt: function(s) { return s; }, hzHasCjk: function() { return false; },
 		hzMix: function(a) { return a; }, hzPanelFill: function() { return 0; }, hzTyFilters: function() { return []; }, hzTy19Filters: function() { return []; },
 		hzQDraw19: function() { h.qDraw++; },
 		hz34S: function(card) { return env.cardScale; }, hz34Eff: function(v) { return v; },

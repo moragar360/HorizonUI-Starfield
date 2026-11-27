@@ -58,11 +58,11 @@ expect(src.indexOf("x = Math.max(vr.x,Math.min(vr.right - w,x));") >= 0, "HUD Me
 expect(src.indexOf("y = Math.max(vr.y,Math.min(vr.bottom - h,y));") >= 0, "HUD Messages box is clamped vertically");
 expect(src.indexOf("hud messages home:") >= 0, "HUD Messages home is logged for the in-game check");
 expect(src.indexOf("Home is the stable visible-rect default") >= 0, "HUD Messages home is not the live line bounds");
-expect(src.indexOf('if(kind == "game") { return n.length > 0 ? n.toUpperCase() : "GAME"; }') >= 0, "unmatched game cards title GAME or ARTIFACT");
-expect(src.indexOf('if(sub == "kid") { return "KID STUFF"; }') >= 0, "Kid Stuff title is KID STUFF");
+expect(src.indexOf('if(kind == "game") { return n.length > 0 ? n.toUpperCase() : this.hzcLt("GAME"); }') >= 0, "unmatched game cards title GAME or ARTIFACT");
+expect(src.indexOf('if(sub == "kid") { return this.hzcLt("KID STUFF"); }') >= 0, "Kid Stuff title is KID STUFF");
 expect(src.indexOf("SENT HOME") < 0, "SENT HOME is not a card title");
-expect(src.indexOf('if(sub == "bounty") { return "BOUNTY PAID"; }') >= 0, "bounty paid title is BOUNTY PAID");
-expect(src.indexOf('if(sub == "bounty-add") { return "BOUNTY"; }') >= 0, "bounty added title is BOUNTY");
+expect(src.indexOf('if(sub == "bounty") { return this.hzcLt("BOUNTY PAID"); }') >= 0, "bounty paid title is BOUNTY PAID");
+expect(src.indexOf('if(sub == "bounty-add") { return this.hzcLt("BOUNTY"); }') >= 0, "bounty added title is BOUNTY");
 expect(src.indexOf('if(sub == "gain" || sub == "bounty-add")') < 0, "bounty added is not a green credits gain");
 expect(src.indexOf('if(sub == "gain") { return HZC_GRN; }') >= 0, "only credit gains are green");
 expect(src.indexOf('sub == "alarm" || sub == "bounty-add"') >= 0, "bounty added uses the red crime tone");
@@ -76,7 +76,7 @@ expect(src.indexOf('if(s == "loved" || s == "loves") { return 0; }') >= 0, "love
 expect(src.indexOf('if(s == "liked" || s == "likes") { return 1; }') >= 0, "likes maps with liked");
 expect(src.indexOf('if(s == "disliked" || s == "dislikes") { return 2; }') >= 0, "dislikes maps with disliked");
 expect(src.indexOf('if(s == "hated" || s == "hates") { return 3; }') >= 0, "hates maps with hated");
-expect(src.indexOf("this.hzcSet(lb,String(HZC_RX_LBL[e.k])") >= 0, "card text uses the category index");
+expect(src.indexOf("this.hzcSet(lb,this.hzcLt(String(HZC_RX_LBL[e.k]))") >= 0, "card text uses the category index");
 expect(src.indexOf("uint(HZC_RX_COL[e.k])") >= 0, "card color uses the category index");
 expect(src.indexOf("int(HZC_RX_DIR[e.k])") >= 0, "chevrons use the category index");
 expect(src.indexOf('this.hzcSet(nm,String(e.n).toUpperCase(),"nm"') >= 0, "card name uses the existing uppercase");
@@ -2075,7 +2075,7 @@ function makeHzcHost(now) {
 	// source pins: event-driven, the count is drawn, no new per-frame loop when nothing is merged
 	const link = fnBody("private function hzcRxLink", "private function hzcRxSlot");
 	expect(link.indexOf("if(this.hzcRxDupN > 0 && this.hzcRxDupOf(it) != null) { continue; }") >= 0 && link.indexOf("else if(this.hzcRxPendN > 0) { this.hzcRxTakeDup(it,tx); }") >= 0, "r6: the link pass reads two counters; the merge helpers run only while a merge is pending or held");
-	expect(fnBody("private function hzcCardDraw", "private function hzcRxDraw").indexOf('ttl = ttl + "  x" + int(e.cnt);') >= 0 && src.indexOf('String(HZC_RX_LBL[k]) + (int(e.cnt) > 1 ? "  x" + int(e.cnt) : "")') >= 0 && src.indexOf('String(HZC_RX_LBL[e.k]) + (int(e.cnt) > 1 ? "  x" + int(e.cnt) : "")') >= 0, "r6: both card kinds draw the xN count");
+	expect(fnBody("private function hzcCardDraw", "private function hzcRxDraw").indexOf('ttl = ttl + "  x" + int(e.cnt);') >= 0 && src.indexOf('this.hzcLt(String(HZC_RX_LBL[k])) + (int(e.cnt) > 1 ? "  x" + int(e.cnt) : "")') >= 0 && src.indexOf('this.hzcLt(String(HZC_RX_LBL[e.k])) + (int(e.cnt) > 1 ? "  x" + int(e.cnt) : "")') >= 0, "r6: both card kinds draw the xN count");
 	const take = fnBody("private function hzcRxTakeDup", "private function hzcRxEnd");
 	expect(take.indexOf(".alpha") < 0 && take.indexOf("int(e.pend) <= 0") >= 0, "r6: a held line is touched only for a card with a pending merge, never its alpha");
 	expect(src.indexOf("HZC_RX_DUP") < 0 && fnBody("public function hzcCardPush", "public function hzcRxWhy").indexOf("getTimer() - ") < 0, "r6: the merge is while the card is up, not a time window");

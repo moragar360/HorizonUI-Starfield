@@ -64,7 +64,18 @@ expect(/hzFitText\(this\.hzPpName/.test(planet) || /hzPpBodyName/.test(planet),
 	"planet layout still writes the game body name");
 expect(/hzLt\("LOCAL\/GAME"\)/.test(planet), "LOCAL/GAME is a static label on layout");
 expect(!/hzLt\(this\.hzPpBodyName/.test(planet), "planet name is not passed through hzLt");
+expect(/hzLt\(this\.hzPpStatus\)/.test(planet), "planet SAFE / hazard word is looked up at layout, not stored translated");
+expect(/hzLt\("AIR"\)/.test(planet), "AIR prefix is looked up at layout");
+expect(/hzLt\("IN SHIP"\)/.test(planet) && /hzLt\("STATION"\)/.test(planet) && /hzLt\("IN SPACE"\)/.test(planet),
+	"off-surface planet status words are looked up");
+expect(/hz43SetTx\(this\.hz43LocL,this\.hzLt\("LOCAL\/GAME"\)\)/.test(as)
+	&& /hz43SetTx\(this\.hz43RealL,this\.hzLt\("PC\/REAL"\)\)/.test(as),
+	"watch clock labels go through hzLt when the face is written");
+expect(/hzPpLayout\(\)/.test(apply), "language apply re-lays the planet card so SAFE / AIR / clocks refresh");
 
+const t19 = fnText(as, "hzT19Label").body;
+expect(/hzT19VanLbl/.test(t19) && /hzLt\(s\)/.test(t19),
+	"no-$ prompt verbs try the vanilla label first, then hzLt (TRADE)");
 expect(!/this\.hzLt\(/.test(fnText(as, "hzTickVitals").body) && !/this\.hzL\(/.test(fnText(as, "hzTickVitals").body),
 	"vitals tick still does no lookup");
 

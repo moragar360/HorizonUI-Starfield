@@ -36,7 +36,7 @@ function flatten(obj, prefix, out) {
 		return;
 	}
 	for (const k of Object.keys(obj)) {
-		if (k.charAt(0) === "_") continue;
+		if (k === "_meta" || k === "_comment") continue;
 		flatten(obj[k], prefix ? prefix + "." + k : k, out);
 	}
 }
@@ -140,6 +140,49 @@ const rawHelp = f11Draw.match(/hz51T\(b,"[A-Za-z][^"]{12,}"/g) || [];
 const allowed = rawHelp.filter((s) => !/hzLt\(/.test(s) && /[a-z]/.test(s));
 expect(allowed.length === 0,
 	"F11 chrome does not print a long English sentence without hzLt (" + (allowed[0] || "none") + ")");
+
+function slug(s) {
+	let o = "", prev = false;
+	for (let i = 0; i < s.length && o.length < 48; i++) {
+		const code = s.charCodeAt(i);
+		const ok = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+		if (ok) { o += s.charAt(i).toLowerCase(); prev = false; }
+		else if (o.length && !prev) { o += "_"; prev = true; }
+	}
+	if (o.endsWith("_")) o = o.slice(0, -1);
+	return o;
+}
+function lookup(table, en) {
+	const sl = slug(en);
+	const pfx = ["settings.ui.", "settings.chrome.", "settings.language.", "settings.tabs.",
+		"hud.hud_label.", "hud.option.", "hud.help.", "hud."];
+	for (const p of pfx) {
+		if (table[p + sl]) return table[p + sl];
+	}
+	return table["hud.help." + sl] || "";
+}
+const sideStrs = [];
+fnText(insert, "hz51Side").body.replace(/"(?:g|s|l)":"([^"]+)"/g, (_, v) => { sideStrs.push(v); return ""; });
+let sideMissEn = 0, sideMissDe = 0;
+const sideEnHit = [];
+const sideDeHit = [];
+for (const s of sideStrs) {
+	if (!lookup(en, s)) { sideMissEn++; sideEnHit.push(s); }
+	const dv = lookup(de, s);
+	if (!dv) { sideMissDe++; sideDeHit.push(s); }
+	else if (dv === s && /[a-z\u00b7]/.test(s)) { sideMissDe++; sideDeHit.push(s); }
+}
+expect(sideMissEn === 0, "en.json has a slug for every F11 sidebar g/s/l (" + (sideEnHit[0] || "ok") + ")");
+expect(sideMissDe === 0, "de.json translates every F11 sidebar subtitle and mixed-case header (" + (sideDeHit[0] || "ok") + ")");
+expect(lookup(de, "OVERRIDE") && lookup(de, "OVERRIDE") !== "OVERRIDE", "OVERRIDE section header is translated");
+expect(en["settings.details._l10nGame"] && de["settings.details._l10nGame"]
+	&& de["settings.details._l10nGame"].indexOf("The interface language") < 0,
+	"German GAME LANGUAGE details are translated");
+expect(en["settings.line.Language"] && de["settings.line.Language"]
+	&& de["settings.line.Language"].indexOf("Language for Horizon") < 0,
+	"German Horizon Language row help is translated");
+expect(/hzLt\(String\(it\.s\)\)/.test(draw) && /hzLt\(String\(grp\.g\)\)/.test(draw),
+	"sidebar subtitles and group headers go through hzLt");
 
 if (failed) {
 	console.error("\n" + failed + " failed, " + passed + " passed");

@@ -580,8 +580,25 @@
             var optsA:Array = r.opts as Array;
             if(optsA == null) { optsA = r.names as Array; }
             if(txt.length == 0 && optsA != null && optsA.length > 0) { txt = String(optsA[0]); }
-            var ct:TextField = this.hz51T(b,txt,0,cy - 8,220,12,"bd",vcol,0.3);
-            var cw:Number = Math.max(HZ51_CTRL_W,Math.round(this.hzTW(ct) + 36));
+            txt = this.hz51Exo2Text(txt);
+            var ct:TextField = this.hz51T(b,txt,0,cy - 8,280,12,"bd",vcol,0.3);
+            var maxTw:Number = this.hzTW(ct);
+            var labs:Array = r.t == "l" && r.names != undefined ? r.names as Array : dropOpts;
+            var li:int = 0;
+            while(labs != null && li < labs.length)
+            {
+               var lab:String = this.hz51Exo2Text(String(labs[li]));
+               if(lab != txt)
+               {
+                  ct.text = lab;
+                  var twLab:Number = this.hzTW(ct);
+                  if(twLab > maxTw) { maxTw = twLab; }
+               }
+               li++;
+            }
+            ct.text = txt;
+            var cw:Number = Math.max(HZ51_CTRL_W,Math.round(maxTw + 36));
+            if(cw > 280) { cw = 280; }
             var cx:Number = Math.round(R - cw);
             var dy:Number = Math.round(cy - HZ51_DD_H / 2);
             b.removeChild(ct);
@@ -1487,13 +1504,14 @@
             if(yy + HZ51_DROP_ITEM > y + h) { break; }
             var sel:Boolean = oi == this.hzSetDropHi;
             if(sel) { g.beginFill(acc,0.18); g.drawRoundRect(x + 3,yy,w - 6,HZ51_DROP_ITEM - 2,4,4); g.endFill(); }
+            var dlab:String = this.hz51Exo2Text(String(opts[oi]));
             if(r.t == "a" && r.pal != undefined)
             {
                var pal:Array = r.pal as Array;
                g.beginFill(uint(pal[Math.min(pal.length - 1,oi)]),1); g.drawRoundRect(x + 10,yy + 6,10,10,2,2); g.endFill();
-               this.hz51T(b,String(opts[oi]),x + 26,yy + 4,w - 36,11,"sb",sel ? acc : uint(T.txt),0.2);
+               this.hz51T(b,dlab,x + 26,yy + 4,w - 36,11,"sb",sel ? acc : uint(T.txt),0.2);
             }
-            else { this.hz51T(b,String(opts[oi]),x + 10,yy + 4,w - 20,11,"sb",sel ? acc : uint(T.txt),0.2); }
+            else { this.hz51T(b,dlab,x + 10,yy + 4,w - 20,11,"sb",sel ? acc : uint(T.txt),0.2); }
             this.hzSetHits.push({"id":"dopt" + oi,"x":x + 3,"y":yy,"w":w - 6,"h":HZ51_DROP_ITEM});
             i++;
          }
