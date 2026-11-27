@@ -4,9 +4,12 @@
 // res/HorizonUI.rc.in includes this header, and the plugin logs and sends the same
 // string (or the version resource that this header produced). Do not copy the
 // numbers into the resource script or into a log line.
-// Product version matches the file version (0.43.4.0). The settings-schema string
-// in the plugin (HZF::kVersion, "0.43.3.0" since 2026-11-19, was "0.42.0"; 0.43.4 adds no settings, so it stays) is a separate value: preset age and the
+// Product version matches the file version (0.43.5.0). The settings-schema string
+// in the plugin (HZF::kVersion, "0.43.5.0" since 2026-11-23 for the new [Scanner] ScanReach; "0.43.3.0" from 2026-11-19, was "0.42.0") is a separate value: preset age and the
 // update backup compare against that, not against this file version.
+// 2026-11-25: TESTONLY 0.43.5.0 on test/0.43.5-all (Quick Menu, message card, scanner). File, product, movie stamps, F11 header, default.ini and
+// preset Version read 0.43.5.0. The settings schema is 0.43.5.0 because of SCAN REACH (presets saved before show "Made for an older version"; every
+// setting still carries over). New Quick Menu keys default with Extended Mode off.
 // 2026-11-22: every version label was bumped to 0.43.4.0 for the 0.43.4 release (user request): file and product
 // version, movie build stamps (HUD, scanner, Comms, scope), F11 header, default ini header, preset Version. The settings
 // schema stays 0.43.3.0 (no new settings), so presets saved in 0.43.3 are not marked as older and user.ini is not re-backed up.
@@ -37,9 +40,9 @@
 
 #define HZ_FILE_VERSION_MAJOR 0
 #define HZ_FILE_VERSION_MINOR 43
-#define HZ_FILE_VERSION_PATCH 4
+#define HZ_FILE_VERSION_PATCH 5
 #define HZ_FILE_VERSION_BUILD 0
-#define HZ_FILE_VERSION_STR "0.43.4.0"
+#define HZ_FILE_VERSION_STR "0.43.5.0"
 
 // 0.43.2.0: 0 is the release state. 1 writes the verbose HUD-message trace (the
 // "hud message:" line and the Comms movie queue as "comms msg:" lines). The card

@@ -1,6 +1,6 @@
 // Unit tests for preset dedupe, the shared preset-name character set, and the
 // single file-version header. No game, no CommonLibSF.
-// Build: g++ -std=c++20 -Wall -Wextra -I src tests/preset_list_test.cpp -o /tmp/preset_list_test
+// Build: g++ -std=c++20 -Wall -Wextra -I src tests/preset_list_test.cpp -o test_scratch/preset_list_test
 
 #include "hz_addr_probe.h"
 #include "hz_msg_match.h"
@@ -19,7 +19,7 @@
 #include <vector>
 
 namespace HZF {
-inline const char* kVersion = "0.43.3.0";
+inline const char* kVersion = "0.43.5.0";
 }
 #include "hz_ini_diff.h"
 #include "hz_preset_apply.h"   // r7 (S-4): the real PresetToUser
@@ -60,8 +60,8 @@ int main()
 {
 	using namespace hzpreset;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.4.0", "file version string");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 4 && HZ_FILE_VERSION_BUILD == 0, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.5.0", "file version string");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 5 && HZ_FILE_VERSION_BUILD == 0, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "verbose reaction trace is off for this release");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "unfiltered HUD capture is off for this release");
 	Expect(HzFileVersionOk("0.43.1.0"), "4-part version ok");
@@ -640,7 +640,7 @@ int main()
 		Expect(load != std::string::npos, "plugin load function is present");
 		Expect(src.find("REX::INFO(\"HorizonUI {} loaded\", HZ::DllFileVersion());", load) != std::string::npos, "load line prints DllFileVersion");
 		Expect(src.find("HorizonUI 0.42.0 loaded") == std::string::npos, "load line is not a typed schema version");
-		Expect(src.find("inline const char* kVersion = \"0.43.3.0\"") != std::string::npos, "settings schema is 0.43.3.0");
+		Expect(src.find("inline const char* kVersion = \"0.43.5.0\"") != std::string::npos, "settings schema is 0.43.5.0");
 		Expect(src.find("\n#include \"hz_ini_diff.h\"") != std::string::npos, "F11 save uses the shared Diff header");
 		{
 			const auto inc = src.find("\n#include \"hz_ini_diff.h\"");
@@ -829,7 +829,7 @@ int main()
 		Expect(ini.find("\r\n") != std::string::npos, "Moragar's Choice stays CRLF");
 		Expect(ini.find("Name=Moragar's Choice") != std::string::npos, "preset name");
 		Expect(ini.find("Author=Moragar") != std::string::npos, "preset author");
-		Expect(ini.find("Version=0.43.4.0") != std::string::npos, "preset Version is the file version");
+		Expect(ini.find("Version=0.43.5.0") != std::string::npos, "preset Version is the file version");
 		Expect(ini.find("Description=The author's own settings, matching the Nexus screenshots.") != std::string::npos, "preset description");
 		Expect(ini.find("NameHover=0") != std::string::npos, "Moragar's Choice sets NameHover");
 		Expect(ini.find("VitalsBars=0") != std::string::npos, "Moragar's Choice sets VitalsBars");
@@ -879,7 +879,7 @@ int main()
 		Expect(static_cast<bool>(in), "default.ini opens");
 		std::string ini((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 		Expect(ini.find("\r\n") != std::string::npos, "default.ini stays CRLF");
-		Expect(ini.find("HorizonUI.default.ini (v0.43.4.0)") != std::string::npos,
+		Expect(ini.find("HorizonUI.default.ini (v0.43.5.0)") != std::string::npos,
 			"default.ini header is the file version");
 		const auto cards = ini.find("[Cards]");
 		const auto compass = ini.find("[Compass]");
@@ -1066,7 +1066,7 @@ int main()
 		std::ifstream in("xmake.lua");
 		Expect(static_cast<bool>(in), "xmake.lua opens");
 		std::string lua((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(lua.find("set_version(\"0.43.4.0\")") != std::string::npos, "xmake version is the 4-part file version");
+		Expect(lua.find("set_version(\"0.43.5.0\")") != std::string::npos, "xmake version is the 4-part file version");
 		Expect(lua.find("set_version(\"0.42.0\")") == std::string::npos, "xmake version is not the 3-part schema");
 		std::ifstream cpp("res/horizonui-plugin.cpp.in");
 		Expect(static_cast<bool>(cpp), "plugin version template opens");
@@ -1145,6 +1145,18 @@ int main()
 		Expect(fresh.find("WatchLog") == std::string::npos, "r7 S-4: a preset applied with no old user.ini adds no WatchLog (diagnostics stay off)");
 		const auto keepHk = HZF::PresetToUser(preset, def, "[Hotkeys]\r\nSettingsKey=F10\r\n");
 		Expect(keepHk.find("SettingsKey=F10") != std::string::npos, "r7 S-4: the player's personal keys ([Hotkeys]) stay, as before the move");
+		{
+			// 0.43.5: the scanner game-setting choices are personal. A preset Apply used to put ScanHighlightArea back to
+			// Vanilla (seen on a real PC: MAX before the Apply, VANILLA after).
+			const std::string oldU = "[Scanner]\r\nScanHighlightArea=4\r\nScanOutlineThickness=2\r\nScanReach=1\r\nScanUnits=1\r\n";
+			const auto keepScan = HZF::PresetToUser("[Preset]\r\nName=P\r\n[Scanner]\r\nScanMaxSignals=3\r\n", def, oldU);
+			const auto lay = HZF::Overlay(def, keepScan);
+			Expect(readKey(lay, "scanhighlightarea") == "4" && readKey(lay, "scanoutlinethickness") == "2" && readKey(lay, "scanreach") == "1", "0.43.5: a preset Apply keeps the player's own HIGHLIGHT AREA, OUTLINE THICKNESS and SCAN REACH");
+			Expect(readKey(lay, "scanmaxsignals") == "3" && readKey(lay, "scanunits") == "0", "0.43.5: the preset's other [Scanner] keys still apply and unlisted ones go back to the defaults");
+			const auto withScan = HZF::PresetToUser("[Preset]\r\nName=P\r\n[Scanner]\r\nScanHighlightArea=2\r\nScanReach=3\r\n", def, "");
+			Expect(readKey(HZF::Overlay(def, withScan), "scanhighlightarea") == "1" && readKey(HZF::Overlay(def, withScan), "scanreach") == "0", "0.43.5: a preset never sets them (an old preset that lists them changes nothing)");
+			Expect(HZF::StripPersonal("[Scanner]\r\nScanHighlightArea=2\r\nScanReach=3\r\nScanUnits=1\r\n").find("ScanHighlightArea") == std::string::npos && HZF::StripPersonal("[Scanner]\r\nScanReach=3\r\nScanUnits=1\r\n").find("ScanUnits=1") != std::string::npos, "0.43.5: a saved preset leaves them out and keeps the other [Scanner] keys");
+		}
 		Expect(HZF::OnlySection(user, "debug").find("[Debug]") == 0 && HZF::OnlySection(user, "cards").empty(), "r6: OnlySection returns one section, or nothing");
 		std::ifstream mc("src/main.cpp");
 		std::string m((std::istreambuf_iterator<char>(mc)), std::istreambuf_iterator<char>());

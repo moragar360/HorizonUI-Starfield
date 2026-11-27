@@ -82,6 +82,8 @@
 #include "hz_menu_bits.h"   // perf round 2: event-kept open-menu set (pure helpers, tests/menu_bits_test.cpp)
 #include "hz_scan_hl.h"     // 0.43.3.1: [Scanner] ScanHighlightArea (pure helpers, tests/scan_hl_test.cpp)
 #include "hz_scan_ol.h"     // 0.43.3.2: [Scanner] ScanOutlineThickness (pure helpers, tests/scan_ol_test.cpp)
+#include "hz_scan_reach.h"  // 0.43.5: [Scanner] ScanReach (pure helpers, tests/scan_reach_test.cpp)
+#include "hz_quickslots.h"  // 0.43.5: Extended Quick Menu settings / store / use dispatch
 #include "preset_dedupe.h"
 
 // v0.37: the settings-file code (HZF) replaces files through this (temp file + MoveFileExW)
@@ -196,7 +198,20 @@ namespace HZ
 	}
 	// v0.37: the folder (HorizonUI.ini above is the legacy file: read for migration only, never written)
 	std::filesystem::path HzDir() { return IniPath().parent_path(); }
+
+	// 0.43.5 Extended Quick Menu (defined in hz_quickslots_game.h, included later)
+	void QmLoadSettingsFromText(const std::string& a_text);
+	void QmDetectOnce();
+	void QmJobKeys(HWND a_wnd);
+	void QmFlushStore();
+	void QmHudTick();
+	void QmLoadStoreFor(const hzlog::Character& a_ch);
+	void PollFavorites(RE::Scaleform::GFx::ASMovieRootBase* a_this);
+	void QmOnFavoritesMovie(RE::IMenu* a_menu);
+	extern std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_favRoot;
+	extern std::atomic<bool> g_inFavPoll;
 }
+
 
 // ==== HZF BEGIN: v0.37 settings files (plain std + one Win32 call through HzfReplace; unit-tested on the box) ====
 // Data\Interface\HorizonUI\:
@@ -210,7 +225,7 @@ namespace HZ
 // HZF lives at file scope (not inside namespace HZ). hz_ini_diff.h is self-contained.
 namespace HZF
 {
-	inline const char* kVersion = "0.43.3.0";   // settings schema; 0.43.3.0 since 2026-11-19 (0.43.4 adds no settings, so it stays), 0.42.0 before (user request): the first start of this DLL backs up user.ini once
+	inline const char* kVersion = "0.43.5.0";   // settings schema; 0.43.5.0 since 2026-11-23 (new [Scanner] ScanReach, user approved the bump), 0.43.3.0 from 2026-11-19 (0.43.4 added no settings), 0.42.0 before: the first start of this DLL backs up user.ini once
 }
 
 #include "hz_ini_diff.h"
@@ -853,12 +868,15 @@ namespace HZ
 	std::atomic<int> g_scanHlWant{hzscanhl::kVanilla};
 	// 0.43.3.2: [Scanner] ScanOutlineThickness, the same way (LoadIni stores, ScanOlApply reads on the UI thread)
 	std::atomic<int> g_scanOlWant{hzscanol::kVanilla};
+	// 0.43.5: [Scanner] ScanReach, the same way (LoadIni stores, ScanReachApply reads on the UI thread)
+	std::atomic<int> g_scanReachWant{hzscanreach::kVanilla};
 
 	void LoadIni(bool a_reloadMsglog = true)
 	{
 		std::string key = "F11";
 		int scanHl = hzscanhl::kVanilla;
 		int scanOl = hzscanol::kVanilla;
+		int scanReach = hzscanreach::kVanilla;
 		g_iniDebug = false;
 		g_perfDiag.store(0, std::memory_order_relaxed);
 		g_perfMode.store(0, std::memory_order_relaxed);
@@ -896,12 +914,15 @@ namespace HZ
 			if (get("settingskey", v) && !v.empty()) key = v;
 			if (get("scanhighlightarea", v)) scanHl = hzscanhl::Parse(v);
 			if (get("scanoutlinethickness", v)) scanOl = hzscanol::Parse(v);
+			if (get("scanreach", v)) scanReach = hzscanreach::Parse(v);
 			if (hzlog::IniReloadAppliesMsglog(a_reloadMsglog))
 				MsglogLoadSettings(d);
+			QmLoadSettingsFromText(text);
 		}
 		MsglogEnsureInit();
 		g_scanHlWant.store(scanHl, std::memory_order_release);   // applied on the UI thread (ScanHlApply), on a change only
 		g_scanOlWant.store(scanOl, std::memory_order_release);   // applied on the UI thread (ScanOlApply), on a change only
+		g_scanReachWant.store(scanReach, std::memory_order_release);   // 0.43.5: applied on the UI thread (ScanReachApply), on a change only
 		auto sc = KeyNameToScan(key);
 		if (!sc) { REX::WARN("unknown SettingsKey '{}', using F11", key); sc = 0x57; key = "F11"; }
 		g_scan = sc;
@@ -1082,6 +1103,8 @@ namespace HZ
 		return bits;
 	}
 
+	std::atomic<bool>          g_scanOpenEdge{false};  // 0.43.5: set by the MenuOpenCloseEvent sink when MonocleMenu opens, taken by ScanRecheck
+	std::atomic<bool>          g_scanOpen{false};      // 0.43.5: true while MonocleMenu is open (same sink; the 2 s recheck skips while this is set)
 	std::atomic<int>           g_menuSink{0};          // 0 pending, 1 registered, -1 failed: every check scans, as before
 	std::atomic<std::uint64_t> g_menuBits{0};          // open watched menus (event-kept, scan-checked)
 	std::atomic<std::uint32_t> g_menuGen{0};           // bumped by every watched open / close event (before its writes)
@@ -1156,6 +1179,13 @@ namespace HZ
 		RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent& a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
 		{
 			try {
+				{   // 0.43.5: the scanner open edge and the open flag for the scan recheck (one string compare per event)
+					static const RE::BSFixedString* const s_mon = [] { auto* n = new RE::BSFixedString{}; *n = "MonocleMenu"; return n; }();
+					if (a_event.menuName == *s_mon) {
+						if (a_event.opening) g_scanOpenEdge.store(true, std::memory_order_release);
+						g_scanOpen.store(a_event.opening, std::memory_order_release);
+					}
+				}
 				const auto& t = HzMenus();
 				for (std::size_t i = 0; i < kMenuN; ++i) {
 					if (!(a_event.menuName == t.name[i])) continue;
@@ -1281,6 +1311,24 @@ namespace HZ
 		return std::string("ch:") + c;
 	}
 
+	// Names ValidKeyName / KeyNameToScan already map (A-Z, 0-9, F1-F12, Insert, Home, End,
+	// PageUp, PageDown). Queued as "bind:<Name>" on the existing F11 raw-input path only;
+	// the HUD ignores it unless a Quick Menu key row is capturing. No extra polling.
+	std::string VkToBind(UINT a_vk)
+	{
+		if (a_vk >= 'A' && a_vk <= 'Z') return std::string(1, static_cast<char>(a_vk));
+		if (a_vk >= '0' && a_vk <= '9') return std::string(1, static_cast<char>(a_vk));
+		if (a_vk >= VK_NUMPAD0 && a_vk <= VK_NUMPAD9)
+			return std::string(1, static_cast<char>('0' + (a_vk - VK_NUMPAD0)));
+		if (a_vk >= VK_F1 && a_vk <= VK_F12) return "F" + std::to_string(a_vk - VK_F1 + 1);
+		if (a_vk == VK_INSERT) return "Insert";
+		if (a_vk == VK_HOME) return "Home";
+		if (a_vk == VK_END) return "End";
+		if (a_vk == VK_PRIOR) return "PageUp";
+		if (a_vk == VK_NEXT) return "PageDown";
+		return {};
+	}
+
 	// key repeat state (window thread only)
 	bool      g_kDown[256]{};
 	ULONGLONG g_kNext[256]{};
@@ -1296,9 +1344,15 @@ namespace HZ
 		if (!g_kDown[a_vk]) { fire = true; g_kNext[a_vk] = now + 400; }
 		else if (IsArrow(a_vk) && now >= g_kNext[a_vk]) { fire = true; g_kNext[a_vk] = now + 150; }
 		g_kDown[a_vk] = true;
-		if (fire && (code || !chr.empty())) {
-			std::lock_guard l(g_qLock);
-			if (g_keyQueue.size() < 64) g_keyQueue.emplace_back(code ? std::string(code) : chr);
+		if (fire) {
+			std::string bind = VkToBind(a_vk);
+			if (code || !chr.empty() || !bind.empty()) {
+				std::lock_guard l(g_qLock);
+				if ((code || !chr.empty()) && g_keyQueue.size() < 64)
+					g_keyQueue.emplace_back(code ? std::string(code) : chr);
+				if (!bind.empty() && g_keyQueue.size() < 64)
+					g_keyQueue.emplace_back(std::string("bind:") + bind);
+			}
 		}
 	}
 
@@ -1959,6 +2013,8 @@ namespace HZ
 
 	void ScanHlApply();   // 0.43.3.1, defined after HzAddrSlot
 	void ScanOlApply();   // 0.43.3.2, defined after ScanHlApply
+	void ScanReachApply();   // 0.43.5, defined after ScanOlApply
+	void ScanRecheck(RE::UI* a_ui, ULONGLONG a_now);   // 0.43.5, defined after ScanReachApply
 
 	void BannerPoll(ULONGLONG a_now)
 	{
@@ -1970,6 +2026,8 @@ namespace HZ
 		IniSavedPushMsg(ui);   // arch-fixes Fix 2: settings-saved signal (edge only)
 		ScanHlApply();         // 0.43.3.1: scanner highlight area (one atomic load and a compare unless it changed)
 		ScanOlApply();         // 0.43.3.2: scanner outline thickness (the same: one atomic load and a compare)
+		ScanReachApply();      // 0.43.5: scan reach (the same: one atomic load and a compare)
+		ScanRecheck(ui, a_now);   // 0.43.5: scanner open edge / 2 s while closed (skipped while open), only after a Horizon write
 		bool scan = g_banScanMod.load() == 1 && ui->IsMenuOpen("MonocleMenu");
 		for (auto m : { "LoadingMenu", "FaderMenu", "MainMenu", "PauseMenu" })
 			if (ui->IsMenuOpen(m)) scan = false;
@@ -2795,12 +2853,19 @@ namespace HZ
 	// the HUDMessagesMenu advance (100 ms gate). Steady state: one atomic load and one int compare. No Scaleform, no
 	// GFx value, no file. The INISettingCollection singleton id is checked in the versionlib table first (a missing id
 	// would end the process inside REL); the lookups are null-checked and run under SEH. The setting lookup walks the
-	// game's INI list once per change. Vanilla at start writes nothing. The game's own values are read once, right
-	// before the first write, and written back on a later Vanilla. A missing id or setting is logged once and the
-	// change is dropped (no retry until the position changes again). Author: Moragar. Last modified: 2026-11-18.
-	int             g_scanHlApplied = hzscanhl::kVanilla;   // UI thread only
-	hzscanhl::Orig  g_scanHlOrig;                           // UI thread only
+	// game's INI list once per change. Vanilla writes nothing (the game, StarfieldCustom.ini or another
+	// highlight-radius mod stays). Going back to Vanilla restores the values captured before Horizon's first write
+	// this session. Writes run only while the Scanner module is installed (modules\scanner.marker). Never on scanner
+	// open or every frame. A missing id or setting is logged once and the change is dropped (no retry until the
+	// position changes again). Author: Moragar. Last modified: 2026-11-27.
+	hzscanhl::State g_scanHl;                                // UI thread only: applied, yield/reapply guard, captured base, last write (hz_scan_hl.h)
 	bool            g_scanHlMissLogged = false;             // UI thread only
+	// 0.43.5: the load peek and the one-line logs
+	bool            g_scanHlPeeked = false;                 // UI thread only: the read-only load line was done
+	bool            g_scanHlPeekOk = false;
+	float           g_scanHlPeekDot = 0.0f, g_scanHlPeekDecal = 0.0f;
+	bool            g_scanHlReLogged = false;               // UI thread only: "reapplied" is logged once per session
+	bool            g_scanHlVanChgLogged = false;           // UI thread only: "changed after load" (Vanilla) once per session
 
 	struct HzScanHlRaw
 	{
@@ -2834,9 +2899,17 @@ namespace HZ
 		a_io->ok = -1;
 		auto* col = RE::INISettingCollection::GetSingleton();
 		if (!col) return;
-		auto* sd = HzScanHlFind(col, hzscanhl::kKeyDot);
-		auto* sr = HzScanHlFind(col, hzscanhl::kKeyDecal);
-		auto* sf = HzScanHlFind(col, hzscanhl::kKeyFall);
+		// 0.43.5: the three settings are static game objects, looked up once per session (a miss is not searched again)
+		static RE::Setting* s_sd = nullptr;
+		static RE::Setting* s_sr = nullptr;
+		static RE::Setting* s_sf = nullptr;
+		static bool s_sdLooked = false, s_srLooked = false, s_sfLooked = false;
+		if (!s_sdLooked) { s_sd = HzScanHlFind(col, hzscanhl::kKeyDot); s_sdLooked = true; }
+		if (!s_srLooked) { s_sr = HzScanHlFind(col, hzscanhl::kKeyDecal); s_srLooked = true; }
+		if (!s_sfLooked) { s_sf = HzScanHlFind(col, hzscanhl::kKeyFall); s_sfLooked = true; }
+		auto* sd = s_sd;
+		auto* sr = s_sr;
+		auto* sf = s_sf;
 		a_io->dotFound = sd ? 1 : 0;
 		a_io->decalFound = sr ? 1 : 0;
 		a_io->fallFound = sf ? 1 : 0;
@@ -2872,26 +2945,36 @@ namespace HZ
 	}
 #endif
 
+	static void ScanHlPeekOnce();   // 0.43.5, below
+
 	void ScanHlApply()
 	{
-		const int want = g_scanHlWant.load(std::memory_order_acquire);
-		if (want == g_scanHlApplied) return;
-		const auto plan = hzscanhl::Next(want, g_scanHlApplied, g_scanHlOrig);
-		if (plan.act == hzscanhl::Act::None) { g_scanHlApplied = want; return; }
+		if (!g_scanHlPeeked) ScanHlPeekOnce();   // 0.43.5: one read-only line at load (then a bool test)
+		int want = g_scanHlWant.load(std::memory_order_acquire);
+		// Scanner module off: do not write. A leftover ScanHighlightArea=2 in the user ini used to apply Full screen
+		// (0.45 / 4.0 / fade 1.0) even with the movies uninstalled. If this session already wrote, restore once.
+		if (g_banScanMod.load(std::memory_order_acquire) != 1) {
+			if (!g_scanHl.wrote.on) return;
+			want = hzscanhl::kVanilla;
+		}
+		if (hzscanhl::Settled(g_scanHl, want)) return;   // 0.43.5: a yield is cleared by any other pick, then 'no change' is decided
+		const auto plan = hzscanhl::Next(want, g_scanHl.applied, g_scanHl.orig);
+		if (plan.act == hzscanhl::Act::None) { g_scanHl.applied = want; return; }
 		const auto id = RE::ID::INISettingCollection::Singleton.id();
 		const int slot = id != 0 ? HzAddrSlot(id) : -1;
 		if (hzaddr::AddrSlotRetry(slot)) return;   // versionlib not read yet (job thread): the next poll tries again
-		g_scanHlApplied = want;                    // one attempt per change: a miss is not retried every poll
+		g_scanHl.applied = want;                    // one attempt per change: a miss is not retried every poll
 		if (hzaddr::AddrSlotMiss(slot)) {
 			if (!g_scanHlMissLogged) { REX::WARN("scanner highlight: INISettingCollection id {} missing, left to the game", id); g_scanHlMissLogged = true; }
 			return;
 		}
 		const bool restore = plan.act == hzscanhl::Act::Restore;
+		const bool vanilla = want == hzscanhl::kVanilla;
 		HzScanHlRaw io{};
-		io.capture = g_scanHlOrig.have ? 0 : 1;
-		io.writeDot = restore ? (g_scanHlOrig.dotOk ? 1 : 0) : 1;
-		io.writeDecal = restore ? (g_scanHlOrig.decalOk ? 1 : 0) : 1;
-		io.writeFall = plan.wFall ? 1 : 0;   // a restore / Horizon dot sets wFall only for a captured fade
+		io.capture = g_scanHl.orig.have ? 0 : 1;
+		io.writeDot = restore ? (g_scanHl.orig.dotOk ? 1 : 0) : 1;
+		io.writeDecal = restore ? (g_scanHl.orig.decalOk ? 1 : 0) : 1;
+		io.writeFall = plan.wFall ? 1 : 0;   // Vanilla restore writes a captured fade; Small / Large / Wide only a captured fade
 		io.dot = plan.dot;
 		io.decal = plan.decal;
 		io.fall = plan.fall;
@@ -2901,13 +2984,13 @@ namespace HZ
 			return;
 		}
 		if (io.capture) {
-			g_scanHlOrig.have = true;
-			g_scanHlOrig.dotOk = io.dotFound != 0;
-			g_scanHlOrig.decalOk = io.decalFound != 0;
-			g_scanHlOrig.fallOk = io.fallFound != 0;
-			g_scanHlOrig.dot = io.dotWas;
-			g_scanHlOrig.decal = io.decalWas;
-			g_scanHlOrig.fall = io.fallWas;
+			g_scanHl.orig.have = true;
+			g_scanHl.orig.dotOk = io.dotFound != 0;
+			g_scanHl.orig.decalOk = io.decalFound != 0;
+			g_scanHl.orig.fallOk = io.fallFound != 0;
+			g_scanHl.orig.dot = io.dotWas;
+			g_scanHl.orig.decal = io.decalWas;
+			g_scanHl.orig.fall = io.fallWas;
 		}
 		if ((!io.dotFound || !io.decalFound) && !g_scanHlMissLogged) {
 			REX::WARN("scanner highlight: {} not found, only the other setting is set", io.dotFound ? hzscanhl::kKeyDecal : hzscanhl::kKeyDot);
@@ -2917,18 +3000,114 @@ namespace HZ
 			REX::WARN("scanner highlight: {} not found, the outline fade is left to the game", hzscanhl::kKeyFall);
 			g_scanHlMissLogged = true;
 		}
+		// 0.43.5: remember what is in the game now. Vanilla is a passthrough (no recheck write; never rewritten on scanner open).
+		g_scanHl.wrote.on = !restore && !vanilla && io.dotFound != 0;
+		g_scanHl.wrote.dot = plan.dot;
+		g_scanHl.wrote.decal = plan.decal;
+		g_scanHl.wrote.wFall = plan.wFall && io.fallFound != 0;
+		g_scanHl.wrote.fall = plan.fall;
 		if (plan.wFall) REX::INFO("scanner highlight: {} ({} / {} / fade {})", hzscanhl::Name(want), plan.dot, plan.decal, plan.fall);
 		else REX::INFO("scanner highlight: {} ({} / {})", hzscanhl::Name(want), plan.dot, plan.decal);
 	}
 
+	// ---- 0.43.5: read-only peek and recheck for ScanHighlightArea ----
+	// Purpose: (1) once at load, read the game's three values and log them (no write), flagging an INI tweak or another
+	// mod that already widens the scanner, so a "Vanilla looks like Max" report can be answered from the log; (2) after
+	// a Horizon write, read the values back on the scanner open edge and every 2 s while the scanner is closed, and write
+	// them again when something else changed them (another mod's setini, a bat file, the console), logged once per
+	// session. Vanilla never writes from this path (passthrough; ScanHlApply only restores after another level).
+	// UI thread only. Same id check and SEH as ScanHlApply (HzScanHlCall with no write = a read). Author: Moragar.
+	// Last modified: 2026-11-27.
+	static bool HzScanHlRead(HzScanHlRaw& a_io)
+	{
+		const auto id = RE::ID::INISettingCollection::Singleton.id();
+		const int slot = id != 0 ? HzAddrSlot(id) : -1;
+		if (hzaddr::AddrSlotRetry(slot) || hzaddr::AddrSlotMiss(slot)) return false;
+		a_io = HzScanHlRaw{};
+		a_io.capture = 1;   // read only: every write flag stays 0
+		const int ran = HzScanHlSEH(&a_io);
+		return ran && a_io.ok == 1 && (a_io.dotFound || a_io.decalFound);
+	}
+
+	static void ScanHlPeekOnce()
+	{
+		const auto id = RE::ID::INISettingCollection::Singleton.id();
+		const int slot = id != 0 ? HzAddrSlot(id) : -1;
+		if (hzaddr::AddrSlotRetry(slot)) return;   // versionlib not read yet: the next poll tries again
+		g_scanHlPeeked = true;
+		HzScanHlRaw io{};
+		if (!HzScanHlRead(io)) return;   // a miss is logged by ScanHlApply when a level is picked
+		g_scanHlPeekOk = true;
+		g_scanHlPeekDot = io.dotWas;
+		g_scanHlPeekDecal = io.decalWas;
+		const bool wide = hzscanhl::WidenedByOther(io.dotFound != 0, io.dotWas, io.decalFound != 0, io.decalWas);
+		REX::INFO("scanner highlight: game values at load {} / {} / fade {}{}", io.dotWas, io.decalWas, io.fallWas,
+			wide ? " - your INI or another mod already widens the scanner (VANILLA leaves those values)" : "");
+	}
+
+	ULONGLONG g_scanReNext = 0;      // UI thread only: the next closed-scanner recheck
+	void ScanReachRecheck();         // 0.43.5, defined after ScanReachApply
+
+	static void ScanHlRecheck(bool a_openEdge)
+	{
+		if (!g_scanHl.wrote.on) {
+			// Vanilla (or nothing written yet): never write here; one line if the game's values changed after load
+			if (!a_openEdge || g_scanHlVanChgLogged || !g_scanHlPeekOk) return;
+			g_scanHlVanChgLogged = true;
+			HzScanHlRaw io{};
+			if (!HzScanHlRead(io)) return;
+			if (hzscanhl::Drifted(io.dotWas, g_scanHlPeekDot) || hzscanhl::Drifted(io.decalWas, g_scanHlPeekDecal))
+				REX::INFO("scanner highlight: Vanilla, the game's values changed after load (now {} / {}) - another mod or the console", io.dotWas, io.decalWas);
+			return;
+		}
+		HzScanHlRaw io{};
+		if (!HzScanHlRead(io)) return;
+		hzscanhl::Now now;
+		now.dotFound = io.dotFound != 0; now.decalFound = io.decalFound != 0; now.fallFound = io.fallFound != 0;
+		now.dot = io.dotWas; now.decal = io.decalWas; now.fall = io.fallWas;
+		const int was = g_scanHl.applied;   // Recheck on a yield updates the state; the log needs the name from before
+		const auto p = hzscanhl::Recheck(g_scanHl, now);   // None / Reapply (up to 3 per pick) / Yield; Yield bookkeeping is in the header
+		if (p.re == hzscanhl::Re::None) return;
+		HzScanHlRaw w{};
+		if (p.re == hzscanhl::Re::Reapply) {
+			w.writeDot = p.writeDot ? 1 : 0;
+			w.writeDecal = p.writeDecal ? 1 : 0;
+			w.writeFall = p.writeFall ? 1 : 0;
+			w.dot = p.dot;
+			w.decal = p.decal;
+			w.fall = p.fall;
+			const int ran = HzScanHlSEH(&w);
+			if (!ran || w.ok != 1) return;
+			if (!g_scanHlReLogged) {
+				g_scanHlReLogged = true;
+				REX::INFO("scanner highlight: reapplied {} (another mod or the console changed it to {} / {})",
+					hzscanhl::Name(was), now.dot, now.decal);
+			}
+			return;
+		}
+		// Yield: Recheck already gave back only the settings that still hold Horizon's value, forgot the base and
+		// stopped managing until the player picks another HIGHLIGHT AREA. Write exactly that plan.
+		if (p.writeDot || p.writeDecal || p.writeFall) {
+			w.writeDot = p.writeDot ? 1 : 0;
+			w.writeDecal = p.writeDecal ? 1 : 0;
+			w.writeFall = p.writeFall ? 1 : 0;
+			w.dot = p.dot;
+			w.decal = p.decal;
+			w.fall = p.fall;
+			HzScanHlSEH(&w);
+		}
+		REX::INFO("scanner highlight: {} was changed again by another mod, a startup bat, the console or a data reload (now {} / {}); Horizon put back only the values it set and leaves the highlight area alone until you pick a new HIGHLIGHT AREA",
+			hzscanhl::Name(was), now.dot, now.decal);
+	}
+
 	// ---- 0.43.3.2: [Scanner] ScanOutlineThickness (src/hz_scan_ol.h) ----
-	// Purpose: write the ten [Monocle] fHighlightScannableOutlineThickness* game settings, only when the wanted position
+	// Purpose: write the eleven [Monocle] fHighlightScannableOutlineThickness* game settings, only when the wanted position
 	// changed: at load and after a settings save / apply (LoadIni stores g_scanOlWant), exactly like ScanHlApply. UI
 	// thread only: called from BannerPoll right after ScanHlApply (100 ms gate). Steady state: one atomic load and one
 	// int compare. No Scaleform, no GFx value, no file. Same id check (INISettingCollection singleton) and SEH; each
 	// lookup is null and type (float) checked; a setting that is not found is neither read nor written. The game's own
 	// values are read once, right before the first write; Thick / Thicker scale those; Vanilla writes them back. The
-	// log line says how many of the ten were found (a missing one shows up there). Author: Moragar. Last modified: 2026-11-18.
+	// log line says how many of the eleven were found (a missing one shows up there). Author: Moragar. Last modified: 2026-11-18.
 	int             g_scanOlApplied = hzscanol::kVanilla;   // UI thread only
 	hzscanol::Orig  g_scanOlOrig;                           // UI thread only
 	bool            g_scanOlMissLogged = false;             // UI thread only
@@ -3025,6 +3204,181 @@ namespace HZ
 			return;
 		}
 		REX::INFO("scanner outline: {} (x{}, {} of {} settings found)", hzscanol::Name(want), restore ? 1.0f : hzscanol::Mul(want), nFound, hzscanol::kN);
+	}
+
+	// ---- 0.43.5: [Scanner] ScanReach (src/hz_scan_reach.h) ----
+	// Purpose: write the two hand scanner range game settings (GMSTs fHandScannerBaseRange = highlight distance,
+	// fHandScannerScanRange = scan distance) as x2 / x3 / x5 of the game's values, only when the wanted position changed:
+	// at load and after a settings save / apply (LoadIni stores g_scanReachWant), like ScanOlApply. This changes gameplay;
+	// Vanilla (the default) writes nothing. fHandScannerScanRangeSkillMult (Surveying) is never touched. The game's values
+	// (Starfield.esm, or a range mod that loaded first) are read right before the first write and multiplied; Vanilla
+	// writes them back only where the game still holds Horizon's value. If something else changes a value after Horizon
+	// wrote it, ScanReachRecheck yields: one log line, nothing is written back, and Horizon leaves the reach alone until
+	// the player picks another SCAN REACH (then the values in the game at that moment are the new base). UI thread only:
+	// BannerPoll, 100 ms gate; steady state one atomic load and an int compare. The GameSettingCollection singleton and
+	// GetSetting ids are checked in versionlib first (as the GMST text reader does), and the calls run under SEH.
+	// Author: Moragar. Last modified: 2026-11-23.
+	hzscanreach::State  g_scanReach;                                  // UI thread only: applied, yield position, base values, what Horizon wrote (hz_scan_reach.h)
+	bool                g_scanReachMissLogged = false;                // UI thread only
+
+	struct HzScanReachRaw
+	{
+		int   write[hzscanreach::kN];  // 1 = write val[i] (only for a setting found)
+		float val[hzscanreach::kN];
+		int   ok;                      // out: 1 ran, -1 no collection
+		int   found[hzscanreach::kN];  // out: the setting exists as a float
+		float was[hzscanreach::kN];    // out: the value before any write
+	};
+
+	static void HzScanReachCall(HzScanReachRaw* a_io)
+	{
+		if (!a_io) return;
+		a_io->ok = -1;
+		auto* col = RE::GameSettingCollection::GetSingleton();
+		if (!col) return;
+		static RE::Setting* s_set[hzscanreach::kN] = {};   // static game objects: looked up once per session
+		static bool s_looked[hzscanreach::kN] = {};        // a miss is not searched again
+		for (int i = 0; i < hzscanreach::kN; ++i) {
+			if (!s_looked[i]) {
+				auto* f = col->GetSetting(hzscanreach::kKeys[i]);
+				if (f && f->GetType() == RE::Setting::Type::kFloat) s_set[i] = f;
+				s_looked[i] = true;
+			}
+			auto* s = s_set[i];
+			a_io->found[i] = s ? 1 : 0;
+			if (!s) continue;
+			a_io->was[i] = s->GetFloat();
+			if (!a_io->write[i]) continue;
+			s->SetFloat(a_io->val[i]);
+		}
+		a_io->ok = 1;
+	}
+
+#if defined(_MSC_VER)
+	static int HzScanReachSEH(HzScanReachRaw* a_io) noexcept
+	{
+		if (!a_io) return 0;
+		using Fn = void (*)(HzScanReachRaw*);
+		Fn fn = &HzScanReachCall;
+		__try {
+			fn(a_io);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+#else
+	static int HzScanReachSEH(HzScanReachRaw* a_io) noexcept
+	{
+		if (!a_io) return 0;
+		try { HzScanReachCall(a_io); return 1; } catch (...) { return 0; }
+	}
+#endif
+
+	// 1 ids ready, 0 versionlib not read yet (try again), -1 missing (logged once)
+	static int HzScanReachIds()
+	{
+		const auto sid = RE::ID::GameSettingCollection::Singleton.id();
+		const auto gid = RE::ID::GameSettingCollection::GetSetting.id();
+		if (sid == 0 || gid == 0) return -1;
+		const int ss = HzAddrSlot(sid);
+		const int gs = HzAddrSlot(gid);
+		if (hzaddr::AddrSlotRetry(ss) || hzaddr::AddrSlotRetry(gs)) return 0;
+		if (hzaddr::AddrSlotMiss(ss) || hzaddr::AddrSlotMiss(gs)) return -1;
+		return 1;
+	}
+
+	// read the two current values (no write); false when the call did not run
+	static bool HzScanReachRead(float a_cur[hzscanreach::kN], bool a_found[hzscanreach::kN])
+	{
+		HzScanReachRaw io{};
+		const int ran = HzScanReachSEH(&io);
+		if (!ran || io.ok != 1) return false;
+		for (int i = 0; i < hzscanreach::kN; ++i) { a_cur[i] = io.was[i]; a_found[i] = io.found[i] != 0; }
+		return true;
+	}
+
+	// write what hzscanreach::Pick / Recheck planned (exactly that, nothing else)
+	static bool HzScanReachWrite(const hzscanreach::Plan& a_p)
+	{
+		HzScanReachRaw io{};
+		bool any = false;
+		for (int i = 0; i < hzscanreach::kN; ++i) { io.write[i] = a_p.w[i] ? 1 : 0; io.val[i] = a_p.val[i]; any = any || a_p.w[i]; }
+		if (!any) return true;
+		const int ran = HzScanReachSEH(&io);
+		return ran && io.ok == 1;
+	}
+
+	void ScanReachApply()
+	{
+		const int want = g_scanReachWant.load(std::memory_order_acquire);
+		if (hzscanreach::Settled(g_scanReach, want)) return;   // steady state: one atomic load and a compare. A yield is cleared by any other pick, then 'no change' is decided
+		const int ids = HzScanReachIds();
+		if (ids == 0) return;   // versionlib not read yet (job thread): the next poll tries again
+		if (ids < 0) {
+			g_scanReach.applied = hzscanreach::Norm(want);   // one attempt per change: a miss is not retried every poll
+			if (!g_scanReachMissLogged) { REX::WARN("scan reach: GameSettingCollection id missing, left to the game"); g_scanReachMissLogged = true; }
+			return;
+		}
+		float cur[hzscanreach::kN] = {};
+		bool found[hzscanreach::kN] = {};
+		if (!HzScanReachRead(cur, found)) {
+			// keep applied as it is: a Vanilla pick must still be able to restore on the next poll
+			if (!g_scanReachMissLogged) { REX::WARN("scan reach: game settings not read, left to the game"); g_scanReachMissLogged = true; }
+			return;
+		}
+		const hzscanreach::Orig before = g_scanReach.orig;
+		const auto p = hzscanreach::Pick(g_scanReach, want, cur, found);
+		if (p.noKeys) {
+			if (!g_scanReachMissLogged) { REX::WARN("scan reach: neither hand scanner range setting found, left to the game"); g_scanReachMissLogged = true; }
+			return;
+		}
+		if (!p.act) return;
+		if (!HzScanReachWrite(p)) {
+			if (!g_scanReachMissLogged) { REX::WARN("scan reach: write failed, left to the game"); g_scanReachMissLogged = true; }
+			return;
+		}
+		if (p.restore) {
+			REX::INFO("scan reach: Vanilla (game values {} / {} m{})", before.v[hzscanreach::kBase], before.v[hzscanreach::kScan],
+				p.skipped ? ", a value another mod changed was left as it is" : "");
+		} else {
+			const auto& o = g_scanReach.orig;
+			REX::INFO("scan reach: {} (highlight {} m, scan {} m plus the Surveying bonus; game values {} / {} m)", hzscanreach::Name(hzscanreach::Norm(want)),
+				p.val[hzscanreach::kBase], p.val[hzscanreach::kScan], o.v[hzscanreach::kBase], o.v[hzscanreach::kScan]);
+		}
+	}
+
+	// 0.43.5: after a Horizon write, a value that no longer holds what Horizon wrote means another mod, a startup bat, the
+	// console or a data reload set it: yield. hzscanreach::Recheck gives back the OTHER setting if it still holds Horizon's
+	// value (never a value somebody else set), forgets the base, and manages nothing until the next pick.
+	void ScanReachRecheck()
+	{
+		if (g_scanReach.applied == hzscanreach::kVanilla) return;
+		if (HzScanReachIds() != 1) return;
+		float cur[hzscanreach::kN] = {};
+		bool found[hzscanreach::kN] = {};
+		if (!HzScanReachRead(cur, found)) return;
+		const auto p = hzscanreach::Recheck(g_scanReach, cur, found);
+		if (!p.act) return;
+		HzScanReachWrite(p);
+		REX::INFO("scan reach: {} was changed to {} by another mod, a startup bat, the console or a data reload; Horizon put back only the values it set and leaves the scan reach alone until you pick a new SCAN REACH",
+			hzscanreach::kKeys[p.driftKey], cur[p.driftKey]);
+	}
+
+	// 0.43.5: the scanner open edge comes from the existing MenuOpenCloseEvent sink (g_scanOpenEdge, set there; no
+	// IsMenuOpen polling). A 2 s read runs only after Horizon wrote a highlight area or a scan reach, and only while
+	// the scanner is closed (g_scanOpen, from the same sink). With everything on Vanilla (the default) this is one
+	// atomic exchange and one atomic load (or a time compare) per poll. The older BannerPoll IsMenuOpen("MonocleMenu")
+	// plus four menus every 100 ms (since 0.42, for the location banner) is unchanged.
+	void ScanRecheck(RE::UI*, ULONGLONG a_now)
+	{
+		if (g_scanOpenEdge.exchange(false, std::memory_order_acq_rel)) { ScanHlRecheck(true); ScanReachRecheck(); return; }
+		if (g_scanOpen.load(std::memory_order_acquire)) return;   // skip the 2 s path while the scanner is open
+		if (a_now < g_scanReNext) return;
+		g_scanReNext = a_now + 2000;
+		if (!g_scanHl.wrote.on && g_scanReach.applied == hzscanreach::kVanilla) return;
+		ScanHlRecheck(false);
+		ScanReachRecheck();
 	}
 
 	// Purpose: location, player name, currentPlayerID, and Calendar. ID-gated
@@ -4522,6 +4876,7 @@ namespace HZ
 			const auto eng = MsglogEngSnap();
 			if (eng.playerId == 0) return;
 			const auto ch = hzlog::MakeCharacter(eng.playerId, eng.name);
+			try { QmLoadStoreFor(ch); } catch (...) {}
 			const auto now = GetTickCount64();
 			bool queue = false;
 			{
@@ -4598,6 +4953,7 @@ namespace HZ
 			MsglogRefreshEngine(true);
 			const auto eng = MsglogEngSnap();
 			const auto ch = hzlog::MakeCharacter(eng.playerId, eng.name);
+			try { QmLoadStoreFor(ch); } catch (...) {}
 			const auto ts = static_cast<std::int64_t>(std::time(nullptr));
 			const auto now = GetTickCount64();
 			const bool afterLoad = g_ml.loadBusy.load();
@@ -5142,6 +5498,8 @@ namespace HZ
 	}
 
 
+#include "hz_quickslots_game.h"
+
 	// Purpose: job-thread poll. Capture, writer coordinator, file I/O,
 	// and load/quit flags. Never touches Scaleform (GetMenu / menuObj /
 	// Invoke). SFSE permanent tasks run on BSJobs in 1.16.244, not Main.
@@ -5157,14 +5515,16 @@ namespace HZ
 		HintWindowOwnerTid();
 		FilesJobPreload();
 		const auto now = GetTickCount64();
+		HWND w = GameWindow();
 		{
-			HWND w = GameWindow();
 			const bool down = w && (GetAsyncKeyState(g_vk.load()) & 0x8000) != 0;
 			if (hzlog::SettingsKeyJobEdge(down, g_wasDownJob)) {
 				g_settingsKeyAt.store(now, std::memory_order_release);
 				g_settingsKeyReq.store(true, std::memory_order_release);
 			}
 		}
+		try { QmJobKeys(w); } catch (...) {}
+		try { QmFlushStore(); } catch (...) {}
 		if (HzWlOn()) {   // watchlog: the mode hotkey (Scroll Lock), edge only. No Scaleform here.
 			HWND ww = GameWindow();
 			const bool wdown = ww && (GetAsyncKeyState(VK_SCROLL) & 0x8000) != 0;
@@ -5291,6 +5651,7 @@ namespace HZ
 		g_hudPolls.fetch_add(1, std::memory_order_relaxed);
 		if (!g_uiPollLogged.exchange(true))
 			REX::INFO("thread: ui poll tid={}", tid);
+		try { QmHudTick(); } catch (...) {}
 		if (HzWlOn()) { try { WlCtxPoll(); } catch (...) {} }   // watchlog: menu map read only, no Invoke
 		// A covering menu (the character screen is StatusMenu) can hide or
 		// pause this movie between frames. Read the menu map first and return
@@ -5615,6 +5976,7 @@ namespace HZ
 		adopt("HUDMenu", g_hudRoot);
 		adopt("HUDMessagesMenu", g_hudMsgRoot);
 		adopt("ScopeMenu", g_scopeRoot);
+		adopt("FavoritesMenu", g_favRoot);
 	}
 
 	void HookedAdvanceFrame(RE::Scaleform::GFx::ASMovieRootBase* a_this, bool a_next)
@@ -5715,6 +6077,16 @@ namespace HZ
 			hzlog::g_advancingRoot = nullptr;
 			hzlog::g_advancingMovie = hzlog::PollMovie::None;
 			g_inScopePoll.store(false, std::memory_order_release);
+			return;
+		}
+		const auto fav = g_favRoot.load(std::memory_order_acquire);
+		if (a_this && fav && a_this == fav) {
+			if (hzlog::PollAlreadyIn(g_inFavPoll.exchange(true, std::memory_order_acq_rel)))
+				return;
+			hzlog::g_advancingRoot = a_this;
+			try { PollFavorites(a_this); } catch (...) {}
+			hzlog::g_advancingRoot = nullptr;
+			g_inFavPoll.store(false, std::memory_order_release);
 		}
 	}
 
@@ -5789,6 +6161,7 @@ namespace HZ
 			g_hudMsgRoot.store(root, std::memory_order_release);
 		else if (isScope)
 			g_scopeRoot.store(root, std::memory_order_release);
+		try { QmOnFavoritesMovie(a_menu); } catch (...) {}
 		if (!isHud && !isMsg) {
 			if (!g_menuTidHinted.exchange(true))
 				REX::INFO("thread: menu-create tid={} (hint only)", ::GetCurrentThreadId());
@@ -5809,6 +6182,7 @@ namespace HZ
 			RegisterSaveLoadSink();
 			RegisterMenuOpenCloseSink();   // perf round 2: event-kept open-menu set for the HUD menu check
 			LoadIni();
+			try { QmDetectOnce(); } catch (...) {}
 			if (auto task = SFSE::GetTaskInterface()) {
 				task->AddPermanentTask([]() { try { Poll(); } catch (...) {} });
 				REX::INFO("hotkey poller registered");

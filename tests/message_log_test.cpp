@@ -1,18 +1,20 @@
 // Message Log P1: capture, ring, pins, prune, per-character files, Persist=0,
 // save-line exclusion, and the F11 popup stack. No game, no CommonLibSF.
 // These cases are written to fail when a rule is broken.
-// Build: g++ -std=c++20 -Wall -Wextra -pthread -I src -DMSGLOG_REPO_ROOT=\"$PWD\" tests/message_log_test.cpp -o /tmp/message_log_test
-// Or: MSGLOG_REPO_ROOT=$PWD /tmp/message_log_test  (relative __FILE__ still finds the repo).
+// Build (from the repo root; write the binary to a scratch folder, not the system temp folder):
+//   g++ -std=c++20 -Wall -Wextra -pthread -I src -DMSGLOG_REPO_ROOT=\"$PWD\" tests/message_log_test.cpp -o test_scratch/message_log_test
+// Or: MSGLOG_REPO_ROOT=$PWD test_scratch/message_log_test  (relative __FILE__ still finds the repo).
 // Author: Moragar
 // Last modified: 2026-10-29.
 
 #include "hz_addr_probe.h"
+#include "hz_test_scratch.h"
 #include "hz_msglog.h"
 #include "hz_msglog_stack.h"
 #include "hz_version.h"
 
 namespace HZF {
-inline const char* kVersion = "0.43.3.0";
+inline const char* kVersion = "0.43.5.0";
 }
 #include "hz_ini_diff.h"
 
@@ -170,11 +172,7 @@ bool WriterSave(hzlog::Log& a_log)
 
 std::filesystem::path TmpRoot()
 {
-	auto p = std::filesystem::temp_directory_path() / ("hz-msglog-" + std::to_string(::getpid()));
-	std::error_code ec;
-	std::filesystem::remove_all(p, ec);
-	std::filesystem::create_directories(p, ec);
-	return p;
+	return HzTestScratch("hz-msglog-");
 }
 
 std::string ReadFile(const std::filesystem::path& a_p)
@@ -846,8 +844,8 @@ int main()
 {
 	using namespace hzlog;
 
-	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.4.0", "file version is 0.43.4.0");
-	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 4 && HZ_FILE_VERSION_BUILD == 0, "file version numbers");
+	Expect(std::string(HZ_FILE_VERSION_STR) == "0.43.5.0", "file version is 0.43.5.0");
+	Expect(HZ_FILE_VERSION_MAJOR == 0 && HZ_FILE_VERSION_MINOR == 43 && HZ_FILE_VERSION_PATCH == 5 && HZ_FILE_VERSION_BUILD == 0, "file version numbers");
 	Expect(HZ_COMMS_MSG_LOG == 0, "probe log is off");
 	Expect(HZ_HUD_MSG_CAPTURE == 0, "hud capture probe is off");
 	ExpectEq(kOpenHint, "F11", "HUD open hint is the F11 key only");
@@ -1173,8 +1171,6 @@ int main()
 			Expect(proc.OnHudReady(chA, 3.0, 300, 3), "switch back to A");
 			ExpectEqI(proc.buf.sess, 3, "A launch session survives the switch");
 			ExpectEqI(proc.buf.LaunchPinFor(chB.key), 5, "B's pin is still 5 after leaving B");
-			std::error_code ecAB;
-			std::filesystem::remove_all(rootAB, ecAB);
 		}
 
 		const char* oldJson =
@@ -1226,8 +1222,6 @@ int main()
 			ExpectEqI(static_cast<int>(clipped.entries.size()), kViewEntryCap, "view drops oldest overflow");
 			ExpectEqI(static_cast<int>(clipped.entries.front().id), 21, "view keeps the newest cap rows");
 		}
-		std::error_code ec;
-		std::filesystem::remove_all(root, ec);
 	}
 
 	// ---- P2 storage fixes the UI exposes ----
@@ -1479,8 +1473,6 @@ int main()
 			|| loaded.entries.size() < huge.entries.size(),
 			"writer dropped oldest unpinned rows");
 
-		std::error_code ec2;
-		std::filesystem::remove_all(root, ec2);
 	}
 
 	// ---- dedupe 3 s / Busy 10 s ----
@@ -1831,8 +1823,6 @@ int main()
 		Expect(reload.buf.entries.empty(), "reload after emptied Clear session has no rows");
 		Expect(!ShouldQueueWrite(false, true, false, ch.key, ch.key),
 			"an automatic empty snapshot is still not a write");
-		std::error_code ecClear;
-		std::filesystem::remove_all(root, ecClear);
 	}
 
 	// ---- per-character switch / NG+ ----
@@ -1863,8 +1853,6 @@ int main()
 		for (const auto& e : log.buf.entries)
 			if (e.text == "sam line") found = true;
 		Expect(found, "loading A does not mix B's rows");
-		std::error_code ec;
-		std::filesystem::remove_all(root, ec);
 	}
 
 	// ---- Persist=0 writes nothing ----
@@ -2549,8 +2537,6 @@ int main()
 				"K02 writer Clear writes pins to bak");
 			Expect(kbak.find("k02 loose") == std::string::npos, "K02 bak is not an empty wipe");
 		}
-		std::error_code ec;
-		std::filesystem::remove_all(root, ec);
 	}
 
 	// ---- F11 Save keeps a hand-edited [MessageLog] (MF-5) ----
@@ -2694,14 +2680,16 @@ int main()
 		ExpectEqI(static_cast<int>(parsed.state.entries.size()), 1, "one entry round trips");
 		ExpectEq(parsed.state.character.names.back(), "Second Name", "names are stored for the cleanup list");
 
-		WriteFile(path, "{not json");
-		std::error_code ecBak;
-		std::filesystem::remove(root / "MessageLog" / "MessageLog_0000ABCD.json.bak", ecBak);
+		// Isolated folder with only a corrupt main file (no bak to remove).
+		const auto isolated = TmpRoot();
+		std::error_code ecIso;
+		std::filesystem::create_directories(isolated / "MessageLog", ecIso);
+		WriteFile(isolated / "MessageLog" / "MessageLog_0000ABCD.json", "{not json");
 		LogState st;
 		std::string notice;
-		FileStore fs(root / "MessageLog");
+		FileStore fs(isolated / "MessageLog");
 		fs.Load("0000ABCD", st, notice);
-		Expect(std::filesystem::is_regular_file(root / "MessageLog" / "MessageLog_0000ABCD.json.bad"), "corrupt file is renamed .bad");
+		Expect(std::filesystem::is_regular_file(isolated / "MessageLog" / "MessageLog_0000ABCD.json.bad"), "corrupt file is renamed .bad");
 		Expect(st.entries.empty(), "corrupt without bak starts empty");
 
 		const auto good = ToJson(parsed.state, "HorizonUI 0.43.0.1");
@@ -2720,8 +2708,6 @@ int main()
 		auto skip = FromJson(std::string("{\"type\":\"horizon.messagelog\",\"version\":1,\"entries\":[{\"id\":1},{\"id\":2,\"k\":\"game\",\"t\":\"ok\"}]}"));
 		Expect(skip.ok, "malformed entries do not fail the file");
 		ExpectEqI(static_cast<int>(skip.state.entries.size()), 1, "only the good entry loads");
-		std::error_code ec;
-		std::filesystem::remove_all(root, ec);
 	}
 
 	// ---- popup stack closes every layer ----
@@ -3611,7 +3597,7 @@ int main()
 			"MissedBadge is hidden until a badge is drawn");
 		Expect(as.find("function hzMsglogNeed") != std::string::npos && as.find("function hzSetMsglogView") != std::string::npos,
 			"the movie exposes the view poll pair");
-		Expect(as.find("HZ_BUILD:String = \"0.43.4.0\"") != std::string::npos, "HUD movie build id is 0.43.4.0");
+		Expect(as.find("HZ_BUILD:String = \"0.43.5.0\"") != std::string::npos, "HUD movie build id is 0.43.5.0");
 		{
 			const auto confirm = AsFnBody(as, "private function hzMsglogDrawConfirm", "private function hzMsglogTypeOn");
 			Expect(confirm.find("hzMsglogWrap") != std::string::npos, "the clear confirm wraps its warning");
@@ -4155,8 +4141,6 @@ int main()
 		Expect(notice.find("too large") != std::string::npos, "oversize load reports too large");
 		Expect(std::filesystem::is_regular_file(root / "MessageLog" / "MessageLog_0000BIG1.json.bad"),
 			"oversize file is renamed .bad");
-		std::error_code ec;
-		std::filesystem::remove_all(root, ec);
 	}
 
 	{
@@ -4222,8 +4206,6 @@ int main()
 			if (e.text == "first line" || e.text == "second line") recovered = true;
 		Expect(recovered, "corrupt file recovers from .bak");
 		Expect(notice.find("bak") != std::string::npos || recovered, "bak recovery notice");
-		std::error_code ec;
-		std::filesystem::remove_all(root, ec);
 	}
 
 	{
@@ -4235,8 +4217,6 @@ int main()
 		log.Offer(Cap(Kind::Game, "new character", 21'000));
 		Expect(log.Flush(21'000), "name-hash flush is a memory-only success");
 		Expect(!std::filesystem::exists(root / "MessageLog"), "name-hash never creates a shared file");
-		std::error_code ec;
-		std::filesystem::remove_all(root, ec);
 	}
 
 	{
@@ -4333,8 +4313,6 @@ int main()
 			if (e.text == "disk old") diskKept = true;
 		}
 		Expect(hudKept && diskKept, "HUD-ready migrate keeps both file and session rows");
-		std::error_code ec;
-		std::filesystem::remove_all(root, ec);
 	}
 
 	{
@@ -4679,44 +4657,55 @@ int main()
 		Expect(log.Flush(21'000), "retry save succeeds");
 		Expect(!log.dirty, "successful retry clears dirty");
 		Expect(ReadFile(path).find("retry me") != std::string::npos, "retry wrote the row");
-		std::error_code ec;
-		std::filesystem::remove_all(root, ec);
 	}
 
 	{
-		const auto root = TmpRoot();
-		Log log;
+		const auto seedRoot = TmpRoot();
+		Log seed;
 		Settings s;
-		log.Configure(s, root);
-		log.buf.character = MakeCharacter(0xABCDu, "Sam");
-		log.Offer(Cap(Kind::Game, "keep original", 20'000));
-		Expect(log.Flush(20'000), "seed the main file");
-		const auto path = root / "MessageLog" / "MessageLog_0000ABCD.json";
-		const auto bak = root / "MessageLog" / "MessageLog_0000ABCD.json.bak";
+		seed.Configure(s, seedRoot);
+		seed.buf.character = MakeCharacter(0xABCDu, "Sam");
+		seed.Offer(Cap(Kind::Game, "keep original", 20'000));
+		Expect(seed.Flush(20'000), "seed the main file");
+		const auto locked = TmpRoot();
 		std::error_code ec;
-		std::filesystem::remove(bak, ec);
+		std::filesystem::create_directories(locked / "MessageLog", ec);
+		std::filesystem::copy_file(
+			seedRoot / "MessageLog" / "MessageLog_0000ABCD.json",
+			locked / "MessageLog" / "MessageLog_0000ABCD.json", ec);
+		const auto path = locked / "MessageLog" / "MessageLog_0000ABCD.json";
+		const auto bak = locked / "MessageLog" / "MessageLog_0000ABCD.json.bak";
 		std::filesystem::create_directory(bak, ec);
+		Log log;
+		log.Configure(s, locked);
+		log.buf.character = MakeCharacter(0xABCDu, "Sam");
 		log.Offer(Cap(Kind::Game, "must not replace", 40'000));
 		Expect(!log.Flush(40'000), "a failed bak copy fails the save");
 		Expect(ReadFile(path).find("keep original") != std::string::npos, "main file is not replaced after bak failure");
 		Expect(ReadFile(path).find("must not replace") == std::string::npos, "new row is not in the main file");
-		std::filesystem::remove_all(root, ec);
 	}
 
 	{
-		const auto root = TmpRoot();
-		Log log;
+		const auto seedRoot = TmpRoot();
+		Log seed;
 		Settings s;
-		log.Configure(s, root);
-		log.buf.character = MakeCharacter(0xABCDu, "Sam");
-		log.Offer(Cap(Kind::Game, "keep original", 20'000));
-		Expect(log.Flush(20'000), "seed the main file for bak give-up");
-		const auto path = root / "MessageLog" / "MessageLog_0000ABCD.json";
-		const auto bak = root / "MessageLog" / "MessageLog_0000ABCD.json.bak";
+		seed.Configure(s, seedRoot);
+		seed.buf.character = MakeCharacter(0xABCDu, "Sam");
+		seed.Offer(Cap(Kind::Game, "keep original", 20'000));
+		Expect(seed.Flush(20'000), "seed the main file for bak give-up");
+		const auto locked = TmpRoot();
 		std::error_code ec;
-		std::filesystem::remove(bak, ec);
+		std::filesystem::create_directories(locked / "MessageLog", ec);
+		std::filesystem::copy_file(
+			seedRoot / "MessageLog" / "MessageLog_0000ABCD.json",
+			locked / "MessageLog" / "MessageLog_0000ABCD.json", ec);
+		const auto path = locked / "MessageLog" / "MessageLog_0000ABCD.json";
+		const auto bak = locked / "MessageLog" / "MessageLog_0000ABCD.json.bak";
 		std::filesystem::create_directory(bak, ec);
 		WriteFile(bak / "lock", "held");
+		Log log;
+		log.Configure(s, locked);
+		log.buf.character = MakeCharacter(0xABCDu, "Sam");
 		auto* fs = dynamic_cast<FileStore*>(log.store.get());
 		Expect(fs != nullptr, "persist store is FileStore");
 		if (fs) fs->bakFailGiveUp = 3;
@@ -4726,7 +4715,6 @@ int main()
 		Expect(log.Flush(43'000), "third bak failure writes the main file");
 		Expect(ReadFile(path).find("third try writes") != std::string::npos, "give-up replace updated the main file");
 		Expect(std::filesystem::is_directory(bak), "locked bak path is left in place");
-		std::filesystem::remove_all(root, ec);
 	}
 
 	{
@@ -5335,8 +5323,6 @@ int main()
 			ExpectEqI(CountNeedle(ReadFile(path), "A running save"), 1, "A's running row is in A's file exactly once");
 			Expect(ReadFile(bRunning).find("A running save") == std::string::npos, "A's running row is not in B's file");
 		}
-		std::error_code ec;
-		std::filesystem::remove_all(root, ec);
 	}
 
 	{
@@ -5986,8 +5972,6 @@ int main()
 				"OnPruneEmpty does not set clearPending");
 		}
 
-		std::error_code ec;
-		std::filesystem::remove_all(root, ec);
 	}
 
 	{
@@ -6833,8 +6817,6 @@ int main()
 			Expect(!coord.LoadBusy(), "the matching load gen clears loadBusy");
 		}
 
-		std::error_code ec2;
-		std::filesystem::remove_all(root, ec2);
 	}
 
 	if (g_fails) {

@@ -18,10 +18,10 @@ includes("lib/commonlibsf")
 
 -- set project constants
 set_project("HorizonUI")
--- File version, four parts. The settings schema (HZF::kVersion, HZ_VERSION) is a separate string, "0.43.3.0" since 2026-11-19 (0.43.4 adds no settings).
+-- File version, four parts. The settings schema (HZF::kVersion, HZ_VERSION) is a separate string, "0.43.5.0" since 2026-11-23 (new [Scanner] ScanReach; 0.43.3.0 before).
 -- CommonLibSF's SFSE::Init line reads this version. The pinned template writes the fourth
 -- PluginVersion component as a literal 0, so res/horizonui-plugin.cpp.in uses HZ_FILE_VERSION_BUILD.
-set_version("0.43.4.0")
+set_version("0.43.5.0")
 set_license("GPL-3.0")
 set_languages("c++23")
 set_warnings("allextra")
@@ -32,7 +32,7 @@ add_rules("plugin.vsxmake.autoupdate")
 
 -- define targets
 target("HorizonUI")
-    set_version("0.43.4.0")
+    set_version("0.43.5.0")
     add_rules("commonlibsf.plugin", {
         name = "HorizonUI",
         author = "Moragar",
@@ -50,7 +50,7 @@ target("HorizonUI")
     add_syslinks("version", "shell32", "ole32")
 
     -- xmake's semver parser rejects a 4-part numeric version. set_version is still the file version
-    -- (0.43.4.0). major.minor.patch stay the first three parts, and the fourth is the build number.
+    -- (0.43.5.0). major.minor.patch stay the first three parts, and the fourth is the build number.
     on_load(function (target)
         local semver = import("core.base.semver")
         if semver._hz4 then return end

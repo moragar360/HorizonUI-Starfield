@@ -30,7 +30,9 @@ once(src, 'public class FavoritesMenu extends IMenu', 'class declaration')
 imports = ['Shared.InventoryItemUtils', 'Shared.PlatformUtils', 'flash.display.DisplayObject', 'flash.display.MovieClip',
            'flash.display.Sprite', 'flash.events.Event', 'flash.events.IOErrorEvent', 'flash.filters.DropShadowFilter',
            'flash.geom.ColorTransform', 'flash.geom.Rectangle', 'flash.net.URLLoader', 'flash.net.URLRequest',
-           'flash.text.TextField', 'flash.text.TextFieldAutoSize', 'flash.text.TextFormat']
+           'flash.text.TextField', 'flash.text.TextFieldAutoSize',            'flash.text.TextFormat',
+           'flash.display.Graphics', 'flash.events.KeyboardEvent', 'flash.events.MouseEvent',
+           'flash.geom.Point']  # last four: 0.43.5 Extended Mode
 m = list(re.finditer(r'(?m)^[ \t]*import [A-Za-z0-9_.]+;[ \t]*\r?$', src))
 last = m[-1]; add = ''
 for im in imports:
@@ -46,6 +48,19 @@ src = after(src, '            this.AssignedItemIcon_mc.LoadImageFixtureFromUIDat
             '\n            try { this.hzqAssign(); } catch(hzqE3:Error) { }   // Horizon: assign mode info card', 'assignedItem setter')
 src = after(src, '      private function onSelectionChange() : void\n      {\n         this.ItemInfo_mc.UpdateDisplay(this.selectedEntry);\n         this.ItemInfo_mc.visible = true;',
             '\n         try { this.hzqSel(); } catch(hzqE4:Error) { }   // Horizon: selection change', 'onSelectionChange')
+# Extra slots 13-24 are Horizon clips, not native favorites. Confirm / arrows must not fall
+# through to vanilla SelectItem (uQuickkeyIndex 0-11 only) or the T d-pad tables.
+src = after(src, '      public function ProcessUserEvent(param1:String, param2:Boolean) : Boolean\n      {\n         var _loc4_:Number = NaN;\n         var _loc3_:Boolean = false;',
+            '\n         try { if(param1 != "Cancel" && param1 != "Quickkeys" && param1 != "YButton" && this.hzqExtUser(param1,param2)) return true; } catch(hzqE5:Error) { }   // Horizon: extra slots 13-24; never swallow close\n', 'ProcessUserEvent')
+src = after(src, '      public function onKeyDownHandler(param1:KeyboardEvent) : *\n      {\n',
+            '         try { if(this.hzqExtArrow(param1)) { param1.stopPropagation(); return; } } catch(hzqE6:Error) { }\n', 'onKeyDownHandler')
+src = after(src, '      public function onKeyUpHandler(param1:KeyboardEvent) : *\n      {\n',
+            '         try { if(param1.keyCode == Keyboard.ENTER && this.hzqExtConfirm()) { param1.stopPropagation(); return; } } catch(hzqE7:Error) { }\n', 'onKeyUpHandler')
+src = after(src, '      private function SelectItem() : void\n      {\n',
+            '         try { if(this.hzqExtConfirm()) return; } catch(hzqE8:Error) { }   // Horizon: never AssignQuickkey with index >= 12\n'
+            '         if(int(this.selectedIndex) >= 12) return;\n', 'SelectItem')
+src = after(src, '      private function onFavEntryMouseover(param1:Event) : void\n      {\n',
+            '         try { if(this.hzqExtMouse(param1)) return; } catch(hzqE9:Error) { }   // Horizon: Entry_13-24 name, not constructed entryIndex 0\n', 'onFavEntryMouseover')
 # 3. members (OnControlMapChanged override included): before the frame scripts (end of the class)
 f = once(src, '      internal function frame13() : *', 'frame13')
 src = src[:f] + blk + nl + src[f:]

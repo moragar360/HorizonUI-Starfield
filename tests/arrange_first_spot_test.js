@@ -113,7 +113,7 @@ for (const [ax, ay] of [["R", "B"], ["C", "C"], ["R", "T"], ["L", "B"], ["L", "T
 
 // ---- Comms: HUD messages card with no game line ----
 function commsHost(cfg, bounds) {
-	const h = { hzcCfg: Object.assign({ TextScale: 1, HudScale: 1, Margin: 40 }, cfg), hzcRxLayer: { x: 0, y: 0 }, hzcRxDbgOn: false, hzcMsgHomeLogged: true, HZC_LRG: false, bounds: 0 };
+	const h = { hzcCfg: Object.assign({ TextScale: 1, HudScale: 1, Margin: 40 }, cfg), hzcRxLayer: { x: 0, y: 0 }, hzcRxDbgOn: false, hzcMsgHomeLogged: true, HZC_LRG: false, HZC_V3_W: 460, HZC_V3_MAX: 3, bounds: 0 };
 	h.hzcVis = () => new Rectangle(0, 0, 2560, 1440);
 	h.hzcRx = []; h.hzcMsgBox = null; h.hzcRxDirty = false;
 	for (const n of ["hzcMsgArranged", "hzcRxAnchor", "hzcMsgLayout", "hzcMsgHome", "hzcAnchor", "hzcCardZ", "hzcRxArrPlace"]) { const f = toJs(COMMS, n); if (f) h[n] = f.bind(h); }
@@ -123,7 +123,7 @@ function commsHost(cfg, bounds) {
 {
 	// the game's column sits a few units off the stable home (and moves as lines come and fade)
 	const vr = new Rectangle(0, 0, 2560, 1440);
-	const W = 360, home = { x: vr.right - W - 40, y: vr.y + 80 };
+	const W = 460, home = { x: vr.right - W - 40, y: vr.y + 80 };
 	const colB = new Rectangle(home.x + 7, home.y - 5, W, 120);
 	for (const [xs, ys] of [["R60", "T20"], ["L300", "B200"], ["C0", "C0"], ["R0", "-1"]]) {
 		const { h, m } = commsHost({ HudMessagesX: xs, HudMessagesY: ys }, colB);

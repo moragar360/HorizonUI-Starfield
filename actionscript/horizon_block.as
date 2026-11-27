@@ -195,6 +195,10 @@
       private var hzTgLastMode:int = -2;
       private var hzTgHidden:Array = [];
       private var hzTgHidA:Array = [];   // H1: hzTgHidden[i].d for alpha entries, null for visible entries (same length, same order)
+      // originals of every vanilla prompt clip Horizon writes (alpha + visible), captured once before the first write.
+      // Separate from hzTgHidden so the hide-walk cache and KeepHold's unused-button visible=true can both be undone.
+      private var hzTgOrig:Array = [];
+      private var hzTgOrigD:Array = [];
       private var hzTgTextH:Number = 40;
       private var hzTgW:Number = 0;
       private var hzTgH:Number = 0;
@@ -2871,6 +2875,7 @@
             var bv:Boolean = v == "1" || v.toLowerCase() == "true";
             var nv:Number = Number(v);
             if(isNaN(nv) && this.hz30IniPos(k,v)) { continue; }
+            if(k.indexOf("quickmenu") == 0 && this.hzQmIniVal(k,v)) { continue; }  // 0.43.5 Extended Quick Menu values (count, per row, layout, keys)
             switch(k)
             {
                case "showjetpack": this.hzShowJetpack = bv; break;
@@ -2901,7 +2906,10 @@
                case "tempunit": if(!isNaN(nv)) { this.hzTempUnit = Math.max(0,Math.min(1,int(nv))); } break;
                case "afflictionlayout": if(!isNaN(nv)) { this.hzAfLayout = Math.max(0,Math.min(2,int(nv))); } break;
                case "planetdetails": this.hzPlanDetails = bv; break;
-               case "showtarget": this.hzShowTarget = bv; break;
+               case "showtarget":
+                  if(this.hzShowTarget && !bv) { this.hz38GiveBackVanilla(); }
+                  this.hzShowTarget = bv;
+                  break;
                case "targetanchor": if(!isNaN(nv)) { this.hzTgAnchor = Math.max(0,Math.min(1,int(nv))); } break;
                case "targetshowvalue": this.hzTgShowValue = bv; break;
                case "compact": this.hzCompact = bv; break;
@@ -4575,24 +4583,135 @@
       // 0.43.3.0 batch f: [Cards Extra] QuickMenuHorizon (F11 > CARDS > QUICK MENU > HORIZON STYLE, default 1). The HUD only
       // stores and writes it; the quick menu movie (favoritesmenu.swf, actionscript/favorites/hzq_main.as) reads it on open.
       // 0 = the game's own quick menu look.
+      // 0.43.5: Extended Mode (up to 24 slots), slot count, slots per row, CROSS+BARS / BARS, and keys 13-24.
       private var hzQmOn:Boolean = true;
+      private var hzQmExt:Boolean = false;
+      private var hzQmCount:int = 24;
+      private var hzQmPerRow:int = 6;
+      private var hzQmLayout:int = 0;   // 0 CROSS + BARS, 1 BARS
+      private var hzQmKeys:Array = ["","","","","","","","","","","",""];
+      private var hzQmEmpty:int = 1;           // 1 = show empty extras, 0 = hide (assign mode still shows them)
+      private var hzQmPanelA:Number = 92;      // extra-window fill 0-100
+      private var hzQmSlotSc:Number = 1;       // extra-slot size vs vanilla 1-12
+      private var hzQmConflict:Boolean = false;   // set by the DLL when another extended-favorites mod is found
+      public function hzQmSetConflict(v:Number) : void { this.hzQmConflict = v >= 0.5; }
+      public function hzQmSetSlotCount(v:Number) : void { this.hzQmCount = this.hzQmClampCount(v); }
+      private function hzQmClampCount(n:Number) : int { return int(Math.max(12,Math.min(24,Math.round(n)))); }
+      private function hzQmClampRow(n:Number) : int
+      {
+         var i:int = int(Math.round(n));
+         if(i <= 4) { return 4; }
+         if(i >= 8) { return 8; }
+         return 6;
+      }
+      private function hzQmClampEmpty(n:Number) : int { return n >= 0.5 ? 1 : 0; }
+      private function hzQmClampPanelA(n:Number) : Number
+      {
+         if(isNaN(n)) { return 92; }
+         return Math.max(0,Math.min(100,n));
+      }
+      private function hzQmClampScale(n:Number) : Number
+      {
+         if(isNaN(n)) { return 1; }
+         return Math.max(0.7,Math.min(1.4,n));
+      }
+      private function hzQmKeyAt(i:int) : String
+      {
+         if(i < 0 || i >= 12 || this.hzQmKeys == null) { return ""; }
+         return String(this.hzQmKeys[i] != null ? this.hzQmKeys[i] : "");
+      }
       private function hzQmIni(k:String, bv:Boolean) : Boolean
       {
          if(k == "quickmenuhorizon") { this.hzQmOn = bv; return true; }
+         if(k == "quickmenuextended") { this.hzQmExt = bv; return true; }
+         return false;
+      }
+      private function hzQmIniVal(k:String, v:String) : Boolean
+      {
+         if(k == "quickmenuslotcount") { this.hzQmCount = this.hzQmClampCount(Number(v)); return true; }
+         if(k == "quickmenuslotsperrow") { this.hzQmPerRow = this.hzQmClampRow(Number(v)); return true; }
+         if(k == "quickmenuextendedlayout")
+         {
+            var lv:String = v.toLowerCase();
+            this.hzQmLayout = (lv == "1" || lv == "bars" || lv == "bar") ? 1 : 0;
+            return true;
+         }
+         if(k.indexOf("quickmenukey") == 0 && k.length > 12)
+         {
+            var slot:int = int(Number(k.substring(12)));
+            if(slot >= 13 && slot <= 24)
+            {
+               this.hzQmKeys[slot - 13] = v;
+               return true;
+            }
+         }
+         if(k == "quickmenuextemptyslots")
+         {
+            var ev:String = v.toLowerCase();
+            this.hzQmEmpty = (ev == "0" || ev == "false" || ev == "hide") ? 0 : 1;
+            return true;
+         }
+         if(k == "quickmenuextpanelopacity") { this.hzQmPanelA = this.hzPctOr(v,92,0); return true; }
+         if(k == "quickmenuextslotscale") { this.hzQmSlotSc = this.hzQmClampScale(Number(v)); return true; }
          return false;
       }
       private function hzQmSetCur(o:Object) : void
       {
          o.QuickMenuHorizon = this.hzQmOn;
+         o.QuickMenuExtended = this.hzQmExt;
+         o.QuickMenuSlotCount = this.hzQmCount;
+         o.QuickMenuSlotsPerRow = this.hzQmPerRow;
+         o.QuickMenuExtendedLayout = this.hzQmLayout;
+         o.QuickMenuExtEmptySlots = this.hzQmEmpty;
+         o.QuickMenuExtPanelOpacity = this.hzQmPanelA;
+         o.QuickMenuExtSlotScale = this.hzQmSlotSc;
+         var i:int = 0;
+         while(i < 12) { o["QuickMenuKey" + (13 + i)] = this.hzQmKeyAt(i); i++; }
       }
       private function hzQmSetLive(p:Object) : void
       {
          if(p.QuickMenuHorizon !== undefined) { this.hzQmOn = p.QuickMenuHorizon === true || Number(p.QuickMenuHorizon) >= 0.5; }
+         if(p.QuickMenuExtended !== undefined) { this.hzQmExt = p.QuickMenuExtended === true || Number(p.QuickMenuExtended) >= 0.5; }
+         if(p.QuickMenuSlotCount !== undefined) { this.hzQmCount = this.hzQmClampCount(Number(p.QuickMenuSlotCount)); }
+         if(p.QuickMenuSlotsPerRow !== undefined) { this.hzQmPerRow = this.hzQmClampRow(Number(p.QuickMenuSlotsPerRow)); }
+         if(p.QuickMenuExtendedLayout !== undefined) { this.hzQmLayout = int(Number(p.QuickMenuExtendedLayout)) != 0 ? 1 : 0; }
+         if(p.QuickMenuExtEmptySlots !== undefined) { this.hzQmEmpty = this.hzQmClampEmpty(Number(p.QuickMenuExtEmptySlots)); }
+         if(p.QuickMenuExtPanelOpacity !== undefined) { this.hzQmPanelA = this.hzQmClampPanelA(Number(p.QuickMenuExtPanelOpacity)); }
+         if(p.QuickMenuExtSlotScale !== undefined) { this.hzQmSlotSc = this.hzQmClampScale(Number(p.QuickMenuExtSlotScale)); }
+         var i:int = 0;
+         while(i < 12)
+         {
+            var kk:String = "QuickMenuKey" + (13 + i);
+            if(p[kk] !== undefined) { this.hzQmKeys[i] = String(p[kk]); }
+            i++;
+         }
       }
       private function hzQmIniLines(a:Array, p:Object) : void
       {
          a.push("; Quick menu (the game's favorites cross): 1 = Horizon cards in your card style, 0 = the game's own look. Read when the menu opens.");
          a.push("QuickMenuHorizon=" + this.hzB(p.QuickMenuHorizon !== undefined ? p.QuickMenuHorizon : this.hzQmOn));
+         a.push("; Extended Mode: 0 = the game's 12-slot T, 1 = up to 24 slots (CROSS + BARS by default). Off until the player turns it on.");
+         a.push("QuickMenuExtended=" + this.hzB(p.QuickMenuExtended !== undefined ? p.QuickMenuExtended : this.hzQmExt));
+         a.push("; Total slot count when Extended Mode is on, 12-24. 24 is the default when it is first turned on.");
+         a.push("QuickMenuSlotCount=" + String(this.hzQmClampCount(p.QuickMenuSlotCount !== undefined ? Number(p.QuickMenuSlotCount) : this.hzQmCount)));
+         a.push("; Extended slots per row: 4, 6, or 8 (6 is the default)");
+         a.push("QuickMenuSlotsPerRow=" + String(this.hzQmClampRow(p.QuickMenuSlotsPerRow !== undefined ? Number(p.QuickMenuSlotsPerRow) : this.hzQmPerRow)));
+         a.push("; Extended layout: 0 = CROSS + BARS (the T for 1-12, bars under it), 1 = BARS (every slot in rows)");
+         a.push("QuickMenuExtendedLayout=" + String(int((p.QuickMenuExtendedLayout !== undefined ? Number(p.QuickMenuExtendedLayout) : this.hzQmLayout) != 0 ? 1 : 0)));
+         a.push("; Empty extra slots: 1 = show a faint plus, 0 = hide unused extras (occupied slots still show). Assign mode still shows them.");
+         a.push("QuickMenuExtEmptySlots=" + String(this.hzQmClampEmpty(p.QuickMenuExtEmptySlots !== undefined ? Number(p.QuickMenuExtEmptySlots) : this.hzQmEmpty)));
+         a.push("; Extra-slots window fill, 0-100. 100 is solid. Does not change the rest of the HUD.");
+         a.push("QuickMenuExtPanelOpacity=" + String(this.hzQmClampPanelA(p.QuickMenuExtPanelOpacity !== undefined ? Number(p.QuickMenuExtPanelOpacity) : this.hzQmPanelA)));
+         a.push("; Extra-slot size vs the vanilla 1-12 Horizon cards (58 px). 1.0 is the same size. 0.7-1.4.");
+         a.push("QuickMenuExtSlotScale=" + String(this.hzQmClampScale(p.QuickMenuExtSlotScale !== undefined ? Number(p.QuickMenuExtSlotScale) : this.hzQmSlotSc)));
+         a.push("; Keys for Horizon slots 13-24. Empty = no bind (the slot still works from the menu). A key bound in the game's controls, the settings key, or a key another slot uses is ignored.");
+         var i:int = 0;
+         while(i < 12)
+         {
+            var kk:String = "QuickMenuKey" + (13 + i);
+            a.push(kk + "=" + String(p[kk] !== undefined ? p[kk] : this.hzQmKeyAt(i)));
+            i++;
+         }
       }
       // =================== Horizon settings window (keyboard + mouse) ===================
       public var HorizonSettings_mc:Sprite = null;
@@ -4614,6 +4733,11 @@
       private static const HZ_SET_H:Number = 660;
       private static const HZ_SET_TABS:Array = ["CARDS","STYLE","TEXT","EFFECTS","RULES","COMPASS","CONTROLS","SCANNER","COMMS"];   // v0.30: 7 SCANNER, 8 COMMS (optional modules)
       private static const HZ_SET_KEYS:Array = ["F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"];
+      private static const HZ_QM_NAMED:Array = ["F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"];
+      private var hzQmCap:String = "";       // QuickMenuKeyN while capturing the next key; "" = off
+      private var hzQmCapWarn:String = "";   // amber warning while a captured key is already used
+      private var hzQmCapCand:String = "";   // candidate waiting for ENTER confirm
+      private var hzQmCapKind:String = "";   // "" | "slot" | "game" | "settings"
       private static const HZ_SET_ACCNAMES:Array = ["CYAN","TEAL","AMBER","VIOLET","LIME","WHITE","ROSE","ORANGE","SKY","GOLD","MINT","STEEL","DEEP BLUE"];
 
       // Row definitions: k = INI key, t = b(ool) / n(umber slider) / a(ccent swatches) / r(choice) / q(rule) / l(value list) / c(key) / x(action)
@@ -6273,6 +6397,7 @@
       {
          this.hzMsglogForceClose();
          this.hzSetIsOpen = false;
+         this.hzQmCapEnd();
          try { this.hz37Reset(); } catch(e37r:Error) { }
          this.hzSetPend = null;
          this.hzSetOrig = null;
@@ -6339,8 +6464,12 @@
          if(this.hzPopLayers != null && this.hzPopLayers.length > 0) { this.hzPopKey(code); return; }   // 0.43.0.1: only the top layer
          if(this.hzArrange) { this.hzArrKey(code); return; }
          if(!this.hzSetIsOpen) { return; }
+         if(this.hzQmCap.length > 0) { this.hzQmCapKey(code); this.hzSetDraw(); return; }   // 0.43.5: extra-slot rebind prompt
+         // QueueKey also sends bind:<Key> for letters/digits/F-keys (capture-only). Ignore it here so
+         // preset naming keeps ch:a and a pending confirm is not dropped after the first character.
+         if(code.indexOf("bind:") == 0) { return; }
          if(this.hz37Key(code)) { this.hzSetDraw(); return; }   // v0.37: preset name entry / pending confirm
-         if(code.indexOf("ch:") == 0 || code == "bksp") { return; }
+         if(code.indexOf("ch:") == 0 || code == "bksp" || code.indexOf("bind:") == 0) { return; }
          var rows:Array = this.hzSetRows(this.hzSetTab);
          switch(code)
          {
@@ -6430,7 +6559,135 @@
             if(i < 0) { i = 10; }
             this.hzSetPend[k] = HZ_SET_KEYS[(i + dir + HZ_SET_KEYS.length) % HZ_SET_KEYS.length];
          }
+         else if(r.t == "k")
+         {
+            // Capture the next key press (rebind prompt). Left / click starts capture; no preset list.
+            this.hzQmCapBegin(k);
+            return;
+         }
          this.hzSetLive(this.hzSetPend);
+      }
+
+      // Purpose: start / run the extra-slot key capture prompt (slots 13-24). Event-driven only
+      // while F11 is open: codes come from hzSettingsKey (existing QueueKey path). Inputs: INI key
+      // or a queued code (bind:/ch:/ok/cancel/bksp). Outputs: pending QuickMenuKeyN. No defaults.
+      private function hzQmCapBegin(k:String) : void
+      {
+         this.hzQmCap = k;
+         this.hzQmCapWarn = "";
+         this.hzQmCapCand = "";
+         this.hzQmCapKind = "";
+      }
+      private function hzQmCapEnd() : void
+      {
+         this.hzQmCap = "";
+         this.hzQmCapWarn = "";
+         this.hzQmCapCand = "";
+         this.hzQmCapKind = "";
+      }
+      private function hzQmKeyOk(n:String) : Boolean
+      {
+         if(n == null || n.length == 0) { return false; }
+         if(n.length == 1)
+         {
+            var c:int = n.charCodeAt(0);
+            return (c >= 65 && c <= 90) || (c >= 48 && c <= 57);
+         }
+         var i:int = 0;
+         while(i < HZ_QM_NAMED.length)
+         {
+            if(String(HZ_QM_NAMED[i]).toUpperCase() == n.toUpperCase()) { return true; }
+            i++;
+         }
+         return false;
+      }
+      private function hzQmCanon(n:String) : String
+      {
+         if(n == null || n.length == 0) { return ""; }
+         if(n.length == 1) { return n.toUpperCase(); }
+         var u:String = n.toUpperCase();
+         if(u == "PAGEUP") { return "PageUp"; }
+         if(u == "PAGEDOWN") { return "PageDown"; }
+         if(u == "INSERT") { return "Insert"; }
+         if(u == "HOME") { return "Home"; }
+         if(u == "END") { return "End"; }
+         if(u.charAt(0) == "F" && u.length <= 3) { return "F" + u.substring(1); }
+         return n;
+      }
+      private function hzQmCapClash(name:String) : String
+      {
+         var u:String = name.toUpperCase();
+         var setKey:String = String(this.hzSetPend != null && this.hzSetPend.SettingsKey != null ? this.hzSetPend.SettingsKey : this.hzSettingsKeyName).toUpperCase();
+         if(u == setKey)
+         {
+            this.hzQmCapKind = "settings";
+            return name + " is HORIZON SETTINGS. Press another key, or ESC to cancel.";
+         }
+         var qn:int = 13;
+         while(qn <= 24)
+         {
+            var qk:String = "QuickMenuKey" + qn;
+            if(qk != this.hzQmCap && String(this.hzSetPend[qk] != null ? this.hzSetPend[qk] : "").toUpperCase() == u)
+            {
+               this.hzQmCapKind = "slot";
+               return name + " is already SLOT " + qn + ". ENTER uses it here and clears slot " + qn + ". Press another key, or ESC to cancel.";
+            }
+            qn++;
+         }
+         if(u == "W" || u == "A" || u == "S" || u == "D" || u == "Q" || u == "E"
+            || u == "F1" || u == "F2" || u == "F3" || u == "F4" || u == "F5" || u == "F6"
+            || u == "F7" || u == "F8" || u == "F9" || u == "F10" || u == "F11" || u == "F12")
+         {
+            this.hzQmCapKind = "game";
+            return name + " is a game or Horizon default. ENTER uses it here anyway. Press another key, or ESC to cancel.";
+         }
+         this.hzQmCapKind = "";
+         return "";
+      }
+      private function hzQmCapApply(name:String, steal:Boolean) : void
+      {
+         var k:String = this.hzQmCap;
+         if(k.length == 0 || this.hzSetPend == null) { this.hzQmCapEnd(); return; }
+         if(steal)
+         {
+            var qn:int = 13;
+            while(qn <= 24)
+            {
+               var qk:String = "QuickMenuKey" + qn;
+               if(qk != k && String(this.hzSetPend[qk] != null ? this.hzSetPend[qk] : "").toUpperCase() == name.toUpperCase()) { this.hzSetPend[qk] = ""; }
+               qn++;
+            }
+         }
+         this.hzSetPend[k] = name;
+         this.hzQmCapEnd();
+         this.hzSetLive(this.hzSetPend);
+      }
+      private function hzQmCapTake(raw:String) : void
+      {
+         var name:String = this.hzQmCanon(raw);
+         if(!this.hzQmKeyOk(name)) { return; }
+         var clash:String = this.hzQmCapClash(name);
+         if(clash.length == 0)
+         {
+            this.hzQmCapApply(name,false);
+            return;
+         }
+         this.hzQmCapCand = name;
+         this.hzQmCapWarn = clash;
+      }
+      private function hzQmCapKey(code:String) : Boolean
+      {
+         if(this.hzQmCap.length == 0) { return false; }
+         if(code == "cancel") { this.hzQmCapEnd(); return true; }
+         if(code == "bksp") { this.hzQmCapApply("",false); return true; }
+         if(code == "ok")
+         {
+            if(this.hzQmCapCand.length > 0 && this.hzQmCapKind != "settings") { this.hzQmCapApply(this.hzQmCapCand,this.hzQmCapKind == "slot"); }
+            return true;
+         }
+         if(code.indexOf("bind:") == 0) { this.hzQmCapTake(code.substring(5)); return true; }
+         if(code.indexOf("ch:") == 0 && code.length == 4) { this.hzQmCapTake(code.substring(3).toUpperCase()); return true; }
+         return true;
       }
 
       private function hzSetSnap(v:Number, r:Object) : Number
@@ -6498,11 +6755,15 @@
             this.hzSetWinOpacity = this.hzPctOr(String(p.SettingsOpacity),93,30);
          }
          if(p.ContainerOpacity != undefined && !isNaN(Number(p.ContainerOpacity)) && Math.abs(this.hzContOpacity - Number(p.ContainerOpacity)) > 0.001) { this.hzContOpacity = Math.max(0.2,Math.min(1.6,Number(p.ContainerOpacity))); this.hzT19Sig = ""; }
-         if(p.ShowTarget != undefined) { this.hzShowTarget = Boolean(p.ShowTarget); }
+         if(p.ShowTarget != undefined)
+         {
+            var wantTg:Boolean = Boolean(p.ShowTarget);
+            if(this.hzShowTarget && !wantTg) { this.hz38GiveBackVanilla(); }   // Hover + Container off: stock card this frame
+            this.hzShowTarget = wantTg;
+         }
          if(p.TargetAnchor != undefined) { this.hzTgAnchor = int(p.TargetAnchor); }
          if(p.TargetShowValue != undefined) { this.hzTgShowValue = Boolean(p.TargetShowValue); }
          this.hzTgDirty = true;
-         if(!this.hzShowTarget) { this.hzTgRestore(); }
          if(p.TimeDisplay != undefined && this.hzTimeDisplay != int(p.TimeDisplay)) { this.hzTimeDisplay = Math.max(0,Math.min(3,int(p.TimeDisplay))); this.hzPpLayout(); }
          if(p.ClockFormat != undefined && this.hzClockFmt != int(p.ClockFormat)) { this.hzClockFmt = Math.max(0,Math.min(1,int(p.ClockFormat))); this.hzPpLayout(); }
          if(p.TempUnit != undefined && this.hzTempUnit != int(p.TempUnit))
@@ -6819,16 +7080,16 @@
       }
 
       // ---- v0.23 settings window (settings_mockup.py): Exo 2 faces, theme follows CardColor / TextTone ----
-      private static const HZ_VERSION:String = "0.43.3.0";   // settings schema = HZF::kVersion (0.42.0 until 2026-11-19; 0.43.4 adds no settings, so it stays)
+      private static const HZ_VERSION:String = "0.43.5.0";   // settings schema = HZF::kVersion (0.43.5.0 since 2026-11-23: [Scanner] ScanReach; 0.43.3.0 from 2026-11-19, 0.42.0 before)
       // v0.42.0.4: movie build id (hzBuildId, and the F11 header until the DLL sends its file version). One constant.
-      private static const HZ_BUILD:String = "0.43.4.0";   // 0.43.4.0: versions aligned (user request, 2026-11-22; was 0.43.3.0)
+      private static const HZ_BUILD:String = "0.43.5.0";   // 0.43.5.0: combined TESTONLY (Quick Menu, message card, scanner)
       private static const HZ_SET_TOP:Number = 112;      // list viewport top
       private static const HZ_SET_TGS:Array = [0.8,0.9,1,1.067,1.1,1.125,1.2,1.25,1.333,1.4,1.5,1.6];
       private static const HZ_SET_TGS_N:Array = ["0.80","0.90","1.00","1.07","1.10","1.125","1.20","1.25","1.33","1.40","1.50","1.60"];
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"","QuickMenuExtEmptySlots":1,"QuickMenuExtPanelOpacity":92,"QuickMenuExtSlotScale":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -7277,7 +7538,7 @@
                   j++;
                }
             }
-            else if(r.t == "r" || r.t == "q" || r.t == "l" || r.t == "c")
+            else if(r.t == "r" || r.t == "q" || r.t == "l" || r.t == "c" || r.t == "k")
             {
                var txt:String = "";
                if(r.t == "r") { txt = String((r.opts as Array)[Math.max(0,Math.min((r.opts as Array).length - 1,this.hz29OptIdx(r,v)))]); }
@@ -7288,25 +7549,31 @@
                   txt = String((r.names as Array)[vi]);
                }
                var x0:Number = 0;
-               if(r.t == "c")
+               if(r.t == "c" || r.t == "k")
                {
-                  var kt:TextField = this.hzWT(b,String(v),0,0,120,11,"bd",acc,0.4);
+                  var kn:String = String(v);
+                  if(r.t == "k" && this.hzQmCap == r.k) { kn = this.hzQmCapCand.length > 0 ? this.hzQmCapCand : "PRESS A KEY"; }
+                  else if(r.t == "k" && kn.length == 0) { kn = "NONE"; }
+                  var kt:TextField = this.hzWT(b,kn,0,0,140,11,"bd",acc,0.4);
                   var kw:Number = Math.max(28,Math.round(this.hzTW(kt) + 16));
                   b.removeChild(kt);
                   x0 = Math.round(R - 14 - kw);
-                  this.hzSetKey(b,g,x0,cy - 12,String(v),isDef ? uint(T.txt) : acc,24,11);
+                  this.hzSetKey(b,g,x0,cy - 12,kn,isDef ? uint(T.txt) : acc,24,11);
                }
                else
                {
                   var ct:TextField = this.hzWT(b,txt,R - 14,cy - 9,260,13,"sb",vcol,1.2,"right");
                   x0 = Math.round(R - 14 - this.hzTW(ct));
                }
-               var lh:Boolean = this.hzSetHover == "lt" + i;
-               var rhv:Boolean = this.hzSetHover == "rt" + i;
-               this.hzSetTri(g,x0 - 14,cy,-1,acc,lh ? 1 : 0.78);
-               this.hzSetTri(g,R,cy,1,acc,rhv ? 1 : 0.78);
-               this.hzSetHits.push({"id":"lt" + i,"x":x0 - 24,"y":y,"w":22,"h":32});
-               this.hzSetHits.push({"id":"rt" + i,"x":R - 10,"y":y,"w":22,"h":32});
+               if(r.t != "k")
+               {
+                  var lh:Boolean = this.hzSetHover == "lt" + i;
+                  var rhv:Boolean = this.hzSetHover == "rt" + i;
+                  this.hzSetTri(g,x0 - 14,cy,-1,acc,lh ? 1 : 0.78);
+                  this.hzSetTri(g,R,cy,1,acc,rhv ? 1 : 0.78);
+                  this.hzSetHits.push({"id":"lt" + i,"x":x0 - 24,"y":y,"w":22,"h":32});
+                  this.hzSetHits.push({"id":"rt" + i,"x":R - 10,"y":y,"w":22,"h":32});
+               }
             }
             else if(r.t == "p") { this.hz37DrawPick(b,g,r,i,cy,R,T); }
             else if(r.t == "x" && String(r.k).indexOf("_hz37") == 0) { this.hz37DrawBtn(b,g,r,i,R,cy,rh,T); }
@@ -7329,6 +7596,20 @@
                var oneN:Number = notePx >= 13 ? 20 : 18;
                if(nh > oneN) { this.hzMsglogWrap(nt,nw,160); nt.height = Math.round(nh); }
                y += nh;
+            }
+            if(r.t == "k" && this.hzQmCap == r.k)
+            {
+               if(this.hzQmCapWarn.length > 0)
+               {
+                  this.hz37DrawWarn(b,g,y,R,T,this.hzQmCapWarn);
+                  y += 44;
+               }
+               else
+               {
+                  var capN:TextField = this.hzWT(b,"Press any letter, number, F1-F12, Insert, Home, End, Page Up, or Page Down. ESC cancels. BACKSPACE clears.",(r.dis ? 56 : 34) + (r.sub ? 22 : 0),y - 2,this.hzSetNoteW(),13,"rg",uint(T.note),0.2,"left",13);
+                  this.hzMsglogWrap(capN,this.hzSetNoteW(),80);
+                  y += Math.max(20,capN.textHeight + 6);
+               }
             }
             y += 4;
             lastShown = li;
@@ -7887,7 +8168,7 @@
                var ri:int = int(id.substr(3));
                this.hzSetRow = ri;
                var rr:Object = rows[ri];
-               if(rr.t == "b" || rr.t == "a" || rr.t == "c" || rr.t == "r" || rr.t == "q" || rr.t == "x" || rr.t == "m" || rr.t == "p" || rr.t == "g") { this.hzSetChange(rr,1); if(this.hzArrange) { return; } }
+               if(rr.t == "b" || rr.t == "a" || rr.t == "c" || rr.t == "k" || rr.t == "r" || rr.t == "q" || rr.t == "x" || rr.t == "m" || rr.t == "p" || rr.t == "g") { this.hzSetChange(rr,1); if(this.hzArrange) { return; } }
                else if(rr.t == "z" && !rr.dis) { this.hz34ZToggle(String(rr.k)); }
                dirty = true;
             }
@@ -9139,24 +9420,67 @@
          return m >= 0 && m <= 2 ? m : -1;
       }
 
+      // Purpose: snapshot alpha and visible of a vanilla prompt clip before Horizon's first write to it.
+      // Inputs: d = the clip; hideA = true when this is an alpha-hide of prompt art (Header / name / button
+      // glyphs / background). Outputs: one hzTgOrig entry per clip (later writes are ignored).
+      // HideA of art that is still at alpha 0 (vanilla holder rollOn / Header AnimIn not finished) stores 1,
+      // the shown state, so Hover+Container off does not restore a mid-roll-on 0 (that left only the leader
+      // line, which ObjectRing VANILLA never hides). KeepHold / Hide pass hideA false so unused key boxes
+      // keep their real visible flag. Author: Moragar. Last modified: 2026-11-27.
+      private function hzTgSnap(d:DisplayObject, hideA:Boolean = false) : void
+      {
+         if(!d) { return; }
+         if(this.hzTgOrigD == null) { this.hzTgOrigD = []; this.hzTgOrig = []; }
+         if(this.hzTgOrigD.indexOf(d) >= 0) { return; }
+         this.hzTgOrigD.push(d);
+         var a:Number = d.alpha;
+         if(hideA && a < 0.05) { a = 1; }
+         this.hzTgOrig.push({"d":d,"v":d.visible,"a":a});
+      }
+
       private function hzTgRestore() : void
       {
-         for each(var o:Object in this.hzTgHidden)
+         // orig is the complete set of Horizon writes (HideA alpha, Hide visible, KeepHold visible/alpha).
+         // Apply it and drop the hide-walk list without a second write: replaying hzTgHidden after orig
+         // could put Header / glyphs back to a captured 0 and hide the name and TALK row again.
+         var hadOrig:Boolean = this.hzTgOrig != null && this.hzTgOrig.length > 0;
+         if(hadOrig)
          {
-            try
+            for each(var s:Object in this.hzTgOrig)
             {
-               if(o.a != undefined) { DisplayObject(o.d).alpha = Number(o.a); }
-               else { DisplayObject(o.d).visible = Boolean(o.v); }
+               try
+               {
+                  var dd:DisplayObject = s.d as DisplayObject;
+                  dd.alpha = Number(s.a);
+                  dd.visible = Boolean(s.v);
+               }
+               catch(errO:Error) { }
             }
-            catch(err:Error) { }
          }
+         else
+         {
+            for each(var o:Object in this.hzTgHidden)
+            {
+               try
+               {
+                  if(o.a != undefined) { (o.d as DisplayObject).alpha = Number(o.a); }
+                  else { (o.d as DisplayObject).visible = Boolean(o.v); }
+               }
+               catch(err:Error) { }
+            }
+         }
+         this.hzTgOrig = [];
+         this.hzTgOrigD = [];
          this.hzTgHidden = [];
          this.hzTgHidA.length = 0;
+         this.hzT19HcValid = false;
+         this.hzT19HcDue = true;
       }
 
       private function hzTgHide(d:DisplayObject) : void
       {
          if(!d) { return; }
+         this.hzTgSnap(d);
          for each(var o:Object in this.hzTgHidden) { if(o.d == d) { if(d.visible) { d.visible = false; } return; } }
          this.hzTgHidden.push({"d":d,"v":d.visible});
          if(this.hzTgHidA.length == this.hzTgHidden.length - 1) { this.hzTgHidA.push(null); }   // H1: not an alpha entry
@@ -9176,7 +9500,7 @@
          var on:Boolean = this.hzShowTarget && aw != null && m >= 0 && rw.visible && this.hzGroupVisible && !this.hzUserHidden && !this.hzArrange;
          if(!on)
          {
-            if(this.hzTgHidden.length > 0) { this.hzTgRestore(); }
+            if(this.hzTgHidden.length > 0 || (this.hzTgOrig != null && this.hzTgOrig.length > 0)) { this.hzTgRestore(); }
             this.HorizonTarget_mc.visible = false;
             return;
          }
@@ -11953,10 +12277,12 @@
          this.hzTgHide(d);
       }
 
-      // alpha-only hide (visible / input untouched); re-applied every frame because vanilla timelines reset clips
+      // alpha-only hide (visible / input untouched); re-applied every frame because vanilla timelines reset clips.
+      // Snapshot uses hideA so a mid-rollOn 0 is stored as 1 (vanilla shown), not as the restore target.
       private function hzT19HideA(d:DisplayObject) : void
       {
          if(!d) { return; }
+         this.hzTgSnap(d, true);
          if(this.hzT19HcRec) { this.hzT19HcD[this.hzT19HcDN] = d; this.hzT19HcP[this.hzT19HcDN] = d.parent; this.hzT19HcDN++; }   // perf round 2 Fix 5
          var ix:Array = this.hzTgHidA;
          if(ix.length == this.hzTgHidden.length)   // H1: native indexOf over the alpha entries' objects (same first match)
@@ -11967,7 +12293,8 @@
          {
             for each(var o:Object in this.hzTgHidden) { if(o.d == d && o.a != undefined) { if(d.alpha != 0) { d.alpha = 0; } return; } }
          }
-         this.hzTgHidden.push({"d":d,"v":d.visible,"a":d.alpha});
+         var ra:Number = d.alpha < 0.05 ? 1 : d.alpha;
+         this.hzTgHidden.push({"d":d,"v":d.visible,"a":ra});
          if(ix.length == this.hzTgHidden.length - 1) { ix.push(d); }
          d.alpha = 0;
       }
@@ -12139,7 +12466,7 @@
       }
       private function hzT19Off() : void
       {
-         if(this.hzTgHidden.length > 0) { this.hzTgRestore(); }
+         if(this.hzTgHidden.length > 0 || (this.hzTgOrig != null && this.hzTgOrig.length > 0)) { this.hzTgRestore(); }
          if(this.hzTg19) { this.hzTg19.visible = false; }
          this.HorizonTarget_mc.visible = false;
          this.hzT19ResetPay();
@@ -12405,11 +12732,13 @@
             var d:DisplayObject = this.hzT19BtnClip(aw,i) as DisplayObject;
             if(d)
             {
+               this.hzTgSnap(d);
                if(!d.visible) { d.visible = true; }
                if(d.alpha < 1) { d.alpha = 1; }
                var p:DisplayObjectContainer = d.parent;
                while(p != null && p != this)
                {
+                  this.hzTgSnap(p);
                   if(!p.visible) { p.visible = true; }
                   if(p.alpha < 1) { p.alpha = 1; }
                   try { if(p == this.RolloverWidget_mc) { break; } } catch(e0:Error) { }
@@ -14116,6 +14445,14 @@
             if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.skipGfx++; }
             return;
          }
+         // Hover + Container off: never touch the vanilla prompt clips (no hide walk, no KeepHold, no button reads).
+         // The falling edge already ran GiveBackVanilla; this is the every-frame gate after that.
+         if(!this.hzShowTarget)
+         {
+            if(this.HorizonTarget_mc && this.HorizonTarget_mc.visible) { this.hzT19Off(); }
+            else if(this.hzTgHidden.length > 0 || (this.hzTgOrig != null && this.hzTgOrig.length > 0)) { this.hzTgRestore(); }
+            return;
+         }
          var aw:Object = null;
          var rw:Object = null;
          try { rw = this.RolloverWidget_mc; aw = rw ? rw.RolloverActivation_mc : null; } catch(err:Error) { aw = null; }
@@ -14153,7 +14490,7 @@
          var scan:Boolean = lastMode == 3 || lastMode == 5;
          var mine:Boolean = this.hzShowTarget && !this.hzUserHidden && !scan && rw != null && aw != null;
          var prompt:Boolean = show && m != 3 && m != 5;
-         if(!mine && this.hzTgHidden.length > 0) { this.hzTgRestore(); }
+         if(!mine && (this.hzTgHidden.length > 0 || (this.hzTgOrig != null && this.hzTgOrig.length > 0))) { this.hzTgRestore(); }
          if(kind == "")
          {
             this.hzT19FadeOut();
@@ -14292,7 +14629,7 @@
       {
          if(this.hz38VanillaRule(true,prompt,card) == "hide") { this.hz38HideVanilla(rw,aw,kind); this.hz38VanShown = false; return; }
          this.hz38VanShown = true;
-         if(this.hzTgHidden.length > 0) { this.hzTgRestore(); }
+         if(this.hzTgHidden.length > 0 || (this.hzTgOrig != null && this.hzTgOrig.length > 0)) { this.hzTgRestore(); }
          // an alpha captured mid roll-on can be 0: a live prompt must be visible
          try
          {
@@ -14302,6 +14639,21 @@
             if(ad && ad.alpha < 0.05) { ad.alpha = 1; }
          }
          catch(eV:Error) { }
+      }
+
+      // Purpose: Hover + Container off, on that setting edge only. Restore every snapshotted vanilla
+      // prompt property (alpha and visible) and hide Horizon's card. HideA of art that was still at
+      // alpha 0 (holder rollOn / Header AnimIn) restores 1 so the name, panel and TALK/TRADE row
+      // come back; unused key boxes keep their snapshotted visible=false. Does not hard-code
+      // holder/activation to 1. The per-frame hide walk does not run.
+      // Inputs: none. Outputs: vanilla prompt shown (leader line plus name and button row); Horizon card off.
+      // Dependencies: hzT19Off, hzTgRestore, hzTgSnap. Author: Moragar. Last modified: 2026-11-27.
+      private function hz38GiveBackVanilla() : void
+      {
+         this.hzT19Off();
+         this.hzT19HcValid = false;
+         this.hzT19HcDue = true;
+         this.hz38VanShown = true;
       }
 
       // round icon tile with a neutral activation glyph (the prompt card for people and objects)
@@ -14818,18 +15170,28 @@
             W = Math.max(340,Math.round(bw + 28));
             o.center = false; o.right = false; o.ls = 2; o.fs = 16; o.size = 16;
             nmTf.visible = true;
-            nmTf.x = 14; nmTf.width = W - 28;
+            nmTf.x = 14;
             this.hzTxtTint(nmTf,steal ? HZ_RED : null);
             this.hzApplyFmt(o);
             this.hzT19HdrR.visible = true;
             this.hzT19Face(this.hzT19HdrR,"sb");
-            this.hzT19HdrR.width = 140;
+            // ITEMS sits in a fixed 140-wide field on the right. Room math must use that slot, not the painted
+            // "N ITEMS" width, or STEAL (and a long title) run into the count.
+            var itemsSlot:Number = 140;
+            this.hzT19HdrR.width = itemsSlot;
             this.hzT19HdrR.text = n + (n == 1 ? " ITEM" : " ITEMS");
-            this.hzT19HdrR.x = W - 14 - 140;
+            this.hzT19HdrR.x = W - 14 - itemsSlot;
             this.hzTxtTop(this.hzT19HdrR,15);
-            var hroom:Number = W - 28 - this.hzTW(this.hzT19HdrR) - 14;
             var stw:Number = 0;
-            if(steal) { stw = 60; hroom -= stw; }
+            if(steal)
+            {
+               this.hzT19Ch2.text = "STEAL";
+               stw = this.hzTW(this.hzT19Ch2) + 14;
+            }
+            else if(this.hzT19Ch2) { this.hzT19Ch2.visible = false; }
+            var hroom:Number = this.hzT19HdrR.x - 14 - (steal ? stw + 10 : 0);
+            if(hroom < 40) { hroom = 40; }
+            nmTf.width = hroom;
             this.hzFitText(nmTf,this.hzUC(hdrTxt),hroom);
             this.hzTxtTop(nmTf,11);
             var vis:int = Math.min(5,n);
@@ -14853,6 +15215,8 @@
             if(steal)
             {
                var stx:Number = 14 + this.hzTW(nmTf) + 10;
+               if(stx + stw > this.hzT19HdrR.x - 4) { stx = this.hzT19HdrR.x - stw - 8; }
+               if(stx < 14) { stx = 14; }
                this.hzChip(g,this.hzT19Ch2,stx,15,"STEAL",HZ_RED,true);
             }
             var ac:uint = this.hzIconCol(acol);
@@ -18236,7 +18600,7 @@
             "DlgAnim":"0 off, 1 fast, 2 vanilla-like",
             "MissionToastScale":"toast size: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = its own size (TextScale applies on top)",
             "DlgButtonBar":"dialogue key bar: 0 Horizon (under the card), 1 the game's bar, 2 hidden (keys still work)",
-            "GameCardTitle":"title of the info message cards (the game's other notices): 0 INFO (default), 1 DATA, 2 MISC, 3 GAME (as before). ARTIFACT cards keep their title",
+            "GameCardTitle":"label on the info message cards (the game's other notices): 0 NONE (default, just the message), 1 DATA, 2 MISC. 3 (the old GAME title) is read as NONE. ARTIFACT cards keep their label",
             "DlgQuickPickHint":"1 = '1 - 9 QUICK PICK' hint on the Horizon bar (keyboard, with DlgNumberKeys=1)",
             "DlgSelectHint":"1 = SELECT key on the Horizon bar (keyboard)"};
          a.push("[Comms]");
@@ -18337,7 +18701,7 @@
                {"k":"MissionToastScale","l":"TOAST SIZE","t":"z","note":"GLOBAL = HUD SCALE (STYLE). Also in CARDS"},
                {"k":"MissionToastSound","l":"GAME QUEST SOUND","t":"b","dis":true,"dv":true,"note":"The sound comes from the game's banner and always plays for now"},
                {"k":"ReactionCard","l":"COMPANION REACTION CARD","t":"b","h":"COMPANION REACTIONS","note":"Restyles the 'liked that' line. English game text only for now; other lines stay the game's"},
-               {"k":"GameCardTitle","l":"INFO MESSAGE TITLE","t":"r","opts":["INFO","DATA","MISC","GAME"],"ids":[0,1,2,3],"note":"Title of the cards for the game's other notices. Applies from the next message"},
+               {"k":"GameCardTitle","l":"GENERIC NOTICE LABEL","t":"r","opts":["NONE","DATA","MISC"],"ids":[0,1,2],"note":"Small label above the game's other notices. NONE shows just the message. Applies from the next message"},
                {"k":"_hz40goscan","l":"SCANNER POPUPS: NOW IN THE SCANNER TAB","t":"x","btn":"OPEN","h":"SCANNER POPUPS"}];
          }
          else
@@ -18448,7 +18812,7 @@
          }
          if(k == "Speaker" || k == "SpeakerD") { return new Point(Math.round(400 * ts),Math.round(86 * ts)); }
          if(k == "MissionToast") { var mf:Number = ts * this.hz34ToastF(); return new Point(Math.round(460 * mf),Math.round(88 * mf)); }
-         if(k == "HudMessages") { var mz:Number = this.hz31MsgZ(); return new Point(Math.max(280,Math.round(360 * mz)),Math.round(56 * mz)); }
+         if(k == "HudMessages") { var mz:Number = this.hz31MsgZ(); return new Point(Math.max(280,Math.round(460 * mz)),Math.round(88 * mz)); }
          var ds:Number = this.hz33DlgScale();
          var dz:Number = Number(c.DlgTextSize) * ts * ds;
          var cmp:Boolean = int(c.DlgLayout) == 1;
@@ -18458,7 +18822,7 @@
          var dh:Number = hd + n * (rowH + 4 * ds) + 14 * ds + (int(c.DlgMoreHint) == 1 && int(c.DlgVisible) > 0 ? 24 * ds : 0) + (int(c.DlgNumberKeys) == 1 && int(c.DlgQuickPickHint) == 1 && int(c.DlgButtonBar) != 0 ? 40 * ds : 0);
          return new Point(Math.round(620 * ds),Math.round(dh));
       }
-      // 0.43.4: the HUD MESSAGES box is the Comms box (hzcMsgLayout / hzcCardZ): 360x56 x TextScale x HudScale,
+      // 0.43.5: the HUD MESSAGES box is the Comms box (hzcMsgLayout / hzcCardZ): 460x88 (the v3 card) x TextScale x HudScale,
       // x1.25 in the large movie, clamped 0.75..2.2. The large HUD movie is the one with HZ_SCALE above 1.
       private function hz31MsgZ() : Number
       {
@@ -18623,9 +18987,9 @@
          }
          else if(k == "HudMessages")
          {
-            var hz:Number = sz.y / 56;   // 0.43.4: the real Comms box, two lines
-            this.hzSText(p,"HUD MESSAGES",14 * hz,7 * hz,sz.x - 28 * hz,this.hzArrFs(15),acc,"left","hdr");
-            this.hzSText(p,"Cards keep this box's anchored edge",14 * hz,29 * hz,sz.x - 28 * hz,this.hzArrFs(13),0xF2F7F9,"left");
+            var hz:Number = sz.y / 88;   // 0.43.5: the real Comms box (the v3 card)
+            this.hzSText(p,"HUD MESSAGES",14 * hz,20 * hz,sz.x - 28 * hz,this.hzArrFs(15),acc,"left","hdr");
+            this.hzSText(p,"Cards keep this box's anchored edge",14 * hz,46 * hz,sz.x - 28 * hz,this.hzArrFs(13),0xF2F7F9,"left");
          }
          else if(k == "MissionToast")
          {
@@ -19200,7 +19564,7 @@
          "DlgInputDelay":"After the option list opens, input is ignored for this long so a held key doesn't pick an option by accident. The game's own delay is 1000 ms; lower is faster.",
          "DlgHoverScroll":"With the mouse resting on the top or bottom visible option for a quarter second, the list scrolls one option. Only matters when VISIBLE OPTIONS limits the list.",
          "DlgButtonBar":"HORIZON: a restyled key strip under the options card. GAME BAR: the game's own button bar. HIDDEN: no bar at all - the keys still work.",
-         "GameCardTitle":"The title on the Horizon card for the game's other notices (the ones that are not crime, credits, crew or afflictions). INFO is the default; GAME is the old title. ARTIFACT cards keep theirs.",
+         "GameCardTitle":"The small label on the Horizon card for the game's other notices (the ones that are not crime, credits, crew or afflictions). NONE is the default and shows just the message; the old INFO and GAME titles are gone. ARTIFACT cards keep theirs.",
          "DlgVisible":"How many options the card shows at once. ALL sizes the card to every option. A number limits it; the rest scroll with the selection, the wheel or hover.",
          "DlgMoreHint":"With VISIBLE OPTIONS limited, a small 'N MORE' line shows how many more options there are.",
          "DlgNumberKeys":"Keys 1 - 9 pick the option with that number. Numbers follow the shown options (HIDDEN already-said options are skipped).",
@@ -19233,6 +19597,14 @@
          "CompassMarkers":"Master switch for every Horizon compass marker below. Quest objectives always show while it is on.",
          "ShowTarget":"Horizon's own card for the game's activate prompt (take, talk, open) and the item / container hover cards. Off = the game's prompt.",
          "QuickMenuHorizon":"The quick menu (the favorites cross you open with your quick-menu key) draws each slot as a Horizon card in your card style: accent, card color, opacity, font and text size. Each slot shows the key you bound to it, and the info card shows the item name, ammo, damage and slot key that the game sends. Mouse, controller and assigning a slot work as in the game. Read when the menu opens. Off = the game's own look.",
+         "QuickMenuExtended":"Adds up to 24 quick slots. Off = the game's 12-slot T (its own favorites). On = Horizon slots 13-24 in bars under the T (or in rows, if you pick BARS). Item assignments are stored per character.",
+         "QuickMenuSlotCount":"How many slots are shown when Extended Mode is on, from 12 to 24. Removing a slot only hides it; its item comes back if you add the slot again. 24 is the default.",
+         "QuickMenuSlotsPerRow":"How many extended slots sit in each bar: 4, 6, or 8. 6 is the default.",
+         "QuickMenuExtendedLayout":"CROSS + BARS keeps the vanilla T for slots 1-12 and puts Horizon slots in bars underneath. BARS draws every slot in rows. CROSS + BARS is the default.",
+         "QuickMenuExtEmptySlots":"SHOW draws unused extra slots as empty squares with a faint plus. HIDE leaves them off until you assign an item. Occupied extra slots always show. Assigning from inventory still shows empty extras so you can click them.",
+         "QuickMenuExtPanelOpacity":"How solid the extra-slots window is. 0 is clear. 100 is solid. Does not change other HUD cards. Applies the next time you open the Quick Menu.",
+         "QuickMenuExtSlotScale":"Size of extra slots compared with the original 12. 1.0 is the same size as slots 1-12. Smaller shrinks the extra window. Applies the next time you open the Quick Menu.",
+         "QuickMenuKey13":"The key that uses Horizon slot 13 while you are not in a menu. Empty = the slot still works from the Quick Menu. Keys already bound in the game's controls are refused.",
          "VehicleExitPill":"While you are in a vehicle, the hold-to-exit prompt is a Horizon pill: the key the game shows, then EXIT. A fill sweeps across while you hold, and the pill turns green with a check when the hold completes. The game's button stays at alpha 0, so the hold still finishes. Off shows the game's prompt.",
          "PlanetDetails":"Adds a gravity / air line to the planet card.",
          "TempUnit":"Planet card and scanner temperature units. The game value is Celsius. Fahrenheit is C times 9/5 plus 32, rounded. Default Celsius.",
@@ -19500,6 +19872,25 @@
             {"k":"HoverScale","l":"HOVER CARDS: SIZE","t":"z","sub":true,"note":"Activate prompts, loose item / take card, compare and enemy tags"},
             {"k":"ContainerScale","l":"CONTAINER WINDOW: SIZE","t":"z","sub":true,"note":"The full container item list"},
             {"k":"QuickMenuHorizon","l":"HORIZON STYLE","t":"b","h":"QUICK MENU","note":"The game's quick menu (favorites cross) as Horizon cards. Off = the game's look."},
+            {"k":"QuickMenuExtended","l":"EXTENDED MODE","t":"b","note":"Off = the game's 12 slots. On = up to 24 slots. CROSS + BARS is the default layout."},
+            {"k":"QuickMenuSlotCount","l":"SLOT COUNT","t":"n","mn":12,"mx":24,"st":1,"sub":true,"note":"ADD SLOT / REMOVE SLOT any time. Slots 13-24 are Horizon slots."},
+            {"k":"QuickMenuSlotsPerRow","l":"SLOTS PER ROW","t":"r","opts":["4","6","8"],"ids":[4,6,8],"sub":true},
+            {"k":"QuickMenuExtendedLayout","l":"EXTENDED LAYOUT","t":"r","opts":["CROSS + BARS","BARS"],"ids":[0,1],"sub":true},
+            {"k":"QuickMenuExtEmptySlots","l":"EMPTY SLOTS","t":"r","opts":["SHOW","HIDE"],"ids":[1,0],"sub":true,"note":"SHOW draws unused extra slots as empty squares with a faint plus. HIDE leaves them off until you assign an item. Occupied slots always show. Assign mode still shows empty extras so you can fill them."},
+            {"k":"QuickMenuExtPanelOpacity","l":"PANEL OPACITY","t":"n","mn":0,"mx":100,"st":1,"pct":1,"n13":true,"sub":true,"note":"How solid the extra-slots window is. 0 is clear. 100 is solid. Does not change other HUD cards."},
+            {"k":"QuickMenuExtSlotScale","l":"SLOT SCALE","t":"n","mn":0.7,"mx":1.4,"st":0.05,"sub":true,"note":"Size of extra slots compared with slots 1-12. 1.0 is the same size. Smaller shrinks the extra window."},
+            {"k":"QuickMenuKey13","l":"SLOT 13 KEY","t":"k","sub":true,"note":"Empty = no key. The slot still works from the menu. Keys used by another slot or the settings key are skipped; keys bound in the game's controls are ignored."},
+            {"k":"QuickMenuKey14","l":"SLOT 14 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey15","l":"SLOT 15 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey16","l":"SLOT 16 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey17","l":"SLOT 17 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey18","l":"SLOT 18 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey19","l":"SLOT 19 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey20","l":"SLOT 20 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey21","l":"SLOT 21 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey22","l":"SLOT 22 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey23","l":"SLOT 23 KEY","t":"k","sub":true},
+            {"k":"QuickMenuKey24","l":"SLOT 24 KEY","t":"k","sub":true},
             {"k":"XpToastScale","l":"XP TOAST: SIZE","t":"z","h":"NOTIFICATIONS"}];
          var on:Boolean = this.hz30Mod["comms"] === 1;
          var mt:Object = {"k":"MissionToast","l":"MISSION TOAST","t":"b"};   // 0.43.3.2: under NOTIFICATIONS, right after XP TOAST: SIZE
@@ -19514,19 +19905,43 @@
          rows.push(mt); rows.push(ms);
          try { this.hz42ScRows(rows); } catch(err42r:Error) { }   // v0.42.0 r2: SCOPE rows (only with the Scope module)
          // 0.43.4: QUICK MENU > HORIZON STYLE locks when quickmenu.marker is absent (optional FOMOD module).
-         // The saved QuickMenuHorizon value is left untouched; a locked row cannot be changed.
+         // 0.43.5: Extended Mode rows lock the same way, and also when another extended-favorites mod is found.
+         // Saved values are left untouched; a locked row cannot be changed.
          var qmi:int = 0;
+         var qmOff:Boolean = this.hz30Mod["quickmenu"] !== 1;
+         var qmConf:Boolean = this.hzQmConflict;
+         // Pending HORIZON STYLE (the F11 list) relocks Extended rows at once. A missing
+         // hzQmOn still defaults to on (m09 host). The saved Extended value is not written.
+         var qmHzOn:Boolean = this.hzQmOn !== false;
+         if(this.hzSetPend != null && this.hzSetPend.QuickMenuHorizon !== undefined)
+         {
+            qmHzOn = this.hzSetPend.QuickMenuHorizon === true || Number(this.hzSetPend.QuickMenuHorizon) >= 0.5;
+         }
          while(qmi < rows.length)
          {
-            if(rows[qmi].k == "QuickMenuHorizon")
+            var qmk:String = String(rows[qmi].k);
+            if(qmk == "QuickMenuHorizon" || qmk == "QuickMenuExtended" || qmk == "QuickMenuSlotCount" || qmk == "QuickMenuSlotsPerRow" || qmk == "QuickMenuExtendedLayout" || qmk == "QuickMenuExtEmptySlots" || qmk == "QuickMenuExtPanelOpacity" || qmk == "QuickMenuExtSlotScale" || qmk.indexOf("QuickMenuKey") == 0)
             {
-               if(this.hz30Mod["quickmenu"] !== 1)
+               if(qmOff)
                {
                   rows[qmi].dis = true;
-                  rows[qmi].dv = false;
+                  if(rows[qmi].t == "b") { rows[qmi].dv = false; }
                   rows[qmi].note = "Quick Menu module not installed. Install it from the Horizon UI installer.";
                }
-               break;
+               else if(qmConf && qmk != "QuickMenuHorizon")
+               {
+                  rows[qmi].dis = true;
+                  if(rows[qmi].t == "b") { rows[qmi].dv = false; }
+                  rows[qmi].note = "Extended Mode is locked because another extended-favorites mod is installed (Favorites Menu Extended or Favorites Banks).";
+               }
+               else if(!qmHzOn && qmk != "QuickMenuHorizon")
+               {
+                  // Vanilla (HORIZON STYLE off): Extended Mode does nothing. Grey the rows so ON is not
+                  // misleading. dv is display-only; the saved Extended setting is not written.
+                  rows[qmi].dis = true;
+                  if(rows[qmi].t == "b") { rows[qmi].dv = false; }
+                  rows[qmi].note = "Extended Mode needs HORIZON STYLE. Your saved setting is kept.";
+               }
             }
             qmi++;
          }
@@ -20610,7 +21025,7 @@
          }
          return false;
       }
-      // mouse press: a click anywhere else drops a pending confirm / the name entry
+      // mouse press: a click anywhere else drops a pending confirm / the name entry / a PRESS A KEY capture
       private function hz37Press(id:String, rows:Array) : void
       {
          var ri:int = -1;
@@ -20619,6 +21034,7 @@
          var k:String = ri >= 0 && ri < rows.length ? String(rows[ri].k) : "";
          if(k != this.hz37Cf && id.indexOf("inf") != 0) { this.hz37Cf = ""; }
          if(this.hz37Edit != null && k != "_hz37save") { this.hz37Edit = null; }
+         if(this.hzQmCap.length > 0 && k != this.hzQmCap) { this.hzQmCapEnd(); }
       }
       private function hz37Reset() : void
       {
@@ -20970,8 +21386,8 @@
       // The scanner movie (monoclemenu.swf / _lrg) reads the same [Scanner] keys itself; this movie writes them (F11) and
       // hides its own cards while the Horizon scanner is open. Types: b 0/1, i int, f float, z size, o -1 or a number,
       // p position (-1, L/R/C+n, T/B/C+n), s hex.
-      private static const HZ40_SCAN_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanHideBioscanDone","b",0,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["ScanHighlightArea","i",1,0,3],["ScanOutlineThickness","i",0,0,2],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideWatchWhileScanning","b",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];
-      private static const HZ40_SCAN_CM:Object = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanHideBioscanDone":["1 = no bioscan card once the planet is fully scanned (every fauna, flora, resource and trait found). Default 0"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"ScanHighlightArea":["Highlight area of the hand scanner (the game's own pick-up cone and outline radius, set by the DLL): 0 = Horizon dot (smaller than the game),","1 = Vanilla (default: the game's own values, nothing is changed), 2 = Full screen (wide screens too), 3 = Max. Applies the next time you open the scanner"],"ScanOutlineThickness":["Outline thickness of the hand scanner highlight (the game's own [Monocle] outline settings, set by the DLL): 0 = Vanilla","(default: the game's own values, nothing is changed), 1 = Thick (1.5x), 2 = Thicker (2x). Applies the next time you open the scanner"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"],"HideWatchWhileScanning":["1 = the watch hides while the hand scanner is open, in every WatchStyle that shows one. With EnemyBar, StealthMeter or","EdgePulse on, the whole bottom-left watch corner hides, planet / bio alerts and the vanilla enemy ring too. With all","three off, only the watch pieces and the env / bio alert text hide (1 / 2 vanilla: the watch; 3 / 4 Horizon: the face","and its marker icons); the alert icons and the enemy ring still show. 0 = shown (default)"]};
+      private static const HZ40_SCAN_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanHideBioscanDone","b",0,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["ScanHighlightArea","i",1,0,5],["ScanOutlineThickness","i",0,0,2],["ScanReach","i",0,0,3],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideWatchWhileScanning","b",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];
+      private static const HZ40_SCAN_CM:Object = {"ScanLayoutVersion":["Layout version (written by the HUD; do not edit)"],"ScanShowPlanet":["---- panels: 1 = shown, 0 = hidden (the other panels of a stack close up) ----"],"ScanShowWorldTags":["1 = name tag next to the picked object; ScanWorldMarkers = markers on points of interest in the view (0 also hides the HUD's floating quest markers while scanning)"],"ScanShowBodyType":["1 = body type (planet, moon, ...) after the system name in the planet card"],"ScanShowShip":["1 = YOUR SHIP and YOUR VEHICLE rows in the signals list (only when the game gives the distance); 0 = your own ship and vehicle are left out of the signals list"],"ScanSocialX":["ScanSocialX / ScanSocialY / ScanSocialScale = the social strip (social skills, bounty) shown instead of the traits card while you scan someone (-1 = the traits card's spot / size)"],"ScanPlanetX":["---- positions: -1 = default spot, L/R/C+n (X) and T/B/C+n (Y) = 1080p units from that screen edge or the center, inside the edge distance ----","(set here, by a preset or with F11 > SCANNER > ARRANGE SCANNER)"],"ScanVitalsX":["ScanVitalsX / ScanVitalsY = the vitals the HUD keeps while scanning (-1 = bottom center)"],"ScanPlanetScale":["---- sizes: -1 = [Style] HudScale (GLOBAL), 0.60 - 1.60 = this panel's own size ----","(the text scales with the panel, as on the HUD cards: below 1.00 it draws under 13 px at 1080p, about 10.4 px at 0.80)"],"ScanWorldTagScale":["World tag size (-1 = GLOBAL); the tag follows the picked object, so it has no position keys"],"ScanPlanetCompact":["---- compact form: -1 = ScanCompactAll, 0 = full card, 1 = slim strip ----"],"ScanCompactAll":["Compact all panels: -1 = [Style] Compact (GLOBAL), 0 = off, 1 = on"],"ScanOpacity":["---- look ----","Panel opacity: -1 = [Style] CardOpacity, 0.20 - 1.60"],"ScanAccent":["Accent color: -1 = the HUD accent, 0 - 12 accent palette, 13 = ScanAccentHex (#RRGGBB)"],"ScanTextCase":["Text case of Horizon's own labels: -1 = [Style] HeaderStyle, 0 = CAPS, 1 = Title (game names are never re-cased to Title)"],"ScanFont":["Font: -1 = [Style] FontFace, 1 Exo 2, 2 Roboto, 0 game font, 3 game font (semibold)"],"ScanMargin":["Edge distance: -1 = [Style] Margin, 20 - 200 (1080p units)"],"ScanUnits":["Distances: 0 = auto (m / km), 1 = meters only"],"ScanMaxSignals":["---- lists and alerts ----","Signals listed (1 - 8); the quest objective row is always kept"],"ScanHazardWarn":["Hazard rows of the planet card: amber at this exposure % (5 - 95), red at ScanHazardCrit (10 - 100, at least amber + 5)"],"ScanCompleteFlash":["---- extras ----","1 = the bioscan card flashes green when a scan is complete"],"ScanLeftToFind":["1 = 'N FAUNA LEFT / N FLORA LEFT' (planet totals) under the bioscan rows"],"ScanHideBioscanDone":["1 = no bioscan card once the planet is fully scanned (every fauna, flora, resource and trait found). Default 0"],"ScanMinRarity":["Resources listed: 0 all, 1 uncommon and up, 2 rare and up, 3 exotic and up, 4 unique only"],"ScanNearestUnscanned":["1 = highlight the nearest undiscovered signal in the signals list"],"ScanHighlightArea":["Highlight area of the hand scanner (the game's own pick-up cone and outline radius, set by the DLL; not the scan distance): 0 = Small (half the game's circle),","1 = Vanilla (default: Horizon writes nothing; the game, StarfieldCustom.ini or another highlight-radius mod stays), 4 = Large, 5 = Wide, 2 = Full screen (3, the old Max, reads as 2). A change writes once; not on scanner open"],"ScanOutlineThickness":["Outline thickness of the hand scanner highlight (the game's own [Monocle] outline settings, set by the DLL): 0 = Vanilla","(default: the game's own values, nothing is changed), 1 = Thick (1.5x), 2 = Thicker (2x). Applies the next time you open the scanner"],"ScanReach":["Scan reach (changes gameplay; the game's own hand scanner range settings, set by the DLL): 0 = Vanilla (default: nothing is changed, range mods keep theirs),","1 = x2, 2 = x3, 3 = x5 of the game's highlight distance (50 m) and scan distance (10 m); the Surveying bonus still adds on top; never more than 500 m. Applies the next time you open the scanner"],"HideMainHudWhileScanning":["---- main HUD ----","1 = hide the Horizon HUD cards while the Horizon scanner is open (needs the Scanner module). The item card, container list,","activate prompt and combat feedback always stay. Whatever this is set to, the vanilla bottom-left planet name / type always","hides while scanning, and the floating quest markers hide while scanning only when ScanWorldMarkers=0 (POI MARKERS off)."],"ScanShowVitalsHealth":["Vitals kept on screen while HideMainHudWhileScanning hides the HUD: 1 = shown, 0 = hidden","(health, O2, boost; these replace ScanShowVitals: an old ScanShowVitals=0 still turns all three off)"],"ScanVitalsCompact":["Kept vitals form: 0 = full card, 1 = slim strip"],"ScanVitalsLayout":["Kept vitals layout: 0 = vertical stack (one stat per row), 1 = horizontal row"],"HideQuestPopupsWhileScanning":["---- scanner popups (done by the Comms HUD Messages file) ----","1 = hide quest popups and the mission toast for the whole scan"],"DimTraitPopupDuringBioscan":["1 = dim the trait popup while scanning; TraitPopupDim = its opacity (0.10 - 0.90)"],"HideWatchWhileScanning":["1 = the watch hides while the hand scanner is open, in every WatchStyle that shows one. With EnemyBar, StealthMeter or","EdgePulse on, the whole bottom-left watch corner hides, planet / bio alerts and the vanilla enemy ring too. With all","three off, only the watch pieces and the env / bio alert text hide (1 / 2 vanilla: the watch; 3 / 4 Horizon: the face","and its marker icons); the alert icons and the enemy ring still show. 0 = shown (default)"]};
       private static const HZ40_POPUP:Array = ["HideQuestPopupsWhileScanning","DimTraitPopupDuringBioscan","TraitPopupDim"];
       private static const HZ40_OPA_V:Array = [-1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6];
       private static const HZ40_OPA_N:Array = ["FOLLOW HUD","0.20","0.30","0.40","0.50","0.60","0.70","0.80","0.90","1.00","1.10","1.20","1.30","1.40","1.50","1.60"];
@@ -21034,6 +21450,7 @@
       }
       private function hz40Fix(c:Object) : void
       {
+         if(int(c.ScanHighlightArea) == 3) { c.ScanHighlightArea = 2; }   // 0.43.5: the retired MAX is FULL SCREEN (the DLL reads 3 the same way)
          if(int(c.ScanHazardCrit) < int(c.ScanHazardWarn) + 5) { c.ScanHazardCrit = Math.min(100,int(c.ScanHazardWarn) + 5); }
          c.ScanLayoutVersion = 1;
       }
@@ -21199,8 +21616,9 @@
             {"k":"ScanLeftToFind","l":"\"LEFT TO FIND\" COUNTS","t":"b","note":"Planet totals under the bioscan rows"},
             {"k":"ScanMinRarity","l":"RESOURCES SHOWN","t":"r","opts":["ALL","UNCOMMON+","RARE+","EXOTIC+","UNIQUE"],"ids":[0,1,2,3,4]},
             {"k":"ScanNearestUnscanned","l":"HIGHLIGHT NEAREST UNDISCOVERED","t":"b","note":"Signals list only"},
-            {"k":"ScanHighlightArea","l":"HIGHLIGHT AREA","t":"r","opts":["HORIZON DOT","VANILLA","FULL SCREEN","MAX"],"ids":[0,1,2,3],"note":"How much of the screen the scanner picks up and outlines (minerals, flora, fauna, items). HORIZON DOT: smaller. VANILLA: the game's own. FULL SCREEN: the whole screen, wide screens and a high FOV too. MAX: the widest, past every screen edge. Applies the next time you open the scanner"},
+            {"k":"ScanHighlightArea","l":"HIGHLIGHT AREA","t":"r","opts":["SMALL","VANILLA","LARGE","WIDE","FULL SCREEN"],"ids":[0,1,4,5,2],"note":"How far from the screen center the scanner picks up and outlines things. It doesn't change how far away you can scan (that's SCAN REACH). SMALL: about half the game's circle. VANILLA: leaves the game's cone (your INI or another highlight-radius mod stays). Horizon does not write it. LARGE: reaches the top and bottom of the screen. WIDE: reaches the left and right edges. FULL SCREEN: the whole screen, corners too. A change writes once; it is not rewritten when you open the scanner"},
             {"k":"ScanOutlineThickness","l":"OUTLINE THICKNESS","t":"r","opts":["VANILLA","THICK","THICKER"],"ids":[0,1,2],"note":"How thick the scanner outlines highlighted minerals, flora, fauna and items. VANILLA: the game's own (your ini tweaks stay). THICK: 1.5x. THICKER: 2x. Applies the next time you open the scanner"},
+            {"k":"ScanReach","l":"SCAN REACH","t":"r","opts":["VANILLA","2X","3X","5X"],"ids":[0,1,2,3],"note":"Changes gameplay: how far away the scanner outlines things (game: 50 m) and how far you can scan them (game: 10 m plus your Surveying bonus). 2X / 3X / 5X multiply your game's values (other range mods included), capped at 500 m. VANILLA changes nothing. A long reach can cost FPS in busy areas. Applies the next time you open the scanner"},
             {"k":"ScanOpacity","l":"OPACITY","t":"l","vals":HZ40_OPA_V,"names":HZ40_OPA_N,"h":"LOOK","note":"FOLLOW HUD = CARD OPACITY (STYLE)"},
             {"k":"ScanAccIdx","l":"ACCENT","t":"a","pal":this.hz40AccPal(),"names":this.hz40AccNames(),"note":"Custom: ScanAccent=13 + ScanAccentHex=#RRGGBB in the ini"},
             {"k":"ScanTextCase","l":"TEXT CASE","t":"r","opts":["FOLLOW HUD","CAPS","TITLE"],"ids":[-1,0,1],"note":"Game names are never re-cased to Title"},

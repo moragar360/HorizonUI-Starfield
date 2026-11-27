@@ -69,8 +69,8 @@ const KEYS = ["Compact", "CompactScale", "ShowVitals", "VitalsScale", "VitalsLay
 	"ShowCompass", "CompassScale", "CompassCompact", "ShowQuests", "QuestsScale", "QuestsCompact", "QuestsWidth", "QuestsMaxHeight", "QuestsWrap", "ShowPlanet", "PlanetScale", "PlanetCompact", "PlanetDetails",
 	"HazardStatus", "HazardScale", "HazardCompact", "ShowCharacter", "CharacterScale", "CharacterCompact", "WatchStyle", "WatchScale", "ShowAfflictions", "AfflictionsScale",
 	"EnemyBar", "EnemyScale", "StealthMeter", "StealthScale", "VehicleExitPill",
-	"ShowTarget", "NameHover", "HoverScale", "ContainerScale", "QuickMenuHorizon", "XpToastScale", "MissionToast", "MissionToastScale"];
-const MAIN = ["CompactScale", "ShowVitals", "ShowJetpack", "ShowAmmo", "ShowCompass", "ShowQuests", "ShowPlanet", "HazardStatus", "ShowCharacter", "WatchStyle", "ShowAfflictions", "EnemyBar", "StealthMeter", "VehicleExitPill", "ShowTarget", "QuickMenuHorizon", "XpToastScale", "MissionToast", "ScopeHoldBreathChip"];
+	"ShowTarget", "NameHover", "HoverScale", "ContainerScale", "QuickMenuHorizon", "QuickMenuExtended", "QuickMenuSlotCount", "QuickMenuSlotsPerRow", "QuickMenuExtendedLayout", "QuickMenuExtEmptySlots", "QuickMenuExtPanelOpacity", "QuickMenuExtSlotScale", "QuickMenuKey13", "QuickMenuKey14", "QuickMenuKey15", "QuickMenuKey16", "QuickMenuKey17", "QuickMenuKey18", "QuickMenuKey19", "QuickMenuKey20", "QuickMenuKey21", "QuickMenuKey22", "QuickMenuKey23", "QuickMenuKey24", "XpToastScale", "MissionToast", "MissionToastScale"];
+const MAIN = ["CompactScale", "ShowVitals", "ShowJetpack", "ShowAmmo", "ShowCompass", "ShowQuests", "ShowPlanet", "HazardStatus", "ShowCharacter", "WatchStyle", "ShowAfflictions", "EnemyBar", "StealthMeter", "VehicleExitPill", "ShowTarget", "QuickMenuHorizon", "QuickMenuExtended", "XpToastScale", "MissionToast", "ScopeHoldBreathChip"];
 
 // 0.43.3.0 batch j: the Active Buffs rows of the base (0.43.3.1 / 0.43.3.2 test builds) that were removed
 const GONE = ["ActiveBuffs", "BuffsScale", "BuffsShow", "BuffsCompact", "BuffsMax", "BuffsTimers", "BuffsPermanent", "BuffsHideEmpty"];
@@ -89,7 +89,8 @@ if (baseAs) {
 	for (const mods of [{}, comms, all]) {
 		// 0.43.3.0 batch f: QUICK MENU > HORIZON STYLE is the one new row; every other row is compared
 		// 0.43.3.0 batch j: the base's Active Buffs rows are left out (they were removed); every other row still matches
-		const b = rowsOf(baseAs, mods).filter((r) => GONE.indexOf(r.k) < 0), n = rowsOf(as, mods).filter((r) => r.k !== "QuickMenuHorizon");
+		const QMNEW = ["QuickMenuHorizon","QuickMenuExtended","QuickMenuSlotCount","QuickMenuSlotsPerRow","QuickMenuExtendedLayout","QuickMenuExtEmptySlots","QuickMenuExtPanelOpacity","QuickMenuExtSlotScale","QuickMenuKey13","QuickMenuKey14","QuickMenuKey15","QuickMenuKey16","QuickMenuKey17","QuickMenuKey18","QuickMenuKey19","QuickMenuKey20","QuickMenuKey21","QuickMenuKey22","QuickMenuKey23","QuickMenuKey24"];
+		const b = rowsOf(baseAs, mods).filter((r) => GONE.indexOf(r.k) < 0), n = rowsOf(as, mods).filter((r) => QMNEW.indexOf(r.k) < 0);
 		const bm = {}; b.forEach((r) => { bm[r.k] = strip(r); });
 		const nm = {}; n.forEach((r) => { nm[r.k] = strip(r); });
 		const same = b.length === n.length && Object.keys(bm).length === Object.keys(nm).length && Object.keys(bm).every((k) => bm[k] === nm[k]);
@@ -97,9 +98,10 @@ if (baseAs) {
 	}
 	const defLine = (src, re) => (src.match(re) || [""])[0];
 	// 0.43.3.2 batch e: the only HZ_SET_DEF change since the base is the two vehicle exit pill offsets (0 / 0 = the game's spot)
-	const defNow = defLine(as, /private static const HZ_SET_DEF:Object = .*/).replace('"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,', "");
+	const QMDEF = '"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"","QuickMenuExtEmptySlots":1,"QuickMenuExtPanelOpacity":92,"QuickMenuExtSlotScale":1,';
+	const defNow = defLine(as, /private static const HZ_SET_DEF:Object = .*/).replace('"VehicleExitX":0,"VehicleExitY":0,' + QMDEF, "");
 	const defBase = defLine(baseAs, /private static const HZ_SET_DEF:Object = .*/).replace(GONE_DEF, "");
-	expect(defNow === defBase && defLine(as, /private static const HZ31_DEF:Object = .*/) === defLine(baseAs, /private static const HZ31_DEF:Object = .*/), "defaults tables (HZ_SET_DEF, HZ31_DEF) unchanged (HZ_SET_DEF only adds VehicleExitX / VehicleExitY = 0 and QuickMenuHorizon = 1, and drops the Active Buffs defaults)");
+	expect(defNow === defBase && defLine(as, /private static const HZ31_DEF:Object = .*/) === defLine(baseAs, /private static const HZ31_DEF:Object = .*/), "defaults tables (HZ_SET_DEF, HZ31_DEF) unchanged except the Quick Menu keys (schema stays 0.43.3.0)");
 	expect(fnText(as, "hz34IniLines").body === fnText(baseAs, "hz34IniLines").body && fnText(as, "hz34Ini").body === fnText(baseAs, "hz34Ini").body && fnText(as, "hz34SetCur").body === fnText(baseAs, "hz34SetCur").body, "the [Cards] reader, writer and current values unchanged (saved settings and presets behave as before)");
 } else {
 	gitBase.report(baseRes, BASE, "old-vs-new row and default checks", expect);
@@ -196,7 +198,17 @@ expect(qmOn && !qmOn.dis && qmOn.inote === "The game's quick menu (favorites cro
 	const h = { hz30Mod: { comms: 1 }, hzQmOn: true, hzSetPend: { QuickMenuHorizon: 1 } };
 	for (const n of ["hz34CardRows", "hz34Sz", "hz34Cmp", "hz42ScRows"]) h[n] = toJs(as, n);
 	const qm = h.hz34CardRows().find((r) => r.k === "QuickMenuHorizon");
-	expect(qm && qm.dis === true && qm.dv === false && h.hzQmOn === true && h.hzSetPend.QuickMenuHorizon === 1 && !/hzQmOn\s*=/.test(fnText(as, "hz34CardRows").body) && !/hzSetPend/.test(fnText(as, "hz34CardRows").body), "the lock leaves the saved QuickMenuHorizon value alone (hzQmOn and hzSetPend are untouched)");
+	expect(qm && qm.dis === true && qm.dv === false && h.hzQmOn === true && h.hzSetPend.QuickMenuHorizon === 1 && !/this\.hzQmOn\s*=/.test(fnText(as, "hz34CardRows").body) && !/hzSetPend\.\w+\s*=(?!=)/.test(fnText(as, "hz34CardRows").body), "the lock leaves the saved QuickMenuHorizon value alone (hzQmOn and hzSetPend are not written)");
+}
+{
+	const h = { hz30Mod: { comms: 1, quickmenu: 1 }, hzQmOn: true, hzQmExt: true, hzQmConflict: false, hzSetPend: { QuickMenuHorizon: false, QuickMenuExtended: true } };
+	for (const n of ["hz34CardRows", "hz34Sz", "hz34Cmp", "hz42ScRows"]) h[n] = toJs(as, n);
+	const off = h.hz34CardRows();
+	const extOff = off.find((r) => r.k === "QuickMenuExtended");
+	expect(!off.find((r) => r.k === "QuickMenuHorizon").dis && extOff.dis === true && extOff.dv === false && h.hzSetPend.QuickMenuExtended === true && h.hzQmExt === true, "pending HORIZON STYLE off greys Extended rows at once and does not write the saved Extended value");
+	h.hzSetPend.QuickMenuHorizon = true;
+	const on = h.hz34CardRows();
+	expect(!on.find((r) => r.k === "QuickMenuExtended").dis && h.hzSetPend.QuickMenuExtended === true && h.hzQmExt === true, "pending HORIZON STYLE on unlocks Extended rows without writing the saved Extended value");
 }
 expect(!/addEventListener|ENTER_FRAME|setInterval|setTimeout|new Timer/.test(fnText(as, "hz34CardRows").body), "menu rows only: no timer or listener");
 

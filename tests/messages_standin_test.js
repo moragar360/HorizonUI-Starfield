@@ -3,7 +3,7 @@
 // mutation check: on the 5eae329 sources it must fail.)
 // A) Stand-in round trip: the HUD stand-in (hz31PxSize / hz31PxHome / hz30Anchor / hz30PosStr / hz30Resolve) saves
 //    HudMessagesX/Y; the Comms movie (hzcMsgLayout / hzcCardZ / hzcAnchor / hzcMsgHome) reads them back. The real
-//    box must be the stand-in box: same size (360x56 x TextScale x HudScale, x1.25 in the large movie) and same spot,
+//    box must be the stand-in box: same size (460x88 x TextScale x HudScale, x1.25 in the large movie) and same spot,
 //    for every X anchor (L/C/R) and Y anchor (T/C/B), normal and large movies, HudScale 1 and not 1.
 // B) Zero bounce: successive messages of different width and line count (short, long, multi-line), for every anchor,
 //    both movies and HudScale 1 / 1.25, on both card paths (linked to a game line, and unlinked). The card's anchored
@@ -63,7 +63,7 @@ function hudHost(lrg, ts, hs) {
 }
 function commsHost(cfg, lrg, vr) {
 	const h = { hzcCfg: Object.assign({ TextScale: 1, HudScale: 1, Margin: MARGIN }, cfg), hzcRxLayer: { x: 0, y: 0 }, hzcRxDbgOn: false, hzcMsgHomeLogged: true,
-		HZC_LRG: lrg, hzcRx: [], hzcMsgBox: null, hzcRxDirty: false, bounds: 0, arrRuns: 0, Messages_mc: null };
+		HZC_LRG: lrg, HZC_V3_W: 460, HZC_V3_MAX: 3, hzcRx: [], hzcMsgBox: null, hzcRxDirty: false, bounds: 0, arrRuns: 0, Messages_mc: null };
 	h.hzcVis = () => new Rectangle(vr.x, vr.y, vr.width, vr.height);
 	for (const n of ["hzcMsgArranged", "hzcRxAnchor", "hzcMsgLayout", "hzcMsgHome", "hzcAnchor", "hzcCardZ", "hzcRxPlace", "hzcRxArrPlace", "hzcRxStack"]) { const f = toJs(COMMS, n); if (f) h[n] = f.bind(h); }
 	if (h.hzcRxArrPlace) { const ap = h.hzcRxArrPlace; h.hzcRxArrPlace = () => { h.arrRuns++; ap(); }; }
@@ -94,7 +94,7 @@ for (const vr of VRS) for (const lrg of [false, true]) for (const hs of SCALES) 
 	const hud = hudHost(lrg, ts, hs);
 	const sz = hud.hz31PxSize("HudMessages");
 	const z = Math.min(2.2, Math.max(0.75, ts * hs * (lrg ? 1.25 : 1)));
-	expect(sz.x === Math.max(280, Math.round(360 * z)) && sz.y === Math.round(56 * z), `stand-in ${vr.width} lrg=${lrg} hs=${hs} ts=${ts}: ${sz.x}x${sz.y} is the Comms box 360x56 x ${z.toFixed(4)}`);
+	expect(sz.x === Math.max(280, Math.round(460 * z)) && sz.y === Math.round(88 * z), `stand-in ${vr.width} lrg=${lrg} hs=${hs} ts=${ts}: ${sz.x}x${sz.y} is the Comms box 460x88 x ${z.toFixed(4)}`);
 	const tl = new Point(vr.x, vr.y), br = new Point(vr.right, vr.bottom);
 	const home = hud.hz31PxHome("HudMessages", tl, br);
 	const xsPos = { L: tl.x + 130, C: Math.round((tl.x + br.x) / 2 - sz.x / 2) + 24, R: br.x - sz.x - 210 };
@@ -157,7 +157,7 @@ for (const vr of [VRS[0]]) for (const lrg of [false, true]) for (const hs of SCA
 	const edges = [];
 	let i = 0;
 	for (const [name, wf, hf] of MSGS) {
-		const w = Math.round(360 * z * wf), hh = Math.round(48 * z * hf);
+		const w = Math.round(460 * z * wf), hh = Math.round(48 * z * hf);
 		// the game's line for this message: its width and height follow the text, its right edge wobbles a little
 		const it = linked ? gameLine(1500 + (i % 2) * 6, 90 + (i % 3) * 4, 320 * wf, 40 * hf) : null;
 		const e = { st: 1, it: it, linked: linked, k: "", n: name, size: [w, hh], sig: "" };

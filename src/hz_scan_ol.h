@@ -1,17 +1,19 @@
 #pragma once
 
 // Purpose: 0.43.3.2 [Scanner] ScanOutlineThickness - how thick the hand scanner draws the outline around highlighted
-// objects (minerals, flora, fauna, items). The thickness is ten game INI settings in [Monocle] (not a Horizon movie
+// objects (minerals, flora, fauna, items). The thickness is eleven game INI settings in [Monocle] (not a Horizon movie
 // value), one per highlight kind: fHighlightScannableOutlineThickness and its _FullyScanned, _Generic, _Scanned,
 // _Social, _TargetFullyScanned, _TargetGeneric, _TargetScannable, _TargetScanned and _Tracked variants. Game
 // defaults (strings dumped from the executable, values read with getini): 3, 1, 2, 1, 1, 2, 3, 3, 2, 3.
+// 0.43.5: + _Bounty (bounty targets), the 11th kind found in the 1.16.244 executable; 0.43.3.2 missed it, so bounty
+// targets kept the game's thickness under Thick / Thicker. Like every kind it is only read / written when found.
 // Positions: 0 = Vanilla (the default: Horizon writes nothing and the game keeps whatever its own INI files say),
 // 1 = Thick (1.5x the game's values), 2 = Thicker (2x). The factor multiplies the values read from the game right
 // before the first write, so a player's own StarfieldCustom.ini tweak is the base and a kind a player turned off
 // (0) stays off. 1.5x and 2x keep every kind apart (1 -> 1.5 / 2, 3 -> 4.5 / 6) without the outline filling small
 // objects; more than about 2x turns thin rocks and plants into solid blobs.
 // Back to Vanilla writes the captured values back. Pure logic: no game, no CommonLibSF, no thread
-// (tests/scan_ol_test.cpp). main.cpp does the game calls. Author: Moragar. Last modified: 2026-11-18.
+// (tests/scan_ol_test.cpp). main.cpp does the game calls. Author: Moragar. Last modified: 2026-11-23.
 
 #include <string>
 
@@ -21,7 +23,7 @@ inline constexpr int kVanilla = 0;
 inline constexpr int kThick = 1;
 inline constexpr int kThicker = 2;
 
-inline constexpr int kN = 10;
+inline constexpr int kN = 11;
 inline constexpr const char* kKeys[kN] = {
 	"fHighlightScannableOutlineThickness:Monocle",
 	"fHighlightScannableOutlineThickness_FullyScanned:Monocle",
@@ -33,6 +35,7 @@ inline constexpr const char* kKeys[kN] = {
 	"fHighlightScannableOutlineThickness_TargetScannable:Monocle",
 	"fHighlightScannableOutlineThickness_TargetScanned:Monocle",
 	"fHighlightScannableOutlineThickness_Tracked:Monocle",
+	"fHighlightScannableOutlineThickness_Bounty:Monocle",   // 0.43.5
 };
 
 inline constexpr float kMulThick = 1.5f;

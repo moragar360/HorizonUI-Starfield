@@ -1,6 +1,6 @@
 // Unit tests for perf round 2 Fix 2 (src/hz_menu_bits.h): the HUD menu check reads an event-kept open-menu set.
 // No game, no CommonLibSF, no thread. Build:
-//   g++ -std=c++20 -Wall -Wextra -Wpedantic -I src tests/menu_bits_test.cpp -o /tmp/menu_bits_test
+//   g++ -std=c++20 -Wall -Wextra -Wpedantic -I src tests/menu_bits_test.cpp -o test_scratch/menu_bits_test
 // Proves:
 //  1. Clear / FirstBlocking give the same answers as the e4d7b75 HudMenusClear / HudBlockingMenu loops (copied
 //     below over a fake menu map) for every light flag and for random and exhaustive small menu states;

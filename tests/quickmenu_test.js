@@ -88,6 +88,10 @@ function host(iniText) {
 	h.hzqFontBegin = function () { this.calls.push("font"); };
 	h.hzqGlyphOk = function () { return false; };
 	h.hzqInfoSet = function () { this.calls.push("infoset"); };
+	// 0.43.5 Extended Mode helpers: off (the default), so the 0.43.3 flow under test is unchanged. Checked in 3b.
+	h.hzqExtGot = false;
+	h.hzqExtOn = function () { return false; };
+	for (const n of ["hzqExtPrepare", "hzqExtDraw", "hzqExtFetch", "hzqExtRestore", "hzqExtListen", "hzqExtPlace", "hzqExtPad", "hzqExtRaise", "hzqRingDraw", "hzqUnclip", "hzqExtFontTouch", "hzqExtFrameDraw", "hzqApplyIconTint", "hzqIsWeapon"]) h[n] = function () {};
 	h.ItemInfo_mc = { ItemNameBg_mc: clip("a"), ItemName_mc: clip("b"), AmmoType_mc: clip("c"), AmmoAmount_mc: clip("d"), DamageTypeHolder_mc: clip("e") };
 	for (let i = 0; i < 12; i++) h["Entry_" + i] = Object.assign(clip("Entry_" + i, [clip("instance1"), clip("Icon_mc"), clip("Catcher_mc"), clip("Quickkey_tf"), clip("SlotInfoSpacer_mc"), clip("hzqCard")]),
 		{ Icon_mc: null, Quickkey_tf: null });
@@ -96,7 +100,12 @@ function host(iniText) {
 }
 
 // ---- 1. no Q keying ----
-const code = codeOnly(main);
+// 0.43.5: the Extended Mode section (slots 13-24, off by default) is its own opt-in block at the end of the file with
+// its own clips, mouse and key handling; these 0.43.3 invariants cover everything before it. It is checked below.
+const EXT_MARK = "// ---------- 0.43.5 Extended Mode";
+const extAt = main.indexOf(EXT_MARK);
+const code = codeOnly(extAt >= 0 ? main.slice(0, extAt) : main);
+const extCode = extAt >= 0 ? codeOnly(main.slice(extAt)) : "";
 expect(!/keyCode|Keyboard\.|KeyboardEvent|KEY_DOWN|KEY_UP|"Q"|'Q'|\b81\b/.test(code), "the Horizon block has no key code, no keyboard listener and no Q");
 expect(!/"Quickkeys"/.test(code), "the Horizon block does not use the quick-menu open / close event");
 expect((code.match(/this\.hzqKeys\[/g) || []).length === 1 && /var k:\* = this\.hzqKeys\[ev\];/.test(code), "key text has one source: the ControlMapData table (hzqKey)");
@@ -120,6 +129,20 @@ expect(!/hitArea|Catcher_mc\.mouse|buttonMode|MouseEvent/.test(code), "the slots
 expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout|getTimer|getChildByName/.test(code + codeOnly(reader)), "no enterFrame, timer, getTimer or name search");
 const listeners = code.match(/addEventListener\([^)]*\)/g) || [];
 expect(listeners.length === 3 && listeners.every((l) => /hzqFont(Ok|Err)Ev/.test(l)), "the only listeners are the one-shot font.marker loader's (plus the reader's file loader)");
+// ---- 3b. Extended Mode block (0.43.5): opt-in, edge-only, its listeners are its own ----
+{
+	expect(extAt > 0 && /if\(!this\.hzqExtOn\(\)\) \{ this\.hzqExtRestore\(\); return; \}/.test(fnText(main, "hzqExtPrepare").body), "Extended Mode off: hzqExtPrepare puts the 12-slot look back and adds nothing");
+	const extL = extCode.match(/addEventListener\([^)]*\)/g) || [];
+	const keyL = extL.filter((l) => /KeyboardEvent/.test(l));
+	expect(keyL.length === 1 && /KEY_UP,this\.hzqExtKey,false,0,true/.test(keyL[0]) && /removeEventListener\(KeyboardEvent\.KEY_UP,this\.hzqExtKey\)/.test(extCode), "Extended Mode: one weak KEY_UP listener on the stage, removed when it turns off");
+	expect(extL.filter((l) => /MouseEvent/.test(l)).length === 3 && extL.length === 4, "Extended Mode: mouse listeners only on its own slot and ADD SLOT clips");
+	expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout|getTimer|getChildByName/.test(extCode), "Extended Mode: no enterFrame, timer or name search");
+	// performance standards: clips built once and reused, change-driven draw
+	const ens = fnText(main, "hzqExtEnsureClips").body, bld = fnText(main, "hzqExtBuildClips").body, drw = fnText(main, "hzqExtDraw").body;
+	expect(/if\(this\.hzqExtPool == null\)/.test(ens) && /if\(this\.hzqExtAdd == null\)/.test(ens) && /if\(this\.hzqExtHold == null\)/.test(ens) && !/new Sprite|removeChild|addEventListener/.test(bld) && (extCode.match(/new Sprite\(\)/g) || []).length === 4, "Extended Mode: hold, frame, 12 slot clips, ADD tile and overlay ring are built once per open; a layout change only moves / shows / hides them");
+	expect(/o\.cSel !== sel \|\| o\.cEmpty !== empty/.test(drw) && /o\.cKey !== key/.test(drw) && /o\.cIcon !== isig/.test(drw) && /!this\.hzqExtAddDrawn/.test(drw), "Extended Mode: a slot is redrawn only when its selection, empty/refuse, key or icon changed; the ADD tile art is drawn once");
+	expect(/public var hzqExtCmd:Function = null;/.test(main) && /public function hzqExtKick\(\)/.test(main), "Extended Mode: declared hzqExtCmd slot (sealed class) and the DLL kick");
+}
 const redrawCallers = FNS.concat(["hzqFontOkEv"]).filter((n) => { try { return /this\.hzqRedraw\(\)/.test(fnText(main, n).body); } catch (e) { return false; } });
 expect(JSON.stringify(redrawCallers.sort()) === JSON.stringify(["hzqCtl", "hzqFontOkEv", "hzqOnIni"]), "a full redraw only after the ini read, font.marker or a ControlMapData change: " + redrawCallers.join(","));
 expect(/for\(var|while\(i < n\)/.test(fnText(main, "hzqHideArt").body) && /Math\.min\(e\.numChildren,10\)/.test(fnText(main, "hzqHideArt").body), "the vanilla-art pass looks at the slot's direct children only (at most 10, no recursion)");
@@ -182,18 +205,18 @@ expect(/for\(var|while\(i < n\)/.test(fnText(main, "hzqHideArt").body) && /Math\
 	}
 }
 // ---- 6. the INI key ----
-expect(/\nVehicleExitY=0\n; Quick menu[^\n]*\nQuickMenuHorizon=1\n\n\[Effects\]/.test(ini), "default.ini [Cards Extra]: QuickMenuHorizon=1, where the writer puts it");
+expect(/\nVehicleExitY=0\n; Quick menu[^\n]*\nQuickMenuHorizon=1\n(?:(?:; [^\n]*|QuickMenu[A-Za-z0-9]+=[^\n]*)\n)*\n\[Effects\]/.test(ini), "default.ini [Cards Extra]: QuickMenuHorizon=1, where the writer puts it (0.43.5 Extended keys follow it)");
 expect(/"VehicleExitY":0,"QuickMenuHorizon":1,/.test(hud), "HZ_SET_DEF: QuickMenuHorizon 1 (DEFAULTS = on)");
 {
-	const h = { hzQmOn: true, hzB: (o) => (o ? "1" : "0") };
-	for (const n of ["hzQmIni", "hzQmSetCur", "hzQmSetLive", "hzQmIniLines"]) h[n] = toJs(hud, n);
+	const h = { hzQmOn: true, hzQmExt: false, hzQmCount: 24, hzQmPerRow: 6, hzQmLayout: 0, hzQmEmpty: 1, hzQmPanelA: 92, hzQmSlotSc: 1, hzQmKeys: ["", "", "", "", "", "", "", "", "", "", "", ""], hzB: (o) => (o ? "1" : "0") };
+	for (const n of ["hzQmIni", "hzQmSetCur", "hzQmSetLive", "hzQmIniLines", "hzQmKeyAt", "hzQmClampCount", "hzQmClampRow", "hzQmClampEmpty", "hzQmClampPanelA", "hzQmClampScale"]) h[n] = toJs(hud, n);
 	expect(h.hzQmIni("quickmenuhorizon", false) === true && h.hzQmOn === false && h.hzQmIni("vehicleexitpill", true) === false, "HUD reader: quickmenuhorizon (any section, like the rest)");
 	const o = {}; h.hzQmSetCur(o);
 	expect(o.QuickMenuHorizon === false, "current values (settings save and presets)");
 	h.hzQmSetLive({ QuickMenuHorizon: 1 });
 	expect(h.hzQmOn === true, "live apply");
 	const a = []; h.hzQmIniLines(a, { QuickMenuHorizon: false });
-	expect(a.length === 2 && a[0].charAt(0) === ";" && a[1] === "QuickMenuHorizon=0", "writer lines");
+	expect(a.length === 29 && a[0].charAt(0) === ";" && a[1] === "QuickMenuHorizon=0" && a[3] === "QuickMenuExtended=0" && a[5] === "QuickMenuSlotCount=24" && a[7] === "QuickMenuSlotsPerRow=6" && a[9] === "QuickMenuExtendedLayout=0" && a[11] === "QuickMenuExtEmptySlots=1" && a[13] === "QuickMenuExtPanelOpacity=92" && a[15] === "QuickMenuExtSlotScale=1" && a[17] === "QuickMenuKey13=" && a[28] === "QuickMenuKey24=" && a.join("\n") === ini.slice(ini.indexOf("; Quick menu (the game"), ini.indexOf("QuickMenuKey24=") + 15).replace("QuickMenuHorizon=1", "QuickMenuHorizon=0"), "writer lines (0.43.5: Extended Mode off, 24 slots, 6 per row, CROSS + BARS, empty extras shown, panel 92, scale 1.0, no keys)");
 	expect(/this\.hzQmIni\(k,bv\)/.test(fnText(hud, "hz26Ini").body) && /hzQmSetCur\(o\)/.test(fnText(hud, "hz26SetCur").body) && /hzQmSetLive\(p\)/.test(fnText(hud, "hz26SetLive").body) && /this\.hzVehIniLines\(a,p\);[^\n]*\n\s*this\.hzQmIniLines\(a,p\);/.test(fnText(hud, "hz26IniLines").body), "wired into the [Cards Extra] reader, current values, live apply and writer");
 	expect(/\{"k":"QuickMenuHorizon","l":"HORIZON STYLE","t":"b","h":"QUICK MENU"/.test(hud), "F11 > CARDS > QUICK MENU > HORIZON STYLE");
 }
