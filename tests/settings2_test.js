@@ -27,7 +27,7 @@ function fnText(src, name) {
 }
 
 expect(/HZ_SET_TABS:Array = \["CARDS","APPEARANCE","SCANNER","COMMS","SYSTEM"\]/.test(as), "five tabs: CARDS APPEARANCE SCANNER COMMS SYSTEM");
-expect(/HZ_SET_W:Number = 1000/.test(as), "window width stays 1000");
+expect(/HZ_SET_W:Number = 1848/.test(as) && /HZ_SET_H:Number = 1020/.test(as), "window defaults to the mockup 1848x1020 and hz51Fit clamps to visibleRect");
 expect(/function hzSetDraw\(\) : void\s*\{\s*this\.hz51Draw\(\);\s*\}/.test(as), "hzSetDraw is the Settings 2.0 shell");
 expect(/function hzSetRows\(tab:int\) : Array\s*\{\s*this\.hzSetPage = this\.hz51PageClamp\(tab\);\s*return this\.hz51Rows\(tab, this\.hzSetPage\);\s*\}/.test(as), "hzSetRows dispatches to the new catalog");
 
@@ -73,10 +73,11 @@ expect(/hzSetIdx = null/.test(close), "search index is dropped when F11 closes")
 expect(/hz51Key/.test(fnText(as, "hzSettingsKey").body), "slash search is handled only while the window is open");
 
 const draw = fnText(as, "hz51Draw").body;
-expect(/hz51DrawHead/.test(draw) && /hz51DrawSide/.test(draw) && /hz51DrawFooter/.test(draw) && /hz51DrawCompact/.test(fnText(as, "hz51DrawHead").body) && /hz51DrawSearchBox/.test(fnText(as, "hz51DrawHead").body), "shell draws compact, search, grouped sidebar, dual footer");
+expect(/hz51DrawHead/.test(draw) && /hz51DrawSide/.test(draw) && /hz51DrawFooter/.test(draw) && /hz51DrawCompact/.test(fnText(as, "hz51DrawHead").body) && /hz51DrawSearchBox/.test(fnText(as, "hz51DrawCompact").body), "shell draws compact, search, grouped sidebar, and the footer");
 expect(/hz51DrawHead/.test(draw), "Arrange Cards sits in the header, not on System");
-expect(/SETTING DETAILS/.test(fnText(as, "hz51DrawRight").body), "right column has Setting Details");
-expect(/KEYBOARD/.test(fnText(as, "hz51DrawFooter").body) && /CONTROLLER/.test(fnText(as, "hz51DrawFooter").body), "dual footer hints");
+expect(/SETTING DETAILS/.test(fnText(as, "hz51DrawRight").body) && /LIVE PREVIEW/.test(fnText(as, "hz51DrawRight").body), "right column has one LIVE PREVIEW and Setting Details");
+expect(!/hzSetPvDraw/.test(fnText(as, "hz51DrawRight").body), "right column does not parent the overflowing planet-card clone");
+expect(/KEYBOARD/.test(fnText(as, "hz51DrawFooter").body) && /CONTROLLER/.test(fnText(as, "hz51DrawFooter").body) && /hz51Pad/.test(fnText(as, "hz51DrawFooter").body), "footer keeps both hint sets and shows only the active device");
 
 const cards = fnText(as, "hz51Cards").body;
 expect(/CharacterShowSeconds/.test(cards) && /SHOW FOR \(SECONDS\)/.test(cards), "Character card has Show for (seconds)");

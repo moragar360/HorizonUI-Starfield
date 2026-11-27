@@ -39,13 +39,13 @@ function replaceFn(sig, newBody, label) {
 }
 
 once(
-	'      private static const HZ_SET_H:Number = 660;\n      private static const HZ_SET_TABS:Array = ["CARDS","STYLE","TEXT","EFFECTS","RULES","COMPASS","CONTROLS","SCANNER","COMMS"];   // v0.30: 7 SCANNER, 8 COMMS (optional modules)',
-	'      private static const HZ_SET_H:Number = 700;\n      private static const HZ_SET_TABS:Array = ["CARDS","APPEARANCE","SCANNER","COMMS","SYSTEM"];   // Settings 2.0',
+	'      private static const HZ_SET_W:Number = 1000;\n      private static const HZ_SET_H:Number = 660;\n      private static const HZ_SET_TABS:Array = ["CARDS","STYLE","TEXT","EFFECTS","RULES","COMPASS","CONTROLS","SCANNER","COMMS"];   // v0.30: 7 SCANNER, 8 COMMS (optional modules)',
+	'      private var HZ_SET_W:Number = 1848;\n      private var HZ_SET_H:Number = 1020;\n      private static const HZ_SET_TABS:Array = ["CARDS","APPEARANCE","SCANNER","COMMS","SYSTEM"];   // Settings 2.0',
 	"tabs"
 );
 once(
 	"      private static const HZ_SET_TOP:Number = 112;      // list viewport top",
-	"      private static const HZ_SET_TOP:Number = 76;       // body top (below header + tabs)",
+	"      private static const HZ_SET_TOP:Number = 108;      // body top (mockup .top 62 + .tabs 46)",
 	"top"
 );
 once(
@@ -89,8 +89,18 @@ replaceFn("      private function hzSetDraw() : void", `      private function h
 
 once(
 	"         this.hzSetTab = 0;\n         this.hzSetRow = 0;\n         this.hzSetScroll = 0;",
-	'         this.hzSetTab = 0;\n         this.hzSetPage = 0;\n         this.hzSetFocus = 0;\n         this.hzSetDrop = -1;\n         this.hzSetFindOn = false;\n         this.hzSetFind = "";\n         this.hzSetHexK = "";\n         this.hzSetGlowK = "";\n         try { this.hz51IndexBuild(); } catch(eIdx:Error) { this.hzSetIdx = []; }\n         this.hzSetRow = 0;\n         this.hzSetScroll = 0;',
+	'         this.hzSetTab = 0;\n         this.hzSetPage = 0;\n         this.hzSetFocus = 0;\n         this.hzSetDrop = -1;\n         this.hzSetFindOn = false;\n         this.hzSetFind = "";\n         this.hzSetHexK = "";\n         this.hzSetGlowK = "";\n         this.hz51Pad = this.hzVehPad == 1;\n         try { this.hz51IndexBuild(); } catch(eIdx:Error) { this.hzSetIdx = []; }\n         this.hzSetRow = 0;\n         this.hzSetScroll = 0;',
 	"open"
+);
+once(
+	"         this.HorizonSettings_mc.x = Math.round(cx - HZ_SET_W / 2);\n         this.HorizonSettings_mc.y = Math.round(cy - HZ_SET_H / 2);",
+	"         try { this.hz51Fit(); } catch(eFitP:Error) { }\n         this.HorizonSettings_mc.x = Math.round(cx - this.HZ_SET_W / 2);\n         this.HorizonSettings_mc.y = Math.round(cy - this.HZ_SET_H / 2);",
+	"place"
+);
+once(
+	'         if(isNaN(this.hz35Mx) || Math.abs(mx - this.hz35Mx) > 2 || Math.abs(my - this.hz35My) > 2) { kb35 = this.hz35Kb; this.hz35Kb = false; this.hz35Mx = mx; this.hz35My = my; }',
+	'         if(isNaN(this.hz35Mx) || Math.abs(mx - this.hz35Mx) > 2 || Math.abs(my - this.hz35My) > 2) { kb35 = this.hz35Kb; this.hz35Kb = false; this.hz51Pad = false; this.hz35Mx = mx; this.hz35My = my; }',
+	"mouse pad"
 );
 once(
 	"         this.hzSetIsOpen = false;\n         this.hzQmCapEnd();",
@@ -356,14 +366,14 @@ once(
 );
 replaceFn("      private function hzSetRowH(r:Object) : Number", `      private function hzSetRowH(r:Object) : Number
       {
-         if(r.t == "m") { return (r.h ? 24 : 0) + this.hz34BanH(); }
+         if(r.t == "m") { return (r.h ? HZ51_SEC : 0) + this.hz34BanH(); }
          if(r.t == "g") { return 48; }
-         if(r.t == "w") { return (r.h ? 24 : 0) + 44; }
+         if(r.t == "w") { return (r.h ? HZ51_SEC : 0) + 44; }
          if(r.t == "kg")
          {
-            return (r.h ? 24 : 0) + this.hz51QmGridH(r.dis);
+            return (r.h ? HZ51_SEC : 0) + this.hz51QmGridH(r.dis);
          }
-         return (r.h ? 24 : 0) + HZ51_ROW;
+         return (r.h ? HZ51_SEC : 0) + HZ51_ROW;
       }
 `, "rowh");
 once(
@@ -372,7 +382,7 @@ once(
 	`         var right:Number = HZ_SET_W - HZ51_PREV_W - HZ51_SIDE_W;`,
 	"notew"
 );
-text = text.split("         var avail:Number = HZ_SET_H - 64 - HZ_SET_TOP;").join("         var avail:Number = HZ_SET_H - HZ51_FOOT - HZ_SET_TOP - 44;");
+text = text.split("         var avail:Number = HZ_SET_H - 64 - HZ_SET_TOP;").join("         var avail:Number = HZ_SET_H - HZ51_FOOT - HZ_SET_TOP - 64;");
 once(
 	'"WatchStyle":0,"CrosshairRule":0};',
 	'"WatchStyle":0,"CrosshairRule":0,"CharacterShowSeconds":8,"Debug":0,"PerfDiag":0,"PerfMode":0,"PerfDump":0};',

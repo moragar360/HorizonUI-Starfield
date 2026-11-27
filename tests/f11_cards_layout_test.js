@@ -130,20 +130,21 @@ expect(secOf("PlanetDetails") === "PLANET" && secOf("EquipmentExtras") === "EQUI
 // ---- 4. headers are not rows ----
 expect(now.every((r) => typeof r.k === "string" && r.k.length > 0 && typeof r.t === "string"), "every row has a key and a control (no header-only row to land on)");
 const rh = fnText(as, "hzSetRowH").body;
-expect(/\(r\.h \? 24 : 0\) \+ HZ51_ROW/.test(rh), "row geometry counts a header's 24 px, so selection follow and scrolling keep the header with its row");
+expect(/\(r\.h \? HZ51_SEC : 0\) \+ HZ51_ROW/.test(rh), "row geometry counts the section header with the row, so selection follow and scrolling keep the header with its row");
 {
 	// selection follow over the real geometry: moving down through every row keeps the selected row inside the view
-	const h = { hzSetRow: 0, hzSetScroll: 0, hzSetMaxScroll: 0, HZ_SET_H: 700, HZ_SET_TOP: 76, HZ51_FOOT: 100, HZ51_ROW: 54, hz34BanH() { return 40; }, hzSetNoteH(r) { return r.note ? 20 : 0; } };
+	const h = { hzSetRow: 0, hzSetScroll: 0, hzSetMaxScroll: 0, HZ_SET_H: 1020, HZ_SET_TOP: 108, HZ51_FOOT: 54, HZ51_ROW: 58, HZ51_SEC: 32, hz34BanH() { return 40; }, hzSetNoteH(r) { return r.note ? 20 : 0; } };
 	const k = /HZ_SET_TOP:Number = (\d+)/.exec(as); if (k) h.HZ_SET_TOP = Number(k[1]);
 	const kh = /HZ_SET_H:Number = (\d+)/.exec(as); if (kh) h.HZ_SET_H = Number(kh[1]);
 	const kf = /HZ51_FOOT:Number = (\d+)/.exec(as); if (kf) h.HZ51_FOOT = Number(kf[1]);
 	const kr = /HZ51_ROW:Number = (\d+)/.exec(as); if (kr) h.HZ51_ROW = Number(kr[1]);
-	const rhBody = fnText(as, "hzSetRowH").body.replace(/var (\w+):[\w*]+/g, "let $1").replace(/([^.\w])HZ51_ROW\b/g, "$1this.HZ51_ROW");
+	const ks = /HZ51_SEC:Number = (\d+)/.exec(as); if (ks) h.HZ51_SEC = Number(ks[1]);
+	const rhBody = fnText(as, "hzSetRowH").body.replace(/var (\w+):[\w*]+/g, "let $1").replace(/([^.\w])HZ51_(ROW|SEC)\b/g, "$1this.HZ51_$2");
 	h.hzSetRowH = new Function("r", rhBody);
 	const fol = fnText(as, "hzSetFollow");
-	h.hzSetFollow = new Function(fol.params.split(":")[0], fol.body.replace(/for each\(var (\w+):[\w*]+ in /g, "for (let $1 of ").replace(/var (\w+):[\w*]+/g, "let $1").replace(/([^.\w])HZ_SET_(H|TOP)\b/g, "$1this.HZ_SET_$2").replace(/([^.\w])HZ51_(FOOT|ROW)\b/g, "$1this.HZ51_$2"));
+	h.hzSetFollow = new Function(fol.params.split(":")[0], fol.body.replace(/for each\(var (\w+):[\w*]+ in /g, "for (let $1 of ").replace(/var (\w+):[\w*]+/g, "let $1").replace(/([^.\w])HZ_SET_(H|TOP)\b/g, "$1this.HZ_SET_$2").replace(/([^.\w])HZ51_(FOOT|ROW|SEC)\b/g, "$1this.HZ51_$2"));
 	const L = list(withScope);
-	const avail = h.HZ_SET_H - h.HZ51_FOOT - h.HZ_SET_TOP - 44;
+	const avail = h.HZ_SET_H - h.HZ51_FOOT - h.HZ_SET_TOP - 64;
 	let ok = true;
 	for (let i = 1; i < withScope.length; i++) {
 		h.hzSetRow = i; h.hzSetFollow(withScope);

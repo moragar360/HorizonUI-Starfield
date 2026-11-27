@@ -16,10 +16,27 @@
       private var hzSetHexBuf:String = "";
       private var hzSetHexPrev:int = -1;
       private var hzSetSideHits:Array = [];
-      private static const HZ51_ROW:Number = 54;
-      private static const HZ51_SIDE_W:Number = 168;
-      private static const HZ51_PREV_W:Number = 196;
-      private static const HZ51_FOOT:Number = 100;
+      private var hz51Pad:Boolean = false;        // last F11 input was gamepad (padx/pady/LB/RB); mouse/letters clear it
+      private var hzSetDropBox:Object = null;     // last drawn dropdown control {x,y,w,h} for menu anchoring
+      // Mockup (cards_status.html / search_jump.html) — whole pixels, filled-rect strokes.
+      private static const HZ51_ROW:Number = 58;        // .row min-height: 58
+      private static const HZ51_HEAD:Number = 62;       // .top height: 62
+      private static const HZ51_TABS:Number = 46;       // .tabs height: 46
+      private static const HZ51_SIDE_W:Number = 268;    // .side width: 268
+      private static const HZ51_PREV_W:Number = 292;    // .pvcol width: 292
+      private static const HZ51_FOOT:Number = 54;       // one .fr row (active device only)
+      private static const HZ51_SEC:Number = 32;        // .sh margin 20+10 + 11px title
+      private static const HZ51_FIND_W:Number = 268;    // .find min-width
+      private static const HZ51_FIND_H:Number = 36;     // .find height
+      private static const HZ51_DD_H:Number = 34;       // .dd height
+      private static const HZ51_PVC_H:Number = 188;     // .pvc height
+      private static const HZ51_WIN_R:Number = 14;      // .win border-radius
+      private static const HZ51_BOX_R:Number = 8;       // .box border-radius
+      private static const HZ51_DIV_A:Number = 0.08;    // .row border-bottom txt 8%
+      private static const HZ51_BOX_A:Number = 0.18;    // .box border acc 18%
+      private static const HZ51_SH_A:Number = 0.28;     // .sh:after acc 28%
+      private static const HZ51_SEL_A:Number = 0.10;    // .row.sel acc 10%
+      private static const HZ51_WIN_EA:Number = 0.28;   // .win border acc 28%
       private static const HZ51_QM_TH:Number = 76;
       private static const HZ51_QM_HEAD:Number = 42;
       private static const HZ51_QM_LOCK:Number = 24;
@@ -28,9 +45,101 @@
       private static const HZ51_QM_CLASH:uint = 0xF2A03A;
       private static const HZ51_PERF_NAMES:Array = ["BASELINE","HOVER SKIP","FIXTURE","FULL PIPELINE","SAME TARGET","RAPID TARGETS","SCANNER","BACKGROUND HUD"];
 
+      // Purpose: size the F11 window from visibleRect the way the mockups do
+      // (1848x1020 on a 1920x1080 stage, 36px / 32px margins). Clamps so a
+      // 1280x720 HUD still fits. Called on open and on each draw while F11 is
+      // open — not from the HUD frame when the menu is closed.
+      // Inputs: Extensions.visibleRect. Outputs: HZ_SET_W / HZ_SET_H.
+      private function hz51Fit() : void
+      {
+         var W:Number = 1848;
+         var H:Number = 1020;
+         try
+         {
+            var vr:Rectangle = Extensions.visibleRect;
+            if(vr != null && this.stage != null)
+            {
+               var tl:Point = this.globalToLocal(new Point(vr.left, vr.top));
+               var br:Point = this.globalToLocal(new Point(vr.right, vr.bottom));
+               var vw:Number = br.x - tl.x;
+               var vh:Number = br.y - tl.y;
+               if(vw >= 400 && vh >= 300)
+               {
+                  W = Math.round(Math.max(1180, Math.min(1848, vw - 72)));
+                  H = Math.round(Math.max(680, Math.min(1020, vh - 64)));
+               }
+            }
+         }
+         catch(eFit:Error) { }
+         this.HZ_SET_W = W;
+         this.HZ_SET_H = H;
+      }
+      // Purpose: 1px window/box/row stroke as filled rects (whole pixels).
+      // Scaleform lineStyle outlines clip and look soft; filled 1xN rects stay sharp.
+      // Inputs: graphics, rounded box in local px, color, alpha. Outputs: four 1px bars.
+      private function hz51Stroke(g:*, x:Number, y:Number, w:Number, h:Number, col:uint, a:Number) : void
+      {
+         x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
+         if(g == null || w < 1 || h < 1 || a <= 0) { return; }
+         g.beginFill(col, a);
+         g.drawRect(x, y, w, 1);
+         g.drawRect(x, y + h - 1, w, 1);
+         if(h > 2)
+         {
+            g.drawRect(x, y + 1, 1, h - 2);
+            g.drawRect(x + w - 1, y + 1, 1, h - 2);
+         }
+         g.endFill();
+      }
+      // Purpose: whole-pixel filled hairline (row divider, section rule, column rule).
+      private function hz51Hair(g:*, x:Number, y:Number, w:Number, h:Number, col:uint, a:Number) : void
+      {
+         if(g == null || a <= 0) { return; }
+         g.beginFill(col, a);
+         g.drawRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
+         g.endFill();
+      }
+      // Purpose: place a dropdown directly under its control (mockup .ddmenu top:38px
+      // on a 34px .dd = 4px gap). Flip above only when the menu would leave the window.
+      // Inputs: control rect, menu size, window. Outputs: {x,y,w,h} whole pixels.
+      private function hz51DropRect(ctrlX:Number, ctrlY:Number, ctrlW:Number, ctrlH:Number, menuW:Number, menuH:Number, winW:Number, winH:Number, foot:Number, top:Number) : Object
+      {
+         var x:Number = Math.round(ctrlX + ctrlW - menuW);
+         if(x < 8) { x = 8; }
+         if(x + menuW > winW - 8) { x = Math.round(Math.max(8, winW - 8 - menuW)); }
+         var gap:Number = 4;
+         var y:Number = Math.round(ctrlY + ctrlH + gap);
+         var maxY:Number = winH - foot - 4;
+         if(y + menuH > maxY)
+         {
+            var above:Number = Math.round(ctrlY - gap - menuH);
+            if(above >= top) { y = above; }
+            else { y = Math.round(Math.max(top, maxY - menuH)); }
+         }
+         return {"x":x,"y":y,"w":Math.round(menuW),"h":Math.round(menuH)};
+      }
+      // Purpose: one typed character from QueueKey. Search must accept both ch:a
+      // (character event) and bind:A (key bind), or letters never reach the find box.
+      private function hz51TypeChar(code:String) : String
+      {
+         if(code == null) { return ""; }
+         if(code.indexOf("ch:") == 0 && code.length >= 4) { return code.substr(3, 1); }
+         if(code.indexOf("bind:") == 0 && code.length >= 6)
+         {
+            var rest:String = code.substr(5);
+            if(rest.length == 1) { return rest; }
+         }
+         return "";
+      }
+      private function hz51NotePad(code:String) : void
+      {
+         if(code == "padx" || code == "pady" || code == "tabprev" || code == "tabnext") { this.hz51Pad = true; }
+         else if(this.hz51TypeChar(code).length > 0) { this.hz51Pad = false; }
+      }
+
       private function hz51Side(tab:int) : Array
       {
-         if(tab == 0) { return [{"g":"HUD CARDS","items":[{"id":"gen","l":"GENERAL","s":"Compact strips · HUD scale"},{"id":"sta","l":"STATUS","s":"Vitals · Jetpack · Afflictions"},{"id":"com","l":"COMBAT","s":"Equipment · Enemy · Scope"},{"id":"nav","l":"NAVIGATION","s":"Compass · Quests · Planet"},{"id":"chr","l":"CHARACTER & WATCH","s":"Character · Watch"}]},{"g":"WORLD","items":[{"id":"int","l":"INTERACTION","s":"Target · Container · Vehicle"}]},{"g":"MENUS & ALERTS","items":[{"id":"qm","l":"QUICK MENU / FAVORITES MENU","s":"Horizon style · Extended"},{"id":"ntf","l":"NOTIFICATIONS","s":"XP toast"}]}]; }
+         if(tab == 0) { return [{"g":"HUD CARDS","items":[{"id":"gen","l":"GENERAL","s":"Compact strips size · HUD scale · Margin"},{"id":"sta","l":"STATUS","s":"Vitals · Jetpack · Afflictions · Hazard Status"},{"id":"com","l":"COMBAT","s":"Equipment · Enemy Health · Stealth · Scope"},{"id":"nav","l":"NAVIGATION","s":"Compass · Quest Tracker · Planet"},{"id":"chr","l":"CHARACTER & WATCH","s":"Character · Watch"}]},{"g":"WORLD","items":[{"id":"int","l":"INTERACTION","s":"Target & Hover · Container · Vehicle Exit"}]},{"g":"MENUS & ALERTS","items":[{"id":"qm","l":"QUICK MENU / FAVORITES MENU","s":"Horizon style · Extended slots"},{"id":"ntf","l":"NOTIFICATIONS","s":"XP toast"}]}]; }
          if(tab == 1) { return [{"g":"LOOK","items":[{"id":"col","l":"COLORS","s":"Accent · Card background"},{"id":"pan","l":"PANELS","s":"Opacity · Background % · Shadow"},{"id":"typ","l":"TYPOGRAPHY","s":"Font · Size · Tone"}]},{"g":"PLACE","items":[{"id":"siz","l":"SIZE & PLACEMENT","s":"HUD scale · Margin · Pixel snap"}]},{"g":"MOTION","items":[{"id":"mot","l":"MOTION & FADING","s":"Smooth bars · Fade · Combat dim"}]},{"g":"CLOCKS","items":[{"id":"clk","l":"CLOCKS & UNITS","s":"Planet time · 12/24 · Temperature"}]}]; }
          if(tab == 2) { return [{"g":"SCANNER","items":[{"id":"ov","l":"OVERVIEW","s":"Module · Layout · Reach"},{"id":"hud","l":"HUD","s":"What stays while you scan"},{"id":"tl","l":"TOOLS","s":"Mode pill · Hints · Outlines"}]},{"g":"FINDINGS","items":[{"id":"sig","l":"SIGNALS","s":"Signals · Compass · World tags"},{"id":"sv","l":"SURVEY","s":"Planet · Bioscan · Traits"}]},{"g":"LOOK","items":[{"id":"pop","l":"POPUPS","s":"Quest and trait popups"},{"id":"ap","l":"APPEARANCE","s":"Colors · Font · Distance"}]}]; }
          if(tab == 3) { return [{"g":"CONVERSATION","items":[{"id":"dlg","l":"DIALOGUE","s":"Layout and look"},{"id":"sub","l":"SUBTITLES","s":"Lines · Speaker · Card"}]},{"g":"ALERTS","items":[{"id":"mst","l":"MISSION TOASTS & REACTIONS","s":"Quest banner and companion lines"}]},{"g":"MODULE","items":[{"id":"cmp","l":"COMPATIBILITY","s":"When another add-on is in the way"}]}]; }
@@ -484,7 +593,13 @@
          else if(tab == 2) { rows = this.hz51Scan(id); }
          else if(tab == 3) { rows = this.hz51Comms(id); }
          else { rows = this.hz51System(id); }
-         return this.hz51Finish(rows);
+         var done:Array = this.hz51Finish(rows);
+         if(done == null || done.length == 0)
+         {
+            // Never leave a sidebar page blank: show a row so the pane is never an empty card.
+            done = this.hz51Finish([{"k":"_empty","l":"NO SETTINGS IN THIS SECTION","t":"x","btn":"—","h":"THIS SECTION","dis":true}]);
+         }
+         return done;
       }
       private function hz51Cards(id:String) : Array
       {
@@ -826,19 +941,24 @@
             var p:int = 0;
             while(p < pages.length)
             {
-               var rows:Array = this.hz51Rows(tab, p);
-               var r:int = 0;
-               while(r < rows.length)
+               try
                {
-                  var row:Object = rows[r];
-                  if(row == null || row.pill || row.t == "m" || row.t == "g" || row.t == "w") { r++; continue; }
-                  var lab:String = String(row.l != undefined ? row.l : "");
-                  if(lab.length == 0) { r++; continue; }
-                  var help:String = this.hz51HelpOf(String(row.k), row);
-                  var hay:String = (lab + " " + help + " " + this.hz51Crumb(tab, p)).toLowerCase();
-                  idx.push({"k":String(row.k),"l":lab,"tab":tab,"page":p,"row":r,"crumb":this.hz51Crumb(tab, p),"hay":hay});
-                  r++;
+                  var rows:Array = this.hz51Rows(tab, p);
+                  var r:int = 0;
+                  while(r < rows.length)
+                  {
+                     var row:Object = rows[r];
+                     if(row == null || row.pill || row.t == "m" || row.t == "g" || row.t == "w" || String(row.k) == "_empty") { r++; continue; }
+                     var lab:String = String(row.l != undefined ? row.l : "");
+                     var note:String = row.note != undefined ? String(row.note) : "";
+                     if(lab.length == 0) { r++; continue; }
+                     var help:String = this.hz51HelpOf(String(row.k), row);
+                     var hay:String = (lab + " " + note + " " + help + " " + String(row.k) + " " + this.hz51Crumb(tab, p)).toLowerCase();
+                     idx.push({"k":String(row.k),"l":lab,"tab":tab,"page":p,"row":r,"crumb":this.hz51Crumb(tab, p),"hay":hay});
+                     r++;
+                  }
                }
+               catch(eIdxP:Error) { }
                p++;
             }
             tab++;
