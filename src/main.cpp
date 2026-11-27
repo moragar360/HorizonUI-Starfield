@@ -190,6 +190,7 @@ namespace HZ
 	void HzAddrLoad() noexcept;
 	void PreloadDllFileVersion();
 	void FilesJobPreload();
+	std::string MsglogFolderPath();   // Message Log folder for F11 Folder SHOW (defined with the log helpers)
 	void RecordUiTidOnce(std::uint32_t a_tid, const char* a_src);
 
 	std::filesystem::path IniPath()
