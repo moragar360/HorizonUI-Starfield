@@ -411,13 +411,15 @@
                g.endFill();
             }
             var labX:Number = r.dis ? x0 + 32 : x0 + 16;
-            var labW:Number = Math.max(120, boxW - 220);
+            var ctrlReserve:Number = r.t == "z" ? HZ51_Z_RESERVE : 220;
+            var labW:Number = Math.max(80, boxW - ctrlReserve);
             var lb35:TextField = this.hz51T(b,String(r.l),labX,y + 6,labW,HZ51_TITLE_PX,"bd",uint(T.txt),0.8);
             this.hzSetHits.push({"id":"row" + i,"x":x0,"y":y,"w":boxW,"h":HZ51_ROW});
             var inf35:String = r.dis ? null : this.hz35InfoOf(r);
             if(inf35 != null && lb35 != null && String(r.l).length > 0)
             {
                var ix35:Number = Math.round(lb35.x + 2 + Math.min(lb35.width,this.hzTW(lb35)) + 14);
+               if(ix35 + 16 > labX + labW) { ix35 = labX + labW - 16; }
                var ion35:Boolean = this.hzSetHover == "inf" + i || (rs && this.hz35Kb);
                this.hz51InfoIcon(b,g,ix35,y + 14,acc,T,ion35,i);
                if(ion35) { this.hz35Tip = {"t":inf35,"x":ix35,"y":y,"h":HZ51_ROW}; }
@@ -428,6 +430,7 @@
                var ht2:TextField = this.hz51T(b,help,labX,y + 24,labW,HZ51_HELP_PX,"rg",uint(T.mut),0.1);
                ht2.wordWrap = false;
                ht2.multiline = false;
+               this.hzFitText(ht2, help, labW);
             }
             var v:* = r.dis ? r.dv : this.hzSetPend[r.k];
             var cy:Number = y + Math.round(HZ51_ROW / 2);
@@ -489,7 +492,7 @@
          if(inst) { g.beginFill(acc,0.07); g.drawRoundRect(x0,y,boxW,h,HZ51_BOX_R,HZ51_BOX_R); g.endFill(); }
          if(paused) { g.beginFill(warn,0.08); g.drawRoundRect(x0,y,boxW,h,HZ51_BOX_R,HZ51_BOX_R); g.endFill(); }
          this.hz34Ring(b,x0,y,boxW,h,HZ51_BOX_R,edge,inst || paused ? 0.65 : 0.28,1);
-         this.hz51T(b,"MODULE",x0 + 14,y + 8,70,8,"sb",uint(T.mut),1.2);
+         this.hz51T(b,this.hzLt("MODULE"),x0 + 14,y + 8,70,8,"sb",uint(T.mut),1.2);
          this.hz51T(b,String(r.l),x0 + 14,y + 22,boxW * 0.55,12,"bd",uint(T.txt),0.8);
          var body:String = r.body != undefined ? String(r.body) : "";
          if(body.length > 0) { this.hz51T(b,body,x0 + 14,y + 42,boxW * 0.55,10,"rg",uint(T.lab),0.1); }
@@ -508,14 +511,14 @@
          {
             var R:Number = x0 + boxW - 14;
             var cy:Number = y + 52;
-            this.hz51T(b,"ENABLE",R - 90,cy - 8,90,9,"sb",uint(T.lab),0.8,"right");
+            this.hz51T(b,this.hzLt("ENABLE"),R - 90,cy - 8,90,9,"sb",uint(T.lab),0.8,"right");
             this.hz51Switch(b,g,R,cy,this.hz51On(swk),T,"tog" + idx);
          }
          return h;
       }
       private function hz51UnavailChip(b:Sprite, g:*, R:Number, cy:Number, T:Object) : void
       {
-         var lab:String = "UNAVAILABLE";
+         var lab:String = this.hzLt("UNAVAILABLE");
          var t:TextField = this.hz51T(b,lab,0,cy - 7,140,9,"sb",uint(T.mut),1.2);
          var w:Number = Math.round(this.hzTW(t) + 16);
          var h:Number = HZ51_BTN_H;
@@ -646,7 +649,7 @@
          var qmOff:Boolean = this.hz30Mod != null && this.hz30Mod["quickmenu"] !== 1;
          if(dis && !qmOff)
          {
-            this.hzWT(b,"Turn on Extended Mode to bind keys. Saved keys are kept.",x0 + 16,y + 8,innerW - 24,12,"rg",uint(T.mut),0.1,"left",12);
+            this.hzWT(b,this.hzLt("Turn on Extended Mode to bind keys. Saved keys are kept."),x0 + 16,y + 8,innerW - 24,12,"rg",uint(T.mut),0.1,"left",12);
             y += HZ51_QM_LOCK;
          }
          var bMain:Sprite = b;
@@ -666,12 +669,12 @@
          var btnH:Number = 22;
          var btnX:Number = Math.round(x0 + innerW - btnW - 12);
          var btnY:Number = y + 8;
-         this.hz51T(b,"Click a key chip to bind. Backspace or Delete clears. A clash is warned and ignored. Tiles are slots 13 through Slot Count.",x0 + 12,y + 8,Math.max(80,btnX - x0 - 20),10,"rg",uint(T.mut),0.1);
+         this.hz51T(b,this.hzLt("Click a key chip to bind. Backspace or Delete clears. A clash is warned and ignored. Tiles are slots 13 through Slot Count."),x0 + 12,y + 8,Math.max(80,btnX - x0 - 20),10,"rg",uint(T.mut),0.1);
          g.beginFill(uint(T.fill),0.70);
          g.drawRoundRect(btnX,btnY,btnW,btnH,6,6);
          g.endFill();
          this.hz51Stroke(g,btnX,btnY,btnW,btnH,dis ? uint(T.mut) : acc,dis ? 0.35 : 0.7,6);
-         this.hz51T(b,"CLEAR ALL KEYS",btnX + btnW / 2,btnY + 4,btnW,9,"sb",dis ? uint(T.mut) : acc,0.8,"center");
+         this.hz51T(b,this.hzLt("CLEAR ALL KEYS"),btnX + btnW / 2,btnY + 4,btnW,9,"sb",dis ? uint(T.mut) : acc,0.8,"center");
          if(!dis) { this.hzSetHits.push({"id":"qmclr","x":btnX,"y":btnY,"w":btnW,"h":btnH}); }
          y += HZ51_QM_HEAD;
          var count:int = this.hz51QmCount();
@@ -689,8 +692,8 @@
             var raw:String = this.hzSetPend != null ? String(this.hzSetPend[k] != null ? this.hzSetPend[k] : "") : "";
             var cap:Boolean = this.hzQmCap == k;
             var kn:String = raw;
-            if(cap) { kn = this.hzQmCapCand.length > 0 ? this.hzQmCapCand : "PRESS ANY KEY…"; }
-            else if(kn.length == 0) { kn = "UNBOUND"; }
+            if(cap) { kn = this.hzQmCapCand.length > 0 ? this.hzQmCapCand : this.hzLt("PRESS ANY KEY…"); }
+            else if(kn.length == 0) { kn = this.hzLt("UNBOUND"); }
             var kind:String = "";
             if(cap && this.hzQmCapCand.length > 0) { kind = this.hzQmCapKind; }
             else if(!cap && raw.length > 0) { kind = this.hzQmNameKind(raw, k); }
@@ -703,11 +706,11 @@
             g.drawRoundRect(xx,yy,tw,th,8,8);
             g.endFill();
             this.hz51Stroke(g,xx,yy,tw,th,bcol,cap || isClash ? 0.85 : 0.22,8);
-            this.hz51T(b,"SLOT " + n,xx + 8,yy + 6,tw - 16,9,"bd",acc,1.2);
+            this.hz51T(b,this.hzLt("SLOT") + " " + n,xx + 8,yy + 6,tw - 16,9,"bd",acc,1.2);
             g.beginFill(uint(T.tile),0.55);
             g.drawRoundRect(xx + 8,yy + 24,14,14,3,3);
             g.endFill();
-            this.hz51T(b,"Empty",xx + 26,yy + 25,tw - 34,9,"rg",uint(T.mut),0.2);
+            this.hz51T(b,this.hzLt("Empty"),xx + 26,yy + 25,tw - 34,9,"rg",uint(T.mut),0.2);
             var chipH:Number = 22;
             var chipY:Number = yy + th - chipH - 8;
             var chipW:Number = tw - 16;
@@ -716,9 +719,9 @@
             g.drawRoundRect(chipX,chipY,chipW,chipH,6,6);
             g.endFill();
             this.hz51Stroke(g,chipX,chipY,chipW,chipH,isClash ? clashCol : (cap ? acc : uint(T.line)),isClash || cap ? 0.9 : 0.4,6);
-            var chipCol:uint = isClash ? clashCol : (kn == "UNBOUND" || kn.indexOf("PRESS") == 0 ? uint(T.mut) : uint(T.txt));
+            var chipCol:uint = isClash ? clashCol : (raw.length == 0 || (cap && this.hzQmCapCand.length == 0) ? uint(T.mut) : uint(T.txt));
             this.hz51T(b,kn,chipX + chipW / 2,chipY + 4,chipW - 4,9,"bd",chipCol,0.4,"center");
-            if(isClash) { this.hz51T(b,"CLASH",xx + 8,yy + 42,tw - 16,8,"sb",clashCol,0.8); }
+            if(isClash) { this.hz51T(b,this.hzLt("CLASH"),xx + 8,yy + 42,tw - 16,8,"sb",clashCol,0.8); }
             if(!dis) { this.hzSetHits.push({"id":"qmk" + n,"x":xx,"y":yy,"w":tw,"h":th}); }
             col++;
             if(col >= per) { col = 0; row++; }
@@ -807,8 +810,8 @@
          if(kind == "preset")
          {
             var pr:Object = this.hz37Cur();
-            this.hz51T(b,pr != null ? String(pr.n) : "NO PRESET",x + w / 2,y + h / 2 - 8,w - 16,11,"bd",acc,0.6,"center");
-            this.hz51T(b,"Pending look · CANCEL reverts",x + w / 2,y + h / 2 + 8,w - 16,9,"rg",uint(T.mut),0.2,"center");
+            this.hz51T(b,pr != null ? String(pr.n) : this.hzLt("NO PRESET"),x + w / 2,y + h / 2 - 8,w - 16,11,"bd",acc,0.6,"center");
+            this.hz51T(b,this.hzLt("Pending look · CANCEL reverts"),x + w / 2,y + h / 2 + 8,w - 16,9,"rg",uint(T.mut),0.2,"center");
             return;
          }
          this.hz51PvCard(b,g,T,acc,x,y,w,h,p,k);

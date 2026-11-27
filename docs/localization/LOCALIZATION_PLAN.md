@@ -79,8 +79,10 @@ ActionScript hzL10n["hud.health"] → "HEALTH"
 Data/SFSE/Plugins/HorizonUI/Localization/
   en.json
   de.json
+  es.json
+  es-mx.json
   zh-cn.json
-  (fr, it, es, es-mx, ja, pl, pt-br fall back to English until a translator ships them)
+  (fr, it, ja, pl, pt-br fall back to English until a translator ships them)
 ```
 
 The DLL is already the file owner for Message Log JSON and Quick Slots JSON. Localization is the same idea: read once, off the UI thread, cache forever.
@@ -629,7 +631,7 @@ This is the bar. If a phase misses it, that phase does not ship.
 
 - FOMOD installer localization (Vortex/MO2 language)
 - Full INI comment translation
-- Shipping `fr.json` / `es.json` / `es-mx.json` / `it.json` / `ja.json` / `pl.json` / `pt-br.json` when translators arrive (stems and fallback already exist; missing file is English)
+- Shipping `fr.json` / `it.json` / `ja.json` / `pl.json` / `pt-br.json` when translators arrive (stems and fallback already exist; missing file is English). `es.json` and `es-mx.json` are shipped.
 - Live language switch without restart
 - Native `$HZ_` export
 - Papyrus (none)

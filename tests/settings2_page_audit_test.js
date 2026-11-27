@@ -157,7 +157,7 @@ const host = {
 };
 
 for (const n of [
-	"hz51Copy","hz51ByKey","hz51Pick","hz51Help","hz51HelpMore","hz51HelpOf","hz51Line","hz51On","hz51Mute","hz51Finish","hz51FbLog",
+	"hz51Copy","hz51ByKey","hz51Pick","hz51Help","hz51HelpMore","hz51HelpKey","hz51HelpOf","hz51Line","hz51On","hz51Mute","hz51Finish","hz51FbLog",
 	"hz51RuleRow","hz51Card","hz51AddCard","hz51Goto","hz51Unavail","hz51ModRow","hz51WrapMod","hz51ModState","hz51ModBadge",
 	"hz51Modules","hz51Msglog","hz51Quick","hz51Fallback","hz51Cards","hz51Appear","hz51Scan","hz51Comms","hz51CommsMap",
 	"hz51System","hz51Side","hz51Pages","hz51PageIndex","hz51PageClamp","hz51Rows","hz51Crumb",

@@ -321,6 +321,31 @@ int main()
 			&& static_cast<unsigned char>(de[1]) == 0xBB && static_cast<unsigned char>(de[2]) == 0xBF),
 		"de.json is UTF-8 with no BOM");
 
+	const auto es = ReadAll("Data/SFSE/Plugins/HorizonUI/Localization/es.json");
+	Expect(!es.empty() && Has(es, "\"language\": \"es\"") && Has(es, "SALUD") && Has(es, "Espa"),
+		"shipped es.json is Spain Spanish");
+	Expect(!(es.size() >= 3 && static_cast<unsigned char>(es[0]) == 0xEF
+			&& static_cast<unsigned char>(es[1]) == 0xBB && static_cast<unsigned char>(es[2]) == 0xBF),
+		"es.json is UTF-8 with no BOM");
+
+	const auto esmx = ReadAll("Data/SFSE/Plugins/HorizonUI/Localization/es-mx.json");
+	Expect(!esmx.empty() && Has(esmx, "\"language\": \"es-mx\"") && Has(esmx, "SALUD") && Has(esmx, "Latinoam"),
+		"shipped es-mx.json is Latin American Spanish");
+	Expect(!(esmx.size() >= 3 && static_cast<unsigned char>(esmx[0]) == 0xEF
+			&& static_cast<unsigned char>(esmx[1]) == 0xBB && static_cast<unsigned char>(esmx[2]) == 0xBF),
+		"es-mx.json is UTF-8 with no BOM");
+	{
+		const auto shippedDir = std::filesystem::path("Data/SFSE/Plugins/HorizonUI/Localization");
+		const auto tes = Load(shippedDir, "es", "en");
+		Expect(tes.usedCode == "es" && Get(tes, "hud.health", "X") == "SALUD",
+			"shipped es.json overlays English");
+		const auto tmx = Load(shippedDir, "es-mx", "en");
+		Expect(tmx.usedCode == "es-mx" && Get(tmx, "hud.health", "X") == "SALUD",
+			"shipped es-mx.json loads through the es then es-mx overlay chain");
+		Expect(Get(tes, "hud.hud_label.press", "X") == "PULSA" && Get(tmx, "hud.hud_label.press", "X") == "PRESIONA",
+			"es-mx overlay wins over es for Latin American wording");
+	}
+
 	if (g_fail) {
 		std::cerr << "\n" << g_fail << " failed, " << g_ok << " passed\n";
 		return 1;

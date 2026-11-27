@@ -41,8 +41,12 @@ expect(/"k":"Language"/.test(sys) && /HORIZON LANGUAGE/.test(sys) && /"t":"l"/.t
 expect(/Auto \(game\)/.test(as) && /hz51LangOpts/.test(sys), "dropdown starts with Auto and is filled from the DLL file list");
 const locZh = path.join(__dirname, "..", "Data", "SFSE", "Plugins", "HorizonUI", "Localization", "zh-cn.json");
 const locDe = path.join(__dirname, "..", "Data", "SFSE", "Plugins", "HorizonUI", "Localization", "de.json");
+const locEs = path.join(__dirname, "..", "Data", "SFSE", "Plugins", "HorizonUI", "Localization", "es.json");
+const locEsMx = path.join(__dirname, "..", "Data", "SFSE", "Plugins", "HorizonUI", "Localization", "es-mx.json");
 expect(fs.existsSync(locZh), "shipped zh-cn.json is present so the Language dropdown can list it");
 expect(fs.existsSync(locDe), "shipped de.json is present");
+expect(fs.existsSync(locEs), "shipped es.json is present");
+expect(fs.existsSync(locEsMx), "shipped es-mx.json is present");
 const langName = fnText(as, "hz51LangName").body;
 expect(/zh-cn/.test(langName) && /zhhans/.test(langName) && /Simplified Chinese/.test(langName),
 	"dropdown names zh-cn / zhhans as Simplified Chinese");

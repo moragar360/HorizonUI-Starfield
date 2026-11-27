@@ -49,6 +49,7 @@
       private static const HZ51_FIND_H:Number = 30;     // header control height
       private static const HZ51_DD_H:Number = 28;       // dropdown box height
       private static const HZ51_CTRL_W:Number = 148;    // dropdown / button min width; all controls share right edge R
+      private static const HZ51_Z_RESERVE:Number = 320; // z-row: GLOBAL/CUSTOM chip + slider + value; labels must end before this
       private static const HZ51_SW_W:Number = 42;       // mock toggle track
       private static const HZ51_SW_H:Number = 22;
       private static const HZ51_BTN_H:Number = 22;      // OPEN / RESET / SHOW on 48px rows
@@ -402,15 +403,15 @@
          while(i < a.length) { a[i] = this.hzLt(String(a[i])); i++; }
       }
       // Purpose: stamp translated labels onto a Settings row at catalog finish
-      // (F11 build / language change), not per HUD frame.
+      // (F11 build / language change), not per HUD frame. note / inote are already
+      // localized by hz51Line / hz51HelpOf (by setting key). Re-slugging them
+      // would expand a short row line back into the full details paragraph.
       private function hz51LocOne(r:Object) : void
       {
          if(r == null) { return; }
          if(r.l != undefined) { r.l = this.hzLt(String(r.l)); }
          if(r.h != undefined && String(r.h).length > 0) { r.h = this.hzLt(String(r.h)); }
          if(r.s != undefined) { r.s = this.hzLt(String(r.s)); }
-         if(r.note != undefined) { r.note = this.hzLt(String(r.note)); }
-         if(r.inote != undefined) { r.inote = this.hzLt(String(r.inote)); }
          if(r.body != undefined) { r.body = this.hzLt(String(r.body)); }
          if(r.badge != undefined) { r.badge = this.hzLt(String(r.badge)); }
          if(r.btn != undefined && r.t == "x") { r.btn = this.hzLt(String(r.btn)); }
@@ -433,6 +434,9 @@
       }
       // Purpose: refresh HUD chrome that was stamped at card build. Called from
       // hzSetL10n only. Ticks keep using the TextField text already set here.
+      // Never stamp player / planet / quest / credit / level fields: those hold
+      // live game values. MASS / POWER / RELOAD are state words; hz26CharSync
+      // and hzE19Sync pick the right one with hzLt.
       private function hzL10nApplyHud() : void
       {
          try
@@ -443,16 +447,14 @@
                if(this.hzVnLbl.length > 1) { this.hzL10nTf(TextField(this.hzVnLbl[1]), "OXYGEN"); }
             }
             this.hzL10nTf(this.hzJ19Title, "JETPACK");
-            this.hzL10nTf(this.hz26ChName, "CHARACTER");
-            this.hzL10nTf(this.hz26ChML, "MASS");
-            this.hzL10nTf(this.hz26PowL, "POWER");
             this.hzL10nTf(this.hzPpLocL, "LOCAL/GAME");
             this.hzL10nTf(this.hzPpRealL, "PC/REAL");
             this.hzL10nTf(this.hz43LocL, "LOCAL/GAME");
             this.hzL10nTf(this.hz43RealL, "PC/REAL");
             this.hzL10nTf(this.hz43DayT, "DAY");
-            this.hzL10nTf(this.hzE19RelT, "RELOAD");
             this.hzHsWordLoc = this.hzLt("HAZARD");
+            try { this.hz26CharSync(); } catch(eCh:Error) { }
+            try { this.hzE19Sync(); } catch(eEq:Error) { }
          }
          catch(eApp:Error) { }
       }
@@ -553,8 +555,18 @@
          }
          return out;
       }
+      // Purpose: table key for Setting Details. Module banners share settings.details.modban.
+      // Inputs: catalog k. Outputs: dotted-id used by hzL. Looked up at F11 build only.
+      private function hz51HelpKey(k:String) : String
+      {
+         if(k != null && k.indexOf("_modban_") == 0) { return "modban"; }
+         return k != null ? k : "";
+      }
       private function hz51HelpOf(k:String, r:Object) : String
       {
+         var id:String = this.hz51HelpKey(k);
+         var byId:String = id.length > 0 ? this.hzL("settings.details." + id, "") : "";
+         if(byId.length > 0) { return byId; }
          var h:String = this.hz51Help(k);
          if(h == null || h.length == 0)
          {
@@ -570,17 +582,20 @@
          return this.hzLt(h);
       }
       // Short line under the row label. Diagnostics wording is from the live overlay / timing / dump paths.
+      // settings.line.<k> wins so a copy edit of details does not restamp the row via slug collision.
       private function hz51Line(k:String, r:Object) : String
       {
+         var lineId:String = this.hzL("settings.line." + k, "");
+         if(lineId.length > 0) { return lineId; }
          switch(k)
          {
-            case "Language": return "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language.";
-            case "_l10nGame": return "Detected at start. Does not follow the override.";
-            case "Debug": return "Shows extra on-screen info about the scanner and compass to help track down a problem.";
-            case "PerfDiag": return "Measures how long the HUD takes to update and saves it so a problem can be found.";
-            case "PerfMode": return "Switches which HUD test runs. Ordinary play uses Baseline.";
-            case "PerfDump": return "Saves one performance report the next time you apply settings.";
-            case "_diagoff": return "These stay off while you play. Turn them on only if something needs checking.";
+            case "Language": return this.hzLt("Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language.");
+            case "_l10nGame": return this.hzLt("Detected at start. Does not follow the override.");
+            case "Debug": return this.hzLt("Shows extra on-screen info about the scanner and compass to help track down a problem.");
+            case "PerfDiag": return this.hzLt("Measures how long the HUD takes to update and saves it so a problem can be found.");
+            case "PerfMode": return this.hzLt("Switches which HUD test runs. Ordinary play uses Baseline.");
+            case "PerfDump": return this.hzLt("Saves one performance report the next time you apply settings.");
+            case "_diagoff": return this.hzLt("These stay off while you play. Turn them on only if something needs checking.");
             default: break;
          }
          var h:String = this.hz51HelpOf(k, r);
@@ -710,6 +725,7 @@
             case "ScanReach": return "Changes how far the scanner can outline and scan things. Vanilla leaves the game as it is. 2x, 3x, and 5x multiply that distance, never past 500 meters. A long reach can cost frame rate in busy areas. Applies the next time you open the scanner.";
             case "ScanHighlightArea": return "How far from the screen center the scanner picks up and outlines things. This does not change how far away you can scan (that is Scan reach). Small is about half the game's circle. Vanilla leaves the game's cone: Horizon writes nothing, so the game or another highlight-radius mod stays. Large reaches the top and bottom. Wide reaches the left and right. Full screen covers the corners too. Applies the next time you open the scanner.";
             case "ScanOutlineThickness": return "How thick scanner outlines are. Vanilla keeps the game's own look. Thick is one and a half times. Thicker is twice. Applies the next time you open the scanner.";
+            case "ScanCompactAll": return "GLOBAL = COMPACT MODE (CARDS). On always uses compact scanner panels. Off always uses the full panels.";
             case "HideMainHudWhileScanning": return "Hides ordinary Horizon HUD cards while the hand scanner is open. Item cards, the container list, the activate prompt, and combat feedback always stay.";
             case "HideWatchWhileScanning": return "Hides the watch while the hand scanner is open. Shared clocks on the planet card are unchanged.";
             case "HideQuestPopupsWhileScanning": return "Hides quest popups and the mission toast while you scan. This belongs with messages and works even when the scanner add-on is not installed.";

@@ -1,7 +1,7 @@
 // Horizon localization checker: missing / duplicate / obsolete keys, and
 // placeholder parity. Run from the repo root: node tests/l10n_check_test.js
-// de.json and zh-cn.json are required. Other Steam stems (fr, es, es-mx, it,
-// ja, pl, pt-br) may be absent: that is English fallback, not a failure.
+// de.json, zh-cn.json, es.json, and es-mx.json are required. Other Steam stems
+// (fr, it, ja, pl, pt-br) may be absent: that is English fallback, not a failure.
 // Fixtures that must fail write under test_scratch, never the system temp folder.
 // Author: Moragar. Last modified: 2026-11-27.
 "use strict";
@@ -69,6 +69,8 @@ expect(fs.existsSync(path.join(root, "tools", "scan_l10n_strings.js")), "tools/s
 expect(fs.existsSync(path.join(locDir, "en.json")), "shipped Localization/en.json is present");
 expect(fs.existsSync(path.join(locDir, "zh-cn.json")), "shipped Localization/zh-cn.json is present");
 expect(fs.existsSync(path.join(locDir, "de.json")), "shipped Localization/de.json is present");
+expect(fs.existsSync(path.join(locDir, "es.json")), "shipped Localization/es.json is present");
+expect(fs.existsSync(path.join(locDir, "es-mx.json")), "shipped Localization/es-mx.json is present");
 expect(!fs.existsSync(path.join(locDir, "ko.json")), "Korean is not a shipped table");
 
 const en = loadLang(locDir, "en");
@@ -96,11 +98,12 @@ expect(!JSON.stringify(en).includes("$HEALTH"), "Horizon-owned strings are not w
 for (const code of langs) {
 	if (code === "en") continue;
 	const table = loadLang(locDir, code);
-	if (code !== "de" && code !== "zh-cn" && !table) {
+	const required = code === "de" || code === "zh-cn" || code === "es" || code === "es-mx";
+	if (!required && !table) {
 		expect(true, code + ": optional until a translator ships it (missing is English fallback)");
 		continue;
 	}
-	if ((code === "de" || code === "zh-cn") && !table) {
+	if (required && !table) {
 		expect(false, code + ": shipped overlay is required");
 		continue;
 	}

@@ -4803,6 +4803,7 @@
       private static const HZ51_FIND_H:Number = 30;     // header control height
       private static const HZ51_DD_H:Number = 28;       // dropdown box height
       private static const HZ51_CTRL_W:Number = 148;    // dropdown / button min width; all controls share right edge R
+      private static const HZ51_Z_RESERVE:Number = 320; // z-row: GLOBAL/CUSTOM chip + slider + value; labels must end before this
       private static const HZ51_SW_W:Number = 42;       // mock toggle track
       private static const HZ51_SW_H:Number = 22;
       private static const HZ51_BTN_H:Number = 22;      // OPEN / RESET / SHOW on 48px rows
@@ -5156,15 +5157,15 @@
          while(i < a.length) { a[i] = this.hzLt(String(a[i])); i++; }
       }
       // Purpose: stamp translated labels onto a Settings row at catalog finish
-      // (F11 build / language change), not per HUD frame.
+      // (F11 build / language change), not per HUD frame. note / inote are already
+      // localized by hz51Line / hz51HelpOf (by setting key). Re-slugging them
+      // would expand a short row line back into the full details paragraph.
       private function hz51LocOne(r:Object) : void
       {
          if(r == null) { return; }
          if(r.l != undefined) { r.l = this.hzLt(String(r.l)); }
          if(r.h != undefined && String(r.h).length > 0) { r.h = this.hzLt(String(r.h)); }
          if(r.s != undefined) { r.s = this.hzLt(String(r.s)); }
-         if(r.note != undefined) { r.note = this.hzLt(String(r.note)); }
-         if(r.inote != undefined) { r.inote = this.hzLt(String(r.inote)); }
          if(r.body != undefined) { r.body = this.hzLt(String(r.body)); }
          if(r.badge != undefined) { r.badge = this.hzLt(String(r.badge)); }
          if(r.btn != undefined && r.t == "x") { r.btn = this.hzLt(String(r.btn)); }
@@ -5187,6 +5188,9 @@
       }
       // Purpose: refresh HUD chrome that was stamped at card build. Called from
       // hzSetL10n only. Ticks keep using the TextField text already set here.
+      // Never stamp player / planet / quest / credit / level fields: those hold
+      // live game values. MASS / POWER / RELOAD are state words; hz26CharSync
+      // and hzE19Sync pick the right one with hzLt.
       private function hzL10nApplyHud() : void
       {
          try
@@ -5197,16 +5201,14 @@
                if(this.hzVnLbl.length > 1) { this.hzL10nTf(TextField(this.hzVnLbl[1]), "OXYGEN"); }
             }
             this.hzL10nTf(this.hzJ19Title, "JETPACK");
-            this.hzL10nTf(this.hz26ChName, "CHARACTER");
-            this.hzL10nTf(this.hz26ChML, "MASS");
-            this.hzL10nTf(this.hz26PowL, "POWER");
             this.hzL10nTf(this.hzPpLocL, "LOCAL/GAME");
             this.hzL10nTf(this.hzPpRealL, "PC/REAL");
             this.hzL10nTf(this.hz43LocL, "LOCAL/GAME");
             this.hzL10nTf(this.hz43RealL, "PC/REAL");
             this.hzL10nTf(this.hz43DayT, "DAY");
-            this.hzL10nTf(this.hzE19RelT, "RELOAD");
             this.hzHsWordLoc = this.hzLt("HAZARD");
+            try { this.hz26CharSync(); } catch(eCh:Error) { }
+            try { this.hzE19Sync(); } catch(eEq:Error) { }
          }
          catch(eApp:Error) { }
       }
@@ -5307,8 +5309,18 @@
          }
          return out;
       }
+      // Purpose: table key for Setting Details. Module banners share settings.details.modban.
+      // Inputs: catalog k. Outputs: dotted-id used by hzL. Looked up at F11 build only.
+      private function hz51HelpKey(k:String) : String
+      {
+         if(k != null && k.indexOf("_modban_") == 0) { return "modban"; }
+         return k != null ? k : "";
+      }
       private function hz51HelpOf(k:String, r:Object) : String
       {
+         var id:String = this.hz51HelpKey(k);
+         var byId:String = id.length > 0 ? this.hzL("settings.details." + id, "") : "";
+         if(byId.length > 0) { return byId; }
          var h:String = this.hz51Help(k);
          if(h == null || h.length == 0)
          {
@@ -5324,17 +5336,20 @@
          return this.hzLt(h);
       }
       // Short line under the row label. Diagnostics wording is from the live overlay / timing / dump paths.
+      // settings.line.<k> wins so a copy edit of details does not restamp the row via slug collision.
       private function hz51Line(k:String, r:Object) : String
       {
+         var lineId:String = this.hzL("settings.line." + k, "");
+         if(lineId.length > 0) { return lineId; }
          switch(k)
          {
-            case "Language": return "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language.";
-            case "_l10nGame": return "Detected at start. Does not follow the override.";
-            case "Debug": return "Shows extra on-screen info about the scanner and compass to help track down a problem.";
-            case "PerfDiag": return "Measures how long the HUD takes to update and saves it so a problem can be found.";
-            case "PerfMode": return "Switches which HUD test runs. Ordinary play uses Baseline.";
-            case "PerfDump": return "Saves one performance report the next time you apply settings.";
-            case "_diagoff": return "These stay off while you play. Turn them on only if something needs checking.";
+            case "Language": return this.hzLt("Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language.");
+            case "_l10nGame": return this.hzLt("Detected at start. Does not follow the override.");
+            case "Debug": return this.hzLt("Shows extra on-screen info about the scanner and compass to help track down a problem.");
+            case "PerfDiag": return this.hzLt("Measures how long the HUD takes to update and saves it so a problem can be found.");
+            case "PerfMode": return this.hzLt("Switches which HUD test runs. Ordinary play uses Baseline.");
+            case "PerfDump": return this.hzLt("Saves one performance report the next time you apply settings.");
+            case "_diagoff": return this.hzLt("These stay off while you play. Turn them on only if something needs checking.");
             default: break;
          }
          var h:String = this.hz51HelpOf(k, r);
@@ -5464,6 +5479,7 @@
             case "ScanReach": return "Changes how far the scanner can outline and scan things. Vanilla leaves the game as it is. 2x, 3x, and 5x multiply that distance, never past 500 meters. A long reach can cost frame rate in busy areas. Applies the next time you open the scanner.";
             case "ScanHighlightArea": return "How far from the screen center the scanner picks up and outlines things. This does not change how far away you can scan (that is Scan reach). Small is about half the game's circle. Vanilla leaves the game's cone: Horizon writes nothing, so the game or another highlight-radius mod stays. Large reaches the top and bottom. Wide reaches the left and right. Full screen covers the corners too. Applies the next time you open the scanner.";
             case "ScanOutlineThickness": return "How thick scanner outlines are. Vanilla keeps the game's own look. Thick is one and a half times. Thicker is twice. Applies the next time you open the scanner.";
+            case "ScanCompactAll": return "GLOBAL = COMPACT MODE (CARDS). On always uses compact scanner panels. Off always uses the full panels.";
             case "HideMainHudWhileScanning": return "Hides ordinary Horizon HUD cards while the hand scanner is open. Item cards, the container list, the activate prompt, and combat feedback always stay.";
             case "HideWatchWhileScanning": return "Hides the watch while the hand scanner is open. Shared clocks on the planet card are unchanged.";
             case "HideQuestPopupsWhileScanning": return "Hides quest popups and the mission toast while you scan. This belongs with messages and works even when the scanner add-on is not installed.";
@@ -7131,13 +7147,15 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
                g.endFill();
             }
             var labX:Number = r.dis ? x0 + 32 : x0 + 16;
-            var labW:Number = Math.max(120, boxW - 220);
+            var ctrlReserve:Number = r.t == "z" ? HZ51_Z_RESERVE : 220;
+            var labW:Number = Math.max(80, boxW - ctrlReserve);
             var lb35:TextField = this.hz51T(b,String(r.l),labX,y + 6,labW,HZ51_TITLE_PX,"bd",uint(T.txt),0.8);
             this.hzSetHits.push({"id":"row" + i,"x":x0,"y":y,"w":boxW,"h":HZ51_ROW});
             var inf35:String = r.dis ? null : this.hz35InfoOf(r);
             if(inf35 != null && lb35 != null && String(r.l).length > 0)
             {
                var ix35:Number = Math.round(lb35.x + 2 + Math.min(lb35.width,this.hzTW(lb35)) + 14);
+               if(ix35 + 16 > labX + labW) { ix35 = labX + labW - 16; }
                var ion35:Boolean = this.hzSetHover == "inf" + i || (rs && this.hz35Kb);
                this.hz51InfoIcon(b,g,ix35,y + 14,acc,T,ion35,i);
                if(ion35) { this.hz35Tip = {"t":inf35,"x":ix35,"y":y,"h":HZ51_ROW}; }
@@ -7148,6 +7166,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
                var ht2:TextField = this.hz51T(b,help,labX,y + 24,labW,HZ51_HELP_PX,"rg",uint(T.mut),0.1);
                ht2.wordWrap = false;
                ht2.multiline = false;
+               this.hzFitText(ht2, help, labW);
             }
             var v:* = r.dis ? r.dv : this.hzSetPend[r.k];
             var cy:Number = y + Math.round(HZ51_ROW / 2);
@@ -7209,7 +7228,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(inst) { g.beginFill(acc,0.07); g.drawRoundRect(x0,y,boxW,h,HZ51_BOX_R,HZ51_BOX_R); g.endFill(); }
          if(paused) { g.beginFill(warn,0.08); g.drawRoundRect(x0,y,boxW,h,HZ51_BOX_R,HZ51_BOX_R); g.endFill(); }
          this.hz34Ring(b,x0,y,boxW,h,HZ51_BOX_R,edge,inst || paused ? 0.65 : 0.28,1);
-         this.hz51T(b,"MODULE",x0 + 14,y + 8,70,8,"sb",uint(T.mut),1.2);
+         this.hz51T(b,this.hzLt("MODULE"),x0 + 14,y + 8,70,8,"sb",uint(T.mut),1.2);
          this.hz51T(b,String(r.l),x0 + 14,y + 22,boxW * 0.55,12,"bd",uint(T.txt),0.8);
          var body:String = r.body != undefined ? String(r.body) : "";
          if(body.length > 0) { this.hz51T(b,body,x0 + 14,y + 42,boxW * 0.55,10,"rg",uint(T.lab),0.1); }
@@ -7228,14 +7247,14 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          {
             var R:Number = x0 + boxW - 14;
             var cy:Number = y + 52;
-            this.hz51T(b,"ENABLE",R - 90,cy - 8,90,9,"sb",uint(T.lab),0.8,"right");
+            this.hz51T(b,this.hzLt("ENABLE"),R - 90,cy - 8,90,9,"sb",uint(T.lab),0.8,"right");
             this.hz51Switch(b,g,R,cy,this.hz51On(swk),T,"tog" + idx);
          }
          return h;
       }
       private function hz51UnavailChip(b:Sprite, g:*, R:Number, cy:Number, T:Object) : void
       {
-         var lab:String = "UNAVAILABLE";
+         var lab:String = this.hzLt("UNAVAILABLE");
          var t:TextField = this.hz51T(b,lab,0,cy - 7,140,9,"sb",uint(T.mut),1.2);
          var w:Number = Math.round(this.hzTW(t) + 16);
          var h:Number = HZ51_BTN_H;
@@ -7366,7 +7385,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var qmOff:Boolean = this.hz30Mod != null && this.hz30Mod["quickmenu"] !== 1;
          if(dis && !qmOff)
          {
-            this.hzWT(b,"Turn on Extended Mode to bind keys. Saved keys are kept.",x0 + 16,y + 8,innerW - 24,12,"rg",uint(T.mut),0.1,"left",12);
+            this.hzWT(b,this.hzLt("Turn on Extended Mode to bind keys. Saved keys are kept."),x0 + 16,y + 8,innerW - 24,12,"rg",uint(T.mut),0.1,"left",12);
             y += HZ51_QM_LOCK;
          }
          var bMain:Sprite = b;
@@ -7386,12 +7405,12 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var btnH:Number = 22;
          var btnX:Number = Math.round(x0 + innerW - btnW - 12);
          var btnY:Number = y + 8;
-         this.hz51T(b,"Click a key chip to bind. Backspace or Delete clears. A clash is warned and ignored. Tiles are slots 13 through Slot Count.",x0 + 12,y + 8,Math.max(80,btnX - x0 - 20),10,"rg",uint(T.mut),0.1);
+         this.hz51T(b,this.hzLt("Click a key chip to bind. Backspace or Delete clears. A clash is warned and ignored. Tiles are slots 13 through Slot Count."),x0 + 12,y + 8,Math.max(80,btnX - x0 - 20),10,"rg",uint(T.mut),0.1);
          g.beginFill(uint(T.fill),0.70);
          g.drawRoundRect(btnX,btnY,btnW,btnH,6,6);
          g.endFill();
          this.hz51Stroke(g,btnX,btnY,btnW,btnH,dis ? uint(T.mut) : acc,dis ? 0.35 : 0.7,6);
-         this.hz51T(b,"CLEAR ALL KEYS",btnX + btnW / 2,btnY + 4,btnW,9,"sb",dis ? uint(T.mut) : acc,0.8,"center");
+         this.hz51T(b,this.hzLt("CLEAR ALL KEYS"),btnX + btnW / 2,btnY + 4,btnW,9,"sb",dis ? uint(T.mut) : acc,0.8,"center");
          if(!dis) { this.hzSetHits.push({"id":"qmclr","x":btnX,"y":btnY,"w":btnW,"h":btnH}); }
          y += HZ51_QM_HEAD;
          var count:int = this.hz51QmCount();
@@ -7409,8 +7428,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             var raw:String = this.hzSetPend != null ? String(this.hzSetPend[k] != null ? this.hzSetPend[k] : "") : "";
             var cap:Boolean = this.hzQmCap == k;
             var kn:String = raw;
-            if(cap) { kn = this.hzQmCapCand.length > 0 ? this.hzQmCapCand : "PRESS ANY KEY…"; }
-            else if(kn.length == 0) { kn = "UNBOUND"; }
+            if(cap) { kn = this.hzQmCapCand.length > 0 ? this.hzQmCapCand : this.hzLt("PRESS ANY KEY…"); }
+            else if(kn.length == 0) { kn = this.hzLt("UNBOUND"); }
             var kind:String = "";
             if(cap && this.hzQmCapCand.length > 0) { kind = this.hzQmCapKind; }
             else if(!cap && raw.length > 0) { kind = this.hzQmNameKind(raw, k); }
@@ -7423,11 +7442,11 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             g.drawRoundRect(xx,yy,tw,th,8,8);
             g.endFill();
             this.hz51Stroke(g,xx,yy,tw,th,bcol,cap || isClash ? 0.85 : 0.22,8);
-            this.hz51T(b,"SLOT " + n,xx + 8,yy + 6,tw - 16,9,"bd",acc,1.2);
+            this.hz51T(b,this.hzLt("SLOT") + " " + n,xx + 8,yy + 6,tw - 16,9,"bd",acc,1.2);
             g.beginFill(uint(T.tile),0.55);
             g.drawRoundRect(xx + 8,yy + 24,14,14,3,3);
             g.endFill();
-            this.hz51T(b,"Empty",xx + 26,yy + 25,tw - 34,9,"rg",uint(T.mut),0.2);
+            this.hz51T(b,this.hzLt("Empty"),xx + 26,yy + 25,tw - 34,9,"rg",uint(T.mut),0.2);
             var chipH:Number = 22;
             var chipY:Number = yy + th - chipH - 8;
             var chipW:Number = tw - 16;
@@ -7436,9 +7455,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             g.drawRoundRect(chipX,chipY,chipW,chipH,6,6);
             g.endFill();
             this.hz51Stroke(g,chipX,chipY,chipW,chipH,isClash ? clashCol : (cap ? acc : uint(T.line)),isClash || cap ? 0.9 : 0.4,6);
-            var chipCol:uint = isClash ? clashCol : (kn == "UNBOUND" || kn.indexOf("PRESS") == 0 ? uint(T.mut) : uint(T.txt));
+            var chipCol:uint = isClash ? clashCol : (raw.length == 0 || (cap && this.hzQmCapCand.length == 0) ? uint(T.mut) : uint(T.txt));
             this.hz51T(b,kn,chipX + chipW / 2,chipY + 4,chipW - 4,9,"bd",chipCol,0.4,"center");
-            if(isClash) { this.hz51T(b,"CLASH",xx + 8,yy + 42,tw - 16,8,"sb",clashCol,0.8); }
+            if(isClash) { this.hz51T(b,this.hzLt("CLASH"),xx + 8,yy + 42,tw - 16,8,"sb",clashCol,0.8); }
             if(!dis) { this.hzSetHits.push({"id":"qmk" + n,"x":xx,"y":yy,"w":tw,"h":th}); }
             col++;
             if(col >= per) { col = 0; row++; }
@@ -7527,8 +7546,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(kind == "preset")
          {
             var pr:Object = this.hz37Cur();
-            this.hz51T(b,pr != null ? String(pr.n) : "NO PRESET",x + w / 2,y + h / 2 - 8,w - 16,11,"bd",acc,0.6,"center");
-            this.hz51T(b,"Pending look · CANCEL reverts",x + w / 2,y + h / 2 + 8,w - 16,9,"rg",uint(T.mut),0.2,"center");
+            this.hz51T(b,pr != null ? String(pr.n) : this.hzLt("NO PRESET"),x + w / 2,y + h / 2 - 8,w - 16,11,"bd",acc,0.6,"center");
+            this.hz51T(b,this.hzLt("Pending look · CANCEL reverts"),x + w / 2,y + h / 2 + 8,w - 16,9,"rg",uint(T.mut),0.2,"center");
             return;
          }
          this.hz51PvCard(b,g,T,acc,x,y,w,h,p,k);
@@ -13359,7 +13378,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var showUT:Boolean = !locOk && this.hzPpUT >= 0 && (td == 1 || td == 3);
          var showLoc:Boolean = (locOk && (td == 1 || td == 3)) || showUT;
          this.hzPpShowUT = showUT;
-         this.hzPpLocL.text = "LOCAL/GAME";
+         this.hzPpLocL.text = this.hzLt("LOCAL/GAME");
          var realStr:String = null;
          if(td >= 2)
          {
@@ -15503,7 +15522,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
                var cg:* = this.hzE19Chip.graphics;
                cg.clear();
                var ccol:uint = empty ? HZ_RED : HZ_AMB;
-               this.hzE19RelT.text = "RELOAD";
+               this.hzE19RelT.text = this.hzLt("RELOAD");
                this.hzTxtTint(this.hzE19RelT,ccol);
                var cw:Number = this.hzTW(this.hzE19RelT) + 16;
                cg.lineStyle(1,this.hzIconCol(ccol),0.9,true);
@@ -19225,7 +19244,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var f:Sprite = new Sprite(); c.addChild(f); this.hz26ChF = f;
          this.hz26ChG = new Sprite(); f.addChild(this.hz26ChG);
          var W:Number = HZ_CH_W;
-         this.hz26ChName = this.hzT(f,this.hzLt("CHARACTER"),76,14,W - 90,15,"sb","main",2); this.hzHdr19(this.hz26ChName);
+         this.hz26ChName = this.hzT(f,"Character",76,14,W - 90,15,"sb","main",2); this.hzHdr19(this.hz26ChName);
          this.hz26ChSpT = this.hzT(f,"",0,0,100,10,"bd","col",0.8,"left",0xFFFFFF);
          this.hz26ChSpT.visible = false;
          this.hz26ChCr = this.hzT(f,"",W - 14 - 150,15,150,14,"sb","main",0.5,"right");
@@ -19344,7 +19363,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             this.hzT19Line(g,104,W,false);
             var mc:uint = this.hzIconCol(over ? HZ_RED : HZ_ACCENT);
             this.hz26Weight(g,26,124,mc,0.9);
-            this.hz26ChML.text = over ? "OVERWEIGHT" : "MASS";
+            this.hz26ChML.text = over ? this.hzLt("OVERWEIGHT") : this.hzLt("MASS");
             this.hzTxtTint(this.hz26ChML,over ? HZ_RED : null);
             this.hzTxtTop(this.hz26ChML,114);
             this.hz26ChMV.text = mS;
@@ -19824,7 +19843,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
                g.lineStyle();
                this.hz26PowIcon(tcx,cy,9,ready);
                lx += 36;
-               this.hz26PowL.text = ready ? "READY" : "POWER";
+               this.hz26PowL.text = ready ? this.hzLt("READY") : this.hzLt("POWER");
                this.hzTxtTint(this.hz26PowL,ready ? HZ_VIO : null);
                this.hz26PowL.x = lx; this.hzTxtTop(this.hz26PowL,cy - 8);
                this.hz26PowP.text = Math.round(pf * 100) + "%";
@@ -23454,14 +23473,15 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          }
          this.hzSetHits.push({"id":"bar" + i,"x":bx,"y":cy - 10,"w":bw,"h":20,"bx":bx,"bw":bw});
          var pillH:Number = HZ51_BTN_H;
-         var ct:TextField = this.hz51T(b,glob ? "GLOBAL" : "CUSTOM",0,cy - 8,120,11,"sb",glob ? uint(T.txt) : acc,1.2);
+         var zlab:String = this.hzLt(glob ? "GLOBAL" : "CUSTOM");
+         var ct:TextField = this.hz51T(b,zlab,0,cy - 8,120,11,"sb",glob ? uint(T.txt) : acc,1.2);
          var cw:Number = Math.max(HZ51_CTRL_W > 88 ? 72 : 72, Math.round(this.hzTW(ct) + 20));
          var cx:Number = Math.round(bx - 12 - cw);
          var py:Number = Math.round(cy - pillH / 2);
          b.removeChild(ct);
          g.beginFill(acc,glob ? 0.08 : 0.18); g.drawRoundRect(cx,py,cw,pillH,6,6); g.endFill();
          this.hz34Ring(b,cx,py,cw,pillH,6,glob ? uint(T.line) : acc,glob ? 0.8 : 0.9,1);
-         this.hz51T(b,glob ? "GLOBAL" : "CUSTOM",cx + cw / 2,py + 4,cw,11,"sb",glob ? uint(T.txt) : acc,1.2,"center");
+         this.hz51T(b,zlab,cx + cw / 2,py + 4,cw,11,"sb",glob ? uint(T.txt) : acc,1.2,"center");
          this.hzSetHits.push({"id":"zg" + i,"x":cx,"y":py,"w":cw,"h":pillH});
       }
 
