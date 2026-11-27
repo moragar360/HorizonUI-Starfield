@@ -66,6 +66,7 @@ function checkPair(enFlat, other, code) {
 
 expect(fs.existsSync(path.join(root, "tools", "scan_l10n_strings.js")), "tools/scan_l10n_strings.js is committed");
 expect(fs.existsSync(path.join(locDir, "en.json")), "shipped Localization/en.json is present");
+expect(fs.existsSync(path.join(locDir, "zh-cn.json")), "shipped Localization/zh-cn.json is present");
 
 const en = loadLang(locDir, "en");
 expect(!!en, "English table parses");

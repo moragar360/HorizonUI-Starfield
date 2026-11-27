@@ -39,6 +39,13 @@ expect(/id == "loc"/.test(sys), "hz51System builds the loc page");
 expect(/_l10nGame/.test(sys) && /GAME LANGUAGE/.test(sys) && /dis":true/.test(sys.replace(/\s/g, "")), "detected language is a read-only row");
 expect(/"k":"Language"/.test(sys) && /HORIZON LANGUAGE/.test(sys) && /"t":"l"/.test(sys), "override is a list dropdown bound to Language");
 expect(/AUTO \(GAME\)/.test(as) && /hz51LangOpts/.test(sys), "dropdown starts with Auto and is filled from available JSON files");
+const locZh = path.join(__dirname, "..", "Data", "SFSE", "Plugins", "HorizonUI", "Localization", "zh-cn.json");
+expect(fs.existsSync(locZh), "shipped zh-cn.json is present so the Language dropdown can list it");
+const langName = fnText(as, "hz51LangName").body;
+expect(/zh-cn/.test(langName) && /zhhans/.test(langName) && /CHINESE \(SIMPLIFIED\)/.test(langName),
+	"dropdown names zh-cn / zhhans as Chinese (Simplified)");
+expect(/hzL10nFiles/.test(fnText(as, "hz51LangOpts").body),
+	"dropdown options are the Localization/*.json stems the DLL listed at load");
 
 const help = fnText(as, "hz51Help").body;
 expect(help.indexOf("Language for Horizon labels") >= 0, "Language Setting Details exist");

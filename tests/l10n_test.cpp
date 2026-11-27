@@ -253,6 +253,23 @@ int main()
 	Expect(!Has(shipped, "A change takes effect after you restart the game."),
 		"en.json language help does not require a restart");
 
+	const auto zhcn = ReadAll("Data/SFSE/Plugins/HorizonUI/Localization/zh-cn.json");
+	Expect(!zhcn.empty() && Has(zhcn, "\"language\": \"zh-cn\"") && Has(zhcn, "简体中文"),
+		"shipped zh-cn.json is Simplified Chinese (MapCode stem for sLanguage zhhans)");
+	Expect(!(zhcn.size() >= 3 && static_cast<unsigned char>(zhcn[0]) == 0xEF
+			&& static_cast<unsigned char>(zhcn[1]) == 0xBB && static_cast<unsigned char>(zhcn[2]) == 0xBF),
+		"zh-cn.json is UTF-8 with no BOM");
+	{
+		const auto files = ListLangFiles(std::filesystem::path("Data/SFSE/Plugins/HorizonUI/Localization"));
+		bool hasZh = false, hasEn = false;
+		for (const auto& f : files) {
+			if (f == "zh-cn") hasZh = true;
+			if (f == "en") hasEn = true;
+		}
+		Expect(hasEn && hasZh && !files.empty() && files.front() == "en",
+			"Language dropdown file list is English first, then includes zh-cn");
+	}
+
 	if (g_fail) {
 		std::cerr << "\n" << g_fail << " failed, " << g_ok << " passed\n";
 		return 1;
