@@ -17,6 +17,7 @@
          this.hzSetHits = [];
          this.hzSetSideHits = [];
          this.hzSetDropBox = null;
+         this.hzSetDropMenu = null;
          if(this.hzSetPv != null) { this.hzSetPv.visible = false; }
          var T:Object = this.hzSetTheme();
          var acc:uint = uint(T.acc);
@@ -276,7 +277,7 @@
                   this.hz51Stroke(gMain,boxX,boxY,boxW,Math.max(20,boxH),acc,HZ51_BOX_A,HZ51_BOX_R);
                   boxOpen = false;
                }
-               var shY:Number = y + (firstSec ? 0 : 8);
+               var shY:Number = y + (firstSec ? 2 : 10);
                var ht:TextField = this.hz51T(b,String(r.h),x0,shY + 6,Math.min(240,boxW * 0.45),HZ51_SH_PX,"bd",acc,1.4);
                var ruleX:Number = x0 + Math.round(this.hzTW(ht) + 12);
                this.hz51Hair(g,ruleX,shY + 16,Math.max(16,boxW - (ruleX - x0)),1,acc,HZ51_SH_A);
@@ -761,6 +762,7 @@
          if(this.hzSetDropScroll < 0) { this.hzSetDropScroll = 0; }
          if(this.hzSetDropScroll > Math.max(0, opts.length - vis)) { this.hzSetDropScroll = Math.max(0, opts.length - vis); }
          h = 8 + vis * HZ51_DROP_ITEM;
+         this.hzSetDropMenu = {"x":x,"y":y,"w":w,"h":h};
          g.beginFill(uint(T.fill),1);
          g.drawRoundRect(x,y,w,h,6,6);
          g.endFill();
@@ -781,7 +783,7 @@
                this.hz51T(b,String(opts[oi]),x + 26,yy + 4,w - 36,11,"sb",sel ? acc : uint(T.txt),0.2);
             }
             else { this.hz51T(b,String(opts[oi]),x + 10,yy + 4,w - 20,11,"sb",sel ? acc : uint(T.txt),0.2); }
-            this.hzSetHits.push({"id":"dopt" + oi,"x":x + 3,"y":yy,"w":w - 6,"h":HZ51_DROP_ITEM - 2});
+            this.hzSetHits.push({"id":"dopt" + oi,"x":x + 3,"y":yy,"w":w - 6,"h":HZ51_DROP_ITEM});
             i++;
          }
          if(opts.length > vis)
@@ -912,7 +914,7 @@
       private function hz51ListBox() : Object
       {
          var x:Number = HZ51_SIDE_W + 20;
-         var y:Number = HZ_SET_TOP + 52;
+         var y:Number = HZ_SET_TOP + 64;
          var r:Number = this.HZ_SET_W - HZ51_PREV_W - 14;
          return {"x":x,"y":y,"r":r,"w":r - x};
       }

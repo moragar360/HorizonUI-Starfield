@@ -69,6 +69,14 @@ expect(/hz51Fit/.test(fnText(as, "hzSetPlace").body), "hzSetPlace sizes from vis
 expect(!/HorizonSettings_mc\.scaleX/.test(fnText(as, "hzSetPlace").body) && !/HorizonSettings_mc\.scaleY/.test(fnText(as, "hzSetPlace").body), "hzSetPlace does not scale HorizonSettings_mc (old F11 in hudmenu_lrg also left the window at 1.0; HZ_SCALE 1.07 is cards only)");
 expect(/hudmenu_lrg 1\.07 scales HUD cards only/.test(as), "comment records that _lrg HZ_SCALE must not be applied to the F11 clip");
 expect(/HZ51_SIDE_W \+ 20/.test(fnText(as, "hz51ListBox").body), "list has 20px main padding so labels do not run into the sidebar");
+expect(constN("HZ51_SEC") === 36 && /HZ_SET_TOP \+ 64/.test(fnText(as, "hz51ListBox").body),
+	"page title has 64px before the list; section headers keep a 36px gap before the first row");
+expect(/firstSec \? 2 : 10/.test(fnText(as, "hz51DrawList").body),
+	"section titles add extra space before the first setting row on every page");
+expect(/h\":HZ51_DROP_ITEM/.test(fnText(as, "hz51DrawDrop").body),
+	"dropdown option hit rects use the full 24px row (no 2px gap that misses the click)");
+expect(/function hz51HitAt/.test(as) && /dropout/.test(fnText(as, "hz51HitAt").body),
+	"open dropdowns own hit-testing so a click cannot fall through to the row below");
 
 // 2. Active-device hints (change-driven, no poll)
 expect(/hz51Pad = this.hzVehPad == 1/.test(fnText(as, "hzToggleSettings").body), "open seeds the hint row from ControlMap (hzVehPad)");

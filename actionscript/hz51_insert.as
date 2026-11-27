@@ -18,6 +18,7 @@
       private var hzSetSideHits:Array = [];
       private var hz51Pad:Boolean = false;        // last F11 input was gamepad (hzpad / D-pad / A/B / LB/RB / stick); mouse/letters clear it
       private var hzSetDropBox:Object = null;     // last drawn dropdown control {x,y,w,h} for menu anchoring
+      private var hzSetDropMenu:Object = null;    // open menu rect {x,y,w,h}; clicks inside never fall through
       private var hzSetDropScroll:int = 0;        // first visible option when the menu is taller than the gap
       private var hzSetDropVis:int = 0;           // how many options the open menu can show
       private var hzSetOver:Sprite = null;        // dropdown / find layer above row text (body.graphics sits behind children)
@@ -32,7 +33,7 @@
       private static const HZ51_SIDE_W:Number = 248;    // one-line labels at 11px; slimming further does not shrink the window
       private static const HZ51_PREV_W:Number = 196;    // scaled from mockup 292
       private static const HZ51_FOOT:Number = 46;       // one hint row
-      private static const HZ51_SEC:Number = 26;        // section title + rule
+      private static const HZ51_SEC:Number = 36;        // section title + rule + gap before the first row
       private static const HZ51_FIND_W:Number = 176;    // header search slot
       private static const HZ51_FIND_H:Number = 30;     // header control height
       private static const HZ51_DD_H:Number = 28;       // dropdown box height
@@ -267,6 +268,7 @@
       private function hz51Copy(r:Object) : Object
       {
          var o:Object = {};
+         if(r == null) { return o; }
          for(var k:String in r) { o[k] = r[k]; }
          return o;
       }
@@ -497,7 +499,7 @@
          if(this.hzSetPend == null) { return true; }
          var v:* = this.hzSetPend[k];
          if(v === undefined) { return true; }
-         if(v is Boolean) { return Boolean(v); }
+         if(v === true || v === false) { return Boolean(v); }
          return Number(v) >= 0.5;
       }
       private function hz51Mute(rows:Array) : Array
@@ -560,6 +562,7 @@
       {
          var opts:Array = [];
          var i:int = 0;
+         if(ids == null) { ids = []; }
          while(i < ids.length)
          {
             var id:int = int(ids[i]);
@@ -573,7 +576,7 @@
             i++;
          }
          var t:String = key == "CrosshairRule" ? "r" : "q";
-         var r:Object = {"k":key,"l":"SHOW WHEN","t":t,"ids":ids,"opts":opts,"sub":true};
+         var r:Object = {"k":key,"l":"SHOW WHEN","t":t,"ids":ids != null ? ids : [],"opts":opts,"sub":true};
          if(key == "CrosshairRule") { r.t = "r"; }
          return r;
       }
@@ -584,8 +587,23 @@
          if(scaleKey != null && scaleKey.length > 0) { rows.push({"k":scaleKey,"l":"SIZE","t":"z","sub":true}); }
          if(compactKey != null && compactKey.length > 0) { rows.push({"k":compactKey,"l":"COMPACT FORM","t":"r","opts":["GLOBAL","ON","OFF"],"ids":[-1,1,0],"sub":true}); }
          var i:int = 0;
-         while(extra != null && i < extra.length) { rows.push(extra[i]); i++; }
+         while(extra != null && i < extra.length) { if(extra[i] != null) { rows.push(extra[i]); } i++; }
          return rows;
+      }
+      // Purpose: append one card's rows. A throw in extras (null copy, missing
+      // name table) must not wipe the rest of STATUS / COMBAT / INTERACTION.
+      private function hz51AddCard(rows:Array, onKey:String, onLab:String, section:String, ruleKey:String, ruleIds:Array, scaleKey:String, compactKey:String, extra:Array) : void
+      {
+         try
+         {
+            var more:Array = this.hz51Card(onKey, onLab, section, ruleKey, ruleIds, scaleKey, compactKey, extra);
+            var i:int = 0;
+            while(i < more.length) { rows.push(more[i]); i++; }
+         }
+         catch(eAdd:Error)
+         {
+            rows.push({"k":onKey,"l":onLab,"t":"b","h":section});
+         }
       }
       private function hz51Goto(id:String, lab:String, tab:int, page:int, key:String, section:String) : Object
       {
@@ -666,7 +684,11 @@
             else if(tab == 3) { rows = this.hz51Comms(id); }
             else { rows = this.hz51System(id); }
          }
-         catch(eRows:Error) { rows = []; }
+         catch(eRows:Error)
+         {
+            // Keep any rows already built; only a total miss uses the placeholder.
+            try { rows = this.hz51Fallback(tab, id); } catch(eFb:Error) { if(rows == null) { rows = []; } }
+         }
          var done:Array = this.hz51Finish(rows);
          if(done == null || done.length == 0)
          {
@@ -675,9 +697,41 @@
          }
          return done;
       }
+      // Purpose: rebuild a CARDS page from hz34CardRows when the pretty builder
+      // throws, so STATUS / COMBAT / INTERACTION never draw empty.
+      // Inputs: tab, sidebar id. Outputs: row array (may be empty for other pages).
+      private function hz51Fallback(tab:int, id:String) : Array
+      {
+         if(tab != 0) { return []; }
+         var keys:Array = [];
+         if(id == "sta") { keys = ["ShowVitals","VitalsRule","VitalsScale","VitalsLayout","VitalsBars","AutoCenterVitals","RegenSliver","ShowJetpack","JetpackRule","JetpackScale","ShowAfflictions","AfflictionsRule","AfflictionsScale","AfflictionLayout","HazardStatus","HazardScale","HazardCompact","EdgePulse"]; }
+         else if(id == "com") { keys = ["ShowAmmo","AmmoRule","EquipmentScale","EquipmentCompact","EquipmentExtras","EnemyBar","EnemyScale","StealthMeter","StealthScale"]; }
+         else if(id == "int") { keys = ["ShowTarget","NameHover","HoverScale","TargetAnchor","TargetShowValue","ContainerScale","ContainerOpacity","ObjectRing","VehicleExitPill"]; }
+         else { return []; }
+         var picked:Array = [];
+         try { picked = this.hz51Pick(this.hz34CardRows(), keys); } catch(ePick:Error) { picked = []; }
+         if(id == "sta")
+         {
+            picked.push({"k":"EdgePulse","l":"LOW HEALTH / O2 SCREEN-EDGE PULSE","t":"b","h":"WARNINGS"});
+            picked.push({"k":"AfflictionLayout","l":"LAYOUT","t":"r","opts":["COLUMN","ROW","ICONS ONLY"],"ids":[0,1,2],"sub":true});
+            picked.push({"k":"AutoCenterVitals","l":"AUTO-CENTER WHEN EQUIPMENT HIDDEN","t":"b","sub":true});
+            picked.push({"k":"RegenSliver","l":"HEALING REGEN SLIVER","t":"b","sub":true});
+         }
+         if(id == "com")
+         {
+            picked.push({"k":"CrosshairRule","l":"SHOW WHEN","t":"r","opts":["ALWAYS","WHEN WEAPON DRAWN","OFF"],"ids":[0,1,2],"h":"CROSSHAIR"});
+            picked.push({"k":"CrosshairStyle","l":"INTERACTION STYLE","t":"r","opts":["VANILLA","HORIZON DOT","HORIZON CROSS","NONE"],"sub":true});
+            picked.push({"k":"HitMarkers","l":"HIT MARKER / KILL X","t":"b","h":"COMBAT FEEDBACK"});
+            picked.push({"k":"DamageNumbers","l":"DAMAGE NUMBERS","t":"b"});
+            picked.push({"k":"DirectionRing","l":"DAMAGE DIRECTION RING","t":"b"});
+            try { this.hz42ScRows(picked); } catch(eScFb:Error) { }
+         }
+         return picked;
+      }
       private function hz51Cards(id:String) : Array
       {
-         var all:Array = this.hz34CardRows();
+         var all:Array = [];
+         try { all = this.hz34CardRows(); } catch(eAll:Error) { all = []; }
          var m:Object = this.hz51ByKey(all);
          var rows:Array = [];
          if(id == "gen")
@@ -690,29 +744,31 @@
          }
          if(id == "sta")
          {
-            rows = rows.concat(this.hz51Card("ShowVitals","VITALS","VITALS","VitalsRule",[0,5,1,2],"VitalsScale","", [
-               this.hz51Copy(m["VitalsLayout"] != undefined ? m["VitalsLayout"] : {"k":"VitalsLayout","l":"LAYOUT","t":"r","opts":["VERTICAL","HORIZONTAL"],"ids":[0,1],"sub":true}),
-               this.hz51Copy(m["VitalsBars"] != undefined ? m["VitalsBars"] : {"k":"VitalsBars","l":"HEALTH AND O2 BARS","t":"r","opts":["FULL","COMPACT"],"ids":[0,1],"sub":true}),
+            // Literals only: copying hz34CardRows objects (or HZ_AFLAY_NAMES in a
+            // nested extra) threw on STATUS and the outer try left the page empty.
+            this.hz51AddCard(rows,"ShowVitals","VITALS","VITALS","VitalsRule",[0,5,1,2],"VitalsScale","", [
+               {"k":"VitalsLayout","l":"LAYOUT","t":"r","opts":["VERTICAL","HORIZONTAL"],"ids":[0,1],"sub":true},
+               {"k":"VitalsBars","l":"HEALTH AND O2 BARS","t":"r","opts":["FULL","COMPACT"],"ids":[0,1],"sub":true},
                {"k":"AutoCenterVitals","l":"AUTO-CENTER WHEN EQUIPMENT HIDDEN","t":"b","sub":true},
                {"k":"RegenSliver","l":"HEALING REGEN SLIVER","t":"b","sub":true}
-            ]));
-            rows = rows.concat(this.hz51Card("ShowJetpack","JETPACK","JETPACK","JetpackRule",[0,4,1,2],"JetpackScale","", []));
-            rows = rows.concat(this.hz51Card("ShowAfflictions","AFFLICTIONS","AFFLICTIONS","AfflictionsRule",[0,6,1,2],"AfflictionsScale","", [
-               {"k":"AfflictionLayout","l":"LAYOUT","t":"r","opts":HZ_AFLAY_NAMES,"ids":[0,1,2],"sub":true}
-            ]));
-            rows = rows.concat(this.hz51Card("HazardStatus","HAZARD STATUS","HAZARD STATUS","","", "HazardScale","HazardCompact", []));
+            ]);
+            this.hz51AddCard(rows,"ShowJetpack","JETPACK","JETPACK","JetpackRule",[0,4,1,2],"JetpackScale","", []);
+            this.hz51AddCard(rows,"ShowAfflictions","AFFLICTIONS","AFFLICTIONS","AfflictionsRule",[0,6,1,2],"AfflictionsScale","", [
+               {"k":"AfflictionLayout","l":"LAYOUT","t":"r","opts":["COLUMN","ROW","ICONS ONLY"],"ids":[0,1,2],"sub":true}
+            ]);
+            this.hz51AddCard(rows,"HazardStatus","HAZARD STATUS","HAZARD STATUS","",null,"HazardScale","HazardCompact", []);
             rows.push({"k":"EdgePulse","l":"LOW HEALTH / O2 SCREEN-EDGE PULSE","t":"b","h":"WARNINGS"});
             return rows;
          }
          if(id == "com")
          {
-            rows = rows.concat(this.hz51Card("ShowAmmo","EQUIPMENT","EQUIPMENT","AmmoRule",[0,3,1,2],"EquipmentScale","EquipmentCompact", [
+            this.hz51AddCard(rows,"ShowAmmo","EQUIPMENT","EQUIPMENT","AmmoRule",[0,3,1,2],"EquipmentScale","EquipmentCompact", [
                {"k":"EquipmentExtras","l":"GRENADES + STARBORN POWER","t":"b","sub":true}
-            ]));
-            rows = rows.concat(this.hz51Card("EnemyBar","ENEMY HEALTH","ENEMY HEALTH","","","EnemyScale","", []));
-            rows = rows.concat(this.hz51Card("StealthMeter","STEALTH","STEALTH","","","StealthScale","", []));
+            ]);
+            this.hz51AddCard(rows,"EnemyBar","ENEMY HEALTH","ENEMY HEALTH","",null,"EnemyScale","", []);
+            this.hz51AddCard(rows,"StealthMeter","STEALTH","STEALTH","",null,"StealthScale","", []);
             rows.push({"k":"CrosshairRule","l":"SHOW WHEN","t":"r","opts":["ALWAYS","WHEN WEAPON DRAWN","OFF"],"ids":[0,1,2],"h":"CROSSHAIR"});
-            rows.push({"k":"CrosshairStyle","l":"INTERACTION STYLE","t":"r","opts":HZ_XH_NAMES,"sub":true});
+            rows.push({"k":"CrosshairStyle","l":"INTERACTION STYLE","t":"r","opts":["VANILLA","HORIZON DOT","HORIZON CROSS","NONE"],"sub":true});
             rows.push({"k":"HitMarkers","l":"HIT MARKER / KILL X","t":"b","h":"COMBAT FEEDBACK"});
             rows.push({"k":"DamageNumbers","l":"DAMAGE NUMBERS","t":"b"});
             rows.push({"k":"DirectionRing","l":"DAMAGE DIRECTION RING","t":"b"});
@@ -747,22 +803,22 @@
                {"k":"CharacterShowSeconds","l":"SHOW FOR (SECONDS)","t":"n","mn":2,"mx":60,"st":1,"sub":true}
             ]));
             rows.push({"k":"WatchStyle","l":"WATCH","t":"r","h":"WATCH","opts":["OFF","VANILLA","VANILLA + HORIZON","HORIZON DIGITAL","HORIZON ANALOG"],"ids":[0,1,2,3,4]});
-            if(m["WatchScale"] != undefined) { var ws:Object = this.hz51Copy(m["WatchScale"]); ws.l = "SIZE"; ws.sub = true; rows.push(ws); }
+            rows.push({"k":"WatchScale","l":"SIZE","t":"z","sub":true});
             rows.push(this.hz51Goto("_goto_clocks","CLOCKS & UNITS",1,5,"TimeDisplay","LINKS"));
             rows.push(this.hz51Goto("_goto_scanwatch","HIDE WATCH WHILE SCANNING",2,1,"HideWatchWhileScanning",""));
             return rows;
          }
          if(id == "int")
          {
-            rows = rows.concat(this.hz51Card("ShowTarget","TARGET CARD","TARGET & HOVER","","","", "", [
-               this.hz51Copy(m["NameHover"] != undefined ? m["NameHover"] : {"k":"NameHover","l":"NAME HOVER","t":"r","opts":["COMPACT","FULL"],"ids":[0,1],"sub":true}),
+            this.hz51AddCard(rows,"ShowTarget","TARGET CARD","TARGET & HOVER","",null,"","", [
+               {"k":"NameHover","l":"NAME HOVER","t":"r","opts":["COMPACT","FULL"],"ids":[0,1],"sub":true},
                {"k":"HoverScale","l":"HOVER SIZE","t":"z","sub":true},
-               {"k":"TargetAnchor","l":"ANCHOR","t":"r","opts":HZ_TGANCHOR_NAMES,"sub":true},
+               {"k":"TargetAnchor","l":"ANCHOR","t":"r","opts":["CROSSHAIR","FOLLOW TARGET"],"sub":true},
                {"k":"TargetShowValue","l":"ITEM VALUE / WEIGHT","t":"b","sub":true}
-            ]));
+            ]);
             rows.push({"k":"ContainerScale","l":"LIST SIZE","t":"z","h":"CONTAINER"});
             rows.push({"k":"ContainerOpacity","l":"CONTAINER / CROSSHAIR CARD OPACITY","t":"n","mn":0.2,"mx":1.6,"st":0.05,"sub":true});
-            rows.push({"k":"ObjectRing","l":"OBJECT RING / LEADER LINE","t":"r","opts":HZ_RING_NAMES,"h":"OBJECT HIGHLIGHT"});
+            rows.push({"k":"ObjectRing","l":"OBJECT RING / LEADER LINE","t":"r","opts":["OFF","CONTAINERS ONLY","VANILLA"],"h":"OBJECT HIGHLIGHT"});
             rows.push({"k":"VehicleExitPill","l":"HORIZON EXIT PILL","t":"b","h":"VEHICLE"});
             return rows;
          }
@@ -850,9 +906,16 @@
          var commsOn:Boolean = this.hz30Mod["comms"] === 1;
          if(id == "pop")
          {
-            var pop:Array = this.hz40PopupRows();
+            var pop:Array = [];
+            try { pop = this.hz40PopupRows(); } catch(ePop:Error) { pop = []; }
             var i:int = 0;
             while(i < pop.length) { if(String(pop[i].k) == "HideQuestPopupsWhileScanning") { pop[i].h = "POPUPS"; } i++; }
+            if(pop.length == 0)
+            {
+               pop = [{"k":"HideQuestPopupsWhileScanning","l":"HIDE QUEST POPUPS WHILE SCANNING","t":"b","h":"POPUPS"},
+                  {"k":"DimTraitPopupDuringBioscan","l":"DIM TRAIT POPUP WHILE SCANNING","t":"b"},
+                  {"k":"TraitPopupDim","l":"TRAIT POPUP DIM","t":"n","mn":0.1,"mx":0.9,"st":0.05,"sub":true}];
+            }
             return pop;
          }
          if(!scanOn)
@@ -862,16 +925,40 @@
                return this.hz51Unavail([{"k":"_scanmiss","l":"SCANNER","t":"b","dis":true,"dv":false,"h":"SCANNER"}], "Install it from the Horizon UI installer.");
             }
          }
-         var src:Array = this.hz40ScanRows();
+         var src:Array = [];
+         try { src = this.hz40ScanRows(); } catch(eScan:Error) { src = []; }
          var m:Object = this.hz51ByKey(src);
          var keys:Array = [];
          if(id == "ov") { keys = ["_hz41arrscan","ScanCompactAll","ScanHighlightArea","ScanReach","_hz40rstlay","_hz40rstall"]; }
-         else if(id == "hud") { keys = ["HideMainHudWhileScanning","ScanShowVitalsHealth","ScanShowVitalsO2","ScanShowVitalsBoost","ScanVitalsCompact","ScanVitalsLayout","HideWatchWhileScanning"]; }
-         else if(id == "tl") { keys = ["ScanShowMode","ScanModeScale","ScanShowHints","ScanHintsScale","ScanHighlightArea","ScanOutlineThickness"]; }
+         else if(id == "hud")
+         {
+            try { var hud:Array = this.hz41TopRows(); if(hud != null && hud.length > 0) { return hud; } } catch(eHud:Error) { }
+            return [{"k":"HideMainHudWhileScanning","l":"HIDE HORIZON HUD WHILE SCANNING","t":"b","h":"MAIN HUD"},
+               {"k":"ScanShowVitalsHealth","l":"KEEP HEALTH","t":"b","sub":true},
+               {"k":"ScanShowVitalsO2","l":"KEEP O2","t":"b","sub":true},
+               {"k":"ScanShowVitalsBoost","l":"KEEP BOOST","t":"b","sub":true},
+               {"k":"ScanVitalsCompact","l":"COMPACT VITALS","t":"b","sub":true},
+               {"k":"ScanVitalsLayout","l":"VITALS LAYOUT","t":"r","opts":["VERTICAL","HORIZONTAL"],"ids":[0,1],"sub":true},
+               {"k":"HideWatchWhileScanning","l":"HIDE WATCH WHILE SCANNING","t":"b"}];
+         }
+         else if(id == "tl") { keys = ["ScanShowMode","ScanModeScale","ScanShowHints","ScanHintsScale","ScanOutlineThickness"]; }
          else if(id == "sig") { keys = ["ScanShowSignals","ScanSignalsScale","ScanSignalsCompact","ScanMaxSignals","ScanShowShip","ScanNearestUnscanned","ScanShowCompass","ScanCompassScale","ScanCompassCompact","ScanShowWorldTags","ScanWorldTagScale","ScanWorldMarkers"]; }
          else if(id == "sv") { keys = ["ScanShowPlanet","ScanPlanetScale","ScanPlanetCompact","ScanShowBodyType","ScanHazardWarn","ScanHazardCrit","ScanShowBioscan","ScanBioscanScale","ScanBioscanCompact","ScanHideBioscanDone","ScanCompleteFlash","ScanLeftToFind","ScanShowTraits","ScanTraitsScale","ScanTraitsCompact","ScanMinRarity"]; }
          else { keys = ["ScanOpacity","ScanAccIdx","ScanTextCase","ScanFont","ScanMargin","ScanUnits"]; }
          var rows:Array = this.hz51Pick(src, keys);
+         var have:Object = this.hz51ByKey(rows);
+         var ki:int = 0;
+         while(ki < keys.length)
+         {
+            var kk:String = String(keys[ki]);
+            if(have[kk] == undefined)
+            {
+               if(kk.indexOf("Scale") > 0) { rows.push({"k":kk,"l":"SIZE","t":"z","sub":true}); }
+               else if(kk.indexOf("Compact") > 0) { rows.push({"k":kk,"l":"COMPACT FORM","t":"r","opts":["GLOBAL","ON","OFF"],"ids":[-1,1,0],"sub":true}); }
+               else { rows.push({"k":kk,"l":kk,"t":"b"}); }
+            }
+            ki++;
+         }
          if(id == "ov" && m["_hz30m_scanner"] != undefined) { rows.unshift(this.hz51Copy(m["_hz30m_scanner"])); }
          if(id == "ap") { rows.push(this.hz51Goto("_goto_temp","TEMPERATURE UNITS",1,5,"TempUnit","SHORTCUT")); }
          return rows;
@@ -897,7 +984,8 @@
          }
          var saved:int = this.hz31Page;
          this.hz31Page = id == "dlg" ? 1 : 0;
-         var full:Array = this.hz31CommsRows();
+         var full:Array = [];
+         try { full = this.hz31CommsRows(); } catch(eCom:Error) { full = []; }
          this.hz31Page = saved;
          var skip:Object = {"_hz30m_comms":1,"_hz31page":1,"MissionToast":1,"MissionToastTime":1,"MissionToastMax":1,"MissionToastScale":1,"MissionToastSound":1,"ReactionCard":1,"GameCardTitle":1,"_hz40goscan":1};
          var rows:Array = [];
@@ -913,7 +1001,7 @@
             else if(id == "sub")
             {
                if(k == "_hz31usesub") { i++; continue; }
-               if(k.indexOf("Dlg") == 0 || k == "Dialogue") { i++; continue; }
+               if(k.indexOf("Dlg") == 0 || k == "Dialogue" || k == "SpeakerCard") { i++; continue; }
                rows.push(this.hz51Copy(full[i]));
             }
             else
@@ -1116,6 +1204,8 @@
       private function hz51DropPick(r:Object, idx:int) : void
       {
          if(r == null || this.hzSetPend == null) { return; }
+         var opts:Array = this.hz51DropOpts(r);
+         if(idx < 0 || opts == null || idx >= opts.length) { return; }
          var k:String = String(r.k);
          if(r.t == "r" && r.ids != undefined) { this.hzSetPend[k] = int((r.ids as Array)[idx]); }
          else if(r.t == "r") { this.hzSetPend[k] = idx; }
@@ -1124,6 +1214,71 @@
          else if(r.t == "a") { this.hzSetPend[k] = idx; }
          else if(r.t == "c") { this.hzSetPend[k] = HZ_SET_KEYS[idx]; }
          this.hzSetLive(this.hzSetPend);
+      }
+      // Purpose: topmost hit under the cursor. An open dropdown owns the click:
+      // dopt rows and the menu rect win. A SIZE slider under the list used to
+      // break the walk on "bar" before dopt was seen, so every option after the
+      // first applied to the row below. Scroll and upward menus use the same
+      // dopt rects the draw path paints (visible slot y, option index in the id).
+      // Inputs: mouse in HorizonSettings_mc space. Outputs: hit or null.
+      private function hz51HitAt(mx:Number, my:Number) : Object
+      {
+         var hits:Array = this.hzSetHits;
+         if(hits == null) { return null; }
+         var i:int;
+         var h:Object;
+         if(this.hzSetDrop >= 0)
+         {
+            i = hits.length - 1;
+            while(i >= 0)
+            {
+               h = hits[i];
+               if(h != null && mx >= Number(h.x) && mx <= Number(h.x) + Number(h.w) && my >= Number(h.y) && my <= Number(h.y) + Number(h.h) && String(h.id).indexOf("dopt") == 0)
+               {
+                  return h;
+               }
+               i--;
+            }
+            var box:Object = this.hzSetDropMenu;
+            if(box != null && mx >= Number(box.x) && mx <= Number(box.x) + Number(box.w) && my >= Number(box.y) && my <= Number(box.y) + Number(box.h))
+            {
+               return {"id":"dropbg","x":box.x,"y":box.y,"w":box.w,"h":box.h};
+            }
+            return {"id":"dropout","x":mx,"y":my,"w":1,"h":1};
+         }
+         i = hits.length - 1;
+         while(i >= 0)
+         {
+            h = hits[i];
+            if(h != null && mx >= Number(h.x) && mx <= Number(h.x) + Number(h.w) && my >= Number(h.y) && my <= Number(h.y) + Number(h.h))
+            {
+               return h;
+            }
+            i--;
+         }
+         return null;
+      }
+      // Purpose: filled disc from lineTo segments so Scaleform anti-aliases a
+      // circle at 12px (drawCircle plus hz51Stroke's four bars looked square).
+      private function hz51Disk(g:*, cx:Number, cy:Number, r:Number, col:uint, a:Number) : void
+      {
+         if(g == null || r < 2 || a <= 0) { return; }
+         cx = Math.round(cx);
+         cy = Math.round(cy);
+         r = Math.round(r);
+         var n:int = 16;
+         var i:int = 0;
+         g.beginFill(col, a);
+         while(i <= n)
+         {
+            var ang:Number = i * Math.PI * 2 / n;
+            var px:Number = cx + Math.cos(ang) * r;
+            var py:Number = cy + Math.sin(ang) * r;
+            if(i == 0) { g.moveTo(px, py); }
+            else { g.lineTo(px, py); }
+            i++;
+         }
+         g.endFill();
       }
       private function hz51HexCommit() : void
       {
@@ -1213,18 +1368,17 @@
          if(idx >= 0) { this.hzSetHits.push({"id":"row" + idx,"x":x0,"y":y0,"w":w,"h":h}); }
          return h;
       }
-      // Purpose: 12px (i) disc with a gap after the label. Smaller than hz35InfoIcon
-      // (16px) so it does not crowd the title.
+      // Purpose: 12px round (i) disc with a centered letter, not a square stroke.
+      // hz51Stroke is four 1px bars (the teal-wedge fix) and boxed the old disc
+      // at 1080p and 1440p. Fill is a 16-gon; the ring is hz34Ring (quarter
+      // curves). The 'i' is a pixel-fitted TextField so it stays centered.
       private function hz51InfoIcon(b:Sprite, g:*, cx:Number, cy:Number, acc:uint, T:Object, on:Boolean, i:int) : void
       {
          var r:Number = HZ51_INFO_R;
-         g.beginFill(acc,on ? 0.32 : 0.14);
-         g.drawCircle(cx,cy,r);
-         g.endFill();
-         this.hz51Stroke(g,Math.round(cx - r),Math.round(cy - r),r * 2,r * 2,acc,on ? 1 : 0.7,r * 2);
-         g.beginFill(on ? uint(T.txt) : acc,1);
-         g.drawRect(cx - 0.8,cy - 1.5,1.6,4.5);
-         g.drawCircle(cx,cy - 3.4,1);
-         g.endFill();
+         cx = Math.round(cx);
+         cy = Math.round(cy);
+         this.hz51Disk(g,cx,cy,r,acc,on ? 0.32 : 0.14);
+         this.hz34Ring(b,cx - r,cy - r,r * 2,r * 2,r,acc,on ? 1 : 0.7,1);
+         this.hz51T(b,"i",cx,cy - r + 2,r * 2,8,"bd",on ? uint(T.txt) : acc,0,"center");
          this.hzSetHits.push({"id":"inf" + i,"x":cx - 10,"y":cy - 10,"w":20,"h":20});
       }

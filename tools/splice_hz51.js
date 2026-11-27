@@ -30,14 +30,20 @@ text = text.replace(
 	/private static const HZ_SET_TOP:Number = \d+;      \/\/ body top[^\n]*/,
 	"private static const HZ_SET_TOP:Number = 90;      // body top (head 52 + tabs 38)"
 );
-text = text.split("HZ_SET_H - HZ51_FOOT - HZ_SET_TOP - 64").join("HZ_SET_H - HZ51_FOOT - HZ_SET_TOP - 52");
+text = text.replace(/HZ_SET_H - HZ51_FOOT - HZ_SET_TOP - \d+/g, "HZ_SET_H - HZ51_FOOT - HZ_SET_TOP - 64");
 text = text.replace(
 	'if(r.t == "m") { return (r.h ? HZ51_SEC : 0) + this.hz34BanH(); }',
 	'if(r.t == "m") { return (r.h ? HZ51_SEC : 0) + 40; }'
 );
+if (!text.includes('id == "findx"')) {
+	text = text.replace(
+		'else if(id == "findbox") { this.hzSetFindOn = true; this.hzSetFocus = 2; dirty = true; }',
+		'else if(id == "findx") { this.hz51FindClose(); dirty = true; }\n            else if(id == "findbox") { this.hzSetFindOn = true; this.hzSetFocus = 2; dirty = true; }'
+	);
+}
 text = text.replace(
-	'else if(id == "findbox") { this.hzSetFindOn = true; this.hzSetFocus = 2; dirty = true; }',
-	'else if(id == "findx") { this.hz51FindClose(); dirty = true; }\n            else if(id == "findbox") { this.hzSetFindOn = true; this.hzSetFocus = 2; dirty = true; }'
+	"         var hit:Object = null;\n         var hid:String = \"\";\n         for each(var h:Object in this.hzSetHits)\n         {\n            if(mx >= h.x && mx <= h.x + h.w && my >= h.y && my <= h.y + h.h)\n            {\n               hit = h; hid = h.id;\n               if(String(h.id).indexOf(\"bar\") == 0) { break; } // slider wins over its row\n            }\n         }",
+	"         var hit:Object = this.hz51HitAt(mx, my);\n         var hid:String = hit != null ? String(hit.id) : \"\";"
 );
 text = text.replace(
 	'var w:Number = this.hzSetBtn(host,hg,R,cy - 14,lab,cf || ed,true,rh && !dim,T,"row" + i,13);',
@@ -47,7 +53,13 @@ if (!/HZ_SET_W:Number = 1260/.test(text) || !/HZ_SET_H:Number = 726/.test(text))
 	console.error("failed to pin 1260x726");
 	process.exit(1);
 }
-if (!text.includes("function hz51Stroke") || !text.includes("function hz51HeadSlots") || !text.includes("hzSetOver")) {
+if (!text.includes('id == "dropout"')) {
+	text = text.replace(
+		'else if(id.indexOf("dopt") == 0) { this.hz51DropPick(rows[this.hzSetDrop], int(id.substr(4))); this.hzSetDrop = -1; this.hzSetFocus = 0; dirty = true; }',
+		'else if(id == "dropout") { this.hzSetDrop = -1; this.hzSetFocus = 0; dirty = true; }\n            else if(id == "dropbg") { }\n            else if(id.indexOf("dopt") == 0) { this.hz51DropPick(rows[this.hzSetDrop], int(id.substr(4))); this.hzSetDrop = -1; this.hzSetFocus = 0; dirty = true; }'
+	);
+}
+if (!text.includes("function hz51Stroke") || !text.includes("function hz51HeadSlots") || !text.includes("hzSetOver") || !text.includes("function hz51HitAt") || !text.includes("function hz51Disk")) {
 	console.error("splice missing new helpers");
 	process.exit(1);
 }

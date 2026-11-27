@@ -121,6 +121,42 @@ function overlap(a, b) {
 
 expect(constN("HZ51_INFO_R") === 6 && /\+ 14/.test(fnText(as, "hz51DrawList").body) && /hz51InfoIcon/.test(fnText(as, "hz51DrawList").body),
 	"(i) is a 12px disc with 14px after the label");
+expect(/hz51Disk/.test(fnText(as, "hz51InfoIcon").body) && /hz34Ring/.test(fnText(as, "hz51InfoIcon").body) && !/hz51Stroke/.test(fnText(as, "hz51InfoIcon").body),
+	"(i) is a 16-gon disc plus hz34Ring, not hz51Stroke's square bars");
+expect(/hz51T\(b,"i"/.test(fnText(as, "hz51InfoIcon").body) && /"center"/.test(fnText(as, "hz51InfoIcon").body),
+	"(i) letter is a centered TextField, not a subpixel rect");
+expect(/Math\.PI \* 2/.test(fnText(as, "hz51Disk").body) && /n:int = 16/.test(fnText(as, "hz51Disk").body),
+	"disc uses 16 lineTo segments so 1080p and 1440p stay round");
+
+expect(/function hz51HitAt/.test(as) && /id == "dropout"/.test(fnText(as, "hzSettingsMouse").body),
+	"open dropdowns own the click; a miss closes the list instead of hitting the row below");
+expect(/indexOf\("dopt"\) == 0/.test(fnText(as, "hz51HitAt").body) && /hzSetDropMenu/.test(fnText(as, "hz51HitAt").body),
+	"dopt hits win over SIZE sliders; the menu rect swallows padding clicks");
+expect(/h\":HZ51_DROP_ITEM\}/.test(fnText(as, "hz51DrawDrop").body) || /h\":HZ51_DROP_ITEM\)/.test(fnText(as, "hz51DrawDrop").body) || /h\":HZ51_DROP_ITEM/.test(fnText(as, "hz51DrawDrop").body),
+	"option hit rects use the full 24px row so scroll and upward lists have no gap");
+{
+	const hitFn = new Function("mx", "my", fnText(as, "hz51HitAt").body.replace(/var (\w+):[\w.*]+/g, "let $1").replace(/Number\(/g, "(").replace(/String\(/g, "String("));
+	const bar = { id: "bar3", x: 700, y: 200, w: 160, h: 48 };
+	const row = { id: "row4", x: 268, y: 200, w: 760, h: 48 };
+	const dopt = { id: "dopt2", x: 700, y: 210, w: 148, h: 24 };
+	const dropHost = { hzSetDrop: 1, hzSetHits: [row, bar, dopt], hzSetDropMenu: { x: 700, y: 180, w: 148, h: 120 } };
+	const picked = hitFn.call(dropHost, 740, 220);
+	expect(picked && picked.id === "dopt2", "a click on option 2 hits dopt even when a SIZE bar sits under it: " + (picked && picked.id));
+	const miss = hitFn.call(dropHost, 100, 400);
+	expect(miss && miss.id === "dropout", "a click outside an open menu is dropout, not the sidebar or a row");
+	const closed = hitFn.call({ hzSetDrop: -1, hzSetHits: [row, bar], hzSetDropMenu: null }, 740, 220);
+	expect(closed && closed.id === "bar3", "with the menu closed, reverse walk still prefers the slider over its row");
+}
+
+expect(constN("HZ51_SEC") === 36 && /HZ_SET_TOP \+ 64/.test(fnText(as, "hz51ListBox").body),
+	"page title has 64px before the list; section headers keep a 36px gap before the first row");
+expect(/firstSec \? 2 : 10/.test(fnText(as, "hz51DrawList").body),
+	"section titles add extra space before the first setting row on every page");
+
+expect(/function hz51AddCard/.test(as) && /function hz51Fallback/.test(as),
+	"STATUS / COMBAT / INTERACTION append per card and fall back to the old catalog if a builder throws");
+expect(/COLUMN","ROW","ICONS ONLY/.test(fnText(as, "hz51Cards").body) && /VANILLA","HORIZON DOT/.test(fnText(as, "hz51Cards").body),
+	"AfflictionLayout and CrosshairStyle use inline option lists so a missing name table cannot empty the page");
 expect(/HZ51_WIN_W/.test(fnText(as, "hz51Fit").body) && constN("HZ51_WIN_W") === 1260 && /HZ_SET_H:Number = 726/.test(as),
 	"final window cap is 1260 x 726");
 expect(insert.indexOf("HZ51_WIN_W") >= 0 && draw.indexOf("hz51FindClose") >= 0, "source of truth is still hz51_insert.as / hz51_draw.as");
