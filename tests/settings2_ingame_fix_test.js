@@ -157,6 +157,51 @@ expect(/function hz51AddCard/.test(as) && /function hz51Fallback/.test(as),
 	"STATUS / COMBAT / INTERACTION append per card and fall back to the old catalog if a builder throws");
 expect(/COLUMN","ROW","ICONS ONLY/.test(fnText(as, "hz51Cards").body) && /VANILLA","HORIZON DOT/.test(fnText(as, "hz51Cards").body),
 	"AfflictionLayout and CrosshairStyle use inline option lists so a missing name table cannot empty the page");
+
+expect(/hz51FbLog\("eRows"/.test(fnText(as, "hz51Rows").body) && /hz51FbLog\("eFb"/.test(fnText(as, "hz51Rows").body),
+	"eRows and eFb log once through hz51FbLog (page id + error)");
+expect(/hz51FbLog\("eAdd"/.test(fnText(as, "hz51AddCard").body),
+	"eAdd logs the section id and error");
+expect(/hz51FbLog\("ePick"/.test(fnText(as, "hz51Fallback").body),
+	"ePick logs the page id and error");
+expect(/hz51FbLog\("eSc"/.test(fnText(as, "hz51Cards").body) && /hz51FbLog\("eSc"/.test(fnText(as, "hz51Fallback").body),
+	"eSc logs from the combat builder and from the fallback Scope append");
+expect(/if\(this\.hzWlOn\) \{ this\.hzWlPush\(line\); \}/.test(fnText(as, "hz51FbLog").body) && /page=/.test(fnText(as, "hz51FbLog").body) && /err=/.test(fnText(as, "hz51FbLog").body),
+	"the fallback log line goes to HorizonUI.log via hzWlPush (watchlog gate) with page and error");
+expect(/hz51FbSeen\[key\] === true/.test(fnText(as, "hz51FbLog").body) && /hz51FbSeen = null/.test(fnText(as, "hzToggleSettings").body),
+	"each catch logs once per F11 open, not per draw; open clears the seen map");
+expect(/SETTINGS FALLBACK/.test(fnText(as, "hzDbgShow").body) && /hz51FbDbg/.test(fnText(as, "hzDbgShow").body) && /hzDebug/.test(fnText(as, "hz51FbLog").body),
+	"Debug Overlay shows the fallback line when diagnostics are on");
+expect(/hz51RuleRow\("VitalsRule"/.test(fnText(as, "hz51Fallback").body) && /hz51RuleRow\("JetpackRule"/.test(fnText(as, "hz51Fallback").body) && /hz51RuleRow\("AfflictionsRule"/.test(fnText(as, "hz51Fallback").body),
+	"fallback STATUS keeps SHOW WHEN (VitalsRule, JetpackRule, AfflictionsRule)");
+{
+	const logBody = asJs(fnText(as, "hz51FbLog").body);
+	const logFn = new Function("tag", "page", "err", logBody);
+	const host = { hz51FbSeen: null, hz51FbDbg: "", hzDebug: true, hzWlOn: true, dbgN: 0, pushed: [], hzWlPush(s) { this.pushed.push(s); }, hzDbgShow() { this.dbgN++; } };
+	logFn.call(host, "eRows", "sta", { message: "null opts" });
+	logFn.call(host, "eRows", "sta", { message: "null opts" });
+	logFn.call(host, "ePick", "sta", { message: "catalog" });
+	expect(host.pushed.length === 2 && host.pushed[0].indexOf("eRows") >= 0 && host.pushed[0].indexOf("page=sta") >= 0 && host.pushed[0].indexOf("null opts") >= 0,
+		"first catch logs page and message: " + host.pushed[0]);
+	expect(host.dbgN === 2 && host.hz51FbDbg.indexOf("eRows") >= 0 && host.hz51FbDbg.indexOf("ePick") >= 0,
+		"Debug Overlay is refreshed once per distinct catch, not on the repeat");
+	const fbBody = fnText(as, "hz51Fallback").body.replace(/var (\w+):[\w.*]+/g, "let $1").replace(/catch\((\w+):\w+\)/g, "catch($1)").replace(/ as Array/g, "").replace(/\bint\(/g, "(");
+	const fbFn = new Function("tab", "id", "const HZ_RULE_NAMES = ['ALWAYS','COMBAT ONLY','HIDE IN SHIP','WEAPON DRAWN ONLY','IN USE / NOT FULL','WHEN NOT FULL (HP/O2)','ONLY WHEN AFFLICTED','ON XP / LEVEL / CREDITS','WHEN OVERWEIGHT','XP / LEVEL OR OVERWEIGHT'];\n" + fbBody);
+	const fbHost = {
+		pushed: [],
+		hz51FbLog(tag, page, err) { this.pushed.push(tag + ":" + page); },
+		hz34CardRows() { throw new Error("catalog"); },
+		hz51Pick() { return []; },
+		hz51ByKey(rows) { const m = {}; for (const r of rows) if (r && r.k) m[r.k] = r; return m; },
+		hz51RuleRow(key, ids) { return { k: key, l: "SHOW WHEN", t: "q", ids: ids || [], opts: ["ALWAYS"] }; },
+		hz42ScRows() { }
+	};
+	const staFb = fbFn.call(fbHost, 0, "sta") || [];
+	const ks = staFb.map((r) => String(r.k));
+	expect(ks.indexOf("VitalsRule") >= 0 && ks.indexOf("JetpackRule") >= 0 && ks.indexOf("AfflictionsRule") >= 0,
+		"fallback STATUS rows include the three SHOW WHEN rules when the catalog throws");
+	expect(fbHost.pushed.indexOf("ePick:sta") >= 0, "catalog throw logs ePick for STATUS");
+}
 expect(/HZ51_WIN_W/.test(fnText(as, "hz51Fit").body) && constN("HZ51_WIN_W") === 1260 && /HZ_SET_H:Number = 726/.test(as),
 	"final window cap is 1260 x 726");
 expect(insert.indexOf("HZ51_WIN_W") >= 0 && draw.indexOf("hz51FindClose") >= 0, "source of truth is still hz51_insert.as / hz51_draw.as");

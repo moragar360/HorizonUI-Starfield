@@ -3272,7 +3272,8 @@
          var df:TextFormat = new TextFormat(this.hzFont ? this.hzFont : "$MAIN_Font",14,0xFFFF66);
          this.hzDbgText.defaultTextFormat = df;
          this.hzDbgText.visible = true;
-         this.hzDbgText.text = "CROSSHAIR: " + this.hzDbgCross + "\n\nWEAPON: " + this.hzDbgWeap + "\n\nCOMPASS (array:type x count): " + this.hzDbgCmp + "\n\nENV KEYS:\n" + this.hzDbgEnv + "\n\nV0.26 PROVIDERS:\n" + this.hz26DbgText();
+         var fb51:String = this.hz51FbDbg != null && this.hz51FbDbg.length > 0 ? "\n\nSETTINGS FALLBACK:\n" + this.hz51FbDbg : "";
+         this.hzDbgText.text = "CROSSHAIR: " + this.hzDbgCross + "\n\nWEAPON: " + this.hzDbgWeap + "\n\nCOMPASS (array:type x count): " + this.hzDbgCmp + "\n\nENV KEYS:\n" + this.hzDbgEnv + "\n\nV0.26 PROVIDERS:\n" + this.hz26DbgText() + fb51;
          this.hzDbgText.setTextFormat(df);
          this.hzDbgText.textColor = 0xFFFF66;
       }
@@ -4767,6 +4768,8 @@
       private var hzSetDropScroll:int = 0;        // first visible option when the menu is taller than the gap
       private var hzSetDropVis:int = 0;           // how many options the open menu can show
       private var hzSetOver:Sprite = null;        // dropdown / find layer above row text (body.graphics sits behind children)
+      private var hz51FbSeen:Object = null;       // tag:page already logged this F11 open (hz51Rows runs every draw)
+      private var hz51FbDbg:String = "";          // Debug Overlay lines so a fallback never looks like success
       // Compact shell: old F11 was 1000x660. Height stays 726. Width 1260 gives the
       // header, extended key grid, and right-aligned controls room without covering
       // HUD side cards at 1080p or 1440p (hz51Fit never grows past this cap).
@@ -5335,6 +5338,25 @@
          while(extra != null && i < extra.length) { if(extra[i] != null) { rows.push(extra[i]); } i++; }
          return rows;
       }
+      // Purpose: one HorizonUI.log line per fallback catch per F11 open. hz51Rows
+      // runs every draw, so the same throw must not queue or rebuild the overlay
+      // again. Inputs: catch tag, page or section id, Error. Outputs: hzWlPush
+      // once; Debug Overlay text when hzDebug is on. No HUD-frame work.
+      private function hz51FbLog(tag:String, page:String, err:Error) : void
+      {
+         if(this.hz51FbSeen == null) { this.hz51FbSeen = {}; }
+         var key:String = String(tag) + ":" + String(page);
+         if(this.hz51FbSeen[key] === true) { return; }
+         this.hz51FbSeen[key] = true;
+         var msg:String = "";
+         if(err != null) { try { msg = String(err.message); } catch(eMsg:Error) { msg = "error"; } }
+         var line:String = "hz51 fallback " + tag + " page=" + page + " err=" + msg;
+         if(this.hzWlOn) { this.hzWlPush(line); }
+         if(this.hz51FbDbg == null) { this.hz51FbDbg = ""; }
+         if(this.hz51FbDbg.length > 0) { this.hz51FbDbg += "\n"; }
+         this.hz51FbDbg += line;
+         if(this.hzDebug) { this.hzDbgShow(); }
+      }
       // Purpose: append one card's rows. A throw in extras (null copy, missing
       // name table) must not wipe the rest of STATUS / COMBAT / INTERACTION.
       private function hz51AddCard(rows:Array, onKey:String, onLab:String, section:String, ruleKey:String, ruleIds:Array, scaleKey:String, compactKey:String, extra:Array) : void
@@ -5347,7 +5369,12 @@
          }
          catch(eAdd:Error)
          {
+            this.hz51FbLog("eAdd", section, eAdd);
             rows.push({"k":onKey,"l":onLab,"t":"b","h":section});
+            if(ruleKey != null && ruleKey.length > 0)
+            {
+               try { rows.push(this.hz51RuleRow(ruleKey, ruleIds)); } catch(eAddRule:Error) { }
+            }
          }
       }
       private function hz51Goto(id:String, lab:String, tab:int, page:int, key:String, section:String) : Object
@@ -5432,7 +5459,8 @@
          catch(eRows:Error)
          {
             // Keep any rows already built; only a total miss uses the placeholder.
-            try { rows = this.hz51Fallback(tab, id); } catch(eFb:Error) { if(rows == null) { rows = []; } }
+            this.hz51FbLog("eRows", id, eRows);
+            try { rows = this.hz51Fallback(tab, id); } catch(eFb:Error) { this.hz51FbLog("eFb", id, eFb); if(rows == null) { rows = []; } }
          }
          var done:Array = this.hz51Finish(rows);
          if(done == null || done.length == 0)
@@ -5454,13 +5482,18 @@
          else if(id == "int") { keys = ["ShowTarget","NameHover","HoverScale","TargetAnchor","TargetShowValue","ContainerScale","ContainerOpacity","ObjectRing","VehicleExitPill"]; }
          else { return []; }
          var picked:Array = [];
-         try { picked = this.hz51Pick(this.hz34CardRows(), keys); } catch(ePick:Error) { picked = []; }
+         try { picked = this.hz51Pick(this.hz34CardRows(), keys); } catch(ePick:Error) { this.hz51FbLog("ePick", id, ePick); picked = []; }
          if(id == "sta")
          {
             picked.push({"k":"EdgePulse","l":"LOW HEALTH / O2 SCREEN-EDGE PULSE","t":"b","h":"WARNINGS"});
             picked.push({"k":"AfflictionLayout","l":"LAYOUT","t":"r","opts":["COLUMN","ROW","ICONS ONLY"],"ids":[0,1,2],"sub":true});
             picked.push({"k":"AutoCenterVitals","l":"AUTO-CENTER WHEN EQUIPMENT HIDDEN","t":"b","sub":true});
             picked.push({"k":"RegenSliver","l":"HEALING REGEN SLIVER","t":"b","sub":true});
+            // SHOW WHEN lives on the old RULES tab, not hz34CardRows; pick cannot restore it.
+            var haveSta:Object = this.hz51ByKey(picked);
+            if(haveSta["VitalsRule"] == undefined) { picked.push(this.hz51RuleRow("VitalsRule",[0,5,1,2])); }
+            if(haveSta["JetpackRule"] == undefined) { picked.push(this.hz51RuleRow("JetpackRule",[0,4,1,2])); }
+            if(haveSta["AfflictionsRule"] == undefined) { picked.push(this.hz51RuleRow("AfflictionsRule",[0,6,1,2])); }
          }
          if(id == "com")
          {
@@ -5469,7 +5502,7 @@
             picked.push({"k":"HitMarkers","l":"HIT MARKER / KILL X","t":"b","h":"COMBAT FEEDBACK"});
             picked.push({"k":"DamageNumbers","l":"DAMAGE NUMBERS","t":"b"});
             picked.push({"k":"DirectionRing","l":"DAMAGE DIRECTION RING","t":"b"});
-            try { this.hz42ScRows(picked); } catch(eScFb:Error) { }
+            try { this.hz42ScRows(picked); } catch(eScFb:Error) { this.hz51FbLog("eSc", id, eScFb); }
          }
          return picked;
       }
@@ -5517,7 +5550,7 @@
             rows.push({"k":"HitMarkers","l":"HIT MARKER / KILL X","t":"b","h":"COMBAT FEEDBACK"});
             rows.push({"k":"DamageNumbers","l":"DAMAGE NUMBERS","t":"b"});
             rows.push({"k":"DirectionRing","l":"DAMAGE DIRECTION RING","t":"b"});
-            try { this.hz42ScRows(rows); } catch(eSc:Error) { }
+            try { this.hz42ScRows(rows); } catch(eSc:Error) { this.hz51FbLog("eSc", id, eSc); }
             return rows;
          }
          if(id == "nav")
@@ -8661,6 +8694,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hzSetHexK = "";
          this.hzSetGlowK = "";
          this.hz51Pad = this.hzVehPad == 1;
+         this.hz51FbSeen = null;
+         this.hz51FbDbg = "";
          try { this.hz51IndexBuild(); } catch(eIdx:Error) { this.hzSetIdx = []; }
          this.hzSetRow = 0;
          this.hzSetScroll = 0;

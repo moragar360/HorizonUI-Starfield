@@ -59,7 +59,19 @@ if (!text.includes('id == "dropout"')) {
 		'else if(id == "dropout") { this.hzSetDrop = -1; this.hzSetFocus = 0; dirty = true; }\n            else if(id == "dropbg") { }\n            else if(id.indexOf("dopt") == 0) { this.hz51DropPick(rows[this.hzSetDrop], int(id.substr(4))); this.hzSetDrop = -1; this.hzSetFocus = 0; dirty = true; }'
 	);
 }
-if (!text.includes("function hz51Stroke") || !text.includes("function hz51HeadSlots") || !text.includes("hzSetOver") || !text.includes("function hz51HitAt") || !text.includes("function hz51Disk")) {
+if (!text.includes("this.hz51FbSeen = null")) {
+	text = text.replace(
+		"this.hz51Pad = this.hzVehPad == 1;",
+		"this.hz51Pad = this.hzVehPad == 1;\n         this.hz51FbSeen = null;\n         this.hz51FbDbg = \"\";"
+	);
+}
+if (!text.includes("SETTINGS FALLBACK")) {
+	text = text.replace(
+		'this.hzDbgText.text = "CROSSHAIR: " + this.hzDbgCross + "\\n\\nWEAPON: " + this.hzDbgWeap + "\\n\\nCOMPASS (array:type x count): " + this.hzDbgCmp + "\\n\\nENV KEYS:\\n" + this.hzDbgEnv + "\\n\\nV0.26 PROVIDERS:\\n" + this.hz26DbgText();',
+		'var fb51:String = this.hz51FbDbg != null && this.hz51FbDbg.length > 0 ? "\\n\\nSETTINGS FALLBACK:\\n" + this.hz51FbDbg : "";\n         this.hzDbgText.text = "CROSSHAIR: " + this.hzDbgCross + "\\n\\nWEAPON: " + this.hzDbgWeap + "\\n\\nCOMPASS (array:type x count): " + this.hzDbgCmp + "\\n\\nENV KEYS:\\n" + this.hzDbgEnv + "\\n\\nV0.26 PROVIDERS:\\n" + this.hz26DbgText() + fb51;'
+	);
+}
+if (!text.includes("function hz51Stroke") || !text.includes("function hz51HeadSlots") || !text.includes("hzSetOver") || !text.includes("function hz51HitAt") || !text.includes("function hz51Disk") || !text.includes("function hz51FbLog")) {
 	console.error("splice missing new helpers");
 	process.exit(1);
 }
