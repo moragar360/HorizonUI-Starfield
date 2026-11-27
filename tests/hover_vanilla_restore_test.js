@@ -51,6 +51,17 @@ function toJs(src, name) {
 	expect(/if\(this\.hzShowTarget && !bv\) \{ this\.hz38GiveBackVanilla\(\); \}/.test(SRC), "F11 live toggle: falling edge restores vanilla this frame");
 	expect(/if\(this\.hzShowTarget && !wantTg\) \{ this\.hz38GiveBackVanilla\(\); \}/.test(SRC), "settings apply: falling edge restores vanilla this frame");
 	expect(/if\(!this\.hzShowTarget\)/.test(tick) && tick.indexOf("if(!this.hzShowTarget)") < tick.indexOf("hzT19BtnSync"), "when the feature is off the tick returns before any vanilla prompt clip read or hide");
+	const firstOff = tick.slice(tick.indexOf("if(!this.hzShowTarget)"), tick.indexOf("return;"));
+	expect(/hzTgOrig/.test(firstOff) && /hzT19Off/.test(firstOff),
+		"Hover-off tick restores when only hzTgOrig is nonempty (not only when the hide list or Horizon card is up)");
+	const apply = fnText(SRC, "hzL10nApplyHud").body;
+	expect(/hzT19Sig = ""/.test(apply) && /if\(!this\.hzShowTarget\)/.test(apply) && /hzT19Off\(\)/.test(apply),
+		"language apply / rebuild with Hover off restores vanilla and does not add a third GiveBackVanilla");
+	expect(!/hz38GiveBackVanilla/.test(apply), "language apply uses hzT19Off, not a third GiveBackVanilla");
+	const tgTick = fnText(SRC, "hzTgTick").body;
+	const offBlk = tgTick.slice(tgTick.indexOf("if(!on)"), tgTick.indexOf("if(!on)") + 280);
+	expect(/hzTgOrig/.test(offBlk) && /hzTgRestore/.test(offBlk),
+		"Container-off / !on restores orig snapshots so the stock prompt comes back");
 	const van = fnText(SRC, "hz38Vanilla").body;
 	expect(/hd\.alpha < 0\.05/.test(van) && /hd\.alpha = 1/.test(van), "while Horizon still owns the prompt, a captured 0 alpha is forced to 1");
 	expect(!/hz38GiveBackVanilla/.test(van), "the per-frame vanilla rule does not double as the off-edge restore");
@@ -187,6 +198,37 @@ function makeHost() {
 	holder.alpha = 1;
 	h.hz38GiveBackVanilla();
 	expect(holder.alpha === 0.4, "KeepHold / generic snap still restores the real captured alpha, not a forced 1");
+}
+
+{
+	const { h, header, glyph } = makeHost();
+	h.hzT19HideA(header);
+	h.hzT19HideA(glyph);
+	h.hzTgHidden = [];
+	header.alpha = 0;
+	glyph.alpha = 0;
+	h.hzShowTarget = false;
+	h.HorizonTarget_mc.visible = false;
+	h.hzTg19.visible = false;
+	expect(h.hzTgOrig.length > 0 && h.hzTgHidden.length === 0, "orig-only: hide-walk list empty, snapshots remain");
+	h.hzT19Off();
+	expect(header.alpha === 1 && glyph.alpha === 1 && header.visible === true && glyph.visible === true,
+		"orig-only Off brings TALK/TRADE art back (the path the first tick gate now takes)");
+	expect(!h.HorizonTarget_mc.visible && !h.hzTg19.visible, "Horizon card stays off after orig-only restore");
+}
+
+{
+	const { h, header, unused, glyph } = makeHost();
+	h.hzT19HideA(header);
+	h.hzT19HideA(glyph);
+	h.hzT19KeepHold(null);
+	h.hzShowTarget = false;
+	h.hzT19Sig = "stale-trade";
+	h.hzT19Off();
+	expect(header.alpha === 1 && glyph.alpha === 1, "language apply with Hover off restores name bar and TALK/TRADE glyph");
+	expect(unused.visible === false, "language apply with Hover off restores unused key boxes");
+	expect(!h.HorizonTarget_mc.visible && !h.hzTg19.visible, "language apply with Hover off hides Horizon's circle");
+	expect(h.hzT19Sig === "", "language apply / Off clears the pill signature so TRADE restamps when Hover is on again");
 }
 
 console.log("hover vanilla restore: " + passed + " ok, " + (failed ? failed + " FAILED" : "all passed"));

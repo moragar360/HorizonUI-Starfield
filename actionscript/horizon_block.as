@@ -4997,7 +4997,9 @@
       // by the Language dropdown so it never draws tofu and never switches
       // that list to $MAIN_Font. Not a per-stem flag: a future script Exo 2
       // lacks is rejected the same way. Translated HUD text still uses
-      // hzHasCjk + $MAIN_Font when ja/zh-cn is active.
+      // hzHasCjk + $MAIN_Font per string when that string has CJK. The
+      // Language dropdown never uses that path (Final rule: English name
+      // in Exo 2 when Exo 2 cannot render the native name).
       // Inputs: a UI string. Outputs: whether Exo 2 can render it.
       private function hzExo2Can(s:String) : Boolean
       {
@@ -5281,7 +5283,10 @@
       // hzSetL10n only. Ticks keep using the TextField text already set here.
       // Never stamp player / planet / quest / credit / level fields: those hold
       // live game values. MASS / POWER / RELOAD are state words; hz26CharSync
-      // and hzE19Sync pick the right one with hzLt.
+      // and hzE19Sync pick the right one with hzLt. Target pill verbs (TRADE)
+      // live in hzT19Content: clearing hzT19Sig rebuilds them on the next tick
+      // when Hover is on. When Hover is off, restore vanilla so a language
+      // apply cannot leave Horizon's circle and leader line up.
       private function hzL10nApplyHud() : void
       {
          try
@@ -5301,6 +5306,8 @@
             try { this.hz26CharSync(); } catch(eCh:Error) { }
             try { this.hzE19Sync(); } catch(eEq:Error) { }
             try { this.hzPpLayout(); } catch(ePp:Error) { }
+            this.hzT19Sig = "";
+            if(!this.hzShowTarget) { this.hzT19Off(); }
          }
          catch(eApp:Error) { }
       }
@@ -17981,9 +17988,13 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
 
       private function hzT19Tick() : void
       {
+         // Hover + Container off: restore even when only hzTgOrig is nonempty
+         // (KeepHold / HideA snapshots with an empty hide-walk list). Skipping
+         // that left vanilla TALK/TRADE at alpha 0 and Horizon's circle +
+         // leader line on screen. Language apply also calls hzT19Off when off.
          if(!this.hzShowTarget)
          {
-            if((this.HorizonTarget_mc && this.HorizonTarget_mc.visible) || (this.hzTg19 && this.hzTg19.visible) || (this.hzTgHidden != null && this.hzTgHidden.length > 0))
+            if((this.HorizonTarget_mc && this.HorizonTarget_mc.visible) || (this.hzTg19 && this.hzTg19.visible) || (this.hzTgHidden != null && this.hzTgHidden.length > 0) || (this.hzTgOrig != null && this.hzTgOrig.length > 0))
             {
                this.hzT19Off();
             }

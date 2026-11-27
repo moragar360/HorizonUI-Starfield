@@ -96,7 +96,8 @@ inline std::string MapCode(std::string_view a_raw)
 // combining marks, general punctuation, currency. CJK / Hangul / Arabic /
 // Thai / Cyrillic / non-BMP are not in the HUD Exo 2 face, so those names
 // must never be drawn there (tofu). Translated HUD text still uses
-// $MAIN_Font via hzHasCjk when ja/zh-cn is active.
+// $MAIN_Font via hzHasCjk per string when that string has CJK. The
+// Language dropdown never uses that path (Final rule).
 inline bool Exo2CanCp(std::uint32_t a_cp)
 {
 	if (a_cp <= 0x024F) return true;

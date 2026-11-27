@@ -97,6 +97,8 @@ expect(!/\$MAIN_Font/.test(fnText(insert, "hz51LangName").body)
 	&& !/\$MAIN_Font/.test(fnText(insert, "hz51Exo2Text").body)
 	&& !/\$MAIN_Font/.test(fnText(draw, "hz51DrawDrop").body),
 	"Language dropdown path never selects $MAIN_Font");
+expect(!/when ja\/zh-cn is active/.test(insert) && !/when ja\/zh-cn is active/.test(as),
+	"Clarification wording (native CJK in the dropdown when ja/zh-cn is active) is gone");
 expect(/cjk \? "\$MAIN_Font"/.test(fnText(as, "hzWT").body) || /cjk \? "\$MAIN_Font"/.test(fnText(as, "hzApplyFmt19").body),
 	"translated HUD text still uses $MAIN_Font when the string is CJK");
 
@@ -121,7 +123,7 @@ host.hzL10n = {
 	"settings.language.de": "Deutsch (German)"
 };
 expect(host.hz51LangName("ja") === "Japanese" && host.hz51LangName("zh-cn") === "Simplified Chinese",
-	"when ja/zh-cn overlay supplies native CJK names the dropdown still shows English in Exo 2");
+	"Final rule: overlay native CJK names still become English in Exo 2 (Clarification superseded)");
 expect(host.hz51LangName("de") === "Deutsch (German)",
 	"an overlay that stays in Exo 2 keeps the native name");
 host.hzL10n = null;

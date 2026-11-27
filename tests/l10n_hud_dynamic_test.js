@@ -72,6 +72,9 @@ expect(/hz43SetTx\(this\.hz43LocL,this\.hzLt\("LOCAL\/GAME"\)\)/.test(as)
 	&& /hz43SetTx\(this\.hz43RealL,this\.hzLt\("PC\/REAL"\)\)/.test(as),
 	"watch clock labels go through hzLt when the face is written");
 expect(/hzPpLayout\(\)/.test(apply), "language apply re-lays the planet card so SAFE / AIR / clocks refresh");
+expect(/hzT19Sig = ""/.test(apply), "language apply invalidates the target-pill signature so TRADE restamps");
+expect(/if\(!this\.hzShowTarget\)/.test(apply) && /hzT19Off\(\)/.test(apply),
+	"language apply restores vanilla when Hover is off (does not leave the circle and leader line)");
 
 const t19 = fnText(as, "hzT19Label").body;
 expect(/hzT19VanLbl/.test(t19) && /hzLt\(s\)/.test(t19),
