@@ -1,15 +1,4 @@
 {
-  "_meta": {
-    "mod": "Horizon UI",
-    "author": "Moragar",
-    "language": "de",
-    "languageName": "Deutsch",
-    "gameLanguageCodes": [
-      "de"
-    ],
-    "schema": 1,
-    "notes": "Deutsche Übersetzung. Diese Datei kopieren, alle Schlüssel beibehalten und nur Zeichenfolgenwerte ersetzen. Platzhalter sehen so aus: {0} {1} {name}. Diese beibehalten. Horizon-eigene Zeichenfolgen nicht in $-Tokens einschließen."
-  },
   "settings": {
     "tabs": {
       "cards": "KARTEN",
@@ -37,17 +26,17 @@
     "language": {
       "label": "SPRACHE",
       "help": "Sprache für Horizon-Beschriftungen, Einstellungen und Schnellmenü. Automatisch folgt der Spielsprache. Nach einer Änderung lädt OK die Sprache einmal neu. Gegenstandsnamen und die spielinternen $-Tokens bleiben in der Spielsprache.",
-      "auto": "Auto (Spiel)",
-      "en": "English",
-      "de": "Deutsch (German)",
-      "fr": "Français (French)",
-      "es": "Español (Spanish)",
+      "auto": "AUTO (SPIEL)",
+      "en": "ENGLISCH",
+      "de": "DEUTSCH",
+      "fr": "FRANZÖSISCH",
+      "es": "SPANISCH",
       "es-mx": "Español de Latinoamérica (Spanish, Latin America)",
-      "it": "Italiano (Italian)",
-      "ja": "日本語 (Japanese)",
-      "pl": "Polski (Polish)",
+      "it": "ITALIENISCH",
+      "ja": "JAPANISCH",
+      "pl": "POLNISCH",
       "pt-br": "Português do Brasil (Portuguese, Brazil)",
-      "zh-cn": "简体中文 (Simplified Chinese)",
+      "zh-cn": "CHINESISCH (VEREINFACHT)",
       "game": "SPIELSPRACHE",
       "horizon": "HORIZON-SPRACHE",
       "gameLine": "Beim Start erkannt. Folgt nicht der Auswahl darunter.",
@@ -1301,5 +1290,16 @@
       "quest": "QUEST",
       "location": "ORT"
     }
+  },
+  "_meta": {
+    "mod": "Horizon UI",
+    "author": "Moragar",
+    "language": "de",
+    "languageName": "Deutsch",
+    "gameLanguageCodes": [
+      "de"
+    ],
+    "schema": 1,
+    "notes": "Deutsche Übersetzung. Diese Datei kopieren, alle Schlüssel beibehalten und nur Zeichenfolgenwerte ersetzen. Platzhalter sehen so aus: {0} {1} {name}. Diese beibehalten. Horizon-eigene Zeichenfolgen nicht in $-Tokens einschließen."
   }
 }

@@ -315,7 +315,7 @@ int main()
 	}
 
 	const auto de = ReadAll("Data/SFSE/Plugins/HorizonUI/Localization/de.json");
-	Expect(!de.empty() && Has(de, "\"language\": \"de\"") && Has(de, "Deutsch (German)"),
+	Expect(!de.empty() && Has(de, "\"language\": \"de\"") && Has(de, "GESUNDHEIT") && Has(de, "SPRACHE"),
 		"shipped de.json is German");
 	Expect(!(de.size() >= 3 && static_cast<unsigned char>(de[0]) == 0xEF
 			&& static_cast<unsigned char>(de[1]) == 0xBB && static_cast<unsigned char>(de[2]) == 0xBF),
