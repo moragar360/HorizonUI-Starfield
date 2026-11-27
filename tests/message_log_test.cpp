@@ -5,7 +5,7 @@
 //   g++ -std=c++20 -Wall -Wextra -pthread -I src -DMSGLOG_REPO_ROOT=\"$PWD\" tests/message_log_test.cpp -o test_scratch/message_log_test
 // Or: MSGLOG_REPO_ROOT=$PWD test_scratch/message_log_test  (relative __FILE__ still finds the repo).
 // Author: Moragar
-// Last modified: 2026-10-29.
+// Last modified: 2026-11-26.
 
 #include "hz_addr_probe.h"
 #include "hz_test_scratch.h"
@@ -3425,8 +3425,10 @@ int main()
 			"the log popup is 976 wide");
 		Expect(as.find("HZ_ML_CLOCK:Number = 168") != std::string::npos,
 			"the time column is 168 px");
-		Expect(as.find("HZ_SET_W:Number = 1848") != std::string::npos,
-			"the F11 window defaults to the mockup 1848 width");
+		Expect(as.find("HZ_SET_W:Number = 1100") != std::string::npos,
+			"the F11 window defaults to 1100 (10% over the old 1000 clip)");
+		Expect(as.find("HZ_SET_H:Number = 726") != std::string::npos,
+			"the F11 window defaults to 726 (10% over the old 660 clip)");
 		Expect(as.find("HZ_ML_H") != std::string::npos && as.find("620") != std::string::npos,
 			"the log popup is 620 tall");
 		Expect(as.find("HZ_ML_VIS") != std::string::npos && as.find("HZ_ML_ROW") != std::string::npos,

@@ -135,7 +135,7 @@
          g.drawRoundRect(px0,py0,pw,ph,15,15);
          g.endFill();
          this.hz51Stroke(g,px0,py0,pw,ph,uint(T.txt),psel ? 0.28 : 0.16,15);
-         this.hz51T(b,"COMPACT MODE (STRIPS)",px0 + 12,py0 + 8,pw - 58,11,"bd",uint(T.lab),0.8);
+         this.hz51T(b,"COMPACT MODE (STRIPS)",px0 + 12,py0 + 8,pw - 46,11,"bd",uint(T.lab),0.8);
          this.hz51Switch(b,g,px0 + pw - 8,py0 + ph / 2,pon,T);
          this.hzSetHits.push({"id":"compact","x":px0,"y":py0,"w":pw,"h":ph});
       }
@@ -775,6 +775,19 @@
             g.beginFill(acc,0.9); g.drawRoundRect(trX,thY,4,thH,2,2); g.endFill();
          }
       }
+      // Purpose: mouse wheel on an open dropdown. One option row per notch from
+      // the existing wheelup/wheeldown queue (native already forwards the wheel).
+      // Keeps the highlight in the visible window. No polling, no extra listeners.
+      // Inputs: d +1 down / -1 up, n option count. Outputs: hzSetDropScroll / Hi.
+      private function hz51DropWheel(d:int, n:int) : void
+      {
+         var vis:int = this.hzSetDropVis > 0 ? this.hzSetDropVis : 1;
+         if(n < 1) { return; }
+         var maxS:int = Math.max(0, n - vis);
+         this.hzSetDropScroll = Math.max(0, Math.min(maxS, this.hzSetDropScroll + d));
+         if(this.hzSetDropHi < this.hzSetDropScroll) { this.hzSetDropHi = this.hzSetDropScroll; }
+         if(this.hzSetDropHi >= this.hzSetDropScroll + vis) { this.hzSetDropHi = this.hzSetDropScroll + vis - 1; }
+      }
       private function hz51Key(code:String) : Boolean
       {
          this.hz51NotePad(code);
@@ -843,6 +856,11 @@
                this.hz51DropPick(rr, this.hzSetDropHi);
                this.hzSetDrop = -1;
                this.hzSetFocus = 0;
+               return true;
+            }
+            if(code == "wheelup" || code == "wheeldown")
+            {
+               this.hz51DropWheel(code == "wheeldown" ? 1 : -1, opts.length);
                return true;
             }
             return true;

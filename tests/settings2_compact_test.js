@@ -123,8 +123,10 @@ for (const tab of [0, 2, 4]) {
 		expect(arr.x + arr.w <= 1100 - 16, "tab " + tab + ": Arrange stays inside the header");
 	}
 	expect(find.x + find.w <= (s.arrW > 0 ? arr.x : 1100 - 16), "tab " + tab + ": search stays left of Arrange / the right margin");
-	expect(compact.w >= 96 && find.w === 176, "tab " + tab + ": compact and search have usable widths");
+	expect(compact.w >= 220 && find.w === 176, "tab " + tab + ": compact has room for COMPACT MODE (STRIPS); search stays 176");
 }
+expect(/pw - 46/.test(fnText(as, "hz51DrawCompact").body),
+	"compact label uses the extra slot width (not a 58px ON/OFF gutter)");
 expect(/hz51T\(b,txt/.test(fnText(as, "hz51DrawSearchBox").body) && /fill\),0\.88/.test(fnText(as, "hz51DrawSearchBox").body),
 	"search field uses 12px text on an opaque fill so placeholder and typed text stay readable");
 expect(!/ON" : "OFF"/.test(fnText(as, "hz51Switch").body),
@@ -133,6 +135,29 @@ expect(/hzSetFillA/.test(as) && /SettingsOpacity/.test(fnText(as, "hz51System").
 	"SETTINGS WINDOW % (SettingsOpacity) still tints the window while you adjust");
 expect(!/hzSetMove|drag window|window drag/i.test(fnText(as, "hz51Draw").body + fnText(as, "hzSettingsMouse").body),
 	"the F11 window is not dragged (Arrange Cards still moves HUD cards; no new move feature)");
+
+const keyBody = fnText(as, "hz51Key").body;
+const dropStart = keyBody.indexOf("hzSetDrop >= 0");
+const dropEnd = keyBody.indexOf("hz51TypeChar(code) == \"/\"");
+const dropKey = dropStart >= 0 && dropEnd > dropStart ? keyBody.slice(dropStart, dropEnd) : "";
+expect(/wheelup/.test(dropKey) && /wheeldown/.test(dropKey) && /hz51DropWheel/.test(dropKey),
+	"an open dropdown handles wheelup/wheeldown (Accent Color and other long lists)");
+expect(!/hzSetScrollBy/.test(dropKey), "dropdown wheel does not scroll the F11 row list");
+expect(!/addEventListener|enterFrame|ENTER_FRAME|new Timer|setInterval/.test(fnText(as, "hz51DropWheel").body),
+	"dropdown wheel is event-driven from the existing queue; no polling or extra listeners");
+{
+	const wheelFn = new Function("d", "n", "const int = (n) => n | 0;\n" + asJs(fnText(as, "hz51DropWheel").body));
+	const host = { hzSetDropScroll: 0, hzSetDropHi: 0, hzSetDropVis: 4 };
+	wheelFn.call(host, 1, 15);
+	expect(host.hzSetDropScroll === 1 && host.hzSetDropHi === 1,
+		"one wheel-down notch on a 15-item list shows the next option");
+	for (let i = 0; i < 20; i++) { wheelFn.call(host, 1, 15); }
+	expect(host.hzSetDropScroll === 11 && host.hzSetDropHi === 11,
+		"wheel stops at the last window (15 items, 4 visible) and keeps the highlight in view");
+	wheelFn.call(host, -1, 15);
+	expect(host.hzSetDropScroll === 10 && host.hzSetDropHi === 11,
+		"wheel-up moves the open list one row back");
+}
 
 if (failed) { console.error(failed + " failed, " + passed + " passed"); process.exit(1); }
 console.log(passed + " passed");

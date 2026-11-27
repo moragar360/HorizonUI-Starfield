@@ -168,7 +168,7 @@
          var ax:Number = W - 16 - arrW;
          var findW:Number = HZ51_FIND_W;
          var fx:Number = ax - (arrW > 0 ? gap : 0) - findW;
-         var compactW:Number = 200;
+         var compactW:Number = 232;         // room for COMPACT MODE (STRIPS) plus the 36px switch
          var cx:Number = fx - gap - compactW;
          if(cx < titleR)
          {
