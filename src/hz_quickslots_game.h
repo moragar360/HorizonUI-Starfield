@@ -1138,8 +1138,10 @@
 		const int n = hzqs::ClampCount(set.slotCount);
 		// S-3 / S-B: clear (and show empty) only when the form is no longer an inventory object.
 		// N-i: a name-only refuse is sent as a 6th field so the menu can draw the unavailable look.
+		// Assigned rows then send ft|dir|img|weap. weap=1 when LookupByID is TESObjectWEAP (equipment-card tint).
 		bool stale[12]{};
 		bool refuse[12]{};
+		bool weap[12]{};
 		std::uint32_t staleId[12]{};
 		bool anyStale = false;
 		for (int i = hzqs::kExtFirst; i <= n; ++i) {
@@ -1148,6 +1150,8 @@
 			// N-n: one form lookup / AssignmentCheck per slot (not a separate refuse pass).
 			auto* form = RE::TESForm::LookupByID(a->formId);
 			if (!form) continue;
+			// Same form the HUD equipment card tints (TESObjectWEAP). Payload field 9; movie applies hzqCtW.
+			if (form->Is(RE::FormType::kWEAP)) weap[i - hzqs::kExtFirst] = true;
 			const auto chk = hzqs::AssignmentCheck(*a, QmFormName(form), form->IsBoundObject());
 			if (chk == hzqs::SlotCheck::Clear) {
 				stale[i - hzqs::kExtFirst] = true;
@@ -1189,14 +1193,15 @@
 			o += has ? "0" : "1";
 			o.push_back('|');
 			o += refuse[i - hzqs::kExtFirst] ? "1" : "0";
-			if (a->iconType >= 0 && !a->iconName.empty()) {
-				o.push_back('|');
-				o += std::to_string(a->iconType);
-				o.push_back('|');
-				o += hzqs::PayloadSafe(a->iconDir);
-				o.push_back('|');
-				o += hzqs::PayloadSafe(a->iconName);
-			}
+			o.push_back('|');
+			if (a->iconType >= 0 && !a->iconName.empty()) o += std::to_string(a->iconType);
+			else o += "-1";
+			o.push_back('|');
+			o += hzqs::PayloadSafe(a->iconDir);
+			o.push_back('|');
+			o += hzqs::PayloadSafe(a->iconName);
+			o.push_back('|');
+			o += weap[i - hzqs::kExtFirst] ? "1" : "0";
 		}
 		QmInvFindReset();  // N-j: QmHookHas above may have filled the cache on the UI thread
 		if (anyStale) {

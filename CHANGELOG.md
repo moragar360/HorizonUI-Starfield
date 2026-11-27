@@ -27,6 +27,7 @@ TESTONLY build on `test/0.43.5-all`, from `release/0.43.4.0`, with the Extended 
 - **Highlight area sticks:** each time you open the scanner Horizon checks the cone and outline values it set and sets them again if something changed them (one log line). If something keeps changing them (three resets), Horizon gives back what it set and stops managing HIGHLIGHT AREA until you pick another level, so it never fights another mod. The log also notes once at load when your INI or another mod already widens the scanner.
 - **Quick Menu extra icons:** an item icon on slots 13-24 no longer draws at native size over the card. It uses the vanilla 60 px BoundClip sizer and the same after-load fit as slots 1-12, so it stays inside the 72 px card below the key chip.
 - **Quick Menu extra title font:** EXTENDED QUICK / FAVORITE SLOTS uses the same F11 Font helper as the rest of the menu (it could stay on the game face if it was drawn before the Horizon font loaded).
+- **Quick Menu weapon icon tint:** weapon icons on slots 1-12 and 13-24 take the player's F11 accent the same way the HUD equipment card tints its weapon symbol (`hzIconCol` plus `ColorTransform(0,0,0,1, r, g, b, 0)`). Aid and power icons are unchanged. The tint follows a live accent change on the next Quick Menu redraw (not a poll).
 
 ### Notes
 - This is a private TESTONLY build. It is not a public release.

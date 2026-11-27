@@ -91,7 +91,7 @@ function host(iniText) {
 	// 0.43.5 Extended Mode helpers: off (the default), so the 0.43.3 flow under test is unchanged. Checked in 3b.
 	h.hzqExtGot = false;
 	h.hzqExtOn = function () { return false; };
-	for (const n of ["hzqExtPrepare", "hzqExtDraw", "hzqExtFetch", "hzqExtRestore", "hzqExtListen", "hzqExtPlace", "hzqExtPad", "hzqExtRaise", "hzqRingDraw", "hzqUnclip", "hzqExtFontTouch", "hzqExtFrameDraw"]) h[n] = function () {};
+	for (const n of ["hzqExtPrepare", "hzqExtDraw", "hzqExtFetch", "hzqExtRestore", "hzqExtListen", "hzqExtPlace", "hzqExtPad", "hzqExtRaise", "hzqRingDraw", "hzqUnclip", "hzqExtFontTouch", "hzqExtFrameDraw", "hzqApplyIconTint", "hzqIsWeapon"]) h[n] = function () {};
 	h.ItemInfo_mc = { ItemNameBg_mc: clip("a"), ItemName_mc: clip("b"), AmmoType_mc: clip("c"), AmmoAmount_mc: clip("d"), DamageTypeHolder_mc: clip("e") };
 	for (let i = 0; i < 12; i++) h["Entry_" + i] = Object.assign(clip("Entry_" + i, [clip("instance1"), clip("Icon_mc"), clip("Catcher_mc"), clip("Quickkey_tf"), clip("SlotInfoSpacer_mc"), clip("hzqCard")]),
 		{ Icon_mc: null, Quickkey_tf: null });

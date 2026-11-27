@@ -482,5 +482,70 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		"I: center-right info panel does not overlap the HUD equipment card on the right edge");
 }
 
+// ---- J. weapon icons use the HUD equipment-card accent ColorTransform ----
+{
+	const eq = fnText(hud, "hzE19PlaceIcons").body;
+	const tints = fnText(qm, "hzqTints").body;
+	const apply = fnText(qm, "hzqApplyIconTint").body;
+	const isW = fnText(qm, "hzqIsWeapon").body;
+	expect(/ColorTransform\(0,0,0,1,\(col >> 16\) & 0xFF,\(col >> 8\) & 0xFF,col & 0xFF,0\)/.test(eq)
+		&& /this\.hzIconCol\(this\.hzEqLow \? HZ_AMB : HZ_ACCENT\)/.test(eq),
+		"J: equipment card tints the weapon symbol with hzIconCol(accent) and ColorTransform(0,0,0,1,r,g,b,0)");
+	expect(/this\.hzqIconCol\(this\.hzqAccent\(\)\)/.test(tints)
+		&& /this\.hzqCtW\.redMultiplier = 0/.test(tints)
+		&& /this\.hzqCtW\.redOffset = \(a >> 16\) & 0xFF/.test(tints)
+		&& /this\.hzqCtW\.greenOffset = \(a >> 8\) & 0xFF/.test(tints)
+		&& /this\.hzqCtW\.blueOffset = a & 0xFF/.test(tints)
+		&& /this\.hzqCtW\.alphaMultiplier = 1/.test(tints)
+		&& /this\.hzqCtW\.alphaOffset = 0/.test(tints)
+		&& !/HZ_AMB|hzEqLow/.test(tints),
+		"J: Quick Menu hzqCtW is that same add-RGB transform; color source is hzqIconCol(hzqAccent()), no ammo-amber");
+	expect(/function hzqIconCol/.test(qm) && codeOnly(fnText(qm, "hzqIconCol").body).replace(/\s+/g, "")
+		=== codeOnly(fnText(hud, "hzIconCol").body).replace(/this\.hz/g, "this.hzq").replace(/\s+/g, ""),
+		"J: hzqIconCol is the HUD hzIconCol helper (light-card contrast)");
+	expect(/this\.hzqApplyIconTint\(ic,this\.hzqIsWeapon\(it\),empty,sel,it\)/.test(fnText(qm, "hzqCard").body)
+		&& /this\.hzqApplyIconTint\(fe\["Icon_mc"\]/.test(fnText(qm, "hzqIcDone").body),
+		"J: slots 1-12 tint on card draw and after the icon-load callback");
+	expect(/if\(weap\) \{ ic\.transform\.colorTransform = this\.hzqCtW; return; \}/.test(apply)
+		&& /FT_SYMBOL/.test(apply) && /this\.hzqCtA/.test(apply) && /this\.hzqCtN/.test(apply),
+		"J: weapons always get hzqCtW; other symbols keep selected-accent; non-weapon pictures stay identity");
+	expect(/it\.bIsPower == true/.test(isW) && /it\.bIsEquippable == true/.test(isW)
+		&& /aElementalStats/.test(isW) && /sAmmoName/.test(isW),
+		"J: a favorite is a weapon when it is equippable (or has ammo/damage) and not a power");
+	function toJsIsW() {
+		const b = fnText(qm, "hzqIsWeapon").body
+			.replace(/var (\w+):[\w*.]+/g, "let $1")
+			.replace(/catch\((\w+):\w+\)/g, "catch($1)");
+		return new Function("it", b);
+	}
+	const isWeapon = toJsIsW();
+	expect(isWeapon({ sName: "Grendel", bIsEquippable: true, sAmmoName: "7.77mm" }) === true, "J: an equippable gun is a weapon");
+	expect(isWeapon({ sName: "Tanto", bIsEquippable: true }) === true, "J: melee (equippable, no ammo) is a weapon");
+	expect(isWeapon({ sName: "Med Pack", bIsEquippable: false, uCount: 4 }) === false, "J: aid is not a weapon");
+	expect(isWeapon({ sName: "Personal Atmosphere", bIsPower: true, bIsEquippable: true }) === false, "J: a power is not a weapon");
+	expect(isWeapon({ sName: "Razorback", aElementalStats: [{ iElementalType: 0, fValue: 12 }] }) === true,
+		"J: damage stats still count as a weapon if the equippable flag is missing");
+	const extW = fnText(qm, "hzqExtIsWeapon").body;
+	expect(/d\.weap === true/.test(extW) && /kind == "power"/.test(extW) && /kind == "essence"/.test(extW)
+		&& /this\.hzqIsWeapon\(this\.hzqExtIconSrc\(d\)\)/.test(extW),
+		"J: extras use the DLL weap flag (TESObjectWEAP), then the same 1-12 helper");
+	expect(/this\.hzqExtTintIcon\(o,d,empty,sel\)/.test(fnText(qm, "hzqExtDraw").body)
+		&& fnText(qm, "hzqExtDraw").body.indexOf("this.hzqExtTintIcon")
+			> fnText(qm, "hzqExtDraw").body.indexOf("o.cKey = key")
+		&& /this\.hzqExtTintIcon/.test(fnText(qm, "hzqExtIcDone").body)
+		&& /this\.hzqExtTintIcon/.test(fnText(qm, "hzqExtLoadIcon").body)
+		&& /this\.hzqApplyIconTint\(o\.ic/.test(fnText(qm, "hzqExtTintIcon").body),
+		"J: extras re-tint on every draw (accent change, no reload) and after the load callback");
+	expect(/form->Is\(RE::FormType::kWEAP\)/.test(game) && /weap\[i - hzqs::kExtFirst\]/.test(game)
+		&& /f\.length > 9 && String\(f\[9\]\) == "1"/.test(fnText(qm, "hzqExtApply").body),
+		"J: ready payload field 9 is 1 when LookupByID is TESObjectWEAP; assign/use extra is unchanged");
+	expect(!/QmAssign/.test(fnText(qm, "hzqTints").body) && !/hzqExtCmdSend/.test(fnText(qm, "hzqApplyIconTint").body)
+		&& !/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(codeOnly(tints + apply + fnText(qm, "hzqExtTintIcon").body)),
+		"J: tint is change-driven (redraw / load); no poll, no assign/key-equip change");
+	expect(/function hzqApplyIconTint/.test(pimp) && /function hzqApplyIconTint/.test(pimpL)
+		&& /hzqCtW/.test(pimp) && /hzqCtW/.test(pimpL),
+		"J: both movies carry the equipment-card weapon tint");
+}
+
 console.log("quickmenu_assign_keys_test " + (failed ? "FAILED" : "passed") + " (" + passed + " ok, " + failed + " FAIL)");
 process.exit(failed ? 1 : 0);

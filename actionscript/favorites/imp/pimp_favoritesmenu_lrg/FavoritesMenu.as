@@ -454,9 +454,10 @@ package
       private var hzqInfY:Number = 0;
       private var hzqInfObj:Object = null;      // what the info card shows (selected entry, or the item being assigned)
       private var hzqInfSel:Boolean = false;    // hzqInfObj is the selected slot (SLOT row allowed)
-      private var hzqCtA:ColorTransform = null; // reused: accent tint for symbol icons
-      private var hzqCtM:ColorTransform = null; // reused: main text tint for symbol icons
-      private var hzqCtN:ColorTransform = null; // reused: identity (images)
+      private var hzqCtA:ColorTransform = null; // reused: accent multiply tint for non-weapon symbol icons
+      private var hzqCtM:ColorTransform = null; // reused: main text tint for non-weapon symbol icons
+      private var hzqCtN:ColorTransform = null; // reused: identity (non-weapon pictures)
+      private var hzqCtW:ColorTransform = null; // reused: equipment-card weapon tint (multiply 0, add accent RGB)
 
       private function hzqOpen() : void
       {
@@ -881,6 +882,8 @@ package
          this.hzqCtA = new ColorTransform();
          this.hzqCtM = new ColorTransform();
          this.hzqCtN = new ColorTransform();
+         this.hzqCtW = new ColorTransform();
+         this.hzqTints();
          var cards:Array = [];
          var i:int = 0;
          while(i < 12)
@@ -954,12 +957,49 @@ package
          }
          catch(eExtR:Error) { }
       }
+      // Purpose: refresh the reused icon ColorTransforms from the live F11 accent / text color.
+      // Inputs: hzqS AccentColor / AccentHex / card fill (for hzqIconCol contrast). Outputs: hzqCtA / hzqCtM
+      // multiply tints for non-weapon symbols, and hzqCtW = the HUD equipment card's weapon tint
+      // (hzE19PlaceIcons: ColorTransform(0,0,0,1, r,g,b,0) with col = hzIconCol(HZ_ACCENT)).
+      // The equipment card only tints the equipped weapon (amber when ammo is low). Quick Menu has no
+      // magazine state, so weapons always use the accent. Called from hzqBuild and hzqRedraw (ini / font /
+      // data / ControlMap edges), never per frame.
       private function hzqTints() : void
       {
+         if(this.hzqCtA == null || this.hzqCtM == null || this.hzqCtW == null) { return; }
          var a:uint = this.hzqIconCol(this.hzqAccent());
          var m:uint = this.hzqMainCol();
          this.hzqCtA.redMultiplier = ((a >> 16) & 0xFF) / 255; this.hzqCtA.greenMultiplier = ((a >> 8) & 0xFF) / 255; this.hzqCtA.blueMultiplier = (a & 0xFF) / 255;
          this.hzqCtM.redMultiplier = ((m >> 16) & 0xFF) / 255; this.hzqCtM.greenMultiplier = ((m >> 8) & 0xFF) / 255; this.hzqCtM.blueMultiplier = (m & 0xFF) / 255;
+         // Same constructor as hzE19PlaceIcons; mutate the reused object so a redraw does not allocate.
+         this.hzqCtW.redMultiplier = 0; this.hzqCtW.greenMultiplier = 0; this.hzqCtW.blueMultiplier = 0; this.hzqCtW.alphaMultiplier = 1;
+         this.hzqCtW.redOffset = (a >> 16) & 0xFF; this.hzqCtW.greenOffset = (a >> 8) & 0xFF; this.hzqCtW.blueOffset = a & 0xFF; this.hzqCtW.alphaOffset = 0;
+      }
+      // Purpose: a favorite is a weapon when the game marks it equippable (or sends ammo / damage) and it is
+      // not a power. The HUD equipment card only shows TESObjectWEAP; Quick Menu matches that for slots 1-12
+      // from FavoritesData. Aid photos stay identity. Powers keep the symbol multiply tint.
+      // Inputs: aFavoriteItems / AssignedItem row. Outputs: true = apply hzqCtW.
+      private function hzqIsWeapon(it:Object) : Boolean
+      {
+         if(it == null) { return false; }
+         try { if(it.bIsPower == true) { return false; } } catch(e0:Error) { }
+         try { if(it.bIsEquippable == true) { return true; } } catch(e1:Error) { }
+         try { if(it.aElementalStats != null && it.aElementalStats.length > 0) { return true; } } catch(e2:Error) { }
+         try { if(it.sAmmoName != null && String(it.sAmmoName).length > 0) { return true; } } catch(e3:Error) { }
+         return false;
+      }
+      // Purpose: write Icon_mc.colorTransform. Weapons use the equipment-card add-RGB accent tint
+      // (hzqCtW) whether selected or not. Other symbols keep selected-accent / unselected-main.
+      // Non-weapon pictures stay identity. Empty slots stay identity.
+      // Inputs: Icon_mc, weapon flag, empty, selected, item (for FT_SYMBOL). Outputs: colorTransform.
+      private function hzqApplyIconTint(ic:*, weap:Boolean, empty:Boolean, sel:Boolean, it:Object) : void
+      {
+         if(ic == null) { return; }
+         if(empty) { ic.transform.colorTransform = this.hzqCtN; return; }
+         if(weap) { ic.transform.colorTransform = this.hzqCtW; return; }
+         var sym:Boolean = false;
+         try { sym = it != null && it.iconImage != null && it.iconImage.iFixtureType == ImageFixture.FT_SYMBOL; } catch(e1:Error) { sym = false; }
+         ic.transform.colorTransform = sym ? (sel ? this.hzqCtA : this.hzqCtM) : this.hzqCtN;
       }
       // the bound button name of a user event (ControlMapData strButtonName), trimmed; "" when unbound
       private function hzqRaw(ev:String) : String
@@ -1073,12 +1113,12 @@ package
             c.kb = 5 + kh;
          }
          else { k.visible = false; c.kb = 0; }
-         // the game's icon: symbols take the accent when selected, the main text color otherwise; pictures stay as they are
+         // Weapon pictures/symbols: equipment-card accent tint (hzqCtW). Other symbols: accent when
+         // selected, main text otherwise. Non-weapon pictures stay as they are.
          var ic:* = e["Icon_mc"];
          if(ic != null)
          {
-            var sym:Boolean = !empty && it.iconImage != null && it.iconImage.iFixtureType == ImageFixture.FT_SYMBOL;
-            ic.transform.colorTransform = sym ? (sel ? this.hzqCtA : this.hzqCtM) : this.hzqCtN;
+            this.hzqApplyIconTint(ic,this.hzqIsWeapon(it),empty,sel,it);
             this.hzqIcHook(i,ic);
             this.hzqFit(i);
          }
@@ -1108,6 +1148,13 @@ package
          if(fe == null) { return; }
          try { fe.onIconLoadAttemptComplete(); } catch(e0:Error) { }
          if(!this.hzqOn) { return; }
+         try
+         {
+            var it:Object = this.FavoritesInfoA != null && i < this.FavoritesInfoA.length ? this.FavoritesInfoA[i] : null;
+            var empty:Boolean = it == null || it.sName == null || String(it.sName).length == 0;
+            this.hzqApplyIconTint(fe["Icon_mc"],this.hzqIsWeapon(it),empty,i == int(this.selectedIndex),it);
+         }
+         catch(eT:Error) { }
          try { this.hzqFit(i); } catch(e1:Error) { this.hzqFail(); }
       }
       // Fit: back to the game's transform first (so it never compounds across redraws, selection, assign or a new icon in
@@ -2270,6 +2317,8 @@ package
             var isig:String = d == null ? "" : String(d.name) + "|" + String(d.ft) + "|" + String(d.img);
             if(o.cIcon !== isig) { this.hzqExtLoadIcon(o,d); o.cIcon = isig; }
             else if(!empty && o.ic != null && o.ic.visible) { this.hzqExtFitIcon(o); }
+            // Tint is outside the art skip so an accent change (hzqRedraw) re-applies hzqCtW with no reload.
+            try { this.hzqExtTintIcon(o,d,empty,sel); } catch(eTn:Error) { }
             i++;
          }
          if(this.hzqExtAdd != null && !this.hzqExtAddDrawn)
@@ -2346,6 +2395,27 @@ package
          }
          return null;
       }
+      // Purpose: extra-slot weapon flag. The DLL's ready payload sets weap=1 when LookupByID is TESObjectWEAP
+      // (the same form the HUD equipment card shows). Fallback: AssignedItem / a matching 1-12 favorite
+      // (hzqIsWeapon), or an icon path that names a weapon. Powers and Quantum Essence are never weapons.
+      // Inputs: extra payload row. Outputs: true = apply hzqCtW.
+      private function hzqExtIsWeapon(d:Object) : Boolean
+      {
+         if(d == null) { return false; }
+         if(d.kind == "power" || d.kind == "essence") { return false; }
+         if(d.weap === true) { return true; }
+         if(this.hzqIsWeapon(this.hzqExtIconSrc(d))) { return true; }
+         var path:String = (String(d.dir != null ? d.dir : "") + "/" + String(d.img != null ? d.img : "")).toLowerCase();
+         return path.indexOf("weapon") >= 0;
+      }
+      // Purpose: extra Icon_mc uses the same equipment-card accent tint as slots 1-12. Applied on draw
+      // (including accent-only redraws) and after the load callback. Empty / refuse: identity.
+      private function hzqExtTintIcon(o:Object, d:Object, empty:Boolean, sel:Boolean) : void
+      {
+         if(o == null || o.ic == null) { return; }
+         var src:Object = this.hzqExtIconSrc(d);
+         this.hzqApplyIconTint(o.ic,!empty && this.hzqExtIsWeapon(d),empty,sel,src);
+      }
       // Vanilla FavoritesEntry.LoadIcon: clipSizer / centerClip, then onLoadAttemptComplete, then
       // LoadImageFixtureFromUIData(..., "FavoritesIconBuffer"). FavoritesIconBuffer is the image-cache
       // name, not a size. Timeline Icon_mc has BoundClip_mc 60 x 60; AddDisplayObject scales the
@@ -2384,6 +2454,7 @@ package
             ic.mouseEnabled = false;
             ic.mouseChildren = false;
             this.hzqExtFitIcon(o);
+            this.hzqExtTintIcon(o,d,false,int(o.i) == this.hzqExtSel);
          }
          catch(eL:Error) { ic.visible = false; }
       }
@@ -2432,6 +2503,7 @@ package
          if(o == null || o.ic == null) { return; }
          try { o.ic.mouseEnabled = false; o.ic.mouseChildren = false; } catch(eM:Error) { }
          try { this.hzqExtFitIcon(o); } catch(e1:Error) { }
+         try { this.hzqExtTintIcon(o,this.hzqExtData != null ? this.hzqExtData[String(slot)] : null,false,slot == this.hzqExtSel); } catch(eT:Error) { }
       }
       private function hzqExtSlotObj(slot:int) : Object
       {
@@ -2543,7 +2615,8 @@ package
       {
          this.hzqExtData = {};
          if(pay == null || pay.length == 0) { return; }
-         // header records m|<refused key mask> and c|<DLL slot count>, then 13|name|count|kind|empty|refuse;...
+         // header records m|<refused key mask> and c|<DLL slot count>, then
+         // 13|name|count|kind|empty|refuse|ft|dir|img|weap;... weap=1 is TESObjectWEAP.
          var parts:Array = pay.split(";");
          var i:int = 0;
          while(i < parts.length)
@@ -2563,7 +2636,7 @@ package
                      continue;
                   }
                   var slot:int = int(Number(f[0]));
-                  this.hzqExtData[String(slot)] = {"name":f.length > 1 ? String(f[1]) : "","count":f.length > 2 ? Number(f[2]) : 0,"kind":f.length > 3 ? String(f[3]) : "inventory","empty":f.length > 4 ? String(f[4]) == "1" : (f.length <= 1 || String(f[1]).length == 0),"refuse":f.length > 5 && String(f[5]) == "1","ft":f.length > 6 ? int(Number(f[6])) : -1,"dir":f.length > 7 ? String(f[7]) : "","img":f.length > 8 ? String(f[8]) : ""};
+                  this.hzqExtData[String(slot)] = {"name":f.length > 1 ? String(f[1]) : "","count":f.length > 2 ? Number(f[2]) : 0,"kind":f.length > 3 ? String(f[3]) : "inventory","empty":f.length > 4 ? String(f[4]) == "1" : (f.length <= 1 || String(f[1]).length == 0),"refuse":f.length > 5 && String(f[5]) == "1","ft":f.length > 6 ? int(Number(f[6])) : -1,"dir":f.length > 7 ? String(f[7]) : "","img":f.length > 8 ? String(f[8]) : "","weap":f.length > 9 && String(f[9]) == "1"};
                }
             }
             i++;
@@ -2967,6 +3040,7 @@ package
          if(this.hzq37N.length > 0 && this.hzq37Step == 0) { this.hzq37Q = this.hzq37N; this.hzq37N = []; this.hzq37Begin(); }
       }
       // =================== end shared settings reader ===================
+
       internal function frame13() : *
       {
          stop();
