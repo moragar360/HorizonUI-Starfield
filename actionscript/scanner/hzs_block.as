@@ -628,19 +628,22 @@
          return f;
       }
       // one text field. (x, cy) = left / right / center x and the vertical middle; tr = tracking in em.
-      // maxW > 0 shortens the text with "..." to fit. Returns the field (its right edge = x + width for "l").
+      // maxW > 0 shortens the text with "..." to fit, unless wrap is true: then it wraps at maxW and the first line
+      // stays centered on cy (extra lines grow down). wrap defaults false so chips and the 0.43.4 pool stay truncated.
+      // Returns the field (its right edge = x + width for "l").
       // 0.43.4: while a text pass is open for p (hzsTPBegin), the field in p's next slot is reused instead of a new one
       // (see hzsTPBegin). A new field is made and formatted exactly as before.
-      private function hzsT(p:Sprite, s:String, x:Number, cy:Number, size:Number, col:uint, w:String = "sb", tr:Number = 0, al:String = "l", a:Number = 1, maxW:Number = 0, font:String = null) : TextField
+      private function hzsT(p:Sprite, s:String, x:Number, cy:Number, size:Number, col:uint, w:String = "sb", tr:Number = 0, al:String = "l", a:Number = 1, maxW:Number = 0, font:String = null, wrap:Boolean = false) : TextField
       {
          var fs:Number = this.hzsFs(size);
          var face:String = font != null ? font : this.hzsFace(w);
          var ls:Number = Math.round(fs * tr * 10) / 10;
          var str:String = s == null ? "" : s;
+         var wrapNow:Boolean = wrap == true && maxW > 0;
          var t:TextField = null;
          if(p != null && p === this.hzsTPc)
          {
-            var fk:String = face + "|" + fs + "|" + col + "|" + ls + "\u0001";
+            var fk:String = face + "|" + fs + "|" + col + "|" + ls + (wrapNow ? "|w" : "") + "\u0001";
             var key:String = fk + maxW + "\u0001" + str;
             var i:int = this.hzsTPi;
             this.hzsTPi = i + 1;
@@ -650,12 +653,12 @@
             {
                t = old;
                t.name = key;
-               this.hzsTSet(t,str,this.hzsTFmt(face,fs,col,ls),maxW);
+               this.hzsTSet(t,str,this.hzsTFmt(face,fs,col,ls),maxW,wrapNow);
                this.hzsTPNew++;
             }
             else
             {
-               t = this.hzsTNew(face,fs,col,ls,str,maxW);
+               t = this.hzsTNew(face,fs,col,ls,str,maxW,wrapNow);
                t.name = key;
                if(i < p.numChildren) { p.removeChildAt(i); }
                p.addChildAt(t,i);
@@ -664,13 +667,14 @@
          }
          else
          {
-            t = this.hzsTNew(face,fs,col,ls,str,maxW);
+            t = this.hzsTNew(face,fs,col,ls,str,maxW,wrapNow);
             p.addChild(t);
          }
          t.alpha = a;
          var tw:Number = t.textWidth;
          t.x = al == "r" ? Math.round(x - tw - 2) : (al == "c" ? Math.round(x - tw / 2 - 2) : Math.round(x - 2));
-         t.y = Math.round(cy - t.height / 2);
+         // wrap grows down from the first line; trunc keeps the old vertical middle of the one-line field
+         t.y = Math.round(cy - (wrapNow ? this.hzsTOne(size) : t.height) / 2);
          return t;
       }
       private function hzsTFmt(face:String, fs:Number, col:uint, ls:Number) : TextFormat
@@ -680,7 +684,7 @@
          return f;
       }
       // a new field (the pre-0.43.4 hzsT body: same flags, same format, same order)
-      private function hzsTNew(face:String, fs:Number, col:uint, ls:Number, str:String, maxW:Number) : TextField
+      private function hzsTNew(face:String, fs:Number, col:uint, ls:Number, str:String, maxW:Number, wrap:Boolean = false) : TextField
       {
          var t:TextField = new TextField();
          t.embedFonts = true;
@@ -689,14 +693,44 @@
          t.autoSize = TextFieldAutoSize.LEFT;
          var f:TextFormat = this.hzsTFmt(face,fs,col,ls);
          t.defaultTextFormat = f;
-         this.hzsTSet(t,str,f,maxW);
+         this.hzsTSet(t,str,f,maxW,wrap);
          return t;
       }
-      private function hzsTSet(t:TextField, str:String, f:TextFormat, maxW:Number) : void
+      private function hzsTSet(t:TextField, str:String, f:TextFormat, maxW:Number, wrap:Boolean = false) : void
       {
+         t.wordWrap = false;
+         t.multiline = false;
          t.text = str;
          t.setTextFormat(f);
-         if(maxW > 0 && t.textWidth > maxW && str.length > 1) { this.hzsTrunc(t,str,f,maxW); }
+         if(maxW > 0 && wrap == true)
+         {
+            t.wordWrap = true;
+            t.multiline = true;
+            t.width = maxW;
+            t.autoSize = TextFieldAutoSize.LEFT;
+            t.setTextFormat(f);
+         }
+         else if(maxW > 0 && t.textWidth > maxW && str.length > 1) { this.hzsTrunc(t,str,f,maxW); }
+      }
+      // one-line field height used when wrap grows down from cy (same formula the 0.43.4 mock uses)
+      private function hzsTOne(size:Number) : Number
+      {
+         return Math.round(this.hzsFs(size) * 1.25 + 4);
+      }
+      // extra pixels a wrapped field grew below one line (0 when it fit). Uses the field's own numLines /
+      // textHeight after wrap (no throwaway clip).
+      private function hzsTExtra(t:TextField, size:Number) : Number
+      {
+         if(t == null) { return 0; }
+         var one:Number = this.hzsTOne(size);
+         var n:int = 1;
+         try { n = int(t.numLines); } catch(e0:Error) { n = 1; }
+         if(n < 1) { n = 1; }
+         if(n > 1) { return Math.round((n - 1) * one); }
+         var th:Number = 0;
+         try { th = Number(t.textHeight); } catch(e1:Error) { th = 0; }
+         if(!(th > 0)) { th = t.height; }
+         return Math.max(0,Math.round(th - one));
       }
       // 0.43.4: "..." shortening by halving instead of one character at a time. The old loop tried n = length - 1, length - 2,
       // ... 2 (each "the first n characters, trailing spaces cut, then ...") and kept the first that fit, or n = 2 when none
@@ -1798,28 +1832,33 @@
          var w:Number = HZS_CW;
          var x0:Number = HZS_PAD + 2;
          var iw:Number = w - HZS_PAD - x0;
+         var pt:TextField = this.hzsT(p,m.pct + "%",w - HZS_PAD,28,30,HZS_WHITE,"bd",0,"r");
+         this.hzsT(p,this.hzsCs("SURVEYED"),w - HZS_PAD,52,13,HZS_LABEL,"sb",0.12,"r");
+         var nmax:Number = pt.x - (x0 + 50) - 12;
+         var nt:TextField = this.hzsT(p,String(m.name),x0 + 50,26,22,HZS_WHITE,"sb",0.08,"l",1,nmax,null,true);
+         var extra:Number = this.hzsTExtra(nt,22);
+         if(String(m.sys).length > 0)
+         {
+            var st:TextField = this.hzsT(p,String(m.sys),x0 + 50,50 + extra,13,HZS_MUTED,"sb",0.08,"l",1,nmax,null,true);
+            extra += this.hzsTExtra(st,13);
+         }
          var nrow:int = int(Math.ceil(m.cond.length / 2));
-         var hy:Number = 118 + nrow * 42 + 6;
+         var hy:Number = 118 + extra + nrow * 42 + 6;
          var haz:Array = m.haz as Array;
          var h:Number = haz == null ? hy - 10 : (haz.length == 0 ? hy + 22 : hy + 24 + haz.length * 40);
          this.hzsCard(g,w,h,HZS_R_CARD,acc);
          this.hzsTile(g,x0 + 20,36,20,acc,0.55);
          this.hzsIcon(g,"planet",x0 + 20,36,acc);
-         var pt:TextField = this.hzsT(p,m.pct + "%",w - HZS_PAD,28,30,HZS_WHITE,"bd",0,"r");
-         this.hzsT(p,this.hzsCs("SURVEYED"),w - HZS_PAD,52,13,HZS_LABEL,"sb",0.12,"r");
-         var nmax:Number = pt.x - (x0 + 50) - 12;
-         this.hzsT(p,String(m.name),x0 + 50,26,22,HZS_WHITE,"sb",0.08,"l",1,nmax);
-         if(String(m.sys).length > 0) { this.hzsT(p,String(m.sys),x0 + 50,50,13,HZS_MUTED,"sb",0.08,"l",1,nmax); }
-         this.hzsBar(g,x0,68,iw,6,int(m.pct) / 100,acc);
+         this.hzsBar(g,x0,68 + extra,iw,6,int(m.pct) / 100,acc);
          if(m.cond.length > 0)
          {
-            this.hzsSection(p,x0,94,iw,"CONDITIONS",null,acc);
+            this.hzsSection(p,x0,94 + extra,iw,"CONDITIONS",null,acc);
             var cw:Number = iw / 2;
             var i:int = 0;
             while(i < m.cond.length)
             {
                var cx:Number = x0 + i % 2 * cw;
-               var cy:Number = 118 + int(i / 2) * 42;
+               var cy:Number = 118 + extra + int(i / 2) * 42;
                this.hzsT(p,this.hzsCs(String(m.cond[i][0])),cx,cy,13,HZS_LABEL,"sb",0.1,"l",1,cw - 8);
                this.hzsT(p,String(m.cond[i][1]),cx,cy + 19,17,HZS_WHITE,"sb",0.02,"l",1,cw - 8);
                i++;
@@ -1884,7 +1923,23 @@
          var by:Number = ly >= 0 ? yy + 38 : yy + 12;
          var bio:Boolean = m.hasFl || m.hasFa;
          var nk:int = (m.hasFl ? 1 : 0) + (m.hasFa ? 1 : 0);
-         var h:Number = bio ? by + 22 * nk + 30 : (ly >= 0 ? ly + 26 : yy + 4);
+         var extraH:Number = 0;
+         var bioRows:Array = [];
+         if(bio)
+         {
+            var bl0:Number = by + 22;
+            var kinds:Array = [[m.hasFl,"FLORA",m.bfl,int(m.flc)],[m.hasFa,"FAUNA",m.bfa,int(m.fac)]];
+            for each(var bk0:Array in kinds)
+            {
+               if(!bk0[0]) { continue; }
+               var bwt:TextField = this.hzsT(p,this.hzsBiomeWord(Boolean(bk0[2]),int(bk0[3])),x0 + 88,bl0,13,bk0[2] ? HZS_GRN : HZS_WHITE,"rg",0.02,"l",1,iw - 88,null,true);
+               var bex:Number = this.hzsTExtra(bwt,13);
+               bioRows.push([bk0,bl0,bex]);
+               extraH += bex;
+               bl0 += 22 + bex;
+            }
+         }
+         var h:Number = (bio ? by + 22 * nk + 30 : (ly >= 0 ? ly + 26 : yy + 4)) + extraH;
          var fl:Number = Number(m.fl);
          var full:Boolean = int(m.tot) >= int(m.mx);
          this.hzsCard(g,w,h,HZS_R_CARD,full ? HZS_GRN : acc,fl > 0 ? HZS_GRN : 0xFFFFFF,fl > 0 ? (90 + 150 * fl) / 255 : 0.1);
@@ -1919,16 +1974,15 @@
          }
          if(bio)
          {
-            // v0.40.2: "IN THIS BIOME" + one plain line per kind (planet counts stay in the rows above)
+            // v0.40.2: "IN THIS BIOME" + one plain line per kind (planet counts stay in the rows above).
+            // The biome word was placed before the card so wrap extra could grow h; only the FLORA/FAUNA label is new here.
             this.hzsT(p,this.hzsCs("IN THIS BIOME"),x0,by,13,HZS_MUTED,"sb",0.1);
-            var bl:Number = by + 22;
-            for each(var bk:Array in [[m.hasFl,"FLORA",m.bfl,int(m.flc)],[m.hasFa,"FAUNA",m.bfa,int(m.fac)]])
+            for each(var br:Array in bioRows)
             {
-               if(!bk[0]) { continue; }
+               var bk:Array = br[0];
+               var bl:Number = Number(br[1]);
                var kt:TextField = this.hzsT(p,this.hzsCs(String(bk[1])),x0,bl,13,bk[2] ? HZS_GRN : HZS_LABEL,"sb",0.1);
                if(bk[2]) { this.hzsCheck(g,x0 + 72,bl,HZS_GRN,0.8); }
-               this.hzsT(p,this.hzsBiomeWord(Boolean(bk[2]),int(bk[3])),x0 + 88,bl,13,bk[2] ? HZS_GRN : HZS_WHITE,"rg",0.02,"l",1,iw - 88);
-               bl += 22;
             }
          }
          if(fl > 0)
@@ -1992,33 +2046,47 @@
          var x0:Number = HZS_PAD + 2;
          var iw:Number = w - HZS_PAD - x0;
          var rows:Array = m.rows as Array;
-         var h:Number = 44 + rows.length * 48 + 12;
-         this.hzsCard(g,w,h,HZS_R_CARD,acc);
-         this.hzsSection(p,x0,18,iw,"SIGNALS",m.inr + " " + this.hzsCs("IN RANGE"),acc);
+         // pooled row fields first: wrap extra comes from each row's own TextField (numLines / textHeight), no throwaway clips
+         var boxes:Array = [];
          var yy:Number = 44;
          for each(var r:Object in rows)
          {
             var hl:Boolean = r.hl == true;
             var c:uint = uint(r.col);
             var undisc:Boolean = !hl && c == HZS_POI;
-            if(hl)
-            {
-               this.hzsRR(g,x0 - 8,yy,iw + 14,46,10,acc,34 / 255);
-               this.hzsRR(g,x0 - 8,yy + 8,3,30,1.5,acc,1);
-            }
-            else if(undisc)
-            {
-               this.hzsRR(g,x0 - 8,yy,iw + 14,46,10,HZS_BG,0.55);
-            }
             var cy:Number = yy + 23;
-            this.hzsTile(g,x0 + 16,cy,16,hl ? acc : c,0.47);
-            this.hzsIcon(g,String(r.ic),x0 + 16,cy,hl ? acc : c,1);
             var dt:TextField = this.hzsT(p,String(r.d),w - HZS_PAD,cy,16,r.ic == "ship" || r.ic == "vehicle" ? acc : uint(r.dc),"sb",0.02,"r",r.ic == "ship" || r.ic == "vehicle" ? 0.67 : 1);
             var lim:Number = dt.x - (x0 + 42) - 10;
-            this.hzsT(p,String(r.n),x0 + 42,cy - 9,14,c != HZS_MUTED || hl ? HZS_WHITE : HZS_LABEL,"sb",0.1,"l",1,lim);
-            if(hl) { this.hzsT(p,String(r.sub),x0 + 42,cy + 10,13,acc,"bd",0.1,"l",1,lim); }
-            else { this.hzsT(p,String(r.sub),x0 + 42,cy + 10,13,undisc ? HZS_LABEL : HZS_MUTED,"rg",0,"l",1,lim); }
-            yy += 48;
+            var ntf:TextField = this.hzsT(p,String(r.n),x0 + 42,cy - 9,14,c != HZS_MUTED || hl ? HZS_WHITE : HZS_LABEL,"sb",0.1,"l",1,lim,null,true);
+            var nExtra:Number = this.hzsTExtra(ntf,14);
+            var stf:TextField = hl ? this.hzsT(p,String(r.sub),x0 + 42,cy + 10 + nExtra,13,acc,"bd",0.1,"l",1,lim,null,true) : this.hzsT(p,String(r.sub),x0 + 42,cy + 10 + nExtra,13,undisc ? HZS_LABEL : HZS_MUTED,"rg",0,"l",1,lim,null,true);
+            var rowH:Number = 48 + nExtra + this.hzsTExtra(stf,13);
+            boxes.push([yy,rowH,hl,undisc,c,String(r.ic)]);
+            yy += rowH;
+         }
+         var h:Number = yy + 12;
+         this.hzsCard(g,w,h,HZS_R_CARD,acc);
+         this.hzsSection(p,x0,18,iw,"SIGNALS",m.inr + " " + this.hzsCs("IN RANGE"),acc);
+         for each(var b:Array in boxes)
+         {
+            var y0:Number = Number(b[0]);
+            var rowH2:Number = Number(b[1]);
+            var hl2:Boolean = b[2] == true;
+            var undisc2:Boolean = b[3] == true;
+            var c2:uint = uint(b[4]);
+            var boxH:Number = rowH2 - 2;
+            if(hl2)
+            {
+               this.hzsRR(g,x0 - 8,y0,iw + 14,boxH,10,acc,34 / 255);
+               this.hzsRR(g,x0 - 8,y0 + 8,3,rowH2 - 18,1.5,acc,1);
+            }
+            else if(undisc2)
+            {
+               this.hzsRR(g,x0 - 8,y0,iw + 14,boxH,10,HZS_BG,0.55);
+            }
+            var cy2:Number = y0 + 23;
+            this.hzsTile(g,x0 + 16,cy2,16,hl2 ? acc : c2,0.47);
+            this.hzsIcon(g,String(b[5]),x0 + 16,cy2,hl2 ? acc : c2,1);
          }
          return [w,h];
       }
@@ -2469,18 +2537,26 @@
          this.hzsTPBegin(tp);
          this.hzsTk = tk;   // 0.42.0.4: world tag text floor after its scale
          var tg:* = tp.graphics;
-         this.hzsCard(tg,tw,52,HZS_R_STRIP,-1,tc,100 / 255);
          var tx:Number = 14;
          if(String(tag.sym).length > 0)
          {
-            tg.lineStyle(1.2,tc,180 / 255,true); tg.beginFill(tc,40 / 255); tg.drawRoundRect(12,13,34,26,12,12); tg.endFill(); tg.lineStyle();
             this.hzsT(tp,String(tag.sym),29,26,14,tc,"bd",0,"c",1,32);
             tx = 58;
          }
          var dt:TextField = String(tag.d).length > 0 ? this.hzsT(tp,String(tag.d),tw - 14,26,15,acc,"sb",0.02,"r") : null;
          var lim:Number = (dt != null ? dt.x - 8 : tw - 14) - tx;
-         this.hzsT(tp,String(tag.n),tx,String(tag.sub).length > 0 ? 17 : 26,15,HZS_WHITE,"sb",0.12,"l",1,lim);
-         if(String(tag.sub).length > 0) { this.hzsT(tp,String(tag.sub),tx,36,13,HZS_MUTED,"rg",0,"l",1,lim); }
+         var ntf:TextField = this.hzsT(tp,String(tag.n),tx,String(tag.sub).length > 0 ? 17 : 26,15,HZS_WHITE,"sb",0.12,"l",1,lim,null,true);
+         var extra:Number = this.hzsTExtra(ntf,15);
+         if(String(tag.sub).length > 0)
+         {
+            var stf:TextField = this.hzsT(tp,String(tag.sub),tx,36 + extra,13,HZS_MUTED,"rg",0,"l",1,lim,null,true);
+            extra += this.hzsTExtra(stf,13);
+         }
+         this.hzsCard(tg,tw,52 + extra,HZS_R_STRIP,-1,tc,100 / 255);
+         if(String(tag.sym).length > 0)
+         {
+            tg.lineStyle(1.2,tc,180 / 255,true); tg.beginFill(tc,40 / 255); tg.drawRoundRect(12,13,34,26,12,12); tg.endFill(); tg.lineStyle();
+         }
          if(String(tag.flg).length > 0)
          {
             var fx0:Number = 0;
@@ -2575,9 +2651,10 @@
                }
                if(nm)
                {
-                  var nt:TextField = this.hzsT(sx,String(m[4]),30,0,14,HZS_WHITE,"sb",0.12,"l",1,260);   // measured on itself (was a probe copy)
+                  var nt:TextField = this.hzsT(sx,String(m[4]),30,0,14,HZS_WHITE,"sb",0.12,"l",1,260,null,true);   // wrap at 260; the pill grows down
                   var w:Number = this.hzsTw(nt) + 28;
-                  g.lineStyle(1,c,120 / 255,true); g.beginFill(HZS_BG,200 / 255); g.drawRoundRect(16,-13,w,26,26,26); g.endFill(); g.lineStyle();
+                  var ph:Number = 26 + this.hzsTExtra(nt,14);
+                  g.lineStyle(1,c,120 / 255,true); g.beginFill(HZS_BG,200 / 255); g.drawRoundRect(16,-13,w,ph,26,26); g.endFill(); g.lineStyle();
                }
                this.hzsTPEnd();
             }

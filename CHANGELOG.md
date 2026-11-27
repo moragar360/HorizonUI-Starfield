@@ -24,6 +24,8 @@ TESTONLY build on `test/0.43.5-all`, from `release/0.43.4.0`, with the Extended 
 - **OUTLINE THICKNESS** now also covers bounty targets.
 
 ### Fixed
+- **Scanner card names wrap:** POI marker names, fauna/flora world tags, full planet names, full Signals rows and bioscan biome lines wrap onto extra lines at the same Exo 2 size. Those cards, pills and row highlight boxes grow down by the extra lines (measured on the pooled field; no throwaway clips per row). Compact 44 px strips, resource chips, social rows and hint labels stay one line and use "..." when they do not fit. German and Spanish long names stay whole where they wrap.
+- **Equipment "Weapon drawn only":** the card shows when a weapon reticle is up (rifle, pistol, shotgun, laser, cutter), even if the HUD crosshair is turned off. Unarmed / fists stay hidden. The plugin does not poll `IsWeaponOut` (CommonLibSF has no usable weapon-state event). ALWAYS and COMBAT ONLY are unchanged.
 - **Highlight area Vanilla is a passthrough:** VANILLA writes nothing (same as Outline Thickness Vanilla). A leftover Full screen (`ScanHighlightArea=2`) in the user ini is not applied when the Scanner module is off, so getini keeps the game / StarfieldCustom.ini / other-mod values. Saved ids keep their meaning (0 Small, 1 Vanilla, 2 Full screen, 3 Max reads as 2, 4 Large, 5 Wide). Full screen is still 0.45 / 4.0 / fade 1.0. A change writes once; opening the scanner does not rewrite Vanilla.
 - **Container STEAL chip:** the STEAL tag on the full container list card (for example a first-aid kit) no longer overlaps the title or the ITEMS count. Room math uses the 140-wide ITEMS field; layout still runs only when the card content changes.
 - **Hover + Container off:** turning the setting off restores the game's stock prompt the same frame (it used to stay hidden until a save and reload). Alpha and visible of every vanilla prompt clip Horizon changed are snapshotted before the first write and restored together. An alpha-hide that ran while vanilla rollOn / Header AnimIn still had the clip at 0 restores 1 (the shown state), so the name, panel and TALK / TRADE row come back with the leader line; unused key boxes keep visible=false. When the setting is off the hover tick does not touch those clips. The restore runs on that setting edge only; the hide list is not walked every frame.
@@ -38,6 +40,7 @@ TESTONLY build on `test/0.43.5-all`, from `release/0.43.4.0`, with the Extended 
 
 ### Notes
 - This is a private TESTONLY build. It is not a public release.
+- **Scanner outline flash:** flora/fauna world outlines that flash when the scanner opens or closes are engine highlight decals, not Horizon Scaleform. Opening the scanner with nothing drifted stays read-only. A fade/falloff write on every open, or a Vanilla look change, is not shipped. Flying creatures still flash on Full screen; that path is not the ResourceVeins falloff.
 
 
 ## [0.43.4.0-alpha] - 2026-11-23

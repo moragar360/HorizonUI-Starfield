@@ -35,7 +35,7 @@ Released as v0.43.3.0-alpha. The settings schema (HZF::kVersion) is 0.43.3.0 (it
 - **Locked containers:** the full prompt with the lock level (for example "STEAL FROM [MASTER]") shows instead of being cut off.
 - **Horizon watch:** HORIZON DIGITAL / HORIZON ANALOG no longer re-write the face every frame, and the face hides in ship HUD mode.
 - **Scanner:** marker names and the compass list are cached (same output, less work per frame). New option F11 > SCANNER > BIOSCAN > HIDE WHEN FULLY SCANNED (off by default).
-- **F11 notes:** EQUIPMENT rule: "Crosshair off? Set this to ALWAYS or COMBAT ONLY." HIGHLIGHT AREA now says what it changes.
+- **F11 notes:** EQUIPMENT rule: "Drawn follows a weapon reticle (rifle, pistol, shotgun, laser, cutter). The HUD crosshair can be off." HIGHLIGHT AREA now says what it changes.
 - **Scanner highlight area:** FULL SCREEN is wider and a new MAX position was added. **Scanner outline thickness:** F11 > SCANNER > OUTLINE THICKNESS (VANILLA by default, THICK, THICKER). Both need an SFSE plugin built from this source (file version 0.43.3.0); not tested in game yet.
 - **Name hover pill:** a long name wraps onto up to three lines at the same font size instead of being cut off.
 - **Active Buffs card removed:** the card from the earlier test builds is gone from F11, ARRANGE CARDS and the HUD. Settings left over from a test build are ignored. The Afflictions and Hazard Status cards are unchanged.

@@ -19,6 +19,7 @@
 
 #include "hz_scan_hl.h"
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -40,6 +41,12 @@ std::string ReadAll(const char* a_p)
 	std::stringstream ss;
 	ss << in.rdbuf();
 	return ss.str();
+}
+std::string ReadSrc(const char* a_p)
+{
+	std::string s = ReadAll(a_p);
+	s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());
+	return s;
 }
 bool Has(const std::string& a_s, const std::string& a_n) { return a_s.find(a_n) != std::string::npos; }
 std::size_t Count(const std::string& a_s, const std::string& a_n)
@@ -225,7 +232,7 @@ int main()
 	}
 
 	// 4. source pins
-	const auto cpp = ReadAll("src/main.cpp");
+	const auto cpp = ReadSrc("src/main.cpp");
 	const auto as = ReadAll("actionscript/horizon_block.as");
 	const auto ini = ReadAll("Interface/HorizonUI/HorizonUI.default.ini");
 	const auto pa = ReadAll("src/hz_preset_apply.h");
@@ -273,6 +280,34 @@ int main()
 	const std::string c1 = "Highlight area of the hand scanner (the game's own pick-up cone and outline radius, set by the DLL; not the scan distance): 0 = Small (half the game's circle),";
 	const std::string c2 = "1 = Vanilla (default: Horizon writes nothing; the game, StarfieldCustom.ini or another highlight-radius mod stays), 4 = Large, 5 = Wide, 2 = Full screen (3, the old Max, reads as 2). A change writes once; not on scanner open";
 	Expect(Has(ini, "; " + c1 + "\r\n; " + c2 + "\r\nScanHighlightArea=1") && Has(as, "\"ScanHighlightArea\":[\"" + c1 + "\",\"" + c2 + "\"]"), "the default.ini comment equals the HUD writer's comment");
+
+	// Outline flash (Nexus): do not write fade/falloff on an undrifted open. Vanilla stays a passthrough.
+	{
+		const auto hzs = ReadAll("actionscript/scanner/hzs_block.as");
+		const auto hide = FnBody(hzs, "private function hzsHideVanilla() : void");
+		Expect(!hide.empty() && Has(hide, "d.alpha = 0") && !Has(hide, "SetFloat") && !Has(hide, "fScanHighlight") && !Has(hide, "fResourceDecal"),
+			"world outlines are not Horizon Scaleform: hzsHideVanilla only alphas HUD clips");
+		Expect(Has(ReadAll("src/hz_scan_hl.h"), "Not shipped: writing fade/falloff on every open"),
+			"the flash research is recorded: no open-path fade write is shipped");
+		State st; // Vanilla / nothing written
+		Now n; n.dotFound = n.decalFound = n.fallFound = true; n.dot = 0.92f; n.decal = 0.8f; n.fall = 0.25f;
+		const auto none = Recheck(st, n);
+		Expect(none.re == Re::None && !none.writeDot && !none.writeDecal && !none.writeFall,
+			"undrifted open with nothing written: Recheck is read-only (no cone/falloff write)");
+		st.wrote.on = true; st.wrote.dot = 0.82f; st.wrote.decal = 1.4f; st.wrote.wFall = false; st.wrote.fall = 0.25f;
+		Now same; same.dotFound = same.decalFound = same.fallFound = true; same.dot = 0.82f; same.decal = 1.4f; same.fall = 0.25f;
+		const auto still = Recheck(st, same);
+		Expect(still.re == Re::None && !still.writeFall, "Large undrifted open does not write fade (Small/Large/Wide are not an open-path fade write)");
+		Expect(!Has(re, "for (") && !Has(rc, "IsMenuOpen") && Has(re, "if (!g_scanHl.wrote.on)"),
+			"no polling and no write on every open: Recheck returns before a write when nothing was written");
+		Orig noOrig;
+		p = Next(kDot, kVanilla, noOrig);
+		Expect(p.act == Act::Write && !p.wFall, "Small still leaves fade to the game (lengthening it would be a look change)");
+		p = Next(kLarge, kVanilla, noOrig);
+		Expect(!p.wFall, "Large still leaves fade to the game");
+		p = Next(kWide, kVanilla, noOrig);
+		Expect(!p.wFall, "Wide still leaves fade to the game");
+	}
 
 	std::cout << (g_fail ? "FAILED " : "PASSED ") << g_ok << " ok, " << g_fail << " FAIL\n";
 	return g_fail ? 1 : 0;

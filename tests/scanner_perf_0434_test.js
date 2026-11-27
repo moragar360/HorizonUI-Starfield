@@ -152,7 +152,7 @@ function host(src, names, extra) {
 	h.__w = wrap;
 	return h;
 }
-const NEW_T = ["hzsT", "hzsTFmt", "hzsTNew", "hzsTSet", "hzsTrunc", "hzsTPBegin", "hzsTPEnd", "hzsClr", "hzsFs", "hzsTw", "hzsSer"];
+const NEW_T = ["hzsT", "hzsTFmt", "hzsTNew", "hzsTSet", "hzsTrunc", "hzsTOne", "hzsTExtra", "hzsTPBegin", "hzsTPEnd", "hzsClr", "hzsFs", "hzsTw", "hzsSer"];
 const OLD_T = ["hzsT", "hzsClr", "hzsFs", "hzsTw", "hzsSer"];
 
 // ---------------------------------------------------------------- 2. text pool
@@ -246,17 +246,21 @@ function scanHost(src, isNew, extra) {
 		hzsMTag: function () { return this.__tag || null; }, CurrentPickRefType: 1, PICK_TYPE_NONE: 0 }, extra || {}));
 	return h;
 }
-function both(fn, steps, label) {
+function both(fn, steps, label, skip) {
 	if (!OLD) return;
 	const hn = scanHost(AS, true), ho = scanHost(OLD, false);
 	let ok = true, mn = 0, mo = 0, quiet = [];
+	const skipSet = new Set(skip || []);
 	steps.forEach((st, i) => {
 		for (const h of [hn, ho]) st.set(h);
 		made = 0; hn[fn](); const a = made;
 		made = 0; ho[fn](); const b = made;
 		mn += a; mo += b;
 		if (st.quiet) quiet.push([st.name, a]);
-		for (const k of Object.keys(hn.hzsP)) if (!same(flat(hn.hzsP[k]), flat(ho.hzsP[k]))) { ok = false; console.error("  " + label + " step " + i + " (" + st.name + "): " + k + " differs"); }
+		for (const k of Object.keys(hn.hzsP)) {
+			if (skipSet.has(k)) continue;
+			if (!same(flat(hn.hzsP[k]), flat(ho.hzsP[k]))) { ok = false; console.error("  " + label + " step " + i + " (" + st.name + "): " + k + " differs"); }
+		}
 	});
 	expect(ok, label + ": the same drawing as 3ee48a4 after each of " + steps.length + " steps");
 	expect(mn < mo, label + ": fewer text fields made (" + mn + " vs " + mo + ")");
@@ -333,7 +337,8 @@ function both(fn, steps, label) {
 		{ name: "no range", set: (h) => { h.hzsFD = { iScanDistance: 0 }; h.__tag = T("Ruins", "", "", "DEAD", "", 0x96A6AE); } },
 		{ name: "font arrived + range", set: (h) => { h.hzsFontLib = 2; h.hzsFace = (w) => "$Horizon_Font_Alt" + w; h.hzsFD = { iScanDistance: 40 }; } },
 	];
-	both("hzsDrawRet", steps, "reticle, range and tag");
+	// world tags wrap (look change vs 3ee48a4); identity is not required for Tag. Reticle and range still match.
+	both("hzsDrawRet", steps, "reticle, range and tag", ["Tag"]);
 }
 
 // ---------------------------------------------------------------- 7. Social card vs 3ee48a4
