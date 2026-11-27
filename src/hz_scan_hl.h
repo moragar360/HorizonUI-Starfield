@@ -9,11 +9,30 @@
 //   fResourceDecalRenderRadiusPct:ResourceVeins - how far from the center an already highlighted object keeps its
 //                                             outline; game default 0.8.
 //   fResourceDecalRenderRadiusFalloffPct:ResourceVeins - the fade band at the edge of that radius; game default 0.25.
-// (Defaults: the published getini dump of all valid Starfield INI settings and the Nexus "scanner highlight radius"
-// article. The pick-up distance is game form data, not an INI setting, and is not changed here.)
-// 0.43.5 levels (each one a visible step on a 16:9 screen at the default first-person FOV of 85, horizontal):
+// Defaults (INI, not GMST). Confirmed 2026-11-27:
+//   getini dump of every valid Starfield INI setting (STEP, values read with getini "name:section"):
+//     https://stepmodifications.org/forum/topic/19019-starfield-default-values-for-all-known-valid-ini-settings/
+//     fScanHighlightDotAngle:Interface = 0.92
+//     fResourceDecalRenderRadiusPct:ResourceVeins = 0.8
+//     fResourceDecalRenderRadiusFalloffPct:ResourceVeins = 0.25
+//   Nexus "Changing the scanner highlight radius" (setini of the first two; screenshots of the vanilla cone):
+//     https://www.nexusmods.com/starfield/articles/651
+//   Public scanner-highlight mods (Fullscran, Hand Scanner Utility) write these same three INI keys, not GMSTs.
+// Activation / interact pick is a different system and is not written here:
+//   INI [Interface] fActivatePickRadius = 0.1, fActivatePickLength = 2.4 (same STEP getini dump)
+//   GMST fActivatePickLength = 2.1429 (starfieldwiki.net GMST list; CK Game Settings Database)
+//   iActivatePickAngle is not in the getini dump or the GMST list. CK Activators have a per-form
+//   "Activation Range for Player" angle, not a global setting:
+//     https://starfield.creationkit.bethesda.net/Activator
+// The official CK INI page does not list these keys (only a short "useful settings" table):
+//   https://starfield.creationkit.bethesda.net/Initialization_(.ini)_Settings
+// The pick-up distance is game form data, not an INI setting, and is not changed here.
+// 0.43.5 levels (each one a visible step on a 16:9 screen at the default first-person FOV of 85, horizontal).
+// F11 lists them in size order; the ids keep their old meaning so a saved value does not change what it does:
 //   0 = Small (was "Horizon dot")  0.98 / 0.4, the game's fade: about 11.5 degrees, half the vanilla circle.
-//   1 = Vanilla (the default)      Horizon writes nothing; the game keeps whatever its own INI files say.
+//   1 = Vanilla (the default)      writes nothing: the game, StarfieldCustom.ini, or another highlight-radius mod stays.
+//                                  Switching back from Small / Large / Wide / Full screen restores the values captured
+//                                  before Horizon's first write this session (same passthrough as Outline Thickness).
 //   4 = Large                      0.82 / 1.4, the game's fade: about 35 degrees, the circle reaches the top and bottom
 //                                  of the screen (0.82 is the published "in between" angle; 1.4 is the radius below).
 //   5 = Wide                       0.735 / 1.8, the game's fade: about 42.7 degrees, it reaches the left and right edges (the half width at 16:9 / FOV 85 is 42.5);
@@ -27,18 +46,22 @@
 // The ini ids keep their old meaning (0, 1, 2, and 3 read as 2), so no saved value changes meaning; Large and Wide got
 // the new ids 4 and 5. F11 lists them in size order: 0, 1, 4, 5, 2.
 // Screen corner math: at a horizontal FOV h and aspect a the corner sits atan(tan(h/2) * sqrt(1 + 1/a^2)) from the center.
-// The game's own values are read once, right before Horizon first writes, and written back when the player goes
-// back to Vanilla (never the hardcoded 0.92 / 0.8 / 0.25, so a StarfieldCustom.ini tweak survives). Small, Large and
-// Wide leave the fade to the game (they write back the captured fade when they follow Full screen).
+// Vanilla writes nothing at load. Going back to Vanilla restores the captured game values (if Horizon already wrote
+// another level this session). It is not rewritten on scanner open or every frame. Small, Large and Wide still leave
+// the fade to the game (they write back the captured fade when they follow Full screen). The game's values at load are
+// still read once for that fade capture and for the WidenedByOther log line. kGameDot / kGameDecal / kGameFall are the
+// published getini defaults (STEP dump; Nexus article 651, still 0.92 / 0.8 as of 2026-08-15). They are the WidenedByOther
+// comparison, not a Vanilla write. Full screen is 0.45 / 4.0 / fade 1.0; that pair is not a game default.
 // 0.43.5: main.cpp also reads the values back (Drifted) and writes them again when something else changed them, and
 // logs the game's own values once at load (WidenedByOther flags an INI tweak or another mod that already widens).
 // Pure logic: no game, no CommonLibSF, no thread (tests/scan_hl_test.cpp). main.cpp does the game calls.
-// Author: Moragar. Last modified: 2026-11-24.
+// Author: Moragar. Last modified: 2026-11-27. Vanilla is passthrough (no write / restore captured).
 
 #include <string>
 
 namespace hzscanhl {
 
+inline constexpr int kUnset = -1;    // applied starts here so the first BannerPoll can record Vanilla without writing
 inline constexpr int kDot = 0;       // F11 "SMALL" (the name kDot is kept from 0.43.3.1)
 inline constexpr int kVanilla = 1;
 inline constexpr int kFull = 2;
@@ -56,8 +79,9 @@ inline constexpr float kFullAngleDot = 0.45f;   // Full screen: about 63 degrees
 inline constexpr float kFullDecal = 4.0f;
 inline constexpr float kFullFall = 1.0f;
 
-inline constexpr float kGameDot = 0.92f;        // the game's defaults (getini), only used to spot an outside widening
+inline constexpr float kGameDot = 0.92f;        // published getini defaults (Vanilla does not write these)
 inline constexpr float kGameDecal = 0.8f;
+inline constexpr float kGameFall = 0.25f;       // the game's default outline fade
 
 inline constexpr const char* kKeyDot = "fScanHighlightDotAngle:Interface";
 inline constexpr const char* kKeyDecal = "fResourceDecalRenderRadiusPct:ResourceVeins";
@@ -102,12 +126,14 @@ struct Plan
 	Act   act = Act::None;
 	float dot = 0.0f;
 	float decal = 0.0f;
-	bool  wFall = false;     // write the fade too (Full screen; Small / Large / Wide and Vanilla only to give a captured one back)
+	bool  wFall = false;     // write the fade too (Full screen always; Vanilla restore only a captured fade; Small / Large / Wide only a captured fade)
 	float fall = 0.0f;
 };
 
-// a_applied: what Horizon last left in the game - kVanilla at start (nothing written) and after a restore.
-// None when nothing changes; Vanilla with no earlier write is None too (nothing to give back).
+// a_applied: what Horizon last left in the game. Starts at kUnset so the first apply can record Vanilla
+// without writing. After that, None when nothing changes.
+// Vanilla is a passthrough: write nothing until another level has been applied this session, then Restore
+// the captured game / INI / other-mod values (never force 0.92 / 0.8 / 0.25).
 inline Plan Next(int a_want, int a_applied, const Orig& a_orig)
 {
 	Plan p;
@@ -116,7 +142,13 @@ inline Plan Next(int a_want, int a_applied, const Orig& a_orig)
 	if (a_want != kDot && a_want != kFull && a_want != kLarge && a_want != kWide) a_want = kVanilla;
 	if (a_want == a_applied) return p;
 	if (a_want == kVanilla) {
-		if (a_orig.have) { p.act = Act::Restore; p.dot = a_orig.dot; p.decal = a_orig.decal; p.wFall = a_orig.fallOk; p.fall = a_orig.fall; }
+		if (a_orig.have) {
+			p.act = Act::Restore;
+			p.dot = a_orig.dot;
+			p.decal = a_orig.decal;
+			p.wFall = a_orig.fallOk;
+			p.fall = a_orig.fall;
+		}
 		return p;
 	}
 	p.act = Act::Write;
@@ -197,7 +229,7 @@ inline Give GiveBack(const Wrote& a_w, const Orig& a_o, const Now& a_n)
 // the full HIGHLIGHT AREA state main.cpp and the tests share (applied, yield/reapply guard, captured base, last write)
 struct State
 {
-	int   applied = kVanilla;
+	int   applied = kUnset;  // first Vanilla apply records the level and writes nothing
 	Guard guard;
 	Orig  orig;
 	Wrote wrote;

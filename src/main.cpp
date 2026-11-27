@@ -3073,9 +3073,11 @@ namespace HZ
 	// the HUDMessagesMenu advance (100 ms gate). Steady state: one atomic load and one int compare. No Scaleform, no
 	// GFx value, no file. The INISettingCollection singleton id is checked in the versionlib table first (a missing id
 	// would end the process inside REL); the lookups are null-checked and run under SEH. The setting lookup walks the
-	// game's INI list once per change. Vanilla at start writes nothing. The game's own values are read once, right
-	// before the first write, and written back on a later Vanilla. A missing id or setting is logged once and the
-	// change is dropped (no retry until the position changes again). Author: Moragar. Last modified: 2026-11-18.
+	// game's INI list once per change. Vanilla writes nothing (the game, StarfieldCustom.ini or another
+	// highlight-radius mod stays). Going back to Vanilla restores the values captured before Horizon's first write
+	// this session. Writes run only while the Scanner module is installed (modules\scanner.marker). Never on scanner
+	// open or every frame. A missing id or setting is logged once and the change is dropped (no retry until the
+	// position changes again). Author: Moragar. Last modified: 2026-11-27.
 	hzscanhl::State g_scanHl;                                // UI thread only: applied, yield/reapply guard, captured base, last write (hz_scan_hl.h)
 	bool            g_scanHlMissLogged = false;             // UI thread only
 	// 0.43.5: the load peek and the one-line logs
@@ -3168,7 +3170,13 @@ namespace HZ
 	void ScanHlApply()
 	{
 		if (!g_scanHlPeeked) ScanHlPeekOnce();   // 0.43.5: one read-only line at load (then a bool test)
-		const int want = g_scanHlWant.load(std::memory_order_acquire);
+		int want = g_scanHlWant.load(std::memory_order_acquire);
+		// Scanner module off: do not write. A leftover ScanHighlightArea=2 in the user ini used to apply Full screen
+		// (0.45 / 4.0 / fade 1.0) even with the movies uninstalled. If this session already wrote, restore once.
+		if (g_banScanMod.load(std::memory_order_acquire) != 1) {
+			if (!g_scanHl.wrote.on) return;
+			want = hzscanhl::kVanilla;
+		}
 		if (hzscanhl::Settled(g_scanHl, want)) return;   // 0.43.5: a yield is cleared by any other pick, then 'no change' is decided
 		const auto plan = hzscanhl::Next(want, g_scanHl.applied, g_scanHl.orig);
 		if (plan.act == hzscanhl::Act::None) { g_scanHl.applied = want; return; }
@@ -3181,11 +3189,12 @@ namespace HZ
 			return;
 		}
 		const bool restore = plan.act == hzscanhl::Act::Restore;
+		const bool vanilla = want == hzscanhl::kVanilla;
 		HzScanHlRaw io{};
 		io.capture = g_scanHl.orig.have ? 0 : 1;
 		io.writeDot = restore ? (g_scanHl.orig.dotOk ? 1 : 0) : 1;
 		io.writeDecal = restore ? (g_scanHl.orig.decalOk ? 1 : 0) : 1;
-		io.writeFall = plan.wFall ? 1 : 0;   // a restore / Horizon dot sets wFall only for a captured fade
+		io.writeFall = plan.wFall ? 1 : 0;   // Vanilla restore writes a captured fade; Small / Large / Wide only a captured fade
 		io.dot = plan.dot;
 		io.decal = plan.decal;
 		io.fall = plan.fall;
@@ -3211,8 +3220,8 @@ namespace HZ
 			REX::WARN("scanner highlight: {} not found, the outline fade is left to the game", hzscanhl::kKeyFall);
 			g_scanHlMissLogged = true;
 		}
-		// 0.43.5: remember what is in the game now (a Vanilla restore turns the recheck off)
-		g_scanHl.wrote.on = !restore && io.dotFound != 0;
+		// 0.43.5: remember what is in the game now. Vanilla is a passthrough (no recheck write; never rewritten on scanner open).
+		g_scanHl.wrote.on = !restore && !vanilla && io.dotFound != 0;
 		g_scanHl.wrote.dot = plan.dot;
 		g_scanHl.wrote.decal = plan.decal;
 		g_scanHl.wrote.wFall = plan.wFall && io.fallFound != 0;
@@ -3226,9 +3235,9 @@ namespace HZ
 	// mod that already widens the scanner, so a "Vanilla looks like Max" report can be answered from the log; (2) after
 	// a Horizon write, read the values back on the scanner open edge and every 2 s while the scanner is closed, and write
 	// them again when something else changed them (another mod's setini, a bat file, the console), logged once per
-	// session. With Vanilla nothing is ever written; it only logs once if the game's values changed after load.
+	// session. Vanilla never writes from this path (passthrough; ScanHlApply only restores after another level).
 	// UI thread only. Same id check and SEH as ScanHlApply (HzScanHlCall with no write = a read). Author: Moragar.
-	// Last modified: 2026-11-23.
+	// Last modified: 2026-11-27.
 	static bool HzScanHlRead(HzScanHlRaw& a_io)
 	{
 		const auto id = RE::ID::INISettingCollection::Singleton.id();
@@ -3253,7 +3262,7 @@ namespace HZ
 		g_scanHlPeekDecal = io.decalWas;
 		const bool wide = hzscanhl::WidenedByOther(io.dotFound != 0, io.dotWas, io.decalFound != 0, io.decalWas);
 		REX::INFO("scanner highlight: game values at load {} / {} / fade {}{}", io.dotWas, io.decalWas, io.fallWas,
-			wide ? " - your INI or another mod already widens the scanner (VANILLA keeps that)" : "");
+			wide ? " - your INI or another mod already widens the scanner (VANILLA leaves those values)" : "");
 	}
 
 	ULONGLONG g_scanReNext = 0;      // UI thread only: the next closed-scanner recheck
@@ -3262,7 +3271,7 @@ namespace HZ
 	static void ScanHlRecheck(bool a_openEdge)
 	{
 		if (!g_scanHl.wrote.on) {
-			// Vanilla: never write; one line if the game's own values changed after load (first scanner open only)
+			// Vanilla (or nothing written yet): never write here; one line if the game's values changed after load
 			if (!a_openEdge || g_scanHlVanChgLogged || !g_scanHlPeekOk) return;
 			g_scanHlVanChgLogged = true;
 			HzScanHlRaw io{};

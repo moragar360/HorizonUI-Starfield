@@ -1,17 +1,17 @@
-// 0.43.4 scanner performance tests (hzs_block.as and both MonocleMenu.as copies). The look must stay identical.
+// 0.43.4 scanner performance tests (hzs_block.as and both MonocleMenu.as copies).
 //  1. the block is spliced unchanged into both scanner hosts, and every hzs member the block uses is declared
 //  2. text pool (hzsT / hzsTPBegin / hzsTPEnd): a reused field draws exactly like a new one, no field is made
 //     when nothing changed, child order = call order, unused slots dropped; fuzzed against the 3ee48a4 hzsT
 //  3. "..." shortening (hzsTrunc): the same text as the 3ee48a4 one-character loop on a corpus and width models
-//  4. world markers, compass and reticle / range / tag: the production functions run against the 3ee48a4 bodies on
-//     the same inputs; the drawn result (every shape and text, at its screen spot, in draw order) must be the same
-//     after each step, while the new code makes far fewer text fields (none on a move-only frame)
+//  4. world markers: move-only frames make no text field and redraw no slot (sprites move). Compass and reticle /
+//     range / tag still match the 3ee48a4 bodies. Undiscovered markers use a brighter POI tone and a dark backing
+//     (look change vs 3ee48a4; identity is not required for that path).
 //  5. the 6-frame poll skips the event-only planet / bioscan cards; events and the frequent env data still redraw them
 //  6. settings: the open frame no longer reads the files again right after the start read
 //  7. Social card (review M-1): a bounty with a key prompt draws as in 3ee48a4 on an empty card and on a card that
 //     already had fields (the key is measured on a throwaway sprite, never added to and removed from the card)
 // Old bodies come from git (tests/lib/git_base.js: SKIP in a source zip without git, HZ_REQUIRE_GIT=1 makes it a FAIL).
-// Author: Moragar. Last modified: 2026-11-22.
+// Author: Moragar. Last modified: 2026-11-27.
 "use strict";
 
 const fs = require("fs");
@@ -284,12 +284,25 @@ function both(fn, steps, label) {
 		{ name: "markers off", set: (h) => { h.hzsOn = (k) => k !== "ScanWorldMarkers"; } },
 		{ name: "markers on", set: (h) => { h.hzsOn = () => true; h.hzsFD = mk(moved(0.03, 0)); } },
 	];
-	const hn = both("hzsDrawMarks", steps, "world markers");
-	if (hn) {
-		// a move-only frame does not touch a slot's drawing: no graphics.clear on any slot
+	// undiscovered markers changed look (brighter POI + dark backing): do not require a pixel match with 3ee48a4.
+	// Still require the 0.43.4 pooling contract: fewer fields than the old rebuild, none on a move-only frame.
+	{
+		const hn = scanHost(AS, true);
+		let mn = 0;
+		const quiet = [];
+		steps.forEach((st) => { st.set(hn); made = 0; hn.hzsDrawMarks(); mn += made; if (st.quiet) quiet.push([st.name, made]); });
+		if (OLD) {
+			const ho = scanHost(OLD, false);
+			let mo = 0;
+			steps.forEach((st) => { st.set(ho); made = 0; ho.hzsDrawMarks(); mo += made; });
+			expect(mn < mo, "world markers: fewer text fields made (" + mn + " vs " + mo + ")");
+		}
+		for (const [n, a] of quiet) expect(a === 0, "world markers: " + n + ": no text field made");
 		const slots = hn.hzsMkI.kids; const c0 = slots.map((s) => s.graphics.clears);
+		const keepI = hn.hzsMkI, keepT = hn.hzsMkT;
 		hn.hzsFD = mk(moved(0.05, 0.02)); hn.hzsDrawMarks();
 		expect(slots.every((s, i) => s.graphics.clears === c0[i]), "world markers: a move-only frame redraws no marker (the sprites move)");
+		expect(hn.hzsMkI === keepI && hn.hzsMkT === keepT, "world markers: hzsMkI / hzsMkT are reused (not torn down)");
 		expect(hn.hzsP.Marks.kids.length === 2 && hn.hzsP.Marks.kids[0] === hn.hzsMkI && hn.hzsP.Marks.kids[1] === hn.hzsMkT, "world markers: the icon layer sits under the text layer");
 	}
 }
@@ -421,6 +434,11 @@ if (OLD) {
 	expect(/if\(m == null\) \{ this\.hzsClr\(p\);/.test(dp) && /this\.hzsTPBegin\(p\);/.test(dp) && /this\.hzsTPEnd\(\);\s*\n\s*this\.hzsTk = 1;/.test(dp), "pool: the panels open a text pass after the empty check and close it after drawing");
 	expect(!/probe/.test(fnText(AS, "hzsDrawMarks").body) && !/probe/.test(fnText(AS, "hzsDrawRet").body) && !/probe/.test(fnText(AS, "hzsDrawCompassIfMoved").body), "markers, reticle and compass measure their own fields (no probe copies)");
 	expect(!/hzsSer\(list\)/.test(fnText(AS, "hzsDrawMarks").body), "world markers: no serialized list string per frame");
+	expect(!/GlowFilter/.test(AS) && !/\.filters\s*=/.test(AS), "scanner block adds no GlowFilter / filter array (cheap backing only)");
+	expect(!/ScanHlApply/.test(AS), "scanner movie never calls ScanHlApply");
+	expect(!/hzsMkI\s*=\s*null/.test(fnText(AS, "hzsTick").body) && !/hzsMkT\s*=\s*null/.test(fnText(AS, "hzsTick").body) && !/ScanHlApply/.test(fnText(AS, "hzsTick").body), "hzsTick does not tear down hzsMkI / hzsMkT or apply highlight INI");
+	expect(/HZS_POI/.test(AS) && /0xD7E3E8/.test(BLOCK) && /HZS_POI/.test(fnText(AS, "hzsDrawMarks").body) && /HZS_BG/.test(fnText(AS, "hzsDrawMarks").body), "undiscovered world markers: brighter POI tone and a dark backing, redrawn only when the slot key changes");
+	expect(/HZS_POI/.test(fnText(AS, "hzsMSignals").body) && /HZS_BG/.test(fnText(AS, "hzsDSig").body), "Signals rows: undiscovered uses the POI tone and a dark row backing");
 }
 
 if (failed) { console.error("scanner perf 0.43.4: " + passed + " ok, " + failed + " FAILED"); process.exit(1); }

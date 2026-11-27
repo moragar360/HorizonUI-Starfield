@@ -4,15 +4,18 @@
 //   zig c++ -std=c++20 -Wall -Wextra -I src tests/scan_hl_test.cpp -o test_scratch/scan_hl_test   (run from the repo root)
 // Proves:
 //  1. Parse: "0" / "1" / "2" / "3" (spaces trimmed) map to the four positions; anything else is Vanilla;
-//  2. Next: Vanilla at start writes nothing; a change to Horizon dot / Full screen / Max writes the documented values;
-//     back to Vanilla writes the captured game values (never 0.92 / 0.8 / 0.25 by itself); no change = nothing;
-//     Full screen covers the corners of 16:9, 21:9 and 32:9 screens at common FOVs (cone geometry, 0.43.3.2);
-//  3. a model of ScanHlApply over random position changes: the game values only ever hold the captured originals,
-//     the dot set, the full set or the max set (Horizon dot with the game's own fade), the originals are read once before the first write, and a Vanilla start or a
-//     Vanilla-only run never touches the game;
-//  4. source pins: the apply runs only from BannerPoll (UI thread), behind the id check and SEH; LoadIni stores the
-//     key; the F11 row shows labels; HZ40_SCAN_KEYS, the writer comment and default.ini agree.
-// Author: Moragar. Last modified: 2026-11-23.
+//  2. Next: Vanilla writes nothing (from kUnset, and when already applied); back from another level Restores the
+//     captured game / INI values, never 0.92 / 0.8 / 0.25; a change to Small / Large / Wide / Full / old Max writes
+//     the documented values; 0.45 / 1.0 is Full screen, not Vanilla; no change = nothing; Full screen covers the
+//     corners of 16:9, 21:9 and 32:9 screens at common FOVs;
+//  3. a model of ScanHlApply over random position changes: Horizon only writes the four sized sets (never Vanilla
+//     0.92, never 0.2 / 10 / 10); a Vanilla-only run writes nothing; Vanilla never leaves wrote.on so the
+//     scanner-open recheck does not rewrite;
+//  4. source pins: the apply runs only from BannerPoll (UI thread), behind the id check and SEH; writes skip when
+//     scanner.marker is not present; LoadIni stores the key; the F11 row shows labels in size order with ids
+//     0 / 1 / 4 / 5 / 2; HZ40_SCAN_KEYS, the writer comment and default.ini agree. Old saved ids keep their meaning
+//     (3 reads as 2).
+// Author: Moragar. Last modified: 2026-11-27.
 
 #include "hz_scan_hl.h"
 
@@ -73,8 +76,11 @@ int main()
 
 	// 2. Next and the level values
 	Orig none;
-	Expect(Next(kVanilla, kVanilla, none).act == Act::None, "Vanilla at start: nothing written");
-	auto p = Next(kFull, kVanilla, none);
+	Expect(Next(kVanilla, kVanilla, none).act == Act::None, "Vanilla already applied: nothing written");
+	Plan p = Next(kVanilla, kUnset, none);
+	Expect(p.act == Act::None, "first Vanilla (applied unset, nothing captured) writes nothing");
+	Expect(kFullAngleDot == 0.45f && kFullFall == 1.0f && kFullDecal == 4.0f && kGameDot == 0.92f && kGameFall == 0.25f, "0.45 / fade 1.0 is Full screen; published getini defaults stay 0.92 / 0.25");
+	p = Next(kFull, kVanilla, none);
 	Expect(p.act == Act::Write && p.dot == 0.45f && p.decal == 4.0f && p.wFall && p.fall == 1.0f, "Full screen writes 0.45 / 4.0 / fade 1.0");
 	p = Next(kMax, kVanilla, none);
 	Expect(p.act == Act::Write && p.dot == kFullAngleDot && p.decal == kFullDecal && p.fall == kFullFall, "a want of 3 (old MAX) writes the Full screen set, never 0.2 / 10 / 10");
@@ -110,14 +116,15 @@ int main()
 	Expect(Next(kDot, kFull, none).act == Act::Write && Next(kFull, kDot, none).dot == kFullAngleDot && Next(kLarge, kWide, none).dot == kLargeAngleDot, "a change between two levels writes the new set");
 	Orig o; o.have = true; o.dotOk = true; o.decalOk = true; o.fallOk = true; o.dot = 0.85f; o.decal = 1.3f; o.fall = 0.3f;
 	p = Next(kVanilla, kFull, o);
-	Expect(p.act == Act::Restore && p.dot == 0.85f && p.decal == 1.3f && p.wFall && p.fall == 0.3f, "back to Vanilla restores the captured game values, the fade too (a user INI tweak survives)");
+	Expect(p.act == Act::Restore && p.dot == 0.85f && p.decal == 1.3f && p.wFall && p.fall == 0.3f, "back to Vanilla restores the captured game / INI values, not 0.92 / 0.8 / 0.25");
 	p = Next(kWide, kFull, o);
 	Expect(p.act == Act::Write && p.dot == kWideAngleDot && p.wFall && p.fall == 0.3f, "Wide after Full screen gives the captured fade back");
 	Orig nf = o; nf.fallOk = false;
-	Expect(!Next(kVanilla, kFull, nf).wFall && !Next(kLarge, kFull, nf).wFall, "a fade that was not found is never written back");
+	Expect(!Next(kVanilla, kFull, nf).wFall && !Next(kLarge, kFull, nf).wFall, "Vanilla restore and Large do not write a fade that was not found");
 	Expect(Next(kVanilla, kFull, none).act == Act::None, "Vanilla with nothing captured writes nothing");
 	Expect(Next(kFull, kFull, o).act == Act::None && Next(kDot, kDot, o).act == Act::None && Next(kLarge, kLarge, o).act == Act::None && Next(kWide, kWide, o).act == Act::None, "no change = nothing");
-	Expect(Next(7, kFull, o).act == Act::Restore && Next(-3, kVanilla, o).act == Act::None, "an out-of-range want counts as Vanilla");
+	p = Next(7, kFull, o);
+	Expect(p.act == Act::Restore && p.dot == 0.85f && Next(-3, kVanilla, o).act == Act::None, "an out-of-range want counts as Vanilla (restore captured, or nothing if Vanilla is already applied)");
 	// Drifted / WidenedByOther
 	Expect(!Drifted(0.82f, 0.82f) && !Drifted(0.8201f, 0.82f) && Drifted(0.2f, 0.82f) && Drifted(0.83f, 0.82f), "Drifted: only a real change counts (float noise does not)");
 	Expect(!WidenedByOther(true, 0.92f, true, 0.8f) && WidenedByOther(true, 0.2f, true, 10.0f) && WidenedByOther(true, 0.59f, true, 0.8f) && WidenedByOther(true, 0.92f, true, 2.6f) && !WidenedByOther(true, 0.98f, true, 0.4f) && !WidenedByOther(false, 0.0f, false, 0.0f), "WidenedByOther: flags a wider game value (Fullscran 0.2 / 10, the 0.59 guide), not the defaults or a smaller cone");
@@ -173,7 +180,7 @@ int main()
 	// 3. model of ScanHlApply plus ScanHlRecheck, driven by the shared State / Next / Recheck (the same code main.cpp runs)
 	{
 		std::mt19937 rng(4335);
-		int bad = 0, reads = 0, writesFromVanillaOnly = 0, reapplies = 0, yields = 0;
+		int bad = 0, reads = 0, vanillaOnlyBad = 0, reapplies = 0, yields = 0;
 		const int pos[] = { kDot, kVanilla, kFull, kMax, kLarge, kWide };
 		for (int run = 0; run < 2000; ++run) {
 			const float gameDot = 0.80f + 0.01f * static_cast<float>(rng() % 15);
@@ -201,16 +208,19 @@ int main()
 				curDot = pl.dot; curDecal = pl.decal; if (pl.wFall) curFall = pl.fall; ++writes;
 				st.wrote.on = pl.act == Act::Write;
 				st.wrote.dot = pl.dot; st.wrote.decal = pl.decal; st.wrote.wFall = pl.wFall; st.wrote.fall = pl.fall;
-				const bool okSet = (pl.act == Act::Restore && curDot == st.orig.dot && curDecal == st.orig.decal) || (curDot == kDotAngleDot && curDecal == kDotDecal) || (curDot == kLargeAngleDot && curDecal == kLargeDecal) || (curDot == kWideAngleDot && curDecal == kWideDecal) || (curDot == kFullAngleDot && curDecal == kFullDecal && curFall == kFullFall);
-				if (!okSet) ++bad;
-				if (curDot == 0.2f && pl.act == Act::Write) ++bad;   // Horizon never writes the old Max set
-				if (st.applied == kVanilla && st.wrote.on) ++bad;     // a Vanilla claim never leaves a Horizon write in the state
+				if (pl.act == Act::Write) {
+					const bool okSet = (curDot == kDotAngleDot && curDecal == kDotDecal) || (curDot == kLargeAngleDot && curDecal == kLargeDecal) || (curDot == kWideAngleDot && curDecal == kWideDecal) || (curDot == kFullAngleDot && curDecal == kFullDecal && curFall == kFullFall);
+					if (!okSet) ++bad;
+					if (curDot == 0.2f) ++bad;   // Horizon never writes the old Max set
+					if (curDot == kGameDot && curDecal == kGameDecal) ++bad;   // Vanilla never forces the STEP 0.92 / 0.8 pair
+				}
+				if (st.applied == kVanilla && st.wrote.on) ++bad;     // Vanilla never leaves a recheck write in the state
 			}
-			if (vanillaOnly && writes) ++writesFromVanillaOnly;
+			if (vanillaOnly && writes != 0) ++vanillaOnlyBad;
 		}
-		Expect(bad == 0, "model: Horizon only ever writes the Small / Large / Wide / Full screen sets or gives the captured set back (never 0.2), and Vanilla never leaves a write in the state");
-		Expect(writesFromVanillaOnly == 0, "model: a Vanilla-only player never gets a write");
-		Expect(reads > 0 && reads <= 1600, "model: the game values are read at most once per session (" + std::to_string(reads) + " reads)");
+		Expect(bad == 0, "model: Horizon only ever writes the Small / Large / Wide / Full screen sets (never 0.2, never forced 0.92), and Vanilla never leaves a recheck write in the state");
+		Expect(vanillaOnlyBad == 0, "model: a Vanilla-only player gets no highlight writes");
+		Expect(reads > 0 && reads <= 2000, "model: the game values are read at most once per session (" + std::to_string(reads) + " reads)");
 		Expect(reapplies > 0 && yields > 0, "model: an outside change is written back at most 3 times per pick, then Horizon yields (" + std::to_string(reapplies) + " reapplies, " + std::to_string(yields) + " yields)");
 	}
 
@@ -222,7 +232,7 @@ int main()
 	const auto apply = FnBody(cpp, "void ScanHlApply()\n");
 	Expect(!cpp.empty() && Count(cpp, "ScanHlApply();") == 2 && Has(FnBody(cpp, "void BannerPoll(ULONGLONG a_now)"), "ScanHlApply();"), "ScanHlApply is called once, from BannerPoll (the HUD messages advance, UI thread); plus its forward declaration");
 	Expect(Has(apply, "if (hzscanhl::Settled(g_scanHl, want)) return;") && apply.find("hzscanhl::Settled(") < apply.find("HzAddrSlot"), "steady state returns before any game call (a bool test, one atomic load and a compare)");
-	Expect(Has(apply, "if (!g_scanHlPeeked) ScanHlPeekOnce();") && apply.find("ScanHlPeekOnce();") < apply.find("const int want"), "0.43.5: the read-only load line runs once, before the first apply can write");
+	Expect(Has(apply, "if (!g_scanHlPeeked) ScanHlPeekOnce();") && apply.find("ScanHlPeekOnce();") < apply.find("int want = g_scanHlWant"), "0.43.5: the read-only load line runs once, before the first apply can write");
 	Expect(Has(apply, "HzAddrSlot(id)") && Has(apply, "AddrSlotMiss(slot)") && Has(apply, "HzScanHlSEH(&io)") && apply.find("HzAddrSlot(id)") < apply.find("HzScanHlSEH(&io)"), "the INISettingCollection id is checked in versionlib before the singleton is touched; the call runs under SEH");
 	const auto call = FnBody(cpp, "static void HzScanHlCall(HzScanHlRaw* a_io)");
 	Expect(Has(call, "if (sf && a_io->writeFall) sf->SetFloat(a_io->fall);") && Has(call, "if (sf) a_io->fallWas = sf->GetFloat();") && Has(apply, "io.writeFall = plan.wFall ? 1 : 0;") && Has(apply, "g_scanHl.orig.fall = io.fallWas;"), "the fade is captured once with the other two and written only when the plan says so");
@@ -241,18 +251,27 @@ int main()
 	const auto rc = FnBody(cpp, "void ScanRecheck(RE::UI*, ULONGLONG a_now)\n");
 	Expect(!Has(rc, "IsMenuOpen") && Has(rc, "g_scanOpenEdge.exchange(false") && Has(rc, "if (g_scanOpen.load(std::memory_order_acquire)) return;") && Has(rc, "if (a_now < g_scanReNext) return;") && Has(rc, "g_scanReNext = a_now + 2000;") && Has(rc, "if (!g_scanHl.wrote.on && g_scanReach.applied == hzscanreach::kVanilla) return;") && Has(FnBody(cpp, "void BannerPoll(ULONGLONG a_now)"), "ScanRecheck(ui, a_now);"), "S-1 / N-8: no IsMenuOpen polling; the open edge comes from the menu sink; the 2 s read runs only after a Horizon write and is skipped while the scanner is open");
 	Expect(Has(FnBody(cpp, "ProcessEvent(const RE::MenuOpenCloseEvent& a_event"), "g_scanOpenEdge.store(true, std::memory_order_release);") && Has(cpp, "std::atomic<bool>          g_scanOpenEdge{false};") && Has(cpp, "std::atomic<bool>          g_scanOpen{false};") && Has(FnBody(cpp, "ProcessEvent(const RE::MenuOpenCloseEvent& a_event"), "g_scanOpen.store(a_event.opening, std::memory_order_release);"), "the MenuOpenCloseEvent sink sets the scanner open edge and the open flag (one string compare per event, one lazy one-time allocation for the name)");
-	Expect(Has(apply, "g_scanHl.wrote.on = !restore && io.dotFound != 0;"), "a Vanilla restore turns the recheck off");
+	Expect(Has(apply, "g_scanHl.wrote.on = !restore && !vanilla && io.dotFound != 0;"), "a Vanilla restore turns the recheck off (never rewritten on scanner open)");
+	Expect(kGameDot == 0.92f && kGameDecal == 0.8f && kGameFall == 0.25f, "published getini defaults stay 0.92 / 0.8 / 0.25 (WidenedByOther only; Vanilla does not write them)");
+	Expect(Has(apply, "g_banScanMod.load(std::memory_order_acquire) != 1") && Has(apply, "want = hzscanhl::kVanilla;"), "Scanner module off skips highlight writes; a leftover this-session write is restored");
+	Expect(Has(ReadAll("src/hz_scan_hl.h"), "if (a_want == kVanilla)") && Has(ReadAll("src/hz_scan_hl.h"), "p.act = Act::Restore;"), "Next: Vanilla is Restore of captured values, not a Write of 0.92");
+	Expect(std::string(kKeyDot) == "fScanHighlightDotAngle:Interface" && std::string(kKeyDecal) == "fResourceDecalRenderRadiusPct:ResourceVeins" && std::string(kKeyFall) == "fResourceDecalRenderRadiusFalloffPct:ResourceVeins", "HIGHLIGHT AREA targets the scanner INI keys (Interface / ResourceVeins), not GMSTs");
+	Expect(!Has(call, "ActivatePick") && !Has(call, "fActivatePick") && !Has(call, "SetGS") && Has(call, "SetFloat(a_io->dot)") && Has(call, "INISettingCollection"), "SetFloat is only the three scanner INI settings; activation pick (fActivatePickRadius / Length, iActivatePickAngle) is not written");
+	Expect(Has(apply, "const bool vanilla = want == hzscanhl::kVanilla;") && Has(peek, "VANILLA leaves those values"), "Vanilla is a passthrough, logged on the load line");
+	Expect(Has(ReadAll("src/hz_scan_hl.h"), "int   applied = kUnset;") && Has(ReadAll("src/hz_scan_hl.h"), "inline constexpr int kUnset = -1;"), "applied starts unset so the first BannerPoll can record Vanilla without writing");
 	// presets keep the player's own choice
 	Expect(Has(pa, "a_sec == \"scanner\" && (a_kl == \"scanhighlightarea\" || a_kl == \"scanoutlinethickness\" || a_kl == \"scanreach\")"), "0.43.5: ScanHighlightArea / ScanOutlineThickness / ScanReach are personal keys (a preset Apply keeps the player's own)");
 	// F11 / ini
 	Expect(Has(as, "[\"ScanNearestUnscanned\",\"b\",1,0,1],[\"ScanHighlightArea\",\"i\",1,0,5],[\"ScanOutlineThickness\",\"i\",0,0,2],[\"ScanReach\",\"i\",0,0,3],[\"HideMainHudWhileScanning\""), "HZ40_SCAN_KEYS: ScanHighlightArea int 0 - 5 default 1, then ScanOutlineThickness, then ScanReach");
 	Expect(Has(as, "{\"k\":\"ScanHighlightArea\",\"l\":\"HIGHLIGHT AREA\",\"t\":\"r\",\"opts\":[\"SMALL\",\"VANILLA\",\"LARGE\",\"WIDE\",\"FULL SCREEN\"],\"ids\":[0,1,4,5,2]"), "F11 SCANNER row: five labels in size order, ids 0 / 1 / 4 / 5 / 2");
-	Expect(Has(as, "\"ids\":[0,1,4,5,2],\"note\":\"How far from the screen center the scanner picks up and outlines things. It doesn't change how far away you can scan (that's SCAN REACH). SMALL: about half the game's circle. VANILLA: the game's own (or your own INI tweak). LARGE: reaches the top and bottom of the screen. WIDE: reaches the left and right edges. FULL SCREEN: the whole screen, corners too. Applies the next time you open the scanner\"}"), "F11 HIGHLIGHT AREA note: what each level covers, not the distance, when it applies");
+	Expect(Has(as, "\"ids\":[0,1,4,5,2],\"note\":\"How far from the screen center the scanner picks up and outlines things. It doesn't change how far away you can scan (that's SCAN REACH). SMALL: about half the game's circle. VANILLA: leaves the game's cone (your INI or another highlight-radius mod stays). Horizon does not write it. LARGE: reaches the top and bottom of the screen. WIDE: reaches the left and right edges. FULL SCREEN: the whole screen, corners too. A change writes once; it is not rewritten when you open the scanner\"}"), "F11 HIGHLIGHT AREA note: Vanilla is a passthrough, not rewritten on scanner open");
+	Expect(Has(as, "case \"ScanHighlightArea\": return") && Has(as, "Vanilla leaves the game's cone: Horizon writes nothing, so the game or another highlight-radius mod stays"),
+		"Settings 2.0 HIGHLIGHT AREA Setting Details: Vanilla is a passthrough");
 	Expect(Has(FnBody(as, "private function hz40Fix(c:Object) : void"), "if(int(c.ScanHighlightArea) == 3) { c.ScanHighlightArea = 2; }"), "the HUD shows and saves a stored 3 (old MAX) as FULL SCREEN (2)");
 	const auto iniKey = ini.find("\r\nScanHighlightArea=1\r\n");
 	Expect(iniKey != std::string::npos && ini.find("ScanNearestUnscanned=1\r\n") < iniKey && iniKey < ini.find("HideMainHudWhileScanning=1"), "default.ini: ScanHighlightArea=1 under [Scanner], in the HZ40_SCAN_KEYS order");
 	const std::string c1 = "Highlight area of the hand scanner (the game's own pick-up cone and outline radius, set by the DLL; not the scan distance): 0 = Small (half the game's circle),";
-	const std::string c2 = "1 = Vanilla (default: the game's own values, nothing is changed), 4 = Large, 5 = Wide, 2 = Full screen (3, the old Max, reads as 2). Applies the next time you open the scanner";
+	const std::string c2 = "1 = Vanilla (default: Horizon writes nothing; the game, StarfieldCustom.ini or another highlight-radius mod stays), 4 = Large, 5 = Wide, 2 = Full screen (3, the old Max, reads as 2). A change writes once; not on scanner open";
 	Expect(Has(ini, "; " + c1 + "\r\n; " + c2 + "\r\nScanHighlightArea=1") && Has(as, "\"ScanHighlightArea\":[\"" + c1 + "\",\"" + c2 + "\"]"), "the default.ini comment equals the HUD writer's comment");
 
 	std::cout << (g_fail ? "FAILED " : "PASSED ") << g_ok << " ok, " << g_fail << " FAIL\n";
