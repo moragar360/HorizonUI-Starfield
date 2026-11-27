@@ -133,7 +133,7 @@ const rh = fnText(as, "hzSetRowH").body;
 expect(/\(r\.h \? HZ51_SEC : 0\) \+ HZ51_ROW/.test(rh), "row geometry counts the section header with the row, so selection follow and scrolling keep the header with its row");
 {
 	// selection follow over the real geometry: moving down through every row keeps the selected row inside the view
-	const h = { hzSetRow: 0, hzSetScroll: 0, hzSetMaxScroll: 0, HZ_SET_H: 1020, HZ_SET_TOP: 108, HZ51_FOOT: 54, HZ51_ROW: 58, HZ51_SEC: 32, hz34BanH() { return 40; }, hzSetNoteH(r) { return r.note ? 20 : 0; } };
+	const h = { hzSetRow: 0, hzSetScroll: 0, hzSetMaxScroll: 0, HZ_SET_H: 1020, HZ_SET_TOP: 108, HZ51_FOOT: 54, HZ51_ROW: 58, HZ51_SEC: 32, hz34BanH() { return 40; }, hzSetNoteH(r) { return r.note ? 20 : 0; }, hz51QmGridH() { return 210; } };
 	const k = /HZ_SET_TOP:Number = (\d+)/.exec(as); if (k) h.HZ_SET_TOP = Number(k[1]);
 	const kh = /HZ_SET_H:Number = (\d+)/.exec(as); if (kh) h.HZ_SET_H = Number(kh[1]);
 	const kf = /HZ51_FOOT:Number = (\d+)/.exec(as); if (kf) h.HZ51_FOOT = Number(kf[1]);
@@ -144,13 +144,16 @@ expect(/\(r\.h \? HZ51_SEC : 0\) \+ HZ51_ROW/.test(rh), "row geometry counts the
 	const fol = fnText(as, "hzSetFollow");
 	h.hzSetFollow = new Function(fol.params.split(":")[0], fol.body.replace(/for each\(var (\w+):[\w*]+ in /g, "for (let $1 of ").replace(/var (\w+):[\w*]+/g, "let $1").replace(/([^.\w])HZ_SET_(H|TOP)\b/g, "$1this.HZ_SET_$2").replace(/([^.\w])HZ51_(FOOT|ROW|SEC)\b/g, "$1this.HZ51_$2"));
 	const L = list(withScope);
-	const avail = h.HZ_SET_H - h.HZ51_FOOT - h.HZ_SET_TOP - 64;
+	// same leftover as hzSetFollow (list chrome under the tabs), not the old 64px mockup header
+	const avail = h.HZ_SET_H - h.HZ51_FOOT - h.HZ_SET_TOP - 52;
 	let ok = true;
 	for (let i = 1; i < withScope.length; i++) {
 		h.hzSetRow = i; h.hzSetFollow(withScope);
 		const li = L.indexOf(withScope[i]);
 		let y = 0; for (let j = h.hzSetScroll; j <= li; j++) y += h.hzSetRowH(L[j]);
-		if (li < h.hzSetScroll || y > avail) { ok = false; break; }
+		const rh = h.hzSetRowH(L[li]);
+		// a row taller than the pane (key grid) is in view when it is scrolled to the top
+		if (li < h.hzSetScroll || (y > avail && !(rh > avail && li === h.hzSetScroll))) { ok = false; break; }
 	}
 	expect(ok, "down through all " + (withScope.length - 1) + " list rows: the selected row (with its header) is always fully in view");
 }

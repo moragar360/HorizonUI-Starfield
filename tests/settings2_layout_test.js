@@ -41,34 +41,34 @@ function constN(name) {
 	return m ? Number(m[1]) : NaN;
 }
 
-// Mockup cards_status.html / search_jump.html vs implemented constants
+// Compact shell: mockup colors/style, 10% over the old 1000x660 F11 clip so the HUD stays visible.
 const mock = {
-	winW: 1848, winH: 1020, side: 268, prev: 292, row: 58, head: 62, tabs: 46,
-	footRow: 54, findW: 268, findH: 36, ddH: 34, pvcH: 188, divA: 0.08, boxA: 0.18,
-	selA: 0.10, shA: 0.28, winEA: 0.28, titlePx: 13, helpPx: 12
+	winW: 1100, winH: 726, side: 248, prev: 196, row: 48, head: 52, tabs: 38,
+	footRow: 46, findW: 176, findH: 30, ddH: 28, pvcH: 120, divA: 0.08, boxA: 0.18,
+	selA: 0.10, shA: 0.28, winEA: 0.28, titlePx: 12, helpPx: 11
 };
-expect(constN("HZ51_ROW") === mock.row, "row height mockup " + mock.row + " / implemented " + constN("HZ51_ROW"));
-expect(constN("HZ51_SIDE_W") === mock.side, "sidebar width mockup " + mock.side + " / implemented " + constN("HZ51_SIDE_W"));
-expect(constN("HZ51_PREV_W") === mock.prev, "preview width mockup " + mock.prev + " / implemented " + constN("HZ51_PREV_W"));
-expect(constN("HZ51_HEAD") === mock.head && constN("HZ51_TABS") === mock.tabs, "header 62 + tabs 46 mockup / implemented " + constN("HZ51_HEAD") + "+" + constN("HZ51_TABS"));
-expect(constN("HZ51_FOOT") === mock.footRow, "single hint row mockup " + mock.footRow + " / implemented " + constN("HZ51_FOOT"));
-expect(constN("HZ51_FIND_W") === mock.findW && constN("HZ51_FIND_H") === mock.findH, "search box mockup 268x36 / implemented " + constN("HZ51_FIND_W") + "x" + constN("HZ51_FIND_H"));
-expect(constN("HZ51_DD_H") === mock.ddH && constN("HZ51_PVC_H") === mock.pvcH, "dropdown 34 and preview card 188 mockup / implemented " + constN("HZ51_DD_H") + " / " + constN("HZ51_PVC_H"));
-expect(constN("HZ51_DIV_A") === mock.divA && constN("HZ51_BOX_A") === mock.boxA && constN("HZ51_SEL_A") === mock.selA, "divider 0.08 / box 0.18 / sel 0.10 mockup alphas implemented");
-expect(/HZ_SET_W:Number = 1848/.test(as) && /HZ_SET_H:Number = 1020/.test(as) && /HZ_SET_TOP:Number = 108/.test(as), "window 1848x1020, body top 108 (62+46)");
+expect(constN("HZ51_ROW") === mock.row, "row height " + mock.row + " / implemented " + constN("HZ51_ROW"));
+expect(constN("HZ51_SIDE_W") === mock.side, "sidebar width " + mock.side + " / implemented " + constN("HZ51_SIDE_W"));
+expect(constN("HZ51_PREV_W") === mock.prev, "preview width " + mock.prev + " / implemented " + constN("HZ51_PREV_W"));
+expect(constN("HZ51_HEAD") === mock.head && constN("HZ51_TABS") === mock.tabs, "header 52 + tabs 38 / implemented " + constN("HZ51_HEAD") + "+" + constN("HZ51_TABS"));
+expect(constN("HZ51_FOOT") === mock.footRow, "single hint row " + mock.footRow + " / implemented " + constN("HZ51_FOOT"));
+expect(constN("HZ51_FIND_W") === mock.findW && constN("HZ51_FIND_H") === mock.findH, "search box 176x30 / implemented " + constN("HZ51_FIND_W") + "x" + constN("HZ51_FIND_H"));
+expect(constN("HZ51_DD_H") === mock.ddH && constN("HZ51_PVC_H") === mock.pvcH, "dropdown 28 and preview card 120 / implemented " + constN("HZ51_DD_H") + " / " + constN("HZ51_PVC_H"));
+expect(constN("HZ51_DIV_A") === mock.divA && constN("HZ51_BOX_A") === mock.boxA && constN("HZ51_SEL_A") === mock.selA, "divider 0.08 / box 0.18 / sel 0.10 mockup alphas kept");
+expect(/HZ_SET_W:Number = 1100/.test(as) && /HZ_SET_H:Number = 726/.test(as) && /HZ_SET_TOP:Number = 90/.test(as), "window 1100x726, body top 90 (52+38)");
 expect(/hz51Stroke/.test(fnText(as, "hz51DrawList").body) && /HZ51_DIV_A/.test(fnText(as, "hz51DrawList").body), "list rows use filled-rect box stroke and 8% dividers");
-expect(!/lineStyle/.test(fnText(as, "hz51Stroke").body) && /drawRect\(x, y, w, 1\)/.test(fnText(as, "hz51Stroke").body) && /drawRoundRect\(x, y, w, h, r, r\)/.test(fnText(as, "hz51Stroke").body) && /drawRoundRect\(x \+ 1, y \+ 1, w - 2, h - 2, ir, ir\)/.test(fnText(as, "hz51Stroke").body), "hz51Stroke is a pixel-snapped filled ring (outer minus inner round rect); r=0 keeps four 1px bars; never lineStyle");
-expect(/13,\"bd\"/.test(fnText(as, "hz51DrawList").body), "row title 13px bold (mockup .ln 13px/700)");
-expect(/12,\"rg\"/.test(fnText(as, "hz51DrawList").body), "row help 12px (mockup .help 12px/500)");
-expect(/11,\"bd\"/.test(fnText(as, "hz51DrawList").body) && /HZ51_SH_A/.test(fnText(as, "hz51DrawList").body), "section header 11px accent + 28% rule (mockup .sh)");
+expect(!/lineStyle/.test(fnText(as, "hz51Stroke").body) && /drawRect\(x, y, w, 1\)/.test(fnText(as, "hz51Stroke").body) && !/drawRoundRect/.test(fnText(as, "hz51Stroke").body), "hz51Stroke is four 1px bars inside the box; never lineStyle or even-odd roundRect");
+expect(/HZ51_TITLE_PX/.test(fnText(as, "hz51DrawList").body), "row title 12px");
+expect(/HZ51_HELP_PX/.test(fnText(as, "hz51DrawList").body), "row help 11px");
+expect(/HZ51_SH_PX/.test(fnText(as, "hz51DrawList").body) && /HZ51_SH_A/.test(fnText(as, "hz51DrawList").body), "section header 10px accent + 28% rule");
 
-// 1. Window from visibleRect
-expect(/vw - 72/.test(fnText(as, "hz51Fit").body) && /vh - 60/.test(fnText(as, "hz51Fit").body), "hz51Fit uses mockup 36px left and 32+28 top/bottom (72/60) so 1080p is 1020 tall");
-expect(Math.round(Math.max(1100, Math.min(1848, 1920 - 72))) === 1848 && Math.round(Math.max(640, Math.min(1020, 1080 - 60))) === 1020, "1080p visibleRect yields the mockup 1848x1020 (bottom of window at 30+1020=1050, 30px stage margin)");
+// 1. Window from visibleRect — cap at 1100x726 so HUD cards stay visible
+expect(/vw - 80/.test(fnText(as, "hz51Fit").body) && /vh - 80/.test(fnText(as, "hz51Fit").body), "hz51Fit leaves an 80px stage margin so edge HUD cards stay in view");
+expect(Math.round(Math.max(900, Math.min(1100, 1920 - 80))) === 1100 && Math.round(Math.max(560, Math.min(726, 1080 - 80))) === 726, "1080p visibleRect yields 1100x726");
 expect(/hz51Fit/.test(fnText(as, "hzSetPlace").body), "hzSetPlace sizes from visibleRect before centering");
 expect(!/HorizonSettings_mc\.scaleX/.test(fnText(as, "hzSetPlace").body) && !/HorizonSettings_mc\.scaleY/.test(fnText(as, "hzSetPlace").body), "hzSetPlace does not scale HorizonSettings_mc (old F11 in hudmenu_lrg also left the window at 1.0; HZ_SCALE 1.07 is cards only)");
 expect(/hudmenu_lrg 1\.07 scales HUD cards only/.test(as), "comment records that _lrg HZ_SCALE must not be applied to the F11 clip");
-expect(/HZ51_SIDE_W \+ 28/.test(fnText(as, "hz51ListBox").body), "list has 28px main padding so labels do not run into the sidebar");
+expect(/HZ51_SIDE_W \+ 20/.test(fnText(as, "hz51ListBox").body), "list has 20px main padding so labels do not run into the sidebar");
 
 // 2. Active-device hints (change-driven, no poll)
 expect(/hz51Pad = this.hzVehPad == 1/.test(fnText(as, "hzToggleSettings").body), "open seeds the hint row from ControlMap (hzVehPad)");
@@ -87,13 +87,14 @@ const typeChar = toJs(as, "hz51TypeChar");
 expect(typeChar("ch:v") === "v" && typeChar("bind:V") === "" && typeChar("ok") === "", "ch:v yields v; bind:V is not a typed character");
 const drawBody = fnText(as, "hz51Draw").body;
 expect(/drawRoundRect\(0,12,W,H/.test(drawBody) && !/while\(i < 5\)/.test(drawBody), "window shadow is one 12px-offset fill (mockup 0 12px 48px), not a 5-layer blur");
-expect(/HZ51_WIN_R/.test(fnText(as, "hz51Draw").body) && /HZ51_BOX_R/.test(fnText(as, "hz51DrawList").body), "window and box strokes pass the matching corner radius into the filled ring");
+expect(/HZ51_WIN_R/.test(fnText(as, "hz51Draw").body) && /HZ51_BOX_R/.test(fnText(as, "hz51DrawList").body), "window and box still use the mockup corner radii on their fills");
 
-const drop = toJs(as, "hz51DropRect");
-const below = drop(800, 400, 148, 34, 220, 120, 1848, 1020, 54, 108);
-expect(below.y === 438 && below.x === 728, "dropdown anchors 4px below a 34px control (mockup .ddmenu top:38px): y=" + below.y);
-const flip = drop(800, 900, 148, 34, 220, 200, 1848, 1020, 54, 108);
-expect(flip.y === 900 - 4 - 200, "dropdown flips above only when it would leave the window: y=" + flip.y);
+const drop = new Function("ctrlX", "ctrlY", "ctrlW", "ctrlH", "menuW", "menuH", "winW", "winH", "foot", "top",
+	"const HZ51_DROP_ITEM = 24; const int = (n) => n | 0;\n" + fnText(as, "hz51DropRect").body.replace(/var (\w+):[\w.*]+/g, "let $1"));
+const below = drop(800, 400, 148, 28, 148, 120, 1100, 726, 46, 90);
+expect(below.x === 800 && below.y === 432 && below.w === 148, "dropdown sits under its box (same x/w, 4px gap): x=" + below.x + " y=" + below.y);
+const flip = drop(800, 620, 148, 28, 148, 200, 1100, 726, 46, 90);
+expect(flip.y + flip.h <= 620 - 4, "dropdown flips above when it would leave the window: y=" + flip.y + " h=" + flip.h);
 
 // 4. Empty STATUS / every sidebar page
 expect(/ShowVitals/.test(fnText(as, "hz51Cards").body) && /id == \"sta\"/.test(fnText(as, "hz51Cards").body), "CARDS > STATUS still builds Vitals/Jetpack/Afflictions/Hazard/Warnings");
@@ -108,10 +109,10 @@ expect(/hz51Cards/.test(fnText(as, "hz51Rows").body) && /hz51Appear/.test(fnText
 expect(!/hzSetPvDraw/.test(fnText(as, "hz51DrawRight").body), "Setting Details column does not call hzSetPvDraw");
 expect(/hzSetPv\.visible = false/.test(fnText(as, "hz51Draw").body), "planet-card clone is hidden while F11 is open");
 expect((fnText(as, "hz51DrawRight").body.match(/LIVE PREVIEW/g) || []).length === 1, "LIVE PREVIEW is drawn once");
-expect(/HZ51_PVC_H/.test(fnText(as, "hz51DrawRight").body) && /SETTING DETAILS/.test(fnText(as, "hz51DrawRight").body), "188px preview card then Setting Details below it");
+expect(/HZ51_PVC_H/.test(fnText(as, "hz51DrawRight").body) && /SETTING DETAILS/.test(fnText(as, "hz51DrawRight").body), "preview card then Setting Details below it");
 
 // 6. Module pills vertically centered on the row
-expect(/HZ51_ROW \/ 2/.test(fnText(as, "hz51DrawList").body) && /r\.t == \"md\"/.test(fnText(as, "hz51DrawList").body), "INSTALLED / ENABLED badge is vertically centered on the 58px row");
+expect(/HZ51_ROW \/ 2/.test(fnText(as, "hz51DrawList").body) && /r\.t == \"md\"/.test(fnText(as, "hz51DrawList").body), "INSTALLED / ENABLED badge is vertically centered on the row");
 
 // 7. Dropdowns drawn last, on top
 expect(/hz51DrawDrop/.test(fnText(as, "hz51Draw").body) && fnText(as, "hz51Draw").body.indexOf("hz51DrawDrop") > fnText(as, "hz51Draw").body.indexOf("hz51DrawList"), "dropdown menu is drawn after the list so it sits on top");

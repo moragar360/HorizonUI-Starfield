@@ -18,20 +18,28 @@
       private var hzSetSideHits:Array = [];
       private var hz51Pad:Boolean = false;        // last F11 input was gamepad (hzpad / D-pad / A/B / LB/RB / stick); mouse/letters clear it
       private var hzSetDropBox:Object = null;     // last drawn dropdown control {x,y,w,h} for menu anchoring
-      // Mockup (cards_status.html / search_jump.html) — whole pixels, filled-rect strokes.
-      private static const HZ51_ROW:Number = 58;        // .row min-height: 58
-      private static const HZ51_HEAD:Number = 62;       // .top height: 62
-      private static const HZ51_TABS:Number = 46;       // .tabs height: 46
-      private static const HZ51_SIDE_W:Number = 268;    // .side width: 268
-      private static const HZ51_PREV_W:Number = 292;    // .pvcol width: 292
-      private static const HZ51_FOOT:Number = 54;       // one .fr row (active device only)
-      private static const HZ51_SEC:Number = 32;        // .sh margin 20+10 + 11px title
-      private static const HZ51_FIND_W:Number = 268;    // .find min-width
-      private static const HZ51_FIND_H:Number = 36;     // .find height
-      private static const HZ51_DD_H:Number = 34;       // .dd height
-      private static const HZ51_PVC_H:Number = 188;     // .pvc height
-      private static const HZ51_WIN_R:Number = 14;      // .win border-radius
-      private static const HZ51_BOX_R:Number = 8;       // .box border-radius
+      private var hzSetDropScroll:int = 0;        // first visible option when the menu is taller than the gap
+      private var hzSetDropVis:int = 0;           // how many options the open menu can show
+      private var hzSetOver:Sprite = null;        // dropdown / find layer above row text (body.graphics sits behind children)
+      // Compact shell: old F11 was 1000x660; this window is 10% larger (1100x726) so HUD cards stay visible.
+      // Style (filled 1px bars, accent, Exo 2) matches the mockup; type and rows are scaled to fit.
+      private static const HZ51_ROW:Number = 48;        // scaled from mockup 58
+      private static const HZ51_HEAD:Number = 52;       // scaled from mockup 62
+      private static const HZ51_TABS:Number = 38;       // scaled from mockup 46
+      private static const HZ51_SIDE_W:Number = 248;    // one-line labels at 11px; slimming further does not shrink the 1100 window
+      private static const HZ51_PREV_W:Number = 196;    // scaled from mockup 292
+      private static const HZ51_FOOT:Number = 46;       // one hint row
+      private static const HZ51_SEC:Number = 26;        // section title + rule
+      private static const HZ51_FIND_W:Number = 176;    // header search slot
+      private static const HZ51_FIND_H:Number = 30;     // header control height
+      private static const HZ51_DD_H:Number = 28;       // dropdown box height
+      private static const HZ51_PVC_H:Number = 120;     // live preview card
+      private static const HZ51_WIN_R:Number = 10;
+      private static const HZ51_BOX_R:Number = 6;
+      private static const HZ51_DROP_ITEM:Number = 24;  // one option row in an open menu
+      private static const HZ51_TITLE_PX:Number = 12;
+      private static const HZ51_HELP_PX:Number = 11;
+      private static const HZ51_SH_PX:Number = 10;
       private static const HZ51_DIV_A:Number = 0.08;    // .row border-bottom txt 8%
       private static const HZ51_BOX_A:Number = 0.18;    // .box border acc 18%
       private static const HZ51_SH_A:Number = 0.28;     // .sh:after acc 28%
@@ -45,15 +53,15 @@
       private static const HZ51_QM_CLASH:uint = 0xF2A03A;
       private static const HZ51_PERF_NAMES:Array = ["BASELINE","HOVER SKIP","FIXTURE","FULL PIPELINE","SAME TARGET","RAPID TARGETS","SCANNER","BACKGROUND HUD"];
 
-      // Purpose: size the F11 window from visibleRect the way the mockups do
-      // (1848x1020 on a 1920x1080 stage, 36px / 32px margins). Clamps so a
-      // 1280x720 HUD still fits. Called on open and on each draw while F11 is
-      // open — not from the HUD frame when the menu is closed.
+      // Purpose: size the F11 window just larger than the old 1000x660 settings
+      // clip (10% → 1100x726). Never grow on a 1440p / ultrawide stage — players
+      // need to see the real HUD while they adjust. Shrinks on a 720p HUD so the
+      // window still fits. Called on open and on each draw while F11 is open.
       // Inputs: Extensions.visibleRect. Outputs: HZ_SET_W / HZ_SET_H.
       private function hz51Fit() : void
       {
-         var W:Number = 1848;
-         var H:Number = 1020;
+         var W:Number = 1100;
+         var H:Number = 726;
          try
          {
             var vr:Rectangle = Extensions.visibleRect;
@@ -65,9 +73,8 @@
                var vh:Number = br.y - tl.y;
                if(vw >= 400 && vh >= 300)
                {
-                  W = Math.round(Math.max(1100, Math.min(1848, vw - 72)));
-                  // mockup: top 32 + height 1020 on 1080 → bottom 28 (not a symmetric 32)
-                  H = Math.round(Math.max(640, Math.min(1020, vh - 60)));
+                  W = Math.round(Math.max(900, Math.min(1100, vw - 80)));
+                  H = Math.round(Math.max(560, Math.min(726, vh - 80)));
                }
             }
          }
@@ -75,32 +82,37 @@
          this.HZ_SET_W = W;
          this.HZ_SET_H = H;
       }
-      // Purpose: 1px stroke as a filled ring, pixel-snapped. Rounded fills use even-odd
-      // (outer round rect minus inner) so the border follows the same corner as the fill.
-      // r=0 keeps four 1px bars for sharp hairlines. Never lineStyle (clips / looks soft).
+      // Purpose: 1px stroke as four filled bars, each its own beginFill/endFill,
+      // strictly inside [x,y,w,h]. Scaleform even-odd (outer roundRect minus inner)
+      // joined the two subpaths with a diagonal and filled a teal wedge from the
+      // control, past the row and scrollbar, into the preview. r is kept so call
+      // sites stay the same; corners stay sharp. Never lineStyle.
+      // Inputs: graphics, box, color, alpha, unused radius. Outputs: 1px frame.
       private function hz51Stroke(g:*, x:Number, y:Number, w:Number, h:Number, col:uint, a:Number, r:Number = 0) : void
       {
          x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
-         r = Math.max(0, Math.round(r));
          if(g == null || w < 2 || h < 2 || a <= 0) { return; }
-         if(r < 1)
+         g.beginFill(col, a);
+         g.drawRect(x, y, w, 1);
+         g.endFill();
+         g.beginFill(col, a);
+         g.drawRect(x, y + h - 1, w, 1);
+         g.endFill();
+         if(h > 2)
          {
             g.beginFill(col, a);
-            g.drawRect(x, y, w, 1);
-            g.drawRect(x, y + h - 1, w, 1);
-            if(h > 2)
-            {
-               g.drawRect(x, y + 1, 1, h - 2);
-               g.drawRect(x + w - 1, y + 1, 1, h - 2);
-            }
+            g.drawRect(x, y + 1, 1, h - 2);
             g.endFill();
-            return;
+            g.beginFill(col, a);
+            g.drawRect(x + w - 1, y + 1, 1, h - 2);
+            g.endFill();
          }
-         var ir:Number = Math.max(0, r - 1);
-         g.beginFill(col, a);
-         g.drawRoundRect(x, y, w, h, r, r);
-         g.drawRoundRect(x + 1, y + 1, w - 2, h - 2, ir, ir);
-         g.endFill();
+      }
+      // Purpose: Settings 2.0 text at the intended pixel size. hzWT floors at 13px
+      // unless minPx is passed, which made 11–12px labels jump and overlap.
+      private function hz51T(b:Sprite, txt:String, x:Number, y:Number, w:Number, fs:Number, face:String, col:uint, ls:Number = 0, align:String = "left") : TextField
+      {
+         return this.hzWT(b, txt, x, y, w, fs, face, col, ls, align, int(Math.round(fs)));
       }
       // Purpose: whole-pixel filled hairline (row divider, section rule, column rule).
       private function hz51Hair(g:*, x:Number, y:Number, w:Number, h:Number, col:uint, a:Number) : void
@@ -110,24 +122,61 @@
          g.drawRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
          g.endFill();
       }
-      // Purpose: place a dropdown directly under its control (mockup .ddmenu top:38px
-      // on a 34px .dd = 4px gap). Flip above only when the menu would leave the window.
-      // Inputs: control rect, menu size, window. Outputs: {x,y,w,h} whole pixels.
+      // Purpose: place a dropdown flush with its box (same left and right edges).
+      // Prefer 4px below; flip above if the leftover below is smaller. Height is
+      // clipped to the leftover so a 15-item list near the bottom stays inside
+      // the window; the draw path then scrolls. Never right-aligns to a wider menu.
+      // Inputs: control rect, requested menu size, window. Outputs: {x,y,w,h,vis}.
       private function hz51DropRect(ctrlX:Number, ctrlY:Number, ctrlW:Number, ctrlH:Number, menuW:Number, menuH:Number, winW:Number, winH:Number, foot:Number, top:Number) : Object
       {
-         var x:Number = Math.round(ctrlX + ctrlW - menuW);
+         var w:Number = Math.round(ctrlW > 8 ? ctrlW : menuW);
+         var x:Number = Math.round(ctrlX);
          if(x < 8) { x = 8; }
-         if(x + menuW > winW - 8) { x = Math.round(Math.max(8, winW - 8 - menuW)); }
+         if(x + w > winW - 8) { x = Math.round(Math.max(8, winW - 8 - w)); }
          var gap:Number = 4;
-         var y:Number = Math.round(ctrlY + ctrlH + gap);
          var maxY:Number = winH - foot - 4;
-         if(y + menuH > maxY)
+         var below:Number = maxY - (ctrlY + ctrlH + gap);
+         var above:Number = ctrlY - gap - top;
+         var need:Number = Math.max(HZ51_DROP_ITEM + 8, menuH);
+         var y:Number;
+         var h:Number;
+         if(below >= Math.min(need, 3 * HZ51_DROP_ITEM + 8) || below >= above)
          {
-            var above:Number = Math.round(ctrlY - gap - menuH);
-            if(above >= top) { y = above; }
-            else { y = Math.round(Math.max(top, maxY - menuH)); }
+            y = Math.round(ctrlY + ctrlH + gap);
+            h = Math.round(Math.max(HZ51_DROP_ITEM + 8, Math.min(need, Math.max(HZ51_DROP_ITEM + 8, below))));
          }
-         return {"x":x,"y":y,"w":Math.round(menuW),"h":Math.round(menuH)};
+         else
+         {
+            h = Math.round(Math.max(HZ51_DROP_ITEM + 8, Math.min(need, Math.max(HZ51_DROP_ITEM + 8, above))));
+            y = Math.round(ctrlY - gap - h);
+            if(y < top) { y = Math.round(top); h = Math.round(Math.max(HZ51_DROP_ITEM + 8, ctrlY - gap - y)); }
+         }
+         var vis:int = Math.max(1, int(Math.floor((h - 8) / HZ51_DROP_ITEM)));
+         return {"x":x,"y":y,"w":w,"h":h,"vis":vis};
+      }
+      // Purpose: header compact / search / arrange as three fixed slots from the
+      // right, never overlapping the title cluster. Laid out from constants (not
+      // per-frame text measurement). Outputs: pixel rects for each control.
+      private function hz51HeadSlots() : Object
+      {
+         var W:Number = this.HZ_SET_W;
+         var fy:Number = Math.round((HZ51_HEAD - HZ51_FIND_H) / 2);
+         var h:Number = HZ51_FIND_H;
+         var gap:Number = 8;
+         var titleR:Number = 340;
+         var arrW:Number = this.hzSetTab == 4 ? 0 : (this.hzSetTab == 2 ? 150 : 132);
+         var ax:Number = W - 16 - arrW;
+         var findW:Number = HZ51_FIND_W;
+         var fx:Number = ax - (arrW > 0 ? gap : 0) - findW;
+         var compactW:Number = 200;
+         var cx:Number = fx - gap - compactW;
+         if(cx < titleR)
+         {
+            compactW = Math.max(128, fx - gap - titleR);
+            cx = fx - gap - compactW;
+         }
+         if(cx < titleR) { cx = titleR; compactW = Math.max(96, fx - gap - cx); }
+         return {"titleR":titleR,"cx":cx,"cw":compactW,"fx":fx,"findW":findW,"ax":ax,"arrW":arrW,"fy":fy,"h":h,"W":W,"gap":gap};
       }
       // Purpose: one typed character from QueueKey. Letters arrive as the pair
       // ch:v then bind:V (FlushInputToHud calls hzSettingsKey for each). Find and
