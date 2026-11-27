@@ -128,6 +128,7 @@ function host(src, W, isNew) {
 		hzT19EdgeN: 3, hzT19WalkSkip: 0, hzT19LblDue: true, hzT19LblC: null, hzT19HcDue: true, hzT19HcRec: false, hzT19HcValid: false, hzT19HcAw: null, hzT19HcHd: null, hzT19HcArr: null,
 		hzT19HcLen: -1, hzT19HcBtn: null, hzT19HcD: [], hzT19HcP: [], hzT19HcDN: 0, hzT19HcB: [], hzT19HcBK: [], hzT19HcBP: [], hzT19HcBN: 0 });
 	for (const f of HIDE_FN) bind(h, src, f);
+	if (src.indexOf("function hzTgSnap(") >= 0) bind(h, src, "hzTgSnap");
 	if (isNew) for (const f of NEW_FN) bind(h, src, f);
 	const walk = h.hzT19HidePromptTree;
 	h.hzT19HidePromptTree = function(box, b) { if (box === W.hd) h.walks++; return walk(box, b); };   // one count per hz38HideVanilla walk (the holder pass)

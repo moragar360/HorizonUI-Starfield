@@ -9,8 +9,24 @@
 //   fResourceDecalRenderRadiusPct:ResourceVeins - how far from the center an already highlighted object keeps its
 //                                             outline; game default 0.8.
 //   fResourceDecalRenderRadiusFalloffPct:ResourceVeins - the fade band at the edge of that radius; game default 0.25.
-// (Defaults: the published getini dump of all valid Starfield INI settings and the Nexus "scanner highlight radius"
-// article. The pick-up distance is game form data, not an INI setting, and is not changed here.)
+// Defaults (INI, not GMST). Confirmed 2026-11-27:
+//   getini dump of every valid Starfield INI setting (STEP, values read with getini "name:section"):
+//     https://stepmodifications.org/forum/topic/19019-starfield-default-values-for-all-known-valid-ini-settings/
+//     fScanHighlightDotAngle:Interface = 0.92
+//     fResourceDecalRenderRadiusPct:ResourceVeins = 0.8
+//     fResourceDecalRenderRadiusFalloffPct:ResourceVeins = 0.25
+//   Nexus "Changing the scanner highlight radius" (setini of the first two; screenshots of the vanilla cone):
+//     https://www.nexusmods.com/starfield/articles/651
+//   Public scanner-highlight mods (Fullscran, Hand Scanner Utility) write these same three INI keys, not GMSTs.
+// Activation / interact pick is a different system and is not written here:
+//   INI [Interface] fActivatePickRadius = 0.1, fActivatePickLength = 2.4 (same STEP getini dump)
+//   GMST fActivatePickLength = 2.1429 (starfieldwiki.net GMST list; CK Game Settings Database)
+//   iActivatePickAngle is not in the getini dump or the GMST list. CK Activators have a per-form
+//   "Activation Range for Player" angle, not a global setting:
+//     https://starfield.creationkit.bethesda.net/Activator
+// The official CK INI page does not list these keys (only a short "useful settings" table):
+//   https://starfield.creationkit.bethesda.net/Initialization_(.ini)_Settings
+// The pick-up distance is game form data, not an INI setting, and is not changed here.
 // 0.43.5 levels (each one a visible step on a 16:9 screen at the default first-person FOV of 85, horizontal).
 // F11 lists them in size order; the ids keep their old meaning so a saved value does not change what it does:
 //   0 = Small (was "Horizon dot")  0.98 / 0.4, the game's fade: about 11.5 degrees, half the vanilla circle.

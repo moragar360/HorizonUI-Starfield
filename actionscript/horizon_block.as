@@ -195,6 +195,10 @@
       private var hzTgLastMode:int = -2;
       private var hzTgHidden:Array = [];
       private var hzTgHidA:Array = [];   // H1: hzTgHidden[i].d for alpha entries, null for visible entries (same length, same order)
+      // originals of every vanilla prompt clip Horizon writes (alpha + visible), captured once before the first write.
+      // Separate from hzTgHidden so the hide-walk cache and KeepHold's unused-button visible=true can both be undone.
+      private var hzTgOrig:Array = [];
+      private var hzTgOrigD:Array = [];
       private var hzTgTextH:Number = 40;
       private var hzTgW:Number = 0;
       private var hzTgH:Number = 0;
@@ -9416,14 +9420,45 @@
          return m >= 0 && m <= 2 ? m : -1;
       }
 
+      // Purpose: snapshot alpha and visible of a vanilla prompt clip before Horizon's first write to it.
+      // Inputs: d = the clip. Outputs: one hzTgOrig entry per clip (later writes are ignored).
+      // Dependencies: none. KeepHold, HideA and Hide all go through this so Hover+Container off can restore
+      // unused key boxes (visible) and glyphs/background (alpha). Author: Moragar. Last modified: 2026-11-27.
+      private function hzTgSnap(d:DisplayObject) : void
+      {
+         if(!d) { return; }
+         if(this.hzTgOrigD == null) { this.hzTgOrigD = []; this.hzTgOrig = []; }
+         if(this.hzTgOrigD.indexOf(d) >= 0) { return; }
+         this.hzTgOrigD.push(d);
+         this.hzTgOrig.push({"d":d,"v":d.visible,"a":d.alpha});
+      }
+
       private function hzTgRestore() : void
       {
+         // orig is the complete set of Horizon writes (HideA alpha, Hide visible, KeepHold visible/alpha).
+         // Apply it first so unused key boxes go back to visible=false and glyphs/background go back to their
+         // captured alpha. The hide-walk list is then dropped without a second write.
+         if(this.hzTgOrig != null)
+         {
+            for each(var s:Object in this.hzTgOrig)
+            {
+               try
+               {
+                  var dd:DisplayObject = s.d as DisplayObject;
+                  dd.alpha = Number(s.a);
+                  dd.visible = Boolean(s.v);
+               }
+               catch(errO:Error) { }
+            }
+         }
+         this.hzTgOrig = [];
+         this.hzTgOrigD = [];
          for each(var o:Object in this.hzTgHidden)
          {
             try
             {
-               if(o.a != undefined) { DisplayObject(o.d).alpha = Number(o.a); }
-               else { DisplayObject(o.d).visible = Boolean(o.v); }
+               if(o.a != undefined) { (o.d as DisplayObject).alpha = Number(o.a); }
+               else { (o.d as DisplayObject).visible = Boolean(o.v); }
             }
             catch(err:Error) { }
          }
@@ -9434,6 +9469,7 @@
       private function hzTgHide(d:DisplayObject) : void
       {
          if(!d) { return; }
+         this.hzTgSnap(d);
          for each(var o:Object in this.hzTgHidden) { if(o.d == d) { if(d.visible) { d.visible = false; } return; } }
          this.hzTgHidden.push({"d":d,"v":d.visible});
          if(this.hzTgHidA.length == this.hzTgHidden.length - 1) { this.hzTgHidA.push(null); }   // H1: not an alpha entry
@@ -9453,7 +9489,7 @@
          var on:Boolean = this.hzShowTarget && aw != null && m >= 0 && rw.visible && this.hzGroupVisible && !this.hzUserHidden && !this.hzArrange;
          if(!on)
          {
-            if(this.hzTgHidden.length > 0) { this.hzTgRestore(); }
+            if(this.hzTgHidden.length > 0 || (this.hzTgOrig != null && this.hzTgOrig.length > 0)) { this.hzTgRestore(); }
             this.HorizonTarget_mc.visible = false;
             return;
          }
@@ -12234,6 +12270,7 @@
       private function hzT19HideA(d:DisplayObject) : void
       {
          if(!d) { return; }
+         this.hzTgSnap(d);
          if(this.hzT19HcRec) { this.hzT19HcD[this.hzT19HcDN] = d; this.hzT19HcP[this.hzT19HcDN] = d.parent; this.hzT19HcDN++; }   // perf round 2 Fix 5
          var ix:Array = this.hzTgHidA;
          if(ix.length == this.hzTgHidden.length)   // H1: native indexOf over the alpha entries' objects (same first match)
@@ -12416,7 +12453,7 @@
       }
       private function hzT19Off() : void
       {
-         if(this.hzTgHidden.length > 0) { this.hzTgRestore(); }
+         if(this.hzTgHidden.length > 0 || (this.hzTgOrig != null && this.hzTgOrig.length > 0)) { this.hzTgRestore(); }
          if(this.hzTg19) { this.hzTg19.visible = false; }
          this.HorizonTarget_mc.visible = false;
          this.hzT19ResetPay();
@@ -12682,11 +12719,13 @@
             var d:DisplayObject = this.hzT19BtnClip(aw,i) as DisplayObject;
             if(d)
             {
+               this.hzTgSnap(d);
                if(!d.visible) { d.visible = true; }
                if(d.alpha < 1) { d.alpha = 1; }
                var p:DisplayObjectContainer = d.parent;
                while(p != null && p != this)
                {
+                  this.hzTgSnap(p);
                   if(!p.visible) { p.visible = true; }
                   if(p.alpha < 1) { p.alpha = 1; }
                   try { if(p == this.RolloverWidget_mc) { break; } } catch(e0:Error) { }
@@ -14393,6 +14432,14 @@
             if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.skipGfx++; }
             return;
          }
+         // Hover + Container off: never touch the vanilla prompt clips (no hide walk, no KeepHold, no button reads).
+         // The falling edge already ran GiveBackVanilla; this is the every-frame gate after that.
+         if(!this.hzShowTarget)
+         {
+            if(this.HorizonTarget_mc && this.HorizonTarget_mc.visible) { this.hzT19Off(); }
+            else if(this.hzTgHidden.length > 0 || (this.hzTgOrig != null && this.hzTgOrig.length > 0)) { this.hzTgRestore(); }
+            return;
+         }
          var aw:Object = null;
          var rw:Object = null;
          try { rw = this.RolloverWidget_mc; aw = rw ? rw.RolloverActivation_mc : null; } catch(err:Error) { aw = null; }
@@ -14430,7 +14477,7 @@
          var scan:Boolean = lastMode == 3 || lastMode == 5;
          var mine:Boolean = this.hzShowTarget && !this.hzUserHidden && !scan && rw != null && aw != null;
          var prompt:Boolean = show && m != 3 && m != 5;
-         if(!mine && this.hzTgHidden.length > 0) { this.hzTgRestore(); }
+         if(!mine && (this.hzTgHidden.length > 0 || (this.hzTgOrig != null && this.hzTgOrig.length > 0))) { this.hzTgRestore(); }
          if(kind == "")
          {
             this.hzT19FadeOut();
@@ -14569,7 +14616,7 @@
       {
          if(this.hz38VanillaRule(true,prompt,card) == "hide") { this.hz38HideVanilla(rw,aw,kind); this.hz38VanShown = false; return; }
          this.hz38VanShown = true;
-         if(this.hzTgHidden.length > 0) { this.hzTgRestore(); }
+         if(this.hzTgHidden.length > 0 || (this.hzTgOrig != null && this.hzTgOrig.length > 0)) { this.hzTgRestore(); }
          // an alpha captured mid roll-on can be 0: a live prompt must be visible
          try
          {
@@ -14581,25 +14628,17 @@
          catch(eV:Error) { }
       }
 
-      // Purpose: Hover + Container off, on that setting edge only. Restore captured alphas, force the stock
-      // prompt to alpha 1 this frame, and hide Horizon's card. The per-frame hide walk does not run.
-      // Inputs: none (reads RolloverWidget_mc). Outputs: vanilla prompt visible; Horizon target card off.
-      // Dependencies: hzT19Off, hzTgRestore. Author: Moragar. Last modified: 2026-11-27.
+      // Purpose: Hover + Container off, on that setting edge only. Restore every snapshotted vanilla
+      // prompt property (alpha and visible) and hide Horizon's card. Does not force holder/activation
+      // to alpha 1: that left a white unstyled bar with empty key boxes when glyphs and unused-button
+      // visible flags were not restored. The per-frame hide walk does not run.
+      // Inputs: none. Outputs: vanilla prompt at its snapshotted originals; Horizon target card off.
+      // Dependencies: hzT19Off, hzTgRestore, hzTgSnap. Author: Moragar. Last modified: 2026-11-27.
       private function hz38GiveBackVanilla() : void
       {
          this.hzT19Off();
          this.hzT19HcValid = false;
          this.hzT19HcDue = true;
-         try
-         {
-            var rw:Object = this.RolloverWidget_mc;
-            var aw:Object = rw ? rw.RolloverActivation_mc : null;
-            var hd:DisplayObject = rw ? rw.RolloverActivationHolder_mc as DisplayObject : null;
-            var ad:DisplayObject = aw as DisplayObject;
-            if(hd) { hd.alpha = 1; }
-            if(ad) { ad.alpha = 1; }
-         }
-         catch(eGb:Error) { }
          this.hz38VanShown = true;
       }
 
