@@ -1,7 +1,10 @@
 // Hover + Container off must restore the game's stock prompt the same frame, without a save/reload.
 // Round 2: forcing holder/activation to alpha 1 left a white unstyled bar with empty key boxes (KeepHold had
 // set unused Button1_mc visible=true without a snapshot, and restore only wrote alpha, not visible). Horizon
-// now snapshots alpha+visible before every write (HideA, Hide, KeepHold) and restores both. When the feature
+// snapshots alpha+visible before every write (HideA, Hide, KeepHold) and restores both.
+// Round 3 (qmfix_0435n in game): only the leader line came back. Vanilla holder rollOn / Header AnimIn
+// still had Header / glyphs at alpha 0 when HideA first ran, so restore wrote 0. HideA now stores 1 for
+// that case (the shown state). Restore applies orig only (no second hidden-list write). When the feature
 // is off the tick never touches those clips.
 // Run: node tests/hover_vanilla_restore_test.js
 // Author: Moragar. Last modified: 2026-11-27.
@@ -55,16 +58,20 @@ function toJs(src, name) {
 
 {
 	const snap = fnText(SRC, "hzTgSnap").body;
-	expect(/hzTgOrigD\.indexOf\(d\)/.test(snap) && /\.push\(\{"d":d,"v":d\.visible,"a":d\.alpha\}\)/.test(snap), "hzTgSnap records alpha and visible once per clip");
+	expect(/hzTgOrigD\.indexOf\(d\)/.test(snap) && /hideA && a < 0\.05/.test(snap) && /\.push\(\{"d":d,"v":d\.visible,"a":a\}\)/.test(snap), "hzTgSnap records alpha and visible once per clip; HideA of a 0 stores 1");
+	expect(/hideA:Boolean = false/.test(fnText(SRC, "hzTgSnap").params), "hzTgSnap hideA defaults false so KeepHold / Hide keep the real visible flag");
 	expect(!/ENTER_FRAME|getTimer|addEventListener/.test(snap), "hzTgSnap adds no per-frame work");
 	const hideA = fnText(SRC, "hzT19HideA").body;
-	expect(hideA.indexOf("this.hzTgSnap(d)") >= 0 && hideA.indexOf("this.hzTgSnap(d)") < hideA.indexOf("d.alpha = 0"), "HideA snapshots before it writes alpha");
+	expect(hideA.indexOf("this.hzTgSnap(d, true)") >= 0 && hideA.indexOf("this.hzTgSnap(d, true)") < hideA.indexOf("d.alpha = 0"), "HideA snapshots as prompt art before it writes alpha");
+	expect(/d\.alpha < 0\.05 \? 1 : d\.alpha/.test(hideA), "HideA's hide-walk entry also stores 1 when the clip was already 0");
 	const hide = fnText(SRC, "hzTgHide").body;
 	expect(hide.indexOf("this.hzTgSnap(d)") >= 0 && hide.indexOf("this.hzTgSnap(d)") < hide.indexOf("d.visible = false"), "Hide snapshots before it writes visible");
 	const kh = fnText(SRC, "hzT19KeepHold").body;
 	expect(/this\.hzTgSnap\(d\)/.test(kh) && /this\.hzTgSnap\(p\)/.test(kh) && kh.indexOf("this.hzTgSnap(d)") < kh.indexOf("d.visible = true"), "KeepHold snapshots the button and each parent before visible/alpha writes");
 	const rest = fnText(SRC, "hzTgRestore").body;
 	expect(/dd\.alpha = Number\(s\.a\)/.test(rest) && /dd\.visible = Boolean\(s\.v\)/.test(rest) && /s\.d as DisplayObject/.test(rest), "restore writes both snapshotted properties (alpha and visible)");
+	expect(/if\(hadOrig\)/.test(rest) && /else[\s\S]*this\.hzTgHidden/.test(rest), "restore applies orig and does not replay the hide-walk list over it");
+	expect(/hzT19HcValid = false/.test(rest), "restore invalidates the hide-walk cache so the next off frame cannot re-zero art");
 	for (const n of ["hzT19HideA", "hzT19KeepHold", "hzTgHide"]) {
 		const b = fnText(SRC, n).body;
 		expect(!/textColor|setTextFormat|defaultTextFormat|colorTransform|gotoAndStop|gotoAndPlay|filters\s*=/.test(b), n + " only writes alpha/visible on vanilla prompt clips");
@@ -154,6 +161,32 @@ function makeHost() {
 	h.hzTgSnap(glyph);
 	h.hzTgSnap(unused);
 	expect(h.hzTgOrig.filter((o) => o.d === glyph).length === 1 && h.hzTgOrig.filter((o) => o.d === unused).length === 1, "a second snap of the same clip does not replace the original");
+}
+
+{
+	const { h, header, unused, glyph } = makeHost();
+	header.alpha = 0;
+	glyph.alpha = 0;
+	h.hzT19HideA(header);
+	h.hzT19HideA(glyph);
+	h.hzT19KeepHold(null);
+	const origHeader = h.hzTgOrig.filter((o) => o.d === header)[0];
+	const origGlyph = h.hzTgOrig.filter((o) => o.d === glyph)[0];
+	expect(origHeader && origHeader.a === 1 && origGlyph && origGlyph.a === 1, "HideA during vanilla rollOn (art still at 0) stores 1, the shown state");
+	h.hzTgHidden.push({ d: header, v: true, a: 0 });
+	h.hz38GiveBackVanilla();
+	expect(header.alpha === 1 && header.visible === true, "name / panel come back (not left at the captured rollOn 0)");
+	expect(glyph.alpha === 1 && glyph.visible === true, "TALK / TRADE glyph and label come back");
+	expect(unused.visible === false, "unused key box stays hidden");
+}
+
+{
+	const { h, holder } = makeHost();
+	holder.alpha = 0.4;
+	h.hzTgSnap(holder);
+	holder.alpha = 1;
+	h.hz38GiveBackVanilla();
+	expect(holder.alpha === 0.4, "KeepHold / generic snap still restores the real captured alpha, not a forced 1");
 }
 
 console.log("hover vanilla restore: " + passed + " ok, " + (failed ? failed + " FAILED" : "all passed"));

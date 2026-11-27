@@ -9421,24 +9421,30 @@
       }
 
       // Purpose: snapshot alpha and visible of a vanilla prompt clip before Horizon's first write to it.
-      // Inputs: d = the clip. Outputs: one hzTgOrig entry per clip (later writes are ignored).
-      // Dependencies: none. KeepHold, HideA and Hide all go through this so Hover+Container off can restore
-      // unused key boxes (visible) and glyphs/background (alpha). Author: Moragar. Last modified: 2026-11-27.
-      private function hzTgSnap(d:DisplayObject) : void
+      // Inputs: d = the clip; hideA = true when this is an alpha-hide of prompt art (Header / name / button
+      // glyphs / background). Outputs: one hzTgOrig entry per clip (later writes are ignored).
+      // HideA of art that is still at alpha 0 (vanilla holder rollOn / Header AnimIn not finished) stores 1,
+      // the shown state, so Hover+Container off does not restore a mid-roll-on 0 (that left only the leader
+      // line, which ObjectRing VANILLA never hides). KeepHold / Hide pass hideA false so unused key boxes
+      // keep their real visible flag. Author: Moragar. Last modified: 2026-11-27.
+      private function hzTgSnap(d:DisplayObject, hideA:Boolean = false) : void
       {
          if(!d) { return; }
          if(this.hzTgOrigD == null) { this.hzTgOrigD = []; this.hzTgOrig = []; }
          if(this.hzTgOrigD.indexOf(d) >= 0) { return; }
          this.hzTgOrigD.push(d);
-         this.hzTgOrig.push({"d":d,"v":d.visible,"a":d.alpha});
+         var a:Number = d.alpha;
+         if(hideA && a < 0.05) { a = 1; }
+         this.hzTgOrig.push({"d":d,"v":d.visible,"a":a});
       }
 
       private function hzTgRestore() : void
       {
          // orig is the complete set of Horizon writes (HideA alpha, Hide visible, KeepHold visible/alpha).
-         // Apply it first so unused key boxes go back to visible=false and glyphs/background go back to their
-         // captured alpha. The hide-walk list is then dropped without a second write.
-         if(this.hzTgOrig != null)
+         // Apply it and drop the hide-walk list without a second write: replaying hzTgHidden after orig
+         // could put Header / glyphs back to a captured 0 and hide the name and TALK row again.
+         var hadOrig:Boolean = this.hzTgOrig != null && this.hzTgOrig.length > 0;
+         if(hadOrig)
          {
             for each(var s:Object in this.hzTgOrig)
             {
@@ -9451,19 +9457,24 @@
                catch(errO:Error) { }
             }
          }
+         else
+         {
+            for each(var o:Object in this.hzTgHidden)
+            {
+               try
+               {
+                  if(o.a != undefined) { (o.d as DisplayObject).alpha = Number(o.a); }
+                  else { (o.d as DisplayObject).visible = Boolean(o.v); }
+               }
+               catch(err:Error) { }
+            }
+         }
          this.hzTgOrig = [];
          this.hzTgOrigD = [];
-         for each(var o:Object in this.hzTgHidden)
-         {
-            try
-            {
-               if(o.a != undefined) { (o.d as DisplayObject).alpha = Number(o.a); }
-               else { (o.d as DisplayObject).visible = Boolean(o.v); }
-            }
-            catch(err:Error) { }
-         }
          this.hzTgHidden = [];
          this.hzTgHidA.length = 0;
+         this.hzT19HcValid = false;
+         this.hzT19HcDue = true;
       }
 
       private function hzTgHide(d:DisplayObject) : void
@@ -12266,11 +12277,12 @@
          this.hzTgHide(d);
       }
 
-      // alpha-only hide (visible / input untouched); re-applied every frame because vanilla timelines reset clips
+      // alpha-only hide (visible / input untouched); re-applied every frame because vanilla timelines reset clips.
+      // Snapshot uses hideA so a mid-rollOn 0 is stored as 1 (vanilla shown), not as the restore target.
       private function hzT19HideA(d:DisplayObject) : void
       {
          if(!d) { return; }
-         this.hzTgSnap(d);
+         this.hzTgSnap(d, true);
          if(this.hzT19HcRec) { this.hzT19HcD[this.hzT19HcDN] = d; this.hzT19HcP[this.hzT19HcDN] = d.parent; this.hzT19HcDN++; }   // perf round 2 Fix 5
          var ix:Array = this.hzTgHidA;
          if(ix.length == this.hzTgHidden.length)   // H1: native indexOf over the alpha entries' objects (same first match)
@@ -12281,7 +12293,8 @@
          {
             for each(var o:Object in this.hzTgHidden) { if(o.d == d && o.a != undefined) { if(d.alpha != 0) { d.alpha = 0; } return; } }
          }
-         this.hzTgHidden.push({"d":d,"v":d.visible,"a":d.alpha});
+         var ra:Number = d.alpha < 0.05 ? 1 : d.alpha;
+         this.hzTgHidden.push({"d":d,"v":d.visible,"a":ra});
          if(ix.length == this.hzTgHidden.length - 1) { ix.push(d); }
          d.alpha = 0;
       }
@@ -14629,10 +14642,11 @@
       }
 
       // Purpose: Hover + Container off, on that setting edge only. Restore every snapshotted vanilla
-      // prompt property (alpha and visible) and hide Horizon's card. Does not force holder/activation
-      // to alpha 1: that left a white unstyled bar with empty key boxes when glyphs and unused-button
-      // visible flags were not restored. The per-frame hide walk does not run.
-      // Inputs: none. Outputs: vanilla prompt at its snapshotted originals; Horizon target card off.
+      // prompt property (alpha and visible) and hide Horizon's card. HideA of art that was still at
+      // alpha 0 (holder rollOn / Header AnimIn) restores 1 so the name, panel and TALK/TRADE row
+      // come back; unused key boxes keep their snapshotted visible=false. Does not hard-code
+      // holder/activation to 1. The per-frame hide walk does not run.
+      // Inputs: none. Outputs: vanilla prompt shown (leader line plus name and button row); Horizon card off.
       // Dependencies: hzT19Off, hzTgRestore, hzTgSnap. Author: Moragar. Last modified: 2026-11-27.
       private function hz38GiveBackVanilla() : void
       {
